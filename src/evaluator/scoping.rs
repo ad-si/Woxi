@@ -596,12 +596,17 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
     });
   }
 
-  // Handle Alternatives: Element[a | b | c, dom]
-  if let Expr::BinaryOp {
-    op: BinaryOperator::Alternatives,
-    ..
-  } = x
-  {
+  // Handle Alternatives: Element[a | b | c, dom]. `a | b | c` evaluates to a
+  // flat Alternatives[...] FunctionCall, but held/explicit forms may still be
+  // a nested BinaryOp — accept both.
+  let is_alternatives = matches!(
+    x,
+    Expr::BinaryOp {
+      op: BinaryOperator::Alternatives,
+      ..
+    }
+  ) || matches!(x, Expr::FunctionCall { name, .. } if name == "Alternatives");
+  if is_alternatives {
     let alts = collect_alternatives(x);
     let mut remaining = Vec::new();
     for alt in &alts {
@@ -735,6 +740,10 @@ fn collect_alternatives(expr: &Expr) -> Vec<Expr> {
       let mut result = collect_alternatives(left);
       result.extend(collect_alternatives(right));
       result
+    }
+    // `a | b | c` evaluates to a flat Alternatives[...] FunctionCall.
+    Expr::FunctionCall { name, args } if name == "Alternatives" => {
+      args.iter().flat_map(collect_alternatives).collect()
     }
     _ => vec![expr.clone()],
   }

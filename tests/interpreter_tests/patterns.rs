@@ -931,6 +931,47 @@ mod alternatives {
   }
 
   #[test]
+  fn alternatives_is_flat_arity() {
+    // `a | b | c` from the `|` operator is a flat, 3-argument Alternatives,
+    // while explicit nesting is preserved (Length 2).
+    assert_eq!(interpret("Length[a | b | c]").unwrap(), "3");
+    assert_eq!(
+      interpret("Length[Alternatives[Alternatives[a, b], c]]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn alternatives_structural_operations() {
+    // Structural operations treat the flat operands as siblings, matching WS.
+    assert_eq!(interpret("MemberQ[a | b | c, b]").unwrap(), "True");
+    assert_eq!(interpret("MemberQ[a | b | c, x]").unwrap(), "False");
+    assert_eq!(interpret("Sort[c | a | b]").unwrap(), "a | b | c");
+    assert_eq!(interpret("Reverse[a | b | c]").unwrap(), "c | b | a");
+    assert_eq!(interpret("Append[a | b | c, d]").unwrap(), "a | b | c | d");
+    assert_eq!(interpret("Prepend[a | b | c, z]").unwrap(), "z | a | b | c");
+    assert_eq!(
+      interpret("Replace[a | b | c, b -> x, 1]").unwrap(),
+      "a | x | c"
+    );
+    assert_eq!(interpret("Count[a | b | c, b]").unwrap(), "1");
+    assert_eq!(
+      interpret("Map[f, a | b | c]").unwrap(),
+      "f[a] | f[b] | f[c]"
+    );
+  }
+
+  #[test]
+  fn alternatives_element_drops_known_members() {
+    // Element drops alternatives already known to be in the domain.
+    assert_eq!(
+      interpret("Element[3 | a, Integers]").unwrap(),
+      "Element[a, Integers]"
+    );
+    assert_eq!(interpret("Element[3 | 5, Integers]").unwrap(), "True");
+  }
+
+  #[test]
   fn alternatives_part_flattens_chain() {
     // `a | b | c` is the flat, associative head Alternatives[a, b, c]; Part
     // must index into all three operands, not the outer binary node.

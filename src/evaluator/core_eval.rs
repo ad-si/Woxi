@@ -2376,11 +2376,35 @@ pub fn evaluate_expr_to_expr_inner(
           crate::functions::string_ast::string_join_ast(&[left_val, right_val])
         }
         BinaryOperator::Alternatives => {
-          // Alternatives stays symbolic (used in pattern matching)
-          Ok(Expr::BinaryOp {
-            op: BinaryOperator::Alternatives,
-            left: Box::new(left_val),
-            right: Box::new(right_val),
+          // `a | b | c` (the `|` operator) is a flat Alternatives head in WL:
+          // Length[a | b | c] == 3. The parser builds it as a nested BinaryOp
+          // chain, so canonicalize the evaluated chain into a flat
+          // Alternatives[...] FunctionCall. This makes structural operations
+          // (Part, Sort, MemberQ, Append, …) see all operands as siblings,
+          // matching wolframscript. Held patterns keep their BinaryOp form and
+          // are handled directly by the pattern matcher, which accepts both.
+          fn push_alt(e: &Expr, out: &mut Vec<Expr>) {
+            match e {
+              Expr::FunctionCall { name, args } if name == "Alternatives" => {
+                out.extend(args.iter().cloned());
+              }
+              Expr::BinaryOp {
+                op: BinaryOperator::Alternatives,
+                left,
+                right,
+              } => {
+                push_alt(left, out);
+                push_alt(right, out);
+              }
+              other => out.push(other.clone()),
+            }
+          }
+          let mut parts = Vec::new();
+          push_alt(&left_val, &mut parts);
+          push_alt(&right_val, &mut parts);
+          Ok(Expr::FunctionCall {
+            name: "Alternatives".to_string(),
+            args: parts.into(),
           })
         }
       }
