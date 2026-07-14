@@ -2266,6 +2266,22 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => p_val == Some(f64::INFINITY),
   };
 
+  // Emit Norm::ptype and leave the call unevaluated for an out-of-range norm
+  // parameter (a numeric p < 1 for a vector, or a non-{1,2,Infinity,
+  // "Frobenius"} value for a matrix).
+  let ptype = || {
+    if let Some(p) = &p_expr {
+      crate::emit_message(&format!(
+        "Norm::ptype: The second argument of Norm, {}, should be a symbol, Infinity or an integer or real number not less than 1 for vector p-norms; or 1, 2, Infinity or \"Frobenius\" for matrix norms.",
+        crate::syntax::expr_to_string(p)
+      ));
+    }
+    Ok(Expr::FunctionCall {
+      name: "Norm".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+
   // Norm[matrix, "Frobenius"] — sqrt of sum of squared absolute values
   // across every entry of the (rectangular) matrix.
   if matches!(&p_expr, Some(Expr::String(s)) if s == "Frobenius")
@@ -2383,12 +2399,19 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         return evaluate_expr_to_expr(&sqrt);
       }
-      // Other matrix p-norms are not defined; leave unevaluated.
-      return Ok(Expr::FunctionCall {
-        name: "Norm".to_string(),
-        args: args.to_vec().into(),
-      });
+      // Only 1, 2, Infinity and "Frobenius" are valid matrix norms; anything
+      // else emits ptype and stays unevaluated.
+      return ptype();
     }
+  }
+
+  // A vector (or scalar) p-norm requires a numeric p not less than 1; a
+  // numeric p < 1 is rejected with ptype (symbolic p stays symbolic).
+  if let Some(p) = p_val
+    && p.is_finite()
+    && p < 1.0
+  {
+    return ptype();
   }
 
   match &args[0] {

@@ -4871,6 +4871,27 @@ mod cases {
     assert_case(r#"Norm[-5, "Frobenius"]"#, r#"5"#);
     assert_case(r#"Norm[{1., 2.}, "Frobenius"]"#, r#"2.23606797749979"#);
   }
+  // An out-of-range norm parameter emits Norm::ptype and stays unevaluated:
+  // a numeric p < 1 for a vector, or a non-{1,2,Infinity,"Frobenius"} value
+  // for a matrix. A symbolic p is still kept symbolic.
+  #[test]
+  fn norm_invalid_parameter_emits_ptype() {
+    for input in [
+      r#"Norm[{1, 2, 3}, 0.5]"#,
+      r#"Norm[3, 0.5]"#,
+      r#"Norm[{{1, 2}, {3, 4}}, 3]"#,
+      r#"Norm[{{1, 2}, {3, 4}}, "Nuclear"]"#,
+    ] {
+      let r = woxi::interpret_with_stdout(input).unwrap();
+      assert!(
+        r.warnings.iter().any(|w| w.contains("Norm::ptype")),
+        "expected ptype for {input}, got {:?}",
+        r.warnings
+      );
+    }
+    // A symbolic p is not rejected.
+    assert_case(r#"Norm[{1, 2, 3}, p]"#, r#"(1 + 2^p + 3^p)^p^(-1)"#);
+  }
   #[test]
   fn norm_empty_vector_emits_nvm() {
     // Norm[{}] has no value: it stays unevaluated (with Norm::nvm) rather
