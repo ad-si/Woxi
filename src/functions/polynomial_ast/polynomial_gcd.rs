@@ -139,7 +139,7 @@ fn mod_norm(a: i128, p: i128) -> i128 {
 
 /// Modular inverse of `a` mod `p` via the extended Euclidean algorithm
 /// (assumes gcd(a, p) = 1, which holds for p prime and a not a multiple of p).
-pub(super) fn mod_inv(a: i128, p: i128) -> i128 {
+fn mod_inv(a: i128, p: i128) -> i128 {
   let (mut old_r, mut r) = (mod_norm(a, p), p);
   let (mut old_s, mut s) = (1i128, 0i128);
   while r != 0 {

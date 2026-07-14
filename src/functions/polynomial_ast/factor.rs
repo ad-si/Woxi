@@ -1539,7 +1539,7 @@ fn decompose_product(
 }
 
 /// Check if an expression is purely numeric
-pub fn is_numeric_expr(expr: &Expr) -> bool {
+fn is_numeric_expr(expr: &Expr) -> bool {
   matches!(expr, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
     || matches!(expr,
       Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2
