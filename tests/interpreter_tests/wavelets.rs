@@ -28,8 +28,16 @@ mod wavelets {
 
   #[test]
   fn haar_primal_lowpass() {
+    // Machine reals by default; exact fractions only on WorkingPrecision.
     assert_eq!(
       interpret("WaveletFilterCoefficients[HaarWavelet[]]").unwrap(),
+      "{{0, 0.5}, {1, 0.5}}"
+    );
+    assert_eq!(
+      interpret(
+        "WaveletFilterCoefficients[HaarWavelet[], WorkingPrecision -> Infinity]"
+      )
+      .unwrap(),
       "{{0, 1/2}, {1, 1/2}}"
     );
   }
@@ -39,7 +47,7 @@ mod wavelets {
     assert_eq!(
       interpret("WaveletFilterCoefficients[HaarWavelet[], \"PrimalHighpass\"]")
         .unwrap(),
-      "{{0, 1/2}, {1, -1/2}}"
+      "{{0, 0.5}, {1, -0.5}}"
     );
   }
 
@@ -89,20 +97,56 @@ mod wavelets {
   }
 
   #[test]
-  fn biorthogonal_spline_exact_rationals() {
+  fn biorthogonal_spline_primal_is_long_filter() {
+    // Wolfram labels the longer complementary filter "Primal" and the shorter
+    // B-spline filter "Dual"; machine reals by default.
     assert_eq!(
       interpret(
         "WaveletFilterCoefficients[BiorthogonalSplineWavelet[2, 2], \"PrimalLowpass\"]"
       )
       .unwrap(),
-      "{{-1, 1/4}, {0, 1/2}, {1, 1/4}}"
+      "{{-2, -0.125}, {-1, 0.25}, {0, 0.75}, {1, 0.25}, {2, -0.125}}"
     );
     assert_eq!(
       interpret(
         "WaveletFilterCoefficients[BiorthogonalSplineWavelet[2, 2], \"DualLowpass\"]"
       )
       .unwrap(),
+      "{{-1, 0.25}, {0, 0.5}, {1, 0.25}}"
+    );
+  }
+
+  #[test]
+  fn biorthogonal_spline_exact_rationals() {
+    // WorkingPrecision -> Infinity gives the exact dyadic rationals.
+    assert_eq!(
+      interpret(
+        "WaveletFilterCoefficients[BiorthogonalSplineWavelet[2, 2], \"PrimalLowpass\", WorkingPrecision -> Infinity]"
+      )
+      .unwrap(),
       "{{-2, -1/8}, {-1, 1/4}, {0, 3/4}, {1, 1/4}, {2, -1/8}}"
+    );
+    assert_eq!(
+      interpret(
+        "WaveletFilterCoefficients[BiorthogonalSplineWavelet[2, 2], \"DualLowpass\", WorkingPrecision -> Infinity]"
+      )
+      .unwrap(),
+      "{{-1, 1/4}, {0, 1/2}, {1, 1/4}}"
+    );
+    // The analyzing highpass filters are reported with flipped sign.
+    assert_eq!(
+      interpret(
+        "WaveletFilterCoefficients[BiorthogonalSplineWavelet[2, 2], \"PrimalHighpass\", WorkingPrecision -> Infinity]"
+      )
+      .unwrap(),
+      "{{0, -1/4}, {1, 1/2}, {2, -1/4}}"
+    );
+    assert_eq!(
+      interpret(
+        "WaveletFilterCoefficients[BiorthogonalSplineWavelet[2, 2], \"DualHighpass\", WorkingPrecision -> Infinity]"
+      )
+      .unwrap(),
+      "{{-1, -1/8}, {0, -1/4}, {1, 3/4}, {2, -1/4}, {3, -1/8}}"
     );
   }
 
@@ -118,9 +162,16 @@ mod wavelets {
   }
 
   #[test]
-  fn cdf53_is_exact() {
+  fn cdf53_default_is_machine_exact_on_infinity() {
     assert_eq!(
       interpret("WaveletFilterCoefficients[CDFWavelet[\"5/3\"]]").unwrap(),
+      "{{-1, 0.25}, {0, 0.5}, {1, 0.25}}"
+    );
+    assert_eq!(
+      interpret(
+        "WaveletFilterCoefficients[CDFWavelet[\"5/3\"], WorkingPrecision -> Infinity]"
+      )
+      .unwrap(),
       "{{-1, 1/4}, {0, 1/2}, {1, 1/4}}"
     );
   }
@@ -139,17 +190,26 @@ mod wavelets {
 
   #[test]
   fn shannon_filter_exact_values() {
+    // Machine reals by default.
     assert_eq!(
       interpret("f = WaveletFilterCoefficients[ShannonWavelet[2]]; f[[3]]")
         .unwrap(),
-      "{0, 1/2}"
+      "{0, 0.5}"
     );
     assert_eq!(
       interpret(
         "f = WaveletFilterCoefficients[ShannonWavelet[2]]; {f[[2]], f[[4]]}"
       )
       .unwrap(),
-      "{{-1, Pi^(-1)}, {1, Pi^(-1)}}"
+      "{{-1, 0.3183098861837907}, {1, 0.3183098861837907}}"
+    );
+    // Exact closed form on WorkingPrecision -> Infinity.
+    assert_eq!(
+      interpret(
+        "f = WaveletFilterCoefficients[ShannonWavelet[2], WorkingPrecision -> Infinity]; {f[[2]], f[[3]], f[[4]]}"
+      )
+      .unwrap(),
+      "{{-1, Pi^(-1)}, {0, 1/2}, {1, Pi^(-1)}}"
     );
   }
 
@@ -205,7 +265,7 @@ mod wavelets {
         "WaveletFilterCoefficients[HaarWavelet[], {\"PrimalLowpass\", \"PrimalHighpass\"}]"
       )
       .unwrap(),
-      "{{{0, 1/2}, {1, 1/2}}, {{0, 1/2}, {1, -1/2}}}"
+      "{{{0, 0.5}, {1, 0.5}}, {{0, 0.5}, {1, -0.5}}}"
     );
   }
 
@@ -221,7 +281,7 @@ mod wavelets {
         "WaveletFilterCoefficients[HaarWavelet[], \"LiftingFilter\"][\"PrimalLowpass\"]"
       )
       .unwrap(),
-      "{{0, 1/2}, {1, 1/2}}"
+      "{{0, 0.5}, {1, 0.5}}"
     );
   }
 
@@ -276,7 +336,7 @@ mod wavelets {
     assert_eq!(
       interpret("DiscreteWaveletTransform[{1, 2, 3, 4}][\"BasisIndex\"]")
         .unwrap(),
-      "{{0, 0}, {0, 1}, {1}}"
+      "{{1}, {0, 1}, {0, 0}}"
     );
   }
 
@@ -289,7 +349,7 @@ mod wavelets {
     assert_eq!(
       interpret("DiscreteWaveletTransform[{1, 2, 3, 4}][{0, 1}, \"Values\"]")
         .unwrap(),
-      "{-2.}"
+      "{{-2.}}"
     );
   }
 
@@ -558,7 +618,7 @@ mod wavelets {
         "Normal[LiftingWaveletTransform[{1, 1, 3, 1}, HaarWavelet[], 1, WorkingPrecision -> Infinity]]"
       )
       .unwrap(),
-      "{{0} -> {Sqrt[2], 2*Sqrt[2]}, {1} -> {0, Sqrt[2]}}"
+      "{{0} -> {Sqrt[2], 2*Sqrt[2]}, {1} -> {0, -Sqrt[2]}}"
     );
   }
 
@@ -569,7 +629,7 @@ mod wavelets {
         "LiftingWaveletTransform[{a, b}, HaarWavelet[], 1][{1}, \"Values\"]"
       )
       .unwrap(),
-      "{Sqrt[2]*(a/2 - b/2)}"
+      "{{Sqrt[2]*(-1/2*a + b/2)}}"
     );
   }
 
@@ -605,7 +665,7 @@ mod wavelets {
         "WaveletThreshold[DiscreteWaveletTransform[{1., 5., 2., 8.}], {\"Soft\", 1.}][{1}, \"Values\"]"
       )
       .unwrap(),
-      "{-1.8284271247461903, -3.2426406871192857}"
+      "{{-1.8284271247461903, -3.2426406871192857}}"
     );
   }
 
@@ -616,7 +676,7 @@ mod wavelets {
         "WaveletThreshold[DiscreteWaveletTransform[{1., 5., 2., 8.}], {\"Hard\", 3.}][{1}, \"Values\"]"
       )
       .unwrap(),
-      "{0., -4.242640687119286}"
+      "{{0., -4.242640687119286}}"
     );
   }
 
@@ -682,7 +742,7 @@ mod wavelets {
         "dwd = DiscreteWaveletTransform[{1., 2., 3., 4.}, HaarWavelet[], 1]; m = WaveletMapIndexed[#1*0 &, dwd, {1}]; {m[{0}, \"Values\"] === dwd[{0}, \"Values\"], m[{1}, \"Values\"]}"
       )
       .unwrap(),
-      "{True, {0., 0.}}"
+      "{True, {{0., 0.}}}"
     );
   }
 
@@ -743,7 +803,7 @@ mod wavelets {
         "cwd = ContinuousWaveletTransform[Range[32] // N]; {cwd[\"Octaves\"], cwd[\"Voices\"], cwd[\"Wavelet\"]}"
       )
       .unwrap(),
-      "{4, 4, MexicanHatWavelet[]}"
+      "{4, 4, MexicanHatWavelet[1]}"
     );
   }
 

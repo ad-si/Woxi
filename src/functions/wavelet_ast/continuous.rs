@@ -363,9 +363,11 @@ pub fn continuous_wavelet_transform_ast(
       return Ok(unevaluated(fname, args));
     }
   };
+  // The default continuous wavelet is reported in its canonical form
+  // MexicanHatWavelet[1] (the sigma-1 Mexican hat), matching Wolfram.
   let default_wavelet = Expr::FunctionCall {
     name: "MexicanHatWavelet".to_string(),
-    args: vec![].into(),
+    args: vec![Expr::Integer(1)].into(),
   };
   let wavelet_expr = match positional.get(1) {
     None => default_wavelet,

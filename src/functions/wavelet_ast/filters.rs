@@ -72,6 +72,15 @@ fn negate_expr(e: &Expr) -> Expr {
   crate::evaluator::evaluate_expr_to_expr(&call).unwrap_or(call)
 }
 
+/// Flip the sign of every coefficient (indices preserved).
+pub fn negate_filter(f: &Filter) -> Filter {
+  f.iter().map(|&(i, c)| (i, -c)).collect()
+}
+
+pub fn negate_filter_exact(f: &ExactFilter) -> ExactFilter {
+  f.iter().map(|(i, c)| (*i, negate_expr(c))).collect()
+}
+
 /// Parse and evaluate a Wolfram Language expression used to build exact
 /// filter values (input is always internally generated, never user data).
 fn wl(code: &str) -> Expr {

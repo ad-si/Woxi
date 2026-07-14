@@ -318,49 +318,66 @@ fn single_filter_result(
     Some(f) => f,
     None => return Ok(unevaluated("WaveletFilterCoefficients", orig_args)),
   };
-  let (numeric, exact): (filters::Filter, Option<filters::ExactFilter>) =
+  // For the biorthogonal spline families Wolfram labels the longer
+  // (complementary) filter "Primal" and the shorter B-spline filter "Dual" —
+  // the opposite of the internal naming — and reports the highpass filters
+  // with flipped sign. Remap the requested spec accordingly.
+  let is_bior = matches!(
+    spec,
+    WaveletSpec::BiorthogonalSpline(_, _)
+      | WaveletSpec::ReverseBiorthogonalSpline(_, _)
+  );
+  let eff_kind: &str = if is_bior {
     match kind.as_str() {
-      "PrimalLowpass" => {
-        (filters.primal_lo.clone(), filters.primal_lo_exact.clone())
-      }
-      "DualLowpass" => (filters.dual_lo.clone(), filters.dual_lo_exact.clone()),
-      "PrimalHighpass" => (
-        filters::highpass_from(&filters.dual_lo),
-        filters
-          .dual_lo_exact
-          .as_ref()
-          .map(filters::highpass_from_exact),
-      ),
-      "DualHighpass" => (
-        filters::highpass_from(&filters.primal_lo),
-        filters
-          .primal_lo_exact
-          .as_ref()
-          .map(filters::highpass_from_exact),
-      ),
-      _ => {
-        crate::emit_message(&format!(
-          "WaveletFilterCoefficients::invspec: \"{}\" is not a valid filter specification.",
-          kind
-        ));
-        return Ok(unevaluated("WaveletFilterCoefficients", orig_args));
-      }
-    };
-
-  // Exact coefficients are the default where a closed form exists; the
-  // orthogonal families computed by spectral factorization or quadrature
-  // give machine numbers (matching the MachinePrecision default), and
-  // WorkingPrecision -> Infinity has nothing more to offer for them.
-  let use_exact = exact.is_some()
-    && (exact_requested
-      || matches!(
-        spec,
-        WaveletSpec::Haar
-          | WaveletSpec::BiorthogonalSpline(_, _)
-          | WaveletSpec::ReverseBiorthogonalSpline(_, _)
-          | WaveletSpec::Cdf(false)
-          | WaveletSpec::Shannon(_)
+      "PrimalLowpass" => "DualLowpass",
+      "DualLowpass" => "PrimalLowpass",
+      "PrimalHighpass" => "DualHighpass",
+      "DualHighpass" => "PrimalHighpass",
+      other => other,
+    }
+  } else {
+    kind.as_str()
+  };
+  let bior_highpass_flip =
+    is_bior && matches!(kind.as_str(), "PrimalHighpass" | "DualHighpass");
+  let (mut numeric, mut exact): (
+    filters::Filter,
+    Option<filters::ExactFilter>,
+  ) = match eff_kind {
+    "PrimalLowpass" => {
+      (filters.primal_lo.clone(), filters.primal_lo_exact.clone())
+    }
+    "DualLowpass" => (filters.dual_lo.clone(), filters.dual_lo_exact.clone()),
+    "PrimalHighpass" => (
+      filters::highpass_from(&filters.dual_lo),
+      filters
+        .dual_lo_exact
+        .as_ref()
+        .map(filters::highpass_from_exact),
+    ),
+    "DualHighpass" => (
+      filters::highpass_from(&filters.primal_lo),
+      filters
+        .primal_lo_exact
+        .as_ref()
+        .map(filters::highpass_from_exact),
+    ),
+    _ => {
+      crate::emit_message(&format!(
+        "WaveletFilterCoefficients::invspec: \"{}\" is not a valid filter specification.",
+        kind
       ));
+      return Ok(unevaluated("WaveletFilterCoefficients", orig_args));
+    }
+  };
+  if bior_highpass_flip {
+    numeric = filters::negate_filter(&numeric);
+    exact = exact.as_ref().map(filters::negate_filter_exact);
+  }
+
+  // Machine-precision values are the default (matching Wolfram); exact
+  // closed-form coefficients are only produced on WorkingPrecision -> Infinity.
+  let use_exact = exact.is_some() && exact_requested;
   let pairs: Vec<Expr> = if use_exact {
     exact
       .unwrap()

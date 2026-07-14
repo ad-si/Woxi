@@ -621,7 +621,8 @@ fn dwt_level_plain(
   filters: &WaveletFilters,
 ) -> Vec<(u8, CoefArray)> {
   let lo = &filters.dual_lo;
-  let hi = highpass_from(&filters.primal_lo);
+  // Lifting reports detail with the opposite sign of the decimated transform.
+  let hi = super::filters::negate_filter(&highpass_from(&filters.primal_lo));
   let step = |x: &[f64], f: &Filter| -> Vec<f64> {
     let n = x.len() as i64;
     let s2 = std::f64::consts::SQRT_2;
@@ -832,7 +833,10 @@ fn idwt_level_plain(
   filters: &WaveletFilters,
 ) -> CoefArray {
   let synth_lo = filters.primal_lo.clone();
-  let synth_hi = highpass_from(&filters.dual_lo);
+  // Matches the flipped detail-sign convention of `dwt_level_plain`, so the
+  // lifting transform still reconstructs exactly.
+  let synth_hi =
+    super::filters::negate_filter(&highpass_from(&filters.dual_lo));
   let step = |a: &[f64], d: &[f64], n: usize| -> Vec<f64> {
     let s2 = std::f64::consts::SQRT_2;
     let mut x = vec![0.0; n];
@@ -942,7 +946,8 @@ pub fn basis_index(kind: TransformKind, r: usize, rank: usize) -> Vec<Vec<u8>> {
         basis.push(w);
       }
     }
-    basis.sort();
+    // Natural construction order (finest detail first, coarse approximation
+    // last) matches Wolfram's BasisIndex ordering; no sorting.
   }
   basis
 }

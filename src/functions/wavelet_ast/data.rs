@@ -356,7 +356,12 @@ fn symbolic_forward(
   r: usize,
 ) -> Option<Vec<(Vec<u8>, Expr)>> {
   let (primal, dual) = exact_filters(spec)?;
-  let hi = super::filters::highpass_from_exact(&primal);
+  let mut hi = super::filters::highpass_from_exact(&primal);
+  // The lifting scheme reports detail coefficients with the opposite sign
+  // convention from the decimated transform (predict = odd - even).
+  if kind == TransformKind::Lwt {
+    hi = super::filters::negate_filter_exact(&hi);
+  }
   let mut out: Vec<(Vec<u8>, Vec<Expr>)> = Vec::new();
   let data: Vec<Expr> = if kind == TransformKind::Lwt {
     let mult = 1usize << r;
@@ -800,9 +805,15 @@ fn symbolic_inverse(
 ) -> Option<Expr> {
   let (primal, dual) = exact_filters(spec)?;
   let synth_lo = primal.clone();
-  let synth_hi = super::filters::highpass_from_exact(&dual);
-  let analysis_lo = dual;
-  let analysis_hi = super::filters::highpass_from_exact(&primal);
+  let mut synth_hi = super::filters::highpass_from_exact(&dual);
+  let analysis_lo = dual.clone();
+  let mut analysis_hi = super::filters::highpass_from_exact(&primal);
+  // The lifting transform stores detail with a flipped sign; mirror that in
+  // both highpass filters so reconstruction still cancels exactly.
+  if dwd.kind == TransformKind::Lwt {
+    synth_hi = super::filters::negate_filter_exact(&synth_hi);
+    analysis_hi = super::filters::negate_filter_exact(&analysis_hi);
+  }
   let filters_num = super::wavelet_filters(spec)?;
   let r = dwd.refinement();
   let n0 = dwd.dims[0];
@@ -1105,7 +1116,10 @@ pub fn apply_dwd(func: &Expr, args: &[Expr]) -> Result<Expr, InterpreterError> {
       out.push(value);
     }
   }
-  if single_explicit && out.len() == 1 && form != "Rules" {
+  // A single explicit wind unwraps only for the coefficient (default) and
+  // "Inverse" forms; "Values" keeps the per-wind list wrapper, so
+  // dwd[{1}, "Values"] returns {{…}} to match Wolfram.
+  if single_explicit && out.len() == 1 && form != "Rules" && form != "Values" {
     return Ok(out.pop().unwrap());
   }
   Ok(Expr::List(out.into()))

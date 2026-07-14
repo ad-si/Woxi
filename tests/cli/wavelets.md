@@ -31,12 +31,12 @@ pairs. Lowpass coefficients sum to 1:
 
 ```scrut
 $ wo 'WaveletFilterCoefficients[HaarWavelet[]]'
-{{0, 1/2}, {1, 1/2}}
+{{0, 0.5}, {1, 0.5}}
 ```
 
 ```scrut
 $ wo 'WaveletFilterCoefficients[HaarWavelet[], "PrimalHighpass"]'
-{{0, 1/2}, {1, -1/2}}
+{{0, 0.5}, {1, -0.5}}
 ```
 
 Exact coefficients with `WorkingPrecision -> Infinity`:
@@ -50,7 +50,7 @@ Biorthogonal families have separate primal and dual filters:
 
 ```scrut
 $ wo 'WaveletFilterCoefficients[BiorthogonalSplineWavelet[2, 2], "DualLowpass"]'
-{{-2, -1/8}, {-1, 1/4}, {0, 3/4}, {1, 1/4}, {2, -1/8}}
+{{-1, 0.25}, {0, 0.5}, {1, 0.25}}
 ```
 
 
@@ -66,7 +66,7 @@ $ wo 'dwd = DiscreteWaveletTransform[{1, 2, 3, 4}, HaarWavelet[], 1]; dwd[All]'
 
 ```scrut
 $ wo 'DiscreteWaveletTransform[{1, 2, 3, 4}]["BasisIndex"]'
-{{0, 0}, {0, 1}, {1}}
+{{1}, {0, 1}, {0, 0}}
 ```
 
 `InverseWaveletTransform` reconstructs the data:
@@ -90,7 +90,7 @@ The lifting transform computes exact results for exact input:
 
 ```scrut
 $ wo 'Normal[LiftingWaveletTransform[{1, 1, 3, 1}, HaarWavelet[], 1, WorkingPrecision -> Infinity]]'
-{{0} -> {Sqrt[2], 2*Sqrt[2]}, {1} -> {0, Sqrt[2]}}
+{{0} -> {Sqrt[2], 2*Sqrt[2]}, {1} -> {0, -Sqrt[2]}}
 ```
 
 
@@ -114,7 +114,7 @@ with an explicit threshold value):
 
 ```scrut
 $ wo 'WaveletThreshold[DiscreteWaveletTransform[{1., 5., 2., 8.}], {"Soft", 1.}][{1}, "Values"]'
-{-1.8284271247461903, -3.2426406871192857}
+{{-1.8284271247461903, -3.2426406871192857}}
 ```
 
 
@@ -122,5 +122,5 @@ $ wo 'WaveletThreshold[DiscreteWaveletTransform[{1., 5., 2., 8.}], {"Soft", 1.}]
 
 ```scrut
 $ wo 'cwd = ContinuousWaveletTransform[Range[32] // N]; {cwd["Octaves"], cwd["Voices"], cwd["Wavelet"]}'
-{4, 4, MexicanHatWavelet[]}
+{4, 4, MexicanHatWavelet[1]}
 ```
