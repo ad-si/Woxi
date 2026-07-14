@@ -1228,6 +1228,19 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
     return 0;
   }
 
+  // Powers with the same symbolic base compare by exponent, canonically:
+  // Order[E^(-2*t), E^(-1/9*t^2)] = 1 because the exponent -2*t precedes
+  // -1/9*t^2 (degree ascending; wolframscript-verified). The string
+  // comparison below would order "E^(-1/9*t^2)" first on '1' < '2'.
+  if let (Some((ba, ea)), Some((bb, eb))) = (power_parts(a), power_parts(b))
+    && crate::syntax::expr_to_string(&ba) == crate::syntax::expr_to_string(&bb)
+  {
+    let ord = compare_exprs(&ea, &eb);
+    if ord != 0 {
+      return ord;
+    }
+  }
+
   // Wolfram canonical ordering: symbols and compounds are compared structurally
   // Classification: atom-like (atoms, constants, powers) sort before function calls
   let a_is_atom = is_atom_expr(a);
@@ -1368,6 +1381,28 @@ fn int_base_power(e: &Expr) -> Option<(i128, f64)> {
   let Expr::Integer(b) = base else { return None };
   let e = try_eval_to_f64_with_infinity(&exp)?;
   Some((b, e))
+}
+
+/// Decompose a power expression — Power[b, e] (either Expr shape) or
+/// Sqrt[b] — into `(base, exponent)`. Non-power expressions yield None.
+fn power_parts(e: &Expr) -> Option<(Expr, Expr)> {
+  match e {
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      Some((args[0].clone(), Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+      }))
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Some((args[0].clone(), args[1].clone()))
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => Some(((**left).clone(), (**right).clone())),
+    _ => None,
+  }
 }
 
 /// Split a term into its leading number-literal coefficient and the

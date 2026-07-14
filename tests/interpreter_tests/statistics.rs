@@ -9141,16 +9141,14 @@ mod failure_distribution {
     // of (1 || 2) && (1 || 3), so the naive independence product rules would
     // double-count it. Reducing the Boolean function to its read-once form
     // (1 || (2 && 3)) via BooleanMinimize makes independence exact, matching
-    // wolframscript's value. (Woxi orders the two complement factors as
-    // (1 - E^(-3*t))*(1 - E^(-5*t)); wolframscript writes the E^(-5*t) factor
-    // first — a general Times factor-ordering divergence, so the verify
-    // harness skip-lists this exact case.)
+    // wolframscript's value and factor order (E^(-5*t) sums sort first:
+    // same-base powers compare by exponent, coefficient ascending).
     assert_eq!(
       interpret(
         "CDF[FailureDistribution[(x || y) && (x || z), {{x, ExponentialDistribution[2]}, {y, ExponentialDistribution[3]}, {z, ExponentialDistribution[5]}}], t]"
       )
       .unwrap(),
-      "Piecewise[{{1 - (1 - (1 - E^(-3*t))*(1 - E^(-5*t)))/E^(2*t), t >= 0}}, 0]"
+      "Piecewise[{{1 - (1 - (1 - E^(-5*t))*(1 - E^(-3*t)))/E^(2*t), t >= 0}}, 0]"
     );
   }
 }
