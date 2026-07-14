@@ -2226,6 +2226,14 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Norm expects 1 or 2 arguments".into(),
     ));
   }
+  // A SparseArray argument is handled via its dense form.
+  if let Some(dense) =
+    crate::functions::list_helpers_ast::densify_sparse_array(&args[0])
+  {
+    let mut new_args = args.to_vec();
+    new_args[0] = dense;
+    return norm_ast(&new_args);
+  }
   // An empty vector has no norm: emit Norm::nvm and stay unevaluated rather
   // than collapsing to 0. (wolframscript parity)
   if matches!(&args[0], Expr::List(items) if items.is_empty()) {

@@ -9927,3 +9927,68 @@ mod sparse_array_input {
     );
   }
 }
+
+// More scalar-reduction statistics densify a SparseArray argument.
+mod sparse_array_scalar_reductions {
+  use super::*;
+
+  #[test]
+  fn harmonic_mean_and_norm() {
+    // HarmonicMean of {2, 4} is 8/3.
+    assert_eq!(
+      interpret("HarmonicMean[SparseArray[{1 -> 2, 2 -> 4}, 2]]").unwrap(),
+      "8/3"
+    );
+    // 2-norm of {3, 4} is 5; 1-norm is 7.
+    assert_eq!(
+      interpret("Norm[SparseArray[{1 -> 3, 2 -> 4}, 2]]").unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret("Norm[SparseArray[{1 -> 3, 2 -> 4}, 2], 1]").unwrap(),
+      "7"
+    );
+  }
+
+  #[test]
+  fn central_moment_and_shape() {
+    // Second central moment of {1, 2, 3} is 2/3.
+    assert_eq!(
+      interpret("CentralMoment[SparseArray[{1 -> 1, 2 -> 2, 3 -> 3}, 3], 2]")
+        .unwrap(),
+      "2/3"
+    );
+    // Kurtosis and Skewness are computed from CentralMoment, so they resolve
+    // once CentralMoment densifies.
+    assert_eq!(
+      interpret("Kurtosis[SparseArray[{1 -> 1, 2 -> 2, 3 -> 3, 4 -> 4}, 4]]")
+        .unwrap(),
+      "41/25"
+    );
+    assert_eq!(
+      interpret("Skewness[SparseArray[{1 -> 1, 2 -> 2, 3 -> 4}, 3]]").unwrap(),
+      "(5*Sqrt[2/7])/7"
+    );
+  }
+
+  #[test]
+  fn trimmed_mean_and_correlation() {
+    // Dense form {1, 2, 3, 100}; trimming 1/4 from each end leaves {2, 3}.
+    assert_eq!(
+      interpret(
+        "TrimmedMean[SparseArray[{1 -> 1, 2 -> 2, 3 -> 3, 4 -> 100}, 4], 1/4]"
+      )
+      .unwrap(),
+      "5/2"
+    );
+    // Correlation densifies both SparseArray arguments.
+    assert_eq!(
+      interpret(
+        "Correlation[SparseArray[{1 -> 1, 2 -> 2, 3 -> 3}, 3], \
+         SparseArray[{1 -> 2, 2 -> 4, 3 -> 7}, 3]]"
+      )
+      .unwrap(),
+      "(5*Sqrt[3/19])/2"
+    );
+  }
+}

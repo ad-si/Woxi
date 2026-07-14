@@ -1865,6 +1865,12 @@ pub fn harmonic_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "HarmonicMean expects exactly 1 argument".into(),
     ));
   }
+  // A SparseArray argument is handled via its dense form.
+  if let Some(dense) =
+    crate::functions::list_helpers_ast::densify_sparse_array(&args[0])
+  {
+    return harmonic_mean_ast(&[dense]);
+  }
   match &args[0] {
     Expr::List(items) => {
       // An empty list stays unevaluated (matching wolframscript).
@@ -3093,6 +3099,19 @@ fn correlation_from_covariance(cov_rows: &[Expr]) -> Option<Expr> {
 }
 
 pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // SparseArray arguments are handled via their dense forms.
+  if args.iter().any(|a| {
+    crate::functions::list_helpers_ast::densify_sparse_array(a).is_some()
+  }) {
+    let new_args: Vec<Expr> = args
+      .iter()
+      .map(|a| {
+        crate::functions::list_helpers_ast::densify_sparse_array(a)
+          .unwrap_or_else(|| a.clone())
+      })
+      .collect();
+    return correlation_ast(&new_args);
+  }
   let unevaluated = || {
     Ok(Expr::FunctionCall {
       name: "Correlation".to_string(),
@@ -3701,6 +3720,16 @@ fn distribution_moment(
 
 /// CentralMoment[list, r] - r-th central moment of a numeric list
 pub fn central_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // A SparseArray data argument is handled via its dense form. (This also
+  // fixes Kurtosis/Skewness, which are computed from CentralMoment.)
+  if let Some(first) = args.first()
+    && let Some(dense) =
+      crate::functions::list_helpers_ast::densify_sparse_array(first)
+  {
+    let mut new_args = args.to_vec();
+    new_args[0] = dense;
+    return central_moment_ast(&new_args);
+  }
   // Distribution form: CentralMoment[dist, n].
   if args.len() == 2
     && let Some(dist) = as_distribution(&args[0])

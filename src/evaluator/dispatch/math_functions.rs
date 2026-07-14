@@ -920,6 +920,17 @@ pub fn dispatch_math_functions(
       // TrimmedMean[list]              ≡ TrimmedMean[list, 0.05]
       // TrimmedMean[list, f]           — drop floor(f*n) smallest and largest
       // TrimmedMean[list, {f1, f2}]    — drop floor(f1*n) smallest, floor(f2*n) largest
+      // A SparseArray data argument is handled via its dense form.
+      if let Some(dense) =
+        crate::functions::list_helpers_ast::densify_sparse_array(&args[0])
+      {
+        let mut new_args = args.to_vec();
+        new_args[0] = dense;
+        return Some(crate::evaluator::evaluate_function_call_ast(
+          "TrimmedMean",
+          &new_args,
+        ));
+      }
       if let Expr::List(elems) = &args[0] {
         let n = elems.len();
         let (trim_lo, trim_hi) = match args.get(1) {
