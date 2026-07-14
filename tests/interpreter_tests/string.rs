@@ -7354,6 +7354,35 @@ mod string_count_patterns {
       "{2, 4}"
     );
   }
+
+  // Overlaps -> True and Overlaps -> All both count overlapping matches (one
+  // per start position); the default (and Overlaps -> False) does not.
+  #[test]
+  fn count_overlaps_true_and_all() {
+    assert_eq!(
+      interpret(r#"StringCount["aaaa", "aa", Overlaps -> True]"#).unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(r#"StringCount["aaaa", "aa", Overlaps -> All]"#).unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(r#"StringCount["aaa", "aa", Overlaps -> All]"#).unwrap(),
+      "2"
+    );
+    assert_eq!(interpret(r#"StringCount["aaaa", "aa"]"#).unwrap(), "2");
+    assert_eq!(
+      interpret(r#"StringCount["aaaa", "aa", Overlaps -> False]"#).unwrap(),
+      "2"
+    );
+    // Threads over a list of strings.
+    assert_eq!(
+      interpret(r#"StringCount[{"aaa", "aaaa"}, "aa", Overlaps -> All]"#)
+        .unwrap(),
+      "{2, 3}"
+    );
+  }
 }
 
 mod string_starts_ends_patterns {

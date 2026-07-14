@@ -7767,7 +7767,9 @@ pub fn string_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::Integer(count as i128))
 }
 
-/// Whether `Overlaps -> True` appears in the option arguments.
+/// Whether `Overlaps -> True` or `Overlaps -> All` appears in the option
+/// arguments. For a fixed-length string pattern both request that overlapping
+/// matches be counted (one per start position).
 fn has_overlaps_option(args: &[Expr]) -> bool {
   for arg in args.iter().skip(2) {
     if let Expr::Rule {
@@ -7775,7 +7777,10 @@ fn has_overlaps_option(args: &[Expr]) -> bool {
       replacement,
     } = arg
       && crate::syntax::expr_to_string(pattern) == "Overlaps"
-      && crate::syntax::expr_to_string(replacement) == "True"
+      && matches!(
+        crate::syntax::expr_to_string(replacement).as_str(),
+        "True" | "All"
+      )
     {
       return true;
     }
