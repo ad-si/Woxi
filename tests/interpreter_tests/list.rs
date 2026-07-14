@@ -3456,6 +3456,35 @@ mod random_choice {
     assert_eq!(interpret("RandomChoice[{x}]").unwrap(), "x");
     assert_eq!(interpret("RandomChoice[{x}, 3]").unwrap(), "{x, x, x}");
   }
+
+  // A zero dimension yields an empty result (not an error).
+  #[test]
+  fn zero_dimension_gives_empty() {
+    assert_eq!(interpret("RandomChoice[{1, 2, 3}, 0]").unwrap(), "{}");
+    assert_eq!(interpret("RandomChoice[{1, 2, 3}, {0}]").unwrap(), "{}");
+  }
+
+  // A negative or non-integer dimension emits ::array and stays unevaluated,
+  // rather than raising a hard evaluation error.
+  #[test]
+  fn invalid_dimension_emits_array_message() {
+    for input in [
+      "RandomChoice[{1, 2, 3}, -1]",
+      "RandomChoice[{1, 2, 3}, {-1}]",
+      "RandomInteger[{1, 6}, -1]",
+      "RandomInteger[{1, 6}, {-1}]",
+      "RandomReal[1, -1]",
+      "RandomComplex[1, -1]",
+    ] {
+      let r = woxi::interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, input, "result mismatch for {input}");
+      assert!(
+        r.warnings.iter().any(|w| w.contains("::array")),
+        "expected ::array for {input}, got {:?}",
+        r.warnings
+      );
+    }
+  }
 }
 
 mod random_sample {

@@ -3,6 +3,27 @@ use super::*;
 use crate::InterpreterError;
 use crate::syntax::{BinaryOperator, Expr};
 
+/// Emit the `<Name>::array` message and return the call unevaluated for an
+/// invalid dimension specification (a negative integer, a non-integer, or a
+/// list containing one) in position 2 of a Random* array generator, matching
+/// wolframscript instead of raising a hard evaluation error.
+fn random_array_dims_error(
+  name: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let call = Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.to_vec().into(),
+  };
+  crate::emit_message(&format!(
+    "{}::array: The array dimensions {} given in position 2 of {} should be a list of non-negative machine-sized integers giving the dimensions for the result.",
+    name,
+    crate::syntax::expr_to_string(&args[1]),
+    crate::syntax::expr_to_string(&call)
+  ));
+  Ok(call)
+}
+
 /// RandomInteger[max] or RandomInteger[{min, max}] - Random integer
 pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use rand::Rng;
@@ -64,20 +85,12 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           for item in items {
             match item {
               Expr::Integer(n) if *n >= 0 => dims.push(*n as usize),
-              _ => {
-                return Err(InterpreterError::EvaluationError(
-                  "RandomInteger: dimension specification must contain non-negative integers".into(),
-                ));
-              }
+              _ => return random_array_dims_error("RandomInteger", args),
             }
           }
           dims
         }
-        _ => {
-          return Err(InterpreterError::EvaluationError(
-            "RandomInteger: second argument must be a non-negative integer or list of non-negative integers".into(),
-          ));
-        }
+        _ => return random_array_dims_error("RandomInteger", args),
       };
 
       let (min, max) = match &args[0] {
@@ -177,20 +190,12 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           for item in items {
             match item {
               Expr::Integer(n) if *n >= 0 => dims.push(*n as usize),
-              _ => {
-                return Err(InterpreterError::EvaluationError(
-                  "RandomReal: dimension specification must contain non-negative integers".into(),
-                ));
-              }
+              _ => return random_array_dims_error("RandomReal", args),
             }
           }
           dims
         }
-        _ => {
-          return Err(InterpreterError::EvaluationError(
-            "RandomReal: second argument must be a non-negative integer or list of non-negative integers".into(),
-          ));
-        }
+        _ => return random_array_dims_error("RandomReal", args),
       };
 
       let (min, max) = match &args[0] {
@@ -387,20 +392,12 @@ pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           for item in items {
             match item {
               Expr::Integer(n) if *n >= 0 => dims.push(*n as usize),
-              _ => {
-                return Err(InterpreterError::EvaluationError(
-                  "RandomComplex: dimension specification must contain non-negative integers".into(),
-                ));
-              }
+              _ => return random_array_dims_error("RandomComplex", args),
             }
           }
           dims
         }
-        _ => {
-          return Err(InterpreterError::EvaluationError(
-            "RandomComplex: second argument must be a non-negative integer or list of non-negative integers".into(),
-          ));
-        }
+        _ => return random_array_dims_error("RandomComplex", args),
       };
 
       fn build(
@@ -939,22 +936,13 @@ pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let mut out = Vec::with_capacity(ds.len());
         for d in ds.iter() {
           match d {
-            Expr::Integer(k) if *k > 0 => out.push(*k as usize),
-            _ => {
-              return Err(InterpreterError::EvaluationError(
-                "RandomChoice: dimension entries must be positive integers"
-                  .into(),
-              ));
-            }
+            Expr::Integer(k) if *k >= 0 => out.push(*k as usize),
+            _ => return random_array_dims_error("RandomChoice", args),
           }
         }
         out
       }
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "RandomChoice: second argument must be a non-negative integer or list of dimensions".into(),
-        ));
-      }
+      _ => return random_array_dims_error("RandomChoice", args),
     };
     fn build(items: &[Expr], dims: &[usize], cdf: Option<&[f64]>) -> Expr {
       use rand::Rng;
