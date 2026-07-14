@@ -269,6 +269,21 @@ mod harmonic_mean {
   fn harmonic_mean_equal_elements() {
     assert_eq!(interpret("HarmonicMean[{5, 5, 5}]").unwrap(), "5");
   }
+
+  // A zero element makes 1/x infinite, so the harmonic mean is exactly 0
+  // (rather than raising a division-by-zero error).
+  #[test]
+  fn harmonic_mean_with_zero_is_zero() {
+    assert_eq!(interpret("HarmonicMean[{0, 2}]").unwrap(), "0");
+    assert_eq!(interpret("HarmonicMean[{2, 0, 4}]").unwrap(), "0");
+    assert_eq!(interpret("HarmonicMean[{0., 2.}]").unwrap(), "0");
+    assert_eq!(interpret("HarmonicMean[{0}]").unwrap(), "0");
+    // Column-wise over a matrix: only the column containing 0 collapses.
+    assert_eq!(
+      interpret("HarmonicMean[{{0, 2}, {4, 8}}]").unwrap(),
+      "{0, 16/5}"
+    );
+  }
 }
 
 mod contraharmonic_mean {

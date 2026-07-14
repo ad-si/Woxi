@@ -1887,10 +1887,9 @@ pub fn harmonic_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for item in items {
         match item {
           Expr::Integer(n) => {
+            // A zero element makes 1/x infinite, so the harmonic mean is 0.
             if *n == 0 {
-              return Err(InterpreterError::EvaluationError(
-                "HarmonicMean: division by zero".into(),
-              ));
+              return Ok(Expr::Integer(0));
             }
             int_vals.push(*n);
           }
@@ -1933,10 +1932,9 @@ pub fn harmonic_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let mut vals = Vec::new();
         for item in items {
           if let Some(v) = expr_to_num(item) {
+            // A zero element gives an exact harmonic mean of 0.
             if v == 0.0 {
-              return Err(InterpreterError::EvaluationError(
-                "HarmonicMean: division by zero".into(),
-              ));
+              return Ok(Expr::Integer(0));
             }
             vals.push(v);
           } else {
