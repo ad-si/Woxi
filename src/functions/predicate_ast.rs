@@ -2145,7 +2145,16 @@ pub fn length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         0
       }
     }
-    Expr::Comparison { operands, .. } => operands.len() as i128,
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      // A mixed chain like `a < b <= c` is Inequality[a, Less, b, LessEqual, c]
+      // (length 5); a uniform chain is Op[a, b, c] (length 3).
+      let (_, args) =
+        crate::syntax::comparison_head_and_args(operands, operators);
+      args.len() as i128
+    }
     // Atoms: Integer, Real, String, Identifier, BigFloat, BigInteger, etc.
     _ => 0,
   };

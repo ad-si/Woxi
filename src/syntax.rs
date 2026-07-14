@@ -1199,6 +1199,51 @@ pub enum ComparisonOp {
   UnsameQ,      // =!=
 }
 
+impl ComparisonOp {
+  /// FullForm head name for this comparison operator (e.g. `!=` -> "Unequal").
+  pub fn head_name(&self) -> &'static str {
+    match self {
+      ComparisonOp::Equal => "Equal",
+      ComparisonOp::NotEqual => "Unequal",
+      ComparisonOp::Less => "Less",
+      ComparisonOp::LessEqual => "LessEqual",
+      ComparisonOp::Greater => "Greater",
+      ComparisonOp::GreaterEqual => "GreaterEqual",
+      ComparisonOp::SameQ => "SameQ",
+      ComparisonOp::UnsameQ => "UnsameQ",
+    }
+  }
+}
+
+/// Decompose a Comparison chain into its equivalent (head, args) exactly as WL
+/// sees it: a uniform chain `a op b op c` is `Op[a, b, c]`, while a mixed chain
+/// like `a < b <= c` is `Inequality[a, Less, b, LessEqual, c]` (operands and
+/// operator symbols interleaved). Used by structural operations (Length, Part,
+/// Apply) so they observe the same arity as wolframscript.
+pub fn comparison_head_and_args(
+  operands: &[Expr],
+  operators: &[ComparisonOp],
+) -> (String, Vec<Expr>) {
+  let all_same = operators.windows(2).all(|w| w[0] == w[1]);
+  if all_same {
+    let head = operators
+      .first()
+      .map(|o| o.head_name())
+      .unwrap_or("Equal")
+      .to_string();
+    (head, operands.to_vec())
+  } else {
+    let mut args = Vec::with_capacity(operands.len() + operators.len());
+    for (i, operand) in operands.iter().enumerate() {
+      args.push(operand.clone());
+      if let Some(op) = operators.get(i) {
+        args.push(Expr::Identifier(op.head_name().to_string()));
+      }
+    }
+    ("Inequality".to_string(), args)
+  }
+}
+
 use crate::Rule;
 use pest::iterators::Pair;
 

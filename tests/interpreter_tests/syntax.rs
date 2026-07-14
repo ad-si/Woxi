@@ -9440,3 +9440,36 @@ mod cases {
     assert_case(r#"Symbol_x"#, r#"Symbol_x"#);
   }
 }
+
+mod comparison_structural_ops {
+  use super::*;
+
+  #[test]
+  fn uniform_chain_applies_flat() {
+    // a == b == c is Equal[a, b, c]; Apply exposes the flat operands.
+    assert_eq!(interpret("List @@ (a == b == c)").unwrap(), "{a, b, c}");
+    assert_eq!(interpret("Apply[List, a == b]").unwrap(), "{a, b}");
+    assert_eq!(interpret("List @@ (a < b < c)").unwrap(), "{a, b, c}");
+    assert_eq!(interpret("List @@ (a >= b >= c)").unwrap(), "{a, b, c}");
+  }
+
+  #[test]
+  fn mixed_chain_is_inequality() {
+    // a < b <= c is Inequality[a, Less, b, LessEqual, c]: operands and
+    // operator symbols interleave. Matches wolframscript.
+    assert_eq!(
+      interpret("List @@ (a < b <= c)").unwrap(),
+      "{a, Less, b, LessEqual, c}"
+    );
+    assert_eq!(interpret("Length[a < b <= c]").unwrap(), "5");
+    assert_eq!(interpret("Part[a < b <= c, 2]").unwrap(), "Less");
+    assert_eq!(interpret("Part[a < b <= c, 3]").unwrap(), "b");
+  }
+
+  #[test]
+  fn uniform_chain_length_and_head() {
+    assert_eq!(interpret("Length[a == b == c]").unwrap(), "3");
+    assert_eq!(interpret("Part[a == b == c, 0]").unwrap(), "Equal");
+    assert_eq!(interpret("Part[a < b <= c, 0]").unwrap(), "Inequality");
+  }
+}

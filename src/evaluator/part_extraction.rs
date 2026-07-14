@@ -789,14 +789,21 @@ pub fn extract_part_ast(
         Ok(part_take_unevaluated(expr, index))
       }
     }
-    Expr::Comparison { operands, .. } => {
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      // Index into the WL structure: uniform `a op b op c` is Op[a, b, c];
+      // mixed `a < b <= c` is Inequality[a, Less, b, LessEqual, c].
+      let (head, parts) =
+        crate::syntax::comparison_head_and_args(operands, operators);
       if idx == 0 {
-        return Ok(Expr::Identifier("Comparison".to_string()));
+        return Ok(Expr::Identifier(head));
       }
-      let len = operands.len() as i64;
+      let len = parts.len() as i64;
       let actual_idx = if idx < 0 { len + idx } else { idx - 1 };
       if actual_idx >= 0 && actual_idx < len {
-        Ok(operands[actual_idx as usize].clone())
+        Ok(parts[actual_idx as usize].clone())
       } else {
         let expr_str = crate::syntax::expr_to_string(expr);
         crate::emit_message(&format!(

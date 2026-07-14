@@ -788,6 +788,16 @@ fn expr_children(expr: &Expr) -> Option<Vec<Expr>> {
       }
     }
     Expr::UnaryOp { operand, .. } => Some(vec![operand.as_ref().clone()]),
+    // Comparison chains decompose to Op[a, b, c] (uniform) or
+    // Inequality[a, Less, b, ...] (mixed), matching wolframscript.
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      let (_, args) =
+        crate::syntax::comparison_head_and_args(operands, operators);
+      Some(args)
+    }
     Expr::Rule {
       pattern,
       replacement,

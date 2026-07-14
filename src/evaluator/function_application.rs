@@ -373,6 +373,16 @@ pub fn apply_apply_ast(
       flatten(op, right, &mut parts);
       parts.into()
     }
+    // Comparison chains: `a == b == c` is Equal[a, b, c]; `a < b <= c` is
+    // Inequality[a, Less, b, LessEqual, c]. Matches wolframscript.
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      let (_, args) =
+        crate::syntax::comparison_head_and_args(operands, operators);
+      args.into()
+    }
     _ => {
       // Atoms have no children; Apply on an atom returns the atom unchanged
       return Ok(list.clone());

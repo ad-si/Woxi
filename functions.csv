@@ -6182,7 +6182,7 @@ WeierstrassE3,,,,11.2,
 WeierstrassEta1,,,,11.2,
 WindingCount,,,,12.0,
 WithLock,,,,12.3,
-Inequality,Chained inequality with per-step comparison operators,✅,pure,1.0,
+Inequality,Chained inequality with per-step comparison operators,✅,pure,1.0,5611
 Discard,Removes the elements of a list for which a criterion is True (complement of Select),✅,pure,13.1,5591
 MusicNote,Represents a musical note,✅,pure,15.0,5592
 MusicRest,Represents a musical rest (silence),✅,pure,15.0,5593
