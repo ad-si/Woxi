@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::unevaluated;
 
 // Virtual working-directory stack used by SetDirectory / ResetDirectory.
 //
@@ -108,10 +109,7 @@ pub fn dispatch_io_functions(
           Err(_) => Expr::Identifier("$Failed".to_string()),
         }));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "Environment".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("Environment", args)));
     }
     // GetEnvironment[] — all environment variables as a List of rules.
     "GetEnvironment" if args.is_empty() => {
@@ -149,10 +147,7 @@ pub fn dispatch_io_functions(
         }
         _ => {}
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "GetEnvironment".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("GetEnvironment", args)));
     }
     // SetEnvironment["name" -> "value"]   — set an environment variable
     // SetEnvironment["name" -> None]      — unset an environment variable
@@ -259,10 +254,7 @@ pub fn dispatch_io_functions(
       let filename = match &args[0] {
         Expr::String(s) => s.clone(),
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "ReadString".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("ReadString", args)));
         }
       };
       let Some(bytes) = crate::wasm::virtual_file(&filename) else {
@@ -286,10 +278,7 @@ pub fn dispatch_io_functions(
       let filename = match &args[0] {
         Expr::String(s) => s.clone(),
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "ReadString".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("ReadString", args)));
         }
       };
       let content = match std::fs::read_to_string(&filename) {
@@ -325,10 +314,7 @@ pub fn dispatch_io_functions(
         // URL[…] / CloudObject[…] and other specifications are left
         // unevaluated (network access is out of scope).
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "FileTemplate".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("FileTemplate", args)));
         }
       };
       // Resolve relative paths against the virtual working directory.
@@ -396,10 +382,7 @@ pub fn dispatch_io_functions(
         // URL[…] / CloudObject[…] and other specifications are left
         // unevaluated (network access is out of scope).
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "XMLTemplate".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("XMLTemplate", args)));
         }
       };
       let bound_args = if args.len() == 2 {
@@ -420,10 +403,7 @@ pub fn dispatch_io_functions(
         Expr::String(s) => s.clone(),
         Expr::Identifier(s) => s.clone(),
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "Get".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("Get", args)));
         }
       };
       let content = match std::fs::read_to_string(&filename) {
@@ -455,10 +435,7 @@ pub fn dispatch_io_functions(
       let filename = match args.last().unwrap() {
         Expr::String(s) => s.clone(),
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "Put".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("Put", args)));
         }
       };
       let exprs = &args[..args.len() - 1];
@@ -489,10 +466,7 @@ pub fn dispatch_io_functions(
       let filename = match args.last().unwrap() {
         Expr::String(s) => s.clone(),
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "PutAppend".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("PutAppend", args)));
         }
       };
       let exprs = &args[..args.len() - 1];
@@ -795,10 +769,7 @@ pub fn dispatch_io_functions(
         Expr::String(s) => s.clone(),
         _ => {
           // Return unevaluated for non-string format
-          return Some(Ok(Expr::FunctionCall {
-            name: "ExportString".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("ExportString", args)));
         }
       };
       if format_str == "SVG" || format_str == "PDF" {
@@ -818,10 +789,7 @@ pub fn dispatch_io_functions(
           }
           #[cfg(target_arch = "wasm32")]
           {
-            return Some(Ok(Expr::FunctionCall {
-              name: "ExportString".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("ExportString", args)));
           }
         }
         return Some(Ok(Expr::String(svg)));
@@ -862,10 +830,7 @@ pub fn dispatch_io_functions(
         return Some(Ok(Expr::String(s)));
       }
       // Return unevaluated for unsupported formats
-      return Some(Ok(Expr::FunctionCall {
-        name: "ExportString".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("ExportString", args)));
     }
     #[cfg(not(target_arch = "wasm32"))]
     "Find" if args.len() == 2 => {
@@ -966,12 +931,8 @@ pub fn dispatch_io_functions(
       // $Failed with the matching wolframscript message; a failed file in
       // a file LIST contributes a $Failed element instead.
       let failed = || Some(Ok(Expr::Identifier("$Failed".to_string())));
-      let call_display = || {
-        crate::syntax::expr_to_output(&Expr::FunctionCall {
-          name: "FindList".to_string(),
-          args: args.to_vec().into(),
-        })
-      };
+      let call_display =
+        || crate::syntax::expr_to_output(&unevaluated("FindList", args));
       if args.len() < 2 {
         let (tag, noun) = if args.len() == 1 {
           ("argtu", "1 argument")
@@ -1114,10 +1075,7 @@ pub fn dispatch_io_functions(
           crate::emit_message(
             "NotebookDirectory::nosv: The notebook directory is not available outside a notebook front-end.",
           );
-          Ok(Expr::FunctionCall {
-            name: "NotebookDirectory".to_string(),
-            args: args.to_vec().into(),
-          })
+          Ok(unevaluated("NotebookDirectory", args))
         }
       });
     }
@@ -1128,10 +1086,7 @@ pub fn dispatch_io_functions(
       } else if let Expr::String(s) = &args[0] {
         s.clone()
       } else {
-        return Some(Ok(Expr::FunctionCall {
-          name: "ParentDirectory".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("ParentDirectory", args)));
       };
       let parent = std::path::Path::new(&base)
         .parent()
@@ -1144,10 +1099,7 @@ pub fn dispatch_io_functions(
       let path_str = match &args[0] {
         Expr::String(s) => s.clone(),
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "DirectoryName".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("DirectoryName", args)));
         }
       };
       let n = if args.len() == 2 {
@@ -1157,16 +1109,10 @@ pub fn dispatch_io_functions(
             crate::emit_message(
               "DirectoryName::intpm: Positive machine-sized integer expected at position 2 in DirectoryName.",
             );
-            return Some(Ok(Expr::FunctionCall {
-              name: "DirectoryName".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("DirectoryName", args)));
           }
           _ => {
-            return Some(Ok(Expr::FunctionCall {
-              name: "DirectoryName".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("DirectoryName", args)));
           }
         }
       } else {
@@ -1226,10 +1172,7 @@ pub fn dispatch_io_functions(
         all.push(file.clone());
         return Some(Ok(Expr::String(all.join(&sep))));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "ToFileName".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("ToFileName", args)));
     }
     "FileNameJoin" if args.len() == 1 || args.len() == 2 => {
       // Detect OperatingSystem option from second argument (a Rule).
@@ -1265,10 +1208,7 @@ pub fn dispatch_io_functions(
           return Some(Ok(Expr::String(joined)));
         }
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "FileNameJoin".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("FileNameJoin", args)));
     }
     "FileNameSplit" if args.len() == 1 => {
       if let Expr::String(s) = &args[0] {
@@ -1285,10 +1225,7 @@ pub fn dispatch_io_functions(
           .collect();
         return Some(Ok(Expr::List(parts.into())));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "FileNameSplit".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("FileNameSplit", args)));
     }
     "FileNameDepth" if args.len() == 1 => {
       if let Expr::String(s) = &args[0] {
@@ -1302,10 +1239,7 @@ pub fn dispatch_io_functions(
           .count() as i128;
         return Some(Ok(Expr::Integer(count)));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "FileNameDepth".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("FileNameDepth", args)));
     }
     "ExpandFileName" if args.len() == 1 => {
       if let Expr::String(s) = &args[0] {
@@ -1344,10 +1278,7 @@ pub fn dispatch_io_functions(
           normalized.to_string_lossy().into_owned(),
         )));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "ExpandFileName".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("ExpandFileName", args)));
     }
     "URLParse" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::http_ast::url_parse_ast(args));
@@ -1369,10 +1300,7 @@ pub fn dispatch_io_functions(
           strs
         }
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "URLBuild".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("URLBuild", args)));
         }
       };
 
@@ -1454,10 +1382,7 @@ pub fn dispatch_io_functions(
           }));
         }
         None => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "OpenRead".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("OpenRead", args)));
         }
       };
       if !std::path::Path::new(&filename).exists() {
@@ -1529,10 +1454,7 @@ pub fn dispatch_io_functions(
       let path = match io_stream_path(&args[0]) {
         Some(p) => p,
         None => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "BinaryWrite".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("BinaryWrite", args)));
         }
       };
       // Render a single value at the given type into the byte buffer.
@@ -1551,10 +1473,7 @@ pub fn dispatch_io_functions(
           _ => false,
         }
       }
-      let unevaluated = || Expr::FunctionCall {
-        name: "BinaryWrite".to_string(),
-        args: args.to_vec().into(),
-      };
+      let unevaluated = || unevaluated("BinaryWrite", args);
       let bytes: Vec<u8> = if args.len() == 3 {
         // Explicit type spec — either a single type string applied to
         // every value or a list of per-element types.
@@ -1642,10 +1561,7 @@ pub fn dispatch_io_functions(
       let path = match io_stream_path(&args[0]) {
         Some(p) => p,
         None => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "BinaryRead".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("BinaryRead", args)));
         }
       };
       // Extract stream id (second arg of InputStream[path, id]) so we can
@@ -1706,10 +1622,7 @@ pub fn dispatch_io_functions(
       match &form {
         Expr::String(_) => {
           let Some(result) = read_one(&form, start_pos) else {
-            return Some(Ok(Expr::FunctionCall {
-              name: "BinaryRead".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("BinaryRead", args)));
           };
           if let Some(id) = stream_id {
             let advance = if matches!(&result, Expr::Identifier(s) if s == "EndOfFile")
@@ -1727,10 +1640,7 @@ pub fn dispatch_io_functions(
           let mut offset = start_pos;
           for it in items.iter() {
             let Some(value) = read_one(it, offset) else {
-              return Some(Ok(Expr::FunctionCall {
-                name: "BinaryRead".to_string(),
-                args: args.to_vec().into(),
-              }));
+              return Some(Ok(unevaluated("BinaryRead", args)));
             };
             if !matches!(&value, Expr::Identifier(s) if s == "EndOfFile") {
               offset += 1;
@@ -1743,10 +1653,7 @@ pub fn dispatch_io_functions(
           return Some(Ok(Expr::List(out.into())));
         }
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "BinaryRead".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("BinaryRead", args)));
         }
       }
     }
@@ -1763,10 +1670,7 @@ pub fn dispatch_io_functions(
         _ => match io_stream_path(&args[0]) {
           Some(p) => p,
           None => {
-            return Some(Ok(Expr::FunctionCall {
-              name: "BinaryReadList".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("BinaryReadList", args)));
           }
         },
       };
@@ -1780,10 +1684,7 @@ pub fn dispatch_io_functions(
       match &form {
         Expr::String(s) if s == "Byte" => {}
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "BinaryReadList".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("BinaryReadList", args)));
         }
       }
       let bytes = match std::fs::read(&path) {
@@ -1886,10 +1787,7 @@ pub fn dispatch_io_functions(
           let id = match &stream_args[1] {
             Expr::Integer(n) => *n as usize,
             _ => {
-              return Some(Ok(Expr::FunctionCall {
-                name: "Close".to_string(),
-                args: args.to_vec().into(),
-              }));
+              return Some(Ok(unevaluated("Close", args)));
             }
           };
           match crate::close_stream(id) {
@@ -1903,19 +1801,13 @@ pub fn dispatch_io_functions(
             None => {
               let stream_str = crate::syntax::expr_to_string(&args[0]);
               crate::emit_message(&format!("{} is not open.", stream_str));
-              return Some(Ok(Expr::FunctionCall {
-                name: "Close".to_string(),
-                args: args.to_vec().into(),
-              }));
+              return Some(Ok(unevaluated("Close", args)));
             }
           }
         }
         Expr::String(s) => {
           crate::emit_message(&format!("{} is not open.", s));
-          return Some(Ok(Expr::FunctionCall {
-            name: "Close".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("Close", args)));
         }
         _ => {
           // Anything else is a type error — match wolframscript's message.
@@ -1924,10 +1816,7 @@ pub fn dispatch_io_functions(
             "Close::stream: {} is not a string, SocketObject, InputStream[ ] or OutputStream[ ].",
             arg_str
           ));
-          return Some(Ok(Expr::FunctionCall {
-            name: "Close".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("Close", args)));
         }
       }
     }
@@ -1951,17 +1840,11 @@ pub fn dispatch_io_functions(
                   "StreamPosition::openx: {} is not open.",
                   stream_str
                 ));
-                return Some(Ok(Expr::FunctionCall {
-                  name: "StreamPosition".to_string(),
-                  args: args.to_vec().into(),
-                }));
+                return Some(Ok(unevaluated("StreamPosition", args)));
               }
             }
           } else {
-            return Some(Ok(Expr::FunctionCall {
-              name: "StreamPosition".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("StreamPosition", args)));
           }
         }
         Expr::String(s) => {
@@ -1969,16 +1852,10 @@ pub fn dispatch_io_functions(
             "StreamPosition::openx: {} is not open.",
             s
           ));
-          return Some(Ok(Expr::FunctionCall {
-            name: "StreamPosition".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("StreamPosition", args)));
         }
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "StreamPosition".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("StreamPosition", args)));
         }
       }
     }
@@ -1993,10 +1870,7 @@ pub fn dispatch_io_functions(
         Expr::Integer(n) => Some(*n as usize),
         _ if is_infinity => None,
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "SetStreamPosition".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("SetStreamPosition", args)));
         }
       };
       match stream {
@@ -2038,23 +1912,14 @@ pub fn dispatch_io_functions(
                 "SetStreamPosition::openx: {} is not open.",
                 stream_str
               ));
-              return Some(Ok(Expr::FunctionCall {
-                name: "SetStreamPosition".to_string(),
-                args: args.to_vec().into(),
-              }));
+              return Some(Ok(unevaluated("SetStreamPosition", args)));
             }
           } else {
-            return Some(Ok(Expr::FunctionCall {
-              name: "SetStreamPosition".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("SetStreamPosition", args)));
           }
         }
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "SetStreamPosition".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("SetStreamPosition", args)));
         }
       }
     }
@@ -2089,17 +1954,11 @@ pub fn dispatch_io_functions(
               }
             }
           } else {
-            return Some(Ok(Expr::FunctionCall {
-              name: "ReadLine".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("ReadLine", args)));
           }
         }
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "ReadLine".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("ReadLine", args)));
         }
       };
 
@@ -2149,10 +2008,7 @@ pub fn dispatch_io_functions(
         match &args[2] {
           Expr::Integer(n) if *n >= 0 => *n as usize,
           _ => {
-            return Some(Ok(Expr::FunctionCall {
-              name: "Skip".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("Skip", args)));
           }
         }
       } else {
@@ -2183,10 +2039,7 @@ pub fn dispatch_io_functions(
         )));
       }
 
-      return Some(Ok(Expr::FunctionCall {
-        name: "Skip".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("Skip", args)));
     }
     // Read[stream] or Read[stream, type] — read from a stream
     "Read" if !args.is_empty() && args.len() <= 2 => {
@@ -2239,10 +2092,7 @@ pub fn dispatch_io_functions(
         return Some(Ok(result));
       }
 
-      return Some(Ok(Expr::FunctionCall {
-        name: "Read".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("Read", args)));
     }
     // Write[stream, expr1, expr2, ...] — write expressions to a stream in OutputForm
     #[cfg(not(target_arch = "wasm32"))]
@@ -2304,10 +2154,7 @@ pub fn dispatch_io_functions(
         return Some(Ok(Expr::Identifier("Null".to_string())));
       }
 
-      return Some(Ok(Expr::FunctionCall {
-        name: "Write".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("Write", args)));
     }
     // WriteString[stream, "text1", "text2", ...] — write strings to a stream
     #[cfg(not(target_arch = "wasm32"))]
@@ -2403,10 +2250,7 @@ pub fn dispatch_io_functions(
         return Some(Ok(Expr::Identifier("Null".to_string())));
       }
 
-      return Some(Ok(Expr::FunctionCall {
-        name: "WriteString".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("WriteString", args)));
     }
     // Save["filename", symbol] or Save["filename", {sym1, sym2, ...}]
     // Saves symbol definitions (OwnValues, DownValues, Attributes, Options) to a file
@@ -2415,10 +2259,7 @@ pub fn dispatch_io_functions(
       let filename = match &args[0] {
         Expr::String(s) => s.clone(),
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "Save".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("Save", args)));
         }
       };
 
@@ -2435,10 +2276,7 @@ pub fn dispatch_io_functions(
           })
           .collect(),
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "Save".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("Save", args)));
         }
       };
 
@@ -2632,10 +2470,7 @@ pub fn dispatch_io_functions(
         match &args[0] {
           Expr::String(s) => s.clone(),
           _ => {
-            return Some(Ok(Expr::FunctionCall {
-              name: "FileNames".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("FileNames", args)));
           }
         }
       };
@@ -2706,10 +2541,7 @@ pub fn dispatch_io_functions(
       let dir = match &args[0] {
         Expr::String(s) => s.clone(),
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "SetDirectory".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("SetDirectory", args)));
         }
       };
       // Resolve the requested path against the current virtual directory so
@@ -2773,10 +2605,7 @@ pub fn dispatch_io_functions(
     #[cfg(not(target_arch = "wasm32"))]
     "FileFormat" if args.len() == 1 => {
       let Expr::String(name) = &args[0] else {
-        return Some(Ok(Expr::FunctionCall {
-          name: "FileFormat".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("FileFormat", args)));
       };
       if !std::path::Path::new(name).exists() {
         crate::emit_message(&format!(
@@ -2785,10 +2614,7 @@ pub fn dispatch_io_functions(
         ));
         return Some(Ok(Expr::Identifier("$Failed".to_string())));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "FileFormat".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("FileFormat", args)));
     }
     // FileDate["name"] / FileDate["name", "type"] — file timestamps.
     // Woxi doesn't implement the date lookup yet; for missing files it
@@ -2797,10 +2623,7 @@ pub fn dispatch_io_functions(
     #[cfg(not(target_arch = "wasm32"))]
     "FileDate" if args.len() == 1 || args.len() == 2 => {
       let Expr::String(name) = &args[0] else {
-        return Some(Ok(Expr::FunctionCall {
-          name: "FileDate".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("FileDate", args)));
       };
       if !std::path::Path::new(name).exists() {
         crate::emit_message(&format!(
@@ -2808,10 +2631,7 @@ pub fn dispatch_io_functions(
           name
         ));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "FileDate".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("FileDate", args)));
     }
     // FileHash["name"] / FileHash["name", "Algorithm"] — return the
     // hash as an Integer. Missing files emit `FileHash::noopen` and
@@ -2819,10 +2639,7 @@ pub fn dispatch_io_functions(
     #[cfg(not(target_arch = "wasm32"))]
     "FileHash" if args.len() == 1 || args.len() == 2 => {
       let Expr::String(name) = &args[0] else {
-        return Some(Ok(Expr::FunctionCall {
-          name: "FileHash".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("FileHash", args)));
       };
       // Only emit the matching error message — actual hashing isn't
       // supported yet. wolframscript reports the absolute path, so
@@ -2839,10 +2656,7 @@ pub fn dispatch_io_functions(
         crate::emit_message(&format!("FileHash::noopen: Cannot open {}.", abs));
         return Some(Ok(Expr::Identifier("$Failed".to_string())));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "FileHash".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("FileHash", args)));
     }
     // FileSize["name"] — the size as Quantity[bytes, "Bytes"] with a Real
     // magnitude. Unlike FileByteCount, errors echo the call unevaluated:
@@ -2850,12 +2664,7 @@ pub fn dispatch_io_functions(
     // non-string argument. A File["…"] wrapper is accepted.
     #[cfg(not(target_arch = "wasm32"))]
     "FileSize" if args.len() == 1 => {
-      let unevaluated = || {
-        Some(Ok(Expr::FunctionCall {
-          name: "FileSize".to_string(),
-          args: args.to_vec().into(),
-        }))
-      };
+      let unevaluated = || Some(Ok(unevaluated("FileSize", args)));
       let name = match &args[0] {
         Expr::String(s) => s.clone(),
         Expr::FunctionCall { name, args: fargs }
@@ -2908,10 +2717,7 @@ pub fn dispatch_io_functions(
     #[cfg(not(target_arch = "wasm32"))]
     "FileByteCount" if args.len() == 1 => {
       let Expr::String(name) = &args[0] else {
-        return Some(Ok(Expr::FunctionCall {
-          name: "FileByteCount".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("FileByteCount", args)));
       };
       match std::fs::metadata(name) {
         Ok(meta) if meta.is_file() => {
@@ -2932,10 +2738,7 @@ pub fn dispatch_io_functions(
     #[cfg(not(target_arch = "wasm32"))]
     "AbsoluteFileName" if args.len() == 1 => {
       let Expr::String(name) = &args[0] else {
-        return Some(Ok(Expr::FunctionCall {
-          name: "AbsoluteFileName".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("AbsoluteFileName", args)));
       };
       match std::fs::canonicalize(name) {
         Ok(p) => {
@@ -2956,10 +2759,7 @@ pub fn dispatch_io_functions(
     #[cfg(not(target_arch = "wasm32"))]
     "FindFile" if args.len() == 1 => {
       let Expr::String(name) = &args[0] else {
-        return Some(Ok(Expr::FunctionCall {
-          name: "FindFile".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("FindFile", args)));
       };
       // Context names end with a backtick and can't be resolved to a file
       // on disk. Match wolframscript's `$Failed` return.
@@ -3058,10 +2858,7 @@ pub fn dispatch_io_functions(
           return Some(Ok(Expr::String(join(&components[s..e]))));
         }
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "FileNameTake".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("FileNameTake", args)));
     }
     // Input[] / Input[prompt] / InputString[] / InputString[prompt] —
     // wolframscript in script mode prints the prompt to stdout (no trailing

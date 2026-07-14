@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::BinaryOperator;
+use crate::syntax::{BinaryOperator, unevaluated};
 
 /// MapAll[f, expr] - apply f to every subexpression in expr (bottom-up)
 pub fn map_all_ast(f: &Expr, expr: &Expr) -> Result<Expr, InterpreterError> {
@@ -64,10 +64,7 @@ pub fn distribute_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let required_head = match &args[2] {
       Expr::Identifier(name) => name.clone(),
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "Distribute".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Distribute", args));
       }
     };
     if outer_name != required_head {
@@ -1914,10 +1911,7 @@ fn evaluate_bezier_function(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
-      name: "BezierFunction".to_string(),
-      args: func_args.to_vec().into(),
-    });
+    return Ok(unevaluated("BezierFunction", func_args));
   }
 
   // Extract the parameter t as f64
@@ -1930,18 +1924,12 @@ fn evaluate_bezier_function(
       if let (Expr::Integer(n), Expr::Integer(d)) = (&ra[0], &ra[1]) {
         *n as f64 / *d as f64
       } else {
-        return Ok(Expr::FunctionCall {
-          name: "BezierFunction".to_string(),
-          args: func_args.to_vec().into(),
-        });
+        return Ok(unevaluated("BezierFunction", func_args));
       }
     }
     _ => {
       // Symbolic t: return unevaluated
-      return Ok(Expr::FunctionCall {
-        name: "BezierFunction".to_string(),
-        args: func_args.to_vec().into(),
-      });
+      return Ok(unevaluated("BezierFunction", func_args));
     }
   };
 
@@ -1949,18 +1937,12 @@ fn evaluate_bezier_function(
   let points = match &func_args[0] {
     Expr::List(pts) => pts,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "BezierFunction".to_string(),
-        args: func_args.to_vec().into(),
-      });
+      return Ok(unevaluated("BezierFunction", func_args));
     }
   };
 
   if points.is_empty() {
-    return Ok(Expr::FunctionCall {
-      name: "BezierFunction".to_string(),
-      args: func_args.to_vec().into(),
-    });
+    return Ok(unevaluated("BezierFunction", func_args));
   }
 
   // Convert control points to Vec<Vec<f64>>
@@ -1979,27 +1961,18 @@ fn evaluate_bezier_function(
               if let (Expr::Integer(n), Expr::Integer(d)) = (&ra[0], &ra[1]) {
                 fcoords.push(*n as f64 / *d as f64);
               } else {
-                return Ok(Expr::FunctionCall {
-                  name: "BezierFunction".to_string(),
-                  args: func_args.to_vec().into(),
-                });
+                return Ok(unevaluated("BezierFunction", func_args));
               }
             }
             _ => {
-              return Ok(Expr::FunctionCall {
-                name: "BezierFunction".to_string(),
-                args: func_args.to_vec().into(),
-              });
+              return Ok(unevaluated("BezierFunction", func_args));
             }
           }
         }
         ctrl_pts.push(fcoords);
       }
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "BezierFunction".to_string(),
-          args: func_args.to_vec().into(),
-        });
+        return Ok(unevaluated("BezierFunction", func_args));
       }
     }
   }
@@ -2089,10 +2062,7 @@ fn evaluate_bspline_function(
   // When the spline can't be sampled (symbolic parameters, malformed form),
   // echo the object applied to its parameters: `BSplineFunction[...][params]`.
   let unevaluated = || Expr::CurriedCall {
-    func: Box::new(Expr::FunctionCall {
-      name: "BSplineFunction".to_string(),
-      args: func_args.to_vec().into(),
-    }),
+    func: Box::new(unevaluated("BSplineFunction", func_args)),
     args: args.to_vec(),
   };
 

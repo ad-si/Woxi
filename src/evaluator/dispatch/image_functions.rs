@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::unevaluated;
 
 /// Colors of a Wolfram `ColorData` indexed scheme (`ColorData[n, "ColorList"]`).
 ///
@@ -305,10 +306,7 @@ pub fn dispatch_image_functions(
       let result = crate::functions::image_ast::image_constructor_ast(args);
       return Some(match result {
         Ok(expr) => Ok(expr),
-        Err(_) => Ok(Expr::FunctionCall {
-          name: "Image".to_string(),
-          args: args.to_vec().into(),
-        }),
+        Err(_) => Ok(unevaluated("Image", args)),
       });
     }
     "ImageQ" if args.len() == 1 => {
@@ -595,10 +593,7 @@ pub fn dispatch_image_functions(
       let path = match import_path_spec(&args[0]) {
         Some(p) => p,
         None => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "Import".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("Import", args)));
         }
       };
       let is_url = path.starts_with("http://") || path.starts_with("https://");
@@ -748,10 +743,7 @@ pub fn dispatch_image_functions(
       let path = match import_path_spec(&args[0]) {
         Some(p) => p,
         None => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "Import".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("Import", args)));
         }
       };
       let is_url = path.starts_with("http://") || path.starts_with("https://");
@@ -811,10 +803,7 @@ pub fn dispatch_image_functions(
             );
           }
         }
-        return Some(Ok(Expr::FunctionCall {
-          name: "Import".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("Import", args)));
       }
 
       if let Expr::String(fmt) = &args[1]
@@ -904,10 +893,7 @@ pub fn dispatch_image_functions(
         let element = match &args[1] {
           Expr::String(e) => e.clone(),
           _ => {
-            return Some(Ok(Expr::FunctionCall {
-              name: "Import".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("Import", args)));
           }
         };
         if is_url {
@@ -962,10 +948,7 @@ pub fn dispatch_image_functions(
         let element = match &args[1] {
           Expr::String(e) => e.clone(),
           _ => {
-            return Some(Ok(Expr::FunctionCall {
-              name: "Import".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("Import", args)));
           }
         };
         #[cfg(not(target_arch = "wasm32"))]
@@ -1037,10 +1020,7 @@ pub fn dispatch_image_functions(
       }
 
       // Fall through for unsupported formats
-      return Some(Ok(Expr::FunctionCall {
-        name: "Import".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("Import", args)));
     }
     "ImportString" if !args.is_empty() && args.len() <= 2 => {
       let content = match &args[0] {
@@ -1052,10 +1032,7 @@ pub fn dispatch_image_functions(
             "ImportString::string: First argument {} is not a string.",
             crate::syntax::expr_to_string(&args[0])
           ));
-          return Some(Ok(Expr::FunctionCall {
-            name: "ImportString".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("ImportString", args)));
         }
       };
 
@@ -1065,10 +1042,7 @@ pub fn dispatch_image_functions(
         match &args[1] {
           Expr::String(s) => s.as_str(),
           _ => {
-            return Some(Ok(Expr::FunctionCall {
-              name: "ImportString".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("ImportString", args)));
           }
         }
       } else {
@@ -1153,10 +1127,7 @@ pub fn dispatch_image_functions(
       }
 
       if format != "CSV" {
-        return Some(Ok(Expr::FunctionCall {
-          name: "ImportString".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("ImportString", args)));
       }
 
       let rows = crate::functions::csv_ast::parse_csv(&content);

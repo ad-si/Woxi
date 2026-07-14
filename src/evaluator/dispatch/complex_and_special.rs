@@ -1,7 +1,9 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::{is_sqrt, make_sqrt};
-use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
+};
 
 pub fn dispatch_complex_and_special(
   name: &str,
@@ -215,10 +217,7 @@ pub fn dispatch_complex_and_special(
         return Some(Ok(Expr::Identifier("Undefined".to_string())));
       }
       _ => {
-        return Some(Ok(Expr::FunctionCall {
-          name: "ConditionalExpression".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("ConditionalExpression", args)));
       }
     },
     "DirectedInfinity" if args.len() <= 1 => {
@@ -421,10 +420,7 @@ pub fn dispatch_complex_and_special(
               }));
             }
           }
-          return Some(Ok(Expr::FunctionCall {
-            name: "DirectedInfinity".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("DirectedInfinity", args)));
         }
       }
     }
@@ -435,16 +431,10 @@ pub fn dispatch_complex_and_special(
     // EchoFunction[…] and EchoLabel[…] are operator forms: they stay
     // symbolic until applied to an argument (handled in apply_curried_call).
     "EchoFunction" if args.len() <= 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "EchoFunction".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("EchoFunction", args)));
     }
     "EchoLabel" if args.len() <= 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "EchoLabel".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("EchoLabel", args)));
     }
     "Echo" if !args.is_empty() && args.len() <= 3 => {
       let label = if args.len() >= 2 {
@@ -721,10 +711,7 @@ pub fn dispatch_complex_and_special(
       }
 
       // Non-identifier argument — return unevaluated
-      return Some(Ok(Expr::FunctionCall {
-        name: "Information".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("Information", args)));
     }
 
     // Definition[symbol] - show definition of a symbol
@@ -1052,10 +1039,7 @@ pub fn dispatch_complex_and_special(
         return Some(Ok(Expr::Raw(lines.join("\n \n"))));
       }
 
-      return Some(Ok(Expr::FunctionCall {
-        name: "Definition".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("Definition", args)));
     }
 
     // FullDefinition[symbol] - show definition of a symbol and all its dependencies
@@ -1368,10 +1352,7 @@ pub fn dispatch_complex_and_special(
         return Some(Ok(Expr::Raw(all_sections.join("\n \n"))));
       }
 
-      return Some(Ok(Expr::FunctionCall {
-        name: "FullDefinition".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("FullDefinition", args)));
     }
 
     // Sow[expr] or Sow[expr, tag] - adds expr to the current Reap collection
@@ -1598,10 +1579,7 @@ pub fn dispatch_complex_and_special(
         Some(Expr::Identifier(s)) if s == "Infinity" => None,
         None => None,
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "ReplaceList".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("ReplaceList", args)));
         }
       };
       if max_matches == Some(0) {
@@ -1823,10 +1801,7 @@ pub fn dispatch_complex_and_special(
         }
       }
       // Second argument is not a rule — leave unevaluated.
-      return Some(Ok(Expr::FunctionCall {
-        name: "ReplaceList".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("ReplaceList", args)));
     }
     "Replace" if args.len() == 3 || args.len() == 4 => {
       // Replace[expr, rules, levelspec] or
@@ -1877,111 +1852,60 @@ pub fn dispatch_complex_and_special(
     // RawBoxes[boxes] — wrapper that tells the display system to render boxes directly
     // It simply returns itself; the rendering pipeline in generate_output_svg() handles it.
     "RawBoxes" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "RawBoxes".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("RawBoxes", args)));
     }
     // DisplayForm[boxes] — wrapper that causes box expressions to be rendered visually.
     // It stays unevaluated; the rendering pipeline handles it like RawBoxes.
     "DisplayForm" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "DisplayForm".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("DisplayForm", args)));
     }
     // Low-level typesetting box constructors — these are inert and return themselves.
     "FractionBox" if args.len() == 2 || args.len() == 3 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated(name, args)));
     }
     "SqrtBox" if args.len() == 1 || args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated(name, args)));
     }
     "SuperscriptBox" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated(name, args)));
     }
     "SubscriptBox" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated(name, args)));
     }
     "SubsuperscriptBox" if args.len() == 3 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated(name, args)));
     }
     "OverscriptBox" if args.len() == 2 || args.len() == 3 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated(name, args)));
     }
     "UnderscriptBox" if args.len() == 2 || args.len() == 3 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated(name, args)));
     }
     "UnderoverscriptBox" if args.len() == 3 || args.len() == 4 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated(name, args)));
     }
     "RadicalBox" if args.len() == 2 || args.len() == 3 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated(name, args)));
     }
     "FrameBox" if !args.is_empty() => {
-      return Some(Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated(name, args)));
     }
     "StyleBox" if !args.is_empty() => {
-      return Some(Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated(name, args)));
     }
     "GridBox" if !args.is_empty() => {
-      return Some(Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated(name, args)));
     }
     "TagBox" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated(name, args)));
     }
     "InterpretationBox" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated(name, args)));
     }
     // FormBox[content, form] — inert box wrapper tagging the
     // content with a form (e.g. TraditionalForm). Stays unevaluated.
     "FormBox" if args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated(name, args)));
     }
     // Area[region] — compute the area of a geometric region
     "Area" if args.len() == 1 => {
@@ -2117,10 +2041,7 @@ pub fn dispatch_complex_and_special(
       {
         return Some(compute_planar_angle(&pts[0], &pts[1], &pts[2]));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "PlanarAngle".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("PlanarAngle", args)));
     }
     // PolygonAngle[poly] — interior angles at each vertex;
     // PolygonAngle[poly, vertex] — interior angle at one vertex.
@@ -2143,10 +2064,7 @@ pub fn dispatch_complex_and_special(
         let is_numeric = matches!(q, Expr::Integer(_) | Expr::Real(_))
           || matches!(q, Expr::FunctionCall { name, .. } if name == "Rational");
         if !is_numeric {
-          return Some(Ok(Expr::FunctionCall {
-            name: "QBinomial".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("QBinomial", args)));
         }
         // Product[(1 - q^(n-i)) / (1 - q^(i+1)), {i, 0, k-1}]
         let mut result = Expr::Integer(1);
@@ -2208,10 +2126,7 @@ pub fn dispatch_complex_and_special(
         }
         return Some(crate::evaluator::evaluate_expr_to_expr(&result));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "QBinomial".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("QBinomial", args)));
     }
     // RegionEqual[r1, r2, ...] — test whether regions are equal
     "RegionEqual" => {
@@ -2241,10 +2156,7 @@ pub fn dispatch_complex_and_special(
       } = &formula
         && fname == "FindSequenceFunction"
       {
-        return Some(Ok(Expr::FunctionCall {
-          name: "FindSequenceFunction".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("FindSequenceFunction", args)));
       }
       let body = crate::syntax::substitute_variable(
         &formula,
@@ -2276,10 +2188,7 @@ pub fn dispatch_complex_and_special(
           // A list of heads is rejected by Wolfram (Inactivate::sympatt);
           // keep the call unevaluated to mirror that non-result.
           _ => {
-            return Some(Ok(Expr::FunctionCall {
-              name: "Inactivate".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("Inactivate", args)));
           }
         }
       } else {
@@ -2289,17 +2198,11 @@ pub fn dispatch_complex_and_special(
     }
     // Form wrappers -- keep as wrappers (matching wolframscript OutputForm behavior)
     "MathMLForm" | "StandardForm" | "InputForm" if !args.is_empty() => {
-      return Some(Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated(name, args)));
     }
     // TraditionalForm[expr] — keep as-is (formatting wrapper, not eagerly evaluated)
     "TraditionalForm" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "TraditionalForm".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("TraditionalForm", args)));
     }
     // Format[expr] / Format[expr, fmt] — look up user-defined rules in
     // FORMAT_VALUES (registered by `Format[pat] := body` and
@@ -2359,17 +2262,11 @@ pub fn dispatch_complex_and_special(
     // MeanAround[{x1, ..., xn}] = Around[N[Mean], N[StandardDeviation/Sqrt[n]]]
     "MeanAround" if args.len() == 1 => {
       let Expr::List(items) = &args[0] else {
-        return Some(Ok(Expr::FunctionCall {
-          name: "MeanAround".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("MeanAround", args)));
       };
       let n = items.len();
       if n == 0 {
-        return Some(Ok(Expr::FunctionCall {
-          name: "MeanAround".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("MeanAround", args)));
       }
       // Mean
       let mean_expr = Expr::FunctionCall {
@@ -2408,10 +2305,7 @@ pub fn dispatch_complex_and_special(
           }));
         }
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "MeanAround".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("MeanAround", args)));
         }
       }
     }
@@ -2421,12 +2315,7 @@ pub fn dispatch_complex_and_special(
     // Around[Interval[{a, b}]] treats the interval as a uniform distribution:
     // Around[(a+b)/2, (b-a)/(2 Sqrt[3])].
     "Around" if args.len() == 1 => {
-      let unevaluated = || {
-        Some(Ok(Expr::FunctionCall {
-          name: "Around".to_string(),
-          args: args.to_vec().into(),
-        }))
-      };
+      let unevaluated = || Some(Ok(unevaluated("Around", args)));
       return match &args[0] {
         Expr::FunctionCall {
           name: iname,
@@ -2585,10 +2474,7 @@ pub fn dispatch_complex_and_special(
     // Symbolic operators with no built-in meaning -- just return as-is with evaluated args
     "Therefore" | "Because" | "TableForm" | "MatrixForm" | "Row" | "Grid"
     | "TextGrid" | "Column" | "Framed" | "Highlighted" => {
-      return Some(Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated(name, args)));
     }
 
     // `In[k]` references prior input. With no input history (script mode),
@@ -2603,10 +2489,7 @@ pub fn dispatch_complex_and_special(
           args: vec![Expr::Integer(0)].into(),
         }));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "In".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("In", args)));
     }
 
     // SequenceForm[a, b, c, ...] prints the concatenated string forms of
@@ -2630,10 +2513,7 @@ pub fn dispatch_complex_and_special(
         return Some(Ok(val));
       }
       // Return unevaluated for symbols without defaults
-      return Some(Ok(Expr::FunctionCall {
-        name: "Default".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("Default", args)));
     }
 
     // Default[f, n] / Default[f, n, m] — when the user hasn't installed a
@@ -2662,10 +2542,7 @@ pub fn dispatch_complex_and_special(
           return Some(Ok(val));
         }
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "Default".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("Default", args)));
     }
 
     _ => {}
@@ -2840,10 +2717,7 @@ fn enumerate_list_sequence_matches(
           let value = if len == 1 {
             slice[0].clone()
           } else {
-            Expr::FunctionCall {
-              name: "Sequence".to_string(),
-              args: slice.to_vec().into(),
-            }
+            unevaluated("Sequence", slice)
           };
           bindings.push((slot.name.to_string(), value));
         }
@@ -4224,10 +4098,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
           .into(),
         };
       }
-      let rest = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: args[1..].to_vec().into(),
-      };
+      let rest = unevaluated("Times", &args[1..]);
       Expr::FunctionCall {
         name: "RowBox".to_string(),
         args: vec![Expr::List(
@@ -5497,14 +5368,8 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     "Sqrt" if args.len() == 1 => tf_box("SqrtBox", vec![tf(&args[0])]),
     "Power" if args.len() == 2 => tf_power(&args[0], &args[1]),
     "Rational" if args.len() == 2 => tf_fraction(&args[0], &args[1]),
-    "Times" if args.len() >= 2 => tf_times(&Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: args.to_vec().into(),
-    }),
-    "Plus" if args.len() >= 2 => tf_plus(&Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: args.to_vec().into(),
-    }),
+    "Times" if args.len() >= 2 => tf_times(&unevaluated("Times", args)),
+    "Plus" if args.len() >= 2 => tf_plus(&unevaluated("Plus", args)),
     "Divide" if args.len() == 2 => tf_fraction(&args[0], &args[1]),
     "Exp" if args.len() == 1 => {
       tf_box("SuperscriptBox", vec![tf_string("\u{2147}"), tf(&args[0])])
@@ -6701,10 +6566,7 @@ fn compute_region_disjoint(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if args.is_empty() {
       return Ok(Expr::Identifier("True".to_string()));
     }
-    return Ok(Expr::FunctionCall {
-      name: "RegionDisjoint".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("RegionDisjoint", args));
   };
   for i in 0..shapes.len() {
     for j in i + 1..shapes.len() {
@@ -9312,12 +9174,7 @@ fn compute_moment_of_inertia(
   region: &Expr,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "MomentOfInertia".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("MomentOfInertia", args));
   let Some(dim) = moment_region_dim(region) else {
     return unevaluated();
   };
@@ -12284,12 +12141,7 @@ fn compute_arc_length_curve(
   iter: &Expr,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "ArcLength".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("ArcLength", args));
   // The iterator must be {t, a, b} with `t` a symbol.
   let Expr::List(spec) = iter else {
     return unevaluated();
@@ -12944,10 +12796,7 @@ fn compute_region_equal(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // If any region is not recognized, return unevaluated
   if normalized.iter().any(|n| n.is_none()) {
-    return Ok(Expr::FunctionCall {
-      name: "RegionEqual".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("RegionEqual", args));
   }
 
   let normalized: Vec<Expr> =
@@ -13122,12 +12971,7 @@ fn polygon_point_2d(v: &Expr) -> Option<(f64, f64)> {
 /// at a vertex; at a reflex (concave) vertex the interior angle is 2 Pi minus
 /// that, detected from the polygon's orientation and the local turn direction.
 fn compute_polygon_angle(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "PolygonAngle".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("PolygonAngle", args));
   // Accept Polygon[pts] or Triangle[pts].
   let verts: Vec<Expr> = match &args[0] {
     Expr::FunctionCall { name, args: ra }
@@ -14099,12 +13943,7 @@ fn dist2_nd(p1: &[Expr], p2: &[Expr]) -> Expr {
 /// so exact input stays exact and the formulas work in any embedding
 /// dimension.
 fn compute_triangle_center(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let uneval = || {
-    Ok(Expr::FunctionCall {
-      name: "TriangleCenter".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let uneval = || Ok(unevaluated("TriangleCenter", args));
   let vertices = match &args[0] {
     Expr::FunctionCall { name, args: targs }
       if name == "Triangle" && targs.len() == 1 =>
@@ -14227,12 +14066,7 @@ fn region_within(
 ) -> Result<Expr, InterpreterError> {
   use crate::evaluator::type_helpers::expr_to_number;
 
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "RegionWithin".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("RegionWithin", args));
 
   let true_expr = || Ok(Expr::Identifier("True".to_string()));
   let false_expr = || Ok(Expr::Identifier("False".to_string()));

@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::unevaluated;
 
 /// Pattern[name, Blank[]] → name_ or Pattern[name, Blank[h]] → name_h
 #[inline(never)]
@@ -7,18 +8,12 @@ pub fn evaluate_pattern_function_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
-    return Ok(Expr::FunctionCall {
-      name: "Pattern".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Pattern", args));
   }
   let pattern_name = match &args[0] {
     Expr::Identifier(n) => n.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Pattern".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Pattern", args));
     }
   };
   // Evaluate the second argument (the blank part)
@@ -57,10 +52,7 @@ pub fn evaluate_rule_delayed_ast(
 pub fn evaluate_pattern_test_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  Ok(Expr::FunctionCall {
-    name: "PatternTest".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("PatternTest", args))
 }
 
 /// BlankSequence[] → __ or BlankSequence[h] → __h
@@ -85,16 +77,10 @@ pub fn evaluate_blank_sequence_ast(
           blank_type,
         })
       } else {
-        Ok(Expr::FunctionCall {
-          name: name.to_string(),
-          args: args.to_vec().into(),
-        })
+        Ok(unevaluated(name, args))
       }
     }
-    _ => Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated(name, args)),
   }
 }
 
@@ -115,15 +101,9 @@ pub fn evaluate_blank_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           blank_type: 1,
         })
       } else {
-        Ok(Expr::FunctionCall {
-          name: "Blank".to_string(),
-          args: args.to_vec().into(),
-        })
+        Ok(unevaluated("Blank", args))
       }
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "Blank".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("Blank", args)),
   }
 }

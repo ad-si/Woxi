@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::make_sqrt;
-use crate::syntax::{BinaryOperator, UnaryOperator};
+use crate::syntax::{BinaryOperator, UnaryOperator, unevaluated};
 
 pub fn dispatch_linear_algebra_functions(
   name: &str,
@@ -244,10 +244,7 @@ pub fn dispatch_linear_algebra_functions(
     "IdentityMatrix"
       if args.len() == 2 && !matches!(&args[1], Expr::List(_)) =>
     {
-      let call = Expr::FunctionCall {
-        name: "IdentityMatrix".to_string(),
-        args: args.to_vec().into(),
-      };
+      let call = unevaluated("IdentityMatrix", args);
       crate::emit_message(&format!(
         "IdentityMatrix::targ: Argument {} at position 2 should be a list or sparse array.",
         crate::syntax::expr_to_string(&args[1])
@@ -272,10 +269,7 @@ pub fn dispatch_linear_algebra_functions(
         // Out-of-range direction: a non-positive k is ::intpm (the direction
         // argument must be a positive integer), while a too-large positive k
         // is ::nokun. Both stay unevaluated, matching wolframscript.
-        let call = Expr::FunctionCall {
-          name: "UnitVector".to_string(),
-          args: args.to_vec().into(),
-        };
+        let call = unevaluated("UnitVector", args);
         if k < 1 {
           crate::emit_message(&format!(
             "UnitVector::intpm: Positive machine-sized integer expected at position {} in {}.",
@@ -935,10 +929,7 @@ pub fn dispatch_linear_algebra_functions(
            a nonempty square matrix.",
           crate::syntax::expr_to_string(&args[0])
         ));
-        return Some(Ok(Expr::FunctionCall {
-          name: "MatrixMinimalPolynomial".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("MatrixMinimalPolynomial", args)));
       }
       if let Some(result) = matrix_minimal_polynomial(&args[0], &args[1]) {
         return Some(result);
@@ -976,12 +967,7 @@ pub fn dispatch_linear_algebra_functions(
     // matrices, Sylvester form for a 2x2 with distinct eigenvalues. A pure
     // function or a shape it cannot handle is left unevaluated.
     "MatrixFunction" if args.len() == 2 => {
-      let uneval = || {
-        Some(Ok(Expr::FunctionCall {
-          name: "MatrixFunction".to_string(),
-          args: args.to_vec().into(),
-        }))
-      };
+      let uneval = || Some(Ok(unevaluated("MatrixFunction", args)));
       if let Expr::Identifier(fname) = &args[0] {
         let result = crate::functions::linear_algebra_ast::matrix_function_ast(
           std::slice::from_ref(&args[1]),
@@ -994,10 +980,7 @@ pub fn dispatch_linear_algebra_functions(
           Ok(Expr::FunctionCall { ref name, .. })
             if name == "MatrixFunction" =>
           {
-            Ok(Expr::FunctionCall {
-              name: "MatrixFunction".to_string(),
-              args: args.to_vec().into(),
-            })
+            Ok(unevaluated("MatrixFunction", args))
           }
           other => other,
         });
@@ -1054,10 +1037,7 @@ pub fn dispatch_linear_algebra_functions(
            vector.",
           crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output)
         ));
-        return Some(Ok(Expr::FunctionCall {
-          name: "MatrixExp".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("MatrixExp", args)));
       }
       let exp = match crate::functions::linear_algebra_ast::matrix_function_ast(
         std::slice::from_ref(&args[0]),
@@ -1071,10 +1051,7 @@ pub fn dispatch_linear_algebra_functions(
       // call; surface the original two-argument form unevaluated.
       if matches!(&exp, Expr::FunctionCall { name, .. } if name == "MatrixExp")
       {
-        return Some(Ok(Expr::FunctionCall {
-          name: "MatrixExp".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("MatrixExp", args)));
       }
       return Some(evaluate_expr_to_expr(&Expr::FunctionCall {
         name: "Dot".to_string(),
@@ -1123,10 +1100,7 @@ pub fn dispatch_linear_algebra_functions(
             }
           });
           if !is_square {
-            return Some(Ok(Expr::FunctionCall {
-              name: "MatrixPower".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("MatrixPower", args)));
           }
 
           if n == 0 {
@@ -1196,10 +1170,7 @@ pub fn dispatch_linear_algebra_functions(
         return Some(Ok(result));
       }
       // Symbolic: return unevaluated
-      return Some(Ok(Expr::FunctionCall {
-        name: "MatrixPower".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("MatrixPower", args)));
     }
     "CellularAutomaton" if args.len() == 3 => {
       return Some(
@@ -1284,10 +1255,7 @@ pub fn dispatch_linear_algebra_functions(
         };
         return Some(rotation_matrix_plane(&theta, &pair[0], &pair[1]));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "RotationMatrix".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("RotationMatrix", args)));
     }
     "RotationMatrix" if args.len() == 1 => {
       // 2D rotation matrix: {{Cos[θ], -Sin[θ]}, {Sin[θ], Cos[θ]}}
@@ -1329,10 +1297,7 @@ pub fn dispatch_linear_algebra_functions(
       {
         return Some(rotation_matrix_plane(&args[0], &pair[0], &pair[1]));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "RotationMatrix".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("RotationMatrix", args)));
     }
     "RotationMatrix" if args.len() == 2 => {
       // 3D rotation matrix about a numeric axis by angle theta. Reuse the
@@ -1368,10 +1333,7 @@ pub fn dispatch_linear_algebra_functions(
           None => {}
         }
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "RotationMatrix".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("RotationMatrix", args)));
     }
     "EulerMatrix" if args.len() == 1 || args.len() == 2 => {
       return Some(euler_matrix_ast(args));
@@ -1412,10 +1374,7 @@ pub fn dispatch_linear_algebra_functions(
           });
         return Some(evaluated);
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "TranslationTransform".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("TranslationTransform", args)));
     }
     // RescalingTransform[{{min,max},...}] → maps the bounding box to the unit cube.
     // RescalingTransform[{{min,max},...}, {{ymin,ymax},...}] → maps to the target box.
@@ -1427,26 +1386,17 @@ pub fn dispatch_linear_algebra_functions(
       let src = if let Expr::List(v) = &args[0] {
         v
       } else {
-        return Some(Ok(Expr::FunctionCall {
-          name: "RescalingTransform".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("RescalingTransform", args)));
       };
       // Optional target box.
       let tgt = if args.len() == 2 {
         if let Expr::List(v) = &args[1] {
           if v.len() != src.len() {
-            return Some(Ok(Expr::FunctionCall {
-              name: "RescalingTransform".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("RescalingTransform", args)));
           }
           Some(v)
         } else {
-          return Some(Ok(Expr::FunctionCall {
-            name: "RescalingTransform".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("RescalingTransform", args)));
         }
       } else {
         None
@@ -1467,20 +1417,14 @@ pub fn dispatch_linear_algebra_functions(
         let (min_i, max_i) = match pair(&src[i]) {
           Some(p) => p,
           None => {
-            return Some(Ok(Expr::FunctionCall {
-              name: "RescalingTransform".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("RescalingTransform", args)));
           }
         };
         let (ymin_i, ymax_i) = match &tgt {
           Some(t) => match pair(&t[i]) {
             Some(p) => p,
             None => {
-              return Some(Ok(Expr::FunctionCall {
-                name: "RescalingTransform".to_string(),
-                args: args.to_vec().into(),
-              }));
+              return Some(Ok(unevaluated("RescalingTransform", args)));
             }
           },
           None => (Expr::Integer(0), Expr::Integer(1)),
@@ -1545,10 +1489,7 @@ pub fn dispatch_linear_algebra_functions(
       {
         return Some(Ok(tf_args[0].clone()));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "TransformationMatrix".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("TransformationMatrix", args)));
     }
     // GeometricTransformation[g, t]: when t is a TransformationFunction,
     // Wolfram normalizes it to the affine pair {linearMatrix, translation},
@@ -1671,10 +1612,7 @@ pub fn dispatch_linear_algebra_functions(
         if let Some(result) = rotation_transform_3d_axis(&args[0], axis) {
           return Some(result);
         }
-        return Some(Ok(Expr::FunctionCall {
-          name: "RotationTransform".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("RotationTransform", args)));
       }
       let theta = &args[0];
       let cos_t = Expr::FunctionCall {
@@ -1726,10 +1664,7 @@ pub fn dispatch_linear_algebra_functions(
           (tx_e, ty_e)
         } else {
           // Non-list or wrong-dim center: leave unevaluated.
-          return Some(Ok(Expr::FunctionCall {
-            name: "RotationTransform".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("RotationTransform", args)));
         }
       } else {
         (Expr::Integer(0), Expr::Integer(0))
@@ -1788,10 +1723,7 @@ pub fn dispatch_linear_algebra_functions(
         // Plain matrix m form.
         Expr::List(m) if is_matrix(&args[0]) => (m.as_ref(), None),
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "AffineTransform".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("AffineTransform", args)));
         }
       };
 
@@ -1802,10 +1734,7 @@ pub fn dispatch_linear_algebra_functions(
         .all(|r| matches!(r, Expr::List(c) if c.len() == n));
       let v_ok = v_opt.map(|v| v.len() == n).unwrap_or(true);
       if !m_ok || !v_ok {
-        return Some(Ok(Expr::FunctionCall {
-          name: "AffineTransform".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("AffineTransform", args)));
       }
 
       // Build the (n+1)x(n+1) augmented matrix.
@@ -1847,12 +1776,8 @@ pub fn dispatch_linear_algebra_functions(
         matches!(e, Expr::List(items)
           if items.iter().all(|i| !matches!(i, Expr::List(_))))
       }
-      let unevaluated = || {
-        Some(Ok(Expr::FunctionCall {
-          name: "LinearFractionalTransform".to_string(),
-          args: args.to_vec().into(),
-        }))
-      };
+      let unevaluated =
+        || Some(Ok(unevaluated("LinearFractionalTransform", args)));
       match &args[0] {
         // {m, v, w, b} form.
         Expr::List(parts)
@@ -1952,22 +1877,14 @@ pub fn dispatch_linear_algebra_functions(
           });
         return Some(evaluated);
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "ScalingTransform".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("ScalingTransform", args)));
     }
     // ReflectionTransform[v] → reflection in the hyperplane through the origin
     // perpendicular to v. The linear part is M = I - 2 (v⊗v)/(v·v), embedded in
     // an (n+1)×(n+1) homogeneous matrix. ReflectionTransform[v, pt] reflects in
     // the hyperplane through pt instead, giving the translation pt - M·pt.
     "ReflectionTransform" if args.len() == 1 || args.len() == 2 => {
-      let unevaluated = || {
-        Some(Ok(Expr::FunctionCall {
-          name: "ReflectionTransform".to_string(),
-          args: args.to_vec().into(),
-        }))
-      };
+      let unevaluated = || Some(Ok(unevaluated("ReflectionTransform", args)));
       let Expr::List(v) = &args[0] else {
         return unevaluated();
       };
@@ -2173,10 +2090,7 @@ pub fn dispatch_linear_algebra_functions(
           });
         return Some(evaluated);
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "ShearingTransform".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("ShearingTransform", args)));
     }
     "Adjugate" if args.len() == 1 => {
       if let Expr::List(rows) = &args[0] {
@@ -2648,10 +2562,7 @@ pub fn dispatch_linear_algebra_functions(
           Expr::Integer(n) => *n as i64,
           // A non-integer band specification is left unevaluated.
           _ => {
-            return Some(Ok(Expr::FunctionCall {
-              name: "DiagonalMatrixQ".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("DiagonalMatrixQ", args)));
           }
         }
       } else {
@@ -2986,10 +2897,7 @@ pub fn dispatch_linear_algebra_functions(
         "CrossMatrix::notre: The first argument {} must be a non-complex number or a list of non-complex numbers.",
         crate::syntax::expr_to_string(&args[0])
       ));
-      return Some(Ok(Expr::FunctionCall {
-        name: "CrossMatrix".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("CrossMatrix", args)));
     }
     // FourierDCTMatrix[n] / FourierDCTMatrix[n, m] — n x n discrete cosine
     // transform matrix of type m (m defaults to 2). Each entry is built as a
@@ -3076,10 +2984,7 @@ pub fn dispatch_linear_algebra_functions(
       }
       // Non-positive-integer size or transform type outside 1..4: leave the
       // call unevaluated, matching wolframscript (which also emits a message).
-      return Some(Ok(Expr::FunctionCall {
-        name: "FourierDCTMatrix".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("FourierDCTMatrix", args)));
     }
     // FourierMatrix[n] — discrete Fourier transform matrix
     // Entry (j,k) = omega^((j-1)*(k-1)) / sqrt(n), omega = e^(2*pi*i/n)
@@ -3096,10 +3001,7 @@ pub fn dispatch_linear_algebra_functions(
         // n > 600.
         const FOURIER_MATRIX_MAX_MATERIALIZE: i128 = 600;
         if n > FOURIER_MATRIX_MAX_MATERIALIZE {
-          return Some(Ok(Expr::FunctionCall {
-            name: "FourierMatrix".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("FourierMatrix", args)));
         }
         let n = n as usize;
         let inv_sqrt_n = Expr::FunctionCall {
@@ -3941,10 +3843,7 @@ fn kronecker_product_pair(
 /// KroneckerProduct[a, b, ...] — generalized tensor (Kronecker) product.
 /// Supports vectors and matrices and folds left over any number of args.
 fn kronecker_product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "KroneckerProduct".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("KroneckerProduct", args);
 
   // Classify the first operand.
   let mut acc_owned = args[0].clone();
@@ -4515,10 +4414,7 @@ fn euler_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let angles = match &args[0] {
     Expr::List(items) if items.len() == 3 => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "EulerMatrix".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("EulerMatrix", args));
     }
   };
 
@@ -4530,20 +4426,14 @@ fn euler_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           match item {
             Expr::Integer(n) => out[i] = *n,
             _ => {
-              return Ok(Expr::FunctionCall {
-                name: "EulerMatrix".to_string(),
-                args: args.to_vec().into(),
-              });
+              return Ok(unevaluated("EulerMatrix", args));
             }
           }
         }
         out
       }
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "EulerMatrix".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("EulerMatrix", args));
       }
     }
   } else {
@@ -4575,10 +4465,7 @@ fn roll_pitch_yaw_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "RollPitchYawMatrix::ang: {} should be a list of three real-valued quantities.",
         crate::syntax::expr_to_output(other)
       ));
-      return Ok(Expr::FunctionCall {
-        name: "RollPitchYawMatrix".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("RollPitchYawMatrix", args));
     }
   };
   let reversed_angles = Expr::List(
@@ -4593,10 +4480,7 @@ fn roll_pitch_yaw_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
       }
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "RollPitchYawMatrix".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("RollPitchYawMatrix", args));
       }
     }
   } else {
@@ -4806,12 +4690,7 @@ fn lyapunov_solve_common(
     }
   }
 
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated(name, args));
   if args.len() < 2 || args.len() > 3 {
     return unevaluated();
   }
@@ -5143,10 +5022,7 @@ fn lyapunov_symbolic_diagonal(
           "{}::nosol: The matrix equation has no solution.",
           name
         ));
-        return Some(Ok(Expr::FunctionCall {
-          name: name.to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated(name, args)));
       }
       let entry = fc(
         "Times",

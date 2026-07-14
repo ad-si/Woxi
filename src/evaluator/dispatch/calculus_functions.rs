@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::is_sqrt;
-use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator};
+use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator, unevaluated};
 
 /// Check if the result of differentiation contains a
 /// `Derivative[...][func_name][...]` pattern (as CurriedCall),
@@ -300,10 +300,7 @@ pub fn dispatch_calculus_functions(
           return Some(evaluate_expr_to_expr(&substituted));
         }
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "Derivative".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("Derivative", args)));
     }
     "Derivative" if args.len() == 2 => {
       // Derivative[m][Derivative[n][f]] → Derivative[m + n][f]
@@ -440,16 +437,10 @@ pub fn dispatch_calculus_functions(
           }
         }
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "Derivative".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("Derivative", args)));
     }
     "Derivative" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "Derivative".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("Derivative", args)));
     }
     "D" if args.len() >= 2 => {
       return Some(crate::functions::calculus_ast::d_ast(args));
@@ -536,10 +527,7 @@ pub fn dispatch_calculus_functions(
       if all_resolved {
         return Some(Ok(current));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "DiscreteLimit".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("DiscreteLimit", args)));
     }
     "MaxLimit" if args.len() == 2 => {
       return Some(crate::functions::calculus_ast::max_limit_ast(args));
@@ -670,10 +658,7 @@ pub fn dispatch_calculus_functions(
       if let Some(result) = symbolic_series_coefficient(&args[0], &args[1]) {
         return Some(crate::evaluator::evaluate_expr_to_expr(&result));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "SeriesCoefficient".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("SeriesCoefficient", args)));
     }
     "RSolve" if args.len() == 3 => {
       return Some(crate::functions::rsolve_ast::rsolve_ast(args));
@@ -3984,10 +3969,7 @@ fn function_domain_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let var = match &args[1] {
     Expr::Identifier(name) => name.as_str(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "FunctionDomain".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("FunctionDomain", args));
     }
   };
 

@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, ComparisonOp};
+use crate::syntax::{BinaryOperator, ComparisonOp, unevaluated};
 
 thread_local! {
   /// Symbols currently being looked up — prevents infinite recursion when
@@ -927,10 +927,7 @@ pub fn evaluate_expr_to_expr_inner(
             // the original `SetDelayed[…]` shell. Otherwise fall through
             // to the built-in handler. `Expr` doesn't impl `PartialEq` so
             // compare via the canonical InputForm rendering.
-            let original = Expr::FunctionCall {
-              name: "SetDelayed".to_string(),
-              args: args.to_vec().into(),
-            };
+            let original = unevaluated("SetDelayed", args);
             let unchanged = crate::syntax::expr_to_string(&result)
               == crate::syntax::expr_to_string(&original);
             if !unchanged {
@@ -1975,10 +1972,7 @@ pub fn evaluate_expr_to_expr_inner(
                 },
               );
             }
-            return Ok(Expr::FunctionCall {
-              name: name.to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated(name, args));
           }
         }
         // Special handling for Quiet[expr], Quiet[expr, msgs], Quiet[expr, moff, mon]

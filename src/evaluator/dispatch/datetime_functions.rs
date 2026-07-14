@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, UnaryOperator};
+use crate::syntax::{BinaryOperator, UnaryOperator, unevaluated};
 
 pub fn dispatch_datetime_functions(
   name: &str,
@@ -88,12 +88,7 @@ pub fn dispatch_datetime_functions(
             }
           )
       };
-      let unevaluated = || {
-        Some(Ok(Expr::FunctionCall {
-          name: "TimeZoneOffset".to_string(),
-          args: args.to_vec().into(),
-        }))
-      };
+      let unevaluated = || Some(Ok(unevaluated("TimeZoneOffset", args)));
       if args.is_empty() {
         return Some(Ok(Expr::Real(0.0)));
       }
@@ -154,10 +149,7 @@ pub fn dispatch_datetime_functions(
     // The canonical form DateInterval[{{d1, d2}, ...}, granularity, calendar,
     // timezone] evaluates to itself, like wolframscript.
     "DateInterval" if args.len() == 4 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "DateInterval".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("DateInterval", args)));
     }
     // DateInterval[{date1, date2}] — create a date interval
     "DateInterval" if args.len() == 1 => {
@@ -185,10 +177,7 @@ pub fn dispatch_datetime_functions(
         "DateInterval::arg: Argument {} cannot be interpreted as a date or time input.",
         crate::syntax::expr_to_string(&args[0])
       ));
-      return Some(Ok(Expr::FunctionCall {
-        name: "DateInterval".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("DateInterval", args)));
     }
     // DateObjectQ[expr] — True iff expr is a well-formed DateObject: the
     // head is DateObject and the first argument is a list of 1–6 numeric
@@ -297,10 +286,7 @@ pub fn dispatch_datetime_functions(
               "DateObject::str: String {} cannot be interpreted as a date.",
               s
             ));
-            return Some(Ok(Expr::FunctionCall {
-              name: "DateObject".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("DateObject", args)));
           }
         }
       }
@@ -334,10 +320,7 @@ pub fn dispatch_datetime_functions(
             extra.push(Expr::Real(0.0));
           }
           _ => {
-            return Some(Ok(Expr::FunctionCall {
-              name: "DateObject".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("DateObject", args)));
           }
         }
         let mut new_args = vec![normalized];
@@ -364,10 +347,7 @@ pub fn dispatch_datetime_functions(
           args: new_args.into(),
         }));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "DateObject".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("DateObject", args)));
     }
     // DayCount[date1, date2] — number of days between two dates
     "DayCount" if args.len() == 3 => {
@@ -379,10 +359,7 @@ pub fn dispatch_datetime_functions(
       {
         return Some(Ok(result));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "DayCount".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("DayCount", args)));
     }
     "DayCount" if args.len() == 2 => {
       // Report un-interpretable date arguments under the DayCount head before
@@ -444,10 +421,7 @@ pub fn dispatch_datetime_functions(
         let unix = abs_secs - WOLFRAM_EPOCH_TO_UNIX - tz * 3600.0;
         return Some(Ok(Expr::Integer(unix.round() as i128)));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "UnixTime".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("UnixTime", args)));
     }
     // FromUnixTime[n] / FromUnixTime[n, TimeZone -> tz] — the instant `n`
     // seconds after the Unix epoch, as a DateObject. The displayed calendar
@@ -459,20 +433,14 @@ pub fn dispatch_datetime_functions(
         Expr::Real(r) => Some(*r),
         _ => None,
       }) else {
-        return Some(Ok(Expr::FunctionCall {
-          name: "FromUnixTime".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("FromUnixTime", args)));
       };
       // Resolve the time-zone offset in hours.
       let tz = if args.len() == 2 {
         match parse_timezone_option(&args[1]) {
           Some(tz) => tz,
           None => {
-            return Some(Ok(Expr::FunctionCall {
-              name: "FromUnixTime".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("FromUnixTime", args)));
           }
         }
       } else {
@@ -508,10 +476,7 @@ pub fn dispatch_datetime_functions(
       #[cfg(not(feature = "cli"))]
       {
         let _ = (unix_secs, tz);
-        return Some(Ok(Expr::FunctionCall {
-          name: "FromUnixTime".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("FromUnixTime", args)));
       }
     }
     // FromAbsoluteTime[n] — the instant `n` seconds after the Wolfram epoch
@@ -524,10 +489,7 @@ pub fn dispatch_datetime_functions(
         Expr::Real(r) => Some(*r),
         _ => None,
       }) else {
-        return Some(Ok(Expr::FunctionCall {
-          name: "FromAbsoluteTime".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("FromAbsoluteTime", args)));
       };
       #[cfg(feature = "cli")]
       {
@@ -557,10 +519,7 @@ pub fn dispatch_datetime_functions(
       #[cfg(not(feature = "cli"))]
       {
         let _ = wolfram_secs;
-        return Some(Ok(Expr::FunctionCall {
-          name: "FromAbsoluteTime".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("FromAbsoluteTime", args)));
       }
     }
     "JulianDate" if args.len() <= 1 => {

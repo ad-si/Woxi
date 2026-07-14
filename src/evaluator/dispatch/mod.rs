@@ -5,6 +5,7 @@ use super::*;
 #[allow(unused_imports)]
 pub(crate) use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
+  unevaluated,
 };
 #[allow(unused_imports)]
 pub(crate) use crate::{
@@ -127,10 +128,7 @@ pub fn evaluate_function_call_ast(
 
   const RECURSION_LIMIT: usize = 1024;
   if depth > RECURSION_LIMIT {
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   stacker::maybe_grow(2 * 1024 * 1024, 4 * 1024 * 1024, || {
@@ -1660,10 +1658,7 @@ pub fn evaluate_function_call_ast_inner(
     // curried form Interpreter["Country"][name] (see apply_curried_call).
     // Returning here avoids the "not yet implemented" warning.
     "Interpreter" => {
-      return Ok(Expr::FunctionCall {
-        name: "Interpreter".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Interpreter", args));
     }
     _ => {}
   }
@@ -1838,15 +1833,11 @@ pub fn evaluate_function_call_ast_inner(
   // fall through to the unevaluated form for that case.
   if name == "SetOptions" {
     if args.len() == 1 {
-      return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Options".to_string(),
-        args: args.to_vec().into(),
-      });
+      return crate::evaluator::evaluate_expr_to_expr(&unevaluated(
+        "Options", args,
+      ));
     }
-    return Ok(Expr::FunctionCall {
-      name: "SetOptions".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("SetOptions", args));
   }
 
   // Circle[] defaults to Circle[{0, 0}]
@@ -2131,10 +2122,7 @@ pub fn evaluate_function_call_ast_inner(
     | "ThemeColor"
     | "SystemColor"
     | "LegendLabel" => {
-      return Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated(name, args));
     }
     // UpTo stays symbolic but validates its argument: anything numeric
     // that is not a non-negative integer (or Infinity) emits ::innf.
@@ -2155,19 +2143,13 @@ pub fn evaluate_function_call_ast_inner(
           crate::emit_message(&format!(
             "UpTo::innf: Non-negative integer or Infinity expected at position 1 in {}.",
             crate::syntax::format_expr(
-              &Expr::FunctionCall {
-                name: "UpTo".to_string(),
-                args: args.to_vec().into(),
-              },
+              &unevaluated("UpTo", args),
               crate::syntax::ExprForm::Output
             )
           ));
         }
       }
-      return Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated(name, args));
     }
     _ => {}
   }
@@ -2195,10 +2177,7 @@ pub fn evaluate_function_call_ast_inner(
       // Element at position i goes to position perm[i]
       if let Expr::List(perm) = &args[1] {
         if perm.len() != list.len() {
-          return Ok(Expr::FunctionCall {
-            name: name.to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated(name, args));
         }
         let mut result = vec![Expr::Integer(0); list.len()];
         for (i, p) in perm.iter().enumerate() {
@@ -2206,16 +2185,10 @@ pub fn evaluate_function_call_ast_inner(
             if idx >= 1 && (idx as usize) <= list.len() {
               result[(idx - 1) as usize] = list[i].clone();
             } else {
-              return Ok(Expr::FunctionCall {
-                name: name.to_string(),
-                args: args.to_vec().into(),
-              });
+              return Ok(unevaluated(name, args));
             }
           } else {
-            return Ok(Expr::FunctionCall {
-              name: name.to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated(name, args));
           }
         }
         return Ok(rebuild(result));
@@ -2255,10 +2228,7 @@ pub fn evaluate_function_call_ast_inner(
         return Ok(rebuild(result));
       }
     }
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // PermutationList[Cycles[{cycle1, cycle2, ...}]] — convert cycle notation to list form
@@ -2344,10 +2314,7 @@ pub fn evaluate_function_call_ast_inner(
             "PermutationList::permlist: Invalid permutation list {}.",
             crate::syntax::expr_to_string(&args[0])
           ));
-          return Ok(Expr::FunctionCall {
-            name: name.to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated(name, args));
         }
         // Largest moved position (0 for the identity).
         let support_max = (1..=len)
@@ -2363,10 +2330,7 @@ pub fn evaluate_function_call_ast_inner(
                 support_max,
                 crate::syntax::expr_to_string(&args[0])
               ));
-              return Ok(Expr::FunctionCall {
-                name: name.to_string(),
-                args: args.to_vec().into(),
-              });
+              return Ok(unevaluated(name, args));
             }
             *n
           }
@@ -2381,10 +2345,7 @@ pub fn evaluate_function_call_ast_inner(
         return Ok(Expr::List(result.into()));
       }
     }
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // PermutationCycles[{p1, p2, ...}] — convert permutation list to cycle notation
@@ -2434,10 +2395,7 @@ pub fn evaluate_function_call_ast_inner(
         });
       }
     }
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // PermutationReplace[expr, perm] — replace each point by its image under perm.
@@ -2539,10 +2497,7 @@ pub fn evaluate_function_call_ast_inner(
       }
       return Ok(map_point(&args[0], &images));
     }
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // RelationGraph[f, {v1, ..., vn}, opts...] → Graph whose edge i->j exists
@@ -2621,10 +2576,7 @@ pub fn evaluate_function_call_ast_inner(
         args: graph_args.into(),
       });
     }
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // CompleteGraph[n, opts...] → Graph[{1,...,n}, {UndirectedEdge[i,j] for all i<j}, {opts}]
@@ -2717,10 +2669,7 @@ pub fn evaluate_function_call_ast_inner(
         });
       }
     }
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // CycleGraph[n, opts...] → cycle graph: vertices 1..n with edges 1-2, 2-3, ..., n-1.
@@ -2911,25 +2860,15 @@ pub fn evaluate_function_call_ast_inner(
         crate::emit_message(&format!(
           "HararyGraph::nonopt: Options expected (instead of {}) beyond position 2 in {}. An option must be a rule or a list of rules.",
           crate::syntax::expr_to_string(extra),
-          crate::syntax::expr_to_string(&Expr::FunctionCall {
-            name: "HararyGraph".to_string(),
-            args: args.to_vec().into(),
-          })
+          crate::syntax::expr_to_string(&unevaluated("HararyGraph", args))
         ));
-        return Ok(Expr::FunctionCall {
-          name: "HararyGraph".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("HararyGraph", args));
       }
     }
     // Positive machine-sized integers required (intpm); reals, zero, and
     // negative integers warn, symbolic arguments stay silent.
-    let call_str = || {
-      crate::syntax::expr_to_string(&Expr::FunctionCall {
-        name: "HararyGraph".to_string(),
-        args: args.to_vec().into(),
-      })
-    };
+    let call_str =
+      || crate::syntax::expr_to_string(&unevaluated("HararyGraph", args));
     let classify = |e: &Expr| -> Option<Option<i128>> {
       // Some(Some(v)): positive integer; Some(None): invalid numeric
       // (emit intpm); None: symbolic (stay unevaluated silently)
@@ -2939,10 +2878,7 @@ pub fn evaluate_function_call_ast_inner(
         _ => None,
       }
     };
-    let unevaluated = Expr::FunctionCall {
-      name: "HararyGraph".to_string(),
-      args: args.to_vec().into(),
-    };
+    let unevaluated = unevaluated("HararyGraph", args);
     let (k, n) = match (classify(&args[0]), classify(&args[1])) {
       (Some(None), _) => {
         crate::emit_message(&format!(
@@ -3121,10 +3057,7 @@ pub fn evaluate_function_call_ast_inner(
       if let Expr::Integer(kv) = &args[1] {
         *kv
       } else {
-        return Ok(Expr::FunctionCall {
-          name: name.to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated(name, args));
       }
     } else {
       2
@@ -3394,10 +3327,7 @@ pub fn evaluate_function_call_ast_inner(
 
     // List input: filter along the flat sequence.
     let Expr::List(data) = &args[1] else {
-      return Ok(Expr::FunctionCall {
-        name: "RecurrenceFilter".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("RecurrenceFilter", args));
     };
     // y[n] = (sum_j b[j]*x[n-j] - sum_i(i>0) a[i]*y[n-i]) / a[0]
     let n = data.len();
@@ -3642,10 +3572,7 @@ pub fn evaluate_function_call_ast_inner(
   {
     let nrows = rows.len();
     if nrows == 0 {
-      return Ok(Expr::FunctionCall {
-        name: "ArrayMesh".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("ArrayMesh", args));
     }
     // Parse the matrix
     let mut matrix: Vec<Vec<bool>> = Vec::new();
@@ -3661,10 +3588,7 @@ pub fn evaluate_function_call_ast_inner(
           .collect();
         matrix.push(row_vals);
       } else {
-        return Ok(Expr::FunctionCall {
-          name: "ArrayMesh".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("ArrayMesh", args));
       }
     }
 
@@ -3913,10 +3837,7 @@ pub fn evaluate_function_call_ast_inner(
         _ => (*n as usize, 2, 1),
       },
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: name.to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated(name, args));
       }
     };
     let und = |a: usize, b: usize| Expr::FunctionCall {
@@ -3992,10 +3913,7 @@ pub fn evaluate_function_call_ast_inner(
           args: gargs.clone(),
         }
       } else {
-        Expr::FunctionCall {
-          name: "Graph".to_string(),
-          args: args.to_vec().into(),
-        }
+        unevaluated("Graph", args)
       };
       // Evaluate the embedded Graph so any rules/edges are normalised
       // into the canonical {vertex_list, edge_list, opts…} form, then
@@ -4324,17 +4242,11 @@ pub fn evaluate_function_call_ast_inner(
       && matches!(&args[0], Expr::List(_))
       && matches!(&args[1], Expr::List(_))
     {
-      return Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated(name, args));
     }
 
     // Fall through: return as inert
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // FindCycle[graph | edgeList, kspec, n] → list of cycles (each a list of edges)
@@ -4422,10 +4334,7 @@ pub fn evaluate_function_call_ast_inner(
       return Ok(gargs[1].clone());
     }
     // Return unevaluated for non-graph input
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // EdgeList[graph, patt] keeps the edges matching the pattern, i.e.
@@ -4458,10 +4367,7 @@ pub fn evaluate_function_call_ast_inner(
     {
       return Ok(gargs[0].clone());
     }
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // VertexList[graph, patt] keeps the vertices matching the pattern, i.e.
@@ -4512,15 +4418,9 @@ pub fn evaluate_function_call_ast_inner(
         crate::emit_message(&format!(
           "VertexDelete::inv: The argument {} in {} is not a valid vertex.",
           expr_to_string(&args[1]),
-          expr_to_string(&Expr::FunctionCall {
-            name: name.to_string(),
-            args: args.to_vec().into(),
-          })
+          expr_to_string(&unevaluated(name, args))
         ));
-        return Ok(Expr::FunctionCall {
-          name: name.to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated(name, args));
       }
       let is_deleted = |v: &Expr| to_delete.iter().any(|d| expr_equal(v, d));
       // Helper: extract the two endpoints of an edge (possibly Labeled).
@@ -4568,10 +4468,7 @@ pub fn evaluate_function_call_ast_inner(
         args: result_args.into(),
       });
     }
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // VertexContract[Graph[...], {v1, v2, ...}] → merge the listed vertices into
@@ -4596,10 +4493,7 @@ pub fn evaluate_function_call_ast_inner(
         .unwrap_or_else(|| args[0].clone()),
       );
     }
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // EdgeContract[Graph[...], u <-> v] → contract a single existing edge,
@@ -4639,10 +4533,7 @@ pub fn evaluate_function_call_ast_inner(
       }
       return Ok(args[0].clone());
     }
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // GraphDisjointUnion[g1, g2, ...] → disjoint union with vertices relabeled to
@@ -4668,10 +4559,7 @@ pub fn evaluate_function_call_ast_inner(
     if ok && !parsed.is_empty() {
       return Ok(crate::functions::graph::graph_disjoint_union(&parsed));
     }
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // GraphReciprocity[Graph[verts, edges]] → fraction of directed edges that are
@@ -4689,10 +4577,7 @@ pub fn evaluate_function_call_ast_inner(
     {
       return Ok(result);
     }
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // EdgeAdd[Graph[vertices, edges], e | {e1, e2, ...}] →
@@ -4762,15 +4647,9 @@ pub fn evaluate_function_call_ast_inner(
         crate::emit_message(&format!(
           "EdgeAdd::inv: The argument {} in {} is not a valid edge.",
           expr_to_string(&args[1]),
-          expr_to_string(&Expr::FunctionCall {
-            name: name.to_string(),
-            args: args.to_vec().into(),
-          })
+          expr_to_string(&unevaluated(name, args))
         ));
-        return Ok(Expr::FunctionCall {
-          name: name.to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated(name, args));
       }
       let mut new_vertices: Vec<Expr> = vertices.iter().cloned().collect();
       let mut new_edges: Vec<Expr> = edges.iter().cloned().collect();
@@ -4794,10 +4673,7 @@ pub fn evaluate_function_call_ast_inner(
         args: result_args.into(),
       });
     }
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // EdgeDelete[Graph[vertices, edges], e | {e1, e2, ...}] →
@@ -4889,15 +4765,9 @@ pub fn evaluate_function_call_ast_inner(
         crate::emit_message(&format!(
           "EdgeDelete::inv: The argument {} in {} is not a valid edge.",
           expr_to_string(&args[1]),
-          expr_to_string(&Expr::FunctionCall {
-            name: name.to_string(),
-            args: args.to_vec().into(),
-          })
+          expr_to_string(&unevaluated(name, args))
         ));
-        return Ok(Expr::FunctionCall {
-          name: name.to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated(name, args));
       }
       let new_edges: Vec<Expr> = remaining.into_iter().flatten().collect();
       let mut result_args =
@@ -4909,10 +4779,7 @@ pub fn evaluate_function_call_ast_inner(
         args: result_args.into(),
       });
     }
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // VertexIndex[Graph[vertices, edges], v] → 1-based position of v in VertexList[g]
@@ -4935,16 +4802,10 @@ pub fn evaluate_function_call_ast_inner(
       crate::emit_message(&format!(
         "VertexIndex::inv: The argument {} in {} is not a valid vertex.",
         target,
-        expr_to_string(&Expr::FunctionCall {
-          name: name.to_string(),
-          args: args.to_vec().into(),
-        })
+        expr_to_string(&unevaluated(name, args))
       ));
     }
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // IndexGraph[graph] or IndexGraph[graph, r] — reindex vertices to integers
@@ -4963,10 +4824,7 @@ pub fn evaluate_function_call_ast_inner(
       match &args[1] {
         Expr::Integer(n) => *n,
         _ => {
-          return Ok(Expr::FunctionCall {
-            name: name.to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated(name, args));
         }
       }
     } else {
@@ -5067,10 +4925,7 @@ pub fn evaluate_function_call_ast_inner(
         graphs.push((vs, es));
       } else {
         // Not a graph, return unevaluated
-        return Ok(Expr::FunctionCall {
-          name: name.to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated(name, args));
       }
     }
 
@@ -5155,10 +5010,7 @@ pub fn evaluate_function_call_ast_inner(
             replacement,
           } => ((**pattern).clone(), (**replacement).clone()),
           _ => {
-            return Ok(Expr::FunctionCall {
-              name: "EdgeRules".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("EdgeRules", args));
           }
         };
         rules.push(Expr::Rule {
@@ -5172,10 +5024,7 @@ pub fn evaluate_function_call_ast_inner(
       "EdgeRules::graph: A graph object is expected at position 1 in EdgeRules[{}].",
       expr_to_string(&args[0])
     ));
-    return Ok(Expr::FunctionCall {
-      name: "EdgeRules".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("EdgeRules", args));
   }
 
   // VertexQ[graph, vertex] — True if vertex is in graph. Anything that is
@@ -5636,10 +5485,7 @@ pub fn evaluate_function_call_ast_inner(
           return Ok(Expr::List(dist.into_iter().map(wdist_to_expr).collect()));
         }
       }
-      return Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated(name, args));
     }
 
     // BFS over unit-weight edges from `start`, returning distances
@@ -6886,10 +6732,7 @@ pub fn evaluate_function_call_ast_inner(
         matrix.into_iter().map(|v| Expr::List(v.into())).collect(),
       ));
     }
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // WeightedAdjacencyMatrix[Graph[{vertices}, {edges}, EdgeWeight -> {w...}]]
@@ -6990,10 +6833,7 @@ pub fn evaluate_function_call_ast_inner(
       }
       return Ok(Expr::List(matrix.into()));
     }
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // IncidenceMatrix[Graph[{vertices}, {edges}]] — vertex-by-edge incidence matrix.
@@ -7067,10 +6907,7 @@ pub fn evaluate_function_call_ast_inner(
           .collect(),
       ));
     }
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // KirchhoffMatrix[Graph[{vertices}, {edges}]] — the Laplacian (Kirchhoff)
@@ -7170,10 +7007,7 @@ pub fn evaluate_function_call_ast_inner(
           .collect(),
       ));
     }
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // ConnectedGraphQ[graph] — True if the graph is connected.
@@ -7322,10 +7156,7 @@ pub fn evaluate_function_call_ast_inner(
           .collect(),
       ));
     }
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // ConnectedGraphComponents[graph] — returns subgraphs for each connected component
@@ -7376,10 +7207,7 @@ pub fn evaluate_function_call_ast_inner(
         return Ok(Expr::List(subgraphs.into()));
       }
     }
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // WeaklyConnectedComponents[graph] — connected components ignoring edge direction
@@ -7461,10 +7289,7 @@ pub fn evaluate_function_call_ast_inner(
         .collect();
       return Ok(Expr::String(concatenated));
     }
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // Triangle[] defaults to Triangle[{{0,0},{1,0},{0,1}}]
@@ -7483,10 +7308,7 @@ pub fn evaluate_function_call_ast_inner(
         .into(),
       });
     }
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // PathGraph[{v1, v2, ...}] — create a path graph connecting sequential vertices
@@ -8770,10 +8592,7 @@ pub fn evaluate_function_call_ast_inner(
       return Ok(Expr::List(coords.into()));
     }
     // Return unevaluated for non-graph input
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // SubstitutionSystem[rules, init, n] — apply substitution rules iteratively
@@ -8950,10 +8769,7 @@ pub fn evaluate_function_call_ast_inner(
       "DeleteFile::strs: A string or nonempty list of strings is expected at position 1 in DeleteFile[{}].",
       arg_str
     ));
-    return Ok(Expr::FunctionCall {
-      name: "DeleteFile".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("DeleteFile", args));
   }
 
   // RenameFile[source, dest] — rename/move a file
@@ -9021,10 +8837,7 @@ pub fn evaluate_function_call_ast_inner(
         Err(_) => return Ok(Expr::Identifier("$Failed".to_string())),
       }
     }
-    return Ok(Expr::FunctionCall {
-      name: "RenameDirectory".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("RenameDirectory", args));
   }
 
   // DeleteDirectory[path] — remove an empty directory. Mirror
@@ -9039,10 +8852,7 @@ pub fn evaluate_function_call_ast_inner(
           "DeleteDirectory::strs: A string or nonempty list of strings is expected at position 1 in DeleteDirectory[{}].",
           arg_str
         ));
-        return Ok(Expr::FunctionCall {
-          name: "DeleteDirectory".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("DeleteDirectory", args));
       }
     };
     let p = std::path::Path::new(&path);
@@ -9362,10 +9172,7 @@ pub fn evaluate_function_call_ast_inner(
       if let Expr::List(verts) = &args[0] {
         (Some(verts.clone()), &args[1])
       } else {
-        return Ok(Expr::FunctionCall {
-          name: name.to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated(name, args));
       }
     } else {
       (None, &args[0])
@@ -9454,10 +9261,7 @@ pub fn evaluate_function_call_ast_inner(
         (weights.iter().cloned().collect::<Vec<_>>(), sum)
       }
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: name.to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated(name, args));
       }
     };
     let r = window.len();
@@ -9466,10 +9270,7 @@ pub fn evaluate_function_call_ast_inner(
         "MovingAverage::arg2: The second argument {} must be a positive integer less than or equal to the length {} of the first argument, or a vector of length less than or equal to the length of the first argument.",
         r, n
       ));
-      return Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated(name, args));
     }
     let mut result = Vec::with_capacity(n - r + 1);
     for i in 0..=(n - r) {
@@ -9587,10 +9388,7 @@ pub fn evaluate_function_call_ast_inner(
       if !expr_to_string(&result).contains("Annuity") {
         return Ok(result);
       }
-      return Ok(Expr::FunctionCall {
-        name: "TimeValue".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("TimeValue", args));
     }
     let s_scalar =
       matches!(s, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
@@ -9969,10 +9767,7 @@ pub fn evaluate_function_call_ast_inner(
       // Mixed or malformed sublist shapes are not valid cashflow specs; leave
       // the call unevaluated rather than producing a spurious list.
       if any_list && !all_pairs {
-        return Ok(Expr::FunctionCall {
-          name: "TimeValue".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("TimeValue", args));
       }
       let mut terms: Vec<Expr> = Vec::with_capacity(flows.len());
       for (k, c) in flows.iter().enumerate() {
@@ -10215,10 +10010,7 @@ pub fn evaluate_function_call_ast_inner(
           Some((items[0].clone(), items[1].clone()))
         }
         _ => {
-          return Ok(Expr::FunctionCall {
-            name: name.to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated(name, args));
         }
       };
       let (r, theta) = match &args[1] {
@@ -10282,12 +10074,7 @@ pub fn evaluate_function_call_ast_inner(
   //   CirclePoints[{r, theta}, n]     — radius r, explicit starting angle
   //   CirclePoints[{cx, cy}, ..., n]  — the above translated to a center
   if name == "CirclePoints" && (1..=3).contains(&args.len()) {
-    let unevaluated = || {
-      Ok(Expr::FunctionCall {
-        name: "CirclePoints".to_string(),
-        args: args.to_vec().into(),
-      })
-    };
+    let unevaluated = || Ok(unevaluated("CirclePoints", args));
     // n is always the last argument and must be a positive integer.
     let n = match args.last() {
       Some(Expr::Integer(n)) if *n >= 1 => *n as usize,
@@ -10378,18 +10165,12 @@ pub fn evaluate_function_call_ast_inner(
 
   // Key[k] is an operator form — return unevaluated (applied via CurriedCall)
   if name == "Key" {
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // Darker/Lighter fallback: return unevaluated if color couldn't be resolved
   if name == "Darker" || name == "Lighter" {
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // FunctionInterpolation[expr, {x, xmin, xmax}]
@@ -10433,10 +10214,7 @@ pub fn evaluate_function_call_ast_inner(
       }
       Err(_) => {
         crate::emit_message(&format!("General::noopen: Cannot open {}.", path));
-        return Ok(Expr::FunctionCall {
-          name: "FilePrint".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("FilePrint", args));
       }
     }
   }
@@ -10495,10 +10273,7 @@ pub fn evaluate_function_call_ast_inner(
       "{}::argr: {} called with 1 argument; 2 arguments are expected.",
       name, name
     ));
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
   if matches!(name, "Opening" | "Closing" | "Erosion" | "Dilation")
     && args.len() == 2
@@ -10513,10 +10288,7 @@ pub fn evaluate_function_call_ast_inner(
         name,
         crate::syntax::expr_to_string(&args[0])
       ));
-      return Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated(name, args));
     }
   }
 
@@ -10621,10 +10393,7 @@ pub fn evaluate_function_call_ast_inner(
       | "UnderoverscriptBox"
       | "ForwardBackward"
   ) {
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // ClearSystemCache[] - no-op, returns Null
@@ -10666,11 +10435,7 @@ pub fn evaluate_function_call_ast_inner(
   {
     return Ok(Expr::FunctionCall {
       name: "Sound".to_string(),
-      args: vec![Expr::FunctionCall {
-        name: "Play".to_string(),
-        args: args.to_vec().into(),
-      }]
-      .into(),
+      args: vec![unevaluated("Play", args)].into(),
     });
   }
 
@@ -10888,10 +10653,7 @@ pub fn evaluate_function_call_ast_inner(
   }
 
   // Unknown function - return as symbolic function call
-  Ok(Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated(name, args))
 }
 
 /// Extract RGB components from a color expression as (numerator, denominator) pairs.
@@ -11991,10 +11753,7 @@ fn function_interpolation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
-  Ok(Expr::FunctionCall {
-    name: "FunctionInterpolation".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("FunctionInterpolation", args))
 }
 
 /// Compute chromatic polynomial coefficients via deletion-contraction.
@@ -12472,19 +12231,13 @@ fn find_maximum_flow_impl(
   let s = match vertex_idx(source) {
     Some(i) => i,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "FindMaximumFlow".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("FindMaximumFlow", args));
     }
   };
   let t = match vertex_idx(sink) {
     Some(i) => i,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "FindMaximumFlow".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("FindMaximumFlow", args));
     }
   };
 

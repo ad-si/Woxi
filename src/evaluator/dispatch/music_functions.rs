@@ -7,6 +7,7 @@
 
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::unevaluated;
 
 pub(super) fn dispatch_music_functions(
   name: &str,
@@ -59,10 +60,7 @@ pub(super) fn dispatch_music_functions(
     "MusicPlot" if args.len() == 1 => {
       if crate::functions::music_ast::is_invalid_music_scale(&args[0]) {
         crate::functions::music_ast::emit_music_plot_message(&args[0]);
-        return Some(Ok(Expr::FunctionCall {
-          name: "MusicPlot".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("MusicPlot", args)));
       }
       crate::functions::music_render::music_to_svg(&args[0])
         .map(|svg| Ok(crate::graphics_result(svg)))
