@@ -11221,7 +11221,60 @@ fn bigfloat_plus(args: &[Expr]) -> Result<Expr, InterpreterError> {
     p.max(1.0)
   };
 
-  // Format result value with the right number of significant digits
+  // Compute the value itself. When every summand can be evaluated to an
+  // astro-float BigFloat (numeric literals, exact constants), sum in
+  // arbitrary precision so digits past the machine-double limit are correct
+  // (e.g. N[Pi,30] - 3 keeps ~28 accurate digits, not just 16). Otherwise fall
+  // back to the f64 approximation.
+  if args.iter().all(is_bigfloat_evaluable_factor) {
+    use astro_float::{BigFloat, Consts, RoundingMode};
+    let rm = RoundingMode::ToEven;
+    // Use enough bits to represent the least-precise summand's digits with
+    // margin, and at least the result precision.
+    let max_prec = args
+      .iter()
+      .filter_map(|a| {
+        if let Expr::BigFloat(_, p) = a {
+          Some(*p)
+        } else {
+          None
+        }
+      })
+      .fold(0.0f64, f64::max)
+      .max(result_prec);
+    let bits = crate::functions::math_ast::numerical::nominal_bits(
+      max_prec.ceil() as usize,
+    );
+    if let Ok(mut cc) = Consts::new() {
+      let mut sum = BigFloat::from_i32(0, bits);
+      let mut ok = true;
+      for arg in args {
+        match crate::functions::math_ast::numerical::expr_to_bigfloat(
+          arg, bits, rm, &mut cc,
+        ) {
+          Ok(v) => sum = sum.add(&v, bits, rm),
+          Err(_) => {
+            ok = false;
+            break;
+          }
+        }
+      }
+      if ok {
+        let max_fraction_digits =
+          ((bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
+        if let Ok(s) = crate::functions::math_ast::numerical::bigfloat_to_string(
+          &sum,
+          Some(max_fraction_digits),
+          rm,
+          &mut cc,
+        ) {
+          return Ok(Expr::BigFloat(s, result_prec));
+        }
+      }
+    }
+  }
+
+  // Fallback: format the f64 approximation to the result precision.
   let display_prec = (result_prec.round() as usize).max(1);
   let result_str = format_bigfloat_value(sum_val, display_prec);
   Ok(Expr::BigFloat(result_str, result_prec))

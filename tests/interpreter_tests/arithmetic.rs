@@ -9295,3 +9295,49 @@ mod bigfloat_exp_log {
     assert!(r.contains("`30.6632456843634"), "precision tag: {r}");
   }
 }
+
+mod bigfloat_subtract {
+  use super::*;
+
+  // The `-` operator on a BigFloat used to collapse to a 16-digit machine Real
+  // (N[Pi,30] - 3 gave 0.14159265358979312). It must stay precision-tracked
+  // like Subtract[] and Plus.
+  #[test]
+  fn minus_operator_keeps_precision() {
+    let r = interpret("N[Pi, 30] - 3").unwrap();
+    // Correct to far more than machine-double's 16 digits, with the WS
+    // precision tag (30 minus the lost leading digit).
+    assert!(
+      r.starts_with("0.14159265358979323846264338327950288419716939937510"),
+      "value lost precision: {r}"
+    );
+    assert!(
+      r.contains("`28.653890848257205"),
+      "wrong precision tag: {r}"
+    );
+  }
+
+  #[test]
+  fn minus_matches_subtract_function() {
+    assert_eq!(
+      interpret("N[Pi, 30] - 3").unwrap(),
+      interpret("Subtract[N[Pi, 30], 3]").unwrap()
+    );
+  }
+
+  #[test]
+  fn clean_bigfloat_sums_match_ws() {
+    assert_eq!(interpret("N[10, 30] + N[5, 30]").unwrap(), "15.`30.");
+    assert_eq!(interpret("N[2, 20] + N[3, 20]").unwrap(), "5.`20.");
+  }
+
+  #[test]
+  fn bigfloat_sum_value_is_arbitrary_precision() {
+    // N[Pi,30] + 1 must carry Pi's digits past the machine-double limit.
+    let r = interpret("N[Pi, 30] + 1").unwrap();
+    assert!(
+      r.starts_with("4.14159265358979323846264338327950288419716939937510"),
+      "sum lost precision: {r}"
+    );
+  }
+}

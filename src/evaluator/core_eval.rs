@@ -2355,6 +2355,13 @@ pub fn evaluate_expr_to_expr_inner(
             bigint_binary_op(&left_val, &right_val, |a, b| a - b)
           {
             Ok(result)
+          } else if matches!(&left_val, Expr::BigFloat(_, _))
+            || matches!(&right_val, Expr::BigFloat(_, _))
+          {
+            // Arbitrary-precision operands: route through subtract_ast
+            // (a + (-1)*b) so precision is tracked, instead of collapsing to
+            // an f64 Real. Matches `Subtract[N[Pi,30], 3]`.
+            crate::functions::math_ast::subtract_ast(&[left_val, right_val])
           } else if let (Some(l), Some(r)) = (left_num, right_num) {
             if matches!(&left_val, Expr::Real(_))
               || matches!(&right_val, Expr::Real(_))
