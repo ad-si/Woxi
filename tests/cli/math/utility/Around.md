@@ -52,7 +52,7 @@ Asymmetric uncertainties are propagated per side; a negative coefficient
 swaps the two sides.
 
 ```scrut
-$ wo '-Around[5, {0.1, 0.2}]'
+$ wo 'Times[-1, Around[5, {0.1, 0.2}]]'
 Around[-5., {0.2, 0.1}]
 ```
 
