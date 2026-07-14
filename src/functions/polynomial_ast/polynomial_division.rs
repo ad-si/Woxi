@@ -138,7 +138,7 @@ pub fn polynomial_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::functions::groebner_ast::polynomial_reduce_multivar(
         &args[0], &divisors, &vars,
       )
-      .unwrap_or_else(|| unevaluated()),
+      .unwrap_or_else(&unevaluated),
     );
   }
   let var = match &args[2] {
