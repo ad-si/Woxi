@@ -395,42 +395,51 @@ pub fn string_join_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::String(String::new()));
   }
 
-  // Validate: every leaf must be a string; lists of strings are flattened.
-  // On any non-string leaf, emit a StringJoin::string message pointing at the
-  // first offending leaf's 1-based position and return unevaluated (matches
-  // wolframscript).
-  fn first_non_string(expr: &Expr, pos: &mut usize) -> Option<usize> {
+  // StringJoin is Flat: nested StringJoin and lists collapse into a single
+  // flat sequence of leaves. Build that leaf sequence so validation, message
+  // positions, and the unevaluated result all match wolframscript.
+  fn flatten_leaves(expr: &Expr, out: &mut Vec<Expr>) {
     match expr {
-      Expr::String(_) => {
-        *pos += 1;
-        None
-      }
       Expr::List(items) => {
         for item in items {
-          if let Some(p) = first_non_string(item, pos) {
-            return Some(p);
-          }
+          flatten_leaves(item, out);
         }
-        None
       }
-      _ => {
-        *pos += 1;
-        Some(*pos)
+      Expr::FunctionCall { name, args } if name == "StringJoin" => {
+        for a in args.iter() {
+          flatten_leaves(a, out);
+        }
       }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::StringJoin,
+        left,
+        right,
+      } => {
+        flatten_leaves(left, out);
+        flatten_leaves(right, out);
+      }
+      _ => out.push(expr.clone()),
     }
   }
-  let mut cursor = 0usize;
-  let mut bad_pos: Option<usize> = None;
+  let mut leaves = Vec::new();
   for arg in args {
-    if let Some(p) = first_non_string(arg, &mut cursor) {
-      bad_pos = Some(p);
-      break;
-    }
+    flatten_leaves(arg, &mut leaves);
   }
-  if let Some(pos) = bad_pos {
-    // Format as infix: args joined by `<>`, dropping the enclosing quotes of
-    // each string argument — so StringJoin["U", 2] renders as `U<>2`.
-    let infix = args
+
+  // Validate: every leaf must be a string. wolframscript emits one
+  // StringJoin::string message per non-string leaf (with its 1-based position
+  // in the flat sequence), subject to the standard General::stop suppression
+  // after three, then returns the flat StringJoin unevaluated.
+  let non_string: Vec<usize> = leaves
+    .iter()
+    .enumerate()
+    .filter(|(_, l)| !matches!(l, Expr::String(_)))
+    .map(|(i, _)| i + 1)
+    .collect();
+  if !non_string.is_empty() {
+    // Format as infix: leaves joined by `<>`, dropping the enclosing quotes of
+    // each string leaf — so StringJoin["U", 2] renders as `U<>2`.
+    let infix = leaves
       .iter()
       .map(|a| match a {
         Expr::String(s) => s.clone(),
@@ -438,13 +447,15 @@ pub fn string_join_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
       .collect::<Vec<_>>()
       .join("<>");
-    crate::emit_message(&format!(
-      "StringJoin::string: String expected at position {} in {}.",
-      pos, infix
-    ));
+    for pos in non_string {
+      crate::emit_message(&format!(
+        "StringJoin::string: String expected at position {} in {}.",
+        pos, infix
+      ));
+    }
     return Ok(Expr::FunctionCall {
       name: "StringJoin".to_string(),
-      args: args.to_vec().into(),
+      args: leaves.into(),
     });
   }
 

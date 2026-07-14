@@ -59,6 +59,67 @@ mod string_join_arg_errors {
   fn plain_string_chain_still_works() {
     assert_eq!(interpret(r#""a" <> "b" <> "c""#).unwrap(), "abc");
   }
+
+  #[test]
+  fn flat_chain_returns_flat_unevaluated() {
+    // StringJoin is Flat: a <> b <> c is StringJoin[a, b, c], not the nested
+    // StringJoin[StringJoin[a, b], c] the parser builds. Matches wolframscript.
+    assert_eq!(interpret("a <> b <> c").unwrap(), "StringJoin[a, b, c]");
+    assert_eq!(
+      interpret("a <> b <> c <> d").unwrap(),
+      "StringJoin[a, b, c, d]"
+    );
+  }
+
+  #[test]
+  fn one_message_per_non_string_leaf() {
+    // wolframscript emits one StringJoin::string message per non-string leaf,
+    // numbered by position in the flat chain (not one message for the first).
+    let _ = interpret("x <> b <> y").unwrap();
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "StringJoin::string: String expected at position 2 in x<>b<>y."
+      )),
+      "expected position-2 message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn all_non_string_leaves_report_positions() {
+    let _ = interpret("StringJoin[1, 2]").unwrap();
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "StringJoin::string: String expected at position 1 in 1<>2."
+      )),
+      "missing position-1 message, got {:?}",
+      msgs
+    );
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "StringJoin::string: String expected at position 2 in 1<>2."
+      )),
+      "missing position-2 message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn general_stop_after_three_messages() {
+    // A four-symbol chain emits three per-leaf messages then General::stop.
+    let _ = interpret("a <> b <> c <> d").unwrap();
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "General::stop: Further output of StringJoin::string will be \
+         suppressed during this calculation."
+      )),
+      "expected General::stop, got {:?}",
+      msgs
+    );
+  }
 }
 
 mod string_replace_arg_errors {

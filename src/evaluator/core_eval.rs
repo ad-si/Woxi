@@ -2202,6 +2202,33 @@ pub fn evaluate_expr_to_expr_inner(
           }
           return crate::functions::boolean_ast::or_ast(&[left_val, right_val]);
         }
+        BinaryOperator::StringJoin => {
+          // StringJoin is Flat: evaluate the whole `a <> b <> c` chain as one
+          // StringJoin so string_join_ast sees every operand at once (correct
+          // message positions and a flat result), rather than evaluating each
+          // nested BinaryOp separately and emitting premature messages.
+          fn gather(e: &Expr, out: &mut Vec<Expr>) {
+            if let Expr::BinaryOp {
+              op: BinaryOperator::StringJoin,
+              left,
+              right,
+            } = e
+            {
+              gather(left, out);
+              gather(right, out);
+            } else {
+              out.push(e.clone());
+            }
+          }
+          let mut operands = Vec::new();
+          gather(left, &mut operands);
+          gather(right, &mut operands);
+          let mut evaled = Vec::with_capacity(operands.len());
+          for o in &operands {
+            evaled.push(evaluate_expr_to_expr(o)?);
+          }
+          return crate::functions::string_ast::string_join_ast(&evaled);
+        }
         _ => {}
       }
 
