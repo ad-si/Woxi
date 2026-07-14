@@ -294,7 +294,7 @@ ArcTanh,Returns the inverse hyperbolic tangent,✅,pure,1.0,297
 StringExpression,Represents a string pattern formed by concatenating string pattern objects,✅,pure,5.1,298
 Repeated,Pattern that matches one or more repetitions,✅,pure,1.0,299
 ChemicalData,,🚫,,6.0,300
-RandomVariate,Generates pseudorandom variates from a distribution,✅,contextual,8.0,301
+RandomVariate,Generates pseudorandom variates from a distribution as a scalar list or array of given dimensions,✅,contextual,8.0,301
 Cylinder,3D cylinder graphics primitive,✅,none,6.0,302
 Graph,Yields a graph with vertices and edges rendered as SVG,✅,effectful,8.0,303
 Tiny,Tiny size specification,✅,none,6.0,304

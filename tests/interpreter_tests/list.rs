@@ -5584,6 +5584,69 @@ mod random_variate {
     );
   }
 
+  // A dimension list produces a nested array of that shape; a zero dimension
+  // yields the corresponding empty structure.
+  #[test]
+  fn dimension_list_array() {
+    assert_eq!(
+      interpret("Dimensions[RandomVariate[NormalDistribution[0, 1], {2, 3}]]")
+        .unwrap(),
+      "{2, 3}"
+    );
+    assert_eq!(
+      interpret(
+        "Dimensions[RandomVariate[NormalDistribution[0, 1], {2, 2, 2}]]"
+      )
+      .unwrap(),
+      "{2, 2, 2}"
+    );
+    assert_eq!(
+      interpret("RandomVariate[NormalDistribution[0, 1], {0}]").unwrap(),
+      "{}"
+    );
+    assert_eq!(
+      interpret("RandomVariate[NormalDistribution[0, 1], {2, 0}]").unwrap(),
+      "{{}, {}}"
+    );
+  }
+
+  // A negative or non-integer dimension emits ::array and stays unevaluated.
+  #[test]
+  fn invalid_dimension_emits_array() {
+    for input in [
+      "RandomVariate[NormalDistribution[0, 1], -1]",
+      "RandomVariate[NormalDistribution[0, 1], {-1}]",
+    ] {
+      let r = woxi::interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, input, "result mismatch for {input}");
+      assert!(
+        r.warnings
+          .iter()
+          .any(|w| w.contains("RandomVariate::array")),
+        "expected array message for {input}, got {:?}",
+        r.warnings
+      );
+    }
+  }
+
+  // RandomPrime rejects a non-positive dimension with posdim.
+  #[test]
+  fn random_prime_invalid_dimension_emits_posdim() {
+    for input in [
+      "RandomPrime[100, -1]",
+      "RandomPrime[100, 0]",
+      "RandomPrime[100, {0}]",
+    ] {
+      let r = woxi::interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, input, "result mismatch for {input}");
+      assert!(
+        r.warnings.iter().any(|w| w.contains("RandomPrime::posdim")),
+        "expected posdim for {input}, got {:?}",
+        r.warnings
+      );
+    }
+  }
+
   #[test]
   fn normal_single() {
     let result: f64 = interpret("RandomVariate[NormalDistribution[]]")

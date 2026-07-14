@@ -1235,11 +1235,45 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // A zero count yields an empty list (matching wolframscript).
       Expr::Integer(0) => return Ok(Expr::List(vec![].into())),
       Expr::Integer(n) if *n > 0 => Some(*n as usize),
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "RandomVariate: second argument must be a positive integer".into(),
-        ));
+      // A dimension list {d1, d2, …} produces a nested array of that shape:
+      // draw prod(d) samples flat, then reshape.
+      Expr::List(dims_expr) => {
+        let mut dims = Vec::with_capacity(dims_expr.len());
+        for d in dims_expr.iter() {
+          match d {
+            Expr::Integer(k) if *k >= 0 => dims.push(*k as usize),
+            _ => return random_array_dims_error("RandomVariate", args),
+          }
+        }
+        let total: usize = dims.iter().product();
+        // A zero total means some dimension is 0; build the empty nested
+        // shape directly (ArrayReshape does not reduce zero-size specs).
+        if total == 0 {
+          fn empty_nested(dims: &[usize]) -> Expr {
+            match dims {
+              [_] | [] => Expr::List(vec![].into()),
+              [n, rest @ ..] => {
+                Expr::List((0..*n).map(|_| empty_nested(rest)).collect())
+              }
+            }
+          }
+          return Ok(empty_nested(&dims));
+        }
+        let flat =
+          random_variate_ast(&[dist.clone(), Expr::Integer(total as i128)])?;
+        let reshaped = Expr::FunctionCall {
+          name: "ArrayReshape".to_string(),
+          args: vec![
+            flat,
+            Expr::List(
+              dims.iter().map(|&d| Expr::Integer(d as i128)).collect(),
+            ),
+          ]
+          .into(),
+        };
+        return crate::evaluator::evaluate_expr_to_expr(&reshaped);
       }
+      _ => return random_array_dims_error("RandomVariate", args),
     }
   } else {
     None
@@ -1571,6 +1605,19 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // or a list of dimensions {n1, n2, ...} for a nested array. Track
   // both as a `dims` vector — when it has length 1 we keep the
   // original flat-list output to match wolframscript.
+  // The dimensions parameter must be a positive integer or a list of positive
+  // integers; anything else emits posdim and stays unevaluated (rather than a
+  // hard evaluation error).
+  let posdim = || {
+    crate::emit_message(&format!(
+      "RandomPrime::posdim: The dimensions parameter {} is expected to be a positive integer or a list of positive integers.",
+      crate::syntax::expr_to_string(&args[1])
+    ));
+    Ok(Expr::FunctionCall {
+      name: "RandomPrime".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
   let dims: Vec<usize> = if args.len() == 2 {
     match &args[1] {
       Expr::Integer(n) if *n > 0 => vec![*n as usize],
@@ -1579,21 +1626,12 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         for it in items.iter() {
           match it {
             Expr::Integer(n) if *n > 0 => ds.push(*n as usize),
-            _ => {
-              return Err(InterpreterError::EvaluationError(
-                "RandomPrime: dimension entries must be positive integers"
-                  .into(),
-              ));
-            }
+            _ => return posdim(),
           }
         }
         ds
       }
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "RandomPrime: second argument must be a positive integer or list of dimensions".into(),
-        ));
-      }
+      _ => return posdim(),
     }
   } else {
     Vec::new()
