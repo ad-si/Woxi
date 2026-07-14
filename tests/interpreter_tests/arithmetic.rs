@@ -9341,3 +9341,49 @@ mod bigfloat_subtract {
     );
   }
 }
+
+mod bigfloat_trig {
+  use super::*;
+
+  // Tan/Cot/Sec/Csc on a BigFloat used to be left unevaluated (Tan[1.`30.]).
+  // They reduce to Sin/Cos ratios; the precision tag matches wolframscript.
+  #[test]
+  fn tan_of_bigfloat_evaluates() {
+    let r = interpret("Tan[N[1, 30]]").unwrap();
+    assert!(
+      r.starts_with("1.5574077246549022305069748074583601730872507723815"),
+      "value: {r}"
+    );
+    assert!(r.contains("`29.65767596643728"), "precision tag: {r}");
+  }
+
+  #[test]
+  fn cot_of_bigfloat_evaluates() {
+    let r = interpret("Cot[N[1, 30]]").unwrap();
+    assert!(
+      r.starts_with("0.6420926159343307030064199865942656202302781139181"),
+      "value: {r}"
+    );
+    assert!(r.contains("`29.65767596643728"), "precision tag: {r}");
+  }
+
+  #[test]
+  fn sec_of_bigfloat_evaluates() {
+    let r = interpret("Sec[N[1, 30]]").unwrap();
+    assert!(
+      r.starts_with("1.8508157176809256179117532413986501934703966550940"),
+      "value: {r}"
+    );
+    assert!(r.contains("`29.807597675558274"), "precision tag: {r}");
+  }
+
+  #[test]
+  fn csc_of_bigfloat_evaluates() {
+    let r = interpret("Csc[N[1, 30]]").unwrap();
+    assert!(
+      r.starts_with("1.1883951057781212162615994523745510035278298340979"),
+      "value: {r}"
+    );
+    assert!(r.contains("`30.192402324441726"), "precision tag: {r}");
+  }
+}

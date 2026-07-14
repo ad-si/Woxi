@@ -1804,6 +1804,30 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// Evaluate a circular function ratio at an arbitrary-precision argument, e.g.
+/// Tan[x] = Sin[x]/Cos[x] or Sec[x] = 1/Cos[x]. `num = None` means a constant 1
+/// numerator (for Sec/Csc). Both Sin/Cos have BigFloat paths and the division
+/// propagates the precision tag, matching wolframscript.
+fn bigfloat_trig_ratio(
+  x: &Expr,
+  num: Option<&str>,
+  den: &str,
+) -> Result<Expr, InterpreterError> {
+  let numerator = match num {
+    Some(head) => crate::evaluator::evaluate_function_call_ast(
+      head,
+      std::slice::from_ref(x),
+    )?,
+    None => Expr::Integer(1),
+  };
+  let denominator =
+    crate::evaluator::evaluate_function_call_ast(den, std::slice::from_ref(x))?;
+  crate::evaluator::evaluate_function_call_ast(
+    "Divide",
+    &[numerator, denominator],
+  )
+}
+
 pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -1856,6 +1880,12 @@ pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Tan of a Real always returns a Real, even if the numeric value
     // happens to be a whole number (matching wolframscript).
     return Ok(Expr::Real(f.tan()));
+  }
+  // Tan of a BigFloat: Tan[x] = Sin[x]/Cos[x]. Both have arbitrary-precision
+  // paths, and the division propagates the precision tag (matching WS),
+  // instead of leaving `Tan[1.`30.]` unevaluated.
+  if matches!(&args[0], Expr::BigFloat(_, _)) {
+    return bigfloat_trig_ratio(&args[0], Some("Sin"), "Cos");
   }
   // Exact complex: for purely imaginary: tan(bi) = i*tanh(b)
   if let Some(((re_num, _re_den), (im_num, im_den))) =
@@ -1946,6 +1976,10 @@ pub fn sec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::Real(1.0 / c));
   }
+  // Sec of a BigFloat: 1/Cos[x] at arbitrary precision.
+  if matches!(&args[0], Expr::BigFloat(_, _)) {
+    return bigfloat_trig_ratio(&args[0], None, "Cos");
+  }
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_sec(k, n)
   {
@@ -1998,6 +2032,10 @@ pub fn csc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::Real(1.0 / s));
   }
+  // Csc of a BigFloat: 1/Sin[x] at arbitrary precision.
+  if matches!(&args[0], Expr::BigFloat(_, _)) {
+    return bigfloat_trig_ratio(&args[0], None, "Sin");
+  }
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_csc(k, n)
   {
@@ -2049,6 +2087,10 @@ pub fn cot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Identifier("ComplexInfinity".to_string()));
     }
     return Ok(Expr::Real(f.cos() / s));
+  }
+  // Cot of a BigFloat: Cos[x]/Sin[x] at arbitrary precision.
+  if matches!(&args[0], Expr::BigFloat(_, _)) {
+    return bigfloat_trig_ratio(&args[0], Some("Cos"), "Sin");
   }
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_cot(k, n)
