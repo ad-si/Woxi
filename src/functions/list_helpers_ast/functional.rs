@@ -2,7 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, UnaryOperator};
+use crate::syntax::{BinaryOperator, UnaryOperator, unevaluated};
 
 /// AST-based Fold/FoldList: fold a function over a list.
 /// Fold[f, x, {a, b, c}] -> f[f[f[x, a], b], c]
@@ -508,22 +508,14 @@ fn sequence_fold_invl(fname: &str, args: &[Expr]) -> Option<Expr> {
         "{fname}::invl: The argument {} is not a list.",
         crate::syntax::format_expr(arg, crate::syntax::ExprForm::Output)
       ));
-      return Some(Expr::FunctionCall {
-        name: fname.to_string(),
-        args: args.to_vec().into(),
-      });
+      return Some(unevaluated(fname, args));
     }
   }
   None
 }
 
 pub fn sequence_fold_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "SequenceFoldList".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("SequenceFoldList", args));
   if args.len() < 3 || args.len() > 4 {
     return unevaluated();
   }
@@ -576,10 +568,7 @@ pub fn sequence_fold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(items.last().cloned().unwrap())
     }
     // SequenceFoldList stayed unevaluated → keep SequenceFold unevaluated.
-    _ => Ok(Expr::FunctionCall {
-      name: "SequenceFold".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("SequenceFold", args)),
   }
 }
 
@@ -1667,10 +1656,7 @@ pub fn find_repeat_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match expr_to_i128(&args[1]) {
       Some(n) if n >= 1 => n,
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "FindRepeat".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("FindRepeat", args));
       }
     }
   } else {
@@ -1718,10 +1704,7 @@ pub fn find_repeat_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "FindRepeat::arg1: The first argument {} to FindRepeat is expected to be a list, an association or a string.",
         crate::syntax::expr_to_string(arg)
       ));
-      Ok(Expr::FunctionCall {
-        name: "FindRepeat".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("FindRepeat", args))
     }
   }
 }
@@ -1762,10 +1745,7 @@ fn transient_repeat_split(strs: &[String], n: i128) -> (usize, usize) {
 pub fn find_transient_repeat_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "FindTransientRepeat".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("FindTransientRepeat", args);
   // The second argument must be a positive integer.
   let n: i128 = match expr_to_i128(&args[1]) {
     Some(n) if n >= 1 => n,

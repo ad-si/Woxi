@@ -3,7 +3,9 @@
 //! These functions work directly with `Expr` AST nodes, avoiding string round-trips.
 
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
+};
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -101,15 +103,9 @@ pub fn string_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Non-string argument: emit message and return unevaluated (matches wolframscript).
   crate::emit_message(&format!(
     "StringLength::string: String expected at position 1 in {}.",
-    crate::syntax::expr_to_string(&Expr::FunctionCall {
-      name: "StringLength".to_string(),
-      args: args.to_vec().into(),
-    })
+    crate::syntax::expr_to_string(&unevaluated("StringLength", args))
   ));
-  Ok(Expr::FunctionCall {
-    name: "StringLength".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("StringLength", args))
 }
 
 /// StringTake[s, n] - first n chars; StringTake[s, -n] - last n chars;
@@ -134,10 +130,7 @@ fn emit_strse(fname: &str, args: &[Expr]) {
     "{}::strse: A string or list of strings is expected at position 1 in {}.",
     fname,
     crate::syntax::format_expr(
-      &Expr::FunctionCall {
-        name: fname.to_string(),
-        args: args.to_vec().into(),
-      },
+      &unevaluated(fname, args),
       crate::syntax::ExprForm::Output
     )
   ));
@@ -163,10 +156,7 @@ fn string_take_drop(
   fname: &str,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: fname.to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated(fname, args);
   // Thread over a list of strings
   if let Expr::List(items) = &args[0] {
     let results: Result<Vec<Expr>, InterpreterError> = items
@@ -359,10 +349,7 @@ fn span_to_list_arg(span: &Expr) -> Option<Expr> {
 
 pub fn string_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
-    return Ok(Expr::FunctionCall {
-      name: "StringTake".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("StringTake", args));
   }
   // StringTake[s, i;;j] — a Span spec maps to the {i, j} list form.
   if let Some(list) = span_to_list_arg(&args[1]) {
@@ -375,10 +362,7 @@ pub fn string_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// StringDrop[s, {n}] - drop nth character; StringDrop[s, {m, n}] - drop chars m through n
 pub fn string_drop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
-    return Ok(Expr::FunctionCall {
-      name: "StringDrop".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("StringDrop", args));
   }
   // StringDrop[s, i;;j] — a Span spec maps to the {i, j} list form.
   if let Some(list) = span_to_list_arg(&args[1]) {
@@ -712,10 +696,7 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // invalid: Wolfram emits StringSplit::strse referencing the whole call and
   // leaves it unevaluated, rather than coercing the value to a string.
   if !matches!(&args[0], Expr::String(_)) {
-    let unevaluated = Expr::FunctionCall {
-      name: "StringSplit".to_string(),
-      args: args.to_vec().into(),
-    };
+    let unevaluated = unevaluated("StringSplit", args);
     crate::emit_message(&format!(
       "StringSplit::strse: A string or list of strings is expected at position 1 in {}.",
       crate::syntax::format_expr(&unevaluated, crate::syntax::ExprForm::Output)
@@ -1247,10 +1228,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // the argument to its textual form (e.g. `StringReplace[xyz, "a" -> "x"]`).
   if !is_string_subject(&args[0]) {
     emit_strse("StringReplace", args);
-    return Ok(Expr::FunctionCall {
-      name: "StringReplace".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("StringReplace", args));
   }
 
   // Handle list of strings as first arg
@@ -1669,10 +1647,7 @@ pub fn to_upper_case_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::String(s) = &args[0] {
     return Ok(Expr::String(s.to_uppercase()));
   }
-  Ok(Expr::FunctionCall {
-    name: "ToUpperCase".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ToUpperCase", args))
 }
 
 /// ToLowerCase[s] - converts string to lowercase
@@ -1694,10 +1669,7 @@ pub fn to_lower_case_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::String(s) = &args[0] {
     return Ok(Expr::String(s.to_lowercase()));
   }
-  Ok(Expr::FunctionCall {
-    name: "ToLowerCase".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ToLowerCase", args))
 }
 
 /// Characters[s] - converts string to list of characters
@@ -1723,10 +1695,7 @@ pub fn characters_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       s.chars().map(|c| Expr::String(c.to_string())).collect();
     return Ok(Expr::List(chars.into()));
   }
-  Ok(Expr::FunctionCall {
-    name: "Characters".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Characters", args))
 }
 
 /// StringRiffle[list] or StringRiffle[list, sep] or StringRiffle[list, {left, sep, right}]
@@ -2148,10 +2117,7 @@ pub fn string_reverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::String(s) = &args[0] {
     return Ok(Expr::String(s.chars().rev().collect()));
   }
-  let unevaluated = Expr::FunctionCall {
-    name: "StringReverse".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = unevaluated("StringReverse", args);
   crate::emit_message(&format!(
     "StringReverse::string: String expected at position 1 in {}.",
     crate::syntax::format_expr(&unevaluated, crate::syntax::ExprForm::Output)
@@ -2247,10 +2213,7 @@ pub fn string_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Ok(Expr::String(trimmed))
   } else {
     // Unrecognized pattern: return unevaluated
-    Ok(Expr::FunctionCall {
-      name: "StringTrim".to_string(),
-      args: args.to_vec().into(),
-    })
+    Ok(unevaluated("StringTrim", args))
   }
 }
 
@@ -4032,10 +3995,7 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "ToString::fmtval: {} is not a valid format type.",
         crate::syntax::expr_to_output(&args[1])
       ));
-      return Ok(Expr::FunctionCall {
-        name: "ToString".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("ToString", args));
     }
   }
 
@@ -7053,10 +7013,7 @@ fn box_function_call(name: &str, args: &[Expr]) -> String {
         return format!("RowBox[{{\"-\", {}}}]", rest);
       }
       // Check for fraction form: Times[..., Power[den, -1]]
-      let full_expr = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: args.to_vec().into(),
-      };
+      let full_expr = unevaluated("Times", args);
       let (num, den) =
         crate::functions::polynomial_ast::together::extract_num_den(&full_expr);
       if !matches!(&den, Expr::Integer(1)) {
@@ -7456,10 +7413,7 @@ fn string_pad_one_arg(args: &[Expr]) -> PadOneArg {
 /// Emit `<name>::strlist` for a one-argument call whose argument is not a list
 /// of strings, and return the unevaluated call.
 fn string_pad_strlist(name: &str, args: &[Expr]) -> Expr {
-  let call = Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.to_vec().into(),
-  };
+  let call = unevaluated(name, args);
   crate::emit_message(&format!(
     "{}::strlist: List of strings expected at position 1 in {}.",
     name,
@@ -7476,10 +7430,7 @@ fn string_pad_length(name: &str, args: &[Expr]) -> Result<usize, Expr> {
   match &args[1] {
     Expr::Integer(n) if *n >= 0 => Ok(*n as usize),
     _ => {
-      let call = Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      };
+      let call = unevaluated(name, args);
       crate::emit_message(&format!(
         "{}::intnm: Non-negative machine-sized integer expected at position 2 in {}.",
         name,
@@ -7510,10 +7461,7 @@ pub fn string_pad_left_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // else (empty string, a number, a list), even when the result would be a
   // pure truncation, so validate before threading or padding.
   if args.len() == 3 && !matches!(&args[2], Expr::String(p) if !p.is_empty()) {
-    let call = Expr::FunctionCall {
-      name: "StringPadLeft".to_string(),
-      args: args.to_vec().into(),
-    };
+    let call = unevaluated("StringPadLeft", args);
     crate::emit_message(&format!(
       "StringPadLeft::stringnz: String of non-zero length expected at \
        position 3 in {}.",
@@ -7590,10 +7538,7 @@ pub fn string_pad_right_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // else (empty string, a number, a list), even when the result would be a
   // pure truncation, so validate before threading or padding.
   if args.len() == 3 && !matches!(&args[2], Expr::String(p) if !p.is_empty()) {
-    let call = Expr::FunctionCall {
-      name: "StringPadRight".to_string(),
-      args: args.to_vec().into(),
-    };
+    let call = unevaluated("StringPadRight", args);
     crate::emit_message(&format!(
       "StringPadRight::stringnz: String of non-zero length expected at \
        position 3 in {}.",
@@ -7653,12 +7598,7 @@ pub fn string_pad_right_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// than `n` is hard-broken every `n` characters. The number of characters is
 /// counted by Unicode code point.
 pub fn insert_linebreaks_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "InsertLinebreaks".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("InsertLinebreaks", args));
   if args.is_empty() || args.len() > 2 {
     return unevaluated();
   }
@@ -7902,15 +7842,9 @@ pub fn to_character_code_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::emit_message(&format!(
         "ToCharacterCode::strse: A string or list of strings is \
          expected at position 1 in {}.",
-        crate::syntax::expr_to_string(&Expr::FunctionCall {
-          name: "ToCharacterCode".to_string(),
-          args: args.to_vec().into(),
-        })
+        crate::syntax::expr_to_string(&unevaluated("ToCharacterCode", args))
       ));
-      return Ok(Expr::FunctionCall {
-        name: "ToCharacterCode".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("ToCharacterCode", args));
     }
     let mut results = Vec::new();
     for item in items {
@@ -7925,15 +7859,9 @@ pub fn to_character_code_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::emit_message(&format!(
       "ToCharacterCode::strse: A string or list of strings is \
        expected at position 1 in {}.",
-      crate::syntax::expr_to_string(&Expr::FunctionCall {
-        name: "ToCharacterCode".to_string(),
-        args: args.to_vec().into(),
-      })
+      crate::syntax::expr_to_string(&unevaluated("ToCharacterCode", args))
     ));
-    return Ok(Expr::FunctionCall {
-      name: "ToCharacterCode".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("ToCharacterCode", args));
   }
   let s = expr_to_str(&args[0])?;
   Ok(Expr::List(codes_for(&s).into()))
@@ -8034,12 +7962,7 @@ pub fn character_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // so 97 became the digit '9' and CharacterRange[97, 99] wrongly produced
   // {"9"}.) wolframscript requires BOTH endpoints to be the same kind — a
   // mixed call like CharacterRange["a", 99] is left unevaluated.
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "CharacterRange".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("CharacterRange", args));
   let a0_int = matches!(&args[0], Expr::Integer(n) if *n >= 0);
   let a1_int = matches!(&args[1], Expr::Integer(n) if *n >= 0);
   if a0_int != a1_int {
@@ -8163,10 +8086,7 @@ pub fn integer_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         else {
           // Unsupported range / non-integer — leave unevaluated rather
           // than guess at the vinculum/OverscriptBox encoding.
-          return Ok(Expr::FunctionCall {
-            name: "IntegerString".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("IntegerString", args));
         };
         s
       }
@@ -8174,19 +8094,13 @@ pub fn integer_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::emit_message(&format!(
           "IntegerString::numsys: Invalid numeric system {name}."
         ));
-        return Ok(Expr::FunctionCall {
-          name: "IntegerString".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("IntegerString", args));
       }
     };
     return Ok(Expr::String(result));
   }
 
-  let unevaluated = || Expr::FunctionCall {
-    name: "IntegerString".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("IntegerString", args);
   let show =
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
 
@@ -8282,10 +8196,7 @@ pub fn alphabet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => None,
     Some(Expr::String(s)) => Some(s.as_str()),
     Some(_) => {
-      return Ok(Expr::FunctionCall {
-        name: "Alphabet".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Alphabet", args));
     }
   };
 
@@ -8331,10 +8242,7 @@ pub fn alphabet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect(),
     Some("Greek") => chars_to_list("αβγδεζηθικλμνξοπρστυφχψω"),
     Some(_) => {
-      return Ok(Expr::FunctionCall {
-        name: "Alphabet".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Alphabet", args));
     }
   };
   Ok(Expr::List(letters.into()))
@@ -8351,12 +8259,7 @@ pub fn from_letter_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // alphabet (1-based, negative counts from the end), with out-of-range or 0
   // giving a space — the same convention as the English default.
   if args.len() == 2 {
-    let unevaluated = || {
-      Ok(Expr::FunctionCall {
-        name: "FromLetterNumber".to_string(),
-        args: args.to_vec().into(),
-      })
-    };
+    let unevaluated = || Ok(unevaluated("FromLetterNumber", args));
     let alphabet = alphabet_ast(std::slice::from_ref(&args[1]))?;
     let letters = match &alphabet {
       Expr::List(items) => items,
@@ -8418,10 +8321,7 @@ pub fn from_letter_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .collect();
       Ok(Expr::List(results?.into()))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "FromLetterNumber".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("FromLetterNumber", args)),
   }
 }
 
@@ -8488,10 +8388,7 @@ pub fn letter_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let alphabet = match args.get(1) {
     Some(Expr::String(s)) => s.clone(),
     Some(_) => {
-      return Ok(Expr::FunctionCall {
-        name: "LetterNumber".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("LetterNumber", args));
     }
     None => "English".to_string(),
   };
@@ -8522,10 +8419,7 @@ pub fn letter_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .collect();
       Ok(Expr::List(results?.into()))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "LetterNumber".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("LetterNumber", args)),
   }
 }
 
@@ -8597,10 +8491,7 @@ pub fn lower_case_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// A non-string argument — or a list that is not entirely strings — emits
 /// the `::strse` message and stays unevaluated.
 pub fn printable_ascii_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "PrintableASCIIQ".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("PrintableASCIIQ", args);
   let strse = || {
     crate::emit_message(&format!(
       "PrintableASCIIQ::strse: A string or list of strings is expected at position 1 in {}.",
@@ -8660,10 +8551,7 @@ fn string_insert_invalid(args: &[Expr], pos: i128) -> Expr {
     pos,
     crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
   ));
-  Expr::FunctionCall {
-    name: "StringInsert".to_string(),
-    args: args.to_vec().into(),
-  }
+  unevaluated("StringInsert", args)
 }
 
 pub fn string_insert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -8678,10 +8566,7 @@ pub fn string_insert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // matching wolframscript (checked before the list-of-strings first-argument
   // form, so the message reports the whole original call).
   if !matches!(&args[1], Expr::String(_)) {
-    let call = Expr::FunctionCall {
-      name: "StringInsert".to_string(),
-      args: args.to_vec().into(),
-    };
+    let call = unevaluated("StringInsert", args);
     crate::emit_message(&format!(
       "StringInsert::string: String expected at position 2 in {}.",
       crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
@@ -8779,10 +8664,7 @@ pub fn string_replace_part_ast(
   let s = match expr_to_str(&args[0]) {
     Ok(s) => s,
     Err(_) => {
-      return Ok(Expr::FunctionCall {
-        name: "StringReplacePart".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("StringReplacePart", args));
     }
   };
   let chars: Vec<char> = s.chars().collect();
@@ -8887,10 +8769,7 @@ pub fn string_replace_part_ast(
       }
       Ok(Expr::String(result))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "StringReplacePart".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("StringReplacePart", args)),
   }
 }
 
@@ -8997,10 +8876,7 @@ pub fn capitalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output)
         ));
       }
-      return Ok(Expr::FunctionCall {
-        name: "Capitalize".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Capitalize", args));
     }
     // Rebuild the string, capitalizing the selected words while preserving
     // the original whitespace runs.
@@ -9162,10 +9038,7 @@ pub fn needleman_wunsch_similarity_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
-    return Ok(Expr::FunctionCall {
-      name: "NeedlemanWunschSimilarity".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("NeedlemanWunschSimilarity", args));
   }
   let a = alignment_tokens(&args[0])?;
   let b = alignment_tokens(&args[1])?;
@@ -9198,10 +9071,7 @@ pub fn smith_waterman_similarity_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
-    return Ok(Expr::FunctionCall {
-      name: "SmithWatermanSimilarity".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("SmithWatermanSimilarity", args));
   }
   let a = alignment_tokens(&args[0])?;
   let b = alignment_tokens(&args[1])?;
@@ -9390,10 +9260,7 @@ pub fn longest_common_subsequence_positions_ast(
   let (t1, t2) = match (lcs_tokens(&args[0]), lcs_tokens(&args[1])) {
     (Some(t1), Some(t2)) => (t1, t2),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "LongestCommonSubsequencePositions".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("LongestCommonSubsequencePositions", args));
     }
   };
   let (start1, start2, len) = longest_common_run(&t1, &t2);
@@ -9505,10 +9372,7 @@ pub fn longest_common_sequence_positions_ast(
       (lcs_tokens(&args[0]).unwrap(), lcs_tokens(&args[1]).unwrap())
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "LongestCommonSequencePositions".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("LongestCommonSequencePositions", args));
     }
   };
   let pairs = lcs_index_pairs(&t1, &t2);
@@ -9576,10 +9440,7 @@ pub fn sequence_alignment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (false, c1, c2, o1, o2)
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "SequenceAlignment".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("SequenceAlignment", args));
     }
   };
 
@@ -9749,10 +9610,7 @@ pub fn string_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output),
       s
     ));
-    Expr::FunctionCall {
-      name: "StringPart".to_string(),
-      args: args.to_vec().into(),
-    }
+    unevaluated("StringPart", args)
   };
 
   match &args[1] {
@@ -9813,10 +9671,7 @@ pub fn hamming_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       expr_to_str(&args[0])?,
       expr_to_str(&args[1])?
     ));
-    return Ok(Expr::FunctionCall {
-      name: "HammingDistance".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("HammingDistance", args));
   }
 
   let dist = chars1
@@ -9845,12 +9700,7 @@ pub fn text_word_tokens(s: &str) -> Vec<String> {
 /// `word` (a Real). `word` may be a list, giving an association of fractions.
 /// Case-sensitive by default; `IgnoreCase -> True` folds case.
 pub fn word_frequency_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "WordFrequency".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("WordFrequency", args));
   let s = expr_to_str(&args[0])?;
   let ignore_case = extract_ignore_case(&args[2..]);
   let words = text_word_tokens(&s);
@@ -10412,10 +10262,7 @@ pub fn hash_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .collect::<String>()
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Hash".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Hash", args));
     }
   };
 
@@ -10581,10 +10428,7 @@ pub fn uncompress_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// to the original expression (like `Uncompress`).
 pub fn compressed_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
-      name: "CompressedData".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("CompressedData", args));
   }
   let evaluated = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
   match &evaluated {
@@ -10707,10 +10551,7 @@ pub fn read_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "ReadList::intnm: Non-negative machine-sized integer expected at position 3 in ReadList[{}].",
           formatted_args
         ));
-        return Ok(Expr::FunctionCall {
-          name: "ReadList".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("ReadList", args));
       }
     }
   } else {
@@ -11597,10 +11438,7 @@ fn template_object_apply(
 /// or `key` with the value from an association.
 pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
-    return Ok(Expr::FunctionCall {
-      name: "TemplateApply".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("TemplateApply", args));
   }
 
   let template = match &args[0] {
@@ -11689,10 +11527,7 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       map
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "TemplateApply".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("TemplateApply", args));
     }
   };
 
@@ -11743,10 +11578,7 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// StringPartition[string, n] partitions string into non-overlapping substrings of length n.
 /// StringPartition[string, n, d] partitions with offset d.
 pub fn string_partition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "StringPartition".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("StringPartition", args);
   // A non-string first argument stays unevaluated.
   let s = match &args[0] {
     Expr::String(s) => s.clone(),
@@ -11832,10 +11664,7 @@ pub fn dictionary_word_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if result { "True" } else { "False" }.to_string(),
       ))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "DictionaryWordQ".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("DictionaryWordQ", args)),
   }
 }
 
@@ -11859,10 +11688,7 @@ pub fn url_encode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .collect();
       Ok(Expr::List(encoded?.into()))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "URLEncode".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("URLEncode", args)),
   }
 }
 
@@ -11878,10 +11704,7 @@ pub fn url_decode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .collect();
       Ok(Expr::List(decoded?.into()))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "URLDecode".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("URLDecode", args)),
   }
 }
 
@@ -11934,10 +11757,7 @@ pub fn string_to_byte_array_ast(
   let s = match &args[0] {
     Expr::String(s) => s,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "StringToByteArray".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("StringToByteArray", args));
     }
   };
   // Encode as UTF-8 bytes and create ByteArray
@@ -11986,10 +11806,7 @@ pub fn byte_array_to_string_ast(
         })
         .collect(),
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "ByteArrayToString".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("ByteArrayToString", args));
       }
     };
     return Ok(Expr::String(String::from_utf8_lossy(&bytes).to_string()));
@@ -11998,10 +11815,7 @@ pub fn byte_array_to_string_ast(
     "ByteArrayToString::barray: {} is not a ByteArray object or {{}}.",
     crate::syntax::expr_to_string(&args[0])
   ));
-  Ok(Expr::FunctionCall {
-    name: "ByteArrayToString".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ByteArrayToString", args))
 }
 
 /// Extract the bytes of a ByteArray, which stores its data either as a base64
@@ -12030,12 +11844,7 @@ pub fn byte_array_bytes(expr: &Expr) -> Option<Vec<u8>> {
 
 /// BaseEncode[bytearray] — Base64-encode a ByteArray to a string.
 pub fn base_encode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "BaseEncode".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("BaseEncode", args));
   if args.len() != 1 {
     return unevaluated();
   }
@@ -12057,12 +11866,7 @@ pub fn base_encode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// BaseDecode["string"] — Base64-decode a string to a ByteArray.
 pub fn base_decode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "BaseDecode".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("BaseDecode", args));
   if args.len() != 1 {
     return unevaluated();
   }
@@ -12097,10 +11901,7 @@ pub fn base_decode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// brackets) followed by whitespace or end of input — unless the run is
 /// an ellipsis or the preceding token is an abbreviation.
 pub fn text_sentences_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "TextSentences".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = |args: &[Expr]| unevaluated("TextSentences", args);
 
   if args.is_empty() || args.len() > 2 {
     return Ok(unevaluated(args));
@@ -12324,10 +12125,7 @@ enum Pos {
 }
 
 pub fn string_extract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "StringExtract".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("StringExtract", args);
   // A list of strings maps the extraction over its elements
   if let Expr::List(items) = &args[0] {
     let mut out = Vec::with_capacity(items.len());
@@ -12344,10 +12142,7 @@ pub fn string_extract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::emit_message(&format!(
         "StringExtract::strse: A string or list of strings is expected at position 1 in {}.",
         crate::syntax::format_expr(
-          &Expr::FunctionCall {
-            name: "StringExtract".to_string(),
-            args: args.to_vec().into(),
-          },
+          &unevaluated(),
           crate::syntax::ExprForm::Output
         )
       ));

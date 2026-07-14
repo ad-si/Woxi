@@ -3,7 +3,9 @@
 //! These functions work directly with `Expr` AST nodes.
 
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
+};
 
 /// Helper to create boolean result
 fn bool_expr(b: bool) -> Expr {
@@ -946,10 +948,7 @@ pub fn positive_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(b) = sign_via_numeric(&args[0], |f| f > 0.0) {
     return Ok(bool_expr(b));
   }
-  Ok(Expr::FunctionCall {
-    name: "Positive".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Positive", args))
 }
 
 /// Negative[x] - Tests if x is a negative number
@@ -976,10 +975,7 @@ pub fn negative_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(b) = sign_via_numeric(&args[0], |f| f < 0.0) {
     return Ok(bool_expr(b));
   }
-  Ok(Expr::FunctionCall {
-    name: "Negative".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Negative", args))
 }
 
 /// NonPositive[x] - Tests if x is <= 0
@@ -1008,10 +1004,7 @@ pub fn non_positive_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(b) = sign_via_numeric(&args[0], |f| f <= 0.0) {
     return Ok(bool_expr(b));
   }
-  Ok(Expr::FunctionCall {
-    name: "NonPositive".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("NonPositive", args))
 }
 
 /// NonNegative[x] - Tests if x is >= 0
@@ -1044,10 +1037,7 @@ pub fn non_negative_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(b) = sign_via_numeric(&args[0], |f| f >= 0.0) {
     return Ok(bool_expr(b));
   }
-  Ok(Expr::FunctionCall {
-    name: "NonNegative".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("NonNegative", args))
 }
 
 fn is_zero(expr: &Expr) -> bool {
@@ -1417,10 +1407,7 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "FreeQ::level: Level specification {} is not of the form n, {{n}} or {{m, n}}.",
         crate::syntax::format_expr(&args[2], crate::syntax::ExprForm::Output)
       ));
-      return Ok(Expr::FunctionCall {
-        name: "FreeQ".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("FreeQ", args));
     }
     let parts = crate::functions::list_helpers_ast::level_unified_ast(&[
       args[0].clone(),
@@ -1434,10 +1421,7 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if any { "False" } else { "True" }.to_string(),
       ));
     }
-    return Ok(Expr::FunctionCall {
-      name: "FreeQ".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("FreeQ", args));
   }
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
@@ -1729,10 +1713,7 @@ pub fn square_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let (Expr::Integer(p), Expr::Integer(q)) = (&rargs[0], &rargs[1]) {
         Ok(bool_expr(is_squarefree_i128(*p) && is_squarefree_i128(*q)))
       } else {
-        Ok(Expr::FunctionCall {
-          name: "SquareFreeQ".to_string(),
-          args: args.to_vec().into(),
-        })
+        Ok(unevaluated("SquareFreeQ", args))
       }
     }
     // An explicit real number is never square-free (SquareFreeQ[5.0] -> False).
@@ -1774,10 +1755,7 @@ pub fn square_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // unevaluated for multivariate/non-polynomial expressions.
     other => match poly_square_free_q(other) {
       Some(b) => Ok(bool_expr(b)),
-      None => Ok(Expr::FunctionCall {
-        name: "SquareFreeQ".to_string(),
-        args: args.to_vec().into(),
-      }),
+      None => Ok(unevaluated("SquareFreeQ", args)),
     },
   }
 }
@@ -1811,10 +1789,7 @@ pub fn palindrome_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let is_palindrome = s.chars().eq(s.chars().rev());
       Ok(bool_expr(is_palindrome))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "PalindromeQ".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("PalindromeQ", args)),
   }
 }
 
@@ -1830,10 +1805,7 @@ pub fn divisible_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let unevaluated = || Expr::FunctionCall {
-    name: "Divisible".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("Divisible", args);
 
   // Extract an exact rational (numerator, denominator) from an argument.
   // Returns Ok(Some(...)) for an exact number, Ok(None) for a symbolic value
@@ -2523,10 +2495,7 @@ fn same_head_elements<'a>(
           "{}::heads: Heads {} and {} at positions 1 and 2 are expected to be the same.",
           fname, h1, h2
         ));
-        return Err(Expr::FunctionCall {
-          name: fname.to_string(),
-          args: args.to_vec().into(),
-        });
+        return Err(unevaluated(fname, args));
       }
       Ok(None)
     }
@@ -2544,10 +2513,7 @@ pub fn subset_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match extract_same_test(&args[2]) {
       Some(f) => Some(f),
       None => {
-        return Ok(Expr::FunctionCall {
-          name: "SubsetQ".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("SubsetQ", args));
       }
     }
   } else {
@@ -2561,16 +2527,10 @@ pub fn subset_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (superset, subset) = match same_head_elements("SubsetQ", &pair_args) {
     Ok(Some(pair)) => pair,
     Ok(None) => {
-      return Ok(Expr::FunctionCall {
-        name: "SubsetQ".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("SubsetQ", args));
     }
     Err(_) => {
-      return Ok(Expr::FunctionCall {
-        name: "SubsetQ".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("SubsetQ", args));
     }
   };
   if let Some(test) = same_test {
@@ -2645,10 +2605,7 @@ fn intersecting_or_disjoint(
     match extract_same_test(&args[2]) {
       Some(f) => Some(f),
       None => {
-        return Ok(Expr::FunctionCall {
-          name: fname.to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated(fname, args));
       }
     }
   } else {
@@ -2661,16 +2618,10 @@ fn intersecting_or_disjoint(
   let (a, b) = match same_head_elements(fname, &pair_args) {
     Ok(Some(pair)) => pair,
     Ok(None) => {
-      return Ok(Expr::FunctionCall {
-        name: fname.to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated(fname, args));
     }
     Err(_) => {
-      return Ok(Expr::FunctionCall {
-        name: fname.to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated(fname, args));
     }
   };
   let has_common = if let Some(test) = same_test {
@@ -2707,10 +2658,7 @@ fn intersecting_or_disjoint(
 /// Lists; atoms leave the call unevaluated after emitting the `normal` message.
 pub fn duplicate_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
-    return Ok(Expr::FunctionCall {
-      name: "DuplicateFreeQ".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("DuplicateFreeQ", args));
   }
   // The subject must be a non-atomic expression (List or any head[...]).
   let elements: &[Expr] = match &args[0] {
@@ -2721,10 +2669,7 @@ pub fn duplicate_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "DuplicateFreeQ::normal: Nonatomic expression expected at position 1 in DuplicateFreeQ[{}].",
         crate::syntax::expr_to_output(&args[0])
       ));
-      return Ok(Expr::FunctionCall {
-        name: "DuplicateFreeQ".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("DuplicateFreeQ", args));
     }
   };
 
@@ -2764,10 +2709,7 @@ pub fn duplicate_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// whether an expression could be zero.
 pub fn possible_zero_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
-      name: "PossibleZeroQ".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("PossibleZeroQ", args));
   }
   let expr = &args[0];
 
@@ -2877,12 +2819,7 @@ pub fn mandelbrot_set_iteration_count_ast(
 ) -> Result<Expr, InterpreterError> {
   use crate::functions::list_helpers_ast::expr_to_complex_parts;
 
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "MandelbrotSetIterationCount".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("MandelbrotSetIterationCount", args));
   if args.is_empty() {
     return unevaluated();
   }
@@ -3014,12 +2951,7 @@ pub fn mandelbrot_set_member_q_ast(
 ) -> Result<Expr, InterpreterError> {
   use crate::functions::list_helpers_ast::expr_to_complex_parts;
 
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "MandelbrotSetMemberQ".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("MandelbrotSetMemberQ", args));
   // wolframscript leaves the zero-argument form unevaluated without a message.
   if args.is_empty() {
     return unevaluated();

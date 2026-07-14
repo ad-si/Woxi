@@ -2,7 +2,7 @@
 use super::*;
 use crate::InterpreterError;
 use crate::functions::math_ast::{expr_to_f64, expr_to_i128, is_sqrt};
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 /// MinimalPolynomial[α, x] - Computes the minimal polynomial of an algebraic number α
 /// in the variable x.
@@ -37,10 +37,7 @@ pub fn minimal_polynomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     None => {
       // Return unevaluated
-      Ok(Expr::FunctionCall {
-        name: "MinimalPolynomial".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("MinimalPolynomial", args))
     }
   }
 }
@@ -1480,10 +1477,7 @@ pub fn number_field_signature_ast(
   let alpha = if args.len() == 1 {
     args[0].clone()
   } else {
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Root".to_string(),
-      args: args.to_vec().into(),
-    })?
+    crate::evaluator::evaluate_expr_to_expr(&unevaluated("Root", args))?
   };
   if let Some(coeffs) = compute_minpoly_coeffs(&alpha)? {
     let coeffs = make_square_free(&coeffs);
@@ -1503,10 +1497,7 @@ pub fn number_field_signature_ast(
     "NumberFieldSignature::nalg: {} is not an explicit algebraic number.",
     crate::syntax::expr_to_string(&alpha)
   ));
-  Ok(Expr::FunctionCall {
-    name: "NumberFieldSignature".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("NumberFieldSignature", args))
 }
 
 /// Minimal-polynomial coefficients (ascending, primitive, positive leading
@@ -1531,10 +1522,7 @@ fn nalg_unevaluated(head: &str, args: &[Expr]) -> Expr {
     "{head}::nalg: {} is not an explicit algebraic number.",
     crate::syntax::expr_to_string(&args[0])
   ));
-  Expr::FunctionCall {
-    name: head.to_string(),
-    args: args.to_vec().into(),
-  }
+  unevaluated(head, args)
 }
 
 /// AlgebraicUnitQ[a] — True iff a is an algebraic integer whose reciprocal
@@ -1738,12 +1726,7 @@ fn sturm_real_root_count(coeffs: &[i128]) -> usize {
 pub fn number_field_discriminant_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "NumberFieldDiscriminant".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("NumberFieldDiscriminant", args));
   if args.len() != 1 {
     return unevaluated();
   }

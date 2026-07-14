@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr};
+use crate::syntax::{BinaryOperator, Expr, unevaluated};
 
 use crate::functions::polynomial_ast::coefficient::coefficient_ast;
 use crate::functions::polynomial_ast::exponent::max_power_int;
@@ -24,10 +24,7 @@ pub fn horner_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match &args[1] {
       Expr::Identifier(name) => name.clone(),
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "HornerForm".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("HornerForm", args));
       }
     }
   } else {

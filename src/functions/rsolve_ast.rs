@@ -1,18 +1,22 @@
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
+};
 
 /// RSolve[{recurrence, initial_conditions...}, a, n]
 /// RSolve[recurrence, a[n], n] — single equation, return rule for `a[n]`
 /// Solve constant-coefficient linear recurrence relations.
 pub fn rsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || unevaluated("RSolve", args);
+
   if args.len() != 3 {
-    return Ok(unevaluated(args));
+    return Ok(unevaluated());
   }
 
   // Extract the variable name (e.g. "n")
   let var_name = match &args[2] {
     Expr::Identifier(name) => name.clone(),
-    _ => return Ok(unevaluated(args)),
+    _ => return Ok(unevaluated()),
   };
 
   // Second arg is either `a` (Identifier — return rule for the function)
@@ -25,7 +29,7 @@ pub fn rsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       (name.clone(), true)
     }
-    _ => return Ok(unevaluated(args)),
+    _ => return Ok(unevaluated()),
   };
 
   // Extract equations from the first argument. Accept a list, a single
@@ -44,7 +48,7 @@ pub fn rsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::FunctionCall { name, .. } if name == "And" => {
       flatten_and(&args[0]).into()
     }
-    _ => return Ok(unevaluated(args)),
+    _ => return Ok(unevaluated()),
   };
 
   // Separate the recurrence relation from initial conditions
@@ -55,7 +59,7 @@ pub fn rsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Each equation should be lhs == rhs
     let (lhs, rhs) = match extract_equation(eq) {
       Some(pair) => pair,
-      None => return Ok(unevaluated(args)),
+      None => return Ok(unevaluated()),
     };
 
     // Check if this is an initial condition: a[integer] == value
@@ -74,14 +78,14 @@ pub fn rsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     // Otherwise this is the recurrence relation
     if recurrence.is_some() {
-      return Ok(unevaluated(args)); // Multiple recurrences not supported
+      return Ok(unevaluated()); // Multiple recurrences not supported
     }
     recurrence = Some((lhs, rhs));
   }
 
   let (rec_lhs, rec_rhs) = match recurrence {
     Some(r) => r,
-    None => return Ok(unevaluated(args)),
+    None => return Ok(unevaluated()),
   };
 
   // Try to solve as constant-coefficient linear recurrence
@@ -117,7 +121,7 @@ pub fn rsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  Ok(unevaluated(args))
+  Ok(unevaluated())
 }
 
 /// True if `expr` references `func_name[...]` anywhere.
@@ -395,13 +399,6 @@ fn wrap_rsolve_result(
   Expr::List(vec![Expr::List(vec![rule].into())].into())
 }
 
-fn unevaluated(args: &[Expr]) -> Expr {
-  Expr::FunctionCall {
-    name: "RSolve".to_string(),
-    args: args.to_vec().into(),
-  }
-}
-
 /// Flatten a conjunction (`a && b && c`, whether represented as nested
 /// `BinaryOp::And` or a flattened `And[...]` FunctionCall) into the list of
 /// its conjuncts. Non-And expressions yield a single-element list.
@@ -426,13 +423,10 @@ fn flatten_and(expr: &Expr) -> Vec<Expr> {
 /// RSolveValue[eqns, expr, n] — like RSolve, but returns the value of `expr`
 /// under the solution instead of a list of replacement rules.
 pub fn rsolve_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated_value = |args: &[Expr]| Expr::FunctionCall {
-    name: "RSolveValue".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("RSolveValue", args);
 
   if args.len() != 3 {
-    return Ok(unevaluated_value(args));
+    return Ok(unevaluated());
   }
 
   // Determine the unknown function from the second argument: either the
@@ -440,7 +434,7 @@ pub fn rsolve_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let func_name = match &args[1] {
     Expr::Identifier(name) => name.clone(),
     Expr::FunctionCall { name, .. } => name.clone(),
-    _ => return Ok(unevaluated_value(args)),
+    _ => return Ok(unevaluated()),
   };
 
   // Solve for the function itself: {{a -> Function[{n}, body]}}
@@ -455,11 +449,11 @@ pub fn rsolve_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(outer) if outer.len() == 1 => match &outer[0] {
       Expr::List(inner) if inner.len() == 1 => match &inner[0] {
         rule @ Expr::Rule { .. } => rule.clone(),
-        _ => return Ok(unevaluated_value(args)),
+        _ => return Ok(unevaluated()),
       },
-      _ => return Ok(unevaluated_value(args)),
+      _ => return Ok(unevaluated()),
     },
-    _ => return Ok(unevaluated_value(args)),
+    _ => return Ok(unevaluated()),
   };
 
   // Bare symbol requested: return the Function[...] itself.
@@ -1382,14 +1376,15 @@ fn lcm(a: i128, b: i128) -> i128 {
 /// RecurrenceTable[{recurrence, initial_conditions...}, a, {n, nmin, nmax}]
 /// Iteratively evaluate a recurrence relation.
 pub fn recurrence_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || unevaluated("RecurrenceTable", args);
   if args.len() != 3 {
-    return Ok(recurrence_table_unevaluated(args));
+    return Ok(unevaluated());
   }
 
   // Extract function name (e.g. "a")
   let func_name = match &args[1] {
     Expr::Identifier(name) => name.clone(),
-    _ => return Ok(recurrence_table_unevaluated(args)),
+    _ => return Ok(unevaluated()),
   };
 
   // Extract the range spec: {n, nmax} (nmin defaults to 1) or {n, nmin, nmax}.
@@ -1397,7 +1392,7 @@ pub fn recurrence_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) if items.len() == 2 || items.len() == 3 => {
       let var = match &items[0] {
         Expr::Identifier(s) => s.clone(),
-        _ => return Ok(recurrence_table_unevaluated(args)),
+        _ => return Ok(unevaluated()),
       };
       let ints: Vec<i128> = items[1..]
         .iter()
@@ -1407,7 +1402,7 @@ pub fn recurrence_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         })
         .collect();
       if ints.len() != items.len() - 1 {
-        return Ok(recurrence_table_unevaluated(args));
+        return Ok(unevaluated());
       }
       if ints.len() == 1 {
         (var, 1, ints[0])
@@ -1415,13 +1410,13 @@ pub fn recurrence_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         (var, ints[0], ints[1])
       }
     }
-    _ => return Ok(recurrence_table_unevaluated(args)),
+    _ => return Ok(unevaluated()),
   };
 
   // Extract equations from first arg
   let equations = match &args[0] {
     Expr::List(eqs) => eqs.clone(),
-    _ => return Ok(recurrence_table_unevaluated(args)),
+    _ => return Ok(unevaluated()),
   };
 
   // Separate initial conditions from the recurrence
@@ -1432,7 +1427,7 @@ pub fn recurrence_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for eq in &equations {
     let (lhs, rhs) = match extract_equation(eq) {
       Some(pair) => pair,
-      None => return Ok(recurrence_table_unevaluated(args)),
+      None => return Ok(unevaluated()),
     };
 
     // Check if this is an initial condition: a[integer] == value
@@ -1453,14 +1448,14 @@ pub fn recurrence_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     // This is the recurrence relation
     if recurrence_eq.is_some() {
-      return Ok(recurrence_table_unevaluated(args));
+      return Ok(unevaluated());
     }
     recurrence_eq = Some((lhs, rhs));
   }
 
   let (rec_lhs, rec_rhs) = match recurrence_eq {
     Some(r) => r,
-    None => return Ok(recurrence_table_unevaluated(args)),
+    None => return Ok(unevaluated()),
   };
 
   // Determine which side has the "highest" a[n+k] to solve for
@@ -1477,7 +1472,7 @@ pub fn recurrence_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // RHS is a[n+offset], LHS is the expression
     (offset, rec_lhs)
   } else {
-    return Ok(recurrence_table_unevaluated(args));
+    return Ok(unevaluated());
   };
 
   // Now iterate: for each n from nmin to nmax, compute a[n]
@@ -1579,12 +1574,5 @@ fn substitute_func_values(
       operand: Box::new(substitute_func_values(operand, func_name, values)),
     },
     _ => expr.clone(),
-  }
-}
-
-fn recurrence_table_unevaluated(args: &[Expr]) -> Expr {
-  Expr::FunctionCall {
-    name: "RecurrenceTable".to_string(),
-    args: args.to_vec().into(),
   }
 }

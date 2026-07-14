@@ -17,19 +17,14 @@ use crate::InterpreterError;
 use crate::functions::molecule_ast::{
   DrawMolecule, drawable_molecule, molecule_ast,
 };
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 /// `MoleculePlot[mol]` — the 2-D structure diagram as a `Graphics` object.
 /// The argument may be a `Molecule[…]` object or any specification a plain
 /// `Molecule[…]` call accepts (a chemical name or SMILES string). Returns the
 /// call unevaluated if it does not describe a molecule.
 pub fn molecule_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "MoleculePlot".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("MoleculePlot", args));
   if args.len() != 1 {
     return unevaluated();
   }

@@ -1,6 +1,6 @@
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
-use crate::syntax::{BinaryOperator, Expr};
+use crate::syntax::{BinaryOperator, Expr, unevaluated};
 
 /// InterpolatingPolynomial[data, x] — find the polynomial that interpolates the data.
 ///
@@ -13,19 +13,13 @@ pub fn interpolating_polynomial_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
-    return Ok(Expr::FunctionCall {
-      name: "InterpolatingPolynomial".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("InterpolatingPolynomial", args));
   }
 
   let data = match &args[0] {
     Expr::List(items) => items.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "InterpolatingPolynomial".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("InterpolatingPolynomial", args));
     }
   };
 
@@ -48,24 +42,15 @@ pub fn interpolating_polynomial_ast(
               xs.push(pair[0].clone());
               ys.push(pair[1].clone());
             } else {
-              return Ok(Expr::FunctionCall {
-                name: "InterpolatingPolynomial".to_string(),
-                args: args.to_vec().into(),
-              });
+              return Ok(unevaluated("InterpolatingPolynomial", args));
             }
           } else {
-            return Ok(Expr::FunctionCall {
-              name: "InterpolatingPolynomial".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("InterpolatingPolynomial", args));
           }
         }
         (xs, ys)
       } else {
-        return Ok(Expr::FunctionCall {
-          name: "InterpolatingPolynomial".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("InterpolatingPolynomial", args));
       }
     } else {
       // {y1,y2,...} — x values are 1,2,3,...

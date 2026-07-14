@@ -2,7 +2,9 @@ use super::together::negate_expr;
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, ComparisonOp, Expr, expr_to_string};
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, expr_to_string, unevaluated,
+};
 
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
 
@@ -22,10 +24,7 @@ pub fn eliminate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     eq @ Expr::Comparison { .. } => vec![eq.clone()],
     eq @ Expr::FunctionCall { name, .. } if name == "Equal" => vec![eq.clone()],
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Eliminate".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Eliminate", args));
     }
   };
 
@@ -38,19 +37,13 @@ pub fn eliminate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Expr::Identifier(name) = item {
           vars.push(name.clone());
         } else {
-          return Ok(Expr::FunctionCall {
-            name: "Eliminate".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("Eliminate", args));
         }
       }
       vars
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Eliminate".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Eliminate", args));
     }
   };
 
@@ -314,18 +307,12 @@ pub fn solve_always_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
       .collect(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "SolveAlways".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("SolveAlways", args));
     }
   };
 
   if vars.is_empty() {
-    return Ok(Expr::FunctionCall {
-      name: "SolveAlways".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("SolveAlways", args));
   }
 
   // Handle True/False (e.g. 0 == 0 evaluates to True before reaching us)

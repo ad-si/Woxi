@@ -5,7 +5,9 @@
 
 use crate::InterpreterError;
 use crate::functions::math_ast::{is_sqrt, make_sqrt};
-use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
+};
 
 thread_local! {
   /// Active `NonConstants` context for `D`. Holds the symbol names that must be
@@ -50,12 +52,7 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if args[1..].iter().any(|a| option_name(a).is_some()) {
     let expr = &args[0];
-    let unevaluated = || {
-      Ok(Expr::FunctionCall {
-        name: "D".to_string(),
-        args: args.to_vec().into(),
-      })
-    };
+    let unevaluated = || unevaluated("D", args);
     let mut diff_vars: Vec<Expr> = Vec::new();
     let mut non_constants: Vec<Expr> = Vec::new();
     for a in &args[1..] {
@@ -74,18 +71,15 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           crate::emit_message(&format!(
             "D::optx: Unknown option {} in {}.",
             opt,
-            crate::syntax::expr_to_output(&Expr::FunctionCall {
-              name: "D".to_string(),
-              args: args.to_vec().into(),
-            })
+            crate::syntax::expr_to_output(&unevaluated())
           ));
-          return unevaluated();
+          return Ok(unevaluated());
         }
         None => diff_vars.push(a.clone()),
       }
     }
     if diff_vars.is_empty() {
-      return unevaluated();
+      return Ok(unevaluated());
     }
     // Differentiate against the real variables, treating every NonConstants
     // symbol as dependent on the differentiation variable. Its derivative is
@@ -188,10 +182,7 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && items.len() == 2
     && !matches!(&items[1], Expr::Integer(n) if *n >= 0)
   {
-    return Ok(Expr::FunctionCall {
-      name: "D".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("D", args));
   }
 
   // Handle D[expr, {var, n}] for higher-order derivatives.
@@ -536,10 +527,7 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let var_name = match &items[0] {
       Expr::Identifier(name) => name.clone(),
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "Integrate".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Integrate", args));
       }
     };
     let lo = &items[1];
@@ -693,29 +681,20 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         || is_infinity(hi)
         || is_negative_infinity(hi);
       if has_infinite_bound && is_nonfinite_result(&result) {
-        return Ok(Expr::FunctionCall {
-          name: "Integrate".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Integrate", args));
       }
       return Ok(result);
     }
 
     // Return unevaluated
-    return Ok(Expr::FunctionCall {
-      name: "Integrate".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Integrate", args));
   }
 
   // Indefinite integral: Integrate[expr, var]
   let var_name = match &args[1] {
     Expr::Identifier(name) => name.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Integrate".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Integrate", args));
     }
   };
 
@@ -796,10 +775,7 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .unwrap_or(simplified);
       Ok(evaluated)
     }
-    None => Ok(Expr::FunctionCall {
-      name: "Integrate".to_string(),
-      args: args.to_vec().into(),
-    }),
+    None => Ok(unevaluated("Integrate", args)),
   }
 }
 
@@ -5044,10 +5020,7 @@ fn arcsin_arccos_linear_antideriv(
       right: Box::new(Expr::Integer(p)),
     }
   };
-  let inverse_trig = Expr::FunctionCall {
-    name: fname.to_string(),
-    args: args.to_vec().into(),
-  };
+  let inverse_trig = unevaluated(fname, args);
   let x_times_atrig = Expr::BinaryOp {
     op: BinaryOperator::Times,
     left: Box::new(Expr::Identifier(var.to_string())),
@@ -10851,10 +10824,7 @@ fn one_sided_limit_ast(
   direction: LimitDirection,
 ) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
-    return Ok(Expr::FunctionCall {
-      name: fn_name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(fn_name, args));
   }
 
   // Build Limit[expr, rule, Direction -> dir]
@@ -10874,10 +10844,7 @@ fn one_sided_limit_ast(
   if let Expr::FunctionCall { name, .. } = &result
     && name == "Limit"
   {
-    return Ok(Expr::FunctionCall {
-      name: fn_name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(fn_name, args));
   }
 
   Ok(result)
@@ -12072,10 +12039,7 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // the call unevaluated rather than hanging.
   let cur_depth = LIMIT_DEPTH.with(|d| d.get());
   if cur_depth > 16 {
-    return Ok(Expr::FunctionCall {
-      name: "Limit".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Limit", args));
   }
   LIMIT_DEPTH.with(|d| d.set(cur_depth + 1));
   let _depth_guard = LimitDepthGuard;
@@ -12096,19 +12060,13 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let name = match pattern.as_ref() {
         Expr::Identifier(n) => n.clone(),
         _ => {
-          return Ok(Expr::FunctionCall {
-            name: "Limit".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("Limit", args));
         }
       };
       (name, replacement.as_ref().clone())
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Limit".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Limit", args));
     }
   };
 
@@ -12124,10 +12082,7 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Limit[f[x], x -> 0] is kept, but Limit[f[0] + x, x -> 0] = f[0] (the f[0]
   // argument is a var-free constant, so only the `+ x` term is substituted).
   if contains_unknown_function_of_var(&args[0], &var_name) {
-    return Ok(Expr::FunctionCall {
-      name: "Limit".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Limit", args));
   }
 
   // Handle limits at Infinity
@@ -12167,10 +12122,7 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         right: Box::new(inner),
       });
     }
-    return Ok(Expr::FunctionCall {
-      name: "Limit".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Limit", args));
   }
 
   // Functions with known poles (Zeta at 1, Gamma at nonpositive integers)
@@ -12437,10 +12389,7 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Return unevaluated
-  Ok(Expr::FunctionCall {
-    name: "Limit".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Limit", args))
 }
 
 /// The limit of `(z - z0)^m * f` used by `residue_ast`. Residue assumes the
@@ -12966,12 +12915,7 @@ fn rewrite_pole_models(
 }
 
 pub fn residue_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "Residue".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("Residue", args));
 
   if args.len() != 2 {
     return unevaluated();
@@ -13281,12 +13225,7 @@ fn rat_linear_solve(
 /// non-singular denominator system are handled; degenerate (singular) systems
 /// — e.g. the Padé of an already-rational function — return unevaluated.
 pub fn pade_approximant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "PadeApproximant".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("PadeApproximant", args));
   if args.len() != 2 {
     return unevaluated();
   }
@@ -13497,12 +13436,7 @@ fn poly_mul_trunc(
 /// `> n`. Only series with exact rational coefficients and integer step
 /// (`den == 1`) are handled; anything else is returned unevaluated.
 pub fn inverse_series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "InverseSeries".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("InverseSeries", args));
   if args.is_empty() || args.len() > 2 {
     return unevaluated();
   }
@@ -13987,12 +13921,7 @@ fn compose_series_pair(outer: &Expr, inner: &Expr) -> Option<Expr> {
 /// i.e. s1(s2(s3(...))). Inner series must have a zero constant term and the
 /// outer ones must be expanded about 0; otherwise the call is unevaluated.
 pub fn compose_series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "ComposeSeries".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("ComposeSeries", args));
   if args.len() < 2 {
     return unevaluated();
   }
@@ -14530,28 +14459,19 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let name = match &items[0] {
         Expr::Identifier(n) => n.clone(),
         _ => {
-          return Ok(Expr::FunctionCall {
-            name: "Series".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("Series", args));
         }
       };
       let order = match &items[2] {
         Expr::Integer(n) => *n,
         _ => {
-          return Ok(Expr::FunctionCall {
-            name: "Series".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("Series", args));
         }
       };
       (name, items[1].clone(), order)
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Series".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Series", args));
     }
   };
 
@@ -14779,10 +14699,7 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // Could not produce a clean expansion — leave the call symbolic instead of
     // emitting a bogus SeriesData.
-    return Ok(Expr::FunctionCall {
-      name: "Series".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Series", args));
   }
 
   // Series[QFactorial[n, q], {q, 0, k}] — expand the q-factorial directly
@@ -15369,10 +15286,7 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       current_expr = match differentiate(&current_expr, &var_name) {
         Ok(d) => simplify(d),
         Err(_) => {
-          return Ok(Expr::FunctionCall {
-            name: "Series".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("Series", args));
         }
       };
     }
@@ -15736,10 +15650,7 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   if bad_method_call {
-    return Ok(Expr::FunctionCall {
-      name: "NIntegrate".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("NIntegrate", args));
   }
 
   // Second argument must be {var, lo, hi}
@@ -16150,12 +16061,7 @@ pub fn grad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Grad expects 2 or 3 arguments".into(),
     ));
   }
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "Grad".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("Grad", args));
   let vars = match &args[1] {
     Expr::List(items) => items,
     _ => return unevaluated(),
@@ -16242,19 +16148,13 @@ pub fn wronskian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let funcs = match &args[0] {
     Expr::List(items) => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Wronskian".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Wronskian", args));
     }
   };
   let var_name = match &args[1] {
     Expr::Identifier(s) => s,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Wronskian".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Wronskian", args));
     }
   };
 
@@ -16299,12 +16199,7 @@ pub fn div_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Div expects 2 or 3 arguments".into(),
     ));
   }
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "Div".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("Div", args));
   let funcs = match &args[0] {
     Expr::List(items) => items,
     _ => return unevaluated(),
@@ -16402,12 +16297,7 @@ pub fn laplacian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Laplacian expects 2 or 3 arguments".into(),
     ));
   }
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "Laplacian".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("Laplacian", args));
   let vars = match &args[1] {
     Expr::List(items) => items,
     _ => return unevaluated(),
@@ -16481,22 +16371,14 @@ pub fn curl_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let vars = match &args[1] {
     Expr::List(items) => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Curl".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Curl", args));
     }
   };
 
   // The 3-argument form uses orthogonal-curvilinear scale factors and requires
   // a vector field of 2 (scalar result) or 3 (vector result) components.
   if args.len() == 3 {
-    let unevaluated = || {
-      Ok(Expr::FunctionCall {
-        name: "Curl".to_string(),
-        args: args.to_vec().into(),
-      })
-    };
+    let unevaluated = || Ok(unevaluated("Curl", args));
     let field = match &args[0] {
       Expr::List(items) => items,
       _ => return unevaluated(),
@@ -16523,19 +16405,13 @@ pub fn curl_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let var1 = match &vars[0] {
       Expr::Identifier(s) => s,
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "Curl".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Curl", args));
       }
     };
     let var2 = match &vars[1] {
       Expr::Identifier(s) => s,
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "Curl".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Curl", args));
       }
     };
     let dsdy = differentiate_expr(&args[0], var2)?;
@@ -16550,10 +16426,7 @@ pub fn curl_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let field = match &args[0] {
     Expr::List(items) => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Curl".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Curl", args));
     }
   };
 
@@ -16564,12 +16437,7 @@ pub fn curl_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // unevaluated).
   let n = vars.len();
   let (rank, dims) = tensor_shape(&args[0]);
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "Curl".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || unevaluated("Curl", args);
   let field_str = crate::syntax::expr_to_string(&args[0]);
   if rank == 1 {
     if dims[0] != n {
@@ -16577,7 +16445,7 @@ pub fn curl_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Curl::ndimv: There is no {}-dimensional curl for the {}-dimensional vector {}.",
         n, dims[0], field_str
       ));
-      return unevaluated();
+      return Ok(unevaluated());
     }
     // dims[0] == n: a 2- or 3-vector is computed below; higher-dimensional
     // vectors give an antisymmetric tensor that is left unevaluated.
@@ -16592,18 +16460,18 @@ pub fn curl_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::syntax::expr_to_string(&dims_list),
         n
       ));
-      return unevaluated();
+      return Ok(unevaluated());
     }
     if rank >= n {
       crate::emit_message(&format!(
         "Curl::hrank: Tensor expression {} does not have a curl because its rank, {}, is greater than or equal to the dimension {}.",
         field_str, rank, n
       ));
-      return unevaluated();
+      return Ok(unevaluated());
     }
     // rank < n with matching dimensions: a valid higher-rank curl that Woxi
     // does not yet compute; leave unevaluated rather than return a wrong value.
-    return unevaluated();
+    return Ok(unevaluated());
   }
 
   if field.len() == 2 && vars.len() == 2 {
@@ -16611,19 +16479,13 @@ pub fn curl_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let var1 = match &vars[0] {
       Expr::Identifier(s) => s,
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "Curl".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated());
       }
     };
     let var2 = match &vars[1] {
       Expr::Identifier(s) => s,
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "Curl".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated());
       }
     };
     let df2_dx1 = differentiate_expr(&field[1], var1)?;
@@ -16662,10 +16524,7 @@ pub fn curl_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     Ok(Expr::List(components.into()))
   } else {
-    Ok(Expr::FunctionCall {
-      name: "Curl".to_string(),
-      args: args.to_vec().into(),
-    })
+    Ok(unevaluated())
   }
 }
 
@@ -17088,12 +16947,7 @@ fn total_differentiate(
 /// returns the series truncated at order n (Normal[Series[f, {x, x0, n}]]).
 /// Infinite expansion points and other forms are left unevaluated.
 pub fn asymptotic_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "Asymptotic".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("Asymptotic", args));
   if args.len() != 2 {
     return unevaluated();
   }
@@ -17225,10 +17079,7 @@ fn leading_series_term(series: &Expr, var: &str, x0: &Expr) -> Option<Expr> {
 /// Uses Series expansion and iterative coefficient solving.
 pub fn asymptotic_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
-    return Ok(Expr::FunctionCall {
-      name: "AsymptoticSolve".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("AsymptoticSolve", args));
   }
 
   // Parse the equation: eqn can be f == 0 or just f (treated as f == 0)
@@ -17285,17 +17136,11 @@ pub fn asymptotic_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } => match pattern.as_ref() {
       Expr::Identifier(name) => (name.clone(), *replacement.clone()),
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "AsymptoticSolve".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("AsymptoticSolve", args));
       }
     },
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "AsymptoticSolve".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("AsymptoticSolve", args));
     }
   };
 
@@ -17305,28 +17150,19 @@ pub fn asymptotic_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) if items.len() == 3 => match &items[2] {
       Expr::Integer(n) => *n,
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "AsymptoticSolve".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("AsymptoticSolve", args));
       }
     },
     Expr::Integer(n) => *n,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "AsymptoticSolve".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("AsymptoticSolve", args));
     }
   };
 
   // When 3rd arg is a plain integer (not a list/rule with perturbation param),
   // Wolfram returns unevaluated.
   if matches!(&args[2], Expr::Integer(_)) {
-    return Ok(Expr::FunctionCall {
-      name: "AsymptoticSolve".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("AsymptoticSolve", args));
   }
 
   if order < 1 {
@@ -17350,10 +17186,7 @@ pub fn asymptotic_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (coeffs, _min_power) = match extract_series_coefficients(&series_result) {
     Some(c) => c,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "AsymptoticSolve".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("AsymptoticSolve", args));
     }
   };
 
@@ -17474,10 +17307,7 @@ pub fn asymptotic_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::List(result.into()))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "AsymptoticSolve".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("AsymptoticSolve", args)),
   }
 }
 
@@ -17525,10 +17355,7 @@ fn extract_series_coefficients(expr: &Expr) -> Option<(Vec<Expr>, i128)> {
 /// by building a Sum expression and evaluating it.
 pub fn discrete_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 4 {
-    return Ok(Expr::FunctionCall {
-      name: "DiscreteConvolve".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("DiscreteConvolve", args));
   }
 
   let f_expr = &args[0];
@@ -17536,19 +17363,13 @@ pub fn discrete_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n_var = match &args[2] {
     Expr::Identifier(name) => name.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "DiscreteConvolve".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("DiscreteConvolve", args));
     }
   };
   let m_var = match &args[3] {
     Expr::Identifier(name) => name.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "DiscreteConvolve".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("DiscreteConvolve", args));
     }
   };
 
@@ -17609,10 +17430,7 @@ pub fn discrete_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // the internal summation variable; in that case keep DiscreteConvolve
   // symbolic rather than leaking the raw `Sum[…, {k$dc, -Infinity, Infinity}]`.
   if !is_constant_wrt(&result, k_var) {
-    return Ok(Expr::FunctionCall {
-      name: "DiscreteConvolve".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("DiscreteConvolve", args));
   }
   Ok(result)
 }
@@ -17651,10 +17469,7 @@ pub fn frenet_serret_system_ast(
 
   let n = components.len();
   if !(2..=3).contains(&n) {
-    return Ok(Expr::FunctionCall {
-      name: "FrenetSerretSystem".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("FrenetSerretSystem", args));
   }
 
   let eval = |e: &Expr| -> Result<Expr, InterpreterError> {
@@ -17921,10 +17736,7 @@ pub fn asymptotic_integrate_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
-    return Ok(Expr::FunctionCall {
-      name: "AsymptoticIntegrate".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("AsymptoticIntegrate", args));
   }
 
   let f = &args[0];
@@ -17962,10 +17774,7 @@ pub fn asymptotic_integrate_ast(
         (items[0].clone(), items[1].clone(), false, n)
       }
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "AsymptoticIntegrate".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("AsymptoticIntegrate", args));
       }
     };
 
@@ -18083,10 +17892,7 @@ pub fn asymptotic_integrate_ast(
 
   // spec must be {x, x0, n}
   if !matches!(spec, Expr::List(items) if items.len() == 3) {
-    return Ok(Expr::FunctionCall {
-      name: "AsymptoticIntegrate".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("AsymptoticIntegrate", args));
   }
 
   // Try to compute the exact antiderivative first
@@ -18126,10 +17932,7 @@ pub fn asymptotic_integrate_ast(
         let var_name = match var {
           Expr::Identifier(s) => s.clone(),
           _ => {
-            return Ok(Expr::FunctionCall {
-              name: "AsymptoticIntegrate".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("AsymptoticIntegrate", args));
           }
         };
 
@@ -18207,10 +18010,7 @@ pub fn asymptotic_integrate_ast(
     _ => {}
   }
 
-  Ok(Expr::FunctionCall {
-    name: "AsymptoticIntegrate".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("AsymptoticIntegrate", args))
 }
 
 pub fn arc_curvature_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -18232,10 +18032,7 @@ pub fn arc_curvature_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(simplified);
   }
   // Fallback: return unevaluated
-  Ok(Expr::FunctionCall {
-    name: "ArcCurvature".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ArcCurvature", args))
 }
 
 /// Check if an expression contains a variable by name.
@@ -18433,12 +18230,7 @@ fn try_trig_delta(expr: &Expr, var: &str, step: &Expr) -> Option<Expr> {
 /// only when its top-level head is Plus, matching wolframscript. A specifier
 /// that is not a valid variable emits `General::ivar` and stays unevaluated.
 pub fn discrete_shift_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "DiscreteShift".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("DiscreteShift", args));
   if args.is_empty() {
     return unevaluated();
   }
@@ -18507,12 +18299,7 @@ pub fn discrete_shift_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// the operator in each variable. The result is simplified to match
 /// wolframscript.
 pub fn discrete_ratio_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "DiscreteRatio".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("DiscreteRatio", args));
   if args.is_empty() {
     return unevaluated();
   }
@@ -18621,20 +18408,14 @@ pub fn discrete_ratio_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// DifferenceDelta[f, {x, n, h}] = n-th order forward difference with step h
 pub fn difference_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
-    return Ok(Expr::FunctionCall {
-      name: "DifferenceDelta".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("DifferenceDelta", args));
   }
 
   let expr = &args[0];
 
   // Parse second argument: x, {x, n}, or {x, n, h}
   let (var_name, order, step) = if args.len() == 1 {
-    return Ok(Expr::FunctionCall {
-      name: "DifferenceDelta".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("DifferenceDelta", args));
   } else {
     match &args[1] {
       Expr::Identifier(name) => (name.clone(), 1usize, Expr::Integer(1)),
@@ -18642,20 +18423,14 @@ pub fn difference_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let var = match &items[0] {
           Expr::Identifier(name) => name.clone(),
           _ => {
-            return Ok(Expr::FunctionCall {
-              name: "DifferenceDelta".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("DifferenceDelta", args));
           }
         };
         let n = if items.len() >= 2 {
           match crate::functions::math_ast::expr_to_i128(&items[1]) {
             Some(n) if n >= 0 => n as usize,
             _ => {
-              return Ok(Expr::FunctionCall {
-                name: "DifferenceDelta".to_string(),
-                args: args.to_vec().into(),
-              });
+              return Ok(unevaluated("DifferenceDelta", args));
             }
           }
         } else {
@@ -18669,10 +18444,7 @@ pub fn difference_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         (var, n, h)
       }
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "DifferenceDelta".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("DifferenceDelta", args));
       }
     }
   };
@@ -18741,10 +18513,7 @@ pub fn difference_quotient_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 3 {
-    return Ok(Expr::FunctionCall {
-      name: "DifferenceQuotient".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("DifferenceQuotient", args));
   }
 
   let expr = &args[0];
@@ -18756,36 +18525,24 @@ pub fn difference_quotient_ast(
         let var = match &items[0] {
           Expr::Identifier(name) => name.clone(),
           _ => {
-            return Ok(Expr::FunctionCall {
-              name: "DifferenceQuotient".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("DifferenceQuotient", args));
           }
         };
         (var, items[1].clone())
       }
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "DifferenceQuotient".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("DifferenceQuotient", args));
       }
     }
   } else {
-    return Ok(Expr::FunctionCall {
-      name: "DifferenceQuotient".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("DifferenceQuotient", args));
   };
 
   let order = if args.len() == 3 {
     match crate::functions::math_ast::expr_to_i128(&args[2]) {
       Some(n) if n >= 0 => n as usize,
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "DifferenceQuotient".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("DifferenceQuotient", args));
       }
     }
   } else {

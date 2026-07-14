@@ -2,7 +2,7 @@
 use super::*;
 use crate::InterpreterError;
 use crate::functions::math_ast::expr_to_i128;
-use crate::syntax::{BinaryOperator, Expr};
+use crate::syntax::{BinaryOperator, Expr, unevaluated};
 
 /// Resultant[poly1, poly2, var] - Computes the resultant of two polynomials
 /// with respect to the given variable.
@@ -50,19 +50,13 @@ pub fn resultant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let deg1 = match max_power_int(poly1, &var) {
     Some(d) => d,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "Resultant".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Resultant", args));
     }
   };
   let deg2 = match max_power_int(poly2, &var) {
     Some(d) => d,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "Resultant".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Resultant", args));
     }
   };
 
@@ -174,10 +168,7 @@ pub(super) fn reduce_coeffs_modulus(
 /// reproduces wolframscript for every degree combination (m < n needs
 /// no swap or sign factor).
 pub fn subresultants_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "Subresultants".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = |args: &[Expr]| unevaluated("Subresultants", args);
   // A `Modulus -> p` option computes over GF(p) with the reduced inputs
   // (degrees drop where leading coefficients vanish mod p). Entries are
   // normalized to [0, p), except that for deg1 < deg2 wolframscript
@@ -415,10 +406,8 @@ pub fn subresultant_polynomials_ast(
       pos_idx.push(i);
     }
   }
-  let unevaluated = |rebuilt: &[Expr]| Expr::FunctionCall {
-    name: "SubresultantPolynomials".to_string(),
-    args: rebuilt.to_vec().into(),
-  };
+  let unevaluated =
+    |rebuilt: &[Expr]| unevaluated("SubresultantPolynomials", rebuilt);
   if pos_idx.len() != 3 {
     return Ok(unevaluated(&rebuilt));
   }
@@ -637,10 +626,8 @@ pub fn subresultant_polynomial_remainders_ast(
       pos_idx.push(i);
     }
   }
-  let unevaluated = |rebuilt: &[Expr]| Expr::FunctionCall {
-    name: "SubresultantPolynomialRemainders".to_string(),
-    args: rebuilt.to_vec().into(),
-  };
+  let unevaluated =
+    |rebuilt: &[Expr]| unevaluated("SubresultantPolynomialRemainders", rebuilt);
   if pos_idx.len() != 3 {
     return Ok(unevaluated(&rebuilt));
   }

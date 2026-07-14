@@ -1,31 +1,22 @@
 use crate::InterpreterError;
 use crate::functions::graphics::Color;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 pub fn voronoi_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
-      name: "VoronoiMesh".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("VoronoiMesh", args));
   }
 
   let pts_expr = match &args[0] {
     Expr::List(v) => v,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "VoronoiMesh".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("VoronoiMesh", args));
     }
   };
 
   // Empty list: return unevaluated (Wolfram issues VoronoiMesh::pts message)
   if pts_expr.is_empty() {
-    return Ok(Expr::FunctionCall {
-      name: "VoronoiMesh".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("VoronoiMesh", args));
   }
 
   // Parse input points

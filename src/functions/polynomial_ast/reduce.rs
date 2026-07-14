@@ -4,6 +4,7 @@ use super::*;
 use crate::InterpreterError;
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
+  unevaluated,
 };
 
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
@@ -46,10 +47,7 @@ pub fn reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Extract variable names
   let vars = extract_reduce_vars(&args[1]);
   if vars.is_empty() {
-    return Ok(Expr::FunctionCall {
-      name: "Reduce".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Reduce", args));
   }
 
   // Reduce[trigEq && bounded_range, x]: delegate to Solve, which specializes

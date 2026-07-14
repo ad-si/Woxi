@@ -5,7 +5,7 @@ use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
   DEFAULT_HEIGHT, DEFAULT_WIDTH, RESOLUTION_SCALE, parse_image_size,
 };
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 /// Which side of the plot the root of the dendrogram points to.
 #[derive(Clone, Copy, PartialEq)]
@@ -51,12 +51,7 @@ struct Node {
 /// `Dendrogram[data]` — hierarchically cluster `data` and render the
 /// resulting merge tree as a Graphics object.
 pub fn dendrogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "Dendrogram".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("Dendrogram", args));
 
   let mut orientation = Orientation::Top;
   let mut linkage = Linkage::Ward;

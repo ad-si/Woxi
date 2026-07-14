@@ -1,6 +1,6 @@
 use crate::InterpreterError;
 use crate::syntax::BinaryOperator;
-use crate::syntax::{Expr, ImageType};
+use crate::syntax::{Expr, ImageType, unevaluated};
 use std::sync::Arc;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -141,10 +141,7 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Image expects at least 1 argument".into(),
     ));
   }
-  let unevaluated = || Expr::FunctionCall {
-    name: "Image".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("Image", args);
 
   // Image[image] is idempotent: wolframscript returns the inner image
   // unchanged.
@@ -475,10 +472,7 @@ pub fn image_dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ImageDimensions::imginv: Expecting an image or graphics instead of {}.",
     crate::syntax::expr_to_string(&args[0])
   ));
-  Ok(Expr::FunctionCall {
-    name: "ImageDimensions".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ImageDimensions", args))
 }
 
 /// Extract `{width, height, depth}` for a valid Image3D[arg]. Returns
@@ -549,10 +543,7 @@ pub fn image_aspect_ratio_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::Image { width, height, .. } = &args[0] {
     let (w, h) = (*width as i128, *height as i128);
     if w == 0 {
-      return Ok(Expr::FunctionCall {
-        name: "ImageAspectRatio".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("ImageAspectRatio", args));
     }
     return Ok(ratio(h, w));
   }
@@ -566,10 +557,7 @@ pub fn image_aspect_ratio_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ImageAspectRatio::imginv: Expecting an image or graphics instead of {}.",
     crate::syntax::expr_to_string(&args[0])
   ));
-  Ok(Expr::FunctionCall {
-    name: "ImageAspectRatio".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ImageAspectRatio", args))
 }
 
 /// ImageChannels[img] — channel count (1/3/4 for 2D, derived from the
@@ -590,10 +578,7 @@ pub fn image_channels_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ImageChannels::imginv: Expecting an image or graphics instead of {}.",
     crate::syntax::expr_to_string(&args[0])
   ));
-  Ok(Expr::FunctionCall {
-    name: "ImageChannels".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ImageChannels", args))
 }
 
 /// Channel count for a valid Image3D[arg]; None for invalid shapes.
@@ -652,10 +637,7 @@ pub fn image_type_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ImageType::imginv: Expecting an image or graphics instead of {}.",
     crate::syntax::expr_to_string(&args[0])
   ));
-  Ok(Expr::FunctionCall {
-    name: "ImageType".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ImageType", args))
 }
 
 /// Resolve the underlying type tag for a valid Image3D[arg]. Defaults
@@ -788,10 +770,7 @@ pub fn image_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "ImageData::imginv: Expecting an image or graphics instead of {}.",
         crate::syntax::expr_to_string(&args[0])
       ));
-      Ok(Expr::FunctionCall {
-        name: "ImageData".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("ImageData", args))
     }
   }
 }
@@ -828,10 +807,7 @@ pub fn pixel_value_positions_ast(
       "PixelValuePositions::imginv: Expecting an image or graphics instead of {}.",
       crate::syntax::expr_to_string(&args[0])
     ));
-    return Ok(Expr::FunctionCall {
-      name: "PixelValuePositions".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("PixelValuePositions", args));
   };
 
   let ch = *channels as usize;
@@ -844,10 +820,7 @@ pub fn pixel_value_positions_ast(
         match crate::functions::math_ast::try_eval_to_f64(it) {
           Some(v) => vs.push(v),
           None => {
-            return Ok(Expr::FunctionCall {
-              name: "PixelValuePositions".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("PixelValuePositions", args));
           }
         }
       }
@@ -856,10 +829,7 @@ pub fn pixel_value_positions_ast(
     other => match crate::functions::math_ast::try_eval_to_f64(other) {
       Some(v) => vec![v],
       None => {
-        return Ok(Expr::FunctionCall {
-          name: "PixelValuePositions".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("PixelValuePositions", args));
       }
     },
   };
@@ -873,10 +843,7 @@ pub fn pixel_value_positions_ast(
     match crate::functions::math_ast::try_eval_to_f64(&args[2]) {
       Some(v) => v,
       None => {
-        return Ok(Expr::FunctionCall {
-          name: "PixelValuePositions".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("PixelValuePositions", args));
       }
     }
   } else {
@@ -933,10 +900,7 @@ pub fn image_color_space_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ImageColorSpace::imginv: Expecting an image or graphics instead of {}.",
     crate::syntax::expr_to_string(&args[0])
   ));
-  Ok(Expr::FunctionCall {
-    name: "ImageColorSpace".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ImageColorSpace", args))
 }
 
 // ─── Processing functions (Phase 2) ────────────────────────────────────────
@@ -1070,10 +1034,7 @@ pub fn color_negate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       let Some((r, g, b, alpha)) = color_directive_to_rgb(&args[0]) else {
         // Symbolic components: leave unevaluated.
-        return Ok(Expr::FunctionCall {
-          name: "ColorNegate".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("ColorNegate", args));
       };
       let (nr, ng, nb) = (1.0 - r, 1.0 - g, 1.0 - b);
       let mut out = if name == "Hue" {
@@ -1102,10 +1063,7 @@ pub fn color_negate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "ColorNegate::imginv: {} should be a valid image, a color directive or a list of such objects.",
         crate::syntax::expr_to_string(other)
       ));
-      Ok(Expr::FunctionCall {
-        name: "ColorNegate".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("ColorNegate", args))
     }
   }
 }
@@ -1126,10 +1084,7 @@ pub fn binarize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Binarize::imginv: Expecting an image or graphics instead of {}.",
       crate::syntax::expr_to_string(&args[0])
     ));
-    return Ok(Expr::FunctionCall {
-      name: "Binarize".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Binarize", args));
   }
 
   // Threshold can be a single number (strict >) or a {t1, t2} pair
@@ -1221,10 +1176,7 @@ pub fn blur_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Blur::imginv: Expecting an image or graphics instead of {}.",
       crate::syntax::expr_to_string(&args[0])
     ));
-    return Ok(Expr::FunctionCall {
-      name: "Blur".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Blur", args));
   };
 
   let radius = if args.len() == 2 {
@@ -1328,10 +1280,7 @@ pub fn thumbnail_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Thumbnail::imginv: Expecting an image or graphics instead of {}.",
       crate::syntax::expr_to_string(&args[0])
     ));
-    return Ok(Expr::FunctionCall {
-      name: "Thumbnail".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Thumbnail", args));
   }
   let size_arg = if args.len() == 2 {
     expr_to_f64(&args[1])? as i64
@@ -1368,10 +1317,7 @@ pub fn sharpen_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Sharpen::imginv: Expecting an image or graphics instead of {}.",
       crate::syntax::expr_to_string(&args[0])
     ));
-    return Ok(Expr::FunctionCall {
-      name: "Sharpen".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Sharpen", args));
   };
 
   let radius = if args.len() == 2 {
@@ -1481,10 +1427,7 @@ pub fn image_adjust_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ImageAdjust::imginv: Expecting an image or graphics instead of {}.",
       crate::syntax::expr_to_string(&args[0])
     ));
-    return Ok(Expr::FunctionCall {
-      name: "ImageAdjust".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("ImageAdjust", args));
   };
 
   // 1-arg form: rescale to [0, 1] using actual min/max.
@@ -1691,10 +1634,7 @@ pub fn image_reflect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "ImageReflect::imgvinv: Expecting an image, graphics or video instead of {}.",
         crate::syntax::expr_to_string(&args[0])
       ));
-      Ok(Expr::FunctionCall {
-        name: "ImageReflect".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("ImageReflect", args))
     }
   }
 }
@@ -1714,10 +1654,7 @@ pub fn image_rotate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ImageRotate::imginv: Expecting an image or graphics instead of {}.",
       crate::syntax::expr_to_string(&args[0])
     ));
-    return Ok(Expr::FunctionCall {
-      name: "ImageRotate".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("ImageRotate", args));
   }
 
   let pi = std::f64::consts::PI;
@@ -1753,10 +1690,7 @@ pub fn image_rotate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     0
   } else {
     // Non-90° rotations aren't supported; pass through unevaluated.
-    return Ok(Expr::FunctionCall {
-      name: "ImageRotate".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("ImageRotate", args));
   };
 
   let pixel = |r: usize, c: usize| -> &[f64] {
@@ -1823,10 +1757,7 @@ pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ImageResize::imginv: Expecting an image or graphics instead of {}.",
       crate::syntax::expr_to_string(&args[0])
     ));
-    return Ok(Expr::FunctionCall {
-      name: "ImageResize".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("ImageResize", args));
   }
 
   if args.len() != 2 {
@@ -1966,10 +1897,7 @@ pub fn image_crop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if args.len() == 2 {
     // ImageCrop[image, size] isn't implemented yet; return unevaluated.
-    return Ok(Expr::FunctionCall {
-      name: "ImageCrop".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("ImageCrop", args));
   }
 
   // Auto-crop: trim any uniform border that matches the (0, 0) pixel.
@@ -2095,10 +2023,7 @@ pub fn image_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               (expr_to_f64(&p[0])?, expr_to_f64(&p[1])?)
             }
             _ => {
-              return Ok(Expr::FunctionCall {
-                name: "ImageTrim".to_string(),
-                args: args.to_vec().into(),
-              });
+              return Ok(unevaluated("ImageTrim", args));
             }
           };
           let (bx, by) = match &outer[1] {
@@ -2106,19 +2031,13 @@ pub fn image_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               (expr_to_f64(&p[0])?, expr_to_f64(&p[1])?)
             }
             _ => {
-              return Ok(Expr::FunctionCall {
-                name: "ImageTrim".to_string(),
-                args: args.to_vec().into(),
-              });
+              return Ok(unevaluated("ImageTrim", args));
             }
           };
           (ax.min(bx), ay.min(by), ax.max(bx), ay.max(by))
         }
         _ => {
-          return Ok(Expr::FunctionCall {
-            name: "ImageTrim".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("ImageTrim", args));
         }
       };
 
@@ -2172,10 +2091,7 @@ pub fn image_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         image_type,
       })
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "ImageTrim".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("ImageTrim", args)),
   }
 }
 
@@ -2323,10 +2239,7 @@ pub fn edge_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "EdgeDetect::imginv: Expecting an image or graphics instead of {}.",
         crate::syntax::expr_to_string(&args[0])
       ));
-      Ok(Expr::FunctionCall {
-        name: "EdgeDetect".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("EdgeDetect", args))
     }
   }
 }
@@ -2465,10 +2378,7 @@ pub fn dominant_colors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "DominantColors::imginv: Expecting an image or graphics instead of {{{}}}.",
       crate::syntax::expr_to_string(&args[0])
     ));
-    return Ok(Expr::FunctionCall {
-      name: "DominantColors".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("DominantColors", args));
   }
 
   if args.len() > 2 {
@@ -3302,10 +3212,7 @@ fn pointwise_image_op(
     name,
     crate::syntax::expr_to_string(bad)
   ));
-  Ok(Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated(name, args))
 }
 
 /// ImageAdd[img, x1, x2, …] — pointwise addition, threading through
@@ -3435,16 +3342,10 @@ pub fn pixel_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "PixelValue::imginv: Expecting an image or graphics instead of {}.",
       crate::syntax::expr_to_string(&args[0])
     ));
-    return Ok(Expr::FunctionCall {
-      name: "PixelValue".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("PixelValue", args));
   };
   let Expr::List(pos) = &args[1] else {
-    return Ok(Expr::FunctionCall {
-      name: "PixelValue".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("PixelValue", args));
   };
   let coord = |e: &Expr| -> Option<i64> {
     match e {
@@ -3478,10 +3379,7 @@ pub fn pixel_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(make_zero());
   }
   let (Some(x), Some(y)) = (coord(&pos[0]), coord(&pos[1])) else {
-    return Ok(Expr::FunctionCall {
-      name: "PixelValue".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("PixelValue", args));
   };
   if x < 1 || y < 1 || x > *width as i64 || y > *height as i64 {
     return Ok(make_zero());
@@ -3508,10 +3406,7 @@ pub fn text_recognize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "TextRecognize::imgvinv: Expecting an image, graphics or video instead of {}.",
       crate::syntax::expr_to_string(&args[0])
     ));
-    return Ok(Expr::FunctionCall {
-      name: "TextRecognize".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("TextRecognize", args));
   }
   // Two-arg form with a structural level: `Line`, `Word`, `Character`,
   // `Block` — wolframscript returns an empty list when no text is
@@ -3536,10 +3431,7 @@ pub fn text_recognize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// output for purely numeric input. Larger radii or non-list inputs stay
 /// symbolic.
 pub fn gradient_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "GradientFilter".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("GradientFilter", args);
   if args.len() != 2 {
     return Ok(unevaluated());
   }
@@ -3876,10 +3768,7 @@ pub fn median_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::syntax::expr_to_string(&args[0])
     ));
   }
-  Ok(Expr::FunctionCall {
-    name: "MedianFilter".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("MedianFilter", args))
 }
 
 /// MeanFilter[arg, r] — replace every element by the mean of the values
@@ -3994,10 +3883,7 @@ fn aggregating_filter_ast(
       crate::syntax::expr_to_string(&args[0])
     ));
   }
-  Ok(Expr::FunctionCall {
-    name: filter_name.to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated(filter_name, args))
 }
 
 /// ImageConvolve[img, kernel] — 2D convolution per channel with
@@ -4023,18 +3909,12 @@ pub fn image_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ImageConvolve::imginv: Expecting an image or graphics instead of {}.",
       crate::syntax::expr_to_string(&args[0])
     ));
-    return Ok(Expr::FunctionCall {
-      name: "ImageConvolve".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("ImageConvolve", args));
   };
 
   // Parse the kernel: a 1D or 2D nested list of numbers.
   let Expr::List(rows) = &args[1] else {
-    return Ok(Expr::FunctionCall {
-      name: "ImageConvolve".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("ImageConvolve", args));
   };
   if rows.is_empty() {
     return Ok(args[0].clone());
@@ -4050,16 +3930,10 @@ pub fn image_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut kernel = Vec::with_capacity(krows * kcols);
   for row in rows.iter() {
     let Expr::List(items) = row else {
-      return Ok(Expr::FunctionCall {
-        name: "ImageConvolve".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("ImageConvolve", args));
     };
     if items.len() != kcols {
-      return Ok(Expr::FunctionCall {
-        name: "ImageConvolve".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("ImageConvolve", args));
     }
     for v in items.iter() {
       kernel.push(expr_to_f64(v)?);
@@ -4113,10 +3987,7 @@ pub fn gaussian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::syntax::expr_to_string(&args[0])
       ));
     }
-    return Ok(Expr::FunctionCall {
-      name: "GaussianFilter".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("GaussianFilter", args));
   }
   // Parse `r` (integer radius) and optional `sigma` from the second
   // argument. Supported shapes: `r` (integer) → sigma = r/2;
@@ -4129,29 +4000,20 @@ pub fn gaussian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Integer(n) if *n >= 1 => *n as usize,
         Expr::Real(f) if *f >= 1.0 => f.floor() as usize,
         _ => {
-          return Ok(Expr::FunctionCall {
-            name: "GaussianFilter".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("GaussianFilter", args));
         }
       };
       let sigma = match &items[1] {
         Expr::Integer(n) if *n > 0 => *n as f64,
         Expr::Real(f) if *f > 0.0 => *f,
         _ => {
-          return Ok(Expr::FunctionCall {
-            name: "GaussianFilter".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("GaussianFilter", args));
         }
       };
       (r_int, sigma)
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "GaussianFilter".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("GaussianFilter", args));
     }
   };
 
@@ -4164,10 +4026,7 @@ pub fn gaussian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .filter_map(crate::functions::math_ast::try_eval_to_f64)
       .collect();
     if data.len() != items.len() {
-      return Ok(Expr::FunctionCall {
-        name: "GaussianFilter".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("GaussianFilter", args));
     }
     let result =
       crate::functions::math_ast::convolve_edge_padded(&data, &kernel);
@@ -4225,10 +4084,7 @@ pub fn gaussian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "GaussianFilter::arg1: The first argument {} should be a rectangular array, image or video.",
     crate::syntax::expr_to_string(&args[0])
   ));
-  Ok(Expr::FunctionCall {
-    name: "GaussianFilter".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("GaussianFilter", args))
 }
 
 /// Build the 1D Gaussian-filter kernel of half-width `radius` and
@@ -4315,10 +4171,7 @@ fn expr_to_f64_opt(e: &Expr) -> Option<f64> {
 }
 
 fn symbolic_gaussian_matrix(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  Ok(Expr::FunctionCall {
-    name: "GaussianMatrix".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("GaussianMatrix", args))
 }
 
 /// Colorize[matrix] — colorize an integer-label matrix as an RGB
@@ -4382,10 +4235,7 @@ pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::syntax::expr_to_string(&args[0])
     ));
   }
-  Ok(Expr::FunctionCall {
-    name: "Colorize".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Colorize", args))
 }
 
 /// MorphologicalBinarize[img, {t1, t2}] / [img, t] — hysteresis
@@ -4398,10 +4248,7 @@ pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn morphological_binarize_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "MorphologicalBinarize".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("MorphologicalBinarize", args);
   let Expr::Image {
     width,
     height,
@@ -4485,10 +4332,7 @@ pub fn morphological_binarize_ast(
 /// outside. Real32 images compute in f32, everything else in f64.
 pub fn image_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use crate::syntax::ImageType;
-  let unevaluated = || Expr::FunctionCall {
-    name: "ImageValue".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("ImageValue", args);
   let Expr::Image {
     width,
     height,
@@ -4676,10 +4520,7 @@ fn filling_marker(mask: &[f64], w: usize, h: usize, add: f64) -> Vec<f64> {
 ///   basin; the result is Real64 for Real64 inputs and Real32 otherwise.
 pub fn filling_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use crate::syntax::ImageType;
-  let unevaluated = || Expr::FunctionCall {
-    name: "FillingTransform".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("FillingTransform", args);
   let Expr::Image {
     width,
     height,
@@ -4920,10 +4761,7 @@ const EDT_FAR: f64 = 1e18;
 /// garbage in wolframscript and are deliberately given sane numeric
 /// semantics here instead.
 pub fn distance_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "DistanceTransform".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("DistanceTransform", args);
   let Expr::Image {
     width,
     height,
@@ -5033,10 +4871,7 @@ const COLOR_COMBINE_SPACES: &[(&str, usize)] = &[
 /// type in the order Bit < Byte < Bit16 < Real32 < Real64.
 pub fn color_combine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use crate::syntax::ImageType;
-  let unevaluated = || Expr::FunctionCall {
-    name: "ColorCombine".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("ColorCombine", args);
 
   let color_space: Option<(&'static str, usize)> = if args.len() == 2 {
     let found = match &args[1] {
@@ -5170,10 +5005,7 @@ pub fn color_separate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ColorSeparate::imginv: Expecting an image or graphics instead of {}.",
       crate::syntax::expr_to_string(&args[0])
     ));
-    return Ok(Expr::FunctionCall {
-      name: "ColorSeparate".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("ColorSeparate", args));
   };
   let ch = *channels as usize;
   let n = (*width as usize) * (*height as usize);
@@ -5202,10 +5034,7 @@ pub fn color_quantize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::syntax::expr_to_string(&args[0])
     ));
   }
-  Ok(Expr::FunctionCall {
-    name: "ColorQuantize".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ColorQuantize", args))
 }
 
 /// Threshold[data]            replaces values with |x| ≤ 10^-10 by zero.
@@ -5215,10 +5044,7 @@ pub fn color_quantize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// wolframscript. Non-numeric leaves trigger Threshold::nlist and the
 /// call is returned unevaluated.
 pub fn threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "Threshold".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("Threshold", args);
   let is_array_like = matches!(
     &args[0],
     Expr::Image { .. } | Expr::List(_) | Expr::FunctionCall { .. }
@@ -5659,10 +5485,7 @@ fn partition_axis_blocks(
 /// keeping clipped partial blocks); sizes and offsets are floored, offsets
 /// clamped to >= 1. Decoded from wolframscript probes.
 pub fn image_partition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "ImagePartition".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("ImagePartition", args);
   let Expr::Image {
     color_space,
     width,
@@ -5828,10 +5651,7 @@ pub fn image_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "ImageTake::imginv: Expecting an image or graphics instead of {}.",
         crate::syntax::expr_to_string(&args[0])
       ));
-      Ok(Expr::FunctionCall {
-        name: "ImageTake".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("ImageTake", args))
     }
   }
 }
@@ -6670,10 +6490,7 @@ pub fn image_assemble_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             "ImageAssemble::row: \
                Expecting images of the same height in one row.",
           );
-          return Ok(Expr::FunctionCall {
-            name: "ImageAssemble".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("ImageAssemble", args));
         }
       }
     }
@@ -6687,10 +6504,7 @@ pub fn image_assemble_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             "ImageAssemble::col: \
                Expecting images of the same width in one column.",
           );
-          return Ok(Expr::FunctionCall {
-            name: "ImageAssemble".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("ImageAssemble", args));
         }
       }
     }
@@ -7520,12 +7334,7 @@ fn cmc_distance(
 /// nor trigger). Arrays give a binary SparseArray; a single-channel image
 /// gives a binary ("Bit") image.
 pub fn crossing_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "CrossingDetect".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("CrossingDetect", args));
   if args.is_empty() || args.len() > 2 {
     return unevaluated();
   }

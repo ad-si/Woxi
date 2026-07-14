@@ -13,15 +13,12 @@
 
 use crate::InterpreterError;
 use crate::syntax::Expr;
-use crate::syntax::{BinaryOperator, UnaryOperator};
+use crate::syntax::{BinaryOperator, UnaryOperator, unevaluated};
 
 pub fn dirichlet_character_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "DirichletCharacter".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = |args: &[Expr]| unevaluated("DirichletCharacter", args);
   if args.len() != 3 {
     return Ok(unevaluated(args));
   }
@@ -369,10 +366,7 @@ fn total_rotation(factors: &[Factor], exps: &[i128], a: i128) -> (i128, i128) {
 /// with higher-order values stay unevaluated.
 pub fn dirichlet_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use num_bigint::BigInt;
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "DirichletL".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = |args: &[Expr]| unevaluated("DirichletL", args);
   if args.len() != 3 {
     return Ok(unevaluated(args));
   }
@@ -911,10 +905,7 @@ fn scale_by_coeffs(core: Expr, a: &ConvTerm, b: &ConvTerm) -> Expr {
 }
 
 pub fn dirichlet_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "DirichletConvolve".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("DirichletConvolve", args);
   let (f, g, var_expr, m) = (&args[0], &args[1], &args[2], &args[3]);
   let var = match var_expr {
     Expr::Identifier(s) => s.clone(),

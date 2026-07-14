@@ -17,7 +17,7 @@
 //! inputs are passed through / left unevaluated.
 
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 /// Transliterate[s] or Transliterate[{s1, s2, ...}]
 pub fn transliterate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -41,10 +41,7 @@ pub fn transliterate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Expr::List(out.into()))
     }
     // Non-string arguments stay unevaluated, like in wolframscript.
-    _ => Ok(Expr::FunctionCall {
-      name: "Transliterate".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("Transliterate", args)),
   }
 }
 

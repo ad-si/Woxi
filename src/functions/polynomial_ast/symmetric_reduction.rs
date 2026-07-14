@@ -10,7 +10,7 @@
 //! lexicographic monomial order.
 
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 fn eval(e: Expr) -> Result<Expr, InterpreterError> {
   crate::evaluator::evaluate_expr_to_expr(&e)
@@ -134,12 +134,7 @@ fn negative_numeric(e: &Expr) -> bool {
 pub fn power_symmetric_polynomial_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "PowerSymmetricPolynomial".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("PowerSymmetricPolynomial", args));
   if args.len() != 2 {
     // The one-argument form is a formal object.
     return unevaluated();
@@ -198,12 +193,7 @@ pub fn power_symmetric_polynomial_ast(
 pub fn symmetric_reduction_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "SymmetricReduction".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("SymmetricReduction", args));
   if args.len() != 2 && args.len() != 3 {
     return unevaluated();
   }

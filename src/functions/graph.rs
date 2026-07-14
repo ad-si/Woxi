@@ -1,6 +1,8 @@
 use crate::InterpreterError;
 use crate::functions::graphics::{Color, graphics_ast, parse_color};
-use crate::syntax::{BinaryOperator, Expr, expr_to_output, expr_to_string};
+use crate::syntax::{
+  BinaryOperator, Expr, expr_to_output, expr_to_string, unevaluated,
+};
 use petgraph::graph::{DiGraph, NodeIndex, UnGraph};
 use petgraph::visit::EdgeRef;
 use std::collections::HashMap;
@@ -192,38 +194,26 @@ fn build_render_graph(
 /// via the Graphics pipeline, using petgraph as the underlying data structure.
 pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
-    return Ok(Expr::FunctionCall {
-      name: "Graph".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Graph", args));
   }
 
   let vertices = match &args[0] {
     Expr::List(v) => v.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Graph".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Graph", args));
     }
   };
 
   let raw_edges = match &args[1] {
     Expr::List(e) => e.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Graph".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Graph", args));
     }
   };
 
   let n = vertices.len();
   if n == 0 {
-    return Ok(Expr::FunctionCall {
-      name: "Graph".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Graph", args));
   }
 
   // Parse options from remaining args
@@ -1759,12 +1749,7 @@ fn fc_parse_count(arg: Option<&Expr>) -> Option<usize> {
 /// Core FindCycle implementation. Returns a list of cycles, each cycle being a
 /// list of edge expressions (DirectedEdge / UndirectedEdge).
 pub fn find_cycle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "FindCycle".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("FindCycle", args));
 
   if args.is_empty() || args.len() > 3 {
     return unevaluated();
@@ -2040,17 +2025,9 @@ fn parse_vertex_style(
 pub fn find_fundamental_cycles_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "FindFundamentalCycles".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("FindFundamentalCycles", args));
   let call_display = || {
-    expr_to_string(&Expr::FunctionCall {
-      name: "FindFundamentalCycles".to_string(),
-      args: args.to_vec().into(),
-    })
+    expr_to_string(&crate::syntax::unevaluated("FindFundamentalCycles", args))
   };
 
   if args.is_empty() {
@@ -2209,12 +2186,7 @@ pub fn find_fundamental_cycles_ast(
 }
 
 pub fn find_shortest_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let inert = || {
-    Ok(Expr::FunctionCall {
-      name: "FindShortestPath".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let inert = || Ok(unevaluated("FindShortestPath", args));
   if args.len() < 3 {
     return inert();
   }
@@ -2431,10 +2403,7 @@ mod ordered_f64 {
 pub fn transitive_closure_graph_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "TransitiveClosureGraph".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = |args: &[Expr]| unevaluated("TransitiveClosureGraph", args);
   if args.len() != 1 {
     return Ok(unevaluated(args));
   }
@@ -2537,10 +2506,8 @@ pub fn transitive_closure_graph_ast(
 pub fn transitive_reduction_graph_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "TransitiveReductionGraph".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated =
+    |args: &[Expr]| unevaluated("TransitiveReductionGraph", args);
   if args.len() != 1 {
     return Ok(unevaluated(args));
   }
@@ -2646,10 +2613,7 @@ pub fn transitive_reduction_graph_ast(
 /// the readout order wolframscript produces from its reversed adjacency
 /// structure.
 pub fn reverse_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "ReverseGraph".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("ReverseGraph", args);
   let not_a_graph = || {
     crate::emit_message(&format!(
       "ReverseGraph::graph: A graph object is expected at position 1 in {}.",
@@ -2733,10 +2697,7 @@ pub fn reverse_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// the vertex-list positions of their endpoints, matching wolframscript. The
 /// two-argument conversion forms ("Acyclic", "Random", …) are not handled.
 pub fn directed_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "DirectedGraph".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("DirectedGraph", args);
   let not_a_graph = || {
     crate::emit_message(&format!(
       "DirectedGraph::graph: A graph object is expected at position 1 in {}.",
@@ -2826,10 +2787,8 @@ pub fn directed_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn find_independent_vertex_set_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "FindIndependentVertexSet".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated =
+    |args: &[Expr]| unevaluated("FindIndependentVertexSet", args);
   if args.len() != 1 {
     return Ok(unevaluated(args));
   }
@@ -2921,10 +2880,7 @@ pub fn find_independent_vertex_set_ast(
 /// sequentially with shared visited state. Unknown vertices emit
 /// VertexComponent::inv.
 pub fn vertex_component_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "VertexComponent".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = |args: &[Expr]| unevaluated("VertexComponent", args);
   if args.len() != 2 {
     return Ok(unevaluated(args));
   }
@@ -3034,10 +2990,7 @@ pub fn vertex_reach_component_ast(
   args: &[Expr],
   out: bool,
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated(name, args);
   if args.len() < 2 || args.len() > 3 {
     return Ok(unevaluated());
   }
@@ -3158,10 +3111,7 @@ pub fn vertex_reach_component_ast(
 pub fn weighted_adjacency_graph_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "WeightedAdjacencyGraph".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = |args: &[Expr]| unevaluated("WeightedAdjacencyGraph", args);
   let (vertices, matrix) = match args {
     [Expr::List(m)] => (None, m),
     [Expr::List(v), Expr::List(m)] => (Some(v.clone()), m),
@@ -3233,10 +3183,7 @@ pub fn weighted_adjacency_graph_ast(
 pub fn find_minimum_cost_flow_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "FindMinimumCostFlow".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = |args: &[Expr]| unevaluated("FindMinimumCostFlow", args);
   if args.len() != 3 {
     return Ok(unevaluated(args));
   }
@@ -3387,10 +3334,7 @@ pub fn find_minimum_cost_flow_ast(
 pub fn nearest_neighbor_graph_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "NearestNeighborGraph".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = |args: &[Expr]| unevaluated("NearestNeighborGraph", args);
   if args.is_empty() || args.len() > 2 {
     return Ok(unevaluated(args));
   }
@@ -3618,10 +3562,7 @@ pub fn connectivity_ast(
   name: &str,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated(name, args);
   // Extract Graph[vertex list, undirected edge list]
   let (vertices, edge_exprs) = match &args[0] {
     Expr::FunctionCall {
@@ -3729,10 +3670,7 @@ pub fn connectivity_ast(
         "{}::inv: The argument {} in {} is not a valid vertex.",
         name,
         pos,
-        expr_to_string(&Expr::FunctionCall {
-          name: name.to_string(),
-          args: args.to_vec().into(),
-        })
+        expr_to_string(&unevaluated())
       ));
     };
     let s = match find(&args[1]) {
@@ -3811,18 +3749,9 @@ pub fn connectivity_ast(
 // artifact that is not replicated; k <= 0 performs no pruning here.
 
 pub fn k_core_components_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "KCoreComponents".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("KCoreComponents", args);
   let call_str = || {
-    crate::syntax::format_expr(
-      &Expr::FunctionCall {
-        name: "KCoreComponents".to_string(),
-        args: args.to_vec().into(),
-      },
-      crate::syntax::ExprForm::Output,
-    )
+    crate::syntax::format_expr(&unevaluated(), crate::syntax::ExprForm::Output)
   };
   let (vertices, edge_exprs) = match &args[0] {
     Expr::FunctionCall {
@@ -3988,18 +3917,9 @@ fn bron_kerbosch(
 }
 
 pub fn find_clique_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "FindClique".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("FindClique", args);
   let call_str = || {
-    crate::syntax::format_expr(
-      &Expr::FunctionCall {
-        name: "FindClique".to_string(),
-        args: args.to_vec().into(),
-      },
-      crate::syntax::ExprForm::Output,
-    )
+    crate::syntax::format_expr(&unevaluated(), crate::syntax::ExprForm::Output)
   };
   let inv = |arg: &Expr| {
     crate::emit_message(&format!(
@@ -4171,10 +4091,7 @@ pub fn find_clique_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 // display order for explicitly-constructed graphs is an igraph artifact
 // that is not replicated.
 pub fn subgraph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "Subgraph".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("Subgraph", args);
   let (vertices, edge_exprs) = match &args[0] {
     Expr::FunctionCall {
       name: gname,
@@ -4245,10 +4162,7 @@ pub fn subgraph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// edges from the upper triangle; a non-symmetric one gives directed edges
 /// row by row. Trailing arguments (Graph options) pass through.
 pub fn kirchhoff_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "KirchhoffGraph".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("KirchhoffGraph", args);
   if args.is_empty() {
     return Ok(unevaluated());
   }
@@ -4364,10 +4278,7 @@ pub fn kirchhoff_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// order, -2 loops in place), then undirected non-loop edges, then the
 /// undirected self-loops.
 pub fn incidence_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "IncidenceGraph".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("IncidenceGraph", args);
   let (names, matrix_expr, matrix_pos) = match args {
     [m] => (None, m, 1),
     [Expr::List(v), m] => (Some(v), m, 2),
@@ -4471,10 +4382,7 @@ pub fn incidence_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 // orientation wolframscript uses for explicitly-constructed graphs is an
 // igraph artifact that is not replicated).
 pub fn line_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "LineGraph".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("LineGraph", args);
   let edge_exprs = match &args[0] {
     Expr::FunctionCall {
       name: gname,
@@ -4539,10 +4447,7 @@ pub fn line_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 // (and for explicitly-constructed graphs) is an igraph traversal artifact
 // that is not replicated.
 pub fn neighborhood_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "NeighborhoodGraph".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("NeighborhoodGraph", args);
   let (vertices, edge_exprs) = match &args[0] {
     Expr::FunctionCall {
       name: gname,
@@ -5560,10 +5465,7 @@ pub fn graph_metric_ast(
   name: &str,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated(name, args);
   // GraphLinkEfficiency = 1 - MeanGraphDistance/EdgeCount (decoded from
   // wolframscript's exact rationals; disconnected graphs give -Infinity
   // through the infinite mean distance).
@@ -5792,10 +5694,7 @@ pub fn graph_accessor_ast(
   name: &str,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated(name, args);
   let (vertices, edge_exprs) = match &args[0] {
     Expr::FunctionCall {
       name: gname,
@@ -5833,10 +5732,7 @@ pub fn graph_accessor_ast(
       name,
       crate::syntax::format_expr(arg, crate::syntax::ExprForm::Output),
       crate::syntax::format_expr(
-        &Expr::FunctionCall {
-          name: name.to_string(),
-          args: args.to_vec().into(),
-        },
+        &unevaluated(),
         crate::syntax::ExprForm::Output
       ),
       what
@@ -5946,10 +5842,7 @@ pub fn graph_accessor_ast(
 pub fn graph_assortativity_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "GraphAssortativity".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("GraphAssortativity", args);
   let (n, pairs) = match parse_graph_pairs(&args[0]) {
     Some(g) => g,
     None => return Ok(unevaluated()),

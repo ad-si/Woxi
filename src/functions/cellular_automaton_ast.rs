@@ -1,5 +1,5 @@
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 /// CellularAutomaton[rule, init, steps]
 ///
@@ -20,12 +20,7 @@ use crate::syntax::Expr;
 /// Step specifications: t and {t} (both steps 0..t), {{t}}, {{t1, t2}} and
 /// {{t1, t2, dt}} (a list of the selected states).
 pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "CellularAutomaton".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("CellularAutomaton", args));
 
   if args.len() != 3 {
     return unevaluated();

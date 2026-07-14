@@ -3,7 +3,7 @@
 //! These functions work directly with `Expr` AST nodes.
 
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 /// Whether an expression is a valid association entry: a single rule, a
 /// list of rules, or an association. Used by AssociationMap to decide when
@@ -35,10 +35,7 @@ fn invalid_subject_message(
     crate::syntax::format_expr(subject, crate::syntax::ExprForm::Output),
     what
   ));
-  Expr::FunctionCall {
-    name: fname.to_string(),
-    args: args.to_vec().into(),
-  }
+  unevaluated(fname, args)
 }
 
 /// Helper to extract key from a rule expression
@@ -262,20 +259,14 @@ pub fn key_drop_from_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "KeyDropFrom::blnoval: The symbol {} at position 1 should have an immediate value defined.",
         sym
       ));
-      Ok(Expr::FunctionCall {
-        name: "KeyDropFrom".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("KeyDropFrom", args))
     }
     other => {
       crate::emit_message(&format!(
         "KeyDropFrom::rvalue: {} is not a variable with a value, so its value cannot be changed.",
         crate::syntax::format_expr(other, crate::syntax::ExprForm::Output)
       ));
-      Ok(Expr::FunctionCall {
-        name: "KeyDropFrom".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("KeyDropFrom", args))
     }
   }
 }

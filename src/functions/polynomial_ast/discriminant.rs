@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 /// True when `e` is a numeric literal equal to zero (integer or real).
 fn is_zero_const(e: &Expr) -> bool {
@@ -45,10 +45,7 @@ pub fn discriminant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let var_name = match var {
     Expr::Identifier(name) => name.as_str(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Discriminant".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Discriminant", args));
     }
   };
 
@@ -57,10 +54,7 @@ pub fn discriminant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let degree = match max_power_int(&expanded, var_name) {
     Some(d) => d,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "Discriminant".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Discriminant", args));
     }
   };
 

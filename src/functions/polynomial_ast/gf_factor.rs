@@ -10,7 +10,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr};
+use crate::syntax::{BinaryOperator, Expr, unevaluated};
 
 /// Keep the c-sweep in Berlekamp splitting bounded.
 const MAX_MODULUS: i128 = 65_536;
@@ -507,10 +507,7 @@ pub fn irreducible_polynomial_q_modulus(
 /// left unevaluated — wolframscript's grouping of those products is
 /// internal to its iterative lcm and not reproducible.
 pub fn polynomial_lcm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "PolynomialLCM".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("PolynomialLCM", args);
   let mut pos: Vec<Expr> = Vec::new();
   let mut modulus: Option<i128> = None;
   for a in args {

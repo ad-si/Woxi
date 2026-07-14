@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr};
+use crate::syntax::{BinaryOperator, Expr, unevaluated};
 use std::cmp::Ordering;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -574,10 +574,7 @@ pub fn interval_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       spans.push((pair[0].clone(), pair[1].clone()));
     } else {
       // Invalid argument — return unevaluated
-      return Ok(Expr::FunctionCall {
-        name: "Interval".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Interval", args));
     }
   }
 
@@ -605,10 +602,7 @@ pub fn interval_union_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     } else {
       // Non-interval arg: return unevaluated
-      return Ok(Expr::FunctionCall {
-        name: "IntervalUnion".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("IntervalUnion", args));
     }
   }
   let normalized = normalize_intervals(all_spans);
@@ -639,10 +633,7 @@ pub fn interval_intersection_ast(
       .map(|(lo, hi)| (lo.clone(), hi.clone()))
       .collect::<Vec<_>>(),
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "IntervalIntersection".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("IntervalIntersection", args));
     }
   };
 
@@ -655,10 +646,7 @@ pub fn interval_intersection_ast(
         .map(|(lo, hi)| (lo.clone(), hi.clone()))
         .collect::<Vec<_>>(),
       None => {
-        return Ok(Expr::FunctionCall {
-          name: "IntervalIntersection".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("IntervalIntersection", args));
       }
     };
 
@@ -693,10 +681,7 @@ pub fn interval_member_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let spans = match is_interval(&args[0]) {
     Some(s) => s,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "IntervalMemberQ".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("IntervalMemberQ", args));
     }
   };
 

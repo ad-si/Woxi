@@ -7,7 +7,7 @@ use crate::functions::plot::{
   PLOT_COLORS, RESOLUTION_SCALE, generate_bar_svg, generate_histogram_svg,
   parse_image_size,
 };
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 /// Extract grouped values from the first argument.
 /// Returns a list of groups, where each group is a list of f64 values.
@@ -962,10 +962,7 @@ pub fn bar_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Ok(g) => g,
     Err(_) => {
       // Return unevaluated for invalid (non-list) input, matching wolframscript.
-      return Ok(Expr::FunctionCall {
-        name: "BarChart3D".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("BarChart3D", args));
     }
   };
   if groups.is_empty() {
@@ -1112,10 +1109,7 @@ pub fn pie_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let rows = match extract_pie_rows(&args[0]) {
     Ok(r) => r,
     Err(_) => {
-      return Ok(Expr::FunctionCall {
-        name: "PieChart3D".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("PieChart3D", args));
     }
   };
   let has_data = rows.iter().any(|r| r.iter().sum::<f64>() > 0.0);
@@ -2544,10 +2538,7 @@ pub fn date_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if all_series.is_empty() {
     // Return unevaluated (like Wolfram does for invalid data)
-    return Ok(Expr::FunctionCall {
-      name: "DateListPlot".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("DateListPlot", args));
   }
 
   let chart_opts = parse_chart_options(args);

@@ -2,7 +2,9 @@
 use super::*;
 use crate::InterpreterError;
 use crate::functions::calculus_ast::simplify;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
+use crate::syntax::{
+  BinaryOperator, Expr, UnaryOperator, expr_to_string, unevaluated,
+};
 
 // ─── Factor ─────────────────────────────────────────────────────────
 
@@ -31,10 +33,7 @@ fn unknown_option_fallback(head: &str, args: &[Expr]) -> Expr {
     }
     _ => None,
   };
-  let call = Expr::FunctionCall {
-    name: head.to_string(),
-    args: args.to_vec().into(),
-  };
+  let call = unevaluated(head, args);
   if let Some(opt) = option_name
     && !known(&opt)
   {
@@ -184,10 +183,7 @@ fn factor_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if let Some(p) = extract_modulus_option(&args[1]) {
       return match super::factor_modulus(&args[0], p)? {
         Some(e) => Ok(e),
-        None => Ok(Expr::FunctionCall {
-          name: "Factor".to_string(),
-          args: args.to_vec().into(),
-        }),
+        None => Ok(unevaluated("Factor", args)),
       };
     }
     return Ok(unknown_option_fallback("Factor", args));
@@ -1295,10 +1291,7 @@ pub fn factor_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if let Some(p) = extract_modulus_option(&args[1]) {
       return match super::factor_list_modulus(&args[0], p)? {
         Some(e) => Ok(e),
-        None => Ok(Expr::FunctionCall {
-          name: "FactorList".to_string(),
-          args: args.to_vec().into(),
-        }),
+        None => Ok(unevaluated("FactorList", args)),
       };
     }
     return Ok(unknown_option_fallback("FactorList", args));
@@ -1377,10 +1370,7 @@ pub fn irreducible_polynomial_q_ast(
     if let Some(p) = extract_modulus_option(&args[1]) {
       return match super::irreducible_polynomial_q_modulus(&args[0], p)? {
         Some(e) => Ok(e),
-        None => Ok(Expr::FunctionCall {
-          name: "IrreduciblePolynomialQ".to_string(),
-          args: args.to_vec().into(),
-        }),
+        None => Ok(unevaluated("IrreduciblePolynomialQ", args)),
       };
     }
     return Ok(unknown_option_fallback("IrreduciblePolynomialQ", args));

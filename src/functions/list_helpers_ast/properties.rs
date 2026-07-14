@@ -2,6 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::unevaluated;
 
 /// AST-based ArrayDepth: compute depth of nested lists.
 /// Returns the depth to which the expression forms a rectangular array.
@@ -75,12 +76,7 @@ pub fn array_depth_ast(list: &Expr) -> Result<Expr, InterpreterError> {
 pub fn array_components_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Return the expression unevaluated (matching wolframscript, which emits a
   // message and leaves ArrayComponents[...] in place).
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "ArrayComponents".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("ArrayComponents", args));
 
   // Argument 1 must be a list.
   if args.is_empty() || !matches!(&args[0], Expr::List(_)) {
@@ -279,10 +275,7 @@ pub fn tensor_rank_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
 /// of the tensor T. Each pair {i, j} of 1-indexed slots is summed over the
 /// matching dimension, leaving the free indices in their original order.
 pub fn tensor_contract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "TensorContract".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("TensorContract", args);
   if args.len() != 2 {
     return Ok(unevaluated());
   }

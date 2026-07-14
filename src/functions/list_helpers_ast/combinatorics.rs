@@ -2,6 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::unevaluated;
 
 /// Unified Permutations: `Permutations[list]` (full-length only),
 /// `Permutations[list, n]` (lengths 0..n), `Permutations[list, {n}]`,
@@ -10,10 +11,7 @@ use super::*;
 /// yield distinct permutations only; general heads keep their head.
 /// Atoms emit ::normal and invalid specs emit ::nninfseq.
 pub fn permutations_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let original = || Expr::FunctionCall {
-    name: "Permutations".to_string(),
-    args: args.to_vec().into(),
-  };
+  let original = || unevaluated("Permutations", args);
   let show =
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
 
@@ -177,10 +175,7 @@ fn generate_k_permutations(
 /// heads keep their head; atoms emit ::normal; invalid specs emit
 /// ::nninfseq (position 2) or ::seq (position 3).
 pub fn subsets_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let original = || Expr::FunctionCall {
-    name: "Subsets".to_string(),
-    args: args.to_vec().into(),
-  };
+  let original = || unevaluated("Subsets", args);
   let show =
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
 
@@ -405,10 +400,7 @@ pub fn subsequences_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let items = match &args[0] {
     Expr::List(items) => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Subsequences".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Subsequences", args));
     }
   };
 
@@ -424,26 +416,17 @@ pub fn subsequences_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             let k = *k as usize;
             (k, k)
           } else {
-            return Ok(Expr::FunctionCall {
-              name: "Subsequences".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("Subsequences", args));
           }
         } else if spec.len() == 2 {
           // {nmin, nmax}
           if let (Expr::Integer(lo), Expr::Integer(hi)) = (&spec[0], &spec[1]) {
             (*lo as usize, *hi as usize)
           } else {
-            return Ok(Expr::FunctionCall {
-              name: "Subsequences".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("Subsequences", args));
           }
         } else {
-          return Ok(Expr::FunctionCall {
-            name: "Subsequences".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("Subsequences", args));
         }
       }
       Expr::Integer(_) | Expr::BigInteger(_) => {
@@ -452,10 +435,7 @@ pub fn subsequences_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         (0, k)
       }
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "Subsequences".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Subsequences", args));
       }
     }
   } else {
@@ -560,10 +540,7 @@ pub fn groupings_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let ops = match parse_grouping_ops(&args[1]) {
     Some(ops) => ops,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "Groupings".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Groupings", args));
     }
   };
 
@@ -571,10 +548,7 @@ pub fn groupings_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(n) if *n >= 1 => (1..=*n).map(Expr::Integer).collect(),
     Expr::List(items) => items.to_vec(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Groupings".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Groupings", args));
     }
   };
 

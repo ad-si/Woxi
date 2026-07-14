@@ -3,7 +3,9 @@
 //! integer width all match wolframscript's output byte for byte.
 
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
+};
 
 // WXF token bytes.
 const T_FUNCTION: u8 = b'f'; // 102
@@ -422,12 +424,7 @@ fn write_expr(out: &mut Vec<u8>, expr: &Expr) -> Option<()> {
 
 /// BinarySerialize[expr] — WXF bytes as a ByteArray.
 pub fn binary_serialize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "BinarySerialize".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("BinarySerialize", args));
   if args.len() != 1 {
     return unevaluated();
   }
@@ -618,12 +615,7 @@ fn read_packed_level(
 /// BinaryDeserialize[ByteArray[…]] — parse WXF bytes back into an
 /// expression; corrupt data emits BinaryDeserialize::corrupt and $Failed.
 pub fn binary_deserialize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "BinaryDeserialize".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("BinaryDeserialize", args));
   if args.len() != 1 {
     return unevaluated();
   }

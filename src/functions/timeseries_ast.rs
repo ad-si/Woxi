@@ -11,7 +11,7 @@ use crate::InterpreterError;
 use crate::functions::datetime_ast::{
   date_to_absolute_seconds, day_of_week, days_in_month, extract_date_components,
 };
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 /// Monday = 0 … Sunday = 6, matching `day_of_week`.
 fn weekday_index(name: &str) -> Option<i64> {
@@ -252,19 +252,13 @@ pub fn temporal_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let is_multi_path =
       !values.is_empty() && values.iter().all(|v| matches!(v, Expr::List(_)));
     if is_multi_path {
-      return Ok(Expr::FunctionCall {
-        name: "TemporalData".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("TemporalData", args));
     }
     // Single scalar path → reuse the TimeSeries constructor.
     return time_series_ast(args);
   }
 
-  Ok(Expr::FunctionCall {
-    name: "TemporalData".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("TemporalData", args))
 }
 
 /// All value paths of a temporal object as `(time, value)` pair lists. A
@@ -311,10 +305,7 @@ pub fn temporal_paths(expr: &Expr) -> Option<Vec<Vec<(Expr, Expr)>>> {
 /// `TimeSeries[values]` / `TimeSeries[values, dates]` constructor. A list of
 /// `{date, value}` pairs is already canonical and is returned unchanged.
 pub fn time_series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let echo = || Expr::FunctionCall {
-    name: "TimeSeries".to_string(),
-    args: args.to_vec().into(),
-  };
+  let echo = || unevaluated("TimeSeries", args);
   match args {
     [Expr::List(items)] => {
       let elems: Vec<&Expr> = items.iter().collect();
@@ -416,12 +407,7 @@ pub fn time_series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn time_series_resample_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let echo = || {
-    Ok(Expr::FunctionCall {
-      name: "TimeSeriesResample".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let echo = || Ok(unevaluated("TimeSeriesResample", args));
   if args.len() != 2 {
     return echo();
   }

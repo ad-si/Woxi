@@ -23,7 +23,7 @@
 //! all give `MusicPitch["G3"]`. The conversions use the standard convention
 //! where middle C is MIDI 60 / C4 and A4 (MIDI 69) is 440 Hz.
 
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 /// Heads that the Wolfram Language classifies as music objects — the "Music
 /// Events", "Music Properties", and "Music Containers" of the
@@ -1405,10 +1405,7 @@ pub fn music_chord(args: &[Expr]) -> Option<Expr> {
         crate::emit_message_to_stdout(
           "MusicChord::args: MusicChord called with invalid parameters.",
         );
-        Some(Expr::FunctionCall {
-          name: "MusicChord".to_string(),
-          args: args.to_vec().into(),
-        })
+        Some(unevaluated("MusicChord", args))
       };
       let Some((letter, accidental, quality)) = parse_chord_name(spec) else {
         return invalid();
@@ -2318,10 +2315,7 @@ pub fn music_scale(args: &[Expr]) -> Option<Expr> {
         "MusicScale::passc: {} is not a valid property association.",
         message_form(second)
       ));
-      Some(Expr::FunctionCall {
-        name: "MusicScale".to_string(),
-        args: args.to_vec().into(),
-      })
+      Some(unevaluated("MusicScale", args))
     }
     _ => None,
   }

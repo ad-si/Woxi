@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr};
+use crate::syntax::{BinaryOperator, Expr, unevaluated};
 
 use crate::functions::calculus_ast::simplify;
 use crate::functions::math_ast::times_ast;
@@ -82,10 +82,7 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ) {
         return Ok(args[0].clone());
       }
-      return Ok(Expr::FunctionCall {
-        name: "Collect".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Collect", args));
     }
   };
 

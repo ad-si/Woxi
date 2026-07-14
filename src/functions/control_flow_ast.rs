@@ -5,8 +5,7 @@
 use crate::InterpreterError;
 use crate::evaluator::{apply_function_to_arg, evaluate_expr_to_expr};
 use crate::functions::expr_form::{ExprForm, decompose_expr};
-use crate::syntax::Expr;
-use crate::syntax::expr_to_string;
+use crate::syntax::{Expr, expr_to_string, unevaluated};
 
 /// Switch[expr, pat1, val1, pat2, val2, ..., default?]
 /// Evaluates expr, then finds first matching pattern and returns corresponding value.
@@ -21,10 +20,7 @@ pub fn switch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
        Switch must be called with an odd number of arguments.",
       args.len()
     ));
-    return Ok(Expr::FunctionCall {
-      name: "Switch".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Switch", args));
   }
 
   // Evaluate the test expression
@@ -47,10 +43,7 @@ pub fn switch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // No match — return unevaluated
-  Ok(Expr::FunctionCall {
-    name: "Switch".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Switch", args))
 }
 
 /// Check if `test` matches `pattern`.
@@ -384,10 +377,7 @@ fn maybe_trace(
 
 /// Rebuild an expression from a head name and children as a FunctionCall.
 fn rebuild_from_head(head: &str, children: &[Expr]) -> Expr {
-  Expr::FunctionCall {
-    name: head.to_string(),
-    args: children.to_vec().into(),
-  }
+  unevaluated(head, children)
 }
 
 /// Recursively trace-evaluate an expression, calling f on each sub-expression.
