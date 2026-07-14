@@ -1309,9 +1309,11 @@ mod interpreter_tests {
       ("ControlActive[1, 2]", "2"),
       ("ControlActive[1 + 1, 2 + 2]", "4"),
       ("ControlActive[\"fast\", \"slow\"]", "slow"),
-      // Non-two-argument forms have no active/normal split, so they stay
+      // ControlActive[] with no arguments queries whether a control is being
+      // actively manipulated; outside a notebook nothing is, so it is False.
+      ("ControlActive[]", "False"),
+      // Other non-two-argument forms have no active/normal split, so they stay
       // symbolic (and must not warn about being unimplemented).
-      ("ControlActive[]", "ControlActive[]"),
       ("ControlActive[5]", "ControlActive[5]"),
     ];
     for (input, expected) in cases {

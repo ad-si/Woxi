@@ -34,10 +34,11 @@ $ wo 'ControlActive[10, 100]'
 100
 ```
 
-Forms other than the two-argument `active`/`normal` split have no inactive
-value to fall back to, so they stay symbolic:
+With no arguments `ControlActive[]` queries whether a control is currently
+being actively manipulated. Outside an interactive notebook nothing is, so it
+evaluates to `False`:
 
 ```scrut
 $ wo 'ControlActive[]'
-ControlActive[]
+False
 ```
