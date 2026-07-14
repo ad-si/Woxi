@@ -3,6 +3,13 @@ use super::*;
 use crate::functions::list_helpers_ast;
 use crate::syntax::{BinaryOperator, UnaryOperator};
 
+fn unevaluated(name: &str, args: &[Expr]) -> Expr {
+  Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.to_vec().into(),
+  }
+}
+
 /// Parse the `m` argument of NestWhile[f, x, test, m, ...]. Returns `All` for
 /// the symbol `All`, `Last(n)` for a positive integer, and `None` otherwise.
 /// Extract the function `f` from a `SameTest -> f` option, given as either a
@@ -80,17 +87,11 @@ fn invalid_seq_spec(
         name,
         i + 1,
         crate::syntax::format_expr(
-          &Expr::FunctionCall {
-            name: name.to_string(),
-            args: args.to_vec().into(),
-          },
+          &unevaluated(name, args),
           crate::syntax::ExprForm::Output
         )
       ));
-      return Some(Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated(name, args)));
     }
   }
   None
@@ -116,10 +117,7 @@ fn extremal_by_count(name: &str, args: &[Expr]) -> Result<i128, Expr> {
         name,
         crate::syntax::format_expr(arg3, crate::syntax::ExprForm::Output)
       ));
-      Err(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      })
+      Err(unevaluated(name, args))
     }
   }
 }
@@ -165,10 +163,7 @@ fn is_infinity_symbol(e: &Expr) -> bool {
 /// Emit `<F>::intnm: Non-negative machine-sized integer expected at
 /// position <pos> in <call>.` and return the unevaluated call.
 fn intnm_message(name: &str, args: &[Expr], pos: usize) -> Expr {
-  let call = Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.to_vec().into(),
-  };
+  let call = unevaluated(name, args);
   crate::emit_message(&format!(
     "{}::intnm: Non-negative machine-sized integer expected at position {} in {}.",
     name,
@@ -421,10 +416,7 @@ fn flatten_at_apply(expr: &Expr, positions: &[Vec<i128>]) -> Expr {
 /// ::flatp for parts without parts — aborting on the first failure, then
 /// splices the parts at the surviving (deduplicated) positions.
 fn flatten_at_unified(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let original = || Expr::FunctionCall {
-    name: "FlattenAt".to_string(),
-    args: args.to_vec().into(),
-  };
+  let original = || unevaluated("FlattenAt", args);
   let show =
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
   let subject = &args[0];
@@ -655,10 +647,7 @@ fn regional_extrema(values: &[f64], find_max: bool) -> Vec<Expr> {
 // index and the largest end index, matching wolframscript. A string argument
 // is processed character-wise and the result is rebuilt as a string.
 fn longest_ordered_sequence(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let symbolic = || Expr::FunctionCall {
-    name: "LongestOrderedSequence".to_string(),
-    args: args.to_vec().into(),
-  };
+  let symbolic = || unevaluated("LongestOrderedSequence", args);
   // A string is accepted only in the one-argument form; the two-argument form
   // requires a List. Anything else emits ::list and stays unevaluated.
   let (elements, is_string): (Vec<Expr>, bool) = match &args[0] {
@@ -1493,10 +1482,7 @@ pub fn dispatch_list_operations(
       // original ReplaceAt call instead of leaking the delegate's head.
       return Some(result.map(|r| match &r {
         Expr::FunctionCall { name, .. } if name == "MapAt" => {
-          Expr::FunctionCall {
-            name: "ReplaceAt".to_string(),
-            args: args.to_vec().into(),
-          }
+          unevaluated("ReplaceAt", args)
         }
         _ => r,
       }));
@@ -1544,17 +1530,11 @@ pub fn dispatch_list_operations(
           (Some(name.clone()), xs.to_vec())
         }
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "TakeList".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("TakeList", args)));
         }
       };
       let Expr::List(specs) = &args[1] else {
-        return Some(Ok(Expr::FunctionCall {
-          name: "TakeList".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("TakeList", args)));
       };
       let wrap = |slice: Vec<Expr>| -> Expr {
         match &head {
@@ -1566,10 +1546,7 @@ pub fn dispatch_list_operations(
         }
       };
       // Unevaluated TakeList[...] result, reused by every error path.
-      let unevaluated = Expr::FunctionCall {
-        name: "TakeList".to_string(),
-        args: args.to_vec().into(),
-      };
+      let unevaluated = unevaluated("TakeList", args);
       // An overrun (an integer spec demanding more than is left) aborts the
       // whole call with TakeList::iseqs, referencing the entire spec list and
       // the original input — matching wolframscript.
@@ -1651,10 +1628,7 @@ pub fn dispatch_list_operations(
     }
     "FlattenAt" if args.len() == 1 => {
       // Operator form FlattenAt[pos] — return unevaluated for currying.
-      return Some(Ok(Expr::FunctionCall {
-        name: "FlattenAt".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("FlattenAt", args)));
     }
     "FlattenAt" if args.len() == 2 => {
       return Some(flatten_at_unified(args));
@@ -1752,10 +1726,7 @@ pub fn dispatch_list_operations(
             "MovingMedian::arg2: The second argument {} must be a positive integer less than or equal to the length {} of the first argument.",
             r, n
           ));
-          return Some(Ok(Expr::FunctionCall {
-            name: "MovingMedian".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("MovingMedian", args)));
         }
         let mut result = Vec::with_capacity(n - r + 1);
         for i in 0..=(n - r) {
@@ -1827,10 +1798,7 @@ pub fn dispatch_list_operations(
     }
     "AllMatch" if args.len() == 1 => {
       // Operator form: return unevaluated for currying
-      return Some(Ok(Expr::FunctionCall {
-        name: "AllMatch".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("AllMatch", args)));
     }
     "AnyTrue" if args.len() == 2 || args.len() == 3 => {
       return Some(list_helpers_ast::any_true_ast(args));
@@ -1840,10 +1808,7 @@ pub fn dispatch_list_operations(
     }
     "AnyMatch" if args.len() == 1 => {
       // Operator form: return unevaluated for currying
-      return Some(Ok(Expr::FunctionCall {
-        name: "AnyMatch".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("AnyMatch", args)));
     }
     "NoneTrue" if args.len() == 2 || args.len() == 3 => {
       return Some(list_helpers_ast::none_true_ast(args));
@@ -1860,18 +1825,12 @@ pub fn dispatch_list_operations(
           (fargs.as_slice(), Some(name.as_str()))
         }
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "Fold".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("Fold", args)));
         }
       };
       if items.is_empty() {
         // Fold[f, {}] is unevaluated in Wolfram Language
-        return Some(Ok(Expr::FunctionCall {
-          name: "Fold".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("Fold", args)));
       }
       let init = items[0].clone();
       let rest = match head {
@@ -1893,17 +1852,11 @@ pub fn dispatch_list_operations(
           Expr::List(items) => items.as_slice(),
           Expr::FunctionCall { args: fargs, .. } => fargs.as_slice(),
           _ => {
-            return Some(Ok(Expr::FunctionCall {
-              name: "FoldWhile".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("FoldWhile", args)));
           }
         };
         if list_items.is_empty() {
-          return Some(Ok(Expr::FunctionCall {
-            name: "FoldWhile".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("FoldWhile", args)));
         }
         (list_items[0].clone(), list_items[1..].to_vec(), &args[2..3])
       } else {
@@ -1911,10 +1864,7 @@ pub fn dispatch_list_operations(
           Expr::List(items) => items.to_vec(),
           Expr::FunctionCall { args: fargs, .. } => fargs.to_vec(),
           _ => {
-            return Some(Ok(Expr::FunctionCall {
-              name: "FoldWhile".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("FoldWhile", args)));
           }
         };
         (args[1].clone(), list_items, &args[3..])
@@ -1925,10 +1875,7 @@ pub fn dispatch_list_operations(
         match parse_nest_while_m(&tail[1]) {
           Some(m) => m,
           None => {
-            return Some(Ok(Expr::FunctionCall {
-              name: "FoldWhile".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("FoldWhile", args)));
           }
         }
       } else {
@@ -1952,10 +1899,7 @@ pub fn dispatch_list_operations(
           "GroupBy::list1: The argument {} is not a valid list of Associations or rules or lists of rules.",
           crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
         ));
-        return Some(Ok(Expr::FunctionCall {
-          name: "GroupBy".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("GroupBy", args)));
       }
       let result = list_helpers_ast::group_by_ast(&args[0], &args[1]);
       if args.len() == 3 {
@@ -2246,10 +2190,7 @@ pub fn dispatch_list_operations(
         list_helpers_ast::table_iterators_invalid(name, &args[1..])
       {
         crate::emit_message(&msg);
-        return Some(Ok(Expr::FunctionCall {
-          name: name.to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated(name, args)));
       }
       if args.len() == 2 {
         return Some(list_helpers_ast::table_ast(&args[0], &args[1]));
@@ -2316,10 +2257,7 @@ pub fn dispatch_list_operations(
               None
             };
             let call = crate::syntax::format_expr(
-              &Expr::FunctionCall {
-                name: "MapThread".to_string(),
-                args: args.to_vec().into(),
-              },
+              &unevaluated("MapThread", args),
               crate::syntax::ExprForm::Output,
             );
             match mismatch {
@@ -2332,10 +2270,7 @@ pub fn dispatch_list_operations(
                 call
               )),
             }
-            Ok(Expr::FunctionCall {
-              name: "MapThread".to_string(),
-              args: args.to_vec().into(),
-            })
+            Ok(unevaluated("MapThread", args))
           }
           other => other,
         },
@@ -2395,27 +2330,16 @@ pub fn dispatch_list_operations(
               crate::syntax::ExprForm::Output
             )
           ));
-          return Some(Ok(Expr::FunctionCall {
-            name: "Partition".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("Partition", args)));
         }
       };
-      let unevaluated = || {
-        Some(Ok(Expr::FunctionCall {
-          name: "Partition".to_string(),
-          args: args.to_vec().into(),
-        }))
-      };
+      let uneval = || Some(Ok(unevaluated("Partition", args)));
       let ilsmp = |position: usize| {
         crate::emit_message(&format!(
           "Partition::ilsmp: Single or list of positive machine-sized integers expected at position {} of {}.",
           position,
           crate::syntax::format_expr(
-            &Expr::FunctionCall {
-              name: "Partition".to_string(),
-              args: args.to_vec().into(),
-            },
+            &unevaluated("Partition", args),
             crate::syntax::ExprForm::Output
           )
         ));
@@ -2481,7 +2405,7 @@ pub fn dispatch_list_operations(
             Some(d) => Some(d),
             None => {
               ilsmp(3);
-              return unevaluated();
+              return uneval();
             }
           }
         } else {
@@ -2507,7 +2431,7 @@ pub fn dispatch_list_operations(
           ns.iter().map(positive_machine).collect::<Option<Vec<_>>>()
         else {
           ilsmp(2);
-          return unevaluated();
+          return uneval();
         };
         let offsets: Option<Vec<i128>> = if args.len() >= 3 {
           match &args[2] {
@@ -2521,7 +2445,7 @@ pub fn dispatch_list_operations(
         };
         let Some(offsets) = offsets else {
           ilsmp(3);
-          return unevaluated();
+          return uneval();
         };
         {
           // Depth check: a {n1, ..., nk} size spec needs a depth-k
@@ -2554,10 +2478,7 @@ pub fn dispatch_list_operations(
               sizes.len(),
               expr_to_string(&dims_expr)
             ));
-            return Some(Ok(Expr::FunctionCall {
-              name: "Partition".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("Partition", args)));
           }
           return Some(list_helpers_ast::partition_multi_dim_ast(
             &args[0], &sizes, &offsets,
@@ -2586,7 +2507,7 @@ pub fn dispatch_list_operations(
           crate::syntax::ExprForm::Output
         )
       ));
-      return unevaluated();
+      return uneval();
     }
     "Permutations" if !args.is_empty() && args.len() <= 2 => {
       return Some(list_helpers_ast::permutations_ast(args));
@@ -2640,10 +2561,7 @@ pub fn dispatch_list_operations(
           crate::syntax::expr_to_output(&args[0])
         ));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "Signature".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("Signature", args)));
     }
     "Subsets" if !args.is_empty() && args.len() <= 3 => {
       return Some(list_helpers_ast::subsets_ast(args));
@@ -3048,10 +2966,7 @@ pub fn dispatch_list_operations(
           "LexicographicSort",
           args,
         );
-        return Some(Ok(Expr::FunctionCall {
-          name: "LexicographicSort".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("LexicographicSort", args)));
       }
       // LexicographicSort compares lists element by element (shorter lists are
       // NOT pulled to the front the way the canonical Sort does).
@@ -3064,10 +2979,7 @@ pub fn dispatch_list_operations(
       // Sort[atom, p] is invalid: emit ::normal and stay unevaluated.
       if list_helpers_ast::is_atomic_arg(&args[0]) {
         list_helpers_ast::emit_nonatomic_normal_message("Sort", args);
-        return Some(Ok(Expr::FunctionCall {
-          name: "Sort".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("Sort", args)));
       }
       // Sort[assoc, p] - sort the association entries by their values using p,
       // mirroring Sort[assoc] (which orders by value). Keys ride along.
@@ -3153,10 +3065,7 @@ pub fn dispatch_list_operations(
     "ReverseSort" if args.len() == 1 || args.len() == 2 => {
       // ReverseSort[list] sorts then reverses
       // ReverseSort[list, p] sorts by p then reverses
-      let mut sorted = match evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Sort".to_string(),
-        args: args.to_vec().into(),
-      }) {
+      let mut sorted = match evaluate_expr_to_expr(&unevaluated("Sort", args)) {
         Ok(v) => v,
         Err(e) => return Some(Err(e)),
       };
@@ -3202,10 +3111,7 @@ pub fn dispatch_list_operations(
     "Differences"
       if (1..=3).contains(&args.len()) && listrp_invalid_atom(&args[0]) =>
     {
-      let call = Expr::FunctionCall {
-        name: "Differences".to_string(),
-        args: args.to_vec().into(),
-      };
+      let call = unevaluated("Differences", args);
       crate::emit_message(&format!(
         "Differences::listrp: List, SparseArray object, or structured array expected at position 1 in {}.",
         crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
@@ -3229,10 +3135,7 @@ pub fn dispatch_list_operations(
           // wolframscript, rather than recursing into scalar elements.
           let depth = array_depth(&args[0]);
           if spec.len() > depth {
-            let call = Expr::FunctionCall {
-              name: "Differences".to_string(),
-              args: args.to_vec().into(),
-            };
+            let call = unevaluated("Differences", args);
             crate::emit_message(&format!(
               "Differences::depth: Requested differences {} exceeds the array depth, {}, of the input.",
               crate::syntax::format_expr(
@@ -3264,10 +3167,7 @@ pub fn dispatch_list_operations(
     "Ratios"
       if (1..=2).contains(&args.len()) && listrp_invalid_atom(&args[0]) =>
     {
-      let call = Expr::FunctionCall {
-        name: "Ratios".to_string(),
-        args: args.to_vec().into(),
-      };
+      let call = unevaluated("Ratios", args);
       crate::emit_message(&format!(
         "Ratios::listrp: List, SparseArray object, or structured array expected at position 1 in {}.",
         crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
@@ -3279,10 +3179,7 @@ pub fn dispatch_list_operations(
         match expr_to_i128(&args[1]) {
           Some(n) if n >= 0 => n as usize,
           _ => {
-            return Some(Ok(Expr::FunctionCall {
-              name: "Ratios".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("Ratios", args)));
           }
         }
       } else {
@@ -3310,10 +3207,7 @@ pub fn dispatch_list_operations(
         }
         return Some(Ok(Expr::List(current)));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "Ratios".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("Ratios", args)));
     }
     "Scan" if args.len() == 2 => {
       return Some(list_helpers_ast::scan_ast(&args[0], &args[1]));
@@ -3343,10 +3237,7 @@ pub fn dispatch_list_operations(
           (fargs.as_slice(), Some(name.as_str()))
         }
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "FoldList".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("FoldList", args)));
         }
       };
       if items.is_empty() {
@@ -3395,10 +3286,7 @@ pub fn dispatch_list_operations(
             "Transpose::nmtx: The first two levels of {} cannot be transposed.",
             crate::syntax::expr_to_string(&args[0])
           ));
-          Ok(Expr::FunctionCall {
-            name: "Transpose".to_string(),
-            args: args.to_vec().into(),
-          })
+          Ok(unevaluated("Transpose", args))
         }
         other => other,
       });
@@ -3419,10 +3307,7 @@ pub fn dispatch_list_operations(
               "TensorTranspose::symmperm: Invalid permutation or symmetry generator {}.",
               crate::syntax::expr_to_string(&args[1])
             ));
-            return Some(Ok(Expr::FunctionCall {
-              name: "TensorTranspose".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("TensorTranspose", args)));
           }
         }
       } else {
@@ -3441,10 +3326,7 @@ pub fn dispatch_list_operations(
             "TensorTranspose::ttrank: Permutation {} moves slots beyond tensor rank {}.",
             perm_str, rank
           ));
-          Expr::FunctionCall {
-            name: "TensorTranspose".to_string(),
-            args: args.to_vec().into(),
-          }
+          unevaluated("TensorTranspose", args)
         }
         TensorTransposeResult::SymmPerm => {
           let perm_str = match perm {
@@ -3455,10 +3337,7 @@ pub fn dispatch_list_operations(
             "TensorTranspose::symmperm: Invalid permutation or symmetry generator {}.",
             perm_str
           ));
-          Expr::FunctionCall {
-            name: "TensorTranspose".to_string(),
-            args: args.to_vec().into(),
-          }
+          unevaluated("TensorTranspose", args)
         }
       }));
     }
@@ -3467,10 +3346,7 @@ pub fn dispatch_list_operations(
         match &args[1] {
           Expr::Integer(n) => *n as i64,
           _ => {
-            return Some(Ok(Expr::FunctionCall {
-              name: "Diagonal".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("Diagonal", args)));
           }
         }
       } else {
@@ -3513,10 +3389,7 @@ pub fn dispatch_list_operations(
         {
           return Some(Ok(args[0].clone()));
         }
-        return Some(Ok(Expr::FunctionCall {
-          name: "Join".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("Join", args)));
       }
       // Check if last argument is an integer level spec
       if args.len() >= 3
@@ -3530,10 +3403,7 @@ pub fn dispatch_list_operations(
         // Join::headsd. Both leave the call unevaluated, matching
         // wolframscript.
         if level >= 2 {
-          let unevaluated = || Expr::FunctionCall {
-            name: "Join".to_string(),
-            args: args.to_vec().into(),
-          };
+          let unevaluated = || unevaluated("Join", args);
           for (i, a) in lists.iter().enumerate() {
             if !has_join_depth(a, level) {
               let tag = if i == 0 {
@@ -3576,12 +3446,7 @@ pub fn dispatch_list_operations(
     // WeightedData[Automatic, {data, weights}] (matching wolframscript).
     "WeightedData" if args.len() == 2 => {
       // Already canonical: leave as-is.
-      if weighted_data_parts(&Expr::FunctionCall {
-        name: "WeightedData".to_string(),
-        args: args.to_vec().into(),
-      })
-      .is_some()
-      {
+      if weighted_data_parts(&unevaluated("WeightedData", args)).is_some() {
         return None;
       }
       if let (Expr::List(d), Expr::List(w)) = (&args[0], &args[1])
@@ -3637,10 +3502,7 @@ pub fn dispatch_list_operations(
       {
         return Some(result);
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "ArrayFilter".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("ArrayFilter", args)));
     }
     // MaxDetect[list] / MinDetect[list]: regional-extrema mask of a numeric
     // list. The 2-argument h-maxima form is left for the morphology code.
@@ -3654,10 +3516,7 @@ pub fn dispatch_list_operations(
         return Some(Ok(Expr::List(mask.into())));
       }
       // Empty list, non-list, or non-numeric entries: leave unevaluated.
-      return Some(Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated(name, args)));
     }
     "ConstantArray" if args.len() == 2 => {
       return Some(list_helpers_ast::constant_array_ast(&args[0], &args[1]));
@@ -3746,12 +3605,7 @@ pub fn dispatch_list_operations(
     // given argument positions (n means positions 1 through n), holding the
     // rest constant.
     "Thread" if args.len() == 3 => {
-      let unevaluated = || {
-        Ok(Expr::FunctionCall {
-          name: "Thread".to_string(),
-          args: args.to_vec().into(),
-        })
-      };
+      let unevaluated = || Ok(unevaluated("Thread", args));
       let head = if let Expr::Identifier(h) = &args[1] {
         Some(h.as_str())
       } else {
@@ -3839,10 +3693,7 @@ pub fn dispatch_list_operations(
         }));
       }
       // Leaf (children given as None) or any other spec: keep as-is.
-      return Some(Ok(Expr::FunctionCall {
-        name: "Tree".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("Tree", args)));
     }
     // TreeQ[expr] -> True iff expr is a valid Tree object (head Tree with two
     // arguments whose second is None or a list of valid Trees), else False.
@@ -3885,15 +3736,9 @@ pub fn dispatch_list_operations(
       }
       crate::emit_message(&format!(
         "{name}::tree: Tree expected at position 1 in {}.",
-        crate::syntax::expr_to_string(&Expr::FunctionCall {
-          name: name.to_string(),
-          args: args.to_vec().into(),
-        })
+        crate::syntax::expr_to_string(&unevaluated(name, args)),
       ));
-      return Some(Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated(name, args)));
     }
     // ExpressionTree[expr] builds the canonical Tree form of expr; an optional
     // second argument selects the node-data structure ("Heads" (default),
@@ -3915,39 +3760,28 @@ pub fn dispatch_list_operations(
           "ExpressionTree::struct: {} is not a valid expression structure. Valid structures include \"HeadTrees\", \"Heads\", \"Subexpressions\" and \"Atoms\".",
           crate::syntax::expr_to_output(&args[1])
         ));
-        return Some(Ok(Expr::FunctionCall {
-          name: "ExpressionTree".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("ExpressionTree", args)));
       }
       return Some(Ok(build_expression_tree(&args[0], &structure)));
     }
     // TreeExpression[tree] reconstructs the expression that the tree
     // represents — the inverse of ExpressionTree.
     "TreeExpression" if args.len() == 1 => {
-      return Some(Ok(tree_to_expression(&args[0]).unwrap_or_else(|| {
-        Expr::FunctionCall {
-          name: "TreeExpression".to_string(),
-          args: args.to_vec().into(),
-        }
-      })));
+      return Some(Ok(
+        tree_to_expression(&args[0])
+          .unwrap_or_else(|| unevaluated("TreeExpression", args)),
+      ));
     }
     // TreeRules[tree] gives the nested-rule representation of a tree.
     "TreeRules" if args.len() == 1 => {
-      return Some(Ok(tree_rules(&args[0]).unwrap_or_else(|| {
-        Expr::FunctionCall {
-          name: "TreeRules".to_string(),
-          args: args.to_vec().into(),
-        }
-      })));
+      return Some(Ok(
+        tree_rules(&args[0]).unwrap_or_else(|| unevaluated("TreeRules", args)),
+      ));
     }
     // RootTree[tree] gives the root truncated to level 0; RootTree[tree, n]
     // keeps the tree down to level n (n a non-negative integer or Infinity).
     "RootTree" if args.len() == 1 || args.len() == 2 => {
-      let unevaluated = || Expr::FunctionCall {
-        name: "RootTree".to_string(),
-        args: args.to_vec().into(),
-      };
+      let unevaluated = || unevaluated("RootTree", args);
       if tree_node(&args[0]).is_none() {
         crate::emit_message(&format!(
           "RootTree::tree: Tree expected at position 1 in {}.",
@@ -3988,39 +3822,24 @@ pub fn dispatch_list_operations(
       }
       crate::emit_message(&format!(
         "{name}::tree: Tree expected at position 1 in {}.",
-        crate::syntax::expr_to_string(&Expr::FunctionCall {
-          name: name.to_string(),
-          args: args.to_vec().into(),
-        })
+        crate::syntax::expr_to_string(&unevaluated(name, args)),
       ));
-      return Some(Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated(name, args)));
     }
     // TreeMap[f] operator form: kept symbolic so TreeMap[f][tree] can apply it.
     "TreeMap" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "TreeMap".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("TreeMap", args)));
     }
     // TreeReplacePart[rules] operator form: kept symbolic so the curried call
     // TreeReplacePart[rules][tree] can apply it.
     "TreeReplacePart" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "TreeReplacePart".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("TreeReplacePart", args)));
     }
     // TreeReplacePart[tree, pos -> value] replaces the subtree at pos; a list
     // of rules applies them in order. A scalar value becomes a leaf. The root
     // position {} and out-of-range positions are silent no-ops.
     "TreeReplacePart" if args.len() == 2 => {
-      let unevaluated = || Expr::FunctionCall {
-        name: "TreeReplacePart".to_string(),
-        args: args.to_vec().into(),
-      };
+      let unevaluated = || unevaluated("TreeReplacePart", args);
       if tree_node(&args[0]).is_none() {
         crate::emit_message(&format!(
           "TreeReplacePart::tree: Tree expected at position 1 in {}.",
@@ -4061,10 +3880,7 @@ pub fn dispatch_list_operations(
     // children). A scalar child becomes a leaf. Out-of-range or leaf-descending
     // positions leave the expression unevaluated.
     "TreeInsert" if args.len() == 3 => {
-      let unevaluated = || Expr::FunctionCall {
-        name: "TreeInsert".to_string(),
-        args: args.to_vec().into(),
-      };
+      let unevaluated = || unevaluated("TreeInsert", args);
       if tree_node(&args[0]).is_none() {
         crate::emit_message(&format!(
           "TreeInsert::tree: Tree expected at position 1 in {}.",
@@ -4093,10 +3909,7 @@ pub fn dispatch_list_operations(
     // TreeDelete[tree, pos]: remove the subtree at `pos`. The root position {}
     // and out-of-range positions leave the expression unevaluated.
     "TreeDelete" if args.len() == 2 => {
-      let unevaluated = || Expr::FunctionCall {
-        name: "TreeDelete".to_string(),
-        args: args.to_vec().into(),
-      };
+      let unevaluated = || unevaluated("TreeDelete", args);
       if tree_node(&args[0]).is_none() {
         crate::emit_message(&format!(
           "TreeDelete::tree: Tree expected at position 1 in {}.",
@@ -4118,10 +3931,7 @@ pub fn dispatch_list_operations(
     // TreeLevel[tree, spec]: subtrees at the levels selected by spec, in
     // post-order (descendants before their parent).
     "TreeLevel" if args.len() == 2 => {
-      let unevaluated = || Expr::FunctionCall {
-        name: "TreeLevel".to_string(),
-        args: args.to_vec().into(),
-      };
+      let unevaluated = || unevaluated("TreeLevel", args);
       if tree_node(&args[0]).is_none() {
         crate::emit_message(&format!(
           "TreeLevel::tree: Tree expected at position 1 in {}.",
@@ -4139,20 +3949,14 @@ pub fn dispatch_list_operations(
     // TreeSelect[crit] operator form: kept symbolic so TreeSelect[crit][tree]
     // can apply it (handled in apply_curried_call).
     "TreeSelect" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "TreeSelect".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("TreeSelect", args)));
     }
     // TreeSelect[tree, crit] picks the subtrees (post-order, root included)
     // for which crit[subtree] is True. The optional third argument limits the
     // result to the first n; the four-argument form restricts to a level spec
     // first. n must be a non-negative integer or Infinity.
     "TreeSelect" if (2..=4).contains(&args.len()) => {
-      let unevaluated = || Expr::FunctionCall {
-        name: "TreeSelect".to_string(),
-        args: args.to_vec().into(),
-      };
+      let unevaluated = || unevaluated("TreeSelect", args);
       if tree_node(&args[0]).is_none() {
         crate::emit_message(&format!(
           "TreeSelect::tree: Tree expected at position 1 in {}.",
@@ -4211,10 +4015,7 @@ pub fn dispatch_list_operations(
     // in post-order (descendants before parent); the root's position is {}.
     // The optional third argument restricts positions to a level spec.
     "TreePosition" if args.len() == 2 || args.len() == 3 => {
-      let unevaluated = || Expr::FunctionCall {
-        name: "TreePosition".to_string(),
-        args: args.to_vec().into(),
-      };
+      let unevaluated = || unevaluated("TreePosition", args);
       let bounds = if args.len() == 3 {
         match parse_tree_level_spec(&args[2]) {
           Some(b) => Some(b),
@@ -4241,10 +4042,7 @@ pub fn dispatch_list_operations(
     // position ({i, j, ...}, all integers) giving one subtree, or a list of
     // positions ({{...}, {...}}) giving a list of subtrees ({} gives {}).
     "TreeExtract" if args.len() == 2 => {
-      let unevaluated = || Expr::FunctionCall {
-        name: "TreeExtract".to_string(),
-        args: args.to_vec().into(),
-      };
+      let unevaluated = || unevaluated("TreeExtract", args);
       // First argument must be a tree.
       if tree_node(&args[0]).is_none() {
         crate::emit_message(&format!(
@@ -4301,15 +4099,9 @@ pub fn dispatch_list_operations(
       Ok(None) => {
         crate::emit_message(&format!(
           "TreeMap::tree: Tree expected at position 2 in {}.",
-          crate::syntax::expr_to_string(&Expr::FunctionCall {
-            name: "TreeMap".to_string(),
-            args: args.to_vec().into(),
-          })
+          crate::syntax::expr_to_string(&unevaluated("TreeMap", args)),
         ));
-        return Some(Ok(Expr::FunctionCall {
-          name: "TreeMap".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("TreeMap", args)));
       }
       Err(e) => return Some(Err(e)),
     },
@@ -4317,10 +4109,7 @@ pub fn dispatch_list_operations(
     // TreeCount[tree, patt] counts all matching nodes; the optional third
     // argument restricts the count to the given level spec.
     "TreeCount" if args.len() == 2 || args.len() == 3 => {
-      let unevaluated = || Expr::FunctionCall {
-        name: "TreeCount".to_string(),
-        args: args.to_vec().into(),
-      };
+      let unevaluated = || unevaluated("TreeCount", args);
       let bounds = if args.len() == 3 {
         match parse_tree_level_spec(&args[2]) {
           Some(b) => Some(b),
@@ -4341,20 +4130,14 @@ pub fn dispatch_list_operations(
     // TreeFold[f] is the operator form: keep it symbolic so the curried call
     // TreeFold[f][tree] can apply it (handled in apply_curried_call).
     "TreeFold" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "TreeFold".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("TreeFold", args)));
     }
     // TreeFold[f, tree] folds f over the tree bottom-up; TreeFold[f] is the
     // operator form applied via the curried call TreeFold[f][tree].
     "TreeFold" if args.len() == 2 => match tree_fold(&args[0], &args[1]) {
       Ok(Some(v)) => return Some(Ok(v)),
       Ok(None) => {
-        return Some(Ok(Expr::FunctionCall {
-          name: "TreeFold".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("TreeFold", args)));
       }
       Err(e) => return Some(Err(e)),
     },
@@ -4369,10 +4152,7 @@ pub fn dispatch_list_operations(
     "Comap" if args.len() == 1 => {
       // Operator form: Comap[funs] stays symbolic until applied to an argument
       // via the curried form Comap[funs][x].
-      return Some(Ok(Expr::FunctionCall {
-        name: "Comap".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("Comap", args)));
     }
     "Comap" if args.len() == 2 => {
       return Some(list_helpers_ast::comap_ast(&args[0], &args[1], None));
@@ -4387,10 +4167,7 @@ pub fn dispatch_list_operations(
     "ComapApply" if args.len() == 1 => {
       // Operator form: ComapApply[funs] stays symbolic until applied via the
       // curried form ComapApply[funs][args].
-      return Some(Ok(Expr::FunctionCall {
-        name: "ComapApply".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("ComapApply", args)));
     }
     "ComapApply" if args.len() == 2 => {
       return Some(list_helpers_ast::comap_apply_ast(&args[0], &args[1]));
@@ -4595,10 +4372,7 @@ pub fn dispatch_list_operations(
       if let (Expr::List(list1), Expr::List(list2)) = (&args[0], &args[1]) {
         if let Some(opt) = args.get(2) {
           let Some(test) = same_test_option(opt) else {
-            return Some(Ok(Expr::FunctionCall {
-              name: "ContainsAny".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("ContainsAny", args)));
           };
           let result = list2
             .iter()
@@ -4616,10 +4390,7 @@ pub fn dispatch_list_operations(
       if let (Expr::List(list1), Expr::List(list2)) = (&args[0], &args[1]) {
         if let Some(opt) = args.get(2) {
           let Some(test) = same_test_option(opt) else {
-            return Some(Ok(Expr::FunctionCall {
-              name: "ContainsAll".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("ContainsAll", args)));
           };
           let result = list2
             .iter()
@@ -4637,10 +4408,7 @@ pub fn dispatch_list_operations(
       if let (Expr::List(list1), Expr::List(list2)) = (&args[0], &args[1]) {
         if let Some(opt) = args.get(2) {
           let Some(test) = same_test_option(opt) else {
-            return Some(Ok(Expr::FunctionCall {
-              name: "ContainsNone".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("ContainsNone", args)));
           };
           let result = !list2
             .iter()
@@ -4660,10 +4428,7 @@ pub fn dispatch_list_operations(
       if let (Expr::List(list1), Expr::List(list2)) = (&args[0], &args[1]) {
         if let Some(opt) = args.get(2) {
           let Some(test) = same_test_option(opt) else {
-            return Some(Ok(Expr::FunctionCall {
-              name: "ContainsExactly".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("ContainsExactly", args)));
           };
           let all = list2
             .iter()
@@ -4682,10 +4447,7 @@ pub fn dispatch_list_operations(
     }
     // ContainsExactly[list2] — operator form, returns a callable.
     "ContainsExactly" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "ContainsExactly".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("ContainsExactly", args)));
     }
     "SquareMatrixQ" if args.len() == 1 => {
       let result = match &args[0] {
@@ -4722,10 +4484,7 @@ pub fn dispatch_list_operations(
         list_helpers_ast::table_iterators_invalid(name, &args[1..])
       {
         crate::emit_message(&msg);
-        return Some(Ok(Expr::FunctionCall {
-          name: name.to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated(name, args)));
       }
       if args.len() == 2 {
         return Some(list_helpers_ast::do_ast(&args[0], &args[1]));
@@ -4779,10 +4538,7 @@ pub fn dispatch_list_operations(
             crate::emit_message(
               "Indexed::ind: The index 0 is not a nonzero integer.",
             );
-            return Some(Ok(Expr::FunctionCall {
-              name: "Indexed".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("Indexed", args)));
           }
           _ => {
             return Some(Ok(unevaluated_with_list_index()));
@@ -4804,10 +4560,7 @@ pub fn dispatch_list_operations(
             n,
             crate::syntax::expr_to_string(&current)
           ));
-          return Some(Ok(Expr::FunctionCall {
-            name: "Indexed".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("Indexed", args)));
         }
         current = items[pos as usize].clone();
       }
@@ -4836,10 +4589,7 @@ pub fn dispatch_list_operations(
         e => nonneg_machine_int(e).is_some(),
       };
       if !valid_spec {
-        let call = Expr::FunctionCall {
-          name: name.to_string(),
-          args: args.to_vec().into(),
-        };
+        let call = unevaluated(name, args);
         crate::emit_message(&format!(
           "{name}::ilsmn: Single or list of non-negative machine-sized integers expected at position 2 of {}.",
           crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
@@ -5182,10 +4932,7 @@ pub fn dispatch_list_operations(
       if let Expr::List(ref elems) = args[2] {
         // FoldPair on an empty list stays unevaluated (matching wolframscript).
         if elems.is_empty() {
-          return Some(Ok(Expr::FunctionCall {
-            name: "FoldPair".to_string(),
-            args: args.to_vec().into(),
-          }));
+          return Some(Ok(unevaluated("FoldPair", args)));
         }
         let f = &args[0];
         let mut state = args[1].clone();
@@ -5229,10 +4976,7 @@ pub fn dispatch_list_operations(
                   crate::syntax::ExprForm::Output
                 )
               ));
-              return Some(Ok(Expr::FunctionCall {
-                name: "FoldPair".to_string(),
-                args: args.to_vec().into(),
-              }));
+              return Some(Ok(unevaluated("FoldPair", args)));
             }
           }
         }
@@ -5393,10 +5137,7 @@ pub fn dispatch_list_operations(
           crate::syntax::expr_to_string(&args[0]),
           crate::syntax::expr_to_string(&args[1])
         ));
-        return Some(Ok(Expr::FunctionCall {
-          name: "SequencePosition".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("SequencePosition", args)));
       }
       // Trailing arguments: an optional count limit (Integer/Infinity) and an
       // `Overlaps -> True | False | All` option. Unlike SequenceCases,
@@ -5524,10 +5265,7 @@ pub fn dispatch_list_operations(
           crate::syntax::expr_to_string(&args[0]),
           crate::syntax::expr_to_string(&args[1])
         ));
-        return Some(Ok(Expr::FunctionCall {
-          name: "SequenceCases".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("SequenceCases", args)));
       }
       // Trailing arguments: an optional count limit (Integer/Infinity) and an
       // `Overlaps -> True | False | All` option (default: non-overlapping).
@@ -5679,10 +5417,7 @@ pub fn dispatch_list_operations(
           crate::syntax::expr_to_string(&args[0]),
           crate::syntax::expr_to_string(&args[1])
         ));
-        return Some(Ok(Expr::FunctionCall {
-          name: "SequenceSplit".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("SequenceSplit", args)));
       }
       if let Expr::List(list) = &args[0] {
         let match_pat = &args[1];
@@ -5707,10 +5442,7 @@ pub fn dispatch_list_operations(
         let sub = match list_pat {
           Expr::List(items) => items,
           _ => {
-            return Some(Ok(Expr::FunctionCall {
-              name: "SequenceSplit".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("SequenceSplit", args)));
           }
         };
 
@@ -5890,15 +5622,9 @@ pub fn dispatch_list_operations(
       if !matches!(&args[0], Expr::List(_)) {
         crate::emit_message(&format!(
           "SequenceReplace::list: List expected at position 1 in {}.",
-          crate::syntax::expr_to_string(&Expr::FunctionCall {
-            name: "SequenceReplace".to_string(),
-            args: args.to_vec().into(),
-          })
+          crate::syntax::expr_to_string(&unevaluated("SequenceReplace", args)),
         ));
-        return Some(Ok(Expr::FunctionCall {
-          name: "SequenceReplace".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("SequenceReplace", args)));
       }
 
       // Optional max-replacement count.
@@ -5908,10 +5634,7 @@ pub fn dispatch_list_operations(
           // Infinity / All → unlimited (None below). Anything else → bail out.
           Expr::Identifier(s) if s == "Infinity" || s == "All" => None,
           _ => {
-            return Some(Ok(Expr::FunctionCall {
-              name: "SequenceReplace".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("SequenceReplace", args)));
           }
         }
       } else {
@@ -5945,10 +5668,7 @@ pub fn dispatch_list_operations(
 
       // If no parseable rules, return unevaluated.
       if rules.is_empty() {
-        return Some(Ok(Expr::FunctionCall {
-          name: "SequenceReplace".to_string(),
-          args: args.to_vec().into(),
-        }));
+        return Some(Ok(unevaluated("SequenceReplace", args)));
       }
 
       let list = match &args[0] {
@@ -6030,10 +5750,7 @@ pub fn dispatch_list_operations(
     // SubsetReplace[rule] — operator form, kept symbolic so it can later be
     // applied to a list (handled in function_application as f[rule][list]).
     "SubsetReplace" if args.len() == 1 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "SubsetReplace".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("SubsetReplace", args)));
     }
     // SubsetReplace[list, rule] — replace non-overlapping subsets (combinations,
     // not just contiguous runs) whose element values match a rule's LHS. Rules
@@ -6042,10 +5759,7 @@ pub fn dispatch_list_operations(
     // greedily, consuming their positions. The RHS is emitted at the smallest
     // position of each matched subset.
     "SubsetReplace" if args.len() == 2 => {
-      let unevaluated = || Expr::FunctionCall {
-        name: "SubsetReplace".to_string(),
-        args: args.to_vec().into(),
-      };
+      let unevaluated = || unevaluated("SubsetReplace", args);
       let Expr::List(list) = &args[0] else {
         crate::emit_message(&format!(
           "SubsetReplace::list: List expected at position 1 in {}.",
@@ -6482,10 +6196,7 @@ pub fn dispatch_list_operations(
     // structurally distinct inputs like Cycles[{{4, 10, 2, 5}, {9}}]
     // and Cycles[{{2, 5, 4, 10}}] compare equal.
     "Cycles" if args.len() == 1 => {
-      if let Some(cycles) = cycles_arg(&Expr::FunctionCall {
-        name: "Cycles".to_string(),
-        args: args.to_vec().into(),
-      }) {
+      if let Some(cycles) = cycles_arg(&unevaluated("Cycles", args)) {
         let mut canonical: Vec<Vec<i128>> = Vec::with_capacity(cycles.len());
         for cycle in cycles.iter() {
           if cycle.len() <= 1 {
@@ -7020,10 +6731,7 @@ pub fn dispatch_list_operations(
     // Splice[list] and Splice[list, head] — stay unevaluated; splicing is done
     // by the enclosing context (List evaluation or flatten_sequences).
     "Splice" if args.len() == 1 || args.len() == 2 => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "Splice".to_string(),
-        args: args.to_vec().into(),
-      }));
+      return Some(Ok(unevaluated("Splice", args)));
     }
     // SubsetMap[f, list, positions] — apply f to the elements at `positions`
     // collectively and put the results back. `positions` may be:
@@ -7045,10 +6753,7 @@ pub fn dispatch_list_operations(
         // Apply f to the extracted sublist (as a single list argument).
         let mapped =
           apply_function_to_arg(f, &Expr::List(subset.clone().into()))
-            .unwrap_or_else(|_| Expr::FunctionCall {
-              name: "SubsetMap".to_string(),
-              args: args.to_vec().into(),
-            });
+            .unwrap_or_else(|_| unevaluated("SubsetMap", args));
         // The result must be a list of the same length as the extracted
         // sublist; otherwise SubsetMap can't put the elements back and emits
         // `newls`, leaving the call unevaluated (matching wolframscript).
@@ -7074,10 +6779,7 @@ pub fn dispatch_list_operations(
                 crate::syntax::ExprForm::Output
               )
             ));
-            return Some(Ok(Expr::FunctionCall {
-              name: "SubsetMap".to_string(),
-              args: args.to_vec().into(),
-            }));
+            return Some(Ok(unevaluated("SubsetMap", args)));
           }
         }
       }
@@ -7396,11 +7098,7 @@ fn array_pad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     Expr::Integer(0)
   };
-  let unevaluated = || Expr::FunctionCall {
-    name: "ArrayPad".to_string(),
-    args: args.to_vec().into(),
-  };
-
+  let unevaluated = || unevaluated("ArrayPad", args);
   // Try per-dimension form: {{m1, n1}, {m2, n2}, ...} or {{m1}, {m2}, ...}
   // where the spec list has length equal to the array's rank.
   if let Expr::List(spec_items) = &args[1]
@@ -7934,10 +7632,7 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let pts = match pattern.as_ref() {
         Expr::List(v) => v.clone(),
         _ => {
-          return Ok(Expr::FunctionCall {
-            name: "Nearest".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("Nearest", args));
         }
       };
       // points -> Automatic: label each point by its 1-based position, so the
@@ -7962,10 +7657,7 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             (pts.to_vec(), None)
           }
           _ => {
-            return Ok(Expr::FunctionCall {
-              name: "Nearest".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("Nearest", args));
           }
         }
       } else if let Expr::List(plist) = replacement.as_ref()
@@ -7985,10 +7677,7 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let lbls = match replacement.as_ref() {
           Expr::List(v) if v.len() == pts.len() => v.clone(),
           _ => {
-            return Ok(Expr::FunctionCall {
-              name: "Nearest".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("Nearest", args));
           }
         };
         (pts.to_vec(), Some(lbls.to_vec()))
@@ -8029,10 +7718,7 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Nearest".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Nearest", args));
     }
   };
   let items = &items_owned;
@@ -8080,28 +7766,19 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::Integer(k) if *k >= 1 => Some(*k as usize),
           Expr::Identifier(s) if s == "All" => None,
           _ => {
-            return Ok(Expr::FunctionCall {
-              name: "Nearest".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("Nearest", args));
           }
         };
         let r = match expr_to_f64(&pair[1]) {
           Some(r) if r >= 0.0 => r,
           _ => {
-            return Ok(Expr::FunctionCall {
-              name: "Nearest".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("Nearest", args));
           }
         };
         (count, Some(r))
       }
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "Nearest".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Nearest", args));
       }
     }
   } else {
@@ -8116,10 +7793,7 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
 
   if distances.is_empty() {
-    return Ok(Expr::FunctionCall {
-      name: "Nearest".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Nearest", args));
   }
 
   // Sort by distance, then by original order for ties
@@ -8212,20 +7886,14 @@ fn array_reshape_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         match item {
           Expr::Integer(n) if *n > 0 => d.push(*n as usize),
           _ => {
-            return Ok(Expr::FunctionCall {
-              name: "ArrayReshape".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("ArrayReshape", args));
           }
         }
       }
       d
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "ArrayReshape".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("ArrayReshape", args));
     }
   };
 
@@ -8396,12 +8064,7 @@ fn list_convolve_overhang(
   padding: Option<&Expr>,
   all_args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "ListConvolve".to_string(),
-      args: all_args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("ListConvolve", all_args));
   let (Expr::List(ker), Expr::List(data)) = (kernel, list) else {
     return unevaluated();
   };
@@ -8494,12 +8157,7 @@ fn list_correlate_overhang(
   padding: Option<&Expr>,
   all_args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "ListCorrelate".to_string(),
-      args: all_args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("ListCorrelate", all_args));
   let (Expr::List(ker), Expr::List(data)) = (kernel, list) else {
     return unevaluated();
   };
