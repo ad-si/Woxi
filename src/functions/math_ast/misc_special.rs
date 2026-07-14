@@ -1,7 +1,9 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
+use crate::syntax::{
+  BinaryOperator, Expr, UnaryOperator, expr_to_string, unevaluated,
+};
 use num_bigint::BigInt;
 
 /// QPochhammer[a, q, n] — q-Pochhammer symbol.
@@ -18,10 +20,7 @@ pub fn q_pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return q_pochhammer_infinite(&args[0], &args[1]);
   }
   if args.len() != 3 {
-    return Ok(Expr::FunctionCall {
-      name: "QPochhammer".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("QPochhammer", args));
   }
 
   let a = &args[0];
@@ -32,10 +31,7 @@ pub fn q_pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = match expr_to_i128(n_expr) {
     Some(n) if n >= 0 => n as usize,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "QPochhammer".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("QPochhammer", args));
     }
   };
 
@@ -466,10 +462,7 @@ pub fn product_log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     // Otherwise return unevaluated
-    return Ok(Expr::FunctionCall {
-      name: "ProductLog".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("ProductLog", args));
   }
 
   // ProductLog[-1/E] = -1 (principal branch at the branch point).
@@ -554,10 +547,7 @@ pub fn product_log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => {}
   }
-  Ok(Expr::FunctionCall {
-    name: "ProductLog".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ProductLog", args))
 }
 
 /// Helper: convert a list of Expr to Vec<f64>, returning None if any element is not numeric
@@ -585,10 +575,7 @@ fn expr_list_to_f64_vec(list: &[Expr]) -> Option<Vec<f64>> {
 /// Meijer G-function
 pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
-    return Ok(Expr::FunctionCall {
-      name: "MeijerG".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("MeijerG", args));
   }
   // wolframscript emits `MeijerG::hdiv` when the upper/lower parameter
   // arguments aren't both nested length-2 lists. Trigger the same warning
@@ -603,10 +590,7 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       expr_to_string(&args[1]),
       expr_to_string(&args[2])
     ));
-    return Ok(Expr::FunctionCall {
-      name: "MeijerG".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("MeijerG", args));
   }
 
   // Parse upper parameters: {{a1,...,an}, {an+1,...,ap}}
@@ -615,28 +599,19 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let list_n = match &v[0] {
         Expr::List(l) => l.clone(),
         _ => {
-          return Ok(Expr::FunctionCall {
-            name: "MeijerG".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("MeijerG", args));
         }
       };
       let list_rest = match &v[1] {
         Expr::List(l) => l.clone(),
         _ => {
-          return Ok(Expr::FunctionCall {
-            name: "MeijerG".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("MeijerG", args));
         }
       };
       (list_n, list_rest)
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "MeijerG".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("MeijerG", args));
     }
   };
 
@@ -646,28 +621,19 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let list_m = match &v[0] {
         Expr::List(l) => l.clone(),
         _ => {
-          return Ok(Expr::FunctionCall {
-            name: "MeijerG".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("MeijerG", args));
         }
       };
       let list_rest = match &v[1] {
         Expr::List(l) => l.clone(),
         _ => {
-          return Ok(Expr::FunctionCall {
-            name: "MeijerG".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("MeijerG", args));
         }
       };
       (list_m, list_rest)
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "MeijerG".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("MeijerG", args));
     }
   };
 
@@ -681,10 +647,7 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Consistency check: need m > 0 or n > 0, and p+q < 2(m+n) or other conditions
   if m == 0 && n == 0 {
     // No poles to sum over - function doesn't exist
-    return Ok(Expr::FunctionCall {
-      name: "MeijerG".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("MeijerG", args));
   }
 
   // MeijerG[{{}, {}}, {{0}, {}}, 0] = 1
@@ -784,10 +747,7 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             && diff.round() >= 1.0
           {
             // hdiv: function does not exist
-            return Ok(Expr::FunctionCall {
-              name: "MeijerG".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("MeijerG", args));
           }
         }
       }
@@ -806,18 +766,12 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         // Integer/rational args - only evaluate via N[]
         // Return unevaluated for pure integer/rational input
-        return Ok(Expr::FunctionCall {
-          name: "MeijerG".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("MeijerG", args));
       }
     }
   }
 
-  Ok(Expr::FunctionCall {
-    name: "MeijerG".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("MeijerG", args))
 }
 
 /// Numeric evaluation of MeijerG using residue series.
@@ -1247,10 +1201,7 @@ pub fn struve_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Return unevaluated
-  Ok(Expr::FunctionCall {
-    name: "StruveH".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("StruveH", args))
 }
 
 /// Compute Struve H_n(z) using series expansion.
@@ -1349,10 +1300,7 @@ pub fn struve_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Return unevaluated
-  Ok(Expr::FunctionCall {
-    name: "StruveL".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("StruveL", args))
 }
 
 /// Compute modified Struve L_n(z) using series expansion.
@@ -1424,10 +1372,7 @@ pub fn square_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return Ok(Expr::Integer(-1));
         }
       }
-      Ok(Expr::FunctionCall {
-        name: "SquareWave".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("SquareWave", args))
     }
     2 => {
       // SquareWave[{d1, d2, ...}, t]
@@ -1443,10 +1388,7 @@ pub fn square_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let idx = (n - 1).saturating_sub(idx_raw.min(n - 1));
         return Ok(levels[idx].clone());
       }
-      Ok(Expr::FunctionCall {
-        name: "SquareWave".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("SquareWave", args))
     }
     _ => Err(InterpreterError::EvaluationError(
       "SquareWave expects 1 or 2 arguments".into(),
@@ -1507,10 +1449,7 @@ pub fn triangle_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let val = 4.0 * (frac - 0.5).abs() - 1.0;
         return Ok(Expr::Real(val));
       }
-      Ok(Expr::FunctionCall {
-        name: "TriangleWave".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("TriangleWave", args))
     }
     2 => {
       // TriangleWave[{min, max}, t]
@@ -1529,10 +1468,7 @@ pub fn triangle_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return Ok(Expr::Real(result));
         }
       }
-      Ok(Expr::FunctionCall {
-        name: "TriangleWave".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("TriangleWave", args))
     }
     _ => Err(InterpreterError::EvaluationError(
       "TriangleWave expects 1 or 2 arguments".into(),
@@ -1579,10 +1515,7 @@ pub fn sawtooth_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let frac = t - t.floor();
         return Ok(Expr::Real(frac));
       }
-      Ok(Expr::FunctionCall {
-        name: "SawtoothWave".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("SawtoothWave", args))
     }
     2 => {
       // SawtoothWave[{min, max}, t]
@@ -1600,10 +1533,7 @@ pub fn sawtooth_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return Ok(Expr::Real(result));
         }
       }
-      Ok(Expr::FunctionCall {
-        name: "SawtoothWave".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("SawtoothWave", args))
     }
     _ => Err(InterpreterError::EvaluationError(
       "SawtoothWave expects 1 or 2 arguments".into(),
@@ -1628,10 +1558,7 @@ pub fn parabolic_cylinder_d_ast(
     return Ok(Expr::Real(parabolic_cylinder_d(nu, z)));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "ParabolicCylinderD".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ParabolicCylinderD", args))
 }
 
 /// Compute D_ν(z) using the relation to confluent hypergeometric functions:
@@ -1717,10 +1644,7 @@ pub fn anger_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Return unevaluated
-  Ok(Expr::FunctionCall {
-    name: "AngerJ".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("AngerJ", args))
 }
 
 /// Compute AngerJ[nu, z] numerically using Gauss-Legendre quadrature.
@@ -1816,10 +1740,7 @@ pub fn weber_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Return unevaluated
-  Ok(Expr::FunctionCall {
-    name: "WeberE".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("WeberE", args))
 }
 
 /// WeberE[n, z] for an integer order n and exact argument z, as the finite
@@ -1968,10 +1889,7 @@ pub fn wigner_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // WignerD[{j, m1, m2}, theta]
   // WignerD[{j, m1, m2}, phi, theta, psi]
   if args.len() != 2 && args.len() != 4 {
-    return Ok(Expr::FunctionCall {
-      name: "WignerD".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("WignerD", args));
   }
 
   let (j_val, m1_val, m2_val) = match &args[0] {
@@ -1979,37 +1897,25 @@ pub fn wigner_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let j = match try_eval_to_f64(&items[0]) {
         Some(v) => v,
         None => {
-          return Ok(Expr::FunctionCall {
-            name: "WignerD".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("WignerD", args));
         }
       };
       let m1 = match try_eval_to_f64(&items[1]) {
         Some(v) => v,
         None => {
-          return Ok(Expr::FunctionCall {
-            name: "WignerD".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("WignerD", args));
         }
       };
       let m2 = match try_eval_to_f64(&items[2]) {
         Some(v) => v,
         None => {
-          return Ok(Expr::FunctionCall {
-            name: "WignerD".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("WignerD", args));
         }
       };
       (j, m1, m2)
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "WignerD".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("WignerD", args));
     }
   };
 
@@ -2020,15 +1926,9 @@ pub fn wigner_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => {
         // Check if at least one is Real
         if !matches!(&args[1], Expr::Real(_)) {
-          return Ok(Expr::FunctionCall {
-            name: "WignerD".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("WignerD", args));
         }
-        return Ok(Expr::FunctionCall {
-          name: "WignerD".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("WignerD", args));
       }
     };
     let result = wigner_d_small(j_val, m1_val, m2_val, theta);
@@ -2049,10 +1949,7 @@ pub fn wigner_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         return crate::evaluator::evaluate_expr_to_expr(&result);
       }
-      return Ok(Expr::FunctionCall {
-        name: "WignerD".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("WignerD", args));
     }
     let phi = phi_n.unwrap();
     let theta = theta_n.unwrap();
@@ -2417,19 +2314,13 @@ pub fn norlund_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return norlund_b_poly_ast(args);
   }
   if args.len() != 2 {
-    return Ok(Expr::FunctionCall {
-      name: "NorlundB".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("NorlundB", args));
   }
 
   let n = match &args[0] {
     Expr::Integer(n) if *n >= 0 => *n as usize,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "NorlundB".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("NorlundB", args));
     }
   };
 
@@ -2494,10 +2385,7 @@ fn norlund_b_poly_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = match &args[0] {
     Expr::Integer(n) if *n >= 0 => *n as usize,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "NorlundB".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("NorlundB", args));
     }
   };
   let a = &args[1];
@@ -2762,10 +2650,7 @@ pub fn appell_f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Unevaluated
-  Ok(Expr::FunctionCall {
-    name: "AppellF1".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("AppellF1", args))
 }
 
 fn exprs_structurally_equal(a: &Expr, b: &Expr) -> bool {
@@ -2890,10 +2775,7 @@ pub fn appell_f2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Unevaluated
-  Ok(Expr::FunctionCall {
-    name: "AppellF2".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("AppellF2", args))
 }
 
 /// Compute F2(a, b1, b2; c1, c2; x, y) using double series
@@ -3009,10 +2891,7 @@ pub fn appell_f3_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Unevaluated
-  Ok(Expr::FunctionCall {
-    name: "AppellF3".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("AppellF3", args))
 }
 
 /// Compute F3(a1, a2, b1, b2; c; x, y) using double series
@@ -3127,10 +3006,7 @@ pub fn appell_f4_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Unevaluated
-  Ok(Expr::FunctionCall {
-    name: "AppellF4".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("AppellF4", args))
 }
 
 /// Compute F4(a, b; c1, c2; x, y) using double series
@@ -3227,10 +3103,7 @@ pub fn perfect_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         expr_to_string(&args[0]),
         expr_to_string(&args[0])
       ));
-      return Ok(Expr::FunctionCall {
-        name: "PerfectNumber".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("PerfectNumber", args));
     }
   };
 
@@ -3244,10 +3117,7 @@ pub fn perfect_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   ];
 
   if n > mersenne_exponents.len() {
-    return Ok(Expr::FunctionCall {
-      name: "PerfectNumber".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("PerfectNumber", args));
   }
 
   let p = mersenne_exponents[n - 1];
@@ -3287,10 +3157,7 @@ pub fn ramanujan_tau_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let tau = ramanujan_tau_compute(n);
       Ok(Expr::Integer(tau))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "RamanujanTau".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("RamanujanTau", args)),
   }
 }
 
@@ -3354,10 +3221,7 @@ pub fn powers_representations_ast(
   let n = match &args[0] {
     Expr::Integer(v) => *v,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "PowersRepresentations".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("PowersRepresentations", args));
     }
   };
 
@@ -3365,26 +3229,17 @@ pub fn powers_representations_ast(
     Expr::Integer(v) if *v >= 0 => *v as usize,
     Expr::Integer(_) => return Ok(Expr::List(vec![].into())),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "PowersRepresentations".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("PowersRepresentations", args));
     }
   };
 
   let p = match &args[2] {
     Expr::Integer(v) if *v >= 1 => *v as u32,
     Expr::Integer(_) => {
-      return Ok(Expr::FunctionCall {
-        name: "PowersRepresentations".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("PowersRepresentations", args));
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "PowersRepresentations".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("PowersRepresentations", args));
     }
   };
 
@@ -3488,10 +3343,7 @@ fn powers_rep_search(
 /// compounding). Listable in `r`.
 pub fn effective_interest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
-    return Ok(Expr::FunctionCall {
-      name: "EffectiveInterest".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("EffectiveInterest", args));
   }
   // Listable on the first argument.
   if let Expr::List(items) = &args[0] {
@@ -3562,20 +3414,14 @@ pub fn entropy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     1 => (None, &args[0]),
     2 => (Some(&args[0]), &args[1]),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Entropy".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Entropy", args));
     }
   };
 
   let items = match list {
     Expr::List(items) => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Entropy".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Entropy", args));
     }
   };
 
@@ -3639,16 +3485,10 @@ pub fn entropy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// An exact zero magnitude yields -Infinity.
 pub fn real_exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
-    return Ok(Expr::FunctionCall {
-      name: "RealExponent".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("RealExponent", args));
   }
 
-  let unevaluated = || Expr::FunctionCall {
-    name: "RealExponent".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("RealExponent", args);
 
   // Determine the base. Default is 10. The base must be a real number > 1.
   let base: f64 = if args.len() == 2 {

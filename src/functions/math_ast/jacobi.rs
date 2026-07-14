@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 /// Compute Jacobi elliptic functions sn(u, m), cn(u, m), dn(u, m) numerically
 /// using the descending Landen (AGM) transformation.
@@ -99,10 +99,7 @@ pub fn jacobi_amplitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(sn.atan2(cn)));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "JacobiAmplitude".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("JacobiAmplitude", args))
 }
 
 /// JacobiEpsilon[u, m] - the Jacobi epsilon function, the integral of dn^2,
@@ -155,10 +152,7 @@ pub fn jacobi_epsilon_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "JacobiEpsilon".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("JacobiEpsilon", args))
 }
 
 /// JacobiDN[u, m] - Jacobi elliptic function dn
@@ -209,10 +203,7 @@ pub fn jacobi_dn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Unevaluated
-  Ok(Expr::FunctionCall {
-    name: "JacobiDN".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("JacobiDN", args))
 }
 
 /// JacobiSN[u, m] - Jacobi elliptic function sn
@@ -270,10 +261,7 @@ pub fn jacobi_sn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Unevaluated
-  Ok(Expr::FunctionCall {
-    name: "JacobiSN".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("JacobiSN", args))
 }
 
 /// JacobiCN[u, m] - Jacobi elliptic function cn
@@ -327,10 +315,7 @@ pub fn jacobi_cn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Unevaluated
-  Ok(Expr::FunctionCall {
-    name: "JacobiCN".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("JacobiCN", args))
 }
 
 // ─── InverseJacobi functions ────────────────────────────────────────
@@ -394,10 +379,7 @@ pub fn inverse_jacobi_sn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  Ok(Expr::FunctionCall {
-    name: "InverseJacobiSN".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("InverseJacobiSN", args))
 }
 
 /// InverseJacobiCN[v, m]
@@ -446,10 +428,7 @@ pub fn inverse_jacobi_cn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  Ok(Expr::FunctionCall {
-    name: "InverseJacobiCN".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("InverseJacobiCN", args))
 }
 
 /// InverseJacobiDN[v, m]
@@ -484,10 +463,7 @@ pub fn inverse_jacobi_dn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  Ok(Expr::FunctionCall {
-    name: "InverseJacobiDN".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("InverseJacobiDN", args))
 }
 
 /// InverseJacobiCD[v, m]
@@ -529,10 +505,7 @@ pub fn inverse_jacobi_cd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  Ok(Expr::FunctionCall {
-    name: "InverseJacobiCD".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("InverseJacobiCD", args))
 }
 
 /// InverseJacobiSC[v, m]
@@ -577,10 +550,7 @@ pub fn inverse_jacobi_sc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  Ok(Expr::FunctionCall {
-    name: "InverseJacobiSC".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("InverseJacobiSC", args))
 }
 
 /// InverseJacobiCS[v, m]
@@ -609,10 +579,7 @@ pub fn inverse_jacobi_cs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  Ok(Expr::FunctionCall {
-    name: "InverseJacobiCS".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("InverseJacobiCS", args))
 }
 
 /// InverseJacobiSD[v, m]
@@ -657,10 +624,7 @@ pub fn inverse_jacobi_sd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  Ok(Expr::FunctionCall {
-    name: "InverseJacobiSD".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("InverseJacobiSD", args))
 }
 
 /// InverseJacobiDS[v, m]
@@ -697,10 +661,7 @@ pub fn inverse_jacobi_ds_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  Ok(Expr::FunctionCall {
-    name: "InverseJacobiDS".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("InverseJacobiDS", args))
 }
 
 /// InverseJacobiNS[v, m]
@@ -737,10 +698,7 @@ pub fn inverse_jacobi_ns_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  Ok(Expr::FunctionCall {
-    name: "InverseJacobiNS".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("InverseJacobiNS", args))
 }
 
 /// InverseJacobiNC[v, m]
@@ -782,10 +740,7 @@ pub fn inverse_jacobi_nc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  Ok(Expr::FunctionCall {
-    name: "InverseJacobiNC".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("InverseJacobiNC", args))
 }
 
 /// InverseJacobiND[v, m]
@@ -820,10 +775,7 @@ pub fn inverse_jacobi_nd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  Ok(Expr::FunctionCall {
-    name: "InverseJacobiND".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("InverseJacobiND", args))
 }
 
 /// InverseJacobiDC[v, m]
@@ -849,10 +801,7 @@ pub fn inverse_jacobi_dc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(elliptic_f(arg.asin(), m_f)));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "InverseJacobiDC".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("InverseJacobiDC", args))
 }
 
 /// Extract the inner expression from a negated expression like Times[-1, x] or -x
@@ -931,10 +880,7 @@ pub fn jacobi_sc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(sn / cn));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "JacobiSC".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("JacobiSC", args))
 }
 
 /// JacobiDC[u, m] - Jacobi DC elliptic function (DN/CN)
@@ -976,10 +922,7 @@ pub fn jacobi_dc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(dn / cn));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "JacobiDC".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("JacobiDC", args))
 }
 
 /// JacobiCD[u, m] - Jacobi CD elliptic function (CN/DN)
@@ -1021,10 +964,7 @@ pub fn jacobi_cd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(cn / dn));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "JacobiCD".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("JacobiCD", args))
 }
 
 /// JacobiSD[u, m] - Jacobi SD elliptic function (SN/DN)
@@ -1064,10 +1004,7 @@ pub fn jacobi_sd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(sn / dn));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "JacobiSD".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("JacobiSD", args))
 }
 
 /// JacobiCS[u, m] - Jacobi CS elliptic function (CN/SN)
@@ -1103,10 +1040,7 @@ pub fn jacobi_cs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(cn / sn));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "JacobiCS".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("JacobiCS", args))
 }
 
 /// JacobiDS[u, m] - Jacobi DS elliptic function (DN/SN)
@@ -1142,10 +1076,7 @@ pub fn jacobi_ds_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(dn / sn));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "JacobiDS".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("JacobiDS", args))
 }
 
 /// JacobiNS[u, m] - Jacobi NS elliptic function (1/SN)
@@ -1181,10 +1112,7 @@ pub fn jacobi_ns_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(1.0 / sn));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "JacobiNS".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("JacobiNS", args))
 }
 
 /// JacobiND[u, m] - Jacobi ND elliptic function (1/DN)
@@ -1221,10 +1149,7 @@ pub fn jacobi_nd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(1.0 / dn));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "JacobiND".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("JacobiND", args))
 }
 
 /// JacobiNC[u, m] - Jacobi NC elliptic function (1/CN)
@@ -1264,10 +1189,7 @@ pub fn jacobi_nc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(1.0 / cn));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "JacobiNC".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("JacobiNC", args))
 }
 
 /// Check if an expression is numerically zero

@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 /// Try to express a symbolic expression as a rational multiple of Pi: k*Pi/n.
 /// Returns Some((k, n)) in lowest terms, None if not recognized.
@@ -1455,10 +1455,7 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::BigFloat(digits, prec) = &args[0] {
     let p_in = (*prec).max(1.0);
     let result = crate::functions::math_ast::n_eval_arbitrary(
-      &Expr::FunctionCall {
-        name: "Sin".to_string(),
-        args: args.to_vec().into(),
-      },
+      &unevaluated("Sin", args),
       p_in,
     )?;
     if let Expr::BigFloat(ref out_digits, _) = result {
@@ -1530,10 +1527,7 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       );
     }
     // Non-Pi-fraction real part: leave unevaluated (matches Wolfram)
-    return Ok(Expr::FunctionCall {
-      name: "Sin".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Sin", args));
   }
   // General complex with non-float components: try splitting into
   // real_part + im*I where real_part can be any expression (e.g., Pi, Pi/6)
@@ -1580,10 +1574,7 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       );
     }
     // Non-Pi-fraction real part: leave unevaluated
-    return Ok(Expr::FunctionCall {
-      name: "Sin".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Sin", args));
   }
   // Complex float: sin(a+bi) = sin(a)cosh(b) + i*cos(a)sinh(b)
   // Only use float path when the argument actually contains a float value
@@ -1606,10 +1597,7 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return r;
   }
   // Return unevaluated
-  Ok(Expr::FunctionCall {
-    name: "Sin".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Sin", args))
 }
 
 pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -1670,10 +1658,7 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::BigFloat(digits, prec) = &args[0] {
     let p_in = (*prec).max(1.0);
     let result = crate::functions::math_ast::n_eval_arbitrary(
-      &Expr::FunctionCall {
-        name: "Cos".to_string(),
-        args: args.to_vec().into(),
-      },
+      &unevaluated("Cos", args),
       p_in,
     )?;
     if let Expr::BigFloat(ref out_digits, _) = result {
@@ -1734,10 +1719,7 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       );
     }
     // Non-Pi-fraction real part: leave unevaluated
-    return Ok(Expr::FunctionCall {
-      name: "Cos".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Cos", args));
   }
   // General complex with non-float components: try splitting into
   // real_part + im*I
@@ -1776,10 +1758,7 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         &[real_term, im_term],
       );
     }
-    return Ok(Expr::FunctionCall {
-      name: "Cos".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Cos", args));
   }
   // Complex float: cos(a+bi) = cos(a)cosh(b) - i*sin(a)sinh(b)
   if contains_float(&args[0])
@@ -1798,10 +1777,7 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(r) = try_trig_pi_phase("Cos", &args[0]) {
     return r;
   }
-  Ok(Expr::FunctionCall {
-    name: "Cos".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Cos", args))
 }
 
 /// Evaluate a circular function ratio at an arbitrary-precision argument, e.g.
@@ -1903,10 +1879,7 @@ pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       );
     }
     // Non-zero real part: leave unevaluated (matches Wolfram)
-    return Ok(Expr::FunctionCall {
-      name: "Tan".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Tan", args));
   }
   // Complex float: tan(z) = sin(z)/cos(z)
   if contains_float(&args[0])
@@ -1933,10 +1906,7 @@ pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(r) = try_trig_pi_phase("Tan", &args[0]) {
     return r;
   }
-  Ok(Expr::FunctionCall {
-    name: "Tan".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Tan", args))
 }
 
 pub fn sec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -1988,10 +1958,7 @@ pub fn sec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(r) = try_trig_pi_phase("Sec", &args[0]) {
     return r;
   }
-  Ok(Expr::FunctionCall {
-    name: "Sec".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Sec", args))
 }
 
 pub fn csc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -2044,10 +2011,7 @@ pub fn csc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(r) = try_trig_pi_phase("Csc", &args[0]) {
     return r;
   }
-  Ok(Expr::FunctionCall {
-    name: "Csc".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Csc", args))
 }
 
 pub fn cot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -2100,10 +2064,7 @@ pub fn cot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(r) = try_trig_pi_phase("Cot", &args[0]) {
     return r;
   }
-  Ok(Expr::FunctionCall {
-    name: "Cot".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Cot", args))
 }
 
 pub fn exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -2200,10 +2161,7 @@ pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Real(result));
     }
     // Otherwise keep the symbolic two-argument form.
-    return Ok(Expr::FunctionCall {
-      name: "Erf".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Erf", args));
   }
   // Helper: negate the Erf of the positive part
   let negate_erf = |inner: Expr| -> Expr {
@@ -2226,10 +2184,7 @@ pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       match &dargs[0] {
         Expr::Integer(1) => Ok(Expr::Integer(1)),
         Expr::Integer(-1) => Ok(Expr::Integer(-1)),
-        _ => Ok(Expr::FunctionCall {
-          name: "Erf".to_string(),
-          args: args.to_vec().into(),
-        }),
+        _ => Ok(unevaluated("Erf", args)),
       }
     }
     // Erf[-Infinity] = -1 (UnaryOp form)
@@ -2264,10 +2219,7 @@ pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         return Ok(negate_erf(pos_arg));
       }
-      Ok(Expr::FunctionCall {
-        name: "Erf".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("Erf", args))
     }
     // BinaryOp::Times form: -1 * x
     Expr::BinaryOp {
@@ -2291,20 +2243,14 @@ pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         return Ok(negate_erf(pos_arg));
       }
-      Ok(Expr::FunctionCall {
-        name: "Erf".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("Erf", args))
     }
     // Erf[-n] for negative integer
     Expr::Integer(n) if *n < 0 => Ok(negate_erf(Expr::Integer(-*n))),
     // Numeric evaluation for Real arguments
     Expr::Real(f) => Ok(Expr::Real(erf_f64(*f))),
     // Otherwise symbolic
-    _ => Ok(Expr::FunctionCall {
-      name: "Erf".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("Erf", args)),
   }
 }
 
@@ -2331,10 +2277,7 @@ pub fn erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       match &dargs[0] {
         Expr::Integer(1) => Ok(Expr::Integer(0)),
         Expr::Integer(-1) => Ok(Expr::Integer(2)),
-        _ => Ok(Expr::FunctionCall {
-          name: "Erfc".to_string(),
-          args: args.to_vec().into(),
-        }),
+        _ => Ok(unevaluated("Erfc", args)),
       }
     }
     // Numeric evaluation for Real arguments
@@ -2342,10 +2285,7 @@ pub fn erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // 2 - Erfc[x] rewrite.)
     Expr::Real(f) => Ok(Expr::Real(1.0 - erf_f64(*f))),
     // Otherwise symbolic
-    _ => Ok(Expr::FunctionCall {
-      name: "Erfc".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("Erfc", args)),
   }
 }
 
@@ -2395,10 +2335,7 @@ pub fn erfi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         return negate_erfi(pos_arg);
       }
-      Ok(Expr::FunctionCall {
-        name: "Erfi".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("Erfi", args))
     }
     // BinaryOp::Times form: -1 * x
     Expr::BinaryOp {
@@ -2422,20 +2359,14 @@ pub fn erfi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         return negate_erfi(pos_arg);
       }
-      Ok(Expr::FunctionCall {
-        name: "Erfi".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("Erfi", args))
     }
     // Erfi[-n] for negative integer
     Expr::Integer(n) if *n < 0 => negate_erfi(Expr::Integer(-*n)),
     // Numeric evaluation for Real arguments
     Expr::Real(f) => Ok(Expr::Real(erfi_f64(*f))),
     // Otherwise symbolic
-    _ => Ok(Expr::FunctionCall {
-      name: "Erfi".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("Erfi", args)),
   }
 }
 
@@ -2485,10 +2416,7 @@ pub fn dawson_f_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         return negate(pos_arg);
       }
-      Ok(Expr::FunctionCall {
-        name: "DawsonF".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("DawsonF", args))
     }
     // BinaryOp::Times form: -1 * x
     Expr::BinaryOp {
@@ -2512,20 +2440,14 @@ pub fn dawson_f_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         return negate(pos_arg);
       }
-      Ok(Expr::FunctionCall {
-        name: "DawsonF".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("DawsonF", args))
     }
     // DawsonF[-n] for negative integer
     Expr::Integer(n) if *n < 0 => negate(Expr::Integer(-*n)),
     // Numeric evaluation for Real arguments
     Expr::Real(f) => Ok(Expr::Real(dawson_f64(*f))),
     // Otherwise symbolic
-    _ => Ok(Expr::FunctionCall {
-      name: "DawsonF".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("DawsonF", args)),
   }
 }
 
@@ -2559,17 +2481,11 @@ pub fn inverse_erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           operand: Box::new(Expr::Identifier("Infinity".to_string())),
         })
       } else {
-        Ok(Expr::FunctionCall {
-          name: "InverseErf".to_string(),
-          args: args.to_vec().into(),
-        })
+        Ok(unevaluated("InverseErf", args))
       }
     }
     // Otherwise symbolic — return unevaluated
-    _ => Ok(Expr::FunctionCall {
-      name: "InverseErf".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("InverseErf", args)),
   }
 }
 
@@ -2624,16 +2540,10 @@ pub fn inverse_erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           operand: Box::new(Expr::Identifier("Infinity".to_string())),
         })
       } else {
-        Ok(Expr::FunctionCall {
-          name: "InverseErfc".to_string(),
-          args: args.to_vec().into(),
-        })
+        Ok(unevaluated("InverseErfc", args))
       }
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "InverseErfc".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("InverseErfc", args)),
   }
 }
 
@@ -3105,10 +3015,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           re, im,
         ));
       }
-      Ok(Expr::FunctionCall {
-        name: "Log".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("Log", args))
     }
     2 => {
       // Log[base, x] — integer base and a positive rational argument x = p/q.
@@ -3221,10 +3128,7 @@ pub fn log10_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Symbolic fallback: Log10[x] = Log[x] / Log[10]
   let expr = Expr::BinaryOp {
     op: BinaryOperator::Divide,
-    left: Box::new(Expr::FunctionCall {
-      name: "Log".to_string(),
-      args: args.to_vec().into(),
-    }),
+    left: Box::new(unevaluated("Log", args)),
     right: Box::new(Expr::FunctionCall {
       name: "Log".to_string(),
       args: vec![Expr::Integer(10)].into(),
@@ -3264,10 +3168,7 @@ pub fn log2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Symbolic fallback: Log2[x] = Log[x] / Log[2]
   let expr = Expr::BinaryOp {
     op: BinaryOperator::Divide,
-    left: Box::new(Expr::FunctionCall {
-      name: "Log".to_string(),
-      args: args.to_vec().into(),
-    }),
+    left: Box::new(unevaluated("Log", args)),
     right: Box::new(Expr::FunctionCall {
       name: "Log".to_string(),
       args: vec![Expr::Integer(2)].into(),
@@ -3352,10 +3253,7 @@ pub fn arcsin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(result);
   }
-  Ok(Expr::FunctionCall {
-    name: "ArcSin".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ArcSin", args))
 }
 
 /// ArcCos[x] - Inverse cosine (symbolic)
@@ -3504,10 +3402,7 @@ pub fn arccos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(result);
   }
-  Ok(Expr::FunctionCall {
-    name: "ArcCos".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ArcCos", args))
 }
 
 /// Check if a float value matches a known ArcCos special angle
@@ -3768,10 +3663,7 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(Expr::FunctionCall {
-    name: "ArcTan".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ArcTan", args))
 }
 
 /// ArcTan[x, y] - Two-argument arctangent (atan2)
@@ -3896,10 +3788,7 @@ pub fn arctan2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Return unevaluated for symbolic args
-  Ok(Expr::FunctionCall {
-    name: "ArcTan".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ArcTan", args))
 }
 
 /// Try to split an expression into real part and exact imaginary coefficient.
@@ -4081,10 +3970,7 @@ fn try_extract_negated(expr: &Expr) -> Option<Expr> {
           if args.len() == 2 {
             return Some(args[1].clone());
           }
-          return Some(Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: args[1..].to_vec().into(),
-          });
+          return Some(unevaluated("Times", &args[1..]));
         }
         let mut new_args = vec![negated_first];
         new_args.extend_from_slice(&args[1..]);
@@ -4274,10 +4160,7 @@ pub fn sinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let inner = crate::evaluator::evaluate_function_call_ast("Sinh", &[pos])?;
     return Ok(negate_expr(inner));
   }
-  Ok(Expr::FunctionCall {
-    name: "Sinh".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Sinh", args))
 }
 
 /// Cosh[x] - Hyperbolic cosine
@@ -4325,10 +4208,7 @@ pub fn cosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(pos) = try_extract_negated(&args[0]) {
     return crate::evaluator::evaluate_function_call_ast("Cosh", &[pos]);
   }
-  Ok(Expr::FunctionCall {
-    name: "Cosh".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Cosh", args))
 }
 
 /// Tanh[x] - Hyperbolic tangent
@@ -4378,10 +4258,7 @@ pub fn tanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let inner = crate::evaluator::evaluate_function_call_ast("Tanh", &[pos])?;
     return Ok(negate_expr(inner));
   }
-  Ok(Expr::FunctionCall {
-    name: "Tanh".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Tanh", args))
 }
 
 /// Coth[x] - Hyperbolic cotangent
@@ -4435,10 +4312,7 @@ pub fn coth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let inner = crate::evaluator::evaluate_function_call_ast("Coth", &[pos])?;
     return Ok(negate_expr(inner));
   }
-  Ok(Expr::FunctionCall {
-    name: "Coth".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Coth", args))
 }
 
 /// Sech[x] - Hyperbolic secant
@@ -4481,10 +4355,7 @@ pub fn sech_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(pos) = try_extract_negated(&args[0]) {
     return crate::evaluator::evaluate_function_call_ast("Sech", &[pos]);
   }
-  Ok(Expr::FunctionCall {
-    name: "Sech".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Sech", args))
 }
 
 /// Csch[x] - Hyperbolic cosecant
@@ -4538,10 +4409,7 @@ pub fn csch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let inner = crate::evaluator::evaluate_function_call_ast("Csch", &[pos])?;
     return Ok(negate_expr(inner));
   }
-  Ok(Expr::FunctionCall {
-    name: "Csch".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Csch", args))
 }
 
 /// ArcSinh[x] - Inverse hyperbolic sine
@@ -4586,10 +4454,7 @@ pub fn arcsinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::evaluator::evaluate_function_call_ast("ArcSinh", &[neg])?;
     return Ok(negate_expr(inner));
   }
-  Ok(Expr::FunctionCall {
-    name: "ArcSinh".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ArcSinh", args))
 }
 
 /// ArcCosh[x] - Inverse hyperbolic cosine
@@ -4672,10 +4537,7 @@ pub fn arccosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => {}
   }
-  Ok(Expr::FunctionCall {
-    name: "ArcCosh".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ArcCosh", args))
 }
 
 /// True if `expr` contains a Real or BigFloat anywhere — used to gate
@@ -4763,10 +4625,7 @@ pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::evaluator::evaluate_function_call_ast("ArcTanh", &[neg])?;
     return Ok(negate_expr(inner));
   }
-  Ok(Expr::FunctionCall {
-    name: "ArcTanh".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ArcTanh", args))
 }
 
 /// ArcCoth[x] - Inverse hyperbolic cotangent
@@ -4873,10 +4732,7 @@ pub fn arccoth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &[Expr::Integer(-1), inner],
     );
   }
-  Ok(Expr::FunctionCall {
-    name: "ArcCoth".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ArcCoth", args))
 }
 
 /// ArcSech[x] - Inverse hyperbolic secant
@@ -4908,10 +4764,7 @@ pub fn arcsech_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => {}
   }
-  Ok(Expr::FunctionCall {
-    name: "ArcSech".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ArcSech", args))
 }
 
 pub fn arccot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -4921,12 +4774,7 @@ pub fn arccot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let x = &args[0];
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "ArcCot".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("ArcCot", args));
 
   // ArcCot[±Infinity] = 0; ArcCot[0] = Pi/2.
   if matches!(x, Expr::Identifier(s) if s == "Infinity")
@@ -5007,10 +4855,7 @@ pub fn arccsc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &[Expr::Real(1.0 / *f)],
     );
   }
-  Ok(Expr::FunctionCall {
-    name: "ArcCsc".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ArcCsc", args))
 }
 
 pub fn arcsec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -5054,10 +4899,7 @@ pub fn arcsec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &[Expr::Real(1.0 / *f)],
     );
   }
-  Ok(Expr::FunctionCall {
-    name: "ArcSec".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ArcSec", args))
 }
 
 pub fn arccsch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -5094,10 +4936,7 @@ pub fn arccsch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &[Expr::Integer(-1), inner],
     );
   }
-  Ok(Expr::FunctionCall {
-    name: "ArcCsch".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ArcCsch", args))
 }
 
 /// Helper to construct -Pi/2 matching wolframscript output format
@@ -5236,10 +5075,7 @@ pub fn gudermannian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     Expr::Identifier(name) if name == "ComplexInfinity" => {
       // Gudermannian[ComplexInfinity] is unevaluated in Wolfram
-      return Ok(Expr::FunctionCall {
-        name: "Gudermannian".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Gudermannian", args));
     }
     Expr::Identifier(name) if name == "Undefined" => {
       return Ok(Expr::Identifier("Undefined".to_string()));
@@ -5276,10 +5112,7 @@ pub fn gudermannian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {}
   }
   // Symbolic: return unevaluated (matching wolframscript behavior)
-  Ok(Expr::FunctionCall {
-    name: "Gudermannian".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("Gudermannian", args))
 }
 
 /// InverseGudermannian[x] - the inverse Gudermannian function
@@ -5307,10 +5140,7 @@ pub fn inverse_gudermannian_ast(
     }
     _ => {}
   }
-  Ok(Expr::FunctionCall {
-    name: "InverseGudermannian".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("InverseGudermannian", args))
 }
 
 /// LogisticSigmoid[x] = 1 / (1 + Exp[-x])
@@ -5386,10 +5216,7 @@ pub fn logistic_sigmoid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .into(),
     });
   }
-  Ok(Expr::FunctionCall {
-    name: "LogisticSigmoid".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("LogisticSigmoid", args))
 }
 
 // ─── Degree Trig Functions ──────────────────────────────────────────────
@@ -5417,10 +5244,7 @@ fn trig_degrees_ast(
   if let Expr::FunctionCall { name, .. } = &result
     && name == func_name
   {
-    return Ok(Expr::FunctionCall {
-      name: degrees_name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(degrees_name, args));
   }
   Ok(result)
 }
@@ -5445,10 +5269,7 @@ fn arc_trig_degrees_ast(
   if let Expr::FunctionCall { name, .. } = &radians
     && name == func_name
   {
-    return Ok(Expr::FunctionCall {
-      name: degrees_name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(degrees_name, args));
   }
   // For numeric results, convert radians to degrees (keep as Real)
   if let Expr::Real(f) = &radians {
@@ -5524,10 +5345,7 @@ pub fn arccsc_degrees_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// TrigExpand[expr] — expand trig functions of sums and integer multiples.
 pub fn trig_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
-      name: "TrigExpand".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("TrigExpand", args));
   }
   let result = trig_expand_recursive(&args[0]);
   // TrigExpand distributes products over sums (and expands powers).
@@ -5918,10 +5736,7 @@ fn expand_cosh_multiple(n: usize, x: &Expr) -> Expr {
 // ─── AST building helpers ───────────────────────────────────────────
 
 fn make_fn(name: &str, args: &[Expr]) -> Expr {
-  Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.to_vec().into(),
-  }
+  unevaluated(name, args)
 }
 
 fn make_times(a: &Expr, b: &Expr) -> Expr {
@@ -5984,10 +5799,7 @@ fn build_sum(terms: &[Expr]) -> Expr {
   if terms.len() == 1 {
     return terms[0].clone();
   }
-  Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: terms.to_vec().into(),
-  }
+  unevaluated("Plus", terms)
 }
 
 // ─── TrigReduce ─────────────────────────────────────────────────────────
@@ -5996,10 +5808,7 @@ fn build_sum(terms: &[Expr]) -> Expr {
 /// sums of trig functions with linear arguments.
 pub fn trig_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
-      name: "TrigReduce".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("TrigReduce", args));
   }
   let result = trig_reduce_recursive(&args[0]);
   let evaluated = crate::evaluator::evaluate_expr_to_expr(&result)?;
