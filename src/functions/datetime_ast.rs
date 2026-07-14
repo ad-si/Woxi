@@ -1,7 +1,7 @@
 //! AST-native date/time functions.
 
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 /// Parse an ISO-style date/time string into its integer components, e.g.
 /// `"2024-03-15"` → `{2024, 3, 15}` and `"2024-03-15 14:30:00"` →
@@ -254,12 +254,7 @@ fn jdn_to_julian(jdn: i64) -> (i64, i64, i64) {
 /// stays unevaluated, matching wolframscript. Non-Julian target calendars are
 /// left unevaluated.
 pub fn calendar_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "CalendarConvert".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("CalendarConvert", args));
   if args.len() != 2 {
     return unevaluated();
   }
@@ -812,10 +807,7 @@ pub fn absolute_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
-      name: "AbsoluteTime".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("AbsoluteTime", args));
   }
 
   let arg = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
@@ -918,10 +910,7 @@ pub fn date_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
-      name: "DateList".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("DateList", args));
   }
 
   let arg = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
@@ -1039,12 +1028,7 @@ fn make_date_list(y: i64, m: i64, d: i64, h: i64, min: i64, sec: f64) -> Expr {
 /// date lists stay date lists). Dates are ordered by their padded calendar
 /// components (year, month, day, hour, minute, second).
 pub fn date_bounds_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "DateBounds".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("DateBounds", args));
   let Expr::List(items) = &args[0] else {
     return unevaluated();
   };
@@ -1089,12 +1073,7 @@ pub fn date_bounds_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// chrono-tz (CLI builds only — the WASM build leaves named zones
 /// unevaluated). One-argument form converts to $TimeZone (0.).
 pub fn time_zone_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "TimeZoneConvert".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("TimeZoneConvert", args));
   if args.is_empty() || args.len() > 2 {
     return unevaluated();
   }
@@ -1350,10 +1329,7 @@ fn named_zone_offset(_name: &str, _c: &[f64], _local: bool) -> Option<f64> {
 
 pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
-    return Ok(Expr::FunctionCall {
-      name: "DatePlus".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("DatePlus", args));
   }
 
   let date_arg = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
@@ -1728,10 +1704,7 @@ pub fn date_spec_error(
         head,
         crate::syntax::format_expr(&ev, crate::syntax::ExprForm::Output)
       ));
-      return Some(Expr::FunctionCall {
-        name: head.to_string(),
-        args: args.to_vec().into(),
-      });
+      return Some(unevaluated(head, args));
     }
   }
   None
@@ -1739,10 +1712,7 @@ pub fn date_spec_error(
 
 pub fn date_difference_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 3 {
-    return Ok(Expr::FunctionCall {
-      name: "DateDifference".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("DateDifference", args));
   }
 
   if let Some(unevaluated) = date_spec_error("DateDifference", args, &args[..2])
@@ -1756,19 +1726,13 @@ pub fn date_difference_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let c1 = match extract_date_components(&date1) {
     Some(c) => c,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "DateDifference".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("DateDifference", args));
     }
   };
   let c2 = match extract_date_components(&date2) {
     Some(c) => c,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "DateDifference".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("DateDifference", args));
     }
   };
 
@@ -1815,10 +1779,7 @@ pub fn date_difference_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return date_difference_multi_unit(&c1, &c2, &unit_arg);
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "DateDifference".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("DateDifference", args));
     }
   };
 
@@ -1885,20 +1846,20 @@ fn date_difference_multi_unit(
         match item {
           Expr::String(s) => v.push(s.clone()),
           Expr::Identifier(s) => v.push(s.clone()),
-          _ => return Ok(unevaluated(c1, c2, units)),
+          _ => return Ok(unevaluated_date_difference(c1, c2, units)),
         }
       }
       v
     }
-    _ => return Ok(unevaluated(c1, c2, units)),
+    _ => return Ok(unevaluated_date_difference(c1, c2, units)),
   };
   if unit_strs.is_empty() {
-    return Ok(unevaluated(c1, c2, units));
+    return Ok(unevaluated_date_difference(c1, c2, units));
   }
   // Bail out for calendar-aware units that don't reduce to fixed seconds.
   for u in &unit_strs {
     if u == "Year" || u == "Month" {
-      return Ok(unevaluated(c1, c2, units));
+      return Ok(unevaluated_date_difference(c1, c2, units));
     }
   }
   let s1 = date_to_absolute_seconds(
@@ -1928,7 +1889,7 @@ fn date_difference_multi_unit(
       "Hour" => 3600.0,
       "Minute" => 60.0,
       "Second" => 1.0,
-      _ => return Ok(unevaluated(c1, c2, units)),
+      _ => return Ok(unevaluated_date_difference(c1, c2, units)),
     };
     let plural = match u.as_str() {
       "Week" => "Weeks",
@@ -1969,7 +1930,7 @@ fn date_difference_multi_unit(
   })
 }
 
-fn unevaluated(c1: &[f64], c2: &[f64], units: &Expr) -> Expr {
+fn unevaluated_date_difference(c1: &[f64], c2: &[f64], units: &Expr) -> Expr {
   let to_list = |c: &[f64]| -> Expr {
     Expr::List(
       c.iter()
@@ -2122,16 +2083,10 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Some((y, m, d)) = parse_date_string(s) {
           vec![y as f64, m as f64, d as f64, 0.0, 0.0, 0.0]
         } else {
-          return Ok(Expr::FunctionCall {
-            name: "DateString".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("DateString", args));
         }
       } else {
-        return Ok(Expr::FunctionCall {
-          name: "DateString".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("DateString", args));
       }
     }
   };
@@ -2243,10 +2198,7 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .into()
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "DateString".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("DateString", args));
     }
   };
 
@@ -2299,10 +2251,7 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// DayName[DateObject[{year, month, day}]] - also accepted
 pub fn day_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
-      name: "DayName".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("DayName", args));
   }
 
   let arg = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
@@ -2327,10 +2276,7 @@ pub fn day_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier(day_name(dow).to_string()));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "DayName".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("DayName", args))
 }
 
 /// Day of the year (1–366) for a Gregorian date.
@@ -2385,12 +2331,7 @@ fn iso_week_year(year: i64, month: i64, day: i64) -> i64 {
 
 /// DateValue[date, property] — a named component of a date.
 pub fn date_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "DateValue".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("DateValue", args));
   if args.len() != 2 {
     return unevaluated();
   }
@@ -2476,12 +2417,7 @@ pub fn date_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// ("BusinessDay", "Holiday"), bare category symbols, and lists are left
 /// unevaluated, matching Wolfram.
 pub fn day_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "DayMatchQ".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("DayMatchQ", args));
   if args.len() != 2 {
     return unevaluated();
   }
@@ -2588,12 +2524,7 @@ fn day_round_result(
 /// dependent classes (e.g. "BusinessDay") and the 3-argument rounding form are
 /// left unevaluated.
 pub fn day_round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "DayRound".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("DayRound", args));
   // DayRound[date] — floor the date to its containing day, returning a
   // DateObject with Day granularity (the daytype defaults to every day).
   if args.len() == 1 {
@@ -2708,12 +2639,7 @@ fn date_granularity_step(
 /// for gran = "Day"/"Month"/"Year" gives the next such calendar unit. Other
 /// forms are left unevaluated.
 pub fn next_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "NextDate".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("NextDate", args));
   if args.len() != 2 {
     return unevaluated();
   }
@@ -2777,12 +2703,7 @@ pub fn next_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// `NextDate`: only the weekday-name form (symbol or string Monday…Sunday) is
 /// supported; other forms are left unevaluated.
 pub fn previous_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "PreviousDate".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("PreviousDate", args));
   if args.len() != 2 {
     return unevaluated();
   }
@@ -2927,10 +2848,7 @@ pub fn datetime_order_key(e: &Expr) -> Option<(f64, u8)> {
 /// DayPlus[date, n, "BusinessDay"] - adds n business days (Mon-Fri)
 pub fn day_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 3 {
-    return Ok(Expr::FunctionCall {
-      name: "DayPlus".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("DayPlus", args));
   }
 
   let date_arg = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
@@ -2939,10 +2857,7 @@ pub fn day_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let components = match extract_date_components(&date_arg) {
     Some(c) => c,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "DayPlus".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("DayPlus", args));
     }
   };
 
@@ -2962,10 +2877,7 @@ pub fn day_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(n) => *n as i64,
     Expr::Real(f) => *f as i64,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "DayPlus".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("DayPlus", args));
     }
   };
 
@@ -3040,10 +2952,7 @@ fn weekday_index(name: &str) -> Option<i64> {
 
 pub fn day_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 && args.len() != 3 {
-    return Ok(Expr::FunctionCall {
-      name: "DayRange".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("DayRange", args));
   }
 
   // Optional 3rd argument: a weekday (or list of weekdays) to keep, e.g.
@@ -3060,17 +2969,11 @@ pub fn day_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Identifier(n) | Expr::Constant(n) => match weekday_index(n) {
           Some(i) => idxs.push(i),
           None => {
-            return Ok(Expr::FunctionCall {
-              name: "DayRange".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("DayRange", args));
           }
         },
         _ => {
-          return Ok(Expr::FunctionCall {
-            name: "DayRange".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("DayRange", args));
         }
       }
     }
@@ -3094,12 +2997,7 @@ pub fn day_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     Some(out)
   };
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "DayRange".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("DayRange", args));
 
   let start_comp = match extract_date_components(&start_arg).and_then(pad_date)
   {
@@ -3172,12 +3070,7 @@ pub fn day_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// the granularity: hours and minutes are truncated to whole numbers, while
 /// the Instant form keeps a fractional seconds value.
 pub fn time_object_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "TimeObject".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("TimeObject", args));
 
   // Only the single date-list argument form is handled here; option forms
   // (TimeZone, string parsing, …) fall through unevaluated.
@@ -3264,12 +3157,7 @@ pub fn time_object_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// step by the calendar; the other units step by a fixed number of seconds.
 /// If `start` is after `end` the result is the empty list.
 pub fn date_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "DateRange".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("DateRange", args));
 
   if args.len() != 2 && args.len() != 3 {
     return unevaluated();
@@ -3448,10 +3336,7 @@ pub fn date_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// so negative years shift by one. Date lists are taken as-is with no
 /// time-zone adjustment, matching wolframscript.
 pub fn julian_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "JulianDate".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = |args: &[Expr]| unevaluated("JulianDate", args);
 
   if args.is_empty() {
     use web_time::{SystemTime, UNIX_EPOCH};
@@ -3763,12 +3648,7 @@ fn instant_to_granular_date_object(seconds: f64, gran: &str) -> Expr {
 /// MidDate[datespec, gran, x] — the date at fraction x (instead of 1/2) of
 ///   the interval; for a list of dates x spans their overall bounds.
 pub fn mid_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "MidDate".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("MidDate", args));
   if args.is_empty() || args.len() > 3 {
     return unevaluated();
   }
@@ -3986,12 +3866,7 @@ pub fn date_object_panel_svg(expr: &Expr) -> Option<String> {
 /// Instant containers (and TimeObject arguments) stay silently unevaluated;
 /// non-date arguments emit `::arg` and echo.
 pub fn date_within_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "DateWithinQ".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("DateWithinQ", args));
   if args.len() != 2 {
     return unevaluated();
   }
@@ -4078,12 +3953,7 @@ pub fn date_within_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// the interval's constituent days (Day granularity) as DateObjects. Other
 /// granularities and non-list/interval arguments are left unevaluated.
 pub fn date_select_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "DateSelect".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("DateSelect", args));
   if args.len() != 2 {
     return unevaluated();
   }
@@ -4165,12 +4035,7 @@ pub fn date_select_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// consecutive days) do not overlap, while intervals that share an interior
 /// unit do. Non-date arguments (or instant points) stay unevaluated.
 pub fn date_overlaps_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "DateOverlapsQ".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("DateOverlapsQ", args));
   if args.len() != 2 {
     return unevaluated();
   }
@@ -4310,12 +4175,7 @@ pub fn date_overlaps_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// exact time components (integer seconds when whole); Real input gives a
 /// Real seconds component. Non-numeric arguments emit ::arg.
 pub fn from_julian_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "FromJulianDate".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("FromJulianDate", args));
   if args.len() != 1 {
     return unevaluated();
   }

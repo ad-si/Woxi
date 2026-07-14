@@ -7,7 +7,7 @@
 //! `req[{"Scheme", "Domain", Method}]`.
 
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 /// The user agent wolframscript sends and reports for HTTP requests.
 const USER_AGENT: &str = "Wolfram HTTPClient 15.";
@@ -729,10 +729,8 @@ fn curl_error_text(stderr: &str) -> String {
 /// request cannot be sent, mirroring wolframscript's structure.
 #[cfg(not(target_arch = "wasm32"))]
 fn connection_failure(url: &str, func_args: &[Expr]) -> Expr {
-  let request = http_request_ast(func_args).unwrap_or(Expr::FunctionCall {
-    name: "HTTPRequest".to_string(),
-    args: func_args.to_vec().into(),
-  });
+  let request = http_request_ast(func_args)
+    .unwrap_or(unevaluated("HTTPRequest", func_args));
   let template_key = Expr::String("MessageTemplate".to_string());
   Expr::FunctionCall {
     name: "Failure".to_string(),
@@ -897,12 +895,7 @@ fn decode_query_component(s: &str) -> String {
 /// keys/values are percent-decoded; `Fragment`, `PathString`, and
 /// `QueryString` stay raw, matching wolframscript.
 pub fn url_parse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "URLParse".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("URLParse", args));
   if args.is_empty() || args.len() > 2 {
     return unevaluated();
   }

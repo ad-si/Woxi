@@ -8,13 +8,12 @@
 //! - 1/n! decay: True
 
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
+};
 
 pub fn sum_convergence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "SumConvergence".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = |args: &[Expr]| unevaluated("SumConvergence", args);
   if args.len() != 2 {
     return Ok(unevaluated(args));
   }

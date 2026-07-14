@@ -2,6 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::unevaluated;
 
 /// AST-based Tally: count occurrences of each element.
 /// Tally[{a, b, a, c, b, a}] -> {{a, 3}, {b, 2}, {c, 1}}
@@ -247,10 +248,7 @@ fn collect_set_subjects<'a>(
   fname: &str,
   args: &'a [Expr],
 ) -> Result<(Vec<&'a [Expr]>, Option<&'a str>, Option<&'a Expr>), Expr> {
-  let unevaluated = || Expr::FunctionCall {
-    name: fname.to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated(fname, args);
   let show =
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
 
@@ -689,10 +687,7 @@ fn complement_with_same_test(
 pub fn delete_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use std::collections::HashMap;
 
-  let unevaluated = || Expr::FunctionCall {
-    name: "DeleteElements".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("DeleteElements", args);
 
   // Subject must be a List or a general expression with a head.
   let (items, head): (&[Expr], Option<&str>) = match &args[0] {
@@ -853,10 +848,7 @@ pub fn delete_adjacent_duplicates_ast(
   let items = match &args[0] {
     Expr::List(items) => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "DeleteAdjacentDuplicates".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("DeleteAdjacentDuplicates", args));
     }
   };
 
@@ -897,10 +889,7 @@ pub fn commonest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::emit_message(
         "Commonest::arg1: The first argument is expected to be a list.",
       );
-      return Ok(Expr::FunctionCall {
-        name: "Commonest".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Commonest", args));
     }
   };
 
@@ -921,18 +910,12 @@ pub fn commonest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         match &a[0] {
           Expr::Integer(n) if *n >= 0 => *n as usize,
           _ => {
-            return Ok(Expr::FunctionCall {
-              name: "Commonest".to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated("Commonest", args));
           }
         }
       }
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "Commonest".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Commonest", args));
       }
     }
   } else {
@@ -994,10 +977,7 @@ pub fn commonest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// `UniqueElements[lists, test]` uses `test[a, b]` to decide whether two
 /// elements are equivalent, replacing the default SameQ comparison.
 pub fn unique_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "UniqueElements".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("UniqueElements", args);
 
   // The sole subject is a list of lists.
   let Expr::List(lists) = &args[0] else {
@@ -1118,10 +1098,7 @@ pub fn symmetric_difference_ast(
     let items = match list {
       Expr::List(items) => items,
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "SymmetricDifference".to_string(),
-          args: lists.to_vec().into(),
-        });
+        return Ok(unevaluated("SymmetricDifference", lists));
       }
     };
 

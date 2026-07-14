@@ -14,13 +14,12 @@
 
 use crate::InterpreterError;
 use crate::functions::calculus_ast::is_constant_wrt;
-use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
+};
 
 pub fn z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "ZTransform".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = |args: &[Expr]| unevaluated("ZTransform", args);
   if args.len() != 3 {
     return Ok(unevaluated(args));
   }
@@ -665,10 +664,7 @@ fn split_fraction(expr: &Expr) -> (i128, Expr, Expr) {
 pub fn inverse_z_transform_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "InverseZTransform".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = |args: &[Expr]| unevaluated("InverseZTransform", args);
   if args.len() != 3 {
     return Ok(unevaluated(args));
   }
@@ -1126,10 +1122,7 @@ fn times_factors(expr: &Expr) -> Vec<Expr> {
 pub fn fourier_coefficient_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "FourierCoefficient".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = |args: &[Expr]| unevaluated("FourierCoefficient", args);
   if args.len() != 3 {
     return Ok(unevaluated(args));
   }
@@ -1313,10 +1306,7 @@ pub fn fourier_sin_cos_coefficient_ast(
   } else {
     "FourierCosCoefficient"
   };
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: head.to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = |args: &[Expr]| unevaluated(head, args);
   if args.len() != 3 {
     return Ok(unevaluated(args));
   }

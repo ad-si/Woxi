@@ -8,7 +8,7 @@ use crate::functions::plot::{
   parse_plot_legends, parse_plot_style,
 };
 use crate::functions::sound::audio_sample_rate;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 /// Parse list data from the first argument.
 /// Returns a vector of series, each series being a vector of (x, y) points.
@@ -782,10 +782,7 @@ pub fn audio_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data =
     evaluate_expr_to_expr(&args[0]).unwrap_or_else(|_| args[0].clone());
   let Some(all_series) = collect_audio_series(&data) else {
-    return Ok(Expr::FunctionCall {
-      name: "AudioPlot".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("AudioPlot", args));
   };
   let all_series: Vec<Vec<(f64, f64)>> = all_series
     .into_iter()

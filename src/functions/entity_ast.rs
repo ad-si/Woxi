@@ -4,7 +4,7 @@
 //! EntityList, EntityProperties, EntityStores, EntityClassList, and Entity property access.
 
 use crate::InterpreterError;
-use crate::syntax::{Expr, expr_to_string};
+use crate::syntax::{Expr, expr_to_string, unevaluated};
 
 use std::cell::RefCell;
 
@@ -34,10 +34,7 @@ thread_local! {
 /// Returns the normalized EntityStore expression.
 pub fn entity_store_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
-      name: "EntityStore".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("EntityStore", args));
   }
 
   // Parse the list of type -> data rules
@@ -52,10 +49,7 @@ pub fn entity_store_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       vec![&args[0]]
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "EntityStore".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("EntityStore", args));
     }
   };
 
@@ -65,10 +59,7 @@ pub fn entity_store_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let (type_name, type_data) = match extract_rule(rule) {
       Some(pair) => pair,
       None => {
-        return Ok(Expr::FunctionCall {
-          name: "EntityStore".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("EntityStore", args));
       }
     };
 
@@ -81,10 +72,7 @@ pub fn entity_store_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match &type_data {
       Expr::Association(_) => {}
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "EntityStore".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("EntityStore", args));
       }
     }
 
@@ -218,10 +206,7 @@ fn parse_entity_type_data(data: &Expr) -> Option<EntityTypeData> {
 /// Returns a list of type names that were registered.
 pub fn entity_register_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
-      name: "EntityRegister".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("EntityRegister", args));
   }
 
   let store = &args[0];
@@ -306,10 +291,7 @@ pub fn entity_register_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// EntityUnregister["type"] — unregister the first store containing that type.
 pub fn entity_unregister_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
-      name: "EntityUnregister".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("EntityUnregister", args));
   }
 
   match &args[0] {
@@ -326,20 +308,14 @@ pub fn entity_unregister_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
       Ok(Expr::Identifier("Null".to_string()))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "EntityUnregister".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("EntityUnregister", args)),
   }
 }
 
 /// EntityStores[] — return a list of all registered entity stores.
 pub fn entity_stores_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !args.is_empty() {
-    return Ok(Expr::FunctionCall {
-      name: "EntityStores".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("EntityStores", args));
   }
 
   let stores = ENTITY_STORES.with(|stores| {
@@ -574,15 +550,9 @@ pub fn entity_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
 
       // Fallback: return unevaluated
-      Ok(Expr::FunctionCall {
-        name: "EntityValue".to_string(),
-        args: args.to_vec().into(),
-      })
+      Ok(unevaluated("EntityValue", args))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "EntityValue".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("EntityValue", args)),
   }
 }
 
@@ -633,10 +603,7 @@ fn resolve_entity_lookup(
 /// EntityList[EntityClass["type", "class"]] — list entities in a class.
 pub fn entity_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
-      name: "EntityList".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("EntityList", args));
   }
 
   match &args[0] {
@@ -665,10 +632,7 @@ pub fn entity_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       entity_list_for_class(&type_name, &class_name)
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "EntityList".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("EntityList", args)),
   }
 }
 
@@ -784,19 +748,13 @@ fn entity_count_for_type(type_name: &str) -> Result<Expr, InterpreterError> {
 /// EntityClassList["type"] — list all entity classes for a given type.
 pub fn entity_class_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
-      name: "EntityClassList".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("EntityClassList", args));
   }
 
   let type_name = match &args[0] {
     Expr::String(s) => s.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "EntityClassList".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("EntityClassList", args));
     }
   };
 
@@ -839,18 +797,12 @@ pub fn entity_class_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// EntityProperties["type"] — list all properties for a given type.
 pub fn entity_properties_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
-      name: "EntityProperties".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("EntityProperties", args));
   }
 
   match &args[0] {
     Expr::String(type_name) => entity_properties_for_type(type_name),
-    _ => Ok(Expr::FunctionCall {
-      name: "EntityProperties".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => Ok(unevaluated("EntityProperties", args)),
   }
 }
 
@@ -903,10 +855,7 @@ pub fn entity_property_access(
 ) -> Result<Expr, InterpreterError> {
   if entity_args.len() != 2 || access_args.len() != 1 {
     return Ok(Expr::CurriedCall {
-      func: Box::new(Expr::FunctionCall {
-        name: "Entity".to_string(),
-        args: entity_args.to_vec().into(),
-      }),
+      func: Box::new(unevaluated("Entity", entity_args)),
       args: access_args.to_vec(),
     });
   }
@@ -924,10 +873,7 @@ pub fn entity_property_access(
     Expr::String(s) => s.clone(),
     _ => {
       return Ok(Expr::CurriedCall {
-        func: Box::new(Expr::FunctionCall {
-          name: "Entity".to_string(),
-          args: entity_args.to_vec().into(),
-        }),
+        func: Box::new(unevaluated("Entity", entity_args)),
         args: access_args.to_vec(),
       });
     }
@@ -943,10 +889,7 @@ pub fn entity_store_property_access(
 ) -> Result<Expr, InterpreterError> {
   if call_args.len() != 2 {
     return Ok(Expr::CurriedCall {
-      func: Box::new(Expr::FunctionCall {
-        name: "EntityStore".to_string(),
-        args: store_args.to_vec().into(),
-      }),
+      func: Box::new(unevaluated("EntityStore", store_args)),
       args: call_args.to_vec(),
     });
   }
@@ -969,10 +912,7 @@ pub fn entity_store_property_access(
     }
     _ => {
       return Ok(Expr::CurriedCall {
-        func: Box::new(Expr::FunctionCall {
-          name: "EntityStore".to_string(),
-          args: store_args.to_vec().into(),
-        }),
+        func: Box::new(unevaluated("EntityStore", store_args)),
         args: call_args.to_vec(),
       });
     }
@@ -982,10 +922,7 @@ pub fn entity_store_property_access(
     Expr::String(s) => s.clone(),
     _ => {
       return Ok(Expr::CurriedCall {
-        func: Box::new(Expr::FunctionCall {
-          name: "EntityStore".to_string(),
-          args: store_args.to_vec().into(),
-        }),
+        func: Box::new(unevaluated("EntityStore", store_args)),
         args: call_args.to_vec(),
       });
     }

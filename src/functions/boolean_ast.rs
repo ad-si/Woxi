@@ -6,7 +6,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
-use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
+};
 
 /// Helper to check if an Expr is True or False
 fn as_bool(expr: &Expr) -> Option<bool> {
@@ -99,10 +101,7 @@ pub fn or_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn not_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     // Return unevaluated for wrong number of arguments
-    return Ok(Expr::FunctionCall {
-      name: "Not".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Not", args));
   }
 
   let evaluated = evaluate_expr_to_expr(&args[0])?;
@@ -409,10 +408,7 @@ pub fn which_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Which::{}: Which called with {} {}.",
       tag, n, word
     ));
-    return Ok(Expr::FunctionCall {
-      name: "Which".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Which", args));
   }
 
   for i in (0..args.len()).step_by(2) {
@@ -2050,10 +2046,7 @@ pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match &args[1] {
       Expr::String(s) => s.as_str().to_string(),
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "BooleanConvert".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("BooleanConvert", args));
       }
     }
   } else {
@@ -2083,10 +2076,7 @@ pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       normalize_not(&bc_to_single_connective(&cnf, "And", "Or", "And"))
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "BooleanConvert".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("BooleanConvert", args));
     }
   };
 
@@ -2132,12 +2122,7 @@ fn collect_boolean_variables(expr: &Expr, vars: &mut BTreeSet<String>) {
 /// variables; if a variable of `expr` is missing from the list the expression
 /// is not Boolean-valued and the call stays unevaluated (matching wolframscript).
 pub fn tautology_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "TautologyQ".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("TautologyQ", args));
   if args.len() != 1 && args.len() != 2 {
     return unevaluated();
   }
@@ -2206,10 +2191,7 @@ pub fn tautology_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// BooleanMinimize[expr] - Find the minimal sum-of-products form.
 pub fn boolean_minimize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
-      name: "BooleanMinimize".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("BooleanMinimize", args));
   }
 
   let expr = &args[0];
@@ -2230,10 +2212,7 @@ pub fn boolean_minimize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Limit to 20 variables
   if n > 20 {
-    return Ok(Expr::FunctionCall {
-      name: "BooleanMinimize".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("BooleanMinimize", args));
   }
 
   if n == 0 {
@@ -2461,10 +2440,7 @@ pub fn boolean_counting_function_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
-    return Ok(Expr::FunctionCall {
-      name: "BooleanCountingFunction".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("BooleanCountingFunction", args));
   }
   let vars: Vec<String> = match &args[1] {
     Expr::List(items) => {
@@ -2473,36 +2449,24 @@ pub fn boolean_counting_function_ast(
         if let Expr::Identifier(s) = it {
           out.push(s.clone());
         } else {
-          return Ok(Expr::FunctionCall {
-            name: "BooleanCountingFunction".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("BooleanCountingFunction", args));
         }
       }
       out
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "BooleanCountingFunction".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("BooleanCountingFunction", args));
     }
   };
   let n = vars.len();
   if n == 0 {
-    return Ok(Expr::FunctionCall {
-      name: "BooleanCountingFunction".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("BooleanCountingFunction", args));
   }
 
   let count_set: Vec<usize> = match parse_counting_spec(&args[0], n) {
     Some(cs) => cs,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "BooleanCountingFunction".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("BooleanCountingFunction", args));
     }
   };
 
@@ -2787,27 +2751,18 @@ fn vector_compare_ast(
 ) -> Result<Expr, InterpreterError> {
   // VectorLess/VectorLessEqual takes exactly 1 argument: a list of vectors/scalars
   if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   let items = match &args[0] {
     Expr::List(list_args) => list_args,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated(name, args));
     }
   };
 
   if items.len() < 2 {
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated(name, args));
   }
 
   // Check if items are vectors (lists) or scalars
@@ -2827,19 +2782,13 @@ fn vector_compare_ast(
           let na = match expr_to_num(ea) {
             Some(n) => n,
             None => {
-              return Ok(Expr::FunctionCall {
-                name: name.to_string(),
-                args: args.to_vec().into(),
-              });
+              return Ok(unevaluated(name, args));
             }
           };
           let nb = match expr_to_num(eb) {
             Some(n) => n,
             None => {
-              return Ok(Expr::FunctionCall {
-                name: name.to_string(),
-                args: args.to_vec().into(),
-              });
+              return Ok(unevaluated(name, args));
             }
           };
           if allow_equal {
@@ -2856,19 +2805,13 @@ fn vector_compare_ast(
         let na = match expr_to_num(a) {
           Some(n) => n,
           None => {
-            return Ok(Expr::FunctionCall {
-              name: name.to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated(name, args));
           }
         };
         let nb = match expr_to_num(b) {
           Some(n) => n,
           None => {
-            return Ok(Expr::FunctionCall {
-              name: name.to_string(),
-              args: args.to_vec().into(),
-            });
+            return Ok(unevaluated(name, args));
           }
         };
         if allow_equal {
@@ -2985,10 +2928,7 @@ fn substitute_boolean_var(expr: &Expr, var: &Expr, val: &Expr) -> Expr {
 /// BooleanVariables[expr] - the Boolean variables, canonically sorted.
 pub fn boolean_variables_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
-      name: "BooleanVariables".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("BooleanVariables", args));
   }
   let mut vars = Vec::new();
   collect_boolean_variable_exprs(&args[0], &mut vars);
@@ -3045,10 +2985,7 @@ fn count_satisfying(
 
 /// SatisfiableQ[expr] / SatisfiableQ[expr, vars]
 pub fn satisfiable_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "SatisfiableQ".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("SatisfiableQ", args);
   let vars = match satisfiability_vars(args) {
     Some(v) if v.len() <= 24 => v,
     _ => return Ok(unevaluated()),
@@ -3095,10 +3032,7 @@ pub fn satisfiable_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn satisfiability_count_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "SatisfiabilityCount".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("SatisfiabilityCount", args);
   let vars = match satisfiability_vars(args) {
     Some(v) if v.len() <= 24 => v,
     _ => return Ok(unevaluated()),
@@ -3153,10 +3087,7 @@ pub fn majority_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(args[0].clone());
   }
   if n == 2 && unknowns == 2 {
-    return evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "And".to_string(),
-      args: args.to_vec().into(),
-    });
+    return evaluate_expr_to_expr(&unevaluated("And", args));
   }
   // Majority is Orderless: canonically sort the remaining arguments
   let mut sorted = args.to_vec();
@@ -3176,18 +3107,12 @@ pub fn majority_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// specification gives False. Boolean expressions and other malformed
 /// specifications emit ::bspec.
 pub fn boolean_minterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "BooleanMinterms".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("BooleanMinterms", args);
   let bspec = || {
     crate::emit_message(&format!(
       "BooleanMinterms::bspec: {} is not a valid BooleanMinterms specification.",
       crate::syntax::format_expr(
-        &Expr::FunctionCall {
-          name: "BooleanMinterms".to_string(),
-          args: args.to_vec().into(),
-        },
+        &unevaluated(),
         crate::syntax::ExprForm::Output
       )
     ));
@@ -3321,12 +3246,7 @@ pub fn boolean_minterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// whose Boolean-variable set is empty (or opaque non-Boolean atoms) are
 /// vacuously True, like wolframscript.
 pub fn unate_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "UnateQ".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("UnateQ", args));
   if args.is_empty() || args.len() > 2 {
     return unevaluated();
   }
@@ -3407,10 +3327,7 @@ pub fn unate_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// empty specification is True, and covering every index collapses to
 /// False.
 pub fn boolean_maxterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "BooleanMaxterms".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("BooleanMaxterms", args);
   if args.len() != 2 {
     return Ok(unevaluated());
   }
@@ -3418,10 +3335,7 @@ pub fn boolean_maxterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::emit_message(&format!(
       "BooleanMaxterms::bspec: {} is not a valid BooleanMaxterms specification.",
       crate::syntax::format_expr(
-        &Expr::FunctionCall {
-          name: "BooleanMaxterms".to_string(),
-          args: args.to_vec().into(),
-        },
+        &unevaluated(),
         crate::syntax::ExprForm::Output
       )
     ));
@@ -3554,12 +3468,7 @@ fn boolean_quantifier(
   args: &[Expr],
   conjunct: bool,
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated(name, args));
   if args.len() != 2 {
     return unevaluated();
   }

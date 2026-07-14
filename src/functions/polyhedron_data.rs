@@ -3,7 +3,7 @@
 //! exact Wolfram Language expressions so results stay symbolic.
 
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 struct PolyhedronInfo {
   name: &'static str,
@@ -321,12 +321,7 @@ fn string_list(items: &[&str]) -> Expr {
 }
 
 pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "PolyhedronData".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("PolyhedronData", args));
 
   // `PolyhedronData[All]` — the list of known entities (by name).
   if let Some(Expr::Identifier(sym)) = args.first()

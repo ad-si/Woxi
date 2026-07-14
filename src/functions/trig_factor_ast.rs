@@ -9,14 +9,11 @@
 //! wolframscript does for already-factored or non-trig input.
 
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 pub fn trig_factor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
-      name: "TrigFactor".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("TrigFactor", args));
   }
   Ok(factor(&args[0]).unwrap_or_else(|| args[0].clone()))
 }

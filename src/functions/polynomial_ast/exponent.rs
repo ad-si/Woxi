@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 use crate::functions::calculus_ast::is_constant_wrt;
 
@@ -175,18 +175,12 @@ pub fn exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           sorted.into_iter().map(|r| r.to_expr()).collect();
         Ok(Expr::List(elems.into()))
       }
-      None => Ok(Expr::FunctionCall {
-        name: "Exponent".to_string(),
-        args: args.to_vec().into(),
-      }),
+      None => Ok(unevaluated("Exponent", args)),
     }
   } else if use_min {
     match min_power(&expanded, var) {
       Some(r) => Ok(r.to_expr()),
-      None => Ok(Expr::FunctionCall {
-        name: "Exponent".to_string(),
-        args: args.to_vec().into(),
-      }),
+      None => Ok(unevaluated("Exponent", args)),
     }
   } else {
     match max_power(&expanded, var) {
@@ -197,10 +191,7 @@ pub fn exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Some(exprs) = collect_term_powers(&expanded, var) {
           return Ok(build_max_expr(exprs));
         }
-        Ok(Expr::FunctionCall {
-          name: "Exponent".to_string(),
-          args: args.to_vec().into(),
-        })
+        Ok(unevaluated("Exponent", args))
       }
     }
   }

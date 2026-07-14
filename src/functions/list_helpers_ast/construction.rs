@@ -2,7 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::BinaryOperator;
+use crate::syntax::{BinaryOperator, unevaluated};
 
 /// AST-based Table: generate a table of values.
 /// Table[expr, {i, min, max}] -> {expr with i=min, ..., expr with i=max}
@@ -525,10 +525,7 @@ fn expr_to_rational(expr: &Expr) -> Option<(i128, i128)> {
 /// Range[min, max, step] -> {min, min+step, ..., max}
 pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 3 {
-    return Ok(Expr::FunctionCall {
-      name: "Range".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Range", args));
   }
 
   // Listable-style threading: Range[{a,b}, ...] => {Range[a, ...], Range[b, ...]}.
@@ -566,10 +563,7 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
 
     if step_n == 0 {
-      let call = Expr::FunctionCall {
-        name: "Range".to_string(),
-        args: args.to_vec().into(),
-      };
+      let call = unevaluated("Range", args);
       crate::emit_message(&format!(
         "Range::range: Range specification in {} does not have appropriate bounds.",
         crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
@@ -673,10 +667,7 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // range using the numeric count and render each element symbolically.
     if min_f.is_none() || max_f.is_none() {
       if let Some(0.0) = step_f {
-        let call = Expr::FunctionCall {
-          name: "Range".to_string(),
-          args: args.to_vec().into(),
-        };
+        let call = unevaluated("Range", args);
         crate::emit_message(&format!(
           "Range::range: Range specification in {} does not have appropriate bounds.",
           crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
@@ -748,20 +739,14 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       // Fully symbolic with no way to determine length — leave
       // unevaluated like Mathematica.
-      return Ok(Expr::FunctionCall {
-        name: "Range".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("Range", args));
     }
 
     if let (Some(min_val), Some(max_val), Some(step_val)) =
       (min_f, max_f, step_f)
     {
       if step_val == 0.0 {
-        let call = Expr::FunctionCall {
-          name: "Range".to_string(),
-          args: args.to_vec().into(),
-        };
+        let call = unevaluated("Range", args);
         crate::emit_message(&format!(
           "Range::range: Range specification in {} does not have appropriate bounds.",
           crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
@@ -813,10 +798,7 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
 
   if step == 0.0 {
-    let call = Expr::FunctionCall {
-      name: "Range".to_string(),
-      args: args.to_vec().into(),
-    };
+    let call = unevaluated("Range", args);
     crate::emit_message(&format!(
       "Range::range: Range specification in {} does not have appropriate bounds.",
       crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
@@ -865,10 +847,7 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// PowerRange[min, max, r] uses factor r instead of 10.
 pub fn power_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 3 {
-    return Ok(Expr::FunctionCall {
-      name: "PowerRange".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("PowerRange", args));
   }
 
   // Try rational arithmetic
@@ -952,10 +931,7 @@ pub fn power_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(results.into()));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "PowerRange".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("PowerRange", args))
 }
 
 /// AST-based ConstantArray: create array filled with constant.
@@ -1801,10 +1777,7 @@ pub fn array_multi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Some(n) = expr_to_i128(item) {
           d.push(n);
         } else {
-          return Ok(Expr::FunctionCall {
-            name: "Array".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("Array", args));
         }
       }
       d
@@ -1813,10 +1786,7 @@ pub fn array_multi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Some(n) = expr_to_i128(dims_expr) {
         vec![n]
       } else {
-        return Ok(Expr::FunctionCall {
-          name: "Array".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("Array", args));
       }
     }
   };
@@ -2308,17 +2278,11 @@ pub fn sparse_array_normalize_ast(
     && matches!(&args[1], Expr::List(_))
     && matches!(&args[3], Expr::List(_))
   {
-    return Ok(Expr::FunctionCall {
-      name: "SparseArray".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("SparseArray", args));
   }
 
   if args.is_empty() || args.len() > 3 {
-    return Ok(Expr::FunctionCall {
-      name: "SparseArray".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("SparseArray", args));
   }
 
   // Band[{i, j}] / Band[{i, j}, {iMax, jMax}] rules need to know the
@@ -2348,10 +2312,7 @@ pub fn sparse_array_normalize_ast(
   let (parsed_rules, inferred_dims) = match parse_sparse_data(data, &default) {
     Some(x) => x,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "SparseArray".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("SparseArray", args));
     }
   };
 
@@ -2361,26 +2322,17 @@ pub fn sparse_array_normalize_ast(
     match parse_sparse_dims(&args[1]) {
       Some(d) => {
         if !parsed_rules.is_empty() && d.len() != parsed_rules[0].0.len() {
-          return Ok(Expr::FunctionCall {
-            name: "SparseArray".to_string(),
-            args: args.to_vec().into(),
-          });
+          return Ok(unevaluated("SparseArray", args));
         }
         d
       }
       None => {
-        return Ok(Expr::FunctionCall {
-          name: "SparseArray".to_string(),
-          args: args.to_vec().into(),
-        });
+        return Ok(unevaluated("SparseArray", args));
       }
     }
   } else {
     if inferred_dims.is_empty() {
-      return Ok(Expr::FunctionCall {
-        name: "SparseArray".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("SparseArray", args));
     }
     inferred_dims
   };
@@ -2678,10 +2630,7 @@ pub fn sparse_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Atomic expressions emit ::normal (with `{1, i}` positions for atomic
 /// elements in the one-argument form) and invalid specs emit ::ilsmn.
 pub fn tuples_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let original = || Expr::FunctionCall {
-    name: "Tuples".to_string(),
-    args: args.to_vec().into(),
-  };
+  let original = || unevaluated("Tuples", args);
   let show =
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
   let emit_normal = |position: &str| {
@@ -2829,12 +2778,7 @@ pub fn tuples_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn distance_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Return the unevaluated form for any argument shape that DistanceMatrix
   // cannot process (matching wolframscript, which leaves it symbolic).
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "DistanceMatrix".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("DistanceMatrix", args));
 
   if args.is_empty() || args.len() > 2 {
     return unevaluated();

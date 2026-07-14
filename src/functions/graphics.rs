@@ -4,6 +4,7 @@ use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{DEFAULT_HEIGHT, DEFAULT_WIDTH, parse_image_size};
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
+  unevaluated,
 };
 
 /// Dash length for the "Small" named size in Dashing directives.
@@ -2055,10 +2056,7 @@ fn parse_polar_curve(
 /// symbolic echo. Returns `None` when the arguments don't describe a
 /// renderable curve (symbolic bounds etc.), so those stay symbolic.
 pub fn polar_curve_to_graphics(name: &str, args: &[Expr]) -> Option<Expr> {
-  let expr = Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.to_vec().into(),
-  };
+  let expr = unevaluated(name, args);
   // Check that the arguments actually parse into a drawable primitive
   // before rendering — otherwise an invalid call would show up as an
   // empty graphic instead of its symbolic form.
@@ -5772,10 +5770,10 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
               if fn_args.len() == 2 {
                 result.push_str(&expr_to_svg_markup(&fn_args[1]));
               } else {
-                result.push_str(&expr_to_svg_markup(&Expr::FunctionCall {
-                  name: "Times".to_string(),
-                  args: fn_args[1..].to_vec().into(),
-                }));
+                result.push_str(&expr_to_svg_markup(&unevaluated(
+                  "Times",
+                  &fn_args[1..],
+                )));
               }
             } else if let Expr::Integer(n) = arg
               && *n < 0
@@ -7163,10 +7161,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   if merged_primitives.is_empty() {
-    return Ok(Expr::FunctionCall {
-      name: "Show".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("Show", args));
   }
 
   let content = Expr::List(merged_primitives.into());
@@ -11054,10 +11049,7 @@ pub fn koch_curve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = match &args[0] {
     Expr::Integer(n) if *n >= 0 => *n as usize,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "KochCurve".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("KochCurve", args));
     }
   };
 
@@ -11204,10 +11196,7 @@ pub fn drop_shadowing_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   if !valid {
-    return Ok(Expr::FunctionCall {
-      name: "DropShadowing".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(unevaluated("DropShadowing", args));
   }
 
   Ok(Expr::FunctionCall {
@@ -13591,12 +13580,7 @@ fn curve_order(name: &str, args: &[Expr], max_n: i128) -> Option<i128> {
 /// which reproduces wolframscript's orientation exactly: order 1 runs
 /// (0,0) → (0,1) → (1,1) → (1,0)).
 pub fn hilbert_curve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "HilbertCurve".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("HilbertCurve", args));
   let Some(n) = curve_order("HilbertCurve", args, 10) else {
     return unevaluated();
   };
@@ -13634,12 +13618,7 @@ pub fn hilbert_curve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// (d → 2 - d) when the sum of the preceding other-coordinate digits is
 /// odd — which reproduces wolframscript's serpentine orientation.
 pub fn peano_curve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "PeanoCurve".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("PeanoCurve", args));
   let Some(n) = curve_order("PeanoCurve", args, 7) else {
     return unevaluated();
   };
@@ -13686,12 +13665,7 @@ pub fn peano_curve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// moves are (±32, ±32) and axis moves 64 — matching wolframscript's
 /// absolute integer coordinates at every order.
 pub fn sierpinski_curve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "SierpinskiCurve".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("SierpinskiCurve", args));
   let Some(n) = curve_order("SierpinskiCurve", args, 9) else {
     return unevaluated();
   };

@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{Expr, expr_to_string};
+use crate::syntax::{Expr, expr_to_string, unevaluated};
 
 /// PolynomialExtendedGCD[p, q, x] - extended GCD of two polynomials.
 ///
@@ -30,10 +30,7 @@ pub fn polynomial_extended_gcd_ast(
   let var = match &pos[2] {
     Expr::Identifier(name) => name.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "PolynomialExtendedGCD".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("PolynomialExtendedGCD", args));
     }
   };
 

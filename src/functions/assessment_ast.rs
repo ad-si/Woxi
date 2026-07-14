@@ -18,7 +18,7 @@
 
 use crate::InterpreterError;
 use crate::evaluator::pattern_matching::expr_equal;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 /// Turn a numeric-or-boolean grade expression into a `(score, correct)` pair.
 /// Returns `None` when the expression is not a recognized grade value.
@@ -184,10 +184,7 @@ pub fn apply_result_object(
 /// cannot be reduced.
 fn keep_curried(head: &str, func_args: &[Expr], arg: &Expr) -> Expr {
   Expr::CurriedCall {
-    func: Box::new(Expr::FunctionCall {
-      name: head.to_string(),
-      args: func_args.to_vec().into(),
-    }),
+    func: Box::new(unevaluated(head, func_args)),
     args: vec![arg.clone()],
   }
 }

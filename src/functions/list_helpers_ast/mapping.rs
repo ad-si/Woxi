@@ -2,7 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::ComparisonOp;
+use crate::syntax::{ComparisonOp, unevaluated};
 
 /// AST-based Map: apply function to each element of a list or association.
 /// Map[f, {a, b, c}] -> {f[a], f[b], f[c]}
@@ -1651,10 +1651,7 @@ pub fn compose_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let funcs = match &args[0] {
     Expr::List(items) => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "ComposeList".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("ComposeList", args));
     }
   };
 

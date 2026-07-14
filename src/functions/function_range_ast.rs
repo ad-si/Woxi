@@ -7,13 +7,10 @@
 //! LessEqual, 1].
 
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, ComparisonOp, Expr};
+use crate::syntax::{BinaryOperator, ComparisonOp, Expr, unevaluated};
 
 pub fn function_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "FunctionRange".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = |args: &[Expr]| unevaluated("FunctionRange", args);
   if args.len() != 3 {
     return Ok(unevaluated(args));
   }

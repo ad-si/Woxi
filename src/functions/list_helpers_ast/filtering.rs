@@ -2,7 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::BinaryOperator;
+use crate::syntax::{BinaryOperator, unevaluated};
 
 /// AST-based Select: filter elements where predicate returns True.
 /// Select[{a, b, c}, pred] -> elements where pred[elem] is True
@@ -225,10 +225,7 @@ pub fn select_first_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) => items.as_slice(),
     Expr::FunctionCall { args, .. } => args.as_slice(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "SelectFirst".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("SelectFirst", args));
     }
   };
 
@@ -1046,10 +1043,7 @@ fn cases_visit(
 /// enclosing expression). Invalid level specs emit `::level`, invalid
 /// counts `::innf`; both return the call unevaluated.
 pub fn cases_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let original = || Expr::FunctionCall {
-    name: "Cases".to_string(),
-    args: args.to_vec().into(),
-  };
+  let original = || unevaluated("Cases", args);
   let show =
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
 
@@ -1181,10 +1175,7 @@ pub fn cases_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Counts matches on the same canonical walk as Cases. Invalid level
 /// specs emit `::level`; a non-option fourth argument emits `::nonopt`.
 pub fn count_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let original = || Expr::FunctionCall {
-    name: "Count".to_string(),
-    args: args.to_vec().into(),
-  };
+  let original = || unevaluated("Count", args);
   let show =
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
 
@@ -1304,10 +1295,7 @@ pub fn count_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// canonical order (children before the enclosing expression). Invalid
 /// level specs emit `::level` and return the call unevaluated.
 pub fn level_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let original = || Expr::FunctionCall {
-    name: "Level".to_string(),
-    args: args.to_vec().into(),
-  };
+  let original = || unevaluated("Level", args);
   let show =
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
 
@@ -1486,10 +1474,7 @@ fn delete_cases_walk(
 pub fn delete_cases_unified_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let original = || Expr::FunctionCall {
-    name: "DeleteCases".to_string(),
-    args: args.to_vec().into(),
-  };
+  let original = || unevaluated("DeleteCases", args);
   let show =
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
 
@@ -1594,10 +1579,7 @@ pub fn delete_cases_unified_ast(
 /// Invalid level specs emit `::level`, invalid counts `::innf`; both
 /// return the call unevaluated.
 pub fn position_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let original = || Expr::FunctionCall {
-    name: "Position".to_string(),
-    args: args.to_vec().into(),
-  };
+  let original = || unevaluated("Position", args);
   let show =
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
 
@@ -1927,19 +1909,13 @@ pub fn contains_only_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let list = match &args[0] {
     Expr::List(items) => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "ContainsOnly".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("ContainsOnly", args));
     }
   };
   let elems = match &args[1] {
     Expr::List(items) => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "ContainsOnly".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("ContainsOnly", args));
     }
   };
 
@@ -2025,10 +2001,7 @@ pub fn length_while_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) => items.to_vec(),
     Expr::Association(pairs) => pairs.iter().map(|(_, v)| v.clone()).collect(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "LengthWhile".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("LengthWhile", args));
     }
   };
   let mut count: i128 = 0;
@@ -2169,10 +2142,7 @@ pub fn peak_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = match &args[0] {
     Expr::List(items) => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "PeakDetect".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated("PeakDetect", args));
     }
   };
 
@@ -2542,10 +2512,7 @@ pub fn subset_count_ast(
 /// when it is among the maxima and otherwise take the first-occurring
 /// maximum in window order. Nonpositive radii leave the data unchanged.
 pub fn commonest_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
-    name: "CommonestFilter".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = |args: &[Expr]| unevaluated("CommonestFilter", args);
   if args.len() != 2 {
     return Ok(unevaluated(args));
   }

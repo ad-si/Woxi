@@ -16,17 +16,14 @@
 //! - strings, external ids and monolingual texts → plain strings
 
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr};
+use crate::syntax::{BinaryOperator, Expr, unevaluated};
 
 /// `ExternalIdentifier[type, id]` / `ExternalIdentifier[type, id, assoc]` —
 /// inert symbolic construct; the arguments are kept exactly as given.
 pub fn external_identifier_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  Ok(Expr::FunctionCall {
-    name: "ExternalIdentifier".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(unevaluated("ExternalIdentifier", args))
 }
 
 /// An item or property specification: a single identifier or a list of them.
@@ -39,12 +36,7 @@ enum Spec {
 /// Wikidata item. List specifications map to the corresponding array of
 /// results (one list of values per item/property combination).
 pub fn wikidata_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "WikidataData".to_string(),
-      args: args.to_vec().into(),
-    })
-  };
+  let unevaluated = || Ok(unevaluated("WikidataData", args));
   if args.len() != 2 {
     return unevaluated();
   }
