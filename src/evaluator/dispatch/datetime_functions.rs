@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::{BinaryOperator, UnaryOperator};
 
 pub fn dispatch_datetime_functions(
   name: &str,
@@ -42,6 +43,9 @@ pub fn dispatch_datetime_functions(
     "DateString" => {
       return Some(crate::functions::datetime_ast::date_string_ast(args));
     }
+    "CalendarConvert" if args.len() == 2 => {
+      return Some(crate::functions::datetime_ast::calendar_convert_ast(args));
+    }
     "SessionTime" if args.is_empty() => {
       return Some(Ok(Expr::Real(crate::session_time())));
     }
@@ -79,7 +83,7 @@ pub fn dispatch_datetime_functions(
           || matches!(
             e,
             Expr::UnaryOp {
-              op: crate::syntax::UnaryOperator::Minus,
+              op: UnaryOperator::Minus,
               ..
             }
           )
@@ -130,7 +134,7 @@ pub fn dispatch_datetime_functions(
         return Some(Ok(zones[0].clone()));
       }
       return Some(crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Minus,
+        op: BinaryOperator::Minus,
         left: Box::new(zones[0].clone()),
         right: Box::new(zones[1].clone()),
       }));
@@ -210,6 +214,16 @@ pub fn dispatch_datetime_functions(
       )));
     }
     // DateObject is a data container — normalize granularity
+    // FromDateString["string"] gives the DateObject for a date string. For the
+    // common single-argument forms it is equivalent to DateObject["string"].
+    "FromDateString"
+      if args.len() == 1 && matches!(&args[0], Expr::String(_)) =>
+    {
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        "DateObject",
+        args,
+      ));
+    }
     "DateObject" => {
       // DateObject[] → current instant (same shape as `Now`)
       if args.is_empty() {
@@ -252,10 +266,26 @@ pub fn dispatch_datetime_functions(
       }
       // DateObject["2024-03-15"] — parse an ISO date/time string into a
       // component list and let the list logic below tag the granularity.
+      // Natural-language forms like "July 4, 1776" or "Jan 1 2000" fall back
+      // to the month-name parser.
       if args.len() == 1
         && let Expr::String(s) = &args[0]
       {
-        match crate::functions::datetime_ast::parse_iso_date_components(s) {
+        let components =
+          crate::functions::datetime_ast::parse_iso_date_components(s).or_else(
+            || {
+              crate::functions::datetime_ast::parse_date_string(s).map(
+                |(y, m, d)| {
+                  vec![
+                    Expr::Integer(y as i128),
+                    Expr::Integer(m as i128),
+                    Expr::Integer(d as i128),
+                  ]
+                },
+              )
+            },
+          );
+        match components {
           Some(components) => {
             return Some(crate::evaluator::evaluate_function_call_ast(
               "DateObject",

@@ -1951,11 +1951,13 @@ mod function_interpolation {
     assert_eq!(result, "True");
   }
 
+  // FunctionInterpolation is not HoldAll in Wolfram (unlike Plot3D): its
+  // attributes are just {Protected, ReadProtected}.
   #[test]
   fn attributes() {
     assert_eq!(
       interpret("Attributes[FunctionInterpolation]").unwrap(),
-      "{HoldAll, Protected, ReadProtected}"
+      "{Protected, ReadProtected}"
     );
   }
 }
@@ -2594,6 +2596,24 @@ mod cases {
       r#"-3.2620959521652644 - 24.973939745527076*I"#,
     );
   }
+  // Symbolic order parameter: the Pochhammer coefficients stay factored,
+  // matching wolframscript. (Previously left unevaluated.)
+  #[test]
+  fn gegenbauer_c_symbolic_lambda() {
+    assert_case(r#"GegenbauerC[0, l, x]"#, r#"1"#);
+    assert_case(r#"GegenbauerC[1, l, x]"#, r#"2*l*x"#);
+    assert_case(r#"GegenbauerC[2, l, x]"#, r#"-l + 2*l*(1 + l)*x^2"#);
+    assert_case(
+      r#"GegenbauerC[3, l, x]"#,
+      r#"-2*l*(1 + l)*x + (4*l*(1 + l)*(2 + l)*x^3)/3"#,
+    );
+    assert_case(
+      r#"GegenbauerC[4, l, x]"#,
+      r#"(l*(1 + l))/2 - 2*l*(1 + l)*(2 + l)*x^2 + (2*l*(1 + l)*(2 + l)*(3 + l)*x^4)/3"#,
+    );
+    // A scaled argument distributes the power.
+    assert_case(r#"GegenbauerC[2, l, 2 x]"#, r#"-l + 8*l*(1 + l)*x^2"#);
+  }
   #[test]
   fn hermite_h_1() {
     assert_case(
@@ -2746,6 +2766,26 @@ mod cases {
     // Exact rational argument stays exact (not 0.1875).
     assert_case(r#"JacobiP[2, 1, 1, 1/2]"#, r#"3/16"#);
   }
+  // n >= 2 with rational (non-integer) order parameters and symbolic x:
+  // wolframscript's factored (x - 1) form. (Previously left unevaluated.)
+  #[test]
+  fn jacobi_p_rational_ab() {
+    assert_case(
+      r#"JacobiP[2, 1/2, 1/2, x]"#,
+      r#"15/8 + 5*(-1 + x) + (5*(-1 + x)^2)/2"#,
+    );
+    assert_case(
+      r#"JacobiP[3, 1, 2, x]"#,
+      r#"4 + 21*(-1 + x) + 28*(-1 + x)^2 + (21*(-1 + x)^3)/2"#,
+    );
+    assert_case(
+      r#"JacobiP[2, 3/2, 1/2, x]"#,
+      r#"35/8 + (35*(-1 + x))/4 + (15*(-1 + x)^2)/4"#,
+    );
+    // A fully symbolic order is left unevaluated (Woxi's Times/Plus ordering
+    // would not match wolframscript there).
+    assert_case(r#"JacobiP[2, a, b, x]"#, r#"JacobiP[2, a, b, x]"#);
+  }
 
   #[test]
   fn laguerre_l_1() {
@@ -2766,6 +2806,26 @@ mod cases {
     assert_case(
       r#"LaguerreL[8, x]; LaguerreL[3/2, 1.7]; LaguerreL[5, 2, x]"#,
       r#"(2520 - 4200*x + 2100*x^2 - 420*x^3 + 35*x^4 - x^5)/120"#,
+    );
+  }
+  // Generalized Laguerre with a symbolic order parameter: fully expanded over
+  // n!, matching wolframscript. (Previously left unevaluated.)
+  #[test]
+  fn laguerre_l_symbolic_order() {
+    assert_case(r#"LaguerreL[0, k, x]"#, r#"1"#);
+    assert_case(r#"LaguerreL[1, k, x]"#, r#"1 + k - x"#);
+    assert_case(
+      r#"LaguerreL[2, k, x]"#,
+      r#"(2 + 3*k + k^2 - 4*x - 2*k*x + x^2)/2"#,
+    );
+    assert_case(
+      r#"LaguerreL[3, a, x]"#,
+      r#"(6 + 11*a + 6*a^2 + a^3 - 18*x - 15*a*x - 3*a^2*x + 9*x^2 + 3*a*x^2 - x^3)/6"#,
+    );
+    // A scaled argument distributes the powers.
+    assert_case(
+      r#"LaguerreL[2, a, 2 x]"#,
+      r#"(2 + 3*a + a^2 - 8*x - 4*a*x + 4*x^2)/2"#,
     );
   }
   #[test]
@@ -4613,5 +4673,321 @@ mod special_function_listability {
       interpret("StruveH[0, {1., 2.}]").unwrap(),
       "{0.5686566270482872, 0.7908588495080952}"
     );
+  }
+}
+
+// ModularLambda and KleinInvariantJ — elliptic modular functions. Exact values
+// hold at the lemniscatic point tau = I; machine-precision arguments in the
+// upper half-plane evaluate numerically via the theta-function ratio. All
+// expected strings were verified against wolframscript.
+mod modular_lambda_klein_j {
+  use super::*;
+
+  #[test]
+  fn exact_lemniscatic_point() {
+    assert_eq!(interpret("ModularLambda[I]").unwrap(), "1/2");
+    assert_eq!(interpret("KleinInvariantJ[I]").unwrap(), "1");
+  }
+
+  #[test]
+  fn exact_non_special_stays_symbolic() {
+    // Like wolframscript, a non-lemniscatic exact argument is left unevaluated.
+    assert_eq!(
+      interpret("ModularLambda[2 I]").unwrap(),
+      "ModularLambda[2*I]"
+    );
+    assert_eq!(
+      interpret("KleinInvariantJ[2 I]").unwrap(),
+      "KleinInvariantJ[2*I]"
+    );
+  }
+
+  #[test]
+  fn numeric_imaginary_axis() {
+    // ModularLambda is real on the imaginary axis.
+    assert_eq!(
+      interpret("Round[ModularLambda[2.0 I], 10^-8]").unwrap(),
+      "117749/4000000"
+    );
+    assert_eq!(
+      interpret("Round[ModularLambda[1.5 I], 10^-8]").unwrap(),
+      "13389413/100000000"
+    );
+    // KleinInvariantJ[2 I] = 166.375 (Chop clears the 0.*I imaginary part).
+    assert_eq!(
+      interpret("Round[Chop[KleinInvariantJ[2.0 I]], 10^-4]").unwrap(),
+      "1331/8"
+    );
+  }
+
+  #[test]
+  fn numeric_complex_argument() {
+    // Off the imaginary axis ModularLambda is genuinely complex.
+    assert_eq!(
+      interpret("Round[Re[ModularLambda[0.5 + 2.0 I]], 10^-8]").unwrap(),
+      "22317/50000000"
+    );
+  }
+}
+
+// WeierstrassInvariants[{ω1, ω2}] returns the lattice invariants {g2, g3}.
+// Numeric only when a half-period is inexact; collinear half-periods stay
+// symbolic. Expected strings verified against wolframscript.
+mod weierstrass_invariants {
+  use super::*;
+
+  #[test]
+  fn lemniscatic_lattice() {
+    // g3 vanishes for the square lattice τ = I (Chop clears the numeric noise).
+    assert_eq!(
+      interpret("Round[Chop[WeierstrassInvariants[{1.0, I}]], 10^-6]").unwrap(),
+      "{2363409/200000, 0}"
+    );
+  }
+
+  #[test]
+  fn general_lattices_and_g3_sign() {
+    // Orientation of the half-periods flips the sign of g3.
+    assert_eq!(
+      interpret("Round[Chop[WeierstrassInvariants[{2.0, 1.0 I}]], 10^-6]")
+        .unwrap(),
+      "{4062109/500000, -1110763/250000}"
+    );
+    assert_eq!(
+      interpret("Round[Chop[WeierstrassInvariants[{1.0, 2.0 I}]], 10^-6]")
+        .unwrap(),
+      "{4062109/500000, 1110763/250000}"
+    );
+  }
+
+  #[test]
+  fn collinear_stays_symbolic() {
+    // Non-independent (real-ratio) half-periods do not define a lattice.
+    assert_eq!(
+      interpret("WeierstrassInvariants[{1.0, 1.0}]").unwrap(),
+      "WeierstrassInvariants[{1., 1.}]"
+    );
+  }
+
+  #[test]
+  fn exact_stays_symbolic() {
+    // A generic exact lattice has no closed form, so it is left unevaluated
+    // (matching wolframscript, which only numericizes inexact input).
+    assert_eq!(
+      interpret("WeierstrassInvariants[{1, 2 I}]").unwrap(),
+      "WeierstrassInvariants[{1, 2*I}]"
+    );
+    assert_eq!(
+      interpret("WeierstrassInvariants[{1, 3 I}]").unwrap(),
+      "WeierstrassInvariants[{1, 3*I}]"
+    );
+  }
+
+  // The square (lemniscatic, ω₂/ω₁ = ±I) and hexagonal (equianharmonic,
+  // ω₂/ω₁ a primitive 6th root of unity) CM lattices have exact closed-form
+  // invariants that wolframscript returns even for exact half-periods.
+  #[test]
+  fn cm_lattices_closed_form() {
+    // Square lattice: g₃ = 0, g₂ = Gamma[1/4]^8/(256 Pi^2 ω₁^4).
+    assert_eq!(
+      interpret("WeierstrassInvariants[{1, I}]").unwrap(),
+      "{Gamma[1/4]^8/(256*Pi^2), 0}"
+    );
+    assert_eq!(
+      interpret("WeierstrassInvariants[{5, 5 I}]").unwrap(),
+      "{Gamma[1/4]^8/(160000*Pi^2), 0}"
+    );
+    assert_eq!(
+      interpret("WeierstrassInvariants[{1/2, I/2}]").unwrap(),
+      "{Gamma[1/4]^8/(16*Pi^2), 0}"
+    );
+    // Rotations/swaps of the square lattice give the same invariants.
+    assert_eq!(
+      interpret("WeierstrassInvariants[{I, -1}]").unwrap(),
+      "{Gamma[1/4]^8/(256*Pi^2), 0}"
+    );
+    assert_eq!(
+      interpret("WeierstrassInvariants[{2 I, 2}]").unwrap(),
+      "{Gamma[1/4]^8/(4096*Pi^2), 0}"
+    );
+    // Hexagonal lattice: g₂ = 0, g₃ = Gamma[1/3]^18/(4096 Pi^6 ω₁^6).
+    assert_eq!(
+      interpret("WeierstrassInvariants[{1, Exp[I Pi/3]}]").unwrap(),
+      "{0, Gamma[1/3]^18/(4096*Pi^6)}"
+    );
+    assert_eq!(
+      interpret("WeierstrassInvariants[{1, Exp[2 I Pi/3]}]").unwrap(),
+      "{0, Gamma[1/3]^18/(4096*Pi^6)}"
+    );
+    assert_eq!(
+      interpret("WeierstrassInvariants[{1, (1 + I Sqrt[3])/2}]").unwrap(),
+      "{0, Gamma[1/3]^18/(4096*Pi^6)}"
+    );
+  }
+}
+
+// WeierstrassHalfPeriods[{g2, g3}] returns the fundamental half-periods.
+// Implemented for the real positive-discriminant (rectangular-lattice) regime;
+// numeric only for inexact invariants. Expected strings verified against
+// wolframscript.
+mod weierstrass_half_periods {
+  use super::*;
+
+  #[test]
+  fn rectangular_lattices() {
+    assert_eq!(
+      interpret("Round[WeierstrassHalfPeriods[{8.0, 4.0}], 10^-6]").unwrap(),
+      "{1009453/1000000, (371103*I)/250000}"
+    );
+    assert_eq!(
+      interpret("Round[WeierstrassHalfPeriods[{13.0, 6.0}], 10^-6]").unwrap(),
+      "{56981/62500, (1120881*I)/1000000}"
+    );
+    // g3 = 0 gives a square lattice (equal real and imaginary half-periods).
+    assert_eq!(
+      interpret("Round[WeierstrassHalfPeriods[{4.0, 0.0}], 10^-6]").unwrap(),
+      "{1311029/1000000, (1311029*I)/1000000}"
+    );
+  }
+
+  #[test]
+  fn exact_stays_symbolic() {
+    // Exact invariants are left unevaluated (matching wolframscript, which only
+    // numericizes inexact input).
+    assert_eq!(
+      interpret("WeierstrassHalfPeriods[{8, 4}]").unwrap(),
+      "WeierstrassHalfPeriods[{8, 4}]"
+    );
+  }
+}
+
+// Owen's T function T(h, a): numeric for inexact arguments (odd in a, even in
+// h) with exact values at h = 0 and a = 0. Verified against wolframscript.
+mod owen_t {
+  use super::*;
+
+  #[test]
+  fn numeric() {
+    assert_eq!(
+      interpret("Round[OwenT[1.0, 0.5], 10^-10]").unwrap(),
+      "430646911/10000000000"
+    );
+    assert_eq!(
+      interpret("Round[OwenT[0.5, 1.0], 10^-10]").unwrap(),
+      "106671063/1000000000"
+    );
+    assert_eq!(
+      interpret("Round[OwenT[1.0, 3.0], 10^-10]").unwrap(),
+      "792995047/10000000000"
+    );
+  }
+
+  #[test]
+  fn symmetries() {
+    // Odd in the second argument, even in the first.
+    assert_eq!(
+      interpret("OwenT[1.0, -0.5] == -OwenT[1.0, 0.5]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("OwenT[-1.0, 0.5] == OwenT[1.0, 0.5]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn exact_special_cases() {
+    assert_eq!(interpret("OwenT[2.0, 0.0]").unwrap(), "0.");
+    assert_eq!(interpret("OwenT[h, 0]").unwrap(), "0");
+    assert_eq!(interpret("OwenT[0, a]").unwrap(), "ArcTan[a]/(2*Pi)");
+    // Exact, non-special arguments stay symbolic.
+    assert_eq!(interpret("OwenT[1, 1/2]").unwrap(), "OwenT[1, 1/2]");
+  }
+}
+
+// Neville theta functions: exact special values at z == 0 / m == 0 /
+// m == 1, odd/even parity extraction, machine evaluation for real
+// arguments (exact arguments stay symbolic like wolframscript).
+// ULP-sensitive float values assert through the Round technique.
+mod neville_theta {
+  use super::*;
+
+  #[test]
+  fn special_values_and_parity() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{NevilleThetaS[z, 0], NevilleThetaC[z, 0], NevilleThetaD[z, 0], \
+          NevilleThetaN[z, 0]}"
+      )
+      .unwrap(),
+      "{Sin[z], Cos[z], 1, 1}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{NevilleThetaS[z, 1], NevilleThetaC[z, 1], NevilleThetaD[z, 1], \
+          NevilleThetaN[z, 1]}"
+      )
+      .unwrap(),
+      "{Sinh[z], 1, 1, Cosh[z]}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{NevilleThetaS[0, m], NevilleThetaC[0, m], NevilleThetaD[0, m], \
+          NevilleThetaN[0, m]}"
+      )
+      .unwrap(),
+      "{0, 1, 1, 1}"
+    );
+    // θs is odd, the others even; exact arguments stay symbolic.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{NevilleThetaS[-z, m], NevilleThetaC[-z, m], \
+          NevilleThetaN[1/2, 1/3]}"
+      )
+      .unwrap(),
+      "{-NevilleThetaS[z, m], NevilleThetaC[z, m], NevilleThetaN[1/2, 1/3]}"
+    );
+  }
+
+  #[test]
+  fn machine_evaluation() {
+    // Bit-stable float points.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{NevilleThetaS[0.5, 0.3], NevilleThetaS[2., 0.7], \
+          NevilleThetaD[2., 0.7], NevilleThetaN[2., 0.7]}"
+      )
+      .unwrap(),
+      "{0.4828708375384975, 1.3489052898920963, 0.740926161305894, \
+        1.3500568185364288}"
+    );
+    // ULP-sensitive points via Round (both engines agree at 10 digits).
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Round[NevilleThetaC[0.5, 0.3]*10^10], \
+          Round[NevilleThetaD[0.5, 0.3]*10^10], \
+          Round[NevilleThetaN[0.5, 0.3]*10^10], \
+          Round[NevilleThetaC[2., 0.7]*10^10]}"
+      )
+      .unwrap(),
+      "{8964776434, 9833041936, 10182516442, 557488312}"
+    );
+  }
+
+  #[test]
+  fn arity_message() {
+    clear_state();
+    let r = interpret_with_stdout("NevilleThetaS[z]").unwrap();
+    assert_eq!(r.result, "NevilleThetaS[z]");
+    assert!(r.warnings[0].contains(
+      "NevilleThetaS::argr: NevilleThetaS called with 1 argument; \
+       2 arguments are expected."
+    ));
   }
 }

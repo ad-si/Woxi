@@ -225,6 +225,26 @@ mod table_symbolic_bounds {
     assert_eq!(interpret("Table[i, i]").unwrap(), "Table[i, i]");
   }
 
+  // A zero step never terminates, so Table/Do reject it with iterb and stay
+  // unevaluated rather than raising an evaluation error (or looping).
+  #[test]
+  fn zero_step_stays_unevaluated() {
+    let r = woxi::interpret_with_stdout("Table[i, {i, 1, 3, 0}]").unwrap();
+    assert_eq!(r.result, "Table[i, {i, 1, 3, 0}]");
+    assert!(
+      r.warnings.iter().any(|w| w.contains("Table::iterb")),
+      "expected iterb message, got {:?}",
+      r.warnings
+    );
+    let d = woxi::interpret_with_stdout("Do[Print[i], {i, 1, 3, 0}]").unwrap();
+    assert_eq!(d.result, "Do[Print[i], {i, 1, 3, 0}]");
+    assert!(
+      d.warnings.iter().any(|w| w.contains("Do::iterb")),
+      "expected iterb message, got {:?}",
+      d.warnings
+    );
+  }
+
   // In a multi-iterator Table, an inner iterator with symbolic bounds leaves
   // the whole call unevaluated.
   #[test]
@@ -399,6 +419,59 @@ mod union_sorting {
       )
       .unwrap(),
       "{{a, 1}, {b, 2}, {d, 3}}"
+    );
+  }
+}
+
+mod set_operations_on_associations {
+  use super::*;
+
+  // Union merges by key (last value wins for a shared key), preserving
+  // first-seen key order, and returns an association.
+  #[test]
+  fn union_merges_by_key() {
+    assert_eq!(
+      interpret("Union[<|a -> 1, b -> 2|>, <|c -> 3|>]").unwrap(),
+      "<|a -> 1, b -> 2, c -> 3|>"
+    );
+    assert_eq!(
+      interpret("Union[<|a -> 1, b -> 2|>, <|a -> 9, c -> 3|>]").unwrap(),
+      "<|a -> 9, b -> 2, c -> 3|>"
+    );
+    // Key order follows first appearance, not sorting.
+    assert_eq!(
+      interpret("Union[<|b -> 2, a -> 1|>, <|c -> 3|>]").unwrap(),
+      "<|b -> 2, a -> 1, c -> 3|>"
+    );
+  }
+
+  // Intersection keeps key->value pairs common to every association.
+  #[test]
+  fn intersection_by_pairs() {
+    assert_eq!(
+      interpret(
+        "Intersection[<|a -> 1, b -> 2, c -> 3|>, <|b -> 9, c -> 9, d -> 9|>]"
+      )
+      .unwrap(),
+      "<||>"
+    );
+    assert_eq!(
+      interpret("Intersection[<|a -> 1, b -> 2, c -> 3|>, <|a -> 1, b -> 9|>]")
+        .unwrap(),
+      "<|a -> 1|>"
+    );
+  }
+
+  // Complement removes the first association's pairs that appear in any other.
+  #[test]
+  fn complement_by_pairs() {
+    assert_eq!(
+      interpret("Complement[<|a -> 1, b -> 2, c -> 3|>, <|b -> 9|>]").unwrap(),
+      "<|a -> 1, b -> 2, c -> 3|>"
+    );
+    assert_eq!(
+      interpret("Complement[<|a -> 1, b -> 2|>, <|b -> 2|>]").unwrap(),
+      "<|a -> 1|>"
     );
   }
 }
@@ -884,6 +957,19 @@ mod map_indexed {
     assert_eq!(
       interpret("MapIndexed[f, <|\"x\" -> 10, \"y\" -> 20|>]").unwrap(),
       "<|x -> f[10, {Key[x]}], y -> f[20, {Key[y]}]|>"
+    );
+  }
+
+  // MapIndexed threads over any head, keeping it.
+  #[test]
+  fn non_list_head() {
+    assert_eq!(
+      interpret("MapIndexed[f, g[x, y]]").unwrap(),
+      "g[f[x, {1}], f[y, {2}]]"
+    );
+    assert_eq!(
+      interpret("MapIndexed[#2 &, h[a, b, c]]").unwrap(),
+      "h[{1}, {2}, {3}]"
     );
   }
 
@@ -2401,6 +2487,32 @@ mod sort_atomic_normal {
 mod sort_canonical {
   use super::*;
 
+  // Compatible Quantities sort by their physical value, not structurally.
+  #[test]
+  fn sort_quantities_by_value() {
+    assert_eq!(
+      interpret(
+        r#"Sort[{Quantity[3, "Meters"], Quantity[100, "Centimeters"], Quantity[2, "Meters"]}]"#
+      )
+      .unwrap(),
+      "{Quantity[100, Centimeters], Quantity[2, Meters], Quantity[3, Meters]}"
+    );
+    assert_eq!(
+      interpret(
+        r#"Sort[{Quantity[90, "Minutes"], Quantity[1, "Hours"], Quantity[30, "Minutes"]}]"#
+      )
+      .unwrap(),
+      "{Quantity[30, Minutes], Quantity[1, Hours], Quantity[90, Minutes]}"
+    );
+    assert_eq!(
+      interpret(
+        r#"Ordering[{Quantity[3, "Meters"], Quantity[100, "Centimeters"], Quantity[2, "Meters"]}]"#
+      )
+      .unwrap(),
+      "{2, 3, 1}"
+    );
+  }
+
   #[test]
   fn sort_strings_case_insensitive() {
     assert_eq!(
@@ -2798,6 +2910,18 @@ mod partition {
       interpret("Partition[{1, 2, 3, 4, 5, 6}, 2]").unwrap(),
       "{{1, 2}, {3, 4}, {5, 6}}"
     );
+  }
+
+  // Degenerate block size 0 with an explicit positive offset d yields
+  // Floor[Length/d] + 1 empty blocks (the 2-argument form still errors).
+  #[test]
+  fn zero_block_size_with_offset() {
+    assert_eq!(
+      interpret("Partition[{1, 2, 3}, 0, 1]").unwrap(),
+      "{{}, {}, {}, {}}"
+    );
+    assert_eq!(interpret("Partition[{1, 2, 3}, 0, 2]").unwrap(), "{{}, {}}");
+    assert_eq!(interpret("Partition[{}, 0, 1]").unwrap(), "{{}}");
   }
 
   #[test]
@@ -3370,6 +3494,49 @@ mod random_choice {
   fn single_element_list() {
     assert_eq!(interpret("RandomChoice[{x}]").unwrap(), "x");
     assert_eq!(interpret("RandomChoice[{x}, 3]").unwrap(), "{x, x, x}");
+  }
+
+  // A zero dimension yields an empty result (not an error).
+  #[test]
+  fn zero_dimension_gives_empty() {
+    assert_eq!(interpret("RandomChoice[{1, 2, 3}, 0]").unwrap(), "{}");
+    assert_eq!(interpret("RandomChoice[{1, 2, 3}, {0}]").unwrap(), "{}");
+  }
+
+  // An empty choice list emits lrwl and stays unevaluated (not a hard error).
+  #[test]
+  fn empty_list_emits_lrwl() {
+    for input in ["RandomChoice[{}]", "RandomChoice[{}, 3]"] {
+      let r = woxi::interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, input, "result mismatch for {input}");
+      assert!(
+        r.warnings.iter().any(|w| w.contains("RandomChoice::lrwl")),
+        "expected lrwl for {input}, got {:?}",
+        r.warnings
+      );
+    }
+  }
+
+  // A negative or non-integer dimension emits ::array and stays unevaluated,
+  // rather than raising a hard evaluation error.
+  #[test]
+  fn invalid_dimension_emits_array_message() {
+    for input in [
+      "RandomChoice[{1, 2, 3}, -1]",
+      "RandomChoice[{1, 2, 3}, {-1}]",
+      "RandomInteger[{1, 6}, -1]",
+      "RandomInteger[{1, 6}, {-1}]",
+      "RandomReal[1, -1]",
+      "RandomComplex[1, -1]",
+    ] {
+      let r = woxi::interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, input, "result mismatch for {input}");
+      assert!(
+        r.warnings.iter().any(|w| w.contains("::array")),
+        "expected ::array for {input}, got {:?}",
+        r.warnings
+      );
+    }
   }
 }
 
@@ -4097,6 +4264,27 @@ mod constant_array {
       interpret("ConstantArray[0, {x, 3.5}]").unwrap(),
       "ConstantArray[0, {x, 3.5}]"
     );
+  }
+
+  // A concrete invalid dimension also emits the ilsmn message (not just an
+  // unevaluated result), matching wolframscript.
+  #[test]
+  fn invalid_dimension_emits_ilsmn() {
+    for input in [
+      "ConstantArray[x, -1]",
+      "ConstantArray[x, {2, -1}]",
+      "ConstantArray[x, 2.5]",
+    ] {
+      let r = woxi::interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, input, "result mismatch for {input}");
+      assert!(
+        r.warnings
+          .iter()
+          .any(|w| w.contains("ConstantArray::ilsmn")),
+        "expected ilsmn message for {input}, got {:?}",
+        r.warnings
+      );
+    }
   }
 
   // A symbolic dimension yields a SymbolicZerosArray/SymbolicOnesArray
@@ -5003,6 +5191,20 @@ mod random_complex {
       "True"
     );
   }
+
+  // A reversed corner range {2 + 2 I, 0} is ordered per component rather than
+  // panicking on an empty sampling range.
+  #[test]
+  fn reversed_corner_range_is_ordered() {
+    assert_eq!(
+      interpret(
+        "AllTrue[RandomComplex[{2 + 2 I, 0}, 50], \
+         0 <= Re[#] <= 2 && 0 <= Im[#] <= 2 &]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
 }
 
 mod random_date {
@@ -5324,6 +5526,16 @@ mod random_integer {
       "True"
     );
   }
+
+  // A reversed range {max, min} is ordered before sampling, rather than
+  // raising an error (RandomInteger[{5, 2}] draws from [2, 5]).
+  #[test]
+  fn reversed_range_is_ordered() {
+    assert_eq!(
+      interpret("AllTrue[RandomInteger[{5, 2}, 100], 2 <= # <= 5 &]").unwrap(),
+      "True"
+    );
+  }
 }
 
 mod distributions {
@@ -5447,6 +5659,69 @@ mod random_variate {
       .unwrap(),
       "True"
     );
+  }
+
+  // A dimension list produces a nested array of that shape; a zero dimension
+  // yields the corresponding empty structure.
+  #[test]
+  fn dimension_list_array() {
+    assert_eq!(
+      interpret("Dimensions[RandomVariate[NormalDistribution[0, 1], {2, 3}]]")
+        .unwrap(),
+      "{2, 3}"
+    );
+    assert_eq!(
+      interpret(
+        "Dimensions[RandomVariate[NormalDistribution[0, 1], {2, 2, 2}]]"
+      )
+      .unwrap(),
+      "{2, 2, 2}"
+    );
+    assert_eq!(
+      interpret("RandomVariate[NormalDistribution[0, 1], {0}]").unwrap(),
+      "{}"
+    );
+    assert_eq!(
+      interpret("RandomVariate[NormalDistribution[0, 1], {2, 0}]").unwrap(),
+      "{{}, {}}"
+    );
+  }
+
+  // A negative or non-integer dimension emits ::array and stays unevaluated.
+  #[test]
+  fn invalid_dimension_emits_array() {
+    for input in [
+      "RandomVariate[NormalDistribution[0, 1], -1]",
+      "RandomVariate[NormalDistribution[0, 1], {-1}]",
+    ] {
+      let r = woxi::interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, input, "result mismatch for {input}");
+      assert!(
+        r.warnings
+          .iter()
+          .any(|w| w.contains("RandomVariate::array")),
+        "expected array message for {input}, got {:?}",
+        r.warnings
+      );
+    }
+  }
+
+  // RandomPrime rejects a non-positive dimension with posdim.
+  #[test]
+  fn random_prime_invalid_dimension_emits_posdim() {
+    for input in [
+      "RandomPrime[100, -1]",
+      "RandomPrime[100, 0]",
+      "RandomPrime[100, {0}]",
+    ] {
+      let r = woxi::interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, input, "result mismatch for {input}");
+      assert!(
+        r.warnings.iter().any(|w| w.contains("RandomPrime::posdim")),
+        "expected posdim for {input}, got {:?}",
+        r.warnings
+      );
+    }
   }
 
   #[test]
@@ -6022,6 +6297,35 @@ mod subset_q {
   #[test]
   fn symbolic() {
     assert_eq!(interpret("SubsetQ[{a, b, c}, {a, c}]").unwrap(), "True");
+  }
+
+  // On associations SubsetQ compares the VALUES as sets; either side may be a
+  // list or an association.
+  #[test]
+  fn associations_by_value() {
+    assert_eq!(
+      interpret("SubsetQ[<|a -> 1, b -> 2|>, <|a -> 1|>]").unwrap(),
+      "True"
+    );
+    // The value, not the key, is what matters.
+    assert_eq!(
+      interpret("SubsetQ[<|a -> 1, b -> 2|>, <|c -> 1|>]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("SubsetQ[<|a -> 1, b -> 2|>, <|a -> 9|>]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn associations_mixed_with_lists() {
+    assert_eq!(
+      interpret("SubsetQ[<|a -> 1, b -> 2|>, {1}]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("SubsetQ[{1, 2, 3}, <|a -> 2|>]").unwrap(), "True");
+    assert_eq!(interpret("SubsetQ[<|a -> 1|>, {}]").unwrap(), "True");
   }
 
   // SubsetQ[super, sub, SameTest -> f]: every sub element y must satisfy
@@ -6897,6 +7201,45 @@ mod pick {
       "<|a -> 1, c -> 3|>"
     );
   }
+
+  // Pick operates on any head, not only Lists; the result keeps the first
+  // argument's head and the selector's own head is irrelevant.
+  #[test]
+  fn pick_non_list_head() {
+    assert_eq!(
+      interpret("Pick[f[1, 2, 3], f[True, False, True]]").unwrap(),
+      "f[1, 3]"
+    );
+    assert_eq!(
+      interpret("Pick[g[a, b, c, d], g[1, 0, 1, 0], 1]").unwrap(),
+      "g[a, c]"
+    );
+  }
+
+  #[test]
+  fn pick_mismatched_heads() {
+    // Only structure/length matter — the selector head need not match.
+    assert_eq!(
+      interpret("Pick[f[1, 2, 3], {True, False, True}]").unwrap(),
+      "f[1, 3]"
+    );
+    assert_eq!(
+      interpret("Pick[{1, 2, 3}, f[True, False, True]]").unwrap(),
+      "{1, 3}"
+    );
+    assert_eq!(
+      interpret("Pick[f[1, 2, 3], g[True, False, True]]").unwrap(),
+      "f[1, 3]"
+    );
+  }
+
+  #[test]
+  fn pick_non_list_head_nested() {
+    assert_eq!(
+      interpret("Pick[f[a, {b, c}, d], f[1, {1, 0}, 0], 1]").unwrap(),
+      "f[a, {b}]"
+    );
+  }
 }
 
 mod rest_nonlist {
@@ -7644,9 +7987,10 @@ mod part_span {
     );
   }
 
-  // Span prints in head form in every context — wolframscript 15 never
-  // uses the ;; operator in output. Verified: Print[5 ;; 2] gives
-  // Span[5, 2], Hold[l[[5 ;; 2]]] gives Hold[l[[Span[5, 2]]]].
+  // Span prints in head form in OutputForm — wolframscript 15's OutputForm
+  // (bare echo, Print) shows Span[5, 2], never the ;; operator. Verified:
+  // Print[5 ;; 2] gives Span[5, 2], Hold[l[[5 ;; 2]]] gives
+  // Hold[l[[Span[5, 2]]]].
   #[test]
   fn span_prints_in_head_form() {
     assert_eq!(interpret("5 ;; 2").unwrap(), "Span[5, 2]");
@@ -7655,6 +7999,31 @@ mod part_span {
     assert_eq!(
       interpret("Hold[l[[5 ;; 2]]]").unwrap(),
       "Hold[l[[Span[5, 2]]]]"
+    );
+  }
+
+  // Span prints with the ;; operator in InputForm — wolframscript 15's
+  // ToString[5 ;; 2, InputForm] gives "5 ;; 2", the Part echo gives
+  // {...}[[5 ;; 2]], but a FullForm wrapper keeps the head form.
+  #[test]
+  fn span_prints_operator_in_input_form() {
+    assert_eq!(
+      interpret("ToString[(5 ;; 2), InputForm]").unwrap(),
+      "5 ;; 2"
+    );
+    assert_eq!(
+      interpret("ToString[(1 ;; 10 ;; 2), InputForm]").unwrap(),
+      "1 ;; 10 ;; 2"
+    );
+    assert_eq!(interpret("ToString[(;;), InputForm]").unwrap(), "1 ;; All");
+    assert_eq!(
+      interpret("ToString[(Hold[l[[5 ;; 2]]]), InputForm]").unwrap(),
+      "Hold[l[[5 ;; 2]]]"
+    );
+    // Nested Span argument is parenthesised on re-render.
+    assert_eq!(
+      interpret("ToString[Span[1, Span[2, 3]], InputForm]").unwrap(),
+      "1 ;; (2 ;; 3)"
     );
   }
 
@@ -8219,6 +8588,32 @@ mod join_non_list {
       interpret("Reverse[{{1, 2}, {3, 4}}, {1, 2}]").unwrap(),
       "{{4, 3}, {2, 1}}"
     );
+  }
+
+  // Reverse[expr, n] operates on any head, not only Lists.
+  #[test]
+  fn reverse_level_non_list_head() {
+    assert_eq!(interpret("Reverse[f[a, b, c], 1]").unwrap(), "f[c, b, a]");
+    assert_eq!(
+      interpret("Reverse[g[{1, 2}, {3, 4}], 2]").unwrap(),
+      "g[{2, 1}, {4, 3}]"
+    );
+  }
+
+  #[test]
+  fn reverse_level_association() {
+    assert_eq!(
+      interpret("Reverse[<|a -> 1, b -> 2|>, 1]").unwrap(),
+      "<|b -> 2, a -> 1|>"
+    );
+  }
+
+  // An atomic first argument is invalid: emit the `normal` message and leave
+  // Reverse[atom, n] unevaluated (matching the 1-argument form).
+  #[test]
+  fn reverse_level_atom_unevaluated() {
+    assert_eq!(interpret("Reverse[\"hi\", 1]").unwrap(), "Reverse[hi, 1]");
+    assert_eq!(interpret("Reverse[5, 1]").unwrap(), "Reverse[5, 1]");
   }
 
   #[test]
@@ -8819,6 +9214,38 @@ mod join_non_list {
     assert_eq!(
       interpret("Map[f, a + b + c, Heads->True]").unwrap(),
       "f[Plus][f[a], f[b], f[c]]"
+    );
+  }
+
+  // Map over a rank-1 SparseArray applies f to stored values and default,
+  // keeping the sparse structure.
+  #[test]
+  fn map_sparse_array_vector() {
+    assert_eq!(
+      interpret("Normal[Map[#^2 &, SparseArray[{1 -> 2, 2 -> 3}, 3]]]")
+        .unwrap(),
+      "{4, 9, 0}"
+    );
+    assert_eq!(
+      interpret("Normal[Map[f, SparseArray[{1 -> 2, 2 -> 3}, 3]]]").unwrap(),
+      "{f[2], f[3], f[0]}"
+    );
+  }
+
+  // Map over a higher-rank SparseArray maps over its rows.
+  #[test]
+  fn map_sparse_array_matrix() {
+    assert_eq!(
+      interpret(
+        "Normal[Map[f, SparseArray[{{1, 1} -> 2, {2, 2} -> 3}, {2, 2}]]]"
+      )
+      .unwrap(),
+      "{f[{2, 0}], f[{0, 3}]}"
+    );
+    assert_eq!(
+      interpret("Map[Total, SparseArray[{{1, 1} -> 2, {2, 2} -> 3}, {2, 2}]]")
+        .unwrap(),
+      "{2, 3}"
     );
   }
 
@@ -9716,6 +10143,43 @@ mod array_flatten {
       "{{1, 0, 0, 0, 0}, {0, 1, 0, 0, 0}, {0, 0, 1, 0, 0}, {0, 0, 0, 1, 0}, {0, 0, 0, 0, 1}}"
     );
   }
+
+  // ArrayFlatten[a, r] glues a depth-2r block array; r = 1 concatenates the
+  // top-level blocks along their first axis.
+  #[test]
+  fn rank_one_concatenates_blocks() {
+    assert_eq!(
+      interpret("ArrayFlatten[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}, 1]")
+        .unwrap(),
+      "{{1, 2}, {3, 4}, {5, 6}, {7, 8}}"
+    );
+    assert_eq!(
+      interpret("ArrayFlatten[{{{{1, 2}}, {{3, 4}}}}, 1]").unwrap(),
+      "{{{1, 2}}, {{3, 4}}}"
+    );
+    assert_eq!(
+      interpret("ArrayFlatten[{IdentityMatrix[2], 2 IdentityMatrix[2]}, 1]")
+        .unwrap(),
+      "{{1, 0}, {0, 1}, {2, 0}, {0, 2}}"
+    );
+  }
+
+  // Explicit r = 2 is the default, including scalar-zero block padding.
+  #[test]
+  fn rank_two_matches_default() {
+    assert_eq!(
+      interpret("ArrayFlatten[{{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}}, 2]")
+        .unwrap(),
+      "{{1, 2, 5, 6}, {3, 4, 7, 8}}"
+    );
+    assert_eq!(
+      interpret(
+        "ArrayFlatten[{{IdentityMatrix[2], 0}, {0, IdentityMatrix[2]}}, 2]"
+      )
+      .unwrap(),
+      "{{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}}"
+    );
+  }
 }
 
 mod pdf {
@@ -10180,6 +10644,34 @@ mod array_reshape {
     assert_eq!(
       interpret("ArrayReshape[{}, {2, 2}, {a, b, c, d}]").unwrap(),
       "{{a, b}, {c, d}}"
+    );
+  }
+
+  #[test]
+  fn zero_single_dimension_gives_empty_list() {
+    assert_eq!(interpret("ArrayReshape[{}, {0}]").unwrap(), "{}");
+    assert_eq!(interpret("ArrayReshape[{5}, {0}]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn zero_trailing_dimension_gives_empty_rows() {
+    assert_eq!(interpret("ArrayReshape[{}, {2, 0}]").unwrap(), "{{}, {}}");
+    assert_eq!(
+      interpret("ArrayReshape[{1, 2, 3, 4}, {2, 0}]").unwrap(),
+      "{{}, {}}"
+    );
+  }
+
+  #[test]
+  fn zero_leading_dimension_gives_empty_list() {
+    assert_eq!(interpret("ArrayReshape[Range[6], {0, 3}]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn zero_middle_dimension_gives_empty_rows() {
+    assert_eq!(
+      interpret("ArrayReshape[{1, 2, 3}, {2, 0, 4}]").unwrap(),
+      "{{}, {}}"
     );
   }
 }
@@ -13285,6 +13777,36 @@ mod cases {
     assert_case(
       r#"FixedPointList[Cos, 1.0, 4]; newton[n_] := FixedPointList[.5(# + n/#) &, 1.]; newton[9]; collatz[1] := 1; collatz[x_ ? EvenQ] := x / 2; collatz[x_] := 3 x + 1; list = FixedPointList[collatz, 14]"#,
       r#"{14, 7, 22, 11, 34, 17, 52, 26, 13, 40, 20, 10, 5, 16, 8, 4, 2, 1, 1}"#,
+    );
+  }
+  // A non-integer iteration bound (e.g. All) is rejected with intnm and stays
+  // unevaluated, rather than running to the internal iteration cap.
+  #[test]
+  fn fixed_point_list_invalid_bound() {
+    let r =
+      woxi::interpret_with_stdout("FixedPointList[#/2 &, 8, All]").unwrap();
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("FixedPointList::intnm")),
+      "expected intnm message, got {:?}",
+      r.warnings
+    );
+    assert!(
+      r.result.starts_with("FixedPointList["),
+      "expected unevaluated call, got {}",
+      r.result
+    );
+    // A negative bound is likewise rejected.
+    let neg =
+      woxi::interpret_with_stdout("FixedPointList[#/2 &, 8, -1]").unwrap();
+    assert!(
+      neg
+        .warnings
+        .iter()
+        .any(|w| w.contains("FixedPointList::intnm")),
+      "expected intnm message for negative bound, got {:?}",
+      neg.warnings
     );
   }
   #[test]
@@ -17219,6 +17741,110 @@ mod permutation_replace_list_of_perms {
     assert_eq!(
       interpret("PermutationReplace[{1, 2, 3}, {2, 3, 1}]").unwrap(),
       "{2, 3, 1}"
+    );
+  }
+}
+
+mod subset_map {
+  use super::*;
+
+  #[test]
+  fn flat_integer_positions() {
+    // A flat list of integers names separate level-1 positions; f is applied
+    // to the collected sublist and the result written back in order.
+    assert_eq!(
+      interpret("SubsetMap[Reverse, {x1, x2, x3, x4, x5, x6}, {2, 4}]")
+        .unwrap(),
+      "{x1, x4, x3, x2, x5, x6}"
+    );
+    assert_eq!(
+      interpret("SubsetMap[Reverse, {10, 20, 30, 40}, {2, 4}]").unwrap(),
+      "{10, 40, 30, 20}"
+    );
+  }
+
+  #[test]
+  fn rotate_three_positions() {
+    assert_eq!(
+      interpret("SubsetMap[RotateLeft, {x1, x2, x3, x4, x5, x6}, {2, 4, 5}]")
+        .unwrap(),
+      "{x1, x4, x3, x5, x2, x6}"
+    );
+  }
+
+  #[test]
+  fn span_positions() {
+    assert_eq!(
+      interpret("SubsetMap[Accumulate, {1, 2, 3, 4, 5, 6}, 2 ;; 5]").unwrap(),
+      "{1, 2, 5, 9, 14, 6}"
+    );
+  }
+
+  #[test]
+  fn single_element_position_lists() {
+    // {{2}, {4}} names level-1 positions 2 and 4.
+    assert_eq!(
+      interpret("SubsetMap[Reverse, {{1, 2, 3}, {4, 5, 6}}, {1, 2}]").unwrap(),
+      "{{4, 5, 6}, {1, 2, 3}}"
+    );
+    assert_eq!(
+      interpret(
+        "SubsetMap[Reverse, {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, {{1}, {3}}]"
+      )
+      .unwrap(),
+      "{{7, 8, 9}, {4, 5, 6}, {1, 2, 3}}"
+    );
+  }
+
+  #[test]
+  fn deep_diagonal_positions() {
+    // {{1,1},{2,2},{3,3}} are deep positions into a matrix; reversing the
+    // diagonal swaps the corner elements.
+    assert_eq!(
+      interpret(
+        "SubsetMap[Reverse, {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, {{1, 1}, {2, 2}, {3, 3}}]"
+      )
+      .unwrap(),
+      "{{9, 2, 3}, {4, 5, 6}, {7, 8, 1}}"
+    );
+  }
+
+  #[test]
+  fn part_style_column_spec() {
+    // {All, 2} is a Part-style spec selecting the whole second column.
+    assert_eq!(
+      interpret(
+        "SubsetMap[Accumulate, {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, {All, 2}]"
+      )
+      .unwrap(),
+      "{{1, 2, 3}, {4, 7, 6}, {7, 15, 9}}"
+    );
+  }
+
+  #[test]
+  fn operator_form() {
+    // SubsetMap[f, positions] is the operator form applied to an expression.
+    assert_eq!(
+      interpret("SubsetMap[Reverse, {{1, 1}, {2, 2}}][{{1, 2, 3}, {4, 5, 6}}]")
+        .unwrap(),
+      "{{5, 2, 3}, {4, 1, 6}}"
+    );
+  }
+
+  #[test]
+  fn length_mismatch_stays_unevaluated() {
+    // When f does not return a list of the extracted length, SubsetMap emits
+    // ::newls and returns unevaluated (matches wolframscript).
+    assert_eq!(
+      interpret("SubsetMap[f, {10, 20, 30, 40}, {{2}, {4}}]").unwrap(),
+      "SubsetMap[f, {10, 20, 30, 40}, {{2}, {4}}]"
+    );
+    assert_eq!(
+      interpret(
+        "SubsetMap[Total, {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, {All, 1}]"
+      )
+      .unwrap(),
+      "SubsetMap[Total, {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, {All, 1}]"
     );
   }
 }

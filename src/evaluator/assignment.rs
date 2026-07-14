@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator};
 use std::cell::Cell;
 
 thread_local! {
@@ -104,7 +105,7 @@ pub fn register_user_print_form(name: &str) {
   });
 }
 
-pub fn suppress_specificity_sort() -> bool {
+fn suppress_specificity_sort() -> bool {
   SUPPRESS_SPECIFICITY_SORT.with(|c| c.get())
 }
 
@@ -195,9 +196,7 @@ fn condition_is_literal_arg(c: &Expr) -> bool {
       Some(Expr::FunctionCall { name, .. }) if name == "Length"
     );
     !is_length_check
-      && operators
-        .iter()
-        .any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
+      && operators.iter().any(|op| matches!(op, ComparisonOp::SameQ))
   } else {
     false
   }
@@ -213,7 +212,7 @@ fn condition_is_literal_arg(c: &Expr) -> bool {
 /// Wolfram, where a guarded rule like `f[n_Integer, _] := 0 /; n < 0` is tried
 /// before an unguarded but otherwise-more-specific rule like
 /// `f[n_Integer, r_Integer] := …`.
-pub fn pattern_specificity_score(
+fn pattern_specificity_score(
   blank_types: &[u8],
   heads: &[Option<String>],
   conditions: &[Option<Expr>],
@@ -415,9 +414,7 @@ fn count_specificity_clauses(c: &Expr) -> u32 {
     Expr::Comparison {
       operators,
       operands,
-    } if operators
-      .iter()
-      .any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
+    } if operators.iter().any(|op| matches!(op, ComparisonOp::SameQ))
       && matches!(
         operands.first(),
         Some(Expr::FunctionCall { name, .. }) if name == "Length"
@@ -473,7 +470,7 @@ fn count_pattern_specificity(pat: &Expr) -> u32 {
 /// flattening nested applications of the same operator.
 fn collect_binary_children(
   expr: &Expr,
-  target_op: &crate::syntax::BinaryOperator,
+  target_op: &BinaryOperator,
 ) -> Vec<Expr> {
   match expr {
     Expr::BinaryOp { op, left, right } if op == target_op => {
@@ -686,7 +683,7 @@ fn normalize_structural_pattern(pattern: &Expr) -> Expr {
 pub fn canonicalize_divide_in_expr(expr: &Expr) -> Expr {
   match expr {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left,
       right,
     } => {
@@ -699,14 +696,14 @@ pub fn canonicalize_divide_in_expr(expr: &Expr) -> Expr {
           } else {
             crate::functions::math_ast::times_ast(&[left.clone(), den_inv])
               .unwrap_or_else(|_| Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Divide,
+                op: BinaryOperator::Divide,
                 left: Box::new(left),
                 right: Box::new(right),
               })
           }
         }
         Err(_) => Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(left),
           right: Box::new(right),
         },
@@ -762,7 +759,7 @@ fn reorder_orderless_pattern_args(pattern: Expr) -> Expr {
 
 /// Helper for Attributes[f] = value / Attributes[f] := value
 /// Extracts attribute symbols from value, validates, and sets them on the symbol.
-pub fn set_attributes_from_value(
+fn set_attributes_from_value(
   sym_name: &str,
   rhs_value: &Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -820,7 +817,7 @@ pub fn set_attributes_from_value(
 /// wrappers are stripped) and replay it as an individual `lhs := rhs` so
 /// the rules get installed in FUNC_DEFS via the regular SetDelayed path.
 /// Iteration order is preserved (no specificity sorting), matching Wolfram.
-pub fn set_downvalues_from_rules(rhs: &Expr) -> Result<Expr, InterpreterError> {
+fn set_downvalues_from_rules(rhs: &Expr) -> Result<Expr, InterpreterError> {
   let rules: Vec<Expr> = match rhs {
     Expr::List(items) => items.to_vec(),
     other => vec![other.clone()],
@@ -902,7 +899,7 @@ pub fn set_downvalues_from_rules(rhs: &Expr) -> Result<Expr, InterpreterError> {
 }
 
 /// Helper for Options[f] = value — set options for symbol f
-pub fn set_options_from_value(
+fn set_options_from_value(
   sym_name: &str,
   rhs_value: &Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -1163,7 +1160,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     // place so a tight `Do[s = s <> c, …]` accumulator stays linear in
     // total work instead of paying an O(N) copy on every iteration.
     if let Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::StringJoin,
+      op: BinaryOperator::StringJoin,
       left,
       right,
     } = rhs
@@ -1396,7 +1393,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
               operators,
             }) = c
               && operators.len() == 1
-              && matches!(operators[0], crate::syntax::ComparisonOp::SameQ)
+              && matches!(operators[0], ComparisonOp::SameQ)
               && operands.len() == 2
               && let Expr::Identifier(name) = &operands[0]
               && !params.is_empty()
@@ -1558,7 +1555,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         // Condition: _dvN === eval_arg (using SameQ for exact matching)
         conditions.push(Some(Expr::Comparison {
           operands: vec![Expr::Identifier(param_name.clone()), eval_arg],
-          operators: vec![crate::syntax::ComparisonOp::SameQ],
+          operators: vec![ComparisonOp::SameQ],
         }));
         params.push(param_name);
         heads.push(None);
@@ -1591,7 +1588,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       && conditions.iter().all(|c| {
         matches!(c, Some(Expr::Comparison { operators, .. })
           if operators.len() == 1
-            && operators[0] == crate::syntax::ComparisonOp::SameQ)
+            && operators[0] == ComparisonOp::SameQ)
       });
     if all_literal_sameq {
       let mut arg_exprs = Vec::with_capacity(conditions.len());
@@ -1773,7 +1770,7 @@ pub fn set_delayed_ast(
   // Protected.` and returns `$Failed`. Detect the BinaryOp head
   // here so the message and return value match.
   if let Expr::BinaryOp { op, .. } = lhs {
-    use crate::syntax::BinaryOperator as B;
+    use BinaryOperator as B;
     let tag = match op {
       B::Plus | B::Minus => Some("Plus"),
       B::Times | B::Divide => Some("Times"),
@@ -2291,7 +2288,7 @@ pub fn set_delayed_ast(
               let eval_arg = evaluate_expr_to_expr(arg)?;
               conditions.push(Some(Expr::Comparison {
                 operands: vec![Expr::Identifier(param_name.clone()), eval_arg],
-                operators: vec![crate::syntax::ComparisonOp::SameQ],
+                operators: vec![ComparisonOp::SameQ],
               }));
               params.push(param_name);
               blank_types.push(1);
@@ -2601,17 +2598,11 @@ fn build_list_pattern_match(
   // - Trailing `__` (BlankSequence): Length >= N (consumes ≥1).
   // - Trailing `___` (BlankNullSequence): Length >= N-1 (consumes ≥0).
   let len_cmp = if !trailing_seq {
-    (crate::syntax::ComparisonOp::SameQ, patterns.len() as i128)
+    (ComparisonOp::SameQ, patterns.len() as i128)
   } else if trailing_seq_blank == 2 {
-    (
-      crate::syntax::ComparisonOp::GreaterEqual,
-      patterns.len() as i128,
-    )
+    (ComparisonOp::GreaterEqual, patterns.len() as i128)
   } else {
-    (
-      crate::syntax::ComparisonOp::GreaterEqual,
-      (patterns.len() - 1) as i128,
-    )
+    (ComparisonOp::GreaterEqual, (patterns.len() - 1) as i128)
   };
   let mut rule_conds: Vec<Expr> = vec![Expr::Comparison {
     operands: vec![
@@ -2795,9 +2786,7 @@ fn reconstruct_list_param(
       {
         if let Some(Expr::Integer(n)) = operands.get(1) {
           length = Some(*n);
-          fixed = operators
-            .iter()
-            .any(|o| matches!(o, crate::syntax::ComparisonOp::SameQ));
+          fixed = operators.iter().any(|o| matches!(o, ComparisonOp::SameQ));
         }
       }
       Expr::FunctionCall { name, args }
@@ -2898,9 +2887,7 @@ pub fn reconstruct_list_downvalue(
       operands,
       operators,
     }) = cond
-      && operators
-        .iter()
-        .any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
+      && operators.iter().any(|op| matches!(op, ComparisonOp::SameQ))
       && let Some(lit) = operands.get(1)
     {
       pattern_args.push(lit.clone());
@@ -3058,50 +3045,50 @@ pub fn tag_set_delayed_ast(
     Expr::FunctionCall { name, args } => (name.clone(), args.to_vec()),
     Expr::BinaryOp { op, left, right } => {
       let (name, args) = match op {
-        crate::syntax::BinaryOperator::Plus => {
+        BinaryOperator::Plus => {
           ("Plus".to_string(), collect_binary_children(lhs, op))
         }
-        crate::syntax::BinaryOperator::Times => {
+        BinaryOperator::Times => {
           ("Times".to_string(), collect_binary_children(lhs, op))
         }
-        crate::syntax::BinaryOperator::Alternatives => {
+        BinaryOperator::Alternatives => {
           ("Alternatives".to_string(), collect_binary_children(lhs, op))
         }
-        crate::syntax::BinaryOperator::Minus => (
+        BinaryOperator::Minus => (
           "Plus".to_string(),
           vec![
             left.as_ref().clone(),
             Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Times,
+              op: BinaryOperator::Times,
               left: Box::new(Expr::Integer(-1)),
               right: right.clone(),
             },
           ],
         ),
-        crate::syntax::BinaryOperator::Divide => (
+        BinaryOperator::Divide => (
           "Times".to_string(),
           vec![
             left.as_ref().clone(),
             Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Power,
+              op: BinaryOperator::Power,
               left: right.clone(),
               right: Box::new(Expr::Integer(-1)),
             },
           ],
         ),
-        crate::syntax::BinaryOperator::Power => (
+        BinaryOperator::Power => (
           "Power".to_string(),
           vec![left.as_ref().clone(), right.as_ref().clone()],
         ),
-        crate::syntax::BinaryOperator::And => (
+        BinaryOperator::And => (
           "And".to_string(),
           vec![left.as_ref().clone(), right.as_ref().clone()],
         ),
-        crate::syntax::BinaryOperator::Or => (
+        BinaryOperator::Or => (
           "Or".to_string(),
           vec![left.as_ref().clone(), right.as_ref().clone()],
         ),
-        crate::syntax::BinaryOperator::StringJoin => (
+        BinaryOperator::StringJoin => (
           "StringJoin".to_string(),
           vec![left.as_ref().clone(), right.as_ref().clone()],
         ),
@@ -3110,11 +3097,11 @@ pub fn tag_set_delayed_ast(
     }
     Expr::UnaryOp { op, operand } => {
       let (name, args) = match op {
-        crate::syntax::UnaryOperator::Minus => (
+        UnaryOperator::Minus => (
           "Times".to_string(),
           vec![Expr::Integer(-1), operand.as_ref().clone()],
         ),
-        crate::syntax::UnaryOperator::Not => {
+        UnaryOperator::Not => {
           ("Not".to_string(), vec![operand.as_ref().clone()])
         }
       };
@@ -3158,7 +3145,7 @@ pub fn tag_set_delayed_ast(
               },
               Expr::Integer(inner_args.len() as i128),
             ],
-            operators: vec![crate::syntax::ComparisonOp::SameQ],
+            operators: vec![ComparisonOp::SameQ],
           }));
         } else {
           conditions.push(None);
@@ -3181,7 +3168,7 @@ pub fn tag_set_delayed_ast(
             if let Some(prev_expr) = seen_pattern_vars.get(&pat_name) {
               extra_conditions.push(Expr::Comparison {
                 operands: vec![prev_expr.clone(), part_expr.clone()],
-                operators: vec![crate::syntax::ComparisonOp::SameQ],
+                operators: vec![ComparisonOp::SameQ],
               });
             } else {
               seen_pattern_vars.insert(pat_name.clone(), part_expr.clone());
@@ -3222,7 +3209,7 @@ pub fn tag_set_delayed_ast(
           let eval_arg = evaluate_expr_to_expr(arg)?;
           conditions.push(Some(Expr::Comparison {
             operands: vec![Expr::Identifier(param_name.clone()), eval_arg],
-            operators: vec![crate::syntax::ComparisonOp::SameQ],
+            operators: vec![ComparisonOp::SameQ],
           }));
           params.push(param_name);
           defaults.push(None);
@@ -3266,13 +3253,16 @@ pub fn tag_set_delayed_ast(
     }
     if !attached && !conditions.is_empty() {
       // All slots have conditions - combine with first non-SameQ one using And
-      let combine_idx = conditions.iter().position(|c| {
-        !matches!(
-          c,
-          Some(Expr::Comparison { operators, .. })
-          if operators.iter().any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
-        )
-      }).unwrap_or(0);
+      let combine_idx = conditions
+        .iter()
+        .position(|c| {
+          !matches!(
+            c,
+            Some(Expr::Comparison { operators, .. })
+            if operators.iter().any(|op| matches!(op, ComparisonOp::SameQ))
+          )
+        })
+        .unwrap_or(0);
       let existing = conditions[combine_idx].take().unwrap();
       conditions[combine_idx] = Some(Expr::FunctionCall {
         name: "And".to_string(),
@@ -3457,19 +3447,17 @@ fn normalize_lhs_for_upset(lhs: &Expr) -> Expr {
   match lhs {
     Expr::BinaryOp { op, left, right } => {
       let head = match op {
-        crate::syntax::BinaryOperator::Plus
-        | crate::syntax::BinaryOperator::Minus => "Plus",
-        crate::syntax::BinaryOperator::Times
-        | crate::syntax::BinaryOperator::Divide => "Times",
-        crate::syntax::BinaryOperator::Power => "Power",
+        BinaryOperator::Plus | BinaryOperator::Minus => "Plus",
+        BinaryOperator::Times | BinaryOperator::Divide => "Times",
+        BinaryOperator::Power => "Power",
         _ => return lhs.clone(),
       };
       let right_expr = match op {
-        crate::syntax::BinaryOperator::Minus => Expr::FunctionCall {
+        BinaryOperator::Minus => Expr::FunctionCall {
           name: "Times".to_string(),
           args: vec![Expr::Integer(-1), (**right).clone()].into(),
         },
-        crate::syntax::BinaryOperator::Divide => Expr::FunctionCall {
+        BinaryOperator::Divide => Expr::FunctionCall {
           name: "Power".to_string(),
           args: vec![(**right).clone(), Expr::Integer(-1)].into(),
         },

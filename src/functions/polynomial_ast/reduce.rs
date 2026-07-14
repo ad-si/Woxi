@@ -2,7 +2,9 @@ use super::together::negate_expr;
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
+};
 
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
 use crate::functions::math_ast::make_sqrt;
@@ -59,6 +61,19 @@ pub fn reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(out);
   }
 
+  // Reduce[bounds && extra_constraints, x, Integers]: when the conjunction
+  // pins `x` to a finite integer interval AND carries a further constraint
+  // (`Mod[x, n] == k`, `x != v`, …) that the plain interval enumeration
+  // cannot express, enumerate the interval and keep the integers for which
+  // the whole constraint holds. Matches
+  //   Reduce[Mod[x,3]==1 && 0<=x<=10, x, Integers] -> x==1||x==4||x==7||x==10.
+  if domain == Some("Integers")
+    && vars.len() == 1
+    && let Some(out) = try_reduce_bounded_integer_filtered(expr, &vars[0])
+  {
+    return Ok(out);
+  }
+
   let result = reduce_expr(expr, &vars, domain)?;
 
   // Over the integers, a bounded two-sided interval is enumerated as the
@@ -111,7 +126,6 @@ fn contains_inexact_literal(e: &Expr) -> bool {
 ///   var <= c  -> Element[var, Integers] && var <= floor(c)
 /// Returns `None` for any other shape, inexact bounds, or `==`/`!=`.
 fn tighten_integer_one_sided(result: &Expr, var: &str) -> Option<Expr> {
-  use crate::syntax::ComparisonOp;
   let Expr::Comparison {
     operands,
     operators,
@@ -167,7 +181,6 @@ fn tighten_integer_one_sided(result: &Expr, var: &str) -> Option<Expr> {
 /// any other shape, non-numeric bounds, or an enumeration that would be too
 /// large.
 fn enumerate_integer_interval(result: &Expr, var: &str) -> Option<Expr> {
-  use crate::syntax::ComparisonOp;
   let Expr::FunctionCall { name, args } = result else {
     return None;
   };
@@ -217,6 +230,177 @@ fn enumerate_integer_interval(result: &Expr, var: &str) -> Option<Expr> {
   Some(build_or(terms))
 }
 
+/// If `c` is a purely numeric bound on `var` — a two-sided `Inequality[lo, op,
+/// var, op, hi]` or a one-sided comparison `var op const` / `const op var` with
+/// `op` one of `<`, `<=`, `>`, `>=` — return its `(lower, upper)` integer
+/// contributions (either may be `None`). Returns `None` for anything that is
+/// not a linear bound on the bare variable (e.g. `Mod[x, n] == k`, `x != v`,
+/// `x^2 < 10`), signalling an "extra" constraint to the caller.
+fn numeric_var_bounds(
+  c: &Expr,
+  var: &str,
+) -> Option<(Option<i64>, Option<i64>)> {
+  let is_var = |e: &Expr| matches!(e, Expr::Identifier(s) if s == var);
+  // lo op x -> lower bound; x op hi -> upper bound.
+  let lower_from = |op: ComparisonOp, v: f64| -> Option<i64> {
+    match op {
+      ComparisonOp::Less => Some((v.floor() as i64) + 1),
+      ComparisonOp::LessEqual => Some(v.ceil() as i64),
+      _ => None,
+    }
+  };
+  let upper_from = |op: ComparisonOp, v: f64| -> Option<i64> {
+    match op {
+      ComparisonOp::Less => Some((v.ceil() as i64) - 1),
+      ComparisonOp::LessEqual => Some(v.floor() as i64),
+      _ => None,
+    }
+  };
+  // Two-sided Inequality[lo, op1, var, op2, hi].
+  if let Expr::FunctionCall { name, args } = c
+    && name == "Inequality"
+    && args.len() == 5
+    && is_var(&args[2])
+  {
+    let lo = crate::functions::math_ast::try_eval_to_f64(&args[0])?;
+    let hi = crate::functions::math_ast::try_eval_to_f64(&args[4])?;
+    let op1 = comparison_op_of(&args[1])?;
+    let op2 = comparison_op_of(&args[3])?;
+    return Some((lower_from(op1, lo), upper_from(op2, hi)));
+  }
+  // Chained comparison `lo op x op hi` or one-sided `var op const` /
+  // `const op var`. The variable must appear at exactly one position and be
+  // flanked only by numeric constants and ordering operators.
+  if let Expr::Comparison {
+    operands,
+    operators,
+  } = c
+    && operands.len() >= 2
+    && operators.len() == operands.len() - 1
+    && operators.iter().all(|op| {
+      matches!(
+        op,
+        ComparisonOp::Less
+          | ComparisonOp::LessEqual
+          | ComparisonOp::Greater
+          | ComparisonOp::GreaterEqual
+      )
+    })
+  {
+    let var_positions: Vec<usize> = (0..operands.len())
+      .filter(|&k| is_var(&operands[k]))
+      .collect();
+    if var_positions.len() != 1 {
+      return None;
+    }
+    let k = var_positions[0];
+    let mut lower: Option<i64> = None;
+    let mut upper: Option<i64> = None;
+    // Left neighbor: `o[k-1] op var`.
+    if k > 0 {
+      let v = crate::functions::math_ast::try_eval_to_f64(&operands[k - 1])?;
+      match operators[k - 1] {
+        ComparisonOp::Less | ComparisonOp::LessEqual => {
+          lower = lower_from(operators[k - 1], v);
+        }
+        ComparisonOp::Greater => upper = Some((v.ceil() as i64) - 1),
+        ComparisonOp::GreaterEqual => upper = Some(v.floor() as i64),
+        _ => return None,
+      }
+    }
+    // Right neighbor: `var op o[k+1]`.
+    if k + 1 < operands.len() {
+      let v = crate::functions::math_ast::try_eval_to_f64(&operands[k + 1])?;
+      match operators[k] {
+        ComparisonOp::Less | ComparisonOp::LessEqual => {
+          upper = upper_from(operators[k], v);
+        }
+        ComparisonOp::Greater => lower = Some((v.floor() as i64) + 1),
+        ComparisonOp::GreaterEqual => lower = Some(v.ceil() as i64),
+        _ => return None,
+      }
+    }
+    return Some((lower, upper));
+  }
+  None
+}
+
+fn comparison_op_of(e: &Expr) -> Option<ComparisonOp> {
+  match e {
+    Expr::Identifier(s) => match s.as_str() {
+      "Less" => Some(ComparisonOp::Less),
+      "LessEqual" => Some(ComparisonOp::LessEqual),
+      "Greater" => Some(ComparisonOp::Greater),
+      "GreaterEqual" => Some(ComparisonOp::GreaterEqual),
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+/// `Reduce[bounds && extra, x, Integers]` where the conjunction bounds `x` to a
+/// finite integer interval and carries at least one non-bound constraint:
+/// enumerate the interval and keep the integers for which the full constraint
+/// evaluates `True`, returning `x == v1 || … || x == vk` (or `False`). Returns
+/// `None` when no finite two-sided range is derivable or there is no extra
+/// constraint — the plain interval paths handle those with their own format.
+fn try_reduce_bounded_integer_filtered(expr: &Expr, var: &str) -> Option<Expr> {
+  // Inexact bounds make wolframscript warn (Reduce::ratnz); leave them alone.
+  if contains_inexact_literal(expr) {
+    return None;
+  }
+  let mut conjuncts = Vec::new();
+  collect_and_constraints(expr, &mut conjuncts);
+  if conjuncts.len() < 2 {
+    return None;
+  }
+  let mut lower: Option<i64> = None;
+  let mut upper: Option<i64> = None;
+  let mut has_extra = false;
+  for c in &conjuncts {
+    if let Some((lo, hi)) = numeric_var_bounds(c, var) {
+      if let Some(l) = lo {
+        lower = Some(lower.map_or(l, |cur| cur.max(l)));
+      }
+      if let Some(h) = hi {
+        upper = Some(upper.map_or(h, |cur| cur.min(h)));
+      }
+    } else {
+      has_extra = true;
+    }
+  }
+  let lower = lower?;
+  let upper = upper?;
+  if !has_extra {
+    return None;
+  }
+  if upper < lower {
+    return Some(Expr::Identifier("False".to_string()));
+  }
+  if (upper as i128 - lower as i128) > 100_000 {
+    return None;
+  }
+  let mut terms: Vec<Expr> = Vec::new();
+  for i in lower..=upper {
+    let subst =
+      crate::syntax::substitute_variable(expr, var, &Expr::Integer(i as i128));
+    let evaled = crate::evaluator::evaluate_expr_to_expr(&subst).ok()?;
+    if matches!(&evaled, Expr::Identifier(s) if s == "True") {
+      terms.push(Expr::Comparison {
+        operands: vec![
+          Expr::Identifier(var.to_string()),
+          Expr::Integer(i as i128),
+        ],
+        operators: vec![ComparisonOp::Equal],
+      });
+    }
+  }
+  if terms.is_empty() {
+    return Some(Expr::Identifier("False".to_string()));
+  }
+  Some(build_or(terms))
+}
+
 /// Does `e` contain a `ConditionalExpression[...]` subexpression?
 fn contains_conditional_expression(e: &Expr) -> bool {
   match e {
@@ -242,7 +426,7 @@ fn is_trig_equation(eq: &Expr, var: &str) -> bool {
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      && operators[0] == ComparisonOp::Equal =>
     {
       &operands[0]
     }
@@ -302,7 +486,7 @@ fn try_reduce_bounded_trig(
 }
 
 /// Extract variable names from the second argument of Reduce.
-pub fn extract_reduce_vars(expr: &Expr) -> Vec<String> {
+fn extract_reduce_vars(expr: &Expr) -> Vec<String> {
   match expr {
     Expr::Identifier(name) => {
       // Check it's not a constant
@@ -329,7 +513,7 @@ pub fn extract_reduce_vars(expr: &Expr) -> Vec<String> {
 }
 
 /// Core reduction logic.
-pub fn reduce_expr(
+fn reduce_expr(
   expr: &Expr,
   vars: &[String],
   domain: Option<&str>,
@@ -465,8 +649,8 @@ fn expand_numeric_two_sided_bound(expr: &Expr, var: &str) -> Option<Expr> {
     left: Box::new(left),
     right: Box::new(right),
   };
-  let is_ineq_op = |op: crate::syntax::ComparisonOp| {
-    use crate::syntax::ComparisonOp::*;
+  let is_ineq_op = |op: ComparisonOp| {
+    use ComparisonOp::*;
     matches!(op, Less | LessEqual | Greater | GreaterEqual)
   };
 
@@ -525,7 +709,7 @@ fn expand_numeric_two_sided_bound(expr: &Expr, var: &str) -> Option<Expr> {
 }
 
 /// Reduce a single constraint in one variable.
-pub fn reduce_single_var(
+fn reduce_single_var(
   expr: &Expr,
   var: &str,
   domain: Option<&str>,
@@ -573,12 +757,12 @@ pub fn extract_comparison(expr: &Expr) -> Option<(Expr, Expr, CompOp)> {
       operators,
     } if operands.len() == 2 && operators.len() == 1 => {
       let op = match operators[0] {
-        crate::syntax::ComparisonOp::Equal => CompOp::Equal,
-        crate::syntax::ComparisonOp::NotEqual => CompOp::NotEqual,
-        crate::syntax::ComparisonOp::Less => CompOp::Less,
-        crate::syntax::ComparisonOp::LessEqual => CompOp::LessEqual,
-        crate::syntax::ComparisonOp::Greater => CompOp::Greater,
-        crate::syntax::ComparisonOp::GreaterEqual => CompOp::GreaterEqual,
+        ComparisonOp::Equal => CompOp::Equal,
+        ComparisonOp::NotEqual => CompOp::NotEqual,
+        ComparisonOp::Less => CompOp::Less,
+        ComparisonOp::LessEqual => CompOp::LessEqual,
+        ComparisonOp::Greater => CompOp::Greater,
+        ComparisonOp::GreaterEqual => CompOp::GreaterEqual,
         _ => return None,
       };
       Some((operands[0].clone(), operands[1].clone(), op))
@@ -600,7 +784,156 @@ pub fn extract_comparison(expr: &Expr) -> Option<(Expr, Expr, CompOp)> {
 }
 
 /// Reduce an equation lhs == rhs for variable var.
-pub fn reduce_equation(
+/// Strip a leading unary/`-1*` minus from `e` (used so the degenerate condition
+/// prints `b == 0` rather than `-b == 0`, matching wolframscript).
+fn strip_leading_minus(e: &Expr) -> Expr {
+  match e {
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => (**operand).clone(),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::Integer(-1)) => (**right).clone(),
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Integer(-1)) =>
+    {
+      args[1].clone()
+    }
+    _ => e.clone(),
+  }
+}
+
+/// For an equation `expanded == 0` that is linear in `var` with a *parametric*
+/// (non-numeric) leading coefficient, produce the full solution set — including
+/// the degenerate case where the coefficient vanishes — as wolframscript does:
+///   c1*var + c0 == 0   (c1 symbolic)  ->
+///     c0 == 0              : c1 == 0 || var == 0
+///     c0 a nonzero number  : c1 != 0 && var == -c0/c1
+///     c0 parametric        : (-c0 == 0 && c1 == 0) || (c1 != 0 && var == -c0/c1)
+/// Returns None when the shape does not apply (non-linear, numeric coefficient,
+/// restricted domain) so the caller falls through to the normal Solve path.
+fn try_reduce_linear_parametric(
+  expanded: &Expr,
+  var: &str,
+  domain: Option<&str>,
+) -> Result<Option<Expr>, InterpreterError> {
+  // Only the unrestricted (Complexes) case is handled here.
+  if domain.is_some() {
+    return Ok(None);
+  }
+  let var_expr = Expr::Identifier(var.to_string());
+  let degree = crate::functions::polynomial_ast::exponent_ast(&[
+    expanded.clone(),
+    var_expr.clone(),
+  ])?;
+  if !matches!(degree, Expr::Integer(1)) {
+    return Ok(None);
+  }
+  let c1 = crate::functions::polynomial_ast::coefficient_ast(&[
+    expanded.clone(),
+    var_expr.clone(),
+    Expr::Integer(1),
+  ])?;
+  let c0 = crate::functions::polynomial_ast::coefficient_ast(&[
+    expanded.clone(),
+    var_expr.clone(),
+    Expr::Integer(0),
+  ])?;
+  if !is_constant_wrt(&c1, var) || !is_constant_wrt(&c0, var) {
+    return Ok(None);
+  }
+  // A numeric leading coefficient has a unique, non-degenerate solution — the
+  // ordinary Solve path already handles it.
+  if is_reduce_number(&c1) {
+    return Ok(None);
+  }
+  // The condition `c1 == 0` reduces to `s == 0` when c1 is a numeric multiple of
+  // a single symbol `s`; wolframscript enumerates the sub-cases for products of
+  // several symbols, which we do not attempt here.
+  let cond_var = match primitive_condition_var(&c1) {
+    Some(s) => s,
+    None => return Ok(None),
+  };
+  // Solution branch: cond_var != 0 && var == -c0/c1  (the solution keeps the
+  // full coefficient c1, e.g. b/(2*a)). Use the full evaluator so the quotient
+  // is canonicalized the same way Solve reports it (e.g. b/(-a) -> -(b/a)).
+  let sol_value = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(negate_expr(&c0)),
+    right: Box::new(c1.clone()),
+  })?;
+  let solution = and_results(
+    &make_comparison(&cond_var, &Expr::Integer(0), CompOp::NotEqual),
+    &make_equality(&var_expr, &sol_value),
+  );
+  // c0 == 0: the whole line is a solution when the coefficient vanishes.
+  if matches!(&c0, Expr::Integer(0)) {
+    return Ok(Some(or_results(
+      &make_equality(&cond_var, &Expr::Integer(0)),
+      &make_equality(&var_expr, &Expr::Integer(0)),
+    )));
+  }
+  // Nonzero numeric constant: c1 == 0 would make the equation 0 == nonzero, so
+  // only the solution branch survives.
+  if is_reduce_number(&c0) {
+    return Ok(Some(solution));
+  }
+  // Parametric constant: keep both branches.
+  let degenerate = and_results(
+    &make_equality(&strip_leading_minus(&c0), &Expr::Integer(0)),
+    &make_equality(&cond_var, &Expr::Integer(0)),
+  );
+  Ok(Some(or_results(&degenerate, &solution)))
+}
+
+/// Whether `e` is an explicit number literal (integer, real, or rational).
+fn is_reduce_number(e: &Expr) -> bool {
+  matches!(
+    e,
+    Expr::Integer(_)
+      | Expr::Real(_)
+      | Expr::BigInteger(_)
+      | Expr::BigFloat(_, _)
+  ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+}
+
+/// If `c1` is a numeric multiple of a single symbol `s` (e.g. `2 a`, `-a`,
+/// `a/2`), return `s` — the symbol whose vanishing is equivalent to `c1 == 0`.
+/// Returns None for a bare number or a product of several symbols.
+fn primitive_condition_var(c1: &Expr) -> Option<Expr> {
+  match c1 {
+    Expr::Identifier(_) => Some(c1.clone()),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => primitive_condition_var(operand),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => match (is_reduce_number(left), is_reduce_number(right)) {
+      (true, false) => primitive_condition_var(right),
+      (false, true) => primitive_condition_var(left),
+      _ => None,
+    },
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let non_numeric: Vec<&Expr> =
+        args.iter().filter(|a| !is_reduce_number(a)).collect();
+      match non_numeric.as_slice() {
+        [only] => primitive_condition_var(only),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+fn reduce_equation(
   lhs: &Expr,
   rhs: &Expr,
   var: &str,
@@ -626,10 +959,15 @@ pub fn reduce_equation(
     });
   }
 
+  // Linear equation with a symbolic leading coefficient: include the a==0 case.
+  if let Some(result) = try_reduce_linear_parametric(&expanded, var, domain)? {
+    return Ok(result);
+  }
+
   // Use the Solve infrastructure to find roots
   let eq_expr = Expr::Comparison {
     operands: vec![lhs.clone(), rhs.clone()],
-    operators: vec![crate::syntax::ComparisonOp::Equal],
+    operators: vec![ComparisonOp::Equal],
   };
   let solve_result = solve_ast(&[eq_expr, Expr::Identifier(var.to_string())])?;
 
@@ -723,7 +1061,7 @@ pub fn reduce_equation(
 }
 
 /// Reduce a != b for variable var.
-pub fn reduce_not_equal(
+fn reduce_not_equal(
   lhs: &Expr,
   rhs: &Expr,
   var: &str,
@@ -754,7 +1092,7 @@ pub fn reduce_not_equal(
   let _ = domain;
   Ok(Expr::Comparison {
     operands: vec![lhs.clone(), rhs.clone()],
-    operators: vec![crate::syntax::ComparisonOp::NotEqual],
+    operators: vec![ComparisonOp::NotEqual],
   })
 }
 
@@ -871,7 +1209,7 @@ fn try_reduce_arc_degrees(
 }
 
 /// Reduce an inequality (lhs op rhs) for one variable.
-pub fn reduce_inequality(
+fn reduce_inequality(
   lhs: &Expr,
   rhs: &Expr,
   op: CompOp,
@@ -1154,7 +1492,7 @@ fn try_reduce_abs_not_equal(
 }
 
 /// Evaluate a constant inequality (no variable present).
-pub fn evaluate_constant_ineq(val: &Expr, op: CompOp) -> Expr {
+fn evaluate_constant_ineq(val: &Expr, op: CompOp) -> Expr {
   // Try to get a numeric value
   if let Some(n) = expr_to_number(val) {
     let result = match op {
@@ -1194,7 +1532,7 @@ pub fn expr_to_number(expr: &Expr) -> Option<f64> {
 }
 
 /// Reduce a linear inequality (a*x + b op 0)
-pub fn reduce_linear_inequality(
+fn reduce_linear_inequality(
   poly: &Expr,
   var: &str,
   op: CompOp,
@@ -1256,7 +1594,7 @@ pub fn reduce_linear_inequality(
 }
 
 /// Reduce a quadratic inequality (a*x^2 + b*x + c op 0)
-pub fn reduce_quadratic_inequality(
+fn reduce_quadratic_inequality(
   poly: &Expr,
   var: &str,
   op: CompOp,
@@ -1341,7 +1679,7 @@ pub fn reduce_quadratic_inequality(
         }
         CompOp::Greater if ai > 0 => Ok(Expr::Comparison {
           operands: vec![Expr::Identifier(var.to_string()), root],
-          operators: vec![crate::syntax::ComparisonOp::NotEqual],
+          operators: vec![ComparisonOp::NotEqual],
         }),
         CompOp::LessEqual if ai > 0 => {
           Ok(make_equality(&Expr::Identifier(var.to_string()), &root))
@@ -1363,7 +1701,7 @@ pub fn reduce_quadratic_inequality(
         }
         CompOp::Less if ai < 0 => Ok(Expr::Comparison {
           operands: vec![Expr::Identifier(var.to_string()), root],
-          operators: vec![crate::syntax::ComparisonOp::NotEqual],
+          operators: vec![ComparisonOp::NotEqual],
         }),
         CompOp::GreaterEqual if ai < 0 => {
           Ok(make_equality(&Expr::Identifier(var.to_string()), &root))
@@ -1466,7 +1804,7 @@ pub fn reduce_quadratic_inequality(
 }
 
 /// Make a quadratic root expression: (nb + so*Sqrt[si]) / den
-pub fn make_quadratic_root(nb: i128, so: i128, si: i128, den: i128) -> Expr {
+fn make_quadratic_root(nb: i128, so: i128, si: i128, den: i128) -> Expr {
   let g = gcd_i128(gcd_i128(nb, so).abs(), den.abs()).abs();
   let nb = nb / g;
   let so = so / g;
@@ -1508,7 +1846,7 @@ pub fn make_quadratic_root(nb: i128, so: i128, si: i128, den: i128) -> Expr {
 }
 
 /// Order two roots so that the smaller one comes first.
-pub fn order_roots(r1: Expr, r2: Expr) -> (Expr, Expr) {
+fn order_roots(r1: Expr, r2: Expr) -> (Expr, Expr) {
   if let (Some(v1), Some(v2)) = (expr_to_number(&r1), expr_to_number(&r2)) {
     if v1 <= v2 { (r1, r2) } else { (r2, r1) }
   } else {
@@ -1527,7 +1865,7 @@ pub fn order_roots(r1: Expr, r2: Expr) -> (Expr, Expr) {
 }
 
 /// Try to factor and solve higher-degree polynomial inequalities.
-pub fn try_factor_and_reduce_inequality(
+fn try_factor_and_reduce_inequality(
   lhs: &Expr,
   rhs: &Expr,
   op: CompOp,
@@ -1537,7 +1875,7 @@ pub fn try_factor_and_reduce_inequality(
   // Try using Solve to find roots, then determine sign intervals
   let eq = Expr::Comparison {
     operands: vec![lhs.clone(), rhs.clone()],
-    operators: vec![crate::syntax::ComparisonOp::Equal],
+    operators: vec![ComparisonOp::Equal],
   };
   let solve_result =
     solve_ast(&[eq, Expr::Identifier(var.to_string())]).ok()?;
@@ -1671,7 +2009,7 @@ pub fn try_factor_and_reduce_inequality(
 }
 
 /// Evaluate a polynomial at a specific point.
-pub fn eval_poly_at(poly: &Expr, var: &str, x: f64) -> f64 {
+fn eval_poly_at(poly: &Expr, var: &str, x: f64) -> f64 {
   let substituted =
     crate::syntax::substitute_variable(poly, var, &Expr::Real(x));
   let simplified = simplify(substituted);
@@ -1679,7 +2017,7 @@ pub fn eval_poly_at(poly: &Expr, var: &str, x: f64) -> f64 {
 }
 
 /// Check if a sign value matches the comparison operator (compared to 0).
-pub fn sign_matches(val: f64, op: CompOp) -> bool {
+fn sign_matches(val: f64, op: CompOp) -> bool {
   match op {
     CompOp::Less => val < 0.0,
     CompOp::LessEqual => val <= 0.0,
@@ -1691,7 +2029,7 @@ pub fn sign_matches(val: f64, op: CompOp) -> bool {
 }
 
 /// Handle And conjunction of two constraints.
-pub fn reduce_and(
+fn reduce_and(
   left: &Expr,
   right: &Expr,
   vars: &[String],
@@ -1858,7 +2196,7 @@ pub fn collect_and_constraints(expr: &Expr, out: &mut Vec<Expr>) {
 }
 
 /// Collect equalities (var == val) from an And expression.
-pub fn collect_and_equalities(expr: &Expr) -> Vec<(String, Expr)> {
+fn collect_and_equalities(expr: &Expr) -> Vec<(String, Expr)> {
   let mut result = Vec::new();
   let mut constraints = Vec::new();
   collect_and_constraints(expr, &mut constraints);
@@ -1892,7 +2230,7 @@ pub fn collect_or_terms(expr: &Expr) -> Vec<Expr> {
 }
 
 /// Try to combine multiple inequalities on the same variable.
-pub fn reduce_combined_inequalities(
+fn reduce_combined_inequalities(
   ineqs: &[Expr],
   var: &str,
   domain: Option<&str>,
@@ -1983,7 +2321,6 @@ pub fn reduce_combined_inequalities(
       && operators.len() == 2
       && operands.len() == 3
     {
-      use crate::syntax::ComparisonOp;
       let mid = &operands[1];
       if expr_to_string(mid) == var {
         let low_inc = matches!(
@@ -2104,7 +2441,7 @@ pub fn reduce_combined_inequalities(
 }
 
 /// Update a bound, keeping the tighter one.
-pub fn update_bound(
+fn update_bound(
   current: Option<(Expr, bool)>,
   new_val: Expr,
   inclusive: bool,
@@ -2132,7 +2469,7 @@ pub fn update_bound(
 }
 
 /// Handle multi-variable systems.
-pub fn reduce_multi_var(
+fn reduce_multi_var(
   expr: &Expr,
   vars: &[String],
   domain: Option<&str>,
@@ -2190,7 +2527,7 @@ pub fn reduce_multi_var_and(
   if let Some((i, var, lhs, rhs, _deg)) = best {
     let eq = Expr::Comparison {
       operands: vec![lhs, rhs],
-      operators: vec![crate::syntax::ComparisonOp::Equal],
+      operators: vec![ComparisonOp::Equal],
     };
     let solve_result = solve_ast(&[eq, Expr::Identifier(var.to_string())])?;
 
@@ -2337,7 +2674,7 @@ pub fn reduce_multi_var_and(
 }
 
 /// Check if a value is in a given domain.
-pub fn is_in_domain(expr: &Expr, domain: &str) -> bool {
+fn is_in_domain(expr: &Expr, domain: &str) -> bool {
   match domain {
     "Reals" => {
       // Check that the expression doesn't contain I (imaginary unit)
@@ -2524,7 +2861,7 @@ fn try_reduce_exists_quadratic_linear(
   let bound = inv_q(&k)?;
   Some(Expr::Comparison {
     operands: vec![Expr::Identifier(param.clone()), rational_to_expr(&bound)],
-    operators: vec![crate::syntax::ComparisonOp::LessEqual],
+    operators: vec![ComparisonOp::LessEqual],
   })
 }
 
@@ -2735,10 +3072,10 @@ fn extract_le_form(e: &Expr) -> Option<(Expr, Expr)> {
     && operators.len() == 1
   {
     match &operators[0] {
-      crate::syntax::ComparisonOp::LessEqual => {
+      ComparisonOp::LessEqual => {
         Some((operands[0].clone(), operands[1].clone()))
       }
-      crate::syntax::ComparisonOp::GreaterEqual => {
+      ComparisonOp::GreaterEqual => {
         Some((operands[1].clone(), operands[0].clone()))
       }
       _ => None,
@@ -2757,10 +3094,10 @@ fn extract_ge_form(e: &Expr) -> Option<(Expr, Expr)> {
     && operators.len() == 1
   {
     match &operators[0] {
-      crate::syntax::ComparisonOp::GreaterEqual => {
+      ComparisonOp::GreaterEqual => {
         Some((operands[0].clone(), operands[1].clone()))
       }
-      crate::syntax::ComparisonOp::LessEqual => {
+      ComparisonOp::LessEqual => {
         Some((operands[1].clone(), operands[0].clone()))
       }
       _ => None,

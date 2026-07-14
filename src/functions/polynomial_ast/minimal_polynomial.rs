@@ -2,7 +2,7 @@
 use super::*;
 use crate::InterpreterError;
 use crate::functions::math_ast::{expr_to_f64, expr_to_i128, is_sqrt};
-use crate::syntax::{BinaryOperator, Expr};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
 /// MinimalPolynomial[α, x] - Computes the minimal polynomial of an algebraic number α
 /// in the variable x.
@@ -170,7 +170,7 @@ fn compute_minpoly_coeffs(
 
     // Unary minus
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       // minpoly(-α) = minpoly(α) with x replaced by -x
@@ -229,7 +229,7 @@ fn compute_minpoly_coeffs(
     } => {
       // a - b = a + (-b)
       let neg_right = Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new((**right).clone()),
       };
       let sum_expr = Expr::BinaryOp {
@@ -1026,7 +1026,7 @@ fn collect_rad_poly(expr: &Expr, depth: usize) -> Option<RadPoly> {
       power(&args[0], &args[1])
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => Some(rad_scale(&collect_rad_poly(operand, depth + 1)?, (-1, 1))),
     Expr::BinaryOp { op, left, right } => match op {
@@ -1624,7 +1624,7 @@ fn sturm_real_root_count(coeffs: &[i128]) -> usize {
     v
   }
 
-  fn big_gcd(a: &BigInt, b: &BigInt) -> BigInt {
+  fn gcd_bigint(a: &BigInt, b: &BigInt) -> BigInt {
     let mut a = a.abs();
     let mut b = b.abs();
     while !b.is_zero() {
@@ -1638,7 +1638,7 @@ fn sturm_real_root_count(coeffs: &[i128]) -> usize {
   fn content_reduce(v: &[BigInt]) -> Vec<BigInt> {
     let mut g = BigInt::ZERO;
     for c in v {
-      g = big_gcd(&g, c);
+      g = gcd_bigint(&g, c);
     }
     if g > BigInt::from(1) {
       v.iter().map(|c| c / &g).collect()
@@ -1726,4 +1726,413 @@ fn sturm_real_root_count(coeffs: &[i128]) -> usize {
   };
 
   variations(true) - variations(false)
+}
+
+/// NumberFieldDiscriminant[a] — the discriminant of the number field
+/// Q(a). Rationals give 1; quadratic fields give the fundamental
+/// discriminant of b^2 - 4 a c; for degree >= 3 with a monic minimal
+/// polynomial the polynomial discriminant is returned when Z[a] is
+/// p-maximal (Dedekind's criterion) at every prime whose square divides
+/// it, and the call stays unevaluated otherwise (wolframscript computes
+/// the full conductor there). Non-algebraic input emits nalg.
+pub fn number_field_discriminant_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "NumberFieldDiscriminant".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 1 {
+    return unevaluated();
+  }
+  let ev = crate::evaluator::evaluate_expr_to_expr;
+  let var = Expr::Identifier("NumberFieldDiscriminant$x".to_string());
+  let mp = ev(&Expr::FunctionCall {
+    name: "MinimalPolynomial".to_string(),
+    args: vec![args[0].clone(), var.clone()].into(),
+  })?;
+  if matches!(&mp, Expr::FunctionCall { name, .. } if name == "MinimalPolynomial")
+  {
+    crate::emit_message(&format!(
+      "NumberFieldDiscriminant::nalg: {} is not an explicit algebraic number.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return unevaluated();
+  }
+  // Integer coefficient list, constant first.
+  let coeff_expr = ev(&Expr::FunctionCall {
+    name: "CoefficientList".to_string(),
+    args: vec![mp.clone(), var.clone()].into(),
+  })?;
+  let coeffs: Vec<i128> = match &coeff_expr {
+    Expr::List(items) => {
+      let cs: Option<Vec<i128>> = items
+        .iter()
+        .map(|e| match e {
+          Expr::Integer(n) => Some(*n),
+          _ => None,
+        })
+        .collect();
+      match cs {
+        Some(cs) if cs.len() >= 2 => cs,
+        // Degree 0 (rational input never reaches here — its minimal
+        // polynomial is linear) or non-integer coefficients.
+        Some(_) => return Ok(Expr::Integer(1)),
+        None => return unevaluated(),
+      }
+    }
+    _ => return unevaluated(),
+  };
+  let degree = coeffs.len() - 1;
+  if degree <= 1 {
+    return Ok(Expr::Integer(1));
+  }
+  if degree == 2 {
+    let (c, b, a) = (coeffs[0], coeffs[1], coeffs[2]);
+    let d = b.checked_mul(b).and_then(|b2| {
+      a.checked_mul(c)
+        .and_then(|ac| ac.checked_mul(4))
+        .and_then(|f| b2.checked_sub(f))
+    });
+    let Some(d) = d else { return unevaluated() };
+    let Some(d0) = squarefree_part(d) else {
+      return unevaluated();
+    };
+    let fundamental = if d0.rem_euclid(4) == 1 { d0 } else { 4 * d0 };
+    return Ok(Expr::Integer(fundamental));
+  }
+  // Degree >= 3: only the monic (algebraic-integer) case.
+  if coeffs[degree] != 1 {
+    return unevaluated();
+  }
+  let disc = ev(&Expr::FunctionCall {
+    name: "Discriminant".to_string(),
+    args: vec![mp, var].into(),
+  })?;
+  let Expr::Integer(disc) = disc else {
+    return unevaluated();
+  };
+  if disc == 0 {
+    return unevaluated();
+  }
+  let Some(square_primes) = primes_with_square_dividing(disc) else {
+    return unevaluated();
+  };
+  for p in square_primes {
+    match dedekind_p_maximal(&coeffs, p) {
+      Some(true) => {}
+      _ => return unevaluated(),
+    }
+  }
+  Ok(Expr::Integer(disc))
+}
+
+/// The squarefree part of n (with n's sign), or None when the unfactored
+/// remainder is too large to classify.
+fn squarefree_part(n: i128) -> Option<i128> {
+  if n == 0 {
+    return None;
+  }
+  let sign = n.signum();
+  let mut m = n.abs();
+  let mut part: i128 = 1;
+  let mut p: i128 = 2;
+  while p * p <= m && p < 1_000_000 {
+    let mut count = 0;
+    while m % p == 0 {
+      m /= p;
+      count += 1;
+    }
+    if count % 2 == 1 {
+      part *= p;
+    }
+    p += 1;
+  }
+  // The remainder is prime, 1, or a square of a prime > bound; larger
+  // composites cannot be classified here.
+  if m == 1 {
+    Some(sign * part)
+  } else {
+    let root = (m as f64).sqrt().round() as i128;
+    if root * root == m {
+      Some(sign * part)
+    } else if is_probable_prime(m) {
+      Some(sign * part * m)
+    } else {
+      None
+    }
+  }
+}
+
+fn is_probable_prime(n: i128) -> bool {
+  if n < 2 {
+    return false;
+  }
+  for p in [2i128, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37] {
+    if n == p {
+      return true;
+    }
+    if n % p == 0 {
+      return false;
+    }
+  }
+  // Deterministic Miller-Rabin for < 3.3e24 with these bases.
+  let d = n - 1;
+  let s = d.trailing_zeros();
+  let d = d >> s;
+  'witness: for a in [2i128, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37] {
+    let mut x = mod_pow(a, d, n);
+    if x == 1 || x == n - 1 {
+      continue;
+    }
+    for _ in 1..s {
+      x = mod_mul(x, x, n);
+      if x == n - 1 {
+        continue 'witness;
+      }
+    }
+    return false;
+  }
+  true
+}
+
+fn mod_mul(a: i128, b: i128, m: i128) -> i128 {
+  // i128 multiplication can overflow for very large moduli; the values
+  // here come from discriminants that already fit comfortably.
+  ((a as u128).wrapping_mul(b as u128) % (m as u128)) as i128
+}
+
+fn mod_pow(mut base: i128, mut exp: i128, m: i128) -> i128 {
+  let mut acc: i128 = 1;
+  base %= m;
+  while exp > 0 {
+    if exp & 1 == 1 {
+      acc = mod_mul(acc, base, m);
+    }
+    base = mod_mul(base, base, m);
+    exp >>= 1;
+  }
+  acc
+}
+
+/// The primes whose square divides n, or None when n cannot be fully
+/// classified by trial division.
+fn primes_with_square_dividing(n: i128) -> Option<Vec<i128>> {
+  let mut m = n.abs();
+  let mut out = Vec::new();
+  let mut p: i128 = 2;
+  while p * p <= m && p < 1_000_000 {
+    if m % p == 0 {
+      let mut count = 0;
+      while m % p == 0 {
+        m /= p;
+        count += 1;
+      }
+      if count >= 2 {
+        out.push(p);
+      }
+    }
+    p += 1;
+  }
+  if m == 1 {
+    return Some(out);
+  }
+  let root = (m as f64).sqrt().round() as i128;
+  if root * root == m && is_probable_prime(root) {
+    out.push(root);
+    Some(out)
+  } else if is_probable_prime(m) {
+    Some(out)
+  } else {
+    None
+  }
+}
+
+/// Dedekind's criterion: is Z[a] p-maximal for the monic minimal
+/// polynomial f (coefficients constant-first)? With f-bar = g-bar h-bar
+/// (g-bar the radical of f mod p) and F = (g h - f)/p, the order is
+/// p-maximal iff gcd(F-bar, g-bar, h-bar) == 1 in F_p[x].
+fn dedekind_p_maximal(coeffs: &[i128], p: i128) -> Option<bool> {
+  // F_p[x] helpers on constant-first coefficient vectors.
+  let norm = |v: &mut Vec<i128>| {
+    while v.len() > 1 && *v.last()? == 0 {
+      v.pop();
+    }
+    Some(())
+  };
+  let reduce = |v: &[i128]| -> Vec<i128> {
+    let mut out: Vec<i128> = v.iter().map(|c| c.rem_euclid(p)).collect();
+    while out.len() > 1 && *out.last().unwrap() == 0 {
+      out.pop();
+    }
+    out
+  };
+  let inv = |a: i128| -> i128 { mod_pow(a.rem_euclid(p), p - 2, p) };
+  let divmod = |num: &[i128], den: &[i128]| -> (Vec<i128>, Vec<i128>) {
+    let mut rem = num.to_vec();
+    let dl = den.len();
+    if rem.len() < dl {
+      return (vec![0], rem);
+    }
+    let mut quo = vec![0i128; rem.len() - dl + 1];
+    let lead_inv = inv(den[dl - 1]);
+    for i in (0..quo.len()).rev() {
+      let c = mod_mul(rem[i + dl - 1], lead_inv, p);
+      quo[i] = c;
+      if c != 0 {
+        for (j, d) in den.iter().enumerate() {
+          rem[i + j] = (rem[i + j] - mod_mul(c, *d, p)).rem_euclid(p);
+        }
+      }
+    }
+    let mut r = rem;
+    r.truncate(dl - 1);
+    if r.is_empty() {
+      r.push(0);
+    }
+    while r.len() > 1 && *r.last().unwrap() == 0 {
+      r.pop();
+    }
+    (quo, r)
+  };
+  let is_zero = |v: &[i128]| v.len() == 1 && v[0] == 0;
+  let gcd = |a: &[i128], b: &[i128]| -> Vec<i128> {
+    let (mut x, mut y) = (reduce(a), reduce(b));
+    while !is_zero(&y) {
+      let (_, r) = divmod(&x, &y);
+      x = y;
+      y = r;
+    }
+    // Monicize.
+    if !is_zero(&x) {
+      let li = inv(*x.last().unwrap());
+      for c in &mut x {
+        *c = mod_mul(*c, li, p);
+      }
+    }
+    x
+  };
+  let derivative = |v: &[i128]| -> Vec<i128> {
+    if v.len() <= 1 {
+      return vec![0];
+    }
+    reduce(
+      &v[1..]
+        .iter()
+        .enumerate()
+        .map(|(i, c)| c.checked_mul(i as i128 + 1).unwrap_or(0))
+        .collect::<Vec<_>>(),
+    )
+  };
+  let mul = |a: &[i128], b: &[i128]| -> Vec<i128> {
+    let mut out = vec![0i128; a.len() + b.len() - 1];
+    for (i, x) in a.iter().enumerate() {
+      for (j, y) in b.iter().enumerate() {
+        out[i + j] = (out[i + j] + mod_mul(*x, *y, p)).rem_euclid(p);
+      }
+    }
+    out
+  };
+
+  let f_bar = reduce(coeffs);
+  // g-bar: the radical (product of distinct irreducible factors) of
+  // f mod p. When the derivative vanishes, f is a p-th power u(x)^p and
+  // rad(f) = rad(u); in F_p the p-th root just contracts exponents
+  // (Frobenius fixes the coefficients).
+  fn radical(
+    f: &[i128],
+    p: i128,
+    gcd: &dyn Fn(&[i128], &[i128]) -> Vec<i128>,
+    divmod: &dyn Fn(&[i128], &[i128]) -> (Vec<i128>, Vec<i128>),
+    derivative: &dyn Fn(&[i128]) -> Vec<i128>,
+  ) -> Option<Vec<i128>> {
+    let is_zero = |v: &[i128]| v.len() == 1 && v[0] == 0;
+    if f.len() <= 1 {
+      return Some(vec![1]);
+    }
+    let d = derivative(f);
+    if is_zero(&d) {
+      // p-th root: keep the coefficients at exponents divisible by p.
+      let mut u = Vec::new();
+      for (i, c) in f.iter().enumerate() {
+        if (i as i128) % p == 0 {
+          u.push(*c);
+        } else if *c != 0 {
+          return None;
+        }
+      }
+      return radical(&u, p, gcd, divmod, derivative);
+    }
+    let g = gcd(f, &d);
+    // w: each factor with multiplicity not divisible by p, once.
+    let (w, r) = divmod(f, &g);
+    if !is_zero(&r) {
+      return None;
+    }
+    // m: the p-th-power part — g with all w-factors stripped.
+    let mut m = g;
+    loop {
+      let c = gcd(&m, &w);
+      if c.len() <= 1 {
+        break;
+      }
+      let (q, r) = divmod(&m, &c);
+      if !is_zero(&r) {
+        return None;
+      }
+      m = q;
+    }
+    let r2 = radical(&m, p, gcd, divmod, derivative)?;
+    // Combine, dividing out any overlap.
+    let overlap = gcd(&w, &r2);
+    let (extra, r) = divmod(&r2, &overlap);
+    if !is_zero(&r) {
+      return None;
+    }
+    let mut out = vec![0i128; w.len() + extra.len() - 1];
+    for (i, x) in w.iter().enumerate() {
+      for (j, y) in extra.iter().enumerate() {
+        out[i + j] = (out[i + j] + x * y).rem_euclid(p);
+      }
+    }
+    while out.len() > 1 && *out.last().unwrap() == 0 {
+      out.pop();
+    }
+    Some(out)
+  }
+  let g_bar = radical(&f_bar, p, &gcd, &divmod, &derivative)?;
+  let (h_bar, hr) = divmod(&f_bar, &g_bar);
+  if !is_zero(&hr) {
+    return None;
+  }
+  // Lift g, h to Z[x] with coefficients in 0..p, F = (g h - f)/p.
+  let gh = {
+    let mut out = vec![0i128; g_bar.len() + h_bar.len() - 1];
+    for (i, x) in g_bar.iter().enumerate() {
+      for (j, y) in h_bar.iter().enumerate() {
+        out[i + j] = out[i + j].checked_add(x.checked_mul(*y)?)?;
+      }
+    }
+    out
+  };
+  let mut big_f = vec![0i128; gh.len().max(coeffs.len())];
+  for (i, c) in gh.iter().enumerate() {
+    big_f[i] = *c;
+  }
+  for (i, c) in coeffs.iter().enumerate() {
+    big_f[i] = big_f[i].checked_sub(*c)?;
+  }
+  if big_f.iter().any(|c| c % p != 0) {
+    return None;
+  }
+  let f_over_p: Vec<i128> = big_f.iter().map(|c| c / p).collect();
+  let f_over_p_bar = reduce(&f_over_p);
+  let mut acc = gcd(&f_over_p_bar, &g_bar);
+  acc = gcd(&acc, &h_bar);
+  // Suppress the unused-mul warning path.
+  let _ = mul;
+  norm(&mut acc)?;
+  Some(acc.len() == 1 && acc[0] != 0)
 }

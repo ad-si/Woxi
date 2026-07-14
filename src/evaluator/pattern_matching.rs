@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::{BinaryOperator, UnaryOperator};
 use std::cell::RefCell;
 
 // Thread-local stack of accumulated bindings from outer FunctionCall arg loops.
@@ -34,21 +35,12 @@ fn lhs_condition_definitely_fails(bindings: &[(String, Expr)]) -> bool {
   })
 }
 
-fn push_match_context(bindings: &[(String, Expr)]) {
+pub fn push_match_context(bindings: &[(String, Expr)]) {
   MATCH_CONTEXT.with(|ctx| ctx.borrow_mut().push(bindings.to_vec()));
 }
 
-fn pop_match_context() {
+pub fn pop_match_context() {
   MATCH_CONTEXT.with(|ctx| ctx.borrow_mut().pop());
-}
-
-/// Public wrappers for use from dispatch code.
-pub fn push_match_context_pub(bindings: &[(String, Expr)]) {
-  push_match_context(bindings);
-}
-
-pub fn pop_match_context_pub() {
-  pop_match_context();
 }
 
 /// Check if bindings are compatible with all outer context bindings.
@@ -201,7 +193,7 @@ pub fn association_nested_access(
 }
 
 /// Parse an association string like "<|a -> 1, b -> 2|>" into pairs
-pub fn parse_association_string(
+fn parse_association_string(
   s: &str,
 ) -> Result<Vec<(String, String)>, InterpreterError> {
   if !s.starts_with("<|") || !s.ends_with("|>") {
@@ -229,7 +221,7 @@ pub fn parse_association_string(
 /// `<|…|>` associations, lists, or bracketed calls belong to the current
 /// item. Depth is tracked on the two-character `<|` / `|>` delimiters (a
 /// bare `>` also appears in every `->` and must not affect nesting).
-pub fn split_association_items(s: &str) -> Vec<String> {
+fn split_association_items(s: &str) -> Vec<String> {
   let mut items = Vec::new();
   let mut current = String::new();
   let mut depth = 0i64;
@@ -294,7 +286,7 @@ pub fn contains_pattern(expr: &Expr) -> bool {
     | Expr::PatternOptional { .. }
     | Expr::PatternTest { .. } => true,
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Alternatives,
+      op: BinaryOperator::Alternatives,
       ..
     } => true,
     Expr::FunctionCall { name, .. } if name == "Alternatives" => true,
@@ -344,7 +336,7 @@ pub fn contains_pattern(expr: &Expr) -> bool {
 
 /// Try AST-based structural pattern matching for a single rule on an expression.
 /// Returns Some(result) if the pattern matched and was replaced.
-pub fn try_ast_pattern_replace(
+fn try_ast_pattern_replace(
   expr: &Expr,
   pattern: &Expr,
   replacement: &Expr,
@@ -359,7 +351,7 @@ pub fn try_ast_pattern_replace(
 /// Plus or Times) into its operand list, e.g. `(a + b) + c` → `[a, b, c]`.
 fn collect_flat_binary_operands(
   expr: &Expr,
-  op: &crate::syntax::BinaryOperator,
+  op: &BinaryOperator,
   out: &mut Vec<Expr>,
 ) {
   if let Expr::BinaryOp {
@@ -571,7 +563,7 @@ pub fn is_symbol_protected(name: &str) -> bool {
   })
 }
 
-pub fn has_one_identity(name: &str) -> bool {
+fn has_one_identity(name: &str) -> bool {
   let builtin = get_builtin_attributes(name);
   if builtin.contains(&"OneIdentity") {
     return true;
@@ -624,10 +616,8 @@ fn lookup_user_default(
 }
 
 /// Map a BinaryOperator to the corresponding Wolfram Language function name.
-pub fn binary_op_to_func_name(
-  op: &crate::syntax::BinaryOperator,
-) -> &'static str {
-  use crate::syntax::BinaryOperator;
+fn binary_op_to_func_name(op: &BinaryOperator) -> &'static str {
+  use BinaryOperator;
   match op {
     BinaryOperator::Plus => "Plus",
     BinaryOperator::Times => "Times",
@@ -641,7 +631,7 @@ pub fn binary_op_to_func_name(
 /// Try OneIdentity matching: when a pattern is f[args...] and f has OneIdentity,
 /// match a non-f expression by filling in defaults for PatternOptional args
 /// and matching the expression against the remaining required pattern slot.
-pub fn try_one_identity_match(
+fn try_one_identity_match(
   expr: &Expr,
   pat_name: &str,
   pat_args: &[Expr],
@@ -771,7 +761,7 @@ pub fn try_one_identity_match(
 }
 
 /// Try to match a single expression against a structural pattern.
-pub fn try_ast_pattern_replace_single(
+fn try_ast_pattern_replace_single(
   value: &Expr,
   pattern: &Expr,
   replacement: &Expr,
@@ -876,7 +866,7 @@ pub fn try_ast_pattern_replace_single(
 /// Extract the pattern Expr and optional /; condition string from a rule's pattern field.
 /// Handles Expr::Raw("pattern_str /; condition_str") by parsing the pattern part
 /// and returning the condition string separately.
-pub fn extract_pattern_and_condition(pattern: &Expr) -> (Expr, Option<String>) {
+fn extract_pattern_and_condition(pattern: &Expr) -> (Expr, Option<String>) {
   match pattern {
     Expr::Raw(s) if s.contains(" /; ") => {
       // Split on " /; " to get pattern and condition
@@ -1238,7 +1228,7 @@ fn set_partitions(n: usize, k: usize) -> Vec<Vec<Vec<usize>>> {
 /// fewer args than the expression. Partitions expr_args into pat_args.len()
 /// non-empty groups. Groups of size 1 are passed through (OneIdentity), larger
 /// groups are wrapped in the Flat function.
-pub fn try_flat_partition_match(
+fn try_flat_partition_match(
   pat_name: &str,
   pat_args: &[Expr],
   expr_args: &[Expr],
@@ -1497,7 +1487,7 @@ fn enumerate_partitions_with_sizes(
 
 /// Find a subset of `sub_len` arguments from `args` at `indices` that matches the pattern args
 /// when wrapped in a function call. Returns the matched indices and bindings.
-pub fn find_orderless_subset_match(
+fn find_orderless_subset_match(
   func_name: &str,
   args: &[Expr],
   indices: &[usize],
@@ -1891,7 +1881,7 @@ fn try_symbol_replace_all(
 
 /// Try Flat subsequence replacement. For a Flat function f, matches f[a,b] within f[a,b,c]
 /// by trying contiguous subsequences. Recursively applies to subexpressions.
-pub fn try_flat_replace_all(
+fn try_flat_replace_all(
   expr: &Expr,
   pattern: &Expr,
   replacement: &Expr,
@@ -2231,7 +2221,6 @@ pub fn apply_replace_repeated_ast_with_max(
 }
 
 /// Check if two Expr values are structurally equal
-#[allow(dead_code)]
 pub fn expr_equal(a: &Expr, b: &Expr) -> bool {
   match (a, b) {
     (Expr::Integer(x), Expr::Integer(y)) => x == y,
@@ -2254,94 +2243,6 @@ pub fn expr_equal(a: &Expr, b: &Expr) -> bool {
         && a1.iter().zip(a2.iter()).all(|(x, y)| expr_equal(x, y))
     }
     _ => expr_to_string(a) == expr_to_string(b),
-  }
-}
-
-/// Apply a list of rules once to an expression
-#[allow(dead_code)]
-pub fn apply_rules_once(
-  expr: &Expr,
-  rules: &[(&Expr, &Expr)],
-) -> Result<Expr, InterpreterError> {
-  // Try to match each rule against the expression
-  for (pattern, replacement) in rules {
-    if let Some(bindings) = match_pattern(expr, pattern) {
-      return apply_bindings(replacement, &bindings);
-    }
-  }
-
-  // No rule matched at the top level, try to apply rules to subexpressions
-  match expr {
-    Expr::List(items) => {
-      let new_items: Result<Vec<Expr>, _> = items
-        .iter()
-        .map(|item| apply_rules_once(item, rules))
-        .collect();
-      Ok(Expr::List(new_items?.into()))
-    }
-    Expr::FunctionCall { name, args } => {
-      // For Flat functions, try subsequence matching before recursing
-      let has_flat = is_builtin_flat(name)
-        || crate::FUNC_ATTRS.with(|m| {
-          m.borrow()
-            .get(name.as_str())
-            .is_some_and(|attrs| attrs.contains(&"Flat".to_string()))
-        });
-      if has_flat {
-        for (pattern, replacement) in rules {
-          if let Expr::FunctionCall {
-            name: pat_name,
-            args: pat_args,
-          } = pattern
-            && pat_name == name
-            && pat_args.len() < args.len()
-          {
-            // Try matching contiguous subsequences of args
-            let sub_len = pat_args.len();
-            for start in 0..=(args.len() - sub_len) {
-              let sub_expr = Expr::FunctionCall {
-                name: name.clone(),
-                args: args[start..start + sub_len].to_vec().into(),
-              };
-              if let Some(bindings) = match_pattern(&sub_expr, pattern) {
-                let replaced = apply_bindings(replacement, &bindings)?;
-                let mut new_args = args[..start].to_vec();
-                new_args.push(replaced);
-                new_args.extend_from_slice(&args[start + sub_len..]);
-                if new_args.len() == 1 {
-                  return Ok(new_args.into_iter().next().unwrap());
-                }
-                return Ok(Expr::FunctionCall {
-                  name: name.clone(),
-                  args: new_args.into(),
-                });
-              }
-            }
-          }
-        }
-      }
-
-      let new_args: Result<Vec<Expr>, _> = args
-        .iter()
-        .map(|arg| apply_rules_once(arg, rules))
-        .collect();
-      Ok(Expr::FunctionCall {
-        name: name.clone(),
-        args: new_args?.into(),
-      })
-    }
-    Expr::BinaryOp { op, left, right } => Ok(Expr::BinaryOp {
-      op: *op,
-      left: Box::new(apply_rules_once(left, rules)?),
-      right: Box::new(apply_rules_once(right, rules)?),
-    }),
-    // `!x /. x -> True` must descend into the operand like any other
-    // compound expression.
-    Expr::UnaryOp { op, operand } => Ok(Expr::UnaryOp {
-      op: *op,
-      operand: Box::new(apply_rules_once(operand, rules)?),
-    }),
-    _ => Ok(expr.clone()),
   }
 }
 
@@ -3637,7 +3538,7 @@ fn match_pattern_impl(
       }
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Alternatives,
+      op: BinaryOperator::Alternatives,
       left: alt_left,
       right: alt_right,
     } => {
@@ -3748,7 +3649,6 @@ fn match_pattern_impl(
 /// ComplexInfinity → DirectedInfinity[]. Returns None for anything else (and
 /// for an already-explicit DirectedInfinity[…], which needs no rewriting).
 fn directed_infinity_canonical(expr: &Expr) -> Option<Expr> {
-  use crate::syntax::{BinaryOperator, UnaryOperator};
   let is_inf = |e: &Expr| matches!(e, Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity");
   let di = |dir: Vec<Expr>| Expr::FunctionCall {
     name: "DirectedInfinity".to_string(),
@@ -3788,7 +3688,6 @@ fn directed_infinity_canonical(expr: &Expr) -> Option<Expr> {
 }
 
 pub fn get_expr_head(expr: &Expr) -> String {
-  use crate::syntax::{BinaryOperator, UnaryOperator};
   // Check for complex numbers before general matching,
   // so that e.g. 2I (stored as Times[2, I]) is recognized as Complex
   if crate::functions::predicate_ast::is_complex_number(expr) {
@@ -3946,7 +3845,7 @@ pub fn resolve_identifier_to_func_name(name: &str) -> Option<String> {
 /// Apply ReplaceAll with multiple rules at the AST level.
 /// For each sub-expression, try each rule; the first matching rule wins.
 /// If no rule matches the whole node, recurse into children.
-pub fn apply_replace_all_multi_ast(
+fn apply_replace_all_multi_ast(
   expr: &Expr,
   rules: &[(&Expr, &Expr)],
 ) -> Result<Expr, InterpreterError> {

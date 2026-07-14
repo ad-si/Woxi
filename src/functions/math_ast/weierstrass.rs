@@ -132,7 +132,7 @@ pub fn weierstrass_p_prime_ast(
 }
 
 /// Compute WeierstrassPPrime numerically via central difference of WeierstrassP
-pub fn weierstrass_p_prime_numeric(u: f64, g2: f64, g3: f64) -> f64 {
+fn weierstrass_p_prime_numeric(u: f64, g2: f64, g3: f64) -> f64 {
   // ℘'(z)² = 4℘³ - g2℘ - g3, so the magnitude follows directly from the
   // (accurate) value of ℘. A coarse central difference only fixes the sign,
   // which keeps full precision instead of relying on the difference's value.
@@ -145,7 +145,7 @@ pub fn weierstrass_p_prime_numeric(u: f64, g2: f64, g3: f64) -> f64 {
 }
 
 /// Compute WeierstrassP numerically using cubic roots + Jacobi elliptic functions
-pub fn weierstrass_p_numeric(u: f64, g2: f64, g3: f64) -> f64 {
+fn weierstrass_p_numeric(u: f64, g2: f64, g3: f64) -> f64 {
   // Solve depressed cubic: t³ - (g2/4)t - (g3/4) = 0
   let p = -g2 / 4.0;
   let q = -g3 / 4.0;
@@ -223,7 +223,7 @@ fn weierstrass_p_duplication(u: f64, g2: f64, g3: f64) -> f64 {
 }
 
 /// Laurent series fallback: ℘(u) = 1/u² + Σ cₖ u^{2k}
-pub fn weierstrass_p_laurent(u: f64, g2: f64, g3: f64) -> f64 {
+fn weierstrass_p_laurent(u: f64, g2: f64, g3: f64) -> f64 {
   let max_terms = 30;
   let mut c = vec![0.0; max_terms];
   if max_terms > 1 {

@@ -8,7 +8,7 @@
 //! - 1/n! decay: True
 
 use crate::InterpreterError;
-use crate::syntax::{ComparisonOp, Expr};
+use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
 
 pub fn sum_convergence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = |args: &[Expr]| Expr::FunctionCall {
@@ -130,7 +130,7 @@ fn classify_factors(
       }
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -154,7 +154,7 @@ fn classify_factors(
       );
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left,
       right,
     } => {
@@ -281,7 +281,7 @@ fn n_linear_sign(exp: &Expr, n_var: &str) -> Option<i128> {
   match exp {
     Expr::Identifier(v) if v == n_var => Some(1),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } if matches!(operand.as_ref(), Expr::Identifier(v) if v == n_var) => {
       Some(-1)
@@ -302,7 +302,7 @@ fn n_linear_sign(exp: &Expr, n_var: &str) -> Option<i128> {
 fn negated_symbol(exp: &Expr, n_var: &str) -> Option<Expr> {
   match exp {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => match operand.as_ref() {
       p @ Expr::Identifier(v) if v != n_var => Some(p.clone()),
@@ -328,7 +328,7 @@ fn as_power(expr: &Expr) -> Option<(Expr, Expr)> {
       Some((args[0].clone(), args[1].clone()))
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => Some(((**left).clone(), (**right).clone())),

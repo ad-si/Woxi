@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
 
 /// Helper to check if an Expr is True or False
 fn as_bool(expr: &Expr) -> Option<bool> {
@@ -22,10 +22,17 @@ pub fn and_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut remaining = Vec::new();
   for arg in args {
     let evaluated = evaluate_expr_to_expr(arg)?;
-    match as_bool(&evaluated) {
-      Some(false) => return Ok(Expr::Identifier("False".to_string())),
-      Some(true) => {} // Skip True values
-      None => remaining.push(evaluated),
+    // And is Flat: splice nested And (whether stored as a FunctionCall or a
+    // `&&` BinaryOp chain) so `a && b && c` is And[a, b, c], not the nested
+    // And[And[a, b], c] the parser builds. Matches wolframscript.
+    let mut pieces = Vec::new();
+    splice_flat_head(&evaluated, BinaryOperator::And, "And", &mut pieces);
+    for piece in pieces {
+      match as_bool(&piece) {
+        Some(false) => return Ok(Expr::Identifier("False".to_string())),
+        Some(true) => {} // Skip True values
+        None => remaining.push(piece),
+      }
     }
   }
   match remaining.len() {
@@ -38,15 +45,44 @@ pub fn and_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Flatten a Flat boolean head: if `expr` is `head[...]` (as a FunctionCall or
+/// a nested `op` BinaryOp chain), append its leaf operands to `out`; otherwise
+/// append `expr` itself.
+fn splice_flat_head(
+  expr: &Expr,
+  op: BinaryOperator,
+  head: &str,
+  out: &mut Vec<Expr>,
+) {
+  match expr {
+    Expr::FunctionCall { name, args } if name == head => {
+      for a in args.iter() {
+        splice_flat_head(a, op, head, out);
+      }
+    }
+    Expr::BinaryOp { op: o, left, right } if *o == op => {
+      splice_flat_head(left, op, head, out);
+      splice_flat_head(right, op, head, out);
+    }
+    _ => out.push(expr.clone()),
+  }
+}
+
 /// Or[expr1, expr2, ...] - Logical OR
 pub fn or_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut remaining = Vec::new();
   for arg in args {
     let evaluated = evaluate_expr_to_expr(arg)?;
-    match as_bool(&evaluated) {
-      Some(true) => return Ok(Expr::Identifier("True".to_string())),
-      Some(false) => {} // Skip False values
-      None => remaining.push(evaluated),
+    // Or is Flat: splice nested Or (FunctionCall or `||` BinaryOp chain) so
+    // `a || b || c` is Or[a, b, c] rather than Or[Or[a, b], c].
+    let mut pieces = Vec::new();
+    splice_flat_head(&evaluated, BinaryOperator::Or, "Or", &mut pieces);
+    for piece in pieces {
+      match as_bool(&piece) {
+        Some(true) => return Ok(Expr::Identifier("True".to_string())),
+        Some(false) => {} // Skip False values
+        None => remaining.push(piece),
+      }
     }
   }
   match remaining.len() {
@@ -77,7 +113,7 @@ pub fn not_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Double negation: Not[Not[x]] → x. The inner operand is already in
       // normal form (it was produced by evaluating the inner Not).
       if let Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Not,
+        op: UnaryOperator::Not,
         operand,
       } = &evaluated
       {
@@ -103,17 +139,14 @@ pub fn not_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         });
       }
       Ok(Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Not,
+        op: UnaryOperator::Not,
         operand: Box::new(evaluated),
       })
     }
   }
 }
 
-fn negate_comparison_op(
-  op: &crate::syntax::ComparisonOp,
-) -> Option<crate::syntax::ComparisonOp> {
-  use crate::syntax::ComparisonOp;
+fn negate_comparison_op(op: &ComparisonOp) -> Option<ComparisonOp> {
   match op {
     ComparisonOp::Equal => Some(ComparisonOp::NotEqual),
     ComparisonOp::NotEqual => Some(ComparisonOp::Equal),
@@ -317,7 +350,7 @@ pub fn same_q_real_bigfloat(a: &Expr, b: &Expr) -> bool {
 /// representable doubles map to adjacent integers. Mapping the raw bits to a
 /// sign-magnitude-ordered key makes the comparison correct across the
 /// exponent boundaries and across zero.
-pub fn within_one_ulp(a: f64, b: f64) -> bool {
+fn within_one_ulp(a: f64, b: f64) -> bool {
   if a == b {
     return true;
   }
@@ -532,10 +565,7 @@ pub fn all_components_equal(a: &Expr, b: &Expr) -> bool {
 /// (`a < b`, `a == b == c`) rather than keeping the `Less[a, b]` head. Build
 /// the `Expr::Comparison` node the formatter renders that way; the evaluator's
 /// Comparison arm treats it as a stable fixpoint for symbolic operands.
-fn symbolic_comparison_chain(
-  args: &[Expr],
-  op: crate::syntax::ComparisonOp,
-) -> Expr {
+fn symbolic_comparison_chain(args: &[Expr], op: ComparisonOp) -> Expr {
   Expr::Comparison {
     operands: args.to_vec(),
     operators: vec![op; args.len().saturating_sub(1)],
@@ -582,7 +612,7 @@ pub fn infinity_equal_verdict(a: &Expr, b: &Expr) -> Option<Option<bool>> {
     (None, None) => None,
     (Some(_), None) | (None, Some(_)) => {
       let finite = if ka.is_some() { b } else { a };
-      if crate::functions::predicate_ast::is_numeric_q_pub(finite) {
+      if crate::functions::predicate_ast::is_numeric_q(finite) {
         Some(Some(false))
       } else {
         None // symbolic operand — leave to the normal machinery
@@ -607,10 +637,7 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(Expr::Identifier("False".to_string()));
       }
       Some(None) => {
-        return Ok(symbolic_comparison_chain(
-          args,
-          crate::syntax::ComparisonOp::Equal,
-        ));
+        return Ok(symbolic_comparison_chain(args, ComparisonOp::Equal));
       }
       _ => {}
     }
@@ -657,10 +684,7 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.iter().any(
     |a| matches!(a, Expr::FunctionCall { name, .. } if name == "MusicPitch"),
   ) {
-    return Ok(symbolic_comparison_chain(
-      args,
-      crate::syntax::ComparisonOp::Equal,
-    ));
+    return Ok(symbolic_comparison_chain(args, ComparisonOp::Equal));
   }
 
   // Check if all args are numeric
@@ -754,10 +778,7 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Only stay symbolic if at least one arg has free symbols
   if args.iter().any(crate::evaluator::has_free_symbols) {
-    Ok(symbolic_comparison_chain(
-      args,
-      crate::syntax::ComparisonOp::Equal,
-    ))
+    Ok(symbolic_comparison_chain(args, ComparisonOp::Equal))
   } else {
     // No free symbols, not identical → False
     Ok(Expr::Identifier("False".to_string()))
@@ -786,10 +807,7 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Some(Some(false)) => infinity_decided += 1,
         Some(None) => {
-          return Ok(symbolic_comparison_chain(
-            args,
-            crate::syntax::ComparisonOp::NotEqual,
-          ));
+          return Ok(symbolic_comparison_chain(args, ComparisonOp::NotEqual));
         }
         None => {}
       }
@@ -837,10 +855,7 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.iter().any(
     |a| matches!(a, Expr::FunctionCall { name, .. } if name == "MusicPitch"),
   ) {
-    return Ok(symbolic_comparison_chain(
-      args,
-      crate::syntax::ComparisonOp::NotEqual,
-    ));
+    return Ok(symbolic_comparison_chain(args, ComparisonOp::NotEqual));
   }
 
   // Check if all args are numeric
@@ -852,10 +867,7 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Only stay symbolic if at least one arg has free symbols
   if has_free {
-    Ok(symbolic_comparison_chain(
-      args,
-      crate::syntax::ComparisonOp::NotEqual,
-    ))
+    Ok(symbolic_comparison_chain(args, ComparisonOp::NotEqual))
   } else {
     // No free symbols, pairwise different → True
     Ok(Expr::Identifier("True".to_string()))
@@ -865,224 +877,6 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Helper to extract numeric value from Expr — delegates to try_eval_to_f64_with_infinity for full recursive evaluation
 fn expr_to_num(expr: &Expr) -> Option<f64> {
   crate::functions::math_ast::try_eval_to_f64_with_infinity(expr)
-}
-
-/// Compare two expressions exactly when both are integer-valued
-/// (Integer or BigInteger). f64 conversion loses ULPs above ~2^53,
-/// so `2^60 < 2^60 + 1` would round to a tie and return False; bypass
-/// that by comparing the BigInts directly. Returns `None` if either
-/// side isn't an exact integer.
-fn compare_exact_integers(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
-  fn as_bigint(e: &Expr) -> Option<num_bigint::BigInt> {
-    match e {
-      Expr::Integer(n) => Some(num_bigint::BigInt::from(*n)),
-      Expr::BigInteger(n) => Some(n.clone()),
-      _ => None,
-    }
-  }
-  Some(as_bigint(a)?.cmp(&as_bigint(b)?))
-}
-
-/// Less[a, b] or a < b - Tests if a is less than b
-pub fn less_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() < 2 {
-    return Err(InterpreterError::EvaluationError(
-      "Less expects at least 2 arguments".into(),
-    ));
-  }
-
-  // Handle Interval comparisons
-  if let Some(result) =
-    crate::functions::interval_ast::try_interval_compare(args, "Less")
-  {
-    return result;
-  }
-
-  // Detect impossible numeric ordering anywhere in the chain. For
-  // `Less[a1, ..., an]` the chain is True only if every pair (ai, aj)
-  // with i<j satisfies ai < aj transitively, so any pair with both
-  // values numeric and ai >= aj forces the whole chain to False even
-  // when intermediate values are symbolic. E.g. `Less[1, 3, x, 2]` is
-  // False because 3 < ... < 2 cannot hold.
-  let nums: Vec<(usize, f64)> = args
-    .iter()
-    .enumerate()
-    .filter_map(|(i, a)| expr_to_num(a).map(|n| (i, n)))
-    .collect();
-  for w in nums.windows(2) {
-    // Use exact-integer compare first when both endpoints are
-    // BigInteger/Integer (f64 loses 1-ULP precision above ~2^53,
-    // turning `2^60 < 2^60 + 1` into a tie). Only fall back to the
-    // f64 ordering when at least one side isn't an exact integer.
-    if let Some(ord) = compare_exact_integers(&args[w[0].0], &args[w[1].0]) {
-      if !matches!(ord, std::cmp::Ordering::Less) {
-        return Ok(Expr::Identifier("False".to_string()));
-      }
-    } else if w[0].1 >= w[1].1 {
-      return Ok(Expr::Identifier("False".to_string()));
-    }
-  }
-
-  for w in args.windows(2) {
-    let (a, b) = (&w[0], &w[1]);
-    if let Some(ord) = compare_exact_integers(a, b) {
-      if !matches!(ord, std::cmp::Ordering::Less) {
-        return Ok(Expr::Identifier("False".to_string()));
-      }
-      continue;
-    }
-    let prev = match expr_to_num(a) {
-      Some(n) => n,
-      None => {
-        return Ok(symbolic_comparison_chain(
-          args,
-          crate::syntax::ComparisonOp::Less,
-        ));
-      }
-    };
-    let curr = match expr_to_num(b) {
-      Some(n) => n,
-      None => {
-        return Ok(symbolic_comparison_chain(
-          args,
-          crate::syntax::ComparisonOp::Less,
-        ));
-      }
-    };
-    if prev >= curr {
-      return Ok(Expr::Identifier("False".to_string()));
-    }
-  }
-  Ok(Expr::Identifier("True".to_string()))
-}
-
-/// Greater[a, b] or a > b - Tests if a is greater than b
-pub fn greater_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() < 2 {
-    return Err(InterpreterError::EvaluationError(
-      "Greater expects at least 2 arguments".into(),
-    ));
-  }
-
-  // Handle Interval comparisons
-  if let Some(result) =
-    crate::functions::interval_ast::try_interval_compare(args, "Greater")
-  {
-    return result;
-  }
-
-  let mut prev = match expr_to_num(&args[0]) {
-    Some(n) => n,
-    None => {
-      return Ok(symbolic_comparison_chain(
-        args,
-        crate::syntax::ComparisonOp::Greater,
-      ));
-    }
-  };
-
-  for arg in args.iter().skip(1) {
-    let curr = match expr_to_num(arg) {
-      Some(n) => n,
-      None => {
-        return Ok(symbolic_comparison_chain(
-          args,
-          crate::syntax::ComparisonOp::Greater,
-        ));
-      }
-    };
-    if prev <= curr {
-      return Ok(Expr::Identifier("False".to_string()));
-    }
-    prev = curr;
-  }
-  Ok(Expr::Identifier("True".to_string()))
-}
-
-/// LessEqual[a, b] or a <= b - Tests if a is less than or equal to b
-pub fn less_equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() < 2 {
-    return Err(InterpreterError::EvaluationError(
-      "LessEqual expects at least 2 arguments".into(),
-    ));
-  }
-
-  // Handle Interval comparisons
-  if let Some(result) =
-    crate::functions::interval_ast::try_interval_compare(args, "LessEqual")
-  {
-    return result;
-  }
-
-  let mut prev = match expr_to_num(&args[0]) {
-    Some(n) => n,
-    None => {
-      return Ok(symbolic_comparison_chain(
-        args,
-        crate::syntax::ComparisonOp::LessEqual,
-      ));
-    }
-  };
-
-  for arg in args.iter().skip(1) {
-    let curr = match expr_to_num(arg) {
-      Some(n) => n,
-      None => {
-        return Ok(symbolic_comparison_chain(
-          args,
-          crate::syntax::ComparisonOp::LessEqual,
-        ));
-      }
-    };
-    if prev > curr {
-      return Ok(Expr::Identifier("False".to_string()));
-    }
-    prev = curr;
-  }
-  Ok(Expr::Identifier("True".to_string()))
-}
-
-/// GreaterEqual[a, b] or a >= b - Tests if a is greater than or equal to b
-pub fn greater_equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() < 2 {
-    return Err(InterpreterError::EvaluationError(
-      "GreaterEqual expects at least 2 arguments".into(),
-    ));
-  }
-
-  // Handle Interval comparisons
-  if let Some(result) =
-    crate::functions::interval_ast::try_interval_compare(args, "GreaterEqual")
-  {
-    return result;
-  }
-
-  let mut prev = match expr_to_num(&args[0]) {
-    Some(n) => n,
-    None => {
-      return Ok(symbolic_comparison_chain(
-        args,
-        crate::syntax::ComparisonOp::GreaterEqual,
-      ));
-    }
-  };
-
-  for arg in args.iter().skip(1) {
-    let curr = match expr_to_num(arg) {
-      Some(n) => n,
-      None => {
-        return Ok(symbolic_comparison_chain(
-          args,
-          crate::syntax::ComparisonOp::GreaterEqual,
-        ));
-      }
-    };
-    if prev < curr {
-      return Ok(Expr::Identifier("False".to_string()));
-    }
-    prev = curr;
-  }
-  Ok(Expr::Identifier("True".to_string()))
 }
 
 /// Boole[expr] - Converts True to 1 and False to 0
@@ -1383,7 +1177,7 @@ fn normalize_not(expr: &Expr) -> Expr {
   match expr {
     Expr::FunctionCall { name, args } if name == "Not" && args.len() == 1 => {
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Not,
+        op: UnaryOperator::Not,
         operand: Box::new(normalize_not(&args[0])),
       }
     }
@@ -1412,7 +1206,7 @@ fn to_dnf(expr: &Expr) -> Expr {
 fn dnf_literal(e: &Expr) -> (String, bool, Expr) {
   match e {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Not,
+      op: UnaryOperator::Not,
       operand,
     } => (
       crate::syntax::expr_to_string(operand),
@@ -1544,7 +1338,7 @@ fn canonicalize_dnf(expr: &Expr) -> Expr {
           atom.clone()
         } else {
           Expr::UnaryOp {
-            op: crate::syntax::UnaryOperator::Not,
+            op: UnaryOperator::Not,
             operand: Box::new(atom.clone()),
           }
         }
@@ -1751,7 +1545,7 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
     }
     // Convert UnaryOp(Not, x) to FunctionCall("Not", [x]) for uniform processing
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Not,
+      op: UnaryOperator::Not,
       operand,
     } => {
       let inner = eliminate_connectives(operand);
@@ -1776,7 +1570,7 @@ fn apply_not_inward(inner: &Expr) -> Expr {
     }
     // Not[Not[a]] → a (handles UnaryOp form)
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Not,
+      op: UnaryOperator::Not,
       operand,
     } => push_not_inward(operand),
     // Not[And[a, b, ...]] → Or[Not[a], Not[b], ...]
@@ -1826,7 +1620,7 @@ fn push_not_inward(expr: &Expr) -> Expr {
     }
     // Handle Not as UnaryOp
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Not,
+      op: UnaryOperator::Not,
       operand,
     } => apply_not_inward(operand),
     Expr::FunctionCall { name, args } => {
@@ -2146,9 +1940,71 @@ fn distribute_or_over_and(expr: &Expr) -> Expr {
 
 // ─── BooleanConvert ────────────────────────────────────────────────
 
+/// Negate a boolean literal, collapsing double negation: `Not[x] -> x`,
+/// `x -> Not[x]`.
+fn bc_negate_literal(e: &Expr) -> Expr {
+  match e {
+    Expr::FunctionCall { name, args } if name == "Not" && args.len() == 1 => {
+      args[0].clone()
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Not,
+      operand,
+    } => (**operand).clone(),
+    _ => Expr::FunctionCall {
+      name: "Not".to_string(),
+      args: vec![e.clone()].into(),
+    },
+  }
+}
+
+/// Rewrite one clause with the given head (`Or` for the AND form, `And` for
+/// the OR form) as `Not[<dual>[negated literals]]` via De Morgan; other
+/// clauses (bare literals) are returned unchanged.
+fn bc_demorgan_clause(clause: &Expr, clause_head: &str, dual: &str) -> Expr {
+  if let Expr::FunctionCall { name, args } = clause
+    && name == clause_head
+  {
+    let negated: Vec<Expr> = args.iter().map(bc_negate_literal).collect();
+    return Expr::FunctionCall {
+      name: "Not".to_string(),
+      args: vec![Expr::FunctionCall {
+        name: dual.to_string(),
+        args: negated.into(),
+      }]
+      .into(),
+    };
+  }
+  clause.clone()
+}
+
+/// Convert a normal form to an "AND"/"OR"-only form. `top` is the connective
+/// joining the clauses (`And` for the AND form built from CNF, `Or` for the
+/// OR form built from DNF); `clause_head`/`dual` are the connective inside a
+/// clause and its De Morgan dual.
+fn bc_to_single_connective(
+  nf: &Expr,
+  top: &str,
+  clause_head: &str,
+  dual: &str,
+) -> Expr {
+  match nf {
+    Expr::FunctionCall { name, args } if name == top => Expr::FunctionCall {
+      name: top.to_string(),
+      args: args
+        .iter()
+        .map(|c| bc_demorgan_clause(c, clause_head, dual))
+        .collect::<Vec<_>>()
+        .into(),
+    },
+    // A single clause (or a bare literal) is rewritten on its own.
+    other => bc_demorgan_clause(other, clause_head, dual),
+  }
+}
+
 /// BooleanConvert[expr] or BooleanConvert[expr, form]
 /// Convert boolean expressions to different normal forms.
-/// Supported forms: "DNF", "CNF", or default (eliminate compound connectives).
+/// Supported forms: "DNF", "CNF", "AND", "OR", or default (DNF).
 pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -2173,7 +2029,7 @@ pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 (0, crate::syntax::expr_to_string(&args[0]))
               }
               Expr::UnaryOp {
-                op: crate::syntax::UnaryOperator::Not,
+                op: UnaryOperator::Not,
                 operand,
               } => (0, crate::syntax::expr_to_string(operand)),
               _ => (1, crate::syntax::expr_to_string(e)),
@@ -2214,13 +2070,17 @@ pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       sort_boolean_expr(&normalize_not(&cnf))
     }
     "OR" => {
-      let eliminated = eliminate_connectives(expr);
-      let negated = push_not_inward(&eliminated);
-      sort_boolean_expr(&normalize_not(&negated))
+      // Express with Or and Not only: take the DNF and rewrite every
+      // conjunctive clause And[l…] as Not[Or[!l…]] (De Morgan). normalize_not
+      // renders the introduced Not[…] wrappers with the `!` operator.
+      let dnf = canonicalize_dnf(&normalize_not(&to_dnf(expr)));
+      normalize_not(&bc_to_single_connective(&dnf, "Or", "And", "Or"))
     }
     "AND" => {
-      let cnf = to_cnf(expr);
-      sort_boolean_expr(&normalize_not(&cnf))
+      // Express with And and Not only: take the CNF and rewrite every
+      // disjunctive clause Or[l…] as Not[And[!l…]] (De Morgan).
+      let cnf = sort_boolean_expr(&normalize_not(&to_cnf(expr)));
+      normalize_not(&bc_to_single_connective(&cnf, "And", "Or", "And"))
     }
     _ => {
       return Ok(Expr::FunctionCall {
@@ -2552,7 +2412,7 @@ fn implicants_to_expr(
           literals.push(var);
         } else {
           literals.push(Expr::UnaryOp {
-            op: crate::syntax::UnaryOperator::Not,
+            op: UnaryOperator::Not,
             operand: Box::new(var),
           });
         }
@@ -2775,7 +2635,7 @@ fn exactly_k_dnf(vars: &[String], k: usize) -> Expr {
         literals.push(var);
       } else {
         literals.push(Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Not,
+          op: UnaryOperator::Not,
           operand: Box::new(var),
         });
       }
@@ -2806,7 +2666,7 @@ fn at_most_k_dnf(vars: &[String], kmax: usize) -> Expr {
     let mut literals: Vec<Expr> = Vec::with_capacity(s.len());
     for &i in s {
       literals.push(Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Not,
+        op: UnaryOperator::Not,
         operand: Box::new(Expr::Identifier(vars[i].clone())),
       });
     }
@@ -2839,7 +2699,7 @@ fn minterms_to_dnf(vars: &[String], count_set: &[usize]) -> Expr {
           literals.push(var);
         } else {
           literals.push(Expr::UnaryOp {
-            op: crate::syntax::UnaryOperator::Not,
+            op: UnaryOperator::Not,
             operand: Box::new(var),
           });
         }
@@ -3071,7 +2931,7 @@ fn collect_boolean_variable_exprs(expr: &Expr, out: &mut Vec<Expr>) {
       }
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::And | crate::syntax::BinaryOperator::Or,
+      op: BinaryOperator::And | BinaryOperator::Or,
       left,
       right,
     } => {
@@ -3079,7 +2939,7 @@ fn collect_boolean_variable_exprs(expr: &Expr, out: &mut Vec<Expr>) {
       collect_boolean_variable_exprs(right, out);
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Not,
+      op: UnaryOperator::Not,
       operand,
     } => {
       collect_boolean_variable_exprs(operand, out);
@@ -3426,7 +3286,7 @@ pub fn boolean_minterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             vars[i].clone()
           } else {
             Expr::UnaryOp {
-              op: crate::syntax::UnaryOperator::Not,
+              op: UnaryOperator::Not,
               operand: Box::new(vars[i].clone()),
             }
           }
@@ -3658,7 +3518,7 @@ pub fn boolean_maxterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             vars[i].clone()
           } else {
             Expr::UnaryOp {
-              op: crate::syntax::UnaryOperator::Not,
+              op: UnaryOperator::Not,
               operand: Box::new(vars[i].clone()),
             }
           }

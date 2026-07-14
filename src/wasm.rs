@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use wasm_bindgen::prelude::*;
 
+use crate::syntax::Expr;
 use crate::{clear_state, interpret, interpret_with_stdout};
 
 thread_local! {
@@ -61,7 +62,7 @@ extern "C" {
 /// Returns the image as an Expr::Image.
 pub fn import_image_from_url_wasm(
   url: &str,
-) -> Result<crate::syntax::Expr, crate::InterpreterError> {
+) -> Result<Expr, crate::InterpreterError> {
   let b64 = woxi_fetch_url(url).map_err(|e| {
     crate::InterpreterError::EvaluationError(format!(
       "Import: failed to fetch \"{}\": {:?}",
@@ -89,7 +90,7 @@ pub fn import_image_from_url_wasm(
 pub fn csv_import_from_url_wasm(
   url: &str,
   element: Option<&str>,
-) -> Result<crate::syntax::Expr, crate::InterpreterError> {
+) -> Result<Expr, crate::InterpreterError> {
   let b64 = woxi_fetch_url(url).map_err(|e| {
     crate::InterpreterError::EvaluationError(format!(
       "Import: failed to fetch \"{}\": {:?}",

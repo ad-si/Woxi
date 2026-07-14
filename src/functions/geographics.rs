@@ -93,7 +93,7 @@ fn decode_countries(buf: &[u8]) -> Vec<Country> {
 }
 
 /// All countries with their names and geometry (decoded once).
-pub fn world_countries() -> &'static Vec<Country> {
+fn world_countries() -> &'static Vec<Country> {
   static CACHE: OnceLock<Vec<Country>> = OnceLock::new();
   CACHE.get_or_init(|| decode_countries(COUNTRIES_BIN))
 }
@@ -122,7 +122,7 @@ fn fixup_ne_name(ne: &str) -> &str {
 /// Find the polygons of the country whose name resolves (via `country_data`) to
 /// the same canonical country as `query`. Returns `None` for unknown names or
 /// non-sovereign territories not in the knowledge base.
-pub fn country_polygons(query: &str) -> Option<&'static [Polygon]> {
+fn country_polygons(query: &str) -> Option<&'static [Polygon]> {
   let canon = crate::functions::country_data::canonical_name(query)?;
   world_countries().iter().find_map(|c| {
     let ne_canon =

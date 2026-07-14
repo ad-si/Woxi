@@ -2,7 +2,7 @@ use super::together::negate_expr;
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, expr_to_string};
+use crate::syntax::{BinaryOperator, ComparisonOp, Expr, expr_to_string};
 
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
 
@@ -85,7 +85,7 @@ pub fn eliminate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Solve an equation for a variable, returning the value expression.
 /// For `lhs == rhs`, rearranges to isolate `var`:
 ///   a*var + rest = 0 → var = -rest/a
-pub fn solve_for_var(eq: &Expr, var: &str) -> Option<Expr> {
+fn solve_for_var(eq: &Expr, var: &str) -> Option<Expr> {
   let (lhs, rhs) = extract_eq_sides(eq)?;
 
   // Convert to standard form: lhs - rhs = 0
@@ -148,14 +148,14 @@ pub fn solve_for_var(eq: &Expr, var: &str) -> Option<Expr> {
 }
 
 /// Extract (lhs, rhs) from an equation expression
-pub fn extract_eq_sides(eq: &Expr) -> Option<(Expr, Expr)> {
+fn extract_eq_sides(eq: &Expr) -> Option<(Expr, Expr)> {
   match eq {
     Expr::Comparison {
       operands,
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      && operators[0] == ComparisonOp::Equal =>
     {
       Some((operands[0].clone(), operands[1].clone()))
     }
@@ -171,8 +171,16 @@ pub fn contains_var(expr: &Expr, var: &str) -> bool {
   !is_constant_wrt(expr, var)
 }
 
+/// Greatest common divisor of two non-negative integers.
+fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
+  while b != 0 {
+    (a, b) = (b, a % b);
+  }
+  a.abs()
+}
+
 /// Eliminate one variable from a system of equations
-pub fn eliminate_one_variable(
+fn eliminate_one_variable(
   equations: &[Expr],
   var: &str,
 ) -> Result<Vec<Expr>, InterpreterError> {
@@ -236,20 +244,20 @@ pub fn eliminate_one_variable(
 }
 
 /// Simplify an equation by evaluating both sides
-pub fn simplify_equation(eq: &Expr) -> Result<Expr, InterpreterError> {
+fn simplify_equation(eq: &Expr) -> Result<Expr, InterpreterError> {
   match eq {
     Expr::Comparison {
       operands,
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      && operators[0] == ComparisonOp::Equal =>
     {
       let lhs = simplify(expand_and_combine(&operands[0]));
       let rhs = simplify(expand_and_combine(&operands[1]));
       Ok(Expr::Comparison {
         operands: vec![lhs, rhs],
-        operators: vec![crate::syntax::ComparisonOp::Equal],
+        operators: vec![ComparisonOp::Equal],
       })
     }
     Expr::FunctionCall { name, args } if name == "Equal" && args.len() == 2 => {
@@ -257,7 +265,7 @@ pub fn simplify_equation(eq: &Expr) -> Result<Expr, InterpreterError> {
       let rhs = simplify(expand_and_combine(&args[1]));
       Ok(Expr::Comparison {
         operands: vec![lhs, rhs],
-        operators: vec![crate::syntax::ComparisonOp::Equal],
+        operators: vec![ComparisonOp::Equal],
       })
     }
     other => Ok(simplify(expand_and_combine(other))),
@@ -265,7 +273,7 @@ pub fn simplify_equation(eq: &Expr) -> Result<Expr, InterpreterError> {
 }
 
 /// Check if an equation is trivially true (e.g., True, or 0 == 0)
-pub fn is_trivially_true(eq: &Expr) -> bool {
+fn is_trivially_true(eq: &Expr) -> bool {
   match eq {
     Expr::Identifier(s) if s == "True" => true,
     Expr::Comparison {
@@ -273,7 +281,7 @@ pub fn is_trivially_true(eq: &Expr) -> bool {
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      && operators[0] == ComparisonOp::Equal =>
     {
       expr_to_string(&operands[0]) == expr_to_string(&operands[1])
     }
@@ -338,7 +346,7 @@ pub fn solve_always_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      && operators[0] == ComparisonOp::Equal =>
     {
       // lhs == rhs => lhs - rhs
       let lhs_str = expr_to_string(&operands[0]);
@@ -531,7 +539,7 @@ pub fn solve_always_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Recursively extract leaf coefficients from a polynomial expression.
 /// For each variable in vars (starting at var_idx), extract CoefficientList,
 /// then recurse on remaining variables for each coefficient.
-pub fn extract_leaf_coefficients(
+fn extract_leaf_coefficients(
   poly_str: &str,
   vars: &[String],
   var_idx: usize,
@@ -567,7 +575,7 @@ pub fn extract_leaf_coefficients(
 }
 
 /// Collect all identifiers from an expression that are NOT in the excluded set
-pub fn collect_free_vars_sa(
+fn collect_free_vars_sa(
   expr: &Expr,
   excluded: &[String],
   result: &mut std::collections::BTreeSet<String>,
@@ -687,6 +695,39 @@ fn normalize_eliminate_result(eq: &Expr, _eliminated_vars: &[String]) -> Expr {
 
     let coeff = simplify(coeff);
     let rest = simplify(rest);
+
+    // With integer coefficients, Wolfram keeps the eliminated equation as a
+    // primitive polynomial (content-reduced, positive leading coefficient)
+    // rather than solving for the variable: `2 x == 3`, not `x == 3/2`. Only
+    // when the content divides the constant evenly does it become `x == k`.
+    if let (Expr::Integer(c), Expr::Integer(r)) = (&coeff, &rest) {
+      let (mut c, mut r) = (*c, *r);
+      if c < 0 {
+        c = -c;
+        r = -r;
+      }
+      let g = {
+        let g = gcd_i128(c.abs(), r.abs());
+        if g == 0 { 1 } else { g }
+      };
+      let c = c / g;
+      let r = r / g;
+      // c*var + r == 0  =>  c*var == -r
+      let lhs = if c == 1 {
+        Expr::Identifier(var.clone())
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(c)),
+          right: Box::new(Expr::Identifier(var.clone())),
+        }
+      };
+      return Expr::Comparison {
+        operands: vec![lhs, Expr::Integer(-r)],
+        operators: vec![ComparisonOp::Equal],
+      };
+    }
+
     let neg_rest = simplify(expand_and_combine(&negate_expr(&rest)));
 
     let val = match &coeff {
@@ -699,7 +740,7 @@ fn normalize_eliminate_result(eq: &Expr, _eliminated_vars: &[String]) -> Expr {
 
     return Expr::Comparison {
       operands: vec![Expr::Identifier(var.clone()), val],
-      operators: vec![crate::syntax::ComparisonOp::Equal],
+      operators: vec![ComparisonOp::Equal],
     };
   }
 
@@ -771,7 +812,7 @@ fn normalize_eliminate_result(eq: &Expr, _eliminated_vars: &[String]) -> Expr {
 
     return Expr::Comparison {
       operands: vec![lhs_expr, rhs_expr],
-      operators: vec![crate::syntax::ComparisonOp::Equal],
+      operators: vec![ComparisonOp::Equal],
     };
   }
 
@@ -785,7 +826,7 @@ fn normalize_eliminate_result(eq: &Expr, _eliminated_vars: &[String]) -> Expr {
 
   Expr::Comparison {
     operands: vec![expanded_neg, Expr::Integer(0)],
-    operators: vec![crate::syntax::ComparisonOp::Equal],
+    operators: vec![ComparisonOp::Equal],
   }
 }
 

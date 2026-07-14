@@ -854,6 +854,68 @@ mod contains_all {
       "False"
     );
   }
+
+  // Operator (curried) forms: f[list2][list1] == f[list1, list2].
+  #[test]
+  fn contains_operator_forms() {
+    assert_eq!(
+      interpret("ContainsExactly[{a, b, c}][{c, b, a}]").unwrap(),
+      "True"
+    );
+    // ContainsAll[{a,b,c}][{a,b}] == ContainsAll[{a,b}, {a,b,c}] -> {a,b}
+    // does not contain c.
+    assert_eq!(
+      interpret("ContainsAll[{a, b, c}][{a, b}]").unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("ContainsAny[{a, b}][{b, z}]").unwrap(), "True");
+    assert_eq!(interpret("ContainsNone[{x, y}][{a, b}]").unwrap(), "True");
+    // ContainsOnly[{a,b}][{a,b,c}] == ContainsOnly[{a,b,c}, {a,b}] -> c is
+    // not among the allowed elements.
+    assert_eq!(
+      interpret("ContainsOnly[{a, b}][{a, b, c}]").unwrap(),
+      "False"
+    );
+  }
+
+  // Operator forms compose with Map/Select.
+  #[test]
+  fn contains_operator_forms_mapped() {
+    assert_eq!(
+      interpret("Map[ContainsAll[{1, 2, 3}], {{1, 2}, {1, 4}}]").unwrap(),
+      "{False, False}"
+    );
+    assert_eq!(
+      interpret("Select[{{1, 2}, {5, 6}}, ContainsAny[{1, 9}]]").unwrap(),
+      "{{1, 2}}"
+    );
+  }
+
+  // On associations the Contains* family compares the VALUES as sets; either
+  // argument may be a list or an association.
+  #[test]
+  fn contains_family_on_associations() {
+    assert_eq!(
+      interpret("ContainsAll[<|a -> 1, b -> 2|>, <|c -> 1|>]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("ContainsAny[<|a -> 1|>, <|b -> 1, c -> 5|>]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("ContainsExactly[<|a -> 1, b -> 2|>, {2, 1}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("ContainsNone[<|a -> 1, b -> 2|>, {2, 3}]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("ContainsOnly[<|a -> 1, b -> 5|>, {1, 2, 3}]").unwrap(),
+      "False"
+    );
+  }
 }
 
 mod missing_q {
@@ -1838,6 +1900,45 @@ mod product_extended {
   #[test]
   fn bare_var_factorial() {
     assert_eq!(interpret("Product[k, {k, 1, n}]").unwrap(), "n!");
+  }
+
+  // Rational telescoping over a body whose numerator/denominator factor into
+  // several monic linear factors: Product[1 - 1/k^2, {k, 2, n}] = (1+n)/(2n).
+  // Previously only linear/linear ratios telescoped; the quadratic
+  // (k-1)(k+1)/k^2 was left unevaluated.
+  #[test]
+  fn quadratic_rational_telescopes() {
+    assert_eq!(
+      interpret("Product[1 - 1/k^2, {k, 2, n}]").unwrap(),
+      "(1 + n)/(2*n)"
+    );
+    assert_eq!(
+      interpret("Product[(k - 1)*(k + 1)/k^2, {k, 2, n}]").unwrap(),
+      "(1 + n)/(2*n)"
+    );
+    assert_eq!(
+      interpret("Product[(k - 2)*(k + 2)/k^2, {k, 3, n}]").unwrap(),
+      "((1 + n)*(2 + n))/(6*(-1 + n)*n)"
+    );
+    // The finite numeric case is consistent with the closed form at n = 10.
+    assert_eq!(
+      interpret("Product[1 - 1/k^2, {k, 2, 10}]").unwrap(),
+      "11/20"
+    );
+  }
+
+  // The single linear/linear ratio still telescopes as before.
+  #[test]
+  fn linear_ratio_telescopes() {
+    assert_eq!(
+      interpret("Product[(k - 1)/k, {k, 2, n}]").unwrap(),
+      "n^(-1)"
+    );
+    assert_eq!(interpret("Product[(k + 1)/k, {k, 1, n}]").unwrap(), "1 + n");
+    assert_eq!(
+      interpret("Product[(k + 2)/(k + 1), {k, 1, n}]").unwrap(),
+      "(2 + n)/2"
+    );
   }
 
   // Product[c^i, {i, 1, n}] = c^(n*(1+n)/2) for a finite upper limit.
@@ -2830,6 +2931,27 @@ mod permute {
       "{a, b, c}"
     );
   }
+
+  // Permute operates on any head, not only Lists; the result keeps the head.
+  #[test]
+  fn non_list_head_cycles() {
+    assert_eq!(
+      interpret("Permute[f[a, b, c], Cycles[{{1, 2, 3}}]]").unwrap(),
+      "f[c, a, b]"
+    );
+    assert_eq!(
+      interpret("Permute[g[x, y, z], Cycles[{{1, 3}}]]").unwrap(),
+      "g[z, y, x]"
+    );
+  }
+
+  #[test]
+  fn non_list_head_list_form() {
+    assert_eq!(
+      interpret("Permute[f[a, b, c, d], {2, 3, 4, 1}]").unwrap(),
+      "f[d, a, b, c]"
+    );
+  }
 }
 
 mod delete_file {
@@ -3761,6 +3883,57 @@ mod array_rules {
     assert_eq!(
       interpret("Normal[2 SparseArray[{1 -> 5}, 3]]").unwrap(),
       "{10, 0, 0}"
+    );
+  }
+
+  // Normal[expr, h] normalizes only objects whose head is h (or in the list
+  // h), leaving everything else untouched.
+  #[test]
+  fn normal_selective_head() {
+    // An Association becomes its list of rules.
+    assert_eq!(
+      interpret("Normal[<|a -> 1, b -> 2|>, Association]").unwrap(),
+      "{a -> 1, b -> 2}"
+    );
+    // A SparseArray is only densified when SparseArray is the requested head.
+    assert_eq!(
+      interpret("Normal[SparseArray[{1 -> 5}, 3], SparseArray]").unwrap(),
+      "{5, 0, 0}"
+    );
+    // With a non-matching head, the object is left as-is: only the
+    // Association converts, the SparseArray stays.
+    assert_eq!(
+      interpret("Normal[{<|a -> 1|>, SparseArray[{1 -> 5}, 2]}, Association]")
+        .unwrap(),
+      "{{a -> 1}, SparseArray[Automatic, {2}, 0, \
+       {1, {{0, 1}, {{1}}}, {5}}]}"
+    );
+    // A list of heads normalizes each of those heads.
+    assert_eq!(
+      interpret(
+        "Normal[{SparseArray[{1 -> 5}, 2], <|a -> 1|>}, \
+         {SparseArray, Association}]"
+      )
+      .unwrap(),
+      "{{5, 0}, {a -> 1}}"
+    );
+    // Conversion is shallow: a nested Association inside a converted one is
+    // left alone.
+    assert_eq!(
+      interpret("Normal[<|a -> <|b -> 1|>|>, Association]").unwrap(),
+      "{a -> <|b -> 1|>}"
+    );
+    // Recursion descends into ordinary function arguments.
+    assert_eq!(
+      interpret("Normal[f[<|a -> 1|>], Association]").unwrap(),
+      "f[{a -> 1}]"
+    );
+    // But not into the values of an unmatched Association.
+    assert_eq!(
+      interpret("Normal[<|a -> SparseArray[{1 -> 5}, 2]|>, SparseArray]")
+        .unwrap(),
+      "<|a -> SparseArray[Automatic, {2}, 0, \
+       {1, {{0, 1}, {{1}}}, {5}}]|>"
     );
   }
 
@@ -5015,6 +5188,44 @@ mod named_logical_operators {
       interpret("InputForm[Equivalent[a, b]]").unwrap(),
       "InputForm[a \u{29e6} b]"
     );
+  }
+}
+
+mod and_or_flat_chains {
+  use super::*;
+
+  #[test]
+  fn and_operator_chain_is_flat() {
+    // And is Flat: a && b && c is And[a, b, c] (Length 3), not the nested
+    // And[And[a, b], c] the parser builds. Matches wolframscript.
+    assert_eq!(interpret("Length[a && b && c]").unwrap(), "3");
+    assert_eq!(interpret("Length[a && b && c && d]").unwrap(), "4");
+    assert_eq!(interpret("List @@ (a && b && c)").unwrap(), "{a, b, c}");
+  }
+
+  #[test]
+  fn or_operator_chain_is_flat() {
+    assert_eq!(interpret("Length[a || b || c]").unwrap(), "3");
+    assert_eq!(interpret("List @@ (a || b || c)").unwrap(), "{a, b, c}");
+  }
+
+  #[test]
+  fn and_or_short_circuit_still_works() {
+    assert_eq!(interpret("True && a && b").unwrap(), "a && b");
+    assert_eq!(interpret("a && False && b").unwrap(), "False");
+    assert_eq!(interpret("a || True || b").unwrap(), "True");
+  }
+
+  #[test]
+  fn nested_and_groups_flatten() {
+    assert_eq!(interpret("Length[(a && b) && (c && d)]").unwrap(), "4");
+    assert_eq!(interpret("Length[And[a && b, c]]").unwrap(), "3");
+  }
+
+  #[test]
+  fn mixed_and_or_keeps_precedence() {
+    // && binds tighter than ||: a && b || c is Or[And[a, b], c] (Length 2).
+    assert_eq!(interpret("Length[a && b || c]").unwrap(), "2");
   }
 }
 

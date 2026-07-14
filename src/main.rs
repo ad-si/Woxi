@@ -178,7 +178,25 @@ fn install_kernel(user: bool, system: bool) -> std::io::Result<()> {
 
 fn main() {
   let cli = Cli::parse();
+  // Run all work on a worker thread with a large stack. The interpreter and
+  // its output formatters recurse over the expression tree; `stacker` grows the
+  // stack on demand but cannot reliably measure the main thread's stack on some
+  // platforms (macOS), so deeply nested inputs/results (e.g. rendering
+  // Nest[List, {1}, 3000], which wolframscript handles) could overflow the base
+  // 8 MB stack. A 512 MB reserved stack is virtual (paged in lazily) and lifts
+  // the practical nesting depth well past anything wolframscript renders.
+  let worker = std::thread::Builder::new()
+    .stack_size(512 * 1024 * 1024)
+    .spawn(move || run(cli))
+    .expect("failed to spawn worker thread");
+  match worker.join() {
+    Ok(()) => {}
+    // A panic on the worker thread already printed its message; exit non-zero.
+    Err(_) => std::process::exit(101),
+  }
+}
 
+fn run(cli: Cli) {
   match cli.command {
     Commands::Eval {
       expression,

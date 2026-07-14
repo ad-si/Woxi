@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, Expr, expr_to_string};
+use crate::syntax::{BinaryOperator, ComparisonOp, Expr, expr_to_string};
 
 // ─── helpers ────────────────────────────────────────────────────────
 
@@ -47,19 +47,19 @@ pub fn bool_expr(b: bool) -> Expr {
 pub fn make_equality(lhs: &Expr, rhs: &Expr) -> Expr {
   Expr::Comparison {
     operands: vec![lhs.clone(), rhs.clone()],
-    operators: vec![crate::syntax::ComparisonOp::Equal],
+    operators: vec![ComparisonOp::Equal],
   }
 }
 
 /// Build a comparison expression.
 pub fn make_comparison(lhs: &Expr, rhs: &Expr, op: CompOp) -> Expr {
   let comp_op = match op {
-    CompOp::Equal => crate::syntax::ComparisonOp::Equal,
-    CompOp::NotEqual => crate::syntax::ComparisonOp::NotEqual,
-    CompOp::Less => crate::syntax::ComparisonOp::Less,
-    CompOp::LessEqual => crate::syntax::ComparisonOp::LessEqual,
-    CompOp::Greater => crate::syntax::ComparisonOp::Greater,
-    CompOp::GreaterEqual => crate::syntax::ComparisonOp::GreaterEqual,
+    CompOp::Equal => ComparisonOp::Equal,
+    CompOp::NotEqual => ComparisonOp::NotEqual,
+    CompOp::Less => ComparisonOp::Less,
+    CompOp::LessEqual => ComparisonOp::LessEqual,
+    CompOp::Greater => ComparisonOp::Greater,
+    CompOp::GreaterEqual => ComparisonOp::GreaterEqual,
   };
   Expr::Comparison {
     operands: vec![lhs.clone(), rhs.clone()],

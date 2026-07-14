@@ -1,6 +1,6 @@
 use crate::InterpreterError;
 use crate::functions::graphics::{Color, graphics_ast, parse_color};
-use crate::syntax::{Expr, expr_to_output, expr_to_string};
+use crate::syntax::{BinaryOperator, Expr, expr_to_output, expr_to_string};
 use petgraph::graph::{DiGraph, NodeIndex, UnGraph};
 use petgraph::visit::EdgeRef;
 use std::collections::HashMap;
@@ -1233,26 +1233,31 @@ pub fn pagerank_centrality(adj: &[Vec<f64>], alpha: f64) -> Option<Vec<f64>> {
   solve_linear_f64(sys, b)
 }
 
-/// KatzCentrality: solves (I - alpha A) x = beta * 1 for x, the Katz centrality
-/// vector x_i = alpha Σ_j A_ij x_j + beta. Uses Gaussian elimination with
-/// partial pivoting; returns `None` if the system is singular.
+/// KatzCentrality: solves (I - alpha A) x = beta for x, the Katz centrality
+/// vector x_i = alpha Σ_j A_ij x_j + beta_i. `beta` is the per-vertex bias
+/// vector (a scalar beta is expanded to `{beta, …}` by the caller). Uses
+/// Gaussian elimination with partial pivoting; returns `None` if the system is
+/// singular or `beta` has the wrong length.
 pub fn katz_centrality(
   adj: &[Vec<f64>],
   alpha: f64,
-  beta: f64,
+  beta: &[f64],
 ) -> Option<Vec<f64>> {
   let n = adj.len();
   if n == 0 {
     return Some(vec![]);
   }
-  // Augmented matrix M = I - alpha A and right-hand side b = beta * 1.
+  if beta.len() != n {
+    return None;
+  }
+  // Augmented matrix M = I - alpha A and right-hand side b = beta.
   let mut m = vec![vec![0.0_f64; n]; n];
   for (i, row) in m.iter_mut().enumerate() {
     for (j, mij) in row.iter_mut().enumerate() {
       *mij = (if i == j { 1.0 } else { 0.0 }) - alpha * adj[i][j];
     }
   }
-  let mut b = vec![beta; n];
+  let mut b = beta.to_vec();
   for col in 0..n {
     let mut piv = col;
     for r in (col + 1)..n {
@@ -1451,7 +1456,7 @@ pub fn graph_reciprocity(edges: &[Expr]) -> Option<Expr> {
       ku == kv || dir_set.contains(&(kv, ku))
     })
     .count();
-  Some(crate::functions::math_ast::make_rational_pub(
+  Some(crate::functions::math_ast::make_rational(
     reciprocated as i128,
     parsed.len() as i128,
   ))
@@ -2402,7 +2407,7 @@ pub fn find_shortest_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Total-order wrapper for f64 Dijkstra costs (all non-negative, finite).
 mod ordered_f64 {
   #[derive(PartialEq)]
-  pub struct OrderedF64(pub f64);
+  pub(super) struct OrderedF64(pub f64);
   impl Eq for OrderedF64 {}
   impl PartialOrd for OrderedF64 {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
@@ -5559,6 +5564,32 @@ pub fn graph_metric_ast(
     name: name.to_string(),
     args: args.to_vec().into(),
   };
+  // GraphLinkEfficiency = 1 - MeanGraphDistance/EdgeCount (decoded from
+  // wolframscript's exact rationals; disconnected graphs give -Infinity
+  // through the infinite mean distance).
+  if name == "GraphLinkEfficiency" {
+    let mgd = graph_metric_ast("MeanGraphDistance", args)?;
+    if matches!(&mgd, Expr::FunctionCall { name, .. } if name == "MeanGraphDistance")
+    {
+      return Ok(unevaluated());
+    }
+    let ec = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "EdgeCount".to_string(),
+      args: vec![args[0].clone()].into(),
+    })?;
+    if !matches!(&ec, Expr::Integer(m) if *m > 0) {
+      return Ok(unevaluated());
+    }
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left: Box::new(Expr::Integer(1)),
+      right: Box::new(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(mgd),
+        right: Box::new(ec),
+      }),
+    });
+  }
   let (n, pairs) = match parse_graph_pairs(&args[0]) {
     Some(g) => g,
     None => {

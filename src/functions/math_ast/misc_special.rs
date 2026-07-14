@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
 use num_bigint::BigInt;
 
 /// QPochhammer[a, q, n] — q-Pochhammer symbol.
@@ -351,6 +351,92 @@ fn mittag_leffler_series_f64(alpha: f64, beta: f64, z: f64) -> Option<f64> {
 }
 
 /// ProductLog[z] - Lambert W function (principal branch)
+/// Whether `e` is `E^(-1)` in either the BinaryOp or FunctionCall spelling.
+fn is_e_pow_neg1(e: &Expr) -> bool {
+  let is_e =
+    |x: &Expr| matches!(x, Expr::Identifier(s) | Expr::Constant(s) if s == "E");
+  match e {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => is_e(left) && matches!(right.as_ref(), Expr::Integer(-1)),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      is_e(&args[0]) && matches!(&args[1], Expr::Integer(-1))
+    }
+    _ => false,
+  }
+}
+
+/// Whether `e` is the exact expression `-1/E` (the branch point of W). It is
+/// represented as `Times[-1, Power[E, -1]]`, but also accept the `Divide[-1, E]`
+/// spelling defensively.
+fn is_neg_inv_e(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+      matches!(&args[0], Expr::Integer(-1)) && is_e_pow_neg1(&args[1])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      matches!(left.as_ref(), Expr::Integer(-1))
+        && matches!(
+          right.as_ref(),
+          Expr::Identifier(s) | Expr::Constant(s) if s == "E"
+        )
+    }
+    _ => false,
+  }
+}
+
+/// Whether `e` contains an inexact (machine) number.
+fn product_log_is_inexact(e: &Expr) -> bool {
+  match e {
+    Expr::Real(_) | Expr::BigFloat(_, _) => true,
+    Expr::BinaryOp { left, right, .. } => {
+      product_log_is_inexact(left) || product_log_is_inexact(right)
+    }
+    Expr::UnaryOp { operand, .. } => product_log_is_inexact(operand),
+    Expr::FunctionCall { args, .. } | Expr::List(args) => {
+      args.iter().any(product_log_is_inexact)
+    }
+    _ => false,
+  }
+}
+
+/// The real branch W_{-1}(z) of the Lambert W function, defined for
+/// z in [-1/e, 0), where it decreases from -1 (at -1/e) to -∞ (at 0⁻).
+/// Solves w·e^w = z by Halley's method; returns None outside the real domain.
+fn lambert_w_m1_real(z: f64) -> Option<f64> {
+  let e = std::f64::consts::E;
+  let inv_e = -1.0 / e;
+  if !z.is_finite() || z >= 0.0 || z < inv_e - 1e-12 {
+    return None;
+  }
+  if z <= inv_e + 1e-15 {
+    return Some(-1.0);
+  }
+  // Initial guess: asymptotic form near 0, square-root series near -1/e.
+  let mut w = if z > -0.3 {
+    let l1 = (-z).ln();
+    l1 - (-l1).ln()
+  } else {
+    -1.0 - (2.0 * (1.0 + e * z)).max(0.0).sqrt()
+  };
+  for _ in 0..100 {
+    let ew = w.exp();
+    let f = w * ew - z;
+    if f.abs() < 1e-15 * z.abs().max(1e-16) {
+      break;
+    }
+    let wp1 = w + 1.0;
+    w -= f / (ew * wp1 - (w + 2.0) * f / (2.0 * wp1));
+  }
+  Some(w)
+}
+
 pub fn product_log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -364,11 +450,31 @@ pub fn product_log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if matches!(&args[0], Expr::Integer(0)) {
       return product_log_ast(&args[1..]);
     }
+    // Branch k = -1 — the second real branch, W_{-1}, real on [-1/e, 0).
+    if matches!(&args[0], Expr::Integer(-1)) {
+      // Exact special value W_{-1}(-1/e) = -1.
+      if is_neg_inv_e(&args[1]) {
+        return Ok(Expr::Integer(-1));
+      }
+      // Numeric only for inexact arguments (matching wolframscript, which
+      // keeps exact arguments symbolic).
+      if product_log_is_inexact(&args[1])
+        && let Some(z) = try_eval_to_f64(&args[1])
+        && let Some(w) = lambert_w_m1_real(z)
+      {
+        return Ok(Expr::Real(w));
+      }
+    }
     // Otherwise return unevaluated
     return Ok(Expr::FunctionCall {
       name: "ProductLog".to_string(),
       args: args.to_vec().into(),
     });
+  }
+
+  // ProductLog[-1/E] = -1 (principal branch at the branch point).
+  if is_neg_inv_e(&args[0]) {
+    return Ok(Expr::Integer(-1));
   }
 
   match &args[0] {
@@ -377,19 +483,6 @@ pub fn product_log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // ProductLog[E] = 1
     Expr::Identifier(s) if s == "E" => return Ok(Expr::Integer(1)),
     Expr::Constant(s) if s == "E" => return Ok(Expr::Integer(1)),
-    // ProductLog[-1/E] = -1
-    Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
-      left,
-      right,
-    } => {
-      if let Expr::Integer(-1) = left.as_ref()
-        && (matches!(right.as_ref(), Expr::Identifier(s) if s == "E")
-          || matches!(right.as_ref(), Expr::Constant(s) if s == "E"))
-      {
-        return Ok(Expr::Integer(-1));
-      }
-    }
     // ProductLog[x.] for float
     Expr::Real(f) if *f >= -1.0 / std::f64::consts::E => {
       // Use iterative approximation (Halley's method)
@@ -506,9 +599,9 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !upper_ok || !lower_ok {
     crate::emit_message(&format!(
       "MeijerG::hdiv: MeijerG[{}, {}, {}] does not exist. Arguments are not consistent.",
-      crate::syntax::expr_to_string(&args[0]),
-      crate::syntax::expr_to_string(&args[1]),
-      crate::syntax::expr_to_string(&args[2])
+      expr_to_string(&args[0]),
+      expr_to_string(&args[1]),
+      expr_to_string(&args[2])
     ));
     return Ok(Expr::FunctionCall {
       name: "MeijerG".to_string(),
@@ -1016,7 +1109,7 @@ fn struve_half_integer_closed_form(
   two_nu: i64,
   z: &Expr,
 ) -> Option<Result<Expr, InterpreterError>> {
-  use crate::syntax::BinaryOperator as B;
+  use BinaryOperator as B;
   let bin = |op, a: Expr, b: Expr| Expr::BinaryOp {
     op,
     left: Box::new(a),
@@ -1163,7 +1256,7 @@ pub fn struve_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Compute Struve H_n(z) using series expansion.
 ///
 /// H_n(z) = sum_{m=0}^{inf} (-1)^m / (Gamma(m + 3/2) * Gamma(m + n + 3/2)) * (z/2)^(2m+n+1)
-pub fn struve_h(n: f64, z: f64) -> f64 {
+fn struve_h(n: f64, z: f64) -> f64 {
   // Special case: z = 0
   if z == 0.0 {
     if n >= -1.0 {
@@ -1265,7 +1358,7 @@ pub fn struve_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Compute modified Struve L_n(z) using series expansion.
 ///
 /// L_n(z) = sum_{m=0}^{inf} 1 / (Gamma(m + 3/2) * Gamma(m + n + 3/2)) * (z/2)^(2m+n+1)
-pub fn struve_l(n: f64, z: f64) -> f64 {
+fn struve_l(n: f64, z: f64) -> f64 {
   // Special case: z = 0
   if z == 0.0 {
     if n >= -1.0 {
@@ -1546,7 +1639,7 @@ pub fn parabolic_cylinder_d_ast(
 ///   √π / Γ((1-ν)/2) * 1F1(-ν/2, 1/2, z²/2)
 ///   - √2 * z / Γ(-ν/2) * 1F1((1-ν)/2, 3/2, z²/2)
 /// ]
-pub fn parabolic_cylinder_d(nu: f64, z: f64) -> f64 {
+fn parabolic_cylinder_d(nu: f64, z: f64) -> f64 {
   use std::f64::consts::PI;
   let z2_half = z * z / 2.0;
   let prefactor = 2.0_f64.powf(nu / 2.0) * PI.sqrt() * (-z * z / 4.0).exp();
@@ -1634,7 +1727,7 @@ pub fn anger_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 ///
 /// AngerJ[nu, z] = (1/Pi) * Integral[Cos[nu*t - z*Sin[t]], {t, 0, Pi}]
 /// For integer nu, this equals BesselJ[n, z].
-pub fn anger_j(nu: f64, z: f64) -> f64 {
+fn anger_j(nu: f64, z: f64) -> f64 {
   // For integer nu, delegate to BesselJ
   if nu == nu.floor() && nu.is_finite() {
     return bessel_j(nu, z);
@@ -1735,7 +1828,6 @@ fn weber_e_integer_closed_form(
   n: i128,
   z: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  use crate::syntax::BinaryOperator;
   let m = n.unsigned_abs() as i128; // |n|
   let fact = |k: i128| -> BigInt {
     let mut r = BigInt::from(1);
@@ -1798,10 +1890,10 @@ fn weber_e_integer_closed_form(
 }
 
 /// AngerJ[ν, 0] closed form: Sin[ν*Pi] / (ν*Pi).
-pub fn anger_j_at_zero_symbolic(nu: &Expr) -> Expr {
+fn anger_j_at_zero_symbolic(nu: &Expr) -> Expr {
   let pi = Expr::Constant("Pi".to_string());
   let nu_pi = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Times,
+    op: BinaryOperator::Times,
     left: Box::new(nu.clone()),
     right: Box::new(pi.clone()),
   };
@@ -1810,17 +1902,17 @@ pub fn anger_j_at_zero_symbolic(nu: &Expr) -> Expr {
     args: vec![nu_pi.clone()].into(),
   };
   Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(sin_nu_pi),
     right: Box::new(nu_pi),
   }
 }
 
 /// WeberE[ν, 0] closed form: (1 - Cos[ν*Pi]) / (ν*Pi).
-pub fn weber_e_at_zero_symbolic(nu: &Expr) -> Expr {
+fn weber_e_at_zero_symbolic(nu: &Expr) -> Expr {
   let pi = Expr::Constant("Pi".to_string());
   let nu_pi = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Times,
+    op: BinaryOperator::Times,
     left: Box::new(nu.clone()),
     right: Box::new(pi.clone()),
   };
@@ -1829,12 +1921,12 @@ pub fn weber_e_at_zero_symbolic(nu: &Expr) -> Expr {
     args: vec![nu_pi.clone()].into(),
   };
   let one_minus_cos = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Minus,
+    op: BinaryOperator::Minus,
     left: Box::new(Expr::Integer(1)),
     right: Box::new(cos_nu_pi),
   };
   Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(one_minus_cos),
     right: Box::new(nu_pi),
   }
@@ -1843,7 +1935,7 @@ pub fn weber_e_at_zero_symbolic(nu: &Expr) -> Expr {
 /// Compute WeberE[nu, z] numerically using Gauss-Legendre quadrature.
 ///
 /// E_nu(z) = (1/Pi) * Integral[Sin[nu*t - z*Sin[t]], {t, 0, Pi}]
-pub fn weber_e(nu: f64, z: f64) -> f64 {
+fn weber_e(nu: f64, z: f64) -> f64 {
   // For z = 0: WeberE[nu, 0] = (1 - Cos[nu*Pi]) / (nu*Pi)
   if z == 0.0 {
     if nu == 0.0 {
@@ -2639,12 +2731,12 @@ pub fn appell_f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if exprs_structurally_equal(&args[0], &args[3]) {
     let one = Expr::Integer(1);
     let one_minus_x = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(one.clone()),
       right: Box::new(args[4].clone()),
     };
     let one_minus_y = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(one.clone()),
       right: Box::new(args[5].clone()),
     };
@@ -2657,12 +2749,12 @@ pub fn appell_f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: vec![one_minus_y, args[2].clone()].into(),
     };
     let denom = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left: Box::new(factor_x),
       right: Box::new(factor_y),
     };
     let result = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(one),
       right: Box::new(denom),
     };
@@ -2677,7 +2769,7 @@ pub fn appell_f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 fn exprs_structurally_equal(a: &Expr, b: &Expr) -> bool {
-  crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b)
+  expr_to_string(a) == expr_to_string(b)
 }
 
 /// Compute F1(a, b1, b2; c; x, y) using double series
@@ -3132,8 +3224,8 @@ pub fn perfect_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       crate::emit_message(&format!(
         "PerfectNumber::pintprm: Parameter {} at position 1 in PerfectNumber[{}] is expected to be a positive integer.",
-        crate::syntax::expr_to_string(&args[0]),
-        crate::syntax::expr_to_string(&args[0])
+        expr_to_string(&args[0]),
+        expr_to_string(&args[0])
       ));
       return Ok(Expr::FunctionCall {
         name: "PerfectNumber".to_string(),
@@ -3497,7 +3589,7 @@ pub fn entropy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut counts: HashMap<String, i128> = HashMap::new();
   let mut order: Vec<String> = Vec::new();
   for item in items.iter() {
-    let key = crate::syntax::expr_to_string(item);
+    let key = expr_to_string(item);
     if let Some(c) = counts.get_mut(&key) {
       *c += 1;
     } else {
@@ -3506,7 +3598,7 @@ pub fn entropy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   let n = items.len() as i128;
-  let base_str = base.map(crate::syntax::expr_to_string);
+  let base_str = base.map(expr_to_string);
 
   // Build: Log[n] + (1/n) Sum[-c_i Log[c_i]], rebasing each Log to the given
   // base when one is supplied. Use the two-argument `Log[base, x]` form rather
@@ -3577,7 +3669,7 @@ pub fn real_exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     || matches!(&abs_expr, Expr::Real(f) if *f == 0.0)
   {
     return Ok(Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(Expr::Identifier("Infinity".to_string())),
     });
   }

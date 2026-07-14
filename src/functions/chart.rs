@@ -169,7 +169,7 @@ pub(crate) struct ChartLabel {
 }
 
 impl ChartLabel {
-  pub fn plain(text: String) -> Self {
+  pub(crate) fn plain(text: String) -> Self {
     Self {
       text,
       rotation: 0.0,

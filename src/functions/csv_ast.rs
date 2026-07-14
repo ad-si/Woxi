@@ -72,7 +72,7 @@ pub fn parse_tsv(content: &str) -> Vec<Vec<String>> {
 }
 
 /// Auto-convert a string to Integer, Real, or keep as String.
-pub fn auto_convert(s: &str) -> Expr {
+fn auto_convert(s: &str) -> Expr {
   let trimmed = s.trim();
   if trimmed.is_empty() {
     return Expr::String(s.to_string());

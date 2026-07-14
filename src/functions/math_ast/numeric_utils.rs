@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 use num_bigint::BigInt;
 
 /// Helper - constants are kept symbolic, no direct f64 conversion in expr_to_num.
@@ -244,7 +244,6 @@ pub fn dawson_f64(x: f64) -> f64 {
 /// This handles constants (Pi, E, Degree), arithmetic operations, and known functions.
 /// Used by N[], comparisons, and anywhere a numeric value is needed from a symbolic expression.
 pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
-  use crate::syntax::BinaryOperator;
   match expr {
     Expr::Integer(n) => Some(*n as f64),
     Expr::BigInteger(n) => {
@@ -275,7 +274,7 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
       _ => None,
     },
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => try_eval_to_f64(operand).map(|v| -v),
     Expr::BinaryOp { op, left, right } => {
@@ -388,6 +387,33 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
         .and_then(|v| if v >= 1.0 { Some(v.acosh()) } else { None }),
       "ArcTanh" if args.len() == 1 => try_eval_to_f64(&args[0])
         .and_then(|v| if v.abs() < 1.0 { Some(v.atanh()) } else { None }),
+      // Bessel functions with exact numeric arguments stay symbolic but
+      // must numericize under Real contagion (2.*BesselI[0, 3] is a
+      // machine real in wolframscript).
+      "BesselI" if args.len() == 2 => {
+        let n = try_eval_to_f64(&args[0])?;
+        let z = try_eval_to_f64(&args[1])?;
+        let v = crate::functions::math_ast::bessel::bessel_i(n, z);
+        v.is_finite().then_some(v)
+      }
+      "BesselJ" if args.len() == 2 => {
+        let n = try_eval_to_f64(&args[0])?;
+        let z = try_eval_to_f64(&args[1])?;
+        let v = crate::functions::math_ast::bessel::bessel_j(n, z);
+        v.is_finite().then_some(v)
+      }
+      "BesselK" if args.len() == 2 => {
+        let n = try_eval_to_f64(&args[0])?;
+        let z = try_eval_to_f64(&args[1])?;
+        let v = crate::functions::math_ast::bessel::bessel_k(n, z);
+        v.is_finite().then_some(v)
+      }
+      "BesselY" if args.len() == 2 => {
+        let n = try_eval_to_f64(&args[0])?;
+        let z = try_eval_to_f64(&args[1])?;
+        let v = crate::functions::math_ast::bessel::bessel_y(n, z);
+        v.is_finite().then_some(v)
+      }
       "Sqrt" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.sqrt()),
       "Abs" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.abs()),
       "Exp" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.exp()),
@@ -398,10 +424,10 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
       "Erfi" if args.len() == 1 => try_eval_to_f64(&args[0]).map(erfi_f64),
       "DawsonF" if args.len() == 1 => try_eval_to_f64(&args[0]).map(dawson_f64),
       "FresnelS" if args.len() == 1 => {
-        try_eval_to_f64(&args[0]).map(super::fresnel_s_numeric_pub)
+        try_eval_to_f64(&args[0]).map(super::fresnel_s_numeric)
       }
       "FresnelC" if args.len() == 1 => {
-        try_eval_to_f64(&args[0]).map(super::fresnel_c_numeric_pub)
+        try_eval_to_f64(&args[0]).map(super::fresnel_c_numeric)
       }
       "InverseErf" if args.len() == 1 => {
         try_eval_to_f64(&args[0]).and_then(|v| {
@@ -535,7 +561,7 @@ pub fn expr_to_bigint(e: &Expr) -> Option<BigInt> {
 /// their ratio is representable (e.g. `2^2000 / 3^1000`). A naive
 /// `num.to_f64() / den.to_f64()` would compute `inf / inf = NaN` there.
 /// Returns None when `den` is zero.
-pub fn big_rational_to_f64(num: &BigInt, den: &BigInt) -> Option<f64> {
+fn big_rational_to_f64(num: &BigInt, den: &BigInt) -> Option<f64> {
   use num_traits::{Signed, ToPrimitive, Zero};
   if den.is_zero() {
     return None;
@@ -617,13 +643,6 @@ pub fn gcd(a: i128, b: i128) -> i128 {
   a as i128
 }
 
-/// Create a rational or integer result from numerator/denominator
-/// Simplifies the fraction and returns Integer if denominator is 1
-/// Public wrapper for creating rational expressions
-pub fn make_rational_pub(numer: i128, denom: i128) -> Expr {
-  make_rational(numer, denom)
-}
-
 /// Extract the largest easily-found perfect-square factor from a positive
 /// i128: returns `(outside, inside)` with `n == outside^2 * inside`, so
 /// `Sqrt[n] = outside * Sqrt[inside]`. Square factors of primes below a
@@ -660,6 +679,8 @@ pub fn extract_square_factor_i128(n: i128) -> (i128, i128) {
   (outside, inside)
 }
 
+/// Create a rational or integer result from numerator/denominator
+/// Simplifies the fraction and returns Integer if denominator is 1
 pub fn make_rational(numer: i128, denom: i128) -> Expr {
   if denom == 0 {
     // Division by zero - shouldn't reach here but be safe
@@ -694,7 +715,7 @@ pub fn make_rational(numer: i128, denom: i128) -> Expr {
 /// In Wolfram Language, Sqrt[x] is just syntactic sugar for Power[x, 1/2].
 pub fn make_sqrt(arg: Expr) -> Expr {
   Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(arg),
     right: Box::new(make_rational(1, 2)),
   }
@@ -705,7 +726,7 @@ pub fn make_sqrt(arg: Expr) -> Expr {
 pub fn is_sqrt(expr: &Expr) -> Option<&Expr> {
   match expr {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => {
@@ -763,12 +784,12 @@ pub fn complex_rational_to_expr(
     }
     if matches!(&imag_part, Expr::Integer(-1)) {
       return Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(i_expr),
       };
     }
     return Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left: Box::new(imag_part),
       right: Box::new(i_expr),
     };
@@ -779,19 +800,19 @@ pub fn complex_rational_to_expr(
     i_expr
   } else if matches!(&imag_part, Expr::Integer(-1)) {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(i_expr),
     }
   } else {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left: Box::new(imag_part),
       right: Box::new(i_expr),
     }
   };
 
   Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Plus,
+    op: BinaryOperator::Plus,
     left: Box::new(real_part),
     right: Box::new(imag_term),
   }
@@ -811,7 +832,7 @@ pub fn multiply_scalar_by_expr(
       args: vec![Expr::Integer(-1), expr.clone()].into(),
     }),
     _ => Ok(Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left: Box::new(scalar.clone()),
       right: Box::new(expr.clone()),
     }),
@@ -824,7 +845,6 @@ pub fn multiply_scalar_by_expr(
 pub fn try_extract_complex_exact(
   expr: &Expr,
 ) -> Option<((i128, i128), (i128, i128))> {
-  use crate::syntax::BinaryOperator;
   match expr {
     // Pure imaginary: I
     Expr::Identifier(name) if name == "I" => Some(((0, 1), (1, 1))),
@@ -835,7 +855,7 @@ pub fn try_extract_complex_exact(
     }
     // -I or -expr
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       let ((rn, rd), (in_, id)) = try_extract_complex_exact(operand)?;
@@ -950,7 +970,6 @@ pub fn try_extract_complex_exact(
 /// Try to extract float complex parts (re, im) from an expression.
 /// Returns Some((re, im)) if the expression contains float components with I.
 pub fn try_extract_complex_float(expr: &Expr) -> Option<(f64, f64)> {
-  use crate::syntax::{BinaryOperator, UnaryOperator};
   match expr {
     Expr::Identifier(name) if name == "I" => Some((0.0, 1.0)),
     Expr::Integer(n) => Some((*n as f64, 0.0)),
@@ -1047,7 +1066,7 @@ pub fn build_complex_float_expr(re: f64, im: f64) -> Expr {
     i_expr
   } else {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left: Box::new(Expr::Real(im_abs)),
       right: Box::new(i_expr),
     }
@@ -1058,7 +1077,7 @@ pub fn build_complex_float_expr(re: f64, im: f64) -> Expr {
       im_term
     } else {
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(im_term),
       }
     }
@@ -1068,13 +1087,13 @@ pub fn build_complex_float_expr(re: f64, im: f64) -> Expr {
     let re_expr = Expr::Real(re);
     if im > 0.0 {
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(re_expr),
         right: Box::new(im_term),
       }
     } else {
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Minus,
+        op: BinaryOperator::Minus,
         left: Box::new(re_expr),
         right: Box::new(im_term),
       }
@@ -1091,20 +1110,20 @@ pub fn build_complex_float_expr_keep_real(re: f64, im: f64) -> Expr {
   // Always materialise the coefficient as `Real * I` so the |coeff|==1 case
   // prints as `1.*I` rather than bare `I` — wolframscript's numeric form.
   let im_term = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Times,
+    op: BinaryOperator::Times,
     left: Box::new(Expr::Real(im_abs)),
     right: Box::new(i_expr),
   };
   let re_expr = Expr::Real(re);
   if im >= 0.0 {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left: Box::new(re_expr),
       right: Box::new(im_term),
     }
   } else {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(re_expr),
       right: Box::new(im_term),
     }
@@ -1141,7 +1160,7 @@ pub fn build_complex_expr(
   } else {
     let coeff = make_rational(im_abs_num, id_s);
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left: Box::new(coeff),
       right: Box::new(i_expr),
     }
@@ -1157,14 +1176,14 @@ pub fn build_complex_expr(
     } else if im_abs_num == 1 && id_s == 1 {
       // -I
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(im_term),
       }
     } else {
       // -n*I: build Times[-n, I] directly
       let coeff = make_rational(-im_abs_num, id_s);
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(coeff),
         right: Box::new(Expr::Identifier("I".to_string())),
       }
@@ -1174,13 +1193,13 @@ pub fn build_complex_expr(
   // Build re ± im*I
   if im_positive {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left: Box::new(re),
       right: Box::new(im_term),
     }
   } else {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(re),
       right: Box::new(im_term),
     }
@@ -1190,11 +1209,10 @@ pub fn build_complex_expr(
 /// Try to extract complex parts as (re: f64, im: f64) from an expression.
 /// Handles Real, Integer, I, Plus, Times, Minus, Complex, and FunctionCall variants.
 pub fn try_extract_complex_f64(expr: &Expr) -> Option<(f64, f64)> {
-  use crate::syntax::BinaryOperator;
   match expr {
     Expr::Identifier(name) if name == "I" => Some((0.0, 1.0)),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       let (r, i) = try_extract_complex_f64(operand)?;

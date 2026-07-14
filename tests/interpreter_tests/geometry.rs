@@ -92,6 +92,29 @@ mod area {
     assert_eq!(interpret("Area[Triangle[]]").unwrap(), "1/2");
   }
 
+  // Area of a Parallelogram[p, {v1, v2}] is |Det[{v1, v2}]|, independent of the
+  // base point p; it must agree with RegionMeasure. Verified against
+  // wolframscript.
+  #[test]
+  fn parallelogram() {
+    assert_eq!(
+      interpret("Area[Parallelogram[{0, 0}, {{1, 0}, {0, 1}}]]").unwrap(),
+      "1"
+    );
+    // Base point does not affect the area.
+    assert_eq!(
+      interpret("Area[Parallelogram[{1, 1}, {{3, 0}, {0, 2}}]]").unwrap(),
+      "6"
+    );
+    // Sheared parallelogram.
+    assert_eq!(
+      interpret("Area[Parallelogram[{0, 0}, {{2, 0}, {1, 3}}]]").unwrap(),
+      "6"
+    );
+    // Parallelogram[] is the unit square.
+    assert_eq!(interpret("Area[Parallelogram[]]").unwrap(), "1");
+  }
+
   #[test]
   fn regular_polygon_hexagon() {
     // Area[RegularPolygon[n]] = n/2 * Sin[2 Pi/n]; unit circumradius.
@@ -2783,6 +2806,156 @@ mod circumsphere {
   }
 }
 
+// Insphere[{p1, …, p_{n+1}}] — the sphere inscribed in the simplex spanned by
+// the points, given as Sphere[incenter, inradius]. Exact rational inputs stay
+// exact. (The Triangle[…]/Tetrahedron[…] wrapper forms share the same code.)
+mod insphere {
+  use super::*;
+
+  #[test]
+  fn right_triangle_3_4_5() {
+    // Incircle of the 3-4-5 triangle: incenter {1, 1}, inradius 1.
+    assert_eq!(
+      interpret("Insphere[{{0, 0}, {4, 0}, {0, 3}}]").unwrap(),
+      "Sphere[{1, 1}, 1]"
+    );
+  }
+
+  #[test]
+  fn right_triangle_6_8_10() {
+    assert_eq!(
+      interpret("Insphere[{{0, 0}, {6, 0}, {0, 8}}]").unwrap(),
+      "Sphere[{2, 2}, 2]"
+    );
+  }
+
+  #[test]
+  fn translated_triangle() {
+    assert_eq!(
+      interpret("Insphere[{{1, 1}, {5, 1}, {1, 4}}]").unwrap(),
+      "Sphere[{2, 2}, 1]"
+    );
+  }
+
+  #[test]
+  fn matches_triangle_wrapper() {
+    // The raw point-list form and the Triangle[…] wrapper agree.
+    let raw = interpret("Insphere[{{0, 0}, {4, 0}, {0, 3}}]").unwrap();
+    let wrapped =
+      interpret("Insphere[Triangle[{{0, 0}, {4, 0}, {0, 3}}]]").unwrap();
+    assert_eq!(raw, wrapped);
+  }
+}
+
+// AngleBisector[{q1, p, q2}] — the interior-angle bisector at p, returned as
+// InfiniteLine[p, Normalize[q1 - p] + Normalize[q2 - p]]. Verified against
+// wolframscript.
+mod angle_bisector {
+  use super::*;
+
+  #[test]
+  fn right_angle_at_origin() {
+    // Two axis-aligned unit legs bisect along {1, 1}.
+    assert_eq!(
+      interpret("AngleBisector[{{1, 0}, {0, 0}, {0, 1}}]").unwrap(),
+      "InfiniteLine[{0, 0}, {1, 1}]"
+    );
+    // Direction is normalized per leg, so leg lengths don't matter.
+    assert_eq!(
+      interpret("AngleBisector[{{4, 0}, {0, 0}, {0, 3}}]").unwrap(),
+      "InfiniteLine[{0, 0}, {1, 1}]"
+    );
+  }
+
+  #[test]
+  fn irrational_direction_is_simplified() {
+    // 60° leg: bisector direction {3/2, Sqrt[3]/2}.
+    assert_eq!(
+      interpret("AngleBisector[{{1, 0}, {0, 0}, {1, Sqrt[3]}}]").unwrap(),
+      "InfiniteLine[{0, 0}, {3/2, Sqrt[3]/2}]"
+    );
+    // 1/Sqrt[2] + 1/Sqrt[2] must collapse to Sqrt[2], not 2/Sqrt[2].
+    assert_eq!(
+      interpret("AngleBisector[{{2, 0}, {1, 1}, {2, 2}}]").unwrap(),
+      "InfiniteLine[{1, 1}, {Sqrt[2], 0}]"
+    );
+  }
+
+  #[test]
+  fn non_origin_vertex() {
+    assert_eq!(
+      interpret("AngleBisector[{{5, 5}, {0, 0}, {5, -5}}]").unwrap(),
+      "InfiniteLine[{0, 0}, {Sqrt[2], 0}]"
+    );
+  }
+
+  #[test]
+  fn non_2d_or_malformed_stays_unevaluated() {
+    // 3-D points are not handled (matches wolframscript).
+    assert_eq!(
+      interpret("AngleBisector[{{1, 0, 0}, {0, 0, 0}, {0, 1, 0}}]").unwrap(),
+      "AngleBisector[{{1, 0, 0}, {0, 0, 0}, {0, 1, 0}}]"
+    );
+    // A two-point list is not the {q1, p, q2} form.
+    assert_eq!(
+      interpret("AngleBisector[{{1, 0}, {0, 0}}]").unwrap(),
+      "AngleBisector[{{1, 0}, {0, 0}}]"
+    );
+  }
+}
+
+// PerpendicularBisector[{p1, p2}] — the segment's perpendicular bisector as
+// InfiniteLine[midpoint, {dy, -dx}] with {dx, dy} = p2 - p1. Verified against
+// wolframscript.
+mod perpendicular_bisector {
+  use super::*;
+
+  #[test]
+  fn horizontal_and_vertical_segments() {
+    assert_eq!(
+      interpret("PerpendicularBisector[{{0, 0}, {2, 0}}]").unwrap(),
+      "InfiniteLine[{1, 0}, {0, -2}]"
+    );
+    // A rational midpoint stays exact.
+    assert_eq!(
+      interpret("PerpendicularBisector[{{0, 0}, {0, 1}}]").unwrap(),
+      "InfiniteLine[{0, 1/2}, {1, 0}]"
+    );
+  }
+
+  #[test]
+  fn oblique_segments() {
+    assert_eq!(
+      interpret("PerpendicularBisector[{{0, 0}, {4, 2}}]").unwrap(),
+      "InfiniteLine[{2, 1}, {2, -4}]"
+    );
+    assert_eq!(
+      interpret("PerpendicularBisector[{{1, 1}, {3, 5}}]").unwrap(),
+      "InfiniteLine[{2, 3}, {4, -2}]"
+    );
+  }
+
+  #[test]
+  fn line_wrapper_form() {
+    assert_eq!(
+      interpret("PerpendicularBisector[Line[{{-1, -1}, {1, 1}}]]").unwrap(),
+      "InfiniteLine[{0, 0}, {2, -2}]"
+    );
+  }
+
+  #[test]
+  fn non_2d_or_malformed_stays_unevaluated() {
+    assert_eq!(
+      interpret("PerpendicularBisector[{{0, 0, 0}, {2, 0, 0}}]").unwrap(),
+      "PerpendicularBisector[{{0, 0, 0}, {2, 0, 0}}]"
+    );
+    assert_eq!(
+      interpret("PerpendicularBisector[{{2, 3}}]").unwrap(),
+      "PerpendicularBisector[{{2, 3}}]"
+    );
+  }
+}
+
 // BoundingRegion[pts] — the smallest axis-aligned box: Rectangle for 2D points,
 // Cuboid for 1D or >=3D. Min/Max are exact and stay symbolic when needed.
 mod bounding_region {
@@ -4213,6 +4386,1286 @@ mod simple_polygon_q {
       interpret("SimplePolygonQ[Polygon[{{0, 0}, {1, 0}, {a, 1}, {0, 1}}]]")
         .unwrap(),
       "False"
+    );
+  }
+}
+
+// Platonic-solid primitives (Cube, Octahedron, Dodecahedron, Icosahedron,
+// and the regular-Tetrahedron forms) consumed by Volume, SurfaceArea,
+// RegionMeasure, RegionCentroid, and RegionDimension. All outputs verified
+// against wolframscript.
+mod platonic_solid_primitives {
+  use super::*;
+
+  #[test]
+  fn heads_stay_unevaluated() {
+    assert_eq!(interpret("Dodecahedron[]").unwrap(), "Dodecahedron[]");
+    assert_eq!(interpret("Icosahedron[2]").unwrap(), "Icosahedron[2]");
+    assert_eq!(
+      interpret("Cube[{1, 2, 3}, 2]").unwrap(),
+      "Cube[{1, 2, 3}, 2]"
+    );
+    assert_eq!(interpret("Octahedron[a]").unwrap(), "Octahedron[a]");
+  }
+
+  #[test]
+  fn unit_volumes() {
+    assert_eq!(
+      interpret("Volume[Dodecahedron[]]").unwrap(),
+      "(15 + 7*Sqrt[5])/4"
+    );
+    assert_eq!(
+      interpret("Volume[Icosahedron[]]").unwrap(),
+      "(5*(3 + Sqrt[5]))/12"
+    );
+    assert_eq!(interpret("Volume[Cube[]]").unwrap(), "1");
+    assert_eq!(
+      interpret("Volume[Tetrahedron[2]]").unwrap(),
+      "(2*Sqrt[2])/3"
+    );
+    assert_eq!(interpret("Volume[Octahedron[2]]").unwrap(), "(8*Sqrt[2])/3");
+  }
+
+  #[test]
+  fn scaled_volumes() {
+    assert_eq!(
+      interpret("Volume[Dodecahedron[2]]").unwrap(),
+      "2*(15 + 7*Sqrt[5])"
+    );
+    assert_eq!(
+      interpret("Volume[Icosahedron[3]]").unwrap(),
+      "(45*(3 + Sqrt[5]))/4"
+    );
+    assert_eq!(interpret("Volume[Cube[2]]").unwrap(), "8");
+    assert_eq!(
+      interpret("Volume[Dodecahedron[a]]").unwrap(),
+      "((15 + 7*Sqrt[5])*a^3)/4"
+    );
+  }
+
+  #[test]
+  fn center_and_rotation_forms() {
+    // Volume ignores the center and a {θ, ϕ} rotation spec.
+    assert_eq!(
+      interpret("Volume[Dodecahedron[{1, 2, 3}, 2]]").unwrap(),
+      "2*(15 + 7*Sqrt[5])"
+    );
+    assert_eq!(
+      interpret("Volume[Dodecahedron[{1, 2}]]").unwrap(),
+      "(15 + 7*Sqrt[5])/4"
+    );
+    assert_eq!(interpret("Volume[Cube[{1, 2}, 3]]").unwrap(), "27");
+    // A 3-element scalar list is a center, also for Tetrahedron.
+    assert_eq!(
+      interpret("Volume[Tetrahedron[{1, 2, 3}]]").unwrap(),
+      "1/(6*Sqrt[2])"
+    );
+  }
+
+  #[test]
+  fn invalid_forms_stay_unevaluated() {
+    // A concrete non-positive edge is invalid.
+    assert_eq!(
+      interpret("Volume[Dodecahedron[-2]]").unwrap(),
+      "Volume[Dodecahedron[-2]]"
+    );
+    // The rotated-and-centered 3-argument form stays unevaluated.
+    assert_eq!(
+      interpret("Volume[Dodecahedron[{Pi/3, Pi/4}, {1, 2, 3}, 2]]").unwrap(),
+      "Volume[Dodecahedron[{Pi/3, Pi/4}, {1, 2, 3}, 2]]"
+    );
+  }
+
+  #[test]
+  fn surface_areas() {
+    assert_eq!(
+      interpret("SurfaceArea[Dodecahedron[]]").unwrap(),
+      "3*Sqrt[5*(5 + 2*Sqrt[5])]"
+    );
+    assert_eq!(
+      interpret("SurfaceArea[Icosahedron[]]").unwrap(),
+      "5*Sqrt[3]"
+    );
+    assert_eq!(interpret("SurfaceArea[Tetrahedron[]]").unwrap(), "Sqrt[3]");
+    assert_eq!(interpret("SurfaceArea[Cube[2]]").unwrap(), "24");
+    assert_eq!(
+      interpret("SurfaceArea[Octahedron[3]]").unwrap(),
+      "18*Sqrt[3]"
+    );
+    assert_eq!(
+      interpret("SurfaceArea[Dodecahedron[a]]").unwrap(),
+      "3*Sqrt[5*(5 + 2*Sqrt[5])]*a^2"
+    );
+    assert_eq!(
+      interpret("SurfaceArea[Dodecahedron[{1, 2, 3}, 2]]").unwrap(),
+      "12*Sqrt[5*(5 + 2*Sqrt[5])]"
+    );
+    assert_eq!(
+      interpret("SurfaceArea[Icosahedron[{1, 2}, a]]").unwrap(),
+      "5*Sqrt[3]*a^2"
+    );
+  }
+
+  #[test]
+  fn region_measure_is_volume() {
+    assert_eq!(
+      interpret("RegionMeasure[Dodecahedron[]]").unwrap(),
+      "(15 + 7*Sqrt[5])/4"
+    );
+    assert_eq!(
+      interpret("RegionMeasure[Icosahedron[2]]").unwrap(),
+      "(10*(3 + Sqrt[5]))/3"
+    );
+    assert_eq!(interpret("RegionMeasure[Cube[2]]").unwrap(), "8");
+    assert_eq!(
+      interpret("RegionMeasure[Tetrahedron[]]").unwrap(),
+      "1/(6*Sqrt[2])"
+    );
+  }
+
+  #[test]
+  fn region_centroid() {
+    assert_eq!(
+      interpret("RegionCentroid[Dodecahedron[]]").unwrap(),
+      "{0, 0, 0}"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[Dodecahedron[{1, 2, 3}, 2]]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[Icosahedron[{1/2, 0, -1}, 3]]").unwrap(),
+      "{1/2, 0, -1}"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[Icosahedron[2]]").unwrap(),
+      "{0, 0, 0}"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[Tetrahedron[{1, 2, 3}]]").unwrap(),
+      "{1, 2, 3}"
+    );
+    // The explicit-vertex form still averages the vertices.
+    assert_eq!(
+      interpret(
+        "RegionCentroid[Tetrahedron[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}}]]"
+      )
+      .unwrap(),
+      "{1/4, 1/4, 1/4}"
+    );
+  }
+
+  #[test]
+  fn region_dimension() {
+    assert_eq!(interpret("RegionDimension[Dodecahedron[]]").unwrap(), "3");
+    assert_eq!(interpret("RegionDimension[Icosahedron[]]").unwrap(), "3");
+  }
+}
+
+// SurfaceArea for the non-Platonic solids, plus Undefined for regions of
+// intrinsic dimension < 3. All wolframscript-verified.
+mod surface_area {
+  use super::*;
+
+  #[test]
+  fn ball() {
+    assert_eq!(interpret("SurfaceArea[Ball[]]").unwrap(), "4*Pi");
+    assert_eq!(
+      interpret("SurfaceArea[Ball[{1, 2, 3}, r]]").unwrap(),
+      "4*Pi*r^2"
+    );
+    // A 2-D ball is a disk: no surface area.
+    assert_eq!(
+      interpret("SurfaceArea[Ball[{0, 0}, 1]]").unwrap(),
+      "Undefined"
+    );
+  }
+
+  #[test]
+  fn cuboid() {
+    assert_eq!(interpret("SurfaceArea[Cuboid[]]").unwrap(), "6");
+    assert_eq!(
+      interpret("SurfaceArea[Cuboid[{0, 0, 0}, {1, 2, 3}]]").unwrap(),
+      "22"
+    );
+    assert_eq!(
+      interpret("SurfaceArea[Cuboid[{0, 0}, {1, 2}]]").unwrap(),
+      "Undefined"
+    );
+  }
+
+  #[test]
+  fn cylinder_and_cone() {
+    assert_eq!(interpret("SurfaceArea[Cylinder[]]").unwrap(), "6*Pi");
+    assert_eq!(
+      interpret("SurfaceArea[Cylinder[{{0, 0, 0}, {0, 0, 3}}, 2]]").unwrap(),
+      "20*Pi"
+    );
+    assert_eq!(
+      interpret("SurfaceArea[Cone[]]").unwrap(),
+      "(1 + Sqrt[5])*Pi"
+    );
+  }
+
+  #[test]
+  fn explicit_tetrahedron() {
+    assert_eq!(
+      interpret(
+        "SurfaceArea[Tetrahedron[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}}]]"
+      )
+      .unwrap(),
+      "(3 + Sqrt[3])/2"
+    );
+    assert_eq!(
+      interpret(
+        "SurfaceArea[Tetrahedron[{{0, 0, 0}, {1, 2, 0}, {0, 1, 3}, {2, 0, 1}}]]"
+      )
+      .unwrap(),
+      "(5*Sqrt[2] + Sqrt[21] + Sqrt[41] + Sqrt[46])/2"
+    );
+  }
+
+  #[test]
+  fn lower_dimensional_regions_are_undefined() {
+    assert_eq!(interpret("SurfaceArea[Sphere[]]").unwrap(), "Undefined");
+    assert_eq!(interpret("SurfaceArea[Disk[]]").unwrap(), "Undefined");
+    assert_eq!(
+      interpret("SurfaceArea[Triangle[{{0, 0}, {1, 0}, {0, 1}}]]").unwrap(),
+      "Undefined"
+    );
+  }
+}
+
+// Area of a triangle embedded in 3-space (half the cross-product norm),
+// in wolframscript's canonical radical forms.
+mod triangle_area_3d {
+  use super::*;
+
+  #[test]
+  fn triangle_3d() {
+    assert_eq!(
+      interpret("Area[Triangle[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}]]").unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("Area[Triangle[{{0, 0, 0}, {1, 0, 0}, {0, 1, 1}}]]").unwrap(),
+      "1/Sqrt[2]"
+    );
+    assert_eq!(
+      interpret("Area[Triangle[{{0, 0, 0}, {1, 2, 0}, {0, 1, 3}}]]").unwrap(),
+      "Sqrt[23/2]"
+    );
+  }
+}
+
+// Sqrt of a fully numeric product containing a sum keeps the radical
+// merged: wolframscript only extracts the perfect-square part.
+mod numeric_radicand_no_split {
+  use super::*;
+
+  #[test]
+  fn stays_merged() {
+    assert_eq!(
+      interpret("Sqrt[5*(5 + 2*Sqrt[5])]*a^2").unwrap(),
+      "Sqrt[5*(5 + 2*Sqrt[5])]*a^2"
+    );
+    assert_eq!(
+      interpret("Sqrt[2*(1 + Sqrt[2])]*a").unwrap(),
+      "Sqrt[2*(1 + Sqrt[2])]*a"
+    );
+  }
+
+  #[test]
+  fn extracts_square_part() {
+    assert_eq!(
+      interpret("Sqrt[12*(1 + Sqrt[2])]").unwrap(),
+      "2*Sqrt[3*(1 + Sqrt[2])]"
+    );
+    assert_eq!(
+      interpret("Sqrt[12*(1 + Sqrt[2])]*a").unwrap(),
+      "2*Sqrt[3*(1 + Sqrt[2])]*a"
+    );
+    assert_eq!(
+      interpret("Sqrt[4*(1 + Sqrt[2])]").unwrap(),
+      "2*Sqrt[1 + Sqrt[2]]"
+    );
+  }
+
+  #[test]
+  fn three_halves_exponent_still_distributes() {
+    assert_eq!(
+      interpret("(2*(1 + Sqrt[2]))^(3/2)").unwrap(),
+      "2*Sqrt[2]*(1 + Sqrt[2])^(3/2)"
+    );
+  }
+}
+
+// RegionDisjoint[reg1, reg2, …] — pairwise disjointness of geometric
+// regions. Regions are closed, so touching counts as intersecting.
+// All outputs verified against wolframscript.
+mod region_disjoint {
+  use super::*;
+
+  #[test]
+  fn solid_round_regions() {
+    assert_eq!(
+      interpret("RegionDisjoint[Disk[{0, 0}], Disk[{3, 0}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Disk[{0, 0}], Disk[{1, 0}]]").unwrap(),
+      "False"
+    );
+    // Tangent disks share a boundary point.
+    assert_eq!(
+      interpret("RegionDisjoint[Disk[{0, 0}], Disk[{2, 0}]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Ball[{0, 0, 0}], Ball[{3, 0, 0}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Ball[{0, 0, 0}], Ball[{1, 1, 1}]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn shells() {
+    assert_eq!(
+      interpret("RegionDisjoint[Circle[], Circle[{4, 0}]]").unwrap(),
+      "True"
+    );
+    // Concentric circles of different radii never meet.
+    assert_eq!(
+      interpret("RegionDisjoint[Circle[], Circle[{0, 0}, 3]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Circle[], Circle[]]").unwrap(),
+      "False"
+    );
+    // The circle IS part of the closed unit disk's boundary.
+    assert_eq!(
+      interpret("RegionDisjoint[Circle[], Disk[]]").unwrap(),
+      "False"
+    );
+    // A smaller circle lies strictly inside the solid disk.
+    assert_eq!(
+      interpret("RegionDisjoint[Circle[{0, 0}, 1/2], Disk[]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Sphere[], Sphere[{5, 0, 0}]]").unwrap(),
+      "True"
+    );
+    // A small ball strictly inside the unit sphere shell misses it.
+    assert_eq!(
+      interpret("RegionDisjoint[Sphere[], Ball[{0, 0, 0}, 1/4]]").unwrap(),
+      "True"
+    );
+    // A huge circle around a rectangle misses the solid rectangle.
+    assert_eq!(
+      interpret("RegionDisjoint[Rectangle[], Circle[{1/2, 1/2}, 10]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn boxes() {
+    assert_eq!(
+      interpret("RegionDisjoint[Rectangle[], Rectangle[{2, 2}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Rectangle[], Rectangle[{1/2, 1/2}]]").unwrap(),
+      "False"
+    );
+    // Rectangles sharing an edge are not disjoint.
+    assert_eq!(
+      interpret("RegionDisjoint[Rectangle[], Rectangle[{1, 0}]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Cuboid[], Cuboid[{2, 2, 2}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Cuboid[], Cuboid[{1, 0, 0}]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Cuboid[], Ball[{3, 3, 3}, 1]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Rectangle[], Disk[{3, 3}]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn polygons() {
+    assert_eq!(
+      interpret("RegionDisjoint[Triangle[], Disk[{1, 1}, 1/2]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "RegionDisjoint[Triangle[], Triangle[{{2, 2}, {3, 2}, {2, 3}}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Triangle[], Rectangle[{2, 0}]]").unwrap(),
+      "True"
+    );
+    // The triangle touches Rectangle[{1, 0}] at the vertex {1, 0}.
+    assert_eq!(
+      interpret("RegionDisjoint[Triangle[], Rectangle[{1, 0}]]").unwrap(),
+      "False"
+    );
+    // Containment in both directions intersects.
+    assert_eq!(
+      interpret("RegionDisjoint[Disk[{1/4, 1/4}, 1/8], Triangle[]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Triangle[], Disk[{1/4, 1/4}, 5]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "RegionDisjoint[Triangle[{{-10, -10}, {20, -10}, {0, 20}}], Rectangle[]]"
+      )
+      .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "RegionDisjoint[Polygon[{{0, 0}, {4, 0}, {4, 4}, {0, 4}}], Polygon[{{1, 1}, {2, 1}, {2, 2}, {1, 2}}]]"
+      )
+      .unwrap(),
+      "False"
+    );
+    // A big circle shell around the triangle misses it; a small one
+    // inside it crosses the interior.
+    assert_eq!(
+      interpret("RegionDisjoint[Circle[{1/4, 1/4}, 5], Triangle[]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Circle[{1/4, 1/4}, 1/8], Triangle[]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn points() {
+    assert_eq!(
+      interpret("RegionDisjoint[Point[{0, 0}], Point[{1, 0}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Point[{0, 0}], Point[{0, 0}]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Point[{0, 0}], Disk[]]").unwrap(),
+      "False"
+    );
+    // Membership on a shell is exact: {1, 0} lies ON the unit circle,
+    // {1/2, 0} strictly inside misses it.
+    assert_eq!(
+      interpret("RegionDisjoint[Point[{1, 0}], Circle[]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Point[{1/2, 0}], Circle[]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn n_ary_and_edge_cases() {
+    // Pairwise over three regions.
+    assert_eq!(
+      interpret("RegionDisjoint[Disk[{0, 0}], Disk[{3, 0}], Disk[{6, 0}]]")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionDisjoint[Disk[{0, 0}], Disk[{3, 0}], Disk[{1, 0}]]")
+        .unwrap(),
+      "False"
+    );
+    // Zero or one region is vacuously disjoint.
+    assert_eq!(interpret("RegionDisjoint[]").unwrap(), "True");
+    assert_eq!(interpret("RegionDisjoint[Disk[]]").unwrap(), "True");
+    // Regions in different ambient dimensions never intersect.
+    assert_eq!(interpret("RegionDisjoint[Disk[], Ball[]]").unwrap(), "True");
+    // Unsupported arguments stay unevaluated.
+    assert_eq!(interpret("RegionDisjoint[x]").unwrap(), "RegionDisjoint[x]");
+    assert_eq!(
+      interpret("RegionDisjoint[Disk[], x]").unwrap(),
+      "RegionDisjoint[Disk[{0, 0}], x]"
+    );
+  }
+}
+
+// SphericalShell and CapsuleShape region primitives. All outputs verified
+// against wolframscript.
+mod spherical_shell_and_capsule {
+  use super::*;
+
+  #[test]
+  fn constructors_normalize() {
+    assert_eq!(
+      interpret("SphericalShell[]").unwrap(),
+      "SphericalShell[{0, 0, 0}, {1/2, 1}]"
+    );
+    // A single radius r means inner radius r/2.
+    assert_eq!(
+      interpret("SphericalShell[3]").unwrap(),
+      "SphericalShell[{0, 0, 0}, {3/2, 3}]"
+    );
+    assert_eq!(
+      interpret("SphericalShell[a]").unwrap(),
+      "SphericalShell[{0, 0, 0}, {a/2, a}]"
+    );
+    assert_eq!(
+      interpret("SphericalShell[{2, 5}]").unwrap(),
+      "SphericalShell[{0, 0, 0}, {2, 5}]"
+    );
+    // The default capsule lies on the x axis.
+    assert_eq!(
+      interpret("CapsuleShape[]").unwrap(),
+      "CapsuleShape[{{-1, 0, 0}, {1, 0, 0}}, 1]"
+    );
+    assert_eq!(
+      interpret("CapsuleShape[r]").unwrap(),
+      "CapsuleShape[{{-1, 0, 0}, {1, 0, 0}}, r]"
+    );
+    // Unknown arities pass through untouched.
+    assert_eq!(
+      interpret("SphericalShell[{0, 0, 0}, {2, 5}, 7]").unwrap(),
+      "SphericalShell[{0, 0, 0}, {2, 5}, 7]"
+    );
+  }
+
+  #[test]
+  fn shell_volume() {
+    assert_eq!(interpret("Volume[SphericalShell[]]").unwrap(), "(7*Pi)/6");
+    assert_eq!(
+      interpret("Volume[SphericalShell[{1, 2, 3}, {2, 5}]]").unwrap(),
+      "156*Pi"
+    );
+    // The radius pair is unordered for concrete values.
+    assert_eq!(
+      interpret("Volume[SphericalShell[{0, 0, 0}, {5, 2}]]").unwrap(),
+      "156*Pi"
+    );
+    assert_eq!(
+      interpret("Volume[SphericalShell[{0, 0, 0}, {r1, r2}]]").unwrap(),
+      "(4*Pi*(-r1^3 + r2^3))/3"
+    );
+  }
+
+  #[test]
+  fn shell_region_measure_quirk() {
+    // wolframscript's RegionMeasure for a SphericalShell is NOT its
+    // volume but 4 Pi (r2^2 - r1^2) — replicated for conformance.
+    assert_eq!(
+      interpret("RegionMeasure[SphericalShell[]]").unwrap(),
+      "3*Pi"
+    );
+    assert_eq!(
+      interpret("RegionMeasure[SphericalShell[{0, 0, 0}, {2, 5}]]").unwrap(),
+      "84*Pi"
+    );
+    assert_eq!(
+      interpret("RegionMeasure[SphericalShell[{0, 0, 0}, {r1, r2}]]").unwrap(),
+      "4*Pi*(-r1^2 + r2^2)"
+    );
+  }
+
+  #[test]
+  fn shell_surface_area_and_centroid() {
+    // The boundary is both spheres.
+    assert_eq!(
+      interpret("SurfaceArea[SphericalShell[{0, 0, 0}, {2, 5}]]").unwrap(),
+      "116*Pi"
+    );
+    assert_eq!(interpret("SurfaceArea[SphericalShell[]]").unwrap(), "5*Pi");
+    // Symbolic radii stay unevaluated (wolframscript itself hangs there).
+    assert_eq!(
+      interpret("SurfaceArea[SphericalShell[{0, 0, 0}, {a, b}]]").unwrap(),
+      "SurfaceArea[SphericalShell[{0, 0, 0}, {a, b}]]"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[SphericalShell[{1, 2, 3}, {2, 5}]]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(interpret("RegionDimension[SphericalShell[]]").unwrap(), "3");
+  }
+
+  #[test]
+  fn capsule_volume() {
+    assert_eq!(interpret("Volume[CapsuleShape[]]").unwrap(), "(10*Pi)/3");
+    assert_eq!(
+      interpret("Volume[CapsuleShape[r]]").unwrap(),
+      "2*Pi*r^2 + (4*Pi*r^3)/3"
+    );
+    assert_eq!(
+      interpret("Volume[CapsuleShape[{{0, 0, 0}, {0, 0, 3}}, 2]]").unwrap(),
+      "(68*Pi)/3"
+    );
+    // A 2-D point pair (a stadium) stays unevaluated, as in wolframscript.
+    assert_eq!(
+      interpret("Volume[CapsuleShape[{{0, 0}, {3, 0}}, 1]]").unwrap(),
+      "Volume[CapsuleShape[{{0, 0}, {3, 0}}, 1]]"
+    );
+  }
+
+  #[test]
+  fn capsule_measures() {
+    assert_eq!(
+      interpret("RegionCentroid[CapsuleShape[{{0, 0, 0}, {0, 0, 3}}, 2]]")
+        .unwrap(),
+      "{0, 0, 3/2}"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[CapsuleShape[]]").unwrap(),
+      "{0, 0, 0}"
+    );
+    assert_eq!(
+      interpret("SurfaceArea[CapsuleShape[{{0, 0, 0}, {0, 0, 3}}, 2]]")
+        .unwrap(),
+      "28*Pi"
+    );
+    assert_eq!(
+      interpret("RegionMeasure[CapsuleShape[]]").unwrap(),
+      "(10*Pi)/3"
+    );
+    assert_eq!(interpret("RegionDimension[CapsuleShape[]]").unwrap(), "3");
+  }
+}
+
+// DiskSegment[{x, y}, r | {rx, ry}, {θ1, θ2}] — circular / elliptical
+// segments. All outputs verified against wolframscript.
+mod disk_segment {
+  use super::*;
+
+  #[test]
+  fn area() {
+    // A 0..Pi segment is the half disk.
+    assert_eq!(
+      interpret("Area[DiskSegment[{0, 0}, 1, {0, Pi}]]").unwrap(),
+      "Pi/2"
+    );
+    assert_eq!(
+      interpret("Area[DiskSegment[{0, 0}, 1, {0, Pi/2}]]").unwrap(),
+      "(-2 + Pi)/4"
+    );
+    assert_eq!(
+      interpret("Area[DiskSegment[{0, 0}, 2, {0, Pi/3}]]").unwrap(),
+      "(-3*Sqrt[3] + 2*Pi)/3"
+    );
+    // The area is center-independent and angle-shift-invariant.
+    assert_eq!(
+      interpret("Area[DiskSegment[{1, 2}, 3, {0, Pi}]]").unwrap(),
+      "(9*Pi)/2"
+    );
+    assert_eq!(
+      interpret("Area[DiskSegment[{0, 0}, 1, {-Pi/4, 3*Pi/4}]]").unwrap(),
+      "Pi/2"
+    );
+  }
+
+  #[test]
+  fn area_symbolic_radii() {
+    assert_eq!(
+      interpret("Area[DiskSegment[{0, 0}, r, {0, Pi/2}]]").unwrap(),
+      "((-2 + Pi)*r^2)/4"
+    );
+    // Elliptical segment: rx ry (dtheta - Sin[dtheta])/2.
+    assert_eq!(
+      interpret("Area[DiskSegment[{0, 0}, {r1, r2}, {0, Pi/3}]]").unwrap(),
+      "((-3*Sqrt[3] + 2*Pi)*r1*r2)/12"
+    );
+  }
+
+  #[test]
+  fn area_angle_edge_cases() {
+    // Reversed angles are Undefined.
+    assert_eq!(
+      interpret("Area[DiskSegment[{0, 0}, 1, {Pi, 0}]]").unwrap(),
+      "Undefined"
+    );
+    // wolframscript's UnitStep closed form double-counts at exactly
+    // 2 Pi (both steps fire) and clamps to Pi r^2 above — replicated.
+    assert_eq!(
+      interpret("Area[DiskSegment[{0, 0}, 1, {0, 2*Pi}]]").unwrap(),
+      "2*Pi"
+    );
+    assert_eq!(
+      interpret("Area[DiskSegment[{0, 0}, 1, {0, 3*Pi}]]").unwrap(),
+      "Pi"
+    );
+    // Invalid shapes stay unevaluated.
+    assert_eq!(
+      interpret("Area[DiskSegment[]]").unwrap(),
+      "Area[DiskSegment[]]"
+    );
+  }
+
+  #[test]
+  fn centroid() {
+    assert_eq!(
+      interpret("RegionCentroid[DiskSegment[{0, 0}, 1, {0, Pi}]]").unwrap(),
+      "{0, 4/(3*Pi)}"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[DiskSegment[{0, 0}, 1, {0, Pi/2}]]").unwrap(),
+      "{1/(3*(-1 + Pi/2)), 1/(3*(-1 + Pi/2))}"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[DiskSegment[{1, 2}, 3, {0, Pi}]]").unwrap(),
+      "{1, 2 + 4/Pi}"
+    );
+    // Elliptical: each axis scales by its semiaxis.
+    assert_eq!(
+      interpret("RegionCentroid[DiskSegment[{0, 0}, {3, 2}, {0, Pi}]]")
+        .unwrap(),
+      "{0, 8/(3*Pi)}"
+    );
+    // The full-angle segment is the whole disk.
+    assert_eq!(
+      interpret("RegionCentroid[DiskSegment[{0, 0}, 1, {0, 2*Pi}]]").unwrap(),
+      "{0, 0}"
+    );
+  }
+
+  #[test]
+  fn perimeter() {
+    // Chord + arc.
+    assert_eq!(
+      interpret("Perimeter[DiskSegment[{0, 0}, 1, {0, Pi}]]").unwrap(),
+      "2 + Pi"
+    );
+    assert_eq!(
+      interpret("Perimeter[DiskSegment[{0, 0}, 2, {0, Pi/3}]]").unwrap(),
+      "2 + (2*Pi)/3"
+    );
+    assert_eq!(
+      interpret("Perimeter[DiskSegment[{0, 0}, 1, {0, 2*Pi}]]").unwrap(),
+      "2*Pi"
+    );
+    // Elliptical perimeters need elliptic integrals — unevaluated.
+    assert_eq!(
+      interpret("Perimeter[DiskSegment[{0, 0}, {3, 2}, {0, Pi}]]").unwrap(),
+      "Perimeter[DiskSegment[{0, 0}, {3, 2}, {0, Pi}]]"
+    );
+  }
+
+  #[test]
+  fn region_measure_and_dimension() {
+    // wolframscript's RegionMeasure for any valid DiskSegment is the
+    // constant 2 (its dimension, not its area) — replicated.
+    assert_eq!(
+      interpret("RegionMeasure[DiskSegment[{0, 0}, 1, {0, Pi}]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("RegionMeasure[DiskSegment[{0, 0}, 5, {0, Pi/4}]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("RegionDimension[DiskSegment[{0, 0}, 1, {0, Pi/3}]]").unwrap(),
+      "2"
+    );
+    // The argumentless form is invalid and stays unevaluated.
+    assert_eq!(
+      interpret("RegionDimension[DiskSegment[]]").unwrap(),
+      "RegionDimension[DiskSegment[]]"
+    );
+  }
+}
+
+// HalfSpace[n, c] / HalfSpace[n, p] — the closed half-space n.x <= c
+// (n.(x - p) <= 0). All outputs verified against wolframscript.
+mod half_space {
+  use super::*;
+
+  #[test]
+  fn constructor_normalizes() {
+    assert_eq!(
+      interpret("HalfSpace[{1, 0}]").unwrap(),
+      "HalfSpace[{1, 0}, 0]"
+    );
+  }
+
+  #[test]
+  fn region_member() {
+    // Point form: n.(x - p) <= 0, boundary included.
+    assert_eq!(
+      interpret("RegionMember[HalfSpace[{-1, -1, 1}, {0, 0, 0}], {1, 1, 0}]")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionMember[HalfSpace[{-1, -1, 1}, {0, 0, 0}], {0, 0, 1}]")
+        .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("RegionMember[HalfSpace[{-1, -1, 1}, {0, 0, 0}], {0, 0, 0}]")
+        .unwrap(),
+      "True"
+    );
+    // Scalar form: n.x <= c.
+    assert_eq!(
+      interpret("RegionMember[HalfSpace[{1, 0}, 2], {1, 5}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionMember[HalfSpace[{1, 0}, 2], {3, 0}]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("RegionMember[HalfSpace[{1, 0}, 2], {2, 7}]").unwrap(),
+      "True"
+    );
+    // Symbolic points stay unevaluated (wolframscript produces a
+    // Reduce-normalized condition Woxi does not model).
+    assert_eq!(
+      interpret("RegionMember[HalfSpace[{1, 0}, 2], {x, y}]").unwrap(),
+      "RegionMember[HalfSpace[{1, 0}, 2], {x, y}]"
+    );
+  }
+
+  #[test]
+  fn measures_are_infinite() {
+    assert_eq!(
+      interpret("RegionDimension[HalfSpace[{1, 0}, 2]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("RegionDimension[HalfSpace[{-1, -1, 1}, {0, 0, 0}]]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("RegionMeasure[HalfSpace[{1, 0}, 2]]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("Volume[HalfSpace[{-1, -1, 1}, {0, 0, 0}]]").unwrap(),
+      "Infinity"
+    );
+    // Dimension mismatches are Undefined.
+    assert_eq!(
+      interpret("Volume[HalfSpace[{1, 0}, 2]]").unwrap(),
+      "Undefined"
+    );
+    assert_eq!(interpret("Area[HalfSpace[{1, 0}, 2]]").unwrap(), "Infinity");
+    assert_eq!(
+      interpret("Area[HalfSpace[{-1, -1, 1}, {0, 0, 0}]]").unwrap(),
+      "Undefined"
+    );
+    assert_eq!(
+      interpret("BoundedRegionQ[HalfSpace[{1, 0}, 2]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn region_distance() {
+    assert_eq!(
+      interpret("RegionDistance[HalfSpace[{1, 0}, 2], {5, 0}]").unwrap(),
+      "3"
+    );
+    // Boundary and interior points have distance 0.
+    assert_eq!(
+      interpret("RegionDistance[HalfSpace[{1, 0}, 2], {1, 0}]").unwrap(),
+      "0"
+    );
+    // Exact radical forms.
+    assert_eq!(
+      interpret("RegionDistance[HalfSpace[{1, 1}, 0], {1, 1}]").unwrap(),
+      "Sqrt[2]"
+    );
+    assert_eq!(
+      interpret("RegionDistance[HalfSpace[{1, 1}, 0], {1, 2}]").unwrap(),
+      "3/Sqrt[2]"
+    );
+    assert_eq!(
+      interpret("RegionDistance[HalfSpace[{-1, -1, 1}, {0, 0, 0}], {1, 1, 3}]")
+        .unwrap(),
+      "1/Sqrt[3]"
+    );
+  }
+
+  #[test]
+  fn centroid_is_indeterminate() {
+    assert_eq!(
+      interpret("RegionCentroid[HalfSpace[{1, 0}, 2]]").unwrap(),
+      "{Indeterminate, Indeterminate}"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[HalfSpace[{-1, -1, 1}, {0, 0, 0}]]").unwrap(),
+      "{Indeterminate, Indeterminate, Indeterminate}"
+    );
+  }
+}
+
+// RegionMoment[reg, {i1, …, in}] — exact polynomial moments.
+// All outputs verified against wolframscript.
+mod region_moment {
+  use super::*;
+
+  #[test]
+  fn unit_disk_moments() {
+    assert_eq!(interpret("RegionMoment[Disk[], {0, 0}]").unwrap(), "Pi");
+    assert_eq!(interpret("RegionMoment[Disk[], {2, 0}]").unwrap(), "Pi/4");
+    assert_eq!(interpret("RegionMoment[Disk[], {2, 2}]").unwrap(), "Pi/24");
+    assert_eq!(interpret("RegionMoment[Disk[], {4, 0}]").unwrap(), "Pi/8");
+    // Odd exponents vanish by symmetry.
+    assert_eq!(interpret("RegionMoment[Disk[], {1, 0}]").unwrap(), "0");
+    assert_eq!(interpret("RegionMoment[Disk[], {1, 1}]").unwrap(), "0");
+    assert_eq!(interpret("RegionMoment[Disk[], {1, 2}]").unwrap(), "0");
+  }
+
+  #[test]
+  fn scaled_and_shifted_disks_and_balls() {
+    assert_eq!(
+      interpret("RegionMoment[Disk[{0, 0}, r], {2, 0}]").unwrap(),
+      "(Pi*r^4)/4"
+    );
+    assert_eq!(
+      interpret("RegionMoment[Disk[{1, 2}, 3], {1, 0}]").unwrap(),
+      "9*Pi"
+    );
+    assert_eq!(
+      interpret("RegionMoment[Disk[{1, 2}, 3], {2, 1}]").unwrap(),
+      "(117*Pi)/2"
+    );
+    // Symbolic centers work through the binomial expansion.
+    assert_eq!(
+      interpret("RegionMoment[Disk[{cx, cy}, r], {1, 0}]").unwrap(),
+      "cx*Pi*r^2"
+    );
+    assert_eq!(
+      interpret("RegionMoment[Ball[], {0, 0, 0}]").unwrap(),
+      "(4*Pi)/3"
+    );
+    assert_eq!(
+      interpret("RegionMoment[Ball[], {2, 0, 0}]").unwrap(),
+      "(4*Pi)/15"
+    );
+    assert_eq!(
+      interpret("RegionMoment[Ball[{0, 0, 0}, r], {2, 2, 4}]").unwrap(),
+      "(4*Pi*r^11)/3465"
+    );
+    assert_eq!(
+      interpret("RegionMoment[Ball[{1, 0, -1}, 2], {2, 0, 1}]").unwrap(),
+      "(-96*Pi)/5"
+    );
+  }
+
+  #[test]
+  fn boxes() {
+    assert_eq!(
+      interpret("RegionMoment[Rectangle[], {1, 1}]").unwrap(),
+      "1/4"
+    );
+    assert_eq!(
+      interpret("RegionMoment[Rectangle[{-1, -1}, {1, 1}], {2, 2}]").unwrap(),
+      "4/9"
+    );
+    // Symbolic corners.
+    assert_eq!(
+      interpret("RegionMoment[Rectangle[{0, 0}, {a, b}], {1, 2}]").unwrap(),
+      "(a^2*b^3)/6"
+    );
+    assert_eq!(
+      interpret("RegionMoment[Cuboid[], {1, 1, 2}]").unwrap(),
+      "1/12"
+    );
+  }
+
+  #[test]
+  fn triangles() {
+    assert_eq!(
+      interpret("RegionMoment[Triangle[], {1, 1}]").unwrap(),
+      "1/24"
+    );
+    assert_eq!(
+      interpret("RegionMoment[Triangle[{{0, 0}, {2, 0}, {0, 3}}], {1, 0}]")
+        .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("RegionMoment[Triangle[{{1, 1}, {3, 2}, {2, 5}}], {2, 1}]")
+        .unwrap(),
+      "2387/60"
+    );
+    // Symbolic vertices keep the |det| factor symbolic.
+    assert_eq!(
+      interpret("RegionMoment[Triangle[{{0, 0}, {a, 0}, {0, b}}], {1, 0}]")
+        .unwrap(),
+      "(a*Abs[a*b])/6"
+    );
+  }
+
+  #[test]
+  fn invalid_specs_emit_mexp() {
+    clear_state();
+    let r = interpret_with_stdout("RegionMoment[Disk[], {-1, 0}]").unwrap();
+    assert_eq!(r.result, "RegionMoment[Disk[{0, 0}], {-1, 0}]");
+    assert!(r.warnings[0].contains(
+      "RegionMoment::mexp: Invalid moment index specification at position \
+       2 in 2. A list of non-negative integers matching the embedding \
+       dimension is expected."
+    ));
+
+    // A spec of the wrong length also fails.
+    clear_state();
+    let r = interpret_with_stdout("RegionMoment[Disk[], {1, 2, 3}]").unwrap();
+    assert_eq!(r.result, "RegionMoment[Disk[{0, 0}], {1, 2, 3}]");
+    assert!(r.warnings[0].contains("RegionMoment::mexp"));
+  }
+}
+
+// MomentOfInertia[reg] / [reg, pt] / [reg, pt, v] — inertia matrices and
+// axis moments. All outputs verified against wolframscript.
+mod moment_of_inertia {
+  use super::*;
+
+  #[test]
+  fn about_the_centroid() {
+    assert_eq!(
+      interpret("MomentOfInertia[Ball[]]").unwrap(),
+      "{{(8*Pi)/15, 0, 0}, {0, (8*Pi)/15, 0}, {0, 0, (8*Pi)/15}}"
+    );
+    assert_eq!(
+      interpret("MomentOfInertia[Disk[]]").unwrap(),
+      "{{Pi/4, 0}, {0, Pi/4}}"
+    );
+    assert_eq!(
+      interpret("MomentOfInertia[Rectangle[]]").unwrap(),
+      "{{1/12, 0}, {0, 1/12}}"
+    );
+    assert_eq!(
+      interpret("MomentOfInertia[Cuboid[]]").unwrap(),
+      "{{1/6, 0, 0}, {0, 1/6, 0}, {0, 0, 1/6}}"
+    );
+    // Symbolic side lengths.
+    assert_eq!(
+      interpret("MomentOfInertia[Rectangle[{0, 0}, {a, b}]]").unwrap(),
+      "{{(a*b^3)/12, 0}, {0, (a^3*b)/12}}"
+    );
+    // The triangle has a nonzero product of inertia.
+    assert_eq!(
+      interpret("MomentOfInertia[Triangle[]]").unwrap(),
+      "{{1/36, 1/72}, {1/72, 1/36}}"
+    );
+    // An off-center region is measured about its own centroid.
+    assert_eq!(
+      interpret("MomentOfInertia[Disk[{2, 0}]]").unwrap(),
+      "{{Pi/4, 0}, {0, Pi/4}}"
+    );
+  }
+
+  #[test]
+  fn about_a_point() {
+    // Parallel-axis growth away from the centroid.
+    assert_eq!(
+      interpret("MomentOfInertia[Ball[], {1, 1, 0}]").unwrap(),
+      "{{(28*Pi)/15, (-4*Pi)/3, 0}, {(-4*Pi)/3, (28*Pi)/15, 0}, {0, 0, (16*Pi)/5}}"
+    );
+    assert_eq!(
+      interpret("MomentOfInertia[Disk[{2, 0}], {0, 0}]").unwrap(),
+      "{{Pi/4, 0}, {0, (17*Pi)/4}}"
+    );
+    assert_eq!(
+      interpret("MomentOfInertia[Triangle[], {0, 0}]").unwrap(),
+      "{{1/12, -1/24}, {-1/24, 1/12}}"
+    );
+  }
+
+  #[test]
+  fn about_an_axis() {
+    assert_eq!(
+      interpret("MomentOfInertia[Ball[], {0, 0, 0}, {0, 0, 1}]").unwrap(),
+      "(8*Pi)/15"
+    );
+    // Symbolic radius through an oblique axis.
+    assert_eq!(
+      interpret("MomentOfInertia[Ball[{0, 0, 0}, r], {0, 0, 0}, {1, 1, 1}]")
+        .unwrap(),
+      "(8*Pi*r^5)/15"
+    );
+    assert_eq!(
+      interpret("MomentOfInertia[Ball[{1, 2, 3}, 2], {1, 2, 3}, {1, 0, 0}]")
+        .unwrap(),
+      "(256*Pi)/15"
+    );
+    assert_eq!(
+      interpret("MomentOfInertia[Disk[], {0, 0}, {0, 1}]").unwrap(),
+      "Pi/4"
+    );
+    assert_eq!(
+      interpret("MomentOfInertia[Rectangle[], {0, 0}, {1, 1}]").unwrap(),
+      "1/12"
+    );
+  }
+}
+
+// RegionCentroid[Cuboid[...]] — the corner midpoint (was a gap).
+mod cuboid_centroid {
+  use super::*;
+
+  #[test]
+  fn midpoints() {
+    assert_eq!(
+      interpret("RegionCentroid[Cuboid[]]").unwrap(),
+      "{1/2, 1/2, 1/2}"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[Cuboid[{0, 0, 0}, {a, b, c}]]").unwrap(),
+      "{a/2, b/2, c/2}"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[Cuboid[{1, 2, 3}]]").unwrap(),
+      "{3/2, 5/2, 7/2}"
+    );
+  }
+}
+
+// MomentOfInertia for polygons — exact signed fan decomposition.
+// wolframscript's MomentOfInertia is exact for polygons (its
+// RegionMoment is only machine-precision quadrature there, so that one
+// stays unevaluated). All outputs verified against wolframscript.
+mod polygon_moment_of_inertia {
+  use super::*;
+
+  #[test]
+  fn exact_polygon_inertia() {
+    // Non-convex pentagon about its centroid.
+    assert_eq!(
+      interpret(
+        "MomentOfInertia[Polygon[{{0, 0}, {2, 0}, {2, 2}, {1, 1}, {0, 2}}]]"
+      )
+      .unwrap(),
+      "{{37/54, 0}, {0, 7/6}}"
+    );
+    assert_eq!(
+      interpret(
+        "MomentOfInertia[Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}], {0, 0}]"
+      )
+      .unwrap(),
+      "{{1/3, -1/4}, {-1/4, 1/3}}"
+    );
+    // Clockwise vertex order is orientation-corrected.
+    assert_eq!(
+      interpret("MomentOfInertia[Polygon[{{0, 1}, {0, 0}, {1, 0}}]]").unwrap(),
+      "{{1/36, 1/72}, {1/72, 1/36}}"
+    );
+    // Axis form.
+    assert_eq!(
+      interpret(
+        "MomentOfInertia[Polygon[{{0, 0}, {2, 0}, {2, 2}, {1, 1}, {0, 2}}], {0, 0}, {0, 1}]"
+      )
+      .unwrap(),
+      "25/6"
+    );
+  }
+
+  #[test]
+  fn region_moment_for_polygons_stays_unevaluated() {
+    // wolframscript returns machine-precision quadrature values here
+    // (e.g. 3.366666189468263 with visible error); Woxi does not model
+    // that and leaves the call unevaluated.
+    assert_eq!(
+      interpret("RegionMoment[Polygon[{{0, 0}, {1, 0}, {0, 1}}], {1, 1}]")
+        .unwrap(),
+      "RegionMoment[Polygon[{{0, 0}, {1, 0}, {0, 1}}], {1, 1}]"
+    );
+  }
+}
+
+// StadiumShape: the 2-D capsule analog. Constructors self-normalize to
+// the full {{p1, p2}, r} form; Area factors out the Pi coefficient only
+// when it divides the rectangle term (RegionMeasure keeps the plain
+// sum); membership is closed point-to-segment distance. Verified
+// against wolframscript.
+mod stadium_shape {
+  use super::*;
+
+  #[test]
+  fn constructor_normalization() {
+    clear_state();
+    assert_eq!(
+      interpret("{StadiumShape[], StadiumShape[3]}").unwrap(),
+      "{StadiumShape[{{-1, 0}, {1, 0}}, 1], \
+        StadiumShape[{{-1, 0}, {1, 0}}, 3]}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("StadiumShape[{{0, 0}, {4, 0}}, 2]").unwrap(),
+      "StadiumShape[{{0, 0}, {4, 0}}, 2]"
+    );
+  }
+
+  #[test]
+  fn measures() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = StadiumShape[{{0, 0}, {4, 0}}, 2]; \
+         {Area[s], RegionMeasure[s], Perimeter[s], RegionCentroid[s], \
+          RegionDimension[s], RegionEmbeddingDimension[s]}"
+      )
+      .unwrap(),
+      "{4*(4 + Pi), 16 + 4*Pi, 8 + 4*Pi, {2, 0}, 2, 2}"
+    );
+    // The Pi coefficient hoists only when it divides the rectangle term;
+    // a degenerate segment leaves a plain disk.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Area[StadiumShape[{{0, 0}, {1, 0}}, 3]], \
+          Area[StadiumShape[{{0, 0}, {3, 0}}, 1]], \
+          Area[StadiumShape[{{0, 0}, {0, 0}}, 3]]}"
+      )
+      .unwrap(),
+      "{6 + 9*Pi, 6 + Pi, 9*Pi}"
+    );
+    // Symbolic radius keeps the unfactored forms.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s2 = StadiumShape[{{1, 1}, {3, 5}}, r]; \
+         {Area[s2], Perimeter[s2], RegionCentroid[s2]}"
+      )
+      .unwrap(),
+      "{4*Sqrt[5]*r + Pi*r^2, 4*Sqrt[5] + 2*Pi*r, {2, 3}}"
+    );
+  }
+
+  #[test]
+  fn membership() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = StadiumShape[{{0, 0}, {4, 0}}, 2]; \
+         {RegionMember[s, {1, 1}], RegionMember[s, {5, 2}], \
+          RegionMember[s, {-1, 1.5}], RegionMember[s, {4, 2}]}"
+      )
+      .unwrap(),
+      "{True, False, True, True}"
     );
   }
 }

@@ -77,12 +77,12 @@ fn reorder_factored_product(result: Expr) -> Expr {
   }
   // A negated product (-((1+x)*…)) reorders its inner factors the same way.
   if let Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand,
   } = &result
   {
     return Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(reorder_factored_product(operand.as_ref().clone())),
     };
   }
@@ -579,7 +579,7 @@ pub fn factor_integer_poly(coeffs: &[i128], var: &str) -> Vec<Expr> {
 
 /// Get the constant term of a factor expression for sorting.
 /// Recursively descends into the leftmost leaf of Plus chains.
-pub fn factor_constant_term(expr: &Expr) -> i128 {
+fn factor_constant_term(expr: &Expr) -> i128 {
   match expr {
     Expr::Integer(n) => *n,
     Expr::Identifier(_) => 0, // x has constant term 0
@@ -596,7 +596,7 @@ pub fn factor_constant_term(expr: &Expr) -> i128 {
 }
 
 /// Get the degree of a factor expression for sorting.
-pub fn factor_degree(expr: &Expr) -> usize {
+fn factor_degree(expr: &Expr) -> usize {
   let s = expr_to_string(expr);
   // Count the highest power of the variable
   // Look for x^N patterns
@@ -621,7 +621,7 @@ pub fn factor_degree(expr: &Expr) -> usize {
 }
 
 /// Count the number of additive terms in a factor expression for sorting.
-pub fn factor_term_count(expr: &Expr) -> usize {
+fn factor_term_count(expr: &Expr) -> usize {
   match expr {
     Expr::BinaryOp {
       op: BinaryOperator::Plus,
@@ -638,7 +638,7 @@ pub fn factor_term_count(expr: &Expr) -> usize {
 /// Leading coefficient (coefficient of the highest power of `var`) of a factor.
 /// Used as the primary sort key so non-monic factors order by leading
 /// coefficient like wolframscript; returns 0 for non-polynomial factors.
-pub fn factor_leading_coeff(expr: &Expr, var: &str) -> i128 {
+fn factor_leading_coeff(expr: &Expr, var: &str) -> i128 {
   crate::functions::polynomial_ast::simplify::extract_poly_coeffs(expr, var)
     .and_then(|c| c.last().copied())
     .unwrap_or(0)
@@ -646,7 +646,7 @@ pub fn factor_leading_coeff(expr: &Expr, var: &str) -> i128 {
 
 /// Get the first non-constant coefficient of a factor expression for sorting.
 /// This finds the coefficient of the lowest-degree non-constant term.
-pub fn factor_first_nonconst_coeff(expr: &Expr) -> i128 {
+fn factor_first_nonconst_coeff(expr: &Expr) -> i128 {
   // Convert the expression back to string and parse the first non-constant term's sign
   let s = expr_to_string(expr);
   // Find the first term with a variable (after the constant)
@@ -682,7 +682,7 @@ pub fn factor_first_nonconst_coeff(expr: &Expr) -> i128 {
 }
 
 /// Build a linear expression from coefficients: c0 + c1*x
-pub fn linear_to_expr(c0: i128, c1: i128, var: &str) -> Expr {
+fn linear_to_expr(c0: i128, c1: i128, var: &str) -> Expr {
   if c1 == 1 {
     if c0 == 0 {
       Expr::Identifier(var.to_string())
@@ -760,7 +760,7 @@ fn poly_value_scaled(coeffs: &[i128], p: i128, q: i128) -> Option<i128> {
 
 /// Rational-root theorem for a non-integer root p/q (q > 1, gcd(p,q)=1).
 /// Integer roots are handled separately by `find_integer_root`.
-pub fn find_rational_root(coeffs: &[i128]) -> Option<(i128, i128)> {
+fn find_rational_root(coeffs: &[i128]) -> Option<(i128, i128)> {
   if coeffs.len() < 2 {
     return None;
   }
@@ -804,7 +804,7 @@ pub fn evaluate_poly(coeffs: &[i128], x: i128) -> i128 {
 }
 
 /// Get all positive divisors of n.
-pub fn integer_divisors(n: i128) -> Vec<i128> {
+fn integer_divisors(n: i128) -> Vec<i128> {
   if n == 0 {
     return vec![1];
   }
@@ -886,7 +886,7 @@ pub fn poly_div(num: &[i128], den: &[i128]) -> Option<(Vec<i128>, Vec<i128>)> {
 /// Compute the n-th cyclotomic polynomial as integer coefficients.
 /// Φ_1(x) = x - 1
 /// Φ_n(x) = (x^n - 1) / ∏_{d|n, d<n} Φ_d(x)
-pub fn cyclotomic_poly(n: u64) -> Vec<i128> {
+fn cyclotomic_poly(n: u64) -> Vec<i128> {
   if n == 1 {
     return vec![-1, 1]; // x - 1
   }
@@ -911,7 +911,7 @@ pub fn cyclotomic_poly(n: u64) -> Vec<i128> {
 }
 
 /// Get all divisors of n in sorted order.
-pub fn divisors_of(n: u64) -> Vec<u64> {
+fn divisors_of(n: u64) -> Vec<u64> {
   let mut divs = Vec::new();
   let mut i = 1u64;
   while i * i <= n {
@@ -929,7 +929,7 @@ pub fn divisors_of(n: u64) -> Vec<u64> {
 
 /// Try to factor a polynomial (with no rational roots) using polynomial trial division.
 /// First tries cyclotomic factors, then Kronecker-style trial division for small degrees.
-pub fn try_factor_no_rational_roots(coeffs: &[i128], var: &str) -> Vec<Expr> {
+fn try_factor_no_rational_roots(coeffs: &[i128], var: &str) -> Vec<Expr> {
   let deg = coeffs.len() - 1;
   if deg <= 1 {
     return vec![];
@@ -1042,7 +1042,7 @@ pub fn try_factor_no_rational_roots(coeffs: &[i128], var: &str) -> Vec<Expr> {
 
 /// Square-free factorization: detect repeated factors using Yun's algorithm,
 /// then recursively factor each square-free component.
-pub fn try_square_free_factor(coeffs: &[i128], var: &str) -> Vec<Expr> {
+fn try_square_free_factor(coeffs: &[i128], var: &str) -> Vec<Expr> {
   let deg = coeffs.len() - 1;
   if deg <= 2 {
     return vec![];
@@ -1081,7 +1081,7 @@ pub fn try_square_free_factor(coeffs: &[i128], var: &str) -> Vec<Expr> {
 /// Kronecker's method for factoring integer polynomials of small degree.
 /// Try all monic integer polynomial divisors of degree 2..=deg/2
 /// by evaluating at enough points to determine the candidate factor.
-pub fn try_kronecker_factor(coeffs: &[i128], var: &str) -> Vec<Expr> {
+fn try_kronecker_factor(coeffs: &[i128], var: &str) -> Vec<Expr> {
   let deg = coeffs.len() - 1;
   if deg <= 3 {
     // For degree 2-3, if no rational roots exist, it's irreducible over Z
@@ -1165,7 +1165,7 @@ pub fn try_kronecker_factor(coeffs: &[i128], var: &str) -> Vec<Expr> {
 }
 
 /// Factor a sub-polynomial by trying rational roots first, then trial division.
-pub fn factor_sub_poly(coeffs: &[i128], var: &str) -> Vec<Expr> {
+fn factor_sub_poly(coeffs: &[i128], var: &str) -> Vec<Expr> {
   if coeffs.len() <= 1 {
     if coeffs.len() == 1 && coeffs[0] != 1 {
       return vec![Expr::Integer(coeffs[0])];
@@ -1208,7 +1208,7 @@ pub fn factor_sub_poly(coeffs: &[i128], var: &str) -> Vec<Expr> {
 }
 
 /// Compute cartesian product of divisor sets (with size limit to avoid explosion).
-pub fn cartesian_product(sets: &[Vec<i128>]) -> Vec<Vec<i128>> {
+fn cartesian_product(sets: &[Vec<i128>]) -> Vec<Vec<i128>> {
   if sets.is_empty() {
     return vec![vec![]];
   }
@@ -1241,10 +1241,7 @@ pub fn cartesian_product(sets: &[Vec<i128>]) -> Vec<Vec<i128>> {
 /// Lagrange interpolation over integers.
 /// Given points (x_i, y_i), find polynomial with integer coefficients.
 /// Returns None if the interpolation doesn't yield integer coefficients.
-pub fn lagrange_interpolate_integer(
-  xs: &[i128],
-  ys: &[i128],
-) -> Option<Vec<i128>> {
+fn lagrange_interpolate_integer(xs: &[i128], ys: &[i128]) -> Option<Vec<i128>> {
   let n = xs.len();
   if n == 0 {
     return None;
@@ -1465,7 +1462,7 @@ pub fn irreducible_polynomial_q_ast(
 
 /// Decompose a factored expression into {factor, exponent} pairs.
 /// Handles Times[...], Power[base, exp], and literal factors.
-pub fn decompose_product(
+fn decompose_product(
   expr: &Expr,
   pairs: &mut Vec<Expr>,
   numeric_coeff: &mut Expr,
@@ -1477,7 +1474,7 @@ pub fn decompose_product(
       }
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -1485,7 +1482,7 @@ pub fn decompose_product(
       decompose_product(right, pairs, numeric_coeff);
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => {
@@ -1495,7 +1492,7 @@ pub fn decompose_product(
         *numeric_coeff = crate::functions::math_ast::times_ast(&[
           numeric_coeff.clone(),
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left: left.clone(),
             right: right.clone(),
           },
@@ -1533,7 +1530,7 @@ pub fn decompose_product(
       .unwrap_or(expr.clone());
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       // -expr: multiply coeff by -1 and decompose inner
@@ -1651,7 +1648,7 @@ fn extract_rational_coeff(term: &Expr) -> Option<(i128, i128)> {
     }
     // Negation
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       let (n, d) = extract_rational_coeff(operand)?;
@@ -1687,7 +1684,7 @@ fn extract_rational_coeff(term: &Expr) -> Option<(i128, i128)> {
             }
           }
           Expr::UnaryOp {
-            op: crate::syntax::UnaryOperator::Minus,
+            op: UnaryOperator::Minus,
             operand,
           } => match operand.as_ref() {
             Expr::Integer(n) => num *= -n,
@@ -1738,7 +1735,7 @@ fn extract_rational_coeff(term: &Expr) -> Option<(i128, i128)> {
 fn term_total_degree(term: &Expr) -> i128 {
   let inner = match term {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => operand.as_ref(),
     other => other,
@@ -1854,7 +1851,7 @@ fn divide_terms_by(
       Some(v) => match new_n {
         1 => v,
         -1 => Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand: Box::new(v),
         },
         _ => Expr::BinaryOp {
@@ -2079,7 +2076,7 @@ fn extract_non_numeric_factors(term: &Expr) -> Vec<Expr> {
       vec![] // Rational is purely numeric
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => extract_non_numeric_factors(operand),
     Expr::BinaryOp {
@@ -2092,7 +2089,7 @@ fn extract_non_numeric_factors(term: &Expr) -> Vec<Expr> {
         .filter(|f| {
           !matches!(f, Expr::Integer(_) | Expr::Real(_))
             && !matches!(f, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2)
-            && !matches!(f, Expr::UnaryOp { op: crate::syntax::UnaryOperator::Minus, operand } if matches!(operand.as_ref(), Expr::Integer(_) | Expr::Real(_)))
+            && !matches!(f, Expr::UnaryOp { op: UnaryOperator::Minus, operand } if matches!(operand.as_ref(), Expr::Integer(_) | Expr::Real(_)))
         })
         .collect()
     }
@@ -2131,7 +2128,7 @@ fn multivariate_square_free(
   let factored = factor_ast(&[expanded.clone()])?;
   let (mut negated, product) = match &factored {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => (true, operand.as_ref().clone()),
     other => (false, other.clone()),
@@ -2277,7 +2274,7 @@ fn multivariate_square_free(
   };
   Ok(if negated {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(result),
     }
   } else {
@@ -2297,7 +2294,7 @@ fn decompose_content_factors(
   let (mut num, mut den) = (1i128, 1i128);
   let work = match e {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       num = -1;
@@ -2366,7 +2363,7 @@ fn product_square_free(expr: &Expr) -> Result<Option<Expr>, InterpreterError> {
   // negation of either. Everything else uses the expand-based paths.
   let inner = match expr {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => operand.as_ref(),
     other => other,
@@ -2583,7 +2580,7 @@ fn product_square_free(expr: &Expr) -> Result<Option<Expr>, InterpreterError> {
   let product = reorder_factored_product(product);
   Ok(Some(if negate {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(product),
     }
   } else {
@@ -2721,7 +2718,7 @@ fn factor_square_free_ast_impl(
   };
   Ok(if negate {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(product),
     }
   } else {
@@ -2949,7 +2946,7 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
   let summands: Vec<Expr> = match expanded {
     Expr::FunctionCall { name, args } if name == "Plus" => args.to_vec(),
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left,
       right,
     } => {
@@ -2966,7 +2963,7 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
     match term {
       Expr::Integer(n) => Some(*n),
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand,
       } => term_coeff(operand).map(|c| -c),
       Expr::FunctionCall { name, args } if name == "Times" => {
@@ -2976,7 +2973,7 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
           if let Expr::Integer(n) = a {
             coeff *= n;
           } else if let Expr::UnaryOp {
-            op: crate::syntax::UnaryOperator::Minus,
+            op: UnaryOperator::Minus,
             operand,
           } = a
             && let Expr::Integer(n) = operand.as_ref()
@@ -2987,7 +2984,7 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
         Some(coeff)
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left,
         right,
       } => match (left.as_ref(), right.as_ref()) {
@@ -3032,7 +3029,7 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
         &summands[i],
         Expr::Integer(_)
           | Expr::UnaryOp {
-            op: crate::syntax::UnaryOperator::Minus,
+            op: UnaryOperator::Minus,
             ..
           }
       ) && match &summands[i] {
@@ -3075,13 +3072,13 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
         }
       }
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand,
       } => {
         let inner = divide_term(operand, div);
         crate::functions::math_ast::times_ast(&[Expr::Integer(-1), inner])
           .unwrap_or_else(|_| Expr::UnaryOp {
-            op: crate::syntax::UnaryOperator::Minus,
+            op: UnaryOperator::Minus,
             operand: Box::new(divide_term(operand, div)),
           })
       }
@@ -3104,8 +3101,7 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
         }
         if !consumed {
           // No integer factor matched — prepend 1/div as a Rational.
-          new_args
-            .insert(0, crate::functions::math_ast::make_rational_pub(1, div));
+          new_args.insert(0, crate::functions::math_ast::make_rational(1, div));
         }
         crate::functions::math_ast::times_ast(&new_args)
           .unwrap_or_else(|_| term.clone())
@@ -3131,7 +3127,7 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
 fn collect_times_factors(expr: &Expr) -> Vec<Expr> {
   match expr {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -3152,7 +3148,7 @@ fn collect_plus(expr: &Expr, out: &mut Vec<Expr>) {
       }
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left,
       right,
     } => {

@@ -2,7 +2,9 @@ use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{DEFAULT_HEIGHT, DEFAULT_WIDTH, parse_image_size};
-use crate::syntax::{Expr, expr_to_string};
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
+};
 
 /// Dash length for the "Small" named size in Dashing directives.
 /// This is the default dash segment length used by Dashed, Dotted, etc.
@@ -4382,14 +4384,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Extract the base and exponent from a Power expression (either BinaryOp or FunctionCall form).
 /// Public accessor for `as_power` — used by `expr_to_box_form` for unit handling.
-pub fn as_power_pub(expr: &Expr) -> Option<(&Expr, &Expr)> {
-  as_power(expr)
-}
-
-fn as_power(expr: &Expr) -> Option<(&Expr, &Expr)> {
+pub fn as_power(expr: &Expr) -> Option<(&Expr, &Expr)> {
   match expr {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => Some((left.as_ref(), right.as_ref())),
@@ -4402,7 +4400,6 @@ fn as_power(expr: &Expr) -> Option<(&Expr, &Expr)> {
 
 /// Check if expression is an additive form (Plus/Minus) for parenthesization.
 fn is_additive_expr(e: &Expr) -> bool {
-  use crate::syntax::BinaryOperator;
   matches!(
     e,
     Expr::BinaryOp {
@@ -5457,7 +5454,6 @@ pub fn has_fraction(expr: &Expr) -> bool {
 /// E.g. `"Meters"/"Seconds"` → `m/s`, `"Meters"^2` → `m²` (with superscript).
 fn quantity_unit_to_svg_abbrev(unit: &Expr) -> String {
   use crate::functions::quantity_ast::unit_to_abbreviation;
-  use crate::syntax::BinaryOperator;
 
   // Handle Power in both BinaryOp and FunctionCall form
   if let Some((base, exp)) = as_power(unit) {
@@ -5587,9 +5583,7 @@ fn digit_group_extra_width(digit_count: usize) -> f64 {
 /// Recursively handles all expression types so that Power expressions
 /// anywhere in the tree are rendered with `<tspan>` superscripts.
 pub fn expr_to_svg_markup(expr: &Expr) -> String {
-  use crate::syntax::{
-    BinaryOperator, ComparisonOp, UnaryOperator, expr_to_output,
-  };
+  use crate::syntax::expr_to_output;
 
   // Power → superscript (handles both BinaryOp and FunctionCall forms)
   if let Some((base, exp)) = as_power(expr) {
@@ -5932,7 +5926,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
 /// accounting for superscript sizing (exponents rendered at ~70% width).
 /// Recursively mirrors `expr_to_svg_markup` structure.
 pub fn estimate_display_width(expr: &Expr) -> f64 {
-  use crate::syntax::{BinaryOperator, expr_to_output};
+  use crate::syntax::expr_to_output;
 
   if let Some((base, exp)) = as_power(expr) {
     let parens = if is_additive_expr(base) { 2.0 } else { 0.0 };
@@ -6156,7 +6150,6 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
 /// Estimate the display width of an abbreviated unit expression.
 fn estimate_unit_abbrev_width(unit: &Expr) -> f64 {
   use crate::functions::quantity_ast::unit_to_abbreviation;
-  use crate::syntax::BinaryOperator;
 
   if let Some((base, exp)) = as_power(unit) {
     return estimate_unit_abbrev_width(base)
@@ -7203,11 +7196,6 @@ pub fn grid_ast_styled(
 /// Render a grid enclosed with large parentheses (for MatrixForm).
 pub fn grid_ast_with_parens(args: &[Expr]) -> Result<Expr, InterpreterError> {
   grid_ast_internal(args, &[], true)
-}
-
-/// Render a parenthesized grid and return the raw SVG string (for composition).
-pub fn grid_svg_with_parens(args: &[Expr]) -> Result<String, InterpreterError> {
-  grid_svg_internal(args, &[], true)
 }
 
 /// Render a grid and return the raw SVG string.
@@ -8392,66 +8380,6 @@ pub fn matrixform_3d_ast(
       x_off += cell_w + cell_gap_x;
     }
     y_off += row_h + cell_gap_y;
-  }
-
-  svg.push_str("</svg>");
-  Ok(crate::graphics_result(svg))
-}
-
-/// Stack multiple SVG strings vertically with spacing, capture the result.
-pub fn stack_svgs_vertically(
-  svgs: &[String],
-) -> Result<Expr, InterpreterError> {
-  if svgs.is_empty() {
-    return Err(InterpreterError::EvaluationError("No SVGs to stack".into()));
-  }
-
-  // Parse each SVG to get its dimensions and content
-  let mut parsed: Vec<(f64, f64, String, String)> = Vec::new(); // (w, h, viewBox, innerContent)
-  for svg in svgs {
-    if let Some(p) = parse_svg_dimensions(svg) {
-      let parts: Vec<f64> = p
-        .view_box
-        .split_whitespace()
-        .filter_map(|s| s.parse().ok())
-        .collect();
-      if parts.len() >= 4 {
-        parsed.push((parts[2], parts[3], p.view_box.clone(), p.inner_content));
-      }
-    }
-  }
-
-  if parsed.is_empty() {
-    return Err(InterpreterError::EvaluationError(
-      "Could not parse SVGs".into(),
-    ));
-  }
-
-  let gap = 8.0_f64;
-  let max_width: f64 = parsed.iter().map(|(w, _, _, _)| *w).fold(0.0, f64::max);
-  let total_height: f64 = parsed.iter().map(|(_, h, _, _)| *h).sum::<f64>()
-    + (parsed.len() as f64 - 1.0) * gap;
-
-  let mut svg = String::with_capacity(4096);
-  svg.push_str(&format!(
-    "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
-    max_width.ceil() as u32,
-    total_height.ceil() as u32,
-    max_width.ceil() as u32,
-    total_height.ceil() as u32,
-  ));
-
-  let mut y = 0.0_f64;
-  for (w, h, vb, content) in &parsed {
-    // Center horizontally if narrower than max
-    let x = (max_width - w) / 2.0;
-    svg.push_str(&format!(
-      "<svg x=\"{:.0}\" y=\"{:.0}\" width=\"{:.0}\" height=\"{:.0}\" viewBox=\"{}\">\n",
-      x, y, w, h, vb
-    ));
-    svg.push_str(content);
-    svg.push_str("</svg>\n");
-    y += h + gap;
   }
 
   svg.push_str("</svg>");
@@ -11204,7 +11132,7 @@ fn evenly_spaced_stops(n: usize) -> Vec<Expr> {
   }
   let denom = (n - 1) as i128;
   (0..n)
-    .map(|i| crate::functions::make_rational_pub(i as i128, denom))
+    .map(|i| crate::functions::make_rational(i as i128, denom))
     .collect()
 }
 
@@ -11230,7 +11158,7 @@ pub fn drop_shadowing_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         is_number(&args[0]) && is_number(&args[1])
       }
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand,
       } => is_number(operand),
       _ => false,
@@ -11292,7 +11220,7 @@ pub fn drop_shadowing_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       color.unwrap_or_else(|| Expr::FunctionCall {
         name: "Opacity".to_string(),
         args: vec![
-          crate::functions::make_rational_pub(1, 3),
+          crate::functions::make_rational(1, 3),
           Expr::FunctionCall {
             name: "ThemeColor".to_string(),
             args: vec![Expr::Identifier("Foreground".to_string())].into(),
@@ -12669,7 +12597,7 @@ pub fn manipulate_block_code(
 /// [`crate::with_scoped_globals`]). The control is disabled only when the
 /// condition evaluates to the literal `False`; a symbolic or errored result
 /// fails open (enabled) so a control never becomes permanently stuck.
-pub fn manipulate_condition_enabled(condition: &str) -> bool {
+fn manipulate_condition_enabled(condition: &str) -> bool {
   match crate::interpret(condition) {
     Ok(result) => result.trim() != "False",
     Err(_) => true,
@@ -13175,7 +13103,7 @@ pub fn render_manipulate_display(
 /// evaluation rather than one interpreter call per cell — the difference
 /// between 1 and (rows × cols) `Block` evaluations for a large grid, which is
 /// what keeps a toggle responsive.
-pub fn build_manipulate_display(
+fn build_manipulate_display(
   display_code: &str,
   bindings: &[(String, String)],
 ) -> DisplayNode {
@@ -13490,7 +13418,6 @@ fn display_node_to_json(node: &DisplayNode) -> String {
 #[cfg(test)]
 mod manipulate_label_tests {
   use super::*;
-  use crate::syntax::Expr;
 
   fn call(name: &str, args: Vec<Expr>) -> Expr {
     Expr::FunctionCall {

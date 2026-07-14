@@ -16,7 +16,6 @@ pub type ExactFilter = Vec<(i64, Expr)>;
 pub struct WaveletFilters {
   pub primal_lo: Filter,
   pub dual_lo: Filter,
-  pub orthogonal: bool,
   pub primal_lo_exact: Option<ExactFilter>,
   pub dual_lo_exact: Option<ExactFilter>,
 }
@@ -26,7 +25,6 @@ impl WaveletFilters {
     WaveletFilters {
       primal_lo: lo.clone(),
       dual_lo: lo,
-      orthogonal: true,
       primal_lo_exact: exact.clone(),
       dual_lo_exact: exact,
     }
@@ -84,7 +82,7 @@ fn wl(code: &str) -> Expr {
 }
 
 fn rational(num: i128, den: i128) -> Expr {
-  crate::functions::math_ast::make_rational_pub(num, den)
+  crate::functions::math_ast::make_rational(num, den)
 }
 
 // ---------------------------------------------------------------------------
@@ -317,7 +315,7 @@ fn poly_roots(coeffs: &[f64]) -> Vec<C64> {
 /// Daubechies extremal-phase lowpass filter of order n (2n coefficients,
 /// indices 0..2n-1, summing to 1) via spectral factorization of the
 /// half-band polynomial P(y) = Sum C(n-1+k, k) y^k.
-pub fn daubechies_lowpass(n: usize) -> Filter {
+fn daubechies_lowpass(n: usize) -> Filter {
   if n == 1 {
     return vec![(0, 0.5), (1, 0.5)];
   }
@@ -449,7 +447,6 @@ pub fn biorthogonal_spline_filters(n: u32, m: u32) -> WaveletFilters {
   WaveletFilters {
     primal_lo: to_f64(&primal_rat),
     dual_lo: to_f64(&dual_rat),
-    orthogonal: false,
     primal_lo_exact: Some(to_exact(&primal_rat)),
     dual_lo_exact: Some(to_exact(&dual_rat)),
   }
@@ -460,7 +457,6 @@ pub fn reverse_biorthogonal_spline_filters(n: u32, m: u32) -> WaveletFilters {
   WaveletFilters {
     primal_lo: f.dual_lo,
     dual_lo: f.primal_lo,
-    orthogonal: false,
     primal_lo_exact: f.dual_lo_exact,
     dual_lo_exact: f.primal_lo_exact,
   }
@@ -540,7 +536,6 @@ pub fn cdf_97_filters() -> WaveletFilters {
   WaveletFilters {
     primal_lo: collect(&primal_poly),
     dual_lo: collect(&dual_poly),
-    orthogonal: false,
     primal_lo_exact: None,
     dual_lo_exact: None,
   }

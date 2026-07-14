@@ -168,6 +168,7 @@ nav = [
       ] },
       { "Predicates" = [
         "boolean/predicates.md",
+        { "DuplicateFreeQ" = "boolean/predicates/DuplicateFreeQ.md" },
         { "Accuracy" = "boolean/predicates/Accuracy.md" },
         { "AllTrue" = "boolean/predicates/AllTrue.md" },
         { "Alternatives" = "boolean/predicates/Alternatives.md" },
@@ -565,6 +566,10 @@ nav = [
       ] },
       { "Linear Algebra" = [
         "math/linear_algebra.md",
+        { "FourierDCTMatrix" = "math/linear_algebra/FourierDCTMatrix.md" },
+        { "FrobeniusReduce" = "math/linear_algebra/FrobeniusReduce.md" },
+        { "JordanReduce" = "math/linear_algebra/JordanReduce.md" },
+        { "LDLDecomposition" = "math/linear_algebra/LDLDecomposition.md" },
         { "PfaffianDet" = "math/linear_algebra/PfaffianDet.md" },
         { "DrazinInverse" = "math/linear_algebra/DrazinInverse.md" },
         { "MatrixMinimalPolynomial" = "math/linear_algebra/MatrixMinimalPolynomial.md" },
@@ -1086,6 +1091,10 @@ nav = [
     ] },
     { "Functions" = [
       "functions.md",
+      { "DeepNestRendering" = "functions/DeepNestRendering.md" },
+      { "LogLogisticDistribution" = "functions/LogLogisticDistribution.md" },
+      { "LogSeriesDistribution" = "functions/LogSeriesDistribution.md" },
+      { "NakagamiDistribution" = "functions/NakagamiDistribution.md" },
       { "BinormalDistribution" = "functions/BinormalDistribution.md" },
       { "CurryApplied" = "functions/CurryApplied.md" },
       { "HypergeometricDistribution" = "functions/HypergeometricDistribution.md" },
@@ -1649,6 +1658,7 @@ nav = [
   ] },
   { "Scripting" = "scripting.md" },
   { "Jupyter" = "jupyter.md" },
+  { "Python" = "python.md" },
   { "Studio" = "studio.md" },
   { "Effect Levels" = "effect_levels.md" },
   { "Resources" = "resources.md" },

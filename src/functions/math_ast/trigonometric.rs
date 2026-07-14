@@ -1,14 +1,12 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
 /// Try to express a symbolic expression as a rational multiple of Pi: k*Pi/n.
 /// Returns Some((k, n)) in lowest terms, None if not recognized.
 /// Handles patterns: Pi, n*Pi, Pi/d, n*Pi/d, n*Degree, Degree, and FunctionCall variants.
-pub fn try_symbolic_pi_fraction(expr: &Expr) -> Option<(i64, i64)> {
-  use crate::syntax::BinaryOperator;
-
+fn try_symbolic_pi_fraction(expr: &Expr) -> Option<(i64, i64)> {
   // Helper to extract an integer value
   fn as_int(e: &Expr) -> Option<i64> {
     match e {
@@ -195,7 +193,7 @@ pub fn try_symbolic_pi_fraction(expr: &Expr) -> Option<(i64, i64)> {
       // Times[n, BinaryOp::Divide(Pi, d)] or Times[n, BinaryOp::Divide(n2*Pi, d)]
       if let Some(n) = as_int(&args[0])
         && let Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: num,
           right: den,
         } = &args[1]
@@ -216,7 +214,6 @@ pub fn try_symbolic_pi_fraction(expr: &Expr) -> Option<(i64, i64)> {
 /// Collect the additive terms of a sum, handling both the `Plus[...]` and the
 /// `BinaryOp` Plus/Minus representations.
 fn collect_plus_terms(e: &Expr, out: &mut Vec<Expr>) {
-  use crate::syntax::BinaryOperator;
   match e {
     Expr::FunctionCall { name, args } if name == "Plus" => {
       for a in args {
@@ -246,12 +243,11 @@ fn collect_plus_terms(e: &Expr, out: &mut Vec<Expr>) {
 /// Whether a canonical Plus term carries a negative leading sign
 /// (a negative number, `-x`, or a product with a negative coefficient).
 fn term_is_negative(e: &Expr) -> bool {
-  use crate::syntax::BinaryOperator;
   match e {
     Expr::Integer(n) => *n < 0,
     Expr::Real(v) => *v < 0.0,
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       ..
     } => true,
     Expr::FunctionCall { name, args }
@@ -283,7 +279,6 @@ fn term_is_negative(e: &Expr) -> bool {
 /// Returns `(k mod 4, flip, (pn, pd), rest_terms)` with the residual phase
 /// `pn/pd * Pi`, or None when the argument is already canonical.
 fn extract_pi_phase(arg: &Expr) -> Option<(i64, bool, (i64, i64), Vec<Expr>)> {
-  use crate::syntax::BinaryOperator;
   let is_sum = matches!(arg, Expr::FunctionCall { name, .. } if name == "Plus")
     || matches!(
       arg,
@@ -484,7 +479,7 @@ fn octant_fallback(
   })
 }
 
-pub fn exact_sin(k: i64, n: i64) -> Option<Expr> {
+fn exact_sin(k: i64, n: i64) -> Option<Expr> {
   let k_orig = k;
   // Normalize to [0, 2*Pi) i.e., k mod 2n, with k in [0, 2n)
   let period = 2 * n;
@@ -520,14 +515,14 @@ pub fn exact_sin(k: i64, n: i64) -> Option<Expr> {
     (0, _) => Expr::Integer(0),
     // sin(Pi/12) = (-1 + Sqrt[3]) / (2*Sqrt[2])
     (1, 12) => Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(Expr::Integer(-1)),
         right: Box::new(make_sqrt(Expr::Integer(3))),
       }),
       right: Box::new(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(Expr::Integer(2)),
         right: Box::new(make_sqrt(Expr::Integer(2))),
       }),
@@ -536,26 +531,26 @@ pub fn exact_sin(k: i64, n: i64) -> Option<Expr> {
     (1, 6) => make_rational(1, 2),
     // sin(Pi/4) = 1/Sqrt[2]
     (1, 4) => Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(Expr::Integer(1)),
       right: Box::new(make_sqrt(Expr::Integer(2))),
     },
     // sin(Pi/3) = Sqrt[3]/2
     (1, 3) => Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(make_sqrt(Expr::Integer(3))),
       right: Box::new(Expr::Integer(2)),
     },
     // sin(5*Pi/12) = (1 + Sqrt[3]) / (2*Sqrt[2])
     (5, 12) => Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(Expr::Integer(1)),
         right: Box::new(make_sqrt(Expr::Integer(3))),
       }),
       right: Box::new(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(Expr::Integer(2)),
         right: Box::new(make_sqrt(Expr::Integer(2))),
       }),
@@ -586,7 +581,7 @@ pub fn exact_sin(k: i64, n: i64) -> Option<Expr> {
 }
 
 /// Exact Cos value for k*Pi/n. Uses cos(x) = sin(Pi/2 - x).
-pub fn exact_cos(k: i64, n: i64) -> Option<Expr> {
+fn exact_cos(k: i64, n: i64) -> Option<Expr> {
   let k_orig = k;
   // cos(k*Pi/n) = sin(Pi/2 - k*Pi/n) = sin((n - 2k)*Pi/(2n))
   // Simplify: cos(k*Pi/n) = sin((n/2 - k)*Pi/n) -- only works if n is even
@@ -611,27 +606,27 @@ pub fn exact_cos(k: i64, n: i64) -> Option<Expr> {
     (0, _) => Expr::Integer(1),
     // cos(Pi/12) = (1 + Sqrt[3]) / (2*Sqrt[2])
     (1, 12) => Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(Expr::Integer(1)),
         right: Box::new(make_sqrt(Expr::Integer(3))),
       }),
       right: Box::new(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(Expr::Integer(2)),
         right: Box::new(make_sqrt(Expr::Integer(2))),
       }),
     },
     // cos(Pi/6) = Sqrt[3]/2
     (1, 6) => Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(make_sqrt(Expr::Integer(3))),
       right: Box::new(Expr::Integer(2)),
     },
     // cos(Pi/4) = 1/Sqrt[2]
     (1, 4) => Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(Expr::Integer(1)),
       right: Box::new(make_sqrt(Expr::Integer(2))),
     },
@@ -639,14 +634,14 @@ pub fn exact_cos(k: i64, n: i64) -> Option<Expr> {
     (1, 3) => make_rational(1, 2),
     // cos(5*Pi/12) = (-1 + Sqrt[3]) / (2*Sqrt[2])
     (5, 12) => Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(Expr::Integer(-1)),
         right: Box::new(make_sqrt(Expr::Integer(3))),
       }),
       right: Box::new(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(Expr::Integer(2)),
         right: Box::new(make_sqrt(Expr::Integer(2))),
       }),
@@ -678,7 +673,7 @@ pub fn exact_cos(k: i64, n: i64) -> Option<Expr> {
 
 /// Exact Tan value for k*Pi/n.
 /// Tan has period Pi, so normalize k mod n. Undefined when cos = 0.
-pub fn exact_tan(k: i64, n: i64) -> Option<Expr> {
+fn exact_tan(k: i64, n: i64) -> Option<Expr> {
   let k_orig = k;
   // Tan has period Pi, so reduce k*Pi/n mod Pi => (k mod n)*Pi/n
   let k_mod = ((k % n) + n) % n; // in [0, n)
@@ -703,13 +698,13 @@ pub fn exact_tan(k: i64, n: i64) -> Option<Expr> {
     (0, _) => Expr::Integer(0),
     // tan(Pi/12) = 2 - Sqrt[3]
     (1, 12) => Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(Expr::Integer(2)),
       right: Box::new(make_sqrt(Expr::Integer(3))),
     },
     // tan(Pi/6) = 1/Sqrt[3]
     (1, 6) => Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(Expr::Integer(1)),
       right: Box::new(make_sqrt(Expr::Integer(3))),
     },
@@ -719,7 +714,7 @@ pub fn exact_tan(k: i64, n: i64) -> Option<Expr> {
     (1, 3) => make_sqrt(Expr::Integer(3)),
     // tan(5*Pi/12) = 2 + Sqrt[3]
     (5, 12) => Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left: Box::new(Expr::Integer(2)),
       right: Box::new(make_sqrt(Expr::Integer(3))),
     },
@@ -746,7 +741,7 @@ pub fn exact_tan(k: i64, n: i64) -> Option<Expr> {
   }
 }
 
-pub fn exact_sec(k: i64, n: i64) -> Option<Expr> {
+fn exact_sec(k: i64, n: i64) -> Option<Expr> {
   let k_orig = k;
   // Sec has period 2*Pi, and Sec(-x) = Sec(x), Sec(Pi-x) = -Sec(x)
   // Reduce to [0, 2*Pi)
@@ -770,7 +765,7 @@ pub fn exact_sec(k: i64, n: i64) -> Option<Expr> {
     (0, _) => Expr::Integer(1),
     // Sec(Pi/6) = 2/Sqrt[3]
     (1, 6) => Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(Expr::Integer(2)),
       right: Box::new(make_sqrt(Expr::Integer(3))),
     },
@@ -801,7 +796,7 @@ pub fn exact_sec(k: i64, n: i64) -> Option<Expr> {
   }
 }
 
-pub fn exact_csc(k: i64, n: i64) -> Option<Expr> {
+fn exact_csc(k: i64, n: i64) -> Option<Expr> {
   let k_orig = k;
   // Csc has period 2*Pi, Csc(-x) = -Csc(x), Csc(Pi-x) = Csc(x)
   // Reduce to [0, 2*Pi)
@@ -831,7 +826,7 @@ pub fn exact_csc(k: i64, n: i64) -> Option<Expr> {
     (1, 4) => make_sqrt(Expr::Integer(2)),
     // Csc(Pi/3) = 2/Sqrt[3]
     (1, 3) => Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(Expr::Integer(2)),
       right: Box::new(make_sqrt(Expr::Integer(3))),
     },
@@ -858,7 +853,7 @@ pub fn exact_csc(k: i64, n: i64) -> Option<Expr> {
   }
 }
 
-pub fn exact_cot(k: i64, n: i64) -> Option<Expr> {
+fn exact_cot(k: i64, n: i64) -> Option<Expr> {
   let k_orig = k;
   // Cot has period Pi, Cot(-x) = -Cot(x)
   // Reduce k*Pi/n mod Pi => (k mod n)*Pi/n
@@ -884,7 +879,7 @@ pub fn exact_cot(k: i64, n: i64) -> Option<Expr> {
   let val = match (kr, nr) {
     // Cot(Pi/12) = 2 + Sqrt[3]
     (1, 12) => Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left: Box::new(Expr::Integer(2)),
       right: Box::new(make_sqrt(Expr::Integer(3))),
     },
@@ -894,13 +889,13 @@ pub fn exact_cot(k: i64, n: i64) -> Option<Expr> {
     (1, 4) => Expr::Integer(1),
     // Cot(Pi/3) = 1/Sqrt[3]
     (1, 3) => Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(Expr::Integer(1)),
       right: Box::new(make_sqrt(Expr::Integer(3))),
     },
     // Cot(5*Pi/12) = 2 - Sqrt[3]
     (5, 12) => Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(Expr::Integer(2)),
       right: Box::new(make_sqrt(Expr::Integer(3))),
     },
@@ -936,19 +931,19 @@ pub fn exact_cot(k: i64, n: i64) -> Option<Expr> {
 /// keeps wolframscript's "-2 - Sqrt[3]" form rather than "-(2 + Sqrt[3])".
 fn canonicalize_exact_trig_value(
   exact: Expr,
-) -> Result<Expr, crate::InterpreterError> {
+) -> Result<Expr, InterpreterError> {
   if let Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand,
   } = &exact
     && let Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left,
       right,
     } = operand.as_ref()
   {
     let distributed = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left: Box::new(negate_expr((**left).clone())),
       right: Box::new(negate_expr((**right).clone())),
     };
@@ -963,7 +958,7 @@ pub fn negate_expr(mut expr: Expr) -> Expr {
     Expr::Real(f) => return Expr::Real(-*f),
     // --x => x (collapse instead of stacking another wrapper)
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       return *std::mem::replace(operand, Box::new(Expr::Integer(0)));
@@ -1010,7 +1005,7 @@ pub fn negate_expr(mut expr: Expr) -> Expr {
       };
     }
     Expr::BinaryOp { op, left, right }
-      if *op == crate::syntax::BinaryOperator::Times
+      if *op == BinaryOperator::Times
         && matches!(left.as_ref(), Expr::Integer(n) if *n != 0) =>
     {
       let Expr::Integer(n) = **left else {
@@ -1021,7 +1016,7 @@ pub fn negate_expr(mut expr: Expr) -> Expr {
       }
       let right = std::mem::replace(right, Box::new(Expr::Integer(0)));
       return Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(Expr::Integer(-n)),
         right,
       };
@@ -1054,34 +1049,28 @@ pub fn negate_expr(mut expr: Expr) -> Expr {
     }
     // -(a + b) => (-a) + (-b): distribute over a sum so the result keeps the
     // flattened additive form Wolfram displays (e.g. -(-1 + Sqrt[5]) => 1 - Sqrt[5]).
-    Expr::BinaryOp { op, left, right }
-      if *op == crate::syntax::BinaryOperator::Plus =>
-    {
+    Expr::BinaryOp { op, left, right } if *op == BinaryOperator::Plus => {
       let left = std::mem::replace(left, Box::new(Expr::Integer(0)));
       let right = std::mem::replace(right, Box::new(Expr::Integer(0)));
       return Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(negate_expr(*left)),
         right: Box::new(negate_expr(*right)),
       };
     }
     // -(a - b) => (-a) + b: likewise distribute over a difference so the
     // result keeps the additive form (e.g. -(2 - Sqrt[3]) => -2 + Sqrt[3]).
-    Expr::BinaryOp { op, left, right }
-      if *op == crate::syntax::BinaryOperator::Minus =>
-    {
+    Expr::BinaryOp { op, left, right } if *op == BinaryOperator::Minus => {
       let left = std::mem::replace(left, Box::new(Expr::Integer(0)));
       let right = std::mem::replace(right, Box::new(Expr::Integer(0)));
       return Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(negate_expr(*left)),
         right: Box::new(*right),
       };
     }
     // -(a/b) => Times[-1, a/b] to match Wolfram output style
-    Expr::BinaryOp { op, left, right }
-      if *op == crate::syntax::BinaryOperator::Divide =>
-    {
+    Expr::BinaryOp { op, left, right } if *op == BinaryOperator::Divide => {
       // If numerator is an integer, negate it directly: -(n/b) => (-n)/b
       if let Expr::Integer(n) = &**left
         && *n > 1
@@ -1089,7 +1078,7 @@ pub fn negate_expr(mut expr: Expr) -> Expr {
         let neg_left = Box::new(Expr::Integer(-*n));
         let right = std::mem::replace(right, Box::new(Expr::Integer(0)));
         return Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: neg_left,
           right,
         };
@@ -1099,12 +1088,12 @@ pub fn negate_expr(mut expr: Expr) -> Expr {
       // -((-1 + Sqrt[3])/(2 Sqrt[2])) => -1/2*(-1 + Sqrt[3])/Sqrt[2].
       if let Some((k, rest)) = denom_integer_factor(right) {
         let mut factors = vec![
-          crate::functions::math_ast::make_rational_pub(-1, k),
+          crate::functions::math_ast::make_rational(-1, k),
           (**left).clone(),
         ];
         if let Some(rest) = rest {
           factors.push(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left: Box::new(rest),
             right: Box::new(Expr::Integer(-1)),
           });
@@ -1151,7 +1140,7 @@ fn denom_integer_factor(denom: &Expr) -> Option<(i128, Option<Expr>)> {
       }
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -1168,7 +1157,7 @@ fn denom_integer_factor(denom: &Expr) -> Option<(i128, Option<Expr>)> {
 }
 
 /// Build a Complex float result expression from real and imaginary parts.
-pub fn build_complex_float_result(
+fn build_complex_float_result(
   re: f64,
   im: f64,
 ) -> Result<Expr, InterpreterError> {
@@ -1180,7 +1169,7 @@ pub fn build_complex_float_result(
 
 /// Check if an argument is Indeterminate or ComplexInfinity.
 /// For periodic/trig functions, both should return Indeterminate.
-pub fn is_indeterminate_or_complex_infinity(expr: &Expr) -> bool {
+fn is_indeterminate_or_complex_infinity(expr: &Expr) -> bool {
   matches!(expr, Expr::Identifier(s) if s == "Indeterminate" || s == "ComplexInfinity")
 }
 
@@ -1223,7 +1212,7 @@ fn extract_imaginary_factor(arg: &Expr) -> Option<Expr> {
 ///   Cot[I z]=-I Coth[z], Sec[I z]=Sech[z], Csc[I z]=-I Csch[z], and the
 ///   hyperbolic duals Cosh[I z]=Cos[z], Sinh[I z]=I Sin[z], etc.
 /// Returns None when the argument is not of the form `I*z`.
-pub fn imaginary_arg_reduction(
+fn imaginary_arg_reduction(
   func: &str,
   arg: &Expr,
 ) -> Option<Result<Expr, InterpreterError>> {
@@ -1269,15 +1258,15 @@ pub fn imaginary_arg_reduction(
 /// argument's square expands (e.g. `(2 y)^2 -> 4 y^2`), matching wolframscript.
 fn sqrt_one_pm_sq(x: &Expr, plus: bool) -> Expr {
   let x_sq = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(x.clone()),
     right: Box::new(Expr::Integer(2)),
   };
   let inner = Expr::BinaryOp {
     op: if plus {
-      crate::syntax::BinaryOperator::Plus
+      BinaryOperator::Plus
     } else {
-      crate::syntax::BinaryOperator::Minus
+      BinaryOperator::Minus
     },
     left: Box::new(Expr::Integer(1)),
     right: Box::new(x_sq),
@@ -1305,7 +1294,7 @@ fn sqrt_one_plus_sq(x: &Expr) -> Expr {
 
 fn divide(num: Expr, den: Expr) -> Expr {
   let quotient = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(num),
     right: Box::new(den),
   };
@@ -1358,19 +1347,19 @@ fn reciprocal_trig_of_inverse(outer: &str, inner: &Expr) -> Option<Expr> {
 /// the hyperbolic-of-ArcCosh identities.
 fn arccosh_branch_form(x: &Expr) -> Expr {
   let one_plus = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Plus,
+    op: BinaryOperator::Plus,
     left: Box::new(Expr::Integer(1)),
     right: Box::new(x.clone()),
   };
   let minus_one_plus = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Plus,
+    op: BinaryOperator::Plus,
     left: Box::new(Expr::Integer(-1)),
     right: Box::new(x.clone()),
   };
   let sqrt = Expr::FunctionCall {
     name: "Sqrt".to_string(),
     args: vec![Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(minus_one_plus),
       right: Box::new(one_plus.clone()),
     }]
@@ -1815,6 +1804,30 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// Evaluate a circular function ratio at an arbitrary-precision argument, e.g.
+/// Tan[x] = Sin[x]/Cos[x] or Sec[x] = 1/Cos[x]. `num = None` means a constant 1
+/// numerator (for Sec/Csc). Both Sin/Cos have BigFloat paths and the division
+/// propagates the precision tag, matching wolframscript.
+fn bigfloat_trig_ratio(
+  x: &Expr,
+  num: Option<&str>,
+  den: &str,
+) -> Result<Expr, InterpreterError> {
+  let numerator = match num {
+    Some(head) => crate::evaluator::evaluate_function_call_ast(
+      head,
+      std::slice::from_ref(x),
+    )?,
+    None => Expr::Integer(1),
+  };
+  let denominator =
+    crate::evaluator::evaluate_function_call_ast(den, std::slice::from_ref(x))?;
+  crate::evaluator::evaluate_function_call_ast(
+    "Divide",
+    &[numerator, denominator],
+  )
+}
+
 pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -1867,6 +1880,12 @@ pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Tan of a Real always returns a Real, even if the numeric value
     // happens to be a whole number (matching wolframscript).
     return Ok(Expr::Real(f.tan()));
+  }
+  // Tan of a BigFloat: Tan[x] = Sin[x]/Cos[x]. Both have arbitrary-precision
+  // paths, and the division propagates the precision tag (matching WS),
+  // instead of leaving `Tan[1.`30.]` unevaluated.
+  if matches!(&args[0], Expr::BigFloat(_, _)) {
+    return bigfloat_trig_ratio(&args[0], Some("Sin"), "Cos");
   }
   // Exact complex: for purely imaginary: tan(bi) = i*tanh(b)
   if let Some(((re_num, _re_den), (im_num, im_den))) =
@@ -1957,6 +1976,10 @@ pub fn sec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::Real(1.0 / c));
   }
+  // Sec of a BigFloat: 1/Cos[x] at arbitrary precision.
+  if matches!(&args[0], Expr::BigFloat(_, _)) {
+    return bigfloat_trig_ratio(&args[0], None, "Cos");
+  }
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_sec(k, n)
   {
@@ -2008,6 +2031,10 @@ pub fn csc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Identifier("ComplexInfinity".to_string()));
     }
     return Ok(Expr::Real(1.0 / s));
+  }
+  // Csc of a BigFloat: 1/Sin[x] at arbitrary precision.
+  if matches!(&args[0], Expr::BigFloat(_, _)) {
+    return bigfloat_trig_ratio(&args[0], None, "Sin");
   }
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_csc(k, n)
@@ -2061,6 +2088,10 @@ pub fn cot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::Real(f.cos() / s));
   }
+  // Cot of a BigFloat: Cos[x]/Sin[x] at arbitrary precision.
+  if matches!(&args[0], Expr::BigFloat(_, _)) {
+    return bigfloat_trig_ratio(&args[0], Some("Cos"), "Sin");
+  }
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_cot(k, n)
   {
@@ -2109,6 +2140,16 @@ pub fn exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::Real(f.exp()))
     }
+    // Arbitrary-precision argument: compute e^x at the tracked precision
+    // instead of leaving `E^1.`30.` unevaluated.
+    Expr::BigFloat(digits, prec) => {
+      if let Some(result) =
+        crate::functions::math_ast::numerical::bigfloat_exp(digits, *prec)
+      {
+        return result;
+      }
+      power_two(&Expr::Constant("E".to_string()), &args[0])
+    }
     _ => power_two(&Expr::Constant("E".to_string()), &args[0]),
   }
 }
@@ -2132,7 +2173,7 @@ pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if matches!(&args[1], Expr::Integer(0)) {
       let erf_z0 = erf_ast(&args[..1])?;
       return crate::evaluator::evaluate_expr_to_expr(&Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(erf_z0),
       });
     }
@@ -2167,7 +2208,7 @@ pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Helper: negate the Erf of the positive part
   let negate_erf = |inner: Expr| -> Expr {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(Expr::FunctionCall {
         name: "Erf".to_string(),
         args: vec![inner].into(),
@@ -2193,14 +2234,14 @@ pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // Erf[-Infinity] = -1 (UnaryOp form)
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "Infinity") => {
       Ok(Expr::Integer(-1))
     }
     // Erf[-x] = -Erf[x] (UnaryOp form)
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => Ok(negate_erf(*operand.clone())),
     // Erf[Times[-1, x]] = -Erf[x] (evaluated form of -x)
@@ -2230,7 +2271,7 @@ pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // BinaryOp::Times form: -1 * x
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -2244,7 +2285,7 @@ pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && *n < 0
       {
         let pos_arg = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(Expr::Integer(-*n)),
           right: right.clone(),
         };
@@ -2279,7 +2320,7 @@ pub fn erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Erfc[Infinity] = 0, Erfc[-Infinity] = 2
     Expr::Identifier(s) if s == "Infinity" => Ok(Expr::Integer(0)),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "Infinity") => {
       Ok(Expr::Integer(2))
@@ -2318,7 +2359,7 @@ pub fn erfi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let negate_erfi = |inner: Expr| -> Result<Expr, InterpreterError> {
     let inner_result = erfi_ast(&[inner])?;
     Ok(Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(inner_result),
     })
   };
@@ -2331,7 +2372,7 @@ pub fn erfi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // Erfi[-x] = -Erfi[x] (UnaryOp form)
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => negate_erfi(*operand.clone()),
     // Erfi[Times[-1, x]] = -Erfi[x] (evaluated form of -x)
@@ -2361,7 +2402,7 @@ pub fn erfi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // BinaryOp::Times form: -1 * x
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -2375,7 +2416,7 @@ pub fn erfi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && *n < 0
       {
         let pos_arg = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(Expr::Integer(-*n)),
           right: right.clone(),
         };
@@ -2411,7 +2452,7 @@ pub fn dawson_f_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let negate = |inner: Expr| -> Result<Expr, InterpreterError> {
     let inner_result = dawson_f_ast(&[inner])?;
     Ok(Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(inner_result),
     })
   };
@@ -2422,7 +2463,7 @@ pub fn dawson_f_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Identifier(s) if s == "Infinity" => Ok(Expr::Integer(0)),
     // DawsonF[-x] = -DawsonF[x] (UnaryOp form)
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => negate(*operand.clone()),
     // DawsonF[Times[-1, x]] = -DawsonF[x]
@@ -2451,7 +2492,7 @@ pub fn dawson_f_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // BinaryOp::Times form: -1 * x
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -2465,7 +2506,7 @@ pub fn dawson_f_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && *n < 0
       {
         let pos_arg = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(Expr::Integer(-*n)),
           right: right.clone(),
         };
@@ -2501,7 +2542,7 @@ pub fn inverse_erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(1) => Ok(Expr::Identifier("Infinity".to_string())),
     // InverseErf[-1] = -Infinity
     Expr::Integer(-1) => Ok(Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(Expr::Identifier("Infinity".to_string())),
     }),
     // Numeric evaluation for Real arguments
@@ -2514,7 +2555,7 @@ pub fn inverse_erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Ok(Expr::Identifier("Infinity".to_string()))
       } else if *f == -1.0 {
         Ok(Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand: Box::new(Expr::Identifier("Infinity".to_string())),
         })
       } else {
@@ -2547,7 +2588,7 @@ pub fn inverse_erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(1) => Ok(Expr::Integer(0)),
     // InverseErfc[2] = -Infinity
     Expr::Integer(2) => Ok(Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(Expr::Identifier("Infinity".to_string())),
     }),
     // Reflection for an exact rational z with 1 < z < 2:
@@ -2564,7 +2605,7 @@ pub fn inverse_erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       let inner = inverse_erfc_ast(&[make_rational(2 * q - p, *q)])?;
       Ok(Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(inner),
       })
     }
@@ -2579,7 +2620,7 @@ pub fn inverse_erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Ok(Expr::Identifier("Infinity".to_string()))
       } else if *f == 2.0 {
         Ok(Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand: Box::new(Expr::Identifier("Infinity".to_string())),
         })
       } else {
@@ -2666,7 +2707,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Log[0] = -Infinity
       if matches!(&args[0], Expr::Integer(0)) {
         return Ok(Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand: Box::new(Expr::Identifier("Infinity".to_string())),
         });
       }
@@ -2695,7 +2736,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           )
         };
         if let Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           left,
           right,
         } = &args[0]
@@ -2725,7 +2766,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         let e_exp: Option<&Expr> = match &args[0] {
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left,
             right,
           } if matches!(left.as_ref(), Expr::Constant(c) if c == "E") => {
@@ -2782,7 +2823,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         let power_parts: Option<(&Expr, &Expr)> = match &args[0] {
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left,
             right,
           } => Some((left.as_ref(), right.as_ref())),
@@ -2825,7 +2866,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "Times",
           &[
             Expr::Identifier("I".to_string()),
-            crate::functions::math_ast::make_rational_pub(1, 2),
+            crate::functions::math_ast::make_rational(1, 2),
             Expr::Constant("Pi".to_string()),
           ],
         );
@@ -2842,13 +2883,13 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             true
           }
           Expr::UnaryOp {
-            op: crate::syntax::UnaryOperator::Minus,
+            op: UnaryOperator::Minus,
             operand,
           } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "I") => {
             true
           }
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left,
             right,
           } if matches!(left.as_ref(), Expr::Integer(-1))
@@ -2864,7 +2905,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             &[
               Expr::Integer(-1),
               Expr::Identifier("I".to_string()),
-              crate::functions::math_ast::make_rational_pub(1, 2),
+              crate::functions::math_ast::make_rational(1, 2),
               Expr::Constant("Pi".to_string()),
             ],
           );
@@ -2901,7 +2942,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                     name: "Sign".to_string(),
                     args: vec![coeff.clone()].into(),
                   },
-                  crate::functions::math_ast::make_rational_pub(1, 2),
+                  crate::functions::math_ast::make_rational(1, 2),
                   Expr::Identifier("I".to_string()),
                   Expr::Constant("Pi".to_string()),
                 ]
@@ -2924,7 +2965,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           name: "Plus".to_string(),
           args: vec![
             Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Times,
+              op: BinaryOperator::Times,
               left: Box::new(Expr::Identifier("I".to_string())),
               right: Box::new(Expr::Constant("Pi".to_string())),
             },
@@ -2944,7 +2985,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let abs_n = -*n;
         // I*Pi
         let i_pi = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(Expr::Identifier("I".to_string())),
           right: Box::new(Expr::Constant("Pi".to_string())),
         };
@@ -2965,7 +3006,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         let inner = match &args[0] {
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left,
             right,
           } if matches!(left.as_ref(), Expr::Integer(-1)) => {
@@ -2982,7 +3023,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         if let Some(inner_expr) = inner {
           let i_pi = Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(Expr::Identifier("I".to_string())),
             right: Box::new(Expr::Constant("Pi".to_string())),
           };
@@ -3023,10 +3064,18 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: vec![inverted].into(),
         };
         return Ok(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(Expr::Integer(-1)),
           right: Box::new(log_inv),
         });
+      }
+      // Arbitrary-precision argument: compute ln(x) at the tracked precision
+      // instead of leaving `Log[2.`30.]` unevaluated.
+      if let Expr::BigFloat(digits, prec) = &args[0]
+        && let Some(result) =
+          crate::functions::math_ast::numerical::bigfloat_log(digits, *prec)
+      {
+        return result;
       }
       if let Expr::Real(f) = &args[0] {
         if *f > 0.0 {
@@ -3118,7 +3167,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Canonicalize Log[base, x] → Log[x]/Log[base] (evaluated so
       // sub-expressions like Log[0] collapse to -Infinity).
       let result = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::FunctionCall {
           name: "Log".to_string(),
           args: vec![args[1].clone()].into(),
@@ -3171,7 +3220,7 @@ pub fn log10_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Symbolic fallback: Log10[x] = Log[x] / Log[10]
   let expr = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(Expr::FunctionCall {
       name: "Log".to_string(),
       args: args.to_vec().into(),
@@ -3214,7 +3263,7 @@ pub fn log2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Symbolic fallback: Log2[x] = Log[x] / Log[2]
   let expr = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(Expr::FunctionCall {
       name: "Log".to_string(),
       args: args.to_vec().into(),
@@ -3267,7 +3316,7 @@ pub fn arcsin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(0) => return Ok(Expr::Integer(0)),
     Expr::Integer(1) => {
       return Ok(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::Constant("Pi".to_string())),
         right: Box::new(Expr::Integer(2)),
       });
@@ -3275,7 +3324,7 @@ pub fn arcsin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(-1) => {
       // -1/2*Pi = Times[Rational[-1, 2], Pi]
       return Ok(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(Expr::FunctionCall {
           name: "Rational".to_string(),
           args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
@@ -3322,12 +3371,12 @@ fn imaginary_infinity_sign(expr: &Expr) -> Option<i8> {
   };
   match expr {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } if match_pair(left, right) => Some(1),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => imaginary_infinity_sign(operand).map(|s| -s),
     Expr::FunctionCall { name, args } if name == "Times" => {
@@ -3356,7 +3405,7 @@ fn imaginary_infinity_sign(expr: &Expr) -> Option<i8> {
               has_inf = true;
             }
             Expr::UnaryOp {
-              op: crate::syntax::UnaryOperator::Minus,
+              op: UnaryOperator::Minus,
               operand,
             } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "I") => {
               has_i = true;
@@ -3380,7 +3429,7 @@ fn imaginary_infinity_sign(expr: &Expr) -> Option<i8> {
       match &args[0] {
         Expr::Identifier(s) if s == "I" => Some(1),
         Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand,
         } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "I") => {
           Some(-1)
@@ -3410,7 +3459,7 @@ pub fn arccos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(1) => return Ok(Expr::Integer(0)),
     Expr::Integer(0) => {
       return Ok(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::Constant("Pi".to_string())),
         right: Box::new(Expr::Integer(2)),
       });
@@ -3437,7 +3486,7 @@ pub fn arccos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let direction = if sign > 0 {
       // Negate I: Times[-1, I]
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(Expr::Integer(-1)),
         right: Box::new(Expr::Identifier("I".to_string())),
       }
@@ -3462,7 +3511,7 @@ pub fn arccos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Check if a float value matches a known ArcCos special angle
-pub fn arccos_special_value(v: f64) -> Option<Expr> {
+fn arccos_special_value(v: f64) -> Option<Expr> {
   let eps = 1e-12;
 
   // Helper to build n*Pi/d
@@ -3472,7 +3521,7 @@ pub fn arccos_special_value(v: f64) -> Option<Expr> {
         Expr::Constant("Pi".to_string())
       } else {
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(Expr::Integer(num)),
           right: Box::new(Expr::Constant("Pi".to_string())),
         }
@@ -3482,13 +3531,13 @@ pub fn arccos_special_value(v: f64) -> Option<Expr> {
         Expr::Constant("Pi".to_string())
       } else {
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(Expr::Integer(num)),
           right: Box::new(Expr::Constant("Pi".to_string())),
         }
       };
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(numerator),
         right: Box::new(Expr::Integer(den)),
       }
@@ -3516,7 +3565,7 @@ pub fn arccos_special_value(v: f64) -> Option<Expr> {
 }
 
 /// Check if a float value matches a known ArcSin special angle
-pub fn arcsin_special_value(v: f64) -> Option<Expr> {
+fn arcsin_special_value(v: f64) -> Option<Expr> {
   let eps = 1e-12;
 
   // ArcSin special values (|value| -> Pi/d)
@@ -3531,7 +3580,7 @@ pub fn arcsin_special_value(v: f64) -> Option<Expr> {
       if v < 0.0 {
         // Negative: build Times[Rational[-1, den], Pi] to display as -1/den*Pi
         return Some(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(Expr::FunctionCall {
             name: "Rational".to_string(),
             args: vec![Expr::Integer(-1), Expr::Integer(den)].into(),
@@ -3542,7 +3591,7 @@ pub fn arcsin_special_value(v: f64) -> Option<Expr> {
         return Some(Expr::Constant("Pi".to_string()));
       } else {
         return Some(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(Expr::Constant("Pi".to_string())),
           right: Box::new(Expr::Integer(den)),
         });
@@ -3588,7 +3637,7 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(0) => return Ok(Expr::Integer(0)),
     Expr::Integer(1) => {
       return Ok(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::Constant("Pi".to_string())),
         right: Box::new(Expr::Integer(4)),
       });
@@ -3596,7 +3645,7 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(-1) => {
       // -1/4*Pi = Times[Rational[-1, 4], Pi]
       return Ok(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(Expr::FunctionCall {
           name: "Rational".to_string(),
           args: vec![Expr::Integer(-1), Expr::Integer(4)].into(),
@@ -3607,7 +3656,7 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Identifier(s) if s == "Infinity" => {
       // ArcTan[Infinity] = Pi/2
       return Ok(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::Constant("Pi".to_string())),
         right: Box::new(Expr::Integer(2)),
       });
@@ -3638,7 +3687,7 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if (val - sqrt3).abs() < eps {
       // ArcTan[Sqrt[3]] = Pi/3
       return Ok(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::Constant("Pi".to_string())),
         right: Box::new(Expr::Integer(3)),
       });
@@ -3661,7 +3710,7 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if (val - inv_sqrt3).abs() < eps {
       // ArcTan[1/Sqrt[3]] = Pi/6
       return Ok(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::Constant("Pi".to_string())),
         right: Box::new(Expr::Integer(6)),
       });
@@ -3685,7 +3734,7 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let k_over_12_pi = |k: i128| -> Expr {
       if k == 1 {
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(Expr::Constant("Pi".to_string())),
           right: Box::new(Expr::Integer(12)),
         }
@@ -3771,14 +3820,14 @@ pub fn arctan2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Constant("Pi".to_string())
       } else {
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(Expr::Integer(num)),
           right: Box::new(Expr::Constant("Pi".to_string())),
         }
       }
     } else {
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(Expr::FunctionCall {
           name: "Rational".to_string(),
           args: vec![Expr::Integer(num), Expr::Integer(den)].into(),
@@ -3835,7 +3884,7 @@ pub fn arctan2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Constant("Pi".to_string())
     } else {
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(Expr::Integer(-1)),
         right: Box::new(Expr::Constant("Pi".to_string())),
       }
@@ -3860,14 +3909,12 @@ pub fn arctan2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// This is more general than try_extract_complex_exact since real_part
 /// can be any expression (e.g., Pi, Pi/6, symbolic).
 fn try_split_real_imag(expr: &Expr) -> Option<(Expr, (i128, i128))> {
-  use crate::syntax::BinaryOperator;
-
   // Helper: check if expr is purely I*rational (no real part)
   fn as_imag_only(e: &Expr) -> Option<(i128, i128)> {
     match e {
       Expr::Identifier(name) if name == "I" => Some((1, 1)),
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand,
       } => {
         let (n, d) = as_imag_only(operand)?;
@@ -3987,7 +4034,7 @@ fn try_extract_negated(expr: &Expr) -> Option<Expr> {
     Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-n)),
     Expr::Real(f) if *f < 0.0 => Some(Expr::Real(-f)),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => Some((**operand).clone()),
     Expr::FunctionCall { name, args }
@@ -4004,7 +4051,7 @@ fn try_extract_negated(expr: &Expr) -> Option<Expr> {
       }
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -4013,7 +4060,7 @@ fn try_extract_negated(expr: &Expr) -> Option<Expr> {
           Some((**right).clone())
         } else {
           Some(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(negated),
             right: right.clone(),
           })
@@ -4068,7 +4115,7 @@ fn hyperbolic_of_log(
   name: &str,
   arg: &Expr,
 ) -> Option<Result<Expr, InterpreterError>> {
-  use crate::syntax::BinaryOperator as B;
+  use BinaryOperator as B;
   let u = match arg {
     Expr::FunctionCall { name: n, args } if n == "Log" && args.len() == 1 => {
       &args[0]
@@ -4160,7 +4207,7 @@ fn circular_at_infinity(
   }
   let inf = || Expr::Identifier("Infinity".to_string());
   let neg_inf = || Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Times,
+    op: BinaryOperator::Times,
     left: Box::new(Expr::Integer(-1)),
     right: Box::new(Expr::Identifier("Infinity".to_string())),
   };
@@ -4522,11 +4569,11 @@ pub fn arcsinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Identifier("ComplexInfinity".to_string()));
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "Infinity") => {
       return Ok(Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(Expr::Identifier("Infinity".to_string())),
       });
     }
@@ -4618,7 +4665,7 @@ pub fn arccosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Identifier("Infinity".to_string()));
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "Infinity") => {
       return Ok(Expr::Identifier("Infinity".to_string()));
@@ -4664,7 +4711,7 @@ pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(1) => return Ok(Expr::Identifier("Infinity".to_string())),
     Expr::Integer(-1) => {
       return Ok(Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(Expr::Identifier("Infinity".to_string())),
       });
     }
@@ -4753,7 +4800,7 @@ pub fn arccoth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(1) => return Ok(Expr::Identifier("Infinity".to_string())),
     Expr::Integer(-1) => {
       return Ok(Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(Expr::Identifier("Infinity".to_string())),
       });
     }
@@ -5055,19 +5102,19 @@ pub fn arccsch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Helper to construct -Pi/2 matching wolframscript output format
 /// Construct Pi/n as an AST expression
-pub fn pi_over_n(n: i128) -> Expr {
+fn pi_over_n(n: i128) -> Expr {
   Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(Expr::Constant("Pi".to_string())),
     right: Box::new(Expr::Integer(n)),
   }
 }
 
-pub fn negative_pi_over_2() -> Expr {
+fn negative_pi_over_2() -> Expr {
   Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Times,
+    op: BinaryOperator::Times,
     left: Box::new(Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(Expr::Integer(-1)),
       right: Box::new(Expr::Integer(2)),
     }),
@@ -5091,7 +5138,7 @@ fn extract_half_odd_pi_i_coefficient(e: &Expr) -> Option<i128> {
         }
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left,
         right,
       } => {
@@ -5162,7 +5209,7 @@ pub fn gudermannian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Identifier("I".to_string())
     } else {
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(Expr::Identifier("I".to_string())),
       }
     };
@@ -5182,7 +5229,7 @@ pub fn gudermannian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Identifier(name) if name == "Infinity" => {
       // Gudermannian[Infinity] = Pi/2
       return Ok(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::Constant("Pi".to_string())),
         right: Box::new(Expr::Integer(2)),
       });
@@ -5202,14 +5249,14 @@ pub fn gudermannian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // -Infinity (as UnaryOp)
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } if matches!(operand.as_ref(), Expr::Identifier(n) if n == "Infinity") => {
       return Ok(negative_pi_over_2());
     }
     // -Infinity (as BinaryOp)
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } if matches!(left.as_ref(), Expr::Integer(-1))
@@ -5291,7 +5338,7 @@ pub fn logistic_sigmoid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // they are NOT numericized.
     Expr::Identifier(s) if s == "Infinity" => return Ok(Expr::Integer(1)),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "Infinity") => {
       return Ok(Expr::Integer(0));
@@ -5631,7 +5678,6 @@ fn expand_trig_function(name: &str, arg: &Expr) -> Expr {
 
 /// Collect additive terms from a Plus/Minus expression.
 fn collect_additive_terms(expr: &Expr) -> Vec<Expr> {
-  use crate::syntax::BinaryOperator;
   match expr {
     Expr::BinaryOp {
       op: BinaryOperator::Plus,
@@ -5662,7 +5708,6 @@ fn collect_additive_terms(expr: &Expr) -> Vec<Expr> {
 
 /// Extract integer factor from n*x. Returns (n, x).
 fn extract_integer_factor(expr: &Expr) -> (i128, Expr) {
-  use crate::syntax::BinaryOperator;
   match expr {
     Expr::BinaryOp {
       op: BinaryOperator::Times,
@@ -5977,7 +6022,7 @@ fn trig_reduce_recursive(expr: &Expr) -> Expr {
     }
     // Handle BinaryOp Times — two-factor product
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -5987,7 +6032,7 @@ fn trig_reduce_recursive(expr: &Expr) -> Expr {
     }
     // Handle Power[Sin[x], n] or Power[Cos[x], n]
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => {
@@ -5999,7 +6044,7 @@ fn trig_reduce_recursive(expr: &Expr) -> Expr {
         return result;
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left: Box::new(base),
         right: Box::new(trig_reduce_recursive(right)),
       }
@@ -6080,7 +6125,7 @@ fn reduce_two_factor_product(a: &Expr, b: &Expr) -> Expr {
     return result;
   }
   Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Times,
+    op: BinaryOperator::Times,
     left: Box::new(a.clone()),
     right: Box::new(b.clone()),
   }
@@ -6092,19 +6137,19 @@ fn try_reduce_trig_pair(a: &Expr, b: &Expr) -> Option<Expr> {
   let (b_name, b_arg) = extract_trig(b)?;
 
   let sum = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Plus,
+    op: BinaryOperator::Plus,
     left: Box::new(a_arg.clone()),
     right: Box::new(b_arg.clone()),
   };
   let diff = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Minus,
+    op: BinaryOperator::Minus,
     left: Box::new(a_arg.clone()),
     right: Box::new(b_arg.clone()),
   };
 
   let half = |e: Expr| -> Expr {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(e),
       right: Box::new(Expr::Integer(2)),
     }
@@ -6132,17 +6177,17 @@ fn try_reduce_trig_pair(a: &Expr, b: &Expr) -> Option<Expr> {
         (b_arg, a_arg)
       };
       let s = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(sin_arg.clone()),
         right: Box::new(cos_arg.clone()),
       };
       let d = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Minus,
+        op: BinaryOperator::Minus,
         left: Box::new(sin_arg),
         right: Box::new(cos_arg),
       };
       let result = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(sin(s)),
         right: Box::new(sin(d)),
       };
@@ -6151,7 +6196,7 @@ fn try_reduce_trig_pair(a: &Expr, b: &Expr) -> Option<Expr> {
     // Cos[a]*Cos[b] = (Cos[a-b] + Cos[a+b])/2
     ("Cos", "Cos") => {
       let result = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(cos(diff)),
         right: Box::new(cos(sum)),
       };
@@ -6160,7 +6205,7 @@ fn try_reduce_trig_pair(a: &Expr, b: &Expr) -> Option<Expr> {
     // Sin[a]*Sin[b] = (Cos[a-b] - Cos[a+b])/2
     ("Sin", "Sin") => {
       let result = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Minus,
+        op: BinaryOperator::Minus,
         left: Box::new(cos(diff)),
         right: Box::new(cos(sum)),
       };
@@ -6194,7 +6239,7 @@ fn reduce_trig_power(base: &Expr, n: i128) -> Option<Expr> {
       arg.clone()
     } else {
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(Expr::Integer(coeff)),
         right: Box::new(arg.clone()),
       }
@@ -6265,13 +6310,13 @@ fn reduce_trig_power(base: &Expr, n: i128) -> Option<Expr> {
           terms.push(trig_call);
         } else if reduced_c == -1 {
           terms.push(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(Expr::Integer(-1)),
             right: Box::new(trig_call),
           });
         } else {
           terms.push(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(Expr::Integer(reduced_c)),
             right: Box::new(trig_call),
           });
@@ -6293,7 +6338,7 @@ fn reduce_trig_power(base: &Expr, n: i128) -> Option<Expr> {
     Some(numerator)
   } else {
     Some(Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(numerator),
       right: Box::new(Expr::Integer(reduced_denom)),
     })
@@ -6303,7 +6348,7 @@ fn reduce_trig_power(base: &Expr, n: i128) -> Option<Expr> {
 fn try_reduce_with_power(a: &Expr, b: &Expr) -> Option<Expr> {
   // Check if a is Sin[x]^n or Cos[x]^n
   if let Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left,
     right,
   } = a

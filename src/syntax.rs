@@ -1,224 +1,3 @@
-#[derive(Debug, Clone, Copy)]
-pub enum WoNum {
-  Int(i128),
-  Float(f64),
-}
-
-impl std::ops::Add for WoNum {
-  type Output = Self;
-
-  fn add(self, rhs: Self) -> Self {
-    match (self, rhs) {
-      (Self::Int(a), Self::Int(b)) => Self::Int(a + b),
-      (Self::Float(a), Self::Float(b)) => Self::Float(a + b),
-      (Self::Float(a), Self::Int(b)) => Self::Float(a + b as f64),
-      (Self::Int(a), Self::Float(b)) => Self::Float(a as f64 + b),
-    }
-  }
-}
-
-impl std::ops::Mul for WoNum {
-  type Output = Self;
-
-  fn mul(self, rhs: Self) -> Self {
-    match (self, rhs) {
-      (Self::Int(a), Self::Int(b)) => Self::Int(a * b),
-      (Self::Float(a), Self::Float(b)) => Self::Float(a * b),
-      (Self::Float(a), Self::Int(b)) => Self::Float(a * b as f64),
-      (Self::Int(a), Self::Float(b)) => Self::Float(a as f64 * b),
-    }
-  }
-}
-
-impl std::ops::Sub for WoNum {
-  type Output = Self;
-
-  fn sub(self, rhs: Self) -> Self {
-    match (self, rhs) {
-      (Self::Int(a), Self::Int(b)) => Self::Int(a - b),
-      (Self::Float(a), Self::Float(b)) => Self::Float(a - b),
-      (Self::Float(a), Self::Int(b)) => Self::Float(a - b as f64),
-      (Self::Int(a), Self::Float(b)) => Self::Float(a as f64 - b),
-    }
-  }
-}
-
-impl std::ops::Div for WoNum {
-  type Output = Self;
-
-  fn div(self, rhs: Self) -> Self {
-    // Division always produces a float to match Wolfram Language behavior
-    let lhs_f64 = match self {
-      Self::Int(i) => i as f64,
-      Self::Float(f) => f,
-    };
-    let rhs_f64 = match rhs {
-      Self::Int(i) => i as f64,
-      Self::Float(f) => f,
-    };
-    Self::Float(lhs_f64 / rhs_f64)
-  }
-}
-
-impl std::ops::Neg for WoNum {
-  type Output = Self;
-
-  fn neg(self) -> Self {
-    match self {
-      Self::Int(i) => Self::Int(-i),
-      Self::Float(f) => Self::Float(-f),
-    }
-  }
-}
-
-impl std::iter::Sum for WoNum {
-  fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
-    iter.fold(Self::Int(0), |a, b| a + b)
-  }
-}
-
-impl std::iter::FromIterator<Self> for WoNum {
-  fn from_iter<I: IntoIterator<Item = Self>>(iter: I) -> Self {
-    let mut sum_i128 = 0i128;
-    let mut sum_f64 = 0.0;
-
-    for num in iter {
-      match num {
-        Self::Int(i) => {
-          sum_i128 += i;
-        }
-        Self::Float(f) => {
-          sum_f64 += f;
-        }
-      }
-    }
-
-    if sum_f64 != 0.0
-      || (sum_i128 != 0i128
-        && std::mem::size_of::<f64>() < std::mem::size_of::<i128>())
-    {
-      Self::Float(sum_f64)
-    } else {
-      Self::Int(sum_i128)
-    }
-  }
-}
-
-impl WoNum {
-  pub fn abs(self) -> Self {
-    match self {
-      Self::Int(i) => Self::Int(i.abs()),
-      Self::Float(f) => Self::Float(f.abs()),
-    }
-  }
-
-  pub fn sign(&self) -> i8 {
-    match self {
-      Self::Int(i) => i.cmp(&0) as _,
-      Self::Float(f) => {
-        if *f > 0.0 {
-          1
-        } else if *f < 0.0 {
-          -1
-        } else {
-          0
-        }
-      }
-    }
-  }
-
-  pub fn sqrt(self) -> Result<Self, String> {
-    let val = match self {
-      Self::Int(i) => {
-        if i < 0 {
-          return Err("Sqrt function argument must be non-negative".into());
-        }
-        i as f64
-      }
-      Self::Float(f) => {
-        if f < 0.0 {
-          return Err("Sqrt function argument must be non-negative".into());
-        }
-        f
-      }
-    };
-    Ok(Self::Float(val.sqrt()))
-  }
-
-  pub fn floor(self) -> Self {
-    match self {
-      Self::Int(i) => Self::Int(i),
-      Self::Float(f) => {
-        let result = f.floor();
-        // Handle -0.0
-        if result == -0.0 {
-          Self::Float(0.0)
-        } else {
-          Self::Float(result)
-        }
-      }
-    }
-  }
-
-  pub fn ceiling(self) -> Self {
-    match self {
-      Self::Int(i) => Self::Int(i),
-      Self::Float(f) => {
-        let result = f.ceil();
-        // Handle -0.0
-        if result == -0.0 {
-          Self::Float(0.0)
-        } else {
-          Self::Float(result)
-        }
-      }
-    }
-  }
-
-  pub fn round(self) -> Self {
-    match self {
-      Self::Int(i) => Self::Int(i),
-      Self::Float(f) => {
-        // Banker's rounding (half-to-even)
-        let base = f.trunc();
-        let frac = f - base;
-        let result = if frac.abs() == 0.5 {
-          if (base as i64) % 2 == 0 {
-            base
-          } else if f.is_sign_positive() {
-            base + 1.0
-          } else {
-            base - 1.0
-          }
-        } else {
-          f.round()
-        };
-        // Handle -0.0
-        if result == -0.0 {
-          Self::Float(0.0)
-        } else {
-          Self::Float(result)
-        }
-      }
-    }
-  }
-}
-
-#[derive(Debug)]
-pub enum AST {
-  Plus(Vec<WoNum>),
-  Times(Vec<WoNum>),
-  Minus(Vec<WoNum>),
-  Divide(Vec<WoNum>),
-  Abs(WoNum),
-  Sign(WoNum),
-  Sqrt(WoNum),
-  Floor(WoNum),
-  Ceiling(WoNum),
-  Round(WoNum),
-  CreateFile(Option<String>),
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImageType {
   Bit,
@@ -343,6 +122,9 @@ pub enum Expr {
     channels: u8,
     data: std::sync::Arc<Vec<f64>>,
     image_type: ImageType,
+    /// Explicit color-space tag (e.g. from ColorCombine[imgs, "HSB"]).
+    /// `None` reports as `Automatic` from ImageColorSpace.
+    color_space: Option<&'static str>,
   },
   /// Graphics output: holds SVG string, displays as -Graphics- (or -Graphics3D- if is_3d).
   /// `source` optionally carries the raw plot series data so that
@@ -945,6 +727,7 @@ impl Clone for Expr {
       Self::Constant(s) => return Self::Constant(s.clone()),
       Self::Raw(s) => return Self::Raw(s.clone()),
       Self::Image {
+        color_space,
         width,
         height,
         channels,
@@ -952,6 +735,7 @@ impl Clone for Expr {
         image_type,
       } => {
         return Self::Image {
+          color_space: *color_space,
           width: *width,
           height: *height,
           channels: *channels,
@@ -1033,12 +817,14 @@ impl Clone for Expr {
           Self::Constant(s) => results.push(Self::Constant(s.clone())),
           Self::Raw(s) => results.push(Self::Raw(s.clone())),
           Self::Image {
+            color_space,
             width,
             height,
             channels,
             data,
             image_type,
           } => results.push(Self::Image {
+            color_space: *color_space,
             width: *width,
             height: *height,
             channels: *channels,
@@ -1413,13 +1199,58 @@ pub enum ComparisonOp {
   UnsameQ,      // =!=
 }
 
+impl ComparisonOp {
+  /// FullForm head name for this comparison operator (e.g. `!=` -> "Unequal").
+  pub fn head_name(&self) -> &'static str {
+    match self {
+      ComparisonOp::Equal => "Equal",
+      ComparisonOp::NotEqual => "Unequal",
+      ComparisonOp::Less => "Less",
+      ComparisonOp::LessEqual => "LessEqual",
+      ComparisonOp::Greater => "Greater",
+      ComparisonOp::GreaterEqual => "GreaterEqual",
+      ComparisonOp::SameQ => "SameQ",
+      ComparisonOp::UnsameQ => "UnsameQ",
+    }
+  }
+}
+
+/// Decompose a Comparison chain into its equivalent (head, args) exactly as WL
+/// sees it: a uniform chain `a op b op c` is `Op[a, b, c]`, while a mixed chain
+/// like `a < b <= c` is `Inequality[a, Less, b, LessEqual, c]` (operands and
+/// operator symbols interleaved). Used by structural operations (Length, Part,
+/// Apply) so they observe the same arity as wolframscript.
+pub fn comparison_head_and_args(
+  operands: &[Expr],
+  operators: &[ComparisonOp],
+) -> (String, Vec<Expr>) {
+  let all_same = operators.windows(2).all(|w| w[0] == w[1]);
+  if all_same {
+    let head = operators
+      .first()
+      .map(|o| o.head_name())
+      .unwrap_or("Equal")
+      .to_string();
+    (head, operands.to_vec())
+  } else {
+    let mut args = Vec::with_capacity(operands.len() + operators.len());
+    for (i, operand) in operands.iter().enumerate() {
+      args.push(operand.clone());
+      if let Some(op) = operators.get(i) {
+        args.push(Expr::Identifier(op.head_name().to_string()));
+      }
+    }
+    ("Inequality".to_string(), args)
+  }
+}
+
 use crate::Rule;
 use pest::iterators::Pair;
 
 /// Extract the exponent expression from an `ImplicitPowerSuffix` pair.
 /// Handles `^expr`, `^-expr`, and forms with a `PartIndexSuffix` after the
 /// term (e.g. `^m[[1]]` → `Part[m, 1]`, `^-m[[1]]` → `-Part[m, 1]`).
-pub fn implicit_power_exponent(pair: Pair<Rule>) -> Expr {
+fn implicit_power_exponent(pair: Pair<Rule>) -> Expr {
   let inners: Vec<_> = pair.into_inner().collect();
   let first = inners[0].clone();
   let mut expr = match first.as_rule() {
@@ -3044,6 +2875,16 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       Expr::FunctionCall {
         name: "Unset".to_string(),
         args: vec![var].into(),
+      }
+    }
+    Rule::ApplyToOp => {
+      // x //= f -> ApplyTo[x, f]
+      let mut inner = pair.into_inner();
+      let var = pair_to_expr(inner.next().unwrap());
+      let func = pair_to_expr(inner.next().unwrap());
+      Expr::FunctionCall {
+        name: "ApplyTo".to_string(),
+        args: vec![var, func].into(),
       }
     }
     Rule::AddTo => {
@@ -6353,6 +6194,7 @@ fn is_denominator_factor(expr: &Expr) -> bool {
   };
   match exponent {
     Expr::Integer(n) => *n < 0,
+    Expr::Real(r) => *r < 0.0,
     Expr::FunctionCall { name: rn, args: ra }
       if rn == "Rational" && ra.len() == 2 =>
     {
@@ -6361,7 +6203,8 @@ fn is_denominator_factor(expr: &Expr) -> bool {
     Expr::FunctionCall { name: tn, args: ta }
       if tn == "Times"
         && !ta.is_empty()
-        && matches!(&ta[0], Expr::Integer(n) if *n < 0) =>
+        && (matches!(&ta[0], Expr::Integer(n) if *n < 0)
+          || matches!(&ta[0], Expr::Real(r) if *r < 0.0)) =>
     {
       true
     }
@@ -6414,6 +6257,7 @@ fn denominator_form(expr: &Expr) -> Expr {
   };
   let pos_exp = match exponent {
     Expr::Integer(n) => Expr::Integer(-n),
+    Expr::Real(r) => Expr::Real(-r),
     Expr::FunctionCall { name: rn, args: ra }
       if rn == "Rational" && ra.len() == 2 =>
     {
@@ -6421,6 +6265,22 @@ fn denominator_form(expr: &Expr) -> Expr {
         Expr::FunctionCall {
           name: "Rational".to_string(),
           args: vec![Expr::Integer(-n), ra[1].clone()].into(),
+        }
+      } else {
+        unreachable!()
+      }
+    }
+    Expr::FunctionCall { name: tn, args: ta }
+      if tn == "Times"
+        && ta.len() >= 2
+        && matches!(&ta[0], Expr::Real(r) if *r < 0.0) =>
+    {
+      if let Expr::Real(r) = &ta[0] {
+        let mut new_args = vec![Expr::Real(-r)];
+        new_args.extend_from_slice(&ta[1..]);
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: new_args.into(),
         }
       } else {
         unreachable!()
@@ -6624,8 +6484,28 @@ fn format_times_with_denominator(
 }
 
 fn expr_to_part_index_string(expr: &Expr, form: ExprForm) -> String {
-  // Span indices keep their functional head form: wolframscript prints the
-  // unevaluated l[[Span[5, 2]]], never the `;;` operator.
+  // A Span index renders with the `;;` operator in InputForm
+  // (l[[5 ;; 2]]) but keeps its functional head form in OutputForm and
+  // FullForm (l[[Span[5, 2]]]), matching wolframscript. A nested Span
+  // argument is parenthesised.
+  if form == ExprForm::Input
+    && let Expr::FunctionCall { name, args } = expr
+    && name == "Span"
+    && (args.len() == 2 || args.len() == 3)
+  {
+    return args
+      .iter()
+      .map(|a| {
+        let s = format_expr(a, form);
+        if matches!(a, Expr::FunctionCall { name: n, .. } if n == "Span") {
+          format!("({})", s)
+        } else {
+          s
+        }
+      })
+      .collect::<Vec<_>>()
+      .join(" ;; ");
+  }
   format_expr(expr, form)
 }
 
@@ -8776,12 +8656,12 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         if let Some(sqrt_arg) = crate::functions::is_sqrt(expr) {
           return format!("Sqrt[{}]", fmt(sqrt_arg));
         }
-        // OutputForm-only: Power[base, Rational[-1, 2]] → 1/Sqrt[base]
-        if is_output
-          && let Expr::FunctionCall {
-            name: rname,
-            args: rargs,
-          } = &args[1]
+        // Power[base, Rational[-1, 2]] → 1/Sqrt[base] (wolframscript uses
+        // this in InputForm too, e.g. Erfc[1/Sqrt[2]]^2)
+        if let Expr::FunctionCall {
+          name: rname,
+          args: rargs,
+        } = &args[1]
           && rname == "Rational"
           && rargs.len() == 2
           && matches!(&rargs[0], Expr::Integer(-1))
@@ -8898,20 +8778,19 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         OutputFormGuard(IN_OUTPUT_FORM.with(|c| c.replace(true)));
       format_expr(expr, ExprForm::Input)
     }
-    // BinaryOp::Power with Rational[-1, 2] exponent → 1/Sqrt[base] (OutputForm only)
+    // BinaryOp::Power with Rational[-1, 2] exponent → 1/Sqrt[base]
     Expr::BinaryOp {
       op: BinaryOperator::Power,
       left,
       right,
-    } if is_output
-      && matches!(
-        right.as_ref(),
-        Expr::FunctionCall { name, args }
-          if name == "Rational"
-            && args.len() == 2
-            && matches!(&args[0], Expr::Integer(-1))
-            && matches!(&args[1], Expr::Integer(2))
-      ) =>
+    } if matches!(
+      right.as_ref(),
+      Expr::FunctionCall { name, args }
+        if name == "Rational"
+          && args.len() == 2
+          && matches!(&args[0], Expr::Integer(-1))
+          && matches!(&args[1], Expr::Integer(2))
+    ) =>
     {
       let base_str = expr_to_output(left);
       format!("1/Sqrt[{}]", base_str)
@@ -10257,10 +10136,8 @@ fn in_output_form() -> bool {
 }
 
 /// Whether the current render is the inner of a FullForm wrapper (see
-/// `IN_FULL_FORM`). Currently unreferenced — Span, the last user, now
-/// always prints in head form — but kept alongside its guard for the next
-/// form-sensitive renderer.
-#[allow(dead_code)]
+/// `IN_FULL_FORM`). Used by the Span InputForm branch to keep the head form
+/// (`Span[1, 4]`) inside `FullForm[…]` while rendering `1 ;; 4` elsewhere.
 fn in_full_form() -> bool {
   IN_FULL_FORM.with(|c| c.get())
 }
@@ -10353,6 +10230,16 @@ fn negate_neg_numeric_coeff(e: &Expr) -> Option<Expr> {
 }
 
 pub fn expr_to_input_form(expr: &Expr) -> String {
+  // Grow the stack when running low so rendering a deeply nested expression
+  // (e.g. the script-mode display of Nest[f, x, 500], or FullForm of it) does
+  // not overflow. The recursion re-enters this public entry, so every level is
+  // checked. Mirrors the guard on format_expr / evaluate_expr_to_expr.
+  stacker::maybe_grow(2 * 1024 * 1024, 4 * 1024 * 1024, || {
+    expr_to_input_form_impl(expr)
+  })
+}
+
+fn expr_to_input_form_impl(expr: &Expr) -> String {
   let _guard = TrueInputFormGuard(IN_TRUE_INPUT_FORM.with(|c| c.replace(true)));
   match expr {
     Expr::String(s) => {
@@ -10470,10 +10357,29 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
         input_form_rule_rhs(&args[1])
       )
     }
-    // Span always renders in its functional head form — wolframscript 15
-    // never prints the `;;` operator in any output form (Print[5 ;; 2],
-    // InputForm, and the unevaluated Part echo l[[Span[5, 2]]] all show
-    // Span[...]), so no operator special case here.
+    // Span[a, b] / Span[a, b, c] render with the `;;` operator in InputForm,
+    // matching wolframscript's `ToString[5 ;; 2, InputForm]` -> "5 ;; 2"; a
+    // nested Span argument is parenthesised. OutputForm and the bare echo keep
+    // the head form (`Span[5, 2]`) via format_expr, and inside a FullForm
+    // wrapper Span also stays in head form, so this branch is skipped there.
+    Expr::FunctionCall { name, args }
+      if name == "Span"
+        && (args.len() == 2 || args.len() == 3)
+        && !in_full_form() =>
+    {
+      args
+        .iter()
+        .map(|a| {
+          let s = expr_to_input_form(a);
+          if matches!(a, Expr::FunctionCall { name: n, .. } if n == "Span") {
+            format!("({})", s)
+          } else {
+            s
+          }
+        })
+        .collect::<Vec<_>>()
+        .join(" ;; ")
+    }
     // Pattern[name, body] displays as name:body in InputForm; wrap
     // looser-binding bodies (Condition/Rule/RuleDelayed/ReplaceAll/
     // ReplaceRepeated) in parens so `s:a /; b` doesn't flip to
@@ -11346,6 +11252,7 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
     }
     // Image: produce NumericArray InputForm
     Expr::Image {
+      color_space: _,
       width,
       height,
       channels,

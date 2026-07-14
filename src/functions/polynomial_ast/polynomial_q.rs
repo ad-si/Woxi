@@ -143,7 +143,7 @@ fn has_negative_powers(expr: &Expr) -> bool {
 }
 
 /// Collect variables that appear in polynomial context only (not inside functions like Sin)
-pub fn collect_poly_vars(
+fn collect_poly_vars(
   expr: &Expr,
   vars: &mut std::collections::HashSet<String>,
 ) {
@@ -177,7 +177,7 @@ pub fn collect_poly_vars(
 }
 
 /// Recursively check whether an expression is a polynomial in `var`.
-pub fn is_polynomial(expr: &Expr, var: &str) -> bool {
+fn is_polynomial(expr: &Expr, var: &str) -> bool {
   match expr {
     Expr::Integer(_) | Expr::Real(_) | Expr::Constant(_) => true,
     Expr::Identifier(_) => true, // either it IS the variable or a constant symbol – both ok

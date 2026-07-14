@@ -298,7 +298,7 @@ thread_local! {
 
 /// Stash an evaluated expression so subsequent `%` / `Out[]` references
 /// can resolve to it. Called from `interpret_with_stdout` after success.
-pub fn set_last_output(expr: syntax::Expr) {
+fn set_last_output(expr: syntax::Expr) {
   LAST_OUTPUT_EXPR.with(|c| *c.borrow_mut() = Some(expr));
 }
 
@@ -642,7 +642,7 @@ pub fn get_captured_messages_raw() -> Vec<String> {
 }
 
 /// Returns true if currently inside a Quiet[] evaluation
-pub fn is_quiet() -> bool {
+fn is_quiet() -> bool {
   QUIET_LEVEL.with(|level| *level.borrow() > 0)
 }
 
@@ -825,7 +825,7 @@ fn emit_message_core(msg: &str) -> (bool, Option<String>) {
 
 /// Reset the per-calculation General::stop counters (a new top-level
 /// evaluation is a new "calculation").
-pub fn reset_message_stop_counts() {
+fn reset_message_stop_counts() {
   MESSAGE_STOP_COUNTS.with(|m| m.borrow_mut().clear());
 }
 
@@ -880,7 +880,7 @@ pub fn graphics_result(svg: String) -> syntax::Expr {
 
 /// Like `graphics_result` but reports `head` (e.g. `GeoGraphics`) from `Head`
 /// instead of the default `Graphics`. The SVG renders identically.
-pub fn graphics_result_with_head(svg: String, head: &str) -> syntax::Expr {
+fn graphics_result_with_head(svg: String, head: &str) -> syntax::Expr {
   capture_graphics(&svg);
   syntax::Expr::Graphics {
     svg,
@@ -923,7 +923,7 @@ pub fn get_captured_graphics() -> Option<String> {
 }
 
 /// Gets all captured graphics SVGs
-pub fn get_all_captured_graphics() -> Vec<String> {
+fn get_all_captured_graphics() -> Vec<String> {
   CAPTURED_GRAPHICS.with(|buffer| buffer.borrow().clone())
 }
 
@@ -973,7 +973,7 @@ fn clear_captured_sound() {
 }
 
 /// Stores synthesized audio as a base64-encoded WAV (from Play/Sound).
-pub fn capture_sound(wav_base64: &str) {
+fn capture_sound(wav_base64: &str) {
   capture_audio(AudioOutput {
     base64: wav_base64.to_string(),
     mime: "audio/wav".to_string(),
@@ -982,7 +982,7 @@ pub fn capture_sound(wav_base64: &str) {
 }
 
 /// Stores playable audio (e.g. from a file-backed Audio object).
-pub fn capture_audio(audio: AudioOutput) {
+fn capture_audio(audio: AudioOutput) {
   CAPTURED_SOUND.with(|buffer| {
     *buffer.borrow_mut() = Some(audio);
   });
@@ -1341,13 +1341,13 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         if is_visual_mode() {
           generate_output_svg(&syntax::Expr::Real(n));
         }
-        return Ok(format_real_result(n));
+        return Ok(syntax::format_real(n));
       }
     } else {
       if is_visual_mode() {
         generate_output_svg(&syntax::Expr::Real(n));
       }
-      return Ok(format_real_result(n));
+      return Ok(syntax::format_real(n));
     }
   }
   // Check for quoted string - return content without quotes (like wolframscript)
@@ -1409,7 +1409,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       // Check if any element needs evaluation (named colors, date symbols, etc.)
       let needs_eval = trimmed[1..trimmed.len() - 1].split(',').any(|item| {
         let item = item.trim();
-        evaluator::named_color_expr_pub(item).is_some()
+        evaluator::named_color_expr(item).is_some()
           || matches!(
             item,
             "Now"
@@ -1592,7 +1592,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       return Ok(syntax::expr_to_output(&expr));
     }
     // Handle named colors (Red → RGBColor[1, 0, 0], etc.)
-    if let Some(color_expr) = evaluator::named_color_expr_pub(trimmed) {
+    if let Some(color_expr) = evaluator::named_color_expr(trimmed) {
       return Ok(syntax::expr_to_output(&color_expr));
     }
     // Thick → Thickness[Large]
@@ -3091,30 +3091,47 @@ const OUTPUT_SVG_MAX_TOKENS: usize = 20_000;
 /// Count atomic tokens in `expr`, stopping early once `budget` is
 /// exhausted. Returns true when the expression is larger than the budget.
 fn expr_exceeds_token_budget(expr: &syntax::Expr, budget: &mut usize) -> bool {
+  expr_exceeds_token_budget_depth(expr, budget, 0)
+}
+
+/// Deeply-nested results (e.g. `Nest[f, x, 500]`) are treated as exceeding the
+/// budget once they pass `MAX_SVG_DEPTH`. This both bounds this counter's own
+/// recursion and makes `generate_output_svg` skip typesetting expressions too
+/// deep for the (unbounded-recursion) box renderer — which would otherwise
+/// overflow the stack.
+fn expr_exceeds_token_budget_depth(
+  expr: &syntax::Expr,
+  budget: &mut usize,
+  depth: usize,
+) -> bool {
   use syntax::Expr;
-  if *budget == 0 {
+  const MAX_SVG_DEPTH: usize = 256;
+  if *budget == 0 || depth > MAX_SVG_DEPTH {
     return true;
   }
+  let d = depth + 1;
   match expr {
-    Expr::List(items) => {
-      items.iter().any(|e| expr_exceeds_token_budget(e, budget))
-    }
+    Expr::List(items) => items
+      .iter()
+      .any(|e| expr_exceeds_token_budget_depth(e, budget, d)),
     Expr::FunctionCall { args, .. } => {
       *budget = budget.saturating_sub(1);
-      args.iter().any(|e| expr_exceeds_token_budget(e, budget))
+      args
+        .iter()
+        .any(|e| expr_exceeds_token_budget_depth(e, budget, d))
     }
     Expr::Association(pairs) => pairs.iter().any(|(k, v)| {
-      expr_exceeds_token_budget(k, budget)
-        || expr_exceeds_token_budget(v, budget)
+      expr_exceeds_token_budget_depth(k, budget, d)
+        || expr_exceeds_token_budget_depth(v, budget, d)
     }),
     Expr::BinaryOp { left, right, .. } => {
       *budget = budget.saturating_sub(1);
-      expr_exceeds_token_budget(left, budget)
-        || expr_exceeds_token_budget(right, budget)
+      expr_exceeds_token_budget_depth(left, budget, d)
+        || expr_exceeds_token_budget_depth(right, budget, d)
     }
     Expr::UnaryOp { operand, .. } => {
       *budget = budget.saturating_sub(1);
-      expr_exceeds_token_budget(operand, budget)
+      expr_exceeds_token_budget_depth(operand, budget, d)
     }
     _ => {
       *budget = budget.saturating_sub(1);
@@ -3537,7 +3554,7 @@ fn scientific_to_caret(text: &str) -> String {
 /// U+005E. Because U+02C6 is a Unicode letter (category Lm), the grammar would
 /// otherwise swallow it into an identifier (e.g. `xˆ2` → symbol `xˆ`), so we
 /// fix it at the source. Characters inside string literals are left untouched.
-pub fn normalize_circumflex_operator(input: &str) -> String {
+fn normalize_circumflex_operator(input: &str) -> String {
   if !input.contains('\u{02C6}') {
     return input.to_string();
   }
@@ -3566,7 +3583,7 @@ pub fn normalize_circumflex_operator(input: &str) -> String {
   result
 }
 
-pub fn expand_char_escapes(input: &str) -> String {
+fn expand_char_escapes(input: &str) -> String {
   // Fast path: no backslash means nothing to do.
   if !input.contains('\\') {
     return input.to_string();
@@ -4291,11 +4308,6 @@ pub fn interpret_with_stdout(
     sound,
     warnings,
   })
-}
-
-/// Format a result as a real number (with trailing dot for whole numbers)
-pub fn format_real_result(result: f64) -> String {
-  syntax::format_real(result)
 }
 
 fn store_function_definition(

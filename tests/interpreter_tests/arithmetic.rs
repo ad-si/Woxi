@@ -946,6 +946,34 @@ mod big_integer {
     assert_eq!(interpret("CompositeQ[2^128]").unwrap(), "True");
   }
 
+  // CompositeQ matches wolframscript's broad convention: negative composites,
+  // non-integer numbers, and composite Gaussian integers are all True; primes,
+  // units (±1, ±I), zero, and non-numbers are False.
+  #[test]
+  fn composite_q_conventions() {
+    // Negative integers mirror their absolute value.
+    assert_eq!(interpret("CompositeQ[-4]").unwrap(), "True");
+    assert_eq!(interpret("CompositeQ[-2]").unwrap(), "False");
+    // Units and zero are never composite.
+    assert_eq!(interpret("CompositeQ[1]").unwrap(), "False");
+    assert_eq!(interpret("CompositeQ[0]").unwrap(), "False");
+    assert_eq!(interpret("CompositeQ[-1]").unwrap(), "False");
+    // Any explicit non-integer number is composite — even 1.0 and 0.0.
+    assert_eq!(interpret("CompositeQ[6.5]").unwrap(), "True");
+    assert_eq!(interpret("CompositeQ[1.0]").unwrap(), "True");
+    assert_eq!(interpret("CompositeQ[0.0]").unwrap(), "True");
+    assert_eq!(interpret("CompositeQ[1/2]").unwrap(), "True");
+    // Gaussian integers: composite iff the norm exceeds 1.
+    assert_eq!(interpret("CompositeQ[2 I]").unwrap(), "True");
+    assert_eq!(interpret("CompositeQ[3 + 4 I]").unwrap(), "True");
+    assert_eq!(interpret("CompositeQ[I]").unwrap(), "False");
+    assert_eq!(interpret("CompositeQ[1 + I]").unwrap(), "False");
+    // Symbols and symbolic constants are not numbers, hence not composite.
+    assert_eq!(interpret("CompositeQ[x]").unwrap(), "False");
+    assert_eq!(interpret("CompositeQ[Pi]").unwrap(), "False");
+    assert_eq!(interpret("CompositeQ[Sqrt[2]]").unwrap(), "False");
+  }
+
   // CompositeQ, DigitSum, IntegerReverse, DigitCount are Listable: they
   // thread element-wise over a list argument (previously CompositeQ wrongly
   // returned a single False for the whole list).
@@ -4367,6 +4395,30 @@ mod expand_threading {
   fn product_log_special_values() {
     assert_eq!(interpret("ProductLog[0]").unwrap(), "0");
     assert_eq!(interpret("ProductLog[E]").unwrap(), "1");
+    // Branch point of the principal branch: W_0(-1/e) = -1.
+    assert_eq!(interpret("ProductLog[-1/E]").unwrap(), "-1");
+  }
+
+  #[test]
+  fn product_log_branch_minus_one() {
+    // The second real branch W_{-1}(z), real on [-1/e, 0).
+    assert_eq!(
+      interpret("ProductLog[-1, -0.1]").unwrap(),
+      "-3.577152063957297"
+    );
+    assert_eq!(
+      interpret("ProductLog[-1, -0.3]").unwrap(),
+      "-1.7813370234216275"
+    );
+    // Exact branch point: W_{-1}(-1/e) = -1.
+    assert_eq!(interpret("ProductLog[-1, -1/E]").unwrap(), "-1");
+    // Inexact branch point evaluates to the machine number -1.
+    assert_eq!(interpret("ProductLog[-1, -1.0/E]").unwrap(), "-1.");
+    // Exact (non-branch-point) argument stays symbolic, matching wolframscript.
+    assert_eq!(
+      interpret("ProductLog[-1, -1/10]").unwrap(),
+      "ProductLog[-1, -1/10]"
+    );
   }
 
   // ─── Trig with exact complex arguments ────────────────────────────
@@ -7967,6 +8019,27 @@ mod abs_simplifications {
     // Rational components.
     assert_eq!(interpret("Abs[1/2 + 1/2 I]").unwrap(), "1/Sqrt[2]");
   }
+
+  // Machine-precision complex numbers: `a. + b. I` stays Complex in Wolfram
+  // (Head Complex), so Abs is a machine real — including when the imaginary
+  // part is exactly 0. (`5. + 0. I`), and when the magnitude lands on a whole
+  // number (`5.`, not `5`).
+  #[test]
+  fn abs_machine_complex() {
+    // Nonzero imaginary part: result is a machine real, even on whole numbers.
+    assert_eq!(interpret("Abs[3. + 4. I]").unwrap(), "5.");
+    assert_eq!(interpret("Abs[3.0 + I]").unwrap(), "3.1622776601683795");
+    // Zero imaginary part (regression: previously stayed unevaluated).
+    assert_eq!(interpret("Abs[5. + 0. I]").unwrap(), "5.");
+    assert_eq!(interpret("Abs[-2. + 0. I]").unwrap(), "2.");
+    assert_eq!(interpret("Abs[0. + 0. I]").unwrap(), "0.");
+    assert_eq!(interpret("Abs[1.5 + 0. I]").unwrap(), "1.5");
+    // The now-evaluated magnitude flows into further computation.
+    assert_eq!(
+      interpret("Sqrt[Abs[5. + 0. I]]").unwrap(),
+      "2.23606797749979"
+    );
+  }
 }
 
 // Sign is multiplicative: it pulls the sign of each real-constant factor out
@@ -9122,5 +9195,195 @@ mod fresnel_fg_tests {
   #[test]
   fn machine_value() {
     assert_eq!(interpret("FresnelF[0.75]").unwrap(), "0.3342840193756982");
+  }
+}
+
+mod bigfloat_power {
+  use super::*;
+
+  // Power/Sqrt on an arbitrary-precision (BigFloat) base used to be left
+  // unevaluated (e.g. `2.`30.^2`). Integer-exponent results with few
+  // significant digits match wolframscript byte-for-byte.
+  #[test]
+  fn integer_exponent_matches_ws() {
+    assert_eq!(interpret("N[2, 30]^2").unwrap(), "4.`29.69897000433602");
+    assert_eq!(interpret("N[2, 30]^3").unwrap(), "8.`29.522878745280337");
+    assert_eq!(interpret("N[10, 50]^2").unwrap(), "100.`49.69897000433602");
+    assert_eq!(interpret("N[5, 40]^2").unwrap(), "25.`39.69897000433602");
+  }
+
+  #[test]
+  fn negative_exponent_matches_ws() {
+    assert_eq!(interpret("N[2, 30]^(-1)").unwrap(), "0.5`30.");
+  }
+
+  #[test]
+  fn sqrt_of_bigfloat_evaluates() {
+    // Previously returned Sqrt[2.`30.] unevaluated. Now computes the value
+    // with the correct precision tag (30 - log10(1/2)); the leading digits
+    // match sqrt(2) exactly (trailing guard digits, like the rest of Woxi's
+    // BigFloat display, are not asserted).
+    let r = interpret("Sqrt[N[2, 30]]").unwrap();
+    assert!(
+      r.starts_with("1.41421356237309504880168872420969807856967187537"),
+      "unexpected Sqrt value: {r}"
+    );
+    assert!(r.contains("`30.30102999566398"), "wrong precision tag: {r}");
+  }
+
+  #[test]
+  fn fractional_exponent_evaluates() {
+    let r = interpret("N[2, 30]^(1/2)").unwrap();
+    assert!(
+      r.starts_with("1.41421356237309504880168872420969807856967187537"),
+      "unexpected value: {r}"
+    );
+    assert!(r.contains("`30.30102999566398"), "wrong precision tag: {r}");
+  }
+}
+
+mod bigfloat_exp_log {
+  use super::*;
+
+  // Exp/Log on a BigFloat argument used to be left unevaluated (E^1.`30.,
+  // Log[2.`30.]). Cases whose result has few significant digits match
+  // wolframscript byte-for-byte.
+  #[test]
+  fn exp_of_one_matches_ws() {
+    assert_eq!(
+      interpret("Exp[N[1, 30]]").unwrap(),
+      "2.718281828459045235360287471352662497757247093699959574967`30."
+    );
+  }
+
+  #[test]
+  fn e_power_bigfloat_routes_to_exp() {
+    // E^N[1,30] must reduce like Exp[N[1,30]] rather than staying E^1.`30.
+    assert_eq!(
+      interpret("E^N[1, 30]").unwrap(),
+      interpret("Exp[N[1, 30]]").unwrap()
+    );
+  }
+
+  #[test]
+  fn log_of_two_matches_ws() {
+    assert_eq!(
+      interpret("Log[N[2, 30]]").unwrap(),
+      "0.6931471805599453094172321214581765680755001343602552541208`29.84082546104514"
+    );
+  }
+
+  #[test]
+  fn exp_tracks_precision() {
+    // Exp[N[10,30]] precision drops to 30 - log10(10) = 29.
+    let r = interpret("Exp[N[10, 30]]").unwrap();
+    assert!(
+      r.starts_with("22026.4657948067165169579006452842443663535"),
+      "value: {r}"
+    );
+    assert!(r.ends_with("`29."), "precision tag: {r}");
+  }
+
+  #[test]
+  fn log_tracks_precision() {
+    // Log[N[100,30]] precision rises to 30 + log10(Log[100]).
+    let r = interpret("Log[N[100, 30]]").unwrap();
+    assert!(
+      r.starts_with("4.60517018598809136803598290936872841520220297725"),
+      "value: {r}"
+    );
+    assert!(r.contains("`30.6632456843634"), "precision tag: {r}");
+  }
+}
+
+mod bigfloat_subtract {
+  use super::*;
+
+  // The `-` operator on a BigFloat used to collapse to a 16-digit machine Real
+  // (N[Pi,30] - 3 gave 0.14159265358979312). It must stay precision-tracked
+  // like Subtract[] and Plus.
+  #[test]
+  fn minus_operator_keeps_precision() {
+    let r = interpret("N[Pi, 30] - 3").unwrap();
+    // Correct to far more than machine-double's 16 digits, with the WS
+    // precision tag (30 minus the lost leading digit).
+    assert!(
+      r.starts_with("0.14159265358979323846264338327950288419716939937510"),
+      "value lost precision: {r}"
+    );
+    assert!(
+      r.contains("`28.653890848257205"),
+      "wrong precision tag: {r}"
+    );
+  }
+
+  #[test]
+  fn minus_matches_subtract_function() {
+    assert_eq!(
+      interpret("N[Pi, 30] - 3").unwrap(),
+      interpret("Subtract[N[Pi, 30], 3]").unwrap()
+    );
+  }
+
+  #[test]
+  fn clean_bigfloat_sums_match_ws() {
+    assert_eq!(interpret("N[10, 30] + N[5, 30]").unwrap(), "15.`30.");
+    assert_eq!(interpret("N[2, 20] + N[3, 20]").unwrap(), "5.`20.");
+  }
+
+  #[test]
+  fn bigfloat_sum_value_is_arbitrary_precision() {
+    // N[Pi,30] + 1 must carry Pi's digits past the machine-double limit.
+    let r = interpret("N[Pi, 30] + 1").unwrap();
+    assert!(
+      r.starts_with("4.14159265358979323846264338327950288419716939937510"),
+      "sum lost precision: {r}"
+    );
+  }
+}
+
+mod bigfloat_trig {
+  use super::*;
+
+  // Tan/Cot/Sec/Csc on a BigFloat used to be left unevaluated (Tan[1.`30.]).
+  // They reduce to Sin/Cos ratios; the precision tag matches wolframscript.
+  #[test]
+  fn tan_of_bigfloat_evaluates() {
+    let r = interpret("Tan[N[1, 30]]").unwrap();
+    assert!(
+      r.starts_with("1.5574077246549022305069748074583601730872507723815"),
+      "value: {r}"
+    );
+    assert!(r.contains("`29.65767596643728"), "precision tag: {r}");
+  }
+
+  #[test]
+  fn cot_of_bigfloat_evaluates() {
+    let r = interpret("Cot[N[1, 30]]").unwrap();
+    assert!(
+      r.starts_with("0.6420926159343307030064199865942656202302781139181"),
+      "value: {r}"
+    );
+    assert!(r.contains("`29.65767596643728"), "precision tag: {r}");
+  }
+
+  #[test]
+  fn sec_of_bigfloat_evaluates() {
+    let r = interpret("Sec[N[1, 30]]").unwrap();
+    assert!(
+      r.starts_with("1.8508157176809256179117532413986501934703966550940"),
+      "value: {r}"
+    );
+    assert!(r.contains("`29.807597675558274"), "precision tag: {r}");
+  }
+
+  #[test]
+  fn csc_of_bigfloat_evaluates() {
+    let r = interpret("Csc[N[1, 30]]").unwrap();
+    assert!(
+      r.starts_with("1.1883951057781212162615994523745510035278298340979"),
+      "value: {r}"
+    );
+    assert!(r.contains("`30.192402324441726"), "precision tag: {r}");
   }
 }

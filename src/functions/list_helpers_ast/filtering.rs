@@ -2,6 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::BinaryOperator;
 
 /// AST-based Select: filter elements where predicate returns True.
 /// Select[{a, b, c}, pred] -> elements where pred[elem] is True
@@ -679,7 +680,7 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
     }
     // Alternatives: a | b - matches if either side matches
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Alternatives,
+      op: BinaryOperator::Alternatives,
       left,
       right,
     } => matches_pattern_ast(expr, left) || matches_pattern_ast(expr, right),
@@ -2063,76 +2064,76 @@ pub fn pick_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   pick_recursive(list, sel, pattern)
 }
 
+/// The element slice of any non-atomic expression. The selector's own head is
+/// irrelevant to Pick (only its structure/length matters); the result always
+/// keeps the *first* argument's head, so we extract children uniformly from
+/// Lists and general `head[...]` expressions.
+fn pick_children(expr: &Expr) -> Option<&[Expr]> {
+  match expr {
+    Expr::List(items) => Some(items),
+    Expr::FunctionCall { args, .. } => Some(args),
+    _ => None,
+  }
+}
+
+fn is_container(expr: &Expr) -> bool {
+  matches!(expr, Expr::List(_) | Expr::FunctionCall { .. })
+}
+
 fn pick_recursive(
   list: &Expr,
   sel: &Expr,
   pattern: Option<&Expr>,
 ) -> Result<Expr, InterpreterError> {
-  match (list, sel) {
-    (
-      Expr::FunctionCall {
-        name,
-        args: list_args,
-      },
-      Expr::List(sel_items),
-    ) if list_args.len() == sel_items.len() => {
-      let mut result = Vec::new();
-      for (item, s) in list_args.iter().zip(sel_items.iter()) {
-        if let (Expr::List(_), Expr::List(_)) = (item, s) {
-          let picked = pick_recursive(item, s, pattern)?;
-          result.push(picked);
-        } else if let (Expr::FunctionCall { .. }, Expr::List(_)) = (item, s) {
-          let picked = pick_recursive(item, s, pattern)?;
-          result.push(picked);
-        } else if matches_selector(s, pattern) {
-          result.push(item.clone());
-        }
+  // Pick[assoc, sel] / Pick[assoc, sel, patt] — the selector is parallel to the
+  // association's values; keep the matching key->value pairs as a
+  // sub-association.
+  if let Expr::Association(pairs) = list
+    && let Some(sel_items) = pick_children(sel)
+    && pairs.len() == sel_items.len()
+  {
+    let mut result: Vec<(Expr, Expr)> = Vec::new();
+    for ((k, v), s) in pairs.iter().zip(sel_items.iter()) {
+      if matches_selector(s, pattern) {
+        result.push((k.clone(), v.clone()));
       }
-      Ok(Expr::FunctionCall {
+    }
+    return Ok(Expr::Association(result));
+  }
+
+  // General case: `list` is a List or any head[...] and `sel` has the same
+  // length. Elements are matched by position; a nested selector element (itself
+  // a container) recurses, otherwise the element is kept when the selector
+  // matches. The result keeps `list`'s head.
+  if let (Some(list_items), Some(sel_items)) =
+    (pick_children(list), pick_children(sel))
+    && list_items.len() == sel_items.len()
+  {
+    let mut result = Vec::new();
+    for (item, s) in list_items.iter().zip(sel_items.iter()) {
+      if is_container(item) && is_container(s) {
+        result.push(pick_recursive(item, s, pattern)?);
+      } else if matches_selector(s, pattern) {
+        result.push(item.clone());
+      }
+    }
+    return Ok(match list {
+      Expr::FunctionCall { name, .. } => Expr::FunctionCall {
         name: name.clone(),
         args: result.into(),
-      })
-    }
-    (Expr::List(list_items), Expr::List(sel_items))
-      if list_items.len() == sel_items.len() =>
-    {
-      let mut result = Vec::new();
-      for (item, s) in list_items.iter().zip(sel_items.iter()) {
-        if let (Expr::List(_), Expr::List(_)) = (item, s) {
-          let picked = pick_recursive(item, s, pattern)?;
-          result.push(picked);
-        } else if let (Expr::FunctionCall { .. }, Expr::List(_)) = (item, s) {
-          let picked = pick_recursive(item, s, pattern)?;
-          result.push(picked);
-        } else if matches_selector(s, pattern) {
-          result.push(item.clone());
-        }
-      }
-      Ok(Expr::List(result.into()))
-    }
-    // Pick[assoc, sel] / Pick[assoc, sel, patt] — the selector list is
-    // parallel to the association's values; keep the matching key->value
-    // pairs as a sub-association.
-    (Expr::Association(pairs), Expr::List(sel_items))
-      if pairs.len() == sel_items.len() =>
-    {
-      let mut result: Vec<(Expr, Expr)> = Vec::new();
-      for ((k, v), s) in pairs.iter().zip(sel_items.iter()) {
-        if matches_selector(s, pattern) {
-          result.push((k.clone(), v.clone()));
-        }
-      }
-      Ok(Expr::Association(result))
-    }
-    _ => Ok(Expr::FunctionCall {
-      name: "Pick".to_string(),
-      args: if let Some(p) = pattern {
-        vec![list.clone(), sel.clone(), p.clone()].into()
-      } else {
-        vec![list.clone(), sel.clone()].into()
       },
-    }),
+      _ => Expr::List(result.into()),
+    });
   }
+
+  Ok(Expr::FunctionCall {
+    name: "Pick".to_string(),
+    args: if let Some(p) = pattern {
+      vec![list.clone(), sel.clone(), p.clone()].into()
+    } else {
+      vec![list.clone(), sel.clone()].into()
+    },
+  })
 }
 
 fn matches_selector(sel: &Expr, pattern: Option<&Expr>) -> bool {

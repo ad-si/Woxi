@@ -1,7 +1,9 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
+};
 use num_bigint::BigInt;
 use num_traits::Signed;
 
@@ -51,14 +53,14 @@ fn is_concrete_number(e: &Expr) -> bool {
     | Expr::BigFloat(_, _) => true,
     Expr::FunctionCall { name, .. } => name == "Rational",
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => is_concrete_number(operand),
     _ => false,
   }
 }
 
-pub fn bigint_gcd(a: BigInt, b: BigInt) -> BigInt {
+pub fn gcd_bigint(a: BigInt, b: BigInt) -> BigInt {
   use num_traits::Zero;
   let (mut a, mut b) = (a.abs(), b.abs());
   while !b.is_zero() {
@@ -90,8 +92,8 @@ fn emit_gcd_lcm_exact_message(name: &str, args: &[Expr]) {
     crate::emit_message(&format!(
       "{}::exact: Argument {} in {} is not an exact number.",
       name,
-      crate::syntax::expr_to_string(inexact),
-      crate::syntax::expr_to_string(&call),
+      expr_to_string(inexact),
+      expr_to_string(&call),
     ));
   }
 }
@@ -240,15 +242,15 @@ pub fn gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut num_gcd = fractions[0].0.clone().abs();
   let mut den_lcm = fractions[0].1.clone().abs();
   for (n, d) in &fractions[1..] {
-    num_gcd = bigint_gcd(num_gcd, n.clone());
-    den_lcm = bigint_lcm(den_lcm, d.clone());
+    num_gcd = gcd_bigint(num_gcd, n.clone());
+    den_lcm = lcm_bigint(den_lcm, d.clone());
   }
 
   Ok(make_rational_expr(num_gcd, den_lcm))
 }
 
 /// Extended Euclidean algorithm: returns (gcd, s, t) where a*s + b*t = gcd
-pub fn extended_gcd_bigint(a: &BigInt, b: &BigInt) -> (BigInt, BigInt, BigInt) {
+fn extended_gcd_bigint(a: &BigInt, b: &BigInt) -> (BigInt, BigInt, BigInt) {
   use num_traits::Zero;
   if b.is_zero() {
     if a.is_zero() {
@@ -408,8 +410,8 @@ pub fn lcm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut num_lcm = fractions[0].0.clone().abs();
   let mut den_gcd = fractions[0].1.clone().abs();
   for (n, d) in &fractions[1..] {
-    num_lcm = bigint_lcm(num_lcm, n.clone());
-    den_gcd = bigint_gcd(den_gcd, d.clone());
+    num_lcm = lcm_bigint(num_lcm, n.clone());
+    den_gcd = gcd_bigint(den_gcd, d.clone());
   }
 
   Ok(make_rational_expr(num_lcm, den_gcd))
@@ -441,12 +443,12 @@ fn expr_to_fraction(expr: &Expr) -> Option<(BigInt, BigInt)> {
 }
 
 /// LCM helper for BigInts. LCM(0, _) = LCM(_, 0) = 0.
-fn bigint_lcm(a: BigInt, b: BigInt) -> BigInt {
+fn lcm_bigint(a: BigInt, b: BigInt) -> BigInt {
   use num_traits::Zero;
   if a.is_zero() || b.is_zero() {
     return BigInt::from(0);
   }
-  let g = bigint_gcd(a.clone(), b.clone());
+  let g = gcd_bigint(a.clone(), b.clone());
   (a.abs() / g) * b.abs()
 }
 
@@ -459,7 +461,7 @@ pub fn make_rational_expr(num: BigInt, den: BigInt) -> Expr {
     // callers see the same surface behaviour.
     return Expr::Identifier("ComplexInfinity".to_string());
   }
-  let g = bigint_gcd(num.clone(), den.clone());
+  let g = gcd_bigint(num.clone(), den.clone());
   let mut n = num / &g;
   let mut d = den / g;
   if d < BigInt::from(0) {
@@ -818,7 +820,12 @@ pub fn lucas_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       prev = curr;
       curr = expanded;
     }
-    return apply_sign(curr);
+    let signed = apply_sign(curr)?;
+    // The step-wise Expand leaves a rational argument's terms un-summed
+    // (LucasL[4, 1/3] -> 20/9 + 19/81); evaluate so they fold to a single
+    // value (199/81). A symbolic polynomial is already canonical, so this is
+    // idempotent for it.
+    return crate::evaluator::evaluate_expr_to_expr(&signed);
   }
 
   // Real argument: analytic continuation
@@ -1092,7 +1099,7 @@ pub fn bernoulli_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Represent each Bernoulli number as a reduced (numerator, denominator)
   // pair in BigInt, so large numerators (e.g. BernoulliB[60]) don't overflow
   // i128.
-  fn bgcd(a: &BigInt, b: &BigInt) -> BigInt {
+  fn gcd_bigint(a: &BigInt, b: &BigInt) -> BigInt {
     let (mut a, mut b) = (a.clone().abs(), b.clone().abs());
     while b != BigInt::from(0) {
       let t = b.clone();
@@ -1102,7 +1109,7 @@ pub fn bernoulli_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     a
   }
   fn reduce(num: BigInt, den: BigInt) -> (BigInt, BigInt) {
-    let mut g = bgcd(&num, &den);
+    let mut g = gcd_bigint(&num, &den);
     if g == BigInt::from(0) {
       g = BigInt::from(1);
     }
@@ -1244,7 +1251,7 @@ fn bernoulli_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
         z.clone()
       } else {
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           left: Box::new(z.clone()),
           right: Box::new(Expr::Integer(k as i128)),
         }
@@ -1253,13 +1260,13 @@ fn bernoulli_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
         power
       } else if cn == -cd {
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(Expr::Integer(-1)),
           right: Box::new(power),
         }
       } else {
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(coeff_expr),
           right: Box::new(power),
         }
@@ -1275,7 +1282,7 @@ fn bernoulli_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
   let mut result = terms[0].clone();
   for term in &terms[1..] {
     result = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left: Box::new(result),
       right: Box::new(term.clone()),
     };
@@ -1463,7 +1470,7 @@ fn euler_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
         z.clone()
       } else {
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           left: Box::new(z.clone()),
           right: Box::new(Expr::Integer(k as i128)),
         }
@@ -1474,13 +1481,13 @@ fn euler_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
       } else if cn == -cd {
         // coefficient is -1
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(Expr::Integer(-1)),
           right: Box::new(power),
         }
       } else {
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(coeff_expr),
           right: Box::new(power),
         }
@@ -1496,7 +1503,7 @@ fn euler_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
   let mut result = terms[0].clone();
   for term in &terms[1..] {
     result = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left: Box::new(result),
       right: Box::new(term.clone()),
     };
@@ -1534,21 +1541,26 @@ pub fn bell_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   if args.len() == 1 {
-    // Bell number B_n
+    // Bell number B_n via the Bell triangle
     if n == 0 {
       return Ok(Expr::Integer(1));
     }
-    // Compute using B[n] = Sum[Binomial[n-1, k] B[k], {k, 0, n-1}]
-    let mut bell = vec![BigInt::from(0); n + 1];
-    bell[0] = BigInt::from(1);
+    // Compute using the Bell triangle (first column of each row), in BigInt
+    // so large Bell numbers (e.g. BellB[50], 48 digits) don't overflow i128.
+    let zero = BigInt::from(0);
+    let one = BigInt::from(1);
+    let mut row = vec![zero.clone(); n + 1];
+    row[0] = one.clone();
+    let mut next = vec![zero.clone(); n + 1];
     for i in 1..=n {
-      for k in 0..=i - 1 {
-        bell[i] =
-          &bell[i] + binomial_coeff_big((i - 1) as i128, k as i128) * &bell[k];
+      next[0] = &row[i - 1] - &row[0];
+      for j in 1..=i {
+        next[j] = &next[j - 1] + &row[j - 1];
       }
+      (row, next) = (next, row);
     }
 
-    Ok(crate::functions::math_ast::bigint_to_expr(bell[n].clone()))
+    Ok(crate::functions::math_ast::bigint_to_expr(row[n].clone()))
   } else {
     // Bell polynomial B_n(x) = sum_{k=0}^{n} S(n,k) * x^k
     // where S(n,k) is the Stirling number of the second kind
@@ -1559,19 +1571,21 @@ pub fn bell_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // large coefficients (e.g. BellB[50, x]) don't overflow i128.
     let zero = BigInt::from(0);
     let one = BigInt::from(1);
-    let mut stirling = vec![vec![zero.clone(); n + 1]; n + 1];
-    stirling[0][0] = one.clone();
+    let mut row = vec![zero.clone(); n + 1];
+    row[0] = one.clone();
+    let mut next = vec![zero.clone(); n + 1];
     for i in 1..=n {
-      for k in 1..=i {
-        stirling[i][k] = BigInt::from(k as i128) * &stirling[i - 1][k]
-          + &stirling[i - 1][k - 1];
+      next[0] = zero.clone();
+      for j in 1..=i {
+        next[j] = &row[j - 1] + BigInt::from(j as i128) * &row[j];
       }
+      (row, next) = (next, row);
     }
     // Build polynomial: sum_{k=0}^{n} S(n,k) * x^k
     let x = &args[1];
     let mut terms = Vec::new();
     for k in 0..=n {
-      let s = stirling[n][k].clone();
+      let s = row[k].clone();
       if s == zero {
         continue;
       }
@@ -1584,14 +1598,14 @@ pub fn bell_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           x.clone()
         } else {
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(coeff),
             right: Box::new(x.clone()),
           }
         }
       } else {
         let power = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           left: Box::new(x.clone()),
           right: Box::new(Expr::Integer(k as i128)),
         };
@@ -1599,7 +1613,7 @@ pub fn bell_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           power
         } else {
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(coeff),
             right: Box::new(power),
           }
@@ -1614,7 +1628,7 @@ pub fn bell_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut result = terms[0].clone();
     for term in &terms[1..] {
       result = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(result),
         right: Box::new(term.clone()),
       };
@@ -1641,7 +1655,7 @@ pub fn pauli_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let i_expr = Expr::Identifier("I".to_string());
   let neg_i = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Times,
+    op: BinaryOperator::Times,
     left: Box::new(Expr::Integer(-1)),
     right: Box::new(i_expr.clone()),
   };
@@ -1789,15 +1803,17 @@ pub fn stirling_s1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Use DP table with BigInt to avoid overflow
   let zero = BigInt::from(0);
   let one = BigInt::from(1);
-  let mut table = vec![vec![zero.clone(); k + 1]; n + 1];
-  table[0][0] = one;
+  let mut row = vec![zero.clone(); k + 1];
+  row[0] = one.clone();
+  let mut next = vec![zero.clone(); k + 1];
   for i in 1..=n {
+    next[0] = zero.clone();
     for j in 1..=k.min(i) {
-      table[i][j] =
-        &table[i - 1][j - 1] - BigInt::from(i - 1) * &table[i - 1][j];
+      next[j] = &row[j - 1] - BigInt::from(i - 1) * &row[j];
     }
+    (row, next) = (next, row);
   }
-  Ok(bigint_to_expr(table[n][k].clone()))
+  Ok(bigint_to_expr(row[k].clone()))
 }
 
 /// StirlingS2[n, k] - Stirling number of the second kind
@@ -1829,14 +1845,17 @@ pub fn stirling_s2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // S(n,k) = k*S(n-1,k) + S(n-1,k-1)
   let zero = BigInt::from(0);
   let one = BigInt::from(1);
-  let mut table = vec![vec![zero.clone(); k + 1]; n + 1];
-  table[0][0] = one;
+  let mut row = vec![zero.clone(); k + 1];
+  row[0] = one.clone();
+  let mut next = vec![zero.clone(); k + 1];
   for i in 1..=n {
+    next[0] = zero.clone();
     for j in 1..=k.min(i) {
-      table[i][j] = BigInt::from(j) * &table[i - 1][j] + &table[i - 1][j - 1];
+      next[j] = BigInt::from(j) * &row[j] + &row[j - 1];
     }
+    (row, next) = (next, row);
   }
-  Ok(bigint_to_expr(table[n][k].clone()))
+  Ok(bigint_to_expr(row[k].clone()))
 }
 
 /// Digamma function approximation using the asymptotic series.
@@ -1873,6 +1892,22 @@ pub fn digamma(mut x: f64) -> f64 {
 
 /// HarmonicNumber[n] - Returns the nth harmonic number H_n = 1 + 1/2 + ... + 1/n.
 /// HarmonicNumber[n, r] - Returns the generalized harmonic number H_{n,r} = Sum[1/k^r, {k,1,n}].
+/// True when an expression carries an inexact (machine-precision) real, so
+/// HarmonicNumber should numericize. Exact arguments — integers, rationals and
+/// exact irrationals like Sqrt[2] or Pi — stay symbolic, matching wolframscript
+/// (HarmonicNumber[1/2] is kept unevaluated, HarmonicNumber[0.5] is not).
+fn harmonic_arg_is_inexact(e: &Expr) -> bool {
+  match e {
+    Expr::Real(_) => true,
+    Expr::FunctionCall { args, .. } => args.iter().any(harmonic_arg_is_inexact),
+    Expr::BinaryOp { left, right, .. } => {
+      harmonic_arg_is_inexact(left) || harmonic_arg_is_inexact(right)
+    }
+    Expr::UnaryOp { operand, .. } => harmonic_arg_is_inexact(operand),
+    _ => false,
+  }
+}
+
 pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -1911,10 +1946,12 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  // Handle real/float argument: H(x) = digamma(x+1) + EulerGamma
+  // Handle inexact real argument: H(x) = digamma(x+1) + EulerGamma. Only a
+  // machine-precision real numericizes; exact non-integer arguments (1/2,
+  // Sqrt[2], Pi, …) stay symbolic like wolframscript.
   if args.len() == 1
+    && harmonic_arg_is_inexact(&args[0])
     && let Some(x) = expr_to_num(&args[0])
-    && expr_to_i128(&args[0]).is_none()
   {
     // Real input - use digamma approximation
     // Euler-Mascheroni constant
@@ -1940,7 +1977,7 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Build the BinaryOp Power form (k^j), which Sum's closed-form path
       // recognises; FunctionCall Power[k, j] would be left unevaluated.
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left: Box::new(k.clone()),
         right: Box::new(Expr::Integer(j)),
       }
@@ -2008,7 +2045,7 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Compute as exact rational: sum of 1/k^r for k = 1 to n
   // Use BigInt numerator and denominator
-  fn bigint_gcd(a: &BigInt, b: &BigInt) -> BigInt {
+  fn gcd_bigint(a: &BigInt, b: &BigInt) -> BigInt {
     use num_traits::Zero;
     let mut a = if *a < BigInt::zero() {
       -a.clone()
@@ -2039,7 +2076,7 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       num = &num * &k_pow + &den;
       den = &den * &k_pow;
       // Reduce
-      let g = bigint_gcd(&num, &den);
+      let g = gcd_bigint(&num, &den);
       use num_traits::One;
       if g > BigInt::one() {
         num /= &g;
@@ -2108,7 +2145,7 @@ pub fn multiple_harmonic_number_ast(
     // A non-list second argument is a usage error in wolframscript.
     crate::emit_message(&format!(
       "MultipleHarmonicNumber::list: List expected at position 2 in {}.",
-      crate::syntax::expr_to_string(&unevaluated())
+      expr_to_string(&unevaluated())
     ));
     return Ok(unevaluated());
   };
@@ -2123,7 +2160,7 @@ pub fn multiple_harmonic_number_ast(
   ) {
     let Some((&s, rest)) = exps.split_first() else {
       terms.push(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::Integer(1)),
         right: Box::new(bigint_to_expr(denom.clone())),
       });
@@ -2188,7 +2225,7 @@ pub fn alternating_harmonic_number_ast(
     let mut terms = Vec::new();
     for k in 1..=n {
       let k_pow = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left: Box::new(Expr::Integer(k)),
         right: Box::new(neg_r.clone()),
       };
@@ -2198,7 +2235,7 @@ pub fn alternating_harmonic_number_ast(
       }
       if let Some(x) = x {
         factors.push(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           left: Box::new(x.clone()),
           right: Box::new(Expr::Integer(k)),
         });
@@ -2245,7 +2282,7 @@ pub fn alternating_harmonic_number_ast(
         }
         // Eta[r] in wolframscript's form: ((-2 + 2^r) Zeta[r])/2^r
         let two_pow_r = |exp: Expr| Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           left: Box::new(Expr::Integer(2)),
           right: Box::new(exp),
         };
@@ -2331,7 +2368,7 @@ pub fn alternating_harmonic_number_ast(
           };
           num = &num * &k_pow + signed;
           den = &den * &k_pow;
-          let g = bigint_gcd(num.clone(), den.clone());
+          let g = gcd_bigint(num.clone(), den.clone());
           use num_traits::One;
           if g > BigInt::one() {
             num /= &g;
@@ -2373,7 +2410,7 @@ pub fn alternating_harmonic_number_ast(
   let r_expr = &args[1];
   let x = &args[2];
   if !is_exact_order(r_expr)
-    || !crate::functions::predicate_ast::is_numeric_q_pub(x)
+    || !crate::functions::predicate_ast::is_numeric_q(x)
   {
     return Ok(unevaluated);
   }
@@ -2466,7 +2503,7 @@ pub fn hyper_harmonic_number_ast(
   // for symbolic s and x (e.g. HyperHarmonicNumber[0, 5, s] -> 5^(-s)).
   if r == 0 {
     let n_pow = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left: Box::new(Expr::Integer(n)),
       right: Box::new(neg_s(&s)),
     };
@@ -2475,7 +2512,7 @@ pub fn hyper_harmonic_number_ast(
         name: "Times".to_string(),
         args: vec![
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left: Box::new(x.clone()),
             right: Box::new(Expr::Integer(n)),
           },
@@ -2497,7 +2534,7 @@ pub fn hyper_harmonic_number_ast(
     return Ok(unevaluated);
   }
   if let Some(x) = x
-    && !crate::functions::predicate_ast::is_numeric_q_pub(x)
+    && !crate::functions::predicate_ast::is_numeric_q(x)
   {
     return Ok(unevaluated);
   }
@@ -2516,14 +2553,14 @@ pub fn hyper_harmonic_number_ast(
   for k in 1..=n {
     let coeff = bigint_to_expr(binom(n - k + r - 1, r - 1));
     let k_pow = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left: Box::new(Expr::Integer(k)),
       right: Box::new(neg_s.clone()),
     };
     let mut factors = vec![coeff];
     if let Some(x) = x {
       factors.push(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left: Box::new(x.clone()),
         right: Box::new(Expr::Integer(k)),
       });
@@ -2559,7 +2596,7 @@ pub fn prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(n) if n >= 1 => Ok(Expr::Integer(nth_prime(n as usize) as i128)),
     Some(_) => {
       // Concrete non-positive integer: emit message like wolframscript
-      let arg_str = crate::syntax::expr_to_string(&args[0]);
+      let arg_str = expr_to_string(&args[0]);
       crate::emit_message(&format!(
         "Prime::intpp: Positive integer argument expected in Prime[{}].",
         arg_str
@@ -2570,7 +2607,7 @@ pub fn prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Concrete non-integer numeric (e.g. 1.5): emit message like wolframscript
       // Symbolic arguments return unevaluated silently
       if matches!(&args[0], Expr::Real(_) | Expr::BigFloat(_, _)) {
-        let arg_str = crate::syntax::expr_to_string(&args[0]);
+        let arg_str = expr_to_string(&args[0]);
         crate::emit_message(&format!(
           "Prime::intpp: Positive integer argument expected in Prime[{}].",
           arg_str
@@ -2682,7 +2719,7 @@ fn fibonacci_polynomial_ast(
   }
 }
 
-pub fn fibonacci_number_bigint(n: u128) -> BigInt {
+fn fibonacci_number_bigint(n: u128) -> BigInt {
   if n == 0 {
     return BigInt::from(0);
   }
@@ -3366,7 +3403,7 @@ fn factor_integer_rational(
   Ok(Expr::List(result.into()))
 }
 
-pub fn factor_integer_i128(n: i128) -> Result<Expr, InterpreterError> {
+fn factor_integer_i128(n: i128) -> Result<Expr, InterpreterError> {
   if n == 0 {
     // wolframscript: FactorInteger[0] = {{0, 1}} (0 treated as 0^1).
     return Ok(Expr::List(
@@ -3432,7 +3469,7 @@ pub fn factor_integer_i128(n: i128) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(factors.into()))
 }
 
-pub fn factor_integer_bigint(n: &BigInt) -> Result<Expr, InterpreterError> {
+fn factor_integer_bigint(n: &BigInt) -> Result<Expr, InterpreterError> {
   use num_traits::{One, Signed, Zero};
 
   if n.is_zero() {
@@ -3572,46 +3609,80 @@ pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let n = n as u64;
 
-  // Parse length constraints from second arg
-  let (min_len, max_len) = if args.len() >= 2 {
+  // Positive infinity, either the symbol Infinity or DirectedInfinity[1].
+  let is_pos_inf = |e: &Expr| {
+    matches!(e, Expr::Identifier(s) if s == "Infinity")
+      || matches!(e, Expr::FunctionCall { name, args: a }
+        if name == "DirectedInfinity"
+          && a.len() == 1
+          && matches!(&a[0], Expr::Integer(1)))
+  };
+  // An invalid length spec at position 2 emits nninfseq and stays unevaluated.
+  let nninfseq = || {
+    crate::emit_message(&format!(
+      "IntegerPartitions::nninfseq: Position 2 of {} must be All, Infinity, nmax, {{nmin}}, {{nmin, nmax}} or {{nmin, nmax, dn}}, where nmin is a non-negative integer, nmax is a non-negative integer or Infinity, and dn is a nonzero integer.",
+      crate::syntax::expr_to_string(&Expr::FunctionCall {
+        name: "IntegerPartitions".to_string(),
+        args: args.to_vec().into(),
+      })
+    ));
+    Ok(Expr::FunctionCall {
+      name: "IntegerPartitions".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+
+  // Parse length constraints from the second arg into
+  // (min parts, max parts, part-count step).
+  let (min_len, max_len, len_step): (u64, u64, u64) = if args.len() >= 2 {
     match &args[1] {
-      // IntegerPartitions[n, k] — at most k parts
-      e if expr_to_i128(e).is_some_and(|k| k >= 0) => {
-        (1, expr_to_i128(e).unwrap() as u64)
-      }
-      // IntegerPartitions[n, All] — no constraint
-      Expr::Identifier(s) if s == "All" => (1, n.max(1)),
-      // IntegerPartitions[n, {k}] — exactly k parts
-      Expr::List(lst) if lst.len() == 1 => match expr_to_i128(&lst[0]) {
-        Some(k) if k >= 0 => (k as u64, k as u64),
-        _ => {
-          return Ok(Expr::FunctionCall {
-            name: "IntegerPartitions".to_string(),
-            args: args.to_vec().into(),
-          });
-        }
+      // IntegerPartitions[n, All] / [n, Infinity] — no bounds (0..n parts, so
+      // the empty partition of 0 is included).
+      Expr::Identifier(s) if s == "All" => (0, n.max(1), 1),
+      e if is_pos_inf(e) => (0, n.max(1), 1),
+      // IntegerPartitions[n, k] — at most k parts (0..k, so 0 parts qualify).
+      e if expr_to_i128(e).is_some() => match expr_to_i128(e).unwrap() {
+        k if k >= 0 => (0, k as u64, 1),
+        _ => return nninfseq(),
       },
-      // IntegerPartitions[n, {kmin, kmax}] — range of parts
+      // IntegerPartitions[n, {k}] — exactly k parts.
+      Expr::List(lst) if lst.len() == 1 => match expr_to_i128(&lst[0]) {
+        Some(k) if k >= 0 => (k as u64, k as u64, 1),
+        _ => return nninfseq(),
+      },
+      // IntegerPartitions[n, {kmin, kmax}] — range of parts (kmax may be
+      // Infinity, meaning no upper bound).
       Expr::List(lst) if lst.len() == 2 => {
-        match (expr_to_i128(&lst[0]), expr_to_i128(&lst[1])) {
-          (Some(lo), Some(hi)) if lo >= 0 && hi >= 0 => (lo as u64, hi as u64),
-          _ => {
-            return Ok(Expr::FunctionCall {
-              name: "IntegerPartitions".to_string(),
-              args: args.to_vec().into(),
-            });
+        let hi = if is_pos_inf(&lst[1]) {
+          Some(n as i128)
+        } else {
+          expr_to_i128(&lst[1])
+        };
+        match (expr_to_i128(&lst[0]), hi) {
+          (Some(lo), Some(hi)) if lo >= 0 && hi >= 0 => {
+            (lo as u64, hi as u64, 1)
           }
+          _ => return nninfseq(),
         }
       }
-      _ => {
-        return Ok(Expr::FunctionCall {
-          name: "IntegerPartitions".to_string(),
-          args: args.to_vec().into(),
-        });
+      // IntegerPartitions[n, {kmin, kmax, dn}] — part counts kmin, kmin+dn, …
+      Expr::List(lst) if lst.len() == 3 => {
+        let hi = if is_pos_inf(&lst[1]) {
+          Some(n as i128)
+        } else {
+          expr_to_i128(&lst[1])
+        };
+        match (expr_to_i128(&lst[0]), hi, expr_to_i128(&lst[2])) {
+          (Some(lo), Some(hi), Some(dn)) if lo >= 0 && hi >= 0 && dn > 0 => {
+            (lo as u64, hi as u64, dn as u64)
+          }
+          _ => return nninfseq(),
+        }
       }
+      _ => return nninfseq(),
     }
   } else {
-    (1, n.max(1))
+    (1, n.max(1), 1)
   };
 
   // Parse allowed elements from third arg
@@ -3676,6 +3747,27 @@ pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None
   };
 
+  // When a part-count step is in effect the count limit must be applied after
+  // filtering by step, so let the generators run unbounded in that case.
+  let gen_max = if len_step == 1 { max_results } else { None };
+  // Keep only partitions whose length matches the step, then truncate.
+  let apply_step = |lens: Vec<Vec<u64>>| -> Vec<Vec<u64>> {
+    let mut kept: Vec<Vec<u64>> = if len_step == 1 {
+      lens
+    } else {
+      lens
+        .into_iter()
+        .filter(|p| (p.len() as u64 - min_len).is_multiple_of(len_step))
+        .collect()
+    };
+    if len_step != 1
+      && let Some(m) = max_results
+    {
+      kept.truncate(m);
+    }
+    kept
+  };
+
   // Special case: n == 0
   // The only partition of 0 is the empty partition {}, which has 0 parts
   if n == 0 {
@@ -3699,8 +3791,15 @@ pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       0,
       &mut current_signed,
       &mut result_signed,
-      max_results,
+      gen_max,
     );
+    if len_step != 1 {
+      result_signed
+        .retain(|p| (p.len() as u64 - min_len).is_multiple_of(len_step));
+      if let Some(m) = max_results {
+        result_signed.truncate(m);
+      }
+    }
     return Ok(Expr::List(
       result_signed
         .into_iter()
@@ -3722,7 +3821,7 @@ pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         0,
         &mut current,
         &mut result,
-        max_results,
+        gen_max,
       );
     }
     None => {
@@ -3733,11 +3832,12 @@ pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         min_len,
         &mut current,
         &mut result,
-        max_results,
+        gen_max,
       );
     }
   }
 
+  let result = apply_step(result);
   Ok(Expr::List(
     result
       .into_iter()
@@ -3750,7 +3850,7 @@ pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Generate all partitions of `remaining` where each part <= `max_part`,
 /// with total number of parts between `min_len` and `max_len`.
-pub fn generate_partitions(
+fn generate_partitions(
   remaining: u64,
   max_part: u64,
   max_len: u64,
@@ -3791,7 +3891,7 @@ pub fn generate_partitions(
 }
 
 /// Generate partitions using only elements from `elems` (sorted descending, positive).
-pub fn generate_partitions_restricted(
+fn generate_partitions_restricted(
   remaining: u64,
   max_len: u64,
   min_len: u64,
@@ -4316,7 +4416,7 @@ pub fn euler_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Compute Euler's totient function for a BigInt by factoring and applying
 /// φ(n) = ∏ pᵢ^(eᵢ-1) (pᵢ - 1).
-pub fn euler_phi_bigint(n: &BigInt) -> Result<BigInt, InterpreterError> {
+fn euler_phi_bigint(n: &BigInt) -> Result<BigInt, InterpreterError> {
   use num_traits::{One, Zero};
   if n.is_zero() {
     return Ok(BigInt::zero());
@@ -4411,7 +4511,7 @@ pub fn carmichael_lambda_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Carmichael lambda λ(n): the smallest m with a^m ≡ 1 (mod n) for all a
 /// coprime to n. λ(0) is defined here as 0 and λ(1) as 1.
-pub fn carmichael_lambda_u128(n: u128) -> u128 {
+fn carmichael_lambda_u128(n: u128) -> u128 {
   if n == 0 {
     return 0;
   }
@@ -4500,18 +4600,14 @@ pub fn jacobi_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // m must be a positive odd integer
-  if m <= 0 || m % 2 == 0 {
-    return Err(InterpreterError::EvaluationError(
-      "JacobiSymbol: second argument must be a positive odd integer".into(),
-    ));
-  }
-
-  Ok(Expr::Integer(jacobi_symbol(n, m)))
+  // wolframscript defines JacobiSymbol[a, n] for all integers n via the
+  // Kronecker-symbol extension (even/zero/negative n included); for odd
+  // positive n it coincides with the ordinary Jacobi symbol.
+  Ok(Expr::Integer(kronecker_symbol(n, m)))
 }
 
 /// Compute the Jacobi symbol (a/n) using the standard algorithm
-pub fn jacobi_symbol(mut a: i128, mut n: i128) -> i128 {
+fn jacobi_symbol(mut a: i128, mut n: i128) -> i128 {
   if n == 1 {
     return 1;
   }
@@ -4541,6 +4637,61 @@ pub fn jacobi_symbol(mut a: i128, mut n: i128) -> i128 {
   }
 
   if n == 1 { result } else { 0 }
+}
+
+/// Compute the Kronecker symbol (a/n), the extension of the Jacobi symbol to
+/// all integers n (including even, zero and negative). wolframscript defines
+/// both `JacobiSymbol[a, n]` and `KroneckerSymbol[a, n]` by this same symbol.
+pub fn kronecker_symbol(a: i128, n: i128) -> i128 {
+  if n == 0 {
+    return if a == 1 || a == -1 { 1 } else { 0 };
+  }
+  if n == 1 {
+    return 1;
+  }
+  if n == -1 {
+    return if a < 0 { -1 } else { 1 };
+  }
+
+  // (a/2): 0 for even a, +1 for a ≡ ±1 (mod 8), -1 for a ≡ ±3 (mod 8).
+  if n == 2 {
+    if a % 2 == 0 {
+      return 0;
+    }
+    let a_mod_8 = a.rem_euclid(8);
+    return if a_mod_8 == 1 || a_mod_8 == 7 { 1 } else { -1 };
+  }
+  if n == -2 {
+    return kronecker_symbol(a, -1) * kronecker_symbol(a, 2);
+  }
+
+  // For negative n, factor out the sign.
+  if n < 0 {
+    return kronecker_symbol(a, -1) * kronecker_symbol(a, -n);
+  }
+
+  // n > 2 and positive. Factor out the powers of 2, then use the Jacobi symbol
+  // for the remaining odd part.
+  let mut n_rem = n;
+  let mut result: i128 = 1;
+
+  let mut twos = 0;
+  while n_rem % 2 == 0 {
+    n_rem /= 2;
+    twos += 1;
+  }
+  if twos > 0 {
+    let k2 = kronecker_symbol(a, 2);
+    for _ in 0..twos {
+      result *= k2;
+    }
+  }
+
+  if n_rem > 1 {
+    result *= jacobi_symbol(a, n_rem);
+  }
+
+  result
 }
 
 /// CoprimeQ[a, b, ...] - Tests if integers are pairwise coprime
@@ -4626,9 +4777,7 @@ pub fn binomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Binomial[k, k] = 1 for any k (including symbolic), matching wolframscript.
   // Inexact arguments (machine reals) yield 1. rather than the exact integer.
-  if crate::syntax::expr_to_string(&args[0])
-    == crate::syntax::expr_to_string(&args[1])
-  {
+  if expr_to_string(&args[0]) == expr_to_string(&args[1]) {
     let inexact = matches!(&args[0], Expr::Real(_) | Expr::BigFloat(_, _))
       || matches!(&args[1], Expr::Real(_) | Expr::BigFloat(_, _));
     return Ok(if inexact {
@@ -4989,8 +5138,8 @@ pub fn power_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if modulus.is_zero() {
         crate::emit_message(&format!(
           "PowerMod::divz: The argument 0 in PowerMod[{}, {}, 0] should be nonzero.",
-          crate::syntax::expr_to_string(&args[0]),
-          crate::syntax::expr_to_string(&args[1])
+          expr_to_string(&args[0]),
+          expr_to_string(&args[1])
         ));
         return Ok(Expr::FunctionCall {
           name: "PowerMod".to_string(),
@@ -5011,8 +5160,8 @@ pub fn power_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             } else {
               crate::emit_message(&format!(
                 "PowerMod::ninv: {} is not invertible modulo {}.",
-                crate::syntax::expr_to_string(&args[0]),
-                crate::syntax::expr_to_string(&args[2])
+                expr_to_string(&args[0]),
+                expr_to_string(&args[2])
               ));
               Ok(Expr::FunctionCall {
                 name: "PowerMod".to_string(),
@@ -5080,7 +5229,7 @@ fn power_mod_root_ast(
       args: args.to_vec().into(),
     })
   };
-  let exp_str = || crate::syntax::expr_to_string(&args[1]);
+  let exp_str = || expr_to_string(&args[1]);
   let (Some(a), Some(m)) = (expr_to_bigint(&args[0]), expr_to_bigint(&args[2]))
   else {
     return unevaluated();
@@ -5088,7 +5237,7 @@ fn power_mod_root_ast(
   if m.is_zero() {
     crate::emit_message(&format!(
       "PowerMod::divz: The argument 0 in PowerMod[{}, {}, 0] should be nonzero.",
-      crate::syntax::expr_to_string(&args[0]),
+      expr_to_string(&args[0]),
       exp_str()
     ));
     return unevaluated();
@@ -5135,8 +5284,8 @@ fn power_mod_root_ast(
       crate::emit_message(&format!(
         "PowerMod::root: The equation x^{} = {} (mod {}) has no integer solutions.",
         n,
-        crate::syntax::expr_to_string(&args[0]),
-        crate::syntax::expr_to_string(&args[2])
+        expr_to_string(&args[0]),
+        expr_to_string(&args[2])
       ));
       unevaluated()
     }
@@ -5145,7 +5294,7 @@ fn power_mod_root_ast(
 
 /// Binary exponentiation: base^exp mod modulus (all unsigned)
 /// Uses BigUint for intermediate multiplication to avoid u128 overflow.
-pub fn mod_pow_unsigned(base: u128, mut exp: u128, modulus: u128) -> u128 {
+fn mod_pow_unsigned(base: u128, mut exp: u128, modulus: u128) -> u128 {
   use num_bigint::BigUint;
   use num_traits::ToPrimitive;
 
@@ -5166,7 +5315,7 @@ pub fn mod_pow_unsigned(base: u128, mut exp: u128, modulus: u128) -> u128 {
 }
 
 /// Extended Euclidean algorithm for modular inverse
-pub fn mod_inverse(a: i128, m: i128) -> Option<i128> {
+fn mod_inverse(a: i128, m: i128) -> Option<i128> {
   let m_abs = m.abs();
   let a = ((a % m_abs) + m_abs) % m_abs;
   let (mut old_r, mut r) = (a, m_abs);
@@ -5463,7 +5612,7 @@ pub fn next_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Find the smallest prime > n (including negative primes like -2, -3, -5, ...).
-pub fn next_prime_after(n: i128) -> i128 {
+fn next_prime_after(n: i128) -> i128 {
   // For n >= 1: search upward from n+1
   if n >= 1 {
     let mut candidate = n + 1;
@@ -5488,7 +5637,7 @@ pub fn next_prime_after(n: i128) -> i128 {
 
 /// Find the largest prime < n (including negative primes).
 /// The prime sequence is: ..., -7, -5, -3, -2, 2, 3, 5, 7, 11, ...
-pub fn prev_prime_before(n: i128) -> i128 {
+fn prev_prime_before(n: i128) -> i128 {
   // For n > 2: search downward among positive primes
   if n > 2 {
     let mut candidate = n - 1;
@@ -5517,7 +5666,7 @@ pub fn prev_prime_before(n: i128) -> i128 {
 }
 
 /// Find the smallest prime > n for BigInt values.
-pub fn next_prime_after_bigint(n: &BigInt) -> BigInt {
+fn next_prime_after_bigint(n: &BigInt) -> BigInt {
   use num_traits::{One, Zero};
 
   let one = BigInt::one();
@@ -5588,8 +5737,8 @@ pub fn modular_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::emit_message(&format!(
       "ModularInverse::intnz: Nonzero integer expected at position 2 in \
        ModularInverse[{}, {}].",
-      crate::syntax::expr_to_string(&args[0]),
-      crate::syntax::expr_to_string(&args[1])
+      expr_to_string(&args[0]),
+      expr_to_string(&args[1])
     ));
     return unevaluated();
   }
@@ -5606,8 +5755,8 @@ pub fn modular_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !gcd.abs().is_one() {
     crate::emit_message(&format!(
       "ModularInverse::ninv: {} is not invertible modulo {}.",
-      crate::syntax::expr_to_string(&args[0]),
-      crate::syntax::expr_to_string(&args[1])
+      expr_to_string(&args[0]),
+      expr_to_string(&args[1])
     ));
     return unevaluated();
   }
@@ -5622,7 +5771,7 @@ pub fn modular_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Extended GCD: returns (gcd, x, y) such that a*x + b*y = gcd
-pub fn extended_gcd(a: &BigInt, b: &BigInt) -> (BigInt, BigInt, BigInt) {
+fn extended_gcd(a: &BigInt, b: &BigInt) -> (BigInt, BigInt, BigInt) {
   use num_traits::Zero;
   if a.is_zero() {
     return (b.clone(), BigInt::zero(), BigInt::from(1));
@@ -5900,7 +6049,7 @@ pub fn frobenius_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if items.is_empty() {
     crate::emit_message(&format!(
       "FrobeniusNumber::coef: The first argument {} of FrobeniusNumber should be a nonempty list of positive integers.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(Expr::FunctionCall {
       name: "FrobeniusNumber".to_string(),
@@ -5918,7 +6067,7 @@ pub fn frobenius_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         crate::emit_message(&format!(
           "FrobeniusNumber::coef: The first argument {} of FrobeniusNumber should be a nonempty list of positive integers.",
-          crate::syntax::expr_to_string(&args[0])
+          expr_to_string(&args[0])
         ));
         return Ok(Expr::FunctionCall {
           name: "FrobeniusNumber".to_string(),
@@ -5934,13 +6083,13 @@ pub fn frobenius_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Compute GCD of all elements
-  fn gcd(a: i128, b: i128) -> i128 {
-    if b == 0 { a.abs() } else { gcd(b, a % b) }
+  fn gcd_i128(a: i128, b: i128) -> i128 {
+    if b == 0 { a.abs() } else { gcd_i128(b, a % b) }
   }
 
   let mut g = nums[0];
   for &n in &nums[1..] {
-    g = gcd(g, n);
+    g = gcd_i128(g, n);
   }
 
   // If GCD > 1, infinitely many integers can't be represented
@@ -6014,7 +6163,7 @@ pub fn frobenius_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let coef_err = || {
     crate::emit_message(&format!(
       "FrobeniusSolve::coef: The first argument {} of FrobeniusSolve should be a nonempty list of positive integers.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     Ok::<Expr, InterpreterError>(Expr::FunctionCall {
       name: "FrobeniusSolve".to_string(),
@@ -6052,7 +6201,7 @@ pub fn frobenius_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => {
           crate::emit_message(&format!(
             "FrobeniusSolve::nsol: The number {} of requested solutions should be a positive integer.",
-            crate::syntax::expr_to_string(&args[2])
+            expr_to_string(&args[2])
           ));
           return Ok(Expr::FunctionCall {
             name: "FrobeniusSolve".to_string(),
@@ -6132,7 +6281,7 @@ pub fn partitions_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Compute p(n) using dynamic programming
-pub fn partitions_p(n: usize) -> BigInt {
+fn partitions_p(n: usize) -> BigInt {
   let mut dp = vec![BigInt::from(0); n + 1];
   dp[0] = BigInt::from(1);
   for k in 1..=n {
@@ -6199,8 +6348,7 @@ pub fn arithmetic_geometric_mean_ast(
   // matching wolframscript; equal numbers are handled by the numeric path
   // below.
   if matches!(&args[0], Expr::Identifier(_) | Expr::Constant(_))
-    && crate::syntax::expr_to_string(&args[0])
-      == crate::syntax::expr_to_string(&args[1])
+    && expr_to_string(&args[0]) == expr_to_string(&args[1])
   {
     return Ok(args[0].clone());
   }
@@ -9162,8 +9310,8 @@ pub fn six_j_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if c < (a - b).abs() || c > a + b || (a + b + c).rem_euclid(2) != 0 {
       crate::emit_message(&format!(
         "SixJSymbol::tri: SixJSymbol[{}, {}] is not triangular.",
-        crate::syntax::expr_to_string(&args[0]),
-        crate::syntax::expr_to_string(&args[1])
+        expr_to_string(&args[0]),
+        expr_to_string(&args[1])
       ));
       return Ok(Expr::Integer(0));
     }
@@ -9372,7 +9520,7 @@ fn six_j_symbol_symbolic(
       let forced = if v_2j.rem_euclid(2) == 0 {
         Expr::Integer(v_j)
       } else {
-        crate::functions::math_ast::make_rational_pub(v_2j, 2)
+        crate::functions::math_ast::make_rational(v_2j, 2)
       };
       new_items[k] = forced.clone();
       new_args[group] = Expr::List(new_items.into());
@@ -9384,7 +9532,7 @@ fn six_j_symbol_symbolic(
     let forced_value = Expr::Integer(v_2j / 2);
     let cond = Expr::Comparison {
       operands: vec![Expr::Identifier(sym_name.clone()), forced_value],
-      operators: vec![crate::syntax::ComparisonOp::Equal],
+      operators: vec![ComparisonOp::Equal],
     };
     branches.push(Expr::List(vec![value, cond].into()));
   }
@@ -9429,7 +9577,7 @@ fn bigint_rational_to_expr(num: BigInt, den: BigInt) -> Expr {
   if den.is_zero() {
     return Expr::Identifier("ComplexInfinity".to_string());
   }
-  let g = bigint_gcd(num.clone().abs(), den.clone().abs());
+  let g = gcd_bigint(num.clone().abs(), den.clone().abs());
   let (mut n, mut d) = (num / &g, den / &g);
   if d < BigInt::from(0) {
     n = -n;
@@ -9449,7 +9597,7 @@ fn bigint_rational_to_expr(num: BigInt, den: BigInt) -> Expr {
 fn two_half_int_signed(expr: &Expr) -> Option<i128> {
   // UnaryOp::Minus wrapping an integer/rational.
   if let Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand,
   } = expr
   {
@@ -9532,7 +9680,7 @@ pub fn clebsch_gordan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let forced_m_expr = if two_m[idx].rem_euclid(2) == 0 {
       Expr::Integer(two_m[idx] / 2)
     } else {
-      crate::functions::math_ast::make_rational_pub(two_m[idx], 2)
+      crate::functions::math_ast::make_rational(two_m[idx], 2)
     };
     // Build the concrete-m args and recurse so all the existing
     // selection-rule machinery runs.
@@ -9553,7 +9701,7 @@ pub fn clebsch_gordan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     let condition = Expr::Comparison {
       operands: vec![Expr::Identifier(sym_name.clone()), forced_m_expr],
-      operators: vec![crate::syntax::ComparisonOp::Equal],
+      operators: vec![ComparisonOp::Equal],
     };
     let branch = Expr::List(vec![value, condition].into());
     let pw_args = Expr::List(vec![branch].into());
@@ -9660,7 +9808,7 @@ impl PipeThroughRational for Expr {
       if n.rem_euclid(denom) == 0 {
         return Expr::Integer(n / denom);
       }
-      return crate::functions::math_ast::make_rational_pub(n, denom);
+      return crate::functions::math_ast::make_rational(n, denom);
     }
     self
   }
@@ -9687,7 +9835,7 @@ pub fn farey_sequence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(_) if args.len() == 1 => {
       crate::emit_message(&format!(
         "FareySequence::intpm: Positive machine-sized integer expected at position 1 in {}.",
-        crate::syntax::expr_to_string(&unevaluated(args))
+        expr_to_string(&unevaluated(args))
       ));
       return Ok(Expr::Identifier("Null".to_string()));
     }
@@ -9718,7 +9866,7 @@ pub fn farey_sequence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::emit_message(&format!(
           "FareySequence::rank: Farey sequence rank {} at position 2 of {} is expected to be a positive integer less than or equal to {}.",
           rank,
-          crate::syntax::expr_to_string(&unevaluated(args)),
+          expr_to_string(&unevaluated(args)),
           terms.len()
         ));
         return Ok(unevaluated(args));
@@ -9763,7 +9911,7 @@ pub fn fibonorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ if is_non_integer_number => {
       crate::emit_message(&format!(
         "Fibonorial::intnm: Non-negative machine-sized integer expected at position 1 in {}.",
-        crate::syntax::expr_to_string(&unevaluated(args))
+        expr_to_string(&unevaluated(args))
       ));
       Ok(unevaluated(args))
     }

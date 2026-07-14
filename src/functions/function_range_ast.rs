@@ -7,7 +7,7 @@
 //! LessEqual, 1].
 
 use crate::InterpreterError;
-use crate::syntax::{ComparisonOp, Expr};
+use crate::syntax::{BinaryOperator, ComparisonOp, Expr};
 
 pub fn function_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = |args: &[Expr]| Expr::FunctionCall {
@@ -162,7 +162,7 @@ fn as_power(expr: &Expr) -> Option<(Expr, Expr)> {
       Some((args[0].clone(), args[1].clone()))
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => Some(((**left).clone(), (**right).clone())),

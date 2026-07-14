@@ -1146,6 +1146,58 @@ mod probability_distribution {
     );
   }
 
+  // NExpectation[f, x ~ dist] is the numerical wrapper N[Expectation[…]].
+  // The expected strings below were verified to match wolframscript exactly.
+  #[test]
+  fn n_expectation_numeric() {
+    // Discrete mean: E[x] for Poisson[3.5] = 3.5.
+    assert_eq!(
+      interpret("NExpectation[x, x \\[Distributed] PoissonDistribution[3.5]]")
+        .unwrap(),
+      "3.5"
+    );
+    // Second moment of a standard normal = 1.
+    assert_eq!(
+      interpret(
+        "Round[NExpectation[x^2, x \\[Distributed] NormalDistribution[0, 1]], 0.0001]"
+      )
+      .unwrap(),
+      "1."
+    );
+    // Mean of ExponentialDistribution[2] = 1/2.
+    assert_eq!(
+      interpret(
+        "Round[NExpectation[x, x \\[Distributed] ExponentialDistribution[2]], 0.0001]"
+      )
+      .unwrap(),
+      "0.5"
+    );
+    // Second moment of Uniform[{0, 1}] = 1/3.
+    assert_eq!(
+      interpret(
+        "Round[NExpectation[x^2, x \\[Distributed] UniformDistribution[{0, 1}]], 0.0001]"
+      )
+      .unwrap(),
+      "0.33330000000000004"
+    );
+    // Discrete mean: E[x] for Binomial[10, 1/3] = 10/3.
+    assert_eq!(
+      interpret(
+        "NExpectation[x, x \\[Distributed] BinomialDistribution[10, 1/3]]"
+      )
+      .unwrap(),
+      "3.3333333333333335"
+    );
+    // E[Boole[x > 1]] over a standard normal = P(x > 1) ≈ 0.1587.
+    assert_eq!(
+      interpret(
+        "Round[NExpectation[Boole[x > 1], x \\[Distributed] NormalDistribution[0, 1]], 0.0001]"
+      )
+      .unwrap(),
+      "0.1587"
+    );
+  }
+
   #[test]
   fn expectation_multivariate() {
     // E[x, {x,y} ~ PD[(10-x*y^2)/64, {x,2,10}, {y,0,1}]] = 52/9.
@@ -1510,6 +1562,120 @@ mod find_distribution_parameters {
       interpret("FindDistributionParameters[{1, 2, 3}, FooDistribution[a, b]]")
         .unwrap(),
       "FindDistributionParameters[{1, 2, 3}, FooDistribution[a, b]]"
+    );
+  }
+}
+
+mod mixture_distribution {
+  use super::*;
+
+  // Mean of a mixture is the weight-normalized average of the component means.
+  #[test]
+  fn mean_is_weighted_average() {
+    assert_eq!(
+      interpret(
+        "Mean[MixtureDistribution[{1, 1}, \
+         {NormalDistribution[0, 1], NormalDistribution[5, 1]}]]"
+      )
+      .unwrap(),
+      "5/2"
+    );
+    assert_eq!(
+      interpret(
+        "Mean[MixtureDistribution[{1, 3}, \
+         {NormalDistribution[0, 1], NormalDistribution[8, 1]}]]"
+      )
+      .unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret(
+        "Mean[MixtureDistribution[{2, 1}, \
+         {PoissonDistribution[3], PoissonDistribution[9]}]]"
+      )
+      .unwrap(),
+      "5"
+    );
+  }
+
+  // Variance via the law of total variance.
+  #[test]
+  fn variance_law_of_total_variance() {
+    assert_eq!(
+      interpret(
+        "Variance[MixtureDistribution[{1, 1}, \
+         {NormalDistribution[0, 1], NormalDistribution[0, 2]}]]"
+      )
+      .unwrap(),
+      "5/2"
+    );
+    assert_eq!(
+      interpret(
+        "Variance[MixtureDistribution[{1, 1}, \
+         {NormalDistribution[0, 1], NormalDistribution[6, 1]}]]"
+      )
+      .unwrap(),
+      "10"
+    );
+    assert_eq!(
+      interpret(
+        "Variance[MixtureDistribution[{1, 1}, \
+         {PoissonDistribution[2], PoissonDistribution[4]}]]"
+      )
+      .unwrap(),
+      "4"
+    );
+  }
+
+  // PDF of a mixture is the weight-normalized sum of the component PDFs, with
+  // the weight distributed into each term (matching wolframscript's form).
+  #[test]
+  fn pdf_is_weighted_sum() {
+    assert_eq!(
+      interpret(
+        "PDF[MixtureDistribution[{1, 1}, \
+         {NormalDistribution[0, 1], NormalDistribution[3, 1]}], 0]"
+      )
+      .unwrap(),
+      "1/(2*Sqrt[2*Pi]) + 1/(2*E^(9/2)*Sqrt[2*Pi])"
+    );
+    // Discrete components with unequal weights.
+    assert_eq!(
+      interpret(
+        "PDF[MixtureDistribution[{1, 1}, \
+         {PoissonDistribution[2], PoissonDistribution[5]}], 3]"
+      )
+      .unwrap(),
+      "125/(12*E^5) + 2/(3*E^2)"
+    );
+    assert_eq!(
+      interpret(
+        "PDF[MixtureDistribution[{1, 3}, \
+         {UniformDistribution[{0, 1}], UniformDistribution[{0, 2}]}], 1/2]"
+      )
+      .unwrap(),
+      "5/8"
+    );
+  }
+
+  // CDF of a mixture is the weight-normalized sum of the component CDFs.
+  #[test]
+  fn cdf_is_weighted_sum() {
+    assert_eq!(
+      interpret(
+        "CDF[MixtureDistribution[{1, 1}, \
+         {NormalDistribution[0, 1], NormalDistribution[3, 1]}], 0]"
+      )
+      .unwrap(),
+      "1/4 + Erfc[3/Sqrt[2]]/4"
+    );
+    assert_eq!(
+      interpret(
+        "CDF[MixtureDistribution[{1, 1}, \
+         {BernoulliDistribution[1/2], BernoulliDistribution[1/3]}], 0]"
+      )
+      .unwrap(),
+      "7/12"
     );
   }
 }
@@ -6077,5 +6243,1283 @@ mod lindley_distribution {
       "1 - 5/(3*E^2)"
     );
     assert_eq!(interpret("CDF[LindleyDistribution[1], 0]").unwrap(), "0");
+  }
+}
+
+// CoxianDistribution semantics decoded from wolframscript probes: a
+// mixture of hypoexponential prefixes weighted by exit probabilities
+// w_k = a1...a_{k-1}(1-a_k). PDF/CDF cover exact all-distinct and
+// all-equal rates (mixed repetition shares the hypoexponential Erlang
+// gap and stays unevaluated); the all-equal CDF reproduces WS's
+// Piecewise default of 1. Constructors echo silently; consumers emit
+// the validation messages.
+mod coxian_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_and_cdf_distinct_rates() {
+    clear_state();
+    assert_eq!(
+      interpret("PDF[CoxianDistribution[{1/2}, {2, 3}], x]").unwrap(),
+      "Piecewise[{{-3/E^(3*x) + 4/E^(2*x), x >= 0}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("CDF[CoxianDistribution[{1/2}, {2, 3}], x]").unwrap(),
+      "Piecewise[{{1 + E^(-3*x) - 2/E^(2*x), x >= 0}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("PDF[CoxianDistribution[{1/3, 1/4}, {2, 3, 5}], x]").unwrap(),
+      "Piecewise[{{5/(12*E^(5*x)) - 11/(4*E^(3*x)) + 11/(3*E^(2*x)), \
+        x >= 0}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{PDF[CoxianDistribution[{1/2}, {2, 3}], 1], \
+          CDF[CoxianDistribution[{1/2}, {2, 3}], 2], \
+          CDF[CoxianDistribution[{1/2}, {2, 3}], -1]}"
+      )
+      .unwrap(),
+      "{-3/E^3 + 4/E^2, 1 + E^(-6) - 2/E^4, 0}"
+    );
+  }
+
+  #[test]
+  fn equal_rates_use_erlang_terms() {
+    clear_state();
+    assert_eq!(
+      interpret("PDF[CoxianDistribution[{1/2}, {2, 2}], x]").unwrap(),
+      "Piecewise[{{E^(-2*x) + (2*x)/E^(2*x), x >= 0}}, 0]"
+    );
+    // The all-equal CDF carries wolframscript's quirky default 1, so
+    // CDF at negative arguments is 1.
+    clear_state();
+    assert_eq!(
+      interpret("CDF[CoxianDistribution[{1/2}, {2, 2}], x]").unwrap(),
+      "Piecewise[{{1 - E^(-2*x) - x/E^(2*x), x >= 0}}, 1]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{CDF[CoxianDistribution[{1/2}, {2, 2}], -1], \
+          PDF[CoxianDistribution[{1/2}, {2, 2}], -1], \
+          CDF[CoxianDistribution[{1/2}, {2, 2}], 1]}"
+      )
+      .unwrap(),
+      "{1, 0, 1 - 2/E^2}"
+    );
+    // Mixed repeated/distinct rates stay unevaluated (hypoexponential
+    // Erlang-form gap).
+    clear_state();
+    assert_eq!(
+      interpret("PDF[CoxianDistribution[{1/2, 1/3}, {2, 2, 3}], x]").unwrap(),
+      "PDF[CoxianDistribution[{1/2, 1/3}, {2, 2, 3}], x]"
+    );
+  }
+
+  #[test]
+  fn moments() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Mean[CoxianDistribution[{1/2}, {2, 3}]], \
+          Variance[CoxianDistribution[{1/2}, {2, 3}]], \
+          StandardDeviation[CoxianDistribution[{1/2}, {2, 3}]]}"
+      )
+      .unwrap(),
+      "{2/3, 1/3, 1/Sqrt[3]}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Mean[CoxianDistribution[{1/3, 1/4}, {2, 3, 5}]], \
+          Variance[CoxianDistribution[{1/3, 1/4}, {2, 3, 5}]], \
+          StandardDeviation[CoxianDistribution[{1/2, 1/3}, {2, 3, 5}]], \
+          Mean[CoxianDistribution[{1/2}, {2, 2}]], \
+          Variance[CoxianDistribution[{1/2}, {2, 2}]]}"
+      )
+      .unwrap(),
+      "{113/180, 10547/32400, Sqrt[107/3]/10, 3/4, 7/16}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Mean[CoxianDistribution[{0.5}, {2., 3.}]]").unwrap(),
+      "0.6666666666666666"
+    );
+    // Symbolic parameters keep wolframscript's unexpanded shapes.
+    clear_state();
+    assert_eq!(
+      interpret("Mean[CoxianDistribution[{a}, {l1, l2}]]").unwrap(),
+      "(1 - a)/l1 + a*(l1^(-1) + l2^(-1))"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Mean[CoxianDistribution[{a1, a2}, {l1, l2, l3}]]").unwrap(),
+      "(1 - a1)/l1 + a1*(1 - a2)*(l1^(-1) + l2^(-1)) + \
+       a1*a2*(l1^(-1) + l2^(-1) + l3^(-1))"
+    );
+  }
+
+  #[test]
+  fn constructors_echo_and_consumers_validate() {
+    // Invalid constructors echo silently; consuming functions emit the
+    // validation messages.
+    clear_state();
+    let r = interpret_with_stdout("CoxianDistribution[{2}, {2, 3}]").unwrap();
+    assert_eq!(r.result, "CoxianDistribution[{2}, {2, 3}]");
+    assert!(r.warnings.is_empty());
+
+    clear_state();
+    let r =
+      interpret_with_stdout("PDF[CoxianDistribution[{2}, {2, 3}], x]").unwrap();
+    assert_eq!(r.result, "PDF[CoxianDistribution[{2}, {2, 3}], x]");
+    assert!(r.warnings[0].contains(
+      "CoxianDistribution::vprobprm2: The value {2} at position 1 in \
+       CoxianDistribution[{2}, {2, 3}] is expected to be a list of numbers \
+       between 0 and 1, inclusive."
+    ));
+
+    clear_state();
+    let r =
+      interpret_with_stdout("PDF[CoxianDistribution[{1/2}, {2, 3, 4}], x]")
+        .unwrap();
+    assert!(r.warnings[0].contains(
+      "CoxianDistribution::eqln2: The length of {2, 3, 4} at position 2 \
+       should be 1 more than the length of {1/2} at position 1 in \
+       CoxianDistribution[{1/2}, {2, 3, 4}]."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("Mean[CoxianDistribution[{1/2}, {-2, 3}]]")
+      .unwrap();
+    assert!(r.warnings[0].contains(
+      "CoxianDistribution::vrpos: The value {-2, 3} at position 2 in \
+       CoxianDistribution[{1/2}, {-2, 3}] is expected to be a list of \
+       positive numbers."
+    ));
+  }
+}
+
+// HyperexponentialDistribution: a plain mixture of exponentials
+// (PDF = Σ p_i λ_i E^(-λ_i x)); numeric rates merge duplicates and sort
+// descending, symbolic parameters keep wolframscript's (λ p) term
+// shapes. All outputs verified against wolframscript.
+mod hyperexponential_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_and_cdf() {
+    clear_state();
+    assert_eq!(
+      interpret("PDF[HyperexponentialDistribution[{1/3, 2/3}, {2, 5}], x]")
+        .unwrap(),
+      "Piecewise[{{10/(3*E^(5*x)) + 2/(3*E^(2*x)), x >= 0}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("CDF[HyperexponentialDistribution[{1/3, 2/3}, {2, 5}], x]")
+        .unwrap(),
+      "Piecewise[{{1 - 2/(3*E^(5*x)) - 1/(3*E^(2*x)), x >= 0}}, 0]"
+    );
+    // Repeated rates merge their coefficients.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[HyperexponentialDistribution[{1/2, 1/2}, {2, 2}], x]")
+        .unwrap(),
+      "Piecewise[{{2/E^(2*x), x >= 0}}, 0]"
+    );
+    // Float parameters keep wolframscript's denominator rendering.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[HyperexponentialDistribution[{0.3, 0.7}, {2., 5.}], x]")
+        .unwrap(),
+      "Piecewise[{{3.5/E^(5.*x) + 0.6/E^(2.*x), x >= 0}}, 0]"
+    );
+    // Symbolic parameters evaluate too.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[HyperexponentialDistribution[{p1, p2}, {l1, l2}], x]")
+        .unwrap(),
+      "Piecewise[{{(l1*p1)/E^(l1*x) + (l2*p2)/E^(l2*x), x >= 0}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{PDF[HyperexponentialDistribution[{1/3, 2/3}, {2, 5}], 1], \
+          CDF[HyperexponentialDistribution[{1/3, 2/3}, {2, 5}], -1]}"
+      )
+      .unwrap(),
+      "{10/(3*E^5) + 2/(3*E^2), 0}"
+    );
+  }
+
+  #[test]
+  fn moments() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "d = HyperexponentialDistribution[{1/3, 2/3}, {2, 5}]; \
+         {Mean[d], Variance[d], StandardDeviation[d]}"
+      )
+      .unwrap(),
+      "{3/10, 13/100, Sqrt[13]/10}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Mean[HyperexponentialDistribution[{p1, p2}, {l1, l2}]]")
+        .unwrap(),
+      "p1/l1 + p2/l2"
+    );
+    // The 1-ULP float sum 0.3 + 0.7 is accepted as summing to 1.
+    clear_state();
+    assert_eq!(
+      interpret("Mean[HyperexponentialDistribution[{0.3, 0.7}, {2., 5.}]]")
+        .unwrap(),
+      "0.29"
+    );
+  }
+
+  #[test]
+  fn validation_messages() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "PDF[HyperexponentialDistribution[{1/3, 1/3}, {2, 5}], x]",
+    )
+    .unwrap();
+    assert!(r.warnings[0].contains(
+      "HyperexponentialDistribution::vprobprm: The value {1/3, 1/3} at \
+       position 1 in HyperexponentialDistribution[{1/3, 1/3}, {2, 5}] is \
+       expected to be a list of non-negative numbers summing to 1."
+    ));
+
+    // A numeric negative weight fires even next to symbolic ones.
+    clear_state();
+    let r = interpret_with_stdout(
+      "PDF[HyperexponentialDistribution[{-1, p}, {2, 5}], x]",
+    )
+    .unwrap();
+    assert!(r.warnings[0].contains("HyperexponentialDistribution::vprobprm"));
+
+    clear_state();
+    let r = interpret_with_stdout(
+      "PDF[HyperexponentialDistribution[{1/2, 1/2}, {2, -5}], x]",
+    )
+    .unwrap();
+    assert!(r.warnings[0].contains(
+      "HyperexponentialDistribution::vrpos: The value {2, -5} at position 2"
+    ));
+
+    // Length mismatch fires before the rate check.
+    clear_state();
+    let r = interpret_with_stdout(
+      "PDF[HyperexponentialDistribution[{1/2}, {2, -5}], x]",
+    )
+    .unwrap();
+    assert!(r.warnings[0].contains(
+      "HyperexponentialDistribution::eqln: The values {1/2} and {2, -5} at \
+       positions 1 and 2"
+    ));
+
+    // Invalid constructors echo silently.
+    clear_state();
+    let r =
+      interpret_with_stdout("HyperexponentialDistribution[{2, -1}, {2, 5}]")
+        .unwrap();
+    assert!(r.warnings.is_empty());
+  }
+}
+
+// VonMisesDistribution: only the PDF and Mean have closed forms in
+// wolframscript — CDF, Variance, and StandardDeviation stay unevaluated
+// even for numeric parameters. Verified against wolframscript.
+mod von_mises_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_forms() {
+    clear_state();
+    assert_eq!(
+      interpret("PDF[VonMisesDistribution[2, 3], x]").unwrap(),
+      "Piecewise[{{E^(3*Cos[2 - x])/(2*Pi*BesselI[0, 3]), \
+        2 - Pi <= x <= 2 + Pi}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("PDF[VonMisesDistribution[m, k], x]").unwrap(),
+      "Piecewise[{{E^(k*Cos[m - x])/(2*Pi*BesselI[0, k]), \
+        m - Pi <= x <= m + Pi}}, 0]"
+    );
+    // Float parameters fold the normalizing constant and the support
+    // bounds numerically.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[VonMisesDistribution[0.5, 2.], x]").unwrap(),
+      "Piecewise[{{0.06981749835322985*E^(2.*Cos[0.5 - x]), \
+        -2.641592653589793 <= x <= 3.641592653589793}}, 0]"
+    );
+    // Outside the support the density is 0.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[VonMisesDistribution[2, 3], 8]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn only_mean_has_a_closed_form() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Mean[VonMisesDistribution[m, k]], Mean[VonMisesDistribution[0.5, 2.]]}"
+      )
+      .unwrap(),
+      "{m, 0.5}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("CDF[VonMisesDistribution[m, k], x]").unwrap(),
+      "CDF[VonMisesDistribution[m, k], x]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Variance[VonMisesDistribution[2, 3]]").unwrap(),
+      "Variance[VonMisesDistribution[2, 3]]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("StandardDeviation[VonMisesDistribution[2, 3]]").unwrap(),
+      "StandardDeviation[VonMisesDistribution[2, 3]]"
+    );
+  }
+
+  #[test]
+  fn validation_messages() {
+    clear_state();
+    let r =
+      interpret_with_stdout("PDF[VonMisesDistribution[2, -1], x]").unwrap();
+    assert_eq!(r.result, "PDF[VonMisesDistribution[2, -1], x]");
+    assert!(r.warnings[0].contains(
+      "VonMisesDistribution::nnegprm: Parameter -1 at position 2 in \
+       VonMisesDistribution[2, -1] is expected to be non-negative."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("PDF[VonMisesDistribution[2], x]").unwrap();
+    assert!(r.warnings[0].contains(
+      "VonMisesDistribution::argr: VonMisesDistribution called with 1 \
+       argument; 2 arguments are expected."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("VonMisesDistribution[2, -1]").unwrap();
+    assert!(r.warnings.is_empty());
+  }
+}
+
+// BeniniDistribution: log-quadratic hazard on [σ, ∞). Numeric α uses
+// the split σ^α x^(-α) form, symbolic α keeps the full exponential;
+// moments follow wolframscript's Erfc templates. Verified against
+// wolframscript.
+mod benini_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_and_cdf() {
+    clear_state();
+    assert_eq!(
+      interpret("PDF[BeniniDistribution[3, 2, 7], x]").unwrap(),
+      "Piecewise[{{(343*(3/x + (4*Log[x/7])/x))/(E^(2*Log[x/7]^2)*x^3), \
+        x >= 7}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("CDF[BeniniDistribution[3, 2, 7], x]").unwrap(),
+      "Piecewise[{{1 - 343/(E^(2*Log[x/7]^2)*x^3), x >= 7}}, 0]"
+    );
+    // Fractional α: σ^α and x^(-α) render as radicals.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[BeniniDistribution[1/2, 1, 2], x]").unwrap(),
+      "Piecewise[{{(Sqrt[2]*(1/(2*x) + (2*Log[x/2])/x))/(E^Log[x/2]^2*\
+Sqrt[x]), x >= 2}}, 0]"
+    );
+    // Symbolic parameters keep the unsplit exponential form.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[BeniniDistribution[a, b, s], x]").unwrap(),
+      "Piecewise[{{(a/x + (2*b*Log[x/s])/x)/(E^(b*Log[x/s]^2)*(x/s)^a), \
+        x >= s}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("CDF[BeniniDistribution[a, b, s], x]").unwrap(),
+      "Piecewise[{{1 - 1/(E^(b*Log[x/s]^2)*(x/s)^a), x >= s}}, 0]"
+    );
+    // Float parameters fold; below the support the density is 0.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[BeniniDistribution[0.5, 1., 2.], x]").unwrap(),
+      "Piecewise[{{(1.4142135623730951*(0.5/x + (2.*Log[0.5*x])/x))/\
+(E^(1.*Log[0.5*x]^2)*x^0.5), x >= 2.}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("PDF[BeniniDistribution[3, 2, 7], 5]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn moments() {
+    clear_state();
+    assert_eq!(
+      interpret("Mean[BeniniDistribution[3, 2, 7]]").unwrap(),
+      "7 + (7*Sqrt[(E*Pi)/2]*Erfc[1/Sqrt[2]])/2"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Mean[BeniniDistribution[1, 2, 3]]").unwrap(),
+      "3 + (3*Sqrt[Pi/2])/2"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Variance[BeniniDistribution[2, 3, 5]]").unwrap(),
+      "(25*Sqrt[Pi]*(4*Sqrt[3] - 4*Sqrt[3]*E^(1/12)*Erfc[1/(2*Sqrt[3])] - \
+        E^(1/6)*Sqrt[Pi]*Erfc[1/(2*Sqrt[3])]^2))/12"
+    );
+    // The general symbolic templates.
+    clear_state();
+    assert_eq!(
+      interpret("Mean[BeniniDistribution[a, b, s]]").unwrap(),
+      "s + (E^((-1 + a)^2/(4*b))*Sqrt[Pi]*s*Erfc[(-1 + a)/(2*Sqrt[b])])/\
+(2*Sqrt[b])"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Variance[BeniniDistribution[a, b, s]]").unwrap(),
+      "(Sqrt[Pi]*s^2*(4*Sqrt[b]*E^((-2 + a)^2/(4*b))*Erfc[(-2 + a)/\
+(2*Sqrt[b])] - 4*Sqrt[b]*E^((-1 + a)^2/(4*b))*Erfc[(-1 + a)/(2*Sqrt[b])] - \
+E^((-1 + a)^2/(2*b))*Sqrt[Pi]*Erfc[(-1 + a)/(2*Sqrt[b])]^2))/(4*b)"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Mean[BeniniDistribution[0.5, 1., 2.]]").unwrap(),
+      "4.408130900895511"
+    );
+  }
+
+  #[test]
+  fn validation_messages() {
+    clear_state();
+    let r =
+      interpret_with_stdout("PDF[BeniniDistribution[-1, 2, 3], x]").unwrap();
+    assert!(r.warnings[0].contains(
+      "BeniniDistribution::nnegprm: Parameter -1 at position 1 in \
+       BeniniDistribution[-1, 2, 3] is expected to be non-negative."
+    ));
+
+    clear_state();
+    let r =
+      interpret_with_stdout("PDF[BeniniDistribution[2, 1, -3], x]").unwrap();
+    assert!(r.warnings[0].contains(
+      "BeniniDistribution::posprm: Parameter -3 at position 3 in \
+       BeniniDistribution[2, 1, -3] is expected to be positive."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("PDF[BeniniDistribution[2, 1], x]").unwrap();
+    assert!(r.warnings[0].contains(
+      "BeniniDistribution::argrx: BeniniDistribution called with 2 \
+       arguments; 3 arguments are expected."
+    ));
+  }
+}
+
+// HotellingTSquareDistribution: scaled F distribution. Numeric
+// parameters collapse to wolframscript's rational/radical forms
+// (nested ((m+x)^-1)^(k/2) powers for odd p); moments are conditional
+// with Indeterminate outside the existence region. Verified against
+// wolframscript.
+mod hotelling_t_square_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_and_cdf() {
+    clear_state();
+    assert_eq!(
+      interpret("PDF[HotellingTSquareDistribution[2, 5], x]").unwrap(),
+      "Piecewise[{{50/(5 + x)^3, x > 0}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("CDF[HotellingTSquareDistribution[2, 5], x]").unwrap(),
+      "Piecewise[{{1 - (1 - (4*x)/(5*(4 + (4*x)/5)))^2, x > 0}}, 0]"
+    );
+    // Odd p keeps the nested half-integer power.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[HotellingTSquareDistribution[3, 4], x]").unwrap(),
+      "Piecewise[{{6*Sqrt[x]*((4 + x)^(-1))^(5/2), x > 0}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("CDF[HotellingTSquareDistribution[3, 4], x]").unwrap(),
+      "Piecewise[{{(x/(2 + x/2))^(3/2)/(2*Sqrt[2]), x > 0}}, 0]"
+    );
+    // Symbolic parameters keep the Beta / BetaRegularized templates.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[HotellingTSquareDistribution[p, m], x]").unwrap(),
+      "Piecewise[{{((x/m)^(p/2)*(m/(m + x))^((1 + m)/2))/\
+(x*Beta[p/2, (1 + m - p)/2]), x > 0}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("CDF[HotellingTSquareDistribution[p, m], x]").unwrap(),
+      "Piecewise[{{BetaRegularized[((1 + m - p)*x)/(m*(1 + m - p + \
+((1 + m - p)*x)/m)), p/2, (1 + m - p)/2], x > 0}}, 0]"
+    );
+    // Integer-valued float parameters keep an exact-valued coefficient.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[HotellingTSquareDistribution[2., 5.], x]").unwrap(),
+      "Piecewise[{{50.*((5. + x)^(-1))^3., x > 0}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("CDF[HotellingTSquareDistribution[2., 5.], x]").unwrap(),
+      "Piecewise[{{1. - (1 - (0.8*x)/(4. + 0.8*x))^2., x > 0}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("PDF[HotellingTSquareDistribution[2, 5], 3]").unwrap(),
+      "25/256"
+    );
+  }
+
+  #[test]
+  fn conditional_moments() {
+    // No spurious Power::infy at existence boundaries.
+    clear_state();
+    let r = interpret_with_stdout(
+      "{Mean[HotellingTSquareDistribution[2, 5]], \
+        Variance[HotellingTSquareDistribution[2, 5]], \
+        Mean[HotellingTSquareDistribution[3, 4]], \
+        Variance[HotellingTSquareDistribution[2, 9]]}",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{5, Indeterminate, Indeterminate, 18}");
+    assert!(r.warnings.is_empty());
+
+    clear_state();
+    assert_eq!(
+      interpret("Mean[HotellingTSquareDistribution[p, m]]").unwrap(),
+      "Piecewise[{{(m*p)/(-1 + m - p), -1 + m - p > 0}}, Indeterminate]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Variance[HotellingTSquareDistribution[p, m]]").unwrap(),
+      "Piecewise[{{(2*(-1 + m)*m^2*p)/((-3 + m - p)*(1 - m + p)^2), \
+        m > 3 + p}}, Indeterminate]"
+    );
+  }
+
+  #[test]
+  fn validation_messages() {
+    clear_state();
+    let r =
+      interpret_with_stdout("PDF[HotellingTSquareDistribution[-1, 5], x]")
+        .unwrap();
+    assert!(r.warnings[0].contains(
+      "HotellingTSquareDistribution::posprm: Parameter -1 at position 1 in \
+       HotellingTSquareDistribution[-1, 5] is expected to be positive."
+    ));
+
+    clear_state();
+    let r =
+      interpret_with_stdout("PDF[HotellingTSquareDistribution[2], x]").unwrap();
+    assert!(r.warnings[0].contains(
+      "HotellingTSquareDistribution::argr: HotellingTSquareDistribution \
+       called with 1 argument; 2 arguments are expected."
+    ));
+  }
+}
+
+// BetaRegularized expands for float a == 1. / b == 1. like exact
+// (wolframscript: 1. - (1 - z)^2.).
+mod beta_regularized_float_expansion {
+  use super::*;
+
+  #[test]
+  fn float_unit_parameters_expand() {
+    clear_state();
+    assert_eq!(
+      interpret("BetaRegularized[z, 1., 2.]").unwrap(),
+      "1. - (1 - z)^2."
+    );
+    // Exact non-unit parameters stay unevaluated, like wolframscript.
+    clear_state();
+    assert_eq!(
+      interpret("BetaRegularized[z, 2., 3.]").unwrap(),
+      "BetaRegularized[z, 2., 3.]"
+    );
+  }
+}
+
+// TukeyLambdaDistribution: quantile-defined; wolframscript has closed
+// forms only for λ in {0, 1/2, 1, 2, -1} (exact or float) and this
+// implementation mirrors exactly that set (λ = 3 gives Root objects in
+// WS and stays unevaluated here; other λ are unevaluated in both).
+mod tukey_lambda_distribution {
+  use super::*;
+
+  #[test]
+  fn special_lambda_pdfs() {
+    clear_state();
+    assert_eq!(
+      interpret("PDF[TukeyLambdaDistribution[0], x]").unwrap(),
+      "1/(E^x*(1 + E^(-x))^2)"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("PDF[TukeyLambdaDistribution[1/2], x]").unwrap(),
+      "Piecewise[{{(1 - x^2/4)/(2*Sqrt[2 - x^2/4]), -2 <= x <= 2}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{PDF[TukeyLambdaDistribution[1], x], \
+          PDF[TukeyLambdaDistribution[2], x]}"
+      )
+      .unwrap(),
+      "{Piecewise[{{1/2, -1 <= x <= 1}}, 0], \
+        Piecewise[{{1, -1/2 <= x <= 1/2}}, 0]}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("PDF[TukeyLambdaDistribution[-1], x]").unwrap(),
+      "Piecewise[{{(1 - 1/Sqrt[1 + x^2/4])/x^2, x != 0}}, 1/8]"
+    );
+    // Float λ folds coefficients but keeps exact support bounds.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[TukeyLambdaDistribution[0.5], x]").unwrap(),
+      "Piecewise[{{(1 - 0.25*x^2)/(2*Sqrt[2 - 0.25*x^2]), -2 <= x <= 2}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{PDF[TukeyLambdaDistribution[1.], x], \
+          PDF[TukeyLambdaDistribution[2.], x]}"
+      )
+      .unwrap(),
+      "{Piecewise[{{0.5, -1 <= x <= 1}}, 0], \
+        Piecewise[{{1., -1/2 <= x <= 1/2}}, 0]}"
+    );
+    // Other λ stay unevaluated (λ = 3 is Root-valued in wolframscript).
+    clear_state();
+    assert_eq!(
+      interpret("PDF[TukeyLambdaDistribution[1/3], x]").unwrap(),
+      "PDF[TukeyLambdaDistribution[1/3], x]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("PDF[TukeyLambdaDistribution[1/2], 1]").unwrap(),
+      "3/(4*Sqrt[7])"
+    );
+  }
+
+  #[test]
+  fn cdfs_and_location_scale() {
+    clear_state();
+    assert_eq!(
+      interpret("CDF[TukeyLambdaDistribution[0], x]").unwrap(),
+      "(1 + E^(-x))^(-1)"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{CDF[TukeyLambdaDistribution[1], x], \
+          CDF[TukeyLambdaDistribution[-1], x]}"
+      )
+      .unwrap(),
+      "{Piecewise[{{(1 + x)/2, -1 <= x <= 1}, {0, x < -1}}, 1], \
+        Piecewise[{{(-2 + x + Sqrt[4 + x^2])/(2*x), x != 0}}, 1/2]}"
+    );
+    // Location-scale: values substitute (x-μ)/σ, the PDF Piecewise is
+    // divided by σ, and conditions keep the raw substituted variable.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[TukeyLambdaDistribution[1/2, 3, 2], x]").unwrap(),
+      "Piecewise[{{(1 - (-3 + x)^2/16)/(2*Sqrt[2 - (-3 + x)^2/16]), \
+        -2 <= (-3 + x)/2 <= 2}}, 0]/2"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("CDF[TukeyLambdaDistribution[1/2, 3, 2], x]").unwrap(),
+      "Piecewise[{{(4 + (Sqrt[8 - (-3 + x)^2/4]*(-3 + x))/2)/8, \
+        -2 <= (-3 + x)/2 <= 2}, {0, (-3 + x)/2 < -2}}, 1]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("PDF[TukeyLambdaDistribution[0, 3, 2], x]").unwrap(),
+      "E^((3 - x)/2)/(2*(1 + E^((3 - x)/2))^2)"
+    );
+  }
+
+  #[test]
+  fn moments() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Mean[TukeyLambdaDistribution[1/2]], \
+          Variance[TukeyLambdaDistribution[1/2]], \
+          Variance[TukeyLambdaDistribution[0]], \
+          Variance[TukeyLambdaDistribution[3]], \
+          Mean[TukeyLambdaDistribution[1/2, 3, 2]]}"
+      )
+      .unwrap(),
+      "{0, 2*(2 - Pi/2), Pi^2/3, 19/630, 3}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Mean[TukeyLambdaDistribution[l]]").unwrap(),
+      "Piecewise[{{0, l > -1}}, Indeterminate]"
+    );
+  }
+
+  #[test]
+  fn arity_message() {
+    clear_state();
+    let r =
+      interpret_with_stdout("PDF[TukeyLambdaDistribution[1, 2], x]").unwrap();
+    assert_eq!(r.result, "PDF[TukeyLambdaDistribution[1, 2], x]");
+    assert!(r.warnings[0].contains(
+      "TukeyLambdaDistribution::argt: TukeyLambdaDistribution called with \
+       2 arguments; 1 or 3 arguments are expected."
+    ));
+  }
+}
+
+// TsallisQGaussianDistribution: numeric exact q selects its branch
+// (Gaussian at q == 1, full-support power law for 1 < q < 3, compact
+// support for q < 1); the numeric collapses match wolframscript
+// byte-exact (including 1/(2 Pi ...) radical extraction). Float
+// parameters and numeric CDFs with q != 1 are deliberately unevaluated
+// (WS float artifacts / per-q 2F1 collapses are not reproduced).
+mod tsallis_q_gaussian_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_branches() {
+    clear_state();
+    assert_eq!(
+      interpret("PDF[TsallisQGaussianDistribution[0, 2, 1], x]").unwrap(),
+      "1/(2*E^(x^2/8)*Sqrt[2*Pi])"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("PDF[TsallisQGaussianDistribution[0, 2, 3/2], x]").unwrap(),
+      "1/(2*Pi*(1 + x^2/16)^2)"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("PDF[TsallisQGaussianDistribution[1, 3, 1/2], x]").unwrap(),
+      "Piecewise[{{(5*(1 - (1 - x)^2/36)^2)/32, -1 <= (-1 + x)/6 <= 1}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("PDF[TsallisQGaussianDistribution[0, 1, 0], x]").unwrap(),
+      "Piecewise[{{(3*(1 - x^2/2))/(4*Sqrt[2]), -1 <= x/Sqrt[2] <= 1}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("PDF[TsallisQGaussianDistribution[0, 2, 3/2], 4]").unwrap(),
+      "1/(8*Pi)"
+    );
+  }
+
+  #[test]
+  fn cdf_gaussian_case_only() {
+    clear_state();
+    assert_eq!(
+      interpret("CDF[TsallisQGaussianDistribution[0, 2, 1], x]").unwrap(),
+      "(1 + Erf[x/(2*Sqrt[2])])/2"
+    );
+    // Other numeric q have per-q hypergeometric collapses in WS and stay
+    // unevaluated here.
+    clear_state();
+    assert_eq!(
+      interpret("CDF[TsallisQGaussianDistribution[0, 2, 3/2], x]").unwrap(),
+      "CDF[TsallisQGaussianDistribution[0, 2, 3/2], x]"
+    );
+  }
+
+  #[test]
+  fn moments() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Mean[TsallisQGaussianDistribution[0, 2, 3/2]], \
+          Variance[TsallisQGaussianDistribution[0, 2, 3/2]], \
+          Variance[TsallisQGaussianDistribution[0, 2, 17/10]], \
+          Variance[TsallisQGaussianDistribution[0, 2, 5/3]], \
+          Mean[TsallisQGaussianDistribution[0, 2, 5/2]], \
+          Variance[TsallisQGaussianDistribution[0, 2, 5/2]]}"
+      )
+      .unwrap(),
+      "{0, 16, Infinity, Infinity, Indeterminate, Indeterminate}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Mean[TsallisQGaussianDistribution[m, b, q]]").unwrap(),
+      "Piecewise[{{m, q < 2}}, Indeterminate]"
+    );
+    // The Infinity band renders as an Inequality chain.
+    clear_state();
+    assert_eq!(
+      interpret("Variance[TsallisQGaussianDistribution[m, b, q]]").unwrap(),
+      "Piecewise[{{(2*b^2)/(5 - 3*q), q < 5/3}, \
+        {Infinity, Inequality[5/3, LessEqual, q, Less, 2]}}, Indeterminate]"
+    );
+  }
+
+  #[test]
+  fn validation_messages() {
+    clear_state();
+    let r =
+      interpret_with_stdout("PDF[TsallisQGaussianDistribution[0, 2, 3], x]")
+        .unwrap();
+    assert!(r.warnings[0].contains(
+      "TsallisQGaussianDistribution::lss: Parameter 3 at position 3 in \
+       TsallisQGaussianDistribution[0, 2, 3] is expected to be less than 3."
+    ));
+
+    clear_state();
+    let r =
+      interpret_with_stdout("PDF[TsallisQGaussianDistribution[0, -2, 3/2], x]")
+        .unwrap();
+    assert!(r.warnings[0].contains(
+      "TsallisQGaussianDistribution::posprm: Parameter -2 at position 2"
+    ));
+
+    clear_state();
+    let r =
+      interpret_with_stdout("PDF[TsallisQGaussianDistribution[2, 3/2], x]")
+        .unwrap();
+    assert!(r.warnings[0].contains(
+      "TsallisQGaussianDistribution::argrx: TsallisQGaussianDistribution \
+       called with 2 arguments; 3 arguments are expected."
+    ));
+  }
+}
+
+// Denominator radical products of named constants merge and extract
+// perfect squares: 1/(Sqrt[Pi] Sqrt[4 Pi]) is 1/(2 Pi) in wolframscript.
+// Numerator products keep the coefficient-folding route (Sqrt[2/Pi]).
+mod denominator_radical_extraction {
+  use super::*;
+
+  #[test]
+  fn reciprocal_radicals_merge() {
+    clear_state();
+    assert_eq!(interpret("1/(Sqrt[Pi]*Sqrt[4*Pi])").unwrap(), "1/(2*Pi)");
+    clear_state();
+    assert_eq!(interpret("Sqrt[2]*Sqrt[2*Pi]").unwrap(), "2*Sqrt[Pi]");
+  }
+}
+
+// VarianceGammaDistribution: Bessel-type distribution with a
+// three-branch PDF (default Infinity — the x == μ density diverges for
+// λ <= 1/2). Integer λ collapses the half-integer BesselK for x > μ;
+// exact-numeric-argument BesselK calls stay unevaluated like
+// wolframscript. (The x < μ integer-λ branch is value-correct but
+// form-diverges via the known Sqrt-product-split gap.)
+mod variance_gamma_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_forms() {
+    // The symbolic template matches wolframscript byte-exact.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[VarianceGammaDistribution[l, a, b, m], x]").unwrap(),
+      "Piecewise[{{(2^(1/2 - l)*a^(1/2 - l)*((a - b)*(a + b))^l*\
+E^(b*(-m + x))*(-m + x)^(-1/2 + l)*BesselK[-1/2 + l, a*(-m + x)])/\
+(Sqrt[Pi]*Gamma[l]), x > m}, {(2^(1/2 - l)*a^(1/2 - l)*\
+((a - b)*(a + b))^l*E^(b*(-m + x))*(m - x)^(-1/2 + l)*\
+BesselK[-1/2 + l, a*(m - x)])/(Sqrt[Pi]*Gamma[l]), x < m}, \
+{(a^(1 - 2*l)*((a - b)*(a + b))^l*Gamma[-1/2 + l])/(2*Sqrt[Pi]*Gamma[l]), \
+x == m && l > 1/2}}, Infinity]"
+    );
+    // λ = 1 collapses the upper branch to an elementary form; the point
+    // value becomes the Piecewise default.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[VarianceGammaDistribution[1, 3, 1, 0], x]")
+        .unwrap()
+        .split(", x > 0")
+        .next()
+        .unwrap(),
+      "Piecewise[{{4/(3*E^(2*x))"
+    );
+    // λ = 1/2 keeps BesselK[0, ...] and the default is Infinity.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[VarianceGammaDistribution[1/2, 3, 1, 0], x]").unwrap(),
+      "Piecewise[{{(2*Sqrt[2]*E^x*BesselK[0, 3*x])/Pi, x > 0}, \
+        {(2*Sqrt[2]*E^x*BesselK[0, -3*x])/Pi, x < 0}}, Infinity]"
+    );
+    // Exact numeric points keep half-integer BesselK unevaluated.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{PDF[VarianceGammaDistribution[2, 3, 1, 0], 2], \
+          PDF[VarianceGammaDistribution[1, 3, 1, 0], -2]}"
+      )
+      .unwrap(),
+      "{(64*E^2*BesselK[3/2, 6])/(3*Sqrt[3*Pi]), \
+        (8*BesselK[1/2, 6])/(E^2*Sqrt[3*Pi])}"
+    );
+  }
+
+  #[test]
+  fn moments() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Mean[VarianceGammaDistribution[l, a, b, m]], \
+          Variance[VarianceGammaDistribution[l, a, b, m]]}"
+      )
+      .unwrap(),
+      "{(2*b*l)/((a - b)*(a + b)) + m, \
+        (2*(a^2 + b^2)*l)/((a - b)^2*(a + b)^2)}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Mean[VarianceGammaDistribution[2, 3, 1, 0]], \
+          Variance[VarianceGammaDistribution[2, 3, 1, 0]], \
+          Mean[VarianceGammaDistribution[2, 3, 1, 5]]}"
+      )
+      .unwrap(),
+      "{1/2, 5/8, 11/2}"
+    );
+  }
+
+  #[test]
+  fn validation_messages() {
+    // |β| >= α is rejected by the joint parameter check.
+    clear_state();
+    let r =
+      interpret_with_stdout("PDF[VarianceGammaDistribution[2, 1, 3, 0], x]")
+        .unwrap();
+    assert!(r.warnings[0].contains(
+      "VarianceGammaDistribution::bprm: The parameters of distribution \
+       VarianceGammaDistribution[2, 1, 3, 0] are not valid. Use \
+       DistributionParameterAssumptions to obtain the parameter assumptions."
+    ));
+
+    clear_state();
+    let r =
+      interpret_with_stdout("PDF[VarianceGammaDistribution[-2, 3, 1, 0], x]")
+        .unwrap();
+    assert!(r.warnings[0].contains(
+      "VarianceGammaDistribution::posprm: Parameter -2 at position 1"
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("PDF[VarianceGammaDistribution[2, 3, 1], x]")
+      .unwrap();
+    assert!(r.warnings[0].contains(
+      "VarianceGammaDistribution::argrx: VarianceGammaDistribution called \
+       with 3 arguments; 4 arguments are expected."
+    ));
+  }
+}
+
+// Half-integer Bessel functions expand only for arguments containing
+// free symbols; exact numeric arguments (including Pi) stay unevaluated
+// as in wolframscript.
+mod bessel_half_integer_numeric_args {
+  use super::*;
+
+  #[test]
+  fn exact_numeric_arguments_stay_unevaluated() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{BesselK[3/2, 6], BesselI[3/2, 6], BesselJ[3/2, 6], \
+          BesselY[3/2, 6], BesselK[1/2, Pi], BesselK[3/2, 2/3]}"
+      )
+      .unwrap(),
+      "{BesselK[3/2, 6], BesselI[3/2, 6], BesselJ[3/2, 6], \
+        BesselY[3/2, 6], BesselK[1/2, Pi], BesselK[3/2, 2/3]}"
+    );
+    // Symbolic arguments still expand.
+    clear_state();
+    assert_eq!(
+      interpret("BesselK[3/2, 3*x]").unwrap(),
+      "(Sqrt[Pi/6]*(1 + 1/(3*x)))/(E^(3*x)*Sqrt[x])"
+    );
+  }
+}
+
+// HoytDistribution: Nakagami-q fading distribution with BesselI PDF and
+// EllipticE moments. CDF needs MarcumQ and stays unevaluated. Verified
+// against wolframscript.
+mod hoyt_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_forms() {
+    clear_state();
+    assert_eq!(
+      interpret("PDF[HoytDistribution[q, w], x]").unwrap(),
+      "Piecewise[{{((1 + q^2)*x*BesselI[0, ((1 - q^4)*x^2)/(4*q^2*w)])/\
+(E^(((1 + q^2)^2*x^2)/(4*q^2*w))*q*w), x > 0}}, 0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("PDF[HoytDistribution[1/2, 2], x]").unwrap(),
+      "Piecewise[{{(5*x*BesselI[0, (15*x^2)/32])/(4*E^((25*x^2)/32)), \
+        x > 0}}, 0]"
+    );
+    // q = 1 collapses to the Rayleigh form.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[HoytDistribution[1, 2], x]").unwrap(),
+      "Piecewise[{{x/E^(x^2/2), x > 0}}, 0]"
+    );
+    // Exact points keep BesselI unevaluated.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[HoytDistribution[1/2, 2], 1]").unwrap(),
+      "(5*BesselI[0, 15/32])/(4*E^(25/32))"
+    );
+  }
+
+  #[test]
+  fn moments_and_cdf() {
+    clear_state();
+    assert_eq!(
+      interpret("Mean[HoytDistribution[q, w]]").unwrap(),
+      "Sqrt[2/Pi]*Sqrt[w/(1 + q^2)]*EllipticE[1 - q^2]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Variance[HoytDistribution[q, w]]").unwrap(),
+      "w*(1 - (2*EllipticE[1 - q^2]^2)/(Pi*(1 + q^2)))"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Variance[HoytDistribution[1/2, 2]]").unwrap(),
+      "2*(1 - (8*EllipticE[3/4]^2)/(5*Pi))"
+    );
+    // CDF needs MarcumQ and stays unevaluated in Woxi.
+    clear_state();
+    assert_eq!(
+      interpret("CDF[HoytDistribution[q, w], x]").unwrap(),
+      "CDF[HoytDistribution[q, w], x]"
+    );
+  }
+
+  #[test]
+  fn validation_messages() {
+    clear_state();
+    let r = interpret_with_stdout("PDF[HoytDistribution[2, 2], x]").unwrap();
+    assert!(r.warnings[0].contains(
+      "HoytDistribution::pprobprm: Parameter 2 at position 1 in \
+       HoytDistribution[2, 2] is expected to be positive and less than or \
+       equal to 1."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("PDF[HoytDistribution[1/2, -2], x]").unwrap();
+    assert!(
+      r.warnings[0]
+        .contains("HoytDistribution::posprm: Parameter -2 at position 2")
+    );
+
+    clear_state();
+    let r = interpret_with_stdout("PDF[HoytDistribution[1/2], x]").unwrap();
+    assert!(r.warnings[0].contains(
+      "HoytDistribution::argr: HoytDistribution called with 1 argument; \
+       2 arguments are expected."
+    ));
+  }
+}
+
+// CompoundPoissonDistribution[λ, dist]: Mean = λ E[X] and
+// Variance = λ E[X²], delegating to the inner distribution's moments;
+// the PDF stays unevaluated even in wolframscript. The univ message for
+// non-distribution inner arguments replicates wolframscript's literal
+// missing-template fallback.
+mod compound_poisson_distribution {
+  use super::*;
+
+  #[test]
+  fn moments_delegate() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Mean[CompoundPoissonDistribution[l, ExponentialDistribution[a]]], \
+          Variance[CompoundPoissonDistribution[l, ExponentialDistribution[a]]]}"
+      )
+      .unwrap(),
+      "{l/a, (2*l)/a^2}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Mean[CompoundPoissonDistribution[2, GammaDistribution[3, 4]]], \
+          Variance[CompoundPoissonDistribution[2, GammaDistribution[3, 4]]], \
+          Mean[CompoundPoissonDistribution[2.5, PoissonDistribution[3]]]}"
+      )
+      .unwrap(),
+      "{24, 384, 7.5}"
+    );
+    // Discrete and location-scale inner distributions.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Variance[CompoundPoissonDistribution[l, PoissonDistribution[m]]], \
+          Variance[CompoundPoissonDistribution[l, NormalDistribution[m, s]]]}"
+      )
+      .unwrap(),
+      "{l*(m + m^2), l*(m^2 + s^2)}"
+    );
+    // No closed-form PDF.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "PDF[CompoundPoissonDistribution[2, ExponentialDistribution[3]], x]"
+      )
+      .unwrap(),
+      "PDF[CompoundPoissonDistribution[2, ExponentialDistribution[3]], x]"
+    );
+  }
+
+  #[test]
+  fn validation_messages() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "Mean[CompoundPoissonDistribution[-2, ExponentialDistribution[3]]]",
+    )
+    .unwrap();
+    assert!(r.warnings[0].contains(
+      "CompoundPoissonDistribution::posprm: Parameter -2 at position 1"
+    ));
+
+    // wolframscript's own message template is missing; the literal
+    // fallback text matches.
+    clear_state();
+    let r =
+      interpret_with_stdout("Mean[CompoundPoissonDistribution[2, 5]]").unwrap();
+    assert!(r.warnings[0].contains(
+      "CompoundPoissonDistribution::univ: -- Message text not found -- \
+       (5) (2) (CompoundPoissonDistribution[2, 5])"
+    ));
+
+    clear_state();
+    let r =
+      interpret_with_stdout("Mean[CompoundPoissonDistribution[2]]").unwrap();
+    assert!(r.warnings[0].contains(
+      "CompoundPoissonDistribution::argr: CompoundPoissonDistribution \
+       called with 1 argument; 2 arguments are expected."
+    ));
+
+    // Constructors echo silently.
+    clear_state();
+    let r = interpret_with_stdout(
+      "CompoundPoissonDistribution[-2, ExponentialDistribution[3]]",
+    )
+    .unwrap();
+    assert!(r.warnings.is_empty());
+  }
+}
+
+// WakebyDistribution: quantile-defined 5-parameter distribution. The
+// symbolic Quantile keeps wolframscript's ConditionalExpression +
+// Piecewise wrapper; PDF/CDF stay unevaluated in both engines. (The
+// symbolic Mean/Variance term ORDER diverges — known Plus-ordering gap
+// — so tests pin the numeric forms.)
+mod wakeby_distribution {
+  use super::*;
+
+  #[test]
+  fn quantile_forms() {
+    clear_state();
+    assert_eq!(
+      interpret("Quantile[WakebyDistribution[a, b, g, d, m], q]").unwrap(),
+      "ConditionalExpression[Piecewise[{{m + (a*(1 - (1 - q)^b))/b - \
+(g*(1 - (1 - q)^(-d)))/d, 0 < q < 1}, {m, q <= 0}}, Infinity], \
+0 <= q <= 1]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Quantile[WakebyDistribution[1, 2, 3, 1/2, 0], 1/2], \
+          Quantile[WakebyDistribution[1, 2, 3, 1/2, 0], 0], \
+          Quantile[WakebyDistribution[1, 2, 3, 1/2, 0], 1]}"
+      )
+      .unwrap(),
+      "{3/8 - 6*(1 - Sqrt[2]), 0, Infinity}"
+    );
+    // No closed-form PDF/CDF.
+    clear_state();
+    assert_eq!(
+      interpret("PDF[WakebyDistribution[a, b, g, d, m], x]").unwrap(),
+      "PDF[WakebyDistribution[a, b, g, d, m], x]"
+    );
+  }
+
+  #[test]
+  fn moments() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Mean[WakebyDistribution[1, 2, 3, 1/2, 0]], \
+          Variance[WakebyDistribution[1, 2, 3, 1/2, 0]], \
+          Mean[WakebyDistribution[1, 2, 3, 2, 0]], \
+          Mean[WakebyDistribution[0.5, 2., 3., 0.25, 1.]]}"
+      )
+      .unwrap(),
+      "{19/3, Indeterminate, Indeterminate, 5.166666666666667}"
+    );
+  }
+
+  #[test]
+  fn validation_messages() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "Quantile[WakebyDistribution[-1, 2, 3, 1/2, 0], q]",
+    )
+    .unwrap();
+    assert!(r.warnings[0].contains(
+      "WakebyDistribution::posprm: Parameter -1 at position 1 in \
+       WakebyDistribution[-1, 2, 3, 1/2, 0] is expected to be positive."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout(
+      "Quantile[WakebyDistribution[1, 2, -3, 1/2, 0], q]",
+    )
+    .unwrap();
+    assert!(
+      r.warnings[0]
+        .contains("WakebyDistribution::posprm: Parameter -3 at position 3")
+    );
+
+    clear_state();
+    let r =
+      interpret_with_stdout("Quantile[WakebyDistribution[1, 2, 3, 1/2], q]")
+        .unwrap();
+    assert!(r.warnings[0].contains(
+      "WakebyDistribution::argrx: WakebyDistribution called with 4 \
+       arguments; 5 arguments are expected."
+    ));
   }
 }

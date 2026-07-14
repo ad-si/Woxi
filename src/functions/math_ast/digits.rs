@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
 use num_bigint::BigInt;
 use num_traits::Signed;
 
@@ -550,7 +550,7 @@ impl BigRational {
 /// Compute atan(1/k) as a BigRational using the Taylor series:
 /// atan(x) = x - x^3/3 + x^5/5 - ...
 /// For x = 1/k: atan(1/k) = 1/k - 1/(3*k^3) + 1/(5*k^5) - ...
-pub fn big_atan_recip(k: u64, terms: usize) -> BigRational {
+fn big_atan_recip(k: u64, terms: usize) -> BigRational {
   let mut result = BigRational::zero();
   let k2 = k as u128 * k as u128; // k^2 as u128
   // power_denom tracks k^(2n+1) as BigUint
@@ -572,7 +572,7 @@ pub fn big_atan_recip(k: u64, terms: usize) -> BigRational {
 
 /// Compute Pi as a BigRational using Machin's formula:
 /// Pi/4 = 4*atan(1/5) - atan(1/239)
-pub fn pi_as_big_rational(terms: usize) -> BigRational {
+fn pi_as_big_rational(terms: usize) -> BigRational {
   let atan5 = big_atan_recip(5, terms);
   let atan239 = big_atan_recip(239, terms);
   // Pi = 4 * (4*atan(1/5) - atan(1/239))
@@ -582,7 +582,7 @@ pub fn pi_as_big_rational(terms: usize) -> BigRational {
 }
 
 /// Compute E as a BigRational using the series: e = sum(1/k!, k=0..terms)
-pub fn e_as_big_rational(terms: usize) -> BigRational {
+fn e_as_big_rational(terms: usize) -> BigRational {
   let mut result = BigRational::zero();
   let mut factorial = BigUint::from_u64(1);
   for k in 0..terms {
@@ -600,7 +600,7 @@ pub fn e_as_big_rational(terms: usize) -> BigRational {
 }
 
 /// Compute the continued fraction of a BigRational, returning up to n terms.
-pub fn continued_fraction_from_big_rational(
+fn continued_fraction_from_big_rational(
   val: &BigRational,
   n: usize,
 ) -> Vec<i128> {
@@ -619,7 +619,7 @@ pub fn continued_fraction_from_big_rational(
 
 /// Try to compute a constant expression as a high-precision BigRational.
 /// Returns None if the expression is not a recognized constant.
-pub fn try_constant_as_big_rational(
+fn try_constant_as_big_rational(
   expr: &Expr,
   n_terms: usize,
 ) -> Option<BigRational> {
@@ -670,7 +670,7 @@ fn extract_sqrt_integer(expr: &Expr) -> Option<i128> {
       None
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => {
@@ -709,7 +709,7 @@ fn extract_reciprocal_sqrt_integer(expr: &Expr) -> Option<i128> {
       None
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => {
@@ -739,7 +739,7 @@ fn extract_quadratic_irrational(
   // overall Rational coefficient and whatever Plus-sum remains.
   let (inner_owned, scale_num, scale_den): (Expr, i128, i128) = match expr {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left,
       right,
     } => {
@@ -789,7 +789,7 @@ fn extract_quadratic_irrational(
   let mut d: i128 = 0;
   let terms: Vec<&Expr> = match inner {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left,
       right,
     } => vec![left.as_ref(), right.as_ref()],
@@ -814,7 +814,7 @@ fn extract_quadratic_irrational(
     // k * Sqrt[d] — canonically as Times[k, Sqrt[d]].
     let (coeff, sqrt_expr) = match t {
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left,
         right,
       } => (left.as_ref(), right.as_ref()),
@@ -1774,7 +1774,7 @@ pub fn integer_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 ///   `0.05` in base 10 gives exponent `-1`.
 ///
 /// Produces exactly `num_digits` digits.
-pub fn bigfloat_to_digits_base(
+fn bigfloat_to_digits_base(
   bf: &astro_float::BigFloat,
   base: i128,
   num_digits: usize,
@@ -1901,7 +1901,7 @@ fn bigfloat_small_int_to_i128(
 /// Extract decimal digits and exponent from a BigFloat.
 /// Returns (digit_chars, decimal_exponent) where digit_chars are ASCII digit bytes
 /// and decimal_exponent is the number of integer digits (position of decimal point).
-pub fn bigfloat_to_digits(
+fn bigfloat_to_digits(
   bf: &astro_float::BigFloat,
   rm: astro_float::RoundingMode,
   cc: &mut astro_float::Consts,
@@ -2161,7 +2161,7 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(n) => *n < 0,
     Expr::Real(f) => *f < 0.0,
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       ..
     } => true,
     _ => false,
@@ -2663,6 +2663,26 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // Handle {digit_list, {p1, p2, ...}} form: a list of decimal-point positions
+  // threads FromDigits over each position, returning the list of results, e.g.
+  // FromDigits[{{1, 0, 1}, {-1, 2}}] = {101/10000, 101/10}. Matches
+  // wolframscript; an empty position list yields an empty list.
+  if items.len() == 2
+    && matches!(&items[0], Expr::List(_))
+    && let Expr::List(positions) = &items[1]
+  {
+    let mut results = Vec::with_capacity(positions.len());
+    for p in positions.iter() {
+      let inner = Expr::List(vec![items[0].clone(), p.clone()].into());
+      let mut call_args = vec![inner];
+      if args.len() == 2 {
+        call_args.push(args[1].clone());
+      }
+      results.push(from_digits_ast(&call_args)?);
+    }
+    return Ok(Expr::List(results.into()));
+  }
+
   // Handle {digit_list, exponent} form (output of RealDigits)
   // FromDigits[{{d1,d2,...,dn}, e}] = (d1*base^(e-1) + d2*base^(e-2) + ... + dn*base^(e-n))
   if items.len() == 2
@@ -2686,7 +2706,7 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Need a rational: int_val / base^(-shift)
       let denom = big_base.pow((-shift) as u32);
       // Simplify the fraction using Euclidean gcd
-      fn bigint_gcd(a: &BigInt, b: &BigInt) -> BigInt {
+      fn gcd_bigint(a: &BigInt, b: &BigInt) -> BigInt {
         let mut a = if a < &BigInt::from(0) { -a } else { a.clone() };
         let mut b = if b < &BigInt::from(0) { -b } else { b.clone() };
         while b > BigInt::from(0) {
@@ -2696,7 +2716,7 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         a
       }
-      let g = bigint_gcd(&int_val, &denom);
+      let g = gcd_bigint(&int_val, &denom);
       let num = &int_val / &g;
       let den = &denom / &g;
       if den == BigInt::from(1) {
@@ -2821,14 +2841,24 @@ pub fn integer_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// IntegerReverse[n] - reverse the digits of an integer in base 10.
 /// IntegerReverse[n, b] - reverse the digits of n in base b.
+/// IntegerReverse[n, b, len] - reverse exactly the `len` least-significant
+/// base-b digits of n (padding with leading zeros), matching
+/// FromDigits[Reverse[IntegerDigits[n, b, len]], b].
 pub fn integer_reverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 2 {
+  if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "IntegerReverse expects 1 or 2 arguments".into(),
+      "IntegerReverse expects 1, 2, or 3 arguments".into(),
     ));
   }
 
-  let base = if args.len() == 2 {
+  let uneval = || {
+    Ok(Expr::FunctionCall {
+      name: "IntegerReverse".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+
+  let base = if args.len() >= 2 {
     match expr_to_i128(&args[1]) {
       Some(b) if b >= 2 => b,
       Some(_) => {
@@ -2836,15 +2866,30 @@ pub fn integer_reverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "IntegerReverse: base must be at least 2".into(),
         ));
       }
-      None => {
-        return Ok(Expr::FunctionCall {
-          name: "IntegerReverse".to_string(),
-          args: args.to_vec().into(),
-        });
-      }
+      None => return uneval(),
     }
   } else {
     10
+  };
+
+  // Optional digit-count: reverse exactly `len` low-order digits.
+  let len = if args.len() == 3 {
+    match expr_to_i128(&args[2]) {
+      Some(l) if l >= 0 => Some(l),
+      Some(_) => {
+        crate::emit_message(&format!(
+          "IntegerReverse::intpm: Positive machine-sized integer expected at position 3 in {}.",
+          crate::syntax::expr_to_string(&Expr::FunctionCall {
+            name: "IntegerReverse".to_string(),
+            args: args.to_vec().into(),
+          })
+        ));
+        return uneval();
+      }
+      None => return uneval(),
+    }
+  } else {
+    None
   };
 
   // Handle BigInteger
@@ -2853,17 +2898,27 @@ pub fn integer_reverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut abs_n = if n < BigInt::zero() { -n } else { n };
     let base_big = BigInt::from(base);
     let mut result = BigInt::zero();
-    while abs_n > BigInt::zero() {
-      result = result * &base_big + (&abs_n % &base_big);
-      abs_n /= &base_big;
+    match len {
+      // Fixed digit count: take exactly `len` low-order digits, most
+      // significant last, so leading zeros participate in the reversal.
+      Some(len) => {
+        for _ in 0..len {
+          result = result * &base_big + (&abs_n % &base_big);
+          abs_n /= &base_big;
+        }
+      }
+      // Reverse all significant digits.
+      None => {
+        while abs_n > BigInt::zero() {
+          result = result * &base_big + (&abs_n % &base_big);
+          abs_n /= &base_big;
+        }
+      }
     }
     return Ok(bigint_to_expr(result));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "IntegerReverse".to_string(),
-    args: args.to_vec().into(),
-  })
+  uneval()
 }
 
 const ONES: [&str; 20] = [
@@ -2906,7 +2961,7 @@ const SCALES: [&str; 7] = [
 
 /// Spell out a number 0..=999 in English words.
 /// Uses U+2010 HYPHEN for compound numbers like "twenty‐one".
-pub fn spell_below_1000(n: u64) -> String {
+fn spell_below_1000(n: u64) -> String {
   if n == 0 {
     return String::new();
   }
@@ -3560,7 +3615,7 @@ fn make_rational_expr(num: i128, den: i128) -> Expr {
         Expr::Integer(-n)
       } else {
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(Expr::Integer(-n)),
           right: Box::new(Expr::Integer(-d)),
         }
@@ -3569,7 +3624,7 @@ fn make_rational_expr(num: i128, den: i128) -> Expr {
       Expr::Integer(n)
     } else {
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::Integer(n)),
         right: Box::new(Expr::Integer(d)),
       }
@@ -3860,11 +3915,11 @@ pub fn number_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "NumberExpand".to_string(),
     args: args.to_vec().into(),
   };
-  if args.is_empty() || args.len() > 2 {
+  if args.is_empty() || args.len() > 3 {
     return Ok(unevaluated(args));
   }
   // Base validation happens before the value is looked at
-  let base: i128 = if args.len() == 2 {
+  let base: i128 = if args.len() >= 2 {
     match &args[1] {
       Expr::Integer(b) if *b >= 2 => *b,
       Expr::Integer(b) => {
@@ -3878,12 +3933,20 @@ pub fn number_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     10
   };
+  // Optional length: the result has exactly `len` elements. When `len` exceeds
+  // the digit count the expansion is padded with trailing zeros; when it is
+  // smaller, the low-order terms are summed into the final element.
+  let len: Option<usize> = if args.len() == 3 {
+    match &args[2] {
+      Expr::Integer(l) if *l >= 1 => Some(*l as usize),
+      _ => return Ok(unevaluated(args)),
+    }
+  } else {
+    None
+  };
 
   match &args[0] {
     Expr::Integer(n) => {
-      if *n == 0 {
-        return Ok(Expr::List(vec![Expr::Integer(0)].into()));
-      }
       let sign = n.signum();
       let mut digits: Vec<i128> = Vec::new();
       let mut num = n.unsigned_abs();
@@ -3892,14 +3955,28 @@ pub fn number_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         digits.push((num % base_u) as i128);
         num /= base_u;
       }
-      // digits[i] sits at place base^i; emit highest place first
-      let terms: Vec<Expr> = digits
+      // digits[i] sits at place base^i; collect the place-value terms with the
+      // highest place first.
+      let mut terms: Vec<i128> = digits
         .iter()
         .enumerate()
         .rev()
-        .map(|(place, d)| Expr::Integer(sign * d * base.pow(place as u32)))
+        .map(|(place, d)| sign * d * base.pow(place as u32))
         .collect();
-      Ok(Expr::List(terms.into()))
+      if terms.is_empty() {
+        terms.push(0); // n == 0
+      }
+      if let Some(len) = len {
+        if len >= terms.len() {
+          terms.resize(len, 0); // pad with trailing zeros
+        } else {
+          // Keep the top len-1 terms; fold the remainder into the last.
+          let tail: i128 = terms[len - 1..].iter().sum();
+          terms.truncate(len - 1);
+          terms.push(tail);
+        }
+      }
+      Ok(Expr::List(terms.into_iter().map(Expr::Integer).collect()))
     }
     Expr::FunctionCall { name, .. } if name == "Rational" => {
       Ok(Expr::List(vec![args[0].clone()].into()))
@@ -3959,7 +4036,7 @@ pub fn number_decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let psv = |args: &[Expr]| {
     crate::emit_message(&format!(
       "NumberDecompose::psv: {} is not a list of nonincreasing positive numbers.",
-      crate::syntax::expr_to_string(&args[1])
+      expr_to_string(&args[1])
     ));
     Ok(unevaluated(args))
   };
@@ -3996,7 +4073,7 @@ pub fn number_decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   } else {
-    let gcd = |mut a: i128, mut b: i128| -> i128 {
+    let gcd_i128 = |mut a: i128, mut b: i128| -> i128 {
       a = a.abs();
       b = b.abs();
       while b != 0 {
@@ -4024,7 +4101,7 @@ pub fn number_decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // rem -= q_int * u
         rn = rn * ud - q_int * un * rd;
         rd *= ud;
-        let g = gcd(rn, rd);
+        let g = gcd_i128(rn, rd);
         rn /= g;
         rd /= g;
       }
@@ -4061,8 +4138,8 @@ pub fn number_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if coeff_exprs.len() > unit_exprs.len() {
     crate::emit_message(&format!(
       "NumberCompose::ulen: List {} of coefficients cannot be longer than list {} of units.",
-      crate::syntax::expr_to_string(&args[0]),
-      crate::syntax::expr_to_string(&args[1])
+      expr_to_string(&args[0]),
+      expr_to_string(&args[1])
     ));
     return Ok(unevaluated(args));
   }
@@ -4089,7 +4166,7 @@ pub fn number_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let psv = |args: &[Expr]| {
     crate::emit_message(&format!(
       "NumberCompose::psv: {} is not a list of nonincreasing positive numbers.",
-      crate::syntax::expr_to_string(&args[1])
+      expr_to_string(&args[1])
     ));
     Ok(unevaluated(args))
   };
@@ -4163,7 +4240,7 @@ pub fn minkowski_question_mark_ast(
       let golden = matches!(other, Expr::Identifier(s) | Expr::Constant(s) if s == "GoldenRatio");
       let neg_golden = match other {
         Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand,
         } => matches!(
           operand.as_ref(),
@@ -4209,7 +4286,7 @@ pub fn minkowski_question_mark_ast(
   };
 
   // Exact fraction arithmetic over BigInt
-  let gcd = |a: &BigInt, b: &BigInt| -> BigInt {
+  let gcd_bigint = |a: &BigInt, b: &BigInt| -> BigInt {
     let (mut a, mut b) = (a.clone(), b.clone());
     if a < BigInt::from(0) {
       a = -a;
@@ -4229,7 +4306,7 @@ pub fn minkowski_question_mark_ast(
     }
   };
   let reduce = |num: BigInt, den: BigInt| -> (BigInt, BigInt) {
-    let g = gcd(&num, &den);
+    let g = gcd_bigint(&num, &den);
     let (mut n, mut d) = (num / &g, den / g);
     if d < BigInt::from(0) {
       n = -n;
@@ -4342,7 +4419,7 @@ pub fn from_roman_numeral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       crate::emit_message(&format!(
         "FromRomanNumeral::string: String expected at position 1 in {}.",
-        crate::syntax::expr_to_string(&unevaluated(args))
+        expr_to_string(&unevaluated(args))
       ));
       Ok(unevaluated(args))
     }
@@ -4381,8 +4458,8 @@ pub fn thue_morse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::emit_message(&format!(
           "ThueMorse::nnintprm: Parameter {} at position 1 in {} is expected \
            to be a non-negative integer.",
-          crate::syntax::expr_to_string(&args[0]),
-          crate::syntax::expr_to_string(&unevaluated(args))
+          expr_to_string(&args[0]),
+          expr_to_string(&unevaluated(args))
         ));
       }
       Ok(unevaluated(args))
@@ -4416,8 +4493,8 @@ pub fn rudin_shapiro_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::emit_message(&format!(
           "RudinShapiro::nnintprm: Parameter {} at position 1 in {} is \
            expected to be a non-negative integer.",
-          crate::syntax::expr_to_string(&args[0]),
-          crate::syntax::expr_to_string(&unevaluated(args))
+          expr_to_string(&args[0]),
+          expr_to_string(&unevaluated(args))
         ));
       }
       Ok(unevaluated(args))

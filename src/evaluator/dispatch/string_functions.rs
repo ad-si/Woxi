@@ -489,6 +489,12 @@ pub fn dispatch_string_functions(
         args,
       ));
     }
+    "BinarySerialize" if args.len() == 1 => {
+      return Some(crate::functions::wxf_ast::binary_serialize_ast(args));
+    }
+    "BinaryDeserialize" if args.len() == 1 => {
+      return Some(crate::functions::wxf_ast::binary_deserialize_ast(args));
+    }
     "BaseEncode" if args.len() == 1 => {
       return Some(crate::functions::string_ast::base_encode_ast(args));
     }

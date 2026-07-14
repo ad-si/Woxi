@@ -59,6 +59,67 @@ mod string_join_arg_errors {
   fn plain_string_chain_still_works() {
     assert_eq!(interpret(r#""a" <> "b" <> "c""#).unwrap(), "abc");
   }
+
+  #[test]
+  fn flat_chain_returns_flat_unevaluated() {
+    // StringJoin is Flat: a <> b <> c is StringJoin[a, b, c], not the nested
+    // StringJoin[StringJoin[a, b], c] the parser builds. Matches wolframscript.
+    assert_eq!(interpret("a <> b <> c").unwrap(), "StringJoin[a, b, c]");
+    assert_eq!(
+      interpret("a <> b <> c <> d").unwrap(),
+      "StringJoin[a, b, c, d]"
+    );
+  }
+
+  #[test]
+  fn one_message_per_non_string_leaf() {
+    // wolframscript emits one StringJoin::string message per non-string leaf,
+    // numbered by position in the flat chain (not one message for the first).
+    let _ = interpret("x <> b <> y").unwrap();
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "StringJoin::string: String expected at position 2 in x<>b<>y."
+      )),
+      "expected position-2 message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn all_non_string_leaves_report_positions() {
+    let _ = interpret("StringJoin[1, 2]").unwrap();
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "StringJoin::string: String expected at position 1 in 1<>2."
+      )),
+      "missing position-1 message, got {:?}",
+      msgs
+    );
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "StringJoin::string: String expected at position 2 in 1<>2."
+      )),
+      "missing position-2 message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn general_stop_after_three_messages() {
+    // A four-symbol chain emits three per-leaf messages then General::stop.
+    let _ = interpret("a <> b <> c <> d").unwrap();
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "General::stop: Further output of StringJoin::string will be \
+         suppressed during this calculation."
+      )),
+      "expected General::stop, got {:?}",
+      msgs
+    );
+  }
 }
 
 mod string_replace_arg_errors {
@@ -2076,6 +2137,95 @@ mod ignore_case {
 
 mod string_patterns {
   use super::*;
+
+  // A repeated pattern name in a string pattern (`x_ ~~ x_`) is a
+  // back-reference: both occurrences must match the *same* substring. The Rust
+  // `regex` crate has no native backreferences, so Woxi records the repeated
+  // captures and verifies they compare equal after matching. These must hold
+  // across every string-matching function, matching wolframscript.
+  #[test]
+  fn backreference_string_match_q() {
+    assert_eq!(
+      interpret(r#"StringMatchQ["aa", x_ ~~ x_]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["ab", x_ ~~ x_]"#).unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn backreference_string_replace() {
+    assert_eq!(
+      interpret(r#"StringReplace["hello", a_ ~~ a_ -> "!"]"#).unwrap(),
+      "he!o"
+    );
+    assert_eq!(
+      interpret(r#"StringReplace["aabbcc", x_ ~~ x_ -> "*"]"#).unwrap(),
+      "***"
+    );
+  }
+
+  #[test]
+  fn backreference_string_count_and_position() {
+    assert_eq!(interpret(r#"StringCount["abcc", x_ ~~ x_]"#).unwrap(), "1");
+    assert_eq!(
+      interpret(r#"StringPosition["abcc", x_ ~~ x_]"#).unwrap(),
+      "{{3, 4}}"
+    );
+  }
+
+  #[test]
+  fn backreference_string_split() {
+    // Delimiter never matches (no equal adjacent pair) → whole string kept.
+    assert_eq!(
+      interpret(r#"StringSplit["aXbYc", x_ ~~ x_]"#).unwrap(),
+      "{aXbYc}"
+    );
+    assert_eq!(
+      interpret(r#"StringSplit["aXXbYYc", x_ ~~ x_]"#).unwrap(),
+      "{a, b, c}"
+    );
+  }
+
+  #[test]
+  fn backreference_string_free_contains_starts_ends() {
+    assert_eq!(interpret(r#"StringFreeQ["ab", x_ ~~ x_]"#).unwrap(), "True");
+    assert_eq!(
+      interpret(r#"StringContainsQ["abcc", x_ ~~ x_]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringStartsQ["aab", x_ ~~ x_]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringStartsQ["abc", x_ ~~ x_]"#).unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(r#"StringEndsQ["abcc", x_ ~~ x_]"#).unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn backreference_string_delete_and_trim() {
+    assert_eq!(
+      interpret(r#"StringDelete["abcc", x_ ~~ x_]"#).unwrap(),
+      "ab"
+    );
+    assert_eq!(
+      interpret(r#"StringTrim["aabxyaa", x_ ~~ x_]"#).unwrap(),
+      "bxy"
+    );
+    // Ends aren't equal pairs → nothing trimmed.
+    assert_eq!(
+      interpret(r#"StringTrim["abxyab", x_ ~~ x_]"#).unwrap(),
+      "abxyab"
+    );
+  }
 
   #[test]
   fn repeated_parsing() {
@@ -4156,6 +4306,46 @@ mod tex_form {
     assert_eq!(interpret("ToString[3/4, TeXForm]").unwrap(), "\\frac{3}{4}");
   }
 
+  // A rational coefficient p/q folds into the fraction: wolframscript renders
+  // `Sqrt[x]/2` as `\frac{\sqrt{x}}{2}`, not `\frac{1}{2}\sqrt{x}`.
+  #[test]
+  fn rational_coefficient_folds_into_fraction() {
+    assert_eq!(interpret("ToString[x/2, TeXForm]").unwrap(), "\\frac{x}{2}");
+    assert_eq!(
+      interpret("ToString[3 x/2, TeXForm]").unwrap(),
+      "\\frac{3 x}{2}"
+    );
+    assert_eq!(
+      interpret("ToString[Sqrt[x]/2, TeXForm]").unwrap(),
+      "\\frac{\\sqrt{x}}{2}"
+    );
+    assert_eq!(
+      interpret("ToString[x y/2, TeXForm]").unwrap(),
+      "\\frac{x y}{2}"
+    );
+    // The rational denominator merges with other denominator factors.
+    assert_eq!(
+      interpret("ToString[2 x/(3 y), TeXForm]").unwrap(),
+      "\\frac{2 x}{3 y}"
+    );
+    // A negative coefficient keeps the sign outside the fraction.
+    assert_eq!(
+      interpret("ToString[-Sqrt[x]/2, TeXForm]").unwrap(),
+      "-\\frac{\\sqrt{x}}{2}"
+    );
+    // A single parenthesised-sum factor still folds (with its parens).
+    assert_eq!(
+      interpret("ToString[3 (a + b)/2, TeXForm]").unwrap(),
+      "\\frac{3 (a+b)}{2}"
+    );
+    // But a product of several factors including a sum keeps the coefficient
+    // separate, matching wolframscript.
+    assert_eq!(
+      interpret("ToString[Sum[i, {i, 1, n}], TeXForm]").unwrap(),
+      "\\frac{1}{2} n (n+1)"
+    );
+  }
+
   // A Plus factor inside a product must be parenthesized.
   #[test]
   fn product_with_plus_factor() {
@@ -4202,6 +4392,31 @@ mod tex_form {
     assert_eq!(
       interpret("ToString[Binomial[n, k], TeXForm]").unwrap(),
       "\\binom{n}{k}"
+    );
+
+    // Tall content (fraction/radical/superscript) uses \left…\right so the
+    // delimiters are sized to the content, matching wolframscript. Simple
+    // content keeps the plain delimiters (the assertions above).
+    assert_eq!(
+      interpret("ToString[Floor[x/2], TeXForm]").unwrap(),
+      "\\left\\lfloor \\frac{x}{2}\\right\\rfloor"
+    );
+    assert_eq!(
+      interpret("ToString[Floor[x^2], TeXForm]").unwrap(),
+      "\\left\\lfloor x^2\\right\\rfloor"
+    );
+    assert_eq!(
+      interpret("ToString[Ceiling[Sqrt[x]], TeXForm]").unwrap(),
+      "\\left\\lceil \\sqrt{x}\\right\\rceil"
+    );
+    // Abs and Norm follow the same rule.
+    assert_eq!(
+      interpret("ToString[Abs[x/y], TeXForm]").unwrap(),
+      "\\left| \\frac{x}{y}\\right|"
+    );
+    assert_eq!(
+      interpret("ToString[Norm[a/b], TeXForm]").unwrap(),
+      "\\left\\| \\frac{a}{b}\\right\\|"
     );
     // Subscript renders as x_1 in TeXForm (not the 2D OutputForm layout).
     assert_eq!(
@@ -5017,6 +5232,30 @@ mod tex_form {
     // Single-letter user functions render bare (not wrapped in \text{}),
     // matching wolframscript: ToString[f[x], TeXForm] = f(x).
     assert_eq!(interpret("ToString[f[x], TeXForm]").unwrap(), "f(x)");
+  }
+
+  // A built-in function with no special TeX rule keeps WL square brackets
+  // (Round[x] -> \text{Round}[x]), while an unknown user function uses math
+  // parentheses (myf[x] -> \text{myf}(x)) — matching wolframscript.
+  #[test]
+  fn builtin_uses_square_brackets_unknown_uses_parens() {
+    assert_eq!(
+      interpret("ToString[Round[x], TeXForm]").unwrap(),
+      "\\text{Round}[x]"
+    );
+    assert_eq!(
+      interpret("ToString[Quotient[a, b], TeXForm]").unwrap(),
+      "\\text{Quotient}[a,b]"
+    );
+    assert_eq!(
+      interpret("ToString[IntegerPart[x], TeXForm]").unwrap(),
+      "\\text{IntegerPart}[x]"
+    );
+    // Unknown multi-letter user function keeps parentheses.
+    assert_eq!(
+      interpret("ToString[myf[x], TeXForm]").unwrap(),
+      "\\text{myf}(x)"
+    );
   }
 
   #[test]
@@ -7174,6 +7413,35 @@ mod string_count_patterns {
     assert_eq!(
       interpret(r#"StringCount[{"abc", "abcabc"}, {"a", "b"}]"#).unwrap(),
       "{2, 4}"
+    );
+  }
+
+  // Overlaps -> True and Overlaps -> All both count overlapping matches (one
+  // per start position); the default (and Overlaps -> False) does not.
+  #[test]
+  fn count_overlaps_true_and_all() {
+    assert_eq!(
+      interpret(r#"StringCount["aaaa", "aa", Overlaps -> True]"#).unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(r#"StringCount["aaaa", "aa", Overlaps -> All]"#).unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(r#"StringCount["aaa", "aa", Overlaps -> All]"#).unwrap(),
+      "2"
+    );
+    assert_eq!(interpret(r#"StringCount["aaaa", "aa"]"#).unwrap(), "2");
+    assert_eq!(
+      interpret(r#"StringCount["aaaa", "aa", Overlaps -> False]"#).unwrap(),
+      "2"
+    );
+    // Threads over a list of strings.
+    assert_eq!(
+      interpret(r#"StringCount[{"aaa", "aaaa"}, "aa", Overlaps -> All]"#)
+        .unwrap(),
+      "{2, 3}"
     );
   }
 }
@@ -11295,6 +11563,190 @@ mod longest_common_sequence_positions_tests {
       interpret("LongestCommonSequence[{a, b, c, a, b}, {b, c, b, a}]")
         .unwrap(),
       "{b, c, a}"
+    );
+  }
+}
+
+// DatePattern[{elements…}] / DatePattern[{…}, sep] in string patterns.
+// All outputs verified against wolframscript.
+mod date_pattern {
+  use super::*;
+
+  #[test]
+  fn basic_dates_and_times() {
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"3/15/1984\", DatePattern[{\"Month\", \"Day\", \"Year\"}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"00:38:16\", DatePattern[{\"Hour\", \"Minute\", \"Second\"}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    // Single-digit fields and two-digit years are fine.
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"24/1/5\", DatePattern[{\"Year\", \"Month\", \"Day\"}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"5:3:2\", DatePattern[{\"Hour\", \"Minute\", \"Second\"}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn default_separators() {
+    // The default separator is exactly one of / - . : — mixed freely,
+    // but spaces, doubling, or no separator do not match.
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"2024-01/05\", DatePattern[{\"Year\", \"Month\", \"Day\"}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"2024.01.05\", DatePattern[{\"Year\", \"Month\", \"Day\"}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    for bad in ["20240105", "2024 01 05", "2024--01--05"] {
+      assert_eq!(
+        interpret(&format!(
+          "StringMatchQ[\"{bad}\", DatePattern[{{\"Year\", \"Month\", \"Day\"}}]]"
+        ))
+        .unwrap(),
+        "False",
+        "{bad} should not match"
+      );
+    }
+  }
+
+  #[test]
+  fn explicit_separator() {
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"3-15-1984\", DatePattern[{\"Month\", \"Day\", \"Year\"}, \"-\"]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"3/15/1984\", DatePattern[{\"Month\", \"Day\", \"Year\"}, \"-\"]]"
+      )
+      .unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn field_ranges_are_validated() {
+    // Month 13, hour 24/25, second 60, and zero fields fail; but there
+    // is no calendar logic (April 31 matches).
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"13/45/1984\", DatePattern[{\"Month\", \"Day\", \"Year\"}]]"
+      )
+      .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"25:00:00\", DatePattern[{\"Hour\", \"Minute\", \"Second\"}]]"
+      )
+      .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"23:59:60\", DatePattern[{\"Hour\", \"Minute\", \"Second\"}]]"
+      )
+      .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"0/0/1984\", DatePattern[{\"Month\", \"Day\", \"Year\"}]]"
+      )
+      .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"31/4/2024\", DatePattern[{\"Day\", \"Month\", \"Year\"}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    // Years are 1 to 4 digits.
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"197/1/5\", DatePattern[{\"Year\", \"Month\", \"Day\"}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"19845/1/5\", DatePattern[{\"Year\", \"Month\", \"Day\"}]]"
+      )
+      .unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn names_and_literal_elements() {
+    // Literal strings in the element list are separators; day and month
+    // names match case-insensitively.
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"Wed, 15 Nov 2006\", DatePattern[{\"DayName\", \", \", \"Day\", \" \", \"MonthName\", \" \", \"Year\"}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "StringMatchQ[\"wed, 15 nov 2006\", DatePattern[{\"DayName\", \", \", \"Day\", \" \", \"MonthName\", \" \", \"Year\"}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("StringMatchQ[\"MONDAY\", DatePattern[{\"DayName\"}]]")
+        .unwrap(),
+      "True"
+    );
+    // Unknown element names are literals.
+    assert_eq!(
+      interpret("StringMatchQ[\"x\", DatePattern[{\"Foo\"}]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn string_cases_extraction() {
+    assert_eq!(
+      interpret(
+        "StringCases[\"due 3/15/1984 or 12/1/22\", DatePattern[{\"Month\", \"Day\", \"Year\"}]]"
+      )
+      .unwrap(),
+      "{3/15/1984, 12/1/22}"
     );
   }
 }

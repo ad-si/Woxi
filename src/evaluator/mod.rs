@@ -1,6 +1,4 @@
-use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
-};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
 use crate::{ENV, InterpreterError, PART_DEPTH, StoredValue, interpret};
 
 use std::collections::{HashMap, HashSet};
@@ -38,7 +36,6 @@ pub fn is_known_wolfram_function(name: &str) -> bool {
 /// Information about a built-in Wolfram Language function.
 pub struct BuiltinFunctionInfo {
   pub description: &'static str,
-  pub effect_level: &'static str,
 }
 
 /// Registry of all function info from functions.csv.
@@ -59,13 +56,7 @@ static BUILTIN_FUNCTION_INFO: LazyLock<
       if description.is_empty() && effect_level.is_empty() {
         return None;
       }
-      Some((
-        name,
-        BuiltinFunctionInfo {
-          description,
-          effect_level,
-        },
-      ))
+      Some((name, BuiltinFunctionInfo { description }))
     })
     .collect()
 });

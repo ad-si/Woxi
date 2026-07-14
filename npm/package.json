@@ -1,0 +1,40 @@
+{
+  "name": "woxi",
+  "version": "0.1.0",
+  "description": "Interpreter for a subset of the Wolfram Language, compiled to WebAssembly",
+  "keywords": [
+    "wolfram",
+    "wolfram-language",
+    "mathematica",
+    "cas",
+    "math",
+    "interpreter",
+    "wasm"
+  ],
+  "license": "AGPL-3.0-or-later",
+  "author": "Adrian Sieber",
+  "homepage": "https://woxi.ad-si.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ad-si/Woxi.git",
+    "directory": "npm"
+  },
+  "bugs": {
+    "url": "https://github.com/ad-si/Woxi/issues"
+  },
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "pkg/"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "make -C .. npm-build",
+    "test": "node --test",
+    "prepublishOnly": "node -e \"require('./pkg/woxi.js')\" || (echo 'pkg/ is missing - run `make npm-build` in the repo root first' && exit 1)"
+  }
+}

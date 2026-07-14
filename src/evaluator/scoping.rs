@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::{BinaryOperator, ComparisonOp};
 
 /// AST-based Module implementation to avoid interpret() recursion
 pub fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -318,7 +319,7 @@ fn is_non_integer_rational(e: &Expr) -> bool {
 }
 
 /// Check if an expression is a member of a given domain
-pub fn is_member_of_domain(expr: &Expr, domain: &str) -> Option<bool> {
+fn is_member_of_domain(expr: &Expr, domain: &str) -> Option<bool> {
   // Infinity, -Infinity and ComplexInfinity are DirectedInfinity objects, not
   // members of any number domain (Reals, Integers, Complexes, …). Without this
   // guard Infinity matches the real/complex constant arms below.
@@ -371,7 +372,7 @@ pub fn is_member_of_domain(expr: &Expr, domain: &str) -> Option<bool> {
       // irrational (perfect powers are already simplified to integers).
       // Radicals are stored as a Power BinaryOp.
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left,
         right,
       } if is_rational_literal(left) && is_non_integer_rational(right) => {
@@ -473,7 +474,7 @@ pub fn is_member_of_domain(expr: &Expr, domain: &str) -> Option<bool> {
       // A radical Power[rational, rational] (e.g. Sqrt[2], 2^(1/3)) is
       // algebraic. Radicals are stored as a Power BinaryOp.
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left,
         right,
       } if is_rational_literal(left) && is_rational_literal(right) => {
@@ -551,7 +552,7 @@ pub fn is_member_of_domain(expr: &Expr, domain: &str) -> Option<bool> {
 }
 
 /// Simple primality check for small numbers
-pub fn is_prime_simple(n: i128) -> bool {
+fn is_prime_simple(n: i128) -> bool {
   if n < 2 {
     return false;
   }
@@ -595,12 +596,17 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
     });
   }
 
-  // Handle Alternatives: Element[a | b | c, dom]
-  if let Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Alternatives,
-    ..
-  } = x
-  {
+  // Handle Alternatives: Element[a | b | c, dom]. `a | b | c` evaluates to a
+  // flat Alternatives[...] FunctionCall, but held/explicit forms may still be
+  // a nested BinaryOp — accept both.
+  let is_alternatives = matches!(
+    x,
+    Expr::BinaryOp {
+      op: BinaryOperator::Alternatives,
+      ..
+    }
+  ) || matches!(x, Expr::FunctionCall { name, .. } if name == "Alternatives");
+  if is_alternatives {
     let alts = collect_alternatives(x);
     let mut remaining = Vec::new();
     for alt in &alts {
@@ -619,7 +625,7 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
     let alt_expr = remaining
       .into_iter()
       .reduce(|acc, e| Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Alternatives,
+        op: BinaryOperator::Alternatives,
         left: Box::new(acc),
         right: Box::new(e),
       })
@@ -640,7 +646,7 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
       .iter()
       .cloned()
       .reduce(|acc, e| Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Alternatives,
+        op: BinaryOperator::Alternatives,
         left: Box::new(acc),
         right: Box::new(e),
       })
@@ -724,16 +730,20 @@ pub fn not_element_ast(
 }
 
 /// Collect all alternatives from a nested Alternatives expression
-pub fn collect_alternatives(expr: &Expr) -> Vec<Expr> {
+fn collect_alternatives(expr: &Expr) -> Vec<Expr> {
   match expr {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Alternatives,
+      op: BinaryOperator::Alternatives,
       left,
       right,
     } => {
       let mut result = collect_alternatives(left);
       result.extend(collect_alternatives(right));
       result
+    }
+    // `a | b | c` evaluates to a flat Alternatives[...] FunctionCall.
+    Expr::FunctionCall { name, args } if name == "Alternatives" => {
+      args.iter().flat_map(collect_alternatives).collect()
     }
     _ => vec![expr.clone()],
   }
@@ -850,7 +860,7 @@ fn apply_assumption_substitutions(body: &Expr, assumption: &Expr) -> Expr {
         operators,
       } if operands.len() == 2
         && operators.len() == 1
-        && operators[0] == crate::syntax::ComparisonOp::Equal =>
+        && operators[0] == ComparisonOp::Equal =>
       {
         if let Expr::Identifier(var) = &operands[0] {
           out.push((var.clone(), operands[1].clone()));

@@ -1,7 +1,9 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{
+  BinaryOperator, Expr, UnaryOperator, expr_to_string, substitute_variable,
+};
 
 pub fn n_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
@@ -30,7 +32,7 @@ pub fn n_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           crate::emit_message(&format!(
             "N::precbd: Requested precision {} is not a machine-sized real number between $MinPrecision and $MaxPrecision.",
-            crate::syntax::expr_to_string(other)
+            expr_to_string(other)
           ));
           return Ok(Expr::FunctionCall {
             name: "N".to_string(),
@@ -180,7 +182,7 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
       // If the result is still a Power with complex operands, force
       // numeric evaluation via z^w = exp(w * log(z))
       if let Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left: ref base,
         right: ref exp,
       } = result
@@ -205,10 +207,10 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
             // Preserve complex form: re + 0.*I (matching Wolfram's convention
             // for complex power results where imaginary part is numerically zero)
             return Ok(Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Plus,
+              op: BinaryOperator::Plus,
               left: Box::new(Expr::Real(re)),
               right: Box::new(Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Times,
+                op: BinaryOperator::Times,
                 left: Box::new(Expr::Real(0.0)),
                 right: Box::new(Expr::Identifier("I".to_string())),
               }),
@@ -288,11 +290,11 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
       if !has_user_n_rules {
         return Ok(expr.clone());
       }
-      let original_str = crate::syntax::expr_to_string(expr);
+      let original_str = expr_to_string(expr);
       let n_call_str = format!("N[{}]", original_str);
       match crate::evaluator::evaluate_function_call_ast("N", &[expr.clone()]) {
         Ok(result) => {
-          let result_str = crate::syntax::expr_to_string(&result);
+          let result_str = expr_to_string(&result);
           if result_str == n_call_str {
             Ok(expr.clone())
           } else {
@@ -337,7 +339,7 @@ fn try_as_integer(expr: &Expr) -> Option<i128> {
   match expr {
     Expr::Integer(n) => Some(*n),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       if let Expr::Integer(n) = operand.as_ref() {
@@ -352,7 +354,7 @@ fn try_as_integer(expr: &Expr) -> Option<i128> {
 
 /// Compute base^n for integer n, handling negative exponents.
 /// Uses BigFloat::powi for the absolute value, then inverts if needed.
-fn bigfloat_powi(
+pub(crate) fn bigfloat_powi(
   base: &astro_float::BigFloat,
   n: i128,
   bits: usize,
@@ -371,6 +373,71 @@ fn bigfloat_powi(
     BigFloat::from_i32(1, bits).div(&result, bits, rm)
   } else {
     result
+  }
+}
+
+/// `Exp[x]` for a precision-tagged BigFloat `x`. Computes e^x in astro-float
+/// and tracks precision as `input_prec - log10(|x|)` (matching wolframscript:
+/// Exp[N[1,30]] keeps precision 30, Exp[N[10,30]] drops to 29). Returns None
+/// when `x` is zero (handled elsewhere) so the caller can defer.
+pub fn bigfloat_exp(
+  digits: &str,
+  prec: f64,
+) -> Option<Result<Expr, InterpreterError>> {
+  use astro_float::{BigFloat, Consts, Radix, RoundingMode};
+  let x_val: f64 = digits.parse().ok()?;
+  if x_val == 0.0 {
+    return None;
+  }
+  let rm = RoundingMode::ToEven;
+  let bits = nominal_bits(prec.ceil() as usize);
+  let mut cc = match Consts::new() {
+    Ok(c) => c,
+    Err(e) => {
+      return Some(Err(InterpreterError::EvaluationError(format!("{}", e))));
+    }
+  };
+  let x = BigFloat::parse(digits, Radix::Dec, bits, rm, &mut cc);
+  let result = x.exp(bits, rm, &mut cc);
+  let result_prec = prec - x_val.abs().log10();
+  let max_fraction_digits =
+    ((bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
+  match bigfloat_to_string(&result, Some(max_fraction_digits), rm, &mut cc) {
+    Ok(s) => Some(Ok(Expr::BigFloat(s, result_prec))),
+    Err(e) => Some(Err(e)),
+  }
+}
+
+/// `Log[x]` (natural log) for a precision-tagged BigFloat `x > 0`. Computes
+/// ln(x) in astro-float and tracks precision as `input_prec + log10(|ln x|)`
+/// (matching wolframscript: Log[N[2,30]] has precision 30 + log10(ln 2)).
+/// Returns None for non-positive `x` (complex/zero result — deferred) or when
+/// `x == 1` (ln = 0, special-cased by the caller).
+pub fn bigfloat_log(
+  digits: &str,
+  prec: f64,
+) -> Option<Result<Expr, InterpreterError>> {
+  use astro_float::{BigFloat, Consts, Radix, RoundingMode};
+  let x_val: f64 = digits.parse().ok()?;
+  if x_val <= 0.0 || x_val == 1.0 {
+    return None;
+  }
+  let rm = RoundingMode::ToEven;
+  let bits = nominal_bits(prec.ceil() as usize);
+  let mut cc = match Consts::new() {
+    Ok(c) => c,
+    Err(e) => {
+      return Some(Err(InterpreterError::EvaluationError(format!("{}", e))));
+    }
+  };
+  let x = BigFloat::parse(digits, Radix::Dec, bits, rm, &mut cc);
+  let result = x.ln(bits, rm, &mut cc);
+  let result_prec = prec + x_val.ln().abs().log10();
+  let max_fraction_digits =
+    ((bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
+  match bigfloat_to_string(&result, Some(max_fraction_digits), rm, &mut cc) {
+    Ok(s) => Some(Ok(Expr::BigFloat(s, result_prec))),
+    Err(e) => Some(Err(e)),
   }
 }
 
@@ -1199,7 +1266,7 @@ fn is_blank_pattern_expr(e: &Expr) -> bool {
       is_blank_pattern_expr(&pa[1])
     }
     _ => {
-      let rendered = crate::syntax::expr_to_string(e);
+      let rendered = expr_to_string(e);
       rendered == "_"
         || rendered.starts_with("Blank[")
         || rendered.contains("Pattern[")
@@ -1240,7 +1307,6 @@ pub fn expr_to_bigfloat(
   rm: astro_float::RoundingMode,
   cc: &mut astro_float::Consts,
 ) -> Result<astro_float::BigFloat, InterpreterError> {
-  use crate::syntax::BinaryOperator;
   use astro_float::BigFloat;
 
   match expr {
@@ -1321,7 +1387,7 @@ pub fn expr_to_bigfloat(
       Ok(fifty_three.mul(&log10_2, bits, rm))
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       let val = expr_to_bigfloat(operand, bits, rm, cc)?;
@@ -1490,7 +1556,7 @@ pub fn expr_to_bigfloat(
     }
     _ => Err(InterpreterError::EvaluationError(format!(
       "N: cannot evaluate expression to arbitrary precision: {}",
-      crate::syntax::expr_to_string(expr)
+      expr_to_string(expr)
     ))),
   }
 }
@@ -1504,7 +1570,6 @@ fn expr_to_complex_bigfloat(
   rm: astro_float::RoundingMode,
   cc: &mut astro_float::Consts,
 ) -> Result<(astro_float::BigFloat, astro_float::BigFloat), InterpreterError> {
-  use crate::syntax::BinaryOperator;
   use astro_float::BigFloat;
 
   // Fast path: if purely real, delegate
@@ -1519,7 +1584,7 @@ fn expr_to_complex_bigfloat(
     }
     // Unary minus
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       let (re, im) = expr_to_complex_bigfloat(operand, bits, rm, cc)?;
@@ -1758,7 +1823,7 @@ fn expr_to_complex_bigfloat(
     },
     _ => Err(InterpreterError::EvaluationError(format!(
       "N: cannot evaluate expression to complex arbitrary precision: {}",
-      crate::syntax::expr_to_string(expr)
+      expr_to_string(expr)
     ))),
   }
 }
@@ -1787,7 +1852,7 @@ fn build_complex_bigfloat_result(
 
   // Build |im| * I term (always positive coefficient)
   let abs_im_term = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Times,
+    op: BinaryOperator::Times,
     left: Box::new(im_bf),
     right: Box::new(i_expr),
   };
@@ -1798,7 +1863,7 @@ fn build_complex_bigfloat_result(
       let neg_im_str = bigfloat_to_string(&im, max_digits, rm, cc)?;
       let neg_im_bf = Expr::BigFloat(neg_im_str, precision as f64);
       return Ok(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(neg_im_bf),
         right: Box::new(Expr::Identifier("I".to_string())),
       });
@@ -1812,14 +1877,14 @@ fn build_complex_bigfloat_result(
   if im_negative {
     // re - |im|*I
     Ok(Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(re_bf),
       right: Box::new(abs_im_term),
     })
   } else {
     // re + |im|*I
     Ok(Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left: Box::new(re_bf),
       right: Box::new(abs_im_term),
     })
@@ -1851,20 +1916,20 @@ fn build_complex_result_with_string_precision(
 
   let i_expr = Expr::Identifier("I".to_string());
   let abs_im_term = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Times,
+    op: BinaryOperator::Times,
     left: Box::new(im_raw),
     right: Box::new(i_expr),
   };
 
   if im_negative {
     Ok(Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(re_raw),
       right: Box::new(abs_im_term),
     })
   } else {
     Ok(Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left: Box::new(re_raw),
       right: Box::new(abs_im_term),
     })
@@ -2226,6 +2291,14 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Norm expects 1 or 2 arguments".into(),
     ));
   }
+  // A SparseArray argument is handled via its dense form.
+  if let Some(dense) =
+    crate::functions::list_helpers_ast::densify_sparse_array(&args[0])
+  {
+    let mut new_args = args.to_vec();
+    new_args[0] = dense;
+    return norm_ast(&new_args);
+  }
   // An empty vector has no norm: emit Norm::nvm and stay unevaluated rather
   // than collapsing to 0. (wolframscript parity)
   if matches!(&args[0], Expr::List(items) if items.is_empty()) {
@@ -2258,6 +2331,22 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => p_val == Some(f64::INFINITY),
   };
 
+  // Emit Norm::ptype and leave the call unevaluated for an out-of-range norm
+  // parameter (a numeric p < 1 for a vector, or a non-{1,2,Infinity,
+  // "Frobenius"} value for a matrix).
+  let ptype = || {
+    if let Some(p) = &p_expr {
+      crate::emit_message(&format!(
+        "Norm::ptype: The second argument of Norm, {}, should be a symbol, Infinity or an integer or real number not less than 1 for vector p-norms; or 1, 2, Infinity or \"Frobenius\" for matrix norms.",
+        crate::syntax::expr_to_string(p)
+      ));
+    }
+    Ok(Expr::FunctionCall {
+      name: "Norm".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+
   // Norm[matrix, "Frobenius"] — sqrt of sum of squared absolute values
   // across every entry of the (rectangular) matrix.
   if matches!(&p_expr, Some(Expr::String(s)) if s == "Frobenius")
@@ -2282,6 +2371,12 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     return norm_ast(&[Expr::List(flat.into())]);
+  }
+
+  // For a vector or scalar the Frobenius norm is just the ordinary 2-norm
+  // (Abs for a scalar); only the matrix case above needs special handling.
+  if matches!(&p_expr, Some(Expr::String(s)) if s == "Frobenius") {
+    return norm_ast(std::slice::from_ref(&args[0]));
   }
 
   // Matrix norms: args[0] is a rectangular list of lists. These differ from
@@ -2369,12 +2464,19 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         return evaluate_expr_to_expr(&sqrt);
       }
-      // Other matrix p-norms are not defined; leave unevaluated.
-      return Ok(Expr::FunctionCall {
-        name: "Norm".to_string(),
-        args: args.to_vec().into(),
-      });
+      // Only 1, 2, Infinity and "Frobenius" are valid matrix norms; anything
+      // else emits ptype and stays unevaluated.
+      return ptype();
     }
+  }
+
+  // A vector (or scalar) p-norm requires a numeric p not less than 1; a
+  // numeric p < 1 is rejected with ptype (symbolic p stays symbolic).
+  if let Some(p) = p_val
+    && p.is_finite()
+    && p < 1.0
+  {
+    return ptype();
   }
 
   match &args[0] {
@@ -2568,7 +2670,7 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Norm[2/3] -> 2/3, Norm[3 + 4 I] -> 5). For a non-numeric scalar (x,
     // a + b I, …) wolframscript leaves Norm unevaluated.
     _ => {
-      if crate::functions::predicate_ast::is_numeric_q_pub(&args[0]) {
+      if crate::functions::predicate_ast::is_numeric_q(&args[0]) {
         crate::evaluator::evaluate_function_call_ast("Abs", &[args[0].clone()])
       } else {
         Ok(Expr::FunctionCall {
@@ -2587,7 +2689,7 @@ pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::functions::list_helpers_ast::apply_func_ast(&args[1], &args[0])?;
     // v / norm_val
     let result = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(args[0].clone()),
       right: Box::new(norm_val),
     })?;
@@ -2623,7 +2725,7 @@ pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             let squared_terms: Vec<Expr> = items
               .iter()
               .map(|e| Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Power,
+                op: BinaryOperator::Power,
                 left: Box::new(Expr::FunctionCall {
                   name: "Abs".to_string(),
                   args: vec![e.clone()].into(),
@@ -2650,7 +2752,7 @@ pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               .iter()
               .map(|e| {
                 crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-                  op: crate::syntax::BinaryOperator::Divide,
+                  op: BinaryOperator::Divide,
                   left: Box::new(e.clone()),
                   right: Box::new(norm_expr.clone()),
                 })
@@ -2686,7 +2788,7 @@ pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             } else {
               // x / Sqrt[sum_sq] = x * Power[sum_sq, -1/2]
               Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Divide,
+                op: BinaryOperator::Divide,
                 left: Box::new(Expr::Integer(*x)),
                 right: Box::new(make_sqrt(Expr::Integer(sum_sq))),
               }
@@ -2821,7 +2923,7 @@ pub fn precision_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Expr::Identifier("Infinity".to_string()))
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       ..
     } => {
       // Exact rationals like 1/2 have infinite precision
@@ -2980,7 +3082,7 @@ pub fn accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Expr::Identifier("Infinity".to_string()))
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       ..
     } => Ok(Expr::Identifier("Infinity".to_string())),
     // Complex number with finite-accuracy parts: apply Wolfram's formula
@@ -2997,10 +3099,10 @@ pub fn accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // to Infinity even though both operands have finite accuracy.
     Expr::BinaryOp {
       op:
-        crate::syntax::BinaryOperator::Plus
-        | crate::syntax::BinaryOperator::Minus
-        | crate::syntax::BinaryOperator::Times
-        | crate::syntax::BinaryOperator::Power,
+        BinaryOperator::Plus
+        | BinaryOperator::Minus
+        | BinaryOperator::Times
+        | BinaryOperator::Power,
       left,
       right,
     } => {
@@ -3067,7 +3169,6 @@ pub fn accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// either part has infinite accuracy, or if there's no I factor — in
 /// those cases the caller falls back to the generic min-of-children path.
 fn try_complex_accuracy(expr: &Expr) -> Option<Expr> {
-  use crate::syntax::BinaryOperator;
   let plus_args: Vec<Expr> = match expr {
     Expr::FunctionCall { name, args } if name == "Plus" && args.len() == 2 => {
       args.to_vec()
@@ -3156,12 +3257,12 @@ pub fn power_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(power_expand_recursive(&args[0]))
 }
 
-pub fn power_expand_recursive(expr: &Expr) -> Expr {
+fn power_expand_recursive(expr: &Expr) -> Expr {
   // Helper to extract (base, exponent) from any Power representation
   let extract_power = |e: &Expr| -> Option<(Expr, Expr)> {
     match e {
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left,
         right,
       } => Some((*left.clone(), *right.clone())),
@@ -3195,7 +3296,7 @@ pub fn power_expand_recursive(expr: &Expr) -> Expr {
         args.iter().flat_map(collect_times_factors).collect()
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left,
         right,
       } => {
@@ -3204,13 +3305,13 @@ pub fn power_expand_recursive(expr: &Expr) -> Expr {
         factors
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left,
         right,
       } => {
         let mut factors = collect_times_factors(left);
         factors.push(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           left: right.clone(),
           right: Box::new(Expr::Integer(-1)),
         });
@@ -3240,13 +3341,13 @@ pub fn power_expand_recursive(expr: &Expr) -> Expr {
         let new_exp = match times_ast(&[inner_exp.clone(), exp.clone()]) {
           Ok(r) => r,
           Err(_) => Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(inner_exp),
             right: Box::new(exp),
           },
         };
         return match crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           left: Box::new(inner_base),
           right: Box::new(new_exp),
         }) {
@@ -3266,7 +3367,7 @@ pub fn power_expand_recursive(expr: &Expr) -> Expr {
               let new_exp = match times_ast(&[inner_exp.clone(), exp.clone()]) {
                 Ok(r) => r,
                 Err(_) => Expr::BinaryOp {
-                  op: crate::syntax::BinaryOperator::Times,
+                  op: BinaryOperator::Times,
                   left: Box::new(inner_exp),
                   right: Box::new(exp.clone()),
                 },
@@ -3274,7 +3375,7 @@ pub fn power_expand_recursive(expr: &Expr) -> Expr {
               match power_two(&inner_base, &new_exp) {
                 Ok(r) => r,
                 Err(_) => Expr::BinaryOp {
-                  op: crate::syntax::BinaryOperator::Power,
+                  op: BinaryOperator::Power,
                   left: Box::new(inner_base),
                   right: Box::new(new_exp),
                 },
@@ -3283,7 +3384,7 @@ pub fn power_expand_recursive(expr: &Expr) -> Expr {
               match power_two(factor, &exp) {
                 Ok(r) => r,
                 Err(_) => Expr::BinaryOp {
-                  op: crate::syntax::BinaryOperator::Power,
+                  op: BinaryOperator::Power,
                   left: Box::new(factor.clone()),
                   right: Box::new(exp.clone()),
                 },
@@ -3330,7 +3431,7 @@ pub fn power_expand_recursive(expr: &Expr) -> Expr {
                 Ok(r) => r,
                 Err(_) => {
                   return Expr::BinaryOp {
-                    op: crate::syntax::BinaryOperator::Power,
+                    op: BinaryOperator::Power,
                     left: Box::new(base),
                     right: Box::new(exp),
                   };
@@ -3340,7 +3441,7 @@ pub fn power_expand_recursive(expr: &Expr) -> Expr {
             return match power_two(&log_arg, &new_exp) {
               Ok(r) => r,
               Err(_) => Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Power,
+                op: BinaryOperator::Power,
                 left: Box::new(log_arg),
                 right: Box::new(new_exp),
               },
@@ -3350,7 +3451,7 @@ pub fn power_expand_recursive(expr: &Expr) -> Expr {
       }
 
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left: Box::new(base),
         right: Box::new(exp),
       }
@@ -3366,7 +3467,7 @@ pub fn power_expand_recursive(expr: &Expr) -> Expr {
       // Convert a/b to Times[a, Power[b, -1]] and fall through to product rule
       let expanded_arg = match &expanded_arg {
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left,
           right,
         } => Expr::FunctionCall {
@@ -3374,7 +3475,7 @@ pub fn power_expand_recursive(expr: &Expr) -> Expr {
           args: vec![
             *left.clone(),
             Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Power,
+              op: BinaryOperator::Power,
               left: right.clone(),
               right: Box::new(Expr::Integer(-1)),
             },
@@ -3498,18 +3599,16 @@ pub fn variables_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   collect_variables(&args[0], &mut vars);
   // Deduplicate while preserving order
   let mut seen = std::collections::HashSet::new();
-  vars.retain(|v| seen.insert(crate::syntax::expr_to_string(v)));
+  vars.retain(|v| seen.insert(expr_to_string(v)));
   // For List input, sort in canonical order (alphabetical);
   // for non-List input, preserve first-appearance order (matching Wolfram).
   if matches!(&args[0], Expr::List(_)) {
-    vars.sort_by(|a, b| {
-      crate::syntax::expr_to_string(a).cmp(&crate::syntax::expr_to_string(b))
-    });
+    vars.sort_by_key(expr_to_string);
   }
   Ok(Expr::List(vars.into()))
 }
 
-pub fn collect_variables(expr: &Expr, vars: &mut Vec<Expr>) {
+fn collect_variables(expr: &Expr, vars: &mut Vec<Expr>) {
   match expr {
     Expr::Integer(_)
     | Expr::Real(_)
@@ -3540,11 +3639,11 @@ pub fn collect_variables(expr: &Expr, vars: &mut Vec<Expr>) {
     }
     Expr::BinaryOp { op, left, right } => {
       match op {
-        crate::syntax::BinaryOperator::Plus
-        | crate::syntax::BinaryOperator::Minus
-        | crate::syntax::BinaryOperator::Times
-        | crate::syntax::BinaryOperator::Power
-        | crate::syntax::BinaryOperator::Divide => {
+        BinaryOperator::Plus
+        | BinaryOperator::Minus
+        | BinaryOperator::Times
+        | BinaryOperator::Power
+        | BinaryOperator::Divide => {
           collect_variables(left, vars);
           collect_variables(right, vars);
         }
@@ -3648,12 +3747,12 @@ pub fn linear_recurrence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for (i, coeff) in kernel.iter().enumerate() {
       let idx = seq.len() - 1 - i;
       let term = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(coeff.clone()),
         right: Box::new(seq[idx].clone()),
       };
       next = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(next),
         right: Box::new(term),
       };
@@ -3928,7 +4027,7 @@ pub fn squared_euclidean_distance_ast(
 /// Core DFT computation shared by Fourier and InverseFourier.
 /// `sign` is +1 for Fourier, -1 for InverseFourier (before applying `b`).
 /// FourierParameters {a, b}: F_s = n^((a-1)/2) * sum_{r=0}^{n-1} u_r * exp(2*pi*i*b*(r*s)/n)
-pub fn dft_core(
+fn dft_core(
   data: &[(f64, f64)],
   param_a: f64,
   param_b: f64,
@@ -4029,7 +4128,7 @@ pub(crate) fn fft_pow2_in_place(data: &mut [(f64, f64)], exp_sign: f64) {
 
 /// Round a floating-point number to clean up near-integer/near-half values.
 /// This accounts for floating-point errors in DFT trig computations.
-pub fn fourier_round(x: f64) -> f64 {
+fn fourier_round(x: f64) -> f64 {
   if x.abs() < 1e-14 {
     return 0.0;
   }
@@ -4066,7 +4165,7 @@ pub fn fourier_result_to_expr(re: f64, im: f64, force_complex: bool) -> Expr {
 
 /// Parse FourierParameters option from args, returning (a, b).
 /// Default is {0, 1}.
-pub fn parse_fourier_parameters(
+fn parse_fourier_parameters(
   args: &[Expr],
 ) -> Result<(f64, f64), InterpreterError> {
   for arg in args {
@@ -4100,7 +4199,7 @@ pub fn parse_fourier_parameters(
 }
 
 /// Shared implementation for Fourier and InverseFourier
-pub fn fourier_impl(
+fn fourier_impl(
   func_name: &str,
   args: &[Expr],
   inverse: bool,
@@ -4118,7 +4217,7 @@ pub fn fourier_impl(
       crate::emit_message(&format!(
         "{}::fftl: Argument {} is not a nonempty list or rectangular array of numeric quantities.",
         func_name,
-        crate::syntax::expr_to_string(&args[0])
+        expr_to_string(&args[0])
       ));
       return Ok(Expr::FunctionCall {
         name: func_name.to_string(),
@@ -4136,7 +4235,7 @@ pub fn fourier_impl(
       crate::emit_message(&format!(
         "{}::fftl: Argument {} is not a nonempty list or rectangular array of numeric quantities.",
         func_name,
-        crate::syntax::expr_to_string(&args[0])
+        expr_to_string(&args[0])
       ));
       return Ok(Expr::FunctionCall {
         name: func_name.to_string(),
@@ -4236,7 +4335,7 @@ pub fn fourier_dct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || {
     crate::emit_message(&format!(
       "FourierDCT::fftl: Argument {} is not a nonempty list or rectangular array of numeric quantities.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     Ok(Expr::FunctionCall {
       name: "FourierDCT".to_string(),
@@ -4295,7 +4394,7 @@ pub fn discrete_hilbert_transform_ast(
   let data_err = || {
     crate::emit_message(&format!(
       "DiscreteHilbertTransform::data: {} is empty or not a real valued numerical array.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     unevaluated()
   };
@@ -4416,7 +4515,7 @@ pub fn fourier_dst_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || {
     crate::emit_message(&format!(
       "FourierDST::fftl: Argument {} is not a nonempty list or rectangular array of numeric quantities.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     Ok(Expr::FunctionCall {
       name: "FourierDST".to_string(),
@@ -4457,7 +4556,7 @@ pub fn fourier_dst_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Takes a sequence of partial sums and returns an accelerated estimate.
 /// Polynomial extrapolation using Neville's algorithm.
 /// Given points (x_i, y_i) representing (1/n, S_n), extrapolate to x=0.
-pub fn neville_extrapolation(xs: &[f64], ys: &[f64]) -> f64 {
+fn neville_extrapolation(xs: &[f64], ys: &[f64]) -> f64 {
   let n = xs.len();
   if n == 0 {
     return 0.0;
@@ -4547,8 +4646,7 @@ pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let max_n = *checkpoints.last().unwrap();
     for i in min_val..(min_val + max_n) {
       let sub_val = Expr::Integer(i as i128);
-      let substituted =
-        crate::syntax::substitute_variable(body, &var_name, &sub_val);
+      let substituted = substitute_variable(body, &var_name, &sub_val);
       let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
       let term = match try_eval_to_f64(&val) {
         Some(f) => f,
@@ -4597,8 +4695,7 @@ pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut sum = 0.0_f64;
   for i in min_val..=max_val {
     let sub_val = Expr::Integer(i as i128);
-    let substituted =
-      crate::syntax::substitute_variable(body, &var_name, &sub_val);
+    let substituted = substitute_variable(body, &var_name, &sub_val);
     let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
     let term = match try_eval_to_f64(&val) {
       Some(f) => f,
@@ -4672,8 +4769,7 @@ pub fn nproduct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let eval_term = |i: i64| -> Result<Option<f64>, InterpreterError> {
     let sub_val = Expr::Integer(i as i128);
-    let substituted =
-      crate::syntax::substitute_variable(body, &var_name, &sub_val);
+    let substituted = substitute_variable(body, &var_name, &sub_val);
     let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
     Ok(try_eval_to_f64(&val))
   };
@@ -5288,10 +5384,7 @@ fn compute_khinchin(
 /// to `decimal_digits` decimal places, as a "0.ddd…" string. Computed
 /// exactly: enough base-b digits accumulate into a big integer M so that
 /// M/b^K determines the requested decimal digits, then long-divided.
-pub(crate) fn champernowne_decimal_digits(
-  base: i128,
-  decimal_digits: usize,
-) -> String {
+fn champernowne_decimal_digits(base: i128, decimal_digits: usize) -> String {
   use num_bigint::BigInt;
   let k_needed = ((decimal_digits as f64 + 2.0) * std::f64::consts::LN_10
     / (base as f64).ln())
@@ -5381,7 +5474,6 @@ pub fn list_fourier_sequence_transform_ast(
 
   // Build the sum: Sum[a_k * E^(-I * omega * k), {k, 0, n-1}]
   use crate::evaluator::evaluate_expr_to_expr;
-  use crate::syntax::BinaryOperator;
 
   let mut terms: Vec<Expr> = Vec::new();
   for (k, coeff) in list.iter().enumerate() {
@@ -5600,7 +5692,6 @@ pub fn tukey_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Exact: build (1 + Cos[Pi (2 Abs[x] - 1 + alpha)/alpha]) / 2 and evaluate
   // symbolically so Cos simplifies (matching wolframscript's radical forms).
-  use crate::syntax::BinaryOperator;
   let abs_x = Expr::FunctionCall {
     name: "Abs".to_string(),
     args: vec![x.clone()].into(),
@@ -5662,7 +5753,6 @@ fn window_arg_inexact(e: &Expr) -> bool {
 /// Exact arguments give the exact polynomial value (e.g. ParzenWindow[1/3] ->
 /// 2/27); Real arguments numericize.
 pub fn parzen_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use crate::syntax::BinaryOperator;
   let unevaluated = || Expr::FunctionCall {
     name: "ParzenWindow".to_string(),
     args: args.to_vec().into(),
@@ -5739,7 +5829,6 @@ pub fn parzen_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Exact arguments give E^(rational) (e.g. GaussianWindow[1/4] -> E^(-25/72));
 /// Real arguments numericize.
 pub fn gaussian_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use crate::syntax::BinaryOperator;
   let unevaluated = || Expr::FunctionCall {
     name: "GaussianWindow".to_string(),
     args: args.to_vec().into(),
@@ -5794,7 +5883,6 @@ pub fn gaussian_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// (1 - 2|x|) Cos[2 Pi |x|] + Sin[2 Pi |x|] / Pi. Exact arguments evaluate the
 /// symbolic form (e.g. BohmanWindow[1/4] -> 1/Pi); Real arguments numericize.
 pub fn bohman_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use crate::syntax::BinaryOperator;
   let unevaluated = || Expr::FunctionCall {
     name: "BohmanWindow".to_string(),
     args: args.to_vec().into(),
@@ -5959,6 +6047,7 @@ pub fn bandpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Image input: separable 2D filter (row-then-column 1D passes).
   if let Expr::Image {
+    color_space: _,
     width,
     height,
     channels,
@@ -5996,6 +6085,7 @@ pub fn bandpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     return Ok(Expr::Image {
+      color_space: None,
       width: *width,
       height: *height,
       channels: *channels,
@@ -6188,6 +6278,7 @@ pub fn lowpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // with the same 1D windowed-sinc kernel. Matches wolframscript's
   // separable 2D filter (`LowpassFilter[Image[…], ωc]`).
   if let Expr::Image {
+    color_space: _,
     width,
     height,
     channels,
@@ -6227,6 +6318,7 @@ pub fn lowpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     return Ok(Expr::Image {
+      color_space: None,
       width: *width,
       height: *height,
       channels: *channels,
@@ -6339,6 +6431,7 @@ pub fn highpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Image input: separable 2D filter (row-then-column 1D passes).
   if let Expr::Image {
+    color_space: _,
     width,
     height,
     channels,
@@ -6376,6 +6469,7 @@ pub fn highpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     return Ok(Expr::Image {
+      color_space: None,
       width: *width,
       height: *height,
       channels: *channels,
@@ -6504,6 +6598,7 @@ pub fn bandstop_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Image input: separable 2D filter (row-then-column 1D passes).
   if let Expr::Image {
+    color_space: _,
     width,
     height,
     channels,
@@ -6541,6 +6636,7 @@ pub fn bandstop_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     return Ok(Expr::Image {
+      color_space: None,
       width: *width,
       height: *height,
       channels: *channels,
@@ -6613,11 +6709,8 @@ fn root_sum_n_eval(poly_arg: &Expr, fn_arg: &Expr) -> Option<Expr> {
   // Substitute Slot(1) → __rs_x__ to get a polynomial in a named variable
   // (extract_poly_coeffs needs an identifier).
   let var = "__rs_x__";
-  let poly_in_var = crate::syntax::substitute_variable(
-    poly_body,
-    "#1",
-    &Expr::Identifier(var.to_string()),
-  );
+  let poly_in_var =
+    substitute_variable(poly_body, "#1", &Expr::Identifier(var.to_string()));
   // Slot(1) inside Function bodies is stored differently from Identifier
   // "#1"; substitute that variant too.
   let poly_in_var = substitute_slot_with_identifier(&poly_in_var, 1, var);
@@ -6672,20 +6765,32 @@ fn root_n_eval(poly_arg: &Expr, k_arg: &Expr) -> Option<Expr> {
   if k < 1 {
     return None;
   }
-  let poly_body = match poly_arg {
-    Expr::Function { body } => body.as_ref(),
-    _ => return None,
+  // Two accepted first-argument shapes for Root[f, k]:
+  //   * pure function `#^3 - 2 &` (Slot/`#1` is the root variable), or
+  //   * an ordinary polynomial expression in a single symbol, e.g. `x^3 - 2`.
+  let (poly_in_var, var): (Expr, String) = match poly_arg {
+    Expr::Function { body } => {
+      let var = "__root_x__".to_string();
+      let sub = crate::syntax::substitute_variable(
+        body.as_ref(),
+        "#1",
+        &Expr::Identifier(var.clone()),
+      );
+      (substitute_slot_with_identifier(&sub, 1, &var), var)
+    }
+    _ => {
+      let mut vars = std::collections::HashSet::new();
+      collect_expr_vars(poly_arg, &mut vars);
+      if vars.len() != 1 {
+        return None;
+      }
+      let var = vars.into_iter().next().unwrap();
+      (poly_arg.clone(), var)
+    }
   };
-  let var = "__root_x__";
-  let poly_in_var = crate::syntax::substitute_variable(
-    poly_body,
-    "#1",
-    &Expr::Identifier(var.to_string()),
-  );
-  let poly_in_var = substitute_slot_with_identifier(&poly_in_var, 1, var);
   let expanded =
     crate::functions::polynomial_ast::expand_and_combine(&poly_in_var);
-  let coeffs_i = extract_poly_coeffs(&expanded, var)?;
+  let coeffs_i = extract_poly_coeffs(&expanded, &var)?;
   if coeffs_i.len() < 2 {
     return None;
   }
@@ -6724,6 +6829,38 @@ fn root_n_eval(poly_arg: &Expr, k_arg: &Expr) -> Option<Expr> {
       ]
       .into(),
     })
+  }
+}
+
+/// Collect the free symbol names in `expr` (skipping the boolean/null
+/// literals). Used to infer the root variable of an expression-form
+/// `Root[x^3 - 2, k]`.
+fn collect_expr_vars(
+  expr: &Expr,
+  vars: &mut std::collections::HashSet<String>,
+) {
+  match expr {
+    Expr::Identifier(name)
+      if name != "True" && name != "False" && name != "Null" =>
+    {
+      vars.insert(name.clone());
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      collect_expr_vars(left, vars);
+      collect_expr_vars(right, vars);
+    }
+    Expr::UnaryOp { operand, .. } => collect_expr_vars(operand, vars),
+    Expr::FunctionCall { args, .. } => {
+      for a in args {
+        collect_expr_vars(a, vars);
+      }
+    }
+    Expr::List(items) => {
+      for i in items {
+        collect_expr_vars(i, vars);
+      }
+    }
+    _ => {}
   }
 }
 

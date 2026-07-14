@@ -916,7 +916,7 @@ fn top_level_split_call(s: &str) -> Option<(&str, Vec<&str>)> {
   Some((head, out))
 }
 
-pub fn assert_case(input: &str, expected: &str) {
+pub(crate) fn assert_case(input: &str, expected: &str) {
   clear_state();
   let result =
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| interpret(input)));

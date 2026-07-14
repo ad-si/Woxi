@@ -5,7 +5,7 @@
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::{make_sqrt, try_eval_to_f64};
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
 /// Transpose a matrix (Vec<Vec<Expr>>)
 fn transpose_matrix(m: &[Vec<Expr>]) -> Vec<Vec<Expr>> {
@@ -323,11 +323,8 @@ pub fn orthogonalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // e = w / Sqrt[normsq] = w * normsq^(-1/2).
       let inv_norm = Expr::FunctionCall {
         name: "Power".to_string(),
-        args: vec![
-          normsq,
-          crate::functions::math_ast::make_rational_pub(-1, 2),
-        ]
-        .into(),
+        args: vec![normsq, crate::functions::math_ast::make_rational(-1, 2)]
+          .into(),
       };
       let e: Vec<Expr> = w
         .iter()
@@ -410,7 +407,7 @@ fn fallback_plus(a: &Expr, b: &Expr) -> Expr {
   match crate::functions::math_ast::plus_ast(&[a.clone(), b.clone()]) {
     Ok(r) => r,
     Err(_) => Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left: Box::new(a.clone()),
       right: Box::new(b.clone()),
     },
@@ -425,7 +422,7 @@ fn eval_mul(a: &Expr, b: &Expr) -> Expr {
         match crate::functions::math_ast::times_ast(&[a.clone(), b.clone()]) {
           Ok(r) => r,
           Err(_) => Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(a.clone()),
             right: Box::new(b.clone()),
           },
@@ -439,7 +436,7 @@ fn eval_mul(a: &Expr, b: &Expr) -> Expr {
     _ => match crate::functions::math_ast::times_ast(&[a.clone(), b.clone()]) {
       Ok(r) => r,
       Err(_) => Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(a.clone()),
         right: Box::new(b.clone()),
       },
@@ -464,7 +461,7 @@ fn fallback_sub(a: &Expr, b: &Expr) -> Expr {
   match crate::functions::math_ast::subtract_ast(&[a.clone(), b.clone()]) {
     Ok(r) => r,
     Err(_) => Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(a.clone()),
       right: Box::new(b.clone()),
     },
@@ -477,6 +474,23 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Dot expects exactly 2 arguments".into(),
     ));
+  }
+
+  // Densify any SparseArray operand to its Normal (dense nested-list) form and
+  // retry, so `SparseArray[...] . vec` and friends behave like the dense case.
+  let is_sparse = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "SparseArray");
+  if is_sparse(&args[0]) || is_sparse(&args[1]) {
+    let densify = |e: &Expr| -> Expr {
+      if let Expr::FunctionCall { name, args: sa } = e
+        && name == "SparseArray"
+      {
+        crate::functions::list_helpers_ast::sparse_array_ast(sa)
+          .unwrap_or_else(|_| e.clone())
+      } else {
+        e.clone()
+      }
+    };
+    return dot_ast(&[densify(&args[0]), densify(&args[1])]);
   }
 
   // TransformationFunction[M1] . TransformationFunction[M2] →
@@ -725,9 +739,9 @@ pub fn is_nonempty_square(m: &[Vec<Expr>]) -> bool {
 /// Whether `arg` should trigger a `::matsq` message — a concrete non-matrix
 /// argument (a list, or a numeric value such as 5, Pi, 3/4). Bare symbols and
 /// symbolic expressions (`x`, `a + b`, `f[x]`) stay held with no message.
-pub fn is_matsq_subject(arg: &Expr) -> bool {
+fn is_matsq_subject(arg: &Expr) -> bool {
   matches!(arg, Expr::List(_))
-    || crate::functions::predicate_ast::is_numeric_q_pub(arg)
+    || crate::functions::predicate_ast::is_numeric_q(arg)
 }
 
 /// Emit `<F>::matsq: Argument <m> at position 1 is not a nonempty square
@@ -1119,9 +1133,9 @@ fn eval_divide(a: &Expr, b: &Expr) -> Expr {
         let (n, d) = (x / g, y / g);
         if d < 0 {
           // Keep denominator positive
-          crate::functions::math_ast::make_rational_pub(-n, -d)
+          crate::functions::math_ast::make_rational(-n, -d)
         } else {
-          crate::functions::math_ast::make_rational_pub(n, d)
+          crate::functions::math_ast::make_rational(n, d)
         }
       }
     }
@@ -1129,7 +1143,7 @@ fn eval_divide(a: &Expr, b: &Expr) -> Expr {
       match crate::functions::math_ast::divide_ast(&[a.clone(), b.clone()]) {
         Ok(r) => r,
         Err(_) => Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(a.clone()),
           right: Box::new(b.clone()),
         },
@@ -1184,9 +1198,9 @@ fn diagonal_element(expr: &Expr, i: usize, depth: usize) -> Option<Expr> {
 /// this is the sum of all entries; for a matrix it is the usual trace. With a
 /// second argument f, the combining head f is used in place of Plus.
 pub fn tr_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 2 {
+  if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "Tr expects 1 or 2 arguments".into(),
+      "Tr expects 1, 2, or 3 arguments".into(),
     ));
   }
 
@@ -1203,23 +1217,6 @@ pub fn tr_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // The combining function f (default: Plus) is applied to the whole
-  // sequence of diagonal elements at once as f[d1, d2, ..., dn], not
-  // pairwise — so Tr[m, List] returns a list of the diagonal.
-  let combine_name: String = if args.len() == 2 {
-    match &args[1] {
-      Expr::Identifier(name) => name.clone(),
-      _ => {
-        return Ok(Expr::FunctionCall {
-          name: "Tr".to_string(),
-          args: args.to_vec().into(),
-        });
-      }
-    }
-  } else {
-    "Plus".to_string()
-  };
-
   let unevaluated = || {
     Ok(Expr::FunctionCall {
       name: "Tr".to_string(),
@@ -1227,21 +1224,59 @@ pub fn tr_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
   };
 
+  // The combining function f (default: Plus) is applied to the whole
+  // sequence of diagonal elements at once as f[d1, d2, ..., dn], not
+  // pairwise — so Tr[m, List] returns a list of the diagonal.
+  let combine_name: String = if args.len() >= 2 {
+    match &args[1] {
+      Expr::Identifier(name) => name.clone(),
+      _ => return unevaluated(),
+    }
+  } else {
+    "Plus".to_string()
+  };
+
+  // Optional level n: the generalized trace runs over the first n indices,
+  // combining the resulting slices. n is clamped to the tensor rank; a zero
+  // level is rejected with Tr::intnz, matching wolframscript.
+  let level: Option<usize> = if args.len() == 3 {
+    match expr_to_i128(&args[2]) {
+      Some(n) if n >= 1 => Some(n as usize),
+      Some(_) => {
+        crate::emit_message(&format!(
+          "Tr::intnz: Nonzero integer expected at position 3 in {}.",
+          crate::syntax::expr_to_string(&Expr::FunctionCall {
+            name: "Tr".to_string(),
+            args: args.to_vec().into(),
+          })
+        ));
+        return unevaluated();
+      }
+      None => return unevaluated(),
+    }
+  } else {
+    None
+  };
+
   // Collect the diagonal entries (or, for a plain vector, all entries).
   let diag: Vec<Expr> = if let Some(vec) = expr_to_vector(&args[0]) {
+    // A rank-1 vector: the diagonal over any (clamped) level is every entry.
     vec
   } else if matches!(&args[0], Expr::List(_)) {
-    // Rank >= 2 array: the main diagonal a[[i, i, ..., i]] over all levels,
-    // i = 1..min(dimensions). (A rank-2 matrix reduces to the usual trace.)
+    // Rank >= 2 array: the main diagonal a[[i, i, ..., i]] over the first
+    // `n` levels (default: all levels), i = 1..min(first n dimensions). For
+    // n < rank each diagonal entry is the remaining sub-array (slice). A
+    // rank-2 matrix with the default level reduces to the usual trace.
     let shape = array_shape(&args[0]);
     if shape.len() < 2 {
       return unevaluated();
     }
     let rank = shape.len();
-    let min_dim = *shape.iter().min().unwrap();
+    let depth = level.unwrap_or(rank).min(rank);
+    let min_dim = *shape[..depth].iter().min().unwrap();
     let mut d = Vec::with_capacity(min_dim);
     for i in 0..min_dim {
-      match diagonal_element(&args[0], i, rank) {
+      match diagonal_element(&args[0], i, depth) {
         Some(e) => d.push(e),
         None => return unevaluated(),
       }
@@ -1437,9 +1472,9 @@ pub fn vandermonde_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// DiagonalMatrix[list] - diagonal matrix from a list
 pub fn diagonal_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 2 {
+  if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "DiagonalMatrix expects 1 or 2 arguments".into(),
+      "DiagonalMatrix expects 1, 2 or 3 arguments".into(),
     ));
   }
   let diag = match &args[0] {
@@ -1451,22 +1486,33 @@ pub fn diagonal_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
-  let k: i128 = if args.len() == 2 {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "DiagonalMatrix".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let k: i128 = if args.len() >= 2 {
     match &args[1] {
       Expr::Integer(v) => *v,
-      _ => {
-        return Ok(Expr::FunctionCall {
-          name: "DiagonalMatrix".to_string(),
-          args: args.to_vec().into(),
-        });
-      }
+      _ => return unevaluated(),
     }
   } else {
     0
   };
   let n = diag.len();
-  let size = n + k.unsigned_abs() as usize;
   let k_abs = k.unsigned_abs() as usize;
+  // DiagonalMatrix[list, k, m] forces an m×m square matrix instead of the
+  // auto-sized (len + |k|); entries that fall outside the m×m grid are
+  // dropped. wolframscript: DiagonalMatrix[{1,2,3}, 0, 4] pads to 4×4.
+  let size = if args.len() == 3 {
+    match &args[2] {
+      Expr::Integer(m) if *m >= 0 => *m as usize,
+      _ => return unevaluated(),
+    }
+  } else {
+    n + k_abs
+  };
   // An inexact diagonal makes the whole matrix inexact: the off-diagonal
   // fill is the machine real 0. rather than the exact Integer 0, and any
   // exact numeric diagonal entry is promoted to a Real too
@@ -1498,8 +1544,9 @@ pub fn diagonal_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for i in 0..size {
     let mut row = vec![zero.clone(); size];
     if k >= 0 {
-      // Super-diagonal: element j goes at row j, column j + k
-      if i < n {
+      // Super-diagonal: element j goes at row j, column j + k. Bounds-check
+      // the column so an explicit size that clips the diagonal is honoured.
+      if i < n && i + k_abs < size {
         row[i + k_abs] = promote(&diag[i]);
       }
     } else {
@@ -1780,12 +1827,12 @@ pub fn projection_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: vec![conj_v, v.clone()].into(),
     };
     let scalar = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(dot_cv_u),
       right: Box::new(dot_cv_v),
     };
     let result = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left: Box::new(scalar),
       right: Box::new(v),
     };
@@ -2481,7 +2528,7 @@ fn divide_exact_root(root: &Expr, d: i128) -> Option<Expr> {
   match root {
     Expr::Integer(n) => Some(simplify_fraction(*n, d)),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       let pos = divide_exact_root(operand, d)?;
@@ -2504,7 +2551,7 @@ fn divide_exact_root(root: &Expr, d: i128) -> Option<Expr> {
       .ok()
     }
     _ => crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(root.clone()),
       right: Box::new(Expr::Integer(d)),
     })
@@ -2583,7 +2630,7 @@ fn quadratic_eigenvalues(b_coeff: i128, c_coeff: i128) -> Vec<Expr> {
     }
     // Otherwise keep the quotient form (3 + I*Sqrt[11])/2
     let halved = |num: Expr| Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(num),
       right: Box::new(Expr::Integer(2)),
     };
@@ -2646,7 +2693,7 @@ fn simplify_fraction(n: i128, d: i128) -> Expr {
   if d == 1 {
     Expr::Integer(n)
   } else {
-    crate::functions::math_ast::make_rational_pub(n, d)
+    crate::functions::math_ast::make_rational(n, d)
   }
 }
 
@@ -2856,7 +2903,7 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: vec![a, d].into(),
     };
     let lambda_minus = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(Expr::FunctionCall {
         name: "Plus".to_string(),
         args: vec![
@@ -2871,7 +2918,7 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       right: Box::new(Expr::Integer(2)),
     };
     let lambda_plus = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(Expr::FunctionCall {
         name: "Plus".to_string(),
         args: vec![trace, sqrt_disc].into(),
@@ -3513,7 +3560,7 @@ fn complex_2x2_eigenvectors(
   let quotient_vector =
     |num_minuend: &Expr, num_subtrahend: &Expr, den: &Expr| {
       let x = evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::FunctionCall {
           name: "Plus".to_string(),
           args: vec![
@@ -3575,7 +3622,10 @@ fn complex_2x2_eigenvectors(
 
   let rows: Vec<Vec<Expr>> = if repeated {
     if b_zero && c_zero {
-      vec![basis(true), basis(false)]
+      // Scalar matrix (c·Id): the eigenspace is all of C^2, so the vectors
+      // come from NullSpace[0], which wolframscript returns in reversed-basis
+      // order ({{0, 1}, {1, 0}}) — matching the real/integer scalar path.
+      vec![basis(false), basis(true)]
     } else {
       vec![vector_for(&l1)?, zero_row()]
     }
@@ -6813,8 +6863,6 @@ pub fn fitted_model_normal(
 pub fn cholesky_decomposition_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  use crate::syntax::BinaryOperator;
-
   let unevaluated = || Expr::FunctionCall {
     name: "CholeskyDecomposition".to_string(),
     args: args.to_vec().into(),
@@ -7019,8 +7067,6 @@ pub(crate) fn contains_imaginary_unit(e: &Expr) -> bool {
 }
 
 pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use crate::syntax::BinaryOperator;
-
   let matrix = match expr_to_matrix(&args[0]) {
     Some(m) => m,
     None => {
@@ -7291,7 +7337,6 @@ pub fn singular_value_decomposition_ast(
 /// pass through unchanged.
 fn simplify_radical_factor(expr: &Expr) -> Expr {
   use crate::functions::math_ast::{gcd, make_rational, sqrt_ast, times_ast};
-  use crate::syntax::BinaryOperator;
   let extract_int = |e: &Expr| -> Option<i128> {
     if let Expr::Integer(n) = e {
       Some(*n)
@@ -7359,7 +7404,7 @@ fn simplify_radical_factor(expr: &Expr) -> Expr {
   let mut other: Vec<Expr> = Vec::new();
   for f in &factors {
     if let Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } = f
     {
@@ -7565,7 +7610,6 @@ fn simplify_radical_factor(expr: &Expr) -> Expr {
 
 /// Helper: evaluate a dot product of two vectors
 fn eval_dot_product(a: &[Expr], b: &[Expr]) -> Result<Expr, InterpreterError> {
-  use crate::syntax::BinaryOperator;
   let mut sum = Expr::Integer(0);
   for (ai, bi) in a.iter().zip(b.iter()) {
     let prod = Expr::BinaryOp {
@@ -8551,7 +8595,7 @@ pub fn jordan_decomposition_ast(
     let result = simplify(simplify(evaluate_expr_to_expr(&e)?)?)?;
     let inner = match &result {
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand,
       } => Some(operand.as_ref()),
       Expr::FunctionCall { name, args }
@@ -8569,7 +8613,7 @@ pub fn jordan_decomposition_ast(
           Some(args.iter().cloned().collect())
         }
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left,
           right,
         } => {
@@ -8605,7 +8649,7 @@ pub fn jordan_decomposition_ast(
   let repeated = same(&l1, &l2);
 
   let div = |n: Expr, dn: Expr| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(n),
     right: Box::new(dn),
   };
@@ -9269,7 +9313,7 @@ fn expr_to_gq(e: &Expr) -> Option<GQNum> {
       Some(acc)
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => GQNum::zero().sub(&expr_to_gq(operand)?),
     // Complex-rational scalars can survive as unevaluated binary
@@ -9278,10 +9322,10 @@ fn expr_to_gq(e: &Expr) -> Option<GQNum> {
       let l = expr_to_gq(left)?;
       let r = expr_to_gq(right)?;
       match op {
-        crate::syntax::BinaryOperator::Plus => l.add(&r),
-        crate::syntax::BinaryOperator::Minus => l.sub(&r),
-        crate::syntax::BinaryOperator::Times => l.mul(&r),
-        crate::syntax::BinaryOperator::Divide => l.div(&r),
+        BinaryOperator::Plus => l.add(&r),
+        BinaryOperator::Minus => l.sub(&r),
+        BinaryOperator::Times => l.mul(&r),
+        BinaryOperator::Divide => l.div(&r),
         _ => None,
       }
     }
@@ -9295,7 +9339,7 @@ fn gq_to_expr(q: &GQNum) -> Option<Expr> {
     if x.d == 1 {
       Expr::Integer(x.n)
     } else {
-      crate::functions::math_ast::make_rational_pub(x.n, x.d)
+      crate::functions::math_ast::make_rational(x.n, x.d)
     }
   };
   if q.im.is_zero() {
@@ -9475,7 +9519,7 @@ fn expr_mod_m(e: &Expr, m: i128) -> Result<i128, bool> {
       expr_mod_m(&rat, m)
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => expr_mod_m(operand, m).map(|v| (-v).rem_euclid(m)),
     _ => Err(false),
@@ -10001,7 +10045,7 @@ pub fn coordinate_transform_ast(
     args: fargs.into(),
   };
   let sq = |e: &Expr| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(e.clone()),
     right: Box::new(Expr::Integer(2)),
   };

@@ -2,7 +2,9 @@
 use super::*;
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
-use crate::syntax::{BinaryOperator, ComparisonOp, Expr};
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
+};
 
 /// Helper to build a binary operation expression
 fn binop(op: BinaryOperator, left: Expr, right: Expr) -> Expr {
@@ -111,6 +113,26 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let dist = &args[0];
 
+  // PDF[DiscreteMarkovProcess[...][t], x] — the state distribution after
+  // t steps, as a Boole sum.
+  if args.len() == 2
+    && let Expr::CurriedCall { func, args: targs } = dist
+    && let Expr::FunctionCall { name, args: dargs } = func.as_ref()
+    && targs.len() == 1
+  {
+    if name == "DiscreteMarkovProcess" {
+      return dmp_step_pdf(dargs, &targs[0], &args[1]).map(|r| {
+        r.unwrap_or_else(|| Expr::FunctionCall {
+          name: "PDF".to_string(),
+          args: args.to_vec().into(),
+        })
+      });
+    }
+    if let Some(slice) = process_slice_distribution(name, dargs, &targs[0]) {
+      return pdf_ast(&[slice, args[1].clone()]);
+    }
+  }
+
   // Extract distribution name and parameters
   let (dist_name, dargs) = match dist {
     Expr::FunctionCall { name, args: dargs } => {
@@ -124,12 +146,42 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // PDF[StationaryDistribution[DiscreteMarkovProcess[...]], x].
+  if dist_name == "StationaryDistribution"
+    && args.len() == 2
+    && dargs.len() == 1
+    && let Expr::FunctionCall { name, args: mp } = &dargs[0]
+    && name == "DiscreteMarkovProcess"
+  {
+    return dmp_stationary_pdf(mp, &args[1]).map(|r| {
+      r.unwrap_or_else(|| Expr::FunctionCall {
+        name: "PDF".to_string(),
+        args: args.to_vec().into(),
+      })
+    });
+  }
+
   if args.len() == 1 {
     // PDF[dist] - return unevaluated for now
     return Ok(Expr::FunctionCall {
       name: "PDF".to_string(),
       args: args.to_vec().into(),
     });
+  }
+
+  // PDF[MixtureDistribution[{w1, …}, {d1, …}], x] is the weight-normalized sum
+  // of the component PDFs: Σ w_i PDF[d_i, x] / Σ w_i.
+  if dist_name == "MixtureDistribution" && dargs.len() == 2 {
+    let x = args[1].clone();
+    return Ok(
+      super::statistics::mixture_weighted_component_quantity(dargs, |d| {
+        pdf_ast(&[d.clone(), x.clone()])
+      })?
+      .unwrap_or_else(|| Expr::FunctionCall {
+        name: "PDF".to_string(),
+        args: args.to_vec().into(),
+      }),
+    );
   }
 
   // ErlangDistribution[k, λ] == GammaDistribution[k, 1/λ]
@@ -206,6 +258,18 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "MeixnerDistribution" => pdf_meixner(dargs, x),
     "LogGammaDistribution" => pdf_loggamma(dargs, x),
     "SkellamDistribution" => pdf_skellam(dargs, x),
+    "HypoexponentialDistribution" => pdf_hypoexponential(dargs, x),
+    "CoxianDistribution" => pdf_coxian(dargs, x),
+    "HyperexponentialDistribution" => pdf_hyperexponential(dargs, x),
+    "VonMisesDistribution" => pdf_vonmises(dargs, x),
+    "BeniniDistribution" => pdf_benini(dargs, x),
+    "HotellingTSquareDistribution" => pdf_hotelling(dargs, x),
+    "TukeyLambdaDistribution" => tukey_lambda_pdf_cdf(dargs, x, true),
+    "TsallisQGaussianDistribution" => tsallis_qgaussian_pdf(dargs, x),
+    "VarianceGammaDistribution" => variance_gamma_pdf(dargs, x),
+    "HoytDistribution" => hoyt_pdf(dargs, x),
+    "FailureDistribution" => pdf_failure_distribution(dargs, x),
+    "FirstPassageTimeDistribution" => pdf_first_passage(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
     "BinomialDistribution" => pdf_binomial(dargs, x),
     "HypergeometricDistribution" => pdf_hypergeometric(dargs, x),
@@ -230,6 +294,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "LaplaceDistribution" => pdf_laplace(dargs, x),
     "RayleighDistribution" => pdf_rayleigh(dargs, x),
     "MultinomialDistribution" => pdf_multinomial(dargs, x),
+    "NegativeMultinomialDistribution" => pdf_negative_multinomial(dargs, x),
     "DirichletDistribution" => pdf_dirichlet(dargs, x),
     "NegativeBinomialDistribution" => pdf_negative_binomial(dargs, x),
     "MultivariatePoissonDistribution" => pdf_multivariate_poisson(dargs, x),
@@ -267,6 +332,31 @@ pub fn survival_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if args.len() == 1 {
     // SurvivalFunction[dist] — symbolic pure form, leave unevaluated.
+    return Ok(Expr::FunctionCall {
+      name: "SurvivalFunction".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+  // FailureDistribution has its own survival shape:
+  // Piecewise[{{1, t < 0}}, 1 - cdfvalue] (wolframscript-verified).
+  if let Expr::FunctionCall { name, args: dargs } = &args[0]
+    && name == "FailureDistribution"
+  {
+    if let Some((value, _)) = failure_distribution_cdf_value(dargs, &args[1])? {
+      let complement = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          int(1),
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![int(-1), value].into(),
+          },
+        ]
+        .into(),
+      };
+      let below = comparison(args[1].clone(), ComparisonOp::Less, int(0));
+      return eval(piecewise(vec![(int(1), below)], complement));
+    }
     return Ok(Expr::FunctionCall {
       name: "SurvivalFunction".to_string(),
       args: args.to_vec().into(),
@@ -363,11 +453,11 @@ pub fn hazard_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "Times".to_string(),
         args: vec![
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left: Box::new(Expr::Identifier("E".to_string())),
             right: Box::new(divide(
               Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Power,
+                op: BinaryOperator::Power,
                 left: Box::new(x.clone()),
                 right: Box::new(int(2)),
               },
@@ -423,8 +513,7 @@ pub fn hazard_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       if p_pair.len() != 2
         || s_pair.len() != 2
-        || crate::syntax::expr_to_string(&p_pair[1])
-          != crate::syntax::expr_to_string(&s_pair[1])
+        || expr_to_string(&p_pair[1]) != expr_to_string(&s_pair[1])
       {
         return Ok(unevaluated(args));
       }
@@ -455,7 +544,7 @@ fn match_erfc_half(expr: &Expr) -> Option<Expr> {
   };
   match expr {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left,
       right,
     } if matches!(right.as_ref(), Expr::Integer(2)) => erfc_arg(left),
@@ -493,7 +582,7 @@ pub fn quantile_distribution_closed_form(
   }
   let infinity = || Expr::Identifier("Infinity".to_string());
   let neg_infinity = || Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand: Box::new(infinity()),
   };
   let is_exact_q = !matches!(q, Expr::Real(_));
@@ -527,7 +616,7 @@ pub fn quantile_distribution_closed_form(
           return Some(if v.1 == 1 {
             Expr::Integer(v.0)
           } else {
-            crate::functions::math_ast::make_rational_pub(v.0, v.1)
+            crate::functions::math_ast::make_rational(v.0, v.1)
           });
         }
       }
@@ -535,7 +624,7 @@ pub fn quantile_distribution_closed_form(
         if v.1 == 1 {
           Expr::Integer(v.0)
         } else {
-          crate::functions::math_ast::make_rational_pub(v.0, v.1)
+          crate::functions::math_ast::make_rational(v.0, v.1)
         }
       })
     }
@@ -570,10 +659,8 @@ pub fn quantile_distribution_closed_form(
       }
       let (a, b) = (dargs[0].clone(), dargs[1].clone());
       let pi = Expr::Constant("Pi".to_string());
-      let q_minus_half = minus(
-        q.clone(),
-        crate::functions::math_ast::make_rational_pub(1, 2),
-      );
+      let q_minus_half =
+        minus(q.clone(), crate::functions::math_ast::make_rational(1, 2));
       let tan = Expr::FunctionCall {
         name: "Tan".to_string(),
         args: vec![times(pi, q_minus_half)].into(),
@@ -711,7 +798,7 @@ pub fn quantile_distribution_closed_form(
           _ => vec![sqrt2, s.clone(), inverse_erfc],
         };
         let term = Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand: Box::new(Expr::FunctionCall {
             name: "Times".to_string(),
             args: factors.into(),
@@ -818,7 +905,7 @@ pub fn quantile_distribution_closed_form(
         args: vec![
           s,
           divide(nu.clone(), int(2)),
-          crate::functions::math_ast::make_rational_pub(1, 2),
+          crate::functions::math_ast::make_rational(1, 2),
         ]
         .into(),
       };
@@ -883,7 +970,7 @@ pub fn inverse_survival_closed_form(
   let is_exact_q = !matches!(q, Expr::Real(_));
   let infinity = || Expr::Identifier("Infinity".to_string());
   let neg_infinity = || Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand: Box::new(infinity()),
   };
 
@@ -1882,6 +1969,7 @@ fn is_multivariate_distribution(name: &str) -> bool {
       | "BinormalDistribution"
       | "MultivariatePoissonDistribution"
       | "MultinomialDistribution"
+      | "NegativeMultinomialDistribution"
       | "DirichletDistribution"
       | "ProductDistribution"
       | "CopulaDistribution"
@@ -1896,6 +1984,16 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let dist = &args[0];
+
+  // CDF over process time slices delegates to the slice distribution.
+  if args.len() == 2
+    && let Expr::CurriedCall { func, args: targs } = dist
+    && let Expr::FunctionCall { name, args: dargs } = func.as_ref()
+    && targs.len() == 1
+    && let Some(slice) = process_slice_distribution(name, dargs, &targs[0])
+  {
+    return cdf_ast(&[slice, args[1].clone()]);
+  }
 
   let (dist_name, dargs) = match dist {
     Expr::FunctionCall { name, args: dargs } => {
@@ -1914,6 +2012,21 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "CDF".to_string(),
       args: args.to_vec().into(),
     });
+  }
+
+  // CDF[MixtureDistribution[{w1, …}, {d1, …}], x] is the weight-normalized sum
+  // of the component CDFs: Σ w_i CDF[d_i, x] / Σ w_i.
+  if dist_name == "MixtureDistribution" && dargs.len() == 2 {
+    let x = args[1].clone();
+    return Ok(
+      super::statistics::mixture_weighted_component_quantity(dargs, |d| {
+        cdf_ast(&[d.clone(), x.clone()])
+      })?
+      .unwrap_or_else(|| Expr::FunctionCall {
+        name: "CDF".to_string(),
+        args: args.to_vec().into(),
+      }),
+    );
   }
 
   // ErlangDistribution[k, λ] == GammaDistribution[k, 1/λ]
@@ -1985,6 +2098,15 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ExponentialDistribution" => cdf_exponential(dargs, x),
     "PoissonDistribution" => cdf_poisson(dargs, x),
     "SkellamDistribution" => cdf_skellam(dargs, x),
+    "HypoexponentialDistribution" => cdf_hypoexponential(dargs, x),
+    "CoxianDistribution" => cdf_coxian(dargs, x),
+    "HyperexponentialDistribution" => cdf_hyperexponential(dargs, x),
+    "BeniniDistribution" => cdf_benini(dargs, x),
+    "HotellingTSquareDistribution" => cdf_hotelling(dargs, x),
+    "TukeyLambdaDistribution" => tukey_lambda_pdf_cdf(dargs, x, false),
+    "TsallisQGaussianDistribution" => tsallis_qgaussian_cdf(dargs, x),
+    "FailureDistribution" => cdf_failure_distribution(dargs, x),
+    "FirstPassageTimeDistribution" => cdf_first_passage(dargs, x),
     "BernoulliDistribution" => cdf_bernoulli(dargs, x),
     "BinomialDistribution" => cdf_binomial(dargs, x),
     "InverseGammaDistribution" => cdf_inverse_gamma(dargs, x),
@@ -2007,6 +2129,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "DiscreteUniformDistribution" => cdf_discrete_uniform(dargs, x),
     "LaplaceDistribution" => cdf_laplace(dargs, x),
     "RayleighDistribution" => cdf_rayleigh(dargs, x),
+    "NegativeMultinomialDistribution" => cdf_negative_multinomial(dargs, x),
     "HalfNormalDistribution" => cdf_half_normal(dargs, x),
     "ChiDistribution" => cdf_chi(dargs, x),
     "LogisticDistribution" => cdf_logistic(dargs, x),
@@ -2120,7 +2243,7 @@ fn cdf_exponential(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       e(),
       times(
         Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand: Box::new(lambda),
         },
         x.clone(),
@@ -2310,7 +2433,7 @@ fn pdf_gamma(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let exp_part = power(
     e(),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(divide(x.clone(), beta.clone())),
     },
   );
@@ -2411,7 +2534,7 @@ fn pdf_logistic(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   // (1 + E^(...))^2
   let denom_sq = power(
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left: Box::new(int(1)),
       right: Box::new(exp_val.clone()),
     },
@@ -2433,7 +2556,7 @@ fn cdf_logistic(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
   let exp_val = power(e(), divide(minus(m, x), s));
   let denom = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Plus,
+    op: BinaryOperator::Plus,
     left: Box::new(int(1)),
     right: Box::new(exp_val),
   };
@@ -2458,7 +2581,7 @@ fn pdf_inverse_chi_square(
   let x_part = power(
     power(x.clone(), int(-1)),
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left: Box::new(int(1)),
       right: Box::new(divide(n.clone(), int(2))),
     },
@@ -2521,9 +2644,9 @@ fn pdf_frechet(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let xb_part = power(
     xb.clone(),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(int(1)),
         right: Box::new(a.clone()),
       }),
@@ -2535,7 +2658,7 @@ fn pdf_frechet(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     power(
       xb,
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(a.clone()),
       },
     ),
@@ -2565,11 +2688,11 @@ fn cdf_frechet(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let value = power(
     e(),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(power(
         divide(shifted, b),
         Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand: Box::new(a),
         },
       )),
@@ -2596,9 +2719,9 @@ fn pdf_extreme_value(
   let ab = divide(minus(a.clone(), x), b.clone());
   // E^(-E^((a-x)/b) + (a-x)/b)
   let exp_arg = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Plus,
+    op: BinaryOperator::Plus,
     left: Box::new(Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(power(e(), ab.clone())),
     }),
     right: Box::new(ab),
@@ -2624,7 +2747,7 @@ fn cdf_extreme_value(
   eval(power(
     e(),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(power(e(), ab)),
     },
   ))
@@ -2651,7 +2774,7 @@ fn pdf_gompertz_makeham(
   let inner = times(minus(int(1), e_lx), x0.clone());
   // l*x + (1 - E^(l*x))*x0
   let exp_arg = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Plus,
+    op: BinaryOperator::Plus,
     left: Box::new(lx),
     right: Box::new(inner),
   };
@@ -2743,7 +2866,7 @@ fn cdf_inverse_gaussian(
     times(
       sqrt_lx,
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(m.clone()),
         right: Box::new(x.clone()),
       },
@@ -2758,7 +2881,7 @@ fn cdf_inverse_gaussian(
     int(2),
   );
   let value = eval(Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Plus,
+    op: BinaryOperator::Plus,
     left: Box::new(erfc1),
     right: Box::new(times(exp_part, erfc2)),
   })?;
@@ -3473,7 +3596,7 @@ fn extract_mgf_pattern(expr: &Expr, var: &str) -> Option<(Expr, Expr)> {
       args[1].clone()
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => {
@@ -3939,14 +4062,6 @@ fn try_expectation_probability_distribution(
   Ok(Some(eval(integral)?))
 }
 
-/// Public wrapper for distribution_mean_variance for use by Mean/Variance
-pub fn distribution_mean_variance_pub(
-  dist_name: &str,
-  dargs: &[Expr],
-) -> Result<(Expr, Expr), InterpreterError> {
-  distribution_mean_variance(dist_name, dargs)
-}
-
 /// Parameters of a BinormalDistribution as `(m1, m2, s1, s2, rho)`.
 ///   BinormalDistribution[{m1, m2}, {s1, s2}, rho]  — full form
 ///   BinormalDistribution[rho]                       — standard (means 0,
@@ -3977,7 +4092,7 @@ pub fn binormal_params(
 }
 
 /// Returns (Mean, Variance) as symbolic expressions for known distributions.
-fn distribution_mean_variance(
+pub fn distribution_mean_variance(
   dist_name: &str,
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
@@ -3986,6 +4101,30 @@ fn distribution_mean_variance(
       "GammaDistribution",
       &erlang_gamma_dargs(dargs)?,
     ),
+    "CoxianDistribution" => coxian_mean_variance(dargs),
+    "VonMisesDistribution" => {
+      let Some(()) = vonmises_checked(dargs) else {
+        return Err(InterpreterError::EvaluationError(
+          "VonMisesDistribution: invalid parameters".into(),
+        ));
+      };
+      // Only the mean has a closed form; Variance/StandardDeviation
+      // stay unevaluated in wolframscript (VonMises is not listed for
+      // the variance dispatch, so the second component is unused).
+      Ok((
+        dargs[0].clone(),
+        Expr::Identifier("Indeterminate".to_string()),
+      ))
+    }
+    "HyperexponentialDistribution" => hyperexponential_mean_variance(dargs),
+    "BeniniDistribution" => benini_mean_variance(dargs),
+    "HotellingTSquareDistribution" => hotelling_mean_variance(dargs),
+    "TukeyLambdaDistribution" => tukey_lambda_mean_variance(dargs),
+    "TsallisQGaussianDistribution" => tsallis_qgaussian_mean_variance(dargs),
+    "VarianceGammaDistribution" => variance_gamma_mean_variance(dargs),
+    "HoytDistribution" => hoyt_mean_variance(dargs),
+    "CompoundPoissonDistribution" => compound_poisson_mean_variance(dargs),
+    "WakebyDistribution" => wakeby_mean_variance(dargs),
     "MaxwellDistribution" => {
       if dargs.len() != 1 {
         return Err(InterpreterError::EvaluationError(
@@ -4983,7 +5122,7 @@ fn distribution_mean_variance(
       let b_gamma = times(b.clone(), gamma_1_minus_inv_a.clone());
       let mean_value = match &mu {
         Some(m) => Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Plus,
+          op: BinaryOperator::Plus,
           left: Box::new(m.clone()),
           right: Box::new(b_gamma),
         },
@@ -5581,9 +5720,7 @@ fn distribution_mean_variance(
 /// Check if expression is var^n
 fn is_power_of_var(expr: &Expr, var: &str, n: i128) -> bool {
   match expr {
-    Expr::BinaryOp { op, left, right }
-      if *op == crate::syntax::BinaryOperator::Power =>
-    {
+    Expr::BinaryOp { op, left, right } if *op == BinaryOperator::Power => {
       matches!(left.as_ref(), Expr::Identifier(v) if v == var)
         && matches!(right.as_ref(), Expr::Integer(k) if *k == n)
     }
@@ -5598,9 +5735,7 @@ fn extract_linear(expr: &Expr, var: &str) -> Option<(Expr, Expr)> {
     // Pure variable: x → (1, 0)
     Expr::Identifier(n) if n == var => Some((int(1), int(0))),
     // a * x
-    Expr::BinaryOp { op, left, right }
-      if *op == crate::syntax::BinaryOperator::Times =>
-    {
+    Expr::BinaryOp { op, left, right } if *op == BinaryOperator::Times => {
       if matches!(right.as_ref(), Expr::Identifier(n) if n == var)
         && !contains_var(left, var)
       {
@@ -5614,9 +5749,7 @@ fn extract_linear(expr: &Expr, var: &str) -> Option<(Expr, Expr)> {
       }
     }
     // a + b (try linear decomposition)
-    Expr::BinaryOp { op, left, right }
-      if *op == crate::syntax::BinaryOperator::Plus =>
-    {
+    Expr::BinaryOp { op, left, right } if *op == BinaryOperator::Plus => {
       // If left is linear in var and right is constant (or vice versa)
       if !contains_var(right, var)
         && let Some((a, b)) = extract_linear(left, var)
@@ -5632,9 +5765,7 @@ fn extract_linear(expr: &Expr, var: &str) -> Option<(Expr, Expr)> {
       }
       None
     }
-    Expr::BinaryOp { op, left, right }
-      if *op == crate::syntax::BinaryOperator::Minus =>
-    {
+    Expr::BinaryOp { op, left, right } if *op == BinaryOperator::Minus => {
       if !contains_var(right, var)
         && let Some((a, b)) = extract_linear(left, var)
       {
@@ -6276,7 +6407,7 @@ fn cdf_lognormal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     args: vec![x.clone()].into(),
   };
   let arg = Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand: Box::new(divide(minus(log_x, mu), times(sqrt(int(2)), sigma))),
   };
   let cdf_val = divide(
@@ -6496,7 +6627,7 @@ fn pdf_pareto(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     power(
       x.clone(),
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(plus(int(1), a)),
       },
     ),
@@ -6600,7 +6731,7 @@ fn cdf_weibull(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     power(
       e(),
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(power(xb, a)),
       },
     ),
@@ -6699,7 +6830,7 @@ fn pdf_laplace(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     power(
       e(),
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(divide(abs_diff, b.clone())),
       },
     ),
@@ -6725,7 +6856,7 @@ fn cdf_laplace(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       power(
         e(),
         Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand: Box::new(divide(diff, b)),
         },
       ),
@@ -6750,7 +6881,7 @@ fn pdf_rayleigh(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     power(
       e(),
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(divide(power(x.clone(), int(2)), times(int(2), s2))),
       },
     ),
@@ -6773,7 +6904,7 @@ fn cdf_rayleigh(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     power(
       e(),
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(divide(power(x.clone(), int(2)), times(int(2), s2))),
       },
     ),
@@ -6815,6 +6946,9 @@ fn pdf_multinomial(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "PDF[MultinomialDistribution[...]]: length of x must match length of probabilities".into(),
     ));
+  }
+  if any_concrete_non_integer(&xs) {
+    return Ok(int(0));
   }
 
   // Build the multinomial coefficient as product of binomials:
@@ -6865,6 +6999,3840 @@ fn pdf_multinomial(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   };
 
   eval(piecewise(vec![(pdf_val, combined_cond)], int(0)))
+}
+
+/// True if any component of a discrete multivariate point is a concrete
+/// number that is not an exact integer. wolframscript's multivariate discrete
+/// PDFs are 0 there — including at integer-valued Reals like `2.`.
+fn any_concrete_non_integer(xs: &[Expr]) -> bool {
+  xs.iter().any(|xi| {
+    !matches!(xi, Expr::Integer(_) | Expr::BigInteger(_))
+      && crate::functions::math_ast::expr_to_num(xi).is_some()
+  })
+}
+
+/// Simplify a positive-unate And/Or tree (integer leaves) by flattening
+/// nested same-head nodes and applying idempotency (dropping structurally
+/// duplicate children). A node that collapses to a single child returns that
+/// child. This is reliability-preserving, so a tree whose only repeats are
+/// idempotency-reducible (e.g. Or[1, 1] -> 1) becomes a distinct-leaf tree
+/// on which the independence product rules are exact.
+fn simplify_positive_boolean(e: &Expr) -> Expr {
+  // Some(true) = And, Some(false) = Or, None = not a boolean junction.
+  fn junction(e: &Expr) -> Option<bool> {
+    match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::And,
+        ..
+      } => Some(true),
+      Expr::BinaryOp {
+        op: BinaryOperator::Or,
+        ..
+      } => Some(false),
+      Expr::FunctionCall { name, .. } if name == "And" => Some(true),
+      Expr::FunctionCall { name, .. } if name == "Or" => Some(false),
+      _ => None,
+    }
+  }
+  fn children(e: &Expr) -> Vec<Expr> {
+    match e {
+      Expr::BinaryOp { left, right, .. } => {
+        vec![left.as_ref().clone(), right.as_ref().clone()]
+      }
+      Expr::FunctionCall { args, .. } => args.iter().cloned().collect(),
+      _ => vec![],
+    }
+  }
+  let Some(is_and) = junction(e) else {
+    return e.clone();
+  };
+  // Simplify children, flattening any of the same head.
+  let mut kids: Vec<Expr> = Vec::new();
+  for c in children(e) {
+    let sc = simplify_positive_boolean(&c);
+    if junction(&sc) == Some(is_and) {
+      kids.extend(children(&sc));
+    } else {
+      kids.push(sc);
+    }
+  }
+  // Idempotency: drop structurally duplicate children.
+  let mut uniq: Vec<Expr> = Vec::new();
+  for k in kids {
+    if !uniq
+      .iter()
+      .any(|u| crate::evaluator::pattern_matching::expr_equal(u, &k))
+    {
+      uniq.push(k);
+    }
+  }
+  if uniq.len() == 1 {
+    return uniq.into_iter().next().unwrap();
+  }
+  Expr::FunctionCall {
+    name: if is_and { "And" } else { "Or" }.to_string(),
+    args: uniq.into(),
+  }
+}
+
+/// Rewrite an index-leaf positive Boolean expression into an equivalent
+/// read-once form via `BooleanMinimize`. The integer leaves are mapped to
+/// fresh symbols (BooleanMinimize ignores bare integers), minimized, then
+/// mapped back. Returns `None` if minimization fails or the result is not a
+/// pure And/Or/index tree. The caller checks whether the result is actually
+/// read-once.
+fn failure_read_once_form(bexpr: &Expr) -> Option<Expr> {
+  fn map_leaves(e: &Expr, f: &dyn Fn(&Expr) -> Option<Expr>) -> Expr {
+    if let Some(r) = f(e) {
+      return r;
+    }
+    match e {
+      Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+        op: *op,
+        left: Box::new(map_leaves(left, f)),
+        right: Box::new(map_leaves(right, f)),
+      },
+      Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+        op: *op,
+        operand: Box::new(map_leaves(operand, f)),
+      },
+      Expr::FunctionCall { name, args }
+        if name == "And" || name == "Or" || name == "Not" =>
+      {
+        Expr::FunctionCall {
+          name: name.clone(),
+          args: args.iter().map(|a| map_leaves(a, f)).collect(),
+        }
+      }
+      _ => e.clone(),
+    }
+  }
+  const PREFIX: &str = "\u{1}fdvar";
+  let to_symbol = map_leaves(bexpr, &|e| match e {
+    Expr::Integer(i) => Some(Expr::Identifier(format!("{PREFIX}{i}"))),
+    _ => None,
+  });
+  let minimized = eval(Expr::FunctionCall {
+    name: "BooleanMinimize".to_string(),
+    args: vec![to_symbol].into(),
+  })
+  .ok()?;
+  Some(map_leaves(&minimized, &|e| match e {
+    Expr::Identifier(s) => s
+      .strip_prefix(PREFIX)
+      .and_then(|n| n.parse::<i128>().ok())
+      .map(Expr::Integer),
+    _ => None,
+  }))
+}
+
+/// The composed CDF value of a FailureDistribution boolean tree over
+/// component CDFs (independent events, each used once): a leaf index maps
+/// to its component CDF, And multiplies CDFs, Or complements the product
+/// of complements. Returns (value, strict) where `strict` is true when
+/// any component support condition was strict (t > 0).
+///
+/// Emits FailureDistribution::nonunate for negations; duplicated events
+/// (which wolframscript resolves exactly) and non-And/Or structure return
+/// None so the caller stays unevaluated.
+fn failure_distribution_cdf_value(
+  dargs: &[Expr],
+  t: &Expr,
+) -> Result<Option<(Expr, bool)>, InterpreterError> {
+  let [bexpr, Expr::List(pairs)] = dargs else {
+    return Ok(None);
+  };
+  // Component CDF value branches, keyed by index.
+  let mut comp: Vec<Option<(Expr, bool)>> = vec![None; pairs.len() + 1];
+  for p in pairs.iter() {
+    let Expr::List(kv) = p else { return Ok(None) };
+    let (Expr::Integer(idx), dist) = (&kv[0], &kv[1]) else {
+      return Ok(None);
+    };
+    let idx = *idx as usize;
+    if idx == 0 || idx >= comp.len() {
+      return Ok(None);
+    }
+    let c = cdf_ast(&[dist.clone(), t.clone()])?;
+    // Expect Piecewise[{{v, t >= 0 | t > 0}}, 0].
+    let Expr::FunctionCall { name, args } = &c else {
+      return Ok(None);
+    };
+    if name != "Piecewise" || args.len() != 2 {
+      return Ok(None);
+    }
+    let Expr::List(cases) = &args[0] else {
+      return Ok(None);
+    };
+    if cases.len() != 1 {
+      return Ok(None);
+    }
+    let Expr::List(pair) = &cases[0] else {
+      return Ok(None);
+    };
+    let strict = match &pair[1] {
+      Expr::Comparison { operators, .. } if operators.len() == 1 => {
+        matches!(operators[0], ComparisonOp::Greater)
+      }
+      _ => return Ok(None),
+    };
+    comp[idx] = Some((pair[0].clone(), strict));
+  }
+
+  // Negations are not positive unate.
+  fn has_not(e: &Expr) -> bool {
+    match e {
+      Expr::UnaryOp { op, operand } => {
+        matches!(op, UnaryOperator::Not) || has_not(operand)
+      }
+      Expr::FunctionCall { name, args } => {
+        name == "Not" || args.iter().any(has_not)
+      }
+      Expr::BinaryOp { left, right, .. } => has_not(left) || has_not(right),
+      _ => false,
+    }
+  }
+  if has_not(bexpr) {
+    crate::emit_message(&format!(
+      "FailureDistribution::nonunate: The Boolean expression {} is not positive unate. Use UnateQ to test if a Boolean expression is unate.",
+      crate::syntax::expr_to_string(bexpr).trim()
+    ));
+    return Ok(None);
+  }
+  // Collapse idempotency-reducible repeats (Or[a, a] -> a, And[a, a] -> a,
+  // plus flattening of nested same-head And/Or) so that duplicated events —
+  // which wolframscript resolves exactly and the independence product rules
+  // below would get wrong — reduce to a distinct-leaf tree where those rules
+  // are exact. Genuine cross-term repeats (e.g. Or[And[1, 2], And[1, 3]])
+  // survive the reduction and still bail out via the dedup check below.
+  let simplified = simplify_positive_boolean(bexpr);
+  // Each event may appear only once (the independence product rules below
+  // treat the branches as independent). A leaf appearing more than once is a
+  // shared event; the rules would double-count it.
+  fn leaves(e: &Expr, out: &mut Vec<i128>) -> bool {
+    match e {
+      Expr::Integer(i) => {
+        out.push(*i);
+        true
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::And | BinaryOperator::Or,
+        left,
+        right,
+      } => leaves(left, out) && leaves(right, out),
+      Expr::FunctionCall { name, args } if name == "And" || name == "Or" => {
+        args.iter().all(|a| leaves(a, out))
+      }
+      _ => false,
+    }
+  }
+  let read_once = |e: &Expr| -> bool {
+    let mut seen = Vec::new();
+    if !leaves(e, &mut seen) {
+      return false;
+    }
+    let mut sorted = seen.clone();
+    sorted.sort_unstable();
+    sorted.dedup();
+    sorted.len() == seen.len()
+  };
+  // If events repeat across the tree (e.g. Or[And[1, 2], And[1, 3]]) the
+  // independence product rules would double-count the shared event.
+  // wolframscript resolves such trees by rewriting them into an equivalent
+  // read-once form — (1 || 2) && (1 || 3) becomes 1 || (2 && 3) — and then
+  // applies independence. Reproduce that by minimizing the Boolean function;
+  // if the minimized form is read-once, compose against it. Otherwise stay
+  // unevaluated.
+  let bexpr = if read_once(&simplified) {
+    simplified
+  } else if let Some(reduced) =
+    failure_read_once_form(&simplified).filter(read_once)
+  {
+    reduced
+  } else {
+    return Ok(None);
+  };
+  let bexpr = &bexpr;
+
+  fn compose(
+    e: &Expr,
+    comp: &[Option<(Expr, bool)>],
+    strict: &mut bool,
+  ) -> Option<Expr> {
+    let product = |fs: Vec<Expr>| -> Expr {
+      match fs.len() {
+        1 => fs.into_iter().next().unwrap(),
+        _ => Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: fs.into(),
+        },
+      }
+    };
+    let complement = |f: Expr| -> Expr {
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          Expr::Integer(1),
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), f].into(),
+          },
+        ]
+        .into(),
+      }
+    };
+    let children = |e: &Expr| -> Option<(bool, Vec<Expr>)> {
+      match e {
+        Expr::BinaryOp {
+          op: op @ (BinaryOperator::And | BinaryOperator::Or),
+          left,
+          right,
+        } => Some((
+          matches!(op, BinaryOperator::And),
+          vec![left.as_ref().clone(), right.as_ref().clone()],
+        )),
+        Expr::FunctionCall { name, args } if name == "And" || name == "Or" => {
+          Some((name == "And", args.iter().cloned().collect()))
+        }
+        _ => None,
+      }
+    };
+    match e {
+      Expr::Integer(i) => {
+        let (v, s) = comp.get(*i as usize)?.clone()?;
+        if s {
+          *strict = true;
+        }
+        Some(v)
+      }
+      _ => {
+        let (is_and, kids) = children(e)?;
+        let parts: Option<Vec<Expr>> =
+          kids.iter().map(|k| compose(k, comp, strict)).collect();
+        let parts = parts?;
+        if is_and {
+          Some(product(parts))
+        } else {
+          Some(complement(product(
+            parts.into_iter().map(complement).collect(),
+          )))
+        }
+      }
+    }
+  }
+  let mut strict = false;
+  match compose(bexpr, &comp, &mut strict) {
+    Some(value) => Ok(Some((value, strict))),
+    None => Ok(None),
+  }
+}
+
+/// CDF[FailureDistribution[…], t] — Piecewise[{{composed, t >= 0}}, 0]
+/// (strict t > 0 when any component support is strict).
+fn cdf_failure_distribution(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "CDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "FailureDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  // Compose against a symbolic variable (component CDFs keep their
+  // Piecewise shape there), then substitute a concrete point at the end.
+  let var = match &x {
+    Expr::Identifier(_) => x.clone(),
+    _ => Expr::Identifier("t".to_string()),
+  };
+  let Some((value, strict)) = failure_distribution_cdf_value(dargs, &var)?
+  else {
+    return unevaluated(x);
+  };
+  let op = if strict {
+    ComparisonOp::Greater
+  } else {
+    ComparisonOp::GreaterEqual
+  };
+  let cond = comparison(var.clone(), op, int(0));
+  let result = eval(piecewise(vec![(value, cond)], int(0)))?;
+  if matches!(&x, Expr::Identifier(_)) {
+    Ok(result)
+  } else {
+    eval(Expr::FunctionCall {
+      name: "ReplaceAll".to_string(),
+      args: vec![
+        result,
+        Expr::Rule {
+          pattern: Box::new(var),
+          replacement: Box::new(x),
+        },
+      ]
+      .into(),
+    })
+  }
+}
+
+/// PDF[FailureDistribution[…], t] — the derivative of the composed CDF,
+/// on t > 0.
+fn pdf_failure_distribution(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "PDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "FailureDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  // The derivative needs a symbolic variable to differentiate against.
+  let var = match &x {
+    Expr::Identifier(_) => x.clone(),
+    _ => Expr::Identifier("t".to_string()),
+  };
+  let Some((value, _)) = failure_distribution_cdf_value(dargs, &var)? else {
+    return unevaluated(x);
+  };
+  let deriv = eval(Expr::FunctionCall {
+    name: "D".to_string(),
+    args: vec![value, var.clone()].into(),
+  })?;
+  let cond = comparison(var.clone(), ComparisonOp::Greater, int(0));
+  let result = eval(piecewise(vec![(deriv, cond)], int(0)))?;
+  if matches!(&x, Expr::Identifier(_)) {
+    Ok(result)
+  } else {
+    // Numeric evaluation point: substitute after differentiating.
+    eval(Expr::FunctionCall {
+      name: "ReplaceAll".to_string(),
+      args: vec![
+        result,
+        Expr::Rule {
+          pattern: Box::new(var),
+          replacement: Box::new(x),
+        },
+      ]
+      .into(),
+    })
+  }
+}
+
+/// The time-slice distribution of a continuous random process:
+/// WienerProcess[m, s][t] is NormalDistribution[m t, s Sqrt[t]] and
+/// GeometricBrownianMotionProcess[m, s, x0][t] is
+/// LogNormalDistribution[(m - s^2/2) t + Log[x0], s Sqrt[t]] — built in
+/// exactly those shapes so the delegated moments and PDF match
+/// wolframscript's displays.
+pub fn process_slice_distribution(
+  proc_name: &str,
+  dargs: &[Expr],
+  t: &Expr,
+) -> Option<Expr> {
+  let sqrt_t = Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![t.clone()].into(),
+  };
+  match proc_name {
+    "WienerProcess" if dargs.len() == 2 => Some(Expr::FunctionCall {
+      name: "NormalDistribution".to_string(),
+      args: vec![
+        times(dargs[0].clone(), t.clone()),
+        times(dargs[1].clone(), sqrt_t),
+      ]
+      .into(),
+    }),
+    // Counting and noise processes with directly parameterized slices.
+    "PoissonProcess" if dargs.len() == 1 => Some(Expr::FunctionCall {
+      name: "PoissonDistribution".to_string(),
+      args: vec![times(dargs[0].clone(), t.clone())].into(),
+    }),
+    "BinomialProcess" if dargs.len() == 1 => Some(Expr::FunctionCall {
+      name: "BinomialDistribution".to_string(),
+      args: vec![t.clone(), dargs[0].clone()].into(),
+    }),
+    // A Bernoulli process' slice does not depend on the time.
+    "BernoulliProcess" if dargs.len() == 1 => Some(Expr::FunctionCall {
+      name: "BernoulliDistribution".to_string(),
+      args: vec![dargs[0].clone()].into(),
+    }),
+    // White noise is the underlying distribution at every time.
+    "WhiteNoiseProcess"
+      if dargs.len() == 1 && matches!(dargs[0], Expr::FunctionCall { .. }) =>
+    {
+      Some(dargs[0].clone())
+    }
+    // OrnsteinUhlenbeckProcess[m, s, th] starts in stationarity
+    // (time-independent slice); the 4-argument form starts at x0.
+    "OrnsteinUhlenbeckProcess" if dargs.len() == 3 => {
+      let (m, sp, th) = (&dargs[0], &dargs[1], &dargs[2]);
+      Some(Expr::FunctionCall {
+        name: "NormalDistribution".to_string(),
+        args: vec![
+          m.clone(),
+          divide(
+            sp.clone(),
+            Expr::FunctionCall {
+              name: "Sqrt".to_string(),
+              args: vec![times(int(2), th.clone())].into(),
+            },
+          ),
+        ]
+        .into(),
+      })
+    }
+    "OrnsteinUhlenbeckProcess" if dargs.len() == 4 => {
+      let (m, sp, th, x0) = (&dargs[0], &dargs[1], &dargs[2], &dargs[3]);
+      let decay = power(
+        Expr::Constant("E".to_string()),
+        times(times(int(-1), th.clone()), t.clone()),
+      );
+      let mu = plus(
+        m.clone(),
+        times(plus(x0.clone(), times(int(-1), m.clone())), decay),
+      );
+      let var = divide(
+        times(
+          plus(
+            int(1),
+            times(
+              int(-1),
+              power(
+                Expr::Constant("E".to_string()),
+                times(times(int(-2), th.clone()), t.clone()),
+              ),
+            ),
+          ),
+          power(sp.clone(), int(2)),
+        ),
+        times(int(2), th.clone()),
+      );
+      Some(Expr::FunctionCall {
+        name: "NormalDistribution".to_string(),
+        args: vec![
+          mu,
+          Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![var].into(),
+          },
+        ]
+        .into(),
+      })
+    }
+    // BrownianBridgeProcess[s, {t1, a}, {t2, b}] — the interpolating
+    // Gaussian bridge.
+    "BrownianBridgeProcess" if dargs.len() == 3 => {
+      let sp = &dargs[0];
+      let (Expr::List(p1), Expr::List(p2)) = (&dargs[1], &dargs[2]) else {
+        return None;
+      };
+      if p1.len() != 2 || p2.len() != 2 {
+        return None;
+      }
+      let (t1, a) = (&p1[0], &p1[1]);
+      let (t2, b) = (&p2[0], &p2[1]);
+      let span = plus(t2.clone(), times(int(-1), t1.clone()));
+      let up = plus(t.clone(), times(int(-1), t1.clone()));
+      let down = plus(t2.clone(), times(int(-1), t.clone()));
+      let mu = plus(
+        divide(times(a.clone(), down.clone()), span.clone()),
+        divide(times(b.clone(), up.clone()), span.clone()),
+      );
+      // The scale factor stays outside the radical, matching
+      // wolframscript's SliceDistribution display
+      // s*Sqrt[((t - t1)*(-t + t2))/(-t1 + t2)].
+      let sigma = times(
+        sp.clone(),
+        Expr::FunctionCall {
+          name: "Sqrt".to_string(),
+          args: vec![divide(times(up, down), span)].into(),
+        },
+      );
+      Some(Expr::FunctionCall {
+        name: "NormalDistribution".to_string(),
+        args: vec![mu, sigma].into(),
+      })
+    }
+    "GeometricBrownianMotionProcess" if dargs.len() == 3 => {
+      let (m, s, x0) = (&dargs[0], &dargs[1], &dargs[2]);
+      let drift = plus(
+        m.clone(),
+        times(
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
+          },
+          power(s.clone(), int(2)),
+        ),
+      );
+      let mu = plus(
+        times(drift, t.clone()),
+        Expr::FunctionCall {
+          name: "Log".to_string(),
+          args: vec![x0.clone()].into(),
+        },
+      );
+      Some(Expr::FunctionCall {
+        name: "LogNormalDistribution".to_string(),
+        args: vec![mu, times(s.clone(), sqrt_t)].into(),
+      })
+    }
+    _ => None,
+  }
+}
+
+/// Parses FirstPassageTimeDistribution[DiscreteMarkovProcess[i0, m], j]
+/// into (i0, transition rows, n, target j). Only the integer-initial-state
+/// form is supported.
+struct Fptd {
+  i0: usize,
+  rows: Vec<Vec<Expr>>,
+  n: usize,
+  target: usize,
+}
+
+fn fptd_parts(dargs: &[Expr]) -> Option<Fptd> {
+  let [proc, Expr::Integer(j)] = dargs else {
+    return None;
+  };
+  let Expr::FunctionCall { name, args } = proc else {
+    return None;
+  };
+  if name != "DiscreteMarkovProcess" || args.len() != 2 {
+    return None;
+  }
+  let Expr::Integer(i0) = &args[0] else {
+    return None;
+  };
+  let Expr::List(rows) = &args[1] else {
+    return None;
+  };
+  let n = rows.len();
+  if n == 0 || *i0 < 1 || (*i0 as usize) > n || *j < 1 || (*j as usize) > n {
+    return None;
+  }
+  let mut mat = Vec::with_capacity(n);
+  for r in rows.iter() {
+    let Expr::List(cells) = r else { return None };
+    if cells.len() != n {
+      return None;
+    }
+    mat.push(cells.iter().cloned().collect());
+  }
+  Some(Fptd {
+    i0: *i0 as usize - 1,
+    rows: mat,
+    n,
+    target: *j as usize - 1,
+  })
+}
+
+/// The taboo pieces of a first-passage problem: the sub-matrix Q over the
+/// non-target states, the jump-to-target column r, the start vector over
+/// the non-target states (the initial unit vector for i0 != j, or the
+/// target row's off-target part for the first-return case), and the
+/// direct first-step probability f_1.
+struct FptdTaboo {
+  q: Vec<Vec<Expr>>,
+  r: Vec<Expr>,
+  start: Vec<Expr>,
+  f1: Expr,
+}
+
+fn fptd_taboo(f: &Fptd) -> FptdTaboo {
+  let others: Vec<usize> = (0..f.n).filter(|&k| k != f.target).collect();
+  let q: Vec<Vec<Expr>> = others
+    .iter()
+    .map(|&a| others.iter().map(|&b| f.rows[a][b].clone()).collect())
+    .collect();
+  let r: Vec<Expr> = others
+    .iter()
+    .map(|&a| f.rows[a][f.target].clone())
+    .collect();
+  if f.i0 == f.target {
+    // First return: one step from the target, then the taboo walk.
+    FptdTaboo {
+      q,
+      r,
+      start: others
+        .iter()
+        .map(|&b| f.rows[f.target][b].clone())
+        .collect(),
+      f1: f.rows[f.target][f.target].clone(),
+    }
+  } else {
+    let pos = others.iter().position(|&k| k == f.i0).unwrap();
+    let start: Vec<Expr> = (0..others.len())
+      .map(|k| Expr::Integer(if k == pos { 1 } else { 0 }))
+      .collect();
+    FptdTaboo {
+      f1: f.rows[f.i0][f.target].clone(),
+      q,
+      r,
+      start,
+    }
+  }
+}
+
+/// f_k for k = 1..=count, exactly, via iterated vector-matrix products.
+fn fptd_probs(f: &Fptd, count: usize) -> Result<Vec<Expr>, InterpreterError> {
+  let taboo = fptd_taboo(f);
+  let dot_vec =
+    |v: &[Expr], m: &[Vec<Expr>]| -> Result<Vec<Expr>, InterpreterError> {
+      let dim = v.len();
+      (0..dim)
+        .map(|b| {
+          let terms: Vec<Expr> = (0..dim)
+            .map(|a| times(v[a].clone(), m[a][b].clone()))
+            .collect();
+          eval(Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: terms.into(),
+          })
+        })
+        .collect()
+    };
+  let inner = |v: &[Expr], r: &[Expr]| -> Result<Expr, InterpreterError> {
+    let terms: Vec<Expr> = v
+      .iter()
+      .zip(r.iter())
+      .map(|(a, b)| times(a.clone(), b.clone()))
+      .collect();
+    eval(Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    })
+  };
+  let mut out = Vec::with_capacity(count);
+  if count == 0 {
+    return Ok(out);
+  }
+  out.push(eval(taboo.f1.clone())?);
+  // For i0 != j: f_k = start.Q^(k-1).r; the start vector already encodes
+  // one absorbed step in the return case (f_k = start.Q^(k-2).r there).
+  let mut v = taboo.start.clone();
+  for k in 2..=count {
+    if f.i0 == f.target && k == 2 {
+      // v is already the post-first-step distribution.
+    } else {
+      v = dot_vec(&v, &taboo.q)?;
+    }
+    out.push(inner(&v, &taboo.r)?);
+  }
+  Ok(out)
+}
+
+/// The exact hitting-time moments: (mean, variance) of the first passage
+/// (or first return) time, via (I - Q) h = 1 and (I - Q) m2 = 1 + 2 Q h.
+fn fptd_moments(f: &Fptd) -> Result<Option<(Expr, Expr)>, InterpreterError> {
+  let taboo = fptd_taboo(f);
+  let dim = taboo.q.len();
+  let i_minus_q: Vec<Expr> = (0..dim)
+    .map(|a| {
+      Expr::List(
+        (0..dim)
+          .map(|b| {
+            let mut entry = times(int(-1), taboo.q[a][b].clone());
+            if a == b {
+              entry = plus(int(1), entry);
+            }
+            entry
+          })
+          .collect::<Vec<_>>()
+          .into(),
+      )
+    })
+    .collect();
+  let solve = |rhs: Vec<Expr>| -> Result<Option<Vec<Expr>>, InterpreterError> {
+    let solved = eval(Expr::FunctionCall {
+      name: "LinearSolve".to_string(),
+      args: vec![Expr::List(i_minus_q.clone().into()), Expr::List(rhs.into())]
+        .into(),
+    })?;
+    match solved {
+      Expr::List(ref v) if v.len() == dim => {
+        Ok(Some(v.iter().cloned().collect()))
+      }
+      _ => Ok(None),
+    }
+  };
+  let Some(h) = solve(vec![int(1); dim])? else {
+    return Ok(None);
+  };
+  // rhs2 = 1 + 2 (Q h)
+  let mut rhs2 = Vec::with_capacity(dim);
+  for a in 0..dim {
+    let qh: Vec<Expr> = (0..dim)
+      .map(|b| times(taboo.q[a][b].clone(), h[b].clone()))
+      .collect();
+    rhs2.push(eval(plus(
+      int(1),
+      times(
+        int(2),
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: qh.into(),
+        },
+      ),
+    ))?);
+  }
+  let Some(m2) = solve(rhs2)? else {
+    return Ok(None);
+  };
+  let inner = |v: &[Expr], w: &[Expr]| -> Expr {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: v
+        .iter()
+        .zip(w.iter())
+        .map(|(a, b)| times(a.clone(), b.clone()))
+        .collect::<Vec<_>>()
+        .into(),
+    }
+  };
+  let (mean, second) = if f.i0 == f.target {
+    // E[T] = 1 + p.h; E[T^2] = 1 + 2 p.h + p.m2 (p = target row off j).
+    let ph = inner(&taboo.start, &h);
+    let pm2 = inner(&taboo.start, &m2);
+    (
+      eval(plus(int(1), ph.clone()))?,
+      eval(plus(plus(int(1), times(int(2), ph)), pm2))?,
+    )
+  } else {
+    let others: Vec<usize> = (0..f.n).filter(|&k| k != f.target).collect();
+    let pos = others.iter().position(|&k| k == f.i0).unwrap();
+    (h[pos].clone(), m2[pos].clone())
+  };
+  let variance =
+    eval(plus(second, times(int(-1), power(mean.clone(), int(2)))))?;
+  Ok(Some((mean, variance)))
+}
+
+/// PDF[FirstPassageTimeDistribution[...], t] for a concrete t: f_t for
+/// positive integers, 0 elsewhere. Symbolic t (wolframscript produces
+/// eigendecomposition closed forms) stays unevaluated.
+fn pdf_first_passage(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "PDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "FirstPassageTimeDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some(f) = fptd_parts(dargs) else {
+    return unevaluated(x);
+  };
+  match crate::functions::math_ast::try_eval_to_f64(&x) {
+    Some(v) => {
+      if v < 1.0 || v.fract() != 0.0 || v > 100_000.0 {
+        return Ok(int(0));
+      }
+      let k = v as usize;
+      let probs = fptd_probs(&f, k)?;
+      Ok(probs.into_iter().next_back().unwrap_or(int(0)))
+    }
+    None => unevaluated(x),
+  }
+}
+
+/// CDF[FirstPassageTimeDistribution[...], t] for a concrete t: the sum of
+/// f_1..f_Floor[t].
+fn cdf_first_passage(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "CDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "FirstPassageTimeDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some(f) = fptd_parts(dargs) else {
+    return unevaluated(x);
+  };
+  match crate::functions::math_ast::try_eval_to_f64(&x) {
+    Some(v) => {
+      if v < 1.0 {
+        return Ok(int(0));
+      }
+      let k = (v.floor() as usize).min(100_000);
+      let probs = fptd_probs(&f, k)?;
+      eval(Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: probs.into(),
+      })
+    }
+    None => unevaluated(x),
+  }
+}
+
+/// Mean/Variance accessors used by the statistics dispatch.
+pub fn fptd_mean(dargs: &[Expr]) -> Result<Option<Expr>, InterpreterError> {
+  match fptd_parts(dargs) {
+    Some(f) => Ok(fptd_moments(&f)?.map(|(m, _)| m)),
+    None => Ok(None),
+  }
+}
+
+pub fn fptd_variance(dargs: &[Expr]) -> Result<Option<Expr>, InterpreterError> {
+  match fptd_parts(dargs) {
+    Some(f) => Ok(fptd_moments(&f)?.map(|(_, v)| v)),
+    None => Ok(None),
+  }
+}
+
+/// Parses DiscreteMarkovProcess[i0 | p0, m] into the initial probability
+/// row vector and the (square, expression-valued) transition matrix.
+fn dmp_parts(dargs: &[Expr]) -> Option<(Vec<Expr>, Expr, usize)> {
+  if dargs.len() != 2 {
+    return None;
+  }
+  let Expr::List(rows) = &dargs[1] else {
+    return None;
+  };
+  let n = rows.len();
+  if n == 0
+    || rows
+      .iter()
+      .any(|r| !matches!(r, Expr::List(c) if c.len() == n))
+  {
+    return None;
+  }
+  let p0: Vec<Expr> = match &dargs[0] {
+    Expr::Integer(i0) if *i0 >= 1 && (*i0 as usize) <= n => (1..=n)
+      .map(|k| Expr::Integer(if k as i128 == *i0 { 1 } else { 0 }))
+      .collect(),
+    Expr::List(probs) if probs.len() == n => probs.iter().cloned().collect(),
+    _ => return None,
+  };
+  Some((p0, dargs[1].clone(), n))
+}
+
+/// Boole-sum Σ p_k Boole[lhs_k], skipping zero-probability terms.
+fn boole_sum(probs: &[Expr], term_lhs: impl Fn(usize) -> (Expr, Expr)) -> Expr {
+  let mut terms: Vec<Expr> = Vec::new();
+  for (k, p) in probs.iter().enumerate() {
+    if matches!(p, Expr::Integer(0)) {
+      continue;
+    }
+    let (l, r) = term_lhs(k + 1);
+    let boole = Expr::FunctionCall {
+      name: "Boole".to_string(),
+      args: vec![comparison(l, ComparisonOp::Equal, r)].into(),
+    };
+    terms.push(if matches!(p, Expr::Integer(1)) {
+      boole
+    } else {
+      times(p.clone(), boole)
+    });
+  }
+  match terms.len() {
+    0 => int(0),
+    1 => terms.into_iter().next().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    },
+  }
+}
+
+/// PDF[DiscreteMarkovProcess[...][t], x] = Σ (p0.m^t)_k Boole[k == x].
+fn dmp_step_pdf(
+  dargs: &[Expr],
+  t: &Expr,
+  x: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  let Some((p0, m, _)) = dmp_parts(dargs) else {
+    return Ok(None);
+  };
+  let Expr::Integer(steps) = t else {
+    return Ok(None);
+  };
+  if *steps < 0 {
+    return Ok(None);
+  }
+  let probs_expr = if *steps == 0 {
+    Expr::List(p0.into())
+  } else {
+    eval(Expr::FunctionCall {
+      name: "Dot".to_string(),
+      args: vec![
+        Expr::List(p0.into()),
+        Expr::FunctionCall {
+          name: "MatrixPower".to_string(),
+          args: vec![m, Expr::Integer(*steps)].into(),
+        },
+      ]
+      .into(),
+    })?
+  };
+  let Expr::List(probs) = &probs_expr else {
+    return Ok(None);
+  };
+  let probs: Vec<Expr> = probs.iter().cloned().collect();
+  // wolframscript writes these terms with the state first: Boole[1 == x].
+  let sum = boole_sum(&probs, |k| (int(k as i128), x.clone()));
+  Ok(Some(eval(sum)?))
+}
+
+/// The stationary distribution π of a DiscreteMarkovProcess (πP = π,
+/// Σπ = 1), solved exactly.
+fn dmp_stationary(
+  dargs: &[Expr],
+) -> Result<Option<Vec<Expr>>, InterpreterError> {
+  let Some((_, m, n)) = dmp_parts(dargs) else {
+    return Ok(None);
+  };
+  let Expr::List(rows) = &m else {
+    return Ok(None);
+  };
+  // Equations: Σ_i π_i (P[i][j] − δ_ij) = 0 for j < n−1, plus Σ π_i = 1.
+  let mut sys_rows: Vec<Expr> = Vec::with_capacity(n);
+  for j in 0..n.saturating_sub(1) {
+    let mut row: Vec<Expr> = Vec::with_capacity(n);
+    for (i, r) in rows.iter().enumerate() {
+      let Expr::List(cells) = r else {
+        return Ok(None);
+      };
+      let mut entry = cells[j].clone();
+      if i == j {
+        entry = plus(entry, int(-1));
+      }
+      row.push(eval(entry)?);
+    }
+    sys_rows.push(Expr::List(row.into()));
+  }
+  sys_rows.push(Expr::List(vec![int(1); n].into()));
+  let mut rhs: Vec<Expr> = vec![int(0); n];
+  rhs[n - 1] = int(1);
+  let solved = eval(Expr::FunctionCall {
+    name: "LinearSolve".to_string(),
+    args: vec![Expr::List(sys_rows.into()), Expr::List(rhs.into())].into(),
+  })?;
+  match solved {
+    Expr::List(ref pi) if pi.len() == n => {
+      Ok(Some(pi.iter().cloned().collect()))
+    }
+    _ => Ok(None),
+  }
+}
+
+/// PDF[StationaryDistribution[DiscreteMarkovProcess[...]], x]: a numeric
+/// x gives π_x directly; a symbolic x gives wolframscript's
+/// Piecewise[{{Σ π_k Boole[x == k], Inequality[1, LessEqual, x,
+/// LessEqual, n]}}, 0] form (the terms here put x first).
+fn dmp_stationary_pdf(
+  dargs: &[Expr],
+  x: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  let Some(pi) = dmp_stationary(dargs)? else {
+    return Ok(None);
+  };
+  let n = pi.len();
+  let sum = boole_sum(&pi, |k| (x.clone(), int(k as i128)));
+  let cond = Expr::FunctionCall {
+    name: "Inequality".to_string(),
+    args: vec![
+      int(1),
+      Expr::Identifier("LessEqual".to_string()),
+      x.clone(),
+      Expr::Identifier("LessEqual".to_string()),
+      int(n as i128),
+    ]
+    .into(),
+  };
+  Ok(Some(eval(piecewise(vec![(sum, cond)], int(0)))?))
+}
+
+/// Mean[StationaryDistribution[DiscreteMarkovProcess[...]]] = Σ k π_k.
+pub fn dmp_stationary_mean(
+  dargs: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  let Some(pi) = dmp_stationary(dargs)? else {
+    return Ok(None);
+  };
+  let terms: Vec<Expr> = pi
+    .iter()
+    .enumerate()
+    .map(|(k, p)| times(int(k as i128 + 1), p.clone()))
+    .collect();
+  Ok(Some(eval(Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  })?))
+}
+
+/// Validation for WakebyDistribution[α, β, γ, δ, μ]: α and γ positive
+/// (posprm at positions 1 and 3), arity 5 (argrx).
+fn wakeby_checked(dargs: &[Expr]) -> Option<()> {
+  if dargs.len() != 5 {
+    let word = if dargs.len() == 1 {
+      "argument"
+    } else {
+      "arguments"
+    };
+    crate::emit_message(&format!(
+      "WakebyDistribution::argrx: WakebyDistribution called with {} {}; 5 arguments are expected.",
+      dargs.len(),
+      word
+    ));
+    return None;
+  }
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  let dist = || {
+    crate::syntax::expr_to_string(&Expr::FunctionCall {
+      name: "WakebyDistribution".to_string(),
+      args: dargs.to_vec().into(),
+    })
+  };
+  for pos in [0usize, 2] {
+    if num(&dargs[pos]).is_some_and(|v| v <= 0.0) {
+      crate::emit_message(&format!(
+        "WakebyDistribution::posprm: Parameter {} at position {} in {} is expected to be positive.",
+        crate::syntax::expr_to_string(&dargs[pos]),
+        pos + 1,
+        dist()
+      ));
+      return None;
+    }
+  }
+  Some(())
+}
+
+/// The Wakeby quantile expression
+/// m + a (1 - (1-q)^b)/b - g (1 - (1-q)^(-d))/d.
+fn wakeby_quantile_body(dargs: &[Expr], q: &Expr) -> Expr {
+  let (a, b, g, d, m) = (
+    dargs[0].clone(),
+    dargs[1].clone(),
+    dargs[2].clone(),
+    dargs[3].clone(),
+    dargs[4].clone(),
+  );
+  let one_minus_q = plus(int(1), times(int(-1), q.clone()));
+  let rise =
+    |expo: Expr| plus(int(1), times(int(-1), power(one_minus_q.clone(), expo)));
+  plus(
+    plus(m, divide(times(a, rise(b.clone())), b)),
+    times(
+      int(-1),
+      divide(times(g, rise(times(int(-1), d.clone()))), d),
+    ),
+  )
+}
+
+/// Quantile[WakebyDistribution[...], q]: the quantile-defined form,
+/// wrapped in ConditionalExpression[Piecewise[...], 0 <= q <= 1] for
+/// symbolic q; numeric q evaluates the applicable branch directly.
+pub fn wakeby_quantile(
+  dargs: &[Expr],
+  q: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "Quantile".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "WakebyDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        q.clone(),
+      ]
+      .into(),
+    })
+  };
+  let Some(()) = wakeby_checked(dargs) else {
+    return unevaluated();
+  };
+  let inf = Expr::Identifier("Infinity".to_string());
+  match crate::functions::math_ast::try_eval_to_f64(q) {
+    Some(qv) if qv > 0.0 && qv < 1.0 => eval(wakeby_quantile_body(dargs, q)),
+    Some(qv) if qv == 0.0 => eval(dargs[4].clone()),
+    Some(qv) if qv == 1.0 => Ok(inf),
+    Some(_) => unevaluated(),
+    None => {
+      let body = wakeby_quantile_body(dargs, q);
+      let pw = piecewise_with_default(
+        vec![
+          (
+            eval(body)?,
+            comparison3(
+              int(0),
+              ComparisonOp::Less,
+              q.clone(),
+              ComparisonOp::Less,
+              int(1),
+            ),
+          ),
+          (
+            eval(dargs[4].clone())?,
+            comparison(q.clone(), ComparisonOp::LessEqual, int(0)),
+          ),
+        ],
+        inf,
+      );
+      Ok(Expr::FunctionCall {
+        name: "ConditionalExpression".to_string(),
+        args: vec![
+          pw,
+          comparison3(
+            int(0),
+            ComparisonOp::LessEqual,
+            q.clone(),
+            ComparisonOp::LessEqual,
+            int(1),
+          ),
+        ]
+        .into(),
+      })
+    }
+  }
+}
+
+/// Mean (d < 1) and Variance (d < 1/2) of WakebyDistribution, with
+/// Indeterminate outside the existence regions.
+fn wakeby_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let Some(()) = wakeby_checked(dargs) else {
+    return Err(InterpreterError::EvaluationError(
+      "WakebyDistribution: invalid parameters".into(),
+    ));
+  };
+  let (a, b, g, d, m) = (
+    dargs[0].clone(),
+    dargs[1].clone(),
+    dargs[2].clone(),
+    dargs[3].clone(),
+    dargs[4].clone(),
+  );
+  let indet = Expr::Identifier("Indeterminate".to_string());
+  let one_plus_b = plus(int(1), b.clone());
+  let mean_body = plus(
+    plus(
+      divide(a.clone(), one_plus_b.clone()),
+      divide(g.clone(), plus(int(1), times(int(-1), d.clone()))),
+    ),
+    m,
+  );
+  let dm1 = plus(int(-1), d.clone());
+  let var_body = plus(
+    plus(
+      divide(
+        power(a.clone(), int(2)),
+        times(
+          power(one_plus_b.clone(), int(2)),
+          plus(int(1), times(int(2), b.clone())),
+        ),
+      ),
+      times(
+        int(-1),
+        divide(
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![int(2), a, g.clone()].into(),
+          },
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              one_plus_b,
+              plus(plus(int(1), b), times(int(-1), d.clone())),
+              dm1.clone(),
+            ]
+            .into(),
+          },
+        ),
+      ),
+    ),
+    times(
+      int(-1),
+      divide(
+        power(g, int(2)),
+        times(power(dm1, int(2)), plus(int(-1), times(int(2), d.clone()))),
+      ),
+    ),
+  );
+  match crate::functions::math_ast::try_eval_to_f64(&d) {
+    Some(dv) => {
+      let mean = if dv < 1.0 {
+        eval(mean_body)?
+      } else {
+        indet.clone()
+      };
+      let variance = if dv < 0.5 { eval(var_body)? } else { indet };
+      Ok((mean, variance))
+    }
+    None => {
+      let mean = eval(piecewise_with_default(
+        vec![(mean_body, comparison(d.clone(), ComparisonOp::Less, int(1)))],
+        indet.clone(),
+      ))?;
+      let variance = eval(piecewise_with_default(
+        vec![(
+          var_body,
+          comparison(d, ComparisonOp::Less, divide(int(1), int(2))),
+        )],
+        indet,
+      ))?;
+      Ok((mean, variance))
+    }
+  }
+}
+
+/// Mean and Variance of CompoundPoissonDistribution[λ, dist]:
+/// λ E[X] and λ E[X²] = λ (Var[X] + E[X]²), delegating to the inner
+/// distribution's moments. The PDF has no closed form and stays
+/// unevaluated (as in wolframscript).
+fn compound_poisson_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let bail = || {
+    Err(InterpreterError::EvaluationError(
+      "CompoundPoissonDistribution: invalid parameters".into(),
+    ))
+  };
+  if dargs.len() != 2 {
+    let word = if dargs.len() == 1 {
+      "argument"
+    } else {
+      "arguments"
+    };
+    crate::emit_message(&format!(
+      "CompoundPoissonDistribution::argr: CompoundPoissonDistribution called with {} {}; 2 arguments are expected.",
+      dargs.len(),
+      word
+    ));
+    return bail();
+  }
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  let dist_str = || {
+    crate::syntax::expr_to_string(&Expr::FunctionCall {
+      name: "CompoundPoissonDistribution".to_string(),
+      args: dargs.to_vec().into(),
+    })
+  };
+  if num(&dargs[0]).is_some_and(|v| v <= 0.0) {
+    crate::emit_message(&format!(
+      "CompoundPoissonDistribution::posprm: Parameter {} at position 1 in {} is expected to be positive.",
+      crate::syntax::expr_to_string(&dargs[0]),
+      dist_str()
+    ));
+    return bail();
+  }
+  let Expr::FunctionCall {
+    name: inner_name,
+    args: inner_args,
+  } = &dargs[1]
+  else {
+    // wolframscript's own message template is missing here; it prints
+    // the raw fallback, which we replicate verbatim.
+    crate::emit_message(&format!(
+      "CompoundPoissonDistribution::univ: -- Message text not found -- ({}) ({}) ({})",
+      crate::syntax::expr_to_string(&dargs[1]),
+      crate::syntax::expr_to_string(&dargs[0]),
+      dist_str()
+    ));
+    return bail();
+  };
+  if !inner_name.ends_with("Distribution") {
+    crate::emit_message(&format!(
+      "CompoundPoissonDistribution::univ: -- Message text not found -- ({}) ({}) ({})",
+      crate::syntax::expr_to_string(&dargs[1]),
+      crate::syntax::expr_to_string(&dargs[0]),
+      dist_str()
+    ));
+    return bail();
+  }
+  // Unknown inner distributions bail silently to an unevaluated echo.
+  let (im, iv) = distribution_mean_variance(inner_name, inner_args)?;
+  let lam = dargs[0].clone();
+  let mean = eval(times(lam.clone(), im.clone()))?;
+  let variance = eval(times(lam, plus(iv, power(im, int(2)))))?;
+  Ok((mean, variance))
+}
+
+/// Validation for HoytDistribution[q, ω]: q in (0, 1] (pprobprm),
+/// ω positive (posprm), arity 2 (argr).
+fn hoyt_checked(dargs: &[Expr]) -> Option<()> {
+  if dargs.len() != 2 {
+    let word = if dargs.len() == 1 {
+      "argument"
+    } else {
+      "arguments"
+    };
+    crate::emit_message(&format!(
+      "HoytDistribution::argr: HoytDistribution called with {} {}; 2 arguments are expected.",
+      dargs.len(),
+      word
+    ));
+    return None;
+  }
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  let dist = || {
+    crate::syntax::expr_to_string(&Expr::FunctionCall {
+      name: "HoytDistribution".to_string(),
+      args: dargs.to_vec().into(),
+    })
+  };
+  if num(&dargs[0]).is_some_and(|v| !(v > 0.0 && v <= 1.0)) {
+    crate::emit_message(&format!(
+      "HoytDistribution::pprobprm: Parameter {} at position 1 in {} is expected to be positive and less than or equal to 1.",
+      crate::syntax::expr_to_string(&dargs[0]),
+      dist()
+    ));
+    return None;
+  }
+  if num(&dargs[1]).is_some_and(|v| v <= 0.0) {
+    crate::emit_message(&format!(
+      "HoytDistribution::posprm: Parameter {} at position 2 in {} is expected to be positive.",
+      crate::syntax::expr_to_string(&dargs[1]),
+      dist()
+    ));
+    return None;
+  }
+  Some(())
+}
+
+/// PDF[HoytDistribution[q, ω], x] =
+/// (1+q²) x BesselI[0, (1-q⁴)x²/(4q²ω)] E^(-(1+q²)²x²/(4q²ω))/(q ω)
+/// on x > 0.
+fn hoyt_pdf(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "PDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "HoytDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some(()) = hoyt_checked(dargs) else {
+    return unevaluated(x);
+  };
+  let (q, w) = (dargs[0].clone(), dargs[1].clone());
+  let q2 = power(q.clone(), int(2));
+  let one_plus_q2 = plus(int(1), q2.clone());
+  let four_q2_w = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![int(4), q2.clone(), w.clone()].into(),
+  };
+  let x2 = power(x.clone(), int(2));
+  let bessel = Expr::FunctionCall {
+    name: "BesselI".to_string(),
+    args: vec![
+      int(0),
+      divide(
+        times(
+          plus(int(1), times(int(-1), power(q.clone(), int(4)))),
+          x2.clone(),
+        ),
+        four_q2_w.clone(),
+      ),
+    ]
+    .into(),
+  };
+  let gaussian = power(
+    e(),
+    times(
+      int(-1),
+      divide(times(power(one_plus_q2.clone(), int(2)), x2), four_q2_w),
+    ),
+  );
+  let value = divide(
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![one_plus_q2, x.clone(), bessel, gaussian].into(),
+    },
+    times(q, w),
+  );
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// Mean = Sqrt[2/π] Sqrt[ω/(1+q²)] EllipticE[1-q²] and
+/// Variance = ω (1 - 2 EllipticE[1-q²]²/(π (1+q²))).
+fn hoyt_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let Some(()) = hoyt_checked(dargs) else {
+    return Err(InterpreterError::EvaluationError(
+      "HoytDistribution: invalid parameters".into(),
+    ));
+  };
+  let (q, w) = (dargs[0].clone(), dargs[1].clone());
+  let one_plus_q2 = plus(int(1), power(q.clone(), int(2)));
+  let elliptic = Expr::FunctionCall {
+    name: "EllipticE".to_string(),
+    args: vec![plus(int(1), times(int(-1), power(q, int(2))))].into(),
+  };
+  let sqrt = |e: Expr| Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![e].into(),
+  };
+  let mean = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      sqrt(divide(int(2), Expr::Constant("Pi".to_string()))),
+      sqrt(divide(w.clone(), one_plus_q2.clone())),
+      elliptic.clone(),
+    ]
+    .into(),
+  };
+  let variance = times(
+    w,
+    plus(
+      int(1),
+      times(
+        int(-1),
+        divide(
+          times(int(2), power(elliptic, int(2))),
+          times(Expr::Constant("Pi".to_string()), one_plus_q2),
+        ),
+      ),
+    ),
+  );
+  Ok((eval(mean)?, eval(variance)?))
+}
+
+/// Validation for VarianceGammaDistribution[λ, α, β, μ]: λ, α positive
+/// (posprm); numeric |β| >= α → bprm; arity 4 (argrx).
+fn variance_gamma_checked(dargs: &[Expr]) -> Option<()> {
+  if dargs.len() != 4 {
+    let word = if dargs.len() == 1 {
+      "argument"
+    } else {
+      "arguments"
+    };
+    crate::emit_message(&format!(
+      "VarianceGammaDistribution::argrx: VarianceGammaDistribution called with {} {}; 4 arguments are expected.",
+      dargs.len(),
+      word
+    ));
+    return None;
+  }
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  let dist = || {
+    crate::syntax::expr_to_string(&Expr::FunctionCall {
+      name: "VarianceGammaDistribution".to_string(),
+      args: dargs.to_vec().into(),
+    })
+  };
+  for pos in 0..2 {
+    if num(&dargs[pos]).is_some_and(|v| v <= 0.0) {
+      crate::emit_message(&format!(
+        "VarianceGammaDistribution::posprm: Parameter {} at position {} in {} is expected to be positive.",
+        crate::syntax::expr_to_string(&dargs[pos]),
+        pos + 1,
+        dist()
+      ));
+      return None;
+    }
+  }
+  if let (Some(a), Some(b)) = (num(&dargs[1]), num(&dargs[2]))
+    && b.abs() >= a
+  {
+    crate::emit_message(&format!(
+      "VarianceGammaDistribution::bprm: The parameters of distribution {} are not valid. Use DistributionParameterAssumptions to obtain the parameter assumptions.",
+      dist()
+    ));
+    return None;
+  }
+  Some(())
+}
+
+/// PDF[VarianceGammaDistribution[λ, α, β, μ], x]: three branches
+/// (x > μ, x < μ, and the finite point value at x == μ for λ > 1/2)
+/// with default Infinity; half-integer BesselK collapses for integer λ.
+fn variance_gamma_pdf(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "PDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "VarianceGammaDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some(()) = variance_gamma_checked(dargs) else {
+    return unevaluated(x);
+  };
+  let (l, a, b, m) = (
+    dargs[0].clone(),
+    dargs[1].clone(),
+    dargs[2].clone(),
+    dargs[3].clone(),
+  );
+  let sqrt_pi = Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![Expr::Constant("Pi".to_string())].into(),
+  };
+  let gamma_l = Expr::FunctionCall {
+    name: "Gamma".to_string(),
+    args: vec![l.clone()].into(),
+  };
+  let half_minus_l = plus(divide(int(1), int(2)), times(int(-1), l.clone()));
+  let a2b2 = times(
+    plus(a.clone(), times(int(-1), b.clone())),
+    plus(a.clone(), b.clone()),
+  );
+  // Branch value for a signed distance d = ±(x - μ).
+  let branch = |d: Expr| -> Expr {
+    divide(
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          power(int(2), half_minus_l.clone()),
+          power(a.clone(), half_minus_l.clone()),
+          power(a2b2.clone(), l.clone()),
+          power(
+            e(),
+            times(b.clone(), plus(times(int(-1), m.clone()), x.clone())),
+          ),
+          power(d.clone(), plus(divide(int(-1), int(2)), l.clone())),
+          Expr::FunctionCall {
+            name: "BesselK".to_string(),
+            args: vec![
+              plus(divide(int(-1), int(2)), l.clone()),
+              times(a.clone(), d),
+            ]
+            .into(),
+          },
+        ]
+        .into(),
+      },
+      times(sqrt_pi.clone(), gamma_l.clone()),
+    )
+  };
+  let above = branch(plus(times(int(-1), m.clone()), x.clone()));
+  let below = branch(plus(m.clone(), times(int(-1), x.clone())));
+  let point = divide(
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        power(a.clone(), plus(int(1), times(int(-2), l.clone()))),
+        power(a2b2, l.clone()),
+        Expr::FunctionCall {
+          name: "Gamma".to_string(),
+          args: vec![plus(divide(int(-1), int(2)), l.clone())].into(),
+        },
+      ]
+      .into(),
+    },
+    times(times(int(2), sqrt_pi), gamma_l),
+  );
+  let inf = Expr::Identifier("Infinity".to_string());
+  let cond_above = comparison(x.clone(), ComparisonOp::Greater, m.clone());
+  let cond_below = comparison(x.clone(), ComparisonOp::Less, m.clone());
+  match crate::functions::math_ast::try_eval_to_f64(&l) {
+    Some(lv) => {
+      // The point branch folds into the default when λ is numeric.
+      let default = if lv > 0.5 { eval(point)? } else { inf };
+      eval(piecewise_with_default(
+        vec![(eval(above)?, cond_above), (eval(below)?, cond_below)],
+        default,
+      ))
+    }
+    None => {
+      let cond_point = Expr::BinaryOp {
+        op: BinaryOperator::And,
+        left: Box::new(comparison(x.clone(), ComparisonOp::Equal, m)),
+        right: Box::new(comparison(
+          l,
+          ComparisonOp::Greater,
+          divide(int(1), int(2)),
+        )),
+      };
+      eval(piecewise_with_default(
+        vec![
+          (above, cond_above),
+          (below, cond_below),
+          (point, cond_point),
+        ],
+        inf,
+      ))
+    }
+  }
+}
+
+/// Mean = 2βλ/((α-β)(α+β)) + μ and
+/// Variance = 2(α²+β²)λ/((α-β)²(α+β)²).
+fn variance_gamma_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let Some(()) = variance_gamma_checked(dargs) else {
+    return Err(InterpreterError::EvaluationError(
+      "VarianceGammaDistribution: invalid parameters".into(),
+    ));
+  };
+  let (l, a, b, m) = (
+    dargs[0].clone(),
+    dargs[1].clone(),
+    dargs[2].clone(),
+    dargs[3].clone(),
+  );
+  let amb = plus(a.clone(), times(int(-1), b.clone()));
+  let apb = plus(a.clone(), b.clone());
+  let mean = plus(
+    divide(
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![int(2), b.clone(), l.clone()].into(),
+      },
+      times(amb.clone(), apb.clone()),
+    ),
+    m,
+  );
+  let variance = divide(
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![int(2), plus(power(a, int(2)), power(b, int(2))), l].into(),
+    },
+    times(power(amb, int(2)), power(apb, int(2))),
+  );
+  Ok((eval(mean)?, eval(variance)?))
+}
+
+/// Validation for TsallisQGaussianDistribution[μ, β, q]: β positive
+/// (posprm, position 2), q < 3 (lss, position 3), arity 3 (argrx).
+fn tsallis_checked(dargs: &[Expr]) -> Option<()> {
+  if dargs.len() != 3 {
+    let word = if dargs.len() == 1 {
+      "argument"
+    } else {
+      "arguments"
+    };
+    crate::emit_message(&format!(
+      "TsallisQGaussianDistribution::argrx: TsallisQGaussianDistribution called with {} {}; 3 arguments are expected.",
+      dargs.len(),
+      word
+    ));
+    return None;
+  }
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  let dist = || {
+    crate::syntax::expr_to_string(&Expr::FunctionCall {
+      name: "TsallisQGaussianDistribution".to_string(),
+      args: dargs.to_vec().into(),
+    })
+  };
+  if num(&dargs[1]).is_some_and(|v| v <= 0.0) {
+    crate::emit_message(&format!(
+      "TsallisQGaussianDistribution::posprm: Parameter {} at position 2 in {} is expected to be positive.",
+      crate::syntax::expr_to_string(&dargs[1]),
+      dist()
+    ));
+    return None;
+  }
+  if num(&dargs[2]).is_some_and(|v| v >= 3.0) {
+    crate::emit_message(&format!(
+      "TsallisQGaussianDistribution::lss: Parameter {} at position 3 in {} is expected to be less than 3.",
+      crate::syntax::expr_to_string(&dargs[2]),
+      dist()
+    ));
+    return None;
+  }
+  Some(())
+}
+
+/// Shared subtrees of the Tsallis q-Gaussian closed forms.
+struct TsallisParts {
+  gaussian: Expr,
+  branch_wide: Expr,
+  branch_compact: Expr,
+  compact_arg: Expr,
+}
+
+fn tsallis_parts(m: &Expr, b: &Expr, q: &Expr, x: &Expr) -> TsallisParts {
+  let sqrt = |e: Expr| Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![e].into(),
+  };
+  let gamma = |e: Expr| Expr::FunctionCall {
+    name: "Gamma".to_string(),
+    args: vec![e].into(),
+  };
+  let two_pi = times(int(2), Expr::Constant("Pi".to_string()));
+  let m_minus_x = plus(m.clone(), times(int(-1), x.clone()));
+  let qm1 = plus(int(-1), q.clone());
+  let one_mq = plus(int(1), times(int(-1), q.clone()));
+  // Gaussian branch: 1/(b E^((m-x)^2/(2 b^2)) Sqrt[2 Pi])
+  let gaussian = power(
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        b.clone(),
+        power(
+          e(),
+          divide(
+            power(m_minus_x.clone(), int(2)),
+            times(int(2), power(b.clone(), int(2))),
+          ),
+        ),
+        sqrt(two_pi.clone()),
+      ]
+      .into(),
+    },
+    int(-1),
+  );
+  // (1 + (-1+q)(m-x)^2/(2 b^2))^((1-q)^-1)
+  let core = power(
+    plus(
+      int(1),
+      divide(
+        times(qm1.clone(), power(m_minus_x.clone(), int(2))),
+        times(int(2), power(b.clone(), int(2))),
+      ),
+    ),
+    power(one_mq.clone(), int(-1)),
+  );
+  // 1 < q < 3 branch
+  let branch_wide = divide(
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        sqrt(qm1.clone()),
+        core.clone(),
+        gamma(power(qm1.clone(), int(-1))),
+      ]
+      .into(),
+    },
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        b.clone(),
+        sqrt(two_pi.clone()),
+        gamma(divide(
+          plus(int(3), times(int(-1), q.clone())),
+          times(int(2), qm1.clone()),
+        )),
+      ]
+      .into(),
+    },
+  );
+  // q < 1 branch
+  let branch_compact = divide(
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        sqrt(one_mq.clone()),
+        core,
+        gamma(plus(divide(int(3), int(2)), power(one_mq.clone(), int(-1)))),
+      ]
+      .into(),
+    },
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        b.clone(),
+        sqrt(two_pi),
+        gamma(plus(int(1), power(one_mq.clone(), int(-1)))),
+      ]
+      .into(),
+    },
+  );
+  // (Sqrt[(1-q)/b^2] (-m+x))/Sqrt[2]
+  let compact_arg = divide(
+    times(
+      sqrt(divide(one_mq, power(b.clone(), int(2)))),
+      plus(times(int(-1), m.clone()), x.clone()),
+    ),
+    sqrt(int(2)),
+  );
+  TsallisParts {
+    gaussian,
+    branch_wide,
+    branch_compact,
+    compact_arg,
+  }
+}
+
+/// PDF[TsallisQGaussianDistribution[μ, β, q], x]: numeric exact q picks
+/// its branch (Gaussian at q == 1, full-support power law for 1 < q < 3,
+/// compact support for q < 1); symbolic q keeps the three-branch
+/// Piecewise. Float parameters stay unevaluated (wolframscript's float
+/// artifacts are not reproducible).
+fn tsallis_qgaussian_pdf(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "PDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "TsallisQGaussianDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some(()) = tsallis_checked(dargs) else {
+    return unevaluated(x);
+  };
+  let (m, b, q) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
+  if dargs.iter().any(|e| {
+    !coxian_exact(e) && crate::functions::math_ast::try_eval_to_f64(e).is_some()
+  }) {
+    return unevaluated(x);
+  }
+  let parts = tsallis_parts(&m, &b, &q, &x);
+  match crate::functions::math_ast::try_eval_to_f64(&q) {
+    Some(qv) if qv == 1.0 => eval(parts.gaussian),
+    Some(qv) if qv > 1.0 => eval(parts.branch_wide),
+    Some(_) => {
+      let cond = comparison3(
+        int(-1),
+        ComparisonOp::LessEqual,
+        eval(parts.compact_arg)?,
+        ComparisonOp::LessEqual,
+        int(1),
+      );
+      eval(piecewise(vec![(eval(parts.branch_compact)?, cond)], int(0)))
+    }
+    None => {
+      let q_eq_1 = comparison(q.clone(), ComparisonOp::Equal, int(1));
+      let q_mid = comparison3(
+        int(1),
+        ComparisonOp::Less,
+        q.clone(),
+        ComparisonOp::Less,
+        int(3),
+      );
+      let q_low = Expr::BinaryOp {
+        op: BinaryOperator::And,
+        left: Box::new(comparison(q.clone(), ComparisonOp::Less, int(1))),
+        right: Box::new(comparison3(
+          int(-1),
+          ComparisonOp::LessEqual,
+          parts.compact_arg,
+          ComparisonOp::LessEqual,
+          int(1),
+        )),
+      };
+      eval(piecewise(
+        vec![
+          (parts.gaussian, q_eq_1),
+          (parts.branch_wide, q_mid),
+          (parts.branch_compact, q_low),
+        ],
+        int(0),
+      ))
+    }
+  }
+}
+
+/// CDF[TsallisQGaussianDistribution[μ, β, q], x]: q == 1 uses the Erf
+/// closed form; symbolic q keeps the Hypergeometric2F1 template; other
+/// numeric q stay unevaluated (wolframscript's per-q hypergeometric
+/// collapses are not reproduced).
+fn tsallis_qgaussian_cdf(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "CDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "TsallisQGaussianDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some(()) = tsallis_checked(dargs) else {
+    return unevaluated(x);
+  };
+  let (m, b, q) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
+  let erf_form = divide(
+    plus(
+      int(1),
+      Expr::FunctionCall {
+        name: "Erf".to_string(),
+        args: vec![divide(
+          plus(times(int(-1), m.clone()), x.clone()),
+          times(
+            Expr::FunctionCall {
+              name: "Sqrt".to_string(),
+              args: vec![int(2)].into(),
+            },
+            b.clone(),
+          ),
+        )]
+        .into(),
+      },
+    ),
+    int(2),
+  );
+  match crate::functions::math_ast::try_eval_to_f64(&q) {
+    Some(qv) if qv == 1.0 => eval(erf_form),
+    Some(_) => unevaluated(x),
+    None => unevaluated(x),
+  }
+}
+
+/// Mean and Variance of TsallisQGaussianDistribution: Mean = μ for
+/// q < 2; Variance = 2β²/(5-3q) for q < 5/3, Infinity for
+/// 5/3 <= q < 2, Indeterminate otherwise.
+fn tsallis_qgaussian_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let Some(()) = tsallis_checked(dargs) else {
+    return Err(InterpreterError::EvaluationError(
+      "TsallisQGaussianDistribution: invalid parameters".into(),
+    ));
+  };
+  let (m, b, q) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
+  let indet = Expr::Identifier("Indeterminate".to_string());
+  let inf = Expr::Identifier("Infinity".to_string());
+  let var_core = divide(
+    times(int(2), power(b.clone(), int(2))),
+    plus(int(5), times(int(-3), q.clone())),
+  );
+  match crate::functions::math_ast::try_eval_to_f64(&q) {
+    Some(qv) => {
+      let mean = if qv < 2.0 { eval(m)? } else { indet.clone() };
+      let variance = if qv < 5.0 / 3.0 {
+        eval(var_core)?
+      } else if qv < 2.0 {
+        inf
+      } else {
+        indet
+      };
+      Ok((mean, variance))
+    }
+    None => {
+      let mean = eval(piecewise_with_default(
+        vec![(m, comparison(q.clone(), ComparisonOp::Less, int(2)))],
+        indet.clone(),
+      ))?;
+      let variance = eval(piecewise_with_default(
+        vec![
+          (
+            var_core,
+            comparison(q.clone(), ComparisonOp::Less, divide(int(5), int(3))),
+          ),
+          (
+            inf,
+            comparison3(
+              divide(int(5), int(3)),
+              ComparisonOp::LessEqual,
+              q,
+              ComparisonOp::Less,
+              int(2),
+            ),
+          ),
+        ],
+        indet,
+      ))?;
+      Ok((mean, variance))
+    }
+  }
+}
+
+/// Arity check for TukeyLambdaDistribution (1 or 3 arguments).
+fn tukey_lambda_checked(dargs: &[Expr]) -> Option<()> {
+  if dargs.len() == 1 || dargs.len() == 3 {
+    return Some(());
+  }
+  let word = if dargs.len() == 1 {
+    "argument"
+  } else {
+    "arguments"
+  };
+  crate::emit_message(&format!(
+    "TukeyLambdaDistribution::argt: TukeyLambdaDistribution called with {} {}; 1 or 3 arguments are expected.",
+    dargs.len(),
+    word
+  ));
+  None
+}
+
+/// PDF/CDF of TukeyLambdaDistribution for the λ values wolframscript
+/// has closed forms for (0, 1/2, 1, 2, -1, exact or float). Other λ
+/// (including the Root-object λ=3 case) stay unevaluated. The 3-arg
+/// location-scale form substitutes (x-μ)/σ into the branch values and
+/// conditions and divides the PDF Piecewise by σ, as wolframscript does.
+fn tukey_lambda_pdf_cdf(
+  dargs: &[Expr],
+  x: Expr,
+  want_pdf: bool,
+) -> Result<Expr, InterpreterError> {
+  let head = if want_pdf { "PDF" } else { "CDF" };
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: head.to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "TukeyLambdaDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some(()) = tukey_lambda_checked(dargs) else {
+    return unevaluated(x);
+  };
+  let lam = dargs[0].clone();
+  let Some(lv) = crate::functions::math_ast::try_eval_to_f64(&lam) else {
+    return unevaluated(x);
+  };
+  let scaled = dargs.len() == 3;
+  // The variable the closed forms are written in: x or (x - μ)/σ.
+  let y: Expr = if scaled {
+    eval(divide(
+      plus(times(int(-1), dargs[1].clone()), x.clone()),
+      dargs[2].clone(),
+    ))?
+  } else {
+    x.clone()
+  };
+  let sq = |e: &Expr| power(e.clone(), int(2));
+  let lam2y2 = |lam: &Expr, y: &Expr| times(sq(lam), sq(y));
+  // (value, condition) pairs plus default per λ; None = no closed form.
+  let e_neg = |arg: Expr| power(e(), times(int(-1), arg));
+  let branches: Option<(Vec<(Expr, Expr)>, Expr)> = if lv == 0.0 {
+    // Logistic: full support, no Piecewise.
+    let value = if want_pdf {
+      if scaled {
+        // E^((μ-x)/σ)/(σ (1 + E^((μ-x)/σ))^2)
+        let z = eval(divide(
+          plus(dargs[1].clone(), times(int(-1), x.clone())),
+          dargs[2].clone(),
+        ))?;
+        divide(
+          power(e(), z.clone()),
+          times(dargs[2].clone(), sq(&plus(int(1), power(e(), z)))),
+        )
+      } else {
+        times(
+          e_neg(y.clone()),
+          power(plus(int(1), e_neg(y.clone())), int(-2)),
+        )
+      }
+    } else {
+      power(plus(int(1), e_neg(y.clone())), int(-1))
+    };
+    return eval(value);
+  } else if lv == 0.5 {
+    let c = eval(lam2y2(&lam, &y))?;
+    let cond = comparison3(
+      int(-2),
+      ComparisonOp::LessEqual,
+      y.clone(),
+      ComparisonOp::LessEqual,
+      int(2),
+    );
+    if want_pdf {
+      let v = divide(
+        plus(int(1), times(int(-1), c.clone())),
+        times(
+          int(2),
+          Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![plus(int(2), times(int(-1), c))].into(),
+          },
+        ),
+      );
+      Some((vec![(v, cond)], int(0)))
+    } else {
+      let inner = plus(
+        int(4),
+        times(
+          y.clone(),
+          Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![plus(int(8), times(int(-1), sq(&y)))].into(),
+          },
+        ),
+      );
+      // Float λ folds the 1/8 into a 0.125 prefactor, like wolframscript.
+      let v = if matches!(&lam, Expr::Real(_)) {
+        times(Expr::Real(0.125), inner)
+      } else {
+        divide(inner, int(8))
+      };
+      let below = comparison(y.clone(), ComparisonOp::Less, int(-2));
+      Some((vec![(v, cond), (int(0), below)], int(1)))
+    }
+  } else if lv == 1.0 || lv == 2.0 {
+    // Support bounds stay exact even for float λ (wolframscript shows
+    // -1 <= x <= 1 for λ = 1.).
+    let half_width = if lv == 1.0 {
+      int(1)
+    } else {
+      divide(int(1), int(2))
+    };
+    let half_width = eval(half_width)?;
+    let lo = eval(times(int(-1), half_width.clone()))?;
+    let cond = comparison3(
+      lo.clone(),
+      ComparisonOp::LessEqual,
+      y.clone(),
+      ComparisonOp::LessEqual,
+      half_width,
+    );
+    if want_pdf {
+      let v = eval(divide(lam.clone(), int(2)))?;
+      Some((vec![(v, cond)], int(0)))
+    } else {
+      let v = divide(plus(int(1), times(lam.clone(), y.clone())), int(2));
+      let below = comparison(y.clone(), ComparisonOp::Less, lo);
+      Some((vec![(v, cond), (int(0), below)], int(1)))
+    }
+  } else if lv == -1.0 {
+    let cond = comparison(y.clone(), ComparisonOp::NotEqual, int(0));
+    if want_pdf {
+      let v = divide(
+        plus(
+          int(1),
+          times(
+            int(-1),
+            power(
+              Expr::FunctionCall {
+                name: "Sqrt".to_string(),
+                args: vec![plus(int(1), divide(sq(&y), int(4)))].into(),
+              },
+              int(-1),
+            ),
+          ),
+        ),
+        sq(&y),
+      );
+      Some((vec![(v, cond)], divide(int(1), int(8))))
+    } else {
+      let v = divide(
+        plus(
+          plus(int(-2), y.clone()),
+          Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![plus(int(4), sq(&y))].into(),
+          },
+        ),
+        times(int(2), y.clone()),
+      );
+      Some((vec![(v, cond)], divide(int(1), int(2))))
+    }
+  } else {
+    None
+  };
+  let Some((cases, default)) = branches else {
+    return unevaluated(x);
+  };
+  // Branch values evaluate; conditions keep the substituted variable raw.
+  let mut evaled: Vec<(Expr, Expr)> = Vec::new();
+  for (v, c) in cases {
+    evaled.push((eval(v)?, c));
+  }
+  let pw = eval(piecewise_with_default(
+    evaled.into_iter().collect::<Vec<_>>(),
+    eval(default)?,
+  ))?;
+  if want_pdf && scaled {
+    Ok(times(pw, power(dargs[2].clone(), int(-1))))
+  } else {
+    Ok(pw)
+  }
+}
+
+/// Mean and Variance of TukeyLambdaDistribution: Mean is 0 (or μ) for
+/// λ > -1; Variance uses the factorial template
+/// (-2 λ!² + 2 (2λ)!)/(λ² (1+2λ)!) for λ > -1/2.
+fn tukey_lambda_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let Some(()) = tukey_lambda_checked(dargs) else {
+    return Err(InterpreterError::EvaluationError(
+      "TukeyLambdaDistribution: invalid arity".into(),
+    ));
+  };
+  let lam = dargs[0].clone();
+  let indet = Expr::Identifier("Indeterminate".to_string());
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  let mu = if dargs.len() == 3 {
+    dargs[1].clone()
+  } else {
+    int(0)
+  };
+  let fact = |e: Expr| Expr::FunctionCall {
+    name: "Factorial".to_string(),
+    args: vec![e].into(),
+  };
+  let var_core = divide(
+    plus(
+      times(int(-2), power(fact(lam.clone()), int(2))),
+      times(int(2), fact(times(int(2), lam.clone()))),
+    ),
+    times(
+      power(lam.clone(), int(2)),
+      fact(plus(int(1), times(int(2), lam.clone()))),
+    ),
+  );
+  let sigma2 = if dargs.len() == 3 {
+    times(power(dargs[2].clone(), int(2)), var_core.clone())
+  } else {
+    var_core.clone()
+  };
+  match num(&lam) {
+    Some(lv) => {
+      let mean = if lv > -1.0 { eval(mu)? } else { indet.clone() };
+      let variance = if lv == 0.0 {
+        // Logistic limit: the factorial template divides by λ².
+        let core =
+          divide(power(Expr::Constant("Pi".to_string()), int(2)), int(3));
+        let scaled_core = if dargs.len() == 3 {
+          times(power(dargs[2].clone(), int(2)), core)
+        } else {
+          core
+        };
+        eval(scaled_core)?
+      } else if lv > -0.5 {
+        eval(sigma2)?
+      } else {
+        indet
+      };
+      Ok((mean, variance))
+    }
+    None => {
+      let mean = eval(piecewise_with_default(
+        vec![(mu, comparison(lam.clone(), ComparisonOp::Greater, int(-1)))],
+        indet.clone(),
+      ))?;
+      let variance = eval(piecewise_with_default(
+        vec![(
+          sigma2,
+          comparison(lam, ComparisonOp::Greater, divide(int(-1), int(2))),
+        )],
+        indet,
+      ))?;
+      Ok((mean, variance))
+    }
+  }
+}
+
+/// Validation for HotellingTSquareDistribution[p, m]: both parameters
+/// must be positive numbers (posprm); wrong arity emits argr. Messages
+/// come from consuming functions.
+fn hotelling_checked(dargs: &[Expr]) -> Option<()> {
+  if dargs.len() != 2 {
+    let word = if dargs.len() == 1 {
+      "argument"
+    } else {
+      "arguments"
+    };
+    crate::emit_message(&format!(
+      "HotellingTSquareDistribution::argr: HotellingTSquareDistribution called with {} {}; 2 arguments are expected.",
+      dargs.len(),
+      word
+    ));
+    return None;
+  }
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  for pos in 0..2 {
+    if num(&dargs[pos]).is_some_and(|v| v <= 0.0) {
+      crate::emit_message(&format!(
+        "HotellingTSquareDistribution::posprm: Parameter {} at position {} in {} is expected to be positive.",
+        crate::syntax::expr_to_string(&dargs[pos]),
+        pos + 1,
+        crate::syntax::expr_to_string(&Expr::FunctionCall {
+          name: "HotellingTSquareDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        })
+      ));
+      return None;
+    }
+  }
+  Some(())
+}
+
+/// PDF[HotellingTSquareDistribution[p, m], x]. Numeric parameters use
+/// the collapsed C x^(p/2-1) ((m+x)^-1)^((1+m)/2) form wolframscript
+/// produces; symbolic parameters keep the Beta template.
+fn pdf_hotelling(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "PDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "HotellingTSquareDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some(()) = hotelling_checked(dargs) else {
+    return unevaluated(x);
+  };
+  let (pp, m) = (dargs[0].clone(), dargs[1].clone());
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  let half = |e: Expr| divide(e, int(2));
+  let beta = Expr::FunctionCall {
+    name: "Beta".to_string(),
+    args: vec![
+      half(pp.clone()),
+      half(plus(plus(int(1), m.clone()), times(int(-1), pp.clone()))),
+    ]
+    .into(),
+  };
+  let value = if num(&pp).is_some() && num(&m).is_some() {
+    // Integer-valued float parameters compute the coefficient exactly
+    // and refloat it (5.^2/Beta[1., 2.] must be 50., not 50.00000...2).
+    let exactify = |e: &Expr| -> Expr {
+      match e {
+        Expr::Real(r) if r.fract() == 0.0 && r.abs() < 1e15 => int(*r as i128),
+        other => other.clone(),
+      }
+    };
+    let any_float = matches!(&pp, Expr::Real(_)) || matches!(&m, Expr::Real(_));
+    let (pe, me) = (exactify(&pp), exactify(&m));
+    let coeff_expr = divide(
+      power(
+        me.clone(),
+        half(plus(plus(int(1), me.clone()), times(int(-1), pe.clone()))),
+      ),
+      Expr::FunctionCall {
+        name: "Beta".to_string(),
+        args: vec![
+          half(pe.clone()),
+          half(plus(plus(int(1), me.clone()), times(int(-1), pe))),
+        ]
+        .into(),
+      },
+    );
+    let coeff_exact = eval(coeff_expr)?;
+    let coeff = if any_float
+      && !matches!(&coeff_exact, Expr::Real(_))
+      && let Some(v) = num(&coeff_exact)
+    {
+      Expr::Real(v)
+    } else if any_float {
+      coeff_exact
+    } else {
+      eval(divide(
+        power(
+          m.clone(),
+          half(plus(plus(int(1), m.clone()), times(int(-1), pp.clone()))),
+        ),
+        beta,
+      ))?
+    };
+    let expo = eval(plus(half(pp.clone()), int(-1)))?;
+    let tail = power(
+      power(plus(m.clone(), x.clone()), int(-1)),
+      half(plus(int(1), m.clone())),
+    );
+    let is_zero = num(&expo).is_some_and(|v| v == 0.0);
+    if is_zero {
+      times(coeff, tail)
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![coeff, power(x.clone(), expo), tail].into(),
+      }
+    }
+  } else {
+    divide(
+      times(
+        power(divide(x.clone(), m.clone()), half(pp.clone())),
+        power(
+          divide(m.clone(), plus(m.clone(), x.clone())),
+          half(plus(int(1), m.clone())),
+        ),
+      ),
+      times(x.clone(), beta),
+    )
+  };
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// CDF[HotellingTSquareDistribution[p, m], x] via the BetaRegularized
+/// template (which expands itself for a == 1 or b == 1).
+fn cdf_hotelling(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "CDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "HotellingTSquareDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some(()) = hotelling_checked(dargs) else {
+    return unevaluated(x);
+  };
+  let (pp, m) = (dargs[0].clone(), dargs[1].clone());
+  let half = |e: Expr| divide(e, int(2));
+  let k = plus(plus(int(1), m.clone()), times(int(-1), pp.clone()));
+  let z = divide(
+    times(k.clone(), x.clone()),
+    times(
+      m.clone(),
+      plus(k.clone(), divide(times(k.clone(), x.clone()), m.clone())),
+    ),
+  );
+  let value = Expr::FunctionCall {
+    name: "BetaRegularized".to_string(),
+    args: vec![z, half(pp), half(k)].into(),
+  };
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// Mean and Variance of HotellingTSquareDistribution as conditional
+/// Piecewise expressions (Indeterminate outside the existence region).
+fn hotelling_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let Some(()) = hotelling_checked(dargs) else {
+    return Err(InterpreterError::EvaluationError(
+      "HotellingTSquareDistribution: invalid parameters".into(),
+    ));
+  };
+  let (pp, m) = (dargs[0].clone(), dargs[1].clone());
+  let indet = Expr::Identifier("Indeterminate".to_string());
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  let numeric = num(&pp).zip(num(&m));
+  // Mean: (m p)/(-1 + m - p) when -1 + m - p > 0. For numeric
+  // parameters the condition is decided up front so a dead branch never
+  // evaluates (avoiding spurious Power::infy at the boundary).
+  let dof = plus(plus(int(-1), m.clone()), times(int(-1), pp.clone()));
+  let mean_value = divide(times(m.clone(), pp.clone()), dof.clone());
+  let mean = match numeric {
+    Some((pv, mv)) => {
+      if mv - pv - 1.0 > 0.0 {
+        eval(mean_value)?
+      } else {
+        indet.clone()
+      }
+    }
+    None => eval(piecewise_with_default(
+      vec![(mean_value, comparison(dof, ComparisonOp::Greater, int(0)))],
+      indet.clone(),
+    ))?,
+  };
+  // Variance: 2 (-1+m) m^2 p / ((-3+m-p)(1-m+p)^2) when m > 3 + p.
+  let var_num = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      int(2),
+      plus(int(-1), m.clone()),
+      power(m.clone(), int(2)),
+      pp.clone(),
+    ]
+    .into(),
+  };
+  let var_den = times(
+    plus(plus(int(-3), m.clone()), times(int(-1), pp.clone())),
+    power(
+      plus(plus(int(1), times(int(-1), m.clone())), pp.clone()),
+      int(2),
+    ),
+  );
+  let var_value = divide(var_num, var_den);
+  let variance = match numeric {
+    Some((pv, mv)) => {
+      if mv > 3.0 + pv {
+        eval(var_value)?
+      } else {
+        indet
+      }
+    }
+    None => eval(piecewise_with_default(
+      vec![(
+        var_value,
+        comparison(m, ComparisonOp::Greater, plus(int(3), pp)),
+      )],
+      indet,
+    ))?,
+  };
+  Ok((mean, variance))
+}
+
+/// Piecewise with an explicit default value.
+fn piecewise_with_default(cases: Vec<(Expr, Expr)>, default: Expr) -> Expr {
+  let pairs: Vec<Expr> = cases
+    .into_iter()
+    .map(|(v, c)| Expr::List(vec![v, c].into()))
+    .collect();
+  Expr::FunctionCall {
+    name: "Piecewise".to_string(),
+    args: vec![Expr::List(pairs.into()), default].into(),
+  }
+}
+
+/// Validation for BeniniDistribution[α, β, σ]: α and β must be
+/// non-negative (nnegprm), σ positive (posprm); wrong arity emits argrx.
+/// All messages come from consuming functions.
+fn benini_checked(dargs: &[Expr]) -> Option<()> {
+  if dargs.len() != 3 {
+    let word = if dargs.len() == 1 {
+      "argument"
+    } else {
+      "arguments"
+    };
+    crate::emit_message(&format!(
+      "BeniniDistribution::argrx: BeniniDistribution called with {} {}; 3 arguments are expected.",
+      dargs.len(),
+      word
+    ));
+    return None;
+  }
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  let dist = || {
+    crate::syntax::expr_to_string(&Expr::FunctionCall {
+      name: "BeniniDistribution".to_string(),
+      args: dargs.to_vec().into(),
+    })
+  };
+  for pos in 0..2 {
+    if num(&dargs[pos]).is_some_and(|v| v < 0.0) {
+      crate::emit_message(&format!(
+        "BeniniDistribution::nnegprm: Parameter {} at position {} in {} is expected to be non-negative.",
+        crate::syntax::expr_to_string(&dargs[pos]),
+        pos + 1,
+        dist()
+      ));
+      return None;
+    }
+  }
+  if num(&dargs[2]).is_some_and(|v| v <= 0.0) {
+    crate::emit_message(&format!(
+      "BeniniDistribution::posprm: Parameter {} at position 3 in {} is expected to be positive.",
+      crate::syntax::expr_to_string(&dargs[2]),
+      dist()
+    ));
+    return None;
+  }
+  Some(())
+}
+
+/// Log[x/σ], the building block of the Benini closed forms.
+fn benini_log(x: &Expr, sigma: &Expr) -> Expr {
+  Expr::FunctionCall {
+    name: "Log".to_string(),
+    args: vec![divide(x.clone(), sigma.clone())].into(),
+  }
+}
+
+/// PDF[BeniniDistribution[α, β, σ], x]. Numeric α uses the split form
+/// σ^α x^(-α) (2/x + ...) E^(-β Log²) wolframscript shows; symbolic α
+/// keeps the whole exponential E^(-α Log - β Log²).
+fn pdf_benini(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "PDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "BeniniDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some(()) = benini_checked(dargs) else {
+    return unevaluated(x);
+  };
+  let (a, b, sg) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
+  let lg = benini_log(&x, &sg);
+  let hazard = plus(
+    times(a.clone(), power(x.clone(), int(-1))),
+    times(
+      times(times(int(2), b.clone()), lg.clone()),
+      power(x.clone(), int(-1)),
+    ),
+  );
+  let quad = power(
+    e(),
+    times(times(int(-1), b.clone()), power(lg.clone(), int(2))),
+  );
+  let value = if crate::functions::math_ast::try_eval_to_f64(&a).is_some() {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        power(sg.clone(), a.clone()),
+        hazard,
+        quad,
+        power(x.clone(), times(int(-1), a)),
+      ]
+      .into(),
+    }
+  } else {
+    times(
+      power(
+        e(),
+        plus(
+          times(times(int(-1), a), lg.clone()),
+          times(times(int(-1), b), power(lg, int(2))),
+        ),
+      ),
+      hazard,
+    )
+  };
+  let cond = comparison(x, ComparisonOp::GreaterEqual, sg);
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// CDF[BeniniDistribution[α, β, σ], x] = 1 - σ^α x^(-α) E^(-β Log²)
+/// (numeric α) or 1 - E^(-α Log - β Log²) (symbolic α).
+fn cdf_benini(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "CDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "BeniniDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some(()) = benini_checked(dargs) else {
+    return unevaluated(x);
+  };
+  let (a, b, sg) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
+  let lg = benini_log(&x, &sg);
+  let survival = if crate::functions::math_ast::try_eval_to_f64(&a).is_some() {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        power(sg.clone(), a.clone()),
+        power(
+          e(),
+          times(times(int(-1), b.clone()), power(lg.clone(), int(2))),
+        ),
+        power(x.clone(), times(int(-1), a)),
+      ]
+      .into(),
+    }
+  } else {
+    power(
+      e(),
+      plus(
+        times(times(int(-1), a), lg.clone()),
+        times(times(int(-1), b), power(lg, int(2))),
+      ),
+    )
+  };
+  let value = plus(int(1), times(int(-1), survival));
+  let cond = comparison(x, ComparisonOp::GreaterEqual, sg);
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// Mean and Variance of BeniniDistribution in wolframscript's Erfc
+/// template shapes.
+fn benini_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let Some(()) = benini_checked(dargs) else {
+    return Err(InterpreterError::EvaluationError(
+      "BeniniDistribution: invalid parameters".into(),
+    ));
+  };
+  let (a, b, sg) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
+  let sqrt_pi = Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![Expr::Constant("Pi".to_string())].into(),
+  };
+  let sqrt_b = Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![b.clone()].into(),
+  };
+  // Shared pieces for shift k: E^((-k+a)^2/(4β)) and Erfc[(-k+a)/(2√β)].
+  let shifted = |k: i128, denom_scale: i128| -> (Expr, Expr) {
+    let base = plus(int(-k), a.clone());
+    let expo = power(
+      e(),
+      divide(
+        power(base.clone(), int(2)),
+        times(int(denom_scale), b.clone()),
+      ),
+    );
+    let erfc = Expr::FunctionCall {
+      name: "Erfc".to_string(),
+      args: vec![divide(base, times(int(2), sqrt_b.clone()))].into(),
+    };
+    (expo, erfc)
+  };
+  let (e1, erfc1) = shifted(1, 4);
+  let mean = plus(
+    sg.clone(),
+    divide(
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![e1.clone(), sqrt_pi.clone(), sg.clone(), erfc1.clone()]
+          .into(),
+      },
+      times(int(2), sqrt_b.clone()),
+    ),
+  );
+  let (e2, erfc2) = shifted(2, 4);
+  let (e1w, _) = shifted(1, 2);
+  let t1 = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![int(4), sqrt_b.clone(), e2, erfc2].into(),
+  };
+  let t2 = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![int(-4), sqrt_b, e1, erfc1.clone()].into(),
+  };
+  let t3 = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![int(-1), e1w, sqrt_pi.clone(), power(erfc1, int(2))].into(),
+  };
+  let variance = divide(
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        sqrt_pi,
+        power(sg, int(2)),
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![t1, t2, t3].into(),
+        },
+      ]
+      .into(),
+    },
+    times(int(4), b),
+  );
+  Ok((eval(mean)?, eval(variance)?))
+}
+
+/// Validation for VonMisesDistribution[μ, κ]: emits argr when the
+/// argument count is off and nnegprm when κ is a negative number (all
+/// from consuming functions; the constructor echoes silently).
+fn vonmises_checked(dargs: &[Expr]) -> Option<()> {
+  if dargs.len() != 2 {
+    let word = if dargs.len() == 1 {
+      "argument"
+    } else {
+      "arguments"
+    };
+    crate::emit_message(&format!(
+      "VonMisesDistribution::argr: VonMisesDistribution called with {} {}; 2 arguments are expected.",
+      dargs.len(),
+      word
+    ));
+    return None;
+  }
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  if num(&dargs[1]).is_some_and(|v| v < 0.0) {
+    crate::emit_message(&format!(
+      "VonMisesDistribution::nnegprm: Parameter {} at position 2 in {} is expected to be non-negative.",
+      crate::syntax::expr_to_string(&dargs[1]),
+      crate::syntax::expr_to_string(&Expr::FunctionCall {
+        name: "VonMisesDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      })
+    ));
+    return None;
+  }
+  Some(())
+}
+
+/// PDF[VonMisesDistribution[μ, κ], x] =
+/// Piecewise[{{E^(κ Cos[μ - x])/(2 π BesselI[0, κ]), μ-π <= x <= μ+π}}, 0].
+/// CDF has no closed form and stays unevaluated, as in wolframscript.
+fn pdf_vonmises(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "PDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "VonMisesDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some(()) = vonmises_checked(dargs) else {
+    return unevaluated(x);
+  };
+  let (m, k) = (dargs[0].clone(), dargs[1].clone());
+  let pi = Expr::Constant("Pi".to_string());
+  let cos = Expr::FunctionCall {
+    name: "Cos".to_string(),
+    args: vec![plus(m.clone(), times(int(-1), x.clone()))].into(),
+  };
+  let bessel = Expr::FunctionCall {
+    name: "BesselI".to_string(),
+    args: vec![int(0), k.clone()].into(),
+  };
+  let value = times(
+    power(e(), times(k, cos)),
+    power(
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![int(2), pi.clone(), bessel].into(),
+      },
+      int(-1),
+    ),
+  );
+  let cond = comparison3(
+    minus(m.clone(), pi.clone()),
+    ComparisonOp::LessEqual,
+    x,
+    ComparisonOp::LessEqual,
+    plus(m, pi),
+  );
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// Validated HyperexponentialDistribution arguments (probs, rates).
+/// Emits eqln / vprobprm / vrpos (in that order) and returns None on
+/// failure; non-list shapes fail silently. The probability sum check
+/// only applies when every weight is numeric, with a 1-ULP style
+/// tolerance for floats (wolframscript accepts 0.3 + 0.7).
+fn hyperexponential_checked(dargs: &[Expr]) -> Option<(Vec<Expr>, Vec<Expr>)> {
+  let [Expr::List(probs), Expr::List(rates)] = dargs else {
+    return None;
+  };
+  let dist = || {
+    crate::syntax::expr_to_string(&Expr::FunctionCall {
+      name: "HyperexponentialDistribution".to_string(),
+      args: dargs.to_vec().into(),
+    })
+  };
+  if probs.len() != rates.len() {
+    crate::emit_message(&format!(
+      "HyperexponentialDistribution::eqln: The values {} and {} at positions 1 and 2 in {} are expected to have the same length.",
+      crate::syntax::expr_to_string(&dargs[0]),
+      crate::syntax::expr_to_string(&dargs[1]),
+      dist()
+    ));
+    return None;
+  }
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  let vals: Vec<Option<f64>> = probs.iter().map(&num).collect();
+  let negative = vals.iter().any(|v| v.is_some_and(|v| v < 0.0));
+  let bad_sum = vals.iter().all(|v| v.is_some())
+    && (vals.iter().map(|v| v.unwrap()).sum::<f64>() - 1.0).abs() > 1e-13;
+  if negative || bad_sum {
+    crate::emit_message(&format!(
+      "HyperexponentialDistribution::vprobprm: The value {} at position 1 in {} is expected to be a list of non-negative numbers summing to 1.",
+      crate::syntax::expr_to_string(&dargs[0]),
+      dist()
+    ));
+    return None;
+  }
+  if rates.iter().any(|r| num(r).is_some_and(|v| v <= 0.0)) {
+    crate::emit_message(&format!(
+      "HyperexponentialDistribution::vrpos: The value {} at position 2 in {} is expected to be a list of positive numbers.",
+      crate::syntax::expr_to_string(&dargs[1]),
+      dist()
+    ));
+    return None;
+  }
+  Some((probs.to_vec(), rates.to_vec()))
+}
+
+/// Per-rate coefficient sums of the hyperexponential mixture when all
+/// rates are numeric: groups repeated rates (coefficients merge) and
+/// orders by descending rate. `scale_by_rate` selects PDF (p λ) vs
+/// CDF (p) coefficients.
+fn hyperexponential_numeric_terms(
+  probs: &[Expr],
+  rates: &[Expr],
+  scale_by_rate: bool,
+) -> Option<Vec<(Expr, Expr)>> {
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  let vals: Vec<f64> = rates.iter().map(num).collect::<Option<_>>()?;
+  let mut groups: Vec<(f64, Expr, Vec<Expr>)> = Vec::new();
+  for (i, v) in vals.iter().enumerate() {
+    let coeff = if scale_by_rate {
+      times(probs[i].clone(), rates[i].clone())
+    } else {
+      probs[i].clone()
+    };
+    match groups.iter_mut().find(|(gv, ..)| gv == v) {
+      Some((.., cs)) => cs.push(coeff),
+      None => groups.push((*v, rates[i].clone(), vec![coeff])),
+    }
+  }
+  groups.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+  groups
+    .into_iter()
+    .map(|(_, rate, cs)| {
+      let sum = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: cs.into(),
+      };
+      eval(sum).ok().map(|c| (c, rate))
+    })
+    .collect()
+}
+
+/// PDF[HyperexponentialDistribution[{p...}, {λ...}], x]:
+/// Piecewise[{{Σ p_i λ_i E^(-λ_i x), x >= 0}}, 0]. Numeric rates merge
+/// and sort descending; symbolic rates keep the given order with the
+/// (λ p) coefficient shape wolframscript uses.
+fn pdf_hyperexponential(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "PDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "HyperexponentialDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some((probs, rates)) = hyperexponential_checked(dargs) else {
+    return unevaluated(x);
+  };
+  let terms: Vec<Expr> =
+    match hyperexponential_numeric_terms(&probs, &rates, true) {
+      Some(groups) => groups
+        .into_iter()
+        .map(|(c, rate)| coxian_exp_term(c, None, &rate, &x))
+        .collect(),
+      None => probs
+        .iter()
+        .zip(rates.iter())
+        .map(|(p, l)| coxian_exp_term(times(l.clone(), p.clone()), None, l, &x))
+        .collect(),
+    };
+  let value = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  };
+  let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// CDF[HyperexponentialDistribution[{p...}, {λ...}], x]:
+/// Piecewise[{{1 - Σ p_i E^(-λ_i x), x >= 0}}, 0].
+fn cdf_hyperexponential(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "CDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "HyperexponentialDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some((probs, rates)) = hyperexponential_checked(dargs) else {
+    return unevaluated(x);
+  };
+  let mut terms: Vec<Expr> = vec![int(1)];
+  match hyperexponential_numeric_terms(&probs, &rates, false) {
+    Some(groups) => {
+      for (c, rate) in groups {
+        let neg = eval(times(int(-1), c))?;
+        terms.push(coxian_exp_term(neg, None, &rate, &x));
+      }
+    }
+    None => {
+      for (p, l) in probs.iter().zip(rates.iter()) {
+        terms.push(coxian_exp_term(times(int(-1), p.clone()), None, l, &x));
+      }
+    }
+  }
+  let value = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  };
+  let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// Mean = Σ p_i/λ_i and Variance = 2 Σ p_i/λ_i² - Mean², in
+/// wolframscript's symbolic shapes.
+fn hyperexponential_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let Some((probs, rates)) = hyperexponential_checked(dargs) else {
+    return Err(InterpreterError::EvaluationError(
+      "HyperexponentialDistribution: invalid parameters".into(),
+    ));
+  };
+  let term =
+    |p: &Expr, l: &Expr, k: i128| times(p.clone(), power(l.clone(), int(k)));
+  let mean = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: probs
+      .iter()
+      .zip(rates.iter())
+      .map(|(p, l)| term(p, l, -1))
+      .collect::<Vec<_>>()
+      .into(),
+  };
+  let second = times(
+    int(2),
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: probs
+        .iter()
+        .zip(rates.iter())
+        .map(|(p, l)| term(p, l, -2))
+        .collect::<Vec<_>>()
+        .into(),
+    },
+  );
+  let variance = plus(second, times(int(-1), power(mean.clone(), int(2))));
+  Ok((eval(mean)?, eval(variance)?))
+}
+
+/// Validated CoxianDistribution arguments: (alphas, rates) with
+/// len(rates) == len(alphas) + 1. Emits wolframscript's eqln2 /
+/// vprobprm2 / vrpos messages (in that order) and returns None when a
+/// check fails; non-list shapes fail silently.
+fn coxian_checked(dargs: &[Expr]) -> Option<(Vec<Expr>, Vec<Expr>)> {
+  let [Expr::List(alphas), Expr::List(rates)] = dargs else {
+    return None;
+  };
+  let dist = || {
+    crate::syntax::expr_to_string(&Expr::FunctionCall {
+      name: "CoxianDistribution".to_string(),
+      args: dargs.to_vec().into(),
+    })
+  };
+  if rates.len() != alphas.len() + 1 {
+    crate::emit_message(&format!(
+      "CoxianDistribution::eqln2: The length of {} at position 2 should be 1 more than the length of {} at position 1 in {}.",
+      crate::syntax::expr_to_string(&dargs[1]),
+      crate::syntax::expr_to_string(&dargs[0]),
+      dist()
+    ));
+    return None;
+  }
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  if alphas
+    .iter()
+    .any(|a| num(a).is_some_and(|v| !(0.0..=1.0).contains(&v)))
+  {
+    crate::emit_message(&format!(
+      "CoxianDistribution::vprobprm2: The value {} at position 1 in {} is expected to be a list of numbers between 0 and 1, inclusive.",
+      crate::syntax::expr_to_string(&dargs[0]),
+      dist()
+    ));
+    return None;
+  }
+  if rates.iter().any(|r| num(r).is_some_and(|v| v <= 0.0)) {
+    crate::emit_message(&format!(
+      "CoxianDistribution::vrpos: The value {} at position 2 in {} is expected to be a list of positive numbers.",
+      crate::syntax::expr_to_string(&dargs[1]),
+      dist()
+    ));
+    return None;
+  }
+  Some((alphas.to_vec(), rates.to_vec()))
+}
+
+/// Phase-exit weights of a Coxian distribution as unevaluated exprs:
+/// w_k = α1···α_{k-1}(1-α_k) for k < m and w_m = α1···α_{m-1}, shaped
+/// to reproduce wolframscript's symbolic moment forms.
+fn coxian_weights(alphas: &[Expr]) -> Vec<Expr> {
+  let m = alphas.len() + 1;
+  let one_minus = |a: &Expr| plus(int(1), times(int(-1), a.clone()));
+  let product = |fs: Vec<Expr>| -> Expr {
+    match fs.len() {
+      0 => int(1),
+      1 => fs.into_iter().next().unwrap(),
+      _ => Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: fs.into(),
+      },
+    }
+  };
+  (1..=m)
+    .map(|k| {
+      let mut fs: Vec<Expr> = alphas[..k - 1].to_vec();
+      if k < m {
+        fs.push(one_minus(&alphas[k - 1]));
+      }
+      product(fs)
+    })
+    .collect()
+}
+
+/// Mean and variance of CoxianDistribution[{α...}, {λ...}] in
+/// wolframscript's symbolic shapes: Mean = Σ w_k (1/λ1 + … + 1/λk) and
+/// E[X²] uses 2 w_1/λ1² for the first phase.
+fn coxian_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let Some((alphas, rates)) = coxian_checked(dargs) else {
+    return Err(InterpreterError::EvaluationError(
+      "CoxianDistribution: invalid parameters".into(),
+    ));
+  };
+  let weights = coxian_weights(&alphas);
+  let inv_sum = |k: usize| -> Expr {
+    if k == 1 {
+      power(rates[0].clone(), int(-1))
+    } else {
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: rates[..k]
+          .iter()
+          .map(|r| power(r.clone(), int(-1)))
+          .collect::<Vec<_>>()
+          .into(),
+      }
+    }
+  };
+  let m = rates.len();
+  let mean_terms: Vec<Expr> = (1..=m)
+    .map(|k| times(weights[k - 1].clone(), inv_sum(k)))
+    .collect();
+  let mean = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: mean_terms.clone().into(),
+  };
+  let e2_terms: Vec<Expr> = (1..=m)
+    .map(|k| {
+      if k == 1 {
+        times(
+          times(int(2), weights[0].clone()),
+          power(rates[0].clone(), int(-2)),
+        )
+      } else {
+        let mut parts: Vec<Expr> = rates[..k]
+          .iter()
+          .map(|r| power(r.clone(), int(-2)))
+          .collect();
+        parts.push(power(inv_sum(k), int(2)));
+        times(
+          weights[k - 1].clone(),
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: parts.into(),
+          },
+        )
+      }
+    })
+    .collect();
+  let mut var_terms = e2_terms;
+  var_terms.push(times(int(-1), power(mean.clone(), int(2))));
+  let variance = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: var_terms.into(),
+  };
+  Ok((eval(mean)?, eval(variance)?))
+}
+
+/// True for expressions that evaluate to an exact number (no machine
+/// reals anywhere) — the precondition for the Coxian closed forms.
+fn coxian_exact(e: &Expr) -> bool {
+  fn no_real(e: &Expr) -> bool {
+    match e {
+      Expr::Real(_) | Expr::BigFloat(..) => false,
+      Expr::List(items) => items.iter().all(no_real),
+      Expr::FunctionCall { args, .. } => args.iter().all(no_real),
+      Expr::BinaryOp { left, right, .. } => no_real(left) && no_real(right),
+      Expr::UnaryOp { operand, .. } => no_real(operand),
+      _ => true,
+    }
+  }
+  no_real(e) && crate::functions::math_ast::try_eval_to_f64(e).is_some()
+}
+
+/// Coxian rate layout for the closed forms: Some(true) if all rates are
+/// exact and pairwise distinct, Some(false) if exact and all equal;
+/// None otherwise (mixed repetition and symbolic/float rates stay
+/// unevaluated like the hypoexponential Erlang gap).
+fn coxian_rate_layout(alphas: &[Expr], rates: &[Expr]) -> Option<bool> {
+  if !alphas.iter().all(coxian_exact) || !rates.iter().all(coxian_exact) {
+    return None;
+  }
+  let vals: Vec<f64> = rates
+    .iter()
+    .map(|r| crate::functions::math_ast::try_eval_to_f64(r).unwrap())
+    .collect();
+  let distinct = vals
+    .iter()
+    .enumerate()
+    .all(|(i, v)| vals[..i].iter().all(|w| w != v));
+  let equal = vals.iter().all(|v| *v == vals[0]);
+  if distinct {
+    Some(true)
+  } else if equal {
+    Some(false)
+  } else {
+    None
+  }
+}
+
+/// Per-exponential coefficients of the Coxian density/survival for
+/// pairwise-distinct rates: pdf = Σ_i λi C_i e^(-λi x) and
+/// 1 - CDF = Σ_i D_i e^(-λi x) with D_i = Σ_{k>i} w_k Π_{j≤k, j≠i}
+/// λj/(λj - λi); C_i shares the sum but scaled by λi.
+fn coxian_distinct_coefficients(
+  alphas: &[Expr],
+  rates: &[Expr],
+) -> Result<Vec<Expr>, InterpreterError> {
+  let weights = coxian_weights(alphas);
+  let m = rates.len();
+  let mut coeffs = Vec::with_capacity(m);
+  for i in 0..m {
+    let mut sum_terms: Vec<Expr> = Vec::new();
+    for (k, w) in weights.iter().enumerate().skip(i) {
+      // component k+1 uses rates[0..=k]
+      let mut fs: Vec<Expr> = vec![w.clone()];
+      for (j, r) in rates[..=k].iter().enumerate() {
+        if j == i {
+          continue;
+        }
+        fs.push(divide(r.clone(), minus(r.clone(), rates[i].clone())));
+      }
+      sum_terms.push(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: fs.into(),
+      });
+    }
+    coeffs.push(eval(Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: sum_terms.into(),
+    })?);
+  }
+  Ok(coeffs)
+}
+
+/// Exponential factor E^(-λ x) (optionally with an x power in front).
+fn coxian_exp_term(
+  coeff: Expr,
+  xpow: Option<Expr>,
+  rate: &Expr,
+  x: &Expr,
+) -> Expr {
+  let e_part = power(e(), times(times(int(-1), rate.clone()), x.clone()));
+  match xpow {
+    Some(p) => times(times(coeff, p), e_part),
+    None => times(coeff, e_part),
+  }
+}
+
+/// PDF[CoxianDistribution[...], x] for exact all-distinct or all-equal
+/// rates; Piecewise[{{Σ terms, x >= 0}}, 0] with terms in descending
+/// rate order (distinct) or ascending x power (equal rates).
+fn pdf_coxian(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "PDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "CoxianDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some((alphas, rates)) = coxian_checked(dargs) else {
+    return unevaluated(x);
+  };
+  let Some(distinct) = coxian_rate_layout(&alphas, &rates) else {
+    return unevaluated(x);
+  };
+  let terms: Vec<Expr> = if distinct {
+    let coeffs = coxian_distinct_coefficients(&alphas, &rates)?;
+    let mut order: Vec<usize> = (0..rates.len()).collect();
+    let val = |i: usize| {
+      crate::functions::math_ast::try_eval_to_f64(&rates[i]).unwrap()
+    };
+    order.sort_by(|&a, &b| val(b).partial_cmp(&val(a)).unwrap());
+    order
+      .iter()
+      .map(|&i| {
+        let c = eval(times(coeffs[i].clone(), rates[i].clone()))?;
+        Ok(coxian_exp_term(c, None, &rates[i], &x))
+      })
+      .collect::<Result<_, InterpreterError>>()?
+  } else {
+    // All-equal rates: Σ_k w_k λ^k x^(k-1) e^(-λ x)/(k-1)!.
+    let weights = coxian_weights(&alphas);
+    let lam = &rates[0];
+    (1..=rates.len())
+      .map(|k| {
+        let mut fact = int(1);
+        for j in 2..k {
+          fact = times(fact, int(j as i128));
+        }
+        let c = eval(divide(
+          times(weights[k - 1].clone(), power(lam.clone(), int(k as i128))),
+          fact,
+        ))?;
+        let xpow = if k == 1 {
+          None
+        } else if k == 2 {
+          Some(x.clone())
+        } else {
+          Some(power(x.clone(), int((k - 1) as i128)))
+        };
+        Ok(coxian_exp_term(c, xpow, lam, &x))
+      })
+      .collect::<Result<_, InterpreterError>>()?
+  };
+  let value = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  };
+  let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// CDF[CoxianDistribution[...], x] for exact all-distinct or all-equal
+/// rates. The all-equal form reproduces wolframscript's Piecewise
+/// default of 1 (a WS quirk: CDF[..., -1] is 1 there).
+fn cdf_coxian(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "CDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "CoxianDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some((alphas, rates)) = coxian_checked(dargs) else {
+    return unevaluated(x);
+  };
+  let Some(distinct) = coxian_rate_layout(&alphas, &rates) else {
+    return unevaluated(x);
+  };
+  let mut terms: Vec<Expr> = vec![int(1)];
+  let default;
+  if distinct {
+    let coeffs = coxian_distinct_coefficients(&alphas, &rates)?;
+    let mut order: Vec<usize> = (0..rates.len()).collect();
+    let val = |i: usize| {
+      crate::functions::math_ast::try_eval_to_f64(&rates[i]).unwrap()
+    };
+    order.sort_by(|&a, &b| val(b).partial_cmp(&val(a)).unwrap());
+    for &i in &order {
+      let c = eval(times(int(-1), coeffs[i].clone()))?;
+      terms.push(coxian_exp_term(c, None, &rates[i], &x));
+    }
+    default = int(0);
+  } else {
+    // Survival of the equal-rate mixture: Σ_j (Σ_{k>j} w_k) λ^j x^j
+    // e^(-λ x)/j! subtracted from 1.
+    let weights = coxian_weights(&alphas);
+    let lam = &rates[0];
+    let m = rates.len();
+    for j in 0..m {
+      let mut fact = int(1);
+      for f in 2..=j {
+        fact = times(fact, int(f as i128));
+      }
+      let wsum = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: weights[j..].to_vec().into(),
+      };
+      let c = eval(times(
+        int(-1),
+        divide(times(wsum, power(lam.clone(), int(j as i128))), fact),
+      ))?;
+      let xpow = if j == 0 {
+        None
+      } else if j == 1 {
+        Some(x.clone())
+      } else {
+        Some(power(x.clone(), int(j as i128)))
+      };
+      terms.push(coxian_exp_term(c, xpow, lam, &x));
+    }
+    default = int(1);
+  }
+  let value = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  };
+  let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
+  eval(piecewise(vec![(value, cond)], default))
+}
+
+/// The rates of a HypoexponentialDistribution[{λ1, …, λn}] when all are
+/// concrete and pairwise distinct — the precondition for the
+/// distinct-rate closed forms below. (Repeated rates need Erlang-style
+/// terms wolframscript produces, e.g. 4 x E^(-2 x) for {2, 2}; those and
+/// symbolic rates stay unevaluated.)
+fn hypoexponential_distinct_rates(dargs: &[Expr]) -> Option<Vec<(Expr, f64)>> {
+  match dargs {
+    [Expr::List(rates)] if !rates.is_empty() => {
+      let keyed: Option<Vec<(Expr, f64)>> = rates
+        .iter()
+        .map(|r| {
+          crate::functions::math_ast::try_eval_to_f64(r).map(|f| (r.clone(), f))
+        })
+        .collect();
+      let keyed = keyed?;
+      for i in 0..keyed.len() {
+        for j in 0..i {
+          if keyed[i].1 == keyed[j].1 {
+            return None;
+          }
+        }
+      }
+      Some(keyed)
+    }
+    _ => None,
+  }
+}
+
+/// The distinct-rate mixture coefficients c_i = Π_{j≠i} λj/(λj − λi),
+/// as exact expressions.
+fn hypoexponential_coefficients(
+  rates: &[(Expr, f64)],
+) -> Result<Vec<Expr>, InterpreterError> {
+  let mut coeffs = Vec::with_capacity(rates.len());
+  for i in 0..rates.len() {
+    let mut num: Vec<Expr> = Vec::new();
+    let mut den: Vec<Expr> = Vec::new();
+    for j in 0..rates.len() {
+      if j == i {
+        continue;
+      }
+      num.push(rates[j].0.clone());
+      den.push(minus(rates[j].0.clone(), rates[i].0.clone()));
+    }
+    let product = |fs: Vec<Expr>| -> Expr {
+      match fs.len() {
+        0 => int(1),
+        1 => fs.into_iter().next().unwrap(),
+        _ => Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: fs.into(),
+        },
+      }
+    };
+    coeffs.push(eval(divide(product(num), product(den)))?);
+  }
+  Ok(coeffs)
+}
+
+/// PDF[HypoexponentialDistribution[{λ1, …}], x] for distinct concrete
+/// rates: Piecewise[{{Σ c_i λ_i E^(-λ_i x), x > 0}}, 0].
+fn pdf_hypoexponential(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "PDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "HypoexponentialDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some(rates) = hypoexponential_distinct_rates(dargs) else {
+    return unevaluated(x);
+  };
+  let coeffs = hypoexponential_coefficients(&rates)?;
+  let terms: Vec<Expr> = rates
+    .iter()
+    .zip(coeffs.iter())
+    .map(|((rate, _), c)| {
+      times(
+        times(c.clone(), rate.clone()),
+        power(e(), times(times(int(-1), rate.clone()), x.clone())),
+      )
+    })
+    .collect();
+  let value = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  };
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// CDF[HypoexponentialDistribution[{λ1, …}], x] for distinct concrete
+/// rates: Piecewise[{{1 - Σ c_i E^(-λ_i x), x > 0}}, 0].
+fn cdf_hypoexponential(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "CDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "HypoexponentialDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Some(rates) = hypoexponential_distinct_rates(dargs) else {
+    return unevaluated(x);
+  };
+  let coeffs = hypoexponential_coefficients(&rates)?;
+  let mut terms: Vec<Expr> = vec![int(1)];
+  for ((rate, _), c) in rates.iter().zip(coeffs.iter()) {
+    terms.push(times(
+      times(int(-1), c.clone()),
+      power(e(), times(times(int(-1), rate.clone()), x.clone())),
+    ));
+  }
+  let value = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  };
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// Parses `NegativeMultinomialDistribution[n, {p1, …, pk}]` arguments into
+/// `(n, probs)`.
+fn negative_multinomial_params(
+  dargs: &[Expr],
+) -> Result<(Expr, crate::ExprList), InterpreterError> {
+  match dargs {
+    [n, Expr::List(probs)] if !probs.is_empty() => {
+      Ok((n.clone(), probs.clone()))
+    }
+    _ => Err(InterpreterError::EvaluationError(
+      "NegativeMultinomialDistribution expects a parameter n and a list of failure probabilities".into(),
+    )),
+  }
+}
+
+/// The complement `1 - p1 - … - pk` of the failure probabilities, grouped as
+/// `1 - (p1 + … + pk)` so machine-precision parameters fold in
+/// wolframscript's order (1 - (0.2 + 0.4) ≠ 1 - 0.2 - 0.4 in f64).
+fn negative_multinomial_success(probs: &[Expr]) -> Expr {
+  let mut sum = probs[0].clone();
+  for p in probs.iter().skip(1) {
+    sum = plus(sum, p.clone());
+  }
+  minus(int(1), sum)
+}
+
+/// PDF[NegativeMultinomialDistribution[n, {p1, ..., pk}], {x1, ..., xk}]
+/// = (1 - p1 - ... - pk)^n * p1^x1 * ... * pk^xk
+///   * Pochhammer[n, x1 + ... + xk] / (x1! * ... * xk!)
+///   when all xi >= 0
+/// = 0 otherwise
+fn pdf_negative_multinomial(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let (n, probs) = negative_multinomial_params(dargs)?;
+  let xs = match &x {
+    Expr::List(items) if items.len() == probs.len() => items.clone(),
+    _ => {
+      // A point of the wrong shape stays unevaluated, as in wolframscript.
+      return Ok(Expr::FunctionCall {
+        name: "PDF".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "NegativeMultinomialDistribution".to_string(),
+            args: dargs.to_vec().into(),
+          },
+          x,
+        ]
+        .into(),
+      });
+    }
+  };
+  if any_concrete_non_integer(&xs) {
+    return Ok(int(0));
+  }
+
+  // Numerator: (1 - Σp)^n * p1^x1 * ... * pk^xk * Pochhammer[n, Σx]
+  let mut numer = power(negative_multinomial_success(&probs), n.clone());
+  for (p, xi) in probs.iter().zip(xs.iter()) {
+    numer = times(numer, power(p.clone(), xi.clone()));
+  }
+  let mut sum_xs = xs[0].clone();
+  for xi in xs.iter().skip(1) {
+    sum_xs = plus(sum_xs, xi.clone());
+  }
+  numer = times(
+    numer,
+    Expr::FunctionCall {
+      name: "Pochhammer".to_string(),
+      args: vec![n, sum_xs].into(),
+    },
+  );
+
+  // Denominator: x1! * ... * xk!
+  let mut denom = factorial(xs[0].clone());
+  for xi in xs.iter().skip(1) {
+    denom = times(denom, factorial(xi.clone()));
+  }
+  let pdf_val = divide(numer, denom);
+
+  // Support: all xi >= 0.
+  let conditions: Vec<Expr> = xs
+    .iter()
+    .map(|xi| comparison(xi.clone(), ComparisonOp::GreaterEqual, int(0)))
+    .collect();
+  let combined_cond = if conditions.len() == 1 {
+    conditions.into_iter().next().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "And".to_string(),
+      args: conditions.into(),
+    }
+  };
+
+  eval(piecewise(vec![(pdf_val, combined_cond)], int(0)))
+}
+
+/// CDF[NegativeMultinomialDistribution[n, {p1, ..., pk}], {x1, ..., xk}]
+/// for a fully numeric distribution and point: the finite sum of the PDF
+/// over the integer grid 0 <= i_j <= Floor[x_j]. Symbolic arguments stay
+/// unevaluated (wolframscript's combined closed form for symbolic n is a
+/// canonicalization rabbit hole).
+fn cdf_negative_multinomial(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(Expr::FunctionCall {
+      name: "CDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "NegativeMultinomialDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        x,
+      ]
+      .into(),
+    })
+  };
+  let Ok((n, probs)) = negative_multinomial_params(dargs) else {
+    return unevaluated(x);
+  };
+  if crate::functions::math_ast::expr_to_num(&n).is_none()
+    || probs
+      .iter()
+      .any(|p| crate::functions::math_ast::expr_to_num(p).is_none())
+  {
+    return unevaluated(x);
+  }
+  let Expr::List(xs) = &x else {
+    return unevaluated(x);
+  };
+  if xs.len() != probs.len() {
+    return unevaluated(x);
+  }
+  let mut bounds: Vec<i64> = Vec::with_capacity(xs.len());
+  for xi in xs.iter() {
+    let Some(v) = crate::functions::math_ast::expr_to_num(xi) else {
+      return unevaluated(x.clone());
+    };
+    let f = v.floor();
+    if f < 0.0 {
+      return Ok(int(0));
+    }
+    bounds.push(f as i64);
+  }
+
+  // Row-major walk over the grid, accumulating PDF terms.
+  let mut point = vec![0i64; bounds.len()];
+  let mut total: Option<Expr> = None;
+  loop {
+    let point_expr =
+      Expr::List(point.iter().map(|&i| Expr::Integer(i as i128)).collect());
+    let term = pdf_negative_multinomial(dargs, point_expr)?;
+    total = Some(match total {
+      Some(acc) => plus(acc, term),
+      None => term,
+    });
+    // Advance the mixed-radix counter (last component fastest).
+    let mut dim = point.len();
+    let mut advanced = false;
+    while dim > 0 {
+      dim -= 1;
+      if point[dim] < bounds[dim] {
+        point[dim] += 1;
+        advanced = true;
+        break;
+      }
+      point[dim] = 0;
+    }
+    if !advanced {
+      return eval(total.expect("grid is never empty"));
+    }
+  }
 }
 
 /// PDF[MultivariatePoissonDistribution[μ_0, {μ_1, μ_2}], {x, y}] for the
@@ -6926,7 +10894,7 @@ fn pdf_multivariate_poisson(
   let neg_mu1_mu2_over_mu0 = eval(times(
     int(-1),
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(times(mu1.clone(), mu2.clone())),
       right: Box::new(mu0.clone()),
     },
@@ -6961,7 +10929,7 @@ fn pdf_multivariate_poisson(
   let denominator = times(times(exp_sum, x_fact), y_fact);
 
   let pdf_val = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(numerator),
     right: Box::new(denominator),
   };
@@ -7009,6 +10977,209 @@ pub fn multinomial_mean_variance(
   }
 
   Ok((Expr::List(means.into()), Expr::List(variances.into())))
+}
+
+/// Returns (Mean list, Variance list) for
+/// NegativeMultinomialDistribution[n, {p1, …, pk}] with q = 1 - p1 - … - pk:
+/// Mean_i = n p_i / q, Variance_i = n p_i (1 - Σ_{j≠i} p_j) / q^2.
+pub fn negative_multinomial_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let (n, probs) = negative_multinomial_params(dargs)?;
+  let q = negative_multinomial_success(&probs);
+
+  let mut means = Vec::with_capacity(probs.len());
+  let mut variances = Vec::with_capacity(probs.len());
+  for p in probs.iter() {
+    means.push(eval(divide(times(n.clone(), p.clone()), q.clone()))?);
+    // The numerator factor 1 - Σ_{j≠i} p_j is built as q + p_i: symbolically
+    // it cancels to wolframscript's subtracted form, and for machine floats
+    // it reproduces wolframscript's fold order (1 - (0.2 + 0.4) + 0.2 differs
+    // from 1 - 0.4 in the last bit).
+    let others = plus(q.clone(), p.clone());
+    variances.push(eval(divide(
+      times(times(n.clone(), p.clone()), others),
+      power(q.clone(), int(2)),
+    ))?);
+  }
+
+  Ok((Expr::List(means.into()), Expr::List(variances.into())))
+}
+
+/// Covariance[NegativeMultinomialDistribution[n, {p1, …, pk}]] is the k×k
+/// matrix with diagonal n (p_i^2/q^2 + p_i/q) and off-diagonal n p_i p_j / q^2
+/// where q = 1 - p1 - … - pk.
+pub fn negative_multinomial_covariance(
+  dargs: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let (n, probs) = negative_multinomial_params(dargs)?;
+  let q = negative_multinomial_success(&probs);
+
+  let mut rows = Vec::with_capacity(probs.len());
+  for (i, pi) in probs.iter().enumerate() {
+    let mut row = Vec::with_capacity(probs.len());
+    for (j, pj) in probs.iter().enumerate() {
+      let entry = if i == j {
+        times(
+          n.clone(),
+          plus(
+            divide(power(pi.clone(), int(2)), power(q.clone(), int(2))),
+            divide(pi.clone(), q.clone()),
+          ),
+        )
+      } else {
+        divide(
+          times(times(n.clone(), pi.clone()), pj.clone()),
+          power(q.clone(), int(2)),
+        )
+      };
+      row.push(eval(entry)?);
+    }
+    rows.push(Expr::List(row.into()));
+  }
+  Ok(Expr::List(rows.into()))
+}
+
+/// Returns (Mean matrix, Variance matrix) for
+/// WishartMatrixDistribution[ν, Σ]: Mean = ν Σ,
+/// Variance_ij = ν (σ_ij^2 + σ_ii σ_jj).
+///
+/// Validation mirrors wolframscript's moment-time checks (the constructor
+/// itself never validates): a non-numeric / non-symmetric /
+/// non-positive-definite Σ emits `posdefprm`; then a non-numeric ν or
+/// ν <= p - 1 emits `bprm`. On either failure returns Err so the caller
+/// leaves the call unevaluated.
+pub fn wishart_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let dist_str = || {
+    crate::syntax::expr_to_string(&Expr::FunctionCall {
+      name: "WishartMatrixDistribution".to_string(),
+      args: dargs.to_vec().into(),
+    })
+  };
+  let fail = |msg: String| -> Result<(Expr, Expr), InterpreterError> {
+    crate::emit_message(&msg);
+    Err(InterpreterError::EvaluationError(
+      "invalid WishartMatrixDistribution parameters".into(),
+    ))
+  };
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "WishartMatrixDistribution expects 2 arguments".into(),
+    ));
+  }
+  let (nu, sigma) = (&dargs[0], &dargs[1]);
+
+  // Σ: square, numeric, symmetric, positive definite.
+  let posdefprm = |s: &Expr| {
+    format!(
+      "WishartMatrixDistribution::posdefprm: The value {} at position 2 in {} is expected to be a symmetric positive definite matrix.",
+      crate::syntax::expr_to_string(s),
+      dist_str()
+    )
+  };
+  let Expr::List(rows) = sigma else {
+    return fail(posdefprm(sigma));
+  };
+  let p = rows.len();
+  let mut sig = vec![vec![0.0f64; p]; p];
+  let mut sig_exprs: Vec<Vec<Expr>> = Vec::with_capacity(p);
+  for (i, row) in rows.iter().enumerate() {
+    let Expr::List(cells) = row else {
+      return fail(posdefprm(sigma));
+    };
+    if cells.len() != p {
+      return fail(posdefprm(sigma));
+    }
+    let mut row_exprs = Vec::with_capacity(p);
+    for (j, cell) in cells.iter().enumerate() {
+      let Some(v) = crate::functions::math_ast::try_eval_to_f64(cell) else {
+        return fail(posdefprm(sigma));
+      };
+      sig[i][j] = v;
+      row_exprs.push(cell.clone());
+    }
+    sig_exprs.push(row_exprs);
+  }
+  let scale = sig.iter().flatten().fold(1.0f64, |acc, x| acc.max(x.abs()));
+  let tol = 1e-9 * scale;
+  for i in 0..p {
+    for j in 0..i {
+      if (sig[i][j] - sig[j][i]).abs() > tol {
+        return fail(posdefprm(sigma));
+      }
+    }
+  }
+  // Positive definiteness via leading principal minors (Sylvester).
+  for k in 1..=p {
+    let mut m: Vec<Vec<f64>> = (0..k).map(|i| sig[i][..k].to_vec()).collect();
+    // Gaussian elimination determinant.
+    let mut det = 1.0f64;
+    for col in 0..k {
+      let pivot = (col..k)
+        .max_by(|&a, &b| {
+          m[a][col]
+            .abs()
+            .partial_cmp(&m[b][col].abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .unwrap();
+      if m[pivot][col].abs() < 1e-12 * scale.max(1.0) {
+        det = 0.0;
+        break;
+      }
+      if pivot != col {
+        m.swap(pivot, col);
+        det = -det;
+      }
+      det *= m[col][col];
+      for r in col + 1..k {
+        let f = m[r][col] / m[col][col];
+        for c in col..k {
+          m[r][c] -= f * m[col][c];
+        }
+      }
+    }
+    if det <= 0.0 {
+      return fail(posdefprm(sigma));
+    }
+  }
+
+  // ν: numeric with ν > p - 1.
+  let bprm = || {
+    format!(
+      "WishartMatrixDistribution::bprm: The parameters of distribution {} are not valid. Use DistributionParameterAssumptions to obtain the parameter assumptions.",
+      dist_str()
+    )
+  };
+  let Some(nu_f) = crate::functions::math_ast::try_eval_to_f64(nu) else {
+    return fail(bprm());
+  };
+  if nu_f <= (p as f64) - 1.0 {
+    return fail(bprm());
+  }
+
+  let mut mean_rows = Vec::with_capacity(p);
+  let mut var_rows = Vec::with_capacity(p);
+  for i in 0..p {
+    let mut mean_row = Vec::with_capacity(p);
+    let mut var_row = Vec::with_capacity(p);
+    for j in 0..p {
+      mean_row.push(eval(times(nu.clone(), sig_exprs[i][j].clone()))?);
+      // ν (σ_ij^2 + σ_ii σ_jj)
+      var_row.push(eval(times(
+        nu.clone(),
+        plus(
+          power(sig_exprs[i][j].clone(), int(2)),
+          times(sig_exprs[i][i].clone(), sig_exprs[j][j].clone()),
+        ),
+      ))?);
+    }
+    mean_rows.push(Expr::List(mean_row.into()));
+    var_rows.push(Expr::List(var_row.into()));
+  }
+  Ok((Expr::List(mean_rows.into()), Expr::List(var_rows.into())))
 }
 
 /// Mean and Variance for MultivariatePoissonDistribution[theta0, {theta1, ..., thetan}]
@@ -7490,10 +11661,7 @@ fn pdf_arcsin(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   // condition: a < x < b
   let cond = Expr::Comparison {
     operands: vec![a, x, b],
-    operators: vec![
-      crate::syntax::ComparisonOp::Less,
-      crate::syntax::ComparisonOp::Less,
-    ],
+    operators: vec![ComparisonOp::Less, ComparisonOp::Less],
   };
 
   eval(piecewise(vec![(density, cond)], int(0)))
@@ -7690,7 +11858,7 @@ fn pdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   // (-mu + x): Wolfram canonical ordering
   let neg_mu_plus_x = plus(
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(mu.clone()),
     },
     x.clone(),
@@ -7763,7 +11931,7 @@ fn pdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       let mu_plus_sigma_minus_x = plus(
         plus(mu.clone(), sigma.clone()),
         Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand: Box::new(x.clone()),
         },
       );
@@ -7838,7 +12006,7 @@ fn cdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   // t = (-mu + x) / sigma (canonical ordering)
   let neg_mu_plus_x = plus(
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(mu.clone()),
     },
     x.clone(),
@@ -7861,7 +12029,7 @@ fn cdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       let mu_plus_sigma_minus_x = plus(
         plus(mu.clone(), sigma.clone()),
         Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand: Box::new(x.clone()),
         },
       );
@@ -7879,11 +12047,11 @@ fn cdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
   // Distribute negative sign: (-gamma - delta*h) / Sqrt[2]
   let neg_gamma = Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand: Box::new(gamma.clone()),
   };
   let neg_delta_h = Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand: Box::new(times(delta.clone(), h_of_t.clone())),
   };
   let erfc_arg = divide(plus(neg_gamma, neg_delta_h), sqrt(int(2)));
@@ -8067,7 +12235,7 @@ fn additive_terms(expr: &Expr) -> Vec<Expr> {
       out
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left,
       right,
     } => {
@@ -8232,7 +12400,7 @@ pub fn log_likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let half_log_2pi = divide(plus(log_of(int(2)), log_of(pi())), int(2));
       let result = plus(
         times(
-          crate::functions::math_ast::make_rational_pub(-1, 2),
+          crate::functions::math_ast::make_rational(-1, 2),
           divide(poly, times(s.clone(), s.clone())),
         ),
         times(int(-n), plus(half_log_2pi, log_of(s.clone()))),
@@ -8256,7 +12424,7 @@ fn extract_polynomial_in_var(
       args.iter().cloned().collect()
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left,
       right,
     } => vec![(**left).clone(), (**right).clone()],
@@ -8279,7 +12447,7 @@ fn extract_polynomial_in_var(
         }
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left,
         right,
       } if matches!(left.as_ref(), Expr::Identifier(v) if v == var) => {
@@ -8319,7 +12487,6 @@ fn distribution_raw_moment(
     matches!(e, Expr::Integer(_) | Expr::Real(_))
       || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
   };
-  let factorial = |n: i128| -> i128 { (2..=n).product() };
 
   match dist_name {
     // E[x^k] = p for every k >= 1: the support is {0, 1}, so x^k = x.
@@ -8327,7 +12494,7 @@ fn distribution_raw_moment(
     "BernoulliDistribution" if dargs.len() == 1 => Some(dargs[0].clone()),
     // E[x^k] = k!/lambda^k
     "ExponentialDistribution" if dargs.len() == 1 => {
-      eval(divide(int(factorial(k)), power(dargs[0].clone(), int(k)))).ok()
+      eval(divide(int(fact(k)), power(dargs[0].clone(), int(k)))).ok()
     }
     // E[x^k] = (a^k + a^(k-1) b + ... + b^k)/(k + 1)
     "UniformDistribution" if dargs.len() == 1 => {
@@ -8479,6 +12646,29 @@ fn distribution_raw_moment(
       })
       .ok()
     }
+    // ChiSquareDistribution[nu] = GammaDistribution[nu/2, 2], so
+    // E[x^k] = 2^k*Pochhammer[nu/2, k] = Product_{i=0}^{k-1} (nu + 2 i).
+    // wolframscript prints this as nu*(2 + nu)*(4 + nu)*...*(2(k-1) + nu).
+    "ChiSquareDistribution" if dargs.len() == 1 => {
+      let nu = dargs[0].clone();
+      let mut factors: Vec<Expr> = Vec::with_capacity(k as usize);
+      for i in 0..k {
+        factors.push(if i == 0 {
+          nu.clone()
+        } else {
+          plus(int(2 * i), nu.clone())
+        });
+      }
+      let result = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: factors.into(),
+      };
+      if numeric(&nu) {
+        eval(result).ok()
+      } else {
+        Some(result)
+      }
+    }
     _ => None,
   }
 }
@@ -8486,7 +12676,7 @@ fn distribution_raw_moment(
 /// Exact expectation of a polynomial integrand: Sum[c_k * E[x^k]].
 /// Single power terms with unit coefficient return the moment verbatim
 /// (preserving raw factored templates); combinations evaluate.
-pub fn polynomial_expectation(
+fn polynomial_expectation(
   expr: &Expr,
   var: &str,
   dist_name: &str,
@@ -8618,7 +12808,7 @@ fn frac_to_rational_expr(f: (i128, i128)) -> Expr {
   if f.1 == 1 {
     Expr::Integer(f.0)
   } else {
-    crate::functions::math_ast::make_rational_pub(f.0, f.1)
+    crate::functions::math_ast::make_rational(f.0, f.1)
   }
 }
 
@@ -8629,10 +12819,7 @@ fn frac_to_rational_expr(f: (i128, i128)) -> Expr {
 /// term styles are position-dependent (the first non-unit-variance term
 /// prints as -1/q*v^2, later ones as -v^2/q), so the structure mirrors
 /// what the parser builds for those strings.
-pub fn pdf_multinormal(
-  dargs: &[Expr],
-  x: Expr,
-) -> Result<Expr, InterpreterError> {
+fn pdf_multinormal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = || Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -8674,16 +12861,16 @@ pub fn pdf_multinormal(
   }
 
   let pow2 = |e: Expr| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(e),
     right: Box::new(int(2)),
   };
   let neg = |e: Expr| Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand: Box::new(e),
   };
   let div2 = |a: Expr, b: Expr| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(a),
     right: Box::new(b),
   };
@@ -8706,7 +12893,7 @@ pub fn pdf_multinormal(
     } else if !first_scaled_seen {
       first_scaled_seen = true;
       times(
-        crate::functions::math_ast::make_rational_pub(-1, variances[i]),
+        crate::functions::math_ast::make_rational(-1, variances[i]),
         sq,
       )
     } else {
@@ -8722,7 +12909,7 @@ pub fn pdf_multinormal(
     int(2),
   );
   let e_pow = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(Expr::Identifier("E".to_string())),
     right: Box::new(exponent),
   };
@@ -8749,9 +12936,9 @@ pub fn pdf_multinormal(
       args: vec![int(2 * det)].into(),
     })?;
     let pi_pow = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left: Box::new(pi()),
-      right: Box::new(crate::functions::math_ast::make_rational_pub(3, 2)),
+      right: Box::new(crate::functions::math_ast::make_rational(3, 2)),
     };
     match &sqrt_part {
       Expr::Integer(s) => Expr::FunctionCall {
@@ -8846,7 +13033,7 @@ pub fn empirical_distribution_ast(
     uniques.push(if v.1 == 1 {
       Expr::Integer(v.0)
     } else {
-      crate::functions::math_ast::make_rational_pub(v.0, v.1)
+      crate::functions::math_ast::make_rational(v.0, v.1)
     });
   }
   Ok(Expr::FunctionCall {
@@ -8890,7 +13077,7 @@ fn frac_expr((n, d): (i128, i128)) -> Expr {
   if d == 1 {
     Expr::Integer(n)
   } else {
-    crate::functions::math_ast::make_rational_pub(n, d)
+    crate::functions::math_ast::make_rational(n, d)
   }
 }
 
@@ -9078,7 +13265,7 @@ fn histogram_parts(
 /// where cumᵢ accumulates wᵢ·widthᵢ in the stored arithmetic (machine reals
 /// or exact rationals). A numeric point collapses to its value through
 /// ordinary evaluation.
-pub fn histogram_pdf_cdf(
+fn histogram_pdf_cdf(
   dargs: &[Expr],
   x: &Expr,
   cumulative: bool,
@@ -9234,7 +13421,7 @@ fn histogram_moment(dargs: &[Expr], k: u32) -> Option<Expr> {
 }
 
 /// Extract (weights, values) from an empirical DataDistribution.
-pub fn data_distribution_parts(
+fn data_distribution_parts(
   dargs: &[Expr],
 ) -> Option<(Vec<(i128, i128)>, Vec<(i128, i128)>)> {
   if dargs.len() != 4 {
@@ -9292,12 +13479,12 @@ pub fn data_distribution_moment(dargs: &[Expr], k: u32) -> Option<Expr> {
   Some(if den == 1 {
     Expr::Integer(num)
   } else {
-    crate::functions::math_ast::make_rational_pub(num, den)
+    crate::functions::math_ast::make_rational(num, den)
   })
 }
 
 /// PDF (point mass) and CDF (left-closed step sum) at a numeric point.
-pub fn data_distribution_pdf_cdf(
+fn data_distribution_pdf_cdf(
   dargs: &[Expr],
   x: &Expr,
   cumulative: bool,
@@ -9330,7 +13517,7 @@ pub fn data_distribution_pdf_cdf(
   Some(if den == 1 {
     Expr::Integer(num)
   } else {
-    crate::functions::math_ast::make_rational_pub(num, den)
+    crate::functions::math_ast::make_rational(num, den)
   })
 }
 
@@ -9342,7 +13529,7 @@ pub fn data_distribution_pdf_cdf(
 /// support conditions, and the coefficient quirks (6*E^...,
 /// E^.../Sqrt[2*Pi], (3*E^...)/Sqrt[2*Pi], and the lambda = 2 special
 /// case E^...*Sqrt[2/Pi]).
-pub fn pdf_product_distribution(
+fn pdf_product_distribution(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -9395,16 +13582,16 @@ pub fn pdf_product_distribution(
   }
 
   let neg = |e: Expr| Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand: Box::new(e),
   };
   let pow2 = |e: Expr| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(e),
     right: Box::new(int(2)),
   };
   let div2 = |a: Expr, b: Expr| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(a),
     right: Box::new(b),
   };
@@ -9424,7 +13611,7 @@ pub fn pdf_product_distribution(
         let sq = pow2(v);
         terms.push(if !first_scaled_seen {
           first_scaled_seen = true;
-          times(crate::functions::math_ast::make_rational_pub(-1, 2), sq)
+          times(crate::functions::math_ast::make_rational(-1, 2), sq)
         } else {
           neg(div2(sq, int(2)))
         });
@@ -9438,13 +13625,13 @@ pub fn pdf_product_distribution(
         });
         conds.push(Expr::Comparison {
           operands: vec![v, int(0)],
-          operators: vec![crate::syntax::ComparisonOp::GreaterEqual],
+          operators: vec![ComparisonOp::GreaterEqual],
         });
       }
     }
   }
   let e_pow = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(Expr::Identifier("E".to_string())),
     right: Box::new(Expr::FunctionCall {
       name: "Plus".to_string(),
@@ -9513,7 +13700,11 @@ fn uniform_sum_n(dargs: &[Expr]) -> Option<i128> {
 }
 
 fn fact(n: i128) -> i128 {
-  (2..=n).product::<i128>().max(1)
+  let mut result = 1i128;
+  for i in 2..=n {
+    result *= i;
+  }
+  result
 }
 
 /// (x - k)^p as the raw print form (-k + x)^p, or (n - k - x)^p when
@@ -9597,15 +13788,24 @@ fn inclusion_exclusion_piece(
 fn cdf_expanded_coeffs(n: i128, j: i128) -> Vec<(i128, i128)> {
   let nf = fact(n);
   let mut coeffs = vec![0i128; (n + 1) as usize];
-  for k in 0..=j {
-    let sign = if k % 2 == 0 { 1 } else { -1 };
-    let c_nk = crate::functions::binomial_coeff(n, k) * sign;
+  let mut c_nk = 1i128; // C(n,k)
+  // (-1)^0 C(n,0) (x-0)^n = x^n
+  coeffs[n as usize] = 1;
+  for k in 1..=j {
     // (x - k)^n = sum_i C(n,i) x^i (-k)^(n-i)
+    let sign = if k % 2 == 0 { 1 } else { -1 };
+    c_nk = (c_nk * (n - k + 1)) / k; // C(n,k)
+    let mut c_ni = 1i128; // C(n,i)
+    let mut mk_ni = 1i128; // (-k)^(n-i)
+    for _ in 0..n {
+      mk_ni *= -k;
+    }
     for i in 0..=n {
-      let mut term = c_nk * crate::functions::binomial_coeff(n, i);
-      for _ in 0..(n - i) {
-        term *= -k;
+      if i > 0 {
+        c_ni = (c_ni * (n - i + 1)) / i; // C(n,i)
+        mk_ni /= -k; // (-k)^(n-i)
       }
+      let term = sign * c_nk * c_ni * mk_ni;
       coeffs[i as usize] += term;
     }
   }
@@ -9654,7 +13854,7 @@ fn coeff_power_term(num: i128, den: i128, base: &Expr, i: i128) -> Expr {
   // Pull the sign out so Plus prints "- (3*x)/2" instead of "+ (-3*x)/2"
   if num < 0 {
     return Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(coeff_power_term(-num, den, base, i)),
     };
   }
@@ -9684,10 +13884,7 @@ fn coeff_power_term(num: i128, den: i128, base: &Expr, i: i128) -> Expr {
   }
 }
 
-pub fn pdf_uniform_sum(
-  dargs: &[Expr],
-  x: Expr,
-) -> Result<Expr, InterpreterError> {
+fn pdf_uniform_sum(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -9760,10 +13957,7 @@ pub fn pdf_uniform_sum(
   Ok(piecewise(pairs, int(0)))
 }
 
-pub fn cdf_uniform_sum(
-  dargs: &[Expr],
-  x: Expr,
-) -> Result<Expr, InterpreterError> {
+fn cdf_uniform_sum(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "CDF".to_string(),
     args: vec![
@@ -9911,7 +14105,7 @@ fn numeric_floor(x: &Expr) -> Option<i128> {
 /// wrapped in Piecewise over 0 <= k <= n (the denominator evaluates
 /// when the parameters are numeric). Numeric k gives the exact value;
 /// non-integers and out-of-range points give 0.
-pub fn pdf_beta_binomial(
+fn pdf_beta_binomial(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -10012,7 +14206,7 @@ pub fn pdf_beta_binomial(
 /// CDF[BetaBinomialDistribution[a, b, n], x] for numeric x: partial
 /// PMF sums (the symbolic form uses HypergeometricPFQ internals that
 /// stay unevaluated here).
-pub fn cdf_beta_binomial(
+fn cdf_beta_binomial(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -10078,10 +14272,7 @@ fn beta_prime_general_body(
   eval(divide(num, den))
 }
 
-pub fn pdf_beta_prime(
-  dargs: &[Expr],
-  x: Expr,
-) -> Result<Expr, InterpreterError> {
+fn pdf_beta_prime(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -10214,10 +14405,7 @@ pub fn pdf_beta_prime(
 
 /// CDF[BetaPrimeDistribution[p, q], x] =
 /// Piecewise[{{BetaRegularized[x/(1+x), p, q], x > 0}}, 0].
-pub fn cdf_beta_prime(
-  dargs: &[Expr],
-  x: Expr,
-) -> Result<Expr, InterpreterError> {
+fn cdf_beta_prime(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "CDF".to_string(),
     args: vec![
@@ -10302,7 +14490,7 @@ pub fn cdf_beta_prime(
 /// forms for l = 0. Odd v >= 5 with l != 0 stays unevaluated (Wolfram
 /// collapses those into growing Bessel polynomials), as do points for
 /// odd v (Wolfram switches to BesselI forms there).
-pub fn pdf_noncentral_chi_square(
+fn pdf_noncentral_chi_square(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -10527,7 +14715,7 @@ pub fn pdf_noncentral_chi_square(
 /// CDF[NoncentralChiSquareDistribution[v, l], x] =
 /// Piecewise[{{MarcumQ[v/2, Sqrt[l], 0, Sqrt[x]], x > 0}}, 0], with
 /// the four-argument MarcumQ evaluating numerically for machine reals.
-pub fn cdf_noncentral_chi_square(
+fn cdf_noncentral_chi_square(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -10592,7 +14780,7 @@ pub fn cdf_noncentral_chi_square(
 /// at x >= m. For k = 2 the coefficient merges into s Sqrt[2 Pi], and
 /// when both branches canonicalize identically (k = 2 with m = 0) the
 /// Piecewise collapses to the single expression, as in wolframscript.
-pub fn pdf_exponential_power(
+fn pdf_exponential_power(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -10689,9 +14877,7 @@ pub fn pdf_exponential_power(
   } else {
     return Ok(unevaluated(dargs, x));
   };
-  if crate::syntax::expr_to_string(&b_plus)
-    == crate::syntax::expr_to_string(&b_minus)
-  {
+  if expr_to_string(&b_plus) == expr_to_string(&b_minus) {
     return Ok(b_plus);
   }
   let cond = comparison(x, ComparisonOp::GreaterEqual, m);
@@ -10701,7 +14887,7 @@ pub fn pdf_exponential_power(
 /// CDF[ExponentialPowerDistribution[k, m, s], x] =
 /// Piecewise[{{GammaRegularized[1/k, ((m-x)/s)^k/k]/2, x < m}},
 ///           1 - GammaRegularized[1/k, ((-m+x)/s)^k/k]/2].
-pub fn cdf_exponential_power(
+fn cdf_exponential_power(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -10789,7 +14975,7 @@ fn rice_numeric(e: &Expr) -> Option<f64> {
 /// Piecewise[{{E^((-a^2 - x^2)/(2 b^2)) x BesselI[0, a x/b^2]/b^2,
 /// x > 0}}, 0], evaluated so numeric parameters collapse the way
 /// wolframscript prints them.
-pub fn pdf_rice(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn pdf_rice(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -10854,7 +15040,7 @@ pub fn pdf_rice(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
 /// CDF[RiceDistribution[a, b], x] =
 /// Piecewise[{{MarcumQ[1, a/b, 0, x/b], x > 0}}, 0].
-pub fn cdf_rice(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn cdf_rice(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "CDF".to_string(),
     args: vec![
@@ -11039,17 +15225,14 @@ pub fn rice_mean_variance(
       eval(times(int(rd), e_half))?
     };
     // Single-factor denominators print without parentheses
-    let den_str = crate::syntax::expr_to_string(&denominator);
+    let den_str = expr_to_string(&denominator);
     let den_str = if den_str.contains('*') {
       format!("({den_str})")
     } else {
       den_str
     };
-    let mean = Expr::Raw(format!(
-      "({})/{}",
-      crate::syntax::expr_to_string(&numerator),
-      den_str
-    ));
+    let mean =
+      Expr::Raw(format!("({})/{}", expr_to_string(&numerator), den_str));
     // Var = base - Pi sum^2 / (q^2 2 e^k / b^2)
     let base = eval(plus(pow2(a), times(int(2), pow2(b))))?;
     let denom = eval(divide(
@@ -11058,9 +15241,9 @@ pub fn rice_mean_variance(
     ))?;
     let var = Expr::Raw(format!(
       "{} - (Pi*({})^2)/({})",
-      crate::syntax::expr_to_string(&base),
-      crate::syntax::expr_to_string(&sum),
-      crate::syntax::expr_to_string(&denom)
+      expr_to_string(&base),
+      expr_to_string(&sum),
+      expr_to_string(&denom)
     ));
     return Ok((mean, var));
   }
@@ -11188,10 +15371,7 @@ fn ms_z(a: &Expr, b: &Expr, x: &Expr) -> Expr {
 /// the Gumbel branch for g == 0 (full real support) and the
 /// generalized branch with support u > 0 otherwise; symbolic g keeps
 /// both pieces.
-pub fn pdf_min_stable(
-  dargs: &[Expr],
-  x: Expr,
-) -> Result<Expr, InterpreterError> {
+fn pdf_min_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -11347,10 +15527,7 @@ pub fn pdf_min_stable(
 /// CDF[MinStableDistribution[a, b, g], x]: 1 - E^(-E^((-a+x)/b)) for
 /// g == 0; 1 - E^(-u^(-1/g)) on u > 0 otherwise, with default 1 above
 /// the support for g > 0 and 0 below it for g < 0.
-pub fn cdf_min_stable(
-  dargs: &[Expr],
-  x: Expr,
-) -> Result<Expr, InterpreterError> {
+fn cdf_min_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "CDF".to_string(),
     args: vec![
@@ -11386,7 +15563,7 @@ pub fn cdf_min_stable(
     one_minus(power(
       e(),
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(power(
           u,
           call("Times", vec![int(-1), power(g.clone(), int(-1))]),
@@ -11460,7 +15637,7 @@ pub fn cdf_min_stable(
 /// Mean and variance for MinStableDistribution: Gumbel constants at
 /// g == 0, Gamma-function forms below the existence thresholds (g < 1
 /// for the mean, 2 g < 1 for the variance), Indeterminate beyond.
-pub fn min_stable_mean_variance(
+fn min_stable_mean_variance(
   a: &Expr,
   b: &Expr,
   g: &Expr,
@@ -11662,10 +15839,7 @@ fn msx_z(a: &Expr, b: &Expr, x: &Expr) -> Expr {
 }
 
 /// PDF[MaxStableDistribution[a, b, g], x] — mirror of MinStable.
-pub fn pdf_max_stable(
-  dargs: &[Expr],
-  x: Expr,
-) -> Result<Expr, InterpreterError> {
+fn pdf_max_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -11704,7 +15878,7 @@ pub fn pdf_max_stable(
           "Plus",
           vec![
             Expr::UnaryOp {
-              op: crate::syntax::UnaryOperator::Minus,
+              op: UnaryOperator::Minus,
               operand: Box::new(power(e(), z)),
             },
             call("Times", vec![int(-1), neg_za]),
@@ -11755,7 +15929,7 @@ pub fn pdf_max_stable(
           "Plus",
           vec![
             Expr::UnaryOp {
-              op: crate::syntax::UnaryOperator::Minus,
+              op: UnaryOperator::Minus,
               operand: Box::new(power(e(), z.clone())),
             },
             z,
@@ -11813,10 +15987,7 @@ pub fn pdf_max_stable(
 
 /// CDF[MaxStableDistribution[a, b, g], x] = E^(-u^(-1/g)) on u > 0,
 /// with 0 below the support for g > 0 and 1 above it for g < 0.
-pub fn cdf_max_stable(
-  dargs: &[Expr],
-  x: Expr,
-) -> Result<Expr, InterpreterError> {
+fn cdf_max_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "CDF".to_string(),
     args: vec![
@@ -11840,7 +16011,7 @@ pub fn cdf_max_stable(
     power(
       e(),
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(power(e(), msx_z(&a, &b, at))),
       },
     )
@@ -11850,7 +16021,7 @@ pub fn cdf_max_stable(
     power(
       e(),
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(power(
           u,
           call("Times", vec![int(-1), power(g.clone(), int(-1))]),
@@ -11875,7 +16046,7 @@ pub fn cdf_max_stable(
       Ok(power(
         e(),
         Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand: Box::new(power(e(), z)),
         },
       ))
@@ -11934,7 +16105,7 @@ pub fn cdf_max_stable(
 
 /// Mean and variance for MaxStableDistribution (the variance matches
 /// MinStable; the mean mirrors its sign structure).
-pub fn max_stable_mean_variance(
+fn max_stable_mean_variance(
   a: &Expr,
   b: &Expr,
   g: &Expr,
@@ -12030,10 +16201,7 @@ fn triangular_params(
 /// 2(b-x)/((b-a)(b-c)) on c < x <= b, with the numeric coefficient
 /// evaluated but the (b - x) factor kept unexpanded, as wolframscript
 /// prints it.
-pub fn pdf_triangular(
-  dargs: &[Expr],
-  x: Expr,
-) -> Result<Expr, InterpreterError> {
+fn pdf_triangular(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -12159,10 +16327,7 @@ pub fn pdf_triangular(
 
 /// CDF[TriangularDistribution[{a, b}, c], x] with the quadratic pieces
 /// and a third {1, x > b} piece.
-pub fn cdf_triangular(
-  dargs: &[Expr],
-  x: Expr,
-) -> Result<Expr, InterpreterError> {
+fn cdf_triangular(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "CDF".to_string(),
     args: vec![
@@ -12326,7 +16491,7 @@ pub fn cdf_triangular(
 
 /// Mean (a + b + c)/3 and variance
 /// (a^2 - a b + b^2 - a c - b c + c^2)/18 for TriangularDistribution.
-pub fn triangular_mean_variance(
+fn triangular_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   let Some((a, b, c)) = triangular_params(dargs)? else {
@@ -12439,7 +16604,7 @@ fn maxwell_rational(e: &Expr) -> Option<(i128, i128)> {
 
 /// PDF[MaxwellDistribution[s], x] =
 /// Piecewise[{{Sqrt[2/Pi] x^2 E^(-x^2/(2 s^2))/s^3, x > 0}}, 0].
-pub fn pdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn pdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -12519,7 +16684,7 @@ pub fn pdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 /// CDF[MaxwellDistribution[s], x] =
 /// Piecewise[{{-Sqrt[2/Pi] x E^(-x^2/(2 s^2))/s + Erf[x/(Sqrt[2] s)],
 /// x > 0}}, 0].
-pub fn cdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn cdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "CDF".to_string(),
     args: vec![
@@ -12553,7 +16718,7 @@ pub fn cdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
         ))?,
       );
       let term1 = Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(maxwell_term(sq, sp, at.clone(), e_part)),
       };
       let erf = call(
@@ -12629,7 +16794,7 @@ pub fn cdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 /// PDF[BirnbaumSaundersDistribution[a, l], x] =
 /// Piecewise[{{(1 + l x)/(2 a E^((-1 + l x)^2/(2 a^2 l x)) Sqrt[2 Pi]
 /// Sqrt[l x^3]), x > 0}}, 0].
-pub fn pdf_birnbaum_saunders(
+fn pdf_birnbaum_saunders(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -12690,7 +16855,7 @@ pub fn pdf_birnbaum_saunders(
 
 /// CDF[BirnbaumSaundersDistribution[a, l], x] =
 /// Piecewise[{{(1 + Erf[(-1 + l x)/(Sqrt[2] a Sqrt[l x])])/2, x > 0}}, 0].
-pub fn cdf_birnbaum_saunders(
+fn cdf_birnbaum_saunders(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -12742,7 +16907,7 @@ pub fn cdf_birnbaum_saunders(
 /// PDF[LevyDistribution[m, s], x] =
 /// Piecewise[{{(s/(-m + x))^(3/2)/(E^(s/(2 (-m + x))) Sqrt[2 Pi] s),
 /// -m + x > 0}}, 0].
-pub fn pdf_levy(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn pdf_levy(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -12793,7 +16958,7 @@ pub fn pdf_levy(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
 /// CDF[LevyDistribution[m, s], x] =
 /// Piecewise[{{Erfc[Sqrt[s/(-m + x)]/Sqrt[2]], -m + x > 0}}, 0].
-pub fn cdf_levy(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn cdf_levy(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "CDF".to_string(),
     args: vec![
@@ -12838,7 +17003,7 @@ pub fn cdf_levy(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
 /// PDF[LindleyDistribution[d], x] =
 /// Piecewise[{{(d^2 (1 + x))/((1 + d) E^(d x)), x > 0}}, 0].
-pub fn pdf_lindley(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn pdf_lindley(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -12878,7 +17043,7 @@ pub fn pdf_lindley(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
 /// CDF[LindleyDistribution[d], x] =
 /// Piecewise[{{1 - (1 + d + d x)/((1 + d) E^(d x)), x > 0}}, 0].
-pub fn cdf_lindley(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn cdf_lindley(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "CDF".to_string(),
     args: vec![
@@ -12945,10 +17110,7 @@ pub fn maxwell_mean_variance(
   } else {
     // wolframscript puts the Pi-sum factor first; assembled raw since
     // evaluation would reorder it
-    Expr::Raw(format!(
-      "((-8 + 3*Pi)*{}^2)/Pi",
-      crate::syntax::expr_to_string(s)
-    ))
+    Expr::Raw(format!("((-8 + 3*Pi)*{}^2)/Pi", expr_to_string(s)))
   };
   Ok((mean, var))
 }
@@ -12964,7 +17126,7 @@ fn wigner_params(dargs: &[Expr]) -> Option<(Expr, Expr)> {
 
 /// PDF[WignerSemicircleDistribution[a, r], x] =
 /// Piecewise[{{2 Sqrt[1 - (x-a)^2/r^2]/(Pi r), a - r < x < a + r}}, 0].
-pub fn pdf_wigner_semicircle(
+fn pdf_wigner_semicircle(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -13048,7 +17210,7 @@ pub fn pdf_wigner_semicircle(
 /// CDF[WignerSemicircleDistribution[a, r], x] =
 /// 1/2 + (x-a) Sqrt[1 - (x-a)^2/r^2]/(Pi r) + ArcSin[(x-a)/r]/Pi
 /// inside the support, 1 at and above a + r.
-pub fn cdf_wigner_semicircle(
+fn cdf_wigner_semicircle(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -13170,7 +17332,7 @@ pub fn cdf_wigner_semicircle(
 }
 
 /// Mean a and variance r^2/4 for WignerSemicircleDistribution.
-pub fn wigner_mean_variance(
+fn wigner_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   let Some((a, r)) = wigner_params(dargs) else {
@@ -13219,7 +17381,7 @@ fn sech_arg(m: &Expr, s: &Expr, x: &Expr) -> Result<Expr, InterpreterError> {
 }
 
 /// PDF[SechDistribution[m, s], x] = Sech[Pi (x - m)/(2 s)]/(2 s).
-pub fn pdf_sech(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn pdf_sech(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -13250,7 +17412,7 @@ pub fn pdf_sech(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
 /// CDF[SechDistribution[m, s], x] =
 /// 2 ArcTan[E^(Pi (x - m)/(2 s))]/Pi.
-pub fn cdf_sech(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn cdf_sech(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "CDF".to_string(),
     args: vec![
@@ -13287,7 +17449,7 @@ pub fn cdf_sech(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 }
 
 /// Mean m and variance s^2 for SechDistribution.
-pub fn sech_mean_variance(
+fn sech_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   let Some((m, s)) = sech_params(dargs) else {
@@ -13303,7 +17465,7 @@ pub fn sech_mean_variance(
 /// wolframscript's sign folding: numeric nonzero m keeps the
 /// (m - x)/s exponent, m = 0 and symbolic m flip into the
 /// 1/E^((-m + x)/s) reciprocal.
-pub fn pdf_moyal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn pdf_moyal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -13421,7 +17583,7 @@ pub fn pdf_moyal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 }
 
 /// CDF[MoyalDistribution[m, s], x] = Erfc[E^(-(x-m)/(2 s))/Sqrt[2]].
-pub fn cdf_moyal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn cdf_moyal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "CDF".to_string(),
     args: vec![
@@ -13522,10 +17684,7 @@ pub fn moyal_mean_variance(
 /// For rational a = p/q wolframscript splits the power into
 /// p^(x-n) q^(n-x) and merges any matching prime-power part of n into
 /// the bases (n = 2, a = 1/2 gives 2^(3-x)).
-pub fn pdf_borel_tanner(
-  dargs: &[Expr],
-  x: Expr,
-) -> Result<Expr, InterpreterError> {
+fn pdf_borel_tanner(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -13673,7 +17832,7 @@ pub fn pdf_borel_tanner(
 
 /// Mean n/(1 - a) and variance a n/(1 - a)^3 for
 /// BorelTannerDistribution.
-pub fn borel_tanner_mean_variance(
+fn borel_tanner_mean_variance(
   a: &Expr,
   n: &Expr,
 ) -> Result<(Expr, Expr), InterpreterError> {
@@ -13700,9 +17859,9 @@ fn benktander_valid(
         eval(divide(times(a.clone(), plus(a.clone(), int(1))), int(2)))?;
       crate::emit_message(&format!(
         "BenktanderGibratDistribution::lsseq: Parameter {} at position 2 in {} is expected to be less than or equal to {}.",
-        crate::syntax::expr_to_string(b),
-        crate::syntax::expr_to_string(context),
-        crate::syntax::expr_to_string(&bound_expr)
+        expr_to_string(b),
+        expr_to_string(context),
+        expr_to_string(&bound_expr)
       ));
       return Ok(false);
     }
@@ -13711,7 +17870,7 @@ fn benktander_valid(
 }
 
 /// PDF[BenktanderGibratDistribution[a, b], x] on x >= 1.
-pub fn pdf_benktander_gibrat(
+fn pdf_benktander_gibrat(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -13858,7 +18017,7 @@ pub fn pdf_benktander_gibrat(
 
 /// CDF[BenktanderGibratDistribution[a, b], x] =
 /// 1 - x^(-1 - a)(1 + 2 b Log[x]/a)/E^(b Log[x]^2) on x >= 1.
-pub fn cdf_benktander_gibrat(
+fn cdf_benktander_gibrat(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -13954,7 +18113,7 @@ pub fn cdf_benktander_gibrat(
 
 /// Mean 1 + 1/a and the Erfc-based variance for
 /// BenktanderGibratDistribution.
-pub fn benktander_gibrat_mean_variance(
+fn benktander_gibrat_mean_variance(
   a: &Expr,
   b: &Expr,
 ) -> Result<(Expr, Expr), InterpreterError> {
@@ -14040,7 +18199,7 @@ pub fn benktander_gibrat_mean_variance(
 
 /// PDF[GumbelDistribution[a, b], x] = E^(-E^z + z)/b with
 /// z = (x - a)/b (the minimum-extreme-value Gumbel; [] is (0, 1)).
-pub fn pdf_gumbel(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn pdf_gumbel(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -14082,7 +18241,7 @@ pub fn pdf_gumbel(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       "Plus",
       vec![
         Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand: Box::new(power(e(), z.clone())),
         },
         z,
@@ -14109,7 +18268,7 @@ pub fn pdf_gumbel(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 }
 
 /// CDF[GumbelDistribution[a, b], x] = 1 - E^(-E^((x - a)/b)).
-pub fn cdf_gumbel(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn cdf_gumbel(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "CDF".to_string(),
     args: vec![
@@ -14155,7 +18314,7 @@ pub fn cdf_gumbel(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
             power(
               e(),
               Expr::UnaryOp {
-                op: crate::syntax::UnaryOperator::Minus,
+                op: UnaryOperator::Minus,
                 operand: Box::new(power(e(), z)),
               },
             ),
@@ -14175,7 +18334,7 @@ pub fn cdf_gumbel(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
 /// Mean a - b EulerGamma and variance b^2 Pi^2/6 for
 /// GumbelDistribution.
-pub fn gumbel_mean_variance(
+fn gumbel_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   let (a, b) = match dargs {
@@ -14208,7 +18367,7 @@ pub fn gumbel_mean_variance(
 /// PDF[ZipfDistribution[r], x] = x^(-1-r)/Zeta[1+r] on x >= 1;
 /// PDF[ZipfDistribution[n, r], x] uses HarmonicNumber[n, 1+r] on
 /// 1 <= x <= n.
-pub fn pdf_zipf(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn pdf_zipf(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -14282,7 +18441,7 @@ pub fn pdf_zipf(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 /// Mean and variance for ZipfDistribution: Zeta ratios with existence
 /// thresholds (r > 1, r > 2) for the infinite form, HarmonicNumber
 /// ratios for the bounded form.
-pub fn zipf_mean_variance(
+fn zipf_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
@@ -14399,7 +18558,7 @@ pub fn zipf_mean_variance(
 /// PDF for BenfordDistribution[b] (Benford's law, base b): the probability of
 /// leading digit d is Log[1 + 1/d]/Log[b] for d = 1 … b-1, and 0 otherwise.
 /// Only an integer base b >= 2 is handled.
-pub fn pdf_benford(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn pdf_benford(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "PDF".to_string(),
     args: vec![
@@ -14454,7 +18613,7 @@ pub fn pdf_benford(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
 /// CDF for BenfordDistribution[b]: the leading-digit probabilities telescope to
 /// Log[1 + Floor[x]]/Log[b] on 1 <= x < b, with 0 below 1 and 1 at or above b.
-pub fn cdf_benford(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn cdf_benford(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
     name: "CDF".to_string(),
     args: vec![
@@ -14523,7 +18682,7 @@ pub fn cdf_benford(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 /// the closed form b - Log[b!]/Log[b]; the variance is the exact second-moment
 /// sum minus the squared mean (its symbolic form may differ from wolframscript
 /// while remaining value-correct).
-pub fn benford_mean_variance(
+fn benford_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   let [b] = dargs else {
@@ -14580,7 +18739,7 @@ fn benktander_weibull_valid(a: &Expr, b: &Expr) -> bool {
 
 /// PDF for BenktanderWeibullDistribution[a, b] on x >= 1:
 /// E^((a (1 - x^b))/b) x^(b-2) (1 - b + a x^b).
-pub fn pdf_benktander_weibull(
+fn pdf_benktander_weibull(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -14639,7 +18798,7 @@ pub fn pdf_benktander_weibull(
 
 /// CDF for BenktanderWeibullDistribution[a, b] on x >= 1:
 /// 1 - E^((a (1 - x^b))/b) x^(b-1).
-pub fn cdf_benktander_weibull(
+fn cdf_benktander_weibull(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -14694,7 +18853,7 @@ pub fn cdf_benktander_weibull(
 
 /// Mean and variance for BenktanderWeibullDistribution[a, b]:
 /// Mean = 1 + 1/a; Variance = (-1 + 2 a E^(a/b) ExpIntegralE[1 - 1/b, a/b]/b)/a^2.
-pub fn benktander_weibull_mean_variance(
+fn benktander_weibull_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   let [a, b] = dargs else {
@@ -14732,7 +18891,7 @@ pub fn benktander_weibull_mean_variance(
 
 /// PDF for SinghMaddalaDistribution[q, a, b] (Burr XII) on x > 0:
 /// a q x^(a-1) (1 + (x/b)^a)^(-1-q) / b^a.
-pub fn pdf_singh_maddala(
+fn pdf_singh_maddala(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -14754,7 +18913,7 @@ pub fn pdf_singh_maddala(
 
 /// CDF for SinghMaddalaDistribution[q, a, b] on x > 0:
 /// 1 - (1 + (x/b)^a)^(-q).
-pub fn cdf_singh_maddala(
+fn cdf_singh_maddala(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -14776,7 +18935,7 @@ pub fn cdf_singh_maddala(
 /// Mean and variance for SinghMaddalaDistribution[q, a, b], each valid only
 /// above a moment threshold (a q > 1 for the mean, a q > 2 for the variance)
 /// and Indeterminate otherwise.
-pub fn singh_maddala_mean_variance(
+fn singh_maddala_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   if dargs.len() != 3 {
@@ -14830,7 +18989,7 @@ pub fn singh_maddala_mean_variance(
 
 /// Mean and variance for the 4-argument BetaPrimeDistribution[p, q, b, a]
 /// (power b, scale a), each existing only above a moment threshold in b*q.
-pub fn beta_prime4_mean_variance(
+fn beta_prime4_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   let (p, q, b, a) = (
@@ -14883,7 +19042,7 @@ pub fn beta_prime4_mean_variance(
 
 /// Mean and variance for the 3-argument ParetoDistribution[k, a, m]
 /// (Type II / Lomax, scale k, location m).
-pub fn pareto3_mean_variance(
+fn pareto3_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   let (k, a, m) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
@@ -14915,7 +19074,7 @@ pub fn pareto3_mean_variance(
 
 /// Mean and variance for the 4-argument ParetoDistribution[k, a, g, m]
 /// (extra shape g), each existing only above a threshold in a/g.
-pub fn pareto4_mean_variance(
+fn pareto4_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   let (k, a, g, m) = (

@@ -48,6 +48,38 @@ You can easily install it with [Rust's cargo](https://doc.rust-lang.org/cargo/):
 cargo install woxi
 ```
 
+### JavaScript / Node.js
+
+Woxi is also available [on npm](https://www.npmjs.com/package/woxi)
+as a WebAssembly build with JavaScript bindings (see [npm/](./npm)):
+
+```sh
+npm install woxi
+```
+
+```js
+const { evaluate } = require("woxi")
+evaluate("Plus[1, 2]")  //=> "3"
+```
+
+### Python
+
+Woxi is also available [on PyPI](https://pypi.org/project/woxi/)
+as a Python package with pre-built wheels:
+
+```sh
+pip install woxi
+```
+
+```python
+import woxi
+
+woxi.interpret("Plus[1, 2]")  # => '3'
+```
+
+See [woxi-py/readme.md](woxi-py/readme.md) for the full Python API.
+
+
 ### From Source
 
 If you want to build Woxi from source, you need to have Rust installed.

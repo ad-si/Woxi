@@ -268,6 +268,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "ClearAttributes" | "AssociateTo" | "KeyDropFrom" | "Inactivate" => {
       vec!["HoldFirst", "Protected"]
     }
+    "ApplyTo" => vec!["HoldFirst", "Protected"],
     "Set" => vec!["HoldFirst", "Protected", "SequenceHold"],
     "SetDelayed" | "TagSetDelayed" | "UpSetDelayed" => {
       vec!["HoldAll", "Protected", "SequenceHold"]
@@ -319,10 +320,11 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "ShearingTransform"
     | "AffineTransform"
     | "NetGraph"
+    | "FunctionInterpolation"
     | "CMYKColor" => {
       vec!["Protected", "ReadProtected"]
     }
-    "Plot3D" | "FunctionInterpolation" => {
+    "Plot3D" => {
       vec!["HoldAll", "Protected", "ReadProtected"]
     }
 
@@ -657,6 +659,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
 
     // NHoldAll + Protected + ReadProtected
     "InverseFunction" => vec!["NHoldAll", "Protected", "ReadProtected"],
+    "PrintTemporary" => vec!["Protected", "ReadProtected"],
 
     // Protected + ReadProtected (additional)
     "Sound"

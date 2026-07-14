@@ -8,7 +8,7 @@
 //! unevaluated.
 
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 use std::collections::BTreeMap;
 
 type Frac = (i128, i128);
@@ -168,7 +168,6 @@ fn reduce(p: &Poly, basis: &[Poly]) -> Option<Poly> {
 /// Render a `Poly` (lex order, leading term first) back to an `Expr`, then
 /// evaluate it so the result is canonicalized like wolframscript.
 fn poly_to_expr(p: &Poly, vars: &[String]) -> Expr {
-  use crate::syntax::BinaryOperator;
   if p.is_empty() {
     return Expr::Integer(0);
   }
@@ -548,7 +547,7 @@ pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             factors.push(Expr::Identifier(vars[vi].clone()));
           } else if e > 1 {
             factors.push(Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Power,
+              op: BinaryOperator::Power,
               left: Box::new(Expr::Identifier(vars[vi].clone())),
               right: Box::new(Expr::Integer(e as i128)),
             });
@@ -591,7 +590,7 @@ fn expr_to_poly(expr: &Expr, vars: &[String]) -> Option<Poly> {
         }
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left,
         right,
       } => {
@@ -599,7 +598,7 @@ fn expr_to_poly(expr: &Expr, vars: &[String]) -> Option<Poly> {
         split(right, sign, out);
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Minus,
+        op: BinaryOperator::Minus,
         left,
         right,
       } => {
@@ -607,7 +606,7 @@ fn expr_to_poly(expr: &Expr, vars: &[String]) -> Option<Poly> {
         split(right, -sign, out);
       }
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand,
       } => split(operand, -sign, out),
       other => out.push((other, sign)),
@@ -634,7 +633,7 @@ fn term_to_mono(term: &Expr, vars: &[String]) -> Option<(Mono, Frac)> {
         }
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left,
         right,
       } => {
@@ -671,7 +670,7 @@ fn term_to_mono(term: &Expr, vars: &[String]) -> Option<(Mono, Frac)> {
             (&args[0], &args[1])
           }
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left,
             right,
           } => (&**left as &Expr, &**right as &Expr),

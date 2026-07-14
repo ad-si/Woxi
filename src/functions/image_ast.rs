@@ -1,4 +1,5 @@
 use crate::InterpreterError;
+use crate::syntax::BinaryOperator;
 use crate::syntax::{Expr, ImageType};
 use std::sync::Arc;
 
@@ -49,6 +50,7 @@ fn dynamic_image_to_expr(img: &image::DynamicImage) -> Expr {
       let data: Vec<f64> =
         g.as_raw().iter().map(|&v| v as f64 / 255.0).collect();
       Expr::Image {
+        color_space: None,
         width,
         height,
         channels: 1,
@@ -60,6 +62,7 @@ fn dynamic_image_to_expr(img: &image::DynamicImage) -> Expr {
       let data: Vec<f64> =
         rgba.as_raw().iter().map(|&v| v as f64 / 255.0).collect();
       Expr::Image {
+        color_space: None,
         width,
         height,
         channels: 4,
@@ -73,6 +76,7 @@ fn dynamic_image_to_expr(img: &image::DynamicImage) -> Expr {
       let data: Vec<f64> =
         rgb.as_raw().iter().map(|&v| v as f64 / 255.0).collect();
       Expr::Image {
+        color_space: None,
         width,
         height,
         channels: 3,
@@ -118,11 +122,13 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Image expects at least 1 argument".into(),
     ));
   }
+  let unevaluated = || Expr::FunctionCall {
+    name: "Image".to_string(),
+    args: args.to_vec().into(),
+  };
 
   // Image[image] is idempotent: wolframscript returns the inner image
-  // unchanged. Only honour the shortcut when no extra positional args
-  // are present (an explicit type or option ought to fall through to
-  // the construction path).
+  // unchanged.
   if args.len() == 1
     && let Expr::Image { .. } = &args[0]
   {
@@ -130,7 +136,6 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // The second positional arg is a type tag (string or identifier).
-  // Anything beyond that must be a Rule-form option.
   let parse_type = |e: &Expr| -> Option<ImageType> {
     let s = match e {
       Expr::String(s) | Expr::Identifier(s) => Some(s.as_str()),
@@ -148,9 +153,26 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let mut requested_type: Option<ImageType> = None;
   let mut opt_start = 1;
-  if let Some(ty) = args.get(1).and_then(parse_type) {
-    requested_type = Some(ty);
-    opt_start = 2;
+  if let Some(second) = args.get(1)
+    && !matches!(second, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+  {
+    match parse_type(second) {
+      Some(ty) => {
+        requested_type = Some(ty);
+        opt_start = 2;
+      }
+      None => {
+        let shown = match second {
+          Expr::String(s) => s.clone(),
+          e => crate::syntax::expr_to_string(e),
+        };
+        crate::emit_message(&format!(
+          "Image::imgdtype: The specified data type {} should be \"Bit\", \"Byte\", \"Bit16\", \"Real32\" or \"Real64\".",
+          shown
+        ));
+        return Ok(unevaluated());
+      }
+    }
   }
 
   // Treat the remaining args as options. Only Rule/RuleDelayed shapes are
@@ -163,6 +185,41 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::syntax::expr_to_string(opt)
       )));
     }
+  }
+
+  // Image[image, type] re-quantizes the NORMALIZED data into the new
+  // type (unlike raw list input, which is read on the type's own scale).
+  if let Expr::Image {
+    width,
+    height,
+    channels,
+    ref data,
+    color_space,
+    ..
+  } = args[0]
+  {
+    let ty = requested_type.unwrap_or(ImageType::Real32);
+    let quant = match ty {
+      ImageType::Bit => Some(1.0),
+      ImageType::Byte => Some(255.0),
+      ImageType::Bit16 => Some(65535.0),
+      _ => None,
+    };
+    let new_data: Vec<f64> = match quant {
+      Some(m) => data
+        .iter()
+        .map(|&v| (v * m).round_ties_even().clamp(0.0, m) / m)
+        .collect(),
+      None => data.as_ref().clone(),
+    };
+    return Ok(Expr::Image {
+      color_space,
+      width,
+      height,
+      channels,
+      data: Arc::new(new_data),
+      image_type: ty,
+    });
   }
 
   // `Image[NumericArray[data, type]]` — unwrap to the nested list and
@@ -181,6 +238,7 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => None,
         };
         requested_type = match s {
+          Some("Bit") => Some(ImageType::Bit),
           Some("Byte") | Some("UnsignedInteger8") => Some(ImageType::Byte),
           Some("Bit16") | Some("UnsignedInteger16") => Some(ImageType::Bit16),
           Some("Real32") => Some(ImageType::Real32),
@@ -194,154 +252,103 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     other => other,
   };
 
-  // The argument should be a 2D or 3D nested list
-  let rows = match raw_arg {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "Image expects a nested list of pixel data".into(),
-      ));
-    }
+  // Parse a strictly rectangular rank-2 or rank-3 numeric array. Any
+  // shape or value problem gets wolframscript's imgarray message and an
+  // unevaluated echo.
+  let invalid = || {
+    crate::emit_message(&format!(
+      "Image::imgarray: The specified argument {} should be an array of rank 2 or 3 with machine-sized numbers.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+  };
+  let parsed = parse_image_array(raw_arg);
+  let Some((width, height, channels, mut data)) = parsed else {
+    invalid();
+    return Ok(unevaluated());
   };
 
+  // Integer-typed images read raw values on their own scale (a real 0.5
+  // with "Byte" is the byte value 0.5, rounded half-even and clamped) and
+  // store them normalized to [0, 1].
+  let quant: Option<f64> = match requested_type {
+    Some(ImageType::Bit) => Some(1.0),
+    Some(ImageType::Byte) => Some(255.0),
+    Some(ImageType::Bit16) => Some(65535.0),
+    _ => None,
+  };
+  if let Some(m) = quant {
+    for v in &mut data {
+      *v = v.round_ties_even().clamp(0.0, m) / m;
+    }
+  }
+
+  Ok(Expr::Image {
+    color_space: None,
+    width,
+    height,
+    channels,
+    data: Arc::new(data),
+    image_type: requested_type.unwrap_or(ImageType::Real32),
+  })
+}
+
+/// Extract (width, height, channels, row-major interleaved data) from a
+/// rectangular rank-2 or rank-3 nested list; None for anything malformed.
+/// A rank-3 array with single-element pixels collapses to one channel.
+fn parse_image_array(arg: &Expr) -> Option<(u32, u32, u8, Vec<f64>)> {
+  let Expr::List(rows) = arg else { return None };
   if rows.is_empty() {
-    return Err(InterpreterError::EvaluationError(
-      "Image: pixel data must not be empty".into(),
-    ));
+    return None;
   }
-
-  // Determine if this is grayscale (2D: {{v,...},...}) or color (3D: {{{r,g,b},...},...})
-  let first_row = match &rows[0] {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "Image expects a 2D or 3D nested list".into(),
-      ));
-    }
+  let Expr::List(first_row) = &rows[0] else {
+    return None;
   };
-
   if first_row.is_empty() {
-    return Err(InterpreterError::EvaluationError(
-      "Image: rows must not be empty".into(),
-    ));
+    return None;
   }
-
-  // Check first element of first row: if it's a List, we have color channels
+  let width = first_row.len();
+  let height = rows.len();
   let is_color = matches!(&first_row[0], Expr::List(_));
-
-  let height = rows.len() as u32;
-
-  // Normalize integer-typed pixel values into the [0, 1] f64 buffer.
-  // Storage is always normalized; image_type only affects display precision
-  // and the implicit /255 (or /65535) applied on input.
-  let divisor: f64 = match requested_type {
-    Some(ImageType::Byte) => 255.0,
-    Some(ImageType::Bit16) => 65535.0,
-    _ => 1.0,
-  };
-
-  if is_color {
-    // Color image: {{{r,g,b}, ...}, ...}
-    let width = first_row.len() as u32;
-    let channels = match &first_row[0] {
-      Expr::List(pixel) => pixel.len() as u8,
-      _ => unreachable!(),
-    };
-    if channels != 3 && channels != 4 {
-      return Err(InterpreterError::EvaluationError(format!(
-        "Image: color pixels must have 3 (RGB) or 4 (RGBA) channels, got {}",
-        channels
-      )));
+  let channels = if is_color {
+    match &first_row[0] {
+      Expr::List(pixel) if !pixel.is_empty() => pixel.len(),
+      _ => return None,
     }
-
-    let expected_len =
-      (width as usize) * (height as usize) * (channels as usize);
-    let mut data = Vec::with_capacity(expected_len);
-
-    for (i, row) in rows.iter().enumerate() {
-      let row_items = match row {
-        Expr::List(items) => items,
-        _ => {
-          return Err(InterpreterError::EvaluationError(format!(
-            "Image: row {} is not a list",
-            i
-          )));
-        }
-      };
-      if row_items.len() as u32 != width {
-        return Err(InterpreterError::EvaluationError(format!(
-          "Image: row {} has {} pixels, expected {}",
-          i,
-          row_items.len(),
-          width
-        )));
-      }
-      for pixel in row_items {
-        let pixel_vals = match pixel {
-          Expr::List(vals) => vals,
-          _ => {
-            return Err(InterpreterError::EvaluationError(
-              "Image: each pixel must be a list of channel values".into(),
-            ));
-          }
-        };
-        if pixel_vals.len() as u8 != channels {
-          return Err(InterpreterError::EvaluationError(format!(
-            "Image: pixel has {} channels, expected {}",
-            pixel_vals.len(),
-            channels
-          )));
-        }
-        for v in pixel_vals {
-          data.push(expr_to_f64(v)? / divisor);
-        }
-      }
-    }
-
-    Ok(Expr::Image {
-      width,
-      height,
-      channels,
-      data: Arc::new(data),
-      image_type: requested_type.unwrap_or(ImageType::Real32),
-    })
   } else {
-    // Grayscale image: {{v, v, ...}, ...}
-    let width = first_row.len() as u32;
-    let expected_len = (width as usize) * (height as usize);
-    let mut data = Vec::with_capacity(expected_len);
+    1
+  };
+  if channels > u8::MAX as usize {
+    return None;
+  }
 
-    for (i, row) in rows.iter().enumerate() {
-      let row_items = match row {
-        Expr::List(items) => items,
-        _ => {
-          return Err(InterpreterError::EvaluationError(format!(
-            "Image: row {} is not a list",
-            i
-          )));
+  let mut data = Vec::with_capacity(width * height * channels);
+  let leaf = |e: &Expr| -> Option<f64> {
+    if matches!(e, Expr::List(_)) {
+      return None;
+    }
+    let v = crate::functions::math_ast::try_eval_to_f64(e)?;
+    v.is_finite().then_some(v)
+  };
+  for row in rows.iter() {
+    let Expr::List(items) = row else { return None };
+    if items.len() != width {
+      return None;
+    }
+    for cell in items.iter() {
+      if is_color {
+        let Expr::List(pixel) = cell else { return None };
+        if pixel.len() != channels {
+          return None;
         }
-      };
-      if row_items.len() as u32 != width {
-        return Err(InterpreterError::EvaluationError(format!(
-          "Image: row {} has {} values, expected {}",
-          i,
-          row_items.len(),
-          width
-        )));
-      }
-      for v in row_items {
-        data.push(expr_to_f64(v)? / divisor);
+        for v in pixel.iter() {
+          data.push(leaf(v)?);
+        }
+      } else {
+        data.push(leaf(cell)?);
       }
     }
-
-    Ok(Expr::Image {
-      width,
-      height,
-      channels: 1,
-      data: Arc::new(data),
-      image_type: requested_type.unwrap_or(ImageType::Real32),
-    })
   }
+  Some((width as u32, height as u32, channels as u8, data))
 }
 
 /// Helper: extract f64 from Expr, resolving constants and arithmetic
@@ -684,6 +691,7 @@ pub fn image_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   match &args[0] {
     Expr::Image {
+      color_space: _,
       width,
       height,
       channels,
@@ -891,7 +899,13 @@ pub fn image_color_space_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // wolframscript treats both Image and Image3D as valid inputs and
   // returns Automatic when no explicit colour space is set on the
   // image (the common case for inputs built from raw NumericArrays).
-  if matches!(&args[0], Expr::Image { .. }) || is_valid_image3d(&args[0]) {
+  if let Expr::Image { color_space, .. } = &args[0] {
+    return Ok(match color_space {
+      Some(cs) => Expr::String((*cs).to_string()),
+      None => Expr::Identifier("Automatic".to_string()),
+    });
+  }
+  if is_valid_image3d(&args[0]) {
     return Ok(Expr::Identifier("Automatic".to_string()));
   }
   // Matches wolframscript: emit ImageColorSpace::imginv and return
@@ -917,6 +931,7 @@ pub fn color_negate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   match &args[0] {
     Expr::Image {
+      color_space: _,
       width,
       height,
       channels,
@@ -952,6 +967,7 @@ pub fn color_negate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
 
       Ok(Expr::Image {
+        color_space: None,
         width: *width,
         height: *height,
         channels: *channels,
@@ -1151,6 +1167,7 @@ pub fn binarize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
 
       Ok(Expr::Image {
+        color_space: None,
         width: *width,
         height: *height,
         channels: 1,
@@ -1173,6 +1190,7 @@ pub fn blur_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let Expr::Image {
+    color_space: _,
     width,
     height,
     channels,
@@ -1267,6 +1285,7 @@ pub fn blur_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(Expr::Image {
+    color_space: None,
     width: *width,
     height: *height,
     channels: *channels,
@@ -1318,6 +1337,7 @@ pub fn sharpen_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let Expr::Image {
+    color_space: _,
     width,
     height,
     channels,
@@ -1411,6 +1431,7 @@ pub fn sharpen_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
 
   Ok(Expr::Image {
+    color_space: None,
     width: *width,
     height: *height,
     channels: *channels,
@@ -1429,6 +1450,7 @@ pub fn image_adjust_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let Expr::Image {
+    color_space: _,
     width,
     height,
     channels,
@@ -1505,6 +1527,7 @@ pub fn image_adjust_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   Ok(Expr::Image {
+    color_space: None,
     width: *width,
     height: *height,
     channels: *channels,
@@ -1586,6 +1609,7 @@ pub fn image_reflect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   match &args[0] {
     Expr::Image {
+      color_space: _,
       width,
       height,
       channels,
@@ -1635,6 +1659,7 @@ pub fn image_reflect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       };
       Ok(Expr::Image {
+        color_space: None,
         width: new_w,
         height: new_h,
         channels: *channels,
@@ -1684,6 +1709,7 @@ pub fn image_rotate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   let Expr::Image {
+    color_space: _,
     width,
     height,
     channels,
@@ -1762,6 +1788,7 @@ pub fn image_rotate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   Ok(Expr::Image {
+    color_space: None,
     width: new_w,
     height: new_h,
     channels: *channels,
@@ -1790,6 +1817,7 @@ pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let Expr::Image {
+    color_space: _,
     width,
     height,
     channels,
@@ -1886,6 +1914,7 @@ pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(Expr::Image {
+    color_space: None,
     width: new_w,
     height: new_h,
     channels: *channels,
@@ -1903,6 +1932,7 @@ pub fn image_crop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let Expr::Image {
+    color_space: _,
     width,
     height,
     channels,
@@ -1953,6 +1983,7 @@ pub fn image_crop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if top == h {
     // The whole image matches the corner; return a 1×1 image.
     return Ok(Expr::Image {
+      color_space: None,
       width: 1,
       height: 1,
       channels: *channels,
@@ -2010,6 +2041,7 @@ pub fn image_crop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   Ok(Expr::Image {
+    color_space: None,
     width: new_w as u32,
     height: new_h as u32,
     channels: *channels,
@@ -2113,6 +2145,7 @@ pub fn image_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => unreachable!(),
       };
       Ok(Expr::Image {
+        color_space: None,
         width: crop_w,
         height: crop_h,
         channels: *channels,
@@ -2258,6 +2291,7 @@ pub fn edge_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
 
       Ok(Expr::Image {
+        color_space: None,
         width: *width,
         height: *height,
         channels: 1,
@@ -2641,6 +2675,7 @@ pub fn image_apply_ast(
   };
 
   let Expr::Image {
+    color_space: _,
     width,
     height,
     channels,
@@ -2672,6 +2707,7 @@ pub fn image_apply_ast(
       new_data.push(expr_to_f64(&result)?);
     }
     return Ok(Expr::Image {
+      color_space: None,
       width: *width,
       height: *height,
       channels: 1,
@@ -2726,6 +2762,7 @@ pub fn image_apply_ast(
   }
 
   Ok(Expr::Image {
+    color_space: None,
     width: *width,
     height: *height,
     channels: out_ch as u8,
@@ -2933,6 +2970,7 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   match &args[0] {
     Expr::Image {
+      color_space: _,
       width,
       height,
       channels,
@@ -2957,6 +2995,7 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             new_data.push(lum);
           }
           Ok(Expr::Image {
+            color_space: None,
             width: *width,
             height: *height,
             channels: 1,
@@ -2977,6 +3016,7 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               new_data.push(v);
             }
             Ok(Expr::Image {
+              color_space: None,
               width: *width,
               height: *height,
               channels: 3,
@@ -2993,6 +3033,7 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               new_data.push(data[base + 2]);
             }
             Ok(Expr::Image {
+              color_space: None,
               width: *width,
               height: *height,
               channels: 3,
@@ -3040,6 +3081,7 @@ pub fn image_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let (
     Expr::Image {
+      color_space: _,
       width: w1,
       height: h1,
       channels: ch1,
@@ -3107,6 +3149,7 @@ pub fn image_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(Expr::Image {
+    color_space: None,
     width: *w1,
     height: *h1,
     channels: *ch1,
@@ -3142,6 +3185,7 @@ fn pointwise_image_op(
   // (Image, Image) — pointwise on matching dimensions.
   if let (
     Expr::Image {
+      color_space: _,
       width: w1,
       height: h1,
       channels: ch1,
@@ -3170,6 +3214,7 @@ fn pointwise_image_op(
       .map(|(&a, &b)| apply(a, b, is_r32))
       .collect();
     return Ok(Expr::Image {
+      color_space: None,
       width: *w1,
       height: *h1,
       channels: *ch1,
@@ -3180,6 +3225,7 @@ fn pointwise_image_op(
 
   // (Image, scalar) — apply `op(pixel, scalar)` to every pixel.
   if let Expr::Image {
+    color_space: _,
     width,
     height,
     channels,
@@ -3192,6 +3238,7 @@ fn pointwise_image_op(
     let new_data: Vec<f64> =
       data.iter().map(|&v| apply(v, s, is_r32)).collect();
     return Ok(Expr::Image {
+      color_space: None,
       width: *width,
       height: *height,
       channels: *channels,
@@ -3201,6 +3248,7 @@ fn pointwise_image_op(
   }
   // (scalar, Image) — apply `op(scalar, pixel)`.
   if let Expr::Image {
+    color_space: _,
     width,
     height,
     channels,
@@ -3213,6 +3261,7 @@ fn pointwise_image_op(
     let new_data: Vec<f64> =
       data.iter().map(|&v| apply(s, v, is_r32)).collect();
     return Ok(Expr::Image {
+      color_space: None,
       width: *width,
       height: *height,
       channels: *channels,
@@ -3322,6 +3371,7 @@ pub fn random_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   });
 
   Ok(Expr::Image {
+    color_space: None,
     width: w,
     height: h,
     channels,
@@ -3354,6 +3404,7 @@ pub fn binary_image_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// return 0 (or a list of zeros for multi-channel images).
 pub fn pixel_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Expr::Image {
+    color_space: _,
     width,
     height,
     channels,
@@ -3545,6 +3596,7 @@ pub fn gradient_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   //        ∂I/∂y = D ⊛_y T ⊛_x I,
   //      then `|∇I| = √((∂I/∂x)² + (∂I/∂y)²)`.
   if let Expr::Image {
+    color_space: _,
     width,
     height,
     channels,
@@ -3616,6 +3668,7 @@ pub fn gradient_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     return Ok(Expr::Image {
+      color_space: None,
       width: *width,
       height: *height,
       channels: *channels,
@@ -3679,6 +3732,7 @@ pub fn median_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // pixel buffer; result preserves precision and image type.
   if let (
     Expr::Image {
+      color_space: _,
       width,
       height,
       channels,
@@ -3719,6 +3773,7 @@ pub fn median_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     return Ok(Expr::Image {
+      color_space: None,
       width: *width,
       height: *height,
       channels: *channels,
@@ -3937,6 +3992,7 @@ pub fn image_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let Expr::Image {
+    color_space: _,
     width,
     height,
     channels,
@@ -4015,6 +4071,7 @@ pub fn image_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   Ok(Expr::Image {
+    color_space: None,
     width: *width,
     height: *height,
     channels: *channels,
@@ -4100,6 +4157,7 @@ pub fn gaussian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Image input: separable 2D (row-then-column 1D convolution).
   if let Expr::Image {
+    color_space: _,
     width,
     height,
     channels,
@@ -4135,6 +4193,7 @@ pub fn gaussian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     return Ok(Expr::Image {
+      color_space: None,
       width: *width,
       height: *height,
       channels: *channels,
@@ -4289,6 +4348,7 @@ pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       data.push(t);
     }
     return Ok(Expr::Image {
+      color_space: None,
       width,
       height,
       channels: 3,
@@ -4309,12 +4369,777 @@ pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// MorphologicalBinarize[img, {t1, t2}] / [img, t] — hysteresis
+/// binarization: pixels strictly above t2 seed regions that grow through
+/// 8-connected pixels strictly above t1. A scalar t means {0.8 t, t},
+/// a one-element list {t} means {t, t}. Multichannel pixels compare on
+/// their channel MEAN (f32; unlike DistanceTransform's luminance).
+/// The parameterless Otsu-default form is deliberately not implemented
+/// (FindThreshold's iterative binning is WS-internal).
+pub fn morphological_binarize_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "MorphologicalBinarize".to_string(),
+    args: args.to_vec().into(),
+  };
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    ref data,
+    ..
+  } = args[0]
+  else {
+    crate::emit_message(&format!(
+      "MorphologicalBinarize::imginv: Expecting an image or graphics instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated());
+  };
+  let num = crate::functions::math_ast::try_eval_to_f64;
+  let thresholds = match &args[1] {
+    Expr::List(ts) if ts.len() == 1 => num(&ts[0]).map(|t| (t, t)),
+    Expr::List(ts) if ts.len() == 2 => num(&ts[0]).zip(num(&ts[1])),
+    Expr::List(_) => None,
+    e => num(e).map(|t| (0.8 * t, t)),
+  };
+  let Some((t1, t2)) = thresholds else {
+    crate::emit_message(&format!(
+      "MorphologicalBinarize::bdarg2: Invalid threshold specification {}.",
+      crate::syntax::expr_to_string(&args[1])
+    ));
+    return Ok(unevaluated());
+  };
+
+  let (w, h, ch) = (width as usize, height as usize, channels as usize);
+  let n = w * h;
+  let gray = |i: usize| -> f64 {
+    let px = &data[i * ch..(i + 1) * ch];
+    if ch >= 3 {
+      let m = (px[0] as f32 + px[1] as f32 + px[2] as f32) / 3.0f32;
+      m as f64
+    } else {
+      (px[0] as f32) as f64
+    }
+  };
+
+  // Seed pixels flood through weak pixels with 8-connectivity.
+  let mut out = vec![0.0f64; n];
+  let mut stack: Vec<usize> = Vec::new();
+  for i in 0..n {
+    if gray(i) > t2 {
+      out[i] = 1.0;
+      stack.push(i);
+    }
+  }
+  while let Some(i) = stack.pop() {
+    let (x, y) = ((i % w) as isize, (i / w) as isize);
+    for dy in -1..=1isize {
+      for dx in -1..=1isize {
+        let (nx, ny) = (x + dx, y + dy);
+        if nx < 0 || ny < 0 || nx >= w as isize || ny >= h as isize {
+          continue;
+        }
+        let j = ny as usize * w + nx as usize;
+        if out[j] == 0.0 && gray(j) > t1 {
+          out[j] = 1.0;
+          stack.push(j);
+        }
+      }
+    }
+  }
+
+  Ok(Expr::Image {
+    color_space: None,
+    width,
+    height,
+    channels: 1,
+    data: Arc::new(out),
+    image_type: crate::syntax::ImageType::Bit,
+  })
+}
+
+/// ImageValue[img, {x, y}] / [img, {pos1, pos2, ...}] — bilinear sample
+/// in the image coordinate system (x from the left edge, y up from the
+/// bottom edge, pixel centers at half-integers) with zero padding
+/// outside. Real32 images compute in f32, everything else in f64.
+pub fn image_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use crate::syntax::ImageType;
+  let unevaluated = || Expr::FunctionCall {
+    name: "ImageValue".to_string(),
+    args: args.to_vec().into(),
+  };
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    ref data,
+    image_type,
+    ..
+  } = args[0]
+  else {
+    crate::emit_message(&format!(
+      "ImageValue::imginv: Expecting an image or graphics instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated());
+  };
+  let (w, h, ch) = (width as usize, height as usize, channels as usize);
+
+  let coord = |e: &Expr| -> Option<(f64, f64)> {
+    let Expr::List(xy) = e else { return None };
+    if xy.len() != 2 {
+      return None;
+    }
+    let x = crate::functions::math_ast::try_eval_to_f64(&xy[0])?;
+    let y = crate::functions::math_ast::try_eval_to_f64(&xy[1])?;
+    (x.is_finite() && y.is_finite()).then_some((x, y))
+  };
+
+  // Distinguish a single point {x, y} from a list of points.
+  enum Spec {
+    One((f64, f64)),
+    Many(Vec<(f64, f64)>),
+  }
+  let spec = (|| -> Option<Spec> {
+    match &args[1] {
+      Expr::List(items)
+        if items.len() == 2 && !matches!(&items[0], Expr::List(_)) =>
+      {
+        Some(Spec::One(coord(&args[1])?))
+      }
+      Expr::List(items) => {
+        let pts: Option<Vec<_>> = items.iter().map(coord).collect();
+        Some(Spec::Many(pts?))
+      }
+      _ => None,
+    }
+  })();
+  let Some(spec) = spec else {
+    crate::emit_message(&format!(
+      "ImageValue::imgrng: The specified argument {} should be an image, a graphics object or a list of coordinates.",
+      crate::syntax::expr_to_string(&args[1])
+    ));
+    return Ok(unevaluated());
+  };
+
+  // Pixel accessor by 0-based column and bottom-based row, 0 outside.
+  let pixel = |col: i64, brow: i64, c: usize| -> f64 {
+    if col < 0 || brow < 0 || col >= w as i64 || brow >= h as i64 {
+      0.0
+    } else {
+      let row = h - 1 - brow as usize;
+      data[(row * w + col as usize) * ch + c]
+    }
+  };
+  // Tensor-product weighted sum in f64. Real32 images snap their pixel
+  // values to f32 and round the final result to f32 (pinned against
+  // wolframscript to the last bit; a nested-lerp form differs by 1 ULP).
+  let real32 = image_type == ImageType::Real32;
+  let sample = |x: f64, y: f64, c: usize| -> f64 {
+    let gx = x - 0.5;
+    let gy = y - 0.5;
+    let (j0f, k0f) = (gx.floor(), gy.floor());
+    let (fx, fy) = (gx - j0f, gy - k0f);
+    let (j0, k0) = (j0f as i64, k0f as i64);
+    let p = |dj: i64, dk: i64| {
+      let v = pixel(j0 + dj, k0 + dk, c);
+      if real32 { (v as f32) as f64 } else { v }
+    };
+    let v = (1.0 - fx) * (1.0 - fy) * p(0, 0)
+      + fx * (1.0 - fy) * p(1, 0)
+      + (1.0 - fx) * fy * p(0, 1)
+      + fx * fy * p(1, 1);
+    if real32 { (v as f32) as f64 } else { v }
+  };
+  let value_at = |x: f64, y: f64| -> Expr {
+    if ch == 1 {
+      Expr::Real(sample(x, y, 0))
+    } else {
+      Expr::List(
+        (0..ch)
+          .map(|c| Expr::Real(sample(x, y, c)))
+          .collect::<Vec<_>>()
+          .into(),
+      )
+    }
+  };
+
+  Ok(match spec {
+    Spec::One((x, y)) => value_at(x, y),
+    Spec::Many(pts) => Expr::List(
+      pts
+        .iter()
+        .map(|&(x, y)| value_at(x, y))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+  })
+}
+
+/// Priority-flood morphological reconstruction by erosion over `mask`
+/// (per channel plane): the result is the smallest R >= mask with
+/// R <= marker that is stable under neighborhood erosion. Used by
+/// FillingTransform; `corner_neighbors` selects 4- vs 8-connectivity.
+fn reconstruct_by_erosion(
+  mask: &[f64],
+  marker: &[f64],
+  w: usize,
+  h: usize,
+  corner_neighbors: bool,
+) -> Vec<f64> {
+  use std::cmp::Reverse;
+  use std::collections::BinaryHeap;
+  let mut r: Vec<f64> =
+    mask.iter().zip(marker).map(|(&i, &m)| i.max(m)).collect();
+  // Pixel values are non-negative, so the IEEE bit pattern orders them.
+  let mut heap: BinaryHeap<(Reverse<u64>, usize)> =
+    (0..r.len()).map(|i| (Reverse(r[i].to_bits()), i)).collect();
+  let mut done = vec![false; r.len()];
+  while let Some((Reverse(bits), i)) = heap.pop() {
+    if done[i] || f64::from_bits(bits) > r[i] {
+      continue;
+    }
+    done[i] = true;
+    let (x, y) = (i % w, i / w);
+    let mut relax =
+      |nx: isize, ny: isize, heap: &mut BinaryHeap<(Reverse<u64>, usize)>| {
+        if nx < 0 || ny < 0 || nx >= w as isize || ny >= h as isize {
+          return;
+        }
+        let j = ny as usize * w + nx as usize;
+        let cand = mask[j].max(r[i]);
+        if cand < r[j] {
+          r[j] = cand;
+          heap.push((Reverse(cand.to_bits()), j));
+        }
+      };
+    let (xi, yi) = (x as isize, y as isize);
+    relax(xi - 1, yi, &mut heap);
+    relax(xi + 1, yi, &mut heap);
+    relax(xi, yi - 1, &mut heap);
+    relax(xi, yi + 1, &mut heap);
+    if corner_neighbors {
+      relax(xi - 1, yi - 1, &mut heap);
+      relax(xi + 1, yi - 1, &mut heap);
+      relax(xi - 1, yi + 1, &mut heap);
+      relax(xi + 1, yi + 1, &mut heap);
+    }
+  }
+  r
+}
+
+/// Marker plane for hole filling: the image itself on the border,
+/// `interior` (a large value or mask + h) inside.
+fn filling_marker(mask: &[f64], w: usize, h: usize, add: f64) -> Vec<f64> {
+  (0..mask.len())
+    .map(|i| {
+      let (x, y) = (i % w, i / w);
+      if x == 0 || y == 0 || x == w - 1 || y == h - 1 {
+        mask[i]
+      } else if add.is_infinite() {
+        f64::INFINITY
+      } else {
+        mask[i] + add
+      }
+    })
+    .collect()
+}
+
+/// FillingTransform[img] / [img, h] / [img, marker] — fill extended
+/// minima (holes) per channel. Decoded from wolframscript probes:
+/// - plain form: flood from the border with 4-connectivity;
+/// - depth form: reconstruction with interior marker mask+h and
+///   8-connectivity; Bit becomes Real32, Byte/Bit16 stay quantized;
+/// - marker form: per-pixel I + (F - I) * m where F is the plain fill
+///   and m is the largest (clamped) marker value in each 4-connected
+///   basin; the result is Real64 for Real64 inputs and Real32 otherwise.
+pub fn filling_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use crate::syntax::ImageType;
+  let unevaluated = || Expr::FunctionCall {
+    name: "FillingTransform".to_string(),
+    args: args.to_vec().into(),
+  };
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    ref data,
+    image_type,
+    ..
+  } = args[0]
+  else {
+    crate::emit_message(&format!(
+      "FillingTransform::imginv: Expecting an image or graphics instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated());
+  };
+  let (w, h, ch) = (width as usize, height as usize, channels as usize);
+  let n = w * h;
+
+  // Snap stored values to f32 unless the image genuinely holds f64,
+  // mirroring wolframscript's Real32 storage of non-Real64 images.
+  let snap = |v: f64, t: ImageType| -> f64 {
+    if t == ImageType::Real64 {
+      v
+    } else {
+      (v as f32) as f64
+    }
+  };
+
+  enum Second {
+    None,
+    Depth(f64),
+    Marker(Vec<f64>),
+  }
+  let second = if args.len() == 2 {
+    match &args[1] {
+      Expr::Image {
+        width: mw,
+        height: mh,
+        channels: mc,
+        data: mdata,
+        image_type: mt,
+        ..
+      } => {
+        if *mc != 1 {
+          // Multichannel markers echo unevaluated without a message.
+          return Ok(unevaluated());
+        }
+        // The largest clamped marker value per 4-connected basin scales
+        // the fill; positions outside a smaller marker read as zero.
+        let (mw, mh) = (*mw as usize, *mh as usize);
+        let mut m = vec![0.0f64; n];
+        for y in 0..h.min(mh) {
+          for x in 0..w.min(mw) {
+            m[y * w + x] = snap(mdata[y * mw + x], *mt).clamp(0.0, 1.0);
+          }
+        }
+        Second::Marker(m)
+      }
+      e => match crate::functions::math_ast::try_eval_to_f64(e) {
+        Some(v) if v >= 0.0 => Second::Depth(v),
+        Some(_) => {
+          crate::emit_message(&format!(
+            "FillingTransform::invh: The height specification {} must be positive.",
+            crate::syntax::expr_to_string(e)
+          ));
+          return Ok(unevaluated());
+        }
+        None => {
+          crate::emit_message(&format!(
+            "FillingTransform::arg2: Expecting either a marker or depth specification as the second argument instead of {}.",
+            crate::syntax::expr_to_string(e)
+          ));
+          return Ok(unevaluated());
+        }
+      },
+    }
+  } else {
+    Second::None
+  };
+
+  let corner = matches!(second, Second::Depth(_));
+  let mut out = vec![0.0f64; n * ch];
+  for c in 0..ch {
+    let mask: Vec<f64> =
+      (0..n).map(|i| snap(data[i * ch + c], image_type)).collect();
+    let plane: Vec<f64> = match &second {
+      Second::None => {
+        let marker = filling_marker(&mask, w, h, f64::INFINITY);
+        reconstruct_by_erosion(&mask, &marker, w, h, corner)
+      }
+      Second::Depth(d) => {
+        let marker = filling_marker(&mask, w, h, *d);
+        reconstruct_by_erosion(&mask, &marker, w, h, corner)
+      }
+      Second::Marker(m) => {
+        let marker = filling_marker(&mask, w, h, f64::INFINITY);
+        let f = reconstruct_by_erosion(&mask, &marker, w, h, corner);
+        // Label 4-connected basins (F > mask) and take each basin's
+        // largest marker value.
+        let mut label = vec![usize::MAX; n];
+        let mut basin_m: Vec<f64> = Vec::new();
+        for start in 0..n {
+          if label[start] != usize::MAX || f[start] <= mask[start] {
+            continue;
+          }
+          let id = basin_m.len();
+          basin_m.push(0.0);
+          let mut stack = vec![start];
+          label[start] = id;
+          while let Some(i) = stack.pop() {
+            basin_m[id] = basin_m[id].max(m[i]);
+            let (x, y) = (i % w, i / w);
+            for (nx, ny) in [
+              (x.wrapping_sub(1), y),
+              (x + 1, y),
+              (x, y.wrapping_sub(1)),
+              (x, y + 1),
+            ] {
+              if nx >= w || ny >= h {
+                continue;
+              }
+              let j = ny * w + nx;
+              if label[j] == usize::MAX && f[j] > mask[j] {
+                label[j] = id;
+                stack.push(j);
+              }
+            }
+          }
+        }
+        (0..n)
+          .map(|i| {
+            if label[i] == usize::MAX {
+              mask[i]
+            } else {
+              // Linear interpolation between the image and its plain
+              // fill: F*m + I*(1-m), in f32 arithmetic unless Real64
+              // (each operation rounds — this matches wolframscript
+              // bit-exact where I + (F-I)*m does not).
+              let mv = basin_m[label[i]];
+              if image_type == ImageType::Real64 {
+                let m = (mv as f32) as f64;
+                f[i] * m + mask[i] * (1.0 - m)
+              } else {
+                let m = mv as f32;
+                let r = f[i] as f32 * m + mask[i] as f32 * (1.0 - m);
+                r as f64
+              }
+            }
+          })
+          .collect()
+      }
+    };
+    for i in 0..n {
+      out[i * ch + c] = plane[i];
+    }
+  }
+
+  let out_type = match &second {
+    Second::None => image_type,
+    Second::Depth(_) => match image_type {
+      ImageType::Bit => ImageType::Real32,
+      t => t,
+    },
+    Second::Marker(_) => match image_type {
+      ImageType::Real64 => ImageType::Real64,
+      _ => ImageType::Real32,
+    },
+  };
+  // Quantized types keep their quantization for the depth form.
+  if matches!(second, Second::Depth(_)) {
+    let scale = match out_type {
+      ImageType::Byte => Some(255.0),
+      ImageType::Bit16 => Some(65535.0),
+      _ => None,
+    };
+    if let Some(s) = scale {
+      for v in &mut out {
+        *v = (*v * s).round() / s;
+      }
+    }
+  }
+
+  Ok(Expr::Image {
+    color_space: None,
+    width,
+    height,
+    channels,
+    data: Arc::new(out),
+    image_type: out_type,
+  })
+}
+
+/// One-dimensional squared-distance transform (Felzenszwalb-Huttenlocher
+/// lower-envelope-of-parabolas pass). `f` holds source costs, `d` results.
+fn edt_pass_1d(f: &[f64], d: &mut [f64]) {
+  let n = f.len();
+  let mut v = vec![0usize; n];
+  let mut z = vec![0.0f64; n + 1];
+  let mut k = 0usize;
+  z[0] = f64::NEG_INFINITY;
+  z[1] = f64::INFINITY;
+  for q in 1..n {
+    loop {
+      let vk = v[k];
+      let s = ((f[q] + (q * q) as f64) - (f[vk] + (vk * vk) as f64))
+        / (2.0 * (q - vk) as f64);
+      if s <= z[k] {
+        k -= 1;
+      } else {
+        k += 1;
+        v[k] = q;
+        z[k] = s;
+        z[k + 1] = f64::INFINITY;
+        break;
+      }
+    }
+  }
+  k = 0;
+  for (q, dq) in d.iter_mut().enumerate() {
+    while z[k + 1] < q as f64 {
+      k += 1;
+    }
+    let diff = q as f64 - v[k] as f64;
+    *dq = diff * diff + f[v[k]];
+  }
+}
+
+/// Marker cost for foreground pixels: far larger than any possible
+/// squared pixel distance, small enough to stay exact through the passes.
+const EDT_FAR: f64 = 1e18;
+
+/// DistanceTransform[img] / [img, t] — each foreground pixel becomes its
+/// Euclidean distance to the nearest background pixel (the image border
+/// does not count as background). Foreground is luminance strictly above
+/// t (default 0), evaluated on f32-snapped pixel values. When the image
+/// has no background pixel at all, wolframscript returns all-1 values.
+/// Exact non-machine thresholds (e.g. 1/2) trigger image-dependent
+/// garbage in wolframscript and are deliberately given sane numeric
+/// semantics here instead.
+pub fn distance_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "DistanceTransform".to_string(),
+    args: args.to_vec().into(),
+  };
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    ref data,
+    ..
+  } = args[0]
+  else {
+    crate::emit_message(&format!(
+      "DistanceTransform::imginv: Expecting an image or graphics instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated());
+  };
+  let t = if args.len() == 2 {
+    match crate::functions::math_ast::try_eval_to_f64(&args[1]) {
+      Some(v) => v,
+      None => {
+        crate::emit_message(&format!(
+          "DistanceTransform::rthres: The specified threshold value {} should represent a real number.",
+          crate::syntax::expr_to_string(&args[1])
+        ));
+        return Ok(unevaluated());
+      }
+    }
+  } else {
+    0.0
+  };
+
+  let (w, h, ch) = (width as usize, height as usize, channels as usize);
+  let n = w * h;
+  // Foreground test on the f32-snapped luminance (channels 3/4 use the
+  // 0.299/0.587/0.114 weights in f32 arithmetic; 2 channels are
+  // gray+alpha). The threshold itself stays in f64.
+  let luminance = |i: usize| -> f64 {
+    let px = &data[i * ch..(i + 1) * ch];
+    let l32 = if ch >= 3 {
+      0.299f32 * px[0] as f32
+        + 0.587f32 * px[1] as f32
+        + 0.114f32 * px[2] as f32
+    } else {
+      px[0] as f32
+    };
+    l32 as f64
+  };
+
+  let mut cost: Vec<f64> = (0..n)
+    .map(|i| if luminance(i) > t { EDT_FAR } else { 0.0 })
+    .collect();
+  if cost.iter().all(|&c| c > 0.0) {
+    // No background pixel anywhere: wolframscript yields all-1 values.
+    return Ok(Expr::Image {
+      color_space: None,
+      width,
+      height,
+      channels: 1,
+      data: Arc::new(vec![1.0; n]),
+      image_type: crate::syntax::ImageType::Real32,
+    });
+  }
+
+  // Column pass then row pass over squared distances.
+  let mut buf = vec![0.0f64; h.max(w)];
+  let mut out = vec![0.0f64; n];
+  for x in 0..w {
+    let col: Vec<f64> = (0..h).map(|y| cost[y * w + x]).collect();
+    edt_pass_1d(&col, &mut buf[..h]);
+    for y in 0..h {
+      out[y * w + x] = buf[y];
+    }
+  }
+  for y in 0..h {
+    let row: Vec<f64> = (0..w).map(|x| out[y * w + x]).collect();
+    edt_pass_1d(&row, &mut buf[..w]);
+    for x in 0..w {
+      cost[y * w + x] = buf[x].sqrt();
+    }
+  }
+
+  Ok(Expr::Image {
+    color_space: None,
+    width,
+    height,
+    channels: 1,
+    data: Arc::new(cost),
+    image_type: crate::syntax::ImageType::Real32,
+  })
+}
+
+/// Valid ColorCombine color-space names with their required channel count
+/// (decoded from wolframscript: imgcstype for anything else).
+const COLOR_COMBINE_SPACES: &[(&str, usize)] = &[
+  ("Grayscale", 1),
+  ("RGB", 3),
+  ("HSB", 3),
+  ("XYZ", 3),
+  ("LAB", 3),
+  ("LUV", 3),
+  ("CMYK", 4),
+];
+
+/// ColorCombine[{img1, img2, ...}] / ColorCombine[imgs, colorspace] —
+/// interleave the channels of the inputs into one multichannel image.
+/// The colorspace argument only tags the result (no data conversion);
+/// its validity is checked before the image list, and its channel count
+/// must match the combined total. The result type is the highest input
+/// type in the order Bit < Byte < Bit16 < Real32 < Real64.
+pub fn color_combine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use crate::syntax::ImageType;
+  let unevaluated = || Expr::FunctionCall {
+    name: "ColorCombine".to_string(),
+    args: args.to_vec().into(),
+  };
+
+  let color_space: Option<(&'static str, usize)> = if args.len() == 2 {
+    let found = match &args[1] {
+      Expr::String(s) => COLOR_COMBINE_SPACES
+        .iter()
+        .find(|(name, _)| name == s)
+        .copied(),
+      _ => None,
+    };
+    match found {
+      Some(cs) => Some(cs),
+      None => {
+        let shown = match &args[1] {
+          Expr::String(s) => s.clone(),
+          e => crate::syntax::expr_to_string(e),
+        };
+        crate::emit_message(&format!(
+          "ColorCombine::imgcstype: {} is an invalid color space specification.",
+          shown
+        ));
+        return Ok(unevaluated());
+      }
+    }
+  } else {
+    None
+  };
+
+  let invalid_list = || {
+    crate::emit_message(&format!(
+      "ColorCombine::ccbinput: {} should be a list of images with the same image dimensions.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+  };
+  let Expr::List(items) = &args[0] else {
+    invalid_list();
+    return Ok(unevaluated());
+  };
+  let mut inputs: Vec<(u32, u32, usize, &std::sync::Arc<Vec<f64>>, ImageType)> =
+    Vec::with_capacity(items.len());
+  for item in items.iter() {
+    let Expr::Image {
+      width,
+      height,
+      channels,
+      data,
+      image_type,
+      ..
+    } = item
+    else {
+      invalid_list();
+      return Ok(unevaluated());
+    };
+    inputs.push((*width, *height, *channels as usize, data, *image_type));
+  }
+  let Some(&(w, h, ..)) = inputs.first() else {
+    invalid_list();
+    return Ok(unevaluated());
+  };
+  if inputs.iter().any(|&(iw, ih, ..)| iw != w || ih != h) {
+    invalid_list();
+    return Ok(unevaluated());
+  }
+
+  let total: usize = inputs.iter().map(|&(.., ch, _, _)| ch).sum();
+  if let Some((name, want)) = color_space
+    && total != want
+  {
+    crate::emit_message(&format!(
+      "ColorCombine::imgcsmis: The specified color space {} and the number of channels {} are not compatible.",
+      name, total
+    ));
+    return Ok(unevaluated());
+  }
+
+  let type_rank = |t: ImageType| match t {
+    ImageType::Bit => 0,
+    ImageType::Byte => 1,
+    ImageType::Bit16 => 2,
+    ImageType::Real32 => 3,
+    ImageType::Real64 => 4,
+  };
+  let image_type = inputs
+    .iter()
+    .map(|&(.., t)| t)
+    .max_by_key(|&t| type_rank(t))
+    .unwrap();
+
+  // Pixel data is stored normalized to [0, 1] regardless of type, so the
+  // channels interleave without rescaling. Real32 inputs are snapped to
+  // f32 so their values keep single precision when the result is Real64
+  // (wolframscript stores Real32 images as f32).
+  let n = (w as usize) * (h as usize);
+  let mut data = Vec::with_capacity(n * total);
+  for i in 0..n {
+    for &(.., ch, src, ty) in &inputs {
+      for v in &src[i * ch..(i + 1) * ch] {
+        data.push(if ty == ImageType::Real32 {
+          (*v as f32) as f64
+        } else {
+          *v
+        });
+      }
+    }
+  }
+
+  Ok(Expr::Image {
+    color_space: color_space.map(|(name, _)| name),
+    width: w,
+    height: h,
+    channels: total as u8,
+    data: Arc::new(data),
+    image_type,
+  })
+}
+
 /// ColorSeparate[img] — return one single-channel image per channel
 /// of the input. Grayscale images pass through unchanged (as a list
 /// of one). The output images preserve the input's width, height, and
 /// image type.
 pub fn color_separate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Expr::Image {
+    color_space: _,
     width,
     height,
     channels,
@@ -4337,6 +5162,7 @@ pub fn color_separate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for c_idx in 0..ch {
     let channel_data: Vec<f64> = (0..n).map(|i| data[i * ch + c_idx]).collect();
     images.push(Expr::Image {
+      color_space: None,
       width: *width,
       height: *height,
       channels: 1,
@@ -4703,27 +5529,224 @@ fn as_rational(e: &Expr) -> Option<(i64, i64)> {
   }
 }
 
-/// ImagePartition[img, n] / [img, n, d] — image tile partition stub.
-/// Real image partitioning isn't implemented yet; this stub only matches
-/// wolframscript's behavior for non-image input (emits ImagePartition::imginv
-/// and returns the call unevaluated) so doctests like
-/// `ImagePartition[hedy, 256]` (no image present) line up.
+/// One axis of an ImagePartition size spec.
+enum PartitionAxisMode {
+  /// Plain size `n`: top-left anchored grid, only complete blocks kept.
+  Full(usize),
+  /// `{n}` form: centered grid, partial edge blocks are kept (clipped).
+  Clipped(usize),
+}
+
+/// A positive block size / offset component: numeric, floored, >= 1.
+fn partition_positive_int(e: &Expr) -> Option<usize> {
+  let v = crate::functions::math_ast::try_eval_to_f64(e)?;
+  if !v.is_finite() {
+    return None;
+  }
+  let f = v.floor();
+  if f >= 1.0 && f <= u32::MAX as f64 {
+    Some(f as usize)
+  } else {
+    None
+  }
+}
+
+/// Parse one element of a two-element size spec: `n` or `{n}`.
+fn partition_size_elem(e: &Expr) -> Option<PartitionAxisMode> {
+  match e {
+    Expr::List(items) if items.len() == 1 => {
+      partition_positive_int(&items[0]).map(PartitionAxisMode::Clipped)
+    }
+    Expr::List(_) => None,
+    _ => partition_positive_int(e).map(PartitionAxisMode::Full),
+  }
+}
+
+/// Parse the full size spec (2nd argument) into per-axis (x, y) modes.
+fn partition_size_spec(
+  spec: &Expr,
+) -> Option<(PartitionAxisMode, PartitionAxisMode)> {
+  match spec {
+    Expr::List(items) if items.len() == 1 => {
+      // {s} (and {{s}}) apply the clipped mode to both axes.
+      let n = match &items[0] {
+        Expr::List(inner) if inner.len() == 1 => {
+          partition_positive_int(&inner[0])?
+        }
+        Expr::List(_) => return None,
+        e => partition_positive_int(e)?,
+      };
+      Some((PartitionAxisMode::Clipped(n), PartitionAxisMode::Clipped(n)))
+    }
+    Expr::List(items) if items.len() == 2 => Some((
+      partition_size_elem(&items[0])?,
+      partition_size_elem(&items[1])?,
+    )),
+    Expr::List(_) => None,
+    e => {
+      let n = partition_positive_int(e)?;
+      Some((PartitionAxisMode::Full(n), PartitionAxisMode::Full(n)))
+    }
+  }
+}
+
+/// Block positions along one axis as (start, length), top/left to
+/// bottom/right, already clipped to the image extent.
+fn partition_axis_blocks(
+  dim: usize,
+  mode: &PartitionAxisMode,
+  step: usize,
+) -> Vec<(usize, usize)> {
+  match *mode {
+    PartitionAxisMode::Full(w) => {
+      let w = w.min(dim);
+      let mut blocks = Vec::new();
+      let mut x = 0;
+      while x + w <= dim {
+        blocks.push((x, w));
+        x += step;
+      }
+      blocks
+    }
+    PartitionAxisMode::Clipped(w) => {
+      // A grid of ceil(dim/step) blocks is centered on the image (odd
+      // overhang goes to the leading edge); the kept blocks are every grid
+      // position whose center lies within the closed image interval,
+      // clipped to the image extent.
+      let n = dim.div_ceil(step);
+      let span = w + (n - 1) * step;
+      let overhang = span.saturating_sub(dim) as i64;
+      let (w_i, step_i) = (w as i64, step as i64);
+      let mut x = -((overhang + 1) / 2);
+      while 2 * (x - step_i) + w_i >= 0 {
+        x -= step_i;
+      }
+      let mut blocks = Vec::new();
+      while 2 * x + w_i <= 2 * dim as i64 {
+        let start = x.max(0) as usize;
+        let end = ((x + w_i) as usize).min(dim);
+        if end > start {
+          blocks.push((start, end - start));
+        }
+        x += step_i;
+      }
+      blocks
+    }
+  }
+}
+
+/// ImagePartition[img, s], [img, {w, h}], [img, sizes, offsets].
+/// Size components are `n` (complete blocks only) or `{n}` (centered grid
+/// keeping clipped partial blocks); sizes and offsets are floored, offsets
+/// clamped to >= 1. Decoded from wolframscript probes.
 pub fn image_partition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if !matches!(&args[0], Expr::Image { .. }) {
+  let unevaluated = || Expr::FunctionCall {
+    name: "ImagePartition".to_string(),
+    args: args.to_vec().into(),
+  };
+  let Expr::Image {
+    color_space,
+    width,
+    height,
+    channels,
+    ref data,
+    image_type,
+  } = args[0]
+  else {
     crate::emit_message(&format!(
       "ImagePartition::imginv: Expecting an image or graphics instead of {}.",
       crate::syntax::expr_to_string(&args[0])
     ));
-    return Ok(Expr::FunctionCall {
-      name: "ImagePartition".to_string(),
-      args: args.to_vec().into(),
-    });
-  }
-  // Image input: leave unevaluated for now (real partitioning TBD).
-  Ok(Expr::FunctionCall {
-    name: "ImagePartition".to_string(),
-    args: args.to_vec().into(),
-  })
+    return Ok(unevaluated());
+  };
+
+  let Some((mode_x, mode_y)) = partition_size_spec(&args[1]) else {
+    crate::emit_message(&format!(
+      "ImagePartition::arg2: {} is not a valid size specification for image partitions.",
+      crate::syntax::expr_to_string(&args[1])
+    ));
+    return Ok(unevaluated());
+  };
+
+  let (dx, dy) = if args.len() == 3 {
+    let invalid = |shown: &str| {
+      crate::emit_message(&format!(
+        "ImagePartition::arg3: {} is not a positive number or a pair of positive numbers.",
+        shown
+      ));
+    };
+    // Positivity is checked on the raw value; the effective step is
+    // max(1, floor(d)). Invalid scalars are shown normalized to a pair.
+    let step_of = |e: &Expr| -> Option<usize> {
+      let v = crate::functions::math_ast::try_eval_to_f64(e)?;
+      if v > 0.0 {
+        Some((v.floor() as usize).max(1))
+      } else {
+        None
+      }
+    };
+    match &args[2] {
+      Expr::List(items) if items.len() == 2 => {
+        match (step_of(&items[0]), step_of(&items[1])) {
+          (Some(a), Some(b)) => (a, b),
+          _ => {
+            invalid(&crate::syntax::expr_to_string(&args[2]));
+            return Ok(unevaluated());
+          }
+        }
+      }
+      Expr::List(_) => {
+        invalid(&crate::syntax::expr_to_string(&args[2]));
+        return Ok(unevaluated());
+      }
+      e => match step_of(e) {
+        Some(d) => (d, d),
+        None => {
+          let shown = crate::syntax::expr_to_string(e);
+          invalid(&format!("{{{}, {}}}", shown, shown));
+          return Ok(unevaluated());
+        }
+      },
+    }
+  } else {
+    // Default offsets are the (floored) block sizes.
+    let size = |m: &PartitionAxisMode| match *m {
+      PartitionAxisMode::Full(n) | PartitionAxisMode::Clipped(n) => n,
+    };
+    (size(&mode_x), size(&mode_y))
+  };
+
+  let (w, h, ch) = (width as usize, height as usize, channels as usize);
+  let cols = partition_axis_blocks(w, &mode_x, dx);
+  let rows = partition_axis_blocks(h, &mode_y, dy);
+
+  let grid: Vec<Expr> = rows
+    .iter()
+    .map(|&(y0, bh)| {
+      Expr::List(
+        cols
+          .iter()
+          .map(|&(x0, bw)| {
+            let mut block = Vec::with_capacity(bw * bh * ch);
+            for y in y0..y0 + bh {
+              let base = (y * w + x0) * ch;
+              block.extend_from_slice(&data[base..base + bw * ch]);
+            }
+            Expr::Image {
+              color_space,
+              width: bw as u32,
+              height: bh as u32,
+              channels,
+              data: Arc::new(block),
+              image_type,
+            }
+          })
+          .collect::<Vec<_>>()
+          .into(),
+      )
+    })
+    .collect();
+  Ok(Expr::List(grid.into()))
 }
 
 pub fn image_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -4735,6 +5758,7 @@ pub fn image_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   match &args[0] {
     Expr::Image {
+      color_space,
       width,
       height,
       channels,
@@ -4772,6 +5796,7 @@ pub fn image_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
 
       Ok(Expr::Image {
+        color_space: *color_space,
         width: new_w as u32,
         height: new_h as u32,
         channels: *channels,
@@ -4943,6 +5968,7 @@ fn extract_image_weight(
 ) -> Option<(u32, u32, u8, &std::sync::Arc<Vec<f64>>, &ImageType, f64)> {
   // Direct image → weight 1.0
   if let Expr::Image {
+    color_space: _,
     width,
     height,
     channels,
@@ -4955,13 +5981,14 @@ fn extract_image_weight(
 
   // w * Image or Image * w
   if let Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Times,
+    op: BinaryOperator::Times,
     left,
     right,
   } = expr
   {
     if let Some(w) = crate::functions::math_ast::try_eval_to_f64(left)
       && let Expr::Image {
+        color_space: _,
         width,
         height,
         channels,
@@ -4973,6 +6000,7 @@ fn extract_image_weight(
     }
     if let Some(w) = crate::functions::math_ast::try_eval_to_f64(right)
       && let Expr::Image {
+        color_space: _,
         width,
         height,
         channels,
@@ -4991,6 +6019,7 @@ fn extract_image_weight(
   {
     if let Some(w) = crate::functions::math_ast::try_eval_to_f64(&args[0])
       && let Expr::Image {
+        color_space: _,
         width,
         height,
         channels,
@@ -5002,6 +6031,7 @@ fn extract_image_weight(
     }
     if let Some(w) = crate::functions::math_ast::try_eval_to_f64(&args[1])
       && let Expr::Image {
+        color_space: _,
         width,
         height,
         channels,
@@ -5083,6 +6113,7 @@ fn try_collage_same_shape(items: &[Expr]) -> Option<Expr> {
   }
 
   Some(Expr::Image {
+    color_space: None,
     width: out_w as u32,
     height: out_h as u32,
     channels: ch_first,
@@ -5487,6 +6518,7 @@ fn try_assemble_same_shape(outer: &[Expr]) -> Option<Expr> {
   }
 
   Some(Expr::Image {
+    color_space: None,
     width: out_w as u32,
     height: out_h as u32,
     channels: ch_first,
@@ -5784,7 +6816,7 @@ pub fn import_image_from_url(url: &str) -> Result<Expr, InterpreterError> {
 /// Anything with exotic glyphs outside the embedded fonts will fall
 /// through to `load_system_fonts()`.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn load_embedded_fonts(fontdb: &mut resvg::usvg::fontdb::Database) {
+fn load_embedded_fonts(fontdb: &mut resvg::usvg::fontdb::Database) {
   fontdb.load_font_data(
     include_bytes!(
       "../../resources/AtkinsonHyperlegibleMono-VariableFont_wght.ttf"
@@ -5927,6 +6959,7 @@ pub fn rasterize_svg(
   let data: Vec<f64> = rgba_data.iter().map(|&v| v as f64 / 255.0).collect();
 
   Ok(Expr::Image {
+    color_space: None,
     width: pix_w,
     height: pix_h,
     channels: 4,
@@ -6067,6 +7100,7 @@ pub fn constant_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data: Vec<f64> = pixel.iter().cycle().take(len).copied().collect();
 
   Ok(Expr::Image {
+    color_space: None,
     width: w,
     height: h,
     channels,
@@ -6109,7 +7143,7 @@ fn resolve_color_value(
     }
     // Named color (Red, Blue, etc.)
     Expr::Identifier(name) => {
-      if let Some(color_expr) = crate::evaluator::named_color_expr_pub(name) {
+      if let Some(color_expr) = crate::evaluator::named_color_expr(name) {
         resolve_color_value(&color_expr)
       } else {
         Err(InterpreterError::EvaluationError(format!(
@@ -6458,4 +7492,153 @@ fn cmc_distance(
   let term_c = delta_c / (c_param * s_c);
   let de2 = term_l * term_l + term_c * term_c + delta_h2 / (s_h * s_h);
   de2.sqrt() / 100.0
+}
+
+/// CrossingDetect[array | image] / CrossingDetect[..., delta] — marks the
+/// zero crossings: after treating values with |v| < delta as zero, an
+/// element is 1 exactly when its value is positive and some 8-neighbor is
+/// negative (wolframscript-verified, including that zeros neither mark
+/// nor trigger). Arrays give a binary SparseArray; a single-channel image
+/// gives a binary ("Bit") image.
+pub fn crossing_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "CrossingDetect".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.is_empty() || args.len() > 2 {
+    return unevaluated();
+  }
+  let delta = match args.get(1) {
+    None => 0.0,
+    Some(d) => match crate::functions::math_ast::try_eval_to_f64(d) {
+      Some(v) if v >= 0.0 => v,
+      _ => return unevaluated(),
+    },
+  };
+  let zeroed = |v: f64| if v.abs() < delta { 0.0 } else { v };
+  let crossings = |grid: &Vec<Vec<f64>>| -> Vec<Vec<i128>> {
+    let h = grid.len();
+    let w = grid.first().map(|r| r.len()).unwrap_or(0);
+    let mut out = vec![vec![0i128; w]; h];
+    for r in 0..h {
+      for c in 0..w {
+        let v = zeroed(grid[r][c]);
+        if v <= 0.0 {
+          continue;
+        }
+        'search: for dr in -1i64..=1 {
+          for dc in -1i64..=1 {
+            if dr == 0 && dc == 0 {
+              continue;
+            }
+            let (nr, nc) = (r as i64 + dr, c as i64 + dc);
+            if nr < 0 || nc < 0 || nr >= h as i64 || nc >= w as i64 {
+              continue;
+            }
+            if zeroed(grid[nr as usize][nc as usize]) < 0.0 {
+              out[r][c] = 1;
+              break 'search;
+            }
+          }
+        }
+      }
+    }
+    out
+  };
+  let num = |e: &Expr| crate::functions::math_ast::try_eval_to_f64(e);
+
+  match &args[0] {
+    // Single-channel image → binary image.
+    Expr::Image {
+      width,
+      height,
+      channels: 1,
+      data,
+      ..
+    } => {
+      let (w, h) = (*width as usize, *height as usize);
+      let grid: Vec<Vec<f64>> =
+        (0..h).map(|r| data[r * w..(r + 1) * w].to_vec()).collect();
+      let marked = crossings(&grid);
+      let out: Vec<f64> = marked
+        .iter()
+        .flat_map(|row| row.iter().map(|&b| b as f64))
+        .collect();
+      Ok(Expr::Image {
+        color_space: None,
+        width: *width,
+        height: *height,
+        channels: 1,
+        data: std::sync::Arc::new(out),
+        image_type: crate::syntax::ImageType::Bit,
+      })
+    }
+    // 1-D numeric list → binary SparseArray vector.
+    Expr::List(items)
+      if !items.is_empty() && items.iter().all(|e| num(e).is_some()) =>
+    {
+      let row: Vec<f64> = items.iter().map(|e| num(e).unwrap()).collect();
+      let marked = crossings(&vec![row]);
+      let dense = Expr::List(
+        marked[0]
+          .iter()
+          .map(|&b| Expr::Integer(b))
+          .collect::<Vec<_>>()
+          .into(),
+      );
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "SparseArray".to_string(),
+        args: vec![dense].into(),
+      })
+    }
+    // 2-D numeric matrix → binary SparseArray matrix. (In one dimension
+    // the 8-neighborhood reduces to the two adjacent elements.)
+    Expr::List(rows)
+      if !rows.is_empty()
+        && rows.iter().all(|r| matches!(r, Expr::List(_))) =>
+    {
+      let mut grid: Vec<Vec<f64>> = Vec::with_capacity(rows.len());
+      let mut width: Option<usize> = None;
+      for r in rows.iter() {
+        let Expr::List(cells) = r else {
+          return unevaluated();
+        };
+        if *width.get_or_insert(cells.len()) != cells.len() || cells.is_empty()
+        {
+          return unevaluated();
+        }
+        let mut vals = Vec::with_capacity(cells.len());
+        for c in cells.iter() {
+          match num(c) {
+            Some(v) => vals.push(v),
+            None => return unevaluated(),
+          }
+        }
+        grid.push(vals);
+      }
+      let marked = crossings(&grid);
+      let dense = Expr::List(
+        marked
+          .iter()
+          .map(|row| {
+            Expr::List(
+              row
+                .iter()
+                .map(|&b| Expr::Integer(b))
+                .collect::<Vec<_>>()
+                .into(),
+            )
+          })
+          .collect::<Vec<_>>()
+          .into(),
+      );
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "SparseArray".to_string(),
+        args: vec![dense].into(),
+      })
+    }
+    _ => unevaluated(),
+  }
 }

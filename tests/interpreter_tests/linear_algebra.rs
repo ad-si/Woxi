@@ -67,6 +67,73 @@ mod dot {
     assert_eq!(interpret("a . b").unwrap(), "a . b");
   }
 
+  // Dot is variadic: Dot[x] returns x; Dot[a, b, c, …] chains pairwise dots
+  // left-to-right (a.b.c = (a.b).c), matching wolframscript.
+  #[test]
+  fn dot_single_argument_returns_argument() {
+    assert_eq!(interpret("Dot[{1, 2, 3}]").unwrap(), "{1, 2, 3}");
+  }
+
+  #[test]
+  fn dot_three_matrices_and_vector() {
+    assert_eq!(
+      interpret("Dot[{{1, 0}, {0, 1}}, {{1, 2}, {3, 4}}, {5, 6}]").unwrap(),
+      "{17, 39}"
+    );
+  }
+
+  #[test]
+  fn dot_three_matrices() {
+    assert_eq!(
+      interpret("Dot[{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}, {{1, 0}, {0, 1}}]")
+        .unwrap(),
+      "{{19, 22}, {43, 50}}"
+    );
+  }
+
+  #[test]
+  fn dot_multiple_symbolic_chains() {
+    assert_eq!(interpret("Dot[a, b, c]").unwrap(), "a . b . c");
+  }
+
+  // A SparseArray operand is densified so Dot behaves like the dense case.
+  #[test]
+  fn sparse_matrix_dot_vector() {
+    assert_eq!(
+      interpret("SparseArray[{{1, 1} -> 2, {2, 2} -> 3}, {2, 2}] . {1, 1}")
+        .unwrap(),
+      "{2, 3}"
+    );
+  }
+
+  #[test]
+  fn sparse_vector_dot_vector() {
+    assert_eq!(
+      interpret("SparseArray[{1 -> 5, 2 -> 3}, 3] . {1, 1, 1}").unwrap(),
+      "8"
+    );
+  }
+
+  #[test]
+  fn vector_dot_sparse_vector() {
+    assert_eq!(
+      interpret("{1, 2} . SparseArray[{1 -> 5, 2 -> 3}, 2]").unwrap(),
+      "11"
+    );
+  }
+
+  #[test]
+  fn sparse_dot_sparse() {
+    assert_eq!(
+      interpret(
+        "Normal[SparseArray[{{1, 1} -> 1, {2, 2} -> 1}, {2, 2}] . \
+         SparseArray[{{1, 1} -> 2, {2, 2} -> 3}, {2, 2}]]"
+      )
+      .unwrap(),
+      "{{2, 0}, {0, 3}}"
+    );
+  }
+
   #[test]
   fn dot_display_infix() {
     // Dot[a, b] should display as infix a . b
@@ -476,6 +543,51 @@ mod tr {
     );
   }
 
+  // Tr[t, f, n] contracts the first n indices: it combines the slices
+  // t[[i, i, ..., i (n times), ...]] with f, clamping n to the rank.
+  #[test]
+  fn trace_with_level() {
+    // n = 2 is the ordinary matrix trace.
+    assert_eq!(interpret("Tr[{{1, 2}, {3, 4}}, Plus, 2]").unwrap(), "5");
+    // n = 1 combines the top-level rows: Plus[{1, 2}, {3, 4}] = {4, 6}.
+    assert_eq!(
+      interpret("Tr[{{1, 2}, {3, 4}}, Plus, 1]").unwrap(),
+      "{4, 6}"
+    );
+    // A different combiner and List collector.
+    assert_eq!(interpret("Tr[{{1, 2}, {3, 4}}, Times, 2]").unwrap(), "4");
+    assert_eq!(
+      interpret("Tr[{{1, 2}, {3, 4}}, List, 2]").unwrap(),
+      "{1, 4}"
+    );
+    // Non-square: the diagonal length is min(2, 3) = 2.
+    assert_eq!(
+      interpret("Tr[{{1, 2, 3}, {4, 5, 6}}, Plus, 2]").unwrap(),
+      "6"
+    );
+    // Rank-3: n = 2 leaves the third index free, giving slice lists.
+    assert_eq!(
+      interpret("Tr[Array[a, {2, 2, 2}], List, 2]").unwrap(),
+      "{{a[1, 1, 1], a[1, 1, 2]}, {a[2, 2, 1], a[2, 2, 2]}}"
+    );
+    // n above the rank is clamped, and n on a vector combines all entries.
+    assert_eq!(interpret("Tr[{{1, 2}, {3, 4}}, Plus, 3]").unwrap(), "5");
+    assert_eq!(interpret("Tr[{1, 2, 3}, Plus, 2]").unwrap(), "6");
+  }
+
+  // A zero level is rejected with Tr::intnz and stays unevaluated.
+  #[test]
+  fn trace_zero_level_rejected() {
+    let r =
+      woxi::interpret_with_stdout("Tr[{{1, 2}, {3, 4}}, Plus, 0]").unwrap();
+    assert_eq!(r.result, "Tr[{{1, 2}, {3, 4}}, Plus, 0]");
+    assert!(
+      r.warnings.iter().any(|w| w.contains("Tr::intnz")),
+      "expected intnz message, got {:?}",
+      r.warnings
+    );
+  }
+
   #[test]
   fn trace_rank_three_with_times() {
     assert_eq!(
@@ -525,6 +637,30 @@ mod identity_matrix {
     assert_eq!(
       interpret("IdentityMatrix[{3, 3}]").unwrap(),
       "{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}"
+    );
+  }
+
+  #[test]
+  fn identity_sparse_array() {
+    // IdentityMatrix[n, SparseArray] returns the identity as a SparseArray in
+    // the same CSR form as SparseArray[IdentityMatrix[n]].
+    assert_eq!(
+      interpret("IdentityMatrix[3, SparseArray]").unwrap(),
+      "SparseArray[Automatic, {3, 3}, 0, {1, {{0, 1, 2, 3}, \
+       {{1}, {2}, {3}}}, {1, 1, 1}}]"
+    );
+    assert_eq!(
+      interpret("IdentityMatrix[1, SparseArray]").unwrap(),
+      "SparseArray[Automatic, {1, 1}, 0, {1, {{0, 1}, {{1}}}, {1}}]"
+    );
+    // Normal densifies back to the identity, and it dots like the identity.
+    assert_eq!(
+      interpret("Normal[IdentityMatrix[3, SparseArray]]").unwrap(),
+      "{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}"
+    );
+    assert_eq!(
+      interpret("IdentityMatrix[3, SparseArray] . {a, b, c}").unwrap(),
+      "{a, b, c}"
     );
   }
 }
@@ -585,6 +721,39 @@ mod diagonal_matrix {
     assert_eq!(
       interpret("DiagonalMatrix[{x}, 2]").unwrap(),
       "{{0, 0, x}, {0, 0, 0}, {0, 0, 0}}"
+    );
+  }
+
+  // The 3-argument form DiagonalMatrix[list, k, m] forces an m×m matrix,
+  // padding (or clipping) instead of the auto-sized len + |k|.
+  #[test]
+  fn explicit_dimension() {
+    assert_eq!(
+      interpret("DiagonalMatrix[{1, 2, 3}, 0, 4]").unwrap(),
+      "{{1, 0, 0, 0}, {0, 2, 0, 0}, {0, 0, 3, 0}, {0, 0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("DiagonalMatrix[{1, 2}, 0, 3]").unwrap(),
+      "{{1, 0, 0}, {0, 2, 0}, {0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("DiagonalMatrix[{1, 2, 3}, 1, 4]").unwrap(),
+      "{{0, 1, 0, 0}, {0, 0, 2, 0}, {0, 0, 0, 3}, {0, 0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("DiagonalMatrix[{1, 2, 3}, -1, 4]").unwrap(),
+      "{{0, 0, 0, 0}, {1, 0, 0, 0}, {0, 2, 0, 0}, {0, 0, 3, 0}}"
+    );
+    // An explicit dimension smaller than the diagonal clips it.
+    assert_eq!(
+      interpret("DiagonalMatrix[{1, 2, 3, 4, 5}, 0, 3]").unwrap(),
+      "{{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}"
+    );
+    // Inexact promotion still applies with an explicit dimension.
+    assert_eq!(
+      interpret("DiagonalMatrix[{1, 2., 3}, 0, 4]").unwrap(),
+      "{{1., 0., 0., 0.}, {0., 2., 0., 0.}, {0., 0., 3., 0.}, \
+       {0., 0., 0., 0.}}"
     );
   }
 
@@ -1813,9 +1982,11 @@ mod eigenvectors {
       interpret("Eigenvectors[{{I, 0}, {0, 2}}]").unwrap(),
       "{{0, 1}, {1, 0}}"
     );
+    // Scalar matrix I·Id: eigenspace is all of C^2, so wolframscript returns
+    // the reversed-basis NullSpace order, matching the real scalar path.
     assert_eq!(
       interpret("Eigenvectors[{{I, 0}, {0, I}}]").unwrap(),
-      "{{1, 0}, {0, 1}}"
+      "{{0, 1}, {1, 0}}"
     );
   }
 
@@ -4691,6 +4862,36 @@ mod cases {
       r#"Sqrt[Abs[Subscript[a, 1, 1]]^2 + Abs[Subscript[a, 1, 2]]^2 + Abs[Subscript[a, 2, 1]]^2 + Abs[Subscript[a, 2, 2]]^2]"#,
     );
   }
+  // For a vector or scalar the "Frobenius" norm is the ordinary 2-norm
+  // (Abs for a scalar), not a p-norm with the string treated as p.
+  #[test]
+  fn norm_frobenius_vector_and_scalar() {
+    assert_case(r#"Norm[{3, 4}, "Frobenius"]"#, r#"5"#);
+    assert_case(r#"Norm[{1, 2, 2}, "Frobenius"]"#, r#"3"#);
+    assert_case(r#"Norm[-5, "Frobenius"]"#, r#"5"#);
+    assert_case(r#"Norm[{1., 2.}, "Frobenius"]"#, r#"2.23606797749979"#);
+  }
+  // An out-of-range norm parameter emits Norm::ptype and stays unevaluated:
+  // a numeric p < 1 for a vector, or a non-{1,2,Infinity,"Frobenius"} value
+  // for a matrix. A symbolic p is still kept symbolic.
+  #[test]
+  fn norm_invalid_parameter_emits_ptype() {
+    for input in [
+      r#"Norm[{1, 2, 3}, 0.5]"#,
+      r#"Norm[3, 0.5]"#,
+      r#"Norm[{{1, 2}, {3, 4}}, 3]"#,
+      r#"Norm[{{1, 2}, {3, 4}}, "Nuclear"]"#,
+    ] {
+      let r = woxi::interpret_with_stdout(input).unwrap();
+      assert!(
+        r.warnings.iter().any(|w| w.contains("Norm::ptype")),
+        "expected ptype for {input}, got {:?}",
+        r.warnings
+      );
+    }
+    // A symbolic p is not rejected.
+    assert_case(r#"Norm[{1, 2, 3}, p]"#, r#"(1 + 2^p + 3^p)^p^(-1)"#);
+  }
   #[test]
   fn norm_empty_vector_emits_nvm() {
     // Norm[{}] has no value: it stays unevaluated (with Norm::nvm) rather
@@ -7507,6 +7708,193 @@ mod modulus_option {
       )),
       "expected modp, got {:?}",
       result.warnings
+    );
+  }
+}
+
+mod sparse_array_matrix_functions {
+  use super::*;
+
+  // Matrix routines densify a SparseArray operand and behave like the dense
+  // case, matching Wolfram.
+  const SA: &str =
+    "SparseArray[{{1, 1} -> 2, {1, 2} -> 1, {2, 2} -> 3}, {2, 2}]";
+
+  #[test]
+  fn det() {
+    assert_eq!(interpret(&format!("Det[{SA}]")).unwrap(), "6");
+  }
+
+  #[test]
+  fn eigenvalues() {
+    assert_eq!(interpret(&format!("Eigenvalues[{SA}]")).unwrap(), "{3, 2}");
+  }
+
+  #[test]
+  fn eigenvectors() {
+    assert_eq!(
+      interpret(&format!("Eigenvectors[{SA}]")).unwrap(),
+      "{{1, 1}, {1, 0}}"
+    );
+  }
+
+  #[test]
+  fn matrix_rank() {
+    assert_eq!(interpret(&format!("MatrixRank[{SA}]")).unwrap(), "2");
+  }
+
+  #[test]
+  fn characteristic_polynomial() {
+    assert_eq!(
+      interpret(&format!("CharacteristicPolynomial[{SA}, x]")).unwrap(),
+      "6 - 5*x + x^2"
+    );
+  }
+
+  #[test]
+  fn linear_solve() {
+    assert_eq!(
+      interpret(&format!("LinearSolve[{SA}, {{1, 1}}]")).unwrap(),
+      "{1/3, 1/3}"
+    );
+  }
+
+  #[test]
+  fn minors() {
+    assert_eq!(
+      interpret(&format!("Minors[{SA}]")).unwrap(),
+      "{{2, 1}, {0, 3}}"
+    );
+  }
+}
+
+mod sparse_array_arithmetic {
+  use super::*;
+
+  // A SparseArray combined with a dense list threads element-wise as its dense
+  // form, rather than being broadcast whole against each list element.
+  #[test]
+  fn sparse_plus_dense_vector() {
+    assert_eq!(
+      interpret("SparseArray[{1 -> 5, 2 -> 3}, 3] + {1, 1, 1}").unwrap(),
+      "{6, 4, 1}"
+    );
+    assert_eq!(
+      interpret("{1, 1, 1} + SparseArray[{1 -> 5, 2 -> 3}, 3]").unwrap(),
+      "{6, 4, 1}"
+    );
+  }
+
+  // Times preserves the zero pattern (0 * x == 0), so a SparseArray multiplied
+  // by a dense vector stays a SparseArray rather than densifying.
+  #[test]
+  fn sparse_times_dense_vector() {
+    assert_eq!(
+      interpret("SparseArray[{1 -> 5, 2 -> 3}, 3] * {2, 2, 2}").unwrap(),
+      "SparseArray[Automatic, {3}, 0, {1, {{0, 2}, {{1}, {2}}}, {10, 6}}]"
+    );
+  }
+
+  #[test]
+  fn sparse_minus_dense_vector() {
+    assert_eq!(
+      interpret("SparseArray[{1 -> 5, 2 -> 3}, 3] - {1, 2, 3}").unwrap(),
+      "{4, 1, -3}"
+    );
+    assert_eq!(
+      interpret("{10, 20, 30} - SparseArray[{1 -> 5}, 3]").unwrap(),
+      "{5, 20, 30}"
+    );
+  }
+
+  // Function-call (Listable) form threads the same way.
+  #[test]
+  fn sparse_plus_dense_function_form() {
+    assert_eq!(
+      interpret("Plus[SparseArray[{1 -> 5, 2 -> 3}, 3], {1, 1, 1}]").unwrap(),
+      "{6, 4, 1}"
+    );
+  }
+}
+
+// StateSpaceModel objects and their structural control matrices.
+// All outputs verified against wolframscript.
+mod control_systems {
+  use super::*;
+
+  #[test]
+  fn state_space_model_echoes() {
+    assert_eq!(
+      interpret(
+        "StateSpaceModel[{{{0, 1}, {-1, -1}}, {{0}, {1}}, {{1, 0}}, {{0}}}]"
+      )
+      .unwrap(),
+      "StateSpaceModel[{{{0, 1}, {-1, -1}}, {{0}, {1}}, {{1, 0}}, {{0}}}]"
+    );
+  }
+
+  #[test]
+  fn observability_matrix() {
+    assert_eq!(
+      interpret(
+        "ObservabilityMatrix[StateSpaceModel[{{{0, 1}, {-1, -1}}, {{0}, {1}}, {{1, 0}}, {{0}}}]]"
+      )
+      .unwrap(),
+      "{{1, 0}, {0, 1}}"
+    );
+    // Symbolic entries flow through the iterated Dot products.
+    assert_eq!(
+      interpret(
+        "ObservabilityMatrix[StateSpaceModel[{{{a, b}, {c, d}}, {{1}, {0}}, {{1, 0}}, {{0}}}]]"
+      )
+      .unwrap(),
+      "{{1, 0}, {a, b}}"
+    );
+    assert_eq!(
+      interpret(
+        "ObservabilityMatrix[StateSpaceModel[{{{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}, {{1}, {1}, {1}}, {{1, 1, 1}}, {{0}}}]]"
+      )
+      .unwrap(),
+      "{{1, 1, 1}, {1, 2, 3}, {1, 4, 9}}"
+    );
+    // A multi-output c stacks its row blocks.
+    assert_eq!(
+      interpret(
+        "ObservabilityMatrix[StateSpaceModel[{{{1, 1}, {0, 1}}, {{1}, {1}}, {{1, 0}, {0, 1}}, {{0}, {0}}}]]"
+      )
+      .unwrap(),
+      "{{1, 0}, {0, 1}, {1, 1}, {0, 1}}"
+    );
+    // Non-models stay unevaluated.
+    assert_eq!(
+      interpret("ObservabilityMatrix[x]").unwrap(),
+      "ObservabilityMatrix[x]"
+    );
+  }
+
+  #[test]
+  fn controllability_matrix() {
+    assert_eq!(
+      interpret(
+        "ControllabilityMatrix[StateSpaceModel[{{{0, 1}, {-1, -1}}, {{0}, {1}}, {{1, 0}}, {{0}}}]]"
+      )
+      .unwrap(),
+      "{{0, 1}, {1, -1}}"
+    );
+    assert_eq!(
+      interpret(
+        "ControllabilityMatrix[StateSpaceModel[{{{a, b}, {c, d}}, {{1}, {0}}, {{1, 0}}, {{0}}}]]"
+      )
+      .unwrap(),
+      "{{1, a}, {0, c}}"
+    );
+    // A multi-input b joins its column blocks.
+    assert_eq!(
+      interpret(
+        "ControllabilityMatrix[StateSpaceModel[{{{1, 1}, {0, 1}}, {{1, 0}, {0, 1}}, {{1, 0}}, {{0, 0}}}]]"
+      )
+      .unwrap(),
+      "{{1, 0, 1, 1}, {0, 1, 0, 1}}"
     );
   }
 }

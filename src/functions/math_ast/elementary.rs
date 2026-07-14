@@ -1,7 +1,9 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{
+  BinaryOperator, Expr, ExprForm, UnaryOperator, expr_to_string,
+};
 use num_bigint::BigInt;
 use num_bigint::Sign;
 
@@ -205,10 +207,22 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   // Handle floating-point complex numbers: Abs[3.0 + I] = sqrt(10)
-  if let Some((re, im)) = try_extract_complex_f64(&args[0])
-    && im != 0.0
-  {
-    return Ok(num_to_expr((re * re + im * im).sqrt()));
+  if let Some((re, im)) = try_extract_complex_f64(&args[0]) {
+    if im != 0.0 {
+      // Exact complex numbers are handled above, so reaching here means a
+      // machine-precision value: the magnitude stays a machine real even when
+      // it lands on a whole number (Abs[3. + 4. I] = 5., not 5).
+      return Ok(Expr::Real((re * re + im * im).sqrt()));
+    }
+    // A machine-precision complex whose imaginary part is exactly 0. — e.g.
+    // `5. + 0.*I`, which stays Complex[5., 0.] in Wolfram rather than folding
+    // to a real. Its Abs is |re| as a machine real (`5.`, matching
+    // wolframscript). Guard on the presence of the imaginary unit so a
+    // genuinely real symbolic sum (Sqrt[2] - 3) is not floatified here but
+    // keeps its exact form via the fallback below.
+    if mentions_imaginary_unit(&args[0]) {
+      return Ok(Expr::Real(re.abs()));
+    }
   }
   // Fallback for a real-valued numeric expression that wasn't simplified
   // above (e.g. a sum like Sqrt[2] - 3): |x| exactly. Negative values are
@@ -286,7 +300,7 @@ fn negative_literal_abs(f: &Expr) -> Option<Expr> {
 fn as_power(expr: &Expr) -> Option<(&Expr, &Expr)> {
   match expr {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => Some((left.as_ref(), right.as_ref())),
@@ -300,7 +314,7 @@ fn as_power(expr: &Expr) -> Option<(&Expr, &Expr)> {
 fn power_with_real_exponent(expr: &Expr) -> Option<(&Expr, &Expr)> {
   let (base, exp) = match expr {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => (left.as_ref(), right.as_ref()),
@@ -368,7 +382,7 @@ fn collect_times_factors<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) -> bool {
       true
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -435,7 +449,7 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // product whose only I-mentioning factor is I itself).
   let power_parts: Option<(&Expr, &Expr)> = match &args[0] {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => Some((left.as_ref(), right.as_ref())),
@@ -485,7 +499,7 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Check for -Infinity (UnaryOp::Minus applied to Infinity)
   if let Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand,
   } = &args[0]
     && matches!(operand.as_ref(), Expr::Identifier(s) if s == "Infinity")
@@ -556,7 +570,7 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           left,
           right,
         } => inner(left) && !mentions_imaginary_unit(right),
@@ -661,7 +675,7 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let z_expr = build_complex_expr(rn, rd, in_, id);
         let abs_expr = make_sqrt(make_rational(abs2_n, abs2_d));
         return Ok(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(z_expr),
           right: Box::new(abs_expr),
         });
@@ -853,11 +867,20 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(&args[0], Expr::Identifier(s) if s == "ComplexInfinity") {
     return Ok(Expr::Identifier("ComplexInfinity".to_string()));
   }
+  // Sqrt of an arbitrary-precision BigFloat: delegate to Power[base, 1/2] so
+  // the precision-tracked bigfloat path computes it (rather than leaving
+  // `Sqrt[2.`30.]` unevaluated).
+  if matches!(&args[0], Expr::BigFloat(_, _)) {
+    return crate::functions::math_ast::power_two(
+      &args[0],
+      &make_rational(1, 2),
+    );
+  }
   // Sqrt[I] / Sqrt[-I]: delegate to Power[base, 1/2] so the imaginary-unit
   // canonicalisation (Sqrt[I] = (-1)^(1/4), Sqrt[-I] = -(-1)^(3/4)) applies.
   if matches!(&args[0], Expr::Identifier(s) if s == "I")
     || matches!(&args[0],
-      Expr::UnaryOp { op: crate::syntax::UnaryOperator::Minus, operand }
+      Expr::UnaryOp { op: UnaryOperator::Minus, operand }
         if matches!(operand.as_ref(), Expr::Identifier(s) if s == "I"))
   {
     return crate::functions::math_ast::power_two(
@@ -1056,7 +1079,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // Sqrt[base^(2n)] → base^n only when base is known non-negative
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left: base,
       right: exp,
     } if matches!(exp.as_ref(), Expr::Integer(n) if *n > 0 && n % 2 == 0)
@@ -1068,7 +1091,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return Ok(*base.clone());
         } else {
           return Ok(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left: base.clone(),
             right: Box::new(Expr::Integer(half)),
           });
@@ -1078,7 +1101,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // Sqrt of a product: Sqrt[n * expr^2 * ...] → simplify factors
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       ..
     }
     | Expr::FunctionCall { name: _, args: _ }
@@ -1100,7 +1123,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
           // expr^2 → move expr outside only if expr is known non-negative
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left: base,
             right: exp,
           } if matches!(exp.as_ref(), Expr::Integer(2))
@@ -1111,7 +1134,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // expr^(2n) → move expr^n outside (for any even n, including negative)
           // only if expr is known non-negative
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left: base,
             right: exp,
           } if matches!(exp.as_ref(), Expr::Integer(n) if n % 2 == 0 && *n != 0)
@@ -1123,7 +1146,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 outside.push(*base.clone());
               } else {
                 outside.push(Expr::BinaryOp {
-                  op: crate::syntax::BinaryOperator::Power,
+                  op: BinaryOperator::Power,
                   left: base.clone(),
                   right: Box::new(Expr::Integer(half)),
                 });
@@ -1146,7 +1169,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 outside.push(pargs[0].clone());
               } else {
                 outside.push(Expr::BinaryOp {
-                  op: crate::syntax::BinaryOperator::Power,
+                  op: BinaryOperator::Power,
                   left: Box::new(pargs[0].clone()),
                   right: Box::new(Expr::Integer(half)),
                 });
@@ -1261,7 +1284,7 @@ fn extract_int_coeff(term: &Expr) -> Option<(i128, Expr)> {
       }
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       let (c, base) = extract_int_coeff(operand)?;
@@ -1443,7 +1466,7 @@ pub fn surd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_literal_zero(degree) {
     crate::emit_message(&format!(
       "Surd::indet: Indeterminate expression Surd[{}, 0] encountered.",
-      crate::syntax::expr_to_string(base)
+      expr_to_string(base)
     ));
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
@@ -1790,9 +1813,26 @@ pub fn ceiling_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Extract numerator/denominator from Integer or Rational expr
+fn expr_fraction(e: &Expr) -> Option<(i128, i128)> {
+  match e {
+    Expr::Integer(n) => Some((*n, 1)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        Some((*n, *d))
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
 /// Helper for Floor[x, a] and Ceiling[x, a]
 /// Floor[x, a] = a * Floor[x/a], Ceiling[x, a] = a * Ceiling[x/a]
-pub fn floor_ceil_two_arg(
+fn floor_ceil_two_arg(
   x: &Expr,
   a: &Expr,
   is_floor: bool,
@@ -1805,12 +1845,8 @@ pub fn floor_ceil_two_arg(
     return build_complex_result(re_r, im_r);
   }
   // Try rational arithmetic first for exact results
-  if let (Some(xn), Some(xd), Some(an), Some(ad)) = (
-    expr_numerator(x),
-    expr_denominator(x),
-    expr_numerator(a),
-    expr_denominator(a),
-  ) {
+  if let (Some((xn, xd)), Some((an, ad))) = (expr_fraction(x), expr_fraction(a))
+  {
     if an == 0 {
       // Floor[x, 0] or Ceiling[x, 0] → Indeterminate
       return Ok(Expr::Identifier("Indeterminate".to_string()));
@@ -1846,7 +1882,7 @@ pub fn floor_ceil_two_arg(
   // a * Floor[x/a] via the single-argument Floor/Ceiling, which resolves both
   // exact transcendentals and floats to an integer. Falls through when the
   // quotient does not reduce to an integer (e.g. a symbolic x).
-  if let (Some(an), Some(ad)) = (expr_numerator(a), expr_denominator(a))
+  if let Some((an, ad)) = expr_fraction(a)
     && an != 0
   {
     // q = x / a = x * (ad / an)
@@ -1923,7 +1959,7 @@ fn bankers_round(n: f64) -> f64 {
 /// `BigInteger` when the magnitude exceeds the `i128` range (a plain `as i128`
 /// cast would saturate to `i128::MAX`). `{:.0}` renders the float's exact
 /// integer value without scientific notation.
-pub(crate) fn f64_to_int_expr(v: f64) -> Expr {
+fn f64_to_int_expr(v: f64) -> Expr {
   if v.abs() < i128::MAX as f64 {
     Expr::Integer(v as i128)
   } else if v.is_finite() {
@@ -1995,7 +2031,7 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let (Some(num), Some(den)) =
         (expr_to_i128(&rargs[0]), expr_to_i128(&rargs[1]))
       {
-        return Ok(make_rational_pub(n * num, den));
+        return Ok(make_rational(n * num, den));
       }
     }
 
@@ -2025,7 +2061,7 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if !a_is_real && !a_is_int {
         // Symbolic: return n * a
         return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(Expr::Integer(n)),
           right: Box::new(eval_a),
         });
@@ -2074,8 +2110,8 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::functions::math_ast::try_extract_complex_exact(&args[0])
     && in_ != 0
   {
-    let re_rat = make_rational_pub(rn, rd);
-    let im_rat = make_rational_pub(in_, id);
+    let re_rat = make_rational(rn, rd);
+    let im_rat = make_rational(in_, id);
     let re_rounded = round_ast(&[re_rat])?;
     let im_rounded = round_ast(&[im_rat])?;
     return crate::evaluator::evaluate_function_call_ast(
@@ -2183,14 +2219,14 @@ pub fn try_as_rational(expr: &Expr) -> Option<(i128, i128)> {
 }
 
 /// Mod[m, n] - 2-argument form
-pub fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
+fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   // Mod[m, 0] => Indeterminate for any m (including symbolic), matching
   // wolframscript. The numeric branches below also guard against zero, but
   // this catches the case where m is symbolic and never reaches them.
   if is_literal_zero(n) {
     crate::emit_message(&format!(
       "Mod::indet: Indeterminate expression Mod[{}, 0] encountered.",
-      crate::syntax::expr_to_string(m)
+      expr_to_string(m)
     ));
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
@@ -2212,7 +2248,7 @@ pub fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     if nb.is_zero() {
       crate::emit_message(&format!(
         "Mod::indet: Indeterminate expression Mod[{}, 0] encountered.",
-        crate::syntax::expr_to_string(m)
+        expr_to_string(m)
       ));
       return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
@@ -2232,7 +2268,7 @@ pub fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
       // Mod[m, 0] => Indeterminate
       crate::emit_message(&format!(
         "Mod::indet: Indeterminate expression Mod[{}, 0] encountered.",
-        crate::syntax::expr_to_string(m)
+        expr_to_string(m)
       ));
       return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
@@ -2258,14 +2294,14 @@ pub fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     if b == 0.0 {
       crate::emit_message(&format!(
         "Mod::indet: Indeterminate expression Mod[{}, 0] encountered.",
-        crate::syntax::expr_to_string(m)
+        expr_to_string(m)
       ));
       return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
     // floor_quot = Floor[m/n]; evaluating the quotient first lets exact
     // cancellations (e.g. 2*Pi/Pi -> 2) happen so the floor is exact.
     let quotient = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(m.clone()),
       right: Box::new(n.clone()),
     };
@@ -2275,10 +2311,10 @@ pub fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     };
     // result = m - n*Floor[m/n]
     let result = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(m.clone()),
       right: Box::new(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(n.clone()),
         right: Box::new(floor_quot),
       }),
@@ -2296,7 +2332,7 @@ pub fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     && (m_im != 0 || n_im != 0)
   {
     let quotient = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(m.clone()),
       right: Box::new(n.clone()),
     };
@@ -2305,10 +2341,10 @@ pub fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
       args: vec![quotient].into(),
     };
     let result = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(m.clone()),
       right: Box::new(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(n.clone()),
         right: Box::new(round_quot),
       }),
@@ -2321,7 +2357,7 @@ pub fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     if b == 0.0 {
       crate::emit_message(&format!(
         "Mod::indet: Indeterminate expression Mod[{}, 0] encountered.",
-        crate::syntax::expr_to_string(m)
+        expr_to_string(m)
       ));
       return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
@@ -2354,17 +2390,13 @@ fn mod_contains_inexact(expr: &Expr) -> bool {
 }
 
 /// Mod[m, n, d] - 3-argument form: m - n * Floor[(m - d) / n]
-pub fn mod3_ast(
-  m: &Expr,
-  n: &Expr,
-  d: &Expr,
-) -> Result<Expr, InterpreterError> {
+fn mod3_ast(m: &Expr, n: &Expr, d: &Expr) -> Result<Expr, InterpreterError> {
   // Mod[m, 0, d] => Indeterminate for any m (including symbolic).
   if is_literal_zero(n) {
     crate::emit_message(&format!(
       "Mod::indet: Indeterminate expression Mod[{}, 0, {}] encountered.",
-      crate::syntax::expr_to_string(m),
-      crate::syntax::expr_to_string(d)
+      expr_to_string(m),
+      expr_to_string(d)
     ));
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
@@ -2375,8 +2407,8 @@ pub fn mod3_ast(
     if nn == 0 && nd != 0 {
       crate::emit_message(&format!(
         "Mod::indet: Indeterminate expression Mod[{}, 0, {}] encountered.",
-        crate::syntax::expr_to_string(m),
-        crate::syntax::expr_to_string(d)
+        expr_to_string(m),
+        expr_to_string(d)
       ));
       return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
@@ -2406,19 +2438,19 @@ pub fn mod3_ast(
     if b == 0.0 {
       crate::emit_message(&format!(
         "Mod::indet: Indeterminate expression Mod[{}, 0, {}] encountered.",
-        crate::syntax::expr_to_string(m),
-        crate::syntax::expr_to_string(d)
+        expr_to_string(m),
+        expr_to_string(d)
       ));
       return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
     // floor_quot = Floor[(m - d)/n]
     let diff = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(m.clone()),
       right: Box::new(d.clone()),
     };
     let quotient = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(diff),
       right: Box::new(n.clone()),
     };
@@ -2428,10 +2460,10 @@ pub fn mod3_ast(
     };
     // result = m - n*Floor[(m - d)/n]
     let result = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(m.clone()),
       right: Box::new(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(n.clone()),
         right: Box::new(floor_quot),
       }),
@@ -2446,8 +2478,8 @@ pub fn mod3_ast(
     if b == 0.0 {
       crate::emit_message(&format!(
         "Mod::indet: Indeterminate expression Mod[{}, 0, {}] encountered.",
-        crate::syntax::expr_to_string(m),
-        crate::syntax::expr_to_string(d)
+        expr_to_string(m),
+        expr_to_string(d)
       ));
       return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
@@ -2465,7 +2497,7 @@ pub fn mod3_ast(
 }
 
 /// Integer floor division: floor(a / b)
-pub fn floor_div(a: i128, b: i128) -> i128 {
+fn floor_div(a: i128, b: i128) -> i128 {
   if b == 0 {
     return 0;
   }
@@ -2494,7 +2526,7 @@ pub fn quotient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       is_literal_zero(&args[0])
     };
-    let call = crate::syntax::expr_to_string(&Expr::FunctionCall {
+    let call = expr_to_string(&Expr::FunctionCall {
       name: "Quotient".to_string(),
       args: args.to_vec().into(),
     });
@@ -2614,7 +2646,7 @@ pub fn quotient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // the identity Mod[m, n] = m - n*Quotient[m, n]. Building the symbolic
         // Round and evaluating it also normalises the display to `a + b*I`.
         let quotient = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(args[0].clone()),
           right: Box::new(args[1].clone()),
         };
@@ -2742,7 +2774,7 @@ pub fn clip_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn emit_integer_exponent_ibase(b: &Expr) {
   crate::emit_message(&format!(
     "IntegerExponent::ibase: Base {} is not an integer greater than 1.",
-    crate::syntax::format_expr(b, crate::syntax::ExprForm::Output)
+    crate::syntax::format_expr(b, ExprForm::Output)
   ));
 }
 
@@ -3163,10 +3195,7 @@ pub fn chop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   chop_expr(&args[0], tolerance)
 }
 
-pub fn chop_expr(
-  expr: &Expr,
-  tolerance: f64,
-) -> Result<Expr, InterpreterError> {
+fn chop_expr(expr: &Expr, tolerance: f64) -> Result<Expr, InterpreterError> {
   match expr {
     Expr::Real(f) => {
       if f.abs() < tolerance {
@@ -3265,7 +3294,7 @@ pub fn cube_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if cube_part > 1 {
         // CubeRoot[n] = cube_part * CubeRoot[remainder]
         let cube_root_remainder = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           left: Box::new(Expr::Integer(remainder as i128)),
           right: Box::new(Expr::FunctionCall {
             name: "Rational".to_string(),
@@ -3273,7 +3302,7 @@ pub fn cube_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }),
         };
         let result = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(Expr::Integer(sign * cube_part as i128)),
           right: Box::new(cube_root_remainder),
         };
@@ -3283,7 +3312,7 @@ pub fn cube_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Sign[n] * abs[n]^(1/3) (matching wolframscript: CubeRoot[-5]
         // -> -5^(1/3), i.e. -(5^(1/3)), not the complex (-5)^(1/3)).
         let pow = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           left: Box::new(Expr::Integer(abs_n as i128)),
           right: Box::new(Expr::FunctionCall {
             name: "Rational".to_string(),
@@ -3292,7 +3321,7 @@ pub fn cube_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         if sign < 0 {
           Ok(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(Expr::Integer(-1)),
             right: Box::new(pow),
           })
@@ -3332,7 +3361,7 @@ fn is_concrete_number(e: &Expr) -> bool {
     | Expr::BigFloat(_, _) => true,
     Expr::FunctionCall { name, .. } => name == "Rational",
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => is_concrete_number(operand),
     _ => false,
@@ -3373,10 +3402,7 @@ pub fn subdivide_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           crate::emit_message(&format!(
             "Subdivide::sdmint: The number of subdivisions given in position {} of {} should be a positive machine-sized integer.",
             args.len(),
-            crate::syntax::format_expr(
-              &unevaluated(),
-              crate::syntax::ExprForm::Output
-            )
+            crate::syntax::format_expr(&unevaluated(), ExprForm::Output)
           ));
           return Ok(unevaluated());
         }
@@ -3391,10 +3417,7 @@ pub fn subdivide_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::emit_message(&format!(
         "Subdivide::sdmint: The number of subdivisions given in position {} of {} should be a positive machine-sized integer.",
         args.len(),
-        crate::syntax::format_expr(
-          &unevaluated(),
-          crate::syntax::ExprForm::Output
-        )
+        crate::syntax::format_expr(&unevaluated(), ExprForm::Output)
       ));
       return Ok(unevaluated());
     }
@@ -3461,7 +3484,6 @@ fn subdivide_scalar_at(
   n: i128,
 ) -> Result<Expr, InterpreterError> {
   use crate::evaluator::evaluate_expr_to_expr;
-  use crate::syntax::BinaryOperator;
 
   if i == 0 {
     return Ok(xmin.clone());
@@ -3490,6 +3512,245 @@ fn subdivide_scalar_at(
     right: Box::new(term_max),
   };
   evaluate_expr_to_expr(&result)
+}
+
+/// Extract an exact (numerator, denominator) pair from an Integer or Rational.
+fn expr_to_rational_pair(e: &Expr) -> Option<(i128, i128)> {
+  match e {
+    Expr::Integer(n) => Some((*n, 1)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        Some((*n, *d))
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Round a raw step up to the nearest "nice" number m * 10^k with
+/// m in {1, 2, 2.5, 5}, returned as an exact (numerator, denominator).
+fn nice_step_rational(raw: f64) -> Option<(i128, i128)> {
+  if !(raw.is_finite() && raw > 0.0) {
+    return None;
+  }
+  let mut k = raw.log10().floor() as i32;
+  // Guard against floating-point error in the exponent.
+  while 10f64.powi(k) > raw * (1.0 + 1e-9) {
+    k -= 1;
+  }
+  while 10f64.powi(k + 1) <= raw * (1.0 + 1e-9) {
+    k += 1;
+  }
+  let mantissa = raw / 10f64.powi(k);
+  let eps = 1.0 + 1e-9;
+  // (num, den) of the nice mantissa, plus an extra power of ten when the
+  // mantissa rounds up past 5 into the next decade.
+  let (mn, md, extra) = if mantissa <= 1.0 * eps {
+    (1i128, 1i128, 0)
+  } else if mantissa <= 2.0 * eps {
+    (2, 1, 0)
+  } else if mantissa <= 2.5 * eps {
+    (5, 2, 0)
+  } else if mantissa <= 5.0 * eps {
+    (5, 1, 0)
+  } else {
+    (1, 1, 1)
+  };
+  let k = k + extra;
+  let (mut sn, mut sd) = (mn, md);
+  if k >= 0 {
+    sn = sn.checked_mul(10i128.checked_pow(k as u32)?)?;
+  } else {
+    sd = sd.checked_mul(10i128.checked_pow((-k) as u32)?)?;
+  }
+  let g = gcd_i128(sn.abs(), sd.abs()).max(1);
+  Some((sn / g, sd / g))
+}
+
+fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
+  while b != 0 {
+    (a, b) = (b, a % b);
+  }
+  a.abs()
+}
+
+/// Reduce a (numerator, denominator) pair to lowest terms with a positive
+/// denominator.
+fn reduce_rat(n: i128, d: i128) -> (i128, i128) {
+  let s = if d < 0 { -1 } else { 1 };
+  let (n, d) = (n * s, d * s);
+  let g = gcd_i128(n.abs(), d).max(1);
+  (n / g, d / g)
+}
+
+fn rat_to_f64((n, d): (i128, i128)) -> f64 {
+  n as f64 / d as f64
+}
+
+/// The rational points dividing [min, max] into steps of exact size `step`
+/// (a positive rational), with endpoints snapped to the nearest step multiple
+/// covering the interval. Returns `None` when the point count is implausibly
+/// large (guards against pathological inputs).
+fn division_points(
+  min: (i128, i128),
+  max: (i128, i128),
+  step: (i128, i128),
+) -> Option<Vec<(i128, i128)>> {
+  let (sn, sd) = step;
+  // value/step = value_n*sd / (value_d*sn); floor for first, ceil for last.
+  let first = (min.0 * sd).div_euclid(min.1 * sn);
+  let last = -((-(max.0 * sd)).div_euclid(max.1 * sn));
+  if last < first || (last - first) > 100_000 {
+    return None;
+  }
+  let mut pts = Vec::with_capacity((last - first + 1) as usize);
+  for i in first..=last {
+    pts.push(reduce_rat(i * sn, sd));
+  }
+  Some(pts)
+}
+
+/// Round a positive rational to the nearest integer (half to even) with a
+/// minimum of 1 — used to pick how many `dx` units make up a division step.
+fn round_half_even_min1((n, d): (i128, i128)) -> i128 {
+  let f = n.div_euclid(d);
+  let r = n - f * d; // 0 <= r < d
+  let twice = 2 * r;
+  let m = if twice < d {
+    f
+  } else if twice > d {
+    f + 1
+  } else if f % 2 == 0 {
+    f
+  } else {
+    f + 1
+  };
+  m.max(1)
+}
+
+/// The nice division step for `n` parts of [min, max]. With `dx = Some(..)`,
+/// the step is constrained to an integer multiple of `dx` (the 3-element
+/// {xmin, xmax, dx} range form): the raw step is measured in `dx` units,
+/// rounded to a nice count of units, and scaled back.
+fn find_divisions_step(
+  min: (i128, i128),
+  max: (i128, i128),
+  n: i128,
+  dx: Option<(i128, i128)>,
+) -> Option<(i128, i128)> {
+  let raw = (rat_to_f64(max) - rat_to_f64(min)) / n as f64;
+  match dx {
+    None => nice_step_rational(raw),
+    Some((dn, dd)) => {
+      let units = raw * dd as f64 / dn as f64;
+      let nice = nice_step_rational(units)?;
+      let m = round_half_even_min1(nice);
+      Some(reduce_rat(m * dn, dd))
+    }
+  }
+}
+
+/// The nested FindDivisions[{xmin, xmax}, {n1, n2, ...}] output: a list with
+/// one level per count. Level 0 is the flat major grid; each deeper level
+/// subdivides the intervals of the level above, grouped by parent interval.
+fn nested_divisions(
+  min: (i128, i128),
+  max: (i128, i128),
+  counts: &[i128],
+) -> Option<Vec<Expr>> {
+  let step = find_divisions_step(min, max, counts[0], None)?;
+  let major = division_points(min, max, step)?;
+  let mut levels = vec![Expr::List(
+    major.iter().map(|&(n, d)| make_rational(n, d)).collect(),
+  )];
+  if counts.len() == 1 {
+    return Some(levels);
+  }
+  // Recursively subdivide each consecutive major interval with the remaining
+  // counts, then merge the per-interval results level by level.
+  let mut sub_results = Vec::with_capacity(major.len().saturating_sub(1));
+  for w in major.windows(2) {
+    sub_results.push(nested_divisions(w[0], w[1], &counts[1..])?);
+  }
+  for level in 0..(counts.len() - 1) {
+    let merged: Vec<Expr> =
+      sub_results.iter().map(|sr| sr[level].clone()).collect();
+    levels.push(Expr::List(merged.into()));
+  }
+  Some(levels)
+}
+
+/// FindDivisions[{xmin, xmax}, n] — about n "nice" numbers dividing the interval
+/// into equally spaced parts, using step sizes of the form {1,2,2.5,5}*10^k.
+/// Also supports FindDivisions[{xmin, xmax, dx}, n] (steps constrained to
+/// multiples of dx) and FindDivisions[{xmin, xmax}, {n1, n2, ...}] (recursive
+/// nested subdivision). Division endpoints may fall just outside [xmin, xmax].
+/// Non-numeric endpoints stay unevaluated.
+pub fn find_divisions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "FindDivisions".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 2 {
+    return unevaluated();
+  }
+  let range = match &args[0] {
+    Expr::List(items) if items.len() == 2 || items.len() == 3 => items,
+    _ => return unevaluated(),
+  };
+  let (Some(min), Some(max)) = (
+    expr_to_rational_pair(&range[0]),
+    expr_to_rational_pair(&range[1]),
+  ) else {
+    return unevaluated();
+  };
+  let (min, max) = (reduce_rat(min.0, min.1), reduce_rat(max.0, max.1));
+
+  // Optional spacing unit dx (the 3-element range form). Must be positive.
+  let dx = if range.len() == 3 {
+    match expr_to_rational_pair(&range[2]) {
+      Some(d) if d.0 > 0 => Some(reduce_rat(d.0, d.1)),
+      _ => return unevaluated(),
+    }
+  } else {
+    None
+  };
+
+  match &args[1] {
+    Expr::Integer(n) if *n > 0 => {
+      let Some(step) = find_divisions_step(min, max, *n, dx) else {
+        return unevaluated();
+      };
+      let Some(pts) = division_points(min, max, step) else {
+        return unevaluated();
+      };
+      Ok(Expr::List(
+        pts.iter().map(|&(n, d)| make_rational(n, d)).collect(),
+      ))
+    }
+    // Nested subdivision counts {n1, n2, ...}. The dx spacing constraint is not
+    // combined with nested counts (leave that form unevaluated).
+    Expr::List(counts) if dx.is_none() && !counts.is_empty() => {
+      let mut ns = Vec::with_capacity(counts.len());
+      for c in counts.iter() {
+        match c {
+          Expr::Integer(n) if *n > 0 => ns.push(*n),
+          _ => return unevaluated(),
+        }
+      }
+      match nested_divisions(min, max, &ns) {
+        Some(levels) => Ok(Expr::List(levels.into())),
+        None => unevaluated(),
+      }
+    }
+    _ => unevaluated(),
+  }
 }
 
 /// Ramp[x] - returns max(0, x)
@@ -3549,9 +3810,9 @@ pub fn kronecker_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // First check if any are symbolic (non-numeric)
   let mut has_symbolic = false;
   let mut all_equal = true;
-  let first_str = crate::syntax::expr_to_string(&args[0]);
+  let first_str = expr_to_string(&args[0]);
   for arg in &args[1..] {
-    let s = crate::syntax::expr_to_string(arg);
+    let s = expr_to_string(arg);
     if s != first_str {
       all_equal = false;
       // Check if both are numeric and compare numerically
@@ -3636,11 +3897,8 @@ pub fn unit_step_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some(v) if v < 0.0 => return Ok(Expr::Integer(0)),
         Some(_) => {} // >= 0: contributes 1, drop it
         None => {
-          let s = crate::syntax::expr_to_string(arg);
-          if !remaining
-            .iter()
-            .any(|e| crate::syntax::expr_to_string(e) == s)
-          {
+          let s = expr_to_string(arg);
+          if !remaining.iter().any(|e| expr_to_string(e) == s) {
             remaining.push(arg.clone());
           }
         }
@@ -3669,7 +3927,7 @@ pub fn unit_step_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     },
     Expr::Identifier(name) if name == "Infinity" => Ok(Expr::Integer(1)),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => match operand.as_ref() {
       Expr::Constant(c) if matches!(c.as_str(), "Pi" | "E" | "Degree") => {
@@ -3699,7 +3957,7 @@ pub fn unit_step_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } if matches!(left.as_ref(), Expr::Integer(-1)) => match right.as_ref() {
@@ -4041,7 +4299,7 @@ pub fn heaviside_lambda_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         // 1 - |n/d| = (|d| - |n|) / |d|
         let num = abs_d - abs_n;
-        return Ok(crate::functions::math_ast::make_rational_pub(num, abs_d));
+        return Ok(crate::functions::math_ast::make_rational(num, abs_d));
       }
       Ok(Expr::FunctionCall {
         name: "HeavisideLambda".to_string(),

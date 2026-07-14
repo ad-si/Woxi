@@ -5,7 +5,7 @@
 
 use crate::InterpreterError;
 use crate::functions::math_ast::make_sqrt;
-use crate::syntax::{BinaryOperator, Expr};
+use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
 
 // ─── DSolve ────────────────────────────────────────────────────────────
 
@@ -39,6 +39,20 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let eqns_arg = &args[0];
   let dep_arg = &args[1];
   let indep_var = &args[2];
+
+  // Purely algebraic case: when the equation(s) contain no derivatives of the
+  // dependent function, DSolve reduces to Solve for the dependent function(s),
+  // e.g. DSolve[y[x] + 2 == 5, y[x], x] -> {{y[x] -> 3}}. Delegate to Solve,
+  // which treats the applications `y[x]` as generalized unknowns.
+  if !contains_derivative(eqns_arg) {
+    let solved =
+      crate::functions::solve_ast(&[eqns_arg.clone(), dep_arg.clone()])?;
+    // Only accept a genuine solution list; otherwise fall through so the ODE
+    // machinery (or the unevaluated fallback) handles it.
+    if matches!(&solved, Expr::List(_)) {
+      return Ok(solved);
+    }
+  }
 
   // PDE branch: `DSolve[eqn, f, {x, y}]` (or `DSolve[eqn, f[x, y], {x, y}]`)
   // for a first-order linear PDE in two variables. Three recognised
@@ -485,6 +499,34 @@ struct OdeTerm {
 // ─── ODE Parsing Helpers ───────────────────────────────────────────────
 
 /// Normalize equation: lhs == rhs → lhs - rhs (everything on left side)
+/// Does `expr` contain any derivative anywhere — a `Derivative[...]` head
+/// (i.e. `y'[x]`, `y''[x]`, … which parse to `Derivative[n][y][x]`) or a `D[…]`
+/// operator? Used to distinguish a genuine ODE/PDE from a purely algebraic
+/// equation in the dependent function.
+fn contains_derivative(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      name == "Derivative"
+        || name == "D"
+        || args.iter().any(contains_derivative)
+    }
+    // Derivative[n][y][x] parses to a nested CurriedCall whose innermost head
+    // is FunctionCall("Derivative", …); traverse both func and args.
+    Expr::CurriedCall { func, args } => {
+      contains_derivative(func) || args.iter().any(contains_derivative)
+    }
+    Expr::List(items) => items.iter().any(contains_derivative),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_derivative(left) || contains_derivative(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_derivative(operand),
+    Expr::Comparison { operands, .. } => {
+      operands.iter().any(contains_derivative)
+    }
+    _ => false,
+  }
+}
+
 fn normalize_equation(eq: &Expr) -> Result<Expr, InterpreterError> {
   match eq {
     Expr::Comparison {
@@ -492,7 +534,7 @@ fn normalize_equation(eq: &Expr) -> Result<Expr, InterpreterError> {
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      && operators[0] == ComparisonOp::Equal =>
     {
       let lhs = &operands[0];
       let rhs = &operands[1];
@@ -521,7 +563,7 @@ fn is_initial_condition(expr: &Expr, y_name: &str, x_name: &str) -> bool {
   } = expr
     && operands.len() == 2
     && operators.len() == 1
-    && operators[0] == crate::syntax::ComparisonOp::Equal
+    && operators[0] == ComparisonOp::Equal
   {
     let lhs = &operands[0];
     // y[val]
@@ -608,7 +650,7 @@ fn parse_numeric_initial_condition(
   } = expr
     && operands.len() == 2
     && operators.len() == 1
-    && operators[0] == crate::syntax::ComparisonOp::Equal
+    && operators[0] == ComparisonOp::Equal
   {
     let lhs = &operands[0];
 
@@ -683,7 +725,7 @@ fn collect_additive_terms(
       collect_additive_terms(right, y_name, x_name, !negated, terms)?;
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       collect_additive_terms(operand, y_name, x_name, !negated, terms)?;
@@ -972,7 +1014,7 @@ fn negate_expr(expr: &Expr) -> Expr {
     Expr::Integer(n) => Expr::Integer(-n),
     Expr::Real(f) => Expr::Real(-f),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => *operand.clone(),
     _ => Expr::BinaryOp {
@@ -1612,7 +1654,7 @@ fn make_exp_term_expr(coeff: &Expr, x_name: &str) -> Expr {
   let exponent = match coeff {
     Expr::Integer(1) => x,
     Expr::Integer(-1) => Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(x),
     },
     _ => Expr::BinaryOp {
@@ -1695,7 +1737,7 @@ fn apply_initial_conditions(
     } = ic
       && operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal
+      && operators[0] == ComparisonOp::Equal
     {
       let lhs = &operands[0];
       let rhs = &operands[1];
@@ -1752,7 +1794,7 @@ fn apply_initial_conditions(
       // Create equation: evaluated == rhs
       let equation = Expr::Comparison {
         operands: vec![evaluated, rhs.clone()],
-        operators: vec![crate::syntax::ComparisonOp::Equal],
+        operators: vec![ComparisonOp::Equal],
       };
       equations.push(equation);
     }
@@ -2034,7 +2076,7 @@ fn expr_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
     Expr::Constant(name) if name == "E" => Ok(std::f64::consts::E),
     Expr::Constant(name) if name == "Pi" => Ok(std::f64::consts::PI),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => Ok(-expr_to_f64(operand)?),
     Expr::BinaryOp { op, left, right } => {
@@ -2158,9 +2200,19 @@ pub fn interpolation_ast(
   };
 
   if data_list.is_empty() {
-    return Err(InterpreterError::EvaluationError(
-      "Interpolation: need at least one data point".into(),
+    // An empty data list is not interpolatable: emit innd and stay
+    // unevaluated (wolframscript parity) rather than raising a hard error.
+    crate::emit_message(&format!(
+      "Interpolation::innd: First argument in {} does not contain a list of data and coordinates.",
+      crate::syntax::format_expr(
+        &data_evaluated,
+        crate::syntax::ExprForm::Output
+      )
     ));
+    return Ok(Expr::FunctionCall {
+      name: head.to_string(),
+      args: args.to_vec().into(),
+    });
   }
 
   // ListInterpolation of a rectangular numeric matrix is a 2-D grid (values on
@@ -2197,13 +2249,10 @@ pub fn interpolation_ast(
   points.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
   let n = points.len();
-  if n < 2 {
-    return Err(InterpreterError::EvaluationError(
-      "Interpolation: need at least 2 data points".into(),
-    ));
-  }
 
-  // Clamp order to valid range
+  // Clamp order to valid range. A single data point is allowed: the order is
+  // reduced to 0 (with inhr) and the result is a constant interpolation,
+  // matching wolframscript.
   let mut order = interp_order.max(1).min(3) as usize;
   if order >= n {
     let reduced = n - 1;
@@ -2523,10 +2572,21 @@ pub fn evaluate_interpolating_function(
   };
 
   let n = data_points.len();
-  if n < 2 {
+  if n == 0 {
     return Err(InterpreterError::EvaluationError(
       "InterpolatingFunction: not enough data points".into(),
     ));
+  }
+  if n == 1 {
+    // A single data point is a constant interpolation: return the stored y
+    // (preserving its Integer/Real type) for any input.
+    if let Expr::List(pair) = &data_points[0]
+      && pair.len() == 2
+    {
+      return Ok(pair[1].clone());
+    }
+    let (_, y) = extract_point(&data_points[0])?;
+    return Ok(real_or_integer(y));
   }
 
   // Extract all points for interpolation
@@ -2896,7 +2956,7 @@ fn try_direct_linear_pde_body(
   let mut c = match &rhs {
     Expr::Integer(n) => *n,
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => match operand.as_ref() {
       Expr::Integer(n) => -*n,
@@ -2972,7 +3032,7 @@ fn try_direct_linear_pde_body(
 /// `-b/a` reduced to either an `Integer` (if `a` divides `b`) or a
 /// `Rational` literal. Sign is folded into the numerator.
 fn make_neg_b_over_a(b: i128, a: i128) -> Expr {
-  use crate::functions::math_ast::make_rational_pub;
+  use crate::functions::math_ast::make_rational;
   let g = gcd_i128(b.abs(), a.abs());
   let g = if g == 0 { 1 } else { g };
   let (num, den) = (-b / g, a / g);
@@ -2980,12 +3040,12 @@ fn make_neg_b_over_a(b: i128, a: i128) -> Expr {
   if den == 1 {
     Expr::Integer(num)
   } else {
-    make_rational_pub(num, den)
+    make_rational(num, den)
   }
 }
 
 fn make_c_over_a(c: i128, a: i128) -> Expr {
-  use crate::functions::math_ast::make_rational_pub;
+  use crate::functions::math_ast::make_rational;
   let g = gcd_i128(c.abs(), a.abs());
   let g = if g == 0 { 1 } else { g };
   let (num, den) = (c / g, a / g);
@@ -2993,7 +3053,7 @@ fn make_c_over_a(c: i128, a: i128) -> Expr {
   if den == 1 {
     Expr::Integer(num)
   } else {
-    make_rational_pub(num, den)
+    make_rational(num, den)
   }
 }
 
@@ -3248,7 +3308,7 @@ fn pde_split_equation(eqn: &Expr) -> Option<(Expr, Expr)> {
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      && operators[0] == ComparisonOp::Equal =>
     {
       Some((operands[0].clone(), operands[1].clone()))
     }

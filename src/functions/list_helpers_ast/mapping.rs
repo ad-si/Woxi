@@ -2,6 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::ComparisonOp;
 
 /// AST-based Map: apply function to each element of a list or association.
 /// Map[f, {a, b, c}] -> {f[a], f[b], f[c]}
@@ -45,6 +46,53 @@ pub fn map_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
         })
         .collect();
       Ok(Expr::Association(results?))
+    }
+    // Map over a rank-1 SparseArray applies f to each element while keeping the
+    // sparse structure: f is applied to every stored value and to the default
+    // value (Map[f, SparseArray[..]] -> SparseArray[.., f[default], {.., {f[v1],
+    // ..}}]), matching Wolfram. Without this, the generic head branch below would
+    // map f over the internal representation (Automatic, dims, ...) and corrupt
+    // it. Higher-rank arrays map over their (sub-array) rows, so we densify and
+    // map as a list — value-correct via Normal.
+    Expr::FunctionCall {
+      name,
+      args: sa_args,
+    } if name == "SparseArray" => {
+      let canonical =
+        crate::functions::list_helpers_ast::sparse_array_normalize_ast(
+          sa_args,
+        )?;
+      if let Expr::FunctionCall { name: cn, args: ca } = &canonical
+        && cn == "SparseArray"
+        && ca.len() == 4
+        && matches!(&ca[0], Expr::Identifier(s) if s == "Automatic")
+        && let Expr::List(dims) = &ca[1]
+        && dims.len() == 1
+        && let Expr::List(structure) = &ca[3]
+        && structure.len() == 3
+        && let Expr::List(values) = &structure[2]
+      {
+        let new_default = apply_func_ast(func, &ca[2])?;
+        let new_values: Result<Vec<Expr>, _> =
+          values.iter().map(|v| apply_func_ast(func, v)).collect();
+        let new_structure = Expr::List(
+          vec![
+            structure[0].clone(),
+            structure[1].clone(),
+            Expr::List(new_values?.into()),
+          ]
+          .into(),
+        );
+        return Ok(Expr::FunctionCall {
+          name: "SparseArray".to_string(),
+          args: vec![ca[0].clone(), ca[1].clone(), new_default, new_structure]
+            .into(),
+        });
+      }
+      // Rank >= 2 (or an unrecognized structure): densify and map as a list.
+      let dense =
+        crate::functions::list_helpers_ast::sparse_array_ast(sa_args)?;
+      map_ast(func, &dense)
     }
     // Rational / Complex are atoms: Map at level 1 returns them unchanged.
     _ if crate::functions::predicate_ast::is_atomic_number(list) => {
@@ -179,7 +227,6 @@ fn map_decompose(expr: &Expr) -> Option<(String, Vec<Expr>)> {
 
 /// Rebuild a mapped composite from its canonical head and new children.
 fn rewrap(head: &str, children: Vec<Expr>) -> Expr {
-  use crate::syntax::ComparisonOp;
   // Relational heads must be rebuilt as `Expr::Comparison` so they render
   // infix (`f[a] == f[b]`), not as `Equal[f[a], f[b]]`.
   let cmp_op = match head {
@@ -705,8 +752,11 @@ pub fn map_indexed_ast(
   func: &Expr,
   list: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
+  // MapIndexed threads over any non-atomic head, keeping it: List gives a
+  // List, and a general head[...] gives head[f[e1, {1}], f[e2, {2}], ...].
+  let (head, items): (Option<&String>, &[Expr]) = match list {
+    Expr::List(items) => (None, items),
+    Expr::FunctionCall { name, args } => (Some(name), args),
     // On an association, f is applied to each value with the index {Key[key]},
     // keeping the keys: <|k -> f[v, {Key[k]}], ...|>.
     Expr::Association(pairs) => {
@@ -741,9 +791,18 @@ pub fn map_indexed_ast(
       apply_func_to_two_args(func, item, &index)
     })
     .collect();
-  let results: Vec<Expr> =
-    results?.into_iter().filter(|e| !is_nothing(e)).collect();
-  Ok(Expr::List(results.into()))
+  match head {
+    // `Nothing` is auto-removed only from Lists, not general heads.
+    None => {
+      let results: Vec<Expr> =
+        results?.into_iter().filter(|e| !is_nothing(e)).collect();
+      Ok(Expr::List(results.into()))
+    }
+    Some(h) => Ok(Expr::FunctionCall {
+      name: h.clone(),
+      args: results?.into(),
+    }),
+  }
 }
 
 /// Detect a Heads -> True option, either as Expr::Rule or Expr::FunctionCall.
@@ -1127,6 +1186,13 @@ pub fn map_thread_ast(
       });
     }
   };
+
+  // Level 0: no threading — apply the function directly to the top-level
+  // elements, i.e. MapThread[f, {a1, …, ak}, 0] = f[a1, …, ak]. The elements
+  // need not be lists in this case.
+  if level == Some(0) {
+    return apply_func_to_n_args(func, outer_items);
+  }
 
   if outer_items.is_empty() {
     return Ok(Expr::List(vec![].into()));

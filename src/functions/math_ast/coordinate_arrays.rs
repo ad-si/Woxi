@@ -4,7 +4,7 @@
 //! pairs versus the two corner points `{mins, maxs}`.
 
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, UnaryOperator, expr_to_output};
 
 /// One coordinate value: an exact rational (p/q, q > 0) or a machine real.
 /// Grids over exact bounds with exact steps stay exact (`Into[2]` of a unit
@@ -158,7 +158,7 @@ fn to_num(expr: &Expr) -> Option<Num> {
       }
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => to_num(operand).map(|v| match v {
       Num::Exact(p, q) => Num::Exact(-p, q),
@@ -313,14 +313,14 @@ pub fn coordinate_bounds_array_ast(
   let Some(ranges) = ranges else {
     crate::emit_message(&format!(
       "CoordinateBoundsArray::bound: Invalid bounds specification {}.",
-      crate::syntax::expr_to_output(&args[0])
+      expr_to_output(&args[0])
     ));
     return unevaluated();
   };
   match build_array(&ranges, args.get(1), args.get(2), &|off| {
     crate::emit_message(&format!(
       "CoordinateBoundsArray::offs: Invalid offset specification {}.",
-      crate::syntax::expr_to_output(off)
+      expr_to_output(off)
     ));
   }) {
     Some(result) => Ok(result),
@@ -361,14 +361,14 @@ pub fn coordinate_bounding_box_array_ast(
   let Some(ranges) = ranges else {
     crate::emit_message(&format!(
       "CoordinateBoundingBoxArray::bbox: Invalid bounding box specification {}.",
-      crate::syntax::expr_to_output(&args[0])
+      expr_to_output(&args[0])
     ));
     return unevaluated();
   };
   match build_array(&ranges, args.get(1), args.get(2), &|off| {
     crate::emit_message(&format!(
       "CoordinateBoundingBoxArray::offs: Invalid offset specification {}.",
-      crate::syntax::expr_to_output(off)
+      expr_to_output(off)
     ));
   }) {
     Some(result) => Ok(result),

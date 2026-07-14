@@ -898,7 +898,7 @@ pub fn is_sum(expr: &Expr) -> bool {
 
 /// Distribute the product of two expanded expressions.
 /// If either is a sum, produce all cross-products.
-pub fn distribute_product(left: &Expr, right: &Expr) -> Expr {
+fn distribute_product(left: &Expr, right: &Expr) -> Expr {
   let left_terms = collect_additive_terms(left);
   let right_terms = collect_additive_terms(right);
 
@@ -917,7 +917,7 @@ pub fn distribute_product(left: &Expr, right: &Expr) -> Expr {
 }
 
 /// Multiply two non-sum terms (individual monomials).
-pub fn multiply_terms(a: &Expr, b: &Expr) -> Expr {
+fn multiply_terms(a: &Expr, b: &Expr) -> Expr {
   // Handle negation
   if let Expr::UnaryOp {
     op: UnaryOperator::Minus,
@@ -985,7 +985,6 @@ fn is_numeric_scalar(e: &Expr) -> bool {
 /// own output, leaving the shared `combine_product_factors` (used by Simplify)
 /// untouched.
 fn fold_term_numerics(expr: &Expr) -> Expr {
-  use crate::syntax::{BinaryOperator, UnaryOperator};
   match expr {
     Expr::BinaryOp {
       op: BinaryOperator::Plus,
@@ -1037,7 +1036,7 @@ fn fold_term_numerics(expr: &Expr) -> Expr {
   }
 }
 
-pub fn combine_product_factors(factors: Vec<Expr>) -> Expr {
+fn combine_product_factors(factors: Vec<Expr>) -> Expr {
   // Group factors by base, sum exponents
   let mut base_exps: Vec<(String, Expr, Expr)> = Vec::new(); // (sort_key, base, exponent)
   let mut numeric_coeff = Expr::Integer(1);
@@ -1126,7 +1125,7 @@ pub fn negate_term(t: &Expr) -> Expr {
 }
 
 /// Expand (sum)^n by repeated distribution.
-pub fn expand_power(base: &Expr, n: i128) -> Expr {
+fn expand_power(base: &Expr, n: i128) -> Expr {
   if n == 0 {
     return Expr::Integer(1);
   }
@@ -1249,7 +1248,7 @@ fn sort_var_factors_canonical(factors: &mut [Expr]) {
     match e {
       Expr::Identifier(_) | Expr::Constant(_) => 0,
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left,
         ..
       } => factor_subpriority(left),
@@ -1467,7 +1466,7 @@ pub fn expand_all_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Recursively expand all subexpressions, then expand at the top level
-pub fn expand_all_recursive(expr: &Expr) -> Expr {
+fn expand_all_recursive(expr: &Expr) -> Expr {
   match expr {
     Expr::Integer(_)
     | Expr::Real(_)

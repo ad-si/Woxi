@@ -6,7 +6,7 @@
 //! c > 0 return their conditions.
 
 use crate::InterpreterError;
-use crate::syntax::{ComparisonOp, Expr};
+use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
 
 pub fn resolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = |args: &[Expr]| Expr::FunctionCall {
@@ -149,7 +149,7 @@ fn parametric_template(head: &str, var: &str, cond: &Expr) -> Option<Expr> {
         (&args[0], &args[1])
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left,
         right,
       } => (&**left as &Expr, &**right as &Expr),
@@ -506,8 +506,6 @@ fn walk_monomial(
   coeff: &mut Q,
   vp: &mut Option<(String, i128)>,
 ) -> Option<()> {
-  use crate::syntax::{BinaryOperator, UnaryOperator};
-
   if let Some((n, d)) = expr_to_rational(e) {
     *coeff = coeff.mul(Q::new(n, d));
     return Some(());
@@ -593,7 +591,6 @@ fn add_var_power(
 }
 
 fn collect_plus<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
-  use crate::syntax::BinaryOperator;
   match e {
     Expr::FunctionCall { name, args } if name == "Plus" => {
       for a in args.iter() {

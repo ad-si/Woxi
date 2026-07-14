@@ -10,7 +10,7 @@
 //! lexicographic monomial order.
 
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
 fn eval(e: Expr) -> Result<Expr, InterpreterError> {
   crate::evaluator::evaluate_expr_to_expr(&e)
@@ -110,7 +110,7 @@ fn negative_numeric(e: &Expr) -> bool {
       )
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       matches!(

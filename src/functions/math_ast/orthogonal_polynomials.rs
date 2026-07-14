@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 use num_bigint::BigInt;
 
 /// Visit every additive term of a polynomial expression, flattening nested and
@@ -33,7 +33,7 @@ fn integer_coeff_of_term(t: &Expr) -> Option<BigInt> {
     Expr::Integer(c) => Some(BigInt::from(*c)),
     Expr::BigInteger(c) => Some(c.clone()),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => integer_coeff_of_term(operand).map(|c| -c),
     Expr::FunctionCall { name, .. } if name == "Rational" => None,
@@ -129,13 +129,13 @@ fn reduce_poly_over_integer(expr: Expr) -> Result<Expr, InterpreterError> {
   let mut content = BigInt::from(0);
   let mut bail = false;
   for_each_plus_term(&poly, &mut |t| match integer_coeff_of_term(t) {
-    Some(c) => content = bigint_gcd(content.clone(), c.abs()),
+    Some(c) => content = gcd_bigint(content.clone(), c.abs()),
     None => bail = true,
   });
   if bail {
     return Ok(expr);
   }
-  let g = bigint_gcd(content, d.abs());
+  let g = gcd_bigint(content, d.abs());
   if g <= BigInt::from(1) {
     return Ok(expr);
   }
@@ -346,12 +346,21 @@ pub fn jacobi_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return jacobi_p_integer_ab(n, *ai, *bi, &args[3]);
   }
 
-  // Try numerical evaluation
+  // Numerical evaluation only when a, b or x is an inexact machine number.
+  // Exact rational a, b with an exact x keeps the closed form below
+  // (JacobiP[3, 1/2, 1/2, 1/3] = -245/432, not the float -0.5671…).
+  let is_inexact = |e: &Expr| {
+    matches!(e, Expr::Real(_) | Expr::BigFloat(_, _))
+      || crate::functions::math_ast::try_extract_complex_float(e)
+        .is_some_and(|(_, im)| im != 0.0)
+  };
+  let args_inexact =
+    is_inexact(&args[1]) || is_inexact(&args[2]) || is_inexact(&args[3]);
   let a_f = try_eval_to_f64(&args[1]);
   let b_f = try_eval_to_f64(&args[2]);
   let x_f = try_eval_to_f64(&args[3]);
 
-  if let (Some(a), Some(b), Some(x)) = (a_f, b_f, x_f) {
+  if args_inexact && let (Some(a), Some(b), Some(x)) = (a_f, b_f, x_f) {
     let result = jacobi_p_eval_f64(n, a, b, x);
     return Ok(Expr::Real(result));
   }
@@ -382,12 +391,81 @@ pub fn jacobi_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return crate::functions::math_ast::times_ast(&[half, numer]);
   }
 
-  // Try rational evaluation for integer/rational a, b, x
-  // For now, return unevaluated for symbolic args
+  // n >= 2 with rational (non-integer) a, b and a non-numeric x: build the
+  // (x - 1) expansion the way wolframscript prints it. Restricted to exact
+  // rational a, b because with those the Pochhammer coefficients collapse to
+  // numbers, so the sum keeps wolframscript's term/factor order; a fully
+  // symbolic a/b would reorder under Woxi's Times/Plus canonicalization.
+  let is_exact_rational = |e: &Expr| {
+    matches!(e, Expr::Integer(_))
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+  if is_exact_rational(&args[1]) && is_exact_rational(&args[2]) {
+    return jacobi_p_rational_ab(n, &args[1], &args[2], &args[3]);
+  }
   Ok(Expr::FunctionCall {
     name: "JacobiP".to_string(),
     args: args.to_vec().into(),
   })
+}
+
+/// P_n^{(a,b)}(x) for n >= 2 and exact rational order parameters, in
+/// wolframscript's factored (x - 1) form:
+///   P_n^{(a,b)}(x) = Σ_{s=0}^{n} c_s (x - 1)^s,
+///   c_s = Pochhammer[1+a+s, n-s] · Pochhammer[1+a+b+n, s] / (2^s s! (n-s)!).
+fn jacobi_p_rational_ab(
+  n: usize,
+  a: &Expr,
+  b: &Expr,
+  x: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  // const + a, and const + a + b.
+  let plus_a = |c: i128| call("Plus", vec![Expr::Integer(c), a.clone()]);
+  let plus_ab =
+    |c: i128| call("Plus", vec![Expr::Integer(c), a.clone(), b.clone()]);
+  let x_minus_1 = call("Plus", vec![Expr::Integer(-1), x.clone()]);
+
+  let mut terms: Vec<Expr> = Vec::with_capacity(n + 1);
+  for s in 0..=n {
+    // Denominator 2^s · s! · (n-s)!.
+    let s_fact: i128 = (1..=s as i128).product::<i128>().max(1);
+    let ns_fact: i128 = (1..=(n - s) as i128).product::<i128>().max(1);
+    let Some(den) = (1i128 << s)
+      .checked_mul(s_fact)
+      .and_then(|v| v.checked_mul(ns_fact))
+    else {
+      return Ok(call(
+        "JacobiP",
+        vec![Expr::Integer(n as i128), a.clone(), b.clone(), x.clone()],
+      ));
+    };
+
+    let mut factors: Vec<Expr> = Vec::new();
+    factors.push(call("Rational", vec![Expr::Integer(1), Expr::Integer(den)]));
+    // Pochhammer[1+a+s, n-s] = (1+s+a)(2+s+a)…(n+a).
+    for j in 0..(n - s) {
+      factors.push(plus_a((1 + s + j) as i128));
+    }
+    // Pochhammer[1+a+b+n, s] = (1+n+a+b)(2+n+a+b)…(s+n+a+b).
+    for i in 0..s {
+      factors.push(plus_ab((1 + n + i) as i128));
+    }
+    // (x - 1)^s.
+    match s {
+      0 => {}
+      1 => factors.push(x_minus_1.clone()),
+      p => factors.push(call(
+        "Power",
+        vec![x_minus_1.clone(), Expr::Integer(p as i128)],
+      )),
+    }
+    terms.push(call("Times", factors));
+  }
+  crate::evaluator::evaluate_expr_to_expr(&call("Plus", terms))
 }
 
 /// Evaluate the Jacobi polynomial P_n^{(a,b)}(x) numerically using
@@ -576,8 +654,13 @@ fn associated_legendre_p_ast(
   let (var_name, working_x, needs_back_sub) = match x_expr {
     Expr::Identifier(s) => (s.clone(), x_expr.clone(), false),
     _ => {
-      // Numeric evaluation fallback when no symbol is available
-      if let Some(xf) = try_eval_to_f64(x_expr) {
+      // Numeric fallback only for an inexact machine number. An exact numeric
+      // x (0, 1/2, Cos[Pi/2]) substitutes into the symbolic polynomial so the
+      // result stays exact, matching wolframscript (LegendreP[1, 1, 0] = -1,
+      // LegendreP[2, 1, 1/2] = -3 Sqrt[3]/4 — not floats).
+      if expr_has_inexact_real(x_expr)
+        && let Some(xf) = try_eval_to_f64(x_expr)
+      {
         return Ok(Expr::Real(associated_legendre_eval_f64(
           n as i64, m as i64, xf,
         )));
@@ -614,10 +697,10 @@ fn associated_legendre_p_ast(
       name: "Power".to_string(),
       args: vec![
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Minus,
+          op: BinaryOperator::Minus,
           left: Box::new(Expr::Integer(1)),
           right: Box::new(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left: Box::new(x_expr.clone()),
             right: Box::new(Expr::Integer(2)),
           }),
@@ -633,10 +716,10 @@ fn associated_legendre_p_ast(
       name: "Power".to_string(),
       args: vec![
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Minus,
+          op: BinaryOperator::Minus,
           left: Box::new(Expr::Integer(1)),
           right: Box::new(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left: Box::new(x_expr.clone()),
             right: Box::new(Expr::Integer(2)),
           }),
@@ -652,15 +735,15 @@ fn associated_legendre_p_ast(
       sqrt_part
     } else {
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(Expr::FunctionCall {
           name: "Power".to_string(),
           args: vec![
             Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Minus,
+              op: BinaryOperator::Minus,
               left: Box::new(Expr::Integer(1)),
               right: Box::new(Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Power,
+                op: BinaryOperator::Power,
                 left: Box::new(x_expr.clone()),
                 right: Box::new(Expr::Integer(2)),
               }),
@@ -676,10 +759,10 @@ fn associated_legendre_p_ast(
 
   // Build: sign * factor * deriv
   let result = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Times,
+    op: BinaryOperator::Times,
     left: Box::new(Expr::Integer(sign)),
     right: Box::new(Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left: Box::new(factor),
       right: Box::new(deriv),
     }),
@@ -718,7 +801,7 @@ fn legendre_eval_rational(n: usize, x: (BigInt, BigInt)) -> (BigInt, BigInt) {
     let diff_n = &term1_n * &term2_d - &term2_n * &term1_d;
     let diff_d = &term1_d * &term2_d * (&m_i + BigInt::from(1));
 
-    let g = bigint_gcd(diff_n.clone(), diff_d.clone());
+    let g = gcd_bigint(diff_n.clone(), diff_d.clone());
     let next_n = &diff_n / &g;
     let next_d = &diff_d / &g;
 
@@ -819,6 +902,21 @@ fn associated_legendre_eval_f64(l: i64, m: i64, x: f64) -> f64 {
 }
 
 /// SphericalHarmonicY[l, m, theta, phi] - Spherical harmonic function
+/// True when an expression carries an inexact (machine-precision) real, so a
+/// closed-form special function should numericize. Exact arguments (integers,
+/// rationals, Pi, …) stay symbolic to match wolframscript.
+fn expr_has_inexact_real(e: &Expr) -> bool {
+  match e {
+    Expr::Real(_) => true,
+    Expr::FunctionCall { args, .. } => args.iter().any(expr_has_inexact_real),
+    Expr::BinaryOp { left, right, .. } => {
+      expr_has_inexact_real(left) || expr_has_inexact_real(right)
+    }
+    Expr::UnaryOp { operand, .. } => expr_has_inexact_real(operand),
+    _ => false,
+  }
+}
+
 pub fn spherical_harmonic_y_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
@@ -1804,11 +1902,10 @@ fn legendre_q_complex(n: (f64, f64), z: (f64, f64)) -> (f64, f64) {
 /// through to the unevaluated form when any argument fails to reduce
 /// to a complex `(re, im)` pair.
 fn legendre_q_associated_ast(
-  n_expr: &crate::syntax::Expr,
-  m_expr: &crate::syntax::Expr,
-  z_expr: &crate::syntax::Expr,
-) -> Result<crate::syntax::Expr, crate::InterpreterError> {
-  use crate::syntax::Expr;
+  n_expr: &Expr,
+  m_expr: &Expr,
+  z_expr: &Expr,
+) -> Result<Expr, InterpreterError> {
   let unevaluated = || Expr::FunctionCall {
     name: "LegendreQ".to_string(),
     args: vec![n_expr.clone(), m_expr.clone(), z_expr.clone()].into(),
@@ -1974,7 +2071,6 @@ fn chebyshev_general_numeric(
   n_expr: &Expr,
   x_expr: &Expr,
 ) -> Option<Expr> {
-  use crate::syntax::BinaryOperator;
   fn has_real_literal(e: &Expr) -> bool {
     match e {
       Expr::Real(_) | Expr::BigFloat(_, _) => true,
@@ -2067,7 +2163,6 @@ fn chebyshev_general_exact(
   n_expr: &Expr,
   x_expr: &Expr,
 ) -> Option<Expr> {
-  use crate::syntax::BinaryOperator;
   // n must be a non-integer rational p/q (q > 1).
   let q = match n_expr {
     Expr::FunctionCall { name, args }
@@ -2081,7 +2176,7 @@ fn chebyshev_general_exact(
     _ => return None,
   };
   // A half-integer order rewrites for any x; other orders only for numeric x.
-  if q != 2 && !crate::functions::predicate_ast::is_numeric_q_pub(x_expr) {
+  if q != 2 && !crate::functions::predicate_ast::is_numeric_q(x_expr) {
     return None;
   }
   // ChebyshevU[n, 1] = n + 1 (the Sin/Sqrt form is 0/0 there).
@@ -2236,7 +2331,7 @@ fn chebyshev_t_eval_rational(
     let a_d = &xd * &t.1;
     let new_n = &a_n * &tm1.1 - &tm1.0 * &a_d;
     let new_d = &a_d * &tm1.1;
-    let g = bigint_gcd(new_n.clone(), new_d.clone());
+    let g = gcd_bigint(new_n.clone(), new_d.clone());
     tm1 = t;
     t = if g != BigInt::from(0) {
       (&new_n / &g, &new_d / &g)
@@ -2463,7 +2558,7 @@ fn chebyshev_u_eval_rational(
     let a_d = &xd * &u.1;
     let new_n = &a_n * &um1.1 - &um1.0 * &a_d;
     let new_d = &a_d * &um1.1;
-    let g = bigint_gcd(new_n.clone(), new_d.clone());
+    let g = gcd_bigint(new_n.clone(), new_d.clone());
     um1 = u;
     u = if g != BigInt::from(0) {
       (&new_n / &g, &new_d / &g)
@@ -2686,10 +2781,10 @@ pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       return Ok(Expr::Real(gegenbauer_eval_f64(n, lam_f, x_f)));
     }
-    return Ok(Expr::FunctionCall {
-      name: "GegenbauerC".to_string(),
-      args: args.to_vec().into(),
-    });
+    // Symbolic order parameter: build the explicit polynomial in x with the
+    // Pochhammer coefficients kept factored, matching wolframscript.
+    let poly = gegenbauer_symbolic_lambda(n, &args[1], &args[2]);
+    return crate::evaluator::evaluate_expr_to_expr(&poly);
   }
 
   let lam = lambda.unwrap();
@@ -2745,6 +2840,80 @@ pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// GegenbauerC[n, λ, x] for a non-negative integer n and a symbolic order λ,
+/// built from the explicit series
+///   C_n^λ(x) = Σ_{k=0}^{⌊n/2⌋} (-1)^k · Pochhammer[λ, n-k]/(k! (n-2k)!) · (2x)^{n-2k}.
+/// The Pochhammer factors λ(1+λ)…(n-k-1+λ) are kept as an unexpanded product so
+/// the result matches wolframscript's factored form.
+fn gegenbauer_symbolic_lambda(n: usize, lambda: &Expr, x: &Expr) -> Expr {
+  let fact = |m: usize| (1..=m).map(|v| v as i128).product::<i128>().max(1);
+  let gcd = |mut a: i128, mut b: i128| {
+    while b != 0 {
+      (a, b) = (b, a % b);
+    }
+    a.abs().max(1)
+  };
+  let mut terms: Vec<Expr> = Vec::new();
+  for k in 0..=(n / 2) {
+    let power = n - 2 * k; // exponent of x
+    let m = n - k; // number of Pochhammer factors
+    // Rational coefficient (-1)^k · 2^power / (k! · power!), reduced.
+    let mut num: i128 = if k % 2 == 0 { 1 } else { -1 };
+    num *= 1i128 << power;
+    let den = fact(k) * fact(power);
+    let g = gcd(num, den);
+    let (num, den) = (num / g, den / g);
+
+    let mut factors: Vec<Expr> = Vec::new();
+    if den == 1 {
+      if num != 1 {
+        factors.push(Expr::Integer(num));
+      }
+    } else {
+      factors.push(Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(num), Expr::Integer(den)].into(),
+      });
+    }
+    // Pochhammer[λ, m] = λ · (1+λ) · … · (m-1+λ).
+    for i in 0..m {
+      factors.push(if i == 0 {
+        lambda.clone()
+      } else {
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![Expr::Integer(i as i128), lambda.clone()].into(),
+        }
+      });
+    }
+    // x^power (omit for power 0, bare x for power 1).
+    match power {
+      0 => {}
+      1 => factors.push(x.clone()),
+      p => factors.push(Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![x.clone(), Expr::Integer(p as i128)].into(),
+      }),
+    }
+    terms.push(match factors.len() {
+      0 => Expr::Integer(1),
+      1 => factors.remove(0),
+      _ => Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: factors.into(),
+      },
+    });
+  }
+  match terms.len() {
+    0 => Expr::Integer(0),
+    1 => terms.remove(0),
+    _ => Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    },
+  }
+}
+
 /// Evaluate Gegenbauer C_n^lambda(p/q) as rational
 /// C_0^λ = 1, C_1^λ = 2λx, C_{k+1}^λ = (2(k+λ)x C_k^λ - (k+2λ-1) C_{k-1}^λ) / (k+1)
 fn gegenbauer_eval_rational(
@@ -2760,7 +2929,7 @@ fn gegenbauer_eval_rational(
   // C_1 = 2λx = (2*lam_n*x_n, lam_d*x_d)
   let c1_n = BigInt::from(2) * &lam.0 * &x.0;
   let c1_d = &lam.1 * &x.1;
-  let g = bigint_gcd(c1_n.clone(), c1_d.clone());
+  let g = gcd_bigint(c1_n.clone(), c1_d.clone());
   let c1 = if g != BigInt::from(0) {
     (&c1_n / &g, &c1_d / &g)
   } else {
@@ -2799,7 +2968,7 @@ fn gegenbauer_eval_rational(
     let new_n = diff_n;
     let new_d = diff_d * (&kk + BigInt::from(1));
 
-    let g = bigint_gcd(new_n.clone(), new_d.clone());
+    let g = gcd_bigint(new_n.clone(), new_d.clone());
     cm1 = c;
     c = if g != BigInt::from(0) {
       (&new_n / &g, &new_d / &g)
@@ -3313,7 +3482,7 @@ fn generalized_laguerre_l_ast(
           x_expr.clone()
         } else {
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left: Box::new(x_expr.clone()),
             right: Box::new(Expr::Integer(k as i128)),
           }
@@ -3322,13 +3491,13 @@ fn generalized_laguerre_l_ast(
           power
         } else if scaled == -1 {
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(Expr::Integer(-1)),
             right: Box::new(power),
           }
         } else {
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(coeff_expr),
             right: Box::new(power),
           }
@@ -3344,7 +3513,7 @@ fn generalized_laguerre_l_ast(
     let mut numer = terms[0].clone();
     for term in &terms[1..] {
       numer = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(numer),
         right: Box::new(term.clone()),
       };
@@ -3353,7 +3522,7 @@ fn generalized_laguerre_l_ast(
       numer
     } else {
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(numer),
         right: Box::new(Expr::Integer(common_denom)),
       }
@@ -3361,19 +3530,69 @@ fn generalized_laguerre_l_ast(
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
 
-  // For non-integer a or numeric evaluation, try float
-  if let (Some(af), Some(xf)) =
-    (try_eval_to_f64(a_expr), try_eval_to_f64(x_expr))
+  // Numerical fallback only when a or x is an inexact machine number. Exact
+  // rational a with an exact x keeps the exact value via the closed form
+  // below (LaguerreL[3, 1/2, 1/3] = 1189/1296, not the float 0.9174…).
+  let is_inexact = |e: &Expr| {
+    matches!(e, Expr::Real(_) | Expr::BigFloat(_, _))
+      || crate::functions::math_ast::try_extract_complex_float(e)
+        .is_some_and(|(_, im)| im != 0.0)
+  };
+  if (is_inexact(a_expr) || is_inexact(x_expr))
+    && let (Some(af), Some(xf)) =
+      (try_eval_to_f64(a_expr), try_eval_to_f64(x_expr))
   {
     let result = generalized_laguerre_f64(n, af, xf);
     return Ok(Expr::Real(result));
   }
 
-  // Return unevaluated
-  Ok(Expr::FunctionCall {
-    name: "LaguerreL".to_string(),
-    args: vec![n_expr.clone(), a_expr.clone(), x_expr.clone()].into(),
-  })
+  // Symbolic order a: L_n^a(x) = Σ_{k=0}^{n} Binomial[n+a, n-k] (-1)^k x^k / k!.
+  // Expand n! · (that sum) into an integer-coefficient polynomial in a and x,
+  // then divide by n! so the result prints as a single fraction the way
+  // wolframscript does (e.g. (2 + 3 a + a^2 - 4 x - 2 a x + x^2)/2).
+  let Some(n_fact) =
+    (1..=n as i128).try_fold(1i128, |acc, v| acc.checked_mul(v))
+  else {
+    // n! overflows i128 (n > 20): leave unevaluated rather than risk garbage.
+    return Ok(Expr::FunctionCall {
+      name: "LaguerreL".to_string(),
+      args: vec![n_expr.clone(), a_expr.clone(), x_expr.clone()].into(),
+    });
+  };
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let pow = |b: Expr, e: i128| call("Power", vec![b, Expr::Integer(e)]);
+  let mut sum_terms: Vec<Expr> = Vec::with_capacity(n + 1);
+  for k in 0..=n {
+    let k_fact: i128 = (1..=k as i128).product::<i128>().max(1);
+    sum_terms.push(call(
+      "Times",
+      vec![
+        call(
+          "Binomial",
+          vec![
+            call("Plus", vec![Expr::Integer(n as i128), a_expr.clone()]),
+            Expr::Integer((n - k) as i128),
+          ],
+        ),
+        pow(Expr::Integer(-1), k as i128),
+        pow(x_expr.clone(), k as i128),
+        pow(Expr::Integer(k_fact), -1),
+      ],
+    ));
+  }
+  let scaled = call(
+    "Times",
+    vec![Expr::Integer(n_fact), call("Plus", sum_terms)],
+  );
+  let result = Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(call("Expand", vec![scaled])),
+    right: Box::new(Expr::Integer(n_fact)),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
 /// Numerical evaluation of generalized Laguerre polynomial via recurrence
@@ -3425,7 +3644,7 @@ fn laguerre_eval_rational(n: usize, x: (BigInt, BigInt)) -> (BigInt, BigInt) {
     let sub_n = &a_n * b_d - &b_n * &a_d;
     let sub_d = &a_d * b_d * (&kf + BigInt::from(1));
 
-    let g = bigint_gcd(sub_n.clone(), sub_d.clone());
+    let g = gcd_bigint(sub_n.clone(), sub_d.clone());
     lm1 = l;
     l = if g != BigInt::from(0) {
       (&sub_n / &g, &sub_d / &g)
@@ -3621,10 +3840,12 @@ pub fn hermite_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // rather than staying as `-12 (1 + I) + 8 (1 + I)^3`. Symbolic x
         // keeps the polynomial form unchanged.
         if is_fully_numeric_arg(&args[1]) {
-          return crate::evaluator::evaluate_function_call_ast(
-            "Expand",
-            &[expr],
-          );
+          // Expand collapses `(1 + I)^3` etc.; evaluate the result so the
+          // resulting numeric sum folds to a single number (HermiteH[3, 1/2]
+          // = -5, not the un-summed -6 + 1).
+          let expanded =
+            crate::evaluator::evaluate_function_call_ast("Expand", &[expr])?;
+          return crate::evaluator::evaluate_expr_to_expr(&expanded);
         }
         // Evaluate (not Expand) the substituted polynomial: a monomial argument
         // like `2 x` distributes `(2 x)^k` to `2^k x^k` (matching wolframscript),
@@ -3801,7 +4022,7 @@ fn rewrite_sqrt_one_minus_cos_sq(expr: &Expr, theta: &Expr) -> Expr {
   let is_cos_theta_sq = |e: &Expr| -> bool {
     let (base, exp) = match e {
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left,
         right,
       } => (left.as_ref(), right.as_ref()),
@@ -3821,7 +4042,7 @@ fn rewrite_sqrt_one_minus_cos_sq(expr: &Expr, theta: &Expr) -> Expr {
     // Match: 1 - Cos[θ]^2 in either `BinaryOp::Minus` or
     // `Plus[1, Times[-1, Cos[θ]^2]]` shape.
     if let Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left,
       right,
     } = e
@@ -3903,7 +4124,7 @@ fn rewrite_sqrt_one_minus_cos_sq(expr: &Expr, theta: &Expr) -> Expr {
   }
   match expr {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => {
@@ -3913,7 +4134,7 @@ fn rewrite_sqrt_one_minus_cos_sq(expr: &Expr, theta: &Expr) -> Expr {
         return sin_pow(e2);
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left: Box::new(rewrite_sqrt_one_minus_cos_sq(left, theta)),
         right: Box::new(rewrite_sqrt_one_minus_cos_sq(right, theta)),
       }

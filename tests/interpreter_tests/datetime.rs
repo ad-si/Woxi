@@ -1588,6 +1588,35 @@ mod time_object {
     );
   }
 
+  // TimeObject + Quantity[duration] shifts the time of day (wrapping around a
+  // 24h day); the result carries a 0. time-zone field.
+  #[test]
+  fn time_object_plus_quantity() {
+    assert_case(
+      r#"TimeObject[{14, 30, 0}] + Quantity[90, "Minutes"]"#,
+      r#"TimeObject[{16, 0, 0}, Instant, 0.]"#,
+    );
+    // Wraps past midnight.
+    assert_case(
+      r#"TimeObject[{23, 30, 0}] + Quantity[60, "Minutes"]"#,
+      r#"TimeObject[{0, 30, 0}, Instant, 0.]"#,
+    );
+    // Subtraction and commutativity.
+    assert_case(
+      r#"TimeObject[{10, 0, 0}] - Quantity[2, "Hours"]"#,
+      r#"TimeObject[{8, 0, 0}, Instant, 0.]"#,
+    );
+    assert_case(
+      r#"Quantity[15, "Minutes"] + TimeObject[{9, 0, 0}]"#,
+      r#"TimeObject[{9, 15, 0}, Instant, 0.]"#,
+    );
+    // Minute granularity is preserved.
+    assert_case(
+      r#"TimeObject[{14, 30}] + Quantity[1, "Hours"]"#,
+      r#"TimeObject[{15, 30}, Minute, 0.]"#,
+    );
+  }
+
   #[test]
   fn time_object_keeps_fractional_seconds() {
     assert_case(
@@ -3539,6 +3568,176 @@ mod date_select_tests {
       )
       .unwrap(),
       "{}"
+    );
+  }
+}
+
+mod calendar_convert {
+  use super::*;
+
+  // Gregorian → Julian: the Julian calendar runs 13 days behind Gregorian in
+  // the 1900–2099 window (12/13-day offset in earlier centuries).
+  #[test]
+  fn gregorian_to_julian_modern() {
+    assert_eq!(
+      interpret("CalendarConvert[DateObject[{2024, 3, 14}], \"Julian\"]")
+        .unwrap(),
+      "DateObject[{2024, 3, 1}, Day, Julian]"
+    );
+    assert_eq!(
+      interpret("CalendarConvert[DateObject[{2000, 1, 1}], \"Julian\"]")
+        .unwrap(),
+      "DateObject[{1999, 12, 19}, Day, Julian]"
+    );
+  }
+
+  // The offset differs across century boundaries because Julian has no
+  // century leap-year exception.
+  #[test]
+  fn gregorian_to_julian_across_centuries() {
+    assert_eq!(
+      interpret("CalendarConvert[DateObject[{1900, 3, 1}], \"Julian\"]")
+        .unwrap(),
+      "DateObject[{1900, 2, 17}, Day, Julian]"
+    );
+    assert_eq!(
+      interpret("CalendarConvert[DateObject[{2100, 3, 1}], \"Julian\"]")
+        .unwrap(),
+      "DateObject[{2100, 2, 16}, Day, Julian]"
+    );
+    assert_eq!(
+      interpret("CalendarConvert[DateObject[{1, 1, 1}], \"Julian\"]").unwrap(),
+      "DateObject[{1, 1, 3}, Day, Julian]"
+    );
+    assert_eq!(
+      interpret("CalendarConvert[DateObject[{1582, 10, 15}], \"Julian\"]")
+        .unwrap(),
+      "DateObject[{1582, 10, 5}, Day, Julian]"
+    );
+  }
+
+  // Converting to Gregorian from a (default) Gregorian source is the identity,
+  // dropping any calendar tag and reporting Day granularity.
+  #[test]
+  fn gregorian_identity() {
+    assert_eq!(
+      interpret("CalendarConvert[DateObject[{2024, 3, 14}], \"Gregorian\"]")
+        .unwrap(),
+      "DateObject[{2024, 3, 14}, Day]"
+    );
+  }
+
+  // A source already tagged with a non-Gregorian calendar is left
+  // unevaluated, matching wolframscript.
+  #[test]
+  fn non_gregorian_source_unevaluated() {
+    assert_eq!(
+      interpret(
+        "CalendarConvert[DateObject[{2024, 3, 14}, \"Julian\"], \"Gregorian\"]"
+      )
+      .unwrap(),
+      "CalendarConvert[DateObject[{2024, 3, 14}, Julian], Gregorian]"
+    );
+  }
+}
+
+mod from_date_string {
+  use super::*;
+
+  #[test]
+  fn iso_date() {
+    assert_eq!(
+      interpret(r#"FromDateString["2026-07-15"]"#).unwrap(),
+      "DateObject[{2026, 7, 15}, Day]"
+    );
+  }
+
+  #[test]
+  fn month_name_forms() {
+    assert_eq!(
+      interpret(r#"FromDateString["July 4, 1776"]"#).unwrap(),
+      "DateObject[{1776, 7, 4}, Day]"
+    );
+    assert_eq!(
+      interpret(r#"FromDateString["Jan 1 2000"]"#).unwrap(),
+      "DateObject[{2000, 1, 1}, Day]"
+    );
+    // Day-first ordering and ordinal day suffixes.
+    assert_eq!(
+      interpret(r#"FromDateString["4th July 1776"]"#).unwrap(),
+      "DateObject[{1776, 7, 4}, Day]"
+    );
+    assert_eq!(
+      interpret(r#"FromDateString["Jan 8th, 2022"]"#).unwrap(),
+      "DateObject[{2022, 1, 8}, Day]"
+    );
+  }
+
+  #[test]
+  fn datetime_and_year_granularity() {
+    assert_eq!(
+      interpret(r#"FromDateString["2026-07-15 14:30:00"]"#).unwrap(),
+      "DateObject[{2026, 7, 15, 14, 30, 0}, Instant, Gregorian, 0.]"
+    );
+    assert_eq!(
+      interpret(r#"FromDateString["2026"]"#).unwrap(),
+      "DateObject[{2026}, Year]"
+    );
+  }
+
+  // DateObject now parses natural-language month-name strings too.
+  #[test]
+  fn date_object_parses_month_name() {
+    assert_eq!(
+      interpret(r#"DateObject["July 4, 1776"]"#).unwrap(),
+      "DateObject[{1776, 7, 4}, Day]"
+    );
+  }
+}
+
+mod date_time_ordering {
+  use woxi::interpret;
+
+  // DateObject / TimeObject support the ordering comparisons (< > <= >=) by
+  // comparing absolute time / time-of-day.
+  #[test]
+  fn date_object_ordering() {
+    assert_eq!(
+      interpret("DateObject[{2026, 1, 1}] < DateObject[{2026, 6, 1}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("DateObject[{2026, 6, 1}] > DateObject[{2026, 1, 1}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("DateObject[{2026, 6, 1}] < DateObject[{2026, 1, 1}]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("DateObject[{2026, 1, 1}] <= DateObject[{2026, 1, 1}]")
+        .unwrap(),
+      "True"
+    );
+    // Sub-day resolution via time components.
+    assert_eq!(
+      interpret(
+        "DateObject[{2026, 1, 1, 10, 30, 0}] < DateObject[{2026, 1, 1, 14, 0, 0}]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn time_object_ordering() {
+    assert_eq!(
+      interpret("TimeObject[{10, 0, 0}] < TimeObject[{14, 0, 0}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("TimeObject[{14, 0, 0}] <= TimeObject[{10, 0, 0}]").unwrap(),
+      "False"
     );
   }
 }

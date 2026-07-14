@@ -269,6 +269,21 @@ mod harmonic_mean {
   fn harmonic_mean_equal_elements() {
     assert_eq!(interpret("HarmonicMean[{5, 5, 5}]").unwrap(), "5");
   }
+
+  // A zero element makes 1/x infinite, so the harmonic mean is exactly 0
+  // (rather than raising a division-by-zero error).
+  #[test]
+  fn harmonic_mean_with_zero_is_zero() {
+    assert_eq!(interpret("HarmonicMean[{0, 2}]").unwrap(), "0");
+    assert_eq!(interpret("HarmonicMean[{2, 0, 4}]").unwrap(), "0");
+    assert_eq!(interpret("HarmonicMean[{0., 2.}]").unwrap(), "0");
+    assert_eq!(interpret("HarmonicMean[{0}]").unwrap(), "0");
+    // Column-wise over a matrix: only the column containing 0 collapses.
+    assert_eq!(
+      interpret("HarmonicMean[{{0, 2}, {4, 8}}]").unwrap(),
+      "{0, 16/5}"
+    );
+  }
 }
 
 mod contraharmonic_mean {
@@ -740,6 +755,20 @@ mod root_mean_square {
   #[test]
   fn rms_integer_radical_reduced() {
     assert_eq!(interpret("RootMeanSquare[{6, 8}]").unwrap(), "5*Sqrt[2]");
+  }
+
+  // A matrix is reduced column-wise: Sqrt[Mean[data^2]] per column.
+  #[test]
+  fn rms_matrix_is_column_wise() {
+    assert_eq!(interpret("RootMeanSquare[{{3, 4}}]").unwrap(), "{3, 4}");
+    assert_eq!(
+      interpret("RootMeanSquare[{{1, 2}, {3, 4}}]").unwrap(),
+      "{Sqrt[5], Sqrt[10]}"
+    );
+    assert_eq!(
+      interpret("RootMeanSquare[{{1, 2}, {3, 4}, {5, 6}}]").unwrap(),
+      "{Sqrt[35/3], 2*Sqrt[14/3]}"
+    );
   }
 }
 
@@ -2374,6 +2403,24 @@ mod correlation {
     );
   }
 
+  // Correlation of a multivariate distribution is its normalized covariance
+  // matrix.
+  #[test]
+  fn correlation_of_distribution() {
+    assert_eq!(
+      interpret("Correlation[BinormalDistribution[rho]]").unwrap(),
+      "{{1, rho}, {rho, 1}}"
+    );
+    // Non-unit variances normalize: Cov {{4,1},{1,9}} -> off-diag 1/Sqrt[36].
+    assert_eq!(
+      interpret(
+        "Correlation[MultinormalDistribution[{0, 0}, {{4, 1}, {1, 9}}]]"
+      )
+      .unwrap(),
+      "{{1, 1/6}, {1/6, 1}}"
+    );
+  }
+
   // A single flat vector is one variable, perfectly correlated with itself.
   #[test]
   fn correlation_single_vector() {
@@ -2651,6 +2698,241 @@ mod moment {
   }
 }
 
+// Raw and central moments of the chi-square distribution. Chi-square[nu] has
+// raw moments E[x^n] = Product_{i=0}^{n-1} (nu + 2 i), which wolframscript
+// prints in the factored form nu*(2 + nu)*(4 + nu)*.... The expected strings
+// were verified against wolframscript.
+mod chi_square_moments {
+  use super::*;
+
+  #[test]
+  fn raw_moments_symbolic() {
+    assert_eq!(
+      interpret("Moment[ChiSquareDistribution[k], 3]").unwrap(),
+      "k*(2 + k)*(4 + k)"
+    );
+    assert_eq!(
+      interpret("Moment[ChiSquareDistribution[k], 4]").unwrap(),
+      "k*(2 + k)*(4 + k)*(6 + k)"
+    );
+  }
+
+  #[test]
+  fn raw_moment_numeric() {
+    // 6*8*10 = 480.
+    assert_eq!(
+      interpret("Moment[ChiSquareDistribution[6], 3]").unwrap(),
+      "480"
+    );
+  }
+
+  #[test]
+  fn central_moment_third() {
+    assert_eq!(
+      interpret("CentralMoment[ChiSquareDistribution[k], 3]").unwrap(),
+      "8*k"
+    );
+    assert_eq!(
+      interpret("CentralMoment[ChiSquareDistribution[6], 3]").unwrap(),
+      "48"
+    );
+  }
+
+  #[test]
+  fn kurtosis_reduces() {
+    // Kurtosis = CentralMoment[4]/Variance^2 collapses to 3 + 12/nu.
+    assert_eq!(
+      interpret("Kurtosis[ChiSquareDistribution[k]]").unwrap(),
+      "3 + 12/k"
+    );
+  }
+}
+
+// Laplace central moments have the closed form 0 (odd n) / n!*b^n (even n),
+// which the generic raw-moment path cannot reach (it needs incomplete Gammas).
+// The expected strings were verified against wolframscript.
+mod laplace_moments {
+  use super::*;
+
+  #[test]
+  fn central_moments() {
+    assert_eq!(
+      interpret("CentralMoment[LaplaceDistribution[m, b], 2]").unwrap(),
+      "2*b^2"
+    );
+    // Odd central moments vanish (the distribution is symmetric).
+    assert_eq!(
+      interpret("CentralMoment[LaplaceDistribution[m, b], 3]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("CentralMoment[LaplaceDistribution[m, b], 4]").unwrap(),
+      "24*b^4"
+    );
+    assert_eq!(
+      interpret("CentralMoment[LaplaceDistribution[m, b], 6]").unwrap(),
+      "720*b^6"
+    );
+  }
+
+  #[test]
+  fn skewness_and_kurtosis() {
+    assert_eq!(
+      interpret("Skewness[LaplaceDistribution[m, b]]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Kurtosis[LaplaceDistribution[m, b]]").unwrap(),
+      "6"
+    );
+  }
+}
+
+// Logistic central moments follow the closed form 0 (odd n) /
+// (-1)^(n/2-1)*(2^n-2)*BernoulliB[n]*Pi^n*b^n (even n), from the central MGF
+// Pi t / Sin[Pi t]. Expected strings verified against wolframscript.
+mod logistic_moments {
+  use super::*;
+
+  #[test]
+  fn central_moments() {
+    assert_eq!(
+      interpret("CentralMoment[LogisticDistribution[m, b], 2]").unwrap(),
+      "(b^2*Pi^2)/3"
+    );
+    assert_eq!(
+      interpret("CentralMoment[LogisticDistribution[m, b], 3]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("CentralMoment[LogisticDistribution[m, b], 4]").unwrap(),
+      "(7*b^4*Pi^4)/15"
+    );
+    assert_eq!(
+      interpret("CentralMoment[LogisticDistribution[m, b], 6]").unwrap(),
+      "(31*b^6*Pi^6)/21"
+    );
+  }
+
+  #[test]
+  fn skewness_and_kurtosis() {
+    assert_eq!(
+      interpret("Skewness[LogisticDistribution[m, b]]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Kurtosis[LogisticDistribution[m, b]]").unwrap(),
+      "21/5"
+    );
+  }
+}
+
+// The Cauchy distribution has no finite moments: every central moment of order
+// >= 1 is Indeterminate, so Skewness and Kurtosis are Indeterminate too.
+mod cauchy_moments {
+  use super::*;
+
+  #[test]
+  fn central_moments() {
+    assert_eq!(
+      interpret("CentralMoment[CauchyDistribution[a, b], 0]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("CentralMoment[CauchyDistribution[a, b], 3]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("CentralMoment[CauchyDistribution[a, b], 4]").unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  #[test]
+  fn skewness_and_kurtosis() {
+    assert_eq!(
+      interpret("Skewness[CauchyDistribution[a, b]]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("Kurtosis[CauchyDistribution[a, b]]").unwrap(),
+      "Indeterminate"
+    );
+  }
+}
+
+// The hyperbolic-secant distribution is symmetric; its even central moments are
+// the Euler numbers scaled by s^n: (-1)^(n/2)*EulerE[n]*s^n. Skewness is 0 and
+// Kurtosis is 5. Expected strings verified against wolframscript.
+mod sech_moments {
+  use super::*;
+
+  #[test]
+  fn central_moments() {
+    assert_eq!(
+      interpret("CentralMoment[SechDistribution[m, s], 2]").unwrap(),
+      "s^2"
+    );
+    assert_eq!(
+      interpret("CentralMoment[SechDistribution[m, s], 3]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("CentralMoment[SechDistribution[m, s], 4]").unwrap(),
+      "5*s^4"
+    );
+    assert_eq!(
+      interpret("CentralMoment[SechDistribution[m, s], 6]").unwrap(),
+      "61*s^6"
+    );
+  }
+
+  #[test]
+  fn skewness_and_kurtosis() {
+    assert_eq!(interpret("Skewness[SechDistribution[m, s]]").unwrap(), "0");
+    assert_eq!(interpret("Kurtosis[SechDistribution[m, s]]").unwrap(), "5");
+  }
+}
+
+// Uniform[{a, b}] is symmetric; its central moments are 0 (odd) and the compact
+// (b - a)^n/(2^n (n+1)) (even), so Kurtosis reduces to 9/5. Previously the
+// generic path left an un-collected polynomial. Verified against wolframscript.
+mod uniform_moments {
+  use super::*;
+
+  #[test]
+  fn central_moments() {
+    assert_eq!(
+      interpret("CentralMoment[UniformDistribution[{a, b}], 2]").unwrap(),
+      "(-a + b)^2/12"
+    );
+    assert_eq!(
+      interpret("CentralMoment[UniformDistribution[{a, b}], 3]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("CentralMoment[UniformDistribution[{a, b}], 4]").unwrap(),
+      "(-a + b)^4/80"
+    );
+    assert_eq!(
+      interpret("CentralMoment[UniformDistribution[{a, b}], 6]").unwrap(),
+      "(-a + b)^6/448"
+    );
+  }
+
+  #[test]
+  fn skewness_and_kurtosis() {
+    assert_eq!(
+      interpret("Skewness[UniformDistribution[{a, b}]]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Kurtosis[UniformDistribution[{a, b}]]").unwrap(),
+      "9/5"
+    );
+  }
+}
+
 mod factorial_moment {
   use super::*;
 
@@ -2773,6 +3055,51 @@ mod factorial_moment {
     assert_eq!(
       interpret("FactorialMoment[BinomialDistribution[n, p], 3]").unwrap(),
       "(1 - n)*(2 - n)*n*p^3"
+    );
+  }
+
+  // Continuous (and other) distributions resolve through the defining
+  // expectation E[X(X-1)...(X-r+1)]. The expected strings match wolframscript.
+  #[test]
+  fn continuous_normal() {
+    // First factorial moment is the mean.
+    assert_eq!(
+      interpret("FactorialMoment[NormalDistribution[0, 1], 1]").unwrap(),
+      "0"
+    );
+    // r=2: E[x(x-1)] = E[x^2] - E[x] = (mu^2 + sigma^2) - mu.
+    assert_eq!(
+      interpret("FactorialMoment[NormalDistribution[mu, sigma], 2]").unwrap(),
+      "-mu + mu^2 + sigma^2"
+    );
+    // r=3 over a standard normal: E[x(x-1)(x-2)] = -3.
+    assert_eq!(
+      interpret("FactorialMoment[NormalDistribution[0, 1], 3]").unwrap(),
+      "-3"
+    );
+    // r=0 is always 1.
+    assert_eq!(
+      interpret("FactorialMoment[NormalDistribution[0, 1], 0]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn continuous_exponential_uniform_gamma() {
+    // ExponentialDistribution[1]: E[x(x-1)] = 2 - 1 = 1.
+    assert_eq!(
+      interpret("FactorialMoment[ExponentialDistribution[1], 2]").unwrap(),
+      "1"
+    );
+    // UniformDistribution[{0, 1}]: E[x(x-1)] = 1/3 - 1/2 = -1/6.
+    assert_eq!(
+      interpret("FactorialMoment[UniformDistribution[{0, 1}], 2]").unwrap(),
+      "-1/6"
+    );
+    // GammaDistribution[a, b]: symbolic parameters resolve exactly.
+    assert_eq!(
+      interpret("FactorialMoment[GammaDistribution[a, b], 2]").unwrap(),
+      "-(a*b) + a*(1 + a)*b^2"
     );
   }
 }
@@ -3359,6 +3686,310 @@ mod multinomial_distribution {
       interpret("StandardDeviation[MultinomialDistribution[n, {p1, p2, p3}]]")
         .unwrap(),
       "{Sqrt[n*(1 - p1)*p1], Sqrt[n*(1 - p2)*p2], Sqrt[n*(1 - p3)*p3]}"
+    );
+  }
+
+  #[test]
+  fn pdf_zero_at_non_integer_point() {
+    // Discrete multivariate PDFs are 0 at any non-integer component,
+    // including integer-valued Reals like 2.
+    assert_eq!(
+      interpret(
+        "PDF[MultinomialDistribution[5, {1/2, 1/3, 1/6}], {3/2, 2, 3/2}]"
+      )
+      .unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("PDF[MultinomialDistribution[5, {1/2, 1/3, 1/6}], {2., 2, 1}]")
+        .unwrap(),
+      "0"
+    );
+  }
+}
+
+mod negative_multinomial_distribution {
+  use super::*;
+
+  #[test]
+  fn displays_unevaluated() {
+    assert_eq!(
+      interpret("NegativeMultinomialDistribution[5, {1/5, 2/5}]").unwrap(),
+      "NegativeMultinomialDistribution[5, {1/5, 2/5}]"
+    );
+  }
+
+  #[test]
+  fn pdf_symbolic() {
+    assert_eq!(
+      interpret("PDF[NegativeMultinomialDistribution[n, {p1, p2}], {x1, x2}]")
+        .unwrap(),
+      "Piecewise[{{(p1^x1*(1 - p1 - p2)^n*p2^x2*Pochhammer[n, x1 + x2])/(x1!*x2!), x1 >= 0 && x2 >= 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn pdf_symbolic_three_components() {
+    assert_eq!(
+      interpret(
+        "PDF[NegativeMultinomialDistribution[n, {p1, p2, p3}], {x1, x2, x3}]"
+      )
+      .unwrap(),
+      "Piecewise[{{(p1^x1*p2^x2*(1 - p1 - p2 - p3)^n*p3^x3*Pochhammer[n, x1 + x2 + x3])/(x1!*x2!*x3!), x1 >= 0 && x2 >= 0 && x3 >= 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn pdf_exact() {
+    assert_eq!(
+      interpret("PDF[NegativeMultinomialDistribution[5, {1/5, 2/5}], {1, 2}]")
+        .unwrap(),
+      "2688/78125"
+    );
+    assert_eq!(
+      interpret("PDF[NegativeMultinomialDistribution[5, {1/5, 2/5}], {0, 0}]")
+        .unwrap(),
+      "32/3125"
+    );
+  }
+
+  #[test]
+  fn pdf_outside_support() {
+    // Negative and non-integer points (including integer-valued Reals)
+    // have probability 0.
+    assert_eq!(
+      interpret("PDF[NegativeMultinomialDistribution[5, {1/5, 2/5}], {-1, 2}]")
+        .unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret(
+        "PDF[NegativeMultinomialDistribution[5, {1/5, 2/5}], {3/2, 2}]"
+      )
+      .unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("PDF[NegativeMultinomialDistribution[5, {1/5, 2/5}], {1., 2}]")
+        .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn pdf_wrong_length_unevaluated() {
+    assert_eq!(
+      interpret("PDF[NegativeMultinomialDistribution[5, {1/5, 2/5}], {1}]")
+        .unwrap(),
+      "PDF[NegativeMultinomialDistribution[5, {1/5, 2/5}], {1}]"
+    );
+  }
+
+  #[test]
+  fn cdf_exact() {
+    assert_eq!(
+      interpret("CDF[NegativeMultinomialDistribution[5, {1/5, 2/5}], {1, 2}]")
+        .unwrap(),
+      "9728/78125"
+    );
+    assert_eq!(
+      interpret("CDF[NegativeMultinomialDistribution[5, {1/5, 2/5}], {0, 0}]")
+        .unwrap(),
+      "32/3125"
+    );
+    assert_eq!(
+      interpret("CDF[NegativeMultinomialDistribution[5, {1/5, 2/5}], {5, 6}]")
+        .unwrap(),
+      "21246699776/30517578125"
+    );
+  }
+
+  #[test]
+  fn cdf_floors_non_integer_points() {
+    assert_eq!(
+      interpret(
+        "CDF[NegativeMultinomialDistribution[5, {1/5, 2/5}], {3/2, 2}]"
+      )
+      .unwrap(),
+      "9728/78125"
+    );
+    assert_eq!(
+      interpret("CDF[NegativeMultinomialDistribution[5, {1/5, 2/5}], {-1, 2}]")
+        .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn cdf_symbolic_unevaluated() {
+    // wolframscript folds the symbolic sum into a combined power form;
+    // Woxi keeps symbolic arguments unevaluated instead.
+    assert_eq!(
+      interpret("CDF[NegativeMultinomialDistribution[n, {p1, p2}], {x1, x2}]")
+        .unwrap(),
+      "CDF[NegativeMultinomialDistribution[n, {p1, p2}], {x1, x2}]"
+    );
+  }
+
+  #[test]
+  fn mean_exact() {
+    assert_eq!(
+      interpret("Mean[NegativeMultinomialDistribution[5, {1/5, 2/5}]]")
+        .unwrap(),
+      "{5/2, 5}"
+    );
+  }
+
+  #[test]
+  fn mean_symbolic() {
+    assert_eq!(
+      interpret("Mean[NegativeMultinomialDistribution[n, {p1, p2}]]").unwrap(),
+      "{(n*p1)/(1 - p1 - p2), (n*p2)/(1 - p1 - p2)}"
+    );
+    assert_eq!(
+      interpret("Mean[NegativeMultinomialDistribution[n, {p1, p2, p3}]]")
+        .unwrap(),
+      "{(n*p1)/(1 - p1 - p2 - p3), (n*p2)/(1 - p1 - p2 - p3), (n*p3)/(1 - p1 - p2 - p3)}"
+    );
+  }
+
+  #[test]
+  fn mean_machine_precision() {
+    // Matches wolframscript's float fold order bit for bit.
+    assert_eq!(
+      interpret("Mean[NegativeMultinomialDistribution[5, {0.2, 0.4}]]")
+        .unwrap(),
+      "{2.5000000000000004, 5.000000000000001}"
+    );
+  }
+
+  #[test]
+  fn variance_exact() {
+    assert_eq!(
+      interpret("Variance[NegativeMultinomialDistribution[5, {1/5, 2/5}]]")
+        .unwrap(),
+      "{15/4, 10}"
+    );
+  }
+
+  #[test]
+  fn variance_symbolic() {
+    assert_eq!(
+      interpret("Variance[NegativeMultinomialDistribution[n, {p1, p2}]]")
+        .unwrap(),
+      "{(n*p1*(1 - p2))/(1 - p1 - p2)^2, (n*(1 - p1)*p2)/(1 - p1 - p2)^2}"
+    );
+    assert_eq!(
+      interpret("Variance[NegativeMultinomialDistribution[n, {p1, p2, p3}]]")
+        .unwrap(),
+      "{(n*p1*(1 - p2 - p3))/(1 - p1 - p2 - p3)^2, (n*p2*(1 - p1 - p3))/(1 - p1 - p2 - p3)^2, (n*(1 - p1 - p2)*p3)/(1 - p1 - p2 - p3)^2}"
+    );
+  }
+
+  #[test]
+  fn variance_machine_precision() {
+    assert_eq!(
+      interpret("Variance[NegativeMultinomialDistribution[5, {0.2, 0.4}]]")
+        .unwrap(),
+      "{3.7500000000000013, 10.000000000000005}"
+    );
+  }
+
+  #[test]
+  fn standard_deviation_exact() {
+    assert_eq!(
+      interpret(
+        "StandardDeviation[NegativeMultinomialDistribution[5, {1/5, 2/5}]]"
+      )
+      .unwrap(),
+      "{Sqrt[15]/2, Sqrt[10]}"
+    );
+  }
+
+  #[test]
+  fn covariance_exact() {
+    assert_eq!(
+      interpret("Covariance[NegativeMultinomialDistribution[5, {1/5, 2/5}]]")
+        .unwrap(),
+      "{{15/4, 5/2}, {5/2, 10}}"
+    );
+  }
+
+  #[test]
+  fn covariance_symbolic() {
+    // Note the diagonal asymmetry: the p1 entry leads with its squared
+    // term while the p2 entry (the base's last variable) leads with the
+    // linear one — wolframscript's canonical Plus order does the same.
+    assert_eq!(
+      interpret("Covariance[NegativeMultinomialDistribution[n, {p1, p2}]]")
+        .unwrap(),
+      "{{n*(p1^2/(1 - p1 - p2)^2 + p1/(1 - p1 - p2)), (n*p1*p2)/(1 - p1 - p2)^2}, {(n*p1*p2)/(1 - p1 - p2)^2, n*(p2/(1 - p1 - p2) + p2^2/(1 - p1 - p2)^2)}}"
+    );
+  }
+
+  #[test]
+  fn covariance_machine_precision() {
+    assert_eq!(
+      interpret("Covariance[NegativeMultinomialDistribution[5, {0.2, 0.4}]]")
+        .unwrap(),
+      "{{3.750000000000001, 2.5000000000000018}, {2.5000000000000018, 10.000000000000004}}"
+    );
+  }
+
+  #[test]
+  fn single_component() {
+    assert_eq!(
+      interpret("Mean[NegativeMultinomialDistribution[5, {1/5}]]").unwrap(),
+      "{5/4}"
+    );
+  }
+
+  #[test]
+  fn shared_denominator_power_term_order() {
+    // Regression: same-variable monomial numerators over powers of a
+    // shared sum base order by the leading monomial over the common
+    // denominator, matching wolframscript. Sum numerators keep the
+    // polynomial comparison.
+    assert_eq!(
+      interpret("x/(1 + x) + x^2/(1 + x)^2").unwrap(),
+      "x^2/(1 + x)^2 + x/(1 + x)"
+    );
+    // Negative leading coefficient keeps the shallow term first.
+    assert_eq!(
+      interpret("x/(1 - x) + x^2/(1 - x)^2").unwrap(),
+      "x/(1 - x) + x^2/(1 - x)^2"
+    );
+    // The base's LAST variable leads linear-first, earlier variables
+    // squared-first.
+    assert_eq!(
+      interpret("x/(1 - x - y) + x^2/(1 - x - y)^2").unwrap(),
+      "x^2/(1 - x - y)^2 + x/(1 - x - y)"
+    );
+    assert_eq!(
+      interpret("y/(1 - x - y) + y^2/(1 - x - y)^2").unwrap(),
+      "y/(1 - x - y) + y^2/(1 - x - y)^2"
+    );
+    // Squared leading addend raises the shallow key's degree.
+    assert_eq!(
+      interpret("x/(1 + x^2) + x^2/(1 + x^2)^2").unwrap(),
+      "x^2/(1 + x^2)^2 + x/(1 + x^2)"
+    );
+    assert_eq!(
+      interpret("x^2/(1 - x) + x^3/(1 - x)^2").unwrap(),
+      "x^2/(1 - x) + x^3/(1 - x)^2"
+    );
+    assert_eq!(
+      interpret("x/(1 + x) + x^3/(1 + x)^3").unwrap(),
+      "x^3/(1 + x)^3 + x/(1 + x)"
+    );
+    // Sum numerators compare as polynomials.
+    assert_eq!(
+      interpret("(2 + x)/(3 + x) + (5 + x)/(3 + x)^2").unwrap(),
+      "(2 + x)/(3 + x) + (5 + x)/(3 + x)^2"
+    );
+    assert_eq!(
+      interpret("(5 + x)/(3 + x) + (2 + x)/(3 + x)^2").unwrap(),
+      "(2 + x)/(3 + x)^2 + (5 + x)/(3 + x)"
     );
   }
 }
@@ -4525,6 +5156,66 @@ mod group_elements {
       "GroupElements[SymmetricGroup[3], 3]"
     );
   }
+
+  // GroupElements[PermutationGroup[{gens}]] enumerates the group generated by
+  // the given permutations, in lexicographic image-list order. Verified
+  // against wolframscript.
+  #[test]
+  fn permutation_group_single_transposition() {
+    assert_eq!(
+      interpret("GroupElements[PermutationGroup[{Cycles[{{1, 2}}]}]]").unwrap(),
+      "{Cycles[{}], Cycles[{{1, 2}}]}"
+    );
+  }
+
+  #[test]
+  fn permutation_group_three_cycle() {
+    assert_eq!(
+      interpret("GroupElements[PermutationGroup[{Cycles[{{1, 2, 3}}]}]]")
+        .unwrap(),
+      "{Cycles[{}], Cycles[{{1, 2, 3}}], Cycles[{{1, 3, 2}}]}"
+    );
+  }
+
+  #[test]
+  fn permutation_group_generates_s3() {
+    // Two adjacent transpositions generate all of S_3.
+    assert_eq!(
+      interpret(
+        "GroupElements[PermutationGroup[{Cycles[{{1, 2}}], Cycles[{{2, 3}}]}]]"
+      )
+      .unwrap(),
+      "{Cycles[{}], Cycles[{{2, 3}}], Cycles[{{1, 2}}], \
+       Cycles[{{1, 2, 3}}], Cycles[{{1, 3, 2}}], Cycles[{{1, 3}}]}"
+    );
+  }
+
+  #[test]
+  fn permutation_group_order_and_membership() {
+    assert_eq!(
+      interpret(
+        "GroupOrder[PermutationGroup[{Cycles[{{1, 2}}], Cycles[{{2, 3}}]}]]"
+      )
+      .unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret(
+        "GroupElementQ[PermutationGroup[{Cycles[{{1, 2}}], \
+         Cycles[{{2, 3}}]}], Cycles[{{1, 3}}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "GroupElementQ[PermutationGroup[{Cycles[{{1, 2}}]}], \
+         Cycles[{{1, 2, 3}}]]"
+      )
+      .unwrap(),
+      "False"
+    );
+  }
 }
 
 // GroupOrbits[group, {points}] gives the orbits of the seed points under the
@@ -4577,6 +5268,25 @@ mod group_orbits {
     assert_eq!(
       interpret("GroupOrbits[AbelianGroup[{2, 2}], {1, 3}]").unwrap(),
       "{{1, 2}, {3, 4}}"
+    );
+  }
+
+  #[test]
+  fn permutation_group_orbits() {
+    // A single transposition: point 3 is a fixed orbit on its own.
+    assert_eq!(
+      interpret("GroupOrbits[PermutationGroup[{Cycles[{{1, 2}}]}], {1, 2, 3}]")
+        .unwrap(),
+      "{{1, 2}, {3}}"
+    );
+    // Two generators merge the reachable points into one orbit.
+    assert_eq!(
+      interpret(
+        "GroupOrbits[PermutationGroup[{Cycles[{{1, 3, 6}, {2, 4}}], \
+         Cycles[{{6, 7}}]}], {1, 2, 3, 4, 5, 6, 7}]"
+      )
+      .unwrap(),
+      "{{1, 3, 6, 7}, {2, 4}, {5}}"
     );
   }
 }
@@ -5532,6 +6242,29 @@ mod cases {
   fn quartiles() {
     assert_case(r#"Quartiles[Range[25]]"#, r#"{27 / 4, 13, 77 / 4}"#);
   }
+  // A probability outside [0, 1] (or a symbolic one for plain data) is
+  // rejected with nquan and stays unevaluated, rather than silently
+  // computing a clamped result.
+  #[test]
+  fn quantile_out_of_range_emits_nquan() {
+    for input in [
+      "Quantile[{1, 2, 3, 4, 5}, 1.5]",
+      "Quantile[{1, 2, 3, 4, 5}, -0.5]",
+      "Quantile[{1, 2, 3, 4, 5}, {0.25, 0.5, 1.5}]",
+      "Quantile[{1, 2, 3, 4, 5}, q]",
+    ] {
+      let r = woxi::interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, input, "result mismatch for {input}");
+      assert!(
+        r.warnings.iter().any(|w| w.contains("Quantile::nquan")),
+        "expected nquan for {input}, got {:?}",
+        r.warnings
+      );
+    }
+    // Valid probabilities (including the 0 and 1 endpoints) still compute.
+    assert_case(r#"Quantile[{1, 2, 3, 4, 5}, 0]"#, r#"1"#);
+    assert_case(r#"Quantile[{1, 2, 3, 4, 5}, 1]"#, r#"5"#);
+  }
   #[test]
   fn mean_1() {
     assert_case(r#"Mean[{26, 64, 36}]"#, r#"42"#);
@@ -6209,6 +6942,72 @@ mod characteristic_function {
   }
 
   #[test]
+  fn chisquare_and_beta() {
+    // ChiSquare: (1 - 2 I t)^(-k/2), also folding for a numeric k.
+    assert_eq!(
+      interpret("CharacteristicFunction[ChiSquareDistribution[k], t]").unwrap(),
+      "(1 - (2*I)*t)^(-1/2*k)"
+    );
+    assert_eq!(
+      interpret("CharacteristicFunction[ChiSquareDistribution[4], t]").unwrap(),
+      "(1 - (2*I)*t)^(-2)"
+    );
+    // Beta: the confluent hypergeometric function evaluated at I t.
+    assert_eq!(
+      interpret("CharacteristicFunction[BetaDistribution[a, b], t]").unwrap(),
+      "Hypergeometric1F1[a, a + b, I*t]"
+    );
+  }
+
+  #[test]
+  fn laplace() {
+    assert_eq!(
+      interpret("CharacteristicFunction[LaplaceDistribution[m, b], t]")
+        .unwrap(),
+      "E^(I*m*t)/(1 + b^2*t^2)"
+    );
+    // Numeric parameters fold.
+    assert_eq!(
+      interpret("CharacteristicFunction[LaplaceDistribution[0, 2], t]")
+        .unwrap(),
+      "(1 + 4*t^2)^(-1)"
+    );
+  }
+
+  #[test]
+  fn negative_binomial() {
+    assert_eq!(
+      interpret(
+        "CharacteristicFunction[NegativeBinomialDistribution[n, p], t]"
+      )
+      .unwrap(),
+      "(p/(1 - E^(I*t)*(1 - p)))^n"
+    );
+  }
+
+  #[test]
+  fn log_series() {
+    assert_eq!(
+      interpret("CharacteristicFunction[LogSeriesDistribution[p], t]").unwrap(),
+      "Log[1 - E^(I*t)*p]/Log[1 - p]"
+    );
+  }
+
+  #[test]
+  fn logistic() {
+    assert_eq!(
+      interpret("CharacteristicFunction[LogisticDistribution[m, b], t]")
+        .unwrap(),
+      "b*E^(I*m*t)*Pi*t*Csch[b*Pi*t]"
+    );
+    assert_eq!(
+      interpret("CharacteristicFunction[LogisticDistribution[0, 1], t]")
+        .unwrap(),
+      "Pi*t*Csch[Pi*t]"
+    );
+  }
+
+  #[test]
   fn numeric_argument() {
     assert_eq!(
       interpret("CharacteristicFunction[NormalDistribution[], 0]").unwrap(),
@@ -6292,6 +7091,89 @@ mod moment_generating_function {
   }
 
   #[test]
+  fn chisquare_and_beta() {
+    // ChiSquare: (1 - 2 t)^(-k/2), also folding for a numeric k.
+    assert_eq!(
+      interpret("MomentGeneratingFunction[ChiSquareDistribution[k], t]")
+        .unwrap(),
+      "(1 - 2*t)^(-1/2*k)"
+    );
+    assert_eq!(
+      interpret("MomentGeneratingFunction[ChiSquareDistribution[6], t]")
+        .unwrap(),
+      "(1 - 2*t)^(-3)"
+    );
+    // Beta: the confluent hypergeometric function.
+    assert_eq!(
+      interpret("MomentGeneratingFunction[BetaDistribution[a, b], t]").unwrap(),
+      "Hypergeometric1F1[a, a + b, t]"
+    );
+  }
+
+  #[test]
+  fn laplace() {
+    assert_eq!(
+      interpret("MomentGeneratingFunction[LaplaceDistribution[m, b], t]")
+        .unwrap(),
+      "E^(m*t)/(1 - b^2*t^2)"
+    );
+    assert_eq!(
+      interpret("MomentGeneratingFunction[LaplaceDistribution[0, 1], t]")
+        .unwrap(),
+      "(1 - t^2)^(-1)"
+    );
+  }
+
+  #[test]
+  fn negative_binomial() {
+    assert_eq!(
+      interpret(
+        "MomentGeneratingFunction[NegativeBinomialDistribution[n, p], t]"
+      )
+      .unwrap(),
+      "(p/(1 - E^t*(1 - p)))^n"
+    );
+  }
+
+  #[test]
+  fn log_series() {
+    assert_eq!(
+      interpret("MomentGeneratingFunction[LogSeriesDistribution[p], t]")
+        .unwrap(),
+      "Log[1 - E^t*p]/Log[1 - p]"
+    );
+  }
+
+  #[test]
+  fn logistic() {
+    assert_eq!(
+      interpret("MomentGeneratingFunction[LogisticDistribution[m, b], t]")
+        .unwrap(),
+      "E^(m*t)/Sinc[b*Pi*t]"
+    );
+    assert_eq!(
+      interpret("MomentGeneratingFunction[LogisticDistribution[0, 1], t]")
+        .unwrap(),
+      "Sinc[Pi*t]^(-1)"
+    );
+  }
+
+  #[test]
+  fn no_mgf_is_indeterminate() {
+    // Student-t and Cauchy have no moment-generating function.
+    assert_eq!(
+      interpret("MomentGeneratingFunction[StudentTDistribution[n], t]")
+        .unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("MomentGeneratingFunction[CauchyDistribution[a, b], t]")
+        .unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  #[test]
   fn numeric_argument_folds() {
     // The MGF at t = 0 is always 1.
     assert_eq!(
@@ -6357,6 +7239,22 @@ mod cumulant_generating_function {
     );
   }
 
+  // An E^(m t) numerator splits off as a linear term, leaving the denominator
+  // under a Log (unlike Exponential's a/(a - t), which stays a single Log).
+  #[test]
+  fn exponential_numerator_splits() {
+    assert_eq!(
+      interpret("CumulantGeneratingFunction[LaplaceDistribution[m, b], t]")
+        .unwrap(),
+      "m*t - Log[1 - b^2*t^2]"
+    );
+    assert_eq!(
+      interpret("CumulantGeneratingFunction[LogisticDistribution[m, b], t]")
+        .unwrap(),
+      "m*t - Log[Sinc[b*Pi*t]]"
+    );
+  }
+
   #[test]
   fn power_forms() {
     assert_eq!(
@@ -6368,6 +7266,28 @@ mod cumulant_generating_function {
       interpret("CumulantGeneratingFunction[GammaDistribution[a, b], t]")
         .unwrap(),
       "-(a*Log[1 - b*t])"
+    );
+    // ChiSquare derives its CGF from the (1 - 2 t)^(-k/2) MGF.
+    assert_eq!(
+      interpret("CumulantGeneratingFunction[ChiSquareDistribution[k], t]")
+        .unwrap(),
+      "-1/2*(k*Log[1 - 2*t])"
+    );
+  }
+
+  // Distributions with no MGF have no CGF either: Log[Indeterminate] folds to
+  // Indeterminate rather than being left as a nested Log.
+  #[test]
+  fn no_cgf_is_indeterminate() {
+    assert_eq!(
+      interpret("CumulantGeneratingFunction[StudentTDistribution[n], t]")
+        .unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("CumulantGeneratingFunction[CauchyDistribution[a, b], t]")
+        .unwrap(),
+      "Indeterminate"
     );
   }
 
@@ -7797,6 +8717,1369 @@ mod factorial_central_mgf_tests {
       interpret("CentralMomentGeneratingFunction[BernoulliDistribution[p], t]")
         .unwrap(),
       "(1 - p + E^t*p)/E^(p*t)"
+    );
+  }
+}
+
+mod wishart_matrix_distribution {
+  use super::*;
+
+  #[test]
+  fn displays_unevaluated() {
+    assert_eq!(
+      interpret("WishartMatrixDistribution[10, {{1, 1/3}, {1/3, 1}}]").unwrap(),
+      "WishartMatrixDistribution[10, {{1, 1/3}, {1/3, 1}}]"
+    );
+    // The constructor never validates — even non-symmetric matrices
+    // echo silently (wolframscript-verified).
+    assert_eq!(
+      interpret("WishartMatrixDistribution[nu, {{1, 2}, {3, 4}}]").unwrap(),
+      "WishartMatrixDistribution[nu, {{1, 2}, {3, 4}}]"
+    );
+  }
+
+  #[test]
+  fn mean_is_nu_sigma() {
+    assert_eq!(
+      interpret(
+        "Mean[WishartMatrixDistribution[3, DiagonalMatrix[{2, 1, 3}]]]"
+      )
+      .unwrap(),
+      "{{6, 0, 0}, {0, 3, 0}, {0, 0, 9}}"
+    );
+    assert_eq!(
+      interpret("Mean[WishartMatrixDistribution[10, {{1, 1/3}, {1/3, 1}}]]")
+        .unwrap(),
+      "{{10, 10/3}, {10/3, 10}}"
+    );
+    // Non-integer and machine-precision degrees of freedom.
+    assert_eq!(
+      interpret("Mean[WishartMatrixDistribution[5/2, {{1, 0}, {0, 1}}]]")
+        .unwrap(),
+      "{{5/2, 0}, {0, 5/2}}"
+    );
+    assert_eq!(
+      interpret("Mean[WishartMatrixDistribution[2.5, {{1., 0.}, {0., 1.}}]]")
+        .unwrap(),
+      "{{2.5, 0.}, {0., 2.5}}"
+    );
+    // nu == p is allowed (nu > p - 1).
+    assert_eq!(
+      interpret("Mean[WishartMatrixDistribution[2, {{4, 0}, {0, 9}}]]")
+        .unwrap(),
+      "{{8, 0}, {0, 18}}"
+    );
+  }
+
+  #[test]
+  fn variance() {
+    // Variance_ij = nu (sigma_ij^2 + sigma_ii sigma_jj).
+    assert_eq!(
+      interpret(
+        "Variance[WishartMatrixDistribution[10, {{1, 1/3}, {1/3, 1}}]]"
+      )
+      .unwrap(),
+      "{{20, 100/9}, {100/9, 20}}"
+    );
+    assert_eq!(
+      interpret("Variance[WishartMatrixDistribution[5, {{4, 0}, {0, 9}}]]")
+        .unwrap(),
+      "{{160, 180}, {180, 810}}"
+    );
+    assert_eq!(
+      interpret("Variance[WishartMatrixDistribution[5/2, {{1, 0}, {0, 1}}]]")
+        .unwrap(),
+      "{{5, 5/2}, {5/2, 5}}"
+    );
+  }
+
+  #[test]
+  fn moments_validate_parameters() {
+    // Symbolic or non-positive-definite scale matrices emit posdefprm.
+    clear_state();
+    let r = interpret_with_stdout(
+      "Mean[WishartMatrixDistribution[nu, {{a, b}, {b, c}}]]",
+    )
+    .unwrap();
+    assert_eq!(
+      r.result,
+      "Mean[WishartMatrixDistribution[nu, {{a, b}, {b, c}}]]"
+    );
+    assert!(r.warnings[0].contains(
+      "WishartMatrixDistribution::posdefprm: The value {{a, b}, {b, c}} at \
+       position 2 in WishartMatrixDistribution[nu, {{a, b}, {b, c}}] is \
+       expected to be a symmetric positive definite matrix."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout(
+      "Mean[WishartMatrixDistribution[10, {{1, 2}, {3, 4}}]]",
+    )
+    .unwrap();
+    assert_eq!(
+      r.result,
+      "Mean[WishartMatrixDistribution[10, {{1, 2}, {3, 4}}]]"
+    );
+    assert!(r.warnings[0].contains("WishartMatrixDistribution::posdefprm"));
+
+    clear_state();
+    let r = interpret_with_stdout(
+      "Variance[WishartMatrixDistribution[10, {{-1, 0}, {0, 1}}]]",
+    )
+    .unwrap();
+    assert_eq!(
+      r.result,
+      "Variance[WishartMatrixDistribution[10, {{-1, 0}, {0, 1}}]]"
+    );
+    assert!(r.warnings[0].contains("WishartMatrixDistribution::posdefprm"));
+
+    // A symbolic nu (or nu <= p - 1) with a valid matrix emits bprm.
+    clear_state();
+    let r = interpret_with_stdout(
+      "Mean[WishartMatrixDistribution[nu, {{1, 0}, {0, 1}}]]",
+    )
+    .unwrap();
+    assert_eq!(
+      r.result,
+      "Mean[WishartMatrixDistribution[nu, {{1, 0}, {0, 1}}]]"
+    );
+    assert!(r.warnings[0].contains(
+      "WishartMatrixDistribution::bprm: The parameters of distribution \
+       WishartMatrixDistribution[nu, {{1, 0}, {0, 1}}] are not valid. Use \
+       DistributionParameterAssumptions to obtain the parameter assumptions."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout(
+      "Mean[WishartMatrixDistribution[1, {{1, 0}, {0, 1}}]]",
+    )
+    .unwrap();
+    assert_eq!(
+      r.result,
+      "Mean[WishartMatrixDistribution[1, {{1, 0}, {0, 1}}]]"
+    );
+    assert!(r.warnings[0].contains("WishartMatrixDistribution::bprm"));
+  }
+}
+
+// AbsoluteCorrelationFunction[data, hspec] — the non-centered second
+// moment estimate Sum x_t x_(t+|h|) / n. All outputs verified against
+// wolframscript.
+mod absolute_correlation_function {
+  use super::*;
+
+  #[test]
+  fn single_lags() {
+    assert_eq!(
+      interpret("AbsoluteCorrelationFunction[{1, 2, 3, 4, 5}, 1]").unwrap(),
+      "8"
+    );
+    assert_eq!(
+      interpret("AbsoluteCorrelationFunction[{1, 2, 3, 4, 5}, 0]").unwrap(),
+      "11"
+    );
+    assert_eq!(
+      interpret("AbsoluteCorrelationFunction[{1, 2, 3, 4, 5}, 2]").unwrap(),
+      "26/5"
+    );
+    // The largest valid lag uses a single product.
+    assert_eq!(
+      interpret("AbsoluteCorrelationFunction[{1, 2, 3, 4, 5}, 4]").unwrap(),
+      "1"
+    );
+    // Negative lags are symmetric.
+    assert_eq!(
+      interpret("AbsoluteCorrelationFunction[{1, 2, 3, 4, 5}, -1]").unwrap(),
+      "8"
+    );
+    assert_eq!(
+      interpret("AbsoluteCorrelationFunction[{1., 2., 3., 4.}, 1]").unwrap(),
+      "5."
+    );
+  }
+
+  #[test]
+  fn range_specs() {
+    // {hmax} means lags 0 through hmax.
+    assert_eq!(
+      interpret("AbsoluteCorrelationFunction[{1, 2, 3, 4, 5}, {2}]").unwrap(),
+      "{11, 8, 26/5}"
+    );
+    // {h1, h2} is an inclusive lag range.
+    assert_eq!(
+      interpret("AbsoluteCorrelationFunction[{1, 2, 3, 4, 5}, {1, 3}]")
+        .unwrap(),
+      "{8, 26/5, 14/5}"
+    );
+  }
+
+  #[test]
+  fn out_of_range_lags_emit_bdlag() {
+    clear_state();
+    let r =
+      interpret_with_stdout("AbsoluteCorrelationFunction[{1, 2, 3, 4, 5}, 5]")
+        .unwrap();
+    assert_eq!(r.result, "AbsoluteCorrelationFunction[{1, 2, 3, 4, 5}, 5]");
+    assert!(r.warnings[0].contains(
+      "AbsoluteCorrelationFunction::bdlag: The lag specification 5 should \
+       be a symbol, an integer with magnitude less than the length of the \
+       data or a range specification indicating such integers."
+    ));
+  }
+}
+
+// StandbyDistribution and the HypoexponentialDistribution closed forms it
+// normalizes to. All outputs verified against wolframscript.
+mod standby_distribution {
+  use super::*;
+
+  #[test]
+  fn all_exponential_normalizes_to_hypoexponential() {
+    assert_eq!(
+      interpret(
+        "StandbyDistribution[ExponentialDistribution[2], {ExponentialDistribution[3]}]"
+      )
+      .unwrap(),
+      "HypoexponentialDistribution[{2, 3}]"
+    );
+    // Also with symbolic rates and several standby components.
+    assert_eq!(
+      interpret(
+        "StandbyDistribution[ExponentialDistribution[a], {ExponentialDistribution[b], ExponentialDistribution[c]}]"
+      )
+      .unwrap(),
+      "HypoexponentialDistribution[{a, b, c}]"
+    );
+    // Non-exponential components stay unevaluated.
+    assert_eq!(
+      interpret(
+        "StandbyDistribution[GammaDistribution[2, 3], {ExponentialDistribution[5]}]"
+      )
+      .unwrap(),
+      "StandbyDistribution[GammaDistribution[2, 3], {ExponentialDistribution[5]}]"
+    );
+  }
+
+  #[test]
+  fn moments_sum_over_components() {
+    assert_eq!(
+      interpret(
+        "Mean[StandbyDistribution[ExponentialDistribution[a], {ExponentialDistribution[b]}]]"
+      )
+      .unwrap(),
+      "a^(-1) + b^(-1)"
+    );
+    assert_eq!(
+      interpret(
+        "Mean[StandbyDistribution[ExponentialDistribution[2], {ExponentialDistribution[3], ExponentialDistribution[4]}]]"
+      )
+      .unwrap(),
+      "13/12"
+    );
+    assert_eq!(
+      interpret(
+        "Variance[StandbyDistribution[ExponentialDistribution[2], {ExponentialDistribution[3]}]]"
+      )
+      .unwrap(),
+      "13/36"
+    );
+    // Mixed component kinds still sum their moments.
+    assert_eq!(
+      interpret(
+        "Mean[StandbyDistribution[GammaDistribution[2, 3], {ExponentialDistribution[5]}]]"
+      )
+      .unwrap(),
+      "31/5"
+    );
+    assert_eq!(
+      interpret(
+        "Variance[StandbyDistribution[GammaDistribution[2, 3], {ExponentialDistribution[5]}]]"
+      )
+      .unwrap(),
+      "451/25"
+    );
+  }
+
+  #[test]
+  fn hypoexponential_pdf_and_cdf() {
+    assert_eq!(
+      interpret("PDF[HypoexponentialDistribution[{2, 3}], x]").unwrap(),
+      "Piecewise[{{-6/E^(3*x) + 6/E^(2*x), x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[HypoexponentialDistribution[{2, 3, 4}], x]").unwrap(),
+      "Piecewise[{{12/E^(4*x) - 24/E^(3*x) + 12/E^(2*x), x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[HypoexponentialDistribution[{2, 3}], x]").unwrap(),
+      "Piecewise[{{1 + 2/E^(3*x) - 3/E^(2*x), x > 0}}, 0]"
+    );
+    // Repeated rates need Erlang-style terms (wolframscript gives
+    // 4 x E^(-2 x) for {2, 2}) — unevaluated here.
+    assert_eq!(
+      interpret("PDF[HypoexponentialDistribution[{2, 2}], x]").unwrap(),
+      "PDF[HypoexponentialDistribution[{2, 2}], x]"
+    );
+  }
+}
+
+// FailureDistribution — Boolean system reliability. All outputs verified
+// against wolframscript.
+mod failure_distribution {
+  use super::*;
+
+  #[test]
+  fn constructor_normalizes_events_to_indices() {
+    assert_eq!(
+      interpret(
+        "FailureDistribution[x || y, {{x, ExponentialDistribution[a]}, {y, ExponentialDistribution[b]}}]"
+      )
+      .unwrap(),
+      "FailureDistribution[1 || 2, {{1, ExponentialDistribution[a]}, {2, ExponentialDistribution[b]}}]"
+    );
+  }
+
+  #[test]
+  fn cdf_composition() {
+    // Parallel failure (And): the CDFs multiply.
+    assert_eq!(
+      interpret(
+        "CDF[FailureDistribution[x && y, {{x, ExponentialDistribution[a]}, {y, ExponentialDistribution[b]}}], t]"
+      )
+      .unwrap(),
+      "Piecewise[{{(1 - E^(-(a*t)))*(1 - E^(-(b*t))), t >= 0}}, 0]"
+    );
+    // Series failure (Or) with concrete rates.
+    assert_eq!(
+      interpret(
+        "CDF[FailureDistribution[x || y, {{x, ExponentialDistribution[2]}, {y, ExponentialDistribution[3]}}], t]"
+      )
+      .unwrap(),
+      "Piecewise[{{1 - E^(-5*t), t >= 0}}, 0]"
+    );
+    // Mixed component families; a strict component support makes the
+    // combined condition strict.
+    assert_eq!(
+      interpret(
+        "CDF[FailureDistribution[x && y, {{x, ExponentialDistribution[2]}, {y, WeibullDistribution[2, 3]}}], t]"
+      )
+      .unwrap(),
+      "Piecewise[{{(1 - E^(-2*t))*(1 - E^(-1/9*t^2)), t > 0}}, 0]"
+    );
+    // Concrete evaluation points substitute into the value branch.
+    assert_eq!(
+      interpret(
+        "CDF[FailureDistribution[x && y, {{x, ExponentialDistribution[a]}, {y, ExponentialDistribution[b]}}], 5]"
+      )
+      .unwrap(),
+      "(1 - E^(-5*a))*(1 - E^(-5*b))"
+    );
+  }
+
+  #[test]
+  fn survival_and_pdf() {
+    // SurvivalFunction has its own piecewise shape.
+    assert_eq!(
+      interpret(
+        "SurvivalFunction[FailureDistribution[x && y, {{x, ExponentialDistribution[a]}, {y, ExponentialDistribution[b]}}], t]"
+      )
+      .unwrap(),
+      "Piecewise[{{1, t < 0}}, 1 - (1 - E^(-(a*t)))*(1 - E^(-(b*t)))]"
+    );
+    // The PDF is the derivative of the composed CDF.
+    assert_eq!(
+      interpret(
+        "PDF[FailureDistribution[x && y, {{x, ExponentialDistribution[a]}, {y, ExponentialDistribution[b]}}], t]"
+      )
+      .unwrap(),
+      "Piecewise[{{(b*(1 - E^(-(a*t))))/E^(b*t) + (a*(1 - E^(-(b*t))))/E^(a*t), t > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn validation() {
+    // Negated events are not positive unate.
+    clear_state();
+    let r = interpret_with_stdout(
+      "CDF[FailureDistribution[!x, {{x, ExponentialDistribution[2]}}], t]",
+    )
+    .unwrap();
+    assert_eq!(
+      r.result,
+      "CDF[FailureDistribution[ !1, {{1, ExponentialDistribution[2]}}], t]"
+    );
+    assert!(r.warnings[0].contains(
+      "FailureDistribution::nonunate: The Boolean expression !1 is not \
+       positive unate. Use UnateQ to test if a Boolean expression is unate."
+    ));
+
+    // Idempotency-reducible repeats (Or[x, x] -> x) collapse to a distinct-
+    // leaf tree, so the CDF/PDF resolve exactly like wolframscript.
+    assert_eq!(
+      interpret(
+        "CDF[FailureDistribution[x || x, {{x, ExponentialDistribution[2]}}], t]"
+      )
+      .unwrap(),
+      "Piecewise[{{1 - E^(-2*t), t >= 0}}, 0]"
+    );
+    assert_eq!(
+      interpret(
+        "PDF[FailureDistribution[x || x, {{x, ExponentialDistribution[2]}}], t]"
+      )
+      .unwrap(),
+      "Piecewise[{{2/E^(2*t), t > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret(
+        "CDF[FailureDistribution[x && x, {{x, ExponentialDistribution[2]}}], t]"
+      )
+      .unwrap(),
+      "Piecewise[{{1 - E^(-2*t), t >= 0}}, 0]"
+    );
+
+    // Genuine cross-term repeats: the shared event 1 appears in both branches
+    // of (1 || 2) && (1 || 3), so the naive independence product rules would
+    // double-count it. Reducing the Boolean function to its read-once form
+    // (1 || (2 && 3)) via BooleanMinimize makes independence exact, matching
+    // wolframscript's value. (Woxi orders the two complement factors as
+    // (1 - E^(-3*t))*(1 - E^(-5*t)); wolframscript writes the E^(-5*t) factor
+    // first — a general Times factor-ordering divergence, so the verify
+    // harness skip-lists this exact case.)
+    assert_eq!(
+      interpret(
+        "CDF[FailureDistribution[(x || y) && (x || z), {{x, ExponentialDistribution[2]}, {y, ExponentialDistribution[3]}, {z, ExponentialDistribution[5]}}], t]"
+      )
+      .unwrap(),
+      "Piecewise[{{1 - (1 - (1 - E^(-3*t))*(1 - E^(-5*t)))/E^(2*t), t >= 0}}, 0]"
+    );
+  }
+}
+
+// DiscreteMarkovProcess — step distributions and the stationary
+// distribution. All outputs verified against wolframscript.
+mod discrete_markov_process {
+  use super::*;
+
+  #[test]
+  fn constructor_echoes() {
+    assert_eq!(
+      interpret("DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}]").unwrap(),
+      "DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}]"
+    );
+  }
+
+  #[test]
+  fn step_distributions() {
+    // t = 0 is the initial state; the Boole terms put the state first.
+    assert_eq!(
+      interpret(
+        "PDF[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}][0], x]"
+      )
+      .unwrap(),
+      "Boole[1 == x]"
+    );
+    assert_eq!(
+      interpret(
+        "PDF[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}][1], x]"
+      )
+      .unwrap(),
+      "Boole[1 == x]/2 + Boole[2 == x]/2"
+    );
+    assert_eq!(
+      interpret(
+        "PDF[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}][3], x]"
+      )
+      .unwrap(),
+      "(29*Boole[1 == x])/72 + (43*Boole[2 == x])/72"
+    );
+    // Concrete states give the exact probability; out-of-range gives 0.
+    assert_eq!(
+      interpret(
+        "PDF[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}][3], 1]"
+      )
+      .unwrap(),
+      "29/72"
+    );
+    assert_eq!(
+      interpret(
+        "PDF[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}][2], 5]"
+      )
+      .unwrap(),
+      "0"
+    );
+    // Probability-vector initial states work too.
+    assert_eq!(
+      interpret(
+        "PDF[DiscreteMarkovProcess[{1/4, 3/4}, {{1/2, 1/2}, {1/3, 2/3}}][1], x]"
+      )
+      .unwrap(),
+      "(3*Boole[1 == x])/8 + (5*Boole[2 == x])/8"
+    );
+  }
+
+  #[test]
+  fn stationary_distribution() {
+    // Exact solve of pi.P == pi with total probability 1.
+    assert_eq!(
+      interpret(
+        "PDF[StationaryDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}]], 1]"
+      )
+      .unwrap(),
+      "2/5"
+    );
+    assert_eq!(
+      interpret(
+        "PDF[StationaryDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}]], 2]"
+      )
+      .unwrap(),
+      "3/5"
+    );
+    assert_eq!(
+      interpret(
+        "PDF[StationaryDistribution[DiscreteMarkovProcess[{1, 0, 0}, {{0, 1/2, 1/2}, {1/2, 0, 1/2}, {1/2, 1/2, 0}}]], 2]"
+      )
+      .unwrap(),
+      "1/3"
+    );
+    // The symbolic form is a Piecewise over the state range; these
+    // Boole terms put x first, and the condition is an Inequality call.
+    assert_eq!(
+      interpret(
+        "PDF[StationaryDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}]], x]"
+      )
+      .unwrap(),
+      "Piecewise[{{(2*Boole[x == 1])/5 + (3*Boole[x == 2])/5, Inequality[1, LessEqual, x, LessEqual, 2]}}, 0]"
+    );
+    assert_eq!(
+      interpret(
+        "PDF[StationaryDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}]], 5]"
+      )
+      .unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret(
+        "Mean[StationaryDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}]]]"
+      )
+      .unwrap(),
+      "8/5"
+    );
+    assert_eq!(
+      interpret(
+        "Mean[StationaryDistribution[DiscreteMarkovProcess[{1, 0, 0}, {{0, 1/2, 1/2}, {1/2, 0, 1/2}, {1/2, 1/2, 0}}]]]"
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+}
+
+// FirstPassageTimeDistribution for discrete Markov processes. All
+// outputs verified against wolframscript.
+mod first_passage_time_distribution {
+  use super::*;
+
+  #[test]
+  fn first_passage_probabilities() {
+    // From state 1 to state 2: stay-then-jump geometric tail.
+    for (t, expected) in [("1", "1/2"), ("2", "1/4"), ("3", "1/8")] {
+      assert_eq!(
+        interpret(&format!(
+          "PDF[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{{{1/2, 1/2}}, {{1/3, 2/3}}}}], 2], {t}]"
+        ))
+        .unwrap(),
+        expected
+      );
+    }
+    // Zero and non-integer times have no mass; the CDF floors.
+    assert_eq!(
+      interpret(
+        "PDF[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}], 2], 0]"
+      )
+      .unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret(
+        "PDF[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}], 2], 3/2]"
+      )
+      .unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret(
+        "CDF[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}], 2], 3]"
+      )
+      .unwrap(),
+      "7/8"
+    );
+    assert_eq!(
+      interpret(
+        "CDF[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}], 2], 5/2]"
+      )
+      .unwrap(),
+      "3/4"
+    );
+  }
+
+  #[test]
+  fn first_return_case() {
+    // Target == initial state means the first RETURN time; its mean is
+    // 1/pi_1.
+    assert_eq!(
+      interpret(
+        "Mean[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}], 1]]"
+      )
+      .unwrap(),
+      "5/2"
+    );
+    for (t, expected) in [("1", "1/2"), ("2", "1/6"), ("3", "1/9")] {
+      assert_eq!(
+        interpret(&format!(
+          "PDF[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{{{1/2, 1/2}}, {{1/3, 2/3}}}}], 1], {t}]"
+        ))
+        .unwrap(),
+        expected
+      );
+    }
+    assert_eq!(
+      interpret(
+        "Variance[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}], 1]]"
+      )
+      .unwrap(),
+      "21/4"
+    );
+  }
+
+  #[test]
+  fn exact_moments() {
+    assert_eq!(
+      interpret(
+        "Mean[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}], 2]]"
+      )
+      .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(
+        "Variance[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}], 2]]"
+      )
+      .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(
+        "Mean[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{0, 1/2, 1/2}, {1/2, 0, 1/2}, {1/2, 1/2, 0}}], 3]]"
+      )
+      .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(
+        "Variance[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{0, 1/2, 1/2}, {1/2, 0, 1/2}, {1/2, 1/2, 0}}], 3]]"
+      )
+      .unwrap(),
+      "2"
+    );
+    // Symbolic times need eigendecomposition closed forms — unevaluated.
+    assert_eq!(
+      interpret(
+        "PDF[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}], 2], x]"
+      )
+      .unwrap(),
+      "PDF[FirstPassageTimeDistribution[DiscreteMarkovProcess[1, {{1/2, 1/2}, {1/3, 2/3}}], 2], x]"
+    );
+  }
+}
+
+// Wiener and geometric Brownian motion process time slices. All outputs
+// verified against wolframscript.
+mod continuous_process_slices {
+  use super::*;
+
+  #[test]
+  fn wiener_process() {
+    // WienerProcess[] normalizes to WienerProcess[0, 1].
+    assert_eq!(interpret("WienerProcess[]").unwrap(), "WienerProcess[0, 1]");
+    assert_eq!(interpret("Mean[WienerProcess[m, s][t]]").unwrap(), "m*t");
+    assert_eq!(
+      interpret("Variance[WienerProcess[m, s][t]]").unwrap(),
+      "s^2*t"
+    );
+    assert_eq!(
+      interpret("PDF[WienerProcess[m, s][t], x]").unwrap(),
+      "1/(E^((-(m*t) + x)^2/(2*s^2*t))*Sqrt[2*Pi]*s*Sqrt[t])"
+    );
+    assert_eq!(interpret("Mean[WienerProcess[][t]]").unwrap(), "0");
+    assert_eq!(
+      interpret("Variance[WienerProcess[1/10, 1/2][4]]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn geometric_brownian_motion() {
+    assert_eq!(
+      interpret("GeometricBrownianMotionProcess[m, s, x0]").unwrap(),
+      "GeometricBrownianMotionProcess[m, s, x0]"
+    );
+    // The slice is LogNormal with drift (m - s^2/2) t + Log[x0]; the
+    // moments keep wolframscript's unsimplified exponent forms.
+    assert_eq!(
+      interpret("Mean[GeometricBrownianMotionProcess[m, s, x0][t]]").unwrap(),
+      "E^((s^2*t)/2 + (m - s^2/2)*t)*x0"
+    );
+    assert_eq!(
+      interpret("Mean[GeometricBrownianMotionProcess[1/10, 1/2, 1][3]]")
+        .unwrap(),
+      "E^(3/10)"
+    );
+    assert_eq!(
+      interpret("PDF[GeometricBrownianMotionProcess[m, s, x0][t], x]").unwrap(),
+      "Piecewise[{{1/(E^((-((m - s^2/2)*t) + Log[x] - Log[x0])^2/(2*s^2*t))*Sqrt[2*Pi]*s*Sqrt[t]*x), x > 0}}, 0]"
+    );
+    // Numeric values pin the variance and CDF (their symbolic forms
+    // differ only in known Times/exponent ordering).
+    assert_eq!(
+      interpret("N[Variance[GeometricBrownianMotionProcess[1/10, 1/2, 1][3]]]")
+        .unwrap(),
+      "2.0353067303064654"
+    );
+    assert_eq!(
+      interpret("N[CDF[GeometricBrownianMotionProcess[1/10, 1/2, 1][3], 2]]")
+        .unwrap(),
+      "0.8124551558563821"
+    );
+  }
+}
+
+// Ornstein-Uhlenbeck and Brownian-bridge process time slices. All
+// outputs verified against wolframscript.
+mod ou_and_brownian_bridge_slices {
+  use super::*;
+
+  #[test]
+  fn ornstein_uhlenbeck() {
+    // The 3-argument form starts in stationarity: time-independent.
+    assert_eq!(
+      interpret("Mean[OrnsteinUhlenbeckProcess[m, s, th][t]]").unwrap(),
+      "m"
+    );
+    assert_eq!(
+      interpret("Variance[OrnsteinUhlenbeckProcess[m, s, th][t]]").unwrap(),
+      "s^2/(2*th)"
+    );
+    assert_eq!(
+      interpret("PDF[OrnsteinUhlenbeckProcess[m, s, th][t], x]").unwrap(),
+      "Sqrt[th]/(E^((th*(-m + x)^2)/s^2)*Sqrt[Pi]*s)"
+    );
+    assert_eq!(
+      interpret("Variance[OrnsteinUhlenbeckProcess[1, 2, 3][2]]").unwrap(),
+      "2/3"
+    );
+    // The 4-argument form starts at x0 and relaxes toward m.
+    assert_eq!(
+      interpret("Mean[OrnsteinUhlenbeckProcess[m, s, th, x0][t]]").unwrap(),
+      "m + (-m + x0)/E^(t*th)"
+    );
+    assert_eq!(
+      interpret("Variance[OrnsteinUhlenbeckProcess[m, s, th, x0][t]]").unwrap(),
+      "((1 - E^(-2*t*th))*s^2)/(2*th)"
+    );
+  }
+
+  #[test]
+  fn brownian_bridge() {
+    // Constructor normalization and the 1-argument arity error.
+    assert_eq!(
+      interpret("BrownianBridgeProcess[]").unwrap(),
+      "BrownianBridgeProcess[1, {0, 0}, {1, 0}]"
+    );
+    assert_eq!(
+      interpret("BrownianBridgeProcess[{t1, a}, {t2, b}]").unwrap(),
+      "BrownianBridgeProcess[1, {t1, a}, {t2, b}]"
+    );
+    clear_state();
+    let r = interpret_with_stdout("BrownianBridgeProcess[s]").unwrap();
+    assert_eq!(r.result, "BrownianBridgeProcess[s]");
+    assert!(r.warnings[0].contains(
+      "BrownianBridgeProcess::argtu: BrownianBridgeProcess called with 1 \
+       argument; 2 or 3 arguments are expected."
+    ));
+    // The slice interpolates linearly with bridge variance.
+    assert_eq!(
+      interpret("Mean[BrownianBridgeProcess[s, {t1, a}, {t2, b}][t]]").unwrap(),
+      "(b*(t - t1))/(-t1 + t2) + (a*(-t + t2))/(-t1 + t2)"
+    );
+    assert_eq!(
+      interpret("Variance[BrownianBridgeProcess[s, {t1, a}, {t2, b}][t]]")
+        .unwrap(),
+      "(s^2*(t - t1)*(-t + t2))/(-t1 + t2)"
+    );
+    assert_eq!(
+      interpret("Variance[BrownianBridgeProcess[2, {0, 0}, {3, 0}][1]]")
+        .unwrap(),
+      "8/3"
+    );
+    assert_eq!(
+      interpret("Mean[BrownianBridgeProcess[1, {0, 2}, {4, 6}][1]]").unwrap(),
+      "3"
+    );
+  }
+}
+
+// Poisson/Binomial/Bernoulli/white-noise process time slices. All
+// outputs verified against wolframscript.
+mod counting_process_slices {
+  use super::*;
+
+  #[test]
+  fn poisson_process() {
+    assert_eq!(interpret("Mean[PoissonProcess[l][t]]").unwrap(), "l*t");
+    assert_eq!(interpret("Variance[PoissonProcess[l][t]]").unwrap(), "l*t");
+    assert_eq!(
+      interpret("PDF[PoissonProcess[l][t], x]").unwrap(),
+      "Piecewise[{{(l*t)^x/(E^(l*t)*x!), x >= 0}}, 0]"
+    );
+    assert_eq!(interpret("Mean[PoissonProcess[2][3]]").unwrap(), "6");
+    clear_state();
+    let r = interpret_with_stdout("PoissonProcess[]").unwrap();
+    assert_eq!(r.result, "PoissonProcess[]");
+    assert!(r.warnings[0].contains(
+      "PoissonProcess::argx: PoissonProcess called with 0 arguments; 1 \
+       argument is expected."
+    ));
+  }
+
+  #[test]
+  fn binomial_and_bernoulli_processes() {
+    assert_eq!(interpret("Mean[BinomialProcess[p][t]]").unwrap(), "p*t");
+    assert_eq!(
+      interpret("Variance[BinomialProcess[p][t]]").unwrap(),
+      "(1 - p)*p*t"
+    );
+    // The slice keeps the symbolic step count in the support condition.
+    assert_eq!(
+      interpret("PDF[BinomialProcess[p][t], x]").unwrap(),
+      "Piecewise[{{(1 - p)^(t - x)*p^x*Binomial[t, x], 0 <= x <= t}}, 0]"
+    );
+    // The Bernoulli process slice does not depend on the time.
+    assert_eq!(interpret("Mean[BernoulliProcess[p][t]]").unwrap(), "p");
+    assert_eq!(
+      interpret("PDF[BernoulliProcess[p][t], x]").unwrap(),
+      "Piecewise[{{1 - p, x == 0}, {p, x == 1}}, 0]"
+    );
+  }
+
+  #[test]
+  fn white_noise_process() {
+    // White noise slices to its underlying distribution at every time.
+    assert_eq!(
+      interpret("Variance[WhiteNoiseProcess[NormalDistribution[m, s]][t]]")
+        .unwrap(),
+      "s^2"
+    );
+    assert_eq!(
+      interpret("PDF[WhiteNoiseProcess[NormalDistribution[m, s]][t], x]")
+        .unwrap(),
+      "1/(E^((-m + x)^2/(2*s^2))*Sqrt[2*Pi]*s)"
+    );
+  }
+}
+
+// SliceDistribution — materializes process time slices. All outputs
+// verified against wolframscript.
+mod slice_distribution {
+  use super::*;
+
+  #[test]
+  fn continuous_processes() {
+    assert_eq!(
+      interpret("SliceDistribution[WienerProcess[m, s], t]").unwrap(),
+      "NormalDistribution[m*t, s*Sqrt[t]]"
+    );
+    assert_eq!(
+      interpret(
+        "SliceDistribution[GeometricBrownianMotionProcess[m, s, x0], t]"
+      )
+      .unwrap(),
+      "LogNormalDistribution[(m - s^2/2)*t + Log[x0], s*Sqrt[t]]"
+    );
+    assert_eq!(
+      interpret("SliceDistribution[OrnsteinUhlenbeckProcess[m, s, th], t]")
+        .unwrap(),
+      "NormalDistribution[m, s/(Sqrt[2]*Sqrt[th])]"
+    );
+    // The bridge keeps its scale factor outside the radical.
+    assert_eq!(
+      interpret(
+        "SliceDistribution[BrownianBridgeProcess[s, {t1, a}, {t2, b}], t]"
+      )
+      .unwrap(),
+      "NormalDistribution[(b*(t - t1))/(-t1 + t2) + (a*(-t + t2))/(-t1 + t2), s*Sqrt[((t - t1)*(-t + t2))/(-t1 + t2)]]"
+    );
+    // Concrete times evaluate the parameters.
+    assert_eq!(
+      interpret("SliceDistribution[WienerProcess[1/10, 2], 4]").unwrap(),
+      "NormalDistribution[2/5, 4]"
+    );
+  }
+
+  #[test]
+  fn counting_and_noise_processes() {
+    assert_eq!(
+      interpret("SliceDistribution[PoissonProcess[l], t]").unwrap(),
+      "PoissonDistribution[l*t]"
+    );
+    assert_eq!(
+      interpret("SliceDistribution[BinomialProcess[p], t]").unwrap(),
+      "BinomialDistribution[t, p]"
+    );
+    assert_eq!(
+      interpret("SliceDistribution[BernoulliProcess[p], t]").unwrap(),
+      "BernoulliDistribution[p]"
+    );
+    assert_eq!(
+      interpret(
+        "SliceDistribution[WhiteNoiseProcess[NormalDistribution[m, s]], t]"
+      )
+      .unwrap(),
+      "NormalDistribution[m, s]"
+    );
+    // Non-processes stay unevaluated.
+    assert_eq!(
+      interpret("SliceDistribution[x, t]").unwrap(),
+      "SliceDistribution[x, t]"
+    );
+  }
+}
+
+// CovarianceFunction[proc, t1, t2] closed forms for the random-process
+// family. All outputs verified against wolframscript.
+mod process_covariance_function {
+  use super::*;
+
+  #[test]
+  fn brownian_family() {
+    assert_eq!(
+      interpret("CovarianceFunction[WienerProcess[m, s], t1, t2]").unwrap(),
+      "s^2*Min[t1, t2]"
+    );
+    assert_eq!(
+      interpret("CovarianceFunction[WienerProcess[1/10, 2], 3, 5]").unwrap(),
+      "12"
+    );
+    assert_eq!(
+      interpret(
+        "CovarianceFunction[OrnsteinUhlenbeckProcess[m, s, th], t1, t2]"
+      )
+      .unwrap(),
+      "s^2/(2*E^(th*Abs[t1 - t2])*th)"
+    );
+    assert_eq!(
+      interpret(
+        "CovarianceFunction[BrownianBridgeProcess[s, {ta, a}, {tb, b}], t1, t2]"
+      )
+      .unwrap(),
+      "(s^2*(tb - Max[t1, t2])*(-ta + Min[t1, t2]))/(-ta + tb)"
+    );
+    assert_eq!(
+      interpret(
+        "CovarianceFunction[GeometricBrownianMotionProcess[m, s, x0], t1, t2]"
+      )
+      .unwrap(),
+      "E^(m*(t1 + t2))*(-1 + E^(s^2*Min[t1, t2]))*x0^2"
+    );
+  }
+
+  #[test]
+  fn counting_and_noise_family() {
+    assert_eq!(
+      interpret("CovarianceFunction[PoissonProcess[l], t1, t2]").unwrap(),
+      "l*Min[t1, t2]"
+    );
+    assert_eq!(
+      interpret("CovarianceFunction[BinomialProcess[p], t1, t2]").unwrap(),
+      "(1 - p)*p*Min[t1, t2]"
+    );
+    // Independent steps only covary at equal times.
+    assert_eq!(
+      interpret("CovarianceFunction[BernoulliProcess[p], t1, t2]").unwrap(),
+      "Piecewise[{{(1 - p)*p, t1 == t2}}, 0]"
+    );
+    assert_eq!(
+      interpret(
+        "CovarianceFunction[WhiteNoiseProcess[NormalDistribution[m, s]], t1, t2]"
+      )
+      .unwrap(),
+      "s^2*DiscreteDelta[-t1 + t2]"
+    );
+  }
+}
+
+// CorrelationFunction / AbsoluteCorrelationFunction closed forms for
+// the random-process family. All outputs verified against wolframscript.
+mod process_correlation_functions {
+  use super::*;
+
+  #[test]
+  fn correlation_function() {
+    // The scale cancels for the Brownian/counting cases.
+    for proc in [
+      "WienerProcess[m, s]",
+      "PoissonProcess[l]",
+      "BinomialProcess[p]",
+    ] {
+      assert_eq!(
+        interpret(&format!("CorrelationFunction[{proc}, t1, t2]")).unwrap(),
+        "Min[t1, t2]/Sqrt[t1*t2]",
+        "{proc}"
+      );
+    }
+    assert_eq!(
+      interpret(
+        "CorrelationFunction[OrnsteinUhlenbeckProcess[m, s, th], t1, t2]"
+      )
+      .unwrap(),
+      "E^(-(th*Abs[t1 - t2]))"
+    );
+    assert_eq!(
+      interpret("CorrelationFunction[BernoulliProcess[p], t1, t2]").unwrap(),
+      "KroneckerDelta[t1, t2]"
+    );
+    assert_eq!(
+      interpret(
+        "CorrelationFunction[WhiteNoiseProcess[NormalDistribution[m, s]], t1, t2]"
+      )
+      .unwrap(),
+      "DiscreteDelta[-t1 + t2]"
+    );
+    assert_eq!(
+      interpret(
+        "CorrelationFunction[GeometricBrownianMotionProcess[m, s, x0], t1, t2]"
+      )
+      .unwrap(),
+      "(-1 + E^(s^2*Min[t1, t2]))/(Sqrt[-1 + E^(s^2*t1)]*Sqrt[-1 + E^(s^2*t2)])"
+    );
+    assert_eq!(
+      interpret("CorrelationFunction[WienerProcess[1/10, 2], 3, 5]").unwrap(),
+      "Sqrt[3/5]"
+    );
+    // The bridge's symbolic numerator differs only in Plus term order
+    // from wolframscript; concrete times agree exactly.
+    assert_eq!(
+      interpret(
+        "CorrelationFunction[BrownianBridgeProcess[1, {0, 0}, {4, 0}], 1, 2]"
+      )
+      .unwrap(),
+      "1/Sqrt[3]"
+    );
+  }
+
+  #[test]
+  fn absolute_correlation_function() {
+    assert_eq!(
+      interpret("AbsoluteCorrelationFunction[WienerProcess[m, s], t1, t2]")
+        .unwrap(),
+      "m^2*t1*t2 + s^2*Min[t1, t2]"
+    );
+    assert_eq!(
+      interpret("AbsoluteCorrelationFunction[PoissonProcess[l], t1, t2]")
+        .unwrap(),
+      "l^2*t1*t2 + l*Min[t1, t2]"
+    );
+    assert_eq!(
+      interpret(
+        "AbsoluteCorrelationFunction[OrnsteinUhlenbeckProcess[m, s, th], t1, t2]"
+      )
+      .unwrap(),
+      "m^2 + s^2/(2*E^(th*Abs[t1 - t2])*th)"
+    );
+    assert_eq!(
+      interpret("AbsoluteCorrelationFunction[BinomialProcess[p], t1, t2]")
+        .unwrap(),
+      "p^2*t1*t2 + (1 - p)*p*Min[t1, t2]"
+    );
+    // Bernoulli distinguishes equal and unequal times.
+    assert_eq!(
+      interpret("AbsoluteCorrelationFunction[BernoulliProcess[p], t1, t2]")
+        .unwrap(),
+      "Piecewise[{{p, t1 == t2}, {p^2, t1 != t2}}, 0]"
+    );
+    // wolframscript reports plain covariance for white noise here.
+    assert_eq!(
+      interpret(
+        "AbsoluteCorrelationFunction[WhiteNoiseProcess[NormalDistribution[m, s]], t1, t2]"
+      )
+      .unwrap(),
+      "s^2*DiscreteDelta[-t1 + t2]"
+    );
+    assert_eq!(
+      interpret(
+        "AbsoluteCorrelationFunction[GeometricBrownianMotionProcess[m, s, x0], t1, t2]"
+      )
+      .unwrap(),
+      "E^(m*(t1 + t2) + s^2*Min[t1, t2])*x0^2"
+    );
+    assert_eq!(
+      interpret(
+        "AbsoluteCorrelationFunction[BrownianBridgeProcess[1, {0, 2}, {4, 6}], 1, 2]"
+      )
+      .unwrap(),
+      "25/2"
+    );
+  }
+}
+
+// BiweightMidvariance — robust dispersion. All outputs verified against
+// wolframscript (exact rationals; machine-float inputs differ in the
+// last bit and are not pinned).
+mod biweight_midvariance {
+  use super::*;
+
+  #[test]
+  fn exact_values() {
+    assert_eq!(
+      interpret("BiweightMidvariance[{1, 2, 3, 4, 5}]").unwrap(),
+      "363144328/158090645"
+    );
+    // Robust against the outlier.
+    assert_eq!(
+      interpret("BiweightMidvariance[{1, 2, 3, 4, 100}]").unwrap(),
+      "10302415/5077803"
+    );
+    // Explicit scaling constant (the default is 9).
+    assert_eq!(
+      interpret("BiweightMidvariance[{1, 2, 3, 4, 5}, 6]").unwrap(),
+      "5694929/2016010"
+    );
+    assert_eq!(interpret("BiweightMidvariance[{1, 2}]").unwrap(), "100/361");
+    assert_eq!(
+      interpret("BiweightMidvariance[{1, 2}, 9]").unwrap(),
+      "100/361"
+    );
+  }
+
+  #[test]
+  fn degenerate_and_invalid() {
+    // Zero MAD is Indeterminate.
+    assert_eq!(
+      interpret("BiweightMidvariance[{2, 2, 2, 2}]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("BiweightMidvariance[x]").unwrap(),
+      "BiweightMidvariance[x]"
+    );
+  }
+}
+
+// Statistics functions densify a SparseArray argument and behave like the
+// equivalent dense list, matching wolframscript.
+mod sparse_array_input {
+  use super::*;
+
+  #[test]
+  fn mean_densifies() {
+    // Dense form is {6, 3, 0, 0}; mean 9/4.
+    assert_eq!(
+      interpret("Mean[SparseArray[{1 -> 6, 2 -> 3}, 4]]").unwrap(),
+      "9/4"
+    );
+    // 2-D: column means of {{2, 0}, {4, 0}}.
+    assert_eq!(
+      interpret("Mean[SparseArray[{{1, 1} -> 2, {2, 1} -> 4}, {2, 2}]]")
+        .unwrap(),
+      "{3, 0}"
+    );
+  }
+
+  #[test]
+  fn median_densifies() {
+    // Dense form is {5, 0, 0}; median 0.
+    assert_eq!(interpret("Median[SparseArray[{1 -> 5}, 3]]").unwrap(), "0");
+  }
+
+  #[test]
+  fn variance_densifies() {
+    // Dense form is {2, 4, 6}; variance 4.
+    assert_eq!(
+      interpret("Variance[SparseArray[{1 -> 2, 2 -> 4, 3 -> 6}, 3]]").unwrap(),
+      "4"
+    );
+    // Dense form is {5, 0, 0}; variance 25/3.
+    assert_eq!(
+      interpret("Variance[SparseArray[{1 -> 5}, 3]]").unwrap(),
+      "25/3"
+    );
+  }
+
+  #[test]
+  fn standard_deviation_densifies() {
+    // Dense form is {2, 4, 0, 0}; standard deviation Sqrt[11/3].
+    assert_eq!(
+      interpret("StandardDeviation[SparseArray[{1 -> 2, 2 -> 4}, 4]]").unwrap(),
+      "Sqrt[11/3]"
+    );
+  }
+
+  #[test]
+  fn geometric_mean_and_rms_densify() {
+    // GeometricMean of {2, 8} is 4.
+    assert_eq!(
+      interpret("GeometricMean[SparseArray[{1 -> 2, 2 -> 8}, 2]]").unwrap(),
+      "4"
+    );
+    // RootMeanSquare of {3, 4} is 5/Sqrt[2].
+    assert_eq!(
+      interpret("RootMeanSquare[SparseArray[{1 -> 3, 2 -> 4}, 2]]").unwrap(),
+      "5/Sqrt[2]"
+    );
+  }
+
+  #[test]
+  fn quantile_densifies() {
+    // Dense form is {5, 3, 0, 0}; the 1/2 quantile is 0.
+    assert_eq!(
+      interpret("Quantile[SparseArray[{1 -> 5, 2 -> 3}, 4], 0.5]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn commonest_densifies() {
+    // Dense form is {5, 0, 0}; the commonest value is 0.
+    assert_eq!(
+      interpret("Commonest[SparseArray[{1 -> 5}, 3]]").unwrap(),
+      "{0}"
+    );
+    // Dense form is {5, 5, 2, 0, 0}; 5 and 0 tie, ordered by first appearance.
+    assert_eq!(
+      interpret("Commonest[SparseArray[{1 -> 5, 2 -> 5, 3 -> 2}, 5]]").unwrap(),
+      "{5, 0}"
+    );
+  }
+
+  #[test]
+  fn max_and_min_densify() {
+    assert_eq!(interpret("Max[SparseArray[{1 -> 5}, 3]]").unwrap(), "5");
+    assert_eq!(interpret("Min[SparseArray[{1 -> 5}, 3]]").unwrap(), "0");
+    assert_eq!(
+      interpret("Max[SparseArray[{1 -> 5, 3 -> 9}, 4]]").unwrap(),
+      "9"
+    );
+    // A SparseArray mixed with a plain scalar argument.
+    assert_eq!(
+      interpret("Max[SparseArray[{1 -> 5}, 3], 10]").unwrap(),
+      "10"
+    );
+    assert_eq!(
+      interpret("Min[SparseArray[{1 -> 5}, 3], -2]").unwrap(),
+      "-2"
+    );
+  }
+}
+
+// More scalar-reduction statistics densify a SparseArray argument.
+mod sparse_array_scalar_reductions {
+  use super::*;
+
+  #[test]
+  fn harmonic_mean_and_norm() {
+    // HarmonicMean of {2, 4} is 8/3.
+    assert_eq!(
+      interpret("HarmonicMean[SparseArray[{1 -> 2, 2 -> 4}, 2]]").unwrap(),
+      "8/3"
+    );
+    // 2-norm of {3, 4} is 5; 1-norm is 7.
+    assert_eq!(
+      interpret("Norm[SparseArray[{1 -> 3, 2 -> 4}, 2]]").unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret("Norm[SparseArray[{1 -> 3, 2 -> 4}, 2], 1]").unwrap(),
+      "7"
+    );
+  }
+
+  #[test]
+  fn central_moment_and_shape() {
+    // Second central moment of {1, 2, 3} is 2/3.
+    assert_eq!(
+      interpret("CentralMoment[SparseArray[{1 -> 1, 2 -> 2, 3 -> 3}, 3], 2]")
+        .unwrap(),
+      "2/3"
+    );
+    // Kurtosis and Skewness are computed from CentralMoment, so they resolve
+    // once CentralMoment densifies.
+    assert_eq!(
+      interpret("Kurtosis[SparseArray[{1 -> 1, 2 -> 2, 3 -> 3, 4 -> 4}, 4]]")
+        .unwrap(),
+      "41/25"
+    );
+    assert_eq!(
+      interpret("Skewness[SparseArray[{1 -> 1, 2 -> 2, 3 -> 4}, 3]]").unwrap(),
+      "(5*Sqrt[2/7])/7"
+    );
+  }
+
+  #[test]
+  fn trimmed_mean_and_correlation() {
+    // Dense form {1, 2, 3, 100}; trimming 1/4 from each end leaves {2, 3}.
+    assert_eq!(
+      interpret(
+        "TrimmedMean[SparseArray[{1 -> 1, 2 -> 2, 3 -> 3, 4 -> 100}, 4], 1/4]"
+      )
+      .unwrap(),
+      "5/2"
+    );
+    // Correlation densifies both SparseArray arguments.
+    assert_eq!(
+      interpret(
+        "Correlation[SparseArray[{1 -> 1, 2 -> 2, 3 -> 3}, 3], \
+         SparseArray[{1 -> 2, 2 -> 4, 3 -> 7}, 3]]"
+      )
+      .unwrap(),
+      "(5*Sqrt[3/19])/2"
+    );
+  }
+}
+
+// CentralMoment (and therefore Kurtosis/Skewness) reduces a matrix
+// column-wise, matching wolframscript.
+mod matrix_central_moment {
+  use super::*;
+
+  #[test]
+  fn central_moment_columns() {
+    assert_eq!(
+      interpret("CentralMoment[{{1, 2}, {3, 4}, {5, 6}}, 2]").unwrap(),
+      "{8/3, 8/3}"
+    );
+    assert_eq!(
+      interpret("CentralMoment[{{1, 2}, {3, 4}, {5, 6}}, 3]").unwrap(),
+      "{0, 0}"
+    );
+  }
+
+  #[test]
+  fn kurtosis_and_skewness_columns() {
+    assert_eq!(
+      interpret("Kurtosis[{{1, 2}, {3, 4}, {5, 6}, {7, 8}}]").unwrap(),
+      "{41/25, 41/25}"
+    );
+    assert_eq!(
+      interpret("Skewness[{{1, 2}, {3, 4}, {5, 6}}]").unwrap(),
+      "{0, 0}"
+    );
+    // A genuinely asymmetric column has a nonzero skewness.
+    assert_eq!(
+      interpret("Skewness[{{1, 2}, {3, 4}, {5, 100}}]").unwrap(),
+      "{0, 113975/(2353*Sqrt[4706])}"
+    );
+    assert_eq!(
+      interpret("Kurtosis[{{1, 10}, {3, 4}, {5, 6}, {7, 2}}]").unwrap(),
+      "{41/25, 323/175}"
     );
   }
 }

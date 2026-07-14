@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::BinaryOperator;
 
 /// MapAll[f, expr] - apply f to every subexpression in expr (bottom-up)
 pub fn map_all_ast(f: &Expr, expr: &Expr) -> Result<Expr, InterpreterError> {
@@ -124,7 +125,7 @@ pub fn distribute_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Largest slot index `n` referenced by `#n`/`##n` in `expr`. Returns 0 when
 /// the body uses no slots. SlotSequence `##` (== `##1`) counts as slot 1.
-pub fn max_slot_index(expr: &Expr) -> usize {
+fn max_slot_index(expr: &Expr) -> usize {
   fn walk(e: &Expr, max: &mut usize) {
     match e {
       Expr::Slot(n) | Expr::SlotSequence(n) if *n > *max => {
@@ -251,7 +252,7 @@ fn differentiate_function_body(body: &Expr, orders: &[i128]) -> Option<Expr> {
         Expr::Integer(0)
       } else {
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(factor),
           right: Box::new(chain),
         }
@@ -276,10 +277,30 @@ fn differentiate_function_body(body: &Expr, orders: &[i128]) -> Option<Expr> {
 }
 
 /// Split an expression by its head. E.g., split_by_head(a + b, "Plus") = [a, b]
-pub fn split_by_head(expr: &Expr, head: &str) -> Vec<Expr> {
+fn split_by_head(expr: &Expr, head: &str) -> Vec<Expr> {
+  use crate::syntax::BinaryOperator;
+  // Operators like `|` (Alternatives) or `+` (Plus) are stored as (possibly
+  // nested) BinaryOp nodes rather than FunctionCall nodes. Map the operator to
+  // its head name so Distribute can split e.g. `a | b | c` into {a, b, c}.
+  let binop_head = |op: &BinaryOperator| -> Option<&'static str> {
+    match op {
+      BinaryOperator::Plus => Some("Plus"),
+      BinaryOperator::Times => Some("Times"),
+      BinaryOperator::And => Some("And"),
+      BinaryOperator::Or => Some("Or"),
+      BinaryOperator::StringJoin => Some("StringJoin"),
+      BinaryOperator::Alternatives => Some("Alternatives"),
+      _ => None,
+    }
+  };
   match expr {
     Expr::FunctionCall { name, args } if name == head => args.to_vec(),
     Expr::List(items) if head == "List" => items.to_vec(),
+    Expr::BinaryOp { op, left, right } if binop_head(op) == Some(head) => {
+      let mut parts = split_by_head(left, head);
+      parts.extend(split_by_head(right, head));
+      parts
+    }
     _ => vec![expr.clone()],
   }
 }
@@ -327,6 +348,41 @@ pub fn apply_apply_ast(
     Expr::List(items) => items.clone(),
     // Apply replaces the head of any expression: f @@ Plus[a, b, c] → f[a, b, c]
     Expr::FunctionCall { args, .. } => args.clone(),
+    // Some heads stay as (possibly nested) BinaryOp nodes rather than
+    // FunctionCall nodes — notably Alternatives (`a | b | c`). Flatten
+    // same-operator chains so `List @@ (a | b | c)` → {a, b, c}, matching WS.
+    Expr::BinaryOp { op, left, right } => {
+      use crate::syntax::BinaryOperator;
+      fn flatten(op: &BinaryOperator, e: &Expr, out: &mut Vec<Expr>) {
+        if let Expr::BinaryOp {
+          op: inner,
+          left,
+          right,
+        } = e
+          && inner == op
+          && !matches!(op, BinaryOperator::Power)
+        {
+          flatten(op, left, out);
+          flatten(op, right, out);
+          return;
+        }
+        out.push(e.clone());
+      }
+      let mut parts = Vec::new();
+      flatten(op, left, &mut parts);
+      flatten(op, right, &mut parts);
+      parts.into()
+    }
+    // Comparison chains: `a == b == c` is Equal[a, b, c]; `a < b <= c` is
+    // Inequality[a, Less, b, LessEqual, c]. Matches wolframscript.
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      let (_, args) =
+        crate::syntax::comparison_head_and_args(operands, operators);
+      args.into()
+    }
     _ => {
       // Atoms have no children; Apply on an atom returns the atom unchanged
       return Ok(list.clone());
@@ -511,8 +567,8 @@ pub fn apply_function_to_arg(
         return evaluate_function_call_ast(name, &new_args);
       }
       // Nest[f, n][x] -> Nest[f, x, n]: the applied expression goes in the
-      // middle.
-      if name == "Nest" && args.len() == 2 {
+      // middle (likewise NestList[f, n][x] -> NestList[f, x, n]).
+      if (name == "Nest" || name == "NestList") && args.len() == 2 {
         let new_args = vec![args[0].clone(), arg.clone(), args[1].clone()];
         return evaluate_function_call_ast(name, &new_args);
       }
@@ -579,6 +635,7 @@ pub fn apply_function_to_arg(
           | "StringCases"
           | "MemberQ"
           | "Select"
+          | "SelectFirst"
           | "AllTrue"
           | "AnyTrue"
           | "NoneTrue"
@@ -601,6 +658,14 @@ pub fn apply_function_to_arg(
           | "Prepend"
           | "FirstCase"
           | "SubsetReplace"
+          | "ContainsAll"
+          | "ContainsAny"
+          | "ContainsNone"
+          | "ContainsOnly"
+          | "ContainsExactly"
+          | "GatherBy"
+          | "SplitBy"
+          | "DeleteDuplicatesBy"
       ) && args.len() == 1
       {
         // Operator form: prepend the argument instead of appending
@@ -1408,6 +1473,7 @@ pub fn apply_curried_call(
           | "StringCases"
           | "MemberQ"
           | "Select"
+          | "SelectFirst"
           | "AllTrue"
           | "AnyTrue"
           | "NoneTrue"
@@ -1441,14 +1507,25 @@ pub fn apply_curried_call(
           | "Prepend"
           | "FirstCase"
           | "SubsetReplace"
+          | "ContainsAll"
+          | "ContainsAny"
+          | "ContainsNone"
+          | "ContainsOnly"
+          | "ContainsExactly"
+          | "GatherBy"
+          | "SplitBy"
+          | "DeleteDuplicatesBy"
       ) && func_args.len() == 1
         && args.len() == 1
       {
         // Operator form: prepend the argument instead of appending
         let new_args = vec![args[0].clone(), func_args[0].clone()];
         evaluate_function_call_ast(name, &new_args)
-      } else if name == "Nest" && func_args.len() == 2 && args.len() == 1 {
-        // Nest[f, n][x] -> Nest[f, x, n]
+      } else if (name == "Nest" || name == "NestList")
+        && func_args.len() == 2
+        && args.len() == 1
+      {
+        // Nest[f, n][x] -> Nest[f, x, n] (likewise NestList)
         let new_args =
           vec![func_args[0].clone(), args[0].clone(), func_args[1].clone()];
         evaluate_function_call_ast(name, &new_args)
@@ -2216,7 +2293,7 @@ fn apply_transformation_function(
     if !matches!(&h, Expr::Integer(1)) {
       for comp in &mut result {
         *comp = evaluate_expr_to_expr(&Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(comp.clone()),
           right: Box::new(h.clone()),
         })?;

@@ -3,7 +3,7 @@
 //! These functions work directly with `Expr` AST nodes, avoiding string round-trips.
 
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -24,7 +24,7 @@ thread_local! {
 /// exists. Identical pattern strings always produce identical compiled
 /// regexes, so caching is observationally indistinguishable from
 /// recompiling — only faster.
-pub(crate) fn compile_regex(pat: &str) -> Result<regex::Regex, regex::Error> {
+fn compile_regex(pat: &str) -> Result<regex::Regex, regex::Error> {
   use regex::Regex;
   REGEX_CACHE.with(|c| {
     if let Some(re) = c.borrow().get(pat) {
@@ -395,42 +395,51 @@ pub fn string_join_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::String(String::new()));
   }
 
-  // Validate: every leaf must be a string; lists of strings are flattened.
-  // On any non-string leaf, emit a StringJoin::string message pointing at the
-  // first offending leaf's 1-based position and return unevaluated (matches
-  // wolframscript).
-  fn first_non_string(expr: &Expr, pos: &mut usize) -> Option<usize> {
+  // StringJoin is Flat: nested StringJoin and lists collapse into a single
+  // flat sequence of leaves. Build that leaf sequence so validation, message
+  // positions, and the unevaluated result all match wolframscript.
+  fn flatten_leaves(expr: &Expr, out: &mut Vec<Expr>) {
     match expr {
-      Expr::String(_) => {
-        *pos += 1;
-        None
-      }
       Expr::List(items) => {
         for item in items {
-          if let Some(p) = first_non_string(item, pos) {
-            return Some(p);
-          }
+          flatten_leaves(item, out);
         }
-        None
       }
-      _ => {
-        *pos += 1;
-        Some(*pos)
+      Expr::FunctionCall { name, args } if name == "StringJoin" => {
+        for a in args.iter() {
+          flatten_leaves(a, out);
+        }
       }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::StringJoin,
+        left,
+        right,
+      } => {
+        flatten_leaves(left, out);
+        flatten_leaves(right, out);
+      }
+      _ => out.push(expr.clone()),
     }
   }
-  let mut cursor = 0usize;
-  let mut bad_pos: Option<usize> = None;
+  let mut leaves = Vec::new();
   for arg in args {
-    if let Some(p) = first_non_string(arg, &mut cursor) {
-      bad_pos = Some(p);
-      break;
-    }
+    flatten_leaves(arg, &mut leaves);
   }
-  if let Some(pos) = bad_pos {
-    // Format as infix: args joined by `<>`, dropping the enclosing quotes of
-    // each string argument — so StringJoin["U", 2] renders as `U<>2`.
-    let infix = args
+
+  // Validate: every leaf must be a string. wolframscript emits one
+  // StringJoin::string message per non-string leaf (with its 1-based position
+  // in the flat sequence), subject to the standard General::stop suppression
+  // after three, then returns the flat StringJoin unevaluated.
+  let non_string: Vec<usize> = leaves
+    .iter()
+    .enumerate()
+    .filter(|(_, l)| !matches!(l, Expr::String(_)))
+    .map(|(i, _)| i + 1)
+    .collect();
+  if !non_string.is_empty() {
+    // Format as infix: leaves joined by `<>`, dropping the enclosing quotes of
+    // each string leaf — so StringJoin["U", 2] renders as `U<>2`.
+    let infix = leaves
       .iter()
       .map(|a| match a {
         Expr::String(s) => s.clone(),
@@ -438,13 +447,15 @@ pub fn string_join_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
       .collect::<Vec<_>>()
       .join("<>");
-    crate::emit_message(&format!(
-      "StringJoin::string: String expected at position {} in {}.",
-      pos, infix
-    ));
+    for pos in non_string {
+      crate::emit_message(&format!(
+        "StringJoin::string: String expected at position {} in {}.",
+        pos, infix
+      ));
+    }
     return Ok(Expr::FunctionCall {
       name: "StringJoin".to_string(),
-      args: args.to_vec().into(),
+      args: leaves.into(),
     });
   }
 
@@ -810,12 +821,18 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // string literals (and lists of them) use the literal-delimiter path below;
   // any non-literal delimiter — a bare pattern, or a list that contains one
   // (e.g. {DigitCharacter}) — goes through the pattern → regex converter.
-  let regex_from_pattern = if let Some(p) = extract_regex_pattern(&args[1]) {
-    Some(p)
+  let (regex_from_pattern, split_constraints): (
+    Option<String>,
+    Vec<(String, String)>,
+  ) = if let Some(p) = extract_regex_pattern(&args[1]) {
+    (Some(p), Vec::new())
   } else if !is_literal_string_pattern(&args[1]) {
-    string_pattern_to_regex(&args[1])
+    match string_pattern_to_regex_with_state(&args[1]) {
+      Some((p, c)) => (Some(p), c),
+      None => (None, Vec::new()),
+    }
   } else {
-    None
+    (None, Vec::new())
   };
   if let Some(pat) = regex_from_pattern {
     let regex_pat = if ignore_case {
@@ -829,7 +846,26 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         e
       ))
     })?;
-    let parts: Vec<Expr> = if let Some(n) = max_parts {
+    let parts: Vec<Expr> = if !split_constraints.is_empty() {
+      // Delimiter has a back-reference (`x_ ~~ x_`): the `regex` crate's
+      // `split` can't enforce it, so split on constraint-satisfying spans.
+      let spans = find_constraint_spans(&re, &split_constraints, &s, false);
+      let mut pieces: Vec<Expr> = Vec::new();
+      let mut last = 0usize;
+      let mut splits = 0usize;
+      for (start, end) in spans {
+        if let Some(n) = max_parts
+          && splits + 1 >= n
+        {
+          break;
+        }
+        pieces.push(Expr::String(s[last..start].to_string()));
+        last = end;
+        splits += 1;
+      }
+      pieces.push(Expr::String(s[last..].to_string()));
+      pieces
+    } else if let Some(n) = max_parts {
       re.splitn(&s, n)
         .map(|p| Expr::String(p.to_string()))
         .collect()
@@ -954,7 +990,9 @@ pub fn string_starts_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let ignore_case = has_ignore_case_option(args);
 
   // Try regex-based pattern first
-  if let Some(regex_pat) = string_pattern_to_regex(&args[1]) {
+  if let Some((regex_pat, constraints)) =
+    string_pattern_to_regex_with_state(&args[1])
+  {
     let full_pat = if ignore_case {
       format!("(?i)^(?:{})", regex_pat)
     } else {
@@ -964,7 +1002,12 @@ pub fn string_starts_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
     })?;
     return Ok(Expr::Identifier(
-      if re.is_match(&s) { "True" } else { "False" }.to_string(),
+      if full_match_with_constraints(&re, &constraints, &s) {
+        "True"
+      } else {
+        "False"
+      }
+      .to_string(),
     ));
   }
 
@@ -1002,7 +1045,9 @@ pub fn string_ends_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let ignore_case = has_ignore_case_option(args);
 
   // Try regex-based pattern first
-  if let Some(regex_pat) = string_pattern_to_regex(&args[1]) {
+  if let Some((regex_pat, constraints)) =
+    string_pattern_to_regex_with_state(&args[1])
+  {
     let full_pat = if ignore_case {
       format!("(?i)(?:{})$", regex_pat)
     } else {
@@ -1012,7 +1057,12 @@ pub fn string_ends_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
     })?;
     return Ok(Expr::Identifier(
-      if re.is_match(&s) { "True" } else { "False" }.to_string(),
+      if full_match_with_constraints(&re, &constraints, &s) {
+        "True"
+      } else {
+        "False"
+      }
+      .to_string(),
     ));
   }
 
@@ -1051,17 +1101,12 @@ pub fn string_contains_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let ignore_case = has_ignore_case_option(args);
 
   // Try regex-based pattern first
-  if let Some(regex_pat) = string_pattern_to_regex(&args[1]) {
-    let full_pat = if ignore_case {
-      format!("(?i){}", regex_pat)
-    } else {
-      regex_pat
-    };
-    let re = compile_regex(&full_pat).map_err(|e| {
-      InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
-    })?;
+  if let Some(compiled) = compile_string_pattern(&args[1], ignore_case) {
+    let (re, constraints) = compiled?;
+    let present =
+      !find_constraint_spans(&re, &constraints, &s, false).is_empty();
     return Ok(Expr::Identifier(
-      if re.is_match(&s) { "True" } else { "False" }.to_string(),
+      if present { "True" } else { "False" }.to_string(),
     ));
   }
 
@@ -1234,6 +1279,9 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       /// groups. Only RegularExpression patterns do this; a plain literal
       /// pattern (e.g. compiled for IgnoreCase) keeps `$n` verbatim.
       expand_dollar: bool,
+      /// Back-reference constraints (repeated pattern names must capture equal
+      /// substrings), e.g. from `x_ ~~ x_`. Empty for literal/regex patterns.
+      constraints: Vec<(String, String)>,
     },
     /// Regex pattern with a delayed replacement expression (RuleDelayed).
     /// Captured named groups are substituted into the expression before evaluation.
@@ -1244,6 +1292,8 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       regex: regex::Regex,
       replacement_expr: Expr,
       condition: Option<Expr>,
+      /// Back-reference constraints (see `Regex::constraints`).
+      constraints: Vec<(String, String)>,
     },
   }
 
@@ -1278,8 +1328,8 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       let inner_pattern = &args[0];
       let test = &args[1];
-      let regex_str =
-        string_pattern_to_regex(inner_pattern).ok_or_else(|| {
+      let (regex_str, constraints) =
+        string_pattern_to_regex_with_state(inner_pattern).ok_or_else(|| {
           InterpreterError::EvaluationError(
             "StringReplace: unsupported conditional pattern".into(),
           )
@@ -1299,6 +1349,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         regex: re,
         replacement_expr: replacement_expr.clone(),
         condition: Some(test.clone()),
+        constraints,
       });
     }
 
@@ -1321,6 +1372,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           regex: re,
           replacement_expr: replacement_expr.clone(),
           condition: None,
+          constraints: Vec::new(),
         });
       }
       let replacement = expr_to_str(replacement_expr)?;
@@ -1336,6 +1388,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           regex: re,
           replacement,
           expand_dollar: false,
+          constraints: Vec::new(),
         });
       }
       return Ok(ReplaceRule::Simple {
@@ -1345,7 +1398,9 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
 
     // For complex patterns (Alternatives, StringExpression, etc.), use regex
-    if let Some(regex_str) = string_pattern_to_regex(pattern_expr) {
+    if let Some((regex_str, constraints)) =
+      string_pattern_to_regex_with_state(pattern_expr)
+    {
       let regex_str = if ignore_case {
         format!("(?i){}", regex_str)
       } else {
@@ -1370,6 +1425,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           regex: re,
           replacement_expr: replacement_expr.clone(),
           condition: None,
+          constraints,
         });
       }
 
@@ -1380,6 +1436,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           regex: re,
           replacement_expr: replacement_expr.clone(),
           condition: None,
+          constraints,
         });
       }
 
@@ -1393,6 +1450,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           pattern_expr,
           Expr::FunctionCall { name, .. } if name == "RegularExpression"
         ),
+        constraints,
       });
     }
 
@@ -1411,6 +1469,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           regex: re,
           replacement,
           expand_dollar: false,
+          constraints: Vec::new(),
         });
       }
       return Ok(ReplaceRule::Simple {
@@ -1504,6 +1563,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             regex,
             replacement,
             expand_dollar,
+            constraints,
           } => {
             // Use captures_at on the full string so anchors like ^ and \b can
             // inspect surrounding characters. Require the match to start
@@ -1512,6 +1572,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               && let Some(m) = caps.get(0)
               && m.start() == i
               && !m.as_str().is_empty()
+              && caps_satisfy_constraints(&caps, constraints)
             {
               if *expand_dollar {
                 result.push_str(&expand_dollar_replacement(replacement, &caps));
@@ -1528,11 +1589,13 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             regex,
             replacement_expr,
             condition,
+            constraints,
           } => {
             if let Some(caps) = regex.captures_at(s, i)
               && let Some(m) = caps.get(0)
               && m.start() == i
               && !m.as_str().is_empty()
+              && caps_satisfy_constraints(&caps, constraints)
             {
               // A `/;` condition must hold for this match. Substitute the
               // captured names into it and evaluate; skip the rule otherwise.
@@ -1808,13 +1871,16 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // them) use the exact literal path below; RegularExpression and every other
   // string pattern (character classes, Alternatives, `_?test`, lists
   // containing patterns, …) go through the shared pattern → regex converter.
-  let regex_pat = extract_regex_pattern(&args[1]).or_else(|| {
-    if is_literal_string_pattern(&args[1]) {
-      None
+  let (regex_pat, pat_constraints): (Option<String>, Vec<(String, String)>) =
+    if let Some(rp) = extract_regex_pattern(&args[1]) {
+      (Some(rp), Vec::new())
+    } else if is_literal_string_pattern(&args[1]) {
+      (None, Vec::new())
+    } else if let Some((rp, c)) = string_pattern_to_regex_with_state(&args[1]) {
+      (Some(rp), c)
     } else {
-      string_pattern_to_regex(&args[1])
-    }
-  });
+      (None, Vec::new())
+    };
 
   let s_chars: Vec<char> = s.chars().collect();
   // For each match: (start_index_0based, length_in_chars)
@@ -1864,9 +1930,11 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let byte_offset: usize =
           s_chars[..start_char].iter().map(|c| c.len_utf8()).sum();
         let substr = &s[byte_offset..];
-        if let Some(m) = re.find(substr)
+        if let Some(caps) = re.captures(substr)
+          && let Some(m) = caps.get(0)
           && m.start() == 0
-          && !m.is_empty()
+          && !m.as_str().is_empty()
+          && caps_satisfy_constraints(&caps, &pat_constraints)
         {
           let match_chars = m.as_str().chars().count();
           raw_matches.push((start_char, match_chars));
@@ -1984,7 +2052,9 @@ pub fn string_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Try pattern-based matching (DigitCharacter, LetterCharacter, Repeated, etc.)
-  if let Some(regex_str) = string_pattern_to_regex(&args[1]) {
+  if let Some((regex_str, constraints)) =
+    string_pattern_to_regex_with_state(&args[1])
+  {
     let case_flag = if ignore_case { "(?i)" } else { "" };
     let full_regex = format!("{}^(?:{})$", case_flag, regex_str);
     let re = compile_regex(&full_regex).map_err(|e| {
@@ -1994,7 +2064,12 @@ pub fn string_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ))
     })?;
     return Ok(Expr::Identifier(
-      if re.is_match(&s) { "True" } else { "False" }.to_string(),
+      if full_match_with_constraints(&re, &constraints, &s) {
+        "True"
+      } else {
+        "False"
+      }
+      .to_string(),
     ));
   }
 
@@ -2137,8 +2212,12 @@ pub fn string_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let trimmed = s.strip_prefix(patt.as_str()).unwrap_or(&s);
     let trimmed = trimmed.strip_suffix(patt.as_str()).unwrap_or(trimmed);
     Ok(Expr::String(trimmed.to_string()))
-  } else if let Some(regex_pat) = string_pattern_to_regex(&args[1]) {
-    // String pattern (Repeated, Whitespace, etc.): use regex
+  } else if let Some((regex_pat, constraints)) =
+    string_pattern_to_regex_with_state(&args[1])
+  {
+    // String pattern (Repeated, Whitespace, etc.): use regex, stripping a
+    // leading and a trailing match only when it satisfies any back-reference
+    // constraints (`x_ ~~ x_`).
     let start_re =
       compile_regex(&format!("^(?:{})", regex_pat)).map_err(|e| {
         InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
@@ -2147,9 +2226,25 @@ pub fn string_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       compile_regex(&format!("(?:{})$", regex_pat)).map_err(|e| {
         InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
       })?;
-    let trimmed = start_re.replace(&s, "");
-    let trimmed = end_re.replace(&trimmed, "");
-    Ok(Expr::String(trimmed.into_owned()))
+    let after_start = if let Some(caps) = start_re.captures(&s)
+      && let Some(m) = caps.get(0)
+      && !m.as_str().is_empty()
+      && caps_satisfy_constraints(&caps, &constraints)
+    {
+      s[m.end()..].to_string()
+    } else {
+      s.clone()
+    };
+    let trimmed = if let Some(caps) = end_re.captures(&after_start)
+      && let Some(m) = caps.get(0)
+      && !m.as_str().is_empty()
+      && caps_satisfy_constraints(&caps, &constraints)
+    {
+      after_start[..m.start()].to_string()
+    } else {
+      after_start
+    };
+    Ok(Expr::String(trimmed))
   } else {
     // Unrecognized pattern: return unevaluated
     Ok(Expr::FunctionCall {
@@ -2460,6 +2555,96 @@ fn maybe_named_group(
   }
 }
 
+/// Do the regex `caps` satisfy all back-reference `constraints` — i.e. every
+/// repeated Wolfram pattern name (`x_ ~~ … ~~ x_`) captured equal substrings?
+/// The `regex` crate has no native backreferences, so `maybe_named_group`
+/// records these `(orig, dup)` capture-name pairs and matching sites verify
+/// them here. A missing capture (optional group didn't participate) is treated
+/// as satisfied.
+fn caps_satisfy_constraints(
+  caps: &regex::Captures,
+  constraints: &[(String, String)],
+) -> bool {
+  constraints.iter().all(|(orig, dup)| {
+    match (caps.name(orig), caps.name(dup)) {
+      (Some(a), Some(b)) => a.as_str() == b.as_str(),
+      _ => true,
+    }
+  })
+}
+
+/// Compile a string-pattern expression to a regex plus its back-reference
+/// constraints, applying the `(?i)` case-insensitivity flag when requested.
+/// Returns `None` when `expr` is not a recognised string pattern.
+fn compile_string_pattern(
+  expr: &Expr,
+  ignore_case: bool,
+) -> Option<Result<(regex::Regex, Vec<(String, String)>), InterpreterError>> {
+  let (regex_str, constraints) = string_pattern_to_regex_with_state(expr)?;
+  let regex_str = if ignore_case {
+    format!("(?i){}", regex_str)
+  } else {
+    regex_str
+  };
+  Some(
+    compile_regex(&regex_str)
+      .map(|re| (re, constraints))
+      .map_err(|e| {
+        InterpreterError::EvaluationError(format!(
+          "Invalid string pattern: {}",
+          e
+        ))
+      }),
+  )
+}
+
+/// Find all non-empty match spans (byte ranges) of `re` in `s` that satisfy the
+/// back-reference `constraints`. Scans left to right; with `overlapping` it
+/// advances one character past each match start, otherwise past the whole
+/// match. This is the constraint-aware analogue of `re.find_iter`.
+fn find_constraint_spans(
+  re: &regex::Regex,
+  constraints: &[(String, String)],
+  s: &str,
+  overlapping: bool,
+) -> Vec<(usize, usize)> {
+  let mut spans = Vec::new();
+  let mut i = 0;
+  while i < s.len() {
+    if let Some(caps) = re.captures_at(s, i)
+      && let Some(m) = caps.get(0)
+      && m.start() == i
+      && !m.as_str().is_empty()
+      && caps_satisfy_constraints(&caps, constraints)
+    {
+      spans.push((m.start(), m.end()));
+      let ch = s[i..].chars().next().unwrap();
+      i = if overlapping {
+        i + ch.len_utf8()
+      } else {
+        m.end()
+      };
+    } else {
+      let ch = s[i..].chars().next().unwrap();
+      i += ch.len_utf8();
+    }
+  }
+  spans
+}
+
+/// True if `re` (anchored with `^…$` by the caller) matches all of `s` while
+/// satisfying the back-reference `constraints`.
+fn full_match_with_constraints(
+  re: &regex::Regex,
+  constraints: &[(String, String)],
+  s: &str,
+) -> bool {
+  match re.captures(s) {
+    Some(caps) => caps_satisfy_constraints(&caps, constraints),
+    None => false,
+  }
+}
+
 /// True if `re` is a regex body that matches exactly one character — either
 /// a single non-metacharacter, or a backslash escape of one character. Used
 /// by `Except[c]` to lift the inner pattern into a negated character class
@@ -2476,6 +2661,77 @@ fn is_single_char_atom(re: &str) -> bool {
 
 /// Convert a Wolfram string pattern expression to a regex pattern string.
 /// Returns None if the expression is not a recognized string pattern.
+/// The regex for one DatePattern element name, or None for strings that
+/// are not element names (they match literally). Ranges are purely
+/// numeric — wolframscript accepts "31/4" and "2/30" (no calendar logic)
+/// but rejects month 13, day 32, hour 24, minute/second 60.
+fn date_pattern_element_regex(name: &str) -> Option<&'static str> {
+  Some(match name {
+    "Year" => "[0-9]{1,4}",
+    "Month" => "(?:0?[1-9]|1[0-2])",
+    "Day" => "(?:0?[1-9]|[12][0-9]|3[01])",
+    "Hour" | "Hour24" => "(?:[01]?[0-9]|2[0-3])",
+    "Hour12" => "(?:0?[1-9]|1[0-2])",
+    "Minute" => "(?:[0-5]?[0-9])",
+    "Second" => "(?:[0-5]?[0-9])",
+    // Case-insensitive, longest alternatives first so StringCases
+    // captures full names.
+    "DayName" => {
+      "(?i:monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)"
+    }
+    "MonthName" => {
+      "(?i:january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)"
+    }
+    _ => return None,
+  })
+}
+
+/// DatePattern[{e1, e2, …}] / DatePattern[{…}, sep] as a regex. Element
+/// names become their field regexes; other strings match literally. A
+/// single separator (the default class [/-.:], or the given pattern)
+/// is required between two adjacent field elements — never next to a
+/// literal (wolframscript-verified: "2024-01/05" matches Year/Month/Day,
+/// "2024--01--05" and "2024 01 05" do not).
+fn date_pattern_to_regex(
+  args: &crate::ExprList,
+  seen: &mut PatternState,
+) -> Option<String> {
+  if args.is_empty() || args.len() > 2 {
+    return None;
+  }
+  let Expr::List(items) = &args[0] else {
+    return None;
+  };
+  if items.is_empty() {
+    return None;
+  }
+  let sep = match args.get(1) {
+    None => "[/\\-.:]".to_string(),
+    Some(sep_pat) => string_pattern_to_regex_inner(sep_pat, seen)?,
+  };
+  let mut out = String::new();
+  let mut prev_was_element = false;
+  for item in items.iter() {
+    let Expr::String(s) = item else {
+      return None;
+    };
+    match date_pattern_element_regex(s) {
+      Some(field) => {
+        if prev_was_element {
+          out.push_str(&sep);
+        }
+        out.push_str(field);
+        prev_was_element = true;
+      }
+      None => {
+        out.push_str(&regex::escape(s));
+        prev_was_element = false;
+      }
+    }
+  }
+  Some(out)
+}
+
 fn string_pattern_to_regex_inner(
   expr: &Expr,
   seen: &mut PatternState,
@@ -2590,7 +2846,7 @@ fn string_pattern_to_regex_inner(
 
     // Alternatives as BinaryOp (e.g. pat1 | pat2)
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Alternatives,
+      op: BinaryOperator::Alternatives,
       left,
       right,
     } => {
@@ -2618,6 +2874,12 @@ fn string_pattern_to_regex_inner(
         .map(|a| string_pattern_to_regex_inner(a, seen))
         .collect();
       parts.map(|ps| format!("(?:{})", ps.join("|")))
+    }
+
+    // DatePattern[{elements…}] / DatePattern[{…}, sep] — date fields with
+    // separators.
+    Expr::FunctionCall { name, args } if name == "DatePattern" => {
+      date_pattern_to_regex(args, seen)
     }
 
     // StringExpression[pat1, pat2, ...] = pat1 ~~ pat2 ~~ ...
@@ -4858,7 +5120,6 @@ fn pad_bigfloat_to_precision(digits: &str, prec: f64) -> String {
 }
 
 pub fn expr_to_tex(expr: &Expr) -> String {
-  use crate::syntax::{BinaryOperator, UnaryOperator};
   // HoldForm[x] is a display wrapper; render its content transparently.
   if let Expr::FunctionCall { name, args } = expr
     && name == "HoldForm"
@@ -4966,7 +5227,6 @@ pub fn expr_to_tex(expr: &Expr) -> String {
       operands,
       operators,
     } => {
-      use crate::syntax::ComparisonOp;
       let mut result = expr_to_tex(&operands[0]);
       for (i, op) in operators.iter().enumerate() {
         let op_tex = match op {
@@ -5023,6 +5283,23 @@ pub fn expr_to_tex(expr: &Expr) -> String {
 }
 
 /// Convert an identifier to its TeX representation.
+/// Wrap already-rendered TeX in a delimiter pair (`\lfloor`/`\rfloor`, `|`/`|`,
+/// `\|`/`\|`, …). wolframscript sizes the delimiters with `\left…\right` when
+/// the content is "tall" — a fraction, radical, superscript or subscript —
+/// (Floor[x/2] → `\left\lfloor \frac{x}{2}\right\rfloor`) and uses the plain
+/// delimiters otherwise (Floor[x] → `\lfloor x\rfloor`).
+fn tex_delimited(inner: &str, ldelim: &str, rdelim: &str) -> String {
+  let tall = inner.contains("\\frac")
+    || inner.contains("\\sqrt")
+    || inner.contains('^')
+    || inner.contains('_');
+  if tall {
+    format!("\\left{} {}\\right{}", ldelim, inner, rdelim)
+  } else {
+    format!("{} {}{}", ldelim, inner, rdelim)
+  }
+}
+
 fn tex_identifier(name: &str) -> String {
   match name {
     "Pi" => "\\pi".to_string(),
@@ -5081,7 +5358,7 @@ fn as_neg_int_power(expr: &Expr) -> Option<(&Expr, i128)> {
       None
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => {
@@ -5092,7 +5369,7 @@ fn as_neg_int_power(expr: &Expr) -> Option<(&Expr, i128)> {
       }
       // Also handle UnaryOp Minus wrapping an integer
       if let Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand,
       } = right.as_ref()
         && let Expr::Integer(n) = operand.as_ref()
@@ -5143,16 +5420,66 @@ fn tex_parens_plain(expr: &Expr) -> String {
 /// Handle n-ary Times in TeX, splitting into \frac when negative-integer
 /// Power factors are present (matching Wolfram TeXForm).
 fn tex_times_nary(args: &[Expr]) -> String {
+  use BinaryOperator::{Minus, Plus};
+  let tex_needs_product_parens = |arg: &Expr| -> bool {
+    matches!(
+      arg,
+      Expr::BinaryOp {
+        op: Plus | Minus,
+        ..
+      }
+    ) || matches!(arg, Expr::FunctionCall { name, args }
+        if name == "Plus" && args.len() >= 2)
+  };
+
   // Check for -1 leading factor
-  let (negate, factors) = if matches!(&args[0], Expr::Integer(-1)) {
+  let (mut negate, factors) = if matches!(&args[0], Expr::Integer(-1)) {
     (true, &args[1..])
   } else {
     (false, args)
   };
 
-  // Partition into numerator factors and denominator factors
+  // A leading rational coefficient p/q (q > 1) is folded into the fraction —
+  // wolframscript renders `Sqrt[x]/2` as `\frac{\sqrt{x}}{2}`, not
+  // `\frac{1}{2}\sqrt{x}`, and `2 x/(3 y)` as `\frac{2 x}{3 y}`. The exception
+  // is a product of several factors that includes a parenthesised sum, where
+  // wolframscript keeps the coefficient separate (`(1/2)(a+b)c` →
+  // `\frac{1}{2} c (a+b)`).
+  let mut rat_num: Option<i128> = None; // |p|, folded into the numerator
+  let mut rat_den: Option<i128> = None; // q, folded into the denominator
+  let mut leading_rational: Option<&Expr> = None;
+  let factors: &[Expr] = if let Some(
+    first @ Expr::FunctionCall { name, args: ra },
+  ) = factors.first()
+    && name == "Rational"
+    && ra.len() == 2
+    && let (Expr::Integer(p), Expr::Integer(q)) = (&ra[0], &ra[1])
+    && q.abs() > 1
+  {
+    let rest = &factors[1..];
+    let has_plus = rest.iter().any(&tex_needs_product_parens);
+    if rest.len() <= 1 || !has_plus {
+      if *p < 0 {
+        negate = !negate;
+      }
+      rat_num = Some(p.abs());
+      rat_den = Some(q.abs());
+      rest
+    } else {
+      // Keep the coefficient as a standalone \frac{p}{q} factor.
+      leading_rational = Some(first);
+      rest
+    }
+  } else {
+    factors
+  };
+
+  // Partition remaining factors into numerator factors and denominator factors
   let mut numer_args: Vec<&Expr> = Vec::new();
   let mut denom: Vec<String> = Vec::new();
+  if let Some(d) = rat_den {
+    denom.push(d.to_string());
+  }
   for arg in factors {
     if let Some((base, pos_exp)) = as_neg_int_power(arg) {
       denom.push(tex_denom_factor(base, pos_exp));
@@ -5164,29 +5491,27 @@ fn tex_times_nary(args: &[Expr]) -> String {
   // A `Plus`/`Minus` factor in a multi-factor product needs parentheses, e.g.
   // `a (b+c)`. A lone numerator factor (the whole numerator of a fraction, or
   // a single product term) is already grouped by its brace, so it must not.
-  let multi = numer_args.len() > 1;
-  let tex_needs_product_parens = |arg: &Expr| -> bool {
-    use crate::syntax::BinaryOperator::{Minus, Plus};
-    matches!(
-      arg,
-      Expr::BinaryOp {
-        op: Plus | Minus,
-        ..
-      }
-    ) || matches!(arg, Expr::FunctionCall { name, args }
-        if name == "Plus" && args.len() >= 2)
-  };
-  let numer: Vec<String> = numer_args
-    .iter()
-    .map(|arg| {
-      let tex = expr_to_tex(arg);
-      if multi && tex_needs_product_parens(arg) {
-        format!("({})", tex)
-      } else {
-        tex
-      }
-    })
-    .collect();
+  // A folded integer coefficient (rat_num > 1) or a standalone \frac coefficient
+  // counts as another factor for this decision.
+  let extra_lead =
+    matches!(rat_num, Some(n) if n > 1) || leading_rational.is_some();
+  let multi = numer_args.len() > 1 || (extra_lead && !numer_args.is_empty());
+  let mut numer: Vec<String> = Vec::new();
+  if let Some(r) = leading_rational {
+    numer.push(expr_to_tex(r));
+  } else if let Some(n) = rat_num
+    && n > 1
+  {
+    numer.push(n.to_string());
+  }
+  numer.extend(numer_args.iter().map(|arg| {
+    let tex = expr_to_tex(arg);
+    if multi && tex_needs_product_parens(arg) {
+      format!("({})", tex)
+    } else {
+      tex
+    }
+  }));
 
   let sign = if negate { "-" } else { "" };
 
@@ -5209,7 +5534,7 @@ fn tex_times_nary(args: &[Expr]) -> String {
 fn tex_power(base: &Expr, exp: &Expr) -> String {
   // Special case: Power[x, 1/2] → \sqrt{x}
   if let Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left,
     right,
   } = exp
@@ -5361,7 +5686,6 @@ fn tex_derivative(
 /// Classify a logical operator for TeX parenthesization, returning
 /// `(kind, precedence)` for And/Or/Xor/Implies/Not (higher binds tighter).
 fn tex_logic_op(expr: &Expr) -> Option<(&'static str, u8)> {
-  use crate::syntax::{BinaryOperator, UnaryOperator};
   match expr {
     Expr::FunctionCall { name, args } => match name.as_str() {
       "And" if args.len() >= 2 => Some(("And", 20)),
@@ -5507,7 +5831,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       let lhs = if matches!(
         &args[0],
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Alternatives,
+          op: BinaryOperator::Alternatives,
           ..
         }
       ) {
@@ -5541,7 +5865,9 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       tex_atom_or_paren(&args[1])
     ),
     // Norm[v] -> \| v\| (vector bars).
-    "Norm" if args.len() == 1 => format!("\\| {}\\|", expr_to_tex(&args[0])),
+    "Norm" if args.len() == 1 => {
+      tex_delimited(&expr_to_tex(&args[0]), "\\|", "\\|")
+    }
     // Factorial2[n] -> n!! (typeset as \text{!!}).
     "Factorial2" if args.len() == 1 => {
       format!("{}\\text{{!!}}", tex_postfix_arg(&args[0]))
@@ -5892,9 +6218,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       format!("\\sqrt{{{}}}", expr_to_tex(&args[0]))
     }
     // Abs
-    "Abs" if args.len() == 1 => {
-      format!("| {}|", expr_to_tex(&args[0]))
-    }
+    "Abs" if args.len() == 1 => tex_delimited(&expr_to_tex(&args[0]), "|", "|"),
     // Rational
     "Rational" if args.len() == 2 => {
       // Pull a leading minus out of the fraction: -3/4 -> -\frac{3}{4}.
@@ -6141,10 +6465,10 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     }
     // Floor[x] -> \lfloor x\rfloor, Ceiling[x] -> \lceil x\rceil.
     "Floor" if args.len() == 1 => {
-      format!("\\lfloor {}\\rfloor", expr_to_tex(&args[0]))
+      tex_delimited(&expr_to_tex(&args[0]), "\\lfloor", "\\rfloor")
     }
     "Ceiling" if args.len() == 1 => {
-      format!("\\lceil {}\\rceil", expr_to_tex(&args[0]))
+      tex_delimited(&expr_to_tex(&args[0]), "\\lceil", "\\rceil")
     }
     // Binomial[n, k] -> \binom{n}{k}.
     "Binomial" if args.len() == 2 => {
@@ -6154,17 +6478,22 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
         expr_to_tex(&args[1])
       )
     }
-    // Default: render as function name with parenthesized args. Single-letter
-    // names render bare (matches wolframscript: f[x] -> f(x)); multi-letter
-    // names use \text{} to distinguish them from implicit products.
+    // Default rendering. wolframscript keeps WL square brackets for a built-in
+    // function that has no special TeX rule (Round[x] -> \text{Round}[x],
+    // Quotient[a, b] -> \text{Quotient}[a, b]), but renders an unknown/user
+    // function with math parentheses (f[x] -> f(x), myf[x] -> \text{myf}(x)).
     _ => {
       let args_tex: Vec<String> = args.iter().map(expr_to_tex).collect();
-      let head = if name.chars().count() == 1 {
-        name.to_string()
+      if crate::evaluator::get_builtin_function_info(name).is_some() {
+        format!("\\text{{{}}}[{}]", name, args_tex.join(","))
       } else {
-        format!("\\text{{{}}}", name)
-      };
-      format!("{}({})", head, args_tex.join(","))
+        let head = if name.chars().count() == 1 {
+          name.to_string()
+        } else {
+          format!("\\text{{{}}}", name)
+        };
+        format!("{}({})", head, args_tex.join(","))
+      }
     }
   }
 }
@@ -6175,14 +6504,13 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
 
 /// Convert a Wolfram expression to MathML (presentation MathML).
 /// Returns the complete `<math>...</math>` block with proper indentation.
-pub fn expr_to_mathml(expr: &Expr) -> String {
+fn expr_to_mathml(expr: &Expr) -> String {
   let inner = mathml_inner(expr, 1);
   format!("<math>\n{}\n</math>\n", inner)
 }
 
 /// Render a single expression as a MathML fragment at the given indentation depth.
 fn mathml_inner(expr: &Expr, depth: usize) -> String {
-  use crate::syntax::{BinaryOperator, UnaryOperator};
   let indent = " ".repeat(depth);
 
   match expr {
@@ -6545,8 +6873,6 @@ pub fn expr_to_box_form(expr: &Expr) -> String {
 /// Convert an expression to its box form representation.
 /// All atoms are string-quoted to match Wolfram's box format.
 pub fn expr_to_boxes(expr: &Expr) -> String {
-  use crate::syntax::{BinaryOperator, UnaryOperator};
-
   match expr {
     // Simple atoms — all quoted in box form
     Expr::Integer(n) => format!("\"{}\"", n),
@@ -6761,7 +7087,7 @@ fn box_function_call(name: &str, args: &[Expr]) -> String {
 /// `` `` `` placeholders are replaced sequentially, `` `n` `` with the nth argument.
 /// Out-of-range indices leave the placeholder literal in the output and
 /// emit a StringForm::sfr warning, matching wolframscript.
-pub fn format_string_form(template: &str, values: &[Expr]) -> String {
+fn format_string_form(template: &str, values: &[Expr]) -> String {
   let mut result = String::new();
   let chars: Vec<char> = template.chars().collect();
   let len = chars.len();
@@ -6926,7 +7252,7 @@ pub fn to_expression_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // ToExpression[InterpretationBox[boxes, expr]] returns the interpreted
   // expression directly (the second argument), evaluated. This matches
   // wolframscript: `ToExpression[InterpretationBox["Four", 4]]` → 4.
-  if let crate::syntax::Expr::FunctionCall {
+  if let Expr::FunctionCall {
     name,
     args: ib_args,
   } = &args[0]
@@ -6935,7 +7261,7 @@ pub fn to_expression_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let interpreted = crate::evaluator::evaluate_expr_to_expr(&ib_args[1])?;
     if args.len() == 3 {
-      let wrapped = crate::syntax::Expr::FunctionCall {
+      let wrapped = Expr::FunctionCall {
         name: crate::syntax::expr_to_string(&args[2]),
         args: vec![interpreted].into(),
       };
@@ -6960,7 +7286,7 @@ pub fn to_expression_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // ToExpression["1+1", InputForm, Hold] is Hold[1 + 1], not Hold[2].
   if args.len() == 3 {
     let parsed = parse_program_to_expr(&s)?;
-    let wrapped = crate::syntax::Expr::FunctionCall {
+    let wrapped = Expr::FunctionCall {
       name: crate::syntax::expr_to_string(&args[2]),
       args: vec![parsed].into(),
     };
@@ -7428,30 +7754,9 @@ pub fn string_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Try regex-based pattern first (handles RegularExpression, string patterns,
   // lists-of-patterns as alternatives, etc.)
-  if let Some(regex_pat) = string_pattern_to_regex(&args[1]) {
-    let count = if overlaps {
-      // Overlapping matches: count every start position where the pattern
-      // matches, anchored at that position.
-      let anchored_pat = if ignore_case {
-        format!("^(?i:{})", regex_pat)
-      } else {
-        format!("^(?:{})", regex_pat)
-      };
-      let anchored = compile_regex(&anchored_pat).map_err(|e| {
-        InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
-      })?;
-      count_overlapping_regex(&anchored, &s)
-    } else {
-      let full = if ignore_case {
-        format!("(?i:{})", regex_pat)
-      } else {
-        regex_pat
-      };
-      let re = compile_regex(&full).map_err(|e| {
-        InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
-      })?;
-      re.find_iter(&s).count()
-    };
+  if let Some(compiled) = compile_string_pattern(&args[1], ignore_case) {
+    let (re, constraints) = compiled?;
+    let count = find_constraint_spans(&re, &constraints, &s, overlaps).len();
     return Ok(Expr::Integer(count as i128));
   }
 
@@ -7473,7 +7778,9 @@ pub fn string_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::Integer(count as i128))
 }
 
-/// Whether `Overlaps -> True` appears in the option arguments.
+/// Whether `Overlaps -> True` or `Overlaps -> All` appears in the option
+/// arguments. For a fixed-length string pattern both request that overlapping
+/// matches be counted (one per start position).
 fn has_overlaps_option(args: &[Expr]) -> bool {
   for arg in args.iter().skip(2) {
     if let Expr::Rule {
@@ -7481,7 +7788,10 @@ fn has_overlaps_option(args: &[Expr]) -> bool {
       replacement,
     } = arg
       && crate::syntax::expr_to_string(pattern) == "Overlaps"
-      && crate::syntax::expr_to_string(replacement) == "True"
+      && matches!(
+        crate::syntax::expr_to_string(replacement).as_str(),
+        "True" | "All"
+      )
     {
       return true;
     }
@@ -7498,18 +7808,6 @@ fn count_overlapping_substring(hay: &str, needle: &str) -> usize {
   let mut count = 0;
   for (i, _) in hay.char_indices() {
     if hay[i..].starts_with(needle) {
-      count += 1;
-    }
-  }
-  count
-}
-
-/// Count overlapping regex matches — one per char start position where the
-/// (start-anchored) regex matches.
-fn count_overlapping_regex(anchored: &regex::Regex, hay: &str) -> usize {
-  let mut count = 0;
-  for (i, _) in hay.char_indices() {
-    if anchored.is_match(&hay[i..]) {
       count += 1;
     }
   }
@@ -7542,17 +7840,12 @@ pub fn string_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let ignore_case = has_ignore_case_option(args);
 
   // Try regex-based pattern first
-  if let Some(regex_pat) = string_pattern_to_regex(&args[1]) {
-    let full_pat = if ignore_case {
-      format!("(?i){}", regex_pat)
-    } else {
-      regex_pat
-    };
-    let re = compile_regex(&full_pat).map_err(|e| {
-      InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
-    })?;
+  if let Some(compiled) = compile_string_pattern(&args[1], ignore_case) {
+    let (re, constraints) = compiled?;
+    let present =
+      !find_constraint_spans(&re, &constraints, &s, false).is_empty();
     return Ok(Expr::Identifier(
-      if re.is_match(&s) { "False" } else { "True" }.to_string(),
+      if present { "False" } else { "True" }.to_string(),
     ));
   }
 
@@ -8629,16 +8922,19 @@ pub fn string_delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Reuse the shared string-pattern → regex conversion so character classes
   // (DigitCharacter, …), blanks, alternation lists, and string literals all
   // work, matching StringReplace[s, patt -> ""].
-  if let Some(regex_pat) = string_pattern_to_regex(&args[1]) {
-    let full = if ignore_case {
-      format!("(?i:{})", regex_pat)
-    } else {
-      regex_pat
-    };
-    let re = compile_regex(&full).map_err(|e| {
-      InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
-    })?;
-    return Ok(Expr::String(re.replace_all(&s, "").into_owned()));
+  if let Some(compiled) = compile_string_pattern(&args[1], ignore_case) {
+    let (re, constraints) = compiled?;
+    // Delete every non-overlapping match honoring back-reference constraints
+    // (`x_ ~~ x_`); keep the text between them.
+    let spans = find_constraint_spans(&re, &constraints, &s, false);
+    let mut out = String::with_capacity(s.len());
+    let mut last = 0usize;
+    for (start, end) in spans {
+      out.push_str(&s[last..start]);
+      last = end;
+    }
+    out.push_str(&s[last..]);
+    return Ok(Expr::String(out));
   }
 
   // Fallback: plain substring deletion (single pattern or list of literals).
@@ -9659,7 +9955,7 @@ pub fn word_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Build an association of n-gram counts in first-occurrence order (the order
 /// Counts uses), as the two-argument CharacterCounts/LetterCounts forms do.
-pub fn ngram_counts(grams: Vec<String>) -> Expr {
+fn ngram_counts(grams: Vec<String>) -> Expr {
   let mut counts: Vec<(String, i128)> = Vec::new();
   let mut seen: std::collections::HashMap<String, usize> =
     std::collections::HashMap::new();
@@ -10242,7 +10538,7 @@ fn inflate_compressed(s: &str) -> Result<Vec<u8>, InterpreterError> {
 /// Turn a `"1:..."` compressed string into the original expression. Handles
 /// wolframscript's binary `!boR` serialization (packed arrays, nested
 /// expressions) as well as woxi's text serialization.
-pub fn decompress_to_expr(s: &str) -> Result<Expr, InterpreterError> {
+fn decompress_to_expr(s: &str) -> Result<Expr, InterpreterError> {
   let bytes = inflate_compressed(s)?;
 
   if let Some(expr) = crate::functions::wl_serialize::deserialize(&bytes) {
@@ -11065,7 +11361,7 @@ fn parse_template_expression(body: &str) -> Option<Expr> {
 /// `TemplateSlot[n]`. A `<* expr *>` section becomes `TemplateExpression[expr]`
 /// with `#`/`#key` slot references rewritten to `TemplateSlot`. An unterminated
 /// backtick is kept as a literal character, matching wolframscript.
-pub fn parse_template_parts(template: &str) -> Vec<Expr> {
+fn parse_template_parts(template: &str) -> Vec<Expr> {
   let chars: Vec<char> = template.chars().collect();
   let mut parts: Vec<Expr> = Vec::new();
   let mut literal = String::new();
@@ -11250,7 +11546,7 @@ fn template_slot_value(key: &Expr, args: &Expr) -> Option<Expr> {
 /// association (by key name); each `TemplateExpression[expr]` has its slots
 /// substituted, is evaluated, and the result rendered. Returns the combined
 /// string.
-pub fn template_object_apply(
+fn template_object_apply(
   parts: &[Expr],
   args: &Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -11710,7 +12006,7 @@ pub fn byte_array_to_string_ast(
 
 /// Extract the bytes of a ByteArray, which stores its data either as a base64
 /// string or as a list of integer byte values.
-fn byte_array_bytes(expr: &Expr) -> Option<Vec<u8>> {
+pub fn byte_array_bytes(expr: &Expr) -> Option<Vec<u8>> {
   if let Expr::FunctionCall { name, args } = expr
     && name == "ByteArray"
     && args.len() == 1

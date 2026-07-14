@@ -9,7 +9,7 @@
 //! lengths pass through fine.
 
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr, expr_to_output};
 
 fn fc(name: &str, args: Vec<Expr>) -> Expr {
   Expr::FunctionCall {
@@ -45,10 +45,7 @@ fn fraction_parts(e: &Expr) -> Option<(String, String)> {
     Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2 =>
     {
-      Some((
-        crate::syntax::expr_to_output(&args[0]),
-        crate::syntax::expr_to_output(&args[1]),
-      ))
+      Some((expr_to_output(&args[0]), expr_to_output(&args[1])))
     }
     // A product with a Rational coefficient — Times may appear either as a
     // FunctionCall or as an infix BinaryOp node.
@@ -56,18 +53,15 @@ fn fraction_parts(e: &Expr) -> Option<(String, String)> {
       rational_times(&args[0], &args[1])
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => rational_times(left, right),
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left,
       right,
-    } => Some((
-      crate::syntax::expr_to_output(left),
-      crate::syntax::expr_to_output(right),
-    )),
+    } => Some((expr_to_output(left), expr_to_output(right))),
     _ => None,
   }
 }
@@ -79,12 +73,12 @@ fn rational_times(coeff: &Expr, rest: &Expr) -> Option<(String, String)> {
     && name == "Rational"
     && args.len() == 2
   {
-    let rest = crate::syntax::expr_to_output(rest);
+    let rest = expr_to_output(rest);
     let num = match &args[0] {
       Expr::Integer(1) => rest,
-      p => format!("{} {}", crate::syntax::expr_to_output(p), rest),
+      p => format!("{} {}", expr_to_output(p), rest),
     };
-    return Some((num, crate::syntax::expr_to_output(&args[1])));
+    return Some((num, expr_to_output(&args[1])));
   }
   None
 }
@@ -126,7 +120,7 @@ fn emit_asm(head: &str, a1: &Expr, a2: &Expr) {
           bot.push_str(&center(&den));
         }
         None => {
-          let s = crate::syntax::expr_to_output(e);
+          let s = expr_to_output(e);
           mid.push_str(&s);
           top.push_str(&" ".repeat(s.chars().count()));
           bot.push_str(&" ".repeat(s.chars().count()));
@@ -453,7 +447,7 @@ pub fn triangle_measurement_ast(
   if crate::functions::math_ast::try_eval_to_f64(&signed) == Some(0.0) {
     crate::emit_message(&format!(
       "TriangleMeasurement::invtri: {} expected to specify a nondegenerate triangle in the plane.",
-      crate::syntax::expr_to_output(&args[0])
+      expr_to_output(&args[0])
     ));
     return unevaluated();
   }

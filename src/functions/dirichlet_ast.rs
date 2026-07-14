@@ -13,6 +13,7 @@
 
 use crate::InterpreterError;
 use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, UnaryOperator};
 
 pub fn dirichlet_character_ast(
   args: &[Expr],
@@ -296,7 +297,7 @@ fn assemble_value(quarter: i128, num: i128, den: i128) -> Expr {
       1 => Expr::Identifier("I".to_string()),
       2 => Expr::Integer(-1),
       _ => Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(Expr::Identifier("I".to_string())),
       },
     };
@@ -510,7 +511,7 @@ pub fn dirichlet_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Fraction helpers over BigInt
   type Frac = (BigInt, BigInt);
-  let gcd_big = |a: &BigInt, b: &BigInt| -> BigInt {
+  let gcd_bigint = |a: &BigInt, b: &BigInt| -> BigInt {
     let (mut a, mut b) = (a.clone(), b.clone());
     if a < BigInt::from(0) {
       a = -a;
@@ -530,7 +531,7 @@ pub fn dirichlet_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
   let reduce = |num: BigInt, den: BigInt| -> Frac {
-    let g = gcd_big(&num, &den);
+    let g = gcd_bigint(&num, &den);
     let (mut n, mut d) = (num / &g, den / g);
     if d < BigInt::from(0) {
       n = -n;
@@ -648,8 +649,6 @@ pub fn dirichlet_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 //    `unknown * 1 -> DivisorSum`, irreducible pairs stay as inert
 //    DirichletConvolve terms.
 
-use crate::syntax::BinaryOperator;
-
 #[derive(Clone)]
 enum ConvAtom {
   /// var^k for integer k >= 0 (k = 0 is the constant 1, k = 1 is var)
@@ -703,7 +702,7 @@ fn flatten_times(expr: &Expr, out: &mut Vec<Expr>) {
       }
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       out.push(Expr::Integer(-1));

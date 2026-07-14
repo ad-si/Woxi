@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr};
 use std::cmp::Ordering;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -222,7 +222,7 @@ pub fn coth_csch_interval(head: &str, expr: &Expr) -> Option<Expr> {
   }
   let inf = || Expr::Identifier("Infinity".to_string());
   let neg_inf = || Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Times,
+    op: BinaryOperator::Times,
     left: Box::new(Expr::Integer(-1)),
     right: Box::new(Expr::Identifier("Infinity".to_string())),
   };
@@ -296,7 +296,7 @@ pub fn tan_cot_interval(head: &str, expr: &Expr) -> Option<Expr> {
   let period = std::f64::consts::PI;
   let inf = || Expr::Identifier("Infinity".to_string());
   let neg_inf = || Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Times,
+    op: BinaryOperator::Times,
     left: Box::new(Expr::Integer(-1)),
     right: Box::new(Expr::Identifier("Infinity".to_string())),
   };
@@ -353,7 +353,7 @@ pub fn sec_csc_interval(head: &str, expr: &Expr) -> Option<Expr> {
   };
   let inf = || Expr::Identifier("Infinity".to_string());
   let neg_inf = || Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Times,
+    op: BinaryOperator::Times,
     left: Box::new(Expr::Integer(-1)),
     right: Box::new(Expr::Identifier("Infinity".to_string())),
   };
@@ -1107,132 +1107,6 @@ pub fn try_interval_max(
 }
 
 // ─── Comparison Hooks ───────────────────────────────────────────────────────
-
-/// Check interval comparison for Less/Greater/LessEqual/GreaterEqual.
-/// Returns Some(true/false) for definite results, None for unevaluated (overlapping).
-pub fn try_interval_compare(
-  args: &[Expr],
-  cmp_name: &str,
-) -> Option<Result<Expr, InterpreterError>> {
-  if !has_interval(args) {
-    return None;
-  }
-
-  if args.len() != 2 {
-    return None;
-  }
-
-  // Extract or wrap as intervals
-  let a_spans = if let Some(spans) = is_interval(&args[0]) {
-    spans
-      .into_iter()
-      .map(|(lo, hi)| (lo.clone(), hi.clone()))
-      .collect::<Vec<_>>()
-  } else {
-    let val = &args[0];
-    // Must be numeric for comparison
-    expr_to_f64(val)?;
-    vec![(val.clone(), val.clone())]
-  };
-
-  let b_spans = if let Some(spans) = is_interval(&args[1]) {
-    spans
-      .into_iter()
-      .map(|(lo, hi)| (lo.clone(), hi.clone()))
-      .collect::<Vec<_>>()
-  } else {
-    let val = &args[1];
-    expr_to_f64(val)?;
-    vec![(val.clone(), val.clone())]
-  };
-
-  // Get overall bounds
-  let a_lo = a_spans
-    .iter()
-    .map(|(lo, _)| lo)
-    .fold(a_spans[0].0.clone(), |acc, x| numeric_min(&acc, x));
-  let a_hi = a_spans
-    .iter()
-    .map(|(_, hi)| hi)
-    .fold(a_spans[0].1.clone(), |acc, x| numeric_max(&acc, x));
-  let b_lo = b_spans
-    .iter()
-    .map(|(lo, _)| lo)
-    .fold(b_spans[0].0.clone(), |acc, x| numeric_min(&acc, x));
-  let b_hi = b_spans
-    .iter()
-    .map(|(_, hi)| hi)
-    .fold(b_spans[0].1.clone(), |acc, x| numeric_max(&acc, x));
-
-  match cmp_name {
-    "Less" => {
-      // True if a_hi < b_lo (all of a is less than all of b)
-      if let Some(Ordering::Less) = compare_numeric(&a_hi, &b_lo) {
-        return Some(Ok(Expr::Identifier("True".to_string())));
-      }
-      // False if a_lo >= b_hi (some of a is >= some of b)
-      if let Some(Ordering::Greater | Ordering::Equal) =
-        compare_numeric(&a_lo, &b_hi)
-      {
-        return Some(Ok(Expr::Identifier("False".to_string())));
-      }
-      // Overlapping: return unevaluated
-      Some(Ok(Expr::FunctionCall {
-        name: "Less".to_string(),
-        args: args.to_vec().into(),
-      }))
-    }
-    "Greater" => {
-      // True if a_lo > b_hi
-      if let Some(Ordering::Greater) = compare_numeric(&a_lo, &b_hi) {
-        return Some(Ok(Expr::Identifier("True".to_string())));
-      }
-      // False if a_hi <= b_lo
-      if let Some(Ordering::Less | Ordering::Equal) =
-        compare_numeric(&a_hi, &b_lo)
-      {
-        return Some(Ok(Expr::Identifier("False".to_string())));
-      }
-      Some(Ok(Expr::FunctionCall {
-        name: "Greater".to_string(),
-        args: args.to_vec().into(),
-      }))
-    }
-    "LessEqual" => {
-      // True if a_hi <= b_lo
-      if let Some(Ordering::Less | Ordering::Equal) =
-        compare_numeric(&a_hi, &b_lo)
-      {
-        return Some(Ok(Expr::Identifier("True".to_string())));
-      }
-      // False if a_lo > b_hi
-      if let Some(Ordering::Greater) = compare_numeric(&a_lo, &b_hi) {
-        return Some(Ok(Expr::Identifier("False".to_string())));
-      }
-      Some(Ok(Expr::FunctionCall {
-        name: "LessEqual".to_string(),
-        args: args.to_vec().into(),
-      }))
-    }
-    "GreaterEqual" => {
-      // True if a_lo >= b_hi
-      if let Some(Ordering::Greater | Ordering::Equal) =
-        compare_numeric(&a_lo, &b_hi)
-      {
-        return Some(Ok(Expr::Identifier("True".to_string())));
-      }
-      // False if a_hi < b_lo
-      if let Some(Ordering::Less) = compare_numeric(&a_hi, &b_lo) {
-        return Some(Ok(Expr::Identifier("False".to_string())));
-      }
-      Some(Ok(Expr::FunctionCall {
-        name: "GreaterEqual".to_string(),
-        args: args.to_vec().into(),
-      }))
-    }
-    _ => None,
-  }
-}
 
 // ─── CenteredInterval helpers ───────────────────────────────────────────
 

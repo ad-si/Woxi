@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr};
 
 /// True if `z_expr` is `<zero_name>[order, k, ...]` whose first argument equals
 /// `n_expr` AND both `order` and `k` are concrete positive integers — the only
@@ -89,10 +89,13 @@ pub fn bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Closed-form rules at half-integer orders. Use the standard recurrence
   //   J_{n+1}(z) = (2n/z) J_n(z) - J_{n-1}(z)
   // anchored at J_{±1/2}. Walks numerically through the integer m in n = m/2.
+  // wolframscript only expands when the argument contains free symbols;
+  // exact numeric arguments (6, 2/3, Pi) stay unevaluated.
   if let Some((n_num, n_den)) =
     crate::functions::math_ast::expr_to_rational(n_expr)
     && n_den == 2
     && (n_num.unsigned_abs() <= 51)
+    && crate::functions::math_ast::try_eval_to_f64(z_expr).is_none()
     && let Some(result) = half_int_bessel_j(n_num, z_expr)?
   {
     return Ok(result);
@@ -168,11 +171,9 @@ fn half_int_bessel_i(
 fn is_plus_expr(e: &Expr) -> bool {
   match e {
     Expr::FunctionCall { name, .. } if name == "Plus" => true,
-    Expr::BinaryOp { op, .. } => matches!(
-      op,
-      crate::syntax::BinaryOperator::Plus
-        | crate::syntax::BinaryOperator::Minus
-    ),
+    Expr::BinaryOp { op, .. } => {
+      matches!(op, BinaryOperator::Plus | BinaryOperator::Minus)
+    }
     _ => false,
   }
 }
@@ -181,41 +182,41 @@ fn wrap_with_sqrt_factor_rationalised(
   p: &Expr,
   z_expr: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  use crate::syntax::Expr::*;
   // Build Distribute[2*p, Plus] / (Sqrt[2*Pi] * Sqrt[z]).
-  let two_p = FunctionCall {
+  let two_p = Expr::FunctionCall {
     name: "Times".to_string(),
-    args: vec![Integer(2), p.clone()].into(),
+    args: vec![Expr::Integer(2), p.clone()].into(),
   };
-  let distributed = FunctionCall {
+  let distributed = Expr::FunctionCall {
     name: "Distribute".to_string(),
-    args: vec![two_p, Identifier("Plus".to_string())].into(),
+    args: vec![two_p, Expr::Identifier("Plus".to_string())].into(),
   };
-  let denom = FunctionCall {
+  let denom = Expr::FunctionCall {
     name: "Times".to_string(),
     args: vec![
-      FunctionCall {
+      Expr::FunctionCall {
         name: "Sqrt".to_string(),
-        args: vec![FunctionCall {
+        args: vec![Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![Integer(2), Identifier("Pi".to_string())].into(),
+          args: vec![Expr::Integer(2), Expr::Identifier("Pi".to_string())]
+            .into(),
         }]
         .into(),
       },
-      FunctionCall {
+      Expr::FunctionCall {
         name: "Sqrt".to_string(),
         args: vec![z_expr.clone()].into(),
       },
     ]
     .into(),
   };
-  let expr = FunctionCall {
+  let expr = Expr::FunctionCall {
     name: "Times".to_string(),
     args: vec![
       distributed,
-      FunctionCall {
+      Expr::FunctionCall {
         name: "Power".to_string(),
-        args: vec![denom, Integer(-1)].into(),
+        args: vec![denom, Expr::Integer(-1)].into(),
       },
     ]
     .into(),
@@ -304,31 +305,30 @@ fn bessel_poly_recurrence(
   sign: BesselSign,
   forward: bool,
 ) -> Result<Expr, InterpreterError> {
-  use crate::syntax::Expr::*;
   // Coefficient on the (m/z) * P_m term and on P_{other}.
   let (a_coef, b_coef): (i128, i128) = match (sign, forward) {
     (BesselSign::J, _) => (coef, -1), // (m/z) P_m - P_other
     (BesselSign::I, true) => (-coef, 1), // -(m/z) P_m + P_other
     (BesselSign::I, false) => (coef, 1), // (m/z) P_m + P_other
   };
-  let expr = FunctionCall {
+  let expr = Expr::FunctionCall {
     name: "Plus".to_string(),
     args: vec![
-      FunctionCall {
+      Expr::FunctionCall {
         name: "Times".to_string(),
         args: vec![
-          Integer(a_coef),
-          FunctionCall {
+          Expr::Integer(a_coef),
+          Expr::FunctionCall {
             name: "Power".to_string(),
-            args: vec![z_expr.clone(), Integer(-1)].into(),
+            args: vec![z_expr.clone(), Expr::Integer(-1)].into(),
           },
           p_n.clone(),
         ]
         .into(),
       },
-      FunctionCall {
+      Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![Integer(b_coef), p_other.clone()].into(),
+        args: vec![Expr::Integer(b_coef), p_other.clone()].into(),
       },
     ]
     .into(),
@@ -341,19 +341,19 @@ fn wrap_with_sqrt_factor(
   p: &Expr,
   z_expr: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  use crate::syntax::Expr::*;
-  let expr = FunctionCall {
+  let expr = Expr::FunctionCall {
     name: "Times".to_string(),
     args: vec![
-      FunctionCall {
+      Expr::FunctionCall {
         name: "Sqrt".to_string(),
-        args: vec![FunctionCall {
+        args: vec![Expr::FunctionCall {
           name: "Times".to_string(),
           args: vec![
-            Integer(2),
-            FunctionCall {
+            Expr::Integer(2),
+            Expr::FunctionCall {
               name: "Power".to_string(),
-              args: vec![Identifier("Pi".to_string()), Integer(-1)].into(),
+              args: vec![Expr::Identifier("Pi".to_string()), Expr::Integer(-1)]
+                .into(),
             },
           ]
           .into(),
@@ -361,14 +361,14 @@ fn wrap_with_sqrt_factor(
         .into(),
       },
       p.clone(),
-      FunctionCall {
+      Expr::FunctionCall {
         name: "Power".to_string(),
         args: vec![
-          FunctionCall {
+          Expr::FunctionCall {
             name: "Sqrt".to_string(),
             args: vec![z_expr.clone()].into(),
           },
-          Integer(-1),
+          Expr::Integer(-1),
         ]
         .into(),
       },
@@ -670,10 +670,12 @@ pub fn bessel_i_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Closed-form rules at half-integer orders. Anchored at I_{±1/2}; the
   // recurrence I_{n+1}(z) = I_{n-1}(z) - (2n/z) I_n(z) (sign-flipped vs J).
+  // Exact numeric arguments stay unevaluated (wolframscript).
   if let Some((n_num, n_den)) =
     crate::functions::math_ast::expr_to_rational(n_expr)
     && n_den == 2
     && (n_num.unsigned_abs() <= 51)
+    && crate::functions::math_ast::try_eval_to_f64(z_expr).is_none()
     && let Some(result) = half_int_bessel_i(n_num, z_expr)?
   {
     return Ok(result);
@@ -755,10 +757,12 @@ pub fn bessel_k_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Closed-form rules at half-integer orders. K_{1/2}(z) = K_{-1/2}(z) =
   // Sqrt[Pi/(2z)] * E^(-z); K_{n+1}(z) = (2n/z) K_n(z) + K_{n-1}(z).
   // K is symmetric: K_{-n}(z) = K_n(z).
+  // Exact numeric arguments stay unevaluated (wolframscript).
   if let Some((n_num, n_den)) =
     crate::functions::math_ast::expr_to_rational(n_expr)
     && n_den == 2
     && (n_num.unsigned_abs() <= 51)
+    && crate::functions::math_ast::try_eval_to_f64(z_expr).is_none()
     && let Some(result) = half_int_bessel_k(n_num, z_expr)?
   {
     return Ok(result);
@@ -800,18 +804,17 @@ fn bessel_k_polynomial(
   let mut curr = Expr::Integer(1); // P_{1}
   let mut m_cur: i128 = 1;
   while m_cur < m {
-    use crate::syntax::Expr::*;
     // P_{m_cur+2} = (m_cur/z) * curr + prev
-    let next_expr = FunctionCall {
+    let next_expr = Expr::FunctionCall {
       name: "Plus".to_string(),
       args: vec![
-        FunctionCall {
+        Expr::FunctionCall {
           name: "Times".to_string(),
           args: vec![
-            Integer(m_cur),
-            FunctionCall {
+            Expr::Integer(m_cur),
+            Expr::FunctionCall {
               name: "Power".to_string(),
-              args: vec![z_expr.clone(), Integer(-1)].into(),
+              args: vec![z_expr.clone(), Expr::Integer(-1)].into(),
             },
             curr.clone(),
           ]
@@ -836,20 +839,19 @@ fn wrap_bessel_k_factor(
   p: &Expr,
   z_expr: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  use crate::syntax::Expr::*;
-  let expr = FunctionCall {
+  let expr = Expr::FunctionCall {
     name: "Times".to_string(),
     args: vec![
       // Sqrt[Pi/2]
-      FunctionCall {
+      Expr::FunctionCall {
         name: "Sqrt".to_string(),
-        args: vec![FunctionCall {
+        args: vec![Expr::FunctionCall {
           name: "Times".to_string(),
           args: vec![
-            Identifier("Pi".to_string()),
-            FunctionCall {
+            Expr::Identifier("Pi".to_string()),
+            Expr::FunctionCall {
               name: "Power".to_string(),
-              args: vec![Integer(2), Integer(-1)].into(),
+              args: vec![Expr::Integer(2), Expr::Integer(-1)].into(),
             },
           ]
           .into(),
@@ -858,26 +860,26 @@ fn wrap_bessel_k_factor(
       },
       p.clone(),
       // 1 / E^z = E^(-z)
-      FunctionCall {
+      Expr::FunctionCall {
         name: "Power".to_string(),
         args: vec![
-          Constant("E".to_string()),
-          FunctionCall {
+          Expr::Constant("E".to_string()),
+          Expr::FunctionCall {
             name: "Times".to_string(),
-            args: vec![Integer(-1), z_expr.clone()].into(),
+            args: vec![Expr::Integer(-1), z_expr.clone()].into(),
           },
         ]
         .into(),
       },
       // 1 / Sqrt[z]
-      FunctionCall {
+      Expr::FunctionCall {
         name: "Power".to_string(),
         args: vec![
-          FunctionCall {
+          Expr::FunctionCall {
             name: "Sqrt".to_string(),
             args: vec![z_expr.clone()].into(),
           },
-          Integer(-1),
+          Expr::Integer(-1),
         ]
         .into(),
       },
@@ -929,7 +931,7 @@ pub fn bessel_k(n: f64, z: f64) -> f64 {
 
 /// Compute K_0(z) and K_1(z) simultaneously using the Temme series for small z
 /// and asymptotic expansion for large z.
-pub fn bessel_k01(z: f64) -> (f64, f64) {
+fn bessel_k01(z: f64) -> (f64, f64) {
   if z <= 2.0 {
     // Series for K_0 and K_1
     let euler_gamma = 0.5772156649015329;
@@ -1059,6 +1061,7 @@ pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && n_den == 2
     && (n_num.unsigned_abs() <= 51)
     && (-n_num) % 2 != 0
+    && crate::functions::math_ast::try_eval_to_f64(z_expr).is_none()
   {
     let k = (n_num - 1).div_euclid(2);
     let sign: i128 = if k.rem_euclid(2) == 0 { -1 } else { 1 };
@@ -1120,7 +1123,7 @@ pub fn bessel_y(n: f64, z: f64) -> f64 {
 }
 
 /// Y_0(z) = (2/π) * (J_0(z) * (ln(z/2) + γ) + Σ (-1)^{m+1} H_m * (z/2)^{2m} / (m!)^2)
-pub fn bessel_y0(z: f64) -> f64 {
+fn bessel_y0(z: f64) -> f64 {
   let two_over_pi = 2.0 / std::f64::consts::PI;
   let euler_gamma = 0.5772156649015329;
   let half_z = z / 2.0;
@@ -1147,7 +1150,7 @@ pub fn bessel_y0(z: f64) -> f64 {
 }
 
 /// Y_1(z) = (2/π) * (J_1(z) * ln(z/2) - 1/z + Σ ...)
-pub fn bessel_y1(z: f64) -> f64 {
+fn bessel_y1(z: f64) -> f64 {
   let two_over_pi = 2.0 / std::f64::consts::PI;
   let euler_gamma = 0.5772156649015329;
   let half_z = z / 2.0;
@@ -1217,7 +1220,6 @@ fn coulomb_wave_reduce(
   args: &[Expr],
   kind: CoulombKind,
 ) -> Result<Expr, InterpreterError> {
-  use crate::syntax::Expr::*;
   let name = match kind {
     CoulombKind::F => "CoulombF",
     CoulombKind::G => "CoulombG",
@@ -1225,7 +1227,7 @@ fn coulomb_wave_reduce(
     CoulombKind::H2 => "CoulombH2",
   };
   let uneval = || {
-    Ok(FunctionCall {
+    Ok(Expr::FunctionCall {
       name: name.to_string(),
       args: args.to_vec().into(),
     })
@@ -1235,37 +1237,37 @@ fn coulomb_wave_reduce(
   }
   let (l, eta, z) = (&args[0], &args[1], &args[2]);
   // The reduction only applies at eta == 0.
-  let eta_zero =
-    matches!(eta, Integer(0)) || matches!(eta, Real(f) if *f == 0.0);
+  let eta_zero = matches!(eta, Expr::Integer(0))
+    || matches!(eta, Expr::Real(f) if *f == 0.0);
   if !eta_zero {
     return uneval();
   }
-  let i_unit = || Identifier("I".to_string());
+  let i_unit = || Expr::Identifier("I".to_string());
   // L == 0: the spherical functions collapse to elementary form.
-  if matches!(l, Integer(0)) {
+  if matches!(l, Expr::Integer(0)) {
     let elem = match kind {
-      CoulombKind::F => FunctionCall {
+      CoulombKind::F => Expr::FunctionCall {
         name: "Sin".to_string(),
         args: vec![z.clone()].into(),
       },
-      CoulombKind::G => FunctionCall {
+      CoulombKind::G => Expr::FunctionCall {
         name: "Cos".to_string(),
         args: vec![z.clone()].into(),
       },
       // E^(I z) and E^(-I z).
-      CoulombKind::H1 => FunctionCall {
+      CoulombKind::H1 => Expr::FunctionCall {
         name: "Exp".to_string(),
-        args: vec![FunctionCall {
+        args: vec![Expr::FunctionCall {
           name: "Times".to_string(),
           args: vec![i_unit(), z.clone()].into(),
         }]
         .into(),
       },
-      CoulombKind::H2 => FunctionCall {
+      CoulombKind::H2 => Expr::FunctionCall {
         name: "Exp".to_string(),
-        args: vec![FunctionCall {
+        args: vec![Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![Integer(-1), i_unit(), z.clone()].into(),
+          args: vec![Expr::Integer(-1), i_unit(), z.clone()].into(),
         }]
         .into(),
       },
@@ -1279,20 +1281,20 @@ fn coulomb_wave_reduce(
     CoulombKind::H1 => "SphericalHankelH1",
     CoulombKind::H2 => "SphericalHankelH2",
   };
-  let sph = FunctionCall {
+  let sph = Expr::FunctionCall {
     name: sph_name.to_string(),
     args: vec![l.clone(), z.clone()].into(),
   };
   // Leading factors before z: F -> none, G -> -1, H1 -> I, H2 -> -I.
   let mut factors: Vec<Expr> = match kind {
     CoulombKind::F => vec![],
-    CoulombKind::G => vec![Integer(-1)],
+    CoulombKind::G => vec![Expr::Integer(-1)],
     CoulombKind::H1 => vec![i_unit()],
-    CoulombKind::H2 => vec![Integer(-1), i_unit()],
+    CoulombKind::H2 => vec![Expr::Integer(-1), i_unit()],
   };
   factors.push(z.clone());
   factors.push(sph);
-  let result = FunctionCall {
+  let result = Expr::FunctionCall {
     name: "Times".to_string(),
     args: factors.into(),
   };

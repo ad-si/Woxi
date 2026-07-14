@@ -1,0 +1,47 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "woxi"
+description = "Interpreter for a subset of the Wolfram Language"
+readme = "readme.md"
+license = "AGPL-3.0-or-later"
+# A copy of /license.txt under a different name: the sdist already
+# vendors the workspace's license.txt at its root (via the woxi crate),
+# and two sources mapping to the same sdist path make maturin error.
+license-files = ["LICENSE"]
+authors = [{ name = "Adrian Sieber", email = "mail@adriansieber.com" }]
+requires-python = ">=3.10"
+keywords = ["wolfram", "wolfram-language", "mathematica", "cas", "math", "interpreter"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Rust",
+  "Topic :: Scientific/Engineering :: Mathematics",
+  "Topic :: Software Development :: Interpreters",
+]
+# Version is taken from woxi-py/Cargo.toml by maturin.
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://woxi.ad-si.com"
+Repository = "https://github.com/ad-si/Woxi"
+Issues = "https://github.com/ad-si/Woxi/issues"
+
+[project.scripts]
+woxi = "woxi.__main__:main"
+
+[tool.maturin]
+# Pure-Python wrapper package lives in python/woxi; the compiled
+# extension is placed inside it as woxi._woxi.
+python-source = "python"
+module-name = "woxi._woxi"
+features = ["extension-module"]
+# The default "cargo" sdist generator vendors the woxi library crate
+# (a path dependency one directory up) into the sdist, so the sdist
+# builds standalone. What gets vendored is controlled by the `exclude`
+# list in the woxi crate's own Cargo.toml (`cargo package` file
+# selection), not by maturin excludes.

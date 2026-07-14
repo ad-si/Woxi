@@ -2,6 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::{BinaryOperator, UnaryOperator};
 
 /// AST-based Fold/FoldList: fold a function over a list.
 /// Fold[f, x, {a, b, c}] -> f[f[f[x, a], b], c]
@@ -733,7 +734,6 @@ fn expr_children(expr: &Expr) -> Option<Vec<Expr>> {
     Expr::List(items) => Some(items.to_vec()),
     Expr::FunctionCall { args, .. } => Some(args.to_vec()),
     Expr::BinaryOp { op, left, right } => {
-      use crate::syntax::BinaryOperator;
       match op {
         // a - b → Plus[a, Times[-1, b]]
         BinaryOperator::Minus => Some(vec![
@@ -757,11 +757,52 @@ fn expr_children(expr: &Expr) -> Option<Vec<Expr>> {
             ])
           }
         }
-        // Plus, Times, Power, And, Or, etc.
+        // Flat (associative) operators such as Alternatives (`a | b | c`) are
+        // stored as nested BinaryOp chains but are conceptually a single
+        // n-ary head, so flatten same-operator nestings into siblings —
+        // matching WS where `a | b | c` is Alternatives[a, b, c]. Power is
+        // right-associative and genuinely binary (`a^b^c` = a^(b^c)), so it
+        // keeps its two operands.
+        BinaryOperator::Plus
+        | BinaryOperator::Times
+        | BinaryOperator::And
+        | BinaryOperator::Or
+        | BinaryOperator::StringJoin
+        | BinaryOperator::Alternatives => {
+          fn flatten(op: &BinaryOperator, e: &Expr, out: &mut Vec<Expr>) {
+            if let Expr::BinaryOp {
+              op: inner,
+              left,
+              right,
+            } = e
+              && inner == op
+            {
+              flatten(op, left, out);
+              flatten(op, right, out);
+              return;
+            }
+            out.push(e.clone());
+          }
+          let mut parts = Vec::new();
+          flatten(op, left, &mut parts);
+          flatten(op, right, &mut parts);
+          Some(parts)
+        }
+        // Power (right-associative, binary) and any remaining operators.
         _ => Some(vec![left.as_ref().clone(), right.as_ref().clone()]),
       }
     }
     Expr::UnaryOp { operand, .. } => Some(vec![operand.as_ref().clone()]),
+    // Comparison chains decompose to Op[a, b, c] (uniform) or
+    // Inequality[a, Less, b, ...] (mixed), matching wolframscript.
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      let (_, args) =
+        crate::syntax::comparison_head_and_args(operands, operators);
+      Some(args)
+    }
     Expr::Rule {
       pattern,
       replacement,
@@ -966,8 +1007,8 @@ fn apply_at_level_recursive(
   }
 }
 
-fn binary_op_to_name(op: crate::syntax::BinaryOperator) -> &'static str {
-  use crate::syntax::BinaryOperator::*;
+fn binary_op_to_name(op: BinaryOperator) -> &'static str {
+  use BinaryOperator::*;
   match op {
     Plus => "Plus",
     Minus => "Subtract",
@@ -981,8 +1022,8 @@ fn binary_op_to_name(op: crate::syntax::BinaryOperator) -> &'static str {
   }
 }
 
-fn unary_op_to_name(op: crate::syntax::UnaryOperator) -> &'static str {
-  use crate::syntax::UnaryOperator::*;
+fn unary_op_to_name(op: UnaryOperator) -> &'static str {
+  use UnaryOperator::*;
   match op {
     Minus => "Times",
     Not => "Not",
@@ -1018,10 +1059,7 @@ fn apply_func_as_head(
 /// Outer[f, list1, list2, ...] - generalized outer product.
 /// Threads through any shared head (not just `List`). All arguments must have
 /// the same head; if they differ, the call is returned unevaluated.
-pub fn outer_ast(
-  func: &Expr,
-  lists: &[Expr],
-) -> Result<Expr, InterpreterError> {
+fn outer_ast(func: &Expr, lists: &[Expr]) -> Result<Expr, InterpreterError> {
   outer_ast_with_levels(func, lists, &[])
 }
 
@@ -1053,7 +1091,7 @@ pub fn tensor_product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let times = Expr::Identifier("Times".to_string());
   let is_scalar = |e: &Expr| -> bool {
     !matches!(e, Expr::List(_))
-      && crate::functions::predicate_ast::is_numeric_q_pub(e)
+      && crate::functions::predicate_ast::is_numeric_q(e)
   };
 
   // Pull scalars out; they distribute over the tensor part via Times.

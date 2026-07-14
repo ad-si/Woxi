@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{Expr, expr_to_string};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
 use num_bigint::BigInt;
 use num_bigint::Sign;
 
@@ -72,7 +72,7 @@ fn polynomial_term_to_series_data(
     None
   };
   if let Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left,
     right,
   } = e
@@ -89,7 +89,7 @@ fn polynomial_term_to_series_data(
   }
   // `-var` and `-var^n`
   if let Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand,
   } = e
   {
@@ -104,7 +104,7 @@ fn polynomial_term_to_series_data(
         .map(|c| match c {
           Expr::Integer(n) => Expr::Integer(-n),
           other => Expr::UnaryOp {
-            op: crate::syntax::UnaryOperator::Minus,
+            op: UnaryOperator::Minus,
             operand: Box::new(other.clone()),
           },
         })
@@ -129,7 +129,7 @@ fn polynomial_term_to_series_data(
   let times_args: Option<Vec<Expr>> = match e {
     Expr::FunctionCall { name, args } if name == "Times" => Some(args.to_vec()),
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => Some(vec![*left.clone(), *right.clone()]),
@@ -147,7 +147,7 @@ fn polynomial_term_to_series_data(
       let n = if matches!(f, Expr::Identifier(s) if s == var_name) {
         1
       } else if let Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left,
         right,
       } = f
@@ -259,10 +259,8 @@ fn try_series_data_plus(
   };
   for &idx in &series_indices[1..] {
     if let Expr::FunctionCall { args: sa, .. } = &args[idx] {
-      let var_eq = crate::syntax::expr_to_string(&sa[0])
-        == crate::syntax::expr_to_string(&var0);
-      let x0_eq = crate::syntax::expr_to_string(&sa[1])
-        == crate::syntax::expr_to_string(&x0_0);
+      let var_eq = expr_to_string(&sa[0]) == expr_to_string(&var0);
+      let x0_eq = expr_to_string(&sa[1]) == expr_to_string(&x0_0);
       if !var_eq || !x0_eq {
         return Ok(None);
       }
@@ -431,10 +429,8 @@ fn try_series_data_times(
   };
   for &idx in &series_indices[1..] {
     if let Expr::FunctionCall { args: sa, .. } = &args[idx] {
-      let var_eq = crate::syntax::expr_to_string(&sa[0])
-        == crate::syntax::expr_to_string(&var0);
-      let x0_eq = crate::syntax::expr_to_string(&sa[1])
-        == crate::syntax::expr_to_string(&x0_0);
+      let var_eq = expr_to_string(&sa[0]) == expr_to_string(&var0);
+      let x0_eq = expr_to_string(&sa[1]) == expr_to_string(&x0_0);
       if !var_eq || !x0_eq {
         return Ok(None);
       }
@@ -719,8 +715,8 @@ pub fn try_threaded_op(
         // "Too shallow" — emit the message and leave the operation
         // unevaluated as a left-folded BinaryOp (which is not re-evaluated).
         let bin_op = match op {
-          ThreadedOp::Plus => crate::syntax::BinaryOperator::Plus,
-          ThreadedOp::Times => crate::syntax::BinaryOperator::Times,
+          ThreadedOp::Plus => BinaryOperator::Plus,
+          ThreadedOp::Times => BinaryOperator::Times,
         };
         let mut folded = args[0].clone();
         for a in &args[1..] {
@@ -739,7 +735,7 @@ pub fn try_threaded_op(
           "Threaded::thrdts: The level specified for threading the argument \
            at position {} in {} is too shallow.",
           pos,
-          crate::syntax::expr_to_string(&folded)
+          expr_to_string(&folded)
         ));
         return Some(Ok(folded));
       }
@@ -772,7 +768,7 @@ fn is_numeric_literal_part(e: &Expr) -> bool {
 /// differences return None and keep their opaque shape.
 fn split_numeric_complex_minus(e: &Expr) -> Option<(Expr, Expr)> {
   let Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Minus,
+    op: BinaryOperator::Minus,
     left,
     right,
   } = e
@@ -785,7 +781,7 @@ fn split_numeric_complex_minus(e: &Expr) -> Option<(Expr, Expr)> {
   let is_i = |x: &Expr| matches!(x, Expr::Identifier(s) if s == "I");
   let neg_imag = match right.as_ref() {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left: coeff,
       right: i,
     } if is_i(i) => {
@@ -795,13 +791,13 @@ fn split_numeric_complex_minus(e: &Expr) -> Option<(Expr, Expr)> {
         _ => return None,
       };
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(neg_coeff),
         right: i.clone(),
       }
     }
     i if is_i(i) => Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left: Box::new(Expr::Integer(-1)),
       right: Box::new(Expr::Identifier("I".to_string())),
     },
@@ -861,6 +857,11 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Handle DateObject + Quantity[n, unit]: shift the date by the time span
   // (commutatively, and for any number of calendar-unit quantities).
   if let Some(result) = try_date_object_plus_quantity(args) {
+    return result;
+  }
+
+  // Handle TimeObject + Quantity[n, time-unit]: shift the time of day.
+  if let Some(result) = try_time_object_plus_quantity(args) {
     return result;
   }
 
@@ -950,7 +951,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         ref left,
         ref right,
       } => {
@@ -970,7 +971,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         flat_args.push(cargs[0].clone());
         stack.push(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(cargs[1].clone()),
           right: Box::new(Expr::Identifier("I".to_string())),
         });
@@ -1004,13 +1005,13 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       match arg {
         Expr::Identifier(name) if name == "Infinity" => has_pos_inf = true,
         Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand,
         } if matches!(operand.as_ref(), Expr::Identifier(n) if n == "Infinity") => {
           has_neg_inf = true
         }
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left,
           right,
         } if matches!(left.as_ref(), Expr::Integer(-1))
@@ -1034,7 +1035,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     if has_neg_inf {
       return Ok(Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(Expr::Identifier("Infinity".to_string())),
       });
     }
@@ -1056,13 +1057,13 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && flat_args.len() == 2
     {
       let unevaluated = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(flat_args[0].clone()),
         right: Box::new(flat_args[1].clone()),
       };
       crate::emit_message(&format!(
         "Thread::tdlen: Objects of unequal length in {} cannot be combined.",
-        crate::syntax::expr_to_string(&unevaluated)
+        expr_to_string(&unevaluated)
       ));
       return Ok(unevaluated);
     }
@@ -1256,7 +1257,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ) || matches!(
         e,
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left,
           right,
         } if matches!(left.as_ref(), Expr::Real(_))
@@ -1279,6 +1280,17 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else if has_exact && !exact_sum.is_zero() {
       final_args.push(exact_sum.to_expr());
     }
+
+    // wolframscript's canonical Plus order treats a pure-imaginary numeric
+    // term as a number, sorting it ahead of the symbolic terms — e.g.
+    // `x + 3*I` → `3*I + x`, `a + b + 3*I` → `3*I + a + b`. Woxi keeps the
+    // imaginary term in its native `k*I` form (so the renderer stays happy)
+    // but reorders it to the front. Only when there is no real numeric
+    // prefix: with a nonzero real part wolframscript folds both into a single
+    // Complex atom `(re + im*I)`, which Woxi cannot represent inside a Plus.
+    let hoist_imaginary = !has_real_term
+      && exact_sum.is_zero()
+      && !flat_args.iter().any(|a| matches!(a, Expr::BigFloat(_, _)));
 
     // When the sum has any Real (or BigFloat) component, promote the
     // integer/rational coefficient of any imaginary symbolic term to a
@@ -1333,6 +1345,20 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .map(|i| sorted_symbolic[i].clone())
         .collect(),
     };
+
+    // Hoist a pure-imaginary numeric term to the front so it sorts like the
+    // number it is (`x + 3*I` → `3*I + x`). See `hoist_imaginary` above.
+    if hoist_imaginary
+      && let Some(idx) = sorted_symbolic.iter().position(|t| {
+        let (c, base) = decompose_term(t);
+        matches!(&base, Expr::Identifier(s) if s == "I")
+          && !matches!(c, Coeff::Real(_))
+      })
+      && idx != 0
+    {
+      let term = sorted_symbolic.remove(idx);
+      sorted_symbolic.insert(0, term);
+    }
 
     // Underflow[] floats ahead of the numeric coefficient too — Wolfram
     // prints `1 - Underflow[]` as `Underflow[] + 1`. Splice any Underflow[]
@@ -1390,7 +1416,7 @@ fn is_integer_times_i(e: &Expr) -> bool {
       has_i
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -1453,7 +1479,7 @@ fn promote_integer_times_i_to_real(e: Expr) -> Expr {
     };
   }
   if let Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Times,
+    op: BinaryOperator::Times,
     left,
     right,
   } = &e
@@ -1517,7 +1543,7 @@ fn promote_integer_times_i_to_real(e: Expr) -> Expr {
   e
 }
 
-fn bigint_gcd(a: &BigInt, b: &BigInt) -> BigInt {
+fn gcd_bigint(a: &BigInt, b: &BigInt) -> BigInt {
   let mut a = match a.sign() {
     Sign::Minus => -a,
     _ => a.clone(),
@@ -1608,7 +1634,7 @@ impl Coeff {
         let (n2, d2) = Self::to_big(*n2, *d2);
         let mut sn = &n1 * &d2 + &n2 * &d1;
         let mut sd = d1 * d2;
-        let g = bigint_gcd(&sn, &sd);
+        let g = gcd_bigint(&sn, &sd);
         sn /= &g;
         sd /= g;
         if sd < BigInt::from(0) {
@@ -1620,7 +1646,7 @@ impl Coeff {
       (Self::BigExact(n1, d1), Self::BigExact(n2, d2)) => {
         let mut sn = n1 * d2 + n2 * d1;
         let mut sd = d1 * d2;
-        let g = bigint_gcd(&sn, &sd);
+        let g = gcd_bigint(&sn, &sd);
         sn /= &g;
         sd /= g;
         if sd < BigInt::from(0) {
@@ -1669,7 +1695,7 @@ impl Coeff {
         let (n2, d2) = Self::to_big(*n2, *d2);
         let mut sn = &n1 * &n2;
         let mut sd = d1 * d2;
-        let g = bigint_gcd(&sn, &sd);
+        let g = gcd_bigint(&sn, &sd);
         sn /= &g;
         sd /= g;
         if sd < BigInt::from(0) {
@@ -1681,7 +1707,7 @@ impl Coeff {
       (Self::BigExact(n1, d1), Self::BigExact(n2, d2)) => {
         let mut sn = n1 * n2;
         let mut sd = d1 * d2;
-        let g = bigint_gcd(&sn, &sd);
+        let g = gcd_bigint(&sn, &sd);
         sn /= &g;
         sd /= g;
         if sd < BigInt::from(0) {
@@ -1744,7 +1770,7 @@ impl Coeff {
 /// BigInteger. Unlike `expr_to_rational` (which is limited to i128) this
 /// preserves rationals whose numerator/denominator exceed i128, so Plus and
 /// friends can combine them instead of leaving them as symbolic summands.
-pub fn expr_to_coeff(arg: &Expr) -> Option<Coeff> {
+fn expr_to_coeff(arg: &Expr) -> Option<Coeff> {
   match arg {
     Expr::Integer(n) => Some(Coeff::Exact(*n, 1)),
     Expr::BigInteger(n) => Some(Coeff::BigExact(n.clone(), BigInt::from(1))),
@@ -1766,7 +1792,7 @@ pub fn expr_to_coeff(arg: &Expr) -> Option<Coeff> {
 /// Decompose a term into (coefficient, base_expression).
 /// E.g. `3*x` → (Exact(3,1), x), `x` → (Exact(1,1), x), `-x` → (Exact(-1,1), x),
 /// `1.5*x` → (Real(1.5), x), `Rational[3,4]*x` → (Exact(3,4), x).
-pub fn decompose_term(e: &Expr) -> (Coeff, Expr) {
+fn decompose_term(e: &Expr) -> (Coeff, Expr) {
   match e {
     Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
       let base_from = |args: &[Expr]| -> Expr {
@@ -1799,7 +1825,7 @@ pub fn decompose_term(e: &Expr) -> (Coeff, Expr) {
       }
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -1820,7 +1846,7 @@ pub fn decompose_term(e: &Expr) -> (Coeff, Expr) {
       }
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left,
       right,
     } => {
@@ -1835,7 +1861,7 @@ pub fn decompose_term(e: &Expr) -> (Coeff, Expr) {
       }
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       let (c, base) = decompose_term(operand);
@@ -1848,7 +1874,7 @@ pub fn decompose_term(e: &Expr) -> (Coeff, Expr) {
 
 /// Collect like terms: group symbolic terms by their base expression
 /// and sum their coefficients. E.g. [E, E] → [2*E], [3*x, 2*x] → [5*x].
-pub fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
+fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
   use std::collections::BTreeMap;
 
   // Group by string representation of base → sum of coefficients
@@ -1858,7 +1884,7 @@ pub fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
 
   for term in terms {
     let (c, base) = decompose_term(term);
-    let key = crate::syntax::expr_to_string(&base);
+    let key = expr_to_string(&base);
     if let Some(&idx) = index.get(&key) {
       let entry = &mut groups[idx];
       entry.2 = entry.2.add(&c);
@@ -2111,7 +2137,7 @@ fn extract_latest_variable(e: &Expr) -> Option<String> {
 /// their base rather than by the coefficient digits.
 fn term_sort_key(e: &Expr) -> String {
   let (_, base) = decompose_term(e);
-  let s = crate::syntax::expr_to_string(&base);
+  let s = expr_to_string(&base);
   s.strip_prefix('-').unwrap_or(&s).to_string()
 }
 
@@ -2127,7 +2153,7 @@ fn is_numeric_factor(e: &Expr) -> bool {
       is_numeric_factor(&args[0]) && is_numeric_factor(&args[1])
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => is_numeric_factor(left) && is_numeric_factor(right),
@@ -2238,7 +2264,7 @@ fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
       Some(vec![(expr_to_string(e), 1.0)])
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => {
@@ -2303,7 +2329,7 @@ fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
       None
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left,
       right,
     } => {
@@ -2322,7 +2348,7 @@ fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
       Some(pairs)
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -2501,7 +2527,7 @@ fn constant_symbol_name(base: &Expr) -> Option<&str> {
   match base {
     Expr::Constant(name) if name != "I" => Some(name),
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       ..
     } => constant_symbol_name(left),
@@ -2560,7 +2586,7 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
         args.iter().any(is_i_factor)
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left,
         right,
       } => {
@@ -2698,7 +2724,7 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
         let is_numeric_base_symbolic_power = |e: &Expr| -> bool {
           let (base, exp): (&Expr, &Expr) = match e {
             Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Power,
+              op: BinaryOperator::Power,
               left,
               right,
             } => (left, right),
@@ -2770,8 +2796,7 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
           || matches!(
             &none_base,
             Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Plus
-                | crate::syntax::BinaryOperator::Minus,
+              op: BinaryOperator::Plus | BinaryOperator::Minus,
               ..
             }
           );
@@ -3041,7 +3066,7 @@ fn collect_fn_call_factors(e: &Expr) -> Vec<&Expr> {
         }
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left,
         right,
       } => {
@@ -3168,7 +3193,7 @@ fn extract_primary_fn_name(e: &Expr) -> Option<String> {
       Some(name.clone())
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -3181,7 +3206,7 @@ fn extract_primary_fn_name(e: &Expr) -> Option<String> {
       }
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       ..
     } => extract_primary_fn_name(left),
@@ -3209,7 +3234,7 @@ fn extract_primary_fn_exponent(e: &Expr, name: &str) -> f64 {
       }
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => {
@@ -3233,7 +3258,7 @@ fn extract_primary_fn_exponent(e: &Expr, name: &str) -> f64 {
       total
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -3280,7 +3305,7 @@ fn extract_trig_factors(e: &Expr) -> Vec<(String, Expr, i64)> {
       }
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => {
@@ -3307,7 +3332,7 @@ fn extract_trig_factors(e: &Expr) -> Vec<(String, Expr, i64)> {
       }
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -3366,7 +3391,7 @@ fn extract_poly_degree_in_product(e: &Expr) -> f64 {
       max_deg
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -3460,7 +3485,7 @@ fn sum_recip_vs_univar_order(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
         var_power(&args[0], &args[1]).map(|v| (v, vec![0, 1], false))
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left,
         right,
       } => var_power(left, right).map(|v| (v, vec![0, 1], false)),
@@ -3472,8 +3497,7 @@ fn sum_recip_vs_univar_order(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
   if (!ra && !rb) || va != vb {
     return None;
   }
-  let degree =
-    |c: &[i128]| c.iter().rposition(|&k| k != 0).unwrap_or(0);
+  let degree = |c: &[i128]| c.iter().rposition(|&k| k != 0).unwrap_or(0);
   let (da, db) = (degree(&ca), degree(&cb));
   if da != db {
     return Some(da.cmp(&db));
@@ -3489,6 +3513,149 @@ fn sum_recip_vs_univar_order(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
   None
 }
 
+/// Orders two shared-sum-base terms with pure-power numerators of the SAME
+/// variable, `x^αs/Q^s` (shallow) vs `x^αd/Q^d` (deep, d > s), by comparing
+/// the leading monomials over the common denominator Q^d: the shallow term's
+/// key is x^αs · (leading addend of Q)^(d-s), the deep term's is x^αd.
+/// Smaller total degree first; on a degree tie a key in a LATER variable is
+/// larger, and same-monomial keys compare by signed coefficient (deep first
+/// on a coefficient tie). All wolframscript-verified:
+/// x/(1+x) + x^2/(1+x)^2 reorders deep-first while x/(1-x) + x^2/(1-x)^2
+/// stays put (negative leading coefficient), p1/(1-p1-p2) trails
+/// p1^2/(1-p1-p2)^2 but p2/(1-p1-p2) leads p2^2/(1-p1-p2)^2 (p2 is the
+/// base's last variable), x^2/(1-x) leads x^3/(1-x)^2, and
+/// x/(1+x^2) + x^2/(1+x^2)^2 reorders deep-first (squared leading addend).
+/// Returns None when the shapes don't fit so the caller falls back to the
+/// plain ascending-exponent rule.
+fn same_var_sum_base_order(
+  num_a: &Expr,
+  ea: i128,
+  num_b: &Expr,
+  eb: i128,
+  base: &Expr,
+) -> Option<std::cmp::Ordering> {
+  use std::cmp::Ordering;
+  // A numerator factor as (var, positive degree).
+  fn var_power(e: &Expr) -> Option<(&str, i128)> {
+    match e {
+      Expr::Identifier(v) => Some((v, 1)),
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        match (&args[0], &args[1]) {
+          (Expr::Identifier(v), Expr::Integer(k)) if *k > 0 => Some((v, *k)),
+          _ => None,
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => match (left.as_ref(), right.as_ref()) {
+        (Expr::Identifier(v), Expr::Integer(k)) if *k > 0 => Some((v, *k)),
+        _ => None,
+      },
+      _ => None,
+    }
+  }
+  // The last addend of the sum base with its accumulated sign.
+  fn last_addend(e: &Expr) -> (i128, &Expr) {
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == "Plus" && !args.is_empty() =>
+      {
+        last_addend(args.last().unwrap())
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        right,
+        ..
+      } => last_addend(right),
+      Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        right,
+        ..
+      } => {
+        let (s, t) = last_addend(right);
+        (-s, t)
+      }
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand,
+      } => {
+        let (s, t) = last_addend(operand);
+        (-s, t)
+      }
+      _ => (1, e),
+    }
+  }
+  // An addend as (integer coefficient, var, positive degree).
+  fn monom(e: &Expr) -> Option<(i128, &str, i128)> {
+    if let Some((v, k)) = var_power(e) {
+      return Some((1, v, k));
+    }
+    let (c, inner) = match e {
+      Expr::FunctionCall { name, args }
+        if name == "Times" && args.len() == 2 =>
+      {
+        match &args[0] {
+          Expr::Integer(c) => (*c, &args[1]),
+          _ => return None,
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => match left.as_ref() {
+        Expr::Integer(c) => (*c, right.as_ref()),
+        _ => return None,
+      },
+      _ => return None,
+    };
+    var_power(inner).map(|(v, k)| (c, v, k))
+  }
+
+  let (va, da) = var_power(num_a)?;
+  let (vb, db) = var_power(num_b)?;
+  if va != vb || ea == eb {
+    return None;
+  }
+  // Shallow = exponent closer to 0 (both are negative).
+  let ((alpha_s, es, a_is_shallow), (alpha_d, ed)) = if ea > eb {
+    ((da, ea, true), (db, eb))
+  } else {
+    ((db, eb, false), (da, ea))
+  };
+  let delta = es - ed;
+  if delta > 8 {
+    return None;
+  }
+  let (sign, term) = last_addend(base);
+  let (c, vl, m) = monom(term)?;
+  let c = c.checked_mul(sign)?;
+  let shallow_first = |sf: bool| {
+    Some(if sf == a_is_shallow {
+      Ordering::Less
+    } else {
+      Ordering::Greater
+    })
+  };
+  let deg_s = alpha_s + m * delta;
+  if deg_s != alpha_d {
+    return shallow_first(deg_s < alpha_d);
+  }
+  if vl != va {
+    // The shallow key ends in a later variable, so it is larger.
+    return shallow_first(false);
+  }
+  let c_key = c.checked_pow(u32::try_from(delta).ok()?)?;
+  if c_key == 1 {
+    return shallow_first(false);
+  }
+  shallow_first(c_key < 1)
+}
+
 fn cmp_neg_pow(f: &Expr) -> Option<(&Expr, i128)> {
   match f {
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
@@ -3498,7 +3665,7 @@ fn cmp_neg_pow(f: &Expr) -> Option<(&Expr, i128)> {
       }
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => match right.as_ref() {
@@ -3514,8 +3681,7 @@ fn cmp_is_sum_base(e: &Expr) -> bool {
     || matches!(
       e,
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus
-          | crate::syntax::BinaryOperator::Minus,
+        op: BinaryOperator::Plus | BinaryOperator::Minus,
         ..
       }
     )
@@ -3540,7 +3706,7 @@ fn univar_int_coeffs(e: &Expr) -> Option<(String, Vec<i128>)> {
         }
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left,
         right,
       } => match (left.as_ref(), right.as_ref()) {
@@ -3560,7 +3726,7 @@ fn univar_int_coeffs(e: &Expr) -> Option<(String, Vec<i128>)> {
         }
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left,
         right,
       } => match (left.as_ref(), monomial(right)) {
@@ -3568,7 +3734,7 @@ fn univar_int_coeffs(e: &Expr) -> Option<(String, Vec<i128>)> {
         _ => None,
       },
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand,
       } => {
         let (v, d, c) = monomial(operand)?;
@@ -3645,7 +3811,7 @@ fn cross_shape_shared_denom_order(
       || matches!(
         e,
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           ..
         }
       )
@@ -3656,7 +3822,7 @@ fn cross_shape_shared_denom_order(
         args.iter().for_each(|x| collect_factors(x, out));
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left,
         right,
       } => {
@@ -3709,6 +3875,15 @@ fn cross_shape_shared_denom_order(
 fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   use std::cmp::Ordering;
 
+  // Two compatible Quantities sort by their physical value (converting to a
+  // common unit), so Sort[{3 m, 100 cm, 2 m}] -> {100 cm, 2 m, 3 m}. A tie in
+  // value falls through to the structural comparison below.
+  if let Some(ord) = crate::functions::quantity_ast::try_quantity_compare(a, b)
+    && ord != Ordering::Equal
+  {
+    return ord;
+  }
+
   if let Some(ord) = cross_shape_shared_denom_order(a, b) {
     return ord;
   }
@@ -3741,17 +3916,15 @@ fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   }
 
   // Normalize a top-level BinaryOp head to the canonical FunctionCall name.
-  fn binop_head(op: &crate::syntax::BinaryOperator) -> &'static str {
+  fn binop_head(op: &BinaryOperator) -> &'static str {
     match op {
-      crate::syntax::BinaryOperator::Plus
-      | crate::syntax::BinaryOperator::Minus => "Plus",
-      crate::syntax::BinaryOperator::Times
-      | crate::syntax::BinaryOperator::Divide => "Times",
-      crate::syntax::BinaryOperator::Power => "Power",
-      crate::syntax::BinaryOperator::And => "And",
-      crate::syntax::BinaryOperator::Or => "Or",
-      crate::syntax::BinaryOperator::StringJoin => "StringJoin",
-      crate::syntax::BinaryOperator::Alternatives => "Alternatives",
+      BinaryOperator::Plus | BinaryOperator::Minus => "Plus",
+      BinaryOperator::Times | BinaryOperator::Divide => "Times",
+      BinaryOperator::Power => "Power",
+      BinaryOperator::And => "And",
+      BinaryOperator::Or => "Or",
+      BinaryOperator::StringJoin => "StringJoin",
+      BinaryOperator::Alternatives => "Alternatives",
     }
   }
 
@@ -4030,6 +4203,23 @@ fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
                       }
                       (true, true) => {
                         if na_f.len() == 1 && nb_f.len() == 1 {
+                          // Two monomial numerators (no sum factor) follow
+                          // the leading-monomial-over-common-denominator
+                          // rule (ascending exponent when the shapes don't
+                          // fit it): x/(1+x) + x^2/(1+x)^2 reorders to
+                          // x^2/(1+x)^2 + x/(1+x). Only sum numerators
+                          // compare as polynomials ((2+x)/(3+x) stays
+                          // before (5+x)/(3+x)^2).
+                          if !cmp_is_sum_base(na_f[0])
+                            && !cmp_is_sum_base(nb_f[0])
+                          {
+                            if let Some(ord) = same_var_sum_base_order(
+                              na_f[0], ea, nb_f[0], eb, base_a,
+                            ) {
+                              return ord;
+                            }
+                            return ea.cmp(&eb);
+                          }
                           let cmp = compare_expr_canonical(na_f[0], nb_f[0]);
                           if cmp != Ordering::Equal {
                             return cmp;
@@ -4098,61 +4288,59 @@ fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
     ) => {
       // Normalize Minus→Plus and Divide→Times for comparison,
       // matching Wolfram's canonical form.
-      let (norm_op_a, norm_ra) =
-        if *op_a == crate::syntax::BinaryOperator::Minus {
-          (
-            crate::syntax::BinaryOperator::Plus,
-            Expr::UnaryOp {
-              op: crate::syntax::UnaryOperator::Minus,
-              operand: ra.clone(),
-            },
-          )
-        } else if *op_a == crate::syntax::BinaryOperator::Divide {
-          (
-            crate::syntax::BinaryOperator::Times,
-            Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Power,
-              left: ra.clone(),
-              right: Box::new(Expr::Integer(-1)),
-            },
-          )
-        } else {
-          (*op_a, *ra.clone())
-        };
-      let (norm_op_b, norm_rb) =
-        if *op_b == crate::syntax::BinaryOperator::Minus {
-          (
-            crate::syntax::BinaryOperator::Plus,
-            Expr::UnaryOp {
-              op: crate::syntax::UnaryOperator::Minus,
-              operand: rb.clone(),
-            },
-          )
-        } else if *op_b == crate::syntax::BinaryOperator::Divide {
-          (
-            crate::syntax::BinaryOperator::Times,
-            Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Power,
-              left: rb.clone(),
-              right: Box::new(Expr::Integer(-1)),
-            },
-          )
-        } else {
-          (*op_b, *rb.clone())
-        };
+      let (norm_op_a, norm_ra) = if *op_a == BinaryOperator::Minus {
+        (
+          BinaryOperator::Plus,
+          Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            operand: ra.clone(),
+          },
+        )
+      } else if *op_a == BinaryOperator::Divide {
+        (
+          BinaryOperator::Times,
+          Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: ra.clone(),
+            right: Box::new(Expr::Integer(-1)),
+          },
+        )
+      } else {
+        (*op_a, *ra.clone())
+      };
+      let (norm_op_b, norm_rb) = if *op_b == BinaryOperator::Minus {
+        (
+          BinaryOperator::Plus,
+          Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            operand: rb.clone(),
+          },
+        )
+      } else if *op_b == BinaryOperator::Divide {
+        (
+          BinaryOperator::Times,
+          Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: rb.clone(),
+            right: Box::new(Expr::Integer(-1)),
+          },
+        )
+      } else {
+        (*op_b, *rb.clone())
+      };
       // Compare by canonical operator name (alphabetical) rather than
       // enum discriminant, so Power sorts before Times, matching Wolfram.
-      let op_name = |op: &crate::syntax::BinaryOperator| -> &str {
+      let op_name = |op: &BinaryOperator| -> &str {
         match op {
-          crate::syntax::BinaryOperator::Plus => "Plus",
-          crate::syntax::BinaryOperator::Minus => "Plus",
-          crate::syntax::BinaryOperator::Times => "Times",
-          crate::syntax::BinaryOperator::Divide => "Times",
-          crate::syntax::BinaryOperator::Power => "Power",
-          crate::syntax::BinaryOperator::And => "And",
-          crate::syntax::BinaryOperator::Or => "Or",
-          crate::syntax::BinaryOperator::StringJoin => "StringJoin",
-          crate::syntax::BinaryOperator::Alternatives => "Alternatives",
+          BinaryOperator::Plus => "Plus",
+          BinaryOperator::Minus => "Plus",
+          BinaryOperator::Times => "Times",
+          BinaryOperator::Divide => "Times",
+          BinaryOperator::Power => "Power",
+          BinaryOperator::And => "And",
+          BinaryOperator::Or => "Or",
+          BinaryOperator::StringJoin => "StringJoin",
+          BinaryOperator::Alternatives => "Alternatives",
         }
       };
       let cmp = op_name(&norm_op_a).cmp(op_name(&norm_op_b));
@@ -4214,8 +4402,8 @@ fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
         ta.cmp(&tb)
       } else {
         // Fall back to string comparison
-        let sa = crate::syntax::expr_to_string(a);
-        let sb = crate::syntax::expr_to_string(b);
+        let sa = expr_to_string(a);
+        let sb = expr_to_string(b);
         sa.cmp(&sb)
       }
     }
@@ -4236,7 +4424,7 @@ fn sum_term_list(e: &Expr) -> Option<Vec<Expr>> {
         }
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left,
         right,
       } => {
@@ -4244,13 +4432,13 @@ fn sum_term_list(e: &Expr) -> Option<Vec<Expr>> {
         collect(right, out);
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Minus,
+        op: BinaryOperator::Minus,
         left,
         right,
       } => {
         collect(left, out);
         out.push(Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand: right.clone(),
         });
       }
@@ -4264,8 +4452,7 @@ fn sum_term_list(e: &Expr) -> Option<Vec<Expr>> {
       Some(out)
     }
     Expr::BinaryOp {
-      op:
-        crate::syntax::BinaryOperator::Plus | crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Plus | BinaryOperator::Minus,
       ..
     } => {
       let mut out = Vec::new();
@@ -4280,7 +4467,7 @@ fn sum_term_list(e: &Expr) -> Option<Vec<Expr>> {
 fn extract_power_base_exp(e: &Expr) -> Option<(Expr, Expr)> {
   match e {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => Some(((**left).clone(), (**right).clone())),
@@ -4301,14 +4488,14 @@ fn exprs_equal_canonically(a: &Expr, b: &Expr) -> bool {
 fn is_negated_form(e: &Expr) -> bool {
   match e {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       ..
     } => true,
     Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
       matches!(&args[0], Expr::Integer(n) if *n < 0)
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       ..
     } => matches!(left.as_ref(), Expr::Integer(n) if *n < 0),
@@ -4320,7 +4507,7 @@ fn is_negated_form(e: &Expr) -> bool {
 fn strip_negation(e: &Expr) -> Expr {
   match e {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => *operand.clone(),
     Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
@@ -4341,7 +4528,7 @@ fn strip_negation(e: &Expr) -> Expr {
       }
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -4351,7 +4538,7 @@ fn strip_negation(e: &Expr) -> Expr {
           *right.clone()
         } else {
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(Expr::Integer(pos_n)),
             right: right.clone(),
           }
@@ -4372,17 +4559,17 @@ pub fn term_priority(e: &Expr) -> i32 {
   match e {
     Expr::Identifier(_) => 0,
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       ..
     } => term_priority(left),
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left,
       ..
     } => term_priority(left),
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => term_priority(left).max(term_priority(right)),
@@ -4405,7 +4592,7 @@ pub fn term_priority(e: &Expr) -> i32 {
 
 /// Sub-priority for Times factor ordering: identifiers before compound expressions.
 /// This ensures simple symbols sort before sums/products, matching Wolfram behavior.
-pub fn times_factor_subpriority(e: &Expr) -> i32 {
+fn times_factor_subpriority(e: &Expr) -> i32 {
   match e {
     // Arbitrary-precision numerics survive in `symbolic_args` rather
     // than being absorbed into the integer coefficient, so they pass
@@ -4417,7 +4604,7 @@ pub fn times_factor_subpriority(e: &Expr) -> i32 {
     Expr::Identifier(name) if name == "I" => -2,
     Expr::Identifier(_) | Expr::Constant(_) => 0,
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       ..
     } => {
@@ -4429,8 +4616,7 @@ pub fn times_factor_subpriority(e: &Expr) -> i32 {
       if base_sp == 1 { 0 } else { base_sp }
     }
     Expr::BinaryOp {
-      op:
-        crate::syntax::BinaryOperator::Plus | crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Plus | BinaryOperator::Minus,
       ..
     } => 1,
     Expr::FunctionCall { name, args } => match name.as_str() {
@@ -4498,7 +4684,7 @@ pub fn times_factor_subpriority(e: &Expr) -> i32 {
 fn times_term_base_exp(e: &Expr) -> (Expr, Option<f64>) {
   match e {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => times_term_base_exp(operand),
     Expr::FunctionCall { name, args }
@@ -4507,7 +4693,7 @@ fn times_term_base_exp(e: &Expr) -> (Expr, Option<f64>) {
       times_term_base_exp(args.last().unwrap())
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       right,
       ..
     } => times_term_base_exp(right),
@@ -4565,8 +4751,8 @@ fn order_factor_vs_additive(
     && matches!(hb, Expr::Identifier(_) | Expr::Constant(_))
   {
     crate::functions::list_helpers_ast::wolfram_string_order(
-      &crate::syntax::expr_to_string(&fb),
-      &crate::syntax::expr_to_string(&hb),
+      &expr_to_string(&fb),
+      &expr_to_string(&hb),
     )
   } else {
     crate::functions::list_helpers_ast::compare_exprs(&fb, &hb)
@@ -4602,7 +4788,7 @@ fn order_factor_vs_additive(
     top,
     Expr::UnaryOp { .. }
       | Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         ..
       }
   ) && !matches!(top, Expr::FunctionCall { name, .. } if name == "Times");
@@ -4637,7 +4823,7 @@ pub fn order_monomial_vs_sum(
         }
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left,
         right,
       } => {
@@ -4651,7 +4837,7 @@ pub fn order_monomial_vs_sum(
     || matches!(
       sum,
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         ..
       }
     );
@@ -4844,8 +5030,8 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
         // Equal sort keys: tie-break with full base string comparison
         // e.g. Plus[-1, x] vs Plus[1, x] both have sort key "x"
         // but "-1 + x" < "1 + x" lexicographically
-        let full_a = crate::syntax::expr_to_string(&aa[0]);
-        let full_b = crate::syntax::expr_to_string(&ab[0]);
+        let full_a = expr_to_string(&aa[0]);
+        let full_b = expr_to_string(&ab[0]);
         let full_ord = crate::functions::list_helpers_ast::wolfram_string_order(&full_a, &full_b);
         if full_ord > 0 {
           return std::cmp::Ordering::Less;
@@ -4904,7 +5090,7 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
     // to match Wolfram's Times ordering. This handles both same-variant
     // (e.g. both BinaryOp::Power) and cross-variant (BinaryOp vs FunctionCall) cases.
     let is_power_like = |e: &Expr| -> bool {
-      matches!(e, Expr::BinaryOp { op: crate::syntax::BinaryOperator::Power, .. })
+      matches!(e, Expr::BinaryOp { op: BinaryOperator::Power, .. })
         || matches!(e, Expr::FunctionCall { name, args } if (name == "Power" && args.len() == 2))
         || is_sqrt(e).is_some()
     };
@@ -4952,8 +5138,8 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
           if na == "Plus" && nb == "Plus" && aa.len() == ab.len()
       ) || matches!(
         (&base_a, &base_b),
-        (Expr::BinaryOp { op: crate::syntax::BinaryOperator::Plus, .. },
-         Expr::BinaryOp { op: crate::syntax::BinaryOperator::Plus, .. })
+        (Expr::BinaryOp { op: BinaryOperator::Plus, .. },
+         Expr::BinaryOp { op: BinaryOperator::Plus, .. })
       );
       if same_fn_base || same_arity_plus_base {
         let base_cmp = compare_expr_canonical(&base_a, &base_b);
@@ -4983,8 +5169,8 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
         matches!(
           e,
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Plus
-              | crate::syntax::BinaryOperator::Minus,
+            op: BinaryOperator::Plus
+              | BinaryOperator::Minus,
             ..
           }
         ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
@@ -5006,8 +5192,8 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
         return std::cmp::Ordering::Less; // additive base first
       }
       // Fall back to string length then alphabetical
-      let as_str = crate::syntax::expr_to_string(a);
-      let bs_str = crate::syntax::expr_to_string(b);
+      let as_str = expr_to_string(a);
+      let bs_str = expr_to_string(b);
       let len_cmp = as_str.len().cmp(&bs_str.len());
       if len_cmp != std::cmp::Ordering::Equal {
         return len_cmp;
@@ -5035,7 +5221,7 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
         std::cmp::Ordering::Greater
       } else {
         // Equal sort keys: fall back to full string comparison
-        crate::syntax::expr_to_string(a).cmp(&crate::syntax::expr_to_string(b))
+        expr_to_string(a).cmp(&expr_to_string(b))
       }
     }
   });
@@ -5046,7 +5232,7 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
 fn power_const_base(e: &Expr) -> Option<String> {
   let base = match e {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       ..
     } => left.as_ref(),
@@ -5057,16 +5243,14 @@ fn power_const_base(e: &Expr) -> Option<String> {
   };
   match base {
     Expr::Constant(c) => Some(c.clone()),
-    Expr::Integer(_) | Expr::Real(_) => {
-      Some(crate::syntax::expr_to_string(base))
-    }
+    Expr::Integer(_) | Expr::Real(_) => Some(expr_to_string(base)),
     _ => None,
   }
 }
 
 /// Check if an additive expression contains a given identifier with a negative coefficient.
 /// For example, `(x - y)` contains `y` negated, but `(x + y)` does not.
-pub fn additive_contains_negated(additive: &Expr, ident: &Expr) -> bool {
+fn additive_contains_negated(additive: &Expr, ident: &Expr) -> bool {
   let ident_name = match ident {
     Expr::Identifier(name) => name.as_str(),
     Expr::Constant(name) => name.as_str(),
@@ -5074,7 +5258,7 @@ pub fn additive_contains_negated(additive: &Expr, ident: &Expr) -> bool {
   };
   match additive {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       right,
       ..
     } => {
@@ -5082,7 +5266,7 @@ pub fn additive_contains_negated(additive: &Expr, ident: &Expr) -> bool {
       matches!(right.as_ref(), Expr::Identifier(name) if name == ident_name)
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left,
       right,
     } => {
@@ -5101,13 +5285,13 @@ pub fn additive_contains_negated(additive: &Expr, ident: &Expr) -> bool {
 fn has_negated_ident(expr: &Expr, ident_name: &str) -> bool {
   match expr {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       matches!(operand.as_ref(), Expr::Identifier(name) if name == ident_name)
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -5172,7 +5356,7 @@ pub fn additive_is_neg_const_plus_ident(additive: &Expr, ident: &Expr) -> bool {
 
   // Check for BinaryOp Plus with negative number and same variable
   if let Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Plus,
+    op: BinaryOperator::Plus,
     left,
     right,
   } = additive
@@ -5199,14 +5383,14 @@ fn multiply_exponents(a: &Expr, b: &Expr) -> Expr {
         make_rational(n * m, *d)
       } else {
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(a.clone()),
           right: Box::new(b.clone()),
         }
       }
     }
     _ => Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left: Box::new(a.clone()),
       right: Box::new(b.clone()),
     },
@@ -5230,12 +5414,12 @@ fn is_numeric_like(expr: &Expr) -> bool {
       args.iter().all(is_numeric_like)
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => is_numeric_like(left) && is_numeric_like(right),
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => is_numeric_like(left) && is_numeric_like(right),
@@ -5245,10 +5429,10 @@ fn is_numeric_like(expr: &Expr) -> bool {
 
 /// x → (x, 1), x^n → (x, n), Sqrt[x] → (x, 1/2)
 /// Power[Sqrt[x], n] → (x, n/2), Power[x^a, b] → (x, a*b)
-pub fn extract_base_exponent(expr: &Expr) -> (Expr, Expr) {
+fn extract_base_exponent(expr: &Expr) -> (Expr, Expr) {
   match expr {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => {
@@ -5374,7 +5558,7 @@ fn combine_reciprocal_trig(
       continue;
     };
     let signed = if is_recip { negate_exp(&exp) } else { exp };
-    let key = format!("{}|{}", primary, crate::syntax::expr_to_string(farg));
+    let key = format!("{}|{}", primary, expr_to_string(farg));
     if let Some(gi) = groups.iter().position(|g| g.key == key) {
       groups[gi].count += 1;
       groups[gi].exps.push(signed);
@@ -5449,9 +5633,7 @@ fn combine_reciprocal_trig(
 }
 
 /// Combine like bases in a list of symbolic factors: x^a * x^b → x^(a+b)
-pub fn combine_like_bases(
-  args: Vec<Expr>,
-) -> Result<Vec<Expr>, InterpreterError> {
+fn combine_like_bases(args: Vec<Expr>) -> Result<Vec<Expr>, InterpreterError> {
   if args.len() <= 1 {
     return Ok(args);
   }
@@ -5471,11 +5653,11 @@ pub fn combine_like_bases(
       Expr::Identifier(_) | Expr::Constant(_) => true,
       Expr::FunctionCall { .. } => true,
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         ..
       }
       | Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Minus,
+        op: BinaryOperator::Minus,
         ..
       } => true,
       _ => false,
@@ -5484,7 +5666,7 @@ pub fn combine_like_bases(
       non_combinable.push(arg.clone());
       continue;
     }
-    let base_key = crate::syntax::expr_to_string(&base);
+    let base_key = expr_to_string(&base);
     if let Some(group) = groups.iter_mut().find(|(k, _, _)| *k == base_key) {
       group.2.push(exp);
     } else {
@@ -5528,9 +5710,40 @@ pub fn combine_like_bases(
       continue;
     }
     let (base_i, exp_i) = extract_base_exponent(&result[i]);
+    let is_negative_exp = matches!(
+      &exp_i,
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2
+          && matches!(&args[0], Expr::Integer(n) if *n < 0)
+    );
+    // Numeric-like base products of identifier constants (Pi as an
+    // Identifier rather than Constant). wolframscript merges these when
+    // they sit in a DENOMINATOR (1/(Sqrt[Pi] Sqrt[4 Pi]) → 1/(2 Pi)),
+    // but numerator radicals prefer the coefficient-folding route
+    // (Sqrt[2] Sqrt[Pi]/2 stays for Sqrt[Pi/2]).
+    fn numeric_like_with_idents(e: &Expr) -> bool {
+      match e {
+        Expr::Identifier(name) => matches!(
+          name.as_str(),
+          "Pi"
+            | "E"
+            | "EulerGamma"
+            | "GoldenRatio"
+            | "Catalan"
+            | "Degree"
+            | "Glaisher"
+            | "Khinchin"
+        ),
+        Expr::FunctionCall { name, args } if name == "Times" => {
+          args.iter().all(numeric_like_with_idents)
+        }
+        other => is_numeric_like(other),
+      }
+    }
     // Only combine bases that are numeric-like (integers, constants, or products thereof)
     // This avoids combining purely symbolic expressions like Sqrt[x]*Sqrt[y]
-    let is_combinable_base = is_numeric_like(&base_i);
+    let is_combinable_base = is_numeric_like(&base_i)
+      || (is_negative_exp && numeric_like_with_idents(&base_i));
     let is_rational_exp = matches!(
       &exp_i,
       Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2
@@ -5539,16 +5752,16 @@ pub fn combine_like_bases(
       combined.push(result[i].clone());
       continue;
     }
-    let exp_key = crate::syntax::expr_to_string(&exp_i);
+    let exp_key = expr_to_string(&exp_i);
     let mut bases_to_multiply = vec![base_i];
     for j in (i + 1)..result.len() {
       if used[j] {
         continue;
       }
       let (base_j, exp_j) = extract_base_exponent(&result[j]);
-      if is_numeric_like(&base_j)
-        && crate::syntax::expr_to_string(&exp_j) == exp_key
-      {
+      let combinable_j = is_numeric_like(&base_j)
+        || (is_negative_exp && numeric_like_with_idents(&base_j));
+      if combinable_j && expr_to_string(&exp_j) == exp_key {
         bases_to_multiply.push(base_j);
         used[j] = true;
       }
@@ -5557,7 +5770,117 @@ pub fn combine_like_bases(
       combined.push(result[i].clone());
     } else {
       let product = times_ast(&bases_to_multiply)?;
-      combined.push(power_two(&product, &exp_i)?);
+      // A merged radicand that is a perfect square (integer square times
+      // even powers of named constants, e.g. 4 Pi^2) extracts fully:
+      // 1/(Sqrt[Pi] Sqrt[4 Pi]) → 1/Sqrt[4 Pi^2] → 1/(2 Pi).
+      let extracted = (|| -> Option<Expr> {
+        let half = match &exp_i {
+          Expr::FunctionCall { name, args }
+            if name == "Rational" && args.len() == 2 =>
+          {
+            match (&args[0], &args[1]) {
+              (Expr::Integer(n), Expr::Integer(2)) if n.abs() == 1 => *n,
+              _ => return None,
+            }
+          }
+          _ => return None,
+        };
+        let mut int_part: i128 = 1;
+        let mut const_pows: Vec<(String, i128)> = Vec::new();
+        let mut stack = vec![product.clone()];
+        while let Some(f) = stack.pop() {
+          match &f {
+            Expr::Integer(n) if *n > 0 => {
+              int_part = int_part.checked_mul(*n)?;
+            }
+            Expr::Identifier(name) | Expr::Constant(name) => {
+              match const_pows.iter_mut().find(|(n, _)| n == name) {
+                Some((_, k)) => *k += 1,
+                None => const_pows.push((name.clone(), 1)),
+              }
+            }
+            Expr::FunctionCall { name, args } if name == "Times" => {
+              stack.extend(args.iter().cloned());
+            }
+            Expr::FunctionCall { name, args }
+              if name == "Power"
+                && args.len() == 2
+                && matches!(&args[1], Expr::Integer(k) if *k > 0) =>
+            {
+              let Expr::Integer(k) = args[1] else {
+                return None;
+              };
+              match &args[0] {
+                Expr::Identifier(name) | Expr::Constant(name) => {
+                  match const_pows.iter_mut().find(|(n, _)| n == name) {
+                    Some((_, kk)) => *kk += k,
+                    None => const_pows.push((name.clone(), k)),
+                  }
+                }
+                _ => return None,
+              }
+            }
+            Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left,
+              right,
+            } => {
+              stack.push(left.as_ref().clone());
+              stack.push(right.as_ref().clone());
+            }
+            Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left,
+              right,
+            } if matches!(right.as_ref(), Expr::Integer(k) if *k > 0) => {
+              let Expr::Integer(k) = right.as_ref() else {
+                return None;
+              };
+              match left.as_ref() {
+                Expr::Identifier(name) | Expr::Constant(name) => {
+                  match const_pows.iter_mut().find(|(n, _)| n == name) {
+                    Some((_, kk)) => *kk += k,
+                    None => const_pows.push((name.clone(), *k)),
+                  }
+                }
+                _ => return None,
+              }
+            }
+            _ => return None,
+          }
+        }
+        let root = (int_part as f64).sqrt().round() as i128;
+        if root * root != int_part || const_pows.iter().any(|(_, k)| k % 2 != 0)
+        {
+          return None;
+        }
+        let mut factors: Vec<Expr> = Vec::new();
+        if root != 1 {
+          factors.push(Expr::Integer(root));
+        }
+        for (name, k) in const_pows {
+          let base = Expr::Identifier(name);
+          factors.push(if k == 2 {
+            base
+          } else {
+            power_two(&base, &Expr::Integer(k / 2)).ok()?
+          });
+        }
+        let extracted = match factors.len() {
+          0 => Expr::Integer(1),
+          1 => factors.into_iter().next().unwrap(),
+          _ => times_ast(&factors).ok()?,
+        };
+        if half > 0 {
+          Some(extracted)
+        } else {
+          power_two(&extracted, &Expr::Integer(-1)).ok()
+        }
+      })();
+      match extracted {
+        Some(e) => combined.push(e),
+        None => combined.push(power_two(&product, &exp_i)?),
+      }
     }
   }
 
@@ -5598,12 +5921,12 @@ pub fn combine_like_bases(
         args.iter().all(is_pos_numeric)
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left,
         right,
       } => is_pos_numeric(left) && is_pos_numeric(right),
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left,
         ..
       } => is_pos_numeric(left),
@@ -5627,15 +5950,13 @@ pub fn combine_like_bases(
       continue;
     }
     let neg_exp_i = times_ast(&[Expr::Integer(-1), exp_i.clone()])?;
-    let neg_exp_key = crate::syntax::expr_to_string(&neg_exp_i);
+    let neg_exp_key = expr_to_string(&neg_exp_i);
     for j in 0..combined.len() {
       if j == i || consumed[j] {
         continue;
       }
       let (base_j, exp_j) = extract_base_exponent(&combined[j]);
-      if is_pos_numeric(&base_j)
-        && crate::syntax::expr_to_string(&exp_j) == neg_exp_key
-      {
+      if is_pos_numeric(&base_j) && expr_to_string(&exp_j) == neg_exp_key {
         pairs.push((i, j));
         consumed[i] = true;
         consumed[j] = true;
@@ -5734,7 +6055,7 @@ fn try_series_data_times_var_power(
         }
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left,
         right,
       } => {
@@ -5753,7 +6074,7 @@ fn try_series_data_times_var_power(
   let (p, q) = match power {
     e if same_var(e) => (1i128, 1i128),
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } if same_var(left) => match extract_pq(right) {
@@ -5984,7 +6305,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left,
         right,
       } => {
@@ -5992,20 +6313,20 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         flatten_times(right, out);
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left,
         right,
       } => {
         // a/b → a * b^(-1)
         flatten_times(left, out);
         out.push(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           left: right.clone(),
           right: Box::new(Expr::Integer(-1)),
         });
       }
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand,
       } => {
         // -x → (-1) * x
@@ -6114,7 +6435,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let inf_idx = flat_args.iter().position(|a| {
     matches!(a, Expr::Identifier(n) if n == "Infinity")
       || matches!(a, Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand,
         } if matches!(operand.as_ref(), Expr::Identifier(n) if n == "Infinity"))
       || matches!(a, Expr::FunctionCall { name, args } if name == "DirectedInfinity" && args.len() == 1)
@@ -6176,7 +6497,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand,
         } => real_factor_sign(operand).map(|s| -s),
         Expr::FunctionCall { name, args } if name == "Times" => {
@@ -6187,7 +6508,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Some(sign)
         }
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left,
           right,
         } => Some(real_factor_sign(left)? * real_factor_sign(right)?),
@@ -6198,7 +6519,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       match a {
         Expr::Identifier(n) if n == "Infinity" => Some(1),
         Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand,
         } if matches!(operand.as_ref(), Expr::Identifier(n) if n == "Infinity") => {
           Some(-1)
@@ -6232,7 +6553,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           inf
         } else {
           Expr::UnaryOp {
-            op: crate::syntax::UnaryOperator::Minus,
+            op: UnaryOperator::Minus,
             operand: Box::new(inf),
           }
         });
@@ -6304,7 +6625,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           &args[1]
         }
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           left,
           right,
         } if matches!(left.as_ref(), Expr::Identifier(s) if s == "E")
@@ -6338,9 +6659,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if pi == ei || consumed.contains(ei) {
             continue;
           }
-          if crate::syntax::expr_to_string(pz)
-            == crate::syntax::expr_to_string(ez)
-          {
+          if expr_to_string(pz) == expr_to_string(ez) {
             consumed.insert(*pi);
             consumed.insert(*ei);
             replacements.push(pz.clone());
@@ -6591,7 +6910,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // `(10^40)^(-1)`) is otherwise left symbolic and never cancels against a
         // large integer numerator (the BigInteger analogue of the Rational case).
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           left: base,
           right: exp,
         } if matches!(
@@ -6658,7 +6977,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     // Reduce the fraction by gcd and fix the sign onto the numerator.
     {
-      let g = bigint_gcd(&big_numer, &big_denom);
+      let g = gcd_bigint(&big_numer, &big_denom);
       if g != BigInt::from(0) {
         big_numer /= &g;
         big_denom /= &g;
@@ -6797,7 +7116,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Power[Integer(n), Integer(neg)] → absorb into rational coefficient
       // e.g. 2^(-1) → rat_denom *= 2, or 3^(-2) → rat_denom *= 9
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left: base,
         right: exp,
       } if matches!(base.as_ref(), Expr::Integer(n) if *n != 0)
@@ -6827,7 +7146,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // But leave Times[I, Pi/2] unchanged (no explicit rational coefficient).
         if has_rational_coeff_in_args
           && let Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Divide,
+            op: BinaryOperator::Divide,
             left: num_expr,
             right: den_expr,
           } = arg
@@ -6936,10 +7255,10 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if has_imag {
         // 0.0 * I → 0. + 0.*I (Complex form)
         return Ok(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Plus,
+          op: BinaryOperator::Plus,
           left: Box::new(Expr::Real(0.0)),
           right: Box::new(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(Expr::Real(0.0)),
             right: Box::new(Expr::Identifier("I".to_string())),
           }),
@@ -6980,7 +7299,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       let big_numer = BigInt::from(int_product) * BigInt::from(rat_numer);
       let big_denom = BigInt::from(rat_denom);
-      let g = bigint_gcd(&big_numer, &big_denom);
+      let g = gcd_bigint(&big_numer, &big_denom);
       let mut sn = big_numer / &g;
       let mut sd = big_denom / g;
       if sd < BigInt::from(0) {
@@ -7045,7 +7364,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       matches!(&symbolic_args[0], Expr::Identifier(s) if s == "Infinity");
     let is_neg_inf = match &symbolic_args[0] {
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand,
       } => matches!(operand.as_ref(), Expr::Identifier(s) if s == "Infinity"),
       _ => false,
@@ -7059,7 +7378,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(Expr::Identifier("Infinity".to_string()));
       } else {
         return Ok(Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand: Box::new(Expr::Identifier("Infinity".to_string())),
         });
       }
@@ -7122,7 +7441,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Some(ta.iter().cloned().collect())
         }
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left,
           right,
         } if as_int_rational(left).is_some()
@@ -7200,7 +7519,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               symbolic_args[i] = base;
             } else {
               symbolic_args[i] = Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Power,
+                op: BinaryOperator::Power,
                 left: Box::new(base),
                 right: Box::new(new_exp),
               };
@@ -7281,7 +7600,9 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if symbolic_args.len() == 1
     && let Some((cn, cd)) = (match &coeff {
       Expr::Integer(n) => Some((*n, 1i128)),
-      Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
         match (&args[0], &args[1]) {
           (Expr::Integer(n), Expr::Integer(d)) if *d > 0 => Some((*n, *d)),
           _ => None,
@@ -7293,7 +7614,9 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let (base, exp) = extract_base_exponent(&symbolic_args[0]);
     let half = match &exp {
-      Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
         match (&args[0], &args[1]) {
           (Expr::Integer(1), Expr::Integer(2)) => Some(1),
           (Expr::Integer(-1), Expr::Integer(2)) => Some(-1),
@@ -7304,7 +7627,9 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     let base_frac = match &base {
       Expr::Integer(n) if *n > 0 => Some((*n, 1i128)),
-      Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
         match (&args[0], &args[1]) {
           (Expr::Integer(n), Expr::Integer(d)) if *n > 0 && *d > 0 => {
             Some((*n, *d))
@@ -7321,11 +7646,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let merged = cn
         .checked_mul(cn)
         .and_then(|c2| c2.checked_mul(rn))
-        .and_then(|num| {
-          cd.checked_mul(cd)
-            .and_then(|d2| d2.checked_mul(rd))
-            .map(|den| (num, den))
-        });
+        .zip(cd.checked_mul(cd).and_then(|d2| d2.checked_mul(rd)));
       if let Some((mut num, mut den)) = merged {
         let g = gcd(num.abs(), den).max(1);
         num /= g;
@@ -7345,10 +7666,10 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         // Only rewrite when something actually changed; canonical inputs
         // are fixed points and must return through the generic path.
-        let coeff_str = crate::syntax::expr_to_string(&coeff);
-        let new_coeff_str = crate::syntax::expr_to_string(&new_coeff);
-        let factor_str = crate::syntax::expr_to_string(&symbolic_args[0]);
-        let rebuilt_str = crate::syntax::expr_to_string(&rebuilt);
+        let coeff_str = expr_to_string(&coeff);
+        let new_coeff_str = expr_to_string(&new_coeff);
+        let factor_str = expr_to_string(&symbolic_args[0]);
+        let rebuilt_str = expr_to_string(&rebuilt);
         if coeff_str != new_coeff_str || factor_str != rebuilt_str {
           if matches!(&new_coeff, Expr::Integer(1)) {
             return Ok(rebuilt);
@@ -7621,12 +7942,12 @@ fn format_infy_fraction_2d_block(
 }
 
 /// Check if an expression represents an infinite quantity
-pub fn is_infinity_like(expr: &Expr) -> bool {
+fn is_infinity_like(expr: &Expr) -> bool {
   match expr {
     Expr::Identifier(name) => name == "Infinity" || name == "ComplexInfinity",
     Expr::FunctionCall { name, .. } => name == "DirectedInfinity",
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => matches!(operand.as_ref(), Expr::Identifier(n) if n == "Infinity"),
     _ => false,
@@ -7646,11 +7967,7 @@ pub fn is_infinity_like(expr: &Expr) -> bool {
 /// before the box, e.g. `"Power::infy: Infinite expression "`. The numerator
 /// and denominator are centered within a box whose width is the longer of the
 /// two, and the dash run spans that width.
-pub(crate) fn format_infy_fraction_2d(
-  prefix: &str,
-  num: &str,
-  denom: &str,
-) -> String {
+fn format_infy_fraction_2d(prefix: &str, num: &str, denom: &str) -> String {
   let base_lead = prefix.len();
   let width = num.chars().count().max(denom.chars().count());
   let dashes = "-".repeat(width);
@@ -7771,7 +8088,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
       // Negative divisor flips Infinity → -Infinity. Use UnaryOp Minus
       // so the formatter prints `-Infinity` consistently.
       return Ok(Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(a.clone()),
       });
     }
@@ -7810,7 +8127,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
 
   // For BigInteger / BigInteger (or mixed Integer/BigInteger), reduce by GCD
   {
-    use crate::functions::math_ast::number_theory::bigint_gcd;
+    use crate::functions::math_ast::number_theory::gcd_bigint;
     let a_big = expr_to_bigint(a);
     let b_big = expr_to_bigint(b);
     if let (Some(numer), Some(denom)) = (a_big, b_big) {
@@ -7818,7 +8135,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
       if denom.is_zero() {
         return Ok(divide_by_zero_result(a));
       }
-      let g = bigint_gcd(numer.clone(), denom.clone());
+      let g = gcd_bigint(numer.clone(), denom.clone());
       let mut rn = &numer / &g;
       let mut rd = &denom / &g;
       // Normalize sign: put sign in numerator
@@ -7842,7 +8159,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
   {
     // BinaryOp form
     if let Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } = a
@@ -7894,7 +8211,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     && matches!(is_sqrt(b).unwrap(), Expr::Integer(m) if *m > 0)
   {
     let b_inv = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left: Box::new(b.clone()),
       right: Box::new(Expr::Integer(-1)),
     };
@@ -8071,14 +8388,14 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
       // preserved instead of collapsing to a lossy Real (e.g. iterating
       // `#/2 &` past a 2^127 denominator must stay an exact fraction).
       _ => {
-        use crate::functions::math_ast::number_theory::bigint_gcd;
+        use crate::functions::math_ast::number_theory::gcd_bigint;
         use num_traits::Zero;
         let numer = BigInt::from(a_n) * BigInt::from(b_d);
         let denom = BigInt::from(a_d) * BigInt::from(b_n);
         if denom.is_zero() {
           return Ok(divide_by_zero_result(a));
         }
-        let g = bigint_gcd(numer.clone(), denom.clone());
+        let g = gcd_bigint(numer.clone(), denom.clone());
         let mut rn = &numer / &g;
         let mut rd = &denom / &g;
         if rd < BigInt::from(0) {
@@ -8131,7 +8448,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     }
     _ => {
       // x / x → 1 for identical symbolic expressions
-      if crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b) {
+      if expr_to_string(a) == expr_to_string(b) {
         return Ok(Expr::Integer(1));
       }
 
@@ -8203,8 +8520,7 @@ fn flip_unit_negative_rational_product(expr: Expr) -> Expr {
       || matches!(
         e,
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Plus
-            | crate::syntax::BinaryOperator::Minus,
+          op: BinaryOperator::Plus | BinaryOperator::Minus,
           ..
         }
       )
@@ -8243,18 +8559,6 @@ fn flip_unit_negative_rational_product(expr: Expr) -> Expr {
   Expr::FunctionCall {
     name: "Times".to_string(),
     args: vec![make_rational(1, *cd), negated].into(),
-  }
-}
-
-/// Extract numerator and optional denominator from an expression.
-pub fn extract_num_den(e: &Expr) -> (Expr, Option<Expr>) {
-  match e {
-    Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
-      left,
-      right,
-    } => (*left.clone(), Some(*right.clone())),
-    _ => (e.clone(), None),
   }
 }
 
@@ -8415,6 +8719,20 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(base.clone());
   }
 
+  // Arbitrary-precision base (BigFloat) raised to a real power: compute the
+  // value and track precision, instead of leaving `2.`30.^2` unevaluated.
+  if let Some(result) = try_bigfloat_power(base, exp) {
+    return result;
+  }
+  // E raised to an arbitrary-precision exponent: E^N[1,30] = Exp[N[1,30]].
+  if matches!(base, Expr::Constant(c) if c == "E")
+    && matches!(exp, Expr::BigFloat(_, _))
+  {
+    return crate::functions::math_ast::trigonometric::exp_ast(
+      std::slice::from_ref(exp),
+    );
+  }
+
   // SeriesData ^ n (positive integer n): repeated Cauchy product, so e.g.
   // (Series[…])^2 squares the series. A pure O-term (empty coefficients) just
   // scales its order: O[x^(a/d)]^n = O[x^(n*a/d)].
@@ -8489,7 +8807,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       true
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "I") => true,
     _ => false,
@@ -8522,7 +8840,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     let y_expr = if yd == 1 {
       Expr::Integer(yn)
     } else {
-      crate::functions::math_ast::make_rational_pub(yn, yd)
+      crate::functions::math_ast::make_rational(yn, yd)
     };
     let neg_one_pow = Expr::FunctionCall {
       name: "Power".to_string(),
@@ -8570,7 +8888,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     let y_expr = if yd == 1 {
       Expr::Integer(yn)
     } else {
-      crate::functions::math_ast::make_rational_pub(yn, yd)
+      crate::functions::math_ast::make_rational(yn, yd)
     };
     let neg_one_pow = Expr::FunctionCall {
       name: "Power".to_string(),
@@ -8625,12 +8943,12 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
           args.iter().any(term_has_log)
         }
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left,
           right,
         } => term_has_log(left) || term_has_log(right),
         Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand,
         } => term_has_log(operand),
         _ => false,
@@ -8641,7 +8959,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         Some(args.iter().collect())
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left,
         right,
       } => Some(vec![left.as_ref(), right.as_ref()]),
@@ -8706,7 +9024,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         Some(targs.iter().collect())
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left,
         right,
       } => Some(vec![left.as_ref(), right.as_ref()]),
@@ -8794,7 +9112,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     crate::emit_message(&format!(
       "\n{:>40}\nInfinity::indet: Indeterminate expression {}  encountered.",
       "0",
-      crate::syntax::expr_to_string(base)
+      expr_to_string(base)
     ));
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
@@ -8907,7 +9225,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   // `-Sin[t]^2` instead of `Sin[t]^2`.
   if let Expr::Integer(n) = exp
     && let Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } = base
   {
@@ -8930,7 +9248,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         Some(targs.iter().collect())
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left,
         right,
       } => Some(vec![left.as_ref(), right.as_ref()]),
@@ -8972,7 +9290,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         Some(targs.iter().collect())
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left,
         right,
       } => Some(vec![left.as_ref(), right.as_ref()]),
@@ -9041,14 +9359,14 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
                 && is_numeric_like_extended(&args[1])
             }
             Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Times,
+              op: BinaryOperator::Times,
               left,
               right,
             } => {
               is_numeric_like_extended(left) && is_numeric_like_extended(right)
             }
             Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Power,
+              op: BinaryOperator::Power,
               left,
               right,
             } => {
@@ -9056,6 +9374,98 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
             }
             _ => false,
           }
+        }
+        // A fully numeric radicand containing a sum (e.g. 5*(5 + 2*Sqrt[5]))
+        // does not distribute under Sqrt: wolframscript only extracts the
+        // perfect-square part of the numeric factor and keeps the residue
+        // merged inside the radical — Sqrt[12*(1 + Sqrt[2])] gives
+        // 2*Sqrt[3*(1 + Sqrt[2])] and Sqrt[5*(5 + 2*Sqrt[5])] stays put,
+        // while (2*(1 + Sqrt[2]))^(3/2) still distributes fully.
+        fn is_numeric_with_sums(e: &Expr) -> bool {
+          match e {
+            Expr::FunctionCall { name, args }
+              if matches!(name.as_str(), "Plus" | "Sqrt") =>
+            {
+              args.iter().all(is_numeric_with_sums)
+            }
+            Expr::BinaryOp {
+              op: BinaryOperator::Plus | BinaryOperator::Minus,
+              left,
+              right,
+            } => is_numeric_with_sums(left) && is_numeric_with_sums(right),
+            Expr::UnaryOp {
+              op: UnaryOperator::Minus,
+              operand,
+            } => is_numeric_with_sums(operand),
+            _ => is_numeric_like_extended(e),
+          }
+        }
+        fn contains_sum(e: &Expr) -> bool {
+          match e {
+            Expr::FunctionCall { name, args } => {
+              name == "Plus" || args.iter().any(contains_sum)
+            }
+            Expr::BinaryOp {
+              op: BinaryOperator::Plus | BinaryOperator::Minus,
+              ..
+            } => true,
+            Expr::BinaryOp { left, right, .. } => {
+              contains_sum(left) || contains_sum(right)
+            }
+            Expr::UnaryOp { operand, .. } => contains_sum(operand),
+            _ => false,
+          }
+        }
+        let numeric_sum_radicand = matches!(
+          (&rargs[0], &rargs[1]),
+          (Expr::Integer(1), Expr::Integer(2))
+        ) && matches!(&numeric, Expr::Integer(_))
+          && rest.iter().all(is_numeric_with_sums)
+          && rest.iter().any(contains_sum);
+        if numeric_sum_radicand
+          && let Expr::Integer(c) = &numeric
+          && *c <= 1_000_000_000_000
+        {
+          // Largest s with s^2 | c.
+          let mut s: i128 = 1;
+          let mut k: i128 = 2;
+          let mut m = *c;
+          while k * k <= m {
+            while m % (k * k) == 0 {
+              m /= k * k;
+              s *= k;
+            }
+            k += 1;
+          }
+          if s == 1 {
+            // Nothing to extract: keep the radical merged (skip the
+            // distribution below and every later rewrite of this power).
+            return Ok(Expr::FunctionCall {
+              name: "Sqrt".to_string(),
+              args: vec![base.clone()].into(),
+            });
+          }
+          let r = *c / (s * s);
+          let mut radicand_factors: Vec<Expr> = Vec::new();
+          if r != 1 {
+            radicand_factors.push(Expr::Integer(r));
+          }
+          radicand_factors.extend(rest.iter().cloned());
+          let radicand = if radicand_factors.len() == 1 {
+            radicand_factors.into_iter().next().unwrap()
+          } else {
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: radicand_factors.into(),
+            }
+          };
+          return times_ast(&[
+            Expr::Integer(s),
+            Expr::FunctionCall {
+              name: "Sqrt".to_string(),
+              args: vec![radicand].into(),
+            },
+          ]);
         }
         let rest_has_nonnumeric =
           rest.iter().any(|f| !is_numeric_like_extended(f));
@@ -9108,7 +9518,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   if let Expr::Integer(e2) = exp {
     let inner = match base {
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left,
         right,
       } => Some((left.as_ref(), right.as_ref())),
@@ -9157,7 +9567,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   if let Expr::Real(_) = exp {
     let inner = match base {
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left,
         right,
       } => Some((left.as_ref(), right.as_ref())),
@@ -9186,7 +9596,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         (Some(&fargs[0]), Some(&fargs[1]))
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left,
         right,
       } => (Some(left.as_ref()), Some(right.as_ref())),
@@ -9215,7 +9625,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         Some(&targs[1])
       }
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand,
       } => Some(operand.as_ref()),
       _ => None,
@@ -9229,7 +9639,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
           (Some(&pargs[0]), Some(&pargs[1]))
         }
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           left,
           right,
         } => (Some(left.as_ref()), Some(right.as_ref())),
@@ -9270,7 +9680,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     use num_traits::{ToPrimitive, Zero};
 
     // BigInt GCD helper
-    fn bigint_gcd(a: &BigInt, b: &BigInt) -> BigInt {
+    fn gcd_bigint(a: &BigInt, b: &BigInt) -> BigInt {
       let mut a = if *a < BigInt::from(0) {
         -a.clone()
       } else {
@@ -9336,10 +9746,10 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     let k_n = num_traits::pow::pow(k_big, *n as usize);
 
     // Reduce fractions
-    let g_re = bigint_gcd(&result_re, &k_n);
+    let g_re = gcd_bigint(&result_re, &k_n);
     let final_re_n = &result_re / &g_re;
     let final_re_d = &k_n / &g_re;
-    let g_im = bigint_gcd(&result_im, &k_n);
+    let g_im = gcd_bigint(&result_im, &k_n);
     let final_im_n = &result_im / &g_im;
     let final_im_d = &k_n / &g_im;
 
@@ -9367,7 +9777,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         negate_expr(i_expr.clone())
       } else {
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(im_expr),
           right: Box::new(i_expr),
         }
@@ -9376,7 +9786,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         return Ok(imag_term);
       }
       return Ok(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(re_expr),
         right: Box::new(imag_term),
       });
@@ -9437,7 +9847,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         Some(args.iter().collect())
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left,
         right,
       } => Some(vec![left.as_ref(), right.as_ref()]),
@@ -9500,16 +9910,16 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       }
       if real_part == 0.0 {
         return Ok(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(Expr::Real(imag_part)),
           right: Box::new(Expr::Identifier("I".to_string())),
         });
       }
       return Ok(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(Expr::Real(real_part)),
         right: Box::new(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(Expr::Real(imag_part)),
           right: Box::new(Expr::Identifier("I".to_string())),
         }),
@@ -9523,8 +9933,8 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   let exp_is_zero = matches!(exp, Expr::Integer(0))
     || matches!(exp, Expr::Real(f) if *f == 0.0);
   if base_is_zero && exp_is_zero {
-    let base_str = crate::syntax::expr_to_string(base);
-    let exp_str = crate::syntax::expr_to_string(exp);
+    let base_str = expr_to_string(base);
+    let exp_str = expr_to_string(exp);
     // Align exponent above the base in the warning message
     // "Power::indet: Indeterminate expression " is 39 chars
     // Exponent starts at column 39 + len(base), right-align needs + len(exp)
@@ -9547,7 +9957,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     && let Some(e) = expr_to_num(exp)
     && e < 0.0
   {
-    let base_str = crate::syntax::expr_to_string(base);
+    let base_str = expr_to_string(base);
     if e == -1.0 {
       crate::emit_message(&format_infy_fraction_2d(
         "Power::infy: Infinite expression ",
@@ -9555,7 +9965,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         &base_str,
       ));
     } else {
-      let exp_str = crate::syntax::expr_to_string(exp);
+      let exp_str = expr_to_string(exp);
       crate::emit_message(&super::format_power_infy_2d(&base_str, &exp_str));
     }
     return Ok(Expr::Identifier("ComplexInfinity".to_string()));
@@ -9681,7 +10091,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         return divide_ast(&[p_root, q_root]);
       }
       return Ok(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left: Box::new(base.clone()),
         right: Box::new(exp.clone()),
       });
@@ -9748,7 +10158,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       if !matches!(
         &pos_result,
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           ..
         }
       ) && !matches!(&pos_result, Expr::FunctionCall { name, .. } if name == "Power")
@@ -9839,7 +10249,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
           radical_factors.iter().map(|(p, _)| *p).product();
         if combined_base == *b {
           return Ok(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left: Box::new(base.clone()),
             right: Box::new(exp.clone()),
           });
@@ -9849,7 +10259,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
           return Ok(make_sqrt(Expr::Integer(combined_base)));
         }
         return Ok(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           left: Box::new(Expr::Integer(combined_base)),
           right: Box::new(make_rational(rn, rd)),
         });
@@ -9868,7 +10278,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
           rad_parts.push(make_sqrt(Expr::Integer(*prime)));
         } else {
           rad_parts.push(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left: Box::new(Expr::Integer(*prime)),
             right: Box::new(make_rational(reduced_num, reduced_den)),
           });
@@ -9890,7 +10300,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
 
     // Not exact — keep symbolic
     return Ok(Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left: Box::new(base.clone()),
       right: Box::new(exp.clone()),
     });
@@ -10026,7 +10436,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         return Ok(build_complex_float_expr(re, im));
       }
       Ok(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left: Box::new(base.clone()),
         right: Box::new(exp.clone()),
       })
@@ -10143,7 +10553,7 @@ fn side_contributions(c: f64, a: &AroundNum) -> (f64, f64) {
 /// first-order error propagation treating each Around as independent. Returns
 /// None unless at least one argument is an Around and every other argument is a
 /// literal number (a symbolic term leaves the sum unevaluated).
-pub fn try_around_plus(args: &[Expr]) -> Option<Expr> {
+fn try_around_plus(args: &[Expr]) -> Option<Expr> {
   if !args.iter().any(|a| as_around(a).is_some()) {
     return None;
   }
@@ -10176,7 +10586,7 @@ pub fn try_around_plus(args: &[Expr]) -> Option<Expr> {
 /// absolute partials (rather than scaling a relative sum) keeps the float
 /// result aligned with wolframscript, e.g. Around[5,1]*Around[3,1] gives
 /// exactly Sqrt[34].
-pub fn try_around_times(args: &[Expr]) -> Option<Expr> {
+fn try_around_times(args: &[Expr]) -> Option<Expr> {
   if !args.iter().any(|a| as_around(a).is_some()) {
     return None;
   }
@@ -10216,7 +10626,7 @@ pub fn try_around_times(args: &[Expr]) -> Option<Expr> {
 /// Unlike Plus/Times, wolframscript does not swap the asymmetric sides for a
 /// negative derivative here — it scales both sides by the absolute partial and
 /// keeps their `{minus, plus}` order.
-pub fn try_around_power(base: &Expr, exp: &Expr) -> Option<Expr> {
+fn try_around_power(base: &Expr, exp: &Expr) -> Option<Expr> {
   let ar = as_around(base)?;
   let n = around_literal(exp)?;
   let value = ar.value.powf(n);
@@ -10232,6 +10642,9 @@ pub fn try_around_power(base: &Expr, exp: &Expr) -> Option<Expr> {
 /// Around through it. None for functions without a smooth real derivative here.
 fn around_func_and_deriv(name: &str, a: f64) -> Option<(f64, f64)> {
   let v = match name {
+    // |a| with derivative Sign(a); at a == 0 the slope is 0 (Sign[0] == 0), so
+    // the uncertainty collapses: Abs[Around[0, δ]] -> Around[0, 0].
+    "Abs" | "RealAbs" => (a.abs(), if a == 0.0 { 0.0 } else { a.signum() }),
     "Sqrt" => (a.sqrt(), 0.5 / a.sqrt()),
     "Exp" => (a.exp(), a.exp()),
     "Log" => (a.ln(), 1.0 / a),
@@ -10306,7 +10719,7 @@ fn try_extract_i_pi_rational_multiple(expr: &Expr) -> Option<(i128, i128)> {
         }
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left,
         right,
       } => {
@@ -10320,7 +10733,7 @@ fn try_extract_i_pi_rational_multiple(expr: &Expr) -> Option<(i128, i128)> {
     || matches!(
       expr,
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         ..
       }
     );
@@ -10465,7 +10878,7 @@ fn simplify_neg1_rational_power(
     let rq = q / g2;
     let inner = Expr::FunctionCall {
       name: "Power".to_string(),
-      args: vec![Expr::Integer(-1), make_rational_pub(rp, rq)].into(),
+      args: vec![Expr::Integer(-1), make_rational(rp, rq)].into(),
     };
     return Ok(negate_expr(inner));
   }
@@ -10476,12 +10889,12 @@ fn simplify_neg1_rational_power(
   // 0 < p < q: return (-1)^(p/q)
   Ok(Expr::FunctionCall {
     name: "Power".to_string(),
-    args: vec![Expr::Integer(-1), make_rational_pub(p, q)].into(),
+    args: vec![Expr::Integer(-1), make_rational(p, q)].into(),
   })
 }
 
 /// Thread a binary operation over lists
-pub fn thread_binary_over_lists<F>(
+fn thread_binary_over_lists<F>(
   args: &[Expr],
   op: F,
 ) -> Result<Expr, InterpreterError>
@@ -10539,7 +10952,7 @@ pub fn subtract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Recursively flatten all List arguments for Max/Min
-pub fn flatten_lists(args: &[Expr]) -> Vec<&Expr> {
+fn flatten_lists(args: &[Expr]) -> Vec<&Expr> {
   let mut result = Vec::new();
   for arg in args {
     match arg {
@@ -10558,7 +10971,7 @@ pub fn flatten_lists(args: &[Expr]) -> Vec<&Expr> {
 /// Like try_eval_to_f64 but also handles Infinity/-Infinity (for Max/Min)
 pub fn try_eval_to_f64_with_infinity(expr: &Expr) -> Option<f64> {
   // Check by string representation for Infinity forms
-  let s = crate::syntax::expr_to_string(expr);
+  let s = expr_to_string(expr);
   if s == "Infinity" {
     return Some(f64::INFINITY);
   }
@@ -10569,9 +10982,37 @@ pub fn try_eval_to_f64_with_infinity(expr: &Expr) -> Option<f64> {
 }
 
 /// Max[args...] or Max[list] - Maximum value
+/// If any argument is a SparseArray, return the argument list with every
+/// SparseArray replaced by its dense form (so Max/Min compare over the
+/// expanded elements). Returns `None` when no argument is a SparseArray.
+fn densify_sparse_args(args: &[Expr]) -> Option<Vec<Expr>> {
+  if !args.iter().any(
+    |a| matches!(a, Expr::FunctionCall { name, .. } if name == "SparseArray"),
+  ) {
+    return None;
+  }
+  let mut out = Vec::with_capacity(args.len());
+  let mut changed = false;
+  for a in args {
+    match crate::functions::list_helpers_ast::densify_sparse_array(a) {
+      Some(dense) => {
+        out.push(dense);
+        changed = true;
+      }
+      None => out.push(a.clone()),
+    }
+  }
+  changed.then_some(out)
+}
+
 pub fn max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Identifier("-Infinity".to_string()));
+  }
+
+  // Any SparseArray argument is compared over its dense elements.
+  if let Some(dense) = densify_sparse_args(args) {
+    return max_ast(&dense);
   }
 
   // Handle Interval in Max
@@ -10619,7 +11060,7 @@ pub fn max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // (numeric duplicates already collapse into the single best value).
   {
     let mut seen = std::collections::HashSet::new();
-    symbolic.retain(|e| seen.insert(crate::syntax::expr_to_string(e)));
+    symbolic.retain(|e| seen.insert(expr_to_string(e)));
   }
 
   if symbolic.is_empty() {
@@ -10650,6 +11091,11 @@ pub fn max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Identifier("Infinity".to_string()));
+  }
+
+  // Any SparseArray argument is compared over its dense elements.
+  if let Some(dense) = densify_sparse_args(args) {
+    return min_ast(&dense);
   }
 
   // Handle Interval in Min
@@ -10696,7 +11142,7 @@ pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Min is idempotent: Min[a, a] == a. Drop duplicate symbolic arguments.
   {
     let mut seen = std::collections::HashSet::new();
-    symbolic.retain(|e| seen.insert(crate::syntax::expr_to_string(e)));
+    symbolic.retain(|e| seen.insert(expr_to_string(e)));
   }
 
   if symbolic.is_empty() {
@@ -10775,7 +11221,60 @@ fn bigfloat_plus(args: &[Expr]) -> Result<Expr, InterpreterError> {
     p.max(1.0)
   };
 
-  // Format result value with the right number of significant digits
+  // Compute the value itself. When every summand can be evaluated to an
+  // astro-float BigFloat (numeric literals, exact constants), sum in
+  // arbitrary precision so digits past the machine-double limit are correct
+  // (e.g. N[Pi,30] - 3 keeps ~28 accurate digits, not just 16). Otherwise fall
+  // back to the f64 approximation.
+  if args.iter().all(is_bigfloat_evaluable_factor) {
+    use astro_float::{BigFloat, Consts, RoundingMode};
+    let rm = RoundingMode::ToEven;
+    // Use enough bits to represent the least-precise summand's digits with
+    // margin, and at least the result precision.
+    let max_prec = args
+      .iter()
+      .filter_map(|a| {
+        if let Expr::BigFloat(_, p) = a {
+          Some(*p)
+        } else {
+          None
+        }
+      })
+      .fold(0.0f64, f64::max)
+      .max(result_prec);
+    let bits = crate::functions::math_ast::numerical::nominal_bits(
+      max_prec.ceil() as usize,
+    );
+    if let Ok(mut cc) = Consts::new() {
+      let mut sum = BigFloat::from_i32(0, bits);
+      let mut ok = true;
+      for arg in args {
+        match crate::functions::math_ast::numerical::expr_to_bigfloat(
+          arg, bits, rm, &mut cc,
+        ) {
+          Ok(v) => sum = sum.add(&v, bits, rm),
+          Err(_) => {
+            ok = false;
+            break;
+          }
+        }
+      }
+      if ok {
+        let max_fraction_digits =
+          ((bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
+        if let Ok(s) = crate::functions::math_ast::numerical::bigfloat_to_string(
+          &sum,
+          Some(max_fraction_digits),
+          rm,
+          &mut cc,
+        ) {
+          return Ok(Expr::BigFloat(s, result_prec));
+        }
+      }
+    }
+  }
+
+  // Fallback: format the f64 approximation to the result precision.
   let display_prec = (result_prec.round() as usize).max(1);
   let result_str = format_bigfloat_value(sum_val, display_prec);
   Ok(Expr::BigFloat(result_str, result_prec))
@@ -10807,7 +11306,7 @@ fn is_bigfloat_evaluable_factor(e: &Expr) -> bool {
         && bigfloat_int_exponent(&args[1]).is_some()
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => {
@@ -10815,7 +11314,7 @@ fn is_bigfloat_evaluable_factor(e: &Expr) -> bool {
         && bigfloat_int_exponent(right).is_some()
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => is_bigfloat_evaluable_factor(operand),
     _ => false,
@@ -10828,7 +11327,7 @@ fn bigfloat_int_exponent(e: &Expr) -> Option<i128> {
   match e {
     Expr::Integer(n) => Some(*n),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       if let Expr::Integer(n) = operand.as_ref() {
@@ -10848,7 +11347,7 @@ fn factor_precision_contribution(e: &Expr) -> Option<f64> {
   match e {
     Expr::BigFloat(_, p) if *p > 0.0 => Some(*p),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => factor_precision_contribution(operand),
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
@@ -10858,7 +11357,7 @@ fn factor_precision_contribution(e: &Expr) -> Option<f64> {
       Some(p - abs_n.log10())
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => {
@@ -10869,6 +11368,111 @@ fn factor_precision_contribution(e: &Expr) -> Option<f64> {
     }
     _ => None,
   }
+}
+
+/// Numeric value of an exponent expression as f64, for the precision formula
+/// `result_prec = base_prec - log10(|exp|)`. Handles the exact-number shapes a
+/// Power exponent can take (Integer, BigInteger, Rational, Real, BigFloat).
+fn exponent_f64(exp: &Expr) -> Option<f64> {
+  match exp {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::BigInteger(n) => n.to_string().parse::<f64>().ok(),
+    Expr::Real(f) => Some(*f),
+    Expr::BigFloat(s, _) => s.parse::<f64>().ok(),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      let a = exponent_f64(&args[0])?;
+      let b = exponent_f64(&args[1])?;
+      if b == 0.0 { None } else { Some(a / b) }
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => exponent_f64(operand).map(|v| -v),
+    _ => None,
+  }
+}
+
+/// `base^exp` where `base` is a precision-tagged BigFloat and `exp` is a real
+/// number. Computes the value in astro-float and tracks the result precision as
+/// `base_prec - log10(|exp|)` (matching wolframscript: N[2,30]^2 has precision
+/// 30 - log10(2), Sqrt[N[2,30]] has 30 - log10(1/2)). Returns None (deferring to
+/// the symbolic/complex path) when the exponent is not a plain real, or the
+/// base is negative with a non-integer exponent (a complex result).
+pub fn try_bigfloat_power(
+  base: &Expr,
+  exp: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  use astro_float::{Consts, RoundingMode};
+
+  let base_prec = match base {
+    Expr::BigFloat(_, p) if *p > 0.0 => *p,
+    _ => return None,
+  };
+  let exp_val = exponent_f64(exp)?;
+  if exp_val == 0.0 {
+    return Some(Ok(Expr::Integer(1)));
+  }
+  let int_exp = match exp {
+    Expr::Integer(n) => Some(*n),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => match operand.as_ref() {
+      Expr::Integer(n) => Some(-n),
+      _ => None,
+    },
+    _ => None,
+  };
+
+  let rm = RoundingMode::ToEven;
+  let bits = crate::functions::math_ast::numerical::nominal_bits(
+    base_prec.ceil() as usize,
+  );
+  let mut cc = match Consts::new() {
+    Ok(c) => c,
+    Err(e) => {
+      return Some(Err(InterpreterError::EvaluationError(format!("{}", e))));
+    }
+  };
+  let base_bf = match crate::functions::math_ast::numerical::expr_to_bigfloat(
+    base, bits, rm, &mut cc,
+  ) {
+    Ok(b) => b,
+    Err(e) => return Some(Err(e)),
+  };
+
+  let result = if let Some(n) = int_exp {
+    crate::functions::math_ast::numerical::bigfloat_powi(&base_bf, n, bits, rm)
+  } else {
+    // Non-integer exponent on a negative base is complex — defer.
+    if base_bf.is_negative() {
+      return None;
+    }
+    let exp_bf = match crate::functions::math_ast::numerical::expr_to_bigfloat(
+      exp, bits, rm, &mut cc,
+    ) {
+      Ok(e) => e,
+      Err(e) => return Some(Err(e)),
+    };
+    base_bf.pow(&exp_bf, bits, rm, &mut cc)
+  };
+
+  let result_prec = base_prec - exp_val.abs().log10();
+  let max_fraction_digits =
+    ((bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
+  let result_str =
+    match crate::functions::math_ast::numerical::bigfloat_to_string(
+      &result,
+      Some(max_fraction_digits),
+      rm,
+      &mut cc,
+    ) {
+      Ok(s) => s,
+      Err(e) => return Some(Err(e)),
+    };
+  Some(Ok(Expr::BigFloat(result_str, result_prec)))
 }
 
 /// Multiply BigFloat-tagged numbers with precision tracking. Mirrors
@@ -10962,7 +11566,7 @@ fn try_date_object_subtraction(
     // Matches Times[-1, DateObject[...]] or UnaryOp(Minus, DateObject[...])
     match e {
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left,
         right,
       } => {
@@ -10990,7 +11594,7 @@ fn try_date_object_subtraction(
         }
       }
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand,
       } if is_date_object(operand) => Some(operand),
       _ => None,
@@ -11020,6 +11624,140 @@ fn try_date_object_subtraction(
 }
 
 /// Adds one or more calendar-unit `Quantity` time spans to a single
+/// `TimeObject[{h, m, s}, ...] + Quantity[n, unit]` shifts the time of day by
+/// the given duration (Seconds/Minutes/Hours/Days), wrapping around a 24-hour
+/// day. Subtraction arrives as a negated quantity. The result keeps the input's
+/// granularity (from its field count) and carries a `0.` time-zone field, e.g.
+/// `TimeObject[{14, 30, 0}, ...] + Quantity[90, "Minutes"]` ->
+/// `TimeObject[{16, 0, 0}, Instant, 0.]`.
+fn try_time_object_plus_quantity(
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  if args.len() < 2 {
+    return None;
+  }
+  // (total seconds since midnight, number of fields) for a TimeObject.
+  fn time_object_seconds(e: &Expr) -> Option<(f64, usize)> {
+    if let Expr::FunctionCall { name, args } = e
+      && name == "TimeObject"
+      && !args.is_empty()
+      && let Expr::List(items) = &args[0]
+      && (1..=3).contains(&items.len())
+    {
+      let mut comps = Vec::with_capacity(items.len());
+      for it in items.iter() {
+        match it {
+          Expr::Integer(n) => comps.push(*n as f64),
+          Expr::Real(r) => comps.push(*r),
+          _ => return None,
+        }
+      }
+      let total = comps.first().copied().unwrap_or(0.0) * 3600.0
+        + comps.get(1).copied().unwrap_or(0.0) * 60.0
+        + comps.get(2).copied().unwrap_or(0.0);
+      return Some((total, comps.len()));
+    }
+    None
+  }
+  // A time-valued Quantity (possibly negated via Times[-1, ...]) in seconds.
+  fn time_quantity_seconds(e: &Expr) -> Option<f64> {
+    if let Expr::FunctionCall { name, args: ta } = e
+      && name == "Times"
+      && ta.len() == 2
+      && matches!(&ta[0], Expr::Integer(-1))
+    {
+      return time_quantity_seconds(&ta[1]).map(|s| -s);
+    }
+    if let Expr::FunctionCall { name, args: qa } = e
+      && name == "Quantity"
+      && qa.len() == 2
+      && let Expr::String(unit) = &qa[1]
+    {
+      let val = match &qa[0] {
+        Expr::Integer(n) => *n as f64,
+        Expr::Real(r) => *r,
+        _ => return None,
+      };
+      let factor = match unit.as_str() {
+        "Seconds" | "Second" => 1.0,
+        "Minutes" | "Minute" => 60.0,
+        "Hours" | "Hour" => 3600.0,
+        "Days" | "Day" => 86400.0,
+        _ => return None,
+      };
+      return Some(val * factor);
+    }
+    None
+  }
+
+  let mut to_idx = None;
+  for (i, a) in args.iter().enumerate() {
+    if matches!(a, Expr::FunctionCall { name, .. } if name == "TimeObject") {
+      if to_idx.is_some() {
+        return None; // more than one TimeObject
+      }
+      to_idx = Some(i);
+    }
+  }
+  let to_idx = to_idx?;
+  let (base, fields) = time_object_seconds(&args[to_idx])?;
+  let mut delta = 0.0;
+  for (i, a) in args.iter().enumerate() {
+    if i == to_idx {
+      continue;
+    }
+    delta += time_quantity_seconds(a)?; // any non-time summand aborts
+  }
+  let total = (base + delta).rem_euclid(86400.0);
+
+  let field = |v: f64| -> Expr {
+    if v.fract() == 0.0 {
+      Expr::Integer(v as i128)
+    } else {
+      Expr::Real(v)
+    }
+  };
+  let (comps, granularity): (Vec<Expr>, &str) = match fields {
+    1 => (
+      vec![Expr::Integer((total / 3600.0).floor() as i128)],
+      "Hour",
+    ),
+    2 => {
+      let tm = (total / 60.0).floor();
+      let h = (tm / 60.0).floor();
+      (
+        vec![
+          Expr::Integer(h as i128),
+          Expr::Integer((tm - h * 60.0) as i128),
+        ],
+        "Minute",
+      )
+    }
+    _ => {
+      let h = (total / 3600.0).floor();
+      let rem = total - h * 3600.0;
+      let m = (rem / 60.0).floor();
+      (
+        vec![
+          Expr::Integer(h as i128),
+          Expr::Integer(m as i128),
+          field(rem - m * 60.0),
+        ],
+        "Instant",
+      )
+    }
+  };
+  Some(Ok(Expr::FunctionCall {
+    name: "TimeObject".to_string(),
+    args: vec![
+      Expr::List(comps.into()),
+      Expr::String(granularity.to_string()),
+      Expr::Real(0.0),
+    ]
+    .into(),
+  }))
+}
+
 /// `DateObject`: e.g. `DateObject[{2024, 7, 4}] + Quantity[1, "Days"]` shifts
 /// the date to July 5. Subtraction arrives here as a negated quantity
 /// (`Quantity[-n, unit]`). Only the calendar units Days/Weeks/Months/Years are

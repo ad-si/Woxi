@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::{BinaryOperator, ComparisonOp};
 
 pub fn dispatch_polynomial_functions(
   name: &str,
@@ -572,6 +573,9 @@ pub fn dispatch_polynomial_functions(
         crate::functions::polynomial_ast::interpolating_polynomial_ast(args),
       );
     }
+    "NumberFieldDiscriminant" if args.len() == 1 => {
+      return Some(crate::functions::number_field_discriminant_ast(args));
+    }
     "MinimalPolynomial" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::minimal_polynomial_ast(
         args,
@@ -602,7 +606,7 @@ pub fn dispatch_polynomial_functions(
           let mut product = vars[indices[0]].clone();
           for &idx in &indices[1..] {
             product = Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Times,
+              op: BinaryOperator::Times,
               left: Box::new(product),
               right: Box::new(vars[idx].clone()),
             };
@@ -617,7 +621,7 @@ pub fn dispatch_polynomial_functions(
               let mut result = terms[0].clone();
               for term in &terms[1..] {
                 result = Expr::BinaryOp {
-                  op: crate::syntax::BinaryOperator::Plus,
+                  op: BinaryOperator::Plus,
                   left: Box::new(result),
                   right: Box::new(term.clone()),
                 };
@@ -681,13 +685,13 @@ pub fn dispatch_polynomial_functions(
                 Expr::Integer(0) => continue,
                 Expr::Integer(1) => Expr::Identifier(var.clone()),
                 _ => Expr::BinaryOp {
-                  op: crate::syntax::BinaryOperator::Power,
+                  op: BinaryOperator::Power,
                   left: Box::new(Expr::Identifier(var.clone())),
                   right: Box::new(exp.clone()),
                 },
               };
               term = Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Times,
+                op: BinaryOperator::Times,
                 left: Box::new(term),
                 right: Box::new(factor),
               };
@@ -702,7 +706,7 @@ pub fn dispatch_polynomial_functions(
                 term
               } else {
                 Expr::BinaryOp {
-                  op: crate::syntax::BinaryOperator::Plus,
+                  op: BinaryOperator::Plus,
                   left: Box::new(result),
                   right: Box::new(term),
                 }
@@ -772,7 +776,7 @@ fn try_reduce_modulus(expr: &Expr, vars: &Expr, opt: &Expr) -> Option<Expr> {
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && matches!(operators[0], crate::syntax::ComparisonOp::Equal) =>
+      && matches!(operators[0], ComparisonOp::Equal) =>
     {
       (operands[0].clone(), operands[1].clone())
     }
@@ -844,12 +848,12 @@ fn try_reduce_modulus(expr: &Expr, vars: &Expr, opt: &Expr) -> Option<Expr> {
         if k == 1 {
           Expr::Comparison {
             operands: vec![Expr::Identifier(name.clone()), Expr::Integer(*v)],
-            operators: vec![crate::syntax::ComparisonOp::Equal],
+            operators: vec![ComparisonOp::Equal],
           }
         } else {
           Expr::Comparison {
             operands: vec![Expr::Identifier(name.clone()), Expr::Integer(*v)],
-            operators: vec![crate::syntax::ComparisonOp::Equal],
+            operators: vec![ComparisonOp::Equal],
           }
         }
       })
@@ -931,11 +935,11 @@ fn try_constrained_linear_disk(name: &str, args: &[Expr]) -> Option<Expr> {
       && operators.len() == 1
       && matches!(
         operators[0],
-        crate::syntax::ComparisonOp::LessEqual
-          | crate::syntax::ComparisonOp::Less
-          | crate::syntax::ComparisonOp::GreaterEqual
-          | crate::syntax::ComparisonOp::Greater
-          | crate::syntax::ComparisonOp::Equal
+        ComparisonOp::LessEqual
+          | ComparisonOp::Less
+          | ComparisonOp::GreaterEqual
+          | ComparisonOp::Greater
+          | ComparisonOp::Equal
       ) =>
     {
       let c = crate::functions::math_ast::expr_to_f64(&operands[1])?;
@@ -1060,11 +1064,11 @@ fn try_constrained_linear_disk_symbolic(
       && operators.len() == 1
       && matches!(
         operators[0],
-        crate::syntax::ComparisonOp::LessEqual
-          | crate::syntax::ComparisonOp::Less
-          | crate::syntax::ComparisonOp::GreaterEqual
-          | crate::syntax::ComparisonOp::Greater
-          | crate::syntax::ComparisonOp::Equal
+        ComparisonOp::LessEqual
+          | ComparisonOp::Less
+          | ComparisonOp::GreaterEqual
+          | ComparisonOp::Greater
+          | ComparisonOp::Equal
       ) =>
     {
       (operands[0].clone(), operands[1].clone())
@@ -1105,35 +1109,35 @@ fn try_constrained_linear_disk_symbolic(
   };
   let plus = |x: Expr, y: Expr| -> Expr {
     eval(Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left: Box::new(x),
       right: Box::new(y),
     })
   };
   let minus = |x: Expr, y: Expr| -> Expr {
     eval(Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(x),
       right: Box::new(y),
     })
   };
   let times = |x: Expr, y: Expr| -> Expr {
     eval(Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left: Box::new(x),
       right: Box::new(y),
     })
   };
   let div = |x: Expr, y: Expr| -> Expr {
     eval(Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(x),
       right: Box::new(y),
     })
   };
   let neg = |x: Expr| -> Expr {
     eval(Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(Expr::Integer(0)),
       right: Box::new(x),
     })
@@ -1254,7 +1258,7 @@ fn sinusoid_extremum(expr: &Expr, var: &str, maximize: bool) -> Option<Expr> {
         args.iter().collect()
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left,
         right,
       } => vec![left, right],
@@ -1287,6 +1291,6 @@ fn sinusoid_extremum(expr: &Expr, var: &str, maximize: bool) -> Option<Expr> {
   Some(if value.1 == 1 {
     Expr::Integer(value.0)
   } else {
-    crate::functions::math_ast::make_rational_pub(value.0, value.1)
+    crate::functions::math_ast::make_rational(value.0, value.1)
   })
 }

@@ -56,7 +56,7 @@ Log,Returns the natural logarithm of a number,✅,pure,1.0,58
 Line,Represents a line graphics primitive,✅,pure,1.0,59
 Apply,Applies a function to list elements as arguments,✅,pure,1.0,60
 Style,Applies styling to an expression for display,✅,pure,6.0,61
-Solve,Solves an equation or system of equations,✅,pure,1.0,62
+Solve,Solves an equation or system of equations (unknowns may be applied functions like y[x] treated as generalized variables),✅,pure,1.0,62
 Out,Gives the expression on the nth output line in an interactive session,✅,contextual,1.0,63
 Abs,Returns the absolute value of a number,✅,pure,1.0,64
 Red,Named color evaluating to RGBColor[1 0 0],✅,pure,5.1,65
@@ -81,7 +81,7 @@ Element,Test or assert membership of an expression in a mathematical domain,✅,
 Thickness,Sets relative line thickness in graphics,✅,pure,1.0,85
 Evaluate,Forces evaluation of an expression,✅,pure,2.0,86
 Row,Displays elements in a row,✅,pure,6.0,87
-DSolve,Solves ordinary differential equations symbolically,✅,pure,2.0,88
+DSolve,Solves ordinary differential equations symbolically (an equation with no derivative reduces to Solve for the dependent function),✅,pure,2.0,88
 Disk,Represents a filled disk or sector graphics primitive,✅,pure,2.0,89
 Blue,Named color evaluating to RGBColor[0 0 1],✅,pure,5.1,90
 PatternTest,Tests whether a pattern matches using a predicate function (pattern?test),✅,pure,1.0,91
@@ -201,18 +201,18 @@ Reverse,Returns a list with elements in reverse order,✅,pure,1.0,204
 UnsameQ,Tests if expressions are not identical,✅,pure,2.0,205
 Rational,Head type for rational numbers,✅,pure,1.0,206
 Bold,Style directive for bold text,✅,pure,6.0,207
-Normal,Converts a special form to a normal expression,✅,pure,1.0,208
+Normal,Converts a special form to a normal expression optionally restricted to objects of a given head,✅,pure,1.0,208
 Hyperlink,Represents a clickable hyperlink to a URI with an optional display label,✅,pure,6.0,209
 ParametricPlot3D,3D parametric plot,✅,none,2.0,210
 GridLines,Option specifying grid lines in a plot,✅,none,2.0,211
 Method,Option symbol for specifying computational methods,✅,pure,4.0,212
-Reduce,Reduces equations and inequalities to canonical disjunctive form; over the Integers domain a bounded two-sided interval is enumerated as a disjunction of the contained integers and a one-sided bound is tightened to the nearest integer with an Element membership conjunct,✅,pure,1.0,213
+Reduce,Reduces equations and inequalities to canonical disjunctive form; over the Integers domain a bounded two-sided interval is enumerated as a disjunction of the contained integers (filtered by extra constraints such as Mod[x n]==k or x!=v) and a one-sided bound is tightened to the nearest integer with an Element membership conjunct,✅,pure,1.0,213
 Inverse,Computes the inverse of a matrix,✅,pure,1.0,214
 SplineClosed,Option for closing B-spline curves,✅,pure,7.0,215
 SlotSequence,Represents a sequence of arguments in a pure function,✅,pure,1.0,216
 Append,Adds an element to the end of a list,✅,pure,1.0,217
 Position,Finds all positions of a pattern in a list,✅,pure,1.0,218
-Union,Returns sorted union of lists,✅,pure,1.0,219
+Union,Returns sorted union of lists or a key-merge of associations,✅,pure,1.0,219
 While,Evaluates an expression repeatedly while a condition is true,✅,pure,1.0,220
 FrameLabel,Axis labels for framed charts (alias for AxesLabel),✅,pure,2.0,221
 FindRoot,Numerically finds a root of an equation using Newton's method,✅,pure,1.0,222
@@ -294,7 +294,7 @@ ArcTanh,Returns the inverse hyperbolic tangent,✅,pure,1.0,297
 StringExpression,Represents a string pattern formed by concatenating string pattern objects,✅,pure,5.1,298
 Repeated,Pattern that matches one or more repetitions,✅,pure,1.0,299
 ChemicalData,,🚫,,6.0,300
-RandomVariate,Generates pseudorandom variates from a distribution,✅,contextual,8.0,301
+RandomVariate,Generates pseudorandom variates from a distribution as a scalar list or array of given dimensions,✅,contextual,8.0,301
 Cylinder,3D cylinder graphics primitive,✅,none,6.0,302
 Graph,Yields a graph with vertices and edges rendered as SVG,✅,effectful,8.0,303
 Tiny,Tiny size specification,✅,none,6.0,304
@@ -407,7 +407,7 @@ FillingStyle,Option for specifying the style of plot filling,✅,pure,6.0,410
 Control,Represents a standalone interactive control such as a slider or popup menu bound to a variable,✅,pure,7.0,411
 WorkingPrecision,Option for numerical precision,✅,pure,1.0,412
 Hypergeometric2F1,Gauss hypergeometric function 2F1,✅,pure,1.0,413
-Complement,Returns elements in first list but not in others,✅,pure,1.0,414
+Complement,Returns elements in first list or association not in the others,✅,pure,1.0,414
 Dashing,Sets line dashing in graphics,✅,pure,1.0,416
 StreamPlot,Creates a streamline plot of a vector field,✅,pure,7.0,416
 Animate,Animated version of an expression (stays symbolic in script mode),✅,unevaluated,6.0,417
@@ -497,8 +497,8 @@ PlotMarkers,Option for specifying markers on plot points,✅,pure,6.0,500
 Through,Distributes a list of functions over arguments,✅,pure,1.0,501
 HoldAll,Attribute specifying all args are held,✅,pure,1.0,502
 GenomeData,,🚫,,7.0,503
-ArrayFlatten,Flatten a matrix of sub-matrices into a single matrix,✅,pure,6.0,504
-Tr,Computes the trace of a matrix or array (sum of main-diagonal entries),✅,pure,4.0,505
+ArrayFlatten,Flatten a matrix of sub-matrices into a single matrix with an optional block rank r,✅,pure,6.0,504
+Tr,Computes the trace of a matrix or array with an optional combiner function and index level (sum of main-diagonal entries by default),✅,pure,4.0,505
 MeshFunctions,Option for specifying mesh line functions in plots,✅,pure,6.0,506
 Cyan,Named color evaluating to RGBColor[0 1 1],✅,pure,5.1,507
 DateListPlot,Plots data with date-valued x-axis,✅,pure,6.0,508
@@ -546,7 +546,7 @@ Locator,Interactive locator object,✅,none,6.0,549
 AddTo,Adds a value to a variable,✅,stateful,1.0,550
 EllipticTheta,Jacobi theta function,✅,pure,1.0,551
 MatrixPlot,Plots a matrix as a colored grid,✅,pure,6.0,552
-Intersection,Returns sorted intersection of lists,✅,pure,1.0,553
+Intersection,Returns sorted intersection of lists or associations,✅,pure,1.0,553
 Erf,Returns the error function value,✅,pure,1.0,554
 ImageDimensions,Returns the dimensions of an image,✅,pure,7.0,555
 InputField,Input field for interactive interfaces,✅,none,6.0,556
@@ -874,7 +874,7 @@ WikipediaData,,🚫,,10.1,880
 ArrayPad,Pads an array with elements on each side,✅,pure,7.0,881
 Convolve,Symbolic convolution of two expressions over the real line,✅,pure,7.0,882
 AircraftData,,🚫,,10.0,883
-IntegerPartitions,Returns the integer partitions of n,✅,pure,6.0,884
+IntegerPartitions,Returns the integer partitions of n optionally constrained by part count (including Infinity and step forms) and allowed parts,✅,pure,6.0,884
 MinMax,Returns the minimum and maximum of a list an association values or an interval,✅,pure,10.1,885
 MachinePrecision,Machine-precision number (~15.95 digits),✅,pure,5.0,886
 AbsoluteOptions,,🚫,,4.0,888
@@ -895,7 +895,7 @@ Triangle,Geometric primitive representing a triangle,✅,none,10.0,901
 ListContourPlot,Creates a contour plot from a list of values or {x y z} triples,✅,pure,1.0,902
 StringFreeQ,Tests if a string is free of a pattern,✅,pure,5.1,903
 Log2,Returns the base-2 logarithm of a number,✅,pure,7.0,904
-ProductLog,Returns the Lambert W function value,✅,pure,3.0,905
+ProductLog,Lambert W function; principal branch and the real branch k=-1 (two-argument form),✅,pure,3.0,905
 KnotData,,🚫,,6.0,906
 Invisible,Invisible display wrapper (stays symbolic),✅,unevaluated,6.0,907
 StyleData,,🚫,,3.0,908
@@ -1066,7 +1066,7 @@ AtomQ,Tests if expression is an atom (not a compound expression),✅,pure,1.0,10
 VertexTextureCoordinates,,🚫,,8.0,1076
 BarSpacing,,🚫,,7.0,1077
 WeierstrassP,Weierstrass elliptic function,✅,pure,1.0,1078
-StateSpaceModel,,🚫,,8.0,1079
+StateSpaceModel,Symbolic state-space control system object consumed by ObservabilityMatrix/ControllabilityMatrix,✅,unevaluated,8.0,1079
 LCM,Returns the least common multiple of integers and rationals (and Gaussian integers),✅,pure,1.0,1080
 Predict,,🚫,,10.0,1081
 RomanNumeral,Converts an integer to a Roman numeral string,✅,pure,10.2,1082
@@ -1121,7 +1121,7 @@ After,,🚫,,3.0,1130
 IntegerLength,Returns the number of digits in an integer,✅,pure,6.0,1132
 StirlingS2,Returns the Stirling number of the second kind,✅,pure,1.0,1133
 BlockRandom,,🚫,,6.0,1134
-Correlation,Pearson correlation of two lists; of one data matrix gives the correlation matrix of its columns,✅,pure,6.0,1135
+Correlation,Pearson correlation of two lists; of one data matrix gives the correlation matrix of its columns; of a multivariate distribution gives its normalized covariance matrix,✅,pure,6.0,1135
 SwatchLegend,Inert legend description with color swatches consumed by Legended (produced by PeriodicTablePlot property coloring),✅,pure,9.0,1136
 TreeForm,Display an expression as a tree structure,✅,pure,1.0,1138
 UpdateInterval,,🚫,,6.0,1138
@@ -1251,7 +1251,7 @@ BetaRegularized,Regularized incomplete beta function I_z(a b),✅,pure,2.0,1263
 Gather,Groups identical elements together (optional custom equivalence test),✅,pure,7.0,1264
 MapAll,Apply a function to every subexpression,✅,pure,1.0,1265
 HurwitzLerchPhi,Hurwitz-Lerch transcendent sum of z^k over (k+a)^s,✅,pure,7.0,1267
-WienerProcess,,🚫,,9.0,1268
+WienerProcess,Wiener process with Normal time slices,✅,unevaluated,9.0,1268
 FindShortestTour,,🚫,,6.0,1269
 DirectedInfinity,Represents a directed infinity,✅,pure,1.0,1270
 StringCount,Counts occurrences of a pattern in a string,✅,pure,5.1,1271
@@ -1274,7 +1274,7 @@ VertexDegree,Returns the degree of vertices in a graph,✅,1,8.0,1287
 OverTilde,Displays expression with tilde above,✅,1,6.0,1288
 ReliefPlot,,🚫,,6.0,1289
 TableSpacing,,🚫,,2.0,1290
-FindDivisions,,🚫,,7.0,1291
+FindDivisions,Finds nice numbers dividing an interval into about n equal parts,✅,pure,7.0,1291
 FileExistsQ,Tests whether a file or directory exists,✅,2,7.0,1293
 FrontEndToken,,🚫,,3.0,1293
 GeometricMean,Returns the geometric mean of a list or an association's values,✅,pure,6.0,1294
@@ -1314,7 +1314,7 @@ ListStepPlot,Plots data as a step function,✅,pure,10.2,1327
 Larger,Font size directive for making text larger,✅,none,6.0,1328
 AngleBracket,Symbolic representation of angle brackets,✅,,3.0,1329
 GeoPath,Geographic path primitive for GeoGraphics,✅,pure,10.0,1330
-MixtureDistribution,,✅,,8.0,1331
+MixtureDistribution,Mixture of component distributions with given weights; Mean Variance PDF and CDF combine the components,✅,pure,8.0,1331
 RemoveBackground,,🚫,,10.0,1332
 Hash,Computes a hash of a string using MD2/MD5/SHA/SHA256/SHA384/SHA512/CRC32/Adler32,✅,pure,1.0,1333
 DeleteSmallComponents,,🚫,,8.0,1334
@@ -1332,13 +1332,13 @@ ExtentSize,,🚫,,8.0,1345
 CoshIntegral,Hyperbolic cosine integral Chi(z),✅,pure,3.0,1347
 SampleRate,,🚫,,2.0,1347
 LegendLayout,,🚫,,9.0,1348
-CentralMoment,Computes the k-th central moment of a list or distribution,✅,pure,6.0,1349
+CentralMoment,Computes the k-th central moment of a list distribution or (column-wise) matrix,✅,pure,6.0,1349
 FaceGrids,Option for Graphics3D specifying grid lines on bounding box faces,✅,pure,2.0,1351
 GeoDistance,Geodesic distance between two geo positions as a Quantity,✅,pure,7.0,1351
 PolynomialRemainder,Remainder of polynomial division,✅,pure,1.0,1353
 Signature,Sign of the permutation that canonically sorts the parts of any non-atomic expression (0 if any are equal),✅,pure,1.0,1353
 CForm,Format expression as C code,✅,pure,1.0,1354
-Permute,Permute elements of a list,✅,pure,8.0,1355
+Permute,Permute the elements of any expression by a permutation,✅,pure,8.0,1355
 Padding,Option specifying padding scheme for array and image operations,✅,pure,7.0,1357
 UnitVector,Generate a unit vector with a 1 at a specified position,✅,pure,6.0,1357
 DeleteFile,Delete a file from the filesystem,✅,effectful,2.0,1359
@@ -1537,7 +1537,7 @@ UndoTrackedVariables,Variables tracked for undo,✅,pure,10.0,1559
 VectorColorFunction,Color function for vector plots,✅,pure,7.0,1559
 NotebookGet,Get notebook expression,✅,pure,3.0,1562
 StringToStream,Creates an input stream from a string,✅,pure,2.0,1562
-SubsetQ,Tests if one list is a subset of another,✅,pure,10.0,1562
+SubsetQ,Tests if one list or association is a subset of another,✅,pure,10.0,1562
 Visible,Visibility option,✅,pure,3.0,1563
 TruncatedDistribution,Truncated probability distribution,✅,pure,8.0,1564
 NotebookFind,Search in a notebook,,unevaluated,3.0,1565
@@ -1563,7 +1563,7 @@ NetInitialize,Initialize a neural net,,unevaluated,11.0,1584
 BoundaryMeshRegion,Boundary mesh region,,unevaluated,10.0,1586
 Cumulant,Computes the r-th cumulant of a list or distribution,✅,pure,8.0,1586
 BooleanConvert,Convert Boolean expressions,✅,pure,7.0,1588
-GeometricBrownianMotionProcess,Geometric Brownian motion,,unevaluated,9.0,1588
+GeometricBrownianMotionProcess,Geometric Brownian motion process with LogNormal time slices,✅,unevaluated,9.0,1588
 DiscreteUniformDistribution,Discrete uniform distribution over integers,✅,computation,6.0,1593
 MeshCellStyle,Style mesh cells,,unevaluated,10.0,1593
 MovingMap,Apply a function to a sliding window,✅,computation,10.0,1593
@@ -1591,7 +1591,7 @@ ARProcess,Autoregressive process,,unevaluated,9.0,1614
 DiscreteWaveletTransform,Discrete wavelet transform giving a DiscreteWaveletData object,✅,pure,8.0,1614
 SystemDialogInput,System dialog input,,unevaluated,6.0,1614
 Commonest,Returns the most common elements in a list,✅,pure,6.0,1617
-ImagePartition,Partition an image,,unevaluated,7.0,1617
+ImagePartition,Partition an image into an array of subimages,✅,pure,7.0,1617
 RelationGraph,Builds a graph whose edges connect vertex pairs satisfying a binary relation,✅,pure,10.2,1617
 PetersenGraph,Generalized Petersen graph GP(n k) built from outer cycle and inner k-jumps,✅,pure,8.0,1620
 RSolveValue,Solves a recurrence equation and returns the value of the requested expression,✅,pure,10.0,1621
@@ -1636,7 +1636,7 @@ NetModel,Neural net model,,unevaluated,11.1,1660
 RotationAction,Rotation action option,,unevaluated,6.0,1661
 BoundaryDiscretizeGraphics,Boundary discretize graphics,,unevaluated,10.0,1665
 ClearAttributes,Removes attributes from a symbol,✅,stateful,1.0,1665
-DiscreteMarkovProcess,Discrete Markov process,,unevaluated,9.0,1665
+DiscreteMarkovProcess,Discrete-time finite-state Markov process consumed by PDF/StationaryDistribution,✅,unevaluated,9.0,1665
 Ket,Dirac ket notation (stays symbolic),✅,unevaluated,13.3,1665
 TradingChart,Financial trading chart,,unevaluated,8.0,1666
 ArrayQ,Tests if an expression is a full array,✅,pure,5.0,1668
@@ -1653,7 +1653,7 @@ BubbleChart,Creates a bubble chart from data,✅,pure,7.0,1679
 ContentSize,Content size option,,unevaluated,7.0,1679
 HazardFunction,Hazard function PDF/SurvivalFunction of a distribution,✅,pure,8.0,1679
 HornerForm,Converts a polynomial to Horner (nested) form,✅,pure,6.0,1682
-NExpectation,Numerical expectation,,unevaluated,8.0,1682
+NExpectation,Numerical expected value of a function of a random variable computed as N of Expectation,✅,pure,8.0,1682
 WordBoundary,Represents a word boundary in string patterns (like regex \b),✅,pure,5.1,1682
 Mouseover,Mouseover display wrapper (stays symbolic),✅,unevaluated,6.0,1683
 AffineStateSpaceModel,Affine state-space model,,unevaluated,10.0,1687
@@ -1737,7 +1737,7 @@ ExportForm,Export form wrapper,,unevaluated,10.0,1763
 ParallelSubmit,Submit parallel task,,unevaluated,7.0,1764
 Application,Application wrapper,,unevaluated,12.2,1766
 FindFile,Find file,✅,unevaluated,7.0,1766
-DistanceTransform,Distance transform,,unevaluated,7.0,1768
+DistanceTransform,Euclidean distance transform of an image,✅,pure,7.0,1768
 DialogInput,Dialog input,,unevaluated,6.0,1770
 TimelinePlot,Plots dates and date intervals as events on a horizontal timeline,✅,pure,10.1,1770
 PassEventsDown,Pass events down option,,unevaluated,6.0,1771
@@ -1766,7 +1766,7 @@ PaneSelector,Pane selector control (stays symbolic in script mode),✅,unevaluat
 URLExecute,Execute URL request,,unevaluated,10.0,1794
 FileBaseName,Returns the base name of a file (without directory and extension),✅,pure,7.0,1796
 SequencePosition,Finds positions of subsequences matching a pattern in a list (overlapping by default; supports a count limit and the Overlaps option),✅,pure,10.1,1796
-ColorCombine,Combine color channels,,unevaluated,7.0,1800
+ColorCombine,Combine color channels into a multichannel image,✅,pure,7.0,1800
 CoordinatesToolOptions,Coordinates tool options,,unevaluated,7.0,1800
 Highlighted,Display wrapper that draws a colored background behind its argument,✅,pure,10.4,1800
 TextGrid,Displays data in a text grid layout,✅,pure,10.3,1800
@@ -1779,9 +1779,9 @@ RayleighDistribution,Rayleigh distribution,✅,pure,6.0,1806
 SetSharedVariable,Set shared variable,,unevaluated,7.0,1808
 TreeGraph,Tree graph from directed edges with tree layout visualization,✅,pure,8.0,1808
 PadeApproximant,Rational (Pade) approximation from a power series,✅,pure,6.0,1809
-FillingTransform,Morphological filling,,unevaluated,8.0,1810
+FillingTransform,Fill extended minima of an image,✅,pure,8.0,1810
 SamplingPeriod,Sampling period option,,unevaluated,8.0,1811
-Cube,Cube primitive,,unevaluated,12.0,1815
+Cube,Regular hexahedron primitive consumed by Volume/SurfaceArea/RegionMeasure/RegionCentroid,✅,unevaluated,12.0,1815
 FindCycle,Find cycles in a graph or list of edges returning each cycle as a list of edges,✅,pure,10.0,1815
 TimeSeriesForecast,Time series forecast,,unevaluated,9.0,1815
 WordFrequencyData,,🚫,,10.4,1815
@@ -1799,7 +1799,7 @@ RealExponent,Returns the base-b real exponent Log[b Abs[x]] of x as a machine re
 TriangularDistribution,Triangular distribution (piecewise PDF and CDF and moments),✅,pure,6.0,1827
 BinaryWrite,Write binary data,✅,io,5.1,1833
 CheckboxBar,Checkbox bar control (stays symbolic in script mode),✅,unevaluated,6.0,1833
-DuplicateFreeQ,Test if list has no duplicates,✅,computation,10.0,1833
+DuplicateFreeQ,Test if list has no duplicates,✅,pure,10.0,1833
 OutputForm,Converts expression to output form,✅,pure,1.0,1833
 RandomPermutation,Random permutation of n points returned as a Cycles object,✅,contextual,8.0,1833
 TooltipDelay,Tooltip delay option,,unevaluated,7.0,1833
@@ -1839,10 +1839,10 @@ ButtonFunction,Button function option,,unevaluated,3.0,1866
 SystemOptions,System options,,unevaluated,6.0,1867
 FrobeniusSolve,Returns non-negative integer solutions to a Frobenius equation,✅,pure,6.0,1869
 Sunday,Day of the week symbol,✅,unevaluated,9.0,1869
-PrintTemporary,Print temporary expression,,unevaluated,6.0,1870
+PrintTemporary,Print like Print in script mode,✅,io,6.0,1870
 Constants,Option for Simplify specifying which symbols are constants,✅,pure,1.0,1873
 GeneratedParameters,Generated parameters option,,unevaluated,5.0,1873
-ImageValue,Image pixel value,,unevaluated,8.0,1873
+ImageValue,Bilinear pixel value lookup in an image,✅,pure,8.0,1873
 MatrixLog,Computes the matrix logarithm (inverse of MatrixExp),✅,pure,9.0,1875
 PlotRegion,Plot region option,,unevaluated,2.0,1875
 DensityHistogram,Density histogram,,unevaluated,8.0,1877
@@ -1854,7 +1854,7 @@ Notebooks,List open notebooks,,unevaluated,3.0,1883
 ZTransform,Computes the Z transform of sequences c*n^k*a^n and a^n/n! plus Sin/Cos[a*n] and UnitStep[n],✅,pure,4.0,1883
 FeatureTypes,Feature types option,,unevaluated,10.1,1885
 LeastSquares,Least squares solution,✅,pure,6.0,1885
-CovarianceFunction,Sample autocovariance of a numeric time series at a lag; or the autocovariance function of a stochastic process (ARMA(p<=1 q<=1) closed forms),✅,pure,9.0,1887
+CovarianceFunction,Sample autocovariance of data at a lag; or the covariance function of ARMA and the common continuous/counting processes,✅,pure,9.0,1887
 XYZColor,XYZ color specification,,unevaluated,10.0,1887
 GraphHighlightStyle,Graph highlight style,,unevaluated,8.0,1889
 ImageTrim,Trims an image to a specified coordinate region,✅,pure,8.0,1889
@@ -1862,7 +1862,7 @@ BSplineSurface,B-spline surface 3D graphics primitive,✅,unevaluated,7.0,1891
 Setting,Setting wrapper,,unevaluated,6.0,1891
 SingularValueList,Returns the nonzero singular values of a matrix in decreasing order,✅,pure,5.0,1892
 Gudermannian,Returns the Gudermannian function value,✅,pure,7.0,1895
-MorphologicalBinarize,Morphological binarize,,unevaluated,8.0,1895
+MorphologicalBinarize,Hysteresis threshold binarization of an image,✅,pure,8.0,1895
 VertexWeight,Vertex weight option,,unevaluated,8.0,1895
 SingleLetterItalics,Single letter italics option,,unevaluated,3.0,1897
 AbsArg,Returns {Abs[z] and Arg[z]} for a complex number z,✅,pure,10.1,1901
@@ -2022,14 +2022,14 @@ NoncentralStudentTDistribution,Non-central Student t distribution,🚫,,6.0,2057
 Quartics,Option for Solve controlling whether quartic formulas are used,✅,pure,1.0,2057
 MachineNumberQ,Test whether an expression is a machine-precision real number,✅,1,2.0,2059
 TextString,Convert any expression to a human-readable string,✅,1,10.0,2059
-ContainsAny,Test if any elements of the second list appear in the first,✅,none,10.2,2061
+ContainsAny,Test if any elements of the second list appear in the first,✅,pure,10.2,2061
 ImagePerspectiveTransformation,Perspective transform on image,🚫,,8.0,2061
 Atom,Represents an atom in a molecule (chemistry),✅,pure,12.0,2065
 InverseSeries,Computes the reversion (inverse) of a power series,✅,pure,1.0,2065
-RootMeanSquare,Returns the root mean square of a list,✅,pure,6.0,2065
+RootMeanSquare,Returns the root mean square of a list or the column-wise root mean square of a matrix,✅,pure,6.0,2065
 SquareMatrixQ,Test if an expression is a square matrix,✅,none,10.0,2065
 CholeskyDecomposition,Returns the upper-triangular Cholesky factor U of a Hermitian positive-definite matrix such that ConjugateTranspose[U].U equals the input,✅,None,5.0,2067
-IntegerReverse,Reverses the digits of an integer (Listable),✅,pure,10.3,2067
+IntegerReverse,Reverses the digits of an integer in base b optionally over a fixed digit count (Listable),✅,pure,10.3,2067
 ColorDistance,Distance between colors,🚫,,10.0,2071
 Construct,Constructs an expression from a head and arguments,✅,pure,11.3,2071
 ContinuousWaveletTransform,Continuous wavelet transform giving a ContinuousWaveletData object,✅,pure,8.0,2071
@@ -2114,7 +2114,7 @@ CircleMinus,Symbolic circle-minus operator displayed with the Unicode glyph,✅,
 DiscreteLimit,Discrete limit of sequence,✅,pure,11.2,2152
 FixedOrder,Fixed ordering pattern constraint,🚫,,10.1,2157
 GraphDistanceMatrix,Matrix of shortest-path distances between all pairs of graph vertices,✅,1,8.0,2157
-OrnsteinUhlenbeckProcess,OU stochastic process,🚫,,9.0,2157
+OrnsteinUhlenbeckProcess,Ornstein-Uhlenbeck process with Normal time slices,✅,unevaluated,9.0,2157
 PolynomialQuotientRemainder,Quotient and remainder of polynomial division,✅,1,6.0,2157
 SignificanceLevel,Statistical significance level option,🚫,,8.0,2157
 Annuity,Financial annuity (passthrough used by TimeValue),✅,pure,8.0,2162
@@ -2215,7 +2215,7 @@ StateResponse,Control systems,🚫,None,8.0,2254
 FullRegion,Geometric region,🚫,None,10.0,2260
 PairedBarChart,Chart visualization,🚫,None,8.0,2260
 Path,Graph theory path,🚫,None,4.0,2260
-PoissonProcess,Stochastic process,🚫,None,9.0,2260
+PoissonProcess,Poisson counting process with Poisson time slices,✅,unevaluated,9.0,2260
 UnitaryMatrixQ,Tests whether a matrix is unitary,✅,None,10.0,2260
 BarcodeImage,Barcode generation,🚫,None,10.0,2263
 MeshRefinementFunction,Numerical mesh option,🚫,None,10.0,2263
@@ -2242,7 +2242,7 @@ BoundingRegion,Smallest axis-aligned bounding box of a point list (Rectangle in 
 CellDingbat,Notebook UI,🚫,None,3.0,2286
 DistributionParameterAssumptions,Probability distribution,🚫,None,8.0,2286
 WheelGraph,Wheel graph with a hub vertex joined to a cycle of rim vertices,✅,pure,8.0,2286
-ContainsAll,Test if a list contains all elements of another list,✅,1,10.2,2289
+ContainsAll,Test if a list contains all elements of another list,✅,pure,10.2,2289
 HypergeometricDistribution,Hypergeometric distribution (sampling without replacement); supports PDF Mean and Variance,✅,pure,6.0,2289
 SystemsModelLabels,Control systems,🚫,None,8.0,2289
 JoinAcross,Joins lists of associations on a common key,✅,None,10.0,2292
@@ -2302,7 +2302,7 @@ CylindricalDecomposition,algebraic geometry,🚫,None,5.0,2350
 FindMinValue,Finds the value at a local minimum of a function numerically,✅,pure,7.0,2350
 FromContinuedFraction,Converts a continued fraction to a number,✅,pure,4.0,2350
 InverseSurvivalFunction,Inverse survival function giving x where the survival probability equals q,✅,pure,8.0,2350
-WeierstrassInvariants,elliptic function theory,🚫,None,3.0,2350
+WeierstrassInvariants,Invariants {g2 g3} of the Weierstrass elliptic function for a lattice given by its half-periods (numeric via theta constants; exact closed forms for the square and hexagonal CM lattices),✅,pure,3.0,2350
 ZipfDistribution,Zipf distribution (Zeta and HarmonicNumber normalizations),✅,pure,6.0,2350
 GeoBubbleChart,geographic visualization,🚫,None,11.1,2355
 MixedUnit,unit system,🚫,None,10.4,2355
@@ -2313,7 +2313,7 @@ KirchhoffMatrix,Builds the Kirchhoff (Laplacian) matrix of a graph,✅,none,8.0,
 ListPlay,audio playback,🚫,None,2.0,2360
 SmoothHistogram3D,3D visualization,🚫,None,8.0,2360
 SyntaxQ,Test if a string is valid Wolfram Language syntax,✅,1,2.0,2360
-SurfaceArea,geometric computation,🚫,None,12.0,2361
+SurfaceArea,Total boundary area of a 3D solid region,✅,pure,12.0,2361
 CloudPut,cloud storage,🚫,None,10.0,2367
 ExponentialMovingAverage,Computes exponential moving average of a list,✅,None,6.0,2367
 GeoDirection,Initial bearing from one geo position to another,✅,pure,7.0,2367
@@ -2383,7 +2383,7 @@ InverseFunctions,option for inverse computation,🚫,None,2.0,2431
 KolmogorovSmirnovTest,statistical test,🚫,None,8.0,2431
 Arrays,type system,🚫,None,9.0,2435
 ExpandDenominator,Expands the denominator of a rational expression,✅,pure,1.0,2435
-KleinInvariantJ,modular form (complex math),🚫,None,3.0,2435
+KleinInvariantJ,Normalized elliptic modular invariant J(tau) equal to j(tau)/1728 (exact at tau=I; numeric via theta ratio),✅,pure,3.0,2435
 QueueProperties,queueing theory,🚫,None,9.0,2435
 Byte,Symbol for byte type in BinaryRead/BinaryWrite,✅,pure,1.0,2438
 FeatureSpacePlot,ML visualization,🚫,None,11.1,2438
@@ -2435,7 +2435,7 @@ Regularization,,🚫,,7.0,2483
 ColorProfileData,,🚫,,9.0,2487
 DegreeCentrality,Degree centrality of graph vertices,✅,1,8.0,2487
 TransferFunctionPoles,,🚫,,8.0,2487
-WhiteNoiseProcess,,🚫,,10.0,2487
+WhiteNoiseProcess,White noise process sliced as its underlying distribution,✅,unevaluated,10.0,2487
 EulerAngles,Extract Euler angles from rotation matrix,✅,none,10.2,2491
 SemanticImportString,,🚫,,10.0,2491
 SystemsModelStateFeedbackConnect,,🚫,,8.0,2491
@@ -2444,7 +2444,7 @@ ImageType,Returns the data type of an image,✅,pure,7.0,2495
 ResetDirectory,resets the current directory to the previous one set by SetDirectory,✅,io,2.0,2495
 SpanFromBoth,,🚫,,6.0,2495
 AudioData,,🚫,,11.0,2503
-BinomialProcess,,🚫,,9.0,2503
+BinomialProcess,Binomial counting process with Binomial time slices,✅,unevaluated,9.0,2503
 ExponentialGeneratingFunction,Compute the exponential generating function of a sequence,✅,pure,7.0,2503
 GeoIdentify,,🚫,,10.0,2503
 HilbertMatrix,Generate a Hilbert matrix of given size,✅,1,6.0,2503
@@ -2591,7 +2591,7 @@ CantorMesh,Create a 1D or 2D Cantor set mesh at a given level of iteration,✅,p
 Capitalize,Capitalizes letters in a string (first word or AllWords/FirstWord/LongWords),✅,pure,10.1,2650
 GeoCenter,,🚫,,10.0,2650
 HeaderLines,option for header lines in imports,✅,Symbolic,10.0,2650
-IntersectingQ,Test whether two lists share any element,✅,none,10.0,2650
+IntersectingQ,Test whether two lists share any element,✅,pure,10.0,2650
 LatticeReduce,LLL lattice basis reduction,✅,pure,1.0,2650
 Splice,Splice a list into an enclosing list,✅,1,12.1,2650
 StateFeedbackGains,Requires control systems framework (StateSpaceModel),🚫,None,8.0,2650
@@ -2697,7 +2697,7 @@ CellGrouping,,🚫,,3.0,2755
 ImageColorSpace,Returns the color space of an image,✅,pure,8.0,2755
 MarkovProcessProperties,,🚫,,9.0,2755
 SierpinskiMesh,,🚫,,11.1,2755
-SubsetMap,Map a function over a subset of a list (positions given as a list or a span) and recombine,✅,pure,12.0,2755
+SubsetMap,Map a function over a subset of a list at flat/deep/span/Part-style positions and recombine,✅,pure,12.0,2755
 XMLObject,represents an XML object,✅,Symbolic,4.2,2755
 AbsArgPlot,,🚫,,12.0,2762
 BulletGauge,,🚫,,9.0,2762
@@ -2774,7 +2774,7 @@ TransposeLayer,,🚫,,11.1,2828
 ContainsOnly,Tests if a list contains only specified elements,✅,pure,10.2,2837
 CoordinateChartData,,🚫,,9.0,2837
 Dated,Symbolic wrapper associating a value with a date,✅,pure,11.0,2837
-DisjointQ,True if lists share no common elements,✅,1,10.0,2837
+DisjointQ,True if lists share no common elements,✅,pure,10.0,2837
 FormObject,,🚫,,10.0,2837
 ImageCorrespondingPoints,,🚫,,8.0,2837
 PositiveSemidefiniteMatrixQ,Test whether a matrix is positive semidefinite,✅,none,10.0,2837
@@ -2836,7 +2836,7 @@ Insphere,Compute the inscribed sphere of a geometric region,✅,pure,10.2,2894
 LocalObject,,🚫,,10.2,2894
 WeatherForecastData,,🚫,,10.4,2894
 FindGeoLocation,,🚫,,7.0,2900
-MangoldtLambda,Von Mangoldt function,✅,none,7.0,2900
+MangoldtLambda,Von Mangoldt function (Listable),✅,pure,7.0,2900
 NoncentralFRatioDistribution,Noncentral F-ratio distribution with PDF Mean and Variance,✅,pure,6.0,2900
 ProcessEstimator,,🚫,,9.0,2900
 SessionSubmit,,🚫,,11.2,2900
@@ -2854,7 +2854,7 @@ ShortRightArrow,,🚫,,3.0,2911
 ColumnLines,,🚫,,3.0,2914
 DatedUnit,Associates a unit with a specific date for time-aware calculations,✅,pure,10.0,2914
 QuantityQ,Tests if an expression is a quantity,✅,pure,9.0,2914
-ContainsNone,Test if none of the elements of the second list appear in the first,✅,none,10.2,2921
+ContainsNone,Test if none of the elements of the second list appear in the first,✅,pure,10.2,2921
 CrossEntropyLossLayer,,🚫,,11.0,2921
 GaugeStyle,,🚫,,9.0,2921
 QuantityDistribution,Probability distribution with physical units,✅,pure,10.4,2921
@@ -2907,12 +2907,12 @@ RandomPolyhedron,,,,12.0,2971
 TextSearch,,🚫,,10.2,2971
 TextTranslation,,🚫,,11.1,2971
 VertexComponent,Vertices that can reach the given vertices (BFS order),✅,pure,8.0,2971
-CapsuleShape,,,,10.2,2978
+CapsuleShape,Filled capsule region between two points consumed by Volume/SurfaceArea/RegionCentroid,✅,pure,10.2,2978
 FindIndependentVertexSet,Maximum independent vertex set (lexicographic by vertex order),✅,pure,8.0,2978
 HighpassFilter,Apply a highpass filter to data,✅,pure,9.0,2978
 KeyMemberQ,True if key exists in association,✅,1,10.3,2978
 KroneckerSymbol,Generalized Jacobi (Kronecker) symbol (Listable),✅,pure,6.0,2978
-SliceDistribution,,,,9.0,2978
+SliceDistribution,Time-slice distribution of a random process,✅,pure,9.0,2978
 TraceOriginal,,,,2.0,2978
 DirichletCharacter,j-th Dirichlet character modulo k at n (Wolfram indexing),✅,pure,7.0,2986
 FindMinimumCostFlow,Minimum cost of a maximum flow over a cost matrix,✅,pure,9.0,2986
@@ -2948,9 +2948,9 @@ Cap,Inert operator displayed with frown symbol,✅,pure,3.0,3020
 CommonestFilter,Replace elements by the commonest value in their neighborhood,✅,pure,7.0,3020
 ComplexStreamPlot,,🚫,,12.1,3020
 DagumDistribution,Dagum distribution for income and wealth modeling,✅,pure,8.0,3020
-DiskSegment,,,,10.2,3020
-FailureDistribution,,,,9.0,3020
-FirstPassageTimeDistribution,,,,9.0,3020
+DiskSegment,Circular or elliptical disk segment region consumed by Area/Perimeter/RegionCentroid,✅,pure,10.2,3020
+FailureDistribution,Failure distribution of a system defined by a Boolean structure over component lifetimes,✅,none,9.0,3020
+FirstPassageTimeDistribution,First passage or return time distribution of a Markov process,✅,none,9.0,3020
 FisherRatioTest,One-sample variance ratio test (chi-square two-sided p-value),✅,pure,8.0,3020
 HammingWindow,Compute HammingWindow value,✅,pure,9.0,3020
 NetReplacePart,,🚫,,11.0,3020
@@ -2962,12 +2962,12 @@ BitSet,Set a bit in an integer,✅,pure,6.0,3031
 DeBruijnGraph,Generate a De Bruijn graph with m symbols and n dimensions,✅,pure,8.0,3031
 MeshCellHighlight,,🚫,,10.2,3031
 MeshCellIndex,,🚫,,10.0,3031
-MomentOfInertia,,,,10.4,3031
+MomentOfInertia,Moment of inertia matrix or axis moment of a region,✅,pure,10.4,3031
 NetMeasurements,,🚫,,12.0,3031
 URLEncode,Percent-encode a string for use in URLs,✅,pure,10.0,3031
 WaveletImagePlot,Pyramid image plot of 2D wavelet coefficients,✅,graphics,8.0,3031
 Xnor,Logical XNOR (true when even number of args are true),✅,pure,7.0,3031
-AbsoluteCorrelationFunction,,,,9.0,3048
+AbsoluteCorrelationFunction,Non-centered autocorrelation estimate of data at given lags,✅,pure,9.0,3048
 BetaBinomialDistribution,Beta-binomial compound distribution (exact PMF and moments),✅,pure,6.0,3048
 BitLength,Returns the number of bits needed to represent an integer,✅,pure,6.0,3048
 EllipticExp,Inverse of EllipticLog on the curve y^2 = x^3 + a x^2 + b x (numerical),✅,pure,1.0,3048
@@ -3003,7 +3003,7 @@ Links,,🚫,,3.0,3070
 Postfix,Symbol for postfix display formatting,✅,pure,1.0,3070
 SeriesTermGoal,,,,12.1,3070
 ShowGroupOpener,,🚫,,6.0,3070
-SphericalShell,,,,10.2,3070
+SphericalShell,Filled spherical shell region between two radii consumed by Volume/SurfaceArea/RegionCentroid,✅,pure,10.2,3070
 UpArrow,,,,3.0,3070
 AudioSampleRate,,🚫,,11.0,3083
 Canvas,,🚫,,12.2,3083
@@ -3019,7 +3019,7 @@ ToSphericalCoordinates,Converts Cartesian coordinates to spherical,✅,None,10.1
 VectorColorFunctionScaling,,,,7.0,3083
 ViewRange,,🚫,,6.0,3083
 ComplexVectorPlot,,🚫,,12.1,3094
-Duration,,,,11.0,3094
+Duration,Duration of an audio sound or time series object as a Quantity,✅,pure,11.0,3094
 EdgeCapacity,,,,9.0,3094
 EdgeQ,True if edge exists in graph,✅,1,8.0,3094
 EvaluatePacket,,🚫,,3.0,3094
@@ -3027,10 +3027,10 @@ FindEquationalProof,,,,11.3,3094
 IndexGraph,Replace graph vertices with integer indices,✅,pure,8.0,3094
 MenuView,Menu view control (stays symbolic in script mode),✅,unevaluated,6.0,3094
 MinStableDistribution,Min-stable (GEV-min) distribution with shape-cased forms,✅,pure,8.0,3094
-NHoldAll,,,,3.0,3094
+NHoldAll,Attribute preventing N from numericizing any argument,✅,pure,3.0,3094
 Vee,Symbolic vee (logical or / join) operator with Unicode display,✅,pure,3.0,3094
-BinarySerialize,,,,11.1,3108
-DatePattern,,,,6.0,3108
+BinarySerialize,Serializes an expression to WXF binary bytes as a ByteArray,✅,pure,11.1,3108
+DatePattern,String pattern matching date elements with separators,✅,pure,6.0,3108
 GeoVariant,,🚫,,10.0,3108
 KCoreComponents,Connected components of the k-core as vertex lists,✅,pure,8.0,3108
 MaxStableDistribution,Max-stable (GEV) distribution with shape-cased forms,✅,pure,8.0,3108
@@ -3039,7 +3039,7 @@ PlayRange,,🚫,,2.0,3108
 PreviousCell,,🚫,,10.0,3108
 RadialAxisPlot,,🚫,,12.2,3108
 SatisfiabilityInstances,Instance ordering and free-variable fill follow WL-internal BDD structure (not reproducible black-box),🚫,pure,7.0,3108
-StandbyDistribution,,,,9.0,3108
+StandbyDistribution,Lifetime distribution of a cold standby system of components,✅,none,9.0,3108
 SummationLayer,,🚫,,11.0,3108
 Typed,,,,12.0,3108
 AlphaChannel,,🚫,,8.0,3121
@@ -3056,7 +3056,7 @@ ImageLevels,,🚫,,8.0,3121
 InverseFourierSinTransform,Inverse Fourier sine transform (the sine transform is an involution),✅,pure,4.0,3121
 LocalTime,,,,10.0,3121
 CycleIndexPolynomial,Cycle index polynomial of a permutation group in given variables,✅,pure,9.0,3124
-Dodecahedron,,,,12.0,3124
+Dodecahedron,Regular dodecahedron primitive consumed by Volume/SurfaceArea/RegionMeasure/RegionCentroid,✅,unevaluated,12.0,3124
 EulerianGraphQ,Test whether a graph has an Eulerian circuit,✅,pure,8.0,3124
 CellEventActions,,🚫,,6.0,3134
 CharacterCounts,Returns an association of character frequencies in a string (or each string of a list); two-arg form counts character n-grams,✅,pure,10.1,3134
@@ -3066,7 +3066,7 @@ FileHash,,✅,,6.0,3134
 HararyGraph,Minimal k-connected Harary graph on n vertices,✅,pure,8.0,3134
 InitializationCell,,🚫,,3.0,3134
 NegativeDefiniteMatrixQ,Test whether a matrix is negative definite,✅,none,10.0,3134
-RegionDisjoint,,,,11.1,3134
+RegionDisjoint,Tests whether geometric regions are pairwise disjoint,✅,pure,11.1,3134
 AnatomyPlot3D,,🚫,,11.0,3143
 Dendrogram,Constructs a dendrogram from the hierarchical clustering of data,✅,pure,10.4,3143
 FactorSquareFree,Square-free factorization of a polynomial,✅,pure,1.0,3143
@@ -3105,7 +3105,7 @@ PermutationLength,Number of non-fixed points in a permutation,✅,1,8.0,3176
 Printout3D,,🚫,,11.0,3176
 UnixTime,Returns the current Unix timestamp (seconds since 1970-01-01),✅,effectful,10.1,3176
 WaveletMatrixPlot,Pyramid matrix plot of 2D wavelet coefficients,✅,graphics,8.0,3176
-WishartMatrixDistribution,,,,10.3,3176
+WishartMatrixDistribution,Matrix distribution of scatter matrices with given covariance and degrees of freedom,✅,none,10.3,3176
 AllowedHeads,,,,12.0,3191
 BilateralFilter,,🚫,,8.0,3191
 DirectedGraphQ,Test whether a graph is a directed graph,✅,pure,8.0,3191
@@ -3126,15 +3126,15 @@ EntityPropertyClass,,🚫,,10.0,3200
 FoldWhile,Folds while a test holds returning the first failing value,✅,pure,12.2,3200
 MouseAnnotation,,🚫,,6.0,3200
 RectangleChart3D,,🚫,,7.0,3200
-RegionMoment,,,,10.4,3200
+RegionMoment,Polynomial moment integral of coordinates over a region,✅,pure,10.4,3200
 StringPadRight,Pads a string on the right to a specified length; a bare list of strings is padded to the longest,✅,pure,10.1,3200
 CellLabelAutoDelete,,🚫,,3.0,3215
 CloudDirectory,,🚫,,10.0,3215
 ConnectedMeshComponents,,🚫,,10.0,3215
 EigenvectorCentrality,Eigenvector centrality of graph vertices from the principal adjacency eigenvector,✅,pure,8.0,3215
 GreaterEqualThan,Operator form of GreaterEqual,✅,none,10.3,3215
-HalfSpace,,,,10.2,3215
-NegativeMultinomialDistribution,,,,8.0,3215
+HalfSpace,Unbounded half-space region consumed by RegionMember/RegionDistance/RegionDimension,✅,pure,10.2,3215
+NegativeMultinomialDistribution,Multivariate discrete distribution counting failures of k types before n successes,✅,none,8.0,3215
 NumeratorDenominator,Gives the numerator and denominator as a pair,✅,pure,12.0,3215
 ResourceSearch,,🚫,,11.0,3215
 ReverseSortBy,Sort in reverse order by a function,✅,none,12.0,3215
@@ -3142,12 +3142,12 @@ RunThrough,Symbol for running external commands,✅,effectful,1.0,3215
 UsingFrontEnd,,🚫,,7.0,3215
 ZeroTest,Option for testing zero equivalence,✅,pure,1.0,3215
 BooleanMinterms,Disjunction of minterms from True/False rows or indices (descending index order),✅,pure,7.0,3224
-CrossingDetect,,,,8.0,3224
+CrossingDetect,Marks zero crossings in an array or image as a binary result,✅,pure,8.0,3224
 DateFunction,,,,6.0,3224
 DateObjectQ,True if the expression is a well-formed DateObject,✅,pure,10.0,3224
 FilteredEntityClass,,🚫,,12.0,3224
 LanguageIdentify,,🚫,,10.1,3224
-ObservabilityMatrix,,,,8.0,3224
+ObservabilityMatrix,Observability matrix of a state-space model,✅,pure,8.0,3224
 PowerDistribution,Continuous distribution with PDF a k^a x^(a-1) on support (0 1/k],✅,pure,8.0,3224
 TopologicalSort,Tie-breaking order among independent vertices follows WL-internal traversal (three candidate models contradicted by probes),🚫,pure,8.0,3224
 DynamicUpdating,,🚫,,6.0,3233
@@ -3169,7 +3169,7 @@ NightHemisphere,,,,10.0,3242
 NonNegativeReals,Domain of non-negative real numbers,✅,pure,12.0,3242
 RealSign,Returns the sign assuming real input,✅,pure,11.1,3242
 CloudObjectURLType,,🚫,,12.0,3257
-CoxianDistribution,,,,9.0,3257
+CoxianDistribution,Coxian phase-type distribution,✅,pure,9.0,3257
 EstimatedBackground,,,,10.0,3257
 GatedRecurrentLayer,,🚫,,11.1,3257
 InverseFourierSequenceTransform,,,,7.0,3257
@@ -3191,7 +3191,7 @@ QuadraticOptimization,,,,12.0,3265
 SampledSoundFunction,,🚫,,2.0,3265
 StringExtract,Extracts fields (by position or span) split by whitespace or chained delimiter rules,✅,pure,10.1,3265
 Tilde,Symbolic tilde relation operator with Unicode display,✅,pure,3.0,3265
-BrownianBridgeProcess,,🚫,,9.0,3280
+BrownianBridgeProcess,Brownian bridge process with Normal time slices,✅,unevaluated,9.0,3280
 ChannelSend,,🚫,,11.0,3280
 CreateUUID,,,,10.0,3280
 DeviceWrite,,🚫,,10.0,3280
@@ -3261,7 +3261,7 @@ GoldenAngle,The golden angle constant Pi(3 - Sqrt[5]),✅,pure,10.2,3344
 GroupStabilizer,Pointwise stabilizer subgroup with canonical generators (named groups; forced PermutationGroup cases),✅,pure,8.0,3344
 InputStream,Input stream object,✅,effectful,2.0,3344
 JacobiCS,Jacobi elliptic function cs (cn/sn),✅,pure,1.0,3344
-NHoldRest,,,,3.0,3344
+NHoldRest,Attribute preventing N from numericizing all but the first argument,✅,pure,3.0,3344
 PageFooters,,🚫,,4.0,3344
 ProbitModelFit,,,,7.0,3344
 RootIntervals,,,,6.0,3344
@@ -3284,17 +3284,17 @@ Interactive,,🚫,,9.0,3363
 NakagamiDistribution,Nakagami distribution with shape parameter m and spread w,✅,pure,8.0,3363
 NicholsPlot,,🚫,,8.0,3363
 SystemsModelDelete,,🚫,,8.0,3363
-VarianceGammaDistribution,,,,9.0,3363
+VarianceGammaDistribution,Variance-gamma Bessel-type distribution,✅,pure,9.0,3363
 ArrayFilter,Applies a function to every radius-r block of a list or array with edge elements replicated at the boundaries,✅,pure,10.2,3378
 AudioResample,,🚫,,11.0,3378
-CalendarConvert,,,,10.0,3378
+CalendarConvert,Convert a date between calendar systems (Gregorian and Julian),✅,pure,10.0,3378
 ConformImages,,,,10.0,3378
 DMSList,Convert decimal degrees to degrees-minutes-seconds,✅,none,7.0,3378
 GeoArea,,🚫,,10.3,3378
 GraphRadius,Minimum vertex eccentricity,✅,1,8.0,3378
 GroupMultiplicationTable,Multiplication table as element indices in GroupElements order,✅,pure,8.0,3378
 HeatTransferPDEComponent,,,,12.2,3378
-Icosahedron,,,,12.0,3378
+Icosahedron,Regular icosahedron primitive consumed by Volume/SurfaceArea/RegionMeasure/RegionCentroid,✅,unevaluated,12.0,3378
 ProcessConnection,,🚫,,10.0,3378
 SetPermissions,,🚫,,10.2,3378
 VertexContract,Merge a set of vertices of a graph into a single vertex,✅,pure,10.0,3378
@@ -3322,7 +3322,7 @@ LevyDistribution,Levy heavy-tailed distribution (infinite moments with radical P
 MeanShift,,🚫,,8.0,3402
 MedianDeviation,Median absolute deviation from the median,✅,pure,6.0,3402
 ShowCellTags,,🚫,,3.0,3402
-TukeyLambdaDistribution,,,,8.0,3402
+TukeyLambdaDistribution,Tukey lambda quantile-defined distribution,✅,pure,8.0,3402
 DeviceConfigure,,🚫,,10.0,3413
 FromEntity,,🚫,,10.0,3413
 GARCHProcess,,🚫,,10.0,3413
@@ -3339,7 +3339,7 @@ JacobiDS,Jacobi elliptic function ds (dn/sn),✅,pure,1.0,3427
 KnapsackSolve,,,,11.0,3427
 LQRegulatorGains,,,,8.0,3427
 MeanAbsoluteLossLayer,,🚫,,11.0,3427
-NevilleThetaS,,,,3.0,3427
+NevilleThetaS,Neville theta S function,✅,pure,3.0,3427
 NextCell,,,,10.0,3427
 PairedTTest,,,,8.0,3427
 PointFigureChart,,🚫,,8.0,3427
@@ -3369,7 +3369,7 @@ DynamicEvaluationTimeout,,🚫,,8.0,3462
 FileSize,Returns the size of a file as Quantity[bytes;"Bytes"] with a Real magnitude; accepts File wrappers,✅,io,11.2,3462
 GaussianUnitaryMatrixDistribution,,,,10.3,3462
 HolidayCalendar,,,,9.0,3462
-HotellingTSquareDistribution,,,,8.0,3462
+HotellingTSquareDistribution,Hotelling T-squared distribution,✅,pure,8.0,3462
 JacobiNS,Jacobi elliptic function ns (1/sn),✅,pure,1.0,3462
 KaiserWindow,,,,9.0,3462
 ListVectorDensityPlot,,🚫,,7.0,3462
@@ -3402,7 +3402,7 @@ GraphDisjointUnion,Disjoint union of graphs with vertices relabeled to consecuti
 KagiChart,,🚫,,8.0,3491
 LessEqualThan,Operator form of LessEqual,✅,none,10.3,3491
 MorphologicalBranchPoints,,🚫,,8.0,3491
-NevilleThetaC,,,,3.0,3491
+NevilleThetaC,Neville theta C function,✅,pure,3.0,3491
 NoneTrue,Checks if no element in a list is true,✅,pure,10.0,3491
 NotebookApply,,🚫,,3.0,3491
 NumericalOrder,Orders two expressions by numeric value falling back to canonical order,✅,pure,11.1,3491
@@ -3417,14 +3417,14 @@ GraphPower,Graph connecting vertices within a given distance,✅,pure,8.0,3506
 LaminaData,,🚫,,10.0,3506
 LiouvilleLambda,Liouville lambda function (Listable),✅,pure,7.0,3506
 MenuCommandKey,,🚫,,6.0,3506
-Octahedron,,,,12.0,3506
+Octahedron,Regular octahedron primitive consumed by Volume/SurfaceArea/RegionMeasure/RegionCentroid,✅,unevaluated,12.0,3506
 SavitzkyGolayMatrix,Least-squares Savitzky-Golay smoothing kernel of a given radius and polynomial degree,✅,pure,10.0,3506
 SpearmanRankTest,,,,9.0,3506
 AASTriangle,Triangle from two angles and the side opposite the first (symbolic angles give the Csc/Cot closed form),✅,pure,10.0,3522
 BlockchainData,,🚫,,11.3,3522
 CramerVonMisesTest,,,,8.0,3522
 Decompose,Decomposes a polynomial into a composition of simpler polynomials,✅,pure,1.0,3522
-HyperexponentialDistribution,,,,9.0,3522
+HyperexponentialDistribution,Mixture of exponential distributions,✅,pure,9.0,3522
 InteractiveTradingChart,,🚫,,8.0,3522
 JacobiND,Jacobi elliptic function nd (1/dn),✅,pure,1.0,3522
 KeySortBy,Sorts an association by applying a function to its keys; supports the operator form KeySortBy[f][assoc],✅,pure,10.0,3522
@@ -3435,7 +3435,7 @@ SkeletonTransform,,🚫,,8.0,3522
 StandardDeviationFilter,Replaces each element with the sample standard deviation of its radius-r neighborhood (1D list or 2D array),✅,pure,7.0,3522
 TransitiveReductionGraph,Minimal graph preserving the reachability of a directed acyclic graph,✅,pure,10.0,3522
 UtilityFunction,,,,10.0,3522
-BeniniDistribution,,,,8.0,3537
+BeniniDistribution,Benini log-quadratic hazard distribution,✅,pure,8.0,3537
 CoxModelFit,,,,9.0,3537
 EdgeConnectivity,Minimum edge cut size (s-t form uses edge-disjoint paths),✅,pure,9.0,3537
 EntropyFilter,,🚫,,7.0,3537
@@ -3474,9 +3474,9 @@ SphericalHankelH2,Spherical Hankel function of the second kind,✅,pure,6.0,3566
 SplicedDistribution,,,,9.0,3566
 SymmetrizedIndependentComponents,,,,9.0,3566
 TelegraphProcess,,🚫,,9.0,3566
-TsallisQGaussianDistribution,,,,9.0,3566
+TsallisQGaussianDistribution,Tsallis q-Gaussian distribution,✅,pure,9.0,3566
 UnsetShared,,,,7.0,3566
-VonMisesDistribution,,,,8.0,3566
+VonMisesDistribution,Von Mises circular distribution,✅,pure,8.0,3566
 AbortKernels,,🚫,,7.0,3578
 CloudSymbol,,🚫,,10.0,3578
 DataDistribution,,,,8.0,3578
@@ -3503,7 +3503,7 @@ SaveConnection,,🚫,,12.0,3593
 SequenceFoldList,Fold over a list keeping an n-element history at each step and returning all results,✅,pure,10.2,3593
 ShapiroWilkTest,,,,8.0,3593
 SpearmanRho,Spearman rank-correlation coefficient of two lists,✅,pure,9.0,3593
-ApplyTo,,,,12.2,3612
+ApplyTo,Apply a function to a variable value in place,✅,stateful,12.2,3612
 BandstopFilter,Apply a bandstop filter to data,✅,pure,9.0,3612
 BlockchainBlockData,,🚫,,11.3,3612
 CloudAccountData,,🚫,,10.0,3612
@@ -3516,18 +3516,18 @@ HilbertCurve,Line through all cells of the 2^n x 2^n grid in Hilbert order (inte
 KumaraswamyDistribution,Kumaraswamy continuous distribution on the unit interval,✅,pure,8.0,3612
 LogLogisticDistribution,Log-logistic distribution with shape g and scale s,✅,pure,8.0,3612
 LongestCommonSequence,Returns the longest noncontiguous subsequence common to two strings or lists,✅,pure,7.0,3612
-NevilleThetaD,,,,3.0,3612
-NevilleThetaN,,,,3.0,3612
+NevilleThetaD,Neville theta D function,✅,pure,3.0,3612
+NevilleThetaN,Neville theta N function,✅,pure,3.0,3612
 SatisfiabilityCount,Number of satisfying assignments of a Boolean expression,✅,pure,7.0,3612
-StadiumShape,,,,10.2,3612
-BernoulliProcess,,🚫,,9.0,3636
-BinaryDeserialize,,,,11.1,3636
+StadiumShape,Two-dimensional stadium region,✅,pure,10.2,3612
+BernoulliProcess,Bernoulli process with time-independent Bernoulli slices,✅,unevaluated,9.0,3636
+BinaryDeserialize,Reconstructs an expression from WXF binary bytes,✅,pure,11.1,3636
 BlackmanWindow,Compute BlackmanWindow value,✅,pure,9.0,3636
 BoundaryMeshRegionQ,,,,10.0,3636
 ButtonSource,,🚫,,3.0,3636
 CalloutStyle,,🚫,,11.0,3636
 ColorBalance,,🚫,,10.2,3636
-CompoundPoissonDistribution,,,,9.0,3636
+CompoundPoissonDistribution,Poisson-compounded sum distribution,✅,pure,9.0,3636
 DoubleLeftRightArrow,,,,3.0,3636
 EvaluationData,,🚫,,10.0,3636
 FailureQ,Tests whether an expression is a failure object such as $Failed or Failure[...],✅,pure,10.2,3636
@@ -3551,7 +3551,7 @@ GaussianOrthogonalMatrixDistribution,,,,10.3,3656
 GeoScaleBar,,🚫,,10.0,3656
 HTTPResponse,Symbolic HTTP response object produced by URLRead; stays unevaluated,✅,unevaluated,10.0,3656
 HilbertFilter,,,,9.0,3656
-HoytDistribution,,,,8.0,3656
+HoytDistribution,Hoyt fading amplitude distribution,✅,pure,8.0,3656
 JacobiNC,Jacobi elliptic function nc (1/cn),✅,pure,1.0,3656
 LCHColor,,,,10.0,3656
 LocationEquivalenceTest,,,,8.0,3656
@@ -3585,7 +3585,7 @@ TimeSeriesInsert,,🚫,,10.0,3678
 TimeSeriesMapThread,,🚫,,10.0,3678
 TransferFunctionZeros,,🚫,,8.0,3678
 UnequalTo,Operator form of Unequal,✅,none,10.4,3678
-WakebyDistribution,,,,8.0,3678
+WakebyDistribution,Wakeby quantile-defined distribution,✅,pure,8.0,3678
 AiryAiZero,n-th real zero of the Airy function Ai,✅,pure,6.0,3697
 AudioFade,,🚫,,11.0,3697
 BirnbaumSaundersDistribution,Birnbaum-Saunders fatigue-life distribution (Mean Variance PDF and Erf CDF),✅,pure,8.0,3697
@@ -3638,7 +3638,7 @@ LongLeftRightArrow,,,,3.0,3737
 ManagedLibraryExpressionID,,,,10.0,3737
 MathMLForm,Converts expression to MathML form,✅,pure,4.1,3737
 MomentEvaluate,,,,8.0,3737
-NHoldFirst,,,,3.0,3737
+NHoldFirst,Attribute preventing N from numericizing the first argument,✅,pure,3.0,3737
 NumberMultiplier,,,,3.0,3737
 PrintableASCIIQ,Tests whether a string consists only of printable ASCII characters,✅,pure,10.1,3737
 StateOutputEstimator,,,,8.0,3737
@@ -3769,7 +3769,7 @@ BirnbaumImportance,,,,9.0,3889
 ByteArrayToString,Convert byte array to string,✅,pure,11.2,3889
 CellBracketOptions,,🚫,,4.0,3889
 ChannelObject,,🚫,,11.0,3889
-ControllabilityMatrix,,,,8.0,3889
+ControllabilityMatrix,Controllability matrix of a state-space model,✅,pure,8.0,3889
 ConvexHullRegion,,🚫,,12.2,3889
 Delimiters,Option symbol specifying what delimiters to use or look for,✅,none,1.0,3889
 Diamond,Symbolic diamond operator with Unicode display,✅,pure,3.0,3889
@@ -4001,7 +4001,7 @@ AttachCell,,,,12.2,4138
 AudioBlockMap,,🚫,,11.0,4138
 BioSequenceComplement,,🚫,,12.2,4138
 BottomHatTransform,,🚫,,7.0,4138
-ContainsExactly,Test if two lists contain exactly the same elements,✅,none,10.2,4138
+ContainsExactly,Test if two lists contain exactly the same elements,✅,pure,10.2,4138
 ControllerMethod,,,,6.0,4138
 CriticalityFailureImportance,,,,9.0,4138
 DirichletTransform,,,,7.0,4138
@@ -4063,7 +4063,7 @@ SendMessage,,🚫,,10.0,4173
 ShowAutoSpellCheck,,🚫,,11.0,4173
 SystemsModelDelayApproximate,,🚫,,9.0,4173
 AffineHalfSpace,,,,10.2,4204
-AngleBisector,,,,12.0,4204
+AngleBisector,Interior-angle bisector at a vertex as an InfiniteLine,✅,pure,12.0,4204
 AudioMeasurements,Scalar measurements of audio (amplitude spectral and pitch properties),✅,pure,11.0,4204
 BoxObject,,🚫,,10.0,4204
 CloudExpressions,,🚫,,10.4,4204
@@ -4235,7 +4235,7 @@ ParzenWindow,de la Vallee Poussin (Parzen) window function; piecewise cubic on [
 PersistentObject,,🚫,,11.1,4356
 StateTransformationLinearize,,,,10.0,4356
 UpperTriangularMatrixQ,True if a matrix is upper triangular,✅,pure,12.0,4356
-WeierstrassHalfPeriods,,,,3.0,4356
+WeierstrassHalfPeriods,Fundamental half-periods of the Weierstrass lattice from its invariants (numeric for the real positive-discriminant rectangular case),✅,pure,3.0,4356
 BesselYZero,Compute zeros of the Bessel function Y_n using bisection and Newton method,✅,pure,6.0,4387
 BlockchainAddressData,,🚫,,12.0,4387
 BohmanWindow,Bohman window function (1-2|x|)Cos[2Pi|x|]+Sin[2Pi|x|]/Pi on [-1/2 1/2],✅,pure,9.0,4387
@@ -4270,7 +4270,7 @@ AnnuityDue,Annuity paying at interval start: TimeValue is (1+i)^q times the ordi
 AskAppend,,🚫,,10.4,4437
 AudioLength,,🚫,,11.0,4437
 AutoIndent,,,,3.0,4437
-BiweightMidvariance,,,,11.1,4437
+BiweightMidvariance,Robust biweight midvariance dispersion estimate of data,✅,pure,11.1,4437
 CentralFeature,Element minimizing total distance to all others (Euclidean/EditDistance/equality metric),✅,pure,11.1,4437
 CepstrogramArray,,🚫,,11.1,4437
 CodeAssistOptions,,🚫,,10.0,4437
@@ -4381,7 +4381,7 @@ NetEvaluationMode,,🚫,,11.1,4527
 NetFlatten,,🚫,,11.3,4527
 NetGANOperator,,🚫,,12.1,4527
 NuclearReactorData,,🚫,,10.0,4527
-NumberFieldDiscriminant,,,,6.0,4527
+NumberFieldDiscriminant,Discriminant of the number field generated by an algebraic number,✅,pure,6.0,4527
 OutputSizeLimit,,🚫,,6.0,4527
 PhaseRange,,,,10.0,4527
 PlantData,,🚫,,10.0,4527
@@ -4412,7 +4412,7 @@ LaplacianPDETerm,,,,12.2,4567
 LibraryFunctionError,,,,8.0,4567
 MinimalStateSpaceModel,,,,8.0,4567
 MinimumTimeIncrement,,,,10.0,4567
-OwenT,,,,8.0,4567
+OwenT,Owen T function T(h a) equal to the integral of a bivariate-normal orthant (numeric for inexact arguments; exact for h=0 or a=0),✅,pure,8.0,4567
 PaddingSize,,,,11.0,4567
 PingTime,,🚫,,11.0,4567
 PsychrometricPropertyData,,🚫,,11.1,4567
@@ -4491,7 +4491,7 @@ FrameBoxOptions,,🚫,,4.0,4660
 FrontEndDynamicExpression,,🚫,,8.0,4660
 GalleryView,,🚫,,11.0,4660
 GenerateDigitalSignature,,🚫,,12.0,4660
-GraphLinkEfficiency,,,,9.0,4660
+GraphLinkEfficiency,Link efficiency 1 minus mean graph distance over edge count,✅,pure,9.0,4660
 ImageFileFilter,,🚫,,9.0,4660
 IncludeMetaInformation,,,,11.0,4660
 MailServerConnect,,🚫,,11.3,4660
@@ -4544,7 +4544,7 @@ NetStateObject,,🚫,,11.3,4707
 NumberFieldClassNumber,,,,6.0,4707
 NumberFieldRootsOfUnity,,,,6.0,4707
 OptionalElement,,,,10.1,4707
-PerpendicularBisector,,,,12.0,4707
+PerpendicularBisector,Perpendicular bisector of a segment as an InfiniteLine,✅,pure,12.0,4707
 PlaceholderLayer,,🚫,,12.2,4707
 PolyhedronCoordinates,,🚫,,12.0,4707
 PowerSymmetricPolynomial,Power sum symmetric polynomial in given data (scalar or tuple exponent spec),✅,pure,8.0,4707
@@ -4680,7 +4680,7 @@ MassFluxValue,,,,12.2,4881
 MatchLocalNames,,,,2.0,4881
 MineralData,,🚫,,10.0,4881
 MissingStyle,,,,10.0,4881
-MixedRadixQuantity,,,,9.0,4881
+MixedRadixQuantity,Represents a quantity given as digits in a mixed-radix base,✅,Symbolic,9.0,4881
 MoleculeRecognize,,🚫,,12.1,4881
 NestedGreaterGreater,,,,3.0,4881
 NonlocalMeansFilter,,,,9.0,4881
@@ -4866,7 +4866,7 @@ MaxWordGap,,,,11.0,5079
 McLaughlinGroupMcL,,,,8.0,5079
 MellinConvolve,,,,11.0,5079
 MissingDataRules,,,,10.0,5079
-ModularLambda,,,,3.0,5079
+ModularLambda,Elliptic modular lambda function lambda(tau) equal to (theta2/theta3)^4 (exact at tau=I; numeric in the upper half-plane),✅,pure,3.0,5079
 MoleculeGraph,,🚫,,12.0,5079
 MountainData,,🚫,,10.0,5079
 NegativelyOrientedPoints,,,,12.2,5079
@@ -5614,7 +5614,7 @@ FractionalD,,,,13.1,
 FrameListVideo,,🚫,,12.3,
 FreeformEvaluate,,🚫,,14.1,
 FrobeniusAutomorphism,,,,13.3,
-FromDateString,,,,12.3,
+FromDateString,Parses a date string into a DateObject,✅,pure,12.3,
 FromFiniteField,,,,14.0,
 FromFiniteFieldIndex,,,,14.0,
 FromLunationNumber,,,,14.0,
@@ -6182,7 +6182,7 @@ WeierstrassE3,,,,11.2,
 WeierstrassEta1,,,,11.2,
 WindingCount,,,,12.0,
 WithLock,,,,12.3,
-Inequality,Chained inequality with per-step comparison operators,✅,pure,1.0,
+Inequality,Chained inequality with per-step comparison operators,✅,pure,1.0,5611
 Discard,Removes the elements of a list for which a criterion is True (complement of Select),✅,pure,13.1,5591
 MusicNote,Represents a musical note,✅,pure,15.0,5592
 MusicRest,Represents a musical rest (silence),✅,pure,15.0,5593

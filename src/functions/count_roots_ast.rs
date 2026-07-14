@@ -13,7 +13,7 @@
 //! Real-valued bounds) returns the call unevaluated.
 
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
 
@@ -27,7 +27,7 @@ struct Rat {
   d: BigInt, // invariant: d > 0, gcd(|n|, d) == 1
 }
 
-fn bigint_gcd(a: &BigInt, b: &BigInt) -> BigInt {
+fn gcd_bigint(a: &BigInt, b: &BigInt) -> BigInt {
   let mut a = a.abs();
   let mut b = b.abs();
   while !b.is_zero() {
@@ -45,7 +45,7 @@ impl Rat {
       n = -n;
       d = -d;
     }
-    let g = bigint_gcd(&n, &d);
+    let g = gcd_bigint(&n, &d);
     if !g.is_zero() && !g.is_one() {
       n /= &g;
       d /= &g;
@@ -398,7 +398,6 @@ fn is_pos_infinity(e: &Expr) -> bool {
 /// Detect `-Infinity` across the forms the parser/evaluator may produce:
 /// `Times[-1, Infinity]` (FunctionCall or BinaryOp) and `-Infinity` (UnaryOp).
 fn is_neg_infinity(e: &Expr) -> bool {
-  use crate::syntax::{BinaryOperator, UnaryOperator};
   let is_neg = |x: &Expr| {
     matches!(x, Expr::Integer(n) if *n < 0)
       || matches!(x, Expr::Real(r) if *r < 0.0)

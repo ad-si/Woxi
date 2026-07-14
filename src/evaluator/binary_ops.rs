@@ -164,6 +164,42 @@ pub fn thread_binary_op(
     }
   }
 
+  // A SparseArray combined with a dense list threads element-wise as its dense
+  // form (`SparseArray[{1->5,2->3},3] + {1,1,1}` == `{6,4,1}`); otherwise the
+  // opaque SparseArray would be broadcast whole against each list element.
+  let is_sparse = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "SparseArray");
+  let densify = |e: &Expr| -> Expr {
+    match e {
+      Expr::FunctionCall { name, args: sa } if name == "SparseArray" => {
+        crate::functions::list_helpers_ast::sparse_array_ast(sa)
+          .unwrap_or_else(|_| e.clone())
+      }
+      other => other.clone(),
+    }
+  };
+  // Times preserves a SparseArray's zero pattern (0 * x == 0): multiplying a
+  // SparseArray by a scalar or a dense list yields another SparseArray rather
+  // than densifying, matching wolframscript
+  // (`SparseArray[{1->5,2->3},3] * {2,2,2}` -> SparseArray[…, {10, 6}], and
+  // `2 * SparseArray[…]` scales the stored values instead of staying inert).
+  if op == BinaryOperator::Times && (is_sparse(left) || is_sparse(right)) {
+    let product = thread_binary_op(&densify(left), &densify(right), op)?;
+    return Ok(
+      crate::evaluator::dispatch::list_operations::dense_to_sparse_array_with_default(
+        &product,
+        &Expr::Integer(0),
+      )
+      .unwrap_or(product),
+    );
+  }
+
+  if is_sparse(left) && matches!(right, Expr::List(_)) {
+    return thread_binary_op(&densify(left), right, op);
+  }
+  if is_sparse(right) && matches!(left, Expr::List(_)) {
+    return thread_binary_op(left, &densify(right), op);
+  }
+
   match (left, right) {
     (Expr::List(left_items), Expr::List(right_items)) => {
       // Both lists - element-wise operation

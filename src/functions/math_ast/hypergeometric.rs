@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr, expr_to_string};
 
 /// Hypergeometric0F1[a, z] - confluent hypergeometric limit function
 /// 0F1(a; z) = Σ z^k / (k! * Pochhammer(a,k)) for k = 0, 1, 2, ...
@@ -37,7 +37,7 @@ pub fn hypergeometric_0f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Compute 0F1(a; z) numerically via series expansion
-pub fn hypergeometric_0f1_f64(a: f64, z: f64) -> f64 {
+fn hypergeometric_0f1_f64(a: f64, z: f64) -> f64 {
   let mut sum = 1.0;
   let mut term = 1.0;
   for k in 0..200 {
@@ -99,7 +99,7 @@ pub fn hypergeometric_0f1_regularized_ast(
 }
 
 /// Compute regularized 0F1~(a; z) = sum_{k=0}^{inf} z^k / (Gamma(a + k) * k!)
-pub fn hypergeometric_0f1_regularized_f64(a: f64, z: f64) -> f64 {
+fn hypergeometric_0f1_regularized_f64(a: f64, z: f64) -> f64 {
   let mut sum = 0.0;
   let mut z_power = 1.0; // z^k
   let mut factorial = 1.0; // k!
@@ -201,7 +201,7 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // When each upper parameter cancels a lower parameter (identical
   // multisets), (a)_n / (a)_n = 1 and the series reduces to Σ z^n/n! = E^z.
   if a_list.len() == b_list.len() && !a_list.is_empty() {
-    let key = |e: &Expr| crate::syntax::expr_to_string(e);
+    let key = |e: &Expr| expr_to_string(e);
     let mut a_keys: Vec<String> = a_list.iter().map(key).collect();
     let mut b_keys: Vec<String> = b_list.iter().map(key).collect();
     a_keys.sort();
@@ -323,6 +323,29 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return crate::functions::math_ast::hypergeometric::hypergeometric1f1_ast(
       &[a_list[0].clone(), b_list[0].clone(), z.clone()],
     );
+  }
+
+  // p=2, q=1 form is exactly Hypergeometric2F1, which carries its own
+  // closed-form reductions (e.g. 2F1[1,1,2,z] = -Log[1-z]/z). Delegate, but
+  // only adopt the delegated result when 2F1 actually reduces to a closed
+  // form: Wolfram does not auto-convert an un-reducible symbolic pFq to
+  // Hypergeometric2F1, so in that case we fall through and keep the input as
+  // HypergeometricPFQ.
+  if a_list.len() == 2 && b_list.len() == 1 {
+    let reduced =
+      crate::functions::math_ast::hypergeometric::hypergeometric2f1_ast(&[
+        a_list[0].clone(),
+        a_list[1].clone(),
+        b_list[0].clone(),
+        z.clone(),
+      ])?;
+    let is_bare_2f1 = matches!(
+      &reduced,
+      Expr::FunctionCall { name, .. } if name == "Hypergeometric2F1"
+    );
+    if !is_bare_2f1 {
+      return Ok(reduced);
+    }
   }
   // 3F2[{1, 1, 2}, {3, 3}, z] closed form. Partial-fractioning the
   // collapsed series Σ 4·z^k/((k+1)(k+2)^2) over the standard sums
@@ -828,14 +851,14 @@ pub fn hypergeometric_pfq_regularized_ast(
   for b_expr in &b_list {
     let gamma_val = gamma_ast(&[b_expr.clone()])?;
     gamma_product = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left: Box::new(gamma_product),
       right: Box::new(gamma_val),
     })?;
   }
 
   crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(pfq_result),
     right: Box::new(gamma_product),
   })
@@ -915,7 +938,7 @@ fn hypergeometric_2f1_regularized_non_positive_c(
           x.clone()
         } else {
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Plus,
+            op: BinaryOperator::Plus,
             left: Box::new(x.clone()),
             right: Box::new(Expr::Integer(k)),
           }
@@ -946,19 +969,19 @@ fn hypergeometric_2f1_regularized_non_positive_c(
 
   // z^{m+1}
   let z_pow = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(z.clone()),
     right: Box::new(Expr::Integer(shift)),
   };
 
   // 2F1(a + m + 1, b + m + 1; m + 2; z)
   let inner_a = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Plus,
+    op: BinaryOperator::Plus,
     left: Box::new(a.clone()),
     right: Box::new(Expr::Integer(shift)),
   };
   let inner_b = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Plus,
+    op: BinaryOperator::Plus,
     left: Box::new(b.clone()),
     right: Box::new(Expr::Integer(shift)),
   };
@@ -995,7 +1018,7 @@ fn is_half(expr: &Expr) -> bool {
         && matches!(&args[1], Expr::Integer(2))
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left,
       right,
     } => {
@@ -1034,8 +1057,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A non-positive integer a is excluded: there the series terminates first,
   // giving a truncated-exponential polynomial (e.g. 1F1[-2, -2, z] =
   // 1 + z + z^2/2), handled by the terminating-series branch below.
-  if crate::syntax::expr_to_string(&args[0])
-    == crate::syntax::expr_to_string(&args[1])
+  if expr_to_string(&args[0]) == expr_to_string(&args[1])
     && !matches!(&args[0], Expr::Integer(n) if *n <= 0)
   {
     let exp_call = Expr::FunctionCall {
@@ -1049,12 +1071,12 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_half(&args[0]) && matches!(&args[1], Expr::Integer(1)) {
     let z = &args[2];
     let half_z = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(z.clone()),
       right: Box::new(Expr::Integer(2)),
     };
     let exp_part = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left: Box::new(Expr::Constant("E".to_string())),
       right: Box::new(half_z.clone()),
     };
@@ -1077,7 +1099,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let z = &args[2];
     let exp_z = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left: Box::new(Expr::Constant("E".to_string())),
       right: Box::new(z.clone()),
     };
@@ -1206,7 +1228,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       let denom = fact(n - k) * &b_pochhammer * &k_fact;
       // coeff = n! / denom (reduce GCD).
-      fn bigint_gcd(a: &BigInt, b: &BigInt) -> BigInt {
+      fn gcd_bigint(a: &BigInt, b: &BigInt) -> BigInt {
         use num_traits::Zero;
         let (mut a, mut b) = (a.clone(), b.clone());
         if a < BigInt::from(0) {
@@ -1222,7 +1244,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         a
       }
-      let g = bigint_gcd(&n_fact, &denom);
+      let g = gcd_bigint(&n_fact, &denom);
       let cn = &n_fact / &g;
       let cd = &denom / &g;
       let z_pow = if k == 0 {
@@ -1280,7 +1302,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: vec![Expr::Integer(b_int), z.clone()].into(),
     };
     let ratio = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(plus),
       right: Box::new(Expr::Integer(b_int)),
     };
@@ -1289,7 +1311,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: vec![Expr::Identifier("E".to_string()), z.clone()].into(),
     };
     let prod = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left: Box::new(ratio),
       right: Box::new(exp_z),
     };
@@ -1356,7 +1378,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Reduce by the gcd shared between numerator e^z coefficient, the
     // numerator constant, and the denominator.
     let g_all =
-      bigint_gcd(bigint_gcd(e_num.abs(), const_num.abs()), z_max.abs());
+      gcd_bigint(gcd_bigint(e_num.abs(), const_num.abs()), z_max.abs());
     let denom = if g_all != BigInt::from(0) {
       &z_max / &g_all
     } else {
@@ -1376,7 +1398,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // when the numerator has a common factor — pull that factor out so
     // the inner Plus shows the smallest integer coefficients.
     let mut outer_factor = BigInt::from(1);
-    let g_num = bigint_gcd(e_n.abs(), c_n.abs());
+    let g_num = gcd_bigint(e_n.abs(), c_n.abs());
     if g_num > BigInt::from(1) {
       outer_factor = g_num.clone();
       e_n /= &g_num;
@@ -1421,7 +1443,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
   }
 
-  fn bigint_gcd(a: BigInt, b: BigInt) -> BigInt {
+  fn gcd_bigint(a: BigInt, b: BigInt) -> BigInt {
     use num_traits::Zero;
     let (mut a, mut b) = (a, b);
     while !b.is_zero() {
@@ -1485,7 +1507,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           &[Expr::Integer(num), z_pow],
         )?,
         (num, den) => {
-          let rat = crate::functions::math_ast::make_rational_pub(num, den);
+          let rat = crate::functions::math_ast::make_rational(num, den);
           crate::evaluator::evaluate_function_call_ast("Times", &[rat, z_pow])?
         }
       };
@@ -1971,7 +1993,7 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Compute U(a, b, z) numerically using the relation:
 /// U(a,b,z) = Γ(1-b)/Γ(a+1-b) * M(a,b,z) + Γ(b-1)/Γ(a) * z^(1-b) * M(a+1-b,2-b,z)
 /// where M = 1F1. For integer b, use Richardson extrapolation on the b parameter.
-pub fn hypergeometric_u_f64(a: f64, b: f64, z: f64) -> f64 {
+fn hypergeometric_u_f64(a: f64, b: f64, z: f64) -> f64 {
   let b_int = b.round();
   let is_b_integer = (b - b_int).abs() < 1e-10;
 
@@ -2001,7 +2023,7 @@ pub fn hypergeometric_u_f64(a: f64, b: f64, z: f64) -> f64 {
   }
 }
 
-pub fn hypergeometric_u_nonint(a: f64, b: f64, z: f64) -> f64 {
+fn hypergeometric_u_nonint(a: f64, b: f64, z: f64) -> f64 {
   let g1b = gamma_fn(1.0 - b);
   let ga1b = gamma_fn(a + 1.0 - b);
   let gb1 = gamma_fn(b - 1.0);
@@ -2056,9 +2078,7 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // 2F1(a, b, b, z) = (1-z)^(-a)
-  if crate::syntax::expr_to_string(&args[1])
-    == crate::syntax::expr_to_string(&args[2])
-  {
+  if expr_to_string(&args[1]) == expr_to_string(&args[2]) {
     let neg_a = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
       name: "Times".to_string(),
       args: vec![Expr::Integer(-1), args[0].clone()].into(),
@@ -2084,9 +2104,7 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // 2F1(a, b, a, z) = (1-z)^(-b)
-  if crate::syntax::expr_to_string(&args[0])
-    == crate::syntax::expr_to_string(&args[2])
-  {
+  if expr_to_string(&args[0]) == expr_to_string(&args[2]) {
     let neg_b = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
       name: "Times".to_string(),
       args: vec![Expr::Integer(-1), args[1].clone()].into(),
@@ -2292,7 +2310,7 @@ fn inner_has_negative_int_coefficient(expr: &Expr) -> bool {
       matches!(&args[0], Expr::Integer(n) if *n < 0)
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       ..
     } => matches!(left.as_ref(), Expr::Integer(n) if *n < 0),
@@ -2318,7 +2336,7 @@ fn negate_leading_integer_coefficient(expr: &Expr) -> Expr {
       }
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -2328,7 +2346,7 @@ fn negate_leading_integer_coefficient(expr: &Expr) -> Expr {
         (**left).clone()
       };
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(new_left),
         right: right.clone(),
       }
@@ -2997,9 +3015,7 @@ pub fn whittaker_w_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               for n in 1..=(-ki) {
                 fact *= n;
               }
-              return Ok(crate::functions::math_ast::make_rational_pub(
-                1, fact,
-              ));
+              return Ok(crate::functions::math_ast::make_rational(1, fact));
             }
             let rounded = value.round();
             if (value - rounded).abs() < 1e-12 {

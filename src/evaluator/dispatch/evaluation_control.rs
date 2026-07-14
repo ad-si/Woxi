@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::BinaryOperator;
 
 pub fn dispatch_evaluation_control(
   name: &str,
@@ -465,6 +466,187 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec().into(),
       }));
     }
+    "NegativeMultinomialDistribution" if args.len() == 2 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "NegativeMultinomialDistribution".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
+    // WienerProcess[] normalizes to WienerProcess[0, 1]
+    // (wolframscript-verified).
+    "WienerProcess" if args.is_empty() => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "WienerProcess".to_string(),
+        args: vec![Expr::Integer(0), Expr::Integer(1)].into(),
+      }));
+    }
+    // BrownianBridgeProcess[] and the two-point form normalize with the
+    // default variance scale 1; a single argument is an arity error
+    // (wolframscript-verified argtu message).
+    "BrownianBridgeProcess" => {
+      let is_pt = |e: &Expr| matches!(e, Expr::List(p) if p.len() == 2);
+      let normalized: Vec<Expr> = match args {
+        [] => vec![
+          Expr::Integer(1),
+          Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
+          Expr::List(vec![Expr::Integer(1), Expr::Integer(0)].into()),
+        ],
+        [p1, p2] if is_pt(p1) && is_pt(p2) => {
+          vec![Expr::Integer(1), p1.clone(), p2.clone()]
+        }
+        [_] => {
+          crate::emit_message(
+            "BrownianBridgeProcess::argtu: BrownianBridgeProcess called with 1 argument; 2 or 3 arguments are expected.",
+          );
+          args.to_vec()
+        }
+        _ => args.to_vec(),
+      };
+      return Some(Ok(Expr::FunctionCall {
+        name: "BrownianBridgeProcess".to_string(),
+        args: normalized.into(),
+      }));
+    }
+    // Random-process objects are symbolic; their time slices proc[t]
+    // are consumed by PDF/CDF/Mean/Variance.
+    "WienerProcess"
+    | "GeometricBrownianMotionProcess"
+    | "OrnsteinUhlenbeckProcess"
+    | "PoissonProcess"
+    | "BinomialProcess"
+    | "BernoulliProcess"
+    | "WhiteNoiseProcess" => {
+      return Some(Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
+    // DiscreteMarkovProcess and its distribution wrappers are symbolic
+    // objects consumed by PDF/CDF/Mean/Variance.
+    "DiscreteMarkovProcess"
+    | "StationaryDistribution"
+    | "FirstPassageTimeDistribution" => {
+      return Some(Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
+    // StateSpaceModel[{a, b, c, d}] is a symbolic control-system object:
+    // it echoes unevaluated and is consumed by ObservabilityMatrix /
+    // ControllabilityMatrix.
+    "StateSpaceModel" => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "StateSpaceModel".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
+    // FailureDistribution[bexpr, {{x1, d1}, …}] normalizes the event
+    // variables to their positional indices (x || y becomes 1 || 2),
+    // exactly as wolframscript displays it. Validation (positive
+    // unateness) happens at CDF/PDF time, not here.
+    "FailureDistribution" if args.len() == 2 => {
+      fn substitute(e: &Expr, map: &[(String, i128)]) -> Expr {
+        match e {
+          Expr::Identifier(v) => {
+            for (name, idx) in map {
+              if name == v {
+                return Expr::Integer(*idx);
+              }
+            }
+            e.clone()
+          }
+          Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+            op: *op,
+            left: Box::new(substitute(left, map)),
+            right: Box::new(substitute(right, map)),
+          },
+          Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+            op: *op,
+            operand: Box::new(substitute(operand, map)),
+          },
+          Expr::FunctionCall { name, args }
+            if name == "And" || name == "Or" || name == "Not" =>
+          {
+            Expr::FunctionCall {
+              name: name.clone(),
+              args: args.iter().map(|a| substitute(a, map)).collect(),
+            }
+          }
+          _ => e.clone(),
+        }
+      }
+      if let Expr::List(pairs) = &args[1]
+        && !pairs.is_empty()
+        && pairs.iter().all(|p| {
+          matches!(p, Expr::List(kv)
+            if kv.len() == 2 && matches!(&kv[0], Expr::Identifier(_)))
+        })
+      {
+        let mut map: Vec<(String, i128)> = Vec::new();
+        let mut new_pairs: Vec<Expr> = Vec::new();
+        for (i, p) in pairs.iter().enumerate() {
+          let Expr::List(kv) = p else { unreachable!() };
+          let Expr::Identifier(v) = &kv[0] else {
+            unreachable!()
+          };
+          map.push((v.clone(), i as i128 + 1));
+          new_pairs.push(Expr::List(
+            vec![Expr::Integer(i as i128 + 1), kv[1].clone()].into(),
+          ));
+        }
+        return Some(Ok(Expr::FunctionCall {
+          name: "FailureDistribution".to_string(),
+          args: vec![substitute(&args[0], &map), Expr::List(new_pairs.into())]
+            .into(),
+        }));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "FailureDistribution".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
+    // StandbyDistribution[Exp[λ1], {Exp[λ2], …}] with perfect switching
+    // normalizes to HypoexponentialDistribution[{λ1, λ2, …}]
+    // (wolframscript-verified, also for symbolic rates). Other component
+    // kinds and the switching-probability/switch-distribution forms stay
+    // unevaluated.
+    "StandbyDistribution" => {
+      let rate = |e: &Expr| -> Option<Expr> {
+        match e {
+          Expr::FunctionCall { name, args }
+            if name == "ExponentialDistribution" && args.len() == 1 =>
+          {
+            Some(args[0].clone())
+          }
+          _ => None,
+        }
+      };
+      if args.len() == 2
+        && let Some(r1) = rate(&args[0])
+        && let Expr::List(rest) = &args[1]
+        && !rest.is_empty()
+        && let Some(mut rates) =
+          rest.iter().map(&rate).collect::<Option<Vec<Expr>>>()
+      {
+        rates.insert(0, r1);
+        return Some(Ok(Expr::FunctionCall {
+          name: "HypoexponentialDistribution".to_string(),
+          args: vec![Expr::List(rates.into())].into(),
+        }));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "StandbyDistribution".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
+    // The constructor never validates (wolframscript echoes even
+    // non-symmetric matrices silently); Mean/Variance validate.
+    "WishartMatrixDistribution" if args.len() == 2 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "WishartMatrixDistribution".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "MultivariatePoissonDistribution" if args.len() == 2 => {
       return Some(Ok(Expr::FunctionCall {
         name: "MultivariatePoissonDistribution".to_string(),
@@ -475,6 +657,121 @@ pub fn dispatch_evaluation_control(
       return Some(Ok(Expr::FunctionCall {
         name: "DirichletDistribution".to_string(),
         args: args.to_vec().into(),
+      }));
+    }
+    // HalfSpace[n] normalizes to HalfSpace[n, 0] (wolframscript-verified).
+    "HalfSpace" if args.len() == 1 && matches!(&args[0], Expr::List(_)) => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "HalfSpace".to_string(),
+        args: vec![args[0].clone(), Expr::Integer(0)].into(),
+      }));
+    }
+    // SphericalShell normalizes to its full form
+    // SphericalShell[center, {rinner, router}]: the default shell is
+    // {1/2, 1}, a single radius r means {r/2, r}, and a bare radius pair
+    // gets the origin center. (wolframscript-verified.)
+    "SphericalShell" if args.len() <= 2 => {
+      let origin = || {
+        Expr::List(
+          vec![Expr::Integer(0), Expr::Integer(0), Expr::Integer(0)].into(),
+        )
+      };
+      let normalized = match args {
+        [] => Some((
+          origin(),
+          Expr::List(
+            vec![
+              Expr::FunctionCall {
+                name: "Rational".to_string(),
+                args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+              },
+              Expr::Integer(1),
+            ]
+            .into(),
+          ),
+        )),
+        [Expr::List(radii)] if radii.len() == 2 => {
+          Some((origin(), args[0].clone()))
+        }
+        [r] if !matches!(r, Expr::List(_)) => {
+          let half = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: Box::new(r.clone()),
+            right: Box::new(Expr::Integer(2)),
+          });
+          match half {
+            Ok(half) => {
+              Some((origin(), Expr::List(vec![half, r.clone()].into())))
+            }
+            Err(_) => None,
+          }
+        }
+        _ => None,
+      };
+      return Some(Ok(match normalized {
+        Some((center, radii)) => Expr::FunctionCall {
+          name: "SphericalShell".to_string(),
+          args: vec![center, radii].into(),
+        },
+        None => Expr::FunctionCall {
+          name: "SphericalShell".to_string(),
+          args: args.to_vec().into(),
+        },
+      }));
+    }
+    // StadiumShape[] / StadiumShape[r] normalize to the full form with the
+    // default endpoints {{-1, 0}, {1, 0}} (the 2-D capsule analog).
+    "StadiumShape" if args.len() <= 2 => {
+      let default_points = || {
+        let pt =
+          |x: i128| Expr::List(vec![Expr::Integer(x), Expr::Integer(0)].into());
+        Expr::List(vec![pt(-1), pt(1)].into())
+      };
+      let normalized = match args {
+        [] => Some((default_points(), Expr::Integer(1))),
+        [r] if !matches!(r, Expr::List(_)) => {
+          Some((default_points(), r.clone()))
+        }
+        _ => None,
+      };
+      return Some(Ok(match normalized {
+        Some((points, r)) => Expr::FunctionCall {
+          name: "StadiumShape".to_string(),
+          args: vec![points, r].into(),
+        },
+        None => Expr::FunctionCall {
+          name: "StadiumShape".to_string(),
+          args: args.to_vec().into(),
+        },
+      }));
+    }
+    // CapsuleShape[] / CapsuleShape[r] normalize to the full form with the
+    // default x-axis endpoints {{-1, 0, 0}, {1, 0, 0}}.
+    "CapsuleShape" if args.len() <= 2 => {
+      let default_points = || {
+        let pt = |x: i128| {
+          Expr::List(
+            vec![Expr::Integer(x), Expr::Integer(0), Expr::Integer(0)].into(),
+          )
+        };
+        Expr::List(vec![pt(-1), pt(1)].into())
+      };
+      let normalized = match args {
+        [] => Some((default_points(), Expr::Integer(1))),
+        [r] if !matches!(r, Expr::List(_)) => {
+          Some((default_points(), r.clone()))
+        }
+        _ => None,
+      };
+      return Some(Ok(match normalized {
+        Some((points, r)) => Expr::FunctionCall {
+          name: "CapsuleShape".to_string(),
+          args: vec![points, r].into(),
+        },
+        None => Expr::FunctionCall {
+          name: "CapsuleShape".to_string(),
+          args: args.to_vec().into(),
+        },
       }));
     }
     "ArcSinDistribution" if args.is_empty() => {

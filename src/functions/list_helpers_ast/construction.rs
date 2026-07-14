@@ -2,6 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::BinaryOperator;
 
 /// AST-based Table: generate a table of values.
 /// Table[expr, {i, min, max}] -> {expr with i=min, ..., expr with i=max}
@@ -93,6 +94,15 @@ pub fn table_iterators_invalid(name: &str, iters: &[Expr]) -> Option<String> {
         // resolve to numbers / earlier iterator variables.
         if let Expr::Identifier(v) = &items[0] {
           bound_vars.push(v.clone());
+        }
+        // A zero step `{i, min, max, 0}` never terminates: Table/Do reject it
+        // with iterb rather than looping forever (matching wolframscript).
+        if items.len() >= 4 {
+          let step = crate::evaluator::evaluate_expr_to_expr(&items[3])
+            .unwrap_or_else(|_| items[3].clone());
+          if crate::functions::math_ast::try_eval_to_f64(&step) == Some(0.0) {
+            return iterb(iter);
+          }
         }
         let second = crate::evaluator::evaluate_expr_to_expr(&items[1])
           .unwrap_or_else(|_| items[1].clone());
@@ -598,7 +608,7 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
 
-      results.push(crate::functions::math_ast::make_rational_pub(cur_n, cur_d));
+      results.push(crate::functions::math_ast::make_rational(cur_n, cur_d));
 
       // cur += step: cur_n/cur_d + step_n/step_d = (cur_n*step_d + step_n*cur_d) / (cur_d*step_d)
       cur_n = cur_n * step_d + step_n * cur_d;
@@ -774,12 +784,12 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           min_expr.clone()
         } else {
           let k_times_step = Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(Expr::Integer(k)),
             right: Box::new(step_expr.clone()),
           };
           let sum = Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Plus,
+            op: BinaryOperator::Plus,
             left: Box::new(min_expr.clone()),
             right: Box::new(k_times_step),
           };
@@ -919,7 +929,7 @@ pub fn power_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         break;
       }
 
-      results.push(crate::functions::math_ast::make_rational_pub(cur_n, cur_d));
+      results.push(crate::functions::math_ast::make_rational(cur_n, cur_d));
 
       // cur *= factor: (cur_n/cur_d) * (fac_n/fac_d) = (cur_n*fac_n) / (cur_d*fac_d)
       cur_n *= fac_n;
@@ -991,9 +1001,17 @@ pub fn constant_array_ast(
     match nonneg_dim(d) {
       Some(n) => concrete_dims.push(n),
       None => {
-        // A concrete but invalid dimension is an error, so leave unevaluated;
-        // a symbolic dimension yields a SymbolicZeros/OnesArray placeholder.
-        if crate::functions::predicate_ast::is_numeric_q_pub(d) {
+        // A concrete but invalid dimension (negative, non-integer, too large)
+        // makes wolframscript emit `::ilsmn` and leave the call unevaluated; a
+        // symbolic dimension yields a SymbolicZeros/OnesArray placeholder.
+        if crate::functions::predicate_ast::is_numeric_q(d) {
+          crate::emit_message(&format!(
+            "ConstantArray::ilsmn: Single or list of non-negative machine-sized integers expected at position 2 of {}.",
+            crate::syntax::expr_to_string(&Expr::FunctionCall {
+              name: "ConstantArray".to_string(),
+              args: vec![elem.clone(), dims.clone()].into(),
+            })
+          ));
           return unevaluated();
         }
         has_symbolic = true;
@@ -1027,7 +1045,7 @@ pub fn constant_array_ast(
     },
     Expr::Integer(1) => ones(),
     _ => Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left: Box::new(elem.clone()),
       right: Box::new(ones()),
     },
@@ -2581,6 +2599,25 @@ fn build_dense_from_rules(
     result.push(build_dense_from_rules(rest_dims, default, &sub_rules));
   }
   Expr::List(result.into())
+}
+
+/// If `expr` is a `SparseArray[...]`, return its dense nested-list form so
+/// callers (statistics functions, etc.) can operate on the expanded array.
+/// Returns `None` when `expr` is not a SparseArray or when densification
+/// fails to reduce it to a non-SparseArray (so the caller leaves it alone).
+pub fn densify_sparse_array(expr: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args: sa } = expr else {
+    return None;
+  };
+  if name != "SparseArray" {
+    return None;
+  }
+  let dense = sparse_array_ast(sa).ok()?;
+  if matches!(&dense, Expr::FunctionCall { name, .. } if name == "SparseArray")
+  {
+    return None;
+  }
+  Some(dense)
 }
 
 /// Expand a SparseArray (any recognized form) into a dense nested list.

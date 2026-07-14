@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::{BinaryOperator, ComparisonOp};
 
 thread_local! {
   /// Symbols currently being looked up — prevents infinite recursion when
@@ -205,11 +206,7 @@ fn gray_level_expr(g: f64) -> Expr {
 /// Map named color identifiers to their Wolfram Language evaluation result.
 /// Basic colors → RGBColor[r, g, b] or GrayLevel[g]
 /// Light* colors → RGBColor[r, g, b] or GrayLevel[g]
-pub fn named_color_expr_pub(name: &str) -> Option<Expr> {
-  named_color_expr(name)
-}
-
-fn named_color_expr(name: &str) -> Option<Expr> {
+pub fn named_color_expr(name: &str) -> Option<Expr> {
   Some(match name {
     // Basic colors
     "Red" => rgb_color_expr(1.0, 0.0, 0.0),
@@ -265,7 +262,7 @@ pub fn find_label_index(exprs: &[Expr], goto_tag: &Expr) -> Option<usize> {
 /// Prepare arguments for iterating functions (Sum, Product, NSum).
 /// The body (args[0]) is kept unevaluated to preserve the iteration variable.
 /// Iterator specs (args[1..]) have their bounds evaluated but variable names preserved.
-pub fn prepare_iterating_function_args(
+fn prepare_iterating_function_args(
   args: &[Expr],
 ) -> Result<Vec<Expr>, InterpreterError> {
   let mut result = Vec::new();
@@ -299,7 +296,7 @@ pub fn prepare_iterating_function_args(
 /// Early dispatch for FunctionCall in evaluate_expr_to_expr — handles held functions
 /// before argument evaluation. Returns Some(result) if handled, None otherwise.
 #[inline(never)]
-pub fn evaluate_expr_to_expr_early_dispatch(
+fn evaluate_expr_to_expr_early_dispatch(
   name: &str,
   args: &[Expr],
 ) -> Result<Option<Expr>, InterpreterError> {
@@ -420,12 +417,6 @@ pub fn evaluate_expr_to_expr_early_dispatch(
     _ => {}
   }
   Ok(None)
-}
-
-/// Evaluate an Expr AST directly and return a string representation.
-/// Delegates to `evaluate_expr_to_expr` and converts the result to a string.
-pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
-  Ok(expr_to_string(&evaluate_expr_to_expr(expr)?))
 }
 
 /// Whether an expression is a valid rules slot for ReplaceAll /
@@ -1003,7 +994,7 @@ pub fn evaluate_expr_to_expr_inner(
               Expr::Integer(-1)
             };
             let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Plus,
+              op: BinaryOperator::Plus,
               left: Box::new(current_val.clone()),
               right: Box::new(delta),
             })?;
@@ -1029,7 +1020,7 @@ pub fn evaluate_expr_to_expr_inner(
               Expr::Integer(-1)
             };
             let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Plus,
+              op: BinaryOperator::Plus,
               left: Box::new(current_val.clone()),
               right: Box::new(delta),
             })?;
@@ -1209,9 +1200,9 @@ pub fn evaluate_expr_to_expr_inner(
                           operands,
                           operators,
                         })) = conds.get(i)
-                          && operators.iter().any(|op| {
-                            matches!(op, crate::syntax::ComparisonOp::SameQ)
-                          })
+                          && operators
+                            .iter()
+                            .any(|op| matches!(op, ComparisonOp::SameQ))
                           && let Some(literal_val) = operands.get(1)
                         {
                           return literal_val.clone();
@@ -1260,6 +1251,50 @@ pub fn evaluate_expr_to_expr_inner(
         {
           return dispatch::evaluate_function_call_ast(name, args);
         }
+        // ApplyTo[x, f] (x //= f): set x to f[x] and return the new
+        // value. HoldFirst; an unset variable emits rvalue.
+        if name == "ApplyTo" && args.len() == 2 {
+          if let Expr::Identifier(var_name) = &args[0] {
+            let current = ENV.with(|e| e.borrow().get(var_name).cloned());
+            let current_val = match current {
+              Some(StoredValue::ExprVal(e)) => e,
+              Some(StoredValue::Raw(s)) => {
+                crate::syntax::string_to_expr(&s).unwrap_or(Expr::Integer(0))
+              }
+              _ => {
+                crate::emit_message(&format!(
+                  "ApplyTo::rvalue: {} is not a variable with a value, so its value cannot be changed.",
+                  var_name
+                ));
+                return Ok(Expr::FunctionCall {
+                  name: name.clone(),
+                  args: args.clone(),
+                });
+              }
+            };
+            let func = evaluate_expr_to_expr(&args[1])?;
+            let new_val =
+              crate::evaluator::function_application::apply_function_to_arg(
+                &func,
+                &current_val,
+              )?;
+            ENV.with(|e| {
+              e.borrow_mut().insert(
+                var_name.clone(),
+                StoredValue::ExprVal(new_val.clone()),
+              );
+            });
+            return Ok(new_val);
+          }
+          crate::emit_message(&format!(
+            "ApplyTo::rvalue: {} is not a variable with a value, so its value cannot be changed.",
+            crate::syntax::expr_to_string(&args[0])
+          ));
+          return Ok(Expr::FunctionCall {
+            name: name.clone(),
+            args: args.clone(),
+          });
+        }
         // Special handling for AddTo, SubtractFrom, TimesBy, DivideBy - x += y, x -= y, etc.
         if (name == "AddTo"
           || name == "SubtractFrom"
@@ -1268,10 +1303,10 @@ pub fn evaluate_expr_to_expr_inner(
           && args.len() == 2
         {
           let op = match name.as_str() {
-            "AddTo" => crate::syntax::BinaryOperator::Plus,
-            "SubtractFrom" => crate::syntax::BinaryOperator::Minus,
-            "TimesBy" => crate::syntax::BinaryOperator::Times,
-            "DivideBy" => crate::syntax::BinaryOperator::Divide,
+            "AddTo" => BinaryOperator::Plus,
+            "SubtractFrom" => BinaryOperator::Minus,
+            "TimesBy" => BinaryOperator::Times,
+            "DivideBy" => BinaryOperator::Divide,
             _ => unreachable!(),
           };
           if let Expr::Identifier(var_name) = &args[0] {
@@ -2167,6 +2202,33 @@ pub fn evaluate_expr_to_expr_inner(
           }
           return crate::functions::boolean_ast::or_ast(&[left_val, right_val]);
         }
+        BinaryOperator::StringJoin => {
+          // StringJoin is Flat: evaluate the whole `a <> b <> c` chain as one
+          // StringJoin so string_join_ast sees every operand at once (correct
+          // message positions and a flat result), rather than evaluating each
+          // nested BinaryOp separately and emitting premature messages.
+          fn gather(e: &Expr, out: &mut Vec<Expr>) {
+            if let Expr::BinaryOp {
+              op: BinaryOperator::StringJoin,
+              left,
+              right,
+            } = e
+            {
+              gather(left, out);
+              gather(right, out);
+            } else {
+              out.push(e.clone());
+            }
+          }
+          let mut operands = Vec::new();
+          gather(left, &mut operands);
+          gather(right, &mut operands);
+          let mut evaled = Vec::with_capacity(operands.len());
+          for o in &operands {
+            evaled.push(evaluate_expr_to_expr(o)?);
+          }
+          return crate::functions::string_ast::string_join_ast(&evaled);
+        }
         _ => {}
       }
 
@@ -2293,6 +2355,13 @@ pub fn evaluate_expr_to_expr_inner(
             bigint_binary_op(&left_val, &right_val, |a, b| a - b)
           {
             Ok(result)
+          } else if matches!(&left_val, Expr::BigFloat(_, _))
+            || matches!(&right_val, Expr::BigFloat(_, _))
+          {
+            // Arbitrary-precision operands: route through subtract_ast
+            // (a + (-1)*b) so precision is tracked, instead of collapsing to
+            // an f64 Real. Matches `Subtract[N[Pi,30], 3]`.
+            crate::functions::math_ast::subtract_ast(&[left_val, right_val])
           } else if let (Some(l), Some(r)) = (left_num, right_num) {
             if matches!(&left_val, Expr::Real(_))
               || matches!(&right_val, Expr::Real(_))
@@ -2341,11 +2410,35 @@ pub fn evaluate_expr_to_expr_inner(
           crate::functions::string_ast::string_join_ast(&[left_val, right_val])
         }
         BinaryOperator::Alternatives => {
-          // Alternatives stays symbolic (used in pattern matching)
-          Ok(Expr::BinaryOp {
-            op: BinaryOperator::Alternatives,
-            left: Box::new(left_val),
-            right: Box::new(right_val),
+          // `a | b | c` (the `|` operator) is a flat Alternatives head in WL:
+          // Length[a | b | c] == 3. The parser builds it as a nested BinaryOp
+          // chain, so canonicalize the evaluated chain into a flat
+          // Alternatives[...] FunctionCall. This makes structural operations
+          // (Part, Sort, MemberQ, Append, …) see all operands as siblings,
+          // matching wolframscript. Held patterns keep their BinaryOp form and
+          // are handled directly by the pattern matcher, which accepts both.
+          fn push_alt(e: &Expr, out: &mut Vec<Expr>) {
+            match e {
+              Expr::FunctionCall { name, args } if name == "Alternatives" => {
+                out.extend(args.iter().cloned());
+              }
+              Expr::BinaryOp {
+                op: BinaryOperator::Alternatives,
+                left,
+                right,
+              } => {
+                push_alt(left, out);
+                push_alt(right, out);
+              }
+              other => out.push(other.clone()),
+            }
+          }
+          let mut parts = Vec::new();
+          push_alt(&left_val, &mut parts);
+          push_alt(&right_val, &mut parts);
+          Ok(Expr::FunctionCall {
+            name: "Alternatives".to_string(),
+            args: parts.into(),
           })
         }
       }
@@ -2598,6 +2691,34 @@ pub fn evaluate_expr_to_expr_inner(
           && let Some(b) = interval_compare(op, left, right)
         {
           if !b {
+            return Ok(Expr::Identifier("False".to_string()));
+          }
+          continue;
+        }
+
+        // Ordering comparisons on DateObject / TimeObject: compare by absolute
+        // time (dates) or seconds-since-midnight (times of day). Both operands
+        // must be the same kind. A determinable result is used; anything else
+        // falls through to the normal (unevaluated) handling.
+        if matches!(
+          op,
+          ComparisonOp::Less
+            | ComparisonOp::LessEqual
+            | ComparisonOp::Greater
+            | ComparisonOp::GreaterEqual
+        ) && let (Some((lv, lk)), Some((rv, rk))) = (
+          crate::functions::datetime_ast::datetime_order_key(left),
+          crate::functions::datetime_ast::datetime_order_key(right),
+        ) && lk == rk
+        {
+          let ok = match op {
+            ComparisonOp::Less => lv < rv,
+            ComparisonOp::LessEqual => lv <= rv,
+            ComparisonOp::Greater => lv > rv,
+            ComparisonOp::GreaterEqual => lv >= rv,
+            _ => true,
+          };
+          if !ok {
             return Ok(Expr::Identifier("False".to_string()));
           }
           continue;

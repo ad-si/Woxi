@@ -2,6 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator};
 
 /// Shared AllTrue/AnyTrue/NoneTrue implementation: apply the predicate
 /// to every element at exactly the requested level (default 1) and
@@ -322,16 +323,16 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       // Median[PowerDistribution[k, a]] = 1/(2^(1/a) k).
       let (k, a) = (dargs[0].clone(), dargs[1].clone());
       let med = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::Integer(1)),
         right: Box::new(Expr::FunctionCall {
           name: "Times".to_string(),
           args: vec![
             Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Power,
+              op: BinaryOperator::Power,
               left: Box::new(Expr::Integer(2)),
               right: Box::new(Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Power,
+                op: BinaryOperator::Power,
                 left: Box::new(a),
                 right: Box::new(Expr::Integer(-1)),
               }),
@@ -368,7 +369,7 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
         args: vec![sqrt_pi, inverse_erf_half].into(),
       };
       let med = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(numer),
         right: Box::new(theta),
       };
@@ -388,7 +389,7 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
         args: vec![Expr::Integer(2)].into(),
       };
       let inv_a = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::Integer(1)),
         right: Box::new(a),
       };
@@ -397,13 +398,13 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
         args: vec![log2, inv_a].into(),
       };
       let b_over = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(b),
         right: Box::new(denom),
       };
       let med = match mu {
         Some(m) => Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Plus,
+          op: BinaryOperator::Plus,
           left: Box::new(m),
           right: Box::new(b_over),
         },
@@ -427,10 +428,10 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
         args: vec![log2].into(),
       };
       let med = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Minus,
+        op: BinaryOperator::Minus,
         left: Box::new(a),
         right: Box::new(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(b),
           right: Box::new(log_log2),
         }),
@@ -461,7 +462,7 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
         args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
       };
       let v_half = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(v),
         right: Box::new(Expr::Integer(2)),
       };
@@ -478,7 +479,7 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
         args: vec![Expr::Integer(2)].into(),
       };
       let med = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(sqrt2),
         right: Box::new(sqrt_inner),
       };
@@ -493,7 +494,7 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       };
       let cond = Expr::Comparison {
         operands: vec![p, half],
-        operators: vec![crate::syntax::ComparisonOp::Greater],
+        operators: vec![ComparisonOp::Greater],
       };
       let pair = Expr::List(vec![Expr::Integer(1), cond].into());
       let cases = Expr::List(vec![pair].into());
@@ -510,32 +511,32 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       let a = dargs[1].clone();
       let b = dargs[2].clone();
       let inv_p = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::Integer(1)),
         right: Box::new(p),
       };
       let two_pow = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left: Box::new(Expr::Integer(2)),
         right: Box::new(inv_p),
       };
       let base = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(Expr::Integer(-1)),
         right: Box::new(two_pow),
       };
       let inv_a = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::Integer(1)),
         right: Box::new(a),
       };
       let denom = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left: Box::new(base),
         right: Box::new(inv_a),
       };
       let med = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(b),
         right: Box::new(denom),
       };
@@ -557,17 +558,17 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       let k = dargs[0].clone();
       let a = dargs[1].clone();
       let inv_a = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::Integer(1)),
         right: Box::new(a),
       };
       let pow_term = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left: Box::new(Expr::Integer(2)),
         right: Box::new(inv_a),
       };
       let med = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(k),
         right: Box::new(pow_term),
       };
@@ -582,17 +583,17 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
         args: vec![Expr::Integer(2)].into(),
       };
       let inv_a = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::Integer(1)),
         right: Box::new(a),
       };
       let pow_term = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left: Box::new(log2),
         right: Box::new(inv_a),
       };
       let med = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(b),
         right: Box::new(pow_term),
       };
@@ -601,7 +602,7 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
     "LogNormalDistribution" if dargs.len() == 2 => {
       // Median[LogNormalDistribution[mu, sigma]] = E^mu
       let med = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left: Box::new(Expr::Constant("E".to_string())),
         right: Box::new(dargs[0].clone()),
       };
@@ -637,12 +638,12 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       // Median = (a + b)/2. ArcSinDistribution is also symmetric about
       // the midpoint of its support, so the same formula applies.
       let sum = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(bounds[0].clone()),
         right: Box::new(bounds[1].clone()),
       };
       let med = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(sum),
         right: Box::new(Expr::Integer(2)),
       };
@@ -664,7 +665,7 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
         args: vec![log4].into(),
       };
       let med = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(sigma),
         right: Box::new(sqrt_log4),
       };
@@ -681,17 +682,17 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       let imax = bounds[1].clone();
       // Median = -1 + min + Max[1, Ceiling[(1 + max - min)/2]]
       let diff = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Minus,
+        op: BinaryOperator::Minus,
         left: Box::new(imax),
         right: Box::new(imin.clone()),
       };
       let one_plus_diff = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(Expr::Integer(1)),
         right: Box::new(diff),
       };
       let half = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(one_plus_diff),
         right: Box::new(Expr::Integer(2)),
       };
@@ -704,10 +705,10 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
         args: vec![Expr::Integer(1), ceiling].into(),
       };
       let med = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(Expr::Integer(-1)),
         right: Box::new(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Plus,
+          op: BinaryOperator::Plus,
           left: Box::new(imin),
           right: Box::new(max_call),
         }),
@@ -727,7 +728,7 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
         args: vec![a, half].into(),
       };
       let med = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(b),
         right: Box::new(denom),
       };
@@ -742,12 +743,12 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
         args: vec![Expr::Integer(2)].into(),
       };
       let log2_over_xi = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(log2),
         right: Box::new(xi),
       };
       let one_plus = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(Expr::Integer(1)),
         right: Box::new(log2_over_xi),
       };
@@ -756,7 +757,7 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
         args: vec![one_plus].into(),
       };
       let med = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(log_arg),
         right: Box::new(lambda),
       };
@@ -765,7 +766,7 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
     // Median[dist] = Quantile[dist, 1/2]; delegate to the closed-form quantile
     // for the gamma family. (BetaDistribution is handled by an earlier arm.)
     "GammaDistribution" | "ChiSquareDistribution" => {
-      let half = crate::functions::math_ast::make_rational_pub(1, 2);
+      let half = crate::functions::math_ast::make_rational(1, 2);
       crate::functions::math_ast::quantile_distribution_closed_form(
         name, dargs, &half,
       )
@@ -800,7 +801,7 @@ fn hypoexponential_median(arg: &Expr) -> Option<Expr> {
       args: vec![Expr::Integer(2)].into(),
     };
     let med = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(log2),
       right: Box::new(lambda),
     };
@@ -903,6 +904,10 @@ fn median_sort_key(e: &Expr) -> Option<f64> {
 
 /// AST-based Median: calculate median of a list.
 pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  // A SparseArray argument is handled via its dense form.
+  if let Some(dense) = super::densify_sparse_array(list) {
+    return median_ast(&dense);
+  }
   // Distribution-form input: Median[dist] → quantile at p = 1/2.
   if let Expr::FunctionCall { name, args } = list
     && let Some(med) = distribution_median(name, args)
@@ -1008,7 +1013,7 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
         return Ok(sorted[len / 2].clone());
       }
       let avg = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::FunctionCall {
           name: "Plus".to_string(),
           args: vec![sorted[len / 2 - 1].clone(), sorted[len / 2].clone()]
@@ -1091,7 +1096,7 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       Ok(keyed[len / 2].1.clone())
     } else {
       let avg = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::FunctionCall {
           name: "Plus".to_string(),
           args: vec![keyed[len / 2 - 1].1.clone(), keyed[len / 2].1.clone()]
@@ -1383,7 +1388,7 @@ pub fn min_max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       vec![
         Expr::Identifier("Infinity".to_string()),
         Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand: Box::new(Expr::Identifier("Infinity".to_string())),
         },
       ]
@@ -1817,7 +1822,7 @@ fn edge_to_f64(e: &Expr) -> Option<f64> {
   // -Infinity is stored as UnaryOp[Minus, Infinity] inside an unevaluated
   // List (the evaluator leaves it as-is to preserve the surface syntax).
   if let Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand,
   } = e
   {
@@ -3639,7 +3644,7 @@ fn find_clusters_with_k(
 /// Falls back to the unevaluated form for inputs that
 /// `ClusteringComponents` can't label (e.g. non-numeric data or shapes
 /// the underlying algorithm doesn't yet handle).
-pub fn find_clusters_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+fn find_clusters_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   // Rule-style inputs: `{key -> val, ...}` and `keys -> vals` — cluster by
   // the *keys* and emit the matching values, ordered with the high-key
   // cluster first (matching wolframscript's

@@ -634,7 +634,7 @@ pub fn bernoulli_number(n: usize) -> Option<(i128, i128)> {
 
 /// Compute Zeta[2n] for positive even integer 2n.
 /// Returns the exact expression |B_{2n}| * 2^(2n-1) * Pi^(2n) / (2n)!
-pub fn zeta_positive_even(two_n: usize) -> Option<Expr> {
+fn zeta_positive_even(two_n: usize) -> Option<Expr> {
   let (b_num, b_den) = bernoulli_number(two_n)?;
   if b_num == 0 {
     return None;
@@ -696,7 +696,7 @@ pub fn zeta_positive_even(two_n: usize) -> Option<Expr> {
 
 /// Compute Zeta[-n] for negative odd integer -n.
 /// Returns (-1)^n * B_{n+1} / (n+1)
-pub fn zeta_negative_odd(abs_n: usize) -> Option<Expr> {
+fn zeta_negative_odd(abs_n: usize) -> Option<Expr> {
   let (b_num, b_den) = bernoulli_number(abs_n + 1)?;
   // (-1)^n * B_{n+1} / (n+1)
   let sign: i128 = if abs_n.is_multiple_of(2) { 1 } else { -1 };
@@ -899,7 +899,7 @@ pub fn log_gamma_complex(re: f64, im: f64) -> (f64, f64) {
 
 /// Compute Zeta(s) numerically for complex s using Euler-Maclaurin formula
 /// with functional equation for Re(s) < 0.5.
-pub fn zeta_numeric_complex(s_re: f64, s_im: f64) -> (f64, f64) {
+fn zeta_numeric_complex(s_re: f64, s_im: f64) -> (f64, f64) {
   use std::f64::consts::PI;
   let s = (s_re, s_im);
 
@@ -1098,12 +1098,12 @@ pub fn extract_f64(expr: &Expr) -> Option<f64> {
   }
 }
 
-pub fn z_expr_from_args(expr: &Expr) -> &Expr {
+fn z_expr_from_args(expr: &Expr) -> &Expr {
   expr
 }
 
 /// Build digamma at positive integer: H_{z-1} - EulerGamma
-pub fn polygamma_digamma_integer(z: usize) -> Expr {
+fn polygamma_digamma_integer(z: usize) -> Expr {
   let euler = Expr::Identifier("EulerGamma".to_string());
   if z == 1 {
     // H_0 = 0, so result is -EulerGamma
@@ -1124,7 +1124,7 @@ pub fn polygamma_digamma_integer(z: usize) -> Expr {
 }
 
 /// Compute H_n = 1 + 1/2 + ... + 1/n as (numerator, denominator)
-pub fn harmonic_rational(n: usize) -> (i128, i128) {
+fn harmonic_rational(n: usize) -> (i128, i128) {
   let mut num: i128 = 0;
   let mut den: i128 = 1;
   for k in 1..=n {
@@ -1140,7 +1140,7 @@ pub fn harmonic_rational(n: usize) -> (i128, i128) {
 
 /// Build exact PolyGamma[n, z] for odd n >= 1 and positive integer z.
 /// Returns n! * (zeta(n+1) - partial_sum)
-pub fn polygamma_odd_integer(n: usize, z: usize) -> Option<Expr> {
+fn polygamma_odd_integer(n: usize, z: usize) -> Option<Expr> {
   // Get zeta(n+1) as a symbolic expression (raw, not multiplied by n!)
   let zeta_expr = zeta_positive_even(n + 1)?;
 
@@ -1180,10 +1180,7 @@ pub fn polygamma_odd_integer(n: usize, z: usize) -> Option<Expr> {
 }
 
 /// Multiply zeta(2n) coefficient by n! and build the expression
-pub fn polygamma_multiply_zeta_by_nfact(
-  two_n: usize,
-  nfact: i128,
-) -> Option<Expr> {
+fn polygamma_multiply_zeta_by_nfact(two_n: usize, nfact: i128) -> Option<Expr> {
   let (b_num, b_den) = bernoulli_number(two_n)?;
   if b_num == 0 {
     return None;
@@ -1243,7 +1240,7 @@ pub fn polygamma_multiply_zeta_by_nfact(
 }
 
 /// Compute Σ_{k=1}^{n} 1/k^power as (numerator, denominator)
-pub fn partial_sum_powers(n: usize, power: usize) -> Option<(i128, i128)> {
+fn partial_sum_powers(n: usize, power: usize) -> Option<(i128, i128)> {
   let mut sum_n: i128 = 0;
   let mut sum_d: i128 = 1;
   for k in 1..=n {
@@ -1258,7 +1255,7 @@ pub fn partial_sum_powers(n: usize, power: usize) -> Option<(i128, i128)> {
 }
 
 /// Compute polygamma function numerically
-pub fn polygamma_numeric(n: usize, mut z: f64) -> f64 {
+fn polygamma_numeric(n: usize, mut z: f64) -> f64 {
   if n == 0 {
     return digamma(z);
   }
@@ -1623,7 +1620,7 @@ fn legendre_p_dp(n: usize, x: f64) -> (f64, f64) {
 }
 
 /// Compute LerchPhi numerically via series: Σ z^k / (k+a)^s
-pub fn lerch_phi_numeric(z: f64, s: f64, a: f64) -> f64 {
+fn lerch_phi_numeric(z: f64, s: f64, a: f64) -> f64 {
   // For z = 1, this is the Hurwitz zeta: Σ 1/(k+a)^s
   // Use Euler-Maclaurin to add tail correction for better convergence
   let n_terms = if (z - 1.0).abs() < 1e-14 { 200 } else { 1000 };

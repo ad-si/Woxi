@@ -49,7 +49,7 @@ pub fn transliterate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Transliterate a string to plain Latin/ASCII.
-pub fn transliterate_to_ascii(input: &str) -> String {
+fn transliterate_to_ascii(input: &str) -> String {
   use unicode_normalization::UnicodeNormalization;
   // Compose first so decomposed kana voicing marks, decomposed Hangul
   // jamo, and combining accents arrive as single code points.

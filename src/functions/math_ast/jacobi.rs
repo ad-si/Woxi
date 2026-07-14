@@ -856,7 +856,7 @@ pub fn inverse_jacobi_dc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Extract the inner expression from a negated expression like Times[-1, x] or -x
-pub fn extract_negated_expr(expr: &Expr) -> Option<Expr> {
+fn extract_negated_expr(expr: &Expr) -> Option<Expr> {
   match expr {
     // Times[-1, x] form (FunctionCall)
     Expr::FunctionCall { name, args }
@@ -1280,7 +1280,7 @@ pub fn is_expr_zero(expr: &Expr) -> bool {
 }
 
 /// Check if an expression is numerically one
-pub fn is_expr_one(expr: &Expr) -> bool {
+fn is_expr_one(expr: &Expr) -> bool {
   match expr {
     Expr::Integer(1) => true,
     Expr::Real(f) => *f == 1.0,

@@ -3,7 +3,7 @@
 //! These functions work directly with `Expr` AST nodes.
 
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
 
 /// Helper to create boolean result
 fn bool_expr(b: bool) -> Expr {
@@ -44,7 +44,7 @@ fn is_numeric_expr(expr: &Expr) -> bool {
     Expr::Identifier(name) if name == "I" => true,
     // n * I or I * n
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -64,8 +64,7 @@ fn is_numeric_expr(expr: &Expr) -> bool {
     }
     // a + b*I or a - b*I
     Expr::BinaryOp {
-      op:
-        crate::syntax::BinaryOperator::Plus | crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Plus | BinaryOperator::Minus,
       left,
       right,
     } => is_numeric_expr(left) && is_numeric_expr(right),
@@ -77,12 +76,12 @@ fn is_numeric_expr(expr: &Expr) -> bool {
     }
     // Unary minus
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => is_numeric_expr(operand),
     // a / b where both are numeric
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left,
       right,
     } => is_numeric_expr(left) && is_numeric_expr(right),
@@ -367,7 +366,6 @@ fn sqrt_of_rational(rad: &Expr) -> Option<QuadNum> {
 /// quadratic field. Returns `None` for anything outside (machine reals,
 /// symbols, non-real radicals, higher-degree algebraics, …).
 fn as_quad_num(expr: &Expr) -> Option<QuadNum> {
-  use crate::syntax::{BinaryOperator, UnaryOperator};
   // Sqrt[r] (matches both the Power[r, 1/2] and Sqrt[r] representations).
   if let Some(rad) = crate::functions::is_sqrt(expr) {
     return sqrt_of_rational(rad);
@@ -563,11 +561,7 @@ pub fn numeric_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Check if an expression is numeric (can be numerically evaluated)
-pub fn is_numeric_q_pub(expr: &Expr) -> bool {
-  is_numeric_q(expr)
-}
-
-fn is_numeric_q(expr: &Expr) -> bool {
+pub fn is_numeric_q(expr: &Expr) -> bool {
   match expr {
     Expr::Integer(_)
     | Expr::BigInteger(_)
@@ -605,7 +599,7 @@ fn is_numeric_q(expr: &Expr) -> bool {
                   operators,
                 } = cond
                 && operators.len() == 1
-                && operators[0] == crate::syntax::ComparisonOp::SameQ
+                && operators[0] == ComparisonOp::SameQ
                 && operands.len() == 2
                 && let Expr::Identifier(cond_val) = &operands[1]
                 && cond_val == name
@@ -702,7 +696,7 @@ fn sign_via_numeric(expr: &Expr, cmp: impl Fn(f64) -> bool) -> Option<bool> {
   // Only fire when NumericQ would succeed — that's how Wolfram decides
   // it can numerically evaluate. Avoids forcing Negative[a] to True or
   // anything weird for unevaluated user symbols.
-  if !is_numeric_q_pub(expr) {
+  if !is_numeric_q(expr) {
     return None;
   }
   let val = super::math_ast::try_eval_to_f64(expr)?;
@@ -778,7 +772,7 @@ fn is_known_positive(expr: &Expr) -> Option<bool> {
       _ => None,
     },
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => is_known_positive(operand).map(|p| !p),
     // Times[-1, x] is negative of x (e.g. -Pi parses as Times[-1, Pi])
@@ -790,7 +784,7 @@ fn is_known_positive(expr: &Expr) -> Option<bool> {
       is_known_positive(&args[1]).map(|p| !p)
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } if matches!(left.as_ref(), Expr::Integer(-1)) => {
@@ -840,7 +834,7 @@ fn is_known_negative(expr: &Expr) -> Option<bool> {
       _ => None,
     },
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => is_known_positive(operand),
     // Times[-1, x] is negative of x (e.g. -Pi parses as Times[-1, Pi])
@@ -852,7 +846,7 @@ fn is_known_negative(expr: &Expr) -> Option<bool> {
       is_known_positive(&args[1])
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } if matches!(left.as_ref(), Expr::Integer(-1)) => is_known_positive(right),
@@ -914,7 +908,7 @@ fn is_nonnegative_abs_form(expr: &Expr) -> bool {
       args.iter().collect()
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => vec![left.as_ref(), right.as_ref()],
@@ -1180,26 +1174,54 @@ pub fn prime_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(bool_expr(is_prime))
 }
 
-/// CompositeQ[n] - Tests if n is a composite (non-prime > 1) number
+/// CompositeQ[n] - Tests whether n is a composite number.
+///
+/// wolframscript's convention: a prime (real or Gaussian) is never composite;
+/// a value that is not an explicit `NumberQ` (symbols, `Pi`, `Sqrt[2]`) is
+/// never composite. Among the remaining numbers:
+///   - exact real integers are composite iff `Abs[n] > 1` (so 0 and ±1 are not);
+///   - exact Gaussian integers are composite iff their norm > 1 (so ±I are not);
+///   - every other explicit number — inexact reals/complex, non-integer
+///     rationals — is composite (e.g. `CompositeQ[6.5]`, `CompositeQ[1/2]`,
+///     and even `CompositeQ[1.0]` are all True).
 pub fn composite_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "CompositeQ expects exactly 1 argument".into(),
     ));
   }
-  // Delegate to PrimeQ and negate
-  let prime_result = prime_q_ast(args)?;
-  let is_prime = matches!(&prime_result, Expr::Identifier(s) if s == "True");
 
-  // CompositeQ is True only for n > 1 that are not prime
-  let n_gt_1 = match &args[0] {
-    Expr::Integer(n) => *n > 1,
-    Expr::BigInteger(n) => *n > num_bigint::BigInt::from(1),
-    Expr::Real(f) if f.fract() == 0.0 => *f > 1.0,
-    _ => return Ok(bool_expr(false)),
-  };
-
-  Ok(bool_expr(n_gt_1 && !is_prime))
+  // Primes (including Gaussian primes) are never composite.
+  if matches!(&prime_q_ast(args)?, Expr::Identifier(s) if s == "True") {
+    return Ok(bool_expr(false));
+  }
+  // Only explicit numbers can be composite.
+  if !matches!(&number_q_ast(args)?, Expr::Identifier(s) if s == "True") {
+    return Ok(bool_expr(false));
+  }
+  // Exact real integers: composite iff |n| > 1 (excludes 0 and ±1).
+  match &args[0] {
+    Expr::Integer(n) => return Ok(bool_expr(n.abs() > 1)),
+    Expr::BigInteger(n) => {
+      use num_traits::Signed;
+      return Ok(bool_expr(n.abs() > num_bigint::BigInt::from(1)));
+    }
+    _ => {}
+  }
+  // Exact Gaussian integers: composite iff the norm exceeds 1 (excludes ±I).
+  if let Some(((rn, rd), (in_, id))) =
+    crate::functions::math_ast::try_extract_complex_exact(&args[0])
+    && rd == 1
+    && id == 1
+    && in_ != 0
+  {
+    let norm = rn
+      .saturating_mul(rn)
+      .saturating_add(in_.saturating_mul(in_));
+    return Ok(bool_expr(norm > 1));
+  }
+  // Any other explicit number (inexact real/complex, non-integer rational).
+  Ok(bool_expr(true))
 }
 
 /// PrimePowerQ[n] - Tests if n is a power of a prime
@@ -1555,11 +1577,11 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Check if operator's head matches the form symbol
         if let Expr::Identifier(s) = form {
           let matches = match op {
-            crate::syntax::BinaryOperator::Plus => s == "Plus",
-            crate::syntax::BinaryOperator::Minus => s == "Plus",
-            crate::syntax::BinaryOperator::Times => s == "Times",
-            crate::syntax::BinaryOperator::Power => s == "Power",
-            crate::syntax::BinaryOperator::Divide => s == "Times",
+            BinaryOperator::Plus => s == "Plus",
+            BinaryOperator::Minus => s == "Plus",
+            BinaryOperator::Times => s == "Times",
+            BinaryOperator::Power => s == "Power",
+            BinaryOperator::Divide => s == "Times",
             _ => false,
           };
           if matches {
@@ -1597,7 +1619,7 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if matches!(
       form,
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Alternatives,
+        op: BinaryOperator::Alternatives,
         ..
       }
     ) {
@@ -1928,12 +1950,12 @@ pub fn is_directed_infinity(expr: &Expr) -> bool {
       args.iter().any(is_inf_sym)
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => is_inf_sym(left) || is_inf_sym(right),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => is_inf_sym(operand),
     _ => false,
@@ -1997,7 +2019,6 @@ pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Rule { .. } => "Rule",
     Expr::RuleDelayed { .. } => "RuleDelayed",
     Expr::BinaryOp { op, left, .. } => {
-      use crate::syntax::BinaryOperator;
       match op {
         BinaryOperator::Plus => "Plus",
         BinaryOperator::Minus => "Plus", // Minus is represented as Plus internally
@@ -2017,15 +2038,11 @@ pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         BinaryOperator::Alternatives => "Alternatives",
       }
     }
-    Expr::UnaryOp { op, .. } => {
-      use crate::syntax::UnaryOperator;
-      match op {
-        UnaryOperator::Minus => "Times",
-        UnaryOperator::Not => "Not",
-      }
-    }
+    Expr::UnaryOp { op, .. } => match op {
+      UnaryOperator::Minus => "Times",
+      UnaryOperator::Not => "Not",
+    },
     Expr::Comparison { operators, .. } => {
-      use crate::syntax::ComparisonOp;
       // A uniform chain (all operators the same) has head equal to that operator.
       // A mixed chain has head "Inequality". A single-op comparison also uses
       // the operator name directly.
@@ -2128,7 +2145,16 @@ pub fn length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         0
       }
     }
-    Expr::Comparison { operands, .. } => operands.len() as i128,
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      // A mixed chain like `a < b <= c` is Inequality[a, Less, b, LessEqual, c]
+      // (length 5); a uniform chain is Op[a, b, c] (length 3).
+      let (_, args) =
+        crate::syntax::comparison_head_and_args(operands, operators);
+      args.len() as i128
+    }
     // Atoms: Integer, Real, String, Identifier, BigFloat, BigInteger, etc.
     _ => 0,
   };
@@ -2462,6 +2488,18 @@ fn head_name(e: &Expr) -> String {
 /// the unevaluated call; matching nonatomic heads (List or any common
 /// head) yield their elements.
 #[allow(clippy::type_complexity)]
+/// Set-style predicates (SubsetQ, DisjointQ, IntersectingQ) compare the VALUES
+/// of an association as a set, so convert an association argument to its list
+/// of values and leave anything else untouched.
+fn assoc_to_value_list(e: &Expr) -> Expr {
+  match e {
+    Expr::Association(pairs) => {
+      Expr::List(pairs.iter().map(|(_, v)| v.clone()).collect())
+    }
+    other => other.clone(),
+  }
+}
+
 fn same_head_elements<'a>(
   fname: &str,
   args: &'a [Expr],
@@ -2515,7 +2553,12 @@ pub fn subset_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     None
   };
-  let (superset, subset) = match same_head_elements("SubsetQ", &args[..2]) {
+  // On associations, SubsetQ compares the VALUES as sets, and either argument
+  // may be a list or an association (`SubsetQ[<|a->1,b->2|>, <|a->1|>]` is True).
+  // Convert associations to their value lists so the shared logic applies.
+  let pair_args =
+    [assoc_to_value_list(&args[0]), assoc_to_value_list(&args[1])];
+  let (superset, subset) = match same_head_elements("SubsetQ", &pair_args) {
     Ok(Some(pair)) => pair,
     Ok(None) => {
       return Ok(Expr::FunctionCall {
@@ -2523,7 +2566,12 @@ pub fn subset_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         args: args.to_vec().into(),
       });
     }
-    Err(unevaluated) => return Ok(unevaluated),
+    Err(_) => {
+      return Ok(Expr::FunctionCall {
+        name: "SubsetQ".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
   };
   if let Some(test) = same_test {
     // Every subset element y must be equivalent to some superset element x,
@@ -2606,7 +2654,11 @@ fn intersecting_or_disjoint(
   } else {
     None
   };
-  let (a, b) = match same_head_elements(fname, &args[..2]) {
+  // Associations are compared by their VALUES as sets (like SubsetQ), and
+  // either argument may be a list or an association.
+  let pair_args =
+    [assoc_to_value_list(&args[0]), assoc_to_value_list(&args[1])];
+  let (a, b) = match same_head_elements(fname, &pair_args) {
     Ok(Some(pair)) => pair,
     Ok(None) => {
       return Ok(Expr::FunctionCall {
@@ -2614,7 +2666,12 @@ fn intersecting_or_disjoint(
         args: args.to_vec().into(),
       });
     }
-    Err(unevaluated) => return Ok(unevaluated),
+    Err(_) => {
+      return Ok(Expr::FunctionCall {
+        name: fname.to_string(),
+        args: args.to_vec().into(),
+      });
+    }
   };
   let has_common = if let Some(test) = same_test {
     // A common element exists iff some pair satisfies test[x, y] (x from the
@@ -2641,6 +2698,65 @@ fn intersecting_or_disjoint(
     }
     .to_string(),
   ))
+}
+
+/// DuplicateFreeQ[list] - True if `list` has no duplicated elements (default
+/// test is SameQ). DuplicateFreeQ[list, test] treats two elements as duplicates
+/// when `test[x, y]` gives True, following DeleteDuplicates order (the retained
+/// element is the first argument). Works on any non-atomic expression, not only
+/// Lists; atoms leave the call unevaluated after emitting the `normal` message.
+pub fn duplicate_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Ok(Expr::FunctionCall {
+      name: "DuplicateFreeQ".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+  // The subject must be a non-atomic expression (List or any head[...]).
+  let elements: &[Expr] = match &args[0] {
+    Expr::List(items) => items,
+    Expr::FunctionCall { args: inner, .. } => inner,
+    _ => {
+      crate::emit_message(&format!(
+        "DuplicateFreeQ::normal: Nonatomic expression expected at position 1 in DuplicateFreeQ[{}].",
+        crate::syntax::expr_to_output(&args[0])
+      ));
+      return Ok(Expr::FunctionCall {
+        name: "DuplicateFreeQ".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+
+  if args.len() == 2 {
+    // Custom test: an element is a duplicate when `test[kept, elem]` is True
+    // for some earlier retained element.
+    let test = &args[1];
+    let mut kept: Vec<&Expr> = Vec::new();
+    for elem in elements {
+      let is_dup = kept.iter().any(|x| {
+        matches!(
+          crate::functions::list_helpers_ast::apply_func_to_two_args(test, x, elem),
+          Ok(Expr::Identifier(ref s)) if s == "True"
+        )
+      });
+      if is_dup {
+        return Ok(bool_expr(false));
+      }
+      kept.push(elem);
+    }
+    return Ok(bool_expr(true));
+  }
+
+  // Default: structural (SameQ) equality, compared via canonical rendering.
+  let mut seen: std::collections::HashSet<String> =
+    std::collections::HashSet::new();
+  for elem in elements {
+    if !seen.insert(crate::syntax::expr_to_string(elem)) {
+      return Ok(bool_expr(false));
+    }
+  }
+  Ok(bool_expr(true))
 }
 
 /// PossibleZeroQ[expr] - Tests if expr is possibly zero
@@ -2759,7 +2875,7 @@ fn is_structural_zero(expr: &Expr) -> bool {
 pub fn mandelbrot_set_iteration_count_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  use crate::functions::list_helpers_ast::expr_to_complex_parts_pub;
+  use crate::functions::list_helpers_ast::expr_to_complex_parts;
 
   let unevaluated = || {
     Ok(Expr::FunctionCall {
@@ -2860,7 +2976,7 @@ pub fn mandelbrot_set_iteration_count_ast(
   fn all_leaves_numeric(e: &Expr) -> bool {
     match e {
       Expr::List(items) => items.iter().all(all_leaves_numeric),
-      _ => expr_to_complex_parts_pub(e)
+      _ => expr_to_complex_parts(e)
         .is_some_and(|(x, y)| x.is_finite() && y.is_finite()),
     }
   }
@@ -2877,7 +2993,7 @@ pub fn mandelbrot_set_iteration_count_ast(
           .into(),
       ),
       _ => {
-        let (x, y) = expr_to_complex_parts_pub(e).unwrap();
+        let (x, y) = expr_to_complex_parts(e).unwrap();
         Expr::Integer(count(x, y, max_iter))
       }
     }
@@ -2896,7 +3012,7 @@ pub fn mandelbrot_set_iteration_count_ast(
 pub fn mandelbrot_set_member_q_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  use crate::functions::list_helpers_ast::expr_to_complex_parts_pub;
+  use crate::functions::list_helpers_ast::expr_to_complex_parts;
 
   let unevaluated = || {
     Ok(Expr::FunctionCall {
@@ -3030,7 +3146,7 @@ pub fn mandelbrot_set_member_q_ast(
   fn all_leaves_numeric(e: &Expr) -> bool {
     match e {
       Expr::List(items) => items.iter().all(all_leaves_numeric),
-      _ => expr_to_complex_parts_pub(e)
+      _ => expr_to_complex_parts(e)
         .is_some_and(|(x, y)| x.is_finite() && y.is_finite()),
     }
   }
@@ -3048,7 +3164,7 @@ pub fn mandelbrot_set_member_q_ast(
           .into(),
       ),
       _ => {
-        let (x, y) = expr_to_complex_parts_pub(e).unwrap();
+        let (x, y) = expr_to_complex_parts(e).unwrap();
         let (is_member, hit_max) = member(x, y, max_iter);
         if hit_max {
           *msg_count += 1;

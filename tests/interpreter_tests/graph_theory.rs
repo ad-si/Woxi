@@ -5175,6 +5175,24 @@ mod katz_centrality {
     );
   }
 
+  // A length-n third argument is a per-vertex bias vector: it solves
+  // (I - alpha A^T) x = beta rather than scaling a constant.
+  #[test]
+  fn beta_vector_is_per_vertex_bias() {
+    assert_eq!(
+      interpret(
+        "Round[KatzCentrality[PathGraph[{1, 2, 3}], 0.5, {1, 2, 3}], 10^-6]"
+      )
+      .unwrap(),
+      "{5, 8, 7}"
+    );
+    assert_eq!(
+      interpret("Round[KatzCentrality[CycleGraph[3], 0.1, {1, 2, 3}], 10^-6]")
+        .unwrap(),
+      "{1590909/1000000, 5/2, 3409091/1000000}"
+    );
+  }
+
   // Katz gains centrality from in-neighbours, so directed edges matter: on a
   // directed path each vertex accumulates alpha^k from k steps upstream.
   #[test]
@@ -5972,5 +5990,54 @@ mod find_fundamental_cycles_tests {
     assert!(r.warnings.iter().any(|w| w.contains(
       "FindFundamentalCycles::argx: FindFundamentalCycles called with 0 arguments; 1 argument is expected."
     )));
+  }
+}
+
+// GraphLinkEfficiency = 1 - MeanGraphDistance/EdgeCount (decoded from
+// wolframscript's exact rationals). All outputs verified against
+// wolframscript.
+mod graph_link_efficiency {
+  use super::*;
+
+  #[test]
+  fn connected_graphs() {
+    assert_eq!(
+      interpret("GraphLinkEfficiency[CycleGraph[3]]").unwrap(),
+      "2/3"
+    );
+    assert_eq!(
+      interpret("GraphLinkEfficiency[CycleGraph[5]]").unwrap(),
+      "7/10"
+    );
+    assert_eq!(
+      interpret("GraphLinkEfficiency[CompleteGraph[4]]").unwrap(),
+      "5/6"
+    );
+    assert_eq!(
+      interpret("GraphLinkEfficiency[PathGraph[Range[4]]]").unwrap(),
+      "4/9"
+    );
+    assert_eq!(
+      interpret("GraphLinkEfficiency[StarGraph[4]]").unwrap(),
+      "1/2"
+    );
+  }
+
+  #[test]
+  fn disconnected_and_invalid() {
+    // An infinite mean distance makes the efficiency -Infinity — also
+    // for directed graphs that are not strongly connected.
+    assert_eq!(
+      interpret("GraphLinkEfficiency[Graph[{1 <-> 2, 3 <-> 4}]]").unwrap(),
+      "-Infinity"
+    );
+    assert_eq!(
+      interpret("GraphLinkEfficiency[Graph[{1 -> 2, 2 -> 3}]]").unwrap(),
+      "-Infinity"
+    );
+    assert_eq!(
+      interpret("GraphLinkEfficiency[x]").unwrap(),
+      "GraphLinkEfficiency[x]"
+    );
   }
 }

@@ -523,7 +523,9 @@ mod log {
   #[test]
   fn log_e_to_complex_symbolic_real_part() {
     // A symbolic real part keeps it unevaluated (E^a need not be positive real).
-    assert_eq!(interpret("Log[E^(a + 3 I)]").unwrap(), "Log[E^(a + 3*I)]");
+    // The pure-imaginary numeric term sorts ahead of the symbol, like
+    // wolframscript's `Log[E^(3*I + a)]`.
+    assert_eq!(interpret("Log[E^(a + 3 I)]").unwrap(), "Log[E^(3*I + a)]");
   }
 }
 
@@ -1792,7 +1794,10 @@ mod machine_real_division {
       interpret("Divide[Divide[-37, -1.8], 95]").unwrap(),
       "0.21637426900584794"
     );
-    assert_eq!(interpret("Divide[-37, -1.8]").unwrap(), "20.555555555555554");
+    assert_eq!(
+      interpret("Divide[-37, -1.8]").unwrap(),
+      "20.555555555555554"
+    );
     assert_eq!(interpret("-37/-1.8").unwrap(), "20.555555555555557");
     assert_eq!(
       interpret("Divide[52.75492379532281, -48.98619485211566]").unwrap(),
@@ -1837,13 +1842,34 @@ mod radical_coefficient_merge {
   // seed 1783672988021454491; all wolframscript-verified).
   #[test]
   fn coefficient_merges_into_radical() {
-    assert_eq!(interpret("InputForm[2/Sqrt[30]]").unwrap(), "InputForm[Sqrt[2/15]]");
-    assert_eq!(interpret("InputForm[6*Sqrt[5/3]]").unwrap(), "InputForm[2*Sqrt[15]]");
-    assert_eq!(interpret("InputForm[30*Sqrt[23/15]]").unwrap(), "InputForm[2*Sqrt[345]]");
-    assert_eq!(interpret("InputForm[-2/Sqrt[30]]").unwrap(), "InputForm[-Sqrt[2/15]]");
-    assert_eq!(interpret("InputForm[(3/2)*Sqrt[2/3]]").unwrap(), "InputForm[Sqrt[3/2]]");
-    assert_eq!(interpret("InputForm[2*Sqrt[1/2]]").unwrap(), "InputForm[Sqrt[2]]");
-    assert_eq!(interpret("InputForm[(1/3)*Sqrt[15/11]]").unwrap(), "InputForm[Sqrt[5/33]]");
+    assert_eq!(
+      interpret("InputForm[2/Sqrt[30]]").unwrap(),
+      "InputForm[Sqrt[2/15]]"
+    );
+    assert_eq!(
+      interpret("InputForm[6*Sqrt[5/3]]").unwrap(),
+      "InputForm[2*Sqrt[15]]"
+    );
+    assert_eq!(
+      interpret("InputForm[30*Sqrt[23/15]]").unwrap(),
+      "InputForm[2*Sqrt[345]]"
+    );
+    assert_eq!(
+      interpret("InputForm[-2/Sqrt[30]]").unwrap(),
+      "InputForm[-Sqrt[2/15]]"
+    );
+    assert_eq!(
+      interpret("InputForm[(3/2)*Sqrt[2/3]]").unwrap(),
+      "InputForm[Sqrt[3/2]]"
+    );
+    assert_eq!(
+      interpret("InputForm[2*Sqrt[1/2]]").unwrap(),
+      "InputForm[Sqrt[2]]"
+    );
+    assert_eq!(
+      interpret("InputForm[(1/3)*Sqrt[15/11]]").unwrap(),
+      "InputForm[Sqrt[5/33]]"
+    );
     assert_eq!(
       interpret("InputForm[(2/5)/Sqrt[14]]").unwrap(),
       "InputForm[Sqrt[2/7]/5]"
@@ -1873,14 +1899,26 @@ mod radical_coefficient_merge {
   // Already-canonical shapes are fixed points and must not be rewritten.
   #[test]
   fn canonical_shapes_are_fixed_points() {
-    assert_eq!(interpret("InputForm[2/Sqrt[3]]").unwrap(), "InputForm[2/Sqrt[3]]");
-    assert_eq!(interpret("InputForm[2*Sqrt[3]]").unwrap(), "InputForm[2*Sqrt[3]]");
-    assert_eq!(interpret("InputForm[Sqrt[5/3]/2]").unwrap(), "InputForm[Sqrt[5/3]/2]");
+    assert_eq!(
+      interpret("InputForm[2/Sqrt[3]]").unwrap(),
+      "InputForm[2/Sqrt[3]]"
+    );
+    assert_eq!(
+      interpret("InputForm[2*Sqrt[3]]").unwrap(),
+      "InputForm[2*Sqrt[3]]"
+    );
+    assert_eq!(
+      interpret("InputForm[Sqrt[5/3]/2]").unwrap(),
+      "InputForm[Sqrt[5/3]/2]"
+    );
     assert_eq!(
       interpret("InputForm[(1/3)*Sqrt[5/11]]").unwrap(),
       "InputForm[Sqrt[5/11]/3]"
     );
-    assert_eq!(interpret("InputForm[1/Sqrt[3]]").unwrap(), "InputForm[1/Sqrt[3]]");
+    assert_eq!(
+      interpret("InputForm[1/Sqrt[3]]").unwrap(),
+      "InputForm[1/Sqrt[3]]"
+    );
   }
 
   // Numerator/Denominator split a fractional power of a rational into its

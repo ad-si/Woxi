@@ -919,6 +919,49 @@ mod batch_unevaluated_wrappers_2 {
       "(a || c) && (a || d) && (b || c) && (b || d)"
     );
   }
+  // The "AND"/"OR" forms express the result with only And+Not or Or+Not,
+  // eliminating the other connective by De Morgan.
+  #[test]
+  fn boolean_convert_and_or_forms() {
+    // AND form: no Or connective may appear.
+    assert_eq!(
+      interpret(r#"BooleanConvert[Implies[a, b], "AND"]"#).unwrap(),
+      " !(a &&  !b)"
+    );
+    assert_eq!(
+      interpret(r#"BooleanConvert[a || b, "AND"]"#).unwrap(),
+      " !( !a &&  !b)"
+    );
+    assert_eq!(
+      interpret(r#"BooleanConvert[a && b, "AND"]"#).unwrap(),
+      "a && b"
+    );
+    assert_eq!(
+      interpret(r#"BooleanConvert[a && b || c, "AND"]"#).unwrap(),
+      " !( !a &&  !c) &&  !( !b &&  !c)"
+    );
+    assert_eq!(
+      interpret(r#"BooleanConvert[Xor[a, b], "AND"]"#).unwrap(),
+      " !(a && b) &&  !( !a &&  !b)"
+    );
+    // OR form: no And connective may appear.
+    assert_eq!(
+      interpret(r#"BooleanConvert[a && b, "OR"]"#).unwrap(),
+      " !( !a ||  !b)"
+    );
+    assert_eq!(
+      interpret(r#"BooleanConvert[a || b, "OR"]"#).unwrap(),
+      "a || b"
+    );
+    assert_eq!(
+      interpret(r#"BooleanConvert[a && b || c, "OR"]"#).unwrap(),
+      " !( !a ||  !b) || c"
+    );
+    assert_eq!(
+      interpret(r#"BooleanConvert[Xor[a, b], "OR"]"#).unwrap(),
+      " !( !a || b) ||  !(a ||  !b)"
+    );
+  }
   #[test]
   fn boolean_counting_function_exactly_k() {
     // {k} → exactly k vars true. Natural DNF of size-k minterms, in lex
@@ -4290,6 +4333,23 @@ mod batch_unevaluated_wrappers_2 {
       "3"
     );
   }
+  // SequenceCount has no max-count argument (unlike SequenceCases): a bare
+  // non-option third argument is rejected with nonopt and stays unevaluated,
+  // matching wolframscript.
+  #[test]
+  fn sequence_count_nonoption_third_arg() {
+    let r =
+      interpret_with_stdout("SequenceCount[{1, 2, 1, 2, 1, 2}, {1, 2}, 2]")
+        .unwrap();
+    assert_eq!(r.result, "SequenceCount[{1, 2, 1, 2, 1, 2}, {1, 2}, 2]");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("SequenceCount::nonopt")),
+      "expected nonopt message, got {:?}",
+      r.warnings
+    );
+  }
   // Pattern element matching.
   #[test]
   fn sequence_count_blank_sequence_runs() {
@@ -4718,6 +4778,14 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("MangoldtLambda[1]").unwrap(), "0");
   }
   #[test]
+  fn mangoldt_lambda_threads_over_list() {
+    // MangoldtLambda is Listable, so it threads over a list argument.
+    assert_eq!(
+      interpret("MangoldtLambda[{2, 3, 4, 5, 6}]").unwrap(),
+      "{Log[2], Log[3], Log[2], Log[5], 0}"
+    );
+  }
+  #[test]
   fn liouville_lambda_basic() {
     assert_eq!(interpret("LiouvilleLambda[6]").unwrap(), "1");
   }
@@ -5135,6 +5203,27 @@ mod batch_unevaluated_wrappers_2 {
       "11/2"
     );
   }
+  // An out-of-range trimming fraction (>= 0.5, negative, or a pair summing to
+  // >= 1) emits arg2 and stays unevaluated instead of silently mis-trimming.
+  #[test]
+  fn trimmed_mean_invalid_fraction_emits_arg2() {
+    for input in [
+      "TrimmedMean[{1, 2, 3, 4}, 1/2]",
+      "TrimmedMean[{1, 2, 3, 4}, -0.1]",
+      "TrimmedMean[{1, 2, 3, 4}, {0.6, 0.5}]",
+      "TrimmedMean[{1, 2, 3, 4}, {0.5, 0.5}]",
+    ] {
+      let r = woxi::interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, input, "result mismatch for {input}");
+      assert!(
+        r.warnings.iter().any(|w| w.contains("TrimmedMean::arg2")),
+        "expected arg2 for {input}, got {:?}",
+        r.warnings
+      );
+    }
+    // A valid fraction still computes.
+    assert_eq!(interpret("TrimmedMean[{1, 2, 3, 4}, 1/4]").unwrap(), "5/2");
+  }
   #[test]
   fn winsorized_mean_basic() {
     assert_eq!(
@@ -5157,6 +5246,30 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(
       interpret("WinsorizedMean[Range[20], {1/10, 1/10}]").unwrap(),
       "21/2"
+    );
+  }
+  // An out-of-range winsorizing fraction emits arg2 and stays unevaluated
+  // instead of silently mis-winsorizing.
+  #[test]
+  fn winsorized_mean_invalid_fraction_emits_arg2() {
+    for input in [
+      "WinsorizedMean[{1, 2, 3, 4}, 1/2]",
+      "WinsorizedMean[{1, 2, 3, 4}, -0.1]",
+      "WinsorizedMean[{1, 2, 3, 4}, {0.6, 0.5}]",
+    ] {
+      let r = woxi::interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, input, "result mismatch for {input}");
+      assert!(
+        r.warnings
+          .iter()
+          .any(|w| w.contains("WinsorizedMean::arg2")),
+        "expected arg2 for {input}, got {:?}",
+        r.warnings
+      );
+    }
+    assert_eq!(
+      interpret("WinsorizedMean[{1, 2, 3, 4}, 0.25]").unwrap(),
+      "5/2"
     );
   }
   #[test]
@@ -5194,6 +5307,38 @@ mod batch_unevaluated_wrappers_2 {
         .unwrap(),
       "85/18"
     );
+  }
+
+  // An out-of-range fraction emits arg2 for the variance variants too.
+  #[test]
+  fn trimmed_winsorized_variance_invalid_fraction_emits_arg2() {
+    let cases = [
+      (
+        "TrimmedVariance[{1, 2, 3, 4}, 0.7]",
+        "TrimmedVariance::arg2",
+      ),
+      (
+        "TrimmedVariance[{1, 2, 3, 4}, -0.1]",
+        "TrimmedVariance::arg2",
+      ),
+      (
+        "WinsorizedVariance[{1, 2, 3, 4}, 0.7]",
+        "WinsorizedVariance::arg2",
+      ),
+      (
+        "WinsorizedVariance[{1, 2, 3, 4}, -0.1]",
+        "WinsorizedVariance::arg2",
+      ),
+    ];
+    for (input, tag) in cases {
+      let r = woxi::interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, input, "result mismatch for {input}");
+      assert!(
+        r.warnings.iter().any(|w| w.contains(tag)),
+        "expected {tag} for {input}, got {:?}",
+        r.warnings
+      );
+    }
   }
 
   // The winsorized count is Floor[f*n], not a rounded value. With n=5 and
@@ -5598,6 +5743,22 @@ mod batch_unevaluated_wrappers_2 {
       interpret("IntersectingQ[{3}, {5}, SameTest -> Greater]").unwrap(),
       "False"
     );
+  }
+
+  // On associations DisjointQ/IntersectingQ compare the VALUES as sets; either
+  // argument may be a list or an association.
+  #[test]
+  fn intersecting_disjoint_on_associations() {
+    assert_eq!(
+      interpret("DisjointQ[<|a -> 1, b -> 2|>, <|c -> 3, d -> 4|>]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("IntersectingQ[<|a -> 1, b -> 2|>, <|c -> 2|>]").unwrap(),
+      "True"
+    );
+    // Mixed association/list, compared by value.
+    assert_eq!(interpret("DisjointQ[<|a -> 1|>, {2, 3}]").unwrap(), "True");
   }
 
   // AlternatingFactorial

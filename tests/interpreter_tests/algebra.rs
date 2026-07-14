@@ -592,6 +592,42 @@ mod simplify {
     assert_eq!(interpret("Simplify[x + x]").unwrap(), "2*x");
   }
 
+  // Simplify minimizes a Boolean expression when that reduces the leaf count
+  // (idempotence/complementarity/absorption), but keeps Xor/Implies whose DNF
+  // expansion is larger — matching wolframscript's cost model.
+  #[test]
+  fn boolean_minimization() {
+    assert_eq!(interpret("Simplify[a && a]").unwrap(), "a");
+    assert_eq!(interpret("Simplify[a || a]").unwrap(), "a");
+    assert_eq!(interpret("Simplify[a && ! a]").unwrap(), "False");
+    assert_eq!(interpret("Simplify[a || ! a]").unwrap(), "True");
+    assert_eq!(interpret("Simplify[a && b && a]").unwrap(), "a && b");
+    assert_eq!(interpret("Simplify[(a || b) && (a || ! b)]").unwrap(), "a");
+    assert_eq!(interpret("Simplify[a || (a && b)]").unwrap(), "a");
+    // Xor and Implies stay because minimizing them enlarges the expression.
+    assert_eq!(interpret("Simplify[Xor[a, b]]").unwrap(), "Xor[a, b]");
+    assert_eq!(
+      interpret("Simplify[Implies[a, b]]").unwrap(),
+      "Implies[a, b]"
+    );
+    // Non-reducible Boolean expressions and arithmetic are unchanged.
+    assert_eq!(interpret("Simplify[a && b]").unwrap(), "a && b");
+    assert_eq!(interpret("Simplify[a + a]").unwrap(), "2*a");
+  }
+
+  // An And/Or of repeated comparison predicates (opaque to BooleanMinimize)
+  // collapses to the single predicate when every operand is identical.
+  #[test]
+  fn boolean_predicate_idempotence() {
+    assert_eq!(interpret("Simplify[a > 2 && a > 2]").unwrap(), "a > 2");
+    assert_eq!(interpret("Simplify[a > 2 || a > 2]").unwrap(), "a > 2");
+    assert_eq!(interpret("Simplify[a == 1 && a == 1]").unwrap(), "a == 1");
+    assert_eq!(
+      interpret("Simplify[a > 2 && a > 2 && a > 2]").unwrap(),
+      "a > 2"
+    );
+  }
+
   // Simplify pulls a -1 out in front of a quotient when the univariate
   // numerator's highest-degree coefficient is negative, or when the
   // denominator is entirely nonpositive; two flips cancel. All
@@ -3730,6 +3766,26 @@ mod symbolic_equal {
       "True"
     );
   }
+
+  // Rendering a deeply nested result — the plain script-mode display, FullForm,
+  // and a ReplaceAll result — must not overflow the stack. Regression: the SVG
+  // typesetting pre-pass and expr_to_input_form recursed unbounded.
+  #[test]
+  fn deeply_nested_render_no_overflow() {
+    assert_eq!(interpret("Nest[f, x, 3]").unwrap(), "f[f[f[x]]]");
+    // Depth 600 result renders as f[f[...f[x]...]]: each level is "f[" + "]"
+    // (3 chars) plus the single "x".
+    let out = interpret("Nest[f, x, 600]").unwrap();
+    assert_eq!(out.len(), 600 * 3 + 1);
+    assert!(out.starts_with("f[f[f["));
+    // FullForm of a deep expression renders without overflow.
+    let ff = interpret("FullForm[Nest[f, x, 600]]").unwrap();
+    assert!(ff.contains("f[f["));
+    // Stripping the outer f via ReplaceAll then rendering the result.
+    let stripped =
+      interpret("ReplaceAll[Nest[f, x, 600], f[a_] -> a]").unwrap();
+    assert_eq!(stripped.len(), 599 * 3 + 1);
+  }
 }
 
 mod solve {
@@ -3740,6 +3796,51 @@ mod solve {
     assert_eq!(interpret("Solve[x - 5 == 0, x]").unwrap(), "{{x -> 5}}");
     assert_eq!(interpret("Solve[2*x + 6 == 0, x]").unwrap(), "{{x -> -3}}");
     assert_eq!(interpret("Solve[3*x + 9 == 0, x]").unwrap(), "{{x -> -3}}");
+  }
+
+  // Generalized variables: an applied function `y[x]` is a valid unknown and
+  // is solved for as a whole, matching wolframscript.
+  #[test]
+  fn generalized_variable_linear() {
+    assert_eq!(
+      interpret("Solve[y[x] + 2 == 5, y[x]]").unwrap(),
+      "{{y[x] -> 3}}"
+    );
+    assert_eq!(
+      interpret("Solve[2 y[x] == x, y[x]]").unwrap(),
+      "{{y[x] -> x/2}}"
+    );
+  }
+
+  #[test]
+  fn generalized_variable_quadratic() {
+    assert_eq!(
+      interpret("Solve[y[x]^2 == 4, y[x]]").unwrap(),
+      "{{y[x] -> -2}, {y[x] -> 2}}"
+    );
+    assert_eq!(
+      interpret("Solve[a[t]^2 == 9, a[t]]").unwrap(),
+      "{{a[t] -> -3}, {a[t] -> 3}}"
+    );
+  }
+
+  #[test]
+  fn generalized_variable_system() {
+    assert_eq!(
+      interpret("Solve[{y[x] + z[x] == 1, y[x] - z[x] == 3}, {y[x], z[x]}]")
+        .unwrap(),
+      "{{y[x] -> 2, z[x] -> -1}}"
+    );
+  }
+
+  // A Laurent equation (negative powers only) must not overflow / panic when
+  // computing the polynomial degree; x^-2 == -1 solves to x = +/-I.
+  #[test]
+  fn negative_power_equation() {
+    assert_eq!(
+      interpret("Solve[x^-2 + 1 == 0, x]").unwrap(),
+      "{{x -> -I}, {x -> I}}"
+    );
   }
 
   #[test]
@@ -4066,6 +4167,31 @@ mod solve {
     );
   }
 
+  // Regression: the negated reciprocal root of x^2 == 1/2 was left as a raw
+  // `UnaryOp[Minus, …]` wrapper that printed as `-2^(-1/2)`; wolframscript
+  // shows `-(1/Sqrt[2])`. Both roots must share the canonical reciprocal form.
+  #[test]
+  fn solve_negated_reciprocal_root() {
+    assert_eq!(
+      interpret("Solve[x^2 == 1/2, x]").unwrap(),
+      "{{x -> -(1/Sqrt[2])}, {x -> 1/Sqrt[2]}}"
+    );
+    assert_eq!(
+      interpret("Solve[2 x^2 == 1, x]").unwrap(),
+      "{{x -> -(1/Sqrt[2])}, {x -> 1/Sqrt[2]}}"
+    );
+    assert_eq!(
+      interpret("Solve[3 x^2 == 1, x]").unwrap(),
+      "{{x -> -(1/Sqrt[3])}, {x -> 1/Sqrt[3]}}"
+    );
+    // The same reciprocal form must survive through a two-variable system.
+    assert_eq!(
+      interpret("Solve[x^2 + y^2 == 1 && x == y, {x, y}]").unwrap(),
+      "{{x -> -(1/Sqrt[2]), y -> -(1/Sqrt[2])}, \
+       {x -> 1/Sqrt[2], y -> 1/Sqrt[2]}}"
+    );
+  }
+
   #[test]
   fn solve_sqrt_equation() {
     assert_eq!(interpret("Solve[Sqrt[x] == 3, x]").unwrap(), "{{x -> 9}}");
@@ -4126,6 +4252,33 @@ mod solve {
     assert_eq!(
       interpret("Solve[Exp[x] == 1, x]").unwrap(),
       "{{x -> ConditionalExpression[(2*I)*Pi*C[1], Element[C[1], Integers]]}}"
+    );
+  }
+
+  #[test]
+  fn solve_general_base_exponential() {
+    // b^x == val for a concrete base > 1 gets the full 2*Pi*I/Log[b] periodic
+    // branches (previously only the principal Log[val]/Log[b] was returned).
+    assert_eq!(
+      interpret("Solve[2^x == 8, x]").unwrap(),
+      "{{x -> ConditionalExpression[((2*I)*Pi*C[1])/Log[2] + Log[8]/Log[2], \
+       Element[C[1], Integers]]}}"
+    );
+    assert_eq!(
+      interpret("Solve[10^x == 1000, x]").unwrap(),
+      "{{x -> ConditionalExpression[((2*I)*Pi*C[1])/Log[10] + \
+       Log[1000]/Log[10], Element[C[1], Integers]]}}"
+    );
+    // val == 1 drops the principal Log term.
+    assert_eq!(
+      interpret("Solve[2^x == 1, x]").unwrap(),
+      "{{x -> ConditionalExpression[((2*I)*Pi*C[1])/Log[2], \
+       Element[C[1], Integers]]}}"
+    );
+    // A symbolic base has no periodic branches, matching wolframscript.
+    assert_eq!(
+      interpret("Solve[a^x == b, x]").unwrap(),
+      "{{x -> Log[b]/Log[a]}}"
     );
   }
 
@@ -4740,6 +4893,25 @@ mod simplify_assumptions {
     );
   }
 
+  // Refinement under an active Assuming must re-combine additive terms, so the
+  // refined `x + x` collapses to `2 x` — matching the explicit-assumption form
+  // Simplify[expr, x > 0].
+  #[test]
+  fn assuming_recombines_refined_sum() {
+    assert_eq!(
+      interpret("Assuming[x > 0, Simplify[Sqrt[x^2] + Abs[x]]]").unwrap(),
+      "2*x"
+    );
+    assert_eq!(
+      interpret("Assuming[x > 0, Simplify[2 Sqrt[x^2] + 3 Abs[x]]]").unwrap(),
+      "5*x"
+    );
+    assert_eq!(
+      interpret("Assuming[x < 0, Simplify[Sqrt[x^2] + Abs[x]]]").unwrap(),
+      "-2*x"
+    );
+  }
+
   #[test]
   fn assuming_combines_with_inner_simplify_assumption() {
     // Outer Assuming and inner direct assumption should combine via And.
@@ -4785,6 +4957,34 @@ mod simplify_assumptions {
   #[test]
   fn assuming_eq_does_not_substitute_into_bare_power() {
     assert_eq!(interpret("Assuming[n == 1, x^n]").unwrap(), "x^n");
+  }
+
+  // Under an inequality assumption `n > 0`, the lower-limit boundary term
+  // `0^(1 + n)` resolves to 0 (Re[1 + n] > 0), so the symbolic power integral
+  // simplifies to `1/(1 + n)` — matching wolframscript. Both the `Assuming`
+  // wrapper and the `Assumptions ->` option must honour this.
+  #[test]
+  fn assuming_positive_integrate_x_n() {
+    assert_eq!(
+      interpret("Assuming[n > 0, Integrate[x^n, {x, 0, 1}]]").unwrap(),
+      "(1 + n)^(-1)"
+    );
+  }
+
+  #[test]
+  fn integrate_x_n_assumptions_option_positive() {
+    assert_eq!(
+      interpret("Integrate[x^n, {x, 0, 1}, Assumptions -> n > 0]").unwrap(),
+      "(1 + n)^(-1)"
+    );
+  }
+
+  #[test]
+  fn assuming_positive_integrate_x_a_upper_two() {
+    assert_eq!(
+      interpret("Assuming[a > 0, Integrate[x^a, {x, 0, 2}]]").unwrap(),
+      "2^(1 + a)/(1 + a)"
+    );
   }
 }
 
@@ -5067,6 +5267,25 @@ mod eliminate {
     assert_eq!(result, "x == 2");
   }
 
+  // Wolfram keeps the eliminated equation as a primitive polynomial rather
+  // than solving for the variable: 2 x == 3, not x == 3/2. Content that
+  // divides evenly still collapses (3 x == 6 -> x == 2).
+  #[test]
+  fn eliminate_keeps_primitive_polynomial() {
+    assert_eq!(
+      interpret("Eliminate[{x + y == 1, x - y == 2}, y]").unwrap(),
+      "2*x == 3"
+    );
+    assert_eq!(
+      interpret("Eliminate[{5 x + y == 2, y == 0}, y]").unwrap(),
+      "5*x == 2"
+    );
+    assert_eq!(
+      interpret("Eliminate[{2 x + y == 5, x - y == 1}, y]").unwrap(),
+      "x == 2"
+    );
+  }
+
   #[test]
   fn eliminate_with_product() {
     // Eliminate x from {a == x + y, b == x*y}
@@ -5146,6 +5365,54 @@ mod reduce {
   #[test]
   fn reduce_true() {
     assert_eq!(interpret("Reduce[True, x]").unwrap(), "True");
+  }
+
+  // A linear equation with a symbolic leading coefficient must include the
+  // degenerate case where that coefficient vanishes. Expected strings verified
+  // against wolframscript.
+  #[test]
+  fn linear_parametric_coefficient() {
+    assert_eq!(
+      interpret("Reduce[a x == b, x]").unwrap(),
+      "(b == 0 && a == 0) || (a != 0 && x == b/a)"
+    );
+    // A nonzero numeric constant drops the degenerate branch.
+    assert_eq!(
+      interpret("Reduce[a x == 5, x]").unwrap(),
+      "a != 0 && x == 5/a"
+    );
+    // A zero constant makes the whole line a solution when the coefficient is 0.
+    assert_eq!(
+      interpret("Reduce[a x == 0, x]").unwrap(),
+      "a == 0 || x == 0"
+    );
+    // A shifted constant term.
+    assert_eq!(
+      interpret("Reduce[a x + c == 0, x]").unwrap(),
+      "(c == 0 && a == 0) || (a != 0 && x == -(c/a))"
+    );
+  }
+
+  // A numeric factor (or sign) on the coefficient collapses in the condition
+  // (2 a == 0 -> a == 0) but is kept in the solution value.
+  #[test]
+  fn linear_parametric_numeric_factor() {
+    assert_eq!(
+      interpret("Reduce[2 a x == b, x]").unwrap(),
+      "(b == 0 && a == 0) || (a != 0 && x == b/(2*a))"
+    );
+    assert_eq!(
+      interpret("Reduce[-a x == b, x]").unwrap(),
+      "(b == 0 && a == 0) || (a != 0 && x == -(b/a))"
+    );
+  }
+
+  // A plain numeric coefficient keeps the single-solution form (no degenerate
+  // branch) — the parametric path must not fire here.
+  #[test]
+  fn linear_numeric_coefficient_unchanged() {
+    assert_eq!(interpret("Reduce[2 x == 6, x]").unwrap(), "x == 3");
+    assert_eq!(interpret("Reduce[x == y, x]").unwrap(), "x == y");
   }
 
   // Reduce of a trig equation over a bounded interval gives the concrete
@@ -5702,6 +5969,69 @@ mod reduce {
     );
   }
 
+  // Over the integers, a bounded interval carrying an extra `Mod[x, n] == k`
+  // constraint enumerates the interval and keeps the congruent integers,
+  // matching wolframscript:
+  //   Reduce[Mod[x,3]==1 && 0<=x<=10, x, Integers]
+  //     -> x == 1 || x == 4 || x == 7 || x == 10.
+  #[test]
+  fn integers_bounded_with_mod_constraint() {
+    assert_eq!(
+      interpret("Reduce[Mod[x, 3] == 1 && 0 <= x <= 10, x, Integers]").unwrap(),
+      "x == 1 || x == 4 || x == 7 || x == 10"
+    );
+    assert_eq!(
+      interpret("Reduce[Mod[x, 2] == 0 && 1 <= x <= 8, x, Integers]").unwrap(),
+      "x == 2 || x == 4 || x == 6 || x == 8"
+    );
+  }
+
+  #[test]
+  fn integers_bounded_with_mod_constraint_strict() {
+    assert_eq!(
+      interpret("Reduce[Mod[x, 3] == 1 && 0 < x < 10, x, Integers]").unwrap(),
+      "x == 1 || x == 4 || x == 7"
+    );
+    assert_eq!(
+      interpret("Reduce[Mod[x, 3] == 1 && 0 < x < 3, x, Integers]").unwrap(),
+      "x == 1"
+    );
+  }
+
+  // The bound may be written with the variable on the right (`10 >= x >= 0`).
+  #[test]
+  fn integers_bounded_with_mod_reversed_chain() {
+    assert_eq!(
+      interpret("Reduce[10 >= x >= 0 && Mod[x, 4] == 2, x, Integers]").unwrap(),
+      "x == 2 || x == 6 || x == 10"
+    );
+  }
+
+  // An empty residue class within the range collapses to False.
+  #[test]
+  fn integers_bounded_with_mod_constraint_empty() {
+    assert_eq!(
+      interpret("Reduce[Mod[x, 5] == 0 && 1 <= x <= 4, x, Integers]").unwrap(),
+      "False"
+    );
+  }
+
+  // Excluded values (`x != v`) are filtered out of the enumerated interval,
+  // matching wolframscript:
+  //   Reduce[1<=x<=4 && x!=2, x, Integers] -> x == 1 || x == 3 || x == 4.
+  #[test]
+  fn integers_bounded_with_unequal_constraints() {
+    assert_eq!(
+      interpret("Reduce[1 <= x <= 4 && x != 2, x, Integers]").unwrap(),
+      "x == 1 || x == 3 || x == 4"
+    );
+    assert_eq!(
+      interpret("Reduce[1 <= x <= 10 && x != 3 && x != 7, x, Integers]")
+        .unwrap(),
+      "x == 1 || x == 2 || x == 4 || x == 5 || x == 6 || x == 8 || x == 9 || x == 10"
+    );
+  }
+
   // Without the Integers domain a one-sided bound is left as the bare
   // comparison.
   #[test]
@@ -6235,6 +6565,30 @@ mod distribute {
       "{{1, 3}, {1, 4}, {2, 3}, {2, 4}}"
     );
   }
+
+  #[test]
+  fn distribute_over_alternatives() {
+    assert_eq!(
+      interpret("Distribute[f[a | b, c | d], Alternatives]").unwrap(),
+      "f[a, c] | f[a, d] | f[b, c] | f[b, d]"
+    );
+  }
+
+  #[test]
+  fn distribute_over_alternatives_single_side() {
+    assert_eq!(
+      interpret("Distribute[f[a | b, c], Alternatives]").unwrap(),
+      "f[a, c] | f[b, c]"
+    );
+  }
+
+  #[test]
+  fn distribute_over_alternatives_chain() {
+    assert_eq!(
+      interpret("Distribute[f[a | b | e, c | d], Alternatives]").unwrap(),
+      "f[a, c] | f[a, d] | f[b, c] | f[b, d] | f[e, c] | f[e, d]"
+    );
+  }
 }
 
 mod polynomial_remainder {
@@ -6764,6 +7118,63 @@ mod solve_periodic_bounded {
       "{{x -> ConditionalExpression[-1/3*Pi + 2*Pi*C[1], \
        Element[C[1], Integers]]}, {x -> ConditionalExpression[Pi/3 + 2*Pi*C[1], \
        Element[C[1], Integers]]}}"
+    );
+  }
+
+  // A |rhs| > 1 for Sin/Cos still solves symbolically via ArcSin/ArcCos (the
+  // inverse is complex-valued), matching wolframscript rather than staying
+  // unevaluated.
+  #[test]
+  fn cos_out_of_range_symbolic() {
+    assert_eq!(
+      interpret("Solve[Cos[x] == 2, x]").unwrap(),
+      "{{x -> ConditionalExpression[-ArcCos[2] + 2*Pi*C[1], \
+       Element[C[1], Integers]]}, {x -> ConditionalExpression[ArcCos[2] + \
+       2*Pi*C[1], Element[C[1], Integers]]}}"
+    );
+  }
+
+  #[test]
+  fn cos_out_of_range_rational() {
+    assert_eq!(
+      interpret("Solve[Cos[x] == 3/2, x]").unwrap(),
+      "{{x -> ConditionalExpression[-ArcCos[3/2] + 2*Pi*C[1], \
+       Element[C[1], Integers]]}, {x -> ConditionalExpression[ArcCos[3/2] + \
+       2*Pi*C[1], Element[C[1], Integers]]}}"
+    );
+  }
+
+  #[test]
+  fn sin_out_of_range_symbolic() {
+    assert_eq!(
+      interpret("Solve[Sin[x] == 3, x]").unwrap(),
+      "{{x -> ConditionalExpression[Pi - ArcSin[3] + 2*Pi*C[1], \
+       Element[C[1], Integers]]}, {x -> ConditionalExpression[ArcSin[3] + \
+       2*Pi*C[1], Element[C[1], Integers]]}}"
+    );
+  }
+
+  // For a symbolic ArcSin right-hand side wolframscript lists the
+  // `Pi - ArcSin[c]` branch first; when it simplifies to a multiple of Pi the
+  // pair is in ascending value order instead.
+  #[test]
+  fn sin_symbolic_rhs_branch_order() {
+    assert_eq!(
+      interpret("Solve[Sin[x] == 1/3, x]").unwrap(),
+      "{{x -> ConditionalExpression[Pi - ArcSin[1/3] + 2*Pi*C[1], \
+       Element[C[1], Integers]]}, {x -> ConditionalExpression[ArcSin[1/3] + \
+       2*Pi*C[1], Element[C[1], Integers]]}}"
+    );
+  }
+
+  #[test]
+  fn sin_special_rhs_ascending_order() {
+    // Simplifies to Pi/6 and 5*Pi/6 → ascending order.
+    assert_eq!(
+      interpret("Solve[Sin[x] == 1/2, x]").unwrap(),
+      "{{x -> ConditionalExpression[Pi/6 + 2*Pi*C[1], \
+       Element[C[1], Integers]]}, {x -> ConditionalExpression[(5*Pi)/6 + \
+       2*Pi*C[1], Element[C[1], Integers]]}}"
     );
   }
 }
@@ -7975,6 +8386,29 @@ mod refine {
     assert_eq!(interpret("Refine[Abs[y], y > 0]").unwrap(), "y");
   }
 
+  // Regression: assumption substitution left refined sums uncombined —
+  // Floor[x] and Ceiling[x] both refine to x, giving `x + x` instead of the
+  // combined `2*x`, and `2 Abs[x]` under x < 0 gave the malformed `2*-1*x`.
+  #[test]
+  fn refined_sum_combines_like_terms() {
+    assert_eq!(
+      interpret("Simplify[Floor[x] + Ceiling[x], Element[x, Integers]]")
+        .unwrap(),
+      "2*x"
+    );
+    assert_eq!(
+      interpret("Simplify[2 Floor[x] + Ceiling[x], Element[x, Integers]]")
+        .unwrap(),
+      "3*x"
+    );
+    assert_eq!(
+      interpret("Refine[Floor[x] + Ceiling[x], Element[x, Integers]]").unwrap(),
+      "2*x"
+    );
+    // Numeric Times coefficient folds through the refined -x.
+    assert_eq!(interpret("Refine[Abs[x] + Abs[x], x < 0]").unwrap(), "-2*x");
+  }
+
   #[test]
   fn assumptions_option_form() {
     // Refine[expr, Assumptions -> cond] behaves like Refine[expr, cond].
@@ -7995,6 +8429,22 @@ mod refine {
         .unwrap(),
       "x"
     );
+  }
+
+  // 0^k resolves to 0 when the exponent is provably positive (Re[k] > 0).
+  #[test]
+  fn refine_zero_to_positive_power() {
+    assert_eq!(interpret("Refine[0^k, k > 0]").unwrap(), "0");
+    assert_eq!(interpret("Refine[0^(1 + n), n > 0]").unwrap(), "0");
+    assert_eq!(interpret("Simplify[0^(1 + n), n > 0]").unwrap(), "0");
+  }
+
+  // Without a positivity guarantee the power stays unevaluated: `n > 0` does
+  // not force `n - 1 > 0`, and with no assumption `0^(1 + n)` is undetermined.
+  #[test]
+  fn refine_zero_power_undetermined_stays() {
+    assert_eq!(interpret("Refine[0^(1 + n)]").unwrap(), "0^(1 + n)");
+    assert_eq!(interpret("Refine[0^(n - 1), n > 0]").unwrap(), "0^(-1 + n)");
   }
 
   #[test]
@@ -8840,6 +9290,38 @@ mod root {
     );
   }
 
+  // Root also accepts an ordinary polynomial expression in one symbol (not
+  // only a pure function). N[Root[x^3 - 2, 1]] finds the real cube root of 2.
+  #[test]
+  fn numerical_value_expression_form_cube_root() {
+    assert_eq!(
+      interpret("N[Root[x^3 - 2, 1]]").unwrap(),
+      "1.2599210498948732"
+    );
+  }
+
+  #[test]
+  fn numerical_value_expression_form_sqrt_ordering() {
+    // x^2 - 2 → roots -Sqrt[2], Sqrt[2] in increasing order.
+    assert_eq!(
+      interpret("N[Root[x^2 - 2, 1]]").unwrap(),
+      "-1.4142135623730951"
+    );
+    assert_eq!(
+      interpret("N[Root[x^2 - 2, 2]]").unwrap(),
+      "1.4142135623730951"
+    );
+  }
+
+  #[test]
+  fn numerical_value_expression_form_casus_irreducibilis() {
+    // x^3 - x - 1 has one real root; no radical form, so N finds it numerically.
+    assert_eq!(
+      interpret("N[Root[x^3 - x - 1, 1]]").unwrap(),
+      "1.324717957244746"
+    );
+  }
+
   // A quartic with four real roots is returned in increasing order.
   #[test]
   fn numerical_value_quartic_all_real() {
@@ -9112,6 +9594,24 @@ mod minimal_polynomial {
     assert_eq!(
       interpret("MinimalPolynomial[Sqrt[3], x]").unwrap(),
       "-3 + x^2"
+    );
+  }
+
+  // MinimalPolynomial is Listable: it threads over a list (or matrix) of
+  // algebraic numbers in the first argument.
+  #[test]
+  fn threads_over_list() {
+    assert_eq!(
+      interpret("MinimalPolynomial[{2, 3}, x]").unwrap(),
+      "{-2 + x, -3 + x}"
+    );
+    assert_eq!(
+      interpret("MinimalPolynomial[{Sqrt[2], Sqrt[3]}, x]").unwrap(),
+      "{-2 + x^2, -3 + x^2}"
+    );
+    assert_eq!(
+      interpret("MinimalPolynomial[{{2, 0}, {0, 2}}, x]").unwrap(),
+      "{{-2 + x, x}, {x, -2 + x}}"
     );
   }
 
@@ -9605,6 +10105,25 @@ mod function_expand {
   }
 
   #[test]
+  fn inverse_gudermannian() {
+    // wolframscript: FunctionExpand[InverseGudermannian[x]] gives the standard
+    // identity Log[Tan[Pi/4 + x/2]]. Plain InverseGudermannian[x] stays held.
+    assert_eq!(
+      interpret("FunctionExpand[InverseGudermannian[x]]").unwrap(),
+      "Log[Tan[Pi/4 + x/2]]"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[InverseGudermannian[y]]").unwrap(),
+      "Log[Tan[Pi/4 + y/2]]"
+    );
+    // Numeric argument still evaluates to the same value as the direct call.
+    assert_eq!(
+      interpret("FunctionExpand[InverseGudermannian[0.5]]").unwrap(),
+      "0.5222381032784403"
+    );
+  }
+
+  #[test]
   fn inverse_haversine_complex_numeric() {
     // 2 * ArcSin[Sqrt[z]] for complex z must be correctly-rounded to match
     // wolframscript bit-for-bit (regression for mathics
@@ -9672,6 +10191,98 @@ mod function_expand {
   #[test]
   fn gamma_half() {
     assert_eq!(interpret("FunctionExpand[Gamma[1/2]]").unwrap(), "Sqrt[Pi]");
+  }
+
+  // Gamma[A]/Gamma[B] with A - B a positive integer collapses to the rising
+  // factorial; a negative difference gives its reciprocal. Expected strings
+  // verified against wolframscript.
+  #[test]
+  fn gamma_ratio() {
+    assert_eq!(
+      interpret("FunctionExpand[Gamma[n + 1]/Gamma[n]]").unwrap(),
+      "n"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Gamma[n + 2]/Gamma[n]]").unwrap(),
+      "n*(1 + n)"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Gamma[n + 3]/Gamma[n]]").unwrap(),
+      "n*(1 + n)*(2 + n)"
+    );
+    // A numeric prefactor survives.
+    assert_eq!(
+      interpret("FunctionExpand[2 Gamma[n + 1]/Gamma[n]]").unwrap(),
+      "2*n"
+    );
+    // Reciprocal ratio.
+    assert_eq!(
+      interpret("FunctionExpand[Gamma[n]/Gamma[n + 1]]").unwrap(),
+      "n^(-1)"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Gamma[n]/Gamma[n + 2]]").unwrap(),
+      "1/(n*(1 + n))"
+    );
+    // A lone Gamma is left unchanged (it is only the ratio that collapses).
+    assert_eq!(
+      interpret("FunctionExpand[Gamma[n + 1]]").unwrap(),
+      "Gamma[1 + n]"
+    );
+  }
+
+  // HarmonicNumber expands to the digamma form; the generalized order gives the
+  // Zeta / HurwitzZeta difference. Verified against wolframscript.
+  #[test]
+  fn harmonic_number() {
+    assert_eq!(
+      interpret("FunctionExpand[HarmonicNumber[n]]").unwrap(),
+      "EulerGamma + PolyGamma[0, 1 + n]"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[HarmonicNumber[m + 1]]").unwrap(),
+      "EulerGamma + PolyGamma[0, 2 + m]"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[HarmonicNumber[n, r]]").unwrap(),
+      "-HurwitzZeta[r, 1 + n] + Zeta[r]"
+    );
+    // An integer order reduces the HurwitzZeta to a PolyGamma.
+    assert_eq!(
+      interpret("FunctionExpand[HarmonicNumber[n, 2]]").unwrap(),
+      "Pi^2/6 - PolyGamma[1, 1 + n]"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[HarmonicNumber[n, 3]]").unwrap(),
+      "PolyGamma[2, 1 + n]/2 + Zeta[3]"
+    );
+    // A concrete HarmonicNumber still evaluates numerically.
+    assert_eq!(
+      interpret("FunctionExpand[HarmonicNumber[5]]").unwrap(),
+      "137/60"
+    );
+  }
+
+  // HurwitzZeta[m, a] with an integer m >= 2 reduces to a PolyGamma.
+  #[test]
+  fn hurwitz_zeta() {
+    assert_eq!(
+      interpret("FunctionExpand[HurwitzZeta[2, a]]").unwrap(),
+      "PolyGamma[1, a]"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[HurwitzZeta[3, a]]").unwrap(),
+      "-1/2*PolyGamma[2, a]"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[HurwitzZeta[4, a]]").unwrap(),
+      "PolyGamma[3, a]/6"
+    );
+    // A symbolic order is left unchanged.
+    assert_eq!(
+      interpret("FunctionExpand[HurwitzZeta[s, a]]").unwrap(),
+      "HurwitzZeta[s, a]"
+    );
   }
 
   // Factorial[n] (n!) expands to the Gamma function.
@@ -9790,6 +10401,20 @@ mod cases {
   #[test]
   fn maximize() {
     assert_case(r#"Maximize[-2 x^2 - 3 x + 5, x]"#, r#"{49/8, {x -> -3/4}}"#);
+  }
+  #[test]
+  fn maximize_unsolved_keeps_original_objective() {
+    // When Maximize can't solve a constrained problem it echoes the call
+    // unevaluated; it must show the user's original objective, not the
+    // internally-negated one (was `Maximize[{-(x*y), ...}]`).
+    assert_case(
+      r#"Maximize[{x y, Sin[x] + Sin[y] == 1}, {x, y}]"#,
+      r#"Maximize[{x*y, Sin[x] + Sin[y] == 1}, {x, y}]"#,
+    );
+    assert_case(
+      r#"Maximize[{x y z, Sin[x] + Sin[y] + Sin[z] == 1}, {x, y, z}]"#,
+      r#"Maximize[{x*y*z, Sin[x] + Sin[y] + Sin[z] == 1}, {x, y, z}]"#,
+    );
   }
   #[test]
   fn minimize() {

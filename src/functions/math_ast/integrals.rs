@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
 /// ExpIntegralEi[x] - Exponential integral Ei(x)
 pub fn exp_integral_ei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -40,7 +40,7 @@ pub fn exp_integral_ei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Compute Ei(x) numerically
 /// For all x: Ei(x) = γ + ln|x| + Σ_{n=1}^∞ x^n / (n * n!)
-pub fn exp_integral_ei_numeric(x: f64) -> f64 {
+fn exp_integral_ei_numeric(x: f64) -> f64 {
   if x.abs() < 40.0 {
     // Power series: Ei(x) = γ + ln|x| + Σ x^n / (n * n!)
     let euler_gamma = 0.5772156649015329;
@@ -188,7 +188,7 @@ pub fn fresnel_s_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Helper: negate FresnelS (odd function)
   let negate_fresnel_s = |inner: Expr| -> Expr {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(Expr::FunctionCall {
         name: "FresnelS".to_string(),
         args: vec![inner].into(),
@@ -223,7 +223,7 @@ pub fn fresnel_s_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // FresnelS[-x] = -FresnelS[x] (UnaryOp form)
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       // Check for -Infinity first
@@ -291,7 +291,7 @@ pub fn fresnel_s_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Compute S(x) = ∫₀ˣ sin(π t²/2) dt numerically
 /// Uses the identity: S(x) = Im[(1+i)/2 · erf(√π/2 · (1+i) · x)]
-fn fresnel_s_numeric(x: f64) -> f64 {
+pub fn fresnel_s_numeric(x: f64) -> f64 {
   if x == 0.0 {
     return 0.0;
   }
@@ -310,7 +310,7 @@ pub fn fresnel_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Helper: negate FresnelC (odd function)
   let negate_fresnel_c = |inner: Expr| -> Expr {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(Expr::FunctionCall {
         name: "FresnelC".to_string(),
         args: vec![inner].into(),
@@ -344,7 +344,7 @@ pub fn fresnel_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // FresnelC[-x] = -FresnelC[x] (UnaryOp form)
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       // Check for -Infinity first
@@ -411,7 +411,7 @@ pub fn fresnel_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Compute C(x) = ∫₀ˣ cos(π t²/2) dt numerically
 /// Uses the identity: C(x) = Re[(1+i)/2 · erf(√π/2 · (1+i) · x)]
-fn fresnel_c_numeric(x: f64) -> f64 {
+pub fn fresnel_c_numeric(x: f64) -> f64 {
   if x == 0.0 {
     return 0.0;
   }
@@ -600,16 +600,6 @@ fn erf_complex_taylor(a: f64, b: f64) -> (f64, f64) {
   (two_over_sqrt_pi * sum_re, two_over_sqrt_pi * sum_im)
 }
 
-/// Public wrapper for FresnelS numeric computation (used by try_eval_to_f64)
-pub fn fresnel_s_numeric_pub(x: f64) -> f64 {
-  fresnel_s_numeric(x)
-}
-
-/// Public wrapper for FresnelC numeric computation (used by try_eval_to_f64)
-pub fn fresnel_c_numeric_pub(x: f64) -> f64 {
-  fresnel_c_numeric(x)
-}
-
 /// SinIntegral[z] - Sine integral Si(z)
 pub fn sin_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -730,7 +720,6 @@ pub fn exp_integral_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // arguments are handled here; a machine-Real argument folds to the same value
   // the numeric path below would give.
   if matches!(n_expr, Expr::Integer(0)) {
-    use crate::syntax::BinaryOperator;
     let exp_neg_z = Expr::FunctionCall {
       name: "Exp".to_string(),
       args: vec![Expr::BinaryOp {
@@ -769,7 +758,7 @@ pub fn exp_integral_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Compute E_n(z) = ∫_1^∞ e^{-zt}/t^n dt
-pub fn exp_integral_en(n: i64, z: f64) -> f64 {
+fn exp_integral_en(n: i64, z: f64) -> f64 {
   if n == 0 {
     // E_0(z) = e^{-z}/z
     return (-z).exp() / z;
@@ -793,7 +782,7 @@ pub fn exp_integral_en(n: i64, z: f64) -> f64 {
 }
 
 /// Compute E_1(z) via series for small z, continued fraction for large z
-pub fn exp_integral_e1(z: f64) -> f64 {
+fn exp_integral_e1(z: f64) -> f64 {
   let euler_gamma = 0.5772156649015329;
 
   if z <= 0.0 {

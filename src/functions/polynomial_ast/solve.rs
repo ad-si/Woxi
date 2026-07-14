@@ -2,7 +2,9 @@ use super::together::negate_expr;
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
+};
 
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
 use crate::functions::math_ast::{is_sqrt, make_sqrt};
@@ -140,7 +142,7 @@ fn try_nsolve_quadratic(
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      && operators[0] == ComparisonOp::Equal =>
     {
       Expr::BinaryOp {
         op: BinaryOperator::Minus,
@@ -266,7 +268,6 @@ fn complex_pow(a: f64, b: f64, c: f64, d: f64) -> (f64, f64) {
 /// `Times[-1, Power[-1, 1/3]]` — fully numericize instead of leaking a
 /// symbolic `Power` into NSolve's output.
 fn eval_complex_full(expr: &Expr) -> Option<(f64, f64)> {
-  use crate::syntax::{BinaryOperator, UnaryOperator};
   // Reuse the existing extractor for everything but Power.
   if let Some(v) = crate::functions::math_ast::try_extract_complex_float(expr) {
     return Some(v);
@@ -426,7 +427,7 @@ pub fn roots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   Expr::Identifier(var.clone()),
                   *replacement.clone(),
                 ],
-                operators: vec![crate::syntax::ComparisonOp::Equal],
+                operators: vec![ComparisonOp::Equal],
               });
             }
           }
@@ -498,7 +499,7 @@ pub fn nroots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      && operators[0] == ComparisonOp::Equal =>
     {
       Expr::BinaryOp {
         op: BinaryOperator::Minus,
@@ -586,7 +587,7 @@ pub fn nroots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     conds.push(Expr::Comparison {
       operands: vec![Expr::Identifier(var.clone()), rhs],
-      operators: vec![crate::syntax::ComparisonOp::Equal],
+      operators: vec![ComparisonOp::Equal],
     });
   }
   if conds.len() == 1 {
@@ -802,7 +803,7 @@ pub fn to_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       operators,
     } = expr
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal
+      && operators[0] == ComparisonOp::Equal
       && operands.len() == 2
     {
       return Some(Expr::Rule {
@@ -1089,6 +1090,62 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Pre-pass: generalized variables. Solve[eqns, f[x]] (or a variable list
+  // containing such applications) treats the whole application `f[x]` as the
+  // unknown, matching wolframscript. Replace every function-application target
+  // with a fresh bare symbol, solve, then map the fresh symbols back to the
+  // original applications in the result. Only triggers when a target is a
+  // FunctionCall, so ordinary bare-symbol solves are unaffected.
+  {
+    let targets: Vec<Expr> = match &args[1] {
+      Expr::List(items) => items.to_vec(),
+      other => vec![other.clone()],
+    };
+    if targets
+      .iter()
+      .any(|t| matches!(t, Expr::FunctionCall { .. }))
+    {
+      let ctx =
+        format!("{}{}", expr_to_string(&args[0]), expr_to_string(&args[1]));
+      let mut subs: Vec<(Expr, Expr)> = Vec::new();
+      let mut fresh_targets: Vec<Expr> = Vec::new();
+      for (i, t) in targets.iter().enumerate() {
+        if matches!(t, Expr::FunctionCall { .. }) {
+          let mut k = i;
+          let mut name = format!("WoxiSolveVar{k}");
+          while ctx.contains(&name) {
+            k += 1000;
+            name = format!("WoxiSolveVar{k}");
+          }
+          let sym = Expr::Identifier(name);
+          subs.push((t.clone(), sym.clone()));
+          fresh_targets.push(sym);
+        } else {
+          fresh_targets.push(t.clone());
+        }
+      }
+      let mut new_eqns = args[0].clone();
+      for (from, to) in &subs {
+        new_eqns = substitute_expr(&new_eqns, from, to);
+      }
+      let new_var_arg = match &args[1] {
+        Expr::List(_) => Expr::List(fresh_targets.into()),
+        _ => fresh_targets.into_iter().next().unwrap(),
+      };
+      let mut new_args = vec![new_eqns, new_var_arg];
+      if args.len() == 3 {
+        new_args.push(args[2].clone());
+      }
+      let result = solve_ast(&new_args)?;
+      // Map the fresh symbols back to the original applications.
+      let mut mapped = result;
+      for (from, to) in &subs {
+        mapped = substitute_expr(&mapped, to, from);
+      }
+      return Ok(mapped);
+    }
+  }
+
   // Pre-pass: turn an And-of-equations into a List of equations so the
   // multi-equation path picks them up. Wolfram lets users write
   // Solve[a == b && c == d, ...] interchangeably with the list form.
@@ -1118,15 +1175,17 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // path (which understands constraints) handles cases like
   // `m^2 == 4 && m > 0`.
   fn all_equalities(items: &[Expr]) -> bool {
-    items.iter().all(|e| matches!(
-      e,
-      Expr::Comparison { operators, .. }
-        if operators.iter().all(|o| matches!(o, crate::syntax::ComparisonOp::Equal))
-    ) || matches!(
-      e,
-      Expr::FunctionCall { name, args }
-        if name == "Equal" && args.len() == 2
-    ))
+    items.iter().all(|e| {
+      matches!(
+        e,
+        Expr::Comparison { operators, .. }
+          if operators.iter().all(|o| matches!(o, ComparisonOp::Equal))
+      ) || matches!(
+        e,
+        Expr::FunctionCall { name, args }
+          if name == "Equal" && args.len() == 2
+      )
+    })
   }
   let args_owned: Vec<Expr>;
   let args = match &args[0] {
@@ -1552,7 +1611,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           operators,
         } if operands.len() == 2
           && operators.len() == 1
-          && operators[0] == crate::syntax::ComparisonOp::Equal =>
+          && operators[0] == ComparisonOp::Equal =>
         {
           (operands[0].clone(), operands[1].clone(), true)
         }
@@ -1625,7 +1684,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      && operators[0] == ComparisonOp::Equal =>
     {
       // lhs - rhs
       Expr::BinaryOp {
@@ -1720,6 +1779,17 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // A negative maximum power means a Laurent/rational expression (e.g. only
+  // x^-2 terms). The coefficient extraction below builds an empty `0..=degree`
+  // range, and the later `degree as usize` cast would index out of bounds, so
+  // bail out with the unevaluated Solve.
+  if degree < 0 {
+    return Ok(Expr::FunctionCall {
+      name: "Solve".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
   // Extract coefficients for each power of var
   let mut coeffs: Vec<Expr> = Vec::new();
   for d in 0..=degree {
@@ -1747,6 +1817,16 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let make_rule = |solution: Expr| -> Expr {
+    // A raw `UnaryOp[Minus, …]` negation wrapper prints its operand in
+    // isolation (`-2^(-1/2)`); evaluating it collapses to the canonical
+    // `Times[-1, …]` form that wolframscript shows (`-(1/Sqrt[2])`). Only the
+    // negation wrapper needs this — already-canonical roots are left as built.
+    let solution = if matches!(solution, Expr::UnaryOp { .. }) {
+      crate::evaluator::evaluate_expr_to_expr(&solution)
+        .unwrap_or_else(|_| solution.clone())
+    } else {
+      solution
+    };
     Expr::List(
       vec![Expr::Rule {
         pattern: Box::new(Expr::Identifier(var.to_string())),
@@ -1940,7 +2020,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 name: "Power".to_string(),
                 args: vec![
                   Expr::Integer(-1),
-                  crate::functions::math_ast::make_rational_pub(p, q),
+                  crate::functions::math_ast::make_rational(p, q),
                 ]
                 .into(),
               }
@@ -2289,7 +2369,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
             let factor_eq = Expr::Comparison {
               operands: vec![factor.clone(), Expr::Integer(0)],
-              operators: vec![crate::syntax::ComparisonOp::Equal],
+              operators: vec![ComparisonOp::Equal],
             };
             if let Ok(Expr::List(ref sols)) =
               solve_ast(&[factor_eq, args[1].clone()])
@@ -2648,6 +2728,24 @@ fn factor_out_constant_factors(expr: &Expr, var: &str) -> Expr {
 /// `{-1, 0, 1}` (the cases where the inverse trig has a closed-form
 /// rational multiple of `Pi`). Returns `None` for everything else so the
 /// caller falls through to the generic polynomial path.
+/// True when `e` is a concrete real literal strictly greater than 1 (positive
+/// integer ≥ 2, rational > 1, or real > 1). Used to decide whether `b^x == val`
+/// gets the full 2*Pi*I/Log[b] periodic branches: for such a base Log[b] > 0 so
+/// no sign canonicalization is needed to match wolframscript.
+fn base_is_real_gt_one(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(n) => *n > 1,
+    Expr::Real(r) => *r > 1.0,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      matches!((&args[0], &args[1]),
+        (Expr::Integer(p), Expr::Integer(q)) if *q > 0 && *p > *q)
+    }
+    _ => false,
+  }
+}
+
 /// Extract `(coeff, inner)` from `coeff * Abs[inner]` where `coeff` is free of
 /// `var`. Returns `None` if the expression isn't a constant multiple of a
 /// single `Abs[...]`.
@@ -2702,7 +2800,7 @@ fn try_solve_abs_eq(
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      && operators[0] == ComparisonOp::Equal =>
     {
       (operands[0].clone(), operands[1].clone())
     }
@@ -2734,7 +2832,7 @@ fn try_solve_abs_eq(
   let solve_branch = |value: Expr| -> Option<Vec<Expr>> {
     let branch_eq = Expr::Comparison {
       operands: vec![inner.clone(), value],
-      operators: vec![crate::syntax::ComparisonOp::Equal],
+      operators: vec![ComparisonOp::Equal],
     };
     let r = solve_ast(&[branch_eq, Expr::Identifier(var.to_string())]).ok()?;
     match r {
@@ -2755,7 +2853,7 @@ fn try_solve_abs_eq(
       // ({x -> -a} before {x -> a}); numeric cases are reordered by
       // sort_solutions anyway.
       let neg = crate::evaluator::evaluate_expr_to_expr(&Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(eff.clone()),
       })
       .ok()?;
@@ -2768,7 +2866,6 @@ fn try_solve_abs_eq(
 }
 
 fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
-  use crate::syntax::ComparisonOp;
   // Extract lhs == rhs.
   let (lhs, rhs) = match eq {
     Expr::Comparison {
@@ -2808,12 +2905,11 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
     _ => None,
   };
   if rhs_special.is_none() {
-    // General case: rhs must be a numeric constant, and within [-1, 1] for
-    // Sin/Cos (where the real inverse exists).
-    let c = crate::functions::math_ast::try_eval_to_f64(rhs)?;
-    if matches!(trig_name, "Sin" | "Cos") && c.abs() > 1.0 {
-      return None;
-    }
+    // General case: rhs must be a numeric constant. A magnitude > 1 for
+    // Sin/Cos is still solved symbolically via ArcSin/ArcCos (the inverse is
+    // complex-valued), matching wolframscript's ConditionalExpression form —
+    // e.g. Solve[Cos[x] == 2, x] -> ±ArcCos[2] + 2*Pi*C[1].
+    let _c = crate::functions::math_ast::try_eval_to_f64(rhs)?;
   }
 
   let var_expr = Expr::Identifier(var.to_string());
@@ -2842,7 +2938,7 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
   };
   let neg_half_pi = Expr::BinaryOp {
     op: BinaryOperator::Times,
-    left: Box::new(crate::functions::math_ast::make_rational_pub(-1, 2)),
+    left: Box::new(crate::functions::math_ast::make_rational(-1, 2)),
     right: Box::new(pi.clone()),
   };
   let half_pi = Expr::BinaryOp {
@@ -2891,7 +2987,7 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
   };
   let negate = |e: Expr| {
     eval(Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(e),
     })
   };
@@ -2911,7 +3007,7 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
       // Wolframscript returns the two-solution list `{x -> -Pi + 2*Pi*C[1],
       // x -> Pi + 2*Pi*C[1]}` even though they coincide modulo 2*Pi.
       let neg_pi = Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(pi.clone()),
       };
       vec![
@@ -2925,10 +3021,19 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
     // Sin; -ArcCos[c] + 2πC, ArcCos[c] + 2πC for Cos; ArcTan[c] + πC for Tan.
     ("Sin", None) => {
       let a = inverse("ArcSin");
-      vec![
-        plus(a.clone(), two_pi_c1.clone()),
-        plus(eval(plus(pi.clone(), negate(a))), two_pi_c1.clone()),
-      ]
+      let arcsin_sol = plus(a.clone(), two_pi_c1.clone());
+      let pi_minus_sol =
+        plus(eval(plus(pi.clone(), negate(a.clone()))), two_pi_c1.clone());
+      // wolframscript orders the two branches by canonical form: when
+      // `ArcSin[c]` stays symbolic (|c| is not a special value) it lists
+      // `Pi - ArcSin[c]` first; when it simplifies to a concrete multiple of Pi
+      // the pair is in ascending value order (`ArcSin[c]` first, since
+      // `ArcSin[c] < Pi - ArcSin[c]` for every real c).
+      if matches!(&a, Expr::FunctionCall { name, .. } if name == "ArcSin") {
+        vec![pi_minus_sol, arcsin_sol]
+      } else {
+        vec![arcsin_sol, pi_minus_sol]
+      }
     }
     ("Cos", None) => {
       let a = inverse("ArcCos");
@@ -2955,7 +3060,7 @@ fn try_solve_inverse_function(
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      && operators[0] == ComparisonOp::Equal =>
     {
       (operands[0].clone(), operands[1].clone())
     }
@@ -3031,49 +3136,76 @@ fn try_solve_inverse_function(
         crate::evaluator::evaluate_expr_to_expr(&inverse_rhs).ok()?;
       let new_eq = Expr::Comparison {
         operands: vec![base, simplified_rhs],
-        operators: vec![crate::syntax::ComparisonOp::Equal],
+        operators: vec![ComparisonOp::Equal],
       };
       return Some(solve_ast(&[new_eq, Expr::Identifier(var.to_string())]));
     }
     if !is_constant_wrt(&exp, var) && is_constant_wrt(&base, var) {
-      // Special case E^x == val (val positive real or 1): produce the
-      // general complex solution as a ConditionalExpression, matching
-      // wolframscript:
-      //   Solve[Exp[x] == 1, x] → {{x -> ConditionalExpression[
-      //     (2*I)*Pi*C[1], Element[C[1], Integers]]}}
-      if matches!(&base, Expr::Constant(n) if n == "E")
-        && matches!(&exp, Expr::Identifier(n) if n == var)
-      {
-        // Principal part: Log[val]
-        let log_val =
+      // b^x == val (bare-var exponent, constant base): the full complex
+      // solution has 2*Pi*I/Log[b] periodicity, which wolframscript reports as
+      //   ConditionalExpression[Log[val]/Log[b] + (2*I*Pi*C[1])/Log[b], C ∈ Z]
+      //   Solve[E^x == 5, x]  → Log[5] + 2*I*Pi*C[1]          (Log[E] = 1)
+      //   Solve[2^x == 8, x]  → Log[8]/Log[2] + (2*I*Pi*C[1])/Log[2]
+      // The periodic branches are only emitted for a concrete base E or > 1; a
+      // symbolic base (or 0 < base < 1) falls through to the principal value,
+      // matching wolframscript.
+      let base_gets_period = matches!(&base, Expr::Constant(n) if n == "E")
+        || base_is_real_gt_one(&base);
+      if matches!(&exp, Expr::Identifier(n) if n == var) && base_gets_period {
+        // Log[base] (evaluates to 1 for E).
+        let log_base =
           crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
             name: "Log".to_string(),
-            args: vec![val.clone()].into(),
+            args: vec![base.clone()].into(),
           })
           .ok()?;
-        // Periodic part: 2*Pi*I*C[1]
+        // Principal part: Log[val] / Log[base].
+        let principal =
+          crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: Box::new(Expr::FunctionCall {
+              name: "Log".to_string(),
+              args: vec![val.clone()].into(),
+            }),
+            right: Box::new(log_base.clone()),
+          })
+          .ok()?;
+        // Periodic part: (2*Pi*I*C[1]) / Log[base].
         let c1 = Expr::FunctionCall {
           name: "C".to_string(),
           args: vec![Expr::Integer(1)].into(),
         };
-        let two_pi_i_c1 =
-          crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
-              Expr::Integer(2),
-              Expr::Identifier("I".to_string()),
-              Expr::Identifier("Pi".to_string()),
-              c1.clone(),
-            ]
-            .into(),
+        let periodic =
+          crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: Box::new(Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![
+                Expr::Integer(2),
+                Expr::Identifier("I".to_string()),
+                Expr::Identifier("Pi".to_string()),
+                c1.clone(),
+              ]
+              .into(),
+            }),
+            right: Box::new(log_base),
           })
           .ok()?;
-        let general =
-          crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        // Keep the periodic term first without re-canonicalizing the sum:
+        // wolframscript lists `(2*I*Pi*C[1])/Log[b] + Log[val]/Log[b]` in that
+        // order, whereas Woxi's Plus ordering would otherwise float the
+        // principal Log term to the front. A zero principal (val == 1) drops
+        // out entirely, matching `Solve[E^x == 1, x] -> 2*I*Pi*C[1]`.
+        let principal_is_zero = matches!(&principal, Expr::Integer(0))
+          || matches!(&principal, Expr::Real(r) if *r == 0.0);
+        let general = if principal_is_zero {
+          periodic
+        } else {
+          Expr::FunctionCall {
             name: "Plus".to_string(),
-            args: vec![log_val, two_pi_i_c1].into(),
-          })
-          .ok()?;
+            args: vec![periodic, principal].into(),
+          }
+        };
         let cond = Expr::FunctionCall {
           name: "ConditionalExpression".to_string(),
           args: vec![
@@ -3113,7 +3245,7 @@ fn try_solve_inverse_function(
         crate::evaluator::evaluate_expr_to_expr(&inverse_rhs).ok()?;
       let new_eq = Expr::Comparison {
         operands: vec![exp, simplified_rhs],
-        operators: vec![crate::syntax::ComparisonOp::Equal],
+        operators: vec![ComparisonOp::Equal],
       };
       return Some(solve_ast(&[new_eq, Expr::Identifier(var.to_string())]));
     }
@@ -3220,7 +3352,7 @@ fn try_solve_inverse_function(
     // Build the new equation: inner == simplified_rhs
     let new_eq = Expr::Comparison {
       operands: vec![inner.clone(), simplified_rhs],
-      operators: vec![crate::syntax::ComparisonOp::Equal],
+      operators: vec![ComparisonOp::Equal],
     };
 
     // Recursively solve the resulting equation
@@ -3456,7 +3588,7 @@ fn try_solve_factoring_powers(
       // Recursively solve
       let new_eq = Expr::Comparison {
         operands: vec![remaining, Expr::Integer(0)],
-        operators: vec![crate::syntax::ComparisonOp::Equal],
+        operators: vec![ComparisonOp::Equal],
       };
       return Some(solve_ast(&[new_eq, args[1].clone()]));
     }
@@ -3547,7 +3679,7 @@ fn build_eq_from_coeffs(coeffs: &[Expr], var: &str) -> Expr {
   };
   Expr::Comparison {
     operands: vec![poly_expr, Expr::Integer(0)],
-    operators: vec![crate::syntax::ComparisonOp::Equal],
+    operators: vec![ComparisonOp::Equal],
   }
 }
 
@@ -3804,7 +3936,7 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Solve the polynomial equation poly == 0
   let eq = Expr::Comparison {
     operands: vec![poly, Expr::Integer(0)],
-    operators: vec![crate::syntax::ComparisonOp::Equal],
+    operators: vec![ComparisonOp::Equal],
   };
 
   let solutions = solve_ast(&[eq, Expr::Identifier(var_name.into())])?;
@@ -3862,9 +3994,9 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Order roots the way Wolfram's `Root` does: real roots first, sorted
 /// ascending, then complex roots sorted by (real, imag).
 pub fn root_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
-  use crate::functions::list_helpers_ast::expr_to_complex_parts_pub;
-  let pa = expr_to_complex_parts_pub(a);
-  let pb = expr_to_complex_parts_pub(b);
+  use crate::functions::list_helpers_ast::expr_to_complex_parts;
+  let pa = expr_to_complex_parts(a);
+  let pb = expr_to_complex_parts(b);
 
   match (pa, pb) {
     (Some((a_re, a_im)), Some((b_re, b_im))) => {
@@ -3900,10 +4032,10 @@ pub fn root_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
 /// `{-1, 0, -I, I, 1}` — `-I` and `I` slot between `0` and `1` because
 /// they share real part 0. (`Root` uses a different rule that floats
 /// every real to the head; both functions are intentionally distinct.)
-pub fn solve_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
-  use crate::functions::list_helpers_ast::expr_to_complex_parts_pub;
-  let pa = expr_to_complex_parts_pub(a);
-  let pb = expr_to_complex_parts_pub(b);
+fn solve_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  use crate::functions::list_helpers_ast::expr_to_complex_parts;
+  let pa = expr_to_complex_parts(a);
+  let pb = expr_to_complex_parts(b);
 
   match (pa, pb) {
     (Some((a_re, a_im)), Some((b_re, b_im))) => {
@@ -4169,7 +4301,7 @@ fn build_find_root_func(arg: &Expr) -> Expr {
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      && operators[0] == ComparisonOp::Equal =>
     {
       Expr::BinaryOp {
         op: BinaryOperator::Minus,
@@ -4448,7 +4580,7 @@ fn find_root_complex_newton(
 }
 
 /// Evaluate an expression numerically at a specific value of var.
-pub fn find_root_eval_at(
+fn find_root_eval_at(
   expr: &Expr,
   var: &str,
   x: f64,
@@ -4485,7 +4617,7 @@ pub fn find_root_eval_at(
 }
 
 /// Parse a number from an expression for FindRoot starting point.
-pub fn find_root_eval_number(expr: &Expr) -> Result<f64, InterpreterError> {
+fn find_root_eval_number(expr: &Expr) -> Result<f64, InterpreterError> {
   match expr {
     Expr::Integer(n) => Ok(*n as f64),
     Expr::Real(r) => Ok(*r),
@@ -4959,7 +5091,7 @@ fn minimize_eval_exact(
     return Ok(simplified);
   }
   if let Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand,
   } = &simplified
   {
@@ -5331,13 +5463,22 @@ fn reduce_fraction(n: i128, d: i128) -> (i128, i128) {
 /// Returns None if not a polynomial with integer coefficients.
 fn minimize_extract_int_coeffs(poly: &Expr, var: &str) -> Option<Vec<i128>> {
   let expanded = expand_and_combine(poly);
-  let degree = max_power_int(&expanded, var)? as usize;
+  // A negative max power means a Laurent/rational expression (e.g. 1/x^2), not
+  // a plain polynomial; bail out (also avoids `degree + 1` overflowing when the
+  // sentinel -1 is cast to usize).
+  let degree_raw = max_power_int(&expanded, var)?;
+  if degree_raw < 0 {
+    return None;
+  }
+  let degree = degree_raw as usize;
   let terms = collect_additive_terms(&expanded);
-  // Pre-check: ensure all terms are polynomial in var (sentinel -1 = non-polynomial)
+  // Pre-check: ensure all terms are polynomial in var. A negative power is
+  // either the sentinel -1 (var appears non-polynomially, e.g. E^x, Sin[x]) or
+  // a genuine negative exponent (x^-2); neither is a plain polynomial.
   for term in &terms {
     let (power, _) = term_var_power_and_coeff(term, var);
-    if power == -1 {
-      return None; // term contains var non-polynomially (e.g. E^x, Sin[x])
+    if power < 0 {
+      return None;
     }
   }
   let mut coeffs = vec![0i128; degree + 1];
@@ -5390,17 +5531,37 @@ fn minimize_poly_bounded_below(f: &Expr, var: &str) -> Option<bool> {
 }
 
 /// Check if f is bounded below by evaluating numerically at large values.
+///
+/// A single large test point is not enough: a linearly unbounded objective such
+/// as `-Abs[x]` reaches only `-1e6` at `x = 1e6`, so a fixed `-1e8` threshold
+/// would wrongly call it bounded. Instead probe a sequence of increasing
+/// magnitudes in each direction; if the objective is still strictly decreasing
+/// and already deeply negative at the largest magnitude, it runs off to
+/// -Infinity (e.g. `Minimize[-Abs[x], x]` -> {-Infinity, {x -> -Infinity}}).
 fn minimize_bounded_below_numerical(f: &Expr, var: &str) -> bool {
-  let test_points: &[f64] = &[-1e6, 1e6];
-  let threshold = -1e8;
-  for &x in test_points {
-    let substituted =
-      crate::syntax::substitute_variable(f, var, &Expr::Real(x));
-    if let Ok(evaled) = crate::evaluator::evaluate_expr_to_expr(&substituted)
-      && let Some(val) = minimize_try_f64(&evaled)
-      && val < threshold
-    {
-      return false;
+  let mags: &[f64] = &[1e2, 1e4, 1e6, 1e8];
+  for &sign in &[-1.0_f64, 1.0] {
+    let mut vals = Vec::with_capacity(mags.len());
+    for &m in mags {
+      let substituted =
+        crate::syntax::substitute_variable(f, var, &Expr::Real(sign * m));
+      match crate::evaluator::evaluate_expr_to_expr(&substituted)
+        .ok()
+        .and_then(|e| minimize_try_f64(&e))
+      {
+        Some(val) => vals.push(val),
+        None => {
+          vals.clear();
+          break;
+        }
+      }
+    }
+    if vals.len() == mags.len() {
+      let last = vals[vals.len() - 1];
+      let prev = vals[vals.len() - 2];
+      if last < prev && last < -1e6 {
+        return false;
+      }
     }
   }
   true
@@ -5413,18 +5574,18 @@ fn minimize_neg_infinity_result(vars: &[String], maximize: bool) -> Expr {
     Expr::Identifier("Infinity".to_string())
   } else {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(Expr::Identifier("Infinity".to_string())),
     }
   };
   let x_val = if maximize {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(Expr::Identifier("Infinity".to_string())),
     }
   } else {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(Expr::Identifier("Infinity".to_string())),
     }
   };
@@ -5439,6 +5600,83 @@ fn minimize_neg_infinity_result(vars: &[String], maximize: bool) -> Expr {
 }
 
 /// Single-variable unconstrained minimize.
+/// True if `e` is a genuinely complex value: it contains the imaginary unit
+/// (via `contains_complex`) or a `Complex[re, im]` node with a nonzero imaginary
+/// part (which `contains_complex` alone does not detect).
+fn minimize_cp_is_complex(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args }
+      if name == "Complex" && args.len() == 2 =>
+    {
+      let im_zero = matches!(&args[1], Expr::Integer(0))
+        || matches!(&args[1], Expr::Real(r) if *r == 0.0);
+      !im_zero || args.iter().any(minimize_cp_is_complex)
+    }
+    Expr::FunctionCall { args, .. } => args.iter().any(minimize_cp_is_complex),
+    Expr::List(items) => items.iter().any(minimize_cp_is_complex),
+    Expr::BinaryOp { left, right, .. } => {
+      minimize_cp_is_complex(left) || minimize_cp_is_complex(right)
+    }
+    Expr::UnaryOp { operand, .. } => minimize_cp_is_complex(operand),
+    _ => contains_complex(e),
+  }
+}
+
+/// Collect every `Abs[g]` subexpression argument `g` that depends on `var`.
+fn collect_abs_args(e: &Expr, var: &str, out: &mut Vec<Expr>) {
+  match e {
+    Expr::FunctionCall { name, args } => {
+      if name == "Abs"
+        && args.len() == 1
+        && !crate::functions::calculus_ast::is_constant_wrt(&args[0], var)
+      {
+        out.push(args[0].clone());
+      }
+      for a in args.iter() {
+        collect_abs_args(a, var, out);
+      }
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      collect_abs_args(left, var, out);
+      collect_abs_args(right, var, out);
+    }
+    Expr::UnaryOp { operand, .. } => collect_abs_args(operand, var, out),
+    Expr::List(items) => {
+      for it in items.iter() {
+        collect_abs_args(it, var, out);
+      }
+    }
+    _ => {}
+  }
+}
+
+/// The `var` values where an `Abs` argument in `f` vanishes — the kink points of
+/// a piecewise-linear/convex objective, which are candidate (non-smooth) minima.
+fn minimize_abs_breakpoints(f: &Expr, var: &str) -> Vec<Expr> {
+  let mut abs_args = Vec::new();
+  collect_abs_args(f, var, &mut abs_args);
+  let mut points = Vec::new();
+  for g in abs_args {
+    let eq = Expr::Comparison {
+      operands: vec![g, Expr::Integer(0)],
+      operators: vec![ComparisonOp::Equal],
+    };
+    let solved = solve_ast(&[eq, Expr::Identifier(var.to_string())]);
+    if let Ok(Expr::List(sol_sets)) = &solved {
+      for sol_set in sol_sets.iter() {
+        if let Expr::List(rules) = sol_set {
+          for rule in rules.iter() {
+            if let Expr::Rule { replacement, .. } = rule {
+              points.push((**replacement).clone());
+            }
+          }
+        }
+      }
+    }
+  }
+  points
+}
+
 fn minimize_single_var(
   f: &Expr,
   var: &str,
@@ -5476,7 +5714,36 @@ fn minimize_single_var(
   }
 
   // Find critical points: solve df == 0
-  let critical_points = minimize_find_critical_points_1d(&df, var, &f_inner)?;
+  let mut critical_points =
+    minimize_find_critical_points_1d(&df, var, &f_inner)?;
+
+  // Abs[g(x)] has a non-smooth kink where g(x) == 0; the derivative-based
+  // search never sees it (d/dx Abs = Sign is never zero). Add those breakpoints
+  // as candidate minimizers so e.g. Minimize[Abs[x - 3], x] -> {0, {x -> 3}}.
+  // Only keep a breakpoint that is a genuine local minimum (the objective does
+  // not dip below it in a small neighbourhood); this rejects concave kinks such
+  // as the maximum of -Abs[x], where the true minimum is unbounded.
+  let eval_num = |xval: &Expr| -> Option<f64> {
+    minimize_eval_exact(&f_inner, var, xval)
+      .ok()
+      .and_then(|e| minimize_try_f64(&e))
+  };
+  for bp in minimize_abs_breakpoints(&f_inner, var) {
+    let bp_str = expr_to_string(&bp);
+    if critical_points.iter().any(|c| expr_to_string(c) == bp_str) {
+      continue;
+    }
+    let (Some(x0), Some(v0)) = (minimize_try_f64(&bp), eval_num(&bp)) else {
+      continue;
+    };
+    let left = eval_num(&Expr::Real(x0 - 1e-4));
+    let right = eval_num(&Expr::Real(x0 + 1e-4));
+    let is_local_min = left.is_some_and(|l| l >= v0 - 1e-9)
+      && right.is_some_and(|r| r >= v0 - 1e-9);
+    if is_local_min {
+      critical_points.push(bp);
+    }
+  }
 
   if critical_points.is_empty() {
     // Bounded function with no critical points: return unevaluated
@@ -5492,6 +5759,11 @@ fn minimize_single_var(
   let mut best_x: Option<Expr> = None;
 
   for cp in &critical_points {
+    // Real-variable optimization ignores complex critical points (e.g. x = ±I
+    // among the roots of x^4 == 1 for Minimize[x^2 + 1/x^2, x]).
+    if minimize_cp_is_complex(cp) {
+      continue;
+    }
     let fval_exact = minimize_eval_exact(&f_inner, var, cp)?;
     let fval_num = minimize_try_f64(&fval_exact);
 
@@ -5553,7 +5825,7 @@ fn minimize_find_critical_points_1d(
   // Fallback: try Solve[df == 0, var]
   let df_eq = Expr::Comparison {
     operands: vec![df.clone(), Expr::Integer(0)],
-    operators: vec![crate::syntax::ComparisonOp::Equal],
+    operators: vec![ComparisonOp::Equal],
   };
   match solve_ast(&[df_eq, Expr::Identifier(var.to_string())]) {
     Ok(solutions) => {
@@ -5676,7 +5948,7 @@ fn minimize_multi_var(
   for (i, var) in vars.iter().enumerate() {
     let grad_eq = Expr::Comparison {
       operands: vec![grad[i].clone(), Expr::Integer(0)],
-      operators: vec![crate::syntax::ComparisonOp::Equal],
+      operators: vec![ComparisonOp::Equal],
     };
     match solve_ast(&[grad_eq, Expr::Identifier(var.clone())]) {
       Ok(sol) => {
@@ -6065,6 +6337,20 @@ fn minimize_constrained(
     f.clone()
   };
 
+  // When Maximize can't solve the problem the sub-solvers echo the call
+  // unevaluated, but embed the internally-negated objective `f_inner`. Restore
+  // the user's original objective so the echo matches wolframscript
+  // (Maximize[{x*y, …}] rather than Maximize[{-(x*y), …}]).
+  let restore = |result: Expr| -> Expr {
+    if maximize
+      && let Expr::FunctionCall { name, .. } = &result
+      && name == func_name
+    {
+      return substitute_expr(&result, &f_inner, f);
+    }
+    result
+  };
+
   // Try ILP if any Element[x, Integers] constraint is present
   if constraints
     .iter()
@@ -6072,23 +6358,29 @@ fn minimize_constrained(
     && let Some(result) =
       minimize_try_ilp(&f_inner, &constraints, vars, maximize, func_name)?
   {
-    return Ok(result);
+    return Ok(restore(result));
   }
 
   // Single variable with simple bound constraints
   if vars.len() == 1 {
     let var = &vars[0];
-    return minimize_constrained_1d(
+    return Ok(restore(minimize_constrained_1d(
       &f_inner,
       &constraints,
       var,
       maximize,
       func_name,
-    );
+    )?));
   }
 
   // Multi-variable: try linear programming for linear constraints + linear/quadratic objective
-  minimize_constrained_nd(&f_inner, &constraints, vars, maximize, func_name)
+  Ok(restore(minimize_constrained_nd(
+    &f_inner,
+    &constraints,
+    vars,
+    maximize,
+    func_name,
+  )?))
 }
 
 /// Try Integer Linear Programming. Returns Some(result) if ILP was solved, None if unsupported.
@@ -6467,7 +6759,6 @@ fn minimize_constrained_1d(
         operands,
         operators,
       } if operands.len() == 2 && operators.len() == 1 => {
-        use crate::syntax::ComparisonOp;
         let lhs = &operands[0];
         let rhs = &operands[1];
         match &operators[0] {
@@ -6687,7 +6978,6 @@ fn minimize_satisfies_constraints(
   vars: &[String],
   vals: &[f64],
 ) -> bool {
-  use crate::syntax::ComparisonOp;
   for con in constraints {
     if let Expr::Comparison {
       operands,
@@ -6733,7 +7023,6 @@ fn minimize_satisfies_constraints(
 /// True if `con` is a strict comparison (`<` or `>`), as opposed to `<=`/`>=`
 /// or `==`. Used by integer enumeration to exclude boundary integers.
 fn constraint_is_strict(con: &Expr) -> bool {
-  use crate::syntax::ComparisonOp;
   matches!(con, Expr::Comparison { operators, .. }
     if operators.len() == 1
       && matches!(operators[0], ComparisonOp::Greater | ComparisonOp::Less))
@@ -6743,7 +7032,6 @@ fn minimize_extract_linear_constraint(
   con: &Expr,
   vars: &[String],
 ) -> Option<(Vec<f64>, f64, i32)> {
-  use crate::syntax::ComparisonOp;
   let (operands, operators) = match con {
     Expr::Comparison {
       operands,
@@ -7024,7 +7312,6 @@ fn minimize_lp_2d(
     let lhs = &operands[0];
     let rhs = &operands[1];
 
-    use crate::syntax::ComparisonOp;
     let sense = match &operators[0] {
       ComparisonOp::GreaterEqual => 1,
       ComparisonOp::LessEqual => -1,
@@ -7595,7 +7882,7 @@ pub fn extract_eq_and_ineq_parts(expr: &Expr) -> (Option<Expr>, Vec<Expr>) {
       &c,
       Expr::Comparison { operators, .. }
         if operators.len() == 1
-          && operators[0] == crate::syntax::ComparisonOp::Equal
+          && operators[0] == ComparisonOp::Equal
     );
     if is_eq && eq_part.is_none() {
       eq_part = Some(c);
@@ -7740,7 +8027,7 @@ fn solve_linear_symbolic(eqs: &[Expr], var_names: &[String]) -> Option<Expr> {
         operands,
         operators,
       } if operators.len() == 1
-        && operators[0] == crate::syntax::ComparisonOp::Equal
+        && operators[0] == ComparisonOp::Equal
         && operands.len() == 2 =>
       {
         (&operands[0], &operands[1])
@@ -8037,7 +8324,7 @@ fn solve_linear_symbolic(eqs: &[Expr], var_names: &[String]) -> Option<Expr> {
 }
 
 /// Convert an evaluated expression to f64
-pub fn expr_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
+fn expr_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
   match expr {
     Expr::Integer(n) => Ok(*n as f64),
     Expr::Real(r) => Ok(*r),
@@ -8640,11 +8927,11 @@ fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
       .or_else(|| named_constant_value(name).map(NumNode::Const)),
     Expr::Constant(name) => named_constant_value(name).map(NumNode::Const),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => Some(NumNode::Neg(Box::new(c(operand)?))),
     Expr::BinaryOp { op, left, right } => {
-      use crate::syntax::BinaryOperator::*;
+      use BinaryOperator::*;
       let l = Box::new(c(left)?);
       let r = Box::new(c(right)?);
       match op {
@@ -8763,7 +9050,7 @@ fn named_constant_value(name: &str) -> Option<f64> {
 /// constraint expression, e.g. `x*y >= 1` or `-3 <= x`.
 struct AtomicComparison {
   left: Expr,
-  op: crate::syntax::ComparisonOp,
+  op: ComparisonOp,
   right: Expr,
 }
 
@@ -8834,7 +9121,7 @@ fn nminimize_infeasible_result(
 
   let inf = if maximize {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(Expr::Identifier("Infinity".to_string())),
     }
   } else {
@@ -8860,7 +9147,7 @@ fn nminimize_unbounded_result(vars: &[String], maximize: bool) -> Expr {
     Expr::Identifier("Infinity".to_string())
   } else {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(Expr::Identifier("Infinity".to_string())),
     }
   };
@@ -8894,7 +9181,7 @@ fn constraint_violation(
   vars: &[String],
   point: &[f64],
 ) -> f64 {
-  use crate::syntax::ComparisonOp::*;
+  use ComparisonOp::*;
   let mut total = 0.0;
   for c in comparisons {
     let l = eval_expr_at_point(&c.left, vars, point);
@@ -9148,7 +9435,7 @@ fn nminimize_penalty(
 
   // Total constraint violation at a point (0 when feasible).
   let violation = |point: &[f64]| -> f64 {
-    use crate::syntax::ComparisonOp::*;
+    use ComparisonOp::*;
     let mut total = 0.0;
     for (c, compiled) in comparisons.iter().zip(cmp_compiled.iter()) {
       let (l, r) = match compiled {
@@ -9356,7 +9643,6 @@ fn extract_bound_from_comparison(
   vars: &[String],
   bounds: &mut [(f64, f64)],
 ) -> Result<(), InterpreterError> {
-  use crate::syntax::ComparisonOp;
   if let Expr::Comparison {
     operands,
     operators,

@@ -4069,3 +4069,1197 @@ mod structural_numeric_unequal {
     );
   }
 }
+
+// CrossingDetect — zero crossings of arrays and images. All outputs
+// verified against wolframscript.
+mod crossing_detect {
+  use super::*;
+
+  #[test]
+  fn one_dimensional_crossings() {
+    assert_eq!(
+      interpret("Normal[CrossingDetect[{4, 0, 1, -2, 1, -2, -3, -1, 3}]]")
+        .unwrap(),
+      "{0, 0, 1, 0, 1, 0, 0, 0, 1}"
+    );
+    // A positive element next to a negative one marks the positive side.
+    assert_eq!(
+      interpret("Normal[CrossingDetect[{1, -1}]]").unwrap(),
+      "{1, 0}"
+    );
+    assert_eq!(
+      interpret("Normal[CrossingDetect[{-1, 1}]]").unwrap(),
+      "{0, 1}"
+    );
+    assert_eq!(
+      interpret("Normal[CrossingDetect[{1, -1, 1, -1}]]").unwrap(),
+      "{1, 0, 1, 0}"
+    );
+    // No crossings without a sign change; zeros neither mark nor
+    // trigger.
+    assert_eq!(
+      interpret("Normal[CrossingDetect[{1, 2, 3}]]").unwrap(),
+      "{0, 0, 0}"
+    );
+    assert_eq!(
+      interpret("Normal[CrossingDetect[{-1, 0, 1}]]").unwrap(),
+      "{0, 0, 0}"
+    );
+    assert_eq!(
+      interpret("Normal[CrossingDetect[{0, -1}]]").unwrap(),
+      "{0, 0}"
+    );
+  }
+
+  #[test]
+  fn delta_zeroes_small_values() {
+    // |v| < delta is treated as zero — strictly, so delta 1 keeps the
+    // plus-or-minus-1 values alive.
+    assert_eq!(
+      interpret("Normal[CrossingDetect[{4, 0, 1, -2, 1, -2, -3, -1, 3}, 1]]")
+        .unwrap(),
+      "{0, 0, 1, 0, 1, 0, 0, 0, 1}"
+    );
+    assert_eq!(
+      interpret("Normal[CrossingDetect[{4, 0, 1, -2, 1, -2, -3, -1, 3}, 3/2]]")
+        .unwrap(),
+      "{0, 0, 0, 0, 0, 0, 0, 0, 0}"
+    );
+  }
+
+  #[test]
+  fn matrices_use_the_eight_neighborhood() {
+    assert_eq!(
+      interpret("Normal[CrossingDetect[{{1, -1}, {1, 1}}]]").unwrap(),
+      "{{1, 0}, {1, 1}}"
+    );
+    // Diagonal neighbors count: every corner sees the negative center.
+    assert_eq!(
+      interpret("Normal[CrossingDetect[{{1, 1, 1}, {1, -5, 1}, {1, 1, 1}}]]")
+        .unwrap(),
+      "{{1, 1, 1}, {1, 0, 1}, {1, 1, 1}}"
+    );
+    assert_eq!(
+      interpret(
+        "Normal[CrossingDetect[{{-1, -1, -1}, {-1, 5, -1}, {-1, -1, -1}}]]"
+      )
+      .unwrap(),
+      "{{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn array_input_returns_sparse_arrays() {
+    assert_eq!(
+      interpret("CrossingDetect[{1, -1}]").unwrap(),
+      "SparseArray[Automatic, {2}, 0, {1, {{0, 1}, {{1}}}, {1}}]"
+    );
+    assert_eq!(
+      interpret("CrossingDetect[{{1, -1}, {-1, -1}}]").unwrap(),
+      "SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 1}, {{1}}}, {1}}]"
+    );
+  }
+
+  #[test]
+  fn image_input_returns_a_bit_image() {
+    assert_eq!(
+      interpret("ImageData[CrossingDetect[Image[{{0.5, -0.5}, {-0.5, 0.5}}]]]")
+        .unwrap(),
+      "{{1, 0}, {0, 1}}"
+    );
+    assert_eq!(
+      interpret("ImageType[CrossingDetect[Image[{{0.5, -0.5}, {-0.5, 0.5}}]]]")
+        .unwrap(),
+      "Bit"
+    );
+  }
+}
+
+// ImagePartition semantics decoded from wolframscript probes: plain sizes
+// keep only complete top-left-anchored blocks (sizes clamped to the image),
+// {n} sizes use a centered grid keeping clipped partial blocks, sizes and
+// offsets are floored, offsets are clamped to >= 1.
+mod image_partition {
+  use super::*;
+
+  const IMG: &str = "img = Image[Table[(10 r + c)/100., {r, 4}, {c, 5}]]; ";
+
+  #[test]
+  fn full_blocks_and_data() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}Map[ImageDimensions, ImagePartition[img, 2], {{2}}]"
+      ))
+      .unwrap(),
+      "{{{2, 2}, {2, 2}}, {{2, 2}, {2, 2}}}"
+    );
+    // Byte images keep their type and exact pixel values, row-major.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "bimg = Image[Table[Mod[10 r + c, 256], {r, 4}, {c, 6}], \"Byte\"]; \
+         Map[ImageData[#, \"Byte\"] &, ImagePartition[bimg, 3], {2}]"
+      )
+      .unwrap(),
+      "{{{{11, 12, 13}, {21, 22, 23}, {31, 32, 33}}, \
+         {{14, 15, 16}, {24, 25, 26}, {34, 35, 36}}}}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "bimg = Image[Table[Mod[10 r + c, 256], {r, 4}, {c, 6}], \"Byte\"]; \
+         Map[ImageType, ImagePartition[bimg, 3], {2}]"
+      )
+      .unwrap(),
+      "{{Byte, Byte}}"
+    );
+  }
+
+  #[test]
+  fn rectangular_sizes_and_offsets() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}Map[ImageDimensions, ImagePartition[img, {{3, 2}}], {{2}}]"
+      ))
+      .unwrap(),
+      "{{{3, 2}}, {{3, 2}}}"
+    );
+    // Overlapping blocks via explicit offsets.
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}Map[ImageDimensions, ImagePartition[img, 2, {{1, 2}}], {{2}}]"
+      ))
+      .unwrap(),
+      "{{{2, 2}, {2, 2}, {2, 2}, {2, 2}}, {{2, 2}, {2, 2}, {2, 2}, {2, 2}}}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}Map[ImageDimensions, ImagePartition[img, 2, 1], {{2}}]"
+      ))
+      .unwrap(),
+      "{{{2, 2}, {2, 2}, {2, 2}, {2, 2}}, {{2, 2}, {2, 2}, {2, 2}, {2, 2}}, \
+        {{2, 2}, {2, 2}, {2, 2}, {2, 2}}}"
+    );
+  }
+
+  #[test]
+  fn sizes_are_floored_and_clamped() {
+    // 2.7 floors to 2; block sizes larger than the image are clamped.
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}Map[ImageDimensions, ImagePartition[img, 2.7], {{2}}]"
+      ))
+      .unwrap(),
+      "{{{2, 2}, {2, 2}}, {{2, 2}, {2, 2}}}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}Map[ImageDimensions, ImagePartition[img, 6], {{2}}]"
+      ))
+      .unwrap(),
+      "{{{5, 4}}}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}Map[ImageDimensions, ImagePartition[img, {{6, 2}}], {{2}}]"
+      ))
+      .unwrap(),
+      "{{{5, 2}}, {{5, 2}}}"
+    );
+    // Fractional offsets are floored with a minimum step of 1.
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}Map[ImageDimensions, ImagePartition[img, 2, 0.5], {{2}}]"
+      ))
+      .unwrap(),
+      "{{{2, 2}, {2, 2}, {2, 2}, {2, 2}}, {{2, 2}, {2, 2}, {2, 2}, {2, 2}}, \
+        {{2, 2}, {2, 2}, {2, 2}, {2, 2}}}"
+    );
+  }
+
+  #[test]
+  fn clipped_mode_keeps_partial_blocks() {
+    // {s} centers the grid and keeps clipped partial edge blocks.
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}Map[ImageDimensions, ImagePartition[img, {{2}}], {{2}}]"
+      ))
+      .unwrap(),
+      "{{{1, 2}, {2, 2}, {2, 2}}, {{1, 2}, {2, 2}, {2, 2}}}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img7 = Image[Table[c/10., {r, 2}, {c, 7}]]; \
+         Map[ImageDimensions, ImagePartition[img7, {3}], {2}]"
+      )
+      .unwrap(),
+      "{{{2, 2}, {3, 2}, {2, 2}}}"
+    );
+    // Odd overhang goes to the leading (top/left) edge.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img7 = Image[Table[c/10., {r, 2}, {c, 7}]]; \
+         Map[ImageDimensions, ImagePartition[img7, {5}], {2}]"
+      )
+      .unwrap(),
+      "{{{3, 2}, {4, 2}}}"
+    );
+    // Per-axis mixing of full and clipped modes.
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}Map[ImageDimensions, ImagePartition[img, {{{{2}}, 2}}], {{2}}]"
+      ))
+      .unwrap(),
+      "{{{1, 2}, {2, 2}, {2, 2}}, {{1, 2}, {2, 2}, {2, 2}}}"
+    );
+    // Clipped mode with an explicit offset keeps every grid block whose
+    // center falls within the image, including duplicates.
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}Map[ImageDimensions, ImagePartition[img, {{2}}, 3], {{2}}]"
+      ))
+      .unwrap(),
+      "{{{2, 1}, {2, 1}}, {{2, 2}, {2, 2}}}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}Map[ImageDimensions, ImagePartition[img, {{10}}, 2], {{2}}]"
+      ))
+      .unwrap(),
+      "{{{5, 4}, {5, 4}, {5, 4}}, {{5, 4}, {5, 4}, {5, 4}}}"
+    );
+  }
+
+  #[test]
+  fn invalid_arguments_emit_messages() {
+    clear_state();
+    let r = interpret_with_stdout("ImagePartition[Image[{{0.5}}], 0]").unwrap();
+    assert_eq!(r.result, "ImagePartition[-Image-, 0]");
+    assert!(r.warnings[0].contains(
+      "ImagePartition::arg2: 0 is not a valid size specification for image partitions."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("ImagePartition[Image[{{0.5}}], {2, All}]")
+      .unwrap();
+    assert!(r.warnings[0].contains(
+      "ImagePartition::arg2: {2, All} is not a valid size specification"
+    ));
+
+    // Invalid scalar offsets are shown normalized to a pair.
+    clear_state();
+    let r =
+      interpret_with_stdout("ImagePartition[Image[{{0.5}}], 2, -1]").unwrap();
+    assert!(r.warnings[0].contains(
+      "ImagePartition::arg3: {-1, -1} is not a positive number or a pair of positive numbers."
+    ));
+
+    clear_state();
+    let r =
+      interpret_with_stdout("ImagePartition[Image[{{0.5}}], 2, {1.5, x}]")
+        .unwrap();
+    assert!(r.warnings[0].contains(
+      "ImagePartition::arg3: {1.5, x} is not a positive number or a pair of positive numbers."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("ImagePartition[5, 0]").unwrap();
+    assert_eq!(r.result, "ImagePartition[5, 0]");
+    assert!(r.warnings[0].contains(
+      "ImagePartition::imginv: Expecting an image or graphics instead of 5."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("ImagePartition[Image[{{0.5}}]]").unwrap();
+    assert_eq!(r.result, "ImagePartition[-Image-]");
+    assert!(r.warnings[0].contains(
+      "ImagePartition::argtu: ImagePartition called with 1 argument; 2 or 3 arguments are expected."
+    ));
+  }
+}
+
+// ColorCombine semantics decoded from wolframscript probes: channels of the
+// inputs interleave (multichannel inputs concatenate), the optional
+// colorspace argument only tags the result and must match the channel
+// count, and the result type is the highest input type.
+mod color_combine {
+  use super::*;
+
+  #[test]
+  fn combines_grayscale_channels() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ColorCombine[{Image[{{0.1, 0.2}, {0.3, 0.4}}], \
+           Image[{{0.5, 0.6}, {0.7, 0.8}}], Image[{{0.9, 1.0}, {0.15, 0.25}}]}]]"
+      )
+      .unwrap(),
+      "{{{0.10000000149011612, 0.5, 0.8999999761581421}, \
+         {0.20000000298023224, 0.6000000238418579, 1.}}, \
+        {{0.30000001192092896, 0.699999988079071, 0.15000000596046448}, \
+         {0.4000000059604645, 0.800000011920929, 0.25}}}"
+    );
+    // A single image gives a single-channel (grayscale) result; two give
+    // a plain 2-channel image.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{ImageChannels[ColorCombine[{Image[{{0.1}}]}]], \
+          ImageChannels[ColorCombine[{Image[{{0.1}}], Image[{{0.2}}]}]], \
+          ImageColorSpace[ColorCombine[{Image[{{0.1}}], Image[{{0.2}}]}]]}"
+      )
+      .unwrap(),
+      "{1, 2, Automatic}"
+    );
+    // Multichannel inputs concatenate their channels.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ColorCombine[{Image[{{{0.1, 0.2, 0.3}}}], Image[{{0.4}}]}]]"
+      )
+      .unwrap(),
+      "{{{0.10000000149011612, 0.20000000298023224, 0.30000001192092896, \
+          0.4000000059604645}}}"
+    );
+  }
+
+  #[test]
+  fn colorspace_argument_tags_the_result() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = {Image[{{0.1}}], Image[{{0.2}}], Image[{{0.3}}]}; \
+         {ImageColorSpace[ColorCombine[g, \"HSB\"]], \
+          ImageColorSpace[ColorCombine[g, \"RGB\"]], \
+          ImageColorSpace[ColorCombine[{Image[{{0.1}}]}, \"Grayscale\"]]}"
+      )
+      .unwrap(),
+      "{HSB, RGB, Grayscale}"
+    );
+    // The data itself is not converted by the tag.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ColorCombine[{Image[{{0.1}}], Image[{{0.2}}], \
+           Image[{{0.3}}]}, \"HSB\"]]"
+      )
+      .unwrap(),
+      "{{{0.10000000149011612, 0.20000000298023224, 0.30000001192092896}}}"
+    );
+    // The tag survives assignment, ImageTake, and ImagePartition, and
+    // ColorSeparate results are untagged again.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "h = ColorCombine[{Image[{{0.1, 0.2}}], Image[{{0.3, 0.4}}], \
+           Image[{{0.5, 0.6}}]}, \"HSB\"]; \
+         {ImageColorSpace[h], ImageColorSpace[ImageTake[h, 1]], \
+          ImageColorSpace[ImagePartition[h, 1][[1, 1]]], \
+          Map[ImageColorSpace, ColorSeparate[h]]}"
+      )
+      .unwrap(),
+      "{HSB, HSB, HSB, {Automatic, Automatic, Automatic}}"
+    );
+  }
+
+  #[test]
+  fn type_promotion() {
+    // Byte + Byte stays Byte with exact values.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "c = ColorCombine[{Image[{{10, 20}, {30, 40}}, \"Byte\"], \
+           Image[{{50, 60}, {70, 80}}, \"Byte\"]}]; \
+         {ImageType[c], ImageData[c, \"Byte\"]}"
+      )
+      .unwrap(),
+      "{Byte, {{{10, 50}, {20, 60}}, {{30, 70}, {40, 80}}}}"
+    );
+    // Real32 channels are snapped to single precision inside a Real64
+    // result; Byte channels convert exactly.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "c = ColorCombine[{Image[{{0.1}}], Image[{{0.1}}, \"Real64\"]}]; \
+         {ImageType[c], ImageData[c]}"
+      )
+      .unwrap(),
+      "{Real64, {{{0.10000000149011612, 0.1}}}}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "c = ColorCombine[{Image[{{10}}, \"Byte\"], \
+           Image[{{0.1}}, \"Real64\"]}]; \
+         {ImageType[c], ImageData[c]}"
+      )
+      .unwrap(),
+      "{Real64, {{{0.0392156862745098, 0.1}}}}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "c = ColorCombine[{Image[{{0, 1}}, \"Bit\"], \
+           Image[{{50, 60}}, \"Byte\"]}]; \
+         {ImageType[c], ImageData[c]}"
+      )
+      .unwrap(),
+      "{Byte, {{{0., 0.19607843137254902}, {1., 0.23529411764705882}}}}"
+    );
+  }
+
+  #[test]
+  fn invalid_arguments_emit_messages() {
+    // Mismatched dimensions, non-image entries, empty or non-list input.
+    clear_state();
+    let r = interpret_with_stdout(
+      "ColorCombine[{Image[{{0.1}}], Image[{{0.1, 0.2}}]}]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "ColorCombine[{-Image-, -Image-}]");
+    assert!(r.warnings[0].contains(
+      "ColorCombine::ccbinput: {-Image-, -Image-} should be a list of images \
+       with the same image dimensions."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("ColorCombine[{Image[{{0.1}}], 5}]").unwrap();
+    assert!(r.warnings[0].contains(
+      "ColorCombine::ccbinput: {-Image-, 5} should be a list of images"
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("ColorCombine[5]").unwrap();
+    assert!(
+      r.warnings[0]
+        .contains("ColorCombine::ccbinput: 5 should be a list of images")
+    );
+
+    // Invalid colorspace fires before the list check; strings render bare.
+    clear_state();
+    let r = interpret_with_stdout("ColorCombine[5, \"Foo\"]").unwrap();
+    assert_eq!(r.result, "ColorCombine[5, Foo]");
+    assert!(r.warnings[0].contains(
+      "ColorCombine::imgcstype: Foo is an invalid color space specification."
+    ));
+
+    // A symbol is not a valid colorspace either.
+    clear_state();
+    let r = interpret_with_stdout(
+      "ColorCombine[{Image[{{0.1}}], Image[{{0.2}}], Image[{{0.3}}]}, RGB]",
+    )
+    .unwrap();
+    assert!(r.warnings[0].contains(
+      "ColorCombine::imgcstype: RGB is an invalid color space specification."
+    ));
+
+    // Channel-count mismatch with the requested colorspace.
+    clear_state();
+    let r = interpret_with_stdout(
+      "ColorCombine[{Image[{{0.1}}], Image[{{0.2}}]}, \"RGB\"]",
+    )
+    .unwrap();
+    assert!(r.warnings[0].contains(
+      "ColorCombine::imgcsmis: The specified color space RGB and the number \
+       of channels 2 are not compatible."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("ColorCombine[{Image[{{0.1}}]}, \"RGB\", 3]")
+      .unwrap();
+    assert!(r.warnings[0].contains(
+      "ColorCombine::argt: ColorCombine called with 3 arguments; 1 or 2 \
+       arguments are expected."
+    ));
+  }
+}
+
+// DistanceTransform semantics decoded from wolframscript probes: exact
+// Euclidean distance to the nearest background pixel (borders are not
+// background), foreground = f32-snapped luminance strictly above t
+// (default 0, f64), Real32 single-channel result, and the all-foreground
+// quirk returning 1 everywhere. Exact non-machine thresholds trigger
+// image-dependent garbage in wolframscript (WS-internal UB) and get sane
+// numeric semantics instead.
+mod distance_transform {
+  use super::*;
+
+  #[test]
+  fn euclidean_distances() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[DistanceTransform[Image[{{0, 0, 0, 0, 0}, {0, 1, 1, 1, 0}, \
+         {0, 1, 1, 1, 0}, {0, 1, 1, 1, 0}, {0, 0, 0, 0, 0}}]]]"
+      )
+      .unwrap(),
+      "{{0., 0., 0., 0., 0.}, {0., 1., 1., 1., 0.}, {0., 1., 2., 1., 0.}, \
+        {0., 1., 1., 1., 0.}, {0., 0., 0., 0., 0.}}"
+    );
+    // Diagonal neighbors give sqrt(2) (f32-rounded); the image border
+    // does not count as background.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[DistanceTransform[Image[{{0, 0, 0, 0}, {0, 1, 1, 0}, \
+         {0, 1, 1, 0}, {1, 1, 1, 1}}]]]"
+      )
+      .unwrap(),
+      "{{0., 0., 0., 0.}, {0., 1., 1., 0.}, {0., 1., 1., 0.}, \
+        {1., 1.4142135381698608, 1.4142135381698608, 1.}}"
+    );
+    // Distances are not clipped.
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[DistanceTransform[Image[{{0, 1, 1, 1, 1, 1, 1}}]]]")
+        .unwrap(),
+      "{{0., 1., 2., 3., 4., 5., 6.}}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "d = DistanceTransform[Image[{{0, 1}}]]; \
+         {ImageType[d], ImageChannels[d], ImageColorSpace[d]}"
+      )
+      .unwrap(),
+      "{Real32, 1, Automatic}"
+    );
+  }
+
+  #[test]
+  fn all_foreground_gives_ones() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[DistanceTransform[Image[ConstantArray[1, {5, 5}]]]]"
+      )
+      .unwrap(),
+      "{{1., 1., 1., 1., 1.}, {1., 1., 1., 1., 1.}, {1., 1., 1., 1., 1.}, \
+        {1., 1., 1., 1., 1.}, {1., 1., 1., 1., 1.}}"
+    );
+    // A negative threshold makes even 0-pixels foreground.
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[DistanceTransform[Image[{{0, 1, 1}}], -1]]")
+        .unwrap(),
+      "{{1., 1., 1.}}"
+    );
+  }
+
+  #[test]
+  fn thresholds() {
+    // Strictly above t, on normalized values.
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[DistanceTransform[Image[{{0.2, 0.5, 0.9}}], 0.5]]")
+        .unwrap(),
+      "{{0., 0., 1.}}"
+    );
+    // Byte pixels compare on the normalized scale.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "b = Image[{{0, 100, 200}}, \"Byte\"]; \
+         {ImageData[DistanceTransform[b]], \
+          ImageData[DistanceTransform[b, 150]], \
+          ImageData[DistanceTransform[b, 0.5]]}"
+      )
+      .unwrap(),
+      "{{{0., 1., 2.}}, {{0., 0., 0.}}, {{0., 0., 1.}}}"
+    );
+    // Pixel values are f32-snapped before the compare, so a stored 0.3
+    // is strictly above the threshold 0.3.
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[DistanceTransform[Image[{{0.3, 0.1}}], 0.3]]")
+        .unwrap(),
+      "{{1., 0.}}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[DistanceTransform[Image[{{0.5, 0.25}}], 0.5]]")
+        .unwrap(),
+      "{{0., 0.}}"
+    );
+  }
+
+  #[test]
+  fn rgb_uses_luminance() {
+    // 0.299 R + 0.587 G + 0.114 B: pure red is background at t = 0.3
+    // but foreground at t = 0.29.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{ImageData[DistanceTransform[Image[{{{1, 0, 0}, {0, 0, 0}}}], 0.29]], \
+          ImageData[DistanceTransform[Image[{{{1, 0, 0}, {0, 0, 0}}}], 0.3]]}"
+      )
+      .unwrap(),
+      "{{{1., 0.}}, {{0., 0.}}}"
+    );
+  }
+
+  #[test]
+  fn invalid_arguments_emit_messages() {
+    clear_state();
+    let r = interpret_with_stdout("DistanceTransform[5]").unwrap();
+    assert_eq!(r.result, "DistanceTransform[5]");
+    assert!(r.warnings[0].contains(
+      "DistanceTransform::imginv: Expecting an image or graphics instead of 5."
+    ));
+
+    clear_state();
+    let r =
+      interpret_with_stdout("DistanceTransform[Image[{{1}}], x]").unwrap();
+    assert_eq!(r.result, "DistanceTransform[-Image-, x]");
+    assert!(r.warnings[0].contains(
+      "DistanceTransform::rthres: The specified threshold value x should \
+       represent a real number."
+    ));
+  }
+}
+
+// FillingTransform semantics decoded from wolframscript probes: the plain
+// form floods from the border with 4-connectivity; the depth form is a
+// reconstruction with interior marker I+h and 8-connectivity; the marker
+// form interpolates per pixel between the image and its plain fill by the
+// largest marker value in each 4-connected basin (f32 lerp F*m + I*(1-m)).
+mod filling_transform {
+  use super::*;
+
+  #[test]
+  fn binary_hole_filling() {
+    // Enclosed zeros fill; zeros touching the border stay.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[FillingTransform[Image[{{1, 1, 1, 1, 1}, {1, 0, 0, 1, 0}, \
+         {1, 0, 0, 1, 1}, {1, 1, 1, 1, 1}}]]]"
+      )
+      .unwrap(),
+      "{{1., 1., 1., 1., 1.}, {1., 1., 1., 1., 0.}, {1., 1., 1., 1., 1.}, \
+        {1., 1., 1., 1., 1.}}"
+    );
+    // Diagonal contact does not connect background to the border
+    // (4-connectivity), so this hole still fills.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[FillingTransform[Image[{{1, 1, 1}, {1, 0, 1}, {1, 1, 0}}]]]"
+      )
+      .unwrap(),
+      "{{1., 1., 1.}, {1., 1., 1.}, {1., 1., 0.}}"
+    );
+  }
+
+  #[test]
+  fn grayscale_fill_and_types() {
+    // Basins rise to their 4-connected pour-out level.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[FillingTransform[Image[{{0.5, 0.6, 0.7, 0.8}, \
+         {0.6, 0.2, 0.3, 0.7}, {0.7, 0.4, 0.2, 0.6}, {0.8, 0.7, 0.6, 0.5}}]]]"
+      )
+      .unwrap(),
+      "{{0.5, 0.6000000238418579, 0.699999988079071, 0.800000011920929}, \
+        {0.6000000238418579, 0.6000000238418579, 0.6000000238418579, 0.699999988079071}, \
+        {0.699999988079071, 0.6000000238418579, 0.6000000238418579, 0.6000000238418579}, \
+        {0.800000011920929, 0.699999988079071, 0.6000000238418579, 0.5}}"
+    );
+    // Per-channel independent filling for multichannel images.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "rgb = Image[Table[If[r == 2 && c == 2, {0.2, 0.1, 0.4}, \
+         {0.9, 0.5, 0.9}], {r, 3}, {c, 3}]]; \
+         ImageData[FillingTransform[rgb]][[2, 2]]"
+      )
+      .unwrap(),
+      "{0.8999999761581421, 0.5, 0.8999999761581421}"
+    );
+    // The image type is preserved (with quantization for Byte).
+    clear_state();
+    assert_eq!(
+      interpret(
+        "b = FillingTransform[Image[{{200, 200, 200}, {200, 50, 200}, \
+         {200, 200, 200}}, \"Byte\"]]; {ImageType[b], ImageData[b, \"Byte\"]}"
+      )
+      .unwrap(),
+      "{Byte, {{200, 200, 200}, {200, 200, 200}, {200, 200, 200}}}"
+    );
+  }
+
+  #[test]
+  fn depth_form() {
+    // Fill level is basin minimum + h, capped by the 8-connected
+    // pour-out level (the corner pixel 0.5 caps this basin).
+    clear_state();
+    assert_eq!(
+      interpret(
+        "gray2 = Image[{{0.5, 0.6, 0.7, 0.8}, {0.6, 0.2, 0.3, 0.7}, \
+         {0.7, 0.4, 0.2, 0.6}, {0.8, 0.7, 0.6, 0.5}}]; \
+         {ImageData[FillingTransform[gray2, 0.2]][[2]], \
+          ImageData[FillingTransform[gray2, 1.]][[2]]}"
+      )
+      .unwrap(),
+      "{{0.6000000238418579, 0.4000000059604645, 0.4000000059604645, \
+         0.699999988079071}, \
+        {0.6000000238418579, 0.5, 0.5, 0.699999988079071}}"
+    );
+    // A diagonal border pixel caps via 8-connectivity in the depth form
+    // even though the plain form (4-connectivity) fills fully.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "i = Image[{{0.9, 0.9, 0.9}, {0.9, 0.4, 0.9}, {0.7, 0.9, 0.9}}]; \
+         {ImageData[FillingTransform[i, 2.]][[2, 2]], \
+          ImageData[FillingTransform[i]][[2, 2]]}"
+      )
+      .unwrap(),
+      "{0.699999988079071, 0.8999999761581421}"
+    );
+    // Bit input becomes Real32; Byte results stay quantized; h = 0 is a
+    // valid no-op.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "bit = Image[{{1, 1, 1}, {1, 0, 1}, {1, 1, 1}}, \"Bit\"]; \
+         d = FillingTransform[bit, 0.4]; \
+         by = FillingTransform[Image[{{200, 200, 200}, {200, 50, 200}, \
+          {200, 200, 200}}, \"Byte\"], 0.2]; \
+         {ImageType[d], ImageData[d][[2, 2]], ImageType[by], \
+          ImageData[by][[2, 2]], \
+          ImageData[FillingTransform[Image[{{0.9, 0.9, 0.9}, {0.9, 0.2, 0.9}, \
+           {0.9, 0.9, 0.9}}], 0]][[2, 2]]}"
+      )
+      .unwrap(),
+      "{Real32, 0.4000000059604645, Byte, 0.396078431372549, \
+        0.20000000298023224}"
+    );
+  }
+
+  #[test]
+  fn marker_form() {
+    // Only basins containing a nonzero marker pixel fill; a fractional
+    // marker interpolates between image and fill (f32 lerp).
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = Image[{{0.9, 0.9, 0.9}, {0.9, 0.2, 0.9}, {0.9, 0.9, 0.9}}]; \
+         Table[ImageData[FillingTransform[g, Image[{{0, 0, 0}, {0, mv, 0}, \
+          {0, 0, 0}}]]][[2, 2]], {mv, {0.1, 0.5, 0.9, 1., 2.}}]"
+      )
+      .unwrap(),
+      "{0.26999998092651367, 0.550000011920929, 0.8299999237060547, \
+        0.8999999761581421, 0.8999999761581421}"
+    );
+    // The largest marker value in the basin applies per pixel:
+    // I + (F - I) scales each pixel individually.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "i5 = Image[{{0.9, 0.9, 0.9, 0.9, 0.9}, {0.9, 0.2, 0.3, 0.2, 0.9}, \
+         {0.9, 0.9, 0.9, 0.9, 0.9}}]; \
+         ImageData[FillingTransform[i5, Image[{{0, 0, 0, 0, 0}, \
+          {0, 0.3, 0, 0.8, 0}, {0, 0, 0, 0, 0}}]]][[2]]"
+      )
+      .unwrap(),
+      "{0.8999999761581421, 0.7599999904632568, 0.7799999713897705, \
+        0.7599999904632568, 0.8999999761581421}"
+    );
+    // Result type: Real64 stays Real64, everything else becomes Real32.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "m3 = Image[{{0, 0, 0}, {0, 0.3, 0}, {0, 0, 0}}]; \
+         by = FillingTransform[Image[{{230, 230, 230}, {230, 50, 230}, \
+          {230, 230, 230}}, \"Byte\"], m3]; \
+         r = FillingTransform[Image[{{0.9, 0.9, 0.9}, {0.9, 0.2, 0.9}, \
+          {0.9, 0.9, 0.9}}, \"Real64\"], m3]; \
+         {ImageType[by], ImageData[by][[2, 2]], ImageType[r], \
+          ImageData[r][[2, 2]]}"
+      )
+      .unwrap(),
+      "{Real32, 0.4078431725502014, Real64, 0.4100000083446503}"
+    );
+    // A marker with mismatched dimensions marks nothing; a multichannel
+    // marker echoes unevaluated.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = Image[{{0.9, 0.9, 0.9}, {0.9, 0.2, 0.9}, {0.9, 0.9, 0.9}}]; \
+         {ImageData[FillingTransform[g, Image[{{1, 0}}]]][[2, 2]], \
+          FillingTransform[g, Image[{{{1, 0, 0}}}]]}"
+      )
+      .unwrap(),
+      "{0.20000000298023224, FillingTransform[-Image-, -Image-]}"
+    );
+  }
+
+  #[test]
+  fn invalid_arguments_emit_messages() {
+    clear_state();
+    let r = interpret_with_stdout("FillingTransform[5]").unwrap();
+    assert_eq!(r.result, "FillingTransform[5]");
+    assert!(r.warnings[0].contains(
+      "FillingTransform::imginv: Expecting an image or graphics instead of 5."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("FillingTransform[Image[{{1}}], x]").unwrap();
+    assert!(r.warnings[0].contains(
+      "FillingTransform::arg2: Expecting either a marker or depth \
+       specification as the second argument instead of x."
+    ));
+
+    clear_state();
+    let r =
+      interpret_with_stdout("FillingTransform[Image[{{1}}], -0.5]").unwrap();
+    assert!(r.warnings[0].contains(
+      "FillingTransform::invh: The height specification -0.5 must be positive."
+    ));
+  }
+}
+
+// Image constructor conformance decoded from wolframscript probes: any
+// channel count is accepted (single-element pixels collapse to
+// grayscale), integer types read raw values on their own scale with
+// half-even rounding and clamping, Image[image, type] re-quantizes the
+// normalized data, and malformed arrays emit imgarray with an
+// unevaluated echo.
+mod image_constructor_conformance {
+  use super::*;
+
+  #[test]
+  fn arbitrary_channel_counts() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "i2 = Image[{{{0.9, 0.5}, {0.2, 0.1}}, {{0.3, 0.7}, {0.4, 0.6}}}]; \
+         {ImageChannels[i2], ImageColorSpace[i2], ImageData[i2][[1, 1]]}"
+      )
+      .unwrap(),
+      "{2, Automatic, {0.8999999761581421, 0.5}}"
+    );
+    // Single-element pixels collapse to a plain grayscale image.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "i1 = Image[{{{0.9}, {0.2}}, {{0.3}, {0.4}}}]; \
+         {ImageChannels[i1], ImageData[i1]}"
+      )
+      .unwrap(),
+      "{1, {{0.8999999761581421, 0.20000000298023224}, \
+        {0.30000001192092896, 0.4000000059604645}}}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("ImageChannels[Image[{{{0.1, 0.2, 0.3, 0.4, 0.5}}}]]").unwrap(),
+      "5"
+    );
+    // ColorSeparate splits 2-channel images.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Map[ImageData, ColorSeparate[Image[{{{0.9, 0.5}, {0.2, 0.1}}}]]]"
+      )
+      .unwrap(),
+      "{{{0.8999999761581421, 0.20000000298023224}}, \
+        {{0.5, 0.10000000149011612}}}"
+    );
+  }
+
+  #[test]
+  fn integer_types_quantize_raw_values() {
+    // Values are read on the type's own scale: reals round half-even
+    // and clamp into range.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{ImageData[Image[{{0.5, 0.998}}, \"Byte\"], \"Byte\"], \
+          ImageData[Image[{{2.5, 3.5, -0.5}}, \"Byte\"], \"Byte\"], \
+          ImageData[Image[{{300, -5}}, \"Byte\"], \"Byte\"], \
+          ImageData[Image[{{0.3, 0.8}}, \"Bit\"]], \
+          ImageData[Image[{{2, -1}}, \"Bit\"]], \
+          ImageData[Image[{{0.5, 70000}}, \"Bit16\"], \"Bit16\"]}"
+      )
+      .unwrap(),
+      "{{{0, 1}}, {{2, 4, 0}}, {{255, 0}}, {{0, 1}}, {{1, 0}}, {{0, 65535}}}"
+    );
+    // Untyped real input stores raw values without clamping.
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[Image[{{0.5, 2.5, -0.5}}]]").unwrap(),
+      "{{0.5, 2.5, -0.5}}"
+    );
+    // Image[image, type] re-quantizes the NORMALIZED data instead.
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[Image[Image[{{0.5}}], \"Byte\"], \"Byte\"]")
+        .unwrap(),
+      "{{128}}"
+    );
+  }
+
+  #[test]
+  fn malformed_arrays_emit_imgarray() {
+    clear_state();
+    let r = interpret_with_stdout("Image[{{x}}]").unwrap();
+    assert_eq!(r.result, "Image[{{x}}]");
+    assert!(r.warnings[0].contains(
+      "Image::imgarray: The specified argument {{x}} should be an array of \
+       rank 2 or 3 with machine-sized numbers."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("Image[{{{0.1, 0.2}, {0.3}}}]").unwrap();
+    assert!(r.warnings[0].contains("Image::imgarray"));
+
+    clear_state();
+    let r = interpret_with_stdout("Image[{}]").unwrap();
+    assert!(r.warnings[0].contains(
+      "Image::imgarray: The specified argument {} should be an array"
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("Image[{{0.5}}, \"Foo\"]").unwrap();
+    assert_eq!(r.result, "Image[{{0.5}}, Foo]");
+    assert!(r.warnings[0].contains(
+      "Image::imgdtype: The specified data type Foo should be \"Bit\", \
+       \"Byte\", \"Bit16\", \"Real32\" or \"Real64\"."
+    ));
+  }
+}
+
+// ImageValue semantics decoded from wolframscript probes: bilinear
+// tensor-product sampling in the image coordinate system (x from the
+// left, y up from the bottom, pixel centers at half-integers) with zero
+// padding outside; Real32 images snap pixels to f32 and round the
+// result to f32, all other types compute in plain f64.
+mod image_value {
+  use super::*;
+
+  const IMG: &str = "img = Image[{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}}]; ";
+
+  #[test]
+  fn bilinear_sampling() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}{{ImageValue[img, {{1, 1}}], ImageValue[img, {{1.5, 1.5}}], \
+          ImageValue[img, {{1.2, 1.8}}], \
+          ImageValue[img, {{1.2345678, 1.7654321}}]}}"
+      ))
+      .unwrap(),
+      "{0.30000001192092896, 0.20000000298023224, 0.11900000274181366, \
+        0.12741579115390778}"
+    );
+    // Positions outside blend with zero padding; fully outside gives 0.
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}{{ImageValue[img, {{3, 2}}], ImageValue[img, {{0, 0}}], \
+          ImageValue[img, {{5, 5}}]}}"
+      ))
+      .unwrap(),
+      "{0.07500000298023224, 0.10000000149011612, 0.}"
+    );
+    // A list of positions gives a list of values; multichannel images
+    // give channel-value lists.
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}ImageValue[img, {{{{1, 1}}, {{3, 2}}, {{1.5, 1.5}}}}]"
+      ))
+      .unwrap(),
+      "{0.30000001192092896, 0.07500000298023224, 0.20000000298023224}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageValue[Image[{{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}}}], {2, 1}]"
+      )
+      .unwrap(),
+      "{0.10000000149011612, 0.125, 0.15000000596046448}"
+    );
+  }
+
+  #[test]
+  fn non_real32_types_compute_in_f64() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageValue[Image[{{10, 200}}, \"Byte\"], {1, 0.5}]").unwrap(),
+      "0.4117647058823529"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageValue[Image[{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}}, \"Real64\"], \
+         {1.2, 1.8}]"
+      )
+      .unwrap(),
+      "0.119"
+    );
+  }
+
+  #[test]
+  fn invalid_arguments_emit_messages() {
+    clear_state();
+    let r =
+      interpret_with_stdout("ImageValue[Image[{{0.5}}], {x, 1}]").unwrap();
+    assert_eq!(r.result, "ImageValue[-Image-, {x, 1}]");
+    assert!(r.warnings[0].contains(
+      "ImageValue::imgrng: The specified argument {x, 1} should be an \
+       image, a graphics object or a list of coordinates."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("ImageValue[5, {1, 1}]").unwrap();
+    assert!(r.warnings[0].contains(
+      "ImageValue::imginv: Expecting an image or graphics instead of 5."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("ImageValue[Image[{{0.5}}]]").unwrap();
+    assert!(r.warnings[0].contains(
+      "ImageValue::argtu: ImageValue called with 1 argument; 2 or 3 \
+       arguments are expected."
+    ));
+  }
+}
+
+// MorphologicalBinarize semantics decoded from wolframscript probes:
+// hysteresis thresholding — seeds strictly above t2 grow through
+// 8-connected pixels strictly above t1 on f32-snapped values; scalar t
+// means {0.8 t, t}, {t} means {t, t}; multichannel pixels compare on
+// their channel mean (not luminance). The Otsu-default 1-arg form is
+// deliberately unimplemented (WS-internal iterative thresholding).
+mod morphological_binarize {
+  use super::*;
+
+  #[test]
+  fn hysteresis_thresholding() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "b = MorphologicalBinarize[Image[{{0.1, 0.55, 0.9}, {0.2, 0.65, 0.3}, \
+         {0.9, 0.05, 0.75}}], {0.5, 0.8}]; {ImageType[b], ImageData[b]}"
+      )
+      .unwrap(),
+      "{Bit, {{0, 1, 1}, {0, 1, 0}, {1, 0, 1}}}"
+    );
+    // Weak pixels connect to seeds through diagonals (8-connectivity).
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[MorphologicalBinarize[Image[{{0.9, 0.1, 0.1}, \
+         {0.1, 0.6, 0.1}, {0.1, 0.1, 0.1}}], {0.5, 0.8}]]"
+      )
+      .unwrap(),
+      "{{1, 0, 0}, {0, 1, 0}, {0, 0, 0}}"
+    );
+    // Comparisons are strict on f32-snapped values: a stored 0.8 seeds
+    // at t2 = 0.8 because 0.8f32 > 0.8.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[MorphologicalBinarize[Image[{{0.8, 0.1}}], {0.5, 0.8}]]"
+      )
+      .unwrap(),
+      "{{1, 0}}"
+    );
+  }
+
+  #[test]
+  fn scalar_and_one_element_thresholds() {
+    // Scalar t means {0.8 t, t}: at t = 0.6 the weak cut is 0.48.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{ImageData[MorphologicalBinarize[Image[{{0.48, 0.9}}], 0.6]], \
+          ImageData[MorphologicalBinarize[Image[{{0.5, 0.9}}], 0.6]], \
+          ImageData[MorphologicalBinarize[Image[{{0.63, 0.9}}], 0.8]], \
+          ImageData[MorphologicalBinarize[Image[{{0.66, 0.9}}], 0.8]]}"
+      )
+      .unwrap(),
+      "{{{0, 1}}, {{1, 1}}, {{0, 1}}, {{1, 1}}}"
+    );
+    // {t} means {t, t}.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{ImageData[MorphologicalBinarize[Image[{{0.55, 0.9}}], {0.6}]], \
+          ImageData[MorphologicalBinarize[Image[{{0.61, 0.9}}], {0.6}]]}"
+      )
+      .unwrap(),
+      "{{{0, 1}}, {{1, 1}}}"
+    );
+  }
+
+  #[test]
+  fn multichannel_uses_channel_mean() {
+    // Pure red has mean 1/3: it seeds at t2 = 0.32 but not at 0.34.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "rgb = Image[{{{1, 0, 0}, {0, 0, 0}}}]; \
+         {ImageData[MorphologicalBinarize[rgb, {0.01, 0.32}]], \
+          ImageData[MorphologicalBinarize[rgb, {0.01, 0.34}]]}"
+      )
+      .unwrap(),
+      "{{{1, 0}}, {{0, 0}}}"
+    );
+    // Byte pixels compare on the normalized scale.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[MorphologicalBinarize[Image[{{50, 200, 130}}, \"Byte\"], \
+         {0.4, 0.7}]]"
+      )
+      .unwrap(),
+      "{{0, 1, 1}}"
+    );
+  }
+
+  #[test]
+  fn invalid_arguments_emit_messages() {
+    clear_state();
+    let r =
+      interpret_with_stdout("MorphologicalBinarize[Image[{{1}}], x]").unwrap();
+    assert_eq!(r.result, "MorphologicalBinarize[-Image-, x]");
+    assert!(r.warnings[0].contains(
+      "MorphologicalBinarize::bdarg2: Invalid threshold specification x."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout(
+      "MorphologicalBinarize[Image[{{1}}], {0.5, 0.6, 0.7}]",
+    )
+    .unwrap();
+    assert!(r.warnings[0].contains(
+      "MorphologicalBinarize::bdarg2: Invalid threshold specification \
+       {0.5, 0.6, 0.7}."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("MorphologicalBinarize[5, 0.5]").unwrap();
+    assert!(r.warnings[0].contains(
+      "MorphologicalBinarize::imginv: Expecting an image or graphics \
+       instead of 5."
+    ));
+  }
+}

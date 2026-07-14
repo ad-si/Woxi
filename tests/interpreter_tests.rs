@@ -886,6 +886,50 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_export_image_to_svg_embeds_png() {
+    // Exporting an Image to an .svg file must produce a valid SVG that wraps
+    // the raster pixels as a base64-encoded PNG <image> element, rather than
+    // erroring because the image crate has no SVG raster encoder.
+    clear_state();
+    let path = std::env::temp_dir().join("woxi_test_export_image.svg");
+    let _ = std::fs::remove_file(&path);
+    let code = format!(
+      "Export[\"{}\", Image[ConstantArray[{{0, 1, 0.5}}, {{4, 4}}]]]",
+      path.display()
+    );
+    // Export returns the filename it wrote to.
+    assert_eq!(interpret(&code).unwrap(), path.display().to_string());
+
+    let svg = std::fs::read_to_string(&path).unwrap();
+    assert!(
+      svg.starts_with("<svg"),
+      "not an SVG: {}",
+      &svg[..40.min(svg.len())]
+    );
+    assert!(
+      svg.contains("width='4'") && svg.contains("height='4'"),
+      "wrong dims"
+    );
+    assert!(
+      svg.contains("data:image/png;base64,"),
+      "raster not embedded as a base64 PNG"
+    );
+    std::fs::remove_file(&path).ok();
+  }
+
+  #[test]
+  fn test_export_string_image_svg_embeds_png() {
+    // ExportString[image, "SVG"] uses the same embedded-PNG rendering.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Image[ConstantArray[{0, 1, 0.5}, {2, 2}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.starts_with("<svg"));
+    assert!(svg.contains("data:image/png;base64,"));
+  }
+
+  #[test]
   fn test_audio_missing_file_still_renders_player_chrome() {
     // A file-backed Audio whose file cannot be read (missing here; any local
     // path in the browser playground) still renders the player chrome: the
@@ -1109,6 +1153,54 @@ mod interpreter_tests {
     );
     // Single argument stays in CircleMinus[...] form, matching wolframscript
     assert_eq!(interpret("CircleMinus[5]").unwrap(), "CircleMinus[5]");
+  }
+
+  #[test]
+  fn test_insphere_simplex() {
+    clear_state();
+    // A 2-simplex is a triangle; Insphere[Simplex[...]] must match the
+    // Triangle[...] wrapper form. 3-4-5 right triangle → incircle of radius 1
+    // centred at {1, 1}; 6-8-10 right triangle → radius 2 centred at {2, 2}.
+    assert_eq!(
+      interpret("Insphere[Simplex[{{0, 0}, {4, 0}, {0, 3}}]]").unwrap(),
+      "Sphere[{1, 1}, 1]"
+    );
+    assert_eq!(
+      interpret("Insphere[Simplex[{{0, 0}, {6, 0}, {0, 8}}]]").unwrap(),
+      "Sphere[{2, 2}, 2]"
+    );
+    // A 3-simplex is a tetrahedron; Simplex and Tetrahedron wrappers must
+    // agree on the inscribed sphere for the same vertices.
+    let verts = "{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}}";
+    assert_eq!(
+      interpret(&format!("Insphere[Simplex[{verts}]]")).unwrap(),
+      interpret(&format!("Insphere[Tetrahedron[{verts}]]")).unwrap()
+    );
+  }
+
+  #[test]
+  fn test_mixed_radix_quantity_stays_symbolic() {
+    clear_state();
+    // MixedRadixQuantity[digits, radixList] is an inert container: wolframscript
+    // leaves it symbolic (arguments evaluate, the head stays) and emits no
+    // message. It must NOT produce a "not yet implemented" warning.
+    let r =
+      interpret_with_stdout("MixedRadixQuantity[{1, 2, 3}, {60, 60}]").unwrap();
+    assert_eq!(r.result, "MixedRadixQuantity[{1, 2, 3}, {60, 60}]");
+    assert!(
+      !r.warnings.iter().any(|w| w.contains("not yet implemented")),
+      "unexpected warning: {:?}",
+      r.warnings
+    );
+    // N threads into the arguments while the head is preserved.
+    assert_eq!(
+      interpret("N[MixedRadixQuantity[{1, 2, 3}, {60, 60}]]").unwrap(),
+      "MixedRadixQuantity[{1., 2., 3.}, {60., 60.}]"
+    );
+    assert_eq!(
+      interpret("Head[MixedRadixQuantity[{1, 2, 3}, {60, 60}]]").unwrap(),
+      "MixedRadixQuantity"
+    );
   }
 
   #[test]
@@ -1379,6 +1471,7 @@ mod interpreter_tests {
   mod timeseries;
   mod turing_machine;
   mod wavelets;
+  mod wxf;
 }
 
 #[cfg(test)]

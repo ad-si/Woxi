@@ -68,7 +68,7 @@ jobs:
       run: cargo fuzz run interpret --target "$HOST_TARGET" -- -timeout=60 -max_len=2048 -max_total_time=300 -rss_limit_mb=8192
     - name: Upload crashing inputs
       if: failure()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: fuzz-artifacts
         path: fuzz/artifacts/

@@ -21,7 +21,7 @@ use woxi::{InterpreterError, interpret};
 
 /// Run the interactive REPL until the user quits (`Quit`/`Exit`, EOF, or two
 /// consecutive interrupts).
-pub fn run() {
+pub(crate) fn run() {
   // Persist `%` / `Out[]` history across evaluations and route messages /
   // `Print` to real stdout (same as `woxi eval`).
   woxi::set_repl_mode(true);

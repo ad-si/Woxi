@@ -491,6 +491,17 @@ mod lucas_l_builtin {
   fn lucas_symbolic_unevaluated() {
     assert_eq!(interpret("LucasL[n]").unwrap(), "LucasL[n]");
   }
+
+  // Regression: a rational argument left the polynomial terms un-summed
+  // (LucasL[4, 1/3] -> 20/9 + 19/81); the value must fold to a single
+  // rational matching wolframscript.
+  #[test]
+  fn lucas_polynomial_rational_argument() {
+    assert_eq!(interpret("LucasL[4, 1/3]").unwrap(), "199/81");
+    assert_eq!(interpret("LucasL[5, 1/2]").unwrap(), "101/32");
+    assert_eq!(interpret("LucasL[6, 1/2]").unwrap(), "297/64");
+    assert_eq!(interpret("LucasL[-3, 1/2]").unwrap(), "-13/8");
+  }
 }
 
 mod catalan_number_builtin {
@@ -814,6 +825,43 @@ mod integer_reverse {
   #[test]
   fn zero() {
     assert_eq!(interpret("IntegerReverse[0]").unwrap(), "0");
+  }
+
+  // IntegerReverse[n, b, len] reverses exactly the `len` least-significant
+  // base-b digits, padding shorter numbers with leading zeros and dropping
+  // digits beyond `len` for longer ones.
+  #[test]
+  fn fixed_length() {
+    // 123 padded to 5 digits (00123) reversed is 32100.
+    assert_eq!(interpret("IntegerReverse[123, 10, 5]").unwrap(), "32100");
+    // Only the low 2 digits of 1234 (34) participate: reversed to 43.
+    assert_eq!(interpret("IntegerReverse[1234, 10, 2]").unwrap(), "43");
+    // Base 2: 5 = 0101 reversed to 1010 = 10.
+    assert_eq!(interpret("IntegerReverse[5, 2, 4]").unwrap(), "10");
+    // Base 16: 255 = 00FF reversed to FF00 = 65280.
+    assert_eq!(interpret("IntegerReverse[255, 16, 4]").unwrap(), "65280");
+    // Length 0 gives 0; the sign of n is ignored.
+    assert_eq!(interpret("IntegerReverse[123, 10, 0]").unwrap(), "0");
+    assert_eq!(interpret("IntegerReverse[-123, 10, 5]").unwrap(), "32100");
+    // Listable over the first argument.
+    assert_eq!(
+      interpret("IntegerReverse[{12, 340}, 10, 3]").unwrap(),
+      "{210, 43}"
+    );
+  }
+
+  // A negative digit count is rejected with intpm and stays unevaluated.
+  #[test]
+  fn fixed_length_negative_rejected() {
+    let r = woxi::interpret_with_stdout("IntegerReverse[123, 10, -2]").unwrap();
+    assert_eq!(r.result, "IntegerReverse[123, 10, -2]");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("IntegerReverse::intpm")),
+      "expected intpm message, got {:?}",
+      r.warnings
+    );
   }
 }
 
@@ -2819,6 +2867,37 @@ mod jacobi_symbol {
       "JacobiSymbol[x, 5]"
     );
   }
+
+  #[test]
+  fn even_denominator_kronecker_extension() {
+    // wolframscript extends JacobiSymbol[a, n] to even n via the Kronecker
+    // symbol: (a/2) = 0 for even a, +1 for a ≡ ±1 (mod 8), -1 for a ≡ ±3.
+    assert_eq!(interpret("JacobiSymbol[3, 4]").unwrap(), "1");
+    assert_eq!(interpret("JacobiSymbol[5, 8]").unwrap(), "-1");
+    assert_eq!(interpret("JacobiSymbol[7, 12]").unwrap(), "1");
+    assert_eq!(interpret("JacobiSymbol[3, 2]").unwrap(), "-1");
+    assert_eq!(interpret("JacobiSymbol[2, 6]").unwrap(), "0");
+  }
+
+  #[test]
+  fn zero_and_negative_denominator() {
+    // (a/0) = 1 iff a = ±1, else 0; negative n factors out (a/-1).
+    assert_eq!(interpret("JacobiSymbol[1, 0]").unwrap(), "1");
+    assert_eq!(interpret("JacobiSymbol[2, 0]").unwrap(), "0");
+    assert_eq!(interpret("JacobiSymbol[-1, 0]").unwrap(), "1");
+    assert_eq!(interpret("JacobiSymbol[15, -4]").unwrap(), "1");
+    assert_eq!(interpret("JacobiSymbol[-3, 4]").unwrap(), "1");
+  }
+
+  #[test]
+  fn matches_kronecker_symbol() {
+    // For every integer pair JacobiSymbol coincides with KroneckerSymbol.
+    assert_eq!(
+      interpret("Table[JacobiSymbol[a, n], {a, -6, 6}, {n, -6, 6}]").unwrap(),
+      interpret("Table[KroneckerSymbol[a, n], {a, -6, 6}, {n, -6, 6}]")
+        .unwrap()
+    );
+  }
 }
 
 mod real_digits {
@@ -4542,6 +4621,37 @@ mod cases {
       r#"0"#,
     );
   }
+  // FromDigits[{digits, {p1, p2, ...}}] threads the decimal-point position over
+  // the list, returning one value per position.
+  #[test]
+  fn from_digits_position_list() {
+    use woxi::interpret;
+    assert_eq!(
+      interpret("FromDigits[{{1, 0, 1}, {-1}}]").unwrap(),
+      "{101/10000}"
+    );
+    assert_eq!(
+      interpret("FromDigits[{{1, 0, 1}, {-1, 2, 5}}]").unwrap(),
+      "{101/10000, 101/10, 10100}"
+    );
+    // With an explicit base.
+    assert_eq!(
+      interpret("FromDigits[{{1, 0, 1}, {2}}, 2]").unwrap(),
+      "{5/2}"
+    );
+    // An empty position list yields an empty list.
+    assert_eq!(interpret("FromDigits[{{1, 0, 1}, {}}]").unwrap(), "{}");
+    // Both elements being lists is the same threaded form.
+    assert_eq!(
+      interpret("FromDigits[{{1, 2}, {3, 4}}]").unwrap(),
+      "{120, 1200}"
+    );
+    // The scalar-position form is unchanged.
+    assert_eq!(
+      interpret("FromDigits[{{1, 0, 1}, -1}]").unwrap(),
+      "101/10000"
+    );
+  }
   #[test]
   fn integer_digits_1() {
     assert_case(r#"IntegerDigits[76543]"#, r#"{7, 6, 5, 4, 3}"#);
@@ -5221,6 +5331,25 @@ mod number_expand {
     assert_case(r#"NumberExpand[-1/3]"#, r#"{-1/3}"#);
     assert_case(r#"NumberExpand[1/3, 2]"#, r#"{1/3}"#);
     assert_case(r#"NumberExpand[5/2]"#, r#"{5/2}"#);
+  }
+
+  // NumberExpand[x, b, len] gives exactly len elements: shorter than the digit
+  // count sums the low terms into the last, longer pads with trailing zeros.
+  #[test]
+  fn explicit_length() {
+    assert_case(r#"NumberExpand[12345, 10, 2]"#, r#"{10000, 2345}"#);
+    assert_case(r#"NumberExpand[12345, 10, 3]"#, r#"{10000, 2000, 345}"#);
+    assert_case(
+      r#"NumberExpand[12345, 10, 5]"#,
+      r#"{10000, 2000, 300, 40, 5}"#,
+    );
+    assert_case(r#"NumberExpand[12345, 10, 1]"#, r#"{12345}"#);
+    assert_case(r#"NumberExpand[255, 2, 3]"#, r#"{128, 64, 63}"#);
+    // len exceeding the digit count pads with trailing zeros.
+    assert_case(r#"NumberExpand[7, 10, 3]"#, r#"{7, 0, 0}"#);
+    assert_case(r#"NumberExpand[0, 10, 3]"#, r#"{0, 0, 0}"#);
+    // Sign is carried into the summed tail.
+    assert_case(r#"NumberExpand[-157, 10, 2]"#, r#"{-100, -57}"#);
   }
 
   #[test]
@@ -6345,5 +6474,85 @@ mod integer_digits_string_messages {
     // Valid forms still work
     assert_eq!(interpret("IntegerString[255, 16]").unwrap(), "ff");
     assert_eq!(interpret("IntegerDigits[255, 16]").unwrap(), "{15, 15}");
+  }
+}
+
+// NumberFieldDiscriminant — discriminants of algebraic number fields.
+// All outputs verified against wolframscript.
+mod number_field_discriminant {
+  use super::*;
+
+  #[test]
+  fn quadratic_fields() {
+    // Fundamental discriminants: 4d for d == 2, 3 (mod 4), d otherwise.
+    assert_eq!(interpret("NumberFieldDiscriminant[Sqrt[2]]").unwrap(), "8");
+    assert_eq!(interpret("NumberFieldDiscriminant[Sqrt[5]]").unwrap(), "5");
+    assert_eq!(interpret("NumberFieldDiscriminant[I]").unwrap(), "-4");
+    assert_eq!(
+      interpret("NumberFieldDiscriminant[Sqrt[-5]]").unwrap(),
+      "-20"
+    );
+    assert_eq!(
+      interpret("NumberFieldDiscriminant[GoldenRatio]").unwrap(),
+      "5"
+    );
+    // Non-squarefree radicands reduce to their field.
+    assert_eq!(
+      interpret("NumberFieldDiscriminant[Sqrt[12]]").unwrap(),
+      "12"
+    );
+    assert_eq!(
+      interpret("NumberFieldDiscriminant[(1 + Sqrt[13])/2]").unwrap(),
+      "13"
+    );
+  }
+
+  #[test]
+  fn rationals_and_cubics() {
+    // Rational numbers generate Q itself.
+    assert_eq!(interpret("NumberFieldDiscriminant[3]").unwrap(), "1");
+    assert_eq!(interpret("NumberFieldDiscriminant[1/2]").unwrap(), "1");
+    // Pure cubics whose equation order is maximal (Dedekind's criterion
+    // at every squared prime, including the derivative-vanishes-mod-p
+    // branch for p = 3).
+    assert_eq!(
+      interpret("NumberFieldDiscriminant[2^(1/3)]").unwrap(),
+      "-108"
+    );
+    assert_eq!(
+      interpret("NumberFieldDiscriminant[5^(1/3)]").unwrap(),
+      "-675"
+    );
+  }
+
+  #[test]
+  fn non_algebraic_input() {
+    clear_state();
+    let r = interpret_with_stdout("NumberFieldDiscriminant[x]").unwrap();
+    assert_eq!(r.result, "NumberFieldDiscriminant[x]");
+    assert!(r.warnings[0].contains(
+      "NumberFieldDiscriminant::nalg: x is not an explicit algebraic \
+       number."
+    ));
+  }
+}
+
+// Exact Bessel calls numericize under Real contagion, matching
+// wolframscript (BesselK/BesselY bit-exact; BesselI/BesselJ have a
+// pre-existing 1-2 ULP backend divergence so only K/Y assert values).
+mod bessel_real_contagion {
+  use super::*;
+
+  #[test]
+  fn bessel_values_fold_in_real_products() {
+    clear_state();
+    assert_eq!(
+      interpret("{2. + BesselK[1, 2], 2. + BesselY[1, 2]}").unwrap(),
+      "{2.1398658818165224, 1.8929675684590626}"
+    );
+    // BesselI/BesselJ numericize too (values within ULPs of WS).
+    clear_state();
+    let r = interpret("2.*BesselI[0, 3]").unwrap();
+    assert!(r.starts_with("9.7615851717300"), "got {r}");
   }
 }

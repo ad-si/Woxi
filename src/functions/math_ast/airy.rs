@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
 /// AiryAi[x] - Airy function of the first kind
 pub fn airy_ai_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -100,7 +100,7 @@ fn cmul(a: (f64, f64), b: (f64, f64)) -> (f64, f64) {
 /// f(x) = 1 + x^3/(2·3) + x^6/(2·3·5·6) + ...
 /// g(x) = x + x^4/(3·4) + x^7/(3·4·6·7) + ...
 /// c1 = Ai(0), c2 = -Ai'(0)
-pub fn airy_ai(x: f64) -> f64 {
+fn airy_ai(x: f64) -> f64 {
   let c1 = 0.3550280538878172; // Ai(0)
   let c2 = 0.2588194037928068; // -Ai'(0)
 
@@ -231,7 +231,7 @@ fn airy_bi_complex(re: f64, im: f64) -> (f64, f64) {
 /// Bi(x) = sqrt(3) * (c1 * f(x) + c2 * g(x))
 /// where f and g are the same series as for Ai(x)
 /// c1 = Ai(0), c2 = -Ai'(0)
-pub fn airy_bi(x: f64) -> f64 {
+fn airy_bi(x: f64) -> f64 {
   let c1 = 0.3550280538878172; // Ai(0)
   let c2 = 0.2588194037928068; // -Ai'(0)
   let sqrt3 = 3.0_f64.sqrt();
@@ -292,7 +292,7 @@ pub fn airy_ai_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(&args[0], Expr::Integer(0)) {
     let result = airy_build_value((2, 3), (1, 3), true)?;
     return crate::evaluator::evaluate_expr_to_expr(&Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: Box::new(result),
     });
   }
@@ -311,7 +311,7 @@ pub fn airy_ai_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Compute Ai'(x) using power series and asymptotic expansion
 /// Ai'(x) = c1 * f'(x) - c2 * g'(x)
-pub fn airy_ai_prime(x: f64) -> f64 {
+fn airy_ai_prime(x: f64) -> f64 {
   let c1 = 0.3550280538878172; // Ai(0)
   let c2 = 0.2588194037928068; // -Ai'(0)
 
@@ -401,7 +401,7 @@ pub fn airy_bi_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .into(),
     };
     let result = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(power_3),
       right: Box::new(gamma),
     };
@@ -422,7 +422,7 @@ pub fn airy_bi_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Compute Bi'(x) using the same series as Ai' but with different sign
 /// Bi'(x) = sqrt(3) * (c1 * f'(x) + c2 * g'(x))
-pub fn airy_bi_prime(x: f64) -> f64 {
+fn airy_bi_prime(x: f64) -> f64 {
   let c1 = 0.3550280538878172;
   let c2 = 0.2588194037928068;
   let sqrt3 = 3.0_f64.sqrt();
@@ -514,7 +514,7 @@ fn airy_build_value(
     gamma
   };
   let result = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(power_3),
     right: Box::new(denom),
   };
@@ -618,7 +618,7 @@ pub fn airy_bi_zero_n_eval(n: i128) -> Option<Expr> {
 /// Scorer function Hi(x) = (1/Pi) integral_0^inf exp(x t - t^3/3) dt, computed
 /// by Simpson's rule on a truncated interval (the t^3 term makes the integrand
 /// decay super-exponentially, so a finite upper limit captures the full value).
-pub fn scorer_hi(x: f64) -> f64 {
+fn scorer_hi(x: f64) -> f64 {
   let f = |t: f64| (x * t - t * t * t / 3.0).exp();
   // The integrand peaks near t = sqrt(x) (for x > 0) with log-height peak_exp;
   // extend the upper limit until the exponent has dropped ~50 below the peak.
@@ -662,7 +662,7 @@ fn scorer_value_at_zero(numer: i128) -> Result<Expr, InterpreterError> {
     args: vec![Expr::Integer(3), three_sixth, gamma].into(),
   };
   let result = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(Expr::Integer(numer)),
     right: Box::new(denom),
   };

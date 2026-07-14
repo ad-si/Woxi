@@ -2775,6 +2775,32 @@ mod limit {
     assert_eq!(interpret("Limit[x^2, x -> 3]").unwrap(), "9");
   }
 
+  // An unknown function of the limit variable can be discontinuous at the
+  // point, so wolframscript keeps the limit unevaluated rather than
+  // substituting f[0]. A var-free argument (f[0]) is a constant and still
+  // substitutes.
+  #[test]
+  fn limit_unknown_function_stays_unevaluated() {
+    assert_eq!(
+      interpret("Limit[f[x], x -> 0]").unwrap(),
+      "Limit[f[x], x -> 0]"
+    );
+    assert_eq!(
+      interpret("Limit[f[x] + 1, x -> 0]").unwrap(),
+      "Limit[1 + f[x], x -> 0]"
+    );
+    assert_eq!(
+      interpret("Limit[g[x] h[x], x -> 0]").unwrap(),
+      "Limit[g[x]*h[x], x -> 0]"
+    );
+    assert_eq!(
+      interpret("Limit[Sin[f[x]], x -> 0]").unwrap(),
+      "Limit[Sin[f[x]], x -> 0]"
+    );
+    // f[0] is a var-free constant, so only the `+ x` term is substituted.
+    assert_eq!(interpret("Limit[f[0] + x, x -> 0]").unwrap(), "f[0]");
+  }
+
   #[test]
   fn limit_free_of_variable() {
     // The limit of an expression not involving the limit variable is itself.
@@ -3021,6 +3047,30 @@ mod limit {
     );
     // The exact value at a finite integer is unaffected.
     assert_eq!(interpret("HarmonicNumber[10]").unwrap(), "7381/2520");
+  }
+
+  // Regression: an exact non-integer argument must stay symbolic (only a
+  // machine-precision real numericizes). wolframscript keeps HarmonicNumber[1/2]
+  // unevaluated but HarmonicNumber[0.5] is a float.
+  #[test]
+  fn harmonic_number_exact_non_integer_stays_symbolic() {
+    assert_eq!(
+      interpret("HarmonicNumber[1/2]").unwrap(),
+      "HarmonicNumber[1/2]"
+    );
+    assert_eq!(
+      interpret("HarmonicNumber[3/2]").unwrap(),
+      "HarmonicNumber[3/2]"
+    );
+    assert_eq!(
+      interpret("HarmonicNumber[Sqrt[2]]").unwrap(),
+      "HarmonicNumber[Sqrt[2]]"
+    );
+    // A machine real still numericizes.
+    assert_eq!(
+      interpret("HarmonicNumber[3.0]").unwrap(),
+      "1.8333333333333335"
+    );
   }
 
   // Product 0 * Infinity at a finite point: the L'Hopital rewrite must use the
@@ -4365,6 +4415,24 @@ mod nintegrate {
     );
   }
 
+  // A convergent oscillatory integral over a semi-infinite domain.
+  // ∫₀^∞ e^(-x) sin(x) dx = 1/2.
+  #[test]
+  fn nintegrate_oscillatory_semi_infinite() {
+    assert_approx("NIntegrate[Exp[-x] Sin[x], {x, 0, Infinity}]", 0.5, 1e-6);
+  }
+
+  // A non-converging oscillatory integrand (Sin[x]/x over [0, ∞) transformed
+  // onto a finite interval) must not hang: the adaptive quadrature is bounded
+  // by a node budget, so N[...] terminates and returns a real number.
+  #[test]
+  fn nintegrate_non_converging_terminates() {
+    assert_eq!(
+      interpret("NumberQ[N[Integrate[Sin[x]/x, {x, 0, Infinity}]]]").unwrap(),
+      "True"
+    );
+  }
+
   #[test]
   fn nintegrate_infinite_rational() {
     // ∫_{-∞}^∞ 1/(1+x²) dx = π
@@ -5429,6 +5497,70 @@ mod minimize {
     );
   }
 
+  // The kink of Abs[g(x)] (where g == 0) is the minimizer of a convex objective.
+  #[test]
+  fn abs_kink_minimum() {
+    assert_eq!(
+      interpret("Minimize[Abs[x - 3], x]").unwrap(),
+      "{0, {x -> 3}}"
+    );
+    assert_eq!(interpret("Minimize[Abs[x], x]").unwrap(), "{0, {x -> 0}}");
+    assert_eq!(
+      interpret("Minimize[Abs[x + 2] + 1, x]").unwrap(),
+      "{1, {x -> -2}}"
+    );
+    assert_eq!(
+      interpret("Minimize[Abs[2*x - 4], x]").unwrap(),
+      "{0, {x -> 2}}"
+    );
+    assert_eq!(
+      interpret("Minimize[3*Abs[x - 1], x]").unwrap(),
+      "{0, {x -> 1}}"
+    );
+  }
+
+  #[test]
+  fn abs_kink_maximum() {
+    assert_eq!(
+      interpret("Maximize[-Abs[x - 5], x]").unwrap(),
+      "{0, {x -> 5}}"
+    );
+    assert_eq!(
+      interpret("Maximize[10 - Abs[x], x]").unwrap(),
+      "{10, {x -> 0}}"
+    );
+  }
+
+  // A concave Abs kink is a maximum, not a minimum: the objective runs off to
+  // -Infinity, so Minimize reports the unbounded result rather than mistaking
+  // the kink for a minimum.
+  #[test]
+  fn concave_abs_not_reported_as_minimum() {
+    assert_eq!(
+      interpret("Minimize[-Abs[x], x]").unwrap(),
+      "{-Infinity, {x -> -Infinity}}"
+    );
+    assert_eq!(
+      interpret("Minimize[-Abs[x - 5], x]").unwrap(),
+      "{-Infinity, {x -> -Infinity}}"
+    );
+  }
+
+  // Objectives with negative powers (Laurent/rational) must not overflow when
+  // extracting polynomial coefficients. x^2 + 1/x^2 has minimum 2 at x = +/-1;
+  // the complex roots (+/-I) of the critical equation must be ignored.
+  #[test]
+  fn rational_objective_ignores_complex_critical_points() {
+    assert_eq!(
+      interpret("Minimize[x^2 + 1/x^2, x]").unwrap(),
+      "{2, {x -> -1}}"
+    );
+    assert_eq!(
+      interpret("Minimize[x^2/(1 + x^2), x]").unwrap(),
+      "{0, {x -> 0}}"
+    );
+  }
+
   // A non-symbol in the variable slot (a constraint, equation, or literal)
   // emits <func>::ivar and stays unevaluated, rather than raising a hard
   // error.
@@ -5882,6 +6014,40 @@ mod dsolve {
     assert_eq!(
       interpret("DSolve[y'[x] == 0, y[x], x]").unwrap(),
       "{{y[x] -> C[1]}}"
+    );
+  }
+
+  // An equation with no derivative of the dependent function is purely
+  // algebraic: DSolve reduces to Solve for the dependent function, matching
+  // wolframscript.
+  #[test]
+  fn algebraic_no_derivative_linear() {
+    assert_eq!(
+      interpret("DSolve[y[x] + 2 == 5, y[x], x]").unwrap(),
+      "{{y[x] -> 3}}"
+    );
+    assert_eq!(
+      interpret("DSolve[2 y[x] == x, y[x], x]").unwrap(),
+      "{{y[x] -> x/2}}"
+    );
+  }
+
+  #[test]
+  fn algebraic_no_derivative_quadratic() {
+    assert_eq!(
+      interpret("DSolve[y[x]^2 == 4, y[x], x]").unwrap(),
+      "{{y[x] -> -2}, {y[x] -> 2}}"
+    );
+  }
+
+  #[test]
+  fn algebraic_no_derivative_system() {
+    assert_eq!(
+      interpret(
+        "DSolve[{y[x] + z[x] == 1, y[x] - z[x] == 3}, {y[x], z[x]}, x]"
+      )
+      .unwrap(),
+      "{{y[x] -> 2, z[x] -> -1}}"
     );
   }
 
@@ -8044,6 +8210,38 @@ mod trig_to_exp {
   }
 
   #[test]
+  fn csc_to_exp() {
+    // Csc[x] = -2*I/(E^(-I*x) - E^(I*x)); the imaginary-exponent denominator
+    // renders identically to wolframscript.
+    assert_eq!(
+      interpret("TrigToExp[Csc[x]]").unwrap(),
+      "(-2*I)/(E^(-I*x) - E^(I*x))"
+    );
+  }
+
+  #[test]
+  fn csc_to_exp_double_angle() {
+    assert_eq!(
+      interpret("TrigToExp[Csc[2 y]]").unwrap(),
+      "(-2*I)/(E^((-2*I)*y) - E^((2*I)*y))"
+    );
+  }
+
+  // Csc composed with its reciprocal collapses to 1 after conversion.
+  #[test]
+  fn csc_times_sin_to_exp() {
+    assert_eq!(interpret("TrigToExp[Sin[x] Csc[x]]").unwrap(), "1");
+  }
+
+  #[test]
+  fn csc_to_exp_input_form() {
+    assert_eq!(
+      interpret("ToString[TrigToExp[Csc[x]], InputForm]").unwrap(),
+      "(-2*I)/(E^((-I)*x) - E^(I*x))"
+    );
+  }
+
+  #[test]
   fn sech_to_exp() {
     assert_eq!(interpret("TrigToExp[Sech[x]]").unwrap(), "2/(E^(-x) + E^x)");
   }
@@ -8229,6 +8427,30 @@ mod interpolation {
         .unwrap();
     let val: f64 = result.parse().expect("should be a number");
     assert!((val - 4.0).abs() < 0.001, "Expected 4.0, got {}", val);
+  }
+
+  // A single data point is a constant interpolation (order reduced to 0):
+  // the function returns that value for any input.
+  #[test]
+  fn single_point_is_constant() {
+    assert_eq!(interpret("Interpolation[{5}][1]").unwrap(), "5");
+    assert_eq!(interpret("Interpolation[{5}][100]").unwrap(), "5");
+    assert_eq!(
+      interpret("Head[Interpolation[{7}]]").unwrap(),
+      "InterpolatingFunction"
+    );
+  }
+
+  // An empty data list emits innd and stays unevaluated (not a hard error).
+  #[test]
+  fn empty_data_emits_innd() {
+    let r = woxi::interpret_with_stdout("Interpolation[{}]").unwrap();
+    assert_eq!(r.result, "Interpolation[{}]");
+    assert!(
+      r.warnings.iter().any(|w| w.contains("Interpolation::innd")),
+      "expected innd, got {:?}",
+      r.warnings
+    );
   }
 
   #[test]
@@ -10071,6 +10293,23 @@ mod discrete_ratio {
       )),
       "expected dvar message, got: {:?}",
       r.warnings
+    );
+  }
+
+  // Factorial/Gamma/Pochhammer ratios collapse the same way wolframscript
+  // reduces them: (n+1)!/n! = n+1, Gamma[n+1]/Gamma[n] = n, etc. Cancel alone
+  // leaves these untouched, so DiscreteRatio applies FunctionExpand.
+  #[test]
+  fn factorial_and_gamma_ratios_reduce() {
+    assert_eq!(interpret("DiscreteRatio[n!, n]").unwrap(), "1 + n");
+    assert_eq!(interpret("DiscreteRatio[Gamma[n], n]").unwrap(), "n");
+    assert_eq!(
+      interpret("DiscreteRatio[Pochhammer[n, 3], n]").unwrap(),
+      "(3 + n)/n"
+    );
+    assert_eq!(
+      interpret("DiscreteRatio[Binomial[n, 2], n]").unwrap(),
+      "(1 + n)/(-1 + n)"
     );
   }
 }

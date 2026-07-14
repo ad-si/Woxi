@@ -1265,6 +1265,29 @@ mod dedekind_eta {
       "Gamma[1/4]/(2*Pi^(3/4))"
     );
   }
+
+  // These elliptic/modular/Carlson functions are Listable and thread over a
+  // list argument, preserving each element's exact or symbolic form.
+  #[test]
+  fn listable_threading() {
+    assert_eq!(
+      interpret("DedekindEta[{I, 2 I}]").unwrap(),
+      "{Gamma[1/4]/(2*Pi^(3/4)), DedekindEta[2*I]}"
+    );
+    assert_eq!(
+      interpret("ModularLambda[{I, 2 I}]").unwrap(),
+      "{1/2, ModularLambda[2*I]}"
+    );
+    assert_eq!(
+      interpret("CarlsonRF[1, 2, {3, 4}]").unwrap(),
+      "{CarlsonRF[1, 2, 3], CarlsonRF[1, 2, 4]}"
+    );
+    assert_eq!(
+      interpret("DirichletL[3, 2, {2, 3}]").unwrap(),
+      "{DirichletL[3, 2, 2], DirichletL[3, 2, 3]}"
+    );
+    assert_eq!(interpret("BarnesG[{2, 3, 4}]").unwrap(), "{1, 1, 2}");
+  }
 }
 
 mod elliptic_theta {
@@ -1583,6 +1606,22 @@ mod legendre_p {
   #[test]
   fn associated_legendre_m_gt_n() {
     assert_eq!(interpret("LegendreP[2, 3, x]").unwrap(), "0");
+  }
+
+  // An exact numeric argument keeps the exact symbolic value; only an inexact
+  // (machine) argument numericizes. wolframscript: LegendreP[1, 1, 0] = -1
+  // (previously returned the float -1.).
+  #[test]
+  fn associated_legendre_exact_argument() {
+    assert_eq!(interpret("LegendreP[1, 1, 0]").unwrap(), "-1");
+    assert_eq!(interpret("LegendreP[2, 1, 1/2]").unwrap(), "(-3*Sqrt[3])/4");
+    assert_eq!(interpret("LegendreP[2, 2, 1/2]").unwrap(), "9/4");
+    assert_eq!(interpret("LegendreP[3, 2, 1/2]").unwrap(), "45/8");
+    // An inexact argument still numericizes.
+    assert_eq!(
+      interpret("LegendreP[1, 1, 0.5]").unwrap(),
+      "-0.8660254037844386"
+    );
   }
 
   #[test]
@@ -2651,6 +2690,21 @@ mod jacobi_p {
     );
   }
 
+  // Rational order parameters with an exact argument keep the exact rational
+  // value; only an inexact argument numericizes. wolframscript:
+  // JacobiP[3, 1/2, 1/2, 1/3] = -245/432 (previously returned a float).
+  #[test]
+  fn rational_ab_exact_argument() {
+    assert_eq!(interpret("JacobiP[3, 1/2, 1/2, 1/3]").unwrap(), "-245/432");
+    assert_eq!(interpret("JacobiP[2, 1/2, 3/2, 1/4]").unwrap(), "-45/64");
+    assert_eq!(interpret("JacobiP[3, 1/2, 1/2, 2]").unwrap(), "245/8");
+    // An inexact argument still numericizes.
+    assert_eq!(
+      interpret("JacobiP[3, 1/2, 1/2, 0.3]").unwrap(),
+      "-0.5381249999999999"
+    );
+  }
+
   #[test]
   fn at_zero() {
     // JacobiP[n, a, b, 0] should work
@@ -3459,6 +3513,22 @@ mod laguerre_l {
       "(120 - 240*x + 120*x^2 - 20*x^3 + x^4)/24"
     );
   }
+
+  // A rational order a with an exact argument keeps the exact rational value;
+  // only an inexact argument numericizes. wolframscript:
+  // LaguerreL[3, 1/2, 1/3] = 1189/1296 (previously returned a float).
+  #[test]
+  fn generalized_laguerre_rational_order_exact_argument() {
+    assert_eq!(interpret("LaguerreL[3, 1/2, 1/3]").unwrap(), "1189/1296");
+    assert_eq!(interpret("LaguerreL[2, 3/2, 1/3]").unwrap(), "235/72");
+    assert_eq!(interpret("LaguerreL[2, 1/2, 1/4]").unwrap(), "41/32");
+    assert_eq!(interpret("LaguerreL[4, 1/2, 1/3]").unwrap(), "21265/31104");
+    // An inexact argument still numericizes.
+    assert_eq!(
+      interpret("LaguerreL[3, 1/2, 0.3]").unwrap(),
+      "1.0279999999999998"
+    );
+  }
 }
 
 mod beta_fn {
@@ -3697,6 +3767,18 @@ mod hermite_h {
     // `-12 (1 + I) + 8 (1 + I)^3`; numeric complex arguments are now
     // expanded to `-28 + 4 I` matching wolframscript.
     assert_eq!(interpret("HermiteH[3, 1 + I]").unwrap(), "-28 + 4*I");
+  }
+
+  // Regression: a rational argument left the substituted terms un-summed
+  // (`HermiteH[3, 1/2]` -> `-6 + 1`); the numeric sum must fold to a single
+  // exact value matching wolframscript.
+  #[test]
+  fn rational_argument_folds_to_single_value() {
+    assert_eq!(interpret("HermiteH[3, 1/2]").unwrap(), "-5");
+    assert_eq!(interpret("HermiteH[3, 1/3]").unwrap(), "-100/27");
+    assert_eq!(interpret("HermiteH[4, 1/2]").unwrap(), "1");
+    assert_eq!(interpret("HermiteH[5, 1/3]").unwrap(), "8312/243");
+    assert_eq!(interpret("HermiteH[6, 1/2]").unwrap(), "31");
   }
 }
 
@@ -5160,6 +5242,55 @@ mod hypergeometric_pfq {
       "1"
     );
   }
+
+  // p=2, q=1 is exactly Hypergeometric2F1: when the 2F1 has a symbolic
+  // closed form, HypergeometricPFQ must reduce to it.
+  #[test]
+  fn two_one_delegates_to_2f1_symbolic() {
+    // 2F1[1, 1, 2, z] = -Log[1 - z]/z
+    assert_eq!(
+      interpret("HypergeometricPFQ[{1, 1}, {2}, z]").unwrap(),
+      "-(Log[1 - z]/z)"
+    );
+    // 2F1[2, 3, 4, x]
+    assert_eq!(
+      interpret("HypergeometricPFQ[{2, 3}, {4}, x]").unwrap(),
+      "(3*(-2*x + x^2 - 2*Log[1 - x] + 2*x*Log[1 - x]))/((-1 + x)*x^3)"
+    );
+    // 2F1[1, 2, 4, x]
+    assert_eq!(
+      interpret("HypergeometricPFQ[{1, 2}, {4}, x]").unwrap(),
+      "(-3*(-2*x + x^2 - 2*Log[1 - x] + 2*x*Log[1 - x]))/x^3"
+    );
+  }
+
+  // A negative-integer upper parameter terminates the series into a
+  // polynomial (handled before the 2F1 delegation, matching Wolfram's form).
+  #[test]
+  fn two_one_terminating_polynomial() {
+    assert_eq!(
+      interpret("HypergeometricPFQ[{-2, 3}, {4}, z]").unwrap(),
+      "1 - (3*z)/2 + (3*z^2)/5"
+    );
+    assert_eq!(
+      interpret("HypergeometricPFQ[{-3, 2}, {1}, z]").unwrap(),
+      "1 - 6*z + 9*z^2 - 4*z^3"
+    );
+  }
+
+  // When the underlying 2F1 has no closed form, Wolfram keeps the input as
+  // HypergeometricPFQ rather than converting it to Hypergeometric2F1.
+  #[test]
+  fn two_one_unreducible_stays_pfq() {
+    assert_eq!(
+      interpret("HypergeometricPFQ[{1/2, 1/2}, {3/2}, z]").unwrap(),
+      "HypergeometricPFQ[{1/2, 1/2}, {3/2}, z]"
+    );
+    assert_eq!(
+      interpret("HypergeometricPFQ[{3, 1}, {2}, x]").unwrap(),
+      "HypergeometricPFQ[{3, 1}, {2}, x]"
+    );
+  }
 }
 
 mod riemann_r {
@@ -5855,6 +5986,32 @@ mod log_gamma {
 #[cfg(test)]
 mod anger_j_tests {
   use super::*;
+
+  // These functions are Listable in the Wolfram Language and thread over a
+  // list argument (previously stayed unevaluated).
+  #[test]
+  fn listable_threading() {
+    assert_eq!(
+      interpret("AngerJ[1, {1, 2}]").unwrap(),
+      "{BesselJ[1, 1], BesselJ[1, 2]}"
+    );
+    assert_eq!(
+      interpret("KelvinBer[{1, 2}]").unwrap(),
+      "{KelvinBer[0, 1], KelvinBer[0, 2]}"
+    );
+    assert_eq!(
+      interpret("KelvinBei[{1, 2}]").unwrap(),
+      "{KelvinBei[0, 1], KelvinBei[0, 2]}"
+    );
+    assert_eq!(
+      interpret("WeberE[1, {1, 2}]").unwrap(),
+      "{2/Pi - StruveH[1, 1], 2/Pi - StruveH[1, 2]}"
+    );
+    assert_eq!(
+      interpret("ArithmeticGeometricMean[{1, 2}, 3]").unwrap(),
+      "{ArithmeticGeometricMean[1, 3], ArithmeticGeometricMean[2, 3]}"
+    );
+  }
 
   // AngerJ[n, z] = BesselJ[n, z] for integer n
   #[test]
@@ -8030,6 +8187,23 @@ mod ramanujan_tau {
   #[test]
   fn symbolic_unevaluated() {
     assert_eq!(interpret("RamanujanTau[n]").unwrap(), "RamanujanTau[n]");
+  }
+
+  // Listable: threads over a list argument (Attributes includes Listable).
+  #[test]
+  fn threads_over_list() {
+    assert_eq!(
+      interpret("RamanujanTau[{1, 2, 3}]").unwrap(),
+      "{1, -24, 252}"
+    );
+    // Other Listable special functions thread too.
+    assert_eq!(interpret("SquaresR[2, {5, 25}]").unwrap(), "{8, 12}");
+    assert_eq!(interpret("PrimitiveRoot[{7, 11}]").unwrap(), "{3, 2}");
+    assert_eq!(
+      interpret("ZernikeR[{2, 4}, 0, r]").unwrap(),
+      "{-1 + 2*r^2, 1 - 6*r^2 + 6*r^4}"
+    );
+    assert_eq!(interpret("QFactorial[{2, 3}, 2]").unwrap(), "{3, 21}");
   }
 }
 

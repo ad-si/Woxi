@@ -204,7 +204,7 @@ pub fn day_count_weekday_ast(
 }
 
 /// Convert a date {y,m,d} to absolute days since 1900-01-01 (day 0)
-pub(crate) fn date_to_absolute_days(year: i64, month: i64, day: i64) -> i64 {
+fn date_to_absolute_days(year: i64, month: i64, day: i64) -> i64 {
   let mut total_days: i64 = 0;
 
   if year >= 1900 {
@@ -225,8 +225,169 @@ pub(crate) fn date_to_absolute_days(year: i64, month: i64, day: i64) -> i64 {
   total_days
 }
 
+/// Julian Day Number (JDN) for a proleptic-Gregorian calendar date. Standard
+/// integer-arithmetic conversion; exact for year >= 1 (the range where the
+/// truncating division matches floor division).
+fn gregorian_to_jdn(year: i64, month: i64, day: i64) -> i64 {
+  let a = (14 - month) / 12;
+  let y = year + 4800 - a;
+  let m = month + 12 * a - 3;
+  day + (153 * m + 2) / 5 + 365 * y + y / 4 - y / 100 + y / 400 - 32045
+}
+
+/// Convert a Julian Day Number back to a Julian-calendar {year, month, day}.
+fn jdn_to_julian(jdn: i64) -> (i64, i64, i64) {
+  let c = jdn + 32082;
+  let d = (4 * c + 3) / 1461;
+  let e = c - (1461 * d) / 4;
+  let m = (5 * e + 2) / 153;
+  let day = e - (153 * m + 2) / 5 + 1;
+  let month = m + 3 - 12 * (m / 10);
+  let year = d - 4800 + m / 10;
+  (year, month, day)
+}
+
+/// CalendarConvert[dateobj, calendar] — reinterpret a (Gregorian) DateObject
+/// in another calendar system. Currently the Julian calendar is supported
+/// (plus the Gregorian identity). The source must be a Gregorian DateObject
+/// (the default); a DateObject already tagged with a non-Gregorian calendar
+/// stays unevaluated, matching wolframscript. Non-Julian target calendars are
+/// left unevaluated.
+pub fn calendar_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "CalendarConvert".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 2 {
+    return unevaluated();
+  }
+  fn token(e: &Expr) -> Option<&str> {
+    match e {
+      Expr::String(s) => Some(s.as_str()),
+      Expr::Identifier(s) => Some(s.as_str()),
+      _ => None,
+    }
+  }
+  let Some(target) = token(&args[1]) else {
+    return unevaluated();
+  };
+
+  // The source must be a DateObject whose date list is the first element.
+  let Expr::FunctionCall { name, args: dargs } = &args[0] else {
+    return unevaluated();
+  };
+  if name != "DateObject" || dargs.is_empty() {
+    return unevaluated();
+  }
+  let Expr::List(items) = &dargs[0] else {
+    return unevaluated();
+  };
+  if items.is_empty() {
+    return unevaluated();
+  }
+
+  // Recognised calendar and granularity tags among the trailing DateObject
+  // elements. A non-Gregorian source calendar isn't supported → unevaluated.
+  let is_calendar = |s: &str| {
+    matches!(
+      s,
+      "Gregorian"
+        | "Julian"
+        | "Islamic"
+        | "Hebrew"
+        | "Jewish"
+        | "Coptic"
+        | "Persian"
+        | "ArithmeticPersian"
+        | "Ethiopic"
+        | "Chinese"
+        | "Mayan"
+    )
+  };
+  let is_granularity = |s: &str| {
+    matches!(
+      s,
+      "Year"
+        | "Quarter"
+        | "Month"
+        | "Week"
+        | "Day"
+        | "Hour"
+        | "Minute"
+        | "Second"
+        | "Instant"
+    )
+  };
+  let mut granularity = "Day";
+  for a in dargs[1..].iter() {
+    if let Some(t) = token(a) {
+      if is_calendar(t) && t != "Gregorian" {
+        return unevaluated();
+      }
+      if is_granularity(t) {
+        granularity = match t {
+          "Year" => "Year",
+          "Quarter" => "Quarter",
+          "Month" => "Month",
+          "Week" => "Week",
+          "Day" => "Day",
+          "Hour" => "Hour",
+          "Minute" => "Minute",
+          "Second" => "Second",
+          _ => "Instant",
+        };
+      }
+    }
+  }
+
+  let as_i64 = |e: &Expr| -> Option<i64> {
+    if let Expr::Integer(n) = e {
+      i64::try_from(*n).ok()
+    } else {
+      None
+    }
+  };
+  let Some(y) = as_i64(&items[0]) else {
+    return unevaluated();
+  };
+  let m = items.get(1).and_then(as_i64).unwrap_or(1);
+  let d = items.get(2).and_then(as_i64).unwrap_or(1);
+
+  let make_date = |yy: i64, mm: i64, dd: i64, calendar: Option<&str>| {
+    let mut oargs = vec![
+      Expr::List(
+        vec![
+          Expr::Integer(yy as i128),
+          Expr::Integer(mm as i128),
+          Expr::Integer(dd as i128),
+        ]
+        .into(),
+      ),
+      Expr::String(granularity.to_string()),
+    ];
+    if let Some(cal) = calendar {
+      oargs.push(Expr::String(cal.to_string()));
+    }
+    Ok(Expr::FunctionCall {
+      name: "DateObject".to_string(),
+      args: oargs.into(),
+    })
+  };
+
+  match target {
+    "Gregorian" => make_date(y, m, d, None),
+    "Julian" => {
+      let (jy, jm, jd) = jdn_to_julian(gregorian_to_jdn(y, m, d));
+      make_date(jy, jm, jd, Some("Julian"))
+    }
+    _ => unevaluated(),
+  }
+}
+
 /// Convert absolute days since 1900-01-01 to {year, month, day}
-pub(crate) fn absolute_days_to_date(mut days: i64) -> (i64, i64, i64) {
+fn absolute_days_to_date(mut days: i64) -> (i64, i64, i64) {
   let mut year: i64 = 1900;
 
   if days >= 0 {
@@ -385,7 +546,7 @@ pub(crate) fn extract_date_components(expr: &Expr) -> Option<Vec<f64>> {
 }
 
 /// Parse a natural language date string like "6 June 1991"
-fn parse_date_string(s: &str) -> Option<(i64, i64, i64)> {
+pub(crate) fn parse_date_string(s: &str) -> Option<(i64, i64, i64)> {
   let months = [
     "january",
     "february",
@@ -401,10 +562,23 @@ fn parse_date_string(s: &str) -> Option<(i64, i64, i64)> {
     "december",
   ];
 
+  // Parse a day token, stripping a trailing comma and any ordinal suffix
+  // ("4", "8th," and "1st" all yield the numeric day).
+  let parse_day = |tok: &str| -> Option<i64> {
+    let t = tok.trim_end_matches(',');
+    let t = t
+      .strip_suffix("st")
+      .or_else(|| t.strip_suffix("nd"))
+      .or_else(|| t.strip_suffix("rd"))
+      .or_else(|| t.strip_suffix("th"))
+      .unwrap_or(t);
+    t.parse::<i64>().ok()
+  };
+
   let parts: Vec<&str> = s.split_whitespace().collect();
   if parts.len() == 3 {
     // Try "Day Month Year" format
-    if let Ok(day) = parts[0].parse::<i64>() {
+    if let Some(day) = parse_day(parts[0]) {
       let month_lower = parts[1].to_lowercase();
       if let Some(month_idx) =
         months.iter().position(|m| m.starts_with(&*month_lower))
@@ -417,14 +591,10 @@ fn parse_date_string(s: &str) -> Option<(i64, i64, i64)> {
     let month_lower = parts[0].to_lowercase();
     if let Some(month_idx) =
       months.iter().position(|m| m.starts_with(&*month_lower))
+      && let Some(day) = parse_day(parts[1])
+      && let Ok(year) = parts[2].parse::<i64>()
     {
-      // Remove trailing comma from day if present
-      let day_str = parts[1].trim_end_matches(',');
-      if let Ok(day) = day_str.parse::<i64>()
-        && let Ok(year) = parts[2].parse::<i64>()
-      {
-        return Some((year, (month_idx + 1) as i64, day));
-      }
+      return Some((year, (month_idx + 1) as i64, day));
     }
   }
 
@@ -2694,6 +2864,61 @@ pub fn resolve_date_to_list(expr: &Expr) -> Option<Expr> {
     }
     _ => None,
   }
+}
+
+/// A numeric ordering key for a `DateObject` (absolute seconds since the epoch)
+/// or a `TimeObject` (seconds since midnight), tagged with a kind (0 = date,
+/// 1 = time) so the two domains are never ordered against each other. Used by
+/// the `<`/`>`/`<=`/`>=` comparisons and Max/Min. Returns None for anything else.
+pub fn datetime_order_key(e: &Expr) -> Option<(f64, u8)> {
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  if name == "DateObject" {
+    let resolved = resolve_date_to_list(e)?;
+    let Expr::List(items) = &resolved else {
+      return None;
+    };
+    let nums: Vec<f64> = items
+      .iter()
+      .map(|it| match it {
+        Expr::Integer(n) => Some(*n as f64),
+        Expr::Real(r) => Some(*r),
+        _ => None,
+      })
+      .collect::<Option<Vec<_>>>()?;
+    let g = |i: usize, d: f64| nums.get(i).copied().unwrap_or(d);
+    return Some((
+      date_to_absolute_seconds(
+        g(0, 0.0) as i64,
+        g(1, 1.0) as i64,
+        g(2, 1.0) as i64,
+        g(3, 0.0) as i64,
+        g(4, 0.0) as i64,
+        g(5, 0.0),
+      ),
+      0,
+    ));
+  }
+  if name == "TimeObject"
+    && !args.is_empty()
+    && let Expr::List(items) = &args[0]
+    && (1..=3).contains(&items.len())
+  {
+    let mut comps = Vec::with_capacity(items.len());
+    for it in items.iter() {
+      comps.push(match it {
+        Expr::Integer(n) => *n as f64,
+        Expr::Real(r) => *r,
+        _ => return None,
+      });
+    }
+    let secs = comps.first().copied().unwrap_or(0.0) * 3600.0
+      + comps.get(1).copied().unwrap_or(0.0) * 60.0
+      + comps.get(2).copied().unwrap_or(0.0);
+    return Some((secs, 1));
+  }
+  None
 }
 
 // ─── DayPlus ────────────────────────────────────────────────────────

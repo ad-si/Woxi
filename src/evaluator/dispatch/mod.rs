@@ -8,7 +8,7 @@ pub(crate) use crate::syntax::{
 };
 #[allow(unused_imports)]
 pub(crate) use crate::{
-  ENV, InterpreterError, PART_DEPTH, StoredValue, format_real_result, interpret,
+  ENV, InterpreterError, PART_DEPTH, StoredValue, interpret,
 };
 
 pub mod arg_count;
@@ -961,8 +961,7 @@ pub fn evaluate_function_call_ast_inner(
                   );
                 // Push positional parameter bindings as context so inner
                 // Orderless matching can check compatibility (e.g. x_Symbol=r).
-                let mut positional_ctx: Vec<(String, crate::syntax::Expr)> =
-                  Vec::new();
+                let mut positional_ctx: Vec<(String, Expr)> = Vec::new();
                 for (pi, param) in params.iter().enumerate() {
                   if pi == idx
                     || pi >= effective_args.len()
@@ -974,7 +973,7 @@ pub fn evaluate_function_call_ast_inner(
                   positional_ctx
                     .push((param.clone(), effective_args[pi].clone()));
                 }
-                crate::evaluator::pattern_matching::push_match_context_pub(
+                crate::evaluator::pattern_matching::push_match_context(
                   &positional_ctx,
                 );
                 let match_result =
@@ -982,7 +981,7 @@ pub fn evaluate_function_call_ast_inner(
                     &canonical_arg,
                     pattern,
                   );
-                crate::evaluator::pattern_matching::pop_match_context_pub();
+                crate::evaluator::pattern_matching::pop_match_context();
                 if let Some(bindings) = match_result {
                   // Check consistency: structural bindings must not conflict
                   // with positional parameter bindings (skip the structural
@@ -1239,8 +1238,7 @@ pub fn evaluate_function_call_ast_inner(
                     );
                   // Push positional parameter bindings as context so inner
                   // Orderless matching can check compatibility.
-                  let mut positional_ctx: Vec<(String, crate::syntax::Expr)> =
-                    Vec::new();
+                  let mut positional_ctx: Vec<(String, Expr)> = Vec::new();
                   for (pi, param) in params.iter().enumerate() {
                     if pi == idx
                       || pi >= effective_args.len()
@@ -1252,7 +1250,7 @@ pub fn evaluate_function_call_ast_inner(
                     positional_ctx
                       .push((param.clone(), effective_args[pi].clone()));
                   }
-                  crate::evaluator::pattern_matching::push_match_context_pub(
+                  crate::evaluator::pattern_matching::push_match_context(
                     &positional_ctx,
                   );
                   let match_result =
@@ -1260,7 +1258,7 @@ pub fn evaluate_function_call_ast_inner(
                       &canonical_arg,
                       pattern,
                     );
-                  crate::evaluator::pattern_matching::pop_match_context_pub();
+                  crate::evaluator::pattern_matching::pop_match_context();
                   if let Some(bindings) = match_result {
                     // Check consistency: structural bindings must not conflict
                     // with positional parameter bindings (skip the structural
@@ -2176,8 +2174,24 @@ pub fn evaluate_function_call_ast_inner(
 
   // Permute[list, perm] — permute list elements
   if name == "Permute" && args.len() == 2 {
-    if let Expr::List(list) = &args[0] {
-      // Permute[list, {p1, p2, ...}] — permutation list form
+    // Permute operates on any non-atomic expression, not just Lists; the
+    // result keeps the original head (e.g. Permute[f[a,b,c], perm] -> f[...]).
+    let head_and_items: Option<(Option<&String>, &[Expr])> = match &args[0] {
+      Expr::List(list) => Some((None, list)),
+      Expr::FunctionCall { name: h, args: a } => Some((Some(h), a)),
+      _ => None,
+    };
+    if let Some((head, list)) = head_and_items {
+      let rebuild = |v: Vec<Expr>| -> Expr {
+        match head {
+          None => Expr::List(v.into()),
+          Some(h) => Expr::FunctionCall {
+            name: h.clone(),
+            args: v.into(),
+          },
+        }
+      };
+      // Permute[expr, {p1, p2, ...}] — permutation list form
       // Element at position i goes to position perm[i]
       if let Expr::List(perm) = &args[1] {
         if perm.len() != list.len() {
@@ -2204,9 +2218,9 @@ pub fn evaluate_function_call_ast_inner(
             });
           }
         }
-        return Ok(Expr::List(result.into()));
+        return Ok(rebuild(result));
       }
-      // Permute[list, Cycles[{...}]] — cycle notation
+      // Permute[expr, Cycles[{...}]] — cycle notation
       if let Expr::FunctionCall {
         name: cname,
         args: cargs,
@@ -2215,7 +2229,7 @@ pub fn evaluate_function_call_ast_inner(
         && cargs.len() == 1
         && let Expr::List(cycle_list) = &cargs[0]
       {
-        let mut result = list.clone();
+        let mut result = list.to_vec();
         for cycle in cycle_list {
           if let Expr::List(c) = cycle {
             let indices: Vec<usize> = c
@@ -2238,7 +2252,7 @@ pub fn evaluate_function_call_ast_inner(
             }
           }
         }
-        return Ok(Expr::List(result));
+        return Ok(rebuild(result));
       }
     }
     return Ok(Expr::FunctionCall {
@@ -3291,6 +3305,7 @@ pub fn evaluate_function_call_ast_inner(
     // per channel. The result preserves dimensions, channels, and
     // image_type.
     if let Expr::Image {
+      color_space: _,
       width,
       height,
       channels,
@@ -3368,6 +3383,7 @@ pub fn evaluate_function_call_ast_inner(
         }
       }
       return Ok(Expr::Image {
+        color_space: None,
         width: *width,
         height: *height,
         channels: *channels,
@@ -3391,12 +3407,12 @@ pub fn evaluate_function_call_ast_inner(
       for (j, bj) in b_coeffs.iter().enumerate() {
         if i >= j {
           let term = Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(bj.clone()),
             right: Box::new(data[i - j].clone()),
           };
           sum = Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Plus,
+            op: BinaryOperator::Plus,
             left: Box::new(sum),
             right: Box::new(term),
           };
@@ -3405,19 +3421,19 @@ pub fn evaluate_function_call_ast_inner(
       for (k, ak) in a_coeffs.iter().enumerate().skip(1) {
         if i >= k {
           let term = Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(ak.clone()),
             right: Box::new(output[i - k].clone()),
           };
           sum = Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Minus,
+            op: BinaryOperator::Minus,
             left: Box::new(sum),
             right: Box::new(term),
           };
         }
       }
       let result = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(sum),
         right: Box::new(a_coeffs[0].clone()),
       };
@@ -3774,7 +3790,7 @@ pub fn evaluate_function_call_ast_inner(
           let mut out = Vec::with_capacity(items.len());
           for x in items.iter() {
             let diff = Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Minus,
+              op: BinaryOperator::Minus,
               left: Box::new(x.clone()),
               right: Box::new(median.clone()),
             };
@@ -3802,12 +3818,12 @@ pub fn evaluate_function_call_ast_inner(
           let mut out = Vec::with_capacity(items.len());
           for x in items.iter() {
             let diff = Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Minus,
+              op: BinaryOperator::Minus,
               left: Box::new(x.clone()),
               right: Box::new(mean.clone()),
             };
             let sq = Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Power,
+              op: BinaryOperator::Power,
               left: Box::new(diff),
               right: Box::new(Expr::Integer(2)),
             };
@@ -3822,7 +3838,7 @@ pub fn evaluate_function_call_ast_inner(
           args: vec![squared_diffs].into(),
         };
         let variance = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(sum_sq),
           right: Box::new(Expr::Integer(n)),
         };
@@ -5770,6 +5786,7 @@ pub fn evaluate_function_call_ast_inner(
       | "GraphDensity"
       | "MeanGraphDistance"
       | "MeanDegreeConnectivity"
+      | "GraphLinkEfficiency"
   ) && args.len() == 1
   {
     return crate::functions::graph::graph_metric_ast(name, args);
@@ -6396,12 +6413,28 @@ pub fn evaluate_function_call_ast_inner(
     && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
     && let Some(alpha) = crate::functions::math_ast::expr_to_f64(&args[1])
   {
-    let beta = if args.len() == 3 {
-      crate::functions::math_ast::expr_to_f64(&args[2]).unwrap_or(1.0)
-    } else {
-      1.0
-    };
     let n = vertices.len();
+    // beta defaults to 1 for every vertex; a scalar third argument is used for
+    // all vertices, and a length-n list gives a per-vertex bias vector.
+    let beta: Vec<f64> = if args.len() == 3 {
+      match &args[2] {
+        Expr::List(bs) if bs.len() == n => {
+          let vals: Option<Vec<f64>> = bs
+            .iter()
+            .map(crate::functions::math_ast::expr_to_f64)
+            .collect();
+          match vals {
+            Some(v) => v,
+            None => vec![1.0; n],
+          }
+        }
+        other => {
+          vec![crate::functions::math_ast::expr_to_f64(other).unwrap_or(1.0); n]
+        }
+      }
+    } else {
+      vec![1.0; n]
+    };
     let mut idx: std::collections::HashMap<String, usize> =
       std::collections::HashMap::new();
     for (i, v) in vertices.iter().enumerate() {
@@ -6423,7 +6456,7 @@ pub fn evaluate_function_call_ast_inner(
       }
     }
     if let Some(centrality) =
-      crate::functions::graph::katz_centrality(&adj, alpha, beta)
+      crate::functions::graph::katz_centrality(&adj, alpha, &beta)
     {
       return Ok(Expr::List(
         centrality
@@ -9183,7 +9216,7 @@ pub fn evaluate_function_call_ast_inner(
                 conds.push(Expr::Comparison {
                   operands: vec![
                     Expr::BinaryOp {
-                      op: crate::syntax::BinaryOperator::Minus,
+                      op: BinaryOperator::Minus,
                       left: Box::new(fargs[i].clone()),
                       right: Box::new(fargs[j].clone()),
                     },
@@ -9226,7 +9259,7 @@ pub fn evaluate_function_call_ast_inner(
                 conds.push(Expr::Comparison {
                   operands: vec![
                     Expr::BinaryOp {
-                      op: crate::syntax::BinaryOperator::Minus,
+                      op: BinaryOperator::Minus,
                       left: Box::new(fargs[i].clone()),
                       right: Box::new(fargs[j].clone()),
                     },
@@ -9444,7 +9477,7 @@ pub fn evaluate_function_call_ast_inner(
       let mut terms: Vec<Expr> = Vec::with_capacity(r);
       for j in 0..r {
         terms.push(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(window[j].clone()),
           right: Box::new(items[i + j].clone()),
         });
@@ -9454,7 +9487,7 @@ pub fn evaluate_function_call_ast_inner(
         args: terms.into(),
       };
       let avg = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(sum),
         right: Box::new(divisor.clone()),
       };
@@ -10209,12 +10242,12 @@ pub fn evaluate_function_call_ast_inner(
     // Apply radius if present
     let (x_comp, y_comp) = if let Some(r) = r {
       let rx = evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(r.clone()),
         right: Box::new(cos_expr),
       })?;
       let ry = evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(r),
         right: Box::new(sin_expr),
       })?;
@@ -10226,12 +10259,12 @@ pub fn evaluate_function_call_ast_inner(
     // Apply center offset if present
     let (final_x, final_y) = if let Some((cx, cy)) = center {
       let fx = evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(cx),
         right: Box::new(x_comp),
       })?;
       let fy = evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(cy),
         right: Box::new(y_comp),
       })?;
@@ -10291,16 +10324,16 @@ pub fn evaluate_function_call_ast_inner(
     // Base angle theta0: explicit, or the default Pi/2 - (n-1)*Pi/n.
     let pi = || Expr::Identifier("Pi".to_string());
     let base = theta.unwrap_or_else(|| Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(pi()),
         right: Box::new(Expr::Integer(2)),
       }),
       right: Box::new(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(Expr::Integer((n - 1) as i128)),
           right: Box::new(pi()),
         }),
@@ -10311,12 +10344,12 @@ pub fn evaluate_function_call_ast_inner(
     for k in 0..n {
       // angle_k = base + 2*k*Pi/n
       let angle = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(base.clone()),
         right: Box::new(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(Expr::Integer(k as i128 * 2)),
             right: Box::new(pi()),
           }),
@@ -10325,10 +10358,10 @@ pub fn evaluate_function_call_ast_inner(
       };
       // coordinate = center + radius * trig(angle)
       let coord = |trig: &str, c: &Expr| Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(c.clone()),
         right: Box::new(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(radius.clone()),
           right: Box::new(Expr::FunctionCall {
             name: trig.to_string(),
@@ -10583,6 +10616,7 @@ pub fn evaluate_function_call_ast_inner(
       | "DotEqual"
       | "NumberMarks"
       | "MixedRadix"
+      | "MixedRadixQuantity"
       | "XMLObject"
       | "UnderoverscriptBox"
       | "ForwardBackward"
@@ -11255,6 +11289,7 @@ fn rational_to_expr(num: i128, den: i128) -> Expr {
 /// `is_darker` = true for Darker, false for Lighter.
 fn evaluate_darker_lighter(args: &[Expr], is_darker: bool) -> Option<Expr> {
   if let Expr::Image {
+    color_space: _,
     width,
     height,
     channels,
@@ -11307,6 +11342,7 @@ fn evaluate_darker_lighter(args: &[Expr], is_darker: bool) -> Option<Expr> {
       })
       .collect();
     return Some(Expr::Image {
+      color_space: None,
       width: *width,
       height: *height,
       channels: *channels,
@@ -11794,6 +11830,7 @@ fn blend_images(colors: &[Expr], weight: Option<&Expr>) -> Option<Expr> {
     new_data.push(v);
   }
   Some(Expr::Image {
+    color_space: None,
     width: w,
     height: h,
     channels: ch,
@@ -12020,8 +12057,6 @@ fn chromatic_poly_coeffs(n: usize, edges: &[(usize, usize)]) -> Vec<i128> {
 
 /// Convert polynomial coefficients to an expression in variable k.
 fn poly_to_expr(coeffs: &[i128], k: &Expr) -> Expr {
-  use crate::syntax::BinaryOperator;
-
   let mut terms: Vec<Expr> = Vec::new();
   for (i, &c) in coeffs.iter().enumerate() {
     if c == 0 {
@@ -12222,6 +12257,7 @@ fn morphological_op(
     crate::functions::math_ast::try_eval_to_f64(radius_expr)? as usize;
 
   if let Expr::Image {
+    color_space: _,
     width,
     height,
     channels,
@@ -12245,6 +12281,7 @@ fn morphological_op(
       }
     }
     return Some(Ok(Expr::Image {
+      color_space: None,
       width: *width,
       height: *height,
       channels: *channels,
@@ -12954,7 +12991,7 @@ fn bspline_point_to_real(e: &Expr) -> Expr {
 
 /// Clamped, uniform knot vector for `n` control points of degree `p`:
 /// `p + 1` leading zeros, evenly-spaced interior knots, `p + 1` trailing ones.
-pub fn bspline_clamped_knots(n: usize, p: usize) -> Vec<f64> {
+fn bspline_clamped_knots(n: usize, p: usize) -> Vec<f64> {
   let mut knots = vec![0.0; p + 1];
   let segments = n - p; // interior knots = segments - 1
   for i in 1..segments {

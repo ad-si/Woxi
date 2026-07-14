@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::{BinaryOperator, UnaryOperator};
 
 fn expr_to_i64(expr: &Expr) -> Option<i64> {
   match expr {
@@ -29,6 +30,38 @@ fn part_take_unevaluated(expr: &Expr, index: &Expr) -> Expr {
   Expr::Part {
     expr: Box::new(expr.clone()),
     index: Box::new(index.clone()),
+  }
+}
+
+/// `a | b | c` (Alternatives) is a flat, associative head in WL but is stored
+/// as a nested BinaryOp chain. Rewrite it into a flattened
+/// `Alternatives[a, b, c]` FunctionCall so positional operations (Part, Take,
+/// …) see all operands as siblings, matching wolframscript. Returns `None`
+/// when `expr` is not such a chain.
+pub fn flatten_alternatives_binop(expr: &Expr) -> Option<Expr> {
+  fn gather(e: &Expr, out: &mut Vec<Expr>) -> bool {
+    if let Expr::BinaryOp {
+      op: BinaryOperator::Alternatives,
+      left,
+      right,
+    } = e
+    {
+      gather(left, out);
+      gather(right, out);
+      true
+    } else {
+      out.push(e.clone());
+      false
+    }
+  }
+  let mut parts = Vec::new();
+  if gather(expr, &mut parts) {
+    Some(Expr::FunctionCall {
+      name: "Alternatives".to_string(),
+      args: parts.into(),
+    })
+  } else {
+    None
   }
 }
 
@@ -304,6 +337,12 @@ pub fn extract_part_ast(
   expr: &Expr,
   index: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // Normalize a nested Alternatives chain (`a | b | c`) into a flat
+  // Alternatives[a, b, c] so positional access matches wolframscript.
+  if let Some(flat) = flatten_alternatives_binop(expr) {
+    return extract_part_ast(&flat, index);
+  }
+
   // A 1-D SparseArray indexed by an integer yields the scalar entry at that
   // position. (Spans/higher-rank keep sub-arrays sparse and fall through.)
   if matches!(index, Expr::Integer(_) | Expr::BigInteger(_))
@@ -676,7 +715,6 @@ pub fn extract_part_ast(
     // Strings are atoms in Wolfram Language — Part[string, n] for n ≠ 0
     // returns unevaluated (handled by the fallback arm below).
     Expr::BinaryOp { op, left, right } => {
-      use crate::syntax::BinaryOperator;
       // Decompose BinaryOp into head + args consistent with Head[]
       let (head_name, parts): (&str, Vec<Expr>) = match op {
         BinaryOperator::Plus => ("Plus", vec![*left.clone(), *right.clone()]),
@@ -729,7 +767,6 @@ pub fn extract_part_ast(
       }
     }
     Expr::UnaryOp { op, operand } => {
-      use crate::syntax::UnaryOperator;
       let (head_name, parts): (&str, Vec<Expr>) = match op {
         UnaryOperator::Minus => {
           ("Times", vec![Expr::Integer(-1), *operand.clone()])
@@ -752,14 +789,21 @@ pub fn extract_part_ast(
         Ok(part_take_unevaluated(expr, index))
       }
     }
-    Expr::Comparison { operands, .. } => {
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      // Index into the WL structure: uniform `a op b op c` is Op[a, b, c];
+      // mixed `a < b <= c` is Inequality[a, Less, b, LessEqual, c].
+      let (head, parts) =
+        crate::syntax::comparison_head_and_args(operands, operators);
       if idx == 0 {
-        return Ok(Expr::Identifier("Comparison".to_string()));
+        return Ok(Expr::Identifier(head));
       }
-      let len = operands.len() as i64;
+      let len = parts.len() as i64;
       let actual_idx = if idx < 0 { len + idx } else { idx - 1 };
       if actual_idx >= 0 && actual_idx < len {
-        Ok(operands[actual_idx as usize].clone())
+        Ok(parts[actual_idx as usize].clone())
       } else {
         let expr_str = crate::syntax::expr_to_string(expr);
         crate::emit_message(&format!(

@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator};
 
 /// Convert an Expr to a boolean value.
 /// Returns Some(true) for Identifier("True"), Some(false) for Identifier("False").
@@ -113,7 +114,6 @@ pub fn apply_func_to_args(
 /// `a-b` is `Plus`, `a==b` is `Equal` — so head-constrained patterns
 /// (`_Power`, `_Plus`, …) match them correctly. Mirrors `Head[]`.
 pub fn get_expr_head_str(expr: &Expr) -> &str {
-  use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator};
   match expr {
     Expr::Integer(_) | Expr::BigInteger(_) => "Integer",
     Expr::Real(_) | Expr::BigFloat(_, _) => "Real",

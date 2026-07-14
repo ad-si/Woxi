@@ -278,6 +278,7 @@ Unset = { Identifier ~ "=" ~ "." ~ !ASCII_DIGIT }
 UnsetSuffix = { "=" ~ "." ~ !ASCII_DIGIT }
 
 // Compound assignment: x += y, x -= y, x *= y, x /= y
+ApplyToOp = { (PartExtract | Identifier) ~ "//=" ~ Expression }
 AddTo = { (PartExtract | Identifier) ~ "+=" ~ Expression }
 SubtractFrom = { (PartExtract | Identifier) ~ "-=" ~ Expression }
 TimesBy = { (PartExtract | Identifier) ~ "*=" ~ Expression }
@@ -374,12 +375,15 @@ PostfixApplication = { PostfixBase ~ ("//" ~ PostfixFunction)+ }
 // CompoundExpression: multiple expressions separated by ;
 // The result is the value of the last expression (like Wolfram's CompoundExpression)
 // A trailing ; means the result is Null (e.g. "a;" is CompoundExpression[a, Null])
-// Uses single alternative to avoid parsing Expression twice for non-compound inputs.
 // Allows consecutive `;` separators with empty expressions between them,
-// matching Wolfram's `a ; ; c` → `CompoundExpression[a, Null, c]`. The
-// inner `!(&SpanSep)` prevents `;;` (Span) from being mis-parsed as two
-// CompoundExpression separators; Span is handled at the Expression level.
-CompoundExpression = { Expression ~ (";" ~ !(&SpanSep) ~ Expression?)+ }
+// matching Wolfram's `a ; ; c` → `CompoundExpression[a, Null, c]`.
+// Each statement may itself be a Span (`5 ;; 2; 1 ;; 10 ;; 2`): a Span operand
+// greedily consumes its own `;;`, so every remaining top-level `;` is a genuine
+// CompoundExpression separator — no `;;` guard is needed and a `;;` statement is
+// free to follow a separator (`... ; ;;`). parse_compound_expression counts the
+// `;` separators from the source to reinsert omitted (Null) statements.
+CompoundStatement = _{ TopLevelSpan | Expression }
+CompoundExpression = { CompoundStatement ~ (";" ~ CompoundStatement?)+ }
 
 // DerivativeNumeric: numeric literal followed by '...' (e.g. 1', (-1.4)', I via Constant)
 DerivativeNumeric = { (PrecisionReal | Real | IntegerScientific | Integer | Constant) ~ DerivativePrime }
@@ -451,6 +455,7 @@ Term = _{
   | SlotCall
   | ImplicitTimes
   | Unset
+  | ApplyToOp
   | AddTo
   | SubtractFrom
   | TimesBy
@@ -478,7 +483,7 @@ Term = _{
   | AssociationExtended
   | Association
   | ParenExtended
-  | "(" ~ (&HasSpanSep ~ SpanExpr | &HasSemicolon ~ CompoundExpression | Expression) ~ ")"
+  | "(" ~ (&HasSemicolon ~ CompoundExpression | &HasSpanSep ~ SpanExpr | Expression) ~ ")"
 }
 
 // SimpleTerm is used for implicit multiplication - doesn't include ImplicitTimes to avoid recursion
@@ -508,6 +513,7 @@ TermNoImplicit = _{
     FunctionCallExtended
   | ImplicitTimes
   | Unset
+  | ApplyToOp
   | AddTo
   | SubtractFrom
   | TimesBy

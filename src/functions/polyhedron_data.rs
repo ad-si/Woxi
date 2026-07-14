@@ -127,7 +127,7 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     edge_count: 30,
     face_count: 12,
     volume: "(15 + 7*Sqrt[5])/4",
-    surface_area: "3*Sqrt[25 + 10*Sqrt[5]]",
+    surface_area: "3*Sqrt[5*(5 + 2*Sqrt[5])]",
     circumradius: "(Sqrt[15] + Sqrt[3])/4",
     inradius: "Sqrt[250 + 110*Sqrt[5]]/20",
     vertices: dodecahedron_vertices,
@@ -140,7 +140,7 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     volume: "(5*(3 + Sqrt[5]))/12",
     surface_area: "5*Sqrt[3]",
     circumradius: "Sqrt[10 + 2*Sqrt[5]]/4",
-    inradius: "(Sqrt[3]*(3 + Sqrt[5]))/12",
+    inradius: "(3*Sqrt[3] + Sqrt[15])/12",
     vertices: icosahedron_vertices,
   },
 ];
@@ -149,6 +149,16 @@ fn find_polyhedron(name: &str) -> Option<&'static PolyhedronInfo> {
   // "Hexahedron" is the standard alternative name for the cube.
   let name = if name == "Hexahedron" { "Cube" } else { name };
   POLYHEDRA.iter().find(|p| p.name == name)
+}
+
+/// The exact unit-edge volume of a Platonic solid, as WL source.
+pub fn unit_volume_src(name: &str) -> Option<&'static str> {
+  find_polyhedron(name).map(|p| p.volume)
+}
+
+/// The exact unit-edge surface area of a Platonic solid, as WL source.
+pub fn unit_surface_area_src(name: &str) -> Option<&'static str> {
+  find_polyhedron(name).map(|p| p.surface_area)
 }
 
 /// Compute the faces of a convex polyhedron from its vertices: every plane

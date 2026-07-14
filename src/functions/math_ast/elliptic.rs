@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
 /// True if `e` contains an inexact (machine) number. Elliptic functions
 /// numericize only when an argument is inexact; exact (integer/rational)
@@ -64,7 +64,7 @@ pub fn elliptic_k_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Compute complete elliptic integral K(m) using the arithmetic-geometric mean
-pub fn elliptic_k(m: f64) -> f64 {
+fn elliptic_k(m: f64) -> f64 {
   let mut a = 1.0;
   let mut b = (1.0 - m).sqrt();
   for _ in 0..100 {
@@ -160,7 +160,7 @@ pub fn elliptic_nome_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Numeric inverse of the elliptic nome: the parameter m in [0, 1] with
 /// EllipticNomeQ[m] == q. The nome q(m) = exp(-Pi K(1-m)/K(m)) increases
 /// monotonically from 0 (m = 0) to 1 (m = 1), so the root is found by bisection.
-pub fn inverse_elliptic_nome_q_numeric(q: f64) -> f64 {
+fn inverse_elliptic_nome_q_numeric(q: f64) -> f64 {
   if q <= 0.0 {
     return 0.0;
   }
@@ -302,7 +302,7 @@ pub fn elliptic_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Compute complete elliptic integral E(m) via series expansion
 /// E(m) = (pi/2) * [1 - sum_{n=1}^inf ((2n-1)!!/(2n)!!)^2 * m^n / (2n-1)]
-pub fn elliptic_e(m: f64) -> f64 {
+fn elliptic_e(m: f64) -> f64 {
   // E(m) = (pi/2) * Σ_{n=0}^∞ ((2n)!/(2^n n!))^2 * (-m^n)/((2n-1)*4^n)
   // Simpler: E(m) = (pi/2) * [1 - Σ_{n=1}^∞ (1/2 choose n)^2 * m^n / (2n-1)]
   // Using the series: E(m) = pi/2 * Σ t_n where
@@ -569,7 +569,7 @@ pub fn elliptic_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Compute incomplete elliptic integral of the third kind via Simpson's rule
-pub fn elliptic_pi_f64(n: f64, phi: f64, m: f64) -> f64 {
+fn elliptic_pi_f64(n: f64, phi: f64, m: f64) -> f64 {
   if phi == 0.0 {
     return 0.0;
   }
@@ -649,7 +649,7 @@ pub fn elliptic_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Compute Jacobi theta function numerically via series expansion
-pub fn elliptic_theta_numeric(a: u32, z: f64, q: f64) -> f64 {
+fn elliptic_theta_numeric(a: u32, z: f64, q: f64) -> f64 {
   match a {
     1 => {
       // θ₁(z, q) = 2 Σ_{n=0}^∞ (-1)^n q^{(n+1/2)²} sin((2n+1)z)
@@ -937,6 +937,409 @@ fn dedekind_eta_numeric(re: f64, im: f64) -> (f64, f64) {
   (res_re, res_im)
 }
 
+// ─── ModularLambda / KleinInvariantJ ───────────────────────────────────
+
+type C = (f64, f64);
+fn cmul(a: C, b: C) -> C {
+  (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0)
+}
+fn cdiv(a: C, b: C) -> C {
+  let d = b.0 * b.0 + b.1 * b.1;
+  ((a.0 * b.0 + a.1 * b.1) / d, (a.1 * b.0 - a.0 * b.1) / d)
+}
+fn cadd(a: C, b: C) -> C {
+  (a.0 + b.0, a.1 + b.1)
+}
+fn csub(a: C, b: C) -> C {
+  (a.0 - b.0, a.1 - b.1)
+}
+fn cscale(a: C, s: f64) -> C {
+  (a.0 * s, a.1 * s)
+}
+fn cpowi(a: C, n: u32) -> C {
+  let mut r = (1.0, 0.0);
+  for _ in 0..n {
+    r = cmul(r, a);
+  }
+  r
+}
+
+/// ModularLambda(τ) = (θ₂(0,q)/θ₃(0,q))^4 with nome q = e^(iπτ), for
+/// τ = re + im·i, im > 0. Returned as a complex (re, im).
+///     θ₂(0,q) = 2 Σ_{n≥0} q^{(n+1/2)²},  θ₃(0,q) = 1 + 2 Σ_{n≥1} q^{n²}.
+/// Since q = r·e^{iφ} with r = e^{-π·im}, φ = π·re, the exponents are real
+/// and q^e = r^e·(cos(eφ) + i·sin(eφ)).
+fn modular_lambda_numeric(re: f64, im: f64) -> C {
+  let pi = std::f64::consts::PI;
+  let r = (-pi * im).exp();
+  let phi = pi * re;
+  let mut t2: C = (0.0, 0.0);
+  let mut t3: C = (1.0, 0.0);
+  for n in 0..5000u32 {
+    let e2 = (n as f64 + 0.5).powi(2);
+    let mag2 = r.powf(e2);
+    t2 = cadd(t2, (mag2 * (e2 * phi).cos(), mag2 * (e2 * phi).sin()));
+    let mut mag3 = 0.0;
+    if n >= 1 {
+      let e3 = (n as f64).powi(2);
+      mag3 = r.powf(e3);
+      t3 = cadd(
+        t3,
+        (2.0 * mag3 * (e3 * phi).cos(), 2.0 * mag3 * (e3 * phi).sin()),
+      );
+    }
+    if mag2 < 1e-18 && (n == 0 || mag3 < 1e-18) {
+      break;
+    }
+  }
+  t2 = cscale(t2, 2.0);
+  cpowi(cdiv(t2, t3), 4)
+}
+
+/// Jacobi theta constants (θ₂, θ₃, θ₄)(0, q) for a nome q = r·e^{iφ}, |q| < 1.
+///     θ₂ = 2 Σ_{n≥0} q^{(n+1/2)²},  θ₃ = 1 + 2 Σ_{n≥1} q^{n²},
+///     θ₄ = 1 + 2 Σ_{n≥1} (-1)ⁿ q^{n²}.
+fn theta_constants(r: f64, phi: f64) -> (C, C, C) {
+  let mut t2: C = (0.0, 0.0);
+  let mut t3: C = (1.0, 0.0);
+  let mut t4: C = (1.0, 0.0);
+  for n in 0..5000u32 {
+    let e2 = (n as f64 + 0.5).powi(2);
+    let mag2 = r.powf(e2);
+    t2 = cadd(t2, (mag2 * (e2 * phi).cos(), mag2 * (e2 * phi).sin()));
+    let mut mag3 = 0.0;
+    if n >= 1 {
+      let e3 = (n as f64).powi(2);
+      mag3 = r.powf(e3);
+      let term = (2.0 * mag3 * (e3 * phi).cos(), 2.0 * mag3 * (e3 * phi).sin());
+      t3 = cadd(t3, term);
+      let sign = if n.is_multiple_of(2) { 1.0 } else { -1.0 };
+      t4 = cadd(t4, cscale(term, sign));
+    }
+    if mag2 < 1e-18 && (n == 0 || mag3 < 1e-18) {
+      break;
+    }
+  }
+  (cscale(t2, 2.0), t3, t4)
+}
+
+/// Invariants {g₂, g₃} of the Weierstrass ℘-function for the lattice with
+/// half-periods ω₁, ω₂ (complex). Returns None when the half-periods are
+/// (numerically) collinear, i.e. their ratio is real. Using τ = ω₂/ω₁ with
+/// Im(τ) > 0 (swap the two if not), nome q = e^{iπτ}, and the theta constants:
+///     e₁ = c(θ₃⁴+θ₄⁴)/3,  e₂ = c(θ₂⁴−θ₄⁴)/3,  e₃ = −c(θ₂⁴+θ₃⁴)/3,
+/// with c = (π/(2ω₁))², then g₂ = 2(e₁²+e₂²+e₃²), g₃ = 4 e₁ e₂ e₃.
+fn weierstrass_invariants_numeric(w1: C, w2: C) -> Option<(C, C)> {
+  let pi = std::f64::consts::PI;
+  let (mut a, mut b) = (w1, w2);
+  let mut tau = cdiv(b, a);
+  if tau.1 < 0.0 {
+    std::mem::swap(&mut a, &mut b);
+    tau = cdiv(b, a);
+  }
+  // Collinear (real ratio) half-periods do not define a lattice.
+  if tau.1.abs() <= 1e-12 * tau.0.hypot(tau.1).max(1.0) {
+    return None;
+  }
+  let r = (-pi * tau.1).exp();
+  let phi = pi * tau.0;
+  let (t2, t3, t4) = theta_constants(r, phi);
+  let (t2_4, t3_4, t4_4) = (cpowi(t2, 4), cpowi(t3, 4), cpowi(t4, 4));
+  let c = cpowi(cdiv((pi, 0.0), (2.0 * a.0, 2.0 * a.1)), 2);
+  let third = 1.0 / 3.0;
+  let e1 = cmul(c, cscale(cadd(t3_4, t4_4), third));
+  let e2 = cmul(c, cscale(csub(t2_4, t4_4), third));
+  let e3 = cmul(c, cscale(cadd(t2_4, t3_4), -third));
+  let g2 = cscale(cadd(cadd(cpowi(e1, 2), cpowi(e2, 2)), cpowi(e3, 2)), 2.0);
+  let g3 = cscale(cmul(cmul(e1, e2), e3), 4.0);
+  Some((g2, g3))
+}
+
+/// The two lattices with extra symmetry have closed-form invariants that
+/// wolframscript returns even for *exact* half-periods. For the square
+/// (lemniscatic) lattice with ω₂/ω₁ = ±I the invariants are
+/// {Gamma[1/4]^8 / (256 Pi^2 ω₁^4), 0}; for the hexagonal (equianharmonic)
+/// lattice with ω₂/ω₁ a primitive 6th root of unity (exp(±I π/3) or
+/// exp(±2 I π/3)) they are {0, Gamma[1/3]^18 / (4096 Pi^6 ω₁^6)}.
+///
+/// The scale factor ω₁^4 (resp. ω₁^6) is invariant under swapping the two
+/// half-periods or multiplying ω₂ by the symmetry root, so it does not matter
+/// which period is taken as ω₁. Returns Ok(None) for every other lattice
+/// (no exact closed form; wolframscript leaves those unevaluated too).
+fn weierstrass_cm_invariants(
+  w1e: &Expr,
+  w2e: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  // Evaluate the (possibly transcendental) half-periods to complex floats via
+  // N[…] so ratios like Exp[I π/3] or (1 + I Sqrt[3])/2 are recognised.
+  let to_complex = |e: &Expr| -> Option<(f64, f64)> {
+    let n = Expr::FunctionCall {
+      name: "N".to_string(),
+      args: vec![e.clone()].into(),
+    };
+    let r = crate::evaluator::evaluate_expr_to_expr(&n).ok()?;
+    crate::functions::math_ast::try_extract_complex_float(&r)
+  };
+  let (w1, w2) = match (to_complex(w1e), to_complex(w2e)) {
+    (Some(a), Some(b)) => (a, b),
+    _ => return Ok(None),
+  };
+  // τ = ω₂/ω₁
+  let den = w1.0 * w1.0 + w1.1 * w1.1;
+  if den <= 0.0 {
+    return Ok(None);
+  }
+  let tau_re = (w2.0 * w1.0 + w2.1 * w1.1) / den;
+  let tau_im = (w2.1 * w1.0 - w2.0 * w1.1) / den;
+  let tol = 1e-9;
+  let close = |a: f64, b: f64| (a - b).abs() < tol;
+  // Square lattice: τ = ±I (Re τ = 0, |Im τ| = 1).
+  let is_square = close(tau_re, 0.0) && close(tau_im.abs(), 1.0);
+  // Hexagonal lattice: |τ| = 1 and |Re τ| = 1/2.
+  let is_hex = close(tau_re.hypot(tau_im), 1.0) && close(tau_re.abs(), 0.5);
+  if !is_square && !is_hex {
+    return Ok(None);
+  }
+  let pow = |base: Expr, exp: i128| Expr::BinaryOp {
+    op: BinaryOperator::Power,
+    left: Box::new(base),
+    right: Box::new(Expr::Integer(exp)),
+  };
+  let gamma = |num: i128, den: i128| Expr::FunctionCall {
+    name: "Gamma".to_string(),
+    args: vec![Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(num), Expr::Integer(den)].into(),
+    }]
+    .into(),
+  };
+  let pi = Expr::Identifier("Pi".to_string());
+  let build = |gamma_arg_den: i128,
+               gamma_pow: i128,
+               coeff: i128,
+               pi_pow: i128,
+               w_pow: i128| Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(pow(gamma(1, gamma_arg_den), gamma_pow)),
+    right: Box::new(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        Expr::Integer(coeff),
+        pow(pi.clone(), pi_pow),
+        pow(w1e.clone(), w_pow),
+      ]
+      .into(),
+    }),
+  };
+  let (g2, g3) = if is_square {
+    // Gamma[1/4]^8 / (256 Pi^2 ω₁^4)
+    (build(4, 8, 256, 2, 4), Expr::Integer(0))
+  } else {
+    // Gamma[1/3]^18 / (4096 Pi^6 ω₁^6)
+    (Expr::Integer(0), build(3, 18, 4096, 6, 6))
+  };
+  let g2 = crate::evaluator::evaluate_expr_to_expr(&g2)?;
+  let g3 = crate::evaluator::evaluate_expr_to_expr(&g3)?;
+  Ok(Some(Expr::List(vec![g2, g3].into())))
+}
+
+/// WeierstrassInvariants[{ω₁, ω₂}] — the invariants {g₂, g₃} of the lattice
+/// generated by the half-periods ω₁, ω₂. Numeric when a half-period is inexact;
+/// exact half-periods stay symbolic except for the two CM lattices (square and
+/// hexagonal), which have the closed forms wolframscript returns.
+pub fn weierstrass_invariants_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "WeierstrassInvariants expects exactly 1 argument".into(),
+    ));
+  }
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "WeierstrassInvariants".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let periods = match &args[0] {
+    Expr::List(items) if items.len() == 2 => items,
+    _ => return unevaluated(),
+  };
+  if !expr_contains_real(&periods[0]) && !expr_contains_real(&periods[1]) {
+    // Exact half-periods: only the square and hexagonal CM lattices have a
+    // closed form; every other exact lattice stays symbolic.
+    if let Some(cm) = weierstrass_cm_invariants(&periods[0], &periods[1])? {
+      return Ok(cm);
+    }
+    return unevaluated();
+  }
+  let (w1, w2) = match (
+    crate::functions::math_ast::try_extract_complex_float(&periods[0]),
+    crate::functions::math_ast::try_extract_complex_float(&periods[1]),
+  ) {
+    (Some(a), Some(b)) => (a, b),
+    _ => return unevaluated(),
+  };
+  match weierstrass_invariants_numeric(w1, w2) {
+    Some((g2, g3)) => Ok(Expr::List(
+      vec![
+        crate::functions::math_ast::build_complex_float_expr_keep_real(
+          g2.0, g2.1,
+        ),
+        crate::functions::math_ast::build_complex_float_expr_keep_real(
+          g3.0, g3.1,
+        ),
+      ]
+      .into(),
+    )),
+    None => unevaluated(),
+  }
+}
+
+/// WeierstrassHalfPeriods[{g₂, g₃}] — the fundamental half-periods {ω₁, ω₂} of
+/// the lattice with the given invariants. Handled for the real, positive-
+/// discriminant regime (g₂³ − 27 g₃² > 0), where the ℘ cubic 4t³ − g₂t − g₃
+/// has three real roots e₁ > e₂ > e₃ and the lattice is rectangular:
+///     ω₁ = K(m)/√(e₁−e₃),  ω₂ = i·K(1−m)/√(e₁−e₃),  m = (e₂−e₃)/(e₁−e₃).
+/// Numeric only when an argument is inexact (matching wolframscript). The
+/// rhombic case (negative discriminant) and complex invariants stay symbolic.
+pub fn weierstrass_half_periods_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "WeierstrassHalfPeriods expects exactly 1 argument".into(),
+    ));
+  }
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "WeierstrassHalfPeriods".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let items = match &args[0] {
+    Expr::List(items) if items.len() == 2 => items,
+    _ => return unevaluated(),
+  };
+  if !expr_contains_real(&items[0]) && !expr_contains_real(&items[1]) {
+    return unevaluated();
+  }
+  // Real invariants only; a complex g₂/g₃ falls back to symbolic.
+  let (g2, g3) = match (
+    crate::functions::math_ast::try_extract_complex_float(&items[0]),
+    crate::functions::math_ast::try_extract_complex_float(&items[1]),
+  ) {
+    (Some((a, ai)), Some((b, bi))) if ai == 0.0 && bi == 0.0 => (a, b),
+    _ => return unevaluated(),
+  };
+  // Positive discriminant ⇒ three real roots ⇒ rectangular lattice (this also
+  // forces g₂ > 0, so the depressed cubic is in the casus irreducibilis).
+  let disc = g2 * g2 * g2 - 27.0 * g3 * g3;
+  if disc <= 0.0 || g2 <= 0.0 {
+    return unevaluated();
+  }
+  // Roots of 4t³ − g₂t − g₃ = 0 via the trigonometric method for t³ + pt + q.
+  let p = -g2 / 4.0;
+  let q = -g3 / 4.0;
+  let pi = std::f64::consts::PI;
+  let amp = 2.0 * (-p / 3.0).sqrt();
+  let phi = ((3.0 * q) / (2.0 * p) * (-3.0 / p).sqrt())
+    .clamp(-1.0, 1.0)
+    .acos();
+  let mut e: Vec<f64> = (0..3)
+    .map(|k| amp * (phi / 3.0 - 2.0 * pi * (k as f64) / 3.0).cos())
+    .collect();
+  e.sort_by(|a, b| b.partial_cmp(a).unwrap());
+  let (e1, e2, e3) = (e[0], e[1], e[2]);
+  let d = e1 - e3;
+  let m = (e2 - e3) / d;
+  let sq = d.sqrt();
+  let omega1 = elliptic_k(m) / sq;
+  let omega2_im = elliptic_k(1.0 - m) / sq;
+  Ok(Expr::List(
+    vec![
+      Expr::Real(omega1),
+      crate::functions::math_ast::build_complex_float_expr_keep_real(
+        0.0, omega2_im,
+      ),
+    ]
+    .into(),
+  ))
+}
+
+/// ModularLambda[τ] — the elliptic modular lambda function.
+pub fn modular_lambda_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ModularLambda expects exactly 1 argument".into(),
+    ));
+  }
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "ModularLambda".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  // Exact value at the lemniscatic point: λ(i) = 1/2.
+  if matches!(&args[0], Expr::Identifier(s) if s == "I") {
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+    });
+  }
+  // Numeric (machine-precision) argument in the upper half-plane.
+  if expr_contains_real(&args[0])
+    && let Some((re, im)) =
+      crate::functions::math_ast::try_extract_complex_float(&args[0])
+    && im > 0.0
+  {
+    let (lr, li) = modular_lambda_numeric(re, im);
+    return Ok(crate::functions::math_ast::build_complex_float_expr(lr, li));
+  }
+  unevaluated()
+}
+
+/// KleinInvariantJ[τ] — the normalized modular invariant J(τ) = j(τ)/1728.
+/// In terms of λ = ModularLambda(τ):
+///     J = (4/27)·(1 - λ + λ²)³ / (λ²·(1 - λ)²).
+pub fn klein_invariant_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "KleinInvariantJ expects exactly 1 argument".into(),
+    ));
+  }
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "KleinInvariantJ".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  // Exact value at the lemniscatic point: J(i) = 1.
+  if matches!(&args[0], Expr::Identifier(s) if s == "I") {
+    return Ok(Expr::Integer(1));
+  }
+  if expr_contains_real(&args[0])
+    && let Some((re, im)) =
+      crate::functions::math_ast::try_extract_complex_float(&args[0])
+    && im > 0.0
+  {
+    let lam = modular_lambda_numeric(re, im);
+    let one = (1.0, 0.0);
+    // 1 - λ + λ²
+    let num_base = cadd(csub(one, lam), cpowi(lam, 2));
+    let num = cscale(cpowi(num_base, 3), 4.0 / 27.0);
+    // λ²·(1 - λ)²
+    let den = cmul(cpowi(lam, 2), cpowi(csub(one, lam), 2));
+    let (jr, ji) = cdiv(num, den);
+    // wolframscript reports the j-invariant as a complex machine number even on
+    // the imaginary axis (e.g. `166.375 + 0.*I`), so keep the imaginary part.
+    return Ok(
+      crate::functions::math_ast::build_complex_float_expr_keep_real(jr, ji),
+    );
+  }
+  unevaluated()
+}
+
 // ─── EllipticExp ───────────────────────────────────────────────────────
 //
 // EllipticExp[u, {a, b}] is the inverse of EllipticLog on the elliptic
@@ -1138,4 +1541,187 @@ fn legendre_p_and_deriv(n: usize, x: f64) -> (f64, f64) {
   }
   let dp = (n as f64) * (x * p1 - p0) / (x * x - 1.0);
   (p1, dp)
+}
+
+/// Jacobi theta series θ1..θ4 at (v, q), plus θ1'(0, q).
+fn jacobi_theta1(v: f64, q: f64) -> f64 {
+  let mut sum = 0.0;
+  for n in 0..40 {
+    let e = (n as f64) + 0.5;
+    let term = q.powf(e * e) * ((2 * n + 1) as f64 * v).sin();
+    sum += if n % 2 == 0 { term } else { -term };
+  }
+  2.0 * sum
+}
+
+fn jacobi_theta2(v: f64, q: f64) -> f64 {
+  let mut sum = 0.0;
+  for n in 0..40 {
+    let e = (n as f64) + 0.5;
+    sum += q.powf(e * e) * ((2 * n + 1) as f64 * v).cos();
+  }
+  2.0 * sum
+}
+
+fn jacobi_theta3(v: f64, q: f64) -> f64 {
+  let mut sum = 0.0;
+  for n in 1..40 {
+    sum += q.powf((n * n) as f64) * (2.0 * n as f64 * v).cos();
+  }
+  1.0 + 2.0 * sum
+}
+
+fn jacobi_theta4(v: f64, q: f64) -> f64 {
+  let mut sum = 0.0;
+  for n in 1..40 {
+    let term = q.powf((n * n) as f64) * (2.0 * n as f64 * v).cos();
+    sum += if n % 2 == 0 { term } else { -term };
+  }
+  1.0 + 2.0 * sum
+}
+
+fn jacobi_theta1_prime0(q: f64) -> f64 {
+  let mut sum = 0.0;
+  for n in 0..40 {
+    let e = (n as f64) + 0.5;
+    let term = (2 * n + 1) as f64 * q.powf(e * e);
+    sum += if n % 2 == 0 { term } else { -term };
+  }
+  2.0 * sum
+}
+
+/// Numeric Neville theta θs/θc/θd/θn at real z, m ∈ [0, 1].
+fn neville_theta_numeric(kind: char, z: f64, m: f64) -> Option<f64> {
+  if !(0.0..=1.0).contains(&m) || !z.is_finite() {
+    return None;
+  }
+  if m == 0.0 {
+    return Some(match kind {
+      's' => z.sin(),
+      'c' => z.cos(),
+      _ => 1.0,
+    });
+  }
+  if m == 1.0 {
+    return Some(match kind {
+      's' => z.sinh(),
+      'n' => z.cosh(),
+      _ => 1.0,
+    });
+  }
+  let k = elliptic_k(m);
+  let kp = elliptic_k(1.0 - m);
+  let q = (-std::f64::consts::PI * kp / k).exp();
+  let v = std::f64::consts::PI * z / (2.0 * k);
+  Some(match kind {
+    's' => {
+      2.0 * k * jacobi_theta1(v, q)
+        / (std::f64::consts::PI * jacobi_theta1_prime0(q))
+    }
+    'c' => jacobi_theta2(v, q) / jacobi_theta2(0.0, q),
+    'd' => jacobi_theta3(v, q) / jacobi_theta3(0.0, q),
+    _ => jacobi_theta4(v, q) / jacobi_theta4(0.0, q),
+  })
+}
+
+/// NevilleThetaS/C/D/N[z, m]: exact special values at z == 0, m == 0,
+/// m == 1; odd/even parity extraction on literal negative arguments;
+/// machine evaluation for real z and m in [0, 1]; everything else stays
+/// unevaluated (matching wolframscript, which keeps exact arguments
+/// symbolic).
+pub fn neville_theta_ast(
+  name: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let kind = name.as_bytes()[12].to_ascii_lowercase() as char;
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 2 {
+    let word = if args.len() == 1 {
+      "argument"
+    } else {
+      "arguments"
+    };
+    crate::emit_message(&format!(
+      "{}::argr: {} called with {} {}; 2 arguments are expected.",
+      name,
+      name,
+      args.len(),
+      word
+    ));
+    return unevaluated();
+  }
+  let (z, m) = (&args[0], &args[1]);
+  let trig = |head: &str, arg: Expr| {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: head.to_string(),
+      args: vec![arg].into(),
+    })
+  };
+  // z == 0: {s, c, d, n} → {0, 1, 1, 1}.
+  if matches!(z, Expr::Integer(0)) {
+    return Ok(Expr::Integer(if kind == 's' { 0 } else { 1 }));
+  }
+  // m == 0: {Sin[z], Cos[z], 1, 1}; m == 1: {Sinh[z], 1, 1, Cosh[z]}.
+  if matches!(m, Expr::Integer(0)) {
+    return match kind {
+      's' => trig("Sin", z.clone()),
+      'c' => trig("Cos", z.clone()),
+      _ => Ok(Expr::Integer(1)),
+    };
+  }
+  if matches!(m, Expr::Integer(1)) {
+    return match kind {
+      's' => trig("Sinh", z.clone()),
+      'n' => trig("Cosh", z.clone()),
+      _ => Ok(Expr::Integer(1)),
+    };
+  }
+  // Parity: θs is odd, the others even.
+  let negated = match z {
+    Expr::FunctionCall { name: tn, args: ta }
+      if tn == "Times"
+        && ta.len() == 2
+        && matches!(&ta[0], Expr::Integer(-1)) =>
+    {
+      Some(ta[1].clone())
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => Some((**operand).clone()),
+    _ => None,
+  };
+  if let Some(pos) = negated {
+    let inner = Expr::FunctionCall {
+      name: name.to_string(),
+      args: vec![pos, m.clone()].into(),
+    };
+    let flipped = crate::evaluator::evaluate_expr_to_expr(&inner)?;
+    return if kind == 's' {
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), flipped].into(),
+      })
+    } else {
+      Ok(flipped)
+    };
+  }
+  // Machine evaluation only when a Real is present (exact numeric
+  // arguments stay symbolic in wolframscript).
+  let has_real = matches!(z, Expr::Real(_)) || matches!(m, Expr::Real(_));
+  if has_real
+    && let (Some(zv), Some(mv)) = (
+      crate::functions::math_ast::try_eval_to_f64(z),
+      crate::functions::math_ast::try_eval_to_f64(m),
+    )
+    && let Some(v) = neville_theta_numeric(kind, zv, mv)
+  {
+    return Ok(Expr::Real(v));
+  }
+  unevaluated()
 }

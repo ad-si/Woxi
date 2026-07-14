@@ -8,6 +8,16 @@ Both route through the same format back-ends as `ImportString` and
 Common recognised formats include `"CSV"`, `"TSV"`, `"JSON"`, `"Text"`,
 `"Lines"`, `"PNG"`, `"SVG"`, and `"String"`.
 
+### Exporting an image to SVG
+
+Exporting an `Image` to an `.svg` file wraps the raster in a base64-encoded
+PNG `<image>` element, keeping the file a valid SVG.
+
+```scrut
+$ wo 'Export["green.svg", Image[ConstantArray[{0, 1, 0.5}, {2, 2}]]]; StringTake[ReadString["green.svg"], 4]'
+<svg
+```
+
 ### Common options
 
 - **`"CharacterEncoding"`** — text encoding (default `"UTF8"`).

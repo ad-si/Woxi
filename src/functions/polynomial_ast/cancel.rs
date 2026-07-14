@@ -158,7 +158,7 @@ fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {
         let terms = collect_additive_terms(&num);
         if terms.len() >= 2 {
           // For each term, extract base→exp map of its multiplicative factors
-          type BaseExpMap = Vec<(String, crate::syntax::Expr, i128)>;
+          type BaseExpMap = Vec<(String, Expr, i128)>;
           fn term_base_exp(term: &Expr) -> BaseExpMap {
             let factors = collect_multiplicative_factors(term);
             let mut map: BaseExpMap = Vec::new();
@@ -777,7 +777,7 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
 }
 
 /// Find the single variable that appears in either or both expressions
-pub fn find_single_variable_both(a: &Expr, b: &Expr) -> Option<String> {
+fn find_single_variable_both(a: &Expr, b: &Expr) -> Option<String> {
   let mut vars = std::collections::HashSet::new();
   collect_variables(a, &mut vars);
   collect_variables(b, &mut vars);
@@ -834,7 +834,7 @@ pub fn poly_gcd(a: &[i128], b: &[i128]) -> Option<Vec<i128>> {
 }
 
 /// Compute pseudo-remainder of polynomial division
-pub fn poly_pseudo_remainder(a: &[i128], b: &[i128]) -> Option<Vec<i128>> {
+fn poly_pseudo_remainder(a: &[i128], b: &[i128]) -> Option<Vec<i128>> {
   if b.is_empty() || b.iter().all(|&c| c == 0) {
     return None;
   }

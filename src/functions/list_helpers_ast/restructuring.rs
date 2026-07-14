@@ -304,133 +304,8 @@ pub fn partition_multi_dim_ast(
   }
 }
 
-/// AST-based Flatten: flatten nested lists.
-pub fn flatten_ast(list: &Expr) -> Result<Expr, InterpreterError> {
-  match list {
-    Expr::List(_) => {
-      let mut result = Vec::new();
-      let mut stack: Vec<&Expr> = vec![list];
-      while let Some(expr) = stack.pop() {
-        match expr {
-          Expr::List(items) => {
-            // Push items in reverse so they're processed in order
-            for item in items.iter().rev() {
-              stack.push(item);
-            }
-          }
-          _ => result.push(expr.clone()),
-        }
-      }
-      Ok(Expr::List(result.into()))
-    }
-    // Rational/Complex are atoms — their internal args must not flatten.
-    Expr::FunctionCall { name, args }
-      if !crate::functions::list_helpers_ast::sorting::is_atomic_arg(list) =>
-    {
-      // Flatten[f[f[a, b], f[c, d]]] -> f[a, b, c, d]
-      // Recursively flatten subexpressions with the same head
-      let mut result = Vec::new();
-      flatten_same_head(name, args, &mut result);
-      Ok(Expr::FunctionCall {
-        name: name.clone(),
-        args: result.into(),
-      })
-    }
-    _ => {
-      if crate::functions::list_helpers_ast::sorting::is_atomic_arg(list) {
-        crate::functions::list_helpers_ast::sorting::emit_nonatomic_normal_message(
-          "Flatten",
-          std::slice::from_ref(list),
-        );
-        return Ok(Expr::FunctionCall {
-          name: "Flatten".to_string(),
-          args: vec![list.clone()].into(),
-        });
-      }
-      Ok(list.clone())
-    }
-  }
-}
-
-/// Helper to recursively flatten subexpressions with the same head
-fn flatten_same_head(head: &str, args: &[Expr], result: &mut Vec<Expr>) {
-  for arg in args {
-    match arg {
-      Expr::FunctionCall {
-        name,
-        args: sub_args,
-      } if name == head => {
-        flatten_same_head(head, sub_args, result);
-      }
-      _ => result.push(arg.clone()),
-    }
-  }
-}
-
-/// Flatten[list, n] - flatten a list to depth n
-pub fn flatten_level_ast(
-  list: &Expr,
-  depth: i128,
-) -> Result<Expr, InterpreterError> {
-  fn flatten_to_depth(expr: &Expr, depth: i128, result: &mut Vec<Expr>) {
-    if depth <= 0 {
-      result.push(expr.clone());
-      return;
-    }
-    match expr {
-      Expr::List(items) => {
-        for item in items {
-          flatten_to_depth(item, depth - 1, result);
-        }
-      }
-      _ => result.push(expr.clone()),
-    }
-  }
-
-  fn flatten_head_to_depth(
-    head: &str,
-    expr: &Expr,
-    depth: i128,
-    result: &mut Vec<Expr>,
-  ) {
-    if depth <= 0 {
-      result.push(expr.clone());
-      return;
-    }
-    match expr {
-      Expr::FunctionCall { name, args } if name == head => {
-        for arg in args {
-          flatten_head_to_depth(head, arg, depth - 1, result);
-        }
-      }
-      _ => result.push(expr.clone()),
-    }
-  }
-
-  match list {
-    Expr::List(items) => {
-      let mut result = Vec::new();
-      for item in items {
-        flatten_to_depth(item, depth, &mut result);
-      }
-      Ok(Expr::List(result.into()))
-    }
-    Expr::FunctionCall { name, args } => {
-      let mut result = Vec::new();
-      for arg in args {
-        flatten_head_to_depth(name, arg, depth, &mut result);
-      }
-      Ok(Expr::FunctionCall {
-        name: name.clone(),
-        args: result.into(),
-      })
-    }
-    _ => Ok(list.clone()),
-  }
-}
-
 /// Flatten[expr, n, head] - flatten expressions with a specific head
-pub fn flatten_head_ast(
+fn flatten_head_ast(
   list: &Expr,
   depth: i128,
   head: &str,
@@ -518,7 +393,7 @@ fn head_children<'a>(expr: &'a Expr, head: &str) -> Option<&'a [Expr]> {
 
 /// Number of levels that can be flattened together: levels at which every
 /// node has the target head. Empty nodes allow any depth below them.
-pub fn flatten_together_depth(expr: &Expr, head: &str) -> usize {
+fn flatten_together_depth(expr: &Expr, head: &str) -> usize {
   match head_children(expr, head) {
     None => 0,
     Some(items) => {
@@ -539,7 +414,7 @@ pub fn flatten_together_depth(expr: &Expr, head: &str) -> usize {
   }
 }
 
-pub fn flatten_dims_ast(
+fn flatten_dims_ast(
   list: &Expr,
   dim_spec: &[Vec<usize>],
   head: &str,
@@ -945,6 +820,26 @@ pub fn reverse_level_ast(
   list: &Expr,
   level_spec: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // The first argument must be a non-atomic expression. Atoms (String,
+  // Integer, Symbol, …) emit the `normal` message and leave Reverse[expr, n]
+  // unevaluated, matching Wolfram.
+  if !matches!(
+    list,
+    Expr::List(_)
+      | Expr::Association(_)
+      | Expr::FunctionCall { .. }
+      | Expr::Rule { .. }
+  ) {
+    crate::emit_message(&format!(
+      "Reverse::normal: Nonatomic expression expected at position 1 in Reverse[{}, {}].",
+      crate::syntax::format_expr(list, crate::syntax::ExprForm::Output),
+      crate::syntax::format_expr(level_spec, crate::syntax::ExprForm::Output)
+    ));
+    return Ok(Expr::FunctionCall {
+      name: "Reverse".to_string(),
+      args: vec![list.clone(), level_spec.clone()].into(),
+    });
+  }
   // Parse level spec: integer n means reverse at level n,
   // {n1, n2} means reverse at levels n1 through n2
   let (min_level, max_level) = match level_spec {
@@ -967,23 +862,55 @@ pub fn reverse_level_ast(
     min_level: usize,
     max_level: usize,
   ) -> Expr {
+    let in_range = current_level >= min_level && current_level <= max_level;
     match expr {
       Expr::List(items) => {
         // First recurse into children
-        let children: Vec<Expr> = items
+        let mut children: Vec<Expr> = items
           .iter()
           .map(|item| {
             reverse_at_levels(item, current_level + 1, min_level, max_level)
           })
           .collect();
         // Then reverse at this level if it's in range
-        if current_level >= min_level && current_level <= max_level {
-          let mut reversed = children;
-          reversed.reverse();
-          Expr::List(reversed.into())
-        } else {
-          Expr::List(children.into())
+        if in_range {
+          children.reverse();
         }
+        Expr::List(children.into())
+      }
+      // Any non-List head (e.g. f[a, b, c]) reverses its arguments the same
+      // way Lists do — Reverse[f[a, b, c], 1] gives f[c, b, a].
+      Expr::FunctionCall { name, args } => {
+        let mut children: Vec<Expr> = args
+          .iter()
+          .map(|item| {
+            reverse_at_levels(item, current_level + 1, min_level, max_level)
+          })
+          .collect();
+        if in_range {
+          children.reverse();
+        }
+        Expr::FunctionCall {
+          name: name.clone(),
+          args: children.into(),
+        }
+      }
+      // Associations reverse the order of their key->value pairs at this
+      // level; recurse into the values for deeper levels.
+      Expr::Association(pairs) => {
+        let mut children: Vec<(Expr, Expr)> = pairs
+          .iter()
+          .map(|(k, v)| {
+            (
+              k.clone(),
+              reverse_at_levels(v, current_level + 1, min_level, max_level),
+            )
+          })
+          .collect();
+        if in_range {
+          children.reverse();
+        }
+        Expr::Association(children)
       }
       _ => expr.clone(),
     }

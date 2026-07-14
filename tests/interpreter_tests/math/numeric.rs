@@ -2018,3 +2018,104 @@ mod subdivide {
     assert!(!r.warnings.iter().any(|w| w.contains("Subdivide::sdmint")));
   }
 }
+
+mod find_divisions {
+  use super::*;
+
+  // FindDivisions[{xmin, xmax}, n] picks a "nice" step of the form
+  // {1,2,2.5,5}*10^k and returns the multiples covering [xmin, xmax].
+  #[test]
+  fn integer_ranges() {
+    assert_eq!(
+      interpret("FindDivisions[{0, 1}, 5]").unwrap(),
+      "{0, 1/5, 2/5, 3/5, 4/5, 1}"
+    );
+    assert_eq!(
+      interpret("FindDivisions[{0, 10}, 5]").unwrap(),
+      "{0, 2, 4, 6, 8, 10}"
+    );
+    assert_eq!(
+      interpret("FindDivisions[{0, 100}, 4]").unwrap(),
+      "{0, 25, 50, 75, 100}"
+    );
+  }
+
+  // The step rounds up to the next nice value, so the actual count can differ
+  // from the requested n.
+  #[test]
+  fn rounds_up_to_nice_step() {
+    assert_eq!(
+      interpret("FindDivisions[{0, 30}, 5]").unwrap(),
+      "{0, 10, 20, 30}"
+    );
+    assert_eq!(
+      interpret("FindDivisions[{0, 1}, 3]").unwrap(),
+      "{0, 1/2, 1}"
+    );
+    assert_eq!(
+      interpret("FindDivisions[{1, 4}, 5]").unwrap(),
+      "{1, 2, 3, 4}"
+    );
+  }
+
+  // Endpoints may fall just outside the requested range.
+  #[test]
+  fn endpoints_may_extend_past_range() {
+    assert_eq!(
+      interpret("FindDivisions[{0, 12}, 5]").unwrap(),
+      "{0, 5/2, 5, 15/2, 10, 25/2}"
+    );
+  }
+
+  #[test]
+  fn negative_and_rational_endpoints() {
+    assert_eq!(
+      interpret("FindDivisions[{-1, 1}, 4]").unwrap(),
+      "{-1, -1/2, 0, 1/2, 1}"
+    );
+    assert_eq!(
+      interpret("FindDivisions[{1/2, 3/2}, 4]").unwrap(),
+      "{1/2, 3/4, 1, 5/4, 3/2}"
+    );
+  }
+
+  // Nested subdivision counts {n1, n2, ...}: level 0 is the major grid, each
+  // deeper level subdivides the intervals above it, grouped by parent interval.
+  #[test]
+  fn nested_subdivision_counts() {
+    assert_eq!(
+      interpret("FindDivisions[{0, 10}, {5, 2}]").unwrap(),
+      "{{0, 2, 4, 6, 8, 10}, {{0, 1, 2}, {2, 3, 4}, {4, 5, 6}, {6, 7, 8}, \
+       {8, 9, 10}}}"
+    );
+    assert_eq!(
+      interpret("FindDivisions[{0, 10}, {5, 2, 2}]").unwrap(),
+      "{{0, 2, 4, 6, 8, 10}, {{0, 1, 2}, {2, 3, 4}, {4, 5, 6}, {6, 7, 8}, \
+       {8, 9, 10}}, {{{0, 1/2, 1}, {1, 3/2, 2}}, {{2, 5/2, 3}, {3, 7/2, 4}}, \
+       {{4, 9/2, 5}, {5, 11/2, 6}}, {{6, 13/2, 7}, {7, 15/2, 8}}, \
+       {{8, 17/2, 9}, {9, 19/2, 10}}}}"
+    );
+  }
+
+  // 3-element {xmin, xmax, dx} range: steps are constrained to integer
+  // multiples of the spacing unit dx.
+  #[test]
+  fn spacing_constrained_range() {
+    assert_eq!(
+      interpret("FindDivisions[{0, 10, 1}, 5]").unwrap(),
+      "{0, 2, 4, 6, 8, 10}"
+    );
+    assert_eq!(
+      interpret("FindDivisions[{0, 10, 3}, 5]").unwrap(),
+      "{0, 3, 6, 9, 12}"
+    );
+    assert_eq!(
+      interpret("FindDivisions[{0, 14, 2}, 5]").unwrap(),
+      "{0, 4, 8, 12, 16}"
+    );
+    assert_eq!(
+      interpret("FindDivisions[{0, 1, 1/3}, 5]").unwrap(),
+      "{0, 1/3, 2/3, 1}"
+    );
+  }
+}

@@ -289,6 +289,21 @@ mod function_head {
   }
 
   #[test]
+  fn apply_over_alternatives_operator_form() {
+    // `a | b | c` is Alternatives[a, b, c] (a flat, associative head stored as
+    // a nested BinaryOp); Apply must flatten it. Matches wolframscript.
+    assert_eq!(interpret("List @@ (a | b)").unwrap(), "{a, b}");
+    assert_eq!(interpret("List @@ (a | b | c)").unwrap(), "{a, b, c}");
+    assert_eq!(interpret("Plus @@ (a | b | c)").unwrap(), "a + b + c");
+  }
+
+  #[test]
+  fn apply_over_alternatives_function_form() {
+    assert_eq!(interpret("Apply[List, a | b | c]").unwrap(), "{a, b, c}");
+    assert_eq!(interpret("Apply[Times, a | b | c]").unwrap(), "a*b*c");
+  }
+
+  #[test]
   fn apply_negative_levelspec() {
     // Negative level -k selects subexpressions of Depth k (here -3 means
     // Depth 3 subexpressions). For {{{{{a}}}}} (Depth 6), {2, -3} = {2, 3}.
@@ -1833,6 +1848,22 @@ mod cases {
       r#"{f[a, 1], f[b, 2], f[c, 3]}"#,
     );
   }
+  // Level 0 does no threading: f is applied directly to the top-level
+  // arguments, MapThread[f, {a1, …, ak}, 0] = f[a1, …, ak].
+  #[test]
+  fn map_thread_level_0() {
+    assert_case(
+      r#"MapThread[f, {{1, 2}, {3, 4}}, 0]"#,
+      r#"f[{1, 2}, {3, 4}]"#,
+    );
+    // Elements need not be lists at level 0.
+    assert_case(r#"MapThread[f, {a, b, c}, 0]"#, r#"f[a, b, c]"#);
+    // A listable function still applies to the whole sublists.
+    assert_case(
+      r#"MapThread[Plus, {{1, 2, 3}, {4, 5, 6}}, 0]"#,
+      r#"{5, 7, 9}"#,
+    );
+  }
   #[test]
   fn thread_1() {
     assert_case(r#"Thread[f[{a, b, c}]]"#, r#"{f[a], f[b], f[c]}"#);
@@ -2416,6 +2447,53 @@ mod append_prepend_nest_firstcase_operator_forms {
     assert_eq!(interpret("Nest[f, 3][x]").unwrap(), "f[f[f[x]]]");
   }
 
+  // NestList[f, n][x] -> NestList[f, x, n].
+  #[test]
+  fn nest_list_operator_form() {
+    assert_eq!(
+      interpret("NestList[f, 2][x]").unwrap(),
+      "{x, f[x], f[f[x]]}"
+    );
+    assert_eq!(interpret("NestList[f, 2]").unwrap(), "NestList[f, 2]");
+  }
+
+  // GatherBy[crit][list] -> GatherBy[list, crit] (order-preserving).
+  #[test]
+  fn gather_by_operator_form() {
+    assert_eq!(
+      interpret("GatherBy[EvenQ][{1, 2, 3, 4}]").unwrap(),
+      "{{1, 3}, {2, 4}}"
+    );
+    assert_eq!(
+      interpret("Map[GatherBy[EvenQ], {{1, 2, 3}, {4, 6}}]").unwrap(),
+      "{{{1, 3}, {2}}, {{4, 6}}}"
+    );
+    assert_eq!(interpret("GatherBy[EvenQ]").unwrap(), "GatherBy[EvenQ]");
+  }
+
+  // SplitBy[crit][list] -> SplitBy[list, crit].
+  #[test]
+  fn split_by_operator_form() {
+    assert_eq!(
+      interpret("SplitBy[EvenQ][{1, 3, 2, 4}]").unwrap(),
+      "{{1, 3}, {2, 4}}"
+    );
+    assert_eq!(interpret("SplitBy[EvenQ]").unwrap(), "SplitBy[EvenQ]");
+  }
+
+  // DeleteDuplicatesBy[crit][list] -> DeleteDuplicatesBy[list, crit].
+  #[test]
+  fn delete_duplicates_by_operator_form() {
+    assert_eq!(
+      interpret("DeleteDuplicatesBy[EvenQ][{1, 2, 3, 4}]").unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(
+      interpret("DeleteDuplicatesBy[Mod[#, 3] &][{1, 4, 2, 7, 5}]").unwrap(),
+      "{1, 2}"
+    );
+  }
+
   #[test]
   fn first_case_operator_form() {
     assert_eq!(interpret("FirstCase[_?OddQ][{2, 4, 5, 6}]").unwrap(), "5");
@@ -2756,5 +2834,52 @@ mod once_wrapper {
   fn two_argument_form() {
     // Once[expr, loc] caches at a location; the returned value is the same.
     assert_eq!(interpret("Once[5 + 5, \"KernelSession\"]").unwrap(), "10");
+  }
+}
+
+// ApplyTo[x, f] / x //= f: applies f to the held variable's value,
+// reassigns, and returns the new value. Verified against wolframscript.
+mod apply_to {
+  use super::*;
+
+  #[test]
+  fn applies_and_reassigns() {
+    clear_state();
+    assert_eq!(
+      interpret("x = 5; ApplyTo[x, f]; InputForm[x]").unwrap(),
+      "InputForm[f[5]]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("y = {1, 2, 3}; y //= Reverse; y").unwrap(),
+      "{3, 2, 1}"
+    );
+    // Returns the new value; pure functions and operator forms apply.
+    clear_state();
+    assert_eq!(interpret("w = 2; w //= (# + 10 &)").unwrap(), "12");
+    clear_state();
+    assert_eq!(
+      interpret("lst = {5, 6}; lst //= Map[g]; lst").unwrap(),
+      "{g[5], g[6]}"
+    );
+    // Neighboring operators are unaffected.
+    clear_state();
+    assert_eq!(interpret("{a // f, 3/2}").unwrap(), "{f[a], 3/2}");
+  }
+
+  #[test]
+  fn attributes_and_rvalue() {
+    clear_state();
+    assert_eq!(
+      interpret("Attributes[ApplyTo]").unwrap(),
+      "{HoldFirst, Protected}"
+    );
+    clear_state();
+    let r = interpret_with_stdout("ApplyTo[z, g]").unwrap();
+    assert_eq!(r.result, "ApplyTo[z, g]");
+    assert!(r.warnings[0].contains(
+      "ApplyTo::rvalue: z is not a variable with a value, so its value \
+       cannot be changed."
+    ));
   }
 }

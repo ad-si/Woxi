@@ -2,6 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::{BinaryOperator, UnaryOperator};
 
 /// Wolfram canonical ordering for expressions.
 /// For strings: case-insensitive first, then lowercase before uppercase for ties.
@@ -9,7 +10,7 @@ use super::*;
 /// Mixed: numbers before strings.
 /// Extract (real, imaginary) parts from a numeric expression for sorting.
 /// Returns None for non-numeric expressions.
-fn expr_to_complex_parts(e: &Expr) -> Option<(f64, f64)> {
+pub fn expr_to_complex_parts(e: &Expr) -> Option<(f64, f64)> {
   use crate::functions::math_ast::try_eval_to_f64;
   use crate::functions::math_ast::try_eval_to_f64_with_infinity;
   // Pure real number (including Infinity/-Infinity)
@@ -24,7 +25,7 @@ fn expr_to_complex_parts(e: &Expr) -> Option<(f64, f64)> {
   match e {
     // Pure imaginary: n*I (BinaryOp form)
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -42,7 +43,7 @@ fn expr_to_complex_parts(e: &Expr) -> Option<(f64, f64)> {
     }
     // a + b*I (BinaryOp form)
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left,
       right,
     } => {
@@ -55,7 +56,7 @@ fn expr_to_complex_parts(e: &Expr) -> Option<(f64, f64)> {
     }
     // a - b*I (BinaryOp form)
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left,
       right,
     } => {
@@ -108,7 +109,7 @@ fn expr_to_complex_parts(e: &Expr) -> Option<(f64, f64)> {
     Expr::Identifier(name) if name == "I" => Some((0.0, 1.0)),
     // Negated: -I, -(a+bI)
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       if let Some((re, im)) = expr_to_complex_parts(operand) {
@@ -118,11 +119,6 @@ fn expr_to_complex_parts(e: &Expr) -> Option<(f64, f64)> {
     }
     _ => None,
   }
-}
-
-/// Public wrapper for expr_to_complex_parts.
-pub fn expr_to_complex_parts_pub(e: &Expr) -> Option<(f64, f64)> {
-  expr_to_complex_parts(e)
 }
 
 /// Check if an expression is Infinity or -Infinity (DirectedInfinity).
@@ -174,6 +170,15 @@ fn exact_real_cmp(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
 }
 
 pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  // Two compatible Quantities sort by their physical value (converted to a
+  // common unit): Sort[{3 m, 100 cm, 2 m}] -> {100 cm, 2 m, 3 m}. A tie in
+  // value falls through to the structural comparison below.
+  if let Some(ord) = crate::functions::quantity_ast::try_quantity_compare(a, b)
+    && ord != std::cmp::Ordering::Equal
+  {
+    return ord;
+  }
+
   // Handle Infinity/-Infinity separately: they sort after all finite numbers
   let a_inf = is_infinity_expr(a);
   let b_inf = is_infinity_expr(b);
@@ -968,7 +973,7 @@ pub fn emit_nonatomic_normal_message(name: &str, args: &[Expr]) {
 /// compared element by element (shorter lists are a tie-break, not pulled to
 /// the front), so `{2}` sorts between `{1, 9}` and `{3}`. Non-list expressions
 /// fall back to the canonical order.
-pub fn lexicographic_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+fn lexicographic_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   if let (Expr::List(la), Expr::List(lb)) = (a, b) {
     for (ai, bi) in la.iter().zip(lb.iter()) {
       let ord = lexicographic_cmp(ai, bi);
@@ -1388,7 +1393,7 @@ fn numeric_coeff_and_rest_expr(e: &Expr) -> (f64, Option<Expr>) {
   };
   match e {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       let (c, r) = numeric_coeff_and_rest_expr(operand);
@@ -1410,7 +1415,7 @@ fn numeric_coeff_and_rest_expr(e: &Expr) -> (f64, Option<Expr>) {
       }
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -1436,15 +1441,15 @@ fn sum_highest_term_negates(sum: &Expr, atom: &Expr) -> bool {
       args.last().cloned()
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       right,
       ..
     } => Some(Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand: right.clone(),
     }),
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       right,
       ..
     } => Some((**right).clone()),
@@ -1453,7 +1458,7 @@ fn sum_highest_term_negates(sum: &Expr, atom: &Expr) -> bool {
   let Some(last) = last else { return false };
   let negated_inner = match &last {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => Some((**operand).clone()),
     Expr::FunctionCall { name, args }
@@ -1464,7 +1469,7 @@ fn sum_highest_term_negates(sum: &Expr, atom: &Expr) -> bool {
       Some(args[1].clone())
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } if matches!(left.as_ref(), Expr::Integer(n) if *n < 0) => {
@@ -1502,7 +1507,7 @@ fn is_power_expr(e: &Expr) -> bool {
   matches!(
     e,
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       ..
     }
   ) || matches!(e, Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2)
@@ -1559,7 +1564,6 @@ pub fn expr_sort_key(e: &Expr) -> String {
       crate::syntax::expr_to_string(e)
     }
     Expr::BinaryOp { op, left, right } => {
-      use crate::syntax::BinaryOperator;
       match op {
         BinaryOperator::Power => {
           // Power: sort key is the base (recurse for compound bases)

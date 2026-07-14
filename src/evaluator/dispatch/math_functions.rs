@@ -1,6 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::make_sqrt;
+use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator};
 
 /// Columnwise quartile-family statistic for a matrix argument.
 ///
@@ -314,7 +315,7 @@ pub fn dispatch_math_functions(
             args: vec![Expr::Integer(3)].into(),
           };
           let iqr = Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Divide,
+            op: BinaryOperator::Divide,
             left: Box::new(log3),
             right: Box::new(lambda),
           };
@@ -332,7 +333,7 @@ pub fn dispatch_math_functions(
         && qs.len() == 3
       {
         let diff = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Minus,
+          op: BinaryOperator::Minus,
           left: Box::new(qs[2].clone()),
           right: Box::new(qs[0].clone()),
         };
@@ -349,9 +350,9 @@ pub fn dispatch_math_functions(
         && qs.len() == 3
       {
         let half_iqr = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Minus,
+            op: BinaryOperator::Minus,
             left: Box::new(qs[2].clone()),
             right: Box::new(qs[0].clone()),
           }),
@@ -370,7 +371,7 @@ pub fn dispatch_math_functions(
         dispatch_math_functions("Quartiles", args)
         && qs.len() == 3
       {
-        use crate::syntax::BinaryOperator::{Divide, Minus, Plus, Times};
+        use BinaryOperator::{Divide, Minus, Plus, Times};
         // numerator = Q1 - 2*Q2 + Q3
         let numerator = Expr::BinaryOp {
           op: Plus,
@@ -774,7 +775,7 @@ pub fn dispatch_math_functions(
             return None;
           };
           let Ok((mean, var)) =
-            crate::functions::math_ast::distribution_mean_variance_pub(cn, ca)
+            crate::functions::math_ast::distribution_mean_variance(cn, ca)
           else {
             return None;
           };
@@ -919,8 +920,32 @@ pub fn dispatch_math_functions(
       // TrimmedMean[list]              ≡ TrimmedMean[list, 0.05]
       // TrimmedMean[list, f]           — drop floor(f*n) smallest and largest
       // TrimmedMean[list, {f1, f2}]    — drop floor(f1*n) smallest, floor(f2*n) largest
+      // A SparseArray data argument is handled via its dense form.
+      if let Some(dense) =
+        crate::functions::list_helpers_ast::densify_sparse_array(&args[0])
+      {
+        let mut new_args = args.to_vec();
+        new_args[0] = dense;
+        return Some(crate::evaluator::evaluate_function_call_ast(
+          "TrimmedMean",
+          &new_args,
+        ));
+      }
       if let Expr::List(elems) = &args[0] {
         let n = elems.len();
+        // The trimming fraction must be a non-negative number < 0.5, or a list
+        // of two non-negative numbers summing to < 1; otherwise emit arg2 and
+        // stay unevaluated (rather than silently mis-trimming).
+        let arg2_error = || {
+          crate::emit_message(&format!(
+            "TrimmedMean::arg2: The second argument {} is expected to be a non-negative number less than 0.5 or a list of two non-negative numbers that sum to less than 1.",
+            crate::syntax::expr_to_string(&args[1])
+          ));
+          Some(Ok(Expr::FunctionCall {
+            name: "TrimmedMean".to_string(),
+            args: args.to_vec().into(),
+          }))
+        };
         let (trim_lo, trim_hi) = match args.get(1) {
           None => {
             let t = (n as f64 * 0.05).floor() as usize;
@@ -933,6 +958,9 @@ pub fn dispatch_math_functions(
             let Some(f2) = expr_to_f64(&fs[1]) else {
               return None;
             };
+            if f1 < 0.0 || f2 < 0.0 || f1 + f2 >= 1.0 {
+              return arg2_error();
+            }
             (
               (n as f64 * f1).floor() as usize,
               (n as f64 * f2).floor() as usize,
@@ -942,6 +970,9 @@ pub fn dispatch_math_functions(
             let Some(f) = expr_to_f64(other) else {
               return None;
             };
+            if !(0.0..0.5).contains(&f) {
+              return arg2_error();
+            }
             let t = (n as f64 * f).floor() as usize;
             (t, t)
           }
@@ -959,7 +990,7 @@ pub fn dispatch_math_functions(
             args: trimmed.to_vec().into(),
           };
           let result = Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Divide,
+            op: BinaryOperator::Divide,
             left: Box::new(sum_expr),
             right: Box::new(Expr::Integer(trimmed.len() as i128)),
           };
@@ -974,18 +1005,39 @@ pub fn dispatch_math_functions(
       //                                   floor(f2*n) at the top.
       if let Expr::List(elems) = &args[0] {
         let n = elems.len();
+        // The winsorizing fraction must be a non-negative number < 0.5, or a
+        // list of two non-negative numbers summing to < 1; otherwise emit arg2
+        // and stay unevaluated (rather than silently mis-winsorizing).
+        let arg2_error = || {
+          crate::emit_message(&format!(
+            "WinsorizedMean::arg2: The second argument {} is expected to be a non-negative number less than 0.5 or a list of two non-negative numbers that sum to less than 1.",
+            crate::syntax::expr_to_string(&args[1])
+          ));
+          Some(Ok(Expr::FunctionCall {
+            name: "WinsorizedMean".to_string(),
+            args: args.to_vec().into(),
+          }))
+        };
         let (trim_lo, trim_hi) = match &args[1] {
           Expr::List(fs) if fs.len() == 2 => {
             match (expr_to_f64(&fs[0]), expr_to_f64(&fs[1])) {
-              (Some(f1), Some(f2)) => (
-                (n as f64 * f1).floor() as usize,
-                (n as f64 * f2).floor() as usize,
-              ),
+              (Some(f1), Some(f2)) => {
+                if f1 < 0.0 || f2 < 0.0 || f1 + f2 >= 1.0 {
+                  return arg2_error();
+                }
+                (
+                  (n as f64 * f1).floor() as usize,
+                  (n as f64 * f2).floor() as usize,
+                )
+              }
               _ => return None,
             }
           }
           other => match expr_to_f64(other) {
             Some(f) => {
+              if !(0.0..0.5).contains(&f) {
+                return arg2_error();
+              }
               let t = (n as f64 * f).floor() as usize;
               (t, t)
             }
@@ -1015,7 +1067,7 @@ pub fn dispatch_math_functions(
             args: winsorized.into(),
           };
           let result = Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Divide,
+            op: BinaryOperator::Divide,
             left: Box::new(sum_expr),
             right: Box::new(Expr::Integer(n as i128)),
           };
@@ -1030,6 +1082,16 @@ pub fn dispatch_math_functions(
       //                                    floor(f2*n) largest
       if let Expr::List(elems) = &args[0] {
         let n = elems.len();
+        let arg2_error = || {
+          crate::emit_message(&format!(
+            "TrimmedVariance::arg2: The second argument {} is expected to be a non-negative number less than 0.5 or a list of two non-negative numbers that sum to less than 1.",
+            crate::syntax::expr_to_string(&args[1])
+          ));
+          Some(Ok(Expr::FunctionCall {
+            name: "TrimmedVariance".to_string(),
+            args: args.to_vec().into(),
+          }))
+        };
         let (trim_lo, trim_hi) = match args.get(1) {
           None => {
             let t = (n as f64 * 0.05).floor() as usize;
@@ -1042,6 +1104,9 @@ pub fn dispatch_math_functions(
             let Some(f2) = expr_to_f64(&fs[1]) else {
               return None;
             };
+            if f1 < 0.0 || f2 < 0.0 || f1 + f2 >= 1.0 {
+              return arg2_error();
+            }
             (
               (n as f64 * f1).floor() as usize,
               (n as f64 * f2).floor() as usize,
@@ -1051,6 +1116,9 @@ pub fn dispatch_math_functions(
             let Some(f) = expr_to_f64(other) else {
               return None;
             };
+            if !(0.0..0.5).contains(&f) {
+              return arg2_error();
+            }
             let t = (n as f64 * f).floor() as usize;
             (t, t)
           }
@@ -1074,6 +1142,17 @@ pub fn dispatch_math_functions(
       if let Expr::List(elems) = &args[0]
         && let Some(frac) = expr_to_f64(&args[1])
       {
+        // A fraction outside [0, 0.5) is rejected with arg2.
+        if !(0.0..0.5).contains(&frac) {
+          crate::emit_message(&format!(
+            "WinsorizedVariance::arg2: The second argument {} is expected to be a non-negative number less than 0.5 or a list of two non-negative numbers that sum to less than 1.",
+            crate::syntax::expr_to_string(&args[1])
+          ));
+          return Some(Ok(Expr::FunctionCall {
+            name: "WinsorizedVariance".to_string(),
+            args: args.to_vec().into(),
+          }));
+        }
         let n = elems.len();
         let trim = (n as f64 * frac).floor() as usize;
         if 2 * trim < n {
@@ -1177,7 +1256,7 @@ pub fn dispatch_math_functions(
     "IntegerLength" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::math_ast::integer_length_ast(args));
     }
-    "IntegerReverse" if !args.is_empty() && args.len() <= 2 => {
+    "IntegerReverse" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::math_ast::integer_reverse_ast(args));
     }
     "Rescale" if !args.is_empty() && args.len() <= 3 => {
@@ -1334,6 +1413,9 @@ pub fn dispatch_math_functions(
     "MittagLefflerE" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::mittag_leffler_e_ast(args));
     }
+    "NevilleThetaS" | "NevilleThetaC" | "NevilleThetaD" | "NevilleThetaN" => {
+      return Some(crate::functions::math_ast::neville_theta_ast(name, args));
+    }
     "EllipticK" if args.len() == 1 => {
       return Some(crate::functions::math_ast::elliptic_k_ast(args));
     }
@@ -1383,6 +1465,22 @@ pub fn dispatch_math_functions(
     }
     "DedekindEta" if args.len() == 1 => {
       return Some(crate::functions::math_ast::dedekind_eta_ast(args));
+    }
+    "ModularLambda" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::modular_lambda_ast(args));
+    }
+    "WeierstrassInvariants" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::weierstrass_invariants_ast(
+        args,
+      ));
+    }
+    "WeierstrassHalfPeriods" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::weierstrass_half_periods_ast(
+        args,
+      ));
+    }
+    "KleinInvariantJ" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::klein_invariant_j_ast(args));
     }
     "Zeta" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::zeta_ast(args));
@@ -1513,7 +1611,7 @@ pub fn dispatch_math_functions(
           args: vec![z.clone(), args[2].clone(), args[3].clone()].into(),
         };
         let diff = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Minus,
+          op: BinaryOperator::Minus,
           left: Box::new(f(&args[1])),
           right: Box::new(f(&args[0])),
         };
@@ -1526,6 +1624,9 @@ pub fn dispatch_math_functions(
     }
     "MarcumQ" if args.len() == 3 || args.len() == 4 => {
       return Some(crate::functions::math_ast::marcum_q_ast(args));
+    }
+    "OwenT" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::owen_t_ast(args));
     }
     "GammaRegularized" if args.len() == 2 => {
       return Some(crate::functions::math_ast::gamma_regularized_ast(args));
@@ -1554,7 +1655,7 @@ pub fn dispatch_math_functions(
           args: vec![args[0].clone(), z.clone()].into(),
         };
         let diff = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Minus,
+          op: BinaryOperator::Minus,
           left: Box::new(g(&args[1])),
           right: Box::new(g(&args[2])),
         };
@@ -1573,7 +1674,7 @@ pub fn dispatch_math_functions(
           .into(),
         };
         let diff = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Minus,
+          op: BinaryOperator::Minus,
           left: Box::new(exp_neg(&args[1])),
           right: Box::new(exp_neg(&args[2])),
         };
@@ -1731,7 +1832,7 @@ pub fn dispatch_math_functions(
           args: vec![z.clone(), args[2].clone(), args[3].clone()].into(),
         };
         let diff = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Minus,
+          op: BinaryOperator::Minus,
           left: Box::new(f(&args[1])),
           right: Box::new(f(&args[0])),
         };
@@ -1887,6 +1988,58 @@ pub fn dispatch_math_functions(
     }
     "CorrelationFunction" if args.len() == 2 => {
       return Some(crate::functions::math_ast::correlation_function_ast(args));
+    }
+    // SliceDistribution[proc, t] materializes the process time-slice
+    // distribution.
+    "SliceDistribution" if args.len() == 2 => {
+      if let Expr::FunctionCall {
+        name: pname,
+        args: dargs,
+      } = &args[0]
+        && let Some(slice) = crate::functions::math_ast::distributions_slice(
+          pname, dargs, &args[1],
+        )
+      {
+        return Some(crate::evaluator::evaluate_expr_to_expr(&slice));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "SliceDistribution".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
+    "CorrelationFunction" if args.len() == 3 => {
+      if let Some(result) =
+        crate::functions::math_ast::statistics_process_correlation(
+          &args[0], &args[1], &args[2],
+        )
+      {
+        return Some(crate::evaluator::evaluate_expr_to_expr(&result));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "CorrelationFunction".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
+    "AbsoluteCorrelationFunction" if args.len() == 3 => {
+      if let Some(result) =
+        crate::functions::math_ast::statistics_process_absolute_correlation(
+          &args[0], &args[1], &args[2],
+        )
+      {
+        return Some(crate::evaluator::evaluate_expr_to_expr(&result));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "AbsoluteCorrelationFunction".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
+    "AbsoluteCorrelationFunction" => {
+      return Some(crate::functions::absolute_correlation_function_ast(args));
+    }
+    "BiweightMidvariance" => {
+      return Some(
+        crate::functions::math_ast::statistics_biweight_midvariance(args),
+      );
     }
     // StieltjesGamma[0] is EulerGamma; positive integers and symbols stay
     // symbolic (N picks up the machine values via try_eval_to_f64); other
@@ -2099,7 +2252,7 @@ pub fn dispatch_math_functions(
           return Some(Ok(Expr::Identifier("Indeterminate".to_string())));
         }
         Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand,
         } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "Infinity") =>
         {
@@ -2123,7 +2276,7 @@ pub fn dispatch_math_functions(
             Expr::FunctionCall { name, .. } if name == "Sin");
           if !is_symbolic {
             let div_expr = Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Divide,
+              op: BinaryOperator::Divide,
               left: Box::new(sin_val.clone()),
               right: Box::new(args[0].clone()),
             };
@@ -2150,7 +2303,7 @@ pub fn dispatch_math_functions(
       }
       if contains_real(&args[0]) {
         let half = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(args[0].clone()),
           right: Box::new(Expr::Integer(2)),
         };
@@ -2159,7 +2312,7 @@ pub fn dispatch_math_functions(
           args: vec![half].into(),
         };
         let expr = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
+          op: BinaryOperator::Power,
           left: Box::new(sin_expr),
           right: Box::new(Expr::Integer(2)),
         };
@@ -2175,9 +2328,9 @@ pub fn dispatch_math_functions(
         args: vec![args[0].clone()].into(),
       };
       let half = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Minus,
+          op: BinaryOperator::Minus,
           left: Box::new(Expr::Integer(1)),
           right: Box::new(cos_x),
         }),
@@ -2301,7 +2454,7 @@ pub fn dispatch_math_functions(
         args: vec![sqrt_expr].into(),
       };
       let expr = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(Expr::Integer(2)),
         right: Box::new(asin_expr),
       };
@@ -2448,7 +2601,7 @@ pub fn dispatch_math_functions(
     "IntegerDigits" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::math_ast::integer_digits_ast(args));
     }
-    "NumberExpand" if args.len() == 1 || args.len() == 2 => {
+    "NumberExpand" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::math_ast::number_expand_ast(args));
     }
     "NumberDecompose" if args.len() == 2 => {
@@ -2559,8 +2712,7 @@ pub fn dispatch_math_functions(
         if base_int >= 2 {
           let denom = (base_int as f64).powi(e as i32) as i128;
           if denom > 0 {
-            let mantissa =
-              crate::functions::math_ast::make_rational_pub(*n, denom);
+            let mantissa = crate::functions::math_ast::make_rational(*n, denom);
             return Some(Ok(Expr::List(
               vec![mantissa, Expr::Integer(e)].into(),
             )));
@@ -3126,6 +3278,9 @@ pub fn dispatch_math_functions(
     }
     "Subdivide" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::math_ast::subdivide_ast(args));
+    }
+    "FindDivisions" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::find_divisions_ast(args));
     }
     "DigitCount" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::math_ast::digit_count_ast(args));
@@ -3987,7 +4142,7 @@ pub fn dispatch_math_functions(
         let widths: Vec<Expr> = (0..dim)
           .map(|d| {
             evaluate_expr_to_expr(&Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Minus,
+              op: BinaryOperator::Minus,
               left: Box::new(maxs[d].clone()),
               right: Box::new(mins[d].clone()),
             })
@@ -4028,13 +4183,13 @@ pub fn dispatch_math_functions(
           let bounds: Vec<Expr> = (0..dim)
             .map(|d| {
               let new_min = evaluate_expr_to_expr(&Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Minus,
+                op: BinaryOperator::Minus,
                 left: Box::new(mins[d].clone()),
                 right: Box::new(pads[d].0.clone()),
               })
               .unwrap_or_else(|_| mins[d].clone());
               let new_max = evaluate_expr_to_expr(&Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Plus,
+                op: BinaryOperator::Plus,
                 left: Box::new(maxs[d].clone()),
                 right: Box::new(pads[d].1.clone()),
               })
@@ -4096,10 +4251,10 @@ pub fn dispatch_math_functions(
           .map(|(ai, bi)| Expr::FunctionCall {
             name: "Abs".to_string(),
             args: vec![Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Plus,
+              op: BinaryOperator::Plus,
               left: Box::new(ai.clone()),
               right: Box::new(Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Times,
+                op: BinaryOperator::Times,
                 left: Box::new(Expr::Integer(-1)),
                 right: Box::new(bi.clone()),
               }),
@@ -4120,10 +4275,10 @@ pub fn dispatch_math_functions(
         let abs_expr = Expr::FunctionCall {
           name: "Abs".to_string(),
           args: vec![Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Plus,
+            op: BinaryOperator::Plus,
             left: Box::new(args[0].clone()),
             right: Box::new(Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Times,
+              op: BinaryOperator::Times,
               left: Box::new(Expr::Integer(-1)),
               right: Box::new(args[1].clone()),
             }),
@@ -4142,10 +4297,10 @@ pub fn dispatch_math_functions(
         let num = Expr::FunctionCall {
           name: "Abs".to_string(),
           args: vec![Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Plus,
+            op: BinaryOperator::Plus,
             left: Box::new(args[0].clone()),
             right: Box::new(Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Times,
+              op: BinaryOperator::Times,
               left: Box::new(Expr::Integer(-1)),
               right: Box::new(args[1].clone()),
             }),
@@ -4155,14 +4310,14 @@ pub fn dispatch_math_functions(
         let den = Expr::FunctionCall {
           name: "Abs".to_string(),
           args: vec![Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Plus,
+            op: BinaryOperator::Plus,
             left: Box::new(args[0].clone()),
             right: Box::new(args[1].clone()),
           }]
           .into(),
         };
         let result = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(num),
           right: Box::new(den),
         };
@@ -4178,10 +4333,10 @@ pub fn dispatch_math_functions(
           num_terms.push(Expr::FunctionCall {
             name: "Abs".to_string(),
             args: vec![Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Plus,
+              op: BinaryOperator::Plus,
               left: Box::new(ai.clone()),
               right: Box::new(Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Times,
+                op: BinaryOperator::Times,
                 left: Box::new(Expr::Integer(-1)),
                 right: Box::new(bi.clone()),
               }),
@@ -4191,7 +4346,7 @@ pub fn dispatch_math_functions(
           den_terms.push(Expr::FunctionCall {
             name: "Abs".to_string(),
             args: vec![Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Plus,
+              op: BinaryOperator::Plus,
               left: Box::new(ai.clone()),
               right: Box::new(bi.clone()),
             }]
@@ -4207,7 +4362,7 @@ pub fn dispatch_math_functions(
           args: den_terms.into(),
         };
         let result = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(num),
           right: Box::new(den),
         };
@@ -4223,10 +4378,10 @@ pub fn dispatch_math_functions(
         let num = Expr::FunctionCall {
           name: "Abs".to_string(),
           args: vec![Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Plus,
+            op: BinaryOperator::Plus,
             left: Box::new(args[0].clone()),
             right: Box::new(Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Times,
+              op: BinaryOperator::Times,
               left: Box::new(Expr::Integer(-1)),
               right: Box::new(args[1].clone()),
             }),
@@ -4234,7 +4389,7 @@ pub fn dispatch_math_functions(
           .into(),
         };
         let den = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Plus,
+          op: BinaryOperator::Plus,
           left: Box::new(Expr::FunctionCall {
             name: "Abs".to_string(),
             args: vec![args[0].clone()].into(),
@@ -4245,7 +4400,7 @@ pub fn dispatch_math_functions(
           }),
         };
         let result = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(num),
           right: Box::new(den),
         };
@@ -4260,10 +4415,10 @@ pub fn dispatch_math_functions(
           let num = Expr::FunctionCall {
             name: "Abs".to_string(),
             args: vec![Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Plus,
+              op: BinaryOperator::Plus,
               left: Box::new(ai.clone()),
               right: Box::new(Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Times,
+                op: BinaryOperator::Times,
                 left: Box::new(Expr::Integer(-1)),
                 right: Box::new(bi.clone()),
               }),
@@ -4271,7 +4426,7 @@ pub fn dispatch_math_functions(
             .into(),
           };
           let den = Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Plus,
+            op: BinaryOperator::Plus,
             left: Box::new(Expr::FunctionCall {
               name: "Abs".to_string(),
               args: vec![ai.clone()].into(),
@@ -4282,7 +4437,7 @@ pub fn dispatch_math_functions(
             }),
           };
           terms.push(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Divide,
+            op: BinaryOperator::Divide,
             left: Box::new(num),
             right: Box::new(den),
           });
@@ -4352,25 +4507,25 @@ pub fn dispatch_math_functions(
           args: vec![args[1].clone()].into(),
         };
         let u_over_abs_u = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(args[0].clone()),
           right: Box::new(abs_u),
         };
         let conj_v_over_abs_v = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(conj_v),
           right: Box::new(abs_v),
         };
         let ratio = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
+          op: BinaryOperator::Times,
           left: Box::new(u_over_abs_u),
           right: Box::new(conj_v_over_abs_v),
         };
         let result = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Plus,
+          op: BinaryOperator::Plus,
           left: Box::new(Expr::Integer(1)),
           right: Box::new(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(Expr::Integer(-1)),
             right: Box::new(ratio),
           }),
@@ -4416,16 +4571,16 @@ pub fn dispatch_math_functions(
           args: vec![args[1].clone()].into(),
         };
         let result = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Plus,
+          op: BinaryOperator::Plus,
           left: Box::new(Expr::Integer(1)),
           right: Box::new(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
+            op: BinaryOperator::Times,
             left: Box::new(Expr::Integer(-1)),
             right: Box::new(Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Divide,
+              op: BinaryOperator::Divide,
               left: Box::new(dot),
               right: Box::new(Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Times,
+                op: BinaryOperator::Times,
                 left: Box::new(norm_a),
                 right: Box::new(norm_b),
               }),
@@ -4597,7 +4752,7 @@ pub fn dispatch_math_functions(
       if let (Some(a), Some(n)) =
         (expr_to_i128(&args[0]), expr_to_i128(&args[1]))
       {
-        let result = kronecker_symbol(a, n);
+        let result = crate::functions::kronecker_symbol(a, n);
         return Some(Ok(Expr::Integer(result)));
       }
     }
@@ -5094,7 +5249,7 @@ pub fn dispatch_math_functions(
         operators,
       } = &args[0]
         && operands.len() == 2
-        && operators.first() == Some(&crate::syntax::ComparisonOp::Equal)
+        && operators.first() == Some(&ComparisonOp::Equal)
         && !is_zero_literal(&operands[1])
       {
         let rhs = operands[1].clone();
@@ -5110,7 +5265,7 @@ pub fn dispatch_math_functions(
           }
           let cond = Expr::Comparison {
             operands: vec![rhs, Expr::Integer(0)],
-            operators: vec![crate::syntax::ComparisonOp::NotEqual],
+            operators: vec![ComparisonOp::NotEqual],
           };
           let branch = Expr::List(vec![divided, cond].into());
           let pw = Expr::FunctionCall {
@@ -5415,7 +5570,7 @@ pub fn dispatch_math_functions(
             true
           }
           Expr::UnaryOp {
-            op: crate::syntax::UnaryOperator::Minus,
+            op: UnaryOperator::Minus,
             operand,
           } => definite_non_integer(operand),
           _ => false,
@@ -5758,7 +5913,7 @@ fn midpoint_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
     args: vec![p1.clone(), p2.clone()].into(),
   };
   let result = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(sum),
     right: Box::new(Expr::Integer(2)),
   };
@@ -5802,22 +5957,22 @@ fn qfactorial_ast(
   for k in 1..=n {
     // [k]_q = (1 - q^k) / (1 - q)
     let q_k = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left: Box::new(q_expr.clone()),
       right: Box::new(Expr::Integer(k as i128)),
     };
     let numerator = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(Expr::Integer(1)),
       right: Box::new(q_k),
     };
     let denominator = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(Expr::Integer(1)),
       right: Box::new(q_expr.clone()),
     };
     let factor = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(numerator),
       right: Box::new(denominator),
     };
@@ -6659,7 +6814,7 @@ fn split_real_imag(expr: &Expr) -> Option<(Expr, Expr)> {
     }
     // -(a + b*I) = -a - b*I
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => {
       let (r, i) = split_real_imag(operand)?;
@@ -7433,7 +7588,7 @@ fn exp_to_trig_recursive(expr: &Expr) -> Expr {
   match expr {
     // E^z where E is the constant
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } if matches!(left.as_ref(), Expr::Constant(c) if c == "E")
@@ -7567,7 +7722,7 @@ fn extract_imaginary_part(z: &Expr) -> Option<Expr> {
     }
     // z = BinaryOp Times with I
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -7652,6 +7807,20 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
           times(&[
             Expr::Integer(2),
             power(plus(&[e_ix, e_nix]), Expr::Integer(-1)),
+          ])
+        }
+        // Csc[x] = -2*I/(E^(-I*x) - E^(I*x))
+        "Csc" => {
+          let ix = times(&[i.clone(), arg.clone()]);
+          let e_ix = power(e.clone(), ix.clone());
+          let e_nix = power(e.clone(), times(&[Expr::Integer(-1), ix]));
+          times(&[
+            Expr::Integer(-2),
+            i,
+            power(
+              plus(&[e_nix, times(&[Expr::Integer(-1), e_ix])]),
+              Expr::Integer(-1),
+            ),
           ])
         }
         // Cot[x] = -I*(E^(-I*x) + E^(I*x))/(E^(-I*x) - E^(I*x))
@@ -7796,13 +7965,13 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
             times(&[half.clone(), log_of(plus(&[Expr::Integer(1), x_inv]))]),
           ])
         }
-        // NOTE: Coth, Csch and Csc are intentionally left to the default
-        // recursive branch. Their exponential forms are value-correct but the
-        // result contains a negative E-power (`-E^(-x)`) or a complex
-        // coefficient over a reciprocal, both of which Woxi's core renderer
-        // canonicalizes differently from wolframscript (`-(1/E^x)` and
-        // `c*(…)^(-1)` rather than `-E^(-x)` and `c/(…)`). See the documented
-        // complex-coeff / negative-E-exponent display divergence.
+        // NOTE: Coth and Csch are intentionally left to the default recursive
+        // branch. Their exponential forms are value-correct but the denominator
+        // contains a negative *real* E-power (`-E^(-x)`), which Woxi's core
+        // renderer canonicalizes as `-(1/E^x)` rather than wolframscript's
+        // `-E^(-x)`. See the documented negative-E-exponent display divergence.
+        // (Csc is handled above: its denominator uses imaginary exponents
+        // `E^(-I*x) - E^(I*x)`, which render identically to wolframscript.)
         // ArcSin, ArcCos, ArcCsch and ArcSech are likewise omitted: their Log
         // arguments are a Plus whose term order Woxi canonicalizes differently
         // (e.g. `Sqrt[1-x^2] + I x` vs wolframscript's `I x + Sqrt[1-x^2]`).
@@ -7950,59 +8119,6 @@ fn pow_mod(mut base: u64, mut exp: u64, modulus: u64) -> u64 {
 }
 
 /// Kronecker symbol — generalization of Jacobi symbol to all integers
-fn kronecker_symbol(a: i128, n: i128) -> i128 {
-  if n == 0 {
-    return if a == 1 || a == -1 { 1 } else { 0 };
-  }
-  if n == 1 {
-    return 1;
-  }
-  if n == -1 {
-    return if a < 0 { -1 } else { 1 };
-  }
-
-  // Handle n == 2
-  if n == 2 {
-    if a % 2 == 0 {
-      return 0;
-    }
-    let a_mod_8 = a.rem_euclid(8);
-    return if a_mod_8 == 1 || a_mod_8 == 7 { 1 } else { -1 };
-  }
-  if n == -2 {
-    return kronecker_symbol(a, -1) * kronecker_symbol(a, 2);
-  }
-
-  // For negative n, factor out the sign
-  if n < 0 {
-    return kronecker_symbol(a, -1) * kronecker_symbol(a, -n);
-  }
-
-  // n > 2 and positive. Factor out powers of 2 from n.
-  let mut n_rem = n;
-  let mut result: i128 = 1;
-
-  // Extract factor of 2
-  let mut twos = 0;
-  while n_rem % 2 == 0 {
-    n_rem /= 2;
-    twos += 1;
-  }
-  if twos > 0 {
-    let k2 = kronecker_symbol(a, 2);
-    for _ in 0..twos {
-      result *= k2;
-    }
-  }
-
-  // Now n_rem is odd and positive, use Jacobi symbol
-  if n_rem > 1 {
-    result *= crate::functions::jacobi_symbol(a, n_rem);
-  }
-
-  result
-}
-
 /// Count representations of n as sum of k squares (brute force recursion)
 fn count_squares_r(
   k: usize,
@@ -8085,14 +8201,14 @@ fn guard_equation_scale(
     relation,
     Expr::Comparison { operands, operators }
       if operands.len() == 2
-        && operators.first() == Some(&crate::syntax::ComparisonOp::Equal)
+        && operators.first() == Some(&ComparisonOp::Equal)
   );
   if !is_equation || is_nonzero_number(scalar) {
     return Ok(scaled);
   }
   let cond = Expr::Comparison {
     operands: vec![scalar.clone(), Expr::Integer(0)],
-    operators: vec![crate::syntax::ComparisonOp::NotEqual],
+    operators: vec![ComparisonOp::NotEqual],
   };
   let branch = Expr::List(vec![scaled, cond].into());
   let pw = Expr::FunctionCall {
@@ -8134,7 +8250,7 @@ fn pair_sides(relation: &Expr, second: &Expr, op: SideOp) -> Option<Expr> {
     return None;
   }
   // The second argument must be an equation for the pairing to be meaningful.
-  if v_operators.first() != Some(&crate::syntax::ComparisonOp::Equal) {
+  if v_operators.first() != Some(&ComparisonOp::Equal) {
     return None;
   }
   // Multiplying/dividing an inequality requires sign-dependent reasoning
@@ -8142,7 +8258,7 @@ fn pair_sides(relation: &Expr, second: &Expr, op: SideOp) -> Option<Expr> {
   // Piecewise. Only handle the clean case where the first relation is an
   // equation; Add/Subtract preserve any relation's direction.
   if matches!(op, SideOp::Multiply | SideOp::Divide)
-    && operators.first() != Some(&crate::syntax::ComparisonOp::Equal)
+    && operators.first() != Some(&ComparisonOp::Equal)
   {
     return None;
   }
@@ -8196,7 +8312,7 @@ fn pair_sides(relation: &Expr, second: &Expr, op: SideOp) -> Option<Expr> {
     SideOp::Divide => {
       let cond = Expr::Comparison {
         operands: vec![v_ops[0].clone(), Expr::Integer(0)],
-        operators: vec![crate::syntax::ComparisonOp::NotEqual],
+        operators: vec![ComparisonOp::NotEqual],
       };
       let branch = Expr::List(vec![paired, cond].into());
       Some(Expr::FunctionCall {
@@ -8218,6 +8334,7 @@ fn image_min_max_filter(
   use_min: bool,
 ) -> Option<Expr> {
   let Expr::Image {
+    color_space: _,
     width,
     height,
     channels,
@@ -8261,6 +8378,7 @@ fn image_min_max_filter(
     }
   }
   Some(Expr::Image {
+    color_space: None,
     width: *width,
     height: *height,
     channels: *channels,

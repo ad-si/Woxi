@@ -1,7 +1,28 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr};
+
+/// Emit the `<Name>::array` message and return the call unevaluated for an
+/// invalid dimension specification (a negative integer, a non-integer, or a
+/// list containing one) in position 2 of a Random* array generator, matching
+/// wolframscript instead of raising a hard evaluation error.
+fn random_array_dims_error(
+  name: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let call = Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.to_vec().into(),
+  };
+  crate::emit_message(&format!(
+    "{}::array: The array dimensions {} given in position 2 of {} should be a list of non-negative machine-sized integers giving the dimensions for the result.",
+    name,
+    crate::syntax::expr_to_string(&args[1]),
+    crate::syntax::expr_to_string(&call)
+  ));
+  Ok(call)
+}
 
 /// RandomInteger[max] or RandomInteger[{min, max}] - Random integer
 pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -33,16 +54,10 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::List(items) if items.len() == 2 => {
         if let (Expr::Integer(min), Expr::Integer(max)) = (&items[0], &items[1])
         {
-          if min > max {
-            Err(InterpreterError::EvaluationError(
-              "RandomInteger: min must be <= max".into(),
-            ))
-          } else {
-            let (min, max) = (*min, *max);
-            Ok(Expr::Integer(crate::with_rng(|rng| {
-              rng.gen_range(min..=max)
-            })))
-          }
+          // A reversed range {max, min} is ordered before sampling, matching
+          // wolframscript (RandomInteger[{5, 2}] draws from [2, 5]).
+          let (lo, hi) = (*min.min(max), *min.max(max));
+          Ok(Expr::Integer(crate::with_rng(|rng| rng.gen_range(lo..=hi))))
         } else {
           Err(InterpreterError::EvaluationError(
             "RandomInteger: range must be integers".into(),
@@ -64,20 +79,12 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           for item in items {
             match item {
               Expr::Integer(n) if *n >= 0 => dims.push(*n as usize),
-              _ => {
-                return Err(InterpreterError::EvaluationError(
-                  "RandomInteger: dimension specification must contain non-negative integers".into(),
-                ));
-              }
+              _ => return random_array_dims_error("RandomInteger", args),
             }
           }
           dims
         }
-        _ => {
-          return Err(InterpreterError::EvaluationError(
-            "RandomInteger: second argument must be a non-negative integer or list of non-negative integers".into(),
-          ));
-        }
+        _ => return random_array_dims_error("RandomInteger", args),
       };
 
       let (min, max) = match &args[0] {
@@ -100,11 +107,8 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       };
 
-      if min > max {
-        return Err(InterpreterError::EvaluationError(
-          "RandomInteger: min must be <= max".into(),
-        ));
-      }
+      // A reversed range is ordered before sampling (wolframscript parity).
+      let (min, max) = (min.min(max), min.max(max));
 
       fn make_random_int_array(dims: &[usize], min: i128, max: i128) -> Expr {
         let n = dims[0];
@@ -177,20 +181,12 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           for item in items {
             match item {
               Expr::Integer(n) if *n >= 0 => dims.push(*n as usize),
-              _ => {
-                return Err(InterpreterError::EvaluationError(
-                  "RandomReal: dimension specification must contain non-negative integers".into(),
-                ));
-              }
+              _ => return random_array_dims_error("RandomReal", args),
             }
           }
           dims
         }
-        _ => {
-          return Err(InterpreterError::EvaluationError(
-            "RandomReal: second argument must be a non-negative integer or list of non-negative integers".into(),
-          ));
-        }
+        _ => return random_array_dims_error("RandomReal", args),
       };
 
       let (min, max) = match &args[0] {
@@ -242,7 +238,6 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// or RandomComplex[range, dims]. Real and imaginary parts are drawn
 /// uniformly from the specified rectangle.
 pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use crate::syntax::BinaryOperator;
   use rand::Rng;
 
   fn complex_parts(expr: &Expr) -> Option<(f64, f64)> {
@@ -352,6 +347,10 @@ pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     im_lo: f64,
     im_hi: f64,
   ) -> Expr {
+    // Order each corner's bounds so a reversed range (e.g. {2 + 2 I, 0}) is
+    // sampled over [0, 2] rather than panicking on an empty range.
+    let (re_lo, re_hi) = (re_lo.min(re_hi), re_lo.max(re_hi));
+    let (im_lo, im_hi) = (im_lo.min(im_hi), im_lo.max(im_hi));
     let re = if re_lo == re_hi {
       re_lo
     } else {
@@ -363,10 +362,10 @@ pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       rng.gen_range(im_lo..im_hi)
     };
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left: Box::new(Expr::Real(re)),
       right: Box::new(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(Expr::Real(im)),
         right: Box::new(Expr::Identifier("I".to_string())),
       }),
@@ -388,20 +387,12 @@ pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           for item in items {
             match item {
               Expr::Integer(n) if *n >= 0 => dims.push(*n as usize),
-              _ => {
-                return Err(InterpreterError::EvaluationError(
-                  "RandomComplex: dimension specification must contain non-negative integers".into(),
-                ));
-              }
+              _ => return random_array_dims_error("RandomComplex", args),
             }
           }
           dims
         }
-        _ => {
-          return Err(InterpreterError::EvaluationError(
-            "RandomComplex: second argument must be a non-negative integer or list of non-negative integers".into(),
-          ));
-        }
+        _ => return random_array_dims_error("RandomComplex", args),
       };
 
       fn build(
@@ -905,9 +896,16 @@ pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match &args[0] {
       Expr::List(items) if !items.is_empty() => items.as_ref(),
       Expr::List(_) => {
-        return Err(InterpreterError::EvaluationError(
-          "RandomChoice: list cannot be empty".into(),
+        // An empty choice list emits lrwl and stays unevaluated rather than
+        // raising a hard error (wolframscript parity).
+        crate::emit_message(&format!(
+          "RandomChoice::lrwl: The items for choice {} should be a nonempty list or a rule weights -> choices.",
+          crate::syntax::expr_to_string(&args[0])
         ));
+        return Ok(Expr::FunctionCall {
+          name: "RandomChoice".to_string(),
+          args: args.to_vec().into(),
+        });
       }
       _ => {
         return Ok(Expr::FunctionCall {
@@ -940,22 +938,13 @@ pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let mut out = Vec::with_capacity(ds.len());
         for d in ds.iter() {
           match d {
-            Expr::Integer(k) if *k > 0 => out.push(*k as usize),
-            _ => {
-              return Err(InterpreterError::EvaluationError(
-                "RandomChoice: dimension entries must be positive integers"
-                  .into(),
-              ));
-            }
+            Expr::Integer(k) if *k >= 0 => out.push(*k as usize),
+            _ => return random_array_dims_error("RandomChoice", args),
           }
         }
         out
       }
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "RandomChoice: second argument must be a non-negative integer or list of dimensions".into(),
-        ));
-      }
+      _ => return random_array_dims_error("RandomChoice", args),
     };
     fn build(items: &[Expr], dims: &[usize], cdf: Option<&[f64]>) -> Expr {
       use rand::Rng;
@@ -1248,11 +1237,45 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // A zero count yields an empty list (matching wolframscript).
       Expr::Integer(0) => return Ok(Expr::List(vec![].into())),
       Expr::Integer(n) if *n > 0 => Some(*n as usize),
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "RandomVariate: second argument must be a positive integer".into(),
-        ));
+      // A dimension list {d1, d2, …} produces a nested array of that shape:
+      // draw prod(d) samples flat, then reshape.
+      Expr::List(dims_expr) => {
+        let mut dims = Vec::with_capacity(dims_expr.len());
+        for d in dims_expr.iter() {
+          match d {
+            Expr::Integer(k) if *k >= 0 => dims.push(*k as usize),
+            _ => return random_array_dims_error("RandomVariate", args),
+          }
+        }
+        let total: usize = dims.iter().product();
+        // A zero total means some dimension is 0; build the empty nested
+        // shape directly (ArrayReshape does not reduce zero-size specs).
+        if total == 0 {
+          fn empty_nested(dims: &[usize]) -> Expr {
+            match dims {
+              [_] | [] => Expr::List(vec![].into()),
+              [n, rest @ ..] => {
+                Expr::List((0..*n).map(|_| empty_nested(rest)).collect())
+              }
+            }
+          }
+          return Ok(empty_nested(&dims));
+        }
+        let flat =
+          random_variate_ast(&[dist.clone(), Expr::Integer(total as i128)])?;
+        let reshaped = Expr::FunctionCall {
+          name: "ArrayReshape".to_string(),
+          args: vec![
+            flat,
+            Expr::List(
+              dims.iter().map(|&d| Expr::Integer(d as i128)).collect(),
+            ),
+          ]
+          .into(),
+        };
+        return crate::evaluator::evaluate_expr_to_expr(&reshaped);
       }
+      _ => return random_array_dims_error("RandomVariate", args),
     }
   } else {
     None
@@ -1584,6 +1607,19 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // or a list of dimensions {n1, n2, ...} for a nested array. Track
   // both as a `dims` vector — when it has length 1 we keep the
   // original flat-list output to match wolframscript.
+  // The dimensions parameter must be a positive integer or a list of positive
+  // integers; anything else emits posdim and stays unevaluated (rather than a
+  // hard evaluation error).
+  let posdim = || {
+    crate::emit_message(&format!(
+      "RandomPrime::posdim: The dimensions parameter {} is expected to be a positive integer or a list of positive integers.",
+      crate::syntax::expr_to_string(&args[1])
+    ));
+    Ok(Expr::FunctionCall {
+      name: "RandomPrime".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
   let dims: Vec<usize> = if args.len() == 2 {
     match &args[1] {
       Expr::Integer(n) if *n > 0 => vec![*n as usize],
@@ -1592,21 +1628,12 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         for it in items.iter() {
           match it {
             Expr::Integer(n) if *n > 0 => ds.push(*n as usize),
-            _ => {
-              return Err(InterpreterError::EvaluationError(
-                "RandomPrime: dimension entries must be positive integers"
-                  .into(),
-              ));
-            }
+            _ => return posdim(),
           }
         }
         ds
       }
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "RandomPrime: second argument must be a positive integer or list of dimensions".into(),
-        ));
-      }
+      _ => return posdim(),
     }
   } else {
     Vec::new()

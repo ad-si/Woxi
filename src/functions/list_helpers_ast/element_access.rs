@@ -2,6 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
 /// Decompose a BinaryOp or UnaryOp expression into canonical Wolfram
 /// (head_name, args) form so that First/Rest/Part/etc. can operate on them.
@@ -10,20 +11,17 @@ use super::*;
 /// Flatten a chained binary operator (Plus/Times/And/Or/StringJoin/Alternatives)
 /// into its full n-ary argument list. e.g. `(((1+2)+3)+4)` → `[1, 2, 3, 4]`.
 fn flatten_assoc_binop(
-  op: crate::syntax::BinaryOperator,
-  left: &crate::syntax::Expr,
-  right: &crate::syntax::Expr,
-) -> Vec<crate::syntax::Expr> {
+  op: BinaryOperator,
+  left: &Expr,
+  right: &Expr,
+) -> Vec<Expr> {
   let mut out = flatten_assoc_one(op, left);
   out.extend(flatten_assoc_one(op, right));
   out
 }
 
-fn flatten_assoc_one(
-  op: crate::syntax::BinaryOperator,
-  expr: &crate::syntax::Expr,
-) -> Vec<crate::syntax::Expr> {
-  if let crate::syntax::Expr::BinaryOp {
+fn flatten_assoc_one(op: BinaryOperator, expr: &Expr) -> Vec<Expr> {
+  if let Expr::BinaryOp {
     op: inner_op,
     left,
     right,
@@ -37,7 +35,6 @@ fn flatten_assoc_one(
 }
 
 pub fn expr_to_head_args(expr: &Expr) -> Option<(String, Vec<Expr>)> {
-  use crate::syntax::{BinaryOperator, UnaryOperator};
   match expr {
     Expr::BinaryOp { op, left, right } => {
       let (head, args) = match op {
@@ -688,7 +685,12 @@ fn span_to_take_spec(span: &Expr) -> Option<Expr> {
   Some(Expr::List(spec.into()))
 }
 
-pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
+fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
+  // Normalize a nested Alternatives chain (`a | b | c`) into a flat
+  // Alternatives[a, b, c] so Take sees all operands as siblings, matching WS.
+  if let Some(flat) = crate::evaluator::flatten_alternatives_binop(list) {
+    return take_ast(&flat, n);
+  }
   // Handle All: return the list unchanged
   if matches!(n, Expr::Identifier(name) if name == "All") {
     return Ok(list.clone());
@@ -877,6 +879,11 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
 
 /// AST-based Drop: drop first n elements.
 pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
+  // Normalize a nested Alternatives chain (`a | b | c`) into a flat
+  // Alternatives[a, b, c] so Drop sees all operands as siblings, matching WS.
+  if let Some(flat) = crate::evaluator::flatten_alternatives_binop(list) {
+    return drop_ast(&flat, n);
+  }
   // A Span spec (i;;j;;k) maps onto the {i, j, k} list form.
   if let Some(spec) = span_to_take_spec(n) {
     return drop_ast(list, &spec);
@@ -1124,127 +1131,6 @@ pub fn drop_multi_ast(
     _ => Ok(Expr::FunctionCall {
       name: "Drop".to_string(),
       args: vec![list.clone(), rows.clone(), cols.clone()].into(),
-    }),
-  }
-}
-
-/// Part[list, i] or list[[i]] - Extract element at position i (1-indexed)
-pub fn part_ast(list: &Expr, index: &Expr) -> Result<Expr, InterpreterError> {
-  // A 1-D SparseArray indexed by an integer yields the scalar entry at that
-  // position. (Spans would produce a sub-array, which Wolfram keeps sparse,
-  // so those are left to the generic path.)
-  if matches!(index, Expr::Integer(_) | Expr::BigInteger(_))
-    && let Some(dense) = dense_1d_sparse(list)
-  {
-    return part_ast(&dense, index);
-  }
-
-  // Try decomposing BinaryOp/UnaryOp to canonical form first
-  if let Some((head_name, ha_args)) = expr_to_head_args(list) {
-    let canonical = Expr::FunctionCall {
-      name: head_name,
-      args: ha_args.into(),
-    };
-    return part_ast(&canonical, index);
-  }
-
-  // Handle Association integer indexing: Part[<|a->1, b->2|>, 2] => 2
-  if let Expr::FunctionCall { name, args } = list
-    && name == "Association"
-    && let Expr::Integer(i) = index
-  {
-    if *i == 0 {
-      return Ok(Expr::Identifier("Association".to_string()));
-    }
-    let idx = if *i > 0 {
-      (*i as usize) - 1
-    } else {
-      let len = args.len() as i128;
-      (len + *i) as usize
-    };
-    if idx >= args.len() {
-      return Err(InterpreterError::EvaluationError(
-        "Part: index out of bounds".into(),
-      ));
-    }
-    // Extract value from Rule[key, value]
-    return match &args[idx] {
-      Expr::FunctionCall {
-        name: rname,
-        args: rargs,
-      } if rname == "Rule" && rargs.len() == 2 => Ok(rargs[1].clone()),
-      Expr::Rule { replacement, .. } => Ok(*replacement.clone()),
-      other => Ok(other.clone()),
-    };
-  }
-
-  let (items, head) = match list {
-    Expr::List(items) => (items.as_slice(), None),
-    Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.as_str())),
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Part".to_string(),
-        args: vec![list.clone(), index.clone()].into(),
-      });
-    }
-  };
-
-  match index {
-    Expr::Integer(_) | Expr::BigInteger(_) => {
-      let i = expr_to_i128(index).ok_or_else(|| {
-        InterpreterError::EvaluationError("Part: index too large".into())
-      })?;
-      if i == 0 {
-        // Part[expr, 0] returns the head
-        return Ok(Expr::Identifier(head.unwrap_or("List").to_string()));
-      }
-      if i < 0 {
-        // Negative indexing: count from end
-        let len = items.len() as i128;
-        let idx = len + i;
-        if idx < 0 || idx >= len {
-          return Err(InterpreterError::EvaluationError(
-            "Part: index out of bounds".into(),
-          ));
-        }
-        return Ok(items[idx as usize].clone());
-      }
-      let idx = (i as usize) - 1;
-      if idx >= items.len() {
-        return Err(InterpreterError::EvaluationError(
-          "Part: index out of bounds".into(),
-        ));
-      }
-      Ok(items[idx].clone())
-    }
-    Expr::List(indices) => {
-      // Multiple indices: Part[list, {i1, i2, ...}]
-      let mut results = Vec::new();
-      for idx_expr in indices {
-        if let Expr::Integer(i) = idx_expr {
-          if *i < 1 {
-            return Err(InterpreterError::EvaluationError(
-              "Part: index must be a positive integer".into(),
-            ));
-          }
-          let idx = (*i as usize) - 1;
-          if idx >= items.len() {
-            return Err(InterpreterError::EvaluationError(
-              "Part: index out of bounds".into(),
-            ));
-          }
-          results.push(items[idx].clone());
-        } else {
-          return Err(InterpreterError::EvaluationError(
-            "Part: indices must be integers".into(),
-          ));
-        }
-      }
-      Ok(Expr::List(results.into()))
-    }
-    _ => Ok(Expr::FunctionCall {
-      name: "Part".to_string(),
-      args: vec![list.clone(), index.clone()].into(),
     }),
   }
 }

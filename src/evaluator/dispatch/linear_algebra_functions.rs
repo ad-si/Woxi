@@ -1,14 +1,80 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::make_sqrt;
+use crate::syntax::{BinaryOperator, UnaryOperator};
 
 pub fn dispatch_linear_algebra_functions(
   name: &str,
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
+  // Several matrix routines below only understand dense nested lists. When a
+  // SparseArray is passed, densify it to its Normal form and retry, matching
+  // Wolfram (compare the Dot handling in dot_ast).
+  if matches!(
+    name,
+    "Det"
+      | "Eigenvalues"
+      | "Eigenvectors"
+      | "MatrixRank"
+      | "CharacteristicPolynomial"
+      | "LinearSolve"
+      | "Minors"
+  ) {
+    let is_sparse = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "SparseArray");
+    if args.iter().any(is_sparse) {
+      let densify = |e: &Expr| -> Expr {
+        if let Expr::FunctionCall { name, args: sa } = e
+          && name == "SparseArray"
+        {
+          crate::functions::list_helpers_ast::sparse_array_ast(sa)
+            .unwrap_or_else(|_| e.clone())
+        } else {
+          e.clone()
+        }
+      };
+      let dense: Vec<Expr> = args.iter().map(densify).collect();
+      // Only retry if densification actually removed every SparseArray, to
+      // avoid recursing forever on a form we could not expand.
+      if !dense.iter().any(is_sparse) {
+        return dispatch_linear_algebra_functions(name, &dense);
+      }
+    }
+  }
+
   match name {
     "Dot" if args.len() == 2 => {
       return Some(crate::functions::linear_algebra_ast::dot_ast(args));
+    }
+    // ObservabilityMatrix[ssm] stacks {c, c.a, ..., c.a^(n-1)};
+    // ControllabilityMatrix[ssm] joins {b, a.b, ..., a^(n-1).b} columnwise.
+    "ObservabilityMatrix" | "ControllabilityMatrix" if args.len() == 1 => {
+      return Some(control_structure_matrix(
+        name,
+        &args[0],
+        name == "ObservabilityMatrix",
+      ));
+    }
+    // Dot[x] returns its single argument unchanged; Dot[a, b, c, …] chains
+    // pairwise dots left-to-right (a.b.c = (a.b).c), matching wolframscript.
+    "Dot" if args.len() == 1 => {
+      return Some(Ok(args[0].clone()));
+    }
+    "Dot" if args.len() >= 3 => {
+      let mut acc =
+        match crate::functions::linear_algebra_ast::dot_ast(&args[..2]) {
+          Ok(v) => v,
+          e => return Some(e),
+        };
+      for next in &args[2..] {
+        acc = match crate::functions::linear_algebra_ast::dot_ast(&[
+          acc,
+          next.clone(),
+        ]) {
+          Ok(v) => v,
+          e => return Some(e),
+        };
+      }
+      return Some(Ok(acc));
     }
     "ArrayDot" if args.len() == 3 => {
       return Some(crate::functions::linear_algebra_ast::array_dot_ast(args));
@@ -143,13 +209,50 @@ pub fn dispatch_linear_algebra_functions(
         return Some(eval("Dot", &[pinv, b]));
       }
     }
-    "Tr" if args.len() == 1 || args.len() == 2 => {
+    "Tr" if (1..=3).contains(&args.len()) => {
       return Some(crate::functions::linear_algebra_ast::tr_ast(args));
     }
     "IdentityMatrix" if args.len() == 1 => {
       return Some(crate::functions::linear_algebra_ast::identity_matrix_ast(
         args,
       ));
+    }
+    // IdentityMatrix[n, SparseArray] returns the identity as a SparseArray.
+    "IdentityMatrix"
+      if args.len() == 2
+        && matches!(&args[1], Expr::Identifier(s) if s == "SparseArray") =>
+    {
+      let dense =
+        match crate::functions::linear_algebra_ast::identity_matrix_ast(
+          std::slice::from_ref(&args[0]),
+        ) {
+          Ok(d) => d,
+          err => return Some(err),
+        };
+      // A dense identity contains no structural zeros to preserve, so the
+      // usual SparseArray conversion produces the same CSR form as
+      // wolframscript's IdentityMatrix[n, SparseArray].
+      return Some(crate::evaluator::evaluate_expr_to_expr(
+        &Expr::FunctionCall {
+          name: "SparseArray".to_string(),
+          args: vec![dense].into(),
+        },
+      ));
+    }
+    // IdentityMatrix[n, type] with an unsupported structural type (neither a
+    // list nor SparseArray) stays unevaluated with wolframscript's message.
+    "IdentityMatrix"
+      if args.len() == 2 && !matches!(&args[1], Expr::List(_)) =>
+    {
+      let call = Expr::FunctionCall {
+        name: "IdentityMatrix".to_string(),
+        args: args.to_vec().into(),
+      };
+      crate::emit_message(&format!(
+        "IdentityMatrix::targ: Argument {} at position 2 should be a list or sparse array.",
+        crate::syntax::expr_to_string(&args[1])
+      ));
+      return Some(Ok(call));
     }
     "UnitVector" if args.len() == 1 || args.len() == 2 => {
       // UnitVector[k] is shorthand for UnitVector[2, k].
@@ -203,7 +306,7 @@ pub fn dispatch_linear_algebra_functions(
         return Some(Ok(build_ones_tensor(&dims)));
       }
     }
-    "DiagonalMatrix" if args.len() == 1 || args.len() == 2 => {
+    "DiagonalMatrix" if (1..=3).contains(&args.len()) => {
       return Some(crate::functions::linear_algebra_ast::diagonal_matrix_ast(
         args,
       ));
@@ -280,7 +383,7 @@ pub fn dispatch_linear_algebra_functions(
           let mut row = Vec::with_capacity(n);
           for j in 0..n {
             let denom = (i + j + 1) as i128;
-            row.push(crate::functions::math_ast::make_rational_pub(1, denom));
+            row.push(crate::functions::math_ast::make_rational(1, denom));
           }
           rows.push(Expr::List(row.into()));
         }
@@ -411,22 +514,22 @@ pub fn dispatch_linear_algebra_functions(
                 Expr::Integer(0)
               };
               let vi_vj = Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Times,
+                op: BinaryOperator::Times,
                 left: Box::new(v[i].clone()),
                 right: Box::new(v[j].clone()),
               };
               let two_vi_vj = Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Times,
+                op: BinaryOperator::Times,
                 left: Box::new(Expr::Integer(2)),
                 right: Box::new(vi_vj),
               };
               let frac = Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Divide,
+                op: BinaryOperator::Divide,
                 left: Box::new(two_vi_vj),
                 right: Box::new(dot_vv.clone()),
               };
               let entry = Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Minus,
+                op: BinaryOperator::Minus,
                 left: Box::new(delta),
                 right: Box::new(frac),
               };
@@ -463,7 +566,7 @@ pub fn dispatch_linear_algebra_functions(
             args: vec![args[1].clone(), args[1].clone()].into(),
           };
           let s_minus_1 = Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Minus,
+            op: BinaryOperator::Minus,
             left: Box::new(s.clone()),
             right: Box::new(Expr::Integer(1)),
           };
@@ -477,22 +580,22 @@ pub fn dispatch_linear_algebra_functions(
                 Expr::Integer(0)
               };
               let vi_vj = Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Times,
+                op: BinaryOperator::Times,
                 left: Box::new(v[i].clone()),
                 right: Box::new(v[j].clone()),
               };
               let numer = Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Times,
+                op: BinaryOperator::Times,
                 left: Box::new(s_minus_1.clone()),
                 right: Box::new(vi_vj),
               };
               let frac = Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Divide,
+                op: BinaryOperator::Divide,
                 left: Box::new(numer),
                 right: Box::new(dot_vv.clone()),
               };
               let sum = Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Plus,
+                op: BinaryOperator::Plus,
                 left: Box::new(delta),
                 right: Box::new(frac),
               };
@@ -1530,12 +1633,12 @@ pub fn dispatch_linear_algebra_functions(
         let nv = sqrt(plus(sq(&v[0]), sq(&v[1])));
         let denom = times(nu, nv);
         let cos_t = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(dot),
           right: Box::new(denom.clone()),
         };
         let sin_t = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(cross),
           right: Box::new(denom),
         };
@@ -1826,10 +1929,10 @@ pub fn dispatch_linear_algebra_functions(
           // Translation column: ci - si*ci = ci*(1 - si)
           if let Some(c) = center {
             let translation = Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Minus,
+              op: BinaryOperator::Minus,
               left: Box::new(c[i].clone()),
               right: Box::new(Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Times,
+                op: BinaryOperator::Times,
                 left: Box::new(scales[i].clone()),
                 right: Box::new(c[i].clone()),
               }),
@@ -2111,7 +2214,7 @@ pub fn dispatch_linear_algebra_functions(
                 Ok(d) => {
                   let sign = if (i + j) % 2 == 0 { 1 } else { -1 };
                   let cofactor = evaluate_expr_to_expr(&Expr::BinaryOp {
-                    op: crate::syntax::BinaryOperator::Times,
+                    op: BinaryOperator::Times,
                     left: Box::new(Expr::Integer(sign)),
                     right: Box::new(d),
                   })
@@ -2432,10 +2535,10 @@ pub fn dispatch_linear_algebra_functions(
               })
               .unwrap_or(matrix[j][i].clone());
               let diff = evaluate_expr_to_expr(&Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Plus,
+                op: BinaryOperator::Plus,
                 left: Box::new(matrix[i][j].clone()),
                 right: Box::new(Expr::BinaryOp {
-                  op: crate::syntax::BinaryOperator::Times,
+                  op: BinaryOperator::Times,
                   left: Box::new(Expr::Integer(-1)),
                   right: Box::new(conj),
                 }),
@@ -2473,7 +2576,7 @@ pub fn dispatch_linear_algebra_functions(
               })
               .unwrap_or(matrix[j][i].clone());
               let sum = evaluate_expr_to_expr(&Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Plus,
+                op: BinaryOperator::Plus,
                 left: Box::new(matrix[i][j].clone()),
                 right: Box::new(conj),
               })
@@ -2766,7 +2869,7 @@ pub fn dispatch_linear_algebra_functions(
             evaluate_expr_to_expr(&sqrt_n_expr).unwrap_or(sqrt_n_expr);
           // Compute 1/Sqrt[n] once (evaluated)
           let inv_sqrt_n_expr = Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Divide,
+            op: BinaryOperator::Divide,
             left: Box::new(Expr::Integer(1)),
             right: Box::new(sqrt_n.clone()),
           };
@@ -2793,7 +2896,7 @@ pub fn dispatch_linear_algebra_functions(
                     } else {
                       // v / Sqrt[n]
                       let entry = Expr::BinaryOp {
-                        op: crate::syntax::BinaryOperator::Divide,
+                        op: BinaryOperator::Divide,
                         left: Box::new(Expr::Integer(v)),
                         right: Box::new(sqrt_n.clone()),
                       };
@@ -2913,12 +3016,12 @@ pub fn dispatch_linear_algebra_functions(
           )));
         }
         {
-          use crate::functions::math_ast::make_rational_pub;
+          use crate::functions::math_ast::make_rational;
           let cos_pi = |num: i128, den: i128| -> Expr {
             let angle = Expr::FunctionCall {
               name: "Times".to_string(),
               args: vec![
-                make_rational_pub(num, den),
+                make_rational(num, den),
                 Expr::Identifier("Pi".to_string()),
               ]
               .into(),
@@ -2938,20 +3041,20 @@ pub fn dispatch_linear_algebra_functions(
             for j in 1..=n {
               let entry = match m {
                 1 => {
-                  let base = make_sqrt(make_rational_pub(2, n - 1));
+                  let base = make_sqrt(make_rational(2, n - 1));
                   let scale = if i == 1 || i == n {
-                    times(make_rational_pub(1, 2), base)
+                    times(make_rational(1, 2), base)
                   } else {
                     base
                   };
                   times(scale, cos_pi((i - 1) * (j - 1), n - 1))
                 }
                 2 => times(
-                  make_sqrt(make_rational_pub(1, n)),
+                  make_sqrt(make_rational(1, n)),
                   cos_pi((2 * i - 1) * (j - 1), 2 * n),
                 ),
                 3 => {
-                  let base = make_sqrt(make_rational_pub(1, n));
+                  let base = make_sqrt(make_rational(1, n));
                   let scale = if i == 1 {
                     base
                   } else {
@@ -2960,7 +3063,7 @@ pub fn dispatch_linear_algebra_functions(
                   times(scale, cos_pi((2 * j - 1) * (i - 1), 2 * n))
                 }
                 _ => times(
-                  make_sqrt(make_rational_pub(2, n)),
+                  make_sqrt(make_rational(2, n)),
                   cos_pi((2 * i - 1) * (2 * j - 1), 4 * n),
                 ),
               };
@@ -4150,7 +4253,7 @@ fn matrix_power_block_symbolic(rows: &[Expr], n_expr: &Expr) -> Option<Expr> {
         let entry = matrix[i][i].clone();
         result[i][i] =
           match crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left: Box::new(entry),
             right: Box::new(n_expr.clone()),
           }) {
@@ -4196,7 +4299,6 @@ fn matrix_power_2x2_symbolic_block(
   m: &[[Expr; 2]; 2],
   n_expr: &Expr,
 ) -> Option<[[Expr; 2]; 2]> {
-  use crate::syntax::BinaryOperator;
   // Extract integer entries.
   let a = crate::functions::math_ast::expr_to_i128(&m[0][0])?;
   let b = crate::functions::math_ast::expr_to_i128(&m[0][1])?;
@@ -4409,7 +4511,7 @@ fn elementary_rotation(axis: i128, angle: &Expr) -> Expr {
 /// EulerMatrix[{a, b, c}] - rotation matrix R(a).R(b).R(c) using the default
 /// {3, 2, 3} (ZYZ) axis convention. EulerMatrix[{a, b, c}, {n1, n2, n3}]
 /// uses the explicitly given axis sequence.
-pub fn euler_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+fn euler_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let angles = match &args[0] {
     Expr::List(items) if items.len() == 3 => items,
     _ => {
@@ -4465,9 +4567,7 @@ pub fn euler_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// the angle list, so this is EulerMatrix with both the angles and the axes
 /// reversed: RollPitchYawMatrix[{α,β,γ}, {p,q,r}] = EulerMatrix[{γ,β,α},
 /// {r,q,p}] (verified symbolically against wolframscript).
-pub fn roll_pitch_yaw_matrix_ast(
-  args: &[Expr],
-) -> Result<Expr, InterpreterError> {
+fn roll_pitch_yaw_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let angles = match &args[0] {
     Expr::List(items) if items.len() == 3 => items,
     other => {
@@ -4543,7 +4643,7 @@ fn rotation_transform_3d_axis(
   let u: Vec<Expr> = axis
     .iter()
     .map(|a| Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(a.clone()),
       right: Box::new(norm.clone()),
     })
@@ -4755,7 +4855,7 @@ fn lyapunov_solve_common(
         }
       }
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand,
       } => {
         let q = parse_matrix_entry_recur(operand)?;
@@ -5062,12 +5162,130 @@ fn lyapunov_symbolic_diagonal(
   Some(Ok(Expr::List(out_rows.into())))
 }
 
-pub fn lyapunov_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+fn lyapunov_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   lyapunov_solve_common("LyapunovSolve", args, false)
 }
 
-pub fn discrete_lyapunov_solve_ast(
+fn discrete_lyapunov_solve_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   lyapunov_solve_common("DiscreteLyapunovSolve", args, true)
+}
+
+/// The observability / controllability matrix of a
+/// StateSpaceModel[{a, b, c, d}]: rows {c, c.a, ..., c.a^(n-1)} stacked,
+/// or columns {b, a.b, ..., a^(n-1).b} joined. Exact and symbolic-safe
+/// (built from iterated Dot products).
+fn control_structure_matrix(
+  fname: &str,
+  ssm: &Expr,
+  observability: bool,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: fname.to_string(),
+      args: vec![ssm.clone()].into(),
+    })
+  };
+  // Parse StateSpaceModel[{a, b, c, d}] (d optional for our purposes).
+  let Expr::FunctionCall { name, args } = ssm else {
+    return unevaluated();
+  };
+  if name != "StateSpaceModel" || args.len() != 1 {
+    return unevaluated();
+  }
+  let Expr::List(mats) = &args[0] else {
+    return unevaluated();
+  };
+  if mats.len() < 3 {
+    return unevaluated();
+  }
+  let rows_of = |m: &Expr| -> Option<Vec<Expr>> {
+    match m {
+      Expr::List(rows)
+        if !rows.is_empty()
+          && rows.iter().all(|r| matches!(r, Expr::List(_))) =>
+      {
+        Some(rows.iter().cloned().collect())
+      }
+      _ => None,
+    }
+  };
+  let (Some(a_rows), Some(b_rows), Some(c_rows)) =
+    (rows_of(&mats[0]), rows_of(&mats[1]), rows_of(&mats[2]))
+  else {
+    return unevaluated();
+  };
+  let n = a_rows.len();
+  // a must be square n x n; c must have n columns; b must have n rows.
+  if a_rows
+    .iter()
+    .any(|r| !matches!(r, Expr::List(c) if c.len() == n))
+  {
+    return unevaluated();
+  }
+  let dot = |x: &Expr, y: &Expr| -> Result<Expr, InterpreterError> {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Dot".to_string(),
+      args: vec![x.clone(), y.clone()].into(),
+    })
+  };
+  let a = mats[0].clone();
+  if observability {
+    if c_rows
+      .iter()
+      .any(|r| !matches!(r, Expr::List(cols) if cols.len() == n))
+    {
+      return unevaluated();
+    }
+    // Stack the row blocks of c, c.a, c.a^2, ...
+    let mut block = mats[2].clone();
+    let mut out_rows: Vec<Expr> = Vec::with_capacity(n * c_rows.len());
+    for k in 0..n {
+      if k > 0 {
+        block = dot(&block, &a)?;
+      }
+      let Expr::List(rows) = &block else {
+        return unevaluated();
+      };
+      out_rows.extend(rows.iter().cloned());
+    }
+    Ok(Expr::List(out_rows.into()))
+  } else {
+    if b_rows.len() != n {
+      return unevaluated();
+    }
+    // Join the column blocks of b, a.b, a^2.b, ... — assemble per row.
+    let mut block = mats[1].clone();
+    let mut blocks: Vec<Vec<Expr>> = Vec::with_capacity(n);
+    for k in 0..n {
+      if k > 0 {
+        block = dot(&a, &block)?;
+      }
+      let Expr::List(rows) = &block else {
+        return unevaluated();
+      };
+      let mut block_rows = Vec::with_capacity(n);
+      for r in rows.iter() {
+        let Expr::List(cols) = r else {
+          return unevaluated();
+        };
+        block_rows
+          .push(Expr::List(cols.iter().cloned().collect::<Vec<_>>().into()));
+      }
+      blocks.push(block_rows.into_iter().collect());
+    }
+    let mut out_rows: Vec<Expr> = Vec::with_capacity(n);
+    for i in 0..n {
+      let mut row: Vec<Expr> = Vec::new();
+      for block_rows in &blocks {
+        let Expr::List(cols) = &block_rows[i] else {
+          return unevaluated();
+        };
+        row.extend(cols.iter().cloned());
+      }
+      out_rows.push(Expr::List(row.into()));
+    }
+    Ok(Expr::List(out_rows.into()))
+  }
 }

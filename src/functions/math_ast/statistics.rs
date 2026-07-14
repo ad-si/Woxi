@@ -1,7 +1,10 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, ExprForm, UnaryOperator, expr_to_output,
+  expr_to_string, format_expr,
+};
 
 /// If the first argument is a numeric scalar, emit
 /// `<F>::rectt: Rectangular array expected at position 1 in <call>.`,
@@ -10,17 +13,17 @@ use crate::syntax::Expr;
 /// strings, Infinity, True) and expressions stay unevaluated with no message.
 pub fn emit_rectt_if_numeric(name: &str, args: &[Expr]) {
   if let Some(first) = args.first()
-    && crate::functions::predicate_ast::is_numeric_q_pub(first)
+    && crate::functions::predicate_ast::is_numeric_q(first)
   {
     crate::emit_message(&format!(
       "{}::rectt: Rectangular array expected at position 1 in {}.",
       name,
-      crate::syntax::format_expr(
+      format_expr(
         &Expr::FunctionCall {
           name: name.to_string(),
           args: args.to_vec().into(),
         },
-        crate::syntax::ExprForm::Output
+        ExprForm::Output
       )
     ));
   }
@@ -51,7 +54,7 @@ fn array_dimensions(e: &Expr) -> Option<Vec<usize>> {
 
 /// Whether `e` is a rectangular array — a list whose elements all share the
 /// same dimensions (recursively). Scalars are trivially rectangular.
-pub fn is_rectangular_array(e: &Expr) -> bool {
+fn is_rectangular_array(e: &Expr) -> bool {
   array_dimensions(e).is_some()
 }
 
@@ -59,19 +62,19 @@ pub fn is_rectangular_array(e: &Expr) -> bool {
 /// depth), emit `<F>::rectt: Rectangular array expected at position 1 in
 /// <call>.` and return the unevaluated call. Returns `None` for a valid
 /// rectangular array or a non-list argument.
-pub fn rectt_if_ragged(name: &str, args: &[Expr]) -> Option<Expr> {
+fn rectt_if_ragged(name: &str, args: &[Expr]) -> Option<Expr> {
   if matches!(args.first(), Some(Expr::List(_)))
     && !is_rectangular_array(&args[0])
   {
     crate::emit_message(&format!(
       "{}::rectt: Rectangular array expected at position 1 in {}.",
       name,
-      crate::syntax::format_expr(
+      format_expr(
         &Expr::FunctionCall {
           name: name.to_string(),
           args: args.to_vec().into(),
         },
-        crate::syntax::ExprForm::Output
+        ExprForm::Output
       )
     ));
     Some(Expr::FunctionCall {
@@ -97,7 +100,7 @@ fn all_leaves_real_numeric(e: &Expr) -> bool {
       all_leaves_real_numeric(&args[0])
     }
     _ => {
-      crate::functions::predicate_ast::is_numeric_q_pub(e)
+      crate::functions::predicate_ast::is_numeric_q(e)
         && !crate::functions::predicate_ast::is_complex_number(e)
     }
   }
@@ -118,12 +121,12 @@ pub fn rectn_if_not_real_rectangular(
     crate::emit_message(&format!(
       "{}::rectn: A rectangular array of real numbers is expected at position 1 in {}.",
       name,
-      crate::syntax::format_expr(
+      format_expr(
         &Expr::FunctionCall {
           name: name.to_string(),
           args: args.to_vec().into(),
         },
-        crate::syntax::ExprForm::Output
+        ExprForm::Output
       )
     ));
     Some(Expr::FunctionCall {
@@ -154,11 +157,8 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() > 2 {
     crate::emit_message(&format!(
       "Total::nonopt: Options expected (instead of {}) beyond position 2 in {}. An option must be a rule or a list of rules.",
-      crate::syntax::format_expr(&args[2], crate::syntax::ExprForm::Output),
-      crate::syntax::format_expr(
-        &unevaluated(),
-        crate::syntax::ExprForm::Output
-      )
+      format_expr(&args[2], ExprForm::Output),
+      format_expr(&unevaluated(), ExprForm::Output)
     ));
     return Ok(unevaluated());
   }
@@ -264,7 +264,7 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       crate::emit_message(&format!(
         "Total::tllen: Lists of unequal length in {} cannot be added.",
-        crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+        format_expr(&args[0], ExprForm::Output)
       ));
       Ok(Expr::FunctionCall {
         name: "Total".to_string(),
@@ -305,18 +305,18 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // True, x + y, f[…], rules) stays unevaluated with no message, matching
     // wolframscript.
     other => {
-      if crate::functions::predicate_ast::is_numeric_q_pub(other) {
+      if crate::functions::predicate_ast::is_numeric_q(other) {
         Ok(other.clone())
       } else {
         if matches!(other, Expr::String(_)) {
           crate::emit_message(&format!(
             "Total::normal: Nonatomic expression expected at position 1 in {}.",
-            crate::syntax::format_expr(
+            format_expr(
               &Expr::FunctionCall {
                 name: "Total".to_string(),
                 args: args.to_vec().into(),
               },
-              crate::syntax::ExprForm::Output
+              ExprForm::Output
             )
           ));
         }
@@ -337,7 +337,7 @@ pub enum TotalLevelSpec {
 
 /// Sum a list at level 1 using Plus (Apply[Plus, list])
 /// Handles nested lists by recursively adding element-wise.
-pub fn total_sum_level1(items: &[Expr]) -> Result<Expr, InterpreterError> {
+fn total_sum_level1(items: &[Expr]) -> Result<Expr, InterpreterError> {
   if items.is_empty() {
     return Ok(Expr::Integer(0));
   }
@@ -356,10 +356,7 @@ pub fn total_sum_level1(items: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Recursively add two expressions, threading over lists element-wise
-pub fn add_exprs_recursive(
-  a: &Expr,
-  b: &Expr,
-) -> Result<Expr, InterpreterError> {
+fn add_exprs_recursive(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
   match (a, b) {
     (Expr::List(la), Expr::List(lb)) if la.len() == lb.len() => {
       let results: Result<Vec<Expr>, _> = la
@@ -380,7 +377,7 @@ pub fn add_exprs_recursive(
 }
 
 /// Recursively apply Total with level spec
-pub fn total_with_level(
+fn total_with_level(
   expr: &Expr,
   level_spec: &TotalLevelSpec,
 ) -> Result<Expr, InterpreterError> {
@@ -394,7 +391,7 @@ pub fn total_with_level(
 /// Total[list, {n1, n2}] - sum across levels n1 through n2 (inclusive),
 /// collapsing those levels into a scalar while preserving the structure
 /// above n1 and (implicitly) below n2.
-pub fn total_range_levels(
+fn total_range_levels(
   expr: &Expr,
   n1: usize,
   n2: usize,
@@ -420,7 +417,7 @@ pub fn total_range_levels(
 
 /// Total[list, n] - sum across levels 1 through n
 /// Level 0 means no summing, level 1 means Apply[Plus, list], etc.
-pub fn total_through_level(
+fn total_through_level(
   expr: &Expr,
   n: usize,
 ) -> Result<Expr, InterpreterError> {
@@ -446,7 +443,7 @@ pub fn total_through_level(
 
 /// Total[list, {n}] - sum at exactly level n
 /// Level 1 = sum the outermost list, level 2 = sum each sublist, etc.
-pub fn total_at_exact_level(
+fn total_at_exact_level(
   expr: &Expr,
   n: usize,
 ) -> Result<Expr, InterpreterError> {
@@ -475,11 +472,103 @@ pub fn total_at_exact_level(
 }
 
 /// Mean[list] - Arithmetic mean
+/// For MixtureDistribution[{w1, …}, {d1, …}], combine a per-component quantity
+/// `q(d_i)` (mean, PDF, CDF, …) into the weight-normalized sum
+/// `Σ w_i q(d_i) / Σ w_i`. Returns None if the weights/components are malformed
+/// or a component quantity can't be evaluated to a value (i.e. stays a
+/// symbolic function call), so the caller leaves the whole thing unevaluated.
+pub(crate) fn mixture_weighted_component_quantity(
+  dargs: &[Expr],
+  quantity: impl Fn(&Expr) -> Result<Expr, InterpreterError>,
+) -> Result<Option<Expr>, InterpreterError> {
+  let (Expr::List(weights), Expr::List(dists)) = (&dargs[0], &dargs[1]) else {
+    return Ok(None);
+  };
+  if weights.is_empty() || weights.len() != dists.len() {
+    return Ok(None);
+  }
+  let call = |name: &str, a: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: a.into(),
+  };
+  // Distribute the normalizing weight into every term — Σ (w_i/W) q(d_i) —
+  // rather than dividing the summed numerator, so the result matches
+  // wolframscript's form (e.g. `1/(2 Sqrt[2 Pi]) + …` instead of `(… )/2`).
+  let inv_w = call(
+    "Power",
+    vec![call("Plus", weights.to_vec()), Expr::Integer(-1)],
+  );
+  let mut terms: Vec<Expr> = Vec::with_capacity(weights.len());
+  for (w, d) in weights.iter().zip(dists.iter()) {
+    let q = quantity(d)?;
+    // If the component quantity didn't resolve (still a Mean[…]/PDF[…] head),
+    // bail so the mixture call stays unevaluated too.
+    if matches!(&q, Expr::FunctionCall { name, .. }
+      if name == "Mean" || name == "Variance" || name == "PDF" || name == "CDF")
+    {
+      return Ok(None);
+    }
+    terms.push(call("Times", vec![w.clone(), inv_w.clone(), q]));
+  }
+  let result = call("Plus", terms);
+  Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?))
+}
+
+/// Variance of MixtureDistribution via the law of total variance:
+/// Var = Σ (w_i/W)(σ_i² + μ_i²) − (Σ (w_i/W) μ_i)².
+fn mixture_variance(dargs: &[Expr]) -> Result<Option<Expr>, InterpreterError> {
+  let (Expr::List(weights), Expr::List(dists)) = (&dargs[0], &dargs[1]) else {
+    return Ok(None);
+  };
+  if weights.is_empty() || weights.len() != dists.len() {
+    return Ok(None);
+  }
+  let call = |name: &str, a: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: a.into(),
+  };
+  let resolved = |q: &Expr| {
+    !matches!(q, Expr::FunctionCall { name, .. }
+      if name == "Mean" || name == "Variance")
+  };
+  // Σ w_i (σ_i² + μ_i²) and Σ w_i μ_i.
+  let mut ex2_terms: Vec<Expr> = Vec::with_capacity(weights.len());
+  let mut mean_terms: Vec<Expr> = Vec::with_capacity(weights.len());
+  for (w, d) in weights.iter().zip(dists.iter()) {
+    let mu = mean_ast(std::slice::from_ref(d))?;
+    let var = variance_ast(std::slice::from_ref(d))?;
+    if !resolved(&mu) || !resolved(&var) {
+      return Ok(None);
+    }
+    let mu2 = call("Power", vec![mu.clone(), Expr::Integer(2)]);
+    ex2_terms
+      .push(call("Times", vec![w.clone(), call("Plus", vec![var, mu2])]));
+    mean_terms.push(call("Times", vec![w.clone(), mu]));
+  }
+  let w_total = call("Plus", weights.to_vec());
+  let inv_w = call("Power", vec![w_total, Expr::Integer(-1)]);
+  // E[X²] = (Σ w_i (σ_i²+μ_i²)) / W ; μ = (Σ w_i μ_i) / W.
+  let ex2 = call("Times", vec![call("Plus", ex2_terms), inv_w.clone()]);
+  let mean = call("Times", vec![call("Plus", mean_terms), inv_w]);
+  let mean2 = call("Power", vec![mean, Expr::Integer(2)]);
+  let result = call(
+    "Plus",
+    vec![ex2, call("Times", vec![Expr::Integer(-1), mean2])],
+  );
+  Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?))
+}
+
 pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "Mean expects exactly 1 argument".into(),
     ));
+  }
+  // A SparseArray argument is averaged over its dense form.
+  if let Some(dense) =
+    crate::functions::list_helpers_ast::densify_sparse_array(&args[0])
+  {
+    return mean_ast(&[dense]);
   }
   // A ragged / mixed-depth list is not a rectangular array: emit ::rectt
   // and stay unevaluated rather than producing a bogus column-wise result.
@@ -551,7 +640,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // while a Quantity sum collapses (Quantity[6, Meters]/2 →
         // Quantity[3, Meters]), matching wolframscript.
         crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(evaluated_sum),
           right: Box::new(Expr::Integer(n)),
         })
@@ -594,6 +683,17 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "HalfNormalDistribution"
         | "InverseGammaDistribution"
         | "HypoexponentialDistribution"
+        | "CoxianDistribution"
+        | "HyperexponentialDistribution"
+        | "BeniniDistribution"
+        | "HotellingTSquareDistribution"
+        | "TukeyLambdaDistribution"
+        | "TsallisQGaussianDistribution"
+        | "VarianceGammaDistribution"
+        | "HoytDistribution"
+        | "CompoundPoissonDistribution"
+        | "WakebyDistribution"
+        | "VonMisesDistribution"
         | "InverseGaussianDistribution"
         | "LogisticDistribution"
         | "GeometricDistribution"
@@ -643,9 +743,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Invalid parameters (e.g. BenktanderGibratDistribution[1, 2]) emit a
       // message and leave the call unevaluated, matching wolframscript;
       // they must not surface as an evaluation error.
-      match super::distributions::distribution_mean_variance_pub(
-        dist_name, dargs,
-      ) {
+      match super::distributions::distribution_mean_variance(dist_name, dargs) {
         Ok((mean, _)) => crate::evaluator::evaluate_expr_to_expr(&mean),
         Err(_) => Ok(Expr::FunctionCall {
           name: "Mean".to_string(),
@@ -657,9 +755,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: dist_name,
       args: dargs,
     } if dist_name == "JohnsonDistribution" => {
-      match super::distributions::distribution_mean_variance_pub(
-        dist_name, dargs,
-      ) {
+      match super::distributions::distribution_mean_variance(dist_name, dargs) {
         Ok((mean, _)) => crate::evaluator::evaluate_expr_to_expr(&mean),
         Err(_) => Ok(Expr::FunctionCall {
           name: "Mean".to_string(),
@@ -674,9 +770,90 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::FunctionCall {
       name: dist_name,
       args: dargs,
+    } if dist_name == "MixtureDistribution" && dargs.len() == 2 => {
+      // Mean of a mixture is the weight-normalized average of the component
+      // means: Σ w_i Mean[dist_i] / Σ w_i.
+      match mixture_weighted_component_quantity(dargs, |d| {
+        mean_ast(std::slice::from_ref(d))
+      })? {
+        Some(mean) => Ok(mean),
+        None => Ok(Expr::FunctionCall {
+          name: "Mean".to_string(),
+          args: args.to_vec().into(),
+        }),
+      }
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
     } if dist_name == "MultinomialDistribution" => {
       let (mean, _) = super::distributions::multinomial_mean_variance(dargs)?;
       Ok(mean)
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
+    } if dist_name == "NegativeMultinomialDistribution" => {
+      let (mean, _) =
+        super::distributions::negative_multinomial_mean_variance(dargs)?;
+      Ok(mean)
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
+    } if dist_name == "WishartMatrixDistribution" && dargs.len() == 2 => {
+      // Invalid parameters have already emitted their message; the call
+      // stays unevaluated.
+      match super::distributions::wishart_mean_variance(dargs) {
+        Ok((mean, _)) => Ok(mean),
+        Err(_) => Ok(Expr::FunctionCall {
+          name: "Mean".to_string(),
+          args: args.to_vec().into(),
+        }),
+      }
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
+    } if dist_name == "FirstPassageTimeDistribution" && dargs.len() == 2 => {
+      match super::distributions::fptd_mean(dargs)? {
+        Some(mean) => Ok(mean),
+        None => Ok(Expr::FunctionCall {
+          name: "Mean".to_string(),
+          args: args.to_vec().into(),
+        }),
+      }
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
+    } if dist_name == "StationaryDistribution" && dargs.len() == 1 => {
+      // Mean of a Markov chain's stationary distribution: Σ k π_k.
+      if let Expr::FunctionCall { name, args: mp } = &dargs[0]
+        && name == "DiscreteMarkovProcess"
+        && let Some(mean) = super::distributions::dmp_stationary_mean(mp)?
+      {
+        return Ok(mean);
+      }
+      Ok(Expr::FunctionCall {
+        name: "Mean".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
+    } if dist_name == "StandbyDistribution" && dargs.len() == 2 => {
+      // Cold-standby lifetimes add, so component moments sum. (The
+      // all-exponential case never reaches here — the constructor
+      // rewrites it to HypoexponentialDistribution.)
+      match standby_component_moments(dargs, mean_ast)? {
+        Some(total) => Ok(total),
+        None => Ok(Expr::FunctionCall {
+          name: "Mean".to_string(),
+          args: args.to_vec().into(),
+        }),
+      }
     }
     Expr::FunctionCall {
       name: dist_name,
@@ -721,6 +898,20 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let values: Vec<Expr> = pairs.iter().map(|(_, v)| v.clone()).collect();
       mean_ast(&[Expr::List(values.into())])
     }
+    // Random-process time slices delegate to their slice distribution.
+    Expr::CurriedCall { func, args: targs } if targs.len() == 1 => {
+      if let Expr::FunctionCall { name, args: dargs } = func.as_ref()
+        && let Some(slice) = super::distributions::process_slice_distribution(
+          name, dargs, &targs[0],
+        )
+      {
+        return mean_ast(&[slice]);
+      }
+      Ok(Expr::FunctionCall {
+        name: "Mean".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
     _ => {
       emit_rectt_if_numeric("Mean", args);
       Ok(Expr::FunctionCall {
@@ -731,8 +922,42 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// The sum of a per-component moment (Mean or Variance) over the
+/// components of StandbyDistribution[d1, {d2, …}]. Returns Ok(None) when
+/// any component moment stays unevaluated, so the caller echoes the call.
+fn standby_component_moments(
+  dargs: &[Expr],
+  moment: fn(&[Expr]) -> Result<Expr, InterpreterError>,
+) -> Result<Option<Expr>, InterpreterError> {
+  let Expr::List(rest) = &dargs[1] else {
+    return Ok(None);
+  };
+  if rest.is_empty() {
+    return Ok(None);
+  }
+  let mut components = vec![dargs[0].clone()];
+  components.extend(rest.iter().cloned());
+  let mut terms = Vec::with_capacity(components.len());
+  for comp in &components {
+    let m = moment(std::slice::from_ref(comp))?;
+    // A moment that came back as the unevaluated call means the
+    // component distribution is unsupported.
+    if matches!(&m, Expr::FunctionCall { name, .. }
+      if name == "Mean" || name == "Variance")
+    {
+      return Ok(None);
+    }
+    terms.push(m);
+  }
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  })
+  .map(Some)
+}
+
 /// Mean of columns in a list-of-lists (matrix)
-pub fn mean_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
+fn mean_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
   let row_vecs: Vec<&crate::ExprList> = rows
     .iter()
     .filter_map(|r| {
@@ -779,6 +1004,12 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Variance expects exactly 1 argument".into(),
     ));
   }
+  // A SparseArray argument is handled via its dense form.
+  if let Some(dense) =
+    crate::functions::list_helpers_ast::densify_sparse_array(&args[0])
+  {
+    return variance_ast(&[dense]);
+  }
   if let Some(uneval) = rectt_if_ragged("Variance", args) {
     return Ok(uneval);
   }
@@ -790,7 +1021,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if items.len() == 1 {
           crate::emit_message(&format!(
             "Variance::shlen: The argument {} should have at least two elements.",
-            crate::syntax::expr_to_string(&args[0])
+            expr_to_string(&args[0])
           ));
         }
         return Ok(Expr::FunctionCall {
@@ -898,6 +1129,16 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "ExtremeValueDistribution"
         | "HalfNormalDistribution"
         | "HypoexponentialDistribution"
+        | "CoxianDistribution"
+        | "HyperexponentialDistribution"
+        | "BeniniDistribution"
+        | "HotellingTSquareDistribution"
+        | "TukeyLambdaDistribution"
+        | "TsallisQGaussianDistribution"
+        | "VarianceGammaDistribution"
+        | "HoytDistribution"
+        | "CompoundPoissonDistribution"
+        | "WakebyDistribution"
         | "InverseGammaDistribution"
         | "InverseGaussianDistribution"
         | "LogisticDistribution"
@@ -943,9 +1184,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       // Invalid parameters emit a message and leave the call unevaluated
       // (matching wolframscript), never an evaluation error.
-      match super::distributions::distribution_mean_variance_pub(
-        dist_name, dargs,
-      ) {
+      match super::distributions::distribution_mean_variance(dist_name, dargs) {
         Ok((_, variance)) => crate::evaluator::evaluate_expr_to_expr(&variance),
         Err(_) => Ok(Expr::FunctionCall {
           name: "Variance".to_string(),
@@ -957,9 +1196,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: dist_name,
       args: dargs,
     } if dist_name == "JohnsonDistribution" => {
-      match super::distributions::distribution_mean_variance_pub(
-        dist_name, dargs,
-      ) {
+      match super::distributions::distribution_mean_variance(dist_name, dargs) {
         Ok((_, variance)) => crate::evaluator::evaluate_expr_to_expr(&variance),
         Err(_) => Ok(Expr::FunctionCall {
           name: "Variance".to_string(),
@@ -974,10 +1211,71 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::FunctionCall {
       name: dist_name,
       args: dargs,
+    } if dist_name == "MixtureDistribution" && dargs.len() == 2 => {
+      // Law of total variance for a mixture:
+      //   Var = Σ (w_i/W)(σ_i² + μ_i²) − (Σ (w_i/W) μ_i)²
+      match mixture_variance(dargs)? {
+        Some(v) => Ok(v),
+        None => Ok(Expr::FunctionCall {
+          name: "Variance".to_string(),
+          args: args.to_vec().into(),
+        }),
+      }
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
     } if dist_name == "MultinomialDistribution" => {
       let (_, variance) =
         super::distributions::multinomial_mean_variance(dargs)?;
       Ok(variance)
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
+    } if dist_name == "NegativeMultinomialDistribution" => {
+      let (_, variance) =
+        super::distributions::negative_multinomial_mean_variance(dargs)?;
+      Ok(variance)
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
+    } if dist_name == "WishartMatrixDistribution" && dargs.len() == 2 => {
+      // Invalid parameters have already emitted their message; the call
+      // stays unevaluated.
+      match super::distributions::wishart_mean_variance(dargs) {
+        Ok((_, variance)) => Ok(variance),
+        Err(_) => Ok(Expr::FunctionCall {
+          name: "Variance".to_string(),
+          args: args.to_vec().into(),
+        }),
+      }
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
+    } if dist_name == "FirstPassageTimeDistribution" && dargs.len() == 2 => {
+      match super::distributions::fptd_variance(dargs)? {
+        Some(variance) => Ok(variance),
+        None => Ok(Expr::FunctionCall {
+          name: "Variance".to_string(),
+          args: args.to_vec().into(),
+        }),
+      }
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
+    } if dist_name == "StandbyDistribution" && dargs.len() == 2 => {
+      // Independent lifetimes add, so variances sum too.
+      match standby_component_moments(dargs, variance_ast)? {
+        Some(total) => Ok(total),
+        None => Ok(Expr::FunctionCall {
+          name: "Variance".to_string(),
+          args: args.to_vec().into(),
+        }),
+      }
     }
     Expr::FunctionCall {
       name: dist_name,
@@ -1002,7 +1300,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       match super::distributions::binormal_params(dargs) {
         Some((_, _, s1, s2, _)) => {
           let sq = |s: Expr| Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left: Box::new(s),
             right: Box::new(Expr::Integer(2)),
           };
@@ -1023,13 +1321,27 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Variance[QuantityDistribution[dist, unit]] = Quantity[Variance[dist], unit^2]
       let inner_var = variance_ast(&[dargs[0].clone()])?;
       let unit_sq = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left: Box::new(dargs[1].clone()),
         right: Box::new(Expr::Integer(2)),
       };
       Ok(Expr::FunctionCall {
         name: "Quantity".to_string(),
         args: vec![inner_var, unit_sq].into(),
+      })
+    }
+    // Random-process time slices delegate to their slice distribution.
+    Expr::CurriedCall { func, args: targs } if targs.len() == 1 => {
+      if let Expr::FunctionCall { name, args: dargs } = func.as_ref()
+        && let Some(slice) = super::distributions::process_slice_distribution(
+          name, dargs, &targs[0],
+        )
+      {
+        return variance_ast(&[slice]);
+      }
+      Ok(Expr::FunctionCall {
+        name: "Variance".to_string(),
+        args: args.to_vec().into(),
       })
     }
     _ => {
@@ -1043,7 +1355,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Compute variance symbolically
-pub fn variance_symbolic(items: &[Expr]) -> Result<Expr, InterpreterError> {
+fn variance_symbolic(items: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = items.len();
   if n < 2 {
     return Err(InterpreterError::EvaluationError(
@@ -1061,7 +1373,7 @@ pub fn variance_symbolic(items: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Variance of columns in a list-of-lists (matrix)
-pub fn variance_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
+fn variance_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
   let row_vecs: Vec<&crate::ExprList> = rows
     .iter()
     .filter_map(|r| {
@@ -1106,6 +1418,12 @@ pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "StandardDeviation expects exactly 1 argument".into(),
     ));
   }
+  // A SparseArray argument is handled via its dense form.
+  if let Some(dense) =
+    crate::functions::list_helpers_ast::densify_sparse_array(&args[0])
+  {
+    return standard_deviation_ast(&[dense]);
+  }
   if let Some(uneval) = rectt_if_ragged("StandardDeviation", args) {
     return Ok(uneval);
   }
@@ -1119,7 +1437,7 @@ pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if items.len() == 1 {
       crate::emit_message(&format!(
         "StandardDeviation::shlen: The argument {} should have at least two elements.",
-        crate::syntax::expr_to_string(&args[0])
+        expr_to_string(&args[0])
       ));
     }
     return Ok(Expr::FunctionCall {
@@ -1130,7 +1448,7 @@ pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A numeric scalar isn't a rectangular array: emit StandardDeviation::rectt
   // directly and stay unevaluated, rather than delegating to Variance below
   // (which would emit Variance::rectt instead).
-  if crate::functions::predicate_ast::is_numeric_q_pub(&args[0]) {
+  if crate::functions::predicate_ast::is_numeric_q(&args[0]) {
     emit_rectt_if_numeric("StandardDeviation", args);
     return Ok(Expr::FunctionCall {
       name: "StandardDeviation".to_string(),
@@ -1328,8 +1646,6 @@ fn try_sqrt_extract_denom_factors(
   use crate::functions::polynomial_ast::{
     build_product, collect_multiplicative_factors,
   };
-  use crate::syntax::BinaryOperator;
-
   // Build `base^half`, collapsing the exponent to a bare base when half == 1.
   let power_or_base = |base: Expr, half: i128| -> Expr {
     if half == 1 {
@@ -1441,6 +1757,12 @@ pub fn geometric_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "GeometricMean expects exactly 1 argument".into(),
     ));
   }
+  // A SparseArray argument is handled via its dense form.
+  if let Some(dense) =
+    crate::functions::list_helpers_ast::densify_sparse_array(&args[0])
+  {
+    return geometric_mean_ast(&[dense]);
+  }
   match &args[0] {
     Expr::List(items) => {
       // An empty list stays unevaluated (matching wolframscript) rather than
@@ -1543,6 +1865,12 @@ pub fn harmonic_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "HarmonicMean expects exactly 1 argument".into(),
     ));
   }
+  // A SparseArray argument is handled via its dense form.
+  if let Some(dense) =
+    crate::functions::list_helpers_ast::densify_sparse_array(&args[0])
+  {
+    return harmonic_mean_ast(&[dense]);
+  }
   match &args[0] {
     Expr::List(items) => {
       // An empty list stays unevaluated (matching wolframscript).
@@ -1559,10 +1887,9 @@ pub fn harmonic_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for item in items {
         match item {
           Expr::Integer(n) => {
+            // A zero element makes 1/x infinite, so the harmonic mean is 0.
             if *n == 0 {
-              return Err(InterpreterError::EvaluationError(
-                "HarmonicMean: division by zero".into(),
-              ));
+              return Ok(Expr::Integer(0));
             }
             int_vals.push(*n);
           }
@@ -1605,10 +1932,9 @@ pub fn harmonic_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let mut vals = Vec::new();
         for item in items {
           if let Some(v) = expr_to_num(item) {
+            // A zero element gives an exact harmonic mean of 0.
             if v == 0.0 {
-              return Err(InterpreterError::EvaluationError(
-                "HarmonicMean: division by zero".into(),
-              ));
+              return Ok(Expr::Integer(0));
             }
             vals.push(v);
           } else {
@@ -1648,7 +1974,7 @@ fn harmonic_mean_symbolic(items: &[Expr]) -> Result<Expr, InterpreterError> {
   let recips: Vec<Expr> = items
     .iter()
     .map(|x| Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(Expr::Integer(1)),
       right: Box::new(x.clone()),
     })
@@ -1659,7 +1985,7 @@ fn harmonic_mean_symbolic(items: &[Expr]) -> Result<Expr, InterpreterError> {
   })?;
   let n = items.len() as i128;
   crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(Expr::Integer(n)),
     right: Box::new(sum),
   })
@@ -1729,7 +2055,7 @@ pub fn contraharmonic_mean_ast(
     if matches!(&args[1], Expr::List(_)) {
       crate::emit_message(&format!(
         "ContraharmonicMean::scalar: Argument {} at position 2 is not a scalar.",
-        crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output)
+        format_expr(&args[1], ExprForm::Output)
       ));
       return unevaluated();
     }
@@ -1870,12 +2196,12 @@ fn covariance_pair(xs: &[Expr], ys: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut terms = Vec::with_capacity(n);
   for (x, y) in xs.iter().zip(ys.iter()) {
     let dx = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(x.clone()),
       right: Box::new(mean_x.clone()),
     };
     let dy = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(y.clone()),
       right: Box::new(mean_y.clone()),
     };
@@ -1884,7 +2210,7 @@ fn covariance_pair(xs: &[Expr], ys: &[Expr]) -> Result<Expr, InterpreterError> {
       args: vec![dy].into(),
     };
     let product = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left: Box::new(dx),
       right: Box::new(conj_dy),
     };
@@ -1898,7 +2224,7 @@ fn covariance_pair(xs: &[Expr], ys: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let sum_val = crate::evaluator::evaluate_expr_to_expr(&sum_expr)?;
   let result = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(sum_val),
     right: Box::new(Expr::Integer((n - 1) as i128)),
   };
@@ -1920,7 +2246,7 @@ fn symbolic_covariance(
   xs: &[Expr],
   ys: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  use crate::syntax::BinaryOperator::{Divide, Minus, Times};
+  use BinaryOperator::{Divide, Minus, Times};
   let n = xs.len();
   let conj = |e: &Expr| Expr::FunctionCall {
     name: "Conjugate".to_string(),
@@ -2008,6 +2334,15 @@ pub fn covariance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return super::distributions::dirichlet_covariance(dargs);
   }
 
+  // Covariance[NegativeMultinomialDistribution[n, {p1, …}]] is the k×k
+  // covariance matrix.
+  if args.len() == 1
+    && let Expr::FunctionCall { name, args: dargs } = &args[0]
+    && name == "NegativeMultinomialDistribution"
+  {
+    return super::distributions::negative_multinomial_covariance(dargs);
+  }
+
   // Covariance[BinormalDistribution[…, {s1, s2}, rho]] is the 2×2 covariance
   // matrix {{s1^2, rho s1 s2}, {rho s1 s2, s2^2}}.
   if args.len() == 1
@@ -2016,7 +2351,7 @@ pub fn covariance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Some((_, _, s1, s2, rho)) =
       super::distributions::binormal_params(dargs)
   {
-    use crate::syntax::BinaryOperator::{Power, Times};
+    use BinaryOperator::{Power, Times};
     let sq = |s: Expr| Expr::BinaryOp {
       op: Power,
       left: Box::new(s),
@@ -2364,7 +2699,7 @@ pub fn hoeffding_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let dtlnth = |pos: usize, arg: &Expr| {
     crate::emit_message(&format!(
       "HoeffdingD::dtlnth: The argument {} at position {} is expected to have length greater than 5.",
-      crate::syntax::expr_to_output(arg),
+      expr_to_output(arg),
       pos
     ));
     unevaluated()
@@ -2710,7 +3045,7 @@ pub fn blomqvist_beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // emit Divide::indet instead).
     if exact || a * b == 0 {
       crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::Integer(num)),
         right: Box::new(Expr::FunctionCall {
           name: "Sqrt".to_string(),
@@ -2724,7 +3059,57 @@ pub fn blomqvist_beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   rank_statistic_forms("BlomqvistBeta", args, &pair)
 }
 
+/// Build the correlation matrix from a covariance matrix (a list of lists):
+/// Corr[i, j] = Cov[i, j] / Sqrt[Cov[i, i] * Cov[j, j]]. Returns None if the
+/// argument isn't a square numeric-or-symbolic covariance matrix.
+fn correlation_from_covariance(cov_rows: &[Expr]) -> Option<Expr> {
+  let n = cov_rows.len();
+  let mut cov: Vec<Vec<Expr>> = Vec::with_capacity(n);
+  for r in cov_rows {
+    let Expr::List(row) = r else { return None };
+    if row.len() != n {
+      return None;
+    }
+    cov.push(row.to_vec());
+  }
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let mut result = Vec::with_capacity(n);
+  for i in 0..n {
+    let mut row = Vec::with_capacity(n);
+    for j in 0..n {
+      // Cov[i, j] / Sqrt[Cov[i, i] * Cov[j, j]]
+      let denom = call(
+        "Power",
+        vec![
+          call("Times", vec![cov[i][i].clone(), cov[j][j].clone()]),
+          call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
+        ],
+      );
+      let entry = call("Times", vec![cov[i][j].clone(), denom]);
+      row.push(crate::evaluator::evaluate_expr_to_expr(&entry).ok()?);
+    }
+    result.push(Expr::List(row.into()));
+  }
+  Some(Expr::List(result.into()))
+}
+
 pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // SparseArray arguments are handled via their dense forms.
+  if args.iter().any(|a| {
+    crate::functions::list_helpers_ast::densify_sparse_array(a).is_some()
+  }) {
+    let new_args: Vec<Expr> = args
+      .iter()
+      .map(|a| {
+        crate::functions::list_helpers_ast::densify_sparse_array(a)
+          .unwrap_or_else(|| a.clone())
+      })
+      .collect();
+    return correlation_ast(&new_args);
+  }
   let unevaluated = || {
     Ok(Expr::FunctionCall {
       name: "Correlation".to_string(),
@@ -2744,6 +3129,21 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // A flat vector is one variable, so it correlates perfectly with itself.
       if items.iter().all(|r| !matches!(r, Expr::List(_))) {
         return Ok(Expr::Integer(1));
+      }
+    }
+    // A distribution's correlation matrix is its normalized covariance
+    // (Correlation[BinormalDistribution[rho]] = {{1, rho}, {rho, 1}}).
+    if !matches!(&args[0], Expr::List(_)) {
+      let cov = crate::evaluator::evaluate_function_call_ast(
+        "Covariance",
+        std::slice::from_ref(&args[0]),
+      );
+      if let Ok(Expr::List(ref rows)) = cov
+        && !rows.is_empty()
+        && rows.iter().all(|r| matches!(r, Expr::List(_)))
+        && let Some(corr) = correlation_from_covariance(rows)
+      {
+        return Ok(corr);
       }
     }
     return unevaluated();
@@ -2808,7 +3208,7 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let w0 = ys[0].clone();
       let w1 = ys[1].clone();
       let diff = |a: &Expr, b: &Expr| Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Minus,
+        op: BinaryOperator::Minus,
         left: Box::new(a.clone()),
         right: Box::new(b.clone()),
       };
@@ -2821,7 +3221,7 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         args: vec![a, b].into(),
       };
       let conj_diff = |a: &Expr, b: &Expr| Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Minus,
+        op: BinaryOperator::Minus,
         left: Box::new(conj(a)),
         right: Box::new(conj(b)),
       };
@@ -2843,7 +3243,7 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // inside each Sqrt (which Woxi's canonical sort would otherwise
       // reorder differently than wolframscript for some variable names).
       return Ok(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(numer),
         right: Box::new(denom),
       });
@@ -2902,7 +3302,7 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
   let var_product = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Times,
+    op: BinaryOperator::Times,
     left: Box::new(var_x),
     right: Box::new(var_y),
   };
@@ -2911,7 +3311,7 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args: vec![var_product].into(),
   };
   let result = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(cov_xy),
     right: Box::new(denom),
   };
@@ -2962,7 +3362,7 @@ fn distribution_raw_moment(
   var: &str,
 ) -> Result<Option<Expr>, InterpreterError> {
   let powered = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(Expr::Identifier(var.to_string())),
     right: Box::new(Expr::Integer(n)),
   };
@@ -3049,13 +3449,13 @@ fn skellam_central_moment(a: &Expr, b: &Expr, n: i128) -> Expr {
   let kappa = |j: usize| -> Expr {
     if j.is_multiple_of(2) {
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
+        op: BinaryOperator::Plus,
         left: Box::new(a.clone()),
         right: Box::new(b.clone()),
       }
     } else {
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Minus,
+        op: BinaryOperator::Minus,
         left: Box::new(a.clone()),
         right: Box::new(b.clone()),
       }
@@ -3118,6 +3518,164 @@ fn distribution_moment(
     )?));
   }
 
+  // Laplace central moments are 0 for odd n and n!*b^n for even n. The generic
+  // raw-moment path only closes for small n (E[x^k] needs incomplete Gammas),
+  // so give the closed form directly. This lets Skewness reduce to 0 and
+  // Kurtosis to 6.
+  if let Some((_, b)) = two_params_of(dist, "LaplaceDistribution") {
+    let result = if n.rem_euclid(2) == 1 {
+      Expr::Integer(0)
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Expr::Integer(fact_i128(n)),
+          Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: Box::new(b),
+            right: Box::new(Expr::Integer(n)),
+          },
+        ]
+        .into(),
+      }
+    };
+    return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
+  }
+
+  // The Cauchy distribution has no finite moments: every central moment of
+  // order >= 1 is Indeterminate (the raw-moment path just fails to close, so
+  // Skewness/Kurtosis would otherwise carry an unevaluated CentralMoment).
+  if two_params_of(dist, "CauchyDistribution").is_some() {
+    return Ok(Some(if n == 0 {
+      Expr::Integer(1)
+    } else {
+      Expr::Identifier("Indeterminate".to_string())
+    }));
+  }
+
+  // Logistic central moments are 0 for odd n and, for even n,
+  //   (-1)^(n/2-1) * (2^n - 2) * BernoulliB[n] * Pi^n * b^n
+  // (from the central MGF Pi t / Sin[Pi t]). The generic raw-moment path does
+  // not close, so give the closed form directly; this lets Skewness reduce to
+  // 0 and Kurtosis to 21/5.
+  if let Some((_, b)) = two_params_of(dist, "LogisticDistribution") {
+    let power = |base: Expr, exp: Expr| Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(base),
+      right: Box::new(exp),
+    };
+    let result = if n.rem_euclid(2) == 1 {
+      Expr::Integer(0)
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          // (-1)^(n/2 - 1)
+          power(Expr::Integer(-1), Expr::Integer(n / 2 - 1)),
+          // 2^n - 2 (kept symbolic so large n does not overflow)
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![
+              power(Expr::Integer(2), Expr::Integer(n)),
+              Expr::Integer(-2),
+            ]
+            .into(),
+          },
+          Expr::FunctionCall {
+            name: "BernoulliB".to_string(),
+            args: vec![Expr::Integer(n)].into(),
+          },
+          power(Expr::Identifier("Pi".to_string()), Expr::Integer(n)),
+          power(b, Expr::Integer(n)),
+        ]
+        .into(),
+      }
+    };
+    return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
+  }
+
+  // Uniform[{a, b}] is symmetric, with central moments 0 for odd n and
+  //   (b - a)^n / (2^n * (n + 1))   for even n.
+  // The generic raw-moment assembly leaves an un-collected polynomial mess, so
+  // give the compact closed form directly (matching wolframscript, e.g. CM4 is
+  // (-a + b)^4/80 and Kurtosis reduces to 9/5).
+  if let Expr::FunctionCall { name, args } = dist
+    && name == "UniformDistribution"
+    && args.len() == 1
+    && let Expr::List(bounds) = &args[0]
+    && bounds.len() == 2
+  {
+    let (a, b) = (bounds[0].clone(), bounds[1].clone());
+    let result = if n.rem_euclid(2) == 1 {
+      Expr::Integer(0)
+    } else {
+      let diff = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          b,
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), a].into(),
+          },
+        ]
+        .into(),
+      };
+      let num = Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(diff),
+        right: Box::new(Expr::Integer(n)),
+      };
+      // 2^n * (n + 1), kept symbolic so large n does not overflow.
+      let denom = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: Box::new(Expr::Integer(2)),
+            right: Box::new(Expr::Integer(n)),
+          },
+          Expr::Integer(n + 1),
+        ]
+        .into(),
+      };
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(num),
+        right: Box::new(denom),
+      }
+    };
+    return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
+  }
+
+  // Hyperbolic-secant central moments are 0 for odd n and, for even n,
+  //   (-1)^(n/2) * EulerE[n] * s^n
+  // (the even moments are the Euler numbers). This gives Skewness 0 and
+  // Kurtosis 5.
+  if let Some((_, s)) = two_params_of(dist, "SechDistribution") {
+    let power = |base: Expr, exp: Expr| Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(base),
+      right: Box::new(exp),
+    };
+    let result = if n.rem_euclid(2) == 1 {
+      Expr::Integer(0)
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          power(Expr::Integer(-1), Expr::Integer(n / 2)),
+          Expr::FunctionCall {
+            name: "EulerE".to_string(),
+            args: vec![Expr::Integer(n)].into(),
+          },
+          power(s, Expr::Integer(n)),
+        ]
+        .into(),
+      }
+    };
+    return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
+  }
+
   let mean = mean_ast(&[dist.clone()])?;
   // CentralMoment = Sum_{k=0}^n Binomial[n, k] (-mean)^(n-k) E[x^k]
   let mut terms = Vec::with_capacity((n + 1) as usize);
@@ -3132,7 +3690,7 @@ fn distribution_moment(
       Expr::Integer(1)
     } else {
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left: Box::new(Expr::FunctionCall {
           name: "Times".to_string(),
           args: vec![Expr::Integer(-1), mean.clone()].into(),
@@ -3160,6 +3718,16 @@ fn distribution_moment(
 
 /// CentralMoment[list, r] - r-th central moment of a numeric list
 pub fn central_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // A SparseArray data argument is handled via its dense form. (This also
+  // fixes Kurtosis/Skewness, which are computed from CentralMoment.)
+  if let Some(first) = args.first()
+    && let Some(dense) =
+      crate::functions::list_helpers_ast::densify_sparse_array(first)
+  {
+    let mut new_args = args.to_vec();
+    new_args[0] = dense;
+    return central_moment_ast(&new_args);
+  }
   // Distribution form: CentralMoment[dist, n].
   if args.len() == 2
     && let Some(dist) = as_distribution(&args[0])
@@ -3173,6 +3741,34 @@ pub fn central_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "CentralMoment".to_string(),
       args: args.to_vec().into(),
     });
+  }
+  // A matrix reduces column-wise: the r-th central moment of each column.
+  // (This also fixes Kurtosis/Skewness of a matrix, which build on it.)
+  if let Expr::List(rows) = &args[0]
+    && !rows.is_empty()
+    && rows
+      .iter()
+      .all(|r| matches!(r, Expr::List(c) if !c.is_empty()))
+  {
+    let cols: Vec<&crate::ExprList> = rows
+      .iter()
+      .filter_map(|r| match r {
+        Expr::List(c) => Some(c),
+        _ => None,
+      })
+      .collect();
+    let ncols = cols[0].len();
+    if cols.iter().all(|c| c.len() == ncols) {
+      let mut result = Vec::with_capacity(ncols);
+      for j in 0..ncols {
+        let column: Vec<Expr> = cols.iter().map(|c| c[j].clone()).collect();
+        result.push(central_moment_ast(&[
+          Expr::List(column.into()),
+          args[1].clone(),
+        ])?);
+      }
+      return Ok(Expr::List(result.into()));
+    }
   }
   let items = match &args[0] {
     Expr::List(items) if !items.is_empty() => items,
@@ -3212,12 +3808,12 @@ pub fn central_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for item in items {
     // (item - mean)^r
     let diff = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left: Box::new(item.clone()),
       right: Box::new(mean_expr.clone()),
     };
     let powered = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left: Box::new(diff),
       right: Box::new(Expr::Integer(r as i128)),
     };
@@ -3232,7 +3828,7 @@ pub fn central_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let sum_val = crate::evaluator::evaluate_expr_to_expr(&sum_expr)?;
   let result = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(sum_val),
     right: Box::new(Expr::Integer(n as i128)),
   };
@@ -3295,7 +3891,7 @@ pub fn cumulant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut terms = Vec::with_capacity(items.len());
     for item in items {
       let powered = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left: Box::new(item.clone()),
         right: Box::new(Expr::Integer(j as i128)),
       };
@@ -3306,7 +3902,7 @@ pub fn cumulant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: terms.into(),
     };
     let div = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(sum_expr),
       right: Box::new(Expr::Integer(n)),
     };
@@ -3343,7 +3939,7 @@ fn cumulant_from_raw_moments(
           .into(),
       };
       acc = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Minus,
+        op: BinaryOperator::Minus,
         left: Box::new(acc),
         right: Box::new(term),
       };
@@ -3366,15 +3962,15 @@ pub fn kurtosis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // moment-ratio Expand mangles the multi-parameter denominator.
   if let Some((a, b)) = skellam_params(&args[0]) {
     let a_plus_b = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left: Box::new(a),
       right: Box::new(b),
     };
     let result = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left: Box::new(Expr::Integer(3)),
       right: Box::new(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::Integer(1)),
         right: Box::new(a_plus_b),
       }),
@@ -3383,7 +3979,7 @@ pub fn kurtosis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // PolyaAeppli: Kurtosis = 3 + (1 + 10 p + p^2)/((1 + p) t).
   if let Some((t, p)) = two_params_of(&args[0], "PolyaAeppliDistribution") {
-    use crate::syntax::BinaryOperator as B;
+    use BinaryOperator as B;
     let bin = |op, l, r| Expr::BinaryOp {
       op,
       left: Box::new(l),
@@ -3406,12 +4002,12 @@ pub fn kurtosis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let m2 = central_moment_ast(&[args[0].clone(), Expr::Integer(2)])?;
   // Compute m4 / m2^2 symbolically
   let m2_squared = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(m2),
     right: Box::new(Expr::Integer(2)),
   };
   let result = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(m4),
     right: Box::new(m2_squared),
   };
@@ -3445,21 +4041,21 @@ pub fn skewness_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // is preserved (the generic moment-ratio Expand would distribute it).
   if let Some((a, b)) = skellam_params(&args[0]) {
     let result = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Minus,
+        op: BinaryOperator::Minus,
         left: Box::new(a.clone()),
         right: Box::new(b.clone()),
       }),
       right: Box::new(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left: Box::new(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Plus,
+          op: BinaryOperator::Plus,
           left: Box::new(a),
           right: Box::new(b),
         }),
         right: Box::new(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(Expr::Integer(3)),
           right: Box::new(Expr::Integer(2)),
         }),
@@ -3469,7 +4065,7 @@ pub fn skewness_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // PolyaAeppli: Skewness = (1 + 4 p + p^2)/((1 + p) Sqrt[(1 + p) t]).
   if let Some((t, p)) = two_params_of(&args[0], "PolyaAeppliDistribution") {
-    use crate::syntax::BinaryOperator as B;
+    use BinaryOperator as B;
     let bin = |op, l, r| Expr::BinaryOp {
       op,
       left: Box::new(l),
@@ -3505,7 +4101,7 @@ pub fn skewness_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     matches!(&m2, Expr::Real(_)) || matches!(&m3, Expr::Real(_));
   let result = if moments_inexact {
     let m2_pow = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left: Box::new(m2),
       right: Box::new(Expr::FunctionCall {
         name: "Rational".to_string(),
@@ -3513,17 +4109,17 @@ pub fn skewness_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }),
     };
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left: Box::new(m3),
       right: Box::new(m2_pow),
     }
   } else {
     // Compute m3 / m2^(3/2) symbolically
     let m2_pow = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left: Box::new(m2),
       right: Box::new(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(Expr::Integer(3)),
         right: Box::new(Expr::Integer(2)),
       }),
@@ -3531,7 +4127,7 @@ pub fn skewness_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     maybe_expand_for_distribution(
       &args[0],
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(m3),
         right: Box::new(m2_pow),
       },
@@ -3548,6 +4144,33 @@ pub fn root_mean_square_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "RootMeanSquare expects exactly 1 argument".into(),
     ));
+  }
+  // A SparseArray argument is handled via its dense form.
+  if let Some(dense) =
+    crate::functions::list_helpers_ast::densify_sparse_array(&args[0])
+  {
+    return root_mean_square_ast(&[dense]);
+  }
+  // A matrix (list of lists) is reduced column-wise: RootMeanSquare[data] =
+  // Sqrt[Mean[data^2]], where the element-wise square and column-wise Mean
+  // give one value per column.
+  if let Expr::List(items) = &args[0]
+    && !items.is_empty()
+    && items.iter().all(|r| matches!(r, Expr::List(_)))
+  {
+    let squared = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![args[0].clone(), Expr::Integer(2)].into(),
+    };
+    let mean = Expr::FunctionCall {
+      name: "Mean".to_string(),
+      args: vec![squared].into(),
+    };
+    let sqrt = Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![mean].into(),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&sqrt);
   }
   match &args[0] {
     Expr::List(items) => {
@@ -3639,40 +4262,6 @@ pub fn gcd_i128(a: i128, b: i128) -> i128 {
   a
 }
 
-/// Extract numerator from Integer or Rational expr
-pub fn expr_numerator(e: &Expr) -> Option<i128> {
-  match e {
-    Expr::Integer(n) => Some(*n),
-    Expr::FunctionCall { name, args }
-      if name == "Rational" && args.len() == 2 =>
-    {
-      if let Expr::Integer(n) = &args[0] {
-        Some(*n)
-      } else {
-        None
-      }
-    }
-    _ => None,
-  }
-}
-
-/// Extract denominator from Integer or Rational expr
-pub fn expr_denominator(e: &Expr) -> Option<i128> {
-  match e {
-    Expr::Integer(_) => Some(1),
-    Expr::FunctionCall { name, args }
-      if name == "Rational" && args.len() == 2 =>
-    {
-      if let Expr::Integer(d) = &args[1] {
-        Some(*d)
-      } else {
-        None
-      }
-    }
-    _ => None,
-  }
-}
-
 /// Floor of a rational number num/den
 pub fn rational_floor(num: i128, den: i128) -> i128 {
   if den == 0 {
@@ -3709,6 +4298,39 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Quantile expects 2 or 3 arguments".into(),
     ));
   }
+  // A SparseArray data argument is handled via its dense form.
+  if let Some(dense) =
+    crate::functions::list_helpers_ast::densify_sparse_array(&args[0])
+  {
+    let mut new_args = args.to_vec();
+    new_args[0] = dense;
+    return quantile_ast(&new_args);
+  }
+  // The probability q must lie in [0, 1]. A numeric q outside that range is
+  // always rejected with nquan (rather than silently computing a clamped
+  // result). For plain data a symbolic q is also rejected, whereas a
+  // distribution accepts a symbolic q (yielding a ConditionalExpression).
+  let q_invalid = |e: &Expr, data_is_list: bool| -> bool {
+    match crate::functions::math_ast::try_eval_to_f64(e) {
+      Some(v) => !(0.0..=1.0).contains(&v),
+      None => data_is_list,
+    }
+  };
+  let data_is_list = matches!(&args[0], Expr::List(_));
+  let invalid = match &args[1] {
+    Expr::List(ps) => ps.iter().any(|p| q_invalid(p, data_is_list)),
+    other => q_invalid(other, data_is_list),
+  };
+  if invalid {
+    crate::emit_message(&format!(
+      "Quantile::nquan: The Quantile specification {} should be a number or a list of numbers between 0 and 1.",
+      crate::syntax::expr_to_string(&args[1])
+    ));
+    return Ok(Expr::FunctionCall {
+      name: "Quantile".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
   // ErlangDistribution[k, λ] == GammaDistribution[k, 1/λ]
   if let Expr::FunctionCall { name, args: dargs } = &args[0]
     && name == "ErlangDistribution"
@@ -3721,6 +4343,14 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut new_args = args.to_vec();
     new_args[0] = gamma;
     return quantile_ast(&new_args);
+  }
+  // Quantile[WakebyDistribution[...], q] — quantile-defined form.
+  if let Expr::FunctionCall { name, args: dargs } = &args[0]
+    && name == "WakebyDistribution"
+    && args.len() == 2
+    && !matches!(&args[1], Expr::List(_))
+  {
+    return super::distributions::wakeby_quantile(dargs, &args[1]);
   }
   // Quantile[dist, {p1, p2, ...}] for a distribution head threads over the
   // probability list (the second argument of Quantile is always a scalar
@@ -3828,7 +4458,7 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   quantile_single(&sorted, &args[1])
 }
 
-pub fn quantile_single(
+fn quantile_single(
   sorted: &[&Expr],
   q: &Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -3878,7 +4508,7 @@ pub fn quantile_single(
 ///   else      → s[[clamp(k)]] + (c + d frac) (s[[clamp(k+1)]] - s[[clamp(k)]])
 /// where clamp pins indices to [1, n]. All arithmetic runs through the
 /// evaluator so exact rationals stay exact and machine reals propagate.
-pub fn quantile_parametric(
+fn quantile_parametric(
   sorted: &[&Expr],
   q: &Expr,
   a: &Expr,
@@ -4010,7 +4640,7 @@ fn factorial_moment_of_distribution(
   r: i128,
 ) -> Option<Expr> {
   let pow = |b: Expr, e: Expr| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(b),
     right: Box::new(e),
   };
@@ -4065,7 +4695,7 @@ fn factorial_moment_of_distribution(
       // so (r-1) such factors contribute (-1)^(r-1).
       Some(if (r - 1).rem_euclid(2) == 1 {
         Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
+          op: UnaryOperator::Minus,
           operand: Box::new(product),
         }
       } else {
@@ -4074,6 +4704,88 @@ fn factorial_moment_of_distribution(
     }
     _ => None,
   }
+}
+
+/// Whether `name` appears anywhere in `expr` as an identifier.
+fn factorial_moment_uses_var(expr: &Expr, name: &str) -> bool {
+  match expr {
+    Expr::Identifier(n) => n == name,
+    Expr::BinaryOp { left, right, .. } => {
+      factorial_moment_uses_var(left, name)
+        || factorial_moment_uses_var(right, name)
+    }
+    Expr::UnaryOp { operand, .. } => factorial_moment_uses_var(operand, name),
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(|a| factorial_moment_uses_var(a, name))
+    }
+    Expr::List(items) => {
+      items.iter().any(|a| factorial_moment_uses_var(a, name))
+    }
+    _ => false,
+  }
+}
+
+/// General distribution factorial moment via the defining expectation
+/// E[X(X-1)...(X-r+1)]. Returns `Ok(None)` when the expectation stays
+/// symbolic (unresolved), so the caller can fall through.
+fn factorial_moment_via_expectation(
+  dist: &Expr,
+  r: i128,
+) -> Result<Option<Expr>, InterpreterError> {
+  // Pick a dummy variable that does not clash with a distribution parameter.
+  let var = ["x", "y", "z", "t", "w", "u", "v"]
+    .into_iter()
+    .find(|c| !factorial_moment_uses_var(dist, c))
+    .unwrap_or("x")
+    .to_string();
+  let var_expr = Expr::Identifier(var.clone());
+
+  // Falling factorial x(x-1)...(x-r+1); the empty product (r = 0) is 1.
+  let falling = if r == 0 {
+    Expr::Integer(1)
+  } else {
+    let mut factors: Vec<Expr> = Vec::with_capacity(r as usize);
+    for i in 0..r {
+      factors.push(if i == 0 {
+        var_expr.clone()
+      } else {
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![var_expr.clone(), Expr::Integer(-i)].into(),
+        }
+      });
+    }
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: factors.into(),
+    }
+  };
+
+  // Expand into a monomial sum so Expectation resolves each moment exactly.
+  let polynomial =
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Expand".to_string(),
+      args: vec![falling].into(),
+    })?;
+
+  let distributed = Expr::FunctionCall {
+    name: "Distributed".to_string(),
+    args: vec![var_expr, dist.clone()].into(),
+  };
+  // Route through the main evaluator (rather than calling expectation_ast
+  // directly) so the exact symbolic-moment path is taken instead of the
+  // numerical-integration fallback.
+  let result = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Expectation".to_string(),
+    args: vec![polynomial, distributed].into(),
+  })?;
+
+  // If Expectation could not resolve, it returns an Expectation[...] call.
+  if matches!(&result, Expr::FunctionCall { name, .. } if name == "Expectation")
+  {
+    return Ok(None);
+  }
+  Ok(Some(result))
 }
 
 pub fn factorial_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -4093,9 +4805,22 @@ pub fn factorial_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && let Expr::Integer(r) = &args[1]
     && *r >= 0
-    && let Some(result) = factorial_moment_of_distribution(dist_name, dargs, *r)
   {
-    return crate::evaluator::evaluate_expr_to_expr(&result);
+    // Prefer the printed closed form for the standard discrete distributions.
+    if let Some(result) = factorial_moment_of_distribution(dist_name, dargs, *r)
+    {
+      return crate::evaluator::evaluate_expr_to_expr(&result);
+    }
+    // General fallback for any other distribution (continuous or discrete):
+    // E[X(X-1)...(X-r+1)] = Expectation[FallingFactorial(x, r), x ~ dist].
+    // The falling factorial is expanded into a monomial sum first so that
+    // Expectation resolves each moment exactly rather than via numerical
+    // integration.
+    if dist_name.ends_with("Distribution")
+      && let Some(result) = factorial_moment_via_expectation(&args[0], *r)?
+    {
+      return Ok(result);
+    }
   }
 
   let items = match &args[0] {
@@ -4157,7 +4882,7 @@ pub fn mean_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut abs_devs = Vec::new();
     for item in items {
       let diff = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Minus,
+        op: BinaryOperator::Minus,
         left: Box::new(item.clone()),
         right: Box::new(mean_expr.clone()),
       };
@@ -4172,7 +4897,7 @@ pub fn mean_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: abs_devs.into(),
     };
     let result = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(sum),
       right: Box::new(Expr::Integer(n)),
     };
@@ -4199,7 +4924,7 @@ pub fn median_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut abs_devs = Vec::new();
     for item in items {
       let diff = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Minus,
+        op: BinaryOperator::Minus,
         left: Box::new(item.clone()),
         right: Box::new(median_expr.clone()),
       };
@@ -5137,6 +5862,15 @@ pub fn group_order_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
+  // PermutationGroup[{gens}]: the order is the number of generated elements.
+  if let Expr::FunctionCall { name, .. } = &args[0]
+    && name == "PermutationGroup"
+  {
+    let elems = group_elements_ast(std::slice::from_ref(&args[0]))?;
+    if let Expr::List(gelems) = &elems {
+      return Ok(Expr::Integer(gelems.len() as i128));
+    }
+  }
   Ok(unevaluated())
 }
 
@@ -5223,7 +5957,77 @@ pub fn group_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(symmetric_group_elements(*n as usize));
   }
+  // PermutationGroup[{gen1, gen2, …}] — the group generated by the given
+  // permutations. Enumerate its elements by closing the generators under
+  // composition.
+  if let Expr::FunctionCall { name, args: gargs } = &args[0]
+    && name == "PermutationGroup"
+    && gargs.len() == 1
+    && let Expr::List(generators) = &gargs[0]
+    && let Some(elems) = permutation_group_elements(generators)
+  {
+    return Ok(elems);
+  }
   Ok(unevaluated())
+}
+
+/// GroupElements[PermutationGroup[{gens}]] — every element of the group
+/// generated by the permutation generators `gens` (each in `Cycles` form), in
+/// lexicographic image-list order (matching wolframscript). Returns `None`
+/// when a generator is not a `Cycles` object or the group is too large to
+/// enumerate safely.
+fn permutation_group_elements(generators: &[Expr]) -> Option<Expr> {
+  // A safety cap so a generator set spanning a very large group (e.g. S_12)
+  // can't hang the interpreter; realistic inputs are far smaller.
+  const MAX_ELEMENTS: usize = 200_000;
+
+  // Degree = the largest moved point across all generators; every generator
+  // must be a Cycles object.
+  let mut degree: i128 = 0;
+  for g in generators {
+    if !matches!(g, Expr::FunctionCall { name, .. } if name == "Cycles") {
+      return None;
+    }
+    for p in cycles_support(g) {
+      if p > degree {
+        degree = p;
+      }
+    }
+  }
+  if degree <= 0 {
+    // No generator moves anything: the trivial group.
+    return Some(Expr::List(vec![make_cycles_multi(Vec::new())].into()));
+  }
+
+  // Each generator as an image list of length `degree` (image[x-1] = g(x)).
+  let gen_images: Vec<Vec<i128>> = generators
+    .iter()
+    .map(|g| (1..=degree).map(|x| apply_cycles_to_point(g, x)).collect())
+    .collect();
+
+  // Breadth-first closure of the identity under left-multiplication by the
+  // generators. A BTreeSet keeps the image lists in lexicographic order.
+  let identity: Vec<i128> = (1..=degree).collect();
+  let mut seen: std::collections::BTreeSet<Vec<i128>> =
+    std::collections::BTreeSet::new();
+  seen.insert(identity.clone());
+  let mut frontier = vec![identity];
+  while let Some(cur) = frontier.pop() {
+    for g in &gen_images {
+      let composed: Vec<i128> =
+        cur.iter().map(|&y| g[(y - 1) as usize]).collect();
+      if seen.insert(composed.clone()) {
+        if seen.len() > MAX_ELEMENTS {
+          return None;
+        }
+        frontier.push(composed);
+      }
+    }
+  }
+
+  let elements: Vec<Expr> =
+    seen.into_iter().map(|img| images_to_cycles(&img)).collect();
+  Some(Expr::List(elements.into()))
 }
 
 /// Image of a single point `p` under a permutation given in cycle notation
@@ -5300,7 +6104,7 @@ pub fn group_element_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Cycles") {
     crate::emit_message(&format!(
       "GroupElementQ::perm: {} is not a valid permutation.",
-      crate::syntax::expr_to_string(&args[1])
+      expr_to_string(&args[1])
     ));
     return Ok(unevaluated());
   }
@@ -5342,7 +6146,7 @@ pub fn group_element_position_ast(
     None => {
       crate::emit_message(&format!(
         "GroupElementPosition::noin: Permutation {} does not belong to group.",
-        crate::syntax::expr_to_string(&args[1])
+        expr_to_string(&args[1])
       ));
       Ok(unevaluated())
     }
@@ -5886,7 +6690,7 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
 
     // BinaryOp Power
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       ..
     } => Some(expr.clone()),
 
@@ -5897,14 +6701,14 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
 
     // BinaryOp Plus
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left,
       right,
     } => asymptotic_sum(&[*left.clone(), *right.clone()], var),
 
     // BinaryOp Minus
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Minus,
+      op: BinaryOperator::Minus,
       left,
       right,
     } => {
@@ -5938,7 +6742,7 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
 
     // BinaryOp Times
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -5952,14 +6756,14 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
 
     // BinaryOp Divide
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left,
       right,
     } => {
       let l = discrete_asymptotic_leading(left, var)?;
       let r = discrete_asymptotic_leading(right, var)?;
       Some(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(l),
         right: Box::new(r),
       })
@@ -6118,7 +6922,7 @@ fn growth_order(expr: &Expr, var: &str) -> Option<f64> {
 
     // BinaryOp variants
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -6128,7 +6932,7 @@ fn growth_order(expr: &Expr, var: &str) -> Option<f64> {
     }
 
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => {
@@ -6185,7 +6989,7 @@ fn asymptotic_binomial(
   // Check if k = n/2
   let is_half = match k_expr {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left,
       right,
     } => is_pure_var(left, var) && matches!(**right, Expr::Integer(2)),
@@ -6290,7 +7094,7 @@ pub fn covariance_function_data(
     Err(e) => return Some(Err(e)),
   };
   let dev = |x: &Expr| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Minus,
+    op: BinaryOperator::Minus,
     left: Box::new(x.clone()),
     right: Box::new(mean.clone()),
   };
@@ -6298,7 +7102,7 @@ pub fn covariance_function_data(
   let mut terms = Vec::new();
   for t in 0..(n - h_us) {
     terms.push(Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left: Box::new(dev(&items[t])),
       right: Box::new(dev(&items[t + h_us])),
     });
@@ -6308,11 +7112,92 @@ pub fn covariance_function_data(
     args: terms.into(),
   };
   let result = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(sum),
     right: Box::new(Expr::Integer(n as i128)),
   };
   Some(crate::evaluator::evaluate_expr_to_expr(&result))
+}
+
+/// AbsoluteCorrelationFunction[data, hspec] — the non-centered second
+/// moment estimate Σ x_t x_(t+|h|) / n (plain products, no conjugation —
+/// wolframscript-verified on complex data). hspec is an integer lag,
+/// {hmax} (lags 0..hmax), or {h1, h2} (lags h1..h2); a lag magnitude at
+/// or beyond the data length emits bdlag.
+pub fn absolute_correlation_function_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "AbsoluteCorrelationFunction".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 2 {
+    return unevaluated();
+  }
+  let Expr::List(items) = &args[0] else {
+    return unevaluated();
+  };
+  if items.is_empty() || !all_numeric_scalars(items) {
+    return unevaluated();
+  }
+  let n = items.len();
+  let bdlag = || {
+    crate::emit_message(&format!(
+      "AbsoluteCorrelationFunction::bdlag: The lag specification {} should be a symbol, an integer with magnitude less than the length of the data or a range specification indicating such integers.",
+      crate::syntax::expr_to_string(&args[1])
+    ));
+  };
+  let single = |h: i128| -> Result<Expr, InterpreterError> {
+    let h_us = h.unsigned_abs() as usize;
+    let terms: Vec<Expr> = (0..(n - h_us))
+      .map(|t| Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(items[t].clone()),
+        right: Box::new(items[t + h_us].clone()),
+      })
+      .collect();
+    crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: terms.into(),
+      }),
+      right: Box::new(Expr::Integer(n as i128)),
+    })
+  };
+  let lags: Vec<i128> = match &args[1] {
+    Expr::Integer(h) => vec![*h],
+    Expr::List(spec) => {
+      let ints: Option<Vec<i128>> = spec
+        .iter()
+        .map(|e| match e {
+          Expr::Integer(v) => Some(*v),
+          _ => None,
+        })
+        .collect();
+      match ints.as_deref() {
+        Some([hmax]) => (0..=*hmax).collect(),
+        Some([h1, h2]) if h1 <= h2 => (*h1..=*h2).collect(),
+        _ => return unevaluated(),
+      }
+    }
+    _ => return unevaluated(),
+  };
+  if lags.iter().any(|h| h.unsigned_abs() >= n as u128) {
+    bdlag();
+    return unevaluated();
+  }
+  let mut values = Vec::with_capacity(lags.len());
+  for h in &lags {
+    values.push(single(*h)?);
+  }
+  if matches!(&args[1], Expr::Integer(_)) {
+    Ok(values.into_iter().next().unwrap())
+  } else {
+    Ok(Expr::List(values.into()))
+  }
 }
 
 /// CovarianceFunction[proc, s, t] gives the autocovariance Cov[X_s, X_t]
@@ -6328,6 +7213,9 @@ pub fn covariance_function_ast(
       args: args.to_vec().into(),
     });
   }
+  if let Some(result) = process_covariance(&args[0], &args[1], &args[2]) {
+    return crate::evaluator::evaluate_expr_to_expr(&result);
+  }
   if let Some(result) = arma_covariance(&args[0], &args[1], &args[2]) {
     // Re-evaluate so the inner Times/Divide combine into canonical
     // negative-power form. Without this, the printer renders sub-terms
@@ -6338,6 +7226,464 @@ pub fn covariance_function_ast(
     name: "CovarianceFunction".to_string(),
     args: args.to_vec().into(),
   })
+}
+
+/// CovarianceFunction[proc, t1, t2] closed forms for the directly
+/// parameterized random processes (all wolframscript-verified).
+fn process_covariance(proc: &Expr, t1: &Expr, t2: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = proc else {
+    return None;
+  };
+  let call = |n: &str, a: Vec<Expr>| Expr::FunctionCall {
+    name: n.to_string(),
+    args: a.into(),
+  };
+  let times2 = |a: Expr, b: Expr| Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+  let plus2 = |a: Expr, b: Expr| Expr::BinaryOp {
+    op: BinaryOperator::Plus,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+  let neg = |a: Expr| times2(Expr::Integer(-1), a);
+  let sq = |a: &Expr| Expr::BinaryOp {
+    op: BinaryOperator::Power,
+    left: Box::new(a.clone()),
+    right: Box::new(Expr::Integer(2)),
+  };
+  let min = call("Min", vec![t1.clone(), t2.clone()]);
+  let max = call("Max", vec![t1.clone(), t2.clone()]);
+  match (name.as_str(), args.as_slice()) {
+    ("WienerProcess", [_, sp]) => Some(times2(sq(sp), min)),
+    ("PoissonProcess", [l]) => Some(times2(l.clone(), min)),
+    ("BinomialProcess", [pp]) => Some(times2(
+      times2(plus2(Expr::Integer(1), neg(pp.clone())), pp.clone()),
+      min,
+    )),
+    // Only equal times covary for the independent-step processes.
+    ("BernoulliProcess", [pp]) => {
+      let value = times2(plus2(Expr::Integer(1), neg(pp.clone())), pp.clone());
+      let cond = Expr::Comparison {
+        operands: vec![t1.clone(), t2.clone()],
+        operators: vec![ComparisonOp::Equal],
+      };
+      Some(call(
+        "Piecewise",
+        vec![
+          Expr::List(vec![Expr::List(vec![value, cond].into())].into()),
+          Expr::Integer(0),
+        ],
+      ))
+    }
+    ("WhiteNoiseProcess", [dist]) => {
+      let var = variance_ast(std::slice::from_ref(dist)).ok()?;
+      if matches!(&var, Expr::FunctionCall { name, .. } if name == "Variance") {
+        return None;
+      }
+      Some(times2(
+        var,
+        call("DiscreteDelta", vec![plus2(neg(t1.clone()), t2.clone())]),
+      ))
+    }
+    // Stationary Ornstein-Uhlenbeck: s^2 E^(-th |t1 - t2|) / (2 th).
+    ("OrnsteinUhlenbeckProcess", [_, sp, th]) => {
+      let decay = Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(Expr::Constant("E".to_string())),
+        right: Box::new(times2(
+          th.clone(),
+          call("Abs", vec![plus2(t1.clone(), neg(t2.clone()))]),
+        )),
+      };
+      Some(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(sq(sp)),
+        right: Box::new(times2(times2(Expr::Integer(2), decay), th.clone())),
+      })
+    }
+    // Brownian bridge: s^2 (tb - Max)(Min - ta)/(tb - ta).
+    ("BrownianBridgeProcess", [sp, Expr::List(p1), Expr::List(p2)])
+      if p1.len() == 2 && p2.len() == 2 =>
+    {
+      let (ta, tb) = (&p1[0], &p2[0]);
+      Some(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(times2(
+          times2(sq(sp), plus2(tb.clone(), neg(max))),
+          plus2(neg(ta.clone()), min),
+        )),
+        right: Box::new(plus2(neg(ta.clone()), tb.clone())),
+      })
+    }
+    // Geometric Brownian motion:
+    // x0^2 E^(m (t1 + t2)) (E^(s^2 Min) - 1).
+    ("GeometricBrownianMotionProcess", [m, sp, x0]) => {
+      let growth = Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(Expr::Constant("E".to_string())),
+        right: Box::new(times2(m.clone(), plus2(t1.clone(), t2.clone()))),
+      };
+      let bump = plus2(
+        Expr::Integer(-1),
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(Expr::Constant("E".to_string())),
+          right: Box::new(times2(sq(sp), min)),
+        },
+      );
+      Some(times2(times2(growth, bump), sq(x0)))
+    }
+    _ => None,
+  }
+}
+
+/// BiweightMidvariance[data] / BiweightMidvariance[data, c] — the robust
+/// dispersion estimate
+///   n Σ_{|u|<1} (x - M)^2 (1 - u^2)^4 / (Σ_{|u|<1} (1 - u^2)(1 - 5 u^2))^2
+/// with u = (x - M)/(c MAD), M the median, MAD the median absolute
+/// deviation, and default c = 9 (formula hand-verified against
+/// wolframscript's exact rationals). MAD == 0 gives Indeterminate.
+pub fn biweight_midvariance_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "BiweightMidvariance".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.is_empty() || args.len() > 2 {
+    return unevaluated();
+  }
+  let Expr::List(items) = &args[0] else {
+    return unevaluated();
+  };
+  if items.is_empty() || !all_numeric_scalars(items) {
+    return unevaluated();
+  }
+  let c = match args.get(1) {
+    None => Expr::Integer(9),
+    Some(e) if crate::functions::math_ast::try_eval_to_f64(e).is_some() => {
+      e.clone()
+    }
+    _ => return unevaluated(),
+  };
+  let ev = crate::evaluator::evaluate_expr_to_expr;
+  let call = |n: &str, a: Vec<Expr>| Expr::FunctionCall {
+    name: n.to_string(),
+    args: a.into(),
+  };
+  let bin = |op: BinaryOperator, a: Expr, b: Expr| Expr::BinaryOp {
+    op,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+  let median = ev(&call("Median", vec![args[0].clone()]))?;
+  let deviations: Vec<Expr> = items
+    .iter()
+    .map(|x| {
+      call(
+        "Abs",
+        vec![bin(BinaryOperator::Minus, x.clone(), median.clone())],
+      )
+    })
+    .collect();
+  let mad = ev(&call("Median", vec![Expr::List(deviations.into())]))?;
+  match crate::functions::math_ast::try_eval_to_f64(&mad) {
+    Some(v) if v != 0.0 => {}
+    Some(_) => return Ok(Expr::Identifier("Indeterminate".to_string())),
+    None => return unevaluated(),
+  }
+  let scale = bin(BinaryOperator::Times, c, mad);
+  let mut num_terms: Vec<Expr> = Vec::new();
+  let mut den_terms: Vec<Expr> = Vec::new();
+  for x in items.iter() {
+    let dev = bin(BinaryOperator::Minus, x.clone(), median.clone());
+    let u = ev(&bin(BinaryOperator::Divide, dev.clone(), scale.clone()))?;
+    let Some(u_f) = crate::functions::math_ast::try_eval_to_f64(&u) else {
+      return unevaluated();
+    };
+    if u_f.abs() >= 1.0 {
+      continue;
+    }
+    let u2 = bin(BinaryOperator::Power, u.clone(), Expr::Integer(2));
+    let one_minus = bin(BinaryOperator::Minus, Expr::Integer(1), u2.clone());
+    num_terms.push(bin(
+      BinaryOperator::Times,
+      bin(BinaryOperator::Power, dev, Expr::Integer(2)),
+      bin(BinaryOperator::Power, one_minus.clone(), Expr::Integer(4)),
+    ));
+    den_terms.push(bin(
+      BinaryOperator::Times,
+      one_minus,
+      bin(
+        BinaryOperator::Minus,
+        Expr::Integer(1),
+        bin(BinaryOperator::Times, Expr::Integer(5), u2),
+      ),
+    ));
+  }
+  if den_terms.is_empty() {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
+  let total = |ts: Vec<Expr>| Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: ts.into(),
+  };
+  ev(&bin(
+    BinaryOperator::Divide,
+    bin(
+      BinaryOperator::Times,
+      Expr::Integer(items.len() as i128),
+      total(num_terms),
+    ),
+    bin(BinaryOperator::Power, total(den_terms), Expr::Integer(2)),
+  ))
+}
+
+/// CorrelationFunction[proc, t1, t2] closed forms (Cov normalized by the
+/// slice standard deviations), in wolframscript's display shapes.
+pub fn process_correlation(proc: &Expr, t1: &Expr, t2: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = proc else {
+    return None;
+  };
+  let call = |n: &str, a: Vec<Expr>| Expr::FunctionCall {
+    name: n.to_string(),
+    args: a.into(),
+  };
+  let bin = |op: BinaryOperator, a: Expr, b: Expr| Expr::BinaryOp {
+    op,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+  let times2 = |a: Expr, b: Expr| bin(BinaryOperator::Times, a, b);
+  let plus2 = |a: Expr, b: Expr| bin(BinaryOperator::Plus, a, b);
+  let neg = |a: Expr| times2(Expr::Integer(-1), a);
+  let sq = |a: &Expr| bin(BinaryOperator::Power, a.clone(), Expr::Integer(2));
+  let min = call("Min", vec![t1.clone(), t2.clone()]);
+  match (name.as_str(), args.as_slice()) {
+    // The scale cancels for all three counting/Brownian cases.
+    ("WienerProcess", [_, _])
+    | ("PoissonProcess", [_])
+    | ("BinomialProcess", [_]) => Some(bin(
+      BinaryOperator::Divide,
+      min,
+      call("Sqrt", vec![times2(t1.clone(), t2.clone())]),
+    )),
+    ("OrnsteinUhlenbeckProcess", [_, _, th]) => Some(bin(
+      BinaryOperator::Power,
+      Expr::Constant("E".to_string()),
+      neg(times2(
+        th.clone(),
+        call("Abs", vec![plus2(t1.clone(), neg(t2.clone()))]),
+      )),
+    )),
+    ("BernoulliProcess", [_]) => {
+      Some(call("KroneckerDelta", vec![t1.clone(), t2.clone()]))
+    }
+    ("WhiteNoiseProcess", [_]) => Some(call(
+      "DiscreteDelta",
+      vec![plus2(neg(t1.clone()), t2.clone())],
+    )),
+    // The bridge numerator is the covariance numerator expanded via
+    // Max + Min == t1 + t2 and Max Min == t1 t2.
+    ("BrownianBridgeProcess", [_, Expr::List(p1), Expr::List(p2)])
+      if p1.len() == 2 && p2.len() == 2 =>
+    {
+      let (ta, tb) = (&p1[0], &p2[0]);
+      let numer = plus2(
+        plus2(
+          neg(times2(t1.clone(), t2.clone())),
+          times2(
+            ta.clone(),
+            plus2(plus2(t1.clone(), t2.clone()), neg(tb.clone())),
+          ),
+        ),
+        times2(plus2(neg(ta.clone()), tb.clone()), min),
+      );
+      let leg = |t: &Expr| {
+        call(
+          "Sqrt",
+          vec![times2(
+            plus2(t.clone(), neg(ta.clone())),
+            plus2(neg(t.clone()), tb.clone()),
+          )],
+        )
+      };
+      Some(bin(BinaryOperator::Divide, numer, times2(leg(t1), leg(t2))))
+    }
+    ("GeometricBrownianMotionProcess", [_, sp, _]) => {
+      let bump = |arg: Expr| {
+        plus2(
+          Expr::Integer(-1),
+          bin(
+            BinaryOperator::Power,
+            Expr::Constant("E".to_string()),
+            times2(sq(sp), arg),
+          ),
+        )
+      };
+      Some(bin(
+        BinaryOperator::Divide,
+        bump(min),
+        times2(
+          call("Sqrt", vec![bump(t1.clone())]),
+          call("Sqrt", vec![bump(t2.clone())]),
+        ),
+      ))
+    }
+    _ => None,
+  }
+}
+
+/// AbsoluteCorrelationFunction[proc, t1, t2] closed forms
+/// (Mean[t1] Mean[t2] + Cov[t1, t2]) in wolframscript's display shapes.
+pub fn process_absolute_correlation(
+  proc: &Expr,
+  t1: &Expr,
+  t2: &Expr,
+) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = proc else {
+    return None;
+  };
+  let call = |n: &str, a: Vec<Expr>| Expr::FunctionCall {
+    name: n.to_string(),
+    args: a.into(),
+  };
+  let bin = |op: BinaryOperator, a: Expr, b: Expr| Expr::BinaryOp {
+    op,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+  let times2 = |a: Expr, b: Expr| bin(BinaryOperator::Times, a, b);
+  let plus2 = |a: Expr, b: Expr| bin(BinaryOperator::Plus, a, b);
+  let neg = |a: Expr| times2(Expr::Integer(-1), a);
+  let sq = |a: &Expr| bin(BinaryOperator::Power, a.clone(), Expr::Integer(2));
+  let min = call("Min", vec![t1.clone(), t2.clone()]);
+  match (name.as_str(), args.as_slice()) {
+    ("WienerProcess", [m, sp]) => Some(plus2(
+      times2(times2(sq(m), t1.clone()), t2.clone()),
+      times2(sq(sp), min),
+    )),
+    ("PoissonProcess", [l]) => Some(plus2(
+      times2(times2(sq(l), t1.clone()), t2.clone()),
+      times2(l.clone(), min),
+    )),
+    ("BinomialProcess", [pp]) => Some(plus2(
+      times2(times2(sq(pp), t1.clone()), t2.clone()),
+      times2(
+        times2(plus2(Expr::Integer(1), neg(pp.clone())), pp.clone()),
+        min,
+      ),
+    )),
+    ("OrnsteinUhlenbeckProcess", [m, sp, th]) => {
+      let decay = bin(
+        BinaryOperator::Power,
+        Expr::Constant("E".to_string()),
+        times2(
+          th.clone(),
+          call("Abs", vec![plus2(t1.clone(), neg(t2.clone()))]),
+        ),
+      );
+      Some(plus2(
+        sq(m),
+        bin(
+          BinaryOperator::Divide,
+          sq(sp),
+          times2(times2(Expr::Integer(2), decay), th.clone()),
+        ),
+      ))
+    }
+    // wolframscript reports the plain covariance here (no mean-squared
+    // term) — replicated.
+    ("WhiteNoiseProcess", [dist]) => {
+      let var = variance_ast(std::slice::from_ref(dist)).ok()?;
+      if matches!(&var, Expr::FunctionCall { name, .. } if name == "Variance") {
+        return None;
+      }
+      Some(times2(
+        var,
+        call("DiscreteDelta", vec![plus2(neg(t1.clone()), t2.clone())]),
+      ))
+    }
+    ("BernoulliProcess", [pp]) => {
+      let eq = Expr::Comparison {
+        operands: vec![t1.clone(), t2.clone()],
+        operators: vec![ComparisonOp::Equal],
+      };
+      let ne = Expr::Comparison {
+        operands: vec![t1.clone(), t2.clone()],
+        operators: vec![ComparisonOp::NotEqual],
+      };
+      Some(call(
+        "Piecewise",
+        vec![
+          Expr::List(
+            vec![
+              Expr::List(vec![pp.clone(), eq].into()),
+              Expr::List(vec![sq(pp), ne].into()),
+            ]
+            .into(),
+          ),
+          Expr::Integer(0),
+        ],
+      ))
+    }
+    ("GeometricBrownianMotionProcess", [m, sp, x0]) => Some(times2(
+      bin(
+        BinaryOperator::Power,
+        Expr::Constant("E".to_string()),
+        plus2(
+          times2(m.clone(), plus2(t1.clone(), t2.clone())),
+          times2(sq(sp), min),
+        ),
+      ),
+      sq(x0),
+    )),
+    ("BrownianBridgeProcess", [sp, Expr::List(p1), Expr::List(p2)])
+      if p1.len() == 2 && p2.len() == 2 =>
+    {
+      let (ta, a) = (&p1[0], &p1[1]);
+      let (tb, b) = (&p2[0], &p2[1]);
+      let span = plus2(neg(ta.clone()), tb.clone());
+      let mean_at = |t: &Expr| {
+        plus2(
+          a.clone(),
+          bin(
+            BinaryOperator::Divide,
+            times2(
+              plus2(neg(a.clone()), b.clone()),
+              plus2(t.clone(), neg(ta.clone())),
+            ),
+            span.clone(),
+          ),
+        )
+      };
+      let mean_product = times2(mean_at(t1), mean_at(t2));
+      let cov = times2(
+        sq(sp),
+        plus2(
+          bin(
+            BinaryOperator::Divide,
+            plus2(
+              neg(times2(t1.clone(), t2.clone())),
+              times2(
+                ta.clone(),
+                plus2(plus2(t1.clone(), t2.clone()), neg(tb.clone())),
+              ),
+            ),
+            span,
+          ),
+          min,
+        ),
+      );
+      Some(plus2(mean_product, cov))
+    }
+    _ => None,
+  }
 }
 
 /// Extract `(ar_list, ma_list, variance)` from an `ARMAProcess[...]` call,
@@ -6409,7 +7755,7 @@ fn cf_pow(b: Expr, e: Expr) -> Expr {
 }
 fn cf_div(n: Expr, d: Expr) -> Expr {
   Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(n),
     right: Box::new(d),
   }
@@ -6445,7 +7791,7 @@ fn cov_ma1(b: &Expr, sigma2: &Expr, s: &Expr, t: &Expr) -> Expr {
       cf_times(vec![b.clone(), sigma2.clone()]),
       Expr::Comparison {
         operands: vec![lag.clone(), Expr::Integer(1)],
-        operators: vec![crate::syntax::ComparisonOp::Equal],
+        operators: vec![ComparisonOp::Equal],
       },
     ]
     .into(),
@@ -6458,7 +7804,7 @@ fn cov_ma1(b: &Expr, sigma2: &Expr, s: &Expr, t: &Expr) -> Expr {
       ]),
       Expr::Comparison {
         operands: vec![lag.clone(), Expr::Integer(0)],
-        operators: vec![crate::syntax::ComparisonOp::Equal],
+        operators: vec![ComparisonOp::Equal],
       },
     ]
     .into(),
@@ -6522,7 +7868,7 @@ fn cov_arma11(a: &Expr, b: &Expr, sigma2: &Expr, s: &Expr, t: &Expr) -> Expr {
       nonzero_value,
       Expr::Comparison {
         operands: vec![lag, Expr::Integer(0)],
-        operators: vec![crate::syntax::ComparisonOp::Greater],
+        operators: vec![ComparisonOp::Greater],
       },
     ]
     .into(),
@@ -6566,16 +7912,16 @@ pub fn characteristic_function_ast(
     args: fargs.into(),
   };
   let neg = |e: Expr| Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand: Box::new(e),
   };
   let pow = |b: Expr, e: Expr| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(b),
     right: Box::new(e),
   };
   let div = |n: Expr, d: Expr| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(n),
     right: Box::new(d),
   };
@@ -6615,7 +7961,7 @@ pub fn characteristic_function_ast(
         call(
           "Times",
           vec![
-            crate::functions::math_ast::make_rational_pub(-1, 2),
+            crate::functions::math_ast::make_rational(-1, 2),
             pow(t.clone(), Expr::Integer(2)),
           ],
         ),
@@ -6727,6 +8073,56 @@ pub fn characteristic_function_ast(
       ),
       false,
     )),
+    // (p/(1 - E^(I*t)*(1 - p)))^n
+    ("NegativeBinomialDistribution", [n, p]) => Some((
+      pow(
+        div(
+          p.clone(),
+          call(
+            "Plus",
+            vec![
+              Expr::Integer(1),
+              call(
+                "Times",
+                vec![
+                  Expr::Integer(-1),
+                  e_it(vec![]),
+                  call(
+                    "Plus",
+                    vec![
+                      Expr::Integer(1),
+                      call("Times", vec![Expr::Integer(-1), p.clone()]),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        n.clone(),
+      ),
+      false,
+    )),
+    // b*E^(I*m*t)*Pi*t*Csch[b*Pi*t]
+    ("LogisticDistribution", [m, b]) => Some((
+      call(
+        "Times",
+        vec![
+          b.clone(),
+          e_it(vec![m.clone()]),
+          Expr::Identifier("Pi".to_string()),
+          t.clone(),
+          call(
+            "Csch",
+            vec![call(
+              "Times",
+              vec![b.clone(), Expr::Identifier("Pi".to_string()), t.clone()],
+            )],
+          ),
+        ],
+      ),
+      true,
+    )),
     // (1 - I*b*t)^(-a) — raw: the evaluator's canonical Times order
     // would print b*I*t
     ("GammaDistribution", [a, b]) => Some((
@@ -6776,6 +8172,78 @@ pub fn characteristic_function_ast(
         true,
       ))
     }
+    // (1 - 2*I*t)^(-k/2)
+    ("ChiSquareDistribution", [k]) => Some((
+      pow(
+        call(
+          "Plus",
+          vec![
+            Expr::Integer(1),
+            call("Times", vec![Expr::Integer(-2), i_unit(), t.clone()]),
+          ],
+        ),
+        div(neg(k.clone()), Expr::Integer(2)),
+      ),
+      false,
+    )),
+    // Hypergeometric1F1[a, a + b, I*t]
+    ("BetaDistribution", [a, b]) => Some((
+      call(
+        "Hypergeometric1F1",
+        vec![
+          a.clone(),
+          call("Plus", vec![a.clone(), b.clone()]),
+          call("Times", vec![i_unit(), t.clone()]),
+        ],
+      ),
+      false,
+    )),
+    // E^(I*m*t)/(1 + b^2*t^2)
+    ("LaplaceDistribution", [m, b]) => Some((
+      div(
+        e_it(vec![m.clone()]),
+        call(
+          "Plus",
+          vec![
+            Expr::Integer(1),
+            call(
+              "Times",
+              vec![
+                pow(b.clone(), Expr::Integer(2)),
+                pow(t.clone(), Expr::Integer(2)),
+              ],
+            ),
+          ],
+        ),
+      ),
+      true,
+    )),
+    // Log[1 - E^(I*t)*p]/Log[1 - p]
+    ("LogSeriesDistribution", [p]) => Some((
+      div(
+        call(
+          "Log",
+          vec![call(
+            "Plus",
+            vec![
+              Expr::Integer(1),
+              call("Times", vec![Expr::Integer(-1), e_it(vec![]), p.clone()]),
+            ],
+          )],
+        ),
+        call(
+          "Log",
+          vec![call(
+            "Plus",
+            vec![
+              Expr::Integer(1),
+              call("Times", vec![Expr::Integer(-1), p.clone()]),
+            ],
+          )],
+        ),
+      ),
+      true,
+    )),
     _ => None,
   };
 
@@ -6814,16 +8282,16 @@ pub fn moment_generating_function_ast(
     args: fargs.into(),
   };
   let neg = |e: Expr| Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand: Box::new(e),
   };
   let pow = |b: Expr, e: Expr| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(b),
     right: Box::new(e),
   };
   let div = |n: Expr, d: Expr| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(n),
     right: Box::new(d),
   };
@@ -6968,6 +8436,37 @@ pub fn moment_generating_function_ast(
       ),
       true,
     )),
+    // (p/(1 - E^t*(1 - p)))^n
+    ("NegativeBinomialDistribution", [n, p]) => Some((
+      pow(
+        div(
+          p.clone(),
+          call(
+            "Plus",
+            vec![
+              Expr::Integer(1),
+              call("Times", vec![Expr::Integer(-1), e_t(vec![]), one_minus(p)]),
+            ],
+          ),
+        ),
+        n.clone(),
+      ),
+      true,
+    )),
+    // E^(m*t)/Sinc[b*Pi*t]
+    ("LogisticDistribution", [m, b]) => Some((
+      div(
+        e_t(vec![m.clone()]),
+        call(
+          "Sinc",
+          vec![call(
+            "Times",
+            vec![b.clone(), Expr::Identifier("Pi".to_string()), t.clone()],
+          )],
+        ),
+      ),
+      true,
+    )),
     // (1 - b*t)^(-a)
     ("GammaDistribution", [a, b]) => Some((
       pow(
@@ -7004,6 +8503,83 @@ pub fn moment_generating_function_ast(
         true,
       ))
     }
+    // (1 - 2*t)^(-k/2)
+    ("ChiSquareDistribution", [k]) => Some((
+      pow(
+        call(
+          "Plus",
+          vec![
+            Expr::Integer(1),
+            call("Times", vec![Expr::Integer(-2), t.clone()]),
+          ],
+        ),
+        div(neg(k.clone()), Expr::Integer(2)),
+      ),
+      false,
+    )),
+    // Hypergeometric1F1[a, a + b, t]
+    ("BetaDistribution", [a, b]) => Some((
+      call(
+        "Hypergeometric1F1",
+        vec![
+          a.clone(),
+          call("Plus", vec![a.clone(), b.clone()]),
+          t.clone(),
+        ],
+      ),
+      false,
+    )),
+    // Student-t and Cauchy have no moment-generating function (the defining
+    // integral diverges), so Wolfram returns Indeterminate for every t.
+    ("StudentTDistribution", [_]) | ("CauchyDistribution", [_, _]) => {
+      Some((Expr::Identifier("Indeterminate".to_string()), false))
+    }
+    // E^(m*t)/(1 - b^2*t^2)
+    ("LaplaceDistribution", [m, b]) => Some((
+      div(
+        e_t(vec![m.clone()]),
+        call(
+          "Plus",
+          vec![
+            Expr::Integer(1),
+            neg(call(
+              "Times",
+              vec![
+                pow(b.clone(), Expr::Integer(2)),
+                pow(t.clone(), Expr::Integer(2)),
+              ],
+            )),
+          ],
+        ),
+      ),
+      true,
+    )),
+    // Log[1 - E^t*p]/Log[1 - p]
+    ("LogSeriesDistribution", [p]) => Some((
+      div(
+        call(
+          "Log",
+          vec![call(
+            "Plus",
+            vec![
+              Expr::Integer(1),
+              call("Times", vec![Expr::Integer(-1), e_t(vec![]), p.clone()]),
+            ],
+          )],
+        ),
+        call(
+          "Log",
+          vec![call(
+            "Plus",
+            vec![
+              Expr::Integer(1),
+              call("Times", vec![Expr::Integer(-1), p.clone()]),
+            ],
+          )],
+        ),
+      ),
+      true,
+    )),
     _ => None,
   };
 
@@ -7021,7 +8597,7 @@ pub fn moment_generating_function_ast(
 fn as_power_pair(e: &Expr) -> Option<(&Expr, &Expr)> {
   match e {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => Some((left, right)),
@@ -7034,6 +8610,40 @@ fn as_power_pair(e: &Expr) -> Option<(&Expr, &Expr)> {
 
 fn is_e_base(e: &Expr) -> bool {
   matches!(e, Expr::Constant(c) | Expr::Identifier(c) if c == "E")
+}
+
+/// The Log of a single MGF factor, using the structural rules
+///   E^X → X,  base^(-a) → -(a Log[base]),  base^exp → exp Log[base],
+///   otherwise → Log[f].
+fn cgf_term(f: &Expr) -> Expr {
+  let log = |e: Expr| Expr::FunctionCall {
+    name: "Log".to_string(),
+    args: vec![e].into(),
+  };
+  if let Some((base, exp)) = as_power_pair(f) {
+    if is_e_base(base) {
+      exp.clone()
+    } else if let Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } = exp
+    {
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand: Box::new(Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![(**operand).clone(), log(base.clone())].into(),
+        }),
+      }
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![exp.clone(), log(base.clone())].into(),
+      }
+    }
+  } else {
+    log(f.clone())
+  }
 }
 
 /// CumulantGeneratingFunction[dist, t] = Log[MomentGeneratingFunction[...]],
@@ -7063,16 +8673,16 @@ pub fn cumulant_generating_function_ast(
     args: fargs.into(),
   };
   let neg = |e: Expr| Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand: Box::new(e),
   };
   let pow = |b: Expr, e: Expr| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(b),
     right: Box::new(e),
   };
   let div = |n: Expr, d: Expr| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(n),
     right: Box::new(d),
   };
@@ -7153,20 +8763,28 @@ pub fn cumulant_generating_function_ast(
   {
     return Ok(unevaluated(args));
   }
-  let cgf = if let Some((base, exp)) = as_power_pair(&mgf) {
-    if is_e_base(base) {
-      exp.clone()
-    } else if let Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
-      operand,
-    } = exp
-    {
-      neg(call("Times", vec![(**operand).clone(), log(base.clone())]))
-    } else {
-      call("Times", vec![exp.clone(), log(base.clone())])
-    }
+  // A distribution with no MGF (e.g. Cauchy, Student-t) also has no CGF:
+  // Log[Indeterminate] is Indeterminate.
+  if matches!(&mgf, Expr::Identifier(s) if s == "Indeterminate") {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
+  // Split an E^X / den quotient the way Wolfram does, so the exponential
+  // prefactor becomes a linear term: Log[E^(m t)/(1 - b^2 t^2)] ->
+  // m t - Log[1 - b^2 t^2]. A quotient without an exponential numerator (e.g.
+  // Exponential's a/(a - t)) is left as a single Log.
+  let num_is_e_power = matches!(&mgf, Expr::BinaryOp {
+    op: BinaryOperator::Divide, left, ..
+  } if as_power_pair(left).is_some_and(|(base, _)| is_e_base(base)));
+  let cgf = if num_is_e_power
+    && let Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } = &mgf
+  {
+    call("Plus", vec![cgf_term(left), neg(cgf_term(right))])
   } else {
-    log(mgf)
+    cgf_term(&mgf)
   };
 
   if symbolic {
@@ -7209,19 +8827,19 @@ pub fn factorial_moment_generating_function_ast(
       args: f.into(),
     };
     let sq = |e: Expr| Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left: Box::new(e),
       right: Box::new(Expr::Integer(2)),
     };
     return Ok(Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left: Box::new(Expr::Identifier("E".to_string())),
       right: Box::new(Expr::FunctionCall {
         name: "Plus".to_string(),
         args: vec![
           times(vec![m, log_t.clone()]),
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Divide,
+            op: BinaryOperator::Divide,
             left: Box::new(times(vec![sq(sd), sq(log_t)])),
             right: Box::new(Expr::Integer(2)),
           },
@@ -7285,7 +8903,7 @@ pub fn central_moment_generating_function_ast(
       args: f.into(),
     };
     let e_pow = |e: Expr| Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left: Box::new(Expr::Identifier("E".to_string())),
       right: Box::new(e),
     };
@@ -7295,7 +8913,7 @@ pub fn central_moment_generating_function_ast(
     };
     let t = args[1].clone();
     let expr = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left: Box::new(Expr::FunctionCall {
         name: "Plus".to_string(),
         args: vec![
@@ -7335,7 +8953,7 @@ pub fn central_moment_generating_function_ast(
   // merge the terms in a different order.
   let e_exponent = match &mgf {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } if matches!(left.as_ref(), Expr::Identifier(b) if b == "E")
@@ -7369,7 +8987,7 @@ pub fn central_moment_generating_function_ast(
       match e {
         Expr::FunctionCall { name, args } if name == "Plus" => args.len(),
         Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Plus,
+          op: BinaryOperator::Plus,
           ..
         } => 2,
         _ => 1,
@@ -7382,13 +9000,13 @@ pub fn central_moment_generating_function_ast(
       raw
     };
     return Ok(Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left: Box::new(Expr::Identifier("E".to_string())),
       right: Box::new(exponent),
     });
   }
   let damp = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left: Box::new(Expr::Identifier("E".to_string())),
     right: Box::new(damp_exponent),
   };
@@ -7485,7 +9103,7 @@ pub fn correlation_function_ast(
   }
 
   crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(numerator),
     right: Box::new(denominator),
   })
@@ -7508,7 +9126,7 @@ pub fn ztest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let bad_data = |args: &[Expr]| {
     crate::emit_message(&format!(
       "ZTest::rctndm1: The argument {} at position 1 should be a rectangular array of real numbers with length greater than the dimension of the array or two such arrays of equal dimensionality.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     Ok(Expr::FunctionCall {
       name: "ZTest".to_string(),
@@ -7586,7 +9204,7 @@ pub fn fisher_ratio_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let bad_data = |args: &[Expr]| {
     crate::emit_message(&format!(
       "FisherRatioTest::vctnln1: The argument {} at position 1 should be a vector of real numbers with length greater than 1 or a list containing two such vectors.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     Ok(Expr::FunctionCall {
       name: "FisherRatioTest".to_string(),
@@ -7614,7 +9232,7 @@ pub fn fisher_ratio_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => {
           crate::emit_message(&format!(
             "FisherRatioTest::sigmnt: The argument {} should be a positive number.",
-            crate::syntax::expr_to_string(&args[1])
+            expr_to_string(&args[1])
           ));
           return Ok(unevaluated(args));
         }
@@ -7709,12 +9327,12 @@ pub fn cycle_index_polynomial_ast(
     return Ok(unevaluated());
   }
   let call_str = || {
-    crate::syntax::format_expr(
+    format_expr(
       &Expr::FunctionCall {
         name: "CycleIndexPolynomial".to_string(),
         args: args.to_vec().into(),
       },
-      crate::syntax::ExprForm::Output,
+      ExprForm::Output,
     )
   };
 
@@ -7755,7 +9373,7 @@ pub fn cycle_index_polynomial_ast(
     None => {
       crate::emit_message(&format!(
         "CycleIndexPolynomial::grp: {} is not a valid group.",
-        crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+        format_expr(&args[0], ExprForm::Output)
       ));
       return Ok(unevaluated());
     }
@@ -7818,7 +9436,7 @@ pub fn cycle_index_polynomial_ast(
           base
         } else {
           Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left: Box::new(base),
             right: Box::new(Expr::Integer(m as i128)),
           }
@@ -8018,7 +9636,7 @@ pub fn group_multiplication_table_ast(
     if !looks_like_group(&args[0]) {
       crate::emit_message(&format!(
         "GroupMultiplicationTable::grp: {} is not a valid group.",
-        crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+        format_expr(&args[0], ExprForm::Output)
       ));
     }
     return Ok(unevaluated());
@@ -8059,7 +9677,7 @@ pub fn group_stabilizer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !looks_like_group(&args[0]) {
     crate::emit_message(&format!(
       "GroupStabilizer::grp: {} is not a valid group.",
-      crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+      format_expr(&args[0], ExprForm::Output)
     ));
     return Ok(unevaluated());
   }
@@ -8201,10 +9819,10 @@ fn erlang_b_symbolic(
     crate::emit_message(&format!(
       "{}::posprm: Parameter {} at position 2 in {}[{}, {}] is expected to be positive.",
       name,
-      crate::syntax::expr_to_output(&args[1]),
+      expr_to_output(&args[1]),
       name,
-      crate::syntax::expr_to_output(&args[0]),
-      crate::syntax::expr_to_output(&args[1]),
+      expr_to_output(&args[0]),
+      expr_to_output(&args[1]),
     ));
     return Some(Ok(Expr::FunctionCall {
       name: name.to_string(),
@@ -8246,7 +9864,7 @@ fn erlang_b_symbolic(
   let reals = || Expr::Identifier("Reals".to_string());
   let positive = |e: &Expr| Expr::Comparison {
     operands: vec![e.clone(), Expr::Integer(0)],
-    operators: vec![crate::syntax::ComparisonOp::Greater],
+    operators: vec![ComparisonOp::Greater],
   };
   let mut conds: Vec<Expr> = Vec::new();
   if c_num.is_none() {
@@ -8347,8 +9965,8 @@ fn erlang_common(
         "{}::intp: Positive integer expected at position 1 in {}[{}, {}].",
         name,
         name,
-        crate::syntax::expr_to_output(&args[0]),
-        crate::syntax::expr_to_output(&args[1])
+        expr_to_output(&args[0]),
+        expr_to_output(&args[1])
       ));
       return unevaluated();
     }
@@ -8406,10 +10024,10 @@ fn erlang_common(
     crate::emit_message(&format!(
       "{}::posprm: Parameter {} at position 2 in {}[{}, {}] is expected to be positive.",
       name,
-      crate::syntax::expr_to_output(&args[1]),
+      expr_to_output(&args[1]),
       name,
-      crate::syntax::expr_to_output(&args[0]),
-      crate::syntax::expr_to_output(&args[1])
+      expr_to_output(&args[0]),
+      expr_to_output(&args[1])
     ));
     return unevaluated();
   }
@@ -8487,7 +10105,7 @@ pub fn central_feature_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
   };
   let call_display = || {
-    crate::syntax::expr_to_string(&Expr::FunctionCall {
+    expr_to_string(&Expr::FunctionCall {
       name: "CentralFeature".to_string(),
       args: args.to_vec().into(),
     })
@@ -8507,7 +10125,7 @@ pub fn central_feature_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if !is_opt {
       crate::emit_message(&format!(
         "CentralFeature::nonopt: Options expected (instead of {}) beyond position 1 in {}. An option must be a rule or a list of rules.",
-        crate::syntax::expr_to_string(extra),
+        expr_to_string(extra),
         call_display()
       ));
       return unevaluated();
@@ -8523,7 +10141,7 @@ pub fn central_feature_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let near1 = || {
     crate::emit_message(&format!(
       "CentralFeature::near1: {} is neither a list of real points nor a valid list of rules.",
-      crate::syntax::expr_to_string(data)
+      expr_to_string(data)
     ));
   };
 
@@ -8572,7 +10190,7 @@ pub fn central_feature_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Index of the element with the smallest total distance to the others
 /// (earliest wins ties), using the automatic metric described above.
 fn central_feature_index(keys: &[Expr]) -> Result<usize, InterpreterError> {
-  use crate::functions::list_helpers_ast::expr_to_complex_parts_pub;
+  use crate::functions::list_helpers_ast::expr_to_complex_parts;
 
   let n = keys.len();
   if n == 1 {
@@ -8580,7 +10198,7 @@ fn central_feature_index(keys: &[Expr]) -> Result<usize, InterpreterError> {
   }
 
   let numeric_parts = |e: &Expr| -> Option<(f64, f64)> {
-    if let Some(p) = expr_to_complex_parts_pub(e) {
+    if let Some(p) = expr_to_complex_parts(e) {
       return Some(p);
     }
     let evaluated =
@@ -8589,7 +10207,7 @@ fn central_feature_index(keys: &[Expr]) -> Result<usize, InterpreterError> {
         args: vec![e.clone()].into(),
       })
       .ok()?;
-    expr_to_complex_parts_pub(&evaluated)
+    expr_to_complex_parts(&evaluated)
   };
 
   // Distance matrix column sums for whichever metric applies.
@@ -8657,8 +10275,7 @@ fn central_feature_index(keys: &[Expr]) -> Result<usize, InterpreterError> {
       .collect()
   } else {
     // Discrete equality metric.
-    let reprs: Vec<String> =
-      keys.iter().map(crate::syntax::expr_to_string).collect();
+    let reprs: Vec<String> = keys.iter().map(expr_to_string).collect();
     (0..n)
       .map(|i| (0..n).filter(|&j| reprs[i] != reprs[j]).count() as f64)
       .collect()

@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
 /// True if `t` carries the imaginary unit `I` as a direct factor (possibly
 /// nested inside Times/negation): `I`, `b I`, `-2 b I`, etc.
@@ -13,7 +13,7 @@ fn has_i_factor(t: &Expr) -> bool {
       args.iter().any(has_i_factor)
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => has_i_factor(left) || has_i_factor(right),
@@ -107,7 +107,7 @@ fn re_im_via_complex_expand(
   which: &str,
   arg: &Expr,
 ) -> Option<Result<Expr, InterpreterError>> {
-  if !crate::functions::predicate_ast::is_numeric_q_pub(arg) {
+  if !crate::functions::predicate_ast::is_numeric_q(arg) {
     return None;
   }
   let expanded = match crate::evaluator::evaluate_function_call_ast(
@@ -324,7 +324,7 @@ fn flatten_times_factors(expr: &Expr, out: &mut Vec<Expr>) {
       }
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -342,7 +342,7 @@ fn split_i_factors(expr: &Expr) -> Option<(usize, Vec<Expr>)> {
     || matches!(
       expr,
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         ..
       }
     );
@@ -406,7 +406,6 @@ fn extract_i_times_any(expr: &Expr) -> Option<Expr> {
 /// Only matches when the input contains at least one BigFloat to avoid
 /// stealing simpler real cases handled elsewhere.
 fn try_extract_complex_bigfloat(expr: &Expr) -> Option<(Expr, Expr)> {
-  use crate::syntax::BinaryOperator;
   let plus_args: Vec<Expr> = match expr {
     Expr::FunctionCall { name, args } if name == "Plus" => args.to_vec(),
     Expr::BinaryOp {
@@ -511,7 +510,7 @@ pub fn is_real_valued(expr: &Expr) -> bool {
     return true;
   }
   // NumericQ expressions: check if they evaluate to a real number
-  if crate::functions::predicate_ast::is_numeric_q_pub(expr) {
+  if crate::functions::predicate_ast::is_numeric_q(expr) {
     // Try to evaluate numerically - if it gives a real, it's real-valued
     if let Some(val) = crate::functions::math_ast::try_eval_to_f64(expr) {
       return val.is_finite() || val.is_nan();
@@ -570,7 +569,6 @@ fn contains_machine_real(expr: &Expr) -> bool {
 /// Flatten a Plus/Minus expression into its summands, rewriting `a - b` into
 /// `a + (-1)*b`. Returns None for non-additive expressions.
 fn collect_plus_terms(expr: &Expr) -> Option<Vec<Expr>> {
-  use crate::syntax::BinaryOperator;
   match expr {
     Expr::FunctionCall { name, args } if name == "Plus" && !args.is_empty() => {
       Some(args.to_vec())
@@ -604,7 +602,7 @@ fn collect_plus_terms(expr: &Expr) -> Option<Vec<Expr>> {
   }
 }
 
-pub fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
+fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
   // Real-valued expressions are their own conjugate. `is_real_valued` covers
   // exact reals/constants plus any NumericQ expression that evaluates to a
   // finite real (Sqrt[2], Log[2], Sin[2], Pi^2, sums of reals, …). Complex
@@ -635,7 +633,7 @@ pub fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
       Expr::Integer(n) => Expr::Integer(-*n),
       Expr::Real(f) => Expr::Real(-*f),
       other => Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand: Box::new(other.clone()),
       },
     };
@@ -779,7 +777,7 @@ pub fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
   if let Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Times,
+    op: BinaryOperator::Times,
     left,
     right,
   } = expr
@@ -796,11 +794,11 @@ pub fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
   // (1 - I)/Sqrt[2]. Only when both parts conjugate cleanly — symbolic
   // quotients like b/Sqrt[a] stay wrapped as a whole, matching Wolfram.
   if let Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left,
     right,
   } = expr
-    && crate::functions::predicate_ast::is_numeric_q_pub(expr)
+    && crate::functions::predicate_ast::is_numeric_q(expr)
   {
     let num = conjugate_one(left)?;
     let den = conjugate_one(right)?;
@@ -808,7 +806,7 @@ pub fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
       |e: &Expr| !crate::syntax::expr_to_string(e).contains("Conjugate[");
     if clean(&num) && clean(&den) {
       return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left: Box::new(num),
         right: Box::new(den),
       });
@@ -834,7 +832,7 @@ pub fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
 
   // UnaryOp Minus: Conjugate[-x] = -Conjugate[x]
   if let Expr::UnaryOp {
-    op: crate::syntax::UnaryOperator::Minus,
+    op: UnaryOperator::Minus,
     operand,
   } = expr
   {
@@ -849,7 +847,7 @@ pub fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
   //     Conjugate[base]^n (e.g. Conjugate[x^2] = Conjugate[x]^2).
   let power_parts: Option<(&Expr, &Expr)> = match expr {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => Some((left.as_ref(), right.as_ref())),
@@ -861,14 +859,14 @@ pub fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
   if let Some((base, exp)) = power_parts {
     if is_strictly_positive_real(base) {
       return Ok(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left: Box::new(base.clone()),
         right: Box::new(conjugate_one(exp)?),
       });
     }
     if matches!(exp, Expr::Integer(_)) {
       return Ok(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left: Box::new(conjugate_one(base)?),
         right: Box::new(exp.clone()),
       });
@@ -927,7 +925,7 @@ pub fn is_strictly_positive_real(e: &Expr) -> bool {
       is_strictly_positive_real(&args[0]) && is_real_valued(&args[1])
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => is_strictly_positive_real(left) && is_real_valued(right),
@@ -947,7 +945,7 @@ fn match_re_plus_i_im(expr: &Expr) -> Option<String> {
   let plus_args: Vec<Expr> = match expr {
     Expr::FunctionCall { name, args } if name == "Plus" => args.to_vec(),
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
+      op: BinaryOperator::Plus,
       left,
       right,
     } => vec![*left.clone(), *right.clone()],
@@ -972,7 +970,7 @@ fn match_re_plus_i_im(expr: &Expr) -> Option<String> {
         args.iter().collect()
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left,
         right,
       } => vec![left.as_ref(), right.as_ref()],
@@ -1058,7 +1056,7 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let e_exp: Option<&Expr> = match &args[0] {
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
+        op: BinaryOperator::Power,
         left,
         right,
       } if matches!(left.as_ref(), Expr::Constant(c) | Expr::Identifier(c) if c == "E") => {
@@ -1300,13 +1298,13 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let pi = Expr::Identifier("Pi".to_string());
           if in_ > 0 {
             return Ok(Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Minus,
+              op: BinaryOperator::Minus,
               left: Box::new(pi),
               right: Box::new(arctan_expr),
             });
           } else {
             return Ok(Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Plus,
+              op: BinaryOperator::Plus,
               left: Box::new(negate_expr(pi)),
               right: Box::new(arctan_expr),
             });
@@ -1362,7 +1360,7 @@ pub fn make_rational_times_pi(n: i128, d: i128) -> Expr {
       negate_expr(Expr::Identifier("Pi".to_string()))
     } else {
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
+        op: BinaryOperator::Times,
         left: Box::new(Expr::Integer(n)),
         right: Box::new(Expr::Identifier("Pi".to_string())),
       }
@@ -1370,7 +1368,7 @@ pub fn make_rational_times_pi(n: i128, d: i128) -> Expr {
   } else {
     let coeff = make_rational(n, d);
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left: Box::new(coeff),
       right: Box::new(Expr::Identifier("Pi".to_string())),
     }
@@ -1667,7 +1665,7 @@ fn gcd_i64(mut a: i64, mut b: i64) -> i64 {
 }
 
 /// Find best rational approximation using continued fractions
-pub fn find_rational(x: f64, tolerance: f64, max_denom: i64) -> (i64, i64) {
+fn find_rational(x: f64, tolerance: f64, max_denom: i64) -> (i64, i64) {
   if x == 0.0 {
     return (0, 1);
   }
@@ -1726,7 +1724,7 @@ pub fn find_rational(x: f64, tolerance: f64, max_denom: i64) -> (i64, i64) {
 
 /// Find rational with smallest denominator within tolerance.
 /// Uses continued fractions with semi-convergent checking.
-pub fn find_rational_smallest_denom(x: f64, tolerance: f64) -> (i64, i64) {
+fn find_rational_smallest_denom(x: f64, tolerance: f64) -> (i64, i64) {
   if x == 0.0 {
     return (0, 1);
   }
@@ -1887,7 +1885,7 @@ pub fn numerator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Real(_) => Ok(args[0].clone()),
     // Numerator[a / b] (BinaryOp Divide) → a
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       left,
       ..
     } => Ok(left.as_ref().clone()),
@@ -1978,7 +1976,7 @@ pub fn denominator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Real(_) => Ok(Expr::Integer(1)),
     // Denominator[a / b] → b
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
+      op: BinaryOperator::Divide,
       right,
       ..
     } => Ok(right.as_ref().clone()),
@@ -1992,7 +1990,7 @@ pub fn denominator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             denom_factors.push(base);
           } else {
             denom_factors.push(Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Power,
+              op: BinaryOperator::Power,
               left: Box::new(base),
               right: Box::new(neg_exp),
             });
@@ -2033,7 +2031,7 @@ pub fn denominator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Ok(base)
         } else {
           Ok(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
+            op: BinaryOperator::Power,
             left: Box::new(base),
             right: Box::new(pos_exp),
           })
@@ -2162,7 +2160,7 @@ fn denominator_trig(expr: &Expr) -> Option<Expr> {
 fn split_rational_power(expr: &Expr) -> Option<(Expr, Expr)> {
   let (base, exp) = match expr {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => (left.as_ref(), right.as_ref()),
@@ -2200,12 +2198,12 @@ fn split_rational_power(expr: &Expr) -> Option<(Expr, Expr)> {
   }
   let pow = |b: i128| {
     crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left: Box::new(Expr::Integer(b)),
       right: Box::new(exp.clone()),
     })
     .unwrap_or_else(|_| Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left: Box::new(Expr::Integer(b)),
       right: Box::new(exp.clone()),
     })
@@ -2216,7 +2214,7 @@ fn split_rational_power(expr: &Expr) -> Option<(Expr, Expr)> {
 pub fn get_negative_power_exponent(expr: &Expr) -> Option<(Expr, Expr)> {
   let (base, exp) = match expr {
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => (left.as_ref().clone(), right.as_ref().clone()),
@@ -2250,7 +2248,7 @@ fn negate_if_negative(exp: &Expr) -> Option<Expr> {
       }
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => Some(operand.as_ref().clone()),
     Expr::FunctionCall { name, args }
