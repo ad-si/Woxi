@@ -1,33 +1,37 @@
 # `Molecule`
 
 Represents a chemical molecule as a symbolic expression of atoms and bonds.
-A molecule can be constructed from a chemical name:
+The canonical form is `Molecule[{atoms…}, {bonds…}, {metadata…}]`. An atom is a
+bare element symbol, or `Atom["El", "Prop" -> value, …]` when it carries extra
+properties. A molecule can be constructed from a chemical name (whose hydrogens
+are materialized as explicit atoms):
 
 ```scrut
 $ wo 'Molecule["water"]'
-Molecule[{Atom[O], Atom[H], Atom[H]}, {Bond[{1, 2}, Single], Bond[{1, 3}, Single]}]
+Molecule[{O, H, H}, {Bond[{1, 2}, Single], Bond[{1, 3}, Single]}, {}]
 ```
 
 … from a [SMILES](https://en.wikipedia.org/wiki/SMILES) string
-(hydrogen atoms are added to fill the normal valences):
+(organic-subset hydrogens stay implicit):
 
 ```scrut
 $ wo 'Molecule["C=O"]'
-Molecule[{Atom[C], Atom[O], Atom[H], Atom[H]}, {Bond[{1, 2}, Double], Bond[{1, 3}, Single], Bond[{1, 4}, Single]}]
+Molecule[{C, O}, {Bond[{1, 2}, Double]}, {}]
 ```
 
-… or from explicit atom and bond lists:
+… or from explicit atom and bond lists (also kept implicit):
 
 ```scrut
 $ wo 'Molecule[{"C", "O"}, {Bond[{1, 2}, "Single"]}]'
-Molecule[{Atom[C], Atom[O], Atom[H], Atom[H], Atom[H], Atom[H]}, {Bond[{1, 2}, Single], Bond[{1, 3}, Single], Bond[{1, 4}, Single], Bond[{1, 5}, Single], Bond[{2, 6}, Single]}]
+Molecule[{C, O}, {Bond[{1, 2}, Single]}, {}]
 ```
 
-Aromatic rings, formal charges, and isotopes are supported:
+Aromatic rings, formal charges, and isotopes are supported. A bracket-atom
+hydrogen count rides along as a `HydrogenCount` property:
 
 ```scrut
 $ wo 'Molecule["[NH4+]"]'
-Molecule[{Atom[N, FormalCharge -> 1], Atom[H], Atom[H], Atom[H], Atom[H]}, {Bond[{1, 2}, Single], Bond[{1, 3}, Single], Bond[{1, 4}, Single], Bond[{1, 5}, Single]}]
+Molecule[{Atom[N, FormalCharge -> 1, HydrogenCount -> 4]}, {}, {}]
 ```
 
 ## `MoleculeQ`
@@ -62,11 +66,12 @@ $ wo 'BondList[Molecule["ammonia"]]'
 
 Computes properties of a molecule
 (`"AtomCount"`, `"BondCount"`, `"AtomList"`, `"BondList"`,
-`"MolecularFormula"`, and `"NetCharge"`):
+`"MolecularFormula"`, and `"NetCharge"`). The molecular formula is returned as a
+typeset `Row` of element symbols with the counts as subscripts:
 
 ```scrut
 $ wo 'MoleculeValue[Molecule["caffeine"], "MolecularFormula"]'
-C8H10N4O2
+Subscript[C, 8]Subscript[H, 10]Subscript[N, 4]Subscript[O, 2]
 ```
 
 Properties can also be accessed by applying the molecule to a property name:
@@ -76,23 +81,23 @@ $ wo 'Molecule["benzene"]["AtomCount"]'
 12
 ```
 
-## Information tile
+## Structure diagram
 
-In visual hosts (the playground and Woxi Studio) a molecule displays as a
-compact information tile: a structure thumbnail beside the molecular formula,
-atom count, and bond count. The same tile is available anywhere via
-`ExportString[mol, "SVG"]`:
+In visual hosts (the playground and Woxi Studio) a molecule displays as its 2-D
+structure diagram. The same diagram is available anywhere via
+`ExportString[mol, "SVG"]`, a standalone SVG document (with an XML declaration):
 
 ```scrut
 $ wo 'StringTake[ExportString[Molecule["caffeine"], "SVG"], 4]'
-<svg
+<?xm
 ```
 
-The tile reports the formula and counts as text:
+It is a structure drawing, not a text summary, so it carries no `Formula: `
+label:
 
 ```scrut
 $ wo 'StringContainsQ[ExportString[Molecule["water"], "SVG"], "Formula: "]'
-True
+False
 ```
 
 ## `MoleculePlot`
@@ -108,11 +113,10 @@ $ wo 'MoleculePlot["caffeine"]'
 -Graphics-
 ```
 
-Carbon atoms with heavy-atom neighbors are drawn as bare vertices (implicit
-hydrogens omitted), so an aromatic ring like benzene needs no atom labels — its
-twelve strokes are the six ring bonds plus the six inner aromatic lines:
+Bonds are drawn as vector polylines rather than `<line>` elements, matching the
+markup wolframscript emits, so a benzene diagram contains no `<line>`:
 
 ```scrut
 $ wo 'StringCount[ExportString[MoleculePlot["benzene"], "SVG"], "<line"]'
-12
+0
 ```

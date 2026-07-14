@@ -3664,11 +3664,15 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       crate::functions::assessment_render::question_object_to_svg(expr)
         .unwrap_or_else(|| expr_text_svg(expr))
     }
-    // Molecule[…] — render the compact information tile (thumbnail + formula
-    // + atom/bond counts).
+    // Molecule[…] — render the 2-D structure diagram, prefixed with an XML
+    // declaration as wolframscript's SVG export is (a standalone document).
     Expr::FunctionCall { name: mol_name, .. } if mol_name == "Molecule" => {
-      crate::functions::molecule_render::molecule_tile_svg(expr)
-        .unwrap_or_else(|| expr_text_svg(expr))
+      match crate::functions::molecule_render::molecule_to_svg(expr) {
+        Some(svg) => {
+          format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n{svg}")
+        }
+        None => expr_text_svg(expr),
+      }
     }
     // MoleculePlot[mol] — render the full 2-D skeletal structure diagram.
     Expr::FunctionCall {

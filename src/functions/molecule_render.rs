@@ -75,151 +75,6 @@ pub fn molecule_to_svg(expr: &Expr) -> Option<String> {
   ))
 }
 
-/// Render a `Molecule[…]` object as the compact information tile Wolfram
-/// notebooks show: a small structure thumbnail beside the molecular formula,
-/// atom count, and bond count. `None` if `expr` is not a valid molecule.
-pub fn molecule_tile_svg(expr: &Expr) -> Option<String> {
-  let mol = drawable_molecule(expr)?;
-  if mol.atoms.is_empty() {
-    return None;
-  }
-  let (formula, atoms, bonds) =
-    crate::functions::molecule_ast::molecule_info(expr)?;
-  let theme = crate::functions::graphics::theme();
-
-  // Structure thumbnail, embedded as a nested, scaled SVG.
-  let coords = layout(&mol);
-  let (thumb_body, tox, toy, tw, th) = render_parts(&mol, &coords);
-
-  let pad = 8.0;
-  let box_w = 84.0;
-  let box_h = 68.0;
-  let text_x = pad + box_w + 16.0;
-  let font = 15.0;
-  let label_font = 14.0;
-  // Proportional-font width estimate, kept generous so nothing clips.
-  let cw = font * 0.6;
-  let lcw = label_font * 0.6;
-
-  let atoms_str = atoms.to_string();
-  let bonds_str = bonds.to_string();
-  let line1_w = "Formula: ".len() as f64 * lcw + formula.len() as f64 * cw;
-  let line2_w =
-    ("Atoms: ".len() + atoms_str.len() + 3 + "Bonds: ".len() + bonds_str.len())
-      as f64
-      * lcw;
-  let width = (text_x + line1_w.max(line2_w) + pad).ceil();
-  let height = pad + box_h + pad;
-
-  let mut svg = format!(
-    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width:.0}\" \
-     height=\"{height:.0}\" viewBox=\"0 0 {width:.0} {height:.0}\" \
-     stroke-linecap=\"round\">"
-  );
-  // Thumbnail frame.
-  svg.push_str(&format!(
-    "<rect x=\"{x:.1}\" y=\"{y:.1}\" width=\"{box_w}\" height=\"{box_h}\" \
-     rx=\"4\" fill=\"{bg}\" stroke=\"{bc}\"/>",
-    x = pad,
-    y = pad,
-    bg = theme.table_header_bg,
-    bc = theme.framed_border,
-  ));
-  // Nested structure diagram, scaled to fit inside the frame with an inset.
-  let inset = 6.0;
-  svg.push_str(&format!(
-    "<svg x=\"{x:.1}\" y=\"{y:.1}\" width=\"{w:.1}\" height=\"{h:.1}\" \
-     viewBox=\"{tox:.2} {toy:.2} {tw:.2} {th:.2}\" \
-     preserveAspectRatio=\"xMidYMid meet\" stroke-linecap=\"round\">{thumb_body}</svg>",
-    x = pad + inset,
-    y = pad + inset,
-    w = box_w - 2.0 * inset,
-    h = box_h - 2.0 * inset,
-  ));
-
-  // Formula line.
-  let ty1 = height / 2.0 - 6.0;
-  svg.push_str(&format!(
-    "<text x=\"{text_x:.1}\" y=\"{ty1:.1}\" font-family=\"Helvetica, Arial, \
-     sans-serif\" font-size=\"{label_font}\" fill=\"{}\">Formula: </text>",
-    theme.text_muted,
-  ));
-  svg.push_str(&format!(
-    "<text x=\"{fx:.1}\" y=\"{ty1:.1}\" font-family=\"Helvetica, Arial, \
-     sans-serif\" font-size=\"{font}\" fill=\"{}\">{}</text>",
-    theme.text_primary,
-    formula_tspans(&formula, font),
-    fx = text_x + "Formula: ".len() as f64 * lcw,
-  ));
-
-  // Atom / bond counts.
-  let ty2 = height / 2.0 + 16.0;
-  let atoms_label_w =
-    "Atoms: ".len() as f64 * lcw + atoms_str.len() as f64 * cw;
-  let bonds_x = text_x + atoms_label_w + 3.0 * lcw;
-  svg.push_str(&format!(
-    "<text x=\"{text_x:.1}\" y=\"{ty2:.1}\" font-family=\"Helvetica, Arial, \
-     sans-serif\" font-size=\"{label_font}\" fill=\"{m}\">Atoms: \
-     <tspan fill=\"{p}\" font-size=\"{font}\">{atoms_str}</tspan></text>\
-     <text x=\"{bonds_x:.1}\" y=\"{ty2:.1}\" font-family=\"Helvetica, Arial, \
-     sans-serif\" font-size=\"{label_font}\" fill=\"{m}\">Bonds: \
-     <tspan fill=\"{p}\" font-size=\"{font}\">{bonds_str}</tspan></text>",
-    m = theme.text_muted,
-    p = theme.text_primary,
-  ));
-
-  svg.push_str("</svg>");
-  Some(svg)
-}
-
-/// Render a molecular formula as SVG `<tspan>`s: element-count digits drop to a
-/// subscript, and a trailing net-charge sign (and its magnitude) rises to a
-/// superscript.
-fn formula_tspans(formula: &str, font: f64) -> String {
-  #[derive(PartialEq, Clone, Copy)]
-  enum Mode {
-    Base,
-    Sub,
-    Super,
-  }
-  let offset = |m: Mode| match m {
-    Mode::Base => 0.0,
-    Mode::Sub => font * 0.26,
-    Mode::Super => -font * 0.42,
-  };
-  let mut out = String::new();
-  let mut charge = false;
-  let mut cur_off = 0.0;
-  for c in formula.chars() {
-    let mode = if c == '+' || c == '-' {
-      charge = true;
-      Mode::Super
-    } else if c.is_ascii_digit() {
-      if charge { Mode::Super } else { Mode::Sub }
-    } else {
-      Mode::Base
-    };
-    let size = if mode == Mode::Base {
-      font
-    } else {
-      font * 0.72
-    };
-    let target_off = offset(mode);
-    let dy = target_off - cur_off;
-    cur_off = target_off;
-    // The en dash reads better than a hyphen-minus for a negative charge.
-    let glyph = if c == '-' {
-      "\u{2013}".to_string()
-    } else {
-      c.to_string()
-    };
-    out.push_str(&format!(
-      "<tspan dy=\"{dy:.2}\" font-size=\"{size:.2}\">{glyph}</tspan>"
-    ));
-  }
-  out
-}
-
 // ---------------------------------------------------------------------------
 // Layout
 // ---------------------------------------------------------------------------
@@ -459,8 +314,7 @@ fn has_label(mol: &DrawMolecule, i: usize) -> bool {
 }
 
 /// Render the structure diagram's inner markup plus its viewBox bounds
-/// (`body`, `ox`, `oy`, `w`, `h`). Shared by the standalone `MoleculePlot`
-/// SVG and the thumbnail embedded in a `Molecule` info tile.
+/// (`body`, `ox`, `oy`, `w`, `h`).
 fn render_parts(
   mol: &DrawMolecule,
   coords: &[Pt],
@@ -577,8 +431,10 @@ fn render_parts(
 }
 
 fn draw_line(out: &mut String, a: Pt, b: Pt, stroke: &str, width: f64) {
+  // Bonds are drawn as two-point polylines (not <line>), matching the vector
+  // markup wolframscript emits for a molecule structure diagram.
   out.push_str(&format!(
-    "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" \
+    "<polyline points=\"{:.2},{:.2} {:.2},{:.2}\" fill=\"none\" \
      stroke=\"{stroke}\" stroke-width=\"{width}\"/>",
     a.0, a.1, b.0, b.1
   ));

@@ -278,7 +278,8 @@ impl<'a> SmilesParser<'a> {
         (Some(k), _) | (_, Some(k)) => k,
         (None, None) => self.implied_bond(open_atom, cur),
       };
-      self.graph.bonds.push((open_atom, cur, kind));
+      // wolframscript orders a ring-closure bond as {closing, opening}.
+      self.graph.bonds.push((cur, open_atom, kind));
     } else {
       self.rings.push((number, cur, here));
     }
@@ -527,13 +528,12 @@ fn parse_smiles(input: &str) -> Option<MolGraph> {
 // Hydrogen filling
 // ---------------------------------------------------------------------------
 
-/// Append explicit hydrogen atoms filling each atom's normal valence, the
-/// way wolframscript canonicalizes molecules. Bracket SMILES atoms carry
-/// their hydrogen count explicitly; other atoms of the organic subset are
-/// filled up to the smallest charge-adjusted valence that fits the existing
-/// bonds. Atoms that already take part in an aromatic bond but were not
-/// parsed from SMILES (no aromatic flag) are left untouched: their hydrogen
-/// count is not deducible without kekulization.
+/// Append explicit hydrogen atoms filling each atom's normal valence. Bracket
+/// SMILES atoms carry their hydrogen count explicitly; other atoms of the
+/// organic subset are filled up to the smallest charge-adjusted valence that
+/// fits the existing bonds, with atoms in an aromatic ring spending one extra
+/// valence slot on the delocalized π-system. After filling, each heavy atom's
+/// HydrogenCount is cleared, since its hydrogens are now explicit atoms.
 fn add_explicit_hydrogens(graph: &mut MolGraph) {
   let heavy_count = graph.atoms.len();
   let mut h_counts: Vec<u32> = vec![0; heavy_count];
@@ -558,11 +558,11 @@ fn add_explicit_hydrogens(graph: &mut MolGraph) {
         }
       }
     }
+    // An atom in the delocalized π-system spends one more valence slot on it.
+    // The aromatic flag is only present on freshly parsed SMILES; a molecule
+    // rebuilt from its canonical form carries aromatic *bonds* instead, so key
+    // off either.
     if atom.aromatic || has_aromatic_bond {
-      if !atom.aromatic {
-        continue;
-      }
-      // One valence slot is consumed by the delocalized π-system.
       bond_sum += 1;
     }
     let h = valences
@@ -580,6 +580,9 @@ fn add_explicit_hydrogens(graph: &mut MolGraph) {
       let h_idx = graph.atoms.len() - 1;
       graph.bonds.push((i, h_idx, BondKind::Single));
     }
+    // The hydrogens are now explicit atoms, so the heavy atom no longer
+    // carries a HydrogenCount — clear it so it renders as a bare atom.
+    graph.atoms[i].explicit_h = None;
   }
 }
 
@@ -594,6 +597,9 @@ fn rule(key: &str, value: Expr) -> Expr {
   }
 }
 
+/// Render an atom for `AtomList` / `MoleculeValue["AtomList"]`: always an
+/// `Atom["El", …]` wrapper carrying FormalCharge and MassNumber. Hydrogens are
+/// materialized as their own atoms, so no HydrogenCount is shown here.
 fn atom_to_expr(atom: &AtomData) -> Expr {
   let mut args = vec![Expr::String(atom.symbol.clone())];
   if atom.formal_charge != 0 {
@@ -604,6 +610,33 @@ fn atom_to_expr(atom: &AtomData) -> Expr {
   }
   if let Some(mass) = atom.mass_number {
     args.push(rule("MassNumber", Expr::Integer(mass as i128)));
+  }
+  Expr::FunctionCall {
+    name: "Atom".to_string(),
+    args: args.into(),
+  }
+}
+
+/// Render an atom for the canonical `Molecule[…]` form: a bare element string
+/// when it carries no extra properties, otherwise `Atom["El", "Prop" -> v, …]`
+/// with FormalCharge, MassNumber, and (for bracket SMILES atoms) HydrogenCount.
+fn atom_to_molecule_expr(atom: &AtomData) -> Expr {
+  let hcount = atom.explicit_h.filter(|h| *h > 0);
+  if atom.formal_charge == 0 && atom.mass_number.is_none() && hcount.is_none() {
+    return Expr::String(atom.symbol.clone());
+  }
+  let mut args = vec![Expr::String(atom.symbol.clone())];
+  if atom.formal_charge != 0 {
+    args.push(rule(
+      "FormalCharge",
+      Expr::Integer(atom.formal_charge as i128),
+    ));
+  }
+  if let Some(mass) = atom.mass_number {
+    args.push(rule("MassNumber", Expr::Integer(mass as i128)));
+  }
+  if let Some(h) = hcount {
+    args.push(rule("HydrogenCount", Expr::Integer(h as i128)));
   }
   Expr::FunctionCall {
     name: "Atom".to_string(),
@@ -629,6 +662,9 @@ fn bond_to_expr(bond: &(usize, usize, BondKind)) -> Expr {
 }
 
 fn graph_to_expr(graph: &MolGraph) -> Expr {
+  // wolframscript's canonical form is the three-argument
+  // `Molecule[{atoms…}, {bonds…}, {metadata…}]`; the metadata list (stereo,
+  // coordinates, …) is empty here.
   Expr::FunctionCall {
     name: "Molecule".to_string(),
     args: vec![
@@ -636,7 +672,7 @@ fn graph_to_expr(graph: &MolGraph) -> Expr {
         graph
           .atoms
           .iter()
-          .map(atom_to_expr)
+          .map(atom_to_molecule_expr)
           .collect::<Vec<_>>()
           .into(),
       ),
@@ -648,6 +684,7 @@ fn graph_to_expr(graph: &MolGraph) -> Expr {
           .collect::<Vec<_>>()
           .into(),
       ),
+      Expr::List(Vec::new().into()),
     ]
     .into(),
   }
@@ -690,6 +727,7 @@ fn atom_from_expr(expr: &Expr) -> Option<AtomData> {
         match key.as_str() {
           "FormalCharge" => atom.formal_charge = *value as i64,
           "MassNumber" => atom.mass_number = Some(*value as i64),
+          "HydrogenCount" => atom.explicit_h = Some((*value).max(0) as u32),
           _ => return None,
         }
       }
@@ -762,29 +800,13 @@ pub struct DrawMolecule {
   pub bonds: Vec<(usize, usize, &'static str)>,
 }
 
-/// Summary facts shown in a molecule's information tile:
-/// `(molecular_formula, atom_count, bond_count)`. `None` if `expr` is not a
-/// valid molecule.
-pub fn molecule_info(expr: &Expr) -> Option<(String, i128, i128)> {
-  let formula = match molecule_property_from_expr(expr, "MolecularFormula")? {
-    Expr::String(ref s) => s.clone(),
-    _ => return None,
-  };
-  let atoms = match molecule_property_from_expr(expr, "AtomCount")? {
-    Expr::Integer(n) => n,
-    _ => return None,
-  };
-  let bonds = match molecule_property_from_expr(expr, "BondCount")? {
-    Expr::Integer(n) => n,
-    _ => return None,
-  };
-  Some((formula, atoms, bonds))
-}
-
 /// Build the drawable (skeletal) view of a canonical molecule expression.
 /// Returns `None` when `expr` is not a valid `Molecule[{atoms…}, {bonds…}]`.
 pub fn drawable_molecule(expr: &Expr) -> Option<DrawMolecule> {
-  let graph = graph_from_molecule_expr(expr)?;
+  let mut graph = graph_from_molecule_expr(expr)?;
+  // Materialize implicit hydrogens (SMILES-sourced molecules keep them
+  // implicit) so the skeletal reduction below sees the full connectivity.
+  add_explicit_hydrogens(&mut graph);
   let n = graph.atoms.len();
   let mut neighbors: Vec<Vec<usize>> = vec![Vec::new(); n];
   for (a, b, _) in &graph.bonds {
@@ -830,7 +852,9 @@ fn graph_from_molecule_expr(expr: &Expr) -> Option<MolGraph> {
   let Expr::FunctionCall { name, args } = expr else {
     return None;
   };
-  if name != "Molecule" || args.len() != 2 {
+  // The canonical form is three-argument (atoms, bonds, metadata); a
+  // two-argument form (metadata omitted) is also accepted.
+  if name != "Molecule" || (args.len() != 2 && args.len() != 3) {
     return None;
   }
   let (Expr::List(atoms), Expr::List(bonds)) = (&args[0], &args[1]) else {
@@ -843,7 +867,11 @@ fn graph_from_molecule_expr(expr: &Expr) -> Option<MolGraph> {
 // Molecular formula (Hill order)
 // ---------------------------------------------------------------------------
 
-fn molecular_formula(graph: &MolGraph) -> String {
+/// The molecular formula (Hill order) as the typeset expression wolframscript
+/// returns: a `Row` of element symbols where a count greater than one becomes a
+/// `Subscript["El", n]`, wrapped in `Superscript[…, "charge"]` when the net
+/// formal charge is nonzero. The graph must already be hydrogen-complete.
+fn molecular_formula(graph: &MolGraph) -> Expr {
   let mut counts: Vec<(String, usize)> = Vec::new();
   for atom in &graph.atoms {
     match counts.iter_mut().find(|(s, _)| *s == atom.symbol) {
@@ -866,22 +894,36 @@ fn molecular_formula(graph: &MolGraph) -> String {
     };
     rank(a).cmp(&rank(b))
   });
-  let mut formula = String::new();
-  for (symbol, count) in &counts {
-    formula.push_str(symbol);
-    if *count > 1 {
-      formula.push_str(&count.to_string());
-    }
-  }
+  let items: Vec<Expr> = counts
+    .iter()
+    .map(|(symbol, count)| {
+      let el = Expr::String(symbol.clone());
+      if *count > 1 {
+        Expr::FunctionCall {
+          name: "Subscript".to_string(),
+          args: vec![el, Expr::Integer(*count as i128)].into(),
+        }
+      } else {
+        el
+      }
+    })
+    .collect();
+  let row = Expr::FunctionCall {
+    name: "Row".to_string(),
+    args: vec![Expr::List(items.into())].into(),
+  };
   let net_charge: i64 = graph.atoms.iter().map(|a| a.formal_charge).sum();
-  match net_charge {
-    0 => {}
-    1 => formula.push('+'),
-    -1 => formula.push('-'),
-    c if c > 1 => formula.push_str(&format!("+{}", c)),
-    c => formula.push_str(&format!("-{}", -c)),
+  let charge_label = match net_charge {
+    0 => return row,
+    1 => "+".to_string(),
+    -1 => "-".to_string(),
+    c if c > 1 => format!("{}+", c),
+    c => format!("{}-", -c),
+  };
+  Expr::FunctionCall {
+    name: "Superscript".to_string(),
+    args: vec![row, Expr::String(charge_label)].into(),
   }
-  formula
 }
 
 // ---------------------------------------------------------------------------
@@ -893,30 +935,31 @@ fn molecular_formula(graph: &MolGraph) -> String {
 pub fn molecule_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match args {
     [Expr::String(spec)] => {
-      let graph = match smiles_for_name(spec) {
-        Some(smiles) => parse_smiles(smiles),
-        None => parse_smiles(spec),
-      };
-      match graph {
-        Some(mut graph) => {
-          add_explicit_hydrogens(&mut graph);
-          Ok(graph_to_expr(&graph))
-        }
-        None => {
-          crate::emit_message(&format!(
-            "Molecule::nointerp: Unable to interpret the input \"{}\" as a molecule.",
-            spec
-          ));
-          Ok(unevaluated("Molecule", args))
-        }
+      // A chemical name resolves to a fully specified structure with
+      // hydrogens materialized (as the curated data service returns them). A
+      // bare SMILES string keeps its hydrogens implicit, matching
+      // wolframscript.
+      if let Some(smiles) = smiles_for_name(spec)
+        && let Some(mut graph) = parse_smiles(smiles)
+      {
+        add_explicit_hydrogens(&mut graph);
+        return Ok(graph_to_expr(&graph));
       }
+      if let Some(graph) = parse_smiles(spec) {
+        return Ok(graph_to_expr(&graph));
+      }
+      crate::emit_message(&format!(
+        "Molecule::nointerp: Unable to interpret the input \"{}\" as a molecule.",
+        spec
+      ));
+      Ok(unevaluated("Molecule", args))
     }
-    [Expr::List(atoms), Expr::List(bonds)] => {
+    // Explicit atom/bond lists keep hydrogens implicit; the optional third
+    // argument is the (ignored) metadata list.
+    [Expr::List(atoms), Expr::List(bonds)]
+    | [Expr::List(atoms), Expr::List(bonds), Expr::List(_)] => {
       match graph_from_lists(atoms, bonds) {
-        Some(mut graph) => {
-          add_explicit_hydrogens(&mut graph);
-          Ok(graph_to_expr(&graph))
-        }
+        Some(graph) => Ok(graph_to_expr(&graph)),
         None => Ok(unevaluated("Molecule", args)),
       }
     }
@@ -989,7 +1032,7 @@ fn molecule_property_from_expr(mol: &Expr, prop: &str) -> Option<Expr> {
   let Expr::FunctionCall { name, args } = mol else {
     return None;
   };
-  if name != "Molecule" || args.len() != 2 {
+  if name != "Molecule" || (args.len() != 2 && args.len() != 3) {
     return None;
   }
   molecule_property(args, prop)
@@ -999,7 +1042,7 @@ fn molecule_property_from_expr(mol: &Expr, prop: &str) -> Option<Expr> {
 /// Used both by MoleculeValue and by subvalue application
 /// (`Molecule[…]["AtomCount"]`).
 pub fn molecule_property(mol_args: &[Expr], prop: &str) -> Option<Expr> {
-  if mol_args.len() != 2 {
+  if mol_args.len() != 2 && mol_args.len() != 3 {
     return None;
   }
   let graph = graph_from_lists(
@@ -1012,11 +1055,21 @@ pub fn molecule_property(mol_args: &[Expr], prop: &str) -> Option<Expr> {
       _ => return None,
     },
   )?;
+  // Atom-, bond-, and formula-level queries see the hydrogen-complete graph;
+  // SMILES-sourced molecules keep hydrogens implicit in their canonical form.
+  let full = || {
+    let mut g = MolGraph {
+      atoms: graph.atoms.clone(),
+      bonds: graph.bonds.clone(),
+    };
+    add_explicit_hydrogens(&mut g);
+    g
+  };
   match prop {
-    "AtomCount" => Some(Expr::Integer(graph.atoms.len() as i128)),
-    "BondCount" => Some(Expr::Integer(graph.bonds.len() as i128)),
+    "AtomCount" => Some(Expr::Integer(full().atoms.len() as i128)),
+    "BondCount" => Some(Expr::Integer(full().bonds.len() as i128)),
     "AtomList" => Some(Expr::List(
-      graph
+      full()
         .atoms
         .iter()
         .map(atom_to_expr)
@@ -1024,14 +1077,14 @@ pub fn molecule_property(mol_args: &[Expr], prop: &str) -> Option<Expr> {
         .into(),
     )),
     "BondList" => Some(Expr::List(
-      graph
+      full()
         .bonds
         .iter()
         .map(bond_to_expr)
         .collect::<Vec<_>>()
         .into(),
     )),
-    "MolecularFormula" => Some(Expr::String(molecular_formula(&graph))),
+    "MolecularFormula" => Some(molecular_formula(&full())),
     "NetCharge" => Some(Expr::Integer(
       graph.atoms.iter().map(|a| a.formal_charge as i128).sum(),
     )),
