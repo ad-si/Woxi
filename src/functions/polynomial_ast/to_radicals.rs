@@ -1,3 +1,4 @@
+use super::{mk_call, mk_int, mk_power, mk_ratio, mk_times};
 use crate::InterpreterError;
 use crate::syntax::{BinaryOperator, Expr};
 
@@ -71,39 +72,12 @@ fn to_radicals_inner(expr: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// Helper: build Expr from common constructors.
-fn mk_call(name: &str, args: Vec<Expr>) -> Expr {
-  Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  }
-}
-
-fn mk_int(n: i128) -> Expr {
-  Expr::Integer(n)
-}
-
-fn mk_ratio(n: i128, d: i128) -> Expr {
-  Expr::FunctionCall {
-    name: "Rational".to_string(),
-    args: vec![Expr::Integer(n), Expr::Integer(d)].into(),
-  }
-}
-
-fn mk_times(a: Expr, b: Expr) -> Expr {
-  mk_call("Times", vec![a, b])
-}
-
 fn mk_plus(args: Vec<Expr>) -> Expr {
   if args.len() == 1 {
     args.into_iter().next().unwrap()
   } else {
     mk_call("Plus", args)
   }
-}
-
-fn mk_power(base: Expr, exp: Expr) -> Expr {
-  mk_call("Power", vec![base, exp])
 }
 
 /// Extract integer polynomial coefficients from a pure function body.

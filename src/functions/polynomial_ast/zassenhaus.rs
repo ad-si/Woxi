@@ -8,6 +8,7 @@
 
 use super::gf_factor::gf_factor_coeffs;
 use super::poly_div;
+use super::{deg, is_zero, trim};
 use crate::functions::math_ast::gcd as gcd_i128;
 
 const PRIMES: [i128; 15] =
@@ -19,20 +20,6 @@ const MAX_DEGREE: usize = 24;
 const MAX_LIFT_TARGET: i128 = 1 << 30;
 
 // ─── modular polynomial arithmetic (ascending trimmed vectors) ───────
-
-fn trim(v: &mut Vec<i128>) {
-  while v.len() > 1 && *v.last().unwrap() == 0 {
-    v.pop();
-  }
-}
-
-fn is_zero(v: &[i128]) -> bool {
-  v == [0]
-}
-
-fn deg(v: &[i128]) -> usize {
-  v.len() - 1
-}
 
 fn mod_inv(a: i128, m: i128) -> Option<i128> {
   let (mut old_r, mut r) = (a.rem_euclid(m), m);
