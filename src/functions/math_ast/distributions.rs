@@ -12154,15 +12154,6 @@ fn distribution_raw_moment(
         };
       }
       // Numeric parameters: exact binomial sum over central moments
-      let double_fact = |n: i128| -> i128 {
-        let mut r = 1i128;
-        let mut i = n;
-        while i > 1 {
-          r *= i;
-          i -= 2;
-        }
-        r
-      };
       let pow_term = |base: &Expr, e: i128| -> Option<Expr> {
         // Omit unit factors — Power[0, 0] would be Indeterminate
         match e {
@@ -12172,8 +12163,17 @@ fn distribution_raw_moment(
         }
       };
       let mut terms: Vec<Expr> = Vec::new();
+      let mut c_kj = 1i128; // binomial C(k,j)
+      let mut fact2 = 1i128; // double factorial, (-1)! = 1
       for j in (0..=k).step_by(2) {
-        let c = crate::functions::binomial_coeff(k, j) * double_fact(j - 1);
+        if j != 0 {
+          // C(k,j) = C(k,j-2) (k-j+2)/(j-1) (k-j+1)/j
+          c_kj = (c_kj * (k - j + 2)) / (j - 1);
+          c_kj = (c_kj * (k - j + 1)) / j;
+          fact2 *= j - 1; // j = 2, 4, 6, ...
+        }
+
+        let c = c_kj * fact2;
         let mut factors = vec![int(c)];
         factors.extend(pow_term(&m, k - j));
         factors.extend(pow_term(&s, j));
@@ -13314,12 +13314,13 @@ fn inclusion_exclusion_piece(
 ) -> Expr {
   let reflect_n = if reflect { Some(n) } else { None };
   let mut terms: Vec<Expr> = Vec::new();
+  let mut c_nk = crate::functions::binomial_coeff(n, j);
   for k in (1..=j).rev() {
-    let coeff = if k % 2 == 0 {
-      crate::functions::binomial_coeff(n, k)
-    } else {
-      -crate::functions::binomial_coeff(n, k)
-    };
+    if k != j {
+      // C(n,k) = C(n,k+1) (k+1)/(n-k)
+      c_nk = (c_nk * (k + 1)) / (n - k);
+    }
+    let coeff = if k % 2 == 0 { c_nk } else { -c_nk };
     terms.push(Expr::FunctionCall {
       name: "Times".to_string(),
       args: vec![int(coeff), shifted_power(k, x, p, reflect_n)].into(),
