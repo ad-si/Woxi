@@ -1005,7 +1005,7 @@ fn pack_components(
   result
 }
 
-fn snap_coord(v: f64) -> f64 {
+pub(crate) fn snap_coord(v: f64) -> f64 {
   for &target in &[0.0, 0.5, -0.5, 1.0, -1.0] {
     if (v - target).abs() < 1e-14 {
       return target;
@@ -4633,9 +4633,7 @@ fn parse_graph_pairs(expr: &Expr) -> Option<(usize, Vec<(usize, usize)>)> {
   Some((vkeys.len(), pairs))
 }
 
-fn bool_expr(b: bool) -> Expr {
-  Expr::Identifier(if b { "True" } else { "False" }.to_string())
-}
+use crate::syntax::bool_expr;
 
 pub fn graph_predicate_ast(
   name: &str,

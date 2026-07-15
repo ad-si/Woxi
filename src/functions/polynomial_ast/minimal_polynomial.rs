@@ -1378,22 +1378,7 @@ fn negate_var_in_poly(coeffs: &[i128]) -> Vec<i128> {
     .collect()
 }
 
-/// Extract a rational number as (numerator, denominator) from an Expr
-fn extract_rational(expr: &Expr) -> Option<(i128, i128)> {
-  match expr {
-    Expr::Integer(n) => Some((*n, 1)),
-    Expr::FunctionCall { name, args }
-      if name == "Rational" && args.len() == 2 =>
-    {
-      if let (Expr::Integer(p), Expr::Integer(q)) = (&args[0], &args[1]) {
-        Some((*p, *q))
-      } else {
-        None
-      }
-    }
-    _ => None,
-  }
-}
+use crate::functions::math_ast::expr_to_rational as extract_rational;
 
 /// Extract a rational pair (p, q) from a Rational expression or integer
 fn extract_rational_pair(expr: &Expr) -> Option<(i128, i128)> {

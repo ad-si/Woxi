@@ -101,19 +101,7 @@ pub fn reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Does `e` contain any inexact (Real / BigFloat) literal? Such bounds make
 /// wolframscript emit a `Reduce::ratnz` warning, so they are left alone here.
-fn contains_inexact_literal(e: &Expr) -> bool {
-  match e {
-    Expr::Real(_) | Expr::BigFloat(_, _) => true,
-    Expr::FunctionCall { args, .. } => {
-      args.iter().any(contains_inexact_literal)
-    }
-    Expr::BinaryOp { left, right, .. } => {
-      contains_inexact_literal(left) || contains_inexact_literal(right)
-    }
-    Expr::UnaryOp { operand, .. } => contains_inexact_literal(operand),
-    _ => false,
-  }
-}
+use crate::functions::math_ast::contains_inexact_real as contains_inexact_literal;
 
 /// If `result` is a single one-sided comparison `var op c` with an exact numeric
 /// bound `c`, tighten it to the nearest admissible integer and pair it with

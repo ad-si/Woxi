@@ -630,6 +630,73 @@ pub fn expr_to_rational(expr: &Expr) -> Option<(i128, i128)> {
   }
 }
 
+/// True if the expression tree contains an inexact (Real or BigFloat)
+/// literal anywhere. Used to decide between exact/symbolic and
+/// machine-precision numerical evaluation.
+pub fn contains_inexact_real(expr: &Expr) -> bool {
+  match expr {
+    Expr::Real(_) | Expr::BigFloat(_, _) => true,
+    Expr::List(items) => items.iter().any(contains_inexact_real),
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_inexact_real),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_inexact_real(left) || contains_inexact_real(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_inexact_real(operand),
+    _ => false,
+  }
+}
+
+/// True if the expression tree contains a machine-precision Real literal
+/// (BigFloats do not count). Distinguishes exact directions like
+/// `(1 + 2 I)/Sqrt[5]` from inexact ones like `1. + 2. I`.
+pub fn expr_contains_real(expr: &Expr) -> bool {
+  match expr {
+    Expr::Real(_) => true,
+    Expr::List(items) => items.iter().any(expr_contains_real),
+    Expr::FunctionCall { args, .. } => args.iter().any(expr_contains_real),
+    Expr::BinaryOp { left, right, .. } => {
+      expr_contains_real(left) || expr_contains_real(right)
+    }
+    Expr::UnaryOp { operand, .. } => expr_contains_real(operand),
+    _ => false,
+  }
+}
+
+/// True for a literal concrete number: Integer, Real, BigInteger, BigFloat,
+/// Rational, or a negated concrete number.
+pub fn is_concrete_number(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(_)
+    | Expr::Real(_)
+    | Expr::BigInteger(_)
+    | Expr::BigFloat(_, _) => true,
+    Expr::FunctionCall { name, .. } => name == "Rational",
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => is_concrete_number(operand),
+    _ => false,
+  }
+}
+
+/// Format an f64 value as a BigFloat string with the given number of
+/// significant digits.
+pub fn format_bigfloat_value(value: f64, sig_digits: usize) -> String {
+  if value == 0.0 {
+    return "0.".to_string();
+  }
+  let sign = if value < 0.0 { "-" } else { "" };
+  let abs_val = value.abs();
+  let magnitude = abs_val.log10().floor() as i32;
+  let decimal_places = ((sig_digits as i32) - magnitude - 1).max(0) as usize;
+  let formatted = format!("{}{:.prec$}", sign, abs_val, prec = decimal_places);
+  if !formatted.contains('.') {
+    format!("{}.", formatted)
+  } else {
+    formatted
+  }
+}
+
 /// Compute GCD of two integers using Euclidean algorithm
 pub fn gcd(a: i128, b: i128) -> i128 {
   // Use `unsigned_abs` (u128) so `i128::MIN` (whose `abs()` overflows) is

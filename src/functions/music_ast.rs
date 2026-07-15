@@ -1053,7 +1053,10 @@ fn music_assoc(head: &str, pairs: Vec<(&str, Expr)>) -> Expr {
 }
 
 /// Look up a string key in an association's `(key, value)` pairs.
-fn assoc_get<'a>(pairs: &'a [(Expr, Expr)], key: &str) -> Option<&'a Expr> {
+pub(crate) fn assoc_get<'a>(
+  pairs: &'a [(Expr, Expr)],
+  key: &str,
+) -> Option<&'a Expr> {
   pairs.iter().find_map(|(k, v)| match k {
     Expr::String(s) if s == key => Some(v),
     _ => None,

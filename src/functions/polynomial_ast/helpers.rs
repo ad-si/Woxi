@@ -36,10 +36,7 @@ pub fn extract_exponent_map(var_factors: &[Expr]) -> HashMap<String, i128> {
   map
 }
 
-/// Helper to create boolean result
-pub fn bool_expr(b: bool) -> Expr {
-  Expr::Identifier(if b { "True" } else { "False" }.to_string())
-}
+pub use crate::syntax::bool_expr;
 
 // ─── Helper functions for building expressions ─────────────────────
 

@@ -11,17 +11,7 @@ use crate::InterpreterError;
 use crate::syntax::{Expr, unevaluated};
 
 /// True if `e` contains an inexact (machine) number anywhere.
-fn is_inexact(e: &Expr) -> bool {
-  match e {
-    Expr::Real(_) | Expr::BigFloat(_, _) => true,
-    Expr::BinaryOp { left, right, .. } => is_inexact(left) || is_inexact(right),
-    Expr::UnaryOp { operand, .. } => is_inexact(operand),
-    Expr::FunctionCall { args, .. } | Expr::List(args) => {
-      args.iter().any(is_inexact)
-    }
-    _ => false,
-  }
-}
+use crate::functions::math_ast::contains_inexact_real as is_inexact;
 
 /// R_C(x, y) — degenerate Carlson integral.
 fn carlson_rc(x: f64, y: f64) -> f64 {

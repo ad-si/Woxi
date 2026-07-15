@@ -1239,9 +1239,6 @@ fn is_pi_x_squared_over_two(expr: &Expr, var: &str) -> bool {
            && matches!(&args[1], Expr::Integer(2))
     )
   }
-  fn is_pi(e: &Expr) -> bool {
-    matches!(e, Expr::Constant(c) if c == "Pi")
-  }
   fn is_var_squared(e: &Expr, var: &str) -> bool {
     match e {
       Expr::BinaryOp {
@@ -6879,7 +6876,7 @@ fn is_exponential(expr: &Expr) -> bool {
 }
 
 /// Compare two expressions by their string representation.
-fn expr_str_eq(a: &Expr, b: &Expr) -> bool {
+pub(crate) fn expr_str_eq(a: &Expr, b: &Expr) -> bool {
   crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b)
 }
 

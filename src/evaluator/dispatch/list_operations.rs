@@ -8002,22 +8002,7 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Try to convert an Expr to f64 for distance computation
-fn expr_to_f64(expr: &Expr) -> Option<f64> {
-  match expr {
-    Expr::Integer(n) => Some(*n as f64),
-    Expr::Real(f) => Some(*f),
-    Expr::FunctionCall { name, args }
-      if name == "Rational" && args.len() == 2 =>
-    {
-      if let (Expr::Integer(a), Expr::Integer(b)) = (&args[0], &args[1]) {
-        Some(*a as f64 / *b as f64)
-      } else {
-        None
-      }
-    }
-    _ => None,
-  }
-}
+use crate::functions::math_ast::expr_to_f64;
 
 fn array_reshape_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Flatten the input list

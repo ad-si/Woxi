@@ -325,19 +325,7 @@ fn groebner_modulus_option(opt: &Expr) -> Option<i128> {
   None
 }
 
-fn is_prime_i128(n: i128) -> bool {
-  if n < 2 {
-    return false;
-  }
-  let mut d = 2i128;
-  while d * d <= n {
-    if n % d == 0 {
-      return false;
-    }
-    d += 1;
-  }
-  true
-}
+use crate::functions::math_ast::is_prime_i128;
 
 pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let full_args = args;

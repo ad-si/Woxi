@@ -2361,23 +2361,6 @@ fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
 }
 
 /// Convert an expression to an f64 if it represents a number.
-fn expr_to_f64(e: &Expr) -> Option<f64> {
-  match e {
-    Expr::Integer(n) => Some(*n as f64),
-    Expr::Real(f) => Some(*f),
-    Expr::FunctionCall { name, args }
-      if name == "Rational" && args.len() == 2 =>
-    {
-      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
-        Some(*n as f64 / *d as f64)
-      } else {
-        None
-      }
-    }
-    _ => None,
-  }
-}
-
 /// Returns true if `e` contains free variables (identifiers that are not
 /// well-known constants like I, Infinity).  Used to distinguish transcendental
 /// expressions-of-variables (e.g. Sin[2*x]) from pure numeric constants
@@ -10910,18 +10893,7 @@ pub fn try_around_unary(
   Some(Ok(make_around_general(fa, m, p, ar.asym)))
 }
 
-fn contains_real(expr: &Expr) -> bool {
-  match expr {
-    Expr::Real(_) | Expr::BigFloat(_, _) => true,
-    Expr::BinaryOp { left, right, .. } => {
-      contains_real(left) || contains_real(right)
-    }
-    Expr::UnaryOp { operand, .. } => contains_real(operand),
-    Expr::FunctionCall { args, .. } => args.iter().any(contains_real),
-    Expr::List(items) => items.iter().any(contains_real),
-    _ => false,
-  }
-}
+use crate::functions::math_ast::contains_inexact_real as contains_real;
 
 /// Try to extract rational coefficient k = numer/denom from an expression
 /// of the form `k * I * Pi`.
@@ -11755,21 +11727,6 @@ fn bigfloat_times(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Format an f64 value as a BigFloat digit string with the given significant digits.
-fn format_bigfloat_value(value: f64, sig_digits: usize) -> String {
-  if value == 0.0 {
-    return "0.".to_string();
-  }
-  let sign = if value < 0.0 { "-" } else { "" };
-  let abs_val = value.abs();
-  let magnitude = abs_val.log10().floor() as i32;
-  let decimal_places = ((sig_digits as i32) - magnitude - 1).max(0) as usize;
-  let formatted = format!("{}{:.prec$}", sign, abs_val, prec = decimal_places);
-  if !formatted.contains('.') {
-    format!("{}.", formatted)
-  } else {
-    formatted
-  }
-}
 
 /// Check if Plus args represent DateObject subtraction (d1 - d2) and handle it.
 /// Returns Some(Ok(Quantity[n, "Days"])) if applicable.

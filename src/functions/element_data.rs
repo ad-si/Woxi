@@ -33,7 +33,7 @@ static ATOMIC_WEIGHT_PRECISIONS: &[f64] = &[
   3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, // 111-118
 ];
 
-fn make_quantity(magnitude: Expr, unit: &str) -> Expr {
+pub(crate) fn make_quantity(magnitude: Expr, unit: &str) -> Expr {
   Expr::FunctionCall {
     name: "Quantity".to_string(),
     args: vec![magnitude, Expr::String(unit.to_string())].into(),

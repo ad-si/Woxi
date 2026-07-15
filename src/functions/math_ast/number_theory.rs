@@ -46,21 +46,19 @@ pub fn is_prime(n: usize) -> bool {
 /// rational, possibly negated) rather than a symbolic expression. Used to
 /// decide whether a "not a valid index" message should fire: a concrete
 /// non-integer argument is an error, but a symbolic one stays unevaluated.
-fn is_concrete_number(e: &Expr) -> bool {
-  match e {
-    Expr::Integer(_)
-    | Expr::Real(_)
-    | Expr::BigInteger(_)
-    | Expr::BigFloat(_, _) => true,
-    Expr::FunctionCall { name, .. } => name == "Rational",
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand,
-    } => is_concrete_number(operand),
-    _ => false,
-  }
-}
 
+
+/// Primality test for i128 values (Miller-Rabin via BigInt beyond usize).
+pub fn is_prime_i128(n: i128) -> bool {
+  if n < 2 {
+    return false;
+  }
+  if n <= usize::MAX as i128 {
+    return is_prime(n as usize);
+  }
+  let big = num_bigint::BigInt::from(n);
+  is_prime_bigint(&big)
+}
 
 /// GCD[a, b, ...] - Greatest common divisor.
 ///
@@ -493,17 +491,6 @@ fn factorial2_extract_real(expr: &Expr) -> Option<(f64, Option<f64>)> {
 
 /// Returns true if the expression contains a Real or BigFloat anywhere
 /// in the tree — i.e., the value is inexact.
-fn contains_inexact_real(expr: &Expr) -> bool {
-  match expr {
-    Expr::Real(_) | Expr::BigFloat(_, _) => true,
-    Expr::UnaryOp { operand, .. } => contains_inexact_real(operand),
-    Expr::BinaryOp { left, right, .. } => {
-      contains_inexact_real(left) || contains_inexact_real(right)
-    }
-    Expr::FunctionCall { args, .. } => args.iter().any(contains_inexact_real),
-    _ => false,
-  }
-}
 
 /// Factorial[n] or n!
 /// Factorial[n] = Gamma[n+1]

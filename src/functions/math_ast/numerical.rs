@@ -2244,18 +2244,6 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// inexact-Real or BigFloat leaf. Used by Norm (and similar) to
 /// decide between exact/symbolic and machine-precision numerical
 /// evaluation.
-fn contains_inexact_real(expr: &Expr) -> bool {
-  match expr {
-    Expr::Real(_) | Expr::BigFloat(_, _) => true,
-    Expr::List(items) => items.iter().any(contains_inexact_real),
-    Expr::FunctionCall { args, .. } => args.iter().any(contains_inexact_real),
-    Expr::BinaryOp { left, right, .. } => {
-      contains_inexact_real(left) || contains_inexact_real(right)
-    }
-    Expr::UnaryOp { operand, .. } => contains_inexact_real(operand),
-    _ => false,
-  }
-}
 
 pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {

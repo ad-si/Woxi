@@ -5638,22 +5638,7 @@ fn cantor_staircase_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
   })
 }
 
-/// Extract numerator and denominator from a rational expression
-fn extract_rational(expr: &Expr) -> Option<(i128, i128)> {
-  match expr {
-    Expr::Integer(n) => Some((*n, 1)),
-    Expr::FunctionCall { name, args }
-      if name == "Rational" && args.len() == 2 =>
-    {
-      if let (Expr::Integer(a), Expr::Integer(b)) = (&args[0], &args[1]) {
-        Some((*a, *b))
-      } else {
-        None
-      }
-    }
-    _ => None,
-  }
-}
+use crate::functions::math_ast::expr_to_rational as extract_rational;
 
 /// Compute cantor staircase for exact rational p/q where 0 < p/q < 1
 fn cantor_staircase_rational(p: i128, q: i128) -> Expr {
@@ -8247,22 +8232,7 @@ fn image_min_max_filter(
   })
 }
 
-fn expr_to_f64(expr: &Expr) -> Option<f64> {
-  match expr {
-    Expr::Integer(n) => Some(*n as f64),
-    Expr::Real(f) => Some(*f),
-    Expr::FunctionCall { name, args }
-      if name == "Rational" && args.len() == 2 =>
-    {
-      if let (Expr::Integer(a), Expr::Integer(b)) = (&args[0], &args[1]) {
-        Some(*a as f64 / *b as f64)
-      } else {
-        None
-      }
-    }
-    _ => None,
-  }
-}
+use crate::functions::math_ast::expr_to_f64;
 
 /// Standardize[data] — subtract mean and divide by standard deviation
 /// Standardize[data, f1, f2] — use f1 for location and f2 for scale
