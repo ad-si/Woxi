@@ -3497,12 +3497,7 @@ fn nice_step_rational(raw: f64) -> Option<(i128, i128)> {
   Some((sn / g, sd / g))
 }
 
-fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
-  while b != 0 {
-    (a, b) = (b, a % b);
-  }
-  a.abs()
-}
+use crate::functions::math_ast::gcd as gcd_i128;
 
 /// Reduce a (numerator, denominator) pair to lowest terms with a positive
 /// denominator.

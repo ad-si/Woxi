@@ -1189,16 +1189,7 @@ fn sinusoid_extremum(expr: &Expr, var: &str, maximize: bool) -> Option<Expr> {
     norm((a.0 * b.1 + b.0 * a.1, a.1 * b.1))
   }
   fn norm(f: Frac) -> Frac {
-    fn gcd(a: i128, b: i128) -> i128 {
-      let (mut a, mut b) = (a.abs(), b.abs());
-      while b != 0 {
-        let t = b;
-        b = a % b;
-        a = t;
-      }
-      a.max(1)
-    }
-    let g = gcd(f.0, f.1);
+    let g = crate::functions::math_ast::gcd(f.0, f.1).max(1);
     let (mut n, mut d) = (f.0 / g, f.1 / g);
     if d < 0 {
       n = -n;

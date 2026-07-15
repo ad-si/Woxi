@@ -712,16 +712,7 @@ fn resolve_lowercase_unit(name: &str) -> Option<String> {
   None
 }
 
-fn gcd(mut a: i128, mut b: i128) -> i128 {
-  a = a.abs();
-  b = b.abs();
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a
-}
+use crate::functions::math_ast::gcd;
 
 // ─── Compound unit decomposition ────────────────────────────────────────────
 

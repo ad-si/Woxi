@@ -643,6 +643,47 @@ pub fn gcd(a: i128, b: i128) -> i128 {
   a as i128
 }
 
+/// Compute GCD of two u64 values using Euclidean algorithm
+pub fn gcd_u64(mut a: u64, mut b: u64) -> u64 {
+  while b != 0 {
+    let t = b;
+    b = a % b;
+    a = t;
+  }
+  a
+}
+
+/// Compute GCD of two unsigned integers using Euclidean algorithm
+pub fn gcd_u128(mut a: u128, mut b: u128) -> u128 {
+  while b != 0 {
+    let t = b;
+    b = a % b;
+    a = t;
+  }
+  a
+}
+
+/// Compute the (non-negative) LCM of two integers; 0 if either is 0.
+pub fn lcm_i128(a: i128, b: i128) -> i128 {
+  if a == 0 || b == 0 {
+    return 0;
+  }
+  (a / gcd(a, b) * b).abs()
+}
+
+/// Compute the (non-negative) GCD of two BigInts.
+pub fn gcd_bigint(a: &BigInt, b: &BigInt) -> BigInt {
+  use num_traits::{Signed, Zero};
+  let mut a = a.abs();
+  let mut b = b.abs();
+  while !b.is_zero() {
+    let t = b.clone();
+    b = &a % &b;
+    a = t;
+  }
+  a
+}
+
 /// Extract the largest easily-found perfect-square factor from a positive
 /// i128: returns `(outside, inside)` with `n == outside^2 * inside`, so
 /// `Sqrt[n] = outside * Sqrt[inside]`. Square factors of primes below a

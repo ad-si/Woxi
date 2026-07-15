@@ -315,12 +315,7 @@ fn rat_add(a: (i128, i128), b: (i128, i128)) -> Option<(i128, i128)> {
   Some((num / g, den / g))
 }
 
-fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
-  while b != 0 {
-    (a, b) = (b, a % b);
-  }
-  a.max(1)
-}
+use crate::functions::math_ast::gcd as gcd_i128;
 
 /// Convert a numeric scalar expression to an `AngleVal`. Exactness is
 /// preserved for Integer/Rational; Reals and exact-but-irrational numerics

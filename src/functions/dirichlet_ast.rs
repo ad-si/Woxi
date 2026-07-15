@@ -257,11 +257,7 @@ fn pow_mod(mut b: i128, mut e: i128, m: i128) -> i128 {
 }
 
 fn gcd(a: i128, b: i128) -> i128 {
-  let (mut a, mut b) = (a.abs(), b.abs());
-  while b != 0 {
-    (a, b) = (b, a % b);
-  }
-  a.max(1)
+  crate::functions::math_ast::gcd(a, b).max(1)
 }
 
 fn euler_phi(k: i128) -> i128 {

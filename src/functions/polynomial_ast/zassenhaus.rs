@@ -8,6 +8,7 @@
 
 use super::gf_factor::gf_factor_coeffs;
 use super::poly_div;
+use crate::functions::math_ast::gcd as gcd_i128;
 
 const PRIMES: [i128; 15] =
   [3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53];
@@ -180,14 +181,6 @@ fn symmetric(v: &[i128], m: i128) -> Vec<i128> {
     .collect();
   trim(&mut out);
   out
-}
-
-fn gcd_i128(a: i128, b: i128) -> i128 {
-  let (mut a, mut b) = (a.abs(), b.abs());
-  while b != 0 {
-    (a, b) = (b, a % b);
-  }
-  a
 }
 
 /// Primitive part with positive leading coefficient; also returns the

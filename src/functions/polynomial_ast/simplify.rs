@@ -139,7 +139,7 @@ fn reduce_rat((n, d): (i128, i128)) -> (i128, i128) {
   if d == 0 {
     return (n, d);
   }
-  let g = super::factor::gcd_i128(n.abs(), d.abs()).max(1);
+  let g = gcd_i128(n.abs(), d.abs()).max(1);
   let (mut n, mut d) = (n / g, d / g);
   if d < 0 {
     n = -n;
@@ -7485,11 +7485,8 @@ fn simplify_quotient_select(
   if matches!(num, Expr::Integer(-1)) {
     return None;
   }
-  fn gcd(a: i128, b: i128) -> i128 {
-    if b == 0 { a.abs() } else { gcd(b, a % b) }
-  }
   let content = |terms: &[(i128, i128, i128)]| -> i128 {
-    let g = terms.iter().fold(0i128, |g, &(n, _, _)| gcd(g, n));
+    let g = terms.iter().fold(0i128, |g, &(n, _, _)| gcd_i128(g, n));
     // FactorTerms sign rule: the highest-degree coefficient's sign
     let sign = if terms.last().map(|&(n, _, _)| n < 0).unwrap_or(false) {
       -1
@@ -7600,7 +7597,7 @@ fn simplify_quotient_select(
       if *pull {
         coeff_n = -coeff_n;
       }
-      let g = gcd(coeff_n, coeff_d);
+      let g = gcd_i128(coeff_n, coeff_d);
       if g > 1 {
         // shared content would have been cancelled upstream; skip
         // rather than construct a misleading display
@@ -7690,7 +7687,7 @@ fn simplify_quotient_select(
       + n_terms
         .iter()
         .map(|&(n, _, e)| {
-          let g = gcd(n, den_mono_coeff);
+          let g = gcd_i128(n, den_mono_coeff);
           quotient_cost::sc_term(n / g, den_mono_coeff / g, e - den_mono_exp)
         })
         .sum::<i64>();
@@ -7740,7 +7737,7 @@ fn simplify_quotient_select(
       for (nc, nt) in flip_opts {
         let mut coeff_n = nc;
         let mut coeff_d = fdc;
-        let g = gcd(coeff_n, coeff_d);
+        let g = gcd_i128(coeff_n, coeff_d);
         if g > 1 {
           coeff_n /= g;
           coeff_d /= g;
@@ -8615,23 +8612,8 @@ fn parse_log_term(term: &Expr) -> Option<(i64, num_bigint::BigInt)> {
 /// a sanity bound on the coefficient magnitude).
 fn try_merge_logs(expr: &Expr) -> Option<Expr> {
   use num_bigint::BigInt;
-  use num_traits::{One, Zero};
+  use num_traits::One;
 
-  // gcd of two non-negative BigInts (Euclid).
-  fn gcd_bigint(mut a: BigInt, mut b: BigInt) -> BigInt {
-    while !b.is_zero() {
-      let r = &a % &b;
-      a = std::mem::replace(&mut b, r);
-    }
-    a
-  }
-  fn gcd_u64(mut a: u64, mut b: u64) -> u64 {
-    while b != 0 {
-      let r = a % b;
-      a = std::mem::replace(&mut b, r);
-    }
-    a
-  }
 
   // Flatten the additive structure (both FunctionCall and BinaryOp forms),
   // and distribute an integer coefficient over a parenthesised sum of logs so
@@ -8747,7 +8729,7 @@ fn try_merge_logs(expr: &Expr) -> Option<Expr> {
         den *= n.pow((-c) as u32);
       }
     }
-    let g = gcd_bigint(num.clone(), den.clone());
+    let g = crate::functions::math_ast::gcd_bigint(&num, &den);
     let num = &num / &g;
     let den = &den / &g;
     let q = if den.is_one() {
@@ -8775,7 +8757,7 @@ fn try_merge_logs(expr: &Expr) -> Option<Expr> {
     let g = logs
       .iter()
       .map(|(c, _)| c.unsigned_abs())
-      .fold(0u64, gcd_u64);
+      .fold(0u64, crate::functions::math_ast::gcd_u64);
     if g > 1 {
       let reduced: Vec<(i64, BigInt)> = logs
         .iter()

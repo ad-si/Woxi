@@ -857,16 +857,6 @@ fn hypoexponential_median(arg: &Expr) -> Option<Expr> {
   None
 }
 
-fn gcd_i128(a: i128, b: i128) -> i128 {
-  let (mut a, mut b) = (a.abs(), b.abs());
-  while b != 0 {
-    let t = a % b;
-    a = b;
-    b = t;
-  }
-  a
-}
-
 /// Numeric ordering key for a Median element. Handles plain numbers and
 /// rationals directly, and falls back to numericizing symbolic-but-real values
 /// (Pi, E, Sin[1], ...) via `N[expr]` so an exact list like {Pi, E, 1} can be
@@ -1038,10 +1028,7 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
         Ok(Expr::Integer(sum / 2))
       } else {
         // Return as Rational
-        fn gcd(a: i128, b: i128) -> i128 {
-          if b == 0 { a } else { gcd(b, a % b) }
-        }
-        let g = gcd(sum.abs(), 2);
+        let g = gcd_i128(sum.abs(), 2);
         Ok(Expr::FunctionCall {
           name: "Rational".to_string(),
           args: vec![Expr::Integer(sum / g), Expr::Integer(2 / g)].into(),

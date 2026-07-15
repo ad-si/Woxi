@@ -1612,16 +1612,7 @@ fn sturm_real_root_count(coeffs: &[i128]) -> usize {
     v
   }
 
-  fn gcd_bigint(a: &BigInt, b: &BigInt) -> BigInt {
-    let mut a = a.abs();
-    let mut b = b.abs();
-    while !b.is_zero() {
-      let t = &a % &b;
-      a = b;
-      b = t;
-    }
-    a
-  }
+  use crate::functions::math_ast::gcd_bigint;
 
   fn content_reduce(v: &[BigInt]) -> Vec<BigInt> {
     let mut g = BigInt::ZERO;

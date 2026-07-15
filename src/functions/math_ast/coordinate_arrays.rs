@@ -4,6 +4,7 @@
 //! pairs versus the two corner points `{mins, maxs}`.
 
 use crate::InterpreterError;
+use crate::functions::math_ast::gcd;
 use crate::syntax::{Expr, UnaryOperator, expr_to_output, unevaluated};
 
 /// One coordinate value: an exact rational (p/q, q > 0) or a machine real.
@@ -35,7 +36,7 @@ impl Num {
     match self {
       Num::Exact(0, _) => Expr::Integer(0),
       Num::Exact(p, q) => {
-        let g = gcd(p.abs(), q);
+        let g = gcd(p.abs(), q).max(1);
         let (p, q) = (p / g, q / g);
         if q == 1 {
           Expr::Integer(p)
@@ -49,13 +50,6 @@ impl Num {
       Num::Real(v) => Expr::Real(v),
     }
   }
-}
-
-fn gcd(mut a: i128, mut b: i128) -> i128 {
-  while b != 0 {
-    (a, b) = (b, a % b);
-  }
-  a.max(1)
 }
 
 /// Combine two numbers with an exact rational operation, falling back to f64

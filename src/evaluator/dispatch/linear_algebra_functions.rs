@@ -3879,16 +3879,7 @@ fn kronecker_product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(acc_owned)
 }
 
-fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
-  a = a.abs();
-  b = b.abs();
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a
-}
+use crate::functions::math_ast::gcd as gcd_i128;
 
 /// Binary dissimilarity functions for binary (0/1) vectors.
 fn binary_dissimilarity_ast(

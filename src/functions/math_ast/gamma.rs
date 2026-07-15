@@ -765,18 +765,6 @@ fn upper_incomplete_gamma_cf(a: f64, z: f64) -> f64 {
   f * (-z).exp() * z.powf(a)
 }
 
-fn gcd_bigint(a: &BigInt, b: &BigInt) -> BigInt {
-  use num_traits::Zero;
-  let mut a = a.magnitude().clone();
-  let mut b = b.magnitude().clone();
-  while !b.is_zero() {
-    let t = b.clone();
-    b = &a % &b;
-    a = t;
-  }
-  a.into()
-}
-
 /// Lanczos approximation for the Gamma function
 pub fn gamma_fn(x: f64) -> f64 {
   if x < 0.5 {

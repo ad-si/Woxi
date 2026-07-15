@@ -1836,10 +1836,7 @@ pub fn music_rest(args: &[Expr]) -> Option<Expr> {
   }
 }
 
-/// Greatest common divisor of two non-negative integers.
-fn gcd(a: i128, b: i128) -> i128 {
-  if b == 0 { a } else { gcd(b, a % b) }
-}
+use crate::functions::math_ast::gcd;
 
 /// Reduce `n/d` to lowest terms with a positive denominator, returning an
 /// `Integer` when the denominator is 1 and a `Rational[n, d]` otherwise.

@@ -461,17 +461,6 @@ fn expr_has_negative_var_power(expr: &Expr) -> bool {
   }
 }
 
-/// GCD of two i128 values.
-pub fn gcd_i128(a: i128, b: i128) -> i128 {
-  let (mut a, mut b) = (a.abs(), b.abs());
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a
-}
-
 /// Factor an integer polynomial given as coefficients.
 /// Returns a list of factor expressions, or empty if can't factor.
 pub fn factor_integer_poly(coeffs: &[i128], var: &str) -> Vec<Expr> {
@@ -2094,14 +2083,6 @@ fn extract_non_numeric_factors(term: &Expr) -> Vec<Expr> {
         .collect()
     }
     _ => vec![term.clone()],
-  }
-}
-
-fn lcm_i128(a: i128, b: i128) -> i128 {
-  if a == 0 || b == 0 {
-    0
-  } else {
-    (a / gcd_i128(a, b)) * b
   }
 }
 

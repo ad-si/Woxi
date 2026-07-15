@@ -4029,17 +4029,6 @@ pub fn root_mean_square_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// GCD for i128 values
-pub fn gcd_i128(a: i128, b: i128) -> i128 {
-  let (mut a, mut b) = (a.abs(), b.abs());
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a
-}
-
 /// Floor of a rational number num/den
 pub fn rational_floor(num: i128, den: i128) -> i128 {
   if den == 0 {

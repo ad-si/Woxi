@@ -7064,23 +7064,7 @@ fn expand_part_spec(
   Some(out)
 }
 
-/// Extract a value from an association by key string
-fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a
-}
-
-fn lcm_i128(a: i128, b: i128) -> i128 {
-  if a == 0 || b == 0 {
-    return 0;
-  }
-  let g = gcd_i128(a.abs(), b.abs());
-  (a / g * b).abs()
-}
+use crate::functions::math_ast::lcm_i128;
 
 /// If `expr` is `Cycles[{{...}, {...}, ...}]` with all-integer cycles,
 /// return each cycle as `Vec<i128>`. Returns `None` for any other shape

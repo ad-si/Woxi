@@ -4,7 +4,7 @@
 //! NDSolve solves initial-value problems numerically using RK4.
 
 use crate::InterpreterError;
-use crate::functions::math_ast::make_sqrt;
+use crate::functions::math_ast::{gcd as gcd_i128, gcd_u128, make_sqrt};
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
 };
@@ -1392,7 +1392,7 @@ fn f64_to_nice_expr(f: f64) -> Expr {
     if (numer - numer.round()).abs() < 1e-10 {
       let n = numer.round() as i128;
       let d = denom as i128;
-      let g = gcd(n.unsigned_abs(), d as u128) as i128;
+      let g = gcd_u128(n.unsigned_abs(), d as u128) as i128;
       let nn = n / g;
       let dd = d / g;
       if dd == 1 {
@@ -1426,15 +1426,6 @@ fn f64_to_nice_expr(f: f64) -> Expr {
     }
   }
   Expr::Real(f)
-}
-
-fn gcd(mut a: u128, mut b: u128) -> u128 {
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a
 }
 
 // ─── First-order Linear ODE Solver ─────────────────────────────────────
@@ -2973,16 +2964,6 @@ fn make_c_over_a(c: i128, a: i128) -> Expr {
   } else {
     make_rational(num, den)
   }
-}
-
-fn gcd_i128(a: i128, b: i128) -> i128 {
-  let (mut a, mut b) = (a, b);
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a
 }
 
 /// Walk a Plus chain and accumulate signed integer coefficients of

@@ -53,15 +53,7 @@ fn mod_inverse(a: i128, p: i128) -> Option<i128> {
   Some(old_s.rem_euclid(p))
 }
 
-fn gcd(a: i128, b: i128) -> i128 {
-  let (mut a, mut b) = (a.abs(), b.abs());
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a
-}
+use crate::functions::math_ast::gcd;
 
 fn norm(f: Frac) -> Option<Frac> {
   if f.1 == 0 {

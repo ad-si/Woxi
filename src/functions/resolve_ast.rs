@@ -295,15 +295,7 @@ fn contains_imaginary(expr: &Expr) -> bool {
 //    complexes a non-constant polynomial always has zeros (and a non-empty
 //    complement), so those collapse without needing separability.
 
-fn gcd(a: i128, b: i128) -> i128 {
-  let (mut a, mut b) = (a.abs(), b.abs());
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a
-}
+use crate::functions::math_ast::gcd;
 
 /// Extract a rational literal (`Integer` or `Rational[n, d]`) from a leaf.
 fn expr_to_rational(e: &Expr) -> Option<(i128, i128)> {

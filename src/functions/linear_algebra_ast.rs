@@ -1220,15 +1220,7 @@ fn eval_divide(a: &Expr, b: &Expr) -> Expr {
   }
 }
 
-fn gcd_i128(a: i128, b: i128) -> i128 {
-  let (mut a, mut b) = (a, b);
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a
-}
+use crate::functions::math_ast::gcd as gcd_i128;
 
 /// The rectangular shape of a nested-List array, found by descending through
 /// the first element of each level. A non-list has an empty shape; `{a, b}`

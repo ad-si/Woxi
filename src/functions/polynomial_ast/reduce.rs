@@ -2885,13 +2885,7 @@ impl Rat {
 }
 
 fn rat_gcd(a: i128, b: i128) -> i128 {
-  let (mut a, mut b) = (a.abs(), b.abs());
-  while b != 0 {
-    let t = a % b;
-    a = b;
-    b = t;
-  }
-  a.max(1)
+  crate::functions::math_ast::gcd(a, b).max(1)
 }
 
 fn rat_simplify(num: i128, den: i128) -> Rat {

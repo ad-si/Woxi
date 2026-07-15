@@ -129,14 +129,7 @@ impl Rat {
   }
 }
 
-fn gcd(mut a: u128, mut b: u128) -> u128 {
-  while b != 0 {
-    let t = a % b;
-    a = b;
-    b = t;
-  }
-  a
-}
+use crate::functions::math_ast::gcd_u128 as gcd;
 
 fn binomial(n: u64, k: u64) -> i128 {
   if k > n {

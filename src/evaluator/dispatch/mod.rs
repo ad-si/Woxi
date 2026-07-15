@@ -1,6 +1,8 @@
 #[allow(unused_imports)]
 use super::*;
 
+use crate::functions::math_ast::gcd as gcd_i128;
+
 // Re-export crate types/functions for submodules (used by submodules via `use super::*`)
 #[allow(unused_imports)]
 pub(crate) use crate::syntax::{
@@ -10953,10 +10955,6 @@ fn expr_to_rational(expr: &Expr) -> Option<(i128, i128)> {
     }
     _ => None,
   }
-}
-
-fn gcd_i128(a: i128, b: i128) -> i128 {
-  if b == 0 { a } else { gcd_i128(b, a % b) }
 }
 
 /// Build a petgraph UnGraph from Wolfram Graph vertices and edges.

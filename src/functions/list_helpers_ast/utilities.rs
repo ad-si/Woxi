@@ -264,15 +264,7 @@ pub fn f64_to_expr(n: f64) -> Expr {
   }
 }
 
-pub(crate) fn gcd_i128(a: i128, b: i128) -> i128 {
-  let (mut a, mut b) = (a.abs(), b.abs());
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a
-}
+pub(crate) use crate::functions::math_ast::gcd as gcd_i128;
 
 /// Identity[x] - returns x unchanged
 pub fn identity_ast(arg: &Expr) -> Result<Expr, InterpreterError> {

@@ -418,16 +418,7 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
 /// Helper: render a rational (num, denom) pair in FullForm notation.
 fn render_rational_full_form(num: i128, denom: i128) -> String {
   // Reduce to lowest terms
-  fn gcd(a: i128, b: i128) -> i128 {
-    let (mut a, mut b) = (a.abs(), b.abs());
-    while b != 0 {
-      let t = b;
-      b = a % b;
-      a = t;
-    }
-    a
-  }
-  let g = gcd(num, denom);
+  let g = crate::functions::math_ast::gcd(num, denom);
   let (n, d) = if g > 0 {
     (num / g, denom / g)
   } else {

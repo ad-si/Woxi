@@ -168,16 +168,7 @@ fn as_power(expr: &Expr) -> Option<(Expr, Expr)> {
 }
 
 fn simplify_frac(n: i128, d: i128) -> (i128, i128) {
-  fn gcd(a: i128, b: i128) -> i128 {
-    let (mut a, mut b) = (a.abs(), b.abs());
-    while b != 0 {
-      let t = b;
-      b = a % b;
-      a = t;
-    }
-    a.max(1)
-  }
-  let g = gcd(n, d);
+  let g = crate::functions::math_ast::gcd(n, d).max(1);
   let (mut n, mut d) = (n / g, d / g);
   if d < 0 {
     n = -n;

@@ -56,15 +56,7 @@ pub fn decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 type Rat = (i128, i128); // (numerator, denominator), always reduced
 
-fn rat_gcd(a: i128, b: i128) -> i128 {
-  let (mut a, mut b) = (a.abs(), b.abs());
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a
-}
+use crate::functions::math_ast::gcd as rat_gcd;
 
 fn rat_reduce(n: i128, d: i128) -> Rat {
   if d == 0 {

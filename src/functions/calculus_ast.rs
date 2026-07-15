@@ -4,7 +4,7 @@
 //! and integration.
 
 use crate::InterpreterError;
-use crate::functions::math_ast::{is_sqrt, make_sqrt};
+use crate::functions::math_ast::{gcd, gcd as gcd_i128, is_sqrt, make_sqrt};
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
 };
@@ -14308,10 +14308,6 @@ fn reduce_frac(num: i128, den: i128) -> (i128, i128) {
   (n, d)
 }
 
-fn gcd_i128(a: i128, b: i128) -> i128 {
-  if b == 0 { a } else { gcd_i128(b, a % b) }
-}
-
 /// If `f` has a leading non-integer rational power of the shift `(var - x0)`
 /// (so that its expansion about `x0` is a genuine Puiseux series), return the
 /// reduced exponent `(p, q)` with `q > 1` together with the analytic cofactor
@@ -15363,16 +15359,6 @@ fn expand_series_data_coefficients(
   }
   // If not a SeriesData, just expand the expression
   series_ast(&[series.clone(), spec.clone()])
-}
-
-fn gcd(a: i128, b: i128) -> i128 {
-  let (mut a, mut b) = (a.abs(), b.abs());
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a
 }
 
 /// NIntegrate[expr, {var, lo, hi}] - Numerical integration

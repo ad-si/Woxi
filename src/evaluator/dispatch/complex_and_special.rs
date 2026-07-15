@@ -11913,9 +11913,7 @@ fn rational_to_expr(n: i128, d: i128) -> Expr {
   }
 }
 
-fn gcd_i128(a: i128, b: i128) -> i128 {
-  if b == 0 { a } else { gcd_i128(b, a % b) }
-}
+use crate::functions::math_ast::gcd as gcd_i128;
 
 /// Rational arithmetic helpers
 fn rat_sub(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {

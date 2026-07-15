@@ -390,15 +390,7 @@ fn as_power(expr: &Expr) -> Option<(Expr, Expr)> {
   }
 }
 
-fn gcd(a: i128, b: i128) -> i128 {
-  let (mut a, mut b) = (a.abs(), b.abs());
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a
-}
+use crate::functions::math_ast::gcd;
 
 fn plus(terms: Vec<Expr>) -> Expr {
   Expr::FunctionCall {

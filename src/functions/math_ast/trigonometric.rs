@@ -6088,17 +6088,6 @@ fn reduce_trig_power(base: &Expr, n: i128) -> Option<Expr> {
   }
 
   // Compute GCD of all numerator coefficients and denom to simplify the fraction
-  fn gcd(mut a: i128, mut b: i128) -> i128 {
-    a = a.abs();
-    b = b.abs();
-    while b != 0 {
-      let t = b;
-      b = a % b;
-      a = t;
-    }
-    a
-  }
-
   let mut g = denom;
   for (c, _) in &num_terms {
     g = gcd(g, *c);

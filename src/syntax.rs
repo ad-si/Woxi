@@ -1729,17 +1729,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
         match denom {
           Some(d) => {
             // Simplify the fraction
-            fn gcd(mut a: i128, mut b: i128) -> i128 {
-              a = a.abs();
-              b = b.abs();
-              while b != 0 {
-                let t = b;
-                b = a % b;
-                a = t;
-              }
-              a
-            }
-            let g = gcd(mantissa, d);
+            let g = crate::functions::math_ast::gcd(mantissa, d);
             let num = mantissa / g;
             let den = d / g;
             if den == 1 {
