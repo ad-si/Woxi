@@ -2,7 +2,8 @@ use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
-  PLOT_COLORS, format_tick, nice_step, parse_image_size, substitute_var,
+  PLOT_COLORS, evaluate_at_xy, format_tick, nice_step, parse_image_size,
+  substitute_var,
 };
 use crate::syntax::Expr;
 
@@ -165,20 +166,6 @@ pub(crate) fn apply_lighting(
   let g = (color.1 as f64 * intensity).round() as u8;
   let b = (color.2 as f64 * intensity).round() as u8;
   (r, g, b)
-}
-
-/// Evaluate the function body at given (x, y) values
-fn evaluate_at_xy(
-  body: &Expr,
-  xvar: &str,
-  yvar: &str,
-  xval: f64,
-  yval: f64,
-) -> Option<f64> {
-  let sub1 = substitute_var(body, xvar, &Expr::Real(xval));
-  let sub2 = substitute_var(&sub1, yvar, &Expr::Real(yval));
-  let result = evaluate_expr_to_expr(&sub2).ok()?;
-  try_eval_to_f64(&result)
 }
 
 fn parse_iterator(

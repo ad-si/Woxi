@@ -9,23 +9,10 @@
 
 use crate::InterpreterError;
 use crate::functions::datetime_ast::{
-  date_to_absolute_seconds, day_of_week, days_in_month, extract_date_components,
+  date_to_absolute_seconds, day_of_week, days_in_month,
+  extract_date_components, weekday_index,
 };
 use crate::syntax::{Expr, unevaluated};
-
-/// Monday = 0 … Sunday = 6, matching `day_of_week`.
-fn weekday_index(name: &str) -> Option<i64> {
-  match name {
-    "Monday" => Some(0),
-    "Tuesday" => Some(1),
-    "Wednesday" => Some(2),
-    "Thursday" => Some(3),
-    "Friday" => Some(4),
-    "Saturday" => Some(5),
-    "Sunday" => Some(6),
-    _ => None,
-  }
-}
 
 fn as_f64(e: &Expr) -> Option<f64> {
   match e {

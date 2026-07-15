@@ -2937,7 +2937,7 @@ pub fn day_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// "BusinessDay"), which cannot be reproduced without that data. Producing a
 /// non-holiday-aware result would diverge from wolframscript.
 /// Map a weekday symbol name to `day_of_week`'s index (0=Monday … 6=Sunday).
-fn weekday_index(name: &str) -> Option<i64> {
+pub(crate) fn weekday_index(name: &str) -> Option<i64> {
   match name {
     "Monday" => Some(0),
     "Tuesday" => Some(1),

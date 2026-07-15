@@ -139,6 +139,72 @@ pub(crate) fn substitute_var(expr: &Expr, var: &str, value: &Expr) -> Expr {
 }
 
 /// Evaluate the function body at a given x value
+/// Parse a plot iterator specification `{var, min, max}`.
+pub(crate) fn parse_iterator(
+  spec: &Expr,
+  label: &str,
+) -> Result<(String, f64, f64), InterpreterError> {
+  match spec {
+    Expr::List(items) if items.len() == 3 => {
+      let var = match &items[0] {
+        Expr::Identifier(name) => name.clone(),
+        _ => {
+          return Err(InterpreterError::EvaluationError(format!(
+            "{label}: iterator variable must be a symbol"
+          )));
+        }
+      };
+      let min_expr = evaluate_expr_to_expr(&items[1])?;
+      let max_expr = evaluate_expr_to_expr(&items[2])?;
+      let min_val = try_eval_to_f64(&min_expr).ok_or_else(|| {
+        InterpreterError::EvaluationError(format!(
+          "{label}: cannot evaluate iterator min to a number"
+        ))
+      })?;
+      let max_val = try_eval_to_f64(&max_expr).ok_or_else(|| {
+        InterpreterError::EvaluationError(format!(
+          "{label}: cannot evaluate iterator max to a number"
+        ))
+      })?;
+      Ok((var, min_val, max_val))
+    }
+    _ => Err(InterpreterError::EvaluationError(format!(
+      "{label}: iterator must be {{var, min, max}}"
+    ))),
+  }
+}
+
+/// Evaluate the function body at given (x, y) values.
+pub(crate) fn evaluate_at_xy(
+  body: &Expr,
+  xvar: &str,
+  yvar: &str,
+  xval: f64,
+  yval: f64,
+) -> Option<f64> {
+  let sub1 = substitute_var(body, xvar, &Expr::Real(xval));
+  let sub2 = substitute_var(&sub1, yvar, &Expr::Real(yval));
+  let result = evaluate_expr_to_expr(&sub2).ok()?;
+  try_eval_to_f64(&result)
+}
+
+/// Simple SVG header for plots without plotters axes (ArrayPlot, charts).
+pub(crate) fn svg_header(w: u32, h: u32, full_width: bool) -> String {
+  let (bg, _, _, _, _) = plot_theme();
+  let bg_fill = format!("rgb({},{},{})", bg.0, bg.1, bg.2);
+  if full_width {
+    format!(
+      "<svg width=\"100%\" viewBox=\"0 0 {w} {h}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n\
+       <rect width=\"{w}\" height=\"{h}\" fill=\"{bg_fill}\"/>\n"
+    )
+  } else {
+    format!(
+      "<svg width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n\
+       <rect width=\"{w}\" height=\"{h}\" fill=\"{bg_fill}\"/>\n"
+    )
+  }
+}
+
 pub(crate) fn evaluate_at_point(body: &Expr, var: &str, x: f64) -> Option<f64> {
   let substituted = substitute_var(body, var, &Expr::Real(x));
   let result = evaluate_expr_to_expr(&substituted).ok()?;
@@ -4084,8 +4150,8 @@ pub(crate) fn generate_bubble_chart_svg(
   Ok(buf)
 }
 
-/// Escape special characters for SVG text content.
-fn html_escape(s: &str) -> String {
+/// Escape special characters for SVG/HTML text content.
+pub(crate) fn html_escape(s: &str) -> String {
   s.replace('&', "&amp;")
     .replace('<', "&lt;")
     .replace('>', "&gt;")

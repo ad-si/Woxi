@@ -4,7 +4,7 @@ use crate::functions::interval_ast::is_interval;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
   DEFAULT_HEIGHT, DEFAULT_WIDTH, PLOT_COLORS, RESOLUTION_SCALE,
-  format_date_tick, generate_date_ticks, parse_image_size,
+  format_date_tick, generate_date_ticks, html_escape, parse_image_size,
 };
 use crate::syntax::{Expr, unevaluated};
 
@@ -464,14 +464,6 @@ fn render_timeline_svg(
   }
 
   buf
-}
-
-/// Escape special HTML characters in text content.
-fn html_escape(s: &str) -> String {
-  s.replace('&', "&amp;")
-    .replace('<', "&lt;")
-    .replace('>', "&gt;")
-    .replace('"', "&quot;")
 }
 
 /// Theme colors: `(background, axis, label, event)`.

@@ -3,7 +3,8 @@ use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::list_helpers_ast::apply_func_to_two_args;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
-  DEFAULT_HEIGHT, DEFAULT_WIDTH, RESOLUTION_SCALE, parse_image_size,
+  DEFAULT_HEIGHT, DEFAULT_WIDTH, RESOLUTION_SCALE, html_escape,
+  parse_image_size,
 };
 use crate::syntax::{Expr, unevaluated};
 
@@ -452,14 +453,6 @@ fn leaf_order(nodes: &[Node], node: usize, out: &mut Vec<usize>) {
 /// Estimate the pixel width of a text label at the given font size.
 fn est_text_width(label: &str, font_size: f64) -> f64 {
   label.chars().count() as f64 * font_size * 0.6
-}
-
-/// Escape special HTML characters in text content.
-fn html_escape(s: &str) -> String {
-  s.replace('&', "&amp;")
-    .replace('<', "&lt;")
-    .replace('>', "&gt;")
-    .replace('"', "&quot;")
 }
 
 /// Theme colors: `(background, line, label)`.
