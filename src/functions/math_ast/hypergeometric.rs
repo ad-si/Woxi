@@ -1316,8 +1316,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Result = (e_num · E^z + const_num) / z_max  — reduce by gcd.
     // Reduce by the gcd shared between numerator e^z coefficient, the
     // numerator constant, and the denominator.
-    let g_all =
-      gcd_bigint(&gcd_bigint(&e_num, &const_num), &z_max);
+    let g_all = gcd_bigint(&gcd_bigint(&e_num, &const_num), &z_max);
     let denom = if g_all != BigInt::from(0) {
       &z_max / &g_all
     } else {

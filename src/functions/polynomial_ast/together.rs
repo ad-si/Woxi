@@ -1809,8 +1809,7 @@ pub fn together_expr(expr: &Expr) -> Expr {
         && exp.0 > 0
         && let Ok(e) = u32::try_from(exp.0)
         && let Some(p) = n.checked_pow(e)
-        && let Some(l) =
-          int_lcm.checked_mul(p / gcd_i128(int_lcm, p).abs())
+        && let Some(l) = int_lcm.checked_mul(p / gcd_i128(int_lcm, p).abs())
       {
         int_lcm = l;
         merged += 1;

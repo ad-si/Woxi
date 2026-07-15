@@ -130,11 +130,8 @@ extern "C" {
   fn report_panic(msg: &str) -> Result<(), JsValue>;
 }
 
-/// Download a URL and decode the image bytes (WASM).
-/// Returns the image as an Expr::Image.
-pub fn import_image_from_url_wasm(
-  url: &str,
-) -> Result<Expr, crate::InterpreterError> {
+/// Fetch a URL via the host-provided hook and base64-decode the response.
+fn fetch_url_bytes(url: &str) -> Result<Vec<u8>, crate::InterpreterError> {
   let b64 = woxi_fetch_url(url).map_err(|e| {
     crate::InterpreterError::EvaluationError(format!(
       "Import: failed to fetch \"{}\": {:?}",
@@ -147,14 +144,21 @@ pub fn import_image_from_url_wasm(
       url
     )));
   }
-  let bytes =
-    base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &b64)
-      .map_err(|e| {
-        crate::InterpreterError::EvaluationError(format!(
-          "Import: failed to decode fetched data: {}",
-          e
-        ))
-      })?;
+  base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &b64)
+    .map_err(|e| {
+      crate::InterpreterError::EvaluationError(format!(
+        "Import: failed to decode fetched data: {}",
+        e
+      ))
+    })
+}
+
+/// Download a URL and decode the image bytes (WASM).
+/// Returns the image as an Expr::Image.
+pub fn import_image_from_url_wasm(
+  url: &str,
+) -> Result<Expr, crate::InterpreterError> {
+  let bytes = fetch_url_bytes(url)?;
   crate::functions::image_ast::import_image_from_bytes(&bytes)
 }
 
@@ -163,26 +167,7 @@ pub fn csv_import_from_url_wasm(
   url: &str,
   element: Option<&str>,
 ) -> Result<Expr, crate::InterpreterError> {
-  let b64 = woxi_fetch_url(url).map_err(|e| {
-    crate::InterpreterError::EvaluationError(format!(
-      "Import: failed to fetch \"{}\": {:?}",
-      url, e
-    ))
-  })?;
-  if b64.is_empty() {
-    return Err(crate::InterpreterError::EvaluationError(format!(
-      "Import: empty response from \"{}\"",
-      url
-    )));
-  }
-  let bytes =
-    base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &b64)
-      .map_err(|e| {
-        crate::InterpreterError::EvaluationError(format!(
-          "Import: failed to decode fetched data: {}",
-          e
-        ))
-      })?;
+  let bytes = fetch_url_bytes(url)?;
   let content = String::from_utf8(bytes).map_err(|e| {
     crate::InterpreterError::EvaluationError(format!(
       "Import: downloaded CSV is not valid UTF-8: {}",

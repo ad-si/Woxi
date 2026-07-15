@@ -47,7 +47,6 @@ pub fn is_prime(n: usize) -> bool {
 /// decide whether a "not a valid index" message should fire: a concrete
 /// non-integer argument is an error, but a symbolic one stays unevaluated.
 
-
 /// Primality test for i128 values (Miller-Rabin via BigInt beyond usize).
 pub fn is_prime_i128(n: i128) -> bool {
   if n < 2 {
@@ -1061,7 +1060,6 @@ pub fn bernoulli_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Compute the nth Bernoulli polynomial B_n(z) = sum_{k=0}^{n} C(n,k) * B_k * z^(n-k)
 fn bernoulli_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
-
   fn rat_add(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
     let num = a.0 * b.1 + b.0 * a.1;
     let den = a.1 * b.1;
@@ -1260,7 +1258,6 @@ pub fn euler_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Compute the nth Euler polynomial and either evaluate at a point or return symbolic expression
 fn euler_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
-
   fn rat_add(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
     let num = a.0 * b.1 + b.0 * a.1;
     let den = a.1 * b.1;
@@ -4324,7 +4321,6 @@ fn lcm_u128(a: u128, b: u128) -> u128 {
     a / gcd_u128(a, b) * b
   }
 }
-
 
 /// JacobiSymbol[n, m] - Compute the Jacobi symbol (n/m)
 pub fn jacobi_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

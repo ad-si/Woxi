@@ -8614,7 +8614,6 @@ fn try_merge_logs(expr: &Expr) -> Option<Expr> {
   use num_bigint::BigInt;
   use num_traits::One;
 
-
   // Flatten the additive structure (both FunctionCall and BinaryOp forms),
   // and distribute an integer coefficient over a parenthesised sum of logs so
   // that e.g. a `2*(Log[2]+Log[3])` produced by common-factor pulling is still

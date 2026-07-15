@@ -33,9 +33,7 @@ mod to_radicals;
 pub mod together;
 mod zassenhaus;
 
-pub(crate) use crate::functions::math_ast::{
-  gcd as gcd_i128, lcm_i128,
-};
+pub(crate) use crate::functions::math_ast::{gcd as gcd_i128, lcm_i128};
 
 pub use apart::*;
 pub use cancel::*;

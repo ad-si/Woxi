@@ -391,19 +391,27 @@ pub fn csv_import_data_spec(
   }
 }
 
-/// Import a CSV file and optionally extract a specific element.
+/// Read and parse a CSV file from disk.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn csv_import_file(
+fn read_csv_file(
   path: &str,
-  element: Option<&str>,
-) -> Result<Expr, crate::InterpreterError> {
+) -> Result<Vec<Vec<String>>, crate::InterpreterError> {
   let content = std::fs::read_to_string(path).map_err(|e| {
     crate::InterpreterError::EvaluationError(format!(
       "Import: cannot open \"{}\": {}",
       path, e
     ))
   })?;
-  let rows = parse_csv(&content);
+  Ok(parse_csv(&content))
+}
+
+/// Import a CSV file and optionally extract a specific element.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn csv_import_file(
+  path: &str,
+  element: Option<&str>,
+) -> Result<Expr, crate::InterpreterError> {
+  let rows = read_csv_file(path)?;
   Ok(csv_import_element(&rows, element))
 }
 
@@ -415,13 +423,7 @@ pub fn csv_import_file_data_spec(
   row_spec: &Expr,
   col_spec: Option<&Expr>,
 ) -> Result<Expr, crate::InterpreterError> {
-  let content = std::fs::read_to_string(path).map_err(|e| {
-    crate::InterpreterError::EvaluationError(format!(
-      "Import: cannot open \"{}\": {}",
-      path, e
-    ))
-  })?;
-  let rows = parse_csv(&content);
+  let rows = read_csv_file(path)?;
   csv_import_data_spec(&rows, row_spec, col_spec)
 }
 
