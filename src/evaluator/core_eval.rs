@@ -578,8 +578,7 @@ pub fn evaluate_expr_to_expr_inner(
               .into_iter()
               .map(|(k, v)| {
                 let key_expr = string_to_expr(&k).unwrap_or(Expr::String(k));
-                let val_expr = string_to_expr(&v).unwrap_or(Expr::String(v));
-                (key_expr, val_expr)
+                (key_expr, v)
               })
               .collect();
             Ok(Expr::Association(expr_items))
@@ -1569,9 +1568,7 @@ pub fn evaluate_expr_to_expr_inner(
               .map(|(k, v)| {
                 let ke = crate::syntax::string_to_expr(k)
                   .unwrap_or(Expr::String(k.clone()));
-                let ve = crate::syntax::string_to_expr(v)
-                  .unwrap_or(Expr::String(v.clone()));
-                (ke, ve)
+                (ke, v.clone())
               })
               .collect::<Vec<_>>(),
             Some(StoredValue::ExprVal(Expr::Association(items))) => {
@@ -1605,15 +1602,10 @@ pub fn evaluate_expr_to_expr_inner(
             }
           }
           let new_val = Expr::Association(items);
-          let pairs: Vec<(String, String)> = match &new_val {
+          let pairs: Vec<(String, Expr)> = match &new_val {
             Expr::Association(items) => items
               .iter()
-              .map(|(k, v)| {
-                (
-                  crate::syntax::expr_to_string(k),
-                  crate::syntax::expr_to_string(v),
-                )
-              })
+              .map(|(k, v)| (crate::syntax::expr_to_string(k), v.clone()))
               .collect(),
             _ => unreachable!(),
           };
@@ -1636,9 +1628,7 @@ pub fn evaluate_expr_to_expr_inner(
               .map(|(k, v)| {
                 let ke = crate::syntax::string_to_expr(k)
                   .unwrap_or(Expr::String(k.clone()));
-                let ve = crate::syntax::string_to_expr(v)
-                  .unwrap_or(Expr::String(v.clone()));
-                (ke, ve)
+                (ke, v.clone())
               })
               .collect::<Vec<_>>(),
             Some(StoredValue::ExprVal(Expr::Association(items))) => {
@@ -1674,15 +1664,10 @@ pub fn evaluate_expr_to_expr_inner(
             })
             .collect();
           let new_val = Expr::Association(filtered);
-          let pairs: Vec<(String, String)> = match &new_val {
+          let pairs: Vec<(String, Expr)> = match &new_val {
             Expr::Association(items) => items
               .iter()
-              .map(|(k, v)| {
-                (
-                  crate::syntax::expr_to_string(k),
-                  crate::syntax::expr_to_string(v),
-                )
-              })
+              .map(|(k, v)| (crate::syntax::expr_to_string(k), v.clone()))
               .collect(),
             _ => unreachable!(),
           };

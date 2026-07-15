@@ -755,9 +755,7 @@ pub fn dispatch_complex_and_special(
                 .map(|(k, v)| {
                   let key_expr = crate::syntax::string_to_expr(k)
                     .unwrap_or(Expr::Identifier(k.clone()));
-                  let val_expr = crate::syntax::string_to_expr(v)
-                    .unwrap_or(Expr::Raw(v.clone()));
-                  (key_expr, val_expr)
+                  (key_expr, v.clone())
                 })
                 .collect();
               expr_to_string(&Expr::Association(items_expr))
@@ -1164,9 +1162,7 @@ pub fn dispatch_complex_and_special(
                   .map(|(k, v)| {
                     let key_expr = crate::syntax::string_to_expr(k)
                       .unwrap_or(Expr::Identifier(k.clone()));
-                    let val_expr = crate::syntax::string_to_expr(v)
-                      .unwrap_or(Expr::Raw(v.clone()));
-                    (key_expr, val_expr)
+                    (key_expr, v.clone())
                   })
                   .collect();
                 expr_to_string(&Expr::Association(items_expr))
@@ -2973,9 +2969,7 @@ fn format_user_information(
           .map(|(k, v)| {
             let key_expr = crate::syntax::string_to_expr(k)
               .unwrap_or(Expr::Identifier(k.clone()));
-            let val_expr =
-              crate::syntax::string_to_expr(v).unwrap_or(Expr::Raw(v.clone()));
-            (key_expr, val_expr)
+            (key_expr, v.clone())
           })
           .collect();
         expr_to_string(&Expr::Association(items_expr))

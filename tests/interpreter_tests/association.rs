@@ -1643,6 +1643,26 @@ mod lookup {
   }
 }
 
+mod stored_value_access {
+  use super::*;
+
+  // Regression: variables bound to associations used to store their values
+  // as strings, so every `h[key]` access re-parsed the value with the full
+  // parser. On a value this size that took ~10 s per access in debug builds
+  // (io::root_mdst::mdst_th2d_histogram hit the 20 s test timeout). Values
+  // are stored structurally now; this must stay effectively instant.
+  #[test]
+  fn large_association_value_lookup_is_structural() {
+    assert_eq!(
+      interpret(
+        r#"h = <|"bins" -> Table[1., {300}, {100}]|>; {Length[h["bins"]], Total[h["bins"], 2]}"#
+      )
+      .unwrap(),
+      "{300, 30000.}"
+    );
+  }
+}
+
 mod cases {
   use super::super::case_helpers::assert_case;
 

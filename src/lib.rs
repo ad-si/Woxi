@@ -24,7 +24,10 @@ pub struct WolframParser;
 
 #[derive(Clone)]
 enum StoredValue {
-  Association(Vec<(String, String)>),
+  // Keys keep their input-form string (used for lookup comparisons); values
+  // stay structured ASTs so large associations never round-trip through the
+  // parser on access.
+  Association(Vec<(String, syntax::Expr)>),
   Raw(String),           // keep evaluated textual value
   ExprVal(syntax::Expr), // keep as structured AST for fast Part access
 }
@@ -1451,9 +1454,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
             .map(|(k, v)| {
               let key_expr = syntax::string_to_expr(k)
                 .unwrap_or(syntax::Expr::Identifier(k.clone()));
-              let val_expr = syntax::string_to_expr(v)
-                .unwrap_or(syntax::Expr::Raw(v.clone()));
-              (key_expr, val_expr)
+              (key_expr, v.clone())
             })
             .collect();
           syntax::expr_to_output(&syntax::Expr::Association(items_expr))

@@ -101,7 +101,7 @@ pub fn association_nested_access(
           .map(|(k, v)| {
             (
               string_to_expr(k).unwrap_or(Expr::Identifier(k.clone())),
-              string_to_expr(v).unwrap_or(Expr::Raw(v.clone())),
+              v.clone(),
             )
           })
           .collect();
@@ -120,7 +120,7 @@ pub fn association_nested_access(
   match assoc {
     Some(StoredValue::Association(pairs)) => {
       // Perform nested access
-      let mut current_val: Option<String> = None;
+      let mut current_val: Option<Expr> = None;
       let mut current_pairs = pairs;
 
       for key in keys {
@@ -131,27 +131,13 @@ pub fn association_nested_access(
         if let Some((_, val)) =
           current_pairs.iter().find(|(k, _)| k == &key_str)
         {
-          // Check if val is a nested association
-          if val.starts_with("<|") && val.ends_with("|>") {
-            // Parse the nested association
-            match crate::interpret(&format!("Keys[{}]", val)) {
-              Ok(_) => {
-                // It's an association - we need to continue drilling down
-                // Parse the association into pairs
-                match parse_association_string(val) {
-                  Ok(nested_pairs) => {
-                    current_pairs = nested_pairs;
-                    current_val = None;
-                  }
-                  Err(_) => {
-                    current_val = Some(val.clone());
-                  }
-                }
-              }
-              Err(_) => {
-                current_val = Some(val.clone());
-              }
-            }
+          // A nested association continues the drill-down
+          if let Expr::Association(nested) = val {
+            current_pairs = nested
+              .iter()
+              .map(|(k, v)| (expr_to_string(k), v.clone()))
+              .collect();
+            current_val = None;
           } else {
             current_val = Some(val.clone());
           }
@@ -168,7 +154,7 @@ pub fn association_nested_access(
 
       // Return the final value
       if let Some(val) = current_val {
-        string_to_expr(&val).or(Ok(Expr::Raw(val)))
+        Ok(val)
       } else {
         // Return remaining association
         let items: Vec<(Expr, Expr)> = current_pairs
@@ -178,7 +164,7 @@ pub fn association_nested_access(
               // Keys are stored in input form (strings keep their quotes),
               // so parse them back instead of wrapping in an Identifier.
               string_to_expr(k).unwrap_or(Expr::Identifier(k.clone())),
-              string_to_expr(v).unwrap_or(Expr::Raw(v.clone())),
+              v.clone(),
             )
           })
           .collect();
@@ -190,93 +176,6 @@ pub fn association_nested_access(
       var_name
     ))),
   }
-}
-
-/// Parse an association string like "<|a -> 1, b -> 2|>" into pairs
-fn parse_association_string(
-  s: &str,
-) -> Result<Vec<(String, String)>, InterpreterError> {
-  if !s.starts_with("<|") || !s.ends_with("|>") {
-    return Err(InterpreterError::EvaluationError(
-      "Not an association".into(),
-    ));
-  }
-  let inner = &s[2..s.len() - 2]; // Strip <| and |>
-  let mut pairs = Vec::new();
-
-  // Simple parsing - split by ", " and then by " -> "
-  for item in split_association_items(inner) {
-    if let Some(arrow_pos) = item.find(" -> ") {
-      let key = item[..arrow_pos].trim().to_string();
-      let val = item[arrow_pos + 4..].trim().to_string();
-      pairs.push((key, val));
-    }
-  }
-
-  Ok(pairs)
-}
-
-/// Split association items handling nested associations. Only a comma at
-/// top level separates items: commas inside quoted strings, nested
-/// `<|…|>` associations, lists, or bracketed calls belong to the current
-/// item. Depth is tracked on the two-character `<|` / `|>` delimiters (a
-/// bare `>` also appears in every `->` and must not affect nesting).
-fn split_association_items(s: &str) -> Vec<String> {
-  let mut items = Vec::new();
-  let mut current = String::new();
-  let mut depth = 0i64;
-  let mut in_string = false;
-  let mut chars = s.chars().peekable();
-
-  while let Some(c) = chars.next() {
-    if in_string {
-      current.push(c);
-      match c {
-        '\\' => {
-          // Keep the escaped character (e.g. \") out of delimiter logic.
-          if let Some(next) = chars.next() {
-            current.push(next);
-          }
-        }
-        '"' => in_string = false,
-        _ => {}
-      }
-      continue;
-    }
-    match c {
-      '"' => {
-        in_string = true;
-        current.push(c);
-      }
-      '<' if chars.peek() == Some(&'|') => {
-        depth += 1;
-        current.push(c);
-        current.push(chars.next().expect("peeked"));
-      }
-      '|' if chars.peek() == Some(&'>') => {
-        depth -= 1;
-        current.push(c);
-        current.push(chars.next().expect("peeked"));
-      }
-      '{' | '[' | '(' => {
-        depth += 1;
-        current.push(c);
-      }
-      '}' | ']' | ')' => {
-        depth -= 1;
-        current.push(c);
-      }
-      ',' if depth == 0 => {
-        items.push(current.trim().to_string());
-        current = String::new();
-      }
-      _ => current.push(c),
-    }
-  }
-  if !current.trim().is_empty() {
-    items.push(current.trim().to_string());
-  }
-  items
 }
 
 /// Check if a pattern Expr contains any Expr::Pattern nodes (named blanks like n_).

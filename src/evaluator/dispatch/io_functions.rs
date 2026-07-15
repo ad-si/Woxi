@@ -2408,7 +2408,9 @@ pub fn dispatch_io_functions(
             crate::StoredValue::Association(items) => {
               let parts: Vec<String> = items
                 .iter()
-                .map(|(k, v)| format!("{} -> {}", k, v))
+                .map(|(k, v)| {
+                  format!("{} -> {}", k, crate::syntax::expr_to_string(v))
+                })
                 .collect();
               format!("<|{}|>", parts.join(", "))
             }

@@ -1014,9 +1014,9 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         let mut env = e.borrow_mut();
         if let Some(StoredValue::Association(pairs)) = env.get_mut(head_name) {
           if let Some(pair) = pairs.iter_mut().find(|(k, _)| k == &key) {
-            pair.1 = expr_to_string(&rhs_value);
+            pair.1 = rhs_value.clone();
           } else {
-            pairs.push((key, expr_to_string(&rhs_value)));
+            pairs.push((key, rhs_value.clone()));
           }
         }
       });
@@ -1084,7 +1084,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
               .map(|(k, v)| {
                 (
                   string_to_expr(k).unwrap_or_else(|_| Expr::String(k.clone())),
-                  string_to_expr(v).unwrap_or_else(|_| Expr::String(v.clone())),
+                  v.clone(),
                 )
               })
               .collect();
@@ -1098,7 +1098,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         Expr::Association(items) => StoredValue::Association(
           items
             .iter()
-            .map(|(k, v)| (expr_to_string(k), expr_to_string(v)))
+            .map(|(k, v)| (expr_to_string(k), v.clone()))
             .collect(),
         ),
         // The whole association was replaced by a non-association value.
@@ -1203,12 +1203,12 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
 
     // Check if RHS is an association
     if let Expr::Association(items) = &rhs_value {
-      let pairs: Vec<(String, String)> = items
+      let pairs: Vec<(String, Expr)> = items
         .iter()
         .map(|(k, v)| {
           // Use expr_to_string for keys to preserve type info
           // (e.g. Expr::String("x") → "\"x\"", Expr::Identifier("x") → "x")
-          (expr_to_string(k), expr_to_string(v))
+          (expr_to_string(k), v.clone())
         })
         .collect();
       ENV.with(|e| {
