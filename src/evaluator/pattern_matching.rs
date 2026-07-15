@@ -347,6 +347,43 @@ fn try_ast_pattern_replace(
   })
 }
 
+/// Rebuild a call from a (possibly rewritten) head and its recursed arguments.
+/// ReplaceAll treats a compound's head as an ordinary subexpression, so a rule
+/// like `x_Symbol :> f[x]` rewrites `h` inside `h[a]`. A symbol head keeps the
+/// `FunctionCall` form; any other head becomes a `CurriedCall`, matching
+/// Wolfram's `f[h][args]`.
+fn rebuild_call_with_head(head: Expr, args: Vec<Expr>) -> Expr {
+  if let Expr::Identifier(h) = &head {
+    Expr::FunctionCall {
+      name: h.clone(),
+      args: args.into(),
+    }
+  } else {
+    Expr::CurriedCall {
+      func: Box::new(head),
+      args,
+    }
+  }
+}
+
+/// Multi-rule variant of head replacement: run the rules against a compound's
+/// head symbol and return the rewritten head, or `None` when no rule matched
+/// it. Literal `head -> x` rules are handled by the per-arm head loops that
+/// call this; this covers blank patterns such as `x_Symbol :> f[x]`.
+fn multi_replace_head(
+  name: &str,
+  rules: &[(&Expr, &Expr)],
+  held: bool,
+) -> Result<Option<Expr>, InterpreterError> {
+  let head = Expr::Identifier(name.to_string());
+  let new_head = apply_replace_all_multi_ast_impl(&head, rules, held)?;
+  if expr_equal(&new_head, &head) {
+    Ok(None)
+  } else {
+    Ok(Some(new_head))
+  }
+}
+
 /// Flatten a chain of same-operator `BinaryOp` nodes (a Flat operator such as
 /// Plus or Times) into its operand list, e.g. `(a + b) + c` → `[a, b, c]`.
 fn collect_flat_binary_operands(
@@ -395,23 +432,36 @@ fn try_ast_pattern_replace_impl(
     return Ok(None);
   }
 
-  // If top-level didn't match, recurse into sub-expressions
+  // If top-level didn't match, recurse into sub-expressions. `recurse`
+  // descends into one child, setting `matched` when that child changed.
+  let recurse =
+    |e: &Expr, matched: &mut bool| -> Result<Expr, InterpreterError> {
+      Ok(
+        match try_ast_pattern_replace(e, pattern, replacement, condition)? {
+          Some(r) => {
+            *matched = true;
+            r
+          }
+          None => e.clone(),
+        },
+      )
+    };
   match expr {
     Expr::List(items) => {
       let mut results = Vec::new();
       let mut any_matched = false;
       for item in items {
-        if let Some(result) =
-          try_ast_pattern_replace(item, pattern, replacement, condition)?
-        {
-          results.push(result);
-          any_matched = true;
-        } else {
-          results.push(item.clone());
-        }
+        results.push(recurse(item, &mut any_matched)?);
       }
+      // The `List` head is itself a subexpression: `{a} /. x_Symbol :> f[x]`
+      // becomes `f[List][f[a]]`. Keep the `List` node when the head is intact.
+      let new_head =
+        recurse(&Expr::Identifier("List".to_string()), &mut any_matched)?;
       if any_matched {
-        Ok(Some(Expr::List(results.into())))
+        Ok(Some(match new_head {
+          Expr::Identifier(ref h) if h == "List" => Expr::List(results.into()),
+          other => rebuild_call_with_head(other, results),
+        }))
       } else {
         Ok(None)
       }
@@ -420,20 +470,14 @@ fn try_ast_pattern_replace_impl(
       let mut new_args = Vec::new();
       let mut any_matched = false;
       for arg in args {
-        if let Some(result) =
-          try_ast_pattern_replace(arg, pattern, replacement, condition)?
-        {
-          new_args.push(result);
-          any_matched = true;
-        } else {
-          new_args.push(arg.clone());
-        }
+        new_args.push(recurse(arg, &mut any_matched)?);
       }
+      // The head `name` is a subexpression too: `h[a] /. x_Symbol :> f[x]`
+      // becomes `f[h][f[a]]`.
+      let new_head =
+        recurse(&Expr::Identifier(name.clone()), &mut any_matched)?;
       if any_matched {
-        Ok(Some(Expr::FunctionCall {
-          name: name.clone(),
-          args: new_args.into(),
-        }))
+        Ok(Some(rebuild_call_with_head(new_head, new_args)))
       } else {
         Ok(None)
       }
@@ -533,6 +577,104 @@ fn try_ast_pattern_replace_impl(
           left: Box::new(new_left),
           right: Box::new(new_right),
         }))
+      } else {
+        Ok(None)
+      }
+    }
+    // ReplaceAll is structural: it must descend into the pattern and
+    // replacement of a `Rule`/`RuleDelayed` subexpression, so e.g.
+    // `{k -> 1.5} /. x_Real :> Round[x]` reaches the `1.5`.
+    Expr::Rule {
+      pattern: sub_pat,
+      replacement: sub_rep,
+    } => {
+      let mut any = false;
+      let np = recurse(sub_pat, &mut any)?;
+      let nr = recurse(sub_rep, &mut any)?;
+      let new_head = recurse(&Expr::Identifier("Rule".to_string()), &mut any)?;
+      if any {
+        Ok(Some(match new_head {
+          Expr::Identifier(ref h) if h == "Rule" => Expr::Rule {
+            pattern: Box::new(np),
+            replacement: Box::new(nr),
+          },
+          other => rebuild_call_with_head(other, vec![np, nr]),
+        }))
+      } else {
+        Ok(None)
+      }
+    }
+    Expr::RuleDelayed {
+      pattern: sub_pat,
+      replacement: sub_rep,
+    } => {
+      let mut any = false;
+      let np = recurse(sub_pat, &mut any)?;
+      let nr = recurse(sub_rep, &mut any)?;
+      let new_head =
+        recurse(&Expr::Identifier("RuleDelayed".to_string()), &mut any)?;
+      if any {
+        Ok(Some(match new_head {
+          Expr::Identifier(ref h) if h == "RuleDelayed" => Expr::RuleDelayed {
+            pattern: Box::new(np),
+            replacement: Box::new(nr),
+          },
+          other => rebuild_call_with_head(other, vec![np, nr]),
+        }))
+      } else {
+        Ok(None)
+      }
+    }
+    // `!x /. x_ -> ...` descends into the operand.
+    Expr::UnaryOp { op, operand } => {
+      let mut any = false;
+      let no = recurse(operand, &mut any)?;
+      if any {
+        Ok(Some(Expr::UnaryOp {
+          op: *op,
+          operand: Box::new(no),
+        }))
+      } else {
+        Ok(None)
+      }
+    }
+    Expr::Function { body } => {
+      let mut any = false;
+      let nb = recurse(body, &mut any)?;
+      if any {
+        Ok(Some(Expr::Function { body: Box::new(nb) }))
+      } else {
+        Ok(None)
+      }
+    }
+    Expr::NamedFunction {
+      params,
+      body,
+      bracketed,
+    } => {
+      let mut any = false;
+      let nb = recurse(body, &mut any)?;
+      if any {
+        Ok(Some(Expr::NamedFunction {
+          params: params.clone(),
+          body: Box::new(nb),
+          bracketed: *bracketed,
+        }))
+      } else {
+        Ok(None)
+      }
+    }
+    // `<|k -> 1.5|> /. x_Real :> ...` descends into every key and value.
+    Expr::Association(pairs) => {
+      let mut any = false;
+      let mut new_pairs = Vec::with_capacity(pairs.len());
+      for (k, v) in pairs {
+        let nk = recurse(k, &mut any)?;
+        let nv = recurse(v, &mut any)?;
+        new_pairs.push((nk, nv));
+      }
+      if any {
+        Ok(Some(Expr::Association(new_pairs)))
       } else {
         Ok(None)
       }
@@ -3719,6 +3861,10 @@ pub fn get_expr_head(expr: &Expr) -> String {
     Expr::ReplaceRepeated { .. } => "ReplaceRepeated".to_string(),
     Expr::Function { .. } => "Function".to_string(),
     Expr::Part { .. } => "Part".to_string(),
+    // The head of a curried call `h[a][b]` is the compound `h[a]`, not a
+    // symbol — return its rendered form so typed blanks like `_Symbol` or
+    // `_h` do not spuriously match the whole expression.
+    Expr::CurriedCall { func, .. } => expr_to_string(func),
     _ => "Symbol".to_string(),
   }
 }
@@ -3961,6 +4107,10 @@ fn apply_replace_all_multi_ast_impl(
           });
         }
       }
+      // Blank-pattern head rewrite: `{a} /. x_Symbol :> f[x]` → `f[List][f[a]]`.
+      if let Some(new_head) = multi_replace_head("List", rules, held)? {
+        return Ok(rebuild_call_with_head(new_head, new_items));
+      }
       Ok(Expr::List(new_items.into()))
     }
     Expr::FunctionCall { name, args } => {
@@ -3993,6 +4143,10 @@ fn apply_replace_all_multi_ast_impl(
             }),
           };
         }
+      }
+      // Blank-pattern head rewrite: `h[a] /. x_Symbol :> f[x]` → `f[h][f[a]]`.
+      if let Some(new_head) = multi_replace_head(name, rules, held)? {
+        return Ok(rebuild_call_with_head(new_head, new_args));
       }
       Ok(Expr::FunctionCall {
         name: name.clone(),
@@ -4057,6 +4211,9 @@ fn apply_replace_all_multi_ast_impl(
     } => {
       let new_pat = apply_replace_all_multi_ast_impl(pattern, rules, held)?;
       let new_rep = apply_replace_all_multi_ast_impl(replacement, rules, held)?;
+      if let Some(new_head) = multi_replace_head("Rule", rules, held)? {
+        return Ok(rebuild_call_with_head(new_head, vec![new_pat, new_rep]));
+      }
       Ok(Expr::Rule {
         pattern: Box::new(new_pat),
         replacement: Box::new(new_rep),
@@ -4070,10 +4227,26 @@ fn apply_replace_all_multi_ast_impl(
       // RuleDelayed holds its RHS — recurse without re-evaluating after
       // substitution.
       let new_rep = apply_replace_all_multi_ast_impl(replacement, rules, true)?;
+      if let Some(new_head) = multi_replace_head("RuleDelayed", rules, held)? {
+        return Ok(rebuild_call_with_head(new_head, vec![new_pat, new_rep]));
+      }
       Ok(Expr::RuleDelayed {
         pattern: Box::new(new_pat),
         replacement: Box::new(new_rep),
       })
+    }
+    // `<|k -> v|> /. rules` descends into every key and value.
+    Expr::Association(pairs) => {
+      let new_pairs: Result<Vec<(Expr, Expr)>, InterpreterError> = pairs
+        .iter()
+        .map(|(k, v)| {
+          Ok((
+            apply_replace_all_multi_ast_impl(k, rules, held)?,
+            apply_replace_all_multi_ast_impl(v, rules, held)?,
+          ))
+        })
+        .collect();
+      Ok(Expr::Association(new_pairs?))
     }
     // Atoms and other nodes without children — return unchanged
     _ => Ok(expr.clone()),

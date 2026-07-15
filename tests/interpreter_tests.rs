@@ -1059,6 +1059,77 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_replace_all_descends_into_rule_and_association() {
+    // Regression: a blank pattern (x_Real, x_Integer, ...) must descend into
+    // the pattern/replacement of a Rule subexpression and into Association
+    // keys/values, matching wolframscript. Previously the AST pattern path
+    // handled only List/FunctionCall/BinaryOp and fell through to a
+    // string-based fallback that never reached inside a Rule.
+    clear_state();
+    // Into a bare Rule's replacement.
+    assert_eq!(
+      interpret("({0} -> {1.5, 2.5}) /. x_Real :> Round[x]").unwrap(),
+      "{0} -> {2, 2}",
+    );
+    // Into a Rule nested in a list.
+    assert_eq!(interpret("{a -> 1.5} /. x_Real :> 9").unwrap(), "{a -> 9}");
+    assert_eq!(interpret("(a -> 5) /. x_Integer :> 9").unwrap(), "a -> 9");
+    // Into an Association value.
+    assert_eq!(
+      interpret("<|k -> 1.5|> /. x_Real :> 9").unwrap(),
+      "<|k -> 9|>",
+    );
+    // A symbol blank descends into the Rule parts (a, b) AND its `Rule` head,
+    // matching wolframscript — rather than the buggy string fallback binding
+    // the whole `a -> b` as a Symbol. See test_replace_all_rewrites_head_symbol.
+    assert_eq!(
+      interpret("(a -> b) /. x_Symbol :> foo[x]").unwrap(),
+      "foo[Rule][foo[a], foo[b]]",
+    );
+  }
+
+  #[test]
+  fn test_replace_all_rewrites_head_symbol() {
+    // ReplaceAll treats a compound's head as an ordinary subexpression, so a
+    // symbol-blank rule rewrites the head too, producing `f[h][...]` (a
+    // CurriedCall) exactly like wolframscript. Regression for woxi previously
+    // leaving heads untouched under `x_Symbol :> ...`.
+    clear_state();
+    assert_eq!(
+      interpret("h[a, b] /. x_Symbol :> f[x]").unwrap(),
+      "f[h][f[a], f[b]]",
+    );
+    // List / Rule heads are subexpressions too.
+    assert_eq!(
+      interpret("{a, b} /. x_Symbol :> f[x]").unwrap(),
+      "f[List][f[a], f[b]]",
+    );
+    assert_eq!(
+      interpret("(a -> b) /. x_Symbol :> f[x]").unwrap(),
+      "f[Rule][f[a], f[b]]",
+    );
+    // Non-symbol heads (integers) are left alone; the head still rewrites.
+    assert_eq!(
+      interpret("h[1, 2] /. x_Symbol :> f[x]").unwrap(),
+      "f[h][1, 2]"
+    );
+    // Curried calls rewrite every layer's head. Previously `h[a][b]` matched
+    // `x_Symbol` at the top level because get_expr_head returned "Symbol".
+    assert_eq!(
+      interpret("h[a][b] /. x_Symbol :> f[x]").unwrap(),
+      "f[h][f[a]][f[b]]",
+    );
+    assert_eq!(interpret("h[a][b] /. x_h :> 99").unwrap(), "99[b]");
+    // The multi-rule path (list of rules) behaves identically.
+    assert_eq!(
+      interpret("h[a, b] /. {x_Symbol :> f[x]}").unwrap(),
+      "f[h][f[a], f[b]]",
+    );
+    // A literal head rule still rewrites only the matching head.
+    assert_eq!(interpret("x[a] /. x -> 3").unwrap(), "3[a]");
+  }
+
+  #[test]
   fn test_match_q_with_condition_backtracks_through_sequence_splits() {
     // MatchQ must enumerate sequence splits when the LHS has a Condition,
     // returning True if any split satisfies the guard.
