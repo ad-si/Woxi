@@ -653,6 +653,14 @@ function main() {
   // while Wolfram's companion-matrix eigenvalues introduce machine-epsilon
   // artifacts (1.0000000000000002).
   const EXACT_EXPR_SKIP = new Set([
+    // Attributes[ParallelDo] is non-deterministic in wolframscript: ParallelDo
+    // autoloads lazily. On a cold kernel it is a stub with {Protected,
+    // ReadProtected}; once the Parallel subsystem initializes (e.g. after any
+    // ParallelDo actually runs) the real definition installs {HoldAll,
+    // Protected}. There is no single stable reference to conform to, so the
+    // fuzzer must not chase it (this expression was flip-flopped twice before).
+    // Woxi returns the cold-kernel value, matching the unit test.
+    "Attributes[ParallelDo]",
     "NSolve[x^3 - 3*x^2 + 2*x == 0, x]",
     // wolframscript leaks its internal System`HarmonicNumberDump`MQHN symbol
     // for a symbolic exponent (a WL bug); Woxi stays unevaluated instead.

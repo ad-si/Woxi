@@ -239,9 +239,14 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     "Control" => vec!["Protected"],
     // PfaffianDet: Protected + ReadProtected (matches wolframscript).
     "PfaffianDet" => vec!["Protected", "ReadProtected"],
-    // Parallel* combinators: Protected + ReadProtected (matches
-    // wolframscript). Like Manipulate, they hold their body via the
-    // explicit name-match in core_eval.rs rather than a HoldAll attribute.
+    // Parallel* combinators: Protected + ReadProtected. This matches a COLD
+    // wolframscript kernel — these functions autoload lazily, so a fresh query
+    // returns the {Protected, ReadProtected} stub. Once the Parallel subsystem
+    // initializes (e.g. after any ParallelDo runs) wolframscript swaps in the
+    // real {HoldAll, Protected} definition. There is no single stable reference;
+    // do not "fix" this to {HoldAll, Protected} (it has been flip-flopped
+    // twice). Like Manipulate, they hold their body via the explicit name-match
+    // in core_eval.rs rather than a HoldAll attribute.
     "ParallelDo"
     | "ParallelTable" | "ParallelSum" | "ParallelProduct"
     | "ParallelMap" | "ParallelArray" | "ParallelCombine"
