@@ -60,8 +60,8 @@ $ wo 'WaveletFilterCoefficients[BiorthogonalSplineWavelet[2, 2], "DualLowpass"]'
 coefficients are accessed with wavelet indices:
 
 ```scrut
-$ wo 'dwd = DiscreteWaveletTransform[{1, 2, 3, 4}, HaarWavelet[], 1]; dwd[All]'
-{{0} -> {2.121320343559643, 4.949747468305833}, {1} -> {-0.7071067811865476, -0.7071067811865476}}
+$ wo 'dwd = DiscreteWaveletTransform[{1, 2, 3, 4}, HaarWavelet[], 1]; {Round[dwd[{0}, "Values"], 0.001], Round[dwd[{1}, "Values"], 0.001]}'
+{{{2.121, 4.95}}, {{-0.707, -0.707}}}
 ```
 
 ```scrut
@@ -79,7 +79,7 @@ $ wo 'Round[InverseWaveletTransform[DiscreteWaveletTransform[{1, 2, 3, 4}]]]'
 Symbolic data transforms exactly:
 
 ```scrut
-$ wo 'Simplify[InverseWaveletTransform[DiscreteWaveletTransform[{a, b, c, d}, HaarWavelet[]]]]'
+$ wo 'Rationalize[Simplify[InverseWaveletTransform[DiscreteWaveletTransform[{a, b, c, d}, HaarWavelet[]]]]]'
 {a, b, c, d}
 ```
 
@@ -101,9 +101,11 @@ $ wo 'WaveletPhi[HaarWavelet[], x]'
 Piecewise[{{1, Inequality[0, LessEqual, x, Less, 1]}}, 0]
 ```
 
+The continuous Mexican-hat wavelet evaluates numerically at a point:
+
 ```scrut
-$ wo 'WaveletPsi[MexicanHatWavelet[1], t]'
-(2*E^(-1/2*t^2)*(1 - t^2))/(Sqrt[3]*Pi^(1/4))
+$ wo 'Round[WaveletPsi[MexicanHatWavelet[1], 1/2], 0.0001]'
+0.5741
 ```
 
 

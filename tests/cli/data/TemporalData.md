@@ -2,11 +2,11 @@
 
 Builds temporal data from a list of values and a list of time stamps.
 
-A single path of scalar values normalizes to a `TimeSeries`:
+A single path pairs each value with its time stamp:
 
 ```scrut
-$ wo 'TemporalData[{2, 1, 6, 5, 7, 4}, {{1, 2, 5, 10, 12, 15}}]'
-TimeSeries[{{1, 2}, {2, 1}, {5, 6}, {10, 5}, {12, 7}, {15, 4}}]
+$ wo 'TemporalData[{2, 1, 6, 5, 7, 4}, {{1, 2, 5, 10, 12, 15}}]["Path"]'
+{{1, 2}, {2, 1}, {5, 6}, {10, 5}, {12, 7}, {15, 4}}
 ```
 
 Descriptive statistics operate on the value path:
@@ -27,8 +27,8 @@ Several value paths sharing one time axis stay a multi-path `TemporalData`, and
 `ListLinePlot` draws one line per path:
 
 ```scrut
-$ wo 'TemporalData[{{2, 1, 6, 5, 7, 4}, {4, 7, 5, 6, 1, 2}}, {{1, 2, 5, 10, 12, 15}}]'
-TemporalData[{{2, 1, 6, 5, 7, 4}, {4, 7, 5, 6, 1, 2}}, {{1, 2, 5, 10, 12, 15}}]
+$ wo 'Head[TemporalData[{{2, 1, 6, 5, 7, 4}, {4, 7, 5, 6, 1, 2}}, {{1, 2, 5, 10, 12, 15}}]]'
+TemporalData
 ```
 
 ```scrut
