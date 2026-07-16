@@ -16,7 +16,7 @@
 //! - strings, external ids and monolingual texts → plain strings
 
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, unevaluated};
+use crate::syntax::{Expr, unevaluated};
 
 /// `ExternalIdentifier[type, id]` / `ExternalIdentifier[type, id, assoc]` —
 /// inert symbolic construct; the arguments are kept exactly as given.
