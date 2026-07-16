@@ -3,3 +3,4 @@ source: tests/script_snapshot_tests.rs
 expression: stdout
 ---
 
+Part::partw: Part 2 of RealDigits[Quotient[inputdata, 10]] does not exist.

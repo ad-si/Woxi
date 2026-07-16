@@ -539,6 +539,21 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_part_partw_mirrored_to_captured_stdout() {
+    // wolframscript prints Part::partw to stdout in script mode, so the
+    // library path (interpret_with_stdout — snapshot tests, playground,
+    // Jupyter) must capture it too. Regression test for the
+    // stem-and-leaf_plot.wls snapshot divergence.
+    clear_state();
+    let r = interpret_with_stdout("RealDigits[Quotient[x, 10]][[2]]").unwrap();
+    assert_eq!(
+      r.stdout,
+      "\nPart::partw: Part 2 of RealDigits[Quotient[x, 10]] does not \
+       exist.\n"
+    );
+  }
+
+  #[test]
   fn test_accented_named_characters_decode() {
     // Wolfram named characters for accented Latin letters must decode to
     // their Unicode chars, so e.g. imported text ("Curaçao") compares

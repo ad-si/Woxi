@@ -67,7 +67,7 @@ pub fn flatten_alternatives_binop(expr: &Expr) -> Option<Expr> {
 
 fn part_take_warn(expr: &Expr, start: i64, end: i64) {
   let expr_str = crate::syntax::expr_to_string(expr);
-  crate::emit_message(&format!(
+  crate::emit_message_to_stdout(&format!(
     "Part::take: Cannot take positions {} through {} in {}.",
     start, end, expr_str
   ));
@@ -398,7 +398,7 @@ pub fn extract_part_ast(
         if let Some((_, v)) = entry_at(*i) {
           return Ok(v.clone());
         }
-        crate::emit_message(&format!(
+        crate::emit_message_to_stdout(&format!(
           "Part::partw: Part {} of {} does not exist.",
           i,
           crate::syntax::format_expr(expr, crate::syntax::ExprForm::Output)
@@ -462,7 +462,7 @@ pub fn extract_part_ast(
               if let Some((k, v)) = entry_at(*i) {
                 selected.push((k.clone(), v.clone()));
               } else {
-                crate::emit_message(&format!(
+                crate::emit_message_to_stdout(&format!(
                   "Part::partw: Part {} of {} does not exist.",
                   i,
                   crate::syntax::format_expr(
@@ -486,7 +486,7 @@ pub fn extract_part_ast(
               }
             }
             _ => {
-              crate::emit_message(&format!(
+              crate::emit_message_to_stdout(&format!(
                 "Part::pkspec1: The expression {} cannot be used as a part specification.",
                 crate::syntax::format_expr(ix, crate::syntax::ExprForm::Output)
               ));
@@ -498,7 +498,7 @@ pub fn extract_part_ast(
       }
       // Anything else is not a valid association part specification
       _ => {
-        crate::emit_message(&format!(
+        crate::emit_message_to_stdout(&format!(
           "Part::pkspec1: The expression {} cannot be used as a part specification.",
           crate::syntax::format_expr(index, crate::syntax::ExprForm::Output)
         ));
@@ -559,7 +559,7 @@ pub fn extract_part_ast(
     // (matching wolframscript), rather than silently truncating 1.5 -> 1.
     Expr::Real(f) if f.is_finite() && f.fract() == 0.0 => *f as i64,
     Expr::Real(_) => {
-      crate::emit_message(&format!(
+      crate::emit_message_to_stdout(&format!(
         "Part::pkspec1: The expression {} cannot be used as a part specification.",
         crate::syntax::format_expr(index, crate::syntax::ExprForm::Output)
       ));
@@ -568,7 +568,7 @@ pub fn extract_part_ast(
     Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2 =>
     {
-      crate::emit_message(&format!(
+      crate::emit_message_to_stdout(&format!(
         "Part::pkspec1: The expression {} cannot be used as a part specification.",
         crate::syntax::format_expr(index, crate::syntax::ExprForm::Output)
       ));
@@ -590,7 +590,7 @@ pub fn extract_part_ast(
             i == 0 || (1..=len).contains(&i) || (-len..=-1).contains(&i)
           };
           if !positions.iter().all(|&i| in_range(i)) {
-            crate::emit_message(&format!(
+            crate::emit_message_to_stdout(&format!(
               "Part::partw: Part {} of {} does not exist.",
               crate::syntax::format_expr(
                 index,
@@ -633,7 +633,7 @@ pub fn extract_part_ast(
       } else {
         // Print warning to stderr and return unevaluated Part expression
         let expr_str = crate::syntax::expr_to_string(expr);
-        crate::emit_message(&format!(
+        crate::emit_message_to_stdout(&format!(
           "Part::partw: Part {} of {} does not exist.",
           idx, expr_str
         ));
@@ -660,7 +660,7 @@ pub fn extract_part_ast(
             return Ok(Expr::Integer(bytes[actual_idx as usize] as i128));
           } else {
             let expr_str = crate::syntax::expr_to_string(expr);
-            crate::emit_message(&format!(
+            crate::emit_message_to_stdout(&format!(
               "Part::partw: Part {} of {} does not exist.",
               idx, expr_str
             ));
@@ -674,7 +674,7 @@ pub fn extract_part_ast(
         Ok(args[actual_idx as usize].clone())
       } else {
         let expr_str = crate::syntax::expr_to_string(expr);
-        crate::emit_message(&format!(
+        crate::emit_message_to_stdout(&format!(
           "Part::partw: Part {} of {} does not exist.",
           idx, expr_str
         ));
@@ -705,7 +705,7 @@ pub fn extract_part_ast(
         Ok(parts[actual_idx as usize].clone())
       } else {
         let expr_str = crate::syntax::expr_to_string(expr);
-        crate::emit_message(&format!(
+        crate::emit_message_to_stdout(&format!(
           "Part::partw: Part {} of {} does not exist.",
           idx, expr_str
         ));
@@ -759,7 +759,7 @@ pub fn extract_part_ast(
         Ok(parts[actual_idx as usize].clone())
       } else {
         let expr_str = crate::syntax::expr_to_string(expr);
-        crate::emit_message(&format!(
+        crate::emit_message_to_stdout(&format!(
           "Part::partw: Part {} of {} does not exist.",
           idx, expr_str
         ));
@@ -782,7 +782,7 @@ pub fn extract_part_ast(
         Ok(parts[actual_idx as usize].clone())
       } else {
         let expr_str = crate::syntax::expr_to_string(expr);
-        crate::emit_message(&format!(
+        crate::emit_message_to_stdout(&format!(
           "Part::partw: Part {} of {} does not exist.",
           idx, expr_str
         ));
@@ -806,7 +806,7 @@ pub fn extract_part_ast(
         Ok(parts[actual_idx as usize].clone())
       } else {
         let expr_str = crate::syntax::expr_to_string(expr);
-        crate::emit_message(&format!(
+        crate::emit_message_to_stdout(&format!(
           "Part::partw: Part {} of {} does not exist.",
           idx, expr_str
         ));
