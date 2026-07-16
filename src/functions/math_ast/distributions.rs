@@ -59,6 +59,13 @@ fn pi() -> Expr {
   Expr::Constant("Pi".to_string())
 }
 
+fn neg(a: Expr) -> Expr {
+  Expr::UnaryOp {
+    op: UnaryOperator::Minus,
+    operand: Box::new(a),
+  }
+}
+
 fn int(n: i128) -> Expr {
   Expr::Integer(n)
 }
@@ -510,10 +517,7 @@ pub fn quantile_distribution_closed_form(
     return None;
   }
   let infinity = || Expr::Identifier("Infinity".to_string());
-  let neg_infinity = || Expr::UnaryOp {
-    op: UnaryOperator::Minus,
-    operand: Box::new(infinity()),
-  };
+  let neg_infinity = || neg(infinity());
   let is_exact_q = !matches!(q, Expr::Real(_));
 
   // Builders for the elementary inverse-CDF formulas below.
@@ -705,10 +709,7 @@ pub fn quantile_distribution_closed_form(
           Expr::Integer(1) => vec![sqrt2, inverse_erfc],
           _ => vec![sqrt2, s.clone(), inverse_erfc],
         };
-        let term = Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand: Box::new(call("Times", factors)),
-        };
+        let term = neg(call("Times", factors));
         let result = match &m {
           Expr::Integer(0) => term,
           _ => call("Plus", vec![m.clone(), term]),
@@ -862,10 +863,7 @@ pub fn inverse_survival_closed_form(
   }
   let is_exact_q = !matches!(q, Expr::Real(_));
   let infinity = || Expr::Identifier("Infinity".to_string());
-  let neg_infinity = || Expr::UnaryOp {
-    op: UnaryOperator::Minus,
-    operand: Box::new(infinity()),
-  };
+  let neg_infinity = || neg(infinity());
 
   match dist_name {
     // InverseSurvivalFunction[NormalDistribution[m, s], q]
@@ -1961,19 +1959,7 @@ fn cdf_exponential(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   }
   let lambda = dargs[0].clone();
 
-  let value = eval(minus(
-    int(1),
-    power(
-      e(),
-      times(
-        Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand: Box::new(lambda),
-        },
-        x.clone(),
-      ),
-    ),
-  ))?;
+  let value = eval(minus(int(1), power(e(), times(neg(lambda), x.clone()))))?;
   let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
 
   eval(piecewise(vec![(value, cond)], int(0)))
@@ -2130,13 +2116,7 @@ fn pdf_gamma(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   // x^(alpha-1)
   let x_part = power(x.clone(), minus(alpha.clone(), int(1)));
   // E^(-x/beta)
-  let exp_part = power(
-    e(),
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(divide(x.clone(), beta.clone())),
-    },
-  );
+  let exp_part = power(e(), neg(divide(x.clone(), beta.clone())));
   // beta^alpha * Gamma[alpha]
   let denom = times(power(beta, alpha.clone()), call("Gamma", vec![alpha]));
   let value = eval(divide(times(x_part, exp_part), denom))?;
@@ -2308,24 +2288,9 @@ fn pdf_frechet(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
   let xb = divide(shifted, b.clone());
   // ((x-c)/b)^(-1 - a)
-  let xb_part = power(
-    xb.clone(),
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(plus(int(1), a.clone())),
-    },
-  );
+  let xb_part = power(xb.clone(), neg(plus(int(1), a.clone())));
   // E^((x-c)/b)^(-a)
-  let exp_part = power(
-    e(),
-    power(
-      xb,
-      Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(a.clone()),
-      },
-    ),
-  );
+  let exp_part = power(e(), power(xb, neg(a.clone())));
   let value = eval(divide(times(a, xb_part), times(b, exp_part)))?;
   let cond = comparison(x, ComparisonOp::Greater, threshold);
   eval(piecewise(vec![(value, cond)], int(0)))
@@ -2352,13 +2317,7 @@ fn cdf_frechet(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     e(),
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
-      operand: Box::new(power(
-        divide(shifted, b),
-        Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand: Box::new(a),
-        },
-      )),
+      operand: Box::new(power(divide(shifted, b), neg(a))),
     },
   );
   let value = eval(value)?;
@@ -2383,10 +2342,7 @@ fn pdf_extreme_value(
   // E^(-E^((a-x)/b) + (a-x)/b)
   let exp_arg = Expr::BinaryOp {
     op: BinaryOperator::Plus,
-    left: Box::new(Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(power(e(), ab.clone())),
-    }),
+    left: Box::new(neg(power(e(), ab.clone()))),
     right: Box::new(ab),
   };
   let exp_arg_eval = eval(exp_arg)?;
@@ -2407,13 +2363,7 @@ fn cdf_extreme_value(
   let b = dargs[1].clone();
 
   let ab = divide(minus(a, x), b);
-  eval(power(
-    e(),
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(power(e(), ab)),
-    },
-  ))
+  eval(power(e(), neg(power(e(), ab))))
 }
 
 // PDF[GompertzMakehamDistribution[l, x0], x] = Piecewise[{{E^(l*x + (1 - E^(l*x))*x0)*l*x0, x >= 0}}, 0]
@@ -5859,10 +5809,7 @@ fn cdf_lognormal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
   // Erfc[-(Log[x] - mu) / (Sqrt[2] * sigma)] / 2
   let log_x = call("Log", vec![x.clone()]);
-  let arg = Expr::UnaryOp {
-    op: UnaryOperator::Minus,
-    operand: Box::new(divide(minus(log_x, mu), times(sqrt(int(2)), sigma))),
-  };
+  let arg = neg(divide(minus(log_x, mu), times(sqrt(int(2)), sigma)));
   let cdf_val = divide(call("Erfc", vec![arg]), int(2));
 
   // Piecewise[{{cdf_val, x > 0}}, 0]
@@ -6058,13 +6005,7 @@ fn pdf_pareto(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   // a * k^a * x^(-1-a)
   let pdf_val = times(
     times(a.clone(), power(k.clone(), a.clone())),
-    power(
-      x.clone(),
-      Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(plus(int(1), a)),
-      },
-    ),
+    power(x.clone(), neg(plus(int(1), a))),
   );
   let cond = comparison(x, ComparisonOp::GreaterEqual, k);
   eval(piecewise(vec![(pdf_val, cond)], int(0)))
@@ -6160,16 +6101,7 @@ fn cdf_weibull(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   };
 
   let xb = divide(xv, b);
-  let cdf_val = minus(
-    int(1),
-    power(
-      e(),
-      Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(power(xb, a)),
-      },
-    ),
-  );
+  let cdf_val = minus(int(1), power(e(), neg(power(xb, a))));
 
   eval(piecewise(vec![(cdf_val, cond)], int(0)))
 }
@@ -6255,13 +6187,7 @@ fn pdf_laplace(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let b = dargs[1].clone();
   let abs_diff = call("Abs", vec![minus(x, mu)]);
   let pdf_val = divide(
-    power(
-      e(),
-      Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(divide(abs_diff, b.clone())),
-      },
-    ),
+    power(e(), neg(divide(abs_diff, b.clone()))),
     times(int(2), b),
   );
   eval(pdf_val)
@@ -6278,19 +6204,8 @@ fn cdf_laplace(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let b = dargs[1].clone();
   let diff = minus(x.clone(), mu.clone());
   let low_val = divide(power(e(), divide(diff.clone(), b.clone())), int(2));
-  let high_val = minus(
-    int(1),
-    divide(
-      power(
-        e(),
-        Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand: Box::new(divide(diff, b)),
-        },
-      ),
-      int(2),
-    ),
-  );
+  let high_val =
+    minus(int(1), divide(power(e(), neg(divide(diff, b))), int(2)));
   let cond = comparison(x, ComparisonOp::Less, mu);
   eval(piecewise(vec![(low_val, cond)], high_val))
 }
@@ -6308,10 +6223,7 @@ fn pdf_rayleigh(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     divide(x.clone(), s2.clone()),
     power(
       e(),
-      Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(divide(power(x.clone(), int(2)), times(int(2), s2))),
-      },
+      neg(divide(power(x.clone(), int(2)), times(int(2), s2))),
     ),
   );
   let cond = comparison(x, ComparisonOp::Greater, int(0));
@@ -6331,10 +6243,7 @@ fn cdf_rayleigh(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     int(1),
     power(
       e(),
-      Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(divide(power(x.clone(), int(2)), times(int(2), s2))),
-      },
+      neg(divide(power(x.clone(), int(2)), times(int(2), s2))),
     ),
   );
   let cond = comparison(x, ComparisonOp::Greater, int(0));
@@ -10768,13 +10677,7 @@ fn pdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let sigma = dargs[4].clone();
 
   // (-mu + x): Wolfram canonical ordering
-  let neg_mu_plus_x = plus(
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(mu.clone()),
-    },
-    x.clone(),
-  );
+  let neg_mu_plus_x = plus(neg(mu.clone()), x.clone());
 
   match type_str.as_str() {
     "SN" => {
@@ -10837,13 +10740,8 @@ fn pdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     "SB" => {
       // PDF = (delta*sigma) / (E^(z^2/2) * Sqrt[2*Pi] * (mu+sigma-x) * (-mu+x))
       // where z = gamma + delta*Log[(-mu+x)/(mu+sigma-x)], for mu < x < mu+sigma
-      let mu_plus_sigma_minus_x = plus(
-        plus(mu.clone(), sigma.clone()),
-        Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand: Box::new(x.clone()),
-        },
-      );
+      let mu_plus_sigma_minus_x =
+        plus(plus(mu.clone(), sigma.clone()), neg(x.clone()));
       let log_arg =
         divide(neg_mu_plus_x.clone(), mu_plus_sigma_minus_x.clone());
       let log_t = call("Log", vec![log_arg]);
@@ -10903,13 +10801,7 @@ fn cdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let sigma = dargs[4].clone();
 
   // t = (-mu + x) / sigma (canonical ordering)
-  let neg_mu_plus_x = plus(
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(mu.clone()),
-    },
-    x.clone(),
-  );
+  let neg_mu_plus_x = plus(neg(mu.clone()), x.clone());
   let t = divide(neg_mu_plus_x.clone(), sigma.clone());
 
   // CDF = Erfc[(-gamma - delta*h(t)) / Sqrt[2]] / 2
@@ -10919,13 +10811,8 @@ fn cdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     "SL" => call("Log", vec![t.clone()]),
     "SU" => call("ArcSinh", vec![t.clone()]),
     "SB" => {
-      let mu_plus_sigma_minus_x = plus(
-        plus(mu.clone(), sigma.clone()),
-        Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand: Box::new(x.clone()),
-        },
-      );
+      let mu_plus_sigma_minus_x =
+        plus(plus(mu.clone(), sigma.clone()), neg(x.clone()));
       call("Log", vec![divide(neg_mu_plus_x, mu_plus_sigma_minus_x)])
     }
     _ => {
@@ -10936,14 +10823,8 @@ fn cdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   };
 
   // Distribute negative sign: (-gamma - delta*h) / Sqrt[2]
-  let neg_gamma = Expr::UnaryOp {
-    op: UnaryOperator::Minus,
-    operand: Box::new(gamma.clone()),
-  };
-  let neg_delta_h = Expr::UnaryOp {
-    op: UnaryOperator::Minus,
-    operand: Box::new(times(delta.clone(), h_of_t.clone())),
-  };
+  let neg_gamma = neg(gamma.clone());
+  let neg_delta_h = neg(times(delta.clone(), h_of_t.clone()));
   let erfc_arg = divide(plus(neg_gamma, neg_delta_h), sqrt(int(2)));
   let cdf_val = divide(call("Erfc", vec![erfc_arg]), int(2));
 
@@ -11683,10 +11564,6 @@ fn pdf_multinormal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   }
 
   let pow2 = |e: Expr| power(e, int(2));
-  let neg = |e: Expr| Expr::UnaryOp {
-    op: UnaryOperator::Minus,
-    operand: Box::new(e),
-  };
   let div2 = |a: Expr, b: Expr| divide(a, b);
 
   // (v - mu): canonical (-mu + v), or just v for a zero mean
@@ -12346,10 +12223,6 @@ fn pdf_product_distribution(
     }
   }
 
-  let neg = |e: Expr| Expr::UnaryOp {
-    op: UnaryOperator::Minus,
-    operand: Box::new(e),
-  };
   let pow2 = |e: Expr| power(e, int(2));
   let div2 = |a: Expr, b: Expr| divide(a, b);
 
@@ -12567,10 +12440,7 @@ fn coeff_power_term(num: i128, den: i128, base: &Expr, i: i128) -> Expr {
   }
   // Pull the sign out so Plus prints "- (3*x)/2" instead of "+ (-3*x)/2"
   if num < 0 {
-    return Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(coeff_power_term(-num, den, base, i)),
-    };
+    return neg(coeff_power_term(-num, den, base, i));
   }
   if num == 1 && den == 1 {
     pow(i)
@@ -14244,13 +14114,7 @@ fn pdf_max_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
         e(),
         call(
           "Plus",
-          vec![
-            Expr::UnaryOp {
-              op: UnaryOperator::Minus,
-              operand: Box::new(power(e(), z)),
-            },
-            call("Times", vec![int(-1), neg_za]),
-          ],
+          vec![neg(power(e(), z)), call("Times", vec![int(-1), neg_za])],
         ),
       )),
       right: Box::new(b.clone()),
@@ -14291,19 +14155,7 @@ fn pdf_max_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       // Exponent -E^z + z with z = (a - x)/b shared between both
       // terms, matching wolframscript's folded print
       let z = eval(msx_z(&a, &b, &x))?;
-      let body = power(
-        e(),
-        call(
-          "Plus",
-          vec![
-            Expr::UnaryOp {
-              op: UnaryOperator::Minus,
-              operand: Box::new(power(e(), z.clone())),
-            },
-            z,
-          ],
-        ),
-      );
+      let body = power(e(), call("Plus", vec![neg(power(e(), z.clone())), z]));
       let b_is_one = matches!(&b, Expr::Integer(1));
       Ok(if b_is_one {
         body
@@ -14359,15 +14211,8 @@ fn cdf_max_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated(dargs, x));
   }
   let (a, b, g) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
-  let gumbel = |at: &Expr| -> Expr {
-    power(
-      e(),
-      Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(power(e(), msx_z(&a, &b, at))),
-      },
-    )
-  };
+  let gumbel =
+    |at: &Expr| -> Expr { power(e(), neg(power(e(), msx_z(&a, &b, at)))) };
   let general = |at: &Expr| -> Expr {
     let u = msx_u(&a, &b, &g, at);
     power(
@@ -14395,13 +14240,7 @@ fn cdf_max_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       // Raw with the inner argument evaluated; an outer eval would
       // hoist E^(-x) into 1/E^x
       let z = eval(msx_z(&a, &b, &x))?;
-      Ok(power(
-        e(),
-        Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand: Box::new(power(e(), z)),
-        },
-      ))
+      Ok(power(e(), neg(power(e(), z))))
     }
     Some(gv) => {
       if numeric_x {
@@ -14980,10 +14819,7 @@ fn cdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
           times(int(2), power(s.clone(), int(2))),
         ))?,
       );
-      let term1 = Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(maxwell_term(sq, sp, at.clone(), e_part)),
-      };
+      let term1 = neg(maxwell_term(sq, sp, at.clone(), e_part));
       let erf = call(
         "Erf",
         vec![eval(Expr::BinaryOp {
@@ -16240,16 +16076,7 @@ fn pdf_gumbel(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   };
   let body = |at: &Expr| -> Result<Expr, InterpreterError> {
     let z = z_of(at)?;
-    let exponent = call(
-      "Plus",
-      vec![
-        Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand: Box::new(power(e(), z.clone())),
-        },
-        z,
-      ],
-    );
+    let exponent = call("Plus", vec![neg(power(e(), z.clone())), z]);
     let body = power(e(), exponent);
     Ok(if matches!(&b, Expr::Integer(1)) {
       body
@@ -16290,19 +16117,7 @@ fn cdf_gumbel(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       "Plus",
       vec![
         int(1),
-        call(
-          "Times",
-          vec![
-            int(-1),
-            power(
-              e(),
-              Expr::UnaryOp {
-                op: UnaryOperator::Minus,
-                operand: Box::new(power(e(), z)),
-              },
-            ),
-          ],
-        ),
+        call("Times", vec![int(-1), power(e(), neg(power(e(), z)))]),
       ],
     ))
   };
