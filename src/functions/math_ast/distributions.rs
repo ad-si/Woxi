@@ -36,11 +36,15 @@ fn sqrt(a: Expr) -> Expr {
   make_sqrt(a)
 }
 
-fn factorial(a: Expr) -> Expr {
+fn call(name: &str, args: Vec<Expr>) -> Expr {
   Expr::FunctionCall {
-    name: "Factorial".to_string(),
-    args: vec![a].into(),
+    name: name.to_string(),
+    args: args.into(),
   }
+}
+
+fn factorial(a: Expr) -> Expr {
+  call("Factorial", vec![a])
 }
 
 fn e() -> Expr {
@@ -99,7 +103,7 @@ fn eval(expr: Expr) -> Result<Expr, InterpreterError> {
 pub fn erlang_gamma_dargs(
   dargs: &[Expr],
 ) -> Result<Vec<Expr>, InterpreterError> {
-  let inv_lambda = eval(divide(Expr::Integer(1), dargs[1].clone()))?;
+  let inv_lambda = eval(divide(int(1), dargs[1].clone()))?;
   Ok(vec![dargs[0].clone(), inv_lambda])
 }
 
@@ -1211,29 +1215,23 @@ fn pdf_probability_distribution(
   }
   let pdf = &dargs[0];
   // Univariate: single iterator. Multivariate PDF[…, {a, b}] isn't supported here.
+  let unevaluated = |x: Expr| {
+    Ok(call(
+      "PDF",
+      vec![unevaluated("ProbabilityDistribution", dargs), x],
+    ))
+  };
   if dargs.len() != 2 {
-    return Ok(Expr::FunctionCall {
-      name: "PDF".to_string(),
-      args: vec![unevaluated("ProbabilityDistribution", dargs), x].into(),
-    });
+    return unevaluated(x);
   }
   let Expr::List(items) = &dargs[1] else {
-    return Ok(Expr::FunctionCall {
-      name: "PDF".to_string(),
-      args: vec![unevaluated("ProbabilityDistribution", dargs), x].into(),
-    });
+    return unevaluated(x);
   };
   if items.len() != 3 {
-    return Ok(Expr::FunctionCall {
-      name: "PDF".to_string(),
-      args: vec![unevaluated("ProbabilityDistribution", dargs), x].into(),
-    });
+    return unevaluated(x);
   }
   let Expr::Identifier(var) = &items[0] else {
-    return Ok(Expr::FunctionCall {
-      name: "PDF".to_string(),
-      args: vec![unevaluated("ProbabilityDistribution", dargs), x].into(),
-    });
+    return unevaluated(x);
   };
   let lo = items[1].clone();
   let hi = items[2].clone();
@@ -1249,30 +1247,24 @@ fn cdf_probability_distribution(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(call(
+      "CDF",
+      vec![unevaluated("ProbabilityDistribution", dargs), x],
+    ))
+  };
   if dargs.len() != 2 {
-    return Ok(Expr::FunctionCall {
-      name: "CDF".to_string(),
-      args: vec![unevaluated("ProbabilityDistribution", dargs), x].into(),
-    });
+    return unevaluated(x);
   }
   let pdf = &dargs[0];
   let Expr::List(items) = &dargs[1] else {
-    return Ok(Expr::FunctionCall {
-      name: "CDF".to_string(),
-      args: vec![unevaluated("ProbabilityDistribution", dargs), x].into(),
-    });
+    return unevaluated(x);
   };
   if items.len() != 3 {
-    return Ok(Expr::FunctionCall {
-      name: "CDF".to_string(),
-      args: vec![unevaluated("ProbabilityDistribution", dargs), x].into(),
-    });
+    return unevaluated(x);
   }
   let Expr::Identifier(var) = &items[0] else {
-    return Ok(Expr::FunctionCall {
-      name: "CDF".to_string(),
-      args: vec![unevaluated("ProbabilityDistribution", dargs), x].into(),
-    });
+    return unevaluated(x);
   };
   let lo = items[1].clone();
   let integral = Expr::FunctionCall {
@@ -1289,19 +1281,8 @@ fn cdf_probability_distribution(
 /// PDF[NormalDistribution[mu, sigma], x] = 1/(E^((-mu + x)^2/(2*sigma^2))*Sqrt[2*Pi]*sigma)
 fn pdf_normal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let (mu, sigma) = match dargs.len() {
-    0 | 2 => {
-      let mu = if dargs.is_empty() {
-        int(0)
-      } else {
-        dargs[0].clone()
-      };
-      let sigma = if dargs.is_empty() {
-        int(1)
-      } else {
-        dargs[1].clone()
-      };
-      (mu, sigma)
-    }
+    0 => (int(0), int(1)),
+    2 => (dargs[0].clone(), dargs[1].clone()),
     _ => {
       return Err(InterpreterError::EvaluationError(
         "NormalDistribution expects 0 or 2 arguments".into(),
@@ -1601,17 +1582,17 @@ fn pdf_hypergeometric(
 ///   - 2 rho ((x - mu1)/sigma1) ((y - mu2)/sigma2)
 ///   + ((y - mu2)/sigma2)^2.
 fn pdf_binormal(dargs: &[Expr], xy: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |xy: Expr| {
+    Ok(call(
+      "PDF",
+      vec![unevaluated("BinormalDistribution", dargs), xy],
+    ))
+  };
   let Expr::List(coords) = &xy else {
-    return Ok(Expr::FunctionCall {
-      name: "PDF".to_string(),
-      args: vec![unevaluated("BinormalDistribution", dargs), xy].into(),
-    });
+    return unevaluated(xy);
   };
   if coords.len() != 2 {
-    return Ok(Expr::FunctionCall {
-      name: "PDF".to_string(),
-      args: vec![unevaluated("BinormalDistribution", dargs), xy].into(),
-    });
+    return unevaluated(xy);
   }
   let x = coords[0].clone();
   let y = coords[1].clone();
@@ -2023,19 +2004,8 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// CDF[NormalDistribution[mu, sigma], x] = Erfc[(mu - x)/(Sqrt[2]*sigma)]/2
 fn cdf_normal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let (mu, sigma) = match dargs.len() {
-    0 | 2 => {
-      let mu = if dargs.is_empty() {
-        int(0)
-      } else {
-        dargs[0].clone()
-      };
-      let sigma = if dargs.is_empty() {
-        int(1)
-      } else {
-        dargs[1].clone()
-      };
-      (mu, sigma)
-    }
+    0 => (int(0), int(1)),
+    2 => (dargs[0].clone(), dargs[1].clone()),
     _ => {
       return Err(InterpreterError::EvaluationError(
         "NormalDistribution expects 0 or 2 arguments".into(),
@@ -2801,7 +2771,7 @@ pub fn probability_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       right: Box::new(p_cond),
     });
   }
-
+  let unevaluated = || Ok(unevaluated("Probability", args));
   // Joint distribution form:
   //   x \[Distributed] d1 && y \[Distributed] d2 && ...
   // Handle it by enumerating the finite discrete support of every variable.
@@ -2814,7 +2784,7 @@ pub fn probability_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         args: vec![result].into(),
       });
     }
-    return Ok(unevaluated("Probability", args));
+    return unevaluated();
   }
 
   // Parse Distributed[var, dist] from the second argument
@@ -2825,11 +2795,11 @@ pub fn probability_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Expr::Identifier(v) = &dargs[0] {
         (v.as_str(), &dargs[1])
       } else {
-        return Ok(unevaluated("Probability", args));
+        return unevaluated();
       }
     }
     _ => {
-      return Ok(unevaluated("Probability", args));
+      return unevaluated();
     }
   };
 
@@ -2863,8 +2833,8 @@ pub fn probability_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return eval(Expr::BinaryOp {
       op: BinaryOperator::Divide,
-      left: Box::new(Expr::Integer(count)),
-      right: Box::new(Expr::Integer(data.len() as i128)),
+      left: Box::new(int(count)),
+      right: Box::new(int(data.len() as i128)),
     });
   }
 
@@ -3106,7 +3076,7 @@ fn discrete_finite_support(dist: &Expr) -> Option<(Vec<Expr>, Expr)> {
       let support: Vec<Expr> = (*lo..=*hi).map(Expr::Integer).collect();
       let prob = Expr::FunctionCall {
         name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(count)].into(),
+        args: vec![int(1), int(count)].into(),
       };
       Some((support, prob))
     }
@@ -3242,6 +3212,7 @@ pub fn expectation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let expr = &args[0];
   let dist_spec = &args[1];
+  let unevaluated = || Ok(unevaluated("Expectation", args));
 
   // Parse Distributed[vars, dist] — vars may be a single Identifier or a List
   // (for multivariate distributions such as ProbabilityDistribution[..., {x,…}, {y,…}]).
@@ -3257,19 +3228,19 @@ pub fn expectation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             if let Expr::Identifier(n) = item {
               names.push(n.clone());
             } else {
-              return Ok(unevaluated("Expectation", args));
+              return unevaluated();
             }
           }
           names
         }
         _ => {
-          return Ok(unevaluated("Expectation", args));
+          return unevaluated();
         }
       };
       (vars, &dargs[1])
     }
     _ => {
-      return Ok(unevaluated("Expectation", args));
+      return unevaluated();
     }
   };
 
@@ -3305,7 +3276,7 @@ pub fn expectation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (dist_name, dargs) = match dist {
     Expr::FunctionCall { name, args: da } => (name.as_str(), da.as_slice()),
     _ => {
-      return Ok(unevaluated("Expectation", args));
+      return unevaluated();
     }
   };
 
@@ -3347,7 +3318,7 @@ pub fn expectation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // For unsupported parameterizations (e.g. list-of-vars over a standard
   // distribution) just return unevaluated.
   if vars.len() != 1 {
-    return Ok(unevaluated("Expectation", args));
+    return unevaluated();
   }
   let var_name = vars.into_iter().next().unwrap();
 
@@ -3385,7 +3356,7 @@ pub fn expectation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mu_t = times(mu, t.clone());
     let half = Expr::FunctionCall {
       name: "Rational".to_string(),
-      args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+      args: vec![int(1), int(2)].into(),
     };
     let sigma_sq_t_sq_half =
       times(times(sigma_sq, power(t.clone(), int(2))), half);
@@ -7102,10 +7073,10 @@ fn failure_distribution_cdf_value(
       Expr::FunctionCall {
         name: "Plus".to_string(),
         args: vec![
-          Expr::Integer(1),
+          int(1),
           Expr::FunctionCall {
             name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), f].into(),
+            args: vec![int(-1), f].into(),
           },
         ]
         .into(),
@@ -7389,7 +7360,7 @@ pub fn process_slice_distribution(
         times(
           Expr::FunctionCall {
             name: "Rational".to_string(),
-            args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
+            args: vec![int(-1), int(2)].into(),
           },
           power(s.clone(), int(2)),
         ),
@@ -7791,7 +7762,7 @@ fn dmp_step_pdf(
         Expr::List(p0.into()),
         Expr::FunctionCall {
           name: "MatrixPower".to_string(),
-          args: vec![m, Expr::Integer(*steps)].into(),
+          args: vec![m, int(*steps)].into(),
         },
       ]
       .into(),
@@ -10357,16 +10328,18 @@ fn pdf_negative_multinomial(
   dargs: &[Expr],
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(call(
+      "PDF",
+      vec![unevaluated("NegativeMultinomialDistribution", dargs), x],
+    ))
+  };
   let (n, probs) = negative_multinomial_params(dargs)?;
   let xs = match &x {
     Expr::List(items) if items.len() == probs.len() => items.clone(),
     _ => {
       // A point of the wrong shape stays unevaluated, as in wolframscript.
-      return Ok(Expr::FunctionCall {
-        name: "PDF".to_string(),
-        args: vec![unevaluated("NegativeMultinomialDistribution", dargs), x]
-          .into(),
-      });
+      return unevaluated(x);
     }
   };
   if any_concrete_non_integer(&xs) {
@@ -11132,6 +11105,12 @@ fn cdf_chi(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 /// - alpha=1, beta=0: Cauchy(mu, sigma)
 /// - alpha=2: Normal(mu, sigma*Sqrt[2])
 fn pdf_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(call(
+      "PDF",
+      vec![unevaluated("StableDistribution", dargs), x],
+    ))
+  };
   let (alpha, beta, mu, sigma) = match dargs.len() {
     2 => (dargs[0].clone(), dargs[1].clone(), int(0), int(1)),
     4 => (
@@ -11148,10 +11127,7 @@ fn pdf_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       dargs[4].clone(),
     ),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "PDF".to_string(),
-        args: vec![unevaluated("StableDistribution", dargs), x].into(),
-      });
+      return unevaluated(x);
     }
   };
 
@@ -11179,14 +11155,17 @@ fn pdf_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   }
 
   // General case: return unevaluated
-  Ok(Expr::FunctionCall {
-    name: "PDF".to_string(),
-    args: vec![unevaluated("StableDistribution", dargs), x].into(),
-  })
+  unevaluated(x)
 }
 
 /// CDF[StableDistribution[alpha, beta, mu, sigma], x]
 fn cdf_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |x: Expr| {
+    Ok(call(
+      "CDF",
+      vec![unevaluated("StableDistribution", dargs), x],
+    ))
+  };
   let (alpha, beta, mu, sigma) = match dargs.len() {
     2 => (dargs[0].clone(), dargs[1].clone(), int(0), int(1)),
     4 => (
@@ -11203,10 +11182,7 @@ fn cdf_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       dargs[4].clone(),
     ),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "CDF".to_string(),
-        args: vec![unevaluated("StableDistribution", dargs), x].into(),
-      });
+      return unevaluated(x);
     }
   };
 
@@ -11229,10 +11205,7 @@ fn cdf_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   }
 
   // General case: return unevaluated
-  Ok(Expr::FunctionCall {
-    name: "CDF".to_string(),
-    args: vec![unevaluated("StableDistribution", dargs), x].into(),
-  })
+  unevaluated(x)
 }
 
 /// PDF[ArcSinDistribution[{a, b}], x]
@@ -12869,10 +12842,6 @@ fn histogram_pdf_cdf(
   }
   // Flat Times/Plus FunctionCalls: the display of the raw (uncanonicalized)
   // tree matches wolframscript's, e.g. `(3*(-2 + x))/10` and `(x*Boole[…])/10`.
-  let fc = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let build = || -> Result<Expr, InterpreterError> {
     let mut terms: Vec<Expr> = Vec::new();
     if cumulative {
@@ -12901,18 +12870,18 @@ fn histogram_pdf_cdf(
         let ramp_offset = if is_zero(&lo) {
           x.clone()
         } else {
-          fc("Plus", vec![eval(times(int(-1), lo.clone()))?, x.clone()])
+          call("Plus", vec![eval(times(int(-1), lo.clone()))?, x.clone()])
         };
         // (cum + w·(x - lo))·Boole[…]; the first bin has no accumulated mass.
         terms.push(if is_zero(&cum) {
-          fc("Times", vec![w.clone(), ramp_offset, boole(cond)])
+          call("Times", vec![w.clone(), ramp_offset, boole(cond)])
         } else {
-          fc(
+          call(
             "Times",
             vec![
-              fc(
+              call(
                 "Plus",
-                vec![cum.clone(), fc("Times", vec![w.clone(), ramp_offset])],
+                vec![cum.clone(), call("Times", vec![w.clone(), ramp_offset])],
               ),
               boole(cond),
             ],
@@ -12920,10 +12889,10 @@ fn histogram_pdf_cdf(
         });
         cum = eval(plus(cum, times(w.clone(), minus(hi, lo))))?;
       } else {
-        terms.push(fc("Times", vec![w.clone(), boole(cond)]));
+        terms.push(call("Times", vec![w.clone(), boole(cond)]));
       }
     }
-    let sum = fc("Plus", terms);
+    let sum = call("Plus", terms);
     if numeric_point.is_some() {
       eval(sum)
     } else {
@@ -13667,11 +13636,6 @@ fn pdf_beta_binomial(
     return Ok(unevaluated(dargs, x));
   }
   let (a, b, n) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
-
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let pmf = |k: Expr| -> Expr {
     // Wolfram prints "10 - k" for numeric n but "-k + n" symbolically
     let neg_k = call("Times", vec![int(-1), k.clone()]);
@@ -13795,10 +13759,6 @@ fn beta_prime_general_body(
   s: &Expr,
   x: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let xs = divide(x.clone(), s.clone());
   let x_pow = power(xs.clone(), plus(int(-1), times(w.clone(), p.clone())));
   let neg_pq = plus(times(int(-1), p.clone()), times(int(-1), q.clone()));
@@ -13845,10 +13805,6 @@ fn pdf_beta_prime(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated(dargs, x));
   }
   let (p, q) = (dargs[0].clone(), dargs[1].clone());
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let is_exact_number = |e: &Expr| -> bool {
     matches!(e, Expr::Integer(_))
       || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
@@ -14024,10 +13980,6 @@ fn pdf_noncentral_chi_square(
     return Ok(unevaluated(dargs, x));
   }
   let (nu, lam) = (dargs[0].clone(), dargs[1].clone());
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let raw_div = |a: Expr, b: Expr| Expr::BinaryOp {
     op: BinaryOperator::Divide,
     left: Box::new(a),
@@ -14242,10 +14194,6 @@ fn cdf_noncentral_chi_square(
     return Ok(unevaluated(dargs, x));
   }
   let (nu, lam) = (dargs[0].clone(), dargs[1].clone());
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let marcum = |at: &Expr| -> Result<Expr, InterpreterError> {
     Ok(call(
       "MarcumQ",
@@ -14300,10 +14248,6 @@ fn pdf_exponential_power(
     return Ok(unevaluated(dargs, x));
   }
   let (k, m, s) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let k_is_numeric = matches!(&k, Expr::Integer(_))
     || matches!(&k, Expr::FunctionCall { name, .. } if name == "Rational");
 
@@ -14400,10 +14344,6 @@ fn cdf_exponential_power(
     return Ok(unevaluated(dargs, x));
   }
   let (k, m, s) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let half_reg = |diff: Expr| -> Result<Expr, InterpreterError> {
     let arg = Expr::BinaryOp {
       op: BinaryOperator::Divide,
@@ -14478,10 +14418,6 @@ fn pdf_rice(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated(dargs, x));
   }
   let (a, b) = (dargs[0].clone(), dargs[1].clone());
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let pow2 = |e: &Expr| power(e.clone(), int(2));
   let body = |at: &Expr| -> Result<Expr, InterpreterError> {
     let exponent = Expr::BinaryOp {
@@ -14570,10 +14506,6 @@ pub fn rice_mean_variance(
   a: &Expr,
   b: &Expr,
 ) -> Result<(Expr, Expr), InterpreterError> {
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let pow2 = |e: &Expr| power(e.clone(), int(2));
   let sqrt_half_pi = call("Sqrt", vec![divide(pi(), int(2))]);
   let numeric_params = rice_numeric(a).is_some() && rice_numeric(b).is_some();
@@ -14860,10 +14792,6 @@ fn pdf_min_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated(dargs, x));
   }
   let (a, b, g) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let gumbel = |at: &Expr| -> Expr {
     // E^(-E^((-a + x)/b) - (a - x)/b)/b
     let z = ms_z(&a, &b, at);
@@ -15009,10 +14937,6 @@ fn cdf_min_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated(dargs, x));
   }
   let (a, b, g) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let one_minus = |inner: Expr| -> Expr {
     call("Plus", vec![int(1), call("Times", vec![int(-1), inner])])
   };
@@ -15108,10 +15032,6 @@ fn min_stable_mean_variance(
   b: &Expr,
   g: &Expr,
 ) -> Result<(Expr, Expr), InterpreterError> {
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let euler_gamma = Expr::Identifier("EulerGamma".to_string());
   let indeterminate = || Expr::Identifier("Indeterminate".to_string());
   let mean_gumbel = || {
@@ -15314,10 +15234,6 @@ fn pdf_max_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated(dargs, x));
   }
   let (a, b, g) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let gumbel = |at: &Expr| -> Expr {
     // E^(-E^((a - x)/b) - (-a + x)/b)/b
     let z = msx_z(&a, &b, at);
@@ -15455,10 +15371,6 @@ fn cdf_max_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated(dargs, x));
   }
   let (a, b, g) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let gumbel = |at: &Expr| -> Expr {
     power(
       e(),
@@ -15562,10 +15474,6 @@ fn max_stable_mean_variance(
   b: &Expr,
   g: &Expr,
 ) -> Result<(Expr, Expr), InterpreterError> {
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let euler_gamma = Expr::Identifier("EulerGamma".to_string());
   let indeterminate = || Expr::Identifier("Indeterminate".to_string());
   let mean_gumbel = || plus(a.clone(), times(b.clone(), euler_gamma.clone()));
@@ -15660,10 +15568,6 @@ fn pdf_triangular(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   };
   let Some((a, b, c)) = triangular_params(dargs)? else {
     return Ok(unevaluated(dargs, x));
-  };
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
   };
   let diff_xa = call(
     "Plus",
@@ -15779,10 +15683,6 @@ fn cdf_triangular(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   };
   let Some((a, b, c)) = triangular_params(dargs)? else {
     return Ok(unevaluated(dargs, x));
-  };
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
   };
   let sq_xa = power(
     call(
@@ -15976,10 +15876,6 @@ fn maxwell_term(
   numerator: Expr,
   e_part: Expr,
 ) -> Expr {
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let mut k = 0;
   let mut m = r_den;
   while m % 2 == 0 {
@@ -16051,10 +15947,6 @@ fn pdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated(dargs, x));
   }
   let s = dargs[0].clone();
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let sqrt_2_pi = call("Sqrt", vec![divide(int(2), pi())]);
   let body = |at: &Expr| -> Result<Expr, InterpreterError> {
     let e_part = power(
@@ -16124,10 +16016,6 @@ fn cdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated(dargs, x));
   }
   let s = dargs[0].clone();
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let sqrt_2_pi = call("Sqrt", vec![divide(int(2), pi())]);
   let body = |at: &Expr| -> Result<Expr, InterpreterError> {
     if ms_numeric(at).is_none()
@@ -16231,10 +16119,6 @@ fn pdf_birnbaum_saunders(
   }
   let a = dargs[0].clone();
   let l = dargs[1].clone();
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let body = |at: &Expr| -> Result<Expr, InterpreterError> {
     // exponent (-1 + l at)^2 / (2 a^2 l at)
     let exponent = divide(
@@ -16285,10 +16169,6 @@ fn cdf_birnbaum_saunders(
   }
   let a = dargs[0].clone();
   let l = dargs[1].clone();
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let body = |at: &Expr| -> Result<Expr, InterpreterError> {
     // Erf[(-1 + l at)/(Sqrt[2] a Sqrt[l at])]
     let erf_arg = divide(
@@ -16327,10 +16207,6 @@ fn pdf_levy(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   }
   let m = dargs[0].clone();
   let s = dargs[1].clone();
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let shift = |at: &Expr| plus(times(int(-1), m.clone()), at.clone());
   let body = |at: &Expr| -> Result<Expr, InterpreterError> {
     let sh = shift(at);
@@ -16371,10 +16247,6 @@ fn cdf_levy(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   }
   let m = dargs[0].clone();
   let s = dargs[1].clone();
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let shift = |at: &Expr| plus(times(int(-1), m.clone()), at.clone());
   let body = |at: &Expr| -> Result<Expr, InterpreterError> {
     let erfc_arg = divide(
@@ -16469,10 +16341,6 @@ fn cdf_lindley(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 pub fn maxwell_mean_variance(
   s: &Expr,
 ) -> Result<(Expr, Expr), InterpreterError> {
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let mean = eval(call(
     "Times",
     vec![int(2), call("Sqrt", vec![divide(int(2), pi())]), s.clone()],
@@ -16518,10 +16386,6 @@ fn pdf_wigner_semicircle(
   };
   let Some((a, r)) = wigner_params(dargs) else {
     return Ok(unevaluated(dargs, x));
-  };
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
   };
   let diff = |at: &Expr| -> Expr {
     if matches!(&a, Expr::Integer(0)) {
@@ -16595,10 +16459,6 @@ fn cdf_wigner_semicircle(
   };
   let Some((a, r)) = wigner_params(dargs) else {
     return Ok(unevaluated(dargs, x));
-  };
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
   };
   let diff = |at: &Expr| -> Expr {
     if matches!(&a, Expr::Integer(0)) {
@@ -16829,10 +16689,6 @@ fn pdf_moyal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     [m, s] => (m.clone(), s.clone()),
     _ => return Ok(unevaluated(dargs, x)),
   };
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let half = || call("Rational", vec![int(-1), int(2)]);
   let body = |at: &Expr| -> Result<Expr, InterpreterError> {
     let folded = ms_numeric(&m).is_some_and(|v| v != 0.0);
@@ -16940,10 +16796,6 @@ fn cdf_moyal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     [m, s] => (m.clone(), s.clone()),
     _ => return Ok(unevaluated(dargs, x)),
   };
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let body = |at: &Expr| -> Result<Expr, InterpreterError> {
     let diff = if matches!(&m, Expr::Integer(0)) {
       at.clone()
@@ -16994,10 +16846,6 @@ pub fn moyal_mean_variance(
       ));
     }
   };
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let sum = call(
     "Plus",
     vec![
@@ -17033,10 +16881,6 @@ fn pdf_borel_tanner(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated(dargs, x));
   }
   let (a, n) = (dargs[0].clone(), dargs[1].clone());
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
 
   // Numeric point: exact value or 0
   if ms_numeric(&x).is_some() {
@@ -17219,10 +17063,6 @@ fn pdf_benktander_gibrat(
   if !benktander_valid(&a, &b, &dist)? {
     return Ok(uneval(dargs, x));
   }
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let log_x = |at: &Expr| call("Log", vec![at.clone()]);
   let numeric = ms_numeric(&a).is_some() && ms_numeric(&b).is_some();
 
@@ -17356,10 +17196,6 @@ fn cdf_benktander_gibrat(
   if !benktander_valid(&a, &b, &dist)? {
     return Ok(uneval(dargs, x));
   }
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let log_x = |at: &Expr| call("Log", vec![at.clone()]);
   let numeric = ms_numeric(&a).is_some() && ms_numeric(&b).is_some();
   let body = |at: &Expr| -> Result<Expr, InterpreterError> {
@@ -17439,10 +17275,6 @@ fn benktander_gibrat_mean_variance(
       "BenktanderGibratDistribution: invalid parameters".into(),
     ));
   }
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let mean = eval(plus(int(1), power(a.clone(), int(-1))))?;
   let a_minus_1 = call("Plus", vec![int(-1), a.clone()]);
   let numeric = ms_numeric(a).is_some() && ms_numeric(b).is_some();
@@ -17522,10 +17354,6 @@ fn pdf_gumbel(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     [a, b] => (a.clone(), b.clone()),
     _ => return Ok(uneval(dargs, x)),
   };
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let z_of = |at: &Expr| -> Result<Expr, InterpreterError> {
     let diff = if matches!(&a, Expr::Integer(0)) {
       at.clone()
@@ -17583,10 +17411,6 @@ fn cdf_gumbel(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     [] => (int(0), int(1)),
     [a, b] => (a.clone(), b.clone()),
     _ => return Ok(unevaluated(dargs, x)),
-  };
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
   };
   let body = |at: &Expr| -> Result<Expr, InterpreterError> {
     let diff = if matches!(&a, Expr::Integer(0)) {
@@ -17676,10 +17500,6 @@ fn pdf_zipf(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     [n, r] => (Some(n.clone()), r.clone()),
     _ => return Ok(unevaluated(dargs, x)),
   };
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let norm = match &n {
     None => call("Zeta", vec![eval(plus(int(1), r.clone()))?]),
     Some(n) => call(
@@ -17736,10 +17556,6 @@ fn pdf_zipf(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 fn zipf_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   match dargs {
     [r] => {
       let zeta = |offset: i128| -> Result<Expr, InterpreterError> {
@@ -17864,10 +17680,6 @@ fn pdf_benford(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   if bv < 2.0 || bv.fract() != 0.0 {
     return Ok(unevaluated(dargs, x));
   }
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   // Log[1 + 1/d] / Log[b].
   let body = |d: &Expr| -> Result<Expr, InterpreterError> {
     let inner = eval(plus(int(1), divide(int(1), d.clone())))?;
@@ -17912,10 +17724,6 @@ fn cdf_benford(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   if bv < 2.0 || bv.fract() != 0.0 {
     return Ok(unevaluated(dargs, x));
   }
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   // Log[1 + Floor[x]] / Log[b] at the given point.
   let body = |floor_plus_one: Expr| -> Result<Expr, InterpreterError> {
     eval(divide(
@@ -17979,10 +17787,6 @@ fn benford_mean_variance(
     ));
   }
   let b_int = bv as i128;
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let log_b = call("Log", vec![b.clone()]);
   // Mean = b - Log[b!]/Log[b].
   let factorial = eval(call("Factorial", vec![b.clone()]))?;
@@ -18124,10 +17928,6 @@ fn benktander_weibull_mean_variance(
     return Err(InterpreterError::EvaluationError(
       "BenktanderWeibullDistribution expects 2 arguments".into(),
     ));
-  };
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
   };
   let e = || Expr::Identifier("E".to_string());
   let mean = eval(plus(int(1), divide(int(1), a.clone())))?;
