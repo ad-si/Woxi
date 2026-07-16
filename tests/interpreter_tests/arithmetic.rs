@@ -5327,6 +5327,27 @@ mod float_division_fold {
     );
   }
 
+  // The mirror direction: a machine-Real dividend over an EXACT symbolic
+  // quotient folds the divisor's numeric content into one exact rational
+  // and multiplies through left-to-right — (19.6*N[86/145])*(1/N[63+Pi])
+  // (differential fuzzer, seed 14911319143061223866, the divergence left
+  // open by the previous fuzzing round; wolframscript-verified).
+  #[test]
+  fn machine_real_over_exact_quotient() {
+    assert_eq!(
+      interpret(
+        "Divide[19.6, Times[Divide[Subtract[-63, Pi], -86], \
+         Subtract[96, Plus[27, -76]]]]"
+      )
+      .unwrap(),
+      "0.17575669287388962"
+    );
+    assert_eq!(
+      interpret("19.6/(63 + Pi)").unwrap(),
+      "0.296333958915279"
+    );
+  }
+
   #[test]
   fn non_quotient_dividends_keep_reciprocal() {
     assert_eq!(interpret("Sqrt[2]/1.8").unwrap(), "0.7856742013183863");
