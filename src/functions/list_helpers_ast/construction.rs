@@ -2093,6 +2093,146 @@ fn expand_pattern_rule(data: &Expr, dims: &[usize]) -> Option<Expr> {
   Some(Expr::List(rules.into()))
 }
 
+/// Expand a LIST of position rules that mixes explicit positions with
+/// pattern rules (`{i_, i_} :> …`) and/or Alternatives-of-position rules
+/// (`{1, 2} | {3, 4} | … -> v`) into a flat list of explicit rules.
+/// wolframscript semantics: for every position, the FIRST rule (in list
+/// order) whose LHS matches wins. Returns None when no rule needs pattern
+/// matching (the ordinary pipeline handles plain rule lists).
+fn expand_pattern_rule_list(data: &Expr, dims: &[usize]) -> Option<Expr> {
+  let Expr::List(items) = data else {
+    return None;
+  };
+  if dims.is_empty() || items.is_empty() {
+    return None;
+  }
+
+  enum Matcher {
+    Explicit(Vec<i128>, Expr),
+    Alternatives(std::collections::HashSet<Vec<i128>>, Expr),
+    /// The whole rule, applied per position via MatchQ + Replace.
+    Pattern(Expr),
+  }
+
+  let explicit_pos = |e: &Expr| -> Option<Vec<i128>> {
+    let pos: Vec<i128> = match e {
+      Expr::List(ps) => ps.iter().map(expr_to_i128).collect::<Option<_>>()?,
+      other => vec![expr_to_i128(other)?],
+    };
+    (pos.len() == dims.len()).then_some(pos)
+  };
+
+  let mut matchers: Vec<Matcher> = Vec::with_capacity(items.len());
+  let mut needs_matching = false;
+  for item in items {
+    let (lhs, rhs, delayed) = match item {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref(), false),
+      Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref(), true),
+      _ => return None,
+    };
+    // A delayed RHS is evaluated once per expanded position; for the
+    // position-independent matchers evaluate it here, once.
+    let value = || -> Option<Expr> {
+      if delayed {
+        crate::evaluator::evaluate_expr_to_expr(rhs).ok()
+      } else {
+        Some(rhs.clone())
+      }
+    };
+    if let Some(pos) = explicit_pos(lhs) {
+      matchers.push(Matcher::Explicit(pos, value()?));
+    } else if let Expr::FunctionCall { name, args } = lhs
+      && name == "Alternatives"
+      && let Some(set) = args
+        .iter()
+        .map(explicit_pos)
+        .collect::<Option<std::collections::HashSet<_>>>()
+    {
+      needs_matching = true;
+      matchers.push(Matcher::Alternatives(set, value()?));
+    } else if expr_contains_pattern(lhs) {
+      needs_matching = true;
+      matchers.push(Matcher::Pattern(item.clone()));
+    } else {
+      return None;
+    }
+  }
+  if !needs_matching {
+    return None;
+  }
+
+  let total: usize = dims.iter().product();
+  if total == 0 || total > 1_000_000 {
+    return None;
+  }
+  let mut rules: Vec<Expr> = Vec::new();
+  for flat in 0..total {
+    let mut rem = flat;
+    let mut pos = vec![0i128; dims.len()];
+    for k in (0..dims.len()).rev() {
+      pos[k] = (rem % dims[k]) as i128 + 1;
+      rem /= dims[k];
+    }
+    for m in &matchers {
+      match m {
+        Matcher::Explicit(p, v) if *p == pos => {
+          rules.push(explicit_rule(&pos, v.clone()));
+        }
+        Matcher::Alternatives(set, v) if set.contains(&pos) => {
+          rules.push(explicit_rule(&pos, v.clone()));
+        }
+        Matcher::Pattern(rule) => {
+          let pos_list =
+            Expr::List(pos.iter().map(|&p| Expr::Integer(p)).collect());
+          let match_q = Expr::FunctionCall {
+            name: "MatchQ".to_string(),
+            args: vec![
+              pos_list.clone(),
+              match rule {
+                Expr::Rule { pattern, .. }
+                | Expr::RuleDelayed { pattern, .. } => (**pattern).clone(),
+                _ => unreachable!(),
+              },
+            ]
+            .into(),
+          };
+          if !matches!(
+            crate::evaluator::evaluate_expr_to_expr(&match_q),
+            Ok(Expr::Identifier(ref s)) if s == "True"
+          ) {
+            continue;
+          }
+          let replaced = Expr::FunctionCall {
+            name: "Replace".to_string(),
+            args: vec![pos_list, rule.clone()].into(),
+          };
+          let val = crate::evaluator::evaluate_expr_to_expr(&replaced).ok()?;
+          rules.push(explicit_rule(&pos, val));
+        }
+        _ => continue,
+      }
+      break;
+    }
+  }
+  Some(Expr::List(rules.into()))
+}
+
+/// Build `{p1, p2, …} -> value` for an explicit integer position.
+fn explicit_rule(pos: &[i128], value: Expr) -> Expr {
+  Expr::Rule {
+    pattern: Box::new(Expr::List(
+      pos.iter().map(|&p| Expr::Integer(p)).collect(),
+    )),
+    replacement: Box::new(value),
+  }
+}
+
 /// Whether `expr` contains a pattern (Blank) node anywhere within it.
 fn expr_contains_pattern(expr: &Expr) -> bool {
   match expr {
@@ -2294,6 +2434,7 @@ pub fn sparse_array_normalize_ast(
   let data: &Expr = if let Some(ref dims) = explicit_dims {
     if let Some(expanded) = expand_pattern_rule(&args[0], dims)
       .or_else(|| expand_band_rules(&args[0], dims))
+      .or_else(|| expand_pattern_rule_list(&args[0], dims))
     {
       expanded_data = expanded;
       &expanded_data

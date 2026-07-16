@@ -859,6 +859,33 @@ mod outer_extended {
     );
   }
 
+  // A LIST of rules may mix explicit positions, pattern rules, and
+  // Alternatives-of-position rules; for each position the FIRST matching
+  // rule (in list order) wins — so `{2, 2} -> 5` beats the later diagonal
+  // pattern. Regression test for resistor_mesh.wls, whose graph Laplacian
+  // is built exactly this way.
+  #[test]
+  fn sparse_array_mixed_rule_list() {
+    assert_eq!(
+      interpret(
+        "Normal[SparseArray[{{2, 2} -> 5, {i_, i_} :> 10 i, \
+         {1, 2} | {3, 1} -> -1}, {3, 3}]]"
+      )
+      .unwrap(),
+      "{{10, -1, 0}, {0, 5, 0}, {-1, 0, 30}}"
+    );
+    // The canonical CSR form must also match wolframscript.
+    assert_eq!(
+      interpret(
+        "SparseArray[{{2, 2} -> 5, {i_, i_} :> 10 i, \
+         {1, 2} | {3, 1} -> -1}, {3, 3}]"
+      )
+      .unwrap(),
+      "SparseArray[Automatic, {3, 3}, 0, {1, {{0, 2, 3, 5}, \
+       {{1}, {2}, {2}, {1}, {3}}}, {10, -1, 5, -1, 30}}]"
+    );
+  }
+
   // A `/; cond` condition on the pattern restricts which positions are
   // filled; the rest take the (default 0) background value.
   #[test]
