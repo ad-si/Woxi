@@ -73,14 +73,14 @@ fn run_script_snapshot_with_args(name: &str, args: &[&str]) {
 
   let stdout = if use_wolfram {
     // wolframscript intermittently exits non-zero on a cold kernel (139 from a
-    // SIGSEGV during startup, 255 from "Connection closed by WolframKernel")
-    // even though the script itself is fine — a transient cold-start flake, not
-    // a real failure. The `wo` Docker wrapper retries those exit codes; this
-    // harness calls `wolframscript` directly, so retry the same codes here so a
-    // cold-start hiccup doesn't fail the snapshot. A genuine script error
-    // returns a stable non-zero exit and still fails after the retries.
-    let transient_exit =
-      |code: Option<i32>| matches!(code, Some(139) | Some(255));
+    // SIGSEGV during startup, 255 from "Connection closed by WolframKernel",
+    // other codes — or none at all when the process dies from a signal) even
+    // though the script itself is fine — a transient cold-start flake, not a
+    // real failure. Genuine script problems (syntax errors, missing files,
+    // WL messages) all exit 0 with the diagnostics in the output, so they are
+    // caught by the snapshot comparison, not the exit code. Any non-success
+    // exit from `wolframscript -file` therefore means infrastructure trouble;
+    // retry it so a cold-start hiccup doesn't fail the snapshot.
     let mut attempt = 0;
     let output = loop {
       let mut cmd = std::process::Command::new("wolframscript");
@@ -94,10 +94,7 @@ fn run_script_snapshot_with_args(name: &str, args: &[&str]) {
       });
 
       attempt += 1;
-      if output.status.success()
-        || attempt > 3
-        || !transient_exit(output.status.code())
-      {
+      if output.status.success() || attempt > 3 {
         break output;
       }
       eprintln!(
@@ -110,9 +107,11 @@ fn run_script_snapshot_with_args(name: &str, args: &[&str]) {
 
     assert!(
       output.status.success(),
-      "wolframscript failed on {}: {}",
+      "wolframscript failed on {} with {:?} after retries:\nstderr: {}\nstdout: {}",
       name,
-      String::from_utf8_lossy(&output.stderr)
+      output.status.code(),
+      String::from_utf8_lossy(&output.stderr),
+      String::from_utf8_lossy(&output.stdout)
     );
 
     String::from_utf8_lossy(&output.stdout).into_owned()
