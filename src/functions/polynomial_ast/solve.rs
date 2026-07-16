@@ -9685,17 +9685,29 @@ pub fn find_instance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => vec![],
   };
 
+  // Whether the solution set below is provably complete: Solve returned the
+  // full (finite) solution set and the concreteness filter dropped nothing.
+  // Only then may an empty result become `{}` ("no instance exists");
+  // otherwise an exhausted search returns the call unevaluated, matching
+  // wolframscript, which never claims emptiness it cannot prove.
+  let mut complete = false;
+
   // Try Solve first (suppress warnings from Solve)
   let mut solutions: Vec<Expr> = {
     crate::push_quiet();
     let solve_result = solve_ast(&[cond.clone(), vars.clone()]);
     crate::pop_quiet();
     match &solve_result {
-      Ok(Expr::List(sols)) if !sols.is_empty() => {
+      Ok(Expr::List(sols)) if sols.is_empty() => {
+        // Solve proved the solution set empty.
+        complete = true;
+        Vec::new()
+      }
+      Ok(Expr::List(sols)) => {
         // Filter out parametric solutions (solutions with free variables)
         // FindInstance needs concrete values, not expressions in terms of
         // other variables.
-        sols
+        let concrete: Vec<Expr> = sols
           .iter()
           .filter(|sol| {
             if let Expr::List(rules) = sol {
@@ -9731,19 +9743,28 @@ pub fn find_instance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
           })
           .cloned()
-          .collect()
+          .collect();
+        complete = concrete.len() == sols.len();
+        concrete
       }
       _ => Vec::new(),
     }
   };
 
   // If Solve failed or returned no solutions, try numerical search
-  if solutions.is_empty() && !var_names.is_empty() {
+  if solutions.is_empty() && !var_names.is_empty() && !complete {
     solutions = find_instance_numerical(cond, &var_names, n, domain.as_deref());
   }
 
   if solutions.is_empty() {
-    return Ok(Expr::List(vec![].into()));
+    if complete {
+      return Ok(Expr::List(vec![].into()));
+    }
+    // Search exhausted without proving emptiness: leave unevaluated.
+    return Ok(Expr::FunctionCall {
+      name: "FindInstance".to_string(),
+      args: args.to_vec().into(),
+    });
   }
 
   // Filter by domain if specified
@@ -9764,7 +9785,15 @@ pub fn find_instance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   if filtered.is_empty() {
-    return Ok(Expr::List(vec![].into()));
+    if complete {
+      return Ok(Expr::List(vec![].into()));
+    }
+    // A partial (e.g. numerically found) solution set that the domain
+    // filter emptied proves nothing: leave unevaluated.
+    return Ok(Expr::FunctionCall {
+      name: "FindInstance".to_string(),
+      args: args.to_vec().into(),
+    });
   }
 
   // Take at most n solutions from the end (Wolfram picks the largest solutions first)

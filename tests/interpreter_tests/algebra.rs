@@ -9782,6 +9782,23 @@ mod find_instance {
       "{{x -> 3}}"
     );
   }
+
+  #[test]
+  fn unsolved_search_stays_unevaluated() {
+    // When neither Solve nor the numerical search can decide, FindInstance
+    // must NOT claim `{}` (provably empty) — it stays unevaluated. This
+    // quintic Diophantine has a solution (27^5+84^5+110^5+133^5 == 144^5)
+    // that wolframscript finds but Woxi's search cannot; returning `{}`
+    // caused a spurious Part::partw in eulers_sum_of_powers_conjecture.wls.
+    assert_eq!(
+      interpret(
+        "FindInstance[x^5 + y^5 + z^5 == w^5 && x > 0, {x, y, z, w}, \
+         Integers]"
+      )
+      .unwrap(),
+      "FindInstance[x^5 + y^5 + z^5 == w^5 && x > 0, {x, y, z, w}, Integers]"
+    );
+  }
 }
 
 mod find_sequence_function {
