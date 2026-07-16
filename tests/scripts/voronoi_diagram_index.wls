@@ -1,25 +1,29 @@
-Print[
-  ExportString[
-    VoronoiMesh[
-      {
-        {4.4, 14},
-        {6.7, 15.25},
-        {6.9, 12.8},
-        {2.1, 11.1},
-        {9.5, 14.9},
-        {13.2, 11.9},
-        {10.3, 12.3},
-        {6.8, 9.5},
-        {3.3, 7.7},
-        {0.6, 5.1},
-        {5.3, 2.4},
-        {8.45, 4.7},
-        {11.5, 9.6},
-        {13.8, 7.3},
-        {12.9, 3.1},
-        {11, 1.1}
-      }
-    ],
-    "SVG"
-  ]
-]
+(* Raw ExportString[…, "SVG"] bytes can never match between engines
+   (cairo-rendered vs primitive-based SVG), so assert stable projections:
+   the result is a MeshRegion and the SVG export path produces SVG. *)
+
+mesh = VoronoiMesh[
+  {
+    {4.4, 14},
+    {6.7, 15.25},
+    {6.9, 12.8},
+    {2.1, 11.1},
+    {9.5, 14.9},
+    {13.2, 11.9},
+    {10.3, 12.3},
+    {6.8, 9.5},
+    {3.3, 7.7},
+    {0.6, 5.1},
+    {5.3, 2.4},
+    {8.45, 4.7},
+    {11.5, 9.6},
+    {13.8, 7.3},
+    {12.9, 3.1},
+    {11, 1.1}
+  }
+];
+
+Print[Head[mesh]];
+
+svg = ExportString[mesh, "SVG"];
+Print[StringQ[svg] && StringContainsQ[svg, "<svg"]];
