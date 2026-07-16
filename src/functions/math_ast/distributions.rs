@@ -51,6 +51,10 @@ fn factorial(a: Expr) -> Expr {
   call("Factorial", vec![a])
 }
 
+fn gamma(z: Expr) -> Expr {
+  call("Gamma", vec![z])
+}
+
 fn e() -> Expr {
   Expr::Constant("E".to_string())
 }
@@ -64,6 +68,18 @@ fn neg(a: Expr) -> Expr {
     op: UnaryOperator::Minus,
     operand: Box::new(a),
   }
+}
+
+fn infinity() -> Expr {
+  Expr::Identifier("Infinity".to_string())
+}
+
+fn neg_infinity() -> Expr {
+  neg(infinity())
+}
+
+fn indeterminate() -> Expr {
+  Expr::Identifier("Indeterminate".to_string())
 }
 
 fn int(n: i128) -> Expr {
@@ -398,7 +414,7 @@ pub fn hazard_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_std_normal && matches!(&x, Expr::Identifier(_)) {
     let sqrt = |e: Expr| call("Sqrt", vec![e]);
     return Ok(divide(
-      sqrt(divide(int(2), Expr::Constant("Pi".to_string()))),
+      sqrt(divide(int(2), pi())),
       Expr::FunctionCall {
         name: "Times".to_string(),
         args: vec![
@@ -516,8 +532,6 @@ pub fn quantile_distribution_closed_form(
   if !(0.0..=1.0).contains(&q_num) {
     return None;
   }
-  let infinity = || Expr::Identifier("Infinity".to_string());
-  let neg_infinity = || neg(infinity());
   let is_exact_q = !matches!(q, Expr::Real(_));
 
   // Builders for the elementary inverse-CDF formulas below.
@@ -579,7 +593,7 @@ pub fn quantile_distribution_closed_form(
         }
       }
       let (a, b) = (dargs[0].clone(), dargs[1].clone());
-      let pi = Expr::Constant("Pi".to_string());
+      let pi = pi();
       let q_minus_half =
         minus(q.clone(), crate::functions::math_ast::make_rational(1, 2));
       let tan = call("Tan", vec![times(pi, q_minus_half)]);
@@ -862,8 +876,6 @@ pub fn inverse_survival_closed_form(
     return None;
   }
   let is_exact_q = !matches!(q, Expr::Real(_));
-  let infinity = || Expr::Identifier("Infinity".to_string());
-  let neg_infinity = || neg(infinity());
 
   match dist_name {
     // InverseSurvivalFunction[NormalDistribution[m, s], q]
@@ -989,7 +1001,6 @@ fn quantile_discrete(
   q_num: f64,
 ) -> Option<Expr> {
   let (kmin, kmax) = discrete_support(dist_name, dargs)?;
-  let infinity = || Expr::Identifier("Infinity".to_string());
   if q_num <= 0.0 {
     return Some(int(kmin));
   }
@@ -3615,10 +3626,7 @@ pub fn distribution_mean_variance(
       // Only the mean has a closed form; Variance/StandardDeviation
       // stay unevaluated in wolframscript (VonMises is not listed for
       // the variance dispatch, so the second component is unused).
-      Ok((
-        dargs[0].clone(),
-        Expr::Identifier("Indeterminate".to_string()),
-      ))
+      Ok((dargs[0].clone(), indeterminate()))
     }
     "HyperexponentialDistribution" => hyperexponential_mean_variance(dargs),
     "BeniniDistribution" => benini_mean_variance(dargs),
@@ -3758,13 +3766,13 @@ pub fn distribution_mean_variance(
       };
       let mean = match q_num {
         Some(v) if v > 1.0 => mean_value,
-        Some(_) => Expr::Identifier("Infinity".to_string()),
+        Some(_) => infinity(),
         None => piecewise(
           vec![(
             mean_value,
             comparison(q.clone(), ComparisonOp::Greater, int(1)),
           )],
-          Expr::Identifier("Infinity".to_string()),
+          infinity(),
         ),
       };
       // Var = Piecewise[{{p(p+q-1)/((q-2)(q-1)^2), q > 2}}, Indeterminate];
@@ -3783,10 +3791,10 @@ pub fn distribution_mean_variance(
       };
       let var = match q_num {
         Some(v) if v > 2.0 => var_value,
-        Some(_) => Expr::Identifier("Indeterminate".to_string()),
+        Some(_) => indeterminate(),
         None => piecewise(
           vec![(var_value, comparison(q, ComparisonOp::Greater, int(2)))],
-          Expr::Identifier("Indeterminate".to_string()),
+          indeterminate(),
         ),
       };
       Ok((mean, var))
@@ -3834,7 +3842,6 @@ pub fn distribution_mean_variance(
         ));
       }
       let (a, b, m) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
-      let inf = || Expr::Identifier("Infinity".to_string());
       // Mean = Piecewise[{{-1 + (1-b)^(-a) + m, b < 1}}, Infinity]
       let mean_val = plus(
         plus(
@@ -3845,7 +3852,7 @@ pub fn distribution_mean_variance(
       );
       let mean = piecewise(
         vec![(mean_val, comparison(b.clone(), ComparisonOp::Less, int(1)))],
-        inf(),
+        infinity(),
       );
       // Var = Piecewise[{{(1-2b)^(-a) - (1-b)^(-2a), b < 1/2}}, Infinity]
       let var_val = minus(
@@ -3860,7 +3867,7 @@ pub fn distribution_mean_variance(
           var_val,
           comparison(b, ComparisonOp::Less, divide(int(1), int(2))),
         )],
-        inf(),
+        infinity(),
       );
       Ok((mean, var))
     }
@@ -3968,7 +3975,6 @@ pub fn distribution_mean_variance(
         ));
       }
       let (a, b, n) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
-      let inf = || Expr::Identifier("Infinity".to_string());
       let a_minus_1 = plus(int(-1), a.clone());
       // Mean = Piecewise[{{b n/(a-1), a > 1}}, Infinity]
       let mean_val = divide(times(b.clone(), n.clone()), a_minus_1.clone());
@@ -3977,7 +3983,7 @@ pub fn distribution_mean_variance(
           mean_val,
           comparison(a.clone(), ComparisonOp::Greater, int(1)),
         )],
-        inf(),
+        infinity(),
       );
       // Var = Piecewise[{{b(a+b-1)n(a+n-1)/((a-2)(a-1)^2), a > 2}}, Infinity]
       let num = times(
@@ -3988,7 +3994,7 @@ pub fn distribution_mean_variance(
       let var_val = divide(num, den);
       let var = piecewise(
         vec![(var_val, comparison(a, ComparisonOp::Greater, int(2)))],
-        inf(),
+        infinity(),
       );
       Ok((mean, var))
     }
@@ -4214,7 +4220,7 @@ pub fn distribution_mean_variance(
       // Mean = Piecewise[{{m, nu > 1}}, Indeterminate]
       let mean = piecewise(
         vec![(m, comparison(nu.clone(), ComparisonOp::Greater, int(1)))],
-        Expr::Identifier("Indeterminate".to_string()),
+        indeterminate(),
       );
       // Var = Piecewise[{{s^2 nu/(nu-2), nu > 2}}, Indeterminate];
       // for the 1-arg form s == 1, giving nu/(nu-2).
@@ -4228,7 +4234,7 @@ pub fn distribution_mean_variance(
       };
       let var = piecewise(
         vec![(var_value, comparison(nu, ComparisonOp::Greater, int(2)))],
-        Expr::Identifier("Indeterminate".to_string()),
+        indeterminate(),
       );
       Ok((mean, var))
     }
@@ -4242,14 +4248,13 @@ pub fn distribution_mean_variance(
       }
       let n = dargs[0].clone();
       let m = dargs[1].clone();
-      let indet = || Expr::Identifier("Indeterminate".to_string());
       // Mean = Piecewise[{{m/(-2 + m), m > 2}}, Indeterminate]
       let mean = piecewise(
         vec![(
           divide(m.clone(), plus(int(-2), m.clone())),
           comparison(m.clone(), ComparisonOp::Greater, int(2)),
         )],
-        indet(),
+        indeterminate(),
       );
       // Var = Piecewise[{{(2 m^2 (-2 + m + n)) /
       //                   ((-4 + m) (-2 + m)^2 n), m > 4}}, Indeterminate]
@@ -4269,7 +4274,7 @@ pub fn distribution_mean_variance(
           divide(var_num, var_den),
           comparison(m, ComparisonOp::Greater, int(4)),
         )],
-        indet(),
+        indeterminate(),
       );
       Ok((mean, var))
     }
@@ -4327,7 +4332,7 @@ pub fn distribution_mean_variance(
           divide(times(a.clone(), k.clone()), plus(int(-1), a.clone())),
           comparison(a.clone(), ComparisonOp::Greater, int(1)),
         )],
-        Expr::Identifier("Indeterminate".to_string()),
+        indeterminate(),
       );
       // Var = Piecewise[{{a*k^2 / ((-2+a)*(-1+a)^2), a > 2}}, Indeterminate]
       let var = piecewise(
@@ -4341,7 +4346,7 @@ pub fn distribution_mean_variance(
           ),
           comparison(a, ComparisonOp::Greater, int(2)),
         )],
-        Expr::Identifier("Indeterminate".to_string()),
+        indeterminate(),
       );
       Ok((mean, var))
     }
@@ -4477,7 +4482,7 @@ pub fn distribution_mean_variance(
       let beta = dargs[2].clone();
       let mu = dargs[3].clone();
       let sigma = dargs[4].clone();
-      let indet = Expr::Identifier("Indeterminate".to_string());
+      let indet = indeterminate();
       // Mean exists when 1 < alpha <= 2.
       // Type 0: Mean = mu - beta * sigma * Tan[Pi * alpha / 2]
       // Type 1: Mean = mu
@@ -4521,7 +4526,7 @@ pub fn distribution_mean_variance(
       }
       let a = dargs[0].clone();
       let b = dargs[1].clone();
-      let indet = Expr::Identifier("Indeterminate".to_string());
+      let indet = indeterminate();
       // Mean = Piecewise[{{b/(-1 + a), a > 1}}, Indeterminate]
       let mean_branch = divide(b.clone(), plus(int(-1), a.clone()));
       let mean = piecewise(
@@ -4591,7 +4596,7 @@ pub fn distribution_mean_variance(
           mean_value,
           comparison(int(1), ComparisonOp::Less, a.clone()),
         )],
-        Expr::Identifier("Infinity".to_string()),
+        infinity(),
       );
       // Var = Piecewise[{{b^2 * (Gamma[1 - 2/a] - Gamma[1 - 1/a]^2), a > 2}}, Infinity]
       // (Variance is translation-invariant — μ drops out.)
@@ -4605,7 +4610,7 @@ pub fn distribution_mean_variance(
           ),
           comparison(a, ComparisonOp::Greater, int(2)),
         )],
-        Expr::Identifier("Infinity".to_string()),
+        infinity(),
       );
       Ok((mean, var))
     }
@@ -4741,7 +4746,6 @@ pub fn distribution_mean_variance(
       }
       let g = dargs[0].clone();
       let s = dargs[1].clone();
-      let indeterminate = || Expr::Identifier("Indeterminate".to_string());
       let csc = |arg: Expr| call("Csc", vec![arg]);
       // Mean = Piecewise[{{(Pi s Csc[Pi/g])/g, g > 1}}, Indeterminate]
       let mean_val = divide(
@@ -4775,7 +4779,7 @@ pub fn distribution_mean_variance(
     }
     "CauchyDistribution" => {
       // Mean and Variance are both Indeterminate for Cauchy
-      let indet = Expr::Identifier("Indeterminate".to_string());
+      let indet = indeterminate();
       Ok((indet.clone(), indet))
     }
     "LaplaceDistribution" => {
@@ -4810,7 +4814,7 @@ pub fn distribution_mean_variance(
         ));
       }
       // Heavy-tailed: both Mean and Variance diverge.
-      let infinity = Expr::Identifier("Infinity".to_string());
+      let infinity = infinity();
       Ok((infinity.clone(), infinity))
     }
     "LindleyDistribution" => {
@@ -4918,7 +4922,6 @@ pub fn distribution_mean_variance(
       let a = dargs[1].clone();
       let b = dargs[2].clone();
       // Mean = b * Gamma[(-1 + a)/a] * Gamma[1/a + p] / Gamma[p]
-      let gamma = |x: Expr| call("Gamma", vec![x]);
       let mean = times(
         times(
           b.clone(),
@@ -4961,7 +4964,7 @@ pub fn distribution_mean_variance(
           mean_expr,
           comparison(m.clone(), ComparisonOp::Greater, int(2)),
         )],
-        Expr::Identifier("Indeterminate".to_string()),
+        indeterminate(),
       );
 
       // Variance = Piecewise[{{2*m^2*((l+n)^2 + (m-2)*(2*l+n)) / ((m-4)*(m-2)^2*n^2), m > 4}}, Indeterminate]
@@ -4983,7 +4986,7 @@ pub fn distribution_mean_variance(
       let var_expr = divide(var_num, var_den);
       let var = piecewise(
         vec![(var_expr, comparison(m, ComparisonOp::Greater, int(4)))],
-        Expr::Identifier("Indeterminate".to_string()),
+        indeterminate(),
       );
 
       Ok((mean, var))
@@ -6783,10 +6786,7 @@ pub fn process_slice_distribution(
     }
     "OrnsteinUhlenbeckProcess" if dargs.len() == 4 => {
       let (m, sp, th, x0) = (&dargs[0], &dargs[1], &dargs[2], &dargs[3]);
-      let decay = power(
-        Expr::Constant("E".to_string()),
-        times(times(int(-1), th.clone()), t.clone()),
-      );
+      let decay = power(e(), times(times(int(-1), th.clone()), t.clone()));
       let mu = plus(
         m.clone(),
         times(plus(x0.clone(), times(int(-1), m.clone())), decay),
@@ -6797,10 +6797,7 @@ pub fn process_slice_distribution(
             int(1),
             times(
               int(-1),
-              power(
-                Expr::Constant("E".to_string()),
-                times(times(int(-2), th.clone()), t.clone()),
-              ),
+              power(e(), times(times(int(-2), th.clone()), t.clone())),
             ),
           ),
           power(sp.clone(), int(2)),
@@ -7383,7 +7380,7 @@ pub fn wakeby_quantile(
   let Some(()) = wakeby_checked(dargs) else {
     return unevaluated();
   };
-  let inf = Expr::Identifier("Infinity".to_string());
+  let inf = infinity();
   match crate::functions::math_ast::try_eval_to_f64(q) {
     Some(qv) if qv > 0.0 && qv < 1.0 => eval(wakeby_quantile_body(dargs, q)),
     Some(qv) if qv == 0.0 => eval(dargs[4].clone()),
@@ -7445,7 +7442,7 @@ fn wakeby_mean_variance(
     dargs[3].clone(),
     dargs[4].clone(),
   );
-  let indet = Expr::Identifier("Indeterminate".to_string());
+  let indet = indeterminate();
   let one_plus_b = plus(int(1), b.clone());
   let mean_body = plus(
     plus(
@@ -7688,7 +7685,7 @@ fn hoyt_mean_variance(
   let mean = Expr::FunctionCall {
     name: "Times".to_string(),
     args: vec![
-      sqrt(divide(int(2), Expr::Constant("Pi".to_string()))),
+      sqrt(divide(int(2), pi())),
       sqrt(divide(w.clone(), one_plus_q2.clone())),
       elliptic.clone(),
     ]
@@ -7702,7 +7699,7 @@ fn hoyt_mean_variance(
         int(-1),
         divide(
           times(int(2), power(elliptic, int(2))),
-          times(Expr::Constant("Pi".to_string()), one_plus_q2),
+          times(pi(), one_plus_q2),
         ),
       ),
     ),
@@ -7778,7 +7775,7 @@ fn variance_gamma_pdf(
     dargs[2].clone(),
     dargs[3].clone(),
   );
-  let sqrt_pi = call("Sqrt", vec![Expr::Constant("Pi".to_string())]);
+  let sqrt_pi = call("Sqrt", vec![pi()]);
   let gamma_l = call("Gamma", vec![l.clone()]);
   let half_minus_l = plus(divide(int(1), int(2)), times(int(-1), l.clone()));
   let a2b2 = times(
@@ -7827,7 +7824,7 @@ fn variance_gamma_pdf(
     },
     times(times(int(2), sqrt_pi), gamma_l),
   );
-  let inf = Expr::Identifier("Infinity".to_string());
+  let inf = infinity();
   let cond_above = comparison(x.clone(), ComparisonOp::Greater, m.clone());
   let cond_below = comparison(x.clone(), ComparisonOp::Less, m.clone());
   match crate::functions::math_ast::try_eval_to_f64(&l) {
@@ -7948,8 +7945,7 @@ struct TsallisParts {
 
 fn tsallis_parts(m: &Expr, b: &Expr, q: &Expr, x: &Expr) -> TsallisParts {
   let sqrt = |e: Expr| call("Sqrt", vec![e]);
-  let gamma = |e: Expr| call("Gamma", vec![e]);
-  let two_pi = times(int(2), Expr::Constant("Pi".to_string()));
+  let two_pi = times(int(2), pi());
   let m_minus_x = plus(m.clone(), times(int(-1), x.clone()));
   let qm1 = plus(int(-1), q.clone());
   let one_mq = plus(int(1), times(int(-1), q.clone()));
@@ -8165,8 +8161,8 @@ fn tsallis_qgaussian_mean_variance(
     ));
   };
   let (m, b, q) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
-  let indet = Expr::Identifier("Indeterminate".to_string());
-  let inf = Expr::Identifier("Infinity".to_string());
+  let indet = indeterminate();
+  let inf = infinity();
   let var_core = divide(
     times(int(2), power(b.clone(), int(2))),
     plus(int(5), times(int(-3), q.clone())),
@@ -8409,22 +8405,21 @@ fn tukey_lambda_mean_variance(
     ));
   };
   let lam = dargs[0].clone();
-  let indet = Expr::Identifier("Indeterminate".to_string());
+  let indet = indeterminate();
   let num = crate::functions::math_ast::try_eval_to_f64;
   let mu = if dargs.len() == 3 {
     dargs[1].clone()
   } else {
     int(0)
   };
-  let fact = |e: Expr| call("Factorial", vec![e]);
   let var_core = divide(
     plus(
-      times(int(-2), power(fact(lam.clone()), int(2))),
-      times(int(2), fact(times(int(2), lam.clone()))),
+      times(int(-2), power(factorial(lam.clone()), int(2))),
+      times(int(2), factorial(times(int(2), lam.clone()))),
     ),
     times(
       power(lam.clone(), int(2)),
-      fact(plus(int(1), times(int(2), lam.clone()))),
+      factorial(plus(int(1), times(int(2), lam.clone()))),
     ),
   );
   let sigma2 = if dargs.len() == 3 {
@@ -8437,8 +8432,7 @@ fn tukey_lambda_mean_variance(
       let mean = if lv > -1.0 { eval(mu)? } else { indet.clone() };
       let variance = if lv == 0.0 {
         // Logistic limit: the factorial template divides by λ².
-        let core =
-          divide(power(Expr::Constant("Pi".to_string()), int(2)), int(3));
+        let core = divide(power(pi(), int(2)), int(3));
         let scaled_core = if dargs.len() == 3 {
           times(power(dargs[2].clone(), int(2)), core)
         } else {
@@ -8635,7 +8629,7 @@ fn hotelling_mean_variance(
     ));
   };
   let (pp, m) = (dargs[0].clone(), dargs[1].clone());
-  let indet = Expr::Identifier("Indeterminate".to_string());
+  let indet = indeterminate();
   let num = crate::functions::math_ast::try_eval_to_f64;
   let numeric = num(&pp).zip(num(&m));
   // Mean: (m p)/(-1 + m - p) when -1 + m - p > 0. For numeric
@@ -8861,7 +8855,7 @@ fn benini_mean_variance(
     ));
   };
   let (a, b, sg) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
-  let sqrt_pi = call("Sqrt", vec![Expr::Constant("Pi".to_string())]);
+  let sqrt_pi = call("Sqrt", vec![pi()]);
   let sqrt_b = call("Sqrt", vec![b.clone()]);
   // Shared pieces for shift k: E^((-k+a)^2/(4β)) and Erfc[(-k+a)/(2√β)].
   let shifted = |k: i128, denom_scale: i128| -> (Expr, Expr) {
@@ -8953,7 +8947,7 @@ fn pdf_vonmises(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     return unevaluated(x);
   };
   let (m, k) = (dargs[0].clone(), dargs[1].clone());
-  let pi = Expr::Constant("Pi".to_string());
+  let pi = pi();
   let cos = call("Cos", vec![plus(m.clone(), times(int(-1), x.clone()))]);
   let bessel = call("BesselI", vec![int(0), k.clone()]);
   let value = times(
@@ -9828,9 +9822,9 @@ fn pdf_multivariate_poisson(
     times(times(neg_mu0_pow_x, mu2_pow_y_minus_x), hypergeometric_u);
 
   // Denominator: E^(μ_0+μ_1+μ_2) · x! · y!
-  let exp_sum = power(Expr::Constant("E".to_string()), sum_mu_eval);
-  let x_fact = call("Factorial", vec![xv.clone()]);
-  let y_fact = call("Factorial", vec![yv.clone()]);
+  let exp_sum = power(e(), sum_mu_eval);
+  let x_fact = factorial(xv.clone());
+  let y_fact = factorial(yv.clone());
   let denominator = times(times(exp_sum, x_fact), y_fact);
 
   let pdf_val = divide(numerator, denominator);
@@ -10233,8 +10227,6 @@ fn pdf_dirichlet(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   for xi in xs.iter() {
     last = minus(last, xi.clone());
   }
-
-  let gamma = |a: Expr| call("Gamma", vec![a]);
 
   // x1^(α1-1) ⋯ xk^(αk-1) (1-Σxi)^(α(k+1)-1) · Gamma[α0] / ∏ Gamma[αi]
   let mut value = power(xs[0].clone(), minus(alphas[0].clone(), int(1)));
@@ -11072,7 +11064,7 @@ pub fn log_likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut terms =
         vec![times(int(-n), m.clone()), times(total, log_of(m.clone()))];
       for x in data {
-        let fact = eval(call("Factorial", vec![x.clone()]))?;
+        let fact = eval(factorial(x.clone()))?;
         if !matches!(fact, Expr::Integer(1)) {
           terms.push(times(int(-1), log_of(fact)));
         }
@@ -13924,7 +13916,6 @@ fn min_stable_mean_variance(
   g: &Expr,
 ) -> Result<(Expr, Expr), InterpreterError> {
   let euler_gamma = Expr::Identifier("EulerGamma".to_string());
-  let indeterminate = || Expr::Identifier("Indeterminate".to_string());
   let mean_gumbel = || {
     plus(
       a.clone(),
@@ -14302,7 +14293,6 @@ fn max_stable_mean_variance(
   g: &Expr,
 ) -> Result<(Expr, Expr), InterpreterError> {
   let euler_gamma = Expr::Identifier("EulerGamma".to_string());
-  let indeterminate = || Expr::Identifier("Indeterminate".to_string());
   let mean_gumbel = || plus(a.clone(), times(b.clone(), euler_gamma.clone()));
   let one_minus_g = call(
     "Plus",
@@ -15724,7 +15714,7 @@ fn pdf_borel_tanner(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       "Times",
       vec![
         power(e(), eval(times(a.clone(), x.clone()))?),
-        call("Factorial", vec![call("Plus", vec![neg_n_expr, x.clone()])]),
+        factorial(call("Plus", vec![neg_n_expr, x.clone()])),
       ],
     )),
   };
@@ -16242,7 +16232,6 @@ fn zipf_mean_variance(
           divide(zeta(-1)?, zeta(1)?),
         ],
       );
-      let infinity = || Expr::Identifier("Infinity".to_string());
       match ms_numeric(r) {
         Some(rv) => Ok((
           if rv > 1.0 {
@@ -16421,7 +16410,7 @@ fn benford_mean_variance(
   let b_int = bv as i128;
   let log_b = call("Log", vec![b.clone()]);
   // Mean = b - Log[b!]/Log[b].
-  let factorial = eval(call("Factorial", vec![b.clone()]))?;
+  let factorial = eval(factorial(b.clone()))?;
   let mean = eval(plus(
     b.clone(),
     times(int(-1), divide(call("Log", vec![factorial]), log_b.clone())),
@@ -16644,8 +16633,6 @@ fn singh_maddala_mean_variance(
     ));
   }
   let (q, a, b) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
-  let gamma = |z: Expr| call("Gamma", vec![z]);
-  let indeterminate = || Expr::Identifier("Indeterminate".to_string());
   let aq = times(a.clone(), q.clone());
   let inv_a = divide(int(1), a.clone());
   let two_a = divide(int(2), a.clone());
@@ -16695,9 +16682,6 @@ fn beta_prime4_mean_variance(
     dargs[2].clone(),
     dargs[3].clone(),
   );
-  let gamma = |z: Expr| call("Gamma", vec![z]);
-  let inf = || Expr::Identifier("Infinity".to_string());
-  let indeterminate = || Expr::Identifier("Indeterminate".to_string());
   let inv_b = divide(int(1), b.clone());
   let two_b = divide(int(2), b.clone());
   let bq = times(b.clone(), q.clone());
@@ -16713,7 +16697,7 @@ fn beta_prime4_mean_variance(
   );
   let mean = piecewise(
     vec![(mean_val, comparison(int(1), ComparisonOp::Less, bq.clone()))],
-    inf(),
+    infinity(),
   );
 
   // Variance = a^2 (Gamma[p] Gamma[2/b + p] Gamma[q] Gamma[-2/b + q]
@@ -16740,7 +16724,6 @@ fn pareto3_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   let (k, a, m) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
-  let indeterminate = || Expr::Identifier("Indeterminate".to_string());
   // Mean = k/(a - 1) + m, for a > 1.
   let mean = piecewise(
     vec![(
@@ -16777,8 +16760,6 @@ fn pareto4_mean_variance(
     dargs[2].clone(),
     dargs[3].clone(),
   );
-  let gamma = |z: Expr| call("Gamma", vec![z]);
-  let indeterminate = || Expr::Identifier("Indeterminate".to_string());
   let g_a = gamma(a.clone());
   let g_amg = gamma(minus(a.clone(), g.clone())); // Gamma[a - g]
   let g_1pg = gamma(plus(int(1), g.clone())); // Gamma[1 + g]
