@@ -59,12 +59,38 @@ fn canonicalize_together_result(expr: &Expr) -> Expr {
   if matches!(expr, Expr::FunctionCall { name, .. } if name == "Complex") {
     return expr.clone();
   }
+  // A fraction that cancelled to a numeric scalar can come back
+  // unevaluated (Times[-1, Power[2, -1]] renders -(1/2)); wolframscript
+  // shows the plain rational -1/2 (differential fuzzer, seed
+  // 6342268670418763375). Symbolic constants (E, Pi) don't evaluate to a
+  // number literal, so quotients like (-1 + E^2)/E^2 pass through.
+  {
+    let mut vars = std::collections::HashSet::new();
+    super::simplify::collect_variables(expr, &mut vars);
+    vars.remove("I");
+    if vars.is_empty()
+      && let Ok(value) = crate::evaluator::evaluate_expr_to_expr(expr)
+      && (matches!(
+        &value,
+        Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_)
+      ) || matches!(&value, Expr::FunctionCall { name, args }
+          if name == "Rational" && args.len() == 2)
+        || crate::functions::predicate_ast::is_complex_number(&value))
+    {
+      return value;
+    }
+  }
   let (num, den) = extract_num_den(expr);
   if matches!(&den, Expr::Integer(1)) {
     return expr.clone();
   }
   let result = canonicalize_quotient_sign(&num, &den, false)
     .unwrap_or_else(|| expr.clone());
+  // wolframscript presents Together denominators with their content
+  // hoisted: Together[1/(x + x^2 + 4*x^3)] → 1/(x*(1 + x + 4*x^2)),
+  // Together[1/(2 + 2*x)] → 1/(2*(1 + x)) (wolframscript-verified;
+  // differential fuzzer, seed 12223212876560045487).
+  let result = hoist_result_denominator_content(&result);
   // Shared numeric content between numerator and denominator cancels:
   // Together[(4+2x)/(6x)] → (2+x)/(3x), (4+2x)/6 → (2+x)/3
   // (wolframscript-verified; differential fuzzer, seed
@@ -84,6 +110,212 @@ fn canonicalize_together_result(expr: &Expr) -> Expr {
     };
   }
   result
+}
+
+/// Rewrite every denominator position of a Together result so each bare
+/// Plus factor gets its content hoisted (see [`hoist_denominator_content`]).
+/// Rewrites Divide right-hand sides and `Power[base, -1]` factors in place,
+/// preserving the surrounding quotient shape (e.g. the `-1/2*1/(...)` form
+/// produced by the sign canonicalization).
+pub(super) fn hoist_result_denominator_content(expr: &Expr) -> Expr {
+  // A bare reciprocal of a single factor displays as den^(-1)
+  // ((1 + x + x^2)^(-1)), but the reciprocal of a PRODUCT — whether the
+  // content hoist created it or it arrived factored — displays as a
+  // fraction: Together[1/(2 + 2*x)] → 1/(2*(1 + x)), Together of a
+  // fraction cancelling to 1/(4*x) → 1/(4*x), never (4*x)^(-1)
+  // (wolframscript-verified).
+  if let Some(base) = reciprocal_base(expr) {
+    let new_den = hoist_denominator_content(base);
+    let den = new_den.as_ref().unwrap_or(base);
+    if flatten_times_args(std::slice::from_ref(den)).len() >= 2 {
+      return Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(Expr::Integer(1)),
+        right: Box::new(den.clone()),
+      };
+    }
+    return expr.clone();
+  }
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => match hoist_denominator_content(right) {
+      Some(new_den) => Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: left.clone(),
+        right: Box::new(new_den),
+      },
+      None => expr.clone(),
+    },
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(hoist_product_factor(left)),
+      right: Box::new(hoist_product_factor(right)),
+    },
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: args
+          .iter()
+          .map(hoist_product_factor)
+          .collect::<Vec<_>>()
+          .into(),
+      }
+    }
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(hoist_result_denominator_content(operand)),
+    },
+    _ => expr.clone(),
+  }
+}
+
+/// The base of a `Power[base, -1]` reciprocal (either Expr shape).
+fn reciprocal_base(e: &Expr) -> Option<&Expr> {
+  match e {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if matches!(right.as_ref(), Expr::Integer(-1)) => Some(left),
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && matches!(&args[1], Expr::Integer(-1)) =>
+    {
+      Some(&args[0])
+    }
+    _ => None,
+  }
+}
+
+/// Hoist denominator content inside one factor of a product. A reciprocal
+/// factor keeps its Power shape (inside a product — e.g. the -1/2*1/(...)
+/// sign-canonicalized form — it already renders as 1/(...)).
+fn hoist_product_factor(f: &Expr) -> Expr {
+  match reciprocal_base(f) {
+    Some(base) => match hoist_denominator_content(base) {
+      Some(new_base) => Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![new_base, Expr::Integer(-1)].into(),
+      },
+      None => f.clone(),
+    },
+    None => hoist_result_denominator_content(f),
+  }
+}
+
+/// Hoist the content out of a denominator's bare Plus factors: the largest
+/// common monomial and the positive integer content move in front of the
+/// primitive polynomial, matching wolframscript —
+/// `x + x^2 + 4*x^3` → `x*(1 + x + 4*x^2)`, `2 + 2*x` → `2*(1 + x)`,
+/// `x^2*y + x*y^2` → `x*y*(x + y)` (all wolframscript-verified). Factors
+/// that are already primitive, carry inexact coefficients, or would hoist a
+/// negative/rational content are left untouched. Returns None when nothing
+/// changed.
+fn hoist_denominator_content(den: &Expr) -> Option<Expr> {
+  fn contains_inexact(e: &Expr) -> bool {
+    match e {
+      Expr::Real(_) | Expr::BigFloat(_, _) => true,
+      Expr::BinaryOp { left, right, .. } => {
+        contains_inexact(left) || contains_inexact(right)
+      }
+      Expr::UnaryOp { operand, .. } => contains_inexact(operand),
+      Expr::FunctionCall { args, .. } | Expr::List(args) => {
+        args.iter().any(contains_inexact)
+      }
+      _ => false,
+    }
+  }
+
+  // A sum in canonical FunctionCall-Plus shape, with unary-minus terms
+  // rewritten as Times[-1, …] so the monomial hoist sees shared bases in
+  // e.g. -x + 2*x^2.
+  fn canonical_sum(terms: &[Expr]) -> Expr {
+    let rebuilt: Vec<Expr> = terms
+      .iter()
+      .map(|t| match t {
+        Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand,
+        } => Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), (**operand).clone()].into(),
+        },
+        other => other.clone(),
+      })
+      .collect();
+    if rebuilt.len() == 1 {
+      rebuilt.into_iter().next().unwrap()
+    } else {
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: rebuilt.into(),
+      }
+    }
+  }
+
+  let factors = flatten_times_args(std::slice::from_ref(den));
+  let mut int_content: i128 = 1;
+  let mut symbolic: Vec<Expr> = Vec::new();
+  let mut changed = false;
+  for f in factors {
+    if let Expr::Integer(n) = &f {
+      int_content = int_content.checked_mul(*n)?;
+      continue;
+    }
+    let terms = collect_additive_terms(&f);
+    if terms.len() < 2 || contains_inexact(&f) {
+      symbolic.push(f);
+      continue;
+    }
+    // Largest common monomial: x + x^2 → x*(1 + x).
+    let normalized = canonical_sum(&terms);
+    let hoisted = factor_common_monomial_from_terms(&normalized);
+    if expr_to_string(&hoisted) != expr_to_string(&normalized) {
+      changed = true;
+    }
+    // Positive integer content of each residual sum: 2 + 2*x → 2*(1 + x).
+    for p in flatten_times_args(std::slice::from_ref(&hoisted)) {
+      let pterms = collect_additive_terms(&p);
+      if pterms.len() < 2 {
+        symbolic.push(p);
+        continue;
+      }
+      match super::factor::factor_terms_numeric(&p, &pterms) {
+        Ok(Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          ref left,
+          ref right,
+        }) if matches!(left.as_ref(), Expr::Integer(n) if *n > 1) => {
+          if let Expr::Integer(n) = left.as_ref() {
+            int_content = int_content.checked_mul(*n)?;
+          }
+          changed = true;
+          symbolic.push(canonical_sum(&collect_additive_terms(right)));
+        }
+        _ => symbolic.push(canonical_sum(&pterms)),
+      }
+    }
+  }
+  if !changed {
+    return None;
+  }
+  crate::functions::math_ast::sort_symbolic_factors(&mut symbolic);
+  if int_content != 1 {
+    symbolic.insert(0, Expr::Integer(int_content));
+  }
+  Some(match symbolic.len() {
+    0 => Expr::Integer(1),
+    1 => symbolic.remove(0),
+    _ => build_product(symbolic),
+  })
 }
 
 /// Cancel the gcd of a sum (or content-wrapped) numerator's integer
@@ -1436,6 +1668,24 @@ pub fn together_expr(expr: &Expr) -> Expr {
           return cancelled;
         }
       }
+      // A numeric-content wrapper on the denominator (x/(4*(x^2 + x^3)),
+      // the canonical form of x/(4*x^2 + 4*x^3)) hides the polynomial from
+      // the GCD cancellation above. Expand the content back through and
+      // cancel: wolframscript gives Together[x/(4*x^2 + 4*x^3)] =
+      // 1/(4*x*(1 + x)) and Together[(x + x^2)/(4*x^2 + 4*x^3)] = 1/(4*x).
+      if let Some(ed_bare) = expand_numeric_content_denominator(&ed)
+        && single_variable_fraction(&en, &ed_bare)
+      {
+        let frac = Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: Box::new(en.clone()),
+          right: Box::new(ed_bare.clone()),
+        };
+        let cancelled = super::cancel::cancel_expr_keep_quotient_sign(&frac);
+        if expr_to_string(&cancelled) != expr_to_string(&frac) {
+          return cancelled;
+        }
+      }
       // A nested purely numeric denominator folds to a single number:
       // wolframscript shows Together[(a + b/6)/2] as (6*a + b)/12,
       // never (6*a + b)/(2*6).
@@ -1699,6 +1949,37 @@ pub fn together_expr(expr: &Expr) -> Expr {
       }
     }
   }
+}
+
+/// If `den` is a product of positive integer factors and exactly one Plus
+/// polynomial (the canonical numeric-content form, e.g. `4*(x^2 + x^3)`),
+/// multiply the content back through and return the bare expanded Plus so
+/// the polynomial GCD cancellation can see it. Returns None for any other
+/// shape.
+fn expand_numeric_content_denominator(den: &Expr) -> Option<Expr> {
+  let factors = flatten_times_args(std::slice::from_ref(den));
+  if factors.len() < 2 {
+    return None;
+  }
+  let mut int_content: i128 = 1;
+  let mut plus: Option<Expr> = None;
+  for f in factors {
+    match f {
+      Expr::Integer(n) if n > 0 => int_content = int_content.checked_mul(n)?,
+      other if is_plus_polynomial(&other) && plus.is_none() => {
+        plus = Some(other)
+      }
+      _ => return None,
+    }
+  }
+  let plus = plus?;
+  if int_content == 1 {
+    return Some(plus);
+  }
+  Some(expand_and_combine(&build_product(vec![
+    Expr::Integer(int_content),
+    plus,
+  ])))
 }
 
 /// True when `num`/`den` together involve exactly one symbolic variable, the

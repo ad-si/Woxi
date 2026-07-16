@@ -990,25 +990,44 @@ fn fold_term_numerics(expr: &Expr) -> Expr {
       op: BinaryOperator::Plus,
       left,
       right,
-    } => Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(fold_term_numerics(left)),
-      right: Box::new(fold_term_numerics(right)),
-    },
-    Expr::FunctionCall { name, args } if name == "Plus" => Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: args
-        .iter()
-        .map(fold_term_numerics)
-        .collect::<Vec<_>>()
-        .into(),
-    },
+    } => {
+      let folded = Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(fold_term_numerics(left)),
+        right: Box::new(fold_term_numerics(right)),
+      };
+      resort_radical_sum(&folded)
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      let folded = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: args
+          .iter()
+          .map(fold_term_numerics)
+          .collect::<Vec<_>>()
+          .into(),
+      };
+      resort_radical_sum(&folded)
+    }
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
       operand,
     } => negate_term(&fold_term_numerics(operand)),
     _ if is_product(expr) => {
       let factors = collect_multiplicative_factors(expr);
+      // A term carrying numeric radicals re-runs through the Times
+      // evaluator: two radicals merge into one canonical radical
+      // (Sqrt[26]*Sqrt[7] → Sqrt[182]; differential fuzzer, seed
+      // 6493139821400918028), and a radical coefficient takes its
+      // canonical place before symbols (3*Sqrt[2]*x, not 3*x*Sqrt[2]) —
+      // all wolframscript-verified.
+      let radicals = factors.iter().filter(|f| is_numeric_radical(f)).count();
+      if (radicals >= 2 || (radicals == 1 && factors.len() >= 2))
+        && let Ok(merged) =
+          crate::evaluator::evaluate_function_call_ast("Times", &factors)
+      {
+        return merged;
+      }
       if factors.iter().filter(|f| is_numeric_scalar(f)).count() < 2 {
         return expr.clone();
       }
@@ -1033,6 +1052,56 @@ fn fold_term_numerics(expr: &Expr) -> Expr {
       build_product(out)
     }
     _ => expr.clone(),
+  }
+}
+
+/// Re-sort a sum through the Plus evaluator when any term carries a
+/// numeric radical: Expand's exponent-map term sort doesn't know the
+/// canonical radical order, so Sqrt[2]*(Sqrt[5]+Sqrt[7]) + Sqrt[3]*(…)
+/// would come out as Sqrt[10] + Sqrt[15] + Sqrt[14] + Sqrt[21]
+/// (wolframscript: Sqrt[10] + Sqrt[14] + Sqrt[15] + Sqrt[21]). Sums
+/// without radicals are returned byte-identical.
+fn resort_radical_sum(sum: &Expr) -> Expr {
+  let has_radical = |term: &Expr| {
+    is_numeric_radical(term)
+      || collect_multiplicative_factors(term)
+        .iter()
+        .any(is_numeric_radical)
+  };
+  let terms = collect_additive_terms(sum);
+  if terms.len() < 2 || !terms.iter().any(|t| has_radical(t)) {
+    return sum.clone();
+  }
+  crate::evaluator::evaluate_function_call_ast("Plus", &terms)
+    .unwrap_or_else(|_| sum.clone())
+}
+
+/// A radical over an exact numeric radicand — Sqrt[26], 26^(1/2),
+/// (2/15)^(3/2) — whose product with another such radical merges into one
+/// canonical radical.
+fn is_numeric_radical(e: &Expr) -> bool {
+  let exact_numeric = |x: &Expr| {
+    matches!(x, Expr::Integer(_) | Expr::BigInteger(_))
+      || matches!(x, Expr::FunctionCall { name, args }
+          if name == "Rational" && args.len() == 2)
+  };
+  let rational_exp = |x: &Expr| {
+    matches!(x, Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2)
+  };
+  match e {
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      exact_numeric(&args[0])
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      exact_numeric(&args[0]) && rational_exp(&args[1])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => exact_numeric(left) && rational_exp(right),
+    _ => false,
   }
 }
 

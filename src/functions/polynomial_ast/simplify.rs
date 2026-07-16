@@ -4455,10 +4455,27 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
   // Candidate 3: Expand — wolframscript prefers `-1 + x^2` over
   // `(x-1)*(x+1)` because the expanded form has fewer leaves. Apply to the
   // current `best` so an Expand also runs on the combined-fraction form the
-  // Together candidate may have produced.
+  // Together candidate may have produced. A variable-free quotient accepts
+  // the expansion only when it clears every denominator ((2 + Sqrt[8])/2 →
+  // 1 + Sqrt[2]); a SPLIT that keeps fractional terms stays combined —
+  // wolframscript's SimplifyCount keeps (-5 + 3*Sqrt[21])/(3*Sqrt[319])
+  // over Sqrt[21/319] - 5/(3*Sqrt[319]) (23 vs 24; differential fuzzer,
+  // seed 1783701001211583055).
   if let Ok(expanded) = super::expand::expand_ast(&[best.clone()]) {
+    let constant_quotient = {
+      let mut vars = std::collections::HashSet::new();
+      collect_variables(&best, &mut vars);
+      vars.remove("I");
+      vars.is_empty()
+        && !matches!(
+          super::together::extract_num_den(&best).1,
+          Expr::Integer(1)
+        )
+    };
+    let splits_fraction =
+      constant_quotient && contains_fractional_power(&expanded);
     let ec = leaf_count(&expanded);
-    if ec < best_c {
+    if !splits_fraction && ec < best_c {
       best = expanded;
       best_c = ec;
     }
@@ -4652,9 +4669,74 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
               );
               has_const && extracted_cost < plain_cost
             }
-            None => simplify_cost_key(&candidate) <= simplify_cost_key(&best),
+            // Radical/transcendental sums follow the exact SimplifyCount:
+            // a STRICT win extracts (-12*Sqrt[5] + 3*Sqrt[19] →
+            // 3*(-4*Sqrt[5] + Sqrt[19]), 17 < 18); a tie extracts only
+            // when every cofactor coefficient is a unit (9 + 9*Sqrt[19]
+            // → 9*(1 + Sqrt[19]) at 10 = 10, but 4*Sqrt[2] - 8*Sqrt[30]
+            // stays expanded at 17 = 17 — differential fuzzer, seed
+            // 12449481718952209155; all wolframscript-verified).
+            None => {
+              let cand_cost = wl_simplify_count(&candidate);
+              let best_cost = wl_simplify_count(&best);
+              let all_unit = coeffs
+                .iter()
+                .all(|(n, d)| n.abs() * g_den == d.abs() * g_num);
+              cand_cost < best_cost || (cand_cost == best_cost && all_unit)
+            }
           };
           if accept {
+            best = candidate;
+          }
+        }
+      }
+    }
+
+    // Candidate 6: common radical extraction — every term carries a
+    // Sqrt of an integer radicand sharing a common factor g, and pulling
+    // Sqrt[g] out wins the exact SimplifyCount: Simplify[-3*Sqrt[2] +
+    // Sqrt[10]] → Sqrt[2]*(-3 + Sqrt[5]) (14 < 15; differential fuzzer,
+    // seed 14799314084710522344; wolframscript-verified).
+    let terms = super::coefficient::collect_additive_terms(&best);
+    if terms.len() >= 2
+      && let Some(radicands) = terms
+        .iter()
+        .map(|t| term_sqrt_radicand(t))
+        .collect::<Option<Vec<i128>>>()
+    {
+      let g = radicands
+        .iter()
+        .fold(0i128, |a, &b| super::factor::gcd_i128(a, b).abs());
+      if g > 1 {
+        let divided: Result<Vec<Expr>, _> = terms
+          .iter()
+          .map(|t| {
+            crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+              op: BinaryOperator::Divide,
+              left: Box::new(t.clone()),
+              right: Box::new(Expr::FunctionCall {
+                name: "Sqrt".to_string(),
+                args: vec![Expr::Integer(g)].into(),
+              }),
+            })
+          })
+          .collect();
+        if let Ok(divided) = divided {
+          let candidate = Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::FunctionCall {
+                name: "Sqrt".to_string(),
+                args: vec![Expr::Integer(g)].into(),
+              },
+              Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: divided.into(),
+              },
+            ]
+            .into(),
+          };
+          if wl_simplify_count(&candidate) < wl_simplify_count(&best) {
             best = candidate;
           }
         }
@@ -4663,6 +4745,118 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
   }
 
   best
+}
+
+/// The positive integer radicand of a term of the form
+/// `(±integer/rational coefficient) * Sqrt[n]` — None for any other shape.
+fn term_sqrt_radicand(term: &Expr) -> Option<i128> {
+  let is_numeric = |e: &Expr| {
+    matches!(e, Expr::Integer(_))
+      || matches!(e, Expr::FunctionCall { name, args }
+          if name == "Rational" && args.len() == 2)
+  };
+  let sqrt_radicand = |e: &Expr| -> Option<i128> {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 =>
+      {
+        match &args[0] {
+          Expr::Integer(n) if *n > 1 => Some(*n),
+          _ => None,
+        }
+      }
+      Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 =>
+      {
+        match (&args[0], &args[1]) {
+          (Expr::Integer(n), Expr::FunctionCall { name: rn, args: ra })
+            if *n > 1
+              && rn == "Rational"
+              && matches!(ra.as_slice(), [Expr::Integer(1), Expr::Integer(2)]) =>
+          {
+            Some(*n)
+          }
+          _ => None,
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => match (left.as_ref(), right.as_ref()) {
+        (Expr::Integer(n), Expr::FunctionCall { name: rn, args: ra })
+          if *n > 1
+            && rn == "Rational"
+            && matches!(ra.as_slice(), [Expr::Integer(1), Expr::Integer(2)]) =>
+        {
+          Some(*n)
+        }
+        _ => None,
+      },
+      _ => None,
+    }
+  };
+  match term {
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => term_sqrt_radicand(operand),
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 =>
+    {
+      if is_numeric(&args[0]) {
+        sqrt_radicand(&args[1])
+      } else {
+        None
+      }
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      if is_numeric(left) {
+        sqrt_radicand(right)
+      } else {
+        None
+      }
+    }
+    other => sqrt_radicand(other),
+  }
+}
+
+/// General SimplifyCount emulation, decoded exactly on radical-sum probes
+/// (wolframscript's Simplify`SimplifyCount): integers cost their decimal
+/// digit count plus one when negative, Rational[n, d] costs both parts
+/// plus one, every other atom costs 1, and every compound node costs one
+/// plus its children.
+fn wl_simplify_count(e: &Expr) -> i64 {
+  match e {
+    Expr::Integer(n) => quotient_cost::sc_int(*n),
+    Expr::BigInteger(n) => {
+      let s = n.to_string();
+      s.trim_start_matches('-').len() as i64
+        + if s.starts_with('-') { 1 } else { 0 }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      1 + wl_simplify_count(&args[0]) + wl_simplify_count(&args[1])
+    }
+    // Sqrt[n] is Power[n, Rational[1, 2]] in WL's internal form: a Power
+    // head plus the Rational exponent's three units.
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      4 + wl_simplify_count(&args[0])
+    }
+    Expr::Real(_) | Expr::BigFloat(_, _) => 2,
+    Expr::Integer(_) => unreachable!(),
+    Expr::Identifier(_) | Expr::Constant(_) | Expr::String(_) => 1,
+    Expr::UnaryOp { operand, .. } => 1 + wl_simplify_count(operand),
+    Expr::BinaryOp { left, right, .. } => {
+      1 + wl_simplify_count(left) + wl_simplify_count(right)
+    }
+    Expr::FunctionCall { args, .. } | Expr::List(args) => {
+      1 + args.iter().map(wl_simplify_count).sum::<i64>()
+    }
+    _ => 1,
+  }
 }
 
 /// wolframscript's Simplify preference order for competing forms: the
@@ -8048,6 +8242,39 @@ fn simplify_abs_products(expr: &Expr) -> Expr {
   } else {
     other_factors.push(combined_abs);
     build_product(other_factors)
+  }
+}
+
+/// True when the expression still carries a division anywhere — a Divide
+/// node or a Power with a negative (integer or rational) exponent.
+fn contains_fractional_power(e: &Expr) -> bool {
+  let neg_exp = |x: &Expr| -> bool {
+    matches!(x, Expr::Integer(n) if *n < 0)
+      || matches!(x, Expr::FunctionCall { name, args }
+          if name == "Rational" && args.len() == 2
+            && matches!(&args[0], Expr::Integer(n) if *n < 0))
+  };
+  match e {
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      ..
+    } => true,
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => neg_exp(right) || contains_fractional_power(left),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      neg_exp(&args[1]) || contains_fractional_power(&args[0])
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_fractional_power(left) || contains_fractional_power(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_fractional_power(operand),
+    Expr::FunctionCall { args, .. } | Expr::List(args) => {
+      args.iter().any(contains_fractional_power)
+    }
+    _ => false,
   }
 }
 
