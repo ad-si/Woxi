@@ -2604,6 +2604,15 @@ pub fn dispatch_list_operations(
           crate::functions::linear_algebra_ast::fitted_model_normal(fm_args),
         );
       }
+      // Normal[LowerTriangularMatrix[…]] (and the other structured-matrix
+      // wrappers produced by LUDecomposition) expands to the dense list.
+      if let Some(dense) =
+        crate::functions::linear_algebra_ast::structured_matrix_to_dense(
+          &args[0],
+        )
+      {
+        return Some(Ok(dense));
+      }
       // Normal[NumericArray[list, type]] returns the underlying list
       // (`{{1,2},{3,4}}`), discarding the dtype tag — wolframscript does
       // the same.

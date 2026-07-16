@@ -627,11 +627,6 @@ function main() {
     // literal {{t, v}, ...} model diverges on Length, Mean type, and date form.
     /\bTimeSeries\[/,
 
-    // LUDecomposition: Wolfram returns StructuredArray-wrapped
-    // LowerTriangularMatrix / UpperTriangularMatrix / PermutationMatrix objects;
-    // Woxi returns the classic {combined-LU, permutation, condition} triple.
-    /\bLUDecomposition\[/,
-
     // DateInterval: Wolfram appends two trailing calendar/timezone slots
     // (Automatic, Automatic or "UT", Automatic) that Woxi's 4-argument canonical
     // form omits. See project_dateinterval_canonical_form.

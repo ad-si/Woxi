@@ -2786,6 +2786,119 @@ mod lu_decomposition {
        {Cycles[{}], Infinity}]], 0}"
     );
   }
+
+  // Exact matrices pivot to the entry of smallest non-zero magnitude in the
+  // column (here |-2| < |3|), matching Wolfram's exact-arithmetic strategy.
+  #[test]
+  fn exact_smallest_magnitude_pivoting() {
+    assert_eq!(
+      interpret("LUDecomposition[{{3, 1}, {-2, 5}}]").unwrap(),
+      "{LowerTriangularMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {{1, 0}, {-3/2, 1}}]], UpperTriangularMatrix[StructuredArray`\
+       StructuredData[{2, 2}, {{-2, 5}, {0, 17/2}}]], \
+       PermutationMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {Cycles[{{1, 2}}], Infinity}]], 0}"
+    );
+  }
+
+  // Equal magnitudes keep the earlier row (no gratuitous permutation).
+  #[test]
+  fn exact_pivot_tie_keeps_first_row() {
+    assert_eq!(
+      interpret("LUDecomposition[{{-2, 1}, {2, 3}}]").unwrap(),
+      "{LowerTriangularMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {{1, 0}, {-1, 1}}]], UpperTriangularMatrix[StructuredArray`\
+       StructuredData[{2, 2}, {{-2, 1}, {0, 4}}]], \
+       PermutationMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {Cycles[{}], Infinity}]], 0}"
+    );
+  }
+
+  // A numeric entry is preferred over a symbolic one even when the symbolic
+  // entry comes first.
+  #[test]
+  fn exact_pivot_prefers_numeric_over_symbolic() {
+    assert_eq!(
+      interpret("LUDecomposition[{{x, 1}, {2, 3}}]").unwrap(),
+      "{LowerTriangularMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {{1, 0}, {x/2, 1}}]], UpperTriangularMatrix[StructuredArray`\
+       StructuredData[{2, 2}, {{2, 3}, {0, 1 - (3*x)/2}}]], \
+       PermutationMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {Cycles[{{1, 2}}], Infinity}]], 0}"
+    );
+  }
+
+  // Wolfram's classic 4×4 documentation example: pivots are 1 (row 2),
+  // 2 (row 3), and 33 (row 4), giving row order {2, 3, 4, 1}.
+  #[test]
+  fn classic_4x4_pivot_order() {
+    assert_eq!(
+      interpret(
+        "LUDecomposition[{{11, 9, 24, 2}, {1, 5, 2, 6}, {3, 17, 18, 1}, \
+         {2, 5, 7, 1}}]"
+      )
+      .unwrap(),
+      "{LowerTriangularMatrix[StructuredArray`StructuredData[{4, 4}, \
+       {{1, 0, 0, 0}, {3, 1, 0, 0}, {2, -5/2, 1, 0}, \
+       {11, -23, 278/33, 1}}]], \
+       UpperTriangularMatrix[StructuredArray`StructuredData[{4, 4}, \
+       {{1, 5, 2, 6}, {0, 2, 12, -17}, {0, 0, 33, -107/2}, \
+       {0, 0, 0, -142/33}}]], \
+       PermutationMatrix[StructuredArray`StructuredData[{4, 4}, \
+       {Cycles[{{1, 2, 3, 4}}], Infinity}]], 0}"
+    );
+  }
+
+  // Normal expands the structured L/U wrappers to their dense lists.
+  #[test]
+  fn normal_expands_triangular_factors() {
+    assert_eq!(
+      interpret("Normal[Part[LUDecomposition[{{1, 2}, {3, 4}}], 1]]").unwrap(),
+      "{{1, 0}, {3, 1}}"
+    );
+    assert_eq!(
+      interpret("Normal[Part[LUDecomposition[{{1, 2}, {3, 4}}], 2]]").unwrap(),
+      "{{1, 2}, {0, -2}}"
+    );
+  }
+
+  // Normal expands the PermutationMatrix wrapper: Cycles[{{1, 2, 3, 4}}]
+  // means row i of the dense form has its 1 in column π(i).
+  #[test]
+  fn normal_expands_permutation_matrix() {
+    assert_eq!(
+      interpret(
+        "Normal[Part[LUDecomposition[{{11, 9, 24, 2}, {1, 5, 2, 6}, \
+         {3, 17, 18, 1}, {2, 5, 7, 1}}], 3]]"
+      )
+      .unwrap(),
+      "{{0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}, {1, 0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "Normal[PermutationMatrix[StructuredArray`StructuredData[{3, 3}, \
+         {Cycles[{{1, 2}}], Infinity}]]]"
+      )
+      .unwrap(),
+      "{{0, 1, 0}, {1, 0, 0}, {0, 0, 1}}"
+    );
+  }
+
+  // Dot densifies the structured factors, so l . u reconstructs the row-
+  // permuted input directly.
+  #[test]
+  fn dot_on_structured_factors() {
+    assert_eq!(
+      interpret(
+        "Part[LUDecomposition[{{11, 9, 24, 2}, {1, 5, 2, 6}, \
+         {3, 17, 18, 1}, {2, 5, 7, 1}}], 1] . \
+         Part[LUDecomposition[{{11, 9, 24, 2}, {1, 5, 2, 6}, \
+         {3, 17, 18, 1}, {2, 5, 7, 1}}], 2]"
+      )
+      .unwrap(),
+      "{{1, 5, 2, 6}, {3, 17, 18, 1}, {2, 5, 7, 1}, {11, 9, 24, 2}}"
+    );
+  }
 }
 
 mod vector_angle {

@@ -458,6 +458,98 @@ fn fallback_sub(a: &Expr, b: &Expr) -> Expr {
 }
 
 /// Dot[a, b] - dot product (vector) or matrix multiply
+/// Expand a structured-matrix wrapper produced by LUDecomposition (and other
+/// structured-matrix functions) to its dense nested-list form:
+///   LowerTriangularMatrix[StructuredArray`StructuredData[{n, n}, rows]]
+///   UpperTriangularMatrix[StructuredArray`StructuredData[{n, n}, rows]]
+///   PermutationMatrix[StructuredArray`StructuredData[{n, n},
+///                                                    {Cycles[…], _}]]
+/// Returns None for anything else.
+pub fn structured_matrix_to_dense(e: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  if !matches!(
+    name.as_str(),
+    "LowerTriangularMatrix" | "UpperTriangularMatrix" | "PermutationMatrix"
+  ) || args.len() != 1
+  {
+    return None;
+  }
+  let Expr::FunctionCall {
+    name: sd_name,
+    args: sd_args,
+  } = &args[0]
+  else {
+    return None;
+  };
+  if sd_name != "StructuredArray`StructuredData" || sd_args.len() != 2 {
+    return None;
+  }
+  let Expr::List(dims) = &sd_args[0] else {
+    return None;
+  };
+  if name == "PermutationMatrix" {
+    // Payload is {Cycles[{{…}, …}], workingLength}; row i of the dense form
+    // has its 1 in column π(i), where π is the cycle product.
+    let n = match &dims[..] {
+      [Expr::Integer(n), _] => usize::try_from(*n).ok()?,
+      _ => return None,
+    };
+    let Expr::List(payload) = &sd_args[1] else {
+      return None;
+    };
+    let Some(Expr::FunctionCall {
+      name: cyc_name,
+      args: cyc_args,
+    }) = payload.first()
+    else {
+      return None;
+    };
+    if cyc_name != "Cycles" || cyc_args.len() != 1 {
+      return None;
+    }
+    let Expr::List(cycles) = &cyc_args[0] else {
+      return None;
+    };
+    let mut perm: Vec<usize> = (0..n).collect();
+    for cycle in cycles.iter() {
+      let Expr::List(members) = cycle else {
+        return None;
+      };
+      let idx: Vec<usize> = members
+        .iter()
+        .map(|m| match m {
+          Expr::Integer(i) if (1..=n as i128).contains(i) => {
+            Some(*i as usize - 1)
+          }
+          _ => None,
+        })
+        .collect::<Option<_>>()?;
+      for w in 0..idx.len() {
+        perm[idx[w]] = idx[(w + 1) % idx.len()];
+      }
+    }
+    let rows: Vec<Expr> = perm
+      .iter()
+      .map(|&j| {
+        Expr::List(
+          (0..n)
+            .map(|c| Expr::Integer(if c == j { 1 } else { 0 }))
+            .collect::<Vec<_>>()
+            .into(),
+        )
+      })
+      .collect();
+    return Some(Expr::List(rows.into()));
+  }
+  // Lower/UpperTriangularMatrix store the dense rows directly.
+  match &sd_args[1] {
+    rows @ Expr::List(_) => Some(rows.clone()),
+    _ => None,
+  }
+}
+
 pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
@@ -465,10 +557,16 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // Densify any SparseArray operand to its Normal (dense nested-list) form and
-  // retry, so `SparseArray[...] . vec` and friends behave like the dense case.
+  // Densify any SparseArray or structured-matrix operand to its Normal
+  // (dense nested-list) form and retry, so `SparseArray[...] . vec` and
+  // `LowerTriangularMatrix[...] . UpperTriangularMatrix[...]` behave like
+  // the dense case.
   let is_sparse = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "SparseArray");
-  if is_sparse(&args[0]) || is_sparse(&args[1]) {
+  if is_sparse(&args[0])
+    || is_sparse(&args[1])
+    || structured_matrix_to_dense(&args[0]).is_some()
+    || structured_matrix_to_dense(&args[1]).is_some()
+  {
     let densify = |e: &Expr| -> Expr {
       if let Expr::FunctionCall { name, args: sa } = e
         && name == "SparseArray"
@@ -476,7 +574,7 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::functions::list_helpers_ast::sparse_array_ast(sa)
           .unwrap_or_else(|_| e.clone())
       } else {
-        e.clone()
+        structured_matrix_to_dense(e).unwrap_or_else(|| e.clone())
       }
     };
     return dot_ast(&[densify(&args[0]), densify(&args[1])]);

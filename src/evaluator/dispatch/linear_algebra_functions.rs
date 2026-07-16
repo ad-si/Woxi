@@ -3431,8 +3431,10 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
 
   for k in 0..n {
     // Choose the pivot row. For machine matrices pick the largest magnitude in
-    // column k (numerical stability); for exact matrices take the first
-    // non-zero entry so no gratuitous permutation is introduced.
+    // column k (numerical stability). For exact matrices Wolfram picks the
+    // numeric entry of smallest non-zero magnitude (earliest row on ties),
+    // falling back to the first non-zero entry when the column has no numeric
+    // candidate (fully symbolic).
     let pivot_row = if numeric {
       let mut best_row = k;
       let mut best_mag = lu_magnitude(&matrix[k][k]);
@@ -3445,14 +3447,25 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
       }
       best_row
     } else {
-      let mut first = k;
+      let mut best_numeric: Option<(usize, f64)> = None;
+      let mut first_nonzero = k;
+      let mut saw_nonzero = false;
       for i in k..n {
-        if !is_zero_expr(&matrix[i][k]) {
-          first = i;
-          break;
+        if is_zero_expr(&matrix[i][k]) {
+          continue;
+        }
+        if !saw_nonzero {
+          first_nonzero = i;
+          saw_nonzero = true;
+        }
+        if let Some(v) = lu_num(&matrix[i][k])
+          && v != 0.0
+          && best_numeric.is_none_or(|(_, m)| v.abs() < m)
+        {
+          best_numeric = Some((i, v.abs()));
         }
       }
-      first
+      best_numeric.map(|(i, _)| i).unwrap_or(first_nonzero)
     };
 
     // Swap rows
