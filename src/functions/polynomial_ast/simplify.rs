@@ -4707,19 +4707,7 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
   // -2*(1 + Sqrt[2]) (the content goes negative only when EVERY term
   // is), and Simplify[3/2 + (3/2)*Sqrt[2]] → (3*(1 + Sqrt[2]))/2.
   // Polynomial sums already go through the Factor candidate above.
-  // Sums carrying a term with a VARIABLE denominator never extract:
-  // Simplify[-4 - 2/x] keeps the split form, never -2*(2 + x^(-1))
-  // (wolframscript-verified). Numeric-radical denominators (3/Sqrt[2])
-  // still participate.
-  let has_variable_denominator_term = || {
-    super::coefficient::collect_additive_terms(&best).iter().any(|t| {
-      let den = super::together::extract_num_den(t).1;
-      let mut vars = std::collections::HashSet::new();
-      collect_variables(&den, &mut vars);
-      !vars.is_empty()
-    })
-  };
-  if !polynomial_like(&best) && !has_variable_denominator_term() {
+  if !polynomial_like(&best) {
     let terms = super::coefficient::collect_additive_terms(&best);
     if terms.len() >= 2
       && let Some((_, _, coeffs)) = super::factor::rational_content(&terms)
@@ -4790,9 +4778,11 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
           };
           // Sums of c·x^e monomials with NEGATIVE exponents (termwise-
           // split quotients) follow SimplifyCount instead: extraction
-          // needs a constant term and a STRICT cost win. wolframscript:
-          // -2+2/x+2x → 2*(-1+1/x+x), but -4+6/x, -4/5+6/(5x) and
-          // 2/x+2x all keep their form.
+          // needs a constant term, a POSITIVE content, and a STRICT cost
+          // win. wolframscript: -2+2/x+2x → 2*(-1+1/x+x), but -4+6/x,
+          // -4/5+6/(5x) and 2/x+2x keep their form, and a negative
+          // content NEVER extracts (-4 - 2/x stays split, never
+          // -2*(2 + x^(-1)); wolframscript-verified).
           let accept = match parse_neg_power_mono_sum(&terms) {
             Some(parsed) => {
               let has_const = parsed.iter().any(|&(_, _, e)| e == 0);
@@ -4825,7 +4815,7 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
                 None,
                 None,
               );
-              has_const && extracted_cost < plain_cost
+              has_const && content > 0 && extracted_cost < plain_cost
             }
             // Radical/transcendental sums follow the exact SimplifyCount:
             // a STRICT win extracts (-12*Sqrt[5] + 3*Sqrt[19] →
