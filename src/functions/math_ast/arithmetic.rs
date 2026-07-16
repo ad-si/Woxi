@@ -8603,6 +8603,28 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
         if den_is_exact {
           Ok(Expr::Real(x / y))
         } else {
+          // An exact QUOTIENT dividend folds its symbolic denominator with
+          // the machine divisor and divides ONCE:
+          // ((42+Pi)/(Pi-10))/(-92.7) is N[42+Pi]/(N[Pi-10]*(-92.7)) =
+          // 0.07100253709778288, never the reciprocal-multiply ...287.
+          // Non-quotient dividends keep the reciprocal path (Sqrt[2]/1.8,
+          // 37/1.8 land one ULP from the direct division, matching
+          // wolframscript). Differential fuzzer, seed
+          // 15033838239546199922; wolframscript-verified.
+          if matches!(b, Expr::Real(_)) {
+            let (p, q) = crate::functions::polynomial_ast::together::extract_num_den(a);
+            let q_is_number = matches!(
+              &q,
+              Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_)
+            ) || matches!(&q, Expr::FunctionCall { name, .. } if name == "Rational");
+            if !q_is_number
+              && let (Some(xp), Some(xq)) =
+                (try_eval_to_f64(&p), try_eval_to_f64(&q))
+              && xq != 0.0
+            {
+              return Ok(Expr::Real(xp / (xq * y)));
+            }
+          }
           Ok(Expr::Real(x * (1.0 / y)))
         }
       }

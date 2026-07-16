@@ -47,7 +47,9 @@ pub fn cancel_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && expr_to_string(&expand_and_combine(&rd))
       == expr_to_string(&expand_and_combine(&input_d));
   let base = if unchanged { args[0].clone() } else { result };
-  Ok(super::together::hoist_result_denominator_content(&base))
+  Ok(super::together::distribute_unit_negative_numerator(
+    &super::together::hoist_result_denominator_content(&base),
+  ))
 }
 
 /// The base of `Power[base, n]` with an integer exponent n ≥ 2 (either

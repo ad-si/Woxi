@@ -5303,6 +5303,47 @@ mod exp_log_identity {
   }
 }
 
+mod float_division_fold {
+  use super::*;
+
+  // An exact QUOTIENT dividend folds its symbolic denominator with the
+  // machine divisor and divides once — N[42+Pi]/(N[Pi-10]*(-92.7)) —
+  // while non-quotient dividends keep wolframscript's reciprocal-multiply
+  // (differential fuzzer, seed 15033838239546199922; all
+  // wolframscript-verified).
+  #[test]
+  fn exact_quotient_over_machine_real() {
+    assert_eq!(
+      interpret("(42 + Pi)/(Pi - 10)/(-92.7)").unwrap(),
+      "0.07100253709778288"
+    );
+    assert_eq!(
+      interpret(
+        "Divide[Times[Times[5, Times[2, Pi]], \
+         Divide[Plus[84, Pi], Plus[Pi, -10]]], Subtract[-87, 5.7]]"
+      )
+      .unwrap(),
+      "4.305983444610272"
+    );
+  }
+
+  #[test]
+  fn non_quotient_dividends_keep_reciprocal() {
+    assert_eq!(interpret("Sqrt[2]/1.8").unwrap(), "0.7856742013183863");
+    assert_eq!(interpret("37/1.8").unwrap(), "20.555555555555557");
+    assert_eq!(interpret("1.5/1.8").unwrap(), "0.8333333333333334");
+    assert_eq!(interpret("1.5/1.8/2.3").unwrap(), "0.3623188405797102");
+    assert_eq!(
+      interpret("(42 + Pi)*(-92.7)").unwrap(),
+      "-4184.625638987774"
+    );
+    assert_eq!(
+      interpret("(42 + Pi)/(-92.7)").unwrap(),
+      "-0.48696432204519735"
+    );
+  }
+}
+
 mod rationalize {
   use super::*;
 

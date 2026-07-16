@@ -4413,6 +4413,114 @@ fn contains_zero_negative_power(expr: &Expr) -> bool {
   }
 }
 
+/// The display shape the SimplifyCount candidate selection builds for a
+/// minus-pull over a monomial denominator: Times[Rational[a,b], Plus[…],
+/// Power[var, -k]] (-1/5*(2+4x)/x). Once built, the form is final.
+fn is_rational_prefactor_quotient(e: &Expr) -> bool {
+  let factors =
+    super::together::flatten_times_args(std::slice::from_ref(e));
+  if factors.len() != 3 {
+    return false;
+  }
+  let mut has_rational = false;
+  let mut has_sum = false;
+  let mut has_reciprocal = false;
+  for f in &factors {
+    match f {
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        has_rational = true;
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus | BinaryOperator::Minus,
+        ..
+      } => has_sum = true,
+      Expr::FunctionCall { name, .. } if name == "Plus" => has_sum = true,
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        right,
+        ..
+      } if matches!(right.as_ref(), Expr::Integer(n) if *n < 0) => {
+        has_reciprocal = true;
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Power"
+          && args.len() == 2
+          && matches!(&args[1], Expr::Integer(n) if *n < 0) =>
+      {
+        has_reciprocal = true;
+      }
+      _ => return false,
+    }
+  }
+  has_rational && has_sum && has_reciprocal
+}
+
+/// True when some PRODUCT factor anywhere in `e` is a sum carrying a
+/// negative-integer power term — the unstable shape a Factor rewrite of a
+/// split quotient produces (-2*(2 + x^(-1))). wolframscript's Simplify
+/// never displays it: Simplify[-4 - 2/x] keeps the split form and
+/// Simplify[(-2-4x)/(5x)] keeps -1/5*(2+4x)/x (wolframscript-verified).
+fn reciprocal_inside_sum_factor(e: &Expr) -> bool {
+  fn has_neg_int_power(e: &Expr) -> bool {
+    match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => {
+        matches!(right.as_ref(), Expr::Integer(n) if *n < 0)
+          || has_neg_int_power(left)
+      }
+      Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+        matches!(&args[1], Expr::Integer(n) if *n < 0)
+          || has_neg_int_power(&args[0])
+      }
+      Expr::BinaryOp { left, right, .. } => {
+        has_neg_int_power(left) || has_neg_int_power(right)
+      }
+      Expr::UnaryOp { operand, .. } => has_neg_int_power(operand),
+      Expr::FunctionCall { args, .. } => args.iter().any(has_neg_int_power),
+      _ => false,
+    }
+  }
+  let is_sum_with_reciprocal = |f: &Expr| {
+    (matches!(
+      f,
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus | BinaryOperator::Minus,
+        ..
+      }
+    ) || matches!(f, Expr::FunctionCall { name, .. } if name == "Plus"))
+      && has_neg_int_power(f)
+  };
+  match e {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      is_sum_with_reciprocal(left)
+        || is_sum_with_reciprocal(right)
+        || reciprocal_inside_sum_factor(left)
+        || reciprocal_inside_sum_factor(right)
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => args
+      .iter()
+      .any(|a| is_sum_with_reciprocal(a) || reciprocal_inside_sum_factor(a)),
+    Expr::BinaryOp { left, right, .. } => {
+      reciprocal_inside_sum_factor(left) || reciprocal_inside_sum_factor(right)
+    }
+    Expr::UnaryOp { operand, .. } => reciprocal_inside_sum_factor(operand),
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(reciprocal_inside_sum_factor)
+    }
+    Expr::List(items) => items.iter().any(reciprocal_inside_sum_factor),
+    _ => false,
+  }
+}
+
 /// Run `simplify_expr` and also try `together_expr`, both at the top level and
 /// recursively on sub-expressions, picking the leaf-smallest result. This lets
 /// nested fraction forms (e.g. continued fractions like `1 + 1/(1 + 1/(1 + 1/x))`
@@ -4422,6 +4530,13 @@ fn contains_zero_negative_power(expr: &Expr) -> bool {
 /// leaf count larger but combining an inner fraction still helps.
 fn simplify_expr_with_together(expr: &Expr) -> Expr {
   let simplified = simplify_expr(expr);
+  // The SimplifyCount candidate selection's rational-prefactor display
+  // (-1/5*(2+4x)/x, Simplify[(-2-4x)/(5x)]) is FINAL: the leaf-count
+  // candidates below would re-expand or re-combine it
+  // (wolframscript-verified).
+  if is_rational_prefactor_quotient(&simplified) {
+    return simplified;
+  }
   let mut best = simplified.clone();
   let mut best_c = leaf_count(&best);
 
@@ -4511,16 +4626,21 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
       super::factor::factor_ast(&[best.clone()])
     };
     if let Ok(factored) = factored {
-      let accept = if is_sum {
-        simplify_cost_key(&factored) <= simplify_cost_key(&best)
-      } else {
-        // Wolfram never factors a quotient's DENOMINATOR into a product
-        // of distinct factors: Simplify[1/(4x+3x^2)] stays
-        // (4x+3x^2)^(-1), not 1/(x(4+3x)). Powers still collapse
-        // (x^2/(1-3x+3x^2-x^3) → -(x^2/(-1+x)^3)).
-        leaf_count(&factored) <= best_c
-          && factored_den_acceptable(&best, &factored)
-      };
+      // Wolfram never factors a reciprocal INTO a sum factor:
+      // Simplify[-4 - 2/x] keeps the split form (never -2*(2 + x^(-1)))
+      // and Simplify[(-2-4x)/(5x)] keeps -1/5*(2+4x)/x;
+      // wolframscript-verified.
+      let accept = !reciprocal_inside_sum_factor(&factored)
+        && if is_sum {
+          simplify_cost_key(&factored) <= simplify_cost_key(&best)
+        } else {
+          // Wolfram never factors a quotient's DENOMINATOR into a product
+          // of distinct factors: Simplify[1/(4x+3x^2)] stays
+          // (4x+3x^2)^(-1), not 1/(x(4+3x)). Powers still collapse
+          // (x^2/(1-3x+3x^2-x^3) → -(x^2/(-1+x)^3)).
+          leaf_count(&factored) <= best_c
+            && factored_den_acceptable(&best, &factored)
+        };
       if accept && !exprs_equal(&factored, &best) {
         // Canonicalize a factored POLYNOMIAL product's factor order
         // through the evaluator: 4x^2-2x factors as 2*(-1+2x)*x but
@@ -4561,7 +4681,19 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
   // -2*(1 + Sqrt[2]) (the content goes negative only when EVERY term
   // is), and Simplify[3/2 + (3/2)*Sqrt[2]] → (3*(1 + Sqrt[2]))/2.
   // Polynomial sums already go through the Factor candidate above.
-  if !polynomial_like(&best) {
+  // Sums carrying a term with a VARIABLE denominator never extract:
+  // Simplify[-4 - 2/x] keeps the split form, never -2*(2 + x^(-1))
+  // (wolframscript-verified). Numeric-radical denominators (3/Sqrt[2])
+  // still participate.
+  let has_variable_denominator_term = || {
+    super::coefficient::collect_additive_terms(&best).iter().any(|t| {
+      let den = super::together::extract_num_den(t).1;
+      let mut vars = std::collections::HashSet::new();
+      collect_variables(&den, &mut vars);
+      !vars.is_empty()
+    })
+  };
+  if !polynomial_like(&best) && !has_variable_denominator_term() {
     let terms = super::coefficient::collect_additive_terms(&best);
     if terms.len() >= 2
       && let Some((_, _, coeffs)) = super::factor::rational_content(&terms)
@@ -4846,7 +4978,6 @@ fn wl_simplify_count(e: &Expr) -> i64 {
       4 + wl_simplify_count(&args[0])
     }
     Expr::Real(_) | Expr::BigFloat(_, _) => 2,
-    Expr::Integer(_) => unreachable!(),
     Expr::Identifier(_) | Expr::Constant(_) | Expr::String(_) => 1,
     Expr::UnaryOp { operand, .. } => 1 + wl_simplify_count(operand),
     Expr::BinaryOp { left, right, .. } => {
@@ -6905,8 +7036,32 @@ pub(crate) fn simplify_division_impl(
   {
     result
   } else {
-    crate::functions::math_ast::make_divide(num_expanded, den_expanded)
+    crate::functions::math_ast::make_divide(
+      num_expanded.clone(),
+      den_expanded.clone(),
+    )
   };
+
+  // divide_two splits a monomial-denominator quotient termwise before the
+  // SimplifyCount candidate selection can cost it ((-2-4x)/(5x) →
+  // -4/5 - 2/(5x)); re-run the selection on the ORIGINAL quotient so the
+  // -1/5*(2+4x)/x pull can still win (wolframscript-verified). A split
+  // that the selection itself confirms comes back unchanged.
+  if canonicalize_sign && extract_minus {
+    let (_, bd) = super::together::extract_num_den(&basic);
+    if matches!(&bd, Expr::Integer(1))
+      && let Some((chosen, true)) = simplify_quotient_select(
+        &crate::functions::math_ast::make_divide(
+          num_expanded.clone(),
+          den_expanded.clone(),
+        ),
+        &num_expanded,
+        &den_expanded,
+      )
+    {
+      return chosen;
+    }
+  }
 
   // wolframscript's Simplify flips p/q → (-p)/(-q) when the denominator's
   // content sign is negative and the numerator is constant or itself
@@ -7384,7 +7539,12 @@ fn simplify_quotient_select(
     !den_is_mono && d_terms.last().map(|&(n, _, _)| n < 0).unwrap_or(false);
   let num_extractable =
     !den_gate_open && n_terms.len() > 1 && n_content.abs() > 1;
-  let num_pullable = !den_gate_open && n_terms.len() > 1 && n_content == -1;
+  // The sign-only -(…) pull competes for ANY negative content, not just
+  // -1: Simplify[(-2-4x)/(1+5x)] → -((2+4x)/(1+5x)) beats the equal-cost
+  // extraction (-2*(1+2x))/(1+5x) on the tie, while a strict count win
+  // keeps the extraction (Simplify[(-5-10x)/(1+7x)] → (-5*(1+2x))/(1+7x));
+  // wolframscript-verified (differential fuzzer, seed 5520550946540289960).
+  let num_pullable = !den_gate_open && n_terms.len() > 1 && n_content < 0;
   let den_extractable = !den_gate_open && !den_is_mono && d_content > 1;
   let num_opts: Vec<(i128, Vec<(i128, i128, i128)>, bool)> = {
     let mut v = Vec::new();
@@ -7599,7 +7759,7 @@ fn simplify_quotient_select(
   for i in 1..cands.len() {
     let tie_wins = match (cands[best].class, cands[i].class) {
       (0, 1) => true,
-      (0, 2) | (0, 3) | (1, 3) => first_num_term_negative,
+      (0, 2) | (0, 3) | (1, 2) | (1, 3) => first_num_term_negative,
       _ => false,
     };
     let better = cands[i].cost < cands[best].cost
@@ -7668,6 +7828,38 @@ fn simplify_quotient_select(
     den_body
   };
   if chosen.minus_pull {
+    // A monomial denominator's coefficient joins the pulled sign as a
+    // rational prefactor: Simplify[(-2-4x)/(5x)] → -1/5*(2+4x)/x and
+    // Simplify[(-2-4x)/(5x^2)] → -1/5*(2+4x)/x^2, never -((2+4x)/(5x));
+    // wolframscript-verified. The display is final — the factor pipeline
+    // would rebuild an unstable numeric-times-sum form.
+    if den_is_mono && den_mono_coeff > 1 {
+      let var_pow = if den_mono_exp == 1 {
+        Expr::Identifier(var.clone())
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(Expr::Identifier(var.clone())),
+          right: Box::new(Expr::Integer(den_mono_exp)),
+        }
+      };
+      return Some((
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            crate::functions::math_ast::make_rational(-1, den_mono_coeff),
+            num_expr,
+            Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(var_pow),
+              right: Box::new(Expr::Integer(-1)),
+            },
+          ]
+          .into(),
+        },
+        true,
+      ));
+    }
     return Some((
       Expr::UnaryOp {
         op: UnaryOperator::Minus,

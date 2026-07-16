@@ -103,13 +103,60 @@ fn canonicalize_together_result(expr: &Expr) -> Expr {
     if matches!(&rd, Expr::Integer(1)) {
       return rn;
     }
-    return Expr::BinaryOp {
+    return distribute_unit_negative_numerator(&Expr::BinaryOp {
       op: BinaryOperator::Divide,
       left: Box::new(rn),
       right: Box::new(rd),
-    };
+    });
   }
-  result
+  distribute_unit_negative_numerator(&result)
+}
+
+/// A unit-negative numerator coefficient distributes into a single sum
+/// factor: Together[(2 + 5*x)/(-2*x)] → (-2 - 5*x)/(2*x) and
+/// Together[(2 + 5*x)/(-x)] → (-2 - 5*x)/x, never the scalar-prefactor
+/// form -1/2*(2 + 5*x)/x. Larger coefficients stay factored
+/// ((3*(2 + 5*x))/(-2*x) → (-3*(2 + 5*x))/(2*x)) and a numerator with
+/// several sum factors keeps its prefactor
+/// (((1 + x)*(2 + x))/(-2*x) → -1/2*((1 + x)*(2 + x))/x); all
+/// wolframscript-verified (differential fuzzer, seed
+/// 1067626979549797460).
+pub(super) fn distribute_unit_negative_numerator(expr: &Expr) -> Expr {
+  let (num, den) = extract_num_den(expr);
+  if matches!(&den, Expr::Integer(1)) {
+    return expr.clone();
+  }
+  let factors = flatten_times_args(std::slice::from_ref(&num));
+  if factors.len() != 2 {
+    return expr.clone();
+  }
+  let is_sum = |e: &Expr| {
+    matches!(
+      e,
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        ..
+      }
+    ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
+  };
+  let sum = if matches!(&factors[0], Expr::Integer(-1)) && is_sum(&factors[1])
+  {
+    &factors[1]
+  } else if matches!(&factors[1], Expr::Integer(-1)) && is_sum(&factors[0]) {
+    &factors[0]
+  } else {
+    return expr.clone();
+  };
+  let negated = expand_and_combine(&Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    left: Box::new(Expr::Integer(-1)),
+    right: Box::new((*sum).clone()),
+  });
+  Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(negated),
+    right: Box::new(den),
+  }
 }
 
 /// Rewrite every denominator position of a Together result so each bare
