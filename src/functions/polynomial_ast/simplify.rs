@@ -4415,13 +4415,36 @@ fn contains_zero_negative_power(expr: &Expr) -> bool {
 
 /// The display shape the SimplifyCount candidate selection builds for a
 /// minus-pull over a monomial denominator: Times[Rational[a,b], Plus[…],
-/// Power[var, -k]] (-1/5*(2+4x)/x). Once built, the form is final.
+/// Power[var, -k]] (-1/5*(2+4x)/x). Once built, the form is final. The
+/// reciprocal's base must be a bare VARIABLE (possibly powered) — a sum
+/// base (Times[Rational[-2,5], 1-x+x^2, (-1+x)^(-1)], a Factor rewrite of
+/// a flipped quotient) is NOT this display and must keep re-simplifying.
 fn is_rational_prefactor_quotient(e: &Expr) -> bool {
   let factors =
     super::together::flatten_times_args(std::slice::from_ref(e));
   if factors.len() != 3 {
     return false;
   }
+  let variable_base = |base: &Expr| -> bool {
+    matches!(base, Expr::Identifier(_))
+      || matches!(
+        base,
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left,
+          right,
+        } if matches!(left.as_ref(), Expr::Identifier(_))
+          && matches!(right.as_ref(), Expr::Integer(k) if *k > 0)
+      )
+      || matches!(
+        base,
+        Expr::FunctionCall { name, args }
+          if name == "Power"
+            && args.len() == 2
+            && matches!(&args[0], Expr::Identifier(_))
+            && matches!(&args[1], Expr::Integer(k) if *k > 0)
+      )
+  };
   let mut has_rational = false;
   let mut has_sum = false;
   let mut has_reciprocal = false;
@@ -4439,15 +4462,18 @@ fn is_rational_prefactor_quotient(e: &Expr) -> bool {
       Expr::FunctionCall { name, .. } if name == "Plus" => has_sum = true,
       Expr::BinaryOp {
         op: BinaryOperator::Power,
+        left,
         right,
-        ..
-      } if matches!(right.as_ref(), Expr::Integer(n) if *n < 0) => {
+      } if matches!(right.as_ref(), Expr::Integer(n) if *n < 0)
+        && variable_base(left) =>
+      {
         has_reciprocal = true;
       }
       Expr::FunctionCall { name, args }
         if name == "Power"
           && args.len() == 2
-          && matches!(&args[1], Expr::Integer(n) if *n < 0) =>
+          && matches!(&args[1], Expr::Integer(n) if *n < 0)
+          && variable_base(&args[0]) =>
       {
         has_reciprocal = true;
       }
