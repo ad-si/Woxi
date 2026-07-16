@@ -12,14 +12,17 @@ Woxi is a computer algebra system (CAS): computations are solved symbolically.
 ## Installation
 
 ```sh
-npm install woxi
+npm install woxi-wasm
 ```
+
+(The package is named `woxi-wasm` because the name `woxi` is not
+available on npm.)
 
 
 ## Usage
 
 ```js
-const { evaluate } = require("woxi")
+import { evaluate } from "woxi-wasm"
 
 evaluate("Plus[1, 2]")        //=> "3"
 evaluate("1/3 + 1/6")         //=> "1/2"
@@ -27,16 +30,16 @@ evaluate("Sqrt[8]")           //=> "2*Sqrt[2]"
 evaluate('StringReverse["hello"]')  //=> "olleh"
 ```
 
-ES modules work too:
+CommonJS works too:
 
 ```js
-import { evaluate } from "woxi"
+const { evaluate } = require("woxi-wasm")
 ```
 
 Interpreter state (variables, function definitions) persists across calls:
 
 ```js
-const woxi = require("woxi")
+import woxi from "woxi-wasm"
 
 woxi.evaluate("f[x_] := x^2")
 woxi.evaluate("f[5]")  //=> "25"

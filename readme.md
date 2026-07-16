@@ -50,15 +50,15 @@ cargo install woxi
 
 ### JavaScript / Node.js
 
-Woxi is also available [on npm](https://www.npmjs.com/package/woxi)
+Woxi is also available [on npm as `woxi-wasm`](https://www.npmjs.com/package/woxi-wasm)
 as a WebAssembly build with JavaScript bindings (see [npm/](./npm)):
 
 ```sh
-npm install woxi
+npm install woxi-wasm
 ```
 
 ```js
-const { evaluate } = require("woxi")
+import { evaluate } from "woxi-wasm"
 evaluate("Plus[1, 2]")  //=> "3"
 ```
 
