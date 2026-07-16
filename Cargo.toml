@@ -99,7 +99,11 @@ env_logger = { version = "0.11", optional = true }
 getrandom = { version = "0.2", features = ["js"], optional = true }
 log = { version = "0.4", optional = true }
 jupyter-protocol = { version = "1.2", optional = true }
-astro-float = { git = "https://github.com/stencillogic/astro-float", rev = "f92380e025deb8e1743ed93c6d5bf0783ac28717" }
+# The git rev carries a wasm32 word-size overflow fix that is not in any
+# crates.io release yet. The version is only used for the published crate
+# (cargo strips the git spec), where the bug is irrelevant: the wasm build
+# is always made from this repo and keeps the pinned rev.
+astro-float = { version = "0.9.5", git = "https://github.com/stencillogic/astro-float", rev = "f92380e025deb8e1743ed93c6d5bf0783ac28717" }
 base64 = "0.22"
 flate2 = "1.0"
 # Pure-Rust OpenType parser (wasm-compatible), used to extract Leland (SMuFL)
