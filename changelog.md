@@ -1,6 +1,6 @@
 # Changelog
 
-# 2026-07-14 - 0.2.0
+# 2026-07-16 - 0.2.0
 
 Between 0.1.0 and 0.2.0 Woxi grew from a minimal interpreter into a broad
 computer algebra system covering a large subset of the Wolfram Language.

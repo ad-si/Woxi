@@ -308,10 +308,10 @@ impl WoxiKernel {
       status: ReplyStatus::Ok,
       protocol_version: "5.3".to_string(),
       implementation: "woxi".to_string(),
-      implementation_version: "0.1.0".to_string(),
+      implementation_version: env!("CARGO_PKG_VERSION").to_string(),
       language_info: LanguageInfo {
         name: "wolfram".to_string(),
-        version: "0.1.0".to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
         mimetype: Some("application/vnd.wolfram.mathematica".to_string()),
         file_extension: Some(".wls".to_string()),
         pygments_lexer: Some("mathematica".to_string()),

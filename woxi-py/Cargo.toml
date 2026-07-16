@@ -2,7 +2,7 @@
 name = "woxi-py"
 description = "Python bindings for Woxi, an interpreter for a subset of the Wolfram Language"
 keywords = ["wolfram", "wolfram-language", "mathematica", "cas", "math"]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/ad-si/Woxi"

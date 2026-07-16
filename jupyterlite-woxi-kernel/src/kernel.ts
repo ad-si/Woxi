@@ -132,13 +132,13 @@ export class WoxiKernel extends BaseKernel implements IKernel {
   async kernelInfoRequest(): Promise<KernelMessage.IInfoReplyMsg['content']> {
     return {
       implementation: 'Woxi',
-      implementation_version: '0.1.0',
+      implementation_version: '0.2.0',
       language_info: {
         codemirror_mode: { name: 'mathematica' },
         file_extension: '.wls',
         mimetype: 'application/vnd.wolfram.mathematica',
         name: 'wolfram',
-        version: '0.1.0',
+        version: '0.2.0',
       },
       protocol_version: '5.3',
       status: 'ok',

@@ -6698,7 +6698,7 @@ checksum = "f17a85883d4e6d00e8a97c586de764dabcc06133f7f1d55dce5cdc070ad7fe59"
 
 [[package]]
 name = "woxi"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "astro-float",
@@ -6759,7 +6759,7 @@ dependencies = [
 
 [[package]]
 name = "woxi-py"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "pyo3",
  "woxi",
@@ -6767,7 +6767,7 @@ dependencies = [
 
 [[package]]
 name = "woxi-studio"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64",
  "dark-light",
