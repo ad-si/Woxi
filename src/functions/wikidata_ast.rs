@@ -16,6 +16,8 @@
 //! - strings, external ids and monolingual texts → plain strings
 
 use crate::InterpreterError;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::syntax::BinaryOperator;
 use crate::syntax::{Expr, unevaluated};
 
 /// `ExternalIdentifier[type, id]` / `ExternalIdentifier[type, id, assoc]` —
