@@ -415,17 +415,16 @@ pub fn hazard_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let sqrt = |e: Expr| call("Sqrt", vec![e]);
     return Ok(divide(
       sqrt(divide(int(2), pi())),
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      call(
+        "Times",
+        vec![
           power(
             Expr::Identifier("E".to_string()),
             divide(power(x.clone(), int(2)), int(2)),
           ),
           call("Erfc", vec![divide(x.clone(), sqrt(int(2)))]),
-        ]
-        .into(),
-      },
+        ],
+      ),
     ));
   }
 
@@ -808,15 +807,14 @@ pub fn quantile_distribution_closed_form(
       } else {
         eval(times(int(2), q.clone())).ok()?
       };
-      let ibr = Expr::FunctionCall {
-        name: "InverseBetaRegularized".to_string(),
-        args: vec![
+      let ibr = call(
+        "InverseBetaRegularized",
+        vec![
           s,
           divide(nu.clone(), int(2)),
           crate::functions::math_ast::make_rational(1, 2),
-        ]
-        .into(),
-      };
+        ],
+      );
       let radical = sqrt(times(nu, plus(int(-1), power(ibr, int(-1)))));
       eval(if q_num < 0.5 { neg(radical) } else { radical }).ok()
     }
@@ -838,16 +836,15 @@ pub fn quantile_distribution_closed_form(
       let (n, m) = (dargs[0].clone(), dargs[1].clone());
       crate::functions::math_ast::expr_to_num(&n)?;
       crate::functions::math_ast::expr_to_num(&m)?;
-      let ibr = Expr::FunctionCall {
-        name: "InverseBetaRegularized".to_string(),
-        args: vec![
+      let ibr = call(
+        "InverseBetaRegularized",
+        vec![
           int(1),
           eval(neg(q.clone())).ok()?,
           divide(m.clone(), int(2)),
           divide(n.clone(), int(2)),
-        ]
-        .into(),
-      };
+        ],
+      );
       eval(divide(times(m, plus(int(-1), power(ibr, int(-1)))), n)).ok()
     }
     "BinomialDistribution"
@@ -1182,14 +1179,13 @@ fn cdf_probability_distribution(
     return unevaluated(x);
   };
   let lo = items[1].clone();
-  let integral = Expr::FunctionCall {
-    name: "Integrate".to_string(),
-    args: vec![
+  let integral = call(
+    "Integrate",
+    vec![
       pdf.clone(),
       Expr::List(vec![Expr::Identifier(var.clone()), lo, x].into()),
-    ]
-    .into(),
-  };
+    ],
+  );
   eval(integral)
 }
 
@@ -1381,15 +1377,14 @@ fn cdf_skellam(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   }
   let (a, b) = (dargs[0].clone(), dargs[1].clone());
   let sqrt2 = unary_fn("Sqrt", int(2));
-  let marcum = Expr::FunctionCall {
-    name: "MarcumQ".to_string(),
-    args: vec![
+  let marcum = call(
+    "MarcumQ",
+    vec![
       times(int(-1), unary_fn("Floor", x)),
       times(sqrt2.clone(), unary_fn("Sqrt", a)),
       times(sqrt2, unary_fn("Sqrt", b)),
-    ]
-    .into(),
-  };
+    ],
+  );
   eval(minus(int(1), marcum))
 }
 
@@ -1660,15 +1655,14 @@ fn cdf_nakagami(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   }
   let m = dargs[0].clone();
   let w = dargs[1].clone();
-  let value = Expr::FunctionCall {
-    name: "GammaRegularized".to_string(),
-    args: vec![
+  let value = call(
+    "GammaRegularized",
+    vec![
       m.clone(),
       int(0),
       divide(times(m, power(x.clone(), int(2))), w),
-    ]
-    .into(),
-  };
+    ],
+  );
   let cond = comparison(x, ComparisonOp::Greater, int(0));
   eval(piecewise(vec![(value, cond)], int(0)))
 }
@@ -2036,15 +2030,14 @@ fn cdf_binomial(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   // BetaRegularized[1 - p, n - Floor[k], 1 + Floor[k]] is the regularized
   // incomplete beta form of the binomial CDF; it collapses to the exact
   // rational at numeric points and stays symbolic otherwise.
-  let value = Expr::FunctionCall {
-    name: "BetaRegularized".to_string(),
-    args: vec![
+  let value = call(
+    "BetaRegularized",
+    vec![
       minus(int(1), p),
       minus(n.clone(), floor_k.clone()),
       plus(int(1), floor_k),
-    ]
-    .into(),
-  };
+    ],
+  );
   let cond_mid = comparison3(
     int(0),
     ComparisonOp::LessEqual,
@@ -2271,11 +2264,10 @@ fn cdf_inverse_chi_square(
   }
   let n = dargs[0].clone();
 
-  let value = Expr::FunctionCall {
-    name: "GammaRegularized".to_string(),
-    args: vec![divide(n, int(2)), divide(int(1), times(int(2), x.clone()))]
-      .into(),
-  };
+  let value = call(
+    "GammaRegularized",
+    vec![divide(n, int(2)), divide(int(1), times(int(2), x.clone()))],
+  );
   let cond = comparison(x, ComparisonOp::Greater, int(0));
   eval(piecewise(vec![(value, cond)], int(0)))
 }
@@ -2324,13 +2316,7 @@ fn cdf_frechet(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     (x.clone(), int(0))
   };
 
-  let value = power(
-    e(),
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(power(divide(shifted, b), neg(a))),
-    },
-  );
+  let value = power(e(), neg(power(divide(shifted, b), neg(a))));
   let value = eval(value)?;
   let cond = comparison(x, ComparisonOp::Greater, threshold);
   eval(piecewise(vec![(value, cond)], int(0)))
@@ -2351,11 +2337,7 @@ fn pdf_extreme_value(
 
   let ab = divide(minus(a.clone(), x), b.clone());
   // E^(-E^((a-x)/b) + (a-x)/b)
-  let exp_arg = Expr::BinaryOp {
-    op: BinaryOperator::Plus,
-    left: Box::new(neg(power(e(), ab.clone()))),
-    right: Box::new(ab),
-  };
+  let exp_arg = plus(neg(power(e(), ab.clone())), ab);
   let exp_arg_eval = eval(exp_arg)?;
   eval(divide(power(e(), exp_arg_eval), b))
 }
@@ -2562,18 +2544,16 @@ pub fn probability_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let mut count: i128 = 0;
     for d in data.iter() {
-      let substituted =
-        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-          name: "ReplaceAll".to_string(),
-          args: vec![
-            event.clone(),
-            Expr::Rule {
-              pattern: Box::new(Expr::Identifier(var_name.to_string())),
-              replacement: Box::new(d.clone()),
-            },
-          ]
-          .into(),
-        })?;
+      let substituted = crate::evaluator::evaluate_expr_to_expr(&call(
+        "ReplaceAll",
+        vec![
+          event.clone(),
+          Expr::Rule {
+            pattern: Box::new(Expr::Identifier(var_name.to_string())),
+            replacement: Box::new(d.clone()),
+          },
+        ],
+      ))?;
       if matches!(&substituted, Expr::Identifier(s) if s == "True") {
         count += 1;
       }
@@ -2744,17 +2724,16 @@ fn probability_from_event(
   let _ = is_discrete;
 
   // Unevaluated fallback
-  Ok(Expr::FunctionCall {
-    name: "Probability".to_string(),
-    args: vec![
+  Ok(call(
+    "Probability",
+    vec![
       event.clone(),
       call(
         "Distributed",
         vec![Expr::Identifier(var.to_string()), dist.clone()],
       ),
-    ]
-    .into(),
-  })
+    ],
+  ))
 }
 
 /// Walk an `And[Distributed[x1, d1], Distributed[x2, d2], ...]` expression
@@ -2985,16 +2964,17 @@ pub fn expectation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let var = &vars[0];
     let substituted: Vec<Expr> = data
       .iter()
-      .map(|d| Expr::FunctionCall {
-        name: "ReplaceAll".to_string(),
-        args: vec![
-          expr.clone(),
-          Expr::Rule {
-            pattern: Box::new(Expr::Identifier(var.clone())),
-            replacement: Box::new(d.clone()),
-          },
-        ]
-        .into(),
+      .map(|d| {
+        call(
+          "ReplaceAll",
+          vec![
+            expr.clone(),
+            Expr::Rule {
+              pattern: Box::new(Expr::Identifier(var.clone())),
+              replacement: Box::new(d.clone()),
+            },
+          ],
+        )
       })
       .collect();
     return crate::evaluator::evaluate_expr_to_expr(&call(
@@ -3235,14 +3215,13 @@ fn try_probability_probability_distribution(
 
   // Helper: build Integrate[pdf, {var, a, b}].
   let build_integral = |a: Expr, b: Expr| -> Expr {
-    Expr::FunctionCall {
-      name: "Integrate".to_string(),
-      args: vec![
+    call(
+      "Integrate",
+      vec![
         pdf.clone(),
         Expr::List(vec![Expr::Identifier(var_name.to_string()), a, b].into()),
-      ]
-      .into(),
-    }
+      ],
+    )
   };
 
   // Conditional events come in as Conditioned[lhs, rhs] (now parsed natively).
@@ -3453,42 +3432,39 @@ fn try_expectation_censored(
       substitute_var(&base_args[0], dummy, &Expr::Identifier(var.to_string()))
     };
     // Integrate f(x) * pdf(x) from a to b.
-    let mid_integral = Expr::FunctionCall {
-      name: "Integrate".to_string(),
-      args: vec![
+    let mid_integral = call(
+      "Integrate",
+      vec![
         times(expr.clone(), pdf.clone()),
         Expr::List(
           vec![Expr::Identifier(var.to_string()), a.clone(), b.clone()].into(),
         ),
-      ]
-      .into(),
-    };
+      ],
+    );
     // P[X < a] and P[X > b] via integrals of pdf over (lo, a) / (b, hi).
     let p_below = {
       let lo = iter[1].clone();
-      Expr::FunctionCall {
-        name: "Integrate".to_string(),
-        args: vec![
+      call(
+        "Integrate",
+        vec![
           pdf.clone(),
           Expr::List(
             vec![Expr::Identifier(var.to_string()), lo, a.clone()].into(),
           ),
-        ]
-        .into(),
-      }
+        ],
+      )
     };
     let p_above = {
       let hi = iter[2].clone();
-      Expr::FunctionCall {
-        name: "Integrate".to_string(),
-        args: vec![
+      call(
+        "Integrate",
+        vec![
           pdf,
           Expr::List(
             vec![Expr::Identifier(var.to_string()), b.clone(), hi].into(),
           ),
-        ]
-        .into(),
-      }
+        ],
+      )
     };
     let f_at_a = substitute_var(expr, var, &a);
     let f_at_b = substitute_var(expr, var, &b);
@@ -3904,25 +3880,23 @@ pub fn distribution_mean_variance(
         let numeric = [&a, &b, &m, &g]
           .iter()
           .all(|e| crate::functions::math_ast::try_eval_to_f64(e).is_some());
-        let f1 = Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![
+        let f1 = call(
+          "Plus",
+          vec![
             times(int(-1), a.clone()),
             b.clone(),
             times(b.clone(), g.clone()),
             times(int(-1), times(g.clone(), m.clone())),
-          ]
-          .into(),
-        };
-        let f2 = Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![
+          ],
+        );
+        let f2 = call(
+          "Plus",
+          vec![
             b,
             times(int(-1), times(a, plus(int(1), g.clone()))),
             times(g.clone(), m),
-          ]
-          .into(),
-        };
+          ],
+        );
         let var_expr = divide(
           times(f1, f2),
           times(power(plus(int(2), g.clone()), int(2)), plus(int(3), g)),
@@ -5335,21 +5309,19 @@ fn expectation_numerical(
     }
     _ => {
       // Return unevaluated for unsupported distributions
-      return Ok(Expr::FunctionCall {
-        name: "Expectation".to_string(),
-        args: vec![
+      return Ok(call(
+        "Expectation",
+        vec![
           expr.clone(),
-          Expr::FunctionCall {
-            name: "Distributed".to_string(),
-            args: vec![
+          call(
+            "Distributed",
+            vec![
               Expr::Identifier(var.to_string()),
               unevaluated(dist_name, dargs),
-            ]
-            .into(),
-          },
-        ]
-        .into(),
-      });
+            ],
+          ),
+        ],
+      ));
     }
   };
 
@@ -5448,11 +5420,10 @@ fn pdf_pert(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     divide(times(g.clone(), minus(m.clone(), a.clone())), width.clone());
   let e_high =
     divide(times(g.clone(), minus(b.clone(), m.clone())), width.clone());
-  let beta_call = Expr::FunctionCall {
-    name: "Beta".to_string(),
-    args: vec![plus(int(1), e_low.clone()), plus(int(1), e_high.clone())]
-      .into(),
-  };
+  let beta_call = call(
+    "Beta",
+    vec![plus(int(1), e_low.clone()), plus(int(1), e_high.clone())],
+  );
   let powers = times(
     power(minus(b.clone(), x.clone()), e_high),
     power(minus(x.clone(), a.clone()), e_low),
@@ -5490,15 +5461,14 @@ fn cdf_pert(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let e_low =
     divide(times(g.clone(), minus(m.clone(), a.clone())), width.clone());
   let e_high = divide(times(g, minus(b.clone(), m)), width.clone());
-  let reg = Expr::FunctionCall {
-    name: "BetaRegularized".to_string(),
-    args: vec![
+  let reg = call(
+    "BetaRegularized",
+    vec![
       divide(minus(x.clone(), a.clone()), width),
       plus(int(1), e_low),
       plus(int(1), e_high),
-    ]
-    .into(),
-  };
+    ],
+  );
   let cond1 = comparison3(
     a,
     ComparisonOp::Less,
@@ -6676,17 +6646,16 @@ fn cdf_failure_distribution(
   if matches!(&x, Expr::Identifier(_)) {
     Ok(result)
   } else {
-    eval(Expr::FunctionCall {
-      name: "ReplaceAll".to_string(),
-      args: vec![
+    eval(call(
+      "ReplaceAll",
+      vec![
         result,
         Expr::Rule {
           pattern: Box::new(var),
           replacement: Box::new(x),
         },
-      ]
-      .into(),
-    })
+      ],
+    ))
   }
 }
 
@@ -6717,17 +6686,16 @@ fn pdf_failure_distribution(
     Ok(result)
   } else {
     // Numeric evaluation point: substitute after differentiating.
-    eval(Expr::FunctionCall {
-      name: "ReplaceAll".to_string(),
-      args: vec![
+    eval(call(
+      "ReplaceAll",
+      vec![
         result,
         Expr::Rule {
           pattern: Box::new(var),
           replacement: Box::new(x),
         },
-      ]
-      .into(),
-    })
+      ],
+    ))
   }
 }
 
@@ -6744,14 +6712,13 @@ pub fn process_slice_distribution(
 ) -> Option<Expr> {
   let sqrt_t = call("Sqrt", vec![t.clone()]);
   match proc_name {
-    "WienerProcess" if dargs.len() == 2 => Some(Expr::FunctionCall {
-      name: "NormalDistribution".to_string(),
-      args: vec![
+    "WienerProcess" if dargs.len() == 2 => Some(call(
+      "NormalDistribution",
+      vec![
         times(dargs[0].clone(), t.clone()),
         times(dargs[1].clone(), sqrt_t),
-      ]
-      .into(),
-    }),
+      ],
+    )),
     // Counting and noise processes with directly parameterized slices.
     "PoissonProcess" if dargs.len() == 1 => Some(call(
       "PoissonDistribution",
@@ -6775,14 +6742,13 @@ pub fn process_slice_distribution(
     // (time-independent slice); the 4-argument form starts at x0.
     "OrnsteinUhlenbeckProcess" if dargs.len() == 3 => {
       let (m, sp, th) = (&dargs[0], &dargs[1], &dargs[2]);
-      Some(Expr::FunctionCall {
-        name: "NormalDistribution".to_string(),
-        args: vec![
+      Some(call(
+        "NormalDistribution",
+        vec![
           m.clone(),
           divide(sp.clone(), call("Sqrt", vec![times(int(2), th.clone())])),
-        ]
-        .into(),
-      })
+        ],
+      ))
     }
     "OrnsteinUhlenbeckProcess" if dargs.len() == 4 => {
       let (m, sp, th, x0) = (&dargs[0], &dargs[1], &dargs[2], &dargs[3]);
@@ -7013,11 +6979,10 @@ fn fptd_moments(f: &Fptd) -> Result<Option<(Expr, Expr)>, InterpreterError> {
     })
     .collect();
   let solve = |rhs: Vec<Expr>| -> Result<Option<Vec<Expr>>, InterpreterError> {
-    let solved = eval(Expr::FunctionCall {
-      name: "LinearSolve".to_string(),
-      args: vec![Expr::List(i_minus_q.clone().into()), Expr::List(rhs.into())]
-        .into(),
-    })?;
+    let solved = eval(call(
+      "LinearSolve",
+      vec![Expr::List(i_minus_q.clone().into()), Expr::List(rhs.into())],
+    ))?;
     match solved {
       Expr::List(ref v) if v.len() == dim => {
         Ok(Some(v.iter().cloned().collect()))
@@ -7040,15 +7005,13 @@ fn fptd_moments(f: &Fptd) -> Result<Option<(Expr, Expr)>, InterpreterError> {
     return Ok(None);
   };
   let inner = |v: &[Expr], w: &[Expr]| -> Expr {
-    Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: v
-        .iter()
+    call(
+      "Plus",
+      v.iter()
         .zip(w.iter())
         .map(|(a, b)| times(a.clone(), b.clone()))
-        .collect::<Vec<_>>()
-        .into(),
-    }
+        .collect::<Vec<_>>(),
+    )
   };
   let (mean, second) = if f.i0 == f.target {
     // E[T] = 1 + p.h; E[T^2] = 1 + 2 p.h + p.m2 (p = target row off j).
@@ -7207,14 +7170,13 @@ fn dmp_step_pdf(
   let probs_expr = if *steps == 0 {
     Expr::List(p0.into())
   } else {
-    eval(Expr::FunctionCall {
-      name: "Dot".to_string(),
-      args: vec![
+    eval(call(
+      "Dot",
+      vec![
         Expr::List(p0.into()),
         call("MatrixPower", vec![m, int(*steps)]),
-      ]
-      .into(),
-    })?
+      ],
+    ))?
   };
   let Expr::List(probs) = &probs_expr else {
     return Ok(None);
@@ -7280,17 +7242,16 @@ fn dmp_stationary_pdf(
   };
   let n = pi.len();
   let sum = boole_sum(&pi, |k| (x.clone(), int(k as i128)));
-  let cond = Expr::FunctionCall {
-    name: "Inequality".to_string(),
-    args: vec![
+  let cond = call(
+    "Inequality",
+    vec![
       int(1),
       Expr::Identifier("LessEqual".to_string()),
       x.clone(),
       Expr::Identifier("LessEqual".to_string()),
       int(n as i128),
-    ]
-    .into(),
-  };
+    ],
+  );
   Ok(Some(eval(piecewise(vec![(sum, cond)], int(0)))?))
 }
 
@@ -7407,9 +7368,9 @@ pub fn wakeby_quantile(
         ],
         inf,
       );
-      Ok(Expr::FunctionCall {
-        name: "ConditionalExpression".to_string(),
-        args: vec![
+      Ok(call(
+        "ConditionalExpression",
+        vec![
           pw,
           comparison3(
             int(0),
@@ -7418,9 +7379,8 @@ pub fn wakeby_quantile(
             ComparisonOp::LessEqual,
             int(1),
           ),
-        ]
-        .into(),
-      })
+        ],
+      ))
     }
   }
 }
@@ -7465,15 +7425,14 @@ fn wakeby_mean_variance(
         int(-1),
         divide(
           call("Times", vec![int(2), a, g.clone()]),
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
+          call(
+            "Times",
+            vec![
               one_plus_b,
               plus(plus(int(1), b), times(int(-1), d.clone())),
               dm1.clone(),
-            ]
-            .into(),
-          },
+            ],
+          ),
         ),
       ),
     ),
@@ -7636,9 +7595,9 @@ fn hoyt_pdf(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let one_plus_q2 = plus(int(1), q2.clone());
   let four_q2_w = call("Times", vec![int(4), q2.clone(), w.clone()]);
   let x2 = power(x.clone(), int(2));
-  let bessel = Expr::FunctionCall {
-    name: "BesselI".to_string(),
-    args: vec![
+  let bessel = call(
+    "BesselI",
+    vec![
       int(0),
       divide(
         times(
@@ -7647,9 +7606,8 @@ fn hoyt_pdf(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
         ),
         four_q2_w.clone(),
       ),
-    ]
-    .into(),
-  };
+    ],
+  );
   let gaussian = power(
     e(),
     times(
@@ -7682,15 +7640,14 @@ fn hoyt_mean_variance(
     vec![plus(int(1), times(int(-1), power(q, int(2))))],
   );
   let sqrt = |e: Expr| call("Sqrt", vec![e]);
-  let mean = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![
+  let mean = call(
+    "Times",
+    vec![
       sqrt(divide(int(2), pi())),
       sqrt(divide(w.clone(), one_plus_q2.clone())),
       elliptic.clone(),
-    ]
-    .into(),
-  };
+    ],
+  );
   let variance = times(
     w,
     plus(
@@ -7785,9 +7742,9 @@ fn variance_gamma_pdf(
   // Branch value for a signed distance d = ±(x - μ).
   let branch = |d: Expr| -> Expr {
     divide(
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      call(
+        "Times",
+        vec![
           power(int(2), half_minus_l.clone()),
           power(a.clone(), half_minus_l.clone()),
           power(a2b2.clone(), l.clone()),
@@ -7796,32 +7753,29 @@ fn variance_gamma_pdf(
             times(b.clone(), plus(times(int(-1), m.clone()), x.clone())),
           ),
           power(d.clone(), plus(divide(int(-1), int(2)), l.clone())),
-          Expr::FunctionCall {
-            name: "BesselK".to_string(),
-            args: vec![
+          call(
+            "BesselK",
+            vec![
               plus(divide(int(-1), int(2)), l.clone()),
               times(a.clone(), d),
-            ]
-            .into(),
-          },
-        ]
-        .into(),
-      },
+            ],
+          ),
+        ],
+      ),
       times(sqrt_pi.clone(), gamma_l.clone()),
     )
   };
   let above = branch(plus(times(int(-1), m.clone()), x.clone()));
   let below = branch(plus(m.clone(), times(int(-1), x.clone())));
   let point = divide(
-    Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![
+    call(
+      "Times",
+      vec![
         power(a.clone(), plus(int(1), times(int(-2), l.clone()))),
         power(a2b2, l.clone()),
         call("Gamma", vec![plus(divide(int(-1), int(2)), l.clone())]),
-      ]
-      .into(),
-    },
+      ],
+    ),
     times(times(int(2), sqrt_pi), gamma_l),
   );
   let inf = infinity();
@@ -7951,9 +7905,9 @@ fn tsallis_parts(m: &Expr, b: &Expr, q: &Expr, x: &Expr) -> TsallisParts {
   let one_mq = plus(int(1), times(int(-1), q.clone()));
   // Gaussian branch: 1/(b E^((m-x)^2/(2 b^2)) Sqrt[2 Pi])
   let gaussian = power(
-    Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![
+    call(
+      "Times",
+      vec![
         b.clone(),
         power(
           e(),
@@ -7963,9 +7917,8 @@ fn tsallis_parts(m: &Expr, b: &Expr, q: &Expr, x: &Expr) -> TsallisParts {
           ),
         ),
         sqrt(two_pi.clone()),
-      ]
-      .into(),
-    },
+      ],
+    ),
     int(-1),
   );
   // (1 + (-1+q)(m-x)^2/(2 b^2))^((1-q)^-1)
@@ -7981,48 +7934,44 @@ fn tsallis_parts(m: &Expr, b: &Expr, q: &Expr, x: &Expr) -> TsallisParts {
   );
   // 1 < q < 3 branch
   let branch_wide = divide(
-    Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![
+    call(
+      "Times",
+      vec![
         sqrt(qm1.clone()),
         core.clone(),
         gamma(power(qm1.clone(), int(-1))),
-      ]
-      .into(),
-    },
-    Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![
+      ],
+    ),
+    call(
+      "Times",
+      vec![
         b.clone(),
         sqrt(two_pi.clone()),
         gamma(divide(
           plus(int(3), times(int(-1), q.clone())),
           times(int(2), qm1.clone()),
         )),
-      ]
-      .into(),
-    },
+      ],
+    ),
   );
   // q < 1 branch
   let branch_compact = divide(
-    Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![
+    call(
+      "Times",
+      vec![
         sqrt(one_mq.clone()),
         core,
         gamma(plus(divide(int(3), int(2)), power(one_mq.clone(), int(-1)))),
-      ]
-      .into(),
-    },
-    Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![
+      ],
+    ),
+    call(
+      "Times",
+      vec![
         b.clone(),
         sqrt(two_pi),
         gamma(plus(int(1), power(one_mq.clone(), int(-1)))),
-      ]
-      .into(),
-    },
+      ],
+    ),
   );
   // (Sqrt[(1-q)/b^2] (-m+x))/Sqrt[2]
   let compact_arg = divide(
@@ -8131,14 +8080,13 @@ fn tsallis_qgaussian_cdf(
   let erf_form = divide(
     plus(
       int(1),
-      Expr::FunctionCall {
-        name: "Erf".to_string(),
-        args: vec![divide(
+      call(
+        "Erf",
+        vec![divide(
           plus(times(int(-1), m.clone()), x.clone()),
           times(call("Sqrt", vec![int(2)]), b.clone()),
-        )]
-        .into(),
-      },
+        )],
+      ),
     ),
     int(2),
   );
@@ -8514,14 +8462,13 @@ fn pdf_hotelling(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let (pp, m) = (dargs[0].clone(), dargs[1].clone());
   let num = crate::functions::math_ast::try_eval_to_f64;
   let half = |e: Expr| divide(e, int(2));
-  let beta = Expr::FunctionCall {
-    name: "Beta".to_string(),
-    args: vec![
+  let beta = call(
+    "Beta",
+    vec![
       half(pp.clone()),
       half(plus(plus(int(1), m.clone()), times(int(-1), pp.clone()))),
-    ]
-    .into(),
-  };
+    ],
+  );
   let value = if num(&pp).is_some() && num(&m).is_some() {
     // Integer-valued float parameters compute the coefficient exactly
     // and refloat it (5.^2/Beta[1., 2.] must be 50., not 50.00000...2).
@@ -8538,14 +8485,13 @@ fn pdf_hotelling(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
         me.clone(),
         half(plus(plus(int(1), me.clone()), times(int(-1), pe.clone()))),
       ),
-      Expr::FunctionCall {
-        name: "Beta".to_string(),
-        args: vec![
+      call(
+        "Beta",
+        vec![
           half(pe.clone()),
           half(plus(plus(int(1), me.clone()), times(int(-1), pe))),
-        ]
-        .into(),
-      },
+        ],
+      ),
     );
     let coeff_exact = eval(coeff_expr)?;
     let coeff = if any_float
@@ -8651,16 +8597,15 @@ fn hotelling_mean_variance(
     ))?,
   };
   // Variance: 2 (-1+m) m^2 p / ((-3+m-p)(1-m+p)^2) when m > 3 + p.
-  let var_num = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![
+  let var_num = call(
+    "Times",
+    vec![
       int(2),
       plus(int(-1), m.clone()),
       power(m.clone(), int(2)),
       pp.clone(),
-    ]
-    .into(),
-  };
+    ],
+  );
   let var_den = times(
     plus(plus(int(-3), m.clone()), times(int(-1), pp.clone())),
     power(
@@ -8694,10 +8639,7 @@ fn piecewise_with_default(cases: Vec<(Expr, Expr)>, default: Expr) -> Expr {
     .into_iter()
     .map(|(v, c)| Expr::List(vec![v, c].into()))
     .collect();
-  Expr::FunctionCall {
-    name: "Piecewise".to_string(),
-    args: vec![Expr::List(pairs.into()), default].into(),
-  }
+  call("Piecewise", vec![Expr::List(pairs.into()), default])
 }
 
 /// Validation for BeniniDistribution[α, β, σ]: α and β must be
@@ -8744,10 +8686,7 @@ fn benini_checked(dargs: &[Expr]) -> Option<()> {
 
 /// Log[x/σ], the building block of the Benini closed forms.
 fn benini_log(x: &Expr, sigma: &Expr) -> Expr {
-  Expr::FunctionCall {
-    name: "Log".to_string(),
-    args: vec![divide(x.clone(), sigma.clone())].into(),
-  }
+  call("Log", vec![divide(x.clone(), sigma.clone())])
 }
 
 /// PDF[BeniniDistribution[α, β, σ], x]. Numeric α uses the split form
@@ -8777,16 +8716,15 @@ fn pdf_benini(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     times(times(int(-1), b.clone()), power(lg.clone(), int(2))),
   );
   let value = if crate::functions::math_ast::try_eval_to_f64(&a).is_some() {
-    Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![
+    call(
+      "Times",
+      vec![
         power(sg.clone(), a.clone()),
         hazard,
         quad,
         power(x.clone(), times(int(-1), a)),
-      ]
-      .into(),
-    }
+      ],
+    )
   } else {
     times(
       power(
@@ -8818,18 +8756,17 @@ fn cdf_benini(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let (a, b, sg) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
   let lg = benini_log(&x, &sg);
   let survival = if crate::functions::math_ast::try_eval_to_f64(&a).is_some() {
-    Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![
+    call(
+      "Times",
+      vec![
         power(sg.clone(), a.clone()),
         power(
           e(),
           times(times(int(-1), b.clone()), power(lg.clone(), int(2))),
         ),
         power(x.clone(), times(int(-1), a)),
-      ]
-      .into(),
-    }
+      ],
+    )
   } else {
     power(
       e(),
@@ -8874,11 +8811,10 @@ fn benini_mean_variance(
   let mean = plus(
     sg.clone(),
     divide(
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![e1.clone(), sqrt_pi.clone(), sg.clone(), erfc1.clone()]
-          .into(),
-      },
+      call(
+        "Times",
+        vec![e1.clone(), sqrt_pi.clone(), sg.clone(), erfc1.clone()],
+      ),
       times(int(2), sqrt_b.clone()),
     ),
   );
@@ -8891,11 +8827,10 @@ fn benini_mean_variance(
     vec![int(-1), e1w, sqrt_pi.clone(), power(erfc1, int(2))],
   );
   let variance = divide(
-    Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![sqrt_pi, power(sg, int(2)), call("Plus", vec![t1, t2, t3])]
-        .into(),
-    },
+    call(
+      "Times",
+      vec![sqrt_pi, power(sg, int(2)), call("Plus", vec![t1, t2, t3])],
+    ),
     times(int(4), b),
   );
   Ok((eval(mean)?, eval(variance)?))
@@ -9125,26 +9060,24 @@ fn hyperexponential_mean_variance(
   };
   let term =
     |p: &Expr, l: &Expr, k: i128| times(p.clone(), power(l.clone(), int(k)));
-  let mean = Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: probs
+  let mean = call(
+    "Plus",
+    probs
       .iter()
       .zip(rates.iter())
       .map(|(p, l)| term(p, l, -1))
-      .collect::<Vec<_>>()
-      .into(),
-  };
+      .collect::<Vec<_>>(),
+  );
   let second = times(
     int(2),
-    Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: probs
+    call(
+      "Plus",
+      probs
         .iter()
         .zip(rates.iter())
         .map(|(p, l)| term(p, l, -2))
-        .collect::<Vec<_>>()
-        .into(),
-    },
+        .collect::<Vec<_>>(),
+    ),
   );
   let variance = plus(second, times(int(-1), power(mean.clone(), int(2))));
   Ok((eval(mean)?, eval(variance)?))
@@ -9232,14 +9165,13 @@ fn coxian_mean_variance(
     if k == 1 {
       power(rates[0].clone(), int(-1))
     } else {
-      Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: rates[..k]
+      call(
+        "Plus",
+        rates[..k]
           .iter()
           .map(|r| power(r.clone(), int(-1)))
-          .collect::<Vec<_>>()
-          .into(),
-      }
+          .collect::<Vec<_>>(),
+      )
     }
   };
   let m = rates.len();
@@ -9687,11 +9619,10 @@ fn cdf_negative_multinomial(
   x: Expr,
 ) -> Result<Expr, InterpreterError> {
   let unevaluated = |x: Expr| {
-    Ok(Expr::FunctionCall {
-      name: "CDF".to_string(),
-      args: vec![unevaluated("NegativeMultinomialDistribution", dargs), x]
-        .into(),
-    })
+    Ok(call(
+      "CDF",
+      vec![unevaluated("NegativeMultinomialDistribution", dargs), x],
+    ))
   };
   let Ok((n, probs)) = negative_multinomial_params(dargs) else {
     return unevaluated(x);
@@ -9777,11 +9708,10 @@ fn pdf_multivariate_poisson(
     // and letting `pdf_ast` swallow the error… simpler to short-circuit
     // here with an unchanged head.
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "PDF".to_string(),
-        args: vec![unevaluated("MultivariatePoissonDistribution", dargs), x]
-          .into(),
-      });
+      return Ok(call(
+        "PDF",
+        vec![unevaluated("MultivariatePoissonDistribution", dargs), x],
+      ));
     }
   };
   let (xv, yv) = match &x {
@@ -9830,14 +9760,13 @@ fn pdf_multivariate_poisson(
   let pdf_val = divide(numerator, denominator);
 
   // Condition: x >= 0 && y >= 0.
-  let cond = Expr::FunctionCall {
-    name: "And".to_string(),
-    args: vec![
+  let cond = call(
+    "And",
+    vec![
       comparison(xv, ComparisonOp::GreaterEqual, int(0)),
       comparison(yv, ComparisonOp::GreaterEqual, int(0)),
-    ]
-    .into(),
-  };
+    ],
+  );
 
   eval(piecewise(vec![(pdf_val, cond)], int(0)))
 }
@@ -10157,16 +10086,15 @@ pub fn dirichlet_mean_variance(
   let mut variances = Vec::with_capacity(alphas.len() - 1);
   for (i, alpha_i) in alphas.iter().enumerate().take(alphas.len() - 1) {
     means.push(eval(times(alpha_i.clone(), power(total.clone(), int(-1))))?);
-    let others = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: alphas
+    let others = call(
+      "Plus",
+      alphas
         .iter()
         .enumerate()
         .filter(|(j, _)| *j != i)
         .map(|(_, a)| a.clone())
-        .collect::<Vec<_>>()
-        .into(),
-    };
+        .collect::<Vec<_>>(),
+    );
     variances.push(eval(times(times(alpha_i.clone(), others), denom.clone()))?);
   }
   Ok((Expr::List(means.into()), Expr::List(variances.into())))
@@ -10340,15 +10268,14 @@ fn cdf_chi(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     ));
   }
   let n = dargs[0].clone();
-  let gamma_reg = Expr::FunctionCall {
-    name: "GammaRegularized".to_string(),
-    args: vec![
+  let gamma_reg = call(
+    "GammaRegularized",
+    vec![
       divide(n, int(2)),
       int(0),
       divide(power(x.clone(), int(2)), int(2)),
-    ]
-    .into(),
-  };
+    ],
+  );
   let cond = comparison(x, ComparisonOp::Greater, int(0));
   eval(piecewise(vec![(gamma_reg, cond)], int(0)))
 }
@@ -10907,10 +10834,7 @@ fn standard_normal() -> Expr {
 }
 
 fn normal_distribution(mu: &Expr, sigma: &Expr) -> Expr {
-  Expr::FunctionCall {
-    name: "NormalDistribution".to_string(),
-    args: vec![mu.clone(), sigma.clone()].into(),
-  }
+  call("NormalDistribution", vec![mu.clone(), sigma.clone()])
 }
 
 /// Collect the additive terms of `expr` and dispatch each to a
@@ -10940,11 +10864,10 @@ fn try_separable_multivariate_expectation(
       let i = var_hits[0];
       let inner = expectation_ast(&[
         term,
-        Expr::FunctionCall {
-          name: "Distributed".to_string(),
-          args: vec![Expr::Identifier(vars[i].clone()), marginals[i].clone()]
-            .into(),
-        },
+        call(
+          "Distributed",
+          vec![Expr::Identifier(vars[i].clone()), marginals[i].clone()],
+        ),
       ])?;
       // If the inner call returned unevaluated, the whole separable
       // path can't simplify cleanly — back out so the caller leaves
@@ -11113,14 +11036,13 @@ pub fn log_likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       // Sum[(x_i - m)^2] expanded in ascending powers of m:
       // Sum[x^2] - 2*Sum[x]*m + n*m^2
-      let sq_total = eval(Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: data
+      let sq_total = eval(call(
+        "Plus",
+        data
           .iter()
           .map(|x| times(x.clone(), x.clone()))
-          .collect::<Vec<_>>()
-          .into(),
-      })?;
+          .collect::<Vec<_>>(),
+      ))?;
       let total = sum_expr()?;
       let poly = plus(
         plus(sq_total, times(times(int(-2), total), m.clone())),
@@ -11687,9 +11609,9 @@ pub fn empirical_distribution_ast(
       crate::functions::math_ast::make_rational(v.0, v.1)
     });
   }
-  Ok(Expr::FunctionCall {
-    name: "DataDistribution".to_string(),
-    args: vec![
+  Ok(call(
+    "DataDistribution",
+    vec![
       Expr::String("Empirical".to_string()),
       Expr::List(
         vec![
@@ -11701,9 +11623,8 @@ pub fn empirical_distribution_ast(
       ),
       Expr::Integer(1),
       Expr::Integer(n),
-    ]
-    .into(),
-  })
+    ],
+  ))
 }
 
 // ─── HistogramDistribution ────────────────────────────────────────────
@@ -11772,18 +11693,17 @@ pub fn histogram_distribution_ast(
   let n = values.len() as i128;
 
   let data_distribution = |weights: Vec<Expr>, edges: Vec<Expr>| {
-    Ok(Expr::FunctionCall {
-      name: "DataDistribution".to_string(),
-      args: vec![
+    Ok(call(
+      "DataDistribution",
+      vec![
         Expr::String("Histogram".to_string()),
         Expr::List(
           vec![Expr::List(weights.into()), Expr::List(edges.into())].into(),
         ),
         Expr::Integer(1),
         Expr::Integer(n),
-      ]
-      .into(),
-    })
+      ],
+    ))
   };
 
   // Exact path: an explicit exact width over exact data whose bins anchor at
@@ -12252,11 +12172,7 @@ fn pdf_product_distribution(
       }
     }
   }
-  let e_pow = Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(Expr::Identifier("E".to_string())),
-    right: Box::new(call("Plus", terms)),
-  };
+  let e_pow = power(Expr::Identifier("E".to_string()), call("Plus", terms));
   let sqrt = |e: Expr| call("Sqrt", vec![e]);
 
   // Assemble the density with wolframscript's coefficient shapes
@@ -12289,14 +12205,13 @@ fn pdf_product_distribution(
   } else {
     call("And", conds)
   };
-  Ok(Expr::FunctionCall {
-    name: "Piecewise".to_string(),
-    args: vec![
+  Ok(call(
+    "Piecewise",
+    vec![
       Expr::List(vec![Expr::List(vec![value, cond].into())].into()),
       int(0),
-    ]
-    .into(),
-  })
+    ],
+  ))
 }
 
 /// Shared pieces for UniformSumDistribution (Irwin-Hall): wolframscript
@@ -12541,21 +12456,19 @@ fn cdf_uniform_sum(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       inclusion_exclusion_piece(n, 0, n, fact(n), &x, false)
     } else if j == n - 1 {
       // 1 - (n - x)^n / n!
-      Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![
+      call(
+        "Plus",
+        vec![
           int(1),
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
+          call(
+            "Times",
+            vec![
               int(-1),
               inclusion_exclusion_piece(n, 0, n, fact(n), &x, true),
-            ]
-            .into(),
-          },
-        ]
-        .into(),
-      }
+            ],
+          ),
+        ],
+      )
     } else if 2 * j < n {
       // Expanded ascending polynomial in x
       let coeffs = cdf_expanded_coeffs(n, j);
@@ -12877,27 +12790,25 @@ fn pdf_beta_prime(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     return Ok(piecewise(vec![(density, cond)], int(0)));
   }
   // Symbolic parameters: raw x^(-1 + p) (1 + x)^(-p - q) / Beta[p, q]
-  let density = Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(call(
+  let density = divide(
+    call(
       "Times",
       vec![
         power(x.clone(), call("Plus", vec![int(-1), p.clone()])),
-        Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(call("Plus", vec![int(1), x.clone()])),
-          right: Box::new(call(
+        power(
+          call("Plus", vec![int(1), x.clone()]),
+          call(
             "Plus",
             vec![
               call("Times", vec![int(-1), p.clone()]),
               call("Times", vec![int(-1), q.clone()]),
             ],
-          )),
-        },
+          ),
+        ),
       ],
-    )),
-    right: Box::new(call("Beta", vec![p, q])),
-  };
+    ),
+    call("Beta", vec![p, q]),
+  );
   Ok(piecewise(vec![(density, cond)], int(0)))
 }
 
@@ -13290,14 +13201,10 @@ fn cdf_exponential_power(
   let (k, m, s) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
   let half_reg = |diff: Expr| -> Result<Expr, InterpreterError> {
     let arg = divide(power(divide(diff, s.clone()), k.clone()), k.clone());
-    eval(Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(call(
-        "GammaRegularized",
-        vec![power(k.clone(), int(-1)), arg],
-      )),
-      right: Box::new(int(2)),
-    })
+    eval(divide(
+      call("GammaRegularized", vec![power(k.clone(), int(-1)), arg]),
+      int(2),
+    ))
   };
   let diff_plus = call(
     "Plus",
@@ -13344,30 +13251,28 @@ fn pdf_rice(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let (a, b) = (dargs[0].clone(), dargs[1].clone());
   let pow2 = |e: &Expr| power(e.clone(), int(2));
   let body = |at: &Expr| -> Result<Expr, InterpreterError> {
-    let exponent = Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(call(
+    let exponent = divide(
+      call(
         "Plus",
         vec![
           call("Times", vec![int(-1), pow2(&a)]),
           call("Times", vec![int(-1), pow2(at)]),
         ],
-      )),
-      right: Box::new(call("Times", vec![int(2), pow2(&b)])),
-    };
+      ),
+      call("Times", vec![int(2), pow2(&b)]),
+    );
     let bessel_arg = eval(divide(times(a.clone(), at.clone()), pow2(&b)))?;
-    eval(Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(call(
+    eval(divide(
+      call(
         "Times",
         vec![
           power(e(), eval(exponent)?),
           at.clone(),
           call("BesselI", vec![int(0), bessel_arg]),
         ],
-      )),
-      right: Box::new(pow2(&b)),
-    })
+      ),
+      pow2(&b),
+    ))
   };
 
   let numeric_x = rice_numeric(&x).is_some();
@@ -13396,16 +13301,15 @@ fn cdf_rice(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   }
   let (a, b) = (dargs[0].clone(), dargs[1].clone());
   let marcum = |at: &Expr| -> Result<Expr, InterpreterError> {
-    Ok(Expr::FunctionCall {
-      name: "MarcumQ".to_string(),
-      args: vec![
+    Ok(call(
+      "MarcumQ",
+      vec![
         int(1),
         eval(divide(a.clone(), b.clone()))?,
         int(0),
         eval(divide(at.clone(), b.clone()))?,
-      ]
-      .into(),
-    })
+      ],
+    ))
   };
   if rice_numeric(&x).is_some() {
     if rice_numeric(&x).is_some_and(|v| v <= 0.0) {
@@ -13486,14 +13390,10 @@ pub fn rice_mean_variance(
               "Times",
               vec![
                 int(-1),
-                Expr::BinaryOp {
-                  op: BinaryOperator::Divide,
-                  left: Box::new(call(
-                    "Times",
-                    vec![pi(), pow2(b), power(laguerre, int(2))],
-                  )),
-                  right: Box::new(int(2)),
-                },
+                divide(
+                  call("Times", vec![pi(), pow2(b), power(laguerre, int(2))]),
+                  int(2),
+                ),
               ],
             ),
           ],
@@ -13603,14 +13503,10 @@ pub fn rice_mean_variance(
         "Times",
         vec![
           int(-1),
-          Expr::BinaryOp {
-            op: BinaryOperator::Divide,
-            left: Box::new(call(
-              "Times",
-              vec![pow2(b), pi(), power(laguerre, int(2))],
-            )),
-            right: Box::new(int(2)),
-          },
+          divide(
+            call("Times", vec![pow2(b), pi(), power(laguerre, int(2))]),
+            int(2),
+          ),
         ],
       ),
     ],
@@ -13647,25 +13543,17 @@ fn ms_u(a: &Expr, b: &Expr, g: &Expr, x: &Expr) -> Expr {
       ),
     )
   };
-  plus(
-    int(1),
-    Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(call("Times", vec![coef, diff])),
-      right: Box::new(b.clone()),
-    },
-  )
+  plus(int(1), divide(call("Times", vec![coef, diff]), b.clone()))
 }
 
 fn ms_z(a: &Expr, b: &Expr, x: &Expr) -> Expr {
-  Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(call(
+  divide(
+    call(
       "Plus",
       vec![call("Times", vec![int(-1), a.clone()]), x.clone()],
-    )),
-    right: Box::new(b.clone()),
-  }
+    ),
+    b.clone(),
+  )
 }
 
 /// PDF[MinStableDistribution[a, b, g], x] in wolframscript's forms:
@@ -13683,17 +13571,15 @@ fn pdf_min_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let gumbel = |at: &Expr| -> Expr {
     // E^(-E^((-a + x)/b) - (a - x)/b)/b
     let z = ms_z(&a, &b, at);
-    let neg_az = Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(call(
+    let neg_az = divide(
+      call(
         "Plus",
         vec![a.clone(), call("Times", vec![int(-1), at.clone()])],
-      )),
-      right: Box::new(b.clone()),
-    };
-    Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(power(
+      ),
+      b.clone(),
+    );
+    divide(
+      power(
         e(),
         call(
           "Plus",
@@ -13702,31 +13588,30 @@ fn pdf_min_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
             call("Times", vec![int(-1), neg_az]),
           ],
         ),
-      )),
-      right: Box::new(b.clone()),
-    }
+      ),
+      b.clone(),
+    )
   };
   let general = |at: &Expr| -> Expr {
     // u^(-1 - 1/g) / (b E^(u^(-1/g)))
     let u = ms_u(&a, &b, &g, at);
     let inv_g = power(g.clone(), int(-1));
-    Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(power(
+    divide(
+      power(
         u.clone(),
         call(
           "Plus",
           vec![int(-1), call("Times", vec![int(-1), inv_g.clone()])],
         ),
-      )),
-      right: Box::new(call(
+      ),
+      call(
         "Times",
         vec![
           b.clone(),
           power(e(), power(u, call("Times", vec![int(-1), inv_g]))),
         ],
-      )),
-    }
+      ),
+    )
   };
 
   let g_num = ms_numeric(&g);
@@ -13742,21 +13627,19 @@ fn pdf_min_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       // Raw assembly with evaluated subparts keeps the exponent in
       // wolframscript's -E^x + x order
       let z = eval(ms_z(&a, &b, &x))?;
-      let neg_az = eval(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      let neg_az = eval(call(
+        "Times",
+        vec![
           int(-1),
-          Expr::BinaryOp {
-            op: BinaryOperator::Divide,
-            left: Box::new(call(
+          divide(
+            call(
               "Plus",
               vec![a.clone(), call("Times", vec![int(-1), x.clone()])],
-            )),
-            right: Box::new(b.clone()),
-          },
-        ]
-        .into(),
-      })?;
+            ),
+            b.clone(),
+          ),
+        ],
+      ))?;
       let exponent = call(
         "Plus",
         vec![call("Times", vec![int(-1), power(e(), z)]), neg_az],
@@ -13795,14 +13678,13 @@ fn pdf_min_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       );
       let p2 = (
         general(&x),
-        Expr::FunctionCall {
-          name: "And".to_string(),
-          args: vec![
+        call(
+          "And",
+          vec![
             comparison(g.clone(), ComparisonOp::NotEqual, int(0)),
             comparison(ms_u(&a, &b, &g, &x), ComparisonOp::Greater, int(0)),
-          ]
-          .into(),
-        },
+          ],
+        ),
       );
       Ok(piecewise(vec![p1, p2], int(0)))
     }
@@ -13835,13 +13717,10 @@ fn cdf_min_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     let u = ms_u(&a, &b, &g, at);
     one_minus(power(
       e(),
-      Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(power(
-          u,
-          call("Times", vec![int(-1), power(g.clone(), int(-1))]),
-        )),
-      },
+      neg(power(
+        u,
+        call("Times", vec![int(-1), power(g.clone(), int(-1))]),
+      )),
     ))
   };
 
@@ -13922,13 +13801,11 @@ fn min_stable_mean_variance(
       times(int(-1), times(b.clone(), euler_gamma.clone())),
     )
   };
-  let var_gumbel = || Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(call(
-      "Times",
-      vec![power(b.clone(), int(2)), power(pi(), int(2))],
-    )),
-    right: Box::new(int(6)),
+  let var_gumbel = || {
+    divide(
+      call("Times", vec![power(b.clone(), int(2)), power(pi(), int(2))]),
+      int(6),
+    )
   };
   let gamma_of = |inner: Expr| call("Gamma", vec![inner]);
   let one_minus_g = call(
@@ -13936,9 +13813,8 @@ fn min_stable_mean_variance(
     vec![int(1), call("Times", vec![int(-1), g.clone()])],
   );
   // (b + a g - b Gamma[1 - g])/g
-  let mean_general = Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(call(
+  let mean_general = divide(
+    call(
       "Plus",
       vec![
         b.clone(),
@@ -13948,17 +13824,16 @@ fn min_stable_mean_variance(
           vec![int(-1), b.clone(), gamma_of(one_minus_g.clone())],
         ),
       ],
-    )),
-    right: Box::new(g.clone()),
-  };
+    ),
+    g.clone(),
+  );
   // b^2 (Gamma[1 - 2g] - Gamma[1 - g]^2)/g^2
   let one_minus_2g = call(
     "Plus",
     vec![int(1), call("Times", vec![int(-2), g.clone()])],
   );
-  let var_general = Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(call(
+  let var_general = divide(
+    call(
       "Times",
       vec![
         power(b.clone(), int(2)),
@@ -13970,9 +13845,9 @@ fn min_stable_mean_variance(
           ],
         ),
       ],
-    )),
-    right: Box::new(power(g.clone(), int(2))),
-  };
+    ),
+    power(g.clone(), int(2)),
+  );
 
   match ms_numeric(g) {
     Some(gv) if gv == 0.0 => Ok((eval(mean_gumbel())?, eval(var_gumbel())?)),
@@ -14058,25 +13933,17 @@ fn msx_u(a: &Expr, b: &Expr, g: &Expr, x: &Expr) -> Expr {
       ),
     )
   };
-  plus(
-    int(1),
-    Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(call("Times", vec![coef, diff])),
-      right: Box::new(b.clone()),
-    },
-  )
+  plus(int(1), divide(call("Times", vec![coef, diff]), b.clone()))
 }
 
 fn msx_z(a: &Expr, b: &Expr, x: &Expr) -> Expr {
-  Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(call(
+  divide(
+    call(
       "Plus",
       vec![a.clone(), call("Times", vec![int(-1), x.clone()])],
-    )),
-    right: Box::new(b.clone()),
-  }
+    ),
+    b.clone(),
+  )
 }
 
 /// PDF[MaxStableDistribution[a, b, g], x] — mirror of MinStable.
@@ -14091,46 +13958,43 @@ fn pdf_max_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let gumbel = |at: &Expr| -> Expr {
     // E^(-E^((a - x)/b) - (-a + x)/b)/b
     let z = msx_z(&a, &b, at);
-    let neg_za = Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(call(
+    let neg_za = divide(
+      call(
         "Plus",
         vec![call("Times", vec![int(-1), a.clone()]), at.clone()],
-      )),
-      right: Box::new(b.clone()),
-    };
-    Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(power(
+      ),
+      b.clone(),
+    );
+    divide(
+      power(
         e(),
         call(
           "Plus",
           vec![neg(power(e(), z)), call("Times", vec![int(-1), neg_za])],
         ),
-      )),
-      right: Box::new(b.clone()),
-    }
+      ),
+      b.clone(),
+    )
   };
   let general = |at: &Expr| -> Expr {
     let u = msx_u(&a, &b, &g, at);
     let inv_g = power(g.clone(), int(-1));
-    Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(power(
+    divide(
+      power(
         u.clone(),
         call(
           "Plus",
           vec![int(-1), call("Times", vec![int(-1), inv_g.clone()])],
         ),
-      )),
-      right: Box::new(call(
+      ),
+      call(
         "Times",
         vec![
           b.clone(),
           power(e(), power(u, call("Times", vec![int(-1), inv_g]))),
         ],
-      )),
-    }
+      ),
+    )
   };
 
   let g_num = ms_numeric(&g);
@@ -14208,13 +14072,10 @@ fn cdf_max_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     let u = msx_u(&a, &b, &g, at);
     power(
       e(),
-      Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(power(
-          u,
-          call("Times", vec![int(-1), power(g.clone(), int(-1))]),
-        )),
-      },
+      neg(power(
+        u,
+        call("Times", vec![int(-1), power(g.clone(), int(-1))]),
+      )),
     )
   };
 
@@ -14299,9 +14160,8 @@ fn max_stable_mean_variance(
     vec![int(1), call("Times", vec![int(-1), g.clone()])],
   );
   // (-b + a g + b Gamma[1 - g])/g
-  let mean_general = Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(call(
+  let mean_general = divide(
+    call(
       "Plus",
       vec![
         call("Times", vec![int(-1), b.clone()]),
@@ -14311,9 +14171,9 @@ fn max_stable_mean_variance(
           vec![b.clone(), call("Gamma", vec![one_minus_g.clone()])],
         ),
       ],
-    )),
-    right: Box::new(g.clone()),
-  };
+    ),
+    g.clone(),
+  );
   // Variance is identical to MinStable's
   let (_, var) = min_stable_mean_variance(a, b, g)?;
   match ms_numeric(g) {
@@ -14638,18 +14498,17 @@ fn triangular_mean_variance(
   let var = eval(unary_fn(
     "Simplify",
     divide(
-      Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![
+      call(
+        "Plus",
+        vec![
           power(a.clone(), int(2)),
           times(int(-1), times(a.clone(), b.clone())),
           power(b.clone(), int(2)),
           times(int(-1), times(a.clone(), c.clone())),
           times(int(-1), times(b.clone(), c.clone())),
           power(c, int(2)),
-        ]
-        .into(),
-      },
+        ],
+      ),
       int(18),
     ),
   ))?;
@@ -14750,13 +14609,9 @@ fn pdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
         e_part,
       ));
     }
-    eval(Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(call(
-        "Times",
-        vec![sqrt_2_pi.clone(), power(at.clone(), int(2))],
-      )),
-      right: Box::new(call(
+    eval(divide(
+      call("Times", vec![sqrt_2_pi.clone(), power(at.clone(), int(2))]),
+      call(
         "Times",
         vec![
           power(
@@ -14768,8 +14623,8 @@ fn pdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
           ),
           power(s.clone(), int(3)),
         ],
-      )),
-    })
+      ),
+    ))
   };
   if ms_numeric(&x).is_some() {
     if ms_numeric(&x).is_some_and(|v| v <= 0.0) {
@@ -14812,14 +14667,10 @@ fn cdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       let term1 = neg(maxwell_term(sq, sp, at.clone(), e_part));
       let erf = call(
         "Erf",
-        vec![eval(Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(at.clone()),
-          right: Box::new(call(
-            "Times",
-            vec![call("Sqrt", vec![int(2)]), s.clone()],
-          )),
-        })?],
+        vec![eval(divide(
+          at.clone(),
+          call("Times", vec![call("Sqrt", vec![int(2)]), s.clone()]),
+        ))?],
       );
       return Ok(call("Plus", vec![term1, erf]));
     }
@@ -14830,13 +14681,9 @@ fn cdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
           "Times",
           vec![
             int(-1),
-            Expr::BinaryOp {
-              op: BinaryOperator::Divide,
-              left: Box::new(call(
-                "Times",
-                vec![sqrt_2_pi.clone(), at.clone()],
-              )),
-              right: Box::new(call(
+            divide(
+              call("Times", vec![sqrt_2_pi.clone(), at.clone()]),
+              call(
                 "Times",
                 vec![
                   power(
@@ -14848,20 +14695,16 @@ fn cdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
                   ),
                   s.clone(),
                 ],
-              )),
-            },
+              ),
+            ),
           ],
         ),
         call(
           "Erf",
-          vec![Expr::BinaryOp {
-            op: BinaryOperator::Divide,
-            left: Box::new(at.clone()),
-            right: Box::new(call(
-              "Times",
-              vec![call("Sqrt", vec![int(2)]), s.clone()],
-            )),
-          }],
+          vec![divide(
+            at.clone(),
+            call("Times", vec![call("Sqrt", vec![int(2)]), s.clone()]),
+          )],
         ),
       ],
     ))
@@ -15123,17 +14966,16 @@ pub fn maxwell_mean_variance(
     vec![int(2), call("Sqrt", vec![divide(int(2), pi())]), s.clone()],
   ))?;
   let var = if ms_numeric(s).is_some() {
-    eval(Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(call(
+    eval(divide(
+      call(
         "Times",
         vec![
           call("Plus", vec![int(-8), call("Times", vec![int(3), pi()])]),
           power(s.clone(), int(2)),
         ],
-      )),
-      right: Box::new(pi()),
-    })?
+      ),
+      pi(),
+    ))?
   } else {
     // wolframscript puts the Pi-sum factor first; assembled raw since
     // evaluation would reorder it
@@ -15355,11 +15197,10 @@ fn sech_arg(m: &Expr, s: &Expr, x: &Expr) -> Result<Expr, InterpreterError> {
       vec![call("Times", vec![int(-1), m.clone()]), x.clone()],
     )
   };
-  eval(Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(call("Times", vec![pi(), diff])),
-    right: Box::new(times(int(2), s.clone())),
-  })
+  eval(divide(
+    call("Times", vec![pi(), diff]),
+    times(int(2), s.clone()),
+  ))
 }
 
 /// PDF[SechDistribution[m, s], x] = Sech[Pi (x - m)/(2 s)]/(2 s).
@@ -15374,11 +15215,7 @@ fn pdf_sech(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated(dargs, x));
   }
   let arg = sech_arg(&m, &s, &x)?;
-  eval(Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(call("Sech", vec![arg])),
-    right: Box::new(times(int(2), s)),
-  })
+  eval(divide(call("Sech", vec![arg]), times(int(2), s)))
 }
 
 /// CDF[SechDistribution[m, s], x] =
@@ -15394,14 +15231,10 @@ fn cdf_sech(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated(dargs, x));
   }
   let arg = sech_arg(&m, &s, &x)?;
-  eval(Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(call(
-      "Times",
-      vec![int(2), call("ArcTan", vec![power(e(), arg)])],
-    )),
-    right: Box::new(pi()),
-  })
+  eval(divide(
+    call("Times", vec![int(2), call("ArcTan", vec![power(e(), arg)])]),
+    pi(),
+  ))
 }
 
 /// Mean m and variance s^2 for SechDistribution.
@@ -15435,22 +15268,20 @@ fn pdf_moyal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     let folded = ms_numeric(&m).is_some_and(|v| v != 0.0);
     let exponent = if folded {
       // -1/2 E^((m - x)/s) + (m - x)/(2 s)
-      let neg_z = eval(Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(call(
+      let neg_z = eval(divide(
+        call(
           "Plus",
           vec![m.clone(), call("Times", vec![int(-1), at.clone()])],
-        )),
-        right: Box::new(s.clone()),
-      })?;
-      let half_neg_z = eval(Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(call(
+        ),
+        s.clone(),
+      ))?;
+      let half_neg_z = eval(divide(
+        call(
           "Plus",
           vec![m.clone(), call("Times", vec![int(-1), at.clone()])],
-        )),
-        right: Box::new(times(int(2), s.clone())),
-      })?;
+        ),
+        times(int(2), s.clone()),
+      ))?;
       call(
         "Plus",
         vec![call("Times", vec![half(), power(e(), neg_z)]), half_neg_z],
@@ -15526,14 +15357,13 @@ fn cdf_moyal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     let z_half = eval(divide(diff, times(int(2), s.clone())))?;
     Ok(call(
       "Erfc",
-      vec![Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(int(1)),
-        right: Box::new(call(
+      vec![divide(
+        int(1),
+        call(
           "Times",
           vec![call("Sqrt", vec![int(2)]), power(e(), z_half)],
-        )),
-      }],
+        ),
+      )],
     ))
   };
   if ms_numeric(&x).is_some() {
@@ -15606,9 +15436,8 @@ fn pdf_borel_tanner(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       return Ok(int(0));
     }
     // a^(x-n) n x^(x-n-1) / (E^(a x) (x-n)!)
-    return eval(Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(call(
+    return eval(divide(
+      call(
         "Times",
         vec![
           power(a.clone(), plus(x.clone(), times(int(-1), n.clone()))),
@@ -15618,18 +15447,15 @@ fn pdf_borel_tanner(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
             plus(plus(x.clone(), times(int(-1), n.clone())), int(-1)),
           ),
         ],
-      )),
-      right: Box::new(call(
+      ),
+      call(
         "Times",
         vec![
           power(e(), times(a.clone(), x.clone())),
-          call(
-            "Factorial",
-            vec![plus(x.clone(), times(int(-1), n.clone()))],
-          ),
+          factorial(plus(x.clone(), times(int(-1), n.clone()))),
         ],
-      )),
-    });
+      ),
+    ));
   }
   if !matches!(&x, Expr::Identifier(_)) {
     return Ok(unevaluated(dargs, x));
@@ -15707,17 +15533,16 @@ fn pdf_borel_tanner(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     Some(nv) => int(-nv),
     None => call("Times", vec![int(-1), n.clone()]),
   };
-  let body = Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(call("Times", factors)),
-    right: Box::new(call(
+  let body = divide(
+    call("Times", factors),
+    call(
       "Times",
       vec![
         power(e(), eval(times(a.clone(), x.clone()))?),
         factorial(call("Plus", vec![neg_n_expr, x.clone()])),
       ],
-    )),
-  };
+    ),
+  );
   let cond = comparison(x, ComparisonOp::GreaterEqual, n);
   Ok(piecewise(vec![(body, cond)], int(0)))
 }
@@ -15791,9 +15616,8 @@ fn pdf_benktander_gibrat(
       return Ok(int(0));
     }
     // Evaluate the closed form at the point
-    return eval(Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(call(
+    return eval(divide(
+      call(
         "Times",
         vec![
           power(x.clone(), eval(plus(int(-2), times(int(-1), a.clone())))?),
@@ -15820,9 +15644,9 @@ fn pdf_benktander_gibrat(
             ],
           ),
         ],
-      )),
-      right: Box::new(power(e(), times(b.clone(), power(log_x(&x), int(2))))),
-    });
+      ),
+      power(e(), times(b.clone(), power(log_x(&x), int(2)))),
+    ));
   }
   if !matches!(&x, Expr::Identifier(_)) {
     return Ok(uneval(dargs, x));
@@ -15855,19 +15679,17 @@ fn pdf_benktander_gibrat(
   let e_part = power(e(), eval(times(b.clone(), power(log_x(&x), int(2))))?);
   let body = if numeric {
     // (...)/(E^(b Log[x]^2) x^(2 + a))
-    Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(bracket),
-      right: Box::new(call(
+    divide(
+      bracket,
+      call(
         "Times",
         vec![e_part, power(x.clone(), eval(plus(int(2), a.clone()))?)],
-      )),
-    }
+      ),
+    )
   } else {
     // (x^(-2 - a) (...))/E^(b Log[x]^2)
-    Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(call(
+    divide(
+      call(
         "Times",
         vec![
           power(
@@ -15879,9 +15701,9 @@ fn pdf_benktander_gibrat(
           ),
           bracket,
         ],
-      )),
-      right: Box::new(e_part),
-    }
+      ),
+      e_part,
+    )
   };
   let cond = comparison(x, ComparisonOp::GreaterEqual, int(1));
   Ok(piecewise(vec![(body, cond)], int(0)))
@@ -15919,18 +15741,16 @@ fn cdf_benktander_gibrat(
     ))?;
     let e_part = power(e(), eval(times(b.clone(), power(log_x(at), int(2))))?);
     let fraction = if numeric {
-      Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(f2),
-        right: Box::new(call(
+      divide(
+        f2,
+        call(
           "Times",
           vec![e_part, power(at.clone(), eval(plus(int(1), a.clone()))?)],
-        )),
-      }
+        ),
+      )
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(call(
+      divide(
+        call(
           "Times",
           vec![
             power(
@@ -15942,9 +15762,9 @@ fn cdf_benktander_gibrat(
             ),
             f2,
           ],
-        )),
-        right: Box::new(e_part),
-      }
+        ),
+        e_part,
+      )
     };
     Ok(call(
       "Plus",
@@ -15984,14 +15804,10 @@ fn benktander_gibrat_mean_variance(
   let numeric = ms_numeric(a).is_some() && ms_numeric(b).is_some();
   let erfc = call(
     "Erfc",
-    vec![eval(Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(a_minus_1.clone()),
-      right: Box::new(call(
-        "Times",
-        vec![int(2), call("Sqrt", vec![b.clone()])],
-      )),
-    })?],
+    vec![eval(divide(
+      a_minus_1.clone(),
+      call("Times", vec![int(2), call("Sqrt", vec![b.clone()])]),
+    ))?],
   );
   let e_part = power(
     e(),
@@ -15999,9 +15815,8 @@ fn benktander_gibrat_mean_variance(
   );
   let var = if numeric {
     // Sqrt[Pi/b] merges for numeric b
-    eval(Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(call(
+    eval(divide(
+      call(
         "Plus",
         vec![
           int(-1),
@@ -16015,29 +15830,27 @@ fn benktander_gibrat_mean_variance(
             ],
           ),
         ],
-      )),
-      right: Box::new(power(a.clone(), int(2))),
-    })?
+      ),
+      power(a.clone(), int(2)),
+    ))?
   } else {
     // (-1 + (a E^((a-1)^2/(4 b)) Sqrt[Pi] Erfc[...])/Sqrt[b])/a^2
-    Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(call(
+    divide(
+      call(
         "Plus",
         vec![
           int(-1),
-          Expr::BinaryOp {
-            op: BinaryOperator::Divide,
-            left: Box::new(call(
+          divide(
+            call(
               "Times",
               vec![a.clone(), e_part, call("Sqrt", vec![pi()]), erfc],
-            )),
-            right: Box::new(call("Sqrt", vec![b.clone()])),
-          },
+            ),
+            call("Sqrt", vec![b.clone()]),
+          ),
         ],
-      )),
-      right: Box::new(power(a.clone(), int(2))),
-    }
+      ),
+      power(a.clone(), int(2)),
+    )
   };
   Ok((mean, var))
 }
@@ -16141,11 +15954,10 @@ fn gumbel_mean_variance(
       times(b.clone(), Expr::Identifier("EulerGamma".to_string())),
     ),
   ))?;
-  let var = eval(Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(call("Times", vec![power(b, int(2)), power(pi(), int(2))])),
-    right: Box::new(int(6)),
-  })?;
+  let var = eval(divide(
+    call("Times", vec![power(b, int(2)), power(pi(), int(2))]),
+    int(6),
+  ))?;
   Ok((mean, var))
 }
 
@@ -16172,14 +15984,13 @@ fn pdf_zipf(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     // Pre-dividing 1/norm hoists rationals out of evaluated Zeta
     // values (Zeta[2] = Pi^2/6 prints as 6/(Pi^2 x^2), not nested)
     let coeff = eval(divide(int(1), norm.clone()))?;
-    eval(Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![
+    eval(call(
+      "Times",
+      vec![
         coeff,
         power(at.clone(), eval(plus(int(-1), times(int(-1), r.clone())))?),
-      ]
-      .into(),
-    })
+      ],
+    ))
   };
   if ms_numeric(&x).is_some() {
     let xv = ms_numeric(&x).unwrap();
