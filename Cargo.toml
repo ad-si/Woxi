@@ -200,6 +200,7 @@ harness = false
 # ~400k-line crate. `split-debuginfo = "unpacked"` additionally skips the
 # slow dsymutil packaging step on macOS.
 [profile.dev]
+opt-level = 1
 debug = "line-tables-only"
 split-debuginfo = "unpacked"
 
