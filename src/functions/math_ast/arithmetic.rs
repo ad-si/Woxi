@@ -8182,6 +8182,67 @@ fn divide_by_zero_result(a: &Expr) -> Expr {
 }
 
 /// Helper for division of two arguments
+/// Machine value of `x / b` for an exact symbolic divisor `b` carrying
+/// numeric content, following wolframscript's fold: the divisor's integer
+/// and rational factors combine with its denominator into ONE exact
+/// rational whose machine value multiplies `x` first, and each remaining
+/// symbolic factor contributes a reciprocal — 19.6/((145*(63+Pi))/86) is
+/// (19.6*N[86/145])*(1/N[63+Pi]). None when `b` has no symbolic factor or
+/// no numeric content to fold (those keep the plain reciprocal path), or
+/// when the exact fraction overflows.
+fn real_over_exact_quotient(x: f64, b: &Expr) -> Option<f64> {
+  use crate::functions::polynomial_ast::together::{
+    extract_num_den, flatten_times_args,
+  };
+  let (bn, bd) = extract_num_den(b);
+  let frac_of = |e: &Expr| -> Option<(i128, i128)> {
+    match e {
+      Expr::Integer(n) => Some((*n, 1)),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        if let (Expr::Integer(p), Expr::Integer(q)) = (&args[0], &args[1]) {
+          Some((*p, *q))
+        } else {
+          None
+        }
+      }
+      _ => None,
+    }
+  };
+  let (bd_n, bd_d) = frac_of(&bd)?;
+  let mut num_n: i128 = 1;
+  let mut num_d: i128 = 1;
+  let mut syms: Vec<Expr> = Vec::new();
+  for f in flatten_times_args(std::slice::from_ref(&bn)) {
+    match frac_of(&f) {
+      Some((p, q)) => {
+        num_n = num_n.checked_mul(p)?;
+        num_d = num_d.checked_mul(q)?;
+      }
+      None => syms.push(f),
+    }
+  }
+  if syms.is_empty() || num_n == 0 {
+    return None;
+  }
+  // 1/b = (bd/1) * (num_d/num_n) * (1/S): fold the exact rational.
+  let r_n = bd_n.checked_mul(num_d)?;
+  let r_d = bd_d.checked_mul(num_n)?;
+  if r_n == 1 && r_d == 1 {
+    return None;
+  }
+  let r = (r_n as f64) / (r_d as f64);
+  let mut s = 1.0f64;
+  for f in &syms {
+    s *= try_eval_to_f64(f)?;
+  }
+  if s == 0.0 {
+    return None;
+  }
+  Some(x * r * (1.0 / s))
+}
+
 pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
   // 0 / expr → 0 (Real if either operand is Real, else Integer).
   let b_is_zero =
@@ -8610,7 +8671,40 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
           || matches!(b, Expr::FunctionCall { name, .. } if name == "Rational");
         if den_is_exact {
           Ok(Expr::Real(x / y))
+        } else if matches!(a, Expr::Real(_))
+          && !contains_real(b)
+          && let Some(r) = real_over_exact_quotient(x, b)
+        {
+          // A machine-Real dividend over an EXACT symbolic quotient folds
+          // the divisor's numeric content into one exact rational and
+          // multiplies through left-to-right:
+          // 19.6/((145*(63+Pi))/86) is (19.6*N[86/145])*(1/N[63+Pi]) =
+          // 0.17575669287388962, matching wolframscript (differential
+          // fuzzer, seed 14911319143061223866; wolframscript-verified).
+          Ok(Expr::Real(r))
         } else {
+          // An exact QUOTIENT dividend folds its symbolic denominator with
+          // the machine divisor and divides ONCE:
+          // ((42+Pi)/(Pi-10))/(-92.7) is N[42+Pi]/(N[Pi-10]*(-92.7)) =
+          // 0.07100253709778288, never the reciprocal-multiply ...287.
+          // Non-quotient dividends keep the reciprocal path (Sqrt[2]/1.8,
+          // 37/1.8 land one ULP from the direct division, matching
+          // wolframscript). Differential fuzzer, seed
+          // 15033838239546199922; wolframscript-verified.
+          if matches!(b, Expr::Real(_)) {
+            let (p, q) = crate::functions::polynomial_ast::together::extract_num_den(a);
+            let q_is_number = matches!(
+              &q,
+              Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_)
+            ) || matches!(&q, Expr::FunctionCall { name, .. } if name == "Rational");
+            if !q_is_number
+              && let (Some(xp), Some(xq)) =
+                (try_eval_to_f64(&p), try_eval_to_f64(&q))
+              && xq != 0.0
+            {
+              return Ok(Expr::Real(xp / (xq * y)));
+            }
+          }
           Ok(Expr::Real(x * (1.0 / y)))
         }
       }

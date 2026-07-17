@@ -2078,6 +2078,75 @@ mod simplify_radical_content {
       "9*(1 + Sqrt[19])"
     );
   }
+
+  // A sum with a VARIABLE-denominator term never extracts numeric content
+  // (Simplify[-4 - 2/x] keeps the split form, never -2*(2 + x^(-1)));
+  // numeric-radical denominators still participate
+  // (wolframscript-verified).
+  #[test]
+  fn variable_denominator_sums_stay_split() {
+    assert_eq!(interpret("Simplify[-4 - 2/x]").unwrap(), "-4 - 2/x");
+    assert_eq!(interpret("Simplify[(-2 - 4 x)/x]").unwrap(), "-4 - 2/x");
+    assert_eq!(
+      interpret("Simplify[3/2 + (3/2)*Sqrt[2]]").unwrap(),
+      "(3*(1 + Sqrt[2]))/2"
+    );
+  }
+}
+
+mod simplify_sign_pull_ties {
+  use super::*;
+
+  // The sign-only -(…) pull competes for ANY negative numerator content
+  // and wins SimplifyCount ties against the content extraction; a strict
+  // count win keeps the extraction (differential fuzzer, seed
+  // 5520550946540289960; all wolframscript-verified).
+  #[test]
+  fn pull_beats_extraction_on_tie() {
+    assert_eq!(
+      interpret("Simplify[(-2 - 4 x)/(1 + 5 x)]").unwrap(),
+      "-((2 + 4*x)/(1 + 5*x))"
+    );
+    assert_eq!(
+      interpret("Simplify[(-3 - 6 x)/(1 + 5 x)]").unwrap(),
+      "-((3 + 6*x)/(1 + 5*x))"
+    );
+    assert_eq!(
+      interpret("Simplify[(-5 - 10 x)/(1 + 7 x)]").unwrap(),
+      "(-5*(1 + 2*x))/(1 + 7*x)"
+    );
+    assert_eq!(
+      interpret("Simplify[(-10 - 20 x)/(1 + 5 x)]").unwrap(),
+      "(-10*(1 + 2*x))/(1 + 5*x)"
+    );
+    assert_eq!(
+      interpret("Simplify[(2 + 4 x)/(1 + 5 x)]").unwrap(),
+      "(2 + 4*x)/(1 + 5*x)"
+    );
+  }
+
+  // A monomial denominator's coefficient joins the pulled sign as a
+  // rational prefactor, and that display is final — no candidate may
+  // re-expand or re-combine it (wolframscript-verified).
+  #[test]
+  fn monomial_denominator_pull_display() {
+    assert_eq!(
+      interpret("Simplify[(-2 - 4 x)/(5 x)]").unwrap(),
+      "-1/5*(2 + 4*x)/x"
+    );
+    assert_eq!(
+      interpret("Simplify[(-1 - 4 x)/(5 x)]").unwrap(),
+      "-1/5*(1 + 4*x)/x"
+    );
+    assert_eq!(
+      interpret("Simplify[(-2 - 4 x)/(5 x^2)]").unwrap(),
+      "-1/5*(2 + 4*x)/x^2"
+    );
+    assert_eq!(
+      interpret("Simplify[(5 + 3 x)/(5 x)]").unwrap(),
+      "3/5 + x^(-1)"
+    );
+  }
 }
 
 mod quotient_term_plus_order {

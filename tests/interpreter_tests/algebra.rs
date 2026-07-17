@@ -2811,6 +2811,67 @@ mod together {
     );
   }
 
+  // A unit-negative numerator coefficient distributes into a single sum
+  // factor instead of staying a scalar prefactor; larger coefficients
+  // stay factored and multi-sum numerators keep their prefactor
+  // (wolframscript-verified; differential fuzzer, seed
+  // 1067626979549797460).
+  #[test]
+  fn unit_negative_numerator_distributes() {
+    assert_eq!(
+      interpret("Together[(2 + 5 x)/(-2 x)]").unwrap(),
+      "(-2 - 5*x)/(2*x)"
+    );
+    assert_eq!(
+      interpret("Together[(2 + 5 x)/(-x)]").unwrap(),
+      "(-2 - 5*x)/x"
+    );
+    assert_eq!(
+      interpret("Together[(2 + 5 x)/(-6 x)]").unwrap(),
+      "(-2 - 5*x)/(6*x)"
+    );
+    assert_eq!(
+      interpret("Together[(2 + 5 x)/(-2 x^2)]").unwrap(),
+      "(-2 - 5*x)/(2*x^2)"
+    );
+    assert_eq!(
+      interpret("Together[(2 + 5 x)/(-2 x y)]").unwrap(),
+      "(-2 - 5*x)/(2*x*y)"
+    );
+    assert_eq!(
+      interpret("Together[(x/2 + 1)/(-2 x)]").unwrap(),
+      "(-2 - x)/(4*x)"
+    );
+    assert_eq!(
+      interpret("Cancel[(2 + 5 x)/(-2 x)]").unwrap(),
+      "(-2 - 5*x)/(2*x)"
+    );
+    // Two flips cancel back to positive content.
+    assert_eq!(
+      interpret("Together[(-2 - 5 x)/(-2 x)]").unwrap(),
+      "(2 + 5*x)/(2*x)"
+    );
+    // A coefficient larger than 1 stays factored on the numerator.
+    assert_eq!(
+      interpret("Together[(3 (2 + 5 x))/(-2 x)]").unwrap(),
+      "(-3*(2 + 5*x))/(2*x)"
+    );
+    assert_eq!(
+      interpret("Together[(2 + 5 x)/(4 x/3)]").unwrap(),
+      "(3*(2 + 5*x))/(4*x)"
+    );
+    // Several sum factors keep the scalar prefactor.
+    assert_eq!(
+      interpret("Together[((1 + x) (2 + x))/(-2 x)]").unwrap(),
+      "-1/2*((1 + x)*(2 + x))/x"
+    );
+    // A monomial numerator keeps the scalar prefactor too.
+    assert_eq!(
+      interpret("Together[x/(-2 - 4 x)]").unwrap(),
+      "-1/2*x/(1 + 2*x)"
+    );
+  }
+
   // The polynomial GCD cancellation sees through the numeric-content
   // wrapper on a denominator: x/(4*(x^2 + x^3)) — the canonical form of
   // x/(4 x^2 + 4 x^3) — still cancels the shared x
