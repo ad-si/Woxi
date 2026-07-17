@@ -1582,6 +1582,7 @@ nav = [
     { "Today" = "dates/Today.md" },
     { "UnixTime" = "dates/UnixTime.md" },
   ] },
+  { "Astronomy" = "astronomy.md" },
   { "Quantities" = [
     "quantity.md",
     { "CompatibleUnitQ" = "quantity/CompatibleUnitQ.md" },

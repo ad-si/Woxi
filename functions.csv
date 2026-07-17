@@ -1648,7 +1648,7 @@ NearestNeighborGraph,Undirected k-nearest-neighbor graph of points (ties include
 BatchNormalizationLayer,Batch normalization layer,,unevaluated,11.0,1675
 ChartBaseStyle,Chart base style,,unevaluated,7.0,1675
 RiemannSiegelZ,Riemann-Siegel Z function on the critical line for real numeric arguments,✅,pure,2.0,1675
-MoonPhase,Phase of the moon,,unevaluated,10.0,1676
+MoonPhase,Illuminated fraction of the Moon (Meeus ephemeris; "Name" gives the phase entity),✅,contextual,10.0,1676
 BubbleChart,Creates a bubble chart from data,✅,pure,7.0,1679
 ContentSize,Content size option,,unevaluated,7.0,1679
 HazardFunction,Hazard function PDF/SurvivalFunction of a distribution,✅,pure,8.0,1679
@@ -1963,7 +1963,7 @@ FourierCosSeries,Fourier cosine series expansion (requires symbolic integration)
 DeclarePackage,Declare package for autoloading (package management),🚫,,2.0,1997
 FourierDCT,Discrete cosine transform of a real list (DCT types 1-4; default type 2),✅,pure,6.0,1997
 SqrtBox,Low-level box construct for square root display,✅,pure,3.0,1999
-Sunrise,Compute sunrise time for location (astronomical computation),🚫,,10.0,1999
+Sunrise,Sunrise time for a location and day (next sunrise without a date; UTC-based DateObject),✅,contextual,10.0,1999
 BlockMap,Apply a function to non-overlapping or sliding blocks of a list,✅,none,10.2,2002
 MarginalDistribution,Marginal distribution of multivariate distribution (complex statistics),🚫,,8.0,2002
 TooltipStyle,Style option for tooltips (GUI),🚫,,8.0,2002
@@ -2138,7 +2138,7 @@ FindGraphCommunities,Finds community structure in a graph,🚫,None,9.0,2179
 ImageSizeMultipliers,Option for scaling image display size,🚫,None,6.0,2179
 IntervalIntersection,Computes the intersection of intervals,✅,pure,3.0,2179
 NotebookLocate,Locates and selects a cell or object in an open notebook,🚫,None,3.0,2179
-SunPosition,Gives the position of the Sun for a given location and time,🚫,None,10.0,2179
+SunPosition,Azimuth/altitude of the Sun for a location and time (equatorial via CelestialSystem option),✅,contextual,10.0,2179
 MAProcess,Represents a moving-average time series process,🚫,None,9.0,2181
 QRDecomposition,Computes the QR decomposition of a matrix,✅,None,2.0,2181
 QuantityArray,Represents an array of quantities with units,🚫,None,10.1,2184
@@ -2152,7 +2152,7 @@ ErlangDistribution,Erlang probability distribution equivalent to GammaDistributi
 FourierCosTransform,Fourier cosine transform of a function,✅,pure,4.0,2190
 KeySelect,Selects elements of an association by a key criterion; supports the operator form KeySelect[crit][assoc],✅,pure,10.0,2191
 SkewNormalDistribution,Probability distribution,🚫,None,8.0,2193
-Sunset,Gives the time of sunset for a given location and date,🚫,None,10.0,2193
+Sunset,Sunset time for a location and day (next sunset without a date; UTC-based DateObject),✅,contextual,10.0,2193
 HankelH2,Hankel function of the second kind,✅,pure,6.0,2197
 LinkObject,Represents a MathLink or WSTP connection to an external process,🚫,None,3.0,2197
 RemoveAlphaChannel,Removes the alpha transparency channel from an image,🚫,None,8.0,2197
@@ -2305,7 +2305,7 @@ InverseSurvivalFunction,Inverse survival function giving x where the survival pr
 WeierstrassInvariants,Invariants {g2 g3} of the Weierstrass elliptic function for a lattice given by its half-periods (numeric via theta constants; exact closed forms for the square and hexagonal CM lattices),✅,pure,3.0,2350
 ZipfDistribution,Zipf distribution (Zeta and HarmonicNumber normalizations),✅,pure,6.0,2350
 GeoBubbleChart,geographic visualization,🚫,None,11.1,2355
-MixedUnit,unit system,🚫,None,10.4,2355
+MixedUnit,Compound unit list inside Quantity (inert canonical form),✅,pure,10.4,2355
 RankedMax,k-th largest element,✅,pure,8.0,2355
 WindowFrame,notebook UI,🚫,None,3.0,2355
 FindProcessParameters,stochastic process fitting,🚫,None,9.0,2360
@@ -2802,7 +2802,7 @@ DayPlus,Adds a number of days to a date returning a DateObject,✅,pure,9.0,2867
 DifferenceRootReduce,,🚫,,7.0,2867
 GeoLabels,,🚫,,10.0,2867
 HankelTransform,,🚫,,11.1,2867
-MixedMagnitude,,🚫,,10.4,2867
+MixedMagnitude,Magnitude list paired with MixedUnit inside Quantity (inert canonical form),✅,pure,10.4,2867
 NonNegativeIntegers,Domain of non-negative integers,✅,pure,12.0,2867
 SARMAProcess,,🚫,,9.0,2867
 ThermometerGauge,,🚫,,9.0,2867
@@ -3090,7 +3090,7 @@ ExtentMarkers,,,,8.0,3162
 FindList,Lines in files containing any of the given literal substrings,✅,filesystem,2.0,3162
 GeoBounds,Latitude and longitude bounds of geo positions,✅,pure,10.0,3162
 LinkReadyQ,,🚫,,3.0,3162
-MoonPosition,,🚫,,10.0,3162
+MoonPosition,Azimuth/altitude of the Moon for a location and time (truncated ELP-2000 ephemeris),✅,contextual,10.0,3162
 StartExternalSession,,🚫,,11.2,3162
 CumulantGeneratingFunction,Cumulant-generating function Log[E[e^(tX)]] of a probability distribution,✅,pure,8.0,3176
 DimensionReduction,,🚫,,10.1,3176
@@ -3202,7 +3202,7 @@ IncidenceList,Edges incident to a vertex in EdgeList order,✅,pure,9.0,3280
 NameQ,Test if a string is a defined symbol name,✅,pure,1.0,3280
 ParticleData,,🚫,,6.0,3280
 PermutationCyclesQ,True if valid Cycles form,✅,1,8.0,3280
-SiderealTime,,,,10.0,3280
+SiderealTime,Local apparent sidereal time as a mixed h-m-s right-ascension Quantity,✅,contextual,10.0,3280
 URLParse,Parses a URL into an association of its components (or just the requested components) with percent-decoded Path and Query,✅,pure,10.0,3280
 UnitDimensions,Gives the physical base dimensions of a unit as {{dimension exponent} ...},✅,pure,9.0,3280
 WignerSemicircleDistribution,Wigner semicircle distribution (ArcSin CDF),✅,pure,8.0,3280
@@ -3936,7 +3936,7 @@ ImportByteArray,,,,11.2,4052
 InverseDistanceTransform,,,,8.0,4052
 LinkActivate,,🚫,,3.0,4052
 LocalTimeZone,,,,10.0,4052
-LunarEclipse,,🚫,,10.0,4052
+LunarEclipse,Time of greatest eclipse and "Type" of the next lunar eclipse after a date,✅,contextual,10.0,4052
 NotebooksMenu,,🚫,,4.0,4052
 RenewalProcess,,🚫,,9.0,4052
 SatisfiableQ,Tests whether a Boolean expression has a satisfying assignment,✅,pure,7.0,4052
@@ -3971,7 +3971,7 @@ NetTake,,🚫,,11.3,4081
 PacletUninstall,,🚫,,12.1,4081
 ParagraphIndent,,,,3.0,4081
 PartitionGranularity,,,,11.0,4081
-SolarEclipse,,🚫,,10.0,4081
+SolarEclipse,Time of greatest eclipse and "Type" of the next solar eclipse after a date,✅,contextual,10.0,4081
 SystemsModelDimensions,,🚫,,8.0,4081
 TrimmedVariance,Variance after trimming extreme values,✅,none,11.1,4081
 URLDownloadSubmit,,🚫,,11.2,4081
@@ -4359,7 +4359,7 @@ Containing,,,,10.2,4527
 ContraharmonicMean,Contraharmonic (Lehmer) mean of a list,✅,pure,7.0,4527
 ControllerInformation,,,,6.0,4527
 CountDistinctBy,Counts distinct values of a function applied to each element,✅,pure,10.0,4527
-DaylightQ,,,,10.0,4527
+DaylightQ,Whether the Sun is above the horizon at a location and time,✅,contextual,10.0,4527
 DeleteCloudExpression,,🚫,,10.4,4527
 DirectoryStack,,,,2.0,4527
 DocumentGeneratorInformation,,🚫,,10.0,4527
@@ -5619,7 +5619,7 @@ FromFiniteField,,,,14.0,
 FromFiniteFieldIndex,,,,14.0,
 FromLunationNumber,,,,14.0,
 FromRawPointer,,🚫,,13.1,
-FullMoon,,,,14.0,
+FullMoon,DateObject of the first full moon after a date (default: now),✅,contextual,14.0,
 FunctionCompileExport,,🚫,,12.0,
 FunctionCompileExportByteArray,,🚫,,12.0,
 FunctionCompileExportString,,🚫,,12.0,
@@ -5786,7 +5786,7 @@ MoleculeMatchQ,,🚫,,13.0,
 MoleculeMaximumCommonSubstructure,,🚫,,12.3,
 MoleculeName,,🚫,,12.3,
 MoleculeSubstructureCount,,🚫,,12.3,
-MoonPhaseDate,,🚫,,14.0,
+MoonPhaseDate,DateObject of the next (optionally specified) principal lunar phase after a date,✅,contextual,14.0,
 MultiaxisArrangement,,,,13.0,
 NBodySimulationData,,🚫,,12.0,
 NCaputoD,,,,13.2,
@@ -5808,7 +5808,7 @@ NetUnfold,,🚫,,13.0,
 NetworkPacketCapture,,🚫,,11.3,
 NetworkPacketRecording,,🚫,,11.3,
 NetworkPacketTrace,,🚫,,12.0,
-NewMoon,,,,14.0,
+NewMoon,DateObject of the first new moon after a date (default: now),✅,contextual,14.0,
 NominalScale,,,,13.1,
 NonNegativeRationals,,,,12.0,
 NonPositiveRationals,,,,12.0,

@@ -70,6 +70,42 @@ pub fn dispatch_datetime_functions(
     "FromJulianDate" if args.len() == 1 => {
       return Some(crate::functions::datetime_ast::from_julian_date_ast(args));
     }
+    "MoonPhase" if args.len() <= 2 => {
+      return Some(crate::functions::astronomy_ast::moon_phase_ast(args));
+    }
+    "NewMoon" if args.len() <= 1 => {
+      return Some(crate::functions::astronomy_ast::new_moon_ast(args));
+    }
+    "FullMoon" if args.len() <= 1 => {
+      return Some(crate::functions::astronomy_ast::full_moon_ast(args));
+    }
+    "MoonPhaseDate" if args.len() <= 2 => {
+      return Some(crate::functions::astronomy_ast::moon_phase_date_ast(args));
+    }
+    "SunPosition" if args.len() <= 3 => {
+      return Some(crate::functions::astronomy_ast::sun_position_ast(args));
+    }
+    "MoonPosition" if args.len() <= 3 => {
+      return Some(crate::functions::astronomy_ast::moon_position_ast(args));
+    }
+    "SiderealTime" if args.len() <= 2 => {
+      return Some(crate::functions::astronomy_ast::sidereal_time_ast(args));
+    }
+    "Sunrise" if args.len() <= 2 => {
+      return Some(crate::functions::astronomy_ast::sunrise_ast(args));
+    }
+    "Sunset" if args.len() <= 2 => {
+      return Some(crate::functions::astronomy_ast::sunset_ast(args));
+    }
+    "DaylightQ" if args.len() <= 2 => {
+      return Some(crate::functions::astronomy_ast::daylight_q_ast(args));
+    }
+    "SolarEclipse" if args.len() <= 2 => {
+      return Some(crate::functions::astronomy_ast::solar_eclipse_ast(args));
+    }
+    "LunarEclipse" if args.len() <= 2 => {
+      return Some(crate::functions::astronomy_ast::lunar_eclipse_ast(args));
+    }
     // TimeZoneOffset[] → $TimeZone; TimeZoneOffset[tz] → the zone's UTC
     // offset (numeric zones pass through); TimeZoneOffset[tz1, tz2(, date)]
     // → tz1 - tz2 (the date only matters for named zones, which need a tz
