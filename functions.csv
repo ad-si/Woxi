@@ -1617,7 +1617,7 @@ ImageCollage,Creates a collage from a list of images with optional weights and f
 NDEigensystem,Numerical eigensystem,,unevaluated,10.2,1641
 FindDistribution,Find matching distribution,,unevaluated,10.3,1643
 TextureCoordinateFunction,Texture coordinate function,,unevaluated,8.0,1643
-TextCases,Extract text patterns,,unevaluated,10.2,1644
+TextCases,Extract text units of a given type from a string (Word mirrors TextWords and Sentence mirrors TextSentences; optional third arg keeps the first n),✅,pure,10.2,1644
 DirectoryName,Extract the directory name from a file path,✅,pure,3.0,1646
 DominantColors,Finds dominant colors in an image using k-means clustering,✅,pure,9.0,1646
 Multicolumn,Multi-column layout,,unevaluated,10.0,1648

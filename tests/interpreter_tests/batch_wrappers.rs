@@ -3464,6 +3464,39 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("TextWords[\"a b c\", 5]").unwrap(), "{a, b, c}");
   }
   #[test]
+  fn text_cases_word() {
+    // TextCases[s, "Word"] mirrors TextWords.
+    assert_eq!(
+      interpret("TextCases[\"The cat sat on the mat.\", \"Word\"]").unwrap(),
+      "{The, cat, sat, on, the, mat}"
+    );
+  }
+  #[test]
+  fn text_cases_sentence() {
+    // TextCases[s, "Sentence"] mirrors TextSentences.
+    assert_eq!(
+      interpret("TextCases[\"Hello world. How are you? Fine.\", \"Sentence\"]")
+        .unwrap(),
+      "{Hello world., How are you?, Fine.}"
+    );
+  }
+  #[test]
+  fn text_cases_word_count_limit() {
+    // TextCases[s, "Word", n] keeps only the first n words.
+    assert_eq!(
+      interpret("TextCases[\"one two three four\", \"Word\", 2]").unwrap(),
+      "{one, two}"
+    );
+  }
+  #[test]
+  fn text_cases_unknown_type_unevaluated() {
+    // "Character" is not a supported content type; stays unevaluated.
+    assert_eq!(
+      interpret("TextCases[\"a b c\", \"Character\"]").unwrap(),
+      "TextCases[a b c, Character]"
+    );
+  }
+  #[test]
   fn word_counts_basic() {
     assert_eq!(
       interpret("WordCounts[\"the cat sat on the mat\"]").unwrap(),

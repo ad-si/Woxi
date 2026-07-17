@@ -357,6 +357,39 @@ pub fn dispatch_string_functions(
     "TextSentences" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::string_ast::text_sentences_ast(args));
     }
+    // TextCases[text, "Word"] and TextCases[text, "Sentence"] extract the
+    // corresponding text units. They mirror TextWords / TextSentences, which
+    // is exactly how the Wolfram Language relates these operations for the
+    // "Word" and "Sentence" content types. An optional third argument n keeps
+    // only the first n results.
+    "TextCases" if args.len() == 2 || args.len() == 3 => {
+      if let (Expr::String(s), Expr::String(spec)) = (&args[0], &args[1]) {
+        let limit = match args.get(2) {
+          None => None,
+          Some(Expr::Integer(n)) if *n >= 1 => Some(*n as usize),
+          Some(_) => return Some(Ok(unevaluated("TextCases", args))),
+        };
+        let mut units: Vec<Expr> = match spec.as_str() {
+          "Word" => crate::functions::string_ast::text_word_tokens(s)
+            .into_iter()
+            .map(Expr::String)
+            .collect(),
+          "Sentence" => {
+            match crate::functions::string_ast::text_sentences_ast(&[
+              args[0].clone()
+            ]) {
+              Ok(Expr::List(ref items)) => items.to_vec(),
+              other => return Some(other),
+            }
+          }
+          _ => return Some(Ok(unevaluated("TextCases", args))),
+        };
+        if let Some(n) = limit {
+          units.truncate(n);
+        }
+        return Some(Ok(Expr::List(units.into())));
+      }
+    }
     "TextWords" if args.len() == 1 || args.len() == 2 => {
       if let Expr::String(s) = &args[0] {
         // Tokenize like WordCounts: surrounding punctuation is trimmed but
