@@ -1193,13 +1193,10 @@ fn next_phase_function(
 pub fn moon_phase_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (date_arg, phase_arg) = match args {
     [] => (None, None),
-    [one] => {
-      if phase_from_expr(one).is_some() {
-        (None, Some(one))
-      } else {
-        (Some(one), None)
-      }
-    }
+    // A lone argument is always read as a phase spec (as in Wolfram): a
+    // date-only call has no phase to look for and stays unevaluated.
+    [one] if phase_from_expr(one).is_some() => (None, Some(one)),
+    [_] => return unevaluated("MoonPhaseDate", args),
     [date, phase] => (Some(date), Some(phase)),
     _ => return unevaluated("MoonPhaseDate", args),
   };
@@ -1476,16 +1473,26 @@ pub fn solar_eclipse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (jd_max, kind) = next_solar_eclipse(jd);
   match property {
     "MaximumEclipseDate" => Ok(date_object_instant(jd_max)),
-    "Type" => Ok(Expr::String(
-      match kind {
-        SolarEclipseKind::Partial => "Partial",
-        SolarEclipseKind::Annular => "Annular",
-        SolarEclipseKind::Total => "Total",
-        SolarEclipseKind::Hybrid => "Hybrid",
-      }
-      .to_string(),
-    )),
+    "Type" => Ok(eclipse_type_entity(match kind {
+      SolarEclipseKind::Partial => "Partial",
+      SolarEclipseKind::Annular => "Annular",
+      SolarEclipseKind::Total => "Total",
+      SolarEclipseKind::Hybrid => "Hybrid",
+    })),
     _ => unevaluated("SolarEclipse", args),
+  }
+}
+
+/// The eclipse "Type" property as an `Entity["EclipseType", …]`, matching
+/// Wolfram's classification value.
+fn eclipse_type_entity(kind: &str) -> Expr {
+  Expr::FunctionCall {
+    name: "Entity".to_string(),
+    args: vec![
+      Expr::String("EclipseType".to_string()),
+      Expr::String(kind.to_string()),
+    ]
+    .into(),
   }
 }
 
@@ -1506,14 +1513,11 @@ pub fn lunar_eclipse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (jd_max, kind) = next_lunar_eclipse(jd);
   match property {
     "MaximumEclipseDate" => Ok(date_object_instant(jd_max)),
-    "Type" => Ok(Expr::String(
-      match kind {
-        LunarEclipseKind::Penumbral => "Penumbral",
-        LunarEclipseKind::Partial => "Partial",
-        LunarEclipseKind::Total => "Total",
-      }
-      .to_string(),
-    )),
+    "Type" => Ok(eclipse_type_entity(match kind {
+      LunarEclipseKind::Penumbral => "Penumbral",
+      LunarEclipseKind::Partial => "Partial",
+      LunarEclipseKind::Total => "Total",
+    })),
     _ => unevaluated("LunarEclipse", args),
   }
 }

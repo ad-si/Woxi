@@ -91,10 +91,10 @@ DateObject[{2024, 4, 8, 18, 17, 41.163}, Instant, Gregorian, 0.]
 
 ```scrut
 $ wo 'SolarEclipse[DateObject[{2023, 10, 1}], "Type"]'
-Annular
+Entity[EclipseType, Annular]
 ```
 
 ```scrut
 $ wo 'LunarEclipse[DateObject[{2025, 1, 1}], "Type"]'
-Total
+Entity[EclipseType, Total]
 ```

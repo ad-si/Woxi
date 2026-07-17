@@ -98,12 +98,12 @@ mod phase_dates {
   }
 
   #[test]
-  fn moon_phase_date_next_principal_phase() {
-    // After the 2024 Apr 8 new moon, the next principal phase is the
-    // first quarter of Apr 15
+  fn moon_phase_date_lone_date_is_invalid_phase() {
+    // A lone argument is read as a phase spec, so a bare date is not a
+    // valid phase and the call stays unevaluated (as in Wolfram).
     assert_eq!(
       interpret("MoonPhaseDate[DateObject[{2024, 4, 9}]]").unwrap(),
-      "DateObject[{2024, 4, 15, 19, 13, 2.637}, Instant, Gregorian, 0.]"
+      "MoonPhaseDate[DateObject[{2024, 4, 9}, Day]]"
     );
   }
 }
@@ -302,7 +302,7 @@ mod eclipses {
     );
     assert_eq!(
       interpret("SolarEclipse[DateObject[{2024, 4, 1}], \"Type\"]").unwrap(),
-      "Total"
+      "Entity[EclipseType, Total]"
     );
   }
 
@@ -311,15 +311,15 @@ mod eclipses {
     // 2023 Oct 14: annular; 2025 Sep 21: partial; 2013 Nov 3: hybrid
     assert_eq!(
       interpret("SolarEclipse[DateObject[{2023, 10, 1}], \"Type\"]").unwrap(),
-      "Annular"
+      "Entity[EclipseType, Annular]"
     );
     assert_eq!(
       interpret("SolarEclipse[DateObject[{2025, 9, 1}], \"Type\"]").unwrap(),
-      "Partial"
+      "Entity[EclipseType, Partial]"
     );
     assert_eq!(
       interpret("SolarEclipse[DateObject[{2013, 10, 20}], \"Type\"]").unwrap(),
-      "Hybrid"
+      "Entity[EclipseType, Hybrid]"
     );
   }
 
@@ -332,7 +332,7 @@ mod eclipses {
     );
     assert_eq!(
       interpret("LunarEclipse[DateObject[{2025, 1, 1}], \"Type\"]").unwrap(),
-      "Total"
+      "Entity[EclipseType, Total]"
     );
   }
 
@@ -341,11 +341,11 @@ mod eclipses {
     // 2024 Mar 25: penumbral; 2024 Sep 18: partial
     assert_eq!(
       interpret("LunarEclipse[DateObject[{2024, 3, 1}], \"Type\"]").unwrap(),
-      "Penumbral"
+      "Entity[EclipseType, Penumbral]"
     );
     assert_eq!(
       interpret("LunarEclipse[DateObject[{2024, 9, 1}], \"Type\"]").unwrap(),
-      "Partial"
+      "Entity[EclipseType, Partial]"
     );
   }
 }
