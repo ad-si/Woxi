@@ -15,6 +15,10 @@ description = "Interpreter for a subset of the Wolfram Language"
 keywords = ["wolfram", "wolfram-language", "mathematica", "cas", "math"]
 version = "0.2.0"
 edition = "2024"
+# Point at the lowercase file explicitly; otherwise cargo auto-detects it
+# via a case-insensitive search for README.md and synthesizes a duplicate
+# uppercase entry in the packaged crate.
+readme = "readme.md"
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/ad-si/Woxi"
 # `cargo run -- eval '…'` should run the interpreter CLI, not the
