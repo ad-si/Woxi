@@ -7,22 +7,24 @@ fn missing_file() -> String {
   )
 }
 
+// On Windows, if a path has components starting with
+// n, r, t, the backslashes look like escape sequences,
+// and the path doesn't work when passed to interpret.
+// Patching paths in the test cases is whack-a-mole, so
+// just use a Unix-style path syntax always.
+// C:/tmp/foo/bar.txt works fine on Windows.
+fn unixify(path: String) -> String {
+  path.replace("\\", "/")
+}
+
 fn temp_file(file: &str) -> String {
   let tmp = std::env::temp_dir().join(file);
-  tmp.display().to_string()
+  unixify(tmp.display().to_string())
 }
 
 fn manifest_file(file: &str) -> String {
   let manifest = env!("CARGO_MANIFEST_DIR");
-  let path = format!("{manifest}/{file}");
-  if cfg!(target_os = "windows") {
-    path
-      .replace("\\t", "\\\\t")
-      .replace("\\r", "\\\\r")
-      .replace("\\n", "\\\\n")
-  } else {
-    path
-  }
+  unixify(format!("{manifest}/{file}"))
 }
 
 mod date_string {
@@ -590,7 +592,7 @@ mod rename_directory {
       .join(format!("woxi_rename_dir_test_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&base);
     std::fs::create_dir_all(base.join("src")).unwrap();
-    let b = base.to_str().unwrap();
+    let b = unixify(base.display().to_string());
 
     // Success returns the destination path (absolute in, absolute out).
     let result = interpret_with_stdout(&format!(
@@ -3960,7 +3962,7 @@ mod csv_import {
       writeln!(f, "{i},row{i},{}.5", i % 100).unwrap();
     }
     drop(f);
-    let path = path.display().to_string();
+    let path = unixify(path.display().to_string());
     assert_eq!(
       interpret(&format!(r#"d = Import["{path}"]; Dimensions[d]"#)).unwrap(),
       "{20001, 3}"
@@ -4597,7 +4599,7 @@ mod xlsx_export {
 
   fn tmp_path(name: &str) -> String {
     let dir = std::env::temp_dir();
-    dir.join(name).to_string_lossy().into_owned()
+    unixify(dir.join(name).to_string_lossy().into_owned())
   }
 
   #[test]
@@ -7047,7 +7049,7 @@ mod file_size {
   fn existing_file() {
     let path = std::env::temp_dir().join("woxi_file_size_test.txt");
     std::fs::write(&path, "hello world").unwrap();
-    let path_str = path.to_string_lossy().into_owned();
+    let path_str = super::unixify(path.display().to_string());
     assert_eq!(
       interpret(&format!(r#"FileSize["{path_str}"]"#)).unwrap(),
       "Quantity[11., Bytes]"
@@ -7069,9 +7071,8 @@ mod file_size {
       interpret(r#"FileSize["/definitely/missing/file_xyz.txt"]"#).unwrap(),
       "FileSize[/definitely/missing/file_xyz.txt]"
     );
-    let dir = std::env::temp_dir();
-    let dir_str = dir.to_string_lossy();
-    let dir_str = dir_str.trim_end_matches('/');
+    let dir = std::env::temp_dir().display().to_string();
+    let dir_str = super::unixify(dir.trim_end_matches('/').to_string());
     assert_eq!(
       interpret(&format!(r#"FileSize["{dir_str}"]"#)).unwrap(),
       format!("FileSize[{dir_str}]")
@@ -7159,7 +7160,7 @@ mod find_list_tests {
     )
     .unwrap();
     std::fs::write(base.join("second.txt"), "one alpha\ntwo beta\n").unwrap();
-    base.to_str().unwrap().to_string()
+    unixify(base.to_str().unwrap().to_string())
   }
 
   // Literal, case-sensitive substring search per line; the third argument
