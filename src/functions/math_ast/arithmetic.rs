@@ -8692,7 +8692,8 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
           // wolframscript). Differential fuzzer, seed
           // 15033838239546199922; wolframscript-verified.
           if matches!(b, Expr::Real(_)) {
-            let (p, q) = crate::functions::polynomial_ast::together::extract_num_den(a);
+            let (p, q) =
+              crate::functions::polynomial_ast::together::extract_num_den(a);
             let q_is_number = matches!(
               &q,
               Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_)

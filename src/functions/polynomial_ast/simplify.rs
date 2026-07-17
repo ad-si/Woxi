@@ -4420,8 +4420,7 @@ fn contains_zero_negative_power(expr: &Expr) -> bool {
 /// base (Times[Rational[-2,5], 1-x+x^2, (-1+x)^(-1)], a Factor rewrite of
 /// a flipped quotient) is NOT this display and must keep re-simplifying.
 fn is_rational_prefactor_quotient(e: &Expr) -> bool {
-  let factors =
-    super::together::flatten_times_args(std::slice::from_ref(e));
+  let factors = super::together::flatten_times_args(std::slice::from_ref(e));
   if factors.len() != 3 {
     return false;
   }
@@ -4499,7 +4498,9 @@ fn reciprocal_inside_sum_factor(e: &Expr) -> bool {
         matches!(right.as_ref(), Expr::Integer(n) if *n < 0)
           || has_neg_int_power(left)
       }
-      Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
         matches!(&args[1], Expr::Integer(n) if *n < 0)
           || has_neg_int_power(&args[0])
       }
