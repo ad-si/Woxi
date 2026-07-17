@@ -2039,6 +2039,12 @@ pub fn dispatch_complex_and_special(
       }
       return Some(Ok(unevaluated("PlanarAngle", args)));
     }
+    // PolygonCoordinates[poly] — the vertices of a 2-D polygon in canonical
+    // (sorted) order. Degenerate (zero-area / collinear) polygons and non-2-D
+    // vertex lists are left unevaluated, matching wolframscript.
+    "PolygonCoordinates" if args.len() == 1 => {
+      return Some(polygon_coordinates(strip_region_wrapper(&args[0]), args));
+    }
     // PolygonAngle[poly] — interior angles at each vertex;
     // PolygonAngle[poly, vertex] — interior angle at one vertex.
     "PolygonAngle" if args.len() == 1 || args.len() == 2 => {
@@ -7732,6 +7738,82 @@ fn strip_region_wrapper(expr: &Expr) -> &Expr {
   } else {
     expr
   }
+}
+
+/// PolygonCoordinates[Polygon[pts]] / [Triangle[pts]] — the polygon vertices in
+/// canonical (Sort) order. Only non-degenerate 2-D polygons are handled; the
+/// call is left unevaluated for 3-D vertices, fewer than three points, or a
+/// zero-area (collinear/duplicate) polygon, matching wolframscript.
+fn polygon_coordinates(
+  region: &Expr,
+  orig: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let uneval = || Ok(unevaluated("PolygonCoordinates", orig));
+  let pts = match region {
+    Expr::FunctionCall { name, args }
+      if (name == "Polygon" || name == "Triangle") && !args.is_empty() =>
+    {
+      match &args[0] {
+        Expr::List(pts) => pts,
+        _ => return uneval(),
+      }
+    }
+    _ => return uneval(),
+  };
+  // Every vertex must be a 2-D point.
+  if pts.len() < 3
+    || !pts
+      .iter()
+      .all(|p| matches!(p, Expr::List(c) if c.len() == 2))
+  {
+    return uneval();
+  }
+  // Shoelace area: Sum_i (x_i*y_{i+1} - x_{i+1}*y_i). Build it symbolically so
+  // the zero test is exact for integer/rational vertices.
+  let coord = |p: &Expr, i: usize| -> Expr {
+    if let Expr::List(c) = p {
+      c[i].clone()
+    } else {
+      Expr::Integer(0)
+    }
+  };
+  let mut terms = Vec::with_capacity(pts.len());
+  for i in 0..pts.len() {
+    let j = (i + 1) % pts.len();
+    let cross = Expr::FunctionCall {
+      name: "Subtract".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![coord(&pts[i], 0), coord(&pts[j], 1)].into(),
+        },
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![coord(&pts[j], 0), coord(&pts[i], 1)].into(),
+        },
+      ]
+      .into(),
+    };
+    terms.push(cross);
+  }
+  let area2 = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  })?;
+  // A zero (twice-)area means the polygon is degenerate (collinear/duplicate).
+  let degenerate = match &area2 {
+    Expr::Integer(0) => true,
+    Expr::Real(r) => r.abs() < 1e-12,
+    _ => false,
+  };
+  if degenerate {
+    return uneval();
+  }
+  // Canonical vertex order.
+  crate::evaluator::evaluate_function_call_ast(
+    "Sort",
+    &[Expr::List(pts.clone())],
+  )
 }
 
 fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {

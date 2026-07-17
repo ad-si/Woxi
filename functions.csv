@@ -3496,7 +3496,7 @@ GeodesicDilation,,🚫,,7.0,3593
 ImageGraphics,,🚫,,11.1,3593
 InverseHaversine,Inverse haversine function,✅,computation,7.0,3593
 LocalSubmit,,🚫,,11.2,3593
-PolygonCoordinates,,,,12.0,3593
+PolygonCoordinates,Vertices of a 2-D polygon in canonical sorted order (degenerate or non-2-D polygons stay unevaluated),✅,pure,12.0,3593
 RadialGradientImage,,🚫,,10.0,3593
 RadicalBox,Low-level box construct for nth root display,✅,pure,3.0,3593
 SaveConnection,,🚫,,12.0,3593

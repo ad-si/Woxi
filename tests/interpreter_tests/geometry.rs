@@ -2235,6 +2235,98 @@ mod polygon_angle {
   }
 }
 
+// PolygonCoordinates[poly] returns the vertices of a 2-D polygon in canonical
+// (Sort) order. All expected values verified against wolframscript.
+mod polygon_coordinates {
+  use super::*;
+
+  #[test]
+  fn triangle_sorted() {
+    assert_eq!(
+      interpret("PolygonCoordinates[Polygon[{{0, 0}, {1, 0}, {0, 1}}]]")
+        .unwrap(),
+      "{{0, 0}, {0, 1}, {1, 0}}"
+    );
+  }
+
+  #[test]
+  fn reorders_to_canonical() {
+    assert_eq!(
+      interpret(
+        "PolygonCoordinates[Polygon[{{2, 2}, {0, 0}, {1, 1}, {3, 0}}]]"
+      )
+      .unwrap(),
+      "{{0, 0}, {1, 1}, {2, 2}, {3, 0}}"
+    );
+  }
+
+  #[test]
+  fn triangle_head() {
+    assert_eq!(
+      interpret("PolygonCoordinates[Triangle[{{0, 0}, {2, 0}, {0, 2}}]]")
+        .unwrap(),
+      "{{0, 0}, {0, 2}, {2, 0}}"
+    );
+  }
+
+  #[test]
+  fn rational_coordinates() {
+    assert_eq!(
+      interpret("PolygonCoordinates[Polygon[{{0, 0}, {1/2, 0}, {0, 1/2}}]]")
+        .unwrap(),
+      "{{0, 0}, {0, 1/2}, {1/2, 0}}"
+    );
+  }
+
+  #[test]
+  fn symbolic_coordinates_sorted() {
+    assert_eq!(
+      interpret("PolygonCoordinates[Polygon[{{c, d}, {a, b}, {e, f}}]]")
+        .unwrap(),
+      "{{a, b}, {c, d}, {e, f}}"
+    );
+  }
+
+  #[test]
+  fn pentagon() {
+    assert_eq!(
+      interpret(
+        "PolygonCoordinates[Polygon[{{0, 0}, {4, 0}, {4, 3}, {2, 5}, {0, 3}}]]"
+      )
+      .unwrap(),
+      "{{0, 0}, {0, 3}, {2, 5}, {4, 0}, {4, 3}}"
+    );
+  }
+
+  // Degenerate (collinear / zero-area) polygons stay unevaluated.
+  #[test]
+  fn collinear_unevaluated() {
+    assert_eq!(
+      interpret("PolygonCoordinates[Polygon[{{0, 0}, {1, 0}, {2, 0}}]]")
+        .unwrap(),
+      "PolygonCoordinates[Polygon[{{0, 0}, {1, 0}, {2, 0}}]]"
+    );
+  }
+
+  #[test]
+  fn duplicate_vertex_unevaluated() {
+    assert_eq!(
+      interpret("PolygonCoordinates[Polygon[{{2, 1}, {2, 1}, {0, 0}}]]")
+        .unwrap(),
+      "PolygonCoordinates[Polygon[{{2, 1}, {2, 1}, {0, 0}}]]"
+    );
+  }
+
+  // Fewer than three vertices is not a polygon.
+  #[test]
+  fn too_few_points_unevaluated() {
+    assert_eq!(
+      interpret("PolygonCoordinates[Polygon[{{1, 2}, {3, 4}}]]").unwrap(),
+      "PolygonCoordinates[Polygon[{{1, 2}, {3, 4}}]]"
+    );
+  }
+}
+
 mod face_grids {
   use super::*;
 

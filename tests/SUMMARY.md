@@ -754,6 +754,7 @@
       - [`Point`](math/utility/Point.md)
       - [`Polygon`](math/utility/Polygon.md)
       - [`PolygonalNumber`](math/utility/PolygonalNumber.md)
+      - [`PolygonCoordinates`](math/utility/PolygonCoordinates.md)
       - [`PrimitiveRoot`](math/utility/PrimitiveRoot.md)
       - [`PrimitiveRootList`](math/utility/PrimitiveRootList.md)
       - [`Probability`](math/utility/Probability.md)

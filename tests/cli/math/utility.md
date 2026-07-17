@@ -114,6 +114,7 @@ and the membership predicate `MemberQ`.
 - [`Point`](utility/Point.md)
 - [`Polygon`](utility/Polygon.md)
 - [`PolygonalNumber`](utility/PolygonalNumber.md)
+- [`PolygonCoordinates`](utility/PolygonCoordinates.md)
 - [`PrimitiveRoot`](utility/PrimitiveRoot.md)
 - [`PrimitiveRootList`](utility/PrimitiveRootList.md)
 - [`QBinomial`](utility/QBinomial.md)
