@@ -13,7 +13,100 @@ pub fn cancel_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Cancel expects exactly 1 argument".into(),
     ));
   }
-  Ok(cancel_expr(&args[0]))
+  // A unit numerator has nothing to cancel: wolframscript returns the
+  // fraction unchanged — Cancel[1/(2 - 2*x)] stays (2 - 2*x)^(-1) and
+  // Cancel[1/((x-1)(x+1))] keeps the factored denominator. A denominator
+  // that itself contains a fraction (1/(x + 1/x)) still needs the full
+  // combine-and-cancel machinery.
+  {
+    let (num, den) = super::together::extract_num_den(&args[0]);
+    if matches!(num, Expr::Integer(1))
+      && !matches!(den, Expr::Integer(1))
+      && !contains_inner_fraction(&den)
+    {
+      return Ok(args[0].clone());
+    }
+  }
+  let result = cancel_expr(&args[0]);
+  // wolframscript presents Cancel results with the denominator content
+  // hoisted — Cancel[(x+1)/(4*x+5*x^2)] → (1+x)/(x*(4+5*x)) — and when
+  // nothing actually cancelled it preserves the input's factored
+  // denominator shape: Cancel[(x+1)/((x-1)(x+2))] keeps the product
+  // (differential fuzzer, seed 7037214829039037119; wolframscript-verified).
+  let (rn, rd) = super::together::extract_num_den(&result);
+  let (input_n, input_d) = super::together::extract_num_den(&args[0]);
+  // Only a PRODUCT denominator is worth preserving — a single Plus (or a
+  // power of one) keeps cancel_expr's own normalization, so the sign
+  // canonicalization Cancel[2/(1-2*x)^2] → 2/(-1+2*x)^2 survives.
+  let unchanged = !matches!(&rd, Expr::Integer(1))
+    && super::together::flatten_times_args(std::slice::from_ref(&input_d))
+      .len()
+      >= 2
+    && expr_to_string(&expand_and_combine(&rn))
+      == expr_to_string(&expand_and_combine(&input_n))
+    && expr_to_string(&expand_and_combine(&rd))
+      == expr_to_string(&expand_and_combine(&input_d));
+  let base = if unchanged { args[0].clone() } else { result };
+  Ok(super::together::hoist_result_denominator_content(&base))
+}
+
+/// The base of `Power[base, n]` with an integer exponent n ≥ 2 (either
+/// Expr shape), where the base is a sum.
+fn int_power_base(e: &Expr) -> Option<&Expr> {
+  let (base, n) = match e {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      match &args[1] {
+        Expr::Integer(n) => (&args[0], *n),
+        _ => return None,
+      }
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => match right.as_ref() {
+      Expr::Integer(n) => (left.as_ref(), *n),
+      _ => return None,
+    },
+    _ => return None,
+  };
+  if n >= 2 && super::expand::is_sum(base) {
+    Some(base)
+  } else {
+    None
+  }
+}
+
+/// True when the expression contains a division or negative power anywhere
+/// — i.e. a nested fraction that Cancel must still combine.
+fn contains_inner_fraction(e: &Expr) -> bool {
+  match e {
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      ..
+    } => true,
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      matches!(right.as_ref(), Expr::Integer(n) if *n < 0)
+        || contains_inner_fraction(left)
+        || contains_inner_fraction(right)
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      matches!(&args[1], Expr::Integer(n) if *n < 0)
+        || args.iter().any(contains_inner_fraction)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_inner_fraction(left) || contains_inner_fraction(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_inner_fraction(operand),
+    Expr::FunctionCall { args, .. } | Expr::List(args) => {
+      args.iter().any(contains_inner_fraction)
+    }
+    _ => false,
+  }
 }
 
 pub fn cancel_expr(expr: &Expr) -> Expr {
@@ -36,6 +129,25 @@ fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {
   // Look for division (handles both BinaryOp::Divide and Times[..., Power[..., -1]])
   let (raw_num, raw_den) = super::together::extract_num_den(expr);
   if !matches!(&raw_den, Expr::Integer(1)) {
+    // A keep-sign caller (D) with a POWER-of-sum denominator keeps the
+    // composed chain-rule shape when only integer content would cancel:
+    // wolframscript's D[3/(2+4x-4x^2), x] stays
+    // (-3*(4 - 8*x))/(2 + 4*x - 4*x^2)^2, never dividing the shared 4
+    // through the squared denominator (differential fuzzer, seed
+    // 15005068122302321648). A genuine polynomial gcd (D[Log[x^2], x] →
+    // 2/x, (x^2+2x+1)/(x+1)^2 → 1) still cancels.
+    if !canonicalize_sign
+      && let Some(pow_base) = int_power_base(&raw_den)
+      && let num_exp = expand_and_combine(&raw_num)
+      && let Some(var) = find_single_variable_both(&num_exp, pow_base)
+      && let (Some(nc), Some(bc)) = (
+        extract_poly_coeffs(&num_exp, &var),
+        extract_poly_coeffs(pow_base, &var),
+      )
+      && poly_gcd(&nc, &bc).map(|g| g.len() <= 1).unwrap_or(false)
+    {
+      return expr.clone();
+    }
     {
       let num = expand_and_combine(&raw_num);
       let den = expand_and_combine(&raw_den);

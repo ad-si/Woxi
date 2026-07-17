@@ -116,12 +116,32 @@ pub fn expr_to_head_args(expr: &Expr) -> Option<(String, Vec<Expr>)> {
 /// Emit `<F>::normal: Nonatomic expression expected at position 1 in
 /// <F>[expr].` for First/Last/Rest/Most applied to an atom.
 fn nonatomic_message(fname: &str, expr: &Expr) {
-  crate::emit_message(&format!(
-    "{}::normal: Nonatomic expression expected at position 1 in {}[{}].",
+  crate::functions::list_helpers_ast::sorting::emit_nonatomic_normal_message(
     fname,
-    fname,
-    crate::syntax::format_expr(expr, crate::syntax::ExprForm::Output)
-  ));
+    std::slice::from_ref(expr),
+  );
+}
+
+/// Short-circuit for the FunctionCall-shaped atoms (Rational, Complex —
+/// AtomQ[5/3] = True): element access must not read their internal
+/// arguments. Returns the unevaluated call (or the default when given),
+/// emitting `::normal` like any other atom.
+fn atomic_arg_result(
+  fname: &str,
+  list: &Expr,
+  default: Option<&Expr>,
+) -> Option<Result<Expr, InterpreterError>> {
+  if !crate::functions::list_helpers_ast::sorting::is_atomic_arg(list) {
+    return None;
+  }
+  if let Some(d) = default {
+    return Some(Ok(d.clone()));
+  }
+  nonatomic_message(fname, list);
+  Some(Ok(Expr::FunctionCall {
+    name: fname.to_string(),
+    args: vec![list.clone()].into(),
+  }))
 }
 
 /// If `expr` is a one-dimensional SparseArray, return its dense vector form
@@ -149,6 +169,9 @@ pub fn first_ast(
 ) -> Result<Expr, InterpreterError> {
   if let Some(dense) = dense_1d_sparse(list) {
     return first_ast(&dense, default);
+  }
+  if let Some(res) = atomic_arg_result("First", list, default) {
+    return res;
   }
   match list {
     Expr::Association(pairs) => {
@@ -270,6 +293,9 @@ pub fn last_ast(
   if let Some(dense) = dense_1d_sparse(list) {
     return last_ast(&dense, default);
   }
+  if let Some(res) = atomic_arg_result("Last", list, default) {
+    return res;
+  }
   match list {
     Expr::Association(pairs) => {
       if pairs.is_empty() {
@@ -383,6 +409,9 @@ pub fn last_ast(
 
 /// AST-based Rest: return all but first element.
 pub fn rest_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  if let Some(res) = atomic_arg_result("Rest", list, None) {
+    return res;
+  }
   let norest = || {
     crate::emit_message(&format!(
       "Rest::norest: Cannot take Rest of expression {} with length zero.",
@@ -436,6 +465,9 @@ pub fn rest_ast(list: &Expr) -> Result<Expr, InterpreterError> {
 
 /// AST-based Most: return all but last element.
 pub fn most_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  if let Some(res) = atomic_arg_result("Most", list, None) {
+    return res;
+  }
   let nomost = || {
     crate::emit_message(&format!(
       "Most::nomost: Cannot take Most of expression {} with length zero.",

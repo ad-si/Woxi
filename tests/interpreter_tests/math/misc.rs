@@ -1957,3 +1957,182 @@ mod radical_coefficient_merge {
     );
   }
 }
+
+mod canonical_order_radicals {
+  use super::*;
+
+  // Canonical order strips number-literal coefficients before comparing
+  // and only breaks a tie on the symbolic part by coefficient, ascending
+  // (differential-fuzzer regression, seed 8305606480288499401; all
+  // wolframscript-verified).
+  #[test]
+  fn order_strips_numeric_coefficients() {
+    assert_eq!(interpret("Order[2*Sqrt[2], Sqrt[11]]").unwrap(), "1");
+    assert_eq!(interpret("Order[-Sqrt[11], 2*Sqrt[6]]").unwrap(), "-1");
+    assert_eq!(interpret("Order[2*x, y]").unwrap(), "1");
+    assert_eq!(interpret("Order[2*x, x]").unwrap(), "-1");
+    assert_eq!(interpret("Order[-x, x]").unwrap(), "1");
+  }
+
+  // Powers of integer bases order by base ascending, then exponent
+  // ascending (wolframscript-verified).
+  #[test]
+  fn integer_base_powers_order_numerically() {
+    assert_eq!(interpret("Order[Sqrt[2], Sqrt[11]]").unwrap(), "1");
+    assert_eq!(interpret("Order[2^(1/3), Sqrt[2]]").unwrap(), "1");
+    assert_eq!(interpret("Order[Sqrt[2], 2^(2/3)]").unwrap(), "1");
+    assert_eq!(
+      interpret("Sort[{Sqrt[11], 2*Sqrt[2]}]").unwrap(),
+      "{2*Sqrt[2], Sqrt[11]}"
+    );
+    assert_eq!(interpret("Sort[{y, 2*x}]").unwrap(), "{2*x, y}");
+  }
+
+  // Times orders Plus factors by their terms from the last (canonically
+  // greatest) one backward, comparing coefficient-stripped terms first
+  // (differential-fuzzer regression, seed 8305606480288499401; all
+  // wolframscript-verified).
+  #[test]
+  fn radical_sum_factors_order() {
+    assert_eq!(
+      interpret("InputForm[(1 + Sqrt[8]) (Sqrt[11] - Sqrt[5])]").unwrap(),
+      "InputForm[(1 + 2*Sqrt[2])*(-Sqrt[5] + Sqrt[11])]"
+    );
+    assert_eq!(
+      interpret("InputForm[(Sqrt[5] - Sqrt[11]) (2 Sqrt[6] - 2 Sqrt[2])]")
+        .unwrap(),
+      "InputForm[(-2*Sqrt[2] + 2*Sqrt[6])*(Sqrt[5] - Sqrt[11])]"
+    );
+    assert_eq!(
+      interpret(
+        "InputForm[Numerator[Times[Plus[Sqrt[24], Times[-1, Sqrt[8]]], \
+         Subtract[Times[-1, Sqrt[11]], Sqrt[5]]]]]"
+      )
+      .unwrap(),
+      "InputForm[(-2*Sqrt[2] + 2*Sqrt[6])*(-Sqrt[5] - Sqrt[11])]"
+    );
+    // Coefficient tie-breaks and mixed atom/radical sums keep their
+    // established order.
+    assert_eq!(
+      interpret("InputForm[(1 + 2 Sqrt[2]) (2 + Sqrt[2])]").unwrap(),
+      "InputForm[(2 + Sqrt[2])*(1 + 2*Sqrt[2])]"
+    );
+    assert_eq!(
+      interpret("InputForm[(1 + Sqrt[7]) (Sqrt[2] + Sqrt[3])]").unwrap(),
+      "InputForm[(Sqrt[2] + Sqrt[3])*(1 + Sqrt[7])]"
+    );
+  }
+}
+
+mod expand_radical_terms {
+  use super::*;
+
+  // Expand re-runs radical-bearing terms through Times so numeric
+  // radicals merge and take their canonical position (differential
+  // fuzzer, seed 6493139821400918028; all wolframscript-verified).
+  #[test]
+  fn radical_products_merge() {
+    assert_eq!(
+      interpret("Expand[(Sqrt[26] - Sqrt[28]) (Sqrt[21] Sqrt[3])]").unwrap(),
+      "-42 + 3*Sqrt[182]"
+    );
+    assert_eq!(
+      interpret("Expand[(Sqrt[2] + Sqrt[3]) (Sqrt[5] + Sqrt[7])]").unwrap(),
+      "Sqrt[10] + Sqrt[14] + Sqrt[15] + Sqrt[21]"
+    );
+    assert_eq!(
+      interpret("Expand[(x + Sqrt[2]) (x + Sqrt[8])]").unwrap(),
+      "4 + 3*Sqrt[2]*x + x^2"
+    );
+    assert_eq!(
+      interpret("Expand[(1 + Sqrt[2])^2]").unwrap(),
+      "3 + 2*Sqrt[2]"
+    );
+  }
+}
+
+mod simplify_radical_content {
+  use super::*;
+
+  // Simplify follows the exact SimplifyCount for radical sums: a common
+  // radical factor extracts on a strict win, numeric content extracts on
+  // a strict win or a unit-cofactor tie, everything else stays expanded
+  // (differential fuzzer, seeds 14799314084710522344 and
+  // 12449481718952209155; all wolframscript-verified).
+  #[test]
+  fn radical_and_content_extraction() {
+    assert_eq!(
+      interpret("Simplify[-Sqrt[8] - (Sqrt[2] - Sqrt[10])]").unwrap(),
+      "Sqrt[2]*(-3 + Sqrt[5])"
+    );
+    assert_eq!(
+      interpret("Simplify[Sqrt[4]*(-4*Sqrt[30]) - (-2)*Sqrt[8]]").unwrap(),
+      "4*Sqrt[2] - 8*Sqrt[30]"
+    );
+    assert_eq!(
+      interpret("Simplify[Sqrt[2] + Sqrt[10]]").unwrap(),
+      "Sqrt[2] + Sqrt[10]"
+    );
+    assert_eq!(
+      interpret("Simplify[9 + 9*Sqrt[19]]").unwrap(),
+      "9*(1 + Sqrt[19])"
+    );
+  }
+}
+
+mod quotient_term_plus_order {
+  use super::*;
+
+  // Rational terms over reciprocal-sum denominators order by their
+  // greatest base: the term missing the canonically greatest base comes
+  // first; on a shared leading base the exponents compare ascending
+  // (differential fuzzer, seed 4040222378236757762; all
+  // wolframscript-verified).
+  #[test]
+  fn quotient_rule_shape() {
+    assert_eq!(
+      interpret(
+        "D[(5 - 2 x + 4 x^2)/(-5 - 4 x + 4 x^2), x]"
+      )
+      .unwrap(),
+      "(-2 + 8*x)/(-5 - 4*x + 4*x^2) - \
+       ((-4 + 8*x)*(5 - 2*x + 4*x^2))/(-5 - 4*x + 4*x^2)^2"
+    );
+    assert_eq!(
+      interpret(
+        "(-2 + 8 x)/(-5 - 4 x + 4 x^2) - \
+         (-4 + 8 x)/(-5 - 4 x + 4 x^2)^2"
+      )
+      .unwrap(),
+      "-((-4 + 8*x)/(-5 - 4*x + 4*x^2)^2) + (-2 + 8*x)/(-5 - 4*x + 4*x^2)"
+    );
+    assert_eq!(
+      interpret(
+        "(-2 + 8 x)/(-5 - 4 x + 4 x^2) - \
+         (5 - 2 x + 4 x^2)/(-5 - 4 x + 4 x^2)^2"
+      )
+      .unwrap(),
+      "(-2 + 8*x)/(-5 - 4*x + 4*x^2) - (5 - 2*x + 4*x^2)/(-5 - 4*x + 4*x^2)^2"
+    );
+    // The Apart tail: polynomial terms first, the reciprocal term last.
+    assert_eq!(
+      interpret("Apart[(1 + 5 x - 3 x^2 + 3 x^3)/(1 - 2 x)]").unwrap(),
+      "-17/8 + (3*x)/4 - (3*x^2)/2 - 25/(8*(-1 + 2*x))"
+    );
+  }
+
+  // D keeps a chain-rule reciprocal composed — no integer-content
+  // cancellation through the squared denominator — while still cancelling
+  // shared SYMBOLIC factors (differential fuzzer, seed
+  // 15005068122302321648; all wolframscript-verified).
+  #[test]
+  fn d_reciprocal_keeps_composed_shape() {
+    assert_eq!(
+      interpret("D[3/(2 + 4 x - 4 x^2), x]").unwrap(),
+      "(-3*(4 - 8*x))/(2 + 4*x - 4*x^2)^2"
+    );
+    assert_eq!(interpret("D[4/(2 + 4 x), x]").unwrap(), "-16/(2 + 4*x)^2");
+    assert_eq!(interpret("D[2/(2 + 2 x), x]").unwrap(), "-4/(2 + 2*x)^2");
+    assert_eq!(interpret("D[Log[x^2], x]").unwrap(), "2/x");
+  }
+}

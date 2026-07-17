@@ -5322,6 +5322,53 @@ mod rationalize {
     assert_eq!(interpret("Rationalize[3.14159]").unwrap(), "314159/100000");
   }
 
+  // The default acceptance: the first continued-fraction convergent h/k
+  // that matches x to machine precision with |h|*k ≤ 2^39, plus the
+  // ambiguity guard for inputs suspiciously close to a half or third
+  // (differential fuzzer, seed 15336548261066338105; all
+  // wolframscript-verified).
+  #[test]
+  fn machine_default_acceptance() {
+    // A float arithmetic result within an ulp of a modest rational.
+    assert_eq!(
+      interpret("Rationalize[1/-41 + -17.2/-7]").unwrap(),
+      "3491/1435"
+    );
+    assert_eq!(interpret("Rationalize[0.1 + 0.2]").unwrap(), "3/10");
+    // Opaque machine reals stay Real.
+    assert_eq!(
+      interpret("Rationalize[3.141592653589793]").unwrap(),
+      "3.141592653589793"
+    );
+    assert_eq!(interpret("Rationalize[1.234567]").unwrap(), "1.234567");
+    // Size boundary: |h|*k just under/over the bound.
+    assert_eq!(
+      interpret("Rationalize[N[123456/999983]]").unwrap(),
+      "123456/999983"
+    );
+    assert_eq!(
+      interpret("Rationalize[N[999999/1000003]]").unwrap(),
+      "0.999996000012"
+    );
+    // Exact binary fractions follow the same size bound.
+    assert_eq!(
+      interpret("Rationalize[N[1/2^31]]").unwrap(),
+      "1/2147483648"
+    );
+    assert_eq!(
+      interpret("Rationalize[N[1/2^40]]").unwrap(),
+      "9.094947017729282*^-13"
+    );
+    assert_eq!(interpret("Rationalize[1234567.5]").unwrap(), "2469135/2");
+    // Ambiguity guard: near a half without being one.
+    assert_eq!(interpret("Rationalize[0.499999]").unwrap(), "0.499999");
+    // ...but nearness to fifths and beyond is fine.
+    assert_eq!(
+      interpret("Rationalize[0.199999]").unwrap(),
+      "199999/1000000"
+    );
+  }
+
   #[test]
   fn exact_fraction() {
     assert_eq!(interpret("Rationalize[0.25]").unwrap(), "1/4");

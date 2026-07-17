@@ -266,6 +266,47 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
     (Some(_), None) => std::cmp::Ordering::Less, // numbers before non-numbers
     (None, Some(_)) => std::cmp::Ordering::Greater,
     (None, None) => {
+      // Number-literal coefficients strip off before comparing — Wolfram's
+      // canonical order gives Sort[{Sqrt[11], 2*Sqrt[2]}] =
+      // {2*Sqrt[2], Sqrt[11]} — and only break a tie on the symbolic
+      // part, ascending (Sort[{2*x, x}] = {x, 2*x}).
+      {
+        let (ca, ra) = numeric_coeff_and_rest_expr(a);
+        let (cb, rb) = numeric_coeff_and_rest_expr(b);
+        if ra.is_some() || rb.is_some() {
+          let ord =
+            canonical_cmp(ra.as_ref().unwrap_or(a), rb.as_ref().unwrap_or(b));
+          if ord != std::cmp::Ordering::Equal {
+            return ord;
+          }
+          if ca != cb {
+            return if ca < cb {
+              std::cmp::Ordering::Less
+            } else {
+              std::cmp::Ordering::Greater
+            };
+          }
+        }
+      }
+      // Powers of integer bases order by base then exponent, ascending
+      // (Sort[{Sqrt[11], Sqrt[2]}] = {Sqrt[2], Sqrt[11]}); the
+      // head-name/argument comparison below would order 11 before 2.
+      if let (Some((ba, ea)), Some((bb, eb))) =
+        (int_base_power(a), int_base_power(b))
+      {
+        match ba.cmp(&bb) {
+          std::cmp::Ordering::Equal => {}
+          other => return other,
+        }
+        if ea != eb {
+          return if ea < eb {
+            std::cmp::Ordering::Less
+          } else {
+            std::cmp::Ordering::Greater
+          };
+        }
+        return std::cmp::Ordering::Equal;
+      }
       // Handle compound expressions (lists, function calls) element-wise
       match (a, b) {
         // Both lists: Wolfram's canonical order compares by length first, then
@@ -520,15 +561,12 @@ pub fn ordering_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       assoc_values = pairs.iter().map(|(_, v)| v.clone()).collect();
       &assoc_values
     }
-    Expr::FunctionCall { args: fc_args, .. } => fc_args.as_slice(),
+    // Rational/Complex are atoms — their internal args have no ordering.
+    Expr::FunctionCall { args: fc_args, .. } if !is_atomic_arg(&args[0]) => {
+      fc_args.as_slice()
+    }
     _ => {
-      crate::emit_message(&format!(
-        "Ordering::normal: Nonatomic expression expected at position 1 in {}.",
-        crate::syntax::format_expr(
-          &unevaluated("Ordering", args),
-          crate::syntax::ExprForm::Output
-        )
-      ));
+      emit_nonatomic_normal_message("Ordering", args);
       return Ok(unevaluated("Ordering", args));
     }
   };
@@ -884,7 +922,9 @@ pub fn maximal_by_ast(
 /// AST-based Sort: sort a list.
 /// Whether `e` is an atomic argument for which list functions emit
 /// `::normal` (numbers, strings, symbols, constants). Lists, function calls,
-/// and associations are nonatomic and operable.
+/// and associations are nonatomic and operable. Rational and Complex are
+/// atoms despite their FunctionCall storage (AtomQ[5/3] = True), so list
+/// functions must not operate on their internal arguments.
 pub fn is_atomic_arg(e: &Expr) -> bool {
   matches!(
     e,
@@ -895,19 +935,23 @@ pub fn is_atomic_arg(e: &Expr) -> bool {
       | Expr::String(_)
       | Expr::Identifier(_)
       | Expr::Constant(_)
-  )
+  ) || matches!(e, Expr::FunctionCall { name, args }
+      if (name == "Rational" || name == "Complex") && args.len() == 2)
+    || crate::functions::predicate_ast::is_complex_number(e)
 }
 
 /// Emit `<F>::normal: Nonatomic expression expected at position 1 in <call>.`,
-/// matching wolframscript for list functions applied to an atom.
+/// matching wolframscript for list functions applied to an atom. The call
+/// renders in 2D OutputForm — a rational argument spans three lines with the
+/// message text on the baseline, exactly as wolframscript prints it.
 pub fn emit_nonatomic_normal_message(name: &str, args: &[Expr]) {
-  crate::emit_message(&format!(
-    "{}::normal: Nonatomic expression expected at position 1 in {}.",
-    name,
-    crate::syntax::format_expr(
-      &unevaluated(name, args),
-      crate::syntax::ExprForm::Output
-    )
+  crate::emit_message(&crate::syntax::format_message_with_expr(
+    &format!(
+      "{}::normal: Nonatomic expression expected at position 1 in ",
+      name
+    ),
+    &unevaluated(name, args),
+    ".",
   ));
 }
 
@@ -952,7 +996,9 @@ pub fn sort_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       sorted.sort_by(|a, b| canonical_cmp(&a.1, &b.1));
       Ok(Expr::Association(sorted))
     }
-    Expr::FunctionCall { name, args } => {
+    // Rational/Complex are atoms — their internal args must not sort
+    // (Sort[5/3] emits Sort::normal, it does not become 3/5).
+    Expr::FunctionCall { name, args } if !is_atomic_arg(list) => {
       let mut sorted = args.clone();
       sorted.sort_by(canonical_cmp);
       Ok(Expr::FunctionCall {
@@ -1125,14 +1171,56 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
     return 0;
   }
 
-  // Terms that are the same symbolic monomial times different number-literal
-  // coefficients order by coefficient ascending: Order[-6*x^2, -5*x^2] = 1,
-  // Order[-x, x] = 1, Order[2*x, x] = -1 (wolframscript-verified).
+  // Wolfram's canonical order compares terms with their number-literal
+  // coefficients stripped first — Order[2*Sqrt[2], Sqrt[11]] = 1 because
+  // Sqrt[2] < Sqrt[11], Order[-Sqrt[11], 2*Sqrt[6]] = -1 — and only breaks
+  // a tie on the symbolic part by the coefficients, ascending:
+  // Order[-6*x^2, -5*x^2] = 1, Order[-x, x] = 1, Order[2*x, x] = -1
+  // (all wolframscript-verified).
   {
-    let (ca, ra) = numeric_coeff_and_rest(a);
-    let (cb, rb) = numeric_coeff_and_rest(b);
-    if ca != cb && ra == rb {
-      return if ca < cb { 1 } else { -1 };
+    let (ca, ra) = numeric_coeff_and_rest_expr(a);
+    let (cb, rb) = numeric_coeff_and_rest_expr(b);
+    if ra.is_some() || rb.is_some() {
+      let ord = compare_exprs(ra.as_ref().unwrap_or(a), rb.as_ref().unwrap_or(b));
+      if ord != 0 {
+        return ord;
+      }
+      if ca != cb {
+        return if ca < cb { 1 } else { -1 };
+      }
+      // Coefficient and symbolic part both tie (e.g. 2*x vs 2.*x): fall
+      // through so the structural comparison below can still distinguish
+      // numerically-equal-but-distinct coefficient types.
+    }
+  }
+
+  // Two powers of integer bases with numeric exponents compare by base
+  // ascending, then exponent ascending: Order[Sqrt[2], Sqrt[11]] = 1,
+  // Order[2^(1/3), Sqrt[2]] = 1, Order[Sqrt[2], 2^(2/3)] = 1 (all
+  // wolframscript-verified). The string comparisons below would order
+  // "11" before "2" lexicographically.
+  if let (Some((ba, ea)), Some((bb, eb))) =
+    (int_base_power(a), int_base_power(b))
+  {
+    if ba != bb {
+      return if ba < bb { 1 } else { -1 };
+    }
+    if ea != eb {
+      return if ea < eb { 1 } else { -1 };
+    }
+    return 0;
+  }
+
+  // Powers with the same symbolic base compare by exponent, canonically:
+  // Order[E^(-2*t), E^(-1/9*t^2)] = 1 because the exponent -2*t precedes
+  // -1/9*t^2 (degree ascending; wolframscript-verified). The string
+  // comparison below would order "E^(-1/9*t^2)" first on '1' < '2'.
+  if let (Some((ba, ea)), Some((bb, eb))) = (power_parts(a), power_parts(b))
+    && crate::syntax::expr_to_string(&ba) == crate::syntax::expr_to_string(&bb)
+  {
+    let ord = compare_exprs(&ea, &eb);
+    if ord != 0 {
+      return ord;
     }
   }
 
@@ -1251,10 +1339,61 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
   }
 }
 
+/// A power of an integer base with a numeric exponent — Sqrt[2],
+/// 2^(1/3), Power[5, -1] — as `(base, exponent)`. These compare by base
+/// ascending then exponent ascending in Wolfram's canonical order.
+fn int_base_power(e: &Expr) -> Option<(i128, f64)> {
+  use crate::functions::math_ast::try_eval_to_f64_with_infinity;
+  let (base, exp) = match e {
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      (args[0].clone(), Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+      })
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (args[0].clone(), args[1].clone())
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => ((**left).clone(), (**right).clone()),
+    _ => return None,
+  };
+  let Expr::Integer(b) = base else { return None };
+  let e = try_eval_to_f64_with_infinity(&exp)?;
+  Some((b, e))
+}
+
+/// Decompose a power expression — Power[b, e] (either Expr shape) or
+/// Sqrt[b] — into `(base, exponent)`. Non-power expressions yield None.
+fn power_parts(e: &Expr) -> Option<(Expr, Expr)> {
+  match e {
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      Some((args[0].clone(), Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+      }))
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Some((args[0].clone(), args[1].clone()))
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => Some(((**left).clone(), (**right).clone())),
+    _ => None,
+  }
+}
+
 /// Split a term into its leading number-literal coefficient and the
-/// canonical string of the remaining symbolic factors. Terms without a
-/// literal coefficient count as coefficient 1 over the whole expression.
-fn numeric_coeff_and_rest(e: &Expr) -> (f64, String) {
+/// remaining symbolic factors. Returns `(coefficient, Some(rest))` when a
+/// literal coefficient (or unary minus) was actually stripped, and
+/// `(1.0, None)` when the term carries no literal coefficient — so callers
+/// can tell `x` (nothing stripped) apart from `1.0*x`.
+fn numeric_coeff_and_rest_expr(e: &Expr) -> (f64, Option<Expr>) {
   use crate::functions::math_ast::try_eval_to_f64_with_infinity;
   let literal = |x: &Expr| -> Option<f64> {
     match x {
@@ -1275,8 +1414,8 @@ fn numeric_coeff_and_rest(e: &Expr) -> (f64, String) {
       op: UnaryOperator::Minus,
       operand,
     } => {
-      let (c, r) = numeric_coeff_and_rest(operand);
-      (-c, r)
+      let (c, r) = numeric_coeff_and_rest_expr(operand);
+      (-c, Some(r.unwrap_or_else(|| (**operand).clone())))
     }
     Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
       if let Some(c) = literal(&args[0]) {
@@ -1285,9 +1424,9 @@ fn numeric_coeff_and_rest(e: &Expr) -> (f64, String) {
         } else {
           unevaluated("Times", &args[1..])
         };
-        (c, crate::syntax::expr_to_string(&rest))
+        (c, Some(rest))
       } else {
-        (1.0, crate::syntax::expr_to_string(e))
+        (1.0, None)
       }
     }
     Expr::BinaryOp {
@@ -1296,13 +1435,13 @@ fn numeric_coeff_and_rest(e: &Expr) -> (f64, String) {
       right,
     } => {
       if let Some(c) = literal(left) {
-        let (cr, r) = numeric_coeff_and_rest(right);
-        (c * cr, r)
+        let (cr, r) = numeric_coeff_and_rest_expr(right);
+        (c * cr, Some(r.unwrap_or_else(|| (**right).clone())))
       } else {
-        (1.0, crate::syntax::expr_to_string(e))
+        (1.0, None)
       }
     }
-    _ => (1.0, crate::syntax::expr_to_string(e)),
+    _ => (1.0, None),
   }
 }
 

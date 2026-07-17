@@ -13039,6 +13039,36 @@ fn expr_to_textbox(expr: &Expr) -> TextBox {
       TextBox::hconcat(&parts)
     }
 
+    // Generic FunctionCall: recurse into the arguments so fractions render
+    // 2D (wolframscript: f[{-(5/3), Pi}] spans three lines). Restricted to
+    // heads with the default bracket rendering — a head with a special 1D
+    // display (Rule → `a -> b`, …) keeps its flat form.
+    Expr::FunctionCall { name, args } => {
+      let flat = expr_to_output(expr);
+      let default_flat = format!(
+        "{}[{}]",
+        name,
+        args
+          .iter()
+          .map(expr_to_output)
+          .collect::<Vec<_>>()
+          .join(", ")
+      );
+      if flat != default_flat {
+        return TextBox::atom(&flat);
+      }
+      let mut parts: Vec<TextBox> = Vec::new();
+      parts.push(TextBox::atom(&format!("{}[", name)));
+      for (i, a) in args.iter().enumerate() {
+        if i > 0 {
+          parts.push(TextBox::atom(", "));
+        }
+        parts.push(expr_to_textbox(a));
+      }
+      parts.push(TextBox::atom("]"));
+      TextBox::hconcat(&parts)
+    }
+
     // For everything else, fall back to 1D rendering
     _ => TextBox::atom(&expr_to_output(expr)),
   }
@@ -13496,6 +13526,28 @@ fn render_times_textbox(args: &[Expr]) -> TextBox {
 pub fn expr_to_output_form_2d(expr: &Expr) -> String {
   let tb = expr_to_textbox(expr);
   tb.to_string()
+}
+
+/// Compose a message line around an expression rendered in 2D OutputForm,
+/// baseline-aligning the surrounding text. wolframscript prints message
+/// arguments in OutputForm, so a rational like -5/3 spans three lines with
+/// the message text on the middle (baseline) line:
+/// ```text
+///                                                    5
+/// Select::normal: ... in Select[EvenQ, {-15.1, Pi, -(-)}].
+///                                                    3
+/// ```
+pub fn format_message_with_expr(
+  prefix: &str,
+  expr: &Expr,
+  suffix: &str,
+) -> String {
+  TextBox::hconcat(&[
+    TextBox::atom(prefix),
+    expr_to_textbox(expr),
+    TextBox::atom(suffix),
+  ])
+  .to_string()
 }
 
 /// Convert a string containing Wolfram box-syntax Unicode markers to the
