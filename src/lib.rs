@@ -925,6 +925,22 @@ pub fn get_captured_graphics() -> Option<String> {
   CAPTURED_GRAPHICS.with(|buffer| buffer.borrow().last().cloned())
 }
 
+/// Removes the most recent captured-graphics entry equal to `svg`.
+///
+/// `Export` uses this so that writing a graphic to a file does not also
+/// surface that graphic as inline output in visual frontends (playground,
+/// woxi-studio). Evaluating the exported value (e.g. `BarChart[...]`) pushes
+/// its SVG into the capture buffer before `Export` runs; this drops exactly
+/// that entry while leaving any unrelated captured graphics untouched.
+pub fn remove_captured_graphics(svg: &str) {
+  CAPTURED_GRAPHICS.with(|buffer| {
+    let mut buf = buffer.borrow_mut();
+    if let Some(pos) = buf.iter().rposition(|s| s == svg) {
+      buf.remove(pos);
+    }
+  });
+}
+
 /// Gets all captured graphics SVGs
 fn get_all_captured_graphics() -> Vec<String> {
   CAPTURED_GRAPHICS.with(|buffer| buffer.borrow().clone())

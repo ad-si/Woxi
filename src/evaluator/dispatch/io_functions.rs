@@ -529,6 +529,15 @@ pub fn dispatch_io_functions(
         .map(|e| e.to_ascii_uppercase());
       let fmt = explicit_fmt.or(ext_fmt).unwrap_or_default();
 
+      // Exporting a graphic writes it to the file; it must not also appear as
+      // inline output in visual frontends (playground, woxi-studio). Evaluating
+      // `args[1]` (e.g. `BarChart[...]`) already pushed its SVG into the capture
+      // buffer, so drop that entry. The `-Graphics-` placeholder case is handled
+      // in the generic branch below, after its SVG is read from the buffer.
+      if let Expr::Graphics { svg, .. } = &args[1] {
+        crate::remove_captured_graphics(svg);
+      }
+
       // Handle Image export.  Vector formats (SVG) wrap the raster in a
       // base64-encoded PNG <image> element so the file is a valid SVG;
       // every other format is written as a raster file by the image crate.
@@ -744,7 +753,11 @@ pub fn dispatch_io_functions(
               "Export: no graphics to export".into(),
             )
           }) {
-            Ok(v) => v,
+            Ok(v) => {
+              // Written to the file, so don't also render it inline.
+              crate::remove_captured_graphics(&v);
+              v
+            }
             Err(e) => return Some(Err(e)),
           }
         }
@@ -788,6 +801,15 @@ pub fn dispatch_io_functions(
         .map(|e| e.to_ascii_uppercase());
       let fmt = explicit_fmt.or(ext_fmt).unwrap_or_default();
       let data = &args[1];
+
+      // Exporting a graphic writes it to the file; it must not also appear as
+      // inline output in the playground. Evaluating `args[1]` already pushed its
+      // SVG into the capture buffer, so drop that entry. The `-Graphics-`
+      // placeholder case is handled in the generic branch below, after its SVG
+      // is read from the buffer.
+      if let Expr::Graphics { svg, .. } = data {
+        crate::remove_captured_graphics(svg);
+      }
 
       // Set to Some(format) when `bytes` is SVG the host must rasterize in the
       // browser (graphics → PNG/JPEG), rather than ready-to-save file bytes.
@@ -891,7 +913,10 @@ pub fn dispatch_io_functions(
           let content = match data {
             Expr::Graphics { svg, .. } => svg.clone(),
             Expr::Identifier(s) if s == "-Graphics-" || s == "-Graphics3D-" => {
-              crate::get_captured_graphics().unwrap_or_default()
+              let svg = crate::get_captured_graphics().unwrap_or_default();
+              // Written to the file, so don't also render it inline.
+              crate::remove_captured_graphics(&svg);
+              svg
             }
             Expr::String(s) => s.clone(),
             Expr::List(items) => {

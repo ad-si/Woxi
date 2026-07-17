@@ -612,6 +612,32 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_export_graphic_does_not_render_inline() {
+    // Exporting a graphic (e.g. BarChart) to a file writes the file and
+    // returns the filename; it must NOT also surface the chart as inline
+    // graphics in visual frontends (playground, woxi-studio). Evaluating the
+    // second argument populates the capture buffer, so Export has to drop that
+    // entry.
+    clear_state();
+    let path = std::env::temp_dir().join("woxi_test_export_barchart.svg");
+    let code = format!(
+      "Export[\"{}\", BarChart[{{5, 8, 3, 9, 6, 4, 7}}]]",
+      path.display()
+    );
+    let r = interpret_with_stdout(&code).unwrap();
+    assert_eq!(r.result, path.display().to_string());
+    assert!(
+      r.graphics.is_none(),
+      "Export should not surface inline graphics, got:\n{:?}",
+      r.graphics
+    );
+    // The file itself must still contain the rendered chart.
+    let written = std::fs::read_to_string(&path).unwrap();
+    assert!(written.contains("<svg"), "exported file should be an SVG");
+    std::fs::remove_file(&path).ok();
+  }
+
+  #[test]
   fn test_column_with_nested_tableform_renders_as_graphics() {
     // In visual mode (playground / woxi-studio), a Column containing a
     // TableForm must pre-render the table as a sub-SVG instead of falling
