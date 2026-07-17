@@ -166,15 +166,11 @@ pub fn dataset_query(
 ) -> Result<Expr, crate::InterpreterError> {
   let data = &func_args[0];
 
-  // Dataset[list_of_assocs][All, "column"] — extract a column
-  if args.len() == 2
-    && let Expr::Identifier(row_spec) = &args[0]
-    && row_spec == "All"
-    && let Expr::List(rows) = data
-  {
-    let col_key = &args[1];
+  // Extract the values of one column from a list of association rows, filling
+  // Missing["KeyAbsent", key] where a row lacks the key (matches Dataset).
+  let extract_column = |rows: &[Expr], col_key: &Expr| -> Vec<Expr> {
     let col_key_str = crate::syntax::expr_to_string(col_key);
-    let values: Vec<Expr> = rows
+    rows
       .iter()
       .map(|row| {
         if let Expr::Association(pairs) = row {
@@ -190,8 +186,33 @@ pub fn dataset_query(
             .into(),
         }
       })
-      .collect();
+      .collect()
+  };
+
+  // Dataset[list_of_assocs][All, "column"] — extract a column
+  if args.len() == 2
+    && let Expr::Identifier(row_spec) = &args[0]
+    && row_spec == "All"
+    && let Expr::List(rows) = data
+  {
+    let values = extract_column(rows, &args[1]);
     return Ok(dataset_ast(&[Expr::List(values.into())]));
+  }
+
+  // Dataset[list_of_assocs][agg, "column"] — aggregate a single column with a
+  // scalar-valued function such as Total, Mean, Max, Min, Median, … The
+  // aggregator is applied to the column's values and the scalar result is
+  // returned bare (Dataset unwraps atomic query results).
+  if args.len() == 2
+    && let Expr::Identifier(agg) = &args[0]
+    && agg != "All"
+    && let Expr::List(rows) = data
+  {
+    let values = extract_column(rows, &args[1]);
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: agg.clone(),
+      args: vec![Expr::List(values.into())].into(),
+    });
   }
 
   // Fallback: return unevaluated

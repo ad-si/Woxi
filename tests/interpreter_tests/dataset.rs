@@ -346,4 +346,63 @@ mod dataset_ast {
     assert!(svg.contains(">30</text>"));
     assert!(svg.contains(">25</text>"));
   }
+
+  // Dataset[data][agg, "column"] applies a scalar aggregator over one column
+  // and returns the bare result. Values verified against wolframscript.
+  #[test]
+  fn dataset_column_total() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Dataset[{<|\"a\" -> 1, \"b\" -> 10|>, <|\"a\" -> 2, \"b\" -> 20|>, \
+         <|\"a\" -> 3, \"b\" -> 30|>}][Total, \"a\"]"
+      )
+      .unwrap(),
+      "6"
+    );
+  }
+
+  #[test]
+  fn dataset_column_mean() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Dataset[{<|\"a\" -> 1, \"b\" -> 10|>, <|\"a\" -> 2, \"b\" -> 20|>, \
+         <|\"a\" -> 3, \"b\" -> 30|>}][Mean, \"b\"]"
+      )
+      .unwrap(),
+      "20"
+    );
+  }
+
+  #[test]
+  fn dataset_column_max_min() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Dataset[{<|\"a\" -> 1|>, <|\"a\" -> 2|>, <|\"a\" -> 3|>}][Max, \"a\"]"
+      )
+      .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(
+        "Dataset[{<|\"a\" -> 1|>, <|\"a\" -> 2|>, <|\"a\" -> 3|>}][Min, \"a\"]"
+      )
+      .unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn dataset_column_median() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Dataset[{<|\"a\" -> 1|>, <|\"a\" -> 2|>, <|\"a\" -> 3|>}][Median, \"a\"]"
+      )
+      .unwrap(),
+      "2"
+    );
+  }
 }
