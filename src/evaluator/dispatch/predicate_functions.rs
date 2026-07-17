@@ -1789,7 +1789,7 @@ fn precedence_value(expr: &Expr) -> f64 {
     | "LessEqual" | "GreaterEqual" | "Inequality" => 290.0,
     "Span" => 305.0,
     "Plus" | "Subtract" => 310.0,
-    "PlusMinus" => 315.0,
+    "PlusMinus" | "MinusPlus" => 315.0,
     "Sum" | "Limit" => 320.0,
     "Integrate" => 325.0,
     "Product" => 380.0,

@@ -7394,6 +7394,17 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           return parts.join(" \u{00B1} ");
         }
       }
+      // MinusPlus[x] displays as ∓x, MinusPlus[a, b] displays as a ∓ b
+      // (the sign-reversed partner of PlusMinus).
+      if name == "MinusPlus" {
+        if args.len() == 1 {
+          return format!("\u{2213}{}", fmt(&args[0]));
+        }
+        if args.len() >= 2 {
+          let parts: Vec<String> = args.iter().map(&fmt).collect();
+          return parts.join(" \u{2213} ");
+        }
+      }
       // CircleTimes[a, b, ...] displays as a ⊗ b ⊗ ...
       if name == "CircleTimes" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(&fmt).collect();
@@ -10759,6 +10770,16 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
         parts.join(" \u{00B1} ")
       } else {
         "PlusMinus[]".to_string()
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "MinusPlus" => {
+      if args.len() == 1 {
+        format!("\u{2213}{}", expr_to_input_form(&args[0]))
+      } else if args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+        parts.join(" \u{2213} ")
+      } else {
+        "MinusPlus[]".to_string()
       }
     }
     Expr::FunctionCall { name, args }

@@ -2366,6 +2366,34 @@ mod plus_minus {
   }
 }
 
+mod minus_plus {
+  use super::*;
+
+  // MinusPlus is the sign-reversed partner of PlusMinus, rendered with ∓.
+  #[test]
+  fn unary() {
+    assert_eq!(interpret("MinusPlus[3]").unwrap(), "\u{2213}3");
+  }
+
+  #[test]
+  fn binary() {
+    assert_eq!(interpret("MinusPlus[a, b]").unwrap(), "a \u{2213} b");
+  }
+
+  #[test]
+  fn nary() {
+    assert_eq!(
+      interpret("MinusPlus[1, 2, 3]").unwrap(),
+      "1 \u{2213} 2 \u{2213} 3"
+    );
+  }
+
+  #[test]
+  fn nested_in_subtraction() {
+    assert_eq!(interpret("a - MinusPlus[b]").unwrap(), "a - \u{2213}b");
+  }
+}
+
 mod circle_times {
   use super::*;
 
