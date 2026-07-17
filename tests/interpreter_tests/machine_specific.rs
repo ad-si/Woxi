@@ -447,6 +447,7 @@ mod cases {
   fn system_character_encoding() {
     assert_case(r#"$SystemCharacterEncoding"#, r#""UTF-8""#);
   }
+  #[cfg(unix)]
   #[test]
   fn root_directory() {
     assert_case(r#"$RootDirectory"#, r#""/""#);
@@ -457,7 +458,8 @@ mod cases {
   }
   #[test]
   fn pathname_separator() {
-    assert_case(r#"$PathnameSeparator"#, r#""/""#);
+    let sep = format!(r#""{}""#, std::path::MAIN_SEPARATOR_STR);
+    assert_case(r#"$PathnameSeparator"#, &sep);
   }
   #[test]
   fn export_formats() {

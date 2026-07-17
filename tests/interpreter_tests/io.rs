@@ -12,6 +12,19 @@ fn temp_file(file: &str) -> String {
   tmp.display().to_string()
 }
 
+fn manifest_file(file: &str) -> String {
+  let manifest = env!("CARGO_MANIFEST_DIR");
+  let path = format!("{manifest}/{file}");
+  if cfg!(target_os = "windows") {
+    path
+      .replace("\\t", "\\\\t")
+      .replace("\\r", "\\\\r")
+      .replace("\\n", "\\\\n")
+  } else {
+    path
+  }
+}
+
 mod date_string {
   use super::*;
 
@@ -3734,8 +3747,7 @@ mod csv_import {
   use super::*;
 
   fn csv_path() -> String {
-    let manifest = env!("CARGO_MANIFEST_DIR");
-    format!("{manifest}/tests/data/data.csv")
+    manifest_file("tests/data/data.csv")
   }
 
   #[test]
@@ -4004,8 +4016,7 @@ mod xlsx_import {
   use super::*;
 
   fn xlsx_path() -> String {
-    let manifest = env!("CARGO_MANIFEST_DIR");
-    format!("{manifest}/tests/data/population.xlsx")
+    manifest_file("tests/data/population.xlsx")
   }
 
   #[test]
@@ -4092,13 +4103,11 @@ mod root_import {
   // "varhist" with variable-width bin edges {0, 1, 2.5, 10} and a
   // TObjString "note".
   fn root_path() -> String {
-    let manifest = env!("CARGO_MANIFEST_DIR");
-    format!("{manifest}/tests/data/sample.root")
+    manifest_file("tests/data/sample.root")
   }
 
   fn lz4_root_path() -> String {
-    let manifest = env!("CARGO_MANIFEST_DIR");
-    format!("{manifest}/tests/data/sample_lz4.root")
+    manifest_file("tests/data/sample_lz4.root")
   }
 
   #[test]
@@ -4222,8 +4231,7 @@ mod root_import {
 
   #[test]
   fn import_root_rejects_non_root_file() {
-    let manifest = env!("CARGO_MANIFEST_DIR");
-    let path = format!("{manifest}/tests/data/data.csv");
+    let path = manifest_file("tests/data/data.csv");
     let err = interpret(&format!(r#"Import["{path}", "ROOT"]"#));
     assert!(err.is_err(), "expected error for non-ROOT file");
     assert!(
@@ -4248,13 +4256,11 @@ mod root_tree_data {
   // flat branches of every basic leaf type, bool and unsigned variants,
   // and two jagged (leaf-count) branches, plus a TH2D "h2" (3×2 bins).
   fn tree_data_path() -> String {
-    let manifest = env!("CARGO_MANIFEST_DIR");
-    format!("{manifest}/tests/data/tree_data.root")
+    manifest_file("tests/data/tree_data.root")
   }
 
   fn sample_path() -> String {
-    let manifest = env!("CARGO_MANIFEST_DIR");
-    format!("{manifest}/tests/data/sample.root")
+    manifest_file("tests/data/sample.root")
   }
 
   #[test]
@@ -4493,9 +4499,8 @@ mod root_mdst {
   use super::*;
 
   fn mdst_path() -> Option<String> {
-    let manifest = env!("CARGO_MANIFEST_DIR");
-    let path = format!(
-      "{manifest}/examples/_dominik_ecker_examples/2026-07-07_mDST-0-0-0-0.root"
+    let path = manifest_file(
+      "examples/_dominik_ecker_examples/2026-07-07_mDST-0-0-0-0.root",
     );
     std::path::Path::new(&path).exists().then_some(path)
   }
@@ -4685,8 +4690,7 @@ mod txt_import {
   use super::*;
 
   fn txt_path() -> String {
-    let manifest = env!("CARGO_MANIFEST_DIR");
-    format!("{manifest}/tests/data/article.txt")
+    manifest_file("tests/data/article.txt")
   }
 
   #[test]
@@ -6826,8 +6830,7 @@ mod json_import {
   use super::*;
 
   fn json_path() -> String {
-    let manifest = env!("CARGO_MANIFEST_DIR");
-    format!("{manifest}/tests/data/sample.json")
+    manifest_file("tests/data/sample.json")
   }
 
   #[test]
