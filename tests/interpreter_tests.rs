@@ -974,6 +974,73 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_export_string_svg_embeds_used_fonts() {
+    // A standalone exported SVG carries the fonts it uses so it renders the
+    // same on systems where they aren't installed. Any text pulls in the
+    // sans-serif face (Atkinson Hyperlegible Next) as an @font-face with the
+    // font bytes inlined as a base64 data URL.
+    clear_state();
+    let svg =
+      interpret("ExportString[Plot[Sin[x], {x, 0, 6}], \"SVG\"]").unwrap();
+    assert!(svg.contains("@font-face"), "no @font-face block");
+    assert!(
+      svg.contains("font-family: \"Atkinson Hyperlegible Next\""),
+      "sans-serif face not embedded"
+    );
+    assert!(
+      svg.contains("src: url(\"data:font/ttf;base64,"),
+      "font bytes not inlined as a data URL"
+    );
+    // The style block sits inside the SVG document, right after the root tag.
+    assert!(svg.contains("<defs><style"), "no <style> block");
+  }
+
+  #[test]
+  fn test_export_string_svg_embeds_monospace_only_when_used() {
+    // The Mono face is embedded only for documents that actually use
+    // monospace text (typeset expressions, datasets, …), not for every graphic.
+    clear_state();
+    let mono =
+      interpret("ExportString[Dataset[<|\"a\" -> 1|>], \"SVG\"]").unwrap();
+    assert!(
+      mono.contains("font-family: \"Atkinson Hyperlegible Mono\""),
+      "monospace face missing for a monospace-using export"
+    );
+
+    clear_state();
+    let sans =
+      interpret("ExportString[Plot[Sin[x], {x, 0, 6}], \"SVG\"]").unwrap();
+    assert!(
+      !sans.contains("Atkinson Hyperlegible Mono"),
+      "Mono face embedded into a graphic that uses no monospace text"
+    );
+
+    // A text label that merely *reads* "monospace" must not pull in the Mono
+    // face — only a `font-family` requesting one does. (The label itself is
+    // drawn with the default sans-serif family.)
+    clear_state();
+    let label = interpret(
+      "ExportString[Graphics[{Text[\"monospace\", {0, 0}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      !label.contains("Atkinson Hyperlegible Mono"),
+      "Mono face embedded because of text content, not a font-family"
+    );
+  }
+
+  #[test]
+  fn test_export_string_svg_without_text_embeds_no_fonts() {
+    // A text-free graphic needs no fonts, so none are embedded.
+    clear_state();
+    let svg = interpret("ExportString[Graphics[{Disk[]}], \"SVG\"]").unwrap();
+    assert!(
+      !svg.contains("@font-face"),
+      "fonts embedded into a text-free graphic"
+    );
+  }
+
+  #[test]
   fn test_audio_missing_file_still_renders_player_chrome() {
     // A file-backed Audio whose file cannot be read (missing here; any local
     // path in the browser playground) still renders the player chrome: the

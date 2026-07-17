@@ -601,6 +601,7 @@ pub fn dispatch_io_functions(
         } else {
           svg
         };
+        let svg = embed_used_fonts(&svg);
         if let Err(e) = std::fs::write(&filename, &svg).map_err(|e| {
           InterpreterError::EvaluationError(format!("Export: {e}"))
         }) {
@@ -838,7 +839,7 @@ pub fn dispatch_io_functions(
           } else {
             svg
           };
-          svg.into_bytes()
+          embed_used_fonts(&svg).into_bytes()
         }
         "WAV" | "WAVE" => {
           match crate::functions::sound::expr_to_wav_bytes(data) {
@@ -969,7 +970,7 @@ pub fn dispatch_io_functions(
             return Some(Ok(unevaluated("ExportString", args)));
           }
         }
-        return Some(Ok(Expr::String(svg)));
+        return Some(Ok(Expr::String(embed_used_fonts(&svg))));
       }
       if format_str == "CSV" || format_str == "TSV" {
         let sep = if format_str == "CSV" { ',' } else { '\t' };
@@ -3671,6 +3672,117 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     ),
     other => expr_text_svg(other),
   }
+}
+
+/// Fonts bundled for embedding into exported SVGs. These are the same faces the
+/// PDF/PNG rasterizers map the generic CSS families onto (see
+/// `svg_to_pdf_bytes` and `image_ast::load_embedded_fonts`), so vector export
+/// stays visually consistent with raster export and renders identically on
+/// systems where the fonts aren't installed.
+const ATKINSON_MONO_TTF: &[u8] = include_bytes!(
+  "../../../resources/AtkinsonHyperlegibleMono-VariableFont_wght.ttf"
+);
+const ATKINSON_NEXT_TTF: &[u8] = include_bytes!(
+  "../../../resources/AtkinsonHyperlegibleNext-VariableFont_wght.ttf"
+);
+
+/// Base64 `data:` URL for a bundled font, encoded once and cached for reuse
+/// across exports.
+fn font_data_url(
+  cache: &'static std::sync::OnceLock<String>,
+  bytes: &'static [u8],
+) -> &'static str {
+  cache.get_or_init(|| {
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+    format!("data:font/ttf;base64,{b64}")
+  })
+}
+
+/// A single `@font-face` CSS rule embedding `family` from `data_url`.
+fn font_face_rule(family: &str, data_url: &str) -> String {
+  format!(
+    "@font-face {{ font-family: \"{family}\"; font-weight: normal; \
+font-style: normal; src: url(\"{data_url}\") format(\"truetype\"); }}\n"
+  )
+}
+
+/// Embed the fonts an exported SVG uses so it renders identically without those
+/// fonts installed on the viewer's system.
+///
+/// Woxi's renderers emit only the generic CSS families `monospace`,
+/// `sans-serif` and `serif` (and bare `<text>` with no family); hosts normally
+/// map these onto the bundled Atkinson faces via their own CSS — see
+/// `tests/playground/style.css`. A standalone exported SVG has no such host, so
+/// we inline that same mapping together with `@font-face` rules carrying the
+/// base64-encoded font data. CSS on SVG `<text>` overrides the inline
+/// presentation attributes, mirroring the playground exactly. The Mono face is
+/// embedded only when the document actually uses monospace text, to avoid
+/// bloating graphics that don't.
+pub(crate) fn embed_used_fonts(svg: &str) -> String {
+  // Only SVG documents that actually draw text need embedded fonts.
+  if !svg.contains("<svg") || !svg.contains("<text") {
+    return svg.to_string();
+  }
+
+  // Sans-serif (Atkinson Hyperlegible Next) is the default for every text
+  // element, so it is always embedded once there is any text.
+  static NEXT_URL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+  let mut style = font_face_rule(
+    "Atkinson Hyperlegible Next",
+    font_data_url(&NEXT_URL, ATKINSON_NEXT_TTF),
+  );
+
+  // Monospace text is tagged with `monospace`, a `Mono` family, or `Courier`
+  // (see the selectors below); embed the Mono face only when a `font-family`
+  // attribute actually requests one. Scanning attribute values rather than the
+  // whole document avoids pulling the face in for a text label that merely
+  // contains one of those words.
+  let needs_mono = svg.match_indices("font-family=\"").any(|(i, m)| {
+    svg[i + m.len()..].split('"').next().is_some_and(|val| {
+      val.contains("monospace")
+        || val.contains("Mono")
+        || val.contains("Courier")
+    })
+  });
+  if needs_mono {
+    static MONO_URL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    style.push_str(&font_face_rule(
+      "Atkinson Hyperlegible Mono",
+      font_data_url(&MONO_URL, ATKINSON_MONO_TTF),
+    ));
+  }
+
+  style.push_str(
+    "svg text { font-family: \"Atkinson Hyperlegible Next\", sans-serif; }\n",
+  );
+  if needs_mono {
+    style.push_str(
+      "svg text[font-family~=\"monospace\"], \
+svg text[font-family*=\"Mono\"], \
+svg text[font-family*=\"Courier\"] \
+{ font-family: \"Atkinson Hyperlegible Mono\", monospace; }\n",
+    );
+  }
+
+  // Insert the style block immediately after the opening `<svg …>` tag. The
+  // tag's attribute values never contain `>`, so the first `>` after `<svg`
+  // reliably closes it.
+  let Some(open) = svg.find("<svg") else {
+    return svg.to_string();
+  };
+  let Some(rel) = svg[open..].find('>') else {
+    return svg.to_string();
+  };
+  let insert_at = open + rel + 1;
+  let style_block =
+    format!("\n<defs><style type=\"text/css\">\n{style}</style></defs>");
+
+  let mut out = String::with_capacity(svg.len() + style_block.len());
+  out.push_str(&svg[..insert_at]);
+  out.push_str(&style_block);
+  out.push_str(&svg[insert_at..]);
+  out
 }
 
 /// Convert an SVG string to PDF bytes using svg2pdf.
