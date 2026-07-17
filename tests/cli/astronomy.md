@@ -6,10 +6,13 @@ icon: lucide/moon-star
 
 Woxi computes astronomical quantities from the algorithms in Meeus's
 *Astronomical Algorithms*: lunar phases, Sun/Moon positions, sidereal
-time, sunrise/sunset, and eclipse predictions. Locations are given as
-`GeoPosition[{lat, lon}]` (or a bare `{lat, lon}` pair) and default to
-`$GeoLocation`; all returned dates are UTC instants (TimeZone `0.`),
-whereas wolframscript localizes them to the location's time zone.
+time, sunrise/sunset, and eclipse predictions. Locations must be given
+explicitly as `GeoPosition[{lat, lon}]` (or a bare `{lat, lon}` pair):
+determining `$GeoLocation` needs a GeoIP lookup, so — like wolframscript
+without internet access — Woxi leaves the location unresolved and a call
+that omits one stays unevaluated. All returned dates are UTC instants
+(TimeZone `0.`), whereas wolframscript localizes them to the location's
+time zone.
 
 ## MoonPhase
 

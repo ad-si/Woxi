@@ -359,11 +359,14 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     // Woxi's whole datetime layer works in UTC (DateObject instants carry
     // TimeZone 0.), so $TimeZone reads as 0. too.
     "$TimeZone" => Some(Expr::Real(0.0)),
-    // Without geolocation access wolframscript falls back to Wolfram's
-    // default location; Woxi always uses that fallback.
-    "$GeoLocation" => {
-      Some(crate::functions::astronomy_ast::default_geo_location())
-    }
+    // Determining the location needs a GeoIP lookup. With no internet
+    // access wolframscript returns Missing["NotAvailable"] (message
+    // $GeoLocation::dloff) rather than inventing a location, and Woxi —
+    // being offline — matches that.
+    "$GeoLocation" => Some(Expr::FunctionCall {
+      name: "Missing".to_string(),
+      args: vec![Expr::String("NotAvailable".to_string())].into(),
+    }),
     "$MachineEpsilon" => Some(Expr::Real(2.220446049250313e-16)),
     "$MaxMachineNumber" => Some(Expr::Real(f64::MAX)),
     // Wolfram's $MinMachineNumber is the smallest normalized double

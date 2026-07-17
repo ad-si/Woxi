@@ -911,18 +911,6 @@ fn sun_rise_set(jd_day: f64, lat: f64, lon: f64) -> Option<(f64, f64)> {
 
 // ─── Argument parsing ───────────────────────────────────────────────
 
-/// Woxi's built-in `$GeoLocation` — like wolframscript without
-/// geolocation access, this falls back to Wolfram's default location.
-pub fn default_geo_location() -> Expr {
-  Expr::FunctionCall {
-    name: "GeoPosition".to_string(),
-    args: vec![Expr::List(
-      vec![Expr::Real(40.11), Expr::Real(-88.24)].into(),
-    )]
-    .into(),
-  }
-}
-
 fn expr_to_f64(e: &Expr) -> Option<f64> {
   match e {
     Expr::Integer(n) => Some(*n as f64),
@@ -1007,20 +995,16 @@ fn parse_date_arg(expr: &Expr) -> Option<f64> {
   Some(abs_seconds_to_jd(abs))
 }
 
-/// Split leading positional args into (location, date) with defaults:
-/// [] → (default, now); [loc] / [date] → the other defaulted;
-/// [loc, date]. Returns None when the args don't fit that shape.
+/// Split leading positional args into (location, date): [loc] → date
+/// defaults to now; [loc, date]. Returns None when no explicit location
+/// is given (it can't be defaulted) or the args don't fit that shape.
 fn parse_location_date(args: &[Expr]) -> Option<((f64, f64), f64)> {
-  let default_loc = parse_location(&default_geo_location())?;
+  // The location can never be defaulted: without internet access
+  // $GeoLocation is Missing["NotAvailable"], so any call that omits an
+  // explicit location stays unevaluated (wolframscript emits Fn::geoloc).
+  // Only the date defaults (to now).
   match args {
-    [] => Some((default_loc, now_jd())),
-    [one] => {
-      if is_location_arg(one) {
-        Some((parse_location(one)?, now_jd()))
-      } else {
-        Some((default_loc, parse_date_arg(one)?))
-      }
-    }
+    [one] if is_location_arg(one) => Some((parse_location(one)?, now_jd())),
     [loc, date] => Some((parse_location(loc)?, parse_date_arg(date)?)),
     _ => None,
   }

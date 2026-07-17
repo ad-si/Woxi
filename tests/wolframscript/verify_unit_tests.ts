@@ -1436,9 +1436,11 @@ function main() {
     // for the day, while Wolfram rolls forward to the next actual sunrise
     // (2025-02-15) — a semantic difference, not a rounding one.
     "Sunrise[GeoPosition[{78.22, 15.63}], DateObject[{2024, 12, 21}]]",
-    // $GeoLocation reflects the location of the machine running wolframscript;
-    // Woxi returns Wolfram's documented offline fallback (Champaign, IL). There
-    // is no stable reference value to conform to.
+    // $GeoLocation needs a GeoIP lookup. Woxi is offline, so it matches
+    // no-internet wolframscript: Missing["NotAvailable"]. The conformance
+    // harness runs wolframscript *with* internet, so it returns the running
+    // machine's real location instead — environment-dependent, no stable
+    // reference value to conform to.
     "$GeoLocation",
   ]);
 

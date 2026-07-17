@@ -354,11 +354,25 @@ mod geo_location {
   use super::*;
 
   #[test]
-  fn default_geo_location() {
-    // Wolfram's offline fallback location
+  fn geo_location_unavailable_without_internet() {
+    // Determining the location needs a GeoIP lookup; with no internet
+    // access wolframscript returns Missing["NotAvailable"] rather than
+    // inventing a location, and Woxi (offline) matches that.
+    assert_eq!(interpret("$GeoLocation").unwrap(), "Missing[NotAvailable]");
+  }
+
+  #[test]
+  fn location_defaulting_functions_stay_unevaluated() {
+    // No explicit location and no $GeoLocation to fall back on: the call
+    // stays unevaluated (wolframscript emits Fn::geoloc offline).
     assert_eq!(
-      interpret("$GeoLocation").unwrap(),
-      "GeoPosition[{40.11, -88.24}]"
+      interpret("Sunrise[DateObject[{2024, 6, 21}]]").unwrap(),
+      "Sunrise[DateObject[{2024, 6, 21}, Day]]"
+    );
+    assert_eq!(
+      interpret("SunPosition[DateObject[{2024, 6, 21, 12, 0, 0}]]").unwrap(),
+      "SunPosition[DateObject[{2024, 6, 21, 12, 0, 0}, Instant, Gregorian, \
+       0.]]"
     );
   }
 }
