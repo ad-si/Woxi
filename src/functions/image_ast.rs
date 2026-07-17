@@ -41,6 +41,49 @@ pub fn expr_to_dynamic_image(
   }
 }
 
+/// Encode an Expr::Image's pixel data to in-memory file bytes in a raster
+/// format. Unlike `export_image`, this writes to a buffer rather than a path,
+/// so it works in the browser (WASM) where `Export` has no filesystem. The
+/// `image` crate's encoders compile to `wasm32`; only the SVG rasterizer
+/// (resvg) is native-only, so plots must be exported as SVG instead.
+pub fn export_image_bytes(
+  fmt: &str,
+  width: u32,
+  height: u32,
+  channels: u8,
+  data: &[f64],
+) -> Result<Vec<u8>, InterpreterError> {
+  use std::io::Cursor;
+  let format = match fmt {
+    "PNG" => image::ImageFormat::Png,
+    "JPG" | "JPEG" => image::ImageFormat::Jpeg,
+    "GIF" => image::ImageFormat::Gif,
+    "BMP" => image::ImageFormat::Bmp,
+    "TIF" | "TIFF" => image::ImageFormat::Tiff,
+    _ => {
+      return Err(InterpreterError::EvaluationError(format!(
+        "Export: unsupported image format \"{}\"",
+        fmt
+      )));
+    }
+  };
+  let dyn_img = expr_to_dynamic_image(width, height, channels, data);
+  // JPEG has no alpha channel; flatten to RGB so encoding a 4-channel image
+  // doesn't fail.
+  let dyn_img = if matches!(format, image::ImageFormat::Jpeg) {
+    image::DynamicImage::ImageRgb8(dyn_img.to_rgb8())
+  } else {
+    dyn_img
+  };
+  let mut buf = Cursor::new(Vec::new());
+  dyn_img.write_to(&mut buf, format).map_err(|e| {
+    InterpreterError::EvaluationError(format!(
+      "Export: image encode error: {e}"
+    ))
+  })?;
+  Ok(buf.into_inner())
+}
+
 /// Convert an `image::DynamicImage` to an Expr::Image (normalized [0,1] f64).
 fn dynamic_image_to_expr(img: &image::DynamicImage) -> Expr {
   let width = img.width();

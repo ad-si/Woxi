@@ -15,6 +15,10 @@ description = "Interpreter for a subset of the Wolfram Language"
 keywords = ["wolfram", "wolfram-language", "mathematica", "cas", "math"]
 version = "0.2.0"
 edition = "2024"
+# Point at the lowercase file explicitly; otherwise cargo auto-detects it
+# via a case-insensitive search for README.md and synthesizes a duplicate
+# uppercase entry in the packaged crate.
+readme = "readme.md"
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/ad-si/Woxi"
 # `cargo run -- eval '…'` should run the interpreter CLI, not the
@@ -51,11 +55,14 @@ exclude = [
 ]
 
 # Differential fuzzer comparing woxi against wolframscript
-# (see fuzz/README.md and `make fuzz-diff`).
+# (see fuzz/README.md and `make fuzz-diff`). Gated behind the non-default
+# `diff-fuzz` feature so the default build (and `cargo install`) produces
+# only the `woxi` CLI, not this dev-only helper. Build/run it with
+# `--features diff-fuzz`.
 [[bin]]
 name = "woxi-diff-fuzz"
 path = "src/bin/diff_fuzz.rs"
-required-features = ["cli"]
+required-features = ["diff-fuzz"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -81,6 +88,11 @@ wasm = ["dep:wasm-bindgen", "dep:getrandom", "dep:console_error_panic_hook", "de
 # exist in the test binaries at all, so `make test` doesn't report them as
 # skipped. They run nightly via `make test-slow`.
 slow-tests = []
+
+# The dev-only differential fuzzer (`src/bin/diff_fuzz.rs`, spawns
+# `wolframscript`). Non-default so `cargo install` ships only the `woxi`
+# CLI; implies `cli` since the fuzzer drives the CLI binary.
+diff-fuzz = ["cli"]
 
 # `pub` items rustc can't see from outside the crate escape the dead_code
 # lint; warning on them keeps dead code detectable via plain `cargo check`.
@@ -200,6 +212,7 @@ harness = false
 # ~400k-line crate. `split-debuginfo = "unpacked"` additionally skips the
 # slow dsymutil packaging step on macOS.
 [profile.dev]
+opt-level = 1
 debug = "line-tables-only"
 split-debuginfo = "unpacked"
 

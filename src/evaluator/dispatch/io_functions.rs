@@ -758,6 +758,158 @@ pub fn dispatch_io_functions(
       }
       return Some(Ok(Expr::String(filename)));
     }
+    // Browser (WASM) `Export`: there is no filesystem, so instead of writing to
+    // disk we serialize the value and hand the bytes to the host via
+    // `record_exported_file`, which surfaces them as downloads. Only the
+    // formats whose encoders compile to `wasm32` are supported; native-only
+    // formats (raster images, PDF, XLSX) return a clear error.
+    #[cfg(target_arch = "wasm32")]
+    "Export" if args.len() >= 2 => {
+      let filename = match &args[0] {
+        Expr::String(s) => s.clone(),
+        other => {
+          return Some(Err(InterpreterError::EvaluationError(format!(
+            "Export: first argument must be a filename string, got {}",
+            crate::syntax::expr_to_string(other)
+          ))));
+        }
+      };
+      // Format from an explicit third-argument string, else the file extension.
+      let explicit_fmt = args.get(2).and_then(|a| {
+        if let Expr::String(s) = a {
+          Some(s.to_ascii_uppercase())
+        } else {
+          None
+        }
+      });
+      let ext_fmt = std::path::Path::new(&filename)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_uppercase());
+      let fmt = explicit_fmt.or(ext_fmt).unwrap_or_default();
+      let data = &args[1];
+
+      // Set to Some(format) when `bytes` is SVG the host must rasterize in the
+      // browser (graphics → PNG/JPEG), rather than ready-to-save file bytes.
+      let mut rasterize: Option<String> = None;
+
+      let bytes: Vec<u8> = match fmt.as_str() {
+        "CSV" => export_string_csv(data, ',', true, true).into_bytes(),
+        "TSV" => export_string_csv(data, '\t', true, true).into_bytes(),
+        "JSON" | "RAWJSON" => match export_string_json(data, 0, false) {
+          Some(mut json) => {
+            json.push('\n');
+            json.into_bytes()
+          }
+          None => {
+            return Some(Err(InterpreterError::EvaluationError(
+              "Export: value cannot be serialized to JSON".into(),
+            )));
+          }
+        },
+        "SVG" => {
+          let svg = expr_to_svg(data);
+          // expr_to_svg is empty when a graphics head fails to render; fall
+          // back to the text rendering so the file stays valid SVG.
+          let svg = if svg.is_empty() {
+            expr_text_svg(data)
+          } else {
+            svg
+          };
+          svg.into_bytes()
+        }
+        "WAV" | "WAVE" => {
+          match crate::functions::sound::expr_to_wav_bytes(data) {
+            Some(b) => b,
+            None => {
+              return Some(Err(InterpreterError::EvaluationError(
+                "Export: value is not a playable sound".into(),
+              )));
+            }
+          }
+        }
+        "MID" | "MIDI" => {
+          match crate::functions::music_midi::music_to_midi(data) {
+            Some(b) => b,
+            None => {
+              return Some(Err(InterpreterError::EvaluationError(
+                "Export: value is not a music object".into(),
+              )));
+            }
+          }
+        }
+        // Raster image formats. An existing Image is encoded here directly
+        // (the `image` crate compiles to wasm). Graphics/plots can't be
+        // rasterized in wasm (the SVG rasterizer, resvg, is native-only), so
+        // their SVG is handed to the host to rasterize via a browser canvas —
+        // which supports PNG and JPEG only. GIF/BMP/TIFF of a plot is rejected.
+        "PNG" | "JPG" | "JPEG" | "GIF" | "BMP" | "TIF" | "TIFF" => match data {
+          Expr::Image {
+            width,
+            height,
+            channels,
+            data: pixels,
+            ..
+          } => match crate::functions::image_ast::export_image_bytes(
+            &fmt, *width, *height, *channels, pixels,
+          ) {
+            Ok(b) => b,
+            Err(e) => return Some(Err(e)),
+          },
+          _ if matches!(fmt.as_str(), "PNG" | "JPG" | "JPEG") => {
+            let svg = expr_to_svg(data);
+            let svg = if svg.is_empty() {
+              expr_text_svg(data)
+            } else {
+              svg
+            };
+            rasterize = Some(if fmt == "PNG" { "png" } else { "jpg" }.into());
+            svg.into_bytes()
+          }
+          _ => {
+            return Some(Err(InterpreterError::EvaluationError(format!(
+              "Export: {} export of a non-image expression (e.g. a plot) is \
+               not supported in the browser; export as PNG or SVG instead",
+              fmt
+            ))));
+          }
+        },
+        // Formats whose encoders are native-only in the WASM build.
+        "PDF" | "XLSX" => {
+          return Some(Err(InterpreterError::EvaluationError(format!(
+            "Export: \"{}\" export is not supported in the browser",
+            fmt
+          ))));
+        }
+        // Text and unrecognized formats: strings verbatim, a list one element
+        // per line, graphics as their SVG, other expressions rendered directly.
+        _ => {
+          let elem = |e: &Expr| match e {
+            Expr::String(s) => s.clone(),
+            _ => crate::syntax::format_expr(e, crate::syntax::ExprForm::Output),
+          };
+          let content = match data {
+            Expr::Graphics { svg, .. } => svg.clone(),
+            Expr::Identifier(s) if s == "-Graphics-" || s == "-Graphics3D-" => {
+              crate::get_captured_graphics().unwrap_or_default()
+            }
+            Expr::String(s) => s.clone(),
+            Expr::List(items) => {
+              items.iter().map(elem).collect::<Vec<_>>().join("\n")
+            }
+            other => elem(other),
+          };
+          content.into_bytes()
+        }
+      };
+
+      crate::wasm::record_exported_file(
+        &filename,
+        &bytes,
+        rasterize.as_deref(),
+      );
+      return Some(Ok(Expr::String(filename)));
+    }
     "ExportString" if args.len() == 2 || args.len() == 3 => {
       // ExportString[expr, "format"] - return string representation.
       // An optional third argument carries format options; for JSON the

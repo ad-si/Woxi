@@ -12,6 +12,19 @@ thread_local! {
   // `import_virtual` in evaluator/dispatch/image_functions.rs).
   static VIRTUAL_FILES: RefCell<HashMap<String, Vec<u8>>> =
     RefCell::new(HashMap::new());
+
+  // Files produced by `Export["name", …]` during evaluation. The browser has
+  // no filesystem to write to, so exports are collected here for the host to
+  // offer as downloads (see `record_exported_file` / `take_exported_files`).
+  // Insertion order is preserved; re-exporting the same name overwrites in
+  // place so the store mirrors the final on-"disk" state.
+  //
+  // Each entry is (name, bytes, rasterize). `rasterize` is `Some("png")` etc.
+  // when `bytes` is actually SVG that the host must rasterize to that format
+  // in the browser (via a canvas) — the SVG rasterizer is native-only, so
+  // graphics→raster export is delegated to the host instead of bundled here.
+  static EXPORTED_FILES: RefCell<Vec<(String, Vec<u8>, Option<String>)>> =
+    RefCell::new(Vec::new());
 }
 
 /// Register (or replace) an in-memory file so `Import["name"]` can read it
@@ -41,6 +54,65 @@ pub fn virtual_file(path: &str) -> Option<Vec<u8>> {
     let base = path.rsplit('/').next().unwrap_or(path);
     files.get(base).cloned()
   })
+}
+
+/// Record (or replace) a file produced by `Export`, so the host can offer it
+/// for download after evaluation. Called from the WASM `Export` handler in
+/// `evaluator/dispatch/io_functions.rs` in place of writing to disk.
+///
+/// `rasterize` is `Some("png")`/`Some("jpg")` when `data` is SVG the host must
+/// convert to that raster format in the browser; `None` for ready-to-save bytes.
+pub fn record_exported_file(name: &str, data: &[u8], rasterize: Option<&str>) {
+  EXPORTED_FILES.with(|files| {
+    let mut files = files.borrow_mut();
+    let raster = rasterize.map(|s| s.to_string());
+    if let Some(entry) = files.iter_mut().find(|(n, _, _)| n == name) {
+      entry.1 = data.to_vec();
+      entry.2 = raster;
+    } else {
+      files.push((name.to_string(), data.to_vec(), raster));
+    }
+  });
+}
+
+/// Return every file produced by `Export` since the last call as a JSON array
+/// of `{"name":…, "data":<base64>[, "rasterize":"png"]}`, then clear the store.
+/// The host decodes each base64 payload into a Blob and renders a download
+/// link; entries carrying `rasterize` hold SVG the host converts to that raster
+/// format first. Draining on read keeps each evaluation's exports separate.
+#[wasm_bindgen]
+pub fn take_exported_files() -> String {
+  EXPORTED_FILES.with(|files| {
+    let mut files = files.borrow_mut();
+    let parts: Vec<String> = files
+      .iter()
+      .map(|(name, data, rasterize)| {
+        let b64 = base64::Engine::encode(
+          &base64::engine::general_purpose::STANDARD,
+          data,
+        );
+        match rasterize {
+          Some(fmt) => format!(
+            r#"{{"name":"{}","data":"{}","rasterize":"{}"}}"#,
+            json_escape(name),
+            b64,
+            json_escape(fmt)
+          ),
+          None => {
+            format!(r#"{{"name":"{}","data":"{}"}}"#, json_escape(name), b64)
+          }
+        }
+      })
+      .collect();
+    files.clear();
+    format!("[{}]", parts.join(","))
+  })
+}
+
+/// Discard any pending exported files without returning them. Called when the
+/// host clears interpreter state so stale exports don't leak into a later run.
+pub fn clear_exported_files() {
+  EXPORTED_FILES.with(|files| files.borrow_mut().clear());
 }
 
 // Import a JS-provided function that fetches a URL and returns its content
@@ -210,6 +282,7 @@ pub fn get_output_svg() -> String {
 #[wasm_bindgen]
 pub fn clear() {
   clear_state();
+  clear_exported_files();
 }
 
 /// Enable or disable dark mode for SVG output colors.
