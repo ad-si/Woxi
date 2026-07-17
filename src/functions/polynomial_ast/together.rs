@@ -372,9 +372,6 @@ fn reduce_shared_integer_content(
   num: &Expr,
   den: &Expr,
 ) -> Option<(Expr, Expr)> {
-  fn gcd(a: i128, b: i128) -> i128 {
-    if b == 0 { a.abs() } else { gcd(b, a % b) }
-  }
   let mut den_factors = flatten_times_args(std::slice::from_ref(den));
   let (den_idx, den_int) =
     den_factors.iter().enumerate().find_map(|(i, f)| match f {
@@ -390,7 +387,7 @@ fn reduce_shared_integer_content(
       _ => None,
     })
   {
-    let g = gcd(c.abs(), den_int);
+    let g = gcd_i128(c.abs(), den_int);
     if g <= 1 {
       return None;
     }
@@ -435,7 +432,7 @@ fn reduce_shared_integer_content(
   if d != 1 || n.abs() <= 1 {
     return None;
   }
-  let g = gcd(n.abs(), den_int);
+  let g = gcd_i128(n.abs(), den_int);
   if g <= 1 {
     return None;
   }
@@ -1619,7 +1616,7 @@ fn shares_cancelable_factor(num: &Expr, den: &Expr) -> bool {
   };
   let (num_content, num_bases) = side(num);
   let (den_content, den_bases) = side(den);
-  if super::factor::gcd_i128(num_content, den_content).abs() > 1 {
+  if gcd_i128(num_content, den_content).abs() > 1 {
     return true;
   }
   num_bases.iter().any(|b| den_bases.contains(b))
@@ -1811,8 +1808,7 @@ pub fn together_expr(expr: &Expr) -> Expr {
         && exp.0 > 0
         && let Ok(e) = u32::try_from(exp.0)
         && let Some(p) = n.checked_pow(e)
-        && let Some(l) =
-          int_lcm.checked_mul(p / super::factor::gcd_i128(int_lcm, p).abs())
+        && let Some(l) = int_lcm.checked_mul(p / gcd_i128(int_lcm, p).abs())
       {
         int_lcm = l;
         merged += 1;

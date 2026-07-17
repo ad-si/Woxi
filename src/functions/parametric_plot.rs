@@ -4,7 +4,7 @@ use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
   NUM_SAMPLES, PlotOptions, PlotRangeOverrides, adjust_y_range_for_filling,
   apply_common_plot_option, build_plot_source, evaluate_at_point,
-  generate_svg_with_filling, substitute_var,
+  generate_svg_with_filling, parse_iterator, substitute_var,
 };
 use crate::syntax::Expr;
 
@@ -341,40 +341,6 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     plot_opts.filling,
   );
   Ok(crate::graphics_result_with_source(svg, source))
-}
-
-fn parse_iterator(
-  spec: &Expr,
-  label: &str,
-) -> Result<(String, f64, f64), InterpreterError> {
-  match spec {
-    Expr::List(items) if items.len() == 3 => {
-      let var = match &items[0] {
-        Expr::Identifier(name) => name.clone(),
-        _ => {
-          return Err(InterpreterError::EvaluationError(format!(
-            "{label}: iterator variable must be a symbol"
-          )));
-        }
-      };
-      let min_expr = evaluate_expr_to_expr(&items[1])?;
-      let max_expr = evaluate_expr_to_expr(&items[2])?;
-      let min_val = try_eval_to_f64(&min_expr).ok_or_else(|| {
-        InterpreterError::EvaluationError(format!(
-          "{label}: cannot evaluate iterator min to a number"
-        ))
-      })?;
-      let max_val = try_eval_to_f64(&max_expr).ok_or_else(|| {
-        InterpreterError::EvaluationError(format!(
-          "{label}: cannot evaluate iterator max to a number"
-        ))
-      })?;
-      Ok((var, min_val, max_val))
-    }
-    _ => Err(InterpreterError::EvaluationError(format!(
-      "{label}: iterator must be {{var, min, max}}"
-    ))),
-  }
 }
 
 /// Compute x/y ranges from point data with 4% padding.

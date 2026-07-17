@@ -594,16 +594,6 @@ fn explicit_real(e: &Expr) -> Option<f64> {
   }
 }
 
-fn gcd_i128(a: i128, b: i128) -> i128 {
-  let (mut a, mut b) = (a.abs(), b.abs());
-  while b != 0 {
-    let t = a % b;
-    a = b;
-    b = t;
-  }
-  a
-}
-
 /// A CoefficientList entry as an exact `(num, den)` rational, or None.
 fn coeff_to_ratio(e: &Expr) -> Option<(i128, i128)> {
   match e {

@@ -1,6 +1,8 @@
 #[allow(unused_imports)]
 use super::*;
 
+use crate::functions::math_ast::gcd as gcd_i128;
+
 // Re-export crate types/functions for submodules (used by submodules via `use super::*`)
 #[allow(unused_imports)]
 pub(crate) use crate::syntax::{
@@ -8568,14 +8570,7 @@ pub fn evaluate_function_call_ast_inner(
       // Circular embedding: angle_k = π/2 + k * 2π/n for k = 1..n
       // Snap coordinates near simple rational values (0, ±0.5, ±1) to
       // eliminate platform-dependent ULP differences in f64 trig.
-      fn snap_coord(v: f64) -> f64 {
-        for &target in &[0.0, 0.5, -0.5, 1.0, -1.0] {
-          if (v - target).abs() < 1e-14 {
-            return target;
-          }
-        }
-        v
-      }
+      use crate::functions::graph::snap_coord;
       let coords: Vec<Expr> = (1..=n)
         .map(|k| {
           let angle = std::f64::consts::FRAC_PI_2
@@ -10953,10 +10948,6 @@ fn expr_to_rational(expr: &Expr) -> Option<(i128, i128)> {
     }
     _ => None,
   }
-}
-
-fn gcd_i128(a: i128, b: i128) -> i128 {
-  if b == 0 { a } else { gcd_i128(b, a % b) }
 }
 
 /// Build a petgraph UnGraph from Wolfram Graph vertices and edges.

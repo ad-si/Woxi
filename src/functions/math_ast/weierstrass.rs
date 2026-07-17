@@ -25,20 +25,7 @@ pub(crate) fn format_power_infy_2d(base: &str, exp: &str) -> String {
 /// in which case the Weierstrass functions numericize; otherwise they stay
 /// symbolic (matching wolframscript; `N[...]` makes the arguments inexact).
 fn any_inexact(exprs: &[&Expr]) -> bool {
-  fn is_inexact(e: &Expr) -> bool {
-    match e {
-      Expr::Real(_) | Expr::BigFloat(_, _) => true,
-      Expr::BinaryOp { left, right, .. } => {
-        is_inexact(left) || is_inexact(right)
-      }
-      Expr::UnaryOp { operand, .. } => is_inexact(operand),
-      Expr::FunctionCall { args, .. } | Expr::List(args) => {
-        args.iter().any(is_inexact)
-      }
-      _ => false,
-    }
-  }
-  exprs.iter().any(|e| is_inexact(e))
+  exprs.iter().any(|e| contains_inexact_real(e))
 }
 
 /// WeierstrassP[u, {g2, g3}] - Weierstrass elliptic function ℘(u; g₂, g₃)

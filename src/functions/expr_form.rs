@@ -418,16 +418,7 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
 /// Helper: render a rational (num, denom) pair in FullForm notation.
 fn render_rational_full_form(num: i128, denom: i128) -> String {
   // Reduce to lowest terms
-  fn gcd(a: i128, b: i128) -> i128 {
-    let (mut a, mut b) = (a.abs(), b.abs());
-    while b != 0 {
-      let t = b;
-      b = a % b;
-      a = t;
-    }
-    a
-  }
-  let g = gcd(num, denom);
+  let g = crate::functions::math_ast::gcd(num, denom);
   let (n, d) = if g > 0 {
     (num / g, denom / g)
   } else {
@@ -510,18 +501,7 @@ fn expr_contains_imag_unit(expr: &Expr) -> bool {
 /// together with `expr_contains_imag_unit` to decide whether a sum
 /// like `Real + Real*I` should collapse to `Complex[re\`, im\`]` in
 /// FullForm.
-fn expr_contains_real(expr: &Expr) -> bool {
-  match expr {
-    Expr::Real(_) => true,
-    Expr::List(items) => items.iter().any(expr_contains_real),
-    Expr::FunctionCall { args, .. } => args.iter().any(expr_contains_real),
-    Expr::BinaryOp { left, right, .. } => {
-      expr_contains_real(left) || expr_contains_real(right)
-    }
-    Expr::UnaryOp { operand, .. } => expr_contains_real(operand),
-    _ => false,
-  }
-}
+use crate::functions::math_ast::expr_contains_real;
 
 /// Render a machine-precision Real for FullForm/InputForm output:
 /// integer values lose their trailing zero (`1.0` → `1.`) and every

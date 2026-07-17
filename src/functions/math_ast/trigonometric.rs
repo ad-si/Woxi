@@ -4542,18 +4542,6 @@ pub fn arccosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// True if `expr` contains a Real or BigFloat anywhere — used to gate
 /// numeric evaluation of otherwise-exact symbolic inputs.
-fn contains_inexact_real(expr: &Expr) -> bool {
-  match expr {
-    Expr::Real(_) | Expr::BigFloat(_, _) => true,
-    Expr::List(items) => items.iter().any(contains_inexact_real),
-    Expr::FunctionCall { args, .. } => args.iter().any(contains_inexact_real),
-    Expr::BinaryOp { left, right, .. } => {
-      contains_inexact_real(left) || contains_inexact_real(right)
-    }
-    Expr::UnaryOp { operand, .. } => contains_inexact_real(operand),
-    _ => false,
-  }
-}
 
 /// ArcTanh[x] - Inverse hyperbolic tangent
 pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -6088,17 +6076,6 @@ fn reduce_trig_power(base: &Expr, n: i128) -> Option<Expr> {
   }
 
   // Compute GCD of all numerator coefficients and denom to simplify the fraction
-  fn gcd(mut a: i128, mut b: i128) -> i128 {
-    a = a.abs();
-    b = b.abs();
-    while b != 0 {
-      let t = b;
-      b = a % b;
-      a = t;
-    }
-    a
-  }
-
   let mut g = denom;
   for (c, _) in &num_terms {
     g = gcd(g, *c);

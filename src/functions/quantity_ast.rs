@@ -712,16 +712,7 @@ fn resolve_lowercase_unit(name: &str) -> Option<String> {
   None
 }
 
-fn gcd(mut a: i128, mut b: i128) -> i128 {
-  a = a.abs();
-  b = b.abs();
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a
-}
+use crate::functions::math_ast::gcd;
 
 // ─── Compound unit decomposition ────────────────────────────────────────────
 
@@ -2724,23 +2715,7 @@ pub fn try_quantity_divide(
   }
 }
 
-/// Extract a rational number (p, q) from an expression.
-/// Integer(n) → (n, 1), Rational[p, q] → (p, q).
-fn expr_to_rational(expr: &Expr) -> Option<(i128, i128)> {
-  match expr {
-    Expr::Integer(n) => Some((*n, 1)),
-    Expr::FunctionCall { name, args }
-      if name == "Rational" && args.len() == 2 =>
-    {
-      if let (Expr::Integer(p), Expr::Integer(q)) = (&args[0], &args[1]) {
-        Some((*p, *q))
-      } else {
-        None
-      }
-    }
-    _ => None,
-  }
-}
+use crate::functions::math_ast::expr_to_rational;
 
 /// Raise a unit expression to a rational power (p/q) by decomposing the unit
 /// into its base components, multiplying each exponent by p/q, and rebuilding.

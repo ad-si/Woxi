@@ -88,9 +88,7 @@ fn score_expr(score: f64) -> Expr {
   }
 }
 
-fn bool_expr(b: bool) -> Expr {
-  Expr::Identifier(if b { "True" } else { "False" }.to_string())
-}
+use crate::syntax::bool_expr;
 
 /// Build an `AssessmentResultObject[<|"AnswerCorrect" -> …, "Score" -> …|>]`.
 fn result_object(score: f64, correct: bool) -> Expr {

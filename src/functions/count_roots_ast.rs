@@ -27,16 +27,7 @@ struct Rat {
   d: BigInt, // invariant: d > 0, gcd(|n|, d) == 1
 }
 
-fn gcd_bigint(a: &BigInt, b: &BigInt) -> BigInt {
-  let mut a = a.abs();
-  let mut b = b.abs();
-  while !b.is_zero() {
-    let r = &a % &b;
-    a = b;
-    b = r;
-  }
-  a
-}
+use crate::functions::math_ast::gcd_bigint;
 
 impl Rat {
   fn new(mut n: BigInt, mut d: BigInt) -> Rat {

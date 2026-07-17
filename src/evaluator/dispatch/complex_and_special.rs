@@ -11876,22 +11876,7 @@ fn find_sequence_function(
   })
 }
 
-/// Convert an Expr to a rational number (numerator, denominator).
-fn expr_to_rational(expr: &Expr) -> Option<(i128, i128)> {
-  match expr {
-    Expr::Integer(n) => Some((*n, 1)),
-    Expr::FunctionCall { name, args }
-      if name == "Rational" && args.len() == 2 =>
-    {
-      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
-        Some((*n, *d))
-      } else {
-        None
-      }
-    }
-    _ => None,
-  }
-}
+use crate::functions::math_ast::expr_to_rational;
 
 /// Convert a rational (n, d) back to an Expr.
 fn rational_to_expr(n: i128, d: i128) -> Expr {
@@ -11913,9 +11898,7 @@ fn rational_to_expr(n: i128, d: i128) -> Expr {
   }
 }
 
-fn gcd_i128(a: i128, b: i128) -> i128 {
-  if b == 0 { a } else { gcd_i128(b, a % b) }
-}
+use crate::functions::math_ast::gcd as gcd_i128;
 
 /// Rational arithmetic helpers
 fn rat_sub(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
@@ -14361,15 +14344,4 @@ fn contains_unevaluated_integrate(expr: &Expr) -> bool {
 /// structure. Used by `DirectedInfinity` to distinguish exact closed-form
 /// directions like `(1 + 2 I)/Sqrt[5]` from inexact ones like
 /// `1. + 2. I` — only the latter should be normalised numerically.
-fn expr_contains_real(expr: &Expr) -> bool {
-  match expr {
-    Expr::Real(_) => true,
-    Expr::UnaryOp { operand, .. } => expr_contains_real(operand),
-    Expr::BinaryOp { left, right, .. } => {
-      expr_contains_real(left) || expr_contains_real(right)
-    }
-    Expr::FunctionCall { args, .. } => args.iter().any(expr_contains_real),
-    Expr::List(items) => items.iter().any(expr_contains_real),
-    _ => false,
-  }
-}
+use crate::functions::math_ast::expr_contains_real;

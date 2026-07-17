@@ -46,30 +46,17 @@ pub fn is_prime(n: usize) -> bool {
 /// rational, possibly negated) rather than a symbolic expression. Used to
 /// decide whether a "not a valid index" message should fire: a concrete
 /// non-integer argument is an error, but a symbolic one stays unevaluated.
-fn is_concrete_number(e: &Expr) -> bool {
-  match e {
-    Expr::Integer(_)
-    | Expr::Real(_)
-    | Expr::BigInteger(_)
-    | Expr::BigFloat(_, _) => true,
-    Expr::FunctionCall { name, .. } => name == "Rational",
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand,
-    } => is_concrete_number(operand),
-    _ => false,
-  }
-}
 
-pub fn gcd_bigint(a: BigInt, b: BigInt) -> BigInt {
-  use num_traits::Zero;
-  let (mut a, mut b) = (a.abs(), b.abs());
-  while !b.is_zero() {
-    let t = b.clone();
-    b = &a % &b;
-    a = t;
+/// Primality test for i128 values (Miller-Rabin via BigInt beyond usize).
+pub fn is_prime_i128(n: i128) -> bool {
+  if n < 2 {
+    return false;
   }
-  a
+  if n <= usize::MAX as i128 {
+    return is_prime(n as usize);
+  }
+  let big = num_bigint::BigInt::from(n);
+  is_prime_bigint(&big)
 }
 
 /// GCD[a, b, ...] - Greatest common divisor.
@@ -237,7 +224,7 @@ pub fn gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut num_gcd = fractions[0].0.clone().abs();
   let mut den_lcm = fractions[0].1.clone().abs();
   for (n, d) in &fractions[1..] {
-    num_gcd = gcd_bigint(num_gcd, n.clone());
+    num_gcd = gcd_bigint(&num_gcd, n);
     den_lcm = lcm_bigint(den_lcm, d.clone());
   }
 
@@ -400,7 +387,7 @@ pub fn lcm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut den_gcd = fractions[0].1.clone().abs();
   for (n, d) in &fractions[1..] {
     num_lcm = lcm_bigint(num_lcm, n.clone());
-    den_gcd = gcd_bigint(den_gcd, d.clone());
+    den_gcd = gcd_bigint(&den_gcd, d);
   }
 
   Ok(make_rational_expr(num_lcm, den_gcd))
@@ -437,7 +424,7 @@ fn lcm_bigint(a: BigInt, b: BigInt) -> BigInt {
   if a.is_zero() || b.is_zero() {
     return BigInt::from(0);
   }
-  let g = gcd_bigint(a.clone(), b.clone());
+  let g = gcd_bigint(&a, &b);
   (a.abs() / g) * b.abs()
 }
 
@@ -450,7 +437,7 @@ pub fn make_rational_expr(num: BigInt, den: BigInt) -> Expr {
     // callers see the same surface behaviour.
     return Expr::Identifier("ComplexInfinity".to_string());
   }
-  let g = gcd_bigint(num.clone(), den.clone());
+  let g = gcd_bigint(&num, &den);
   let mut n = num / &g;
   let mut d = den / g;
   if d < BigInt::from(0) {
@@ -503,17 +490,6 @@ fn factorial2_extract_real(expr: &Expr) -> Option<(f64, Option<f64>)> {
 
 /// Returns true if the expression contains a Real or BigFloat anywhere
 /// in the tree — i.e., the value is inexact.
-fn contains_inexact_real(expr: &Expr) -> bool {
-  match expr {
-    Expr::Real(_) | Expr::BigFloat(_, _) => true,
-    Expr::UnaryOp { operand, .. } => contains_inexact_real(operand),
-    Expr::BinaryOp { left, right, .. } => {
-      contains_inexact_real(left) || contains_inexact_real(right)
-    }
-    Expr::FunctionCall { args, .. } => args.iter().any(contains_inexact_real),
-    _ => false,
-  }
-}
 
 /// Factorial[n] or n!
 /// Factorial[n] = Gamma[n+1]
@@ -1038,15 +1014,6 @@ pub fn bernoulli_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Represent each Bernoulli number as a reduced (numerator, denominator)
   // pair in BigInt, so large numerators (e.g. BernoulliB[60]) don't overflow
   // i128.
-  fn gcd_bigint(a: &BigInt, b: &BigInt) -> BigInt {
-    let (mut a, mut b) = (a.clone().abs(), b.clone().abs());
-    while b != BigInt::from(0) {
-      let t = b.clone();
-      b = &a % &b;
-      a = t;
-    }
-    a
-  }
   fn reduce(num: BigInt, den: BigInt) -> (BigInt, BigInt) {
     let mut g = gcd_bigint(&num, &den);
     if g == BigInt::from(0) {
@@ -1093,20 +1060,10 @@ pub fn bernoulli_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Compute the nth Bernoulli polynomial B_n(z) = sum_{k=0}^{n} C(n,k) * B_k * z^(n-k)
 fn bernoulli_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
-  fn rat_gcd(a: i128, b: i128) -> i128 {
-    let (mut a, mut b) = (a.abs(), b.abs());
-    while b != 0 {
-      let t = b;
-      b = a % b;
-      a = t;
-    }
-    a
-  }
-
   fn rat_add(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
     let num = a.0 * b.1 + b.0 * a.1;
     let den = a.1 * b.1;
-    let g = rat_gcd(num, den);
+    let g = gcd(num, den);
     if den < 0 {
       (-num / g, -den / g)
     } else {
@@ -1117,7 +1074,7 @@ fn bernoulli_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
   fn rat_mul(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
     let num = a.0 * b.0;
     let den = a.1 * b.1;
-    let g = rat_gcd(num, den);
+    let g = gcd(num, den);
     if den < 0 {
       (-num / g, -den / g)
     } else {
@@ -1164,7 +1121,7 @@ fn bernoulli_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
     for k in (0..=n).rev() {
       let rn = result.0 * z_num;
       let rd = result.1 * z_den;
-      let g = rat_gcd(rn, rd);
+      let g = gcd(rn, rd);
       let (rn, rd) = if rd < 0 {
         (-rn / g, -rd / g)
       } else {
@@ -1301,20 +1258,10 @@ pub fn euler_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Compute the nth Euler polynomial and either evaluate at a point or return symbolic expression
 fn euler_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
-  fn rat_gcd(a: i128, b: i128) -> i128 {
-    let (mut a, mut b) = (a.abs(), b.abs());
-    while b != 0 {
-      let t = b;
-      b = a % b;
-      a = t;
-    }
-    a
-  }
-
   fn rat_add(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
     let num = a.0 * b.1 + b.0 * a.1;
     let den = a.1 * b.1;
-    let g = rat_gcd(num, den);
+    let g = gcd(num, den);
     if den < 0 {
       (-num / g, -den / g)
     } else {
@@ -1338,7 +1285,7 @@ fn euler_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
       let (cn, cd) = coeffs[k];
       let num = degree as i128 * cn;
       let den = cd * (k as i128 + 1);
-      let g = rat_gcd(num, den);
+      let g = gcd(num, den);
       let (num, den) = if den < 0 {
         (-num / g, -den / g)
       } else {
@@ -1359,7 +1306,7 @@ fn euler_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
     // C = -sum_at_1 / 2
     let c_num = -sum_at_1.0;
     let c_den = sum_at_1.1 * 2;
-    let g = rat_gcd(c_num, c_den);
+    let g = gcd(c_num, c_den);
     let (c_num, c_den) = if c_den < 0 {
       (-c_num / g, -c_den / g)
     } else {
@@ -1380,7 +1327,7 @@ fn euler_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
       // result = result * z + coeffs[k]
       let rn = result.0 * z_num;
       let rd = result.1 * z_den;
-      let g = rat_gcd(rn, rd);
+      let g = gcd(rn, rd);
       let (rn, rd) = if rd < 0 {
         (-rn / g, -rd / g)
       } else {
@@ -1954,26 +1901,6 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Compute as exact rational: sum of 1/k^r for k = 1 to n
   // Use BigInt numerator and denominator
-  fn gcd_bigint(a: &BigInt, b: &BigInt) -> BigInt {
-    use num_traits::Zero;
-    let mut a = if *a < BigInt::zero() {
-      -a.clone()
-    } else {
-      a.clone()
-    };
-    let mut b = if *b < BigInt::zero() {
-      -b.clone()
-    } else {
-      b.clone()
-    };
-    while !b.is_zero() {
-      let t = b.clone();
-      b = &a % &b;
-      a = t;
-    }
-    a
-  }
-
   let mut num = BigInt::from(0);
   let mut den = BigInt::from(1);
   if r >= 0 {
@@ -2271,7 +2198,7 @@ pub fn alternating_harmonic_number_ast(
           };
           num = &num * &k_pow + signed;
           den = &den * &k_pow;
-          let g = gcd_bigint(num.clone(), den.clone());
+          let g = gcd_bigint(&num, &den);
           use num_traits::One;
           if g > BigInt::one() {
             num /= &g;
@@ -4395,15 +4322,6 @@ fn lcm_u128(a: u128, b: u128) -> u128 {
   }
 }
 
-fn gcd_u128(mut a: u128, mut b: u128) -> u128 {
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a
-}
-
 /// JacobiSymbol[n, m] - Compute the Jacobi symbol (n/m)
 pub fn jacobi_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
@@ -5809,13 +5727,10 @@ pub fn frobenius_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Compute GCD of all elements
-  fn gcd_i128(a: i128, b: i128) -> i128 {
-    if b == 0 { a.abs() } else { gcd_i128(b, a % b) }
-  }
 
   let mut g = nums[0];
   for &n in &nums[1..] {
-    g = gcd_i128(g, n);
+    g = gcd(g, n);
   }
 
   // If GCD > 1, infinitely many integers can't be represented
@@ -9195,7 +9110,7 @@ fn bigint_rational_to_expr(num: BigInt, den: BigInt) -> Expr {
   if den.is_zero() {
     return Expr::Identifier("ComplexInfinity".to_string());
   }
-  let g = gcd_bigint(num.clone().abs(), den.clone().abs());
+  let g = gcd_bigint(&num, &den);
   let (mut n, mut d) = (num / &g, den / &g);
   if d < BigInt::from(0) {
     n = -n;

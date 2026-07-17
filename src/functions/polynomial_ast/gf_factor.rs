@@ -17,20 +17,6 @@ const MAX_MODULUS: i128 = 65_536;
 
 // ─── GF(p) polynomial arithmetic (ascending trimmed coefficient vectors) ──
 
-fn trim(v: &mut Vec<i128>) {
-  while v.len() > 1 && *v.last().unwrap() == 0 {
-    v.pop();
-  }
-}
-
-fn is_zero(v: &[i128]) -> bool {
-  v == [0]
-}
-
-fn deg(v: &[i128]) -> usize {
-  v.len() - 1
-}
-
 fn mod_inv(a: i128, p: i128) -> i128 {
   let (mut old_r, mut r) = (a.rem_euclid(p), p);
   let (mut old_s, mut s) = (1i128, 0i128);

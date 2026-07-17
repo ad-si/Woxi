@@ -269,12 +269,7 @@ fn lookup(name: &str) -> Option<&'static Country> {
   })
 }
 
-fn make_quantity(magnitude: Expr, unit: &str) -> Expr {
-  Expr::FunctionCall {
-    name: "Quantity".to_string(),
-    args: vec![magnitude, Expr::String(unit.to_string())].into(),
-  }
-}
+use crate::functions::element_data::make_quantity;
 
 fn missing(reason: &str, name: &str) -> Expr {
   Expr::FunctionCall {

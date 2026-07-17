@@ -36,9 +36,56 @@ pub fn extract_exponent_map(var_factors: &[Expr]) -> HashMap<String, i128> {
   map
 }
 
-/// Helper to create boolean result
-pub fn bool_expr(b: bool) -> Expr {
-  Expr::Identifier(if b { "True" } else { "False" }.to_string())
+pub use crate::syntax::bool_expr;
+
+/// Build a FunctionCall expression.
+pub fn mk_call(name: &str, args: Vec<Expr>) -> Expr {
+  Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  }
+}
+
+/// Build an Integer expression.
+pub fn mk_int(n: i128) -> Expr {
+  Expr::Integer(n)
+}
+
+/// Build a `Rational[n, d]` expression.
+pub fn mk_ratio(n: i128, d: i128) -> Expr {
+  Expr::FunctionCall {
+    name: "Rational".to_string(),
+    args: vec![Expr::Integer(n), Expr::Integer(d)].into(),
+  }
+}
+
+/// Build `Times[a, b]`.
+pub fn mk_times(a: Expr, b: Expr) -> Expr {
+  mk_call("Times", vec![a, b])
+}
+
+/// Build `Power[base, exp]`.
+pub fn mk_power(base: Expr, exp: Expr) -> Expr {
+  mk_call("Power", vec![base, exp])
+}
+
+// ─── Ascending trimmed polynomial coefficient vectors ────────────────
+
+/// Drop trailing zero coefficients (keeping at least one entry).
+pub fn trim(v: &mut Vec<i128>) {
+  while v.len() > 1 && *v.last().unwrap() == 0 {
+    v.pop();
+  }
+}
+
+/// True for the zero polynomial `[0]`.
+pub fn is_zero(v: &[i128]) -> bool {
+  v == [0]
+}
+
+/// Degree of a trimmed coefficient vector.
+pub fn deg(v: &[i128]) -> usize {
+  v.len() - 1
 }
 
 // ─── Helper functions for building expressions ─────────────────────

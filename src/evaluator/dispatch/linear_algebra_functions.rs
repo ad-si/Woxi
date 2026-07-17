@@ -2069,14 +2069,7 @@ pub fn dispatch_linear_algebra_functions(
         let mut matrix = Expr::List(rows.into());
         // If any input is inexact (contains a Real), the whole matrix is
         // numeric in Wolfram — promote every entry to machine precision.
-        fn is_inexact(e: &Expr) -> bool {
-          match e {
-            Expr::Real(_) | Expr::BigFloat(_, _) => true,
-            Expr::List(items) => items.iter().any(is_inexact),
-            Expr::FunctionCall { args, .. } => args.iter().any(is_inexact),
-            _ => false,
-          }
-        }
+        use crate::functions::math_ast::contains_inexact_real as is_inexact;
         if args.iter().any(is_inexact) {
           matrix = Expr::FunctionCall {
             name: "N".to_string(),
@@ -3879,16 +3872,7 @@ fn kronecker_product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(acc_owned)
 }
 
-fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
-  a = a.abs();
-  b = b.abs();
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a
-}
+use crate::functions::math_ast::gcd as gcd_i128;
 
 /// Binary dissimilarity functions for binary (0/1) vectors.
 fn binary_dissimilarity_ast(

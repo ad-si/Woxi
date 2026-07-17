@@ -53,15 +53,7 @@ fn mod_inverse(a: i128, p: i128) -> Option<i128> {
   Some(old_s.rem_euclid(p))
 }
 
-fn gcd(a: i128, b: i128) -> i128 {
-  let (mut a, mut b) = (a.abs(), b.abs());
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a
-}
+use crate::functions::math_ast::gcd;
 
 fn norm(f: Frac) -> Option<Frac> {
   if f.1 == 0 {
@@ -333,19 +325,7 @@ fn groebner_modulus_option(opt: &Expr) -> Option<i128> {
   None
 }
 
-fn is_prime_i128(n: i128) -> bool {
-  if n < 2 {
-    return false;
-  }
-  let mut d = 2i128;
-  while d * d <= n {
-    if n % d == 0 {
-      return false;
-    }
-    d += 1;
-  }
-  true
-}
+use crate::functions::math_ast::is_prime_i128;
 
 pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let full_args = args;

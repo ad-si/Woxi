@@ -738,7 +738,7 @@ pub fn zeta_numeric(s: f64) -> f64 {
 
 // ─── Complex arithmetic helpers ──────────────────────────────────────
 
-fn cmul(a: (f64, f64), b: (f64, f64)) -> (f64, f64) {
+pub(crate) fn cmul(a: (f64, f64), b: (f64, f64)) -> (f64, f64) {
   (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0)
 }
 

@@ -53,9 +53,7 @@ fn approx_eq(a: f64, b: f64) -> bool {
   (a - b).abs() <= REL * (1.0 + a.abs().max(b.abs()))
 }
 
-fn bool_expr(b: bool) -> Expr {
-  Expr::Identifier(if b { "True" } else { "False" }.to_string())
-}
+use crate::syntax::bool_expr;
 
 /// Parse a single 2D point `{x, y}` with numeric coordinates.
 fn extract_point(expr: &Expr) -> Option<Pt> {

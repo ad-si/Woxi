@@ -44,17 +44,6 @@ pub fn airy_ai_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// True if the expression tree contains a Real or BigFloat node.
-fn contains_inexact_real(expr: &Expr) -> bool {
-  match expr {
-    Expr::Real(_) | Expr::BigFloat(_, _) => true,
-    Expr::UnaryOp { operand, .. } => contains_inexact_real(operand),
-    Expr::BinaryOp { left, right, .. } => {
-      contains_inexact_real(left) || contains_inexact_real(right)
-    }
-    Expr::FunctionCall { args, .. } => args.iter().any(contains_inexact_real),
-    _ => false,
-  }
-}
 
 /// Complex Airy Ai via the power series
 ///   Ai(z) = c1·f(z) − c2·g(z)
@@ -88,9 +77,7 @@ fn airy_ai_complex(re: f64, im: f64) -> (f64, f64) {
   (c1 * f.0 - c2 * g.0, c1 * f.1 - c2 * g.1)
 }
 
-fn cmul(a: (f64, f64), b: (f64, f64)) -> (f64, f64) {
-  (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0)
-}
+use super::zeta_functions::cmul;
 
 /// Compute Ai(x) using the two power series
 /// Ai(x) = c1 * f(x) - c2 * g(x)

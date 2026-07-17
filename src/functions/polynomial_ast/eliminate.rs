@@ -164,14 +164,6 @@ pub fn contains_var(expr: &Expr, var: &str) -> bool {
   !is_constant_wrt(expr, var)
 }
 
-/// Greatest common divisor of two non-negative integers.
-fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
-  while b != 0 {
-    (a, b) = (b, a % b);
-  }
-  a.abs()
-}
-
 /// Eliminate one variable from a system of equations
 fn eliminate_one_variable(
   equations: &[Expr],

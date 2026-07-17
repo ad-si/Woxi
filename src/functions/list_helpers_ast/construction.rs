@@ -501,23 +501,7 @@ pub fn table_ast(
   }
 }
 
-/// Extract a rational (numerator, denominator) from an Expr.
-/// Returns Some((n, d)) for Integer, Rational, None for anything else.
-fn expr_to_rational(expr: &Expr) -> Option<(i128, i128)> {
-  match expr {
-    Expr::Integer(n) => Some((*n, 1)),
-    Expr::FunctionCall { name, args }
-      if name == "Rational" && args.len() == 2 =>
-    {
-      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
-        Some((*n, *d))
-      } else {
-        None
-      }
-    }
-    _ => None,
-  }
-}
+use crate::functions::math_ast::expr_to_rational;
 
 /// AST-based Range: generate a range of numbers.
 /// Range[n] -> {1, 2, ..., n}

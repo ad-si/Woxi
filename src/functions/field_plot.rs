@@ -8,62 +8,14 @@ use crate::functions::math_ast::{
   build_complex_float_expr, try_extract_complex_f64,
 };
 use crate::functions::plot::{
-  DEFAULT_HEIGHT, DEFAULT_WIDTH, RESOLUTION_SCALE, generate_axes_only,
-  parse_image_size, plot_theme, rewrite_svg_header, substitute_var,
+  DEFAULT_HEIGHT, DEFAULT_WIDTH, RESOLUTION_SCALE, evaluate_at_xy,
+  generate_axes_only, parse_image_size, parse_iterator, plot_theme,
+  rewrite_svg_header, substitute_var, svg_header,
 };
 use crate::syntax::Expr;
 
 const FIELD_GRID: usize = 100;
 const VECTOR_GRID: usize = 15;
-
-/// Parse iterator: {var, min, max}
-fn parse_iterator(
-  spec: &Expr,
-  label: &str,
-) -> Result<(String, f64, f64), InterpreterError> {
-  match spec {
-    Expr::List(items) if items.len() == 3 => {
-      let var = match &items[0] {
-        Expr::Identifier(name) => name.clone(),
-        _ => {
-          return Err(InterpreterError::EvaluationError(format!(
-            "{label}: iterator variable must be a symbol"
-          )));
-        }
-      };
-      let min_expr = evaluate_expr_to_expr(&items[1])?;
-      let max_expr = evaluate_expr_to_expr(&items[2])?;
-      let min_val = try_eval_to_f64(&min_expr).ok_or_else(|| {
-        InterpreterError::EvaluationError(format!(
-          "{label}: cannot evaluate iterator min to a number"
-        ))
-      })?;
-      let max_val = try_eval_to_f64(&max_expr).ok_or_else(|| {
-        InterpreterError::EvaluationError(format!(
-          "{label}: cannot evaluate iterator max to a number"
-        ))
-      })?;
-      Ok((var, min_val, max_val))
-    }
-    _ => Err(InterpreterError::EvaluationError(format!(
-      "{label}: iterator must be {{var, min, max}}"
-    ))),
-  }
-}
-
-/// Evaluate f(x, y)
-fn evaluate_at_xy(
-  body: &Expr,
-  xvar: &str,
-  yvar: &str,
-  xval: f64,
-  yval: f64,
-) -> Option<f64> {
-  let sub1 = substitute_var(body, xvar, &Expr::Real(xval));
-  let sub2 = substitute_var(&sub1, yvar, &Expr::Real(yval));
-  let result = evaluate_expr_to_expr(&sub2).ok()?;
-  try_eval_to_f64(&result)
-}
 
 /// Evaluate a boolean condition at (x, y) - returns true/false
 fn evaluate_condition(
@@ -123,23 +75,6 @@ fn parse_field_options(args: &[Expr], start: usize) -> (u32, u32, bool) {
     }
   }
   (svg_width, svg_height, full_width)
-}
-
-/// Simple SVG header for plots without plotters axes (ArrayPlot, MatrixPlot).
-fn svg_header(w: u32, h: u32, full_width: bool) -> String {
-  let (bg, _, _, _, _) = crate::functions::plot::plot_theme();
-  let bg_fill = format!("rgb({},{},{})", bg.0, bg.1, bg.2);
-  if full_width {
-    format!(
-      "<svg width=\"100%\" viewBox=\"0 0 {w} {h}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n\
-       <rect width=\"{w}\" height=\"{h}\" fill=\"{bg_fill}\"/>\n"
-    )
-  } else {
-    format!(
-      "<svg width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n\
-       <rect width=\"{w}\" height=\"{h}\" fill=\"{bg_fill}\"/>\n"
-    )
-  }
 }
 
 /// Map value to a blue-white-red color

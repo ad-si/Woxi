@@ -484,17 +484,6 @@ fn gamma_half_expr(numer: BigInt, denom: BigInt, is_neg: bool) -> Expr {
 /// number anywhere in the tree. Used to distinguish exact symbolic
 /// arguments (which Gamma should not evaluate numerically) from inexact
 /// ones (which should be evaluated to floats).
-fn contains_inexact_real(expr: &Expr) -> bool {
-  match expr {
-    Expr::Real(_) | Expr::BigFloat(_, _) => true,
-    Expr::UnaryOp { operand, .. } => contains_inexact_real(operand),
-    Expr::BinaryOp { left, right, .. } => {
-      contains_inexact_real(left) || contains_inexact_real(right)
-    }
-    Expr::FunctionCall { args, .. } => args.iter().any(contains_inexact_real),
-    _ => false,
-  }
-}
 
 /// Upper incomplete gamma function Gamma[a, z]
 fn gamma_incomplete_upper(
@@ -763,18 +752,6 @@ fn upper_incomplete_gamma_cf(a: f64, z: f64) -> f64 {
     }
   }
   f * (-z).exp() * z.powf(a)
-}
-
-fn gcd_bigint(a: &BigInt, b: &BigInt) -> BigInt {
-  use num_traits::Zero;
-  let mut a = a.magnitude().clone();
-  let mut b = b.magnitude().clone();
-  while !b.is_zero() {
-    let t = b.clone();
-    b = &a % &b;
-    a = t;
-  }
-  a.into()
 }
 
 /// Lanczos approximation for the Gamma function

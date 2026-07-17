@@ -4,19 +4,7 @@ use crate::syntax::{ComparisonOp, unevaluated};
 
 /// True if `expr` contains any Real or BigFloat node — used to decide
 /// between exact and inexact number predicates.
-fn contains_real(expr: &Expr) -> bool {
-  match expr {
-    Expr::Real(_) | Expr::BigFloat(_, _) => true,
-    Expr::FunctionCall { args, .. } | Expr::List(args) => {
-      args.iter().any(contains_real)
-    }
-    Expr::BinaryOp { left, right, .. } => {
-      contains_real(left) || contains_real(right)
-    }
-    Expr::UnaryOp { operand, .. } => contains_real(operand),
-    _ => false,
-  }
-}
+use crate::functions::math_ast::contains_inexact_real as contains_real;
 
 /// ExactNumberQ[x]: True for Integer/Rational/exact Complex (and their
 /// expanded forms). `I`, `1 + I`, `4 I + 5/6` are all exact.

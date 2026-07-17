@@ -2227,7 +2227,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               let root = if j == 0 {
                 val_root.clone()
               } else {
-                let g = super::factor::gcd_i128(j, n);
+                let g = gcd_i128(j, n);
                 let p = j / g;
                 let q = n / g;
                 let multiplier = Expr::FunctionCall {
@@ -2262,7 +2262,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             for j in 0..half_n {
               let frac_num = 2 * j;
               let frac_den = n;
-              let g = super::factor::gcd_i128(frac_num, frac_den);
+              let g = gcd_i128(frac_num, frac_den);
 
               if frac_num == 0 {
                 // frac = 0: roots are -val^(1/n) and val^(1/n)

@@ -73,9 +73,7 @@ impl Rat {
   }
 }
 
-fn gcd(a: u128, b: u128) -> u128 {
-  if b == 0 { a } else { gcd(b, a % b) }
-}
+use crate::functions::math_ast::gcd_u128 as gcd;
 
 /// Try to interpret an Expr as a rational number.
 fn expr_to_rat(e: &Expr) -> Option<Rat> {

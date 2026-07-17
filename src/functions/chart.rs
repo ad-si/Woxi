@@ -5,7 +5,7 @@ use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
   BinSpec, DEFAULT_HEIGHT, DEFAULT_WIDTH, HistogramHeight, MarginOverrides,
   PLOT_COLORS, RESOLUTION_SCALE, generate_bar_svg, generate_histogram_svg,
-  parse_image_size,
+  html_escape, parse_image_size, svg_header,
 };
 use crate::syntax::{Expr, unevaluated};
 
@@ -662,22 +662,6 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     }
   }
   opts
-}
-
-fn svg_header(w: u32, h: u32, full_width: bool) -> String {
-  let (bg, _, _, _, _) = crate::functions::plot::plot_theme();
-  let bg_fill = format!("rgb({},{},{})", bg.0, bg.1, bg.2);
-  if full_width {
-    format!(
-      "<svg width=\"100%\" viewBox=\"0 0 {w} {h}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n\
-       <rect width=\"{w}\" height=\"{h}\" fill=\"{bg_fill}\"/>\n"
-    )
-  } else {
-    format!(
-      "<svg width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n\
-       <rect width=\"{w}\" height=\"{h}\" fill=\"{bg_fill}\"/>\n"
-    )
-  }
 }
 
 /// Format a numeric value for display in chart tooltips.
@@ -2664,14 +2648,6 @@ fn inject_date_labels(
   } else {
     svg.to_string()
   }
-}
-
-/// Escape special HTML characters in text content.
-fn html_escape(s: &str) -> String {
-  s.replace('&', "&amp;")
-    .replace('<', "&lt;")
-    .replace('>', "&gt;")
-    .replace('"', "&quot;")
 }
 
 /// WordCloud[{"word1", "word2", ...}] or WordCloud[{1, 2, 3, ...}]

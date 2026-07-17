@@ -1729,17 +1729,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
         match denom {
           Some(d) => {
             // Simplify the fraction
-            fn gcd(mut a: i128, mut b: i128) -> i128 {
-              a = a.abs();
-              b = b.abs();
-              while b != 0 {
-                let t = b;
-                b = a % b;
-                a = t;
-              }
-              a
-            }
-            let g = gcd(mantissa, d);
+            let g = crate::functions::math_ast::gcd(mantissa, d);
             let num = mantissa / g;
             let den = d / g;
             if den == 1 {
@@ -14042,6 +14032,11 @@ pub fn replace_identifier_in_expr(
     ),
     _ => expr.clone(),
   }
+}
+
+/// Build the boolean symbol `True` or `False`.
+pub fn bool_expr(b: bool) -> Expr {
+  Expr::Identifier(if b { "True" } else { "False" }.to_string())
 }
 
 pub fn unevaluated(name: &str, args: &[Expr]) -> Expr {

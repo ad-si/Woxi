@@ -569,10 +569,7 @@ pub fn image_aspect_ratio_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   fn ratio(h: i128, w: i128) -> Expr {
-    fn gcd(a: i128, b: i128) -> i128 {
-      if b == 0 { a.abs() } else { gcd(b, a % b) }
-    }
-    let g = gcd(h, w);
+    let g = crate::functions::math_ast::gcd(h, w);
     let (num, den) = (h / g, w / g);
     if den == 1 {
       Expr::Integer(num)

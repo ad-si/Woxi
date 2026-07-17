@@ -442,13 +442,6 @@ fn poly_mul_i128(a: &[i128], b: &[i128]) -> Vec<i128> {
   out
 }
 
-fn lcm_i128(a: i128, b: i128) -> i128 {
-  if a == 0 || b == 0 {
-    return 0;
-  }
-  (a / gcd_i128(a.abs(), b.abs())) * b
-}
-
 /// Solve the square rational system `mat * x = rhs` by Gauss–Jordan
 /// elimination. `mat` is row-major `n x n`. Returns None if singular.
 fn solve_rat_system(
@@ -989,20 +982,9 @@ fn apart_repeated_roots(
   Some(build_sum(terms))
 }
 
-/// Polynomial long division returning (quotient, remainder) as coefficient vectors
-fn gcd_i128(a: i128, b: i128) -> i128 {
-  let (mut a, mut b) = (a.abs(), b.abs());
-  while b != 0 {
-    let t = a % b;
-    a = b;
-    b = t;
-  }
-  if a == 0 { 1 } else { a }
-}
-
 /// Reduce n/d to lowest terms with a positive denominator.
 fn rat_reduce(n: i128, d: i128) -> (i128, i128) {
-  let g = gcd_i128(n, d);
+  let g = gcd_i128(n, d).max(1);
   let (mut n, mut d) = (n / g, d / g);
   if d < 0 {
     n = -n;

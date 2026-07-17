@@ -2797,20 +2797,7 @@ pub fn integer_exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 // ─── IntegerPart / FractionalPart ──────────────────────────────────
 
-/// True when `expr` carries a machine-precision (inexact) literal anywhere.
-fn contains_inexact_literal(e: &Expr) -> bool {
-  match e {
-    Expr::Real(_) | Expr::BigFloat(_, _) => true,
-    Expr::BinaryOp { left, right, .. } => {
-      contains_inexact_literal(left) || contains_inexact_literal(right)
-    }
-    Expr::UnaryOp { operand, .. } => contains_inexact_literal(operand),
-    Expr::FunctionCall { args, .. } | Expr::List(args) => {
-      args.iter().any(contains_inexact_literal)
-    }
-    _ => false,
-  }
-}
+use crate::functions::math_ast::contains_inexact_real as contains_inexact_literal;
 
 /// Build `re + im*I`, dropping a zero imaginary part. Used by the complex
 /// branches of IntegerPart/FractionalPart.
@@ -3288,20 +3275,6 @@ pub fn cube_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// True when `e` is a fully concrete number (integer, real, big number, or a
 /// Rational), possibly negated. Used to distinguish a bad numeric argument
 /// (which triggers a message) from a symbolic one (left unevaluated silently).
-fn is_concrete_number(e: &Expr) -> bool {
-  match e {
-    Expr::Integer(_)
-    | Expr::Real(_)
-    | Expr::BigInteger(_)
-    | Expr::BigFloat(_, _) => true,
-    Expr::FunctionCall { name, .. } => name == "Rational",
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand,
-    } => is_concrete_number(operand),
-    _ => false,
-  }
-}
 
 pub fn subdivide_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 3 {
@@ -3497,12 +3470,7 @@ fn nice_step_rational(raw: f64) -> Option<(i128, i128)> {
   Some((sn / g, sd / g))
 }
 
-fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
-  while b != 0 {
-    (a, b) = (b, a % b);
-  }
-  a.abs()
-}
+use crate::functions::math_ast::gcd as gcd_i128;
 
 /// Reduce a (numerator, denominator) pair to lowest terms with a positive
 /// denominator.

@@ -962,15 +962,7 @@ fn hypergeometric_2f1_regularized_non_positive_c(
   Ok(Some(crate::evaluator::evaluate_expr_to_expr(&product)?))
 }
 
-fn gcd_i128(a: i128, b: i128) -> i128 {
-  let (mut a, mut b) = (a, b);
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a.max(1)
-}
+use crate::functions::math_ast::gcd as gcd_i128;
 
 /// Hypergeometric1F1[a, b, z] - Kummer's confluent hypergeometric function
 fn is_half(expr: &Expr) -> bool {
@@ -1192,22 +1184,6 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       let denom = fact(n - k) * &b_pochhammer * &k_fact;
       // coeff = n! / denom (reduce GCD).
-      fn gcd_bigint(a: &BigInt, b: &BigInt) -> BigInt {
-        use num_traits::Zero;
-        let (mut a, mut b) = (a.clone(), b.clone());
-        if a < BigInt::from(0) {
-          a = -a;
-        }
-        if b < BigInt::from(0) {
-          b = -b;
-        }
-        while !b.is_zero() {
-          let r = &a % &b;
-          a = b;
-          b = r;
-        }
-        a
-      }
       let g = gcd_bigint(&n_fact, &denom);
       let cn = &n_fact / &g;
       let cd = &denom / &g;
@@ -1338,11 +1314,9 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     e_num *= &prefactor;
     const_num *= &prefactor;
     // Result = (e_num · E^z + const_num) / z_max  — reduce by gcd.
-    use num_traits::Signed;
     // Reduce by the gcd shared between numerator e^z coefficient, the
     // numerator constant, and the denominator.
-    let g_all =
-      gcd_bigint(gcd_bigint(e_num.abs(), const_num.abs()), z_max.abs());
+    let g_all = gcd_bigint(&gcd_bigint(&e_num, &const_num), &z_max);
     let denom = if g_all != BigInt::from(0) {
       &z_max / &g_all
     } else {
@@ -1362,7 +1336,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // when the numerator has a common factor — pull that factor out so
     // the inner Plus shows the smallest integer coefficients.
     let mut outer_factor = BigInt::from(1);
-    let g_num = gcd_bigint(e_n.abs(), c_n.abs());
+    let g_num = gcd_bigint(&e_n, &c_n);
     if g_num > BigInt::from(1) {
       outer_factor = g_num.clone();
       e_n /= &g_num;
@@ -1405,21 +1379,6 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       crate::evaluator::evaluate_function_call_ast("Times", &factors)
     };
-  }
-
-  fn gcd_bigint(a: BigInt, b: BigInt) -> BigInt {
-    use num_traits::Zero;
-    let (mut a, mut b) = (a, b);
-    while !b.is_zero() {
-      let r = &a % &b;
-      a = b;
-      b = r;
-    }
-    if a == BigInt::from(0) {
-      BigInt::from(1)
-    } else {
-      a
-    }
   }
 
   // Closed form for 1F1[positive integer a, 1, z]:

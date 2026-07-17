@@ -1053,7 +1053,10 @@ fn music_assoc(head: &str, pairs: Vec<(&str, Expr)>) -> Expr {
 }
 
 /// Look up a string key in an association's `(key, value)` pairs.
-fn assoc_get<'a>(pairs: &'a [(Expr, Expr)], key: &str) -> Option<&'a Expr> {
+pub(crate) fn assoc_get<'a>(
+  pairs: &'a [(Expr, Expr)],
+  key: &str,
+) -> Option<&'a Expr> {
   pairs.iter().find_map(|(k, v)| match k {
     Expr::String(s) if s == key => Some(v),
     _ => None,
@@ -1836,10 +1839,7 @@ pub fn music_rest(args: &[Expr]) -> Option<Expr> {
   }
 }
 
-/// Greatest common divisor of two non-negative integers.
-fn gcd(a: i128, b: i128) -> i128 {
-  if b == 0 { a } else { gcd(b, a % b) }
-}
+use crate::functions::math_ast::gcd;
 
 /// Reduce `n/d` to lowest terms with a positive denominator, returning an
 /// `Integer` when the denominator is 1 and a `Rational[n, d]` otherwise.

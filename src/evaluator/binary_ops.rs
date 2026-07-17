@@ -291,23 +291,7 @@ fn precision_for_add(lv: f64, lp: f64, rv: f64, rp: f64, result: f64) -> f64 {
   }
 }
 
-/// Format an f64 value as a BigFloat string with the given number of significant digits.
-fn format_bigfloat_value(value: f64, sig_digits: usize) -> String {
-  if value == 0.0 {
-    return "0.".to_string();
-  }
-  let sign = if value < 0.0 { "-" } else { "" };
-  let abs_val = value.abs();
-  let magnitude = abs_val.log10().floor() as i32;
-  let decimal_places = ((sig_digits as i32) - magnitude - 1).max(0) as usize;
-  let formatted = format!("{}{:.prec$}", sign, abs_val, prec = decimal_places);
-  // Ensure trailing dot if no decimal point
-  if !formatted.contains('.') {
-    format!("{}.", formatted)
-  } else {
-    formatted
-  }
-}
+use crate::functions::math_ast::format_bigfloat_value;
 
 /// Perform a binary operation on BigFloat operands with precision tracking.
 /// Returns None if operands are not numeric, so the caller can fall through.

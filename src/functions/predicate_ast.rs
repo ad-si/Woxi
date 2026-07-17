@@ -7,10 +7,7 @@ use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
 };
 
-/// Helper to create boolean result
-fn bool_expr(b: bool) -> Expr {
-  Expr::Identifier(if b { "True" } else { "False" }.to_string())
-}
+use crate::syntax::bool_expr;
 
 /// NumberQ[expr] - Tests if the expression is a number
 pub fn number_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -1432,9 +1429,7 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let form = &args[1];
   let form_str = crate::syntax::expr_to_string(form);
 
-  fn expr_str_eq(a: &Expr, b: &Expr) -> bool {
-    crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b)
-  }
+  use crate::functions::calculus_ast::expr_str_eq;
 
   /// Check if `needles` args are a subset of `haystack` args (for Flat+Orderless ops)
   fn is_args_subset(haystack: &[Expr], needles: &[Expr]) -> bool {

@@ -1187,17 +1187,7 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(unevaluated("ContinuedFraction", args))
 }
 
-/// Greatest common divisor of two non-negative integers.
-fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
-  a = a.abs();
-  b = b.abs();
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a
-}
+use crate::functions::math_ast::gcd as gcd_i128;
 
 /// Exact rational with i128 numerator/denominator, kept reduced with a
 /// positive denominator. Used to evaluate a periodic continued fraction in
@@ -1468,16 +1458,6 @@ pub fn from_continued_fraction_ast(
   }
 
   // Simplify by GCD
-  fn gcd(mut a: i128, mut b: i128) -> i128 {
-    a = a.abs();
-    b = b.abs();
-    while b != 0 {
-      let t = b;
-      b = a % b;
-      a = t;
-    }
-    a
-  }
 
   let g = gcd(num, den);
   num /= g;
@@ -2648,17 +2628,6 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       // Need a rational: int_val / base^(-shift)
       let denom = big_base.pow((-shift) as u32);
-      // Simplify the fraction using Euclidean gcd
-      fn gcd_bigint(a: &BigInt, b: &BigInt) -> BigInt {
-        let mut a = if a < &BigInt::from(0) { -a } else { a.clone() };
-        let mut b = if b < &BigInt::from(0) { -b } else { b.clone() };
-        while b > BigInt::from(0) {
-          let t = &a % &b;
-          a = b;
-          b = t;
-        }
-        a
-      }
       let g = gcd_bigint(&int_val, &denom);
       let num = &int_val / &g;
       let den = &denom / &g;

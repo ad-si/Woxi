@@ -16,49 +16,12 @@ pub fn expr_to_number(expr: &Expr) -> Option<f64> {
   }
 }
 
-/// Extract an i128 from Integer or BigInteger (if it fits)
-pub fn expr_to_i128(expr: &Expr) -> Option<i128> {
-  use num_traits::ToPrimitive;
-  match expr {
-    Expr::Integer(n) => Some(*n),
-    Expr::BigInteger(n) => n.to_i128(),
-    _ => None,
-  }
-}
+pub use crate::functions::math_ast::expr_to_i128;
 
-/// Resolve a named constant to its numeric f64 value.
-/// Constants (Pi, E, Degree) are kept symbolic — use try_eval_to_f64 for numeric evaluation.
-pub fn constant_to_f64(_name: &str) -> Option<f64> {
-  None
-}
-
-/// Convert a number to an appropriate Expr (Integer if whole, Real otherwise)
-pub fn num_to_expr(n: f64) -> Expr {
-  if n.fract() == 0.0 && n.abs() < i128::MAX as f64 {
-    Expr::Integer(n as i128)
-  } else {
-    Expr::Real(n)
-  }
-}
-
-/// Convert an Expr to BigInt if it's an integer type
-pub fn expr_to_bigint(expr: &Expr) -> Option<num_bigint::BigInt> {
-  match expr {
-    Expr::Integer(n) => Some(num_bigint::BigInt::from(*n)),
-    Expr::BigInteger(n) => Some(n.clone()),
-    _ => None,
-  }
-}
-
-/// Check if an expression requires BigInt arithmetic (exceeds f64 precision).
-/// f64 can only represent integers exactly up to 2^53.
-pub fn needs_bigint(expr: &Expr) -> bool {
-  match expr {
-    Expr::BigInteger(_) => true,
-    Expr::Integer(n) => n.unsigned_abs() > (1u128 << 53),
-    _ => false,
-  }
-}
+pub use crate::functions::math_ast::needs_bigint_arithmetic as needs_bigint;
+pub use crate::functions::math_ast::{
+  constant_to_f64, expr_to_bigint, num_to_expr,
+};
 
 /// Check if an expression contains the imaginary unit I
 pub fn contains_i(expr: &Expr) -> bool {

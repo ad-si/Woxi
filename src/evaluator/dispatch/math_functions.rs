@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::functions::math_ast::make_sqrt;
+use crate::functions::math_ast::{gcd as gcd_i128, gcd_u64, make_sqrt};
 use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator, unevaluated};
 
 /// Columnwise quartile-family statistic for a matrix argument.
@@ -2797,7 +2797,7 @@ pub fn dispatch_math_functions(
           return Some(Ok(Expr::Integer(1)));
         }
         let a_mod = ((*a % *n) + *n) % *n;
-        if a_mod != 0 && crate::functions::math_ast::gcd_i128(a_mod, *n) == 1 {
+        if a_mod != 0 && crate::functions::math_ast::gcd(a_mod, *n) == 1 {
           let mut power = a_mod;
           for k in 1..=*n {
             if power == 1 {
@@ -2844,7 +2844,7 @@ pub fn dispatch_math_functions(
           let phi = crate::functions::math_ast::euler_phi_i128(m);
           let start = if m == 2 { 1 } else { 2 };
           for g in start..m {
-            if crate::functions::math_ast::gcd_i128(g, m) != 1 {
+            if crate::functions::math_ast::gcd(g, m) != 1 {
               continue;
             }
             let mut power = g % m;
@@ -5638,22 +5638,7 @@ fn cantor_staircase_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
   })
 }
 
-/// Extract numerator and denominator from a rational expression
-fn extract_rational(expr: &Expr) -> Option<(i128, i128)> {
-  match expr {
-    Expr::Integer(n) => Some((*n, 1)),
-    Expr::FunctionCall { name, args }
-      if name == "Rational" && args.len() == 2 =>
-    {
-      if let (Expr::Integer(a), Expr::Integer(b)) = (&args[0], &args[1]) {
-        Some((*a, *b))
-      } else {
-        None
-      }
-    }
-    _ => None,
-  }
-}
+use crate::functions::math_ast::expr_to_rational as extract_rational;
 
 /// Compute cantor staircase for exact rational p/q where 0 < p/q < 1
 fn cantor_staircase_rational(p: i128, q: i128) -> Expr {
@@ -5960,15 +5945,6 @@ fn rat_mul(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
   let d = a.1 * b.1;
   let g = gcd_i128(n.abs(), d.abs());
   (n / g, d / g)
-}
-
-fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  if a == 0 { 1 } else { a }
 }
 
 fn solve_rational_system(
@@ -7974,15 +7950,6 @@ fn is_primitive_root(g: u64, n: u64, phi: u64) -> bool {
   true
 }
 
-fn gcd_u64(mut a: u64, mut b: u64) -> u64 {
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a
-}
-
 fn pow_mod(mut base: u64, mut exp: u64, modulus: u64) -> u64 {
   let mut result = 1u64;
   base %= modulus;
@@ -8265,22 +8232,7 @@ fn image_min_max_filter(
   })
 }
 
-fn expr_to_f64(expr: &Expr) -> Option<f64> {
-  match expr {
-    Expr::Integer(n) => Some(*n as f64),
-    Expr::Real(f) => Some(*f),
-    Expr::FunctionCall { name, args }
-      if name == "Rational" && args.len() == 2 =>
-    {
-      if let (Expr::Integer(a), Expr::Integer(b)) = (&args[0], &args[1]) {
-        Some(*a as f64 / *b as f64)
-      } else {
-        None
-      }
-    }
-    _ => None,
-  }
-}
+use crate::functions::math_ast::expr_to_f64;
 
 /// Standardize[data] — subtract mean and divide by standard deviation
 /// Standardize[data, f1, f2] — use f1 for location and f2 for scale

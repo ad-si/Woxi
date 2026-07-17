@@ -1657,17 +1657,6 @@ fn collect_primes_in_range(min: i128, max: i128) -> Vec<i128> {
 }
 
 /// Primality test for i128 values, using Miller-Rabin for large numbers
-fn is_prime_i128(n: i128) -> bool {
-  if n < 2 {
-    return false;
-  }
-  if n <= usize::MAX as i128 {
-    return is_prime(n as usize);
-  }
-  // For values beyond usize, use BigInt Miller-Rabin
-  let big = num_bigint::BigInt::from(n);
-  super::number_theory::is_prime_bigint(&big)
-}
 
 /// SeedRandom[n] - Seed the random number generator
 /// SeedRandom[] - Reset to non-deterministic RNG

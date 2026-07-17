@@ -7064,23 +7064,7 @@ fn expand_part_spec(
   Some(out)
 }
 
-/// Extract a value from an association by key string
-fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a
-}
-
-fn lcm_i128(a: i128, b: i128) -> i128 {
-  if a == 0 || b == 0 {
-    return 0;
-  }
-  let g = gcd_i128(a.abs(), b.abs());
-  (a / g * b).abs()
-}
+use crate::functions::math_ast::lcm_i128;
 
 /// If `expr` is `Cycles[{{...}, {...}, ...}]` with all-integer cycles,
 /// return each cycle as `Vec<i128>`. Returns `None` for any other shape
@@ -8018,22 +8002,7 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Try to convert an Expr to f64 for distance computation
-fn expr_to_f64(expr: &Expr) -> Option<f64> {
-  match expr {
-    Expr::Integer(n) => Some(*n as f64),
-    Expr::Real(f) => Some(*f),
-    Expr::FunctionCall { name, args }
-      if name == "Rational" && args.len() == 2 =>
-    {
-      if let (Expr::Integer(a), Expr::Integer(b)) = (&args[0], &args[1]) {
-        Some(*a as f64 / *b as f64)
-      } else {
-        None
-      }
-    }
-    _ => None,
-  }
-}
+use crate::functions::math_ast::expr_to_f64;
 
 fn array_reshape_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Flatten the input list

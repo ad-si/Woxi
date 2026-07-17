@@ -69,13 +69,7 @@ fn element_midi(expr: &Expr) -> Option<i128> {
   }
 }
 
-/// Look up a string key in an association's `(key, value)` pairs.
-fn assoc_get<'a>(pairs: &'a [(Expr, Expr)], key: &str) -> Option<&'a Expr> {
-  pairs.iter().find_map(|(k, v)| match k {
-    Expr::String(s) if s == key => Some(v),
-    _ => None,
-  })
-}
+use crate::functions::music_ast::assoc_get;
 
 /// The integer beat count carried by a resolved note/rest's annotated duration
 /// (`MusicDuration[<|… "Beats" -> n|>]`), or `None` if absent.
