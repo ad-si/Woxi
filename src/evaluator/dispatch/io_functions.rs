@@ -789,6 +789,10 @@ pub fn dispatch_io_functions(
       let fmt = explicit_fmt.or(ext_fmt).unwrap_or_default();
       let data = &args[1];
 
+      // Set to Some(format) when `bytes` is SVG the host must rasterize in the
+      // browser (graphics → PNG/JPEG), rather than ready-to-save file bytes.
+      let mut rasterize: Option<String> = None;
+
       let bytes: Vec<u8> = match fmt.as_str() {
         "CSV" => export_string_csv(data, ',', true, true).into_bytes(),
         "TSV" => export_string_csv(data, '\t', true, true).into_bytes(),
@@ -834,10 +838,11 @@ pub fn dispatch_io_functions(
             }
           }
         }
-        // Raster image formats. Encoding an existing Image works in the
-        // browser (the `image` crate compiles to wasm); rasterizing a plot or
-        // other graphics does not, because the SVG rasterizer (resvg) is
-        // native-only. So only Image values are accepted here.
+        // Raster image formats. An existing Image is encoded here directly
+        // (the `image` crate compiles to wasm). Graphics/plots can't be
+        // rasterized in wasm (the SVG rasterizer, resvg, is native-only), so
+        // their SVG is handed to the host to rasterize via a browser canvas —
+        // which supports PNG and JPEG only. GIF/BMP/TIFF of a plot is rejected.
         "PNG" | "JPG" | "JPEG" | "GIF" | "BMP" | "TIF" | "TIFF" => match data {
           Expr::Image {
             width,
@@ -851,10 +856,20 @@ pub fn dispatch_io_functions(
             Ok(b) => b,
             Err(e) => return Some(Err(e)),
           },
+          _ if matches!(fmt.as_str(), "PNG" | "JPG" | "JPEG") => {
+            let svg = expr_to_svg(data);
+            let svg = if svg.is_empty() {
+              expr_text_svg(data)
+            } else {
+              svg
+            };
+            rasterize = Some(if fmt == "PNG" { "png" } else { "jpg" }.into());
+            svg.into_bytes()
+          }
           _ => {
             return Some(Err(InterpreterError::EvaluationError(format!(
-              "Export: {} export of a non-image expression (e.g. a plot) \
-                 is not supported in the browser; export as SVG instead",
+              "Export: {} export of a non-image expression (e.g. a plot) is \
+               not supported in the browser; export as PNG or SVG instead",
               fmt
             ))));
           }
@@ -888,7 +903,11 @@ pub fn dispatch_io_functions(
         }
       };
 
-      crate::wasm::record_exported_file(&filename, &bytes);
+      crate::wasm::record_exported_file(
+        &filename,
+        &bytes,
+        rasterize.as_deref(),
+      );
       return Some(Ok(Expr::String(filename)));
     }
     "ExportString" if args.len() == 2 || args.len() == 3 => {
