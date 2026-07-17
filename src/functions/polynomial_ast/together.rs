@@ -139,8 +139,7 @@ pub(super) fn distribute_unit_negative_numerator(expr: &Expr) -> Expr {
       }
     ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
   };
-  let sum = if matches!(&factors[0], Expr::Integer(-1)) && is_sum(&factors[1])
-  {
+  let sum = if matches!(&factors[0], Expr::Integer(-1)) && is_sum(&factors[1]) {
     &factors[1]
   } else if matches!(&factors[1], Expr::Integer(-1)) && is_sum(&factors[0]) {
     &factors[0]

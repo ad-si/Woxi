@@ -5342,10 +5342,7 @@ mod float_division_fold {
       .unwrap(),
       "0.17575669287388962"
     );
-    assert_eq!(
-      interpret("19.6/(63 + Pi)").unwrap(),
-      "0.296333958915279"
-    );
+    assert_eq!(interpret("19.6/(63 + Pi)").unwrap(), "0.296333958915279");
   }
 
   #[test]

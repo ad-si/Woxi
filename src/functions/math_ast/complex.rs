@@ -1691,40 +1691,6 @@ fn rationalize_machine_default(
   }
 }
 
-/// Convert a floating-point number to an exact decimal fraction p/10^n, simplified by GCD.
-/// Uses the shortest decimal representation of the double (Rust's Display format).
-fn decimal_to_fraction(x: f64) -> (i64, i64) {
-  if x == 0.0 {
-    return (0, 1);
-  }
-  let sign: i64 = if x < 0.0 { -1 } else { 1 };
-  let s = format!("{}", x.abs());
-
-  if let Some(dot_pos) = s.find('.') {
-    let int_part = &s[..dot_pos];
-    let frac_part = &s[dot_pos + 1..];
-    let n_decimals = frac_part.len() as u32;
-    let denom = 10i64.pow(n_decimals);
-    let numer: i64 = format!("{}{}", int_part, frac_part).parse().unwrap_or(0);
-    let g = gcd_i64(numer, denom);
-    (sign * numer / g, denom / g)
-  } else {
-    let numer: i64 = s.parse().unwrap_or(0);
-    (sign * numer, 1)
-  }
-}
-
-fn gcd_i64(mut a: i64, mut b: i64) -> i64 {
-  a = a.abs();
-  b = b.abs();
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a
-}
-
 /// Find best rational approximation using continued fractions
 fn find_rational(x: f64, tolerance: f64, max_denom: i64) -> (i64, i64) {
   if x == 0.0 {
