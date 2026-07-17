@@ -2486,7 +2486,11 @@ mod sort_atomic_normal {
       ("Most[5/3]", "Most[5/3]", "Most::normal"),
       ("Ordering[5/3]", "Ordering[5/3]", "Ordering::normal"),
       ("Flatten[5/3]", "Flatten[5/3]", "Flatten::normal"),
-      ("Permutations[5/3]", "Permutations[5/3]", "Permutations::normal"),
+      (
+        "Permutations[5/3]",
+        "Permutations[5/3]",
+        "Permutations::normal",
+      ),
       ("Subsets[5/3]", "Subsets[5/3]", "Subsets::normal"),
       ("Accumulate[5/3]", "Accumulate[5/3]", "Accumulate::normal"),
       ("Sort[1 + 2 I]", "Sort[1 + 2*I]", "Sort::normal"),

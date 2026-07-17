@@ -3604,8 +3604,16 @@ fn quotient_sum_terms_vector_order(
   // beats any nonzero one — and on a shared leading base the exponents
   // compare ascending (1/Q^2 before 1/Q, x before x^2).
   for key in bases.iter().rev() {
-    let ea = ia.iter().find(|(k, _)| k == key).map(|(_, n)| *n).unwrap_or(0);
-    let eb = ib.iter().find(|(k, _)| k == key).map(|(_, n)| *n).unwrap_or(0);
+    let ea = ia
+      .iter()
+      .find(|(k, _)| k == key)
+      .map(|(_, n)| *n)
+      .unwrap_or(0);
+    let eb = ib
+      .iter()
+      .find(|(k, _)| k == key)
+      .map(|(_, n)| *n)
+      .unwrap_or(0);
     if ea == eb {
       continue;
     }

@@ -18,10 +18,12 @@ pub fn permutations_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (items, head): (&[Expr], Option<&str>) = match &args[0] {
     Expr::List(items) => (items.as_slice(), None),
     // Rational/Complex are atoms — their internal args must not permute.
-    Expr::FunctionCall { name, args: fc_args }
-      if !crate::functions::list_helpers_ast::sorting::is_atomic_arg(
-        &args[0],
-      ) =>
+    Expr::FunctionCall {
+      name,
+      args: fc_args,
+    } if !crate::functions::list_helpers_ast::sorting::is_atomic_arg(
+      &args[0],
+    ) =>
     {
       (fc_args.as_slice(), Some(name.as_str()))
     }
@@ -189,10 +191,12 @@ pub fn subsets_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (items, head): (&[Expr], Option<&str>) = match &args[0] {
     Expr::List(items) => (items.as_slice(), None),
     // Rational/Complex are atoms — their internal args must not enumerate.
-    Expr::FunctionCall { name, args: fc_args }
-      if !crate::functions::list_helpers_ast::sorting::is_atomic_arg(
-        &args[0],
-      ) =>
+    Expr::FunctionCall {
+      name,
+      args: fc_args,
+    } if !crate::functions::list_helpers_ast::sorting::is_atomic_arg(
+      &args[0],
+    ) =>
     {
       (fc_args.as_slice(), Some(name.as_str()))
     }

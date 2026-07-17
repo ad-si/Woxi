@@ -2057,10 +2057,7 @@ mod cancel {
       interpret("Cancel[1/((x - 1) (x + 1))]").unwrap(),
       "1/((-1 + x)*(1 + x))"
     );
-    assert_eq!(
-      interpret("Cancel[1/(x (x + 1))]").unwrap(),
-      "1/(x*(1 + x))"
-    );
+    assert_eq!(interpret("Cancel[1/(x (x + 1))]").unwrap(), "1/(x*(1 + x))");
     // A nested fraction bypasses the unit-numerator shortcut (and stays
     // in wolframscript's uncombined display).
     assert_eq!(
@@ -2781,10 +2778,7 @@ mod together {
       interpret("Together[(-3 + x + 2 x^2)/(-3 x + 4 x^2 + 4 x^3)]").unwrap(),
       "(-1 + x)/(x*(-1 + 2*x))"
     );
-    assert_eq!(
-      interpret("Together[1/(2 + 2 x)]").unwrap(),
-      "1/(2*(1 + x))"
-    );
+    assert_eq!(interpret("Together[1/(2 + 2 x)]").unwrap(), "1/(2*(1 + x))");
     assert_eq!(
       interpret("Together[1/(x^2 + x^4)]").unwrap(),
       "1/(x^2*(1 + x^2))"

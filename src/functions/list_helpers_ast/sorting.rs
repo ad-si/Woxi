@@ -1181,7 +1181,8 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
     let (ca, ra) = numeric_coeff_and_rest_expr(a);
     let (cb, rb) = numeric_coeff_and_rest_expr(b);
     if ra.is_some() || rb.is_some() {
-      let ord = compare_exprs(ra.as_ref().unwrap_or(a), rb.as_ref().unwrap_or(b));
+      let ord =
+        compare_exprs(ra.as_ref().unwrap_or(a), rb.as_ref().unwrap_or(b));
       if ord != 0 {
         return ord;
       }
@@ -1345,12 +1346,13 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
 fn int_base_power(e: &Expr) -> Option<(i128, f64)> {
   use crate::functions::math_ast::try_eval_to_f64_with_infinity;
   let (base, exp) = match e {
-    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
-      (args[0].clone(), Expr::FunctionCall {
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => (
+      args[0].clone(),
+      Expr::FunctionCall {
         name: "Rational".to_string(),
         args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-      })
-    }
+      },
+    ),
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       (args[0].clone(), args[1].clone())
     }
@@ -1371,10 +1373,13 @@ fn int_base_power(e: &Expr) -> Option<(i128, f64)> {
 fn power_parts(e: &Expr) -> Option<(Expr, Expr)> {
   match e {
     Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
-      Some((args[0].clone(), Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-      }))
+      Some((
+        args[0].clone(),
+        Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+        },
+      ))
     }
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       Some((args[0].clone(), args[1].clone()))

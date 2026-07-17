@@ -670,7 +670,8 @@ fn apart_general(
   // 10107924694092248000). The all-monic-linear case stays on the existing
   // (well-tested) linear path.
   let needs_general = factors.iter().any(|c| {
-    c.len() >= 3 || (c.len() == 2 && c.last().map(|&l| l.abs() != 1) == Some(true))
+    c.len() >= 3
+      || (c.len() == 2 && c.last().map(|&l| l.abs() != 1) == Some(true))
   });
   if factors.len() < 2 || !needs_general {
     return None;

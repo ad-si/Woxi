@@ -2091,10 +2091,7 @@ mod quotient_term_plus_order {
   #[test]
   fn quotient_rule_shape() {
     assert_eq!(
-      interpret(
-        "D[(5 - 2 x + 4 x^2)/(-5 - 4 x + 4 x^2), x]"
-      )
-      .unwrap(),
+      interpret("D[(5 - 2 x + 4 x^2)/(-5 - 4 x + 4 x^2), x]").unwrap(),
       "(-2 + 8*x)/(-5 - 4*x + 4*x^2) - \
        ((-4 + 8*x)*(5 - 2*x + 4*x^2))/(-5 - 4*x + 4*x^2)^2"
     );

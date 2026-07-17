@@ -1069,7 +1069,7 @@ fn resort_radical_sum(sum: &Expr) -> Expr {
         .any(is_numeric_radical)
   };
   let terms = collect_additive_terms(sum);
-  if terms.len() < 2 || !terms.iter().any(|t| has_radical(t)) {
+  if terms.len() < 2 || !terms.iter().any(has_radical) {
     return sum.clone();
   }
   crate::evaluator::evaluate_function_call_ast("Plus", &terms)

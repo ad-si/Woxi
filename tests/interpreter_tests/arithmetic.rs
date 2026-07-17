@@ -5351,10 +5351,7 @@ mod rationalize {
       "0.999996000012"
     );
     // Exact binary fractions follow the same size bound.
-    assert_eq!(
-      interpret("Rationalize[N[1/2^31]]").unwrap(),
-      "1/2147483648"
-    );
+    assert_eq!(interpret("Rationalize[N[1/2^31]]").unwrap(), "1/2147483648");
     assert_eq!(
       interpret("Rationalize[N[1/2^40]]").unwrap(),
       "9.094947017729282*^-13"

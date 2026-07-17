@@ -4701,7 +4701,7 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
     if terms.len() >= 2
       && let Some(radicands) = terms
         .iter()
-        .map(|t| term_sqrt_radicand(t))
+        .map(term_sqrt_radicand)
         .collect::<Option<Vec<i128>>>()
     {
       let g = radicands
@@ -4757,20 +4757,25 @@ fn term_sqrt_radicand(term: &Expr) -> Option<i128> {
   };
   let sqrt_radicand = |e: &Expr| -> Option<i128> {
     match e {
-      Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 =>
+      Expr::FunctionCall { name, args }
+        if name == "Sqrt" && args.len() == 1 =>
       {
         match &args[0] {
           Expr::Integer(n) if *n > 1 => Some(*n),
           _ => None,
         }
       }
-      Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 =>
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
       {
         match (&args[0], &args[1]) {
           (Expr::Integer(n), Expr::FunctionCall { name: rn, args: ra })
             if *n > 1
               && rn == "Rational"
-              && matches!(ra.as_slice(), [Expr::Integer(1), Expr::Integer(2)]) =>
+              && matches!(
+                ra.as_slice(),
+                [Expr::Integer(1), Expr::Integer(2)]
+              ) =>
           {
             Some(*n)
           }
@@ -4785,7 +4790,10 @@ fn term_sqrt_radicand(term: &Expr) -> Option<i128> {
         (Expr::Integer(n), Expr::FunctionCall { name: rn, args: ra })
           if *n > 1
             && rn == "Rational"
-            && matches!(ra.as_slice(), [Expr::Integer(1), Expr::Integer(2)]) =>
+            && matches!(
+              ra.as_slice(),
+              [Expr::Integer(1), Expr::Integer(2)]
+            ) =>
         {
           Some(*n)
         }
@@ -4799,8 +4807,7 @@ fn term_sqrt_radicand(term: &Expr) -> Option<i128> {
       op: UnaryOperator::Minus,
       operand,
     } => term_sqrt_radicand(operand),
-    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 =>
-    {
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
       if is_numeric(&args[0]) {
         sqrt_radicand(&args[1])
       } else {
