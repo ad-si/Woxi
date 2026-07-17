@@ -22,8 +22,9 @@
 //! need `output_stream: combined` for the same reason); `--compare` gives
 //! stricter modes.
 //!
-//! Run via `make fuzz-diff` or:
-//!   cargo run --bin woxi-diff-fuzz -- --cases 200 --seed 42
+//! Gated behind the non-default `diff-fuzz` feature. Run via `make fuzz-diff`
+//! or:
+//!   cargo run --features diff-fuzz --bin woxi-diff-fuzz -- --cases 200 --seed 42
 
 use std::collections::HashSet;
 use std::io::Read;

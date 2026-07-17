@@ -132,7 +132,7 @@ fuzz-corpus:
 	grep -A 2 'slow_script_test!' tests/script_snapshot_tests.rs \
 		| grep -o '"[^"]*\.wls"' | tr -d '"' | sort -u \
 		| (cd fuzz/corpus/interpret && xargs rm -f)
-	cargo run --bin woxi-diff-fuzz -- --print-cases --cases 200 --seed 0 \
+	cargo run --features diff-fuzz --bin woxi-diff-fuzz -- --print-cases --cases 200 --seed 0 \
 		| split -l 1 - fuzz/corpus/interpret/gen-
 
 # Coverage-guided crash fuzzing (requires a nightly toolchain and
@@ -156,8 +156,8 @@ fuzz-interpret: fuzz-corpus
 # output divergence; exits non-zero when one is found.
 .PHONY: fuzz-diff
 fuzz-diff:
-	cargo build --bins
-	cargo run --bin woxi-diff-fuzz -- --cases 200
+	cargo build --features diff-fuzz --bins
+	cargo run --features diff-fuzz --bin woxi-diff-fuzz -- --cases 200
 
 
 # Build a Docker image with a pinned Rust toolchain and run the

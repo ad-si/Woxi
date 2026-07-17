@@ -55,11 +55,14 @@ exclude = [
 ]
 
 # Differential fuzzer comparing woxi against wolframscript
-# (see fuzz/README.md and `make fuzz-diff`).
+# (see fuzz/README.md and `make fuzz-diff`). Gated behind the non-default
+# `diff-fuzz` feature so the default build (and `cargo install`) produces
+# only the `woxi` CLI, not this dev-only helper. Build/run it with
+# `--features diff-fuzz`.
 [[bin]]
 name = "woxi-diff-fuzz"
 path = "src/bin/diff_fuzz.rs"
-required-features = ["cli"]
+required-features = ["diff-fuzz"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -85,6 +88,11 @@ wasm = ["dep:wasm-bindgen", "dep:getrandom", "dep:console_error_panic_hook", "de
 # exist in the test binaries at all, so `make test` doesn't report them as
 # skipped. They run nightly via `make test-slow`.
 slow-tests = []
+
+# The dev-only differential fuzzer (`src/bin/diff_fuzz.rs`, spawns
+# `wolframscript`). Non-default so `cargo install` ships only the `woxi`
+# CLI; implies `cli` since the fuzzer drives the CLI binary.
+diff-fuzz = ["cli"]
 
 # `pub` items rustc can't see from outside the crate escape the dead_code
 # lint; warning on them keeps dead code detectable via plain `cargo check`.
