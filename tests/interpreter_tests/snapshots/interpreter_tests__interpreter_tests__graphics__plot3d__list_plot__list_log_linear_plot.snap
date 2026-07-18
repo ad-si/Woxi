@@ -58,11 +58,24 @@ expression: "export_svg(\"ListLogLinearPlot[{{1, 2}, {10, 5}, {100, 8}}]\")"
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,162 749,162 "/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,1750 3499,1750 "/>
-<polyline fill="none" opacity="1" stroke="#CCCCCC" stroke-width="10" points="750,1749 750,100 "/>
-<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="750,1688 750,925 750,162 "/>
+<text x="851" y="1830" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="851,1750 851,1790 "/>
+<text x="2124" y="1830" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="2124,1750 2124,1790 "/>
+<text x="3397" y="1830" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="3397,1750 3397,1790 "/>
+<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="851,1688 2124,925 3397,162 "/>
 <line x1="710.0" y1="1688.9" x2="680.0" y2="1688.9" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="1179.6" x2="680.0" y2="1179.6" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="670.4" x2="680.0" y2="670.4" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="161.1" x2="680.0" y2="161.1" stroke="#666" stroke-width="10"/>
-<text x="NaN" y="1938.7" text-anchor="middle" font-family="sans-serif" font-size="145" fill="#666">1</text>
+<text x="851.9" y="1938.7" text-anchor="middle" font-family="sans-serif" font-size="145" fill="#666">1</text>
+<text x="2125.0" y="1938.7" text-anchor="middle" font-family="sans-serif" font-size="145" fill="#666">10</text>
+<text x="3398.1" y="1938.7" text-anchor="middle" font-family="sans-serif" font-size="145" fill="#666">10<tspan baseline-shift="super" font-size="102">2</tspan></text>
 </svg>

@@ -5,11 +5,36 @@ expression: "export_svg(\"ListLogLogPlot[{{1, 10}, {10, 100}, {100, 1000}}]\")"
 <svg width="360" height="225" viewBox="0 0 3600 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="749,100 749,1749 "/>
+<text x="670" y="1688" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1688 749,1688 "/>
+<text x="670" y="925" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,925 749,925 "/>
+<text x="670" y="162" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,162 749,162 "/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,1750 3499,1750 "/>
-<polyline fill="none" opacity="1" stroke="#CCCCCC" stroke-width="10" points="750,1749 750,1749 "/>
-<polyline fill="none" opacity="1" stroke="#CCCCCC" stroke-width="10" points="750,1749 750,1749 "/>
-<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="750,1749 750,1749 750,1749 "/>
-<text x="670.2" y="NaN" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145" fill="#666">1</text>
-<text x="670.2" y="NaN" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145" fill="#666">10<tspan baseline-shift="super" font-size="102">3</tspan></text>
-<text x="NaN" y="1938.7" text-anchor="middle" font-family="sans-serif" font-size="145" fill="#666">1</text>
+<text x="851" y="1830" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="851,1750 851,1790 "/>
+<text x="2124" y="1830" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="2124,1750 2124,1790 "/>
+<text x="3397" y="1830" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="3397,1750 3397,1790 "/>
+<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="851,1688 2124,925 3397,162 "/>
+<text x="670.2" y="1688.9" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145" fill="#666">10</text>
+<text x="670.2" y="925.0" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145" fill="#666">10<tspan baseline-shift="super" font-size="102">2</tspan></text>
+<text x="670.2" y="161.1" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145" fill="#666">10<tspan baseline-shift="super" font-size="102">3</tspan></text>
+<text x="851.9" y="1938.7" text-anchor="middle" font-family="sans-serif" font-size="145" fill="#666">1</text>
+<text x="2125.0" y="1938.7" text-anchor="middle" font-family="sans-serif" font-size="145" fill="#666">10</text>
+<text x="3398.1" y="1938.7" text-anchor="middle" font-family="sans-serif" font-size="145" fill="#666">10<tspan baseline-shift="super" font-size="102">2</tspan></text>
 </svg>
