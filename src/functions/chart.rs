@@ -63,6 +63,7 @@ fn extract_grouped_values(
 }
 
 /// A label with optional styling (bold, italic, color, font-size).
+#[derive(Clone)]
 pub(crate) struct StyledLabel {
   pub text: String,
   pub bold: bool,

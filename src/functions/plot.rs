@@ -1095,6 +1095,7 @@ pub(crate) enum LegendPosition {
 }
 
 /// Options for line-based plots (Plot, ListLinePlot, etc.).
+#[derive(Clone)]
 pub(crate) struct PlotOptions {
   pub svg_width: u32,
   pub svg_height: u32,
@@ -2235,8 +2236,6 @@ fn generate_svg_with_options(
   }
 
   // Inject Callout labels: text annotation near each labeled series
-  if !opts.callout_labels.is_empty()
-    && opts.callout_labels.iter().any(|c| c.is_some())
   {
     let margin_left_f = margin_left as f64;
     let margin_right_f = margin_right as f64;
@@ -2251,68 +2250,99 @@ fn generate_svg_with_options(
       - margin_top_f
       - margin_bottom_f
       - x_label_area as f64;
-    let callout_font_size = sf * 16.0;
-
-    if let Some(insert_pos) = buf.rfind("</svg>") {
-      let mut callout_svg = String::new();
-
-      for (series_idx, label) in opts.callout_labels.iter().enumerate() {
-        let Some(label_text) = label else { continue };
-        if series_idx >= all_points.len() {
-          continue;
-        }
-        let points = &all_points[series_idx];
-
-        // Find a good label point: pick the point closest to 2/3 of x range
-        let target_x = x_min + (x_max - x_min) * 2.0 / 3.0;
-        let best = points
-          .iter()
-          .filter(|(x, y)| x.is_finite() && y.is_finite())
-          .min_by(|a, b| {
-            (a.0 - target_x)
-              .abs()
-              .partial_cmp(&(b.0 - target_x).abs())
-              .unwrap_or(std::cmp::Ordering::Equal)
-          });
-
-        let Some(&(data_x, data_y)) = best else {
-          continue;
-        };
-
-        // Convert data coordinates to SVG pixel coordinates
-        let frac_x = (data_x - x_min) / (x_max - x_min);
-        let frac_y = (data_y - y_min) / (y_max - y_min);
-        let px = plot_x0 + frac_x * plot_w;
-        let py = margin_top_f + plot_h * (1.0 - frac_y);
-
-        // Label offset: place text above the curve point
-        let label_px = px + sf * 5.0;
-        let label_py = py - sf * 12.0;
-
-        // Draw a small line from the curve point to the label
-        let (r, g, b) = series_color(&opts.plot_style, series_idx);
-        let color_str = format!("rgb({r},{g},{b})");
-
-        callout_svg.push_str(&format!(
-          "<line x1=\"{px:.1}\" y1=\"{py:.1}\" x2=\"{label_px:.1}\" y2=\"{label_py:.1}\" \
-           stroke=\"{color_str}\" stroke-width=\"{sw}\" />\n",
-          sw = sf * 1.0,
-        ));
-        callout_svg.push_str(&format!(
-          "<text x=\"{label_px:.1}\" y=\"{label_py:.1}\" \
-           font-family=\"sans-serif\" font-size=\"{callout_font_size:.0}\" \
-           fill=\"{color_str}\" dominant-baseline=\"auto\">{}</text>\n",
-          crate::functions::graphics::box_string_to_svg(label_text)
-        ));
-      }
-
-      buf.insert_str(insert_pos, &callout_svg);
-    }
+    inject_callout_labels(
+      &mut buf,
+      opts,
+      all_points,
+      (x_min, x_max),
+      (y_min, y_max),
+      (plot_x0, margin_top_f, plot_w, plot_h),
+    );
   }
 
   inject_legend(&mut buf, opts);
 
   Ok(buf)
+}
+
+/// Inject Callout/Labeled series labels into a finished SVG buffer as a text
+/// annotation near each labeled series. `plot_area` is the drawing region in
+/// render-space pixels: (left, top, width, height).
+fn inject_callout_labels(
+  buf: &mut String,
+  opts: &PlotOptions,
+  all_points: &[Vec<(f64, f64)>],
+  x_range: (f64, f64),
+  y_range: (f64, f64),
+  plot_area: (f64, f64, f64, f64),
+) {
+  if opts.callout_labels.is_empty()
+    || !opts.callout_labels.iter().any(|c| c.is_some())
+  {
+    return;
+  }
+  let (x_min, x_max) = x_range;
+  let (y_min, y_max) = y_range;
+  let (plot_x0, plot_top, plot_w, plot_h) = plot_area;
+  let sf = RESOLUTION_SCALE as f64;
+  let callout_font_size = sf * 16.0;
+
+  let Some(insert_pos) = buf.rfind("</svg>") else {
+    return;
+  };
+  let mut callout_svg = String::new();
+
+  for (series_idx, label) in opts.callout_labels.iter().enumerate() {
+    let Some(label_text) = label else { continue };
+    if series_idx >= all_points.len() {
+      continue;
+    }
+    let points = &all_points[series_idx];
+
+    // Find a good label point: pick the point closest to 2/3 of x range
+    let target_x = x_min + (x_max - x_min) * 2.0 / 3.0;
+    let best = points
+      .iter()
+      .filter(|(x, y)| x.is_finite() && y.is_finite())
+      .min_by(|a, b| {
+        (a.0 - target_x)
+          .abs()
+          .partial_cmp(&(b.0 - target_x).abs())
+          .unwrap_or(std::cmp::Ordering::Equal)
+      });
+
+    let Some(&(data_x, data_y)) = best else {
+      continue;
+    };
+
+    // Convert data coordinates to SVG pixel coordinates
+    let frac_x = (data_x - x_min) / (x_max - x_min);
+    let frac_y = (data_y - y_min) / (y_max - y_min);
+    let px = plot_x0 + frac_x * plot_w;
+    let py = plot_top + plot_h * (1.0 - frac_y);
+
+    // Label offset: place text above the curve point
+    let label_px = px + sf * 5.0;
+    let label_py = py - sf * 12.0;
+
+    // Draw a small line from the curve point to the label
+    let (r, g, b) = series_color(&opts.plot_style, series_idx);
+    let color_str = format!("rgb({r},{g},{b})");
+
+    callout_svg.push_str(&format!(
+      "<line x1=\"{px:.1}\" y1=\"{py:.1}\" x2=\"{label_px:.1}\" y2=\"{label_py:.1}\" \
+       stroke=\"{color_str}\" stroke-width=\"{sw}\" />\n",
+      sw = sf * 1.0,
+    ));
+    callout_svg.push_str(&format!(
+      "<text x=\"{label_px:.1}\" y=\"{label_py:.1}\" \
+       font-family=\"sans-serif\" font-size=\"{callout_font_size:.0}\" \
+       fill=\"{color_str}\" dominant-baseline=\"auto\">{}</text>\n",
+      crate::functions::graphics::box_string_to_svg(label_text)
+    ));
+  }
+
+  buf.insert_str(insert_pos, &callout_svg);
 }
 
 /// Build a `PlotSource` from sampled plot data so that `Show` can later
@@ -2566,6 +2596,23 @@ pub(crate) fn generate_scatter_svg_with_options(
       MAJOR_TICK_LEN as f64 * sf,
       sf,
       label_fill,
+    );
+  }
+
+  // Callout/Labeled series labels (same plot area as the tick pass above).
+  {
+    let sf = RESOLUTION_SCALE as f64;
+    let margin = 10.0 * sf;
+    let plot_x0 = margin + 65.0 * sf;
+    let plot_w = render_width as f64 - 2.0 * margin - 65.0 * sf;
+    let plot_h = render_height as f64 - 2.0 * margin - 40.0 * sf;
+    inject_callout_labels(
+      &mut buf,
+      opts,
+      all_series,
+      (x_min, x_max),
+      (y_min, y_max),
+      (plot_x0, margin, plot_w, plot_h),
     );
   }
 
