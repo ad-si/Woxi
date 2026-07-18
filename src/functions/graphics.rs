@@ -1397,6 +1397,63 @@ fn collect_primitives(
             None => prims.extend(inner),
           }
         }
+        // Translate[g, {dx, dy}] translates g by the given vector;
+        // Translate[g, {{dx1, dy1}, {dx2, dy2}, …}] draws one translated
+        // copy of g per vector.
+        "Translate" if args.len() >= 2 => {
+          let mut inner_style = style.clone();
+          let mut inner = Vec::new();
+          collect_primitives(&args[0], &mut inner_style, &mut inner, errors);
+          let offsets: Vec<(f64, f64)> =
+            if let Some(v) = expr_to_point(&args[1]) {
+              vec![v]
+            } else {
+              expr_to_point_list(&args[1]).unwrap_or_default()
+            };
+          if offsets.is_empty() {
+            // Non-numeric offset: draw the content untranslated as a fallback.
+            prims.extend(inner);
+          } else {
+            for &(dx, dy) in &offsets {
+              for p in &inner {
+                prims.push(translate_primitive(p, dx, dy));
+              }
+            }
+          }
+        }
+        // Scale[g, s] scales g by s about the center of its bounding box;
+        // Scale[g, {sx, sy}] scales each axis separately and
+        // Scale[g, s, {x, y}] scales about the point {x, y}.
+        "Scale" if args.len() >= 2 => {
+          let mut inner_style = style.clone();
+          let mut inner = Vec::new();
+          collect_primitives(&args[0], &mut inner_style, &mut inner, errors);
+          let factors = match &args[1] {
+            Expr::List(_) => expr_to_point(&args[1]),
+            other => expr_to_f64(other).map(|s| (s, s)),
+          };
+          match factors {
+            Some((sx, sy)) => {
+              let (cx, cy) =
+                args.get(2).and_then(expr_to_point).unwrap_or_else(|| {
+                  let mut bb = BBox::empty();
+                  for p in &inner {
+                    bb.merge(&primitive_bbox(p));
+                  }
+                  if bb.is_empty() {
+                    (0.0, 0.0)
+                  } else {
+                    ((bb.x_min + bb.x_max) / 2.0, (bb.y_min + bb.y_max) / 2.0)
+                  }
+                });
+              for p in &inner {
+                prims.push(scale_primitive(p, cx, cy, sx, sy));
+              }
+            }
+            // Non-numeric factor: draw the content unscaled as a fallback.
+            None => prims.extend(inner),
+          }
+        }
 
         _ => {
           // Try as directive first
@@ -2555,6 +2612,326 @@ fn rotate_primitive(
       p: rp(p.0, p.1),
       v: rv(v.0, v.1),
       w: rv(w.0, w.1),
+      full: *full,
+      style: style.clone(),
+    },
+  }
+}
+
+/// Return a copy of `prim` translated by (dx, dy).
+fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
+  let tp = |x: f64, y: f64| (x + dx, y + dy);
+  match prim {
+    Primitive::PointSingle { x, y, style } => Primitive::PointSingle {
+      x: x + dx,
+      y: y + dy,
+      style: style.clone(),
+    },
+    Primitive::PointMulti { points, style } => Primitive::PointMulti {
+      points: points.iter().map(|&(x, y)| tp(x, y)).collect(),
+      style: style.clone(),
+    },
+    Primitive::Line { segments, style } => Primitive::Line {
+      segments: segments
+        .iter()
+        .map(|seg| seg.iter().map(|&(x, y)| tp(x, y)).collect())
+        .collect(),
+      style: style.clone(),
+    },
+    Primitive::PolygonPrim { points, style } => Primitive::PolygonPrim {
+      points: points.iter().map(|&(x, y)| tp(x, y)).collect(),
+      style: style.clone(),
+    },
+    Primitive::ArrowPrim {
+      points,
+      setback,
+      style,
+    } => Primitive::ArrowPrim {
+      points: points.iter().map(|&(x, y)| tp(x, y)).collect(),
+      setback: *setback,
+      style: style.clone(),
+    },
+    Primitive::BezierCurvePrim { points, style } => {
+      Primitive::BezierCurvePrim {
+        points: points.iter().map(|&(x, y)| tp(x, y)).collect(),
+        style: style.clone(),
+      }
+    }
+    Primitive::RectPrim {
+      x_min,
+      y_min,
+      x_max,
+      y_max,
+      style,
+    } => Primitive::RectPrim {
+      x_min: x_min + dx,
+      y_min: y_min + dy,
+      x_max: x_max + dx,
+      y_max: y_max + dy,
+      style: style.clone(),
+    },
+    Primitive::Disk {
+      cx,
+      cy,
+      rx,
+      ry,
+      style,
+    } => Primitive::Disk {
+      cx: cx + dx,
+      cy: cy + dy,
+      rx: *rx,
+      ry: *ry,
+      style: style.clone(),
+    },
+    Primitive::CircleArc {
+      cx,
+      cy,
+      rx,
+      ry,
+      angles,
+      style,
+    } => Primitive::CircleArc {
+      cx: cx + dx,
+      cy: cy + dy,
+      rx: *rx,
+      ry: *ry,
+      angles: *angles,
+      style: style.clone(),
+    },
+    Primitive::DiskSector {
+      cx,
+      cy,
+      rx,
+      ry,
+      angle1,
+      angle2,
+      style,
+    } => Primitive::DiskSector {
+      cx: cx + dx,
+      cy: cy + dy,
+      rx: *rx,
+      ry: *ry,
+      angle1: *angle1,
+      angle2: *angle2,
+      style: style.clone(),
+    },
+    Primitive::TextPrim { text, x, y, style } => Primitive::TextPrim {
+      text: text.clone(),
+      x: x + dx,
+      y: y + dy,
+      style: style.clone(),
+    },
+    Primitive::RasterPrim {
+      data,
+      x_min,
+      y_min,
+      x_max,
+      y_max,
+    } => Primitive::RasterPrim {
+      data: data.clone(),
+      x_min: x_min + dx,
+      y_min: y_min + dy,
+      x_max: x_max + dx,
+      y_max: y_max + dy,
+    },
+    Primitive::HalfPlanePrim {
+      p,
+      v,
+      w,
+      full,
+      style,
+    } => Primitive::HalfPlanePrim {
+      p: tp(p.0, p.1),
+      v: *v,
+      w: *w,
+      full: *full,
+      style: style.clone(),
+    },
+  }
+}
+
+/// Return a copy of `prim` scaled by (sx, sy) about the fixed point (cx, cy).
+///
+/// Ellipse radii scale per-axis by |sx| and |sy| (a radius cannot be
+/// negative); for negative factors the arc angles are mirrored accordingly.
+/// Point sizes, stroke widths, and text sizes are absolute (not part of the
+/// coordinate system) and stay unchanged.
+fn scale_primitive(
+  prim: &Primitive,
+  cx: f64,
+  cy: f64,
+  sx: f64,
+  sy: f64,
+) -> Primitive {
+  let sp = |x: f64, y: f64| (cx + (x - cx) * sx, cy + (y - cy) * sy);
+  // Map an ellipse angle through the axis scaling: a point at angle θ on the
+  // ellipse lands at angle θ' on the scaled ellipse with
+  // cos θ' = sign(sx)·cos θ and sin θ' = sign(sy)·sin θ.
+  let sa = |a: f64| -> f64 {
+    match (sx < 0.0, sy < 0.0) {
+      (false, false) => a,
+      (true, false) => std::f64::consts::PI - a,
+      (false, true) => -a,
+      (true, true) => a + std::f64::consts::PI,
+    }
+  };
+  // A single mirror flips the sweep direction, so the endpoints swap to keep
+  // the arc's counterclockwise orientation.
+  let sr = |a1: f64, a2: f64| -> (f64, f64) {
+    if (sx < 0.0) != (sy < 0.0) {
+      (sa(a2), sa(a1))
+    } else {
+      (sa(a1), sa(a2))
+    }
+  };
+  match prim {
+    Primitive::PointSingle { x, y, style } => {
+      let (nx, ny) = sp(*x, *y);
+      Primitive::PointSingle {
+        x: nx,
+        y: ny,
+        style: style.clone(),
+      }
+    }
+    Primitive::PointMulti { points, style } => Primitive::PointMulti {
+      points: points.iter().map(|&(x, y)| sp(x, y)).collect(),
+      style: style.clone(),
+    },
+    Primitive::Line { segments, style } => Primitive::Line {
+      segments: segments
+        .iter()
+        .map(|seg| seg.iter().map(|&(x, y)| sp(x, y)).collect())
+        .collect(),
+      style: style.clone(),
+    },
+    Primitive::PolygonPrim { points, style } => Primitive::PolygonPrim {
+      points: points.iter().map(|&(x, y)| sp(x, y)).collect(),
+      style: style.clone(),
+    },
+    Primitive::ArrowPrim {
+      points,
+      setback,
+      style,
+    } => Primitive::ArrowPrim {
+      points: points.iter().map(|&(x, y)| sp(x, y)).collect(),
+      setback: *setback,
+      style: style.clone(),
+    },
+    Primitive::BezierCurvePrim { points, style } => {
+      Primitive::BezierCurvePrim {
+        points: points.iter().map(|&(x, y)| sp(x, y)).collect(),
+        style: style.clone(),
+      }
+    }
+    Primitive::RectPrim {
+      x_min,
+      y_min,
+      x_max,
+      y_max,
+      style,
+    } => {
+      // Negative factors swap the corners; renormalize to min/max form.
+      let (x1, y1) = sp(*x_min, *y_min);
+      let (x2, y2) = sp(*x_max, *y_max);
+      Primitive::RectPrim {
+        x_min: x1.min(x2),
+        y_min: y1.min(y2),
+        x_max: x1.max(x2),
+        y_max: y1.max(y2),
+        style: style.clone(),
+      }
+    }
+    Primitive::Disk {
+      cx: dcx,
+      cy: dcy,
+      rx,
+      ry,
+      style,
+    } => {
+      let (nx, ny) = sp(*dcx, *dcy);
+      Primitive::Disk {
+        cx: nx,
+        cy: ny,
+        rx: rx * sx.abs(),
+        ry: ry * sy.abs(),
+        style: style.clone(),
+      }
+    }
+    Primitive::CircleArc {
+      cx: dcx,
+      cy: dcy,
+      rx,
+      ry,
+      angles,
+      style,
+    } => {
+      let (nx, ny) = sp(*dcx, *dcy);
+      Primitive::CircleArc {
+        cx: nx,
+        cy: ny,
+        rx: rx * sx.abs(),
+        ry: ry * sy.abs(),
+        angles: angles.map(|(a1, a2)| sr(a1, a2)),
+        style: style.clone(),
+      }
+    }
+    Primitive::DiskSector {
+      cx: dcx,
+      cy: dcy,
+      rx,
+      ry,
+      angle1,
+      angle2,
+      style,
+    } => {
+      let (nx, ny) = sp(*dcx, *dcy);
+      let (a1, a2) = sr(*angle1, *angle2);
+      Primitive::DiskSector {
+        cx: nx,
+        cy: ny,
+        rx: rx * sx.abs(),
+        ry: ry * sy.abs(),
+        angle1: a1,
+        angle2: a2,
+        style: style.clone(),
+      }
+    }
+    Primitive::TextPrim { text, x, y, style } => {
+      let (nx, ny) = sp(*x, *y);
+      Primitive::TextPrim {
+        text: text.clone(),
+        x: nx,
+        y: ny,
+        style: style.clone(),
+      }
+    }
+    Primitive::RasterPrim {
+      data,
+      x_min,
+      y_min,
+      x_max,
+      y_max,
+    } => {
+      let (x1, y1) = sp(*x_min, *y_min);
+      let (x2, y2) = sp(*x_max, *y_max);
+      Primitive::RasterPrim {
+        data: data.clone(),
+        x_min: x1.min(x2),
+        y_min: y1.min(y2),
+        x_max: x1.max(x2),
+        y_max: y1.max(y2),
+      }
+    }
+    Primitive::HalfPlanePrim {
+      p,
+      v,
+      w,
+      full,
+      style,
+    } => Primitive::HalfPlanePrim {
+      p: sp(p.0, p.1),
+      v: (v.0 * sx, v.1 * sy),
+      w: (w.0 * sx, w.1 * sy),
       full: *full,
       style: style.clone(),
     },

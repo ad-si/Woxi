@@ -3746,6 +3746,168 @@ mod high_level_functions {
     }
   }
 
+  mod graphics_translate_scale_tests {
+    use super::*;
+
+    // Extract (x, y, width, height) for every <rect> element.
+    fn rects(svg: &str) -> Vec<(f64, f64, f64, f64)> {
+      fn attr(seg: &str, name: &str) -> f64 {
+        let key = format!("{name}=\"");
+        let start = seg.find(&key).expect("missing attr") + key.len();
+        seg[start..].split('"').next().unwrap().parse().unwrap()
+      }
+      svg
+        .match_indices("<rect ")
+        .map(|(i, _)| {
+          let seg = &svg[i..i + svg[i..].find("/>").unwrap()];
+          (
+            attr(seg, "x"),
+            attr(seg, "y"),
+            attr(seg, "width"),
+            attr(seg, "height"),
+          )
+        })
+        .collect()
+    }
+
+    // Extract (cx, cy, rx, ry) for every <ellipse> element.
+    fn ellipses(svg: &str) -> Vec<(f64, f64, f64, f64)> {
+      fn attr(seg: &str, name: &str) -> f64 {
+        let key = format!("{name}=\"");
+        let start = seg.find(&key).expect("missing attr") + key.len();
+        seg[start..].split('"').next().unwrap().parse().unwrap()
+      }
+      svg
+        .match_indices("<ellipse ")
+        .map(|(i, _)| {
+          let seg = &svg[i..i + svg[i..].find("/>").unwrap()];
+          (
+            attr(seg, "cx"),
+            attr(seg, "cy"),
+            attr(seg, "rx"),
+            attr(seg, "ry"),
+          )
+        })
+        .collect()
+    }
+
+    // Extract the x coordinates of every <polyline> element's points.
+    fn polyline_xs(svg: &str) -> Vec<Vec<f64>> {
+      svg
+        .match_indices("<polyline")
+        .map(|(i, _)| {
+          let seg = &svg[i..];
+          let s = seg.find("points=\"").unwrap() + 8;
+          let e = seg[s..].find('"').unwrap() + s;
+          seg[s..e]
+            .split_whitespace()
+            .map(|p| p.split_once(',').unwrap().0.parse::<f64>().unwrap())
+            .collect()
+        })
+        .collect()
+    }
+
+    #[test]
+    fn test_translate_rectangle_shifts_by_vector() {
+      // The translated copy keeps its size and shifts by {3, 0}: for a
+      // 2-wide rectangle the pixel offset is 1.5x the rectangle's width.
+      let svg = interpret(
+        "ExportString[Graphics[{Rectangle[{0, 0}, {2, 1}], Translate[Rectangle[{0, 0}, {2, 1}], {3, 0}]}], \"SVG\"]",
+      )
+      .unwrap();
+      let rs = rects(&svg);
+      assert_eq!(rs.len(), 2, "expected two rects: {svg}");
+      let (x1, y1, w1, h1) = rs[0];
+      let (x2, y2, w2, h2) = rs[1];
+      assert!(
+        (w1 - w2).abs() < 1e-3 && (h1 - h2).abs() < 1e-3,
+        "translation must not resize: {svg}"
+      );
+      assert!((y1 - y2).abs() < 1e-3, "no vertical shift: {svg}");
+      assert!(
+        (x2 - x1 - 1.5 * w1).abs() < 1e-2,
+        "shift must be 3 units (= 1.5 widths): {svg}"
+      );
+    }
+
+    #[test]
+    fn test_translate_with_vector_list_draws_copies() {
+      // Translate[g, {v1, v2, …}] draws one copy of g per vector.
+      let svg = interpret(
+        "ExportString[Graphics[Translate[Disk[{0, 0}, 0.3], {{0, 0}, {1, 0}, {2, 0}}]], \"SVG\"]",
+      )
+      .unwrap();
+      let es = ellipses(&svg);
+      assert_eq!(es.len(), 3, "one copy per vector: {svg}");
+      let step1 = es[1].0 - es[0].0;
+      let step2 = es[2].0 - es[1].0;
+      assert!(step1 > 1.0, "copies must be spread out: {svg}");
+      assert!((step1 - step2).abs() < 1e-2, "even spacing: {svg}");
+      assert!((es[0].1 - es[2].1).abs() < 1e-3, "no vertical shift: {svg}");
+    }
+
+    #[test]
+    fn test_scale_rectangle_about_bbox_center() {
+      // Scale[g, 0.5] halves the size but keeps the bounding-box center.
+      let svg = interpret(
+        "ExportString[Graphics[{Rectangle[{0, 0}, {2, 1}], Scale[Rectangle[{0, 0}, {2, 1}], 0.5]}], \"SVG\"]",
+      )
+      .unwrap();
+      let rs = rects(&svg);
+      assert_eq!(rs.len(), 2, "expected two rects: {svg}");
+      let (x1, y1, w1, h1) = rs[0];
+      let (x2, y2, w2, h2) = rs[1];
+      assert!(
+        (w2 - w1 / 2.0).abs() < 1e-2 && (h2 - h1 / 2.0).abs() < 1e-2,
+        "scaled copy must be half size: {svg}"
+      );
+      assert!(
+        ((x2 + w2 / 2.0) - (x1 + w1 / 2.0)).abs() < 1e-2,
+        "x center must be fixed: {svg}"
+      );
+      assert!(
+        ((y2 + h2 / 2.0) - (y1 + h1 / 2.0)).abs() < 1e-2,
+        "y center must be fixed: {svg}"
+      );
+    }
+
+    #[test]
+    fn test_scale_about_explicit_point() {
+      // Scaling {{1,0},{2,0}} by 2 about the origin gives {{2,0},{4,0}}:
+      // the image starts where the original ends and is twice as long.
+      let svg = interpret(
+        "ExportString[Graphics[{Line[{{1, 0}, {2, 0}}], Scale[Line[{{1, 0}, {2, 0}}], 2, {0, 0}]}], \"SVG\"]",
+      )
+      .unwrap();
+      let ls = polyline_xs(&svg);
+      assert_eq!(ls.len(), 2, "expected two polylines: {svg}");
+      let len0 = ls[0][1] - ls[0][0];
+      let len1 = ls[1][1] - ls[1][0];
+      assert!(
+        (ls[1][0] - ls[0][1]).abs() < 1e-2,
+        "scaled line must start at {{2,0}}: {svg}"
+      );
+      assert!(
+        (len1 - 2.0 * len0).abs() < 1e-2,
+        "scaled line must be twice as long: {svg}"
+      );
+    }
+
+    #[test]
+    fn test_scale_disk_per_axis_gives_ellipse() {
+      // Scale[g, {sx, sy}] scales each axis separately: a unit disk scaled
+      // by {2, 1} becomes an ellipse with rx = 2 ry.
+      let svg = interpret(
+        "ExportString[Graphics[Scale[Disk[{0, 0}, 1], {2, 1}, {0, 0}]], \"SVG\"]",
+      )
+      .unwrap();
+      let es = ellipses(&svg);
+      assert_eq!(es.len(), 1, "expected one ellipse: {svg}");
+      let (_, _, rx, ry) = es[0];
+      assert!((rx - 2.0 * ry).abs() < 0.5, "rx must be twice ry: {svg}");
+    }
+  }
+
   mod string_split_delimiter_tests {
     use super::*;
 
