@@ -4522,7 +4522,16 @@ mod high_level_functions {
       assert!(result.ends_with(", 2}"));
       let inner = &result[1..result.len() - 1];
       let comma = inner.find(',').unwrap();
-      let elapsed: f64 = inner[..comma].trim().parse().unwrap();
+      // Sub-10µs timings print in Wolfram scientific notation (`1.7*^-6`),
+      // which f64::parse can't read directly.
+      let elapsed_str = inner[..comma].trim();
+      let elapsed: f64 = match elapsed_str.split_once("*^") {
+        Some((mantissa, exponent)) => {
+          mantissa.parse::<f64>().unwrap()
+            * 10f64.powi(exponent.parse::<i32>().unwrap())
+        }
+        None => elapsed_str.parse().unwrap(),
+      };
       assert!(
         elapsed >= 0.0,
         "elapsed time must be non-negative, got {elapsed}"
