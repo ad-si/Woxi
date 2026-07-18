@@ -44,6 +44,57 @@ pub fn minimal_polynomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// MinimalPolynomial[α] — the minimal polynomial returned as a pure function
+/// of `#1`, e.g. `MinimalPolynomial[Sqrt[2]]` → `-2 + #1^2 &`. Computed via the
+/// two-argument form in a private dummy variable, then rewritten to `Slot[1]`.
+pub fn minimal_polynomial_pure_ast(
+  alpha: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let dummy = "WoxiMinimalPolynomialDummyVar";
+  let poly = minimal_polynomial_ast(&[
+    alpha.clone(),
+    Expr::Identifier(dummy.to_string()),
+  ])?;
+  // If the two-argument form could not reduce α, keep the call unevaluated.
+  if matches!(&poly, Expr::FunctionCall { name, .. } if name == "MinimalPolynomial")
+  {
+    return Ok(unevaluated("MinimalPolynomial", &[alpha.clone()]));
+  }
+  Ok(Expr::Function {
+    body: Box::new(replace_identifier_with_slot1(&poly, dummy)),
+  })
+}
+
+/// Recursively replace every `Identifier(name)` with `Slot(1)`.
+fn replace_identifier_with_slot1(expr: &Expr, name: &str) -> Expr {
+  match expr {
+    Expr::Identifier(n) if n == name => Expr::Slot(1),
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(replace_identifier_with_slot1(left, name)),
+      right: Box::new(replace_identifier_with_slot1(right, name)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(replace_identifier_with_slot1(operand, name)),
+    },
+    Expr::FunctionCall { name: fname, args } => Expr::FunctionCall {
+      name: fname.clone(),
+      args: args
+        .iter()
+        .map(|a| replace_identifier_with_slot1(a, name))
+        .collect(),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|a| replace_identifier_with_slot1(a, name))
+        .collect(),
+    ),
+    other => other.clone(),
+  }
+}
+
 /// Compute the minimal polynomial coefficients [c0, c1, ..., cn] where
 /// c0 + c1*x + c2*x^2 + ... + cn*x^n = 0 and the polynomial is irreducible.
 /// Returns coefficients in ascending degree order.

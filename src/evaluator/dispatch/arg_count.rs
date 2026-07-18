@@ -888,7 +888,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Min" => Some((0, usize::MAX)),
     "MinFilter" => Some((2, 2)),
     "MinimalBy" => Some((1, 3)),
-    "MinimalPolynomial" => Some((2, 2)),
+    "MinimalPolynomial" => Some((1, 2)),
     "MinValue" => Some((2, 4)),
     "Minimize" => Some((2, 4)),
     "MinLimit" => Some((2, 2)),

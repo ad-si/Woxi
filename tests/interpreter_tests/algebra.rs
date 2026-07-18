@@ -9852,14 +9852,22 @@ mod minimal_polynomial {
     );
   }
 
+  // The one-argument form returns the minimal polynomial as a pure function
+  // of #1 (verified against wolframscript), e.g. Sqrt[2] -> -2 + #1^2 &.
   #[test]
-  fn wrong_arg_count() {
-    // Single argument returns unevaluated or error
-    assert!(
-      interpret("MinimalPolynomial[Sqrt[2]]").is_err()
-        || interpret("MinimalPolynomial[Sqrt[2]]")
-          .unwrap()
-          .contains("MinimalPolynomial")
+  fn pure_function_form() {
+    assert_eq!(
+      interpret("MinimalPolynomial[Sqrt[2]]").unwrap(),
+      "-2 + #1^2 & "
+    );
+    assert_eq!(
+      interpret("MinimalPolynomial[GoldenRatio]").unwrap(),
+      "-1 - #1 + #1^2 & "
+    );
+    assert_eq!(interpret("MinimalPolynomial[3]").unwrap(), "-3 + #1 & ");
+    assert_eq!(
+      interpret("MinimalPolynomial[Sqrt[2] + Sqrt[3]]").unwrap(),
+      "1 - 10*#1^2 + #1^4 & "
     );
   }
 
