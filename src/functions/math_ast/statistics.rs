@@ -1,6 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
+use crate::functions::math_ast::gcd;
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, ExprForm, UnaryOperator, expr_to_output,
   expr_to_string, format_expr, unevaluated,
@@ -557,7 +558,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Ok(Expr::Integer(sum / count))
         } else {
           // Return as Rational
-          let g = gcd_helper(sum.abs(), count);
+          let g = gcd(sum.abs(), count);
           let num = sum / g;
           let denom = count / g;
           Ok(Expr::FunctionCall {

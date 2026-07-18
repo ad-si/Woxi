@@ -1,11 +1,12 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
+use crate::functions::math_ast::gcd as gcd_i128;
 use crate::syntax::{
   BinaryOperator, Expr, UnaryOperator, expr_to_string, unevaluated,
 };
 use num_bigint::BigInt;
-use num_traits::Signed;
+use num_traits::{Signed, Zero};
 
 /// DigitCount[n] - counts of each digit 1-9,0 in base 10
 /// DigitCount[n, b] - counts of each digit in base b
@@ -34,7 +35,6 @@ pub fn digit_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Get digit list in the given base
-  use num_traits::Zero;
   let big_base = BigInt::from(base);
   let mut digits = Vec::new();
   let mut val = n;
@@ -112,7 +112,6 @@ pub fn digit_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       base_vals.push(BigInt::from(bi));
     }
-    use num_traits::Zero;
     let mut sum = BigInt::from(0);
     let mut val = n;
     // Right-to-left: rightmost digit uses last base, etc.
@@ -138,8 +137,6 @@ pub fn digit_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     10
   };
-
-  use num_traits::Zero;
   let big_base = BigInt::from(base);
   let mut sum = BigInt::from(0);
   let mut val = n;
@@ -1187,8 +1184,6 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(unevaluated("ContinuedFraction", args))
 }
 
-use crate::functions::math_ast::gcd as gcd_i128;
-
 /// Exact rational with i128 numerator/denominator, kept reduced with a
 /// positive denominator. Used to evaluate a periodic continued fraction in
 /// the field Q(sqrt(disc)).
@@ -1669,9 +1664,6 @@ pub fn integer_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     BigInt::from(10)
   };
-
-  use num_traits::Zero;
-
   let mut digits = Vec::new();
   if n.is_zero() {
     digits.push(Expr::Integer(0));
@@ -2722,7 +2714,6 @@ pub fn integer_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Try BigInt path first (handles both Integer and BigInteger)
   if let Some(n) = expr_to_bigint(&args[0]) {
-    use num_traits::Zero;
     if n.is_zero() {
       return Ok(Expr::Integer(0));
     }
@@ -2786,7 +2777,6 @@ pub fn integer_reverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Handle BigInteger
   if let Some(n) = expr_to_bigint(&args[0]) {
-    use num_traits::Zero;
     let mut abs_n = if n < BigInt::zero() { -n } else { n };
     let base_big = BigInt::from(base);
     let mut result = BigInt::zero();
@@ -3483,7 +3473,7 @@ fn make_rational_expr(num: i128, den: i128) -> Expr {
   } else if den == -1 {
     Expr::Integer(-num)
   } else {
-    let g = gcd_convergents(num.abs(), den.abs());
+    let g = gcd(num, den);
     let (n, d) = (num / g, den / g);
     if d < 0 {
       if -d == 1 {
@@ -3505,10 +3495,6 @@ fn make_rational_expr(num: i128, den: i128) -> Expr {
       }
     }
   }
-}
-
-fn gcd_convergents(a: i128, b: i128) -> i128 {
-  if b == 0 { a } else { gcd_convergents(b, a % b) }
 }
 
 /// NumberDigit[x, n] — returns the digit at position n of a real number x.
@@ -3939,13 +3925,8 @@ pub fn number_decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   } else {
-    let gcd_i128 = |mut a: i128, mut b: i128| -> i128 {
-      a = a.abs();
-      b = b.abs();
-      while b != 0 {
-        (a, b) = (b, a % b);
-      }
-      a.max(1)
+    let gcd_i128 = |a: i128, b: i128| -> i128 {
+      crate::functions::math_ast::gcd(a, b).max(1)
     };
     let (mut rn, mut rd) = match value {
       Num::Exact(p, q) => (p, q),
@@ -4147,23 +4128,8 @@ pub fn minkowski_question_mark_ast(
 
   // Exact fraction arithmetic over BigInt
   let gcd_bigint = |a: &BigInt, b: &BigInt| -> BigInt {
-    let (mut a, mut b) = (a.clone(), b.clone());
-    if a < BigInt::from(0) {
-      a = -a;
-    }
-    if b < BigInt::from(0) {
-      b = -b;
-    }
-    while b != BigInt::from(0) {
-      let r = &a % &b;
-      a = b;
-      b = r;
-    }
-    if a == BigInt::from(0) {
-      BigInt::from(1)
-    } else {
-      a
-    }
+    let g = crate::functions::math_ast::gcd_bigint(a, b);
+    if g.is_zero() { BigInt::from(1) } else { g }
   };
   let reduce = |num: BigInt, den: BigInt| -> (BigInt, BigInt) {
     let g = gcd_bigint(&num, &den);

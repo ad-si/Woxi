@@ -1,6 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
+use crate::functions::math_ast::gcd as gcd_i128;
 use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 /// Try to express a symbolic expression as a rational multiple of Pi: k*Pi/n.
@@ -43,7 +44,7 @@ fn try_symbolic_pi_fraction(expr: &Expr) -> Option<(i64, i64)> {
     if k == 0 {
       return (0, 1);
     }
-    let g = gcd(k.unsigned_abs() as i128, n.unsigned_abs() as i128) as i64;
+    let g = gcd_i128(k as i128, n as i128) as i64;
     let (k, n) = (k / g, n / g);
     if n < 0 { (-k, -n) } else { (k, n) }
   }
@@ -300,7 +301,7 @@ fn extract_pi_phase(arg: &Expr) -> Option<(i64, bool, (i64, i64), Vec<Expr>)> {
       Some((a, b)) if a != 0 => {
         pn = pn.checked_mul(b)?.checked_add(a.checked_mul(pd)?)?;
         pd = pd.checked_mul(b)?;
-        let g = gcd(pn.unsigned_abs().max(1) as i128, pd as i128) as i64;
+        let g = gcd_i128(pn as i128, pd as i128).max(1) as i64;
         pn /= g;
         pd /= g;
       }
@@ -358,7 +359,7 @@ fn extract_pi_phase(arg: &Expr) -> Option<(i64, bool, (i64, i64), Vec<Expr>)> {
   let mut rpn = 2 * pn - k * pd;
   let mut rpd = 2 * pd;
   if rpn != 0 {
-    let g = gcd(rpn.unsigned_abs() as i128, rpd as i128) as i64;
+    let g = gcd_i128(rpn as i128, rpd as i128) as i64;
     rpn /= g;
     rpd /= g;
   }
@@ -467,7 +468,7 @@ fn octant_fallback(
     // Reference angle exceeds Pi/4 → co-function of the complement.
     let cm = nr - 2 * kr;
     let cd = 2 * nr;
-    let g = gcd(cm as i128, cd as i128) as i64;
+    let g = gcd_i128(cm as i128, cd as i128) as i64;
     build_trig_angle_call(cofunc_head, cm / g, cd / g)
   } else {
     build_trig_angle_call(self_head, kr, nr)
@@ -508,7 +509,7 @@ fn exact_sin(k: i64, n: i64) -> Option<Expr> {
   };
 
   // Reduce k_ref/n to lowest terms for table lookup
-  let g = gcd(k_ref as i128, n as i128) as i64;
+  let g = gcd_i128(k_ref as i128, n as i128) as i64;
   let (kr, nr) = (k_ref / g, n / g);
   // Now compute sin(kr * Pi / nr) for first quadrant reference angle
   let val = match (kr, nr) {
@@ -600,7 +601,7 @@ fn exact_cos(k: i64, n: i64) -> Option<Expr> {
   };
 
   // Reduce k_ref/n to lowest terms for table lookup
-  let g = gcd(k_ref as i128, n as i128) as i64;
+  let g = gcd_i128(k_ref as i128, n as i128) as i64;
   let (kr, nr) = (k_ref / g, n / g);
   let val = match (kr, nr) {
     (0, _) => Expr::Integer(1),
@@ -691,7 +692,7 @@ fn exact_tan(k: i64, n: i64) -> Option<Expr> {
     (n - k_mod, n, -1)
   };
   // Reduce fraction k_ref/n_ref
-  let g = gcd(k_ref as i128, n_ref as i128) as i64;
+  let g = gcd_i128(k_ref as i128, n_ref as i128) as i64;
   let (kr, nr) = (k_ref / g, n_ref / g);
 
   let val = match (kr, nr) {
@@ -758,7 +759,7 @@ fn exact_sec(k: i64, n: i64) -> Option<Expr> {
   if k_ref * 2 == n {
     return Some(Expr::Identifier("ComplexInfinity".to_string()));
   }
-  let g = gcd(k_ref as i128, n as i128) as i64;
+  let g = gcd_i128(k_ref as i128, n as i128) as i64;
   let (kr, nr) = (k_ref / g, n / g);
 
   let val = match (kr, nr) {
@@ -814,7 +815,7 @@ fn exact_csc(k: i64, n: i64) -> Option<Expr> {
   // In (0, Pi): Csc(Pi - x) = Csc(x), so reduce to (0, Pi/2]
   let k_ref = if k2 * 2 > n { n - k2 } else { k2 };
 
-  let g = gcd(k_ref as i128, n as i128) as i64;
+  let g = gcd_i128(k_ref as i128, n as i128) as i64;
   let (kr, nr) = (k_ref / g, n / g);
 
   let val = match (kr, nr) {
@@ -873,7 +874,7 @@ fn exact_cot(k: i64, n: i64) -> Option<Expr> {
     (k_mod, 1)
   };
 
-  let g = gcd(k_ref as i128, n as i128) as i64;
+  let g = gcd_i128(k_ref as i128, n as i128) as i64;
   let (kr, nr) = (k_ref / g, n / g);
 
   let val = match (kr, nr) {
@@ -6078,7 +6079,7 @@ fn reduce_trig_power(base: &Expr, n: i128) -> Option<Expr> {
   // Compute GCD of all numerator coefficients and denom to simplify the fraction
   let mut g = denom;
   for (c, _) in &num_terms {
-    g = gcd(g, *c);
+    g = gcd_i128(g, *c);
   }
   let reduced_denom = denom / g;
 

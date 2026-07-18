@@ -703,9 +703,7 @@ pub fn gcd(a: i128, b: i128) -> i128 {
   // handled correctly, e.g. gcd(-2^127, 1).
   let (mut a, mut b) = (a.unsigned_abs(), b.unsigned_abs());
   while b != 0 {
-    let temp = b;
-    b = a % b;
-    a = temp;
+    (a, b) = (b, a % b);
   }
   a as i128
 }
@@ -713,9 +711,7 @@ pub fn gcd(a: i128, b: i128) -> i128 {
 /// Compute GCD of two u64 values using Euclidean algorithm
 pub fn gcd_u64(mut a: u64, mut b: u64) -> u64 {
   while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
+    (a, b) = (b, a % b);
   }
   a
 }
@@ -723,9 +719,7 @@ pub fn gcd_u64(mut a: u64, mut b: u64) -> u64 {
 /// Compute GCD of two unsigned integers using Euclidean algorithm
 pub fn gcd_u128(mut a: u128, mut b: u128) -> u128 {
   while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
+    (a, b) = (b, a % b);
   }
   a
 }
@@ -741,12 +735,10 @@ pub fn lcm_i128(a: i128, b: i128) -> i128 {
 /// Compute the (non-negative) GCD of two BigInts.
 pub fn gcd_bigint(a: &BigInt, b: &BigInt) -> BigInt {
   use num_traits::{Signed, Zero};
-  let mut a = a.abs();
-  let mut b = b.abs();
+  let (mut a, mut b) = (a.abs(), b.abs());
   while !b.is_zero() {
-    let t = b.clone();
-    b = &a % &b;
-    a = t;
+    let r = &a % &b;
+    (a, b) = (b, r);
   }
   a
 }

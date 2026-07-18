@@ -1,4 +1,5 @@
 use crate::InterpreterError;
+use crate::functions::math_ast::{gcd as gcd_i128, lcm_i128};
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
 };
@@ -1192,7 +1193,7 @@ fn solve_initial_conditions(
         let rhs_n = fn_ * pd * bn * ad;
         let new_n = lhs_n - rhs_n;
         let new_d = lhs_d;
-        let g = gcd_abs(new_n.abs(), new_d.abs());
+        let g = gcd_i128(new_n, new_d);
         aug[row][j] = if g == 0 {
           (0, 1)
         } else {
@@ -1221,7 +1222,7 @@ fn solve_initial_conditions(
       // sn/sd - sub_n/sub_d
       sn = sn * sub_d - sub_n * sd;
       sd *= sub_d;
-      let g = gcd_abs(sn.abs(), sd.abs());
+      let g = gcd_i128(sn, sd);
       if g != 0 {
         sn /= g;
         sd /= g;
@@ -1235,7 +1236,7 @@ fn solve_initial_conditions(
     let (pn, pd) = aug[i][i];
     sn *= pd;
     sd *= pn;
-    let g = gcd_abs(sn.abs(), sd.abs());
+    let g = gcd_i128(sn, sd);
     if g != 0 {
       sn /= g;
       sd /= g;
@@ -1250,16 +1251,6 @@ fn solve_initial_conditions(
   Some(solution)
 }
 
-fn gcd_abs(a: i128, b: i128) -> i128 {
-  let (mut a, mut b) = (a, b);
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a
-}
-
 /// Build the solution expression: (c1_num*r1^n + c2_num*r2^n + ...) / common_denom
 fn build_solution(
   constants: &[(i128, i128)],
@@ -1269,7 +1260,7 @@ fn build_solution(
   // Find common denominator for all constants
   let mut common_denom = 1i128;
   for &(_, cd) in constants {
-    common_denom = lcm(common_denom, cd);
+    common_denom = lcm_i128(common_denom, cd);
   }
 
   // Build terms with integer numerators: (cn * common_denom/cd) * r^n
@@ -1362,14 +1353,6 @@ fn build_solution(
       left: Box::new(numerator),
       right: Box::new(Expr::Integer(common_denom)),
     })
-  }
-}
-
-fn lcm(a: i128, b: i128) -> i128 {
-  if a == 0 || b == 0 {
-    0
-  } else {
-    (a / gcd_abs(a.abs(), b.abs())) * b.abs()
   }
 }
 

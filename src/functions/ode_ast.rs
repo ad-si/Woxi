@@ -4,7 +4,7 @@
 //! NDSolve solves initial-value problems numerically using RK4.
 
 use crate::InterpreterError;
-use crate::functions::math_ast::{gcd as gcd_i128, gcd_u128, make_sqrt};
+use crate::functions::math_ast::{gcd as gcd_i128, make_sqrt};
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
 };
@@ -1392,7 +1392,7 @@ fn f64_to_nice_expr(f: f64) -> Expr {
     if (numer - numer.round()).abs() < 1e-10 {
       let n = numer.round() as i128;
       let d = denom as i128;
-      let g = gcd_u128(n.unsigned_abs(), d as u128) as i128;
+      let g = gcd_i128(n, d);
       let nn = n / g;
       let dd = d / g;
       if dd == 1 {

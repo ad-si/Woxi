@@ -1,7 +1,9 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::functions::math_ast::{expr_to_f64, expr_to_i128, is_sqrt};
+use crate::functions::math_ast::{
+  expr_to_f64, expr_to_i128, gcd as gcd_i128, is_sqrt,
+};
 use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 /// MinimalPolynomial[α, x] - Computes the minimal polynomial of an algebraic number α
@@ -777,7 +779,7 @@ fn poly_sub_i128(a: &[i128], b: &[i128]) -> Vec<i128> {
 type Rat = (i128, i128);
 
 fn rat_norm(n: i128, d: i128) -> Rat {
-  let g = gcd_abs(n, d).max(1);
+  let g = gcd_i128(n, d).max(1);
   let s = if d < 0 { -1 } else { 1 };
   (s * n / g, d.abs() / g)
 }
@@ -817,7 +819,7 @@ fn rad_unify(a: &RadPoly, b: &RadPoly) -> Option<(Option<i128>, usize)> {
     (Some(x), _) => Some(x),
     (_, y) => y,
   };
-  let g = gcd_abs(a.q as i128, b.q as i128) as usize;
+  let g = gcd_i128(a.q as i128, b.q as i128) as usize;
   let l = a.q / g * b.q;
   if l > RAD_MAX_DEGREE {
     return None;
@@ -908,7 +910,7 @@ fn perfect_power_root(b: i128) -> Option<(i128, i128)> {
   }
   let mut g = 0i128;
   for &(_, e) in &factors {
-    g = gcd_abs(g, e);
+    g = gcd_i128(g, e);
   }
   let mut m = 1i128;
   for &(p, e) in &factors {
@@ -927,7 +929,7 @@ fn rad_radical(b: i128, p: i128, q: i128) -> Option<RadPoly> {
   }
   let (m, k) = perfect_power_root(b)?;
   let num = k.checked_mul(p)?;
-  let g = gcd_abs(num, q).max(1);
+  let g = gcd_i128(num, q).max(1);
   let (num, den) = (num / g, q / g);
   if num > 64 {
     return None;
@@ -1150,7 +1152,7 @@ fn single_radical_minpoly(
   }
   let mut den_lcm = 1i128;
   for &(_, d) in &rats {
-    den_lcm = den_lcm / gcd_abs(den_lcm, d).max(1) * d;
+    den_lcm = den_lcm / gcd_i128(den_lcm, d).max(1) * d;
   }
   let ints: Vec<i128> = rats.iter().map(|&(n, d)| n * (den_lcm / d)).collect();
   Ok(Some(make_square_free(&make_primitive_monic(&ints))))
@@ -1188,7 +1190,7 @@ fn make_primitive_monic(coeffs: &[i128]) -> Vec<i128> {
     .iter()
     .copied()
     .filter(|&c| c != 0)
-    .fold(0i128, gcd_abs);
+    .fold(0i128, gcd_i128);
   if g > 1 {
     for c in &mut result {
       *c /= g;
@@ -1400,17 +1402,6 @@ fn collect_times_factors(expr: &Expr) -> Vec<Expr> {
     Expr::FunctionCall { name, args } if name == "Times" => args.to_vec(),
     _ => vec![expr.clone()],
   }
-}
-
-/// GCD of absolute values
-fn gcd_abs(a: i128, b: i128) -> i128 {
-  let (mut a, mut b) = (a.abs(), b.abs());
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a
 }
 
 /// Small divisors of a positive integer (for root-finding)

@@ -6,6 +6,7 @@
 //! biorthogonal families the primal lowpass is the synthesis filter and the
 //! dual lowpass the analysis filter; for orthogonal families they coincide.
 
+use crate::functions::math_ast::gcd as gcd_i128;
 use crate::syntax::Expr;
 
 /// One filter as ascending (index, coefficient) pairs.
@@ -107,7 +108,7 @@ struct Rat {
 impl Rat {
   fn new(num: i128, den: i128) -> Self {
     debug_assert!(den != 0);
-    let g = gcd(num.unsigned_abs(), den.unsigned_abs()).max(1) as i128;
+    let g = gcd_i128(num, den).max(1);
     let sign = if den < 0 { -1 } else { 1 };
     Rat {
       num: sign * num / g,
@@ -128,8 +129,6 @@ impl Rat {
     self.num as f64 / self.den as f64
   }
 }
-
-use crate::functions::math_ast::gcd_u128 as gcd;
 
 fn binomial(n: u64, k: u64) -> i128 {
   if k > n {

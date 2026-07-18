@@ -1,5 +1,6 @@
 use super::{mk_call, mk_int, mk_power, mk_ratio, mk_times};
 use crate::InterpreterError;
+use crate::functions::math_ast::gcd as gcd_i128;
 use crate::syntax::{BinaryOperator, Expr};
 
 /// ToRadicals[expr] — convert Root objects to explicit radical expressions.
@@ -541,17 +542,8 @@ fn simplify_fraction(mut n: i128, mut d: i128) -> (i128, i128) {
     n = -n;
     d = -d;
   }
-  let g = gcd_abs(n.unsigned_abs(), d.unsigned_abs()) as i128;
+  let g = gcd_i128(n, d);
   (n / g, d / g)
-}
-
-fn gcd_abs(mut a: u128, mut b: u128) -> u128 {
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a
 }
 
 /// Solve quartic using Ferrari's method.
