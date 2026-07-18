@@ -8,7 +8,7 @@ use crate::syntax::{
 use num_bigint::BigInt;
 use num_traits::Signed;
 
-fn nth_prime(n: usize) -> usize {
+fn nth_prime(n: i128) -> i128 {
   if n == 0 {
     return 0; // Return 0 for invalid input
   }
@@ -16,34 +16,11 @@ fn nth_prime(n: usize) -> usize {
   let mut num = 1;
   while count < n {
     num += 1;
-    if is_prime(num) {
+    if is_prime_i128(num) {
       count += 1;
     }
   }
   num
-}
-
-pub fn is_prime(n: usize) -> bool {
-  if n < 2 {
-    // 0 or 1
-    return false;
-  }
-  if n < 4 {
-    // 2 or 3
-    return true;
-  }
-  if n.is_multiple_of(2) || n.is_multiple_of(3) {
-    return false;
-  }
-  let mut i = 5usize;
-  while i * i <= n {
-    // (5 + 6k) + [1,3,4,5] -> (6 + 6k) + [0,2,3,4] -> multiple of 2 or 3, already tested
-    if n.is_multiple_of(i) || n.is_multiple_of(i + 2) {
-      return false;
-    }
-    i += 6;
-  }
-  true
 }
 
 /// True if `e` denotes a concrete number (an integer, real, big-float, or
@@ -51,16 +28,33 @@ pub fn is_prime(n: usize) -> bool {
 /// decide whether a "not a valid index" message should fire: a concrete
 /// non-integer argument is an error, but a symbolic one stays unevaluated.
 
-/// Primality test for i128 values (Miller-Rabin via BigInt beyond usize).
+/// Primality test for i128 values (Miller-Rabin via BigInt beyond 1u128 << 53).
 pub fn is_prime_i128(n: i128) -> bool {
   if n < 2 {
     return false;
   }
-  if n <= usize::MAX as i128 {
-    return is_prime(n as usize);
+  if n < 4 {
+    return true;
   }
-  let big = num_bigint::BigInt::from(n);
-  is_prime_bigint(&big)
+
+  if n.unsigned_abs() >= (1u128 << 53) {
+    // For large integers, use Miller-Rabin instead of trial division
+    let big = BigInt::from(n);
+    is_prime_bigint(&big)
+  } else {
+    if n % 2 == 0 || n % 3 == 0 {
+      return false;
+    }
+
+    let sqrt_n = (n as f64).sqrt() as i128;
+    for i in (5..=sqrt_n).step_by(6) {
+      // (5 + 6k) + [1,3,4,5] -> (6 + 6k) + [0,2,3,4] -> multiple of 2 or 3, already tested
+      if n % i == 0 || n % (i + 2) == 0 {
+        return false;
+      }
+    }
+    true
+  }
 }
 
 /// GCD[a, b, ...] - Greatest common divisor.
@@ -2416,7 +2410,7 @@ pub fn prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // every Real argument with Prime::intpp, even an integer-valued one like
   // 3.0, so do NOT coerce Reals to integers here.
   match expr_to_i128(&args[0]) {
-    Some(n) if n >= 1 => Ok(Expr::Integer(nth_prime(n as usize) as i128)),
+    Some(n) if n >= 1 => Ok(Expr::Integer(nth_prime(n))),
     Some(_) => {
       // Concrete non-positive integer: emit message like wolframscript
       let arg_str = expr_to_string(&args[0]);
@@ -5123,10 +5117,9 @@ pub fn prime_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if n < 2 {
         return Ok(Expr::Integer(0));
       }
-      let n_usize = n as usize;
       let mut count: i128 = 0;
-      for i in 2..=n_usize {
-        if is_prime(i) {
+      for i in 2..=n {
+        if is_prime_i128(i) {
           count += 1;
         }
       }
@@ -5141,10 +5134,10 @@ pub fn prime_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if f < 2.0 {
         return Ok(Expr::Integer(0));
       }
-      let n = f.floor() as usize;
+      let n = f.floor() as i128;
       let mut count: i128 = 0;
       for i in 2..=n {
-        if is_prime(i) {
+        if is_prime_i128(i) {
           count += 1;
         }
       }
@@ -5156,10 +5149,10 @@ pub fn prime_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if f < 2.0 {
           return Ok(Expr::Integer(0));
         }
-        let n = f.floor() as usize;
+        let n = f.floor() as i128;
         let mut count: i128 = 0;
         for i in 2..=n {
-          if is_prime(i) {
+          if is_prime_i128(i) {
             count += 1;
           }
         }
@@ -5311,7 +5304,7 @@ fn next_prime_after(n: i128) -> i128 {
   // For n >= 1: search upward from n+1
   if n >= 1 {
     let mut candidate = n + 1;
-    while !is_prime(candidate as usize) {
+    while !is_prime_i128(candidate) {
       candidate += 1;
     }
     return candidate;
@@ -5321,7 +5314,7 @@ fn next_prime_after(n: i128) -> i128 {
   // Search from n+1 upward: for each candidate c, check if |c| is prime.
   if n < -2 {
     for c in (n + 1)..=-2 {
-      if c < 0 && is_prime((-c) as usize) {
+      if c < 0 && is_prime_i128(-c) {
         return c;
       }
     }
@@ -5337,7 +5330,7 @@ fn prev_prime_before(n: i128) -> i128 {
   if n > 2 {
     let mut candidate = n - 1;
     while candidate >= 2 {
-      if is_prime(candidate as usize) {
+      if is_prime_i128(candidate) {
         return candidate;
       }
       candidate -= 1;
@@ -5353,7 +5346,7 @@ fn prev_prime_before(n: i128) -> i128 {
   // For n < -2: search downward among negative primes
   let mut candidate = n - 1;
   loop {
-    if is_prime((-candidate) as usize) {
+    if is_prime_i128(-candidate) {
       return candidate;
     }
     candidate -= 1;

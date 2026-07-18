@@ -1135,27 +1135,7 @@ pub fn prime_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return Ok(bool_expr(false)),
   };
 
-  let is_prime = if n <= 1 {
-    false
-  } else if n <= 3 {
-    true
-  } else if n % 2 == 0 || n % 3 == 0 {
-    false
-  } else if n.unsigned_abs() > (1u128 << 53) {
-    // For large integers, use Miller-Rabin instead of trial division
-    crate::functions::math_ast::is_prime_bigint(&num_bigint::BigInt::from(n))
-  } else {
-    let mut i = 5i128;
-    let mut result = true;
-    while i * i <= n {
-      if n % i == 0 || n % (i + 2) == 0 {
-        result = false;
-        break;
-      }
-      i += 6;
-    }
-    result
-  };
+  let is_prime = crate::functions::math_ast::is_prime_i128(n);
   Ok(bool_expr(is_prime))
 }
 
