@@ -4298,7 +4298,7 @@ PacletObject,,🚫,,12.1,4437
 PaddingLayer,,🚫,,11.1,4437
 PartBehavior,,,,10.0,4437
 PeanoCurve,Line through all cells of the 3^n x 3^n grid in Peano order (integer grid; DataRange maps to reals),✅,pure,11.1,4437
-PrimitivePolynomialQ,,,,11.1,4437
+PrimitivePolynomialQ,Tests whether a polynomial is primitive modulo a prime,✅,pure,11.1,4437
 RadonTransform,,,,11.2,4437
 ReadByteArray,,,,11.3,4437
 RogersTanimotoDissimilarity,Rogers-Tanimoto dissimilarity between binary vectors,✅,pure,6.0,4437

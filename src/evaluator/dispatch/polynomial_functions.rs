@@ -109,6 +109,21 @@ pub fn dispatch_polynomial_functions(
         crate::functions::polynomial_ast::irreducible_polynomial_q_ast(args),
       );
     }
+    "PrimitivePolynomialQ" if args.len() == 2 => {
+      // PrimitivePolynomialQ[poly, p] with a bare prime modulus p.
+      if let Some(p) = expr_to_i128(&args[1]) {
+        return Some(
+          match crate::functions::polynomial_ast::primitive_polynomial_q_modulus(
+            &args[0], p,
+          ) {
+            Ok(Some(result)) => Ok(result),
+            Ok(None) => Ok(unevaluated("PrimitivePolynomialQ", args)),
+            Err(e) => Err(e),
+          },
+        );
+      }
+      return Some(Ok(unevaluated("PrimitivePolynomialQ", args)));
+    }
     "Simplify" if !args.is_empty() => {
       return Some(crate::functions::polynomial_ast::simplify_ast(args));
     }

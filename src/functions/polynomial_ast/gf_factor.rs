@@ -487,6 +487,89 @@ pub fn irreducible_polynomial_q_modulus(
   )))
 }
 
+/// PrimitivePolynomialQ[poly, p]: true when `poly` is primitive over GF(p),
+/// i.e. the multiplicative order of x in GF(p)[x]/(poly) equals p^d - 1 (with
+/// d = deg poly). That order test also implies irreducibility, so constants,
+/// reducible polynomials, and polynomials with a zero constant term are not
+/// primitive. Requires a prime modulus 2 <= p <= MAX_MODULUS; anything else
+/// (composite p, multivariate, non-integer coefficients) stays unevaluated.
+pub fn primitive_polynomial_q_modulus(
+  expr: &Expr,
+  p: i128,
+) -> Result<Option<Expr>, InterpreterError> {
+  if !(2..=MAX_MODULUS).contains(&p)
+    || !crate::functions::math_ast::is_prime_i128(p)
+  {
+    return Ok(None);
+  }
+  let Some((_, coeffs)) = univariate_int_coeffs(expr)? else {
+    return Ok(None);
+  };
+  match is_primitive_over_gf(&coeffs, p) {
+    Some(primitive) => Ok(Some(Expr::Identifier(
+      if primitive { "True" } else { "False" }.to_string(),
+    ))),
+    None => Ok(None),
+  }
+}
+
+/// Distinct prime factors of `n` by trial division.
+fn distinct_prime_factors(mut n: i128) -> Vec<i128> {
+  let mut factors = Vec::new();
+  let mut q = 2i128;
+  while q * q <= n {
+    if n % q == 0 {
+      factors.push(q);
+      while n % q == 0 {
+        n /= q;
+      }
+    }
+    q += 1;
+  }
+  if n > 1 {
+    factors.push(n);
+  }
+  factors
+}
+
+/// Core primitivity test on ascending integer coefficients. Returns None when
+/// p^d overflows i128 (too large for the order arithmetic).
+fn is_primitive_over_gf(coeffs: &[i128], p: i128) -> Option<bool> {
+  let mut c: Vec<i128> = coeffs.iter().map(|&v| v.rem_euclid(p)).collect();
+  trim(&mut c);
+  let d = deg(&c);
+  // Constants and the zero polynomial are never primitive.
+  if d == 0 {
+    return Some(false);
+  }
+  // A zero constant term means x divides the polynomial: reducible / not a
+  // unit, so not primitive.
+  if c[0] == 0 {
+    return Some(false);
+  }
+  // Work in GF(p)[x]/(f) with f monic, so x^n is well defined.
+  let f = make_monic(&c, p);
+  // n = p^d - 1 is the order of the multiplicative group of GF(p^d).
+  let mut pd: i128 = 1;
+  for _ in 0..d {
+    pd = pd.checked_mul(p)?;
+  }
+  let n = pd - 1;
+  let x = [0i128, 1];
+  let one = vec![1i128];
+  // Primitive iff ord(x) = n: x^n = 1 and x^(n/q) != 1 for every prime q | n.
+  // poly_pow_mod reduces x mod f first, so this also covers the degree-1 case.
+  if poly_pow_mod(&x, n, &f, p) != one {
+    return Some(false);
+  }
+  for q in distinct_prime_factors(n) {
+    if poly_pow_mod(&x, n / q, &f, p) == one {
+      return Some(false);
+    }
+  }
+  Some(true)
+}
+
 /// PolynomialLCM[polys..., Modulus -> p]: the two-polynomial modular form
 /// is computed over GF(p); without a modulus the pairwise Cancel-based
 /// fold keeps wolframscript's factored display. The n-ary modular form is

@@ -11853,6 +11853,107 @@ mod irreducible_polynomial_q {
   }
 }
 
+mod primitive_polynomial_q {
+  use super::*;
+
+  // Primitive polynomials over GF(2): x is a generator of GF(2^d)*.
+  #[test]
+  fn primitive_over_gf2() {
+    assert_eq!(
+      interpret("PrimitivePolynomialQ[1 + x + x^2, 2]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("PrimitivePolynomialQ[1 + x + x^3, 2]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("PrimitivePolynomialQ[1 + x^2 + x^3, 2]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("PrimitivePolynomialQ[1 + x + x^4, 2]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("PrimitivePolynomialQ[x^5 + x^2 + 1, 2]").unwrap(),
+      "True"
+    );
+    // Degree 1: x + 1 has root 1, the generator of GF(2)*.
+    assert_eq!(interpret("PrimitivePolynomialQ[1 + x, 2]").unwrap(), "True");
+  }
+
+  // Reducible polynomials and ones with a zero constant term are not primitive.
+  #[test]
+  fn reducible_or_nonunit_is_not_primitive() {
+    // 1 + x^3 = (1 + x)(1 + x + x^2) over GF(2).
+    assert_eq!(
+      interpret("PrimitivePolynomialQ[1 + x^3, 2]").unwrap(),
+      "False"
+    );
+    // 1 + x^2 = (1 + x)^2 over GF(2).
+    assert_eq!(
+      interpret("PrimitivePolynomialQ[1 + x^2, 2]").unwrap(),
+      "False"
+    );
+    // x has a zero constant term, so x is not a unit.
+    assert_eq!(interpret("PrimitivePolynomialQ[x, 2]").unwrap(), "False");
+  }
+
+  // Irreducible but not primitive: the order of x is a proper divisor of
+  // p^d - 1. 1 + x + x^2 + x^3 + x^4 is the 5th cyclotomic polynomial, whose
+  // roots have order 5, not 2^4 - 1 = 15.
+  #[test]
+  fn irreducible_but_not_primitive() {
+    assert_eq!(
+      interpret("PrimitivePolynomialQ[1 + x + x^2 + x^3 + x^4, 2]").unwrap(),
+      "False"
+    );
+  }
+
+  // Odd prime moduli.
+  #[test]
+  fn primitive_over_odd_primes() {
+    assert_eq!(
+      interpret("PrimitivePolynomialQ[2 + x + x^2, 3]").unwrap(),
+      "True"
+    );
+    // Irreducible over GF(3) but x has order 4, not 3^2 - 1 = 8.
+    assert_eq!(
+      interpret("PrimitivePolynomialQ[1 + x^2, 3]").unwrap(),
+      "False"
+    );
+    // Reducible over GF(3): x = 1 is a root.
+    assert_eq!(
+      interpret("PrimitivePolynomialQ[1 + x + x^2, 3]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("PrimitivePolynomialQ[3 + 2 x + x^2, 5]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("PrimitivePolynomialQ[x^4 + 3 x^3 + 2 x^2 + x + 7, 13]")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  // A composite modulus and the one-argument form stay unevaluated, matching
+  // wolframscript (which issues nprimemod / argrx messages and echoes).
+  #[test]
+  fn unevaluated_forms() {
+    assert_eq!(
+      interpret("PrimitivePolynomialQ[1 + x + x^2, 4]").unwrap(),
+      "PrimitivePolynomialQ[1 + x + x^2, 4]"
+    );
+    assert_eq!(
+      interpret("PrimitivePolynomialQ[1 + x + x^2]").unwrap(),
+      "PrimitivePolynomialQ[1 + x + x^2]"
+    );
+  }
+}
+
 mod inequality_display {
   use super::*;
 
