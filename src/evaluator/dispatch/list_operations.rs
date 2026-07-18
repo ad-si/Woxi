@@ -7255,6 +7255,40 @@ fn array_pad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(0)
   };
   let unevaluated = || unevaluated("ArrayPad", args);
+  // Named padding schemes ("Periodic", "Reflected") for a one-dimensional flat
+  // list: ArrayPad[{1,2,3}, 2, "Periodic"] extends the list cyclically on both
+  // sides; "Reflected" reflects it at the boundaries.
+  if let Expr::List(items) = arr
+    && !items.is_empty()
+    && items.iter().all(|e| !matches!(e, Expr::List(_)))
+    && let Expr::String(scheme) = &pad_val
+    && matches!(scheme.as_str(), "Periodic" | "Reflected")
+  {
+    let (left, right) = match &args[1] {
+      Expr::Integer(n) if *n >= 0 => (*n, *n),
+      Expr::List(lr) if lr.len() == 2 => match (&lr[0], &lr[1]) {
+        (Expr::Integer(l), Expr::Integer(r)) if *l >= 0 && *r >= 0 => (*l, *r),
+        _ => return Ok(unevaluated()),
+      },
+      _ => return Ok(unevaluated()),
+    };
+    let len = items.len() as i128;
+    let at = |v: i128| -> Expr {
+      let idx = if scheme == "Periodic" {
+        v.rem_euclid(len)
+      } else if len == 1 {
+        0
+      } else {
+        let period = 2 * (len - 1);
+        let j = v.rem_euclid(period);
+        if j < len { j } else { 2 * (len - 1) - j }
+      };
+      items[idx as usize].clone()
+    };
+    let total = left + len + right;
+    let result: Vec<Expr> = (0..total).map(|p| at(p - left)).collect();
+    return Ok(Expr::List(result.into()));
+  }
   // Try per-dimension form: {{m1, n1}, {m2, n2}, ...} or {{m1}, {m2}, ...}
   // where the spec list has length equal to the array's rank.
   if let Expr::List(spec_items) = &args[1]

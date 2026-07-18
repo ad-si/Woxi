@@ -8684,6 +8684,49 @@ mod join_non_list {
     );
   }
 
+  // Named padding schemes extend the list itself. Verified against
+  // wolframscript.
+  #[test]
+  fn pad_periodic_scheme() {
+    assert_eq!(
+      interpret(r#"PadLeft[{1, 2, 3}, 6, "Periodic"]"#).unwrap(),
+      "{1, 2, 3, 1, 2, 3}"
+    );
+    assert_eq!(
+      interpret(r#"PadRight[{1, 2, 3}, 7, "Periodic"]"#).unwrap(),
+      "{1, 2, 3, 1, 2, 3, 1}"
+    );
+  }
+
+  #[test]
+  fn pad_reflected_scheme() {
+    assert_eq!(
+      interpret(r#"PadLeft[{1, 2, 3}, 7, "Reflected"]"#).unwrap(),
+      "{1, 2, 3, 2, 1, 2, 3}"
+    );
+    assert_eq!(
+      interpret(r#"PadRight[{1, 2, 3}, 7, "Reflected"]"#).unwrap(),
+      "{1, 2, 3, 2, 1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn array_pad_periodic_and_reflected() {
+    assert_eq!(
+      interpret(r#"ArrayPad[{1, 2, 3}, 2, "Periodic"]"#).unwrap(),
+      "{2, 3, 1, 2, 3, 1, 2}"
+    );
+    assert_eq!(
+      interpret(r#"ArrayPad[{1, 2, 3}, 2, "Reflected"]"#).unwrap(),
+      "{3, 2, 1, 2, 3, 2, 1}"
+    );
+    // Asymmetric margins {left, right}.
+    assert_eq!(
+      interpret(r#"ArrayPad[{1, 2, 3}, {1, 2}, "Periodic"]"#).unwrap(),
+      "{3, 1, 2, 3, 1, 2}"
+    );
+  }
+
   #[test]
   fn flatten_with_head() {
     assert_eq!(

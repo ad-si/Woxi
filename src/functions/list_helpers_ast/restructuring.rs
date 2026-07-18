@@ -1786,6 +1786,46 @@ pub fn pad_ast(fname: &str, args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(original());
   }
 
+  // Named padding schemes ("Periodic", "Reflected") for the one-dimensional
+  // scalar-length form. `PadLeft[{1,2,3}, 6, "Periodic"]` extends the list
+  // cyclically; "Reflected" reflects it at the boundaries.
+  if args.len() == 3
+    && let Expr::List(items) = subject
+    && !items.is_empty()
+    && items.iter().all(|e| !matches!(e, Expr::List(_)))
+    && let Some(n) = strict_int(&args[1]).filter(|n| *n >= 0)
+    && let Expr::String(scheme) = &args[2]
+    && matches!(scheme.as_str(), "Periodic" | "Reflected")
+  {
+    let len = items.len() as i128;
+    let n = n as usize;
+    if (n as i128) <= len {
+      let sub: Vec<Expr> = if is_left {
+        items[items.len() - n..].to_vec()
+      } else {
+        items[..n].to_vec()
+      };
+      return Ok(Expr::List(sub.into()));
+    }
+    // Value at virtual index v, where the original occupies [0, len - 1].
+    let at = |v: i128| -> Expr {
+      let idx = if scheme == "Periodic" {
+        v.rem_euclid(len)
+      } else if len == 1 {
+        0
+      } else {
+        let period = 2 * (len - 1);
+        let j = v.rem_euclid(period);
+        if j < len { j } else { 2 * (len - 1) - j }
+      };
+      items[idx as usize].clone()
+    };
+    // PadLeft places the original at the right; PadRight at the left.
+    let offset = if is_left { n as i128 - len } else { 0 };
+    let result: Vec<Expr> = (0..n as i128).map(|p| at(p - offset)).collect();
+    return Ok(Expr::List(result.into()));
+  }
+
   // One-argument ragged-fill form; non-List heads stay unevaluated.
   if args.len() == 1 {
     if !matches!(subject, Expr::List(_)) {
