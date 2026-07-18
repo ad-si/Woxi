@@ -10895,6 +10895,47 @@ mod sparse_array_list_ops {
     );
   }
 
+  // Join of all-SparseArray arguments stays sparse; a mixed join is a List.
+  #[test]
+  fn join() {
+    assert_eq!(
+      interpret(
+        "Normal[Join[SparseArray[{1 -> 1}, 2], SparseArray[{1 -> 3}, 2]]]"
+      )
+      .unwrap(),
+      "{1, 0, 3, 0}"
+    );
+    assert_eq!(
+      interpret(
+        "Head[Join[SparseArray[{1 -> 1}, 2], SparseArray[{1 -> 3}, 2]]]"
+      )
+      .unwrap(),
+      "SparseArray"
+    );
+    // Mixed with a dense list densifies and returns a List.
+    assert_eq!(
+      interpret("Normal[Join[SparseArray[{1 -> 1}, 2], {5, 6}]]").unwrap(),
+      "{1, 0, 5, 6}"
+    );
+    assert_eq!(
+      interpret("Head[Join[SparseArray[{1 -> 1}, 2], {5, 6}]]").unwrap(),
+      "List"
+    );
+  }
+
+  // Riffle densifies a SparseArray argument and returns a plain List.
+  #[test]
+  fn riffle() {
+    assert_eq!(
+      interpret("Riffle[SparseArray[{1 -> 1, 3 -> 3}, 4], 0]").unwrap(),
+      "{1, 0, 0, 0, 3, 0, 0}"
+    );
+    assert_eq!(
+      interpret("Head[Riffle[SparseArray[{1 -> 1, 3 -> 3}, 4], 0]]").unwrap(),
+      "List"
+    );
+  }
+
   #[test]
   fn result_stays_sparse() {
     assert_eq!(

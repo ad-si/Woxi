@@ -3457,6 +3457,21 @@ pub fn dispatch_list_operations(
       }
     }
     "Riffle" if args.len() == 2 || args.len() == 3 => {
+      // A SparseArray first argument is riffled by its dense elements; the
+      // result is a plain List (wolframscript does not keep it sparse).
+      if matches!(&args[0], Expr::FunctionCall { name, .. } if name == "SparseArray")
+      {
+        let normal = match crate::evaluator::evaluate_function_call_ast(
+          "Normal",
+          &[args[0].clone()],
+        ) {
+          Ok(n) => n,
+          Err(e) => return Some(Err(e)),
+        };
+        let mut new_args = args.to_vec();
+        new_args[0] = normal;
+        return Some(list_helpers_ast::riffle_unified_ast(&new_args));
+      }
       return Some(list_helpers_ast::riffle_unified_ast(args));
     }
     "RotateLeft" | "RotateRight" if args.len() == 1 || args.len() == 2 => {
@@ -3466,6 +3481,40 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::pad_ast(name, args));
     }
     "Join" => {
+      // SparseArray arguments join by their dense elements. Densify any sparse
+      // argument, join, then re-wrap as a SparseArray only when every argument
+      // was a SparseArray (a mixed join yields a plain List in wolframscript).
+      let is_sparse = |a: &Expr| matches!(a, Expr::FunctionCall { name, .. } if name == "SparseArray");
+      let is_level_spec =
+        args.len() >= 2 && matches!(&args[args.len() - 1], Expr::Integer(_));
+      if args.iter().any(is_sparse) && !is_level_spec {
+        let all_sparse = args.iter().all(is_sparse);
+        let mut dense = Vec::with_capacity(args.len());
+        for a in args {
+          if is_sparse(a) {
+            match crate::evaluator::evaluate_function_call_ast(
+              "Normal",
+              &[a.clone()],
+            ) {
+              Ok(n) => dense.push(n),
+              Err(e) => return Some(Err(e)),
+            }
+          } else {
+            dense.push(a.clone());
+          }
+        }
+        let joined = match dispatch_list_operations("Join", &dense) {
+          Some(Ok(r)) => r,
+          other => return other,
+        };
+        if all_sparse && matches!(&joined, Expr::List(_)) {
+          return Some(crate::evaluator::evaluate_function_call_ast(
+            "SparseArray",
+            &[joined],
+          ));
+        }
+        return Some(Ok(joined));
+      }
       // Join[expr, n] — a single expression with a trailing positive-integer
       // level. Joining one expression yields that expression unchanged for any
       // valid level (no depth requirement), provided it is nonatomic. An atomic
