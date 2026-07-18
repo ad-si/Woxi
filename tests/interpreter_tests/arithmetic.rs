@@ -4771,6 +4771,28 @@ mod expand_threading {
       "1.4142135623730950488`4."
     );
   }
+
+  // N[expr, {precision, accuracy}] carries the effective precision tag
+  // min(p, a + Log10[|value|]). Verified against wolframscript.
+  #[test]
+  fn n_precision_accuracy_spec() {
+    // Magnitude ≈ 1: equal to N[expr, p].
+    assert_eq!(
+      interpret("N[Sqrt[2], {5, 5}]").unwrap(),
+      "1.4142135623730950488`5."
+    );
+    // Magnitude < 1: the accuracy constraint lowers the precision tag.
+    assert_eq!(
+      interpret("N[1/3, {6, 6}]").unwrap(),
+      "0.3333333333333333333`5.522878745280337"
+    );
+    assert_eq!(interpret("N[1/100, {5, 5}]").unwrap(), "0.01`3.");
+    // Magnitude > 1: the precision p is the binding constraint.
+    assert_eq!(
+      interpret("N[100/3, {5, 5}]").unwrap(),
+      "33.3333333333333333333`5."
+    );
+  }
 }
 
 /// Regression tests for unary minus after operators (issues 2 & 5)

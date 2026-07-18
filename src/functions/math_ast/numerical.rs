@@ -18,6 +18,26 @@ pub fn n_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if matches!(&args[1], Expr::Identifier(s) if s == "MachinePrecision") {
       return n_eval(&args[0]);
     }
+    // N[expr, {precision, accuracy}] — the effective precision of the result is
+    // min(p, a + Log10[|value|]); the digits are those of N[expr, p]. For a
+    // value of magnitude ≈ 1 this equals N[expr, p], but e.g. N[1/3, {6, 6}]
+    // carries the accuracy-limited precision tag 5.5228… rather than 6.
+    if let Expr::List(spec) = &args[1]
+      && spec.len() == 2
+      && let (Some(p), Some(a)) =
+        (try_eval_to_f64(&spec[0]), try_eval_to_f64(&spec[1]))
+      && p > 0.0
+      && a > 0.0
+    {
+      let magnitude = try_eval_to_f64(&args[0]).map(f64::abs).or_else(|| {
+        try_extract_complex_float(&args[0]).map(|(re, im)| re.hypot(im))
+      });
+      let effective = match magnitude {
+        Some(m) if m > 0.0 => p.min(a + m.log10()),
+        _ => p,
+      };
+      return n_eval_arbitrary(&args[0], effective);
+    }
     // N[expr, precision] — arbitrary-precision evaluation. Precision
     // can be a numeric expression (e.g. N[Pi, Pi] uses ≈3.14159… as
     // the precision marker); we preserve the full f64 value so the
