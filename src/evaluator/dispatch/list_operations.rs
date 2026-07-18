@@ -1452,6 +1452,11 @@ pub fn dispatch_list_operations(
       | "RotateLeft"
       | "RotateRight"
       | "Flatten"
+      | "Append"
+      | "Prepend"
+      | "Insert"
+      | "Delete"
+      | "Partition"
   ) && !args.is_empty()
     && matches!(&args[0], Expr::FunctionCall { name: h, .. } if h == "SparseArray")
   {

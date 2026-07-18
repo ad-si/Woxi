@@ -10798,6 +10798,39 @@ mod sparse_array_list_ops {
   }
 
   #[test]
+  fn append_prepend() {
+    assert_eq!(
+      interpret("Normal[Append[SparseArray[{1 -> 1}, 2], 5]]").unwrap(),
+      "{1, 0, 5}"
+    );
+    assert_eq!(
+      interpret("Normal[Prepend[SparseArray[{1 -> 1}, 2], 5]]").unwrap(),
+      "{5, 1, 0}"
+    );
+  }
+
+  #[test]
+  fn insert_delete() {
+    assert_eq!(
+      interpret("Normal[Insert[SparseArray[{1 -> 1}, 2], 9, 2]]").unwrap(),
+      "{1, 9, 0}"
+    );
+    assert_eq!(
+      interpret("Normal[Delete[SparseArray[{1 -> 1, 3 -> 3}, 3], 2]]").unwrap(),
+      "{1, 3}"
+    );
+  }
+
+  #[test]
+  fn partition() {
+    assert_eq!(
+      interpret("Normal[Partition[SparseArray[{1 -> 1, 4 -> 4}, 4], 2]]")
+        .unwrap(),
+      "{{1, 0}, {0, 4}}"
+    );
+  }
+
+  #[test]
   fn result_stays_sparse() {
     assert_eq!(
       interpret("Head[Take[SparseArray[{1 -> 1, 3 -> 3}, 5], 3]]").unwrap(),
@@ -10805,6 +10838,14 @@ mod sparse_array_list_ops {
     );
     assert_eq!(
       interpret("Head[Reverse[SparseArray[{1 -> 1}, 3]]]").unwrap(),
+      "SparseArray"
+    );
+    assert_eq!(
+      interpret("Head[Append[SparseArray[{1 -> 1}, 2], 5]]").unwrap(),
+      "SparseArray"
+    );
+    assert_eq!(
+      interpret("Head[Delete[SparseArray[{1 -> 1, 3 -> 3}, 3], 2]]").unwrap(),
       "SparseArray"
     );
   }
