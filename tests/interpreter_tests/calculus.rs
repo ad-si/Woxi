@@ -8210,6 +8210,25 @@ mod trig_to_exp {
   }
 
   #[test]
+  fn tan_to_exp() {
+    // Tan[x] = I*(E^(-I*x) - E^(I*x))/(E^(-I*x) + E^(I*x)); the E^(-I*x) term
+    // comes first so the negated term keeps a positive exponent, matching
+    // wolframscript's form exactly.
+    assert_eq!(
+      interpret("TrigToExp[Tan[x]]").unwrap(),
+      "(I*(E^(-I*x) - E^(I*x)))/(E^(-I*x) + E^(I*x))"
+    );
+  }
+
+  #[test]
+  fn tan_to_exp_double_angle() {
+    assert_eq!(
+      interpret("TrigToExp[Tan[2 y]]").unwrap(),
+      "(I*(E^((-2*I)*y) - E^((2*I)*y)))/(E^((-2*I)*y) + E^((2*I)*y))"
+    );
+  }
+
+  #[test]
   fn csc_to_exp() {
     // Csc[x] = -2*I/(E^(-I*x) - E^(I*x)); the imaginary-exponent denominator
     // renders identically to wolframscript.

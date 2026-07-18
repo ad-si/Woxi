@@ -7660,16 +7660,18 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
             times(&[Expr::Integer(-1), half, e_nx]),
           ])
         }
-        // Tan[x] = -I*(E^(I*x) - E^(-I*x))/(E^(I*x) + E^(-I*x))
+        // Tan[x] = I*(E^(-I*x) - E^(I*x))/(E^(-I*x) + E^(I*x))
+        // Mirror the Cot construction (E^(-I*x) term first) so the negated
+        // term is the positive-exponent E^(I*x); this matches wolframscript's
+        // form and avoids rendering E^(-I*x) as -(1/E^(I*x)).
         "Tan" => {
           let ix = times(&[i.clone(), arg.clone()]);
           let e_ix = power(e.clone(), ix.clone());
           let e_nix = power(e.clone(), times(&[Expr::Integer(-1), ix]));
           times(&[
-            Expr::Integer(-1),
             i,
-            plus(&[e_ix.clone(), times(&[Expr::Integer(-1), e_nix.clone()])]),
-            power(plus(&[e_ix, e_nix]), Expr::Integer(-1)),
+            plus(&[e_nix.clone(), times(&[Expr::Integer(-1), e_ix.clone()])]),
+            power(plus(&[e_nix, e_ix]), Expr::Integer(-1)),
           ])
         }
         // Sec[x] = 2/(E^(I*x) + E^(-I*x))
