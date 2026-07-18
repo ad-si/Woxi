@@ -3369,9 +3369,64 @@ fn is_rasterizable_frame(expr: &Expr) -> bool {
     )
 }
 
+/// True if `expr` is an already-rendered graphic that can be drawn as a
+/// cell inside a list/grid combination (see the `Expr::List` arms of
+/// `expr_to_svg`).
+fn is_inline_graphic(expr: &Expr) -> bool {
+  match expr {
+    Expr::Graphics { .. } | Expr::Image { .. } => true,
+    Expr::FunctionCall { name, args }
+      if name == "Legended" && !args.is_empty() =>
+    {
+      is_inline_graphic(&args[0])
+    }
+    _ => false,
+  }
+}
+
 pub(crate) fn expr_to_svg(expr: &Expr) -> String {
   match expr {
     Expr::Graphics { svg: svg_data, .. } => svg_data.clone(),
+    // A list of graphics renders as `{g1, g2, …}` with the plots drawn
+    // inline (matching how wolframscript displays such a list), instead
+    // of falling through to the text renderer which would dump
+    // `GraphicsBox[]` placeholders.
+    Expr::List(items)
+      if !items.is_empty() && items.iter().all(is_inline_graphic) =>
+    {
+      let svgs: Vec<String> = items.iter().map(expr_to_svg).collect();
+      if svgs.iter().all(|s| !s.is_empty())
+        && let Some(svg) = crate::functions::graphics::graphics_list_svg(&svgs)
+      {
+        svg
+      } else {
+        expr_text_svg(expr)
+      }
+    }
+    // A 2-D list of graphics renders as a grid of the plots.
+    Expr::List(items)
+      if !items.is_empty()
+        && items.iter().all(|item| {
+          matches!(item, Expr::List(inner)
+            if !inner.is_empty() && inner.iter().all(is_inline_graphic))
+        }) =>
+    {
+      let rows: Vec<Vec<String>> = items
+        .iter()
+        .map(|item| match item {
+          Expr::List(inner) => inner.iter().map(expr_to_svg).collect(),
+          _ => unreachable!(),
+        })
+        .collect();
+      if rows.iter().flatten().all(|s: &String| !s.is_empty())
+        && let Some(svg) =
+          crate::functions::graphics::combine_graphics_svgs(&rows)
+      {
+        svg
+      } else {
+        expr_text_svg(expr)
+      }
+    }
     // Legended[graphics, legend]: the wrapped graphics carry the legend
     // baked into their SVG (e.g. PeriodicTablePlot["Phase"]).
     Expr::FunctionCall { name, args }

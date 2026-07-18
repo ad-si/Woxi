@@ -261,6 +261,9 @@ pub fn dispatch_plotting(
     "ComplexPlot" if args.len() >= 2 => Some(quiet_plot(|| {
       crate::functions::field_plot::complex_plot_ast(args)
     })),
+    "ComplexListPlot" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::list_plot::complex_list_plot_ast(args)
+    })),
     // ComplexPlot3D[f, {z, zmin, zmax}] — plot |f(x + i y)| as a 3D
     // surface over the rectangle in the complex plane. We forward to
     // Plot3D with f's modulus and reuse its rendering. Falls through

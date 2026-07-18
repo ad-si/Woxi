@@ -1359,6 +1359,7 @@
   - [`BoxWhiskerChart`](plotting/BoxWhiskerChart.md)
   - [`BubbleChart`](plotting/BubbleChart.md)
   - [`BubbleHistogram`](plotting/BubbleHistogram.md)
+  - [`ComplexListPlot`](plotting/ComplexListPlot.md)
   - [`ComplexPlot`](plotting/ComplexPlot.md)
   - [`ContourPlot`](plotting/ContourPlot.md)
   - [`DateListPlot`](plotting/DateListPlot.md)
