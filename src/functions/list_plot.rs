@@ -10,6 +10,100 @@ use crate::functions::plot::{
 use crate::functions::sound::audio_sample_rate;
 use crate::syntax::{Expr, unevaluated};
 
+/// One parsed data point: coordinates plus asymmetric x/y uncertainties.
+/// The uncertainties are (minus, plus) half-widths taken from
+/// `Around[value, err]` / `Around[value, {minus, plus}]` entries and are
+/// `(0, 0)` for exact values.
+#[derive(Clone, Copy)]
+struct ErrPoint {
+  x: f64,
+  y: f64,
+  dx: (f64, f64),
+  dy: (f64, f64),
+}
+
+impl ErrPoint {
+  fn from_y(x: f64, (y, dy): (f64, (f64, f64))) -> Self {
+    ErrPoint {
+      x,
+      y,
+      dx: (0.0, 0.0),
+      dy,
+    }
+  }
+
+  fn from_xy((x, dx): (f64, (f64, f64)), (y, dy): (f64, (f64, f64))) -> Self {
+    ErrPoint { x, y, dx, dy }
+  }
+}
+
+/// Evaluate an expression to a plottable value with uncertainty: a plain
+/// number carries zero uncertainty, `Around[v, u]` / `Around[v, {m, p}]`
+/// carry (minus, plus) error-bar half-widths.
+fn eval_to_value_err(expr: &Expr) -> Option<(f64, (f64, f64))> {
+  let e = evaluate_expr_to_expr(expr).unwrap_or_else(|_| expr.clone());
+  if let Expr::FunctionCall { name, args } = &e
+    && name == "Around"
+    && args.len() == 2
+  {
+    let v = try_eval_to_f64(&args[0])?;
+    let err = match &args[1] {
+      Expr::List(items) if items.len() == 2 => (
+        try_eval_to_f64(&items[0])?.abs(),
+        try_eval_to_f64(&items[1])?.abs(),
+      ),
+      u => {
+        let u = try_eval_to_f64(u)?.abs();
+        (u, u)
+      }
+    };
+    return Some((v, err));
+  }
+  try_eval_to_f64(&e).map(|v| (v, (0.0, 0.0)))
+}
+
+/// Strip the uncertainties from parsed series, leaving plain (x, y) points.
+fn strip_errors(all_series: &[Vec<ErrPoint>]) -> Vec<Vec<(f64, f64)>> {
+  all_series
+    .iter()
+    .map(|series| series.iter().map(|p| (p.x, p.y)).collect())
+    .collect()
+}
+
+/// Per-series error bars parallel to the series' points, in the
+/// `PlotOptions::error_bars` layout. Empty when no point has an uncertainty.
+fn collect_error_bars(
+  all_series: &[Vec<ErrPoint>],
+) -> Vec<Vec<((f64, f64), (f64, f64))>> {
+  let has_any = all_series
+    .iter()
+    .flatten()
+    .any(|p| p.dx.0 > 0.0 || p.dx.1 > 0.0 || p.dy.0 > 0.0 || p.dy.1 > 0.0);
+  if !has_any {
+    return Vec::new();
+  }
+  all_series
+    .iter()
+    .map(|series| series.iter().map(|p| (p.dx, p.dy)).collect())
+    .collect()
+}
+
+/// Expand each point to the extremes of its error bars so that range
+/// computation covers the full uncertainty intervals.
+fn error_extremes(all_series: &[Vec<ErrPoint>]) -> Vec<Vec<(f64, f64)>> {
+  all_series
+    .iter()
+    .map(|series| {
+      series
+        .iter()
+        .flat_map(|p| {
+          [(p.x - p.dx.0, p.y - p.dy.0), (p.x + p.dx.1, p.y + p.dy.1)]
+        })
+        .collect()
+    })
+    .collect()
+}
+
 /// Parse list data from the first argument.
 /// Returns a vector of series, each series being a vector of (x, y) points.
 ///
@@ -17,9 +111,19 @@ use crate::syntax::{Expr, unevaluated};
 /// - `{y1, y2, y3}` → single series with x = 1,2,3,...
 /// - `{{x1,y1}, {x2,y2}}` → single series with explicit coordinates
 /// - `{{y1, y2}, {y3, y4}}` → multiple series (if inner lists don't look like points)
+///
+/// Any value (y or x/y pair element) may be an `Around[...]`, whose central
+/// value becomes the coordinate and whose uncertainty an error bar.
 fn parse_list_data(
   arg: &Expr,
 ) -> Result<Vec<Vec<(f64, f64)>>, InterpreterError> {
+  parse_list_data_err(arg).map(|series| strip_errors(&series))
+}
+
+/// Like [`parse_list_data`], but keeps the `Around` uncertainties.
+fn parse_list_data_err(
+  arg: &Expr,
+) -> Result<Vec<Vec<ErrPoint>>, InterpreterError> {
   let data = evaluate_expr_to_expr(arg)?;
 
   // A TimeSeries / multi-path TemporalData becomes one (x, y) series per path.
@@ -32,7 +136,10 @@ fn parse_list_data(
           .filter_map(|(t, v)| {
             let te = evaluate_expr_to_expr(&t).unwrap_or(t);
             let ve = evaluate_expr_to_expr(&v).unwrap_or(v);
-            Some((try_eval_to_f64(&te)?, try_eval_to_f64(&ve)?))
+            Some(ErrPoint::from_xy(
+              (try_eval_to_f64(&te)?, (0.0, 0.0)),
+              eval_to_value_err(&ve)?,
+            ))
           })
           .collect()
       })
@@ -56,32 +163,18 @@ fn parse_list_data(
   // Check if it's a list of {x, y} pairs
   if let Expr::List(first_inner) = &items[0] {
     if first_inner.len() == 2
-      && try_eval_to_f64(
-        &evaluate_expr_to_expr(&first_inner[0])
-          .unwrap_or(first_inner[0].clone()),
-      )
-      .is_some()
-      && try_eval_to_f64(
-        &evaluate_expr_to_expr(&first_inner[1])
-          .unwrap_or(first_inner[1].clone()),
-      )
-      .is_some()
+      && eval_to_value_err(&first_inner[0]).is_some()
+      && eval_to_value_err(&first_inner[1]).is_some()
     {
       // {{x1,y1}, {x2,y2}, ...} → single series with explicit coords
       let mut points = Vec::with_capacity(items.len());
       for item in items {
         if let Expr::List(pair) = item
           && pair.len() == 2
+          && let (Some(x), Some(y)) =
+            (eval_to_value_err(&pair[0]), eval_to_value_err(&pair[1]))
         {
-          let x_expr =
-            evaluate_expr_to_expr(&pair[0]).unwrap_or(pair[0].clone());
-          let y_expr =
-            evaluate_expr_to_expr(&pair[1]).unwrap_or(pair[1].clone());
-          if let (Some(x), Some(y)) =
-            (try_eval_to_f64(&x_expr), try_eval_to_f64(&y_expr))
-          {
-            points.push((x, y));
-          }
+          points.push(ErrPoint::from_xy(x, y));
         }
       }
       return Ok(vec![points]);
@@ -110,9 +203,8 @@ fn parse_list_data(
   // Simple list: {y1, y2, y3} → single series with x = 1,2,3,...
   let mut points = Vec::with_capacity(items.len());
   for (i, item) in items.iter().enumerate() {
-    let v_expr = evaluate_expr_to_expr(item).unwrap_or(item.clone());
-    if let Some(y) = try_eval_to_f64(&v_expr) {
-      points.push(((i + 1) as f64, y));
+    if let Some(y) = eval_to_value_err(item) {
+      points.push(ErrPoint::from_y((i + 1) as f64, y));
     }
   }
   Ok(vec![points])
@@ -121,7 +213,7 @@ fn parse_list_data(
 /// Parse a single series: either plain y-values or {x, y} pairs.
 fn parse_single_series(
   series_items: &[Expr],
-) -> Result<Vec<(f64, f64)>, InterpreterError> {
+) -> Result<Vec<ErrPoint>, InterpreterError> {
   // Check if items are {x, y} pairs
   let is_xy_pairs = !series_items.is_empty()
     && series_items
@@ -133,21 +225,16 @@ fn parse_single_series(
     for item in series_items {
       if let Expr::List(pair) = item
         && pair.len() == 2
+        && let (Some(x), Some(y)) =
+          (eval_to_value_err(&pair[0]), eval_to_value_err(&pair[1]))
       {
-        let x_expr = evaluate_expr_to_expr(&pair[0]).unwrap_or(pair[0].clone());
-        let y_expr = evaluate_expr_to_expr(&pair[1]).unwrap_or(pair[1].clone());
-        if let (Some(x), Some(y)) =
-          (try_eval_to_f64(&x_expr), try_eval_to_f64(&y_expr))
-        {
-          points.push((x, y));
-        }
+        points.push(ErrPoint::from_xy(x, y));
       }
     }
   } else {
     for (i, val) in series_items.iter().enumerate() {
-      let v_expr = evaluate_expr_to_expr(val).unwrap_or(val.clone());
-      if let Some(y) = try_eval_to_f64(&v_expr) {
-        points.push(((i + 1) as f64, y));
+      if let Some(y) = eval_to_value_err(val) {
+        points.push(ErrPoint::from_y((i + 1) as f64, y));
       }
     }
   }
@@ -343,9 +430,12 @@ fn compute_ranges(all_series: &[Vec<(f64, f64)>]) -> ((f64, f64), (f64, f64)) {
 
 /// ListPlot[{y1, y2, ...}] or ListPlot[{{x1,y1}, ...}]
 pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let all_series = parse_list_data(&args[0])?;
-  let parsed = parse_plot_options(args);
-  let (x_range, y_range) = compute_ranges(&all_series);
+  let err_series = parse_list_data_err(&args[0])?;
+  let all_series = strip_errors(&err_series);
+  let mut parsed = parse_plot_options(args);
+  parsed.opts.error_bars = collect_error_bars(&err_series);
+  // The plot range must cover the full extent of any error bars.
+  let (x_range, y_range) = compute_ranges(&error_extremes(&err_series));
   let y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
   let joined = parsed.joined;
@@ -371,9 +461,11 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// ListLinePlot[{y1, y2, ...}]
 pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let all_series = parse_list_data(&args[0])?;
-  let parsed = parse_plot_options(args);
-  let (x_range, mut y_range) = compute_ranges(&all_series);
+  let err_series = parse_list_data_err(&args[0])?;
+  let all_series = strip_errors(&err_series);
+  let mut parsed = parse_plot_options(args);
+  parsed.opts.error_bars = collect_error_bars(&err_series);
+  let (x_range, mut y_range) = compute_ranges(&error_extremes(&err_series));
 
   y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
