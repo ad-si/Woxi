@@ -16,6 +16,7 @@ Converting between strings and other data types, character codes, and encoded fo
 - [`LetterNumber`](conversion/LetterNumber.md)
 - [`FromLetterNumber`](conversion/FromLetterNumber.md)
 - [`CharacterCounts`](conversion/CharacterCounts.md)
+- [`CharacterName`](conversion/CharacterName.md)
 - [`LetterCounts`](conversion/LetterCounts.md)
 - [`WordCount`](conversion/WordCount.md)
 - [`WordCounts`](conversion/WordCounts.md)

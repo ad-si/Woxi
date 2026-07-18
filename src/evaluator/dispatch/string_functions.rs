@@ -253,6 +253,9 @@ pub fn dispatch_string_functions(
     "CharacterRange" if args.len() == 2 => {
       return Some(crate::functions::string_ast::character_range_ast(args));
     }
+    "CharacterName" if args.len() == 1 => {
+      return Some(crate::functions::string_ast::character_name_ast(args));
+    }
     "IntegerString" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::string_ast::integer_string_ast(args));
     }

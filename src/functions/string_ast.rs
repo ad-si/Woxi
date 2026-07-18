@@ -8448,6 +8448,96 @@ pub fn letter_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+// ─── CharacterName ─────────────────────────────────────────────────
+
+/// The Wolfram Language character name of `c`, or `None` when there is no
+/// known name (non-ASCII / unmapped). Letters and digits are algorithmic;
+/// space and ASCII punctuation use the fixed `Raw*` names.
+fn character_name(c: char) -> Option<String> {
+  if c.is_ascii_uppercase() {
+    return Some(format!("LatinCapitalLetter{c}"));
+  }
+  if c.is_ascii_lowercase() {
+    return Some(format!("LatinSmallLetter{}", c.to_ascii_uppercase()));
+  }
+  if c.is_ascii_digit() {
+    const WORDS: [&str; 10] = [
+      "Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight",
+      "Nine",
+    ];
+    return Some(format!("Digit{}", WORDS[(c as usize) - ('0' as usize)]));
+  }
+  let raw = match c {
+    '\t' => "RawTab",
+    ' ' => "RawSpace",
+    '!' => "RawExclamation",
+    '"' => "RawDoubleQuote",
+    '#' => "RawNumberSign",
+    '$' => "RawDollar",
+    '%' => "RawPercent",
+    '&' => "RawAmpersand",
+    '\'' => "RawQuote",
+    '(' => "RawLeftParenthesis",
+    ')' => "RawRightParenthesis",
+    '*' => "RawStar",
+    '+' => "RawPlus",
+    ',' => "RawComma",
+    '-' => "RawDash",
+    '.' => "RawDot",
+    '/' => "RawSlash",
+    ':' => "RawColon",
+    ';' => "RawSemicolon",
+    '<' => "RawLess",
+    '=' => "RawEqual",
+    '>' => "RawGreater",
+    '?' => "RawQuestion",
+    '@' => "RawAt",
+    '[' => "RawLeftBracket",
+    '\\' => "RawBackslash",
+    ']' => "RawRightBracket",
+    '^' => "RawWedge",
+    '_' => "RawUnderscore",
+    '`' => "RawBackquote",
+    '{' => "RawLeftBrace",
+    '|' => "RawVerticalBar",
+    '}' => "RawRightBrace",
+    '~' => "RawTilde",
+    _ => return None,
+  };
+  Some(raw.to_string())
+}
+
+/// CharacterName[c] — the character name of a single character (String), the
+/// character with the given character code (Integer), or a list of names for a
+/// multi-character string. Unmapped characters leave the call unevaluated.
+pub fn character_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Ok(unevaluated("CharacterName", args));
+  match &args[0] {
+    Expr::Integer(n) if *n >= 0 => {
+      match char::from_u32(*n as u32).and_then(character_name) {
+        Some(name) => Ok(Expr::String(name)),
+        None => unevaluated(),
+      }
+    }
+    Expr::String(s) => {
+      let chars: Vec<char> = s.chars().collect();
+      if chars.is_empty() {
+        return unevaluated();
+      }
+      let names: Option<Vec<String>> =
+        chars.iter().map(|c| character_name(*c)).collect();
+      match names {
+        Some(names) if chars.len() == 1 => Ok(Expr::String(names[0].clone())),
+        Some(names) => {
+          Ok(Expr::List(names.into_iter().map(Expr::String).collect()))
+        }
+        None => unevaluated(),
+      }
+    }
+    _ => unevaluated(),
+  }
+}
+
 // ─── LetterQ ───────────────────────────────────────────────────────
 
 /// LetterQ[string] - True if string consists entirely of letters

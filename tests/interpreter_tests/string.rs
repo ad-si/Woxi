@@ -1366,6 +1366,69 @@ mod character_range {
   }
 }
 
+// CharacterName gives the Wolfram Language name of a character. Values
+// verified against wolframscript.
+mod character_name {
+  use super::*;
+
+  #[test]
+  fn letters() {
+    assert_eq!(
+      interpret(r#"CharacterName["a"]"#).unwrap(),
+      "LatinSmallLetterA"
+    );
+    assert_eq!(
+      interpret(r#"CharacterName["A"]"#).unwrap(),
+      "LatinCapitalLetterA"
+    );
+    assert_eq!(
+      interpret(r#"CharacterName["z"]"#).unwrap(),
+      "LatinSmallLetterZ"
+    );
+  }
+
+  #[test]
+  fn digits() {
+    assert_eq!(interpret(r#"CharacterName["1"]"#).unwrap(), "DigitOne");
+    assert_eq!(interpret(r#"CharacterName["0"]"#).unwrap(), "DigitZero");
+    assert_eq!(interpret(r#"CharacterName["9"]"#).unwrap(), "DigitNine");
+  }
+
+  #[test]
+  fn punctuation() {
+    assert_eq!(interpret(r#"CharacterName[" "]"#).unwrap(), "RawSpace");
+    assert_eq!(
+      interpret(r#"CharacterName["!"]"#).unwrap(),
+      "RawExclamation"
+    );
+    assert_eq!(interpret(r#"CharacterName["+"]"#).unwrap(), "RawPlus");
+    assert_eq!(interpret(r#"CharacterName["@"]"#).unwrap(), "RawAt");
+    assert_eq!(
+      interpret(r#"CharacterName["["]"#).unwrap(),
+      "RawLeftBracket"
+    );
+  }
+
+  #[test]
+  fn character_code_argument() {
+    // An integer is treated as a character code.
+    assert_eq!(interpret("CharacterName[97]").unwrap(), "LatinSmallLetterA");
+  }
+
+  #[test]
+  fn multi_character_string_threads() {
+    assert_eq!(
+      interpret(r#"CharacterName["ab"]"#).unwrap(),
+      "{LatinSmallLetterA, LatinSmallLetterB}"
+    );
+  }
+
+  #[test]
+  fn result_is_a_string() {
+    assert_eq!(interpret(r#"Head[CharacterName["a"]]"#).unwrap(), "String");
+  }
+}
+
 mod letter_q {
   use super::*;
 

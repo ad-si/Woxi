@@ -3626,7 +3626,7 @@ ReturnPacket,,,,3.0,3717
 RollPitchYawMatrix,Rotation matrix from roll-pitch-yaw angles (default {3 2 1} convention; rotations apply in reverse angle order; optional axis sequence),✅,pure,10.2,3717
 WatsonUSquareTest,,,,8.0,3717
 BooleanGraph,,,,8.0,3737
-CharacterName,,,,10.2,3737
+CharacterName,Gives the Wolfram Language name of a character (letters digits and ASCII punctuation) or a list of names for a multi-character string,✅,pure,10.2,3737
 ContourDetect,,,,8.0,3737
 Databins,,🚫,,10.0,3737
 DependentVariables,,,,5.0,3737
