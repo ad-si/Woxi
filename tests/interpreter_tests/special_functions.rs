@@ -1200,9 +1200,33 @@ mod piecewise_expand {
   }
 
   #[test]
+  fn ramp() {
+    // Ramp[x] = x for x >= 0, else 0.
+    assert_eq!(
+      interpret("PiecewiseExpand[Ramp[x]]").unwrap(),
+      "Piecewise[{{x, x >= 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn boole() {
+    // Boole[cond] = 1 when cond is True, else 0.
+    assert_eq!(
+      interpret("PiecewiseExpand[Boole[x > 0]]").unwrap(),
+      "Piecewise[{{1, x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("PiecewiseExpand[Boole[x > 0 && y > 0]]").unwrap(),
+      "Piecewise[{{1, x > 0 && y > 0}}, 0]"
+    );
+  }
+
+  #[test]
   fn unsupported_returns_unchanged() {
     // Non-expandable functions pass through unchanged
     assert_eq!(interpret("PiecewiseExpand[Sin[x]]").unwrap(), "Sin[x]");
+    // Abs stays symbolic (not piecewise for complex arguments), matching WS.
+    assert_eq!(interpret("PiecewiseExpand[Abs[x]]").unwrap(), "Abs[x]");
   }
 }
 

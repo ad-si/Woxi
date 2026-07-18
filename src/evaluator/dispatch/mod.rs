@@ -9115,6 +9115,41 @@ pub fn evaluate_function_call_ast_inner(
           };
           return evaluate_expr_to_expr(&pw);
         }
+        // Ramp[x] = x for x >= 0, else 0.
+        "Ramp" if fargs.len() == 1 => {
+          let cond = Expr::Comparison {
+            operands: vec![fargs[0].clone(), Expr::Integer(0)],
+            operators: vec![ComparisonOp::GreaterEqual],
+          };
+          let pw = Expr::FunctionCall {
+            name: "Piecewise".to_string(),
+            args: vec![
+              Expr::List(
+                vec![Expr::List(vec![fargs[0].clone(), cond].into())].into(),
+              ),
+              Expr::Integer(0),
+            ]
+            .into(),
+          };
+          return evaluate_expr_to_expr(&pw);
+        }
+        // Boole[cond] = 1 when cond is True, else 0.
+        "Boole" if fargs.len() == 1 => {
+          let pw = Expr::FunctionCall {
+            name: "Piecewise".to_string(),
+            args: vec![
+              Expr::List(
+                vec![Expr::List(
+                  vec![Expr::Integer(1), fargs[0].clone()].into(),
+                )]
+                .into(),
+              ),
+              Expr::Integer(0),
+            ]
+            .into(),
+          };
+          return evaluate_expr_to_expr(&pw);
+        }
         "Clip" if !fargs.is_empty() => {
           let x = fargs[0].clone();
           let (lo, hi) = if fargs.len() >= 2 {
