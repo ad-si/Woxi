@@ -7262,7 +7262,7 @@ fn array_pad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && !items.is_empty()
     && items.iter().all(|e| !matches!(e, Expr::List(_)))
     && let Expr::String(scheme) = &pad_val
-    && matches!(scheme.as_str(), "Periodic" | "Reflected")
+    && matches!(scheme.as_str(), "Periodic" | "Cyclic" | "Reflected")
   {
     let (left, right) = match &args[1] {
       Expr::Integer(n) if *n >= 0 => (*n, *n),
@@ -7273,8 +7273,9 @@ fn array_pad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => return Ok(unevaluated()),
     };
     let len = items.len() as i128;
+    // "Cyclic" is an alias for "Periodic".
     let at = |v: i128| -> Expr {
-      let idx = if scheme == "Periodic" {
+      let idx = if scheme == "Periodic" || scheme == "Cyclic" {
         v.rem_euclid(len)
       } else if len == 1 {
         0

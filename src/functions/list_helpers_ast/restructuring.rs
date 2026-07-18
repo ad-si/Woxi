@@ -1795,7 +1795,7 @@ pub fn pad_ast(fname: &str, args: &[Expr]) -> Result<Expr, InterpreterError> {
     && items.iter().all(|e| !matches!(e, Expr::List(_)))
     && let Some(n) = strict_int(&args[1]).filter(|n| *n >= 0)
     && let Expr::String(scheme) = &args[2]
-    && matches!(scheme.as_str(), "Periodic" | "Reflected")
+    && matches!(scheme.as_str(), "Periodic" | "Cyclic" | "Reflected")
   {
     let len = items.len() as i128;
     let n = n as usize;
@@ -1808,8 +1808,9 @@ pub fn pad_ast(fname: &str, args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::List(sub.into()));
     }
     // Value at virtual index v, where the original occupies [0, len - 1].
+    // "Cyclic" is an alias for "Periodic".
     let at = |v: i128| -> Expr {
-      let idx = if scheme == "Periodic" {
+      let idx = if scheme == "Periodic" || scheme == "Cyclic" {
         v.rem_euclid(len)
       } else if len == 1 {
         0

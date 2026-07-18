@@ -8698,6 +8698,19 @@ mod join_non_list {
     );
   }
 
+  // "Cyclic" is an alias for "Periodic".
+  #[test]
+  fn pad_cyclic_scheme() {
+    assert_eq!(
+      interpret(r#"PadRight[{1, 2, 3}, 7, "Cyclic"]"#).unwrap(),
+      "{1, 2, 3, 1, 2, 3, 1}"
+    );
+    assert_eq!(
+      interpret(r#"ArrayPad[{1, 2, 3}, 2, "Cyclic"]"#).unwrap(),
+      "{2, 3, 1, 2, 3, 1, 2}"
+    );
+  }
+
   #[test]
   fn pad_reflected_scheme() {
     assert_eq!(
