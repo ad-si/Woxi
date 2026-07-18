@@ -742,6 +742,18 @@ mod batch_unevaluated_wrappers_2 {
       "{9, 25, 49}"
     );
   }
+  // A single-element window spec {r} matches the scalar r for a 1-D list.
+  #[test]
+  fn moving_map_single_element_window_spec() {
+    assert_eq!(
+      interpret("MovingMap[Total, {1, 2, 3, 4, 5, 6}, {1}]").unwrap(),
+      "{3, 5, 7, 9, 11}"
+    );
+    assert_eq!(
+      interpret("MovingMap[Total, {1, 2, 3, 4, 5, 6}, {2}]").unwrap(),
+      "{6, 9, 12, 15}"
+    );
+  }
 
   // ─── Unevaluated batch ────────────────────────────────────────────
   #[test]

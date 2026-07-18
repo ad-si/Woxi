@@ -1783,6 +1783,12 @@ pub fn dispatch_list_operations(
       if let Expr::List(items) = &args[1]
         && let Some(n) = match &args[2] {
           Expr::Integer(n) => Some(*n as usize),
+          // A single-element window spec {r} is the same as the scalar r for
+          // a one-dimensional list, matching wolframscript.
+          Expr::List(spec) if spec.len() == 1 => match &spec[0] {
+            Expr::Integer(r) if *r >= 0 => Some(*r as usize),
+            _ => None,
+          },
           _ => None,
         }
       {
