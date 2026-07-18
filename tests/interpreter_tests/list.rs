@@ -10734,6 +10734,82 @@ mod array_reshape {
   }
 }
 
+// Shape-preserving list operations on a SparseArray operate on its dense
+// elements and return a SparseArray. All expected values verified against
+// wolframscript.
+mod sparse_array_list_ops {
+  use super::*;
+
+  #[test]
+  fn take_drop() {
+    assert_eq!(
+      interpret("Normal[Take[SparseArray[{1 -> 1, 3 -> 3}, 5], 3]]").unwrap(),
+      "{1, 0, 3}"
+    );
+    assert_eq!(
+      interpret("Normal[Drop[SparseArray[{1 -> 1, 3 -> 3}, 5], 1]]").unwrap(),
+      "{0, 3, 0, 0}"
+    );
+    assert_eq!(
+      interpret("Normal[Take[SparseArray[{1 -> 1, 3 -> 3}, 5], {2, 4}]]")
+        .unwrap(),
+      "{0, 3, 0}"
+    );
+  }
+
+  #[test]
+  fn reverse() {
+    assert_eq!(
+      interpret("Normal[Reverse[SparseArray[{1 -> 1, 3 -> 3}, 5]]]").unwrap(),
+      "{0, 0, 3, 0, 1}"
+    );
+  }
+
+  #[test]
+  fn most_rest() {
+    assert_eq!(
+      interpret("Normal[Most[SparseArray[{1 -> 1, 3 -> 3}, 3]]]").unwrap(),
+      "{1, 0}"
+    );
+    assert_eq!(
+      interpret("Normal[Rest[SparseArray[{1 -> 1, 3 -> 3}, 3]]]").unwrap(),
+      "{0, 3}"
+    );
+  }
+
+  #[test]
+  fn rotate() {
+    assert_eq!(
+      interpret("Normal[RotateLeft[SparseArray[{1 -> 1}, 3], 1]]").unwrap(),
+      "{0, 0, 1}"
+    );
+    assert_eq!(
+      interpret("Normal[RotateRight[SparseArray[{1 -> 1}, 3], 1]]").unwrap(),
+      "{0, 1, 0}"
+    );
+  }
+
+  #[test]
+  fn flatten() {
+    assert_eq!(
+      interpret("Normal[Flatten[SparseArray[{{1, 1} -> 1}, {2, 2}]]]").unwrap(),
+      "{1, 0, 0, 0}"
+    );
+  }
+
+  #[test]
+  fn result_stays_sparse() {
+    assert_eq!(
+      interpret("Head[Take[SparseArray[{1 -> 1, 3 -> 3}, 5], 3]]").unwrap(),
+      "SparseArray"
+    );
+    assert_eq!(
+      interpret("Head[Reverse[SparseArray[{1 -> 1}, 3]]]").unwrap(),
+      "SparseArray"
+    );
+  }
+}
+
 mod position_index {
   use super::*;
 

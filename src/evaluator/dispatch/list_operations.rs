@@ -1437,6 +1437,43 @@ pub fn dispatch_list_operations(
     return dispatch_list_operations(name, &converted);
   }
 
+  // Shape-preserving list operations that take a SparseArray as their first
+  // argument return a SparseArray in wolframscript. Densify it via Normal, run
+  // the operation on the dense elements, then re-wrap the list result as a
+  // SparseArray. Without this the operation would mangle the SparseArray's
+  // internal representation instead of its elements.
+  if matches!(
+    name,
+    "Take"
+      | "Drop"
+      | "Most"
+      | "Rest"
+      | "Reverse"
+      | "RotateLeft"
+      | "RotateRight"
+      | "Flatten"
+  ) && !args.is_empty()
+    && matches!(&args[0], Expr::FunctionCall { name: h, .. } if h == "SparseArray")
+  {
+    let normal = match crate::evaluator::evaluate_function_call_ast(
+      "Normal",
+      &[args[0].clone()],
+    ) {
+      Ok(n) => n,
+      Err(e) => return Some(Err(e)),
+    };
+    let mut new_args = args.to_vec();
+    new_args[0] = normal;
+    let result = dispatch_list_operations(name, &new_args)?;
+    return Some(result.and_then(|r| {
+      if matches!(&r, Expr::List(_)) {
+        crate::evaluator::evaluate_function_call_ast("SparseArray", &[r])
+      } else {
+        Ok(r)
+      }
+    }));
+  }
+
   match name {
     "Map" | "ParallelMap" if args.len() == 2 => {
       return Some(list_helpers_ast::map_ast(&args[0], &args[1]));
