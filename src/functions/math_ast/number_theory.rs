@@ -24,20 +24,22 @@ fn nth_prime(n: usize) -> usize {
 }
 
 pub fn is_prime(n: usize) -> bool {
-  if n <= 1 {
+  if n < 2 { // 0 or 1
     return false;
   }
-  if n == 2 {
+  if n < 4 { // 2 or 3
     return true;
   }
-  if n.is_multiple_of(2) {
+  if n.is_multiple_of(2) || n.is_multiple_of(3) {
     return false;
   }
-  let sqrt_n = (n as f64).sqrt() as usize;
-  for i in (3..=sqrt_n).step_by(2) {
-    if n.is_multiple_of(i) {
+  let mut i = 5usize;
+  while i * i <= n {
+    // (5 + 6k) + [1,3,4,5] -> (6 + 6k) + [0,2,3,4] -> multiple of 2 or 3, already tested
+    if n.is_multiple_of(i) || n.is_multiple_of(i + 2) {
       return false;
     }
+    i += 6;
   }
   true
 }

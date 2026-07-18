@@ -346,7 +346,7 @@ fn is_member_of_domain(expr: &Expr, domain: &str) -> Option<bool> {
       _ => None,
     },
     "Primes" => match expr {
-      Expr::Integer(n) => Some(*n >= 2 && is_prime_simple(*n)),
+      Expr::Integer(n) => Some(*n >= 2 && crate::functions::math_ast::is_prime_i128(*n)),
       Expr::Real(_) => Some(false),
       Expr::Constant(_) => Some(false),
       _ => None,
@@ -549,27 +549,6 @@ fn is_member_of_domain(expr: &Expr, domain: &str) -> Option<bool> {
     },
     _ => None,
   }
-}
-
-/// Simple primality check for small numbers
-fn is_prime_simple(n: i128) -> bool {
-  if n < 2 {
-    return false;
-  }
-  if n < 4 {
-    return true;
-  }
-  if n % 2 == 0 || n % 3 == 0 {
-    return false;
-  }
-  let mut i = 5i128;
-  while i * i <= n {
-    if n % i == 0 || n % (i + 2) == 0 {
-      return false;
-    }
-    i += 6;
-  }
-  true
 }
 
 /// Element[x, domain] - Test or assert domain membership
