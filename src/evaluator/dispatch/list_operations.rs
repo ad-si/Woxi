@@ -1457,6 +1457,9 @@ pub fn dispatch_list_operations(
       | "Insert"
       | "Delete"
       | "Partition"
+      | "PadLeft"
+      | "PadRight"
+      | "ArrayPad"
   ) && !args.is_empty()
     && matches!(&args[0], Expr::FunctionCall { name: h, .. } if h == "SparseArray")
   {

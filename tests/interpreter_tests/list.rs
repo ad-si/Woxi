@@ -10831,6 +10831,34 @@ mod sparse_array_list_ops {
   }
 
   #[test]
+  fn pad_left_right() {
+    assert_eq!(
+      interpret("Normal[PadLeft[SparseArray[{1 -> 1, 3 -> 3}, 4], 6]]")
+        .unwrap(),
+      "{0, 0, 1, 0, 3, 0}"
+    );
+    assert_eq!(
+      interpret("Normal[PadRight[SparseArray[{1 -> 1, 3 -> 3}, 4], 6, 9]]")
+        .unwrap(),
+      "{1, 0, 3, 0, 9, 9}"
+    );
+  }
+
+  #[test]
+  fn array_pad() {
+    assert_eq!(
+      interpret("Normal[ArrayPad[SparseArray[{1 -> 1, 3 -> 3}, 4], 1]]")
+        .unwrap(),
+      "{0, 1, 0, 3, 0, 0}"
+    );
+    assert_eq!(
+      interpret("Normal[ArrayPad[SparseArray[{1 -> 1, 3 -> 3}, 4], 1, 5]]")
+        .unwrap(),
+      "{5, 1, 0, 3, 0, 5}"
+    );
+  }
+
+  #[test]
   fn result_stays_sparse() {
     assert_eq!(
       interpret("Head[Take[SparseArray[{1 -> 1, 3 -> 3}, 5], 3]]").unwrap(),
