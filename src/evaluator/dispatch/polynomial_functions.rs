@@ -588,6 +588,13 @@ pub fn dispatch_polynomial_functions(
         crate::functions::polynomial_ast::power_symmetric_polynomial_ast(args),
       );
     }
+    "AugmentedSymmetricPolynomial" if args.len() == 2 => {
+      return Some(
+        crate::functions::polynomial_ast::augmented_symmetric_polynomial_ast(
+          args,
+        ),
+      );
+    }
     "SymmetricPolynomial" if args.len() == 2 => {
       // SymmetricPolynomial[k, {x1, x2, ..., xn}] = e_k(x1,...,xn)
       // The k-th elementary symmetric polynomial

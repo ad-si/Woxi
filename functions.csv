@@ -4150,7 +4150,7 @@ SpellingCorrectionList,,🚫,,10.4,4262
 WelchWindow,Compute WelchWindow value,✅,pure,9.0,4262
 ActiveClassification,,🚫,,11.1,4291
 AudioReverb,,🚫,,11.0,4291
-AugmentedSymmetricPolynomial,,,,8.0,4291
+AugmentedSymmetricPolynomial,Augmented monomial symmetric polynomial for a partition and variable list,✅,pure,8.0,4291
 ControllableDecomposition,,,,8.0,4291
 CreatePermissionsGroup,,🚫,,10.0,4291
 DateBounds,Gives the earliest and latest of a list of dates preserving each date's representation,✅,pure,11.0,4291

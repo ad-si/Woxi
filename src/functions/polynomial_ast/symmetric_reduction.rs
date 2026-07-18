@@ -190,6 +190,98 @@ pub fn power_symmetric_polynomial_ast(
   }
 }
 
+/// Enumerate every ordered tuple of `m` distinct indices drawn from `0..n`
+/// (the m-permutations of n items), in lexicographic order.
+fn distinct_index_tuples(n: usize, m: usize) -> Vec<Vec<usize>> {
+  fn rec(
+    n: usize,
+    m: usize,
+    used: &mut [bool],
+    current: &mut Vec<usize>,
+    out: &mut Vec<Vec<usize>>,
+  ) {
+    if current.len() == m {
+      out.push(current.clone());
+      return;
+    }
+    for i in 0..n {
+      if !used[i] {
+        used[i] = true;
+        current.push(i);
+        rec(n, m, used, current, out);
+        current.pop();
+        used[i] = false;
+      }
+    }
+  }
+  let mut out = Vec::new();
+  let mut used = vec![false; n];
+  let mut current = Vec::with_capacity(m);
+  rec(n, m, &mut used, &mut current, &mut out);
+  out
+}
+
+/// `AugmentedSymmetricPolynomial[{λ1, ..., λm}, {x1, ..., xn}]` — the augmented
+/// monomial symmetric polynomial: the sum over every ordered tuple of `m`
+/// *distinct* variables `(x_{i1}, ..., x_{im})` of `x_{i1}^λ1 ... x_{im}^λm`.
+/// For example `AugmentedSymmetricPolynomial[{2, 1}, {a, b, c}]` sums the six
+/// monomials `a^2 b, a^2 c, a b^2, b^2 c, a c^2, b c^2`. The empty partition
+/// gives `1`, and a partition longer than the variable list gives `0`.
+pub fn augmented_symmetric_polynomial_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Ok(unevaluated("AugmentedSymmetricPolynomial", args));
+  if args.len() != 2 {
+    return unevaluated();
+  }
+  let partition_expr = eval(args[0].clone())?;
+  let partition: Vec<i128> = match &partition_expr {
+    Expr::List(items) => {
+      let mut ps = Vec::with_capacity(items.len());
+      for it in items.iter() {
+        match it {
+          Expr::Integer(k) if *k >= 1 => ps.push(*k),
+          _ => return unevaluated(),
+        }
+      }
+      ps
+    }
+    _ => return unevaluated(),
+  };
+  let vars_expr = eval(args[1].clone())?;
+  let vars: Vec<Expr> = match &vars_expr {
+    Expr::List(items) => items.to_vec(),
+    _ => return unevaluated(),
+  };
+
+  let m = partition.len();
+  let n = vars.len();
+  if m == 0 {
+    return Ok(Expr::Integer(1));
+  }
+  if m > n {
+    return Ok(Expr::Integer(0));
+  }
+
+  let mut terms: Vec<Expr> = Vec::new();
+  for tuple in distinct_index_tuples(n, m) {
+    let factors: Vec<Expr> = tuple
+      .iter()
+      .zip(partition.iter())
+      .map(|(&idx, &exp)| pow(vars[idx].clone(), exp))
+      .collect();
+    let term = match factors.len() {
+      1 => factors.into_iter().next().unwrap(),
+      _ => Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: factors.into(),
+      },
+    };
+    terms.push(term);
+  }
+  eval(sum(terms))
+}
+
 pub fn symmetric_reduction_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {

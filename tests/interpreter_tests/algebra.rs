@@ -12852,6 +12852,60 @@ mod power_symmetric_polynomial {
   }
 
   #[test]
+  fn augmented_symmetric_polynomial() {
+    // Distinct parts: sum over ordered tuples of distinct variables.
+    assert_eq!(
+      interpret("AugmentedSymmetricPolynomial[{2, 1}, {a, b, c}]").unwrap(),
+      "a^2*b + a*b^2 + a^2*c + b^2*c + a*c^2 + b*c^2"
+    );
+    // Equal parts double-count each unordered selection.
+    assert_eq!(
+      interpret("AugmentedSymmetricPolynomial[{1, 1}, {a, b, c}]").unwrap(),
+      "2*a*b + 2*a*c + 2*b*c"
+    );
+    assert_eq!(
+      interpret("AugmentedSymmetricPolynomial[{2, 2}, {a, b, c}]").unwrap(),
+      "2*a^2*b^2 + 2*a^2*c^2 + 2*b^2*c^2"
+    );
+    // Single-part partition is the power sum.
+    assert_eq!(
+      interpret("AugmentedSymmetricPolynomial[{2}, {a, b, c}]").unwrap(),
+      "a^2 + b^2 + c^2"
+    );
+    // Full-length partition of ones gives m! times the product.
+    assert_eq!(
+      interpret("AugmentedSymmetricPolynomial[{1, 1, 1}, {a, b, c}]").unwrap(),
+      "6*a*b*c"
+    );
+    // Repeated ones with a distinct part.
+    assert_eq!(
+      interpret("AugmentedSymmetricPolynomial[{2, 1, 1}, {a, b, c}]").unwrap(),
+      "2*a^2*b*c + 2*a*b^2*c + 2*a*b*c^2"
+    );
+    // Partition longer than the variable list vanishes.
+    assert_eq!(
+      interpret("AugmentedSymmetricPolynomial[{1, 1, 1, 1}, {a, b, c}]")
+        .unwrap(),
+      "0"
+    );
+    // Empty partition is the empty product.
+    assert_eq!(
+      interpret("AugmentedSymmetricPolynomial[{}, {a, b, c}]").unwrap(),
+      "1"
+    );
+    // Fewer variables than parts still works when m <= n.
+    assert_eq!(
+      interpret("AugmentedSymmetricPolynomial[{3, 1}, {a, b}]").unwrap(),
+      "a^3*b + a*b^3"
+    );
+    // Numeric variables reduce to a number.
+    assert_eq!(
+      interpret("AugmentedSymmetricPolynomial[{2, 1}, {1, 2, 3}]").unwrap(),
+      "48"
+    );
+  }
+
+  #[test]
   fn scalar_exponent_threads_listably_over_rows() {
     assert_eq!(
       interpret("PowerSymmetricPolynomial[2, {{1, 2}, {3, 4}}]").unwrap(),
