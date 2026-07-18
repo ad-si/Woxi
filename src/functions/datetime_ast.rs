@@ -2383,7 +2383,9 @@ pub fn date_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::String(day_name_short(day_of_week(y, mo, d)).to_string())
       }
       "Quarter" => int((mo - 1) / 3 + 1),
-      "DayOfYear" => int(day_of_year(y, mo, d)),
+      // The ISO 8601 ordinal date counts calendar days from the start of the
+      // year (1..366), the same value as DayOfYear.
+      "DayOfYear" | "ISOYearDay" => int(day_of_year(y, mo, d)),
       "ISOWeekDay" => int(day_of_week(y, mo, d) + 1),
       "Week" => int(iso_week(y, mo, d)),
       "ISOWeek" => int(iso_week(y, mo, d)),

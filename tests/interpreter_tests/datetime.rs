@@ -2107,6 +2107,24 @@ mod date_value {
     );
   }
 
+  // "ISOYearDay" is the ISO 8601 ordinal date: the calendar day of the year,
+  // the same value as "DayOfYear".
+  #[test]
+  fn iso_year_day() {
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 3, 15}, "ISOYearDay"]"#).unwrap(),
+      "75"
+    );
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 12, 31}, "ISOYearDay"]"#).unwrap(),
+      "366"
+    );
+    assert_eq!(
+      interpret(r#"DateValue[{2023, 12, 31}, "ISOYearDay"]"#).unwrap(),
+      "365"
+    );
+  }
+
   // ISO-8601 week number, including the year-boundary edge cases.
   #[test]
   fn iso_week_number() {
