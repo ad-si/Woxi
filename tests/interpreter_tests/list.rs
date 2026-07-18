@@ -4112,6 +4112,27 @@ mod take_multi_dim {
     );
   }
 
+  // The empty sequence spec `{}` is the empty range: Take takes nothing, Drop
+  // drops nothing. Verified against wolframscript.
+  #[test]
+  fn empty_spec_take_and_drop() {
+    assert_eq!(interpret("Take[{1, 2, 3, 4, 5}, {}]").unwrap(), "{}");
+    assert_eq!(
+      interpret("Drop[{1, 2, 3, 4, 5}, {}]").unwrap(),
+      "{1, 2, 3, 4, 5}"
+    );
+    // Per dimension: Drop only the first column, keep every row.
+    assert_eq!(
+      interpret("Drop[{{1, 2, 3}, {4, 5, 6}}, {}, {1}]").unwrap(),
+      "{{2, 3}, {5, 6}}"
+    );
+    // Drop only the first row, keep every column.
+    assert_eq!(
+      interpret("Drop[{{1, 2, 3}, {4, 5, 6}}, {1}, {}]").unwrap(),
+      "{{4, 5, 6}}"
+    );
+  }
+
   #[test]
   fn take_up_to_within_length() {
     assert_eq!(

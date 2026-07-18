@@ -584,6 +584,9 @@ pub fn seq_spec_shape_ok(spec: &Expr) -> bool {
     Expr::Identifier(s) if s == "All" || s == "None" => true,
     e if machine(e) || upto_count(e).is_some() => true,
     Expr::List(parts) => match parts.as_slice() {
+      // The empty spec `{}` is the empty range: Take takes nothing, Drop
+      // drops nothing.
+      [] => true,
       [i] => machine(i),
       [i, j] => endpoint(i) && endpoint(j),
       [i, j, s] => {
@@ -757,6 +760,11 @@ fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
       None => Expr::List(v.into()),
     }
   };
+
+  // An empty sequence spec `{}` is the empty range: Take takes nothing.
+  if matches!(n, Expr::List(spec) if spec.is_empty()) {
+    return Ok(wrap(Vec::new()));
+  }
 
   // Handle None: an empty take
   if matches!(n, Expr::Identifier(name) if name == "None") {
@@ -952,6 +960,11 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   }
   if matches!(n, Expr::Identifier(name) if name == "All") {
     return Ok(wrap_drop(Vec::new()));
+  }
+  // An empty sequence spec `{}` drops nothing (used per dimension, e.g.
+  // Drop[matrix, {}, {1}] drops only the first column).
+  if matches!(n, Expr::List(spec) if spec.is_empty()) {
+    return Ok(list.clone());
   }
 
   // UpTo[k] endpoints clamp to the list length.
