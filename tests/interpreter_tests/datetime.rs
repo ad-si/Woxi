@@ -3165,6 +3165,38 @@ mod date_within_q_tests {
       "DateWithinQ[DateObject[{2026, 7, 4, 12, 0, 0}, Instant, Gregorian, 0.], DateObject[{2026, 7, 4, 12, 0, 0}, Instant, Gregorian, 0.]]"
     );
   }
+
+  // A DateInterval container spans its whole calendar range; a DateObject or
+  // DateInterval is within it when its span is contained. Verified against
+  // wolframscript.
+  #[test]
+  fn date_interval_container() {
+    let iv = "DateInterval[{{2024, 1, 1}, {2024, 12, 31}}]";
+    assert_eq!(
+      interpret(&format!("DateWithinQ[{iv}, DateObject[{{2024, 6, 15}}]]"))
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(&format!("DateWithinQ[{iv}, DateObject[{{2025, 6, 15}}]]"))
+        .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "DateWithinQ[{iv}, DateInterval[{{{{2024, 3, 1}}, {{2024, 4, 1}}}}]]"
+      ))
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "DateWithinQ[{iv}, DateInterval[{{{{2023, 3, 1}}, {{2024, 4, 1}}}}]]"
+      ))
+      .unwrap(),
+      "False"
+    );
+  }
 }
 
 mod date_overlaps_q_tests {

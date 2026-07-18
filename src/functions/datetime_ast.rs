@@ -3871,18 +3871,8 @@ pub fn date_within_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return unevaluated();
   }
 
-  // The half-open [start, end) span of a DateObject in absolute seconds,
-  // by granularity (= component-list length). Instants are points.
-  fn span(e: &Expr) -> Option<(f64, f64)> {
-    let Expr::FunctionCall { name, args } = e else {
-      return None;
-    };
-    if name != "DateObject" || args.is_empty() {
-      return None;
-    }
-    let Expr::List(items) = &args[0] else {
-      return None;
-    };
+  // Numeric calendar components of a date list (padded to y, mo, d, h, mi, s).
+  fn comps(items: &[Expr]) -> Option<(i64, i64, i64, i64, i64, f64)> {
     if items.is_empty() || items.len() > 6 {
       return None;
     }
@@ -3894,27 +3884,98 @@ pub fn date_within_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => return None,
       };
     }
-    let (y, mo, d, h, mi, s) = (
+    Some((
       c[0] as i64,
       if items.len() > 1 { c[1] as i64 } else { 1 },
       if items.len() > 2 { c[2] as i64 } else { 1 },
       if items.len() > 3 { c[3] as i64 } else { 0 },
       if items.len() > 4 { c[4] as i64 } else { 0 },
       if items.len() > 5 { c[5] } else { 0.0 },
-    );
-    let start = date_to_absolute_seconds(y, mo, d, h, mi, s);
-    let end = match items.len() {
+    ))
+  }
+
+  // The instant that closes a span given its opening components and the
+  // granularity level (1 = year … 6 = second/instant).
+  fn unit_end(
+    (y, mo, d, h, mi, s): (i64, i64, i64, i64, i64, f64),
+    level: usize,
+  ) -> f64 {
+    match level {
       1 => date_to_absolute_seconds(y + 1, 1, 1, 0, 0, 0.0),
       2 => {
         let (ny, nm) = if mo == 12 { (y + 1, 1) } else { (y, mo + 1) };
         date_to_absolute_seconds(ny, nm, 1, 0, 0, 0.0)
       }
-      3 => start + 86400.0,
-      4 => start + 3600.0,
-      5 => start + 60.0,
-      _ => start, // instant: a point
+      3 => date_to_absolute_seconds(y, mo, d, h, mi, s) + 86400.0,
+      4 => date_to_absolute_seconds(y, mo, d, h, mi, s) + 3600.0,
+      5 => date_to_absolute_seconds(y, mo, d, h, mi, s) + 60.0,
+      _ => date_to_absolute_seconds(y, mo, d, h, mi, s), // instant: a point
+    }
+  }
+
+  // A DateInterval's granularity label mapped to its level.
+  fn granularity_level(e: Option<&Expr>) -> usize {
+    let name = match e {
+      Some(Expr::String(s)) => s.as_str(),
+      Some(Expr::Identifier(s)) => s.as_str(),
+      _ => "Day",
     };
-    Some((start, end))
+    match name {
+      "Year" => 1,
+      "Month" | "Quarter" | "Week" => 2,
+      "Hour" => 4,
+      "Minute" => 5,
+      "Second" | "Instant" => 6,
+      _ => 3,
+    }
+  }
+
+  // The half-open [start, end) span of a DateObject (by component-list length)
+  // or the overall span of a DateInterval (first sub-interval start … last
+  // sub-interval end).
+  fn span(e: &Expr) -> Option<(f64, f64)> {
+    let Expr::FunctionCall { name, args } = e else {
+      return None;
+    };
+    match name.as_str() {
+      "DateObject" if !args.is_empty() => {
+        let Expr::List(items) = &args[0] else {
+          return None;
+        };
+        let c = comps(items)?;
+        let start = date_to_absolute_seconds(c.0, c.1, c.2, c.3, c.4, c.5);
+        Some((start, unit_end(c, items.len())))
+      }
+      "DateInterval" if !args.is_empty() => {
+        let Expr::List(pairs) = &args[0] else {
+          return None;
+        };
+        let level = granularity_level(args.get(1));
+        let (mut min_start, mut max_end) = (f64::INFINITY, f64::NEG_INFINITY);
+        for pair in pairs.iter() {
+          let Expr::List(ends) = pair else {
+            return None;
+          };
+          if ends.len() != 2 {
+            return None;
+          }
+          let (Expr::List(sl), Expr::List(el)) = (&ends[0], &ends[1]) else {
+            return None;
+          };
+          let sc = comps(sl)?;
+          let ec = comps(el)?;
+          let start =
+            date_to_absolute_seconds(sc.0, sc.1, sc.2, sc.3, sc.4, sc.5);
+          min_start = min_start.min(start);
+          max_end = max_end.max(unit_end(ec, level));
+        }
+        if min_start.is_infinite() {
+          return None;
+        }
+        Some((min_start, max_end))
+      }
+      _ => None,
+    }
   }
 
   // Date-like but unresolvable arguments (TimeObject, instant containers)
