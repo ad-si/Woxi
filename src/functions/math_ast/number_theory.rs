@@ -24,10 +24,12 @@ fn nth_prime(n: usize) -> usize {
 }
 
 pub fn is_prime(n: usize) -> bool {
-  if n < 2 { // 0 or 1
+  if n < 2 {
+    // 0 or 1
     return false;
   }
-  if n < 4 { // 2 or 3
+  if n < 4 {
+    // 2 or 3
     return true;
   }
   if n.is_multiple_of(2) || n.is_multiple_of(3) {

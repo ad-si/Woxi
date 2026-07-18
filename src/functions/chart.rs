@@ -841,7 +841,23 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
     ));
   }
-  let opts = parse_chart_options(args);
+  let mut opts = parse_chart_options(args);
+  // Resolve a named ChartStyle scheme (e.g. "Pastel") to one color per slice,
+  // sized to the widest ring.
+  let color_count = rows.iter().map(Vec::len).max().unwrap_or(1);
+  apply_color_scheme(&mut opts, color_count);
+  // wolframscript renders PieChart with AspectRatio 1 (square) — the default
+  // is 360x360 and a single-number `ImageSize -> n` still yields an n x n
+  // frame. Only an explicit `ImageSize -> {w, h}` list produces a non-square
+  // frame, so keep the parsed width/height in that one case.
+  let explicit_dims = args[1..].iter().any(|opt| {
+    matches!(opt, Expr::Rule { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize")
+        && matches!(replacement.as_ref(), Expr::List(items) if items.len() == 2))
+  });
+  if !explicit_dims {
+    opts.svg_height = opts.svg_width;
+  }
   let (svg_width, svg_height, full_width) =
     (opts.svg_width, opts.svg_height, opts.full_width);
 
@@ -849,9 +865,13 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let h = svg_height as f64;
   let cx = w / 2.0;
   let cy = h / 2.0;
-  let radius = (w.min(h) / 2.0) * 0.85;
+  // wolframscript leaves a margin of ~1/6 of the half-frame around the pie,
+  // so the radius is ~0.82 of the half-frame (147 on a 360x360 frame).
+  let radius = (w.min(h) / 2.0) * (147.0 / 180.0);
 
   let mut svg = svg_header(svg_width, svg_height, full_width);
+  // Label text is collected separately so it draws on top of every wedge.
+  let mut labels_svg = String::new();
 
   let n_rings = rows.len();
   // Split the total radius between `n_rings` equal-width rings and
@@ -873,32 +893,37 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let r_in = ring_idx as f64 * (ring_width + ring_gap);
     let r_out = r_in + ring_width;
 
-    // Single-ring (flat) input sorts slices smallest-to-largest so the
-    // smallest one sits right above the negative x-axis, matching the
-    // long-standing PieChart layout. Multi-ring input keeps insertion
-    // order per row so rings stay easy to compare across rows.
-    let order: Vec<usize> = if n_rings == 1 {
-      let mut idx: Vec<(usize, f64)> =
-        row.iter().copied().enumerate().collect();
-      idx.sort_by(|a, b| {
-        a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
-      });
-      idx.iter().map(|(i, _)| *i).collect()
-    } else {
-      (0..row.len()).collect()
-    };
+    // Slices are drawn in the order given by the value array, matching
+    // wolframscript: `PieChart[{v1, v2, ...}]` lays wedges out in input
+    // order (no sorting). This holds for both single- and multi-ring input.
 
     // Start at π (negative x-axis) so the first slice sits right above it.
     let mut start_angle = std::f64::consts::PI;
     // Restart the color cycle at each ring so every row uses the same
     // palette — the rings themselves carry the "dataset" distinction.
-    for (slice_idx, &i) in order.iter().enumerate() {
+    for i in 0..row.len() {
       let val = row[i];
-      let (r, g, b) = PLOT_COLORS[slice_idx % PLOT_COLORS.len()];
+      // Color and label are keyed by the original data index `i` (not the
+      // draw order), matching wolframscript: `ChartStyle -> {c1, c2, ...}`
+      // and `ChartLabels -> {l1, l2, ...}` align with the input values.
+      let (r, g, b) = if !opts.chart_style.is_empty() {
+        let c = &opts.chart_style[i % opts.chart_style.len()];
+        (
+          (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+        )
+      } else {
+        PLOT_COLORS[i % PLOT_COLORS.len()]
+      };
       let sweep = 2.0 * std::f64::consts::PI * val / total;
       let end_angle = start_angle + sweep;
       let large_arc = if sweep > std::f64::consts::PI { 1 } else { 0 };
-      let tooltip = format_chart_value(val);
+      let tooltip = opts
+        .chart_labels
+        .get(i)
+        .map(|l| l.text.clone())
+        .unwrap_or_else(|| format_chart_value(val));
 
       if r_in <= 1e-9 {
         // Innermost ring with no hole: render as a center-anchored wedge.
@@ -908,7 +933,7 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let y2 = cy + r_out * end_angle.sin();
         svg.push_str(&format!(
           "<path d=\"M{cx:.2},{cy:.2} L{x1:.2},{y1:.2} A{r_out:.2},{r_out:.2} 0 {large_arc},1 {x2:.2},{y2:.2} Z\" \
-           fill=\"rgb({r},{g},{b})\" stroke=\"white\" stroke-width=\"1\"><title>{tooltip}</title></path>\n"
+           fill=\"rgb({r},{g},{b})\" stroke=\"black\" stroke-width=\"1\"><title>{tooltip}</title></path>\n"
         ));
       } else {
         // Outer ring: render as an annulus wedge.
@@ -922,7 +947,25 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let yo2 = cy + r_out * end_angle.sin();
         svg.push_str(&format!(
           "<path d=\"M{xi1:.2},{yi1:.2} L{xo1:.2},{yo1:.2} A{r_out:.2},{r_out:.2} 0 {large_arc},1 {xo2:.2},{yo2:.2} L{xi2:.2},{yi2:.2} A{r_in:.2},{r_in:.2} 0 {large_arc},0 {xi1:.2},{yi1:.2} Z\" \
-           fill=\"rgb({r},{g},{b})\" stroke=\"white\" stroke-width=\"1\"><title>{tooltip}</title></path>\n"
+           fill=\"rgb({r},{g},{b})\" stroke=\"black\" stroke-width=\"1\"><title>{tooltip}</title></path>\n"
+        ));
+      }
+
+      // Draw the ChartLabels text at the wedge centroid.
+      if let Some(label) = opts.chart_labels.get(i) {
+        let mid_angle = start_angle + sweep / 2.0;
+        let r_label = if r_in <= 1e-9 {
+          r_out * 0.6
+        } else {
+          (r_in + r_out) / 2.0
+        };
+        let lx = cx + r_label * mid_angle.cos();
+        let ly = cy + r_label * mid_angle.sin();
+        labels_svg.push_str(&format!(
+          "<text x=\"{lx:.2}\" y=\"{ly:.2}\" text-anchor=\"middle\" \
+           dominant-baseline=\"central\" font-family=\"sans-serif\" \
+           font-size=\"12\" fill=\"black\">{}</text>\n",
+          crate::functions::graphics::box_string_to_svg(&label.text)
         ));
       }
 
@@ -930,6 +973,7 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  svg.push_str(&labels_svg);
   svg.push_str("</svg>");
   Ok(crate::graphics_result(svg))
 }

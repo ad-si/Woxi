@@ -638,6 +638,75 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_piechart_chartstyle_and_chartlabels() {
+    // Regression: PieChart must honor `ChartStyle` (per-slice fill colors,
+    // keyed by data index) and `ChartLabels` (text drawn on each wedge).
+    clear_state();
+    let svg = interpret_with_stdout(
+      "PieChart[{1, 2, 3, 4}, \
+       ChartStyle -> {Pink, LightBlue, LightGreen, LightOrange}, \
+       ChartLabels -> {\"one\", \"two\", \"three\", \"four\"}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("PieChart should produce a graphics SVG");
+    // ChartStyle colors, one per data index (Pink, LightBlue, LightGreen,
+    // LightOrange). The default PLOT_COLORS palette must not appear.
+    for rgb in [
+      "rgb(255,128,128)", // Pink
+      "rgb(222,240,255)", // LightBlue
+      "rgb(224,255,224)", // LightGreen
+      "rgb(255,230,204)", // LightOrange
+    ] {
+      assert!(
+        svg.contains(rgb),
+        "PieChart SVG missing ChartStyle color {rgb}:\n{svg}"
+      );
+    }
+    // ChartLabels rendered as wedge text.
+    for label in ["one", "two", "three", "four"] {
+      assert!(
+        svg.contains(&format!(">{label}</text>")),
+        "PieChart SVG missing ChartLabels text `{label}`:\n{svg}"
+      );
+    }
+  }
+
+  #[test]
+  fn test_piechart_input_order_and_black_border() {
+    // Regression: PieChart draws slices in the order given by the value
+    // array (no smallest-to-largest sorting) and every wedge has a black
+    // border by default, matching wolframscript (EdgeForm GrayLevel[0]).
+    clear_state();
+    let svg = interpret_with_stdout("PieChart[{30, 20, 10}]")
+      .unwrap()
+      .graphics
+      .expect("PieChart should produce a graphics SVG");
+    // Borders must be black, never white.
+    assert!(
+      !svg.contains("stroke=\"white\""),
+      "PieChart wedges must use a black border:\n{svg}"
+    );
+    assert!(
+      svg.contains("stroke=\"black\""),
+      "PieChart wedges must use a black border:\n{svg}"
+    );
+    // Slices appear in input order: the first `<title>` is 30, then 20, 10.
+    let order: Vec<&str> = svg
+      .match_indices("<title>")
+      .map(|(i, _)| {
+        let rest = &svg[i + "<title>".len()..];
+        &rest[..rest.find("</title>").unwrap()]
+      })
+      .collect();
+    assert_eq!(
+      order,
+      vec!["30", "20", "10"],
+      "PieChart slices must follow the input value order:\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_column_with_nested_tableform_renders_as_graphics() {
     // In visual mode (playground / woxi-studio), a Column containing a
     // TableForm must pre-render the table as a sub-SVG instead of falling

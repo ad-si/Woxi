@@ -346,7 +346,9 @@ fn is_member_of_domain(expr: &Expr, domain: &str) -> Option<bool> {
       _ => None,
     },
     "Primes" => match expr {
-      Expr::Integer(n) => Some(*n >= 2 && crate::functions::math_ast::is_prime_i128(*n)),
+      Expr::Integer(n) => {
+        Some(*n >= 2 && crate::functions::math_ast::is_prime_i128(*n))
+      }
       Expr::Real(_) => Some(false),
       Expr::Constant(_) => Some(false),
       _ => None,
