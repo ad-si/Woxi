@@ -2,10 +2,10 @@ use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
-  DEFAULT_HEIGHT, DEFAULT_WIDTH, Mesh, PlotOptions, adjust_y_range_for_filling,
-  apply_plot_theme, build_plot_source, generate_scatter_svg_with_options,
-  generate_svg_with_filling, parse_filling, parse_image_size,
-  parse_plot_legends, parse_plot_style,
+  DEFAULT_HEIGHT, DEFAULT_WIDTH, Mesh, PLOT_COLORS, PlotOptions, SeriesStyle,
+  adjust_y_range_for_filling, apply_plot_theme, build_plot_source,
+  generate_scatter_svg_with_options, generate_svg_with_filling, parse_filling,
+  parse_image_size, parse_plot_legends, parse_plot_style,
 };
 use crate::functions::sound::audio_sample_rate;
 use crate::syntax::{Expr, unevaluated};
@@ -114,13 +114,6 @@ fn error_extremes(all_series: &[Vec<ErrPoint>]) -> Vec<Vec<(f64, f64)>> {
 ///
 /// Any value (y or x/y pair element) may be an `Around[...]`, whose central
 /// value becomes the coordinate and whose uncertainty an error bar.
-fn parse_list_data(
-  arg: &Expr,
-) -> Result<Vec<Vec<(f64, f64)>>, InterpreterError> {
-  parse_list_data_err(arg).map(|series| strip_errors(&series))
-}
-
-/// Like [`parse_list_data`], but keeps the `Around` uncertainties.
 fn parse_list_data_err(
   arg: &Expr,
 ) -> Result<Vec<Vec<ErrPoint>>, InterpreterError> {
@@ -241,11 +234,102 @@ fn parse_single_series(
   Ok(points)
 }
 
+/// If `expr` is `Labeled[content, label, ...]`, return the content and the
+/// label rendered as display text.
+fn unwrap_labeled(expr: &Expr) -> Option<(Expr, String)> {
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Labeled"
+    && args.len() >= 2
+  {
+    let label = match &args[1] {
+      Expr::String(s) => s.clone(),
+      other => crate::syntax::expr_to_output(other),
+    };
+    Some((args[0].clone(), label))
+  } else {
+    None
+  }
+}
+
+/// One parsed series per dataset plus one optional dataset label per series.
+type LabeledSeries = (Vec<Vec<(f64, f64)>>, Vec<Option<String>>);
+
+/// Like [`LabeledSeries`], but keeping the `Around` uncertainties.
+type LabeledErrSeries = (Vec<Vec<ErrPoint>>, Vec<Option<String>>);
+
+/// Like [`parse_list_data_err_labeled`], with the uncertainties stripped.
+fn parse_list_data_labeled(
+  arg: &Expr,
+) -> Result<LabeledSeries, InterpreterError> {
+  let (series, labels) = parse_list_data_err_labeled(arg)?;
+  Ok((strip_errors(&series), labels))
+}
+
+/// Parse list data that may carry `Labeled[data, label]` wrappers around the
+/// whole argument or around individual datasets. Returns one series per
+/// dataset plus one optional label per series (empty when no wrapper was
+/// present). A Labeled wrapper on any entry of the outer list marks that
+/// list as a list of datasets, so `{Labeled[{1, 2}, "a"], Labeled[{3, 4},
+/// "b"]}` parses as two 2-point series rather than as a list of x/y pairs.
+fn parse_list_data_err_labeled(
+  arg: &Expr,
+) -> Result<LabeledErrSeries, InterpreterError> {
+  let data = evaluate_expr_to_expr(arg)?;
+
+  // Whole argument wrapped: the label applies to every series inside.
+  if let Some((content, label)) = unwrap_labeled(&data) {
+    let series = parse_list_data_err(&content)?;
+    let labels = vec![Some(label); series.len()];
+    return Ok((series, labels));
+  }
+
+  if let Expr::List(items) = &data
+    && items.iter().any(|item| unwrap_labeled(item).is_some())
+  {
+    let mut all_series = Vec::with_capacity(items.len());
+    let mut labels = Vec::with_capacity(items.len());
+    for item in items {
+      let (content, label) = match unwrap_labeled(item) {
+        Some((content, label)) => (content, Some(label)),
+        None => (item.clone(), None),
+      };
+      let content = evaluate_expr_to_expr(&content).unwrap_or(content);
+      match &content {
+        Expr::List(series_items) => {
+          all_series.push(parse_single_series(series_items)?);
+        }
+        // A labeled scalar contributes a one-point series.
+        other => match eval_to_value_err(other) {
+          Some(y) => all_series.push(vec![ErrPoint::from_y(1.0, y)]),
+          None => all_series.push(Vec::new()),
+        },
+      }
+      labels.push(label);
+    }
+    return Ok((all_series, labels));
+  }
+
+  Ok((parse_list_data_err(&data)?, Vec::new()))
+}
+
+/// Panel arrangement from the PlotLayout option.
+#[derive(Default, Clone, Copy, PartialEq)]
+enum PanelLayout {
+  /// All datasets share one panel (the default).
+  #[default]
+  Overlaid,
+  /// One panel per dataset, side by side.
+  Row,
+  /// One panel per dataset, stacked vertically.
+  Column,
+}
+
 /// Parsed list-plot options, including explicit PlotRange overrides.
 #[derive(Default)]
 struct ParsedOptions {
   opts: PlotOptions,
   joined: bool,
+  layout: PanelLayout,
   plot_range_x: Option<(f64, f64)>,
   plot_range_y: Option<(f64, f64)>,
 }
@@ -281,6 +365,15 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           let (rx, ry) = crate::functions::plot::parse_plot_range(replacement);
           out.plot_range_x = rx;
           out.plot_range_y = ry;
+        }
+        "PlotLayout" => {
+          if let Expr::String(layout) = replacement.as_ref() {
+            match layout.as_str() {
+              "Row" => out.layout = PanelLayout::Row,
+              "Column" => out.layout = PanelLayout::Column,
+              _ => {}
+            }
+          }
         }
         "Filling" => {
           opts.filling = parse_filling(replacement);
@@ -451,12 +544,105 @@ fn compute_ranges_scaled(
   )
 }
 
+/// Style for the panel showing series `idx`: the user-supplied style for
+/// that series if any, falling back to the default palette color the series
+/// would have had in the overlaid layout.
+fn panel_style(user_styles: &[SeriesStyle], idx: usize) -> SeriesStyle {
+  let mut style = if user_styles.is_empty() {
+    SeriesStyle::default()
+  } else {
+    user_styles[idx % user_styles.len()].clone()
+  };
+  if style.color.is_none() {
+    let (r, g, b) = PLOT_COLORS[idx % PLOT_COLORS.len()];
+    style.color = Some(crate::functions::graphics::Color::new(
+      r as f64 / 255.0,
+      g as f64 / 255.0,
+      b as f64 / 255.0,
+    ));
+  }
+  style
+}
+
+/// Render one panel per series for `PlotLayout -> "Row" / "Column"` and
+/// combine the panels into a single graphic. Each panel keeps the color its
+/// series would have had overlaid, gets its own axis ranges, and shows its
+/// dataset label (from `Labeled`) if one was given. `range_series` supplies
+/// the per-series points used for range computation (the error-bar extremes
+/// when a series carries `Around` uncertainties; otherwise `all_series`).
+fn render_panel_layout(
+  all_series: &[Vec<(f64, f64)>],
+  range_series: &[Vec<(f64, f64)>],
+  labels: &[Option<String>],
+  parsed: &ParsedOptions,
+  scatter: bool,
+) -> Result<Expr, InterpreterError> {
+  let mut svgs = Vec::with_capacity(all_series.len());
+  for (idx, series) in all_series.iter().enumerate() {
+    let mut opts = parsed.opts.clone();
+    opts.plot_style = vec![panel_style(&parsed.opts.plot_style, idx)];
+    opts.callout_labels = vec![labels.get(idx).cloned().flatten()];
+    // A shared legend across separate panels would repeat per panel.
+    opts.plot_legends = Vec::new();
+    // Keep only this panel's error bars (they are indexed by series).
+    opts.error_bars = match parsed.opts.error_bars.get(idx) {
+      Some(bars) => vec![bars.clone()],
+      None => Vec::new(),
+    };
+
+    let single = std::slice::from_ref(series);
+    let range_single = range_series
+      .get(idx)
+      .map(std::slice::from_ref)
+      .unwrap_or(single);
+    let (x_range, y_range) =
+      compute_ranges_scaled(range_single, opts.log_x, opts.log_y);
+    let y_range = adjust_y_range_for_filling(opts.filling, y_range);
+    let (x_range, y_range) =
+      apply_plot_range_override(parsed, x_range, y_range);
+    let svg = if scatter {
+      generate_scatter_svg_with_options(single, x_range, y_range, &opts)?
+    } else {
+      generate_svg_with_filling(single, x_range, y_range, &opts)?
+    };
+    svgs.push(svg);
+  }
+
+  let rows: Vec<Vec<String>> = match parsed.layout {
+    PanelLayout::Column => svgs.into_iter().map(|svg| vec![svg]).collect(),
+    _ => vec![svgs],
+  };
+  let combined = crate::functions::graphics::combine_graphics_svgs(&rows)
+    .unwrap_or_else(|| {
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string()
+    });
+  Ok(crate::graphics_result(combined))
+}
+
+/// Attach dataset labels from `Labeled` wrappers as callout labels, unless
+/// explicit Callout labels are already present.
+fn apply_dataset_labels(opts: &mut PlotOptions, labels: &[Option<String>]) {
+  if labels.iter().any(|l| l.is_some()) && opts.callout_labels.is_empty() {
+    opts.callout_labels = labels.to_vec();
+  }
+}
+
 /// ListPlot[{y1, y2, ...}] or ListPlot[{{x1,y1}, ...}]
 pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let err_series = parse_list_data_err(&args[0])?;
+  let (err_series, labels) = parse_list_data_err_labeled(&args[0])?;
   let all_series = strip_errors(&err_series);
   let mut parsed = parse_plot_options(args);
+  apply_dataset_labels(&mut parsed.opts, &labels);
   parsed.opts.error_bars = collect_error_bars(&err_series);
+  if parsed.layout != PanelLayout::Overlaid && all_series.len() > 1 {
+    return render_panel_layout(
+      &all_series,
+      &error_extremes(&err_series),
+      &labels,
+      &parsed,
+      !parsed.joined,
+    );
+  }
   // The plot range must cover the full extent of any error bars.
   let (x_range, y_range) = compute_ranges(&error_extremes(&err_series));
   let y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
@@ -562,10 +748,20 @@ pub fn complex_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// ListLinePlot[{y1, y2, ...}]
 pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let err_series = parse_list_data_err(&args[0])?;
+  let (err_series, labels) = parse_list_data_err_labeled(&args[0])?;
   let all_series = strip_errors(&err_series);
   let mut parsed = parse_plot_options(args);
+  apply_dataset_labels(&mut parsed.opts, &labels);
   parsed.opts.error_bars = collect_error_bars(&err_series);
+  if parsed.layout != PanelLayout::Overlaid && all_series.len() > 1 {
+    return render_panel_layout(
+      &all_series,
+      &error_extremes(&err_series),
+      &labels,
+      &parsed,
+      false,
+    );
+  }
   let (x_range, mut y_range) = compute_ranges(&error_extremes(&err_series));
 
   y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
@@ -581,8 +777,9 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// running total of the preceding ones. The regions between consecutive
 /// cumulative curves are filled by default.
 pub fn stacked_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let all_series = parse_list_data(&args[0])?;
+  let (all_series, labels) = parse_list_data_labeled(&args[0])?;
   let mut parsed = parse_plot_options(args);
+  apply_dataset_labels(&mut parsed.opts, &labels);
   parsed.opts.stacked = true;
   // Default to filled bands unless the user explicitly overrode Filling.
   if parsed.opts.filling == crate::functions::plot::Filling::None {
@@ -617,8 +814,9 @@ pub fn stacked_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// ListStepPlot[{y1, y2, ...}]
 pub fn list_step_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let all_series = parse_list_data(&args[0])?;
-  let parsed = parse_plot_options(args);
+  let (all_series, labels) = parse_list_data_labeled(&args[0])?;
+  let mut parsed = parse_plot_options(args);
+  apply_dataset_labels(&mut parsed.opts, &labels);
 
   // Transform each series into staircase coordinates
   let step_series: Vec<Vec<(f64, f64)>> = all_series
@@ -635,6 +833,15 @@ pub fn list_step_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .collect();
 
+  if parsed.layout != PanelLayout::Overlaid && step_series.len() > 1 {
+    return render_panel_layout(
+      &step_series,
+      &step_series,
+      &labels,
+      &parsed,
+      false,
+    );
+  }
   let (x_range, y_range) = compute_ranges(&step_series);
   let y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
@@ -645,8 +852,9 @@ pub fn list_step_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// ListLogPlot: y-axis is log10 scale
 pub fn list_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let all_series = parse_list_data(&args[0])?;
+  let (all_series, labels) = parse_list_data_labeled(&args[0])?;
   let mut parsed = parse_plot_options(args);
+  apply_dataset_labels(&mut parsed.opts, &labels);
   parsed.opts.log_y = true;
 
   // Filter non-positive y values; data stays in original space (LogCoord handles scaling)
@@ -655,6 +863,9 @@ pub fn list_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .map(|series| series.iter().filter(|&&(_, y)| y > 0.0).copied().collect())
     .collect();
 
+  if parsed.layout != PanelLayout::Overlaid && filtered.len() > 1 {
+    return render_panel_layout(&filtered, &filtered, &labels, &parsed, false);
+  }
   let (x_range, y_range) = compute_ranges_scaled(&filtered, false, true);
   let y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
@@ -665,8 +876,9 @@ pub fn list_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// ListLogLogPlot: both axes log10 scale
 pub fn list_log_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let all_series = parse_list_data(&args[0])?;
+  let (all_series, labels) = parse_list_data_labeled(&args[0])?;
   let mut parsed = parse_plot_options(args);
+  apply_dataset_labels(&mut parsed.opts, &labels);
   parsed.opts.log_x = true;
   parsed.opts.log_y = true;
 
@@ -682,6 +894,9 @@ pub fn list_log_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .collect();
 
+  if parsed.layout != PanelLayout::Overlaid && filtered.len() > 1 {
+    return render_panel_layout(&filtered, &filtered, &labels, &parsed, false);
+  }
   let (x_range, y_range) = compute_ranges_scaled(&filtered, true, true);
   let y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
@@ -694,8 +909,9 @@ pub fn list_log_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn list_log_linear_plot_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let all_series = parse_list_data(&args[0])?;
+  let (all_series, labels) = parse_list_data_labeled(&args[0])?;
   let mut parsed = parse_plot_options(args);
+  apply_dataset_labels(&mut parsed.opts, &labels);
   parsed.opts.log_x = true;
 
   // Filter non-positive x values; data stays in original space (LogCoord handles scaling)
@@ -704,6 +920,9 @@ pub fn list_log_linear_plot_ast(
     .map(|series| series.iter().filter(|&&(x, _)| x > 0.0).copied().collect())
     .collect();
 
+  if parsed.layout != PanelLayout::Overlaid && filtered.len() > 1 {
+    return render_panel_layout(&filtered, &filtered, &labels, &parsed, false);
+  }
   let (x_range, y_range) = compute_ranges_scaled(&filtered, true, false);
   let y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
@@ -714,8 +933,9 @@ pub fn list_log_linear_plot_ast(
 
 /// ListPolarPlot[{r1, r2, ...}]: plot data in polar coordinates
 pub fn list_polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let all_series = parse_list_data(&args[0])?;
-  let parsed = parse_plot_options(args);
+  let (all_series, labels) = parse_list_data_labeled(&args[0])?;
+  let mut parsed = parse_plot_options(args);
+  apply_dataset_labels(&mut parsed.opts, &labels);
 
   let polar_series: Vec<Vec<(f64, f64)>> = all_series
     .iter()
