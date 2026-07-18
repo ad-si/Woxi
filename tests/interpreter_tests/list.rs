@@ -10878,6 +10878,23 @@ mod sparse_array_list_ops {
     );
   }
 
+  // ArrayDepth / TensorRank of a SparseArray is its number of dimensions.
+  #[test]
+  fn array_depth_and_tensor_rank() {
+    assert_eq!(
+      interpret("ArrayDepth[SparseArray[{{1, 0}, {0, 2}}]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("ArrayDepth[SparseArray[{1 -> 1, 3 -> 3}, 5]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("TensorRank[SparseArray[{{1, 0}, {0, 2}}]]").unwrap(),
+      "2"
+    );
+  }
+
   #[test]
   fn result_stays_sparse() {
     assert_eq!(

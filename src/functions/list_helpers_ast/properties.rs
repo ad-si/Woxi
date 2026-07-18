@@ -8,6 +8,14 @@ use crate::syntax::unevaluated;
 /// Returns the depth to which the expression forms a rectangular array.
 /// At each level, all elements must be lists of the same length.
 pub fn array_depth_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  // A SparseArray is a rectangular array; its depth is the length of its
+  // dimension list (Dimensions handles the internal representation).
+  if matches!(list, Expr::FunctionCall { name, .. } if name == "SparseArray")
+    && let Ok(Expr::List(ref dims)) =
+      crate::functions::list_helpers_ast::dimensions_ast(&[list.clone()])
+  {
+    return Ok(Expr::Integer(dims.len() as i128));
+  }
   fn compute_depth(expr: &Expr) -> i128 {
     match expr {
       Expr::List(items) => {
@@ -243,6 +251,10 @@ pub fn tensor_rank_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
 
   match expr {
     Expr::List(_) => array_depth_ast(expr),
+    // A SparseArray's tensor rank is its array depth (= number of dimensions).
+    Expr::FunctionCall { name, .. } if name == "SparseArray" => {
+      array_depth_ast(expr)
+    }
     Expr::Integer(_)
     | Expr::Real(_)
     | Expr::BigInteger(_)
