@@ -4463,6 +4463,17 @@ fn try_infinite_sum(
     }
   }
 
+  // Symbolic exponent p-series: Sum[var^e, {var, 1, Infinity}] = Zeta[-e], the
+  // Riemann zeta function. For example Sum[1/n^s] = Sum[n^(-s)] = Zeta[s] and
+  // Sum[n^s] = Zeta[-s]. Numeric exponents are handled by the reciprocal-power
+  // path above; here we only take over when the exponent is symbolic.
+  if let Some(zeta_arg) = match_symbolic_p_series_exponent(body, var_name)? {
+    return Ok(Some(Expr::FunctionCall {
+      name: "Zeta".to_string(),
+      args: vec![zeta_arg].into(),
+    }));
+  }
+
   // Sum[1/c^i, {i, 1, Infinity}] = 1/(c-1) for integer c > 1
   // Detect body = 1/c^var (Divide form)
   if let Expr::BinaryOp {
@@ -4786,6 +4797,52 @@ fn match_odd_reciprocal(
     return None;
   }
   Some((alternating, sign, s))
+}
+
+/// Detect a p-series `1/var^s` / `var^(-s)` with a *symbolic* exponent and
+/// return the Riemann-zeta argument, i.e. the `s` for which the sum equals
+/// `Zeta[s]`. Numeric exponents deliberately return `None` so the closed-form
+/// (or divergence) handlers keep them. `Sum[var^e] = Zeta[-e]`, so the returned
+/// argument is `-e` for a bare `Power[var, e]` and `s` for `Divide[1, var^s]`.
+fn match_symbolic_p_series_exponent(
+  body: &Expr,
+  var_name: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  // Divide[1, Power[var, s]] with symbolic s -> Zeta[s].
+  if let Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left,
+    right,
+  } = body
+    && is_one(left)
+    && let Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: base,
+      right: exp,
+    } = right.as_ref()
+    && matches!(base.as_ref(), Expr::Identifier(name) if name == var_name)
+    && !crate::functions::predicate_ast::is_numeric_q(exp)
+  {
+    return Ok(Some(crate::evaluator::evaluate_expr_to_expr(exp)?));
+  }
+
+  // Power[var, e] with symbolic e -> Zeta[-e].
+  if let Expr::BinaryOp {
+    op: BinaryOperator::Power,
+    left,
+    right,
+  } = body
+    && matches!(left.as_ref(), Expr::Identifier(name) if name == var_name)
+    && !crate::functions::predicate_ast::is_numeric_q(right)
+  {
+    let neg = crate::functions::math_ast::times_ast(&[
+      Expr::Integer(-1),
+      right.as_ref().clone(),
+    ])?;
+    return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&neg)?));
+  }
+
+  Ok(None)
 }
 
 fn match_reciprocal_power(body: &Expr, var_name: &str) -> Option<i64> {

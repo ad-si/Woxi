@@ -12399,6 +12399,31 @@ mod infinite_log_series {
     );
   }
 
+  // Sum[1/n^s, {n, 1, Infinity}] = Zeta[s] for a symbolic exponent, matching the
+  // Riemann-zeta definition. More generally Sum[n^e] = Zeta[-e].
+  #[test]
+  fn symbolic_exponent_zeta_sums() {
+    assert_eq!(
+      interpret("Sum[1/n^s, {n, 1, Infinity}]").unwrap(),
+      "Zeta[s]"
+    );
+    assert_eq!(
+      interpret("Sum[n^(-s), {n, 1, Infinity}]").unwrap(),
+      "Zeta[s]"
+    );
+    assert_eq!(interpret("Sum[n^s, {n, 1, Infinity}]").unwrap(), "Zeta[-s]");
+    assert_eq!(
+      interpret("Sum[1/n^(s + 1), {n, 1, Infinity}]").unwrap(),
+      "Zeta[1 + s]"
+    );
+    // Numeric exponents keep their closed forms / divergence behavior.
+    assert_eq!(interpret("Sum[1/n^2, {n, 1, Infinity}]").unwrap(), "Pi^2/6");
+    assert_eq!(
+      interpret("Sum[1/n^3, {n, 1, Infinity}]").unwrap(),
+      "Zeta[3]"
+    );
+  }
+
   // Sum[Fibonacci[k], {k, a, n}] = Fibonacci[n+2] - Fibonacci[a+1].
   #[test]
   fn fibonacci_partial_sum() {
