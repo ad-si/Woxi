@@ -659,6 +659,15 @@ fn inject_log_axis_labels(
   fill: &str,
   orientation: LogAxisOrientation,
 ) {
+  // A log axis needs positive, finite bounds; otherwise no labels can be
+  // placed (log10 would yield NaN positions).
+  if data_min <= 0.0
+    || !data_min.is_finite()
+    || !data_max.is_finite()
+    || data_max <= data_min
+  {
+    return;
+  }
   let log_min = data_min.log10();
   let log_max = data_max.log10();
   let decades = (log_max - log_min).abs();

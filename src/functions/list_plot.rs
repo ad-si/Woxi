@@ -295,6 +295,17 @@ fn apply_plot_range_override(
 
 /// Compute x/y ranges from data with 4% padding.
 fn compute_ranges(all_series: &[Vec<(f64, f64)>]) -> ((f64, f64), (f64, f64)) {
+  compute_ranges_scaled(all_series, false, false)
+}
+
+/// Compute x/y ranges from data with 4% padding. Log axes are padded
+/// multiplicatively in log space (4% of the log range, matching LogPlot),
+/// so the padded range stays positive.
+fn compute_ranges_scaled(
+  all_series: &[Vec<(f64, f64)>],
+  log_x: bool,
+  log_y: bool,
+) -> ((f64, f64), (f64, f64)) {
   let mut x_min = f64::INFINITY;
   let mut x_max = f64::NEG_INFINITY;
   let mut y_min = f64::INFINITY;
@@ -314,30 +325,42 @@ fn compute_ranges(all_series: &[Vec<(f64, f64)>]) -> ((f64, f64), (f64, f64)) {
   }
 
   if !x_min.is_finite() || !x_max.is_finite() {
-    x_min = 0.0;
-    x_max = 1.0;
+    (x_min, x_max) = if log_x { (1.0, 10.0) } else { (0.0, 1.0) };
   }
   if !y_min.is_finite() || !y_max.is_finite() {
-    y_min = 0.0;
-    y_max = 1.0;
+    (y_min, y_max) = if log_y { (1.0, 10.0) } else { (0.0, 1.0) };
   }
 
-  let x_range = x_max - x_min;
-  let y_range = y_max - y_min;
-  let x_pad = if x_range.abs() < f64::EPSILON {
-    1.0
-  } else {
-    x_range * 0.04
+  let pad_linear = |min: f64, max: f64| {
+    let range = max - min;
+    let pad = if range.abs() < f64::EPSILON {
+      1.0
+    } else {
+      range * 0.04
+    };
+    (min - pad, max + pad)
   };
-  let y_pad = if y_range.abs() < f64::EPSILON {
-    1.0
-  } else {
-    y_range * 0.04
+  let pad_log = |min: f64, max: f64| {
+    let log_range = (max / min).ln();
+    let factor = if log_range.abs() < f64::EPSILON {
+      std::f64::consts::E
+    } else {
+      (log_range * 0.04).exp()
+    };
+    (min / factor, max * factor)
   };
 
   (
-    (x_min - x_pad, x_max + x_pad),
-    (y_min - y_pad, y_max + y_pad),
+    if log_x {
+      pad_log(x_min, x_max)
+    } else {
+      pad_linear(x_min, x_max)
+    },
+    if log_y {
+      pad_log(y_min, y_max)
+    } else {
+      pad_linear(y_min, y_max)
+    },
   )
 }
 
@@ -462,7 +485,7 @@ pub fn list_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .map(|series| series.iter().filter(|&&(_, y)| y > 0.0).copied().collect())
     .collect();
 
-  let (x_range, y_range) = compute_ranges(&filtered);
+  let (x_range, y_range) = compute_ranges_scaled(&filtered, false, true);
   let y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
   let svg =
@@ -489,7 +512,7 @@ pub fn list_log_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .collect();
 
-  let (x_range, y_range) = compute_ranges(&filtered);
+  let (x_range, y_range) = compute_ranges_scaled(&filtered, true, true);
   let y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
   let svg =
@@ -511,7 +534,7 @@ pub fn list_log_linear_plot_ast(
     .map(|series| series.iter().filter(|&&(x, _)| x > 0.0).copied().collect())
     .collect();
 
-  let (x_range, y_range) = compute_ranges(&filtered);
+  let (x_range, y_range) = compute_ranges_scaled(&filtered, true, false);
   let y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
   let svg =
