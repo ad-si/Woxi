@@ -5936,6 +5936,30 @@ mod cases {
       r#"{SparseArray[Automatic, {2}, 0, {1, {{0, 1}, {{1}}}, {0 + 1}}], SparseArray[Automatic, {2, 2}, 0, {1, {{0, 0, 0}, {}}, {}}], SparseArray[Automatic, {2, 2, 2}, 0, {1, {{0, 1, 2}, {{1, 1}, {1, 2}}}, {1, 1}}]}"#,
     );
   }
+  // An equation `lhs == rhs` contributes the coefficients of `lhs - rhs`, so a
+  // linear system yields the constant vector and the coefficient matrix.
+  #[test]
+  fn coefficient_arrays_equations() {
+    assert_case(
+      r#"Normal[CoefficientArrays[{x + y == 1, x - y == 0}, {x, y}]]"#,
+      r#"{{-1, 0}, {{1, 1}, {1, -1}}}"#,
+    );
+  }
+  #[test]
+  fn coefficient_arrays_single_equation() {
+    assert_case(
+      r#"Normal[CoefficientArrays[x^2 + 2 x == 3, x]]"#,
+      r#"{-3, {2}, {{1}}}"#,
+    );
+  }
+  #[test]
+  fn coefficient_arrays_equation_rhs_variable() {
+    // x == y becomes x - y: constant 0, coefficients {1, -1}.
+    assert_case(
+      r#"Normal[CoefficientArrays[{2 x + 3 y == 5, x == y}, {x, y}]]"#,
+      r#"{{-5, 0}, {{2, 3}, {1, -1}}}"#,
+    );
+  }
   #[test]
   fn expand_all() {
     assert_case(

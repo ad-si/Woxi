@@ -2,7 +2,9 @@
 use super::*;
 use crate::InterpreterError;
 use crate::evaluator::pattern_matching::expr_equal;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
+};
 
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
 
@@ -1069,6 +1071,31 @@ pub fn coefficient_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// shape `[n, …, n]` (with `n` = number of variables) holding the
 /// coefficients of all degree-k monomials at their sorted-index slot,
 /// matching wolframscript's `SparseArray[Automatic, dims, 0, …]` shape.
+/// Rewrite an equation `lhs == rhs` as the polynomial `lhs - rhs`; any other
+/// expression is returned unchanged. CoefficientArrays extracts coefficients
+/// from the difference so that equations and plain polynomials behave alike.
+fn equation_to_poly(e: &Expr) -> Expr {
+  let subtract = |lhs: &Expr, rhs: &Expr| Expr::FunctionCall {
+    name: "Subtract".to_string(),
+    args: vec![lhs.clone(), rhs.clone()].into(),
+  };
+  match e {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operators.len() == 1
+      && operators[0] == ComparisonOp::Equal
+      && operands.len() == 2 =>
+    {
+      subtract(&operands[0], &operands[1])
+    }
+    Expr::FunctionCall { name, args } if name == "Equal" && args.len() == 2 => {
+      subtract(&args[0], &args[1])
+    }
+    _ => e.clone(),
+  }
+}
+
 pub fn coefficient_arrays_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
@@ -1096,14 +1123,22 @@ pub fn coefficient_arrays_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if vars.is_empty() {
     return Ok(unevaluated("CoefficientArrays", args));
   }
+  // An equation `lhs == rhs` contributes the coefficients of `lhs - rhs`, so
+  // `CoefficientArrays[{x + y == 1, …}, vars]` matches the polynomial form.
+  let poly_arg = match &args[0] {
+    Expr::List(items) => {
+      Expr::List(items.iter().map(equation_to_poly).collect())
+    }
+    other => equation_to_poly(other),
+  };
   // Multi-polynomial form: `CoefficientArrays[{p1, p2, …}, vars]` returns
   // SparseArrays of shape `[m, n, …, n]` where `m` is the polynomial
   // count and the leading multi-index component is the polynomial index.
-  if let Expr::List(polys) = &args[0] {
+  if let Expr::List(polys) = &poly_arg {
     return coefficient_arrays_multi(polys, &vars);
   }
   let n = vars.len();
-  let expanded = super::expand::expand_and_combine(&args[0]);
+  let expanded = super::expand::expand_and_combine(&poly_arg);
   let expanded = crate::evaluator::evaluate_expr_to_expr(&expanded)?;
   let terms = collect_additive_terms(&expanded);
   // Each entry: (degree, sorted_indices_1based, coefficient_expr).
