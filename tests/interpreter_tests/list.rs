@@ -10705,6 +10705,33 @@ mod array_reshape {
       "{{}, {}}"
     );
   }
+
+  // A SparseArray input is reshaped by its dense elements and the result stays
+  // a SparseArray (matching wolframscript), not the internal representation.
+  #[test]
+  fn sparse_array_input_reshapes_dense_values() {
+    assert_eq!(
+      interpret("Normal[ArrayReshape[SparseArray[{1 -> 1}, 4], {2, 2}]]")
+        .unwrap(),
+      "{{1, 0}, {0, 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "Normal[ArrayReshape[SparseArray[{1 -> 1, 4 -> 9}, 4], {2, 2}]]"
+      )
+      .unwrap(),
+      "{{1, 0}, {0, 9}}"
+    );
+  }
+
+  #[test]
+  fn sparse_array_input_stays_sparse() {
+    assert_eq!(
+      interpret("Head[ArrayReshape[SparseArray[{1 -> 1}, 4], {2, 2}]]")
+        .unwrap(),
+      "SparseArray"
+    );
+  }
 }
 
 mod position_index {

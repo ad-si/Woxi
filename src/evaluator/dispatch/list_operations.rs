@@ -8005,8 +8005,17 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 use crate::functions::math_ast::expr_to_f64;
 
 fn array_reshape_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // A SparseArray input is reshaped by its dense elements, not its internal
+  // representation, so densify it via Normal first. The reshaped result is
+  // re-wrapped as a SparseArray below to match wolframscript's head.
+  let is_sparse = matches!(&args[0], Expr::FunctionCall { name, .. } if name == "SparseArray");
+  let source = if is_sparse {
+    crate::evaluator::evaluate_function_call_ast("Normal", &[args[0].clone()])?
+  } else {
+    args[0].clone()
+  };
   // Flatten the input list
-  let flat = flatten_to_vec(&args[0]);
+  let flat = flatten_to_vec(&source);
 
   // Parse dimensions
   let dims = match &args[1] {
@@ -8048,7 +8057,15 @@ fn array_reshape_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Build the reshaped array, padding with `pad` if needed
   let mut idx = 0;
-  Ok(build_reshaped(&flat, &dims, 0, &mut idx, &pad))
+  let reshaped = build_reshaped(&flat, &dims, 0, &mut idx, &pad);
+  // Preserve sparseness: SparseArray in → SparseArray out (matches WS).
+  if is_sparse {
+    return crate::evaluator::evaluate_function_call_ast(
+      "SparseArray",
+      &[reshaped],
+    );
+  }
+  Ok(reshaped)
 }
 
 fn flatten_to_vec(expr: &Expr) -> Vec<Expr> {
