@@ -1148,6 +1148,9 @@ pub(crate) struct PlotOptions {
   /// series' points: each entry is ((dx_minus, dx_plus), (dy_minus,
   /// dy_plus)) in data units. Empty when the data has no uncertainties.
   pub error_bars: Vec<Vec<((f64, f64), (f64, f64))>>,
+  /// `Background -> color`: fill for the whole image, replacing the
+  /// theme background. `None` keeps the theme default.
+  pub background: Option<RGBColor>,
 }
 
 impl Default for PlotOptions {
@@ -1180,6 +1183,7 @@ impl Default for PlotOptions {
       stacked: false,
       epilog: Vec::new(),
       error_bars: Vec::new(),
+      background: None,
     }
   }
 }
@@ -1489,8 +1493,10 @@ fn generate_svg_with_options(
     5 * s as u32
   };
 
-  let (bg_color, dark_gray, light_gray, label_fill, title_default_fill) =
+  let (theme_bg, dark_gray, light_gray, label_fill, title_default_fill) =
     plot_theme();
+  // Background -> color replaces the theme background for the whole image.
+  let bg_color = opts.background.unwrap_or(theme_bg);
 
   // Dashed series are collected here and emitted after the plot is drawn as a
   // single `<polyline stroke-dasharray>` each (rather than one element per
@@ -5970,6 +5976,20 @@ pub(crate) fn parse_plot_legends(
   }
 }
 
+/// Parse a `Background -> color` option value into a plotters fill color.
+/// Returns `None` for `Background -> None` and unrecognized values, which
+/// keep the theme default.
+pub(crate) fn parse_background_option(expr: &Expr) -> Option<RGBColor> {
+  let val = evaluate_expr_to_expr(expr).unwrap_or_else(|_| expr.clone());
+  crate::functions::graphics::parse_color(&val).map(|c| {
+    RGBColor(
+      (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+      (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+      (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+    )
+  })
+}
+
 /// Range/aspect overrides parsed from options and applied after all options
 /// (and the data) are known.
 #[derive(Default)]
@@ -6078,6 +6098,9 @@ pub(crate) fn apply_common_plot_option(
     }
     "Filling" => {
       plot_opts.filling = parse_filling(replacement);
+    }
+    "Background" => {
+      plot_opts.background = parse_background_option(replacement);
     }
     "Ticks" => match replacement {
       Expr::Identifier(s) if s == "None" => plot_opts.ticks = false,
@@ -6439,6 +6462,9 @@ fn log_scale_plot_ast(
         }
         "Filling" => {
           plot_opts.filling = parse_filling(replacement);
+        }
+        "Background" => {
+          plot_opts.background = parse_background_option(replacement);
         }
         "PlotLegends" => {
           let (labels, auto, expressions, position) =
