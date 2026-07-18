@@ -8028,6 +8028,19 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
         if name == "Tetrahedron" && platonic_center_edge(args).is_some() {
           return or_unevaluated(compute_volume(expr));
         }
+        // Simplex[n] is the standard n-simplex (origin plus the n unit
+        // vectors); its intrinsic measure is 1/n!. The degenerate 0-simplex
+        // (a point) is left unevaluated, matching wolframscript.
+        if name == "Simplex"
+          && args.len() == 1
+          && let Expr::Integer(n) = &args[0]
+          && *n >= 1
+        {
+          return Ok(crate::functions::math_ast::make_rational(
+            1,
+            factorial_small(*n as usize),
+          ));
+        }
         if args.len() == 1
           && let Expr::List(pts) = &args[0]
           && let Some(edges) = simplex_edges(pts)
@@ -10483,6 +10496,21 @@ fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
       // Tetrahedron[{p1, p2, p3, p4}] / Simplex of 4 points in 3-space:
       //   Volume = |Det[{p2-p1, p3-p1, p4-p1}]| / 6.
       "Tetrahedron" | "Simplex" if args.len() == 1 => {
+        // Simplex[n]: Volume (a 3-measure) is defined only for the 3-simplex,
+        // where it is 1/3!; every other dimension is Undefined.
+        if name == "Simplex"
+          && let Expr::Integer(n) = &args[0]
+          && *n >= 0
+        {
+          return if *n == 3 {
+            Ok(crate::functions::math_ast::make_rational(
+              1,
+              factorial_small(3),
+            ))
+          } else {
+            Ok(Expr::Identifier("Undefined".to_string()))
+          };
+        }
         if let Expr::List(pts) = &args[0]
           && pts.len() == 4
           && let Some(edges) = simplex_edges(pts)
@@ -10931,6 +10959,17 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
       // Simplex[{p0, p1, p2}] in the plane — the triangle area |Det[edges]|/2.
       // A higher-dimensional simplex has Undefined 2-area.
       "Simplex" if args.len() == 1 => {
+        // Simplex[n]: Area (a 2-measure) is defined only for the 2-simplex,
+        // where it is 1/2!; every other dimension is Undefined.
+        if let Expr::Integer(n) = &args[0]
+          && *n >= 0
+        {
+          return if *n == 2 {
+            Ok(crate::functions::math_ast::make_rational(1, 2))
+          } else {
+            Ok(Expr::Identifier("Undefined".to_string()))
+          };
+        }
         if let Expr::List(pts) = &args[0]
           && pts.len() == 3
           && let Some(edges) = simplex_edges(pts)

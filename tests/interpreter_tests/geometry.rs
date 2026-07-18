@@ -824,6 +824,29 @@ mod region_measure {
     );
   }
 
+  // Simplex[n] is the standard n-simplex; its measure is 1/n!. Area is defined
+  // only when n == 2 and Volume only when n == 3, otherwise Undefined.
+  #[test]
+  fn standard_simplex_measure() {
+    assert_eq!(interpret("RegionMeasure[Simplex[1]]").unwrap(), "1");
+    assert_eq!(interpret("RegionMeasure[Simplex[2]]").unwrap(), "1/2");
+    assert_eq!(interpret("RegionMeasure[Simplex[3]]").unwrap(), "1/6");
+    assert_eq!(interpret("RegionMeasure[Simplex[4]]").unwrap(), "1/24");
+    // The 0-simplex (a point) is left unevaluated, matching wolframscript.
+    assert_eq!(
+      interpret("RegionMeasure[Simplex[0]]").unwrap(),
+      "RegionMeasure[Simplex[0]]"
+    );
+    // Area is the 2-measure: defined only for the 2-simplex.
+    assert_eq!(interpret("Area[Simplex[2]]").unwrap(), "1/2");
+    assert_eq!(interpret("Area[Simplex[3]]").unwrap(), "Undefined");
+    assert_eq!(interpret("Area[Simplex[1]]").unwrap(), "Undefined");
+    // Volume is the 3-measure: defined only for the 3-simplex.
+    assert_eq!(interpret("Volume[Simplex[3]]").unwrap(), "1/6");
+    assert_eq!(interpret("Volume[Simplex[2]]").unwrap(), "Undefined");
+    assert_eq!(interpret("Volume[Simplex[4]]").unwrap(), "Undefined");
+  }
+
   // Centroid of a tetrahedron / simplex is the mean of its vertices.
   #[test]
   fn tetrahedron_simplex_centroid() {
