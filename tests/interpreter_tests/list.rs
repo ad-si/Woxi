@@ -12187,6 +12187,23 @@ mod ratios_tests {
   }
 
   #[test]
+  fn ratios_with_step() {
+    // Ratios[list, n, s] takes ratios between elements s apart.
+    assert_eq!(interpret("Ratios[{1, 2, 4, 8}, 1, 2]").unwrap(), "{4, 4}");
+    assert_eq!(
+      interpret("Ratios[{1, 3, 9, 27, 81}, 1, 2]").unwrap(),
+      "{9, 9, 9}"
+    );
+    // n applications with the step; a step of 1 is the ordinary form.
+    assert_eq!(
+      interpret("Ratios[{1, 2, 4, 8, 16, 32}, 2, 2]").unwrap(),
+      "{1, 1}"
+    );
+    // A step wider than the list yields an empty result.
+    assert_eq!(interpret("Ratios[{1, 2}, 1, 3]").unwrap(), "{}");
+  }
+
+  #[test]
   fn ratios_non_list_atom_emits_listrp() {
     // Concrete non-list arguments (numbers, NumericQ atoms, strings,
     // associations, booleans) stay unevaluated with Ratios::listrp.

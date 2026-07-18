@@ -1121,7 +1121,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "RankedMin" => Some((2, 2)),
     "Rational" => Some((2, 2)),
     "Rationalize" => Some((1, 2)),
-    "Ratios" => Some((1, 2)),
+    "Ratios" => Some((1, 3)),
     "RayleighDistribution" => Some((1, 1)),
     "Re" => Some((1, 1)),
     "ReImPlot" => Some((2, usize::MAX)),

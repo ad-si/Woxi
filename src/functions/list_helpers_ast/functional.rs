@@ -362,6 +362,44 @@ pub fn differences_step_ast(
   Ok(Expr::List(current))
 }
 
+/// Ratios[list, n, s] — n-th successive ratios taken between elements that are
+/// `s` apart (`list[[i + s]] / list[[i]]`), applied `n` times. Mirrors
+/// [`differences_step_ast`] with division in place of subtraction.
+pub fn ratios_step_ast(
+  list: &Expr,
+  n: usize,
+  s: usize,
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Ratios".to_string(),
+        args: vec![list.clone()].into(),
+      });
+    }
+  };
+
+  let s = s.max(1);
+  let mut current = items;
+  for _ in 0..n {
+    if current.len() <= s {
+      return Ok(Expr::List(vec![].into()));
+    }
+    let mut next = Vec::new();
+    for i in s..current.len() {
+      let ratio = crate::evaluator::evaluate_function_call_ast(
+        "Divide",
+        &[current[i].clone(), current[i - s].clone()],
+      )?;
+      next.push(ratio);
+    }
+    current = next.into();
+  }
+
+  Ok(Expr::List(current))
+}
+
 /// Differences[list, {n1, n2, ...}] - apply `ni` differences at level `i`.
 ///
 /// At the top level we take `n1` successive differences. Each element of

@@ -3258,6 +3258,18 @@ pub fn dispatch_list_operations(
       ));
       return Some(Ok(call));
     }
+    "Ratios" if args.len() == 3 => {
+      // Ratios[list, n, s] — n-th successive ratios with step s.
+      if let (Some(n), Some(s)) =
+        (expr_to_i128(&args[1]), expr_to_i128(&args[2]))
+        && n >= 0
+        && s >= 1
+      {
+        return Some(list_helpers_ast::ratios_step_ast(
+          &args[0], n as usize, s as usize,
+        ));
+      }
+    }
     "Ratios" if args.len() == 1 || args.len() == 2 => {
       let n = if args.len() == 2 {
         match expr_to_i128(&args[1]) {
