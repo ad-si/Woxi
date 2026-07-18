@@ -10859,6 +10859,26 @@ mod sparse_array_list_ops {
   }
 
   #[test]
+  fn diagonal() {
+    assert_eq!(
+      interpret("Normal[Diagonal[SparseArray[{{1, 2}, {3, 4}}]]]").unwrap(),
+      "{1, 4}"
+    );
+    // The offset k selects a super/sub-diagonal.
+    assert_eq!(
+      interpret(
+        "Normal[Diagonal[SparseArray[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}], 1]]"
+      )
+      .unwrap(),
+      "{2, 6}"
+    );
+    assert_eq!(
+      interpret("Head[Diagonal[SparseArray[{{1, 2}, {3, 4}}]]]").unwrap(),
+      "SparseArray"
+    );
+  }
+
+  #[test]
   fn result_stays_sparse() {
     assert_eq!(
       interpret("Head[Take[SparseArray[{1 -> 1, 3 -> 3}, 5], 3]]").unwrap(),

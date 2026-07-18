@@ -1460,6 +1460,7 @@ pub fn dispatch_list_operations(
       | "PadLeft"
       | "PadRight"
       | "ArrayPad"
+      | "Diagonal"
   ) && !args.is_empty()
     && matches!(&args[0], Expr::FunctionCall { name: h, .. } if h == "SparseArray")
   {
