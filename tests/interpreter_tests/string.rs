@@ -7269,6 +7269,36 @@ mod longest_common_subsequence_tests {
       "{}"
     );
   }
+
+  // Among several maximal-length runs, wolframscript returns the one with the
+  // smallest sum of start positions, then the smallest start in the first
+  // argument. "AGGTAB"/"GXTXAYB" has four length-1 runs (A, G, T, B); the
+  // "G" run (starts at 2 and 1, sum 3) wins over the "A" run (starts 1 and 5).
+  #[test]
+  fn ties_prefer_smallest_start_sum() {
+    assert_eq!(
+      interpret(r#"LongestCommonSubsequence["AGGTAB", "GXTXAYB"]"#).unwrap(),
+      "G"
+    );
+    // Equal start sums fall back to the smaller first-argument start: "XABY"
+    // vs "YAXB" ties X (starts 1,3) and A (starts 2,2) at sum 4, so X wins.
+    assert_eq!(
+      interpret(r#"LongestCommonSubsequence["XABY", "YAXB"]"#).unwrap(),
+      "X"
+    );
+    // "ABCD"/"CDAB" ties two length-2 runs (AB and CD) at start sum 4; AB wins
+    // on the smaller first-argument start.
+    assert_eq!(
+      interpret(r#"LongestCommonSubsequence["ABCD", "CDAB"]"#).unwrap(),
+      "AB"
+    );
+    // The same tie-break governs the positions form.
+    assert_eq!(
+      interpret(r#"LongestCommonSubsequencePositions["AGGTAB", "GXTXAYB"]"#)
+        .unwrap(),
+      "{{2, 2}, {1, 1}}"
+    );
+  }
 }
 
 mod longest_common_sequence_tests {

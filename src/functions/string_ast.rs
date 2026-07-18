@@ -9290,8 +9290,10 @@ pub fn damerau_levenshtein_distance_ast(
 }
 
 /// The (start index in `a`, start index in `b`, length) of the longest
-/// contiguous run of tokens common to `a` and `b`. Ties resolve to the
-/// earliest run. Returns (0, 0, 0) when there is no common token.
+/// contiguous run of tokens common to `a` and `b`. Among runs of the maximal
+/// length, wolframscript returns the one minimizing the sum of the two start
+/// positions, breaking a remaining tie by the smaller start in `a`. Returns
+/// (0, 0, 0) when there is no common token.
 fn longest_common_run(a: &[String], b: &[String]) -> (usize, usize, usize) {
   let n = a.len();
   let m = b.len();
@@ -9303,7 +9305,13 @@ fn longest_common_run(a: &[String], b: &[String]) -> (usize, usize, usize) {
     for j in 1..=m {
       if a[i - 1] == b[j - 1] {
         dp[i][j] = dp[i - 1][j - 1] + 1;
-        if dp[i][j] > max_len {
+        // A longer run always wins; among equal-length runs prefer the
+        // smaller (i + j) end-position sum, then the smaller i. Because every
+        // candidate compared here shares the same length, ordering by the end
+        // positions is equivalent to ordering by the start positions.
+        let better = dp[i][j] > max_len
+          || (dp[i][j] == max_len && (i + j, i) < (end_i + end_j, end_i));
+        if better {
           max_len = dp[i][j];
           end_i = i;
           end_j = j;
