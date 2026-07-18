@@ -3555,15 +3555,21 @@ pub fn dispatch_math_functions(
       }
     }
     "ContinuedFractionK" if args.len() == 2 => {
-      // ContinuedFractionK[f, {i, imin, imax}]
+      // ContinuedFractionK[f, {i, imax}] (imin defaults to 1) or
+      // ContinuedFractionK[f, {i, imin, imax}].
       if let Expr::List(ref spec) = args[1]
-        && spec.len() == 3
+        && (spec.len() == 2 || spec.len() == 3)
         && let Expr::Identifier(var) = &spec[0]
       {
-        let imin_expr = crate::evaluator::evaluate_expr_to_expr(&spec[1])
-          .unwrap_or_else(|_| spec[1].clone());
-        let imax_expr = crate::evaluator::evaluate_expr_to_expr(&spec[2])
-          .unwrap_or_else(|_| spec[2].clone());
+        let (imin_src, imax_src) = if spec.len() == 2 {
+          (Expr::Integer(1), spec[1].clone())
+        } else {
+          (spec[1].clone(), spec[2].clone())
+        };
+        let imin_expr = crate::evaluator::evaluate_expr_to_expr(&imin_src)
+          .unwrap_or_else(|_| imin_src.clone());
+        let imax_expr = crate::evaluator::evaluate_expr_to_expr(&imax_src)
+          .unwrap_or_else(|_| imax_src.clone());
         // ContinuedFractionK[1, {n, 1, Infinity}] = -1 + GoldenRatio, the
         // fixed point of x = 1/(1 + x).
         if matches!(&args[0], Expr::Integer(1))
@@ -3612,14 +3618,21 @@ pub fn dispatch_math_functions(
     "ContinuedFractionK" if args.len() == 3 => {
       // ContinuedFractionK[f, g, {n, nmin, nmax}] =
       //   f1/(g1 + f2/(g2 + ... + fk/gk)), with fi, gi = f, g at n = i.
+      // The iterator is either {n, nmax} (nmin defaults to 1) or
+      // {n, nmin, nmax}, matching Table's iterator forms.
       if let Expr::List(ref spec) = args[2]
-        && spec.len() == 3
+        && (spec.len() == 2 || spec.len() == 3)
         && let Expr::Identifier(var) = &spec[0]
       {
-        let nmin_expr = crate::evaluator::evaluate_expr_to_expr(&spec[1])
-          .unwrap_or_else(|_| spec[1].clone());
-        let nmax_expr = crate::evaluator::evaluate_expr_to_expr(&spec[2])
-          .unwrap_or_else(|_| spec[2].clone());
+        let (nmin_src, nmax_src) = if spec.len() == 2 {
+          (Expr::Integer(1), spec[1].clone())
+        } else {
+          (spec[1].clone(), spec[2].clone())
+        };
+        let nmin_expr = crate::evaluator::evaluate_expr_to_expr(&nmin_src)
+          .unwrap_or_else(|_| nmin_src.clone());
+        let nmax_expr = crate::evaluator::evaluate_expr_to_expr(&nmax_src)
+          .unwrap_or_else(|_| nmax_src.clone());
         if let (Expr::Integer(nmin), Expr::Integer(nmax)) =
           (&nmin_expr, &nmax_expr)
         {

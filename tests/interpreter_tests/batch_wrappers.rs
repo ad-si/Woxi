@@ -3189,6 +3189,25 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn continued_fraction_k_two_element_iterator() {
+    // The iterator {k, kmax} defaults kmin to 1, matching Table. Same value as
+    // the explicit {k, 1, kmax} form.
+    assert_eq!(interpret("ContinuedFractionK[k, {k, 3}]").unwrap(), "7/10");
+    assert_eq!(
+      interpret("ContinuedFractionK[k, {k, 5}]").unwrap(),
+      "157/225"
+    );
+    // Three-argument (numerator, denominator) form with a two-element iterator.
+    assert_eq!(
+      interpret("ContinuedFractionK[1, n, {n, 3}]").unwrap(),
+      "7/10"
+    );
+    assert_eq!(
+      interpret("ContinuedFractionK[2 n - 1, n^2, {n, 4}]").unwrap(),
+      "228/379"
+    );
+  }
+  #[test]
   fn counts_by_odd_q() {
     assert_eq!(
       interpret("CountsBy[{1, 2, 3, 4, 5}, OddQ]").unwrap(),
