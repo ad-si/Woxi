@@ -854,6 +854,45 @@ mod region_measure {
     );
   }
 
+  // A two-vector Parallelepiped is a planar region: its measure/area is the
+  // spanned area |Det[{v1, v2}]| and its centroid is the center of the
+  // parallelogram. Volume/Area are Undefined when the dimension does not match.
+  #[test]
+  fn planar_parallelepiped() {
+    assert_eq!(
+      interpret("RegionMeasure[Parallelepiped[{0, 0}, {{1, 0}, {1, 1}}]]")
+        .unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Area[Parallelepiped[{0, 0}, {{2, 0}, {1, 3}}]]").unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[Parallelepiped[{1, 1}, {{2, 0}, {0, 2}}]]")
+        .unwrap(),
+      "{2, 2}"
+    );
+    // A 2-D parallelepiped has no 3-volume; a 3-D one has no 2-area.
+    assert_eq!(
+      interpret("Volume[Parallelepiped[{0, 0}, {{1, 0}, {1, 1}}]]").unwrap(),
+      "Undefined"
+    );
+    assert_eq!(
+      interpret("Area[Parallelepiped[{0,0,0}, {{1,0,0}, {0,1,0}, {0,0,1}}]]")
+        .unwrap(),
+      "Undefined"
+    );
+    // The 3-D parallelepiped centroid generalizes to p + (v1 + v2 + v3)/2.
+    assert_eq!(
+      interpret(
+        "RegionCentroid[Parallelepiped[{0,0,0}, {{2,0,0}, {0,2,0}, {0,0,2}}]]"
+      )
+      .unwrap(),
+      "{1, 1, 1}"
+    );
+  }
+
   // The same shapes via RegionMeasure (intrinsic dimension); a 2-simplex
   // and Area give the triangle area.
   #[test]

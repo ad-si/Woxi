@@ -7905,7 +7905,11 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
       // which reduces to |Det[{v1, v2}]| in the plane but also covers
       // parallelograms embedded in higher-dimensional space.
       // Parallelogram[] is the unit square {0,0} + {{0,1},{1,0}}.
-      "Parallelogram" => {
+      // A two-vector Parallelepiped is the same planar region; the
+      // three-vector form falls through to the volume arm below.
+      "Parallelogram" | "Parallelepiped"
+        if parallelogram_parts(args).is_some() =>
+      {
         let Some((_, v1, v2)) = parallelogram_parts(args) else {
           return unevaluated();
         };
@@ -10533,14 +10537,20 @@ fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
       }
       // Parallelepiped[p, {v1, v2, v3}] — Volume = |Det[{v1, v2, v3}]|.
       "Parallelepiped" if args.len() == 2 => {
-        if let Expr::List(vs) = &args[1]
-          && vs.len() == 3
-          && vs
-            .iter()
-            .all(|v| matches!(v, Expr::List(c) if c.len() == 3))
-        {
-          let rows = vs.iter().cloned().collect();
-          return det_measure(rows, 1);
+        if let Expr::List(vs) = &args[1] {
+          if vs.len() == 3
+            && vs
+              .iter()
+              .all(|v| matches!(v, Expr::List(c) if c.len() == 3))
+          {
+            let rows = vs.iter().cloned().collect();
+            return det_measure(rows, 1);
+          }
+          // A parallelepiped spanned by fewer than three vectors is not a
+          // 3-D solid, so its 3-volume is Undefined.
+          if vs.len() < 3 {
+            return undefined();
+          }
         }
       }
       // A Sphere is a 2-D surface and the following are regions of dimension
@@ -11029,13 +11039,22 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
       // A Tetrahedron is a 3-D solid, so its 2-area is Undefined.
       "Tetrahedron" => Ok(Expr::Identifier("Undefined".to_string())),
       // A Parallelogram is always a planar (2-D) region, so its Area equals
-      // its RegionMeasure. Delegate to keep the two in sync.
+      // its RegionMeasure. Delegate to keep the two in sync. A two-vector
+      // Parallelepiped is likewise planar; any other Parallelepiped is a
+      // higher-dimensional solid with Undefined 2-area.
       "Parallelogram" => {
         crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
           name: "RegionMeasure".to_string(),
           args: vec![expr.clone()].into(),
         })
       }
+      "Parallelepiped" if parallelogram_parts(args).is_some() => {
+        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "RegionMeasure".to_string(),
+          args: vec![expr.clone()].into(),
+        })
+      }
+      "Parallelepiped" => Ok(Expr::Identifier("Undefined".to_string())),
       // Simplex[{p0, p1, p2}] in the plane — the triangle area |Det[edges]|/2.
       // A higher-dimensional simplex has Undefined 2-area.
       "Simplex" if args.len() == 1 => {
@@ -11516,6 +11535,47 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
               },
             ]
             .into(),
+          })
+          .collect();
+        crate::evaluator::evaluate_expr_to_expr(&Expr::List(coords.into()))
+      }
+      // Parallelepiped[p, {v1, ..., vk}] — centroid is p + (v1 + ... + vk)/2.
+      "Parallelepiped" if args.len() == 2 => {
+        let (Expr::List(p), Expr::List(vecs)) = (&args[0], &args[1]) else {
+          return unevaluated();
+        };
+        let dim = p.len();
+        if dim == 0 || vecs.is_empty() {
+          return unevaluated();
+        }
+        let mut cols: Vec<&[Expr]> = Vec::with_capacity(vecs.len());
+        for v in vecs.iter() {
+          let Expr::List(vc) = v else {
+            return unevaluated();
+          };
+          if vc.len() != dim {
+            return unevaluated();
+          }
+          cols.push(vc);
+        }
+        let coords: Vec<Expr> = (0..dim)
+          .map(|d| {
+            let sum: Vec<Expr> = cols.iter().map(|vc| vc[d].clone()).collect();
+            Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: vec![
+                p[d].clone(),
+                Expr::BinaryOp {
+                  op: BinaryOperator::Divide,
+                  left: Box::new(Expr::FunctionCall {
+                    name: "Plus".to_string(),
+                    args: sum.into(),
+                  }),
+                  right: Box::new(Expr::Integer(2)),
+                },
+              ]
+              .into(),
+            }
           })
           .collect();
         crate::evaluator::evaluate_expr_to_expr(&Expr::List(coords.into()))
