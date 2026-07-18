@@ -4575,7 +4575,35 @@ pub fn factorial_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return Ok(uneval()),
   };
 
+  // The falling factorial x(x-1)...(x-r+1). Built explicitly as a product so a
+  // symbolic base expands (e.g. FactorialPower[a, 2] -> (-1 + a)*a), matching
+  // wolframscript's FactorialMoment output; a plain FactorialPower[a, 2] call
+  // would stay unevaluated. Non-integer or negative orders fall back to
+  // FactorialPower, which handles them (or stays symbolic).
   let factorial_power = |x: &Expr, r: &Expr| {
+    if let Expr::Integer(rr) = r
+      && *rr >= 0
+    {
+      if *rr == 0 {
+        return Ok(Expr::Integer(1));
+      }
+      let factors: Vec<Expr> = (0..*rr)
+        .map(|k| {
+          if k == 0 {
+            x.clone()
+          } else {
+            Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: vec![x.clone(), Expr::Integer(-k)].into(),
+            }
+          }
+        })
+        .collect();
+      return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: factors.into(),
+      });
+    }
     crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
       name: "FactorialPower".to_string(),
       args: vec![x.clone(), r.clone()].into(),

@@ -2989,6 +2989,25 @@ mod factorial_moment {
     );
   }
 
+  // Symbolic data expands the falling factorial into a product, matching
+  // wolframscript (FactorialPower[a, 2] -> (-1 + a)*a).
+  #[test]
+  fn symbolic_data() {
+    assert_eq!(
+      interpret("FactorialMoment[{a, b, c}, 2]").unwrap(),
+      "((-1 + a)*a + (-1 + b)*b + (-1 + c)*c)/3"
+    );
+    assert_eq!(
+      interpret("FactorialMoment[{a, b}, 3]").unwrap(),
+      "((-2 + a)*(-1 + a)*a + (-2 + b)*(-1 + b)*b)/2"
+    );
+    assert_eq!(interpret("FactorialMoment[{a, b, c}, 0]").unwrap(), "1");
+    assert_eq!(
+      interpret("FactorialMoment[{a, b, c}, 1]").unwrap(),
+      "(a + b + c)/3"
+    );
+  }
+
   // Distribution factorial moments E[X(X-1)...(X-r+1)].
   #[test]
   fn poisson() {
