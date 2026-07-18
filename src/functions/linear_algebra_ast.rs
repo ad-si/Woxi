@@ -4,7 +4,9 @@
 
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
-use crate::functions::math_ast::{make_sqrt, try_eval_to_f64};
+use crate::functions::math_ast::{
+  expr_to_rational, make_sqrt, try_eval_to_f64,
+};
 use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 /// Transpose a matrix (Vec<Vec<Expr>>)
@@ -3613,27 +3615,10 @@ fn complex_2x2_eigenvectors(
   )))
 }
 
-/// Extract rational parts (numerator, denominator) from an Expr.
-fn expr_to_rational_parts(e: &Expr) -> Option<(i128, i128)> {
-  match e {
-    Expr::Integer(n) => Some((*n, 1)),
-    Expr::FunctionCall { name, args }
-      if name == "Rational" && args.len() == 2 =>
-    {
-      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
-        Some((*n, *d))
-      } else {
-        None
-      }
-    }
-    _ => None,
-  }
-}
-
 /// Scale a vector of rational Exprs to integer entries (clear denominators, reduce GCD).
 fn scale_to_integers(vec: &[Expr]) -> Vec<Expr> {
   let rationals: Vec<Option<(i128, i128)>> =
-    vec.iter().map(expr_to_rational_parts).collect();
+    vec.iter().map(expr_to_rational).collect();
   if rationals.iter().any(|r| r.is_none()) {
     return vec.to_vec();
   }
@@ -7191,19 +7176,6 @@ fn simplify_radical_factor(expr: &Expr) -> Expr {
       None
     }
   };
-  let extract_rational = |e: &Expr| -> Option<(i128, i128)> {
-    if let Expr::Integer(n) = e {
-      return Some((*n, 1));
-    }
-    if let Expr::FunctionCall { name, args } = e
-      && name == "Rational"
-      && args.len() == 2
-      && let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1])
-    {
-      return Some((*n, *d));
-    }
-    None
-  };
   // Pull factors out of Times (FunctionCall or BinaryOp) into a flat Vec.
   let mut factors: Vec<Expr> = Vec::new();
   let mut sign: i128 = 1;
@@ -7256,7 +7228,7 @@ fn simplify_radical_factor(expr: &Expr) -> Expr {
     } = f
     {
       sign = -sign;
-      if let Some((n, d)) = extract_rational(operand) {
+      if let Some((n, d)) = expr_to_rational(operand) {
         coeff_num *= n;
         coeff_den *= d;
         continue;
@@ -7264,7 +7236,7 @@ fn simplify_radical_factor(expr: &Expr) -> Expr {
       other.push(*operand.clone());
       continue;
     }
-    if let Some((n, d)) = extract_rational(f) {
+    if let Some((n, d)) = expr_to_rational(f) {
       coeff_num *= n;
       coeff_den *= d;
       continue;
@@ -7273,7 +7245,7 @@ fn simplify_radical_factor(expr: &Expr) -> Expr {
       && name == "Sqrt"
       && args.len() == 1
     {
-      if let Some((n, d)) = extract_rational(&args[0])
+      if let Some((n, d)) = expr_to_rational(&args[0])
         && n > 0
         && d > 0
       {
@@ -7320,7 +7292,7 @@ fn simplify_radical_factor(expr: &Expr) -> Expr {
       };
       // Power[base, ±1/2] with integer/Rational base.
       if (exp_kind == 1 || exp_kind == -1)
-        && let Some((bn, bd)) = extract_rational(base)
+        && let Some((bn, bd)) = expr_to_rational(base)
         && bn > 0
         && bd > 0
       {
@@ -7350,7 +7322,7 @@ fn simplify_radical_factor(expr: &Expr) -> Expr {
         if let Expr::FunctionCall { name: sn, args: sa } = base
           && sn == "Sqrt"
           && sa.len() == 1
-          && let Some((sn_n, sn_d)) = extract_rational(&sa[0])
+          && let Some((sn_n, sn_d)) = expr_to_rational(&sa[0])
           && sn_n > 0
           && sn_d > 0
         {
@@ -7384,7 +7356,7 @@ fn simplify_radical_factor(expr: &Expr) -> Expr {
                 && args.len() == 2
                 && matches!((&args[0], &args[1]), (Expr::Integer(1), Expr::Integer(2)))
           )
-          && let Some((bn, bd)) = extract_rational(ibase)
+          && let Some((bn, bd)) = expr_to_rational(ibase)
           && bn > 0
           && bd > 0
         {

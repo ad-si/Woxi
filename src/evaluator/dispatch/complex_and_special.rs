@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::functions::math_ast::{is_sqrt, make_sqrt};
+use crate::functions::math_ast::{expr_to_rational, is_sqrt, make_sqrt};
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
 };
@@ -11875,8 +11875,6 @@ fn find_sequence_function(
     args: vec![data_expr.clone(), var_expr.clone()].into(),
   })
 }
-
-use crate::functions::math_ast::expr_to_rational;
 
 /// Convert a rational (n, d) back to an Expr.
 fn rational_to_expr(n: i128, d: i128) -> Expr {

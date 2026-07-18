@@ -2,7 +2,7 @@
 use super::*;
 use crate::InterpreterError;
 use crate::functions::math_ast::{
-  expr_to_f64, expr_to_i128, gcd as gcd_i128, is_sqrt,
+  expr_to_f64, expr_to_i128, expr_to_rational, gcd as gcd_i128, is_sqrt,
 };
 use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
@@ -249,12 +249,11 @@ fn handle_power(
   exp: &Expr,
 ) -> Result<Option<Vec<i128>>, InterpreterError> {
   // Case: a^(p/q) where a is rational
-  if let Some(a_val) = extract_rational(base)
-    && let Some((p, q)) = extract_rational_pair(exp)
+  if let Some((a_num, a_den)) = expr_to_rational(base)
+    && let Some((p, q)) = expr_to_rational(exp)
   {
     // α = (a_num/a_den)^(p/q)
     // α^q = (a_num/a_den)^p
-    let (a_num, a_den) = a_val;
     if q > 0 && q <= 20 && p.abs() <= 20 {
       let q_us = q as u32;
       let p_abs = p.unsigned_abs() as u32;
@@ -328,7 +327,7 @@ fn handle_power(
   // Case: algebraic ^ (1/q) — a q-th root of an algebraic number.
   // If p(t) is the minpoly of base, then α = base^(1/q) satisfies p(α^q) = 0,
   // so x^q substituted into p(t) gives a polynomial vanishing at α.
-  if let Some((p, q)) = extract_rational_pair(exp)
+  if let Some((p, q)) = expr_to_rational(exp)
     && p == 1
     && (2..=10).contains(&q)
   {
@@ -438,7 +437,7 @@ fn handle_complex_algebraic(
   // b*I has minpoly: if b is rational p/q, then (x/b)^2 + 1 = 0 → q^2*x^2 + p^2 = 0... no
   // Actually b*I: (α/(b))^2 = -1 → α^2 = -b^2 → α^2 + b^2 = 0
   // If b = p/q: q^2*x^2 + p^2 = 0
-  if let (Some(re_c), Some((p, q))) = (re_poly, extract_rational(im)) {
+  if let (Some(re_c), Some((p, q))) = (re_poly, expr_to_rational(im)) {
     // minpoly of b*I is q^2*x^2 + p^2
     let im_poly = vec![p * p, 0, q * q];
     let numeric_val =
@@ -1378,13 +1377,6 @@ fn negate_var_in_poly(coeffs: &[i128]) -> Vec<i128> {
     .enumerate()
     .map(|(i, &c)| if i % 2 == 1 { -c } else { c })
     .collect()
-}
-
-use crate::functions::math_ast::expr_to_rational as extract_rational;
-
-/// Extract a rational pair (p, q) from a Rational expression or integer
-fn extract_rational_pair(expr: &Expr) -> Option<(i128, i128)> {
-  extract_rational(expr)
 }
 
 /// Collect factors from a Times expression

@@ -1,6 +1,8 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::functions::math_ast::{gcd as gcd_i128, gcd_u64, make_sqrt};
+use crate::functions::math_ast::{
+  expr_to_rational, gcd as gcd_i128, gcd_u64, make_sqrt,
+};
 use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator, unevaluated};
 
 /// Columnwise quartile-family statistic for a matrix argument.
@@ -4946,10 +4948,8 @@ pub fn dispatch_math_functions(
         }
         // All-rational input: combine into a rational degree value and
         // fall through to the existing rational-path conversion below.
-        let parts: Option<Vec<(i128, i128)>> = items
-          .iter()
-          .map(crate::functions::math_ast::expr_to_rational)
-          .collect();
+        let parts: Option<Vec<(i128, i128)>> =
+          items.iter().map(expr_to_rational).collect();
         if let Some(p) = parts
           && p.len() == 3
         {
@@ -5004,9 +5004,7 @@ pub fn dispatch_math_functions(
         }
       }
 
-      if let Some((num, den)) =
-        crate::functions::math_ast::expr_to_rational(&val)
-      {
+      if let Some((num, den)) = expr_to_rational(&val) {
         let d = num / den;
         let remainder = num - d * den;
         let min_num = remainder * 60;
@@ -5532,9 +5530,7 @@ pub fn dispatch_math_functions(
 /// `n <= 3` (e.g. `QGamma[3, q]` → `1 + q`) and otherwise stays unevaluated.
 /// Non-integer first arguments are left unevaluated.
 fn qgamma_ast(z_expr: &Expr, q_expr: &Expr) -> Result<Expr, InterpreterError> {
-  use crate::functions::math_ast::{
-    expr_to_f64, expr_to_i128, expr_to_rational,
-  };
+  use crate::functions::math_ast::{expr_to_f64, expr_to_i128};
 
   let unevaluated = || {
     Ok(Expr::FunctionCall {
@@ -5609,7 +5605,7 @@ fn cantor_staircase_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
   }
 
   // Handle rationals
-  if let Some((num, den)) = extract_rational(arg) {
+  if let Some((num, den)) = expr_to_rational(arg) {
     if num <= 0 {
       return Ok(Expr::Integer(0));
     }
@@ -5637,8 +5633,6 @@ fn cantor_staircase_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
     args: vec![arg.clone()].into(),
   })
 }
-
-use crate::functions::math_ast::expr_to_rational as extract_rational;
 
 /// Compute cantor staircase for exact rational p/q where 0 < p/q < 1
 fn cantor_staircase_rational(p: i128, q: i128) -> Expr {
@@ -5813,7 +5807,7 @@ fn qfactorial_ast(
   // `QFactorial[n, q]` unevaluated rather than expanding to a rational
   // form. The rational form blows up combinatorially for Series and Plot.
   if crate::functions::math_ast::expr_to_f64(q_expr).is_none()
-    && crate::functions::math_ast::expr_to_rational(q_expr).is_none()
+    && expr_to_rational(q_expr).is_none()
   {
     return Ok(Expr::FunctionCall {
       name: "QFactorial".to_string(),
@@ -5859,8 +5853,6 @@ fn qfactorial_ast(
 /// Find minimum linear recurrence coefficients {c1, c2, ..., cd} such that
 /// a[n] = c1*a[n-1] + c2*a[n-2] + ... + cd*a[n-d] for all valid n.
 fn find_linear_recurrence_impl(seq: &[Expr]) -> Result<Expr, InterpreterError> {
-  use crate::functions::math_ast::expr_to_rational;
-
   // Convert sequence to rationals
   let mut rats: Vec<(i128, i128)> = Vec::new();
   for e in seq {

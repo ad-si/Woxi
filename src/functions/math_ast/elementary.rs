@@ -1,6 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
+use crate::functions::math_ast::expr_to_rational;
 use crate::syntax::{
   BinaryOperator, Expr, ExprForm, UnaryOperator, expr_to_string, unevaluated,
 };
@@ -3413,23 +3414,6 @@ fn subdivide_scalar_at(
   evaluate_expr_to_expr(&result)
 }
 
-/// Extract an exact (numerator, denominator) pair from an Integer or Rational.
-fn expr_to_rational_pair(e: &Expr) -> Option<(i128, i128)> {
-  match e {
-    Expr::Integer(n) => Some((*n, 1)),
-    Expr::FunctionCall { name, args }
-      if name == "Rational" && args.len() == 2 =>
-    {
-      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
-        Some((*n, *d))
-      } else {
-        None
-      }
-    }
-    _ => None,
-  }
-}
-
 /// Round a raw step up to the nearest "nice" number m * 10^k with
 /// m in {1, 2, 2.5, 5}, returned as an exact (numerator, denominator).
 fn nice_step_rational(raw: f64) -> Option<(i128, i128)> {
@@ -3593,17 +3577,16 @@ pub fn find_divisions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) if items.len() == 2 || items.len() == 3 => items,
     _ => return unevaluated(),
   };
-  let (Some(min), Some(max)) = (
-    expr_to_rational_pair(&range[0]),
-    expr_to_rational_pair(&range[1]),
-  ) else {
+  let (Some(min), Some(max)) =
+    (expr_to_rational(&range[0]), expr_to_rational(&range[1]))
+  else {
     return unevaluated();
   };
   let (min, max) = (reduce_rat(min.0, min.1), reduce_rat(max.0, max.1));
 
   // Optional spacing unit dx (the 3-element range form). Must be positive.
   let dx = if range.len() == 3 {
-    match expr_to_rational_pair(&range[2]) {
+    match expr_to_rational(&range[2]) {
       Some(d) if d.0 > 0 => Some(reduce_rat(d.0, d.1)),
       _ => return unevaluated(),
     }
