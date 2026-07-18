@@ -295,6 +295,15 @@ mod arc_length {
       "Undefined"
     );
   }
+
+  // Only the 1-simplex is a curve (a unit segment); higher standard simplices
+  // are filled regions with Undefined arc length.
+  #[test]
+  fn standard_simplex() {
+    assert_eq!(interpret("ArcLength[Simplex[1]]").unwrap(), "1");
+    assert_eq!(interpret("ArcLength[Simplex[2]]").unwrap(), "Undefined");
+    assert_eq!(interpret("ArcLength[Simplex[3]]").unwrap(), "Undefined");
+  }
 }
 
 mod perimeter {
@@ -403,6 +412,21 @@ mod region_centroid {
   #[test]
   fn unit_disk() {
     assert_eq!(interpret("RegionCentroid[Disk[]]").unwrap(), "{0, 0}");
+  }
+
+  // Standard n-simplex: centroid is the mean of {0, e1, …, en}, i.e.
+  // {1/(n+1), …, 1/(n+1)}.
+  #[test]
+  fn standard_simplex() {
+    assert_eq!(interpret("RegionCentroid[Simplex[1]]").unwrap(), "{1/2}");
+    assert_eq!(
+      interpret("RegionCentroid[Simplex[2]]").unwrap(),
+      "{1/3, 1/3}"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[Simplex[3]]").unwrap(),
+      "{1/4, 1/4, 1/4}"
+    );
   }
 
   #[test]
@@ -1548,6 +1572,24 @@ mod region_bounds {
   #[test]
   fn unevaluated() {
     assert_eq!(interpret("RegionBounds[x]").unwrap(), "RegionBounds[x]");
+  }
+
+  // The standard n-simplex spans [0, 1] in each coordinate; the explicit
+  // vertex form is bounded by the min/max over its vertices.
+  #[test]
+  fn simplex() {
+    assert_eq!(
+      interpret("RegionBounds[Simplex[2]]").unwrap(),
+      "{{0, 1}, {0, 1}}"
+    );
+    assert_eq!(
+      interpret("RegionBounds[Simplex[3]]").unwrap(),
+      "{{0, 1}, {0, 1}, {0, 1}}"
+    );
+    assert_eq!(
+      interpret("RegionBounds[Simplex[{{0, 0}, {3, 0}, {0, 3}}]]").unwrap(),
+      "{{0, 3}, {0, 3}}"
+    );
   }
 
   #[test]

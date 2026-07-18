@@ -8352,6 +8352,19 @@ fn compute_region_bounds(expr: &Expr) -> Result<Expr, InterpreterError> {
     {
       return Ok(points_bounds(points).unwrap_or_else(unevaluated));
     }
+    // Simplex[n]: the standard n-simplex spans [0, 1] in each of its n
+    // coordinates. Simplex[{p0, …, pk}]: the box over its vertices.
+    if name == "Simplex" && args.len() == 1 {
+      if let Expr::Integer(n) = &args[0]
+        && *n >= 1
+      {
+        let pair = Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into());
+        return Ok(Expr::List(vec![pair; *n as usize].into()));
+      }
+      if let Expr::List(points) = &args[0] {
+        return Ok(points_bounds(points).unwrap_or_else(unevaluated));
+      }
+    }
     // Point[{x, y, ...}] — a degenerate box {{x, x}, {y, y}, ...}.
     if name == "Point"
       && args.len() == 1
@@ -11630,6 +11643,16 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
       }
       // Tetrahedron / Simplex — the centroid is the mean of the vertices.
       "Tetrahedron" | "Simplex" => {
+        // Simplex[n]: the standard n-simplex has vertices {0, e1, …, en}, so
+        // its centroid is the mean {1/(n+1), …, 1/(n+1)} (n coordinates).
+        if name == "Simplex"
+          && args.len() == 1
+          && let Expr::Integer(n) = &args[0]
+          && *n >= 1
+        {
+          let coord = crate::functions::math_ast::make_rational(1, *n + 1);
+          return Ok(Expr::List(vec![coord; *n as usize].into()));
+        }
         if args.len() == 1
           && let Expr::List(pts) = &args[0]
           && pts.len() >= 2
@@ -12454,6 +12477,22 @@ fn compute_arc_length(expr: &Expr) -> Result<Expr, InterpreterError> {
       // Ellipsoid) are not curves, so their arc length is Undefined.
       "Disk" | "Polygon" | "Triangle" | "Rectangle" | "Ball" | "Ellipsoid" => {
         Ok(Expr::Identifier("Undefined".to_string()))
+      }
+      // Simplex[n]: only the 1-simplex is a curve, with arc length 1; every
+      // other standard simplex is a filled region, so its arc length is
+      // Undefined.
+      "Simplex"
+        if args.len() == 1
+          && matches!(&args[0], Expr::Integer(n) if *n >= 0) =>
+      {
+        let Expr::Integer(n) = &args[0] else {
+          unreachable!()
+        };
+        if *n == 1 {
+          Ok(Expr::Integer(1))
+        } else {
+          Ok(Expr::Identifier("Undefined".to_string()))
+        }
       }
       _ => unevaluated(),
     },
