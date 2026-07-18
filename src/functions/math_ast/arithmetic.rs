@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::functions::math_ast::gcd as gcd_i128;
+use crate::functions::math_ast::{expr_to_rational, gcd as gcd_i128};
 use crate::syntax::{
   BinaryOperator, Expr, UnaryOperator, expr_to_string, unevaluated,
 };
@@ -9833,7 +9833,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     };
     if let (Some(ib), Some(ie)) = (inner_base, inner_exp)
       && matches!(ib, Expr::Integer(-1))
-      && let Some((p, q)) = extract_rational_pair(ie)
+      && let Some((p, q)) = expr_to_rational(ie)
     {
       let new_p = p * n;
       let new_q = q;
@@ -9876,7 +9876,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       };
       if let (Some(ib), Some(ie)) = (inner_base, inner_exp)
         && matches!(ib, Expr::Integer(-1))
-        && let Some((p, q)) = extract_rational_pair(ie)
+        && let Some((p, q)) = expr_to_rational(ie)
       {
         let new_p = n * (q + p);
         let new_q = q;
@@ -11025,20 +11025,6 @@ fn try_extract_i_pi_rational_multiple(expr: &Expr) -> Option<(i128, i128)> {
 
   if has_i && has_pi {
     Some((coeff_numer, coeff_denom))
-  } else {
-    None
-  }
-}
-
-/// Extract (p, q) from a Rational[p, q] FunctionCall expression.
-fn extract_rational_pair(expr: &Expr) -> Option<(i128, i128)> {
-  if let Expr::FunctionCall { name, args } = expr
-    && name == "Rational"
-    && args.len() == 2
-    && let Expr::Integer(p) = &args[0]
-    && let Expr::Integer(q) = &args[1]
-  {
-    Some((*p, *q))
   } else {
     None
   }

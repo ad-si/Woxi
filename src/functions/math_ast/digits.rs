@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::functions::math_ast::gcd as gcd_i128;
+use crate::functions::math_ast::{expr_to_rational, gcd as gcd_i128};
 use crate::syntax::{
   BinaryOperator, Expr, UnaryOperator, expr_to_string, unevaluated,
 };
@@ -1859,24 +1859,6 @@ fn bigfloat_to_digits(
   Ok((ascii_digits, exponent as i64))
 }
 
-/// Extract numerator and denominator from a Rational expression.
-/// Returns Some((numer, denom)) for Rational[n,d] or Integer n, None otherwise.
-fn extract_rational_for_digits(expr: &Expr) -> Option<(i128, i128)> {
-  match expr {
-    Expr::Integer(n) => Some((*n, 1)),
-    Expr::FunctionCall { name, args }
-      if name == "Rational" && args.len() == 2 =>
-    {
-      if let (Expr::Integer(a), Expr::Integer(b)) = (&args[0], &args[1]) {
-        Some((*a, *b))
-      } else {
-        None
-      }
-    }
-    _ => None,
-  }
-}
-
 /// Convert a decimal-literal Real to an exact rational `(numerator, denominator)`
 /// by parsing its {:?} representation. This preserves the decimal value the
 /// user typed (e.g. 123.45 → (12345, 100)) rather than the binary-floating
@@ -2137,7 +2119,7 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // For rationals, use long division with cycle detection
   if let Some((numer, denom)) =
-    rational_from_real.or_else(|| extract_rational_for_digits(&abs_expr))
+    rational_from_real.or_else(|| expr_to_rational(&abs_expr))
     && denom != 0
   {
     if !treat_as_explicit {

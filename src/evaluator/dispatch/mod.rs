@@ -10958,8 +10958,10 @@ fn extract_rgb_rational(color: &Expr) -> Option<[(i128, i128); 3]> {
 
 /// Convert an expression to a rational (numerator, denominator) pair.
 fn expr_to_rational(expr: &Expr) -> Option<(i128, i128)> {
+  if let Some(pair) = crate::functions::math_ast::expr_to_rational(expr) {
+    return Some(pair);
+  }
   match expr {
-    Expr::Integer(n) => Some((*n, 1)),
     Expr::Real(f) => {
       // Try to convert common float values to exact rationals
       if *f == 0.0 {
@@ -10971,15 +10973,6 @@ fn expr_to_rational(expr: &Expr) -> Option<(i128, i128)> {
         let n = (*f * 1000.0).round() as i128;
         let g = gcd_i128(n.abs(), 1000);
         Some((n / g, 1000 / g))
-      }
-    }
-    Expr::FunctionCall { name, args }
-      if name == "Rational" && args.len() == 2 =>
-    {
-      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
-        Some((*n, *d))
-      } else {
-        None
       }
     }
     _ => None,

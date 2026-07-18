@@ -9004,17 +9004,10 @@ fn factor_common_power_base(terms: &[Expr]) -> Option<Expr> {
   }
 
   fn extract_rational_exp(exp: &Expr) -> Option<(i128, i128)> {
+    if let Some(pair) = crate::functions::math_ast::expr_to_rational(exp) {
+      return Some(pair);
+    }
     match exp {
-      Expr::Integer(n) => Some((*n, 1)),
-      Expr::FunctionCall { name, args }
-        if name == "Rational" && args.len() == 2 =>
-      {
-        if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
-          Some((*n, *d))
-        } else {
-          None
-        }
-      }
       // Handle Times[-1, Rational[p, q]] → (-p, q)
       Expr::FunctionCall { name, args }
         if name == "Times"
