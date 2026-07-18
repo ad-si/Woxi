@@ -3179,11 +3179,76 @@ pub fn log2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// ArcSin[x] - Inverse sine (symbolic)
+/// Numeric evaluation of an inverse trig / hyperbolic function at a complex
+/// float argument, via its principal-branch closed form. Returns `None` for
+/// non-complex or exact arguments (which stay symbolic, matching wolframscript).
+fn try_complex_inverse_trig(
+  name: &str,
+  arg: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  if !contains_inexact_real(arg) {
+    return None;
+  }
+  let (x, y) = crate::functions::math_ast::try_extract_complex_float(arg)?;
+  if y == 0.0 {
+    return None;
+  }
+  let cmul = |a: (f64, f64), b: (f64, f64)| {
+    (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0)
+  };
+  // Principal complex square root and logarithm.
+  let csqrt = |a: f64, b: f64| {
+    let r = a.hypot(b);
+    let re = ((r + a) / 2.0).sqrt();
+    let im = ((r - a) / 2.0).sqrt() * if b < 0.0 { -1.0 } else { 1.0 };
+    (re, im)
+  };
+  let cln = |a: f64, b: f64| (a.hypot(b).ln(), b.atan2(a));
+  let (rr, ri) = match name {
+    // ArcSin[z] = -I Log[I z + Sqrt[1 - z^2]]
+    "ArcSin" => {
+      let z2 = cmul((x, y), (x, y));
+      let s = csqrt(1.0 - z2.0, -z2.1);
+      let l = cln(-y + s.0, x + s.1);
+      (l.1, -l.0)
+    }
+    // ArcCos[z] = Pi/2 - ArcSin[z]
+    "ArcCos" => {
+      let z2 = cmul((x, y), (x, y));
+      let s = csqrt(1.0 - z2.0, -z2.1);
+      let l = cln(-y + s.0, x + s.1);
+      (std::f64::consts::FRAC_PI_2 - l.1, l.0)
+    }
+    // ArcTan[z] = (I/2) (Log[1 - I z] - Log[1 + I z])
+    "ArcTan" => {
+      let l1 = cln(1.0 + y, -x);
+      let l2 = cln(1.0 - y, x);
+      (-(l1.1 - l2.1) / 2.0, (l1.0 - l2.0) / 2.0)
+    }
+    // ArcSinh[z] = Log[z + Sqrt[z^2 + 1]]
+    "ArcSinh" => {
+      let z2 = cmul((x, y), (x, y));
+      let s = csqrt(z2.0 + 1.0, z2.1);
+      cln(x + s.0, y + s.1)
+    }
+    _ => return None,
+  };
+  // A non-finite component means the argument hit a pole (e.g. ArcTan[±I]);
+  // wolframscript returns Indeterminate there.
+  if !rr.is_finite() || !ri.is_finite() {
+    return Some(Ok(Expr::Identifier("Indeterminate".to_string())));
+  }
+  Some(build_complex_float_result(rr, ri))
+}
+
 pub fn arcsin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "ArcSin expects exactly 1 argument".into(),
     ));
+  }
+  if let Some(r) = try_complex_inverse_trig("ArcSin", &args[0]) {
+    return r;
   }
   // ArcSin is monotonic increasing on [-1, 1]: map over interval spans.
   if let Some(r) =
@@ -3346,6 +3411,9 @@ pub fn arccos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ArcCos expects exactly 1 argument".into(),
     ));
   }
+  if let Some(r) = try_complex_inverse_trig("ArcCos", &args[0]) {
+    return r;
+  }
   // ArcCos is monotonic decreasing on [-1, 1]: map over interval spans
   // (normalization re-sorts the swapped endpoints).
   if let Some(r) =
@@ -3503,6 +3571,9 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "ArcTan expects exactly 1 argument".into(),
     ));
+  }
+  if let Some(r) = try_complex_inverse_trig("ArcTan", &args[0]) {
+    return r;
   }
   // ArcTan is monotonic increasing on ℝ: map over interval spans.
   if let Some(r) =
@@ -4419,6 +4490,9 @@ pub fn arcsinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "ArcSinh expects 1 argument".into(),
     ));
+  }
+  if let Some(r) = try_complex_inverse_trig("ArcSinh", &args[0]) {
+    return r;
   }
   // ArcSinh is monotonic increasing on ℝ: map over interval spans.
   if let Some(r) =

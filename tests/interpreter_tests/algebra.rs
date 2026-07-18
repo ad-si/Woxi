@@ -13046,6 +13046,60 @@ mod arctan_two_arg {
   }
 }
 
+// Numeric evaluation of the inverse trig / hyperbolic functions at complex
+// float arguments. Values verified against wolframscript (to machine
+// precision; last-digit differences are libm-level rounding).
+mod inverse_trig_complex {
+  use super::*;
+
+  #[test]
+  fn arctan() {
+    assert_eq!(
+      interpret("ArcTan[1.0 + 1.0 I]").unwrap(),
+      "1.0172219678978514 + 0.4023594781085251*I"
+    );
+  }
+
+  #[test]
+  fn arcsin() {
+    assert_eq!(
+      interpret("ArcSin[1.0 + 1.0 I]").unwrap(),
+      "0.6662394324925153 + 1.0612750619050355*I"
+    );
+  }
+
+  #[test]
+  fn arccos() {
+    assert_eq!(
+      interpret("ArcCos[0.5 + 0.5 I]").unwrap(),
+      "1.118517879643706 - 0.5306375309525178*I"
+    );
+  }
+
+  #[test]
+  fn arcsinh() {
+    assert_eq!(
+      interpret("ArcSinh[1.0 + 1.0 I]").unwrap(),
+      "1.0612750619050357 + 0.6662394324925153*I"
+    );
+  }
+
+  // ArcTan[±I] is a pole: wolframscript returns Indeterminate.
+  #[test]
+  fn arctan_pole_is_indeterminate() {
+    assert_eq!(interpret("ArcTan[1.0 I]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("ArcTan[-1.0 I]").unwrap(), "Indeterminate");
+  }
+
+  // Exact/symbolic arguments stay symbolic (unchanged by the numeric path).
+  #[test]
+  fn exact_arguments_unchanged() {
+    assert_eq!(interpret("ArcTan[1]").unwrap(), "Pi/4");
+    assert_eq!(interpret("ArcSin[1/2]").unwrap(), "Pi/6");
+    assert_eq!(interpret("ArcTan[x]").unwrap(), "ArcTan[x]");
+  }
+}
+
 mod arccot_exact {
   use super::*;
 
