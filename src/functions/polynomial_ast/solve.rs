@@ -3,7 +3,7 @@ use super::together::negate_expr;
 use super::*;
 use crate::InterpreterError;
 use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, expr_to_string,
   unevaluated,
 };
 
@@ -416,7 +416,7 @@ pub fn roots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Expr::List(inner) = item {
           if inner.is_empty() {
             // {{}} means all values (identity)
-            return Ok(Expr::Identifier("True".to_string()));
+            return Ok(bool_expr(true));
           }
           for rule in inner {
             if let Expr::Rule { replacement, .. } = rule {
@@ -452,7 +452,7 @@ pub fn roots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
 
       if conditions.is_empty() {
-        Ok(Expr::Identifier("False".to_string()))
+        Ok(bool_expr(false))
       } else if conditions.len() == 1 {
         Ok(conditions.into_iter().next().unwrap())
       } else {

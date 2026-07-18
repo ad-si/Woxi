@@ -4,7 +4,9 @@ use crate::InterpreterError;
 use crate::functions::math_ast::{
   expr_to_f64, expr_to_i128, expr_to_rational, gcd as gcd_i128, is_sqrt,
 };
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
+use crate::syntax::{
+  BinaryOperator, Expr, UnaryOperator, bool_expr, unevaluated,
+};
 
 /// MinimalPolynomial[α, x] - Computes the minimal polynomial of an algebraic number α
 /// in the variable x.
@@ -1552,9 +1554,7 @@ pub fn algebraic_unit_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(c) => *c.last().unwrap() == 1 && c[0].abs() == 1,
     None => false,
   };
-  Ok(Expr::Identifier(
-    if is_unit { "True" } else { "False" }.to_string(),
-  ))
+  Ok(bool_expr(is_unit))
 }
 
 /// AlgebraicNumberNorm[a] — the product of all conjugates of a over Q:

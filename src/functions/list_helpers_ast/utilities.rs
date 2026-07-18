@@ -12,11 +12,6 @@ pub fn expr_to_bool(expr: &Expr) -> Option<bool> {
   }
 }
 
-/// Convert a boolean to an Expr.
-pub fn bool_to_expr(b: bool) -> Expr {
-  Expr::Identifier(if b { "True" } else { "False" }.to_string())
-}
-
 /// Apply a function/predicate to an argument and return the resulting Expr.
 /// Uses the existing apply_function_to_arg from evaluator.
 pub fn apply_func_ast(

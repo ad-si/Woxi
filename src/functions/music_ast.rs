@@ -23,7 +23,9 @@
 //! all give `MusicPitch["G3"]`. The conversions use the standard convention
 //! where middle C is MIDI 60 / C4 and A4 (MIDI 69) is 440 Hz.
 
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
+use crate::syntax::{
+  BinaryOperator, Expr, UnaryOperator, bool_expr, unevaluated,
+};
 
 /// Heads that the Wolfram Language classifies as music objects — the "Music
 /// Events", "Music Properties", and "Music Containers" of the
@@ -67,7 +69,7 @@ pub fn music_object_q(args: &[Expr]) -> Expr {
     [Expr::FunctionCall { name, .. }]
       if MUSIC_OBJECT_HEADS.contains(&name.as_str())
   );
-  Expr::Identifier(if is_object { "True" } else { "False" }.to_string())
+  bool_expr(is_object)
 }
 
 /// Chromatic note names (sharp spelling) indexed by pitch class `0..=11`,

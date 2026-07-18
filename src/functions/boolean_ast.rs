@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, unevaluated,
 };
 
 /// Helper to check if an Expr is True or False
@@ -31,14 +31,14 @@ pub fn and_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     splice_flat_head(&evaluated, BinaryOperator::And, "And", &mut pieces);
     for piece in pieces {
       match as_bool(&piece) {
-        Some(false) => return Ok(Expr::Identifier("False".to_string())),
+        Some(false) => return Ok(bool_expr(false)),
         Some(true) => {} // Skip True values
         None => remaining.push(piece),
       }
     }
   }
   match remaining.len() {
-    0 => Ok(Expr::Identifier("True".to_string())),
+    0 => Ok(bool_expr(true)),
     1 => Ok(remaining.into_iter().next().unwrap()),
     _ => Ok(Expr::FunctionCall {
       name: "And".to_string(),
@@ -81,14 +81,14 @@ pub fn or_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     splice_flat_head(&evaluated, BinaryOperator::Or, "Or", &mut pieces);
     for piece in pieces {
       match as_bool(&piece) {
-        Some(true) => return Ok(Expr::Identifier("True".to_string())),
+        Some(true) => return Ok(bool_expr(true)),
         Some(false) => {} // Skip False values
         None => remaining.push(piece),
       }
     }
   }
   match remaining.len() {
-    0 => Ok(Expr::Identifier("False".to_string())),
+    0 => Ok(bool_expr(false)),
     1 => Ok(remaining.into_iter().next().unwrap()),
     _ => Ok(Expr::FunctionCall {
       name: "Or".to_string(),
@@ -106,8 +106,8 @@ pub fn not_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let evaluated = evaluate_expr_to_expr(&args[0])?;
   match as_bool(&evaluated) {
-    Some(true) => Ok(Expr::Identifier("False".to_string())),
-    Some(false) => Ok(Expr::Identifier("True".to_string())),
+    Some(true) => Ok(bool_expr(false)),
+    Some(false) => Ok(bool_expr(true)),
     None => {
       // Double negation: Not[Not[x]] → x. The inner operand is already in
       // normal form (it was produced by evaluating the inner Not).
@@ -199,7 +199,7 @@ fn reduce_xor_operands(
 pub fn xor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Xor[] = False (empty XOR is the identity element)
   if args.is_empty() {
-    return Ok(Expr::Identifier("False".to_string()));
+    return Ok(bool_expr(false));
   }
   // Single argument: Xor[x] => x
   if args.len() == 1 {
@@ -209,9 +209,7 @@ pub fn xor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (remaining, odd_true) = reduce_xor_operands(args)?;
 
   if remaining.is_empty() {
-    return Ok(Expr::Identifier(
-      if odd_true { "True" } else { "False" }.to_string(),
-    ));
+    return Ok(bool_expr(odd_true));
   }
 
   let core = if remaining.len() == 1 {
@@ -231,7 +229,7 @@ pub fn xor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn xnor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Xnor[] => True (0 true values, even)
   if args.is_empty() {
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   }
   // Xnor is the negation of Xor: reduce the operands the same way, then wrap
   // them in the Xnor head and apply the extra outer negation.
@@ -239,9 +237,7 @@ pub fn xnor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // No surviving operands: Xnor[] of an even True count is True, odd is False.
   if remaining.is_empty() {
-    return Ok(Expr::Identifier(
-      if odd_true { "False" } else { "True" }.to_string(),
-    ));
+    return Ok(bool_expr(!odd_true));
   }
 
   // A single operand x: Xnor reduces to x (odd True) or Not[x] (even True),
@@ -264,7 +260,7 @@ pub fn xnor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn same_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // SameQ[] and SameQ[x] return True (vacuously true)
   if args.len() < 2 {
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   }
 
   // SameQ is not HoldAll, so its arguments are already evaluated by the time
@@ -277,10 +273,10 @@ pub fn same_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for arg in args.iter().skip(1) {
     let val_str = crate::syntax::expr_to_string(arg);
     if val_str != first_str && !same_q_real_bigfloat(first, arg) {
-      return Ok(Expr::Identifier("False".to_string()));
+      return Ok(bool_expr(false));
     }
   }
-  Ok(Expr::Identifier("True".to_string()))
+  Ok(bool_expr(true))
 }
 
 /// SameQ between two floating-point operands. Matches wolframscript's
@@ -373,7 +369,7 @@ fn within_one_ulp(a: f64, b: f64) -> bool {
 pub fn unsame_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // UnsameQ[] and UnsameQ[x] return True (vacuously true)
   if args.len() < 2 {
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   }
 
   // UnsameQ is not HoldAll: arguments arrive already evaluated, so just take
@@ -385,11 +381,11 @@ pub fn unsame_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for i in 0..strs.len() {
     for j in (i + 1)..strs.len() {
       if strs[i] == strs[j] {
-        return Ok(Expr::Identifier("False".to_string()));
+        return Ok(bool_expr(false));
       }
     }
   }
-  Ok(Expr::Identifier("True".to_string()))
+  Ok(bool_expr(true))
 }
 
 /// Which[test1, value1, test2, value2, ...] - Multi-way conditional
@@ -622,7 +618,7 @@ pub fn infinity_equal_verdict(a: &Expr, b: &Expr) -> Option<Option<bool>> {
 pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Equal[] and Equal[x] return True (like wolframscript)
   if args.len() < 2 {
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   }
 
   // Infinity rules run before the string-identity fast path so
@@ -630,7 +626,7 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for pair in args.windows(2) {
     match infinity_equal_verdict(&pair[0], &pair[1]) {
       Some(Some(false)) => {
-        return Ok(Expr::Identifier("False".to_string()));
+        return Ok(bool_expr(false));
       }
       Some(None) => {
         return Ok(symbolic_comparison_chain(args, ComparisonOp::Equal));
@@ -651,9 +647,7 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect();
     if let Some(midis) = midis {
       let all_equal = midis.iter().all(|m| *m == midis[0]);
-      return Ok(Expr::Identifier(
-        if all_equal { "True" } else { "False" }.to_string(),
-      ));
+      return Ok(bool_expr(all_equal));
     }
   }
 
@@ -671,7 +665,7 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   if all_identical {
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   }
 
   // Any other equality touching a MusicPitch stays unevaluated, matching
@@ -726,7 +720,7 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // is True for 18-digit literals.
         let shared = (p0.min(*p1).floor() as usize).saturating_sub(1);
         if shared > 0 && !bigfloat_digits_match_to(d0, d1, shared) {
-          return Ok(Expr::Identifier("False".to_string()));
+          return Ok(bool_expr(false));
         }
       }
       if any_real {
@@ -750,13 +744,13 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         if (first - v).abs() > tol && first != v {
-          return Ok(Expr::Identifier("False".to_string()));
+          return Ok(bool_expr(false));
         }
       } else if v != first {
-        return Ok(Expr::Identifier("False".to_string()));
+        return Ok(bool_expr(false));
       }
     }
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   }
 
   // Structured operands sharing head and arity are equal when every component
@@ -769,7 +763,7 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .skip(1)
       .all(|a| all_components_equal(&args[0], a))
   {
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   }
 
   // Only stay symbolic if at least one arg has free symbols
@@ -777,7 +771,7 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Ok(symbolic_comparison_chain(args, ComparisonOp::Equal))
   } else {
     // No free symbols, not identical → False
-    Ok(Expr::Identifier("False".to_string()))
+    Ok(bool_expr(false))
   }
 }
 
@@ -799,7 +793,7 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for j in i + 1..args.len() {
       match infinity_equal_verdict(&args[i], &args[j]) {
         Some(Some(true)) => {
-          return Ok(Expr::Identifier("False".to_string()));
+          return Ok(bool_expr(false));
         }
         Some(Some(false)) => infinity_decided += 1,
         Some(None) => {
@@ -812,7 +806,7 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // All pairs decided unequal by the infinity rules (e.g. the 2-operand
   // ComplexInfinity != -1/2) — True without consulting the numeric path.
   if infinity_decided == args.len() * (args.len() - 1) / 2 {
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   }
 
   use crate::functions::math_ast::try_eval_to_f64;
@@ -832,7 +826,7 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for i in 0..strs.len() {
       for j in i + 1..strs.len() {
         if strs[i] == strs[j] || all_components_equal(&args[i], &args[j]) {
-          return Ok(Expr::Identifier("False".to_string()));
+          return Ok(bool_expr(false));
         }
       }
     }
@@ -840,7 +834,7 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for i in 0..strs.len() - 1 {
       if strs[i] == strs[i + 1] || all_components_equal(&args[i], &args[i + 1])
       {
-        return Ok(Expr::Identifier("False".to_string()));
+        return Ok(bool_expr(false));
       }
     }
   }
@@ -858,7 +852,7 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let nums: Vec<Option<f64>> = args.iter().map(try_eval_to_f64).collect();
   if nums.iter().all(|n| n.is_some()) {
     // All numeric and pairwise different (checked above via strings)
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   }
 
   // Only stay symbolic if at least one arg has free symbols
@@ -866,7 +860,7 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Ok(symbolic_comparison_chain(args, ComparisonOp::NotEqual))
   } else {
     // No free symbols, pairwise different → True
-    Ok(Expr::Identifier("True".to_string()))
+    Ok(bool_expr(true))
   }
 }
 
@@ -923,13 +917,11 @@ pub fn implies_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let a = evaluate_expr_to_expr(&args[0])?;
   match as_bool(&a) {
-    Some(false) => Ok(Expr::Identifier("True".to_string())), // False implies anything
+    Some(false) => Ok(bool_expr(true)), // False implies anything
     Some(true) => {
       let b = evaluate_expr_to_expr(&args[1])?;
       match as_bool(&b) {
-        Some(val) => Ok(Expr::Identifier(
-          if val { "True" } else { "False" }.to_string(),
-        )),
+        Some(val) => Ok(bool_expr(val)),
         None => Ok(b), // True implies symbolic expr → return the expr
       }
     }
@@ -938,7 +930,7 @@ pub fn implies_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let b = evaluate_expr_to_expr(&args[1])?;
       match as_bool(&b) {
         // Implies[a, True] → True (anything implies a truth).
-        Some(true) => Ok(Expr::Identifier("True".to_string())),
+        Some(true) => Ok(bool_expr(true)),
         // Implies[a, False] → Not[a].
         Some(false) => not_ast(&[a]),
         None => {
@@ -946,7 +938,7 @@ pub fn implies_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if crate::syntax::expr_to_string(&a)
             == crate::syntax::expr_to_string(&b)
           {
-            Ok(Expr::Identifier("True".to_string()))
+            Ok(bool_expr(true))
           } else {
             Ok(Expr::FunctionCall {
               name: "Implies".to_string(),
@@ -963,7 +955,7 @@ pub fn implies_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn nand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Nand[] = Not[And[]] = Not[True] = False
   if args.is_empty() {
-    return Ok(Expr::Identifier("False".to_string()));
+    return Ok(bool_expr(false));
   }
   // Nand[a] = Not[a]
   if args.len() == 1 {
@@ -975,14 +967,14 @@ pub fn nand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for arg in args {
     let evaluated = evaluate_expr_to_expr(arg)?;
     match as_bool(&evaluated) {
-      Some(false) => return Ok(Expr::Identifier("True".to_string())),
+      Some(false) => return Ok(bool_expr(true)),
       Some(true) => {} // Skip True values
       None => remaining.push(evaluated),
     }
   }
   match remaining.len() {
     // All were True → Nand is Not[And[]] = Not[True] = False.
-    0 => Ok(Expr::Identifier("False".to_string())),
+    0 => Ok(bool_expr(false)),
     // A lone surviving operand collapses to its negation: Nand[a, True] -> !a.
     1 => not_ast(&[remaining.into_iter().next().unwrap()]),
     // Some symbolic: Nand[remaining...]
@@ -997,7 +989,7 @@ pub fn nand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn nor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Nor[] = Not[Or[]] = Not[False] = True
   if args.is_empty() {
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   }
   // Nor[a] = Not[a]
   if args.len() == 1 {
@@ -1009,14 +1001,14 @@ pub fn nor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for arg in args {
     let evaluated = evaluate_expr_to_expr(arg)?;
     match as_bool(&evaluated) {
-      Some(true) => return Ok(Expr::Identifier("False".to_string())),
+      Some(true) => return Ok(bool_expr(false)),
       Some(false) => {} // Skip False values
       None => remaining.push(evaluated),
     }
   }
   match remaining.len() {
     // All were False → Nor is Not[Or[]] = Not[False] = True.
-    0 => Ok(Expr::Identifier("True".to_string())),
+    0 => Ok(bool_expr(true)),
     // A lone surviving operand collapses to its negation: Nor[a, False] -> !a.
     1 => not_ast(&[remaining.into_iter().next().unwrap()]),
     // Some symbolic: Nor[remaining...]
@@ -1031,7 +1023,7 @@ pub fn nor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn equivalent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Equivalent[] and Equivalent[a] are vacuously True.
   if args.len() < 2 {
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   }
 
   let mut has_true = false;
@@ -1054,12 +1046,12 @@ pub fn equivalent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // If we have both True and False, it's False
   if has_true && has_false {
-    return Ok(Expr::Identifier("False".to_string()));
+    return Ok(bool_expr(false));
   }
 
   // If all are known and the same value, it's True
   if remaining.is_empty() {
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   }
 
   // If some symbolic: the presence of an explicit True or False reduces
@@ -1095,7 +1087,7 @@ pub fn equivalent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // No boolean literal: a single distinct operand (e.g. Equivalent[a, a]) is
   // vacuously True; otherwise keep the deduplicated chain symbolic.
   if remaining.len() <= 1 {
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   }
   Ok(Expr::FunctionCall {
     name: "Equivalent".to_string(),
@@ -1142,9 +1134,9 @@ pub fn boolean_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for (j, var_name) in vars.iter().enumerate() {
       let bit = (i >> (n - 1 - j)) & 1;
       let val = if bit == 0 {
-        Expr::Identifier("True".to_string())
+        bool_expr(true)
       } else {
-        Expr::Identifier("False".to_string())
+        bool_expr(false)
       };
       substituted =
         crate::syntax::substitute_variable(&substituted, var_name, &val);
@@ -1268,7 +1260,7 @@ fn canonicalize_dnf(expr: &Expr) -> Expr {
       Some(lits) => {
         if lits.is_empty() {
           // An empty conjunction is `True`, which absorbs the whole Or.
-          return Expr::Identifier("True".to_string());
+          return bool_expr(true);
         }
         clauses.push(
           lits
@@ -1280,7 +1272,7 @@ fn canonicalize_dnf(expr: &Expr) -> Expr {
     }
   }
   if clauses.is_empty() {
-    return Expr::Identifier("False".to_string());
+    return bool_expr(false);
   }
 
   // Signature for dedup/subset tests: the (variable, sign) pairs.
@@ -1594,8 +1586,8 @@ fn apply_not_inward(inner: &Expr) -> Expr {
       }
     }
     // Not[True] → False, Not[False] → True
-    Expr::Identifier(s) if s == "True" => Expr::Identifier("False".to_string()),
-    Expr::Identifier(s) if s == "False" => Expr::Identifier("True".to_string()),
+    Expr::Identifier(s) if s == "True" => bool_expr(false),
+    Expr::Identifier(s) if s == "False" => bool_expr(true),
     // Not[other] → Not[other] (keep as-is, recurse into inner)
     other => {
       let recurse = push_not_inward(other);
@@ -1767,7 +1759,7 @@ fn simplify_cnf(expr: &Expr) -> Expr {
         .filter(|clause| !is_tautological_clause(clause))
         .collect();
       if simplified.is_empty() {
-        Expr::Identifier("True".to_string())
+        bool_expr(true)
       } else if simplified.len() == 1 {
         simplified.into_iter().next().unwrap()
       } else {
@@ -2160,9 +2152,9 @@ pub fn tautology_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut substituted = expr.clone();
     for (i, var_name) in var_list.iter().enumerate() {
       let val = if (bits >> i) & 1 == 1 {
-        Expr::Identifier("True".to_string())
+        bool_expr(true)
       } else {
-        Expr::Identifier("False".to_string())
+        bool_expr(false)
       };
       substituted =
         crate::syntax::substitute_variable(&substituted, var_name, &val);
@@ -2183,9 +2175,7 @@ pub fn tautology_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(Expr::Identifier(
-    if has_false { "False" } else { "True" }.to_string(),
-  ))
+  Ok(bool_expr(!has_false))
 }
 
 /// BooleanMinimize[expr] - Find the minimal sum-of-products form.
@@ -2198,10 +2188,10 @@ pub fn boolean_minimize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Handle trivial cases
   if matches!(expr, Expr::Identifier(s) if s == "True") {
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   }
   if matches!(expr, Expr::Identifier(s) if s == "False") {
-    return Ok(Expr::Identifier("False".to_string()));
+    return Ok(bool_expr(false));
   }
 
   // Collect all boolean variables
@@ -2225,9 +2215,9 @@ pub fn boolean_minimize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut substituted = expr.clone();
     for (i, var_name) in var_list.iter().enumerate() {
       let val = if (bits >> i) & 1 == 1 {
-        Expr::Identifier("True".to_string())
+        bool_expr(true)
       } else {
-        Expr::Identifier("False".to_string())
+        bool_expr(false)
       };
       substituted =
         crate::syntax::substitute_variable(&substituted, var_name, &val);
@@ -2239,10 +2229,10 @@ pub fn boolean_minimize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   if minterms.is_empty() {
-    return Ok(Expr::Identifier("False".to_string()));
+    return Ok(bool_expr(false));
   }
   if minterms.len() == (1usize << n) {
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   }
 
   // Quine-McCluskey: find prime implicants
@@ -2377,7 +2367,7 @@ fn implicants_to_expr(
   vars: &[String],
 ) -> Result<Expr, InterpreterError> {
   if implicants.is_empty() {
-    return Ok(Expr::Identifier("False".to_string()));
+    return Ok(bool_expr(false));
   }
 
   let mut terms: Vec<Expr> = Vec::new();
@@ -2398,7 +2388,7 @@ fn implicants_to_expr(
       }
     }
     let term = if literals.is_empty() {
-      Expr::Identifier("True".to_string())
+      bool_expr(true)
     } else if literals.len() == 1 {
       literals.remove(0)
     } else {
@@ -2472,10 +2462,10 @@ pub fn boolean_counting_function_ast(
 
   // Trivial extremes.
   if count_set.is_empty() {
-    return Ok(Expr::Identifier("False".to_string()));
+    return Ok(bool_expr(false));
   }
   if count_set.len() == n + 1 {
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   }
 
   // "Exactly k" — natural sum-of-minterms in lex order over which
@@ -2587,7 +2577,7 @@ fn detect_at_most(count_set: &[usize]) -> Option<usize> {
 fn exactly_k_dnf(vars: &[String], k: usize) -> Expr {
   let n = vars.len();
   if k > n {
-    return Expr::Identifier("False".to_string());
+    return bool_expr(false);
   }
   let subsets = subsets_in_lex_order(n, k);
   let mut terms: Vec<Expr> = Vec::with_capacity(subsets.len());
@@ -2622,7 +2612,7 @@ fn at_most_k_dnf(vars: &[String], kmax: usize) -> Expr {
   let n = vars.len();
   let neg_count = n.saturating_sub(kmax);
   if neg_count == 0 {
-    return Expr::Identifier("True".to_string());
+    return bool_expr(true);
   }
   let subsets = subsets_in_lex_order(n, neg_count);
   let mut terms: Vec<Expr> = Vec::with_capacity(subsets.len());
@@ -2721,7 +2711,7 @@ fn subsets_in_lex_order(n: usize, k: usize) -> Vec<Vec<usize>> {
 /// Wrap `terms` in an `Or` head, or unwrap if there's only one.
 fn or_of(mut terms: Vec<Expr>) -> Expr {
   if terms.is_empty() {
-    return Expr::Identifier("False".to_string());
+    return bool_expr(false);
   }
   if terms.len() == 1 {
     return terms.remove(0);
@@ -2775,7 +2765,7 @@ fn vector_compare_ast(
       (Expr::List(args_a), Expr::List(args_b)) => {
         // Mismatched lengths → False
         if args_a.len() != args_b.len() {
-          return Ok(Expr::Identifier("False".to_string()));
+          return Ok(bool_expr(false));
         }
         // Empty vectors → True (vacuously), continue to next pair
         for (ea, eb) in args_a.iter().zip(args_b.iter()) {
@@ -2793,10 +2783,10 @@ fn vector_compare_ast(
           };
           if allow_equal {
             if na > nb {
-              return Ok(Expr::Identifier("False".to_string()));
+              return Ok(bool_expr(false));
             }
           } else if na >= nb {
-            return Ok(Expr::Identifier("False".to_string()));
+            return Ok(bool_expr(false));
           }
         }
       }
@@ -2816,16 +2806,16 @@ fn vector_compare_ast(
         };
         if allow_equal {
           if na > nb {
-            return Ok(Expr::Identifier("False".to_string()));
+            return Ok(bool_expr(false));
           }
         } else if na >= nb {
-          return Ok(Expr::Identifier("False".to_string()));
+          return Ok(bool_expr(false));
         }
       }
     }
   }
 
-  Ok(Expr::Identifier("True".to_string()))
+  Ok(bool_expr(true))
 }
 
 // ---------------------------------------------------------------------------
@@ -2970,7 +2960,7 @@ fn count_satisfying(
       (0..n).map(|j| (idx >> (n - 1 - j)) & 1 == 0).collect();
     let mut substituted = expr.clone();
     for (var, &b) in vars.iter().zip(&assignment) {
-      let val = Expr::Identifier(if b { "True" } else { "False" }.to_string());
+      let val = bool_expr(b);
       substituted = substitute_boolean_var(&substituted, var, &val);
     }
     let result = evaluate_expr_to_expr(&substituted)?;
@@ -2997,22 +2987,20 @@ pub fn satisfiable_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (0..n).map(|j| (idx >> (n - 1 - j)) & 1 == 0).collect();
     let mut substituted = args[0].clone();
     for (var, &b) in vars.iter().zip(&assignment) {
-      let val = Expr::Identifier(if b { "True" } else { "False" }.to_string());
+      let val = bool_expr(b);
       substituted = substitute_boolean_var(&substituted, var, &val);
     }
     let result = evaluate_expr_to_expr(&substituted)?;
     match &result {
       Expr::Identifier(s) if s == "True" => {
-        return Ok(Expr::Identifier("True".to_string()));
+        return Ok(bool_expr(true));
       }
       Expr::Identifier(s) if s == "False" => {}
       _ => {
         let shown = Expr::List(
           assignment
             .iter()
-            .map(|&b| {
-              Expr::Identifier(if b { "True" } else { "False" }.to_string())
-            })
+            .map(|&b| bool_expr(b))
             .collect::<Vec<_>>()
             .into(),
         );
@@ -3025,7 +3013,7 @@ pub fn satisfiable_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
-  Ok(Expr::Identifier("False".to_string()))
+  Ok(bool_expr(false))
 }
 
 /// SatisfiabilityCount[expr] / SatisfiabilityCount[expr, vars]
@@ -3062,10 +3050,10 @@ pub fn majority_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unknowns = n - trues - falses;
   // Decided regardless of the unknowns
   if 2 * trues > n {
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   }
   if 2 * (trues + unknowns) <= n {
-    return Ok(Expr::Identifier("False".to_string()));
+    return Ok(bool_expr(false));
   }
   // Cancel one True/False pair and re-evaluate
   if trues >= 1 && falses >= 1 {
@@ -3174,7 +3162,7 @@ pub fn boolean_minterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       );
     }
   } else if spec_items.is_empty() {
-    return Ok(Expr::Identifier("False".to_string()));
+    return Ok(bool_expr(false));
   } else {
     bspec();
     return Ok(unevaluated());
@@ -3197,7 +3185,7 @@ pub fn boolean_minterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A specification covering every minterm simplifies to True
   let covered: u64 = rows.iter().map(|r| 1u64 << (nvars - r.len())).sum();
   if covered >= (1u64 << nvars) {
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   }
 
   let terms: Vec<Expr> = rows
@@ -3228,7 +3216,7 @@ pub fn boolean_minterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .collect();
   let result = match terms.len() {
-    0 => Expr::Identifier("False".to_string()),
+    0 => bool_expr(false),
     1 => terms.into_iter().next().unwrap(),
     _ => Expr::FunctionCall {
       name: "Or".to_string(),
@@ -3260,7 +3248,7 @@ pub fn unate_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return unevaluated(),
   };
   if vars.is_empty() {
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   }
   let n = vars.len();
   if n > 16 {
@@ -3313,11 +3301,11 @@ pub fn unate_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       let idx_false = idx_true | bit;
       if is_true(&table[idx_false]) && is_false(&table[idx_true]) {
-        return Ok(Expr::Identifier("False".to_string()));
+        return Ok(bool_expr(false));
       }
     }
   }
-  Ok(Expr::Identifier("True".to_string()))
+  Ok(bool_expr(true))
 }
 
 /// BooleanMaxterms[spec, {vars}] — the conjunction of maxterms given as
@@ -3395,7 +3383,7 @@ pub fn boolean_maxterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       );
     }
   } else if spec_items.is_empty() {
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   } else {
     bspec();
     return Ok(unevaluated());
@@ -3418,7 +3406,7 @@ pub fn boolean_maxterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Covering every maxterm collapses the conjunction to False.
   let covered: u64 = rows.iter().map(|r| 1u64 << (nvars - r.len())).sum();
   if covered >= (1u64 << nvars) {
-    return Ok(Expr::Identifier("False".to_string()));
+    return Ok(bool_expr(false));
   }
 
   let terms: Vec<Expr> = rows
@@ -3449,7 +3437,7 @@ pub fn boolean_maxterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .collect();
   let result = match terms.len() {
-    0 => Expr::Identifier("True".to_string()),
+    0 => bool_expr(true),
     1 => terms.into_iter().next().unwrap(),
     _ => Expr::FunctionCall {
       name: "And".to_string(),

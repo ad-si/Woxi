@@ -3,7 +3,7 @@ use super::*;
 use crate::InterpreterError;
 use crate::functions::calculus_ast::simplify;
 use crate::syntax::{
-  BinaryOperator, Expr, UnaryOperator, expr_to_string, unevaluated,
+  BinaryOperator, Expr, UnaryOperator, bool_expr, expr_to_string, unevaluated,
 };
 
 // ─── Factor ─────────────────────────────────────────────────────────
@@ -1410,12 +1410,12 @@ pub fn irreducible_polynomial_q_ast(
   let list = match factor_list_ast(args) {
     Ok(l) => l,
     Err(_) => {
-      return Ok(Expr::Identifier("False".to_string()));
+      return Ok(bool_expr(false));
     }
   };
 
   let Expr::List(ref entries) = list else {
-    return Ok(Expr::Identifier("False".to_string()));
+    return Ok(bool_expr(false));
   };
 
   let mut non_constant_count = 0usize;
@@ -1434,9 +1434,7 @@ pub fn irreducible_polynomial_q_ast(
   }
 
   let irreducible = non_constant_count == 1 && !has_higher_power;
-  Ok(Expr::Identifier(
-    if irreducible { "True" } else { "False" }.to_string(),
-  ))
+  Ok(bool_expr(irreducible))
 }
 
 /// Decompose a factored expression into {factor, exponent} pairs.

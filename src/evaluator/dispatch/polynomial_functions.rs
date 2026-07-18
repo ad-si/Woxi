@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, ComparisonOp, unevaluated};
+use crate::syntax::{BinaryOperator, ComparisonOp, bool_expr, unevaluated};
 
 pub fn dispatch_polynomial_functions(
   name: &str,
@@ -859,7 +859,7 @@ fn try_reduce_modulus(expr: &Expr, vars: &Expr, opt: &Expr) -> Option<Expr> {
   }
 
   if solutions.is_empty() {
-    return Some(Expr::Identifier("False".to_string()));
+    return Some(bool_expr(false));
   }
 
   // Build (x == v1 && y == w1) || (x == v2 && y == w2) || ...

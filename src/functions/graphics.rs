@@ -3,7 +3,7 @@ use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{DEFAULT_HEIGHT, DEFAULT_WIDTH, parse_image_size};
 use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, expr_to_string,
   unevaluated,
 };
 
@@ -7141,7 +7141,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Enable axes
       let axes_rule = Expr::Rule {
         pattern: Box::new(Expr::Identifier("Axes".to_string())),
-        replacement: Box::new(Expr::Identifier("True".to_string())),
+        replacement: Box::new(bool_expr(true)),
       };
       merge_option(&mut merged_options, &axes_rule);
 

@@ -2,7 +2,7 @@
 use super::*;
 use crate::InterpreterError;
 use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, expr_to_string,
   unevaluated,
 };
 use num_bigint::BigInt;
@@ -2630,7 +2630,7 @@ fn factor_integer_gaussian(n_expr: &Expr) -> Result<Expr, InterpreterError> {
         n_expr.clone(),
         Expr::Rule {
           pattern: Box::new(Expr::Identifier("GaussianIntegers".to_string())),
-          replacement: Box::new(Expr::Identifier("True".to_string())),
+          replacement: Box::new(bool_expr(true)),
         },
       ]
       .into(),
@@ -4449,9 +4449,7 @@ pub fn coprime_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 1 {
     let is_unit =
       matches!(expr_to_i128(&args[0]), Some(n) if n.unsigned_abs() == 1);
-    return Ok(Expr::Identifier(
-      if is_unit { "True" } else { "False" }.to_string(),
-    ));
+    return Ok(bool_expr(is_unit));
   }
 
   // Gaussian-integer CoprimeQ: when at least one argument is a complex
@@ -4466,11 +4464,11 @@ pub fn coprime_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for i in 0..gs.len() {
       for j in (i + 1)..gs.len() {
         if gaussian_gcd(gs[i], gs[j]) != (1, 0) {
-          return Ok(Expr::Identifier("False".to_string()));
+          return Ok(bool_expr(false));
         }
       }
     }
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   }
 
   // Extract all integer values
@@ -4496,12 +4494,12 @@ pub fn coprime_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         a = temp;
       }
       if a != 1 {
-        return Ok(Expr::Identifier("False".to_string()));
+        return Ok(bool_expr(false));
       }
     }
   }
 
-  Ok(Expr::Identifier("True".to_string()))
+  Ok(bool_expr(true))
 }
 
 /// Binomial[n, k] - Binomial coefficient
@@ -5104,9 +5102,7 @@ pub fn mersenne_prime_exponent_q_ast(
     Some(n) => MERSENNE_EXPONENTS.contains(&n),
     None => false,
   };
-  Ok(Expr::Identifier(
-    if is_exponent { "True" } else { "False" }.to_string(),
-  ))
+  Ok(bool_expr(is_exponent))
 }
 
 // ─── PrimePi ───────────────────────────────────────────────────────

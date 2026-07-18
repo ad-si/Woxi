@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::list_helpers_ast;
-use crate::syntax::{BinaryOperator, UnaryOperator, unevaluated};
+use crate::syntax::{BinaryOperator, UnaryOperator, bool_expr, unevaluated};
 
 /// Parse the `m` argument of NestWhile[f, x, test, m, ...]. Returns `All` for
 /// the symbol `All`, `Last(n)` for a positive integer, and `None` otherwise.
@@ -33,11 +33,6 @@ fn same_test_true(test: &Expr, a: &Expr, b: &Expr) -> bool {
     list_helpers_ast::apply_func_to_two_args(test, a, b),
     Ok(Expr::Identifier(ref s)) if s == "True"
   )
-}
-
-/// Build the `True`/`False` symbol from a boolean.
-fn bool_ident(b: bool) -> Expr {
-  Expr::Identifier(if b { "True" } else { "False" }.to_string())
 }
 
 /// True for an argument that is a concrete non-list value the list-difference
@@ -1535,10 +1530,10 @@ pub fn dispatch_list_operations(
         for item in items {
           let s = expr_to_string(item);
           if !seen.insert(s) {
-            return Some(Ok(Expr::Identifier("False".to_string())));
+            return Some(Ok(bool_expr(false)));
           }
         }
-        return Some(Ok(Expr::Identifier("True".to_string())));
+        return Some(Ok(bool_expr(true)));
       }
     }
     // DuplicateFreeQ[list, test] — True iff no two elements are equivalent
@@ -1553,11 +1548,11 @@ pub fn dispatch_list_operations(
                 test, &items[i], &items[j],
               );
             if matches!(res, Ok(Expr::Identifier(ref s)) if s == "True") {
-              return Some(Ok(Expr::Identifier("False".to_string())));
+              return Some(Ok(bool_expr(false)));
             }
           }
         }
-        return Some(Ok(Expr::Identifier("True".to_string())));
+        return Some(Ok(bool_expr(true)));
       }
     }
     "TakeList" if args.len() == 2 => {
@@ -2180,9 +2175,7 @@ pub fn dispatch_list_operations(
             break;
           }
         }
-        return Some(Ok(Expr::Identifier(
-          if ordered { "True" } else { "False" }.to_string(),
-        )));
+        return Some(Ok(bool_expr(ordered)));
       }
     }
     "DeleteAdjacentDuplicates" if args.len() == 1 => {
@@ -3964,7 +3957,7 @@ pub fn dispatch_list_operations(
         if tn == "Tree"
           && ta.len() == 2
           && matches!(&ta[1], Expr::Identifier(s) if s == "None"));
-      return Some(Ok(bool_ident(is_leaf)));
+      return Some(Ok(bool_expr(is_leaf)));
     }
     // Structural recursions over a canonical Tree. Each emits ::tree and stays
     // unevaluated when given a non-tree (matching TreeData/TreeChildren).
@@ -4490,7 +4483,7 @@ pub fn dispatch_list_operations(
         // ArrayQ[expr, n] - depth must equal n
         if let Some(n) = expr_to_i128(&args[1]) {
           if depth != n as usize {
-            return Some(Ok(Expr::Identifier("False".to_string())));
+            return Some(Ok(bool_expr(false)));
           }
         } else {
           return Some(Ok(is_array));
@@ -4501,11 +4494,9 @@ pub fn dispatch_list_operations(
         let test = &args[2];
         let leaves_pass =
           list_helpers_ast::all_leaves_pass_test(&args[0], depth, test);
-        return Some(Ok(Expr::Identifier(
-          (if leaves_pass { "True" } else { "False" }).to_string(),
-        )));
+        return Some(Ok(bool_expr(leaves_pass)));
       }
-      return Some(Ok(Expr::Identifier("True".to_string())));
+      return Some(Ok(bool_expr(true)));
     }
     "VectorQ" if args.len() == 1 => {
       return Some(list_helpers_ast::vector_q_ast(&args[0]));
@@ -4534,12 +4525,12 @@ pub fn dispatch_list_operations(
           let result = list2
             .iter()
             .any(|y| list1.iter().any(|x| same_test_true(test, x, y)));
-          return Some(Ok(bool_ident(result)));
+          return Some(Ok(bool_expr(result)));
         }
         let set1: std::collections::HashSet<String> =
           list1.iter().map(expr_to_string).collect();
         let result = list2.iter().any(|x| set1.contains(&expr_to_string(x)));
-        return Some(Ok(bool_ident(result)));
+        return Some(Ok(bool_expr(result)));
       }
     }
     // ContainsAll[a, b] — every element of b is in a.
@@ -4552,12 +4543,12 @@ pub fn dispatch_list_operations(
           let result = list2
             .iter()
             .all(|y| list1.iter().any(|x| same_test_true(test, x, y)));
-          return Some(Ok(bool_ident(result)));
+          return Some(Ok(bool_expr(result)));
         }
         let set1: std::collections::HashSet<String> =
           list1.iter().map(expr_to_string).collect();
         let result = list2.iter().all(|x| set1.contains(&expr_to_string(x)));
-        return Some(Ok(bool_ident(result)));
+        return Some(Ok(bool_expr(result)));
       }
     }
     // ContainsNone[a, b] — no element of b is in a.
@@ -4570,12 +4561,12 @@ pub fn dispatch_list_operations(
           let result = !list2
             .iter()
             .any(|y| list1.iter().any(|x| same_test_true(test, x, y)));
-          return Some(Ok(bool_ident(result)));
+          return Some(Ok(bool_expr(result)));
         }
         let set1: std::collections::HashSet<String> =
           list1.iter().map(expr_to_string).collect();
         let result = !list2.iter().any(|x| set1.contains(&expr_to_string(x)));
-        return Some(Ok(bool_ident(result)));
+        return Some(Ok(bool_expr(result)));
       }
     }
     // ContainsExactly[list1, list2] — True if the two Lists contain exactly
@@ -4593,13 +4584,13 @@ pub fn dispatch_list_operations(
           let only = list1
             .iter()
             .all(|x| list2.iter().any(|y| same_test_true(test, x, y)));
-          return Some(Ok(bool_ident(all && only)));
+          return Some(Ok(bool_expr(all && only)));
         }
         let set1: std::collections::HashSet<String> =
           list1.iter().map(expr_to_string).collect();
         let set2: std::collections::HashSet<String> =
           list2.iter().map(expr_to_string).collect();
-        return Some(Ok(bool_ident(set1 == set2)));
+        return Some(Ok(bool_expr(set1 == set2)));
       }
     }
     // ContainsExactly[list2] — operator form, returns a callable.
@@ -4617,9 +4608,9 @@ pub fn dispatch_list_operations(
         _ => false,
       };
       return Some(Ok(if result {
-        Expr::Identifier("True".to_string())
+        bool_expr(true)
       } else {
-        Expr::Identifier("False".to_string())
+        bool_expr(false)
       }));
     }
     "TakeWhile" if args.len() == 2 => {
@@ -6357,9 +6348,7 @@ pub fn dispatch_list_operations(
       if let Expr::Association(pairs) = &args[0] {
         let key_str = expr_to_string(&args[1]);
         let found = pairs.iter().any(|(k, _)| expr_to_string(k) == key_str);
-        return Some(Ok(Expr::Identifier(
-          if found { "True" } else { "False" }.to_string(),
-        )));
+        return Some(Ok(bool_expr(found)));
       }
     }
     // Cycles[{cyc1, ...}] — canonicalise: drop length-1 cycles, rotate
@@ -6676,12 +6665,10 @@ pub fn dispatch_list_operations(
             break;
           }
         }
-        return Some(Ok(Expr::Identifier(
-          if valid { "True" } else { "False" }.to_string(),
-        )));
+        return Some(Ok(bool_expr(valid)));
       }
       // Non-list input
-      return Some(Ok(Expr::Identifier("False".to_string())));
+      return Some(Ok(bool_expr(false)));
     }
     // FoldWhileList — fold while test is True, returning the whole history.
     // The 3-argument form takes the first list element as the initial value.
@@ -6711,8 +6698,7 @@ pub fn dispatch_list_operations(
       // The fold stops after the first result that fails the test (which
       // is still included), matching wolframscript.
       let passes = |v: &Expr| {
-        let r = apply_function_to_arg(test, v)
-          .unwrap_or(Expr::Identifier("False".to_string()));
+        let r = apply_function_to_arg(test, v).unwrap_or(bool_expr(false));
         matches!(&r, Expr::Identifier(s) if s == "True")
       };
       if passes(&acc) {
@@ -6773,8 +6759,8 @@ pub fn dispatch_list_operations(
           // If the test fails, we still include this value (Wolfram behavior).
           acc = new_acc;
           results.push(acc.clone());
-          let test_result = apply_function_to_arg(test, &acc)
-            .unwrap_or(Expr::Identifier("False".to_string()));
+          let test_result =
+            apply_function_to_arg(test, &acc).unwrap_or(bool_expr(false));
           let test_str = expr_to_string(&test_result);
           if test_str != "True" {
             break;
@@ -6815,11 +6801,9 @@ pub fn dispatch_list_operations(
             break;
           }
         }
-        return Some(Ok(Expr::Identifier(
-          if valid { "True" } else { "False" }.to_string(),
-        )));
+        return Some(Ok(bool_expr(valid)));
       }
-      return Some(Ok(Expr::Identifier("False".to_string())));
+      return Some(Ok(bool_expr(false)));
     }
     // PermutationSupport[perm] — set of elements moved by the permutation
     "PermutationSupport" if args.len() == 1 => {

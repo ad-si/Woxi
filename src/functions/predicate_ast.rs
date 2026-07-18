@@ -4,10 +4,8 @@
 
 use crate::InterpreterError;
 use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, unevaluated,
 };
-
-use crate::syntax::bool_expr;
 
 /// NumberQ[expr] - Tests if the expression is a number
 pub fn number_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -1414,9 +1412,7 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let any = parts.iter().any(|p| {
         crate::functions::list_helpers_ast::matches_pattern_ast(p, &args[1])
       });
-      return Ok(Expr::Identifier(
-        if any { "False" } else { "True" }.to_string(),
-      ));
+      return Ok(bool_expr(!any));
     }
     return Ok(unevaluated("FreeQ", args));
   }
@@ -2539,10 +2535,10 @@ pub fn subset_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         )
       });
       if !found {
-        return Ok(Expr::Identifier("False".to_string()));
+        return Ok(bool_expr(false));
       }
     }
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   }
   // Default: structural membership.
   let superset_strs: Vec<String> =
@@ -2550,10 +2546,10 @@ pub fn subset_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for elem in subset {
     let s = crate::syntax::expr_to_string(elem);
     if !superset_strs.contains(&s) {
-      return Ok(Expr::Identifier("False".to_string()));
+      return Ok(bool_expr(false));
     }
   }
-  Ok(Expr::Identifier("True".to_string()))
+  Ok(bool_expr(true))
 }
 
 /// Extract the function `f` from a `SameTest -> f` rule, or from a singleton

@@ -1,6 +1,6 @@
 use crate::InterpreterError;
 use crate::functions::math_ast::{is_sqrt, make_sqrt};
-use crate::syntax::{BinaryOperator, Expr, unevaluated};
+use crate::syntax::{BinaryOperator, Expr, bool_expr, unevaluated};
 use std::collections::BTreeMap;
 
 // ─── Unit dimension system ──────────────────────────────────────────────────
@@ -1930,9 +1930,7 @@ pub fn quantity_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some((_mag, unit)) => known_unit_q_recursive(unit),
     None => false,
   };
-  Ok(Expr::Identifier(
-    if result { "True" } else { "False" }.to_string(),
-  ))
+  Ok(bool_expr(result))
 }
 
 // ─── CompatibleUnitQ ────────────────────────────────────────────────────────
@@ -1977,9 +1975,7 @@ pub fn known_unit_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let ok = known_unit_q_recursive(&args[0]);
-  Ok(Expr::Identifier(
-    if ok { "True" } else { "False" }.to_string(),
-  ))
+  Ok(bool_expr(ok))
 }
 
 pub fn compatible_unit_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -1999,9 +1995,7 @@ pub fn compatible_unit_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &args[1]
   };
   let result = units_compatible(u1, u2);
-  Ok(Expr::Identifier(
-    if result { "True" } else { "False" }.to_string(),
-  ))
+  Ok(bool_expr(result))
 }
 
 // ─── UnitConvert ────────────────────────────────────────────────────────────

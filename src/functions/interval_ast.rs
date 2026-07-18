@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, unevaluated};
+use crate::syntax::{BinaryOperator, Expr, bool_expr, unevaluated};
 use std::cmp::Ordering;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -711,10 +711,10 @@ pub fn interval_member_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
       if !contained {
-        return Ok(Expr::Identifier("False".to_string()));
+        return Ok(bool_expr(false));
       }
     }
-    Ok(Expr::Identifier("True".to_string()))
+    Ok(bool_expr(true))
   } else {
     // Point membership
     let point = &args[1];
@@ -724,10 +724,10 @@ pub fn interval_member_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some(Ordering::Less | Ordering::Equal),
       ) = (compare_numeric(lo, point), compare_numeric(point, hi))
       {
-        return Ok(Expr::Identifier("True".to_string()));
+        return Ok(bool_expr(true));
       }
     }
-    Ok(Expr::Identifier("False".to_string()))
+    Ok(bool_expr(false))
   }
 }
 

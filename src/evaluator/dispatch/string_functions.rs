@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::unevaluated;
+use crate::syntax::{bool_expr, unevaluated};
 
 pub fn dispatch_string_functions(
   name: &str,
@@ -346,9 +346,7 @@ pub fn dispatch_string_functions(
     "SyntaxQ" if args.len() == 1 => {
       if let Expr::String(s) = &args[0] {
         let is_valid = crate::parse(s).is_ok();
-        return Some(Ok(Expr::Identifier(
-          if is_valid { "True" } else { "False" }.to_string(),
-        )));
+        return Some(Ok(bool_expr(is_valid)));
       }
     }
     "LetterCounts" if args.len() == 1 => {

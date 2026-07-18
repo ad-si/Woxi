@@ -1,7 +1,9 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::is_sqrt;
-use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator, unevaluated};
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, UnaryOperator, bool_expr, unevaluated,
+};
 
 /// Check if the result of differentiation contains a
 /// `Derivative[...][func_name][...]` pattern (as CurriedCall),
@@ -3979,7 +3981,7 @@ fn function_domain_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if constraints.is_empty() {
     // No restrictions → domain is all reals
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   }
 
   // Simplify each constraint and convert to interval representation

@@ -2,6 +2,7 @@
 use super::*;
 
 use crate::functions::math_ast::gcd as gcd_i128;
+use crate::syntax::bool_expr;
 
 // Re-export crate types/functions for submodules (used by submodules via `use super::*`)
 #[allow(unused_imports)]
@@ -4983,9 +4984,7 @@ pub fn evaluate_function_call_ast_inner(
   {
     let edge_str = expr_to_string(&args[1]);
     let found = edges.iter().any(|e| expr_to_string(e) == edge_str);
-    return Ok(Expr::Identifier(
-      if found { "True" } else { "False" }.to_string(),
-    ));
+    return Ok(bool_expr(found));
   }
 
   // EdgeRules[graph] — the edges as a list of rules (undirected edges
@@ -5047,9 +5046,7 @@ pub fn evaluate_function_call_ast_inner(
     } else {
       false
     };
-    return Ok(Expr::Identifier(
-      if found { "True" } else { "False" }.to_string(),
-    ));
+    return Ok(bool_expr(found));
   }
 
   // GraphQ[expr] — True iff expr is a valid Graph object
@@ -5089,9 +5086,7 @@ pub fn evaluate_function_call_ast_inner(
     } else {
       false
     };
-    return Ok(Expr::Identifier(
-      if is_graph { "True" } else { "False" }.to_string(),
-    ));
+    return Ok(bool_expr(is_graph));
   }
 
   // Graph analysis helper: extract adjacency list from graph
@@ -5108,11 +5103,9 @@ pub fn evaluate_function_call_ast_inner(
       let all_undirected = edges.iter().all(|e| {
         matches!(e, Expr::FunctionCall { name, .. } if name == "UndirectedEdge")
       });
-      return Ok(Expr::Identifier(
-        if all_undirected { "True" } else { "False" }.to_string(),
-      ));
+      return Ok(bool_expr(all_undirected));
     }
-    return Ok(Expr::Identifier("False".to_string()));
+    return Ok(bool_expr(false));
   }
 
   // DirectedGraphQ[graph] — True if all edges are directed
@@ -5128,11 +5121,9 @@ pub fn evaluate_function_call_ast_inner(
       let all_directed = edges.iter().all(|e| {
         matches!(e, Expr::FunctionCall { name, .. } if name == "DirectedEdge")
       });
-      return Ok(Expr::Identifier(
-        if all_directed { "True" } else { "False" }.to_string(),
-      ));
+      return Ok(bool_expr(all_directed));
     }
-    return Ok(Expr::Identifier("False".to_string()));
+    return Ok(bool_expr(false));
   }
 
   // MixedGraphQ[graph] — True if the graph has both directed and undirected
@@ -5161,7 +5152,7 @@ pub fn evaluate_function_call_ast_inner(
         .to_string(),
       ));
     }
-    return Ok(Expr::Identifier("False".to_string()));
+    return Ok(bool_expr(false));
   }
 
   // MultigraphQ[graph] — True if the graph has parallel edges (two edges with
@@ -5199,11 +5190,9 @@ pub fn evaluate_function_call_ast_inner(
           }
         }
       }
-      return Ok(Expr::Identifier(
-        if multi { "True" } else { "False" }.to_string(),
-      ));
+      return Ok(bool_expr(multi));
     }
-    return Ok(Expr::Identifier("False".to_string()));
+    return Ok(bool_expr(false));
   }
 
   // WeightedGraphQ[graph] — True if the graph carries explicit edge or vertex
@@ -5228,11 +5217,9 @@ pub fn evaluate_function_call_ast_inner(
         }
         _ => false,
       });
-      return Ok(Expr::Identifier(
-        if has_weight { "True" } else { "False" }.to_string(),
-      ));
+      return Ok(bool_expr(has_weight));
     }
-    return Ok(Expr::Identifier("False".to_string()));
+    return Ok(bool_expr(false));
   }
 
   // TreeGraphQ[graph] — True if graph is a tree (connected, n-1 edges for n vertices)
@@ -5248,16 +5235,14 @@ pub fn evaluate_function_call_ast_inner(
       let n = vertices.len();
       // A tree has exactly n-1 edges and is connected
       if edges.len() != n - 1 {
-        return Ok(Expr::Identifier("False".to_string()));
+        return Ok(bool_expr(false));
       }
       // Check connectivity via BFS/DFS
       let (pg_graph, _pg_idx) = build_undirected_graph(vertices, edges);
       let connected = is_connected_pg(&pg_graph);
-      return Ok(Expr::Identifier(
-        if connected { "True" } else { "False" }.to_string(),
-      ));
+      return Ok(bool_expr(connected));
     }
-    return Ok(Expr::Identifier("False".to_string()));
+    return Ok(bool_expr(false));
   }
 
   // AcyclicGraphQ[graph] — True if graph has no cycles
@@ -5274,11 +5259,9 @@ pub fn evaluate_function_call_ast_inner(
       // For undirected: acyclic iff edges < n and connected components have tree structure
       // Simple check: edges < n (forest)
       let is_acyclic = edges.len() < n;
-      return Ok(Expr::Identifier(
-        if is_acyclic { "True" } else { "False" }.to_string(),
-      ));
+      return Ok(bool_expr(is_acyclic));
     }
-    return Ok(Expr::Identifier("False".to_string()));
+    return Ok(bool_expr(false));
   }
 
   // EulerianGraphQ[graph] — True if graph has an Eulerian circuit
@@ -5293,7 +5276,7 @@ pub fn evaluate_function_call_ast_inner(
     {
       let n = vertices.len();
       if n == 0 || edges.is_empty() {
-        return Ok(Expr::Identifier("True".to_string()));
+        return Ok(bool_expr(true));
       }
 
       let is_directed = edges.iter().any(|e| {
@@ -5353,7 +5336,7 @@ pub fn evaluate_function_call_ast_inner(
         ));
       }
     }
-    return Ok(Expr::Identifier("False".to_string()));
+    return Ok(bool_expr(false));
   }
 
   // GraphDistance[g, s, t] — length of the shortest path from s to t.
@@ -7031,12 +7014,10 @@ pub fn evaluate_function_call_ast_inner(
         evaluate_function_call_ast_inner("ConnectedComponents", args)?;
       if let Expr::List(comp_lists) = &comps {
         let connected = comp_lists.len() <= 1;
-        return Ok(Expr::Identifier(
-          if connected { "True" } else { "False" }.to_string(),
-        ));
+        return Ok(bool_expr(connected));
       }
     }
-    return Ok(Expr::Identifier("False".to_string()));
+    return Ok(bool_expr(false));
   }
 
   // WeaklyConnectedGraphQ[g] — True iff the underlying undirected graph is
@@ -7053,12 +7034,10 @@ pub fn evaluate_function_call_ast_inner(
         evaluate_function_call_ast_inner("WeaklyConnectedComponents", args)?;
       if let Expr::List(comp_lists) = &comps {
         let connected = comp_lists.len() <= 1;
-        return Ok(Expr::Identifier(
-          if connected { "True" } else { "False" }.to_string(),
-        ));
+        return Ok(bool_expr(connected));
       }
     }
-    return Ok(Expr::Identifier("False".to_string()));
+    return Ok(bool_expr(false));
   }
 
   // ConnectedComponents[Graph[{vertices}, {edges}]]
@@ -7706,13 +7685,11 @@ pub fn evaluate_function_call_ast_inner(
     let iso =
       find_graph_isomorphism_impl(verts1, edges1, verts2, edges2, args)?;
     let found = matches!(&iso, Expr::List(maps) if !maps.is_empty());
-    return Ok(Expr::Identifier(
-      if found { "True" } else { "False" }.into(),
-    ));
+    return Ok(bool_expr(found));
   }
   // Any non-graph argument makes IsomorphicGraphQ False (matching wolframscript).
   if name == "IsomorphicGraphQ" && args.len() == 2 {
-    return Ok(Expr::Identifier("False".into()));
+    return Ok(bool_expr(false));
   }
 
   // FindSpanningTree[Graph[verts, edges]] — minimum spanning tree (Kruskal's)
@@ -8197,9 +8174,7 @@ pub fn evaluate_function_call_ast_inner(
       _ => None,
     };
     if let Some(b) = result {
-      return Ok(Expr::Identifier(
-        if b { "True" } else { "False" }.to_string(),
-      ));
+      return Ok(bool_expr(b));
     }
   }
 
@@ -8547,9 +8522,7 @@ pub fn evaluate_function_call_ast_inner(
       };
 
       if let Some(b) = result {
-        return Ok(Expr::Identifier(
-          if b { "True" } else { "False" }.to_string(),
-        ));
+        return Ok(bool_expr(b));
       }
     }
   }
@@ -8713,9 +8686,7 @@ pub fn evaluate_function_call_ast_inner(
     && let Expr::String(path) = &args[0]
   {
     let exists = std::path::Path::new(path).exists();
-    return Ok(Expr::Identifier(
-      if exists { "True" } else { "False" }.to_string(),
-    ));
+    return Ok(bool_expr(exists));
   }
 
   // FileInformation[path] — wolframscript returns `{}` when the file does
@@ -10272,11 +10243,9 @@ pub fn evaluate_function_call_ast_inner(
   if name == "DirectoryQ" && args.len() == 1 {
     if let Expr::String(path) = &args[0] {
       let is_dir = std::path::Path::new(path).is_dir();
-      return Ok(Expr::Identifier(
-        if is_dir { "True" } else { "False" }.to_string(),
-      ));
+      return Ok(bool_expr(is_dir));
     }
-    return Ok(Expr::Identifier("False".to_string()));
+    return Ok(bool_expr(false));
   }
 
   // FirstCase[x, y] returns Missing["NotFound"] when x is not a list
@@ -12845,11 +12814,7 @@ fn bspline_structured(
   );
   let degree_list: Expr =
     Expr::List(degrees.iter().map(|&d| Expr::Integer(d as i128)).collect());
-  let closed: Expr = Expr::List(
-    (0..dim)
-      .map(|_| Expr::Identifier("False".to_string()))
-      .collect(),
-  );
+  let closed: Expr = Expr::List((0..dim).map(|_| bool_expr(false)).collect());
   let mut net_slot: Vec<Expr> = net.to_vec();
   net_slot.push(Expr::Identifier("Automatic".to_string()));
   let knot_lists: Expr =

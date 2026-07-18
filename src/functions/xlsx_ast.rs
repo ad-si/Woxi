@@ -1,6 +1,6 @@
 use crate::InterpreterError;
 use crate::functions::math_ast::try_eval_to_f64;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, bool_expr};
 use calamine::{Data, Reader, open_workbook_auto, open_workbook_auto_from_rs};
 use rust_xlsxwriter::Workbook;
 use std::io::Cursor;
@@ -14,9 +14,7 @@ fn cell_to_expr(cell: &Data) -> Expr {
     Data::Int(n) => Expr::Real(*n as f64),
     Data::Float(f) => Expr::Real(*f),
     Data::String(s) => Expr::String(s.clone()),
-    Data::Bool(b) => {
-      Expr::Identifier(if *b { "True" } else { "False" }.to_string())
-    }
+    Data::Bool(b) => bool_expr(*b),
     Data::DateTime(dt) => Expr::Real(dt.as_f64()),
     Data::DateTimeIso(s) => Expr::String(s.clone()),
     Data::DurationIso(s) => Expr::String(s.clone()),

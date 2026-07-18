@@ -9,7 +9,7 @@
 
 use crate::InterpreterError;
 use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, unevaluated,
 };
 
 pub fn sum_convergence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -76,26 +76,23 @@ pub fn sum_convergence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // 1/n! decay dominates any polynomial factor
   if inv_factorial {
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   }
 
-  let verdict = |converges: bool| {
-    Expr::Identifier(if converges { "True" } else { "False" }.to_string())
-  };
   match geo_ratio {
     Some((r_abs, alternating)) => {
       if r_abs < 1.0 {
-        Ok(verdict(true))
+        Ok(bool_expr(true))
       } else if r_abs > 1.0 {
-        Ok(verdict(false))
+        Ok(bool_expr(false))
       } else if alternating {
         // |r| == 1 with sign alternation: alternating series test
-        Ok(verdict(net_degree <= -1))
+        Ok(bool_expr(net_degree <= -1))
       } else {
-        Ok(verdict(net_degree <= -2))
+        Ok(bool_expr(net_degree <= -2))
       }
     }
-    None => Ok(verdict(net_degree <= -2)),
+    None => Ok(bool_expr(net_degree <= -2)),
   }
 }
 

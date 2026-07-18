@@ -1,7 +1,7 @@
 //! AST-native date/time functions.
 
 use crate::InterpreterError;
-use crate::syntax::{Expr, unevaluated};
+use crate::syntax::{Expr, bool_expr, unevaluated};
 
 /// Parse an ISO-style date/time string into its integer components, e.g.
 /// `"2024-03-15"` → `{2024, 3, 15}` and `"2024-03-15 14:30:00"` →
@@ -2446,11 +2446,7 @@ pub fn day_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "Sunday",
   ];
 
-  let boolean = |b: bool| {
-    Ok(Expr::Identifier(
-      if b { "True" } else { "False" }.to_string(),
-    ))
-  };
+  let boolean = |b: bool| Ok(bool_expr(b));
 
   match &args[1] {
     // A weekday name (symbol or string) matches that day of the week.
@@ -4006,9 +4002,7 @@ pub fn date_within_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return unevaluated();
   }
   let within = s2 >= s1 && e2 <= e1 && s2 < e1;
-  Ok(Expr::Identifier(
-    if within { "True" } else { "False" }.to_string(),
-  ))
+  Ok(bool_expr(within))
 }
 
 /// DateSelect[list, crit] — the dates of `list` for which `crit[date]` is
@@ -4228,9 +4222,7 @@ pub fn date_overlaps_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let overlaps = a
     .iter()
     .any(|&(s1, e1)| b.iter().any(|&(s2, e2)| s1.max(s2) < e1.min(e2)));
-  Ok(Expr::Identifier(
-    if overlaps { "True" } else { "False" }.to_string(),
-  ))
+  Ok(bool_expr(overlaps))
 }
 
 /// FromJulianDate[jd] — the DateObject instant of a Julian date (days

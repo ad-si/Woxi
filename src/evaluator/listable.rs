@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::syntax::bool_expr;
 
 /// Dispatch function call to built-in implementations (AST version).
 /// This is the AST equivalent of the string-based function dispatch.
@@ -487,7 +488,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     }
     // In script mode (no Mathematica front end / notebook UI),
     // wolframscript returns `False`. Woxi is always headless.
-    "$Notebooks" => Some(Expr::Identifier("False".to_string())),
+    "$Notebooks" => Some(bool_expr(false)),
     // `$RandomState` is wolframscript's RNG state — a multi-thousand-digit
     // integer whose value depends on seed and history. Reproducing the
     // exact value isn't feasible without sharing wolframscript's PRNG
@@ -870,7 +871,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
         None
       }
     }
-    "$Assumptions" => Some(Expr::Identifier("True".to_string())),
+    "$Assumptions" => Some(bool_expr(true)),
     "$Context" => Some(Expr::String(crate::current_context())),
     // $Input is the name of the currently evaluating input source. In
     // wolframscript's -code mode it's the empty string.

@@ -1,6 +1,6 @@
 use crate::InterpreterError;
 use crate::syntax::BinaryOperator;
-use crate::syntax::{Expr, ImageType, unevaluated};
+use crate::syntax::{Expr, ImageType, bool_expr, unevaluated};
 use std::sync::Arc;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -429,9 +429,7 @@ pub fn image_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let is_image =
     matches!(&args[0], Expr::Image { .. }) || is_valid_image3d(&args[0]);
-  Ok(Expr::Identifier(
-    if is_image { "True" } else { "False" }.to_string(),
-  ))
+  Ok(bool_expr(is_image))
 }
 
 /// Image3D[arg] is a valid Image when `arg` is a rank-3 or rank-4 nested
@@ -3360,9 +3358,7 @@ pub fn binary_image_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ..
     }
   );
-  Ok(Expr::Identifier(
-    if result { "True" } else { "False" }.to_string(),
-  ))
+  Ok(bool_expr(result))
 }
 
 /// PixelValue[img, {x, y}] — pixel value at column x (1-indexed from the

@@ -3,7 +3,7 @@
 //! These functions work directly with `Expr` AST nodes.
 
 use crate::InterpreterError;
-use crate::syntax::{Expr, unevaluated};
+use crate::syntax::{Expr, bool_expr, unevaluated};
 
 /// Whether an expression is a valid association entry: a single rule, a
 /// list of rules, or an association. Used by AssociationMap to decide when
@@ -289,10 +289,10 @@ pub fn key_exists_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let k_str = crate::syntax::expr_to_string(k);
         let k_cmp = k_str.as_str();
         if k_cmp == key_cmp {
-          return Ok(Expr::Identifier("True".to_string()));
+          return Ok(bool_expr(true));
         }
       }
-      Ok(Expr::Identifier("False".to_string()))
+      Ok(bool_expr(false))
     }
     // A list of rules is also a valid subject.
     Expr::List(items)
@@ -302,11 +302,11 @@ pub fn key_exists_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Some(k) = extract_rule_key(item) {
           let k_str = crate::syntax::expr_to_string(&k);
           if k_str.as_str() == key_cmp {
-            return Ok(Expr::Identifier("True".to_string()));
+            return Ok(bool_expr(true));
           }
         }
       }
-      Ok(Expr::Identifier("False".to_string()))
+      Ok(bool_expr(false))
     }
     other => {
       // Unlike its siblings, KeyExistsQ answers False after the message.
@@ -317,7 +317,7 @@ pub fn key_exists_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         other,
         args,
       );
-      Ok(Expr::Identifier("False".to_string()))
+      Ok(bool_expr(false))
     }
   }
 }

@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::ComparisonOp;
+use crate::syntax::{ComparisonOp, bool_expr};
 
 pub fn dispatch_boolean_functions(
   name: &str,
@@ -63,7 +63,7 @@ pub fn dispatch_boolean_functions(
     // being actively manipulated. Outside an interactive notebook nothing is,
     // so it evaluates to False, matching wolframscript in script mode.
     "ControlActive" if args.is_empty() => {
-      return Some(Ok(Expr::Identifier("False".to_string())));
+      return Some(Ok(bool_expr(false)));
     }
     "SameQ" => {
       return Some(crate::functions::boolean_ast::same_q_ast(args));
@@ -87,7 +87,7 @@ pub fn dispatch_boolean_functions(
     }
     // 0- or 1-arg Unequal is trivially True (no pair of unequal items).
     "Unequal" if args.len() < 2 => {
-      return Some(Ok(Expr::Identifier("True".to_string())));
+      return Some(Ok(bool_expr(true)));
     }
     // Route the functional forms through the same Comparison evaluation
     // as the operator syntax, so e.g. the ComplexInfinity `nord` messages
