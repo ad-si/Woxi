@@ -7892,7 +7892,7 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
         return stadium_area(&p1, &p2, &r, false);
       }
       // 2-dimensional regions: area.
-      "Disk" | "Rectangle" | "Triangle" | "Polygon" => {
+      "Disk" | "Rectangle" | "Triangle" | "Polygon" | "Annulus" => {
         return or_unevaluated(compute_area(expr));
       }
       // Unbounded regions have infinite measure in their intrinsic dimension.
@@ -10595,6 +10595,73 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
           })
         }
       }
+      // Annulus[] = region between radii 1/2 and 1; Annulus[c, {r1, r2}] is
+      // the ring with inner radius r1 and outer radius r2, area
+      // Pi*(r2^2 - r1^2). The sector form Annulus[c, {r1, r2}, {t1, t2}]
+      // subtends angle (t2 - t1), so its area is (t2 - t1)/2 * (r2^2 - r1^2).
+      "Annulus" => {
+        let annulus_unevaluated = || {
+          Ok(Expr::FunctionCall {
+            name: "Area".to_string(),
+            args: vec![expr.clone()].into(),
+          })
+        };
+        let (r1, r2, angles) = match args.len() {
+          0 => (
+            crate::functions::math_ast::make_rational(1, 2),
+            Expr::Integer(1),
+            None,
+          ),
+          2 | 3 => {
+            let Expr::List(radii) = &args[1] else {
+              return annulus_unevaluated();
+            };
+            if radii.len() != 2 {
+              return annulus_unevaluated();
+            }
+            let angles = if args.len() == 3 {
+              match &args[2] {
+                Expr::List(a) if a.len() == 2 => {
+                  Some((a[0].clone(), a[1].clone()))
+                }
+                _ => return annulus_unevaluated(),
+              }
+            } else {
+              None
+            };
+            (radii[0].clone(), radii[1].clone(), angles)
+          }
+          _ => return annulus_unevaluated(),
+        };
+        let sq = |r: Expr| Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![r, Expr::Integer(2)].into(),
+        };
+        let radial = Expr::FunctionCall {
+          name: "Subtract".to_string(),
+          args: vec![sq(r2), sq(r1)].into(),
+        };
+        // Angular factor: Pi for the full ring, (t2 - t1)/2 for a sector.
+        let angular = match angles {
+          None => Expr::Constant("Pi".to_string()),
+          Some((t1, t2)) => Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              crate::functions::math_ast::make_rational(1, 2),
+              Expr::FunctionCall {
+                name: "Subtract".to_string(),
+                args: vec![t2, t1].into(),
+              },
+            ]
+            .into(),
+          },
+        };
+        let area = Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![angular, radial].into(),
+        };
+        crate::evaluator::evaluate_expr_to_expr(&area)
+      }
       // Ellipsoid[center, {a, b}] (2D) is a filled ellipse: Area = Pi*a*b.
       // Area is the 2-dimensional measure, so an Ellipsoid of any other
       // dimension (e.g. a 3D solid) has Undefined area, matching WL.
@@ -11244,6 +11311,16 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
           Ok(args[0].clone())
         }
       }
+      // Annulus[{x, y}, {r1, r2}] — the full ring is symmetric about its
+      // center; Annulus[] is centered at the origin. The sector form
+      // (three arguments) is not centrally symmetric, so leave it alone.
+      "Annulus" => match args.len() {
+        0 => Ok(Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into())),
+        2 if matches!(&args[0], Expr::List(c) if c.len() == 2) => {
+          Ok(args[0].clone())
+        }
+        _ => unevaluated(),
+      },
       // Ellipsoid[center, {r1, ...}] — centroid is the center (works for any
       // dimension since an ellipsoid is symmetric about its center).
       "Ellipsoid" if args.len() == 2 && matches!(&args[0], Expr::List(_)) => {

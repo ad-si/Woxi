@@ -750,6 +750,39 @@ mod region_measure {
     assert_eq!(interpret("RegionMeasure[Rectangle[]]").unwrap(), "1");
   }
 
+  // Annulus[c, {r1, r2}] has area Pi*(r2^2 - r1^2); the sector form
+  // Annulus[c, {r1, r2}, {t1, t2}] scales by (t2 - t1)/(2 Pi).
+  #[test]
+  fn annulus_area() {
+    assert_eq!(
+      interpret("RegionMeasure[Annulus[{0, 0}, {1, 2}]]").unwrap(),
+      "3*Pi"
+    );
+    assert_eq!(interpret("Area[Annulus[{1, 1}, {2, 3}]]").unwrap(), "5*Pi");
+    // Annulus[] is the ring between radii 1/2 and 1.
+    assert_eq!(interpret("Area[Annulus[]]").unwrap(), "(3*Pi)/4");
+    // Symbolic radii.
+    assert_eq!(
+      interpret("Area[Annulus[{0, 0}, {r1, r2}]]").unwrap(),
+      "Pi*(-r1^2 + r2^2)"
+    );
+    // Annular sectors.
+    assert_eq!(
+      interpret("Area[Annulus[{0, 0}, {1, 2}, {0, Pi}]]").unwrap(),
+      "(3*Pi)/2"
+    );
+    assert_eq!(
+      interpret("Area[Annulus[{0, 0}, {1, 2}, {0, Pi/2}]]").unwrap(),
+      "(3*Pi)/4"
+    );
+    // The full ring is centered at its center; Annulus[] at the origin.
+    assert_eq!(
+      interpret("RegionCentroid[Annulus[{2, 3}, {1, 2}]]").unwrap(),
+      "{2, 3}"
+    );
+    assert_eq!(interpret("RegionCentroid[Annulus[]]").unwrap(), "{0, 0}");
+  }
+
   #[test]
   fn triangle_and_polygon_area() {
     assert_eq!(
