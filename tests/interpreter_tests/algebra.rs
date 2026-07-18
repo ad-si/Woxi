@@ -757,6 +757,54 @@ mod simplify {
     );
   }
 
+  // All-negative sums over reciprocal powers recombine over the common
+  // x^(-k): with UNIT cofactors the full content comes out, otherwise
+  // only the sign and denominator lcm — and the candidate loses when it
+  // costs more than the split form (wolframscript-verified; differential
+  // fuzzer, seed 1784234939556239488).
+  #[test]
+  fn negative_reciprocal_sum_recombines() {
+    assert_eq!(
+      interpret("Simplify[-2 - 2/x]").unwrap(),
+      "(-2*(1 + x))/x"
+    );
+    assert_eq!(
+      interpret("Simplify[-2 - 2/x - 2 x]").unwrap(),
+      "(-2*(1 + x + x^2))/x"
+    );
+    assert_eq!(
+      interpret("Simplify[-2/5 - 2/(5 x)]").unwrap(),
+      "(-2*(1 + x))/(5*x)"
+    );
+    // Non-unit cofactors only pull the sign and the denominator lcm.
+    assert_eq!(
+      interpret("Simplify[-4/5 - 2/(5 x)]").unwrap(),
+      "-1/5*(2 + 4*x)/x"
+    );
+    assert_eq!(
+      interpret("Simplify[(-2 - 4 x)/(3 x)]").unwrap(),
+      "-1/3*(2 + 4*x)/x"
+    );
+    // The recombined quotient loses when it counts higher than the sum.
+    assert_eq!(interpret("Simplify[-4 - 2/x]").unwrap(), "-4 - 2/x");
+    assert_eq!(interpret("Simplify[-4 - 2/x^2]").unwrap(), "-4 - 2/x^2");
+    assert_eq!(
+      interpret("Simplify[-4/5 - 2/(5 x^2)]").unwrap(),
+      "-4/5 - 2/(5*x^2)"
+    );
+    // Mixed-sign sums with a positive content still split-extract —
+    // three-term sums parse the raw Divide[c, x] term shape.
+    assert_eq!(
+      interpret("Simplify[-2 + 2/x + 2 x]").unwrap(),
+      "2*(-1 + x^(-1) + x)"
+    );
+    assert_eq!(
+      interpret("Simplify[4 + 2/x + 2 x]").unwrap(),
+      "2*(2 + x^(-1) + x)"
+    );
+    assert_eq!(interpret("Simplify[4 + 2/x]").unwrap(), "4 + 2/x");
+  }
+
   // Sums of radicals pull out their integer content (the content goes
   // negative only when EVERY term is negative). Differential fuzzer,
   // seed 1783537668073123846; wolframscript-verified.
