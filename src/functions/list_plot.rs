@@ -369,6 +369,84 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics_result_with_source(svg, source))
 }
 
+/// Convert a flat list of complex numbers into (Re, Im) points.
+/// Entries that don't evaluate to a (possibly complex) number are skipped.
+fn complex_series_points(items: &[Expr]) -> Vec<(f64, f64)> {
+  items
+    .iter()
+    .filter_map(|z| {
+      let e = evaluate_expr_to_expr(z).unwrap_or_else(|_| z.clone());
+      crate::functions::list_helpers_ast::expr_to_complex_parts(&e)
+    })
+    .filter(|(re, im)| re.is_finite() && im.is_finite())
+    .collect()
+}
+
+/// Parse complex list data from the first argument of ComplexListPlot.
+///
+/// Supported formats:
+/// - `{z1, z2, ...}` → single series of (Re, Im) points
+/// - `{{z11, z12, ...}, {z21, z22, ...}}` → multiple series
+fn parse_complex_list_data(
+  arg: &Expr,
+) -> Result<Vec<Vec<(f64, f64)>>, InterpreterError> {
+  let data = evaluate_expr_to_expr(arg)?;
+  let items = match &data {
+    Expr::List(items) => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "ComplexListPlot: first argument must be a list".into(),
+      ));
+    }
+  };
+
+  if items.is_empty() {
+    return Ok(vec![vec![]]);
+  }
+
+  // Multiple datasets: {{z11, ...}, {z21, ...}}
+  if items.iter().all(|item| matches!(item, Expr::List(_))) {
+    let mut all_series = Vec::new();
+    for item in items {
+      if let Expr::List(zs) = item {
+        all_series.push(complex_series_points(zs));
+      }
+    }
+    return Ok(all_series);
+  }
+
+  Ok(vec![complex_series_points(items)])
+}
+
+/// ComplexListPlot[{z1, z2, ...}] plots complex numbers as points at
+/// (Re[z], Im[z]) in the complex plane, like ListPlot[ReIm[data]].
+pub fn complex_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let all_series = parse_complex_list_data(&args[0])?;
+  let parsed = parse_plot_options(args);
+  let (x_range, y_range) = compute_ranges(&all_series);
+  let y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
+  let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
+  let joined = parsed.joined;
+  let opts = &parsed.opts;
+
+  let svg = if joined {
+    generate_svg_with_filling(&all_series, x_range, y_range, opts)?
+  } else {
+    generate_scatter_svg_with_options(&all_series, x_range, y_range, opts)?
+  };
+
+  let source = build_plot_source(
+    &all_series,
+    &opts.plot_style,
+    x_range,
+    y_range,
+    (opts.svg_width, opts.svg_height),
+    !joined,
+    opts.filling,
+  );
+  Ok(crate::graphics_result_with_source(svg, source))
+}
+
 /// ListLinePlot[{y1, y2, ...}]
 pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let all_series = parse_list_data(&args[0])?;
