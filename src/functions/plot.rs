@@ -1135,6 +1135,10 @@ pub(crate) struct PlotOptions {
   /// `Epilog -> {…}` graphics primitives (already evaluated), drawn on top
   /// of the plotted data in data coordinates.
   pub epilog: Vec<Expr>,
+  /// Per-series error bars from `Around` data values, parallel to the
+  /// series' points: each entry is ((dx_minus, dx_plus), (dy_minus,
+  /// dy_plus)) in data units. Empty when the data has no uncertainties.
+  pub error_bars: Vec<Vec<((f64, f64), (f64, f64))>>,
 }
 
 impl Default for PlotOptions {
@@ -1166,8 +1170,55 @@ impl Default for PlotOptions {
       log_y: false,
       stacked: false,
       epilog: Vec::new(),
+      error_bars: Vec::new(),
     }
   }
+}
+
+/// Draw `Around`-style error bars for one series: a bar spanning each
+/// point's uncertainty interval, with short caps at both ends, in the
+/// series color. `bars` is parallel to `points` and holds the
+/// ((dx_minus, dx_plus), (dy_minus, dy_plus)) half-widths in data units;
+/// zero widths draw nothing for that direction.
+fn draw_error_bars<
+  DB: plotters::prelude::DrawingBackend,
+  CT: plotters::prelude::CoordTranslate<From = (f64, f64)>,
+>(
+  chart: &mut plotters::prelude::ChartContext<DB, CT>,
+  points: &[(f64, f64)],
+  bars: &[((f64, f64), (f64, f64))],
+  color: RGBColor,
+  x_span: f64,
+  y_span: f64,
+) -> Result<(), InterpreterError> {
+  // Cap half-lengths: a small fixed fraction of the plotted span.
+  let cap_x = x_span * 0.012;
+  let cap_y = y_span * 0.012;
+  let style = color.stroke_width(RESOLUTION_SCALE);
+  let mut segments: Vec<[(f64, f64); 2]> = Vec::new();
+  for (&(x, y), &(dx, dy)) in points.iter().zip(bars) {
+    if !(x.is_finite() && y.is_finite()) {
+      continue;
+    }
+    if dy.0 > 0.0 || dy.1 > 0.0 {
+      let (lo, hi) = (y - dy.0, y + dy.1);
+      segments.push([(x, lo), (x, hi)]);
+      segments.push([(x - cap_x, lo), (x + cap_x, lo)]);
+      segments.push([(x - cap_x, hi), (x + cap_x, hi)]);
+    }
+    if dx.0 > 0.0 || dx.1 > 0.0 {
+      let (lo, hi) = (x - dx.0, x + dx.1);
+      segments.push([(lo, y), (hi, y)]);
+      segments.push([(lo, y - cap_y), (lo, y + cap_y)]);
+      segments.push([(hi, y - cap_y), (hi, y + cap_y)]);
+    }
+  }
+  for seg in segments {
+    chart
+      .draw_series(std::iter::once(PathElement::new(seg.to_vec(), style)))
+      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+  }
+  Ok(())
 }
 
 /// Draw a dashed/dotted line on a chart.
@@ -1798,6 +1849,18 @@ fn generate_svg_with_options(
                   InterpreterError::EvaluationError(format!("Plot: {e}"))
                 })?;
             }
+          }
+
+          // Error bars from Around data values, on top of the line.
+          if let Some(bars) = opts.error_bars.get(series_idx) {
+            draw_error_bars(
+              &mut chart,
+              points,
+              bars,
+              color,
+              x_max - x_min,
+              y_max - y_min,
+            )?;
           }
 
           // Draw mesh dots at each data point when Mesh -> All
@@ -2435,6 +2498,18 @@ pub(crate) fn generate_scatter_svg_with_options(
               InterpreterError::EvaluationError(format!("Plot: {e}"))
             })?;
         }
+      }
+
+      // Error bars from Around data values, under the point markers.
+      if let Some(bars) = opts.error_bars.get(series_idx) {
+        draw_error_bars(
+          &mut chart,
+          points,
+          bars,
+          color,
+          x_max - x_min,
+          y_max - y_min,
+        )?;
       }
 
       chart
