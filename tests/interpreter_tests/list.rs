@@ -11086,6 +11086,50 @@ mod list_convolve {
     assert_eq!(interpret("ListConvolve[{1, 2}, {3, 4}]").unwrap(), "{10}");
   }
 
+  // Two-dimensional (valid, no-overhang) convolution: the kernel is reversed in
+  // both dimensions. Verified against wolframscript.
+  #[test]
+  fn two_dimensional_convolve() {
+    assert_eq!(
+      interpret(
+        "ListConvolve[{{1, 1}, {1, 1}}, {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]"
+      )
+      .unwrap(),
+      "{{12, 16}, {24, 28}}"
+    );
+    // A non-symmetric kernel exposes the double reversal.
+    assert_eq!(
+      interpret(
+        "ListConvolve[{{1, 2}, {3, 4}}, {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]"
+      )
+      .unwrap(),
+      "{{23, 33}, {53, 63}}"
+    );
+    assert_eq!(
+      interpret("ListConvolve[{{a, b}, {c, d}}, {{1, 2}, {3, 4}}]").unwrap(),
+      "{{4*a + 3*b + 2*c + d}}"
+    );
+  }
+
+  // Two-dimensional cross-correlation applies the kernel without reversal.
+  #[test]
+  fn two_dimensional_correlate() {
+    assert_eq!(
+      interpret(
+        "ListCorrelate[{{1, 0}, {0, 1}}, {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]"
+      )
+      .unwrap(),
+      "{{6, 8}, {12, 14}}"
+    );
+    assert_eq!(
+      interpret(
+        "ListCorrelate[{{1, 2}, {3, 4}}, {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]"
+      )
+      .unwrap(),
+      "{{37, 47}, {67, 77}}"
+    );
+  }
+
   // ListConvolve[ker, list, {kL, kR}] aligns kernel element kL with the
   // first list element and kR with the last, wrapping cyclically. {1, 1}
   // gives a full cyclic convolution of length n.

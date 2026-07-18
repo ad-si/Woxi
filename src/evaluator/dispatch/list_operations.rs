@@ -8293,6 +8293,73 @@ fn position_index_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
   Ok(Expr::Association(rules))
 }
 
+/// Two-dimensional (valid, no-overhang) ListCorrelate / ListConvolve. Returns
+/// `None` when either argument is not a rectangular matrix (so the caller falls
+/// back to the 1-D path). For convolution the kernel is reversed in both
+/// dimensions; the output has shape `(dr - kr + 1) × (dc - kc + 1)`.
+fn try_2d_conv_corr(
+  ker: &[Expr],
+  data: &[Expr],
+  flip: bool,
+) -> Option<Result<Expr, InterpreterError>> {
+  fn as_matrix(rows: &[Expr]) -> Option<Vec<Vec<Expr>>> {
+    let mut m = Vec::with_capacity(rows.len());
+    let mut cols = None;
+    for r in rows {
+      let Expr::List(c) = r else { return None };
+      // Rows must be flat (a 2-D array), and rectangular.
+      if c.iter().any(|e| matches!(e, Expr::List(_))) {
+        return None;
+      }
+      match cols {
+        None => cols = Some(c.len()),
+        Some(w) if w != c.len() => return None,
+        _ => {}
+      }
+      m.push(c.to_vec());
+    }
+    if m.is_empty() { None } else { Some(m) }
+  }
+  let km = as_matrix(ker)?;
+  let dm = as_matrix(data)?;
+  let (kr, kc) = (km.len(), km[0].len());
+  let (dr, dc) = (dm.len(), dm[0].len());
+  if kc == 0 || kr > dr || kc > dc {
+    return Some(Ok(Expr::List(vec![].into())));
+  }
+  let (out_r, out_c) = (dr - kr + 1, dc - kc + 1);
+  let mut rows = Vec::with_capacity(out_r);
+  for i in 0..out_r {
+    let mut row = Vec::with_capacity(out_c);
+    for j in 0..out_c {
+      let mut terms = Vec::with_capacity(kr * kc);
+      for a in 0..kr {
+        for b in 0..kc {
+          let ke = if flip {
+            &km[kr - 1 - a][kc - 1 - b]
+          } else {
+            &km[a][b]
+          };
+          terms.push(Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![ke.clone(), dm[i + a][j + b].clone()].into(),
+          });
+        }
+      }
+      let sum = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: terms.into(),
+      };
+      match evaluate_expr_to_expr(&sum) {
+        Ok(v) => row.push(v),
+        Err(e) => return Some(Err(e)),
+      }
+    }
+    rows.push(Expr::List(row.into()));
+  }
+  Some(Ok(Expr::List(rows.into())))
+}
+
 fn list_convolve_ast(
   kernel: &Expr,
   list: &Expr,
@@ -8315,6 +8382,11 @@ fn list_convolve_ast(
       });
     }
   };
+
+  // Matrix arguments: 2-D convolution (kernel reversed in both dimensions).
+  if let Some(r) = try_2d_conv_corr(ker, data, true) {
+    return r;
+  }
 
   let k = ker.len();
   let n = data.len();
@@ -8554,6 +8626,11 @@ fn list_correlate_ast(
       });
     }
   };
+
+  // Matrix arguments: 2-D cross-correlation.
+  if let Some(r) = try_2d_conv_corr(ker, data, false) {
+    return r;
+  }
 
   let k = ker.len();
   let n = data.len();
