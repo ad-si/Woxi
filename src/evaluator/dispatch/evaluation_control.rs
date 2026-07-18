@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, unevaluated};
+use crate::syntax::{BinaryOperator, bool_expr, unevaluated};
 
 pub fn dispatch_evaluation_control(
   name: &str,
@@ -618,9 +618,7 @@ pub fn dispatch_evaluation_control(
       } = &args[0]
       {
         let result = validate_distribution_params(dist_name, dist_args);
-        return Some(Ok(Expr::Identifier(
-          if result { "True" } else { "False" }.to_string(),
-        )));
+        return Some(Ok(bool_expr(result)));
       }
       // Not a recognized distribution — return unevaluated
       return Some(Ok(unevaluated("DistributionParameterQ", args)));
@@ -816,7 +814,7 @@ pub fn dispatch_evaluation_control(
           .to_string(),
         )));
       }
-      return Some(Ok(Expr::Identifier("False".to_string())));
+      return Some(Ok(bool_expr(false)));
     }
     "Piecewise" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::control_flow_ast::piecewise_ast(args));

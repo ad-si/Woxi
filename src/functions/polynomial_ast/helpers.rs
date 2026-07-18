@@ -1,6 +1,8 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, ComparisonOp, Expr, expr_to_string};
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, bool_expr, expr_to_string,
+};
 
 // ─── helpers ────────────────────────────────────────────────────────
 
@@ -35,8 +37,6 @@ pub fn extract_exponent_map(var_factors: &[Expr]) -> HashMap<String, i128> {
   }
   map
 }
-
-pub use crate::syntax::bool_expr;
 
 /// Build a FunctionCall expression.
 pub fn mk_call(name: &str, args: Vec<Expr>) -> Expr {
@@ -157,7 +157,7 @@ pub fn build_or(mut terms: Vec<Expr>) -> Expr {
   terms.retain(|t| !matches!(t, Expr::Identifier(s) if s == "False"));
 
   if terms.is_empty() {
-    return Expr::Identifier("False".to_string());
+    return bool_expr(false);
   }
   if terms.len() == 1 {
     return terms.remove(0);
@@ -200,12 +200,8 @@ pub fn or_results(a: &Expr, b: &Expr) -> Expr {
   match (a, b) {
     (Expr::Identifier(s), _) if s == "False" => b.clone(),
     (_, Expr::Identifier(s)) if s == "False" => a.clone(),
-    (Expr::Identifier(s), _) if s == "True" => {
-      Expr::Identifier("True".to_string())
-    }
-    (_, Expr::Identifier(s)) if s == "True" => {
-      Expr::Identifier("True".to_string())
-    }
+    (Expr::Identifier(s), _) if s == "True" => bool_expr(true),
+    (_, Expr::Identifier(s)) if s == "True" => bool_expr(true),
     _ => Expr::BinaryOp {
       op: BinaryOperator::Or,
       left: Box::new(a.clone()),
@@ -219,12 +215,8 @@ pub fn and_results(a: &Expr, b: &Expr) -> Expr {
   match (a, b) {
     (Expr::Identifier(s), _) if s == "True" => b.clone(),
     (_, Expr::Identifier(s)) if s == "True" => a.clone(),
-    (Expr::Identifier(s), _) if s == "False" => {
-      Expr::Identifier("False".to_string())
-    }
-    (_, Expr::Identifier(s)) if s == "False" => {
-      Expr::Identifier("False".to_string())
-    }
+    (Expr::Identifier(s), _) if s == "False" => bool_expr(false),
+    (_, Expr::Identifier(s)) if s == "False" => bool_expr(false),
     _ => Expr::BinaryOp {
       op: BinaryOperator::And,
       left: Box::new(a.clone()),

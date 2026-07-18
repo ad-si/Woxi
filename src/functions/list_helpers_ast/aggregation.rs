@@ -2,7 +2,9 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator, unevaluated};
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, UnaryOperator, bool_expr, unevaluated,
+};
 
 /// Shared AllTrue/AnyTrue/NoneTrue implementation: apply the predicate
 /// to every element at exactly the requested level (default 1) and
@@ -110,10 +112,10 @@ pub fn all_match_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   for part in &parts {
     if !matches_pattern_ast(part, &args[1]) {
-      return Ok(bool_to_expr(false));
+      return Ok(bool_expr(false));
     }
   }
-  Ok(bool_to_expr(true))
+  Ok(bool_expr(true))
 }
 
 /// AnyMatch[list, pattern] - True if any element at level 1 matches pattern
@@ -140,10 +142,10 @@ pub fn any_match_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   for part in &parts {
     if matches_pattern_ast(part, &args[1]) {
-      return Ok(bool_to_expr(true));
+      return Ok(bool_expr(true));
     }
   }
-  Ok(bool_to_expr(false))
+  Ok(bool_expr(false))
 }
 
 /// AST-based GroupBy: group elements by the value of a function.
@@ -2817,17 +2819,17 @@ pub fn all_same_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
   if items.is_empty() {
-    return Ok(bool_to_expr(true));
+    return Ok(bool_expr(true));
   }
   let first_val = apply_func_ast(&args[1], &items[0])?;
   let first_str = crate::syntax::expr_to_string(&first_val);
   for item in &items[1..] {
     let val = apply_func_ast(&args[1], item)?;
     if crate::syntax::expr_to_string(&val) != first_str {
-      return Ok(bool_to_expr(false));
+      return Ok(bool_expr(false));
     }
   }
-  Ok(bool_to_expr(true))
+  Ok(bool_expr(true))
 }
 
 /// `ClusteringComponents[list]` — assign each element of a 1-D numeric list

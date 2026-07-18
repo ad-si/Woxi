@@ -12,7 +12,7 @@
 //! unsupported cases elsewhere).
 
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, bool_expr};
 
 /// Absolute tolerance for orientation / sign tests (exact-zero comparisons on
 /// well-conditioned inputs).
@@ -52,8 +52,6 @@ fn perp_vec(a: Pt, b: Pt) -> bool {
 fn approx_eq(a: f64, b: f64) -> bool {
   (a - b).abs() <= REL * (1.0 + a.abs().max(b.abs()))
 }
-
-use crate::syntax::bool_expr;
 
 /// Parse a single 2D point `{x, y}` with numeric coordinates.
 fn extract_point(expr: &Expr) -> Option<Pt> {

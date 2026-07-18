@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{ComparisonOp, unevaluated};
+use crate::syntax::{ComparisonOp, bool_expr, unevaluated};
 
 /// True if `expr` contains any Real or BigFloat node — used to decide
 /// between exact and inexact number predicates.
@@ -137,7 +137,7 @@ pub fn dispatch_predicate_functions(
   if args.len() < 2
     && matches!(name, "Less" | "LessEqual" | "Greater" | "GreaterEqual")
   {
-    return Some(Ok(Expr::Identifier("True".to_string())));
+    return Some(Ok(bool_expr(true)));
   }
   match name {
     // Inequality[a, Less, b, Less, c, ...] - evaluate chained comparisons
@@ -185,9 +185,7 @@ pub fn dispatch_predicate_functions(
           .iter()
           .zip(values.windows(2))
           .all(|(op, pair)| op(pair[0], pair[1]));
-        return Some(Ok(Expr::Identifier(
-          if result { "True" } else { "False" }.to_string(),
-        )));
+        return Some(Ok(bool_expr(result)));
       }
       // For mixed-direction chains (e.g. `Greater` with `LessEqual`, or
       // any NotEqual mixed in), split into pairwise `&&` — wolframscript's
@@ -295,18 +293,14 @@ pub fn dispatch_predicate_functions(
             && contains_real(&args[0])
         }
       };
-      return Some(Ok(Expr::Identifier(
-        if is_machine { "True" } else { "False" }.to_string(),
-      )));
+      return Some(Ok(bool_expr(is_machine)));
     }
     "MissingQ" if args.len() == 1 => {
       let is_missing = matches!(
         &args[0],
         Expr::FunctionCall { name, .. } if name == "Missing"
       );
-      return Some(Ok(Expr::Identifier(
-        if is_missing { "True" } else { "False" }.to_string(),
-      )));
+      return Some(Ok(bool_expr(is_missing)));
     }
     // FailureQ[expr] is True for $Failed, $Aborted, and Failure[...] objects
     // (note: Missing[...] is NOT a failure).
@@ -316,9 +310,7 @@ pub fn dispatch_predicate_functions(
         Expr::FunctionCall { name, .. } => name == "Failure",
         _ => false,
       };
-      return Some(Ok(Expr::Identifier(
-        if is_failure { "True" } else { "False" }.to_string(),
-      )));
+      return Some(Ok(bool_expr(is_failure)));
     }
     // AlgebraicIntegerQ[a] is True when a is an algebraic integer: an
     // algebraic number whose minimal polynomial over the rationals is monic
@@ -326,12 +318,10 @@ pub fn dispatch_predicate_functions(
     // integer polynomial, so the test reduces to a unit leading coefficient.
     "RootOfUnityQ" if args.len() == 1 => {
       let b = root_of_unity_q(&args[0]);
-      return Some(Ok(Expr::Identifier(
-        if b { "True" } else { "False" }.to_string(),
-      )));
+      return Some(Ok(bool_expr(b)));
     }
     "AlgebraicIntegerQ" if args.len() == 1 => {
-      let false_result = || Some(Ok(Expr::Identifier("False".to_string())));
+      let false_result = || Some(Ok(bool_expr(false)));
       // Inexact (machine-number) inputs are never algebraic integers.
       if contains_real(&args[0]) {
         return false_result();
@@ -368,9 +358,7 @@ pub fn dispatch_predicate_functions(
         Err(e) => return Some(Err(e)),
       };
       let is_monic = matches!(&lead, Expr::Integer(1) | Expr::Integer(-1));
-      return Some(Ok(Expr::Identifier(
-        if is_monic { "True" } else { "False" }.to_string(),
-      )));
+      return Some(Ok(bool_expr(is_monic)));
     }
     "ColorQ" if args.len() == 1 => {
       let is_color = match &args[0] {
@@ -388,16 +376,14 @@ pub fn dispatch_predicate_functions(
         ),
         _ => false,
       };
-      return Some(Ok(Expr::Identifier(
-        if is_color { "True" } else { "False" }.to_string(),
-      )));
+      return Some(Ok(bool_expr(is_color)));
     }
     "BooleanQ" if args.len() == 1 => {
       return Some(Ok(match &args[0] {
         Expr::Identifier(name) if name == "True" || name == "False" => {
-          Expr::Identifier("True".to_string())
+          bool_expr(true)
         }
-        _ => Expr::Identifier("False".to_string()),
+        _ => bool_expr(false),
       }));
     }
     // SymbolQ is not a standard Wolfram built-in (it's from GeneralUtilities package),
@@ -414,24 +400,24 @@ pub fn dispatch_predicate_functions(
       return Some(Ok(match &args[0] {
         Expr::String(s) => {
           if !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()) {
-            Expr::Identifier("True".to_string())
+            bool_expr(true)
           } else {
-            Expr::Identifier("False".to_string())
+            bool_expr(false)
           }
         }
-        _ => Expr::Identifier("False".to_string()),
+        _ => bool_expr(false),
       }));
     }
     "LetterQ" if args.len() == 1 => {
       return Some(Ok(match &args[0] {
         Expr::String(s) => {
           if !s.is_empty() && s.chars().all(|c| c.is_alphabetic()) {
-            Expr::Identifier("True".to_string())
+            bool_expr(true)
           } else {
-            Expr::Identifier("False".to_string())
+            bool_expr(false)
           }
         }
-        _ => Expr::Identifier("False".to_string()),
+        _ => bool_expr(false),
       }));
     }
     "Precision" if args.len() == 1 => {
@@ -495,7 +481,7 @@ pub fn dispatch_predicate_functions(
     "PerfectNumberQ" if args.len() == 1 => {
       if let Expr::Integer(n) = &args[0] {
         if *n <= 0 {
-          return Some(Ok(Expr::Identifier("False".to_string())));
+          return Some(Ok(bool_expr(false)));
         }
         let n_val = *n;
         // Sum of proper divisors
@@ -513,9 +499,7 @@ pub fn dispatch_predicate_functions(
         if n_val == 1 {
           sum = 0;
         }
-        return Some(Ok(Expr::Identifier(
-          if sum == n_val { "True" } else { "False" }.to_string(),
-        )));
+        return Some(Ok(bool_expr(sum == n_val)));
       }
       // wolframscript reports any non-(positive-integer) argument as not a
       // perfect number: PerfectNumberQ of a Real, rational, constant, or
@@ -524,7 +508,7 @@ pub fn dispatch_predicate_functions(
       if matches!(&args[0], Expr::BigInteger(_)) {
         return Some(Ok(unevaluated("PerfectNumberQ", args)));
       }
-      return Some(Ok(Expr::Identifier("False".to_string())));
+      return Some(Ok(bool_expr(false)));
     }
     "ListQ" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::list_q_ast(args));
@@ -614,15 +598,11 @@ pub fn dispatch_predicate_functions(
     }
     "ExactNumberQ" if args.len() == 1 => {
       let is_exact = is_exact_number(&args[0]);
-      return Some(Ok(Expr::Identifier(
-        if is_exact { "True" } else { "False" }.to_string(),
-      )));
+      return Some(Ok(bool_expr(is_exact)));
     }
     "InexactNumberQ" if args.len() == 1 => {
       let is_inexact = is_inexact_number(&args[0]);
-      return Some(Ok(Expr::Identifier(
-        if is_inexact { "True" } else { "False" }.to_string(),
-      )));
+      return Some(Ok(bool_expr(is_inexact)));
     }
     "Positive" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::positive_ast(args));
@@ -723,7 +703,7 @@ pub fn dispatch_predicate_functions(
                 (try_eval_to_f64(&pair[0]), try_eval_to_f64(&pair[1]));
               if let (Some(lo), Some(hi)) = (lo, hi) {
                 if lo <= xv && xv <= hi {
-                  return Some(Ok(Expr::Identifier("True".to_string())));
+                  return Some(Ok(bool_expr(true)));
                 }
               } else {
                 all_numeric = false;
@@ -731,7 +711,7 @@ pub fn dispatch_predicate_functions(
               }
             }
             if all_numeric {
-              return Some(Ok(Expr::Identifier("False".to_string())));
+              return Some(Ok(bool_expr(false)));
             }
           }
           // Symbolic disjunction over each {min_i, max_i}.
@@ -1614,9 +1594,9 @@ pub fn dispatch_predicate_functions(
           !crate::evaluator::attributes::get_builtin_attributes(name)
             .is_empty();
         if has_own || has_down || has_builtin_attrs {
-          return Some(Ok(Expr::Identifier("True".to_string())));
+          return Some(Ok(bool_expr(true)));
         }
-        return Some(Ok(Expr::Identifier("False".to_string())));
+        return Some(Ok(bool_expr(false)));
       }
       return Some(Ok(unevaluated("NameQ", args)));
     }
@@ -1740,11 +1720,11 @@ fn vector_order_ast(name: &str, arg: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
   if any_false {
-    Ok(Expr::Identifier("False".to_string()))
+    Ok(bool_expr(false))
   } else if any_symbolic {
     unevaluated()
   } else {
-    Ok(Expr::Identifier("True".to_string()))
+    Ok(bool_expr(true))
   }
 }
 

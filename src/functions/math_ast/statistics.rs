@@ -3,8 +3,8 @@ use super::*;
 use crate::InterpreterError;
 use crate::functions::math_ast::gcd;
 use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, ExprForm, UnaryOperator, expr_to_output,
-  expr_to_string, format_expr, unevaluated,
+  BinaryOperator, ComparisonOp, Expr, ExprForm, UnaryOperator, bool_expr,
+  expr_to_output, expr_to_string, format_expr, unevaluated,
 };
 
 /// If the first argument is a numeric scalar, emit
@@ -5815,9 +5815,7 @@ pub fn group_element_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated());
   };
   let found = gelems.iter().any(|g| perms_equal(&args[1], g));
-  Ok(Expr::Identifier(
-    if found { "True" } else { "False" }.to_string(),
-  ))
+  Ok(bool_expr(found))
 }
 
 /// GroupElementPosition[group, perm] - the 1-based position of the permutation

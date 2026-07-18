@@ -14,7 +14,7 @@
 //! self-contained, reproducible country dataset.
 
 use crate::InterpreterError;
-use crate::syntax::{Expr, unevaluated};
+use crate::syntax::{Expr, bool_expr, unevaluated};
 
 /// A single sovereign country: a canonical display name, its population in
 /// number of people, and alternate spellings/abbreviations that should
@@ -353,8 +353,8 @@ fn interpret_scalar(ty: &str, val: &Expr) -> Option<Expr> {
         _ => return None,
       };
       match s.as_str() {
-        "true" => Some(Expr::Identifier("True".to_string())),
-        "false" => Some(Expr::Identifier("False".to_string())),
+        "true" => Some(bool_expr(true)),
+        "false" => Some(bool_expr(false)),
         _ => None,
       }
     }

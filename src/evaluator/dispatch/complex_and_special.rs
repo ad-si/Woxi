@@ -2,7 +2,7 @@
 use super::*;
 use crate::functions::math_ast::{expr_to_rational, is_sqrt, make_sqrt};
 use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, unevaluated,
 };
 
 pub fn dispatch_complex_and_special(
@@ -701,9 +701,7 @@ pub fn dispatch_complex_and_special(
                 }]
                 .into(),
               ),
-              Expr::Identifier(
-                if is_full { "True" } else { "False" }.to_string(),
-              ),
+              bool_expr(is_full),
             ]
             .into(),
           }));
@@ -4378,17 +4376,17 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
                 pattern: Box::new(Expr::Identifier(
                   "ShowSpecialCharacters".to_string(),
                 )),
-                replacement: Box::new(Expr::Identifier("False".to_string())),
+                replacement: Box::new(bool_expr(false)),
               },
               Expr::Rule {
                 pattern: Box::new(Expr::Identifier(
                   "ShowStringCharacters".to_string(),
                 )),
-                replacement: Box::new(Expr::Identifier("True".to_string())),
+                replacement: Box::new(bool_expr(true)),
               },
               Expr::Rule {
                 pattern: Box::new(Expr::Identifier("NumberMarks".to_string())),
-                replacement: Box::new(Expr::Identifier("True".to_string())),
+                replacement: Box::new(bool_expr(true)),
               },
             ]
             .into(),
@@ -4433,7 +4431,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
           Expr::Identifier(name.clone()),
           Expr::Rule {
             pattern: Box::new(Expr::Identifier("Editable".to_string())),
-            replacement: Box::new(Expr::Identifier("True".to_string())),
+            replacement: Box::new(bool_expr(true)),
           },
         ]
         .into(),
@@ -4516,11 +4514,11 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
           },
           Expr::Rule {
             pattern: Box::new(Expr::Identifier("Editable".to_string())),
-            replacement: Box::new(Expr::Identifier("True".to_string())),
+            replacement: Box::new(bool_expr(true)),
           },
           Expr::Rule {
             pattern: Box::new(Expr::Identifier("AutoDelete".to_string())),
-            replacement: Box::new(Expr::Identifier("True".to_string())),
+            replacement: Box::new(bool_expr(true)),
           },
         ]
         .into(),
@@ -4641,7 +4639,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
           },
           Expr::Rule {
             pattern: Box::new(Expr::Identifier("Editable".to_string())),
-            replacement: Box::new(Expr::Identifier("False".to_string())),
+            replacement: Box::new(bool_expr(false)),
           },
         ]
         .into(),
@@ -4673,11 +4671,11 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
                 pattern: Box::new(Expr::Identifier(
                   "ShowStringCharacters".to_string(),
                 )),
-                replacement: Box::new(Expr::Identifier("True".to_string())),
+                replacement: Box::new(bool_expr(true)),
               },
               Expr::Rule {
                 pattern: Box::new(Expr::Identifier("NumberMarks".to_string())),
-                replacement: Box::new(Expr::Identifier("True".to_string())),
+                replacement: Box::new(bool_expr(true)),
               },
             ]
             .into(),
@@ -4688,11 +4686,11 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
           },
           Expr::Rule {
             pattern: Box::new(Expr::Identifier("Editable".to_string())),
-            replacement: Box::new(Expr::Identifier("True".to_string())),
+            replacement: Box::new(bool_expr(true)),
           },
           Expr::Rule {
             pattern: Box::new(Expr::Identifier("AutoDelete".to_string())),
-            replacement: Box::new(Expr::Identifier("True".to_string())),
+            replacement: Box::new(bool_expr(true)),
           },
         ]
         .into(),
@@ -6109,11 +6107,7 @@ fn compute_region_member(
       None
     }
   };
-  let boolean = |b: bool| {
-    Ok(Expr::Identifier(
-      if b { "True" } else { "False" }.to_string(),
-    ))
-  };
+  let boolean = |b: bool| Ok(bool_expr(b));
   const EPS: f64 = 1e-10;
 
   let Some(pt) = to_vec(point) else {
@@ -6152,9 +6146,7 @@ fn compute_region_member(
       };
       let (cx, cy) = (ax + t * dx, ay + t * dy);
       let d2 = (px - cx) * (px - cx) + (py - cy) * (py - cy);
-      Ok(Expr::Identifier(
-        if d2 <= rv * rv { "True" } else { "False" }.to_string(),
-      ))
+      Ok(bool_expr(d2 <= rv * rv))
     }
     "Disk" | "Ball" | "Circle" | "Sphere" => {
       let default_dim = if name == "Ball" || name == "Sphere" {
@@ -6564,18 +6556,18 @@ fn compute_region_disjoint(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
   let Some(shapes) = shapes else {
     if args.is_empty() {
-      return Ok(Expr::Identifier("True".to_string()));
+      return Ok(bool_expr(true));
     }
     return Ok(unevaluated("RegionDisjoint", args));
   };
   for i in 0..shapes.len() {
     for j in i + 1..shapes.len() {
       if disjoint_shapes_intersect(&shapes[i], &shapes[j]) {
-        return Ok(Expr::Identifier("False".to_string()));
+        return Ok(bool_expr(false));
       }
     }
   }
-  Ok(Expr::Identifier("True".to_string()))
+  Ok(bool_expr(true))
 }
 
 /// Nearest point of a `Line[{v1, v2, …}]` (a segment or polyline) to `point`,
@@ -13059,7 +13051,7 @@ fn normalize_polygon_vertices(mut vertices: Vec<Expr>) -> Option<Expr> {
 fn compute_region_equal(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // RegionEqual[] and RegionEqual[r] → True
   if args.len() <= 1 {
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   }
 
   // Try to normalize all regions
@@ -13081,9 +13073,9 @@ fn compute_region_equal(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .all(|n| format!("{n:?}") == format!("{first:?}"));
 
   if all_equal {
-    Ok(Expr::Identifier("True".to_string()))
+    Ok(bool_expr(true))
   } else {
-    Ok(Expr::Identifier("False".to_string()))
+    Ok(bool_expr(false))
   }
 }
 
@@ -14340,8 +14332,8 @@ fn region_within(
 
   let unevaluated = || Ok(unevaluated("RegionWithin", args));
 
-  let true_expr = || Ok(Expr::Identifier("True".to_string()));
-  let false_expr = || Ok(Expr::Identifier("False".to_string()));
+  let true_expr = || Ok(bool_expr(true));
+  let false_expr = || Ok(bool_expr(false));
 
   // Extract region info: (name, center_coords, radius_or_half_sizes)
   let parse_disk_ball = |r: &Expr| -> Option<(String, Vec<f64>, f64)> {

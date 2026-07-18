@@ -2,7 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, UnaryOperator, unevaluated};
+use crate::syntax::{BinaryOperator, UnaryOperator, bool_expr, unevaluated};
 
 /// Wolfram canonical ordering for expressions.
 /// For strings: case-insensitive first, then lowercase before uppercase for ties.
@@ -1028,14 +1028,14 @@ pub fn ordered_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if let Expr::List(items) = &args[0] {
     if items.len() <= 1 {
-      return Ok(Expr::Identifier("True".to_string()));
+      return Ok(bool_expr(true));
     }
     for i in 0..items.len() - 1 {
       if !expr_le(&items[i], &items[i + 1]) {
-        return Ok(Expr::Identifier("False".to_string()));
+        return Ok(bool_expr(false));
       }
     }
-    Ok(Expr::Identifier("True".to_string()))
+    Ok(bool_expr(true))
   } else {
     Ok(unevaluated("OrderedQ", args))
   }

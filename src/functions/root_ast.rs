@@ -43,7 +43,7 @@
 //! LZMA (`XZ`) and ZSTD (`ZS`) records produce a descriptive error.
 
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, bool_expr};
 
 /// Flag bit marking a 4-byte length prefix ("byte count") in streamed data.
 const K_BYTE_COUNT_MASK: u32 = 0x4000_0000;
@@ -1304,9 +1304,7 @@ impl BasicKind {
       BasicKind::U64 => Expr::Integer(r.read_i64()? as u64 as i128),
       BasicKind::F32 => Expr::Real(r.read_f32()? as f64),
       BasicKind::F64 => Expr::Real(r.read_f64()?),
-      BasicKind::Bool => Expr::Identifier(
-        if r.read_u8()? != 0 { "True" } else { "False" }.to_string(),
-      ),
+      BasicKind::Bool => bool_expr(r.read_u8()? != 0),
     })
   }
 }

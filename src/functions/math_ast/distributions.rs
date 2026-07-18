@@ -3,7 +3,7 @@ use super::*;
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, expr_to_string,
   unevaluated,
 };
 
@@ -11617,7 +11617,7 @@ pub fn empirical_distribution_ast(
         vec![
           Expr::List(weights.into()),
           Expr::List(uniques.into()),
-          Expr::Identifier("False".to_string()),
+          bool_expr(false),
         ]
         .into(),
       ),

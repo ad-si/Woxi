@@ -7,7 +7,7 @@
 
 use crate::InterpreterError;
 use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, unevaluated,
 };
 
 pub fn resolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -59,11 +59,7 @@ pub fn resolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let var = vars[0].clone();
 
-  let truth = |b: bool| {
-    Ok(Expr::Identifier(
-      if b { "True" } else { "False" }.to_string(),
-    ))
-  };
+  let truth = |b: bool| Ok(bool_expr(b));
 
   // Parametrized templates
   if let Some(result) = parametric_template(head, &var, &cond) {
@@ -369,9 +365,6 @@ fn resolve_multivar(
   cond: &Expr,
   over_reals: bool,
 ) -> Option<Expr> {
-  let truth =
-    |b: bool| Expr::Identifier(if b { "True" } else { "False" }.to_string());
-
   // Only single (non-chained) comparisons are supported.
   let (operands, op) = match cond {
     Expr::Comparison {
@@ -407,11 +400,11 @@ fn resolve_multivar(
   // polynomial has zeros and a non-empty complement over the complexes, so
   // `Exists` is True and `ForAll` is False for both `==` and `!=`.
   if is_equation && !use_reals && contains_any_bound_var(&expanded, vars) {
-    return Some(truth(head == "Exists"));
+    return Some(bool_expr(head == "Exists"));
   }
 
   let range = separable_range(&expanded, vars)?;
-  Some(truth(decide(head, op, &range)))
+  Some(bool_expr(decide(head, op, &range)))
 }
 
 /// Range of an additively separable polynomial over the reals, as a single

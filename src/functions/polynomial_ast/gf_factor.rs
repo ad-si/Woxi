@@ -10,7 +10,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, unevaluated};
+use crate::syntax::{BinaryOperator, Expr, bool_expr, unevaluated};
 
 /// Keep the c-sweep in Berlekamp splitting bounded.
 const MAX_MODULUS: i128 = 65_536;
@@ -482,9 +482,7 @@ pub fn irreducible_polynomial_q_modulus(
     Some((_, factors)) => factors.len() == 1 && factors[0].1 == 1,
     None => false,
   };
-  Ok(Some(Expr::Identifier(
-    if irreducible { "True" } else { "False" }.to_string(),
-  )))
+  Ok(Some(bool_expr(irreducible)))
 }
 
 /// PrimitivePolynomialQ[poly, p]: true when `poly` is primitive over GF(p),
@@ -506,9 +504,7 @@ pub fn primitive_polynomial_q_modulus(
     return Ok(None);
   };
   match is_primitive_over_gf(&coeffs, p) {
-    Some(primitive) => Ok(Some(Expr::Identifier(
-      if primitive { "True" } else { "False" }.to_string(),
-    ))),
+    Some(primitive) => Ok(Some(bool_expr(primitive))),
     None => Ok(None),
   }
 }

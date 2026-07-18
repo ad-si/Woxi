@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, ComparisonOp, unevaluated};
+use crate::syntax::{BinaryOperator, ComparisonOp, bool_expr, unevaluated};
 
 thread_local! {
   /// Symbols currently being looked up — prevents infinite recursion when
@@ -2156,7 +2156,7 @@ pub fn evaluate_expr_to_expr_inner(
         BinaryOperator::And => {
           let left_val = evaluate_expr_to_expr(left)?;
           if matches!(&left_val, Expr::Identifier(s) if s == "False") {
-            return Ok(Expr::Identifier("False".to_string()));
+            return Ok(bool_expr(false));
           }
           let right_val = evaluate_expr_to_expr(right)?;
           let has_user_rules =
@@ -2171,7 +2171,7 @@ pub fn evaluate_expr_to_expr_inner(
         BinaryOperator::Or => {
           let left_val = evaluate_expr_to_expr(left)?;
           if matches!(&left_val, Expr::Identifier(s) if s == "True") {
-            return Ok(Expr::Identifier("True".to_string()));
+            return Ok(bool_expr(true));
           }
           let right_val = evaluate_expr_to_expr(right)?;
           let has_user_rules =
@@ -2431,9 +2431,9 @@ pub fn evaluate_expr_to_expr_inner(
         }
         UnaryOperator::Not => {
           if matches!(&val, Expr::Identifier(s) if s == "True") {
-            Ok(Expr::Identifier("False".to_string()))
+            Ok(bool_expr(false))
           } else if matches!(&val, Expr::Identifier(s) if s == "False") {
-            Ok(Expr::Identifier("True".to_string()))
+            Ok(bool_expr(true))
           } else {
             Ok(Expr::UnaryOp {
               op: *op,
@@ -2448,7 +2448,7 @@ pub fn evaluate_expr_to_expr_inner(
       operators,
     } => {
       if operands.len() < 2 || operators.is_empty() {
-        return Ok(Expr::Identifier("True".to_string()));
+        return Ok(bool_expr(true));
       }
 
       let values: Vec<Expr> = operands
@@ -2558,9 +2558,7 @@ pub fn evaluate_expr_to_expr_inner(
               // adjacent pair settles an Unequal chain) of any length;
               // a true pair is only decisive for a 2-operand comparison.
               if !result || operands.len() == 2 {
-                return Ok(Expr::Identifier(
-                  if result { "True" } else { "False" }.to_string(),
-                ));
+                return Ok(bool_expr(result));
               }
             }
             Some(None) => {
@@ -2650,7 +2648,7 @@ pub fn evaluate_expr_to_expr_inner(
             _ => true,
           };
           if !ok {
-            return Ok(Expr::Identifier("False".to_string()));
+            return Ok(bool_expr(false));
           }
         }
       }
@@ -2670,7 +2668,7 @@ pub fn evaluate_expr_to_expr_inner(
           && let Some(b) = interval_compare(op, left, right)
         {
           if !b {
-            return Ok(Expr::Identifier("False".to_string()));
+            return Ok(bool_expr(false));
           }
           continue;
         }
@@ -2698,7 +2696,7 @@ pub fn evaluate_expr_to_expr_inner(
             _ => true,
           };
           if !ok {
-            return Ok(Expr::Identifier("False".to_string()));
+            return Ok(bool_expr(false));
           }
           continue;
         }
@@ -2716,7 +2714,7 @@ pub fn evaluate_expr_to_expr_inner(
           )
         {
           if lm != rm {
-            return Ok(Expr::Identifier("False".to_string()));
+            return Ok(bool_expr(false));
           }
           continue;
         }
@@ -2731,7 +2729,7 @@ pub fn evaluate_expr_to_expr_inner(
         {
           if expr_to_string(left) == expr_to_string(right) {
             if matches!(op, ComparisonOp::NotEqual) {
-              return Ok(Expr::Identifier("False".to_string()));
+              return Ok(bool_expr(false));
             }
             continue;
           }
@@ -2775,7 +2773,7 @@ pub fn evaluate_expr_to_expr_inner(
                     d_l, d_r, shared,
                   )
                 {
-                  return Ok(Expr::Identifier("False".to_string()));
+                  return Ok(bool_expr(false));
                 }
               }
               if let (Some(l), Some(r)) =
@@ -2955,10 +2953,10 @@ pub fn evaluate_expr_to_expr_inner(
         };
 
         if !result {
-          return Ok(Expr::Identifier("False".to_string()));
+          return Ok(bool_expr(false));
         }
       }
-      Ok(Expr::Identifier("True".to_string()))
+      Ok(bool_expr(true))
     }
     Expr::CompoundExpr(exprs) => {
       let mut result = Expr::Identifier("Null".to_string());

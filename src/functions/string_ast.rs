@@ -4,7 +4,7 @@
 
 use crate::InterpreterError;
 use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, unevaluated,
 };
 
 use std::cell::RefCell;
@@ -998,9 +998,7 @@ pub fn string_starts_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     s.starts_with(&prefix)
   };
-  Ok(Expr::Identifier(
-    if result { "True" } else { "False" }.to_string(),
-  ))
+  Ok(bool_expr(result))
 }
 
 /// StringEndsQ[s, suffix] - checks if string ends with suffix
@@ -1053,9 +1051,7 @@ pub fn string_ends_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     s.ends_with(&suffix)
   };
-  Ok(Expr::Identifier(
-    if result { "True" } else { "False" }.to_string(),
-  ))
+  Ok(bool_expr(result))
 }
 
 /// StringContainsQ[s, sub] - checks if string contains substring
@@ -1085,7 +1081,7 @@ pub fn string_contains_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // StringContainsQ["ab", ""] are True (wolframscript-verified;
   // differential fuzzer, seed 11333804031743244357).
   if matches!(&args[1], Expr::String(sub) if sub.is_empty()) {
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   }
 
   // Try regex-based pattern first
@@ -1093,9 +1089,7 @@ pub fn string_contains_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let (re, constraints) = compiled?;
     let present =
       !find_constraint_spans(&re, &constraints, &s, false).is_empty();
-    return Ok(Expr::Identifier(
-      if present { "True" } else { "False" }.to_string(),
-    ));
+    return Ok(bool_expr(present));
   }
 
   let sub = expr_to_str(&args[1])?;
@@ -1104,9 +1098,7 @@ pub fn string_contains_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     s.contains(&sub)
   };
-  Ok(Expr::Identifier(
-    if result { "True" } else { "False" }.to_string(),
-  ))
+  Ok(bool_expr(result))
 }
 
 /// Check if args contain IgnoreCase -> True option
@@ -2056,9 +2048,7 @@ pub fn string_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let re = compile_regex(&full_regex).map_err(|e| {
       InterpreterError::EvaluationError(format!("Invalid regex: {}", e))
     })?;
-    return Ok(Expr::Identifier(
-      if re.is_match(&s) { "True" } else { "False" }.to_string(),
-    ));
+    return Ok(bool_expr(re.is_match(&s)));
   }
 
   // Fall back to string-based wildcard matching
@@ -2068,9 +2058,7 @@ pub fn string_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     expr_to_str(&args[1])?
   };
   let matches = wildcard_match(&s, &pattern_str);
-  Ok(Expr::Identifier(
-    if matches { "True" } else { "False" }.to_string(),
-  ))
+  Ok(bool_expr(matches))
 }
 
 /// Simple wildcard matching
@@ -7801,7 +7789,7 @@ pub fn string_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // No string is free of the empty pattern: StringFreeQ["", ""] is False
   // (wolframscript-verified).
   if matches!(&args[1], Expr::String(sub) if sub.is_empty()) {
-    return Ok(Expr::Identifier("False".to_string()));
+    return Ok(bool_expr(false));
   }
 
   // Try regex-based pattern first
@@ -7809,9 +7797,7 @@ pub fn string_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let (re, constraints) = compiled?;
     let present =
       !find_constraint_spans(&re, &constraints, &s, false).is_empty();
-    return Ok(Expr::Identifier(
-      if present { "False" } else { "True" }.to_string(),
-    ));
+    return Ok(bool_expr(!present));
   }
 
   let sub = expr_to_str(&args[1])?;
@@ -7820,9 +7806,7 @@ pub fn string_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     s.contains(&sub)
   };
-  Ok(Expr::Identifier(
-    if contains { "False" } else { "True" }.to_string(),
-  ))
+  Ok(bool_expr(!contains))
 }
 
 /// ToCharacterCode[s] - converts a string to a list of character codes
@@ -8550,11 +8534,9 @@ pub fn letter_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::String(s) => {
       let result = s.chars().all(|c| c.is_alphabetic());
-      Ok(Expr::Identifier(
-        if result { "True" } else { "False" }.to_string(),
-      ))
+      Ok(bool_expr(result))
     }
-    _ => Ok(Expr::Identifier("False".to_string())),
+    _ => Ok(bool_expr(false)),
   }
 }
 
@@ -8570,11 +8552,9 @@ pub fn upper_case_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::String(s) => {
       let result = s.chars().all(|c| c.is_alphabetic() && c.is_uppercase());
-      Ok(Expr::Identifier(
-        if result { "True" } else { "False" }.to_string(),
-      ))
+      Ok(bool_expr(result))
     }
-    _ => Ok(Expr::Identifier("False".to_string())),
+    _ => Ok(bool_expr(false)),
   }
 }
 
@@ -8590,11 +8570,9 @@ pub fn lower_case_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::String(s) => {
       let result = s.chars().all(|c| c.is_alphabetic() && c.is_lowercase());
-      Ok(Expr::Identifier(
-        if result { "True" } else { "False" }.to_string(),
-      ))
+      Ok(bool_expr(result))
     }
-    _ => Ok(Expr::Identifier("False".to_string())),
+    _ => Ok(bool_expr(false)),
   }
 }
 
@@ -8616,8 +8594,6 @@ pub fn printable_ascii_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       )
     ));
   };
-  let bool_expr =
-    |b: bool| Expr::Identifier(if b { "True" } else { "False" }.to_string());
   let is_printable =
     |s: &str| s.chars().all(|c| (32..=126).contains(&(c as u32)));
 
@@ -9070,11 +9046,9 @@ pub fn digit_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::String(s) => {
       let result = s.chars().all(|c| c.is_ascii_digit());
-      Ok(Expr::Identifier(
-        if result { "True" } else { "False" }.to_string(),
-      ))
+      Ok(bool_expr(result))
     }
-    _ => Ok(Expr::Identifier("False".to_string())),
+    _ => Ok(bool_expr(false)),
   }
 }
 
@@ -11783,9 +11757,7 @@ pub fn dictionary_word_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::String(s) => {
       let result = s.is_empty() || DICTIONARY_WORDS.contains(&s.to_lowercase());
-      Ok(Expr::Identifier(
-        if result { "True" } else { "False" }.to_string(),
-      ))
+      Ok(bool_expr(result))
     }
     _ => Ok(unevaluated("DictionaryWordQ", args)),
   }

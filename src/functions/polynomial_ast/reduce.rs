@@ -3,7 +3,7 @@ use super::together::negate_expr;
 use super::*;
 use crate::InterpreterError;
 use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, expr_to_string,
   unevaluated,
 };
 
@@ -199,7 +199,7 @@ fn enumerate_integer_interval(result: &Expr, var: &str) -> Option<Expr> {
     _ => return None,
   };
   if upper < lower {
-    return Some(Expr::Identifier("False".to_string()));
+    return Some(bool_expr(false));
   }
   if (upper as i128 - lower as i128) > 100_000 {
     return None;
@@ -361,7 +361,7 @@ fn try_reduce_bounded_integer_filtered(expr: &Expr, var: &str) -> Option<Expr> {
     return None;
   }
   if upper < lower {
-    return Some(Expr::Identifier("False".to_string()));
+    return Some(bool_expr(false));
   }
   if (upper as i128 - lower as i128) > 100_000 {
     return None;
@@ -382,7 +382,7 @@ fn try_reduce_bounded_integer_filtered(expr: &Expr, var: &str) -> Option<Expr> {
     }
   }
   if terms.is_empty() {
-    return Some(Expr::Identifier("False".to_string()));
+    return Some(bool_expr(false));
   }
   Some(build_or(terms))
 }
@@ -466,7 +466,7 @@ fn try_reduce_bounded_trig(
     eqs.push(make_equality(&var_expr, replacement));
   }
   if eqs.is_empty() {
-    return Ok(Some(Expr::Identifier("False".to_string())));
+    return Ok(Some(bool_expr(false)));
   }
   Ok(Some(build_or(eqs)))
 }
@@ -508,20 +508,20 @@ fn reduce_expr(
   if let Expr::Identifier(s) = expr {
     if s == "True" {
       return Ok(if domain == Some("Reals") || domain == Some("Integers") {
-        Expr::Identifier("True".to_string())
+        bool_expr(true)
       } else {
-        Expr::Identifier("True".to_string())
+        bool_expr(true)
       });
     }
     if s == "False" {
-      return Ok(Expr::Identifier("False".to_string()));
+      return Ok(bool_expr(false));
     }
   }
 
   // Handle List of constraints → convert to And
   if let Expr::List(items) = expr {
     if items.is_empty() {
-      return Ok(Expr::Identifier("True".to_string()));
+      return Ok(bool_expr(true));
     }
     let and_expr =
       items
@@ -550,7 +550,7 @@ fn reduce_expr(
   // Handle FunctionCall Or
   if let Expr::FunctionCall { name, args: fargs } = expr {
     if name == "Or" {
-      let mut result = Expr::Identifier("False".to_string());
+      let mut result = bool_expr(false);
       for a in fargs {
         let r = reduce_expr(a, vars, domain)?;
         result = or_results(&result, &r);
@@ -939,9 +939,9 @@ fn reduce_equation(
     // No variable — check if constant is zero
     let simplified = simplify(expanded);
     return Ok(if matches!(simplified, Expr::Integer(0)) {
-      Expr::Identifier("True".to_string())
+      bool_expr(true)
     } else {
-      Expr::Identifier("False".to_string())
+      bool_expr(false)
     });
   }
 
@@ -960,7 +960,7 @@ fn reduce_equation(
   // Convert Solve result (list of rules) to Or of equalities
   if let Expr::List(solutions) = &solve_result {
     if solutions.is_empty() {
-      return Ok(Expr::Identifier("False".to_string()));
+      return Ok(bool_expr(false));
     }
 
     let mut equalities: Vec<Expr> = Vec::new();
@@ -968,7 +968,7 @@ fn reduce_equation(
       if let Expr::List(rules) = sol {
         if rules.is_empty() {
           // Solve returned {{}} meaning all values are solutions
-          return Ok(Expr::Identifier("True".to_string()));
+          return Ok(bool_expr(true));
         }
         for rule in rules {
           if let Expr::Rule {
@@ -993,7 +993,7 @@ fn reduce_equation(
     }
 
     if equalities.is_empty() {
-      return Ok(Expr::Identifier("False".to_string()));
+      return Ok(bool_expr(false));
     }
 
     // Sort equalities for canonical output
@@ -1069,9 +1069,9 @@ fn reduce_not_equal(
   if is_constant_wrt(&expanded, var) {
     let simplified = simplify(expanded);
     return Ok(if matches!(simplified, Expr::Integer(0)) {
-      Expr::Identifier("False".to_string())
+      bool_expr(false)
     } else {
-      Expr::Identifier("True".to_string())
+      bool_expr(true)
     });
   }
   // Return the not-equal condition as-is for now
@@ -1347,8 +1347,6 @@ fn try_reduce_abs_inequality(
   let neg_c = negate_expr(&c);
   let cval = expr_to_number(&c)?;
   let zero = Expr::Integer(0);
-  let truth =
-    |b: bool| Expr::Identifier(if b { "True" } else { "False" }.to_string());
   let and = |a: Expr, b: Expr| Expr::BinaryOp {
     op: BinaryOperator::And,
     left: Box::new(a),
@@ -1364,7 +1362,7 @@ fn try_reduce_abs_inequality(
     CompOp::Less => {
       // |f| < c : empty when c <= 0, else -c < f < c.
       if cval <= 0.0 {
-        return Some(Ok(truth(false)));
+        return Some(Ok(bool_expr(false)));
       }
       and(
         make_comparison(&inner, &neg_c, CompOp::Greater),
@@ -1374,7 +1372,7 @@ fn try_reduce_abs_inequality(
     CompOp::LessEqual => {
       // |f| <= c : empty for c < 0, the point f == 0 for c == 0, else band.
       if cval < 0.0 {
-        return Some(Ok(truth(false)));
+        return Some(Ok(bool_expr(false)));
       }
       if cval == 0.0 {
         make_comparison(&inner, &zero, CompOp::Equal)
@@ -1389,7 +1387,7 @@ fn try_reduce_abs_inequality(
       // |f| > c : all reals for c < 0, else two open rays. At c == 0 this is
       // `f < 0 || f > 0` (Wolfram does not collapse it to `f != 0`).
       if cval < 0.0 {
-        return Some(Ok(truth(true)));
+        return Some(Ok(bool_expr(true)));
       }
       or(
         make_comparison(&inner, &neg_c, CompOp::Less),
@@ -1399,7 +1397,7 @@ fn try_reduce_abs_inequality(
     CompOp::GreaterEqual => {
       // |f| >= c : all reals when c <= 0, else two closed rays.
       if cval <= 0.0 {
-        return Some(Ok(truth(true)));
+        return Some(Ok(bool_expr(true)));
       }
       or(
         make_comparison(&inner, &neg_c, CompOp::LessEqual),
@@ -1446,7 +1444,7 @@ fn try_reduce_abs_not_equal(
 
   // |f| != c is vacuously true when c < 0 (Abs is never negative).
   if cval < 0.0 {
-    return Some(Ok(Expr::Identifier("True".to_string())));
+    return Some(Ok(bool_expr(true)));
   }
   // |f| != 0 is the two open rays `f < 0 || f > 0` (Wolfram keeps it split
   // rather than folding back to `f != 0`).
@@ -1489,10 +1487,10 @@ fn evaluate_constant_ineq(val: &Expr, op: CompOp) -> Expr {
       CompOp::Equal => n == 0.0,
       CompOp::NotEqual => n != 0.0,
     };
-    return Expr::Identifier(if result { "True" } else { "False" }.to_string());
+    return bool_expr(result);
   }
   // Can't evaluate
-  Expr::Identifier("True".to_string())
+  bool_expr(true)
 }
 
 /// Try to extract a numeric value from an expression.
@@ -1624,7 +1622,7 @@ fn reduce_quadratic_inequality(
       return Ok(if result {
         // Always true over reals
         if domain == Some("Reals") {
-          Expr::Identifier("True".to_string())
+          bool_expr(true)
         } else {
           Expr::FunctionCall {
             name: "Element".to_string(),
@@ -1636,7 +1634,7 @@ fn reduce_quadratic_inequality(
           }
         }
       } else {
-        Expr::Identifier("False".to_string())
+        bool_expr(false)
       });
     }
 
@@ -1651,7 +1649,7 @@ fn reduce_quadratic_inequality(
         }
         CompOp::GreaterEqual if ai > 0 => {
           if domain == Some("Reals") {
-            Ok(Expr::Identifier("True".to_string()))
+            Ok(bool_expr(true))
           } else {
             Ok(Expr::FunctionCall {
               name: "Element".to_string(),
@@ -1670,10 +1668,10 @@ fn reduce_quadratic_inequality(
         CompOp::LessEqual if ai > 0 => {
           Ok(make_equality(&Expr::Identifier(var.to_string()), &root))
         }
-        CompOp::Less if ai > 0 => Ok(Expr::Identifier("False".to_string())),
+        CompOp::Less if ai > 0 => Ok(bool_expr(false)),
         CompOp::LessEqual if ai < 0 => {
           if domain == Some("Reals") {
-            Ok(Expr::Identifier("True".to_string()))
+            Ok(bool_expr(true))
           } else {
             Ok(Expr::FunctionCall {
               name: "Element".to_string(),
@@ -1692,8 +1690,8 @@ fn reduce_quadratic_inequality(
         CompOp::GreaterEqual if ai < 0 => {
           Ok(make_equality(&Expr::Identifier(var.to_string()), &root))
         }
-        CompOp::Greater if ai < 0 => Ok(Expr::Identifier("False".to_string())),
-        _ => Ok(Expr::Identifier("False".to_string())),
+        CompOp::Greater if ai < 0 => Ok(bool_expr(false)),
+        _ => Ok(bool_expr(false)),
       };
     }
 
@@ -1770,7 +1768,7 @@ fn reduce_quadratic_inequality(
           &r2,
         ))
       }
-      _ => Ok(Expr::Identifier("False".to_string())),
+      _ => Ok(bool_expr(false)),
     }
   } else {
     // Non-integer coefficients — return unevaluated
@@ -1985,7 +1983,7 @@ fn try_factor_and_reduce_inequality(
     }
 
     if intervals.is_empty() {
-      return Some(Expr::Identifier("False".to_string()));
+      return Some(bool_expr(false));
     }
 
     return Some(build_or(intervals));
@@ -2034,11 +2032,11 @@ fn reduce_and(
     .iter()
     .any(|c| matches!(c, Expr::Identifier(s) if s == "False"))
   {
-    return Ok(Expr::Identifier("False".to_string()));
+    return Ok(bool_expr(false));
   }
 
   if constraints.is_empty() {
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   }
 
   // Separate equations from inequalities
@@ -2065,7 +2063,7 @@ fn reduce_and(
       let eq_result = reduce_equation(&eq.0, &eq.1, var, domain)?;
 
       if matches!(&eq_result, Expr::Identifier(s) if s == "False") {
-        return Ok(Expr::Identifier("False".to_string()));
+        return Ok(bool_expr(false));
       }
       if matches!(&eq_result, Expr::Identifier(s) if s == "True") {
         // Equation is trivially true, reduce remaining
@@ -2076,7 +2074,7 @@ fn reduce_and(
           .chain(other.iter().cloned())
           .collect();
         if remaining.is_empty() {
-          return Ok(Expr::Identifier("True".to_string()));
+          return Ok(bool_expr(true));
         }
         let combined =
           remaining
@@ -2141,7 +2139,7 @@ fn reduce_and(
       }
 
       if valid_solutions.is_empty() {
-        return Ok(Expr::Identifier("False".to_string()));
+        return Ok(bool_expr(false));
       }
       return Ok(build_or(valid_solutions));
     }
@@ -2256,7 +2254,7 @@ fn reduce_combined_inequalities(
     }
 
     return if valid_branches.is_empty() {
-      Ok(Expr::Identifier("False".to_string()))
+      Ok(bool_expr(false))
     } else {
       Ok(build_or(valid_branches))
     };
@@ -2376,7 +2374,7 @@ fn reduce_combined_inequalities(
         && (low_val > high_val
           || (low_val == high_val && (!low_inc || !high_inc)))
       {
-        return Ok(Expr::Identifier("False".to_string()));
+        return Ok(bool_expr(false));
       }
       let low_op = if *low_inc {
         CompOp::LessEqual
@@ -2474,7 +2472,7 @@ pub fn reduce_multi_var_and(
   domain: Option<&str>,
 ) -> Result<Expr, InterpreterError> {
   if vars.is_empty() || constraints.is_empty() {
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   }
 
   // Find the best (equation, variable) pair: prefer last variable in the list
@@ -2626,7 +2624,7 @@ pub fn reduce_multi_var_and(
       }
 
       if all_results.is_empty() {
-        return Ok(Expr::Identifier("False".to_string()));
+        return Ok(bool_expr(false));
       }
       return Ok(build_or(all_results));
     }
@@ -2842,7 +2840,7 @@ fn try_reduce_exists_quadratic_linear(
   let k = mul_q(&lhs, &delta_sq_inv);
 
   if k.is_zero() || k.is_negative() {
-    return Some(Expr::Identifier("True".to_string()));
+    return Some(bool_expr(true));
   }
   let bound = inv_q(&k)?;
   Some(Expr::Comparison {

@@ -18,7 +18,7 @@
 
 use crate::InterpreterError;
 use crate::evaluator::pattern_matching::expr_equal;
-use crate::syntax::{Expr, unevaluated};
+use crate::syntax::{Expr, bool_expr, unevaluated};
 
 /// Turn a numeric-or-boolean grade expression into a `(score, correct)` pair.
 /// Returns `None` when the expression is not a recognized grade value.
@@ -87,8 +87,6 @@ fn score_expr(score: f64) -> Expr {
     Expr::Real(score)
   }
 }
-
-use crate::syntax::bool_expr;
 
 /// Build an `AssessmentResultObject[<|"AnswerCorrect" -> …, "Score" -> …|>]`.
 fn result_object(score: f64, correct: bool) -> Expr {

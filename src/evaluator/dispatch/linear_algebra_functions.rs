@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::make_sqrt;
-use crate::syntax::{BinaryOperator, UnaryOperator, unevaluated};
+use crate::syntax::{BinaryOperator, UnaryOperator, bool_expr, unevaluated};
 
 pub fn dispatch_linear_algebra_functions(
   name: &str,
@@ -443,7 +443,7 @@ pub fn dispatch_linear_algebra_functions(
       if let Expr::List(rows) = &args[0] {
         let n = rows.len();
         if n == 0 {
-          return Some(Ok(Expr::Identifier("False".to_string())));
+          return Some(Ok(bool_expr(false)));
         }
         let is_square = rows.iter().all(|r| {
           if let Expr::List(cols) = r {
@@ -453,7 +453,7 @@ pub fn dispatch_linear_algebra_functions(
           }
         });
         if !is_square {
-          return Some(Ok(Expr::Identifier("False".to_string())));
+          return Some(Ok(bool_expr(false)));
         }
         // Unitary tests ConjugateTranspose[m].m == Id; orthogonal tests
         // the plain Transpose[m].m == Id (so {{0, I}, {I, 0}} is unitary
@@ -481,14 +481,12 @@ pub fn dispatch_linear_algebra_functions(
             if let Ok(id) = identity {
               let result = crate::syntax::expr_to_string(&evaluated)
                 == crate::syntax::expr_to_string(&id);
-              return Some(Ok(Expr::Identifier(
-                if result { "True" } else { "False" }.to_string(),
-              )));
+              return Some(Ok(bool_expr(result)));
             }
           }
         }
       }
-      return Some(Ok(Expr::Identifier("False".to_string())));
+      return Some(Ok(bool_expr(false)));
     }
     "ReflectionMatrix" if args.len() == 1 => {
       if let Expr::List(v) = &args[0] {
@@ -657,7 +655,7 @@ pub fn dispatch_linear_algebra_functions(
       // Non-square arguments are not positive definite. Guard before calling
       // eigenvalues_ast, which would otherwise emit a spurious matsq message.
       if !is_square_matrix_expr(&args[0]) {
-        return Some(Ok(Expr::Identifier("False".to_string())));
+        return Some(Ok(bool_expr(false)));
       }
       // Compute eigenvalues and check all are strictly positive
       let eigenvals_result =
@@ -674,19 +672,19 @@ pub fn dispatch_linear_algebra_functions(
           match n_val {
             Ok(Expr::Real(f)) if f > 0.0 => continue,
             Ok(Expr::Integer(n)) if n > 0 => continue,
-            _ => return Some(Ok(Expr::Identifier("False".to_string()))),
+            _ => return Some(Ok(bool_expr(false))),
           }
         }
-        return Some(Ok(Expr::Identifier("True".to_string())));
+        return Some(Ok(bool_expr(true)));
       }
-      return Some(Ok(Expr::Identifier("False".to_string())));
+      return Some(Ok(bool_expr(false)));
     }
     "IndefiniteMatrixQ" if args.len() == 1 => {
       // A matrix is "explicitly indefinite" iff its Hermitian part
       // H = (m + ConjugateTranspose[m])/2 has at least one strictly
       // positive eigenvalue AND at least one strictly negative eigenvalue.
       // Anything that can't be confirmed indefinite returns False.
-      let false_res = || Some(Ok(Expr::Identifier("False".to_string())));
+      let false_res = || Some(Ok(bool_expr(false)));
       if let Expr::List(rows) = &args[0] {
         let n = rows.len();
         if n == 0 {
@@ -740,7 +738,7 @@ pub fn dispatch_linear_algebra_functions(
             }
           }
           if has_pos && has_neg {
-            return Some(Ok(Expr::Identifier("True".to_string())));
+            return Some(Ok(bool_expr(true)));
           }
         }
         return false_res();
@@ -2192,7 +2190,7 @@ pub fn dispatch_linear_algebra_functions(
         for row in rows {
           if let Expr::List(cols) = row {
             if cols.len() != n {
-              return Some(Ok(Expr::Identifier("False".to_string())));
+              return Some(Ok(bool_expr(false)));
             }
           } else {
             return None;
@@ -2221,7 +2219,7 @@ pub fn dispatch_linear_algebra_functions(
             }
             if !has_repeated {
               // All eigenvalues distinct => diagonalizable
-              return Some(Ok(Expr::Identifier("True".to_string())));
+              return Some(Ok(bool_expr(true)));
             }
             // Repeated eigenvalues: check if matrix is already diagonal
             let mut is_diagonal = true;
@@ -2238,19 +2236,17 @@ pub fn dispatch_linear_algebra_functions(
                 break;
               }
             }
-            return Some(Ok(Expr::Identifier(
-              if is_diagonal { "True" } else { "False" }.to_string(),
-            )));
+            return Some(Ok(bool_expr(is_diagonal)));
           }
         }
-        return Some(Ok(Expr::Identifier("False".to_string())));
+        return Some(Ok(bool_expr(false)));
       }
     }
     "PositiveSemidefiniteMatrixQ" if args.len() == 1 => {
       // Non-square arguments (scalar, vector, ragged) are not positive
       // semidefinite — answer False rather than staying unevaluated.
       if !is_square_matrix_expr(&args[0]) {
-        return Some(Ok(Expr::Identifier("False".to_string())));
+        return Some(Ok(bool_expr(false)));
       }
       // Check if all eigenvalues are non-negative
       if let Expr::List(rows) = &args[0] {
@@ -2258,7 +2254,7 @@ pub fn dispatch_linear_algebra_functions(
         for row in rows {
           if let Expr::List(cols) = row {
             if cols.len() != n {
-              return Some(Ok(Expr::Identifier("False".to_string())));
+              return Some(Ok(bool_expr(false)));
             }
           } else {
             return None;
@@ -2273,12 +2269,12 @@ pub fn dispatch_linear_algebra_functions(
             match &evaluated {
               Expr::Integer(v) => {
                 if *v < 0 {
-                  return Some(Ok(Expr::Identifier("False".to_string())));
+                  return Some(Ok(bool_expr(false)));
                 }
               }
               Expr::Real(v) => {
                 if *v < 0.0 {
-                  return Some(Ok(Expr::Identifier("False".to_string())));
+                  return Some(Ok(bool_expr(false)));
                 }
               }
               Expr::FunctionCall {
@@ -2288,7 +2284,7 @@ pub fn dispatch_linear_algebra_functions(
                 if let Expr::Integer(n) = &fargs[0]
                   && *n < 0
                 {
-                  return Some(Ok(Expr::Identifier("False".to_string())));
+                  return Some(Ok(bool_expr(false)));
                 }
               }
               _ => {
@@ -2300,20 +2296,20 @@ pub fn dispatch_linear_algebra_functions(
                 if let Ok(Expr::Real(v)) = nval
                   && v < 0.0
                 {
-                  return Some(Ok(Expr::Identifier("False".to_string())));
+                  return Some(Ok(bool_expr(false)));
                 }
               }
             }
           }
-          return Some(Ok(Expr::Identifier("True".to_string())));
+          return Some(Ok(bool_expr(true)));
         }
-        return Some(Ok(Expr::Identifier("False".to_string())));
+        return Some(Ok(bool_expr(false)));
       }
     }
     "NegativeDefiniteMatrixQ" if args.len() == 1 => {
       // Non-square arguments are not negative definite — answer False.
       if !is_square_matrix_expr(&args[0]) {
-        return Some(Ok(Expr::Identifier("False".to_string())));
+        return Some(Ok(bool_expr(false)));
       }
       // All eigenvalues must be strictly negative
       if let Expr::List(rows) = &args[0] {
@@ -2321,7 +2317,7 @@ pub fn dispatch_linear_algebra_functions(
         for row in rows {
           if let Expr::List(cols) = row {
             if cols.len() != n {
-              return Some(Ok(Expr::Identifier("False".to_string())));
+              return Some(Ok(bool_expr(false)));
             }
           } else {
             return None;
@@ -2357,18 +2353,18 @@ pub fn dispatch_linear_algebra_functions(
               }
             };
             if !is_neg {
-              return Some(Ok(Expr::Identifier("False".to_string())));
+              return Some(Ok(bool_expr(false)));
             }
           }
-          return Some(Ok(Expr::Identifier("True".to_string())));
+          return Some(Ok(bool_expr(true)));
         }
-        return Some(Ok(Expr::Identifier("False".to_string())));
+        return Some(Ok(bool_expr(false)));
       }
     }
     "NegativeSemidefiniteMatrixQ" if args.len() == 1 => {
       // Non-square arguments are not negative semidefinite — answer False.
       if !is_square_matrix_expr(&args[0]) {
-        return Some(Ok(Expr::Identifier("False".to_string())));
+        return Some(Ok(bool_expr(false)));
       }
       // All eigenvalues must be <= 0
       if let Expr::List(rows) = &args[0] {
@@ -2376,7 +2372,7 @@ pub fn dispatch_linear_algebra_functions(
         for row in rows {
           if let Expr::List(cols) = row {
             if cols.len() != n {
-              return Some(Ok(Expr::Identifier("False".to_string())));
+              return Some(Ok(bool_expr(false)));
             }
           } else {
             return None;
@@ -2412,12 +2408,12 @@ pub fn dispatch_linear_algebra_functions(
               }
             };
             if is_pos {
-              return Some(Ok(Expr::Identifier("False".to_string())));
+              return Some(Ok(bool_expr(false)));
             }
           }
-          return Some(Ok(Expr::Identifier("True".to_string())));
+          return Some(Ok(bool_expr(true)));
         }
-        return Some(Ok(Expr::Identifier("False".to_string())));
+        return Some(Ok(bool_expr(false)));
       }
     }
     "HermitianMatrixQ" if args.len() == 1 => {
@@ -2452,15 +2448,15 @@ pub fn dispatch_linear_algebra_functions(
               })
               .unwrap_or(Expr::Integer(1));
               if !is_zero_expr(&diff) {
-                return Some(Ok(Expr::Identifier("False".to_string())));
+                return Some(Ok(bool_expr(false)));
               }
             }
           }
-          return Some(Ok(Expr::Identifier("True".to_string())));
+          return Some(Ok(bool_expr(true)));
         }
       }
       // Not a square matrix → False (a predicate, like SymmetricMatrixQ).
-      return Some(Ok(Expr::Identifier("False".to_string())));
+      return Some(Ok(bool_expr(false)));
     }
     "AntihermitianMatrixQ" if args.len() == 1 => {
       // Antihermitian: M == -ConjugateTranspose[M]
@@ -2489,15 +2485,15 @@ pub fn dispatch_linear_algebra_functions(
               })
               .unwrap_or(Expr::Integer(1));
               if !is_zero_expr(&sum) {
-                return Some(Ok(Expr::Identifier("False".to_string())));
+                return Some(Ok(bool_expr(false)));
               }
             }
           }
-          return Some(Ok(Expr::Identifier("True".to_string())));
+          return Some(Ok(bool_expr(true)));
         }
       }
       // Not a square matrix → False (a predicate, like SymmetricMatrixQ).
-      return Some(Ok(Expr::Identifier("False".to_string())));
+      return Some(Ok(bool_expr(false)));
     }
     "NormalMatrixQ" if args.len() == 1 => {
       // Normal: M.M^H == M^H.M where M^H is conjugate transpose
@@ -2536,14 +2532,12 @@ pub fn dispatch_linear_algebra_functions(
           if let (Ok(a), Ok(b)) = (mmh, mhm) {
             let a_str = expr_to_string(&a);
             let b_str = expr_to_string(&b);
-            return Some(Ok(Expr::Identifier(
-              if a_str == b_str { "True" } else { "False" }.to_string(),
-            )));
+            return Some(Ok(bool_expr(a_str == b_str)));
           }
         }
       }
       // Not a square matrix → False (a predicate, like SymmetricMatrixQ).
-      return Some(Ok(Expr::Identifier("False".to_string())));
+      return Some(Ok(bool_expr(false)));
     }
     // DiagonalMatrixQ[m] — True if m is diagonal (nonzeros only on the main
     // diagonal). DiagonalMatrixQ[m, k] allows nonzeros only on the k-th
@@ -2590,12 +2584,10 @@ pub fn dispatch_linear_algebra_functions(
             }
           }
         }
-        return Some(Ok(Expr::Identifier(
-          if is_diag { "True" } else { "False" }.to_string(),
-        )));
+        return Some(Ok(bool_expr(is_diag)));
       }
       // A non-list argument (scalar, symbol, …) is not a matrix → False.
-      return Some(Ok(Expr::Identifier("False".to_string())));
+      return Some(Ok(bool_expr(false)));
     }
     // UpperTriangularMatrixQ[m] — True if m is upper triangular
     "UpperTriangularMatrixQ" if args.len() == 1 => {
@@ -2619,12 +2611,10 @@ pub fn dispatch_linear_algebra_functions(
             break;
           }
         }
-        return Some(Ok(Expr::Identifier(
-          if is_upper { "True" } else { "False" }.to_string(),
-        )));
+        return Some(Ok(bool_expr(is_upper)));
       }
       // A non-list argument (scalar, symbol, …) is not a matrix → False.
-      return Some(Ok(Expr::Identifier("False".to_string())));
+      return Some(Ok(bool_expr(false)));
     }
     // LowerTriangularMatrixQ[m] — True if m is lower triangular
     "LowerTriangularMatrixQ" if args.len() == 1 => {
@@ -2648,12 +2638,10 @@ pub fn dispatch_linear_algebra_functions(
             break;
           }
         }
-        return Some(Ok(Expr::Identifier(
-          if is_lower { "True" } else { "False" }.to_string(),
-        )));
+        return Some(Ok(bool_expr(is_lower)));
       }
       // A non-list argument (scalar, symbol, …) is not a matrix → False.
-      return Some(Ok(Expr::Identifier("False".to_string())));
+      return Some(Ok(bool_expr(false)));
     }
     // AntisymmetricMatrixQ[m] — True if m is antisymmetric (m[i][j] == -m[j][i])
     "AntisymmetricMatrixQ" if args.len() == 1 => {
@@ -2688,9 +2676,7 @@ pub fn dispatch_linear_algebra_functions(
             break;
           }
         }
-        return Some(Ok(Expr::Identifier(
-          if is_antisymmetric { "True" } else { "False" }.to_string(),
-        )));
+        return Some(Ok(bool_expr(is_antisymmetric)));
       }
     }
     // HankelMatrix[{c1,...,cn}] — Hankel matrix where entry (i,j) = c[i+j-1]

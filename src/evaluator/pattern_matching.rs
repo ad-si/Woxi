@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, UnaryOperator, unevaluated};
+use crate::syntax::{BinaryOperator, UnaryOperator, bool_expr, unevaluated};
 use std::cell::RefCell;
 
 // Thread-local stack of accumulated bindings from outer FunctionCall arg loops.
@@ -2521,9 +2521,9 @@ fn apply_pattern_test(test: &Expr, elem: &Expr) -> bool {
         format!("({})[{}]", expr_to_string(test), expr_to_string(elem));
       interpret(&call_str).ok().map(|r| {
         if r == "True" {
-          Expr::Identifier("True".to_string())
+          bool_expr(true)
         } else {
-          Expr::Identifier("False".to_string())
+          bool_expr(false)
         }
       })
     }
@@ -3025,9 +3025,9 @@ fn match_pattern_impl(
             format!("({})[{}]", expr_to_string(test), expr_to_string(expr));
           interpret(&call_str).ok().map(|r| {
             if r == "True" {
-              Expr::Identifier("True".to_string())
+              bool_expr(true)
             } else {
-              Expr::Identifier("False".to_string())
+              bool_expr(false)
             }
           })
         }

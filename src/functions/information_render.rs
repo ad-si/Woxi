@@ -5,7 +5,7 @@
 //! Both use the existing `grid_svg_with_gaps` infrastructure so theming and
 //! layout stay consistent with `Grid[]` / `TableForm[]` output.
 
-use crate::syntax::Expr;
+use crate::syntax::{Expr, bool_expr};
 
 /// Build a `Style[content, Bold]` Expr.
 fn bold_style(text: &str) -> Expr {
@@ -129,10 +129,7 @@ pub fn render_information_card_svg(
 
   // Grid options: outer frame, left-aligned both columns with right-aligned
   // labels, modest spacing, alternating row backgrounds for readability.
-  let frame_opt = rule(
-    Expr::Identifier("Frame".to_string()),
-    Expr::Identifier("True".to_string()),
-  );
+  let frame_opt = rule(Expr::Identifier("Frame".to_string()), bool_expr(true));
   let alignment_opt = rule(
     Expr::Identifier("Alignment".to_string()),
     list(vec![list(vec![
@@ -198,10 +195,7 @@ pub fn render_information_grid_svg(
 
   let grid_data = list(rows);
 
-  let frame_opt = rule(
-    Expr::Identifier("Frame".to_string()),
-    Expr::Identifier("True".to_string()),
-  );
+  let frame_opt = rule(Expr::Identifier("Frame".to_string()), bool_expr(true));
   let alignment_opt = rule(
     Expr::Identifier("Alignment".to_string()),
     Expr::Identifier("Left".to_string()),

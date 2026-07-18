@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::unevaluated;
+use crate::syntax::{bool_expr, unevaluated};
 
 /// Colors of a Wolfram `ColorData` indexed scheme (`ColorData[n, "ColorList"]`).
 ///
@@ -254,8 +254,8 @@ fn json_value_to_expr(value: &serde_json::Value, raw: bool) -> Expr {
   use serde_json::Value;
   match value {
     Value::Null => Expr::Identifier("Null".to_string()),
-    Value::Bool(true) => Expr::Identifier("True".to_string()),
-    Value::Bool(false) => Expr::Identifier("False".to_string()),
+    Value::Bool(true) => bool_expr(true),
+    Value::Bool(false) => bool_expr(false),
     Value::Number(n) => {
       if let Some(i) = n.as_i64() {
         Expr::Integer(i as i128)

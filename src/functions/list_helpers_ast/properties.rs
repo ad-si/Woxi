@@ -2,7 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::unevaluated;
+use crate::syntax::{bool_expr, unevaluated};
 
 /// AST-based ArrayDepth: compute depth of nested lists.
 /// Returns the depth to which the expression forms a rectangular array.
@@ -644,9 +644,9 @@ pub fn array_q_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
   Ok(if is_full_array(expr) {
-    Expr::Identifier("True".to_string())
+    bool_expr(true)
   } else {
-    Expr::Identifier("False".to_string())
+    bool_expr(false)
   })
 }
 
@@ -675,12 +675,12 @@ pub fn vector_q_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
   match expr {
     Expr::List(items) => {
       Ok(if items.iter().all(|i| !matches!(i, Expr::List(_))) {
-        Expr::Identifier("True".to_string())
+        bool_expr(true)
       } else {
-        Expr::Identifier("False".to_string())
+        bool_expr(false)
       })
     }
-    _ => Ok(Expr::Identifier("False".to_string())),
+    _ => Ok(bool_expr(false)),
   }
 }
 
@@ -692,9 +692,7 @@ pub fn vector_q_with_test_ast(
   test: &Expr,
 ) -> Result<Expr, InterpreterError> {
   let ok = matches!(expr, Expr::List(_)) && all_leaves_pass_test(expr, 1, test);
-  Ok(Expr::Identifier(
-    if ok { "True" } else { "False" }.to_string(),
-  ))
+  Ok(bool_expr(ok))
 }
 
 /// MatrixQ[expr] - True if expr is a list of equal-length lists (2D rectangular array).
@@ -702,7 +700,7 @@ pub fn matrix_q_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
   match expr {
     Expr::List(rows) => {
       if rows.is_empty() {
-        return Ok(Expr::Identifier("True".to_string()));
+        return Ok(bool_expr(true));
       }
       // Each row must be a list
       let mut ncols = None;
@@ -711,22 +709,22 @@ pub fn matrix_q_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
           Expr::List(cols) => {
             if let Some(expected) = ncols {
               if cols.len() != expected {
-                return Ok(Expr::Identifier("False".to_string()));
+                return Ok(bool_expr(false));
               }
             } else {
               ncols = Some(cols.len());
             }
             // Each element must not be a list (must be a scalar)
             if cols.iter().any(|c| matches!(c, Expr::List(_))) {
-              return Ok(Expr::Identifier("False".to_string()));
+              return Ok(bool_expr(false));
             }
           }
-          _ => return Ok(Expr::Identifier("False".to_string())),
+          _ => return Ok(bool_expr(false)),
         }
       }
-      Ok(Expr::Identifier("True".to_string()))
+      Ok(bool_expr(true))
     }
-    _ => Ok(Expr::Identifier("False".to_string())),
+    _ => Ok(bool_expr(false)),
   }
 }
 
@@ -754,8 +752,8 @@ pub fn matrix_q_with_test_ast(
   // First check if it's a valid matrix structure
   let rows = match expr {
     Expr::List(rows) if !rows.is_empty() => rows,
-    Expr::List(_) => return Ok(Expr::Identifier("True".to_string())),
-    _ => return Ok(Expr::Identifier("False".to_string())),
+    Expr::List(_) => return Ok(bool_expr(true)),
+    _ => return Ok(bool_expr(false)),
   };
 
   let mut ncols = None;
@@ -764,7 +762,7 @@ pub fn matrix_q_with_test_ast(
       Expr::List(cols) => {
         if let Some(expected) = ncols {
           if cols.len() != expected {
-            return Ok(Expr::Identifier("False".to_string()));
+            return Ok(bool_expr(false));
           }
         } else {
           ncols = Some(cols.len());
@@ -772,7 +770,7 @@ pub fn matrix_q_with_test_ast(
         // Check each element with the test function
         for elem in cols {
           if matches!(elem, Expr::List(_)) {
-            return Ok(Expr::Identifier("False".to_string()));
+            return Ok(bool_expr(false));
           }
           let test_call = Expr::FunctionCall {
             name: if let Expr::Identifier(n) = test {
@@ -796,14 +794,14 @@ pub fn matrix_q_with_test_ast(
           };
           match &result {
             Expr::Identifier(s) if s == "True" => {}
-            _ => return Ok(Expr::Identifier("False".to_string())),
+            _ => return Ok(bool_expr(false)),
           }
         }
       }
-      _ => return Ok(Expr::Identifier("False".to_string())),
+      _ => return Ok(bool_expr(false)),
     }
   }
-  Ok(Expr::Identifier("True".to_string()))
+  Ok(bool_expr(true))
 }
 
 /// SymmetricMatrixQ[m] - True if m is a symmetric square matrix (m[i][j] == m[j][i]).
@@ -812,7 +810,7 @@ pub fn symmetric_matrix_q_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
     Expr::List(rows) => {
       let n = rows.len();
       if n == 0 {
-        return Ok(Expr::Identifier("False".to_string()));
+        return Ok(bool_expr(false));
       }
       // All rows must be lists of length n (square matrix)
       let mut grid: Vec<&crate::ExprList> = Vec::with_capacity(n);
@@ -820,11 +818,11 @@ pub fn symmetric_matrix_q_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
         match row {
           Expr::List(cols) => {
             if cols.len() != n {
-              return Ok(Expr::Identifier("False".to_string()));
+              return Ok(bool_expr(false));
             }
             grid.push(cols);
           }
-          _ => return Ok(Expr::Identifier("False".to_string())),
+          _ => return Ok(bool_expr(false)),
         }
       }
       // Check symmetry: m[i][j] == m[j][i]
@@ -833,13 +831,13 @@ pub fn symmetric_matrix_q_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
           let a = crate::syntax::expr_to_string(&grid[i][j]);
           let b = crate::syntax::expr_to_string(&grid[j][i]);
           if a != b {
-            return Ok(Expr::Identifier("False".to_string()));
+            return Ok(bool_expr(false));
           }
         }
       }
-      Ok(Expr::Identifier("True".to_string()))
+      Ok(bool_expr(true))
     }
-    _ => Ok(Expr::Identifier("False".to_string())),
+    _ => Ok(bool_expr(false)),
   }
 }
 

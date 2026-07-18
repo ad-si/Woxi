@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, ComparisonOp};
+use crate::syntax::{BinaryOperator, ComparisonOp, bool_expr};
 
 /// AST-based Module implementation to avoid interpret() recursion
 pub fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -613,13 +613,13 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
       match is_member_of_domain(alt, domain_name) {
         Some(true) => {} // Known member, skip
         Some(false) => {
-          return Ok(Expr::Identifier("False".to_string()));
+          return Ok(bool_expr(false));
         }
         None => remaining.push(alt.clone()),
       }
     }
     if remaining.is_empty() {
-      return Ok(Expr::Identifier("True".to_string()));
+      return Ok(bool_expr(true));
     }
     // Rebuild Alternatives from remaining
     let alt_expr = remaining
@@ -639,7 +639,7 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
   // Handle lists: Element[{a, b, c}, dom] → Element[a | b | c, dom]
   if let Expr::List(items) = x {
     if items.is_empty() {
-      return Ok(Expr::Identifier("True".to_string()));
+      return Ok(bool_expr(true));
     }
     // Convert list to Alternatives and recurse
     let alt_expr = items
@@ -681,7 +681,7 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
     if !any_dropped && !conflict {
       // No simplification possible; fall through.
     } else if remaining.is_empty() {
-      return Ok(Expr::Identifier("True".to_string()));
+      return Ok(bool_expr(true));
     } else if any_dropped && !conflict {
       let reduced = if remaining.len() == 1 {
         remaining.into_iter().next().unwrap()
@@ -697,8 +697,8 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
 
   // Simple case: check single element
   match is_member_of_domain(x, domain_name) {
-    Some(true) => Ok(Expr::Identifier("True".to_string())),
-    Some(false) => Ok(Expr::Identifier("False".to_string())),
+    Some(true) => Ok(bool_expr(true)),
+    Some(false) => Ok(bool_expr(false)),
     None => Ok(Expr::FunctionCall {
       name: "Element".to_string(),
       args: vec![x.clone(), domain.clone()].into(),
@@ -713,12 +713,8 @@ pub fn not_element_ast(
 ) -> Result<Expr, InterpreterError> {
   let result = element_ast(x, domain)?;
   match &result {
-    Expr::Identifier(name) if name == "True" => {
-      Ok(Expr::Identifier("False".to_string()))
-    }
-    Expr::Identifier(name) if name == "False" => {
-      Ok(Expr::Identifier("True".to_string()))
-    }
+    Expr::Identifier(name) if name == "True" => Ok(bool_expr(false)),
+    Expr::Identifier(name) if name == "False" => Ok(bool_expr(true)),
     _ => {
       // Element returned unevaluated, so NotElement stays unevaluated too
       Ok(Expr::FunctionCall {

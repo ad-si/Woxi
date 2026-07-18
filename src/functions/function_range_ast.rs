@@ -7,7 +7,9 @@
 //! LessEqual, 1].
 
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, ComparisonOp, Expr, unevaluated};
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, bool_expr, unevaluated,
+};
 
 pub fn function_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = |args: &[Expr]| unevaluated("FunctionRange", args);
@@ -29,7 +31,7 @@ pub fn function_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       operands,
       operators,
     };
-  let true_expr = || Expr::Identifier("True".to_string());
+  let true_expr = || bool_expr(true);
   let y_ge =
     |v: Expr| cmp(vec![y.clone(), v], vec![ComparisonOp::GreaterEqual]);
   let y_le = |v: Expr| cmp(vec![y.clone(), v], vec![ComparisonOp::LessEqual]);

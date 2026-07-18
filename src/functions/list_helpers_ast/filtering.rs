@@ -2,7 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, unevaluated};
+use crate::syntax::{BinaryOperator, bool_expr, unevaluated};
 
 /// AST-based Select: filter elements where predicate returns True.
 /// Select[{a, b, c}, pred] -> elements where pred[elem] is True
@@ -499,9 +499,9 @@ fn apply_test_bool(test: &Expr, elem: &Expr) -> bool {
       );
       crate::interpret(&call_str).ok().map(|r| {
         if r == "True" {
-          Expr::Identifier("True".to_string())
+          bool_expr(true)
         } else {
-          Expr::Identifier("False".to_string())
+          bool_expr(false)
         }
       })
     }
@@ -622,9 +622,9 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
           );
           crate::interpret(&call_str).ok().map(|r| {
             if r == "True" {
-              Expr::Identifier("True".to_string())
+              bool_expr(true)
             } else {
-              Expr::Identifier("False".to_string())
+              bool_expr(false)
             }
           })
         }
@@ -1969,10 +1969,10 @@ pub fn contains_only_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
       if !found {
-        return Ok(Expr::Identifier("False".to_string()));
+        return Ok(bool_expr(false));
       }
     }
-    return Ok(Expr::Identifier("True".to_string()));
+    return Ok(bool_expr(true));
   }
 
   use std::collections::HashSet;
@@ -1981,10 +1981,10 @@ pub fn contains_only_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   for item in list {
     if !allowed.contains(&crate::syntax::expr_to_string(item)) {
-      return Ok(Expr::Identifier("False".to_string()));
+      return Ok(bool_expr(false));
     }
   }
-  Ok(Expr::Identifier("True".to_string()))
+  Ok(bool_expr(true))
 }
 
 /// LengthWhile[list, crit] - gives the number of contiguous elements at the start that satisfy crit

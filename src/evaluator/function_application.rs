@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, unevaluated};
+use crate::syntax::{BinaryOperator, bool_expr, unevaluated};
 
 /// MapAll[f, expr] - apply f to every subexpression in expr (bottom-up)
 pub fn map_all_ast(f: &Expr, expr: &Expr) -> Result<Expr, InterpreterError> {
@@ -1207,9 +1207,7 @@ pub fn apply_curried_call(
         v = (v << 1) | bit;
       }
       if ok {
-        return Ok(Expr::Identifier(
-          if (n >> v) & 1 == 1 { "True" } else { "False" }.to_string(),
-        ));
+        return Ok(bool_expr((n >> v) & 1 == 1));
       }
       Ok(Expr::CurriedCall {
         func: Box::new(func.clone()),

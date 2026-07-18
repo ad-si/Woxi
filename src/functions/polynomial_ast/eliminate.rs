@@ -3,7 +3,7 @@ use super::together::negate_expr;
 use super::*;
 use crate::InterpreterError;
 use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, expr_to_string, unevaluated,
+  BinaryOperator, ComparisonOp, Expr, bool_expr, expr_to_string, unevaluated,
 };
 
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
@@ -53,7 +53,7 @@ pub fn eliminate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for var in &vars_to_eliminate {
     eqs = eliminate_one_variable(&eqs, var)?;
     if eqs.is_empty() {
-      return Ok(Expr::Identifier("True".to_string()));
+      return Ok(bool_expr(true));
     }
   }
 

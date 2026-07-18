@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, UnaryOperator, unevaluated};
+use crate::syntax::{BinaryOperator, UnaryOperator, bool_expr, unevaluated};
 
 pub fn dispatch_datetime_functions(
   name: &str,
@@ -234,9 +234,7 @@ pub fn dispatch_datetime_functions(
       } else {
         false
       };
-      return Some(Ok(Expr::Identifier(
-        if valid { "True" } else { "False" }.to_string(),
-      )));
+      return Some(Ok(bool_expr(valid)));
     }
     // DateObject is a data container — normalize granularity
     // FromDateString["string"] gives the DateObject for a date string. For the

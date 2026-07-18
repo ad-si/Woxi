@@ -1,7 +1,7 @@
 use crate::InterpreterError;
 use crate::functions::graphics::{Color, graphics_ast, parse_color};
 use crate::syntax::{
-  BinaryOperator, Expr, expr_to_output, expr_to_string, unevaluated,
+  BinaryOperator, Expr, bool_expr, expr_to_output, expr_to_string, unevaluated,
 };
 use petgraph::graph::{DiGraph, NodeIndex, UnGraph};
 use petgraph::visit::EdgeRef;
@@ -4632,8 +4632,6 @@ fn parse_graph_pairs(expr: &Expr) -> Option<(usize, Vec<(usize, usize)>)> {
   }
   Some((vkeys.len(), pairs))
 }
-
-use crate::syntax::bool_expr;
 
 pub fn graph_predicate_ast(
   name: &str,

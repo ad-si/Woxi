@@ -2,7 +2,7 @@
 use super::*;
 use crate::InterpreterError;
 use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, expr_to_string,
 };
 
 use crate::functions::calculus_ast::simplify;
@@ -918,15 +918,11 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       if let Some(result) =
         check_comparison_under_assumption(expr, info, assumption)
       {
-        return Expr::Identifier(
-          if result { "True" } else { "False" }.to_string(),
-        );
+        return bool_expr(result);
       }
       // Try algebraic reasoning for equations/inequalities
       if let Some(result) = check_algebraic_comparison(expr, info, assumption) {
-        return Expr::Identifier(
-          if result { "True" } else { "False" }.to_string(),
-        );
+        return bool_expr(result);
       }
       expr.clone()
     }
@@ -1395,9 +1391,7 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
         _ => None,
       };
       match verdict {
-        Some(b) => {
-          Expr::Identifier(if b { "True" } else { "False" }.to_string())
-        }
+        Some(b) => bool_expr(b),
         None => Expr::FunctionCall {
           name: name.clone(),
           args: vec![a].into(),
@@ -2727,10 +2721,10 @@ fn refine_element(
   if let Expr::Identifier(dom) = domain {
     match dom.as_str() {
       "Reals" if is_known_real(expr, info) => {
-        return Some(Expr::Identifier("True".to_string()));
+        return Some(bool_expr(true));
       }
       "Integers" if is_known_integer(expr, info) => {
-        return Some(Expr::Identifier("True".to_string()));
+        return Some(bool_expr(true));
       }
       _ => {}
     }
@@ -6483,18 +6477,18 @@ fn simplify_expr_inner(expr: &Expr) -> Expr {
       };
       let expanded_diff = super::expand_and_combine(&diff);
       if matches!(&expanded_diff, Expr::Integer(0)) {
-        Expr::Identifier("True".to_string())
+        bool_expr(true)
       } else if matches!(&expanded_diff, Expr::Integer(n) if *n != 0)
         || matches!(&expanded_diff, Expr::Real(f) if *f != 0.0)
       {
         // Nonzero constant difference means the equation is always False
-        Expr::Identifier("False".to_string())
+        bool_expr(false)
       } else if is_zero_constant(&simplify_expr_with_together(&diff)) {
         // Rational-function case: `Expand` alone can't cancel two fractions
         // over different denominators (e.g. a partial-fraction sum vs its
         // closed form). Combine over a common denominator with the full
         // simplifier and check whether the difference vanishes.
-        Expr::Identifier("True".to_string())
+        bool_expr(true)
       } else {
         Expr::Comparison {
           operands: vec![lhs, rhs],
@@ -6583,7 +6577,7 @@ fn simplify_conditional_expression(value: &Expr, cond: &Expr) -> Expr {
       }
     }
     let new_cond = match residual.len() {
-      0 => Expr::Identifier("True".to_string()),
+      0 => bool_expr(true),
       1 => residual.into_iter().next().unwrap(),
       _ => Expr::FunctionCall {
         name: "And".to_string(),
