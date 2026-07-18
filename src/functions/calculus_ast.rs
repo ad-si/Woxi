@@ -5373,18 +5373,12 @@ fn try_integrate_trig_power(base: &Expr, n: i128, var: &str) -> Option<Expr> {
       // Total coefficient: coeff_num / (freq * 4^m)
       let denom = freq * (1i128 << (2 * m)); // freq * 4^m
       let term = if matches!(&coeff, Expr::Integer(1)) {
-        let g = gcd_i64(
-          coeff_num.unsigned_abs() as i128,
-          denom.unsigned_abs() as i128,
-        );
+        let g = gcd_i128(coeff_num, denom);
         let num = coeff_num / g;
         let den = denom / g;
         make_fraction_term(num, den, integrated_trig)
       } else {
-        let g = gcd_i64(
-          coeff_num.unsigned_abs() as i128,
-          denom.unsigned_abs() as i128,
-        );
+        let g = gcd_i128(coeff_num, denom);
         let num = coeff_num / g;
         let den = denom / g;
         let den_expr = simplify(Expr::BinaryOp {
@@ -5401,7 +5395,7 @@ fn try_integrate_trig_power(base: &Expr, n: i128, var: &str) -> Option<Expr> {
     // Constant term: C(n,m) / 4^m * x
     let binom_mid = crate::functions::binomial_coeff(n, m);
     let power_4m = 1i128 << (2 * m); // 4^m
-    let g = gcd_i64(binom_mid, power_4m);
+    let g = gcd_i128(binom_mid, power_4m);
     let const_num = binom_mid / g;
     let const_den = power_4m / g;
     let const_term = if const_den == 1 {
@@ -5482,18 +5476,12 @@ fn try_integrate_trig_power(base: &Expr, n: i128, var: &str) -> Option<Expr> {
 
       let denom = freq * power_4m;
       let term = if matches!(&coeff, Expr::Integer(1)) {
-        let g = gcd_i64(
-          coeff_num.unsigned_abs() as i128,
-          denom.unsigned_abs() as i128,
-        );
+        let g = gcd_i128(coeff_num, denom);
         let num = coeff_num / g;
         let den = denom / g;
         make_fraction_term(num, den, integrated_trig)
       } else {
-        let g = gcd_i64(
-          coeff_num.unsigned_abs() as i128,
-          denom.unsigned_abs() as i128,
-        );
+        let g = gcd_i128(coeff_num, denom);
         let num = coeff_num / g;
         let den = denom / g;
         let den_expr = simplify(Expr::BinaryOp {
@@ -5597,15 +5585,6 @@ fn make_fraction_term_expr(num: i128, den_expr: Expr, expr: Expr) -> Expr {
     left: Box::new(num_expr),
     right: Box::new(den_expr),
   }
-}
-
-fn gcd_i64(mut a: i128, mut b: i128) -> i128 {
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a.abs()
 }
 
 /// Try to match ∫ E^(a*x) / (c*x) dx = ExpIntegralEi[a*x] / c
@@ -6713,7 +6692,7 @@ fn build_arctan_term(
 
   let term = if let Expr::Integer(s) = sqrt_expr {
     // sqrt is an integer - can simplify
-    let g = gcd_i128_local(abs_coeff, *s);
+    let g = gcd_i128(abs_coeff, *s);
     let reduced_num = abs_coeff / g;
     let reduced_den = *s / g;
 
@@ -6811,17 +6790,6 @@ fn build_coeff_times_expr(num: i128, den: i128, expr: Expr) -> Expr {
   } else {
     unsigned_term
   }
-}
-
-/// Local gcd helper (avoids import issues)
-fn gcd_i128_local(a: i128, b: i128) -> i128 {
-  let (mut a, mut b) = (a.abs(), b.abs());
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a
 }
 
 /// LIATE priority for integration by parts: higher = choose as u first

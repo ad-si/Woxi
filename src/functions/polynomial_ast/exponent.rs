@@ -4,6 +4,7 @@ use crate::InterpreterError;
 use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 use crate::functions::calculus_ast::is_constant_wrt;
+use crate::functions::math_ast::gcd as gcd_i128;
 
 // ─── Rational exponent helpers ─────────────────────────────────────
 
@@ -17,7 +18,7 @@ pub struct Rat {
 impl Rat {
   fn new(n: i128, d: i128) -> Self {
     assert!(d != 0);
-    let g = gcd(n.unsigned_abs(), d.unsigned_abs()) as i128;
+    let g = gcd_i128(n, d);
     let (n2, d2) = (n / g, d / g);
     // Keep denominator positive
     if d2 < 0 {
@@ -72,8 +73,6 @@ impl Rat {
     }
   }
 }
-
-use crate::functions::math_ast::gcd_u128 as gcd;
 
 /// Try to interpret an Expr as a rational number.
 fn expr_to_rat(e: &Expr) -> Option<Rat> {

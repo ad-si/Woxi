@@ -453,11 +453,6 @@ pub fn make_rational_expr(num: BigInt, den: BigInt) -> Expr {
   }
 }
 
-/// Helper function to compute GCD
-pub fn gcd_helper(a: i128, b: i128) -> i128 {
-  if b == 0 { a } else { gcd_helper(b, a % b) }
-}
-
 /// Split-recursive factorial helper based on Fateman's `kg` algorithm.
 /// k(n, m) computes n * (n-m) * (n-2m) * … (down to a value ≤ m).
 /// When n is even and m > 1, factors of 2 are extracted and deferred
