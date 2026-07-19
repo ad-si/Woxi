@@ -8,7 +8,7 @@ use crate::functions::math_ast::{
   build_complex_float_expr, try_extract_complex_f64,
 };
 use crate::functions::plot::{
-  DEFAULT_HEIGHT, DEFAULT_WIDTH, RESOLUTION_SCALE, evaluate_at_xy,
+  DEFAULT_WIDTH, RESOLUTION_SCALE, evaluate_at_xy,
   generate_axes_only, parse_image_size, parse_iterator, plot_theme,
   rewrite_svg_header, substitute_var, svg_header,
 };
@@ -66,8 +66,10 @@ fn parse_field_options(args: &[Expr], start: usize) -> (u32, u32, bool) {
       replacement,
     } = opt
       && matches!(pattern.as_ref(), Expr::Identifier(name) if name == "ImageSize")
+      // Square default aspect: field plots have AspectRatio -> 1, so
+      // ImageSize -> n means n x n.
       && let Some((w, h, fw)) =
-        parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
+        parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_WIDTH)
     {
       svg_width = w;
       svg_height = h;
@@ -75,6 +77,87 @@ fn parse_field_options(args: &[Expr], start: usize) -> (u32, u32, bool) {
     }
   }
   (svg_width, svg_height, full_width)
+}
+
+/// Contour level specification from the Contours option.
+enum ContourSpec {
+  /// Contours -> n: n equally spaced levels
+  Count(usize),
+  /// Contours -> {v1, v2, ...}: explicit levels
+  Levels(Vec<f64>),
+  /// Contours -> Automatic: ~10 levels at "nice" round values
+  Automatic,
+}
+
+/// Options shared by the density / contour plot family.
+struct DensityContourOptions {
+  svg_width: u32,
+  svg_height: u32,
+  full_width: bool,
+  color_function: Option<String>,
+  contours: ContourSpec,
+  contour_shading: bool,
+}
+
+/// Parse ImageSize, ColorFunction, Contours, and ContourShading options.
+fn parse_density_contour_options(
+  args: &[Expr],
+  start: usize,
+) -> DensityContourOptions {
+  let (svg_width, svg_height, full_width) = parse_field_options(args, start);
+  let mut color_function = None;
+  let mut contours = ContourSpec::Automatic;
+  let mut contour_shading = true;
+  for opt in &args[start..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && let Expr::Identifier(name) = pattern.as_ref()
+    {
+      match name.as_str() {
+        "ColorFunction" => {
+          if let Expr::String(s) = replacement.as_ref() {
+            color_function = Some(s.clone());
+          }
+        }
+        "Contours" => match replacement.as_ref() {
+          Expr::Integer(n) if *n > 0 => {
+            contours = ContourSpec::Count(*n as usize);
+          }
+          Expr::List(items) => {
+            let levels: Vec<f64> = items
+              .iter()
+              .filter_map(|item| {
+                let v = evaluate_expr_to_expr(item).unwrap_or(item.clone());
+                try_eval_to_f64(&v)
+              })
+              .filter(|v| v.is_finite())
+              .collect();
+            if !levels.is_empty() {
+              contours = ContourSpec::Levels(levels);
+            }
+          }
+          _ => {}
+        },
+        "ContourShading" => {
+          if matches!(replacement.as_ref(), Expr::Identifier(v) if v == "False")
+          {
+            contour_shading = false;
+          }
+        }
+        _ => {}
+      }
+    }
+  }
+  DensityContourOptions {
+    svg_width,
+    svg_height,
+    full_width,
+    color_function,
+    contours,
+    contour_shading,
+  }
 }
 
 /// Map value to a blue-white-red color
@@ -103,12 +186,537 @@ fn value_to_color(v: f64, v_min: f64, v_max: f64) -> (u8, u8, u8) {
   }
 }
 
+/// Default density / contour gradient: dark blue → azure → teal → green →
+/// yellow, approximating Mathematica's default DensityPlot color scheme.
+fn density_gradient(t: f64) -> (u8, u8, u8) {
+  const STOPS: [(f64, f64, f64); 8] = [
+    (53.0, 42.0, 160.0),
+    (28.0, 83.0, 217.0),
+    (22.0, 128.0, 224.0),
+    (15.0, 168.0, 200.0),
+    (62.0, 192.0, 152.0),
+    (140.0, 199.0, 96.0),
+    (219.0, 194.0, 67.0),
+    (252.0, 232.0, 38.0),
+  ];
+  let t = if t.is_finite() { t.clamp(0.0, 1.0) } else { 0.5 };
+  let x = t * (STOPS.len() - 1) as f64;
+  let i = (x.floor() as usize).min(STOPS.len() - 2);
+  let f = x - i as f64;
+  let a = STOPS[i];
+  let b = STOPS[i + 1];
+  (
+    (a.0 + (b.0 - a.0) * f).round() as u8,
+    (a.1 + (b.1 - a.1) * f).round() as u8,
+    (a.2 + (b.2 - a.2) * f).round() as u8,
+  )
+}
+
+/// Map a scaled value t in [0,1] through the plot's color function:
+/// a named gradient when ColorFunction -> "Name" was given, otherwise
+/// the default density gradient.
+fn scaled_color(t: f64, color_function: Option<&str>) -> (u8, u8, u8) {
+  match color_function {
+    Some(name) => apply_named_color_function(name, t),
+    None => density_gradient(t),
+  }
+}
+
+/// Scale a value into [0,1] over [v_min, v_max] (0.5 for a flat range).
+fn scale_value(v: f64, v_min: f64, v_max: f64) -> f64 {
+  let range = v_max - v_min;
+  if range.abs() < f64::EPSILON {
+    0.5
+  } else {
+    ((v - v_min) / range).clamp(0.0, 1.0)
+  }
+}
+
+/// Render a sampled scalar grid (grid[col][row], row 0 = bottom) as a bitmap
+/// stretched over the plot area. One pixel per sample; the SVG viewer's
+/// smooth image scaling interpolates between samples, which matches
+/// Mathematica's smooth density shading (and avoids the hairline seams that
+/// per-cell <rect> tiles produce). Non-finite samples become transparent.
+fn embed_grid_image(
+  svg: &mut String,
+  grid: &[Vec<f64>],
+  v_min: f64,
+  v_max: f64,
+  x0: f64,
+  y0: f64,
+  w: f64,
+  h: f64,
+  color_function: Option<&str>,
+) {
+  use base64::Engine as _;
+  let cols = grid.len();
+  let rows = grid.first().map(|c| c.len()).unwrap_or(0);
+  if cols == 0 || rows == 0 || !v_min.is_finite() || !v_max.is_finite() {
+    return;
+  }
+  let mut img = image::RgbaImage::new(cols as u32, rows as u32);
+  for (i, col) in grid.iter().enumerate() {
+    for (j, &v) in col.iter().enumerate() {
+      let px = if v.is_finite() {
+        let (r, g, b) = scaled_color(scale_value(v, v_min, v_max), color_function);
+        image::Rgba([r, g, b, 255])
+      } else {
+        image::Rgba([0, 0, 0, 0])
+      };
+      img.put_pixel(i as u32, (rows - 1 - j) as u32, px);
+    }
+  }
+  let mut png = Vec::new();
+  if image::DynamicImage::ImageRgba8(img)
+    .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+    .is_err()
+  {
+    return;
+  }
+  let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
+  svg.push_str(&format!(
+    "<image x=\"{x0:.1}\" y=\"{y0:.1}\" width=\"{w:.1}\" height=\"{h:.1}\" preserveAspectRatio=\"none\" href=\"data:image/png;base64,{b64}\"/>\n"
+  ));
+}
+
+/// Bilinearly resample a node grid (grid[col][row], row 0 = bottom) to
+/// out_cols x out_rows samples whose pixel centers span the same area, so
+/// coarse data grids render as smooth shading instead of visible pixels.
+fn resample_node_grid(
+  grid: &[Vec<f64>],
+  out_cols: usize,
+  out_rows: usize,
+) -> Vec<Vec<f64>> {
+  let cols = grid.len();
+  let rows = if cols > 0 { grid[0].len() } else { 0 };
+  if cols < 2 || rows < 2 {
+    return grid.to_vec();
+  }
+  let mut out = vec![vec![f64::NAN; out_rows]; out_cols];
+  for (i, out_col) in out.iter_mut().enumerate() {
+    let x = (i as f64 + 0.5) / out_cols as f64 * (cols - 1) as f64;
+    let i0 = (x.floor() as usize).min(cols - 2);
+    let fx = x - i0 as f64;
+    for (j, out_v) in out_col.iter_mut().enumerate() {
+      let y = (j as f64 + 0.5) / out_rows as f64 * (rows - 1) as f64;
+      let j0 = (y.floor() as usize).min(rows - 2);
+      let fy = y - j0 as f64;
+      *out_v = grid[i0][j0] * (1.0 - fx) * (1.0 - fy)
+        + grid[i0 + 1][j0] * fx * (1.0 - fy)
+        + grid[i0][j0 + 1] * (1.0 - fx) * fy
+        + grid[i0 + 1][j0 + 1] * fx * fy;
+    }
+  }
+  out
+}
+
+/// Draw the frame box around the plot area (Mathematica draws density and
+/// contour plots with Frame -> True).
+fn push_frame(svg: &mut String, x0: f64, y0: f64, w: f64, h: f64) {
+  let (_, dark_gray, _, _, _) = plot_theme();
+  svg.push_str(&format!(
+    "<rect x=\"{x0:.1}\" y=\"{y0:.1}\" width=\"{w:.1}\" height=\"{h:.1}\" fill=\"none\" stroke=\"rgb({},{},{})\" stroke-width=\"{}\"/>\n",
+    dark_gray.0, dark_gray.1, dark_gray.2, RESOLUTION_SCALE
+  ));
+}
+
+/// Pick ~target contour levels at "nice" round values strictly inside
+/// (v_min, v_max), like Mathematica's Contours -> Automatic.
+fn nice_contour_levels(v_min: f64, v_max: f64, target: usize) -> Vec<f64> {
+  let range = v_max - v_min;
+  if !range.is_finite() || range <= 0.0 {
+    return vec![];
+  }
+  let raw = range / (target as f64 + 1.0);
+  // libm for cross-platform bit-identical results (see channel_to_u8)
+  let mag = libm::pow(10.0, libm::floor(libm::log10(raw)));
+  let norm = raw / mag;
+  let step = if norm <= 1.0 {
+    1.0
+  } else if norm <= 2.0 {
+    2.0
+  } else if norm <= 5.0 {
+    5.0
+  } else {
+    10.0
+  } * mag;
+  let mut levels = Vec::new();
+  let mut k = libm::floor(v_min / step) + 1.0;
+  while k * step < v_max - 1e-9 * step {
+    if k * step > v_min + 1e-9 * step {
+      levels.push(k * step);
+    }
+    k += 1.0;
+  }
+  levels
+}
+
+/// Resolve the Contours option to a sorted list of levels inside the range.
+fn resolve_contour_levels(
+  spec: &ContourSpec,
+  v_min: f64,
+  v_max: f64,
+) -> Vec<f64> {
+  match spec {
+    ContourSpec::Automatic => nice_contour_levels(v_min, v_max, 10),
+    ContourSpec::Count(n) => {
+      let step = (v_max - v_min) / (*n as f64 + 1.0);
+      (1..=*n).map(|k| v_min + k as f64 * step).collect()
+    }
+    ContourSpec::Levels(levels) => {
+      let mut ls: Vec<f64> = levels
+        .iter()
+        .copied()
+        .filter(|v| *v > v_min && *v < v_max)
+        .collect();
+      ls.sort_by(|a, b| a.partial_cmp(b).unwrap());
+      ls.dedup();
+      ls
+    }
+  }
+}
+
+/// A polygon vertex carrying the interpolated field value.
+type PtV = ((f64, f64), f64);
+
+/// Clip a polygon against v >= level (keep_above) or v <= level, with
+/// positions interpolated linearly along the edges (Sutherland–Hodgman).
+fn clip_polygon(poly: &[PtV], level: f64, keep_above: bool) -> Vec<PtV> {
+  let inside =
+    |v: f64| if keep_above { v >= level } else { v <= level };
+  let mut out = Vec::with_capacity(poly.len() + 2);
+  for k in 0..poly.len() {
+    let (pa, va) = poly[k];
+    let (pb, vb) = poly[(k + 1) % poly.len()];
+    if inside(va) {
+      out.push((pa, va));
+    }
+    if inside(va) != inside(vb) {
+      let t = (level - va) / (vb - va);
+      let p = (pa.0 + (pb.0 - pa.0) * t, pa.1 + (pb.1 - pa.1) * t);
+      out.push((p, level));
+    }
+  }
+  out
+}
+
+/// Fill the regions between contour levels with flat band colors (isobands).
+/// Cells fully inside one band are merged into horizontal run rectangles;
+/// cells straddling a level are clipped into per-band polygons whose edges
+/// follow the interpolated contour, so band boundaries are smooth.
+/// grid is grid[col][row] with row 0 at the bottom.
+#[allow(clippy::too_many_arguments)]
+fn render_contour_bands(
+  svg: &mut String,
+  grid: &[Vec<f64>],
+  levels: &[f64],
+  v_min: f64,
+  v_max: f64,
+  plot_x0: f64,
+  plot_y0: f64,
+  cell_w: f64,
+  cell_h: f64,
+  color_function: Option<&str>,
+) {
+  let cols = grid.len();
+  if cols < 2 {
+    return;
+  }
+  let rows = grid[0].len();
+  if rows < 2 {
+    return;
+  }
+  let n_ci = cols - 1;
+  let n_cj = rows - 1;
+
+  let mut bounds = Vec::with_capacity(levels.len() + 2);
+  bounds.push(v_min);
+  bounds.extend_from_slice(levels);
+  bounds.push(v_max);
+
+  let band_fill = |b: usize| -> String {
+    let mid = 0.5 * (bounds[b] + bounds[b + 1]);
+    let (r, g, bl) =
+      scaled_color(scale_value(mid, v_min, v_max), color_function);
+    format!("rgb({r},{g},{bl})")
+  };
+  // Index of the band containing value v.
+  let band_of = |v: f64| -> usize {
+    match levels.iter().position(|&l| v < l) {
+      Some(b) => b,
+      None => levels.len(),
+    }
+  };
+  // A stroke in the fill color prevents antialiasing seams between
+  // adjacent fills (1px at display size; band boundaries are covered by
+  // the contour lines drawn on top).
+  let seam = RESOLUTION_SCALE as f64;
+
+  for j in 0..n_cj {
+    // Merge consecutive same-band cells in this row into one rectangle.
+    let mut run: Option<(usize, usize, usize)> = None; // (band, i_start, i_end)
+    let row_top = plot_y0 + (n_cj - 1 - j) as f64 * cell_h;
+    let flush = |svg: &mut String, run: &mut Option<(usize, usize, usize)>| {
+      if let Some((b, s, e)) = run.take() {
+        let sx = plot_x0 + s as f64 * cell_w;
+        let w = (e - s) as f64 * cell_w;
+        let fill = band_fill(b);
+        svg.push_str(&format!(
+          "<rect x=\"{sx:.1}\" y=\"{row_top:.1}\" width=\"{w:.1}\" height=\"{cell_h:.1}\" fill=\"{fill}\" stroke=\"{fill}\" stroke-width=\"{seam:.1}\"/>\n"
+        ));
+      }
+    };
+    for i in 0..n_ci {
+      let v00 = grid[i][j];
+      let v10 = grid[i + 1][j];
+      let v01 = grid[i][j + 1];
+      let v11 = grid[i + 1][j + 1];
+      if !v00.is_finite()
+        || !v10.is_finite()
+        || !v01.is_finite()
+        || !v11.is_finite()
+      {
+        flush(svg, &mut run);
+        continue;
+      }
+      let cmin = v00.min(v10).min(v01).min(v11);
+      let cmax = v00.max(v10).max(v01).max(v11);
+      let b_lo = band_of(cmin);
+      let b_hi = band_of(cmax);
+      if b_lo == b_hi {
+        run = match run {
+          Some((b, s, e)) if b == b_lo && e == i => Some((b, s, i + 1)),
+          other => {
+            if other.is_some() {
+              let mut prev = other;
+              flush(svg, &mut prev);
+            }
+            Some((b_lo, i, i + 1))
+          }
+        };
+        continue;
+      }
+      flush(svg, &mut run);
+      let px = |fx: f64| plot_x0 + (i as f64 + fx) * cell_w;
+      let py = |fy: f64| plot_y0 + (n_cj as f64 - (j as f64 + fy)) * cell_h;
+      let base: [PtV; 4] = [
+        ((px(0.0), py(0.0)), v00),
+        ((px(1.0), py(0.0)), v10),
+        ((px(1.0), py(1.0)), v11),
+        ((px(0.0), py(1.0)), v01),
+      ];
+      for b in b_lo..=b_hi {
+        let mut poly: Vec<PtV> = base.to_vec();
+        if b > 0 {
+          poly = clip_polygon(&poly, levels[b - 1], true);
+        }
+        if b < levels.len() {
+          poly = clip_polygon(&poly, levels[b], false);
+        }
+        if poly.len() < 3 {
+          continue;
+        }
+        let fill = band_fill(b);
+        let mut d = String::new();
+        for (k, ((x, y), _)) in poly.iter().enumerate() {
+          d.push_str(&format!(
+            "{}{x:.1} {y:.1}",
+            if k == 0 { "M" } else { "L" }
+          ));
+        }
+        d.push('Z');
+        svg.push_str(&format!(
+          "<path d=\"{d}\" fill=\"{fill}\" stroke=\"{fill}\" stroke-width=\"{seam:.1}\" stroke-linejoin=\"round\"/>\n"
+        ));
+      }
+    }
+    flush(svg, &mut run);
+  }
+}
+
+/// Compute marching-squares contour segments for one level.
+/// grid is grid[col][row] with row 0 at the bottom.
+fn marching_squares_segments(
+  grid: &[Vec<f64>],
+  level: f64,
+  plot_x0: f64,
+  plot_y0: f64,
+  cell_w: f64,
+  cell_h: f64,
+) -> Vec<((f64, f64), (f64, f64))> {
+  let cols = grid.len();
+  let rows = if cols > 0 { grid[0].len() } else { 0 };
+  let mut segments = Vec::new();
+  if cols < 2 || rows < 2 {
+    return segments;
+  }
+  let n_cj = rows - 1;
+  for i in 0..cols - 1 {
+    for j in 0..n_cj {
+      let v00 = grid[i][j];
+      let v10 = grid[i + 1][j];
+      let v01 = grid[i][j + 1];
+      let v11 = grid[i + 1][j + 1];
+      if !v00.is_finite()
+        || !v10.is_finite()
+        || !v01.is_finite()
+        || !v11.is_finite()
+      {
+        continue;
+      }
+
+      let case = (v00 >= level) as u8
+        | (((v10 >= level) as u8) << 1)
+        | (((v01 >= level) as u8) << 2)
+        | (((v11 >= level) as u8) << 3);
+
+      if case == 0 || case == 15 {
+        continue;
+      }
+
+      // Clamped: interpolation only runs on edges with a sign change, but
+      // near-equal endpoint values could still push the result outside the
+      // edge by floating-point noise.
+      let lerp = |va: f64, vb: f64| -> f64 {
+        if (vb - va).abs() < f64::EPSILON {
+          0.5
+        } else {
+          ((level - va) / (vb - va)).clamp(0.0, 1.0)
+        }
+      };
+
+      let sx = |fx: f64| -> f64 { plot_x0 + (i as f64 + fx) * cell_w };
+      let sy = |fy: f64| -> f64 {
+        plot_y0 + (n_cj as f64 - (j as f64 + fy)) * cell_h
+      };
+
+      let bottom = (sx(lerp(v00, v10)), sy(0.0));
+      let top = (sx(lerp(v01, v11)), sy(1.0));
+      let left = (sx(0.0), sy(lerp(v00, v01)));
+      let right = (sx(1.0), sy(lerp(v10, v11)));
+
+      // Bits: 1 = v00 (bottom-left), 2 = v10 (bottom-right),
+      // 4 = v01 (top-left), 8 = v11 (top-right).
+      match case {
+        1 | 14 => segments.push((bottom, left)),
+        2 | 13 => segments.push((bottom, right)),
+        3 | 12 => segments.push((left, right)),
+        4 | 11 => segments.push((left, top)),
+        5 | 10 => segments.push((bottom, top)),
+        6 => {
+          // Saddle: v10 and v01 above the level
+          segments.push((bottom, right));
+          segments.push((left, top));
+        }
+        9 => {
+          // Saddle: v00 and v11 above the level
+          segments.push((bottom, left));
+          segments.push((right, top));
+        }
+        7 | 8 => segments.push((right, top)),
+        _ => {}
+      }
+    }
+  }
+  segments
+}
+
+/// Chain contour segments that share endpoints into polylines so lines
+/// render with clean joins and the SVG stays compact.
+fn chain_segments(
+  segments: &[((f64, f64), (f64, f64))],
+) -> Vec<Vec<(f64, f64)>> {
+  use std::collections::HashMap;
+  let key = |p: (f64, f64)| -> (i64, i64) {
+    ((p.0 * 16.0).round() as i64, (p.1 * 16.0).round() as i64)
+  };
+  // Zero-length segments occur when the contour passes exactly through a
+  // grid node; neighboring cells provide the connecting geometry, so they
+  // would only render as spurious dots.
+  let segments: Vec<((f64, f64), (f64, f64))> = segments
+    .iter()
+    .copied()
+    .filter(|(a, b)| key(*a) != key(*b))
+    .collect();
+  // Endpoint -> indices of segments touching it
+  let mut by_point: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
+  for (idx, (a, b)) in segments.iter().enumerate() {
+    by_point.entry(key(*a)).or_default().push(idx);
+    by_point.entry(key(*b)).or_default().push(idx);
+  }
+  let mut used = vec![false; segments.len()];
+  let mut chains = Vec::new();
+  for start in 0..segments.len() {
+    if used[start] {
+      continue;
+    }
+    used[start] = true;
+    let (a, b) = segments[start];
+    let mut chain = vec![a, b];
+    // Extend at both ends
+    for end in 0..2 {
+      loop {
+        let tip = if end == 0 {
+          *chain.last().unwrap()
+        } else {
+          chain[0]
+        };
+        let Some(cands) = by_point.get(&key(tip)) else {
+          break;
+        };
+        let Some(&next) = cands.iter().find(|&&idx| !used[idx]) else {
+          break;
+        };
+        used[next] = true;
+        let (na, nb) = segments[next];
+        let far = if key(na) == key(tip) { nb } else { na };
+        if end == 0 {
+          chain.push(far);
+        } else {
+          chain.insert(0, far);
+        }
+      }
+    }
+    chains.push(chain);
+  }
+  chains
+}
+
+/// Draw contour lines for the given levels as thin dark polylines.
+#[allow(clippy::too_many_arguments)]
+fn render_contour_lines(
+  svg: &mut String,
+  grid: &[Vec<f64>],
+  levels: &[f64],
+  plot_x0: f64,
+  plot_y0: f64,
+  cell_w: f64,
+  cell_h: f64,
+  render_width: u32,
+) {
+  let stroke_w = render_width as f64 / 1000.0 * 2.5;
+  for &level in levels {
+    let segments =
+      marching_squares_segments(grid, level, plot_x0, plot_y0, cell_w, cell_h);
+    for chain in chain_segments(&segments) {
+      let points: Vec<String> = chain
+        .iter()
+        .map(|(x, y)| format!("{x:.1},{y:.1}"))
+        .collect();
+      svg.push_str(&format!(
+        "<polyline points=\"{}\" fill=\"none\" stroke=\"#404040\" stroke-width=\"{stroke_w:.1}\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n",
+        points.join(" ")
+      ));
+    }
+  }
+}
+
 /// DensityPlot[f, {x, xmin, xmax}, {y, ymin, ymax}]
 pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let body = &args[0];
   let (xvar, x_min, x_max) = parse_iterator(&args[1], "DensityPlot")?;
   let (yvar, y_min, y_max) = parse_iterator(&args[2], "DensityPlot")?;
-  let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
+  let opts = parse_density_contour_options(args, 3);
 
   // Sample grid
   let mut grid = vec![vec![f64::NAN; FIELD_GRID]; FIELD_GRID];
@@ -129,13 +737,13 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Use plotters for axes, then overlay density cells
+  // Use plotters for axes, then overlay the density image
   let area = generate_axes_only(
     (x_min, x_max),
     (y_min, y_max),
-    svg_width,
-    svg_height,
-    full_width,
+    opts.svg_width,
+    opts.svg_height,
+    opts.full_width,
   )?;
 
   let mut svg = area.svg;
@@ -144,23 +752,18 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg.truncate(pos);
   }
 
-  let cell_w = area.plot_w / FIELD_GRID as f64;
-  let cell_h = area.plot_h / FIELD_GRID as f64;
-
-  for i in 0..FIELD_GRID {
-    for j in 0..FIELD_GRID {
-      let v = grid[i][j];
-      if v.is_finite() {
-        let (r, g, b) = value_to_color(v, v_min, v_max);
-        let sx = area.plot_x0 + i as f64 * cell_w;
-        let sy = area.plot_y0 + (FIELD_GRID - 1 - j) as f64 * cell_h;
-        svg.push_str(&format!(
-          "<rect x=\"{sx:.1}\" y=\"{sy:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"none\"/>\n",
-          cell_w + 0.5, cell_h + 0.5
-        ));
-      }
-    }
-  }
+  embed_grid_image(
+    &mut svg,
+    &grid,
+    v_min,
+    v_max,
+    area.plot_x0,
+    area.plot_y0,
+    area.plot_w,
+    area.plot_h,
+    opts.color_function.as_deref(),
+  );
+  push_frame(&mut svg, area.plot_x0, area.plot_y0, area.plot_w, area.plot_h);
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result(svg))
@@ -172,7 +775,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let body = &args[0];
   let (xvar, x_min, x_max) = parse_iterator(&args[1], "ContourPlot")?;
   let (yvar, y_min, y_max) = parse_iterator(&args[2], "ContourPlot")?;
-  let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
+  let opts = parse_density_contour_options(args, 3);
 
   let n = FIELD_GRID + 1;
 
@@ -201,20 +804,15 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // Generate contour levels
-  let num_levels = 12;
-  let level_step = (v_max - v_min) / (num_levels + 1) as f64;
-  let levels: Vec<f64> = (1..=num_levels)
-    .map(|k| v_min + k as f64 * level_step)
-    .collect();
+  let levels = resolve_contour_levels(&opts.contours, v_min, v_max);
 
   // Use plotters for axes
   let area = generate_axes_only(
     (x_min, x_max),
     (y_min, y_max),
-    svg_width,
-    svg_height,
-    full_width,
+    opts.svg_width,
+    opts.svg_height,
+    opts.full_width,
   )?;
 
   let mut svg = area.svg;
@@ -225,108 +823,31 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let cell_w = area.plot_w / FIELD_GRID as f64;
   let cell_h = area.plot_h / FIELD_GRID as f64;
 
-  // Fill background with density colors
-  for i in 0..FIELD_GRID {
-    for j in 0..FIELD_GRID {
-      let v =
-        (grid[i][j] + grid[i + 1][j] + grid[i][j + 1] + grid[i + 1][j + 1])
-          / 4.0;
-      if v.is_finite() {
-        let (r, g, b) = value_to_color(v, v_min, v_max);
-        let sx = area.plot_x0 + i as f64 * cell_w;
-        let sy = area.plot_y0 + (FIELD_GRID - 1 - j) as f64 * cell_h;
-        svg.push_str(&format!(
-          "<rect x=\"{sx:.1}\" y=\"{sy:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"none\"/>\n",
-          cell_w + 0.5, cell_h + 0.5
-        ));
-      }
-    }
+  if opts.contour_shading {
+    render_contour_bands(
+      &mut svg,
+      &grid,
+      &levels,
+      v_min,
+      v_max,
+      area.plot_x0,
+      area.plot_y0,
+      cell_w,
+      cell_h,
+      opts.color_function.as_deref(),
+    );
   }
-
-  // Marching squares for contour lines
-  for &level in &levels {
-    let mut segments = Vec::new();
-    for i in 0..FIELD_GRID {
-      for j in 0..FIELD_GRID {
-        let v00 = grid[i][j];
-        let v10 = grid[i + 1][j];
-        let v01 = grid[i][j + 1];
-        let v11 = grid[i + 1][j + 1];
-        if !v00.is_finite()
-          || !v10.is_finite()
-          || !v01.is_finite()
-          || !v11.is_finite()
-        {
-          continue;
-        }
-
-        let b00 = v00 >= level;
-        let b10 = v10 >= level;
-        let b01 = v01 >= level;
-        let b11 = v11 >= level;
-        let case = (b00 as u8)
-          | ((b10 as u8) << 1)
-          | ((b01 as u8) << 2)
-          | ((b11 as u8) << 3);
-
-        if case == 0 || case == 15 {
-          continue;
-        }
-
-        let lerp = |va: f64, vb: f64| -> f64 {
-          if (vb - va).abs() < f64::EPSILON {
-            0.5
-          } else {
-            (level - va) / (vb - va)
-          }
-        };
-
-        let sx = |fx: f64| -> f64 { area.plot_x0 + (i as f64 + fx) * cell_w };
-        let sy = |fy: f64| -> f64 {
-          area.plot_y0 + (FIELD_GRID as f64 - (j as f64 + fy)) * cell_h
-        };
-
-        // Edge midpoints (interpolated)
-        let bottom = (sx(lerp(v00, v10)), sy(0.0));
-        let top = (sx(lerp(v01, v11)), sy(1.0));
-        let left = (sx(0.0), sy(lerp(v00, v01)));
-        let right = (sx(1.0), sy(lerp(v10, v11)));
-
-        let add_seg = |segs: &mut Vec<((f64, f64), (f64, f64))>,
-                       a: (f64, f64),
-                       b: (f64, f64)| {
-          segs.push((a, b));
-        };
-
-        match case {
-          1 | 14 => add_seg(&mut segments, bottom, left),
-          2 | 13 => add_seg(&mut segments, bottom, right),
-          3 | 12 => add_seg(&mut segments, left, right),
-          4 | 11 => add_seg(&mut segments, left, top),
-          5 => {
-            add_seg(&mut segments, bottom, left);
-            add_seg(&mut segments, top, right);
-          }
-          6 | 9 => add_seg(&mut segments, bottom, top),
-          7 | 8 => add_seg(&mut segments, right, top),
-          10 => {
-            add_seg(&mut segments, bottom, right);
-            add_seg(&mut segments, left, top);
-          }
-          _ => {}
-        }
-      }
-    }
-
-    // Draw contour line segments
-    let contour_stroke = crate::functions::graphics::theme().text_primary;
-    for (a, b) in &segments {
-      svg.push_str(&format!(
-        "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{contour_stroke}\" stroke-width=\"{}\" stroke-opacity=\"0.7\"/>\n",
-        a.0, a.1, b.0, b.1, area.render_width as f64 / 1000.0 * 3.0
-      ));
-    }
-  }
+  render_contour_lines(
+    &mut svg,
+    &grid,
+    &levels,
+    area.plot_x0,
+    area.plot_y0,
+    cell_w,
+    cell_h,
+    area.render_width,
+  );
+  push_frame(&mut svg, area.plot_x0, area.plot_y0, area.plot_w, area.plot_h);
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result(svg))
@@ -650,24 +1171,10 @@ pub fn stream_density_plot_ast(
     (sx, sy)
   };
 
-  let cell_w = plot_w / grid_n as f64;
-  let cell_h = plot_h / grid_n as f64;
-
   // Density background
-  for i in 0..grid_n {
-    for j in 0..grid_n {
-      let v = mag_grid[i][j];
-      if v.is_finite() {
-        let (r, g, b) = value_to_color(v, v_min, v_max);
-        let sx = plot_x0 + i as f64 * cell_w;
-        let sy = plot_y0 + (grid_n - 1 - j) as f64 * cell_h;
-        svg.push_str(&format!(
-          "<rect x=\"{sx:.1}\" y=\"{sy:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"none\"/>\n",
-          cell_w + 0.5, cell_h + 0.5
-        ));
-      }
-    }
-  }
+  embed_grid_image(
+    &mut svg, &mag_grid, v_min, v_max, plot_x0, plot_y0, plot_w, plot_h, None,
+  );
 
   // Streamlines
   let seed_n = 8;
@@ -728,6 +1235,8 @@ pub fn stream_density_plot_ast(
     }
   }
 
+  push_frame(&mut svg, plot_x0, plot_y0, plot_w, plot_h);
+
   svg.push_str("</svg>");
   Ok(crate::graphics_result(svg))
 }
@@ -747,251 +1256,49 @@ pub fn list_density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // Determine if input is {x,y,z} triples or a matrix
-  // It's triples if every element is a list of exactly 3 numeric items
-  let is_triples = rows.iter().all(|r| {
-    if let Expr::List(items) = r
-      && items.len() == 3
-    {
-      return items.iter().all(|item| {
-        let v = evaluate_expr_to_expr(item).unwrap_or(item.clone());
-        try_eval_to_f64(&v).is_some()
-      });
-    }
-    false
-  }) && rows.len() > 1
-    && {
-      // Check that it's NOT a 3-column matrix by verifying the "x" values are not
-      // sequential 1..n (ambiguous case: treat as triples if any x or y is non-integer
-      // or doesn't match sequential indices)
-      let first_row = if let Expr::List(items) = &rows[0] {
-        items
-          .iter()
-          .filter_map(|item| {
-            let v = evaluate_expr_to_expr(item).unwrap_or(item.clone());
-            try_eval_to_f64(&v)
-          })
-          .collect::<Vec<_>>()
-      } else {
-        vec![]
-      };
-      // If the first inner list has exactly 3 elements, we need to distinguish
-      // between a 3-column matrix and triples. Check if ALL inner lists have
-      // exactly 3 elements. If the outer list has more than 3 rows, treat as
-      // triples. If it has exactly 3 rows and each row has 3 elements, it's
-      // ambiguous - Mathematica treats it as a matrix.
-      // Simple heuristic: if we have more rows than columns (3), it's triples.
-      rows.len() > 3 || {
-        // For 3 rows of 3 elements, check if the values look like triples
-        // (x values not all the same, y values not all the same)
-        let mut xs = std::collections::HashSet::new();
-        let mut ys = std::collections::HashSet::new();
-        for r in rows {
-          if let Expr::List(items) = r {
-            if let Some(x) = try_eval_to_f64(
-              &evaluate_expr_to_expr(&items[0]).unwrap_or(items[0].clone()),
-            ) {
-              xs.insert(x.to_bits());
-            }
-            if let Some(y) = try_eval_to_f64(
-              &evaluate_expr_to_expr(&items[1]).unwrap_or(items[1].clone()),
-            ) {
-              ys.insert(y.to_bits());
-            }
-          }
-        }
-        // If x or y values are not simply 1..n, treat as triples
-        xs.len() > 1 && ys.len() > 1 && first_row[0] != 1.0
-      }
-    };
+  let opts = parse_density_contour_options(args, 1);
+  let (grid, x_min, x_max, y_min, y_max, v_min, v_max, _n_rows, _n_cols) =
+    parse_list_data_to_grid(rows, "ListDensityPlot")?;
 
-  let (svg_width, svg_height, full_width) = parse_field_options(args, 1);
+  if grid.is_empty() || !v_min.is_finite() || !v_max.is_finite() {
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
+  }
 
-  if is_triples {
-    list_density_plot_triples(rows, svg_width, svg_height, full_width)
+  let area = generate_axes_only(
+    (x_min, x_max),
+    (y_min, y_max),
+    opts.svg_width,
+    opts.svg_height,
+    opts.full_width,
+  )?;
+
+  let mut svg = area.svg;
+  if let Some(pos) = svg.rfind("</svg>") {
+    svg.truncate(pos);
+  }
+
+  // Coarse data grids are upsampled in-process so the shading interpolates
+  // smoothly between the data points instead of showing blocky pixels.
+  let grid = if grid.len() < 64 || grid[0].len() < 64 {
+    resample_node_grid(&grid, 256, 256)
   } else {
-    list_density_plot_matrix(rows, svg_width, svg_height, full_width)
-  }
-}
+    grid
+  };
 
-/// ListDensityPlot from a matrix of z-values
-fn list_density_plot_matrix(
-  rows: &[Expr],
-  svg_width: u32,
-  svg_height: u32,
-  full_width: bool,
-) -> Result<Expr, InterpreterError> {
-  let mut matrix: Vec<Vec<f64>> = Vec::new();
-  let mut v_min = f64::INFINITY;
-  let mut v_max = f64::NEG_INFINITY;
-
-  for row in rows {
-    if let Expr::List(items) = row {
-      let vals: Vec<f64> = items
-        .iter()
-        .map(|item| {
-          let v = evaluate_expr_to_expr(item).unwrap_or(item.clone());
-          try_eval_to_f64(&v).unwrap_or(f64::NAN)
-        })
-        .collect();
-      for &v in &vals {
-        if v.is_finite() {
-          v_min = v_min.min(v);
-          v_max = v_max.max(v);
-        }
-      }
-      matrix.push(vals);
-    }
-  }
-
-  if matrix.is_empty() {
-    return Ok(crate::graphics_result(
-      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
-    ));
-  }
-
-  let n_rows = matrix.len();
-  let n_cols = matrix.iter().map(|r| r.len()).max().unwrap_or(1);
-
-  // x ranges from 1 to n_cols, y ranges from 1 to n_rows
-  let x_min = 1.0;
-  let x_max = n_cols as f64;
-  let y_min = 1.0;
-  let y_max = n_rows as f64;
-
-  let area = generate_axes_only(
-    (x_min, x_max),
-    (y_min, y_max),
-    svg_width,
-    svg_height,
-    full_width,
-  )?;
-
-  let mut svg = area.svg;
-  if let Some(pos) = svg.rfind("</svg>") {
-    svg.truncate(pos);
-  }
-
-  let cell_w = area.plot_w / n_cols as f64;
-  let cell_h = area.plot_h / n_rows as f64;
-
-  // Row 0 is the top (highest y), row n_rows-1 is the bottom (lowest y)
-  for (i, row) in matrix.iter().enumerate() {
-    for (j, &val) in row.iter().enumerate() {
-      if val.is_finite() {
-        let (r, g, b) = value_to_color(val, v_min, v_max);
-        let sx = area.plot_x0 + j as f64 * cell_w;
-        let sy = area.plot_y0 + i as f64 * cell_h;
-        svg.push_str(&format!(
-          "<rect x=\"{sx:.1}\" y=\"{sy:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"none\"/>\n",
-          cell_w + 0.5, cell_h + 0.5
-        ));
-      }
-    }
-  }
-
-  svg.push_str("</svg>");
-  Ok(crate::graphics_result(svg))
-}
-
-/// ListDensityPlot from {x, y, z} triples using inverse distance weighting
-fn list_density_plot_triples(
-  rows: &[Expr],
-  svg_width: u32,
-  svg_height: u32,
-  full_width: bool,
-) -> Result<Expr, InterpreterError> {
-  let mut points: Vec<(f64, f64, f64)> = Vec::new();
-
-  for row in rows {
-    if let Expr::List(items) = row
-      && items.len() == 3
-    {
-      let x = try_eval_to_f64(
-        &evaluate_expr_to_expr(&items[0]).unwrap_or(items[0].clone()),
-      );
-      let y = try_eval_to_f64(
-        &evaluate_expr_to_expr(&items[1]).unwrap_or(items[1].clone()),
-      );
-      let z = try_eval_to_f64(
-        &evaluate_expr_to_expr(&items[2]).unwrap_or(items[2].clone()),
-      );
-      if let (Some(x), Some(y), Some(z)) = (x, y, z)
-        && x.is_finite()
-        && y.is_finite()
-        && z.is_finite()
-      {
-        points.push((x, y, z));
-      }
-    }
-  }
-
-  if points.is_empty() {
-    return Ok(crate::graphics_result(
-      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
-    ));
-  }
-
-  let x_min = points.iter().map(|p| p.0).fold(f64::INFINITY, f64::min);
-  let x_max = points.iter().map(|p| p.0).fold(f64::NEG_INFINITY, f64::max);
-  let y_min = points.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
-  let y_max = points.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max);
-  let z_min = points.iter().map(|p| p.2).fold(f64::INFINITY, f64::min);
-  let z_max = points.iter().map(|p| p.2).fold(f64::NEG_INFINITY, f64::max);
-
-  let area = generate_axes_only(
-    (x_min, x_max),
-    (y_min, y_max),
-    svg_width,
-    svg_height,
-    full_width,
-  )?;
-
-  let mut svg = area.svg;
-  if let Some(pos) = svg.rfind("</svg>") {
-    svg.truncate(pos);
-  }
-
-  // Interpolate using inverse distance weighting on a grid
-  let grid_n = FIELD_GRID;
-  let cell_w = area.plot_w / grid_n as f64;
-  let cell_h = area.plot_h / grid_n as f64;
-  let x_range = x_max - x_min;
-  let y_range = y_max - y_min;
-
-  for i in 0..grid_n {
-    let gx = x_min + (i as f64 + 0.5) / grid_n as f64 * x_range;
-    for j in 0..grid_n {
-      let gy = y_min + (j as f64 + 0.5) / grid_n as f64 * y_range;
-
-      // Inverse distance weighting
-      let mut w_sum = 0.0;
-      let mut z_sum = 0.0;
-      let mut exact = None;
-
-      for &(px, py, pz) in &points {
-        let dx = gx - px;
-        let dy = gy - py;
-        let dist_sq = dx * dx + dy * dy;
-        if dist_sq < 1e-20 {
-          exact = Some(pz);
-          break;
-        }
-        let w = 1.0 / dist_sq;
-        w_sum += w;
-        z_sum += w * pz;
-      }
-
-      let z = exact.unwrap_or_else(|| z_sum / w_sum);
-      let (r, g, b) = value_to_color(z, z_min, z_max);
-      let sx = area.plot_x0 + i as f64 * cell_w;
-      let sy = area.plot_y0 + (grid_n - 1 - j) as f64 * cell_h;
-      svg.push_str(&format!(
-        "<rect x=\"{sx:.1}\" y=\"{sy:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"none\"/>\n",
-        cell_w + 0.5, cell_h + 0.5
-      ));
-    }
-  }
+  embed_grid_image(
+    &mut svg,
+    &grid,
+    v_min,
+    v_max,
+    area.plot_x0,
+    area.plot_y0,
+    area.plot_w,
+    area.plot_h,
+    opts.color_function.as_deref(),
+  );
+  push_frame(&mut svg, area.plot_x0, area.plot_y0, area.plot_w, area.plot_h);
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result(svg))
@@ -1102,14 +1409,14 @@ fn parse_matrix_to_grid(
   let n_rows = matrix.len();
   let n_cols = matrix.iter().map(|r| r.len()).max().unwrap_or(1);
 
-  // Convert to grid[col][row] format for marching squares
-  // Row 0 is top (highest y), row n_rows-1 is bottom (lowest y)
+  // Convert to grid[col][row] format (row 0 at the bottom). Matrix row i
+  // sits at y = i + 1, i.e. the first data row is at the bottom, matching
+  // Mathematica's ListDensityPlot / ListContourPlot orientation.
   let mut grid = vec![vec![f64::NAN; n_rows]; n_cols];
   for (i, row) in matrix.iter().enumerate() {
     for (j, &val) in row.iter().enumerate() {
       if j < n_cols {
-        // grid[col][row_from_bottom]
-        grid[j][n_rows - 1 - i] = val;
+        grid[j][i] = val;
       }
     }
   }
@@ -1175,12 +1482,13 @@ fn parse_triples_to_grid(
   let x_range = x_max - x_min;
   let y_range = y_max - y_min;
 
-  // grid[col][row] with IDW interpolation
+  // grid[col][row] with IDW interpolation, sampled at nodes so the
+  // outermost samples land exactly on the data range bounds
   let mut grid = vec![vec![f64::NAN; grid_n]; grid_n];
   for i in 0..grid_n {
-    let gx = x_min + (i as f64 + 0.5) / grid_n as f64 * x_range;
+    let gx = x_min + i as f64 / (grid_n - 1) as f64 * x_range;
     for j in 0..grid_n {
-      let gy = y_min + (j as f64 + 0.5) / grid_n as f64 * y_range;
+      let gy = y_min + j as f64 / (grid_n - 1) as f64 * y_range;
 
       let mut w_sum = 0.0;
       let mut z_sum = 0.0;
@@ -1221,7 +1529,7 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let (svg_width, svg_height, full_width) = parse_field_options(args, 1);
+  let opts = parse_density_contour_options(args, 1);
   let (grid, x_min, x_max, y_min, y_max, v_min, v_max, _n_rows, _n_cols) =
     parse_list_data_to_grid(rows, "ListContourPlot")?;
 
@@ -1234,9 +1542,9 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let area = generate_axes_only(
     (x_min, x_max),
     (y_min, y_max),
-    svg_width,
-    svg_height,
-    full_width,
+    opts.svg_width,
+    opts.svg_height,
+    opts.full_width,
   )?;
 
   let mut svg = area.svg;
@@ -1244,118 +1552,39 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg.truncate(pos);
   }
 
+  // The grid holds node values: n columns of n rows span n-1 cells each way.
   let grid_cols = grid.len();
   let grid_rows = grid[0].len();
-  let cell_w = area.plot_w / grid_cols as f64;
-  let cell_h = area.plot_h / grid_rows as f64;
+  let cell_w = area.plot_w / (grid_cols.max(2) - 1) as f64;
+  let cell_h = area.plot_h / (grid_rows.max(2) - 1) as f64;
 
-  // Density background
-  for i in 0..grid_cols {
-    for j in 0..grid_rows {
-      let v = grid[i][j];
-      if v.is_finite() {
-        let (r, g, b) = value_to_color(v, v_min, v_max);
-        let sx = area.plot_x0 + i as f64 * cell_w;
-        let sy = area.plot_y0 + (grid_rows - 1 - j) as f64 * cell_h;
-        svg.push_str(&format!(
-          "<rect x=\"{sx:.1}\" y=\"{sy:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"none\"/>\n",
-          cell_w + 0.5, cell_h + 0.5
-        ));
-      }
-    }
+  let levels = resolve_contour_levels(&opts.contours, v_min, v_max);
+
+  if opts.contour_shading {
+    render_contour_bands(
+      &mut svg,
+      &grid,
+      &levels,
+      v_min,
+      v_max,
+      area.plot_x0,
+      area.plot_y0,
+      cell_w,
+      cell_h,
+      opts.color_function.as_deref(),
+    );
   }
-
-  // Contour lines using marching squares
-  let num_levels = 12;
-  let level_step = (v_max - v_min) / (num_levels + 1) as f64;
-  let levels: Vec<f64> = (1..=num_levels)
-    .map(|k| v_min + k as f64 * level_step)
-    .collect();
-
-  let ms_cols = grid_cols.saturating_sub(1);
-  let ms_rows = grid_rows.saturating_sub(1);
-
-  for &level in &levels {
-    let mut segments = Vec::new();
-    for i in 0..ms_cols {
-      for j in 0..ms_rows {
-        let v00 = grid[i][j];
-        let v10 = grid[i + 1][j];
-        let v01 = grid[i][j + 1];
-        let v11 = grid[i + 1][j + 1];
-        if !v00.is_finite()
-          || !v10.is_finite()
-          || !v01.is_finite()
-          || !v11.is_finite()
-        {
-          continue;
-        }
-
-        let b00 = v00 >= level;
-        let b10 = v10 >= level;
-        let b01 = v01 >= level;
-        let b11 = v11 >= level;
-        let case = (b00 as u8)
-          | ((b10 as u8) << 1)
-          | ((b01 as u8) << 2)
-          | ((b11 as u8) << 3);
-
-        if case == 0 || case == 15 {
-          continue;
-        }
-
-        let lerp = |va: f64, vb: f64| -> f64 {
-          if (vb - va).abs() < f64::EPSILON {
-            0.5
-          } else {
-            (level - va) / (vb - va)
-          }
-        };
-
-        let sx = |fx: f64| -> f64 { area.plot_x0 + (i as f64 + fx) * cell_w };
-        let sy = |fy: f64| -> f64 {
-          area.plot_y0 + (grid_rows as f64 - (j as f64 + fy)) * cell_h
-        };
-
-        let bottom = (sx(lerp(v00, v10)), sy(0.0));
-        let top = (sx(lerp(v01, v11)), sy(1.0));
-        let left = (sx(0.0), sy(lerp(v00, v01)));
-        let right = (sx(1.0), sy(lerp(v10, v11)));
-
-        let add_seg = |segs: &mut Vec<((f64, f64), (f64, f64))>,
-                       a: (f64, f64),
-                       b: (f64, f64)| {
-          segs.push((a, b));
-        };
-
-        match case {
-          1 | 14 => add_seg(&mut segments, bottom, left),
-          2 | 13 => add_seg(&mut segments, bottom, right),
-          3 | 12 => add_seg(&mut segments, left, right),
-          4 | 11 => add_seg(&mut segments, left, top),
-          5 => {
-            add_seg(&mut segments, bottom, left);
-            add_seg(&mut segments, top, right);
-          }
-          6 | 9 => add_seg(&mut segments, bottom, top),
-          7 | 8 => add_seg(&mut segments, right, top),
-          10 => {
-            add_seg(&mut segments, bottom, right);
-            add_seg(&mut segments, left, top);
-          }
-          _ => {}
-        }
-      }
-    }
-
-    let contour_stroke = crate::functions::graphics::theme().text_primary;
-    for (a, b) in &segments {
-      svg.push_str(&format!(
-        "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{contour_stroke}\" stroke-width=\"{}\" stroke-opacity=\"0.7\"/>\n",
-        a.0, a.1, b.0, b.1, area.render_width as f64 / 1000.0 * 3.0
-      ));
-    }
-  }
+  render_contour_lines(
+    &mut svg,
+    &grid,
+    &levels,
+    area.plot_x0,
+    area.plot_y0,
+    cell_w,
+    cell_h,
+    area.render_width,
+  );
+  push_frame(&mut svg, area.plot_x0, area.plot_y0, area.plot_w, area.plot_h);
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result(svg))
@@ -1907,28 +2136,39 @@ pub fn complex_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg.truncate(pos);
   }
 
-  let cell_w = area.plot_w / grid_size as f64;
-  let cell_h = area.plot_h / grid_size as f64;
-
+  // Render domain coloring as one embedded bitmap (a pixel per sample)
+  // stretched over the plot area: no per-cell rect seams.
+  use base64::Engine as _;
+  let mut img = image::RgbaImage::new(grid_size as u32, grid_size as u32);
   for i in 0..grid_size {
     let re = re_min + (i as f64 + 0.5) / grid_size as f64 * (re_max - re_min);
     for j in 0..grid_size {
       let im = im_min + (j as f64 + 0.5) / grid_size as f64 * (im_max - im_min);
-      if let Some((fre, fim)) = evaluate_complex_at(body, &zvar, re, im)
+      let px = if let Some((fre, fim)) = evaluate_complex_at(body, &zvar, re, im)
         && fre.is_finite()
         && fim.is_finite()
       {
         let (r, g, b) = complex_to_rgb(fre, fim);
-        let sx = area.plot_x0 + i as f64 * cell_w;
-        // Flip y: higher im values at top
-        let sy = area.plot_y0 + (grid_size - 1 - j) as f64 * cell_h;
-        svg.push_str(&format!(
-            "<rect x=\"{sx:.1}\" y=\"{sy:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"none\"/>\n",
-            cell_w + 0.5, cell_h + 0.5
-          ));
-      }
+        image::Rgba([r, g, b, 255])
+      } else {
+        image::Rgba([0, 0, 0, 0])
+      };
+      // Flip y: higher im values at top
+      img.put_pixel(i as u32, (grid_size - 1 - j) as u32, px);
     }
   }
+  let mut png = Vec::new();
+  if image::DynamicImage::ImageRgba8(img)
+    .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+    .is_ok()
+  {
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
+    svg.push_str(&format!(
+      "<image x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" preserveAspectRatio=\"none\" href=\"data:image/png;base64,{b64}\"/>\n",
+      area.plot_x0, area.plot_y0, area.plot_w, area.plot_h
+    ));
+  }
+  push_frame(&mut svg, area.plot_x0, area.plot_y0, area.plot_w, area.plot_h);
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result(svg))
