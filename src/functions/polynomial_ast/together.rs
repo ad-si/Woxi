@@ -368,7 +368,7 @@ fn hoist_denominator_content(den: &Expr) -> Option<Expr> {
 /// content with the denominator's integer factor: (4+2x)/(6x) →
 /// (2+x)/(3x), (4+2x)/6 → (2+x)/3 (wolframscript Together/Cancel both
 /// reduce). Returns None when nothing cancels.
-fn reduce_shared_integer_content(
+pub(super) fn reduce_shared_integer_content(
   num: &Expr,
   den: &Expr,
 ) -> Option<(Expr, Expr)> {

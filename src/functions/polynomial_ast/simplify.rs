@@ -4597,7 +4597,29 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
   let mut best_c = leaf_count(&best);
 
   // Candidate 1: Together the whole simplified expression.
-  let togethered = super::together::together_expr(&simplified);
+  // together_expr combines over the denominator PRODUCT; shared integer
+  // content must cancel before the candidate competes, or the quotient
+  // selection displays the unreduced coefficients:
+  // Simplify[-4/5 - 2/(5x)] combined to (-10 - 20*x)/(25*x) and showed
+  // (-10*(1 + 2*x))/(25*x) instead of -1/5*(2 + 4*x)/x.
+  let togethered = {
+    let raw = super::together::together_expr(&simplified);
+    let (n, d) = super::together::extract_num_den(&raw);
+    match super::together::reduce_shared_integer_content(&n, &d) {
+      Some((rn, rd)) => {
+        if matches!(&rd, Expr::Integer(1)) {
+          rn
+        } else {
+          Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: Box::new(rn),
+            right: Box::new(rd),
+          }
+        }
+      }
+      None => raw,
+    }
+  };
   let tc = leaf_count(&togethered);
   if tc < best_c {
     // Re-run simplify_expr to absorb any cancellations Together exposed.
@@ -4870,6 +4892,105 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
           };
           if accept {
             best = candidate;
+          } else if all_negative
+            && g_num >= 1
+            && let Some(parsed) = parse_neg_power_mono_sum(&terms)
+            && let Some(k) = parsed.iter().map(|&(_, _, e)| e).min()
+            && k < 0
+          {
+            // All-negative neg-power sums recombine over the common
+            // x^(-k). With UNIT cofactors the full content -g/d comes
+            // out: Simplify[-2 - 2/x] → (-2*(1 + x))/x (tie at 10),
+            // Simplify[-2-2/x-2x] → (-2*(1+x+x^2))/x (13 < 14),
+            // Simplify[-2/5 - 2/(5x)] → (-2*(1 + x))/(5*x) (12 < 14).
+            // Otherwise only the sign and denominator lcm come out:
+            // Simplify[-4/5 - 2/(5x)] → -1/5*(2 + 4*x)/x (tie at 14)
+            // while Simplify[-4 - 2/x] keeps its form (12 > 10); all
+            // wolframscript-verified.
+            let unit_cofactors =
+              parsed.iter().all(|&(n, d, _)| -n * g_den == g_num * d);
+            let cof = |n: i128, d: i128| -> i128 {
+              if unit_cofactors { 1 } else { -n * g_den / d }
+            };
+            let mut shifted: Vec<(i128, i128, i128)> = parsed
+              .iter()
+              .map(|&(n, d, e)| (cof(n, d), 1, e - k))
+              .collect();
+            shifted.sort_by_key(|&(_, _, e)| e);
+            let coeff = if unit_cofactors {
+              (-g_num, g_den)
+            } else {
+              (-1, g_den)
+            };
+            let plain_cost = quotient_cost::sc_sum(&parsed);
+            let comb_cost =
+              quotient_cost::sc_quotient(coeff, &shifted, None, Some(-k));
+            let mut vars2 = std::collections::HashSet::new();
+            collect_variables(&best, &mut vars2);
+            if comb_cost <= plain_cost && vars2.len() == 1 {
+              let var = vars2.into_iter().next().unwrap();
+              let sum_terms: Vec<Expr> = shifted
+                .iter()
+                .map(|&(n, _, e)| term_from_coeff(n, e, &var))
+                .collect();
+              let inner = Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: sum_terms.into(),
+              };
+              let mono = if -k == 1 {
+                Expr::Identifier(var)
+              } else {
+                Expr::BinaryOp {
+                  op: BinaryOperator::Power,
+                  left: Box::new(Expr::Identifier(var)),
+                  right: Box::new(Expr::Integer(-k)),
+                }
+              };
+              best = if unit_cofactors && g_num > 1 {
+                // |num| > 1 shows in the numerator/denominator products
+                let num = Expr::FunctionCall {
+                  name: "Times".to_string(),
+                  args: vec![Expr::Integer(-g_num), inner].into(),
+                };
+                let den = if g_den > 1 {
+                  Expr::FunctionCall {
+                    name: "Times".to_string(),
+                    args: vec![Expr::Integer(g_den), mono].into(),
+                  }
+                } else {
+                  mono
+                };
+                Expr::BinaryOp {
+                  op: BinaryOperator::Divide,
+                  left: Box::new(num),
+                  right: Box::new(den),
+                }
+              } else if g_den > 1 {
+                // a unit-negative rational shows as a prefactor
+                Expr::FunctionCall {
+                  name: "Times".to_string(),
+                  args: vec![
+                    crate::functions::math_ast::make_rational(-1, g_den),
+                    inner,
+                    Expr::BinaryOp {
+                      op: BinaryOperator::Power,
+                      left: Box::new(mono),
+                      right: Box::new(Expr::Integer(-1)),
+                    },
+                  ]
+                  .into(),
+                }
+              } else {
+                Expr::UnaryOp {
+                  op: UnaryOperator::Minus,
+                  operand: Box::new(Expr::BinaryOp {
+                    op: BinaryOperator::Divide,
+                    left: Box::new(inner),
+                    right: Box::new(mono),
+                  }),
+                }
+              };
+            }
           }
         }
       }

@@ -1687,6 +1687,26 @@ fn extract_rational_coeff(term: &Expr) -> Option<(i128, i128)> {
       op: BinaryOperator::Power,
       ..
     } => Some((1, 1)),
+    // Quotient: numerator coefficient over the denominator's coefficient
+    // (2/x → (2, 1), -2/(3 x) → (-2, 3)); a zero denominator coefficient
+    // means the shape is not a rational-coefficient term.
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      let (ln, ld) = extract_rational_coeff(left)?;
+      let (rn, rd) = extract_rational_coeff(right)?;
+      if rn == 0 {
+        return None;
+      }
+      let (mut n, mut d) = (ln * rd, ld * rn);
+      if d < 0 {
+        n = -n;
+        d = -d;
+      }
+      Some((n, d))
+    }
     _ => {
       // Use decompose_term as fallback
       let (coeff, _, _) = decompose_term(term);

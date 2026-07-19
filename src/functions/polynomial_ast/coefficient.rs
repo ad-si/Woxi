@@ -726,6 +726,45 @@ pub fn term_var_power_and_coeff(term: &Expr, var: &str) -> (i128, Expr) {
         },
       )
     }
+    // c / x^k → exponent -k with coefficient c (2/x → (-1, 2)); only a
+    // pure var-power denominator with a constant numerator is safe —
+    // any other quotient keeps the constant/sentinel fallback.
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      let den_pow = match right.as_ref() {
+        Expr::Identifier(n) if n == var => Some(1),
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: b,
+          right: e,
+        } => match (b.as_ref(), e.as_ref()) {
+          (Expr::Identifier(n), Expr::Integer(k)) if n == var => Some(*k),
+          _ => None,
+        },
+        Expr::FunctionCall { name, args }
+          if name == "Power" && args.len() == 2 =>
+        {
+          match (&args[0], &args[1]) {
+            (Expr::Identifier(n), Expr::Integer(k)) if n == var => Some(*k),
+            _ => None,
+          }
+        }
+        _ => None,
+      };
+      if let Some(k) = den_pow
+        && is_constant_wrt(left, var)
+      {
+        return (-k, (**left).clone());
+      }
+      if is_constant_wrt(term, var) {
+        (0, term.clone())
+      } else {
+        (-1, term.clone())
+      }
+    }
     Expr::FunctionCall { name, args } => match name.as_str() {
       "Times" => {
         let mut total_power: i128 = 0;
