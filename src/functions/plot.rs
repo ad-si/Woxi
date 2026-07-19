@@ -1138,6 +1138,10 @@ pub(crate) struct PlotOptions {
   pub log_y: bool,
   /// Callout labels for each series (None = no callout for that series)
   pub callout_labels: Vec<Option<String>>,
+  /// Per-point labels from `Labeled[y, label]` data entries, parallel to
+  /// each series' points (None = no label for that point). Empty when no
+  /// point is labeled.
+  pub point_labels: Vec<Vec<Option<String>>>,
   /// Stacked mode (StackedListPlot): fill each series down to the previous
   /// series' curve instead of to a constant baseline, producing opaque
   /// stacked bands. The `all_points` passed in are the cumulative curves.
@@ -1179,6 +1183,7 @@ impl Default for PlotOptions {
       frame_label_right: None,
       date_axis: false,
       callout_labels: Vec::new(),
+      point_labels: Vec::new(),
       log_x: false,
       log_y: false,
       stacked: false,
@@ -2264,6 +2269,14 @@ fn generate_svg_with_options(
       (y_min, y_max),
       (plot_x0, margin_top_f, plot_w, plot_h),
     );
+    inject_point_labels(
+      &mut buf,
+      opts,
+      all_points,
+      (x_min, x_max),
+      (y_min, y_max),
+      (plot_x0, margin_top_f, plot_w, plot_h),
+    );
   }
 
   inject_legend(&mut buf, opts);
@@ -2349,6 +2362,70 @@ fn inject_callout_labels(
   }
 
   buf.insert_str(insert_pos, &callout_svg);
+}
+
+/// Inject per-point labels (from `Labeled[y, label]` data entries) into a
+/// finished SVG buffer as text next to each labeled point. `plot_area` is
+/// the drawing region in render-space pixels: (left, top, width, height).
+fn inject_point_labels(
+  buf: &mut String,
+  opts: &PlotOptions,
+  all_points: &[Vec<(f64, f64)>],
+  x_range: (f64, f64),
+  y_range: (f64, f64),
+  plot_area: (f64, f64, f64, f64),
+) {
+  if !opts
+    .point_labels
+    .iter()
+    .any(|series| series.iter().any(|l| l.is_some()))
+  {
+    return;
+  }
+  let (x_min, x_max) = x_range;
+  let (y_min, y_max) = y_range;
+  let (plot_x0, plot_top, plot_w, plot_h) = plot_area;
+  let sf = RESOLUTION_SCALE as f64;
+  let font_size = sf * 16.0;
+  let (_, _, _, _, text_fill) = plot_theme();
+
+  let Some(insert_pos) = buf.rfind("</svg>") else {
+    return;
+  };
+  let mut label_svg = String::new();
+
+  for (series_idx, labels) in opts.point_labels.iter().enumerate() {
+    let Some(points) = all_points.get(series_idx) else {
+      continue;
+    };
+    for (&(data_x, data_y), label) in points.iter().zip(labels) {
+      let Some(label_text) = label else { continue };
+      if !(data_x.is_finite() && data_y.is_finite()) {
+        continue;
+      }
+      let frac_x = (data_x - x_min) / (x_max - x_min);
+      let frac_y = (data_y - y_min) / (y_max - y_min);
+      let px = plot_x0 + frac_x * plot_w;
+      let py = plot_top + plot_h * (1.0 - frac_y);
+      // Place the label above-right of the point, flipping to above-left
+      // near the right edge so it stays inside the plot area.
+      let (label_px, anchor) = if frac_x > 0.92 {
+        (px - sf * 4.0, "end")
+      } else {
+        (px + sf * 4.0, "start")
+      };
+      // Keep the label inside the image when the point sits near the top.
+      let label_py = (py - sf * 8.0).max(font_size);
+      label_svg.push_str(&format!(
+        "<text x=\"{label_px:.1}\" y=\"{label_py:.1}\" \
+         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+         fill=\"{text_fill}\" text-anchor=\"{anchor}\">{}</text>\n",
+        crate::functions::graphics::box_string_to_svg(label_text)
+      ));
+    }
+  }
+
+  buf.insert_str(insert_pos, &label_svg);
 }
 
 /// Build a `PlotSource` from sampled plot data so that `Show` can later
@@ -2613,6 +2690,14 @@ pub(crate) fn generate_scatter_svg_with_options(
     let plot_w = render_width as f64 - 2.0 * margin - 65.0 * sf;
     let plot_h = render_height as f64 - 2.0 * margin - 40.0 * sf;
     inject_callout_labels(
+      &mut buf,
+      opts,
+      all_series,
+      (x_min, x_max),
+      (y_min, y_max),
+      (plot_x0, margin, plot_w, plot_h),
+    );
+    inject_point_labels(
       &mut buf,
       opts,
       all_series,

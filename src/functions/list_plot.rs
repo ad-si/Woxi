@@ -254,23 +254,34 @@ fn unwrap_labeled(expr: &Expr) -> Option<(Expr, String)> {
 /// One parsed series per dataset plus one optional dataset label per series.
 type LabeledSeries = (Vec<Vec<(f64, f64)>>, Vec<Option<String>>);
 
-/// Like [`LabeledSeries`], but keeping the `Around` uncertainties.
-type LabeledErrSeries = (Vec<Vec<ErrPoint>>, Vec<Option<String>>);
+/// Like [`LabeledSeries`], but keeping the `Around` uncertainties plus
+/// per-point labels (parallel to each series' points) from `Labeled`
+/// wrappers around scalar data entries.
+type LabeledErrSeries = (
+  Vec<Vec<ErrPoint>>,
+  Vec<Option<String>>,
+  Vec<Vec<Option<String>>>,
+);
 
-/// Like [`parse_list_data_err_labeled`], with the uncertainties stripped.
+/// Like [`parse_list_data_err_labeled`], with the uncertainties and
+/// per-point labels stripped.
 fn parse_list_data_labeled(
   arg: &Expr,
 ) -> Result<LabeledSeries, InterpreterError> {
-  let (series, labels) = parse_list_data_err_labeled(arg)?;
+  let (series, labels, _) = parse_list_data_err_labeled(arg)?;
   Ok((strip_errors(&series), labels))
 }
 
 /// Parse list data that may carry `Labeled[data, label]` wrappers around the
 /// whole argument or around individual datasets. Returns one series per
 /// dataset plus one optional label per series (empty when no wrapper was
-/// present). A Labeled wrapper on any entry of the outer list marks that
-/// list as a list of datasets, so `{Labeled[{1, 2}, "a"], Labeled[{3, 4},
-/// "b"]}` parses as two 2-point series rather than as a list of x/y pairs.
+/// present) plus per-point labels (empty when no point is labeled).
+///
+/// A Labeled wrapper on a list entry of the outer list marks that list as a
+/// list of datasets, so `{Labeled[{1, 2}, "a"], Labeled[{3, 4}, "b"]}`
+/// parses as two 2-point series rather than as a list of x/y pairs. When
+/// every entry is a scalar, the Labeled wrappers instead label individual
+/// points of a single series: `{Labeled[2, "a"], 3}` plots at x = 1, 2.
 fn parse_list_data_err_labeled(
   arg: &Expr,
 ) -> Result<LabeledErrSeries, InterpreterError> {
@@ -280,25 +291,46 @@ fn parse_list_data_err_labeled(
   if let Some((content, label)) = unwrap_labeled(&data) {
     let series = parse_list_data_err(&content)?;
     let labels = vec![Some(label); series.len()];
-    return Ok((series, labels));
+    return Ok((series, labels, Vec::new()));
   }
 
   if let Expr::List(items) = &data
     && items.iter().any(|item| unwrap_labeled(item).is_some())
   {
-    let mut all_series = Vec::with_capacity(items.len());
-    let mut labels = Vec::with_capacity(items.len());
-    for item in items {
-      let (content, label) = match unwrap_labeled(item) {
-        Some((content, label)) => (content, Some(label)),
-        None => (item.clone(), None),
-      };
-      let content = evaluate_expr_to_expr(&content).unwrap_or(content);
+    let unwrapped: Vec<(Expr, Option<String>)> = items
+      .iter()
+      .map(|item| {
+        let (content, label) = match unwrap_labeled(item) {
+          Some((content, label)) => (content, Some(label)),
+          None => (item.clone(), None),
+        };
+        let content = evaluate_expr_to_expr(&content).unwrap_or(content);
+        (content, label)
+      })
+      .collect();
+
+    // All entries scalar: one series with sequential x values and the
+    // labels attached to the individual points.
+    if unwrapped.iter().all(|(c, _)| !matches!(c, Expr::List(_))) {
+      let mut points = Vec::with_capacity(unwrapped.len());
+      let mut point_labels = Vec::with_capacity(unwrapped.len());
+      for (i, (content, label)) in unwrapped.iter().enumerate() {
+        if let Some(y) = eval_to_value_err(content) {
+          points.push(ErrPoint::from_y((i + 1) as f64, y));
+          point_labels.push(label.clone());
+        }
+      }
+      return Ok((vec![points], Vec::new(), vec![point_labels]));
+    }
+
+    let mut all_series = Vec::with_capacity(unwrapped.len());
+    let mut labels = Vec::with_capacity(unwrapped.len());
+    for (content, label) in unwrapped {
       match &content {
         Expr::List(series_items) => {
           all_series.push(parse_single_series(series_items)?);
         }
-        // A labeled scalar contributes a one-point series.
+        // A labeled scalar among datasets contributes a one-point series.
         other => match eval_to_value_err(other) {
           Some(y) => all_series.push(vec![ErrPoint::from_y(1.0, y)]),
           None => all_series.push(Vec::new()),
@@ -306,10 +338,10 @@ fn parse_list_data_err_labeled(
       }
       labels.push(label);
     }
-    return Ok((all_series, labels));
+    return Ok((all_series, labels, Vec::new()));
   }
 
-  Ok((parse_list_data_err(&data)?, Vec::new()))
+  Ok((parse_list_data_err(&data)?, Vec::new(), Vec::new()))
 }
 
 /// Panel arrangement from the PlotLayout option.
@@ -633,10 +665,12 @@ fn apply_dataset_labels(opts: &mut PlotOptions, labels: &[Option<String>]) {
 
 /// ListPlot[{y1, y2, ...}] or ListPlot[{{x1,y1}, ...}]
 pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let (err_series, labels) = parse_list_data_err_labeled(&args[0])?;
+  let (err_series, labels, point_labels) =
+    parse_list_data_err_labeled(&args[0])?;
   let all_series = strip_errors(&err_series);
   let mut parsed = parse_plot_options(args);
   apply_dataset_labels(&mut parsed.opts, &labels);
+  parsed.opts.point_labels = point_labels;
   parsed.opts.error_bars = collect_error_bars(&err_series);
   if parsed.layout != PanelLayout::Overlaid && all_series.len() > 1 {
     return render_panel_layout(
@@ -752,10 +786,12 @@ pub fn complex_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// ListLinePlot[{y1, y2, ...}]
 pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let (err_series, labels) = parse_list_data_err_labeled(&args[0])?;
+  let (err_series, labels, point_labels) =
+    parse_list_data_err_labeled(&args[0])?;
   let all_series = strip_errors(&err_series);
   let mut parsed = parse_plot_options(args);
   apply_dataset_labels(&mut parsed.opts, &labels);
+  parsed.opts.point_labels = point_labels;
   parsed.opts.error_bars = collect_error_bars(&err_series);
   if parsed.layout != PanelLayout::Overlaid && all_series.len() > 1 {
     return render_panel_layout(
