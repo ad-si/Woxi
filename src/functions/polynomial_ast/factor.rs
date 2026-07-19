@@ -1709,7 +1709,12 @@ fn extract_rational_coeff(term: &Expr) -> Option<(i128, i128)> {
 
 /// Total degree of a term's non-numeric part: each symbolic factor counts
 /// 1, an integer power counts its exponent. Sin[x]^2*y → 3.
-fn term_total_degree(term: &Expr) -> i128 {
+/// A term's exponent per symbolic factor (variables by name, other
+/// non-numeric factors like Sin[theta] by their display form) — the
+/// lex-order comparison key for the content-sign rule.
+fn term_lex_exponents(
+  term: &Expr,
+) -> std::collections::BTreeMap<String, i128> {
   let inner = match term {
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
@@ -1717,36 +1722,62 @@ fn term_total_degree(term: &Expr) -> i128 {
     } => operand.as_ref(),
     other => other,
   };
-  let mut deg = 0i128;
+  let mut exps: std::collections::BTreeMap<String, i128> =
+    std::collections::BTreeMap::new();
   for f in collect_multiplicative_factors(inner) {
-    let is_numeric = matches!(
-      &f,
-      Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_)
-    ) || matches!(&f, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2);
-    if is_numeric {
-      continue;
-    }
-    deg += match &f {
+    let (base, e) = match &f {
       Expr::BinaryOp {
         op: BinaryOperator::Power,
+        left,
         right,
-        ..
-      } => match right.as_ref() {
-        Expr::Integer(n) => *n,
-        _ => 1,
-      },
+      } => (
+        left.as_ref().clone(),
+        match right.as_ref() {
+          Expr::Integer(n) => *n,
+          _ => 1,
+        },
+      ),
       Expr::FunctionCall { name, args }
         if name == "Power" && args.len() == 2 =>
       {
-        match &args[1] {
-          Expr::Integer(n) => *n,
-          _ => 1,
-        }
+        (
+          args[0].clone(),
+          match &args[1] {
+            Expr::Integer(n) => *n,
+            _ => 1,
+          },
+        )
       }
-      _ => 1,
+      other => ((*other).clone(), 1),
     };
+    let is_numeric = matches!(
+      &base,
+      Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_)
+    ) || matches!(&base, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2);
+    if !is_numeric {
+      *exps.entry(expr_to_string(&base)).or_insert(0) += e;
+    }
   }
-  deg
+  exps
+}
+
+/// Lexicographic order on exponent maps: variables compare alphabetically,
+/// missing exponents count as 0, and the first differing exponent decides.
+fn lex_exponents_greater(
+  a: &std::collections::BTreeMap<String, i128>,
+  b: &std::collections::BTreeMap<String, i128>,
+) -> bool {
+  let mut vars: Vec<&String> = a.keys().chain(b.keys()).collect();
+  vars.sort();
+  vars.dedup();
+  for v in vars {
+    let ea = a.get(v).copied().unwrap_or(0);
+    let eb = b.get(v).copied().unwrap_or(0);
+    if ea != eb {
+      return ea > eb;
+    }
+  }
+  false
 }
 
 /// Compute the rational content of additive terms: gcd of numerators over
@@ -1775,15 +1806,25 @@ pub(super) fn rational_content(
     .fold(0i128, gcd_i128);
   let den_lcm = coeffs.iter().map(|(_, d)| *d).fold(1i128, lcm_i128);
 
-  let mut best_deg = i128::MIN;
+  // Sign of the LEX-leading term (variables alphabetical, exponents
+  // descending — the same leading term FactorTerms keys its sign on):
+  // FactorTerms[2 - 4x - 4x^2] → -2*(-1 + 2x + 2x^2), but
+  // Factor[2*x^2 - 3*x*y^2] → x*(2*x - 3*y^2) because the x-major lex
+  // leading term is +2x^2, even though -3*x*y^2 has the higher total
+  // degree (wolframscript-verified; differential fuzzer follow-up case).
+  let mut best_key: Option<std::collections::BTreeMap<String, i128>> = None;
   let mut sign: i128 = 1;
   for (term, (n, _)) in terms.iter().zip(coeffs.iter()) {
     if *n == 0 {
       continue;
     }
-    let d = term_total_degree(term);
-    if d > best_deg {
-      best_deg = d;
+    let key = term_lex_exponents(term);
+    let better = match &best_key {
+      None => true,
+      Some(best) => lex_exponents_greater(&key, best),
+    };
+    if better {
+      best_key = Some(key);
       sign = if *n < 0 { -1 } else { 1 };
     }
   }
@@ -4350,16 +4391,25 @@ fn extract_multivar_content(expr: &Expr) -> i128 {
   if gcd == 0 {
     return 1;
   }
-  let mut best_deg = i128::MIN;
+  // Sign of the LEX-leading term (variables alphabetical, exponents
+  // descending): Factor[2*x^2 - 3*x*y^2] keeps x*(2*x - 3*y^2) because
+  // the x-major leading term is +2x^2, while Factor[5*y - 3*x*y^2]
+  // flips to -(y*(-5 + 3*x*y)) on its -3*x*y^2 lead
+  // (wolframscript-verified; differential fuzzer follow-up case).
+  let mut best_key: Option<std::collections::BTreeMap<String, i128>> = None;
   let mut sign = 1i128;
   for term in &terms {
     let c = term_integer_coeff(term);
     if c == 0 {
       continue;
     }
-    let d = term_total_degree(term);
-    if d > best_deg {
-      best_deg = d;
+    let key = term_lex_exponents(term);
+    let better = match &best_key {
+      None => true,
+      Some(best) => lex_exponents_greater(&key, best),
+    };
+    if better {
+      best_key = Some(key);
       sign = if c < 0 { -1 } else { 1 };
     }
   }

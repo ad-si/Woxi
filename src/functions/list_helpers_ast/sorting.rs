@@ -288,13 +288,14 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
           }
         }
       }
-      // Powers of integer bases order by base then exponent, ascending
-      // (Sort[{Sqrt[11], Sqrt[2]}] = {Sqrt[2], Sqrt[11]}); the
+      // Powers of integer or rational bases order by base then exponent,
+      // ascending (Sort[{Sqrt[11], Sqrt[2]}] = {Sqrt[2], Sqrt[11]},
+      // Sort[{Sqrt[3], Sqrt[5/3]}] = {Sqrt[5/3], Sqrt[3]}); the
       // head-name/argument comparison below would order 11 before 2.
       if let (Some((ba, ea)), Some((bb, eb))) =
         (int_base_power(a), int_base_power(b))
       {
-        match ba.cmp(&bb) {
+        match ratio_cmp(ba, bb) {
           std::cmp::Ordering::Equal => {}
           other => return other,
         }
@@ -306,6 +307,81 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
           };
         }
         return std::cmp::Ordering::Equal;
+      }
+      // Same-base powers (or a power against its bare base) compare by
+      // exponent, ascending: Sort[{Pi, 1/Pi}] = {Pi^(-1), Pi},
+      // Sort[{x, Sqrt[x], x^2}] = {Sqrt[x], x, x^2} (wolframscript-verified).
+      {
+        let base_exp = |e: &Expr| -> Option<(String, f64)> {
+          if let Some((base, exp)) = power_parts(e) {
+            let v = crate::functions::math_ast::try_eval_to_f64(&exp)?;
+            Some((crate::syntax::expr_to_string(&base), v))
+          } else {
+            Some((crate::syntax::expr_to_string(e), 1.0))
+          }
+        };
+        let a_is_pow = power_parts(a).is_some();
+        let b_is_pow = power_parts(b).is_some();
+        if (a_is_pow || b_is_pow)
+          && let (Some((sa, ea)), Some((sb, eb))) = (base_exp(a), base_exp(b))
+          && sa == sb
+          && ea != eb
+        {
+          return if ea < eb {
+            std::cmp::Ordering::Less
+          } else {
+            std::cmp::Ordering::Greater
+          };
+        }
+      }
+      // Additive expressions (sums) hold a class-based place in canonical
+      // order (wolframscript-verified probe families in Pi and x):
+      //   {1, 1+x^(-1), 1+Sqrt[x], x^(-2), x^(-1), 93/x, Sqrt[x], x, 2*x,
+      //    x^2, x^3, 1+x, 2+x, 1+2*x, 1+x^2, x+x^2}
+      // A sum whose greatest (last canonical) term is sub-linear (exponent
+      // < 1), has a negative leading coefficient, or carries a negative
+      // lower-order term sorts BEFORE monomials and atoms; every other sum
+      // sorts AFTER them but before plain function calls
+      // (Sort[{Cos[x], 1+x}] = {1+x, Cos[x]}). Two sums compare termwise
+      // from the greatest term down.
+      {
+        let a_terms = sum_terms_list(a);
+        let b_terms = sum_terms_list(b);
+        let skip = matches!(a, Expr::List(_) | Expr::Pattern { .. })
+          || matches!(b, Expr::List(_) | Expr::Pattern { .. });
+        if !skip {
+          match (&a_terms, &b_terms) {
+            (Some(ta), Some(tb)) => {
+              let (ca, cb) = (sum_sorts_early(ta), sum_sorts_early(tb));
+              if ca != cb {
+                return if ca {
+                  std::cmp::Ordering::Less
+                } else {
+                  std::cmp::Ordering::Greater
+                };
+              }
+              let ord = cmp_sum_terms(ta, tb);
+              if ord != std::cmp::Ordering::Equal {
+                return ord;
+              }
+            }
+            (Some(ta), None) => {
+              return if sum_sorts_early(ta) || is_plain_call_non_power(b) {
+                std::cmp::Ordering::Less
+              } else {
+                std::cmp::Ordering::Greater
+              };
+            }
+            (None, Some(tb)) => {
+              return if sum_sorts_early(tb) || is_plain_call_non_power(a) {
+                std::cmp::Ordering::Greater
+              } else {
+                std::cmp::Ordering::Less
+              };
+            }
+            (None, None) => {}
+          }
+        }
       }
       // Handle compound expressions (lists, function calls) element-wise
       match (a, b) {
@@ -1195,16 +1271,18 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
     }
   }
 
-  // Two powers of integer bases with numeric exponents compare by base
-  // ascending, then exponent ascending: Order[Sqrt[2], Sqrt[11]] = 1,
-  // Order[2^(1/3), Sqrt[2]] = 1, Order[Sqrt[2], 2^(2/3)] = 1 (all
+  // Two powers of integer or rational bases with numeric exponents compare
+  // by base ascending, then exponent ascending: Order[Sqrt[2], Sqrt[11]] = 1,
+  // Order[2^(1/3), Sqrt[2]] = 1, Order[Sqrt[5/3], Sqrt[3]] = 1 (all
   // wolframscript-verified). The string comparisons below would order
   // "11" before "2" lexicographically.
   if let (Some((ba, ea)), Some((bb, eb))) =
     (int_base_power(a), int_base_power(b))
   {
-    if ba != bb {
-      return if ba < bb { 1 } else { -1 };
+    match ratio_cmp(ba, bb) {
+      std::cmp::Ordering::Equal => {}
+      std::cmp::Ordering::Less => return 1,
+      std::cmp::Ordering::Greater => return -1,
     }
     if ea != eb {
       return if ea < eb { 1 } else { -1 };
@@ -1343,7 +1421,7 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
 /// A power of an integer base with a numeric exponent — Sqrt[2],
 /// 2^(1/3), Power[5, -1] — as `(base, exponent)`. These compare by base
 /// ascending then exponent ascending in Wolfram's canonical order.
-fn int_base_power(e: &Expr) -> Option<(i128, f64)> {
+fn int_base_power(e: &Expr) -> Option<((i128, i128), f64)> {
   use crate::functions::math_ast::try_eval_to_f64_with_infinity;
   let (base, exp) = match e {
     Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => (
@@ -1363,9 +1441,53 @@ fn int_base_power(e: &Expr) -> Option<(i128, f64)> {
     } => ((**left).clone(), (**right).clone()),
     _ => return None,
   };
-  let Expr::Integer(b) = base else { return None };
+  // Bases may be integers or rationals — Sort[{Sqrt[3], Sqrt[5/3]}] =
+  // {Sqrt[5/3], Sqrt[3]} because 5/3 < 3. Normalized to den > 0.
+  let b = match &base {
+    Expr::Integer(b) => (*b, 1),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(n), Expr::Integer(d)) if *d != 0 => {
+          if *d < 0 { (-n, -d) } else { (*n, *d) }
+        }
+        _ => return None,
+      }
+    }
+    _ => return None,
+  };
   let e = try_eval_to_f64_with_infinity(&exp)?;
   Some((b, e))
+}
+
+/// Order two powers of integer/rational bases with numeric exponents by
+/// base ascending, then exponent ascending — Wolfram's canonical order for
+/// numeric radicals (Order[Sqrt[5/3], Sqrt[3]] = 1, Order[2^(1/3),
+/// Sqrt[2]] = 1). None unless both expressions are such powers.
+pub fn numeric_base_power_cmp(
+  a: &Expr,
+  b: &Expr,
+) -> Option<std::cmp::Ordering> {
+  let (ba, ea) = int_base_power(a)?;
+  let (bb, eb) = int_base_power(b)?;
+  Some(
+    ratio_cmp(ba, bb)
+      .then(ea.partial_cmp(&eb).unwrap_or(std::cmp::Ordering::Equal)),
+  )
+}
+
+/// Compare two exact rationals `(num, den)` with positive denominators by
+/// cross-multiplication, falling back to f64 on i128 overflow.
+fn ratio_cmp(a: (i128, i128), b: (i128, i128)) -> std::cmp::Ordering {
+  match (a.0.checked_mul(b.1), b.0.checked_mul(a.1)) {
+    (Some(l), Some(r)) => l.cmp(&r),
+    _ => {
+      let l = a.0 as f64 / a.1 as f64;
+      let r = b.0 as f64 / b.1 as f64;
+      l.partial_cmp(&r).unwrap_or(std::cmp::Ordering::Equal)
+    }
+  }
 }
 
 /// Decompose a power expression — Power[b, e] (either Expr shape) or
@@ -1448,6 +1570,148 @@ fn numeric_coeff_and_rest_expr(e: &Expr) -> (f64, Option<Expr>) {
     }
     _ => (1.0, None),
   }
+}
+
+/// Flattened additive terms of a sum, in stored (canonical, ascending)
+/// order — the greatest term is last. Minus-chain right operands come back
+/// negated. Returns None unless `e` is an additive expression with at
+/// least two terms.
+fn sum_terms_list(e: &Expr) -> Option<Vec<Expr>> {
+  fn collect(e: &Expr, negate: bool, out: &mut Vec<Expr>) {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Plus" => {
+        for a in args.iter() {
+          collect(a, negate, out);
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left,
+        right,
+      } => {
+        collect(left, negate, out);
+        collect(right, negate, out);
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left,
+        right,
+      } => {
+        collect(left, negate, out);
+        collect(right, !negate, out);
+      }
+      _ => out.push(if negate {
+        Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand: Box::new(e.clone()),
+        }
+      } else {
+        e.clone()
+      }),
+    }
+  }
+  if !matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
+    && !matches!(
+      e,
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus | BinaryOperator::Minus,
+        ..
+      }
+    )
+  {
+    return None;
+  }
+  let mut out = Vec::new();
+  collect(e, false, &mut out);
+  if out.len() >= 2 { Some(out) } else { None }
+}
+
+/// The numeric exponent of a term with its literal coefficient stripped:
+/// `x` -> 1, `Sqrt[x]` -> 0.5, `x^n` -> n, `93/x` -> -1. None when the
+/// exponent is not numeric (e.g. `2^x`).
+fn term_exponent(t: &Expr) -> Option<f64> {
+  let (_, r) = numeric_coeff_and_rest_expr(t);
+  let rest = r.as_ref().unwrap_or(t);
+  if let Some((_, exp)) = power_parts(rest) {
+    crate::functions::math_ast::try_eval_to_f64(&exp)
+  } else {
+    Some(1.0)
+  }
+}
+
+/// True when `t` is a negative number literal or carries a negative literal
+/// coefficient (`-3`, `-x`, `-2*Sqrt[5]`).
+fn term_is_negative(t: &Expr) -> bool {
+  if matches!(
+    t,
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      ..
+    }
+  ) {
+    return true;
+  }
+  if let Some(v) = crate::functions::math_ast::try_eval_to_f64(t) {
+    return v < 0.0;
+  }
+  let (c, r) = numeric_coeff_and_rest_expr(t);
+  r.is_some() && c < 0.0
+}
+
+/// Whether a sum sorts in the EARLY class — before monomials and atoms —
+/// in Wolfram's canonical Sort order. wolframscript-verified:
+///   Sort[{Pi, 1 + 1/Pi}]  = {1 + Pi^(-1), Pi}   (sub-linear lead)
+///   Sort[{x, 5 - x}]      = {5 - x, x}          (negative lead coeff)
+///   Sort[{1/x, -3 + x}]   = {-3 + x, x^(-1)}    (negative lower term)
+///   Sort[{x, 2 + x}]      = {x, 2 + x}          (late: all-positive linear)
+///   Sort[{1/x, x - x^2}]  = {x^(-1), x - x^2}   (late: super-linear lead)
+fn sum_sorts_early(terms: &[Expr]) -> bool {
+  let Some(lead) = terms.last() else {
+    return false;
+  };
+  let Some(exp) = term_exponent(lead) else {
+    return false;
+  };
+  if exp < 1.0 {
+    return true;
+  }
+  if exp == 1.0
+    && (term_is_negative(lead)
+      || terms[..terms.len() - 1].iter().any(term_is_negative))
+  {
+    return true;
+  }
+  false
+}
+
+/// Compare two sums termwise from the greatest (last canonical) term down;
+/// when one runs out, its missing terms count as 0 against the other's
+/// remaining greatest term (Sort[{2 + Pi, Pi}] = {Pi, 2 + Pi} but
+/// Sort[{-3 + x, x}] = {-3 + x, x}).
+fn cmp_sum_terms(ta: &[Expr], tb: &[Expr]) -> std::cmp::Ordering {
+  let (mut i, mut j) = (ta.len(), tb.len());
+  loop {
+    match (i, j) {
+      (0, 0) => return std::cmp::Ordering::Equal,
+      (0, _) => return canonical_cmp(&Expr::Integer(0), &tb[j - 1]),
+      (_, 0) => return canonical_cmp(&ta[i - 1], &Expr::Integer(0)),
+      _ => {
+        let ord = canonical_cmp(&ta[i - 1], &tb[j - 1]);
+        if ord != std::cmp::Ordering::Equal {
+          return ord;
+        }
+        i -= 1;
+        j -= 1;
+      }
+    }
+  }
+}
+
+/// A plain function call that is not itself a power (Sqrt/Power) — sums
+/// sort before these (Sort[{Cos[x], 1 + x}] = {1 + x, Cos[x]}).
+fn is_plain_call_non_power(e: &Expr) -> bool {
+  is_plain_func_call(e)
+    && !matches!(e, Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1)
 }
 
 /// True when `sum` is an additive expression whose highest (last) canonical

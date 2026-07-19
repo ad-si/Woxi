@@ -652,8 +652,25 @@ fn apart_general(
     if let Expr::Integer(_) = f {
       continue; // constant content — folded into the overall scale below
     }
-    let c = extract_poly_coeffs(f, var)?;
+    let mut c = extract_poly_coeffs(f, var)?;
     if c.len() >= 2 {
+      // Normalize each factor to its primitive, positive-leading form —
+      // wolframscript presents partial-fraction denominators content-hoisted
+      // and leading-positive: Apart[(4x-3x^2-x^3)/(x+x^2-5x^3)] = 1/5 +
+      // (-19 + 16*x)/(5*(-1 - x + 5*x^2)), not (19-16*x)/(5+5*x-25*x^2).
+      // Content and sign are absorbed by `scale` (= den / prod of factors)
+      // below, and the content resurfaces as the term's scalar multiplier.
+      let content = c.iter().fold(0i128, |acc, &v| gcd_i128(acc, v.abs()));
+      if content > 1 {
+        for v in c.iter_mut() {
+          *v /= content;
+        }
+      }
+      if c.last().map(|&l| l < 0).unwrap_or(false) {
+        for v in c.iter_mut() {
+          *v = -*v;
+        }
+      }
       factors.push(c);
     }
   }
