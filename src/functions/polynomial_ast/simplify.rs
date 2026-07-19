@@ -4413,6 +4413,39 @@ fn contains_zero_negative_power(expr: &Expr) -> bool {
 /// reciprocal's base must be a bare VARIABLE (possibly powered) — a sum
 /// base (Times[Rational[-2,5], 1-x+x^2, (-1+x)^(-1)], a Factor rewrite of
 /// a flipped quotient) is NOT this display and must keep re-simplifying.
+/// A settled minus-pull over a flipped denominator —
+/// -((4 - 3*x)/(4 + x + 3*x^2 - 5*x^3)) — whose denominator's LEADING
+/// (highest-degree) coefficient is negative. The SimplifyCount candidate
+/// selection chose this display; the Together candidate would distribute
+/// the sign back into the numerator, so it must be treated as final.
+fn is_minus_pull_neg_leading_quotient(e: &Expr) -> bool {
+  let Expr::UnaryOp {
+    op: UnaryOperator::Minus,
+    operand,
+  } = e
+  else {
+    return false;
+  };
+  let Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    right,
+    ..
+  } = operand.as_ref()
+  else {
+    return false;
+  };
+  let mut vars = std::collections::HashSet::new();
+  collect_variables(right, &mut vars);
+  if vars.len() != 1 {
+    return false;
+  }
+  let var = vars.into_iter().next().unwrap();
+  match extract_poly_coeffs(right, &var) {
+    Some(coeffs) => coeffs.last().map(|&c| c < 0).unwrap_or(false),
+    None => false,
+  }
+}
+
 fn is_rational_prefactor_quotient(e: &Expr) -> bool {
   let factors = super::together::flatten_times_args(std::slice::from_ref(e));
   if factors.len() != 3 {
@@ -4555,7 +4588,9 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
   // (-1/5*(2+4x)/x, Simplify[(-2-4x)/(5x)]) is FINAL: the leaf-count
   // candidates below would re-expand or re-combine it
   // (wolframscript-verified).
-  if is_rational_prefactor_quotient(&simplified) {
+  if is_rational_prefactor_quotient(&simplified)
+    || is_minus_pull_neg_leading_quotient(&simplified)
+  {
     return simplified;
   }
   let mut best = simplified.clone();
@@ -4688,6 +4723,8 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
     if !matches!(&d, Expr::Integer(1)) {
       if let Some((chosen, _)) = simplify_quotient_select(&best, &n, &d) {
         best = chosen;
+      } else if let Some(extracted) = radical_quotient_num_content(&n, &d) {
+        best = extracted;
       } else if let Some(signed) =
         super::together::extract_quotient_minus(&n, &d)
       {
@@ -4703,6 +4740,9 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
   // is), and Simplify[3/2 + (3/2)*Sqrt[2]] → (3*(1 + Sqrt[2]))/2.
   // Polynomial sums already go through the Factor candidate above.
   if !polynomial_like(&best) {
+    // Candidate 6 below needs the sum BEFORE candidate 5's content
+    // extraction wraps it in Times[c, Plus[…]].
+    let pre_content = best.clone();
     let terms = super::coefficient::collect_additive_terms(&best);
     if terms.len() >= 2
       && let Some((_, _, coeffs)) = super::factor::rational_content(&terms)
@@ -4840,7 +4880,57 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
     // Sqrt[g] out wins the exact SimplifyCount: Simplify[-3*Sqrt[2] +
     // Sqrt[10]] → Sqrt[2]*(-3 + Sqrt[5]) (14 < 15; differential fuzzer,
     // seed 14799314084710522344; wolframscript-verified).
-    let terms = super::coefficient::collect_additive_terms(&best);
+    let terms = {
+      let t = super::coefficient::collect_additive_terms(&pre_content);
+      if t.len() >= 2 {
+        t
+      } else {
+        // An earlier candidate (Factor) may have content-wrapped the sum
+        // as Times[c, Plus[…]] — distribute c back so the radical
+        // extraction still sees the raw terms.
+        let content_wrapped = match &pre_content {
+          Expr::FunctionCall { name, args }
+            if name == "Times" && args.len() == 2 =>
+          {
+            match (&args[0], &args[1]) {
+              (Expr::Integer(c), inner) => Some((*c, inner.clone())),
+              _ => None,
+            }
+          }
+          Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left,
+            right,
+          } => match left.as_ref() {
+            Expr::Integer(c) => Some((*c, (**right).clone())),
+            _ => None,
+          },
+          _ => None,
+        };
+        match content_wrapped {
+          Some((c, inner)) => {
+            let inner_terms =
+              super::coefficient::collect_additive_terms(&inner);
+            if inner_terms.len() >= 2 {
+              inner_terms
+                .iter()
+                .filter_map(|t| {
+                  crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+                    op: BinaryOperator::Times,
+                    left: Box::new(Expr::Integer(c)),
+                    right: Box::new(t.clone()),
+                  })
+                  .ok()
+                })
+                .collect()
+            } else {
+              t
+            }
+          }
+          None => t,
+        }
+      }
+    };
     if terms.len() >= 2
       && let Some(radicands) = terms
         .iter()
@@ -4848,7 +4938,81 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
         .collect::<Option<Vec<i128>>>()
     {
       let g = radicands.iter().fold(0i128, |a, &b| gcd_i128(a, b).abs());
-      if g > 1 {
+      // A MIXED-SIGN sum whose integer coefficients share |content| > 1
+      // with unit cofactors extracts BOTH the content and the radical —
+      // wolframscript's true SimplifyCount ties the content-only and
+      // fully-extracted forms and Simplify picks the latter, signed so
+      // the greatest term stays positive: Sqrt[8] - Sqrt[24] →
+      // -2*Sqrt[2]*(-1 + Sqrt[3]), -Sqrt[8] + Sqrt[24] →
+      // 2*Sqrt[2]*(-1 + Sqrt[3]); the all-positive Sqrt[8] + Sqrt[24]
+      // keeps 2*(Sqrt[2] + Sqrt[6]) (wolframscript-verified; differential
+      // fuzzer, seed 16005587802477298591).
+      let full_extraction = if g > 1 {
+        (|| -> Option<Expr> {
+          let (_, _, coeffs) = super::factor::rational_content(&terms)?;
+          if coeffs.iter().any(|(_, d)| *d != 1) {
+            return None;
+          }
+          let content = coeffs
+            .iter()
+            .map(|(n, _)| *n)
+            .filter(|&n| n != 0)
+            .fold(0i128, |a, b| gcd_i128(a, b).abs());
+          if content <= 1 {
+            return None;
+          }
+          let has_pos = coeffs.iter().any(|(n, _)| *n > 0);
+          let has_neg = coeffs.iter().any(|(n, _)| *n < 0);
+          if !(has_pos && has_neg) {
+            return None;
+          }
+          if coeffs.iter().any(|(n, _)| (n / content).abs() != 1) {
+            return None;
+          }
+          let signed = if coeffs.last()?.0 < 0 {
+            -content
+          } else {
+            content
+          };
+          let sqrt_of = |n: i128| Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![Expr::Integer(n)].into(),
+          };
+          let inner: Vec<Expr> = coeffs
+            .iter()
+            .zip(radicands.iter())
+            .map(|(&(n, _), &r)| {
+              let c = n / signed; // ±1 by the unit-cofactor gate
+              let rad = r / g;
+              match (c, rad) {
+                (_, 1) => Expr::Integer(c),
+                (1, _) => sqrt_of(rad),
+                _ => Expr::UnaryOp {
+                  op: UnaryOperator::Minus,
+                  operand: Box::new(sqrt_of(rad)),
+                },
+              }
+            })
+            .collect();
+          Some(Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::Integer(signed),
+              sqrt_of(g),
+              Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: inner.into(),
+              },
+            ]
+            .into(),
+          })
+        })()
+      } else {
+        None
+      };
+      if let Some(full) = full_extraction {
+        best = full;
+      } else if g > 1 {
         let divided: Result<Vec<Expr>, _> = terms
           .iter()
           .map(|t| {
@@ -7522,7 +7686,12 @@ fn simplify_quotient_select(
     num_terms: Vec<(i128, i128, i128)>,
     den_content: i128,
     den_terms: Vec<(i128, i128, i128)>,
+    // x^k monomial content split out of a denominator SUM (0 = none):
+    // 1/(-3x^2+5x^3) → 1/(x^2*(-3+5x))
+    den_mono: i128,
     split: bool,
+    // display is final — later factoring would rebuild it
+    terminal: bool,
   }
   let mut cands: Vec<Cand> = Vec::new();
 
@@ -7540,7 +7709,9 @@ fn simplify_quotient_select(
     num_terms: n_terms.clone(),
     den_content: 1,
     den_terms: d_terms.clone(),
+    den_mono: 0,
     split: false,
+    terminal: false,
   });
 
   // extraction variants (unflipped): numerator signed content and/or a
@@ -7559,6 +7730,18 @@ fn simplify_quotient_select(
   // wolframscript-verified (differential fuzzer, seed 5520550946540289960).
   let num_pullable = !den_gate_open && n_terms.len() > 1 && n_content < 0;
   let den_extractable = !den_gate_open && !den_is_mono && d_content > 1;
+  // A denominator sum with monomial content x^k (k >= 1) can split it out
+  // as its own reciprocal power factor: 1/(-3x^2+5x^3) → 1/(x^2*(-3+5x))
+  // (15 < 17), while 1/(4x+3x^2) stays expanded (13 > 12);
+  // wolframscript-verified (differential fuzzer, seed 862368627941598145).
+  let den_min_exp = d_terms.iter().map(|&(_, _, e)| e).min().unwrap_or(0);
+  // With a negative LEADING coefficient the split only applies to a
+  // mixed-sign denominator (1/(3x^2-5x^3) → 1/((3-5x)*x^2)); an
+  // all-nonpositive one pulls the minus out instead
+  // (Simplify[(2+3x)/(-4x-3x^2)] → -((2+3x)/(4x+3x^2))).
+  let den_mono_extractable = !den_is_mono
+    && den_min_exp >= 1
+    && (!den_gate_open || d_terms.iter().any(|&(n, _, _)| n > 0));
   let num_opts: Vec<(i128, Vec<(i128, i128, i128)>, bool)> = {
     let mut v = Vec::new();
     if num_extractable {
@@ -7571,22 +7754,35 @@ fn simplify_quotient_select(
     v
   };
   for (nc, nt, pull) in &num_opts {
-    for de in [true, false] {
-      if de && (!den_extractable || *pull) {
+    for de in [2usize, 1, 0] {
+      if de == 1 && (!den_extractable || *pull) {
         // a -(…) pull keeps the denominator exactly as the input shows
         // it: Simplify[(2+x)/(-5-5x)] → -((2+x)/(5+5x))
         continue;
       }
-      if !de && *nc == 1 && !*pull {
+      if de == 2 && (!den_mono_extractable || *pull) {
+        continue;
+      }
+      if de == 0 && *nc == 1 && !*pull {
         continue; // that's the plain candidate
       }
-      let (dc, dt) = if de {
-        (d_content, scale(&d_terms, d_content))
-      } else {
-        (1, d_terms.clone())
+      let (dc, dt, dk) = match de {
+        1 => (d_content, scale(&d_terms, d_content), 0),
+        2 => {
+          let shifted: Vec<(i128, i128, i128)> = d_terms
+            .iter()
+            .map(|&(n, d, e)| (n, d, e - den_min_exp))
+            .collect();
+          if d_content > 1 {
+            (d_content, scale(&shifted, d_content), den_min_exp)
+          } else {
+            (1, shifted, den_min_exp)
+          }
+        }
+        _ => (1, d_terms.clone(), 0),
       };
       let mut coeff_n = *nc;
-      let mut coeff_d = if den_is_mono { den_mono_coeff } else { dc };
+      let coeff_d = if den_is_mono { den_mono_coeff } else { dc };
       if *pull {
         coeff_n = -coeff_n;
       }
@@ -7594,11 +7790,12 @@ fn simplify_quotient_select(
       if g > 1 {
         // shared content would have been cancelled upstream; skip
         // rather than construct a misleading display
-        coeff_n /= g;
-        coeff_d /= g;
+        continue;
       }
       let cost = if den_is_mono {
         sc_quotient((coeff_n, coeff_d), nt, None, Some(den_mono_exp))
+      } else if dk > 0 {
+        sc_quotient((coeff_n, coeff_d), nt, Some(&dt), Some(dk))
       } else {
         sc_quotient((coeff_n, coeff_d), nt, Some(&dt), None)
       };
@@ -7606,14 +7803,47 @@ fn simplify_quotient_select(
         cost,
         // the -(…) pull only beats plain on a tie when plain's first
         // numerator term is negative (Simplify[(2-x)/(-1+x)] keeps,
-        // (-2-3x)/(4x+3x^2) pulls) — same tie rule as a flip
-        class: if *pull { 2 } else { 1 },
+        // (-2-3x)/(4x+3x^2) pulls) — same tie rule as a flip. The
+        // denominator x^k split (class 4) needs a STRICT win:
+        // (2+3x)/(4x+3x^2) stays expanded on its 18=18 tie.
+        class: if *pull {
+          2
+        } else if dk > 0 {
+          4
+        } else {
+          1
+        },
         minus_pull: *pull,
         num_content: *nc,
         num_terms: nt.clone(),
         den_content: dc,
         den_terms: dt,
+        den_mono: dk,
         split: false,
+        terminal: false,
+      });
+    }
+  }
+
+  // Shared integer content between numerator and denominator cancels
+  // through: Simplify[(2-4x+8x^2)/(2x^2+4x^3)] → (1-2x+4x^2)/(x^2+2x^3)
+  // (wolframscript-verified).
+  if !den_is_mono {
+    let shared = gcd_i128(n_content.abs(), d_content.abs());
+    if shared > 1 {
+      let sn = scale(&n_terms, shared);
+      let sd = scale(&d_terms, shared);
+      cands.push(Cand {
+        cost: sc_quotient((1, 1), &sn, Some(&sd), None),
+        class: 1,
+        minus_pull: false,
+        num_content: 1,
+        num_terms: sn,
+        den_content: 1,
+        den_terms: sd,
+        den_mono: 0,
+        split: false,
+        terminal: false,
       });
     }
   }
@@ -7639,7 +7869,9 @@ fn simplify_quotient_select(
         num_terms: n_terms.clone(),
         den_content: dc,
         den_terms: dt,
+        den_mono: 0,
         split: false,
+        terminal: false,
       });
     }
   }
@@ -7692,7 +7924,9 @@ fn simplify_quotient_select(
       num_terms: n_terms.clone(),
       den_content: 1,
       den_terms: d_terms.clone(),
+      den_mono: 0,
       split: true,
+      terminal: false,
     });
   }
 
@@ -7743,19 +7977,43 @@ fn simplify_quotient_select(
           num_terms: nt,
           den_content: fdc,
           den_terms: fdt.clone(),
+          den_mono: 0,
           split: false,
+          terminal: false,
         });
       }
-    } else if n_terms.first().map(|&(n, _, _)| n < 0).unwrap_or(false) {
+    } else {
+      if n_terms.first().map(|&(n, _, _)| n < 0).unwrap_or(false) {
+        cands.push(Cand {
+          cost: sc_quotient((1, 1), &fn_terms, Some(&fd), None),
+          class: 3,
+          minus_pull: false,
+          num_content: 1,
+          num_terms: fn_terms,
+          den_content: 1,
+          den_terms: fd.clone(),
+          den_mono: 0,
+          split: false,
+          terminal: false,
+        });
+      }
+      // The flipped denominator keeps a negative leading coefficient, so
+      // a clean flip is out — but pulling the sign all the way out over
+      // the NEGATED denominator can still win: Simplify[(4-3x)/
+      // (-4-x-3x^2+5x^3)] → -((4-3x)/(4+x+3x^2-5x^3)) (29 < 30;
+      // wolframscript-verified, differential fuzzer seed
+      // 862368627941598145).
       cands.push(Cand {
-        cost: sc_quotient((1, 1), &fn_terms, Some(&fd), None),
+        cost: sc_quotient((-1, 1), &n_terms, Some(&fd), None),
         class: 3,
-        minus_pull: false,
+        minus_pull: true,
         num_content: 1,
-        num_terms: fn_terms,
+        num_terms: n_terms.clone(),
         den_content: 1,
         den_terms: fd,
+        den_mono: 0,
         split: false,
+        terminal: false,
       });
     }
   }
@@ -7830,7 +8088,37 @@ fn simplify_quotient_select(
     num_body
   };
   let den_body = coeffs_from_terms(&chosen.den_terms, &var);
-  let den_expr = if chosen.den_content > 1 {
+  let den_expr = if chosen.den_mono > 0 {
+    // x^k monomial content split out of the denominator sum:
+    // 1/(-3x^2+5x^3) → 1/(x^2*(-3+5x))
+    let var_pow = if chosen.den_mono == 1 {
+      Expr::Identifier(var.clone())
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(Expr::Identifier(var.clone())),
+        right: Box::new(Expr::Integer(chosen.den_mono)),
+      }
+    };
+    let mut factors: Vec<Expr> = Vec::new();
+    if chosen.den_content > 1 {
+      factors.push(Expr::Integer(chosen.den_content));
+    }
+    // wolframscript orders a negative-LEADING primitive sum before the
+    // power (1/((3 - 5*x)*x^2)) but a positive-leading one after it
+    // (1/(x^2*(-3 + 5*x))).
+    if chosen.den_terms.last().map(|&(n, _, _)| n < 0).unwrap_or(false) {
+      factors.push(den_body);
+      factors.push(var_pow);
+    } else {
+      factors.push(var_pow);
+      factors.push(den_body);
+    }
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: factors.into(),
+    }
+  } else if chosen.den_content > 1 {
     Expr::FunctionCall {
       name: "Times".to_string(),
       args: vec![Expr::Integer(chosen.den_content), den_body].into(),
@@ -7873,6 +8161,9 @@ fn simplify_quotient_select(
         true,
       ));
     }
+    // Terminal: later pipeline stages would redistribute the pulled sign
+    // into the numerator when the kept denominator's leading coefficient
+    // is negative (-((4-3x)/(4+x+3x^2-5x^3)) → (-4+3x)/(…)).
     return Some((
       Expr::UnaryOp {
         op: UnaryOperator::Minus,
@@ -7882,11 +8173,23 @@ fn simplify_quotient_select(
           right: Box::new(den_expr),
         }),
       },
-      false,
+      true,
     ));
   }
-  // a numerator flipped to exactly 1 displays as a reciprocal power
+  // a numerator flipped to exactly 1 displays as a reciprocal power —
+  // except over a mono-content-extracted denominator, whose product base
+  // renders as 1/(x^2*(-3+5x)) via a plain Divide
   if matches!(&num_expr, Expr::Integer(1)) {
+    if chosen.den_mono > 0 {
+      return Some((
+        Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: Box::new(Expr::Integer(1)),
+          right: Box::new(den_expr),
+        },
+        true,
+      ));
+    }
     return Some((
       Expr::BinaryOp {
         op: BinaryOperator::Power,
@@ -7902,7 +8205,7 @@ fn simplify_quotient_select(
       left: Box::new(num_expr),
       right: Box::new(den_expr),
     },
-    false,
+    chosen.terminal,
   ))
 }
 
@@ -7937,6 +8240,97 @@ fn coeffs_from_terms(terms: &[(i128, i128, i128)], var: &str) -> Expr {
     coeffs[e as usize] = n;
   }
   coeffs_to_expr(&coeffs, var)
+}
+
+/// In a variable-free quotient, a numerator sum with integer content
+/// |c| > 1 extracts it, signed so the greatest (last canonical) term
+/// stays positive — wolframscript's SimplifyCount ties the plain and
+/// extracted forms in quotient context and Simplify extracts:
+/// (8 - 2*Sqrt[3])/Sqrt[13] → (-2*(-4 + Sqrt[3]))/Sqrt[13],
+/// (8 + 2*Sqrt[3])/Sqrt[13] → (2*(4 + Sqrt[3]))/Sqrt[13], while the
+/// bare Simplify[8 - 2*Sqrt[3]] keeps its form (wolframscript-verified;
+/// differential fuzzer, seed 16005587802477298591). The content must be
+/// coprime to the denominator's own integer factor — a shared factor
+/// would have cancelled upstream. None → no extraction applies.
+fn radical_quotient_num_content(num: &Expr, den: &Expr) -> Option<Expr> {
+  let mut vars = std::collections::HashSet::new();
+  collect_variables(num, &mut vars);
+  collect_variables(den, &mut vars);
+  vars.remove("I");
+  if !vars.is_empty() {
+    return None;
+  }
+  let terms = super::coefficient::collect_additive_terms(num);
+  if terms.len() < 2 {
+    return None;
+  }
+  let (_, _, coeffs) = super::factor::rational_content(&terms)?;
+  if coeffs.iter().any(|(_, d)| *d != 1) {
+    return None;
+  }
+  let content = coeffs
+    .iter()
+    .map(|(n, _)| *n)
+    .filter(|&n| n != 0)
+    .fold(0i128, |a, b| gcd_i128(a, b).abs());
+  if content <= 1 {
+    return None;
+  }
+  // The denominator's integer factor must not share a factor with the
+  // content (that quotient would reduce instead of extracting).
+  let den_int = match den {
+    Expr::Integer(k) => *k,
+    Expr::FunctionCall { name, args } if name == "Times" && !args.is_empty() =>
+    {
+      match &args[0] {
+        Expr::Integer(k) => *k,
+        _ => 1,
+      }
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      ..
+    } => match left.as_ref() {
+      Expr::Integer(k) => *k,
+      _ => 1,
+    },
+    _ => 1,
+  };
+  if gcd_i128(content, den_int).abs() > 1 {
+    return None;
+  }
+  let signed = if coeffs.last()?.0 < 0 {
+    -content
+  } else {
+    content
+  };
+  let divided: Result<Vec<Expr>, _> = terms
+    .iter()
+    .map(|t| {
+      crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(t.clone()),
+        right: Box::new(Expr::Integer(signed)),
+      })
+    })
+    .collect();
+  let divided = divided.ok()?;
+  Some(Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        Expr::Integer(signed),
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: divided.into(),
+        },
+      ]
+      .into(),
+    }),
+    right: Box::new(den.clone()),
+  })
 }
 
 /// Pull the integer content out of a sum, keeping the polynomial

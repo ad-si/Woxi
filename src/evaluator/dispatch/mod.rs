@@ -579,6 +579,18 @@ pub fn evaluate_function_call_ast_inner(
     return result;
   }
 
+  // A machine Real times a NESTED exact-times-constant product folds in
+  // wolframscript's pre-flattening order (((outer * reals) * nested exact)
+  // * constants), one ulp away from the flattened fold — decide before the
+  // Flat attribute erases the nesting (differential fuzzer, seed
+  // 4134943276941009607).
+  if name == "Times"
+    && let Some(result) =
+      crate::functions::math_ast::nested_exact_const_machine_times(args)
+  {
+    return Ok(result);
+  }
+
   // Apply Flat attribute: flatten nested calls of the same function
   let has_flat = is_builtin_flat(name)
     || crate::FUNC_ATTRS.with(|m| {

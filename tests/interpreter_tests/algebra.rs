@@ -13871,3 +13871,166 @@ mod number_field_signature_tests {
     );
   }
 }
+
+// Differential-fuzzer regression tests (seed 1784293790651335963):
+// canonical ordering, Apart normalization, Simplify extraction, and
+// machine-fold divergences against wolframscript 15.0. All expectations
+// wolframscript-verified.
+mod fuzz_diff_round_2026_07_17 {
+  use super::super::case_helpers::assert_case;
+
+  #[test]
+  fn rational_base_radicals_order_by_numeric_base() {
+    // case seed 3699346173710306347
+    assert_case(
+      "Numerator[Plus[Divide[Sqrt[10], Sqrt[6]], Sqrt[3]]]",
+      "Sqrt[5/3] + Sqrt[3]",
+    );
+    // case seed 320857114228749038
+    assert_case(
+      "Expand[Plus[Plus[Sqrt[9], Sqrt[11]], Divide[Times[4, Sqrt[10]], Sqrt[29]]]]",
+      "3 + 4*Sqrt[10/29] + Sqrt[11]",
+    );
+    // case seed 17866292230593708820
+    assert_case(
+      "Abs[Subtract[Divide[Sqrt[24], Sqrt[29]], Divide[Times[-2, Sqrt[27]], Sqrt[14]]]]",
+      "2*Sqrt[6/29] + 3*Sqrt[6/7]",
+    );
+    assert_case("Sort[{Sqrt[3], Sqrt[5/3]}]", "{Sqrt[5/3], Sqrt[3]}");
+    assert_case("Sort[{Sqrt[3], Sqrt[7/2]}]", "{Sqrt[3], Sqrt[7/2]}");
+    assert_case("Sort[{Sqrt[2], Sqrt[1/2]}]", "{1/Sqrt[2], Sqrt[2]}");
+  }
+
+  #[test]
+  fn sort_union_same_base_powers_and_sums() {
+    // case seed 16300912233182470467 (Union canonical order)
+    assert_case("Union[{Pi}, {1/Pi}]", "{Pi^(-1), Pi}");
+    assert_case("Sort[{Pi, 1/Pi}]", "{Pi^(-1), Pi}");
+    assert_case("Sort[{Pi, 1 + 1/Pi}]", "{1 + Pi^(-1), Pi}");
+    assert_case("Sort[{Pi, -3910 + 93/Pi}]", "{-3910 + 93/Pi, Pi}");
+    assert_case("Sort[{Pi, 2 + Pi}]", "{Pi, 2 + Pi}");
+    assert_case("Sort[{Pi^2, 1 + Pi}]", "{Pi^2, 1 + Pi}");
+    assert_case("Sort[{x, 5 - x}]", "{5 - x, x}");
+    assert_case("Sort[{x, -3 + x}]", "{-3 + x, x}");
+    assert_case("Sort[{1/x, x - x^2}]", "{x^(-1), x - x^2}");
+    assert_case("Sort[{Cos[x], 1 + x}]", "{1 + x, Cos[x]}");
+    assert_case(
+      "Union[{27, 5.7, Pi}, {Plus[Divide[18, 3], Times[81, Divide[-17, 3]]], Subtract[Times[85, -46], Divide[-93, Pi]], Divide[Subtract[8, Divide[6, 2]], Divide[17, 5]]}]",
+      "{-453, 25/17, 5.7, 27, -3910 + 93/Pi, Pi}",
+    );
+  }
+
+  #[test]
+  fn apart_denominator_leading_positive_with_content() {
+    // case seed 8021134854569802508
+    assert_case(
+      "Apart[Divide[Plus[0, Times[4, x], Times[-3, Power[x, 2]], Times[-1, Power[x, 3]]], Plus[0, Times[1, x], Times[1, Power[x, 2]], Times[-5, Power[x, 3]]]]]",
+      "1/5 + (-19 + 16*x)/(5*(-1 - x + 5*x^2))",
+    );
+    assert_case(
+      "Apart[1/(x + x^2 - 5*x^3)]",
+      "x^(-1) + (1 - 5*x)/(-1 - x + 5*x^2)",
+    );
+    assert_case(
+      "Apart[1/(2*x + x^2 - 5*x^3)]",
+      "1/(2*x) + (1 - 5*x)/(2*(-2 - x + 5*x^2))",
+    );
+    // unchanged conventions
+    assert_case(
+      "Apart[(5 + 3*x)/(-1 - 2*x + 3*x^2)]",
+      "2/(-1 + x) - 3/(1 + 3*x)",
+    );
+    assert_case("Apart[1/(x^2*(x + 1))]", "x^(-2) - x^(-1) + (1 + x)^(-1)");
+    assert_case("Apart[(2 - 4*x)/(2 - 5*x)]", "4/5 - 2/(5*(-2 + 5*x))");
+  }
+
+  #[test]
+  fn simplify_radical_and_content_extraction() {
+    // case seed 16005587802477298591
+    assert_case(
+      "Simplify[Times[Subtract[Sqrt[16], Sqrt[3]], Divide[Sqrt[8], Sqrt[26]]]]",
+      "(-2*(-4 + Sqrt[3]))/Sqrt[13]",
+    );
+    assert_case("Simplify[Sqrt[8] - Sqrt[24]]", "-2*Sqrt[2]*(-1 + Sqrt[3])");
+    assert_case("Simplify[-Sqrt[8] + Sqrt[24]]", "2*Sqrt[2]*(-1 + Sqrt[3])");
+    assert_case("Simplify[Sqrt[8] + Sqrt[24]]", "2*(Sqrt[2] + Sqrt[6])");
+    assert_case("Simplify[-Sqrt[8] - Sqrt[24]]", "-2*(Sqrt[2] + Sqrt[6])");
+    assert_case(
+      "Simplify[(8 + 2*Sqrt[3])/Sqrt[13]]",
+      "(2*(4 + Sqrt[3]))/Sqrt[13]",
+    );
+    assert_case(
+      "Simplify[(-8 - 2*Sqrt[3])/Sqrt[13]]",
+      "(-2*(4 + Sqrt[3]))/Sqrt[13]",
+    );
+    assert_case(
+      "Simplify[(5 - 3*Sqrt[3])/Sqrt[13]]",
+      "(5 - 3*Sqrt[3])/Sqrt[13]",
+    );
+    // bare sums keep their form on the SimplifyCount tie
+    assert_case("Simplify[8 - 2*Sqrt[3]]", "8 - 2*Sqrt[3]");
+    assert_case("Simplify[-3*Sqrt[2] + Sqrt[10]]", "Sqrt[2]*(-3 + Sqrt[5])");
+    assert_case("Simplify[4*Sqrt[2] - 8*Sqrt[30]]", "4*Sqrt[2] - 8*Sqrt[30]");
+  }
+
+  #[test]
+  fn simplify_quotient_sign_and_denominator_content() {
+    // case seed 862368627941598145
+    assert_case(
+      "Simplify[Divide[Plus[4, Times[-3, x]], Plus[-4, Times[-1, x], Times[-3, Power[x, 2]], Times[5, Power[x, 3]]]]]",
+      "-((4 - 3*x)/(4 + x + 3*x^2 - 5*x^3))",
+    );
+    assert_case("Simplify[1/(-3*x^2 + 5*x^3)]", "1/(x^2*(-3 + 5*x))");
+    assert_case("Simplify[1/(3*x^2 - 5*x^3)]", "1/((3 - 5*x)*x^2)");
+    assert_case("Simplify[1/(4*x + 3*x^2)]", "(4*x + 3*x^2)^(-1)");
+    assert_case("Simplify[1/(2*x^2 + 4*x^3)]", "(2*x^2 + 4*x^3)^(-1)");
+    assert_case(
+      "Simplify[(1 - 5*x - 3*x^2 - x^3)/(-1 - 2*x + 4*x^2)]",
+      "-((-1 + 5*x + 3*x^2 + x^3)/(-1 - 2*x + 4*x^2))",
+    );
+    assert_case(
+      "Simplify[(2 - 2*x + 2*x^2)/(1 - 2*x)]",
+      "(2 - 2*x + 2*x^2)/(1 - 2*x)",
+    );
+  }
+
+  #[test]
+  fn machine_times_nested_exact_const_fold() {
+    // case seed 4134943276941009607
+    assert_case(
+      "Times[39, Times[Plus[Divide[-63, -70], Plus[-83, Divide[4, 8]]], Pi], Subtract[Plus[Subtract[Pi, -19.5], -76], -5.2]]",
+      "481478.3397922004",
+    );
+    assert_case("Times[39, Times[-35, Pi], -51.3 + Pi]", "206516.44476381145");
+    assert_case("(-1365*Pi)*(-51.3 + Pi)", "206516.44476381148");
+    assert_case("Times[13, Times[-17, Pi], Plus[-51.3, Pi]]", "33435.995818902804");
+    assert_case("Times[7, Times[11, E], Plus[-51.3, Pi]]", "-10079.92551545021");
+    // case seed 4125733669514322931
+    assert_case(
+      "Times[Subtract[Divide[58, -60], Divide[-83, Plus[Divide[-4, 5], Pi]]], Divide[Plus[21, Times[Pi, -22]], Pi], -14.9]",
+      "7868.203629768974",
+    );
+    assert_case(
+      "Times[-14.9, Divide[Plus[21, Times[Pi, -22]], Pi]]",
+      "228.2008366130919",
+    );
+    // flat folds keep their order
+    assert_case("Times[2.7, Times[3, Pi]]", "25.44690049407733");
+    assert_case("Times[0.1, Pi, 0.3, -Pi]", "-0.2960881320326807");
+    // real-first exact factors multiply sequentially in input order
+    // (case seed 15183690236476585210)
+    assert_case(
+      "Times[Times[Plus[Pi, 51], Times[Plus[64, -7.3], Plus[16, Pi]]], -10, Divide[-15, 5]]",
+      "1.762842087037921*^6",
+    );
+  }
+
+  #[test]
+  fn factor_content_sign_follows_lex_leading_term() {
+    assert_case("Factor[2*x^2 - 3*x*y^2]", "x*(2*x - 3*y^2)");
+    assert_case("Factor[5*y - 3*x*y^2]", "-(y*(-5 + 3*x*y))");
+    assert_case("Factor[5*y - 3*x*y]", "-((-5 + 3*x)*y)");
+    assert_case("Factor[-2*x^2*y + 4*x*y^2]", "-2*x*(x - 2*y)*y");
+    assert_case("FactorTerms[2 - 4*x - 4*x^2]", "-2*(-1 + 2*x + 2*x^2)");
+  }
+}

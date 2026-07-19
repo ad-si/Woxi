@@ -309,13 +309,11 @@ fn collect_set_subjects<'a>(
   Ok((slices, head, same_test))
 }
 
-/// Sort canonically via compare_exprs (1 = first argument precedes).
+/// Sort canonically. Union/Intersection/Complement follow Sort's canonical
+/// order (which differs from Order for same-base powers and sums):
+/// Union[{Pi}, {1/Pi}] = {Pi^(-1), Pi} even though Order[Pi, 1/Pi] = -1.
 fn sort_canonical(items: &mut [Expr]) {
-  items.sort_by(|a, b| match compare_exprs(a, b) {
-    n if n > 0 => std::cmp::Ordering::Less,
-    n if n < 0 => std::cmp::Ordering::Greater,
-    _ => std::cmp::Ordering::Equal,
-  });
+  items.sort_by(super::sorting::canonical_cmp);
 }
 
 /// If every argument is an Association, return their `(key, value)` pair

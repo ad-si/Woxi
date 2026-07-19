@@ -4027,6 +4027,17 @@ fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
     return ord;
   }
 
+  // Numeric radicals compare by base ascending, then exponent ascending —
+  // Sqrt[5/3] + Sqrt[3] keeps Sqrt[5/3] first because 5/3 < 3
+  // (wolframscript-verified). The type-tag/argument comparison below would
+  // order the Integer-based Sqrt[3] ahead of the Rational-based Sqrt[5/3].
+  if let Some(ord) =
+    crate::functions::list_helpers_ast::sorting::numeric_base_power_cmp(a, b)
+    && ord != Ordering::Equal
+  {
+    return ord;
+  }
+
   // Assign a type tag for top-level ordering
   fn type_tag(e: &Expr) -> u8 {
     match e {
@@ -6292,6 +6303,189 @@ fn try_series_data_times_var_power(
 }
 
 /// Times[args...] - Product of arguments, with list threading
+/// Machine fold for a Times whose arguments include a machine Real and a
+/// NESTED exact-times-constant product (Times[-35, Pi]): wolframscript
+/// keeps the nested product out of the outer coefficient pool —
+/// Times[39, Times[-35, Pi], r] = ((39 * r) * -35) * N[Pi], one ulp away
+/// from the flat Times[39, -35, Pi, r] = (-1365 * r) * N[Pi]
+/// (wolframscript-verified; differential fuzzer, seed
+/// 4134943276941009607). Returns None unless the argument list is exactly
+/// this shape: only machine reals, exact numbers, numeric-constant
+/// expressions, and at least one real-free nested product carrying both an
+/// exact coefficient and a constant part.
+pub fn nested_exact_const_machine_times(args: &[Expr]) -> Option<Expr> {
+  use crate::functions::math_ast::try_eval_to_f64;
+  fn exact_val(e: &Expr) -> Option<(i128, i128)> {
+    match e {
+      Expr::Integer(n) => Some((*n, 1)),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        match (&args[0], &args[1]) {
+          (Expr::Integer(n), Expr::Integer(d)) if *d != 0 => {
+            if *d < 0 { Some((-n, -d)) } else { Some((*n, *d)) }
+          }
+          _ => None,
+        }
+      }
+      _ => None,
+    }
+  }
+  fn contains_real(e: &Expr) -> bool {
+    match e {
+      Expr::Real(_) | Expr::BigFloat(..) => true,
+      Expr::BinaryOp { left, right, .. } => {
+        contains_real(left) || contains_real(right)
+      }
+      Expr::UnaryOp { operand, .. } => contains_real(operand),
+      Expr::FunctionCall { args, .. } | Expr::List(args) => {
+        args.iter().any(contains_real)
+      }
+      _ => false,
+    }
+  }
+  fn times_factors(e: &Expr) -> Option<Vec<Expr>> {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        Some(args.to_vec())
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        let mut v = times_factors(left)
+          .unwrap_or_else(|| vec![(**left).clone()]);
+        v.extend(
+          times_factors(right).unwrap_or_else(|| vec![(**right).clone()]),
+        );
+        Some(v)
+      }
+      _ => None,
+    }
+  }
+  let mul_exact = |a: (i128, i128), b: (i128, i128)| -> Option<(i128, i128)> {
+    let n = a.0.checked_mul(b.0)?;
+    let d = a.1.checked_mul(b.1)?;
+    let g = {
+      let (mut x, mut y) = (n.abs(), d.abs());
+      while y != 0 {
+        let t = x % y;
+        x = y;
+        y = t;
+      }
+      x.max(1)
+    };
+    Some((n / g, d / g))
+  };
+
+  let mut outer_exact: Option<(i128, i128)> = None;
+  let mut first_numeric_exact: Option<bool> = None;
+  let mut reals: Vec<f64> = Vec::new();
+  let mut nested_coeffs: Vec<f64> = Vec::new();
+  let mut const_tail: Vec<f64> = Vec::new();
+  let mut has_nested = false;
+
+  for arg in args {
+    if let Some(v) = exact_val(arg) {
+      first_numeric_exact.get_or_insert(true);
+      outer_exact = Some(mul_exact(outer_exact.unwrap_or((1, 1)), v)?);
+    } else if let Expr::Real(r) = arg {
+      first_numeric_exact.get_or_insert(false);
+      reals.push(*r);
+    } else if let Some(factors) = times_factors(arg) {
+      if contains_real(arg) {
+        return None;
+      }
+      let mut exact: Option<(i128, i128)> = None;
+      let mut consts: Vec<f64> = Vec::new();
+      for f in &factors {
+        if let Some(v) = exact_val(f) {
+          exact = Some(mul_exact(exact.unwrap_or((1, 1)), v)?);
+        } else {
+          consts.push(try_eval_to_f64(f)?);
+        }
+      }
+      if consts.is_empty() {
+        return None;
+      }
+      has_nested = true;
+      match exact {
+        Some(e) => {
+          nested_coeffs.push(e.0 as f64 / e.1 as f64);
+          const_tail.extend(consts);
+        }
+        // No exact coefficient — the factors multiply in wolframscript's
+        // canonical Times order, which stores reciprocal powers LAST
+        // ((21 - 22*Pi)/Pi is Times[Plus[21, -22*Pi], Power[Pi, -1]]),
+        // while woxi's factor order puts the reciprocal first. Reorder so
+        // Times[A, (21-22*Pi)/Pi, -14.9] folds ((r*A)*(21-22π))*(1/π)
+        // (differential fuzzer, seed 4125733669514322931).
+        None => {
+          let is_reciprocal = |e: &Expr| -> bool {
+            let exp = match e {
+              Expr::BinaryOp {
+                op: BinaryOperator::Power,
+                right,
+                ..
+              } => Some(right.as_ref()),
+              Expr::FunctionCall { name, args }
+                if name == "Power" && args.len() == 2 =>
+              {
+                Some(&args[1])
+              }
+              _ => None,
+            };
+            exp
+              .and_then(crate::functions::math_ast::try_eval_to_f64)
+              .map(|v| v < 0.0)
+              .unwrap_or(false)
+          };
+          let mut main: Vec<f64> = Vec::new();
+          let mut recip: Vec<f64> = Vec::new();
+          for (f, v) in factors.iter().zip(consts.iter()) {
+            if is_reciprocal(f) {
+              recip.push(*v);
+            } else {
+              main.push(*v);
+            }
+          }
+          const_tail.extend(main);
+          const_tail.extend(recip);
+        }
+      }
+    } else if !contains_real(arg)
+      && let Some(v) = try_eval_to_f64(arg)
+    {
+      const_tail.push(v);
+    } else {
+      return None;
+    }
+  }
+  if reals.is_empty() || !has_nested {
+    return None;
+  }
+
+  let exact_f =
+    outer_exact.map(|(n, d)| n as f64 / d as f64).unwrap_or(1.0);
+  let mut fold: Vec<f64> = Vec::new();
+  if outer_exact.is_some() && first_numeric_exact == Some(true) {
+    fold.push(exact_f);
+  }
+  fold.extend_from_slice(&reals);
+  let mut total = machine_tree_fold(&fold, |a, b| a * b);
+  if outer_exact.is_some() && first_numeric_exact != Some(true) {
+    total *= exact_f;
+  }
+  for c in &nested_coeffs {
+    total *= c;
+  }
+  for c in &const_tail {
+    total *= c;
+  }
+  Some(Expr::Real(total))
+}
+
 pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Integer(1));
@@ -6428,6 +6622,18 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Around (uncertain-value) error propagation.
   if let Some(result) = try_around_times(args) {
+    return Ok(result);
+  }
+
+  // A NESTED exact-times-constant product multiplying a machine Real does
+  // not flatten into the outer coefficient pool: wolframscript computes
+  // Times[39, Times[-35, Pi], -51.3 + Pi] as ((39 * real) * -35) * N[Pi]
+  // — the outer exacts fold with the reals first, each nested product's
+  // exact coefficient multiplies next, and the symbolic constants convert
+  // last — while the flat Times[39, -35, Pi, -51.3 + Pi] folds
+  // (-1365 * real) * N[Pi]. One ulp apart; wolframscript-verified
+  // (differential fuzzer, seed 4134943276941009607).
+  if let Some(result) = nested_exact_const_machine_times(args) {
     return Ok(result);
   }
 
@@ -7207,6 +7413,12 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut real_factors: Vec<f64> = Vec::new();
   let mut any_real = false;
   let mut first_numeric_exact: Option<bool> = None;
+  // Each exact factor's f64 value in input order — when the FIRST numeric
+  // factor is a Real, wolframscript multiplies the exact factors one at a
+  // time in input order rather than folding them into one coefficient:
+  // Times[r, -10, -3] is (r*-10)*-3, one ulp away from r*30
+  // (wolframscript-verified; differential fuzzer follow-up case).
+  let mut exact_factor_seq: Vec<f64> = Vec::new();
   let mut symbolic_args: Vec<Expr> = Vec::new();
 
   // Pre-check: is there an explicit Rational or non-unity Integer coefficient among the args?
@@ -7228,6 +7440,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         has_int = true;
         first_numeric_exact.get_or_insert(true);
+        exact_factor_seq.push(*n as f64);
       }
       Expr::Real(f) => {
         real_factors.push(*f);
@@ -7248,6 +7461,9 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
           has_rational = true;
           first_numeric_exact.get_or_insert(true);
+          if let Some(v) = try_eval_to_f64(arg) {
+            exact_factor_seq.push(v);
+          }
         } else {
           symbolic_args.push(arg.clone());
         }
@@ -7270,6 +7486,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               rat_denom = rd;
               has_rational = true;
               first_numeric_exact.get_or_insert(true);
+              exact_factor_seq.push(1.0 / pow as f64);
             } else {
               int_overflow = true;
             }
@@ -7378,7 +7595,16 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       machine_tree_fold(&fold_factors, |a, b| a * b)
     };
     if has_exact_coeff && first_numeric_exact != Some(true) {
-      total *= exact_f;
+      // Per-factor sequential multiply in input order (see
+      // exact_factor_seq above); the coalesced coefficient remains the
+      // fallback for factors that escaped tracking (overflow paths).
+      if exact_factor_seq.is_empty() {
+        total *= exact_f;
+      } else {
+        for f in &exact_factor_seq {
+          total *= f;
+        }
+      }
     }
     for f in &numerified_tail {
       total *= f;
