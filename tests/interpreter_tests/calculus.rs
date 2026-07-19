@@ -369,6 +369,76 @@ mod integrate_with_sum {
     assert_eq!(interpret("Integrate[Cot[x], x]").unwrap(), "Log[Sin[x]]");
   }
 
+  // Products of trig functions of one argument reducing to Sin^p/Cos or
+  // Cos^p/Sin. All expected strings verified against wolframscript.
+  #[test]
+  fn integrate_trig_quotients() {
+    // Even sin power over cos: ArcTanh[Sin] minus odd sin powers.
+    assert_eq!(
+      interpret("Integrate[Sin[x]*Tan[x], x]").unwrap(),
+      "ArcTanh[Sin[x]] - Sin[x]"
+    );
+    assert_eq!(
+      interpret("Integrate[Sin[x]^2/Cos[x], x]").unwrap(),
+      "ArcTanh[Sin[x]] - Sin[x]"
+    );
+    assert_eq!(
+      interpret("Integrate[Sin[x]^3*Tan[x], x]").unwrap(),
+      "ArcTanh[Sin[x]] - Sin[x] - Sin[x]^3/3"
+    );
+    assert_eq!(
+      interpret("Integrate[Sin[x]^5*Tan[x], x]").unwrap(),
+      "ArcTanh[Sin[x]] - Sin[x] - Sin[x]^3/3 - Sin[x]^5/5"
+    );
+    // Linear argument coefficient is divided through.
+    assert_eq!(
+      interpret("Integrate[Sin[2*x]*Tan[2*x], x]").unwrap(),
+      "ArcTanh[Sin[2*x]]/2 - Sin[2*x]/2"
+    );
+    // Odd sin power over cos: -Log[Cos] plus even cos powers.
+    assert_eq!(
+      interpret("Integrate[Sin[x]^2*Tan[x], x]").unwrap(),
+      "Cos[x]^2/2 - Log[Cos[x]]"
+    );
+    assert_eq!(
+      interpret("Integrate[Sin[x]^4*Tan[x], x]").unwrap(),
+      "Cos[x]^2 - Cos[x]^4/4 - Log[Cos[x]]"
+    );
+    assert_eq!(
+      interpret("Integrate[Sin[2*x]^2*Tan[2*x], x]").unwrap(),
+      "Cos[2*x]^2/4 - Log[Cos[2*x]]/2"
+    );
+    // Cos powers over sin.
+    assert_eq!(
+      interpret("Integrate[Cos[x]*Cot[x], x]").unwrap(),
+      "Cos[x] + Log[Tan[x/2]]"
+    );
+    assert_eq!(
+      interpret("Integrate[Cos[3*x]*Cot[3*x], x]").unwrap(),
+      "Cos[3*x]/3 + Log[Tan[(3*x)/2]]/3"
+    );
+    assert_eq!(
+      interpret("Integrate[Cos[x]^2*Cot[x], x]").unwrap(),
+      "Log[Sin[x]] - Sin[x]^2/2"
+    );
+    assert_eq!(
+      interpret("Integrate[Cos[x]^4*Cot[x], x]").unwrap(),
+      "Log[Sin[x]] - Sin[x]^2 + Sin[x]^4/4"
+    );
+    // Sec/Csc spellings of the same quotients. Regression: Sin[x]*Sec[x]
+    // used to reach integration by parts and gain a spurious constant
+    // (-1 - Log[Cos[x]]); Cos[x]*Csc[x] hit the log-derivative rule with an
+    // uncanonical base (Log[1 - Cos[x]^2]/2).
+    assert_eq!(
+      interpret("Integrate[Sin[x]*Sec[x], x]").unwrap(),
+      "-Log[Cos[x]]"
+    );
+    assert_eq!(
+      interpret("Integrate[Cos[x]*Csc[x], x]").unwrap(),
+      "Log[Sin[x]]"
+    );
+  }
+
   // ∫ g'/g dx = Log[g] for a transcendental g (logarithmic-derivative rule).
   #[test]
   fn integrate_one_over_x_log_x() {
@@ -6165,6 +6235,38 @@ mod dsolve {
   }
 
   #[test]
+  fn second_order_nonconstant_forcing_variation_of_parameters() {
+    // Non-constant forcing on a constant-coefficient second-order ODE is
+    // solved by variation of parameters. Regression: the forcing term used to
+    // be silently dropped, returning only the homogeneous solution.
+    // wolframscript: {{y[x] -> -(ArcTanh[Sin[x]]*Cos[x]) + C[1]*Cos[x] + C[2]*Sin[x]}}
+    assert_eq!(
+      interpret("DSolve[y''[x] + y[x] == Tan[x], y[x], x]").unwrap(),
+      "{{y[x] -> -(ArcTanh[Sin[x]]*Cos[x]) + C[1]*Cos[x] + C[2]*Sin[x]}}"
+    );
+    // wolframscript: {{y[x] -> x + C[1]*Cos[x] + C[2]*Sin[x]}}
+    assert_eq!(
+      interpret("DSolve[y''[x] + y[x] == x, y[x], x]").unwrap(),
+      "{{y[x] -> x + C[1]*Cos[x] + C[2]*Sin[x]}}"
+    );
+    // wolframscript: {{y[x] -> C[1]*Cos[x] + Cos[x]*Log[Cos[x]] + x*Sin[x] + C[2]*Sin[x]}}
+    assert_eq!(
+      interpret("DSolve[y''[x] + y[x] == Sec[x], y[x], x]").unwrap(),
+      "{{y[x] -> C[1]*Cos[x] + Cos[x]*Log[Cos[x]] + x*Sin[x] + C[2]*Sin[x]}}"
+    );
+    // Distinct real roots with exponential forcing.
+    // wolframscript: {{y[x] -> E^(3*x)/2 + E^x*C[1] + E^(2*x)*C[2]}} — same
+    // solution; woxi's term order (and thus C[k] labels) for the homogeneous
+    // pair differs, a pre-existing canonical-ordering divergence that also
+    // affects DSolve[y''[x] - 3*y'[x] + 2*y[x] == 0, y[x], x].
+    assert_eq!(
+      interpret("DSolve[y''[x] - 3*y'[x] + 2*y[x] == E^(3*x), y[x], x]")
+        .unwrap(),
+      "{{y[x] -> E^(3*x)/2 + E^(2*x)*C[1] + E^x*C[2]}}"
+    );
+  }
+
+  #[test]
   fn harmonic_oscillator_with_ic() {
     // y''[x] + y[x] == 0, y[0]==1, y'[0]==0 → y[x] -> Cos[x]
     assert_eq!(
@@ -6839,18 +6941,14 @@ mod nmaximize {
 
   #[test]
   fn nmaximize_sin() {
-    // NMaximize[{Sin[x], 0 < x < 2*Pi}, x] should find max near Pi/2
-    let result = interpret("NMaximize[{Sin[x], 0 < x < 2*Pi}, x]").unwrap();
-    assert!(
-      result.starts_with("{"),
-      "Expected list result, got: {}",
-      result
-    );
-    // Check that the max value is close to 1
-    assert!(
-      result.contains("0.99999"),
-      "Max should be ~1, got: {}",
-      result
+    // NMaximize[{Sin[x], 0 < x < 2*Pi}, x] finds the max at Pi/2. The Newton
+    // polish on the gradient converges the objective to an exact 1. (it used
+    // to stall at 0.99999… on the objective's float plateau).
+    // wolframscript: {1., {x -> 1.5707963268033855}} (x is solver noise
+    // around Pi/2; woxi converges to Pi/2 at machine precision).
+    assert_eq!(
+      interpret("NMaximize[{Sin[x], 0 < x < 2*Pi}, x]").unwrap(),
+      "{1., {x -> 1.5707963267948966}}"
     );
   }
 
@@ -6887,6 +6985,22 @@ mod nmaximize {
       result.starts_with("{0."),
       "Min should be ~0, got: {}",
       result
+    );
+  }
+
+  #[test]
+  fn nminimize_periodic_prefers_near_origin_optimum() {
+    // A periodic objective has infinitely many equally good minima across
+    // the default ±10^6 box; wolframscript starts its search near the origin
+    // and reports the minimum there with the objective converged to an exact
+    // -1. Regression for `{-0.9999999999999998, {x -> 960000.0291023118}}`
+    // (a distant sample won the grid scan and the descent stalled on the
+    // objective's float plateau).
+    // wolframscript: {-1., {x -> -1.5707963267952805}} (x is solver noise
+    // around -Pi/2; woxi converges to -Pi/2 at machine precision).
+    assert_eq!(
+      interpret("NMinimize[Sin[x], x]").unwrap(),
+      "{-1., {x -> -1.5707963267948966}}"
     );
   }
 

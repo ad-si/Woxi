@@ -4763,6 +4763,278 @@ fn try_integrate_sin_cos_product(factors: &[&Expr], var: &str) -> Option<Expr> {
   None
 }
 
+/// Extract any trig function with an integer power (possibly negative) from a
+/// factor: `Tan[f]`, `Sec[f]^3`, `Cos[f]^-2`, … Returns (name, argument, power).
+fn extract_any_trig_factor(expr: &Expr) -> Option<(&str, &Expr, i64)> {
+  const TRIGS: [&str; 6] = ["Sin", "Cos", "Tan", "Cot", "Sec", "Csc"];
+  if let Expr::FunctionCall { name, args } = expr
+    && args.len() == 1
+    && TRIGS.contains(&name.as_str())
+  {
+    return Some((name.as_str(), &args[0], 1));
+  }
+  let (base, n) = match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => match right.as_ref() {
+      Expr::Integer(n) => (left.as_ref(), *n),
+      _ => return None,
+    },
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      match &args[1] {
+        Expr::Integer(n) => (&args[0], *n),
+        _ => return None,
+      }
+    }
+    _ => return None,
+  };
+  if let Expr::FunctionCall { name, args } = base
+    && args.len() == 1
+    && TRIGS.contains(&name.as_str())
+  {
+    return Some((name.as_str(), &args[0], n as i64));
+  }
+  None
+}
+
+/// Integrate products of trig functions of a common linear argument that
+/// reduce to `Sin[u]^p / Cos[u]` or `Cos[u]^p / Sin[u]` (e.g. `Sin[x]*Tan[x]`,
+/// `Sin[x]^2/Cos[x]`, `Cos[x]*Cot[x]`), matching wolframscript's closed forms:
+///
+///   ∫ Sin[u]^p/Cos[u] dx, p even:
+///     ArcTanh[Sin[u]]/a - Σ_{j odd < p} Sin[u]^j/(j a)
+///   ∫ Sin[u]^p/Cos[u] dx, p odd (k=(p-1)/2):
+///     -Log[Cos[u]]/a + Σ_{j=1..k} (-1)^(j+1) C(k,j) Cos[u]^(2j)/(2j a)
+///   ∫ Cos[u]^p/Sin[u] dx, p odd (k=(p-1)/2):
+///     Log[Sin[u]]/a + Σ_{j=1..k} (-1)^j C(k,j) Sin[u]^(2j)/(2j a)
+///   ∫ Cos[u]^2/Sin[u] dx:
+///     Cos[u]/a + Log[Tan[u/2]]/a
+///
+/// (`u = a x`.) Even p ≥ 4 in the Cos family needs wolframscript's
+/// multiple-angle presentation and is left unevaluated.
+fn try_integrate_trig_quotient(
+  num_factors: &[&Expr],
+  den_factors: &[&Expr],
+  var: &str,
+) -> Option<Expr> {
+  let mut factors: Vec<(&str, &Expr, i64)> = Vec::new();
+  for factor in num_factors {
+    factors.push(extract_any_trig_factor(factor)?);
+  }
+  for factor in den_factors {
+    let (name, a, power) = extract_any_trig_factor(factor)?;
+    factors.push((name, a, -power));
+  }
+  let mut sin_pow: i64 = 0;
+  let mut cos_pow: i64 = 0;
+  let mut arg: Option<&Expr> = None;
+  for &(name, a, power) in &factors {
+    match arg {
+      None => arg = Some(a),
+      Some(existing) => {
+        if !expr_str_eq(existing, a) {
+          return None;
+        }
+      }
+    }
+    let (ds, dc) = match name {
+      "Sin" => (1, 0),
+      "Cos" => (0, 1),
+      "Tan" => (1, -1),
+      "Cot" => (-1, 1),
+      "Sec" => (0, -1),
+      "Csc" => (-1, 0),
+      _ => return None,
+    };
+    sin_pow += ds * power;
+    cos_pow += dc * power;
+  }
+  let arg = arg?;
+  let coeff = try_match_linear_arg(arg, var)?;
+
+  // Build `Func[u]^n` (n == 1 gives the bare call).
+  let trig_pow = |name: &str, n: i64| -> Expr {
+    let call = Expr::FunctionCall {
+      name: name.to_string(),
+      args: vec![arg.clone()].into(),
+    };
+    if n == 1 {
+      call
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(call),
+        right: Box::new(Expr::Integer(n as i128)),
+      }
+    }
+  };
+  // Build `n/d * expr / a` with the rational coefficient reduced.
+  let coeff_term = |n: i128, d: i128, expr: Expr, a: &Expr| -> Expr {
+    let divisor = simplify(Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(d)),
+      right: Box::new(a.clone()),
+    });
+    if n == 1 {
+      make_divided(expr, divisor)
+    } else if n == -1 {
+      make_neg_divided(expr, divisor)
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(make_divided(Expr::Integer(n), divisor)),
+        right: Box::new(expr),
+      }
+    }
+  };
+  let wrap_call = |name: &str, inner: Expr| -> Expr {
+    Expr::FunctionCall {
+      name: name.to_string(),
+      args: vec![inner].into(),
+    }
+  };
+
+  if cos_pow == -1 && sin_pow == 1 {
+    // ∫ Sin[u]/Cos[u] dx = -Log[Cos[u]]/a
+    return Some(coeff_term(
+      -1,
+      1,
+      wrap_call("Log", trig_pow("Cos", 1)),
+      &coeff,
+    ));
+  }
+  if sin_pow == -1 && cos_pow == 1 {
+    // ∫ Cos[u]/Sin[u] dx = Log[Sin[u]]/a
+    return Some(coeff_term(
+      1,
+      1,
+      wrap_call("Log", trig_pow("Sin", 1)),
+      &coeff,
+    ));
+  }
+
+  if cos_pow == -1 && sin_pow >= 2 {
+    let p = sin_pow;
+    let mut terms: Vec<Expr> = Vec::new();
+    if p % 2 == 0 {
+      // ArcTanh[Sin[u]]/a - Sin[u]/a - Sin[u]^3/(3a) - … - Sin[u]^(p-1)/((p-1)a)
+      terms.push(coeff_term(1, 1, wrap_call("ArcTanh", trig_pow("Sin", 1)), &coeff));
+      let mut j = 1;
+      while j < p {
+        terms.push(coeff_term(-1, j as i128, trig_pow("Sin", j), &coeff));
+        j += 2;
+      }
+    } else {
+      // -Log[Cos[u]]/a + Σ (-1)^(j+1) C(k,j) Cos[u]^(2j)/(2j a)
+      let k = (p - 1) / 2;
+      terms.push(coeff_term(-1, 1, wrap_call("Log", trig_pow("Cos", 1)), &coeff));
+      for j in 1..=k {
+        let binom = crate::functions::binomial_coeff(k as i128, j as i128);
+        let sign = if j % 2 == 1 { 1 } else { -1 };
+        let g = gcd_i128_calc(binom.abs(), 2 * j as i128);
+        terms.push(coeff_term(
+          sign * binom / g,
+          2 * j as i128 / g,
+          trig_pow("Cos", 2 * j),
+          &coeff,
+        ));
+      }
+    }
+    return Some(Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    });
+  }
+
+  if sin_pow == -1 && cos_pow >= 2 {
+    let p = cos_pow;
+    let mut terms: Vec<Expr> = Vec::new();
+    if p == 2 {
+      // Cos[u]/a + Log[Tan[u/2]]/a
+      terms.push(coeff_term(1, 1, trig_pow("Cos", 1), &coeff));
+      let half_arg = simplify(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(arg.clone()),
+        right: Box::new(Expr::Integer(2)),
+      });
+      let tan_half = Expr::FunctionCall {
+        name: "Tan".to_string(),
+        args: vec![half_arg].into(),
+      };
+      terms.push(coeff_term(1, 1, wrap_call("Log", tan_half), &coeff));
+    } else if p % 2 == 1 {
+      // Log[Sin[u]]/a + Σ (-1)^j C(k,j) Sin[u]^(2j)/(2j a)
+      let k = (p - 1) / 2;
+      terms.push(coeff_term(1, 1, wrap_call("Log", trig_pow("Sin", 1)), &coeff));
+      for j in 1..=k {
+        let binom = crate::functions::binomial_coeff(k as i128, j as i128);
+        let sign = if j % 2 == 1 { -1 } else { 1 };
+        let g = gcd_i128_calc(binom.abs(), 2 * j as i128);
+        terms.push(coeff_term(
+          sign * binom / g,
+          2 * j as i128 / g,
+          trig_pow("Sin", 2 * j),
+          &coeff,
+        ));
+      }
+    } else {
+      // Even p ≥ 4 needs wolframscript's multiple-angle presentation.
+      return None;
+    }
+    return Some(Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    });
+  }
+
+  None
+}
+
+/// Split an expression into multiplicative numerator/denominator factor
+/// references, flattening nested Times and Divide.
+fn collect_times_factor_refs<'a>(
+  expr: &'a Expr,
+  num: &mut Vec<&'a Expr>,
+  den: &mut Vec<&'a Expr>,
+) {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      collect_times_factor_refs(left, num, den);
+      collect_times_factor_refs(right, num, den);
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      collect_times_factor_refs(left, num, den);
+      // Denominator factors flip roles below it: a/(b/c) = a*c/b
+      collect_times_factor_refs(right, den, num);
+    }
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
+      for a in args {
+        collect_times_factor_refs(a, num, den);
+      }
+    }
+    _ => num.push(expr),
+  }
+}
+
+fn gcd_i128_calc(mut a: i128, mut b: i128) -> i128 {
+  while b != 0 {
+    let t = b;
+    b = a % b;
+    a = t;
+  }
+  a.max(1)
+}
+
 /// Build the antiderivative of Exp[-a*x^2]:
 ///   Sqrt[Pi/a]/2 * Erf[Sqrt[a]*x]  (general a)
 ///   (Sqrt[Pi]*Erf[x])/2            (when a=1)
@@ -8067,6 +8339,21 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
     return Some(rs);
   }
 
+  // Trig quotients (Sin[x]*Sec[x], Cos[x]*Csc[x], Sin[x]^2/Cos[x], …) must
+  // run before the generic log-derivative and by-parts rules, which produce
+  // non-Wolfram forms for them (e.g. Log[1 - Cos[x]^2]/2, -1 - Log[Cos[x]]).
+  {
+    let mut num_factors: Vec<&Expr> = Vec::new();
+    let mut den_factors: Vec<&Expr> = Vec::new();
+    collect_times_factor_refs(expr, &mut num_factors, &mut den_factors);
+    if num_factors.len() + den_factors.len() >= 2
+      && let Some(result) =
+        try_integrate_trig_quotient(&num_factors, &den_factors, var)
+    {
+      return Some(result);
+    }
+  }
+
   // ∫ c·g'(x)/g(x) dx = c·Log[g(x)] for a sub-expression g (covers
   // transcendental g such as Log[x], Sin[x], 1 + E^x).
   if let Some(result) = try_integrate_log_derivative(expr, var) {
@@ -8164,6 +8451,12 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             {
               return Some(result);
             }
+            // Trig quotients like Sin[x]*Tan[x] (= Sin^2/Cos)
+            if let Some(result) =
+              try_integrate_trig_quotient(&[left, right], &[], var)
+            {
+              return Some(result);
+            }
             // Fall back to integration by parts
             try_integration_by_parts(&[left, right], var)
           }
@@ -8209,6 +8502,12 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             // ∫ E^(a*x) / (c*x) dx = ExpIntegralEi[a*x] / c
             // ∫ E^(a*x) / x dx = ExpIntegralEi[a*x]
             if let Some(result) = try_match_exp_over_linear(left, right, var) {
+              return Some(result);
+            }
+            // Trig quotients like Sin[x]^2/Cos[x]
+            if let Some(result) =
+              try_integrate_trig_quotient(&[left], &[right], var)
+            {
               return Some(result);
             }
             // Try rational function integration (partial fractions)
@@ -9140,8 +9439,10 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
                 });
               }
             }
-            if let Some(trig_result) =
-              try_integrate_sin_cos_product(&var_refs, var)
+            if let Some(trig_result) = try_integrate_sin_cos_product(
+              &var_refs, var,
+            )
+            .or_else(|| try_integrate_trig_quotient(&var_refs, &[], var))
             {
               if const_factors.is_empty() {
                 return Some(trig_result);
