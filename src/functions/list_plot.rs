@@ -378,6 +378,10 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         "Filling" => {
           opts.filling = parse_filling(replacement);
         }
+        "Background" => {
+          opts.background =
+            crate::functions::plot::parse_background_option(replacement);
+        }
         "PlotStyle" => {
           opts.plot_style = parse_plot_style(replacement);
         }
