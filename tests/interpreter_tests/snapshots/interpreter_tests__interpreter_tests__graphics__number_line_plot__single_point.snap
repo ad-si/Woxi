@@ -23,13 +23,13 @@ expression: "export_svg(\"NumberLinePlot[{42}]\")"
 <line x1="3120.0" y1="300.0" x2="3120.0" y2="330.0" stroke="#666666" stroke-width="5"/>
 <line x1="3260.0" y1="300.0" x2="3260.0" y2="330.0" stroke="#666666" stroke-width="5"/>
 <line x1="600.0" y1="300.0" x2="600.0" y2="350.0" stroke="#666666" stroke-width="10"/>
-<text x="600.0" y="504.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">41</text>
+<text x="600.0" y="504.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">41</text>
 <line x1="1300.0" y1="300.0" x2="1300.0" y2="350.0" stroke="#666666" stroke-width="10"/>
-<text x="1300.0" y="504.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">41.5</text>
+<text x="1300.0" y="504.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">41.5</text>
 <line x1="2000.0" y1="300.0" x2="2000.0" y2="350.0" stroke="#666666" stroke-width="10"/>
-<text x="2000.0" y="504.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">42</text>
+<text x="2000.0" y="504.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">42</text>
 <line x1="2700.0" y1="300.0" x2="2700.0" y2="350.0" stroke="#666666" stroke-width="10"/>
-<text x="2700.0" y="504.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">42.5</text>
+<text x="2700.0" y="504.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">42.5</text>
 <line x1="3400.0" y1="300.0" x2="3400.0" y2="350.0" stroke="#666666" stroke-width="10"/>
-<text x="3400.0" y="504.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">43</text>
+<text x="3400.0" y="504.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">43</text>
 </svg>

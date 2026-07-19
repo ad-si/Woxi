@@ -65,13 +65,13 @@ expression: "export_svg(\"NumberLinePlot[{Range[20], 2*Range[10], 3*Range[6], 5*
 <line x1="3079.9" y1="1150.0" x2="3079.9" y2="1180.0" stroke="#666666" stroke-width="5"/>
 <line x1="3333.9" y1="1150.0" x2="3333.9" y2="1180.0" stroke="#666666" stroke-width="5"/>
 <line x1="666.1" y1="1150.0" x2="666.1" y2="1200.0" stroke="#666666" stroke-width="10"/>
-<text x="666.1" y="1354.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">0</text>
+<text x="666.1" y="1354.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">0</text>
 <line x1="1301.3" y1="1150.0" x2="1301.3" y2="1200.0" stroke="#666666" stroke-width="10"/>
-<text x="1301.3" y="1354.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">5</text>
+<text x="1301.3" y="1354.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">5</text>
 <line x1="1936.5" y1="1150.0" x2="1936.5" y2="1200.0" stroke="#666666" stroke-width="10"/>
-<text x="1936.5" y="1354.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">10</text>
+<text x="1936.5" y="1354.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">10</text>
 <line x1="2571.7" y1="1150.0" x2="2571.7" y2="1200.0" stroke="#666666" stroke-width="10"/>
-<text x="2571.7" y="1354.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">15</text>
+<text x="2571.7" y="1354.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">15</text>
 <line x1="3206.9" y1="1150.0" x2="3206.9" y2="1200.0" stroke="#666666" stroke-width="10"/>
-<text x="3206.9" y="1354.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">20</text>
+<text x="3206.9" y="1354.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">20</text>
 </svg>

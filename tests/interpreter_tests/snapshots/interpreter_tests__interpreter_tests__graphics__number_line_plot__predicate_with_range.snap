@@ -26,11 +26,11 @@ expression: "export_svg(\"NumberLinePlot[Sin[x] < Cos[x], {x, 0, 2*Pi}]\")"
 <line x1="2944.4" y1="300.0" x2="2944.4" y2="330.0" stroke="#666666" stroke-width="5"/>
 <line x1="3251.8" y1="300.0" x2="3251.8" y2="330.0" stroke="#666666" stroke-width="5"/>
 <line x1="793.1" y1="300.0" x2="793.1" y2="350.0" stroke="#666666" stroke-width="10"/>
-<text x="793.1" y="504.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">0</text>
+<text x="793.1" y="504.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">0</text>
 <line x1="1561.4" y1="300.0" x2="1561.4" y2="350.0" stroke="#666666" stroke-width="10"/>
-<text x="1561.4" y="504.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">2</text>
+<text x="1561.4" y="504.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">2</text>
 <line x1="2329.8" y1="300.0" x2="2329.8" y2="350.0" stroke="#666666" stroke-width="10"/>
-<text x="2329.8" y="504.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">4</text>
+<text x="2329.8" y="504.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">4</text>
 <line x1="3098.1" y1="300.0" x2="3098.1" y2="350.0" stroke="#666666" stroke-width="10"/>
-<text x="3098.1" y="504.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">6</text>
+<text x="3098.1" y="504.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">6</text>
 </svg>

@@ -17,9 +17,9 @@ expression: "export_svg(\"TernaryListPlot[{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}, {1, 
 <line x1="552.0" y1="2610.6" x2="864.0" y2="3151.0" stroke="#dddddd" stroke-width="5.0"/>
 <line x1="3048.0" y1="2610.6" x2="2736.0" y2="3151.0" stroke="#dddddd" stroke-width="5.0"/>
 <polygon points="1800.0,449.0 240.0,3151.0 3360.0,3151.0" fill="none" stroke="#555555" stroke-width="10.0"/>
-<text x="1800.0" y="384.0" text-anchor="middle" font-family="sans-serif" font-size="130" fill="#333333">1</text>
-<text x="188.0" y="3281.0" text-anchor="end" font-family="sans-serif" font-size="130" fill="#333333">2</text>
-<text x="3412.0" y="3281.0" text-anchor="start" font-family="sans-serif" font-size="130" fill="#333333">3</text>
+<text x="1800.0" y="384.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#333333">1</text>
+<text x="188.0" y="3281.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#333333">2</text>
+<text x="3412.0" y="3281.0" text-anchor="start" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#333333">3</text>
 <circle cx="1800.0" cy="449.0" r="30.0" fill="rgb(94,129,181)"/>
 <circle cx="240.0" cy="3151.0" r="30.0" fill="rgb(94,129,181)"/>
 <circle cx="3360.0" cy="3151.0" r="30.0" fill="rgb(94,129,181)"/>

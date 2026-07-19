@@ -4018,10 +4018,16 @@ font-style: normal; src: url(\"{data_url}\") format(\"truetype\"); }}\n"
 /// map these onto the bundled Atkinson faces via their own CSS — see
 /// `tests/playground/style.css`. A standalone exported SVG has no such host, so
 /// we inline that same mapping together with `@font-face` rules carrying the
-/// base64-encoded font data. CSS on SVG `<text>` overrides the inline
-/// presentation attributes, mirroring the playground exactly. The Mono face is
-/// embedded only when the document actually uses monospace text, to avoid
-/// bloating graphics that don't.
+/// base64-encoded font data.
+///
+/// We also bake the preferred Atkinson family directly onto each text
+/// element's `font-family` attribute, keeping the generic family as a
+/// fallback (e.g. `"Atkinson Hyperlegible Next, sans-serif"`). CSS-aware
+/// renderers apply the equivalent `svg text {}` rule; renderers that read the
+/// presentation attribute but ignore that type-selector rule still pick up the
+/// embedded face from the attribute. Both paths therefore converge on
+/// Atkinson. The Mono face is embedded only when the document actually uses
+/// monospace text, to avoid bloating graphics that don't.
 pub(crate) fn embed_used_fonts(svg: &str) -> String {
   // Only SVG documents that actually draw text need embedded fonts.
   if !svg.contains("<svg") || !svg.contains("<text") {
@@ -4068,23 +4074,42 @@ svg text[font-family*=\"Courier\"] \
     );
   }
 
+  // Bake the preferred Atkinson family onto each text element's `font-family`
+  // attribute, keeping the generic family as a fallback. The generic token is
+  // retained so the mono `[font-family*="Mono"]` CSS selectors below still
+  // match. Exact-quoted matches make this idempotent (an already-rewritten
+  // value no longer equals the generic form).
+  let body = svg
+    .replace(
+      "font-family=\"sans-serif\"",
+      "font-family=\"Atkinson Hyperlegible Next, sans-serif\"",
+    )
+    .replace(
+      "font-family=\"monospace\"",
+      "font-family=\"Atkinson Hyperlegible Mono, monospace\"",
+    )
+    .replace(
+      "font-family=\"serif\"",
+      "font-family=\"Atkinson Hyperlegible Next, serif\"",
+    );
+
   // Insert the style block immediately after the opening `<svg …>` tag. The
   // tag's attribute values never contain `>`, so the first `>` after `<svg`
   // reliably closes it.
-  let Some(open) = svg.find("<svg") else {
-    return svg.to_string();
+  let Some(open) = body.find("<svg") else {
+    return body;
   };
-  let Some(rel) = svg[open..].find('>') else {
-    return svg.to_string();
+  let Some(rel) = body[open..].find('>') else {
+    return body;
   };
   let insert_at = open + rel + 1;
   let style_block =
     format!("\n<defs><style type=\"text/css\">\n{style}</style></defs>");
 
-  let mut out = String::with_capacity(svg.len() + style_block.len());
-  out.push_str(&svg[..insert_at]);
+  let mut out = String::with_capacity(body.len() + style_block.len());
+  out.push_str(&body[..insert_at]);
   out.push_str(&style_block);
-  out.push_str(&svg[insert_at..]);
+  out.push_str(&body[insert_at..]);
   out
 }
 

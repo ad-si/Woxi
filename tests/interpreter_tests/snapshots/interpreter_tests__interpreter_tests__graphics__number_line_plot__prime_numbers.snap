@@ -28,11 +28,11 @@ expression: "export_svg(\"NumberLinePlot[Prime[Range[10]]]\")"
 <line x1="2938.7" y1="300.0" x2="2938.7" y2="330.0" stroke="#666666" stroke-width="5"/>
 <line x1="3117.5" y1="300.0" x2="3117.5" y2="330.0" stroke="#666666" stroke-width="5"/>
 <line x1="614.3" y1="300.0" x2="614.3" y2="350.0" stroke="#666666" stroke-width="10"/>
-<text x="614.3" y="504.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">0</text>
+<text x="614.3" y="504.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">0</text>
 <line x1="1508.3" y1="300.0" x2="1508.3" y2="350.0" stroke="#666666" stroke-width="10"/>
-<text x="1508.3" y="504.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">10</text>
+<text x="1508.3" y="504.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">10</text>
 <line x1="2402.3" y1="300.0" x2="2402.3" y2="350.0" stroke="#666666" stroke-width="10"/>
-<text x="2402.3" y="504.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">20</text>
+<text x="2402.3" y="504.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">20</text>
 <line x1="3296.3" y1="300.0" x2="3296.3" y2="350.0" stroke="#666666" stroke-width="10"/>
-<text x="3296.3" y="504.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">30</text>
+<text x="3296.3" y="504.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">30</text>
 </svg>

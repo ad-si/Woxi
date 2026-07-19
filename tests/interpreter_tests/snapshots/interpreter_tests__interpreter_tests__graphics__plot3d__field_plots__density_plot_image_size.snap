@@ -5,108 +5,108 @@ expression: "export_svg(\"DensityPlot[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi
 <svg width="200" height="125" viewBox="0 0 2000 1250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="2000" height="1250" opacity="1" fill="#FFFFFF" stroke="none"/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="749,100 749,749 "/>
-<text x="670" y="735" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<text x="670" y="735" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,735 749,735 "/>
-<text x="670" y="683" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<text x="670" y="683" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,683 749,683 "/>
-<text x="670" y="632" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<text x="670" y="632" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 -2
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,632 749,632 "/>
-<text x="670" y="580" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<text x="670" y="580" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,580 749,580 "/>
-<text x="670" y="528" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<text x="670" y="528" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,528 749,528 "/>
-<text x="670" y="477" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<text x="670" y="477" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,477 749,477 "/>
-<text x="670" y="425" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<text x="670" y="425" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 0
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,425 749,425 "/>
-<text x="670" y="373" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<text x="670" y="373" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,373 749,373 "/>
-<text x="670" y="322" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<text x="670" y="322" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,322 749,322 "/>
-<text x="670" y="270" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<text x="670" y="270" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,270 749,270 "/>
-<text x="670" y="218" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<text x="670" y="218" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 2
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,218 749,218 "/>
-<text x="670" y="167" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<text x="670" y="167" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,167 749,167 "/>
-<text x="670" y="115" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<text x="670" y="115" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,115 749,115 "/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,750 1899,750 "/>
-<text x="775" y="830" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<text x="775" y="830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="775,750 775,790 "/>
-<text x="867" y="830" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<text x="867" y="830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="867,750 867,790 "/>
-<text x="958" y="830" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<text x="958" y="830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 -2
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="958,750 958,790 "/>
-<text x="1050" y="830" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<text x="1050" y="830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1050,750 1050,790 "/>
-<text x="1141" y="830" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<text x="1141" y="830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1141,750 1141,790 "/>
-<text x="1233" y="830" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<text x="1233" y="830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1233,750 1233,790 "/>
-<text x="1324" y="830" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<text x="1324" y="830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 0
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1324,750 1324,790 "/>
-<text x="1415" y="830" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<text x="1415" y="830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1415,750 1415,790 "/>
-<text x="1507" y="830" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<text x="1507" y="830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1507,750 1507,790 "/>
-<text x="1598" y="830" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<text x="1598" y="830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1598,750 1598,790 "/>
-<text x="1690" y="830" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<text x="1690" y="830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 2
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1690,750 1690,790 "/>
-<text x="1781" y="830" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<text x="1781" y="830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1781,750 1781,790 "/>
-<text x="1873" y="830" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+<text x="1873" y="830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1873,750 1873,790 "/>

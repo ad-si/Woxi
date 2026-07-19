@@ -17,8 +17,8 @@ expression: "export_svg(\"TernaryListPlot[{{1, 1, 1}}, ImageSize -> 200]\")"
 <line x1="392.0" y1="1394.9" x2="544.0" y2="1658.2" stroke="#dddddd" stroke-width="5.0"/>
 <line x1="1608.0" y1="1394.9" x2="1456.0" y2="1658.2" stroke="#dddddd" stroke-width="5.0"/>
 <polygon points="1000.0,341.8 240.0,1658.2 1760.0,1658.2" fill="none" stroke="#555555" stroke-width="10.0"/>
-<text x="1000.0" y="276.8" text-anchor="middle" font-family="sans-serif" font-size="130" fill="#333333">1</text>
-<text x="188.0" y="1788.2" text-anchor="end" font-family="sans-serif" font-size="130" fill="#333333">2</text>
-<text x="1812.0" y="1788.2" text-anchor="start" font-family="sans-serif" font-size="130" fill="#333333">3</text>
+<text x="1000.0" y="276.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#333333">1</text>
+<text x="188.0" y="1788.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#333333">2</text>
+<text x="1812.0" y="1788.2" text-anchor="start" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#333333">3</text>
 <circle cx="1000.0" cy="1219.4" r="30.0" fill="rgb(94,129,181)"/>
 </svg>
