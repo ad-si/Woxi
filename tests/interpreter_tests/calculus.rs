@@ -814,6 +814,86 @@ mod definite_integrals {
   use super::*;
 
   #[test]
+  fn log_sin_over_half_period() {
+    // Euler: ∫_0^{π/2} Log[Sin[x]] dx = -(π Log[2])/2
+    assert_eq!(
+      interpret("Integrate[Log[Sin[x]], {x, 0, Pi/2}]").unwrap(),
+      "-1/2*(Pi*Log[2])"
+    );
+  }
+
+  #[test]
+  fn log_cos_over_half_period() {
+    assert_eq!(
+      interpret("Integrate[Log[Cos[x]], {x, 0, Pi/2}]").unwrap(),
+      "-1/2*(Pi*Log[2])"
+    );
+  }
+
+  #[test]
+  fn log_tan_and_log_cot_over_half_period() {
+    // Tan and Cot swap under x -> Pi/2 - x, so both integrals vanish.
+    assert_eq!(
+      interpret("Integrate[Log[Tan[x]], {x, 0, Pi/2}]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Integrate[Log[Cot[x]], {x, 0, Pi/2}]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn log_sin_over_full_period() {
+    // ∫_0^π Log[Sin[x]] dx = -π Log[2]
+    assert_eq!(
+      interpret("Integrate[Log[Sin[x]], {x, 0, Pi}]").unwrap(),
+      "-(Pi*Log[2])"
+    );
+  }
+
+  #[test]
+  fn log_sin_other_variable_name() {
+    assert_eq!(
+      interpret("Integrate[Log[Sin[y]], {y, 0, Pi/2}]").unwrap(),
+      "-1/2*(Pi*Log[2])"
+    );
+  }
+
+  #[test]
+  fn log_sin_wrong_bounds_stays_unevaluated() {
+    // The table entry must not misfire on other bounds. (wolframscript
+    // returns a PolyLog closed form here, which woxi doesn't support yet —
+    // falling through unevaluated is the safe behaviour.)
+    assert_eq!(
+      interpret("Integrate[Log[Sin[x]], {x, 0, 1}]").unwrap(),
+      "Integrate[Log[Sin[x]], {x, 0, 1}]"
+    );
+  }
+
+  #[test]
+  fn definite_integral_constant_factor_linearity() {
+    // Constant factors are pulled out of known definite integrals.
+    assert_eq!(
+      interpret("Integrate[3 Log[Sin[x]], {x, 0, Pi/2}]").unwrap(),
+      "(-3*Pi*Log[2])/2"
+    );
+    assert_eq!(
+      interpret("Integrate[Log[Sin[x]]/2, {x, 0, Pi/2}]").unwrap(),
+      "-1/4*(Pi*Log[2])"
+    );
+    assert_eq!(
+      interpret("Integrate[-Log[Sin[x]], {x, 0, Pi/2}]").unwrap(),
+      "(Pi*Log[2])/2"
+    );
+    // Symbolic constant factor times the Bessel integral representation.
+    assert_eq!(
+      interpret("Integrate[Pi Cos[Sin[x]], {x, 0, Pi}]").unwrap(),
+      "Pi^2*BesselJ[0, 1]"
+    );
+  }
+
+  #[test]
   fn gaussian_integral_full() {
     // ∫_{-∞}^{∞} E^(-x^2) dx = Sqrt[Pi]
     assert_eq!(
