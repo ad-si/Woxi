@@ -6323,7 +6323,11 @@ pub fn nested_exact_const_machine_times(args: &[Expr]) -> Option<Expr> {
       {
         match (&args[0], &args[1]) {
           (Expr::Integer(n), Expr::Integer(d)) if *d != 0 => {
-            if *d < 0 { Some((-n, -d)) } else { Some((*n, *d)) }
+            if *d < 0 {
+              Some((-n, -d))
+            } else {
+              Some((*n, *d))
+            }
           }
           _ => None,
         }
@@ -6354,8 +6358,8 @@ pub fn nested_exact_const_machine_times(args: &[Expr]) -> Option<Expr> {
         left,
         right,
       } => {
-        let mut v = times_factors(left)
-          .unwrap_or_else(|| vec![(**left).clone()]);
+        let mut v =
+          times_factors(left).unwrap_or_else(|| vec![(**left).clone()]);
         v.extend(
           times_factors(right).unwrap_or_else(|| vec![(**right).clone()]),
         );
@@ -6466,8 +6470,7 @@ pub fn nested_exact_const_machine_times(args: &[Expr]) -> Option<Expr> {
     return None;
   }
 
-  let exact_f =
-    outer_exact.map(|(n, d)| n as f64 / d as f64).unwrap_or(1.0);
+  let exact_f = outer_exact.map(|(n, d)| n as f64 / d as f64).unwrap_or(1.0);
   let mut fold: Vec<f64> = Vec::new();
   if outer_exact.is_some() && first_numeric_exact == Some(true) {
     fold.push(exact_f);

@@ -8228,7 +8228,12 @@ fn simplify_quotient_select(
     // wolframscript orders a negative-LEADING primitive sum before the
     // power (1/((3 - 5*x)*x^2)) but a positive-leading one after it
     // (1/(x^2*(-3 + 5*x))).
-    if chosen.den_terms.last().map(|&(n, _, _)| n < 0).unwrap_or(false) {
+    if chosen
+      .den_terms
+      .last()
+      .map(|&(n, _, _)| n < 0)
+      .unwrap_or(false)
+    {
       factors.push(den_body);
       factors.push(var_pow);
     } else {
@@ -8401,7 +8406,8 @@ fn radical_quotient_num_content(num: &Expr, den: &Expr) -> Option<Expr> {
   // content (that quotient would reduce instead of extracting).
   let den_int = match den {
     Expr::Integer(k) => *k,
-    Expr::FunctionCall { name, args } if name == "Times" && !args.is_empty() =>
+    Expr::FunctionCall { name, args }
+      if name == "Times" && !args.is_empty() =>
     {
       match &args[0] {
         Expr::Integer(k) => *k,

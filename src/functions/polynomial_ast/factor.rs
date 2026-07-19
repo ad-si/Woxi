@@ -1732,9 +1732,7 @@ fn extract_rational_coeff(term: &Expr) -> Option<(i128, i128)> {
 /// A term's exponent per symbolic factor (variables by name, other
 /// non-numeric factors like Sin[theta] by their display form) — the
 /// lex-order comparison key for the content-sign rule.
-fn term_lex_exponents(
-  term: &Expr,
-) -> std::collections::BTreeMap<String, i128> {
+fn term_lex_exponents(term: &Expr) -> std::collections::BTreeMap<String, i128> {
   let inner = match term {
     Expr::UnaryOp {
       op: UnaryOperator::Minus,

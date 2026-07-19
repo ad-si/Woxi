@@ -764,10 +764,7 @@ mod simplify {
   // fuzzer, seed 1784234939556239488).
   #[test]
   fn negative_reciprocal_sum_recombines() {
-    assert_eq!(
-      interpret("Simplify[-2 - 2/x]").unwrap(),
-      "(-2*(1 + x))/x"
-    );
+    assert_eq!(interpret("Simplify[-2 - 2/x]").unwrap(), "(-2*(1 + x))/x");
     assert_eq!(
       interpret("Simplify[-2 - 2/x - 2 x]").unwrap(),
       "(-2*(1 + x + x^2))/x"
@@ -14055,10 +14052,19 @@ mod fuzz_diff_round_2026_07_17 {
       "Times[39, Times[Plus[Divide[-63, -70], Plus[-83, Divide[4, 8]]], Pi], Subtract[Plus[Subtract[Pi, -19.5], -76], -5.2]]",
       "481478.3397922004",
     );
-    assert_case("Times[39, Times[-35, Pi], -51.3 + Pi]", "206516.44476381145");
+    assert_case(
+      "Times[39, Times[-35, Pi], -51.3 + Pi]",
+      "206516.44476381145",
+    );
     assert_case("(-1365*Pi)*(-51.3 + Pi)", "206516.44476381148");
-    assert_case("Times[13, Times[-17, Pi], Plus[-51.3, Pi]]", "33435.995818902804");
-    assert_case("Times[7, Times[11, E], Plus[-51.3, Pi]]", "-10079.92551545021");
+    assert_case(
+      "Times[13, Times[-17, Pi], Plus[-51.3, Pi]]",
+      "33435.995818902804",
+    );
+    assert_case(
+      "Times[7, Times[11, E], Plus[-51.3, Pi]]",
+      "-10079.92551545021",
+    );
     // case seed 4125733669514322931
     assert_case(
       "Times[Subtract[Divide[58, -60], Divide[-83, Plus[Divide[-4, 5], Pi]]], Divide[Plus[21, Times[Pi, -22]], Pi], -14.9]",

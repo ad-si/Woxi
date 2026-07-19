@@ -1450,7 +1450,11 @@ fn int_base_power(e: &Expr) -> Option<((i128, i128), f64)> {
     {
       match (&args[0], &args[1]) {
         (Expr::Integer(n), Expr::Integer(d)) if *d != 0 => {
-          if *d < 0 { (-n, -d) } else { (*n, *d) }
+          if *d < 0 {
+            (-n, -d)
+          } else {
+            (*n, *d)
+          }
         }
         _ => return None,
       }
