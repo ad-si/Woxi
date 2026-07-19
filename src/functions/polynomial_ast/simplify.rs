@@ -4562,7 +4562,29 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
   let mut best_c = leaf_count(&best);
 
   // Candidate 1: Together the whole simplified expression.
-  let togethered = super::together::together_expr(&simplified);
+  // together_expr combines over the denominator PRODUCT; shared integer
+  // content must cancel before the candidate competes, or the quotient
+  // selection displays the unreduced coefficients:
+  // Simplify[-4/5 - 2/(5x)] combined to (-10 - 20*x)/(25*x) and showed
+  // (-10*(1 + 2*x))/(25*x) instead of -1/5*(2 + 4*x)/x.
+  let togethered = {
+    let raw = super::together::together_expr(&simplified);
+    let (n, d) = super::together::extract_num_den(&raw);
+    match super::together::reduce_shared_integer_content(&n, &d) {
+      Some((rn, rd)) => {
+        if matches!(&rd, Expr::Integer(1)) {
+          rn
+        } else {
+          Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: Box::new(rn),
+            right: Box::new(rd),
+          }
+        }
+      }
+      None => raw,
+    }
+  };
   let tc = leaf_count(&togethered);
   if tc < best_c {
     // Re-run simplify_expr to absorb any cancellations Together exposed.

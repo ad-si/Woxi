@@ -776,10 +776,17 @@ mod simplify {
       interpret("Simplify[-2/5 - 2/(5 x)]").unwrap(),
       "(-2*(1 + x))/(5*x)"
     );
-    // Non-unit cofactors only pull the sign and the denominator lcm.
+    // Non-unit cofactors only pull the sign and the denominator lcm —
+    // and the Together candidate's raw denominator-product combine
+    // ((-10 - 20*x)/(25*x)) must reduce its shared integer content
+    // before the quotient selection displays it.
     assert_eq!(
       interpret("Simplify[-4/5 - 2/(5 x)]").unwrap(),
       "-1/5*(2 + 4*x)/x"
+    );
+    assert_eq!(
+      interpret("Simplify[1/2 + 1/(2 x)]").unwrap(),
+      "(1 + x)/(2*x)"
     );
     assert_eq!(
       interpret("Simplify[(-2 - 4 x)/(3 x)]").unwrap(),
