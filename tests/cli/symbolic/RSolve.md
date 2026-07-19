@@ -31,3 +31,16 @@ multiplicity.
 $ wo 'RSolve[a[n] == 4 a[n-1] - 4 a[n-2], a[n], n]'
 {{a[n] -> 2^n*C[1] + 2^n*n*C[2]}}
 ```
+
+The golden-ratio recurrence has irrational characteristic roots, so its
+solutions are expressed in the `Fibonacci`/`LucasL` basis.
+
+```scrut
+$ wo 'RSolve[{a[n] == a[n-1] + a[n-2], a[0] == 0, a[1] == 1}, a[n], n]'
+{{a[n] -> Fibonacci[n]}}
+```
+
+```scrut
+$ wo 'RSolve[a[n] == a[n-1] + a[n-2], a[n], n]'
+{{a[n] -> C[1]*Fibonacci[n] + C[2]*LucasL[n]}}
+```

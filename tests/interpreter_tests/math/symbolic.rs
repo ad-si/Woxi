@@ -1200,6 +1200,106 @@ mod cases {
       r#"{{a -> Function[{n}, -2^n + 3^n]}}"#,
     );
   }
+  // The golden-ratio recurrence a[n] == a[n-1] + a[n-2] has irrational
+  // characteristic roots (1 ± Sqrt[5])/2; wolframscript expresses its
+  // solutions in the Fibonacci/LucasL basis. Previously RSolve stayed
+  // unevaluated on it.
+  #[test]
+  fn r_solve_fibonacci_recurrence() {
+    assert_case(
+      r#"RSolve[{a[n] == a[n-1] + a[n-2], a[0] == 0, a[1] == 1}, a[n], n]"#,
+      r#"{{a[n] -> Fibonacci[n]}}"#,
+    );
+    assert_case(
+      r#"RSolve[{a[n+2] == a[n+1] + a[n], a[0] == 0, a[1] == 1}, a[n], n]"#,
+      r#"{{a[n] -> Fibonacci[n]}}"#,
+    );
+    // ICs at shifted indices still resolve to the same solution.
+    assert_case(
+      r#"RSolve[{a[n] == a[n-1] + a[n-2], a[1] == 1, a[2] == 1}, a[n], n]"#,
+      r#"{{a[n] -> Fibonacci[n]}}"#,
+    );
+    assert_case(
+      r#"RSolve[{a[n] == a[n-1] + a[n-2], a[0] == 2, a[1] == 1}, a[n], n]"#,
+      r#"{{a[n] -> LucasL[n]}}"#,
+    );
+    assert_case(
+      r#"RSolve[{a[n] == a[n-1] + a[n-2], a[0] == 0, a[1] == 1}, a, n]"#,
+      r#"{{a -> Function[{n}, Fibonacci[n]]}}"#,
+    );
+  }
+  #[test]
+  fn r_solve_fibonacci_recurrence_general_combination() {
+    // General solution with both constants free.
+    assert_case(
+      r#"RSolve[a[n] == a[n-1] + a[n-2], a[n], n]"#,
+      r#"{{a[n] -> C[1]*Fibonacci[n] + C[2]*LucasL[n]}}"#,
+    );
+    // Rational coefficients share a pulled-out common denominator.
+    assert_case(
+      r#"RSolve[{a[n] == a[n-1] + a[n-2], a[0] == 1, a[1] == 1}, a[n], n]"#,
+      r#"{{a[n] -> (Fibonacci[n] + LucasL[n])/2}}"#,
+    );
+    assert_case(
+      r#"RSolve[{a[n] == a[n-1] + a[n-2], a[0] == 1, a[1] == 3}, a[n], n]"#,
+      r#"{{a[n] -> (5*Fibonacci[n] + LucasL[n])/2}}"#,
+    );
+    assert_case(
+      r#"RSolve[{a[n] == a[n-1] + a[n-2], a[0] == 1/2, a[1] == 1/3}, a[n], n]"#,
+      r#"{{a[n] -> (Fibonacci[n] + 3*LucasL[n])/12}}"#,
+    );
+    // Integer combinations, including negative coefficients (the sign rides
+    // on the integer factor: -2*Fibonacci[n], not -(2*Fibonacci[n])).
+    assert_case(
+      r#"RSolve[{a[n] == a[n-1] + a[n-2], a[0] == 0, a[1] == 2}, a[n], n]"#,
+      r#"{{a[n] -> 2*Fibonacci[n]}}"#,
+    );
+    assert_case(
+      r#"RSolve[{a[n] == a[n-1] + a[n-2], a[0] == -2, a[1] == 1}, a[n], n]"#,
+      r#"{{a[n] -> 2*Fibonacci[n] - LucasL[n]}}"#,
+    );
+    assert_case(
+      r#"RSolve[{a[n] == a[n-1] + a[n-2], a[0] == 2, a[1] == -1}, a[n], n]"#,
+      r#"{{a[n] -> -2*Fibonacci[n] + LucasL[n]}}"#,
+    );
+    assert_case(
+      r#"RSolve[{a[n] == a[n-1] + a[n-2], a[0] == 1, a[1] == -2}, a[n], n]"#,
+      r#"{{a[n] -> (-5*Fibonacci[n] + LucasL[n])/2}}"#,
+    );
+    // Rational coefficient on a single basis term.
+    assert_case(
+      r#"RSolve[{a[n] == a[n-1] + a[n-2], a[0] == 0, a[1] == 1/2}, a[n], n]"#,
+      r#"{{a[n] -> Fibonacci[n]/2}}"#,
+    );
+  }
+  // Under-determined: one IC keeps C[1] free and eliminates the other
+  // constant, matching wolframscript's parameterization.
+  #[test]
+  fn r_solve_fibonacci_recurrence_partial_ics() {
+    assert_case(
+      r#"RSolve[{a[n] == a[n-1] + a[n-2], a[0] == 0}, a[n], n]"#,
+      r#"{{a[n] -> C[1]*Fibonacci[n]}}"#,
+    );
+    assert_case(
+      r#"RSolve[{a[n] == a[n-1] + a[n-2], a[0] == 1}, a[n], n]"#,
+      r#"{{a[n] -> (2*C[1]*Fibonacci[n] + LucasL[n])/2}}"#,
+    );
+    assert_case(
+      r#"RSolve[{a[n] == a[n-1] + a[n-2], a[1] == 1}, a[n], n]"#,
+      r#"{{a[n] -> C[1]*Fibonacci[n] + LucasL[n] - C[1]*LucasL[n]}}"#,
+    );
+  }
+  #[test]
+  fn r_solve_value_fibonacci_recurrence() {
+    assert_case(
+      r#"RSolveValue[{a[n] == a[n-1] + a[n-2], a[0] == 0, a[1] == 1}, a[n], n]"#,
+      r#"Fibonacci[n]"#,
+    );
+    assert_case(
+      r#"RSolveValue[{a[n] == a[n-1] + a[n-2], a[0] == 0, a[1] == 1}, a[10], n]"#,
+      r#"55"#,
+    );
+  }
   #[test]
   fn r_solve_inhomogeneous_stays_unevaluated() {
     // Regression: the constant/`n` forcing term used to be silently

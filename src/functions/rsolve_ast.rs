@@ -557,6 +557,18 @@ fn solve_const_coeff_linear(
     char_coeffs[idx] = coeff;
   }
 
+  // Golden-ratio recurrence r^2 == r + 1 (e.g. Fibonacci): the characteristic
+  // roots (1 ± Sqrt[5])/2 are irrational, so the rational-root solver below
+  // cannot handle it. wolframscript expresses these solutions in the
+  // Fibonacci/LucasL basis instead of surds.
+  if order == 2
+    && char_coeffs[2] != 0
+    && char_coeffs[1] == -char_coeffs[2]
+    && char_coeffs[0] == -char_coeffs[2]
+  {
+    return solve_fibonacci_lucas(initial_conditions, var_name);
+  }
+
   // Find roots of the characteristic polynomial
   let roots = find_characteristic_roots(&char_coeffs)?;
 
@@ -602,6 +614,223 @@ fn solve_const_coeff_linear(
 
   // Build the solution expression: c1*r1^n + c2*r2^n + ...
   build_solution(&constants, &roots, var_name)
+}
+
+/// `(Fibonacci[k], LucasL[k])` for any integer index `k`, extended to
+/// negative indices via `F[-m] = (-1)^(m+1) F[m]` and `L[-m] = (-1)^m L[m]`.
+fn fib_lucas_at(k: i128) -> Option<(i128, i128)> {
+  let steps = k.checked_abs()?;
+  let (mut f0, mut f1) = (0i128, 1i128);
+  let (mut l0, mut l1) = (2i128, 1i128);
+  for _ in 0..steps {
+    let f2 = f0.checked_add(f1)?;
+    f0 = f1;
+    f1 = f2;
+    let l2 = l0.checked_add(l1)?;
+    l0 = l1;
+    l1 = l2;
+  }
+  let (mut f, mut l) = (f0, l0);
+  if k < 0 {
+    if steps % 2 == 0 {
+      f = -f;
+    } else {
+      l = -l;
+    }
+  }
+  Some((f, l))
+}
+
+/// Reduce a rational to lowest terms with a positive denominator.
+fn rat_reduce(n: i128, d: i128) -> Option<(i128, i128)> {
+  if d == 0 {
+    return None;
+  }
+  let g = gcd_i128(n, d);
+  let (mut n, mut d) = if g == 0 { (0, 1) } else { (n / g, d / g) };
+  if d < 0 {
+    n = -n;
+    d = -d;
+  }
+  Some((n, d))
+}
+
+/// Solve the golden-ratio recurrence (characteristic polynomial r^2 - r - 1,
+/// e.g. the Fibonacci recurrence) in the basis wolframscript uses:
+/// `a[n] = alpha*Fibonacci[n] + beta*LucasL[n]`.
+///
+/// With no initial conditions both constants stay free
+/// (`C[1]*Fibonacci[n] + C[2]*LucasL[n]`). One IC keeps `alpha = C[1]` free
+/// and eliminates `beta`; two ICs at distinct indices determine both
+/// constants exactly (rational values allowed).
+fn solve_fibonacci_lucas(
+  ics: &[(i128, Expr)],
+  var_name: &str,
+) -> Option<Expr> {
+  let ic_value = |e: &Expr| -> Option<(i128, i128)> {
+    let evaled =
+      crate::evaluator::evaluate_expr_to_expr(e).unwrap_or_else(|_| e.clone());
+    crate::functions::math_ast::expr_to_rational(&evaled)
+      .and_then(|(n, d)| rat_reduce(n, d))
+  };
+
+  match ics {
+    [] => {
+      // C[1]*Fibonacci[n] + C[2]*LucasL[n]
+      build_fib_lucas_combination((0, 1), (1, 1), (0, 1), (1, 1), 2, var_name)
+    }
+    [(k, v_expr)] => {
+      // alpha = C[1] stays free; beta = (v - C[1]*F[k]) / L[k]. (L[k] is
+      // never 0 for integer k, so the elimination is always valid.)
+      let (vn, vd) = ic_value(v_expr)?;
+      let (fk, lk) = fib_lucas_at(*k)?;
+      let beta_const = rat_reduce(vn, vd.checked_mul(lk)?)?;
+      let beta_c1 = rat_reduce(-fk, lk)?;
+      build_fib_lucas_combination(
+        (0, 1),
+        (1, 1),
+        beta_const,
+        beta_c1,
+        1,
+        var_name,
+      )
+    }
+    [(k1, v1_expr), (k2, v2_expr)] => {
+      if k1 == k2 {
+        return None;
+      }
+      let (v1n, v1d) = ic_value(v1_expr)?;
+      let (v2n, v2d) = ic_value(v2_expr)?;
+      let (f1, l1) = fib_lucas_at(*k1)?;
+      let (f2, l2) = fib_lucas_at(*k2)?;
+      // Solve alpha*F[k] + beta*L[k] == v for both indices (Cramer's rule).
+      let det = f1.checked_mul(l2)?.checked_sub(f2.checked_mul(l1)?)?;
+      if det == 0 {
+        return None;
+      }
+      // alpha = (v1*L[k2] - v2*L[k1]) / det, over common denominator v1d*v2d.
+      let alpha_num = v1n
+        .checked_mul(v2d)?
+        .checked_mul(l2)?
+        .checked_sub(v2n.checked_mul(v1d)?.checked_mul(l1)?)?;
+      let beta_num = v2n
+        .checked_mul(v1d)?
+        .checked_mul(f1)?
+        .checked_sub(v1n.checked_mul(v2d)?.checked_mul(f2)?)?;
+      let denom = v1d.checked_mul(v2d)?.checked_mul(det)?;
+      let alpha = rat_reduce(alpha_num, denom)?;
+      let beta = rat_reduce(beta_num, denom)?;
+      build_fib_lucas_combination(alpha, (0, 1), beta, (0, 1), 1, var_name)
+    }
+    _ => None, // over-determined — leave unevaluated
+  }
+}
+
+/// Render `(ac + a_c1*C[1])*Fibonacci[n] + (bc + b_c1*C[c_idx_b])*LucasL[n]`
+/// the way wolframscript displays it: the common denominator of all four
+/// rational coefficients is pulled out as a trailing `/d`, and the numerator
+/// terms appear as `m*C[k]*Fibonacci[n]`-style products in the fixed order
+/// Fibonacci-constant, Fibonacci-C, LucasL-constant, LucasL-C.
+/// `c_idx_b` is the index of the arbitrary constant attached to the LucasL
+/// term (2 for the fully general solution, 1 when eliminating against ICs).
+fn build_fib_lucas_combination(
+  a_const: (i128, i128),
+  a_c1: (i128, i128),
+  b_const: (i128, i128),
+  b_c1: (i128, i128),
+  c_idx_b: i128,
+  var_name: &str,
+) -> Option<Expr> {
+  let coeffs = [a_const, a_c1, b_const, b_c1];
+  let mut denom = 1i128;
+  for &(_, d) in &coeffs {
+    denom = lcm_i128(denom, d);
+  }
+  // Integer numerators over the common denominator, reduced by their
+  // collective gcd (so e.g. 2*C[1]*Fibonacci[n]/2 collapses to
+  // C[1]*Fibonacci[n]).
+  let mut nums = [0i128; 4];
+  for (i, &(n, d)) in coeffs.iter().enumerate() {
+    nums[i] = n.checked_mul(denom / d)?;
+  }
+  let mut g = denom;
+  for &n in &nums {
+    g = gcd_i128(g, n);
+  }
+  if g > 1 {
+    for n in &mut nums {
+      *n /= g;
+    }
+    denom /= g;
+  }
+  if nums.iter().all(|&n| n == 0) {
+    return Some(Expr::Integer(0));
+  }
+
+  let n_var = Expr::Identifier(var_name.to_string());
+  let base = |name: &str| Expr::FunctionCall {
+    name: name.to_string(),
+    args: vec![n_var.clone()].into(),
+  };
+  let c = |i: i128| Expr::FunctionCall {
+    name: "C".to_string(),
+    args: vec![Expr::Integer(i)].into(),
+  };
+
+  // (coefficient, optional C[k] factor, basis function)
+  let specs = [
+    (nums[0], None, "Fibonacci"),
+    (nums[1], Some(c(1)), "Fibonacci"),
+    (nums[2], None, "LucasL"),
+    (nums[3], Some(c(c_idx_b)), "LucasL"),
+  ];
+  let mut terms = Vec::new();
+  for (m, c_factor, basis) in specs {
+    if m == 0 {
+      continue;
+    }
+    // A negative coefficient rides on the integer factor (`-5*Fibonacci[n]`,
+    // not `-(5*Fibonacci[n])`); only a bare -1 becomes an outer negation.
+    let mut factors: Vec<Expr> = Vec::new();
+    if m.abs() != 1 {
+      factors.push(Expr::Integer(m));
+    }
+    if let Some(cf) = c_factor {
+      factors.push(cf);
+    }
+    factors.push(base(basis));
+    let mut iter = factors.into_iter();
+    let mut term = iter.next().unwrap();
+    for f in iter {
+      term = Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(term),
+        right: Box::new(f),
+      };
+    }
+    if m == -1 {
+      term = Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand: Box::new(term),
+      };
+    }
+    terms.push(term);
+  }
+
+  let numerator = if terms.len() == 1 {
+    terms.remove(0)
+  } else {
+    crate::functions::math_ast::plus_ast(&terms).ok()?
+  };
+  if denom == 1 {
+    Some(numerator)
+  } else {
+    Some(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(numerator),
+      right: Box::new(Expr::Integer(denom)),
+    })
+  }
 }
 
 /// First-order homogeneous recurrence with a single initial condition.
