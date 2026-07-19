@@ -10331,7 +10331,7 @@ mod function_expand {
     );
     // Numeric argument still evaluates to the same value as the direct call.
     let r = interpret("FunctionExpand[InverseGudermannian[0.5]]").unwrap();
-    let m = "0.522238103278440[23]";
+    let m = "^0.522238103278440[23]$";
     assert!(regex::Regex::new(m).unwrap().is_match(&r));
   }
 

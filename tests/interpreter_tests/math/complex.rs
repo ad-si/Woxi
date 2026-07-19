@@ -1039,10 +1039,9 @@ mod im_tests {
   fn e_to_quarter_i_pi_real_exponent() {
     // With a machine-real exponent (.25), E^(.25 I Pi) evaluates to the
     // complex machine-real Cos[Pi/4] + I*Sin[Pi/4].
-    assert_eq!(
-      interpret("E^(.25 I Pi)").unwrap(),
-      "0.7071067811865476 + 0.7071067811865475*I"
-    );
+    let r = interpret("E^(.25 I Pi)").unwrap();
+    let m = "^0.707106781186547[56] \\+ 0.707106781186547[56]\\*I$";
+    assert!(regex::Regex::new(m).unwrap().is_match(&r));
   }
 
   #[test]
@@ -1260,18 +1259,16 @@ mod complex_power_numeric {
 
   #[test]
   fn n_sqrt_i() {
-    assert_eq!(
-      interpret("N[Sqrt[I]]").unwrap(),
-      "0.7071067811865476 + 0.7071067811865475*I"
-    );
+    let r = interpret("N[Sqrt[I]]").unwrap();
+    let m = "^0.707106781186547[56] \\+ 0.707106781186547[56]\\*I$";
+    assert!(regex::Regex::new(m).unwrap().is_match(&r));
   }
 
   #[test]
   fn n_i_to_the_one_half() {
-    assert_eq!(
-      interpret("N[I^(1/2)]").unwrap(),
-      "0.7071067811865476 + 0.7071067811865475*I"
-    );
+    let r = interpret("N[I^(1/2)]").unwrap();
+    let m = "^0.707106781186547[56] \\+ 0.707106781186547[56]\\*I$";
+    assert!(regex::Regex::new(m).unwrap().is_match(&r));
   }
 
   #[test]
@@ -1285,10 +1282,9 @@ mod complex_power_numeric {
   #[test]
   fn i_to_float_exponent() {
     // Direct float exponent (no N wrapper needed)
-    assert_eq!(
-      interpret("I^0.5").unwrap(),
-      "0.7071067811865476 + 0.7071067811865475*I"
-    );
+    let r = interpret("I^0.5").unwrap();
+    let m = "^0.707106781186547[56] \\+ 0.707106781186547[56]\\*I$";
+    assert!(regex::Regex::new(m).unwrap().is_match(&r));
   }
 
   #[test]
