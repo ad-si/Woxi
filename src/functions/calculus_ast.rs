@@ -1163,7 +1163,141 @@ fn try_definite_integral(
     });
   }
 
+  // Euler's log-trig integrals:
+  //   ∫_0^{Pi/2} Log[Sin[x]] dx = ∫_0^{Pi/2} Log[Cos[x]] dx = -(Pi·Log[2])/2
+  //   ∫_0^{Pi/2} Log[Tan[x]] dx = ∫_0^{Pi/2} Log[Cot[x]] dx = 0
+  //   ∫_0^{Pi}   Log[Sin[x]] dx = -Pi·Log[2]
+  if matches!(lo, Expr::Integer(0))
+    && let Expr::FunctionCall {
+      name: log_name,
+      args: log_args,
+    } = integrand
+    && log_name == "Log"
+    && log_args.len() == 1
+    && let Expr::FunctionCall {
+      name: trig_name,
+      args: trig_args,
+    } = &log_args[0]
+    && trig_args.len() == 1
+    && matches!(&trig_args[0], Expr::Identifier(n) if n == var)
+  {
+    let pi_log2 = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        Expr::Constant("Pi".to_string()),
+        Expr::FunctionCall {
+          name: "Log".to_string(),
+          args: vec![Expr::Integer(2)].into(),
+        },
+      ]
+      .into(),
+    };
+    if is_pi_over_two(hi) {
+      match trig_name.as_str() {
+        "Sin" | "Cos" => {
+          let result = Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::FunctionCall {
+                name: "Rational".to_string(),
+                args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
+              },
+              pi_log2,
+            ]
+            .into(),
+          };
+          return Some(
+            crate::evaluator::evaluate_expr_to_expr(&result).unwrap_or(result),
+          );
+        }
+        // The Tan/Cot integrands are antisymmetric about Pi/4 (Tan and Cot
+        // swap under x -> Pi/2 - x), so the two halves cancel exactly.
+        "Tan" | "Cot" => return Some(Expr::Integer(0)),
+        _ => {}
+      }
+    } else if is_pi(hi) && trig_name == "Sin" {
+      let result = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), pi_log2].into(),
+      };
+      return Some(
+        crate::evaluator::evaluate_expr_to_expr(&result).unwrap_or(result),
+      );
+    }
+  }
+
+  // Linearity in constant factors: ∫ c·f(x) dx = c·∫ f(x) dx for any factor
+  // c independent of the integration variable. Recursing on the var-dependent
+  // part lets every known-integral rule above compose with constant
+  // multiples. Runs last so rules with their own coefficient handling (e.g.
+  // DiracDelta sifting, Gaussian moments) keep their specialised results.
+  {
+    let (negated, base) = match integrand {
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand,
+      } => (true, operand.as_ref()),
+      _ => (false, integrand),
+    };
+    let factors = flatten_times_factors(base);
+    if negated || factors.len() > 1 {
+      let (mut consts, dependent): (Vec<Expr>, Vec<Expr>) = factors
+        .into_iter()
+        .partition(|f| !expr_depends_on_var(f, var));
+      if negated {
+        consts.push(Expr::Integer(-1));
+      }
+      if !consts.is_empty() && !dependent.is_empty() {
+        let rest = if dependent.len() == 1 {
+          dependent.into_iter().next().unwrap()
+        } else {
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: dependent.into(),
+          }
+        };
+        if let Some(inner) = try_definite_integral(&rest, var, lo, hi) {
+          consts.push(inner);
+          let product = Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: consts.into(),
+          };
+          return Some(
+            crate::evaluator::evaluate_expr_to_expr(&product)
+              .unwrap_or(product),
+          );
+        }
+      }
+    }
+  }
+
   None
+}
+
+/// Match the constant `Pi/2` in either its parsed (`Pi/2` division) or
+/// evaluated (`Times[Rational[1, 2], Pi]`) form.
+fn is_pi_over_two(e: &Expr) -> bool {
+  let is_half = |e: &Expr| {
+    matches!(
+      e,
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2
+           && matches!(&args[0], Expr::Integer(1))
+           && matches!(&args[1], Expr::Integer(2))
+    )
+  };
+  match e {
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => is_pi(left) && matches!(right.as_ref(), Expr::Integer(2)),
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+      (is_half(&args[0]) && is_pi(&args[1]))
+        || (is_pi(&args[0]) && is_half(&args[1]))
+    }
+    _ => false,
+  }
 }
 
 fn is_pi(e: &Expr) -> bool {
