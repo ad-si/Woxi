@@ -3388,7 +3388,9 @@ fn is_inline_graphic(expr: &Expr) -> bool {
 /// or `Highlighted` display wrapper.
 fn contains_framed_or_highlighted(expr: &Expr) -> bool {
   match expr {
-    Expr::FunctionCall { name, .. } => name == "Framed" || name == "Highlighted",
+    Expr::FunctionCall { name, .. } => {
+      name == "Framed" || name == "Highlighted"
+    }
     Expr::List(items) => items.iter().any(contains_framed_or_highlighted),
     _ => false,
   }
