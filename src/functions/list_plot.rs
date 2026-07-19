@@ -375,6 +375,17 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
             }
           }
         }
+        "AspectRatio" => {
+          // Ratio (height/width) of the plotting area; the total image height
+          // is derived once margins are known (see generate_svg_with_options).
+          let val =
+            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          if let Some(r) = try_eval_to_f64(&val)
+            && r > 0.0
+          {
+            opts.aspect_ratio = Some(r);
+          }
+        }
         "Filling" => {
           opts.filling = parse_filling(replacement);
         }

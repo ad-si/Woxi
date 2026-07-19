@@ -1110,6 +1110,66 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_plot_aspect_ratio_sizes_frame_not_canvas() {
+    // AspectRatio sets the height/width ratio of the plotting *area* (the data
+    // frame), not the whole image. A short ratio must therefore NOT squash the
+    // plot: the total image is the frame plus the label/tick margins, so its
+    // height exceeds `width * ratio`. Regression for a bug where AspectRatio
+    // sized the entire canvas, collapsing ticks/data into a thin band.
+    let dims = |svg: &str| -> (f64, f64) {
+      let grab = |attr: &str| -> f64 {
+        let key = format!("{attr}=\"");
+        let start = svg.find(&key).expect("attr present") + key.len();
+        let end = svg[start..].find('"').unwrap() + start;
+        svg[start..end].parse().unwrap()
+      };
+      (grab("width"), grab("height"))
+    };
+
+    clear_state();
+    let short = interpret(
+      "ExportString[Plot[Sin[x], {x, 0, 4 Pi}, AspectRatio -> 1/3], \"SVG\"]",
+    )
+    .unwrap();
+    let (w, h) = dims(&short);
+    // Frame height alone would be w/3; the real image must be taller because
+    // axis ticks and labels live outside the frame.
+    assert!(
+      h > w / 3.0 + 30.0,
+      "AspectRatio 1/3 collapsed the frame: {w}x{h} (expected height > w/3 + margins)"
+    );
+
+    // A taller ratio yields a taller image, and the height grows linearly with
+    // the ratio (frame = w' * ratio, margins constant) — never proportional to
+    // the whole canvas.
+    clear_state();
+    let tall = interpret(
+      "ExportString[Plot[Sin[x], {x, 0, 4 Pi}, AspectRatio -> 2/3], \"SVG\"]",
+    )
+    .unwrap();
+    let (_, h2) = dims(&tall);
+    assert!(
+      h2 > h,
+      "doubling AspectRatio did not increase image height: {h} -> {h2}"
+    );
+
+    // ListPlot / ListLinePlot honor AspectRatio the same way (previously they
+    // ignored it and stayed at the default height).
+    for head in ["ListPlot", "ListLinePlot"] {
+      clear_state();
+      let with_ar = interpret(&format!(
+        "ExportString[{head}[Table[Sin[t], {{t, 0, 10, 0.2}}], AspectRatio -> 1/3], \"SVG\"]"
+      ))
+      .unwrap();
+      let (lw, lh) = dims(&with_ar);
+      assert!(
+        lh < lw && (lh - lw / 3.0).abs() < lw / 3.0,
+        "{head} ignored AspectRatio 1/3: {lw}x{lh}"
+      );
+    }
+  }
+
+  #[test]
   fn test_audio_missing_file_still_renders_player_chrome() {
     // A file-backed Audio whose file cannot be read (missing here; any local
     // path in the browser playground) still renders the player chrome: the

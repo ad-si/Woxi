@@ -65,7 +65,9 @@ fn apply_ranges_and_aspect(
   let y_range = overrides.y.unwrap_or(data_y);
 
   if let Some(ar) = overrides.aspect_ratio {
-    plot_opts.svg_height = (plot_opts.svg_width as f64 * ar).round() as u32;
+    // Explicit AspectRatio sizes the plotting area; the total height is
+    // derived in generate_svg_with_options once margins are known.
+    plot_opts.aspect_ratio = Some(ar);
   } else {
     // Adjust aspect ratio to match the displayed data (circles stay round).
     let data_w = x_range.1 - x_range.0;

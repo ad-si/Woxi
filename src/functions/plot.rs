@@ -1152,6 +1152,11 @@ pub(crate) struct PlotOptions {
   /// `Background -> color`: fill for the whole image, replacing the
   /// theme background. `None` keeps the theme default.
   pub background: Option<RGBColor>,
+  /// `AspectRatio -> r`: ratio (height/width) of the plotting *area* (the
+  /// data frame, excluding label/tick margins). When set, the total image
+  /// height is derived so the frame has this ratio, matching Wolfram. `None`
+  /// keeps `svg_height` as given.
+  pub aspect_ratio: Option<f64>,
 }
 
 impl Default for PlotOptions {
@@ -1185,6 +1190,7 @@ impl Default for PlotOptions {
       epilog: Vec::new(),
       error_bars: Vec::new(),
       background: None,
+      aspect_ratio: None,
     }
   }
 }
@@ -1425,13 +1431,13 @@ fn generate_svg_with_options(
   let (x_min, x_max) = x_range;
   let (y_min, y_max) = y_range;
   let svg_width = opts.svg_width;
-  let svg_height = opts.svg_height;
+  let mut svg_height = opts.svg_height;
   let full_width = opts.full_width;
   let filling = opts.filling;
   let (show_x_axis, show_y_axis) = opts.axes;
   let show_ticks = opts.ticks;
   let render_width = svg_width * RESOLUTION_SCALE;
-  let render_height = svg_height * RESOLUTION_SCALE;
+  let mut render_height = svg_height * RESOLUTION_SCALE;
 
   let sf = RESOLUTION_SCALE as f64;
   let s = RESOLUTION_SCALE as i32;
@@ -1493,6 +1499,28 @@ fn generate_svg_with_options(
   } else {
     5 * s as u32
   };
+
+  // AspectRatio sizes the plotting *area* (the data frame), not the whole
+  // image. Derive the total height so that
+  //   plot_area_height = plot_area_width * aspect_ratio
+  // where the plot area excludes the label/tick margins. Recomputing here
+  // (rather than pre-setting svg_height from svg_width) keeps a short/wide
+  // AspectRatio from collapsing the frame when fixed-size label margins would
+  // otherwise consume most of the canvas.
+  if let Some(ar) = opts.aspect_ratio {
+    let plot_w = (render_width as f64)
+      - margin_left as f64
+      - margin_right as f64
+      - y_label_area as f64;
+    if plot_w > 0.0 {
+      let plot_h = plot_w * ar;
+      let target_render_h =
+        plot_h + top_margin as f64 + margin_bottom as f64 + x_label_area as f64;
+      // Round to a whole svg unit so svg_height * scale == render_height.
+      svg_height = ((target_render_h / sf).round() as u32).max(1);
+      render_height = svg_height * RESOLUTION_SCALE;
+    }
+  }
 
   let (theme_bg, dark_gray, light_gray, label_fill, title_default_fill) =
     plot_theme();
@@ -2437,10 +2465,28 @@ pub(crate) fn generate_scatter_svg_with_options(
   let (x_min, x_max) = x_range;
   let (y_min, y_max) = y_range;
   let svg_width = opts.svg_width;
-  let svg_height = opts.svg_height;
+  let mut svg_height = opts.svg_height;
   let full_width = opts.full_width;
   let render_width = svg_width * RESOLUTION_SCALE;
-  let render_height = svg_height * RESOLUTION_SCALE;
+  let mut render_height = svg_height * RESOLUTION_SCALE;
+
+  // AspectRatio sizes the plotting area (the data frame), not the whole image.
+  // The scatter layout uses fixed margins: `margin(10*s)` on every side plus
+  // the left/bottom label areas. Derive the total height so the frame has the
+  // requested height/width ratio.
+  if let Some(ar) = opts.aspect_ratio {
+    let s = RESOLUTION_SCALE as f64;
+    let margin = 10.0 * s;
+    let y_label_area = 65.0 * s;
+    let x_label_area = 40.0 * s;
+    let plot_w = render_width as f64 - 2.0 * margin - y_label_area;
+    if plot_w > 0.0 {
+      let plot_h = plot_w * ar;
+      let target_render_h = plot_h + 2.0 * margin + x_label_area;
+      svg_height = ((target_render_h / s).round() as u32).max(1);
+      render_height = svg_height * RESOLUTION_SCALE;
+    }
+  }
 
   let (bg_color, dark_gray, light_gray, label_fill, _title_fill) = plot_theme();
 
@@ -6228,10 +6274,11 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let (plot_range_x, plot_range_y) = (overrides.x, overrides.y);
 
-  // Apply AspectRatio: override svg_height based on width * ratio
-  // (AspectRatio is height/width in Wolfram Language)
+  // Apply AspectRatio to the plotting area (not the whole image); the total
+  // height is derived in generate_svg_with_options once margins are known.
+  // (AspectRatio is height/width in Wolfram Language.)
   if let Some(ar) = overrides.aspect_ratio {
-    plot_opts.svg_height = (plot_opts.svg_width as f64 * ar).round() as u32;
+    plot_opts.aspect_ratio = Some(ar);
   }
 
   // Parse iterator spec: {x, xmin, xmax}
