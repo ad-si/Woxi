@@ -10673,6 +10673,15 @@ pub fn framed_to_svg(args: &[Expr]) -> Option<String> {
 
   let content = &args[0];
 
+  // Optional `Background -> color` option fills the inside of the frame.
+  let bg_fill = args[1..]
+    .iter()
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "Background")
+    .and_then(|(_, v)| parse_color(v))
+    .map(|c| c.to_svg_rgb());
+  let rect_fill = bg_fill.as_deref().unwrap_or("none");
+
   // Layout constants
   let char_width: f64 = 8.4;
   let font_size: f64 = 14.0;
@@ -10719,7 +10728,7 @@ pub fn framed_to_svg(args: &[Expr]) -> Option<String> {
     // Border rectangle
     let framed_border = theme().framed_border;
     svg.push_str(&format!(
-      "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" rx=\"{rounding:.1}\" fill=\"none\" stroke=\"{framed_border}\" stroke-width=\"{stroke_width}\"/>\n",
+      "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" rx=\"{rounding:.1}\" fill=\"{rect_fill}\" stroke=\"{framed_border}\" stroke-width=\"{stroke_width}\"/>\n",
       stroke_width / 2.0, stroke_width / 2.0,
       total_w - stroke_width, total_h - stroke_width,
     ));
@@ -10751,7 +10760,7 @@ pub fn framed_to_svg(args: &[Expr]) -> Option<String> {
     // Border rectangle
     let framed_border = theme().framed_border;
     svg.push_str(&format!(
-      "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" rx=\"{rounding:.1}\" fill=\"none\" stroke=\"{framed_border}\" stroke-width=\"{stroke_width}\"/>\n",
+      "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" rx=\"{rounding:.1}\" fill=\"{rect_fill}\" stroke=\"{framed_border}\" stroke-width=\"{stroke_width}\"/>\n",
       stroke_width / 2.0, stroke_width / 2.0,
       total_w - stroke_width, total_h - stroke_width,
     ));

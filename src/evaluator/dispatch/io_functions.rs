@@ -3384,6 +3384,16 @@ fn is_inline_graphic(expr: &Expr) -> bool {
   }
 }
 
+/// True if the expression is (or, within nested lists, contains) a `Framed`
+/// or `Highlighted` display wrapper.
+fn contains_framed_or_highlighted(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, .. } => name == "Framed" || name == "Highlighted",
+    Expr::List(items) => items.iter().any(contains_framed_or_highlighted),
+    _ => false,
+  }
+}
+
 pub(crate) fn expr_to_svg(expr: &Expr) -> String {
   match expr {
     Expr::Graphics { svg: svg_data, .. } => svg_data.clone(),
@@ -3562,6 +3572,26 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       } else {
         expr_text_svg(expr)
       }
+    }
+    Expr::FunctionCall {
+      name: fr_name,
+      args: fr_args,
+    } if fr_name == "Framed" && !fr_args.is_empty() => {
+      crate::functions::graphics::framed_to_svg(fr_args)
+        .unwrap_or_else(|| expr_text_svg(expr))
+    }
+    Expr::FunctionCall {
+      name: hl_name,
+      args: hl_args,
+    } if hl_name == "Highlighted" && !hl_args.is_empty() => {
+      crate::functions::graphics::highlighted_to_svg(hl_args)
+        .unwrap_or_else(|| expr_text_svg(expr))
+    }
+    // A list with Framed/Highlighted elements renders as a row `{1, |2|, …}`
+    // with the wrapped items drawn as boxes, matching the inline display path.
+    Expr::List(items) if items.iter().any(contains_framed_or_highlighted) => {
+      crate::functions::graphics::row_with_framed_to_svg(items)
+        .unwrap_or_else(|| expr_text_svg(expr))
     }
     Expr::FunctionCall {
       name: ds_name,
