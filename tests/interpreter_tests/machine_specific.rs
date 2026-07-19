@@ -107,7 +107,10 @@ mod machine_specific {
 
   #[test]
   fn environment_home() {
-    assert_eval(r#"Environment["HOME"]"#, &format!(r#""{}""#, host_home()));
+    assert_eval(
+      r#"h=Environment["HOME"]; If[h === $Failed, Environment["USERPROFILE"], h]"#,
+      &format!(r#""{}""#, host_home()),
+    );
   }
 
   #[cfg(unix)]
@@ -183,7 +186,8 @@ mod machine_specific {
     let expected = format!(
       r#""{}/ExampleData/sunflowers.jpg""#,
       host_initial_dir().trim_end_matches('/'),
-    );
+    )
+    .replace("/", std::path::MAIN_SEPARATOR_STR);
     assert_eval(r#"ExpandFileName["ExampleData/sunflowers.jpg"]"#, &expected);
   }
 
