@@ -9243,6 +9243,50 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               }),
             });
           }
+          // ∫ Log[Log[u]] dx with u = a*x + b linear in x:
+          //   x*Log[Log[u]] - LogIntegral[u]/a        (b == 0)
+          //   (u*Log[Log[u]])/a - LogIntegral[u]/a    (b != 0)
+          if let Expr::FunctionCall {
+            name: inner_name,
+            args: inner_args,
+          } = &args[0]
+            && inner_name == "Log"
+            && inner_args.len() == 1
+          {
+            let u = inner_args[0].clone();
+            if let Some(coeff) = extract_linear_coefficient(&u, var) {
+              let log_log = Expr::FunctionCall {
+                name: "Log".to_string(),
+                args: args.clone(),
+              };
+              let first = if try_match_linear_arg(&u, var).is_some() {
+                // u = a*x, so u/a = x
+                Expr::BinaryOp {
+                  op: BinaryOperator::Times,
+                  left: Box::new(Expr::Identifier(var.to_string())),
+                  right: Box::new(log_log),
+                }
+              } else {
+                make_divided(
+                  Expr::BinaryOp {
+                    op: BinaryOperator::Times,
+                    left: Box::new(u.clone()),
+                    right: Box::new(log_log),
+                  },
+                  coeff.clone(),
+                )
+              };
+              let li = Expr::FunctionCall {
+                name: "LogIntegral".to_string(),
+                args: vec![u].into(),
+              };
+              return Some(Expr::BinaryOp {
+                op: BinaryOperator::Plus,
+                left: Box::new(first),
+                right: Box::new(make_neg_divided(li, coeff)),
+              });
+            }
+          }
           None
         }
         "Times" => {

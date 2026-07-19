@@ -6656,6 +6656,67 @@ mod integrate_log {
       "-2 + E"
     );
   }
+
+  // ∫ Log[Log[u]] dx = (u Log[Log[u]])/a - LogIntegral[u]/a for u = a x + b.
+  #[test]
+  fn integrate_log_log_x() {
+    assert_eq!(
+      interpret("Integrate[Log[Log[x]], x]").unwrap(),
+      "x*Log[Log[x]] - LogIntegral[x]"
+    );
+  }
+
+  #[test]
+  fn integrate_log_log_scaled() {
+    assert_eq!(
+      interpret("Integrate[Log[Log[2*x]], x]").unwrap(),
+      "x*Log[Log[2*x]] - LogIntegral[2*x]/2"
+    );
+  }
+
+  #[test]
+  fn integrate_log_log_symbolic_coefficient() {
+    assert_eq!(
+      interpret("Integrate[Log[Log[a*x]], x]").unwrap(),
+      "x*Log[Log[a*x]] - LogIntegral[a*x]/a"
+    );
+  }
+
+  #[test]
+  fn integrate_log_log_shifted() {
+    assert_eq!(
+      interpret("Integrate[Log[Log[x + 1]], x]").unwrap(),
+      "(1 + x)*Log[Log[1 + x]] - LogIntegral[1 + x]"
+    );
+  }
+
+  #[test]
+  fn integrate_log_log_linear() {
+    assert_eq!(
+      interpret("Integrate[Log[Log[2*x + 3]], x]").unwrap(),
+      "((3 + 2*x)*Log[Log[3 + 2*x]])/2 - LogIntegral[3 + 2*x]/2"
+    );
+  }
+
+  // Regression: LogIntegral (and friends) sort as transcendental terms in
+  // a Plus, after polynomial-like terms and alphabetically among function
+  // calls — `Log[x] + LogIntegral[x]`, not `LogIntegral[x] + Log[x]`.
+  #[test]
+  fn log_integral_plus_ordering() {
+    assert_eq!(
+      interpret("Log[x] + LogIntegral[x]").unwrap(),
+      "Log[x] + LogIntegral[x]"
+    );
+    assert_eq!(
+      interpret("x + LogIntegral[x]").unwrap(),
+      "x + LogIntegral[x]"
+    );
+    assert_eq!(
+      interpret("Sin[x] + SinIntegral[x]").unwrap(),
+      "Sin[x] + SinIntegral[x]"
+    );
+    assert_eq!(interpret("Erf[x] + Erfi[x]").unwrap(), "Erf[x] + Erfi[x]");
+  }
 }
 
 mod integrate_by_parts {
