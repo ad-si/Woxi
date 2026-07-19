@@ -176,4 +176,6 @@ expression: "export_svg(\"ComplexPlot[Sqrt[z], {z, -2 - 2 I, 2 + 2 I}]\")"
 <line x1="710.0" y1="1600.0" x2="680.0" y2="1600.0" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="850.0" x2="680.0" y2="850.0" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="100.0" x2="680.0" y2="100.0" stroke="#666" stroke-width="10"/>
+<image x="750.0" y="100.0" width="2750.0" height="3000.0" preserveAspectRatio="none" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGQAAABkCAYAAABw4pVUAAAB/klEQVR4Ae3AA6AkWZbG8f937o3IzKdyS2Oubdu2bdu2bdu2bWmMnpZKr54yMyLu+Xa3anqmhztr1S+46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+JyG46n8Sgqv+J+EfAWz6AMl+brDwAAAAAElFTkSuQmCC"/>
+<rect x="750.0" y="100.0" width="2750.0" height="3000.0" fill="none" stroke="rgb(102,102,102)" stroke-width="10"/>
 </svg>
