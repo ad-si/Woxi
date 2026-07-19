@@ -4051,7 +4051,7 @@ mod arithmetic_geometric_mean {
 
 mod random_prime {
   use super::*;
-  use woxi::functions::math_ast::is_prime;
+  use woxi::functions::math_ast::is_prime_i128;
 
   #[test]
   fn with_max() {
@@ -4059,7 +4059,7 @@ mod random_prime {
     interpret("SeedRandom[42]").unwrap();
     let result: i128 = interpret("RandomPrime[100]").unwrap().parse().unwrap();
     assert!(result >= 2 && result <= 100);
-    assert!(is_prime(result as usize));
+    assert!(is_prime_i128(result));
   }
 
   #[test]
@@ -4068,7 +4068,7 @@ mod random_prime {
     let result: i128 =
       interpret("RandomPrime[{10, 30}]").unwrap().parse().unwrap();
     assert!(result >= 10 && result <= 30);
-    assert!(is_prime(result as usize));
+    assert!(is_prime_i128(result));
   }
 
   #[test]

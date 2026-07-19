@@ -1649,7 +1649,7 @@ fn collect_primes_in_range(min: i128, max: i128) -> Vec<i128> {
   let start = if min < 2 { 2 } else { min };
   let mut primes = Vec::new();
   for n in start..=max {
-    if is_prime(n as usize) {
+    if is_prime_i128(n) {
       primes.push(n);
     }
   }

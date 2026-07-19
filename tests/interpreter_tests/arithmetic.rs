@@ -761,6 +761,11 @@ mod big_integer {
       interpret("FactorInteger[2^67 - 1]").unwrap(),
       "{{193707721, 1}, {761838257287, 1}}"
     );
+    // This would panic with num-prime 0.4.4
+    assert_eq!(
+      interpret("FactorInteger[2^64 - 6]").unwrap(),
+      "{{2, 1}, {5, 1}, {23, 1}, {53301701, 1}, {1504703107, 1}}"
+    );
   }
 
   #[test]

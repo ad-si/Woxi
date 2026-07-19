@@ -124,7 +124,7 @@ geographiclib-rs = "0.2"
 # at .5 boundaries and breaks the SVG snapshots across platforms.
 libm = "0.2"
 num-bigint = "0.4.6"
-num-prime = "0.4"
+num-prime = "0.5"
 plotters = { version = "0.3", default-features = false, features = ["svg_backend", "line_series", "area_series"] }
 num-traits = "0.2.19"
 pest = "2.5"
