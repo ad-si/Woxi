@@ -9551,4 +9551,180 @@ mod bigfloat_trig {
     );
     assert!(r.contains("`30.192402324441726"), "precision tag: {r}");
   }
+
+  // Machine-real base with an exact Integer exponent: wolframscript computes
+  // these by multiplication chains, not libm pow, and the two can differ in
+  // the last ULP. Every expected value below is wolframscript's exact output.
+  mod real_integer_power_chains {
+    use super::*;
+
+    #[test]
+    fn negative_exponent_uses_reciprocal_of_positive_power() {
+      // libm pow gives 0.017834349827242368 — one ULP off. Found by
+      // differential fuzzing (make fuzz-diff).
+      assert_eq!(
+        interpret("7.488095238095239^-2").unwrap(),
+        "0.01783434982724237"
+      );
+      assert_eq!(
+        interpret(
+          "Power[Plus[Times[Divide[-5, 4], Times[-13, Divide[1, 7]]], \
+           Subtract[Divide[7, 6], -4.0]], -2]"
+        )
+        .unwrap(),
+        "0.01783434982724237"
+      );
+    }
+
+    #[test]
+    fn small_exponent_chain_table() {
+      // n < 16 uses a fixed chain table (x^6 = ((x·x²))² here, not pow).
+      assert_eq!(
+        interpret("12.23936521647462^6").unwrap(),
+        "3.3616567340954533*^6"
+      );
+      assert_eq!(
+        interpret("8.6806365087523^6").unwrap(),
+        "427867.62481567793"
+      );
+      assert_eq!(interpret("1.855199^14").unwrap(), "5720.935105931365");
+      assert_eq!(interpret("1.855199^15").unwrap(), "10613.473087588762");
+    }
+
+    #[test]
+    fn real_typed_exponent_still_uses_libm_pow() {
+      // A Real exponent (even integer-valued) goes through libm pow in
+      // wolframscript — note the different last digit vs the `^6` case.
+      assert_eq!(
+        interpret("12.23936521647462^6.").unwrap(),
+        "3.3616567340954538*^6"
+      );
+    }
+
+    #[test]
+    fn medium_exponent_radix4_digit_peeling() {
+      // 16 <= |n| < 32 peels base-4 digits (x^-13 = 1/(x·(x²·x⁴)²)).
+      assert_eq!(
+        interpret("23.138004741^-13").unwrap(),
+        "1.8355373479186956*^-18"
+      );
+    }
+
+    #[test]
+    fn large_exponent_alternating_binary_and_radix4() {
+      assert_eq!(interpret("1.0346322539^122").unwrap(), "63.66395247925368");
+      assert_eq!(
+        interpret("1.0609804891^2127").unwrap(),
+        "4.782274689686765*^54"
+      );
+      assert_eq!(
+        interpret("0.96602143336^-2127").unwrap(),
+        "8.573468150695504*^31"
+      );
+    }
+
+    #[test]
+    fn negative_base_keeps_chain_semantics() {
+      assert_eq!(
+        interpret("(-7.488095238095239)^-2").unwrap(),
+        "0.01783434982724237"
+      );
+      assert_eq!(
+        interpret("(-7.488095238095239)^3").unwrap(),
+        "-419.869258516899"
+      );
+    }
+
+    #[test]
+    fn complex_float_integer_powers_use_chains() {
+      // Complex machine bases use the same chains, with a Smith-style
+      // reciprocal for negative exponents (the log/exp path is a ULP off).
+      assert_eq!(
+        interpret("(1.5 + 2.5 I)^-2").unwrap(),
+        "-0.05536332179930796 - 0.10380622837370243*I"
+      );
+      assert_eq!(
+        interpret("(1.5 + 2.5 I)^-1").unwrap(),
+        "0.17647058823529413 - 0.29411764705882354*I"
+      );
+      assert_eq!(
+        interpret("(-0.46872406 + 2.28458072 I)^9").unwrap(),
+        "-1977.3101018669993 - 505.83083638499534*I"
+      );
+      assert_eq!(
+        interpret("(-2.914 - 3.775221291 I)^-10").unwrap(),
+        "-1.57443249348989*^-7 - 4.704549167242218*^-8*I"
+      );
+    }
+  }
+
+  // N-ary numeric Times/Plus fold as a balanced machine tree over the
+  // arguments in input order (left half takes ceil(n/2)); exact subtrees
+  // combine exactly, and mixed nodes convert the exact side to f64. Every
+  // expected value below is wolframscript's exact output.
+  mod nary_machine_fold {
+    use super::*;
+
+    #[test]
+    fn times_folds_input_order_not_exact_first() {
+      // (68*63.6)*57, one ulp away from the coalesced (68*57)*63.6.
+      // Found by differential fuzzing (make fuzz-diff).
+      assert_eq!(
+        interpret("Times[68, 63.599999999999994, 57]").unwrap(),
+        "246513.59999999995"
+      );
+      assert_eq!(
+        interpret("Times[68, 63.599999999999994, 54]").unwrap(),
+        "233539.19999999995"
+      );
+      // Same product with the real last coalesces the exact pair first.
+      assert_eq!(
+        interpret("Times[68, 54, 63.599999999999994]").unwrap(),
+        "233539.19999999998"
+      );
+    }
+
+    #[test]
+    fn times_balanced_tree_with_exact_subtrees() {
+      // 4 args: (0.7*3)*(0.9*N[1/7]).
+      assert_eq!(
+        interpret("Times[0.7, 3, 0.9, 1/7]").unwrap(),
+        "0.2699999999999999"
+      );
+      // The right pair 1/3*3 combines exactly to 1.
+      assert_eq!(
+        interpret("Times[0.1, 1/3, 1/3, 3]").unwrap(),
+        "0.03333333333333333"
+      );
+      assert_eq!(
+        interpret("Times[3, 1/7, 0.1, 0.2, 0.3]").unwrap(),
+        "0.0025714285714285713"
+      );
+      assert_eq!(
+        interpret("Times[0.1, 0.2, 3, 1/7, 0.3]").unwrap(),
+        "0.0025714285714285717"
+      );
+    }
+
+    #[test]
+    fn plus_balanced_tree_with_exact_subtrees() {
+      // The adjacent rationals 19/27 + 49/3 combine exactly; converting
+      // each to f64 first would be one ulp lower.
+      assert_eq!(
+        interpret("Plus[19/27, 49/3, 0.1, 0.2]").unwrap(),
+        "17.33703703703704"
+      );
+      // The rational tail sums exactly to 1.
+      assert_eq!(
+        interpret("Plus[0.1, 1/3, 1/3, 1/3]").unwrap(),
+        "1.1"
+      );
+      // But exact terms in separate subtrees still convert individually.
+      assert_eq!(
+        interpret("Plus[22, -59, 34, 14.6]").unwrap(),
+        "11.600000000000001"
+      );
+      assert_eq!(interpret("Plus[2^60, 1, -2^60, 0.5]").unwrap(), "0.");
+    }
+  }
 }

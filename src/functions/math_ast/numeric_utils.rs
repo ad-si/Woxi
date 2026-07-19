@@ -31,6 +31,117 @@ pub fn expr_to_num(expr: &Expr) -> Option<f64> {
   }
 }
 
+/// Machine-real `x^n` for an exact `Integer` exponent `n`, reproducing the
+/// multiplication chains wolframscript uses so results agree to the last ULP
+/// (libm `pow` rounds differently, e.g. `7.488095238095239^-2`).
+///
+/// Empirically reverse-engineered from wolframscript by matching the exact
+/// f64 products over thousands of random bases and exponents:
+/// - exponents 2..=15 use a fixed chain table,
+/// - larger exponents peel a base-4 digit while the remaining exponent has
+///   an odd bit length and a binary digit while it has an even bit length
+///   (squaring the half-power when the digit is 0),
+/// - negative exponents are the reciprocal of the positive power.
+pub fn wolfram_powi(x: f64, n: i128) -> f64 {
+  if n == 0 {
+    return 1.0;
+  }
+  let m = n.unsigned_abs();
+  let r = if m == 1 {
+    x
+  } else {
+    wolfram_pow_chain(x, x * x, m, &|a, b| a * b)
+  };
+  if n < 0 { 1.0 / r } else { r }
+}
+
+/// The multiplication chain shared by real and complex machine integer
+/// powers (see `wolfram_powi` for the empirically derived structure).
+fn wolfram_pow_chain<T: Copy>(x: T, x2: T, k: u128, mul: &impl Fn(T, T) -> T) -> T {
+  let chain = |k| wolfram_pow_chain(x, x2, k, mul);
+  match k {
+    1 => x,
+    2 => x2,
+    3 => mul(x, x2),
+    4 => mul(x2, x2),
+    6 => {
+      let x3 = mul(x, x2);
+      mul(x3, x3)
+    }
+    8 => {
+      let x4 = mul(x2, x2);
+      mul(x4, x4)
+    }
+    10 => {
+      let x5 = chain(5);
+      mul(x5, x5)
+    }
+    12 => {
+      let x6 = mul(x2, mul(x2, x2));
+      mul(x6, x6)
+    }
+    14 => {
+      let x7 = mul(mul(x, x2), mul(x2, x2));
+      mul(x7, x7)
+    }
+    5 | 7 | 9 | 11 | 13 | 15 => mul(x, chain(k - 1)),
+    _ => {
+      let odd_bit_length = (128 - k.leading_zeros()) % 2 == 1;
+      if odd_bit_length {
+        match k % 4 {
+          0 => {
+            let h = chain(k / 2);
+            mul(h, h)
+          }
+          1 => mul(x, chain(k - 1)),
+          2 => mul(x2, chain(k - 2)),
+          _ => mul(mul(x, x2), chain(k - 3)),
+        }
+      } else if k % 2 == 0 {
+        let h = chain(k / 2);
+        mul(h, h)
+      } else {
+        mul(x, chain(k - 1))
+      }
+    }
+  }
+}
+
+/// Machine-complex `z^n` for an exact `Integer` exponent: the same
+/// multiplication chains as `wolfram_powi` with complex multiplications,
+/// and — for negative exponents — the reciprocal of the positive power via
+/// Smith's complex-division algorithm, both matching wolframscript
+/// bit-for-bit (verified over random batches by the differential fuzzer).
+/// Returns `(re, im)`.
+pub fn wolfram_powi_complex(re: f64, im: f64, n: i128) -> (f64, f64) {
+  if n == 0 {
+    return (1.0, 0.0);
+  }
+  let cmul = |a: (f64, f64), b: (f64, f64)| -> (f64, f64) {
+    (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0)
+  };
+  let z = (re, im);
+  let m = n.unsigned_abs();
+  let (c, d) = if m == 1 {
+    z
+  } else {
+    wolfram_pow_chain(z, cmul(z, z), m, &cmul)
+  };
+  if n > 0 {
+    return (c, d);
+  }
+  // 1/(c + d*I) via Smith's algorithm.
+  if c.abs() >= d.abs() {
+    let r = d / c;
+    let den = c + d * r;
+    (1.0 / den, -r / den)
+  } else {
+    let r = c / d;
+    let den = c * r + d;
+    (r / den, -1.0 / den)
+  }
+}
+
 /// Compute the error function erf(x) using the Taylor series.
 /// erf(x) = (2/sqrt(pi)) * sum_{n=0}^{inf} (-1)^n * x^(2n+1) / (n! * (2n+1))
 pub fn erf_f64(x: f64) -> f64 {

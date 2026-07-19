@@ -5493,6 +5493,21 @@ fn pdf_power(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     ));
   }
   let (k, a) = (dargs[0].clone(), dargs[1].clone());
+  // wolframscript's compiled numeric PDF evaluates a*k^a*x^(a-1) as
+  // exp(log a + a log k + (a-1) log x), which rounds differently from the
+  // top-level Power chains for machine reals — mirror it exactly.
+  if let Expr::Real(xf) = x
+    && let (Some(kf), Some(af)) = (try_eval_to_f64(&k), try_eval_to_f64(&a))
+    && kf > 0.0
+    && af > 0.0
+  {
+    let v = if xf > 0.0 && xf <= 1.0 / kf {
+      (af.ln() + af * kf.ln() + (af - 1.0) * xf.ln()).exp()
+    } else {
+      0.0
+    };
+    return Ok(Expr::Real(v));
+  }
   let value = times(
     times(a.clone(), power(k.clone(), a.clone())),
     power(x.clone(), minus(a, int(1))),
@@ -5523,6 +5538,21 @@ fn cdf_power(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     ));
   }
   let (k, a) = (dargs[0].clone(), dargs[1].clone());
+  // As in pdf_power: wolframscript's compiled numeric CDF computes (k*x)^a
+  // with libm pow, not the top-level Power multiplication chains.
+  if let Expr::Real(xf) = x
+    && let (Some(kf), Some(af)) = (try_eval_to_f64(&k), try_eval_to_f64(&a))
+    && kf > 0.0
+  {
+    let v = if xf <= 0.0 {
+      0.0
+    } else if xf <= 1.0 / kf {
+      (kf * xf).powf(af)
+    } else {
+      1.0
+    };
+    return Ok(Expr::Real(v));
+  }
   let value = power(times(k.clone(), x.clone()), a.clone());
   let cond1 = comparison3(
     int(0),
