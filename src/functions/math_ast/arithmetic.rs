@@ -4730,7 +4730,9 @@ pub fn term_priority(e: &Expr) -> i32 {
       "Sin" | "Cos" | "Tan" | "Cot" | "Sec" | "Csc" | "Sinh" | "Cosh"
       | "Tanh" | "Coth" | "Sech" | "Csch" | "ArcSin" | "ArcCos" | "ArcTan"
       | "ArcCot" | "ArcSec" | "ArcCsc" | "Exp" | "Log" | "Factorial"
-      | "Gamma" | "Erf" | "Erfc" | "PolyLog" => 1,
+      | "Gamma" | "Erf" | "Erfc" | "Erfi" | "PolyLog" | "LogIntegral"
+      | "SinIntegral" | "CosIntegral" | "SinhIntegral" | "CoshIntegral"
+      | "ExpIntegralEi" | "ExpIntegralE" | "FresnelS" | "FresnelC" => 1,
       _ => 0,
     },
     Expr::UnaryOp { operand, .. } => term_priority(operand),

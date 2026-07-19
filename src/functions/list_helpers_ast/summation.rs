@@ -4229,6 +4229,83 @@ fn try_infinite_sum(
     }
   }
 
+  // Taylor series of the circular / hyperbolic functions:
+  //   Sum[(-1)^n x^(2n+1)/(2n+1)!, {n, 0, Inf}] = Sin[x]
+  //   Sum[(-1)^n x^(2n)/(2n)!,     {n, 0, Inf}] = Cos[x]
+  //   Sum[x^(2n+1)/(2n+1)!,        {n, 0, Inf}] = Sinh[x]
+  //   Sum[x^(2n)/(2n)!,            {n, 0, Inf}] = Cosh[x]
+  // including shifted spellings. With b = 2j + p (p the parity selecting the
+  // function) and s the term ratio sign, Sum[s^n x^(2n+b)/(2n+b)!, {n, min,
+  // Inf}] = s^(min+j) (F[x] - Sum[s^k x^(2k+p)/(2k+p)!, {k, 0, min+j-1}]).
+  // Re-indexing by k = n + j gives the s^j prefactor while the dropped head
+  // terms keep their own s^k signs. A base exponent offset b' /= b
+  // contributes a plain x^(b'-b) factor (e.g. Sum[(-1)^n x^(2n)/(2n+1)!] =
+  // Sin[x]/x). Only min + j <= 1 is folded: wolframscript combines longer
+  // head corrections over a common denominator (e.g. (-6 x + x^3 +
+  // 6 Sin[x])/6), a form Woxi does not reproduce, so those sums are left
+  // unevaluated rather than diverge in display.
+  if min >= 0
+    && let Some(series) = match_factorial_trig_series(body, var_name)
+  {
+    let j = series.fact_off / 2;
+    let p = series.fact_off % 2;
+    let shift = min + j;
+    if shift > 1 {
+      return Ok(None);
+    }
+    let func = match (series.alternating, p) {
+      (true, 1) => "Sin",
+      (true, 0) => "Cos",
+      (false, 1) => "Sinh",
+      _ => "Cosh",
+    };
+    // Overall sign s^j * sign0. wolframscript distributes this sign into the
+    // head-corrected sum (`x - Sin[x]`) but keeps any other coefficient
+    // factored outside of it (`2*(-x + Sin[x])`, `(-x + Sin[x])/x`), so the
+    // sign goes into the terms and the rest stays an outer product.
+    let negate = (series.alternating && j % 2 != 0) ^ (series.sign0 < 0);
+    let signed = |e: Expr, flip: bool| {
+      if flip {
+        crate::functions::math_ast::times_ast(&[Expr::Integer(-1), e])
+      } else {
+        Ok(e)
+      }
+    };
+    let f_call = Expr::FunctionCall {
+      name: func.to_string(),
+      args: vec![series.base.clone()].into(),
+    };
+    let mut terms = vec![signed(f_call, negate)?];
+    if shift == 1 {
+      // Subtract the k = 0 head term x^p (p! = 1 for p in {0, 1}).
+      let head = if p == 1 {
+        series.base.clone()
+      } else {
+        Expr::Integer(1)
+      };
+      terms.push(signed(head, !negate)?);
+    }
+    let inner = crate::functions::math_ast::plus_ast(&terms)?;
+    let mut outer: Vec<Expr> = Vec::new();
+    if !matches!(series.coeff, Expr::Integer(1)) {
+      outer.push(series.coeff.clone());
+    }
+    if series.base_off != series.fact_off {
+      outer.push(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(series.base.clone()),
+        right: Box::new(Expr::Integer(series.base_off - series.fact_off)),
+      });
+    }
+    let closed = if outer.is_empty() {
+      inner
+    } else {
+      outer.push(inner);
+      crate::functions::math_ast::times_ast(&outer)?
+    };
+    return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&closed)?));
+  }
+
   // Logarithmic series Sum[base^k/k, {k, 1, Infinity}] = -Log[1 - base]
   // (the Mercator/Taylor series for -Log[1-x]). A numeric base needs
   // |base| < 1 to converge; a symbolic base yields the formal result.
@@ -4620,6 +4697,157 @@ fn match_alternating_reciprocal_power(
   };
   let s = match_reciprocal_power(&remaining, var_name)?;
   Some((sign, s))
+}
+
+/// A factorial power-series summand matched by
+/// [`match_factorial_trig_series`]:
+/// `coeff * sign0 * s^var * base^(2 var + base_off) / (2 var + fact_off)!`
+/// with `s = -1` when `alternating` (from a `(-1)^(odd var + d)` factor,
+/// `sign0 = (-1)^d`) and `s = 1` otherwise.
+struct FactorialTrigSeries {
+  coeff: Expr,
+  base: Expr,
+  alternating: bool,
+  sign0: i32,
+  fact_off: i128,
+  base_off: i128,
+}
+
+/// Match the Taylor-series summand of the circular / hyperbolic functions:
+/// `c * (-1)^(k var + d) * base^(2 var + b') / (2 var + b)!` (the sign factor
+/// and the base power each optional). Such sums fold to Sin / Cos (with the
+/// alternating sign) or Sinh / Cosh (without), per the parity of `b`.
+fn match_factorial_trig_series(
+  body: &Expr,
+  var_name: &str,
+) -> Option<FactorialTrigSeries> {
+  fn as_power(f: &Expr) -> Option<(&Expr, &Expr)> {
+    match f {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => Some((left.as_ref(), right.as_ref())),
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        Some((&args[0], &args[1]))
+      }
+      _ => None,
+    }
+  }
+  let is_const =
+    |e: &Expr| crate::functions::calculus_ast::is_constant_wrt(e, var_name);
+
+  let mut num: Vec<Expr> = Vec::new();
+  let mut den: Vec<Expr> = Vec::new();
+  collect_factors(body, &mut num, &mut den, false);
+
+  // Fold explicit `f^-1` numerator factors into the denominator so that
+  // `x^(2n+1) Factorial[2n+1]^-1` matches like the Divide spelling.
+  num.retain(|f| {
+    if let Some((b, e)) = as_power(f)
+      && matches!(e, Expr::Integer(-1))
+    {
+      den.push(b.clone());
+      false
+    } else {
+      true
+    }
+  });
+
+  // The denominator must contain exactly one Factorial[2 var + b] factor;
+  // any other factor must be free of the variable (a coefficient divisor).
+  let mut fact_off: Option<i128> = None;
+  let mut coeff_den: Vec<Expr> = Vec::new();
+  for f in den {
+    if fact_off.is_none()
+      && let Expr::FunctionCall { name, args } = &f
+      && name == "Factorial"
+      && args.len() == 1
+      && let Some((2, b)) = linear_in_var(&args[0], var_name)
+    {
+      fact_off = Some(b);
+      continue;
+    }
+    if !is_const(&f) {
+      return None;
+    }
+    coeff_den.push(f);
+  }
+  let fact_off = fact_off?;
+  if fact_off < 0 {
+    return None;
+  }
+
+  // The numerator may contain a `(-1)^(odd var + d)` sign factor and a
+  // `base^(2 var + b')` power; everything else must be a coefficient.
+  let mut alternating = false;
+  let mut sign0 = 1i32;
+  let mut base: Option<(Expr, i128)> = None;
+  let mut coeff_num: Vec<Expr> = Vec::new();
+  for f in num {
+    if let Some((pb, pe)) = as_power(&f) {
+      if !alternating
+        && matches!(pb, Expr::Integer(-1))
+        && let Some((k, d)) = linear_in_var(pe, var_name)
+        && k % 2 != 0
+      {
+        alternating = true;
+        sign0 = if d.rem_euclid(2) == 0 { 1 } else { -1 };
+        continue;
+      }
+      if base.is_none()
+        && is_const(pb)
+        && let Some((2, bp)) = linear_in_var(pe, var_name)
+      {
+        base = Some((pb.clone(), bp));
+        continue;
+      }
+    }
+    if !is_const(&f) {
+      return None;
+    }
+    coeff_num.push(f);
+  }
+  // Without an explicit base power the series is evaluated at base = 1
+  // (e.g. Sum[(-1)^n/(2n+1)!] = Sin[1]).
+  let (base, base_off) = base.unwrap_or((Expr::Integer(1), fact_off));
+
+  let numerator = match coeff_num.len() {
+    0 => Expr::Integer(1),
+    1 => coeff_num.into_iter().next().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: coeff_num.into(),
+    },
+  };
+  let coeff = if coeff_den.is_empty() {
+    numerator
+  } else {
+    let denominator = if coeff_den.len() == 1 {
+      coeff_den.into_iter().next().unwrap()
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: coeff_den.into(),
+      }
+    };
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(numerator),
+      right: Box::new(denominator),
+    }
+  };
+
+  Some(FactorialTrigSeries {
+    coeff,
+    base,
+    alternating,
+    sign0,
+    fact_off,
+    base_off,
+  })
 }
 
 /// Like `match_reciprocal_power` but for an arbitrary (var-dependent) base:

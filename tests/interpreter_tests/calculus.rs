@@ -6656,6 +6656,67 @@ mod integrate_log {
       "-2 + E"
     );
   }
+
+  // ∫ Log[Log[u]] dx = (u Log[Log[u]])/a - LogIntegral[u]/a for u = a x + b.
+  #[test]
+  fn integrate_log_log_x() {
+    assert_eq!(
+      interpret("Integrate[Log[Log[x]], x]").unwrap(),
+      "x*Log[Log[x]] - LogIntegral[x]"
+    );
+  }
+
+  #[test]
+  fn integrate_log_log_scaled() {
+    assert_eq!(
+      interpret("Integrate[Log[Log[2*x]], x]").unwrap(),
+      "x*Log[Log[2*x]] - LogIntegral[2*x]/2"
+    );
+  }
+
+  #[test]
+  fn integrate_log_log_symbolic_coefficient() {
+    assert_eq!(
+      interpret("Integrate[Log[Log[a*x]], x]").unwrap(),
+      "x*Log[Log[a*x]] - LogIntegral[a*x]/a"
+    );
+  }
+
+  #[test]
+  fn integrate_log_log_shifted() {
+    assert_eq!(
+      interpret("Integrate[Log[Log[x + 1]], x]").unwrap(),
+      "(1 + x)*Log[Log[1 + x]] - LogIntegral[1 + x]"
+    );
+  }
+
+  #[test]
+  fn integrate_log_log_linear() {
+    assert_eq!(
+      interpret("Integrate[Log[Log[2*x + 3]], x]").unwrap(),
+      "((3 + 2*x)*Log[Log[3 + 2*x]])/2 - LogIntegral[3 + 2*x]/2"
+    );
+  }
+
+  // Regression: LogIntegral (and friends) sort as transcendental terms in
+  // a Plus, after polynomial-like terms and alphabetically among function
+  // calls — `Log[x] + LogIntegral[x]`, not `LogIntegral[x] + Log[x]`.
+  #[test]
+  fn log_integral_plus_ordering() {
+    assert_eq!(
+      interpret("Log[x] + LogIntegral[x]").unwrap(),
+      "Log[x] + LogIntegral[x]"
+    );
+    assert_eq!(
+      interpret("x + LogIntegral[x]").unwrap(),
+      "x + LogIntegral[x]"
+    );
+    assert_eq!(
+      interpret("Sin[x] + SinIntegral[x]").unwrap(),
+      "Sin[x] + SinIntegral[x]"
+    );
+    assert_eq!(interpret("Erf[x] + Erfi[x]").unwrap(), "Erf[x] + Erfi[x]");
+  }
 }
 
 mod integrate_by_parts {
@@ -12747,6 +12808,160 @@ mod infinite_log_series {
     assert_eq!(interpret("Sum[0, {n, 1, Infinity}]").unwrap(), "0");
     // Convergent sums are unaffected
     assert_eq!(interpret("Sum[1/n^2, {n, 1, Infinity}]").unwrap(), "Pi^2/6");
+  }
+}
+
+// Taylor series of the circular / hyperbolic functions:
+// Sum[(-1)^n x^(2n+1)/(2n+1)!] = Sin[x] and the Cos / Sinh / Cosh variants,
+// including sign, coefficient, index-shift, and exponent-offset spellings.
+// All verified against wolframscript 15.0.
+mod infinite_factorial_trig_series {
+  use super::*;
+
+  #[test]
+  fn sin_series() {
+    assert_eq!(
+      interpret("Sum[(-1)^n / Factorial[2n+1] * x^(2n+1), {n, 0, Infinity}]")
+        .unwrap(),
+      "Sin[x]"
+    );
+    assert_eq!(
+      interpret("Sum[(-1)^n x^(2n+1)/Factorial[2n+1], {n, 0, Infinity}]")
+        .unwrap(),
+      "Sin[x]"
+    );
+  }
+
+  #[test]
+  fn cos_sinh_cosh_series() {
+    assert_eq!(
+      interpret("Sum[(-1)^n x^(2n)/Factorial[2n], {n, 0, Infinity}]").unwrap(),
+      "Cos[x]"
+    );
+    assert_eq!(
+      interpret("Sum[x^(2n+1)/Factorial[2n+1], {n, 0, Infinity}]").unwrap(),
+      "Sinh[x]"
+    );
+    assert_eq!(
+      interpret("Sum[x^(2n)/Factorial[2n], {n, 0, Infinity}]").unwrap(),
+      "Cosh[x]"
+    );
+  }
+
+  // A (-1)^(n+d) factor with odd d flips the overall sign; a constant
+  // coefficient (numeric or symbolic) is carried through outside.
+  #[test]
+  fn sign_and_coefficient() {
+    assert_eq!(
+      interpret("Sum[(-1)^(n+1) x^(2n+1)/Factorial[2n+1], {n, 0, Infinity}]")
+        .unwrap(),
+      "-Sin[x]"
+    );
+    assert_eq!(
+      interpret("Sum[2 (-1)^n x^(2n+1)/Factorial[2n+1], {n, 0, Infinity}]")
+        .unwrap(),
+      "2*Sin[x]"
+    );
+    assert_eq!(
+      interpret(
+        "Sum[(-1)^n x^(2n+1)/(Factorial[2n+1] y), {n, 0, Infinity}]"
+      )
+      .unwrap(),
+      "Sin[x]/y"
+    );
+  }
+
+  // Without a base power the series is evaluated at 1; a numeric base is
+  // kept inside the function (Sin[3], not a decimal).
+  #[test]
+  fn numeric_base() {
+    assert_eq!(
+      interpret("Sum[(-1)^n/Factorial[2n+1], {n, 0, Infinity}]").unwrap(),
+      "Sin[1]"
+    );
+    assert_eq!(
+      interpret("Sum[(-1)^n 3^(2n+1)/Factorial[2n+1], {n, 0, Infinity}]")
+        .unwrap(),
+      "Sin[3]"
+    );
+  }
+
+  // Starting at n = 1, or an offset factorial argument, subtracts the head
+  // term; the s^j prefactor sign from re-indexing is distributed into the
+  // corrected sum while other coefficients stay factored outside.
+  #[test]
+  fn shifted_series() {
+    assert_eq!(
+      interpret("Sum[(-1)^n x^(2n+1)/Factorial[2n+1], {n, 1, Infinity}]")
+        .unwrap(),
+      "-x + Sin[x]"
+    );
+    assert_eq!(
+      interpret("Sum[(-1)^n x^(2n+3)/Factorial[2n+3], {n, 0, Infinity}]")
+        .unwrap(),
+      "x - Sin[x]"
+    );
+    assert_eq!(
+      interpret("Sum[x^(2n+2)/Factorial[2n+2], {n, 0, Infinity}]").unwrap(),
+      "-1 + Cosh[x]"
+    );
+    assert_eq!(
+      interpret("Sum[(-1)^n x^(2n+2)/Factorial[2n+2], {n, 0, Infinity}]")
+        .unwrap(),
+      "1 - Cos[x]"
+    );
+    assert_eq!(
+      interpret("Sum[(-1)^n x^(2n)/Factorial[2n], {n, 1, Infinity}]")
+        .unwrap(),
+      "-1 + Cos[x]"
+    );
+    assert_eq!(
+      interpret("Sum[2 (-1)^n x^(2n+1)/Factorial[2n+1], {n, 1, Infinity}]")
+        .unwrap(),
+      "2*(-x + Sin[x])"
+    );
+    assert_eq!(
+      interpret("Sum[(-1)^(n+1) x^(2n+1)/Factorial[2n+1], {n, 1, Infinity}]")
+        .unwrap(),
+      "x - Sin[x]"
+    );
+  }
+
+  // An exponent offset b' /= b in the base power contributes a plain
+  // x^(b'-b) factor.
+  #[test]
+  fn exponent_offset() {
+    assert_eq!(
+      interpret("Sum[(-1)^n x^(2n)/Factorial[2n+1], {n, 0, Infinity}]")
+        .unwrap(),
+      "Sin[x]/x"
+    );
+    assert_eq!(
+      interpret("Sum[(-1)^n x^(2n)/Factorial[2n+1], {n, 1, Infinity}]")
+        .unwrap(),
+      "(-x + Sin[x])/x"
+    );
+    assert_eq!(
+      interpret("Sum[(-1)^n x^(2n+1)/Factorial[2n], {n, 0, Infinity}]")
+        .unwrap(),
+      "x*Cos[x]"
+    );
+  }
+
+  // Head corrections longer than one term are combined over a common
+  // denominator by wolframscript, a form Woxi does not reproduce, so those
+  // sums stay unevaluated. The plain exponential series is unaffected.
+  #[test]
+  fn out_of_scope_cases() {
+    assert_eq!(
+      interpret("Sum[(-1)^n x^(2n+1)/Factorial[2n+1], {n, 2, Infinity}]")
+        .unwrap(),
+      "Sum[((-1)^n*x^(2*n + 1))/(2*n + 1)!, {n, 2, Infinity}]"
+    );
+    assert_eq!(
+      interpret("Sum[x^n/Factorial[n], {n, 0, Infinity}]").unwrap(),
+      "E^x"
+    );
   }
 }
 
