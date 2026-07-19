@@ -1011,7 +1011,10 @@ fn solve_constant_coefficient_ode(
       forcing_expr,
       &roots,
       x_name,
-    );
+    )
+    .or_else(|| {
+      variation_of_parameters(&coeffs, &roots, forcing_expr, x_name)
+    });
     if let Some(part) = particular {
       return Ok(crate::functions::calculus_ast::simplify(Expr::BinaryOp {
         op: BinaryOperator::Plus,
@@ -1021,7 +1024,144 @@ fn solve_constant_coefficient_ode(
     }
   }
 
-  Ok(homogeneous)
+  // A non-constant forcing term we cannot integrate: returning just the
+  // homogeneous part would silently drop the forcing and produce a wrong
+  // answer, so leave DSolve unevaluated instead.
+  Err(InterpreterError::EvaluationError(
+    "DSolve: cannot find a particular solution for the forcing term".into(),
+  ))
+}
+
+/// Particular solution of a second-order constant-coefficient ODE
+/// a2 y'' + a1 y' + a0 y = g(x) by variation of parameters:
+///
+///   y_p = -y1 ∫ y2 g / (a2 W) dx + y2 ∫ y1 g / (a2 W) dx
+///
+/// with {y1, y2} the fundamental pair from the characteristic roots and W
+/// their Wronskian (computed in closed form per root configuration). The
+/// `terms` convention is Σ term = 0 with the forcing collected on the left,
+/// so g = -forcing. Returns None when the quadratures don't close.
+fn variation_of_parameters(
+  coeffs: &[f64],
+  roots: &[(f64, f64, usize)],
+  forcing: &Expr,
+  x_name: &str,
+) -> Option<Expr> {
+  if coeffs.len() != 3 {
+    return None;
+  }
+  let x = || Expr::Identifier(x_name.to_string());
+  let times = |a: Expr, b: Expr| Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+  // E^(r x), reduced to 1 for r == 0.
+  let exp_rx = |r: f64| -> Expr {
+    if r.abs() < 1e-10 {
+      Expr::Integer(1)
+    } else {
+      make_exp_term(r, x_name)
+    }
+  };
+  let mul = |a: Expr, b: Expr| -> Expr {
+    match (&a, &b) {
+      (Expr::Integer(1), _) => b,
+      (_, Expr::Integer(1)) => a,
+      _ => times(a, b),
+    }
+  };
+
+  // Fundamental pair and Wronskian y1 y2' - y1' y2 per root configuration.
+  let (y1, y2, wronskian) = match roots {
+    [(r, im, 2)] if im.abs() < 1e-10 => {
+      // Double root r: {E^(r x), x E^(r x)}, W = E^(2 r x)
+      (exp_rx(*r), mul(x(), exp_rx(*r)), exp_rx(2.0 * r))
+    }
+    [(r1, im1, 1), (r2, im2, 1)]
+      if im1.abs() < 1e-10 && im2.abs() < 1e-10 =>
+    {
+      // Distinct real roots: {E^(r1 x), E^(r2 x)}, W = (r2 - r1) E^((r1+r2) x)
+      (
+        exp_rx(*r1),
+        exp_rx(*r2),
+        mul(f64_to_nice_expr(r2 - r1), exp_rx(r1 + r2)),
+      )
+    }
+    [(alpha, beta, 1)] if *beta > 1e-10 => {
+      // Complex pair α ± iβ: {E^(α x) Cos[β x], E^(α x) Sin[β x]},
+      // W = β E^(2 α x)
+      let cos_t = make_trig_term("Cos", *beta, x_name);
+      let sin_t = make_trig_term("Sin", *beta, x_name);
+      (
+        mul(exp_rx(*alpha), cos_t),
+        mul(exp_rx(*alpha), sin_t),
+        mul(f64_to_nice_expr(*beta), exp_rx(2.0 * alpha)),
+      )
+    }
+    _ => return None,
+  };
+
+  // g = -forcing (terms sum to zero), scaled by the leading coefficient and
+  // the Wronskian: integrands are y_i * g / (a2 W).
+  let g = negate_expr(forcing);
+  let a2 = f64_to_nice_expr(coeffs[2]);
+  let integrate_with = |y: &Expr| -> Option<Expr> {
+    let integrand = Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(times(y.clone(), g.clone())),
+      right: Box::new(mul(a2.clone(), wronskian.clone())),
+    };
+    // Canonicalize first so the integrator sees simplified products
+    // (e.g. Cos[x]*Tan[x] -> Sin[x]).
+    let integrand = crate::evaluator::evaluate_expr_to_expr(&integrand)
+      .unwrap_or(integrand);
+    let result = crate::functions::calculus_ast::integrate_ast(&[
+      integrand,
+      Expr::Identifier(x_name.to_string()),
+    ])
+    .ok()?;
+    if contains_function_call(&result, "Integrate") {
+      return None;
+    }
+    Some(result)
+  };
+  let int1 = integrate_with(&y2)?;
+  let int2 = integrate_with(&y1)?;
+
+  // y_p = -y1 ∫ y2 g/(a2 W) + y2 ∫ y1 g/(a2 W); expand so products like
+  // -Cos (ArcTanh[Sin] - Sin) + Sin (-Cos) cancel across the two halves.
+  let y_p = Expr::BinaryOp {
+    op: BinaryOperator::Plus,
+    left: Box::new(times(negate_expr(&y1), int1)),
+    right: Box::new(times(y2, int2)),
+  };
+  let y_p =
+    crate::evaluator::evaluate_function_call_ast("Expand", &[y_p.clone()])
+      .unwrap_or(y_p);
+  let y_p =
+    crate::evaluator::evaluate_function_call_ast("Simplify", &[y_p.clone()])
+      .unwrap_or(y_p);
+  Some(y_p)
+}
+
+/// Whether the expression contains a call to the named function anywhere.
+fn contains_function_call(expr: &Expr, fname: &str) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      name == fname || args.iter().any(|a| contains_function_call(a, fname))
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_function_call(left, fname) || contains_function_call(right, fname)
+    }
+    Expr::UnaryOp { operand, .. } => contains_function_call(operand, fname),
+    Expr::List(items) => items.iter().any(|a| contains_function_call(a, fname)),
+    Expr::CurriedCall { func, args } => {
+      contains_function_call(func, fname)
+        || args.iter().any(|a| contains_function_call(a, fname))
+    }
+    _ => false,
+  }
 }
 
 /// Find roots of characteristic polynomial

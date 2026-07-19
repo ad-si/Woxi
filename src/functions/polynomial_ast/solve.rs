@@ -8437,6 +8437,18 @@ pub fn nminimize_ast(
   } else {
     f64::INFINITY
   };
+  // Best sample restricted to the tightest (nearest-origin) scale range.
+  // wolframscript's NMinimize starts its search in a small default region
+  // around the origin, so when a distant sample refines to the same optimum
+  // as a near-origin one (e.g. the periodic Sin[x]), it reports the
+  // near-origin optimum. Track this candidate separately so we can prefer
+  // it on ties after refinement.
+  let mut tight_x = vec![0.0; n];
+  let mut tight_f = if maximize {
+    f64::NEG_INFINITY
+  } else {
+    f64::INFINITY
+  };
 
   let update_best =
     |pt: &[f64],
@@ -8479,7 +8491,17 @@ pub fn nminimize_ast(
     }
   }
 
-  for sb in &scale_bounds {
+  // Index of the tightest scale (smallest total range).
+  let range_sum =
+    |sb: &[(f64, f64)]| sb.iter().map(|&(lo, hi)| hi - lo).sum::<f64>();
+  let tight_idx = scale_bounds
+    .iter()
+    .enumerate()
+    .min_by(|a, b| range_sum(a.1).total_cmp(&range_sum(b.1)))
+    .map(|(i, _)| i)
+    .unwrap_or(0);
+
+  for (si, sb) in scale_bounds.iter().enumerate() {
     let mut sample_points: Vec<Vec<f64>> = vec![vec![]];
     for i in 0..n {
       let (lo, hi) = sb[i];
@@ -8498,13 +8520,20 @@ pub fn nminimize_ast(
 
     for pt in &sample_points {
       update_best(pt, &mut best_x, &mut best_f, &eval_at);
+      if si == tight_idx {
+        update_best(pt, &mut tight_x, &mut tight_f, &eval_at);
+      }
     }
   }
 
   // Phase 2: Local refinement using golden section / gradient-free search
-  // For each variable, refine using Brent-like narrowing
+  // For each variable, refine using Brent-like narrowing.
+  // The descent contracts roughly geometrically (step ≈ 0.1·gradient), so a
+  // generous iteration cap is needed to converge optima like Sin[x] at -Pi/2
+  // to machine precision (wolframscript prints the objective there as an
+  // exact -1.); a stalled line search exits early, keeping this cheap.
   let sign = if maximize { -1.0 } else { 1.0 };
-  let max_iter = 200;
+  let max_iter = 1000;
   let tol = 1e-12;
 
   // Try to compute symbolic gradients for gradient-based refinement
@@ -8532,7 +8561,7 @@ pub fn nminimize_ast(
     if ok { Some(grads) } else { None }
   };
 
-  let mut x = best_x;
+  let mut x = best_x.clone();
 
   // Run gradient descent from a starting point, returning the optimized point and value.
   let run_gradient_descent =
@@ -8562,6 +8591,7 @@ pub fn nminimize_ast(
         let mut alpha = 0.1 / grad_norm.max(1.0);
         let current_f = eval_at(&objective, &x).unwrap_or(f64::INFINITY) * sign;
 
+        let mut moved = false;
         for _ in 0..30 {
           let x_new: Vec<f64> = x
             .iter()
@@ -8576,12 +8606,18 @@ pub fn nminimize_ast(
             && new_f * sign < current_f
           {
             x = x_new;
+            moved = true;
             break;
           }
           alpha *= 0.5;
           if alpha < 1e-20 {
             break;
           }
+        }
+        if !moved {
+          // Line search stalled: no step improves, so further iterations
+          // would recompute the same failure.
+          break;
         }
       }
       let fval = eval_at(&objective, &x).unwrap_or(f64::INFINITY);
@@ -8670,6 +8706,33 @@ pub fn nminimize_ast(
     }
   }
 
+  // Also refine the best near-origin sample and prefer it when it reaches
+  // the same optimum. wolframscript's NMinimize starts from a small default
+  // region around the origin, so for objectives with many equally good
+  // optima (e.g. Sin[x] over the default ±10^6 box) it reports the one near
+  // the origin, not a distant twin that happened to sample marginally better.
+  if let Some(ref grads) = grad_exprs
+    && tight_f.is_finite()
+    && tight_x != best_x
+  {
+    let (x_near, f_near) = run_gradient_descent(tight_x, grads);
+    if let Ok(f_cur) = eval_at(&objective, &x)
+      && f_near.is_finite()
+    {
+      let tie_tol = 1e-8 * (1.0 + f_cur.abs());
+      let improves = if maximize {
+        f_near > f_cur + tie_tol
+      } else {
+        f_near < f_cur - tie_tol
+      };
+      let ties = (f_near - f_cur).abs() <= tie_tol;
+      let dist2 = |p: &[f64]| p.iter().map(|v| v * v).sum::<f64>();
+      if improves || (ties && dist2(&x_near) < dist2(&x)) {
+        x = x_near;
+      }
+    }
+  }
+
   // Nelder–Mead polish. Coordinate-wise gradient descent / golden section
   // stalls in curved valleys (e.g. Rosenbrock), where coordinated multi-
   // dimensional steps are needed. A simplex polish over the box follows such
@@ -8694,6 +8757,65 @@ pub fn nminimize_ast(
     let polished = nelder_mead_min(&polish_obj, &x, 0.05, n);
     if polish_obj(&polished) < cur {
       x = polished;
+    }
+  }
+
+  // Newton polish on the gradient. Value-comparison descent stalls once the
+  // objective hits its float plateau (|x - x*| ≈ 1e-8 leaves e.g. Sin at
+  // -0.9999999999999997 instead of wolframscript's -1.), but the gradient is
+  // still well-resolved there, so a few damped Newton steps per coordinate
+  // (finite-difference second derivative) close the remaining gap to machine
+  // precision. Guarded: a step is only kept when it shrinks the gradient
+  // component and does not worsen the objective.
+  if let Some(ref grads) = grad_exprs {
+    for _ in 0..5 {
+      let mut moved = false;
+      for i in 0..n {
+        let Ok(gi) = eval_at(&grads[i], &x) else {
+          continue;
+        };
+        if !gi.is_finite() || gi == 0.0 {
+          continue;
+        }
+        let h = 1e-6 * (1.0 + x[i].abs());
+        let mut xp = x.clone();
+        xp[i] += h;
+        let mut xm = x.clone();
+        xm[i] -= h;
+        let (Ok(gp), Ok(gm)) =
+          (eval_at(&grads[i], &xp), eval_at(&grads[i], &xm))
+        else {
+          continue;
+        };
+        let d2 = (gp - gm) / (2.0 * h);
+        if !d2.is_finite() || d2.abs() < 1e-12 {
+          continue;
+        }
+        let step = gi / d2;
+        if !step.is_finite() || step.abs() > 1.0 {
+          continue;
+        }
+        let mut cand = x.clone();
+        cand[i] = (cand[i] - step).clamp(bounds[i].0, bounds[i].1);
+        let (Ok(g_new), Ok(f_new), Ok(f_cur)) = (
+          eval_at(&grads[i], &cand),
+          eval_at(&objective, &cand),
+          eval_at(&objective, &x),
+        ) else {
+          continue;
+        };
+        if g_new.is_finite()
+          && f_new.is_finite()
+          && g_new.abs() < gi.abs()
+          && f_new * sign <= f_cur * sign
+        {
+          x = cand;
+          moved = true;
+        }
+      }
+      if !moved {
+        break;
+      }
     }
   }
 

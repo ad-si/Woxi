@@ -1630,20 +1630,13 @@ fn rationalize_machine_default(
   use num_bigint::BigInt;
   use num_traits::{Signed, Zero};
   let (num, den) = f64_exact_ratio(x)?;
-  let ulp = (x.abs() * f64::EPSILON).max(f64::MIN_POSITIVE);
 
-  // Ambiguity guard: within 10^-5 of a nonzero s/2 or s/3 without being
-  // that value to machine precision. Nearness to zero doesn't count —
-  // N[1/2^38] still rationalizes.
-  for t in [2.0f64, 3.0] {
-    let s = (x * t).round();
-    let err = (x - s / t).abs();
-    if s != 0.0 && err > 4.0 * ulp && err < 1e-5 {
-      return None;
-    }
-  }
-
-  let size_bound = BigInt::from(1u64) << 39;
+  // Size bound |h|*k ≤ 2^38, pinned empirically against wolframscript:
+  // 0.262143 (2.62*10^11) and N[1/2^38] (exactly 2^38) rationalize while
+  // 0.333333, 0.499999, 0.276999 (2.77*10^11) and 0.524287 stay Real.
+  // (A former looser 2^39 bound needed a wrong "close to s/2 or s/3"
+  // ambiguity guard that also mis-bailed on 0.66667 -> 66667/100000.)
+  let size_bound = BigInt::from(1u64) << 38;
 
   // Continued-fraction convergents h/k of num/den.
   let (mut p, mut q) = (num.clone(), den.clone());

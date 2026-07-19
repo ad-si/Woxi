@@ -5409,10 +5409,8 @@ mod rationalize {
   }
 
   // The default acceptance: the first continued-fraction convergent h/k
-  // that matches x to machine precision with |h|*k ≤ 2^39, plus the
-  // ambiguity guard for inputs suspiciously close to a half or third
-  // (differential fuzzer, seed 15336548261066338105; all
-  // wolframscript-verified).
+  // that matches x to machine precision with |h|*k ≤ 2^38 (differential
+  // fuzzer, seed 15336548261066338105; all wolframscript-verified).
   #[test]
   fn machine_default_acceptance() {
     // A float arithmetic result within an ulp of a modest rational.
@@ -5443,13 +5441,26 @@ mod rationalize {
       "9.094947017729282*^-13"
     );
     assert_eq!(interpret("Rationalize[1234567.5]").unwrap(), "2469135/2");
-    // Ambiguity guard: near a half without being one.
+    // 499999/1000000 has |h|*k just above 2^38; 199999/1000000 just below.
     assert_eq!(interpret("Rationalize[0.499999]").unwrap(), "0.499999");
-    // ...but nearness to fifths and beyond is fine.
     assert_eq!(
       interpret("Rationalize[0.199999]").unwrap(),
       "199999/1000000"
     );
+    // Five decimal places rationalize even near a simple fraction — the
+    // former "close to s/2 or s/3" ambiguity guard wrongly bailed here.
+    assert_eq!(interpret("Rationalize[0.33333]").unwrap(), "33333/100000");
+    assert_eq!(interpret("Rationalize[0.66667]").unwrap(), "66667/100000");
+    assert_eq!(
+      interpret("Rationalize[0.666666]").unwrap(),
+      "333333/500000"
+    );
+    // Boundary straddle at 2^38: 262143*10^6 is under, 276999*10^6 over.
+    assert_eq!(
+      interpret("Rationalize[0.262143]").unwrap(),
+      "262143/1000000"
+    );
+    assert_eq!(interpret("Rationalize[0.276999]").unwrap(), "0.276999");
   }
 
   #[test]
