@@ -6376,11 +6376,10 @@ mod high_level_functions {
     #[test]
     fn test_geodestination_returns_geoposition() {
       // GeoDestination[pos, {distance_meters, azimuth_degrees}].
-      let result =
-        interpret("GeoDestination[{40, -100}, {100000, 45}]").unwrap();
-      let regex =
-        "GeoPosition\\[\\{40.63380067529133, -99.164172238688(8|79)\\}\\]";
-      assert!(regex::Regex::new(regex).unwrap().is_match(&result));
+      let r = interpret("GeoDestination[{40, -100}, {100000, 45}]").unwrap();
+      let m =
+        "^GeoPosition\\[\\{40.63380067529133, -99.164172238688(8|79)\\}\\]$";
+      assert!(regex::Regex::new(m).unwrap().is_match(&r));
     }
 
     #[test]

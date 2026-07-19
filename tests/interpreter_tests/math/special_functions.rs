@@ -135,11 +135,11 @@ mod inverse_gudermannian {
     );
     // And the individual values should be exact negatives of one another.
     let r = interpret("InverseGudermannian[0.5]").unwrap();
-    let m = "0.522238103278440[23]";
+    let m = "^0.522238103278440[23]$";
     assert!(regex::Regex::new(m).unwrap().is_match(&r));
 
     let r = interpret("InverseGudermannian[-0.5]").unwrap();
-    let m = "\\-0.522238103278440[23]";
+    let m = "^\\-0.522238103278440[23]$";
     assert!(regex::Regex::new(m).unwrap().is_match(&r));
   }
 }
