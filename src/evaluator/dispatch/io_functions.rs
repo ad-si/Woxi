@@ -3757,7 +3757,223 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     } => crate::functions::image_ast::image_to_svg_document(
       *width, *height, *channels, data,
     ),
+    // TableForm[data, opts…] — render the aligned grid (matching how visual
+    // frontends show it), instead of dumping the raw `TableForm[…]` text.
+    Expr::FunctionCall { name, args }
+      if name == "TableForm" && !args.is_empty() =>
+    {
+      // A table of Graphics is combined into a grid of the plots.
+      if let Some(svg) = tableform_graphics_grid_svg(args) {
+        return svg;
+      }
+      let rendered = crate::render_tableform_if_needed(expr.clone());
+      if let Expr::Graphics { svg, .. } = &rendered {
+        svg.clone()
+      } else {
+        expr_text_svg(expr)
+      }
+    }
+    // MatrixForm[data] — render as a parenthesized matrix.
+    Expr::FunctionCall { name, args }
+      if name == "MatrixForm" && !args.is_empty() =>
+    {
+      let _ = args;
+      let rendered = crate::render_matrixform_if_needed(expr.clone());
+      if let Expr::Graphics { svg, .. } = &rendered {
+        svg.clone()
+      } else {
+        expr_text_svg(expr)
+      }
+    }
+    // TraditionalForm[list] — render the list as a parenthesized matrix.
+    Expr::FunctionCall { name, args }
+      if name == "TraditionalForm"
+        && args.len() == 1
+        && matches!(&args[0], Expr::List(_)) =>
+    {
+      let _ = args;
+      let rendered = crate::render_traditionalform_list_if_needed(expr.clone());
+      if let Expr::Graphics { svg, .. } = &rendered {
+        svg.clone()
+      } else {
+        expr_text_svg(expr)
+      }
+    }
+    // Style[TableForm|MatrixForm[data], directives…] — render the styled grid
+    // (font size, weight, color) rather than the raw expression text.
+    Expr::FunctionCall { name, args }
+      if name == "Style"
+        && args.len() >= 2
+        && matches!(
+          &args[0],
+          Expr::FunctionCall { name: inner, args: inner_args }
+          if (inner == "TableForm" || inner == "MatrixForm")
+            && !inner_args.is_empty()
+        ) =>
+    {
+      if let Some(svg) = styled_tableform_svg(&args[0], &args[1..]) {
+        svg
+      } else {
+        expr_text_svg(expr)
+      }
+    }
+    // Number-format wrappers around a table — e.g.
+    // `ScientificForm[TableForm[m], 3]` or
+    // `PaddedForm[BaseForm[TableForm[m], 2], 8]` — format each cell and render
+    // the resulting grid.
+    Expr::FunctionCall { name, .. }
+      if is_number_format_head(name)
+        && distribute_format_over_tableform(expr).is_some() =>
+    {
+      let table = distribute_format_over_tableform(expr).unwrap();
+      let rendered = crate::render_tableform_if_needed(table);
+      if let Expr::Graphics { svg, .. } = &rendered {
+        svg.clone()
+      } else {
+        expr_text_svg(expr)
+      }
+    }
     other => expr_text_svg(other),
+  }
+}
+
+/// Heads of number-display wrappers that format a value without changing it.
+fn is_number_format_head(name: &str) -> bool {
+  matches!(
+    name,
+    "ScientificForm"
+      | "EngineeringForm"
+      | "NumberForm"
+      | "PaddedForm"
+      | "AccountingForm"
+      | "BaseForm"
+  )
+}
+
+/// If `expr` is one or more nested number-format wrappers around a
+/// `TableForm[data, opts…]`, push those wrappers down onto every data cell and
+/// return the rewritten `TableForm`. Returns `None` when no `TableForm` is
+/// found under the wrappers.
+fn distribute_format_over_tableform(expr: &Expr) -> Option<Expr> {
+  // Peel the format wrappers (outermost first), remembering each head and its
+  // trailing arguments, until we reach the TableForm.
+  let mut wrappers: Vec<(String, Vec<Expr>)> = Vec::new();
+  let mut cur = expr;
+  loop {
+    match cur {
+      Expr::FunctionCall { name, args }
+        if is_number_format_head(name) && !args.is_empty() =>
+      {
+        wrappers.push((name.clone(), args[1..].to_vec()));
+        cur = &args[0];
+      }
+      Expr::FunctionCall { name, args }
+        if name == "TableForm" && !args.is_empty() =>
+      {
+        if wrappers.is_empty() {
+          return None;
+        }
+        // Re-wrap each leaf cell, innermost wrapper applied first so nesting
+        // order matches the original (outer wrapper stays outermost).
+        let new_data = map_leaf_cells(&args[0], &|v| {
+          let mut e = v.clone();
+          for (head, targs) in wrappers.iter().rev() {
+            let mut a = vec![e];
+            a.extend(targs.iter().cloned());
+            e = Expr::FunctionCall {
+              name: head.clone(),
+              args: a.into(),
+            };
+          }
+          e
+        });
+        let mut new_args = vec![new_data];
+        new_args.extend(args[1..].iter().cloned());
+        return Some(Expr::FunctionCall {
+          name: "TableForm".to_string(),
+          args: new_args.into(),
+        });
+      }
+      _ => return None,
+    }
+  }
+}
+
+/// Apply `f` to every non-list leaf of a (possibly nested) list, preserving the
+/// list structure.
+fn map_leaf_cells(expr: &Expr, f: &dyn Fn(&Expr) -> Expr) -> Expr {
+  match expr {
+    Expr::List(items) => {
+      Expr::List(items.iter().map(|e| map_leaf_cells(e, f)).collect())
+    }
+    other => f(other),
+  }
+}
+
+/// Render `TableForm[graphics…]` — a table whose cells are `Graphics`
+/// objects — as a combined grid of the plots. Returns `None` when the data
+/// isn't a (ragged) 2-D list of inline graphics.
+fn tableform_graphics_grid_svg(args: &[Expr]) -> Option<String> {
+  let Expr::List(rows) = args.first()? else {
+    return None;
+  };
+  // A cell is a graphic if it is already rendered (`Expr::Graphics`) or is a
+  // `Graphics[…]` / `Graphics3D[…]` call that `expr_to_svg` renders on demand.
+  fn is_graphic_cell(e: &Expr) -> bool {
+    is_inline_graphic(e)
+      || matches!(e, Expr::FunctionCall { name, args }
+        if (name == "Graphics" || name == "Graphics3D") && !args.is_empty())
+  }
+  // Every row must itself be a non-empty list of graphics; a table of plain
+  // values is handled by the ordinary grid path instead. At least one cell
+  // must be a genuinely rendered graphic (not only bare `Graphics[…]` echoes)
+  // so ordinary symbolic tables don't get diverted here.
+  if rows.is_empty()
+    || !rows.iter().all(|r| {
+      matches!(r, Expr::List(cells)
+        if !cells.is_empty() && cells.iter().all(is_graphic_cell))
+    })
+  {
+    return None;
+  }
+  let grid: Vec<Vec<String>> = rows
+    .iter()
+    .map(|r| match r {
+      Expr::List(cells) => cells.iter().map(expr_to_svg).collect(),
+      _ => unreachable!(),
+    })
+    .collect();
+  if grid.iter().flatten().any(|s| s.is_empty()) {
+    return None;
+  }
+  crate::functions::graphics::combine_graphics_svgs(&grid)
+}
+
+/// Render `Style[TableForm|MatrixForm[data], directives…]` to a styled grid
+/// SVG. Falls back to `None` when the data can't be reshaped into a grid.
+fn styled_tableform_svg(inner: &Expr, directives: &[Expr]) -> Option<String> {
+  let Expr::FunctionCall {
+    name: head,
+    args: inner_args,
+  } = inner
+  else {
+    return None;
+  };
+  let style = crate::functions::graphics::parse_grid_style(directives);
+  let rendered = if head == "MatrixForm" {
+    // MatrixForm reshapes the same way as TableForm, but is drawn with
+    // enclosing parentheses.
+    let (grid_args, _gaps) = crate::tableform_grid_args(inner_args)?;
+    crate::functions::graphics::grid_ast_styled_with_parens(&grid_args, &style)
+  } else {
+    let (grid_args, _gaps) = crate::tableform_grid_args(inner_args)?;
+    crate::functions::graphics::grid_ast_styled(&grid_args, &style)
+  }
+  .ok()?;
+  if let Expr::Graphics { svg, .. } = &rendered {
+    Some(svg.clone())
+  } else {
+    None
   }
 }
 

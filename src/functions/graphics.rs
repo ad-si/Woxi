@@ -5954,6 +5954,44 @@ fn digit_group_extra_width(digit_count: usize) -> f64 {
   (num_groups - 1) as f64 * 0.3
 }
 
+/// Read an optional precision/`n` argument of a display form, defaulting to
+/// `default` when it is absent or non-integer.
+fn format_precision_arg(arg: Option<&Expr>, default: i64) -> i64 {
+  match arg {
+    Some(Expr::Integer(n)) => *n as i64,
+    _ => default,
+  }
+}
+
+/// Render the digits of `x` in the (integer) base `base`. Only integer values
+/// are supported (the only case `BaseForm` cells need in tables); returns
+/// `None` otherwise.
+fn base_form_digits(x: &Expr, base: &Expr) -> Option<String> {
+  let (Expr::Integer(v), Expr::Integer(b)) = (x, base) else {
+    return None;
+  };
+  if *b < 2 || *b > 36 {
+    return None;
+  }
+  const DIGITS: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
+  if *v == 0 {
+    return Some("0".to_string());
+  }
+  let neg = *v < 0;
+  let mut value = v.unsigned_abs();
+  let radix = *b as u128;
+  let mut out: Vec<u8> = Vec::new();
+  while value > 0 {
+    out.push(DIGITS[(value % radix) as usize]);
+    value /= radix;
+  }
+  if neg {
+    out.push(b'-');
+  }
+  out.reverse();
+  String::from_utf8(out).ok()
+}
+
 /// Convert an `Expr` into SVG text markup (inner content of a `<text>` element).
 /// Recursively handles all expression types so that Power expressions
 /// anywhere in the tree are rendered with `<tspan>` superscripts.
@@ -6268,6 +6306,69 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           svg_escape(&crate::functions::string_ast::expr_to_fortran(&args[0]))
         }
 
+        // ScientificForm[x] / [x, n] → mantissa × 10^exp with a superscript
+        // exponent (matching the number's notebook typesetting).
+        "ScientificForm" if !args.is_empty() => {
+          let n = format_precision_arg(args.get(1), 6);
+          match crate::functions::string_ast::scientific_form_parts(&args[0], n)
+          {
+            Some((mantissa, Some(exp))) => format!(
+              "{}×10<tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
+              svg_escape(&mantissa),
+              exp
+            ),
+            Some((mantissa, None)) => svg_escape(&mantissa),
+            None => expr_to_svg_markup(&args[0]),
+          }
+        }
+
+        // EngineeringForm[x] / [x, n] → like ScientificForm but exp is a
+        // multiple of 3.
+        "EngineeringForm" if !args.is_empty() => {
+          let n = format_precision_arg(args.get(1), 6);
+          match crate::functions::string_ast::engineering_form_parts(
+            &args[0], n,
+          ) {
+            Some((mantissa, Some(exp))) => format!(
+              "{}×10<tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
+              svg_escape(&mantissa),
+              exp
+            ),
+            Some((mantissa, None)) => svg_escape(&mantissa),
+            None => expr_to_svg_markup(&args[0]),
+          }
+        }
+
+        // BaseForm[x, b] → digits of x in base b with a subscript base.
+        "BaseForm" if args.len() == 2 => {
+          if let (Some(digits), Expr::Integer(base)) =
+            (base_form_digits(&args[0], &args[1]), &args[1])
+          {
+            format!(
+              "{}<tspan baseline-shift=\"sub\" font-size=\"70%\">{}</tspan>",
+              svg_escape(&digits),
+              base
+            )
+          } else {
+            expr_to_svg_markup(&args[0])
+          }
+        }
+
+        // NumberForm / PaddedForm / AccountingForm → the formatted number text
+        // (padding/grouping is folded into the string; the grid handles
+        // alignment). Multi-line 2-D forms are flattened to a single line. When
+        // the wrapper can't format its argument (e.g. a nested BaseForm that
+        // ToString leaves intact), fall back to rendering the inner value so a
+        // grid of numbers still appears rather than raw wrapper text.
+        "NumberForm" | "PaddedForm" | "AccountingForm" if !args.is_empty() => {
+          let s = crate::functions::string_ast::to_string_default_form(expr);
+          if s.trim_start().starts_with(name.as_str()) {
+            expr_to_svg_markup(&args[0])
+          } else {
+            svg_escape(s.replace('\n', " ").trim())
+          }
+        }
+
         // Style[content, directives...] → render content only
         "Style" if !args.is_empty() => expr_to_svg_markup(&args[0]),
 
@@ -6502,6 +6603,46 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
       "Style" if !args.is_empty() => estimate_display_width(&args[0]),
       // HoldForm[expr] → width of content
       "HoldForm" if args.len() == 1 => estimate_display_width(&args[0]),
+      // Number-display wrappers estimate the width of their *rendered* form
+      // (mantissa × 10^exp, base digits, padded number) rather than the raw
+      // `Head[...]` text, so table columns aren't wildly over-sized.
+      "ScientificForm" | "EngineeringForm" if !args.is_empty() => {
+        let n = format_precision_arg(args.get(1), 6);
+        let parts = if name == "ScientificForm" {
+          crate::functions::string_ast::scientific_form_parts(&args[0], n)
+        } else {
+          crate::functions::string_ast::engineering_form_parts(&args[0], n)
+        };
+        match parts {
+          Some((mantissa, Some(exp))) => {
+            // mantissa + "×10" (3) + exponent as a 70%-width superscript
+            mantissa.len() as f64 + 3.0 + exp.to_string().len() as f64 * 0.7
+          }
+          Some((mantissa, None)) => mantissa.len() as f64,
+          None => estimate_display_width(&args[0]),
+        }
+      }
+      "BaseForm" if args.len() == 2 => {
+        match base_form_digits(&args[0], &args[1]) {
+          // digits + subscript base at 70% width
+          Some(digits) => {
+            let base_len = match &args[1] {
+              Expr::Integer(b) => b.to_string().len(),
+              _ => 1,
+            };
+            digits.len() as f64 + base_len as f64 * 0.7
+          }
+          None => estimate_display_width(&args[0]),
+        }
+      }
+      "NumberForm" | "PaddedForm" | "AccountingForm" if !args.is_empty() => {
+        let s = crate::functions::string_ast::to_string_default_form(expr);
+        if s.trim_start().starts_with(name.as_str()) {
+          estimate_display_width(&args[0])
+        } else {
+          s.replace('\n', " ").trim().chars().count() as f64
+        }
+      }
       _ => {
         let args_width: f64 = args.iter().map(estimate_display_width).sum();
         let seps = if args.len() > 1 {
@@ -7570,6 +7711,15 @@ pub fn grid_ast_with_parens(args: &[Expr]) -> Result<Expr, InterpreterError> {
   grid_ast_internal(args, &[], true)
 }
 
+/// Render a parenthesized grid (MatrixForm) with an inherited outer Style.
+pub fn grid_ast_styled_with_parens(
+  args: &[Expr],
+  style: &GridStyle,
+) -> Result<Expr, InterpreterError> {
+  let svg = grid_svg_styled_internal(args, &[], true, style)?;
+  Ok(crate::graphics_result(svg))
+}
+
 /// Render a grid and return the raw SVG string.
 pub fn grid_svg_with_gaps(
   args: &[Expr],
@@ -7658,6 +7808,12 @@ pub fn parse_grid_style(directives: &[Expr]) -> GridStyle {
     match d {
       Expr::Identifier(s) if s == "Bold" => gs.font_weight = Some("bold"),
       Expr::Identifier(s) if s == "Italic" => gs.font_style = Some("italic"),
+      // Named font sizes (relative to the ~12 pt default cell text).
+      Expr::Identifier(s) if s == "Tiny" => gs.font_size = Some(7.0),
+      Expr::Identifier(s) if s == "Small" => gs.font_size = Some(9.0),
+      Expr::Identifier(s) if s == "Medium" => gs.font_size = Some(12.0),
+      Expr::Identifier(s) if s == "Large" => gs.font_size = Some(18.0),
+      Expr::Identifier(s) if s == "Huge" => gs.font_size = Some(26.0),
       Expr::Integer(n) => gs.font_size = Some(*n as f64),
       Expr::Real(f) => gs.font_size = Some(*f),
       Expr::Rule {
@@ -7672,6 +7828,22 @@ pub fn parse_grid_style(directives: &[Expr]) -> GridStyle {
             Expr::Real(f) => gs.font_size = Some(*f),
             _ => {}
           }
+        }
+      }
+      // Directives grouped in a list, e.g. Style[expr, {Large, Bold, Orange}].
+      Expr::List(items) => {
+        let inner = parse_grid_style(items);
+        if inner.font_weight.is_some() {
+          gs.font_weight = inner.font_weight;
+        }
+        if inner.font_style.is_some() {
+          gs.font_style = inner.font_style;
+        }
+        if inner.font_size.is_some() {
+          gs.font_size = inner.font_size;
+        }
+        if inner.color.is_some() {
+          gs.color = inner.color;
         }
       }
       _ => {
@@ -7786,6 +7958,9 @@ fn grid_svg_styled_internal(
   let mut col_headings: Vec<Expr> = Vec::new();
   let mut spacings_h: Option<f64> = None; // horizontal spacing override
   let mut spacings_v: Option<f64> = None; // vertical spacing override
+  // TableForm's TableSpacing maps directly to pixels (see the option below).
+  let mut table_pad_x: Option<f64> = None; // per-cell horizontal padding (px)
+  let mut table_row_gap: Option<f64> = None; // gap between rows (px)
   let mut dividers_col = false; // vertical divider lines between columns
   let mut dividers_row = false; // horizontal divider lines between rows
   // Per-position divider specs: Some(color) = draw with color, None = don't draw
@@ -8026,9 +8201,9 @@ fn grid_svg_styled_internal(
             _ => {}
           }
         }
-        "TableHeadings" => {
-          // TableHeadings -> {{row_h...}, {col_h...}}
-          if let Expr::List(lists) = replacement.as_ref() {
+        "TableHeadings" => match replacement.as_ref() {
+          // TableHeadings -> {{row_h...}, {col_h...}} (either may be None)
+          Expr::List(lists) => {
             if !lists.is_empty()
               && let Expr::List(rh) = &lists[0]
             {
@@ -8040,55 +8215,76 @@ fn grid_svg_styled_internal(
               col_headings = ch.to_vec();
             }
           }
+          // TableHeadings -> Automatic: label rows and columns with their
+          // 1-based indices.
+          Expr::Identifier(v) if v == "Automatic" => {
+            let n_rows = rows.len();
+            let n_cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+            row_headings =
+              (1..=n_rows).map(|i| Expr::Integer(i as i128)).collect();
+            col_headings =
+              (1..=n_cols).map(|i| Expr::Integer(i as i128)).collect();
+          }
+          _ => {}
+        },
+        "TableSpacing" => {
+          // TableForm's TableSpacing -> {rows, cols}: the first value is the
+          // gap between rows, the second the gap between columns (the opposite
+          // order from Grid's Spacings -> {h, v}). Its units differ from
+          // Grid's ems, so map them to pixels directly rather than routing
+          // through spacings_h / spacings_v. The default column spacing is 3
+          // (→ the standard 12 px cell padding), and rows touch at spacing 1.
+          let num = |e: &Expr| -> Option<f64> {
+            match e {
+              Expr::Integer(n) => Some(*n as f64),
+              Expr::Real(f) => Some(*f),
+              _ => None,
+            }
+          };
+          if let Expr::List(items) = replacement.as_ref() {
+            if let Some(r) = items.first().and_then(num) {
+              table_row_gap = Some((r - 1.0).max(0.0) * 3.5);
+            }
+            if let Some(c) = items.get(1).and_then(num) {
+              table_pad_x = Some(c * 4.0);
+            }
+          }
         }
         _ => {}
       }
     }
   }
 
-  // Inject TableHeadings into the grid data
+  // Inject TableHeadings into the grid data. Wolfram renders the headings in
+  // the same (plain) style as the body cells, separated from it by a thin
+  // rule — not bold. Track whether a heading row/column was added so those
+  // separator lines can be drawn later.
+  let mut has_col_heading_row = false;
+  let mut has_row_heading_col = false;
   if !col_headings.is_empty() {
-    // Add column headings as the first row (bold)
-    let mut heading_row: Vec<Expr> = col_headings
-      .into_iter()
-      .map(|h| Expr::FunctionCall {
-        name: "Style".to_string(),
-        args: vec![h, Expr::Identifier("Bold".to_string())].into(),
-      })
-      .collect();
+    // Add column headings as the first row
+    let mut heading_row: Vec<Expr> = col_headings;
     if !row_headings.is_empty() {
       // Insert empty top-left corner cell
       heading_row.insert(0, Expr::Identifier(String::new()));
     }
     rows.insert(0, heading_row);
+    has_col_heading_row = true;
   }
   if !row_headings.is_empty() {
-    // Add row headings as the first column (bold)
-    let start = if rows.first().is_some_and(|r| {
-      r.first()
-        .is_some_and(|c| matches!(c, Expr::Identifier(s) if s.is_empty()))
-    }) {
-      1 // Skip the heading row (already has corner cell)
-    } else {
-      0
-    };
+    // Add row headings as the first column
+    let start = if has_col_heading_row { 1 } else { 0 };
     for (i, row) in rows.iter_mut().enumerate() {
       if i >= start {
         let idx = i - start;
         if let Some(h) = row_headings.get(idx) {
-          row.insert(
-            0,
-            Expr::FunctionCall {
-              name: "Style".to_string(),
-              args: vec![h.clone(), Expr::Identifier("Bold".to_string())]
-                .into(),
-            },
-          );
+          row.insert(0, h.clone());
         } else {
           row.insert(0, Expr::Identifier(String::new()));
         }
       }
     }
+    has_row_heading_col = true;
   }
 
   // Convert cells to text
@@ -8102,14 +8298,16 @@ fn grid_svg_styled_internal(
   let char_width: f64 = 8.4; // approximate monospace char width at font-size 14
   let font_size: f64 = 14.0;
   // Apply Spacings option: values are in ems (multiples of char_width / font_size)
-  let pad_x: f64 = match spacings_h {
-    Some(h) => h * char_width, // Spacings h in ems → pixel padding
-    None => 12.0,              // default horizontal padding per cell
+  let pad_x: f64 = match (table_pad_x, spacings_h) {
+    (Some(px), _) => px, // TableSpacing → pixels directly
+    (None, Some(h)) => h * char_width, // Spacings h in ems → pixel padding
+    (None, None) => 12.0, // default horizontal padding per cell
   };
   let pad_y: f64 = 2.0; // vertical padding per cell (each side = 1)
-  let row_gap: f64 = match spacings_v {
-    Some(v) => v * font_size, // Spacings v in ems → pixel gap between rows
-    None => 0.0,              // default: no extra row gap
+  let row_gap: f64 = match (table_row_gap, spacings_v) {
+    (Some(g), _) => g, // TableSpacing → pixels directly
+    (None, Some(v)) => v * font_size, // Spacings v in ems → pixel gap
+    (None, None) => 0.0, // default: no extra row gap
   };
   let group_gap: f64 = 6.0; // extra spacing between groups
   let base_row_height = font_size + pad_y;
@@ -8570,6 +8768,28 @@ fn grid_svg_styled_internal(
       if j < num_cols {
         x_offset += col_widths[j];
       }
+    }
+  }
+
+  // TableHeadings separators: a thin rule below the heading row and to the
+  // right of the heading column, matching how Wolfram sets headings apart
+  // from the table body.
+  if has_col_heading_row || has_row_heading_col {
+    let heading_stroke = theme().stroke_default;
+    if has_col_heading_row && num_rows > 1 {
+      // Horizontal rule at the boundary below the first (heading) row.
+      let y = visual_bottoms[0];
+      svg.push_str(&format!(
+        "<line x1=\"{paren_margin:.1}\" y1=\"{y:.1}\" x2=\"{:.1}\" y2=\"{y:.1}\" stroke=\"{heading_stroke}\" stroke-width=\"1\"/>\n",
+        paren_margin + grid_width
+      ));
+    }
+    if has_row_heading_col && num_cols > 1 {
+      // Vertical rule at the boundary to the right of the first (heading) col.
+      let x = paren_margin + col_widths[0];
+      svg.push_str(&format!(
+        "<line x1=\"{x:.1}\" y1=\"0\" x2=\"{x:.1}\" y2=\"{total_height:.1}\" stroke=\"{heading_stroke}\" stroke-width=\"1\"/>\n"
+      ));
     }
   }
 

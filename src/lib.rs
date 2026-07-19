@@ -2362,97 +2362,233 @@ fn is_3d_list(items: &[syntax::Expr]) -> bool {
     })
 }
 
+/// Compute the `Grid` arguments (data reshaped into rows + forwarded options
+/// like `TableHeadings`) and the group-gap row indices for a
+/// `TableForm[data, opts…]` call's argument list.
+///
+/// Returns `None` when the data isn't a renderable list, or when it contains
+/// Graphics placeholders (those are combined by the graphics-grid path
+/// instead). Shared by the plain and `Style`-wrapped rendering paths.
+pub(crate) fn tableform_grid_args(
+  args: &[syntax::Expr],
+) -> Option<(Vec<syntax::Expr>, Vec<usize>)> {
+  let data = args.first()?;
+  // Skip if content contains Graphics placeholders (handled by
+  // render_graphics_list_if_needed / the graphics-grid combine path).
+  if contains_graphics_placeholder(data) {
+    return None;
+  }
+  // TableDepth -> d caps how far TableForm descends into nested lists; deeper
+  // lists are shown inline as literal expressions. The default (unset) lets it
+  // descend as far as the structure allows (the 3D-expansion path below).
+  let table_depth: Option<i64> = args[1..].iter().find_map(|a| match a {
+    syntax::Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(),
+      syntax::Expr::Identifier(n) if n == "TableDepth") =>
+    {
+      match replacement.as_ref() {
+        syntax::Expr::Integer(d) => Some(*d as i64),
+        _ => None,
+      }
+    }
+    _ => None,
+  });
+  // Build grid data and optional group gap indices
+  let (grid_data, group_gaps) = match data {
+    // TableDepth -> 1: each top-level element is one row in a single column,
+    // rendered inline (even if it is itself a list).
+    syntax::Expr::List(items) if table_depth == Some(1) => (
+      syntax::Expr::List(
+        items
+          .iter()
+          .map(|e| syntax::Expr::List(vec![e.clone()].into()))
+          .collect(),
+      ),
+      vec![],
+    ),
+    // TableDepth -> 2: treat the data as a flat 2-D grid — cells that are
+    // themselves lists stay inline rather than expanding into a third axis.
+    syntax::Expr::List(items)
+      if table_depth == Some(2)
+        && items
+          .iter()
+          .all(|item| matches!(item, syntax::Expr::List(_))) =>
+    {
+      (data.clone(), vec![])
+    }
+    syntax::Expr::List(items) if is_3d_list(items) => {
+      // 3D list M[dim1][dim2][dim3]:
+      // Each block M[i] is transposed (sub-lists become columns),
+      // then blocks are stacked vertically.
+      let mut rows: Vec<syntax::Expr> = Vec::new();
+      let mut gaps: Vec<usize> = Vec::new();
+      for (bi, block) in items.iter().enumerate() {
+        if let syntax::Expr::List(sub_lists) = block {
+          if bi > 0 {
+            gaps.push(rows.len());
+          }
+          let dim3 = sub_lists
+            .iter()
+            .map(|sl| {
+              if let syntax::Expr::List(v) = sl {
+                v.len()
+              } else {
+                0
+              }
+            })
+            .max()
+            .unwrap_or(0);
+          for k in 0..dim3 {
+            let row: Vec<syntax::Expr> = sub_lists
+              .iter()
+              .map(|sl| {
+                if let syntax::Expr::List(v) = sl {
+                  v.get(k)
+                    .cloned()
+                    .unwrap_or(syntax::Expr::Identifier(String::new()))
+                } else {
+                  sl.clone()
+                }
+              })
+              .collect();
+            rows.push(syntax::Expr::List(row.into()));
+          }
+        }
+      }
+      (syntax::Expr::List(rows.into()), gaps)
+    }
+    syntax::Expr::List(items)
+      if items
+        .iter()
+        .all(|item| matches!(item, syntax::Expr::List(_))) =>
+    {
+      (data.clone(), vec![])
+    }
+    syntax::Expr::List(items) if !items.is_empty() => {
+      // 1D list — wrap each element in a single-element list (column)
+      (
+        syntax::Expr::List(
+          items
+            .iter()
+            .map(|e| syntax::Expr::List(vec![e.clone()].into()))
+            .collect(),
+        ),
+        vec![],
+      )
+    }
+    _ => return None,
+  };
+  // TableDirections -> Row transposes the table (the outer list runs across
+  // columns instead of down rows). The default (Column) leaves it as built.
+  let transpose_rows = args[1..].iter().any(|a| {
+    matches!(a, syntax::Expr::Rule { pattern, replacement }
+      if matches!(pattern.as_ref(), syntax::Expr::Identifier(n) if n == "TableDirections")
+        && match replacement.as_ref() {
+          syntax::Expr::Identifier(v) => v == "Row",
+          syntax::Expr::List(items) => matches!(items.first(),
+            Some(syntax::Expr::Identifier(v)) if v == "Row"),
+          _ => false,
+        })
+  });
+  let grid_data = if transpose_rows {
+    transpose_grid_list(&grid_data)
+  } else {
+    grid_data
+  };
+  // Forward extra args (options like TableHeadings) to grid rendering.
+  // TableForm defaults to left alignment (unlike Grid which centers).
+  let mut grid_args = vec![grid_data];
+  let has_alignment = args[1..].iter().any(|a| {
+    matches!(a, syntax::Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), syntax::Expr::Identifier(n) if n == "Alignment"))
+  });
+  // TableAlignments -> Center|Left|Right (or {horizontal, vertical}) maps to
+  // the grid's Alignment option. The "." decimal-point form isn't supported
+  // yet, so it falls back to the default left alignment.
+  let table_alignment: Option<syntax::Expr> =
+    args[1..].iter().find_map(|a| match a {
+      syntax::Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(),
+        syntax::Expr::Identifier(n) if n == "TableAlignments") =>
+      {
+        let horiz = match replacement.as_ref() {
+          syntax::Expr::List(items) => items.first(),
+          other => Some(other),
+        };
+        match horiz {
+          Some(syntax::Expr::Identifier(v))
+            if v == "Center" || v == "Left" || v == "Right" =>
+          {
+            Some(syntax::Expr::Identifier(v.clone()))
+          }
+          _ => None,
+        }
+      }
+      _ => None,
+    });
+  if !has_alignment {
+    let align = table_alignment
+      .unwrap_or_else(|| syntax::Expr::Identifier("Left".into()));
+    grid_args.push(syntax::Expr::Rule {
+      pattern: Box::new(syntax::Expr::Identifier("Alignment".into())),
+      replacement: Box::new(align),
+    });
+  }
+  grid_args.extend(args[1..].iter().cloned());
+  Some((grid_args, group_gaps))
+}
+
+/// Transpose a rectangular list-of-rows `{{a,b},{c,d},{e,f}}` into
+/// `{{a,c,e},{b,d,f}}`. Ragged rows are padded with empty cells. A non-list
+/// or empty input is returned unchanged.
+fn transpose_grid_list(data: &syntax::Expr) -> syntax::Expr {
+  let syntax::Expr::List(rows) = data else {
+    return data.clone();
+  };
+  let cols = rows
+    .iter()
+    .map(|r| match r {
+      syntax::Expr::List(c) => c.len(),
+      _ => 1,
+    })
+    .max()
+    .unwrap_or(0);
+  if cols == 0 {
+    return data.clone();
+  }
+  let mut out: Vec<syntax::Expr> = Vec::with_capacity(cols);
+  for j in 0..cols {
+    let new_row: Vec<syntax::Expr> = rows
+      .iter()
+      .map(|r| match r {
+        syntax::Expr::List(c) => c
+          .get(j)
+          .cloned()
+          .unwrap_or_else(|| syntax::Expr::Identifier(String::new())),
+        other if j == 0 => other.clone(),
+        _ => syntax::Expr::Identifier(String::new()),
+      })
+      .collect();
+    out.push(syntax::Expr::List(new_row.into()));
+  }
+  syntax::Expr::List(out.into())
+}
+
 /// If `expr` is a TableForm[list] with non-graphics data, render as a Grid SVG.
 /// This is only called from `interpret_with_stdout` (visual contexts),
 /// not from plain `interpret` (where TableForm stays symbolic).
-fn render_tableform_if_needed(expr: syntax::Expr) -> syntax::Expr {
+pub(crate) fn render_tableform_if_needed(expr: syntax::Expr) -> syntax::Expr {
   match &expr {
     syntax::Expr::FunctionCall { name, args }
       if name == "TableForm" && !args.is_empty() =>
     {
-      let data = &args[0];
-      // Skip if content contains Graphics placeholders (handled by render_graphics_list_if_needed)
-      if contains_graphics_placeholder(data) {
+      let Some((grid_args, group_gaps)) = tableform_grid_args(args) else {
         return expr;
-      }
-      // Build grid data and optional group gap indices
-      let (grid_data, group_gaps) = match data {
-        syntax::Expr::List(items) if is_3d_list(items) => {
-          // 3D list M[dim1][dim2][dim3]:
-          // Each block M[i] is transposed (sub-lists become columns),
-          // then blocks are stacked vertically.
-          let mut rows: Vec<syntax::Expr> = Vec::new();
-          let mut gaps: Vec<usize> = Vec::new();
-          for (bi, block) in items.iter().enumerate() {
-            if let syntax::Expr::List(sub_lists) = block {
-              if bi > 0 {
-                gaps.push(rows.len());
-              }
-              let dim3 = sub_lists
-                .iter()
-                .map(|sl| {
-                  if let syntax::Expr::List(v) = sl {
-                    v.len()
-                  } else {
-                    0
-                  }
-                })
-                .max()
-                .unwrap_or(0);
-              for k in 0..dim3 {
-                let row: Vec<syntax::Expr> = sub_lists
-                  .iter()
-                  .map(|sl| {
-                    if let syntax::Expr::List(v) = sl {
-                      v.get(k)
-                        .cloned()
-                        .unwrap_or(syntax::Expr::Identifier(String::new()))
-                    } else {
-                      sl.clone()
-                    }
-                  })
-                  .collect();
-                rows.push(syntax::Expr::List(row.into()));
-              }
-            }
-          }
-          (syntax::Expr::List(rows.into()), gaps)
-        }
-        syntax::Expr::List(items)
-          if items
-            .iter()
-            .all(|item| matches!(item, syntax::Expr::List(_))) =>
-        {
-          (data.clone(), vec![])
-        }
-        syntax::Expr::List(items) if !items.is_empty() => {
-          // 1D list — wrap each element in a single-element list (column)
-          (
-            syntax::Expr::List(
-              items
-                .iter()
-                .map(|e| syntax::Expr::List(vec![e.clone()].into()))
-                .collect(),
-            ),
-            vec![],
-          )
-        }
-        _ => return expr,
       };
-      // Forward extra args (options like TableHeadings) to grid rendering.
-      // TableForm defaults to left alignment (unlike Grid which centers).
-      let mut grid_args = vec![grid_data];
-      let has_alignment = args[1..].iter().any(|a| {
-        matches!(a, syntax::Expr::Rule { pattern, .. }
-          if matches!(pattern.as_ref(), syntax::Expr::Identifier(n) if n == "Alignment"))
-      });
-      if !has_alignment {
-        grid_args.push(syntax::Expr::Rule {
-          pattern: Box::new(syntax::Expr::Identifier("Alignment".into())),
-          replacement: Box::new(syntax::Expr::Identifier("Left".into())),
-        });
-      }
-      grid_args.extend(args[1..].iter().cloned());
       let result = if group_gaps.is_empty() {
         functions::graphics::grid_ast(&grid_args)
       } else {
@@ -2471,7 +2607,7 @@ fn render_tableform_if_needed(expr: syntax::Expr) -> syntax::Expr {
 /// For 2D lists, render as a parenthesized matrix.
 /// For 3D lists, render each sub-matrix as a parenthesized matrix, stacked vertically.
 /// For 1D lists, render as a column vector with parentheses.
-fn render_matrixform_if_needed(expr: syntax::Expr) -> syntax::Expr {
+pub(crate) fn render_matrixform_if_needed(expr: syntax::Expr) -> syntax::Expr {
   match &expr {
     syntax::Expr::FunctionCall { name, args }
       if name == "MatrixForm" && args.len() == 1 =>
@@ -2532,7 +2668,9 @@ fn render_matrixform_if_needed(expr: syntax::Expr) -> syntax::Expr {
 
 /// If `expr` is `TraditionalForm[{…}]`, render the list as a parenthesized matrix
 /// (same visual treatment as MatrixForm).
-fn render_traditionalform_list_if_needed(expr: syntax::Expr) -> syntax::Expr {
+pub(crate) fn render_traditionalform_list_if_needed(
+  expr: syntax::Expr,
+) -> syntax::Expr {
   match &expr {
     syntax::Expr::FunctionCall { name, args }
       if name == "TraditionalForm"
