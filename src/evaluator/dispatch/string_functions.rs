@@ -106,8 +106,10 @@ pub fn dispatch_string_functions(
       return Some(crate::functions::string_ast::to_string_ast(args));
     }
     // Display wrapper: stays unevaluated in script-mode echo (rendering
-    // happens through ToString), without the not-yet-implemented warning
-    "PaddedForm" if args.len() == 2 => {
+    // happens through ToString), without the not-yet-implemented warning.
+    // Trailing arguments beyond the spec carry options such as
+    // NumberPadding -> {"0", ""}.
+    "PaddedForm" if args.len() >= 2 => {
       return Some(Ok(unevaluated("PaddedForm", args)));
     }
     "ToExpression" if !args.is_empty() && args.len() <= 3 => {

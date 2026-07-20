@@ -4539,18 +4539,42 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // PaddedForm[expr, n] / PaddedForm[expr, {n, f}] — right-aligned
   // number rendering (width n+1 for the integer spec, n+2 for {n, f},
-  // reserving sign/decimal-point columns like wolframscript)
+  // reserving sign/decimal-point columns like wolframscript). The
+  // NumberPadding -> {p1, p2} option replaces the left padding character
+  // (e.g. "0" for zero-padded fields), with the sign column filling like
+  // the NumberForm NumberPadding handling above. A BaseForm[x, b] inner
+  // value pads the base-b digit string and keeps the subscript base line.
   if let Expr::FunctionCall {
     name,
     args: inner_args,
   } = &args[0]
     && name == "PaddedForm"
     && !is_input_form
-    && inner_args.len() == 2
-    && let Some(rendered) =
-      padded_form_to_string(&inner_args[0], &inner_args[1])
+    && inner_args.len() >= 2
   {
-    return Ok(Expr::String(rendered));
+    let positional: Vec<&Expr> = inner_args
+      .iter()
+      .filter(|a| !matches!(a, Expr::Rule { .. }))
+      .collect();
+    if positional.len() == 2 {
+      let lpad = number_padding_left(inner_args);
+      if let Some((digits, base)) =
+        padded_base_form_digits(positional[0], positional[1], &lpad)
+      {
+        let rendered = if base == 10 {
+          digits
+        } else {
+          let indent = " ".repeat(digits.chars().count());
+          format!("{}\n{}{}", digits, indent, base)
+        };
+        return Ok(Expr::String(rendered));
+      }
+      if let Some(rendered) =
+        padded_form_to_string(positional[0], positional[1], &lpad)
+      {
+        return Ok(Expr::String(rendered));
+      }
+    }
   }
 
   // If the expression is MathMLForm[inner], produce MathML regardless of form argument
@@ -12146,36 +12170,116 @@ fn is_abbreviation(before: &[char], after: &[char]) -> bool {
 /// Integer spec n: right-aligned to width n + 1. List spec {n, f}:
 /// rounded to f decimals (with trailing zeros) and right-aligned to
 /// width n + 2. None for non-numeric values or malformed specs.
-/// Right-align an integer's digit string into a padded field. A column is always
-/// reserved for the sign, and the digit field widens past `n` when the number
-/// has more digits, so e.g. `123` with n=2 renders as ` 123` (width 4).
-fn pad_integer_body(body: &str, n: usize) -> String {
-  let num_digits = body.trim_start_matches('-').chars().count();
-  let width = n.max(num_digits) + 1;
-  format!("{body:>width$}")
+/// The left NumberPadding string of a display-form argument list: the first
+/// element of a `NumberPadding -> {p1, p2}` rule, or " " when absent.
+pub fn number_padding_left(args: &[Expr]) -> String {
+  for a in args {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = a
+      && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "NumberPadding")
+      && let Expr::List(pad) = replacement.as_ref()
+      && let Some(Expr::String(p1)) = pad.first()
+    {
+      return p1.clone();
+    }
+  }
+  " ".to_string()
 }
 
-fn padded_form_to_string(value: &Expr, spec: &Expr) -> Option<String> {
+/// Left-pad `body` to `width` columns with the padding string `lpad`
+/// (one copy per missing column, so an empty `lpad` disables padding).
+fn pad_left(body: &str, width: usize, lpad: &str) -> String {
+  let count = width.saturating_sub(body.chars().count());
+  format!("{}{}", lpad.repeat(count), body)
+}
+
+/// Right-align an integer's digit string into a padded field. A column is always
+/// reserved for the sign (filled by the pad character, matching the verified
+/// NumberForm NumberPadding behavior), and the digit field widens past `n`
+/// when the number has more digits, so e.g. `123` with n=2 renders as ` 123`
+/// (width 4).
+fn pad_integer_body(body: &str, n: usize, lpad: &str) -> String {
+  let num_digits = body.trim_start_matches('-').chars().count();
+  pad_left(body, n.max(num_digits) + 1, lpad)
+}
+
+/// Padded digits of `PaddedForm[BaseForm[x, b], n]`: the base-b digit string
+/// of the integer `x`, left-padded to n + 1 columns with `lpad` exactly like
+/// the decimal integer field. Returns `(padded_digits, base)`; None when the
+/// value is not an integer BaseForm or the spec is malformed. A `{n, f}` spec
+/// pads to its integer part (integers ignore the fractional spec).
+pub fn padded_base_form_digits(
+  value: &Expr,
+  spec: &Expr,
+  lpad: &str,
+) -> Option<(String, i128)> {
+  let Expr::FunctionCall { name, args } = value else {
+    return None;
+  };
+  if name != "BaseForm" || args.len() != 2 {
+    return None;
+  }
+  let (Expr::Integer(x), Expr::Integer(b)) = (&args[0], &args[1]) else {
+    return None;
+  };
+  if !(2..=36).contains(b) {
+    return None;
+  }
+  let n = match spec {
+    Expr::Integer(n) if *n >= 0 => *n,
+    Expr::List(parts) if parts.len() == 2 => match &parts[0] {
+      Expr::Integer(n) if *n >= 0 => *n,
+      _ => return None,
+    },
+    _ => return None,
+  };
+  let digits = integer_to_base_string(*x, *b);
+  Some((pad_integer_body(&digits, n as usize, lpad), *b))
+}
+
+/// Padded digits of a full `PaddedForm[BaseForm[x, b], spec, opts…]` argument
+/// list, honoring a `NumberPadding` option. Returns `(padded_digits, base)`;
+/// None when the arguments are not the BaseForm-in-PaddedForm shape.
+pub fn padded_form_base_parts(args: &[Expr]) -> Option<(String, i128)> {
+  let positional: Vec<&Expr> = args
+    .iter()
+    .filter(|a| !matches!(a, Expr::Rule { .. }))
+    .collect();
+  if positional.len() != 2 {
+    return None;
+  }
+  let lpad = number_padding_left(args);
+  padded_base_form_digits(positional[0], positional[1], &lpad)
+}
+
+fn padded_form_to_string(
+  value: &Expr,
+  spec: &Expr,
+  lpad: &str,
+) -> Option<String> {
   // A list pads each element with the same spec and renders as `{e1, e2, ...}`.
   if let Expr::List(items) = value {
     let parts: Option<Vec<String>> = items
       .iter()
-      .map(|e| padded_form_to_string(e, spec))
+      .map(|e| padded_form_to_string(e, spec, lpad))
       .collect();
     return Some(format!("{{{}}}", parts?.join(", ")));
   }
   match spec {
     Expr::Integer(n) if *n >= 0 => match value {
-      Expr::Integer(i) => Some(pad_integer_body(&i.to_string(), *n as usize)),
+      Expr::Integer(i) => {
+        Some(pad_integer_body(&i.to_string(), *n as usize, lpad))
+      }
       Expr::BigInteger(i) => {
-        Some(pad_integer_body(&i.to_string(), *n as usize))
+        Some(pad_integer_body(&i.to_string(), *n as usize, lpad))
       }
       _ => {
         // Reals/rationals: render via output form, padded to width n+1.
         crate::functions::math_ast::expr_to_num(value)?;
         let body = crate::syntax::expr_to_output(value);
-        let width = (*n as usize) + 1;
-        Some(format!("{body:>width$}"))
+        Some(pad_left(&body, (*n as usize) + 1, lpad))
       }
     },
     Expr::List(parts) if parts.len() == 2 => {
@@ -12187,16 +12291,15 @@ fn padded_form_to_string(value: &Expr, spec: &Expr) -> Option<String> {
           // An integer ignores the fractional spec: it is shown as an integer
           // padded to width n+1, never with a spurious decimal part.
           Expr::Integer(i) => {
-            Some(pad_integer_body(&i.to_string(), *n as usize))
+            Some(pad_integer_body(&i.to_string(), *n as usize, lpad))
           }
           Expr::BigInteger(i) => {
-            Some(pad_integer_body(&i.to_string(), *n as usize))
+            Some(pad_integer_body(&i.to_string(), *n as usize, lpad))
           }
           _ => {
             let v = crate::functions::math_ast::expr_to_num(value)?;
             let body = format!("{v:.prec$}", prec = *f as usize);
-            let width = (*n as usize) + 2;
-            Some(format!("{body:>width$}"))
+            Some(pad_left(&body, (*n as usize) + 2, lpad))
           }
         }
       } else {

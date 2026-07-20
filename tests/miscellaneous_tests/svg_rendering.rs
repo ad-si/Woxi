@@ -98,6 +98,78 @@ mod tests {
     );
   }
 
+  // ── PaddedForm[BaseForm[…]] grid cells ──
+
+  fn padded_base_form_expr(value: i128, spec: i128, zero_pad: bool) -> Expr {
+    let mut args = vec![
+      Expr::FunctionCall {
+        name: "BaseForm".to_string(),
+        args: vec![Expr::Integer(value), Expr::Integer(2)].into(),
+      },
+      Expr::Integer(spec),
+    ];
+    if zero_pad {
+      args.push(Expr::Rule {
+        pattern: Box::new(Expr::Identifier("NumberPadding".to_string())),
+        replacement: Box::new(Expr::List(
+          vec![Expr::String("0".to_string()), Expr::String(String::new())]
+            .into(),
+        )),
+      });
+    }
+    Expr::FunctionCall {
+      name: "PaddedForm".to_string(),
+      args: args.into(),
+    }
+  }
+
+  #[test]
+  fn test_svg_padded_base_form_zero_padded() {
+    // PaddedForm[BaseForm[8, 2], 8, NumberPadding -> {"0", ""}] — binary
+    // digits zero-padded to the n+1 field, with the subscript base.
+    let markup = expr_to_svg_markup(&padded_base_form_expr(8, 8, true));
+    assert_eq!(
+      markup,
+      "000001000<tspan baseline-shift=\"sub\" font-size=\"70%\">2</tspan>"
+    );
+    // Width: 9 digit columns + the subscript base at 70%.
+    let width = estimate_display_width(&padded_base_form_expr(8, 8, true));
+    assert!(
+      (width - 9.7).abs() < 1e-9,
+      "expected width 9.7, got {width}"
+    );
+  }
+
+  #[test]
+  fn test_svg_padded_base_form_default_space_padding_trimmed() {
+    // Without NumberPadding the pad is spaces, which the grid drops (cells
+    // are aligned by position, not by literal spaces).
+    let markup = expr_to_svg_markup(&padded_base_form_expr(8, 8, false));
+    assert_eq!(
+      markup,
+      "1000<tspan baseline-shift=\"sub\" font-size=\"70%\">2</tspan>"
+    );
+  }
+
+  #[test]
+  fn test_svg_padded_base_form_table_pipeline() {
+    // End-to-end: the wrapper distributes over TableForm cells and every
+    // cell comes out zero-padded.
+    let svg = woxi::interpret(
+      r#"ExportString[PaddedForm[BaseForm[TableForm[{{8, 49}, {123, 5}}], 2], 8,
+        NumberPadding -> {"0", ""}], "SVG"]"#,
+    )
+    .expect("interpret should succeed");
+    for cell in ["000001000", "000110001", "001111011", "000000101"] {
+      assert!(
+        svg.contains(&format!(
+          "{cell}<tspan baseline-shift=\"sub\" font-size=\"70%\">2</tspan>"
+        )),
+        "zero-padded cell {cell} missing from SVG"
+      );
+    }
+  }
+
   // ── Implicit multiplication (no * symbol) ──
 
   #[test]
