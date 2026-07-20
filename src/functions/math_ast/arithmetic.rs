@@ -8206,7 +8206,32 @@ fn direct_real_divide(a: &Expr, b: &Expr) -> Option<Expr> {
       use num_traits::ToPrimitive;
       n.to_f64()?
     }
-    _ => return None,
+    // An EXACT symbolic numeric numerator ((42 + Pi)/(Pi - 10)) folds
+    // through N first, then one IEEE division — wolframscript rounds
+    // once, never through a reciprocal multiply (differential fuzzer,
+    // seed 15033838239546239488). N of the exact part is correctly
+    // rounded: 25 digits is comfortably past double precision, so the
+    // final parse rounds once to the true machine value (10π(84+π)/(π-10)
+    // differs by 1 ulp when folded structurally in doubles).
+    _ => {
+      if contains_real(a) {
+        return None;
+      }
+      let hi = super::numerical::n_eval_arbitrary(a, 25.0).ok().and_then(
+        |e| match &e {
+          Expr::BigFloat(digits, _) => digits.parse::<f64>().ok(),
+          Expr::Real(x) => Some(*x),
+          _ => None,
+        },
+      );
+      match hi {
+        Some(x) if x.is_finite() => x,
+        _ => match super::numerical::n_eval(a) {
+          Ok(Expr::Real(x)) => x,
+          _ => return None,
+        },
+      }
+    }
   };
   Some(Expr::Real(x / y))
 }

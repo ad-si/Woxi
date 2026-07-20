@@ -103,13 +103,67 @@ fn canonicalize_together_result(expr: &Expr) -> Expr {
     if matches!(&rd, Expr::Integer(1)) {
       return rn;
     }
-    return distribute_unit_negative_numerator(&Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(rn),
-      right: Box::new(rd),
-    });
+    return hoist_numerator_content(&distribute_unit_negative_numerator(
+      &Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(rn),
+        right: Box::new(rd),
+      },
+    ));
   }
-  distribute_unit_negative_numerator(&result)
+  hoist_numerator_content(&distribute_unit_negative_numerator(&result))
+}
+
+/// A combined quotient presents its numerator with the integer content
+/// extracted (FactorTerms sign rule): Together[-4/5 - 2/(5*x)] →
+/// (-2*(1 + 2*x))/(5*x) and Together[-2/5 - 2/(5*x)] →
+/// (-2*(1 + x))/(5*x). Direct quotient inputs already factor through the
+/// cancel path; this covers the sum-combine path
+/// (wolframscript-verified).
+fn hoist_numerator_content(expr: &Expr) -> Expr {
+  let (num, den) = extract_num_den(expr);
+  if matches!(&den, Expr::Integer(1)) {
+    return expr.clone();
+  }
+  if !super::simplify::polynomial_like(&num) {
+    return expr.clone();
+  }
+  let terms = collect_additive_terms(&num);
+  if terms.len() < 2 {
+    return expr.clone();
+  }
+  let Some((content, content_den, _)) = super::factor::rational_content(&terms)
+  else {
+    return expr.clone();
+  };
+  if content_den != 1 || content.abs() <= 1 {
+    return expr.clone();
+  }
+  let divided: Result<Vec<Expr>, _> = terms
+    .iter()
+    .map(|t| {
+      crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(t.clone()),
+        right: Box::new(Expr::Integer(content)),
+      })
+    })
+    .collect();
+  let Ok(divided) = divided else {
+    return expr.clone();
+  };
+  let prim = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: divided.into(),
+  };
+  Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Integer(content), prim].into(),
+    }),
+    right: Box::new(den),
+  }
 }
 
 /// A unit-negative numerator coefficient distributes into a single sum
