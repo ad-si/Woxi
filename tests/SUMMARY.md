@@ -1382,6 +1382,7 @@
   - [`ListContourPlot`](plotting/ListContourPlot.md)
   - [`ListDensityPlot`](plotting/ListDensityPlot.md)
   - [`ListLinePlot`](plotting/ListLinePlot.md)
+  - [`ListLinePlot3D`](plotting/ListLinePlot3D.md)
   - [`ListLogLinearPlot`](plotting/ListLogLinearPlot.md)
   - [`ListLogLogPlot`](plotting/ListLogLogPlot.md)
   - [`ListLogPlot`](plotting/ListLogPlot.md)

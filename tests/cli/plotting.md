@@ -31,6 +31,7 @@ SVG images.
 ## 3D Plots
 
 - [`Plot3D`](plotting/Plot3D.md)
+- [`ListLinePlot3D`](plotting/ListLinePlot3D.md)
 - [`ListPointPlot3D`](plotting/ListPointPlot3D.md)
 
 ## Charts

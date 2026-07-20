@@ -180,6 +180,9 @@ pub fn dispatch_plotting(
     "ListPointPlot3D" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::plot3d::list_point_plot3d_ast(args)
     })),
+    "ListLinePlot3D" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::plot3d::list_line_plot3d_ast(args)
+    })),
     "RevolutionPlot3D" if args.len() >= 2 => Some(quiet_plot(|| {
       crate::functions::plot3d::revolution_plot3d_ast(args)
     })),

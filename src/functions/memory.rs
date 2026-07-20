@@ -153,11 +153,11 @@ pub fn memory_physical() -> i128 {
     // Parse /proc/meminfo for MemTotal (kB) and convert to bytes
     let contents = std::fs::read_to_string("/proc/meminfo").unwrap_or_default();
     for line in contents.lines() {
-      if let Some(rest) = line.strip_prefix("MemTotal:") {
-        if let Some(value) = rest.split_whitespace().next() {
-          let kb: u64 = value.parse().unwrap_or_default();
-          return (kb * 1024) as i128;
-        }
+      if let Some(rest) = line.strip_prefix("MemTotal:")
+        && let Some(value) = rest.split_whitespace().next()
+      {
+        let kb: u64 = value.parse().unwrap_or_default();
+        return (kb * 1024) as i128;
       }
     }
     -1
@@ -240,12 +240,11 @@ pub fn memory_available() -> i128 {
   {
     if let Ok(contents) = std::fs::read_to_string("/proc/meminfo") {
       for line in contents.lines() {
-        if let Some(rest) = line.strip_prefix("MemAvailable:") {
-          if let Some(tok) = rest.split_whitespace().next() {
-            if let Ok(kb) = tok.parse::<i128>() {
-              return kb * 1024;
-            }
-          }
+        if let Some(rest) = line.strip_prefix("MemAvailable:")
+          && let Some(tok) = rest.split_whitespace().next()
+          && let Ok(kb) = tok.parse::<i128>()
+        {
+          return kb * 1024;
         }
       }
     }
