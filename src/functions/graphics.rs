@@ -3536,6 +3536,93 @@ fn bigfloat_display_parts(digits: &str, prec: f64) -> BigFloatDisplay {
   }
 }
 
+/// Graphical display for a machine-precision real: 6 significant figures,
+/// switching to scientific notation when the magnitude is `>= 1e6` or `< 1e-5`,
+/// matching Wolfram's StandardForm (`4.086947…` → `4.08695`, `1234567.89` →
+/// `1.23457×10^6`, `0.000001234` → `1.234×10^-6`). Unlike the CLI / `eval`
+/// InputForm (which keeps the full round-trip precision to match
+/// `wolframscript -code`), the notebook front end rounds machine reals for
+/// display, so grid cells and typeset labels apply this. Returns the mantissa
+/// and an optional power-of-ten exponent (rendered as a superscript by the
+/// caller). Non-finite values (Infinity / NaN) fall back to the plain form.
+fn machine_real_display_parts(f: f64) -> BigFloatDisplay {
+  if !f.is_finite() {
+    return BigFloatDisplay {
+      mantissa: crate::syntax::format_real(f),
+      exponent: None,
+    };
+  }
+  if f == 0.0 {
+    return BigFloatDisplay {
+      mantissa: "0.".to_string(),
+      exponent: None,
+    };
+  }
+  let negative = f.is_sign_negative();
+  let sign = if negative { "-" } else { "" };
+  // Round to 6 significant figures: `{:.5e}` yields one integer digit plus five
+  // fractional digits (six total), with proper round-half-to-even carrying that
+  // can bump the exponent (`999999.6` → `1.00000e6`).
+  let sci = format!("{:.5e}", f.abs());
+  let (mantissa_s, exp_s) = sci.split_once('e').unwrap_or((&sci, "0"));
+  let exp: i64 = exp_s.parse().unwrap_or(0);
+  let digits: String =
+    mantissa_s.chars().filter(char::is_ascii_digit).collect();
+
+  // Scientific notation outside the [-5, 5] decimal exponent window.
+  if exp >= 6 || exp <= -6 {
+    let sig = {
+      let t = digits.trim_end_matches('0');
+      if t.is_empty() { "0" } else { t }
+    };
+    let mantissa = if sig.len() > 1 {
+      format!("{}{}.{}", sign, &sig[..1], &sig[1..])
+    } else {
+      format!("{}{}.", sign, sig)
+    };
+    return BigFloatDisplay {
+      mantissa,
+      exponent: Some(exp),
+    };
+  }
+
+  // Decimal form: the point sits `exp + 1` digits from the left.
+  let dot = exp + 1;
+  let mut s = String::from(sign);
+  if dot <= 0 {
+    s.push_str("0.");
+    for _ in 0..(-dot) {
+      s.push('0');
+    }
+    s.push_str(&digits);
+  } else {
+    let dp = dot as usize;
+    if dp >= digits.len() {
+      s.push_str(&digits);
+      for _ in 0..(dp - digits.len()) {
+        s.push('0');
+      }
+      s.push('.');
+    } else {
+      s.push_str(&digits[..dp]);
+      s.push('.');
+      s.push_str(&digits[dp..]);
+    }
+  }
+  // Drop trailing fractional zeros while keeping the decimal point (`4.00000` →
+  // `4.`, `12.5000` → `12.5`, `100000.` → `100000.`).
+  let mantissa = match s.split_once('.') {
+    Some((int_s, frac_s)) => {
+      format!("{}.{}", int_s, frac_s.trim_end_matches('0'))
+    }
+    None => s,
+  };
+  BigFloatDisplay {
+    mantissa,
+    exponent: None,
+  }
+}
+
 pub(crate) fn svg_escape(s: &str) -> String {
   s.replace('&', "&amp;")
     .replace('<', "&lt;")
@@ -6033,9 +6120,21 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
     }
     Expr::Integer(n) => group_digits_svg(&n.to_string()),
     Expr::BigInteger(n) => group_digits_svg(&n.to_string()),
-    Expr::Real(_) | Expr::Constant(_) | Expr::Slot(_) => {
-      svg_escape(&expr_to_output(expr))
+    Expr::Real(f) => {
+      // Machine reals display at 6 significant figures in the notebook front
+      // end (unlike the full-precision InputForm), with scientific notation for
+      // very large / small magnitudes rendered as a superscript exponent.
+      let parts = machine_real_display_parts(*f);
+      match parts.exponent {
+        Some(exp) => format!(
+          "{}×10<tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
+          svg_escape(&parts.mantissa),
+          exp
+        ),
+        None => svg_escape(&parts.mantissa),
+      }
     }
+    Expr::Constant(_) | Expr::Slot(_) => svg_escape(&expr_to_output(expr)),
 
     // ── List → {a, b, c} ──
     Expr::List(items) => {

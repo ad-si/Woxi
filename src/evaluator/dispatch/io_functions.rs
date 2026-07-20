@@ -3346,6 +3346,13 @@ fn glob_match_impl(pattern: &[char], text: &[char]) -> bool {
 /// Render a text-mode SVG fallback for non-graphics expressions.
 fn expr_text_svg(expr: &Expr) -> String {
   let boxes = super::complex_and_special::expr_to_box_form(expr);
+  // The box form of a machine/arbitrary-precision Real carries a trailing
+  // backtick precision marker (`2.``), matching wolframscript's `MakeBoxes`.
+  // A typeset SVG display (which `Export[…, "SVG"]` emulates) suppresses the
+  // marker and shows the notebook OutputForm — machine reals at 6 significant
+  // figures — so strip it before layout, exactly as `generate_output_svg` does
+  // for the Playground/Studio result SVG.
+  let boxes = crate::strip_number_precision_markers(&boxes);
   boxes_to_text_svg(&boxes)
 }
 

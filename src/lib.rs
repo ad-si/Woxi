@@ -3381,7 +3381,9 @@ fn generate_output_svg(expr: &syntax::Expr) {
 /// of `` 2.` ``) and an arbitrary-precision real is truncated to its precision
 /// in significant digits (so `` N[Pi, 3] `` shows `3.14`, not all 20 digits).
 /// Recurses through the box tree (RowBox/SuperscriptBox/… → List args).
-fn strip_number_precision_markers(expr: &syntax::Expr) -> syntax::Expr {
+pub(crate) fn strip_number_precision_markers(
+  expr: &syntax::Expr,
+) -> syntax::Expr {
   use syntax::Expr;
   match expr {
     Expr::String(s) => {

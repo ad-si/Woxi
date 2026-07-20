@@ -50,6 +50,68 @@ mod tests {
   }
 
   #[test]
+  fn tableform_machine_reals_show_six_significant_figures() {
+    // Regression: `TableForm[RandomReal[...]]` (and any grid) previously dumped
+    // machine reals at full round-trip precision in each cell. The notebook
+    // front end shows them at 6 significant figures, matching wolframscript's
+    // rendered TableForm (`4.086947450855356` → `4.08695`).
+    let out = output_text(
+      "TableForm[{{4.086947450855356, 0.5570980556561822}, \
+       {1.2068048372882523, 0.32869379754390526}}]",
+    );
+    assert!(out.contains("4.08695"), "got: {out}");
+    assert!(out.contains("0.557098"), "got: {out}");
+    assert!(out.contains("1.2068"), "got: {out}");
+    assert!(out.contains("0.328694"), "got: {out}");
+    // The full-precision digits must not leak through.
+    assert!(!out.contains("4.086947450855356"), "got: {out}");
+    assert!(!out.contains("0.5570980556561822"), "got: {out}");
+  }
+
+  #[test]
+  fn grid_machine_reals_switch_to_scientific_notation() {
+    // Large (>= 1e6) and small (< 1e-5) magnitudes render in scientific
+    // notation with a superscript exponent, exactly as wolframscript does:
+    // `1234567.89` → `1.23457×10^6`, `0.000001234` → `1.234×10^-6`.
+    let out = output_text("Grid[{{1234567.89, 0.000001234, 1000000.0}}]");
+    // Tag stripping concatenates the mantissa, the "×10" run, and the
+    // superscript exponent glyphs.
+    assert!(out.contains("1.23457\u{00d7}106"), "got: {out}");
+    assert!(out.contains("1.234\u{00d7}10-6"), "got: {out}");
+    assert!(out.contains("1.\u{00d7}106"), "got: {out}");
+  }
+
+  #[test]
+  fn exportstring_svg_shows_machine_reals_at_six_significant_figures() {
+    // Regression: `Export[…, "SVG"]` of a bare real went through the box-form
+    // text renderer, which kept the `MakeBoxes` backtick marker and the full
+    // round-trip precision (`4.086947450855356\``). The typeset SVG must show
+    // the notebook OutputForm — 6 significant figures, no backtick.
+    clear_state();
+    let svg = interpret("ExportString[4.086947450855356, \"SVG\"]").unwrap();
+    assert!(svg.contains("4.08695"), "expected 6-sig-fig text in SVG");
+    assert!(
+      !svg.contains("4.086947450855356"),
+      "full precision must not leak"
+    );
+    assert!(!svg.contains('`'), "backtick marker must be stripped");
+
+    // A list of reals truncates every element too.
+    clear_state();
+    let svg = interpret(
+      "ExportString[{4.086947450855356, 0.5570980556561822}, \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("4.08695") && svg.contains("0.557098"));
+    assert!(!svg.contains("0.5570980556561822"));
+
+    // An arbitrary-precision real still shows all its requested figures.
+    clear_state();
+    let svg = interpret("ExportString[N[Pi, 20], \"SVG\"]").unwrap();
+    assert!(svg.contains("3.1415926535897932385"));
+  }
+
+  #[test]
   fn truncates_n_pi_by_precision() {
     // Each precision keeps that many significant figures; precision 1 still
     // shows a trailing decimal point so it reads as an approximate real.
