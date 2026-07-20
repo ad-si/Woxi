@@ -104,6 +104,128 @@ fn error_extremes(all_series: &[Vec<ErrPoint>]) -> Vec<Vec<(f64, f64)>> {
     .collect()
 }
 
+/// Render an expression as a short display label, leaving strings unquoted.
+fn label_string(e: &Expr) -> String {
+  match e {
+    Expr::String(s) => s.clone(),
+    other => crate::syntax::expr_to_output(other),
+  }
+}
+
+/// Convert an association into plottable list data. Keys that are all numeric
+/// become x-coordinates (`<|k -> v|>` → `{{k, v}, …}`); with non-numeric keys
+/// the values are plotted at sequential x. When every value is itself a list,
+/// each value is a separate series and its key becomes the series label
+/// (`{Labeled[v1, k1], …}`).
+fn association_to_data(pairs: &[(Expr, Expr)]) -> Expr {
+  let all_values_lists =
+    !pairs.is_empty() && pairs.iter().all(|(_, v)| matches!(v, Expr::List(_)));
+  if all_values_lists {
+    return Expr::List(
+      pairs
+        .iter()
+        .map(|(k, v)| Expr::FunctionCall {
+          name: "Labeled".into(),
+          args: vec![canonicalize_element(v), Expr::String(label_string(k))]
+            .into(),
+        })
+        .collect(),
+    );
+  }
+  let all_keys_numeric =
+    pairs.iter().all(|(k, _)| eval_to_value_err(k).is_some());
+  if all_keys_numeric {
+    return Expr::List(
+      pairs
+        .iter()
+        .map(|(k, v)| Expr::List(vec![k.clone(), v.clone()].into()))
+        .collect(),
+    );
+  }
+  Expr::List(pairs.iter().map(|(_, v)| v.clone()).collect())
+}
+
+/// Strip display wrappers from a single list entry (a scalar, an `{x, y}`
+/// pair, or a nested series), recursing into inner lists so that
+/// `{1, Style[2, Red], 3}` keeps its numbers. `Callout` is kept as a
+/// `Labeled` so its label still draws.
+fn canonicalize_element(e: &Expr) -> Expr {
+  match e {
+    Expr::FunctionCall { name, args } if !args.is_empty() => {
+      match name.as_str() {
+        "Tooltip" | "Style" | "Legended" | "Annotation" | "PopupWindow"
+        | "Mouseover" | "StatusArea" | "Button" => {
+          canonicalize_element(&args[0])
+        }
+        "Callout" if args.len() >= 2 => Expr::FunctionCall {
+          name: "Labeled".into(),
+          args: vec![canonicalize_element(&args[0]), args[1].clone()].into(),
+        },
+        "Callout" => canonicalize_element(&args[0]),
+        _ => e.clone(),
+      }
+    }
+    Expr::List(inner) => {
+      Expr::List(inner.iter().map(canonicalize_element).collect())
+    }
+    _ => e.clone(),
+  }
+}
+
+/// Extract the raw data points from a `WeightedData` object. The evaluated
+/// canonical form is `WeightedData[Automatic, {{data…}, {weights…}}]`; the
+/// user-facing form is `WeightedData[data, weights]`. Either way the data is
+/// the list of values (weights only affect statistics, not point positions).
+fn weighted_data_values(args: &[Expr]) -> Expr {
+  // Canonical `WeightedData[_, {{data}, {weights}}]`.
+  if let Some(Expr::List(inner)) = args.get(1)
+    && let Some(data @ Expr::List(_)) = inner.first()
+  {
+    return data.clone();
+  }
+  // User form `WeightedData[data, …]`.
+  match args.first() {
+    Some(data @ Expr::List(_)) => data.clone(),
+    _ => Expr::List(Vec::new().into()),
+  }
+}
+
+/// Unwrap the container / display wrappers that ListPlot accepts around its
+/// data into a plain list the parser understands: `Tooltip`, `Style`,
+/// `Legended`, `Annotation`, `Callout` (kept as a `Labeled` so its label still
+/// draws), `SparseArray` (densified), `WeightedData` (points only) and
+/// `Association`s. The `data -> labels` rule form is handled by the caller.
+fn canonicalize_plot_data(expr: &Expr) -> Expr {
+  let e = evaluate_expr_to_expr(expr).unwrap_or_else(|_| expr.clone());
+  match &e {
+    Expr::Association(pairs) => association_to_data(pairs),
+    Expr::List(items) => {
+      Expr::List(items.iter().map(canonicalize_element).collect())
+    }
+    Expr::FunctionCall { name, args } if !args.is_empty() => {
+      match name.as_str() {
+        "Tooltip" | "Style" | "Legended" | "Annotation" | "PopupWindow"
+        | "Mouseover" | "StatusArea" | "Button" => {
+          canonicalize_plot_data(&args[0])
+        }
+        "Callout" if args.len() >= 2 => Expr::FunctionCall {
+          name: "Labeled".into(),
+          args: vec![canonicalize_plot_data(&args[0]), args[1].clone()].into(),
+        },
+        "Callout" => canonicalize_plot_data(&args[0]),
+        "WeightedData" => canonicalize_plot_data(&weighted_data_values(args)),
+        "SparseArray" => evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "Normal".into(),
+          args: vec![e.clone()].into(),
+        })
+        .unwrap_or_else(|_| e.clone()),
+        _ => e.clone(),
+      }
+    }
+    _ => e,
+  }
+}
+
 /// Parse list data from the first argument.
 /// Returns a vector of series, each series being a vector of (x, y) points.
 ///
@@ -117,7 +239,7 @@ fn error_extremes(all_series: &[Vec<ErrPoint>]) -> Vec<Vec<(f64, f64)>> {
 fn parse_list_data_err(
   arg: &Expr,
 ) -> Result<Vec<Vec<ErrPoint>>, InterpreterError> {
-  let data = evaluate_expr_to_expr(arg)?;
+  let data = canonicalize_plot_data(arg);
 
   // A TimeSeries / multi-path TemporalData becomes one (x, y) series per path.
   if let Some(paths) = crate::functions::timeseries_ast::temporal_paths(&data) {
@@ -129,10 +251,9 @@ fn parse_list_data_err(
           .filter_map(|(t, v)| {
             let te = evaluate_expr_to_expr(&t).unwrap_or(t);
             let ve = evaluate_expr_to_expr(&v).unwrap_or(v);
-            Some(ErrPoint::from_xy(
-              (try_eval_to_f64(&te)?, (0.0, 0.0)),
-              eval_to_value_err(&ve)?,
-            ))
+            // Date-list / DateObject stamps become AbsoluteTime seconds.
+            let x = crate::functions::timeseries_ast::to_time(&te)?;
+            Some(ErrPoint::from_xy((x, (0.0, 0.0)), eval_to_value_err(&ve)?))
           })
           .collect()
       })
@@ -272,6 +393,76 @@ fn parse_list_data_labeled(
   Ok((strip_errors(&series), labels))
 }
 
+/// Parse `ListPlot[ts -> "key"]` / `ListPlot[ts -> {"k1", …}]`: select the
+/// named components of a component-keyed TimeSeries, one series per key.
+fn parse_temporal_components(
+  ts: &Expr,
+  selector: &Expr,
+) -> Result<LabeledErrSeries, InterpreterError> {
+  let pairs =
+    crate::functions::timeseries_ast::time_series_pairs(ts).unwrap_or_default();
+  let sel =
+    evaluate_expr_to_expr(selector).unwrap_or_else(|_| selector.clone());
+  let keys: Vec<String> = match &sel {
+    Expr::List(items) => items.iter().map(label_string).collect(),
+    other => vec![label_string(other)],
+  };
+  let series: Vec<Vec<ErrPoint>> = keys
+    .iter()
+    .map(|key| {
+      pairs
+        .iter()
+        .filter_map(|(t, v)| {
+          let x = crate::functions::timeseries_ast::to_time(t)?;
+          let comp = match v {
+            Expr::Association(kv) => kv
+              .iter()
+              .find(|(k, _)| matches!(k, Expr::String(s) if s == key))
+              .map(|(_, val)| val.clone()),
+            _ => None,
+          }?;
+          Some(ErrPoint::from_xy(
+            (x, (0.0, 0.0)),
+            eval_to_value_err(&comp)?,
+          ))
+        })
+        .collect()
+    })
+    .collect();
+  Ok((series, Vec::new(), Vec::new()))
+}
+
+/// Parse the `ListPlot[data -> labels]` form: the left side is the data
+/// (points), the right side a parallel list of per-point labels attached to
+/// the first series.
+fn parse_rule_labeled(
+  lhs: &Expr,
+  rhs: &Expr,
+) -> Result<LabeledErrSeries, InterpreterError> {
+  let series = parse_list_data_err(lhs)?;
+  let rhs = evaluate_expr_to_expr(rhs).unwrap_or_else(|_| rhs.clone());
+  let labels: Vec<Option<String>> = match &rhs {
+    Expr::List(items) => {
+      items.iter().map(|it| Some(label_string(it))).collect()
+    }
+    other => vec![Some(label_string(other))],
+  };
+  let point_labels: Vec<Vec<Option<String>>> = series
+    .iter()
+    .enumerate()
+    .map(|(i, s)| {
+      if i == 0 {
+        (0..s.len())
+          .map(|j| labels.get(j).cloned().flatten())
+          .collect()
+      } else {
+        vec![None; s.len()]
+      }
+    })
+    .collect();
+  Ok((series, Vec::new(), point_labels))
+}
+
 /// Parse list data that may carry `Labeled[data, label]` wrappers around the
 /// whole argument or around individual datasets. Returns one series per
 /// dataset plus one optional label per series (empty when no wrapper was
@@ -285,7 +476,26 @@ fn parse_list_data_labeled(
 fn parse_list_data_err_labeled(
   arg: &Expr,
 ) -> Result<LabeledErrSeries, InterpreterError> {
-  let data = evaluate_expr_to_expr(arg)?;
+  let raw = evaluate_expr_to_expr(arg)?;
+
+  // `ts -> component(s)` selects named components of a TimeSeries; every other
+  // `data -> labels` attaches the right side as per-point labels.
+  if let Expr::Rule {
+    pattern,
+    replacement,
+  } = &raw
+  {
+    let lhs =
+      evaluate_expr_to_expr(pattern).unwrap_or_else(|_| *pattern.clone());
+    if crate::functions::timeseries_ast::time_series_pairs(&lhs).is_some() {
+      return parse_temporal_components(&lhs, replacement);
+    }
+    return parse_rule_labeled(pattern, replacement);
+  }
+
+  // Normalize container / display wrappers (Tooltip, Style, Callout,
+  // SparseArray, WeightedData, associations, …) into plain list data.
+  let data = canonicalize_plot_data(&raw);
 
   // Whole argument wrapped: the label applies to every series inside.
   if let Some((content, label)) = unwrap_labeled(&data) {
@@ -364,6 +574,8 @@ struct ParsedOptions {
   layout: PanelLayout,
   plot_range_x: Option<(f64, f64)>,
   plot_range_y: Option<(f64, f64)>,
+  /// `LabelingFunction -> None` (or `Tooltip`): no static point labels drawn.
+  hide_point_labels: bool,
 }
 
 /// Parse common plot options from args[1..].
@@ -427,6 +639,15 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         }
         "PlotStyle" => {
           opts.plot_style = parse_plot_style(replacement);
+        }
+        // Labels that only appear on hover (Tooltip) or are switched off
+        // (None) are not drawn on a static SVG.
+        "LabelingFunction" => {
+          if matches!(replacement.as_ref(),
+            Expr::Identifier(v) if v == "None" || v == "Tooltip")
+          {
+            out.hide_point_labels = true;
+          }
         }
         "PlotLegends" => {
           let (labels, _auto, _expressions, _pos) =
@@ -681,7 +902,11 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let all_series = strip_errors(&err_series);
   let mut parsed = parse_plot_options(args);
   apply_dataset_labels(&mut parsed.opts, &labels);
-  parsed.opts.point_labels = point_labels;
+  parsed.opts.point_labels = if parsed.hide_point_labels {
+    Vec::new()
+  } else {
+    point_labels
+  };
   parsed.opts.error_bars = collect_error_bars(&err_series);
   if parsed.layout != PanelLayout::Overlaid && all_series.len() > 1 {
     return render_panel_layout(
@@ -802,7 +1027,11 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let all_series = strip_errors(&err_series);
   let mut parsed = parse_plot_options(args);
   apply_dataset_labels(&mut parsed.opts, &labels);
-  parsed.opts.point_labels = point_labels;
+  parsed.opts.point_labels = if parsed.hide_point_labels {
+    Vec::new()
+  } else {
+    point_labels
+  };
   parsed.opts.error_bars = collect_error_bars(&err_series);
   if parsed.layout != PanelLayout::Overlaid && all_series.len() > 1 {
     return render_panel_layout(

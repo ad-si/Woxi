@@ -158,6 +158,52 @@ fn parse_date_spec(spec: &Expr) -> Option<([f64; 6], f64, String)> {
   Some((start, amount, unit))
 }
 
+/// Parse a step descriptor for a date range: `"Day"`, `{amount, "Day"}`, or
+/// `Quantity[amount, "Day"]`. Returns `(amount, unit)`.
+fn parse_step_descriptor(e: &Expr) -> Option<(f64, String)> {
+  let is_unit = |s: &str| {
+    unit_seconds(s).is_some() || matches!(s, "Month" | "Quarter" | "Year")
+  };
+  match e {
+    Expr::String(s) | Expr::Identifier(s) if is_unit(s) => {
+      Some((1.0, s.clone()))
+    }
+    Expr::List(items) => {
+      let v: Vec<&Expr> = items.iter().collect();
+      let amount = as_f64(v.first()?)?;
+      let unit = match v.get(1)? {
+        Expr::String(s) | Expr::Identifier(s) if is_unit(s) => s.clone(),
+        _ => return None,
+      };
+      Some((amount, unit))
+    }
+    Expr::FunctionCall { name, args } if name == "Quantity" => {
+      let v: Vec<&Expr> = args.iter().collect();
+      let amount = as_f64(v.first()?).unwrap_or(1.0);
+      match v.get(1)? {
+        Expr::String(s) | Expr::Identifier(s) if is_unit(s) => {
+          Some((amount, s.clone()))
+        }
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Detect the `{start, step}` / `{start, end, step}` date-range form of the
+/// TimeSeries time argument and return `(start, amount, unit)`. Only fires when
+/// the last element is a recognizable step unit, so it never captures a list of
+/// explicit numeric or date-list stamps.
+fn parse_range_spec(times: &[&Expr]) -> Option<([f64; 6], f64, String)> {
+  if times.len() != 2 && times.len() != 3 {
+    return None;
+  }
+  let (amount, unit) = parse_step_descriptor(times.last()?)?;
+  let start = date_components(times[0])?;
+  Some((start, amount, unit))
+}
+
 /// Build canonical `{{date, value}, ...}` pairs from a value path and the date
 /// specification embedded in `TemporalData`'s field list.
 fn build_pairs_from_temporal(fields: &[Expr]) -> Option<Vec<Expr>> {
@@ -248,13 +294,47 @@ pub fn temporal_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(unevaluated("TemporalData", args))
 }
 
+/// When every value of a single time path is a component association
+/// `<|key -> component, …|>` (from `ComponentKeys`), split it into one path per
+/// component, in the association's key order. Otherwise the path is returned
+/// unchanged as a single element.
+fn split_component_paths(pairs: Vec<(Expr, Expr)>) -> Vec<Vec<(Expr, Expr)>> {
+  let all_assoc = !pairs.is_empty()
+    && pairs.iter().all(|(_, v)| matches!(v, Expr::Association(_)));
+  if !all_assoc {
+    return vec![pairs];
+  }
+  let keys: Vec<Expr> = match &pairs[0].1 {
+    Expr::Association(kv) => kv.iter().map(|(k, _)| k.clone()).collect(),
+    _ => return vec![pairs],
+  };
+  keys
+    .iter()
+    .map(|key| {
+      pairs
+        .iter()
+        .filter_map(|(t, v)| match v {
+          Expr::Association(kv) => kv
+            .iter()
+            .find(|(k, _)| {
+              crate::syntax::expr_to_output(k)
+                == crate::syntax::expr_to_output(key)
+            })
+            .map(|(_, val)| (t.clone(), val.clone())),
+          _ => None,
+        })
+        .collect()
+    })
+    .collect()
+}
+
 /// All value paths of a temporal object as `(time, value)` pair lists. A
 /// `TimeSeries` (or single-path object) yields one path; a multi-path
 /// `TemporalData[{p1, …}, {{t…}}]` yields one path per component, each sharing
 /// the common time axis. Returns `None` for non-temporal expressions.
 pub fn temporal_paths(expr: &Expr) -> Option<Vec<Vec<(Expr, Expr)>>> {
   if let Some(pairs) = time_series_pairs(expr) {
-    return Some(vec![pairs]);
+    return Some(split_component_paths(pairs));
   }
   let Expr::FunctionCall { name, args } = expr else {
     return None;
@@ -327,6 +407,19 @@ pub fn time_series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         })
         .collect();
       let times: Vec<&Expr> = times.iter().collect();
+
+      // `{start, step}` / `{start, end, step}` date-range spec → auto-generate
+      // dates. Checked before explicit-stamp pairing because a 3-element spec
+      // like `{{2013,1,1}, Automatic, "Day"}` can share the values' length.
+      if let Some((start, amount, unit)) = parse_range_spec(&times) {
+        let dates = generate_dates(start, amount, &unit, values.len());
+        let pairs = dates
+          .into_iter()
+          .zip(values.iter())
+          .map(|(d, v)| Expr::List(vec![d, v.clone()].into()))
+          .collect();
+        return Ok(time_series(pairs));
+      }
 
       // Explicit time stamps, one per value → direct pairing.
       if times.len() == values.len() {
@@ -442,11 +535,24 @@ pub fn time_series_values(expr: &Expr) -> Option<Expr> {
   ))
 }
 
-/// A trailing constructor argument that is a non-empty list of string keys names
-/// the components of each vector value (WL 15). Anything else (options, etc.) is
-/// not treated as component keys.
+/// A trailing constructor argument that names the components of each vector
+/// value (WL 15): either a bare list of string keys, or the option
+/// `ComponentKeys -> {"a", …}`. Anything else (other options, etc.) is not
+/// treated as component keys.
 fn component_keys(rest: &[Expr]) -> Option<Vec<String>> {
-  let Expr::List(items) = rest.first()? else {
+  let key_list = rest.iter().find_map(|e| match e {
+    Expr::List(_) => Some(e),
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(),
+      Expr::Identifier(n) if n == "ComponentKeys") =>
+    {
+      Some(replacement.as_ref())
+    }
+    _ => None,
+  })?;
+  let Expr::List(items) = key_list else {
     return None;
   };
   let keys: Option<Vec<String>> = items
@@ -514,7 +620,7 @@ fn real_or_int(t: f64) -> Expr {
 
 /// Convert a time stamp (a plain number, a date list, or a `DateObject`) to a
 /// scalar time: numeric stamps pass through; dates become AbsoluteTime seconds.
-fn to_time(e: &Expr) -> Option<f64> {
+pub fn to_time(e: &Expr) -> Option<f64> {
   if let Some(n) = as_f64(e) {
     return Some(n);
   }

@@ -494,4 +494,61 @@ mod vector_valued {
        {DateObject[{2025, 9, 2, 0, 0, 0.}, Instant, Gregorian, 0.], 24.4}}"
     );
   }
+
+  // `{start, Automatic, "Day"}` is a date-range spec, not three explicit time
+  // stamps — even when it happens to have as many elements as there are
+  // values. The generated dates advance one day at a time from the start.
+  #[test]
+  fn range_spec_start_automatic_step_generates_dates() {
+    assert_eq!(
+      interpret(
+        "Normal[TimeSeries[{10, 20, 30}, {{2013, 1, 1}, Automatic, \"Day\"}]]"
+      )
+      .unwrap(),
+      "{{DateObject[{2013, 1, 1, 0, 0, 0.}, Instant, Gregorian, 0.], 10}, \
+       {DateObject[{2013, 1, 2, 0, 0, 0.}, Instant, Gregorian, 0.], 20}, \
+       {DateObject[{2013, 1, 3, 0, 0, 0.}, Instant, Gregorian, 0.], 30}}"
+    );
+  }
+}
+
+// Multi-component TimeSeries (ComponentKeys) plotting: ListPlot draws one
+// series per component, and `ts -> "key"` selects named components.
+mod component_time_series_plot {
+  use super::*;
+
+  const TS: &str = "ts = TimeSeries[Transpose@{{4, 9, 18}, {1, 9, 11}, \
+     {5, 6, 7}}, {{2013, 1, 1}, Automatic, \"Day\"}, \
+     ComponentKeys -> {\"a\", \"b\", \"c\"}];";
+
+  fn svg_circles(code: &str) -> usize {
+    clear_state();
+    let svg =
+      interpret(&format!("{TS} ExportString[{code}, \"SVG\"]")).unwrap();
+    svg.matches("<circle").count()
+  }
+
+  #[test]
+  fn component_keys_build_component_associations() {
+    clear_state();
+    let out = interpret(&format!("{TS} ts[[1, 1, 2]]")).unwrap();
+    // The first value is the association <|a -> 4, b -> 1, c -> 5|>.
+    assert_eq!(out, "<|a -> 4, b -> 1, c -> 5|>");
+  }
+
+  #[test]
+  fn list_plot_draws_one_series_per_component() {
+    // Three components × three time points = nine markers.
+    assert_eq!(svg_circles("ListPlot[ts]"), 9);
+  }
+
+  #[test]
+  fn list_plot_selects_single_component() {
+    assert_eq!(svg_circles("ListPlot[ts -> \"b\"]"), 3);
+  }
+
+  #[test]
+  fn list_plot_selects_multiple_components() {
+    assert_eq!(svg_circles("ListPlot[ts -> {\"a\", \"c\"}]"), 6);
+  }
 }
