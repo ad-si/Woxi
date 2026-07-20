@@ -16001,6 +16001,9 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut tolerance = 1e-10_f64;
   let mut max_recursion = 50_u32;
   let mut working_precision: Option<i128> = None;
+  // `EvaluationMonitor :> expr` — evaluated (with the integration variable
+  // bound) at every sampled point, e.g. to `Sow` the abscissae.
+  let mut monitor: Option<Expr> = None;
   // Recognised method names — anything else triggers NIntegrate::bdmtd.
   // These are the standard Wolfram NIntegrate strategies; Woxi treats
   // them all as the same adaptive Simpson backend internally for now.
@@ -16090,6 +16093,9 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           bad_method_call = true;
         }
       }
+      "EvaluationMonitor" => {
+        monitor = Some(opt_value.clone());
+      }
       _ => {} // Ignore unrecognised options (Wolfram does too).
     }
   }
@@ -16097,9 +16103,10 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("NIntegrate", args));
   }
 
-  // Second argument must be {var, lo, hi}
-  let (var_name, lo, hi) = match &args[1] {
-    Expr::List(items) if items.len() == 3 => {
+  // Second argument is `{var, a, b}` or, with interior waypoints (e.g. a
+  // singularity to break the interval at), `{var, a, b, c, …}`.
+  let (var_name, bounds) = match &args[1] {
+    Expr::List(items) if items.len() >= 3 => {
       let var_name = match &items[0] {
         Expr::Identifier(name) => name.clone(),
         _ => {
@@ -16109,20 +16116,17 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ));
         }
       };
-      // Evaluate bounds — support Infinity/-Infinity
-      let lo_expr = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
-      let hi_expr = crate::evaluator::evaluate_expr_to_expr(&items[2])?;
-      let lo = expr_to_bound(&lo_expr).ok_or_else(|| {
-        InterpreterError::EvaluationError(
-          "NIntegrate: lower bound must be numeric or Infinity".into(),
-        )
-      })?;
-      let hi = expr_to_bound(&hi_expr).ok_or_else(|| {
-        InterpreterError::EvaluationError(
-          "NIntegrate: upper bound must be numeric or Infinity".into(),
-        )
-      })?;
-      (var_name, lo, hi)
+      // Evaluate the boundary points — support Infinity/-Infinity at the ends.
+      let mut bounds = Vec::with_capacity(items.len() - 1);
+      for item in items.iter().skip(1) {
+        let e = crate::evaluator::evaluate_expr_to_expr(item)?;
+        bounds.push(expr_to_bound(&e).ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "NIntegrate: integration bound must be numeric or Infinity".into(),
+          )
+        })?);
+      }
+      (var_name, bounds)
     }
     _ => {
       return Err(InterpreterError::EvaluationError(
@@ -16130,6 +16134,8 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ));
     }
   };
+  let lo = bounds[0];
+  let hi = *bounds.last().unwrap();
 
   let integrand = &args[0];
 
@@ -16151,6 +16157,13 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // by its limit via a tiny perturbation, so adaptive quadrature does not
   // abort at such a point.
   let eval_at = |x: f64| -> Option<f64> {
+    // Fire the EvaluationMonitor at each sampled abscissa (with the variable
+    // bound to x), e.g. so `Sow[x]` records the sample locations.
+    if let Some(m) = &monitor {
+      let sub =
+        crate::syntax::substitute_variable(m, &var_name, &Expr::Real(x));
+      let _ = crate::evaluator::evaluate_expr_to_expr(&sub);
+    }
     let raw = |xx: f64| -> Option<f64> {
       let substituted = crate::syntax::substitute_variable(
         integrand,
@@ -16169,67 +16182,50 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     raw(x + d).or_else(|| raw(x - d))
   };
 
-  let lo_inf = lo.is_infinite() && lo < 0.0;
-  let hi_inf = hi.is_infinite() && hi > 0.0;
-
-  let result = if lo_inf && hi_inf {
-    // (-∞, ∞): substitute x = tan(t), dx = sec²(t) dt, integrate over (-π/2, π/2)
-    let eval_transformed = |t: f64| -> Option<f64> {
-      let x = t.tan();
-      let jacobian = 1.0 / (t.cos() * t.cos()); // sec²(t)
-      eval_at(x).map(|v| v * jacobian)
-    };
+  // Integrate one sub-interval [a, b], handling infinite end bounds via a
+  // tangent substitution. Interior waypoints are always finite.
+  let integrate_segment = |a: f64, b: f64| -> Option<f64> {
+    let a_inf = a.is_infinite() && a < 0.0;
+    let b_inf = b.is_infinite() && b > 0.0;
     let half_pi = std::f64::consts::FRAC_PI_2;
     let eps = 1e-10;
-    adaptive_simpson(
-      &eval_transformed,
-      -half_pi + eps,
-      half_pi - eps,
-      tolerance,
-      max_recursion,
-    )
-  } else if lo_inf {
-    // (-∞, b): substitute x = b - tan(t), dx = -sec²(t) dt, t in (0, π/2)
-    let eval_transformed = |t: f64| -> Option<f64> {
-      let x = hi - t.tan();
-      let jacobian = 1.0 / (t.cos() * t.cos());
-      eval_at(x).map(|v| v * jacobian)
-    };
-    let half_pi = std::f64::consts::FRAC_PI_2;
-    let eps = 1e-10;
-    adaptive_simpson(
-      &eval_transformed,
-      eps,
-      half_pi - eps,
-      tolerance,
-      max_recursion,
-    )
-  } else if hi_inf {
-    // (a, ∞): substitute x = a + tan(t), dx = sec²(t) dt, t in (0, π/2)
-    let eval_transformed = |t: f64| -> Option<f64> {
-      let x = lo + t.tan();
-      let jacobian = 1.0 / (t.cos() * t.cos());
-      eval_at(x).map(|v| v * jacobian)
-    };
-    let half_pi = std::f64::consts::FRAC_PI_2;
-    let eps = 1e-10;
-    adaptive_simpson(
-      &eval_transformed,
-      eps,
-      half_pi - eps,
-      tolerance,
-      max_recursion,
-    )
-  } else {
-    adaptive_simpson(&eval_at, lo, hi, tolerance, max_recursion)
+    if a_inf && b_inf {
+      // (-∞, ∞): x = tan(t), dx = sec²(t) dt over (-π/2, π/2).
+      let g = |t: f64| eval_at(t.tan()).map(|v| v / (t.cos() * t.cos()));
+      adaptive_simpson(
+        &g,
+        -half_pi + eps,
+        half_pi - eps,
+        tolerance,
+        max_recursion,
+      )
+    } else if a_inf {
+      // (-∞, b): x = b - tan(t), t in (0, π/2).
+      let g = |t: f64| eval_at(b - t.tan()).map(|v| v / (t.cos() * t.cos()));
+      adaptive_simpson(&g, eps, half_pi - eps, tolerance, max_recursion)
+    } else if b_inf {
+      // (a, ∞): x = a + tan(t), t in (0, π/2).
+      let g = |t: f64| eval_at(a + t.tan()).map(|v| v / (t.cos() * t.cos()));
+      adaptive_simpson(&g, eps, half_pi - eps, tolerance, max_recursion)
+    } else {
+      adaptive_simpson(&eval_at, a, b, tolerance, max_recursion)
+    }
   };
 
-  match result {
-    Some(val) => Ok(Expr::Real(val)),
-    None => Err(InterpreterError::EvaluationError(
-      "NIntegrate: failed to converge or integrand is not numeric".into(),
-    )),
+  // Sum the integral over each consecutive pair of boundary points. A single
+  // `{var, a, b}` range is just one segment.
+  let mut total = 0.0;
+  for pair in bounds.windows(2) {
+    match integrate_segment(pair[0], pair[1]) {
+      Some(v) => total += v,
+      None => {
+        return Err(InterpreterError::EvaluationError(
+          "NIntegrate: failed to converge or integrand is not numeric".into(),
+        ));
+      }
+    }
   }
+  Ok(Expr::Real(total))
 }
 
 /// Convert an expression to an f64 bound, supporting Infinity/-Infinity

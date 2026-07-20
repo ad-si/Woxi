@@ -4446,6 +4446,27 @@ mod nintegrate {
   }
 
   #[test]
+  fn nintegrate_multi_segment_with_interior_waypoint() {
+    // `{x, -1, 0, 1}` breaks the interval at the x = 0 singularity of
+    // 1/Sqrt[|x|]; ∫₋₁¹ |x|^(-1/2) dx = 4.
+    assert_approx("NIntegrate[1/Abs[Sqrt[x]], {x, -1, 0, 1}]", 4.0, 1e-3);
+  }
+
+  #[test]
+  fn nintegrate_evaluation_monitor_sows_abscissae() {
+    // EvaluationMonitor :> Sow[x] fires at every sampled point, so Reap
+    // collects a non-empty list of abscissae, all inside [0, 1].
+    clear_state();
+    let r = interpret(
+      "Module[{pts}, pts = Reap[NIntegrate[x^2, {x, 0, 1}, \
+       EvaluationMonitor :> Sow[x]]][[2, 1]]; \
+       {Length[pts] > 0, Min[pts] >= 0, Max[pts] <= 1}]",
+    )
+    .unwrap();
+    assert_eq!(r, "{True, True, True}");
+  }
+
+  #[test]
   fn nintegrate_exp_neg_x_squared() {
     // ∫₀¹ e^(-x²) dx ≈ 0.7468241328124271
     assert_approx(
