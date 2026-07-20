@@ -313,6 +313,11 @@ pub fn dispatch_polynomial_functions(
         name == "Maximize",
       ));
     }
+    "LinearProgramming" if args.len() == 3 => {
+      return Some(crate::functions::polynomial_ast::linear_programming_ast(
+        args,
+      ));
+    }
     "Minimize" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::polynomial_ast::minimize_ast(args, false));
     }

@@ -6685,6 +6685,95 @@ mod solve_rationals_domain {
   }
 }
 
+// LinearProgramming[c, m, b] minimizes c.x subject to the constraints from
+// m and b (bare b entries mean >=; {value, sign} pairs select >=/==/<=) and
+// x >= 0. The exact two-phase simplex returns the same vertex wolframscript
+// reports. All expected values verified against wolframscript.
+mod linear_programming {
+  use super::*;
+
+  #[test]
+  fn default_ge_constraints() {
+    assert_eq!(
+      interpret("LinearProgramming[{1, 1}, {{1, 2}, {3, 1}}, {3, 3}]").unwrap(),
+      "{3/5, 6/5}"
+    );
+    // A bare b vector means every constraint is >=.
+    assert_eq!(
+      interpret("LinearProgramming[{1, 1}, {{1, 0}, {0, 1}}, {1, 1}]").unwrap(),
+      "{1, 1}"
+    );
+  }
+
+  #[test]
+  fn mixed_constraint_signs() {
+    // {value, sign}: sign 1 => >=, 0 => ==, -1 => <=.
+    assert_eq!(
+      interpret(
+        "LinearProgramming[{1, 1}, {{1, 2}, {3, 1}}, {{3, -1}, {3, 1}}]"
+      )
+      .unwrap(),
+      "{1, 0}"
+    );
+    assert_eq!(
+      interpret("LinearProgramming[{2, 3}, {{1, 1}}, {{10, 0}}]").unwrap(),
+      "{10, 0}"
+    );
+    assert_eq!(
+      interpret(
+        "LinearProgramming[{-2, -3}, {{1, 1}, {2, 1}}, {{4, -1}, {6, -1}}]"
+      )
+      .unwrap(),
+      "{0, 4}"
+    );
+  }
+
+  #[test]
+  fn multiple_optima_matches_wolfram_vertex() {
+    // Objective 18 is attained at several vertices; Dantzig pivoting lands on
+    // the same one wolframscript reports.
+    assert_eq!(
+      interpret(
+        "LinearProgramming[{3, 2, 1}, {{1, 1, 1}, {2, 1, 0}}, {10, 8}]"
+      )
+      .unwrap(),
+      "{4, 0, 6}"
+    );
+  }
+
+  #[test]
+  fn fractional_costs_and_larger_system() {
+    assert_eq!(
+      interpret("LinearProgramming[{1/2, 1/3}, {{1, 1}}, {{6, 1}}]").unwrap(),
+      "{0, 6}"
+    );
+    assert_eq!(
+      interpret(
+        "LinearProgramming[{5, 4, 3}, {{2, 3, 1}, {4, 1, 2}, {3, 4, 2}}, \
+         {{5, 1}, {11, 1}, {8, 1}}]"
+      )
+      .unwrap(),
+      "{11/4, 0, 0}"
+    );
+  }
+
+  #[test]
+  fn unbounded_returns_indeterminate() {
+    assert_eq!(
+      interpret("LinearProgramming[{-1, 0}, {{1, -1}}, {{0, 1}}]").unwrap(),
+      "{Indeterminate, Indeterminate}"
+    );
+  }
+
+  #[test]
+  fn infeasible_stays_unevaluated() {
+    assert_eq!(
+      interpret("LinearProgramming[{1, 1}, {{1, 1}}, {{-5, -1}}]").unwrap(),
+      "LinearProgramming[{1, 1}, {{1, 1}}, {{-5, -1}}]"
+    );
+  }
+}
+
 mod find_root {
   use super::*;
 
