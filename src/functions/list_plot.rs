@@ -570,6 +570,29 @@ fn parse_list_data_err_labeled(
       return Ok((vec![points], Vec::new(), vec![point_labels]));
     }
 
+    // All entries {x, y} pairs (e.g. `Callout[{x, y}, label]` /
+    // `Labeled[{x, y}, label]` around individual coordinates): the wrappers
+    // label individual points of a single series, not separate datasets.
+    let is_numeric_pair = |c: &Expr| {
+      matches!(c, Expr::List(pair) if pair.len() == 2
+        && eval_to_value_err(&pair[0]).is_some()
+        && eval_to_value_err(&pair[1]).is_some())
+    };
+    if unwrapped.iter().all(|(c, _)| is_numeric_pair(c)) {
+      let mut points = Vec::with_capacity(unwrapped.len());
+      let mut point_labels = Vec::with_capacity(unwrapped.len());
+      for (content, label) in &unwrapped {
+        if let Expr::List(pair) = content
+          && let (Some(x), Some(y)) =
+            (eval_to_value_err(&pair[0]), eval_to_value_err(&pair[1]))
+        {
+          points.push(ErrPoint::from_xy(x, y));
+          point_labels.push(label.clone());
+        }
+      }
+      return Ok((vec![points], Vec::new(), vec![point_labels]));
+    }
+
     let mut all_series = Vec::with_capacity(unwrapped.len());
     let mut labels = Vec::with_capacity(unwrapped.len());
     for (content, label) in unwrapped {
