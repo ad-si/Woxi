@@ -1322,6 +1322,30 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(Expr::List(filtered.into()));
       }
     }
+    if dom == "Rationals" {
+      // Keep only solutions whose values are all exact rationals; irrational
+      // algebraic values like Sqrt[2] are excluded.
+      if let Expr::List(solutions) = &base_solutions {
+        let filtered: Vec<Expr> = solutions
+          .iter()
+          .filter(|sol| {
+            if let Expr::List(rules) = sol {
+              rules.iter().all(|rule| {
+                if let Expr::Rule { replacement, .. } = rule {
+                  is_rational_expr(replacement)
+                } else {
+                  false
+                }
+              })
+            } else {
+              false
+            }
+          })
+          .cloned()
+          .collect();
+        return Ok(Expr::List(filtered.into()));
+      }
+    }
     // For other domains, just return the base solutions
     return Ok(base_solutions);
   }
@@ -10048,6 +10072,34 @@ fn is_integer_expr(expr: &Expr) -> bool {
         false
       }
     }
+  }
+}
+
+/// Check whether a solution value is an exact rational (an integer or a
+/// ratio of integers). Irrational algebraic values such as `Sqrt[2]` are
+/// not rational, so `Solve[x^2 == 2, x, Rationals]` filters them out.
+fn is_rational_expr(expr: &Expr) -> bool {
+  fn is_rational_atom(e: &Expr) -> bool {
+    match e {
+      Expr::Integer(_) | Expr::BigInteger(_) => true,
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        matches!(&args[0], Expr::Integer(_) | Expr::BigInteger(_))
+          && matches!(&args[1], Expr::Integer(_) | Expr::BigInteger(_))
+      }
+      _ => false,
+    }
+  }
+  match expr {
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => is_rational_expr(operand),
+    e if is_rational_atom(e) => true,
+    _ => crate::evaluator::evaluate_expr_to_expr(expr)
+      .map(|evaled| is_rational_atom(&evaled))
+      .unwrap_or(false),
   }
 }
 

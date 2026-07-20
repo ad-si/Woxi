@@ -6627,6 +6627,62 @@ mod nsolve {
       "{-1/2 - (433*I)/500, -1/2 + (433*I)/500, 1}"
     );
   }
+
+  // NSolve accepts an optional domain as its third argument, matching Solve.
+  // Reals keeps only the real roots; Complexes keeps all; Integers/Rationals
+  // keep only integer/rational roots. Verified against wolframscript.
+  #[test]
+  fn domain_argument() {
+    assert_eq!(
+      interpret("NSolve[x^2 == 2, x, Reals]").unwrap(),
+      "{{x -> -1.4142135623730951}, {x -> 1.4142135623730951}}"
+    );
+    // A purely-complex root set is empty over the reals.
+    assert_eq!(interpret("NSolve[x^2 + 1 == 0, x, Reals]").unwrap(), "{}");
+    // Reals drops the complex conjugate pair of a cubic, keeping the real root.
+    assert_eq!(
+      interpret("NSolve[x^3 - 1 == 0, x, Reals]").unwrap(),
+      "{{x -> 1.}}"
+    );
+    // Integers/Rationals reject irrational roots.
+    assert_eq!(interpret("NSolve[x^2 == 2, x, Integers]").unwrap(), "{}");
+    assert_eq!(interpret("NSolve[x^2 == 2, x, Rationals]").unwrap(), "{}");
+    // Rational and integer roots survive their respective domains.
+    assert_eq!(
+      interpret("NSolve[x^2 - 4 == 0, x, Rationals]").unwrap(),
+      "{{x -> -2.}, {x -> 2.}}"
+    );
+    // Multi-variable linear system over the reals.
+    assert_eq!(
+      interpret("NSolve[{x + y == 3, x - y == 1}, {x, y}, Reals]").unwrap(),
+      "{{x -> 2., y -> 1.}}"
+    );
+  }
+}
+
+// Solve[eqns, vars, Rationals] keeps only rational-valued solutions; an
+// irrational algebraic root such as Sqrt[2] is filtered out. Verified against
+// wolframscript.
+mod solve_rationals_domain {
+  use super::*;
+
+  #[test]
+  fn irrational_roots_filtered() {
+    assert_eq!(interpret("Solve[x^2 == 2, x, Rationals]").unwrap(), "{}");
+    assert_eq!(interpret("Solve[x^2 == -1, x, Rationals]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn rational_roots_kept() {
+    assert_eq!(
+      interpret("Solve[x^2 == 4, x, Rationals]").unwrap(),
+      "{{x -> -2}, {x -> 2}}"
+    );
+    assert_eq!(
+      interpret("Solve[2 x == 3, x, Rationals]").unwrap(),
+      "{{x -> 3/2}}"
+    );
+  }
 }
 
 mod find_root {

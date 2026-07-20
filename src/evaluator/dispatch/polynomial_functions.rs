@@ -175,7 +175,7 @@ pub fn dispatch_polynomial_functions(
     "SolveValues" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::polynomial_ast::solve_values_ast(args));
     }
-    "NSolve" if args.len() == 2 => {
+    "NSolve" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::polynomial_ast::nsolve_ast(args));
     }
     "SolveAlways" if args.len() == 2 => {
