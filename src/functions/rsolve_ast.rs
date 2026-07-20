@@ -122,7 +122,274 @@ pub fn rsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Nonlinear logistic map a[n+1] == 4 a[n] (1 - a[n]).
+  if let Some(solution) = solve_logistic_map(
+    &rec_lhs,
+    &rec_rhs,
+    &func_name,
+    &var_name,
+    &initial_conditions,
+  ) {
+    return Ok(wrap_rsolve_result(
+      solution,
+      &func_name,
+      &var_name,
+      return_as_func_call,
+    ));
+  }
+
   Ok(unevaluated())
+}
+
+/// Collect every offset `k` at which `func[var + k]` occurs in `expr`,
+/// pushing into `out`. Returns false if `func` appears with a non-affine
+/// argument or wrong arity, so the caller can bail instead of mis-classifying.
+fn all_func_offsets(
+  expr: &Expr,
+  func_name: &str,
+  var_name: &str,
+  out: &mut Vec<i128>,
+) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == func_name && args.len() == 1 =>
+    {
+      match extract_var_offset(&args[0], var_name) {
+        Some(o) => {
+          out.push(o);
+          true
+        }
+        None => false,
+      }
+    }
+    Expr::FunctionCall { name, .. } if name == func_name => false,
+    Expr::FunctionCall { args, .. } => args
+      .iter()
+      .all(|a| all_func_offsets(a, func_name, var_name, out)),
+    Expr::BinaryOp { left, right, .. } => {
+      all_func_offsets(left, func_name, var_name, out)
+        && all_func_offsets(right, func_name, var_name, out)
+    }
+    Expr::UnaryOp { operand, .. } => {
+      all_func_offsets(operand, func_name, var_name, out)
+    }
+    Expr::List(items) => items
+      .iter()
+      .all(|a| all_func_offsets(a, func_name, var_name, out)),
+    _ => true,
+  }
+}
+
+/// True if every occurrence of `func` in `expr` is at index offset 0 (and at
+/// least one occurrence exists) — i.e. the expression is `f(a[n])`.
+fn side_only_offset_zero(expr: &Expr, func_name: &str, var_name: &str) -> bool {
+  let mut offs = Vec::new();
+  all_func_offsets(expr, func_name, var_name, &mut offs)
+    && !offs.is_empty()
+    && offs.iter().all(|&o| o == 0)
+}
+
+/// Replace every `func[var]` (offset 0) in `expr` with the placeholder symbol
+/// `sym`, leaving the rest of the tree intact.
+fn replace_func0_with_symbol(
+  expr: &Expr,
+  func_name: &str,
+  var_name: &str,
+  sym: &str,
+) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == func_name
+        && args.len() == 1
+        && extract_var_offset(&args[0], var_name) == Some(0) =>
+    {
+      Expr::Identifier(sym.to_string())
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|a| replace_func0_with_symbol(a, func_name, var_name, sym))
+        .collect(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(replace_func0_with_symbol(left, func_name, var_name, sym)),
+      right: Box::new(replace_func0_with_symbol(
+        right, func_name, var_name, sym,
+      )),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(replace_func0_with_symbol(
+        operand, func_name, var_name, sym,
+      )),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|a| replace_func0_with_symbol(a, func_name, var_name, sym))
+        .collect(),
+    ),
+    _ => expr.clone(),
+  }
+}
+
+/// If `poly` is `r*a[n]*(1 - a[n])` (in any algebraically equivalent form),
+/// return the integer parameter `r`. Works by substituting `a[n] -> y` and
+/// checking the polynomial in `y` is exactly `r*y - r*y^2`.
+fn logistic_parameter(
+  poly: &Expr,
+  func_name: &str,
+  var_name: &str,
+) -> Option<i128> {
+  // A placeholder guaranteed distinct from the index and function names.
+  let sym = format!("{func_name}$Logistic${var_name}");
+  let poly_y = replace_func0_with_symbol(poly, func_name, var_name, &sym);
+
+  let clist = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "CoefficientList".to_string(),
+    args: vec![poly_y, Expr::Identifier(sym)].into(),
+  })
+  .ok()?;
+
+  let items = match &clist {
+    Expr::List(v) => v,
+    _ => return None,
+  };
+  // Need exactly {0, r, -r}: constant 0, linear r, quadratic -r, no higher.
+  if items.len() != 3 || !matches!(items[0], Expr::Integer(0)) {
+    return None;
+  }
+  let r = match items[1] {
+    Expr::Integer(r) => r,
+    _ => return None,
+  };
+  match items[2] {
+    Expr::Integer(c2) if c2 == -r => Some(r),
+    _ => None,
+  }
+}
+
+/// Nonlinear logistic map `a[n+1] == 4 a[n] (1 - a[n])`. Only the fully chaotic
+/// case r == 4 has the closed form this solver returns:
+///   IC `a[k0] == c`:  a[n] = (1 - Cos[2^(n-k0)*ArcCos[1 - 2 c]]) / 2
+///   no IC:            a[n] = 1/2 - Cos[2^n*C[1]] / 2
+/// (r == 2 is also solvable in closed form, but wolframscript displays it in a
+/// rewritten rational form this solver doesn't reproduce, so it's left
+/// unevaluated.) Returns None for any other shape.
+fn solve_logistic_map(
+  lhs: &Expr,
+  rhs: &Expr,
+  func_name: &str,
+  var_name: &str,
+  ics: &[(i128, Expr)],
+) -> Option<Expr> {
+  // One side must be the bare advanced term a[n + d] (d >= 1); the other must
+  // depend on `func` only through offset 0.
+  let d_lhs = extract_single_func_offset(lhs, func_name, var_name);
+  let d_rhs = extract_single_func_offset(rhs, func_name, var_name);
+  let (adv_offset, poly_side) = match (d_lhs, d_rhs) {
+    (Some(d), _)
+      if d >= 1 && side_only_offset_zero(rhs, func_name, var_name) =>
+    {
+      (d, rhs)
+    }
+    (_, Some(d))
+      if d >= 1 && side_only_offset_zero(lhs, func_name, var_name) =>
+    {
+      (d, lhs)
+    }
+    _ => return None,
+  };
+  if adv_offset != 1 {
+    return None; // only first-order maps a[n+1] = f(a[n])
+  }
+
+  if logistic_parameter(poly_side, func_name, var_name)? != 4 {
+    return None;
+  }
+
+  let n_var = Expr::Identifier(var_name.to_string());
+  let cos = |arg: Expr| Expr::FunctionCall {
+    name: "Cos".to_string(),
+    args: vec![arg].into(),
+  };
+  let times = |a: Expr, b: Expr| Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+
+  match ics.len() {
+    0 => {
+      // 1/2 - Cos[2^n*C[1]]/2
+      let c1 = Expr::FunctionCall {
+        name: "C".to_string(),
+        args: vec![Expr::Integer(1)].into(),
+      };
+      let pow2 = Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(Expr::Integer(2)),
+        right: Box::new(n_var),
+      };
+      let body = times(
+        crate::functions::math_ast::make_rational(-1, 2),
+        cos(times(pow2, c1)),
+      );
+      Some(Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(crate::functions::math_ast::make_rational(1, 2)),
+        right: Box::new(body),
+      })
+    }
+    1 => {
+      let (k0, c) = &ics[0];
+      // theta = ArcCos[1 - 2 c], evaluated so e.g. 1 - 2*(1/10) -> 4/5.
+      let inner = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(Expr::Integer(1)),
+        right: Box::new(times(Expr::Integer(-2), c.clone())),
+      })
+      .ok()?;
+      let theta =
+        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "ArcCos".to_string(),
+          args: vec![inner].into(),
+        })
+        .ok()?;
+      // Exponent n (k0 == 0) or `-k0 + n` (constant first, matching display).
+      let exponent = if *k0 == 0 {
+        n_var.clone()
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(Expr::Integer(-k0)),
+          right: Box::new(n_var.clone()),
+        }
+      };
+      let pow2 = Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(Expr::Integer(2)),
+        right: Box::new(exponent),
+      };
+      // (1 - Cos[2^(n-k0)*theta]) / 2
+      let numerator = Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(Expr::Integer(1)),
+        right: Box::new(Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand: Box::new(cos(times(pow2, theta))),
+        }),
+      };
+      Some(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(numerator),
+        right: Box::new(Expr::Integer(2)),
+      })
+    }
+    _ => None, // over-determined
+  }
 }
 
 /// True if `expr` references `func_name[...]` anywhere.

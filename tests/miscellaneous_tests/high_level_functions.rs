@@ -4833,6 +4833,101 @@ mod high_level_functions {
         "{{a -> Function[{n}, (-1)^n + C[1] - (-1)^n*C[1]]}}"
       );
     }
+
+    // The fully-chaotic logistic map a[n+1] == 4 a[n] (1 - a[n]) has the
+    // closed form (1 - Cos[2^(n-k0)*ArcCos[1 - 2 c]])/2 for IC a[k0] == c.
+    #[test]
+    fn test_rsolve_logistic_map_r4_initial_condition() {
+      assert_eq!(
+        interpret(
+          "RSolve[{x[n + 1] == 4 x[n] (1 - x[n]), x[0] == 1/10}, x, n]"
+        )
+        .unwrap(),
+        "{{x -> Function[{n}, (1 - Cos[2^n*ArcCos[4/5]])/2]}}"
+      );
+    }
+
+    #[test]
+    fn test_rsolve_logistic_map_r4_conjunction_form() {
+      // The `recurrence && initial` form must reach the same solver.
+      assert_eq!(
+        interpret(
+          "RSolve[x[n + 1] == 4 x[n] (1 - x[n]) && x[0] == 1/10, x, n]"
+        )
+        .unwrap(),
+        "{{x -> Function[{n}, (1 - Cos[2^n*ArcCos[4/5]])/2]}}"
+      );
+    }
+
+    #[test]
+    fn test_rsolve_logistic_map_r4_symbolic_initial() {
+      // General initial condition — not tied to a specific number.
+      assert_eq!(
+        interpret("RSolve[{x[n + 1] == 4 x[n] (1 - x[n]), x[0] == a}, x, n]")
+          .unwrap(),
+        "{{x -> Function[{n}, (1 - Cos[2^n*ArcCos[1 - 2*a]])/2]}}"
+      );
+    }
+
+    #[test]
+    fn test_rsolve_logistic_map_r4_expanded_rhs() {
+      // The quadratic written expanded as 4 x - 4 x^2 must be recognized too.
+      assert_eq!(
+        interpret(
+          "RSolve[{x[n + 1] == 4 x[n] - 4 x[n]^2, x[0] == 1/10}, x, n]"
+        )
+        .unwrap(),
+        "{{x -> Function[{n}, (1 - Cos[2^n*ArcCos[4/5]])/2]}}"
+      );
+    }
+
+    #[test]
+    fn test_rsolve_logistic_map_r4_no_initial_condition() {
+      assert_eq!(
+        interpret("RSolve[{x[n + 1] == 4 x[n] (1 - x[n])}, x, n]").unwrap(),
+        "{{x -> Function[{n}, 1/2 - Cos[2^n*C[1]]/2]}}"
+      );
+    }
+
+    #[test]
+    fn test_rsolve_logistic_map_r4_ic_at_nonzero_index() {
+      assert_eq!(
+        interpret(
+          "RSolve[{x[n + 1] == 4 x[n] (1 - x[n]), x[1] == 1/10}, x, n]"
+        )
+        .unwrap(),
+        "{{x -> Function[{n}, (1 - Cos[2^(-1 + n)*ArcCos[4/5]])/2]}}"
+      );
+    }
+
+    #[test]
+    fn test_rsolve_logistic_map_r3_has_no_closed_form() {
+      // Only r == 4 (and r == 2) are solvable; r == 3 stays unevaluated,
+      // matching wolframscript.
+      assert_eq!(
+        interpret(
+          "RSolve[{x[n + 1] == 3 x[n] (1 - x[n]), x[0] == 1/10}, x, n]"
+        )
+        .unwrap(),
+        "RSolve[{x[1 + n] == 3*(1 - x[n])*x[n], x[0] == 1/10}, x, n]"
+      );
+    }
+
+    #[test]
+    fn test_table_evaluate_honors_symbolic_iterator_in_rsolve() {
+      // Regression: Table[Evaluate[...], {n, ...}] must evaluate the body once
+      // with the iterator `n` still symbolic (so RSolve solves the recurrence
+      // in `n`) before substituting each value — not substitute n first.
+      assert_eq!(
+        interpret(
+          "Quiet[Table[Evaluate[x[n] /. First[RSolve[x[n + 1] == \
+           4 x[n] (1 - x[n]) && x[0] == 1/10, x, n]]], {n, 0, 3}]]"
+        )
+        .unwrap(),
+        "{1/10, (1 - Cos[2*ArcCos[4/5]])/2, \
+         (1 - Cos[4*ArcCos[4/5]])/2, (1 - Cos[8*ArcCos[4/5]])/2}"
+      );
+    }
   }
 
   mod import_ppm_tests {
