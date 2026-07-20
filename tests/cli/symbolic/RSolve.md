@@ -44,3 +44,19 @@ $ wo 'RSolve[{a[n] == a[n-1] + a[n-2], a[0] == 0, a[1] == 1}, a[n], n]'
 $ wo 'RSolve[a[n] == a[n-1] + a[n-2], a[n], n]'
 {{a[n] -> C[1]*Fibonacci[n] + C[2]*LucasL[n]}}
 ```
+
+The nonlinear logistic map `a[n+1] == 4 a[n] (1 - a[n])` (the fully chaotic
+case) has the closed form `(1 - Cos[2^n*ArcCos[1 - 2 c]])/2` for the initial
+condition `a[0] == c`.
+
+```scrut
+$ wo 'RSolve[{x[n + 1] == 4 x[n] (1 - x[n]), x[0] == 1/10}, x, n]'
+{{x -> Function[{n}, (1 - Cos[2^n*ArcCos[4/5]])/2]}}
+```
+
+Without an initial condition the phase stays an arbitrary constant.
+
+```scrut
+$ wo 'RSolve[{x[n + 1] == 4 x[n] (1 - x[n])}, x, n]'
+{{x -> Function[{n}, 1/2 - Cos[2^n*C[1]]/2]}}
+```

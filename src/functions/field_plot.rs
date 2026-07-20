@@ -8,9 +8,9 @@ use crate::functions::math_ast::{
   build_complex_float_expr, try_extract_complex_f64,
 };
 use crate::functions::plot::{
-  DEFAULT_WIDTH, RESOLUTION_SCALE, evaluate_at_xy,
-  generate_axes_only, parse_image_size, parse_iterator, plot_theme,
-  rewrite_svg_header, substitute_var, svg_header,
+  DEFAULT_WIDTH, RESOLUTION_SCALE, evaluate_at_xy, generate_axes_only,
+  parse_image_size, parse_iterator, plot_theme, rewrite_svg_header,
+  substitute_var, svg_header,
 };
 use crate::syntax::Expr;
 
@@ -199,7 +199,11 @@ fn density_gradient(t: f64) -> (u8, u8, u8) {
     (219.0, 194.0, 67.0),
     (252.0, 232.0, 38.0),
   ];
-  let t = if t.is_finite() { t.clamp(0.0, 1.0) } else { 0.5 };
+  let t = if t.is_finite() {
+    t.clamp(0.0, 1.0)
+  } else {
+    0.5
+  };
   let x = t * (STOPS.len() - 1) as f64;
   let i = (x.floor() as usize).min(STOPS.len() - 2);
   let f = x - i as f64;
@@ -258,7 +262,8 @@ fn embed_grid_image(
   for (i, col) in grid.iter().enumerate() {
     for (j, &v) in col.iter().enumerate() {
       let px = if v.is_finite() {
-        let (r, g, b) = scaled_color(scale_value(v, v_min, v_max), color_function);
+        let (r, g, b) =
+          scaled_color(scale_value(v, v_min, v_max), color_function);
         image::Rgba([r, g, b, 255])
       } else {
         image::Rgba([0, 0, 0, 0])
@@ -382,8 +387,7 @@ type PtV = ((f64, f64), f64);
 /// Clip a polygon against v >= level (keep_above) or v <= level, with
 /// positions interpolated linearly along the edges (Sutherland–Hodgman).
 fn clip_polygon(poly: &[PtV], level: f64, keep_above: bool) -> Vec<PtV> {
-  let inside =
-    |v: f64| if keep_above { v >= level } else { v <= level };
+  let inside = |v: f64| if keep_above { v >= level } else { v <= level };
   let mut out = Vec::with_capacity(poly.len() + 2);
   for k in 0..poly.len() {
     let (pa, va) = poly[k];
@@ -586,9 +590,8 @@ fn marching_squares_segments(
       };
 
       let sx = |fx: f64| -> f64 { plot_x0 + (i as f64 + fx) * cell_w };
-      let sy = |fy: f64| -> f64 {
-        plot_y0 + (n_cj as f64 - (j as f64 + fy)) * cell_h
-      };
+      let sy =
+        |fy: f64| -> f64 { plot_y0 + (n_cj as f64 - (j as f64 + fy)) * cell_h };
 
       let bottom = (sx(lerp(v00, v10)), sy(0.0));
       let top = (sx(lerp(v01, v11)), sy(1.0));
@@ -763,7 +766,13 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     area.plot_h,
     opts.color_function.as_deref(),
   );
-  push_frame(&mut svg, area.plot_x0, area.plot_y0, area.plot_w, area.plot_h);
+  push_frame(
+    &mut svg,
+    area.plot_x0,
+    area.plot_y0,
+    area.plot_w,
+    area.plot_h,
+  );
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result(svg))
@@ -847,7 +856,13 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     cell_h,
     area.render_width,
   );
-  push_frame(&mut svg, area.plot_x0, area.plot_y0, area.plot_w, area.plot_h);
+  push_frame(
+    &mut svg,
+    area.plot_x0,
+    area.plot_y0,
+    area.plot_w,
+    area.plot_h,
+  );
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result(svg))
@@ -1298,7 +1313,13 @@ pub fn list_density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     area.plot_h,
     opts.color_function.as_deref(),
   );
-  push_frame(&mut svg, area.plot_x0, area.plot_y0, area.plot_w, area.plot_h);
+  push_frame(
+    &mut svg,
+    area.plot_x0,
+    area.plot_y0,
+    area.plot_w,
+    area.plot_h,
+  );
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result(svg))
@@ -1584,7 +1605,13 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     cell_h,
     area.render_width,
   );
-  push_frame(&mut svg, area.plot_x0, area.plot_y0, area.plot_w, area.plot_h);
+  push_frame(
+    &mut svg,
+    area.plot_x0,
+    area.plot_y0,
+    area.plot_w,
+    area.plot_h,
+  );
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result(svg))
@@ -2144,7 +2171,8 @@ pub fn complex_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let re = re_min + (i as f64 + 0.5) / grid_size as f64 * (re_max - re_min);
     for j in 0..grid_size {
       let im = im_min + (j as f64 + 0.5) / grid_size as f64 * (im_max - im_min);
-      let px = if let Some((fre, fim)) = evaluate_complex_at(body, &zvar, re, im)
+      let px = if let Some((fre, fim)) =
+        evaluate_complex_at(body, &zvar, re, im)
         && fre.is_finite()
         && fim.is_finite()
       {
@@ -2168,7 +2196,13 @@ pub fn complex_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       area.plot_x0, area.plot_y0, area.plot_w, area.plot_h
     ));
   }
-  push_frame(&mut svg, area.plot_x0, area.plot_y0, area.plot_w, area.plot_h);
+  push_frame(
+    &mut svg,
+    area.plot_x0,
+    area.plot_y0,
+    area.plot_w,
+    area.plot_h,
+  );
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result(svg))

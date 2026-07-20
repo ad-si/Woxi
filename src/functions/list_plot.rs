@@ -2,11 +2,11 @@ use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
-  DEFAULT_HEIGHT, DEFAULT_WIDTH, Mesh, PLOT_COLORS, PlotOptions, SeriesStyle,
-  adjust_y_range_for_filling_opts, apply_filling_option, apply_plot_theme,
-  build_plot_source, generate_scatter_svg_with_options,
-  generate_svg_with_filling, parse_image_size, parse_plot_legends,
-  parse_plot_style,
+  DEFAULT_HEIGHT, DEFAULT_WIDTH, IntervalMarkers, Mesh, PLOT_COLORS,
+  PlotOptions, SeriesStyle, adjust_y_range_for_filling_opts,
+  apply_filling_option, apply_plot_theme, build_plot_source,
+  generate_scatter_svg_with_options, generate_svg_with_filling,
+  parse_image_size, parse_plot_legends, parse_plot_style,
 };
 use crate::functions::sound::audio_sample_rate;
 use crate::syntax::{Expr, unevaluated};
@@ -115,10 +115,14 @@ fn label_string(e: &Expr) -> String {
 
 /// Convert an association into plottable list data. Keys that are all numeric
 /// become x-coordinates (`<|k -> v|>` → `{{k, v}, …}`); with non-numeric keys
-/// the values are plotted at sequential x. When every value is itself a list,
-/// each value is a separate series and its key becomes the series label
-/// (`{Labeled[v1, k1], …}`).
-fn association_to_data(pairs: &[(Expr, Expr)]) -> Expr {
+/// the values are plotted at sequential x and, when `keys_label_points` is
+/// set (point plots like ListPlot, but not line plots), each key labels its
+/// point (`{Labeled[v1, k1], …}`). When every value is itself a list, each
+/// value is a separate series and its key becomes the series label.
+fn association_to_data(
+  pairs: &[(Expr, Expr)],
+  keys_label_points: bool,
+) -> Expr {
   let all_values_lists =
     !pairs.is_empty() && pairs.iter().all(|(_, v)| matches!(v, Expr::List(_)));
   if all_values_lists {
@@ -140,6 +144,20 @@ fn association_to_data(pairs: &[(Expr, Expr)]) -> Expr {
       pairs
         .iter()
         .map(|(k, v)| Expr::List(vec![k.clone(), v.clone()].into()))
+        .collect(),
+    );
+  }
+  // Non-numeric keys label their values: `<|"a" -> 2, …|>` plots the values
+  // at sequential x with each key drawn as the point's label.
+  if keys_label_points {
+    return Expr::List(
+      pairs
+        .iter()
+        .map(|(k, v)| Expr::FunctionCall {
+          name: "Labeled".into(),
+          args: vec![canonicalize_element(v), Expr::String(label_string(k))]
+            .into(),
+        })
         .collect(),
     );
   }
@@ -196,10 +214,10 @@ fn weighted_data_values(args: &[Expr]) -> Expr {
 /// `Legended`, `Annotation`, `Callout` (kept as a `Labeled` so its label still
 /// draws), `SparseArray` (densified), `WeightedData` (points only) and
 /// `Association`s. The `data -> labels` rule form is handled by the caller.
-fn canonicalize_plot_data(expr: &Expr) -> Expr {
+fn canonicalize_plot_data(expr: &Expr, keys_label_points: bool) -> Expr {
   let e = evaluate_expr_to_expr(expr).unwrap_or_else(|_| expr.clone());
   match &e {
-    Expr::Association(pairs) => association_to_data(pairs),
+    Expr::Association(pairs) => association_to_data(pairs, keys_label_points),
     Expr::List(items) => {
       Expr::List(items.iter().map(canonicalize_element).collect())
     }
@@ -207,14 +225,20 @@ fn canonicalize_plot_data(expr: &Expr) -> Expr {
       match name.as_str() {
         "Tooltip" | "Style" | "Legended" | "Annotation" | "PopupWindow"
         | "Mouseover" | "StatusArea" | "Button" => {
-          canonicalize_plot_data(&args[0])
+          canonicalize_plot_data(&args[0], keys_label_points)
         }
         "Callout" if args.len() >= 2 => Expr::FunctionCall {
           name: "Labeled".into(),
-          args: vec![canonicalize_plot_data(&args[0]), args[1].clone()].into(),
+          args: vec![
+            canonicalize_plot_data(&args[0], keys_label_points),
+            args[1].clone(),
+          ]
+          .into(),
         },
-        "Callout" => canonicalize_plot_data(&args[0]),
-        "WeightedData" => canonicalize_plot_data(&weighted_data_values(args)),
+        "Callout" => canonicalize_plot_data(&args[0], keys_label_points),
+        "WeightedData" => {
+          canonicalize_plot_data(&weighted_data_values(args), keys_label_points)
+        }
         "SparseArray" => evaluate_expr_to_expr(&Expr::FunctionCall {
           name: "Normal".into(),
           args: vec![e.clone()].into(),
@@ -239,8 +263,9 @@ fn canonicalize_plot_data(expr: &Expr) -> Expr {
 /// value becomes the coordinate and whose uncertainty an error bar.
 fn parse_list_data_err(
   arg: &Expr,
+  keys_label_points: bool,
 ) -> Result<Vec<Vec<ErrPoint>>, InterpreterError> {
-  let data = canonicalize_plot_data(arg);
+  let data = canonicalize_plot_data(arg, keys_label_points);
 
   // A TimeSeries / multi-path TemporalData becomes one (x, y) series per path.
   if let Some(paths) = crate::functions::timeseries_ast::temporal_paths(&data) {
@@ -316,9 +341,15 @@ fn parse_list_data_err(
   }
 
   // Simple list: {y1, y2, y3} → single series with x = 1,2,3,...
+  // A `Labeled[y, …]` entry still contributes its point here (the label is
+  // only drawn by the labeled parser).
   let mut points = Vec::with_capacity(items.len());
   for (i, item) in items.iter().enumerate() {
-    if let Some(y) = eval_to_value_err(item) {
+    let value = match unwrap_labeled(item) {
+      Some((content, _)) => content,
+      None => item.clone(),
+    };
+    if let Some(y) = eval_to_value_err(&value) {
       points.push(ErrPoint::from_y((i + 1) as f64, y));
     }
   }
@@ -390,7 +421,7 @@ type LabeledErrSeries = (
 fn parse_list_data_labeled(
   arg: &Expr,
 ) -> Result<LabeledSeries, InterpreterError> {
-  let (series, labels, _) = parse_list_data_err_labeled(arg)?;
+  let (series, labels, _) = parse_list_data_err_labeled(arg, false)?;
   Ok((strip_errors(&series), labels))
 }
 
@@ -440,7 +471,7 @@ fn parse_rule_labeled(
   lhs: &Expr,
   rhs: &Expr,
 ) -> Result<LabeledErrSeries, InterpreterError> {
-  let series = parse_list_data_err(lhs)?;
+  let series = parse_list_data_err(lhs, false)?;
   let rhs = evaluate_expr_to_expr(rhs).unwrap_or_else(|_| rhs.clone());
   let labels: Vec<Option<String>> = match &rhs {
     Expr::List(items) => {
@@ -474,8 +505,13 @@ fn parse_rule_labeled(
 /// parses as two 2-point series rather than as a list of x/y pairs. When
 /// every entry is a scalar, the Labeled wrappers instead label individual
 /// points of a single series: `{Labeled[2, "a"], 3}` plots at x = 1, 2.
+///
+/// `keys_label_points` controls whether the non-numeric keys of an
+/// association become per-point labels (ListPlot draws them, line plots
+/// don't).
 fn parse_list_data_err_labeled(
   arg: &Expr,
+  keys_label_points: bool,
 ) -> Result<LabeledErrSeries, InterpreterError> {
   let raw = evaluate_expr_to_expr(arg)?;
 
@@ -496,11 +532,11 @@ fn parse_list_data_err_labeled(
 
   // Normalize container / display wrappers (Tooltip, Style, Callout,
   // SparseArray, WeightedData, associations, …) into plain list data.
-  let data = canonicalize_plot_data(&raw);
+  let data = canonicalize_plot_data(&raw, keys_label_points);
 
   // Whole argument wrapped: the label applies to every series inside.
   if let Some((content, label)) = unwrap_labeled(&data) {
-    let series = parse_list_data_err(&content)?;
+    let series = parse_list_data_err(&content, keys_label_points)?;
     let labels = vec![Some(label); series.len()];
     return Ok((series, labels, Vec::new()));
   }
@@ -534,6 +570,29 @@ fn parse_list_data_err_labeled(
       return Ok((vec![points], Vec::new(), vec![point_labels]));
     }
 
+    // All entries {x, y} pairs (e.g. `Callout[{x, y}, label]` /
+    // `Labeled[{x, y}, label]` around individual coordinates): the wrappers
+    // label individual points of a single series, not separate datasets.
+    let is_numeric_pair = |c: &Expr| {
+      matches!(c, Expr::List(pair) if pair.len() == 2
+        && eval_to_value_err(&pair[0]).is_some()
+        && eval_to_value_err(&pair[1]).is_some())
+    };
+    if unwrapped.iter().all(|(c, _)| is_numeric_pair(c)) {
+      let mut points = Vec::with_capacity(unwrapped.len());
+      let mut point_labels = Vec::with_capacity(unwrapped.len());
+      for (content, label) in &unwrapped {
+        if let Expr::List(pair) = content
+          && let (Some(x), Some(y)) =
+            (eval_to_value_err(&pair[0]), eval_to_value_err(&pair[1]))
+        {
+          points.push(ErrPoint::from_xy(x, y));
+          point_labels.push(label.clone());
+        }
+      }
+      return Ok((vec![points], Vec::new(), vec![point_labels]));
+    }
+
     let mut all_series = Vec::with_capacity(unwrapped.len());
     let mut labels = Vec::with_capacity(unwrapped.len());
     for (content, label) in unwrapped {
@@ -552,7 +611,11 @@ fn parse_list_data_err_labeled(
     return Ok((all_series, labels, Vec::new()));
   }
 
-  Ok((parse_list_data_err(&data)?, Vec::new(), Vec::new()))
+  Ok((
+    parse_list_data_err(&data, keys_label_points)?,
+    Vec::new(),
+    Vec::new(),
+  ))
 }
 
 /// Panel arrangement from the PlotLayout option.
@@ -696,6 +759,17 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
             opts.frame = true;
           }
         }
+        // "Fences" (capped error bars) is the default; "Bars" renders with
+        // the same bar geometry. None hides the uncertainty intervals.
+        "IntervalMarkers" => match replacement.as_ref() {
+          Expr::String(s) if s == "Bands" => {
+            opts.interval_markers = IntervalMarkers::Bands;
+          }
+          Expr::Identifier(v) if v == "None" => {
+            opts.interval_markers = IntervalMarkers::None;
+          }
+          _ => {}
+        },
         "Mesh" => {
           if matches!(replacement.as_ref(), Expr::Identifier(v) if v == "All") {
             opts.mesh = Mesh::All;
@@ -899,7 +973,7 @@ fn apply_dataset_labels(opts: &mut PlotOptions, labels: &[Option<String>]) {
 /// ListPlot[{y1, y2, ...}] or ListPlot[{{x1,y1}, ...}]
 pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (err_series, labels, point_labels) =
-    parse_list_data_err_labeled(&args[0])?;
+    parse_list_data_err_labeled(&args[0], true)?;
   let all_series = strip_errors(&err_series);
   let mut parsed = parse_plot_options(args);
   apply_dataset_labels(&mut parsed.opts, &labels);
@@ -1023,8 +1097,10 @@ pub fn complex_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// ListLinePlot[{y1, y2, ...}]
 pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Association keys don't label the points here: wolframscript draws key
+  // labels for ListPlot but not for ListLinePlot.
   let (err_series, labels, point_labels) =
-    parse_list_data_err_labeled(&args[0])?;
+    parse_list_data_err_labeled(&args[0], false)?;
   let all_series = strip_errors(&err_series);
   let mut parsed = parse_plot_options(args);
   apply_dataset_labels(&mut parsed.opts, &labels);

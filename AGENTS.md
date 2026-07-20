@@ -44,6 +44,7 @@ There is 3 levels of tests:
 - Whenever you change something, add unit tests for it.
 - When fixing a bug, always add a regression test so the bug wont't occur again.
 - Always run `make test` after any changes to rule out any regressions.
+- Always run `make format` to format the code before opening a PR.
 - Never implement features or tests only for special cases like e.g. one specific number.
     Make sure to implement it for all possible cases!
 - Use `wolframscript -code 'Plus[1, 2]'` to verify the output of Wolfram Language code.

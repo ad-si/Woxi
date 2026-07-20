@@ -205,9 +205,10 @@ pub fn dispatch_plotting(
       // `ListLinePlot[list]` prints the message and leaves the
       // expression symbolic.
       match crate::evaluator::evaluate_expr_to_expr(&args[0]) {
-        // A TimeSeries / TemporalData is a valid (non-List) data source.
+        // A TimeSeries / TemporalData or an Association is a valid
+        // (non-List) data source.
         Ok(evaluated)
-          if !matches!(evaluated, Expr::List(_))
+          if !matches!(evaluated, Expr::List(_) | Expr::Association(_))
             && crate::functions::timeseries_ast::temporal_paths(&evaluated)
               .is_none() =>
         {

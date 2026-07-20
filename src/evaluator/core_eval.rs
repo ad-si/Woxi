@@ -2057,6 +2057,13 @@ pub fn evaluate_expr_to_expr_inner(
               | "Reap"
               | "Manipulate"
               | "Animate"
+              // Table/Do honour a top-level Evaluate[...] body the same way
+              // the plotting heads do: the body is evaluated once with the
+              // iterator still symbolic (e.g. so `Table[Evaluate[RSolve[…,n]]…,
+              // {n,…}]` solves the recurrence once and then substitutes each n)
+              // instead of being re-derived per value.
+              | "Table"
+              | "Do"
               | "Plot"
               | "Plot3D"
               | "ParametricPlot"

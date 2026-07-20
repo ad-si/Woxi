@@ -1282,6 +1282,20 @@ pub(crate) enum LegendPosition {
   Bottom,
 }
 
+/// How `Around` uncertainty intervals are drawn (IntervalMarkers option):
+/// capped error bars (the default), a filled band spanning the intervals
+/// across the series, or nothing.
+#[derive(Clone, Copy, PartialEq, Default)]
+pub(crate) enum IntervalMarkers {
+  /// Error bars with end caps ("Fences", the default).
+  #[default]
+  Fences,
+  /// One filled band per series covering the y-uncertainty intervals.
+  Bands,
+  /// `IntervalMarkers -> None`: uncertainties are not drawn.
+  None,
+}
+
 /// Options for line-based plots (Plot, ListLinePlot, etc.).
 #[derive(Clone)]
 pub(crate) struct PlotOptions {
@@ -1345,6 +1359,8 @@ pub(crate) struct PlotOptions {
   /// series' points: each entry is ((dx_minus, dx_plus), (dy_minus,
   /// dy_plus)) in data units. Empty when the data has no uncertainties.
   pub error_bars: Vec<Vec<((f64, f64), (f64, f64))>>,
+  /// How the `error_bars` uncertainties are rendered.
+  pub interval_markers: IntervalMarkers,
   /// `Background -> color`: fill for the whole image, replacing the
   /// theme background. `None` keeps the theme default.
   pub background: Option<RGBColor>,
@@ -1387,6 +1403,7 @@ impl Default for PlotOptions {
       stacked: false,
       epilog: Vec::new(),
       error_bars: Vec::new(),
+      interval_markers: IntervalMarkers::default(),
       background: None,
       aspect_ratio: None,
     }
@@ -1436,6 +1453,49 @@ fn draw_error_bars<
       .draw_series(std::iter::once(PathElement::new(seg.to_vec(), style)))
       .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
   }
+  Ok(())
+}
+
+/// Draw `IntervalMarkers -> "Bands"` for one series: a translucent filled
+/// band spanning each point's y-uncertainty interval, outlined in the series
+/// color. `bars` is parallel to `points` (see [`draw_error_bars`]); a point
+/// without y-uncertainty pinches the band to the point itself.
+fn draw_interval_band<
+  DB: plotters::prelude::DrawingBackend,
+  CT: plotters::prelude::CoordTranslate<From = (f64, f64)>,
+>(
+  chart: &mut plotters::prelude::ChartContext<DB, CT>,
+  points: &[(f64, f64)],
+  bars: &[((f64, f64), (f64, f64))],
+  color: RGBColor,
+) -> Result<(), InterpreterError> {
+  let edges: Vec<((f64, f64), (f64, f64))> = points
+    .iter()
+    .zip(bars)
+    .filter(|((x, y), _)| x.is_finite() && y.is_finite())
+    .map(|(&(x, y), &(_dx, dy))| ((x, y - dy.0), (x, y + dy.1)))
+    .collect();
+  if edges.is_empty() {
+    return Ok(());
+  }
+  // Closed outline: along the upper edge, then back along the lower edge.
+  let mut outline: Vec<(f64, f64)> = edges.iter().map(|e| e.1).collect();
+  outline.extend(edges.iter().rev().map(|e| e.0));
+  if outline.len() >= 3 {
+    chart
+      .draw_series(std::iter::once(Polygon::new(
+        outline.clone(),
+        color.mix(0.2),
+      )))
+      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+  }
+  outline.push(edges[0].1);
+  chart
+    .draw_series(std::iter::once(PathElement::new(
+      outline,
+      color.stroke_width(RESOLUTION_SCALE),
+    )))
+    .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
   Ok(())
 }
 
@@ -2010,6 +2070,13 @@ fn generate_svg_with_options(
             y_max,
           );
 
+          // Uncertainty bands lie underneath the curve and any filling.
+          if opts.interval_markers == IntervalMarkers::Bands
+            && let Some(bars) = opts.error_bars.get(series_idx)
+          {
+            draw_interval_band(&mut chart, points, bars, color)?;
+          }
+
           // Draw filled area before the line so the line renders on top.
           // In stacked mode each band is bounded below by the previous
           // cumulative curve (or the axis for the first series) and above by
@@ -2116,7 +2183,9 @@ fn generate_svg_with_options(
           }
 
           // Error bars from Around data values, on top of the line.
-          if let Some(bars) = opts.error_bars.get(series_idx) {
+          if opts.interval_markers == IntervalMarkers::Fences
+            && let Some(bars) = opts.error_bars.get(series_idx)
+          {
             draw_error_bars(
               &mut chart,
               points,
@@ -2905,16 +2974,24 @@ pub(crate) fn generate_scatter_svg_with_options(
           })?;
       }
 
-      // Error bars from Around data values, under the point markers.
+      // Uncertainty intervals from Around data values, under the point
+      // markers: capped error bars by default, one filled band per series
+      // for `IntervalMarkers -> "Bands"`.
       if let Some(bars) = opts.error_bars.get(series_idx) {
-        draw_error_bars(
-          &mut chart,
-          points,
-          bars,
-          color,
-          x_max - x_min,
-          y_max - y_min,
-        )?;
+        match opts.interval_markers {
+          IntervalMarkers::Fences => draw_error_bars(
+            &mut chart,
+            points,
+            bars,
+            color,
+            x_max - x_min,
+            y_max - y_min,
+          )?,
+          IntervalMarkers::Bands => {
+            draw_interval_band(&mut chart, points, bars, color)?
+          }
+          IntervalMarkers::None => {}
+        }
       }
 
       chart
