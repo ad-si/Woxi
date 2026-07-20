@@ -6354,6 +6354,29 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           }
         }
 
+        // PaddedForm[BaseForm[x, b], n, opts…] → the base-b digits padded to
+        // the n+1 field with the NumberPadding character, with a subscript
+        // base (e.g. 00000101₂). Leading spaces from the default padding are
+        // dropped (the grid handles alignment); visible pad characters such
+        // as "0" are kept.
+        "PaddedForm"
+          if crate::functions::string_ast::padded_form_base_parts(args)
+            .is_some() =>
+        {
+          let (digits, base) =
+            crate::functions::string_ast::padded_form_base_parts(args).unwrap();
+          let shown = digits.trim_start_matches(' ');
+          if base == 10 {
+            svg_escape(shown)
+          } else {
+            format!(
+              "{}<tspan baseline-shift=\"sub\" font-size=\"70%\">{}</tspan>",
+              svg_escape(shown),
+              base
+            )
+          }
+        }
+
         // NumberForm / PaddedForm / AccountingForm → the formatted number text
         // (padding/grouping is folded into the string; the grid handles
         // alignment). Multi-line 2-D forms are flattened to a single line. When
@@ -6634,6 +6657,22 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
           }
           None => estimate_display_width(&args[0]),
         }
+      }
+      // Padded base-b digits + subscript base at 70% width, mirroring the
+      // markup branch above (leading space padding is not rendered).
+      "PaddedForm"
+        if crate::functions::string_ast::padded_form_base_parts(args)
+          .is_some() =>
+      {
+        let (digits, base) =
+          crate::functions::string_ast::padded_form_base_parts(args).unwrap();
+        let shown = digits.trim_start_matches(' ');
+        let base_len = if base == 10 {
+          0
+        } else {
+          base.to_string().len()
+        };
+        shown.chars().count() as f64 + base_len as f64 * 0.7
       }
       "NumberForm" | "PaddedForm" | "AccountingForm" if !args.is_empty() => {
         let s = crate::functions::string_ast::to_string_default_form(expr);

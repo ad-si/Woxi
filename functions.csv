@@ -889,7 +889,7 @@ SetterBar,Setter bar control (stays symbolic in script mode),✅,unevaluated,6.0
 StyleBox,Low-level box construct for styled content display,✅,pure,3.0,896
 PadLeft,Pads a list on the left to a specified length,✅,pure,4.0,897
 Counts,Returns association of element counts (on an association counts the values),✅,pure,10.0,898
-PaddedForm,Pads numbers (or a list of numbers) to fixed width via ToString rendering,✅,pure,2.0,900
+PaddedForm,"Pads numbers (or a list of numbers) to fixed width via ToString rendering; supports NumberPadding -> {p1; p2} pad characters and BaseForm[x; b] inner values (padded base-b digits with a subscript base)",✅,pure,2.0,900
 TrigToExp,Convert trigonometric and hyperbolic functions to exponentials and inverse functions to logarithms,✅,pure,3.0,900
 Triangle,Geometric primitive representing a triangle,✅,none,10.0,901
 ListContourPlot,Creates a contour plot from a list of values or {x y z} triples,✅,pure,1.0,902
@@ -1022,7 +1022,7 @@ AppearanceElements,Option specifying which interface elements appear,✅,pure,6.
 TimesBy,Multiplies a variable by a value,✅,stateful,1.0,1032
 Merge,Merges associations using a combining function,✅,pure,10.0,1033
 Colorize,Colorize a label matrix or image,✅,,8.0,1035
-NumberPadding,,🚫,,2.0,1035
+NumberPadding,Option specifying the padding characters used by NumberForm and PaddedForm,✅,pure,2.0,1035
 NonNegative,Tests if a number is non-negative,✅,pure,1.0,1036
 ImageMultiply,Multiplies pixel values of two images pointwise,✅,pure,7.0,1038
 TimeSeries,Represents a time series of values paired with time stamps,✅,pure,10.0,1038

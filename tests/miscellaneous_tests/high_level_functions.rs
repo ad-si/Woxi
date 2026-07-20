@@ -3070,6 +3070,91 @@ mod high_level_functions {
     }
 
     #[test]
+    fn test_padded_form_number_padding() {
+      // NumberPadding -> {p1, p2} replaces the left padding character; the
+      // pad fills the whole n+1 field (sign column included), matching the
+      // NumberForm NumberPadding behavior.
+      assert_eq!(
+        interpret(
+          "ToString[PaddedForm[123, 6, NumberPadding -> {\"0\", \"\"}]]"
+        )
+        .unwrap(),
+        "0000123"
+      );
+      // The sign occupies a pad slot.
+      assert_eq!(
+        interpret(
+          "ToString[PaddedForm[-7, 4, NumberPadding -> {\"0\", \"\"}]]"
+        )
+        .unwrap(),
+        "000-7"
+      );
+      // A {n, f} spec pads the fixed-decimal rendering to width n+2.
+      assert_eq!(
+        interpret(
+          "ToString[PaddedForm[1.5, {4, 2}, NumberPadding -> {\"0\", \"\"}]]"
+        )
+        .unwrap(),
+        "001.50"
+      );
+      // Lists thread the option over every element.
+      assert_eq!(
+        interpret(
+          "ToString[PaddedForm[{1, 22}, 4, NumberPadding -> {\"0\", \"\"}]]"
+        )
+        .unwrap(),
+        "{00001, 00022}"
+      );
+      // InputForm keeps the symbolic head, options included.
+      assert_eq!(
+        interpret(
+          "ToString[PaddedForm[7, 4, NumberPadding -> {\"0\", \"\"}], InputForm]"
+        )
+        .unwrap(),
+        "PaddedForm[7, 4, NumberPadding -> {\"0\", \"\"}]"
+      );
+    }
+
+    #[test]
+    fn test_padded_form_base_form() {
+      // PaddedForm[BaseForm[x, b], n] pads the base-b digit string to the
+      // n+1 field and keeps the subscript base on the line below.
+      assert_eq!(
+        interpret(
+          "ToString[PaddedForm[BaseForm[5, 2], 8, NumberPadding -> {\"0\", \"\"}]]"
+        )
+        .unwrap(),
+        "000000101\n         2"
+      );
+      // Zero pads to a full field of the pad character.
+      assert_eq!(
+        interpret(
+          "ToString[PaddedForm[BaseForm[0, 2], 8, NumberPadding -> {\"0\", \"\"}]]"
+        )
+        .unwrap(),
+        "000000000\n         2"
+      );
+      // Negatives keep the sign within the padded digit line.
+      assert_eq!(
+        interpret(
+          "ToString[PaddedForm[BaseForm[-5, 2], 6, NumberPadding -> {\"0\", \"\"}]]"
+        )
+        .unwrap(),
+        "000-101\n       2"
+      );
+      // Default padding is spaces, like the decimal field.
+      assert_eq!(
+        interpret("ToString[PaddedForm[BaseForm[255, 16], 4]]").unwrap(),
+        "   ff\n     16"
+      );
+      // Base 10 shows no subscript.
+      assert_eq!(
+        interpret("ToString[PaddedForm[BaseForm[5, 10], 3]]").unwrap(),
+        "   5"
+      );
+    }
+
+    #[test]
     fn test_divide_canonical_form() {
       // 1/(a*b) should produce canonical Times[Power[...]] form matching (a*b)^-1
       assert_eq!(interpret("(a*b)^-1 === 1/(a*b)").unwrap(), "True");
