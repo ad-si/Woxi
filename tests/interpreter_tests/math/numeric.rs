@@ -1302,7 +1302,10 @@ mod overflow_safety {
 
   #[test]
   fn n_erf_zero() {
-    assert_eq!(interpret("N[Erf[0], 20]").unwrap(), "0.`20.");
+    // Erf[0] is exact 0, so N[Erf[0], 20] stays the exact integer 0 — matching
+    // wolframscript, which returns `0` (Head Integer, Precision Infinity)
+    // rather than a precision-tagged BigFloat zero.
+    assert_eq!(interpret("N[Erf[0], 20]").unwrap(), "0");
   }
 
   #[test]

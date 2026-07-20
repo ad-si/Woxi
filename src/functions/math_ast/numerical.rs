@@ -59,9 +59,37 @@ pub fn n_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
     };
-    return n_eval_arbitrary(&args[0], precision_f64);
+    return n_eval_arbitrary_precision_form(&args[0], precision_f64);
   }
   n_eval(&args[0])
+}
+
+/// Arbitrary-precision `N[expr, p]` for the plain-precision spec (not the
+/// `{precision, accuracy}` form). Exact zeros collapse to the exact integer 0
+/// — `N[0, p]` stays `0` (Head Integer, Precision Infinity) in wolframscript
+/// rather than becoming a precision-tagged BigFloat zero. Lists are handled
+/// element-wise so e.g. `N[{0, 1/3}, 20]` keeps the zero exact while the
+/// other elements pick up the precision tag.
+fn n_eval_arbitrary_precision_form(
+  expr: &Expr,
+  precision: f64,
+) -> Result<Expr, InterpreterError> {
+  let is_exact_zero = match expr {
+    Expr::Integer(n) => *n == 0,
+    Expr::BigInteger(n) => n.sign() == num_bigint::Sign::NoSign,
+    _ => false,
+  };
+  if is_exact_zero {
+    return Ok(Expr::Integer(0));
+  }
+  if let Expr::List(items) = expr {
+    let results: Result<Vec<Expr>, _> = items
+      .iter()
+      .map(|e| n_eval_arbitrary_precision_form(e, precision))
+      .collect();
+    return Ok(Expr::List(results?.into()));
+  }
+  n_eval_arbitrary(expr, precision)
 }
 
 /// Recursively convert an expression to numeric (Real) form

@@ -1561,6 +1561,32 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn n_of_exact_zero_stays_exact() {
+    clear_state();
+    // N[0, p] on an exact zero stays the exact integer 0 (Head Integer,
+    // Precision Infinity) — wolframscript never fabricates a
+    // precision-tagged BigFloat zero. Non-zero exacts still pick up the tag.
+    assert_eq!(interpret("N[0, 20]").unwrap(), "0");
+    assert_eq!(interpret("N[0, 30]").unwrap(), "0");
+    assert_eq!(interpret("Head[N[0, 20]]").unwrap(), "Integer");
+    assert_eq!(interpret("Precision[N[0, 20]]").unwrap(), "Infinity");
+    // Exact zeros arising from evaluation collapse too.
+    assert_eq!(interpret("N[Sin[0], 20]").unwrap(), "0");
+    assert_eq!(interpret("N[2 - 2, 25]").unwrap(), "0");
+    assert_eq!(interpret("N[Cos[Pi/2], 40]").unwrap(), "0");
+    // A machine Real 0. is left unchanged, and non-zero exacts keep the tag.
+    assert_eq!(interpret("N[0., 20]").unwrap(), "0.");
+    assert_eq!(interpret("N[2, 20]").unwrap(), "2.`20.");
+    // Lists collapse the zero elements element-wise while others keep the tag.
+    assert_eq!(
+      interpret("N[{1, 0, 2}, 20]").unwrap(),
+      "{1.`20., 0, 2.`20.}"
+    );
+    // RealDigits sees the exact 0, not a padded BigFloat zero.
+    assert_eq!(interpret("RealDigits[N[0, 20]]").unwrap(), "{{0}, 1}");
+  }
+
+  #[test]
   fn notation_wrappers_stay_symbolic_without_warning() {
     // Notation/display wrapper heads stay unevaluated as their canonical form
     // in wolframscript and must NOT emit a spurious "not yet implemented"
