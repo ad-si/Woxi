@@ -5853,6 +5853,55 @@ mod random_variate {
   }
 
   #[test]
+  fn binomial_single_in_range() {
+    // BinomialDistribution[n, p] samples an integer in [0, n].
+    let val: i64 = interpret("RandomVariate[BinomialDistribution[50, 0.3]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!(
+      (0..=50).contains(&val),
+      "binomial sample out of range: {val}"
+    );
+  }
+
+  #[test]
+  fn binomial_deterministic_endpoints() {
+    // p = 0 always gives 0 successes; p = 1 always gives n.
+    assert_eq!(
+      interpret("RandomVariate[BinomialDistribution[10, 0]]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("RandomVariate[BinomialDistribution[10, 1]]").unwrap(),
+      "10"
+    );
+  }
+
+  #[test]
+  fn binomial_list_all_in_range() {
+    assert_eq!(
+      interpret(
+        "AllTrue[RandomVariate[BinomialDistribution[50, 0.3], 100], \
+         (IntegerQ[#] && 0 <= # <= 50) &]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn binomial_mean_near_np() {
+    // Mean of many Binomial(50, 0.3) samples should be near n·p = 15.
+    let result: f64 =
+      interpret("Mean[N[RandomVariate[BinomialDistribution[50, 0.3], 3000]]]")
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(result > 13.0 && result < 17.0, "got {}", result);
+  }
+
+  #[test]
   fn binormal_single() {
     // BinormalDistribution[rho] is 2-D standard normal with correlation rho.
     let result = interpret("RandomVariate[BinormalDistribution[1/2]]").unwrap();

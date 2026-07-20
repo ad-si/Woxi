@@ -1475,6 +1475,43 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
     }
+    Expr::FunctionCall { name, args: dargs }
+      if name == "BinomialDistribution" && dargs.len() == 2 =>
+    {
+      // BinomialDistribution[n, p]: number of successes in `trials`
+      // independent Bernoulli(p) trials.
+      let trials = expr_to_num(&dargs[0]).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "BinomialDistribution: invalid trial count".into(),
+        )
+      })?;
+      let prob = expr_to_num(&dargs[1]).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "BinomialDistribution: invalid success probability".into(),
+        )
+      })?;
+      if trials < 0.0 || !(0.0..=1.0).contains(&prob) {
+        return Ok(unevaluated("RandomVariate", args));
+      }
+      let trials = trials.round() as u64;
+      let sample_binomial = || -> i128 {
+        use rand_distr::{Binomial, Distribution};
+        match Binomial::new(trials, prob) {
+          Ok(b) => crate::with_rng(|rng| b.sample(rng) as i128),
+          Err(_) => 0,
+        }
+      };
+      match n {
+        None => Ok(Expr::Integer(sample_binomial())),
+        Some(count) => {
+          let mut out = Vec::with_capacity(count);
+          for _ in 0..count {
+            out.push(Expr::Integer(sample_binomial()));
+          }
+          Ok(Expr::List(out.into()))
+        }
+      }
+    }
     _ => Ok(unevaluated("RandomVariate", args)),
   }
 }
