@@ -392,11 +392,13 @@ fn parse_single_series(
 }
 
 /// Reinterpret list data according to an explicit `DataRange` option, the
-/// way Wolfram does: an explicit range forces value rows to be read as
+/// way Wolfram does: `DataRange -> All` forces value rows to be read as
 /// separate datasets of y-values rather than as (x, y) coordinates. So
 /// `ListPlot[{{1, 1}, {2, 2}, {3, 3}}, DataRange -> All]` plots three
 /// 2-point datasets, not the three points (1,1), (2,2), (3,3). `All` keeps
-/// x = 1, 2, …; `{xmin, xmax}` spaces the x-values evenly over the span.
+/// x = 1, 2, …; `{xmin, xmax}` spaces the x-values evenly over the span,
+/// but leaves a list of (x, y) pairs untouched — pairs keep their explicit
+/// x-coordinates, so the option has no effect there.
 ///
 /// Returns the rewritten data (y-values paired with explicit x-coordinates)
 /// or `None` when the option doesn't change the interpretation (data with
@@ -446,6 +448,16 @@ fn apply_data_range(data: &Expr, spec: &DataRangeSpec) -> Option<Expr> {
     matches!(it, Expr::List(row)
       if row.iter().all(|e| !matches!(e, Expr::List(_))))
   }) {
+    // Rows of exactly two scalars are (x, y) pairs. They keep their
+    // explicit x-coordinates under `DataRange -> {xmin, xmax}`; only
+    // `DataRange -> All` forces the separate-dataset reading.
+    if matches!(spec, DataRangeSpec::Span(..))
+      && items
+        .iter()
+        .all(|it| matches!(it, Expr::List(row) if row.len() == 2))
+    {
+      return None;
+    }
     return Some(Expr::List(
       items
         .iter()
