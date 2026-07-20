@@ -2505,8 +2505,8 @@ pub(crate) fn tableform_grid_args(
       if matches!(pattern.as_ref(), syntax::Expr::Identifier(n) if n == "Alignment"))
   });
   // TableAlignments -> Center|Left|Right (or {horizontal, vertical}) maps to
-  // the grid's Alignment option. The "." decimal-point form isn't supported
-  // yet, so it falls back to the default left alignment.
+  // the grid's Alignment option. The "." decimal-point form maps to the
+  // grid's decimal alignment (numbers line up on their decimal point).
   let table_alignment: Option<syntax::Expr> =
     args[1..].iter().find_map(|a| match a {
       syntax::Expr::Rule {
@@ -2524,6 +2524,9 @@ pub(crate) fn tableform_grid_args(
             if v == "Center" || v == "Left" || v == "Right" =>
           {
             Some(syntax::Expr::Identifier(v.clone()))
+          }
+          Some(syntax::Expr::String(s)) if s == "." => {
+            Some(syntax::Expr::String(".".into()))
           }
           _ => None,
         }

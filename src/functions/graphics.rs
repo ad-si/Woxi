@@ -8008,16 +8008,45 @@ fn unwrap_to_image(cell: &Expr) -> Option<&Expr> {
 }
 
 /// Convert a WL alignment identifier to SVG text-anchor value.
+/// The `"."` string maps to the pseudo-anchor `"decimal"`, handled specially
+/// so numbers in the column line up on their decimal point.
 fn alignment_to_anchor(expr: &Expr) -> &'static str {
-  if let Expr::Identifier(val) = expr {
-    match val.as_str() {
+  match expr {
+    Expr::Identifier(val) => match val.as_str() {
       "Left" => "start",
       "Right" => "end",
       _ => "middle",
-    }
-  } else {
-    "middle"
+    },
+    Expr::String(s) if s == "." => "decimal",
+    _ => "middle",
   }
+}
+
+/// Split a plain (unmarked-up) cell string into its integer-part and
+/// fractional-part widths, in character units, for decimal-point alignment.
+/// The integer part includes any sign and integer digits; the fractional part
+/// includes the decimal point and following digits. A string without a decimal
+/// point has zero fractional width (it aligns with the dot at its right edge).
+fn split_decimal_str(s: &str) -> (f64, f64) {
+  match s.find('.') {
+    Some(pos) => (
+      s[..pos].chars().count() as f64,
+      s[pos..].chars().count() as f64,
+    ),
+    None => (s.chars().count() as f64, 0.0),
+  }
+}
+
+/// Compute the (integer-width, fractional-width) split for a decimal-aligned
+/// cell, or `None` when the cell doesn't render as a plain number (e.g. a
+/// fraction or scientific-notation form containing SVG markup), in which case
+/// the caller falls back to centering.
+fn decimal_split_width(cell: &Expr) -> Option<(f64, f64)> {
+  let s = expr_to_svg_markup(cell);
+  if s.contains('<') {
+    return None;
+  }
+  Some(split_decimal_str(&s))
 }
 
 /// Parse a divider entry: a color expression means "draw with this color",
@@ -8265,6 +8294,7 @@ fn grid_svg_styled_internal(
           _ => {}
         },
         "Alignment" => match replacement.as_ref() {
+          Expr::String(s) if s == "." => alignment_h = "decimal",
           Expr::Identifier(val) => match val.as_str() {
             "Left" => alignment_h = "start",
             "Right" => alignment_h = "end",
@@ -8275,6 +8305,7 @@ fn grid_svg_styled_internal(
             // col_spec can be: Left, {Left, Right, {Left}}, etc.
             if let Some(first) = items.first() {
               match first {
+                Expr::String(s) if s == "." => alignment_h = "decimal",
                 Expr::Identifier(val) => match val.as_str() {
                   "Left" => alignment_h = "start",
                   "Right" => alignment_h = "end",
@@ -8458,6 +8489,37 @@ fn grid_svg_styled_internal(
       if w > col_widths[j] {
         col_widths[j] = w;
       }
+    }
+  }
+
+  // Decimal-point alignment: for each column aligned on ".", find the widest
+  // integer part and the widest fractional part across its cells. The dot sits
+  // at `max_int` chars from the content's left edge, so the column must be
+  // `max_int + max_frac` chars wide to hold the widest number on either side of
+  // the point. `col_decimal_dims[j]` carries the per-column split for the
+  // render pass; `None` means the column isn't decimal-aligned.
+  let col_decimal_dims: Vec<Option<(f64, f64)>> = (0..num_cols)
+    .map(|j| {
+      let is_decimal =
+        col_alignments.get(j).copied().unwrap_or(alignment_h) == "decimal";
+      if !is_decimal {
+        return None;
+      }
+      let (mut max_int, mut max_frac) = (0.0_f64, 0.0_f64);
+      for row in &rows {
+        if let Some(cell) = row.get(j)
+          && let Some((iw, fw)) = decimal_split_width(cell)
+        {
+          max_int = max_int.max(iw);
+          max_frac = max_frac.max(fw);
+        }
+      }
+      Some((max_int, max_frac))
+    })
+    .collect();
+  for (j, dims) in col_decimal_dims.iter().enumerate() {
+    if let Some((max_int, max_frac)) = dims {
+      col_widths[j] = (max_int + max_frac) * char_width + pad_x;
     }
   }
 
@@ -8716,10 +8778,27 @@ fn grid_svg_styled_internal(
     for (j, cell) in row.iter().enumerate() {
       let col_w = col_widths[j];
       let col_align = col_alignments.get(j).copied().unwrap_or(alignment_h);
-      let cx = match col_align {
-        "start" => x_offset + pad_x / 2.0,
-        "end" => x_offset + col_w - pad_x / 2.0,
-        _ => x_offset + col_w / 2.0,
+      // Decimal columns anchor each cell so its decimal point lands at a shared
+      // `dot_x`; the whole number is start-anchored at `dot_x - int_width`.
+      // Cells that don't render as plain numbers fall back to centering.
+      let (anchor, cx): (&str, f64) = if col_align == "decimal" {
+        let (max_int, _) = col_decimal_dims
+          .get(j)
+          .copied()
+          .flatten()
+          .unwrap_or((0.0, 0.0));
+        let dot_x = x_offset + pad_x / 2.0 + max_int * char_width;
+        match decimal_split_width(cell) {
+          Some((iw, _)) => ("start", dot_x - iw * char_width),
+          None => ("middle", x_offset + col_w / 2.0),
+        }
+      } else {
+        let cx = match col_align {
+          "start" => x_offset + pad_x / 2.0,
+          "end" => x_offset + col_w - pad_x / 2.0,
+          _ => x_offset + col_w / 2.0,
+        };
+        (col_align, cx)
       };
       // Shift text down slightly to compensate for ascenders being taller
       // than descenders, which makes mathematical centering look top-heavy.
@@ -8819,7 +8898,7 @@ fn grid_svg_styled_internal(
           theme().text_primary.to_string()
         };
         let text_elem = format!(
-          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"sans-serif\" font-size=\"{fs}\"{fw_attr}{fst_attr} fill=\"{text_fill}\" text-anchor=\"{col_align}\" dominant-baseline=\"central\">{}</text>\n",
+          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"sans-serif\" font-size=\"{fs}\"{fw_attr}{fst_attr} fill=\"{text_fill}\" text-anchor=\"{anchor}\" dominant-baseline=\"central\">{}</text>\n",
           expr_to_svg_markup(text_content)
         );
         if let Some(href) = link_href {

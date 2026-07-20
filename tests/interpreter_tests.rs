@@ -735,6 +735,52 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_tableform_decimal_alignment_lines_up_dots() {
+    // `TableAlignments -> "."` must line up the numbers on their decimal
+    // point. Each cell is start-anchored in the SVG, so the dot's x-position
+    // is `x + (chars before the dot) * char_width` (char_width = 8.4). All
+    // cells must share the same dot x.
+    clear_state();
+    let svg = interpret(
+      "ExportString[TableForm[0.12345 * 10^Range[4], TableAlignments -> \".\"], \"SVG\"]",
+    )
+    .unwrap();
+
+    let char_width = 8.4_f64;
+    let mut dot_positions: Vec<f64> = Vec::new();
+    for chunk in svg.split("<text ").skip(1) {
+      // Parse the `x="…"` attribute.
+      let x_val = chunk
+        .split("x=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .and_then(|s| s.parse::<f64>().ok())
+        .expect("text element must have an x attribute");
+      // Parse the element's text content.
+      let content = chunk
+        .split('>')
+        .nth(1)
+        .and_then(|s| s.split('<').next())
+        .expect("text element must have content");
+      // Only numeric cells participate in decimal alignment.
+      let int_chars = match content.find('.') {
+        Some(pos) => content[..pos].chars().count(),
+        None => content.chars().count(),
+      };
+      dot_positions.push(x_val + int_chars as f64 * char_width);
+    }
+
+    assert_eq!(dot_positions.len(), 4, "expected 4 rows:\n{svg}");
+    let first = dot_positions[0];
+    for dp in &dot_positions {
+      assert!(
+        (dp - first).abs() < 1e-6,
+        "decimal points must line up; got {dot_positions:?}\n{svg}"
+      );
+    }
+  }
+
+  #[test]
   fn test_real_output_svg_has_no_precision_backtick() {
     // Regression: the playground/Studio SVG for results containing machine
     // Reals (e.g. `NMinimize[(x-1)^2, x]` → `{0., {x -> 1.}}`) must not show
