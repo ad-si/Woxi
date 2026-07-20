@@ -2994,7 +2994,7 @@ pub(crate) fn generate_scatter_svg_with_options(
               finite_pts
                 .iter()
                 .filter_map(|&(x, y)| {
-                  interp_polyline_y(target, x).map(|ty| (((x, y)), ty))
+                  interp_polyline_y(target, x).map(|ty| ((x, y), ty))
                 })
                 .collect()
             } else {

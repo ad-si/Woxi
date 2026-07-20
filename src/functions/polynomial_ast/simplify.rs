@@ -7783,10 +7783,14 @@ fn simplify_quotient_select(
       .fold(0i128, |g, &(n, _, _)| gcd_i128(g, n).abs());
     let shared = gcd_i128(ng, dg).abs();
     if shared > 1 {
-      let rn: Vec<(i128, i128, i128)> =
-        n_terms.iter().map(|&(n, d, e)| (n / shared, d, e)).collect();
-      let rd: Vec<(i128, i128, i128)> =
-        d_terms.iter().map(|&(n, d, e)| (n / shared, d, e)).collect();
+      let rn: Vec<(i128, i128, i128)> = n_terms
+        .iter()
+        .map(|&(n, d, e)| (n / shared, d, e))
+        .collect();
+      let rd: Vec<(i128, i128, i128)> = d_terms
+        .iter()
+        .map(|&(n, d, e)| (n / shared, d, e))
+        .collect();
       let num2 = coeffs_from_terms(&rn, &var);
       let den2 = coeffs_from_terms(&rd, &var);
       let basic2 = Expr::BinaryOp {
