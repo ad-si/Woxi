@@ -2,10 +2,11 @@ use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
-  DEFAULT_HEIGHT, DEFAULT_WIDTH, Mesh, PLOT_COLORS, PlotOptions, SeriesStyle,
-  adjust_y_range_for_filling, apply_plot_theme, build_plot_source,
-  generate_scatter_svg_with_options, generate_svg_with_filling, parse_filling,
-  parse_image_size, parse_plot_legends, parse_plot_style,
+  DEFAULT_HEIGHT, DEFAULT_WIDTH, IntervalMarkers, Mesh, PLOT_COLORS,
+  PlotOptions, SeriesStyle, adjust_y_range_for_filling, apply_plot_theme,
+  build_plot_source, generate_scatter_svg_with_options,
+  generate_svg_with_filling, parse_filling, parse_image_size,
+  parse_plot_legends, parse_plot_style,
 };
 use crate::functions::sound::audio_sample_rate;
 use crate::syntax::{Expr, unevaluated};
@@ -735,6 +736,17 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
             opts.frame = true;
           }
         }
+        // "Fences" (capped error bars) is the default; "Bars" renders with
+        // the same bar geometry. None hides the uncertainty intervals.
+        "IntervalMarkers" => match replacement.as_ref() {
+          Expr::String(s) if s == "Bands" => {
+            opts.interval_markers = IntervalMarkers::Bands;
+          }
+          Expr::Identifier(v) if v == "None" => {
+            opts.interval_markers = IntervalMarkers::None;
+          }
+          _ => {}
+        },
         "Mesh" => {
           if matches!(replacement.as_ref(), Expr::Identifier(v) if v == "All") {
             opts.mesh = Mesh::All;
