@@ -2444,6 +2444,31 @@ mod collect_tests {
     );
   }
 
+  // The collected terms are ordered with Wolfram's canonical Plus order, which
+  // compares the constant term against the whole var-term expression rather
+  // than by a "does the constant sort after the variable" shortcut. When the
+  // x-term carries a non-trivial (Plus) coefficient the constant leads, but
+  // against bare powers it trails. Verified against wolframscript.
+  #[test]
+  fn collect_constant_placement_canonical() {
+    // Constant y leads because it sorts before x*(y + z).
+    assert_eq!(
+      interpret("Collect[x y + x z + y, x]").unwrap(),
+      "y + x*(y + z)"
+    );
+    // Constant y trails because it sorts after the bare powers x and x^3.
+    assert_eq!(interpret("Collect[x + x^3 + y, x]").unwrap(), "x + x^3 + y");
+    // Constant z trails a single product term x*y.
+    assert_eq!(interpret("Collect[x y + z, x]").unwrap(), "x*y + z");
+    // Numeric constant leads a symbolic-coefficient term.
+    assert_eq!(interpret("Collect[a x + b, x]").unwrap(), "b + a*x");
+    // Constant w leads a grouped-coefficient term.
+    assert_eq!(
+      interpret("Collect[x a + x b + w, x]").unwrap(),
+      "w + (a + b)*x"
+    );
+  }
+
   #[test]
   fn collect_with_head() {
     assert_eq!(

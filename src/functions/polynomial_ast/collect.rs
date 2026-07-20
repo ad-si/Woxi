@@ -267,50 +267,17 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if result_terms.is_empty() {
     Ok(Expr::Integer(0))
-  } else if head.is_some() {
-    // Head-wrapped coefficients need Wolfram's canonical Plus ordering
-    // (descending powers of the collect variable) rather than the ascending
-    // "constant first" order used when the coefficient is a bare Plus.
+  } else {
+    // Order the collected terms with Wolfram's canonical Plus ordering.
+    // Routing through plus_ast — which keeps a Times-grouped coefficient like
+    // `(a + c)*x^2` atomic while flattening a bare-Plus constant term into its
+    // individual monomials — reproduces wolframscript's order for every case,
+    // including where the constant leads (`y + x*(y + z)`, `e + (c + d)*x`)
+    // and where it trails (`x + x^3 + y`). The var-power terms were built
+    // coefficient-grouped above, so plus_ast never distributes them.
     Ok(plus_ast_canonical(
       result_terms.into_iter().map(|(_, t)| t).collect(),
     ))
-  } else {
-    // The var-power terms stay in ascending-power order (Wolfram's order for
-    // pure powers of the collect variable, with each coefficient kept grouped
-    // and coefficient-first, e.g. `(a + c)*x^2`). The constant (power-0) term
-    // is flattened into its individual monomials (so a multi-term constant like
-    // `a*x + c*x` is not parenthesized) and placed either before or after the
-    // var-power terms. Wolfram puts it after only when it sorts strictly after
-    // the collect variable — i.e. it has no purely-numeric addend and every
-    // variable it contains sorts after the collect variable (`x + x^3 + y`).
-    // Otherwise it leads (`e + (c + d)*x + …`, `6 + 3*y + …`).
-    let const_term = result_terms
-      .iter()
-      .position(|(p, _)| *p == 0)
-      .map(|i| result_terms.remove(i).1);
-    let mut x_terms: Vec<Expr> =
-      result_terms.into_iter().map(|(_, t)| t).collect();
-    if let Some(c) = const_term {
-      let mut const_monos = Vec::new();
-      flatten_plus_terms(&c, &mut const_monos);
-      let has_numeric_addend = const_monos.iter().any(|m| {
-        let mut vs = std::collections::HashSet::new();
-        collect_variables(m, &mut vs);
-        vs.is_empty()
-      });
-      let mut const_vars = std::collections::HashSet::new();
-      collect_variables(&c, &mut const_vars);
-      let after = !has_numeric_addend
-        && !const_vars.is_empty()
-        && const_vars.iter().all(|v| v.as_str() > var);
-      if after {
-        x_terms.extend(const_monos);
-      } else {
-        const_monos.extend(x_terms);
-        x_terms = const_monos;
-      }
-    }
-    Ok(build_sum(x_terms))
   }
 }
 
@@ -371,13 +338,22 @@ fn as_plus_terms(expr: &Expr) -> Option<Vec<Expr>> {
   }
 }
 
-/// Run `terms` through the Plus evaluator to obtain canonical Plus ordering,
-/// falling back to a plain Plus chain if evaluation fails.
+/// Order `terms` with Wolfram's canonical Plus ordering by re-evaluating them
+/// as a `Plus[…]` expression — the same path a parsed sum takes. Full
+/// evaluation (rather than a bare `plus_ast` call) canonicalizes each term's
+/// internal structure first, so a Collect-built product like `(a + c)*x^2`
+/// sorts identically to the parsed form. Plus does not distribute a Times over
+/// a Plus, so grouped coefficients stay intact. Falls back to a plain Plus
+/// chain if evaluation fails.
 fn plus_ast_canonical(terms: Vec<Expr>) -> Expr {
-  match crate::functions::math_ast::plus_ast(&terms) {
-    Ok(e) => e,
-    Err(_) => build_sum(terms),
-  }
+  let sum = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.clone().into(),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&sum).unwrap_or_else(|_| {
+    crate::functions::math_ast::plus_ast(&terms)
+      .unwrap_or_else(|_| build_sum(terms))
+  })
 }
 
 /// After collecting by `collected_var`, walk the result sum and apply
