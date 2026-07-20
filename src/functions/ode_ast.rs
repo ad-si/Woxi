@@ -2466,13 +2466,12 @@ fn interp_1d_f64(values: &[f64], coord: f64, order: usize) -> f64 {
   let needed = (order + 1).min(n);
   // Order 1 uses the bracketing interval [idx, idx+1] (linear interpolation
   // within the cell), matching the 1-D engine; higher orders center the
-  // (order+1)-point stencil around that interval.
+  // (order+1)-point stencil on that interval, always containing both
+  // interval endpoints.
   let start = if needed <= 2 {
     idx.min(n - needed)
-  } else if idx + 1 >= needed {
-    (idx + 1).saturating_sub(needed).min(n - needed)
   } else {
-    0
+    idx.saturating_sub((needed - 2) / 2).min(n - needed)
   };
   let mut acc = 0.0;
   for i in 0..needed {
@@ -2839,15 +2838,13 @@ fn lagrange_interpolate(
   idx: usize,
   order: usize,
 ) -> Result<f64, InterpreterError> {
-  // Select (order+1) points centered around idx
+  // Select the (order+1)-point stencil as centered as possible on the
+  // interval [x_idx, x_idx+1]; it must contain both interval endpoints or
+  // the local polynomial would extrapolate and miss the next grid value.
   let needed = order + 1;
-  let start = if idx + 1 >= needed {
-    (idx + 1)
-      .saturating_sub(needed)
-      .min(n.saturating_sub(needed))
-  } else {
-    0
-  };
+  let start = idx
+    .saturating_sub((order - 1) / 2)
+    .min(n.saturating_sub(needed));
   let end = (start + needed).min(n);
 
   let mut xs = Vec::with_capacity(end - start);
