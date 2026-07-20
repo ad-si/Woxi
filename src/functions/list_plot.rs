@@ -640,6 +640,10 @@ struct ParsedOptions {
   plot_range_y: Option<(f64, f64)>,
   /// `LabelingFunction -> None` (or `Tooltip`): no static point labels drawn.
   hide_point_labels: bool,
+  /// `InterpolationOrder -> n` for joined curves: 0 draws piecewise-constant
+  /// steps, 1 straight lines, >= 2 a smooth interpolated curve. `None`
+  /// (option absent or `-> None`) keeps the default straight lines.
+  interpolation_order: Option<i128>,
 }
 
 /// Parse common plot options from args[1..].
@@ -770,9 +774,17 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           }
           _ => {}
         },
-        "Mesh" => {
-          if matches!(replacement.as_ref(), Expr::Identifier(v) if v == "All") {
-            opts.mesh = Mesh::All;
+        "Mesh" => match replacement.as_ref() {
+          Expr::Identifier(v) if v == "All" => opts.mesh = Mesh::All,
+          Expr::Identifier(v) if v == "Full" => opts.mesh = Mesh::Full,
+          _ => {}
+        },
+        // `None` (the default) means straight lines, like order 1.
+        "InterpolationOrder" => {
+          if let Some(n) = crate::functions::math_ast::expr_to_i128(replacement)
+            && n >= 0
+          {
+            out.interpolation_order = Some(n);
           }
         }
         "PlotTheme" => {
@@ -814,6 +826,100 @@ fn apply_plot_range_override(
     parsed.plot_range_x.unwrap_or(x_range),
     parsed.plot_range_y.unwrap_or(y_range),
   )
+}
+
+/// Subdivisions per data interval when sampling a smooth interpolated curve
+/// (`InterpolationOrder >= 2`).
+const SPLINE_SUBDIV: usize = 24;
+
+/// Turn one series into the staircase that zero-order interpolation draws:
+/// each value is held until the next data point, where the curve jumps
+/// vertically (the same shape ListStepPlot draws).
+fn step_curve(series: &[(f64, f64)]) -> Vec<(f64, f64)> {
+  let mut steps = Vec::with_capacity(series.len() * 2);
+  for (i, &(x, y)) in series.iter().enumerate() {
+    if i > 0 {
+      steps.push((x, series[i - 1].1));
+    }
+    steps.push((x, y));
+  }
+  steps
+}
+
+/// Evaluate the local Lagrange polynomial of degree `order` through the
+/// `order + 1` points of `series` centered around interval `idx` at `x`,
+/// mirroring the window used by `Interpolation` (ode_ast::lagrange_interpolate).
+fn lagrange_value(
+  series: &[(f64, f64)],
+  x: f64,
+  idx: usize,
+  order: usize,
+) -> f64 {
+  // Stencil as centered as possible on the interval [x_idx, x_idx+1],
+  // always containing both interval endpoints (mirrors
+  // ode_ast::lagrange_interpolate).
+  let n = series.len();
+  let needed = order + 1;
+  let start = idx
+    .saturating_sub((order - 1) / 2)
+    .min(n.saturating_sub(needed));
+  let window = &series[start..(start + needed).min(n)];
+  let mut result = 0.0;
+  for (i, &(xi, yi)) in window.iter().enumerate() {
+    let mut basis = 1.0;
+    for (j, &(xj, _)) in window.iter().enumerate() {
+      if j != i && (xi - xj).abs() > f64::EPSILON {
+        basis *= (x - xj) / (xi - xj);
+      }
+    }
+    result += yi * basis;
+  }
+  result
+}
+
+/// Sample the smooth order-`order` interpolated curve through `series`
+/// (sorted by x), keeping the data points themselves on the curve.
+fn spline_curve(series: &[(f64, f64)], order: usize) -> Vec<(f64, f64)> {
+  let mut sorted = series.to_vec();
+  sorted
+    .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+  let n = sorted.len();
+  let eff_order = order.min(n.saturating_sub(1));
+  if eff_order <= 1 {
+    return sorted;
+  }
+  let mut curve = Vec::with_capacity((n - 1) * SPLINE_SUBDIV + 1);
+  curve.push(sorted[0]);
+  for idx in 0..n - 1 {
+    let (x0, _) = sorted[idx];
+    let (x1, _) = sorted[idx + 1];
+    for k in 1..=SPLINE_SUBDIV {
+      let x = x0 + (x1 - x0) * k as f64 / SPLINE_SUBDIV as f64;
+      if k == SPLINE_SUBDIV {
+        curve.push(sorted[idx + 1]);
+      } else {
+        curve.push((x, lagrange_value(&sorted, x, idx, eff_order)));
+      }
+    }
+  }
+  curve
+}
+
+/// Replace each series by the curve `InterpolationOrder -> order` draws
+/// through its points. Order 1 (the straight-line default) returns the data
+/// unchanged.
+fn interpolate_series(
+  all_series: &[Vec<(f64, f64)>],
+  order: i128,
+) -> Vec<Vec<(f64, f64)>> {
+  all_series
+    .iter()
+    .map(|series| match order {
+      0 => step_curve(series),
+      o if o >= 2 => spline_curve(series, o.min(16) as usize),
+      _ => series.clone(),
+    })
+    .collect()
 }
 
 /// Compute x/y ranges from data with 4% padding.
@@ -927,9 +1033,14 @@ fn render_panel_layout(
     opts.callout_labels = vec![labels.get(idx).cloned().flatten()];
     // A shared legend across separate panels would repeat per panel.
     opts.plot_legends = Vec::new();
-    // Keep only this panel's error bars (they are indexed by series).
+    // Keep only this panel's error bars and data-point anchors (they are
+    // indexed by series).
     opts.error_bars = match parsed.opts.error_bars.get(idx) {
       Some(bars) => vec![bars.clone()],
+      None => Vec::new(),
+    };
+    opts.data_points = match parsed.opts.data_points.get(idx) {
+      Some(data) => vec![data.clone()],
       None => Vec::new(),
     };
 
@@ -983,30 +1094,52 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     point_labels
   };
   parsed.opts.error_bars = collect_error_bars(&err_series);
-  if parsed.layout != PanelLayout::Overlaid && all_series.len() > 1 {
+
+  // InterpolationOrder reshapes the joined curve (0 = steps, >= 2 = smooth
+  // spline); mesh dots, error bars, and point labels stay anchored to the
+  // original data points.
+  let curve_transformed =
+    parsed.joined && matches!(parsed.interpolation_order, Some(o) if o != 1);
+  let draw_series = if curve_transformed {
+    parsed.opts.data_points = all_series.clone();
+    interpolate_series(&all_series, parsed.interpolation_order.unwrap())
+  } else {
+    all_series
+  };
+
+  // The plot range must cover the full extent of any error bars, plus any
+  // overshoot of an interpolated curve beyond the data (kept parallel to
+  // the series so the panel layout can index it per panel).
+  let mut range_series = error_extremes(&err_series);
+  if curve_transformed {
+    for (rs, cs) in range_series.iter_mut().zip(&draw_series) {
+      rs.extend(cs.iter().copied());
+    }
+  }
+
+  if parsed.layout != PanelLayout::Overlaid && draw_series.len() > 1 {
     return render_panel_layout(
-      &all_series,
-      &error_extremes(&err_series),
+      &draw_series,
+      &range_series,
       &labels,
       &parsed,
       !parsed.joined,
     );
   }
-  // The plot range must cover the full extent of any error bars.
-  let (x_range, y_range) = compute_ranges(&error_extremes(&err_series));
+  let (x_range, y_range) = compute_ranges(&range_series);
   let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
   let joined = parsed.joined;
   let opts = &parsed.opts;
 
   let svg = if joined {
-    generate_svg_with_filling(&all_series, x_range, y_range, opts)?
+    generate_svg_with_filling(&draw_series, x_range, y_range, opts)?
   } else {
-    generate_scatter_svg_with_options(&all_series, x_range, y_range, opts)?
+    generate_scatter_svg_with_options(&draw_series, x_range, y_range, opts)?
   };
 
   let source = build_plot_source(
-    &all_series,
+    &draw_series,
     &opts.plot_style,
     x_range,
     y_range,
@@ -1110,22 +1243,40 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     point_labels
   };
   parsed.opts.error_bars = collect_error_bars(&err_series);
-  if parsed.layout != PanelLayout::Overlaid && all_series.len() > 1 {
+
+  // ListLinePlot always joins, so InterpolationOrder always reshapes the
+  // curve (0 = steps, >= 2 = smooth spline).
+  let curve_transformed =
+    matches!(parsed.interpolation_order, Some(o) if o != 1);
+  let draw_series = if curve_transformed {
+    parsed.opts.data_points = all_series.clone();
+    interpolate_series(&all_series, parsed.interpolation_order.unwrap())
+  } else {
+    all_series
+  };
+  let mut range_series = error_extremes(&err_series);
+  if curve_transformed {
+    for (rs, cs) in range_series.iter_mut().zip(&draw_series) {
+      rs.extend(cs.iter().copied());
+    }
+  }
+
+  if parsed.layout != PanelLayout::Overlaid && draw_series.len() > 1 {
     return render_panel_layout(
-      &all_series,
-      &error_extremes(&err_series),
+      &draw_series,
+      &range_series,
       &labels,
       &parsed,
       false,
     );
   }
-  let (x_range, mut y_range) = compute_ranges(&error_extremes(&err_series));
+  let (x_range, mut y_range) = compute_ranges(&range_series);
 
   y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
 
   let svg =
-    generate_svg_with_filling(&all_series, x_range, y_range, &parsed.opts)?;
+    generate_svg_with_filling(&draw_series, x_range, y_range, &parsed.opts)?;
   Ok(crate::graphics_result(svg))
 }
 
@@ -1176,19 +1327,8 @@ pub fn list_step_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   apply_dataset_labels(&mut parsed.opts, &labels);
 
   // Transform each series into staircase coordinates
-  let step_series: Vec<Vec<(f64, f64)>> = all_series
-    .iter()
-    .map(|series| {
-      let mut steps = Vec::with_capacity(series.len() * 2);
-      for (i, &(x, y)) in series.iter().enumerate() {
-        if i > 0 {
-          steps.push((x, series[i - 1].1)); // horizontal to new x
-        }
-        steps.push((x, y)); // vertical to new y
-      }
-      steps
-    })
-    .collect();
+  let step_series: Vec<Vec<(f64, f64)>> =
+    all_series.iter().map(|series| step_curve(series)).collect();
 
   if parsed.layout != PanelLayout::Overlaid && step_series.len() > 1 {
     return render_panel_layout(
