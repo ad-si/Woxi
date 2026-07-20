@@ -773,6 +773,56 @@ mod string_split_regex {
 mod string_replace {
   use super::*;
 
+  // A replacement that produces a non-string value yields a StringExpression
+  // (mixed content), not a coerced string. Adjacent string segments coalesce.
+  // Verified against wolframscript:
+  //   StringReplace["abc", "b" -> 5]                = StringExpression[a, 5, c]
+  //   StringReplace["12:34", n:DigitCharacter.. :> StringLength[n]]
+  //                                                 = StringExpression[2, :, 2]
+  #[test]
+  fn non_string_replacement_yields_string_expression() {
+    // Immediate rule with a non-string RHS.
+    assert_eq!(
+      interpret(r#"StringReplace["abc", "b" -> 5]"#).unwrap(),
+      "StringExpression[a, 5, c]"
+    );
+    assert_eq!(
+      interpret(r#"Head[StringReplace["abc", "b" -> 5]]"#).unwrap(),
+      "StringExpression"
+    );
+    // Adjacent literal + string replacement coalesce (Z and d -> "Zd").
+    assert_eq!(
+      interpret(r#"StringReplace["abcd", {"b" -> 5, "c" -> "Z"}]"#).unwrap(),
+      "StringExpression[a, 5, Zd]"
+    );
+    // Two non-strings with nothing between them stay separate.
+    assert_eq!(
+      interpret(r#"StringReplace["aa", "a" -> 5]"#).unwrap(),
+      "StringExpression[5, 5]"
+    );
+    // Delayed rule whose RHS evaluates to an integer.
+    assert_eq!(
+      interpret(
+        r#"StringReplace["12:34", n:DigitCharacter.. :> StringLength[n]]"#
+      )
+      .unwrap(),
+      "StringExpression[2, :, 2]"
+    );
+    // A single non-string segment is still wrapped in StringExpression.
+    assert_eq!(
+      interpret(
+        r#"StringReplace["12", n:DigitCharacter.. :> StringLength[n]]"#
+      )
+      .unwrap(),
+      "StringExpression[2]"
+    );
+    // An all-string replacement still returns a plain String (unchanged).
+    assert_eq!(
+      interpret(r#"StringReplace["abc", "b" -> "X"]"#).unwrap(),
+      "aXc"
+    );
+  }
+
   // A delayed rule (:>) must evaluate its RHS for each match, even when the
   // RHS is a constant expression that does not reference the matched text.
   #[test]

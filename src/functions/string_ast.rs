@@ -1295,6 +1295,13 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     };
 
+    // A non-string replacement (e.g. `"b" -> 5`) must be preserved as an
+    // expression rather than coerced to text, so that the final result becomes
+    // a StringExpression. Such rules are routed through the RegexDelayed path
+    // (which keeps the replacement as an Expr) even when they are immediate
+    // Rules — a constant Expr simply evaluates to itself for each match.
+    let replacement_is_string = matches!(replacement_expr, Expr::String(_));
+
     // Unwrap a `/;` condition on the pattern: `patt /; test` parses to
     // `Condition[patt, test]`. A conditional pattern must evaluate its test
     // for each candidate match, so route it through `RegexDelayed` (with the
@@ -1335,7 +1342,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // literal as a regex and route it through RegexDelayed. With IgnoreCase,
     // compile the escaped literal as a case-insensitive regex instead.
     if let Expr::String(pat_str) = pattern_expr {
-      if is_delayed && !pat_str.is_empty() {
+      if (is_delayed || !replacement_is_string) && !pat_str.is_empty() {
         let prefix = if ignore_case { "(?i)" } else { "" };
         let re =
           compile_regex(&format!("{}{}", prefix, regex::escape(pat_str)))
@@ -1397,7 +1404,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // A *plain-string* RHS is constant, so the delayed/immediate distinction
       // is moot: route it like a Rule below so `$1`/`$2` backreferences expand
       // (RegularExpression["(a)(b)"] :> "$2$1" -> "ba", matching wolframscript).
-      if is_delayed && !matches!(replacement_expr, Expr::String(_)) {
+      if !replacement_is_string {
         return Ok(ReplaceRule::RegexDelayed {
           regex: re,
           replacement_expr: replacement_expr.clone(),
@@ -1472,13 +1479,23 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     rule => vec![extract_rule(rule, ignore_case)?],
   };
 
-  // Scan-based replacement: scan left-to-right, at each position try each rule
+  // Scan-based replacement: scan left-to-right, at each position try each rule.
+  //
+  // The result is a list of ordered segments: runs of literal/string text are
+  // accumulated into `buffer`, while a delayed replacement whose RHS evaluates
+  // to a *non-string* (e.g. `n :> StringLength[n]` yielding an integer) flushes
+  // the buffer and is pushed as its own segment. Adjacent strings coalesce
+  // naturally because they share the same buffer. The caller joins an
+  // all-string result into a single String, or wraps a mixed result in
+  // StringExpression — matching wolframscript, which returns e.g.
+  // StringReplace["abc", "b" -> 5] = StringExpression["a", 5, "c"].
   fn scan_replace(
     s: &str,
     rules: &[ReplaceRule],
     max: Option<usize>,
-  ) -> Result<String, InterpreterError> {
-    let mut result = String::new();
+  ) -> Result<Vec<Expr>, InterpreterError> {
+    let mut segments: Vec<Expr> = Vec::new();
+    let mut buffer = String::new();
     let mut count = 0usize;
     let mut i = 0;
     // Try the zero-width (empty) regex matches anchored at position `pos`.
@@ -1505,16 +1522,16 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     while i < s.len() {
       if max.is_some() && count >= max.unwrap() {
-        result.push_str(&s[i..]);
+        buffer.push_str(&s[i..]);
         break;
       }
       // Zero-width assertion matches (e.g. WordBoundary) are emitted before
       // the character at the current position, without consuming it.
       if let Some(replacement) = zero_width_match(s, rules, i) {
-        result.push_str(replacement);
+        buffer.push_str(replacement);
         count += 1;
         if max.is_some() && count >= max.unwrap() {
-          result.push_str(&s[i..]);
+          buffer.push_str(&s[i..]);
           break;
         }
       }
@@ -1529,7 +1546,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               continue;
             }
             if s[i..].starts_with(pattern.as_str()) {
-              result.push_str(replacement);
+              buffer.push_str(replacement);
               i += pattern.len();
               count += 1;
               matched = true;
@@ -1552,9 +1569,9 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               && caps_satisfy_constraints(&caps, constraints)
             {
               if *expand_dollar {
-                result.push_str(&expand_dollar_replacement(replacement, &caps));
+                buffer.push_str(&expand_dollar_replacement(replacement, &caps));
               } else {
-                result.push_str(replacement);
+                buffer.push_str(replacement);
               }
               i += m.len();
               count += 1;
@@ -1589,12 +1606,17 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               // Evaluate the substituted expression
               let evaluated =
                 crate::evaluator::evaluate_expr_to_expr(&substituted)?;
-              // Convert result to string
-              let replacement_str = match &evaluated {
-                Expr::String(s) => s.clone(),
-                other => crate::syntax::expr_to_string(other),
-              };
-              result.push_str(&replacement_str);
+              // A string RHS joins into the running buffer; a non-string RHS
+              // flushes the buffer and becomes its own segment, so the final
+              // result is a StringExpression rather than a coerced string.
+              if let Expr::String(rs) = &evaluated {
+                buffer.push_str(rs);
+              } else {
+                if !buffer.is_empty() {
+                  segments.push(Expr::String(std::mem::take(&mut buffer)));
+                }
+                segments.push(evaluated);
+              }
               i += m.len();
               count += 1;
               matched = true;
@@ -1605,7 +1627,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       if !matched {
         let ch = s[i..].chars().next().unwrap();
-        result.push(ch);
+        buffer.push(ch);
         i += ch.len_utf8();
       }
     }
@@ -1617,12 +1639,29 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && zero_width_match(s, rules, s.len()).is_some()
       && let Some(replacement) = zero_width_match(s, rules, s.len())
     {
-      result.push_str(replacement);
+      buffer.push_str(replacement);
     }
-    Ok(result)
+    if !buffer.is_empty() {
+      segments.push(Expr::String(buffer));
+    }
+    Ok(segments)
   }
 
-  Ok(Expr::String(scan_replace(&s, &rules, max_replacements)?))
+  let segments = scan_replace(&s, &rules, max_replacements)?;
+  // An all-string result (the common case) coalesces into a single String;
+  // a result containing any non-string segment is returned as a
+  // StringExpression, matching wolframscript.
+  if segments.iter().any(|e| !matches!(e, Expr::String(_))) {
+    Ok(Expr::FunctionCall {
+      name: "StringExpression".to_string(),
+      args: segments.into(),
+    })
+  } else {
+    match segments.into_iter().next() {
+      Some(single) => Ok(single),
+      None => Ok(Expr::String(String::new())),
+    }
+  }
 }
 
 /// ToUpperCase[s] - converts string to uppercase
