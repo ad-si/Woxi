@@ -4319,11 +4319,21 @@ fn quantile_parametric(
   let frac_is_zero = matches!(&frac, Expr::Integer(0))
     || matches!(&frac, Expr::Real(f) if *f == 0.0);
   let clamp = |i: i128| -> usize { i.max(1).min(n) as usize };
-  let lo = sorted[clamp(k) - 1].clone();
+  let lo_idx = clamp(k);
+  let lo = sorted[lo_idx - 1].clone();
   if frac_is_zero {
     return Ok(lo);
   }
-  let hi = sorted[clamp(k + 1) - 1].clone();
+  let hi_idx = clamp(k + 1);
+  // At the boundaries (x <= 1 or x >= n) the clamped lower and upper indices
+  // coincide, so the result is exactly that data element — there is no
+  // interpolation and the (inexact) fractional part of x must not leak in.
+  // wolframscript keeps e.g. Quantile[{1,2,3,4}, 0.9, {{1/2,0},{0,1}}] = 4
+  // (exact), not 4., because lo + w*(hi - lo) collapses to lo when hi == lo.
+  if hi_idx == lo_idx {
+    return Ok(lo);
+  }
+  let hi = sorted[hi_idx - 1].clone();
   // w = c + d * frac. When d is exactly zero there is no interpolation, so
   // the weight is just c — and the (inexact) fractional part of x must not
   // leak into the result. wolframscript keeps e.g.

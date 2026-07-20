@@ -7720,6 +7720,34 @@ mod quantile_parametric {
       "3.8"
     );
   }
+
+  // At the clamp boundaries (x <= 1 or x >= n) the result is exactly the first
+  // or last order statistic — no interpolation occurs, so an inexact
+  // probability must not leak a real into it via lo + w*(hi - lo) where
+  // hi == lo. wolframscript: Quantile[{1,2,3,4}, 0.9, {{1/2,0},{0,1}}] = 4,
+  // not 4.
+  #[test]
+  fn boundary_clamp_stays_exact_with_real_probability() {
+    // Upper boundary: x = 1/2 + 4*0.9 = 4.1 >= n = 4 → data[[4]] = 4 (exact).
+    assert_eq!(
+      interpret("Quantile[{1,2,3,4}, 0.9, {{1/2,0},{0,1}}]").unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret("Quantile[{10,20,30,40}, 0.9, {{1/2,0},{0,1}}]").unwrap(),
+      "40"
+    );
+    // Lower boundary: x = 1/2 + 4*0.05 = 0.7 <= 1 → data[[1]] = 1 (exact).
+    assert_eq!(
+      interpret("Quantile[{1,2,3,4}, 0.05, {{1/2,0},{0,1}}]").unwrap(),
+      "1"
+    );
+    // Interior interpolation is unaffected and stays real.
+    assert_eq!(
+      interpret("Quantile[{1,2,3,4}, 0.25, {{1/2,0},{0,1}}]").unwrap(),
+      "1.5"
+    );
+  }
 }
 
 // WeightedData[data, weights] and the weighted statistics over it.
