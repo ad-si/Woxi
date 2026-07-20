@@ -958,11 +958,14 @@ pub(crate) enum Filling {
   Value(f64),
 }
 
-/// Mesh mode for line plots.
+/// Mesh mode for line plots. `All` marks every point of the drawn curve,
+/// `Full` marks the original data points (the two differ when the curve is
+/// interpolated, e.g. `InterpolationOrder -> 0` steps).
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum Mesh {
   None,
   All,
+  Full,
 }
 
 impl Filling {
@@ -1169,6 +1172,11 @@ pub(crate) struct PlotOptions {
   pub error_bars: Vec<Vec<((f64, f64), (f64, f64))>>,
   /// How the `error_bars` uncertainties are rendered.
   pub interval_markers: IntervalMarkers,
+  /// The original data points per series when the drawn curve differs from
+  /// the data (e.g. `InterpolationOrder` step/spline curves). Anchors
+  /// `Mesh -> Full` dots, error bars, and per-point labels. Empty when the
+  /// drawn curve is the data itself.
+  pub data_points: Vec<Vec<(f64, f64)>>,
   /// `Background -> color`: fill for the whole image, replacing the
   /// theme background. `None` keeps the theme default.
   pub background: Option<RGBColor>,
@@ -1211,6 +1219,7 @@ impl Default for PlotOptions {
       epilog: Vec::new(),
       error_bars: Vec::new(),
       interval_markers: IntervalMarkers::default(),
+      data_points: Vec::new(),
       background: None,
       aspect_ratio: None,
     }
@@ -1879,10 +1888,17 @@ fn generate_svg_with_options(
           );
 
           // Uncertainty bands lie underneath the curve and any filling.
+          // Like the bars, they are parallel to the original data points,
+          // which may differ from the drawn curve (InterpolationOrder).
           if opts.interval_markers == IntervalMarkers::Bands
             && let Some(bars) = opts.error_bars.get(series_idx)
           {
-            draw_interval_band(&mut chart, points, bars, color)?;
+            let anchor = opts
+              .data_points
+              .get(series_idx)
+              .map(|v| v.as_slice())
+              .unwrap_or(points);
+            draw_interval_band(&mut chart, anchor, bars, color)?;
           }
 
           // Draw filled area before the line so the line renders on top.
@@ -1967,13 +1983,20 @@ fn generate_svg_with_options(
             }
           }
 
-          // Error bars from Around data values, on top of the line.
+          // Error bars from Around data values, on top of the line. They
+          // are parallel to the original data points, which may differ from
+          // the drawn curve (InterpolationOrder).
           if opts.interval_markers == IntervalMarkers::Fences
             && let Some(bars) = opts.error_bars.get(series_idx)
           {
+            let anchor = opts
+              .data_points
+              .get(series_idx)
+              .map(|v| v.as_slice())
+              .unwrap_or(points);
             draw_error_bars(
               &mut chart,
-              points,
+              anchor,
               bars,
               color,
               x_max - x_min,
@@ -1981,10 +2004,20 @@ fn generate_svg_with_options(
             )?;
           }
 
-          // Draw mesh dots at each data point when Mesh -> All
-          if opts.mesh == Mesh::All {
+          // Draw mesh dots: at every curve point for Mesh -> All, at the
+          // original data points for Mesh -> Full.
+          if opts.mesh != Mesh::None {
+            let mesh_src: &[(f64, f64)] = if opts.mesh == Mesh::Full {
+              opts
+                .data_points
+                .get(series_idx)
+                .map(|v| v.as_slice())
+                .unwrap_or(points)
+            } else {
+              points
+            };
             let marker_size = 3 * RESOLUTION_SCALE;
-            let finite_pts: Vec<(f64, f64)> = points
+            let finite_pts: Vec<(f64, f64)> = mesh_src
               .iter()
               .copied()
               .filter(|(x, y)| x.is_finite() && y.is_finite())
@@ -2492,7 +2525,13 @@ fn inject_point_labels(
   let mut label_svg = String::new();
 
   for (series_idx, labels) in opts.point_labels.iter().enumerate() {
-    let Some(points) = all_points.get(series_idx) else {
+    // Labels are parallel to the original data points, which may differ
+    // from the drawn curve (InterpolationOrder).
+    let Some(points) = opts
+      .data_points
+      .get(series_idx)
+      .or_else(|| all_points.get(series_idx))
+    else {
       continue;
     };
     for (&(data_x, data_y), label) in points.iter().zip(labels) {

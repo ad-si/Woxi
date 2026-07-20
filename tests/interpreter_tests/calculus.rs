@@ -8939,6 +8939,24 @@ mod interpolation {
       "3.9375"
     );
   }
+
+  // Regression: the cubic stencil for x in [x_i, x_i+1] must be the centered
+  // {i-1, i, i+1, i+2} window (clamped at the ends). The old window trailed
+  // behind the interval — for x in [4, 5] it used the points at x = 1..4,
+  // extrapolating past the window instead of interpolating (8.625 came out
+  // as 7.6875).
+  #[test]
+  fn cubic_stencil_centered_on_interval() {
+    // Window {2, 3, 4, 5}: 3, 5, 7, 11 at x = 3.5 and 4.5.
+    assert_eq!(
+      interpret("Interpolation[{2,3,5,7,11}][3.5]").unwrap(),
+      "5.875"
+    );
+    assert_eq!(
+      interpret("Interpolation[{2,3,5,7,11}][4.5]").unwrap(),
+      "8.625"
+    );
+  }
 }
 
 mod list_interpolation {
