@@ -322,10 +322,14 @@ fn parse_list_data_err(
 
     // Check if it's multiple series: {{y1, y2, ...}, {y3, y4, ...}}
     // or multiple series of explicit coords: {{{x1,y1}, ...}, {{x2,y2}, ...}}
+    // (a 2-element first row is only ambiguous when its entries are scalars;
+    // rows made of {x, y} pairs are always series of explicit coords)
     if first_inner.len() != 2
       || items
         .iter()
         .all(|item| matches!(item, Expr::List(l) if l.len() > 2))
+      || (!first_inner.is_empty()
+        && first_inner.iter().all(|e| matches!(e, Expr::List(_))))
     {
       let mut all_series = Vec::new();
       for item in items {
@@ -385,6 +389,84 @@ fn parse_single_series(
     }
   }
   Ok(points)
+}
+
+/// Reinterpret list data according to an explicit `DataRange` option, the
+/// way Wolfram does: an explicit range forces value rows to be read as
+/// separate datasets of y-values rather than as (x, y) coordinates. So
+/// `ListPlot[{{1, 1}, {2, 2}, {3, 3}}, DataRange -> All]` plots three
+/// 2-point datasets, not the three points (1,1), (2,2), (3,3). `All` keeps
+/// x = 1, 2, …; `{xmin, xmax}` spaces the x-values evenly over the span.
+///
+/// Returns the rewritten data (y-values paired with explicit x-coordinates)
+/// or `None` when the option doesn't change the interpretation (data with
+/// explicit coordinates at the innermost level, or shapes we don't handle).
+fn apply_data_range(data: &Expr, spec: &DataRangeSpec) -> Option<Expr> {
+  let data = evaluate_expr_to_expr(data).unwrap_or_else(|_| data.clone());
+  let Expr::List(items) = &data else {
+    return None;
+  };
+  if items.is_empty() {
+    return None;
+  }
+
+  let x_at = |i: usize, n: usize| -> Expr {
+    match spec {
+      DataRangeSpec::All => Expr::Integer((i + 1) as i128),
+      DataRangeSpec::Span(lo, hi) => {
+        if n <= 1 {
+          Expr::Real(*lo)
+        } else {
+          Expr::Real(lo + (hi - lo) * i as f64 / (n - 1) as f64)
+        }
+      }
+    }
+  };
+  let pair_up = |row: &[Expr]| -> Expr {
+    let n = row.len();
+    Expr::List(
+      row
+        .iter()
+        .enumerate()
+        .map(|(i, y)| Expr::List(vec![x_at(i, n), y.clone()].into()))
+        .collect(),
+    )
+  };
+
+  // Flat list of y-values: only an explicit span changes the x-coordinates.
+  if items.iter().all(|it| !matches!(it, Expr::List(_))) {
+    if matches!(spec, DataRangeSpec::All) {
+      return None;
+    }
+    return Some(pair_up(items));
+  }
+
+  // Matrix of scalar values: every row becomes its own y-value dataset.
+  if items.iter().all(|it| {
+    matches!(it, Expr::List(row)
+      if row.iter().all(|e| !matches!(e, Expr::List(_))))
+  }) {
+    return Some(Expr::List(
+      items
+        .iter()
+        .map(|row| match row {
+          Expr::List(row) => pair_up(row),
+          _ => unreachable!("checked above"),
+        })
+        .collect(),
+    ));
+  }
+
+  None
+}
+
+/// The plot's first argument with any explicit `DataRange` option applied.
+fn data_arg(args: &[Expr], parsed: &ParsedOptions) -> Expr {
+  parsed
+    .data_range
+    .as_ref()
+    .and_then(|spec| apply_data_range(&args[0], spec))
+    .unwrap_or_else(|| args[0].clone())
 }
 
 /// If `expr` is `Labeled[content, label, ...]`, return the content and the
@@ -630,6 +712,15 @@ enum PanelLayout {
   Column,
 }
 
+/// An explicit `DataRange` option value.
+enum DataRangeSpec {
+  /// `DataRange -> All`: rows of a matrix are separate y-value datasets
+  /// plotted at x = 1, 2, ….
+  All,
+  /// `DataRange -> {xmin, xmax}`: y-values are spaced evenly over the span.
+  Span(f64, f64),
+}
+
 /// Parsed list-plot options, including explicit PlotRange overrides.
 #[derive(Default)]
 struct ParsedOptions {
@@ -644,6 +735,8 @@ struct ParsedOptions {
   /// steps, 1 straight lines, >= 2 a smooth interpolated curve. `None`
   /// (option absent or `-> None`) keeps the default straight lines.
   interpolation_order: Option<i128>,
+  /// `DataRange -> All` / `{xmin, xmax}` (None for the Automatic default).
+  data_range: Option<DataRangeSpec>,
 }
 
 /// Parse common plot options from args[1..].
@@ -677,6 +770,18 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           let (rx, ry) = crate::functions::plot::parse_plot_range(replacement);
           out.plot_range_x = rx;
           out.plot_range_y = ry;
+        }
+        "DataRange" => {
+          out.data_range = match replacement.as_ref() {
+            Expr::Identifier(v) if v == "All" => Some(DataRangeSpec::All),
+            Expr::List(pair) if pair.len() == 2 => {
+              match (try_eval_to_f64(&pair[0]), try_eval_to_f64(&pair[1])) {
+                (Some(lo), Some(hi)) => Some(DataRangeSpec::Span(lo, hi)),
+                _ => None,
+              }
+            }
+            _ => None,
+          };
         }
         "PlotLayout" => {
           if let Expr::String(layout) = replacement.as_ref() {
@@ -1083,10 +1188,10 @@ fn apply_dataset_labels(opts: &mut PlotOptions, labels: &[Option<String>]) {
 
 /// ListPlot[{y1, y2, ...}] or ListPlot[{{x1,y1}, ...}]
 pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let (err_series, labels, point_labels) =
-    parse_list_data_err_labeled(&args[0], true)?;
-  let all_series = strip_errors(&err_series);
   let mut parsed = parse_plot_options(args);
+  let (err_series, labels, point_labels) =
+    parse_list_data_err_labeled(&data_arg(args, &parsed), true)?;
+  let all_series = strip_errors(&err_series);
   apply_dataset_labels(&mut parsed.opts, &labels);
   parsed.opts.point_labels = if parsed.hide_point_labels {
     Vec::new()
@@ -1230,12 +1335,12 @@ pub fn complex_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// ListLinePlot[{y1, y2, ...}]
 pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let mut parsed = parse_plot_options(args);
   // Association keys don't label the points here: wolframscript draws key
   // labels for ListPlot but not for ListLinePlot.
   let (err_series, labels, point_labels) =
-    parse_list_data_err_labeled(&args[0], false)?;
+    parse_list_data_err_labeled(&data_arg(args, &parsed), false)?;
   let all_series = strip_errors(&err_series);
-  let mut parsed = parse_plot_options(args);
   apply_dataset_labels(&mut parsed.opts, &labels);
   parsed.opts.point_labels = if parsed.hide_point_labels {
     Vec::new()
@@ -1285,8 +1390,8 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// running total of the preceding ones. The regions between consecutive
 /// cumulative curves are filled by default.
 pub fn stacked_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let (all_series, labels) = parse_list_data_labeled(&args[0])?;
   let mut parsed = parse_plot_options(args);
+  let (all_series, labels) = parse_list_data_labeled(&data_arg(args, &parsed))?;
   apply_dataset_labels(&mut parsed.opts, &labels);
   parsed.opts.stacked = true;
   // Default to filled bands unless the user explicitly overrode Filling.
@@ -1322,8 +1427,8 @@ pub fn stacked_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// ListStepPlot[{y1, y2, ...}]
 pub fn list_step_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let (all_series, labels) = parse_list_data_labeled(&args[0])?;
   let mut parsed = parse_plot_options(args);
+  let (all_series, labels) = parse_list_data_labeled(&data_arg(args, &parsed))?;
   apply_dataset_labels(&mut parsed.opts, &labels);
 
   // Transform each series into staircase coordinates
@@ -1349,8 +1454,8 @@ pub fn list_step_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// ListLogPlot: y-axis is log10 scale
 pub fn list_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let (all_series, labels) = parse_list_data_labeled(&args[0])?;
   let mut parsed = parse_plot_options(args);
+  let (all_series, labels) = parse_list_data_labeled(&data_arg(args, &parsed))?;
   apply_dataset_labels(&mut parsed.opts, &labels);
   parsed.opts.log_y = true;
 
@@ -1373,8 +1478,8 @@ pub fn list_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// ListLogLogPlot: both axes log10 scale
 pub fn list_log_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let (all_series, labels) = parse_list_data_labeled(&args[0])?;
   let mut parsed = parse_plot_options(args);
+  let (all_series, labels) = parse_list_data_labeled(&data_arg(args, &parsed))?;
   apply_dataset_labels(&mut parsed.opts, &labels);
   parsed.opts.log_x = true;
   parsed.opts.log_y = true;
@@ -1406,8 +1511,8 @@ pub fn list_log_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn list_log_linear_plot_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let (all_series, labels) = parse_list_data_labeled(&args[0])?;
   let mut parsed = parse_plot_options(args);
+  let (all_series, labels) = parse_list_data_labeled(&data_arg(args, &parsed))?;
   apply_dataset_labels(&mut parsed.opts, &labels);
   parsed.opts.log_x = true;
 
