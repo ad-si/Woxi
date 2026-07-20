@@ -8217,13 +8217,13 @@ fn direct_real_divide(a: &Expr, b: &Expr) -> Option<Expr> {
       if contains_real(a) {
         return None;
       }
-      let hi = super::numerical::n_eval_arbitrary(a, 25.0).ok().and_then(
-        |e| match &e {
+      let hi = super::numerical::n_eval_arbitrary(a, 25.0)
+        .ok()
+        .and_then(|e| match &e {
           Expr::BigFloat(digits, _) => digits.parse::<f64>().ok(),
           Expr::Real(x) => Some(*x),
           _ => None,
-        },
-      );
+        });
       match hi {
         Some(x) if x.is_finite() => x,
         _ => match super::numerical::n_eval(a) {

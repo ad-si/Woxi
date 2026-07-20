@@ -4585,6 +4585,400 @@ fn generate_scatter_svg(
   Ok(svg)
 }
 
+// ── ListLinePlot3D implementation ────────────────────────────────────
+
+/// A projected 3D polyline segment awaiting depth-sorted emission.
+struct LineSeg3D {
+  x0: f64,
+  y0: f64,
+  x1: f64,
+  y1: f64,
+  depth: f64,
+  color: (u8, u8, u8),
+}
+
+/// Implementation of ListLinePlot3D[data, opts...].
+/// Accepts three formats:
+/// - `{{z11, z12, ...}, {z21, z22, ...}, ...}` — matrix of heights; each row
+///   becomes a curve through {x = column, y = row, z = value}
+/// - `{{x1,y1,z1}, {x2,y2,z2}, ...}` — a single curve through explicit points
+/// - `{{{x,y,z}, ...}, {{x,y,z}, ...}, ...}` — multiple curves
+pub fn list_line_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Parse options
+  let mut svg_width = DEFAULT_SIZE;
+  let mut svg_height = DEFAULT_SIZE;
+  let mut full_width = false;
+
+  for opt in &args[1..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && let Expr::Identifier(name) = pattern.as_ref()
+      && name == "ImageSize"
+      && let Some((w, h, fw)) =
+        parse_image_size(replacement, DEFAULT_SIZE, DEFAULT_SIZE)
+    {
+      svg_width = w;
+      svg_height = h;
+      full_width = fw;
+    }
+  }
+
+  // Evaluate the data argument
+  let evaled_data = evaluate_expr_to_expr(&args[0])?;
+
+  // Each dataset is one polyline through its points (in data order).
+  let mut datasets: Vec<Vec<(f64, f64, f64)>> = Vec::new();
+
+  match &evaled_data {
+    Expr::List(outer) if !outer.is_empty() => {
+      match &outer[0] {
+        Expr::List(inner)
+          if inner.len() == 3 && !matches!(&inner[0], Expr::List(_)) =>
+        {
+          // Single curve: {{x,y,z}, {x,y,z}, ...}
+          let pts = parse_xyz_points(outer);
+          if !pts.is_empty() {
+            datasets.push(pts);
+          }
+        }
+        Expr::List(inner)
+          if !inner.is_empty()
+            && inner.iter().all(|e| !matches!(e, Expr::List(_))) =>
+        {
+          // Matrix of heights: {{z11, z12, ...}, ...}
+          // Each row i becomes a curve through {j+1, i+1, z[i][j]}.
+          for (i, row_expr) in outer.iter().enumerate() {
+            if let Expr::List(row) = row_expr {
+              let mut pts = Vec::new();
+              for (j, val_expr) in row.iter().enumerate() {
+                if let Some(z) = try_eval_to_f64(val_expr)
+                  && z.is_finite()
+                {
+                  pts.push(((j + 1) as f64, (i + 1) as f64, z));
+                }
+              }
+              if !pts.is_empty() {
+                datasets.push(pts);
+              }
+            }
+          }
+        }
+        Expr::List(_) => {
+          // Multiple curves: {{{x,y,z},...}, {{x,y,z},...}, ...}
+          for item in outer {
+            if let Expr::List(inner) = item {
+              let pts = parse_xyz_points(inner);
+              if !pts.is_empty() {
+                datasets.push(pts);
+              }
+            }
+          }
+        }
+        _ => {
+          let pts = parse_xyz_points(outer);
+          if !pts.is_empty() {
+            datasets.push(pts);
+          }
+        }
+      }
+    }
+    _ => {}
+  }
+
+  if datasets.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "ListLinePlot3D: no valid data points found".into(),
+    ));
+  }
+
+  // Find global ranges
+  let mut x_min = f64::INFINITY;
+  let mut x_max = f64::NEG_INFINITY;
+  let mut y_min = f64::INFINITY;
+  let mut y_max = f64::NEG_INFINITY;
+  let mut z_min = f64::INFINITY;
+  let mut z_max = f64::NEG_INFINITY;
+
+  for ds in &datasets {
+    for &(x, y, z) in ds {
+      x_min = x_min.min(x);
+      x_max = x_max.max(x);
+      y_min = y_min.min(y);
+      y_max = y_max.max(y);
+      z_min = z_min.min(z);
+      z_max = z_max.max(z);
+    }
+  }
+
+  if !z_min.is_finite() || !z_max.is_finite() {
+    return Err(InterpreterError::EvaluationError(
+      "ListLinePlot3D: data produced no finite values".into(),
+    ));
+  }
+
+  let x_range_v = if (x_max - x_min).abs() < 1e-15 {
+    1.0
+  } else {
+    x_max - x_min
+  };
+  let y_range_v = if (y_max - y_min).abs() < 1e-15 {
+    1.0
+  } else {
+    y_max - y_min
+  };
+  let z_range_v = if (z_max - z_min).abs() < 1e-15 {
+    1.0
+  } else {
+    z_max - z_min
+  };
+
+  let camera = Camera::default();
+
+  let normalize = |x: f64, y: f64, z: f64| -> Point3D {
+    let nx = if x_range_v > 1e-15 {
+      ((x - x_min) / x_range_v) * 2.0 - 1.0
+    } else {
+      0.0
+    };
+    let ny = if y_range_v > 1e-15 {
+      ((y - y_min) / y_range_v) * 2.0 - 1.0
+    } else {
+      0.0
+    };
+    let nz = if z_range_v > 1e-15 {
+      ((z - z_min) / z_range_v) * 2.0 * Z_SCALE - Z_SCALE
+    } else {
+      0.0
+    };
+    Point3D {
+      x: nx,
+      y: ny,
+      z: nz,
+    }
+  };
+
+  let mut segments: Vec<LineSeg3D> = Vec::new();
+
+  for (di, ds) in datasets.iter().enumerate() {
+    let color = crate::functions::plot::PLOT_COLORS
+      [di % crate::functions::plot::PLOT_COLORS.len()];
+    for pair in ds.windows(2) {
+      let a = normalize(pair[0].0, pair[0].1, pair[0].2);
+      let b = normalize(pair[1].0, pair[1].1, pair[1].2);
+      let (ax, ay) = project(a, &camera);
+      let (bx, by) = project(b, &camera);
+      let mid = Point3D {
+        x: (a.x + b.x) * 0.5,
+        y: (a.y + b.y) * 0.5,
+        z: (a.z + b.z) * 0.5,
+      };
+      segments.push(LineSeg3D {
+        x0: ax,
+        y0: ay,
+        x1: bx,
+        y1: by,
+        depth: depth(mid, &camera),
+        color,
+      });
+    }
+    // A single-point dataset still contributes to the ranges but has no
+    // segments; that matches drawing a zero-length line.
+  }
+
+  // Sort far-to-near (painter's)
+  segments.sort_by(|a, b| {
+    b.depth
+      .partial_cmp(&a.depth)
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+
+  let (z_axis_min, z_axis_max) = if (z_min - z_max).abs() < 1e-15 {
+    (z_min - 0.5, z_max + 0.5)
+  } else {
+    (z_min, z_max)
+  };
+
+  let svg = generate_line3d_svg(
+    &segments,
+    &camera,
+    (x_min, x_max),
+    (y_min, y_max),
+    (z_axis_min, z_axis_max),
+    svg_width,
+    svg_height,
+    full_width,
+  )?;
+
+  Ok(crate::graphics3d_result(svg))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn generate_line3d_svg(
+  segments: &[LineSeg3D],
+  camera: &Camera,
+  x_range: (f64, f64),
+  y_range: (f64, f64),
+  z_range: (f64, f64),
+  svg_width: u32,
+  svg_height: u32,
+  full_width: bool,
+) -> Result<String, InterpreterError> {
+  // Find bounding box of the projected segments and the axes box
+  let mut px_min = f64::INFINITY;
+  let mut px_max = f64::NEG_INFINITY;
+  let mut py_min = f64::INFINITY;
+  let mut py_max = f64::NEG_INFINITY;
+
+  for seg in segments {
+    px_min = px_min.min(seg.x0).min(seg.x1);
+    px_max = px_max.max(seg.x0).max(seg.x1);
+    py_min = py_min.min(seg.y0).min(seg.y1);
+    py_max = py_max.max(seg.y0).max(seg.y1);
+  }
+
+  let bbox_corners = bounding_box_corners();
+  for &corner in &bbox_corners {
+    let (px, py) = project(corner, camera);
+    px_min = px_min.min(px);
+    px_max = px_max.max(px);
+    py_min = py_min.min(py);
+    py_max = py_max.max(py);
+  }
+
+  let p_width = px_max - px_min;
+  let p_height = py_max - py_min;
+  if p_width < 1e-15 || p_height < 1e-15 {
+    return Err(InterpreterError::EvaluationError(
+      "ListLinePlot3D: degenerate projection".into(),
+    ));
+  }
+
+  let margin = 25.0;
+  let draw_w = svg_width as f64 - 2.0 * margin;
+  let draw_h = svg_height as f64 - 2.0 * margin;
+  let scale = (draw_w / p_width).min(draw_h / p_height);
+  let cx = margin + draw_w / 2.0;
+  let cy = margin + draw_h / 2.0;
+  let p_cx = (px_min + px_max) / 2.0;
+  let p_cy = (py_min + py_max) / 2.0;
+
+  let to_svg = |px: f64, py: f64| -> (f64, f64) {
+    let sx = cx + (px - p_cx) * scale;
+    let sy = cy - (py - p_cy) * scale;
+    (sx, sy)
+  };
+
+  let mut svg = String::with_capacity(segments.len() * 100 + 2000);
+
+  if full_width {
+    svg.push_str(&format!(
+      "<svg width=\"100%\" viewBox=\"0 0 {} {}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n",
+      svg_width, svg_height
+    ));
+  } else {
+    svg.push_str(&format!(
+      "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
+      svg_width, svg_height, svg_width, svg_height
+    ));
+  }
+
+  {
+    let (bg, _, _, _, _) = crate::functions::plot::plot_theme();
+    svg.push_str(&format!(
+      "<rect width=\"{}\" height=\"{}\" fill=\"rgb({},{},{})\"/>\n",
+      svg_width, svg_height, bg.0, bg.1, bg.2
+    ));
+  }
+
+  // Draw axes first (behind lines)
+  draw_axes(&mut svg, camera, &to_svg, x_range, y_range, z_range);
+
+  // Build bounding-box edge segments for depth-interleaving
+  let (_, axis_rgb, _, _, _) = crate::functions::plot::plot_theme();
+  let axis_color = format!("rgb({},{},{})", axis_rgb.0, axis_rgb.1, axis_rgb.2);
+  let corners = bounding_box_corners();
+  let edge_pairs: [(usize, usize); 12] = [
+    (0, 1),
+    (0, 2),
+    (1, 3),
+    (2, 3),
+    (4, 5),
+    (4, 6),
+    (5, 7),
+    (6, 7),
+    (0, 4),
+    (1, 5),
+    (2, 6),
+    (3, 7),
+  ];
+  const EDGE_SUBDIVISIONS: usize = 20;
+  let mut sorted_edges: Vec<BoxEdge> =
+    Vec::with_capacity(12 * EDGE_SUBDIVISIONS);
+  for &(i, j) in &edge_pairs {
+    let a = corners[i];
+    let b = corners[j];
+    for s in 0..EDGE_SUBDIVISIONS {
+      let t0 = s as f64 / EDGE_SUBDIVISIONS as f64;
+      let t1 = (s + 1) as f64 / EDGE_SUBDIVISIONS as f64;
+      let tm = (t0 + t1) * 0.5;
+      let lerp = |t: f64| Point3D {
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + (b.y - a.y) * t,
+        z: a.z + (b.z - a.z) * t,
+      };
+      sorted_edges.push(BoxEdge {
+        endpoints: [lerp(t0), lerp(t1)],
+        depth: depth(lerp(tm), camera),
+      });
+    }
+  }
+  sorted_edges.sort_by(|a, b| {
+    b.depth
+      .partial_cmp(&a.depth)
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+
+  // Merge-render data segments and box edges back-to-front (painter's)
+  let emit_edge = |svg: &mut String, edge: &BoxEdge| {
+    let (ex0, ey0) = to_svg(
+      project(edge.endpoints[0], camera).0,
+      project(edge.endpoints[0], camera).1,
+    );
+    let (ex1, ey1) = to_svg(
+      project(edge.endpoints[1], camera).0,
+      project(edge.endpoints[1], camera).1,
+    );
+    svg.push_str(&format!(
+      "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n",
+      ex0, ey0, ex1, ey1, axis_color
+    ));
+  };
+
+  let mut ei = 0;
+  for seg in segments {
+    while ei < sorted_edges.len() && sorted_edges[ei].depth >= seg.depth {
+      emit_edge(&mut svg, &sorted_edges[ei]);
+      ei += 1;
+    }
+    let (sx0, sy0) = to_svg(seg.x0, seg.y0);
+    let (sx1, sy1) = to_svg(seg.x1, seg.y1);
+    let (r, g, b) = seg.color;
+    svg.push_str(&format!(
+      "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"rgb({},{},{})\" stroke-width=\"1.5\" stroke-linecap=\"round\"/>\n",
+      sx0, sy0, sx1, sy1, r, g, b
+    ));
+  }
+  while ei < sorted_edges.len() {
+    emit_edge(&mut svg, &sorted_edges[ei]);
+    ei += 1;
+  }
+
+  svg.push_str("</svg>");
+  Ok(svg)
+}
+
 // ── SphericalPlot3D implementation ───────────────────────────────────
 
 const SPHERICAL_GRID: usize = 50;
