@@ -592,6 +592,121 @@ mod simplify {
     assert_eq!(interpret("Simplify[x + x]").unwrap(), "2*x");
   }
 
+  // On a SimplifyCount tie the sign-only -(…) pull beats the numeric
+  // content extraction (both count 16), while a strict win keeps the
+  // extraction; wolframscript-verified (differential fuzzer, seed
+  // 5520550946540289960).
+  #[test]
+  fn sign_pull_beats_extraction_on_tie() {
+    assert_eq!(
+      interpret("Simplify[(-2 - 4 x)/(1 + 5 x)]").unwrap(),
+      "-((2 + 4*x)/(1 + 5*x))"
+    );
+    assert_eq!(
+      interpret("Simplify[(-3 - 6 x)/(1 + 5 x)]").unwrap(),
+      "-((3 + 6*x)/(1 + 5*x))"
+    );
+    assert_eq!(
+      interpret("Simplify[(-4 - 8 x)/(1 + 5 x)]").unwrap(),
+      "-((4 + 8*x)/(1 + 5*x))"
+    );
+    // Strict count wins keep the extraction.
+    assert_eq!(
+      interpret("Simplify[(-5 - 10 x)/(1 + 7 x)]").unwrap(),
+      "(-5*(1 + 2*x))/(1 + 7*x)"
+    );
+    assert_eq!(
+      interpret("Simplify[(-10 - 20 x)/(1 + 5 x)]").unwrap(),
+      "(-10*(1 + 2*x))/(1 + 5*x)"
+    );
+    // Positive content and mixed signs stay plain.
+    assert_eq!(
+      interpret("Simplify[(2 + 4 x)/(1 + 5 x)]").unwrap(),
+      "(2 + 4*x)/(1 + 5*x)"
+    );
+    assert_eq!(
+      interpret("Simplify[(-2 + 4 x)/(1 + 5 x)]").unwrap(),
+      "(-2 + 4*x)/(1 + 5*x)"
+    );
+  }
+
+  // A monomial denominator with a coefficient displays the pull as a
+  // rational prefactor; a coefficient-free monomial splits termwise
+  // (wolframscript-verified).
+  #[test]
+  fn mono_denominator_pull_prefactor() {
+    assert_eq!(
+      interpret("Simplify[(-2 - 4 x)/(5 x)]").unwrap(),
+      "-1/5*(2 + 4*x)/x"
+    );
+    assert_eq!(
+      interpret("Simplify[(-1 - 4 x)/(5 x)]").unwrap(),
+      "-1/5*(1 + 4*x)/x"
+    );
+    assert_eq!(
+      interpret("Simplify[(-2 - 4 x)/(5 x^2)]").unwrap(),
+      "-1/5*(2 + 4*x)/x^2"
+    );
+    assert_eq!(interpret("Simplify[(-2 - 4 x)/x]").unwrap(), "-4 - 2/x");
+  }
+
+  // Sums of c·x^e monomials with negative exponents: ALL-NEGATIVE
+  // content never split-extracts; the recombined quotient over the
+  // common x^k competes instead — full content out on unit cofactors,
+  // sign and denominator lcm only otherwise. Positive content keeps the
+  // split-extract with a strict-win, has-constant gate; all
+  // wolframscript-verified.
+  #[test]
+  fn reciprocal_sum_recombination() {
+    assert_eq!(interpret("Simplify[-4 - 2/x]").unwrap(), "-4 - 2/x");
+    assert_eq!(interpret("Simplify[-4 - 2/x^2]").unwrap(), "-4 - 2/x^2");
+    assert_eq!(interpret("Simplify[-2 - 2/x]").unwrap(), "(-2*(1 + x))/x");
+    assert_eq!(
+      interpret("Simplify[-2 - 2/x - 2 x]").unwrap(),
+      "(-2*(1 + x + x^2))/x"
+    );
+    assert_eq!(
+      interpret("Simplify[-2/5 - 2/(5 x)]").unwrap(),
+      "(-2*(1 + x))/(5*x)"
+    );
+    assert_eq!(
+      interpret("Simplify[-4/5 - 2/(5 x)]").unwrap(),
+      "-1/5*(2 + 4*x)/x"
+    );
+    assert_eq!(
+      interpret("Simplify[-4/3 - 2/(3 x)]").unwrap(),
+      "-1/3*(2 + 4*x)/x"
+    );
+    assert_eq!(
+      interpret("Simplify[-4/5 - 2/(5 x^2)]").unwrap(),
+      "-4/5 - 2/(5*x^2)"
+    );
+    // Positive/mixed content split-extracts on a strict win with a
+    // constant term present.
+    assert_eq!(
+      interpret("Simplify[-2 + 2/x + 2 x]").unwrap(),
+      "2*(-1 + x^(-1) + x)"
+    );
+    assert_eq!(
+      interpret("Simplify[-4 + 2/x + 2 x]").unwrap(),
+      "2*(-2 + x^(-1) + x)"
+    );
+    assert_eq!(
+      interpret("Simplify[4 + 2/x + 2 x]").unwrap(),
+      "2*(2 + x^(-1) + x)"
+    );
+    // Ties and constant-free sums keep their form.
+    assert_eq!(interpret("Simplify[4 + 2/x]").unwrap(), "4 + 2/x");
+    assert_eq!(interpret("Simplify[-2 + 2/x]").unwrap(), "-2 + 2/x");
+    assert_eq!(interpret("Simplify[2 - 2/x]").unwrap(), "2 - 2/x");
+    assert_eq!(interpret("Simplify[2/x + 2 x]").unwrap(), "2/x + 2*x");
+    assert_eq!(interpret("Simplify[-4 + 6/x]").unwrap(), "-4 + 6/x");
+    assert_eq!(
+      interpret("Simplify[-4/5 + 6/(5 x)]").unwrap(),
+      "-4/5 + 6/(5*x)"
+    );
+  }
+
   // Simplify minimizes a Boolean expression when that reduces the leaf count
   // (idempotence/complementarity/absorption), but keeps Xor/Implies whose DNF
   // expansion is larger — matching wolframscript's cost model.

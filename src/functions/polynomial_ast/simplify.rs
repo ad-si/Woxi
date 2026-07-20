@@ -4698,7 +4698,18 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
     // The square-free rule is decoded for POLYNOMIAL sums; sums carrying
     // other functions (trig etc.) keep the full Factor candidate, whose
     // numeric-content extraction the pipeline relies on.
-    let factored = if is_sum && polynomial_like(&best) {
+    // Sums of c·x^e monomials with negative exponents skip Factor
+    // entirely — the decoded recombine/extraction rules in candidate 5
+    // own them (Factor would rebuild -4/5 - 2/(5x) as the unreduced
+    // (-10*(1 + 2*x))/(25*x)).
+    let neg_power_sum = is_sum
+      && parse_neg_power_mono_sum(&super::coefficient::collect_additive_terms(
+        &best,
+      ))
+      .is_some();
+    let factored = if neg_power_sum {
+      Err(crate::InterpreterError::EvaluationError(String::new()))
+    } else if is_sum && polynomial_like(&best) {
       super::factor::factor_square_free_ast(&[best.clone()])
     } else {
       super::factor::factor_ast(&[best.clone()])
@@ -4841,6 +4852,7 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
           // content NEVER extracts (-4 - 2/x stays split, never
           // -2*(2 + x^(-1)); wolframscript-verified).
           let accept = match parse_neg_power_mono_sum(&terms) {
+            Some(_) if all_negative => false,
             Some(parsed) => {
               let has_const = parsed.iter().any(|&(_, _, e)| e == 0);
               let plain_cost = quotient_cost::sc_sum(&parsed);
@@ -7757,6 +7769,33 @@ fn simplify_quotient_select(
   let d_terms = terms_of(&d_coeffs);
   if n_terms.is_empty() || d_terms.is_empty() {
     return None;
+  }
+  // An unreduced quotient — shared integer content between numerator and
+  // denominator, like the (-10 - 20*x)/(25*x) an internal sum-combine
+  // can hand over — reduces before candidate selection so the built
+  // displays never show the shared factor.
+  {
+    let ng = n_terms
+      .iter()
+      .fold(0i128, |g, &(n, _, _)| gcd_i128(g, n).abs());
+    let dg = d_terms
+      .iter()
+      .fold(0i128, |g, &(n, _, _)| gcd_i128(g, n).abs());
+    let shared = gcd_i128(ng, dg).abs();
+    if shared > 1 {
+      let rn: Vec<(i128, i128, i128)> =
+        n_terms.iter().map(|&(n, d, e)| (n / shared, d, e)).collect();
+      let rd: Vec<(i128, i128, i128)> =
+        d_terms.iter().map(|&(n, d, e)| (n / shared, d, e)).collect();
+      let num2 = coeffs_from_terms(&rn, &var);
+      let den2 = coeffs_from_terms(&rd, &var);
+      let basic2 = Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(num2.clone()),
+        right: Box::new(den2.clone()),
+      };
+      return simplify_quotient_select(&basic2, &num2, &den2);
+    }
   }
   // A literal -1 numerator keeps the older reciprocal handling
   // (Simplify[-1/(1+x)] → -(1+x)^(-1), -1/(1-x) → (-1+x)^(-1)).
