@@ -219,14 +219,25 @@ fn adaptive_sample(
   x_max: f64,
   initial_n: usize,
   max_total: usize,
+  monitor: Option<&Expr>,
 ) -> Vec<(f64, f64)> {
+  // Evaluate one sample, firing the `EvaluationMonitor :> expr` hook (with
+  // the plot variable bound to x) first, e.g. so `Sow[{x, f[x]}]` records
+  // the sampled points.
+  let sample = |x: f64| -> f64 {
+    if let Some(m) = monitor {
+      let sub = crate::syntax::substitute_variable(m, var_name, &Expr::Real(x));
+      let _ = crate::evaluator::evaluate_expr_to_expr(&sub);
+    }
+    evaluate_at_point(func_body, var_name, x).unwrap_or(f64::NAN)
+  };
+
   // Initial uniform sampling
   let step = (x_max - x_min) / (initial_n - 1) as f64;
   let mut points: Vec<(f64, f64)> = (0..initial_n)
     .map(|i| {
       let x = x_min + i as f64 * step;
-      let y = evaluate_at_point(func_body, var_name, x).unwrap_or(f64::NAN);
-      (x, y)
+      (x, sample(x))
     })
     .collect();
 
@@ -273,8 +284,7 @@ fn adaptive_sample(
 
       if needs_refine {
         let xm = (x0 + x1) / 2.0;
-        let ym = evaluate_at_point(func_body, var_name, xm).unwrap_or(f64::NAN);
-        new_points.push((xm, ym));
+        new_points.push((xm, sample(xm)));
       }
     }
 
@@ -1007,6 +1017,167 @@ impl crate::syntax::SeriesFilling {
   }
 }
 
+/// Fill target for one series, from the rule-list form
+/// `Filling -> {i -> spec, …}`.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum FillTarget {
+  /// Fill to a constant reference level (`Axis`, `Bottom`, `Top`, a value).
+  Level(Filling),
+  /// Fill to another series (0-based index), i.e. `i -> {j}`.
+  Series(usize),
+}
+
+/// Parse the rule-list form `Filling -> {i -> spec, …}`, where `spec` is
+/// `{j}` (fill between series i and j), `{{j}, style}` (the style is not
+/// rendered yet), or a constant level (`Axis`, `Bottom`, `Top`, a number).
+/// Returns `None` when `replacement` is not a list of rules keyed by
+/// 1-based series indices, so the caller can fall back to `parse_filling`.
+pub(crate) fn parse_filling_rules(
+  replacement: &Expr,
+) -> Option<Vec<(usize, FillTarget)>> {
+  let Expr::List(items) = replacement else {
+    return None;
+  };
+  let mut rules = Vec::new();
+  for item in items.iter() {
+    let (pattern, rhs) = match item {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref()),
+      _ => return None,
+    };
+    let series_idx = match pattern {
+      Expr::Integer(n) if *n >= 1 => *n as usize - 1,
+      _ => return None,
+    };
+    let target = match rhs {
+      // Braces mark a series target: `{j}` or `{{j}, style}`.
+      Expr::List(spec) => {
+        let target_idx = match spec.first()? {
+          Expr::Integer(j) if *j >= 1 => *j as usize - 1,
+          Expr::List(inner) => match inner.first()? {
+            Expr::Integer(j) if *j >= 1 => *j as usize - 1,
+            _ => return None,
+          },
+          _ => return None,
+        };
+        FillTarget::Series(target_idx)
+      }
+      other => FillTarget::Level(parse_filling(other)),
+    };
+    rules.push((series_idx, target));
+  }
+  Some(rules)
+}
+
+/// Apply a `Filling` option value to `opts`: either the per-series rule
+/// list `{i -> spec, …}` (stored in `filling_rules`) or a global mode
+/// (stored in `filling`).
+pub(crate) fn apply_filling_option(replacement: &Expr, opts: &mut PlotOptions) {
+  if let Some(rules) = parse_filling_rules(replacement) {
+    opts.filling_rules = rules;
+  } else {
+    opts.filling = parse_filling(replacement);
+  }
+}
+
+/// Effective fill target for series `idx`: its entry in the rule list when
+/// `Filling -> {i -> spec, …}` was given (series without a rule stay
+/// unfilled), otherwise the global filling mode.
+pub(crate) fn series_fill_target(opts: &PlotOptions, idx: usize) -> FillTarget {
+  if opts.filling_rules.is_empty() {
+    FillTarget::Level(opts.filling)
+  } else {
+    opts
+      .filling_rules
+      .iter()
+      .find(|(i, _)| *i == idx)
+      .map(|&(_, t)| t)
+      .unwrap_or(FillTarget::Level(Filling::None))
+  }
+}
+
+/// Linearly interpolate a polyline (in data order) at `x`. Returns `None`
+/// when `x` lies outside every segment's x-span, so filling between series
+/// with different x-domains stops at the overlap.
+pub(crate) fn interp_polyline_y(points: &[(f64, f64)], x: f64) -> Option<f64> {
+  for w in points.windows(2) {
+    let (x0, y0) = w[0];
+    let (x1, y1) = w[1];
+    if !(x0.is_finite() && x1.is_finite() && y0.is_finite() && y1.is_finite()) {
+      continue;
+    }
+    let (lo, hi) = if x0 <= x1 { (x0, x1) } else { (x1, x0) };
+    if x >= lo && x <= hi {
+      if (x1 - x0).abs() < f64::EPSILON {
+        return Some(y0);
+      }
+      return Some(y0 + (y1 - y0) * (x - x0) / (x1 - x0));
+    }
+  }
+  None
+}
+
+/// Polygon between two polylines over the overlap of their x-domains: the
+/// source curve forms the top boundary and the reversed target curve the
+/// bottom, both clipped (with interpolated endpoints) to the overlap.
+pub(crate) fn fill_between_polygon(
+  source: &[(f64, f64)],
+  target: &[(f64, f64)],
+) -> Option<Vec<(f64, f64)>> {
+  let finite = |pts: &[(f64, f64)]| -> Vec<(f64, f64)> {
+    pts
+      .iter()
+      .copied()
+      .filter(|(x, y)| x.is_finite() && y.is_finite())
+      .collect()
+  };
+  let src = finite(source);
+  let tgt = finite(target);
+  if src.len() < 2 || tgt.len() < 2 {
+    return None;
+  }
+  let x_span = |pts: &[(f64, f64)]| {
+    pts
+      .iter()
+      .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &(x, _)| {
+        (lo.min(x), hi.max(x))
+      })
+  };
+  let (s_lo, s_hi) = x_span(&src);
+  let (t_lo, t_hi) = x_span(&tgt);
+  let lo = s_lo.max(t_lo);
+  let hi = s_hi.min(t_hi);
+  if lo >= hi {
+    return None;
+  }
+  let clip = |pts: &[(f64, f64)]| -> Vec<(f64, f64)> {
+    let mut out = Vec::new();
+    if let Some(y) = interp_polyline_y(pts, lo) {
+      out.push((lo, y));
+    }
+    out.extend(pts.iter().copied().filter(|&(x, _)| x > lo && x < hi));
+    if let Some(y) = interp_polyline_y(pts, hi) {
+      out.push((hi, y));
+    }
+    out
+  };
+  let mut polygon = clip(&src);
+  let mut bottom = clip(&tgt);
+  bottom.reverse();
+  polygon.extend(bottom);
+  if polygon.len() >= 3 {
+    Some(polygon)
+  } else {
+    None
+  }
+}
+
 /// Parse a `Filling` option value from an expression.
 pub(crate) fn parse_filling(replacement: &Expr) -> Filling {
   match replacement {
@@ -1055,6 +1226,23 @@ pub(crate) fn adjust_y_range_for_filling(
     _ => {}
   }
   (y_lo, y_hi)
+}
+
+/// Like `adjust_y_range_for_filling`, but also accounts for the per-series
+/// `Filling -> {i -> spec, …}` rules: every constant-level target must lie
+/// inside the plotted y-range (between-series targets need no adjustment —
+/// both bounds are data curves already contained in the range).
+pub(crate) fn adjust_y_range_for_filling_opts(
+  opts: &PlotOptions,
+  mut y_range: (f64, f64),
+) -> (f64, f64) {
+  y_range = adjust_y_range_for_filling(opts.filling, y_range);
+  for (_, target) in &opts.filling_rules {
+    if let FillTarget::Level(level) = target {
+      y_range = adjust_y_range_for_filling(*level, y_range);
+    }
+  }
+  y_range
 }
 
 /// Per-series style: color, line thickness, and dashing pattern.
@@ -1118,6 +1306,10 @@ pub(crate) struct PlotOptions {
   pub svg_height: u32,
   pub full_width: bool,
   pub filling: Filling,
+  /// Per-series filling from `Filling -> {i -> spec, …}` (0-based series
+  /// index → target). When non-empty this replaces the global `filling`:
+  /// series without a rule are not filled.
+  pub filling_rules: Vec<(usize, FillTarget)>,
   pub mesh: Mesh,
   pub plot_label: Option<StyledLabel>,
   pub axes_label: Option<(String, String)>,
@@ -1194,6 +1386,7 @@ impl Default for PlotOptions {
       svg_height: DEFAULT_HEIGHT,
       full_width: false,
       filling: Filling::None,
+      filling_rules: Vec::new(),
       mesh: Mesh::None,
       plot_label: None,
       axes_label: None,
@@ -1507,7 +1700,6 @@ fn generate_svg_with_options(
   let svg_width = opts.svg_width;
   let mut svg_height = opts.svg_height;
   let full_width = opts.full_width;
-  let filling = opts.filling;
   let (show_x_axis, show_y_axis) = opts.axes;
   let show_ticks = opts.ticks;
   let render_width = svg_width * RESOLUTION_SCALE;
@@ -1925,20 +2117,43 @@ fn generate_svg_with_options(
                   InterpreterError::EvaluationError(format!("Plot: {e}"))
                 })?;
             }
-          } else if let Some(ref_y) = filling.reference_y(y_min, y_max) {
-            for segment in &segments {
-              if segment.len() < 2 {
-                continue;
+          } else {
+            match series_fill_target(opts, series_idx) {
+              FillTarget::Level(level) => {
+                if let Some(ref_y) = level.reference_y(y_min, y_max) {
+                  for segment in &segments {
+                    if segment.len() < 2 {
+                      continue;
+                    }
+                    chart
+                      .draw_series(AreaSeries::new(
+                        segment.iter().copied(),
+                        ref_y,
+                        RGBColor(r, g, b).mix(0.2),
+                      ))
+                      .map_err(|e| {
+                        InterpreterError::EvaluationError(format!("Plot: {e}"))
+                      })?;
+                  }
+                }
               }
-              chart
-                .draw_series(AreaSeries::new(
-                  segment.iter().copied(),
-                  ref_y,
-                  RGBColor(r, g, b).mix(0.2),
-                ))
-                .map_err(|e| {
-                  InterpreterError::EvaluationError(format!("Plot: {e}"))
-                })?;
+              // `Filling -> {i -> {j}}`: fill the region between this
+              // series and series j over the overlap of their x-domains.
+              FillTarget::Series(target_idx) => {
+                if target_idx != series_idx
+                  && let Some(target) = all_points.get(target_idx)
+                  && let Some(polygon) = fill_between_polygon(points, target)
+                {
+                  chart
+                    .draw_series(std::iter::once(Polygon::new(
+                      polygon,
+                      RGBColor(r, g, b).mix(0.2),
+                    )))
+                    .map_err(|e| {
+                      InterpreterError::EvaluationError(format!("Plot: {e}"))
+                    })?;
+                }
+              }
             }
           }
 
@@ -2760,20 +2975,42 @@ pub(crate) fn generate_scatter_svg_with_options(
         .filter(|(x, y)| x.is_finite() && y.is_finite())
         .collect();
 
-      // Draw stem lines from each point to the fill reference level
-      if let Some(ref_y) = opts.filling.reference_y(y_min, y_max) {
-        let stem_style =
-          RGBColor(r, g, b).mix(0.2).stroke_width(RESOLUTION_SCALE);
-        for &(x, y) in &finite_pts {
-          chart
-            .draw_series(std::iter::once(PathElement::new(
-              vec![(x, y), (x, ref_y)],
-              stem_style,
-            )))
-            .map_err(|e| {
-              InterpreterError::EvaluationError(format!("Plot: {e}"))
-            })?;
-        }
+      // Draw stem lines from each point to the fill reference: a constant
+      // level for Axis/Bottom/Top/value, or — for `Filling -> {i -> {j}}` —
+      // the other series, linearly interpolated at this point's x so
+      // irregularly spaced datasets fill correctly.
+      let stem_style =
+        RGBColor(r, g, b).mix(0.2).stroke_width(RESOLUTION_SCALE);
+      let stem_targets: Vec<((f64, f64), f64)> =
+        match series_fill_target(opts, series_idx) {
+          FillTarget::Level(level) => level
+            .reference_y(y_min, y_max)
+            .map(|ref_y| finite_pts.iter().map(|&p| (p, ref_y)).collect())
+            .unwrap_or_default(),
+          FillTarget::Series(target_idx) => {
+            if target_idx != series_idx
+              && let Some(target) = all_series.get(target_idx)
+            {
+              finite_pts
+                .iter()
+                .filter_map(|&(x, y)| {
+                  interp_polyline_y(target, x).map(|ty| (((x, y)), ty))
+                })
+                .collect()
+            } else {
+              Vec::new()
+            }
+          }
+        };
+      for ((x, y), ref_y) in stem_targets {
+        chart
+          .draw_series(std::iter::once(PathElement::new(
+            vec![(x, y), (x, ref_y)],
+            stem_style,
+          )))
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!("Plot: {e}"))
+          })?;
       }
 
       // Uncertainty intervals from Around data values, under the point
@@ -6391,7 +6628,7 @@ pub(crate) fn apply_common_plot_option(
       }
     }
     "Filling" => {
-      plot_opts.filling = parse_filling(replacement);
+      apply_filling_option(replacement, plot_opts);
     }
     "Background" => {
       plot_opts.background = parse_background_option(replacement);
@@ -6439,9 +6676,27 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut overrides = PlotRangeOverrides::default();
   let mut legends_automatic = false;
   let mut legends_expressions = false;
+  // `EvaluationMonitor :> expr` — evaluated (with the plot variable bound)
+  // at every sampled point, e.g. to `Sow` the sample locations.
+  let mut monitor: Option<Expr> = None;
   let mut seen: std::collections::HashSet<String> =
     std::collections::HashSet::new();
   for opt in &args[2..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } = opt
+      && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "EvaluationMonitor")
+    {
+      if monitor.is_none() {
+        monitor = Some(replacement.as_ref().clone());
+      }
+      continue;
+    }
     if let Expr::Rule {
       pattern,
       replacement,
@@ -6564,6 +6819,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       x_max,
       initial_samples,
       max_total,
+      monitor.as_ref(),
     );
     all_points.push(points);
   }
@@ -6592,7 +6848,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let y_auto_min = y_data_min - padding;
   let y_auto_max = y_data_max + padding;
   let (y_auto_min, y_auto_max) =
-    adjust_y_range_for_filling(plot_opts.filling, (y_auto_min, y_auto_max));
+    adjust_y_range_for_filling_opts(&plot_opts, (y_auto_min, y_auto_max));
 
   // Apply PlotRange overrides (PlotRange -> {ymin, ymax} or {{xmin,xmax},{ymin,ymax}})
   let (x_display_min, x_display_max) = plot_range_x.unwrap_or((x_min, x_max));
@@ -6756,7 +7012,7 @@ fn log_scale_plot_ast(
           }
         }
         "Filling" => {
-          plot_opts.filling = parse_filling(replacement);
+          apply_filling_option(replacement, &mut plot_opts);
         }
         "Background" => {
           plot_opts.background = parse_background_option(replacement);
@@ -6902,7 +7158,7 @@ fn log_scale_plot_ast(
     (y_data_min - padding, y_data_max + padding)
   };
   let y_auto =
-    adjust_y_range_for_filling(plot_opts.filling, (y_auto_min, y_auto_max));
+    adjust_y_range_for_filling_opts(&plot_opts, (y_auto_min, y_auto_max));
 
   let (y_display_min, y_display_max) = plot_range_y.unwrap_or(y_auto);
 

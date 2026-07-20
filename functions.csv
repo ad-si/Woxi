@@ -1054,7 +1054,7 @@ Catenate,Concatenates a list (or association) of lists or associations into one 
 SplineKnots,,🚫,,7.0,1064
 StirlingS1,Returns the Stirling number of the first kind,✅,pure,1.0,1065
 ClebschGordan,Clebsch-Gordan angular momentum coupling coefficient,✅,pure,2.0,1066
-EvaluationMonitor,,🚫,,5.0,1067
+EvaluationMonitor,Option whose expression is evaluated at every point sampled by Plot or NIntegrate,✅,pure,5.0,1067
 NumberString,String pattern matching numeric strings,✅,none,5.1,1068
 Uncompress,Decompresses a string from Compress,✅,pure,6.0,1069
 CreateDocument,,🚫,,6.0,1071

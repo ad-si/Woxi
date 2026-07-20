@@ -3,10 +3,10 @@ use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
   DEFAULT_HEIGHT, DEFAULT_WIDTH, IntervalMarkers, Mesh, PLOT_COLORS,
-  PlotOptions, SeriesStyle, adjust_y_range_for_filling, apply_plot_theme,
-  build_plot_source, generate_scatter_svg_with_options,
-  generate_svg_with_filling, parse_filling, parse_image_size,
-  parse_plot_legends, parse_plot_style,
+  PlotOptions, SeriesStyle, adjust_y_range_for_filling_opts,
+  apply_filling_option, apply_plot_theme, build_plot_source,
+  generate_scatter_svg_with_options, generate_svg_with_filling,
+  parse_image_size, parse_plot_legends, parse_plot_style,
 };
 use crate::functions::sound::audio_sample_rate;
 use crate::syntax::{Expr, unevaluated};
@@ -699,7 +699,7 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           }
         }
         "Filling" => {
-          opts.filling = parse_filling(replacement);
+          apply_filling_option(replacement, opts);
         }
         "Background" => {
           opts.background =
@@ -1051,7 +1051,7 @@ fn render_panel_layout(
       .unwrap_or(single);
     let (x_range, y_range) =
       compute_ranges_scaled(range_single, opts.log_x, opts.log_y);
-    let y_range = adjust_y_range_for_filling(opts.filling, y_range);
+    let y_range = adjust_y_range_for_filling_opts(&opts, y_range);
     let (x_range, y_range) =
       apply_plot_range_override(parsed, x_range, y_range);
     let svg = if scatter {
@@ -1127,7 +1127,7 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
   }
   let (x_range, y_range) = compute_ranges(&range_series);
-  let y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
+  let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
   let joined = parsed.joined;
   let opts = &parsed.opts;
@@ -1205,7 +1205,7 @@ pub fn complex_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let all_series = parse_complex_list_data(&args[0])?;
   let parsed = parse_plot_options(args);
   let (x_range, y_range) = compute_ranges(&all_series);
-  let y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
+  let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
   let joined = parsed.joined;
   let opts = &parsed.opts;
@@ -1272,7 +1272,7 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let (x_range, mut y_range) = compute_ranges(&range_series);
 
-  y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
+  y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
 
   let svg =
@@ -1312,7 +1312,7 @@ pub fn stacked_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let (x_range, mut y_range) = compute_ranges(&cumulative);
-  y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
+  y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
 
   let svg =
@@ -1340,7 +1340,7 @@ pub fn list_step_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
   }
   let (x_range, y_range) = compute_ranges(&step_series);
-  let y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
+  let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
   let svg =
     generate_svg_with_filling(&step_series, x_range, y_range, &parsed.opts)?;
@@ -1364,7 +1364,7 @@ pub fn list_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return render_panel_layout(&filtered, &filtered, &labels, &parsed, false);
   }
   let (x_range, y_range) = compute_ranges_scaled(&filtered, false, true);
-  let y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
+  let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
   let svg =
     generate_svg_with_filling(&filtered, x_range, y_range, &parsed.opts)?;
@@ -1395,7 +1395,7 @@ pub fn list_log_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return render_panel_layout(&filtered, &filtered, &labels, &parsed, false);
   }
   let (x_range, y_range) = compute_ranges_scaled(&filtered, true, true);
-  let y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
+  let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
   let svg =
     generate_svg_with_filling(&filtered, x_range, y_range, &parsed.opts)?;
@@ -1421,7 +1421,7 @@ pub fn list_log_linear_plot_ast(
     return render_panel_layout(&filtered, &filtered, &labels, &parsed, false);
   }
   let (x_range, y_range) = compute_ranges_scaled(&filtered, true, false);
-  let y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
+  let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
   let svg =
     generate_svg_with_filling(&filtered, x_range, y_range, &parsed.opts)?;
@@ -1450,7 +1450,7 @@ pub fn list_polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
 
   let (x_range, y_range) = compute_ranges(&polar_series);
-  let y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
+  let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
   let svg =
     generate_svg_with_filling(&polar_series, x_range, y_range, &parsed.opts)?;
@@ -1560,7 +1560,7 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let all_series = vec![points];
   let parsed = parse_plot_options(args);
   let (x_range, y_range) = compute_ranges(&all_series);
-  let y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
+  let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
 
   let svg = generate_scatter_svg_with_options(
@@ -1710,7 +1710,7 @@ pub fn audio_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let (x_range, y_range) = compute_ranges(&all_series);
-  let y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
+  let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
   let svg =
     generate_svg_with_filling(&all_series, x_range, y_range, &parsed.opts)?;
