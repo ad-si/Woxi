@@ -2,9 +2,9 @@ use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
-  NUM_SAMPLES, PlotOptions, PlotRangeOverrides, adjust_y_range_for_filling,
-  apply_common_plot_option, build_plot_source, evaluate_at_point,
-  generate_svg_with_filling, parse_iterator, substitute_var,
+  NUM_SAMPLES, PlotOptions, PlotRangeOverrides,
+  adjust_y_range_for_filling_opts, apply_common_plot_option, build_plot_source,
+  evaluate_at_point, generate_svg_with_filling, parse_iterator, substitute_var,
 };
 use crate::syntax::Expr;
 
@@ -262,7 +262,7 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Compute ranges (explicit PlotRange components override the data extents)
   let (data_x, data_y) = compute_data_ranges(&all_points);
-  let data_y = adjust_y_range_for_filling(plot_opts.filling, data_y);
+  let data_y = adjust_y_range_for_filling_opts(&plot_opts, data_y);
   let (x_range, y_range) =
     apply_ranges_and_aspect(&mut plot_opts, &overrides, data_x, data_y);
 
@@ -324,7 +324,7 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let (data_x, data_y) = compute_data_ranges(&all_points);
-  let data_y = adjust_y_range_for_filling(plot_opts.filling, data_y);
+  let data_y = adjust_y_range_for_filling_opts(&plot_opts, data_y);
   let (x_range, y_range) =
     apply_ranges_and_aspect(&mut plot_opts, &overrides, data_x, data_y);
 

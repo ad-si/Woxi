@@ -24,7 +24,9 @@ Graphics
 - **`AxesOrigin`** — location of the axes intersection.
 - **`PlotPoints`** — initial sample count.
 - **`MaxRecursion`** — sub-division depth for adaptive sampling.
-- **`Filling`** — region to fill (`None`, `Axis`, `Bottom`, `Top`).
+- **`Filling`** — region to fill (`None`, `Axis`, `Bottom`, `Top`, or a
+  rule list like `{1 -> {2}}` to fill between curves).
+- **`EvaluationMonitor`** — expression evaluated at every sampled point.
 - **`FillingStyle`** — style directive for the filled region.
 - **`Mesh`** — controls mesh markers (`None`, `All`, an integer).
 - **`PlotTheme`** — named theme like `"Scientific"` or `"Business"`.
@@ -34,3 +36,10 @@ Graphics
 - **`FrameLabel`** — labels for the frame sides.
 - **`Epilog`** — extra graphics drawn on top of the plot.
 - **`Prolog`** — extra graphics drawn beneath the plot.
+
+`EvaluationMonitor` can record the points Plot samples, e.g. via `Sow`:
+
+```scrut
+$ wo 'Positive[Length[First@Last[Reap[Plot[Sin[x], {x, 0, 2 Pi}, EvaluationMonitor :> Sow[x]]]]]]'
+True
+```

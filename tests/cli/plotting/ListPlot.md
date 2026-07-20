@@ -19,6 +19,20 @@ Accepts the same core options as `Plot`, plus:
 - **`Joined`** — `True` connects the points with a line.
 - **`PlotMarkers`** — shape spec for the markers.
 
+`Filling` accepts a rule list to fill between datasets: `{1 -> {2}}`
+draws a stem from every point of dataset 1 to dataset 2, interpolating
+linearly when the datasets are irregularly spaced:
+
+```scrut
+$ wo 'Head[ListPlot[{{1, 2, 3}, {2, 3, 4}}, Filling -> {1 -> {2}}]]'
+Graphics
+```
+
+```scrut
+$ wo 'Head[ListPlot[{Sort@First@Last[Reap[Plot[Sin[x], {x, 0, 2 Pi}, EvaluationMonitor :> Sow[{x, Sin[x]}]]]], Sort@First@Last[Reap[Plot[Cos[x], {x, 0, 2 Pi}, EvaluationMonitor :> Sow[{x, Cos[x]}]]]]}, Filling -> {1 -> {2}}]]'
+Graphics
+```
+
 Values wrapped in `Around` are plotted at their central value
 with error bars spanning the uncertainty:
 
