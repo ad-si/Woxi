@@ -5054,7 +5054,12 @@ fn try_integrate_trig_quotient(
     let mut terms: Vec<Expr> = Vec::new();
     if p % 2 == 0 {
       // ArcTanh[Sin[u]]/a - Sin[u]/a - Sin[u]^3/(3a) - … - Sin[u]^(p-1)/((p-1)a)
-      terms.push(coeff_term(1, 1, wrap_call("ArcTanh", trig_pow("Sin", 1)), &coeff));
+      terms.push(coeff_term(
+        1,
+        1,
+        wrap_call("ArcTanh", trig_pow("Sin", 1)),
+        &coeff,
+      ));
       let mut j = 1;
       while j < p {
         terms.push(coeff_term(-1, j as i128, trig_pow("Sin", j), &coeff));
@@ -5063,7 +5068,12 @@ fn try_integrate_trig_quotient(
     } else {
       // -Log[Cos[u]]/a + Σ (-1)^(j+1) C(k,j) Cos[u]^(2j)/(2j a)
       let k = (p - 1) / 2;
-      terms.push(coeff_term(-1, 1, wrap_call("Log", trig_pow("Cos", 1)), &coeff));
+      terms.push(coeff_term(
+        -1,
+        1,
+        wrap_call("Log", trig_pow("Cos", 1)),
+        &coeff,
+      ));
       for j in 1..=k {
         let binom = crate::functions::binomial_coeff(k as i128, j as i128);
         let sign = if j % 2 == 1 { 1 } else { -1 };
@@ -5101,7 +5111,12 @@ fn try_integrate_trig_quotient(
     } else if p % 2 == 1 {
       // Log[Sin[u]]/a + Σ (-1)^j C(k,j) Sin[u]^(2j)/(2j a)
       let k = (p - 1) / 2;
-      terms.push(coeff_term(1, 1, wrap_call("Log", trig_pow("Sin", 1)), &coeff));
+      terms.push(coeff_term(
+        1,
+        1,
+        wrap_call("Log", trig_pow("Sin", 1)),
+        &coeff,
+      ));
       for j in 1..=k {
         let binom = crate::functions::binomial_coeff(k as i128, j as i128);
         let sign = if j % 2 == 1 { -1 } else { 1 };
@@ -9617,10 +9632,9 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
                 });
               }
             }
-            if let Some(trig_result) = try_integrate_sin_cos_product(
-              &var_refs, var,
-            )
-            .or_else(|| try_integrate_trig_quotient(&var_refs, &[], var))
+            if let Some(trig_result) =
+              try_integrate_sin_cos_product(&var_refs, var)
+                .or_else(|| try_integrate_trig_quotient(&var_refs, &[], var))
             {
               if const_factors.is_empty() {
                 return Some(trig_result);

@@ -5451,10 +5451,7 @@ mod rationalize {
     // former "close to s/2 or s/3" ambiguity guard wrongly bailed here.
     assert_eq!(interpret("Rationalize[0.33333]").unwrap(), "33333/100000");
     assert_eq!(interpret("Rationalize[0.66667]").unwrap(), "66667/100000");
-    assert_eq!(
-      interpret("Rationalize[0.666666]").unwrap(),
-      "333333/500000"
-    );
+    assert_eq!(interpret("Rationalize[0.666666]").unwrap(), "333333/500000");
     // Boundary straddle at 2^38: 262143*10^6 is under, 276999*10^6 over.
     assert_eq!(
       interpret("Rationalize[0.262143]").unwrap(),

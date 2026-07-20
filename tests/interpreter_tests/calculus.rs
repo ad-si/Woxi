@@ -12943,10 +12943,8 @@ mod infinite_factorial_trig_series {
       "2*Sin[x]"
     );
     assert_eq!(
-      interpret(
-        "Sum[(-1)^n x^(2n+1)/(Factorial[2n+1] y), {n, 0, Infinity}]"
-      )
-      .unwrap(),
+      interpret("Sum[(-1)^n x^(2n+1)/(Factorial[2n+1] y), {n, 0, Infinity}]")
+        .unwrap(),
       "Sin[x]/y"
     );
   }
@@ -12991,8 +12989,7 @@ mod infinite_factorial_trig_series {
       "1 - Cos[x]"
     );
     assert_eq!(
-      interpret("Sum[(-1)^n x^(2n)/Factorial[2n], {n, 1, Infinity}]")
-        .unwrap(),
+      interpret("Sum[(-1)^n x^(2n)/Factorial[2n], {n, 1, Infinity}]").unwrap(),
       "-1 + Cos[x]"
     );
     assert_eq!(

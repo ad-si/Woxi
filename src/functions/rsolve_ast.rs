@@ -663,10 +663,7 @@ fn rat_reduce(n: i128, d: i128) -> Option<(i128, i128)> {
 /// (`C[1]*Fibonacci[n] + C[2]*LucasL[n]`). One IC keeps `alpha = C[1]` free
 /// and eliminates `beta`; two ICs at distinct indices determine both
 /// constants exactly (rational values allowed).
-fn solve_fibonacci_lucas(
-  ics: &[(i128, Expr)],
-  var_name: &str,
-) -> Option<Expr> {
+fn solve_fibonacci_lucas(ics: &[(i128, Expr)], var_name: &str) -> Option<Expr> {
   let ic_value = |e: &Expr| -> Option<(i128, i128)> {
     let evaled =
       crate::evaluator::evaluate_expr_to_expr(e).unwrap_or_else(|_| e.clone());

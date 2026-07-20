@@ -1012,9 +1012,7 @@ fn solve_constant_coefficient_ode(
       &roots,
       x_name,
     )
-    .or_else(|| {
-      variation_of_parameters(&coeffs, &roots, forcing_expr, x_name)
-    });
+    .or_else(|| variation_of_parameters(&coeffs, &roots, forcing_expr, x_name));
     if let Some(part) = particular {
       return Ok(crate::functions::calculus_ast::simplify(Expr::BinaryOp {
         op: BinaryOperator::Plus,
@@ -1078,9 +1076,7 @@ fn variation_of_parameters(
       // Double root r: {E^(r x), x E^(r x)}, W = E^(2 r x)
       (exp_rx(*r), mul(x(), exp_rx(*r)), exp_rx(2.0 * r))
     }
-    [(r1, im1, 1), (r2, im2, 1)]
-      if im1.abs() < 1e-10 && im2.abs() < 1e-10 =>
-    {
+    [(r1, im1, 1), (r2, im2, 1)] if im1.abs() < 1e-10 && im2.abs() < 1e-10 => {
       // Distinct real roots: {E^(r1 x), E^(r2 x)}, W = (r2 - r1) E^((r1+r2) x)
       (
         exp_rx(*r1),
@@ -1114,8 +1110,8 @@ fn variation_of_parameters(
     };
     // Canonicalize first so the integrator sees simplified products
     // (e.g. Cos[x]*Tan[x] -> Sin[x]).
-    let integrand = crate::evaluator::evaluate_expr_to_expr(&integrand)
-      .unwrap_or(integrand);
+    let integrand =
+      crate::evaluator::evaluate_expr_to_expr(&integrand).unwrap_or(integrand);
     let result = crate::functions::calculus_ast::integrate_ast(&[
       integrand,
       Expr::Identifier(x_name.to_string()),
@@ -1152,7 +1148,8 @@ fn contains_function_call(expr: &Expr, fname: &str) -> bool {
       name == fname || args.iter().any(|a| contains_function_call(a, fname))
     }
     Expr::BinaryOp { left, right, .. } => {
-      contains_function_call(left, fname) || contains_function_call(right, fname)
+      contains_function_call(left, fname)
+        || contains_function_call(right, fname)
     }
     Expr::UnaryOp { operand, .. } => contains_function_call(operand, fname),
     Expr::List(items) => items.iter().any(|a| contains_function_call(a, fname)),
