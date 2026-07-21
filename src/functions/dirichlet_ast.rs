@@ -12,7 +12,7 @@
 //! (1, -1, I, -I, or E^((a*I)/b*Pi) forms on the principal branch).
 
 use crate::InterpreterError;
-use crate::functions::math_ast::gcd_bigint;
+use crate::functions::math_ast::{gcd as gcd_i128, gcd_bigint};
 use crate::syntax::Expr;
 use crate::syntax::{BinaryOperator, UnaryOperator, unevaluated};
 
@@ -53,8 +53,8 @@ pub fn dirichlet_character_ast(
     _ => return Ok(unevaluated(args)),
   };
 
-  if gcd(n, k) != 1 {
-    // k = 1 has gcd(n, 1) = 1 for every n, so this is unreachable there
+  if gcd_i128(n, k) > 1 {
+    // k = 1 has gcd_i128(n, 1) = 0 or 1 for every n, so this is unreachable there
     return Ok(Expr::Integer(0));
   }
 
@@ -78,7 +78,7 @@ pub fn dirichlet_character_ast(
   for (f, e) in factors.iter().zip(&exps) {
     let t = f.dlog(n);
     let (mut p, mut q) = (e * t, f.order);
-    let g = gcd(p, q);
+    let g = gcd_i128(p, q).max(1);
     p = (p / g).rem_euclid(q / g);
     q /= g;
     if q == 1 || q == 2 || q == 4 {
@@ -86,13 +86,13 @@ pub fn dirichlet_character_ast(
     } else {
       num = num * q + p * den;
       den *= q;
-      let g = gcd(num, den);
+      let g = gcd_i128(num, den).max(1);
       num /= g;
       den /= g;
     }
   }
   num = num.rem_euclid(den);
-  let g = gcd(num, den);
+  let g = gcd_i128(num, den).max(1);
   num /= g;
   den /= g;
   // A combined exponential that lands on a fourth root folds into the
@@ -215,7 +215,7 @@ fn character_factors(k: i128) -> Vec<Factor> {
 /// Smallest primitive root modulo the odd prime power pe.
 fn primitive_root(pe: i128, order: i128) -> i128 {
   'g: for g in 2..pe {
-    if gcd(g, pe) != 1 {
+    if gcd_i128(g, pe) > 1 {
       continue;
     }
     // g is a primitive root iff g^(order/q) != 1 for every prime q | order
@@ -257,10 +257,6 @@ fn pow_mod(mut b: i128, mut e: i128, m: i128) -> i128 {
   r
 }
 
-fn gcd(a: i128, b: i128) -> i128 {
-  crate::functions::math_ast::gcd(a, b).max(1)
-}
-
 fn euler_phi(k: i128) -> i128 {
   let mut result = k;
   let mut n = k;
@@ -299,12 +295,12 @@ fn assemble_value(quarter: i128, num: i128, den: i128) -> Expr {
   // Principal branch: the printed multiple of Pi is m = a/b = 2*num/den
   // reduced into (-1, 1]
   let (mut a, mut b) = (2 * num, den);
-  let g = gcd(a, b);
+  let g = gcd_i128(a, b).max(1);
   a /= g;
   b /= g;
   if a > b {
     a -= 2 * b;
-    let g = gcd(a, b);
+    let g = gcd_i128(a, b).max(1);
     a /= g;
     b /= g;
   }
@@ -341,12 +337,12 @@ fn total_rotation(factors: &[Factor], exps: &[i128], a: i128) -> (i128, i128) {
     let (p, q) = (e * t, f.order);
     num = num * q + p * den;
     den *= q;
-    let g = gcd(num, den);
+    let g = gcd_i128(num, den).max(1);
     num /= g;
     den /= g;
   }
   num = num.rem_euclid(den);
-  let g = gcd(num, den);
+  let g = gcd_i128(num, den).max(1);
   (num / g, den / g)
 }
 
@@ -420,7 +416,7 @@ pub fn dirichlet_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // chi(a) for a = 1..k as rotations; None where chi vanishes
   let rotations: Vec<Option<(i128, i128)>> = (1..=k)
     .map(|a| {
-      if gcd(a, k) == 1 {
+      if gcd_i128(a, k) <= 1 {
         Some(total_rotation(&factors, &exps, a))
       } else {
         None

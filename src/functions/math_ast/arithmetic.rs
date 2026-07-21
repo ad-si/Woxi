@@ -286,7 +286,7 @@ fn try_series_data_plus(
           "SeriesData denom must be Integer".into(),
         )
       })?;
-      let g = numeric_utils::gcd(common_denom.abs(), d.abs());
+      let g = gcd_i128(common_denom, d);
       if g == 0 {
         return Ok(None);
       }
@@ -455,7 +455,7 @@ fn try_series_data_times(
           "SeriesData denom must be Integer".into(),
         )
       })?;
-      let g = numeric_utils::gcd(common_denom.abs(), d.abs());
+      let g = gcd_i128(common_denom, d);
       if g == 0 {
         return Ok(None);
       }
@@ -1606,7 +1606,7 @@ impl Coeff {
         {
           let mut sd = c;
           let mut sn = sn;
-          let g = gcd(sn, sd);
+          let g = gcd_i128(sn, sd);
           sn /= g;
           sd /= g;
           if sd < 0 {
@@ -1668,7 +1668,7 @@ impl Coeff {
         {
           let mut sn = sn;
           let mut sd = sd;
-          let g = gcd(sn, sd);
+          let g = gcd_i128(sn, sd);
           sn /= g;
           sd /= g;
           if sd < 0 {
@@ -6245,7 +6245,7 @@ fn try_series_data_times_var_power(
   };
 
   // Lift to the common denominator d = lcm(denom, q).
-  let g = numeric_utils::gcd(denom.abs(), q.abs());
+  let g = gcd_i128(denom, q);
   if g == 0 {
     return Ok(None);
   }
@@ -8018,7 +8018,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .and_then(|c2| c2.checked_mul(rn))
         .zip(cd.checked_mul(cd).and_then(|d2| d2.checked_mul(rd)));
       if let Some((mut num, mut den)) = merged {
-        let g = gcd(num.abs(), den).max(1);
+        let g = gcd_i128(num, den).max(1);
         num /= g;
         den /= g;
         let (s, p1) = extract_square_factor_i128(num.abs());
@@ -8681,7 +8681,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     && *n > 0
   {
     let denom = d * d;
-    let g = gcd(*n, denom);
+    let g = gcd_i128(*n, denom);
     let reduced_d = (denom / g) as u64;
     // Check that the reduced denominator has no perfect square factors
     let mut has_sq_factor = false;
@@ -8972,7 +8972,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
               _ => None,
             })
             .unwrap_or(1);
-          if gcd(num_int as i128, den_int as i128) > 1 {
+          if gcd_i128(num_int as i128, den_int as i128) > 1 {
             let mut all_factors = num_factors;
             for df in den_factors {
               all_factors.push(power_two(&df, &Expr::Integer(-1))?);
@@ -9316,7 +9316,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     // Reduce mod 2*y_den (since y mod 2 means y_num mod 2*y_den).
     let modulus = 2 * y_den;
     y_num = y_num.rem_euclid(modulus);
-    let g = crate::functions::math_ast::gcd(y_num.abs(), y_den);
+    let g = gcd_i128(y_num, y_den);
     let (yn, yd) = (y_num / g, y_den / g);
     // Build -(-1)^Rational[yn, yd]. If yn == 0, (-1)^0 = 1, so result = -1.
     if yn == 0 {
@@ -9354,14 +9354,14 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     // y = p / (2q), reduced mod 2 into [0, 2).
     let y_den = 2 * q;
     let y_num = p.rem_euclid(2 * y_den);
-    let g = crate::functions::math_ast::gcd(y_num.abs(), y_den);
+    let g = gcd_i128(y_num, y_den);
     let (mut yn, mut yd) = (y_num / g, y_den / g);
     let mut sign = 1i128;
     if yn >= yd {
       // y in [1, 2): (-1)^y = -(-1)^(y-1).
       yn -= yd;
       sign = -1;
-      let g2 = crate::functions::math_ast::gcd(yn.abs(), yd);
+      let g2 = gcd_i128(yn, yd);
       if g2 > 1 {
         yn /= g2;
         yd /= g2;

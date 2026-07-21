@@ -8,6 +8,7 @@
 //! unevaluated.
 
 use crate::InterpreterError;
+use crate::functions::math_ast::gcd;
 use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 use std::collections::BTreeMap;
 
@@ -52,8 +53,6 @@ fn mod_inverse(a: i128, p: i128) -> Option<i128> {
   }
   Some(old_s.rem_euclid(p))
 }
-
-use crate::functions::math_ast::gcd;
 
 fn norm(f: Frac) -> Option<Frac> {
   if f.1 == 0 {

@@ -11,6 +11,7 @@
 //! generous iteration budget so it can never cycle on degenerate problems.
 
 use crate::InterpreterError;
+use crate::functions::math_ast::gcd_bigint;
 use crate::syntax::{Expr, unevaluated};
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
@@ -46,7 +47,7 @@ impl Rat {
       self.num = -&self.num;
       self.den = -&self.den;
     }
-    let g = gcd_big(&self.num.abs(), &self.den.abs());
+    let g = gcd_bigint(&self.num, &self.den);
     if !g.is_zero() && !g.is_one() {
       self.num /= &g;
       self.den /= &g;
@@ -93,17 +94,6 @@ impl Rat {
       }
     }
   }
-}
-
-fn gcd_big(a: &BigInt, b: &BigInt) -> BigInt {
-  let mut a = a.clone();
-  let mut b = b.clone();
-  while !b.is_zero() {
-    let t = &a % &b;
-    a = b;
-    b = t;
-  }
-  a
 }
 
 fn bigint_to_expr(n: &BigInt) -> Expr {

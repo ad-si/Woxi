@@ -400,12 +400,10 @@ impl BigUint {
   }
 
   fn gcd(a: &Self, b: &Self) -> Self {
-    let mut a = a.clone();
-    let mut b = b.clone();
+    let (mut a, mut b) = (a.clone(), b.clone());
     while !b.is_zero() {
       let (_, r) = a.divmod(&b);
-      a = b;
-      b = r;
+      (a, b) = (b, r);
     }
     a
   }
@@ -3907,9 +3905,6 @@ pub fn number_decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   } else {
-    let gcd_i128 = |a: i128, b: i128| -> i128 {
-      crate::functions::math_ast::gcd(a, b).max(1)
-    };
     let (mut rn, mut rd) = match value {
       Num::Exact(p, q) => (p, q),
       Num::Real(_) => unreachable!(),
@@ -3930,7 +3925,7 @@ pub fn number_decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // rem -= q_int * u
         rn = rn * ud - q_int * un * rd;
         rd *= ud;
-        let g = gcd_i128(rn, rd);
+        let g = gcd_i128(rn, rd).max(1);
         rn /= g;
         rd /= g;
       }

@@ -4,7 +4,7 @@
 //! and integration.
 
 use crate::InterpreterError;
-use crate::functions::math_ast::{gcd, gcd as gcd_i128, is_sqrt, make_sqrt};
+use crate::functions::math_ast::{gcd as gcd_i128, is_sqrt, make_sqrt};
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
 };
@@ -5129,7 +5129,7 @@ fn try_integrate_trig_quotient(
       for j in 1..=k {
         let binom = crate::functions::binomial_coeff(k as i128, j as i128);
         let sign = if j % 2 == 1 { 1 } else { -1 };
-        let g = gcd_i128_calc(binom.abs(), 2 * j as i128);
+        let g = gcd_i128(binom, 2 * j as i128).max(1);
         terms.push(coeff_term(
           sign * binom / g,
           2 * j as i128 / g,
@@ -5172,7 +5172,7 @@ fn try_integrate_trig_quotient(
       for j in 1..=k {
         let binom = crate::functions::binomial_coeff(k as i128, j as i128);
         let sign = if j % 2 == 1 { -1 } else { 1 };
-        let g = gcd_i128_calc(binom.abs(), 2 * j as i128);
+        let g = gcd_i128(binom, 2 * j as i128).max(1);
         terms.push(coeff_term(
           sign * binom / g,
           2 * j as i128 / g,
@@ -5225,15 +5225,6 @@ fn collect_times_factor_refs<'a>(
     }
     _ => num.push(expr),
   }
-}
-
-fn gcd_i128_calc(mut a: i128, mut b: i128) -> i128 {
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a.max(1)
 }
 
 /// Build the antiderivative of Exp[-a*x^2] (`erf_name` = "Erf") or of
@@ -14641,7 +14632,7 @@ fn rat_reduce(num: i128, den: i128) -> (i128, i128) {
   if num == 0 {
     return (0, 1);
   }
-  let g = gcd(num.abs(), den.abs());
+  let g = gcd_i128(num, den);
   let (n, d) = (num / g, den / g);
   if d < 0 { (-n, -d) } else { (n, d) }
 }
@@ -15902,7 +15893,7 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // value / factorial
       match &value {
         Expr::Integer(n) => {
-          let g = gcd(n.abs(), factorial);
+          let g = gcd_i128(*n, factorial);
           let (num, den) = (n / g, factorial / g);
           if den == 1 {
             Expr::Integer(num)

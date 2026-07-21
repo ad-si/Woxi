@@ -3,6 +3,7 @@
 //! These functions work directly with `Expr` AST nodes.
 
 use crate::InterpreterError;
+use crate::functions::math_ast::gcd as gcd_i128;
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, unevaluated,
 };
@@ -179,21 +180,11 @@ struct QuadNum {
   d: i128,         // square-free radicand > 1 (only meaningful when b != 0)
 }
 
-fn qi_gcd(a: i128, b: i128) -> i128 {
-  let (mut a, mut b) = (a.abs(), b.abs());
-  while b != 0 {
-    let t = a % b;
-    a = b;
-    b = t;
-  }
-  a.max(1)
-}
-
 fn qi_reduce(n: i128, d: i128) -> (i128, i128) {
   if d == 0 {
     return (n, 0);
   }
-  let g = qi_gcd(n, d);
+  let g = gcd_i128(n, d).max(1);
   let (mut n, mut d) = (n / g, d / g);
   if d < 0 {
     n = -n;

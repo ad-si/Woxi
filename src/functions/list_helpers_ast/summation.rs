@@ -2,6 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
+use crate::functions::math_ast::gcd as gcd_i128;
 use crate::syntax::{BinaryOperator, UnaryOperator, unevaluated};
 
 /// AnglePath[{θ1, θ2, ...}] - path with unit steps and cumulative turning angles.
@@ -3663,24 +3664,12 @@ fn match_exponential_base(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
   Some((coeff, base))
 }
 
-/// gcd of two non-negative integers.
-fn tr_gcd(mut a: i128, mut b: i128) -> i128 {
-  a = a.abs();
-  b = b.abs();
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a
-}
-
 /// Reduce a rational (num, den) to lowest terms with a positive denominator.
 fn tr_reduce(n: i128, d: i128) -> (i128, i128) {
   if d == 0 {
     return (n, 0);
   }
-  let g = tr_gcd(n, d).max(1);
+  let g = gcd_i128(n, d).max(1);
   let (mut n, mut d) = (n / g, d / g);
   if d < 0 {
     n = -n;
@@ -3823,7 +3812,7 @@ fn try_telescoping_rational_sum(
   let mut roots: Vec<i128> = Vec::new();
   // Strip integer denominators so the candidate search works on integers.
   let lcm_den = den.iter().fold(1i128, |acc, &(_, d)| {
-    let g = tr_gcd(acc, d);
+    let g = gcd_i128(acc, d);
     acc / g * d
   });
   let int_coeffs: Vec<i128> =
@@ -3968,7 +3957,7 @@ fn try_rational_pole_telescoping_sum(
 
   // Integer-clear the denominator for the rational-root search.
   let lcm_den = den.iter().fold(1i128, |acc, &(_, d)| {
-    let g = tr_gcd(acc, d);
+    let g = gcd_i128(acc, d);
     acc / g * d
   });
   let mut int_coeffs: Vec<i128> =

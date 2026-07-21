@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::functions::math_ast::make_sqrt;
+use crate::functions::math_ast::{gcd as gcd_i128, make_sqrt};
 use crate::syntax::{BinaryOperator, UnaryOperator, bool_expr, unevaluated};
 
 pub fn dispatch_linear_algebra_functions(
@@ -3862,8 +3862,6 @@ fn kronecker_product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(acc_owned)
 }
-
-use crate::functions::math_ast::gcd as gcd_i128;
 
 /// Binary dissimilarity functions for binary (0/1) vectors.
 fn binary_dissimilarity_ast(

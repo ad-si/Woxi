@@ -1,11 +1,11 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
+use crate::functions::calculus_ast::simplify;
+use crate::functions::math_ast::gcd as gcd_i128;
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, expr_to_string,
 };
-
-use crate::functions::calculus_ast::simplify;
 
 // ─── Refine ─────────────────────────────────────────────────────────
 
@@ -10062,17 +10062,6 @@ fn try_trig_polynomial_simplify(expr: &Expr) -> Option<Expr> {
   best
 }
 
-fn integer_gcd(mut a: i128, mut b: i128) -> i128 {
-  a = a.abs();
-  b = b.abs();
-  while b != 0 {
-    let t = b;
-    b = a % b;
-    a = t;
-  }
-  a
-}
-
 /// Perform Pythagorean substitution and power reduction using integer arithmetic.
 /// If `sub_sin`: substitute Sin²=1-Cos², producing polynomial in Cos.
 /// If `!sub_sin`: substitute Cos²=1-Sin², producing polynomial in Sin.
@@ -10180,7 +10169,7 @@ fn try_trig_sub_and_reduce(
   // Step 3: Simplify - find GCD of all numerators and denominator
   let mut g = common_denom;
   for &v in angle_coeffs.values() {
-    g = integer_gcd(g, v);
+    g = gcd_i128(g, v);
   }
   let final_denom = common_denom / g;
 
@@ -10191,7 +10180,7 @@ fn try_trig_sub_and_reduce(
   // Factor out GCD of all simplified numerators
   let mut num_gcd = 0i128;
   for &v in simplified_coeffs.values() {
-    num_gcd = integer_gcd(num_gcd, v);
+    num_gcd = gcd_i128(num_gcd, v);
   }
   if num_gcd == 0 {
     return None;

@@ -6,6 +6,7 @@
 //! c > 0 return their conditions.
 
 use crate::InterpreterError;
+use crate::functions::math_ast::gcd as gcd_i128;
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, unevaluated,
 };
@@ -291,8 +292,6 @@ fn contains_imaginary(expr: &Expr) -> bool {
 //    complexes a non-constant polynomial always has zeros (and a non-empty
 //    complement), so those collapse without needing separability.
 
-use crate::functions::math_ast::gcd;
-
 /// Extract a rational literal (`Integer` or `Rational[n, d]`) from a leaf.
 fn expr_to_rational(e: &Expr) -> Option<(i128, i128)> {
   match e {
@@ -322,7 +321,7 @@ impl Q {
   }
   fn new(n: i128, d: i128) -> Q {
     let (mut n, mut d) = if d < 0 { (-n, -d) } else { (n, d) };
-    let g = gcd(n, d);
+    let g = gcd_i128(n, d);
     if g != 0 {
       n /= g;
       d /= g;

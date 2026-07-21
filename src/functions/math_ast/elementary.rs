@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::functions::math_ast::expr_to_rational;
+use crate::functions::math_ast::{expr_to_rational, gcd as gcd_i128};
 use crate::syntax::{
   BinaryOperator, Expr, ExprForm, UnaryOperator, expr_to_string, unevaluated,
 };
@@ -166,13 +166,13 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Handle exact complex numbers and rationals: Abs[a + b*I] = Sqrt[a^2 + b^2]
   if let Some(((rn, rd), (in_, id))) = try_extract_complex_exact(&args[0]) {
-    let g_r = gcd(rn, rd);
+    let g_r = gcd_i128(rn, rd);
     let (rn, rd) = if rd < 0 {
       (-rn / g_r, -rd / g_r)
     } else {
       (rn / g_r, rd / g_r)
     };
-    let g_i = gcd(in_, id);
+    let g_i = gcd_i128(in_, id);
     let (in_, id) = if id < 0 {
       (-in_ / g_i, -id / g_i)
     } else {
@@ -607,13 +607,13 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Handle complex numbers: Sign[a + b*I] = (a + b*I) / Abs[a + b*I]
   if let Some(((rn, rd), (in_, id))) = try_extract_complex_exact(&args[0]) {
-    let g_r = gcd(rn, rd);
+    let g_r = gcd_i128(rn, rd);
     let (rn, rd) = if rd < 0 {
       (-rn / g_r, -rd / g_r)
     } else {
       (rn / g_r, rd / g_r)
     };
-    let g_i = gcd(in_, id);
+    let g_i = gcd_i128(in_, id);
     let (in_, id) = if id < 0 {
       (-in_ / g_i, -id / g_i)
     } else {
@@ -643,7 +643,7 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .and_then(|a| id.checked_mul(id).and_then(|b| a.checked_mul(b))),
     ) {
       // Simplify |z|^2 fraction
-      let g_abs = gcd(abs2_num.abs(), abs2_den.abs());
+      let g_abs = gcd_i128(abs2_num, abs2_den);
       let (abs2_n, abs2_d) = (abs2_num / g_abs, abs2_den / g_abs);
 
       // Check if |z|^2 is a perfect square (so |z| is rational)
@@ -1290,8 +1290,6 @@ fn extract_int_coeff(term: &Expr) -> Option<(i128, Expr)> {
 /// If the GCD is a perfect square, factor it out.
 /// E.g. Sqrt[4 + 36*t^2 + 36*t^4] → 2*Sqrt[1 + 9*t^2 + 9*t^4]
 fn try_sqrt_plus_gcd(expr: &Expr) -> Option<Expr> {
-  use crate::functions::math_ast::numeric_utils::gcd;
-
   let terms = match expr {
     Expr::FunctionCall { name, args } if name == "Plus" => args,
     _ => return None,
@@ -1313,7 +1311,7 @@ fn try_sqrt_plus_gcd(expr: &Expr) -> Option<Expr> {
   // Compute GCD of absolute values of all coefficients
   let mut g = pairs[0].0.abs();
   for &(c, _) in &pairs[1..] {
-    g = gcd(g, c.abs()).unsigned_abs() as i128;
+    g = gcd_i128(g, c);
     if g <= 1 {
       return None;
     }
@@ -1389,9 +1387,9 @@ fn try_sqrt_gaussian(expr: &Expr) -> Option<Expr> {
   let ((rn, rd), (in_, id)) = try_extract_complex_exact(expr)?;
   // Normalize to integers a and b where z = a + b*I
   // Require both parts to be integers (denominator 1 after reducing)
-  let g_r = crate::functions::math_ast::numeric_utils::gcd(rn, rd).abs();
+  let g_r = gcd_i128(rn, rd);
   let (rn, rd) = (rn / g_r, rd / g_r);
-  let g_i = crate::functions::math_ast::numeric_utils::gcd(in_, id).abs();
+  let g_i = gcd_i128(in_, id);
   let (in_, id) = (in_ / g_i, id / g_i);
   // Pure real cases are handled by existing code; skip to avoid duplication
   if in_ == 0 {
@@ -3453,8 +3451,6 @@ fn nice_step_rational(raw: f64) -> Option<(i128, i128)> {
   let g = gcd_i128(sn.abs(), sd.abs()).max(1);
   Some((sn / g, sd / g))
 }
-
-use crate::functions::math_ast::gcd as gcd_i128;
 
 /// Reduce a (numerator, denominator) pair to lowest terms with a positive
 /// denominator.

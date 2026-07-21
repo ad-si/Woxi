@@ -5,7 +5,7 @@
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::{
-  expr_to_rational, make_sqrt, try_eval_to_f64,
+  expr_to_rational, gcd as gcd_i128, make_sqrt, try_eval_to_f64,
 };
 use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
@@ -1342,8 +1342,6 @@ fn eval_divide(a: &Expr, b: &Expr) -> Expr {
     }
   }
 }
-
-use crate::functions::math_ast::gcd as gcd_i128;
 
 /// The rectangular shape of a nested-List array, found by descending through
 /// the first element of each level. A non-list has an empty shape; `{a, b}`
@@ -7289,7 +7287,7 @@ pub fn singular_value_decomposition_ast(
 /// extracted (e.g. `Sqrt[20/7]` → `2*Sqrt[5/7]`). Other expression shapes
 /// pass through unchanged.
 fn simplify_radical_factor(expr: &Expr) -> Expr {
-  use crate::functions::math_ast::{gcd, make_rational, sqrt_ast, times_ast};
+  use crate::functions::math_ast::{make_rational, sqrt_ast, times_ast};
   let extract_int = |e: &Expr| -> Option<i128> {
     if let Expr::Integer(n) = e {
       Some(*n)
@@ -7517,7 +7515,7 @@ fn simplify_radical_factor(expr: &Expr) -> Expr {
   if inner_den == 0 {
     return expr.clone();
   }
-  let g = gcd(inner_num.abs(), inner_den.abs());
+  let g = gcd_i128(inner_num, inner_den);
   if g == 0 {
     return expr.clone();
   }
@@ -10247,14 +10245,6 @@ fn la_mod_inv(a: i128, m: i128) -> i128 {
   old_s.rem_euclid(m)
 }
 
-fn la_gcd(a: i128, b: i128) -> i128 {
-  let (mut a, mut b) = (a.abs(), b.abs());
-  while b != 0 {
-    (a, b) = (b, a % b);
-  }
-  a
-}
-
 /// Fraction-free integer determinant (Bareiss).
 fn la_int_det(mat: &[Vec<i128>]) -> i128 {
   let n = mat.len();
@@ -10322,7 +10312,7 @@ fn la_rref(mat: &mut [Vec<i128>], m: i128) -> Option<Vec<usize>> {
     if rank == rows {
       break;
     }
-    let Some(pr) = (rank..rows).find(|&r| la_gcd(mat[r][col], m) == 1) else {
+    let Some(pr) = (rank..rows).find(|&r| gcd_i128(mat[r][col], m) == 1) else {
       if (rank..rows).any(|r| mat[r][col] != 0) {
         return None;
       }
@@ -10387,7 +10377,7 @@ pub fn inverse_modulus_ast(
     .map(|r| r.iter().map(|c| c.rem_euclid(m)).collect())
     .collect();
   let det = la_int_det(&reduced).rem_euclid(m);
-  let g = la_gcd(det, m);
+  let g = gcd_i128(det, m);
   if g != 1 {
     if la_is_prime(m) {
       crate::emit_message(&format!(
