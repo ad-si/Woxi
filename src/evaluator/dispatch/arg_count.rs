@@ -1187,6 +1187,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "RomanNumeral" => Some((1, 1)),
     "FromRomanNumeral" => Some((1, 1)),
     "Root" => Some((2, 3)),
+    "RootReduce" => Some((1, 1)),
     "NumberFieldSignature" => Some((1, 3)),
     "RootMeanSquare" => Some((1, 1)),
     "Roots" => Some((2, 2)),

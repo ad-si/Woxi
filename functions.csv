@@ -1377,7 +1377,7 @@ ConvolutionLayer,Neural network convolution layer,🚫,io,11.0,1393
 EmitSound,Emit a sound,🚫,io,6.0,1394
 SurvivalFunction,Survival function for distributions,✅,pure,8.0,1395
 ExpIntegralE,Generalized exponential integral E_n(z),✅,pure,1.0,1397
-RootReduce,Reduce algebraic number to minimal polynomial root,🚫,pure,3.0,1397
+RootReduce,Reduce an algebraic number to a simplified radical or a minimal-polynomial Root object,✅,pure,3.0,1397
 DotDashed,Dot-dashed line style directive,✅,none,6.0,1399
 ListLogLinearPlot,Plots data with logarithmic x-axis,✅,pure,6.0,1399
 ParametricRegion,Represent a parametric region,🚫,pure,10.0,1400

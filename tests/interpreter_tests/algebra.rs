@@ -10021,6 +10021,74 @@ mod interpolating_polynomial {
   }
 }
 
+// RootReduce[α] reduces an algebraic number to canonical form: rationals stay
+// rational, degree-2 numbers become a simplified radical, and higher-degree
+// numbers become a Root[minpoly &, k, 0] object. All expected values verified
+// against wolframscript.
+mod root_reduce {
+  use super::*;
+
+  #[test]
+  fn rationals_pass_through() {
+    assert_eq!(interpret("RootReduce[3]").unwrap(), "3");
+    assert_eq!(interpret("RootReduce[2/3]").unwrap(), "2/3");
+  }
+
+  #[test]
+  fn quadratics_stay_radical() {
+    assert_eq!(interpret("RootReduce[Sqrt[2]]").unwrap(), "Sqrt[2]");
+    assert_eq!(interpret("RootReduce[1 + Sqrt[2]]").unwrap(), "1 + Sqrt[2]");
+    assert_eq!(
+      interpret("RootReduce[(1 + Sqrt[5])/2]").unwrap(),
+      "(1 + Sqrt[5])/2"
+    );
+    assert_eq!(interpret("RootReduce[Sqrt[2]*Sqrt[3]]").unwrap(), "Sqrt[6]");
+    assert_eq!(interpret("RootReduce[I]").unwrap(), "I");
+  }
+
+  #[test]
+  fn nested_radical_denests() {
+    // Sqrt[3 + 2 Sqrt[2]] = 1 + Sqrt[2]; the annihilating polynomial is
+    // reducible (x^4 - 6 x^2 + 1) so RootReduce must pick the degree-2 factor.
+    assert_eq!(
+      interpret("RootReduce[Sqrt[3 + 2 Sqrt[2]]]").unwrap(),
+      "1 + Sqrt[2]"
+    );
+  }
+
+  #[test]
+  fn higher_degree_becomes_root_object() {
+    assert_eq!(
+      interpret("RootReduce[Sqrt[2] + Sqrt[3]]").unwrap(),
+      "Root[1 - 10*#1^2 + #1^4 & , 4, 0]"
+    );
+    assert_eq!(
+      interpret("RootReduce[2^(1/3) + 2^(2/3)]").unwrap(),
+      "Root[-6 - 6*#1 + #1^3 & , 1, 0]"
+    );
+    // Sqrt[5 + 2 Sqrt[6]] = Sqrt[2] + Sqrt[3] (degree 4).
+    assert_eq!(
+      interpret("RootReduce[Sqrt[5 + 2 Sqrt[6]]]").unwrap(),
+      "Root[1 - 10*#1^2 + #1^4 & , 4, 0]"
+    );
+  }
+
+  #[test]
+  fn existing_root_is_kept() {
+    assert_eq!(
+      interpret("RootReduce[Root[#^3 - 2 &, 1]]").unwrap(),
+      "Root[-2 + #1^3 & , 1, 0]"
+    );
+  }
+
+  #[test]
+  fn non_algebraic_returns_unchanged() {
+    assert_eq!(interpret("RootReduce[x]").unwrap(), "x");
+    assert_eq!(interpret("RootReduce[Pi]").unwrap(), "Pi");
+    assert_eq!(interpret("RootReduce[Sin[1]]").unwrap(), "Sin[1]");
+  }
+}
+
 mod minimal_polynomial {
   use super::*;
 

@@ -67,6 +67,294 @@ pub fn minimal_polynomial_pure_ast(
   })
 }
 
+/// RootReduce[α] — reduce an algebraic number to canonical form. Rationals
+/// stay rational, degree-2 numbers are returned as a simplified radical, and
+/// higher-degree numbers become a `Root[minpoly &, k, 0]` object (matching
+/// wolframscript, which only uses radicals up to quadratics).
+pub fn root_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(unevaluated("RootReduce", args));
+  }
+  let alpha = &args[0];
+
+  // Rationals reduce to themselves; an existing Root object is already reduced.
+  match alpha {
+    Expr::Integer(_) | Expr::BigInteger(_) => return Ok(alpha.clone()),
+    Expr::FunctionCall { name, .. } if name == "Rational" || name == "Root" => {
+      return Ok(alpha.clone());
+    }
+    _ => {}
+  }
+
+  // The minimal polynomial gives the degree and the annihilating polynomial.
+  // compute_minpoly_coeffs can return a reducible (square-free) annihilating
+  // polynomial for nested radicals — e.g. x^4 - 6 x^2 + 1 for Sqrt[3+2Sqrt[2]],
+  // which factors as (x^2-2x-1)(x^2+2x-1). Factor it and keep only the
+  // irreducible factor α actually satisfies, so the true minimal degree is used.
+  // A non-algebraic argument (Pi, Sin[1], a free symbol, …) is returned
+  // unchanged, matching wolframscript.
+  let coeffs = match compute_minpoly_coeffs(alpha)? {
+    Some(c) => refine_minimal_coeffs(alpha, &make_square_free(&c)),
+    None => return Ok(alpha.clone()),
+  };
+  let degree = coeffs.len().saturating_sub(1);
+  let target = root_reduce_numeric(alpha);
+
+  // Degree 1 → the rational root -c0/c1. Verify it numerically matches α; a
+  // mismatch means the annihilating polynomial did not capture α (e.g. an
+  // odd root of a negative number), so leave α unchanged rather than emit a
+  // wrong value.
+  if degree <= 1 {
+    if coeffs.len() < 2 || coeffs[1] == 0 {
+      return Ok(alpha.clone());
+    }
+    let val = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(-coeffs[0]), Expr::Integer(coeffs[1])].into(),
+    })?;
+    match (target, root_reduce_numeric(&val)) {
+      (Some(t), Some(v)) if !complex_close(t, v) => return Ok(alpha.clone()),
+      _ => {}
+    }
+    return Ok(val);
+  }
+
+  // Degree 2 → a simplified radical (-c1 ± Sqrt[c1^2 - 4 c0 c2]) / (2 c2),
+  // choosing the sign whose value matches α numerically.
+  if degree == 2 {
+    let (c0, c1, c2) = (coeffs[0], coeffs[1], coeffs[2]);
+    let disc = c1 * c1 - 4 * c0 * c2;
+    for sign in [1i128, -1] {
+      let sqrt_disc = Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![Expr::Integer(disc)].into(),
+      };
+      let signed = if sign == 1 {
+        sqrt_disc
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(-1)),
+          right: Box::new(sqrt_disc),
+        }
+      };
+      let numerator = Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(Expr::Integer(-c1)),
+        right: Box::new(signed),
+      };
+      let candidate = Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(numerator),
+        right: Box::new(Expr::Integer(2 * c2)),
+      };
+      let simplified =
+        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "Simplify".to_string(),
+          args: vec![candidate].into(),
+        })?;
+      match (target, root_reduce_numeric(&simplified)) {
+        (Some(t), Some(v)) if complex_close(t, v) => return Ok(simplified),
+        // With no numeric handle fall back to the principal (+) root.
+        (None, _) if sign == 1 => return Ok(simplified),
+        _ => {}
+      }
+    }
+    return Ok(alpha.clone());
+  }
+
+  // Degree >= 3 → Root[minpoly &, k, 0] with k the index of the root equal to α.
+  // Build the pure function from the refined coefficients (not via
+  // MinimalPolynomial, whose annihilating polynomial may be reducible).
+  let dummy = "WoxiRootReducePureVar";
+  let poly =
+    crate::evaluator::evaluate_expr_to_expr(&coeffs_to_expr(&coeffs, dummy))?;
+  let pure = Expr::Function {
+    body: Box::new(replace_identifier_with_slot1(&poly, dummy)),
+  };
+  if let Some(target) = target {
+    for k in 1..=degree {
+      let root_k = Expr::FunctionCall {
+        name: "Root".to_string(),
+        args: vec![pure.clone(), Expr::Integer(k as i128)].into(),
+      };
+      if let Some(v) = root_reduce_numeric(&root_k)
+        && complex_close(target, v)
+      {
+        return Ok(Expr::FunctionCall {
+          name: "Root".to_string(),
+          args: vec![pure, Expr::Integer(k as i128), Expr::Integer(0)].into(),
+        });
+      }
+    }
+  }
+  Ok(alpha.clone())
+}
+
+/// Numerically evaluate `expr` to a complex `(re, im)` pair via `N`, or `None`
+/// when it does not reduce to a number.
+fn root_reduce_numeric(expr: &Expr) -> Option<(f64, f64)> {
+  let n = Expr::FunctionCall {
+    name: "N".to_string(),
+    args: vec![expr.clone()].into(),
+  };
+  let ev = crate::evaluator::evaluate_expr_to_expr(&n).ok()?;
+  if let Some(r) = crate::functions::math_ast::try_eval_to_f64(&ev) {
+    return Some((r, 0.0));
+  }
+  crate::functions::math_ast::try_extract_complex_float(&ev)
+}
+
+/// Whether two complex numbers agree to a tight relative tolerance.
+fn complex_close(a: (f64, f64), b: (f64, f64)) -> bool {
+  let scale = 1.0 + a.0.abs() + a.1.abs() + b.0.abs() + b.1.abs();
+  (a.0 - b.0).abs() < 1e-9 * scale && (a.1 - b.1).abs() < 1e-9 * scale
+}
+
+/// Reduce an (already square-free) annihilating polynomial to the irreducible
+/// factor that `alpha` actually satisfies, returning its integer coefficients
+/// in ascending order. Falls back to the input coefficients when factoring or
+/// factor selection is inconclusive.
+fn refine_minimal_coeffs(alpha: &Expr, coeffs: &[i128]) -> Vec<i128> {
+  if coeffs.len() <= 2 {
+    return coeffs.to_vec();
+  }
+  let var = "WoxiRootReduceFactorVar";
+  let poly = coeffs_to_expr(coeffs, var);
+  let factored =
+    match crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Factor".to_string(),
+      args: vec![poly].into(),
+    }) {
+      Ok(f) => f,
+      Err(_) => return coeffs.to_vec(),
+    };
+  let factors = collect_poly_factors(&factored, var);
+  if factors.len() <= 1 {
+    return coeffs.to_vec();
+  }
+  for f in &factors {
+    let subbed = substitute_identifier(f, var, alpha);
+    if let Some(v) = root_reduce_numeric(&subbed)
+      && v.0.abs() < 1e-8
+      && v.1.abs() < 1e-8
+      && let Some(c) = factor_int_coeffs(f, var)
+      && c.len() >= 2
+    {
+      return c;
+    }
+  }
+  coeffs.to_vec()
+}
+
+/// Collect the multiplicative factors of `expr` that involve `var` (unwrapping
+/// `Power[base, k]` to its base and ignoring constant factors). Reuses the
+/// module's `collect_times_factors` / `expr_contains_identifier` helpers.
+fn collect_poly_factors(expr: &Expr, var: &str) -> Vec<Expr> {
+  collect_times_factors(expr)
+    .iter()
+    .map(|f| match f {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        args[0].clone()
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        ..
+      } => (**left).clone(),
+      other => (*other).clone(),
+    })
+    .filter(|f| rr_contains_identifier(f, var))
+    .collect()
+}
+
+/// Whether `expr` contains the identifier `name` anywhere.
+fn rr_contains_identifier(expr: &Expr, name: &str) -> bool {
+  match expr {
+    Expr::Identifier(n) => n == name,
+    Expr::BinaryOp { left, right, .. } => {
+      rr_contains_identifier(left, name) || rr_contains_identifier(right, name)
+    }
+    Expr::UnaryOp { operand, .. } => rr_contains_identifier(operand, name),
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(|a| rr_contains_identifier(a, name))
+    }
+    Expr::List(items) => items.iter().any(|a| rr_contains_identifier(a, name)),
+    _ => false,
+  }
+}
+
+/// Replace every `Identifier(name)` with `replacement`.
+fn substitute_identifier(expr: &Expr, name: &str, replacement: &Expr) -> Expr {
+  match expr {
+    Expr::Identifier(n) if n == name => replacement.clone(),
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(substitute_identifier(left, name, replacement)),
+      right: Box::new(substitute_identifier(right, name, replacement)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(substitute_identifier(operand, name, replacement)),
+    },
+    Expr::FunctionCall { name: fname, args } => Expr::FunctionCall {
+      name: fname.clone(),
+      args: args
+        .iter()
+        .map(|a| substitute_identifier(a, name, replacement))
+        .collect(),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|a| substitute_identifier(a, name, replacement))
+        .collect(),
+    ),
+    other => other.clone(),
+  }
+}
+
+/// Extract the integer coefficients (ascending order) of a polynomial factor
+/// via `CoefficientList`, normalized to a positive leading coefficient with
+/// content 1. Returns None when any coefficient is not an integer.
+fn factor_int_coeffs(factor: &Expr, var: &str) -> Option<Vec<i128>> {
+  let clist = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "CoefficientList".to_string(),
+    args: vec![factor.clone(), Expr::Identifier(var.to_string())].into(),
+  })
+  .ok()?;
+  let Expr::List(ref items) = clist else {
+    return None;
+  };
+  let mut coeffs: Vec<i128> = Vec::with_capacity(items.len());
+  for it in items.iter() {
+    coeffs.push(expr_to_i128(it)?);
+  }
+  while coeffs.len() > 1 && *coeffs.last().unwrap() == 0 {
+    coeffs.pop();
+  }
+  if coeffs.is_empty() {
+    return None;
+  }
+  if *coeffs.last().unwrap() < 0 {
+    for c in coeffs.iter_mut() {
+      *c = -*c;
+    }
+  }
+  let mut g = 0i128;
+  for &c in &coeffs {
+    g = gcd_i128(g, c.abs());
+  }
+  if g > 1 {
+    for c in coeffs.iter_mut() {
+      *c /= g;
+    }
+  }
+  Some(coeffs)
+}
+
 /// Recursively replace every `Identifier(name)` with `Slot(1)`.
 fn replace_identifier_with_slot1(expr: &Expr, name: &str) -> Expr {
   match expr {

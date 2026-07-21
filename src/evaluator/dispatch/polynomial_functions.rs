@@ -190,6 +190,9 @@ pub fn dispatch_polynomial_functions(
     "Root" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::polynomial_ast::root_ast(args));
     }
+    "RootReduce" if args.len() == 1 => {
+      return Some(crate::functions::polynomial_ast::root_reduce_ast(args));
+    }
     "NumberFieldSignature" if (1..=3).contains(&args.len()) => {
       return Some(
         crate::functions::polynomial_ast::number_field_signature_ast(args),
