@@ -81,6 +81,18 @@ pub fn tally_with_test_ast(
         counts[i] += 1;
         continue 'outer;
       }
+      // A SameTest that does not reduce to True/False draws Tally::smtst from
+      // wolframscript (the pair is then treated as distinct). The standard
+      // General::stop suppression caps the repeats.
+      if !matches!(result, Expr::Identifier(ref s) if s == "False") {
+        let shown =
+          crate::syntax::format_expr(&result, crate::syntax::ExprForm::Output);
+        crate::emit_message(&format!(
+          "Tally::smtst: Application of the SameTest function yielded {shown}, \
+           which evaluates to {shown}. The SameTest function must evaluate to \
+           True or False at every pair of elements."
+        ));
+      }
     }
     reps.push(item.clone());
     counts.push(1);

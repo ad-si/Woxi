@@ -12124,6 +12124,23 @@ mod tally_with_test {
       "{{a, 3}, {b, 2}, {c, 1}}"
     );
   }
+
+  // A SameTest that does not evaluate to True/False draws Tally::smtst and the
+  // pairs are treated as distinct, matching wolframscript.
+  #[test]
+  fn tally_non_boolean_test_emits_smtst() {
+    let r =
+      woxi::interpret_with_stdout("Tally[{1, 1, 2, 3}, {{1}, {3}}]").unwrap();
+    assert_eq!(r.result, "{{1, 1}, {1, 1}, {2, 1}, {3, 1}}");
+    assert!(
+      r.warnings.iter().any(|w| w.contains(
+        "Tally::smtst: Application of the SameTest function yielded \
+         {{1}, {3}}[1, 1], which evaluates to {{1}, {3}}[1, 1]."
+      )),
+      "{:?}",
+      r.warnings
+    );
+  }
 }
 
 mod take_largest {
