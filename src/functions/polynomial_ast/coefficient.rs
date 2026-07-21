@@ -1103,6 +1103,93 @@ pub fn coefficient_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(rules.into()))
 }
 
+/// FromCoefficientRules[rules, {x1, x2, …}] — the inverse of CoefficientRules.
+/// Each rule maps an exponent vector `{e1, e2, …}` to a coefficient; the result
+/// is the sum of `coeff * x1^e1 * x2^e2 * …` over all rules. An empty rule list
+/// yields 0.
+pub fn from_coefficient_rules_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Ok(unevaluated("FromCoefficientRules", args));
+  }
+
+  // The variables may be a single symbol or a list of symbols.
+  let vars: Vec<Expr> = match &args[1] {
+    Expr::List(items) => items.iter().cloned().collect(),
+    v => vec![v.clone()],
+  };
+
+  // The rules argument must be a list of `expvec -> coeff` rules.
+  let Expr::List(rules) = &args[0] else {
+    return Ok(unevaluated("FromCoefficientRules", args));
+  };
+
+  let mut terms: Vec<Expr> = Vec::new();
+  for rule in rules.iter() {
+    let (exps, coeff) = match rule {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref().clone()),
+      _ => return Ok(unevaluated("FromCoefficientRules", args)),
+    };
+    let Expr::List(exp_items) = exps else {
+      return Ok(unevaluated("FromCoefficientRules", args));
+    };
+    // The exponent vector length must match the variable count.
+    if exp_items.len() != vars.len() {
+      return Ok(unevaluated("FromCoefficientRules", args));
+    }
+
+    // Build coeff * Product(var_i ^ e_i). Exponent 0 contributes nothing;
+    // exponent 1 contributes the bare variable.
+    let mut factors: Vec<Expr> = vec![coeff];
+    for (var, exp) in vars.iter().zip(exp_items.iter()) {
+      let e = match exp {
+        Expr::Integer(n) => *n,
+        _ => return Ok(unevaluated("FromCoefficientRules", args)),
+      };
+      if e == 0 {
+        continue;
+      }
+      let factor = if e == 1 {
+        var.clone()
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(var.clone()),
+          right: Box::new(Expr::Integer(e)),
+        }
+      };
+      factors.push(factor);
+    }
+    let term = factors
+      .into_iter()
+      .reduce(|a, b| Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(a),
+        right: Box::new(b),
+      })
+      .unwrap();
+    terms.push(term);
+  }
+
+  if terms.is_empty() {
+    return Ok(Expr::Integer(0));
+  }
+
+  let sum = terms
+    .into_iter()
+    .reduce(|a, b| Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(a),
+      right: Box::new(b),
+    })
+    .unwrap();
+  crate::evaluator::evaluate_expr_to_expr(&sum)
+}
+
 // ─── CoefficientArrays ─────────────────────────────────────────────────
 
 /// CoefficientArrays[poly, var] or CoefficientArrays[poly, {x, y, …}]

@@ -157,6 +157,11 @@ pub fn dispatch_polynomial_functions(
         args,
       ));
     }
+    "FromCoefficientRules" if args.len() == 2 => {
+      return Some(
+        crate::functions::polynomial_ast::from_coefficient_rules_ast(args),
+      );
+    }
     "CoefficientArrays" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::coefficient_arrays_ast(
         args,

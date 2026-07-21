@@ -838,6 +838,51 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn from_coefficient_rules() {
+    // Inverse of CoefficientRules: build a polynomial from exponent-vector rules.
+    assert_eq!(
+      interpret("FromCoefficientRules[{{2, 0} -> 1, {1, 1} -> 1}, {x, y}]")
+        .unwrap(),
+      "x^2 + x*y"
+    );
+    assert_eq!(
+      interpret(
+        "FromCoefficientRules[{{0, 0} -> 3, {1, 0} -> 2, {0, 2} -> 5}, {x, y}]"
+      )
+      .unwrap(),
+      "3 + 2*x + 5*y^2"
+    );
+    // Single variable.
+    assert_eq!(
+      interpret("FromCoefficientRules[{{2} -> 1, {0} -> 4}, {x}]").unwrap(),
+      "4 + x^2"
+    );
+    // Symbolic coefficients.
+    assert_eq!(
+      interpret(
+        "FromCoefficientRules[{{2, 0} -> a, {1, 1} -> b, {0, 2} -> c}, {x, y}]"
+      )
+      .unwrap(),
+      "a*x^2 + b*x*y + c*y^2"
+    );
+    // Round-trips with CoefficientRules.
+    assert_eq!(
+      interpret(
+        "FromCoefficientRules[CoefficientRules[x^3 + 2*x*y^2 + 7, {x, y}], \
+         {x, y}]"
+      )
+      .unwrap(),
+      "7 + x^3 + 2*x*y^2"
+    );
+    // Empty rule list is the zero polynomial.
+    assert_eq!(interpret("FromCoefficientRules[{}, {x, y}]").unwrap(), "0");
+    // Alternate variable names.
+    assert_eq!(
+      interpret("FromCoefficientRules[{{3, 1} -> 1}, {u, v}]").unwrap(),
+      "u^3*v"
+    );
+  }
+  #[test]
   fn coefficient_rules_one_arg() {
     // One-argument form auto-detects variables via Variables[poly].
     assert_eq!(

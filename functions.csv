@@ -2359,7 +2359,7 @@ Cashflow,Financial cashflow stream (passthrough used by TimeValue),✅,pure,8.0,
 ChanVeseBinarize,image processing,🚫,None,8.0,2408
 CopulaDistribution,probability distribution,🚫,None,8.0,2408
 ToeplitzMatrix,Generate a Toeplitz matrix from a list (symmetric) or from a first column and first row,✅,pure,6.0,2408
-FromCoefficientRules,Builds a polynomial from coefficient rules,✅,None,7.0,2411
+FromCoefficientRules,Builds a polynomial from a list of exponent-vector to coefficient rules,✅,pure,7.0,2411
 ImageMesh,image to mesh,🚫,None,11.0,2411
 ReliabilityDistribution,probability distribution,🚫,None,9.0,2411
 KernelMixtureDistribution,probability distribution,🚫,None,8.0,2413
