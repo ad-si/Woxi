@@ -187,6 +187,40 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return crate::evaluator::evaluate_expr_to_expr(&pow);
   }
 
+  // HypergeometricPFQ[{}, {b}, z] = Gamma[b] z^((1-b)/2) BesselI[b-1, 2 Sqrt[z]]
+  // (the 0F1 → modified Bessel relation). Reduced only for a positive integer b,
+  // where the BesselI form matches wolframscript exactly; symbolic and
+  // half-integer b are left symbolic (their displayed forms differ).
+  if a_list.is_empty()
+    && b_list.len() == 1
+    && let Expr::Integer(bn) = &b_list[0]
+    && *bn >= 1
+  {
+    let b = *bn;
+    let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.into(),
+    };
+    let two_sqrt_z = call(
+      "Times",
+      vec![Expr::Integer(2), call("Sqrt", vec![z.clone()])],
+    );
+    let bessel = call("BesselI", vec![Expr::Integer(b - 1), two_sqrt_z]);
+    // z^((1 - b)/2)
+    let z_pow = call(
+      "Power",
+      vec![
+        z.clone(),
+        call("Divide", vec![Expr::Integer(1 - b), Expr::Integer(2)]),
+      ],
+    );
+    let gamma = call("Gamma", vec![Expr::Integer(b)]);
+    return crate::evaluator::evaluate_expr_to_expr(&call(
+      "Times",
+      vec![gamma, z_pow, bessel],
+    ));
+  }
+
   // When each upper parameter cancels a lower parameter (identical
   // multisets), (a)_n / (a)_n = 1 and the series reduces to Σ z^n/n! = E^z.
   if a_list.len() == b_list.len() && !a_list.is_empty() {

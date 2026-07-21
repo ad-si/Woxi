@@ -5276,6 +5276,34 @@ mod hypergeometric_pfq {
     assert_eq!(interpret("HypergeometricPFQ[{}, {}, x]").unwrap(), "E^x");
   }
 
+  // HypergeometricPFQ[{}, {b}, z] = Gamma[b] z^((1-b)/2) BesselI[b-1, 2 Sqrt[z]]
+  // for a positive integer b (the 0F1 -> modified Bessel relation).
+  #[test]
+  fn zero_f_one_is_bessel() {
+    assert_eq!(
+      interpret("HypergeometricPFQ[{}, {1}, z]").unwrap(),
+      "BesselI[0, 2*Sqrt[z]]"
+    );
+    assert_eq!(
+      interpret("HypergeometricPFQ[{}, {2}, z]").unwrap(),
+      "BesselI[1, 2*Sqrt[z]]/Sqrt[z]"
+    );
+    assert_eq!(
+      interpret("HypergeometricPFQ[{}, {3}, z]").unwrap(),
+      "(2*BesselI[2, 2*Sqrt[z]])/z"
+    );
+    // Numeric z reduces too.
+    assert_eq!(
+      interpret("HypergeometricPFQ[{}, {1}, 4]").unwrap(),
+      "BesselI[0, 4]"
+    );
+    // Symbolic and half-integer b are left symbolic.
+    assert_eq!(
+      interpret("HypergeometricPFQ[{}, {b}, z]").unwrap(),
+      "HypergeometricPFQ[{}, {b}, z]"
+    );
+  }
+
   #[test]
   fn numeric_2f1() {
     assert_eq!(
