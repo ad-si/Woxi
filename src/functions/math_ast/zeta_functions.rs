@@ -1299,6 +1299,20 @@ pub fn lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
+  // LerchPhi[z, 0, a] = 1/(1 - z): the series Σ_k z^k/(k+a)^0 is the geometric
+  // series, independent of a. z = 0 is handled above.
+  if is_expr_zero(s) {
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(Expr::Integer(1)),
+      right: Box::new(Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(Expr::Integer(1)),
+        right: Box::new(z.clone()),
+      }),
+    });
+  }
+
   // LerchPhi[z, s, 1] = PolyLog[s, z] / z (for z != 0, which the z = 0 case
   // above has already handled). Delegating to PolyLog reproduces
   // wolframscript's exact closed forms — e.g. LerchPhi[1/2, 2, 1] ->

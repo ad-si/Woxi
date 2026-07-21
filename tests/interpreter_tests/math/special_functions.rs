@@ -4662,6 +4662,16 @@ mod lerch_phi {
   }
 
   #[test]
+  fn lerch_phi_zero_s() {
+    // LerchPhi[z, 0, a] = 1/(1 - z) (geometric series, independent of a).
+    assert_eq!(interpret("LerchPhi[z, 0, a]").unwrap(), "(1 - z)^(-1)");
+    assert_eq!(interpret("LerchPhi[z, 0, 5]").unwrap(), "(1 - z)^(-1)");
+    assert_eq!(interpret("LerchPhi[1/2, 0, a]").unwrap(), "2");
+    // z = 1 diverges.
+    assert_eq!(interpret("LerchPhi[1, 0, a]").unwrap(), "ComplexInfinity");
+  }
+
+  #[test]
   fn lerch_phi_numeric() {
     // LerchPhi[0.5, 2, 1] = Σ 0.5^k / (k+1)^2
     let result = interpret("LerchPhi[0.5, 2, 1]").unwrap();
