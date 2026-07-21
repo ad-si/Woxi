@@ -12236,6 +12236,56 @@ mod take_largest {
       "{150, -8}"
     );
   }
+
+  // An invalid count spec (not a non-negative integer, Infinity, or UpTo)
+  // emits TakeLargest::innfup and returns the call unevaluated, matching
+  // wolframscript.
+  #[test]
+  fn invalid_spec_emits_innfup() {
+    for spec in ["{2}", "-1", "2.5"] {
+      let src = format!("TakeLargest[{{5, 2, 8, 1, 9}}, {spec}]");
+      let r = woxi::interpret_with_stdout(&src).unwrap();
+      assert_eq!(r.result, format!("TakeLargest[{{5, 2, 8, 1, 9}}, {spec}]"));
+      assert!(
+        r.warnings.iter().any(|w| w.contains("TakeLargest::innfup")),
+        "spec {spec}: expected innfup, got {:?}",
+        r.warnings
+      );
+    }
+  }
+
+  // Requesting more elements than the list holds — a plain integer over the
+  // length, or Infinity — emits TakeLargest::insuff.
+  #[test]
+  fn too_many_emits_insuff() {
+    let r = woxi::interpret_with_stdout("TakeLargest[{5, 2, 8}, 5]").unwrap();
+    assert_eq!(r.result, "TakeLargest[{5, 2, 8}, 5]");
+    assert!(
+      r.warnings.iter().any(|w| w.contains(
+        "TakeLargest::insuff: Cannot take 5 element(s) from a list of length 3."
+      )),
+      "{:?}",
+      r.warnings
+    );
+    let inf =
+      woxi::interpret_with_stdout("TakeLargest[{5, 2, 8}, Infinity]").unwrap();
+    assert!(
+      inf.warnings.iter().any(|w| w.contains(
+        "TakeLargest::insuff: Cannot take Infinity element(s) from a list of length 3."
+      )),
+      "{:?}",
+      inf.warnings
+    );
+  }
+
+  // UpTo[k] clamps to the available length rather than erroring.
+  #[test]
+  fn upto_clamps_to_length() {
+    assert_eq!(
+      interpret("TakeLargest[{5, 2, 8, 1, 9}, UpTo[10]]").unwrap(),
+      "{9, 8, 5, 2, 1}"
+    );
+  }
 }
 
 mod take_smallest {

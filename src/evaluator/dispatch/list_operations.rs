@@ -140,6 +140,78 @@ fn count_or_upto(spec: &Expr, list: &Expr) -> Option<i128> {
   None
 }
 
+/// Validation outcome for a `TakeLargest`/`TakeSmallest` count spec.
+enum TakeExtreme {
+  /// A valid, in-range count of elements to take.
+  Take(i128),
+  /// The spec was invalid or exceeded the list; the message has already been
+  /// emitted and this unevaluated call should be returned.
+  Reject(Expr),
+}
+
+/// Validate the count spec of a two-argument `TakeLargest`/`TakeSmallest`
+/// call over a plain list, emitting wolframscript's messages:
+///   * `innfup` when the spec is not a non-negative integer, `Infinity`, or a
+///     valid `UpTo[k]` (e.g. `-1`, `2.5`, `{2}`);
+///   * `insuff` when more elements than the list holds are requested (a plain
+///     integer larger than the length, or `Infinity`).
+/// Returns `None` when the first argument is not a plain list, so the caller's
+/// other paths (associations, operator forms) are left untouched.
+fn validate_take_extreme(name: &str, args: &[Expr]) -> Option<TakeExtreme> {
+  let Expr::List(items) = &args[0] else {
+    return None;
+  };
+  let len = items.len() as i128;
+  let spec = &args[1];
+
+  // UpTo[k] with a non-negative k clamps to the available length.
+  if let Expr::FunctionCall {
+    name: fname,
+    args: fargs,
+  } = spec
+    && fname == "UpTo"
+    && fargs.len() == 1
+    && let Some(k) = expr_to_i128(&fargs[0])
+    && k >= 0
+  {
+    return Some(TakeExtreme::Take(k.min(len)));
+  }
+
+  let reject = |suffix: String| -> TakeExtreme {
+    let call = unevaluated(name, args);
+    crate::emit_message(&format!("{}::{}", name, suffix));
+    TakeExtreme::Reject(call)
+  };
+  let spec_str =
+    crate::syntax::format_expr(spec, crate::syntax::ExprForm::Output);
+
+  if is_infinity_symbol(spec) {
+    return Some(reject(format!(
+      "insuff: Cannot take Infinity element(s) from a list of length {}.",
+      len
+    )));
+  }
+  if let Some(n) = expr_to_i128(spec) {
+    if n < 0 {
+      return Some(reject(format!(
+        "innfup: Non-negative integer, Infinity or valid UpTo specification expected instead of {}.",
+        spec_str
+      )));
+    }
+    if n > len {
+      return Some(reject(format!(
+        "insuff: Cannot take {} element(s) from a list of length {}.",
+        n, len
+      )));
+    }
+    return Some(TakeExtreme::Take(n));
+  }
+  Some(reject(format!(
+    "innfup: Non-negative integer, Infinity or valid UpTo specification expected instead of {}.",
+    spec_str
+  )))
+}
+
 /// Whether the expression is the symbol Infinity (or DirectedInfinity[1]).
 fn is_infinity_symbol(e: &Expr) -> bool {
   matches!(e, Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity")
@@ -4402,8 +4474,18 @@ pub fn dispatch_list_operations(
       return Some(crate::evaluator::evaluate_expr_to_expr(&wrapped));
     }
     "TakeLargest" if args.len() == 2 => {
-      if let Some(n) = count_or_upto(&args[1], &args[0]) {
-        return Some(list_helpers_ast::take_largest_ast(&args[0], n));
+      match validate_take_extreme("TakeLargest", args) {
+        Some(TakeExtreme::Take(n)) => {
+          return Some(list_helpers_ast::take_largest_ast(&args[0], n));
+        }
+        Some(TakeExtreme::Reject(call)) => return Some(Ok(call)),
+        // Non-list first argument (association / operator form): fall back to
+        // the previous spec parsing.
+        None => {
+          if let Some(n) = count_or_upto(&args[1], &args[0]) {
+            return Some(list_helpers_ast::take_largest_ast(&args[0], n));
+          }
+        }
       }
     }
     "TakeLargest" if args.len() == 3 => {
@@ -4416,8 +4498,16 @@ pub fn dispatch_list_operations(
       }
     }
     "TakeSmallest" if args.len() == 2 => {
-      if let Some(n) = count_or_upto(&args[1], &args[0]) {
-        return Some(list_helpers_ast::take_smallest_ast(&args[0], n));
+      match validate_take_extreme("TakeSmallest", args) {
+        Some(TakeExtreme::Take(n)) => {
+          return Some(list_helpers_ast::take_smallest_ast(&args[0], n));
+        }
+        Some(TakeExtreme::Reject(call)) => return Some(Ok(call)),
+        None => {
+          if let Some(n) = count_or_upto(&args[1], &args[0]) {
+            return Some(list_helpers_ast::take_smallest_ast(&args[0], n));
+          }
+        }
       }
     }
     "TakeSmallest" if args.len() == 3 => {
