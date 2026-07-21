@@ -5,6 +5,14 @@ use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, unevaluated,
 };
 
+fn binop(op: BinaryOperator, left: Expr, right: Expr) -> Expr {
+  Expr::BinaryOp {
+    op,
+    left: Box::new(left),
+    right: Box::new(right),
+  }
+}
+
 pub fn dispatch_complex_and_special(
   name: &str,
   args: &[Expr],
@@ -120,19 +128,19 @@ pub fn dispatch_complex_and_special(
       if !imag_has_i {
         // If real part is 0, return b*I
         if matches!(real, Expr::Integer(0)) {
-          return Some(Ok(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(imag.clone()),
-            right: Box::new(Expr::Identifier("I".to_string())),
-          }));
+          return Some(Ok(binop(
+            BinaryOperator::Times,
+            imag.clone(),
+            Expr::Identifier("I".to_string()),
+          )));
         }
         // If imaginary is 1, return a + I
         if matches!(imag, Expr::Integer(1)) {
-          return Some(Ok(Expr::BinaryOp {
-            op: BinaryOperator::Plus,
-            left: Box::new(real.clone()),
-            right: Box::new(Expr::Identifier("I".to_string())),
-          }));
+          return Some(Ok(binop(
+            BinaryOperator::Plus,
+            real.clone(),
+            Expr::Identifier("I".to_string()),
+          )));
         }
         // General case without I in imag. For concrete numeric components,
         // build a + b*I and EVALUATE it so the result lands in the canonical
@@ -161,15 +169,15 @@ pub fn dispatch_complex_and_special(
         // Symbolic components (e.g. the pattern Complex[a_, b_]) keep the
         // raw a + b*I BinaryOp shape so structural pattern matching against
         // Plus/Times complex trees still works.
-        return Some(Ok(Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(real.clone()),
-          right: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(imag.clone()),
-            right: Box::new(Expr::Identifier("I".to_string())),
-          }),
-        }));
+        return Some(Ok(binop(
+          BinaryOperator::Plus,
+          real.clone(),
+          binop(
+            BinaryOperator::Times,
+            imag.clone(),
+            Expr::Identifier("I".to_string()),
+          ),
+        )));
       }
       // Imaginary part contains I (iterated Complex), evaluate algebraically
       // Complex[a, b] where b has form (re_b + im_b*I):
@@ -303,11 +311,11 @@ pub fn dispatch_complex_and_special(
                   args: vec![Expr::Integer(msn), Expr::Integer(msd)].into(),
                 }
               };
-              let normalized = Expr::BinaryOp {
-                op: BinaryOperator::Divide,
-                left: Box::new(args[0].clone()),
-                right: Box::new(make_sqrt(sqrt_arg)),
-              };
+              let normalized = binop(
+                BinaryOperator::Divide,
+                args[0].clone(),
+                make_sqrt(sqrt_arg),
+              );
               let normalized = match evaluate_expr_to_expr(&normalized) {
                 Ok(v) => v,
                 Err(e) => return Some(Err(e)),
@@ -337,30 +345,17 @@ pub fn dispatch_complex_and_special(
             && let Some((re, im)) = split_real_imag_symbolic(&args[0])
             && !is_zero_expr(&im)
           {
-            let re_sq = Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(re.clone()),
-              right: Box::new(Expr::Integer(2)),
-            };
-            let im_sq = Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(im.clone()),
-              right: Box::new(Expr::Integer(2)),
-            };
-            let mag_sq = Expr::BinaryOp {
-              op: BinaryOperator::Plus,
-              left: Box::new(re_sq),
-              right: Box::new(im_sq),
-            };
+            let re_sq =
+              binop(BinaryOperator::Power, re.clone(), Expr::Integer(2));
+            let im_sq =
+              binop(BinaryOperator::Power, im.clone(), Expr::Integer(2));
+            let mag_sq = binop(BinaryOperator::Plus, re_sq, im_sq);
             let mag_sq = match evaluate_expr_to_expr(&mag_sq) {
               Ok(v) => v,
               Err(e) => return Some(Err(e)),
             };
-            let direction = Expr::BinaryOp {
-              op: BinaryOperator::Divide,
-              left: Box::new(args[0].clone()),
-              right: Box::new(make_sqrt(mag_sq)),
-            };
+            let direction =
+              binop(BinaryOperator::Divide, args[0].clone(), make_sqrt(mag_sq));
             let direction = match evaluate_expr_to_expr(&direction) {
               Ok(v) => v,
               Err(e) => return Some(Err(e)),
@@ -400,16 +395,13 @@ pub fn dispatch_complex_and_special(
               }
               // Build `re + im*I` so the regular Times printer handles
               // sign placement and `0. + r*I` Re/Im split.
-              let im_term = Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(Expr::Real(nim)),
-                right: Box::new(Expr::Identifier("I".to_string())),
-              };
-              let direction = Expr::BinaryOp {
-                op: BinaryOperator::Plus,
-                left: Box::new(Expr::Real(nre)),
-                right: Box::new(im_term),
-              };
+              let im_term = binop(
+                BinaryOperator::Times,
+                Expr::Real(nim),
+                Expr::Identifier("I".to_string()),
+              );
+              let direction =
+                binop(BinaryOperator::Plus, Expr::Real(nre), im_term);
               let direction = match evaluate_expr_to_expr(&direction) {
                 Ok(v) => v,
                 Err(e) => return Some(Err(e)),
@@ -2286,11 +2278,7 @@ pub fn dispatch_complex_and_special(
         name: "Sqrt".to_string(),
         args: vec![Expr::Integer(n as i128)].into(),
       };
-      let std_err = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(std_dev),
-        right: Box::new(sqrt_n),
-      };
+      let std_err = binop(BinaryOperator::Divide, std_dev, sqrt_n);
       let std_err_n = Expr::FunctionCall {
         name: "N".to_string(),
         args: vec![std_err].into(),
@@ -5888,11 +5876,11 @@ fn activate_expr(expr: &Expr, filter: &Option<Vec<String>>) -> Expr {
       Expr::List(items.iter().map(|a| activate_expr(a, filter)).collect())
     }
     // Recurse into binary ops
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(activate_expr(left, filter)),
-      right: Box::new(activate_expr(right, filter)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      activate_expr(left, filter),
+      activate_expr(right, filter),
+    ),
     // Recurse into unary ops
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
@@ -6593,11 +6581,6 @@ fn line_nearest_point(
   }
   let eval = crate::evaluator::evaluate_expr_to_expr;
   let to_f64 = crate::functions::math_ast::try_eval_to_f64;
-  let binop = |op, a: Expr, b: Expr| Expr::BinaryOp {
-    op,
-    left: Box::new(a),
-    right: Box::new(b),
-  };
   let plus = |terms: Vec<Expr>| Expr::FunctionCall {
     name: "Plus".to_string(),
     args: terms.into(),
@@ -6748,11 +6731,7 @@ fn compute_region_distance(
     args: a.into(),
   };
   let euclid = |a: Expr, b: Expr| call("EuclideanDistance", vec![a, b]);
-  let sub = |a: Expr, b: Expr| Expr::BinaryOp {
-    op: BinaryOperator::Minus,
-    left: Box::new(a),
-    right: Box::new(b),
-  };
+  let sub = |a: Expr, b: Expr| binop(BinaryOperator::Minus, a, b);
   let zeros = |n: usize| Expr::List(vec![Expr::Integer(0); n].into());
 
   let expr = match name.as_str() {
@@ -6804,11 +6783,11 @@ fn compute_region_distance(
           args: norm_sq.into(),
         }],
       );
-      return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(excess),
-        right: Box::new(norm),
-      });
+      return crate::evaluator::evaluate_expr_to_expr(&binop(
+        BinaryOperator::Divide,
+        excess,
+        norm,
+      ));
     }
     "Disk" | "Ball" => {
       let dim = if name == "Ball" { 3 } else { 2 };
@@ -6956,11 +6935,6 @@ fn compute_region_nearest(
   let call = |nm: &str, a: Vec<Expr>| Expr::FunctionCall {
     name: nm.to_string(),
     args: a.into(),
-  };
-  let binop = |op: BinaryOperator, a: Expr, b: Expr| Expr::BinaryOp {
-    op,
-    left: Box::new(a),
-    right: Box::new(b),
   };
   let eval = crate::evaluator::evaluate_expr_to_expr;
   let to_f64 = crate::functions::math_ast::try_eval_to_f64;
@@ -7115,11 +7089,6 @@ fn compute_signed_region_distance(
   let call = |nm: &str, a: Vec<Expr>| Expr::FunctionCall {
     name: nm.to_string(),
     args: a.into(),
-  };
-  let binop = |op: BinaryOperator, a: Expr, b: Expr| Expr::BinaryOp {
-    op,
-    left: Box::new(a),
-    right: Box::new(b),
   };
   let sub = |a: Expr, b: Expr| binop(BinaryOperator::Minus, a, b);
   let euclid = |a: Expr, b: Expr| call("EuclideanDistance", vec![a, b]);
@@ -7845,11 +7814,7 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
           ]
           .into(),
         };
-        let volume = Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(product),
-          right: Box::new(Expr::Integer(3)),
-        };
+        let volume = binop(BinaryOperator::Divide, product, Expr::Integer(3));
         return crate::evaluator::evaluate_expr_to_expr(&volume);
       }
       _ => {}
@@ -7947,11 +7912,7 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
         let Some((_, r1, r2)) = torus_parts(args) else {
           return unevaluated();
         };
-        let half = |e: Expr| Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(e),
-          right: Box::new(Expr::Integer(2)),
-        };
+        let half = |e: Expr| binop(BinaryOperator::Divide, e, Expr::Integer(2));
         let tube = half(Expr::FunctionCall {
           name: "Subtract".to_string(),
           args: vec![r2.clone(), r1.clone()].into(),
@@ -8071,11 +8032,11 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
           }
           _ => return unevaluated(),
         };
-        let half_n = Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(Expr::Integer(n as i128)),
-          right: Box::new(Expr::Integer(2)),
-        };
+        let half_n = binop(
+          BinaryOperator::Divide,
+          Expr::Integer(n as i128),
+          Expr::Integer(2),
+        );
         let pi_pow = Expr::FunctionCall {
           name: "Power".to_string(),
           args: vec![Expr::Constant("Pi".to_string()), half_n.clone()].into(),
@@ -8578,11 +8539,7 @@ fn det_measure(
   let vol = if divisor == 1 {
     abs
   } else {
-    Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(abs),
-      right: Box::new(Expr::Integer(divisor)),
-    }
+    binop(BinaryOperator::Divide, abs, Expr::Integer(divisor))
   };
   crate::evaluator::evaluate_expr_to_expr(&vol)
 }
@@ -8738,11 +8695,7 @@ fn compute_region_moment(
       },
     }
   };
-  let ratio = |num: Expr, den: Expr| Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(num),
-    right: Box::new(den),
-  };
+  let ratio = |num: Expr, den: Expr| binop(BinaryOperator::Divide, num, den);
   let is_zero = |e: &Expr| matches!(e, Expr::Integer(0));
 
   // The supported region kinds with their embedding dimension.
@@ -9007,11 +8960,7 @@ fn triangle_moment_parts(
       },
     }
   };
-  let ratio = |num: Expr, den: Expr| Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(num),
-    right: Box::new(den),
-  };
+  let ratio = |num: Expr, den: Expr| binop(BinaryOperator::Divide, num, den);
   let is_zero = |e: &Expr| matches!(e, Expr::Integer(0));
   let sub = |a: &Expr, b: &Expr| -> Result<Expr, InterpreterError> {
     ev(&plus(vec![a.clone(), times(vec![int_e(-1), b.clone()])]))
@@ -9700,11 +9649,7 @@ fn spherical_shell_measure(
   let measure = if den == 1 {
     product
   } else {
-    Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(product),
-      right: Box::new(Expr::Integer(den)),
-    }
+    binop(BinaryOperator::Divide, product, Expr::Integer(den))
   };
   crate::evaluator::evaluate_expr_to_expr(&measure)
 }
@@ -10288,11 +10233,7 @@ fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
       args: vec![Expr::Constant("Pi".to_string()), r_squared, length].into(),
     };
     if name == "Cone" {
-      volume = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(volume),
-        right: Box::new(Expr::Integer(3)),
-      };
+      volume = binop(BinaryOperator::Divide, volume, Expr::Integer(3));
     }
     return crate::evaluator::evaluate_expr_to_expr(&volume);
   }
@@ -11609,11 +11550,8 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
           }),
           right: Box::new(Expr::Integer(2)),
         };
-        let half_dt = Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(dt.clone()),
-          right: Box::new(Expr::Integer(2)),
-        };
+        let half_dt =
+          binop(BinaryOperator::Divide, dt.clone(), Expr::Integer(2));
         // Unit-circle offset 4 Sin[Δθ/2]^3 / (3 (Δθ - Sin[Δθ])).
         let offset = Expr::BinaryOp {
           op: BinaryOperator::Divide,
@@ -12593,11 +12531,8 @@ fn compute_perimeter(expr: &Expr) -> Result<Expr, InterpreterError> {
           return unevaluated();
         }
         let dt = disk_segment_dtheta(&th1, &th2)?;
-        let half_dt = Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(dt.clone()),
-          right: Box::new(Expr::Integer(2)),
-        };
+        let half_dt =
+          binop(BinaryOperator::Divide, dt.clone(), Expr::Integer(2));
         let chord = Expr::FunctionCall {
           name: "Times".to_string(),
           args: vec![
@@ -12660,11 +12595,7 @@ fn compute_perimeter(expr: &Expr) -> Result<Expr, InterpreterError> {
         let ratio_sq = Expr::FunctionCall {
           name: "Power".to_string(),
           args: vec![
-            Expr::BinaryOp {
-              op: BinaryOperator::Divide,
-              left: Box::new(r1),
-              right: Box::new(r2.clone()),
-            },
+            binop(BinaryOperator::Divide, r1, r2.clone()),
             Expr::Integer(2),
           ]
           .into(),
@@ -13925,11 +13856,7 @@ fn insphere_times(a: Expr, b: Expr) -> Expr {
 
 /// Helper: build a - b
 fn insphere_minus(a: Expr, b: Expr) -> Expr {
-  Expr::BinaryOp {
-    op: BinaryOperator::Minus,
-    left: Box::new(a),
-    right: Box::new(b),
-  }
+  binop(BinaryOperator::Minus, a, b)
 }
 
 /// Helper: build a^n
