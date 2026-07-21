@@ -1682,7 +1682,7 @@ Primes,Domain of prime numbers used with Element and related predicates,✅,none
 RandomPrime,Random prime number,✅,contextual,6.0,1709
 SuperDagger,Dagger superscript notation,✅,none,6.0,1709
 ReImPlot,Plots the real and imaginary parts of a complex function on the same axes,✅,pure,12.0,1710
-ExponentFunction,Exponent display function,,unevaluated,2.0,1712
+ExponentFunction,Option for NumberForm and ScientificForm giving a function applied to the base-10 exponent,✅,pure,2.0,1712
 SoftmaxLayer,Softmax neural layer,,unevaluated,11.0,1712
 ProductDistribution,Independent product of distributions (merged PDF plus component stats),✅,pure,8.0,1713
 Save,Saves definitions associated with symbols to a file,✅,effectful,1.0,1714

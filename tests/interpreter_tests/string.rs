@@ -10519,6 +10519,43 @@ abb""#,
       "+2.50",
     );
   }
+  // ExponentFunction -> f re-expresses the number as `mantissa × 10^e'`, where
+  // e' = f applied to the natural base-10 exponent. The exponent renders as a
+  // superscript on the line above (matching wolframscript). `Null` (or a zero
+  // exponent) suppresses the factor; integer arguments are shown verbatim.
+  #[test]
+  fn to_string_number_form_exponent_function() {
+    // Identity: same as the default scientific rendering.
+    assert_case(
+      "ToString[ScientificForm[12345., ExponentFunction -> (# &)]]",
+      "           4\n1.2345 \u{00d7} 10",
+    );
+    // Engineering-style: round the exponent to a multiple of 3.
+    assert_case(
+      "ToString[NumberForm[123456., 4, ExponentFunction -> (3 Floor[#/3] &)]]",
+      "          3\n123.5 \u{00d7} 10",
+    );
+    // Negative numbers keep the sign on the mantissa.
+    assert_case(
+      "ToString[NumberForm[-123456., 4, ExponentFunction -> (3 Floor[#/3] &)]]",
+      "           3\n-123.5 \u{00d7} 10",
+    );
+    // Rounding can renormalize the exponent (9.99 → 1.0×10^1).
+    assert_case(
+      "ToString[NumberForm[9.99, 2, ExponentFunction -> (# &)]]",
+      "       1\n1. \u{00d7} 10",
+    );
+    // Null suppresses the exponent — plain decimal form.
+    assert_case(
+      "ToString[NumberForm[12345., ExponentFunction -> (Null &)]]",
+      "12345.",
+    );
+    // An integer argument is shown verbatim.
+    assert_case(
+      "ToString[NumberForm[123456, 4, ExponentFunction -> (3 Floor[#/3] &)]]",
+      "123456",
+    );
+  }
   #[test]
   fn to_string_number_form_trailing_dot() {
     assert_case("ToString[NumberForm[3.0, 3]]", "3.");

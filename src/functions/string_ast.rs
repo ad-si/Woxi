@@ -3660,6 +3660,75 @@ fn sci_parts_to_2d_string(mantissa: &str, exp: Option<i64>) -> String {
   }
 }
 
+/// Render `NumberForm[x, n, ExponentFunction -> f]` / `ScientificForm[...]`:
+/// take the value's base-10 exponent (after rounding to `n` significant
+/// figures), pass it through `f`, and re-express the number as
+/// `mantissa × 10^e'` with that exponent. `f` returning `Null` (or an exponent
+/// of 0) suppresses the `× 10` factor, leaving just the mantissa. Integer `x`
+/// is shown unchanged.
+fn number_form_exponent_function_to_string(
+  x: &Expr,
+  n: i64,
+  f: &Expr,
+) -> Option<String> {
+  // Integers are displayed verbatim, ignoring the exponent function.
+  if let Expr::Integer(i) = x {
+    return Some(i.to_string());
+  }
+  let v = match x {
+    Expr::Real(r) => *r,
+    _ => return None,
+  };
+  if v == 0.0 {
+    return None;
+  }
+  let n = if n < 1 { 1 } else { n };
+  let neg = v < 0.0;
+  let av = v.abs();
+
+  // Normalized mantissa/exponent after rounding to n significant figures
+  // (e.g. 9.99 at n=2 renormalizes to 1.0×10^1, so the exponent is 1).
+  let formatted = format!("{:.*e}", (n - 1) as usize, av);
+  let (_, exp_raw) = formatted.split_once('e')?;
+  let e: i64 = exp_raw.parse().ok()?;
+
+  // Apply the user exponent function to the natural exponent.
+  let applied = crate::functions::list_helpers_ast::apply_func_ast(
+    f,
+    &Expr::Integer(e as i128),
+  )
+  .ok()?;
+  let applied =
+    crate::evaluator::evaluate_expr_to_expr(&applied).unwrap_or(applied);
+  // Null suppresses the exponent: fall back to the plain number rendering.
+  if matches!(&applied, Expr::Identifier(s) if s == "Null") {
+    return number_form_render(x, n);
+  }
+  let e_prime = match &applied {
+    Expr::Integer(k) => *k as i64,
+    _ => return None,
+  };
+
+  // Mantissa at the chosen exponent, keeping n significant figures total.
+  let decimals = (n - 1 - e + e_prime).max(0) as usize;
+  let mant_val = av / 10f64.powi(e_prime as i32);
+  let mant_str = format!("{:.*}", decimals, mant_val);
+  // Trim trailing fractional zeros but keep the decimal point.
+  let mant_trimmed = match mant_str.split_once('.') {
+    Some((int_part, frac)) => {
+      format!("{}.{}", int_part, frac.trim_end_matches('0'))
+    }
+    None => format!("{mant_str}."),
+  };
+  let mant_final = if neg {
+    format!("-{mant_trimmed}")
+  } else {
+    mant_trimmed
+  };
+  let exp_opt = if e_prime == 0 { None } else { Some(e_prime) };
+  Some(sci_parts_to_2d_string(&mant_final, exp_opt))
+}
+
 /// Horizontally concatenate multi-line text blocks, bottom-aligned: their last
 /// lines share a baseline and shorter blocks are padded with blank lines on top.
 /// Each block's lines are right-padded to the block's own max width so columns
@@ -4316,6 +4385,41 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let width = (*n as usize + 1) + usize::from(has_dot);
       let pad_count = width.saturating_sub(rendered.chars().count());
       return Ok(Expr::String(format!("{}{}", p1.repeat(pad_count), rendered)));
+    }
+  }
+
+  // NumberForm[x, n, ExponentFunction -> f] / ScientificForm[x, n, …] — apply a
+  // custom exponent function that re-expresses the number as mantissa × 10^e'.
+  if let Expr::FunctionCall {
+    name,
+    args: inner_args,
+  } = &args[0]
+    && (name == "NumberForm" || name == "ScientificForm")
+    && !is_input_form
+    && let Some(f) = inner_args.iter().find_map(|a| match a {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ExponentFunction") => {
+        Some(replacement.as_ref())
+      }
+      _ => None,
+    })
+  {
+    let positional: Vec<&Expr> = inner_args
+      .iter()
+      .filter(|a| !matches!(a, Expr::Rule { .. }))
+      .collect();
+    if let Some(&x) = positional.first() {
+      let n = match positional.get(1) {
+        Some(Expr::Integer(n)) => *n as i64,
+        _ => 6,
+      };
+      if let Some(rendered) = render_form_threaded(x, |x| {
+        number_form_exponent_function_to_string(x, n, f)
+      }) {
+        return Ok(Expr::String(rendered));
+      }
     }
   }
 
