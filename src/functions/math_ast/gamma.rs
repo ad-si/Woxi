@@ -1037,13 +1037,25 @@ fn incomplete_beta_ast(
   a: &Expr,
   b: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  // Special case: Beta[1, a, b] = Beta[a, b] (complete).
+  // Special case: Beta[1, a, b] = Beta[a, b] (complete). wolframscript only
+  // performs this reduction when both parameters are numeric; for a symbolic a
+  // or b it keeps the three-argument form (e.g. Beta[1, 2, b] stays held).
   if matches!(z, Expr::Integer(1)) || matches!(z, Expr::Real(f) if *f == 1.0) {
-    let base = beta_ast(&[a.clone(), b.clone()])?;
-    if matches!(z, Expr::Real(_)) {
-      return crate::evaluator::evaluate_function_call_ast("N", &[base]);
+    let is_num = |e: &Expr| {
+      matches!(e, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
+        || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+    };
+    if is_num(a) && is_num(b) {
+      let base = beta_ast(&[a.clone(), b.clone()])?;
+      if matches!(z, Expr::Real(_)) {
+        return crate::evaluator::evaluate_function_call_ast("N", &[base]);
+      }
+      return Ok(base);
     }
-    return Ok(base);
+    return Ok(Expr::FunctionCall {
+      name: "Beta".to_string(),
+      args: vec![z.clone(), a.clone(), b.clone()].into(),
+    });
   }
 
   // The polynomial closed-form is only available when z is numeric and b is a
@@ -1052,6 +1064,43 @@ fn incomplete_beta_ast(
   let z_is_numeric =
     matches!(z, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
       || matches!(z, Expr::FunctionCall { name, .. } if name == "Rational");
+
+  // Symbolic z has an elementary closed form only when a or b equals 1
+  // (integrating t^(a-1) (1-t)^(b-1) collapses):
+  //   Beta[z, 1, b] = (1 - (1 - z)^b)/b
+  //   Beta[z, a, 1] = (z^a - 0^a)/a   (the lower-limit boundary term 0^a is
+  //                                    kept symbolic, matching wolframscript).
+  if !z_is_numeric {
+    let minus = |x: Expr, y: Expr| Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left: Box::new(x),
+      right: Box::new(y),
+    };
+    let power = |x: Expr, y: Expr| Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(x),
+      right: Box::new(y),
+    };
+    let divide = |x: Expr, y: Expr| Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(x),
+      right: Box::new(y),
+    };
+    if matches!(a, Expr::Integer(1)) {
+      let num = minus(
+        Expr::Integer(1),
+        power(minus(Expr::Integer(1), z.clone()), b.clone()),
+      );
+      return crate::evaluator::evaluate_expr_to_expr(&divide(num, b.clone()));
+    }
+    if matches!(b, Expr::Integer(1)) {
+      let num = minus(
+        power(z.clone(), a.clone()),
+        power(Expr::Integer(0), a.clone()),
+      );
+      return crate::evaluator::evaluate_expr_to_expr(&divide(num, a.clone()));
+    }
+  }
   let b_whole: Option<i128> = match b {
     Expr::Integer(n) if *n > 0 => Some(*n),
     Expr::Real(f) if *f > 0.0 && f.fract() == 0.0 => Some(*f as i128),

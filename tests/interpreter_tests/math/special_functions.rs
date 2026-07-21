@@ -3668,6 +3668,31 @@ mod beta_fn {
     assert_eq!(interpret("Beta[1, 2, 3]").unwrap(), "1/12");
   }
 
+  // Beta[1, a, b] only reduces to the complete Beta when both parameters are
+  // numeric; a symbolic parameter keeps the three-argument form (per WL).
+  #[test]
+  fn incomplete_z_one_symbolic_params_stay_held() {
+    assert_eq!(interpret("Beta[1, a, b]").unwrap(), "Beta[1, a, b]");
+    assert_eq!(interpret("Beta[1, 2, b]").unwrap(), "Beta[1, 2, b]");
+    assert_eq!(interpret("Beta[1, a, 3]").unwrap(), "Beta[1, a, 3]");
+    // Both numeric still reduces (including mixed integer/rational).
+    assert_eq!(interpret("Beta[1, 1/2, 3]").unwrap(), "16/15");
+  }
+
+  // Symbolic z has an elementary closed form when a = 1 or b = 1:
+  //   Beta[z, 1, b] = (1 - (1 - z)^b)/b,  Beta[z, a, 1] = (z^a - 0^a)/a.
+  #[test]
+  fn incomplete_symbolic_z_unit_parameter() {
+    assert_eq!(interpret("Beta[z, 1, 3]").unwrap(), "(1 - (1 - z)^3)/3");
+    assert_eq!(interpret("Beta[z, 1, b]").unwrap(), "(1 - (1 - z)^b)/b");
+    assert_eq!(interpret("Beta[z, 2, 1]").unwrap(), "z^2/2");
+    assert_eq!(interpret("Beta[z, 3, 1]").unwrap(), "z^3/3");
+    assert_eq!(interpret("Beta[z, a, 1]").unwrap(), "(-0^a + z^a)/a");
+    assert_eq!(interpret("Beta[z, 1, 1]").unwrap(), "z");
+    // a, b both >= 2 still stays symbolic.
+    assert_eq!(interpret("Beta[z, 2, 2]").unwrap(), "Beta[z, 2, 2]");
+  }
+
   // ── Complete Beta with one integer + one rational argument ───────────
   // Beta[a, n] = (n-1)! / Pochhammer[a, n] is an exact rational for any
   // rational a; wolframscript evaluates these (regression for a gap where
