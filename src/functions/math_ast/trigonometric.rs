@@ -6061,6 +6061,18 @@ fn try_reduce_trig_pair(a: &Expr, b: &Expr) -> Option<Expr> {
       args: vec![e].into(),
     }
   };
+  let sinh = |e: Expr| -> Expr {
+    Expr::FunctionCall {
+      name: "Sinh".to_string(),
+      args: vec![e].into(),
+    }
+  };
+  let cosh = |e: Expr| -> Expr {
+    Expr::FunctionCall {
+      name: "Cosh".to_string(),
+      args: vec![e].into(),
+    }
+  };
 
   match (a_name, b_name) {
     // Sin[a]*Cos[b] = (Sin[a+b] + Sin[a-b])/2
@@ -6105,26 +6117,71 @@ fn try_reduce_trig_pair(a: &Expr, b: &Expr) -> Option<Expr> {
       };
       Some(half(result))
     }
+    // Sinh[a]*Cosh[b] = (Sinh[a+b] + Sinh[a-b])/2
+    ("Sinh", "Cosh") | ("Cosh", "Sinh") => {
+      let (sinh_arg, cosh_arg) = if a_name == "Sinh" {
+        (a_arg, b_arg)
+      } else {
+        (b_arg, a_arg)
+      };
+      let s = Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(sinh_arg.clone()),
+        right: Box::new(cosh_arg.clone()),
+      };
+      let d = Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(sinh_arg),
+        right: Box::new(cosh_arg),
+      };
+      let result = Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(sinh(s)),
+        right: Box::new(sinh(d)),
+      };
+      Some(half(result))
+    }
+    // Cosh[a]*Cosh[b] = (Cosh[a-b] + Cosh[a+b])/2
+    ("Cosh", "Cosh") => {
+      let result = Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(cosh(diff)),
+        right: Box::new(cosh(sum)),
+      };
+      Some(half(result))
+    }
+    // Sinh[a]*Sinh[b] = (Cosh[a+b] - Cosh[a-b])/2
+    ("Sinh", "Sinh") => {
+      let result = Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(cosh(sum)),
+        right: Box::new(cosh(diff)),
+      };
+      Some(half(result))
+    }
     _ => None,
   }
 }
 
-/// Reduce trig power: Sin[x]^n or Cos[x]^n using direct formulas.
+/// Reduce trig power: Sin[x]^n, Cos[x]^n and the hyperbolic Sinh/Cosh forms.
 fn reduce_trig_power(base: &Expr, n: i128) -> Option<Expr> {
   let (trig_name, arg) = extract_trig(base)?;
-  if !matches!(trig_name, "Sin" | "Cos") {
+  if !matches!(trig_name, "Sin" | "Cos" | "Sinh" | "Cosh") {
     return None;
   }
 
-  // Use the power-reduction formulas directly:
+  // Use the power-reduction formulas directly. The circular forms:
   // For even n:
   //   cos^n(x) = 1/2^n * C(n,n/2) + 2/2^n * sum_{k=0}^{n/2-1} C(n,k) cos((n-2k)x)
   //   sin^n(x) = 1/2^n * C(n,n/2) + 2/2^n * sum_{k=0}^{n/2-1} (-1)^(n/2-k) C(n,k) cos((n-2k)x)
   // For odd n:
   //   cos^n(x) = 2/2^n * sum_{k=0}^{(n-1)/2} C(n,k) cos((n-2k)x)
   //   sin^n(x) = 2/2^n * sum_{k=0}^{(n-1)/2} (-1)^((n-1)/2-k) C(n,k) sin((n-2k)x)
+  // The hyperbolic forms mirror these with cosh/sinh, all cosh coefficients
+  // positive; sinh^n carries a (-1)^k weight per term and a (-1)^(n/2) constant.
 
-  let is_cos = trig_name == "Cos";
+  let is_cos = matches!(trig_name, "Cos" | "Cosh");
+  let hyperbolic = matches!(trig_name, "Sinh" | "Cosh");
   let nu = n as usize;
   let denom = 1i128 << n; // 2^n
 
@@ -6145,21 +6202,31 @@ fn reduce_trig_power(base: &Expr, n: i128) -> Option<Expr> {
 
   let half_n = nu / 2;
   let trig_fn = if nu.is_multiple_of(2) {
-    // Even power
-    // Constant term: C(n, n/2)
+    // Even power. Constant term: C(n, n/2), negated for sinh^n when n/2 is odd.
     let binom = crate::functions::binomial_coeff(n, half_n as i128);
-    num_terms.push((binom, None));
-    "Cos"
+    let const_sign = if !is_cos && hyperbolic && !half_n.is_multiple_of(2) {
+      -1
+    } else {
+      1
+    };
+    num_terms.push((const_sign * binom, None));
+    if hyperbolic { "Cosh" } else { "Cos" }
   } else {
-    // Odd power
-    if is_cos { "Cos" } else { "Sin" }
+    // Odd power — the base function is preserved.
+    trig_name
   };
 
   for k in 0..nu - half_n {
     let m = n - 2 * k as i128;
     let binom_val = crate::functions::binomial_coeff(n, k as i128);
     let coeff = 2 * binom_val;
-    let sign = if is_cos || (half_n - k).is_multiple_of(2) {
+    // cos/cosh terms are all positive; sin uses (-1)^(n/2 - k) while sinh uses
+    // (-1)^k.
+    let sign = if is_cos {
+      1
+    } else if hyperbolic {
+      if k.is_multiple_of(2) { 1 } else { -1 }
+    } else if (half_n - k).is_multiple_of(2) {
       1
     } else {
       -1
@@ -6251,7 +6318,18 @@ fn extract_trig(expr: &Expr) -> Option<(&str, Expr)> {
       if args.len() == 1
         && matches!(
           name.as_str(),
-          "Sin" | "Cos" | "Tan" | "Cot" | "Sec" | "Csc"
+          "Sin"
+            | "Cos"
+            | "Tan"
+            | "Cot"
+            | "Sec"
+            | "Csc"
+            | "Sinh"
+            | "Cosh"
+            | "Tanh"
+            | "Coth"
+            | "Sech"
+            | "Csch"
         ) =>
     {
       Some((name.as_str(), args[0].clone()))

@@ -9525,6 +9525,61 @@ mod trig_reduce {
     );
   }
 
+  // Hyperbolic powers and products reduce with the cosh/sinh identities.
+  // Verified against wolframscript.
+  #[test]
+  fn hyperbolic_powers() {
+    assert_eq!(
+      interpret("TrigReduce[Sinh[x]^2]").unwrap(),
+      "(-1 + Cosh[2*x])/2"
+    );
+    assert_eq!(
+      interpret("TrigReduce[Cosh[x]^2]").unwrap(),
+      "(1 + Cosh[2*x])/2"
+    );
+    assert_eq!(
+      interpret("TrigReduce[Sinh[x]^3]").unwrap(),
+      "(-3*Sinh[x] + Sinh[3*x])/4"
+    );
+    assert_eq!(
+      interpret("TrigReduce[Cosh[x]^3]").unwrap(),
+      "(3*Cosh[x] + Cosh[3*x])/4"
+    );
+    assert_eq!(
+      interpret("TrigReduce[Sinh[x]^4]").unwrap(),
+      "(3 - 4*Cosh[2*x] + Cosh[4*x])/8"
+    );
+    assert_eq!(
+      interpret("TrigReduce[Sinh[x]^2 + Cosh[x]^2]").unwrap(),
+      "Cosh[2*x]"
+    );
+  }
+
+  #[test]
+  fn hyperbolic_products() {
+    assert_eq!(
+      interpret("TrigReduce[Sinh[x] Cosh[x]]").unwrap(),
+      "Sinh[2*x]/2"
+    );
+    assert_eq!(
+      interpret("TrigReduce[Sinh[a] Sinh[b]]").unwrap(),
+      "(-Cosh[a - b] + Cosh[a + b])/2"
+    );
+    assert_eq!(
+      interpret("TrigReduce[Cosh[a] Cosh[b]]").unwrap(),
+      "(Cosh[a - b] + Cosh[a + b])/2"
+    );
+    assert_eq!(
+      interpret("TrigReduce[Sinh[x] Cosh[y]]").unwrap(),
+      "(Sinh[x - y] + Sinh[x + y])/2"
+    );
+    // Mixed power/product linearizes across the fixed-point iteration.
+    assert_eq!(
+      interpret("TrigReduce[Cosh[x]^2 Sinh[x]]").unwrap(),
+      "(Sinh[x] + Sinh[3*x])/4"
+    );
+  }
+
   #[test]
   fn sin_cubed() {
     assert_eq!(
