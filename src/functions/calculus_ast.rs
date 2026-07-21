@@ -3208,6 +3208,58 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             }))
           }
         }
+        // SinIntegral[z]: D[SinIntegral[z], z] = Sinc[z] * z'. Wolfram prints
+        // the derivative with the named Sinc rather than Sin[z]/z.
+        "SinIntegral" if args.len() == 1 => {
+          let dz = differentiate(&args[0], var)?;
+          if matches!(dz, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          let sinc = Expr::FunctionCall {
+            name: "Sinc".to_string(),
+            args: vec![args[0].clone()].into(),
+          };
+          if matches!(dz, Expr::Integer(1)) {
+            Ok(sinc)
+          } else {
+            Ok(simplify(Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(dz),
+              right: Box::new(sinc),
+            }))
+          }
+        }
+        // CosIntegral[z] -> Cos[z]/z, SinhIntegral[z] -> Sinh[z]/z,
+        // CoshIntegral[z] -> Cosh[z]/z, each times z'.
+        "CosIntegral" | "SinhIntegral" | "CoshIntegral" if args.len() == 1 => {
+          let dz = differentiate(&args[0], var)?;
+          if matches!(dz, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          let head = match name.as_str() {
+            "CosIntegral" => "Cos",
+            "SinhIntegral" => "Sinh",
+            _ => "Cosh",
+          };
+          let f = Expr::FunctionCall {
+            name: head.to_string(),
+            args: vec![args[0].clone()].into(),
+          };
+          let result = simplify(Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: Box::new(f),
+            right: Box::new(args[0].clone()),
+          });
+          if matches!(dz, Expr::Integer(1)) {
+            Ok(result)
+          } else {
+            Ok(simplify(Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(dz),
+              right: Box::new(result),
+            }))
+          }
+        }
         // FresnelS[z]: D = Sin[(Pi z^2)/2] * z'
         // FresnelC[z]: D = Cos[(Pi z^2)/2] * z'
         "FresnelS" | "FresnelC" if args.len() == 1 => {

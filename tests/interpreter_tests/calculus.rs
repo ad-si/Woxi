@@ -4901,6 +4901,28 @@ mod erf {
     assert_eq!(interpret("D[LogIntegral[2 x], x]").unwrap(), "2/Log[2*x]");
   }
 
+  // The trig/hyperbolic exponential integrals. D[SinIntegral] prints with the
+  // named Sinc; the others give f[z]/z. Verified against wolframscript.
+  #[test]
+  fn d_si_ci_shi_chi() {
+    assert_eq!(interpret("D[SinIntegral[x], x]").unwrap(), "Sinc[x]");
+    assert_eq!(interpret("D[CosIntegral[x], x]").unwrap(), "Cos[x]/x");
+    assert_eq!(interpret("D[SinhIntegral[x], x]").unwrap(), "Sinh[x]/x");
+    assert_eq!(interpret("D[CoshIntegral[x], x]").unwrap(), "Cosh[x]/x");
+    // Chain rule.
+    assert_eq!(
+      interpret("D[SinIntegral[x^2], x]").unwrap(),
+      "2*x*Sinc[x^2]"
+    );
+    assert_eq!(interpret("D[CosIntegral[2 x], x]").unwrap(), "Cos[2*x]/x");
+    assert_eq!(
+      interpret("D[CoshIntegral[x^2], x]").unwrap(),
+      "(2*Cosh[x^2])/x"
+    );
+    // A constant argument differentiates to 0.
+    assert_eq!(interpret("D[SinIntegral[a], x]").unwrap(), "0");
+  }
+
   // Factorial[z] = Gamma[1 + z], so D[z!, z] = Gamma[1 + z] PolyGamma[0, 1 + z].
   // The bare product's factor order is the long-standing Times-ordering
   // divergence (Woxi emits PolyGamma·Gamma, wolframscript Gamma·PolyGamma), so
