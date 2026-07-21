@@ -1522,6 +1522,53 @@ mod ordering {
   }
 
   #[test]
+  fn ordering_by_association() {
+    // Over an association, OrderingBy orders by the values and returns
+    // positional indices (not keys).
+    // wolframscript: OrderingBy[<|"a"->{5,2},"b"->{3,8},"c"->{1,0}|>, First]
+    //   -> {3, 2, 1}
+    assert_eq!(
+      interpret(
+        "OrderingBy[Association[\"a\" -> {5, 2}, \"b\" -> {3, 8}, \
+         \"c\" -> {1, 0}], First]"
+      )
+      .unwrap(),
+      "{3, 2, 1}"
+    );
+  }
+
+  #[test]
+  fn ordering_by_operator_form() {
+    // OrderingBy[f] is the operator form: OrderingBy[f][list] == OrderingBy[list, f]
+    assert_eq!(
+      interpret("OrderingBy[StringLength][{\"list\", \"of\", \"strings\"}]")
+        .unwrap(),
+      "{2, 1, 3}"
+    );
+    // The bare operator stays unevaluated.
+    assert_eq!(
+      interpret("OrderingBy[StringLength]").unwrap(),
+      "OrderingBy[StringLength]"
+    );
+  }
+
+  #[test]
+  fn ordering_by_custom_comparator() {
+    // The 4-argument form OrderingBy[list, f, n, p] orders the f-values with
+    // the comparator p (like SortBy[list, f, p]).
+    // wolframscript: OrderingBy[{3, 1, 2}, Identity, All, Greater] -> {1, 3, 2}
+    assert_eq!(
+      interpret("OrderingBy[{3, 1, 2}, Identity, All, Greater]").unwrap(),
+      "{1, 3, 2}"
+    );
+    // n still truncates after the comparator sort.
+    assert_eq!(
+      interpret("OrderingBy[{5, 2, 8, 1}, Identity, 2, Greater]").unwrap(),
+      "{3, 1}"
+    );
+  }
+
+  #[test]
   fn all_with_greater() {
     assert_eq!(
       interpret("Ordering[{3, 1, 2, 4, 5}, All, Greater]").unwrap(),

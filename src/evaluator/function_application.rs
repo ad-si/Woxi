@@ -1482,6 +1482,7 @@ pub fn apply_curried_call(
           | "TakeLargest"
           | "TakeSmallest"
           | "SortBy"
+          | "OrderingBy"
           | "GroupBy"
           | "CountsBy"
           | "MaximalBy"

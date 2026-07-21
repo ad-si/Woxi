@@ -2044,7 +2044,7 @@ pub fn dispatch_list_operations(
     "PositionSmallest" if args.len() == 1 => {
       return Some(list_helpers_ast::position_extreme_ast(args, false));
     }
-    "OrderingBy" if args.len() == 2 || args.len() == 3 => {
+    "OrderingBy" if (2..=4).contains(&args.len()) => {
       return Some(list_helpers_ast::ordering_by_ast(args));
     }
     "Nest" if args.len() == 3 => {

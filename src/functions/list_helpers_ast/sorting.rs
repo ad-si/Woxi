@@ -729,14 +729,24 @@ pub fn ordering_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// number of positions: positive keeps the first `n`, negative the last `|n|`,
 /// `All` keeps them all.
 pub fn ordering_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() < 2 || args.len() > 3 {
+  if args.len() < 2 || args.len() > 4 {
     return Err(InterpreterError::EvaluationError(
-      "OrderingBy expects 2 or 3 arguments".into(),
+      "OrderingBy expects 2, 3, or 4 arguments".into(),
     ));
   }
+  // Like Ordering, OrderingBy operates on any nonatomic expression. For an
+  // association it orders by the values, returning positional indices (not
+  // keys): OrderingBy[<|a->{5,2}, b->{3,8}, c->{1,0}|>, First] -> {3, 2, 1}.
+  let assoc_values: Vec<Expr>;
   let items: &[Expr] = match &args[0] {
     Expr::List(items) => items.as_slice(),
-    Expr::FunctionCall { args: fc_args, .. } => fc_args.as_slice(),
+    Expr::Association(pairs) => {
+      assoc_values = pairs.iter().map(|(_, v)| v.clone()).collect();
+      &assoc_values
+    }
+    Expr::FunctionCall { args: fc_args, .. } if !is_atomic_arg(&args[0]) => {
+      fc_args.as_slice()
+    }
     _ => {
       return Ok(unevaluated("OrderingBy", args));
     }
@@ -747,16 +757,57 @@ pub fn ordering_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for (i, item) in items.iter().enumerate() {
     keyed.push((i, apply_func_ast(func, item)?));
   }
-  keyed.sort_by(|a, b| by_key_cmp(&a.1, &b.1));
+
+  // The optional 4th argument is an ordering function `p` applied to the
+  // *keys* (the f-values), mirroring Ordering's 3-arg comparator: keys a and b
+  // are ordered by p[a, b] / p[b, a], and incomparable pairs keep their
+  // original order (stable). Without it, the default key comparison is used.
+  if let Some(comparator) = args.get(3) {
+    let p = comparator.clone();
+    let mut err: Option<InterpreterError> = None;
+    let is_true = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "True");
+    keyed.sort_by(|a, b| {
+      if err.is_some() {
+        return std::cmp::Ordering::Equal;
+      }
+      match crate::functions::list_helpers_ast::apply_func_to_two_args(
+        &p, &a.1, &b.1,
+      ) {
+        Ok(ref r) if is_true(r) => return std::cmp::Ordering::Less,
+        Ok(_) => {}
+        Err(e) => {
+          err = Some(e);
+          return std::cmp::Ordering::Equal;
+        }
+      }
+      match crate::functions::list_helpers_ast::apply_func_to_two_args(
+        &p, &b.1, &a.1,
+      ) {
+        Ok(ref r) if is_true(r) => std::cmp::Ordering::Greater,
+        Ok(_) => std::cmp::Ordering::Equal,
+        Err(e) => {
+          err = Some(e);
+          std::cmp::Ordering::Equal
+        }
+      }
+    });
+    if let Some(e) = err {
+      return Err(e);
+    }
+  } else {
+    keyed.sort_by(|a, b| by_key_cmp(&a.1, &b.1));
+  }
 
   let mut result: Vec<Expr> = keyed
     .iter()
     .map(|(idx, _)| Expr::Integer((*idx + 1) as i128))
     .collect();
 
-  if args.len() == 3 {
-    let is_all = matches!(&args[2], Expr::Identifier(n) if n == "All");
-    if !is_all && let Some(n) = expr_to_i128(&args[2]) {
+  // The 3rd argument, if present and not `All`, limits how many positions are
+  // returned: positive keeps the first n, negative the last |n|.
+  if let Some(nspec) = args.get(2) {
+    let is_all = matches!(nspec, Expr::Identifier(n) if n == "All");
+    if !is_all && let Some(n) = expr_to_i128(nspec) {
       if n >= 0 {
         result.truncate(n as usize);
       } else {
