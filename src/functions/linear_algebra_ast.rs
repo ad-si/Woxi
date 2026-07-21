@@ -473,7 +473,10 @@ pub fn structured_matrix_to_dense(e: &Expr) -> Option<Expr> {
   };
   if !matches!(
     name.as_str(),
-    "LowerTriangularMatrix" | "UpperTriangularMatrix" | "PermutationMatrix"
+    "LowerTriangularMatrix"
+      | "UpperTriangularMatrix"
+      | "PermutationMatrix"
+      | "BlockDiagonalMatrix"
   ) || args.len() != 1
   {
     return None;
@@ -491,6 +494,44 @@ pub fn structured_matrix_to_dense(e: &Expr) -> Option<Expr> {
   let Expr::List(dims) = &sd_args[0] else {
     return None;
   };
+  if name == "BlockDiagonalMatrix" {
+    // Payload is {blockList, rowIndices, colIndices}; place each square block
+    // along the diagonal of an n×n zero matrix.
+    let n = match &dims[..] {
+      [Expr::Integer(r), Expr::Integer(_c)] => usize::try_from(*r).ok()?,
+      _ => return None,
+    };
+    let Expr::List(payload) = &sd_args[1] else {
+      return None;
+    };
+    let Some(Expr::List(blocks)) = payload.first() else {
+      return None;
+    };
+    let mut dense: Vec<Vec<Expr>> = vec![vec![Expr::Integer(0); n]; n];
+    let mut offset = 0usize;
+    for block in blocks.iter() {
+      let Expr::List(rows) = block else {
+        return None;
+      };
+      let bn = rows.len();
+      for (i, row) in rows.iter().enumerate() {
+        let Expr::List(cols) = row else {
+          return None;
+        };
+        for (j, val) in cols.iter().enumerate() {
+          dense[offset + i][offset + j] = val.clone();
+        }
+      }
+      offset += bn;
+    }
+    return Some(Expr::List(
+      dense
+        .into_iter()
+        .map(|r| Expr::List(r.into()))
+        .collect::<Vec<_>>()
+        .into(),
+    ));
+  }
   if name == "PermutationMatrix" {
     // Payload is {Cycles[{{…}, …}], workingLength}; row i of the dense form
     // has its 1 in column π(i), where π is the cycle product.
@@ -550,6 +591,86 @@ pub fn structured_matrix_to_dense(e: &Expr) -> Option<Expr> {
     rows @ Expr::List(_) => Some(rows.clone()),
     _ => None,
   }
+}
+
+/// BlockDiagonalMatrix[{d1, d2, …}] assembles square matrices d1, d2, … as the
+/// diagonal blocks of a larger matrix (zeros off-diagonal), represented as a
+/// structured array
+///   BlockDiagonalMatrix[StructuredArray`StructuredData[{n, n},
+///                       {{d1, d2, …}, Range[n], Range[n]}]]
+/// A single block returns that block directly; wolframscript leaves the empty
+/// list, non-square blocks, or an already-structured argument unevaluated.
+pub fn block_diagonal_matrix_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unchanged = || Ok(unevaluated("BlockDiagonalMatrix", args));
+
+  // Already in the canonical StructuredData form — keep it as-is.
+  if let Expr::FunctionCall { name, .. } = &args[0]
+    && name == "StructuredArray`StructuredData"
+  {
+    return unchanged();
+  }
+
+  let Expr::List(blocks) = &args[0] else {
+    return unchanged();
+  };
+  if blocks.is_empty() {
+    return unchanged();
+  }
+
+  // Every block must be a square matrix (a list of equal-length rows whose
+  // length equals the row count).
+  let mut sizes: Vec<usize> = Vec::with_capacity(blocks.len());
+  for b in blocks.iter() {
+    let Expr::List(rows) = b else {
+      return unchanged();
+    };
+    let nr = rows.len();
+    let square = nr > 0
+      && rows
+        .iter()
+        .all(|r| matches!(r, Expr::List(cols) if cols.len() == nr));
+    if !square {
+      return unchanged();
+    }
+    sizes.push(nr);
+  }
+
+  // A single block is returned as the plain matrix.
+  if blocks.len() == 1 {
+    return Ok(blocks[0].clone());
+  }
+
+  let n: usize = sizes.iter().sum();
+  let range_n = Expr::List(
+    (1..=n as i128)
+      .map(Expr::Integer)
+      .collect::<Vec<_>>()
+      .into(),
+  );
+  let payload = Expr::List(
+    vec![
+      Expr::List(blocks.iter().cloned().collect::<Vec<_>>().into()),
+      range_n.clone(),
+      range_n,
+    ]
+    .into(),
+  );
+  let structured = Expr::FunctionCall {
+    name: "StructuredArray`StructuredData".to_string(),
+    args: vec![
+      Expr::List(
+        vec![Expr::Integer(n as i128), Expr::Integer(n as i128)].into(),
+      ),
+      payload,
+    ]
+    .into(),
+  };
+  Ok(Expr::FunctionCall {
+    name: "BlockDiagonalMatrix".to_string(),
+    args: vec![structured].into(),
+  })
 }
 
 pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

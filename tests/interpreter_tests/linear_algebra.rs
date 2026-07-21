@@ -815,6 +815,72 @@ mod diagonal_matrix {
   }
 }
 
+mod block_diagonal_matrix {
+  use super::*;
+
+  #[test]
+  fn structured_form() {
+    // Multiple blocks yield a structured array (matching wolframscript).
+    assert_eq!(
+      interpret("BlockDiagonalMatrix[{{{1}}, {{2, 3}, {4, 5}}}]").unwrap(),
+      "BlockDiagonalMatrix[StructuredArray`StructuredData[{3, 3}, \
+       {{{{1}}, {{2, 3}, {4, 5}}}, {1, 2, 3}, {1, 2, 3}}]]"
+    );
+  }
+
+  #[test]
+  fn normal_densifies() {
+    // Normal expands the structured array to the dense block-diagonal matrix.
+    assert_eq!(
+      interpret("Normal[BlockDiagonalMatrix[{{{1}}, {{2, 3}, {4, 5}}}]]")
+        .unwrap(),
+      "{{1, 0, 0}, {0, 2, 3}, {0, 4, 5}}"
+    );
+    assert_eq!(
+      interpret("Normal[BlockDiagonalMatrix[{{{1}}, {{2}}, {{3}}}]]").unwrap(),
+      "{{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}"
+    );
+    // Symbolic entries are preserved.
+    assert_eq!(
+      interpret("Normal[BlockDiagonalMatrix[{{{a}}, {{b, c}, {d, e}}}]]")
+        .unwrap(),
+      "{{a, 0, 0}, {0, b, c}, {0, d, e}}"
+    );
+  }
+
+  #[test]
+  fn single_block_is_plain_matrix() {
+    // A single block returns that block directly (Head List, not structured).
+    assert_eq!(
+      interpret("BlockDiagonalMatrix[{{{1, 2}, {3, 4}}}]").unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+  }
+
+  #[test]
+  fn dot_densifies() {
+    // A structured block-diagonal matrix densifies in Dot products.
+    assert_eq!(
+      interpret("BlockDiagonalMatrix[{{{1}}, {{2, 3}, {4, 5}}}] . {1, 1, 1}")
+        .unwrap(),
+      "{1, 5, 9}"
+    );
+  }
+
+  #[test]
+  fn invalid_blocks_stay_unevaluated() {
+    // wolframscript leaves an empty list and non-square blocks unevaluated.
+    assert_eq!(
+      interpret("BlockDiagonalMatrix[{}]").unwrap(),
+      "BlockDiagonalMatrix[{}]"
+    );
+    assert_eq!(
+      interpret("BlockDiagonalMatrix[{{{1, 2, 3}}, {{4}, {5}}}]").unwrap(),
+      "BlockDiagonalMatrix[{{{1, 2, 3}}, {{4}, {5}}}]"
+    );
+  }
+}
+
 mod cross {
   use super::*;
 

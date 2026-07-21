@@ -310,6 +310,11 @@ pub fn dispatch_linear_algebra_functions(
         crate::functions::linear_algebra_ast::permutation_matrix_ast(args),
       );
     }
+    "BlockDiagonalMatrix" if args.len() == 1 => {
+      return Some(
+        crate::functions::linear_algebra_ast::block_diagonal_matrix_ast(args),
+      );
+    }
     "VandermondeMatrix" if args.len() == 1 => {
       return Some(
         crate::functions::linear_algebra_ast::vandermonde_matrix_ast(args),
