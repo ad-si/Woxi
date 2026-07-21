@@ -12796,6 +12796,54 @@ mod trig_factor {
       "Sin[2*x] + Sin[4*x]"
     );
   }
+
+  // Hyperbolic sum-to-product, half-angle squares, double angle, and the
+  // fundamental identity. Verified against wolframscript.
+  #[test]
+  fn hyperbolic() {
+    assert_eq!(
+      interpret("TrigFactor[Sinh[x] + Sinh[y]]").unwrap(),
+      "2*Cosh[x/2 - y/2]*Sinh[x/2 + y/2]"
+    );
+    assert_eq!(
+      interpret("TrigFactor[Sinh[x] - Sinh[y]]").unwrap(),
+      "2*Cosh[x/2 + y/2]*Sinh[x/2 - y/2]"
+    );
+    assert_eq!(
+      interpret("TrigFactor[Cosh[x] + Cosh[y]]").unwrap(),
+      "2*Cosh[x/2 - y/2]*Cosh[x/2 + y/2]"
+    );
+    assert_eq!(
+      interpret("TrigFactor[Cosh[x] - Cosh[y]]").unwrap(),
+      "2*Sinh[x/2 - y/2]*Sinh[x/2 + y/2]"
+    );
+    // Half-angle squares from a constant term.
+    assert_eq!(
+      interpret("TrigFactor[Cosh[x] + 1]").unwrap(),
+      "2*Cosh[x/2]^2"
+    );
+    assert_eq!(
+      interpret("TrigFactor[Cosh[x] - 1]").unwrap(),
+      "2*Sinh[x/2]^2"
+    );
+    assert_eq!(
+      interpret("TrigFactor[1 + Cosh[x]]").unwrap(),
+      "2*Cosh[x/2]^2"
+    );
+    // Double angle.
+    assert_eq!(
+      interpret("TrigFactor[Sinh[2 x]]").unwrap(),
+      "2*Cosh[x]*Sinh[x]"
+    );
+    // The fundamental identity collapses to a constant.
+    assert_eq!(interpret("TrigFactor[Cosh[x]^2 - Sinh[x]^2]").unwrap(), "1");
+    assert_eq!(
+      interpret("TrigFactor[Sinh[x]^2 - Cosh[x]^2]").unwrap(),
+      "-1"
+    );
+    // Non-factoring hyperbolic sums pass through unchanged.
+    assert_eq!(interpret("TrigFactor[1 + Sinh[x]]").unwrap(), "1 + Sinh[x]");
+  }
 }
 
 mod subresultants {

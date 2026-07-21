@@ -177,6 +177,19 @@ fn trig_of(e: &Expr) -> Option<(bool, Expr)> {
   }
 }
 
+/// Match Sinh[u] / Cosh[u] and return (is_sinh, u).
+fn hyp_of(e: &Expr) -> Option<(bool, Expr)> {
+  match e {
+    Expr::FunctionCall { name, args } if args.len() == 1 => match name.as_str()
+    {
+      "Sinh" => Some((true, args[0].clone())),
+      "Cosh" => Some((false, args[0].clone())),
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
 /// Match Times[-1, inner] / UnaryMinus(inner).
 fn negated(e: &Expr) -> Option<&Expr> {
   match e {
@@ -216,6 +229,18 @@ fn factor(expr: &Expr) -> Option<Expr> {
       //         = -2*Sin[u - Pi/4]*Sin[u + Pi/4]
       double_angle_product(&u, -1)
     });
+  }
+
+  // Hyperbolic double angle Sinh[2 u] = 2 Cosh[u] Sinh[u]. (Cosh[2 u] factors
+  // over the complex numbers, so wolframscript uses I there; skip it.)
+  if let Some((true, arg)) = hyp_of(expr)
+    && let Some(u) = halved(&arg)
+  {
+    return Some(times(vec![
+      Expr::Integer(2),
+      trig_call("Cosh", u.clone()),
+      trig_call("Sinh", u),
+    ]));
   }
 
   let terms: Vec<&Expr> = match expr {
@@ -350,6 +375,106 @@ fn factor(expr: &Expr) -> Option<Expr> {
     let sin_negated = if sa { na } else { nb };
     // Cos^2 - Sin^2 = Cos[2u]; Sin^2 - Cos^2 = -Cos[2u]
     return Some(double_angle_product(&ua, if sin_negated { -1 } else { 1 }));
+  }
+
+  // Hyperbolic 1 +- Cosh[u] / Cosh[u] +- 1 -> half-angle squares.
+  //   1 + Cosh[u] = 2 Cosh[u/2]^2,   Cosh[u] - 1 = 2 Sinh[u/2]^2.
+  let const_and_cosh = |c: &Expr, other: &Expr| -> Option<(i128, Expr)> {
+    if let Expr::Integer(k @ (1 | -1)) = c
+      && let Some((false, u)) = hyp_of(other)
+    {
+      return Some((*k, u));
+    }
+    None
+  };
+  if let Some((k, u)) = const_and_cosh(a, b).or_else(|| const_and_cosh(b, a)) {
+    let h = halved(&u).unwrap_or_else(|| div(u.clone(), 2));
+    return Some(if k == 1 {
+      times(vec![Expr::Integer(2), pow2(trig_call("Cosh", h))])
+    } else {
+      times(vec![Expr::Integer(2), pow2(trig_call("Sinh", h))])
+    });
+  }
+
+  // Hyperbolic sum-to-product for distinct atomic arguments:
+  //   Sinh[x] + Sinh[y] = 2 Cosh[(x-y)/2] Sinh[(x+y)/2]
+  //   Cosh[x] + Cosh[y] = 2 Cosh[(x-y)/2] Cosh[(x+y)/2]
+  //   Cosh[x] - Cosh[y] = 2 Sinh[(x-y)/2] Sinh[(x+y)/2]
+  let classify_hyp = |e: &Expr| -> Option<(bool, bool, Expr)> {
+    // (is_sinh, negated, u)
+    if let Some((is_sinh, u)) = hyp_of(e) {
+      return Some((is_sinh, false, u));
+    }
+    if let Some(inner) = negated(e)
+      && let Some((is_sinh, u)) = hyp_of(inner)
+    {
+      return Some((is_sinh, true, u));
+    }
+    None
+  };
+  if let (Some((sa, na, ua)), Some((sb, nb, ub))) =
+    (classify_hyp(a), classify_hyp(b))
+    && sa == sb
+    && matches!(ua, Expr::Identifier(_))
+    && matches!(ub, Expr::Identifier(_))
+    && !same(&ua, &ub)
+  {
+    let hd = half_diff(&ua, &ub); // x/2 - y/2
+    let hs = half_sum(&ua, &ub); // x/2 + y/2
+    let prod = |k: i128, h1: &str, a1: Expr, h2: &str, a2: Expr| {
+      times(vec![Expr::Integer(k), trig_call(h1, a1), trig_call(h2, a2)])
+    };
+    return Some(if sa {
+      // Both Sinh: the product is Cosh * Sinh.
+      match (na, nb) {
+        (false, false) => prod(2, "Cosh", hd, "Sinh", hs),
+        (false, true) => prod(2, "Cosh", hs, "Sinh", hd),
+        (true, false) => prod(-2, "Cosh", hs, "Sinh", hd),
+        (true, true) => prod(-2, "Cosh", hd, "Sinh", hs),
+      }
+    } else {
+      // Both Cosh.
+      match (na, nb) {
+        (false, false) => prod(2, "Cosh", hd, "Cosh", hs),
+        (false, true) => prod(2, "Sinh", hd, "Sinh", hs),
+        (true, false) => prod(-2, "Sinh", hd, "Sinh", hs),
+        (true, true) => prod(-2, "Cosh", hd, "Cosh", hs),
+      }
+    });
+  }
+
+  // Cosh[u]^2 - Sinh[u]^2 = 1 (and Sinh[u]^2 - Cosh[u]^2 = -1).
+  let squared_hyp = |e: &Expr| -> Option<(bool, bool, Expr)> {
+    let (inner, negd) = match negated(e) {
+      Some(inner) => (inner, true),
+      None => (e, false),
+    };
+    let base = match inner {
+      Expr::FunctionCall { name, args }
+        if name == "Power"
+          && args.len() == 2
+          && matches!(&args[1], Expr::Integer(2)) =>
+      {
+        &args[0]
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } if matches!(right.as_ref(), Expr::Integer(2)) => left.as_ref(),
+      _ => return None,
+    };
+    hyp_of(base).map(|(is_sinh, u)| (is_sinh, negd, u))
+  };
+  if let (Some((sa, na, ua)), Some((sb, nb, ub))) =
+    (squared_hyp(a), squared_hyp(b))
+    && sa != sb
+    && na != nb
+    && same(&ua, &ub)
+  {
+    // The result is +1 when the Cosh^2 term is the positive one.
+    let cosh_negated = if sa { nb } else { na };
+    return Some(Expr::Integer(if cosh_negated { -1 } else { 1 }));
   }
 
   None
