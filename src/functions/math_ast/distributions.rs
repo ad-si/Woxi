@@ -3093,8 +3093,66 @@ pub fn expectation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return crate::evaluator::evaluate_expr_to_expr(&prob);
   }
 
+  // Try exact symbolic integration E[g(x)] = ∫ g(x) f(x) dx over the support
+  // before falling back to quadrature, so e.g.
+  // Expectation[Sin[x], x ∈ UniformDistribution[{0, Pi}]] = 2/Pi rather than a
+  // numerical surrogate.
+  if let Some(result) =
+    try_symbolic_expectation(expr, &var_name, dist_name, dargs)
+  {
+    return Ok(result);
+  }
+
   // For more complex expressions, use numerical integration
   expectation_numerical(expr, &var_name, dist_name, dargs)
+}
+
+/// Attempt an exact expectation via symbolic definite integration of
+/// `g(x) f(x)` over the distribution's support. Returns None when the support
+/// is not known symbolically or the definite integral does not evaluate.
+fn try_symbolic_expectation(
+  expr: &Expr,
+  var: &str,
+  dist_name: &str,
+  dargs: &[Expr],
+) -> Option<Expr> {
+  // E[g(x)] over UniformDistribution[{a, b}] is Integrate[g, {x, a, b}]/(b-a).
+  let (lo, hi) = match dist_name {
+    "UniformDistribution" => match dargs {
+      [] => (int(0), int(1)),
+      [Expr::List(bounds)] if bounds.len() == 2 => {
+        (bounds[0].clone(), bounds[1].clone())
+      }
+      _ => return None,
+    },
+    _ => return None,
+  };
+  let iter = Expr::List(
+    vec![Expr::Identifier(var.to_string()), lo.clone(), hi.clone()].into(),
+  );
+  let integral = call("Integrate", vec![expr.clone(), iter]);
+  let result = eval(divide(integral, minus(hi, lo))).ok()?;
+  // A definite integral that could not be done leaves an Integrate head; reject
+  // it so the numerical fallback runs.
+  if expr_contains_head(&result, "Integrate") {
+    return None;
+  }
+  Some(result)
+}
+
+/// Whether `expr` contains a `FunctionCall` with the given head anywhere.
+fn expr_contains_head(expr: &Expr, head: &str) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      name == head || args.iter().any(|a| expr_contains_head(a, head))
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      expr_contains_head(left, head) || expr_contains_head(right, head)
+    }
+    Expr::UnaryOp { operand, .. } => expr_contains_head(operand, head),
+    Expr::List(items) => items.iter().any(|a| expr_contains_head(a, head)),
+    _ => false,
+  }
 }
 
 /// Match expressions of the form `c · Exp[t·x]` (with `c`, `t`

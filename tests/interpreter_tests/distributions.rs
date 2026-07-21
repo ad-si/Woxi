@@ -1062,6 +1062,49 @@ mod probability_distribution {
     );
   }
 
+  // A non-polynomial integrand over a uniform distribution is computed by exact
+  // symbolic integration, E[g(x)] = Integrate[g, {x, a, b}]/(b-a), rather than a
+  // numerical surrogate. Verified against wolframscript.
+  #[test]
+  fn expectation_uniform_symbolic() {
+    assert_eq!(
+      interpret(
+        "Expectation[Sin[x], x \\[Distributed] UniformDistribution[{0, Pi}]]"
+      )
+      .unwrap(),
+      "2/Pi"
+    );
+    assert_eq!(
+      interpret(
+        "Expectation[Exp[x], x \\[Distributed] UniformDistribution[{0, 1}]]"
+      )
+      .unwrap(),
+      "-1 + E"
+    );
+    assert_eq!(
+      interpret(
+        "Expectation[1/x, x \\[Distributed] UniformDistribution[{1, 2}]]"
+      )
+      .unwrap(),
+      "Log[2]"
+    );
+    assert_eq!(
+      interpret(
+        "Expectation[Sin[x]^2, x \\[Distributed] UniformDistribution[{0, 2 Pi}]]"
+      )
+      .unwrap(),
+      "1/2"
+    );
+    // The polynomial fast path is unchanged.
+    assert_eq!(
+      interpret(
+        "Expectation[x^2, x \\[Distributed] UniformDistribution[{0, 1}]]"
+      )
+      .unwrap(),
+      "1/3"
+    );
+  }
+
   // Expectation over a data list is the empirical (sample) mean of the
   // expression with the variable replaced by each data point.
   #[test]
