@@ -1779,6 +1779,38 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Special case: HypergeometricU[a, a, z] = E^z Gamma[1 - a, z] (Kummer's
+  // second solution with equal first two parameters). Covers U[1, 1, z] =
+  // E^z Gamma[0, z] and U[2, 2, z] = E^z Gamma[-1, z]; numeric real arguments
+  // are handled by the fast path above.
+  if crate::evaluator::pattern_matching::expr_equal(&args[0], &args[1]) {
+    let z = args[2].clone();
+    let one_minus_a =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          Expr::Integer(1),
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), args[0].clone()].into(),
+          },
+        ]
+        .into(),
+      })?;
+    let exp_z = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![Expr::Identifier("E".to_string()), z.clone()].into(),
+    };
+    let gamma = Expr::FunctionCall {
+      name: "Gamma".to_string(),
+      args: vec![one_minus_a, z].into(),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![exp_z, gamma].into(),
+    });
+  }
+
   // Special case: HypergeometricU[a, a+1, z] = z^(-a)
   if let Expr::Integer(a) = &args[0]
     && let Expr::Integer(b) = &args[1]

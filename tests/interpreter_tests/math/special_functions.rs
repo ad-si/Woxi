@@ -733,6 +733,33 @@ mod hypergeometric_u {
     // HypergeometricU[0, b, z] = 1 for any b and z
     assert_eq!(interpret("HypergeometricU[0, b, z]").unwrap(), "1");
   }
+
+  // HypergeometricU[a, a, z] = E^z Gamma[1 - a, z] (equal first two parameters).
+  #[test]
+  fn equal_parameters() {
+    assert_eq!(
+      interpret("HypergeometricU[a, a, z]").unwrap(),
+      "E^z*Gamma[1 - a, z]"
+    );
+    assert_eq!(
+      interpret("HypergeometricU[1, 1, z]").unwrap(),
+      "E^z*Gamma[0, z]"
+    );
+    assert_eq!(
+      interpret("HypergeometricU[2, 2, z]").unwrap(),
+      "E^z*Gamma[-1, z]"
+    );
+    assert_eq!(
+      interpret("HypergeometricU[3, 3, z]").unwrap(),
+      "E^z*Gamma[-2, z]"
+    );
+    assert_eq!(
+      interpret("HypergeometricU[1/2, 1/2, z]").unwrap(),
+      "E^z*Gamma[1/2, z]"
+    );
+    // a = b = 0 still collapses all the way to 1.
+    assert_eq!(interpret("HypergeometricU[0, 0, z]").unwrap(), "1");
+  }
 }
 
 mod scorer_functions {
