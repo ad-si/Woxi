@@ -6103,6 +6103,57 @@ fn try_match_exp_over_linear(
   }
 }
 
+/// Try to match ∫ f(a*x) / (c*x) dx for a trigonometric or hyperbolic `f`,
+/// giving the corresponding exponential-integral special function:
+///   Sin  → SinIntegral,   Cos  → CosIntegral,
+///   Sinh → SinhIntegral,  Cosh → CoshIntegral.
+/// e.g. ∫ Sin[x]/x dx = SinIntegral[x] and ∫ Cos[a x]/x dx = CosIntegral[a x].
+fn try_match_si_ci_over_linear(
+  numerator: &Expr,
+  denominator: &Expr,
+  var: &str,
+) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = numerator else {
+    return None;
+  };
+  if args.len() != 1 {
+    return None;
+  }
+  let integral_name = match name.as_str() {
+    "Sin" => "SinIntegral",
+    "Cos" => "CosIntegral",
+    "Sinh" => "SinhIntegral",
+    "Cosh" => "CoshIntegral",
+    _ => return None,
+  };
+  let linear_coeff = try_match_linear_arg(&args[0], var)?; // a in f(a*x)
+  let denom_const = try_match_linear_arg(denominator, var)?; // c in c*x
+
+  let si_arg = if matches!(&linear_coeff, Expr::Integer(1)) {
+    Expr::Identifier(var.to_string())
+  } else {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(linear_coeff),
+      right: Box::new(Expr::Identifier(var.to_string())),
+    }
+  };
+  let si_expr = Expr::FunctionCall {
+    name: integral_name.to_string(),
+    args: vec![si_arg].into(),
+  };
+
+  if matches!(&denom_const, Expr::Integer(1)) {
+    Some(si_expr)
+  } else {
+    Some(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(si_expr),
+      right: Box::new(denom_const),
+    })
+  }
+}
+
 /// Check if an expression is Rational[-1, 2] (i.e., exponent -1/2)
 fn is_rational_neg_half(expr: &Expr) -> bool {
   matches!(
@@ -8653,6 +8704,11 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             if let Some(result) = try_match_exp_over_linear(left, right, var) {
               return Some(result);
             }
+            // ∫ Sin[a*x]/(c*x) dx = SinIntegral[a*x]/c (and Cos/Sinh/Cosh)
+            if let Some(result) = try_match_si_ci_over_linear(left, right, var)
+            {
+              return Some(result);
+            }
             // Trig quotients like Sin[x]^2/Cos[x]
             if let Some(result) =
               try_integrate_trig_quotient(&[left], &[right], var)
@@ -9598,6 +9654,12 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               // Try exp over linear: ∫ E^(a*x) / (c*x) dx
               if let Some(result) =
                 try_match_exp_over_linear(&numerator, &denominator, var)
+              {
+                return Some(apply_const(result));
+              }
+              // ∫ Sin[a*x]/(c*x) dx = SinIntegral[a*x]/c (and Cos/Sinh/Cosh)
+              if let Some(result) =
+                try_match_si_ci_over_linear(&numerator, &denominator, var)
               {
                 return Some(apply_const(result));
               }

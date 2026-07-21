@@ -7078,6 +7078,64 @@ mod integrate_exp_integral_ei {
   }
 }
 
+// ∫ f(a x)/(c x) dx for the trig/hyperbolic exponential-integral family.
+// Verified against wolframscript.
+mod integrate_si_ci {
+  use super::*;
+
+  #[test]
+  fn sin_and_cos() {
+    assert_eq!(
+      interpret("Integrate[Sin[x]/x, x]").unwrap(),
+      "SinIntegral[x]"
+    );
+    assert_eq!(
+      interpret("Integrate[Cos[x]/x, x]").unwrap(),
+      "CosIntegral[x]"
+    );
+    // Linear coefficient carries into the argument.
+    assert_eq!(
+      interpret("Integrate[Sin[2 x]/x, x]").unwrap(),
+      "SinIntegral[2*x]"
+    );
+    assert_eq!(
+      interpret("Integrate[Cos[3 x]/x, x]").unwrap(),
+      "CosIntegral[3*x]"
+    );
+    // A constant denominator factor divides the result.
+    assert_eq!(
+      interpret("Integrate[Sin[x]/(2 x), x]").unwrap(),
+      "SinIntegral[x]/2"
+    );
+  }
+
+  #[test]
+  fn hyperbolic() {
+    assert_eq!(
+      interpret("Integrate[Sinh[x]/x, x]").unwrap(),
+      "SinhIntegral[x]"
+    );
+    assert_eq!(
+      interpret("Integrate[Cosh[x]/x, x]").unwrap(),
+      "CoshIntegral[x]"
+    );
+  }
+
+  #[test]
+  fn nonmatching_forms_stay_unevaluated() {
+    // Tan is not part of the family.
+    assert_eq!(
+      interpret("Integrate[Tan[x]/x, x]").unwrap(),
+      "Integrate[Tan[x]/x, x]"
+    );
+    // A nonlinear argument is not the simple f(a x)/x pattern.
+    assert_eq!(
+      interpret("Integrate[Sin[x^2]/x, x]").unwrap(),
+      "Integrate[Sin[x^2]/x, x]"
+    );
+  }
+}
+
 mod sqrt_differentiation {
   use super::*;
 
