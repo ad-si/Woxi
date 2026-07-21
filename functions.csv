@@ -1747,7 +1747,7 @@ FindGeneratingFunction,Find generating function,,unevaluated,7.0,1776
 HistogramDistribution,Histogram distribution of univariate data (DataDistribution container; PDF/CDF/Mean/Variance/StandardDeviation),✅,pure,8.0,1776
 VectorScaling,Vector scaling option,,unevaluated,12.1,1776
 GaussianMatrix,Discrete Gaussian matrix of radius r with standard deviation sigma (default r/2),✅,pure,7.0,1779
-NumberSigns,Number sign display,,unevaluated,2.0,1779
+NumberSigns,Option for NumberForm giving the strings to use for negative and positive number signs,✅,pure,2.0,1779
 TextRecognize,Recognize text in image,✅,unevaluated,8.0,1779
 LeviCivitaTensor,Levi-Civita totally antisymmetric tensor,✅,pure,7.0,1781
 WeierstrassZeta,Weierstrass zeta function,,unevaluated,3.0,1781

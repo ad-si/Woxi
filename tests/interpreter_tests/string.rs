@@ -10482,6 +10482,43 @@ abb""#,
     assert_case("ToString[NumberForm[3.14159, 3]]", "3.14");
     assert_case("ToString[NumberForm[3.14159, 5]]", "3.1416");
   }
+  // NumberSigns -> {neg, pos} overrides the sign prefixes: a non-negative
+  // number (including zero) gets `pos`, a negative one gets `neg`.
+  #[test]
+  fn to_string_number_form_number_signs() {
+    assert_case(
+      "ToString[NumberForm[2.5, 3, NumberSigns -> {\"-\", \"+\"}]]",
+      "+2.5",
+    );
+    assert_case(
+      "ToString[NumberForm[-2.5, 3, NumberSigns -> {\"-\", \"+\"}]]",
+      "-2.5",
+    );
+    // Custom sign strings and the no-precision form.
+    assert_case(
+      "ToString[NumberForm[2.5, NumberSigns -> {\"neg\", \"pos\"}]]",
+      "pos2.5",
+    );
+    // Integers and zero (zero counts as non-negative).
+    assert_case(
+      "ToString[NumberForm[123, NumberSigns -> {\"-\", \"+\"}]]",
+      "+123",
+    );
+    assert_case(
+      "ToString[NumberForm[0, NumberSigns -> {\"-\", \"+\"}]]",
+      "+0",
+    );
+    // Empty signs strip the sign entirely, even for negatives.
+    assert_case(
+      "ToString[NumberForm[-3.14, NumberSigns -> {\"\", \"\"}]]",
+      "3.14",
+    );
+    // Combined with a {n, f} fixed-digit precision spec.
+    assert_case(
+      "ToString[NumberForm[2.5, {5, 2}, NumberSigns -> {\"-\", \"+\"}]]",
+      "+2.50",
+    );
+  }
   #[test]
   fn to_string_number_form_trailing_dot() {
     assert_case("ToString[NumberForm[3.0, 3]]", "3.");

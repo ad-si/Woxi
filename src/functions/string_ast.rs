@@ -4319,6 +4319,64 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // NumberForm[x, NumberSigns -> {neg, pos}] (with optional positional
+  // precision) — override the sign strings: a non-negative number (including
+  // zero) is prefixed with `pos`, a negative one with `neg` before its
+  // magnitude. e.g. NumberForm[2.5, NumberSigns -> {"-", "+"}] -> "+2.5",
+  // NumberForm[-2.5, …] -> "-2.5", NumberForm[-3.14, {"", ""}] -> "3.14".
+  if let Expr::FunctionCall {
+    name,
+    args: inner_args,
+  } = &args[0]
+    && name == "NumberForm"
+    && !is_input_form
+    && let Some(Expr::List(signs)) = inner_args.iter().find_map(|a| match a {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "NumberSigns") => {
+        Some(replacement.as_ref())
+      }
+      _ => None,
+    })
+    && signs.len() == 2
+  {
+    let neg = match &signs[0] {
+      Expr::String(s) => s.clone(),
+      _ => "-".to_string(),
+    };
+    let pos = match &signs[1] {
+      Expr::String(s) => s.clone(),
+      _ => String::new(),
+    };
+    let positional: Vec<&Expr> = inner_args
+      .iter()
+      .filter(|a| !matches!(a, Expr::Rule { .. }))
+      .collect();
+    if let Some(&x) = positional.first() {
+      let (is_neg, abs_x) = match x {
+        Expr::Real(f) => (*f < 0.0, Expr::Real(f.abs())),
+        Expr::Integer(i) => (*i < 0, Expr::Integer(i.abs())),
+        _ => (false, x.clone()),
+      };
+      // The magnitude is rendered by the usual precision path: an integer
+      // second argument gives significant figures, a {n, f} list fixes the
+      // digits after the point, and no precision defaults to 6.
+      let rendered = match positional.get(1) {
+        Some(Expr::Integer(n)) => number_form_render(&abs_x, *n as i64),
+        Some(Expr::List(spec)) if spec.len() == 2 => match &spec[1] {
+          Expr::Integer(f) => number_form_fixed_to_string(&abs_x, *f as i64),
+          _ => None,
+        },
+        _ => number_form_render(&abs_x, 6),
+      };
+      if let Some(rendered) = rendered {
+        let sign = if is_neg { &neg } else { &pos };
+        return Ok(Expr::String(format!("{sign}{rendered}")));
+      }
+    }
+  }
+
   // NumberForm[x, n] — render x to n significant figures.
   // NumberForm[x, {n, f}] — render x with exactly f digits after the decimal
   // point (zero-padded).
