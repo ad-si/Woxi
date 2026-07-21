@@ -527,6 +527,15 @@ pub fn dispatch_polynomial_functions(
     "NMinValue" if args.len() == 2 => {
       // NMinValue[f, x] => calls FindMinimum[f, {x, 0}] and extracts the value
       if let Expr::Identifier(var) = &args[1] {
+        // Constrained form `NMinValue[{f, cons}, x]`: minimize f over the
+        // interval that `cons` (e.g. `0 <= x <= 20`) bounds x to.
+        if let Expr::List(items) = &args[0]
+          && items.len() == 2
+          && let Some(v) =
+            try_bounded_1d_extremum(&items[0], &items[1], var, false)
+        {
+          return Some(Ok(Expr::Real(v)));
+        }
         let find_args = vec![
           args[0].clone(),
           Expr::List(
@@ -543,6 +552,13 @@ pub fn dispatch_polynomial_functions(
     }
     "NMaxValue" if args.len() == 2 => {
       if let Expr::Identifier(var) = &args[1] {
+        if let Expr::List(items) = &args[0]
+          && items.len() == 2
+          && let Some(v) =
+            try_bounded_1d_extremum(&items[0], &items[1], var, true)
+        {
+          return Some(Ok(Expr::Real(v)));
+        }
         let find_args = vec![
           args[0].clone(),
           Expr::List(
@@ -914,6 +930,161 @@ fn try_reduce_modulus(expr: &Expr, vars: &Expr, opt: &Expr) -> Option<Expr> {
     }
   };
   Some(result)
+}
+
+/// Extract the numeric interval `[lo, hi]` that a constraint bounds `var` to,
+/// for the single-variable forms used by `NMinValue[{f, cons}, x]`. Handles
+/// chained `lo <= x <= hi` (parsed as `LessEqual[lo, x, hi]`), its strict and
+/// reversed variants, and `And`-joined one-sided bounds. Returns `None` when
+/// the constraint does not resolve to a finite interval in `var`.
+fn constraint_interval(cons: &Expr, var: &str) -> Option<(f64, f64)> {
+  let is_var = |e: &Expr| matches!(e, Expr::Identifier(s) if s == var);
+  let num = |e: &Expr| crate::functions::math_ast::try_eval_to_f64(e);
+  let mut lo: Option<f64> = None;
+  let mut hi: Option<f64> = None;
+  // Fold a single relation into the running (lo, hi) bounds. `flip` swaps the
+  // comparison direction so `>=`/`>` reuse the `<=`/`<` logic.
+  let mut apply = |a: &Expr, b: &Expr| {
+    // a <= b (or a < b): if a is var, b bounds it above; if b is var, a bounds
+    // it below.
+    if is_var(a)
+      && let Some(v) = num(b)
+    {
+      hi = Some(hi.map_or(v, |h: f64| h.min(v)));
+    } else if is_var(b)
+      && let Some(v) = num(a)
+    {
+      lo = Some(lo.map_or(v, |l: f64| l.max(v)));
+    }
+  };
+  fn collect(cons: &Expr, apply: &mut impl FnMut(&Expr, &Expr)) -> bool {
+    match cons {
+      Expr::FunctionCall { name, args }
+        if matches!(name.as_str(), "LessEqual" | "Less") =>
+      {
+        // Chain a1 <= a2 <= … <= an: each adjacent pair is a relation.
+        for w in args.windows(2) {
+          apply(&w[0], &w[1]);
+        }
+        true
+      }
+      Expr::FunctionCall { name, args }
+        if matches!(name.as_str(), "GreaterEqual" | "Greater") =>
+      {
+        // a1 >= a2 >= … : reverse each pair into the `<=` orientation.
+        for w in args.windows(2) {
+          apply(&w[1], &w[0]);
+        }
+        true
+      }
+      Expr::FunctionCall { name, args } if name == "And" => {
+        args.iter().all(|c| collect(c, apply))
+      }
+      // Chained comparisons parse to `Expr::Comparison` rather than a
+      // LessEqual/Greater FunctionCall (e.g. `0 <= x <= 20`).
+      Expr::Comparison {
+        operands,
+        operators,
+      } => {
+        let mut ok = true;
+        for (i, op) in operators.iter().enumerate() {
+          match op {
+            ComparisonOp::LessEqual | ComparisonOp::Less => {
+              apply(&operands[i], &operands[i + 1]);
+            }
+            ComparisonOp::GreaterEqual | ComparisonOp::Greater => {
+              apply(&operands[i + 1], &operands[i]);
+            }
+            _ => ok = false,
+          }
+        }
+        ok
+      }
+      _ => false,
+    }
+  }
+  if !collect(cons, &mut apply) {
+    return None;
+  }
+  match (lo, hi) {
+    (Some(l), Some(h)) if l < h => Some((l, h)),
+    _ => None,
+  }
+}
+
+/// Minimize (or maximize) a one-variable objective `obj` over the interval
+/// that `cons` bounds `var` to. Used for `NMinValue[{f, a <= x <= b}, x]` and
+/// `NMaxValue`. The objective may be non-convex/oscillatory, so a dense sweep
+/// locates the global basin and a golden-section search refines the best
+/// point. Returns `None` if the constraint has no finite interval or the
+/// objective can't be evaluated numerically.
+fn try_bounded_1d_extremum(
+  obj: &Expr,
+  cons: &Expr,
+  var: &str,
+  maximize: bool,
+) -> Option<f64> {
+  let (lo, hi) = constraint_interval(cons, var)?;
+  // Evaluate the objective at a point, returning it oriented so we always
+  // minimize (negate when maximizing).
+  let eval = |x: f64| -> Option<f64> {
+    let sub = crate::syntax::substitute_variable(obj, var, &Expr::Real(x));
+    let v = crate::functions::math_ast::try_eval_to_f64(
+      &crate::evaluator::evaluate_expr_to_expr(&sub).ok()?,
+    )?;
+    if v.is_finite() {
+      Some(if maximize { -v } else { v })
+    } else {
+      None
+    }
+  };
+  // Dense sweep to find the global basin.
+  const SWEEP: usize = 4000;
+  let mut best_x = lo;
+  let mut best_v = f64::INFINITY;
+  let mut any = false;
+  for i in 0..=SWEEP {
+    let x = lo + (hi - lo) * (i as f64) / (SWEEP as f64);
+    if let Some(v) = eval(x) {
+      any = true;
+      if v < best_v {
+        best_v = v;
+        best_x = x;
+      }
+    }
+  }
+  if !any {
+    return None;
+  }
+  // Golden-section refine within one sweep step either side of the best point.
+  let step = (hi - lo) / (SWEEP as f64);
+  let mut a = (best_x - step).max(lo);
+  let mut b = (best_x + step).min(hi);
+  const INV_PHI: f64 = 0.618_033_988_749_895;
+  let mut c = b - (b - a) * INV_PHI;
+  let mut d = a + (b - a) * INV_PHI;
+  let mut fc = eval(c).unwrap_or(best_v);
+  let mut fd = eval(d).unwrap_or(best_v);
+  for _ in 0..100 {
+    if (b - a).abs() < 1e-12 {
+      break;
+    }
+    if fc < fd {
+      b = d;
+      d = c;
+      fd = fc;
+      c = b - (b - a) * INV_PHI;
+      fc = eval(c).unwrap_or(best_v);
+    } else {
+      a = c;
+      c = d;
+      fc = fd;
+      d = a + (b - a) * INV_PHI;
+      fd = eval(d).unwrap_or(best_v);
+    }
+  }
+  let refined = best_v.min(fc).min(fd);
+  Some(if maximize { -refined } else { refined })
 }
 
 ///   * f is linear in v1, v2 with numeric coefficients,

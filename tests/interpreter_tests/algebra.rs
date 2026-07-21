@@ -11855,6 +11855,23 @@ mod cases {
     );
   }
   #[test]
+  fn nminvalue_bounded_interval() {
+    // NMinValue[{f, a <= x <= b}, x] minimizes over the bounded interval,
+    // even for a non-convex/oscillatory objective. Matches wolframscript's
+    // -2.4050151239695476.
+    assert_case(
+      r#"f = Sin[Sqrt[2] x] + Sin[x]; NMinValue[{D[f, x], 0 <= x <= 20}, x]"#,
+      r#"-2.4050151239695476"#,
+    );
+  }
+  #[test]
+  fn nmaxvalue_bounded_interval() {
+    assert_case(
+      r#"f = Sin[Sqrt[2] x] + Sin[x]; NMaxValue[{D[f, x], 0 <= x <= 20}, x]"#,
+      r#"2.414213562373095"#,
+    );
+  }
+  #[test]
   fn find_root_1() {
     assert_case(
       r#"FindRoot[Cos[x], {x, 1}]"#,
