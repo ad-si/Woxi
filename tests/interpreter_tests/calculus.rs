@@ -9497,6 +9497,34 @@ mod trig_reduce {
     );
   }
 
+  // Mixed powers and products must be fully linearized: reducing one power
+  // leaves a residual product (Cos[2x] Sin[x]) that a second pass reduces.
+  // Verified against wolframscript.
+  #[test]
+  fn mixed_power_product_fully_linearizes() {
+    assert_eq!(
+      interpret("TrigReduce[Cos[x]^2 Sin[x]]").unwrap(),
+      "(Sin[x] + Sin[3*x])/4"
+    );
+    assert_eq!(
+      interpret("TrigReduce[Sin[x]^2 Cos[x]]").unwrap(),
+      "(Cos[x] - Cos[3*x])/4"
+    );
+    assert_eq!(
+      interpret("TrigReduce[Cos[x]^2 Sin[x]^2]").unwrap(),
+      "(1 - Cos[4*x])/8"
+    );
+    assert_eq!(
+      interpret("TrigReduce[Sin[x]^3 Cos[x]^2]").unwrap(),
+      "(2*Sin[x] + Sin[3*x] - Sin[5*x])/16"
+    );
+    // A triple product collapses all the way to a single sine.
+    assert_eq!(
+      interpret("TrigReduce[Sin[x] Cos[x] Cos[2 x]]").unwrap(),
+      "Sin[4*x]/4"
+    );
+  }
+
   #[test]
   fn sin_cubed() {
     assert_eq!(

@@ -5873,15 +5873,37 @@ pub fn trig_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(unevaluated("TrigReduce", args));
   }
-  let result = trig_reduce_recursive(&args[0]);
-  let evaluated = crate::evaluator::evaluate_expr_to_expr(&result)?;
+  // A single reduction pass can leave a residual product of trig functions:
+  // reducing Cos[x]^2 to (1 + Cos[2x])/2 and distributing over Sin[x] yields
+  // (Sin[x] + Cos[2x] Sin[x])/2, whose Cos[2x] Sin[x] must be reduced again.
+  // Iterate to a fixed point so the result is fully linearized, e.g.
+  // (Sin[x] + Sin[3x])/4.
+  let mut current = args[0].clone();
+  for _ in 0..8 {
+    let reduced = trig_reduce_recursive(&current);
+    let evaluated = crate::evaluator::evaluate_expr_to_expr(&reduced)?;
+    // Expand so any product left factored by a power reduction — e.g.
+    // (1 + Cos[2x])/2 * Sin[x] — is distributed into Cos[2x] Sin[x] + …, then
+    // recombine into a single fraction whose numerator carries the product as
+    // a clean term. The next pass's recursion reduces that Cos[2x] Sin[x].
+    let expanded =
+      crate::evaluator::evaluate_function_call_ast("Expand", &[evaluated])?;
+    let combined =
+      crate::evaluator::evaluate_function_call_ast("Together", &[expanded])?;
+    if crate::syntax::expr_to_string(&combined)
+      == crate::syntax::expr_to_string(&current)
+    {
+      break;
+    }
+    current = combined;
+  }
   // Combine the per-term reductions: a sum like Sin[x]^2 + Cos[x]^2 reduces to
   // (1 + Cos[2x])/2 + (1 - Cos[2x])/2, which should collapse to 1. Together
   // merges the fractions and Cancel reduces the result, while an
   // already-combined single fraction (e.g. (Cos[x-y] - Cos[x+y])/2) is left
   // intact.
   let combined =
-    crate::evaluator::evaluate_function_call_ast("Together", &[evaluated])?;
+    crate::evaluator::evaluate_function_call_ast("Together", &[current])?;
   crate::evaluator::evaluate_function_call_ast("Cancel", &[combined])
 }
 
