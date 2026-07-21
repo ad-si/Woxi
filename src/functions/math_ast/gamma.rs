@@ -278,6 +278,18 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if matches!(z1, Expr::Identifier(s) if s == "Infinity") {
       return gamma_incomplete_upper(a, z0);
     }
+    // Gamma[1, z0, z1] = E^(-z0) - E^(-z1) (since Gamma[1, z] = E^(-z)).
+    // wolframscript expands this for a = 1 regardless of the limits, unlike the
+    // general finite-limit case which stays symbolic.
+    if matches!(a, Expr::Integer(1)) {
+      let g0 = gamma_incomplete_upper(a, z0)?;
+      let g1 = gamma_incomplete_upper(a, z1)?;
+      return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(g0),
+        right: Box::new(g1),
+      });
+    }
     // Numeric when any argument is an inexact (machine) real. Otherwise
     // Wolfram keeps the symbolic Gamma[a, z0, z1] form (it does NOT expand
     // to the difference of one-argument incomplete gammas).

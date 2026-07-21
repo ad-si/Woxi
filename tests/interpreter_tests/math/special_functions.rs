@@ -9189,6 +9189,23 @@ mod gamma_incomplete {
     );
   }
 
+  // Gamma[1, z0, z1] = E^(-z0) - E^(-z1): the a = 1 case expands (Gamma[1, z] =
+  // E^(-z)), unlike the general finite-limit form which stays symbolic.
+  #[test]
+  fn gamma_three_arg_a1_expands() {
+    assert_eq!(interpret("Gamma[1, 2, 3]").unwrap(), "-E^(-3) + E^(-2)");
+    assert_eq!(interpret("Gamma[1, 0, 3]").unwrap(), "1 - E^(-3)");
+    assert_eq!(interpret("Gamma[1, x, y]").unwrap(), "E^(-x) - E^(-y)");
+    assert_eq!(interpret("Gamma[1, 2, y]").unwrap(), "E^(-2) - E^(-y)");
+    // Still consistent with the Infinity and equal-limit reductions.
+    assert_eq!(interpret("Gamma[1, 2, Infinity]").unwrap(), "E^(-2)");
+    assert_eq!(interpret("Gamma[1, 0, Infinity]").unwrap(), "1");
+    assert_eq!(interpret("Gamma[1, 5, 5]").unwrap(), "0");
+    // Other orders still stay symbolic (only a = 1 expands).
+    assert_eq!(interpret("Gamma[2, 2, 3]").unwrap(), "Gamma[2, 2, 3]");
+    assert_eq!(interpret("Gamma[1/2, 2, 3]").unwrap(), "Gamma[1/2, 2, 3]");
+  }
+
   // Derivatives of the incomplete gamma: d/dz Gamma[a, z] = -z^(a-1) E^(-z),
   // and the three-argument form differentiates as the difference.
   #[test]
