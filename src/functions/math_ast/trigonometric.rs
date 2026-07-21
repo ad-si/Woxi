@@ -5094,6 +5094,77 @@ fn extract_half_odd_pi_i_coefficient(e: &Expr) -> Option<i128> {
   if has_i && has_pi { k } else { None }
 }
 
+/// If `c` is a negative integer or negative `Rational`, return its positive
+/// counterpart, else `None`.
+fn negate_negative_coeff(c: &Expr) -> Option<Expr> {
+  match c {
+    Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-n)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Integer(p) if *p < 0) =>
+    {
+      let Expr::Integer(p) = &args[0] else {
+        unreachable!()
+      };
+      Some(Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(-p), args[1].clone()].into(),
+      })
+    }
+    _ => None,
+  }
+}
+
+/// If `e` is a negation of some subexpression — a negative number, `-x`,
+/// `Times[-1, x]`, or `Times[c, x]` with a negative numeric coefficient `c` —
+/// return the corresponding positive expression. Used for odd/even parity
+/// reductions `f[-x] = ±f[x]`. Machine reals are intentionally excluded (their
+/// numeric paths are already sign-correct).
+pub fn strip_negation(e: &Expr) -> Option<Expr> {
+  match e {
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => Some((**operand).clone()),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      if matches!(left.as_ref(), Expr::Integer(-1)) {
+        return Some((**right).clone());
+      }
+      let pos = negate_negative_coeff(left)?;
+      Some(Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(pos),
+        right: right.clone(),
+      })
+    }
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
+      if matches!(&args[0], Expr::Integer(-1)) {
+        return Some(if args.len() == 2 {
+          args[1].clone()
+        } else {
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: args[1..].to_vec().into(),
+          }
+        });
+      }
+      let pos = negate_negative_coeff(&args[0])?;
+      let mut new_args = args.to_vec();
+      new_args[0] = pos;
+      Some(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: new_args.into(),
+      })
+    }
+    _ => negate_negative_coeff(e),
+  }
+}
+
 pub fn gudermannian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -5173,6 +5244,14 @@ pub fn gudermannian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(negative_pi_over_2());
     }
     _ => {}
+  }
+  // Gudermannian is odd: Gudermannian[-x] = -Gudermannian[x].
+  if let Some(pos) = strip_negation(&args[0]) {
+    let inner = gudermannian_ast(&[pos])?;
+    return Ok(Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand: Box::new(inner),
+    });
   }
   // Symbolic: return unevaluated (matching wolframscript behavior)
   Ok(unevaluated("Gudermannian", args))

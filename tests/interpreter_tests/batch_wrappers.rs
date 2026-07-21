@@ -2749,6 +2749,13 @@ mod batch_unevaluated_wrappers_2 {
     // wolframscript keeps Haversine[x] held; only FunctionExpand rewrites it.
     assert_eq!(interpret("Haversine[x]").unwrap(), "Haversine[x]");
   }
+  // Haversine is even: Haversine[-x] = Haversine[x].
+  #[test]
+  fn haversine_even_parity() {
+    assert_eq!(interpret("Haversine[-x]").unwrap(), "Haversine[x]");
+    assert_eq!(interpret("Haversine[-2 x]").unwrap(), "Haversine[2*x]");
+    assert_eq!(interpret("Haversine[-1/2 x]").unwrap(), "Haversine[x/2]");
+  }
   #[test]
   fn haversine_exact_rational_angles() {
     // Nice-angle arguments where (1 - Cos[x])/2 reduces to a rational are

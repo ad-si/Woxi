@@ -2217,6 +2217,13 @@ pub fn dispatch_math_functions(
       }
     }
     "Haversine" if args.len() == 1 => {
+      // Haversine is even: Haversine[-x] = Haversine[x].
+      if let Some(pos) = crate::functions::math_ast::strip_negation(&args[0]) {
+        return Some(crate::evaluator::evaluate_function_call_ast(
+          "Haversine",
+          &[pos],
+        ));
+      }
       // For numeric args (containing a Real literal), compute Sin[x/2]^2 —
       // numerically more stable than (1 - Cos[x])/2 and produces the same
       // f64 value as wolframscript.

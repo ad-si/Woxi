@@ -26,6 +26,21 @@ mod gudermannian {
     assert_eq!(interpret("Gudermannian[Infinity]").unwrap(), "Pi/2");
   }
 
+  // Gudermannian is odd: Gudermannian[-x] = -Gudermannian[x].
+  #[test]
+  fn odd_parity() {
+    assert_eq!(interpret("Gudermannian[-x]").unwrap(), "-Gudermannian[x]");
+    assert_eq!(interpret("Gudermannian[-3]").unwrap(), "-Gudermannian[3]");
+    assert_eq!(
+      interpret("Gudermannian[-2 x]").unwrap(),
+      "-Gudermannian[2*x]"
+    );
+    assert_eq!(
+      interpret("Gudermannian[-1/2 x]").unwrap(),
+      "-Gudermannian[x/2]"
+    );
+  }
+
   #[test]
   fn negative_infinity() {
     assert_eq!(interpret("Gudermannian[-Infinity]").unwrap(), "-1/2*Pi");
