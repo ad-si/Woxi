@@ -6738,6 +6738,57 @@ fn compactify_plot_range(
   }
 }
 
+/// Returns true if `expr` textually references the identifier `var`. Used by
+/// the plotting heads to decide whether a held body (which may be a bare
+/// assigned symbol) still needs to be evaluated to surface the plot variable.
+fn expr_mentions_var(expr: &Expr, var: &str) -> bool {
+  // Substituting the variable with a sentinel changes the tree iff the
+  // variable actually occurs; comparing structurally avoids hand-writing a
+  // walker over every Expr variant.
+  let sentinel = Expr::Identifier("$WoxiPlotVarProbe$".to_string());
+  let replaced = crate::syntax::substitute_variable(expr, var, &sentinel);
+  !crate::evaluator::pattern_matching::expr_equal(&replaced, expr)
+}
+
+/// Peel presentation wrappers (`Highlighted`, `Tooltip`, `Legended`,
+/// `Labeled`) off a plot body, returning the inner plottable expression. These
+/// heads annotate a curve — a highlight marker, a hover tooltip, a legend
+/// entry, an inline label — but the function actually sampled is always their
+/// first argument. The wrappers may enclose either a single function or a whole
+/// list of them (e.g. `Highlighted[{Sin[x], Cos[x]}, …]`), so peeling happens
+/// both before and after the body is split into individual curves. Callout is
+/// intentionally left for the dedicated per-curve handling that records its
+/// label.
+fn peel_plot_wrappers(mut e: &Expr) -> &Expr {
+  while let Expr::FunctionCall { name, args } = e {
+    if !args.is_empty()
+      && matches!(
+        name.as_str(),
+        "Highlighted" | "Tooltip" | "Legended" | "Labeled"
+      )
+    {
+      e = &args[0];
+    } else {
+      break;
+    }
+  }
+  e
+}
+
+/// Evaluate a plot body once with `var` kept symbolic, so assigned symbols
+/// (e.g. `f = Sin[x]`) expand to their definitions without the plot variable
+/// being replaced by any global value it might carry.
+fn eval_body_var_symbolic(body: &Expr, var: &str) -> Expr {
+  let saved = crate::ENV.with(|e| e.borrow_mut().remove(var));
+  let result = evaluate_expr_to_expr(body).unwrap_or_else(|_| body.clone());
+  if let Some(v) = saved {
+    crate::ENV.with(|e| {
+      e.borrow_mut().insert(var.to_string(), v);
+    });
+  }
+  result
+}
+
 /// Implementation of Plot[f, {x, xmin, xmax}]
 pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
@@ -6869,15 +6920,58 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &args[0]
   };
 
-  // Collect function bodies: single function or list of functions
-  let raw_bodies: Vec<&Expr> = match body {
-    Expr::List(items) => items.iter().collect(),
-    _ => vec![body],
+  // Plot is HoldAll, so a body passed as a bare symbol (e.g.
+  // `f = Sin[x]; Plot[f, {x, 0, 10}]`) reaches here unevaluated. Sampling
+  // substitutes the plot variable into the body and then evaluates, but a
+  // held `f` contains no `x` to substitute, so the sampler would evaluate the
+  // symbol `f` back to `Sin[x]` with `x` still symbolic — never a number —
+  // yielding an all-white plot. When the body does not textually reference
+  // the plot variable, evaluate it once with that variable kept symbolic so
+  // assigned symbols expand to their definitions (and reveal the variable)
+  // before sampling. Bodies that already mention the variable are left
+  // untouched, so ordinary plots are unaffected.
+  let resolved_storage;
+  let body: &Expr = if expr_mentions_var(body, &var_name) {
+    body
+  } else {
+    let evaluated = eval_body_var_symbolic(body, &var_name);
+    if expr_mentions_var(&evaluated, &var_name) {
+      resolved_storage = evaluated;
+      &resolved_storage
+    } else {
+      body
+    }
   };
 
-  // Unwrap Callout[expr, label] wrappers, storing labels
+  // Peel a presentation wrapper that encloses the whole plot spec so that a
+  // list inside it (e.g. `Highlighted[{Sin[x], Cos[x]}, …]`) is split into
+  // individual curves below rather than sampled as one non-numeric expression.
+  let body = peel_plot_wrappers(body);
+
+  // Collect function bodies: a single function or a (possibly nested) list of
+  // functions. Wolfram flattens nested lists into individual curves, so
+  // `Plot[{{f}, {g}}, …]` draws two curves. Nesting arises naturally from
+  // idioms like `expr /. C[1] -> Range[…]`, where threading a replacement over
+  // several expressions yields a list of lists.
+  fn flatten_plot_bodies<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
+    match e {
+      Expr::List(items) => {
+        for it in items.iter() {
+          flatten_plot_bodies(it, out);
+        }
+      }
+      _ => out.push(e),
+    }
+  }
+  let mut raw_bodies: Vec<&Expr> = Vec::new();
+  flatten_plot_bodies(body, &mut raw_bodies);
+
+  // Unwrap Callout[expr, label] wrappers, storing labels. Other presentation
+  // wrappers (Highlighted/Tooltip/Legended/Labeled) around a single curve are
+  // peeled first so their inner function is what gets sampled.
   let mut bodies: Vec<&Expr> = Vec::with_capacity(raw_bodies.len());
   for b in &raw_bodies {
+    let b = peel_plot_wrappers(b);
     if let Expr::FunctionCall { name, args: cargs } = b
       && name == "Callout"
       && cargs.len() >= 2
