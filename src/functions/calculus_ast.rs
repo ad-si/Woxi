@@ -5326,6 +5326,64 @@ fn match_pos_a_x_squared(expr: &Expr, var: &str) -> Option<Expr> {
   Some(coeff)
 }
 
+/// Build the Fresnel antiderivative of Sin[a*x^2] (`fresnel_name` = "FresnelS")
+/// or Cos[a*x^2] (`fresnel_name` = "FresnelC"):
+///   ∫ Sin[a x^2] dx = Sqrt[Pi/2]/Sqrt[a] * FresnelS[Sqrt[a]*Sqrt[2/Pi]*x].
+/// The factored radicals are left for the evaluator to canonicalize, matching
+/// wolframscript's printed form.
+fn make_fresnel_antiderivative(
+  var: &str,
+  coeff: &Expr,
+  fresnel_name: &str,
+) -> Expr {
+  let x = Expr::Identifier(var.to_string());
+  let pi = Expr::Constant("Pi".to_string());
+  let sqrt_pi_2 = make_sqrt(Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(pi.clone()),
+    right: Box::new(Expr::Integer(2)),
+  });
+  let sqrt_2_pi = make_sqrt(Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(Expr::Integer(2)),
+    right: Box::new(pi),
+  });
+  let sqrt_a = make_sqrt(coeff.clone());
+  let simplify = |e: Expr| -> Expr {
+    let cloned = e.clone();
+    crate::evaluator::evaluate_function_call_ast("Simplify", &[e])
+      .unwrap_or_else(|_| {
+        crate::evaluator::evaluate_expr_to_expr(&cloned).unwrap_or(cloned)
+      })
+  };
+  // Simplify the Fresnel argument first — Sqrt[a] Sqrt[2/Pi] x collapses to x
+  // for a = Pi/2 and to (2 x)/Sqrt[Pi] for a = 2, while a symbolic coefficient
+  // stays split, matching wolframscript.
+  let fresnel_arg = simplify(Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![sqrt_a.clone(), sqrt_2_pi, x].into(),
+  });
+  let fresnel = Expr::FunctionCall {
+    name: fresnel_name.to_string(),
+    args: vec![fresnel_arg].into(),
+  };
+  let result = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      sqrt_pi_2,
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(sqrt_a),
+        right: Box::new(Expr::Integer(-1)),
+      },
+      fresnel,
+    ]
+    .into(),
+  };
+  // Simplify the prefix Sqrt[Pi/2]/Sqrt[a] (e.g. to Sqrt[Pi/6] or Sqrt[Pi]/2).
+  simplify(result)
+}
+
 /// Try to match an expression as `a*var` where `a` is constant w.r.t. `var`,
 /// or just `var` (returning `Integer(1)`).
 /// Returns Some(a) if it matches, None otherwise.
@@ -9290,6 +9348,10 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             };
             return Some(make_neg_divided(cos_expr, coeff));
           }
+          // ∫ Sin[a*x^2] dx = Sqrt[Pi/2]/Sqrt[a] * FresnelS[Sqrt[a] Sqrt[2/Pi] x]
+          if let Some(coeff) = match_pos_a_x_squared(&args[0], var) {
+            return Some(make_fresnel_antiderivative(var, &coeff, "FresnelS"));
+          }
           None
         }
         // Inverse trig antiderivatives for rational-linear arguments
@@ -9347,6 +9409,10 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               args: args.clone(),
             };
             return Some(make_divided(sin_expr, coeff));
+          }
+          // ∫ Cos[a*x^2] dx = Sqrt[Pi/2]/Sqrt[a] * FresnelC[Sqrt[a] Sqrt[2/Pi] x]
+          if let Some(coeff) = match_pos_a_x_squared(&args[0], var) {
+            return Some(make_fresnel_antiderivative(var, &coeff, "FresnelC"));
           }
           None
         }

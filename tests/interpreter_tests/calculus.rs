@@ -5282,6 +5282,58 @@ mod integrate_log_integral {
   }
 }
 
+// ∫ Sin[a x^2] dx = Sqrt[Pi/2]/Sqrt[a] FresnelS[Sqrt[a] Sqrt[2/Pi] x]
+// (and FresnelC for Cos). Verified against wolframscript.
+mod integrate_fresnel {
+  use super::*;
+
+  #[test]
+  fn unit_coefficient() {
+    assert_eq!(
+      interpret("Integrate[Sin[x^2], x]").unwrap(),
+      "Sqrt[Pi/2]*FresnelS[Sqrt[2/Pi]*x]"
+    );
+    assert_eq!(
+      interpret("Integrate[Cos[x^2], x]").unwrap(),
+      "Sqrt[Pi/2]*FresnelC[Sqrt[2/Pi]*x]"
+    );
+  }
+
+  #[test]
+  fn integer_coefficient() {
+    assert_eq!(
+      interpret("Integrate[Cos[3 x^2], x]").unwrap(),
+      "Sqrt[Pi/6]*FresnelC[Sqrt[6/Pi]*x]"
+    );
+    // A perfect-square 2a collapses the radicals into Wolfram's mixed form.
+    assert_eq!(
+      interpret("Integrate[Sin[2 x^2], x]").unwrap(),
+      "(Sqrt[Pi]*FresnelS[(2*x)/Sqrt[Pi]])/2"
+    );
+  }
+
+  #[test]
+  fn canonical_argument() {
+    // The Fresnel convention: ∫ Sin[Pi x^2/2] dx = FresnelS[x].
+    assert_eq!(
+      interpret("Integrate[Sin[Pi x^2/2], x]").unwrap(),
+      "FresnelS[x]"
+    );
+    assert_eq!(
+      interpret("Integrate[Cos[Pi x^2/2], x]").unwrap(),
+      "FresnelC[x]"
+    );
+  }
+
+  #[test]
+  fn symbolic_coefficient() {
+    assert_eq!(
+      interpret("Integrate[Sin[a x^2], x]").unwrap(),
+      "(Sqrt[Pi/2]*FresnelS[Sqrt[a]*Sqrt[2/Pi]*x])/Sqrt[a]"
+    );
+  }
+}
+
 mod erfi {
   use super::*;
 
