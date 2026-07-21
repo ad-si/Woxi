@@ -248,6 +248,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "BorelTannerDistribution" => pdf_borel_tanner(dargs, x),
     "BenktanderGibratDistribution" => pdf_benktander_gibrat(dargs, x),
     "GumbelDistribution" => pdf_gumbel(dargs, x),
+    "SkewNormalDistribution" => pdf_skew_normal(dargs, x),
     "ZipfDistribution" => pdf_zipf(dargs, x),
     "BenfordDistribution" => pdf_benford(dargs, x),
     "BenktanderWeibullDistribution" => pdf_benktander_weibull(dargs, x),
@@ -1831,6 +1832,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "MoyalDistribution" => cdf_moyal(dargs, x),
     "BenktanderGibratDistribution" => cdf_benktander_gibrat(dargs, x),
     "GumbelDistribution" => cdf_gumbel(dargs, x),
+    "SkewNormalDistribution" => cdf_skew_normal(dargs, x),
     "NormalDistribution" => cdf_normal(dargs, x),
     "DataDistribution" => match histogram_pdf_cdf(dargs, &x, true)
       .or_else(|| data_distribution_pdf_cdf(dargs, &x, true).map(Ok))
@@ -3699,6 +3701,7 @@ pub fn distribution_mean_variance(
     "BenfordDistribution" => benford_mean_variance(dargs),
     "BenktanderWeibullDistribution" => benktander_weibull_mean_variance(dargs),
     "GumbelDistribution" => gumbel_mean_variance(dargs),
+    "SkewNormalDistribution" => skew_normal_mean_variance(dargs),
     "SechDistribution" => sech_mean_variance(dargs),
     "WignerSemicircleDistribution" => wigner_mean_variance(dargs),
     "TriangularDistribution" => triangular_mean_variance(dargs),
@@ -16015,6 +16018,110 @@ fn gumbel_mean_variance(
   let var = eval(divide(
     call("Times", vec![power(b, int(2)), power(pi(), int(2))]),
     int(6),
+  ))?;
+  Ok((mean, var))
+}
+
+/// PDF[SkewNormalDistribution[m, s, a], x] =
+///   Erfc[-(a (x - m)/(Sqrt[2] s))] / (E^((x - m)^2/(2 s^2)) Sqrt[2 Pi] s),
+/// i.e. 2/s φ((x - m)/s) Φ(a (x - m)/s) written with Erfc. For a = 0 this
+/// reduces to the Normal PDF because Erfc[0] = 1.
+fn pdf_skew_normal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let uneval = |dargs: &[Expr], x: Expr| {
+    call("PDF", vec![unevaluated("SkewNormalDistribution", dargs), x])
+  };
+  let (m, s, a) = match dargs {
+    [m, s, a] => (m.clone(), s.clone(), a.clone()),
+    _ => return Ok(uneval(dargs, x)),
+  };
+  let body = |at: &Expr| -> Result<Expr, InterpreterError> {
+    let xm = plus(neg(m.clone()), at.clone());
+    let sqrt2 = sqrt(int(2));
+    let erfc_arg = neg(divide(
+      times(a.clone(), xm.clone()),
+      times(sqrt2, s.clone()),
+    ));
+    let num = call("Erfc", vec![erfc_arg]);
+    let gauss = power(
+      e(),
+      divide(power(xm, int(2)), times(int(2), power(s.clone(), int(2)))),
+    );
+    let denom = times(times(gauss, sqrt(times(int(2), pi()))), s.clone());
+    eval(divide(num, denom))
+  };
+  if ms_numeric(&x).is_some() {
+    return body(&x);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(uneval(dargs, x));
+  }
+  body(&x)
+}
+
+/// CDF[SkewNormalDistribution[m, s, a], x] =
+///   Erfc[(m - x)/(Sqrt[2] s)]/2 - 2 OwenT[(x - m)/s, a].
+/// For a = 0, OwenT[z, 0] = 0 and this reduces to the Normal CDF.
+fn cdf_skew_normal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let uneval = |dargs: &[Expr], x: Expr| {
+    call("CDF", vec![unevaluated("SkewNormalDistribution", dargs), x])
+  };
+  let (m, s, a) = match dargs {
+    [m, s, a] => (m.clone(), s.clone(), a.clone()),
+    _ => return Ok(uneval(dargs, x)),
+  };
+  let body = |at: &Expr| -> Result<Expr, InterpreterError> {
+    let phi = divide(
+      call(
+        "Erfc",
+        vec![divide(
+          minus(m.clone(), at.clone()),
+          times(sqrt(int(2)), s.clone()),
+        )],
+      ),
+      int(2),
+    );
+    let owen = call(
+      "OwenT",
+      vec![divide(minus(at.clone(), m.clone()), s.clone()), a.clone()],
+    );
+    eval(minus(phi, times(int(2), owen)))
+  };
+  if ms_numeric(&x).is_some() {
+    return body(&x);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(uneval(dargs, x));
+  }
+  body(&x)
+}
+
+/// Mean = m + a Sqrt[2/Pi] s / Sqrt[1 + a^2] and
+/// Variance = (1 - 2 a^2/((1 + a^2) Pi)) s^2 for SkewNormalDistribution.
+fn skew_normal_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let (m, s, a) = match dargs {
+    [m, s, a] => (m.clone(), s.clone(), a.clone()),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "SkewNormalDistribution expects [m, s, a]".into(),
+      ));
+    }
+  };
+  let a2 = power(a.clone(), int(2));
+  let mean = eval(plus(
+    m,
+    divide(
+      times(times(a, sqrt(divide(int(2), pi()))), s.clone()),
+      sqrt(plus(int(1), a2.clone())),
+    ),
+  ))?;
+  let var = eval(times(
+    minus(
+      int(1),
+      divide(times(int(2), a2.clone()), times(plus(int(1), a2), pi())),
+    ),
+    power(s, int(2)),
   ))?;
   Ok((mean, var))
 }

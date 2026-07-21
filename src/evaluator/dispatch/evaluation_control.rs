@@ -166,6 +166,9 @@ pub fn dispatch_evaluation_control(
     "GumbelDistribution" if args.len() <= 2 => {
       return Some(Ok(unevaluated("GumbelDistribution", args)));
     }
+    "SkewNormalDistribution" if args.len() == 3 => {
+      return Some(Ok(unevaluated("SkewNormalDistribution", args)));
+    }
     "ZipfDistribution" if args.len() == 1 || args.len() == 2 => {
       return Some(Ok(unevaluated("ZipfDistribution", args)));
     }

@@ -2151,7 +2151,7 @@ OpenAppend,Opens a file for appending,✅,effectful,1.0,2188
 ErlangDistribution,Erlang probability distribution equivalent to GammaDistribution with a rate parameter,✅,pure,8.0,2190
 FourierCosTransform,Fourier cosine transform of a function,✅,pure,4.0,2190
 KeySelect,Selects elements of an association by a key criterion; supports the operator form KeySelect[crit][assoc],✅,pure,10.0,2191
-SkewNormalDistribution,Probability distribution,🚫,None,8.0,2193
+SkewNormalDistribution,Skew normal distribution with location m scale s and shape a,✅,pure,8.0,2193
 Sunset,Sunset time for a location and day (next sunset without a date; UTC-based DateObject),✅,contextual,10.0,2193
 HankelH2,Hankel function of the second kind,✅,pure,6.0,2197
 LinkObject,Represents a MathLink or WSTP connection to an external process,🚫,None,3.0,2197

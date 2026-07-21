@@ -1402,6 +1402,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "MeixnerDistribution" => Some((4, 4)),
     "BenktanderGibratDistribution" => Some((2, 2)),
     "GumbelDistribution" => Some((0, 2)),
+    "SkewNormalDistribution" => Some((3, 3)),
     "ZipfDistribution" => Some((1, 2)),
     "BenfordDistribution" => Some((1, 1)),
     "BenktanderWeibullDistribution" => Some((2, 2)),

@@ -4697,6 +4697,80 @@ mod gumbel_distribution {
   }
 }
 
+mod skew_normal_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_forms() {
+    assert_eq!(
+      interpret("PDF[SkewNormalDistribution[m, s, a], x]").unwrap(),
+      "Erfc[-((a*(-m + x))/(Sqrt[2]*s))]/\
+       (E^((-m + x)^2/(2*s^2))*Sqrt[2*Pi]*s)"
+    );
+    assert_eq!(
+      interpret("PDF[SkewNormalDistribution[0, 1, 1], x]").unwrap(),
+      "Erfc[-(x/Sqrt[2])]/(E^(x^2/2)*Sqrt[2*Pi])"
+    );
+    assert_eq!(
+      interpret("PDF[SkewNormalDistribution[0, 1, 2], x]").unwrap(),
+      "Erfc[-(Sqrt[2]*x)]/(E^(x^2/2)*Sqrt[2*Pi])"
+    );
+    // a = 0 reduces to the Normal PDF because Erfc[0] = 1.
+    assert_eq!(
+      interpret("PDF[SkewNormalDistribution[0, 1, 0], x]").unwrap(),
+      "1/(E^(x^2/2)*Sqrt[2*Pi])"
+    );
+    assert_eq!(
+      interpret("PDF[SkewNormalDistribution[0, 1, 1], 0]").unwrap(),
+      "1/Sqrt[2*Pi]"
+    );
+  }
+
+  #[test]
+  fn moments() {
+    assert_eq!(
+      interpret("Mean[SkewNormalDistribution[m, s, a]]").unwrap(),
+      "m + (a*Sqrt[2/Pi]*s)/Sqrt[1 + a^2]"
+    );
+    assert_eq!(
+      interpret("Variance[SkewNormalDistribution[m, s, a]]").unwrap(),
+      "(1 - (2*a^2)/((1 + a^2)*Pi))*s^2"
+    );
+    assert_eq!(
+      interpret("StandardDeviation[SkewNormalDistribution[m, s, a]]").unwrap(),
+      "Sqrt[1 - (2*a^2)/((1 + a^2)*Pi)]*s"
+    );
+    // a = 0 reduces to Normal[m, s]: mean m, variance s^2.
+    assert_eq!(
+      interpret("Mean[SkewNormalDistribution[0, 2, 0]]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Variance[SkewNormalDistribution[0, 1, 0]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("StandardDeviation[SkewNormalDistribution[0, 1, 1]]").unwrap(),
+      "Sqrt[1 - Pi^(-1)]"
+    );
+  }
+
+  #[test]
+  fn numeric_values() {
+    // CDF via Owen's T: exact rational after rounding to 1e-6.
+    assert_eq!(
+      interpret("Round[N[CDF[SkewNormalDistribution[1, 2, 3], 3/2]], 10^-6]")
+        .unwrap(),
+      "114603/500000"
+    );
+    assert_eq!(
+      interpret("Round[N[PDF[SkewNormalDistribution[0, 1, 2], 1/2]], 10^-6]")
+        .unwrap(),
+      "592417/1000000"
+    );
+  }
+}
+
 mod zipf_distribution {
   use super::*;
 
