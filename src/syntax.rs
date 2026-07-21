@@ -3704,9 +3704,13 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
   }
   postfix_funcs.reverse(); // restore left-to-right order
 
-  // Check for trailing ReplaceAll/ReplaceRepeated suffix:
-  // Term (Operator Term)* (ReplaceAllSuffix | ReplaceRepeatedSuffix)?
-  let replace_rules = if inner.last().is_some_and(|p| {
+  // Check for trailing ReplaceAll/ReplaceRepeated suffixes:
+  // Term (Operator Term)* (ReplaceAllSuffix | ReplaceRepeatedSuffix)*
+  // A chain like `a /. b /. c` produces several suffixes that must all be
+  // folded left-to-right (`ReplaceAll[ReplaceAll[a, b], c]`); popping only the
+  // last one silently dropped the intermediate replacements.
+  let mut replace_rules: Vec<(Pair<Rule>, bool)> = Vec::new();
+  while inner.last().is_some_and(|p| {
     p.as_rule() == Rule::ReplaceAllSuffix
       || p.as_rule() == Rule::ReplaceRepeatedSuffix
   }) {
@@ -3714,13 +3718,14 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
     let is_replace_repeated = suffix.as_rule() == Rule::ReplaceRepeatedSuffix;
     // The suffix contains the List or ReplacementRule as its child
     let rules_pair = suffix.into_inner().next().unwrap();
-    Some((rules_pair, is_replace_repeated))
-  } else {
-    None
-  };
+    replace_rules.push((rules_pair, is_replace_repeated));
+  }
+  // Popped from the end, so restore left-to-right application order.
+  replace_rules.reverse();
 
   // Single term case (no operators, no replace, no post-& continuation)
-  if inner.len() == 1 && replace_rules.is_none() && post_anon_pairs.is_empty() {
+  if inner.len() == 1 && replace_rules.is_empty() && post_anon_pairs.is_empty()
+  {
     let mut result = pair_to_expr(inner.remove(0));
     for func_pair in postfix_funcs {
       let func = parse_postfix_function(func_pair);
@@ -3754,7 +3759,7 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
 
 fn parse_expression_inner(
   inner: Vec<Pair<Rule>>,
-  replace_rules: Option<(Pair<Rule>, bool)>,
+  replace_rules: Vec<(Pair<Rule>, bool)>,
   postfix_funcs: Vec<Pair<Rule>>,
   anon_func_suffix: Option<Vec<Vec<Expr>>>,
   post_anon_pairs: Vec<Pair<Rule>>,
@@ -4093,11 +4098,12 @@ fn parse_expression_inner(
     };
   }
 
-  // Apply ReplaceAll/ReplaceRepeated if present.
+  // Apply ReplaceAll/ReplaceRepeated suffixes, folding a chain like
+  // `a /. b /. c` left-to-right into `ReplaceAll[ReplaceAll[a, b], c]`.
   // In Wolfram Language, /. has higher precedence than = and :=, so:
   //   intA = expr /. rules  →  Set[intA, ReplaceAll[expr, rules]]
   // not: ReplaceAll[Set[intA, expr], rules]
-  if let Some((rules_pair, is_replace_repeated)) = replace_rules {
+  for (rules_pair, is_replace_repeated) in replace_rules {
     let rules = pair_to_expr(rules_pair);
     let make_replace = |e: Expr, r: Expr| -> Expr {
       if is_replace_repeated {
@@ -4112,7 +4118,9 @@ fn parse_expression_inner(
         }
       }
     };
-    // If result is an assignment, push /. inside to the right-hand side
+    // If result is an assignment, push /. inside to the right-hand side. Only
+    // the first suffix can meet a raw assignment; later folds wrap the
+    // already-rewritten result.
     result = match result {
       Expr::FunctionCall { ref name, ref args }
         if (name == "Set" || name == "SetDelayed") && args.len() == 2 =>

@@ -616,6 +616,35 @@ mod pattern_matching {
     }
 
     #[test]
+    fn chained_replace_all_bare_rules() {
+      // Regression: a chain of bare (unbraced) rules must apply every rule,
+      // not just the last. Previously the parser kept only the final suffix,
+      // so `x /. x -> 1 /. y -> 2` wrongly returned `x`.
+      assert_eq!(interpret("x /. x -> 1 /. y -> 2").unwrap(), "1");
+      assert_eq!(
+        interpret("{a, b, c} /. a -> 1 /. b -> 2 /. c -> 3").unwrap(),
+        "{1, 2, 3}"
+      );
+    }
+
+    #[test]
+    fn chained_replace_all_four_rules() {
+      // Four chained replacements — every intermediate rule must survive.
+      assert_eq!(
+        interpret("{a, b, c, d} /. a -> 1 /. b -> 2 /. c -> 3 /. d -> 4")
+          .unwrap(),
+        "{1, 2, 3, 4}"
+      );
+    }
+
+    #[test]
+    fn chained_replace_all_into_assignment_rhs() {
+      // `/.` binds tighter than `=`, so chained replacements all land on the
+      // right-hand side of the assignment.
+      assert_eq!(interpret("r = 5 /. a -> 1 /. b -> 2; r").unwrap(), "5");
+    }
+
+    #[test]
     fn fizzbuzz_style_rules() {
       // Test the FizzBuzz pattern
       assert_eq!(
