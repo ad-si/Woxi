@@ -801,6 +801,54 @@ mod carlson_integrals {
     );
   }
 
+  // Exact closed forms wolframscript returns for special argument patterns.
+  #[test]
+  fn exact_special_values() {
+    // R_F: all equal -> 1/Sqrt[x]; one zero + two equal -> Pi/(2 Sqrt[y]);
+    // two equal (concrete) -> R_C; two/three zero -> ComplexInfinity.
+    assert_eq!(interpret("CarlsonRF[1, 1, 1]").unwrap(), "1");
+    assert_eq!(interpret("CarlsonRF[2, 2, 2]").unwrap(), "1/Sqrt[2]");
+    assert_eq!(interpret("CarlsonRF[x, x, x]").unwrap(), "1/Sqrt[x]");
+    assert_eq!(interpret("CarlsonRF[0, 1, 1]").unwrap(), "Pi/2");
+    assert_eq!(interpret("CarlsonRF[0, y, y]").unwrap(), "Pi/(2*Sqrt[y])");
+    assert_eq!(interpret("CarlsonRF[2, 2, 1]").unwrap(), "CarlsonRC[1, 2]");
+    assert_eq!(interpret("CarlsonRF[2, 3, 3]").unwrap(), "CarlsonRC[2, 3]");
+    assert_eq!(interpret("CarlsonRF[2, 2, 3]").unwrap(), "CarlsonRC[3, 2]");
+    assert_eq!(interpret("CarlsonRF[0, 0, 4]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("CarlsonRF[0, 0, 0]").unwrap(), "ComplexInfinity");
+
+    // R_C: R_C(x, x) = 1/Sqrt[x], R_C(0, y) = Pi/(2 Sqrt[y]),
+    // R_C(x, 0) = ComplexInfinity.
+    assert_eq!(interpret("CarlsonRC[1, 1]").unwrap(), "1");
+    assert_eq!(interpret("CarlsonRC[4, 4]").unwrap(), "1/2");
+    assert_eq!(interpret("CarlsonRC[1/4, 1/4]").unwrap(), "2");
+    assert_eq!(interpret("CarlsonRC[0, 4]").unwrap(), "Pi/4");
+    assert_eq!(interpret("CarlsonRC[0, 9]").unwrap(), "Pi/6");
+    assert_eq!(interpret("CarlsonRC[4, 0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("CarlsonRC[0, 0]").unwrap(), "ComplexInfinity");
+
+    // R_D: all equal -> x^(-3/2); first two zero -> ComplexInfinity.
+    assert_eq!(interpret("CarlsonRD[2, 2, 2]").unwrap(), "1/(2*Sqrt[2])");
+    assert_eq!(interpret("CarlsonRD[w, w, w]").unwrap(), "w^(-3/2)");
+    assert_eq!(interpret("CarlsonRD[0, 0, 5]").unwrap(), "ComplexInfinity");
+
+    // R_G: all equal -> Sqrt[x]; two zero -> Sqrt[z]/2;
+    // one zero + two equal -> Pi Sqrt[y]/4.
+    assert_eq!(interpret("CarlsonRG[2, 2, 2]").unwrap(), "Sqrt[2]");
+    assert_eq!(interpret("CarlsonRG[w, w, w]").unwrap(), "Sqrt[w]");
+    assert_eq!(interpret("CarlsonRG[0, 0, 4]").unwrap(), "1");
+    assert_eq!(interpret("CarlsonRG[0, 9, 9]").unwrap(), "(3*Pi)/4");
+    assert_eq!(interpret("CarlsonRG[0, 0, 0]").unwrap(), "0");
+
+    // R_J: all four equal, concrete -> x^(-3/2); symbolic stays symbolic.
+    assert_eq!(interpret("CarlsonRJ[1, 1, 1, 1]").unwrap(), "1");
+    assert_eq!(interpret("CarlsonRJ[2, 2, 2, 2]").unwrap(), "1/(2*Sqrt[2])");
+    assert_eq!(
+      interpret("CarlsonRJ[w, w, w, w]").unwrap(),
+      "CarlsonRJ[w, w, w, w]"
+    );
+  }
+
   // R_C(x, y) — degenerate integral. R_C(1, 2) = Pi/4, R_C(2, 2) = 1/Sqrt[2].
   #[test]
   fn rc_values() {
