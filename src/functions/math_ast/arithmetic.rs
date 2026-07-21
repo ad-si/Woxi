@@ -9218,6 +9218,37 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     );
   }
 
+  // An inexact complex base (a machine float with a nonzero imaginary part)
+  // raised to a non-integer power numericizes, matching wolframscript:
+  // `Sqrt[2.0 + 3.0 I]` gives `1.674… + 0.896… I`, not a symbolic `Sqrt`.
+  // Without this the many exact-radical rewrites below would intercept a
+  // rational exponent like 1/2 and leave the machine-complex base wrapped in
+  // `Sqrt[…]`, so plots of e.g. `Im[Sqrt[…]]` sampled nothing (all-white).
+  // Exact bases (`Sqrt[2 + 3 I]`) lack a Real component and stay symbolic;
+  // positive integer exponents fall through to the more precise
+  // repeated-multiplication path further down.
+  if !matches!(exp, Expr::Integer(_))
+    && let Some((a, b)) = try_extract_complex_float(base)
+    && b != 0.0
+    && contains_real(base)
+    && let Some((c, d)) = try_extract_complex_float(exp)
+  {
+    // z^w = exp(w * log z), with log z = ln|z| + i*arg(z).
+    let abs_z = (a * a + b * b).sqrt();
+    if abs_z != 0.0 {
+      let ln_abs = abs_z.ln();
+      let arg_z = b.atan2(a);
+      let re_exp = c * ln_abs - d * arg_z;
+      let im_exp = d * ln_abs + c * arg_z;
+      let mag = re_exp.exp();
+      let re = mag * im_exp.cos();
+      let im = mag * im_exp.sin();
+      let re = if re.abs() < 1e-15 { 0.0 } else { re };
+      let im = if im.abs() < 1e-15 { 0.0 } else { im };
+      return Ok(build_complex_float_expr(re, im));
+    }
+  }
+
   // SeriesData ^ n (positive integer n): repeated Cauchy product, so e.g.
   // (Series[…])^2 squares the series. A pure O-term (empty coefficients) just
   // scales its order: O[x^(a/d)]^n = O[x^(n*a/d)].

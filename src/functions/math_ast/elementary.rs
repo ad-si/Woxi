@@ -883,6 +883,21 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &make_rational(1, 2),
     );
   }
+  // Sqrt of an inexact complex number (a machine float with a nonzero
+  // imaginary part, e.g. `2.0 + 3.0 I`) numericizes via Power[base, 1/2] to
+  // match wolframscript, rather than staying wrapped as a symbolic Sqrt[…].
+  // Exact complex arguments like `2 + 3 I` have no Real component and are left
+  // symbolic.
+  if let Some((_, im)) =
+    crate::functions::math_ast::try_extract_complex_float(&args[0])
+    && im != 0.0
+    && crate::functions::math_ast::contains_inexact_real(&args[0])
+  {
+    return crate::functions::math_ast::power_two(
+      &args[0],
+      &make_rational(1, 2),
+    );
+  }
   // Handle Sqrt[Quantity[mag, unit]] by delegating to Power[quantity, 1/2]
   if crate::functions::quantity_ast::is_quantity(&args[0]).is_some() {
     let half = make_rational(1, 2);

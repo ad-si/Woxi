@@ -123,6 +123,29 @@ mod arithmetic {
     }
 
     #[test]
+    fn sqrt_inexact_complex_numericizes() {
+      // Sqrt of a machine-precision complex number numericizes (matching
+      // wolframscript) instead of staying wrapped as a symbolic Sqrt[…].
+      assert_eq!(
+        interpret("Sqrt[2.0 + 3.0 I]").unwrap(),
+        "1.6741492280355401 + 0.895977476129838*I"
+      );
+      // An exact complex argument keeps the symbolic form.
+      assert_eq!(interpret("Sqrt[2 + 3 I]").unwrap(), "Sqrt[2 + 3*I]");
+    }
+
+    #[test]
+    fn power_inexact_complex_rational_exponent() {
+      // A rational exponent on an inexact complex base also numericizes;
+      // previously the exact-radical rewrites intercepted the 1/2 and left it
+      // symbolic.
+      assert_eq!(
+        interpret("(2.0 + 3.0 I)^(1/2)").unwrap(),
+        "1.6741492280355401 + 0.895977476129838*I"
+      );
+    }
+
+    #[test]
     fn whole_number_real() {
       // Whole-number reals keep trailing dot
       assert_eq!(interpret("1.0").unwrap(), "1.");
