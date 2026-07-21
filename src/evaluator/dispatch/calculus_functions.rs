@@ -941,6 +941,67 @@ fn as_func_args(expr: &Expr) -> Option<(&str, Vec<&Expr>)> {
 }
 
 /// Try to compute Laplace transform symbolically. Returns None if not recognized.
+/// Decompose an argument that is affine in `t` — `c*t + b` — into its slope
+/// `c` and constant `b`. Returns None when the argument is not linear in `t`.
+fn laplace_affine(arg: &Expr, t: &str) -> Option<(Expr, Expr)> {
+  let terms: Vec<Expr> = match as_func_args(arg) {
+    Some(("Plus", args)) => args.into_iter().cloned().collect(),
+    _ => vec![arg.clone()],
+  };
+  let mut c_terms: Vec<Expr> = Vec::new();
+  let mut b_terms: Vec<Expr> = Vec::new();
+  for term in &terms {
+    if !depends_on(term, t) {
+      b_terms.push(term.clone());
+    } else if let Some(c) = extract_linear_coeff(term, t) {
+      c_terms.push(c);
+    } else {
+      return None;
+    }
+  }
+  if c_terms.is_empty() {
+    return None;
+  }
+  let c = make_plus(c_terms);
+  let b = if b_terms.is_empty() {
+    Expr::Integer(0)
+  } else {
+    make_plus(b_terms)
+  };
+  Some((c, b))
+}
+
+/// Laplace transform of `UnitStep[arg]` / `HeavisideTheta[arg]` where `arg` is
+/// affine in `t` with a positive numeric slope. See the call site for the rule.
+fn laplace_unit_step(arg: &Expr, t: &str, s: &Expr) -> Option<Expr> {
+  let (c, b) = laplace_affine(arg, t)?;
+  let c_val = crate::functions::math_ast::try_eval_to_f64(&c)?;
+  if c_val <= 0.0 {
+    return None;
+  }
+  // Step location t0 = -b/c.
+  let t0 = crate::evaluator::evaluate_expr_to_expr(&make_times(vec![
+    Expr::Integer(-1),
+    b,
+    make_power(c, Expr::Integer(-1)),
+  ]))
+  .ok()?;
+  let t0_val = crate::functions::math_ast::try_eval_to_f64(&t0)?;
+  let inv_s = make_power(s.clone(), Expr::Integer(-1));
+  if t0_val <= 0.0 {
+    // The step has already fired at t = 0, so it is 1 over all of [0, inf).
+    return Some(inv_s);
+  }
+  // Exp[-t0*s] / s.
+  Some(make_times(vec![
+    make_power(
+      Expr::Constant("E".to_string()),
+      make_times(vec![Expr::Integer(-1), t0, s.clone()]),
+    ),
+    inv_s,
+  ]))
+}
+
 fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
   // L[constant, t, s] = constant/s (if expr doesn't depend on t)
   if !depends_on(expr, t) {
@@ -968,6 +1029,17 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
   }
 
   if let Some((fname, fargs)) = as_func_args(expr) {
+    // L[UnitStep[c*t + b], t, s] / L[HeavisideTheta[...]] for a positive
+    // numeric slope c: the step sits at t0 = -b/c. When t0 <= 0 the whole
+    // [0, inf) integration range is in the "1" region, giving 1/s; otherwise
+    // the delay contributes Exp[-t0 s]/s.
+    if (fname == "UnitStep" || fname == "HeavisideTheta")
+      && fargs.len() == 1
+      && let Some(res) = laplace_unit_step(fargs[0], t, s)
+    {
+      return Some(res);
+    }
+
     // L[t^n, t, s] = n! / s^(n+1) for integer n >= 0
     if fname == "Power" && fargs.len() == 2 {
       // Check if base is the variable t (as Identifier)

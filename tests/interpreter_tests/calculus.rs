@@ -7261,6 +7261,49 @@ mod laplace_transform {
     assert_eq!(interpret("LaplaceTransform[1, t, s]").unwrap(), "s^(-1)");
   }
 
+  // L[UnitStep[c t + b]] with a positive numeric slope c: the step sits at
+  // t0 = -b/c. t0 <= 0 gives 1/s; t0 > 0 gives Exp[-t0 s]/s. HeavisideTheta
+  // behaves the same. Verified against wolframscript.
+  #[test]
+  fn unit_step() {
+    assert_eq!(
+      interpret("LaplaceTransform[UnitStep[t], t, s]").unwrap(),
+      "s^(-1)"
+    );
+    assert_eq!(
+      interpret("LaplaceTransform[UnitStep[t - 1], t, s]").unwrap(),
+      "1/(E^s*s)"
+    );
+    assert_eq!(
+      interpret("LaplaceTransform[UnitStep[t - 2], t, s]").unwrap(),
+      "1/(E^(2*s)*s)"
+    );
+    // A slope other than 1 shifts the delay to t0 = 1/2.
+    assert_eq!(
+      interpret("LaplaceTransform[UnitStep[2 t - 1], t, s]").unwrap(),
+      "1/(E^(s/2)*s)"
+    );
+    // A step located at t0 <= 0 is 1 over all of [0, inf).
+    assert_eq!(
+      interpret("LaplaceTransform[UnitStep[t + 1], t, s]").unwrap(),
+      "s^(-1)"
+    );
+    // HeavisideTheta transforms identically.
+    assert_eq!(
+      interpret("LaplaceTransform[HeavisideTheta[t - 1], t, s]").unwrap(),
+      "1/(E^s*s)"
+    );
+    // Linearity: a constant multiple and an added term are handled.
+    assert_eq!(
+      interpret("LaplaceTransform[3 UnitStep[t - 1], t, s]").unwrap(),
+      "3/(E^s*s)"
+    );
+    assert_eq!(
+      interpret("LaplaceTransform[UnitStep[t - 1] + t, t, s]").unwrap(),
+      "s^(-2) + 1/(E^s*s)"
+    );
+  }
+
   #[test]
   fn variable_t() {
     assert_eq!(interpret("LaplaceTransform[t, t, s]").unwrap(), "s^(-2)");
