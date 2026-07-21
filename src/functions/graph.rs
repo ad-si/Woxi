@@ -1979,6 +1979,139 @@ pub fn find_cycle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   ))
 }
 
+/// FindHamiltonianCycle[g] returns a length-1 list holding one Hamiltonian
+/// cycle (a cycle visiting every vertex exactly once and returning to the
+/// start), or {} when the graph has none.
+///
+/// wolframscript's single-cycle result is reproducible as a lexicographic
+/// greedy depth-first search: start at the first vertex and, at each step,
+/// extend to the lowest-ranked reachable unvisited vertex, backtracking on
+/// dead ends, until all vertices are visited and an edge closes back to the
+/// start. Edges are reported in traversal order.
+///
+/// The multi-cycle forms (FindHamiltonianCycle[g, k] / [g, All]) enumerate
+/// cycles in an order that does not match this greedy search, so they are left
+/// unevaluated.
+pub fn find_hamiltonian_cycle_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Ok(unevaluated("FindHamiltonianCycle", args));
+
+  // Only the single-argument form is reproducible; defer the rest.
+  if args.len() != 1 {
+    return unevaluated();
+  }
+
+  let (vertices, raw_edges) = match fc_parse_input(&args[0]) {
+    Some(p) => p,
+    None => return unevaluated(),
+  };
+
+  let n = vertices.len();
+  let empty = Expr::List(vec![].into());
+  if n == 0 {
+    return Ok(empty);
+  }
+
+  // Map vertex key -> rank (index in vertex list).
+  let mut rank: HashMap<String, usize> = HashMap::new();
+  for (i, v) in vertices.iter().enumerate() {
+    rank.entry(expr_to_string(v)).or_insert(i);
+  }
+
+  // Adjacency of (destination rank, directed?). Undirected edges contribute
+  // both orientations; a directed edge only its own direction.
+  let mut adj: Vec<Vec<(usize, bool)>> = vec![Vec::new(); n];
+  for e in &raw_edges {
+    let inner = fc_unwrap_edge(e);
+    let (src, dst, directed) = match inner {
+      Expr::FunctionCall { name, args: eargs } if eargs.len() == 2 => {
+        let d = name != "UndirectedEdge" && name != "TwoWayRule";
+        (&eargs[0], &eargs[1], d)
+      }
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref(), true),
+      _ => continue,
+    };
+    let (si, di) = match (
+      rank.get(&expr_to_string(src)),
+      rank.get(&expr_to_string(dst)),
+    ) {
+      (Some(&s), Some(&d)) => (s, d),
+      _ => continue,
+    };
+    if si == di {
+      continue; // self-loops never participate in a Hamiltonian cycle
+    }
+    adj[si].push((di, directed));
+    if !directed {
+      adj[di].push((si, directed));
+    }
+  }
+  // Sort each adjacency list by destination rank so the DFS always tries the
+  // lowest-numbered neighbour first (lexicographic greedy choice).
+  for a in &mut adj {
+    a.sort_by_key(|x| x.0);
+  }
+
+  // Greedy DFS from vertex 0 recording the traversal edges.
+  let mut visited = vec![false; n];
+  let mut path: Vec<(usize, usize, bool)> = Vec::new(); // (from, to, directed)
+  visited[0] = true;
+
+  fn dfs(
+    cur: usize,
+    depth: usize,
+    n: usize,
+    adj: &[Vec<(usize, bool)>],
+    visited: &mut [bool],
+    path: &mut Vec<(usize, usize, bool)>,
+  ) -> bool {
+    if depth == n {
+      // All vertices visited; look for an edge closing back to the start.
+      if let Some(&(_, directed)) = adj[cur].iter().find(|&&(dst, _)| dst == 0)
+      {
+        path.push((cur, 0, directed));
+        return true;
+      }
+      return false;
+    }
+    for &(dst, directed) in &adj[cur] {
+      if visited[dst] {
+        continue;
+      }
+      visited[dst] = true;
+      path.push((cur, dst, directed));
+      if dfs(dst, depth + 1, n, adj, visited, path) {
+        return true;
+      }
+      path.pop();
+      visited[dst] = false;
+    }
+    false
+  }
+
+  if !dfs(0, 1, n, &adj, &mut visited, &mut path) {
+    return Ok(empty);
+  }
+
+  let cycle: Vec<Expr> = path
+    .iter()
+    .map(|&(s, d, directed)| Expr::FunctionCall {
+      name: if directed {
+        "DirectedEdge".to_string()
+      } else {
+        "UndirectedEdge".to_string()
+      },
+      args: vec![vertices[s].clone(), vertices[d].clone()].into(),
+    })
+    .collect();
+
+  Ok(Expr::List(vec![Expr::List(cycle.into())].into()))
+}
+
 fn collect_directives(expr: &Expr) -> Vec<Expr> {
   match expr {
     Expr::FunctionCall { name, args } if name == "Directive" => args.to_vec(),

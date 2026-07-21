@@ -4270,6 +4270,11 @@ pub fn evaluate_function_call_ast_inner(
     return crate::functions::graph::find_cycle_ast(args);
   }
 
+  // FindHamiltonianCycle[graph] → length-1 list with one Hamiltonian cycle, or {}
+  if name == "FindHamiltonianCycle" && args.len() == 1 {
+    return crate::functions::graph::find_hamiltonian_cycle_ast(args);
+  }
+
   // FindFundamentalCycles[graph | edgeList] → BFS fundamental cycle basis
   if name == "FindFundamentalCycles" {
     return crate::functions::graph::find_fundamental_cycles_ast(args);

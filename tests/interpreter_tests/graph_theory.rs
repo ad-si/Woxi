@@ -3873,6 +3873,59 @@ mod graph_predicates {
   }
 
   #[test]
+  fn find_hamiltonian_cycle() {
+    // The single-argument form returns a length-1 list holding one Hamiltonian
+    // cycle, chosen by a lexicographic greedy DFS from the first vertex.
+    // wolframscript: FindHamiltonianCycle[CompleteGraph[4]]
+    //   -> {{1 <-> 2, 2 <-> 3, 3 <-> 4, 4 <-> 1}}
+    assert_eq!(
+      interpret("FindHamiltonianCycle[CompleteGraph[4]]").unwrap(),
+      "{{1 \u{f3d4} 2, 2 \u{f3d4} 3, 3 \u{f3d4} 4, 4 \u{f3d4} 1}}"
+    );
+    assert_eq!(
+      interpret("FindHamiltonianCycle[CycleGraph[5]]").unwrap(),
+      "{{1 \u{f3d4} 2, 2 \u{f3d4} 3, 3 \u{f3d4} 4, 4 \u{f3d4} 5, 5 \u{f3d4} 1}}"
+    );
+    assert_eq!(
+      interpret("FindHamiltonianCycle[WheelGraph[5]]").unwrap(),
+      "{{1 \u{f3d4} 2, 2 \u{f3d4} 3, 3 \u{f3d4} 4, 4 \u{f3d4} 5, 5 \u{f3d4} 1}}"
+    );
+    // Edges are reported in traversal order (note the 6 <-> 5, 5 <-> 3 chain).
+    assert_eq!(
+      interpret("FindHamiltonianCycle[GridGraph[{2, 3}]]").unwrap(),
+      "{{1 \u{f3d4} 2, 2 \u{f3d4} 4, 4 \u{f3d4} 6, 6 \u{f3d4} 5, \
+       5 \u{f3d4} 3, 3 \u{f3d4} 1}}"
+    );
+  }
+
+  #[test]
+  fn find_hamiltonian_cycle_none() {
+    // A path graph has no Hamiltonian cycle: wolframscript returns {}.
+    assert_eq!(
+      interpret("FindHamiltonianCycle[Graph[{1 <-> 2, 2 <-> 3}]]").unwrap(),
+      "{}"
+    );
+    assert_eq!(
+      interpret("FindHamiltonianCycle[PathGraph[Range[4]]]").unwrap(),
+      "{}"
+    );
+    assert_eq!(
+      interpret("FindHamiltonianCycle[PetersenGraph[5, 2]]").unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn find_hamiltonian_cycle_directed() {
+    // A directed cycle reports DirectedEdge (\u{f3d5}) edges.
+    assert_eq!(
+      interpret("FindHamiltonianCycle[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]]")
+        .unwrap(),
+      "{{1 \u{f3d5} 2, 2 \u{f3d5} 3, 3 \u{f3d5} 1}}"
+    );
+  }
+
+  #[test]
   fn bipartite_graph_q() {
     assert_eq!(interpret("BipartiteGraphQ[CycleGraph[4]]").unwrap(), "True");
     assert_eq!(

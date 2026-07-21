@@ -2227,7 +2227,7 @@ FoldPairList,Folds a list returning emitted values and new states; the two-argum
 AdjacencyList,Neighbor lists of a vertex or of all vertices (vertex-list order),✅,pure,9.0,2276
 CloudShare,Cloud service,🚫,None,10.2,2276
 EffectiveInterest,Effective annual rate from nominal rate compounded over a period,✅,pure,8.0,2276
-FindHamiltonianCycle,Graph algorithm,🚫,None,8.0,2276
+FindHamiltonianCycle,Find a Hamiltonian cycle in a graph returning it as a list of edges or an empty list when none exists,✅,pure,8.0,2276
 GumbelDistribution,Gumbel minimum extreme value distribution,✅,pure,6.0,2276
 LimitsPositioning,Typesetting option,🚫,None,3.0,2276
 PrimeNu,Count distinct prime factors of an integer (Listable),✅,pure,7.0,2276
