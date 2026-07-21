@@ -23,6 +23,7 @@
 //! all give `MusicPitch["G3"]`. The conversions use the standard convention
 //! where middle C is MIDI 60 / C4 and A4 (MIDI 69) is 440 Hz.
 
+use crate::functions::math_ast::gcd;
 use crate::syntax::{
   BinaryOperator, Expr, UnaryOperator, bool_expr, unevaluated,
 };
@@ -1840,8 +1841,6 @@ pub fn music_rest(args: &[Expr]) -> Option<Expr> {
     _ => None,
   }
 }
-
-use crate::functions::math_ast::gcd;
 
 /// Reduce `n/d` to lowest terms with a positive denominator, returning an
 /// `Integer` when the denominator is 1 and a `Rational[n, d]` otherwise.

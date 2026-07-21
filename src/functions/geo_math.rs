@@ -7,6 +7,7 @@
 
 use crate::InterpreterError;
 use crate::functions::geographics::{position_to_latlon, positions_from_arg};
+use crate::functions::math_ast::gcd as gcd_i128;
 use crate::syntax::{Expr, UnaryOperator, unevaluated};
 use geographiclib_rs::{DirectGeodesic, Geodesic, InverseGeodesic};
 use std::sync::OnceLock;
@@ -314,8 +315,6 @@ fn rat_add(a: (i128, i128), b: (i128, i128)) -> Option<(i128, i128)> {
   let g = gcd_i128(num.abs().max(1), den);
   Some((num / g, den / g))
 }
-
-use crate::functions::math_ast::gcd as gcd_i128;
 
 /// Convert a numeric scalar expression to an `AngleVal`. Exactness is
 /// preserved for Integer/Rational; Reals and exact-but-irrational numerics

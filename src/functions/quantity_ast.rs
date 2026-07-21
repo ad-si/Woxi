@@ -1,5 +1,5 @@
 use crate::InterpreterError;
-use crate::functions::math_ast::{is_sqrt, make_sqrt};
+use crate::functions::math_ast::{gcd as gcd_i128, is_sqrt, make_sqrt};
 use crate::syntax::{BinaryOperator, Expr, bool_expr, unevaluated};
 use std::collections::BTreeMap;
 
@@ -720,8 +720,6 @@ fn resolve_lowercase_unit(name: &str) -> Option<String> {
   None
 }
 
-use crate::functions::math_ast::gcd;
-
 // ─── Compound unit decomposition ────────────────────────────────────────────
 
 /// A decomposed compound unit: list of (base_unit_name, exponent) pairs
@@ -1023,7 +1021,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
             *dims.entry(*dim).or_insert(0) += dim_exp * exp;
           }
         }
-        let g = gcd(si_numer, si_denom);
+        let g = gcd_i128(si_numer, si_denom);
         return Some(CompoundUnitInfo {
           components,
           si_numer: si_numer / g,
@@ -1078,7 +1076,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
           // SI factor: left / right
           left_info.si_numer *= right_info.si_denom;
           left_info.si_denom *= right_info.si_numer;
-          let g = gcd(left_info.si_numer, left_info.si_denom);
+          let g = gcd_i128(left_info.si_numer, left_info.si_denom);
           left_info.si_numer /= g;
           left_info.si_denom /= g;
           // Merge dimensions
@@ -1096,7 +1094,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
           }
           left_info.si_numer *= right_info.si_numer;
           left_info.si_denom *= right_info.si_denom;
-          let g = gcd(left_info.si_numer, left_info.si_denom);
+          let g = gcd_i128(left_info.si_numer, left_info.si_denom);
           left_info.si_numer /= g;
           left_info.si_denom /= g;
           for (dim, exp) in &right_info.dimensions {
@@ -1118,7 +1116,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
             .collect();
           let (pn, pd) =
             rational_pow(base_info.si_numer, base_info.si_denom, exp_val);
-          let g = gcd(pn, pd);
+          let g = gcd_i128(pn, pd);
           let dims: BTreeMap<Dimension, i64> = base_info
             .dimensions
             .iter()
@@ -1147,7 +1145,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
             }
             r.si_numer *= info.si_numer;
             r.si_denom *= info.si_denom;
-            let g = gcd(r.si_numer, r.si_denom);
+            let g = gcd_i128(r.si_numer, r.si_denom);
             r.si_numer /= g;
             r.si_denom /= g;
             for (dim, exp) in &info.dimensions {
@@ -1175,7 +1173,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
         .collect();
       let (pn, pd) =
         rational_pow(base_info.si_numer, base_info.si_denom, exp_val);
-      let g = gcd(pn, pd);
+      let g = gcd_i128(pn, pd);
       let dims: BTreeMap<Dimension, i64> = base_info
         .dimensions
         .iter()
@@ -1237,7 +1235,7 @@ fn simplify_compound_unit(
         let (pn, pd) = rational_pow(unit_conv_n, unit_conv_d, *exp);
         conv_numer *= pn;
         conv_denom *= pd;
-        let g = gcd(conv_numer, conv_denom);
+        let g = gcd_i128(conv_numer, conv_denom);
         conv_numer /= g;
         conv_denom /= g;
         total_exp += exp;
@@ -1717,7 +1715,7 @@ fn multiply_magnitude_by_rational(
   denom: i128,
 ) -> Result<Expr, InterpreterError> {
   // Simplify the conversion factor
-  let g = gcd(numer, denom);
+  let g = gcd_i128(numer, denom);
   let numer = numer / g;
   let denom = denom / g;
 
@@ -1729,7 +1727,7 @@ fn multiply_magnitude_by_rational(
     Expr::Integer(m) => {
       let result_numer = m * numer;
       let result_denom = denom;
-      let g2 = gcd(result_numer, result_denom);
+      let g2 = gcd_i128(result_numer, result_denom);
       let rn = result_numer / g2;
       let rd = result_denom / g2;
       if rd == 1 {
@@ -2703,7 +2701,7 @@ fn power_unit_expr(unit: &Expr, p: i128, q: i128) -> Option<Expr> {
     if new_n == 0 {
       continue;
     }
-    let g = gcd(new_n.abs(), new_d.abs());
+    let g = gcd_i128(new_n, new_d);
     let (rn, rd) = (new_n / g, new_d / g);
     // Ensure positive denominator
     let (rn, rd) = if rd < 0 { (-rn, -rd) } else { (rn, rd) };

@@ -1,6 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
+use crate::functions::math_ast::gcd as gcd_i128;
 use crate::syntax::{BinaryOperator, Expr, expr_to_string, unevaluated};
 
 /// Hypergeometric0F1[a, z] - confluent hypergeometric limit function
@@ -961,8 +962,6 @@ fn hypergeometric_2f1_regularized_non_positive_c(
   };
   Ok(Some(crate::evaluator::evaluate_expr_to_expr(&product)?))
 }
-
-use crate::functions::math_ast::gcd as gcd_i128;
 
 /// Hypergeometric1F1[a, b, z] - Kummer's confluent hypergeometric function
 fn is_half(expr: &Expr) -> bool {
@@ -2483,7 +2482,6 @@ fn hypergeometric2f1_1_b_c(
   c: i128,
   z: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  use crate::functions::math_ast::numeric_utils::gcd;
   use std::collections::BTreeMap;
 
   let m = c - b; // >= 2
@@ -2508,7 +2506,7 @@ fn hypergeometric2f1_1_b_c(
     }
     let n = sign * prefactor;
     let d = j_fact * mj_fact;
-    let g = gcd(n.abs(), d);
+    let g = gcd_i128(n, d);
     cj.push((n / g, d / g));
   }
 
@@ -2523,14 +2521,13 @@ fn hypergeometric2f1_1_b_c(
     num: i128,
     den: i128,
   ) {
-    use crate::functions::math_ast::numeric_utils::gcd;
     let entry = map.entry(key).or_insert((0, 1));
     let new_num = entry.0 * den + num * entry.1;
     let new_den = entry.1 * den;
     if new_num == 0 {
       *entry = (0, 1);
     } else {
-      let g = gcd(new_num.abs(), new_den.abs());
+      let g = gcd_i128(new_num, new_den);
       *entry = (new_num / g, new_den / g);
     }
   }
@@ -2545,7 +2542,7 @@ fn hypergeometric2f1_1_b_c(
     for i in 1..(b + j) {
       let num = -cn;
       let den = cd * i;
-      let g = gcd(num.abs(), den.abs());
+      let g = gcd_i128(num, den);
       add_rational(&mut collected, (false, m - 1 - j + i), num / g, den / g);
     }
   }
@@ -2555,7 +2552,7 @@ fn hypergeometric2f1_1_b_c(
 
   // Find common denominator across all terms
   let common_den: i128 = collected.values().fold(1i128, |acc, &(_, d)| {
-    let g = gcd(acc, d.abs());
+    let g = gcd_i128(acc, d);
     acc / g * d.abs()
   });
 
@@ -2566,7 +2563,7 @@ fn hypergeometric2f1_1_b_c(
     .collect();
 
   // Find GCD of all scaled numerators
-  let num_gcd = scaled.iter().map(|(_, n)| n.abs()).fold(0i128, gcd);
+  let num_gcd = scaled.iter().map(|(_, n)| n.abs()).fold(0i128, gcd_i128);
 
   if num_gcd == 0 {
     return Ok(Expr::Integer(0));
@@ -2586,7 +2583,7 @@ fn hypergeometric2f1_1_b_c(
   // Overall factor = sign_adjust * num_gcd / common_den
   let factor_num = sign_adjust * num_gcd;
   let factor_den = common_den;
-  let fg = gcd(factor_num.abs(), factor_den);
+  let fg = gcd_i128(factor_num, factor_den);
   let (factor_n, factor_d) = (factor_num / fg, factor_den / fg);
 
   // Build Log[1-z]
@@ -2613,7 +2610,7 @@ fn hypergeometric2f1_1_b_c(
     // Factored coefficient: scaled_num / (sign_adjust * num_gcd)
     let cn = scaled_num * sign_adjust;
     let cd = num_gcd;
-    let cg = gcd(cn.abs(), cd);
+    let cg = gcd_i128(cn, cd);
     let (cn, cd) = (cn / cg, cd / cg);
 
     let mut factors: Vec<Expr> = Vec::new();

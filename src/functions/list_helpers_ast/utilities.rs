@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+pub(crate) use crate::functions::math_ast::gcd as gcd_i128;
 use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator};
 
 /// Convert an Expr to a boolean value.
@@ -258,8 +259,6 @@ pub fn f64_to_expr(n: f64) -> Expr {
     Expr::Real(n)
   }
 }
-
-pub(crate) use crate::functions::math_ast::gcd as gcd_i128;
 
 /// Identity[x] - returns x unchanged
 pub fn identity_ast(arg: &Expr) -> Result<Expr, InterpreterError> {

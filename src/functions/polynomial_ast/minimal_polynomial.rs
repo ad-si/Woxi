@@ -2,8 +2,10 @@
 use super::*;
 use crate::InterpreterError;
 use crate::functions::math_ast::{
-  expr_to_f64, expr_to_i128, expr_to_rational, gcd as gcd_i128, is_sqrt,
+  expr_to_f64, expr_to_i128, expr_to_rational, gcd as gcd_i128, gcd_bigint,
+  is_sqrt,
 };
+
 use crate::syntax::{
   BinaryOperator, Expr, UnaryOperator, bool_expr, unevaluated,
 };
@@ -345,7 +347,7 @@ fn factor_int_coeffs(factor: &Expr, var: &str) -> Option<Vec<i128>> {
   }
   let mut g = 0i128;
   for &c in &coeffs {
-    g = gcd_i128(g, c.abs());
+    g = gcd_i128(g, c);
   }
   if g > 1 {
     for c in coeffs.iter_mut() {
@@ -1918,8 +1920,6 @@ fn sturm_real_root_count(coeffs: &[i128]) -> usize {
     }
     v
   }
-
-  use crate::functions::math_ast::gcd_bigint;
 
   fn content_reduce(v: &[BigInt]) -> Vec<BigInt> {
     let mut g = BigInt::ZERO;

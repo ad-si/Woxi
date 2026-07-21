@@ -14,6 +14,7 @@
 
 use crate::InterpreterError;
 use crate::functions::calculus_ast::is_constant_wrt;
+use crate::functions::math_ast::gcd;
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
 };
@@ -389,8 +390,6 @@ fn as_power(expr: &Expr) -> Option<(Expr, Expr)> {
     _ => None,
   }
 }
-
-use crate::functions::math_ast::gcd;
 
 fn plus(terms: Vec<Expr>) -> Expr {
   Expr::FunctionCall {

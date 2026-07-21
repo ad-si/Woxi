@@ -1,6 +1,8 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::functions::math_ast::{expr_to_rational, is_sqrt, make_sqrt};
+use crate::functions::math_ast::{
+  expr_to_rational, gcd as gcd_i128, is_sqrt, make_sqrt,
+};
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, unevaluated,
 };
@@ -12106,8 +12108,6 @@ fn rational_to_expr(n: i128, d: i128) -> Expr {
     }
   }
 }
-
-use crate::functions::math_ast::gcd as gcd_i128;
 
 /// Rational arithmetic helpers
 fn rat_sub(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {

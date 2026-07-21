@@ -1,4 +1,5 @@
 use crate::InterpreterError;
+use crate::functions::math_ast::gcd as gcd_i128;
 use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 use super::coefficient::collect_additive_terms;
@@ -56,13 +57,11 @@ pub fn decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 type Rat = (i128, i128); // (numerator, denominator), always reduced
 
-use crate::functions::math_ast::gcd as rat_gcd;
-
 fn rat_reduce(n: i128, d: i128) -> Rat {
   if d == 0 {
     return (n, d);
   }
-  let g = rat_gcd(n, d);
+  let g = gcd_i128(n, d);
   if d < 0 {
     (-n / g, -d / g)
   } else {

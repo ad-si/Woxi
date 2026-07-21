@@ -8,7 +8,7 @@ use crate::syntax::{
 };
 
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
-use crate::functions::math_ast::make_sqrt;
+use crate::functions::math_ast::{gcd as gcd_i128, make_sqrt};
 
 // ─── Reduce ──────────────────────────────────────────────────────────
 
@@ -2870,15 +2870,11 @@ impl Rat {
   }
 }
 
-fn rat_gcd(a: i128, b: i128) -> i128 {
-  crate::functions::math_ast::gcd(a, b).max(1)
-}
-
 fn rat_simplify(num: i128, den: i128) -> Rat {
   if den == 0 {
     return Rat { num, den };
   }
-  let g = rat_gcd(num, den);
+  let g = gcd_i128(num, den).max(1);
   let (mut n, mut d) = (num / g, den / g);
   if d < 0 {
     n = -n;
