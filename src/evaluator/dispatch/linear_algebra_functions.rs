@@ -943,7 +943,7 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
-    "Projection" if args.len() == 2 => {
+    "Projection" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::linear_algebra_ast::projection_ast(args));
     }
     "LatticeReduce" if args.len() == 1 => {

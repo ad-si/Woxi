@@ -1922,9 +1922,32 @@ pub fn conjugate_transpose_ast(
 /// Formula uses conjugate inner product (matches Wolfram):
 ///   (Conjugate[v].u / Conjugate[v].v) * v
 pub fn projection_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Projection[u, v, f] uses a custom inner product f:
+  //   (v * f[v, u]) / f[v, v]
+  // (for a list v this threads componentwise). f[v, u] puts v first, matching
+  // wolframscript.
+  if args.len() == 3 {
+    let u = args[0].clone();
+    let v = args[1].clone();
+    let f = &args[2];
+    let apply = crate::evaluator::function_application::apply_curried_call;
+    let fvu = apply(f, &[v.clone(), u])?;
+    let fvv = apply(f, &[v.clone(), v.clone()])?;
+    let scalar = Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(fvu),
+      right: Box::new(fvv),
+    };
+    let result = Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(scalar),
+      right: Box::new(v),
+    };
+    return evaluate_expr_to_expr(&result);
+  }
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
-      "Projection expects exactly 2 arguments".into(),
+      "Projection expects 2 or 3 arguments".into(),
     ));
   }
   // Symbolic case (neither argument is a literal list): expand to the

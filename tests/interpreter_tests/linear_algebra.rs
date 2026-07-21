@@ -1103,6 +1103,44 @@ mod projection {
       "{1 + (2*I)/3, 5/3 - I/3}"
     );
   }
+
+  // Projection[u, v, f] uses a custom inner product f: (v f[v, u]) / f[v, v].
+  #[test]
+  fn projection_custom_inner_product() {
+    // With Dot (no conjugation) it is the plain orthogonal projection.
+    assert_eq!(
+      interpret("Projection[{1, 2}, {1, 0}, Dot]").unwrap(),
+      "{1, 0}"
+    );
+    assert_eq!(
+      interpret("Projection[{1, 1, 1}, {1, 0, 0}, Dot]").unwrap(),
+      "{1, 0, 0}"
+    );
+    // A pure function as the inner product.
+    assert_eq!(
+      interpret("Projection[{a, b}, {1, 1}, (#1.#2) &]").unwrap(),
+      "{(a + b)/2, (a + b)/2}"
+    );
+    // Dot does not conjugate, unlike the default 2-argument form.
+    assert_eq!(
+      interpret("Projection[{I, 0}, {1, 1}, Dot]").unwrap(),
+      "{I/2, I/2}"
+    );
+  }
+
+  // Fully symbolic 3-argument form: (v f[v, u]) / f[v, v], with v first in f.
+  #[test]
+  fn projection_symbolic_inner_product() {
+    assert_eq!(
+      interpret("Projection[u, v, f]").unwrap(),
+      "(v*f[v, u])/f[v, v]"
+    );
+    assert_eq!(
+      interpret("Projection[{a, b}, {c, d}, g]").unwrap(),
+      "{(c*g[{c, d}, {a, b}])/g[{c, d}, {c, d}], \
+       (d*g[{c, d}, {a, b}])/g[{c, d}, {c, d}]}"
+    );
+  }
 }
 
 mod eigenvalues {
