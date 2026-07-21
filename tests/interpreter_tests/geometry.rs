@@ -2279,6 +2279,51 @@ mod planar_angle {
   fn invalid_input() {
     assert_eq!(interpret("PlanarAngle[0]").unwrap(), "PlanarAngle[0]");
   }
+
+  // PlanarAngle[p -> {q1, q2}] — angle at p between the half-lines to q1 and q2.
+  #[test]
+  fn vertex_rule_form() {
+    assert_eq!(
+      interpret("PlanarAngle[{0, 0} -> {{1, 0}, {0, 1}}]").unwrap(),
+      "Pi/2"
+    );
+    assert_eq!(
+      interpret("PlanarAngle[{0, 0} -> {{1, 0}, {1, 1}}]").unwrap(),
+      "Pi/4"
+    );
+    assert_eq!(
+      interpret("PlanarAngle[{0, 0} -> {{1, 0}, {-1, 0}}]").unwrap(),
+      "Pi"
+    );
+    assert_eq!(
+      interpret("PlanarAngle[{0, 0} -> {{1, 0}, {2, 0}}]").unwrap(),
+      "0"
+    );
+    // A half-line collapsing onto the vertex is Indeterminate.
+    assert_eq!(
+      interpret("PlanarAngle[{1, 1} -> {{4, 5}, {1, 1}}]").unwrap(),
+      "Indeterminate"
+    );
+    // Symbolic coordinates evaluate too.
+    assert_eq!(
+      interpret("PlanarAngle[{0, 0} -> {{a, 0}, {0, a}}]").unwrap(),
+      "Pi/2"
+    );
+  }
+
+  // PlanarAngle is planar: three-dimensional points stay unevaluated in both the
+  // list form and the vertex-rule form (matching wolframscript).
+  #[test]
+  fn three_dimensional_stays_unevaluated() {
+    assert_eq!(
+      interpret("PlanarAngle[{{1, 0, 0}, {0, 0, 0}, {0, 1, 0}}]").unwrap(),
+      "PlanarAngle[{{1, 0, 0}, {0, 0, 0}, {0, 1, 0}}]"
+    );
+    assert_eq!(
+      interpret("PlanarAngle[{0, 0, 0} -> {{1, 0, 0}, {0, 1, 0}}]").unwrap(),
+      "PlanarAngle[{0, 0, 0} -> {{1, 0, 0}, {0, 1, 0}}]"
+    );
+  }
 }
 
 mod polygon_angle {

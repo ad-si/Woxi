@@ -2559,7 +2559,7 @@ LogisticDistribution,represents a logistic distribution,✅,pure,6.0,2611
 MultiplySides,Multiply both sides of an equation by an expression; a symbolic factor is guarded by c != 0 via Piecewise; an equation second argument pairs the sides,✅,none,11.3,2611
 URLShorten,,🚫,,10.0,2611
 DistributionParameterQ,Tests whether the parameters of a distribution are valid,✅,pure,8.0,2617
-PlanarAngle,Computes the angle at a vertex between two rays defined by three points,✅,pure,12.0,2617
+PlanarAngle,Planar angle at a vertex from the list form {q1 p q2} or the vertex-rule form p -> {q1 q2} (2-D only),✅,pure,12.0,2617
 PrivateFontOptions,,🚫,,3.0,2617
 StarGraph,Star graph with n vertices,✅,1,8.0,2617
 Toggler,Toggler control element (stays symbolic in script mode),✅,unevaluated,6.0,2617

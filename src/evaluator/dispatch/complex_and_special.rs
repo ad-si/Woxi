@@ -2022,12 +2022,30 @@ pub fn dispatch_complex_and_special(
         args,
       ));
     }
-    // PlanarAngle[{p1, vertex, p2}] — angle at vertex between rays to p1 and p2
+    // PlanarAngle is a planar (2-D) construct: every point must be a pair, and
+    // higher-dimensional or malformed input stays unevaluated (matching
+    // wolframscript, which leaves e.g. 3-D points unevaluated).
     "PlanarAngle" if args.len() == 1 => {
+      let is_2d = |e: &Expr| matches!(e, Expr::List(c) if c.len() == 2);
+      // PlanarAngle[{q1, p, q2}] — angle at the middle vertex p.
       if let Expr::List(pts) = &args[0]
         && pts.len() == 3
+        && pts.iter().all(&is_2d)
       {
         return Some(compute_planar_angle(&pts[0], &pts[1], &pts[2]));
+      }
+      // PlanarAngle[p -> {q1, q2}] — angle at p between the half-lines through
+      // q1 and q2.
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      } = &args[0]
+        && is_2d(pattern)
+        && let Expr::List(rays) = replacement.as_ref()
+        && rays.len() == 2
+        && rays.iter().all(is_2d)
+      {
+        return Some(compute_planar_angle(&rays[0], pattern, &rays[1]));
       }
       return Some(Ok(unevaluated("PlanarAngle", args)));
     }
