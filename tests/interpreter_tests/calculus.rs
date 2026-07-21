@@ -5244,6 +5244,42 @@ mod integrate_gaussian {
       "(Sqrt[Pi]*Erf[Sqrt[a]*x])/(2*Sqrt[a])"
     );
   }
+
+  // A positive x^2 coefficient gives the Erfi branch. Verified against
+  // wolframscript.
+  #[test]
+  fn integrate_exp_pos_x_squared_gives_erfi() {
+    assert_eq!(
+      interpret("Integrate[Exp[x^2], x]").unwrap(),
+      "(Sqrt[Pi]*Erfi[x])/2"
+    );
+    assert_eq!(
+      interpret("Integrate[Exp[2 x^2], x]").unwrap(),
+      "(Sqrt[Pi/2]*Erfi[Sqrt[2]*x])/2"
+    );
+    assert_eq!(
+      interpret("Integrate[Exp[a x^2], x]").unwrap(),
+      "(Sqrt[Pi]*Erfi[Sqrt[a]*x])/(2*Sqrt[a])"
+    );
+  }
+}
+
+// ∫ 1/Log[x] dx = LogIntegral[x], the reverse of D[LogIntegral[x]] = 1/Log[x].
+// Verified against wolframscript.
+mod integrate_log_integral {
+  use super::*;
+
+  #[test]
+  fn one_over_log() {
+    assert_eq!(
+      interpret("Integrate[1/Log[x], x]").unwrap(),
+      "LogIntegral[x]"
+    );
+    assert_eq!(
+      interpret("Integrate[Log[x]^(-1), x]").unwrap(),
+      "LogIntegral[x]"
+    );
+  }
 }
 
 mod erfi {

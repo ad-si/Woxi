@@ -5236,10 +5236,16 @@ fn gcd_i128_calc(mut a: i128, mut b: i128) -> i128 {
   a.max(1)
 }
 
-/// Build the antiderivative of Exp[-a*x^2]:
+/// Build the antiderivative of Exp[-a*x^2] (`erf_name` = "Erf") or of
+/// Exp[a*x^2] (`erf_name` = "Erfi", for the positive-coefficient branch):
 ///   Sqrt[Pi/a]/2 * Erf[Sqrt[a]*x]  (general a)
 ///   (Sqrt[Pi]*Erf[x])/2            (when a=1)
-fn make_gaussian_antiderivative(var: &str, coeff: &Expr) -> Expr {
+/// The Erfi form is identical with Erf replaced by Erfi.
+fn make_gaussian_antiderivative(
+  var: &str,
+  coeff: &Expr,
+  erf_name: &str,
+) -> Expr {
   let var_expr = Expr::Identifier(var.to_string());
   let (erf_arg, prefix) = match coeff {
     Expr::Integer(1) => {
@@ -5271,7 +5277,7 @@ fn make_gaussian_antiderivative(var: &str, coeff: &Expr) -> Expr {
       };
       let prefix = make_sqrt(Expr::Constant("Pi".to_string()));
       let erf_expr = Expr::FunctionCall {
-        name: "Erf".to_string(),
+        name: erf_name.to_string(),
         args: vec![erf_arg].into(),
       };
       // (Sqrt[Pi] * Erf[Sqrt[a]*x]) / (2 * Sqrt[a])
@@ -5291,7 +5297,7 @@ fn make_gaussian_antiderivative(var: &str, coeff: &Expr) -> Expr {
     }
   };
   let erf_expr = Expr::FunctionCall {
-    name: "Erf".to_string(),
+    name: erf_name.to_string(),
     args: vec![erf_arg].into(),
   };
   // a=1 case: (Sqrt[Pi] * Erf[x]) / 2
@@ -5304,6 +5310,20 @@ fn make_gaussian_antiderivative(var: &str, coeff: &Expr) -> Expr {
     }),
     right: Box::new(Expr::Integer(2)),
   }
+}
+
+/// Match `E^(a*x^2)` with a positive (or symbolic) `a`, returning `a`. Explicit
+/// negative-coefficient forms are left to `match_neg_a_x_squared` (the Erf
+/// branch), so this recognizes the Erfi branch `Exp[a*x^2]` with a > 0.
+fn match_pos_a_x_squared(expr: &Expr, var: &str) -> Option<Expr> {
+  if is_var_squared(expr, var) {
+    return Some(Expr::Integer(1));
+  }
+  let coeff = match_a_x_squared(expr, var)?;
+  if matches!(&coeff, Expr::Integer(n) if *n < 0) {
+    return None;
+  }
+  Some(coeff)
 }
 
 /// Try to match an expression as `a*var` where `a` is constant w.r.t. `var`,
@@ -8772,6 +8792,21 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           }
         }
         Power => {
+          // ∫ 1/Log[x] dx = LogIntegral[x]
+          if let Expr::FunctionCall {
+            name: lname,
+            args: largs,
+          } = left.as_ref()
+            && lname == "Log"
+            && largs.len() == 1
+            && matches!(&largs[0], Expr::Identifier(nm) if nm == var)
+            && matches!(right.as_ref(), Expr::Integer(-1))
+          {
+            return Some(Expr::FunctionCall {
+              name: "LogIntegral".to_string(),
+              args: vec![Expr::Identifier(var.to_string())].into(),
+            });
+          }
           // ∫ Log[x]^n dx = x · Σ_{k=0}^{n} (-1)^(n-k) (n!/k!) Log[x]^k
           // for integer n ≥ 1 (repeated integration by parts). Building the
           // expanded form reproduces wolframscript's ordering, e.g.
@@ -8944,7 +8979,11 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             }
             // ∫ E^(-a*x^2) dx = Sqrt[Pi/a]/2 * Erf[Sqrt[a]*x]
             if let Some(coeff) = match_neg_a_x_squared(exp_arg, var) {
-              return Some(make_gaussian_antiderivative(var, &coeff));
+              return Some(make_gaussian_antiderivative(var, &coeff, "Erf"));
+            }
+            // ∫ E^(a*x^2) dx = Sqrt[Pi/a]/2 * Erfi[Sqrt[a]*x]  (a > 0)
+            if let Some(coeff) = match_pos_a_x_squared(exp_arg, var) {
+              return Some(make_gaussian_antiderivative(var, &coeff, "Erfi"));
             }
             // ∫ E^(-1/x^2) dx = x*E^(-1/x^2) + Sqrt[Pi]*Erf[1/x]
             // Standard integration-by-parts result; matches wolframscript
@@ -9332,7 +9371,11 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           // ∫ Exp[-a*x^2] dx = Sqrt[Pi/a]/2 * Erf[Sqrt[a]*x]
           // (when a=1: Sqrt[Pi]/2 * Erf[x])
           if let Some(coeff) = match_neg_a_x_squared(&args[0], var) {
-            return Some(make_gaussian_antiderivative(var, &coeff));
+            return Some(make_gaussian_antiderivative(var, &coeff, "Erf"));
+          }
+          // ∫ Exp[a*x^2] dx = Sqrt[Pi/a]/2 * Erfi[Sqrt[a]*x]  (a > 0)
+          if let Some(coeff) = match_pos_a_x_squared(&args[0], var) {
+            return Some(make_gaussian_antiderivative(var, &coeff, "Erfi"));
           }
           None
         }
