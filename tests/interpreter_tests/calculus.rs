@@ -9237,6 +9237,30 @@ mod fourier_transform {
     );
   }
 
+  // F[1/(p + q t^2)] = Sqrt[Pi/2]/Sqrt[p q] * Exp[-Sqrt[p/q] Abs[w]].
+  // Verified against wolframscript.
+  #[test]
+  fn lorentzian() {
+    assert_eq!(
+      interpret("FourierTransform[1/(1 + t^2), t, w]").unwrap(),
+      "Sqrt[Pi/2]/E^Abs[w]"
+    );
+    assert_eq!(
+      interpret("FourierTransform[1/(4 + t^2), t, w]").unwrap(),
+      "Sqrt[Pi/2]/(2*E^(2*Abs[w]))"
+    );
+    // A non-unit t^2 coefficient: p = 3, q = 2, so b = Sqrt[3/2].
+    assert_eq!(
+      interpret("FourierTransform[1/(3 + 2 t^2), t, w]").unwrap(),
+      "Sqrt[Pi/3]/(2*E^(Sqrt[3/2]*Abs[w]))"
+    );
+    // A numerator constant is pulled out by linearity.
+    assert_eq!(
+      interpret("FourierTransform[2/(4 + t^2), t, w]").unwrap(),
+      "Sqrt[Pi/2]/E^(2*Abs[w])"
+    );
+  }
+
   #[test]
   fn dirac_delta() {
     assert_eq!(
@@ -9346,6 +9370,20 @@ mod inverse_fourier_transform {
     assert_eq!(
       interpret("InverseFourierTransform[1, w, t]").unwrap(),
       "Sqrt[2*Pi]*DiracDelta[t]"
+    );
+  }
+
+  // F^-1[1/(p + q w^2)] = Sqrt[Pi/2]/Sqrt[p q] * Exp[-Sqrt[p/q] Abs[t]].
+  // Verified against wolframscript.
+  #[test]
+  fn lorentzian() {
+    assert_eq!(
+      interpret("InverseFourierTransform[1/(1 + w^2), w, t]").unwrap(),
+      "Sqrt[Pi/2]/E^Abs[t]"
+    );
+    assert_eq!(
+      interpret("InverseFourierTransform[1/(9 + w^2), w, t]").unwrap(),
+      "Sqrt[Pi/2]/(3*E^(3*Abs[t]))"
     );
   }
 

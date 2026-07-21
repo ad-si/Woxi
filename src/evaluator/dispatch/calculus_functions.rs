@@ -3321,7 +3321,124 @@ fn is_sum_of_t1sq_t2sq(expr: &Expr, t1: &str, t2: &str) -> bool {
 }
 
 /// Try to compute Fourier transform symbolically. Returns None if not recognized.
+/// Match a `q*var^2` term, returning the constant coefficient `q` (or 1 for a
+/// bare `var^2`). Returns None when `term` is not a pure square of `var`.
+fn match_var_squared(term: &Expr, var: &str) -> Option<Expr> {
+  let is_var_sq = |e: &Expr| -> bool {
+    matches!(as_func_args(e), Some((n, a))
+      if n == "Power" && a.len() == 2
+        && matches!(a[0], Expr::Identifier(s) if s == var)
+        && matches!(a[1], Expr::Integer(2)))
+  };
+  if is_var_sq(term) {
+    return Some(Expr::Integer(1));
+  }
+  if let Some((name, args)) = as_func_args(term)
+    && name == "Times"
+  {
+    let mut coeff_factors: Vec<Expr> = Vec::new();
+    let mut found = false;
+    for f in &args {
+      if is_var_sq(f) {
+        if found {
+          return None;
+        }
+        found = true;
+      } else if depends_on(f, var) {
+        return None;
+      } else {
+        coeff_factors.push((*f).clone());
+      }
+    }
+    if found {
+      return Some(if coeff_factors.is_empty() {
+        Expr::Integer(1)
+      } else {
+        make_times(coeff_factors)
+      });
+    }
+  }
+  None
+}
+
+/// Decompose `p + q*var^2` (with a positive numeric constant `p` and positive
+/// numeric coefficient `q`, and no other `var` dependence) into `(p, q)`.
+fn match_inv_quadratic(base: &Expr, var: &str) -> Option<(Expr, Expr)> {
+  let (name, args) = as_func_args(base)?;
+  if name != "Plus" {
+    return None;
+  }
+  let mut p_terms: Vec<Expr> = Vec::new();
+  let mut q: Option<Expr> = None;
+  for term in &args {
+    if !depends_on(term, var) {
+      p_terms.push((*term).clone());
+    } else if let Some(coeff) = match_var_squared(term, var) {
+      if q.is_some() {
+        return None;
+      }
+      q = Some(coeff);
+    } else {
+      return None;
+    }
+  }
+  if p_terms.is_empty() {
+    return None;
+  }
+  let p = make_plus(p_terms);
+  let q = q?;
+  let positive = |e: &Expr| {
+    crate::functions::math_ast::try_eval_to_f64(e).is_some_and(|v| v > 0.0)
+  };
+  if positive(&p) && positive(&q) {
+    Some((p, q))
+  } else {
+    None
+  }
+}
+
+/// Fourier (or, by symmetry, inverse-Fourier) transform of the Lorentzian
+/// `1/(p + q*var^2)` with positive numeric `p, q`, evaluated at `out`:
+///   Sqrt[Pi/2] / Sqrt[p*q] * Exp[-Sqrt[p/q] * Abs[out]].
+/// Under the default FourierParameters this pair is symmetric, so the same
+/// formula serves both directions. Returns None when `expr` is not of this
+/// form.
+fn fourier_lorentzian(expr: &Expr, var: &str, out: &Expr) -> Option<Expr> {
+  let (name, args) = as_func_args(expr)?;
+  if name != "Power" || args.len() != 2 || !matches!(args[1], Expr::Integer(-1))
+  {
+    return None;
+  }
+  let (p, q) = match_inv_quadratic(args[0], var)?;
+  let sqrt_pi_2 = make_sqrt(make_times(vec![
+    Expr::Constant("Pi".to_string()),
+    make_power(Expr::Integer(2), Expr::Integer(-1)),
+  ]));
+  let inv_sqrt_pq = make_power(
+    make_sqrt(make_times(vec![p.clone(), q.clone()])),
+    Expr::Integer(-1),
+  );
+  let b = make_sqrt(make_times(vec![p, make_power(q, Expr::Integer(-1))]));
+  let exp_part = make_power(
+    Expr::Constant("E".to_string()),
+    make_times(vec![
+      Expr::Integer(-1),
+      b,
+      Expr::FunctionCall {
+        name: "Abs".to_string(),
+        args: vec![out.clone()].into(),
+      },
+    ]),
+  );
+  Some(make_times(vec![sqrt_pi_2, inv_sqrt_pq, exp_part]))
+}
+
 fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
+  // F[1/(p + q*t^2)] = Sqrt[Pi/2]/Sqrt[p*q] * Exp[-Sqrt[p/q]*Abs[w]].
+  if let Some(res) = fourier_lorentzian(expr, t, w) {
+    return Some(res);
+  }
+
   // F[constant] = constant * Sqrt[2*Pi] * DiracDelta[w]
   if !depends_on(expr, t) {
     return Some(make_times(vec![
@@ -3807,6 +3924,12 @@ fn inverse_fourier_transform(
 }
 
 fn inverse_fourier_inner(expr: &Expr, w: &str, t: &Expr) -> Option<Expr> {
+  // F^-1[1/(p + q*w^2)] = Sqrt[Pi/2]/Sqrt[p*q] * Exp[-Sqrt[p/q]*Abs[t]]
+  // (the transform pair is symmetric under the default FourierParameters).
+  if let Some(res) = fourier_lorentzian(expr, w, t) {
+    return Some(res);
+  }
+
   // F^-1[constant] = constant * Sqrt[2*Pi] * DiracDelta[t]
   if !depends_on(expr, w) {
     return Some(make_times(vec![
