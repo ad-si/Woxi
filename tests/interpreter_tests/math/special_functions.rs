@@ -1546,6 +1546,22 @@ mod polylog {
   }
 
   #[test]
+  fn symbolic_s_at_neg_one() {
+    // PolyLog[s, -1] = -(1 - 2^(1 - s)) Zeta[s] (the alternating zeta relation).
+    assert_eq!(
+      interpret("PolyLog[s, -1]").unwrap(),
+      "-((1 - 2^(1 - s))*Zeta[s])"
+    );
+    assert_eq!(
+      interpret("PolyLog[nu, -1]").unwrap(),
+      "-((1 - 2^(1 - nu))*Zeta[nu])"
+    );
+    // Integer s still collapses to its exact value (unchanged).
+    assert_eq!(interpret("PolyLog[2, -1]").unwrap(), "-1/12*Pi^2");
+    assert_eq!(interpret("PolyLog[3, -1]").unwrap(), "(-3*Zeta[3])/4");
+  }
+
+  #[test]
   fn at_one_half_s2() {
     // PolyLog[2, 1/2] = Pi^2/12 - Log[2]^2/2
     assert_eq!(

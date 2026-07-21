@@ -40,7 +40,49 @@ pub fn polylog_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {}
   }
 
+  // PolyLog[s, -1] = -(1 - 2^(1 - s)) Zeta[s] for symbolic s (the alternating
+  // zeta / Dirichlet-eta relation). Integer and real s are handled above.
+  if matches!(z_expr, Expr::Integer(-1)) {
+    return polylog_at_neg1_symbolic(s_expr);
+  }
+
   Ok(unevaluated("PolyLog", args))
+}
+
+/// PolyLog[s, -1] = -(1 - 2^(1 - s)) Zeta[s] for a symbolic order `s`.
+fn polylog_at_neg1_symbolic(s: &Expr) -> Result<Expr, InterpreterError> {
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  // 2^(1 - s)
+  let pow = call(
+    "Power",
+    vec![
+      Expr::Integer(2),
+      call(
+        "Plus",
+        vec![
+          Expr::Integer(1),
+          call("Times", vec![Expr::Integer(-1), s.clone()]),
+        ],
+      ),
+    ],
+  );
+  // 1 - 2^(1 - s)
+  let inner = call(
+    "Plus",
+    vec![
+      Expr::Integer(1),
+      call("Times", vec![Expr::Integer(-1), pow]),
+    ],
+  );
+  // -(1 - 2^(1 - s)) Zeta[s]
+  let result = call(
+    "Times",
+    vec![Expr::Integer(-1), inner, call("Zeta", vec![s.clone()])],
+  );
+  crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
 fn polylog_integer_s(
