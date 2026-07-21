@@ -6298,6 +6298,31 @@ mod dsolve {
     );
   }
 
+  // First-order linear inhomogeneous ODEs: the integrating factor is
+  // distributed over the particular and homogeneous parts, matching
+  // wolframscript, while a grouped particular (e.g. a trig combination) stays
+  // grouped. Verified against wolframscript.
+  #[test]
+  fn first_order_linear_inhomogeneous_distributes() {
+    assert_eq!(
+      interpret("DSolve[y'[x] + 2 y[x] == Exp[x], y[x], x]").unwrap(),
+      "{{y[x] -> E^x/3 + C[1]/E^(2*x)}}"
+    );
+    assert_eq!(
+      interpret("DSolve[y'[x] + y[x] == x, y[x], x]").unwrap(),
+      "{{y[x] -> -1 + x + C[1]/E^x}}"
+    );
+    assert_eq!(
+      interpret("DSolve[y'[x] - y[x] == Exp[2 x], y[x], x]").unwrap(),
+      "{{y[x] -> E^(2*x) + E^x*C[1]}}"
+    );
+    // The trig particular solution is kept grouped, not split into terms.
+    assert_eq!(
+      interpret("DSolve[y'[x] + 3 y[x] == Sin[x], y[x], x]").unwrap(),
+      "{{y[x] -> C[1]/E^(3*x) + (-Cos[x] + 3*Sin[x])/10}}"
+    );
+  }
+
   // An equation with no derivative of the dependent function is purely
   // algebraic: DSolve reduces to Solve for the dependent function, matching
   // wolframscript.

@@ -1693,16 +1693,25 @@ fn solve_first_order_linear(
     right: Box::new(neg_p_integral),
   };
 
-  let inner = Expr::BinaryOp {
-    op: BinaryOperator::Plus,
-    left: Box::new(mu_q_integral),
-    right: Box::new(make_c(1)),
-  };
-
-  Ok(Expr::BinaryOp {
+  // Distribute the integrating factor over the particular part and the
+  // constant separately, matching wolframscript's form, e.g.
+  // (E^(3x)/3 + C[1])/E^(2x) -> E^x/3 + C[1]/E^(2x). Each product is simplified
+  // (not fully expanded), so a grouped particular like (-Cos[x]+3Sin[x])/10
+  // stays grouped rather than splitting into separate terms.
+  let particular = crate::functions::calculus_ast::simplify(Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    left: Box::new(inv_mu.clone()),
+    right: Box::new(mu_q_integral),
+  });
+  let homogeneous = crate::functions::calculus_ast::simplify(Expr::BinaryOp {
     op: BinaryOperator::Times,
     left: Box::new(inv_mu),
-    right: Box::new(inner),
+    right: Box::new(make_c(1)),
+  });
+  Ok(Expr::BinaryOp {
+    op: BinaryOperator::Plus,
+    left: Box::new(particular),
+    right: Box::new(homogeneous),
   })
 }
 
