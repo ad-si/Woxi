@@ -6267,6 +6267,54 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  #[test]
+  fn shearing_matrix_normalizes_direction() {
+    // The shear direction v is normalized: a scaled v gives the same matrix.
+    // wolframscript: ShearingMatrix[t, {2, 0}, {0, 1}] -> {{1, Tan[t]}, {0, 1}}
+    assert_eq!(
+      interpret("ShearingMatrix[t, {2, 0}, {0, 1}]").unwrap(),
+      "{{1, Tan[t]}, {0, 1}}"
+    );
+    // v is also projected onto the plane normal to n before normalizing:
+    // {3, 4} projected off {0, 5} becomes {3, 0} -> {1, 0}.
+    assert_eq!(
+      interpret("ShearingMatrix[t, {3, 4}, {0, 5}]").unwrap(),
+      "{{1, Tan[t]}, {0, 1}}"
+    );
+  }
+
+  #[test]
+  fn shearing_matrix_non_axis_aligned() {
+    // Both v and n non-axis-aligned; entries appear over a common denominator.
+    // wolframscript: ShearingMatrix[t, {1, 1}, {1, -1}]
+    //   -> {{(2 + Tan[t])/2, -Tan[t]/2}, {Tan[t]/2, (2 - Tan[t])/2}}
+    assert_eq!(
+      interpret("ShearingMatrix[t, {1, 1}, {1, -1}]").unwrap(),
+      "{{(2 + Tan[t])/2, -1/2*Tan[t]}, {Tan[t]/2, (2 - Tan[t])/2}}"
+    );
+  }
+
+  #[test]
+  fn shearing_matrix_3d_irrational() {
+    // Normalization can leave an irrational (non-cancelling) factor.
+    // wolframscript: ShearingMatrix[t, {1, 2, 0}, {0, 0, 3}]
+    //   -> {{1, 0, Tan[t]/Sqrt[5]}, {0, 1, (2 Tan[t])/Sqrt[5]}, {0, 0, 1}}
+    assert_eq!(
+      interpret("ShearingMatrix[t, {1, 2, 0}, {0, 0, 3}]").unwrap(),
+      "{{1, 0, Tan[t]/Sqrt[5]}, {0, 1, (2*Tan[t])/Sqrt[5]}, {0, 0, 1}}"
+    );
+  }
+
+  #[test]
+  fn shearing_matrix_zero_projection() {
+    // When v is parallel to n the projection vanishes; wolframscript emits
+    // ShearingMatrix::proj and returns the expression unevaluated.
+    assert_eq!(
+      interpret("ShearingMatrix[t, {1, 0}, {1, 0}]").unwrap(),
+      "ShearingMatrix[t, {1, 0}, {1, 0}]"
+    );
+  }
+
   // DiagonalMatrixQ
   #[test]
   fn diagonal_matrix_q_true() {

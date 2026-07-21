@@ -2895,7 +2895,7 @@ Congruent,Inert operator displayed with identical-to symbol,✅,pure,3.0,2960
 NorlundB,Nörlund generalized Bernoulli number NorlundB[n;a]; three-arg form NorlundB[n;a;x] gives the Nörlund polynomial B_n^(a)(x),✅,pure,6.0,2960
 NumberSeparator,Option specifying the digit separator in NumberForm,✅,pure,1.0,2960
 ReplaceImageValue,,🚫,,9.0,2960
-ShearingMatrix,Shearing transformation matrix,✅,none,6.0,2960
+ShearingMatrix,Shearing transformation matrix by an angle along a direction projected normal to a vector,✅,pure,6.0,2960
 Streams,List currently open streams,✅,io,2.0,2960
 ConvexOptimization,,,,12.2,2971
 CreateCloudExpression,,🚫,,10.4,2971

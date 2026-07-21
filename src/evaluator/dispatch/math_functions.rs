@@ -4874,33 +4874,90 @@ pub fn dispatch_math_functions(
     "ShearingMatrix" if args.len() == 3 => {
       if let (Expr::List(v), Expr::List(n_vec)) = (&args[1], &args[2]) {
         let dim = v.len();
-        if dim != n_vec.len() {
+        if dim == 0 || dim != n_vec.len() {
           return None;
         }
-        // Build identity + Tan[theta] * outer(v, n)
-        let s = &Expr::FunctionCall {
-          name: "Tan".to_string(),
-          args: vec![args[0].clone()].into(),
+        // ShearingMatrix[theta, v, n] shears by `theta` along the component of
+        // `v` lying in the hyperplane normal to `n`. With n_hat = n/|n| and
+        // v_hat the unit vector of v projected into that hyperplane
+        // (v_proj = v - (v.n_hat) n_hat), the matrix is
+        //   I + Tan[theta] * (v_hat outer n_hat).
+        let call = |name: &str, a: Vec<Expr>| Expr::FunctionCall {
+          name: name.to_string(),
+          args: a.into(),
         };
+        let eval = |e: Expr| evaluate_expr_to_expr(&e).unwrap_or(e);
+
+        // n.n and v.n (exact where possible).
+        let nn = eval(call(
+          "Plus",
+          (0..dim)
+            .map(|k| call("Times", vec![n_vec[k].clone(), n_vec[k].clone()]))
+            .collect(),
+        ));
+        let vn = eval(call(
+          "Plus",
+          (0..dim)
+            .map(|k| call("Times", vec![v[k].clone(), n_vec[k].clone()]))
+            .collect(),
+        ));
+        // v_proj = v - (v.n / n.n) * n
+        let coeff = eval(call("Divide", vec![vn, nn.clone()]));
+        let v_proj: Vec<Expr> = (0..dim)
+          .map(|i| {
+            eval(call(
+              "Subtract",
+              vec![
+                v[i].clone(),
+                call("Times", vec![coeff.clone(), n_vec[i].clone()]),
+              ],
+            ))
+          })
+          .collect();
+        // |v_proj|^2 — a zero projection has no shear direction.
+        let vpp = eval(call(
+          "Plus",
+          (0..dim)
+            .map(|k| call("Times", vec![v_proj[k].clone(), v_proj[k].clone()]))
+            .collect(),
+        ));
+        let is_zero = matches!(&vpp, Expr::Integer(0))
+          || matches!(&vpp, Expr::Real(r) if *r == 0.0);
+        if is_zero {
+          crate::emit_message(&format!(
+            "ShearingMatrix::proj: The projection of {} onto the plane defined by {} has zero magnitude.",
+            crate::syntax::expr_to_string(&args[1]),
+            crate::syntax::expr_to_string(&args[2]),
+          ));
+          return Some(Ok(unevaluated("ShearingMatrix", args)));
+        }
+
+        let tan = call("Tan", vec![args[0].clone()]);
+        let sqrt_vpp = call("Sqrt", vec![vpp]);
+        let sqrt_nn = call("Sqrt", vec![nn]);
         let mut rows = Vec::with_capacity(dim);
         for i in 0..dim {
           let mut row = Vec::with_capacity(dim);
           for j in 0..dim {
-            let identity_val = if i == j {
-              Expr::Integer(1)
-            } else {
-              Expr::Integer(0)
-            };
-            // s * v[i] * n[j]
-            let shear = Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![s.clone(), v[i].clone(), n_vec[j].clone()].into(),
-            };
-            let entry = Expr::FunctionCall {
-              name: "Plus".to_string(),
-              args: vec![identity_val, shear].into(),
-            };
-            row.push(evaluate_expr_to_expr(&entry).unwrap_or(entry));
+            let delta = Expr::Integer(if i == j { 1 } else { 0 });
+            // Tan[theta] * v_proj[i]*n[j] / (Sqrt[vpp]*Sqrt[nn])
+            let shear = call(
+              "Times",
+              vec![
+                tan.clone(),
+                v_proj[i].clone(),
+                n_vec[j].clone(),
+                call("Power", vec![sqrt_vpp.clone(), Expr::Integer(-1)]),
+                call("Power", vec![sqrt_nn.clone(), Expr::Integer(-1)]),
+              ],
+            );
+            // wolframscript reports each entry over a common denominator
+            // (e.g. `(2 + Tan[t])/2` rather than `1 + Tan[t]/2`); Together
+            // reproduces that form while leaving single-term entries intact.
+            row.push(eval(call(
+              "Together",
+              vec![call("Plus", vec![delta, shear])],
+            )));
           }
           rows.push(Expr::List(row.into()));
         }
