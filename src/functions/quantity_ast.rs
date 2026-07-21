@@ -3,6 +3,14 @@ use crate::functions::math_ast::{is_sqrt, make_sqrt};
 use crate::syntax::{BinaryOperator, Expr, bool_expr, unevaluated};
 use std::collections::BTreeMap;
 
+fn binop(op: BinaryOperator, left: Expr, right: Expr) -> Expr {
+  Expr::BinaryOp {
+    op,
+    left: Box::new(left),
+    right: Box::new(right),
+  }
+}
+
 // ─── Unit dimension system ──────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -792,18 +800,14 @@ fn resolve_per_unit(s: &str) -> Option<Expr> {
   let denom_expr = if exp == 1 {
     Expr::String(denom_name)
   } else {
-    Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(Expr::String(denom_name.clone())),
-      right: Box::new(Expr::Integer(exp)),
-    }
+    binop(
+      BinaryOperator::Power,
+      Expr::String(denom_name.clone()),
+      Expr::Integer(exp),
+    )
   };
 
-  Some(Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(numer_expr),
-    right: Box::new(denom_expr),
-  })
+  Some(binop(BinaryOperator::Divide, numer_expr, denom_expr))
 }
 
 /// Resolve common unit abbreviation strings to full unit names.
@@ -888,11 +892,11 @@ fn resolve_unit_abbreviation(s: &str) -> Option<Expr> {
 
   // Compound abbreviations
   let make_div = |n: &str, d: &str| -> Expr {
-    Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(Expr::String(n.to_string())),
-      right: Box::new(Expr::String(d.to_string())),
-    }
+    binop(
+      BinaryOperator::Divide,
+      Expr::String(n.to_string()),
+      Expr::String(d.to_string()),
+    )
   };
   match s {
     "mph" => Some(make_div("Miles", "Hours")),
@@ -907,11 +911,7 @@ fn resolve_unit_abbreviation(s: &str) -> Option<Expr> {
         let den_expr = resolve_unit_abbreviation(den).or_else(|| {
           get_unit_info(den).map(|_| Expr::String(den.to_string()))
         })?;
-        Some(Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(num_expr),
-          right: Box::new(den_expr),
-        })
+        Some(binop(BinaryOperator::Divide, num_expr, den_expr))
       } else {
         None
       }
@@ -963,11 +963,11 @@ fn try_parse_unit_string(s: &str) -> Option<Expr> {
 fn identifiers_to_strings(expr: &Expr) -> Expr {
   match expr {
     Expr::Identifier(s) => Expr::String(s.clone()),
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(identifiers_to_strings(left)),
-      right: Box::new(identifiers_to_strings(right)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      identifiers_to_strings(left),
+      identifiers_to_strings(right),
+    ),
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
       args: args.iter().map(identifiers_to_strings).collect(),
@@ -1272,11 +1272,7 @@ fn components_to_unit_expr(components: &[(String, i64)]) -> Expr {
     let part = if abs_exp == 1 {
       base
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(base),
-        right: Box::new(Expr::Integer(abs_exp as i128)),
-      }
+      binop(BinaryOperator::Power, base, Expr::Integer(abs_exp as i128))
     };
     if *exp > 0 {
       numer_parts.push(part);
@@ -1307,11 +1303,7 @@ fn components_to_unit_expr(components: &[(String, i64)]) -> Expr {
         args: denom_parts.into(),
       }
     };
-    Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(numer),
-      right: Box::new(denom),
-    }
+    binop(BinaryOperator::Divide, numer, denom)
   }
 }
 
@@ -1471,16 +1463,16 @@ fn canonical_unit_name(name: &str) -> &str {
 /// Used at format time to display entity-resolved compound units.
 fn format_expand_compound_unit(name: &str) -> Option<Expr> {
   match name {
-    "KilowattHours" => Some(Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::String("Hours".to_string())),
-      right: Box::new(Expr::String("Kilowatts".to_string())),
-    }),
-    "WattHours" => Some(Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::String("Hours".to_string())),
-      right: Box::new(Expr::String("Watts".to_string())),
-    }),
+    "KilowattHours" => Some(binop(
+      BinaryOperator::Times,
+      Expr::String("Hours".to_string()),
+      Expr::String("Kilowatts".to_string()),
+    )),
+    "WattHours" => Some(binop(
+      BinaryOperator::Times,
+      Expr::String("Hours".to_string()),
+      Expr::String("Watts".to_string()),
+    )),
     // Area aliases canonicalize to a squared length, matching Wolfram:
     // Quantity[1, "SquareMeters"] → Quantity[1, Meters^2].
     "SquareMeters" => Some(squared_length_unit("Meters")),
@@ -1555,11 +1547,11 @@ fn normalize_unit_for_output(mut unit: Expr) -> Expr {
         let op = *op;
         let left = *std::mem::replace(left, Box::new(Expr::Integer(0)));
         let right = *std::mem::replace(right, Box::new(Expr::Integer(0)));
-        Expr::BinaryOp {
+        binop(
           op,
-          left: Box::new(normalize_unit_for_output(left)),
-          right: Box::new(normalize_unit_for_output(right)),
-        }
+          normalize_unit_for_output(left),
+          normalize_unit_for_output(right),
+        )
       } else {
         unreachable!()
       }
@@ -1649,11 +1641,7 @@ fn normalize_unit(mut unit: Expr) -> Expr {
         let op = *op;
         let left = *std::mem::replace(left, Box::new(Expr::Integer(0)));
         let right = *std::mem::replace(right, Box::new(Expr::Integer(0)));
-        Expr::BinaryOp {
-          op,
-          left: Box::new(normalize_unit(left)),
-          right: Box::new(normalize_unit(right)),
-        }
+        binop(op, normalize_unit(left), normalize_unit(right))
       } else {
         unreachable!()
       }
@@ -1880,11 +1868,11 @@ pub fn quantity_magnitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn unit_idents_to_strings(unit: &Expr) -> Expr {
   match unit {
     Expr::Identifier(s) => Expr::String(s.clone()),
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(unit_idents_to_strings(left)),
-      right: Box::new(unit_idents_to_strings(right)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      unit_idents_to_strings(left),
+      unit_idents_to_strings(right),
+    ),
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
       args: args.iter().map(unit_idents_to_strings).collect(),
@@ -2168,11 +2156,6 @@ fn try_temperature_convert(
   let (msn, msd, bsn, bsd) = temp_to_kelvin_affine(src);
   let (mtn, mtd, btn, btd) = temp_to_kelvin_affine(tgt);
   let int = Expr::Integer;
-  let binop = |op, a: Expr, b: Expr| Expr::BinaryOp {
-    op,
-    left: Box::new(a),
-    right: Box::new(b),
-  };
   // K = (msn/msd)·v + bsn/bsd; result = (K − btn/btd) / (mtn/mtd).
   let term = binop(
     BinaryOperator::Divide,
@@ -2647,11 +2630,8 @@ pub fn try_quantity_divide(
         // Same units cancel out
         Some(Ok(new_mag))
       } else {
-        let raw_compound = Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(unit_a.clone()),
-          right: Box::new(unit_b.clone()),
-        };
+        let raw_compound =
+          binop(BinaryOperator::Divide, unit_a.clone(), unit_b.clone());
         // Try to simplify (merge same-dimension units)
         let (final_unit, conv_n, conv_d) =
           simplify_unit_expr(&raw_compound).unwrap_or((raw_compound, 1, 1));
@@ -2687,11 +2667,8 @@ pub fn try_quantity_divide(
           Ok(m) => m,
           Err(e) => return Some(Err(e)),
         };
-      let inv_unit = Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(unit.clone()),
-        right: Box::new(Expr::Integer(-1)),
-      };
+      let inv_unit =
+        binop(BinaryOperator::Power, unit.clone(), Expr::Integer(-1));
       // Try to simplify
       let (final_unit, conv_n, conv_d) =
         simplify_unit_expr(&inv_unit).unwrap_or((inv_unit, 1, 1));
@@ -2737,20 +2714,16 @@ fn power_unit_expr(unit: &Expr, p: i128, q: i128) -> Option<Expr> {
     let part = if rd == 1 && abs_rn == 1 {
       base
     } else if rd == 1 {
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(base),
-        right: Box::new(Expr::Integer(abs_rn)),
-      }
+      binop(BinaryOperator::Power, base, Expr::Integer(abs_rn))
     } else if abs_rn == 1 && rd == 2 {
       // Power[base, 1/2] → Sqrt[base] (matching Wolfram convention for units)
       make_sqrt(base)
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(base),
-        right: Box::new(crate::functions::math_ast::make_rational(abs_rn, rd)),
-      }
+      binop(
+        BinaryOperator::Power,
+        base,
+        crate::functions::math_ast::make_rational(abs_rn, rd),
+      )
     };
 
     if rn > 0 {
@@ -2782,11 +2755,7 @@ fn power_unit_expr(unit: &Expr, p: i128, q: i128) -> Option<Expr> {
         args: denom_parts.into(),
       }
     };
-    Some(Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(numer),
-      right: Box::new(denom),
-    })
+    Some(binop(BinaryOperator::Divide, numer, denom))
   }
 }
 
@@ -2818,11 +2787,7 @@ pub fn try_quantity_power(
   }
 
   // Fallback: wrap unit in Power without simplification
-  let new_unit = Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(unit.clone()),
-    right: Box::new(exp.clone()),
-  };
+  let new_unit = binop(BinaryOperator::Power, unit.clone(), exp.clone());
 
   Some(Ok(make_quantity(new_mag, new_unit)))
 }
