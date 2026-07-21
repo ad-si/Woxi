@@ -6657,6 +6657,87 @@ pub(crate) fn apply_common_plot_option(
   true
 }
 
+/// Build the compactifying substitution `Tan[Pi*inner/2]`, the bijection
+/// used to fold an infinite plot range into a finite display coordinate.
+fn tan_compactify(inner: Expr) -> Expr {
+  use crate::syntax::BinaryOperator;
+  Expr::FunctionCall {
+    name: "Tan".to_string(),
+    args: vec![Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Identifier("Pi".to_string())),
+        right: Box::new(inner),
+      }),
+      right: Box::new(Expr::Integer(2)),
+    }]
+    .into(),
+  }
+}
+
+/// Given the (possibly infinite) raw endpoints of a `Plot` range, return the
+/// finite display range plus, when an endpoint is infinite, a substitution
+/// `var -> g(var)` mapping the finite display coordinate back onto the real
+/// line. This mirrors Wolfram, which plots e.g. `{x, -Infinity, Infinity}`
+/// over the compact display range `{-1, 1}`.
+///
+/// - `{-Infinity, Infinity}` -> `[-1, 1]`,   `x = Tan[Pi u/2]`
+/// - `{a, Infinity}`         -> `[a, a+1]`,  `x = a + Tan[Pi (u-a)/2]`
+/// - `{-Infinity, b}`        -> `[b-1, b]`,  `x = b - Tan[Pi (b-u)/2]`
+fn compactify_plot_range(
+  var: &str,
+  raw_min: f64,
+  raw_max: f64,
+) -> Result<(f64, f64, Option<Expr>), InterpreterError> {
+  use crate::syntax::BinaryOperator;
+  let min_inf = raw_min == f64::NEG_INFINITY;
+  let max_inf = raw_max == f64::INFINITY;
+  let u = || Expr::Identifier(var.to_string());
+  match (min_inf, max_inf) {
+    (false, false) => {
+      if !raw_min.is_finite() || !raw_max.is_finite() {
+        return Err(InterpreterError::EvaluationError(
+          "Plot: range endpoints must be finite or ±Infinity".into(),
+        ));
+      }
+      Ok((raw_min, raw_max, None))
+    }
+    // {-Infinity, Infinity}: x = Tan[Pi u/2] over u in [-1, 1]
+    (true, true) => Ok((-1.0, 1.0, Some(tan_compactify(u())))),
+    // {a, Infinity}: x = a + Tan[Pi (u-a)/2] over u in [a, a+1]
+    (false, true) => {
+      let a = raw_min;
+      let inner = Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(u()),
+        right: Box::new(Expr::Real(a)),
+      };
+      let transform = Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(Expr::Real(a)),
+        right: Box::new(tan_compactify(inner)),
+      };
+      Ok((a, a + 1.0, Some(transform)))
+    }
+    // {-Infinity, b}: x = b - Tan[Pi (b-u)/2] over u in [b-1, b]
+    (true, false) => {
+      let b = raw_max;
+      let inner = Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(Expr::Real(b)),
+        right: Box::new(u()),
+      };
+      let transform = Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(Expr::Real(b)),
+        right: Box::new(tan_compactify(inner)),
+      };
+      Ok((b - 1.0, b, Some(transform)))
+    }
+  }
+}
+
 /// Implementation of Plot[f, {x, xmin, xmax}]
 pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
@@ -6665,7 +6746,6 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let body = &args[0];
   let iter_spec = &args[1];
 
   // Parse options (Rule expressions after the first two arguments).
@@ -6737,8 +6817,10 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     plot_opts.aspect_ratio = Some(ar);
   }
 
-  // Parse iterator spec: {x, xmin, xmax}
-  let (var_name, x_min, x_max) = match iter_spec {
+  // Parse iterator spec: {x, xmin, xmax}. Endpoints may be ±Infinity, in
+  // which case the range is compactified onto a finite display coordinate
+  // and `x_transform` folds that coordinate back onto the real line.
+  let (var_name, x_min, x_max, x_transform) = match iter_spec {
     Expr::List(items) if items.len() == 3 => {
       let var = match &items[0] {
         Expr::Identifier(name) => name.clone(),
@@ -6748,26 +6830,43 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ));
         }
       };
-      // Evaluate xmin and xmax
+      // Evaluate xmin and xmax (accepting ±Infinity)
       let x_min_expr = evaluate_expr_to_expr(&items[1])?;
       let x_max_expr = evaluate_expr_to_expr(&items[2])?;
-      let x_min = try_eval_to_f64(&x_min_expr).ok_or_else(|| {
-        InterpreterError::EvaluationError(
-          "Plot: cannot evaluate xmin to a number".into(),
-        )
-      })?;
-      let x_max = try_eval_to_f64(&x_max_expr).ok_or_else(|| {
-        InterpreterError::EvaluationError(
-          "Plot: cannot evaluate xmax to a number".into(),
-        )
-      })?;
-      (var, x_min, x_max)
+      let raw_min =
+        crate::functions::math_ast::try_eval_to_f64_with_infinity(&x_min_expr)
+          .ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "Plot: cannot evaluate xmin to a number".into(),
+            )
+          })?;
+      let raw_max =
+        crate::functions::math_ast::try_eval_to_f64_with_infinity(&x_max_expr)
+          .ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "Plot: cannot evaluate xmax to a number".into(),
+            )
+          })?;
+      let (x_min, x_max, transform) =
+        compactify_plot_range(&var, raw_min, raw_max)?;
+      (var, x_min, x_max, transform)
     }
     _ => {
       return Err(InterpreterError::EvaluationError(
         "Plot: second argument must be {x, xmin, xmax}".into(),
       ));
     }
+  };
+
+  // When the range was infinite, substitute the compactifying map into the
+  // function body so sampling the finite display coordinate covers the whole
+  // real line. `body_storage` owns the rewritten body for the borrow below.
+  let body_storage;
+  let body: &Expr = if let Some(t) = &x_transform {
+    body_storage = crate::syntax::substitute_variable(&args[0], &var_name, t);
+    &body_storage
+  } else {
+    &args[0]
   };
 
   // Collect function bodies: single function or list of functions
