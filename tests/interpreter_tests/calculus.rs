@@ -5046,6 +5046,32 @@ mod erf {
     );
   }
 
+  // Incomplete elliptic integrals differentiated w.r.t. the amplitude:
+  //   D[EllipticF[phi, m], phi] = 1/Sqrt[1 - m Sin[phi]^2]
+  //   D[EllipticE[phi, m], phi] = Sqrt[1 - m Sin[phi]^2]
+  #[test]
+  fn d_elliptic_incomplete() {
+    assert_eq!(
+      interpret("D[EllipticF[phi, m], phi]").unwrap(),
+      "1/Sqrt[1 - m*Sin[phi]^2]"
+    );
+    assert_eq!(
+      interpret("D[EllipticE[phi, m], phi]").unwrap(),
+      "Sqrt[1 - m*Sin[phi]^2]"
+    );
+    // Chain rule through the amplitude.
+    assert_eq!(
+      interpret("D[EllipticF[2 x, m], x]").unwrap(),
+      "2/Sqrt[1 - m*Sin[2*x]^2]"
+    );
+    assert_eq!(
+      interpret("D[EllipticE[2 x, m], x]").unwrap(),
+      "2*Sqrt[1 - m*Sin[2*x]^2]"
+    );
+    // A variable that appears in neither argument gives 0.
+    assert_eq!(interpret("D[EllipticF[phi, m], a]").unwrap(), "0");
+  }
+
   // PolyLog[n, z]' = PolyLog[n-1, z]/z; ExpIntegralE[n, z]' = -ExpIntegralE[n-1, z].
   #[test]
   fn d_polylog_and_exp_integral_e() {

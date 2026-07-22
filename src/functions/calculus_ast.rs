@@ -3395,6 +3395,66 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             }))
           }
         }
+        // Incomplete elliptic integrals w.r.t. the amplitude phi:
+        //   D[EllipticF[phi, m], phi] = 1 / Sqrt[1 - m Sin[phi]^2]
+        //   D[EllipticE[phi, m], phi] = Sqrt[1 - m Sin[phi]^2]
+        // A derivative w.r.t. the parameter m is left unevaluated.
+        "EllipticF" | "EllipticE" if args.len() == 2 => {
+          let dphi = differentiate(&args[0], var)?;
+          let dm = differentiate(&args[1], var)?;
+          if matches!(dphi, Expr::Integer(0)) && matches!(dm, Expr::Integer(0))
+          {
+            return Ok(Expr::Integer(0));
+          }
+          if !matches!(dm, Expr::Integer(0)) {
+            return Ok(Expr::FunctionCall {
+              name: "D".to_string(),
+              args: vec![expr.clone(), Expr::Identifier(var.to_string())]
+                .into(),
+            });
+          }
+          // 1 - m Sin[phi]^2
+          let inner =
+            crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+              op: BinaryOperator::Minus,
+              left: Box::new(Expr::Integer(1)),
+              right: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Times,
+                left: Box::new(args[1].clone()),
+                right: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Power,
+                  left: Box::new(Expr::FunctionCall {
+                    name: "Sin".to_string(),
+                    args: vec![args[0].clone()].into(),
+                  }),
+                  right: Box::new(Expr::Integer(2)),
+                }),
+              }),
+            })
+            .unwrap_or_else(|_| args[0].clone());
+          let sqrt = Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![inner].into(),
+          };
+          let deriv = if name == "EllipticF" {
+            Expr::BinaryOp {
+              op: BinaryOperator::Divide,
+              left: Box::new(Expr::Integer(1)),
+              right: Box::new(sqrt),
+            }
+          } else {
+            sqrt
+          };
+          if matches!(dphi, Expr::Integer(1)) {
+            Ok(deriv)
+          } else {
+            Ok(simplify(Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(dphi),
+              right: Box::new(deriv),
+            }))
+          }
+        }
         // FresnelS[z]: D = Sin[(Pi z^2)/2] * z'
         // FresnelC[z]: D = Cos[(Pi z^2)/2] * z'
         "FresnelS" | "FresnelC" if args.len() == 1 => {
