@@ -4431,10 +4431,9 @@ pub fn kronecker_symbol(a: i128, n: i128) -> i128 {
 
 /// CoprimeQ[a, b, ...] - Tests if integers are pairwise coprime
 pub fn coprime_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // CoprimeQ[] is False in wolframscript (there is no unit to be coprime to).
   if args.is_empty() {
-    return Err(InterpreterError::EvaluationError(
-      "CoprimeQ expects at least 1 argument".into(),
-    ));
+    return Ok(bool_expr(false));
   }
 
   // Single argument: CoprimeQ[n] tests whether n is a unit (GCD[n] == 1),

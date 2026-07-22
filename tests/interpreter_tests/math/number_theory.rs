@@ -3245,6 +3245,12 @@ mod coprime_q {
     assert_eq!(interpret("CoprimeQ[x]").unwrap(), "False");
   }
 
+  // CoprimeQ[] (no arguments) is False in wolframscript.
+  #[test]
+  fn no_arguments() {
+    assert_eq!(interpret("CoprimeQ[]").unwrap(), "False");
+  }
+
   // CoprimeQ is Listable: it threads element-wise over list arguments.
   #[test]
   fn listable_single_list() {

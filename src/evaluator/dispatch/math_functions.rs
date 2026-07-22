@@ -2932,7 +2932,7 @@ pub fn dispatch_math_functions(
         }
       }
     }
-    "CoprimeQ" if !args.is_empty() => {
+    "CoprimeQ" => {
       return Some(crate::functions::math_ast::coprime_q_ast(args));
     }
     "Re" if args.len() == 1 => {
