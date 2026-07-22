@@ -80,7 +80,47 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Fall back to symbolic solve + numerize
   let symbolic = solve_ast(args)?;
   let numerized = nsolve_numerize(&symbolic)?;
-  Ok(sort_nsolve_solutions(numerized))
+  // A `Reals` domain (the optional third argument) keeps only the real
+  // solutions. solve_ast already filters the symbolically solvable cases, but a
+  // polynomial with no radical form falls back to numeric roots that arrive
+  // unfiltered — drop the complex ones here so NSolve[quintic, x, Reals]
+  // matches wolframscript.
+  let filtered = if matches!(args.get(2), Some(Expr::Identifier(d) | Expr::Constant(d)) if d == "Reals")
+  {
+    filter_real_nsolve_solutions(numerized)
+  } else {
+    numerized
+  };
+  Ok(sort_nsolve_solutions(filtered))
+}
+
+/// Keep only the solutions whose every `var -> value` replacement is real, for
+/// an NSolve with a `Reals` domain. A value counts as real when it evaluates to
+/// a machine real, or when it is a machine complex with a negligible imaginary
+/// part (numerical noise on a genuinely real root).
+fn filter_real_nsolve_solutions(expr: Expr) -> Expr {
+  let Expr::List(ref items) = expr else {
+    return expr;
+  };
+  let is_real = |item: &Expr| -> bool {
+    let Expr::List(rules) = item else {
+      return true;
+    };
+    rules.iter().all(|r| {
+      let Expr::Rule { replacement, .. } = r else {
+        return true;
+      };
+      if crate::functions::math_ast::try_eval_to_f64(replacement).is_some() {
+        return true;
+      }
+      match crate::functions::math_ast::try_extract_complex_float(replacement) {
+        Some((_re, im)) => im.abs() < 1e-8,
+        // A non-numeric (still symbolic) replacement is left in place.
+        None => true,
+      }
+    })
+  };
+  Expr::List(items.iter().filter(|it| is_real(it)).cloned().collect())
 }
 
 /// wolframscript lists NSolve roots ordered by ascending real part, breaking

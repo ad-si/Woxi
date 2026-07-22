@@ -6658,6 +6658,28 @@ mod nsolve {
       "{{x -> 2., y -> 1.}}"
     );
   }
+
+  // A polynomial with no radical solution falls back to numeric roots, which
+  // previously arrived unfiltered — the Reals domain must still drop the
+  // complex roots. Verified against wolframscript.
+  #[test]
+  fn domain_reals_numeric_roots() {
+    // Quintic x^5 - x - 1: one real root, four complex.
+    assert_eq!(
+      interpret("NSolve[x^5 - x - 1 == 0, x, Reals]").unwrap(),
+      "{{x -> 1.1673039782614187}}"
+    );
+    // Quartic x^4 - 1: real roots +/-1, complex +/-I dropped.
+    assert_eq!(
+      interpret("NSolve[x^4 - 1 == 0, x, Reals]").unwrap(),
+      "{{x -> -1.}, {x -> 1.}}"
+    );
+    // The default (Complexes) domain still returns every root.
+    assert_eq!(
+      interpret("Length[NSolve[x^5 - x - 1 == 0, x]]").unwrap(),
+      "5"
+    );
+  }
 }
 
 // Solve[eqns, vars, Rationals] keeps only rational-valued solutions; an
