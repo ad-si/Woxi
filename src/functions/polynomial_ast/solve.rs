@@ -1006,6 +1006,70 @@ pub fn solve_values_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(values.into()))
 }
 
+/// NSolveValues[eqns, vars] / NSolveValues[eqns, vars, domain] — the numeric
+/// analogue of SolveValues: the variable VALUES from NSolve rather than the
+/// `{var -> value}` rules. A single variable yields a flat list of values; a
+/// list of variables yields a list of value-lists (one per solution), in the
+/// order the variables are given.
+pub fn nsolve_values_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let solutions = nsolve_ast(args)?;
+  let Expr::List(solution_sets) = &solutions else {
+    return Ok(unevaluated("NSolveValues", args));
+  };
+
+  // A list of variables ({x, y}) means each solution contributes a value-list;
+  // a single variable contributes one value.
+  let vars: Option<Vec<String>> = match &args[1] {
+    Expr::List(vs) => vs
+      .iter()
+      .map(|v| match v {
+        Expr::Identifier(name) => Some(name.clone()),
+        _ => None,
+      })
+      .collect(),
+    _ => None,
+  };
+
+  let mut out = Vec::with_capacity(solution_sets.len());
+  for branch in solution_sets.iter() {
+    let Expr::List(rules) = branch else {
+      return Ok(unevaluated("NSolveValues", args));
+    };
+    match &vars {
+      // Multi-variable: emit the values in the requested variable order.
+      Some(names) => {
+        let mut branch_vals = Vec::with_capacity(names.len());
+        for name in names {
+          let value = rules.iter().find_map(|r| match r {
+            Expr::Rule { pattern, replacement }
+              if matches!(pattern.as_ref(), Expr::Identifier(p) if p == name) =>
+            {
+              Some((**replacement).clone())
+            }
+            _ => None,
+          });
+          match value {
+            Some(v) => branch_vals.push(v),
+            None => return Ok(unevaluated("NSolveValues", args)),
+          }
+        }
+        out.push(Expr::List(branch_vals.into()));
+      }
+      // Single variable: one rule per branch, emit its value.
+      None => {
+        if rules.len() != 1 {
+          return Ok(unevaluated("NSolveValues", args));
+        }
+        let Expr::Rule { replacement, .. } = &rules[0] else {
+          return Ok(unevaluated("NSolveValues", args));
+        };
+        out.push((**replacement).clone());
+      }
+    }
+  }
+  Ok(Expr::List(out.into()))
+}
+
 /// Whether `s` names a built-in constant rather than a solve variable.
 fn is_solve_constant(s: &str) -> bool {
   matches!(

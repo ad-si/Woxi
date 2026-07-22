@@ -6682,6 +6682,53 @@ mod nsolve {
   }
 }
 
+// NSolveValues is the numeric analogue of SolveValues: it returns the variable
+// values from NSolve rather than the {var -> value} rules. Verified against
+// wolframscript.
+mod nsolve_values {
+  use super::*;
+
+  #[test]
+  fn single_variable() {
+    assert_eq!(
+      interpret("NSolveValues[x^2 == 2, x]").unwrap(),
+      "{-1.4142135623730951, 1.414213562373095}"
+    );
+    assert_eq!(interpret("NSolveValues[2 x - 1 == 0, x]").unwrap(), "{0.5}");
+  }
+
+  #[test]
+  fn reals_domain() {
+    // Quintic: only the real root survives.
+    assert_eq!(
+      interpret("NSolveValues[x^5 - x - 1 == 0, x, Reals]").unwrap(),
+      "{1.1673039782614187}"
+    );
+    assert_eq!(
+      interpret("NSolveValues[x^4 - 1 == 0, x, Reals]").unwrap(),
+      "{-1., 1.}"
+    );
+    assert_eq!(
+      interpret("NSolveValues[x^2 + 1 == 0, x, Reals]").unwrap(),
+      "{}"
+    );
+    // The default (Complexes) domain returns every root.
+    assert_eq!(
+      interpret("Length[NSolveValues[x^5 - x - 1 == 0, x]]").unwrap(),
+      "5"
+    );
+  }
+
+  // A list of variables yields a value-list per solution, in variable order.
+  #[test]
+  fn multiple_variables() {
+    assert_eq!(
+      interpret("NSolveValues[{x + y == 3, x - y == 1}, {x, y}]").unwrap(),
+      "{{2., 1.}}"
+    );
+  }
+}
+
 // Solve[eqns, vars, Rationals] keeps only rational-valued solutions; an
 // irrational algebraic root such as Sqrt[2] is filtered out. Verified against
 // wolframscript.
