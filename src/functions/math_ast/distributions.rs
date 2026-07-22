@@ -852,6 +852,7 @@ pub fn quantile_distribution_closed_form(
     | "PoissonDistribution"
     | "GeometricDistribution"
     | "NegativeBinomialDistribution"
+    | "PascalDistribution"
     | "BernoulliDistribution"
     | "DiscreteUniformDistribution" => {
       quantile_discrete(dist_name, dargs, q, q_num)
@@ -980,6 +981,10 @@ fn discrete_support(
     "PoissonDistribution" if dargs.len() == 1 => Some((0, None)),
     "GeometricDistribution" if dargs.len() == 1 => Some((0, None)),
     "NegativeBinomialDistribution" if dargs.len() == 2 => Some((0, None)),
+    // Pascal support starts at the number of successes n.
+    "PascalDistribution" if dargs.len() == 2 => {
+      Some((as_int(&dargs[0])?, None))
+    }
     "BernoulliDistribution" if dargs.len() == 1 => Some((0, Some(1))),
     "DiscreteUniformDistribution" if dargs.len() == 1 => match &dargs[0] {
       Expr::List(b) if b.len() == 2 => {
@@ -1858,6 +1863,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "BernoulliDistribution" => cdf_bernoulli(dargs, x),
     "BinomialDistribution" => cdf_binomial(dargs, x),
     "NegativeBinomialDistribution" => cdf_negative_binomial(dargs, x),
+    "PascalDistribution" => cdf_pascal(dargs, x),
     "InverseGammaDistribution" => cdf_inverse_gamma(dargs, x),
     "GammaDistribution" => cdf_gamma(dargs, x),
     "BetaDistribution" => cdf_beta(dargs, x),
@@ -2111,6 +2117,26 @@ fn cdf_negative_binomial(
   let floor_k = call("Floor", vec![x.clone()]);
   let value = call("BetaRegularized", vec![p, n, plus(int(1), floor_k)]);
   let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// CDF[PascalDistribution[n, p], k] =
+///   Piecewise[{{BetaRegularized[p, n, 1 - n + Floor[k]], k >= n}}, 0]
+/// The Pascal distribution counts the number of trials until the n-th success,
+/// so its support starts at k = n (vs. k = 0 for NegativeBinomialDistribution).
+fn cdf_pascal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "PascalDistribution expects 2 arguments".into(),
+    ));
+  }
+  let n = dargs[0].clone();
+  let p = dargs[1].clone();
+  let floor_k = call("Floor", vec![x.clone()]);
+  // 1 - n + Floor[k]
+  let third = plus(minus(int(1), n.clone()), floor_k);
+  let value = call("BetaRegularized", vec![p, n.clone(), third]);
+  let cond = comparison(x, ComparisonOp::GreaterEqual, n);
   eval(piecewise(vec![(value, cond)], int(0)))
 }
 

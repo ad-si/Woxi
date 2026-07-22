@@ -5562,6 +5562,81 @@ mod negative_binomial_distribution_quantile {
   }
 }
 
+mod pascal_distribution_cdf {
+  use super::*;
+
+  // CDF[PascalDistribution[n, p], k] = BetaRegularized[p, n, 1 - n + Floor[k]]
+  // for k >= n (the support starts at n, the number of successes).
+  #[test]
+  fn exact_values() {
+    // Below the support k = n, the CDF is 0.
+    assert_eq!(
+      interpret("CDF[PascalDistribution[3, 1/2], 2]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("CDF[PascalDistribution[3, 1/2], 3]").unwrap(),
+      "1/8"
+    );
+    assert_eq!(
+      interpret("CDF[PascalDistribution[3, 1/2], 5]").unwrap(),
+      "1/2"
+    );
+  }
+
+  // CDF and PDF are consistent: F(k) - F(k-1) = f(k).
+  #[test]
+  fn consistent_with_pdf() {
+    assert_eq!(
+      interpret(
+        "CDF[PascalDistribution[3, 1/2], 5] \
+         - CDF[PascalDistribution[3, 1/2], 4] \
+         == PDF[PascalDistribution[3, 1/2], 5]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
+mod pascal_distribution_quantile {
+  use super::*;
+
+  // Quantile is the smallest k >= n with CDF(k) >= q; Median is the 1/2 quantile.
+  #[test]
+  fn quantile_and_median() {
+    assert_eq!(
+      interpret("Quantile[PascalDistribution[3, 1/2], 1/2]").unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret("Quantile[PascalDistribution[3, 1/2], 9/10]").unwrap(),
+      "9"
+    );
+    assert_eq!(
+      interpret("Median[PascalDistribution[3, 1/2]]").unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret("Median[PascalDistribution[10, 3/10]]").unwrap(),
+      "32"
+    );
+  }
+
+  // q = 0 gives the support minimum n; q = 1 gives Infinity.
+  #[test]
+  fn edges() {
+    assert_eq!(
+      interpret("Quantile[PascalDistribution[3, 1/2], 0]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("Quantile[PascalDistribution[3, 1/2], 1]").unwrap(),
+      "Infinity"
+    );
+  }
+}
+
 mod discrete_quantile {
   use super::*;
 
