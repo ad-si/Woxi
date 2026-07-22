@@ -14509,6 +14509,44 @@ mod fuzz_diff_round_2026_07_17 {
     assert_case("Simplify[8 - 2*Sqrt[3]]", "8 - 2*Sqrt[3]");
     assert_case("Simplify[-3*Sqrt[2] + Sqrt[10]]", "Sqrt[2]*(-3 + Sqrt[5])");
     assert_case("Simplify[4*Sqrt[2] - 8*Sqrt[30]]", "4*Sqrt[2] - 8*Sqrt[30]");
+
+    // case seed 14323847961001369104: a radical times a sum of radicals.
+    // Pulling the shared Sqrt out only wins when a cofactor collapses to a
+    // bare integer; here every cofactor stays a Sqrt, so the content-only
+    // form is kept, and on the unit-cofactor cost tie WL keeps it factored
+    // only when the leading term stays positive.
+    assert_case(
+      "Simplify[Times[Subtract[Sqrt[3], Sqrt[17]], Times[Sqrt[19], Times[-3, Sqrt[28]]]]]",
+      "-6*Sqrt[399] + 6*Sqrt[2261]",
+    );
+    assert_case(
+      "Simplify[2*Sqrt[19]*(Sqrt[3] - Sqrt[17])]",
+      "2*(Sqrt[57] - Sqrt[323])",
+    );
+    assert_case(
+      "Simplify[6*Sqrt[133]*(Sqrt[3] - Sqrt[17])]",
+      "6*(Sqrt[399] - Sqrt[2261])",
+    );
+    assert_case(
+      "Simplify[Sqrt[19]*(Sqrt[3] - Sqrt[17])]",
+      "Sqrt[57] - Sqrt[323]",
+    );
+    // unit-cofactor cost tie: factored only when the leading term is positive
+    assert_case("Simplify[2*Sqrt[3] - 2*Sqrt[5]]", "2*(Sqrt[3] - Sqrt[5])");
+    assert_case(
+      "Simplify[6*Sqrt[399] - 6*Sqrt[2261]]",
+      "6*(Sqrt[399] - Sqrt[2261])",
+    );
+    // non-unit cofactor: strict cost win keeps the content form even with a
+    // negative leading term
+    assert_case(
+      "Simplify[-12*Sqrt[5] + 3*Sqrt[19]]",
+      "3*(-4*Sqrt[5] + Sqrt[19])",
+    );
+    assert_case(
+      "Simplify[12*Sqrt[5] - 3*Sqrt[19]]",
+      "12*Sqrt[5] - 3*Sqrt[19]",
+    );
   }
 
   #[test]

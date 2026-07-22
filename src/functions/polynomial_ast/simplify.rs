@@ -4893,13 +4893,28 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
             // → 9*(1 + Sqrt[19]) at 10 = 10, but 4*Sqrt[2] - 8*Sqrt[30]
             // stays expanded at 17 = 17 — differential fuzzer, seed
             // 12449481718952209155; all wolframscript-verified).
+            //
+            // One extra guard for a sum whose EVERY term is a pure Sqrt:
+            // on the unit-cofactor tie the content-factored and distributed
+            // forms cost the same, and WL keeps the factored form only when
+            // it avoids a leading minus (6*Sqrt[399] - 6*Sqrt[2261] →
+            // 6*(Sqrt[399] - Sqrt[2261]) but -6*Sqrt[399] + 6*Sqrt[2261]
+            // stays distributed). A bare-constant term (9 + 9*Sqrt[19],
+            // -9 + 9*Sqrt[19] → 9*(-1 + Sqrt[19])) is exempt — the constant
+            // makes the factored form a genuine win regardless of sign.
+            // Differential fuzzer, seed 14323847961001369104;
+            // wolframscript-verified.
             None => {
               let cand_cost = wl_simplify_count(&candidate);
               let best_cost = wl_simplify_count(&best);
               let all_unit = coeffs
                 .iter()
                 .all(|(n, d)| n.abs() * g_den == d.abs() * g_num);
-              cand_cost < best_cost || (cand_cost == best_cost && all_unit)
+              let all_sqrt =
+                terms.iter().all(|t| term_sqrt_radicand(t).is_some());
+              let first_negative = coeffs.first().is_some_and(|(n, _)| *n < 0);
+              let tie_ok = all_unit && !(all_sqrt && first_negative);
+              cand_cost < best_cost || (cand_cost == best_cost && tie_ok)
             }
           };
           if accept {
@@ -5143,7 +5158,18 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
       } else {
         None
       };
-      if let Some(full) = full_extraction {
+      // The full radical+content extraction only wins when pulling the
+      // common Sqrt[g] out collapses a cofactor to a bare integer — i.e.
+      // some radicand equals g (Sqrt[8] - Sqrt[24] → -2*Sqrt[2]*(-1 +
+      // Sqrt[3]): radicand 2 == g, dropping a whole Sqrt). When every
+      // cofactor stays a Sqrt (2*Sqrt[57] - 2*Sqrt[323], g = 19: 57/19 = 3
+      // and 323/19 = 17 both survive) pulling Sqrt[19] out costs MORE than
+      // the content-only 2*(Sqrt[57] - Sqrt[323]) that candidate 5 already
+      // built, so keep that instead. Differential fuzzer, seed
+      // 14323847961001369104; wolframscript-verified.
+      if let Some(full) = full_extraction
+        && radicands.contains(&g)
+      {
         best = full;
       } else if g > 1 {
         let divided: Result<Vec<Expr>, _> = terms
