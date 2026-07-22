@@ -7129,6 +7129,21 @@ mod prime_zeta_p {
   fn symbolic_var() {
     assert_eq!(interpret("PrimeZetaP[s]").unwrap(), "PrimeZetaP[s]");
   }
+
+  // P(1) = sum_{p prime} 1/p diverges (Mertens' theorem), so it is
+  // ComplexInfinity for both the exact and the machine-real argument.
+  #[test]
+  fn diverges_at_one() {
+    assert_eq!(interpret("PrimeZetaP[1]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("PrimeZetaP[1.0]").unwrap(), "ComplexInfinity");
+  }
+
+  // Other non-numeric integer arguments stay symbolic (no closed form).
+  #[test]
+  fn other_integers_stay_symbolic() {
+    assert_eq!(interpret("PrimeZetaP[0]").unwrap(), "PrimeZetaP[0]");
+    assert_eq!(interpret("PrimeZetaP[-1]").unwrap(), "PrimeZetaP[-1]");
+  }
 }
 
 mod norlund_b {

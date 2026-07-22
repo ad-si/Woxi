@@ -1629,6 +1629,14 @@ pub fn prime_zeta_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("PrimeZetaP", args));
   }
 
+  // P(1) = sum_{p prime} 1/p diverges (Mertens), so wolframscript returns
+  // ComplexInfinity for both the exact and the machine-real argument.
+  if matches!(&args[0], Expr::Integer(1))
+    || matches!(&args[0], Expr::Real(v) if *v == 1.0)
+  {
+    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+  }
+
   // Only evaluate numerically for Real (approximate) arguments
   let s = match &args[0] {
     Expr::Real(v) if *v > 1.0 => *v,
