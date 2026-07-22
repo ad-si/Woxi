@@ -8,7 +8,7 @@
 //! unevaluated.
 
 use crate::InterpreterError;
-use crate::functions::math_ast::gcd;
+use crate::functions::math_ast::gcd_i128;
 use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 use std::collections::BTreeMap;
 
@@ -62,7 +62,7 @@ fn norm(f: Frac) -> Option<Frac> {
     let inv = mod_inverse(f.1, p)?;
     return Some(((f.0.rem_euclid(p) * inv).rem_euclid(p), 1));
   }
-  let g = gcd(f.0, f.1).max(1);
+  let g = gcd_i128(f.0, f.1).max(1);
   let (mut n, mut d) = (f.0 / g, f.1 / g);
   if d < 0 {
     n = n.checked_neg()?;
@@ -494,13 +494,13 @@ pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let rendered = (|| -> Option<Expr> {
       let mut denom_lcm: i128 = 1;
       for &c in p.values() {
-        denom_lcm = denom_lcm.checked_mul(c.1 / gcd(denom_lcm, c.1))?;
+        denom_lcm = denom_lcm.checked_mul(c.1 / gcd_i128(denom_lcm, c.1))?;
       }
       let mut nums: Vec<(Mono, i128)> = Vec::new();
       let mut content: i128 = 0;
       for (key, &c) in p {
         let scaled = c.0.checked_mul(denom_lcm / c.1)?;
-        content = gcd(content, scaled);
+        content = gcd_i128(content, scaled);
         nums.push((key.0.clone(), scaled));
       }
       let content = content.max(1);

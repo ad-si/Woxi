@@ -5889,7 +5889,7 @@ fn approximate_rational(val: f64) -> Option<(i128, i128)> {
     let n = (val * d as f64).round() as i128;
     let approx = n as f64 / d as f64;
     if (approx - val).abs() < 1e-14 {
-      let g = gcd(n.abs(), d);
+      let g = gcd_i128(n.abs(), d);
       return Some((n / g, d / g));
     }
   }

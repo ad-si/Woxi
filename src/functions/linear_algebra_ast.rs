@@ -5,7 +5,7 @@
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::{
-  expr_to_rational, gcd as gcd_i128, make_sqrt, try_eval_to_f64,
+  expr_to_rational, gcd_i128, make_sqrt, try_eval_to_f64,
 };
 use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 

@@ -1,7 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::functions::math_ast::{expr_to_rational, gcd as gcd_i128};
 use crate::syntax::{
   BinaryOperator, Expr, UnaryOperator, expr_to_string, unevaluated,
 };
@@ -1452,7 +1451,7 @@ pub fn from_continued_fraction_ast(
 
   // Simplify by GCD
 
-  let g = gcd(num, den);
+  let g = gcd_i128(num, den);
   num /= g;
   den /= g;
 
@@ -3453,7 +3452,7 @@ fn make_rational_expr(num: i128, den: i128) -> Expr {
   } else if den == -1 {
     Expr::Integer(-num)
   } else {
-    let g = gcd(num, den);
+    let g = gcd_i128(num, den);
     let (n, d) = (num / g, den / g);
     if d < 0 {
       if -d == 1 {

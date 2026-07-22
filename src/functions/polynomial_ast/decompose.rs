@@ -1,5 +1,5 @@
 use crate::InterpreterError;
-use crate::functions::math_ast::gcd as gcd_i128;
+use crate::functions::math_ast::gcd_i128;
 use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 use super::coefficient::collect_additive_terms;

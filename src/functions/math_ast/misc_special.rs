@@ -1431,7 +1431,7 @@ pub fn triangle_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let result_num = 2 * abs_val - den;
         let result_den = den;
         // Simplify result_num / result_den
-        let g = gcd(result_num, result_den);
+        let g = gcd_i128(result_num, result_den);
         let sn = result_num / g;
         let sd = result_den / g;
         if sd == 1 {
@@ -1499,7 +1499,7 @@ pub fn sawtooth_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if rem == 0 {
           return Ok(Expr::Integer(0));
         }
-        let g = gcd(rem, *d);
+        let g = gcd_i128(rem, *d);
         let sn = rem / g;
         let sd = d / g;
         if sd == 1 {
@@ -2348,7 +2348,7 @@ pub fn norlund_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               .and_then(|x| x.checked_add(tn.checked_mul(result_d)?));
             let new_d = result_d.checked_mul(cd);
             if let (Some(nn), Some(nd)) = (new_n, new_d) {
-              let g = gcd(nn.abs(), nd.abs());
+              let g = gcd_i128(nn.abs(), nd.abs());
               result_n = nn / g;
               result_d = nd / g;
             } else {
@@ -2472,7 +2472,7 @@ fn norlund_b_poly(n: usize) -> Vec<(i128, i128)> {
       factorial *= j as i128;
     }
     if let Some((bn, bd)) = bernoulli_number(j) {
-      let g = gcd(bn.abs(), factorial.abs());
+      let g = gcd_i128(bn.abs(), factorial.abs());
       s.push((bn / g, bd * (factorial / g)));
     } else {
       s.push((0, 1));
@@ -2480,7 +2480,7 @@ fn norlund_b_poly(n: usize) -> Vec<(i128, i128)> {
   }
   // Simplify s values
   for sval in &mut s {
-    let g = gcd(sval.0.abs(), sval.1.abs());
+    let g = gcd_i128(sval.0.abs(), sval.1.abs());
     if g > 0 {
       sval.0 /= g;
       sval.1 /= g;
@@ -2538,7 +2538,7 @@ fn norlund_b_poly(n: usize) -> Vec<(i128, i128)> {
     // Divide by k
     for coeff in &mut hk {
       coeff.1 *= k as i128;
-      let g = gcd(coeff.0.abs(), coeff.1.abs());
+      let g = gcd_i128(coeff.0.abs(), coeff.1.abs());
       if g > 0 {
         coeff.0 /= g;
         coeff.1 /= g;
@@ -2560,7 +2560,7 @@ fn norlund_b_poly(n: usize) -> Vec<(i128, i128)> {
   let mut result = h[n].clone();
   for coeff in &mut result {
     coeff.0 *= factorial;
-    let g = gcd(coeff.0.abs(), coeff.1.abs());
+    let g = gcd_i128(coeff.0.abs(), coeff.1.abs());
     if g > 0 {
       coeff.0 /= g;
       coeff.1 /= g;
@@ -2578,7 +2578,7 @@ fn rat_add_inplace(target: &mut (i128, i128), tn: i128, td: i128) {
   let (rn, rd) = target;
   let new_n = *rn * td + tn * *rd;
   let new_d = *rd * td;
-  let g = gcd(new_n.abs(), new_d.abs());
+  let g = gcd_i128(new_n.abs(), new_d.abs());
   if g > 0 {
     *rn = new_n / g;
     *rd = new_d / g;

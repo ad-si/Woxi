@@ -14,7 +14,7 @@
 
 use crate::InterpreterError;
 use crate::functions::calculus_ast::is_constant_wrt;
-use crate::functions::math_ast::gcd;
+use crate::functions::math_ast::gcd_i128;
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
 };
@@ -153,7 +153,7 @@ pub fn z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ],
     _ => unreachable!(),
   };
-  let content = coeffs.iter().fold(0i128, |acc, &x| gcd(acc, x.abs()));
+  let content = coeffs.iter().fold(0i128, |acc, &x| gcd_i128(acc, x.abs()));
   let reduced: Vec<i128> = coeffs.iter().map(|&x| x / content).collect();
 
   // Numerator: content * z * (poly ascending in z)
@@ -370,7 +370,7 @@ fn collect_factors(
 }
 
 fn reduce_base(parts: &mut TermParts) {
-  let g = gcd(parts.base_num, parts.base_den);
+  let g = gcd_i128(parts.base_num, parts.base_den);
   if g > 1 {
     parts.base_num /= g;
     parts.base_den /= g;
@@ -468,7 +468,7 @@ fn linear_coeff_in_n(arg: &Expr, n_var: &str) -> Option<Expr> {
 type Frac = (i128, i128); // (numerator, denominator), denominator > 0
 
 fn frac(n: i128, d: i128) -> Frac {
-  let g = gcd(n, d);
+  let g = gcd_i128(n, d);
   let (mut n, mut d) = if g == 0 { (0, 1) } else { (n / g, d / g) };
   if d < 0 {
     n = -n;

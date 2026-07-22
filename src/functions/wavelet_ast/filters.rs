@@ -6,7 +6,7 @@
 //! biorthogonal families the primal lowpass is the synthesis filter and the
 //! dual lowpass the analysis filter; for orthogonal families they coincide.
 
-use crate::functions::math_ast::gcd as gcd_i128;
+use crate::functions::math_ast::gcd_i128;
 use crate::syntax::Expr;
 
 /// One filter as ascending (index, coefficient) pairs.

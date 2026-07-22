@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::{
-  expr_to_rational, gcd as gcd_i128, is_sqrt, make_sqrt,
+  expr_to_rational, gcd_i128, is_sqrt, make_sqrt,
 };
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, unevaluated,

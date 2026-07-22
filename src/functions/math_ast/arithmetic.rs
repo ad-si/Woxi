@@ -1,7 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::functions::math_ast::{expr_to_rational, gcd as gcd_i128};
 use crate::syntax::{
   BinaryOperator, Expr, UnaryOperator, expr_to_string, unevaluated,
 };

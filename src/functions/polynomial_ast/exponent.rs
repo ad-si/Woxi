@@ -4,7 +4,7 @@ use crate::InterpreterError;
 use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 use crate::functions::calculus_ast::is_constant_wrt;
-use crate::functions::math_ast::gcd as gcd_i128;
+use crate::functions::math_ast::gcd_i128;
 
 // ─── Rational exponent helpers ─────────────────────────────────────
 

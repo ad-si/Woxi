@@ -1,5 +1,5 @@
 use crate::InterpreterError;
-use crate::functions::math_ast::{gcd as gcd_i128, is_sqrt, make_sqrt};
+use crate::functions::math_ast::{gcd_i128, is_sqrt, make_sqrt};
 use crate::syntax::{BinaryOperator, Expr, bool_expr, unevaluated};
 use std::collections::BTreeMap;
 

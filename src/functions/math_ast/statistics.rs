@@ -1,7 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::functions::math_ast::gcd;
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, ExprForm, UnaryOperator, bool_expr,
   expr_to_output, expr_to_string, format_expr, unevaluated,
@@ -558,7 +557,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Ok(Expr::Integer(sum / count))
         } else {
           // Return as Rational
-          let g = gcd(sum.abs(), count);
+          let g = gcd_i128(sum.abs(), count);
           let num = sum / g;
           let denom = count / g;
           Ok(Expr::FunctionCall {
@@ -1796,7 +1795,7 @@ pub fn harmonic_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           sum_numer = sum_numer * x + sum_denom;
           sum_denom *= x;
           // Simplify to avoid overflow
-          let g = gcd(sum_numer.abs(), sum_denom.abs());
+          let g = gcd_i128(sum_numer.abs(), sum_denom.abs());
           sum_numer /= g;
           sum_denom /= g;
         }
@@ -3994,7 +3993,7 @@ pub fn root_mean_square_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let n = int_vals.len() as i128;
         let sum_sq: i128 = int_vals.iter().map(|x| x * x).sum();
         // RMS = Sqrt[sum_sq / n]
-        let g = gcd(sum_sq.abs(), n);
+        let g = gcd_i128(sum_sq.abs(), n);
         let numer = sum_sq / g;
         let denom = n / g;
         // Check if numer/denom is a perfect square

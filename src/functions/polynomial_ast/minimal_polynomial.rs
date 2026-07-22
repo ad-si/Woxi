@@ -2,8 +2,7 @@
 use super::*;
 use crate::InterpreterError;
 use crate::functions::math_ast::{
-  expr_to_f64, expr_to_i128, expr_to_rational, gcd as gcd_i128, gcd_bigint,
-  is_sqrt,
+  expr_to_f64, expr_to_i128, expr_to_rational, gcd_bigint, gcd_i128, is_sqrt,
 };
 
 use crate::syntax::{

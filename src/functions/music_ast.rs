@@ -23,7 +23,7 @@
 //! all give `MusicPitch["G3"]`. The conversions use the standard convention
 //! where middle C is MIDI 60 / C4 and A4 (MIDI 69) is 440 Hz.
 
-use crate::functions::math_ast::gcd;
+use crate::functions::math_ast::gcd_i128;
 use crate::syntax::{
   BinaryOperator, Expr, UnaryOperator, bool_expr, unevaluated,
 };
@@ -1849,7 +1849,7 @@ fn rational_reduced(mut n: i128, mut d: i128) -> Expr {
     n = -n;
     d = -d;
   }
-  let g = gcd(n.abs(), d).max(1);
+  let g = gcd_i128(n.abs(), d).max(1);
   n /= g;
   d /= g;
   if d == 1 {
@@ -1866,7 +1866,7 @@ type Ratio = (i128, i128);
 /// Reduce a `(numerator, denominator)` pair.
 fn reduce(n: i128, d: i128) -> Ratio {
   let (n, d) = if d < 0 { (-n, -d) } else { (n, d) };
-  let g = gcd(n.abs(), d).max(1);
+  let g = gcd_i128(n.abs(), d).max(1);
   (n / g, d / g)
 }
 

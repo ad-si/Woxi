@@ -7,6 +7,7 @@
 //! LessEqual, 1].
 
 use crate::InterpreterError;
+use crate::functions::math_ast::gcd_i128;
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, bool_expr, unevaluated,
 };
@@ -170,7 +171,7 @@ fn as_power(expr: &Expr) -> Option<(Expr, Expr)> {
 }
 
 fn simplify_frac(n: i128, d: i128) -> (i128, i128) {
-  let g = crate::functions::math_ast::gcd(n, d).max(1);
+  let g = gcd_i128(n, d).max(1);
   let (mut n, mut d) = (n / g, d / g);
   if d < 0 {
     n = -n;
