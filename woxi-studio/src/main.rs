@@ -641,16 +641,16 @@ impl WoxiStudio {
       cell.collapsed = editor.is_collapsed;
 
       // Group input cells with their output
-      if editor.style == CellStyle::Input {
-        if let Some(ref output) = editor.output {
-          let output_cell = Cell::new(CellStyle::Output, output.clone());
-          cells.push(CellEntry::Group(CellGroup {
-            cells: vec![cell, output_cell],
-            open: true,
-          }));
-          i += 1;
-          continue;
-        }
+      if editor.style == CellStyle::Input
+        && let Some(ref output) = editor.output
+      {
+        let output_cell = Cell::new(CellStyle::Output, output.clone());
+        cells.push(CellEntry::Group(CellGroup {
+          cells: vec![cell, output_cell],
+          open: true,
+        }));
+        i += 1;
+        continue;
       }
 
       cells.push(CellEntry::Single(cell));
@@ -956,61 +956,61 @@ impl WoxiStudio {
       }
 
       Message::WrapSelection(idx, open, close) => {
-        if idx < self.cell_editors.len() {
-          if let Some(sel) = self.cell_editors[idx].content.selection() {
-            // Snapshot for undo
-            let snap = self.cell_editors[idx].content.text();
-            self.cell_editors[idx].undo_stack.push(snap);
-            self.cell_editors[idx].redo_stack.clear();
-            // Insert open char (replaces the selection)
+        if idx < self.cell_editors.len()
+          && let Some(sel) = self.cell_editors[idx].content.selection()
+        {
+          // Snapshot for undo
+          let snap = self.cell_editors[idx].content.text();
+          self.cell_editors[idx].undo_stack.push(snap);
+          self.cell_editors[idx].redo_stack.clear();
+          // Insert open char (replaces the selection)
+          self.cell_editors[idx]
+            .content
+            .perform(text_editor::Action::Edit(text_editor::Edit::Insert(
+              open,
+            )));
+          // Insert the original selected text back
+          for c in sel.chars() {
             self.cell_editors[idx]
               .content
-              .perform(text_editor::Action::Edit(text_editor::Edit::Insert(
-                open,
-              )));
-            // Insert the original selected text back
-            for c in sel.chars() {
-              self.cell_editors[idx].content.perform(
-                text_editor::Action::Edit(text_editor::Edit::Insert(c)),
-              );
-            }
-            // Insert close char
-            self.cell_editors[idx]
-              .content
-              .perform(text_editor::Action::Edit(text_editor::Edit::Insert(
-                close,
-              )));
-            self.is_dirty = true;
-            self.cell_editors[idx].output_stale = true;
+              .perform(text_editor::Action::Edit(text_editor::Edit::Insert(c)));
           }
+          // Insert close char
+          self.cell_editors[idx]
+            .content
+            .perform(text_editor::Action::Edit(text_editor::Edit::Insert(
+              close,
+            )));
+          self.is_dirty = true;
+          self.cell_editors[idx].output_stale = true;
         }
         Task::none()
       }
 
       Message::Undo(idx) => {
-        if idx < self.cell_editors.len() {
-          if let Some(prev) = self.cell_editors[idx].undo_stack.pop() {
-            let current = self.cell_editors[idx].content.text();
-            self.cell_editors[idx].redo_stack.push(current);
-            self.cell_editors[idx].content =
-              text_editor::Content::with_text(&prev);
-            self.is_dirty = true;
-            self.cell_editors[idx].output_stale = true;
-          }
+        if idx < self.cell_editors.len()
+          && let Some(prev) = self.cell_editors[idx].undo_stack.pop()
+        {
+          let current = self.cell_editors[idx].content.text();
+          self.cell_editors[idx].redo_stack.push(current);
+          self.cell_editors[idx].content =
+            text_editor::Content::with_text(&prev);
+          self.is_dirty = true;
+          self.cell_editors[idx].output_stale = true;
         }
         Task::none()
       }
 
       Message::Redo(idx) => {
-        if idx < self.cell_editors.len() {
-          if let Some(next) = self.cell_editors[idx].redo_stack.pop() {
-            let current = self.cell_editors[idx].content.text();
-            self.cell_editors[idx].undo_stack.push(current);
-            self.cell_editors[idx].content =
-              text_editor::Content::with_text(&next);
-            self.is_dirty = true;
-            self.cell_editors[idx].output_stale = true;
-          }
+        if idx < self.cell_editors.len()
+          && let Some(next) = self.cell_editors[idx].redo_stack.pop()
+        {
+          let current = self.cell_editors[idx].content.text();
+          self.cell_editors[idx].undo_stack.push(current);
+          self.cell_editors[idx].content =
+            text_editor::Content::with_text(&next);
+          self.is_dirty = true;
+          self.cell_editors[idx].output_stale = true;
         }
         Task::none()
       }
@@ -1419,24 +1419,25 @@ impl WoxiStudio {
       }
 
       Message::DragEnd => {
-        if let (Some(src), Some(dst)) = (self.dragging_cell, self.drop_target) {
-          if src != dst && dst <= self.cell_editors.len() {
-            let cell = self.cell_editors.remove(src);
-            let insert_at = if dst > src { dst - 1 } else { dst };
-            let insert_at = insert_at.min(self.cell_editors.len());
-            self.cell_editors.insert(insert_at, cell);
-            self.focused_cell = Some(insert_at);
-            self.is_dirty = true;
-            if let Some(p) = &mut self.playback {
-              if p.cell == src {
-                p.cell = insert_at;
-              } else {
-                if p.cell > src {
-                  p.cell -= 1;
-                }
-                if p.cell >= insert_at {
-                  p.cell += 1;
-                }
+        if let (Some(src), Some(dst)) = (self.dragging_cell, self.drop_target)
+          && src != dst
+          && dst <= self.cell_editors.len()
+        {
+          let cell = self.cell_editors.remove(src);
+          let insert_at = if dst > src { dst - 1 } else { dst };
+          let insert_at = insert_at.min(self.cell_editors.len());
+          self.cell_editors.insert(insert_at, cell);
+          self.focused_cell = Some(insert_at);
+          self.is_dirty = true;
+          if let Some(p) = &mut self.playback {
+            if p.cell == src {
+              p.cell = insert_at;
+            } else {
+              if p.cell > src {
+                p.cell -= 1;
+              }
+              if p.cell >= insert_at {
+                p.cell += 1;
               }
             }
           }
@@ -1814,10 +1815,10 @@ impl WoxiStudio {
         if self.cell_editors.len() > 1 && idx < self.cell_editors.len() {
           self.cell_editors.remove(idx);
           self.is_dirty = true;
-          if let Some(ref mut focused) = self.focused_cell {
-            if *focused >= self.cell_editors.len() {
-              *focused = self.cell_editors.len() - 1;
-            }
+          if let Some(ref mut focused) = self.focused_cell
+            && *focused >= self.cell_editors.len()
+          {
+            *focused = self.cell_editors.len() - 1;
           }
           match self.playback.as_mut() {
             Some(p) if p.cell == idx => self.stop_playback(),
@@ -2044,56 +2045,56 @@ impl WoxiStudio {
         }
 
         // Ctrl+D: delete forward
-        if modifiers.control() {
-          if let keyboard::Key::Character("d") = key.as_ref() {
-            if let Some(idx) = self.focused_cell {
-              self.cell_editors[idx]
-                .content
-                .perform(text_editor::Action::Edit(text_editor::Edit::Delete));
-              self.is_dirty = true;
-            }
-            return Task::none();
+        if modifiers.control()
+          && let keyboard::Key::Character("d") = key.as_ref()
+        {
+          if let Some(idx) = self.focused_cell {
+            self.cell_editors[idx]
+              .content
+              .perform(text_editor::Action::Edit(text_editor::Edit::Delete));
+            self.is_dirty = true;
           }
+          return Task::none();
         }
 
         // Ctrl+A: move cursor to start of line
-        if modifiers.control() {
-          if let keyboard::Key::Character("a") = key.as_ref() {
-            if let Some(idx) = self.focused_cell {
-              self.cell_editors[idx]
-                .content
-                .perform(text_editor::Action::Move(text_editor::Motion::Home));
-            }
-            return Task::none();
+        if modifiers.control()
+          && let keyboard::Key::Character("a") = key.as_ref()
+        {
+          if let Some(idx) = self.focused_cell {
+            self.cell_editors[idx]
+              .content
+              .perform(text_editor::Action::Move(text_editor::Motion::Home));
           }
+          return Task::none();
         }
 
         // Ctrl+E: move cursor to end of line
-        if modifiers.control() {
-          if let keyboard::Key::Character("e") = key.as_ref() {
-            if let Some(idx) = self.focused_cell {
-              self.cell_editors[idx]
-                .content
-                .perform(text_editor::Action::Move(text_editor::Motion::End));
-            }
-            return Task::none();
+        if modifiers.control()
+          && let keyboard::Key::Character("e") = key.as_ref()
+        {
+          if let Some(idx) = self.focused_cell {
+            self.cell_editors[idx]
+              .content
+              .perform(text_editor::Action::Move(text_editor::Motion::End));
           }
+          return Task::none();
         }
 
         // Ctrl+W: delete previous word
-        if modifiers.control() {
-          if let keyboard::Key::Character("w") = key.as_ref() {
-            if let Some(idx) = self.focused_cell {
-              self.cell_editors[idx].content.perform(
-                text_editor::Action::Select(text_editor::Motion::WordLeft),
-              );
-              self.cell_editors[idx].content.perform(
-                text_editor::Action::Edit(text_editor::Edit::Backspace),
-              );
-              self.is_dirty = true;
-            }
-            return Task::none();
+        if modifiers.control()
+          && let keyboard::Key::Character("w") = key.as_ref()
+        {
+          if let Some(idx) = self.focused_cell {
+            self.cell_editors[idx].content.perform(
+              text_editor::Action::Select(text_editor::Motion::WordLeft),
+            );
+            self.cell_editors[idx]
+              .content
+              .perform(text_editor::Action::Edit(text_editor::Edit::Backspace));
+            self.is_dirty = true;
           }
+          return Task::none();
         }
 
         // Divider navigation (when a "+" divider is focused)
@@ -2686,7 +2687,7 @@ impl WoxiStudio {
     let in_preview = self.preview_mode;
     let has_output = editor.stdout.is_some()
       || editor.graphics_svg.is_some()
-      || editor.output.as_ref().map_or(false, |o| {
+      || editor.output.as_ref().is_some_and(|o| {
         let d = o
           .replace("-Graphics-", "")
           .replace("-Graphics3D-", "")
@@ -2704,7 +2705,7 @@ impl WoxiStudio {
     let has_selection = editor.content.selection().is_some();
     let cursor_at_line_start = {
       let text = editor.content.text();
-      text.lines().nth(cursor_line).map_or(true, |line| {
+      text.lines().nth(cursor_line).is_none_or(|line| {
         line[..cursor_column.min(line.len())]
           .chars()
           .all(|c| c.is_whitespace())
@@ -2774,25 +2775,23 @@ impl WoxiStudio {
         // If there is no cell below, insert a new one. Handled here
         // (before the text editor processes the key) so no stray newline
         // is inserted into the cell's content.
-        if modifiers.shift() {
-          if let keyboard::Key::Named(keyboard::key::Named::Enter) =
+        if modifiers.shift()
+          && let keyboard::Key::Named(keyboard::key::Named::Enter) =
             key.as_ref()
-          {
-            let is_last = idx + 1 >= cell_count;
-            let mut bindings =
-              vec![text_editor::Binding::Custom(Message::EvaluateCell(idx))];
-            if is_last {
-              bindings
-                .push(text_editor::Binding::Custom(Message::AddCellBelow(idx)));
-              bindings
-                .push(text_editor::Binding::Custom(Message::ScrollCellsToEnd));
-            } else {
-              bindings.push(text_editor::Binding::Custom(Message::FocusCell(
-                idx + 1,
-              )));
-            }
-            return Some(text_editor::Binding::Sequence(bindings));
+        {
+          let is_last = idx + 1 >= cell_count;
+          let mut bindings =
+            vec![text_editor::Binding::Custom(Message::EvaluateCell(idx))];
+          if is_last {
+            bindings
+              .push(text_editor::Binding::Custom(Message::AddCellBelow(idx)));
+            bindings
+              .push(text_editor::Binding::Custom(Message::ScrollCellsToEnd));
+          } else {
+            bindings
+              .push(text_editor::Binding::Custom(Message::FocusCell(idx + 1)));
           }
+          return Some(text_editor::Binding::Sequence(bindings));
         }
         // Tab / Shift+Tab indentation
         if let keyboard::Key::Named(keyboard::key::Named::Tab) = key.as_ref() {
@@ -2815,41 +2814,39 @@ impl WoxiStudio {
         if no_mods {
           if let keyboard::Key::Named(keyboard::key::Named::ArrowDown) =
             key.as_ref()
+            && at_last_line
+            && idx < cell_count.saturating_sub(1)
           {
-            if at_last_line && idx < cell_count.saturating_sub(1) {
-              return Some(text_editor::Binding::Sequence(vec![
-                text_editor::Binding::Unfocus,
-                text_editor::Binding::Custom(Message::FocusDividerBelow(idx)),
-              ]));
-            }
+            return Some(text_editor::Binding::Sequence(vec![
+              text_editor::Binding::Unfocus,
+              text_editor::Binding::Custom(Message::FocusDividerBelow(idx)),
+            ]));
           }
           if let keyboard::Key::Named(keyboard::key::Named::ArrowUp) =
             key.as_ref()
+            && at_first_line
+            && idx > 0
           {
-            if at_first_line && idx > 0 {
-              return Some(text_editor::Binding::Sequence(vec![
-                text_editor::Binding::Unfocus,
-                text_editor::Binding::Custom(Message::FocusDividerAbove(idx)),
-              ]));
-            }
+            return Some(text_editor::Binding::Sequence(vec![
+              text_editor::Binding::Unfocus,
+              text_editor::Binding::Custom(Message::FocusDividerAbove(idx)),
+            ]));
           }
         }
         // Wrap selection with matching brackets/quotes
-        if has_selection {
-          if let Some(ref text) = key_press.text {
-            let pair = match text.as_ref() {
-              "{" => Some(('{', '}')),
-              "[" => Some(('[', ']')),
-              "\"" => Some(('"', '"')),
-              "'" => Some(('\'', '\'')),
-              "(" => Some(('(', ')')),
-              _ => None,
-            };
-            if let Some((open, close)) = pair {
-              return Some(text_editor::Binding::Custom(
-                Message::WrapSelection(idx, open, close),
-              ));
-            }
+        if has_selection && let Some(ref text) = key_press.text {
+          let pair = match text.as_ref() {
+            "{" => Some(('{', '}')),
+            "[" => Some(('[', ']')),
+            "\"" => Some(('"', '"')),
+            "'" => Some(('\'', '\'')),
+            "(" => Some(('(', ')')),
+            _ => None,
+          };
+          if let Some((open, close)) = pair {
+            return Some(text_editor::Binding::Custom(Message::WrapSelection(
+              idx, open, close,
+            )));
           }
         }
         text_editor::Binding::from_key_press(key_press)
@@ -2922,7 +2919,7 @@ impl WoxiStudio {
           .width(iced::Length::Fixed(w as f32))
           .height(iced::Length::Fixed(h as f32));
         if stale {
-          img_widget = img_widget.opacity(0.3);
+          img_widget = img_widget.opacity(0.3_f32);
         }
         let clickable = mouse_area(container(img_widget).padding(4))
           .on_double_click(Message::OpenGraphicsModal(idx))
@@ -2932,7 +2929,7 @@ impl WoxiStudio {
         let mut svg_widget =
           svg::Svg::new(handle.clone()).width(iced::Length::Shrink);
         if stale {
-          svg_widget = svg_widget.opacity(0.3);
+          svg_widget = svg_widget.opacity(0.3_f32);
         }
         let clickable = mouse_area(container(svg_widget).padding(4))
           .on_double_click(Message::OpenGraphicsModal(idx))
@@ -3024,7 +3021,7 @@ impl WoxiStudio {
           .width(iced::Length::Fixed(w as f32))
           .height(iced::Length::Fixed(h as f32));
         if stale {
-          img_widget = img_widget.opacity(0.3);
+          img_widget = img_widget.opacity(0.3_f32);
         }
         let clickable = mouse_area(container(img_widget).padding(4))
           .on_double_click(Message::OpenGraphicsModal(idx))
@@ -3034,7 +3031,7 @@ impl WoxiStudio {
         let mut svg_widget =
           svg::Svg::new(handle.clone()).width(iced::Length::Shrink);
         if stale {
-          svg_widget = svg_widget.opacity(0.3);
+          svg_widget = svg_widget.opacity(0.3_f32);
         }
         let clickable = mouse_area(container(svg_widget).padding(4))
           .on_double_click(Message::OpenGraphicsModal(idx))
@@ -3229,11 +3226,11 @@ fn selection_endpoints(
   let anchor_line = cursor_line.saturating_sub(sel_newlines);
   if anchor_line + sel_newlines == cursor_line {
     let first_sel_line = sel_lines_vec[0];
-    if let Some(line) = lines.get(anchor_line) {
-      if line.ends_with(first_sel_line) {
-        let anchor_col = line.len() - first_sel_line.len();
-        return ((anchor_line, anchor_col), (cursor_line, cursor_col));
-      }
+    if let Some(line) = lines.get(anchor_line)
+      && line.ends_with(first_sel_line)
+    {
+      let anchor_col = line.len() - first_sel_line.len();
+      return ((anchor_line, anchor_col), (cursor_line, cursor_col));
     }
   }
 
@@ -3381,18 +3378,15 @@ fn handle_event(
     if matches!(status, iced::event::Status::Ignored) {
       let no_mods =
         !modifiers.shift() && !modifiers.command() && !modifiers.control();
-      if no_mods {
-        match key.as_ref() {
-          keyboard::Key::Named(
-            keyboard::key::Named::ArrowDown
-            | keyboard::key::Named::ArrowUp
-            | keyboard::key::Named::Enter,
-          ) => {
-            return Some(Message::KeyPressed(key, modifiers));
-          }
-          _ => {}
+      if no_mods
+        && let keyboard::Key::Named(
+          keyboard::key::Named::ArrowDown
+          | keyboard::key::Named::ArrowUp
+          | keyboard::key::Named::Enter,
+        ) = key.as_ref()
+        {
+          return Some(Message::KeyPressed(key, modifiers));
         }
-      }
     }
 
     // Ctrl shortcuts for text editing
@@ -3829,7 +3823,7 @@ fn render_manipulate_widget<'a>(
     let mut svg_widget =
       svg::Svg::new(handle.clone()).width(iced::Length::Shrink);
     if stale {
-      svg_widget = svg_widget.opacity(0.3);
+      svg_widget = svg_widget.opacity(0.3_f32);
     }
     output_col = output_col.push(container(svg_widget).padding(4));
   } else if let Some(ref txt) = state.text_output {
@@ -4089,7 +4083,7 @@ fn output_images_element<'a>(
       .width(iced::Length::Fixed(*w as f32))
       .height(iced::Length::Fixed(*h as f32));
     if stale {
-      img = img.opacity(0.3);
+      img = img.opacity(0.3_f32);
     }
     col = col.push(container(img).padding(6));
   }
@@ -4256,16 +4250,16 @@ fn evaluate_cell_statements(
           continue;
         }
 
-        if let Some(svg) = result.graphics {
-          if result.result != "\0" {
-            last_graphics = Some(svg);
-          }
+        if let Some(svg) = result.graphics
+          && result.result != "\0"
+        {
+          last_graphics = Some(svg);
         }
 
-        if let Some(audio) = result.sound {
-          if result.result != "\0" {
-            last_sound = Some(audio);
-          }
+        if let Some(audio) = result.sound
+          && result.result != "\0"
+        {
+          last_sound = Some(audio);
         }
 
         if result.result != "\0" {
@@ -5070,10 +5064,9 @@ fn compute_hidden_cells_from_states(states: &[(CellStyle, bool)]) -> Vec<bool> {
     // collapse region for subsequent cells.
     if is_collapsed
       && matches!(style, CellStyle::Chapter | CellStyle::Subchapter)
+      && let Some(level) = heading_level(style)
     {
-      if let Some(level) = heading_level(style) {
-        stack.push((i, level));
-      }
+      stack.push((i, level));
     }
   }
   hidden
@@ -5678,19 +5671,19 @@ async fn export_pdf(
         }
       }
 
-      if let Some(ref svg_data) = cell.graphics_svg {
-        if let Some((svg_w, svg_h)) = parse_svg_dimensions(svg_data) {
-          let scale = (content_width / svg_w).min(1.0);
-          let rendered_w = svg_w * scale;
-          let rendered_h = svg_h * scale;
-          let _ = write!(
-            elements,
-            r#"<svg x="{margin}" y="{y}" width="{rendered_w}" height="{rendered_h}" viewBox="0 0 {svg_w} {svg_h}">"#,
-          );
-          elements.push_str(&strip_svg_wrapper(svg_data));
-          elements.push_str("</svg>");
-          y += rendered_h + 8.0;
-        }
+      if let Some(ref svg_data) = cell.graphics_svg
+        && let Some((svg_w, svg_h)) = parse_svg_dimensions(svg_data)
+      {
+        let scale = (content_width / svg_w).min(1.0);
+        let rendered_w = svg_w * scale;
+        let rendered_h = svg_h * scale;
+        let _ = write!(
+          elements,
+          r#"<svg x="{margin}" y="{y}" width="{rendered_w}" height="{rendered_h}" viewBox="0 0 {svg_w} {svg_h}">"#,
+        );
+        elements.push_str(strip_svg_wrapper(svg_data));
+        elements.push_str("</svg>");
+        y += rendered_h + 8.0;
       }
 
       if let Some(ref output) = cell.output {
