@@ -28,6 +28,26 @@ jobs:
     - name: Run slow and network tests
       run: make test-slow
 
+  # Windows builds of the interpreter CLI and the Studio notebook editor.
+  # Neither is covered by the Linux-only CI, so this both catches
+  # Windows-specific build breakage and provides downloadable binaries.
+  build-windows:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v5
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: Swatinem/rust-cache@v2
+    - name: Build woxi and woxi-studio
+      run: cargo build --release -p woxi -p woxi-studio
+    - name: Upload Windows binaries
+      uses: actions/upload-artifact@v6
+      with:
+        name: woxi-windows-x86_64
+        path: |
+          target/release/woxi.exe
+          target/release/woxi-studio.exe
+        if-no-files-found: error
+
   # Coverage-guided crash fuzzing of the parser and interpreter (see
   # fuzz/README.md). A few minutes per target per night compounds into
   # deep coverage over time; crashing inputs are uploaded as artifacts.
