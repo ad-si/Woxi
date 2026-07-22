@@ -1177,6 +1177,117 @@ fn is_indeterminate_or_complex_infinity(expr: &Expr) -> bool {
 /// If `arg` has the imaginary unit `I` as a factor, return the product of the
 /// remaining factors `z` (so `arg == I*z`). Handles `I` alone (z = 1) and the
 /// `Times` form (`I x`, `2 I x`, `-I x`, …).
+/// If `term` is `n Pi I` (an integer `n` times `Pi` times the imaginary unit),
+/// return `n`. The imaginary unit may appear as the identifier `I` or as the
+/// pure-imaginary `Complex[0, n]`. Non-integer coefficients (e.g. `Pi I/2`) and
+/// any other factor make this return None.
+fn imaginary_pi_coeff(term: &Expr) -> Option<i64> {
+  let Expr::FunctionCall { name, args } = term else {
+    return None;
+  };
+  if name != "Times" {
+    return None;
+  }
+  let mut coeff: i64 = 1;
+  let mut has_pi = false;
+  let mut has_imag = false;
+  for f in args.iter() {
+    match f {
+      Expr::Constant(s) | Expr::Identifier(s) if s == "Pi" => {
+        if has_pi {
+          return None;
+        }
+        has_pi = true;
+      }
+      Expr::Identifier(s) if s == "I" => {
+        if has_imag {
+          return None;
+        }
+        has_imag = true;
+      }
+      Expr::Integer(n) => {
+        coeff = coeff.checked_mul(i64::try_from(*n).ok()?)?;
+      }
+      // Complex[0, m] = m*I (a pure-imaginary integer coefficient).
+      Expr::FunctionCall { name: cn, args: ca }
+        if cn == "Complex" && ca.len() == 2 =>
+      {
+        let (Expr::Integer(re), Expr::Integer(im)) = (&ca[0], &ca[1]) else {
+          return None;
+        };
+        if *re != 0 || has_imag {
+          return None;
+        }
+        has_imag = true;
+        coeff = coeff.checked_mul(i64::try_from(*im).ok()?)?;
+      }
+      _ => return None,
+    }
+  }
+  (has_pi && has_imag).then_some(coeff)
+}
+
+/// If `arg` is a sum `rest + n Pi I` with a nonzero integer `n`, return
+/// `(n, rest)`. Drives the hyperbolic imaginary-period reductions
+/// `Cosh[z + n Pi I] = (-1)^n Cosh[z]`, `Tanh[z + n Pi I] = Tanh[z]`, etc.
+fn extract_imaginary_pi_period(arg: &Expr) -> Option<(i64, Expr)> {
+  let is_sum = matches!(arg, Expr::FunctionCall { name, .. } if name == "Plus")
+    || matches!(
+      arg,
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus | BinaryOperator::Minus,
+        ..
+      }
+    );
+  if !is_sum {
+    return None;
+  }
+  let mut terms = Vec::new();
+  collect_plus_terms(arg, &mut terms);
+  let mut n: i64 = 0;
+  let mut rest: Vec<Expr> = Vec::new();
+  for t in terms {
+    match imaginary_pi_coeff(&t) {
+      Some(c) => n = n.checked_add(c)?,
+      None => rest.push(t),
+    }
+  }
+  if n == 0 || rest.is_empty() {
+    return None;
+  }
+  let rest_expr = if rest.len() == 1 {
+    rest.into_iter().next().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: rest.into(),
+    }
+  };
+  Some((n, rest_expr))
+}
+
+/// Hyperbolic imaginary-period reduction: `Cosh`/`Sinh`/`Sech`/`Csch` have
+/// period `2 Pi I` (an odd multiple flips the sign); `Tanh`/`Coth` have period
+/// `Pi I` (no sign change). Returns None when `arg` has no `n Pi I` term.
+fn hyperbolic_imaginary_period(
+  func: &str,
+  arg: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  let (n, rest) = extract_imaginary_pi_period(arg)?;
+  let reduced =
+    match crate::evaluator::evaluate_function_call_ast(func, &[rest]) {
+      Ok(v) => v,
+      Err(e) => return Some(Err(e)),
+    };
+  let flips = matches!(func, "Cosh" | "Sinh" | "Sech" | "Csch");
+  let result = if flips && n.rem_euclid(2) == 1 {
+    negate_expr(reduced)
+  } else {
+    reduced
+  };
+  Some(Ok(result))
+}
+
 fn extract_imaginary_factor(arg: &Expr) -> Option<Expr> {
   if matches!(arg, Expr::Identifier(s) if s == "I") {
     return Some(Expr::Integer(1));
@@ -4215,6 +4326,9 @@ pub fn sinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(r) = imaginary_arg_reduction("Sinh", &args[0]) {
     return r;
   }
+  if let Some(r) = hyperbolic_imaginary_period("Sinh", &args[0]) {
+    return r;
+  }
   // Sinh is monotonic increasing on ℝ: map over interval spans.
   if let Some(r) =
     crate::functions::interval_ast::map_monotonic_interval("Sinh", &args[0])
@@ -4265,6 +4379,9 @@ pub fn cosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(r) = imaginary_arg_reduction("Cosh", &args[0]) {
     return r;
   }
+  if let Some(r) = hyperbolic_imaginary_period("Cosh", &args[0]) {
+    return r;
+  }
   // Cosh[Interval[...]] — U-shaped (even, minimum Cosh[0] = 1 at the origin),
   // so a span containing 0 bottoms out at 1; otherwise it is monotonic.
   if let Some(r) = crate::functions::interval_ast::cosh_interval(&args[0]) {
@@ -4311,6 +4428,9 @@ pub fn tanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   if let Some(r) = imaginary_arg_reduction("Tanh", &args[0]) {
+    return r;
+  }
+  if let Some(r) = hyperbolic_imaginary_period("Tanh", &args[0]) {
     return r;
   }
   // Tanh is monotonic increasing on ℝ: map over interval spans.
@@ -4361,6 +4481,9 @@ pub fn coth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   if let Some(r) = imaginary_arg_reduction("Coth", &args[0]) {
+    return r;
+  }
+  if let Some(r) = hyperbolic_imaginary_period("Coth", &args[0]) {
     return r;
   }
   // Coth[Interval[...]] — range over each span (single pole at 0, decreasing).
@@ -4417,6 +4540,9 @@ pub fn sech_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(r) = imaginary_arg_reduction("Sech", &args[0]) {
     return r;
   }
+  if let Some(r) = hyperbolic_imaginary_period("Sech", &args[0]) {
+    return r;
+  }
   // Sech[Interval[...]] — even, max 1 at 0, no poles.
   if let Some(r) = crate::functions::interval_ast::sech_interval(&args[0]) {
     return Ok(r);
@@ -4462,6 +4588,9 @@ pub fn csch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier("ComplexInfinity".to_string()));
   }
   if let Some(r) = imaginary_arg_reduction("Csch", &args[0]) {
+    return r;
+  }
+  if let Some(r) = hyperbolic_imaginary_period("Csch", &args[0]) {
     return r;
   }
   // Csch[Interval[...]] — range over each span (single pole at 0, decreasing).

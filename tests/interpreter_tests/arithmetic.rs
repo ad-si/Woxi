@@ -8529,6 +8529,28 @@ mod imaginary_argument_trig {
     assert_eq!(interpret("Tanh[I x]").unwrap(), "I*Tan[x]");
   }
 
+  // Hyperbolic functions are periodic in the imaginary direction: Cosh/Sinh/
+  // Sech/Csch have period 2*Pi*I (an odd multiple flips the sign), Tanh/Coth
+  // have period Pi*I.
+  #[test]
+  fn hyperbolic_imaginary_period() {
+    assert_eq!(interpret("Cosh[x + 2 Pi I]").unwrap(), "Cosh[x]");
+    assert_eq!(interpret("Cosh[x + Pi I]").unwrap(), "-Cosh[x]");
+    assert_eq!(interpret("Cosh[x - Pi I]").unwrap(), "-Cosh[x]");
+    assert_eq!(interpret("Cosh[x + 3 Pi I]").unwrap(), "-Cosh[x]");
+    assert_eq!(interpret("Sinh[x + Pi I]").unwrap(), "-Sinh[x]");
+    assert_eq!(interpret("Sinh[x + 2 Pi I]").unwrap(), "Sinh[x]");
+    assert_eq!(interpret("Sech[x + Pi I]").unwrap(), "-Sech[x]");
+    assert_eq!(interpret("Csch[x + 2 Pi I]").unwrap(), "Csch[x]");
+    // Tanh/Coth are Pi*I-periodic, so any integer multiple reduces cleanly.
+    assert_eq!(interpret("Tanh[x + Pi I]").unwrap(), "Tanh[x]");
+    assert_eq!(interpret("Coth[x + Pi I]").unwrap(), "Coth[x]");
+    // A non-imaginary Pi shift is not a period and stays put.
+    assert_eq!(interpret("Cosh[x + Pi]").unwrap(), "Cosh[Pi + x]");
+    // Exp is NOT reduced by 2*Pi*I in wolframscript.
+    assert_eq!(interpret("Exp[x + 2 Pi I]").unwrap(), "E^(x + (2*I)*Pi)");
+  }
+
   #[test]
   fn imaginary_with_coefficient() {
     assert_eq!(interpret("Cos[2 I x]").unwrap(), "Cosh[2*x]");
