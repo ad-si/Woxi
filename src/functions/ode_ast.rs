@@ -2195,6 +2195,27 @@ fn eval_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
   expr_to_f64(&evaluated)
 }
 
+/// Convert an interpolation data value to f64, numericising exact symbolic
+/// entries (e.g. `Sin[1]`, `Pi/2`) via `N` when a direct conversion fails.
+/// wolframscript's Interpolation accepts exact symbolic data by numericising
+/// it, so `Interpolation[Table[{x, Sin[x]}, {x, 0, 10}]]` must work.
+fn interp_value_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(expr)
+    .unwrap_or_else(|_| expr.clone());
+  if let Ok(v) = expr_to_f64(&evaluated) {
+    return Ok(v);
+  }
+  // Fall back to N[...] for exact symbolic values that do not reduce to a
+  // number on their own (Sin[1] stays symbolic until numericised).
+  let n_expr = Expr::FunctionCall {
+    name: "N".to_string(),
+    args: vec![evaluated].into(),
+  };
+  let numericized = crate::evaluator::evaluate_expr_to_expr(&n_expr)
+    .unwrap_or_else(|_| expr.clone());
+  expr_to_f64(&numericized)
+}
+
 // ─── Interpolation ─────────────────────────────────────────────────────
 
 /// Interpolation[{y1, y2, ...}] or Interpolation[{{x1,y1}, {x2,y2}, ...}]
@@ -2296,9 +2317,7 @@ pub fn interpolation_ast(
   } else {
     // {y1, y2, ...} — x values are 1, 2, 3, ...
     for (i, item) in data_list.iter().enumerate() {
-      let y = expr_to_f64(
-        &crate::evaluator::evaluate_expr_to_expr(item).unwrap_or(item.clone()),
-      )?;
+      let y = interp_value_to_f64(item)?;
       points.push(((i + 1) as f64, y));
     }
   }
@@ -2884,8 +2903,8 @@ fn extract_point(expr: &Expr) -> Result<(f64, f64), InterpreterError> {
   if let Expr::List(items) = expr
     && items.len() == 2
   {
-    let x = expr_to_f64(&items[0])?;
-    let y = expr_to_f64(&items[1])?;
+    let x = interp_value_to_f64(&items[0])?;
+    let y = interp_value_to_f64(&items[1])?;
     return Ok((x, y));
   }
   Err(InterpreterError::EvaluationError(

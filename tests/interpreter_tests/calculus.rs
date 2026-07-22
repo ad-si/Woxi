@@ -9138,6 +9138,34 @@ mod interpolation {
     assert!((val - 4.0).abs() < 0.001, "Expected 4.0, got {}", val);
   }
 
+  // Exact symbolic data values (e.g. Sin[1], Sin[2]) are numericised via N,
+  // matching wolframscript. Previously these raised a hard "cannot convert
+  // ... to numeric value" error. Values verified against wolframscript.
+  #[test]
+  fn symbolic_values_are_numericized() {
+    // Table[{x, Sin[x]}, ...] yields exact Sin[k] y-values.
+    let result =
+      interpret("Interpolation[Table[{x, Sin[x]}, {x, 0, 10}]][5.5]").unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!(
+      (val - (-0.69032762869809)).abs() < 1e-9,
+      "expected -0.69032762869809, got {val}"
+    );
+  }
+
+  #[test]
+  fn symbolic_value_list_is_numericized() {
+    // A bare list of exact symbolic values (x = 1, 2, 3, ...).
+    let result =
+      interpret("Interpolation[{Sin[1], Sin[2], Sin[3], Sin[4]}][2.5]")
+        .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!(
+      (val - 0.5855680265293732).abs() < 1e-9,
+      "expected 0.5855680265293732, got {val}"
+    );
+  }
+
   // A single data point is a constant interpolation (order reduced to 0):
   // the function returns that value for any input.
   #[test]
