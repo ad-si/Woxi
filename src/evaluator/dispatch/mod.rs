@@ -10465,6 +10465,18 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // ListPlay[{a1, a2, …}, opts…] plays a list of amplitude levels as a sound.
+  // wolframscript normalizes the amplitudes into [-1, 1] and wraps them in a
+  // Sound[SampledSoundList[…]] object (sampled at 8000 Hz by default). Building
+  // that same object makes the result render as -Sound-, report Head -> Sound,
+  // and — in the visual hosts — play the normalized waveform.
+  if name == "ListPlay"
+    && !args.is_empty()
+    && let Some(sound) = crate::functions::sound::list_play(args)
+  {
+    return Ok(sound);
+  }
+
   // Check if the function is a known but unimplemented Wolfram Language function.
   // Some symbolic CAS objects (Root, RootSum, …) intentionally stay
   // unevaluated as their canonical form, so flagging them as

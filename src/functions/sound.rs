@@ -22,24 +22,60 @@ use crate::syntax::Expr;
 /// `SampleRate` wolframscript uses for `Play` (8000 samples per second).
 const SAMPLE_RATE: u32 = 8000;
 
-/// Collect every `Play[f, {t, tmin, tmax}]` segment reachable inside a `Sound`
-/// expression, recursing through nested lists (so `Sound[{Play[…], Play[…]}]`
-/// yields both segments in order).
-fn collect_play_segments<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) {
+/// Collect every playable segment reachable inside a `Sound` expression into
+/// concrete amplitude samples plus a sample rate, recursing through nested
+/// lists (so `Sound[{Play[…], Play[…]}]` yields both segments in order).
+/// Recognizes `Play[f, {t, tmin, tmax}]` (synthesized) and
+/// `SampledSoundList[{samples…}, rate]` (produced by `ListPlay`).
+fn collect_segments(expr: &Expr, out: &mut Vec<(Vec<f64>, u32)>) {
   match expr {
-    Expr::FunctionCall { name, .. } if name == "Play" => out.push(expr),
+    Expr::FunctionCall { name, .. } if name == "Play" => {
+      if let Some(seg) = sample_play(expr) {
+        out.push((seg, SAMPLE_RATE));
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "SampledSoundList" => {
+      if let Some(seg) = sample_sampled_sound_list(args) {
+        out.push(seg);
+      }
+    }
     Expr::FunctionCall { args, .. } => {
       for a in args.iter() {
-        collect_play_segments(a, out);
+        collect_segments(a, out);
       }
     }
     Expr::List(items) => {
       for a in items.iter() {
-        collect_play_segments(a, out);
+        collect_segments(a, out);
       }
     }
     _ => {}
   }
+}
+
+/// Extract amplitude samples and a sample rate from a
+/// `SampledSoundList[{s1, s2, …}, rate]` primitive. The samples are the final
+/// amplitudes (already normalized by `ListPlay`); they are only clipped to
+/// [-1, 1] before quantizing. The rate defaults to 8000 Hz when absent or
+/// non-positive. Returns `None` for an empty or non-numeric sample list.
+fn sample_sampled_sound_list(args: &[Expr]) -> Option<(Vec<f64>, u32)> {
+  let Expr::List(items) = args.first()? else {
+    return None;
+  };
+  if items.is_empty() {
+    return None;
+  }
+  let mut samples = Vec::with_capacity(items.len());
+  for it in items.iter() {
+    samples.push(try_eval_to_f64(it)?.clamp(-1.0, 1.0));
+  }
+  let rate = args
+    .get(1)
+    .and_then(try_eval_to_f64)
+    .filter(|r| *r > 0.0)
+    .map(|r| r.round() as u32)
+    .unwrap_or(SAMPLE_RATE);
+  Some((samples, rate))
 }
 
 /// Sample a single `Play[f, {t, tmin, tmax}]` segment into amplitude values
@@ -97,15 +133,19 @@ fn sample_play(play: &Expr) -> Option<Vec<f64>> {
 /// the samples together with the sample rate in Hz, or `None` when the
 /// expression contains no samplable `Play` segment.
 pub fn sound_to_samples(sound_expr: &Expr) -> Option<(Vec<f64>, u32)> {
-  let mut plays = Vec::new();
-  collect_play_segments(sound_expr, &mut plays);
-  let mut samples = Vec::new();
-  for play in plays {
-    if let Some(seg) = sample_play(play) {
-      samples.extend(seg);
-    }
+  let mut segments = Vec::new();
+  collect_segments(sound_expr, &mut segments);
+  if segments.is_empty() {
+    return None;
   }
-  (!samples.is_empty()).then_some((samples, SAMPLE_RATE))
+  // Use the first segment's sample rate for the whole sound (the common case
+  // is a single segment; mixed-rate Sound objects are rare).
+  let rate = segments[0].1;
+  let mut samples = Vec::new();
+  for (seg, _) in &segments {
+    samples.extend_from_slice(seg);
+  }
+  (!samples.is_empty()).then_some((samples, rate))
 }
 
 /// Encode interleaved 16-bit PCM samples as a little-endian WAV byte stream.
@@ -189,10 +229,10 @@ pub fn expr_to_wav_bytes(expr: &Expr) -> Option<Vec<u8>> {
 /// from raw sample data (Hz).
 pub(crate) const AUDIO_SAMPLE_RATE: f64 = 44100.0;
 
-/// Extract the sample rate from an `Audio[data, opts…]` argument list
-/// (`SampleRate -> r`), falling back to the 44100 Hz default.
-pub(crate) fn audio_sample_rate(args: &[Expr]) -> f64 {
-  for opt in args.iter().skip(1) {
+/// Find a positive `SampleRate -> r` option in an option list, falling back to
+/// `default` when absent or non-positive.
+fn option_sample_rate(opts: &[Expr], default: f64) -> f64 {
+  for opt in opts.iter() {
     if let Expr::Rule {
       pattern,
       replacement,
@@ -208,7 +248,59 @@ pub(crate) fn audio_sample_rate(args: &[Expr]) -> f64 {
       }
     }
   }
-  AUDIO_SAMPLE_RATE
+  default
+}
+
+/// Extract the sample rate from an `Audio[data, opts…]` argument list
+/// (`SampleRate -> r`), falling back to the 44100 Hz default.
+pub(crate) fn audio_sample_rate(args: &[Expr]) -> f64 {
+  option_sample_rate(args.get(1..).unwrap_or(&[]), AUDIO_SAMPLE_RATE)
+}
+
+/// Sample rate `wolframscript` uses for `ListPlay` sampled sounds (Hz).
+const LIST_PLAY_SAMPLE_RATE: f64 = 8000.0;
+
+/// Build the `Sound[SampledSoundList[{samples…}, rate]]` object that
+/// `ListPlay[data, opts…]` produces. `data` is a list of amplitude levels;
+/// wolframscript normalizes them linearly so the minimum maps to -1 and the
+/// maximum to +1 — capped at 0.99999 to stay inside the asymmetric 16-bit
+/// positive range — then samples at `SampleRate` (default 8000 Hz). A constant
+/// (or single-element) signal is silent, yielding all-zero samples. Building
+/// this object makes `ListPlay` render as `-Sound-`, report `Head -> Sound`,
+/// and play the normalized waveform in the visual hosts. Returns `None` when
+/// the first argument is not a non-empty numeric list (so `ListPlay` stays
+/// unevaluated).
+pub fn list_play(args: &[Expr]) -> Option<Expr> {
+  let Expr::List(items) = args.first()? else {
+    return None;
+  };
+  if items.is_empty() {
+    return None;
+  }
+  let mut data = Vec::with_capacity(items.len());
+  for it in items.iter() {
+    data.push(try_eval_to_f64(it)?);
+  }
+  let min = data.iter().copied().fold(f64::INFINITY, f64::min);
+  let max = data.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+  let normalized: Vec<Expr> = if max > min {
+    data
+      .iter()
+      .map(|&x| Expr::Real((2.0 * (x - min) / (max - min) - 1.0).min(0.99999)))
+      .collect()
+  } else {
+    vec![Expr::Real(0.0); data.len()]
+  };
+  let rate =
+    option_sample_rate(&args[1..], LIST_PLAY_SAMPLE_RATE).round() as i128;
+  Some(Expr::FunctionCall {
+    name: "Sound".to_string(),
+    args: vec![Expr::FunctionCall {
+      name: "SampledSoundList".to_string(),
+      args: vec![Expr::List(normalized.into()), Expr::Integer(rate)].into(),
+    }]
+    .into(),
+  })
 }
 
 /// File extensions recognized as audio sources for `Audio["path.ext"]`

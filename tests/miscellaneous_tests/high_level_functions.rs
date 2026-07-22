@@ -4701,6 +4701,55 @@ mod high_level_functions {
     }
 
     #[test]
+    fn test_list_play_renders_as_sound() {
+      // ListPlay builds a Sound object: it renders as -Sound- and reports
+      // Head -> Sound, matching wolframscript.
+      assert_eq!(
+        interpret("ListPlay[{0.1, 0.2, 0.3, -0.1}]").unwrap(),
+        "-Sound-"
+      );
+      assert_eq!(
+        interpret("Head[ListPlay[{0.1, 0.2, 0.3, -0.1}]]").unwrap(),
+        "Sound"
+      );
+    }
+
+    #[test]
+    fn test_export_wav_list_play() {
+      // ListPlay normalizes the amplitudes so the minimum maps to -1 and the
+      // maximum to +1 (capped at 0.99999), then samples at 8000 Hz. Every byte
+      // below is verified against wolframscript's WAV export of the same call:
+      //   {0.1, 0.2, 0.3, -0.1} -> {~0, 0.5, 0.99999, -1.} -> PCM
+      //   0x0000, 0x4000, 0x7FFF, 0x8000.
+      let tmp = std::env::temp_dir().join("woxi_test_list_play.wav");
+      let path = tmp.display().to_string();
+      let result = interpret(&format!(
+        "Export[\"{path}\", ListPlay[{{0.1, 0.2, 0.3, -0.1}}]]"
+      ))
+      .unwrap();
+      assert_eq!(result, path);
+      let frames = assert_wav(&tmp, 8000);
+      assert_eq!(frames, 4, "four samples");
+      let bytes = std::fs::read(&tmp).unwrap();
+      assert_eq!(&bytes[44..52], &[0, 0, 0, 64, 255, 127, 0, 128]);
+      std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn test_export_wav_list_play_sample_rate() {
+      // The SampleRate option flows into the sampled sound.
+      let tmp = std::env::temp_dir().join("woxi_test_list_play_rate.wav");
+      let path = tmp.display().to_string();
+      let result = interpret(&format!(
+        "Export[\"{path}\", ListPlay[{{0.5, -0.5}}, SampleRate -> 44100]]"
+      ))
+      .unwrap();
+      assert_eq!(result, path);
+      assert_wav(&tmp, 44100);
+      std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
     fn test_export_wav_explicit_format() {
       // The format can be given explicitly instead of via the extension.
       let tmp = std::env::temp_dir().join("woxi_test_explicit_wav.bin");
