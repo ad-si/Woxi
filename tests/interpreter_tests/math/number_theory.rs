@@ -4011,6 +4011,21 @@ mod arithmetic_geometric_mean {
     );
   }
 
+  // AGM[a, -a] = 0: negatives-of-each-other collapse the sequence to zero.
+  // Holds for exact integers, machine reals, and symbolic negations, and
+  // preserves exactness (a machine-real argument yields 0.). Verified against
+  // wolframscript. Note the Orderless attribute reorders e.g. {2, -2} first,
+  // which does not affect the result.
+  #[test]
+  fn opposite_args_are_zero() {
+    assert_eq!(interpret("ArithmeticGeometricMean[-1, 1]").unwrap(), "0");
+    assert_eq!(interpret("ArithmeticGeometricMean[-3, 3]").unwrap(), "0");
+    assert_eq!(interpret("ArithmeticGeometricMean[2, -2]").unwrap(), "0");
+    assert_eq!(interpret("ArithmeticGeometricMean[-1., 1.]").unwrap(), "0.");
+    assert_eq!(interpret("ArithmeticGeometricMean[x, -x]").unwrap(), "0");
+    assert_eq!(interpret("ArithmeticGeometricMean[a, -a]").unwrap(), "0");
+  }
+
   #[test]
   fn orderless_sorts_arguments() {
     // The Orderless attribute canonicalizes the argument order.

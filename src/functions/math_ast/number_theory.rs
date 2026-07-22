@@ -5949,6 +5949,26 @@ pub fn arithmetic_geometric_mean_ast(
     return Ok(args[1].clone());
   }
 
+  // AGM[a, -a] = 0: when the two arguments are negatives of each other their
+  // sum vanishes, and the geometric step Sqrt[a*(-a)] together with the mean 0
+  // collapses the whole sequence to zero. This holds for exact, machine-real,
+  // and purely symbolic negations (e.g. AGM[x, -x]). Detect it structurally by
+  // testing whether a + b evaluates to zero, and preserve exactness (a
+  // machine-real argument yields 0. rather than 0), matching wolframscript.
+  if let Ok(sum) =
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![args[0].clone(), args[1].clone()].into(),
+    })
+    && is_zero(&sum)
+  {
+    return Ok(if inexact {
+      Expr::Real(0.0)
+    } else {
+      Expr::Integer(0)
+    });
+  }
+
   // AGM[a, a] = a for equal symbolic atoms (bare symbols and constants such as
   // Pi). Compound equal arguments (e.g. x + 1, Sqrt[2]) stay unevaluated,
   // matching wolframscript; equal numbers are handled by the numeric path

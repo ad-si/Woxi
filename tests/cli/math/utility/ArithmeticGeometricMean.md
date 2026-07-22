@@ -20,3 +20,10 @@ Being `Orderless`, it canonicalizes the order of symbolic arguments:
 $ wo 'ArithmeticGeometricMean[24, 6]'
 ArithmeticGeometricMean[6, 24]
 ```
+
+Arguments that are negatives of each other collapse the sequence to zero:
+
+```scrut
+$ wo 'ArithmeticGeometricMean[x, -x]'
+0
+```
