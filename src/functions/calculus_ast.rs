@@ -15476,6 +15476,51 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return crate::evaluator::evaluate_expr_to_expr(&args[0]);
   }
 
+  // Gamma[x] has a simple pole at x = 0; the direct coefficient path samples
+  // Gamma[0] = ComplexInfinity and fails. Use the identity Gamma[x] = x!/x:
+  // expand the analytic factorial one order higher, then divide by x by
+  // shifting every exponent down one integer power (nmin/nmax -= den, the
+  // coefficient list stays verbatim). Routing the numerator through the
+  // Factorial series keeps the coefficients in wolframscript's canonical form
+  // (e.g. (6*EulerGamma^2 + Pi^2)/12), which the generic `.../x` Laurent
+  // division would otherwise re-fold into (EulerGamma^2 + Pi^2/6)/2.
+  if matches!(&x0, Expr::Integer(0))
+    && let Expr::FunctionCall { name, args: ga } = &args[0]
+    && name == "Gamma"
+    && ga.len() == 1
+    && matches!(&ga[0], Expr::Identifier(n) if *n == var_name)
+  {
+    let fact_series = series_ast(&[
+      Expr::FunctionCall {
+        name: "Factorial".to_string(),
+        args: vec![ga[0].clone()].into(),
+      },
+      Expr::List(
+        vec![ga[0].clone(), Expr::Integer(0), Expr::Integer(order + 1)].into(),
+      ),
+    ])?;
+    if let Expr::FunctionCall { name, args: sd } = &fact_series
+      && name == "SeriesData"
+      && sd.len() == 6
+      && let Expr::Integer(nmin) = &sd[3]
+      && let Expr::Integer(nmax) = &sd[4]
+      && let Expr::Integer(den) = &sd[5]
+    {
+      return Ok(Expr::FunctionCall {
+        name: "SeriesData".to_string(),
+        args: vec![
+          sd[0].clone(),
+          sd[1].clone(),
+          sd[2].clone(),
+          Expr::Integer(nmin - den),
+          Expr::Integer(nmax - den),
+          sd[5].clone(),
+        ]
+        .into(),
+      });
+    }
+  }
+
   // Laurent sums: the direct coefficient path samples the integrand near x0
   // and chokes on a summand with a pole there (e.g. `1/x + 1 + x` yields
   // ComplexInfinity coefficients). Series is linear, so when some summand is

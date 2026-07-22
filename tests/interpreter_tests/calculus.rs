@@ -2234,6 +2234,30 @@ mod series {
     );
   }
 
+  // Gamma[x] has a simple pole at x = 0. The direct coefficient path samples
+  // Gamma[0] = ComplexInfinity and used to return a bogus all-ComplexInfinity
+  // series; expand via Gamma[x] = x!/x instead (the analytic factorial series
+  // one order higher, shifted down one integer power). Orders 0 and 1 match
+  // wolframscript's SeriesData exactly. (Order >= 2 is value-correct but the
+  // interior coefficients inherit the factorial series' form divergence, e.g.
+  // (EulerGamma^2 + Pi^2/6)/2 vs WL's (6*EulerGamma^2 + Pi^2)/12.)
+  #[test]
+  fn series_gamma_pole_at_zero() {
+    assert_eq!(
+      interpret("Series[Gamma[x], {x, 0, 0}]").unwrap(),
+      "SeriesData[x, 0, {1, -EulerGamma}, -1, 1, 1]"
+    );
+    assert_eq!(
+      interpret("Series[Gamma[x], {x, 0, 1}]").unwrap(),
+      "SeriesData[x, 0, {1, -EulerGamma, (6*EulerGamma^2 + Pi^2)/12}, -1, 2, 1]"
+    );
+    // Works with any expansion variable, not just x.
+    assert_eq!(
+      interpret("Series[Gamma[y], {y, 0, 0}]").unwrap(),
+      "SeriesData[y, 0, {1, -EulerGamma}, -1, 1, 1]"
+    );
+  }
+
   // Puiseux (fractional-power) expansion: f = x^(p/q) g(x) expands with den = q,
   // the cofactor g's coefficients interleaved with q-1 zeros. nmax follows the
   // rule max(order*q, nmin) + 1.
