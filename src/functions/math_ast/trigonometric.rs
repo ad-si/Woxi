@@ -2351,12 +2351,21 @@ pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       return Ok(Expr::Integer(0));
     }
-    // Numeric: both are machine reals. Use the exact identity
-    // Erf[b] - Erf[a] = Erfc[a] - Erfc[b]; when both arguments are large and
-    // same-signed, Erf is near +/-1 there, so the direct difference loses
-    // precision to cancellation — the complementary form avoids it.
-    if let (Expr::Real(f0), Expr::Real(f1)) = (&args[0], &args[1]) {
-      let (a, b) = (*f0, *f1);
+    // Numeric: as soon as either argument is inexact, wolframscript
+    // numericizes the whole form (Erf[1, 2.] = Erf[2.] - Erf[1.]), so evaluate
+    // both to f64. Use the exact identity Erf[b] - Erf[a] = Erfc[a] - Erfc[b];
+    // when both arguments are large and same-signed, Erf is near +/-1 there, so
+    // the direct difference loses precision to cancellation — the complementary
+    // form avoids it.
+    let any_inexact =
+      crate::functions::math_ast::contains_inexact_real(&args[0])
+        || crate::functions::math_ast::contains_inexact_real(&args[1]);
+    if any_inexact
+      && let (Some(a), Some(b)) = (
+        crate::functions::math_ast::try_eval_to_f64(&args[0]),
+        crate::functions::math_ast::try_eval_to_f64(&args[1]),
+      )
+    {
       let result = if a >= 0.0 && b >= 0.0 {
         erfc_f64(a) - erfc_f64(b)
       } else if a <= 0.0 && b <= 0.0 {

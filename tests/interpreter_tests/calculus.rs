@@ -4963,6 +4963,25 @@ mod erf {
     );
   }
 
+  // A single inexact argument numericizes the whole two-argument form, even
+  // when the other argument is an exact integer (Erf[1, 2.] = Erf[2.] -
+  // Erf[1.]). Projected to an integer for a full-precision match.
+  #[test]
+  fn erf_two_arg_mixed_exactness_numeric() {
+    assert_eq!(
+      interpret("Round[10^13 Erf[1, 2.]]").unwrap(),
+      "1526214720692"
+    );
+    assert_eq!(
+      interpret("Round[10^13 Erf[1., 2]]").unwrap(),
+      "1526214720692"
+    );
+    assert_eq!(
+      interpret("Round[10^13 Erf[2., 1]]").unwrap(),
+      "-1526214720692"
+    );
+  }
+
   // Wolfram keeps the generalized two-argument Erf symbolic instead of
   // rewriting it to a difference of one-argument Erfs.
   #[test]
