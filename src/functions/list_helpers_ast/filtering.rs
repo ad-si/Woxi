@@ -819,9 +819,16 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
 /// Rational and Complex numbers are atomic for Level / Depth / Cases /
 /// Position purposes (matching Wolfram's AtomQ), even though Woxi stores a
 /// rational as a `Rational[n, d]` call and a complex as a Plus-Times tree.
-/// They must therefore not be descended into when enumerating levels.
+/// They must therefore not be descended into when enumerating levels. The
+/// packed-array objects (SparseArray, ByteArray, NumericArray) are AtomQ too,
+/// so structural traversal must not index into their stored representation
+/// (e.g. Position/Count/Cases on a SparseArray look at no parts).
 fn is_atomic_number(expr: &Expr) -> bool {
-  matches!(expr, Expr::FunctionCall { name, .. } if name == "Rational")
+  matches!(expr, Expr::FunctionCall { name, .. }
+    if name == "Rational"
+      || name == "SparseArray"
+      || name == "ByteArray"
+      || name == "NumericArray")
     || crate::functions::predicate_ast::is_complex_number(expr)
 }
 

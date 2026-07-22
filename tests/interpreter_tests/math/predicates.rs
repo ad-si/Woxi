@@ -1051,6 +1051,42 @@ mod atom_q {
   fn atom_q_numeric_array() {
     assert_eq!(interpret("AtomQ[NumericArray[{1, 2, 3}]]").unwrap(), "True");
   }
+
+  // A SparseArray is atomic too, so structural traversal (Position/Cases/Count/
+  // Level) sees no parts, and Depth reports the dense rank + 1 rather than the
+  // depth of the stored representation. Verified against wolframscript.
+  #[test]
+  fn atom_q_sparse_array() {
+    assert_eq!(
+      interpret("AtomQ[SparseArray[{1 -> 1}, 3]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn sparse_array_atomic_traversal() {
+    assert_eq!(
+      interpret("Position[SparseArray[{1 -> 0, 2 -> 5, 3 -> 0}, 3], 5]")
+        .unwrap(),
+      "{}"
+    );
+    assert_eq!(
+      interpret("Count[SparseArray[{1 -> 1, 2 -> 0, 3 -> 3}, 3], 0]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Cases[SparseArray[{1 -> 1, 2 -> 0, 3 -> 3}, 3], _?Positive]")
+        .unwrap(),
+      "{}"
+    );
+    // Depth is 1 + rank of the dense array (2 for a vector, 3 for a matrix).
+    assert_eq!(interpret("Depth[SparseArray[{1 -> 1}, 3]]").unwrap(), "2");
+    assert_eq!(
+      interpret("Depth[SparseArray[{{1, 1} -> 5}, {2, 2}]]").unwrap(),
+      "3"
+    );
+    assert_eq!(interpret("Depth[LeviCivitaTensor[3]]").unwrap(), "4");
+  }
 }
 
 mod xor_single {

@@ -523,12 +523,14 @@ pub fn atom_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       | Expr::String(_)
       | Expr::Identifier(_)
       | Expr::Constant(_) => true,
-      // Rational[n, d] and Complex[re, im] are atoms in Mathematica
+      // Rational[n, d] and Complex[re, im] are atoms in Mathematica; the packed
+      // array objects (ByteArray, NumericArray, SparseArray) are atoms too.
       Expr::FunctionCall { name, .. }
         if name == "Rational"
           || name == "Complex"
           || name == "ByteArray"
-          || name == "NumericArray" =>
+          || name == "NumericArray"
+          || name == "SparseArray" =>
       {
         true
       }
@@ -2109,6 +2111,16 @@ pub fn depth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       || matches!(expr, Expr::FunctionCall { name, .. } if name == "Rational")
     {
       return 1;
+    }
+    // A SparseArray is an atom, but wolframscript reports its Depth as that of
+    // the dense array it represents: 1 + rank (e.g. 2 for a vector, 3 for a
+    // matrix). Do not descend into its stored {Automatic, dims, default, data}.
+    if let Expr::FunctionCall { name, args: sa } = expr
+      && name == "SparseArray"
+      && sa.len() == 4
+      && let Expr::List(dims) = &sa[1]
+    {
+      return 1 + dims.len() as i128;
     }
     match expr {
       Expr::List(items) => 1 + items.iter().map(calc_depth).max().unwrap_or(0),
