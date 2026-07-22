@@ -1063,6 +1063,25 @@ pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return wrap_with_sqrt_factor(&p_signed, z_expr);
   }
 
+  // Negative integer order: Y_{-n}(z) = (-1)^n * Y_n(z).
+  if let Expr::Integer(n) = n_expr
+    && *n < 0
+  {
+    let pos_n = -n;
+    let positive_call = Expr::FunctionCall {
+      name: "BesselY".to_string(),
+      args: vec![Expr::Integer(pos_n), z_expr.clone()].into(),
+    };
+    return if pos_n.unsigned_abs() & 1 == 0 {
+      Ok(positive_call)
+    } else {
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), positive_call].into(),
+      })
+    };
+  }
+
   Ok(unevaluated("BesselY", args))
 }
 

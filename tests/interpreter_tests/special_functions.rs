@@ -3000,6 +3000,14 @@ mod cases {
   fn bessel_y_2() {
     assert_case(r#"BesselY[1.5, 4]; BesselY[0., 0.]"#, r#"-Infinity"#);
   }
+  // Negative integer order: Y_{-n}(z) = (-1)^n Y_n(z), matching wolframscript.
+  #[test]
+  fn bessel_y_negative_integer_order() {
+    assert_case(r#"BesselY[-1, x]"#, r#"-BesselY[1, x]"#);
+    assert_case(r#"BesselY[-2, x]"#, r#"BesselY[2, x]"#);
+    assert_case(r#"BesselY[-3, x]"#, r#"-BesselY[3, x]"#);
+    assert_case(r#"BesselY[-4, x]"#, r#"BesselY[4, x]"#);
+  }
   #[test]
   fn n_3() {
     assert_case(r#"N[BesselJZero[0, 1]]"#, r#"2.404825557695773"#);
