@@ -3256,6 +3256,114 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             }))
           }
         }
+        // PolyLog[n, z]: D[_, z] = PolyLog[n-1, z] / z.
+        "PolyLog" if args.len() == 2 => {
+          let dn = differentiate(&args[0], var)?;
+          let dz = differentiate(&args[1], var)?;
+          if matches!(dn, Expr::Integer(0)) && matches!(dz, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          if !matches!(dn, Expr::Integer(0)) {
+            return Ok(Expr::FunctionCall {
+              name: "D".to_string(),
+              args: vec![expr.clone(), Expr::Identifier(var.to_string())]
+                .into(),
+            });
+          }
+          let n_minus_1 = crate::functions::math_ast::plus_ast(&[
+            Expr::Integer(-1),
+            args[0].clone(),
+          ])?;
+          let pl =
+            crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+              name: "PolyLog".to_string(),
+              args: vec![n_minus_1, args[1].clone()].into(),
+            })?;
+          let result = simplify(Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: Box::new(pl),
+            right: Box::new(args[1].clone()),
+          });
+          if matches!(dz, Expr::Integer(1)) {
+            Ok(result)
+          } else {
+            Ok(simplify(Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(dz),
+              right: Box::new(result),
+            }))
+          }
+        }
+        // ExpIntegralE[n, z]: D[_, z] = -ExpIntegralE[n-1, z].
+        "ExpIntegralE" if args.len() == 2 => {
+          let dn = differentiate(&args[0], var)?;
+          let dz = differentiate(&args[1], var)?;
+          if matches!(dn, Expr::Integer(0)) && matches!(dz, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          if !matches!(dn, Expr::Integer(0)) {
+            return Ok(Expr::FunctionCall {
+              name: "D".to_string(),
+              args: vec![expr.clone(), Expr::Identifier(var.to_string())]
+                .into(),
+            });
+          }
+          let n_minus_1 = crate::functions::math_ast::plus_ast(&[
+            Expr::Integer(-1),
+            args[0].clone(),
+          ])?;
+          let neg_e =
+            crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![
+                Expr::Integer(-1),
+                Expr::FunctionCall {
+                  name: "ExpIntegralE".to_string(),
+                  args: vec![n_minus_1, args[1].clone()].into(),
+                },
+              ]
+              .into(),
+            })?;
+          if matches!(dz, Expr::Integer(1)) {
+            Ok(neg_e)
+          } else {
+            Ok(simplify(Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(dz),
+              right: Box::new(neg_e),
+            }))
+          }
+        }
+        // AiryAiPrime[z] -> z AiryAi[z], AiryBiPrime[z] -> z AiryBi[z] (the
+        // Airy ODE y'' = z y), each times z'.
+        "AiryAiPrime" | "AiryBiPrime" if args.len() == 1 => {
+          let dz = differentiate(&args[0], var)?;
+          if matches!(dz, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          let base = if name == "AiryAiPrime" {
+            "AiryAi"
+          } else {
+            "AiryBi"
+          };
+          let result = simplify(Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(args[0].clone()),
+            right: Box::new(Expr::FunctionCall {
+              name: base.to_string(),
+              args: vec![args[0].clone()].into(),
+            }),
+          });
+          if matches!(dz, Expr::Integer(1)) {
+            Ok(result)
+          } else {
+            Ok(simplify(Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(dz),
+              right: Box::new(result),
+            }))
+          }
+        }
         // CosIntegral[z] -> Cos[z]/z, SinhIntegral[z] -> Sinh[z]/z,
         // CoshIntegral[z] -> Cosh[z]/z, each times z'.
         "CosIntegral" | "SinhIntegral" | "CoshIntegral" if args.len() == 1 => {

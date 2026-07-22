@@ -5035,6 +5035,36 @@ mod erf {
     );
   }
 
+  // AiryAiPrime/AiryBiPrime satisfy the Airy ODE y'' = z y.
+  #[test]
+  fn d_airy_prime() {
+    assert_eq!(interpret("D[AiryAiPrime[x], x]").unwrap(), "x*AiryAi[x]");
+    assert_eq!(interpret("D[AiryBiPrime[x], x]").unwrap(), "x*AiryBi[x]");
+    assert_eq!(
+      interpret("D[AiryAiPrime[2 x], x]").unwrap(),
+      "4*x*AiryAi[2*x]"
+    );
+  }
+
+  // PolyLog[n, z]' = PolyLog[n-1, z]/z; ExpIntegralE[n, z]' = -ExpIntegralE[n-1, z].
+  #[test]
+  fn d_polylog_and_exp_integral_e() {
+    assert_eq!(interpret("D[PolyLog[2, x], x]").unwrap(), "-(Log[1 - x]/x)");
+    assert_eq!(interpret("D[PolyLog[3, x], x]").unwrap(), "PolyLog[2, x]/x");
+    assert_eq!(
+      interpret("D[PolyLog[n, x], x]").unwrap(),
+      "PolyLog[-1 + n, x]/x"
+    );
+    assert_eq!(
+      interpret("D[ExpIntegralE[n, x], x]").unwrap(),
+      "-ExpIntegralE[-1 + n, x]"
+    );
+    assert_eq!(
+      interpret("D[ExpIntegralE[2, x], x]").unwrap(),
+      "-ExpIntegralE[1, x]"
+    );
+  }
+
   // Ramp[z] is flat below 0 and the identity above, with a corner at 0, so
   // D[Ramp[z], z] = Piecewise[{{0, z < 0}, {1, z > 0}}, Indeterminate].
   // (A composite argument keeps the chain-rule factor; Woxi does not yet
