@@ -4559,6 +4559,71 @@ mod bernstein_basis_piecewise {
   }
 }
 
+// CardinalBSplineBasis[d, x] — the centered cardinal B-spline of degree d,
+// supported on [-(d+1)/2, (d+1)/2]. Values verified against wolframscript.
+mod cardinal_bspline_basis {
+  use super::*;
+
+  #[test]
+  fn exact_rational_values() {
+    // Exact x gives an exact rational.
+    assert_eq!(interpret("CardinalBSplineBasis[2, 0]").unwrap(), "3/4");
+    assert_eq!(interpret("CardinalBSplineBasis[2, 1/2]").unwrap(), "1/2");
+    assert_eq!(interpret("CardinalBSplineBasis[1, 1/3]").unwrap(), "2/3");
+    assert_eq!(interpret("CardinalBSplineBasis[1, 1/4]").unwrap(), "3/4");
+    assert_eq!(interpret("CardinalBSplineBasis[3, 0]").unwrap(), "2/3");
+    assert_eq!(interpret("CardinalBSplineBasis[3, 1]").unwrap(), "1/6");
+    // The support boundary is exactly 0.
+    assert_eq!(interpret("CardinalBSplineBasis[2, 3/2]").unwrap(), "0");
+  }
+
+  #[test]
+  fn real_values() {
+    assert_eq!(interpret("CardinalBSplineBasis[2, 0.5]").unwrap(), "0.5");
+    assert_eq!(interpret("CardinalBSplineBasis[1, 0.5]").unwrap(), "0.5");
+    assert_eq!(
+      interpret("CardinalBSplineBasis[3, 1.5]").unwrap(),
+      "0.020833333333333332"
+    );
+    // Even function: value at -x equals value at x.
+    assert_eq!(interpret("CardinalBSplineBasis[2, -0.5]").unwrap(), "0.5");
+    // At the support edge, a machine real stays a machine real 0.
+    assert_eq!(interpret("CardinalBSplineBasis[2, 1.5]").unwrap(), "0.");
+  }
+
+  #[test]
+  fn degree_zero_is_indicator() {
+    // Degree 0 is the indicator of (-1/2, 1/2], returning an exact integer.
+    assert_eq!(interpret("CardinalBSplineBasis[0, 0.3]").unwrap(), "1");
+    assert_eq!(interpret("CardinalBSplineBasis[0, 0.5]").unwrap(), "1");
+    assert_eq!(interpret("CardinalBSplineBasis[0, 0.7]").unwrap(), "0");
+    assert_eq!(interpret("CardinalBSplineBasis[0, 1/4]").unwrap(), "1");
+  }
+
+  #[test]
+  fn outside_support_is_exact_zero() {
+    // Strictly outside the support the value is an exact integer 0, even for a
+    // machine-real argument (matching wolframscript).
+    assert_eq!(interpret("CardinalBSplineBasis[2, 5.0]").unwrap(), "0");
+    assert_eq!(interpret("CardinalBSplineBasis[2, -5.0]").unwrap(), "0");
+    assert_eq!(interpret("CardinalBSplineBasis[2, 2.0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn symbolic_and_invalid_unevaluated() {
+    // Symbolic x keeps the piecewise form.
+    assert_eq!(
+      interpret("CardinalBSplineBasis[2, x]").unwrap(),
+      "CardinalBSplineBasis[2, x]"
+    );
+    // A negative degree stays unevaluated (with an intnm message).
+    assert_eq!(
+      interpret("CardinalBSplineBasis[-1, 0.3]").unwrap(),
+      "CardinalBSplineBasis[-1, 0.3]"
+    );
+  }
+}
+
 // Special functions are Listable: they thread element-wise over list
 // arguments (with scalar broadcasting), matching wolframscript.
 mod special_function_listability {

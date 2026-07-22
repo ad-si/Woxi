@@ -6285,3 +6285,4 @@ FindShortestCurve,Shortest curve (minimizing geodesic) between two points on a r
 ShortestCurveDistance,Geodesic distance between two points on a region (Circle/Sphere great-circle distance; Euclidean distance in convex solids; length along Line chains),✅,pure,14.3,
 MidDate,Gives the date at the midpoint of a date interval or list of dates,✅,pure,14.2,
 LinearProgramming,Finds a vector minimizing a linear objective subject to linear constraints solved with an exact simplex,✅,pure,1.0,
+CardinalBSplineBasis,Centered cardinal B-spline basis function of a given degree,✅,pure,9.0,

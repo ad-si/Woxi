@@ -3033,6 +3033,93 @@ pub fn dispatch_math_functions(
     "Binomial" if args.len() == 2 => {
       return Some(crate::functions::math_ast::binomial_ast(args));
     }
+    "CardinalBSplineBasis" if args.len() == 2 => {
+      // CardinalBSplineBasis[d, x] is the centered cardinal B-spline of degree
+      // d, supported on [-(d+1)/2, (d+1)/2]:
+      //   (1/d!) * sum_{k=0}^{d+1} (-1)^k Binomial[d+1, k] (x + (d+1)/2 - k)_+^d
+      // where (y)_+^d = y^d for y > 0 and 0 otherwise. Evaluates when d is a
+      // non-negative integer and x is numeric; exact x gives an exact result.
+      let unevaluated = || unevaluated("CardinalBSplineBasis", args);
+      let d = match expr_to_i128(&args[0]) {
+        Some(d) if d >= 0 => d,
+        Some(_) => {
+          // A negative (or otherwise invalid) integer: message + unevaluated.
+          crate::emit_message(&format!(
+            "CardinalBSplineBasis::intnm: Non-negative machine-sized integer expected at position 1 in CardinalBSplineBasis[{}, {}].",
+            crate::syntax::expr_to_string(&args[0]),
+            crate::syntax::expr_to_string(&args[1]),
+          ));
+          return Some(Ok(unevaluated()));
+        }
+        None => return Some(Ok(unevaluated())),
+      };
+      // Symbolic x stays unevaluated (wolframscript keeps the piecewise form).
+      let Some(xf) = crate::functions::math_ast::try_eval_to_f64(&args[1])
+      else {
+        return Some(Ok(unevaluated()));
+      };
+      // Strictly outside the support [-(d+1)/2, (d+1)/2] the value is exactly
+      // 0 (an Integer, even for a machine-real x): wolframscript returns 0, not
+      // 0.. Inside — including the boundary — the alternating sum is evaluated,
+      // which for a machine-real x yields a machine-real result (e.g. 0. at the
+      // support edge).
+      let half = (d + 1) as f64 / 2.0;
+      if xf > half || xf < -half {
+        return Some(Ok(Expr::Integer(0)));
+      }
+      let mut terms: Vec<Expr> = Vec::new();
+      for k in 0..=(d + 1) {
+        // y = x + (d + 1 - 2k)/2
+        let num = d + 1 - 2 * k;
+        let shift = if num % 2 == 0 {
+          Expr::Integer(num / 2)
+        } else {
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(num), Expr::Integer(2)].into(),
+          }
+        };
+        let y = crate::functions::math_ast::plus_ast(&[args[1].clone(), shift])
+          .ok()?;
+        // Include the term only where the truncated power is nonzero (y > 0).
+        // For d >= 1 the term at y == 0 is 0 anyway; for d == 0 it must be
+        // excluded, so the strict `> 0` test is correct for every degree.
+        match crate::functions::math_ast::try_eval_to_f64(&y) {
+          Some(yf) if yf > 0.0 => {}
+          _ => continue,
+        }
+        let coef = crate::functions::binomial_coeff(d + 1, k);
+        let signed = if k % 2 == 0 { coef } else { -coef };
+        let power = if d == 0 {
+          Expr::Integer(1)
+        } else {
+          crate::functions::math_ast::power_ast(&[y, Expr::Integer(d)]).ok()?
+        };
+        terms.push(
+          crate::functions::math_ast::times_ast(&[
+            Expr::Integer(signed),
+            power,
+          ])
+          .ok()?,
+        );
+      }
+      let sum = if terms.is_empty() {
+        Expr::Integer(0)
+      } else {
+        crate::functions::math_ast::plus_ast(&terms).ok()?
+      };
+      // Divide by d! (1 for d = 0).
+      let factorial: i128 = (1..=d).product::<i128>().max(1);
+      let result = crate::functions::math_ast::times_ast(&[
+        sum,
+        Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(1), Expr::Integer(factorial)].into(),
+        },
+      ])
+      .ok()?;
+      return Some(crate::evaluator::evaluate_expr_to_expr(&result));
+    }
     "BernsteinBasis" if args.len() == 3 => {
       // BernsteinBasis[d, n, x] is the piecewise Bernstein basis polynomial:
       //   Binomial[d, n] x^n (1-x)^(d-n)   for 0 <= x <= 1,
