@@ -1905,6 +1905,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "StudentTDistribution" => cdf_student_t(dargs, x),
     "FRatioDistribution" => cdf_f_ratio(dargs, x),
     "WaringYuleDistribution" => cdf_waring_yule(dargs, x),
+    "ZipfDistribution" => cdf_zipf(dargs, x),
     "JohnsonDistribution" => cdf_johnson(dargs, x),
     _ => Ok(unevaluated("CDF", args)),
   }
@@ -16260,6 +16261,67 @@ fn pdf_zipf(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     ),
   };
   Ok(piecewise(vec![(body(&x)?, cond)], int(0)))
+}
+
+/// CDF[ZipfDistribution[r], k] = HarmonicNumber[Floor[k], 1 + r]/Zeta[1 + r] on
+/// k >= 1; CDF[ZipfDistribution[n, r], k] uses HarmonicNumber[n, 1 + r] as the
+/// normalizer on 1 <= k <= n and saturates to 1 for k > n.
+fn cdf_zipf(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| {
+    call("CDF", vec![unevaluated("ZipfDistribution", dargs), x])
+  };
+  let (n, r) = match dargs {
+    [r] => (None, r.clone()),
+    [n, r] => (Some(n.clone()), r.clone()),
+    _ => return Ok(unevaluated(dargs, x)),
+  };
+  let s1 = eval(plus(int(1), r.clone()))?; // 1 + r
+  let norm = match &n {
+    None => call("Zeta", vec![s1.clone()]),
+    Some(n) => call("HarmonicNumber", vec![n.clone(), s1.clone()]),
+  };
+  let hn = |at: Expr| -> Result<Expr, InterpreterError> {
+    let harmonic =
+      call("HarmonicNumber", vec![call("Floor", vec![at]), s1.clone()]);
+    eval(divide(harmonic, norm.clone()))
+  };
+  // Numeric argument: the support is the positive integers (bounded above by n
+  // in the two-parameter form).
+  if let Some(xv) = ms_numeric(&x) {
+    if xv < 1.0 {
+      return Ok(int(0));
+    }
+    if let Some(nv) = n.as_ref().and_then(ms_numeric)
+      && xv >= nv
+    {
+      return Ok(int(1));
+    }
+    return hn(x);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  // Symbolic argument → Piecewise.
+  match &n {
+    None => {
+      let cond = comparison(x.clone(), ComparisonOp::GreaterEqual, int(1));
+      Ok(piecewise(vec![(hn(x.clone())?, cond)], int(0)))
+    }
+    Some(n) => {
+      let cond1 = comparison3(
+        int(1),
+        ComparisonOp::LessEqual,
+        x.clone(),
+        ComparisonOp::LessEqual,
+        n.clone(),
+      );
+      let cond2 = comparison(x.clone(), ComparisonOp::Greater, n.clone());
+      Ok(piecewise(
+        vec![(hn(x.clone())?, cond1), (int(1), cond2)],
+        int(0),
+      ))
+    }
+  }
 }
 
 /// Mean and variance for ZipfDistribution: Zeta ratios with existence

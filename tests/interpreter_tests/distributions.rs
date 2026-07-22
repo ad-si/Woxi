@@ -4936,6 +4936,43 @@ mod zipf_distribution {
   }
 
   #[test]
+  fn cdf_forms() {
+    // One-parameter form: HarmonicNumber[Floor[k], 1 + r]/Zeta[1 + r] on k >= 1.
+    assert_eq!(
+      interpret("CDF[ZipfDistribution[s], k]").unwrap(),
+      "Piecewise[{{HarmonicNumber[Floor[k], 1 + s]/Zeta[1 + s], k >= 1}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[ZipfDistribution[2], 3]").unwrap(),
+      "251/(216*Zeta[3])"
+    );
+    assert_eq!(
+      interpret("CDF[ZipfDistribution[2], 1]").unwrap(),
+      "Zeta[3]^(-1)"
+    );
+    // Below the support (k < 1) the CDF is 0.
+    assert_eq!(interpret("CDF[ZipfDistribution[2], 0]").unwrap(), "0");
+
+    // Two-parameter (bounded) form normalizes by HarmonicNumber[n, 1 + r] and
+    // saturates to 1 for k > n.
+    assert_eq!(
+      interpret("CDF[ZipfDistribution[n, r], k]").unwrap(),
+      "Piecewise[{{HarmonicNumber[Floor[k], 1 + r]/HarmonicNumber[n, 1 + r], \
+       1 <= k <= n}, {1, k > n}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[ZipfDistribution[5, 1], 3]").unwrap(),
+      "4900/5269"
+    );
+    assert_eq!(
+      interpret("CDF[ZipfDistribution[3, 2], 2]").unwrap(),
+      "243/251"
+    );
+    // At and beyond the top of the support the CDF is 1.
+    assert_eq!(interpret("CDF[ZipfDistribution[3, 2], 3]").unwrap(), "1");
+  }
+
+  #[test]
   fn moments_with_existence_thresholds() {
     // Mean needs r > 1, variance r > 2
     assert_eq!(
