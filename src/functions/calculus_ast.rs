@@ -9510,6 +9510,57 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           }
           None
         }
+        // Integration by parts of the exponential/trig integral functions
+        // (argument = x); each is x F[x] plus the elementary ∫ x F'[x]:
+        //   ∫ SinIntegral[x]    = x SinIntegral[x]  + Cos[x]
+        //   ∫ CosIntegral[x]    = x CosIntegral[x]  - Sin[x]
+        //   ∫ SinhIntegral[x]   = x SinhIntegral[x] - Cosh[x]
+        //   ∫ CoshIntegral[x]   = x CoshIntegral[x] - Sinh[x]
+        //   ∫ ExpIntegralEi[x]  = x ExpIntegralEi[x] - E^x
+        "SinIntegral" | "CosIntegral" | "SinhIntegral" | "CoshIntegral"
+        | "ExpIntegralEi"
+          if args.len() == 1 =>
+        {
+          if let Expr::Identifier(n) = &args[0]
+            && n == var
+          {
+            let x = Expr::Identifier(var.to_string());
+            let call = |head: &str, a: Expr| Expr::FunctionCall {
+              name: head.to_string(),
+              args: vec![a].into(),
+            };
+            let neg = |e: Expr| Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(Expr::Integer(-1)),
+              right: Box::new(e),
+            };
+            let correction = match name.as_str() {
+              "SinIntegral" => call("Cos", x.clone()),
+              "CosIntegral" => neg(call("Sin", x.clone())),
+              "SinhIntegral" => neg(call("Cosh", x.clone())),
+              "CoshIntegral" => neg(call("Sinh", x.clone())),
+              _ => neg(Expr::BinaryOp {
+                op: BinaryOperator::Power,
+                left: Box::new(Expr::Constant("E".to_string())),
+                right: Box::new(x.clone()),
+              }),
+            };
+            let x_f = Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(x),
+              right: Box::new(Expr::FunctionCall {
+                name: name.clone(),
+                args: args.clone(),
+              }),
+            };
+            return Some(simplify(Expr::BinaryOp {
+              op: BinaryOperator::Plus,
+              left: Box::new(x_f),
+              right: Box::new(correction),
+            }));
+          }
+          None
+        }
         // Integration by parts of the inverse hyperbolic functions (arg = x):
         //   ∫ ArcSinh[x] = x ArcSinh[x] - Sqrt[1 + x^2]
         //   ∫ ArcCosh[x] = x ArcCosh[x] - Sqrt[-1 + x] Sqrt[1 + x]

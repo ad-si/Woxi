@@ -192,6 +192,36 @@ mod integrate_with_sum {
     );
   }
 
+  // Integration by parts of the exponential/trig integral functions.
+  #[test]
+  fn integrate_exp_trig_integral_functions() {
+    assert_eq!(
+      interpret("Integrate[SinIntegral[x], x]").unwrap(),
+      "Cos[x] + x*SinIntegral[x]"
+    );
+    assert_eq!(
+      interpret("Integrate[CosIntegral[x], x]").unwrap(),
+      "x*CosIntegral[x] - Sin[x]"
+    );
+    assert_eq!(
+      interpret("Integrate[SinhIntegral[x], x]").unwrap(),
+      "-Cosh[x] + x*SinhIntegral[x]"
+    );
+    assert_eq!(
+      interpret("Integrate[CoshIntegral[x], x]").unwrap(),
+      "x*CoshIntegral[x] - Sinh[x]"
+    );
+    assert_eq!(
+      interpret("Integrate[ExpIntegralEi[x], x]").unwrap(),
+      "-E^x + x*ExpIntegralEi[x]"
+    );
+    // ExpIntegralEi round-trips (its correction -E^x cancels cleanly).
+    assert_eq!(
+      interpret("D[Integrate[ExpIntegralEi[x], x], x]").unwrap(),
+      "ExpIntegralEi[x]"
+    );
+  }
+
   // Integration by parts of the inverse hyperbolic functions.
   #[test]
   fn integrate_inverse_hyperbolic() {
