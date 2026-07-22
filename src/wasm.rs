@@ -233,13 +233,6 @@ pub fn get_graphics() -> String {
   crate::get_captured_graphics().unwrap_or_default()
 }
 
-/// Return the captured GraphicsBox expression from the last `evaluate()` call.
-/// Returns an empty string when there is no graphics output.
-#[wasm_bindgen]
-pub fn get_graphicsbox() -> String {
-  crate::get_captured_graphicsbox().unwrap_or_default()
-}
-
 /// Return the playable audio (base64-encoded) from the last `evaluate()`
 /// call, if any. Returns an empty string when there is no sound.
 #[wasm_bindgen]
@@ -254,13 +247,6 @@ pub fn get_sound() -> String {
 #[wasm_bindgen]
 pub fn get_warnings() -> String {
   crate::get_captured_warnings().join("\n")
-}
-
-/// Return SVG rendering of the last text result (with superscripts etc.).
-/// Returns an empty string when there is no output SVG (e.g. for Graphics results).
-#[wasm_bindgen]
-pub fn get_output_svg() -> String {
-  crate::get_captured_output_svg().unwrap_or_default()
 }
 
 /// Clear all interpreter state (variables and function definitions).

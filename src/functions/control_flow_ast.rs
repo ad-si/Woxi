@@ -326,7 +326,7 @@ pub fn quiet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::restore_warnings(snapshot);
   } else if !suppress_msgs.is_empty() {
     // Suppress specific messages: remove only matching entries from the messages buffer
-    let (snap_unimpl, snap_warns, snap_msgs) = snapshot;
+    let (snap_unimpl, snap_msgs) = snapshot;
     // Get current messages state
     let current_msgs = crate::get_captured_messages_raw();
     // Keep only messages that were in the snapshot OR don't match the filter
@@ -338,7 +338,7 @@ pub fn quiet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
       .map(|(_, w)| w)
       .collect();
-    crate::restore_warnings((snap_unimpl, snap_warns, new_msgs));
+    crate::restore_warnings((snap_unimpl, new_msgs));
   }
 
   result

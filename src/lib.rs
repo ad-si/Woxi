@@ -346,11 +346,6 @@ thread_local! {
     static UNIMPLEMENTED_CALLS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
-// Captured warnings (general-purpose, e.g. deprecation notices)
-thread_local! {
-    static CAPTURED_WARNINGS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
-}
-
 // Captured Wolfram-style messages (printed inline, tracked for Check/Quiet interaction)
 thread_local! {
     static CAPTURED_MESSAGES: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
@@ -561,12 +556,9 @@ fn get_captured_stdout() -> String {
   CAPTURED_STDOUT.with(|buffer| buffer.borrow().clone())
 }
 
-/// Clears the captured warnings, messages, and unimplemented calls buffers
+/// Clears the captured messages and unimplemented calls buffers
 fn clear_captured_warnings() {
   UNIMPLEMENTED_CALLS.with(|buffer| {
-    buffer.borrow_mut().clear();
-  });
-  CAPTURED_WARNINGS.with(|buffer| {
     buffer.borrow_mut().clear();
   });
   CAPTURED_MESSAGES.with(|buffer| {
@@ -578,13 +570,6 @@ fn clear_captured_warnings() {
 pub fn capture_unimplemented_call(call_str: &str) {
   UNIMPLEMENTED_CALLS.with(|buffer| {
     buffer.borrow_mut().push(call_str.to_string());
-  });
-}
-
-/// Appends a warning message
-pub fn capture_warning(text: &str) {
-  CAPTURED_WARNINGS.with(|buffer| {
-    buffer.borrow_mut().push(text.to_string());
   });
 }
 
@@ -603,10 +588,6 @@ pub fn get_captured_warnings() -> Vec<String> {
     };
     warnings.push(format!("{} {} not yet implemented in Woxi.", joined, verb));
   }
-
-  CAPTURED_WARNINGS.with(|buffer| {
-    warnings.extend(buffer.borrow().clone());
-  });
 
   // Include messages (used by Check[] to detect message generation)
   CAPTURED_MESSAGES.with(|buffer| {
@@ -631,10 +612,6 @@ fn get_warnings_for_display() -> Vec<String> {
     };
     warnings.push(format!("{} {} not yet implemented in Woxi.", joined, verb));
   }
-
-  CAPTURED_WARNINGS.with(|buffer| {
-    warnings.extend(buffer.borrow().clone());
-  });
 
   warnings
 }
@@ -665,18 +642,16 @@ pub fn pop_quiet() {
 }
 
 /// Snapshot the current state of all warning/message buffers (for Quiet save/restore)
-pub fn snapshot_warnings() -> (Vec<String>, Vec<String>, Vec<String>) {
+pub fn snapshot_warnings() -> (Vec<String>, Vec<String>) {
   let unimpl = UNIMPLEMENTED_CALLS.with(|b| b.borrow().clone());
-  let warns = CAPTURED_WARNINGS.with(|b| b.borrow().clone());
   let msgs = CAPTURED_MESSAGES.with(|b| b.borrow().clone());
-  (unimpl, warns, msgs)
+  (unimpl, msgs)
 }
 
 /// Restore all warning/message buffers to a previous snapshot
-pub fn restore_warnings(snapshot: (Vec<String>, Vec<String>, Vec<String>)) {
+pub fn restore_warnings(snapshot: (Vec<String>, Vec<String>)) {
   UNIMPLEMENTED_CALLS.with(|b| *b.borrow_mut() = snapshot.0);
-  CAPTURED_WARNINGS.with(|b| *b.borrow_mut() = snapshot.1);
-  CAPTURED_MESSAGES.with(|b| *b.borrow_mut() = snapshot.2);
+  CAPTURED_MESSAGES.with(|b| *b.borrow_mut() = snapshot.1);
 }
 
 /// Capture the current evaluation stack trace for the most recent error.

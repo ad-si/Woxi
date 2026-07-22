@@ -14056,7 +14056,7 @@ pub fn residue_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // The internal pole-order probes evaluate at the singularity and would
   // print Power::infy etc.; wolframscript's Residue emits no messages.
-  struct QuietGuard((Vec<String>, Vec<String>, Vec<String>));
+  struct QuietGuard((Vec<String>, Vec<String>));
   impl Drop for QuietGuard {
     fn drop(&mut self) {
       crate::pop_quiet();
