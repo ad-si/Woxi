@@ -7183,6 +7183,124 @@ mod url_decode_tests {
   }
 }
 
+mod url_query_encode_tests {
+  use super::*;
+
+  #[test]
+  fn from_association() {
+    // Spaces become "+"; non-string values render textually.
+    assert_eq!(
+      interpret(r#"URLQueryEncode[<|"a" -> 1, "b" -> "x y"|>]"#).unwrap(),
+      "a=1&b=x+y"
+    );
+  }
+
+  #[test]
+  fn from_rule_list() {
+    assert_eq!(
+      interpret(r#"URLQueryEncode[{"q" -> "hello world", "n" -> 5}]"#).unwrap(),
+      "q=hello+world&n=5"
+    );
+  }
+
+  #[test]
+  fn percent_encodes_reserved_chars() {
+    assert_eq!(
+      interpret(r#"URLQueryEncode[<|"key" -> "a+b/c?d=e&f#g"|>]"#).unwrap(),
+      "key=a%2Bb%2Fc%3Fd%3De%26f%23g"
+    );
+  }
+
+  #[test]
+  fn keeps_unreserved_encodes_the_rest() {
+    // Unreserved set is ALPHA / DIGIT / - _ . ~ ; everything else encoded.
+    assert_eq!(
+      interpret(r#"URLQueryEncode[<|"x" -> "hello world!~-_.*()"|>]"#).unwrap(),
+      "x=hello+world%21~-_.%2A%28%29"
+    );
+  }
+
+  #[test]
+  fn boolean_lowercased() {
+    assert_eq!(
+      interpret(r#"URLQueryEncode[<|"a" -> True|>]"#).unwrap(),
+      "a=true"
+    );
+  }
+
+  #[test]
+  fn empty_association() {
+    assert_eq!(interpret("URLQueryEncode[<||>]").unwrap(), "");
+  }
+
+  #[test]
+  fn non_query_stays_unevaluated() {
+    assert_eq!(
+      interpret(r#"URLQueryEncode["a=b"]"#).unwrap(),
+      "URLQueryEncode[a=b]"
+    );
+  }
+}
+
+mod url_query_decode_tests {
+  use super::*;
+
+  #[test]
+  fn plus_is_space() {
+    assert_eq!(
+      interpret(r#"URLQueryDecode["a=1&b=x+y"]"#).unwrap(),
+      "{a -> 1, b -> x y}"
+    );
+  }
+
+  #[test]
+  fn percent_and_utf8() {
+    assert_eq!(
+      interpret(r#"URLQueryDecode["q=hello%20world&n=5"]"#).unwrap(),
+      "{q -> hello world, n -> 5}"
+    );
+    // %C3%A9 is the UTF-8 encoding of é.
+    assert_eq!(
+      interpret(r#"URLQueryDecode["a=c%C3%A9"]"#).unwrap(),
+      "{a -> cé}"
+    );
+  }
+
+  #[test]
+  fn split_on_first_equals_before_decoding() {
+    // The %3D in the key stays encoded when splitting, then decodes to "=".
+    assert_eq!(
+      interpret(r#"URLQueryDecode["a%3Db=c"]"#).unwrap(),
+      "{a=b -> c}"
+    );
+  }
+
+  #[test]
+  fn missing_value_and_empty() {
+    assert_eq!(
+      interpret(r#"URLQueryDecode["flag"]"#).unwrap(),
+      "{flag -> }"
+    );
+    assert_eq!(interpret(r#"URLQueryDecode[""]"#).unwrap(), "{}");
+  }
+
+  #[test]
+  fn duplicate_keys_kept() {
+    assert_eq!(
+      interpret(r#"URLQueryDecode["a=1&a=2"]"#).unwrap(),
+      "{a -> 1, a -> 2}"
+    );
+  }
+
+  #[test]
+  fn decoded_values_are_strings() {
+    assert_eq!(
+      interpret(r#"Head[URLQueryDecode["a=1"][[1, 2]]]"#).unwrap(),
+      "String"
+    );
+  }
+}
+
 mod string_trim {
   use super::*;
 

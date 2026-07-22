@@ -501,6 +501,12 @@ pub fn dispatch_string_functions(
     "URLDecode" if args.len() == 1 => {
       return Some(crate::functions::string_ast::url_decode_ast(args));
     }
+    "URLQueryEncode" if args.len() == 1 => {
+      return Some(crate::functions::string_ast::url_query_encode_ast(args));
+    }
+    "URLQueryDecode" if args.len() == 1 => {
+      return Some(crate::functions::string_ast::url_query_decode_ast(args));
+    }
     "StringToByteArray" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::string_ast::string_to_byte_array_ast(
         args,

@@ -4306,7 +4306,7 @@ SimplePolygonQ,Tests whether a polygon with numeric vertices is non-self-interse
 SolidRegionQ,,,,11.0,4437
 SystemModelSimulate,,🚫,,11.3,4437
 TrendStyle,,,,8.0,4437
-URLQueryEncode,,,,10.0,4437
+URLQueryEncode,Builds a URL query string from an association or list of rules,✅,pure,10.0,4437
 VertexCoverQ,,,,8.0,4437
 WikipediaSearch,,🚫,,10.0,4437
 WordSearch,,,,2.0,4437
@@ -4511,7 +4511,7 @@ ShowCursorTracker,,🚫,,4.0,4660
 SubsetCases,Finds non-overlapping subsets matching a pattern,✅,pure,12.1,4660
 TraceDialog,,🚫,,2.0,4660
 TypeSpecifier,,,,12.0,4660
-URLQueryDecode,,,,10.0,4660
+URLQueryDecode,Parses a URL query string into a list of key-value rules,✅,pure,10.0,4660
 UnregisterExternalEvaluator,,🚫,,11.2,4660
 WebImage,,🚫,,12.0,4660
 WeierstrassHalfPeriodW2,,,,11.2,4660

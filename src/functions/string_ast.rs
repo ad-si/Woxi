@@ -12028,6 +12028,99 @@ pub fn url_decode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Render a query key/value to its string form before percent-encoding.
+/// Strings pass through verbatim; True/False lower-case (matching WL); other
+/// atoms use their standard textual form.
+fn query_stringify(e: &Expr) -> String {
+  match e {
+    Expr::String(s) => s.clone(),
+    Expr::Identifier(id) if id == "True" => "true".to_string(),
+    Expr::Identifier(id) if id == "False" => "false".to_string(),
+    _ => crate::syntax::expr_to_string(e),
+  }
+}
+
+/// Percent-encode a query component, using "+" for spaces (as URLQueryEncode
+/// does, unlike URLEncode which emits "%20").
+fn query_encode_component(s: &str) -> String {
+  percent_encode(s).replace("%20", "+")
+}
+
+/// URLQueryEncode[assoc | {rules...}] - build a URL query string.
+pub fn url_query_encode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(unevaluated("URLQueryEncode", args));
+  }
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
+
+  // Collect the key/value pairs from either an Association or a list of rules.
+  let pairs: Vec<(Expr, Expr)> = match &evaluated {
+    Expr::Association(entries) => entries.clone(),
+    Expr::List(items) => {
+      let mut out = Vec::with_capacity(items.len());
+      for item in items.iter() {
+        match item {
+          Expr::Rule {
+            pattern,
+            replacement,
+          }
+          | Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } => out.push(((**pattern).clone(), (**replacement).clone())),
+          _ => return Ok(unevaluated("URLQueryEncode", args)),
+        }
+      }
+      out
+    }
+    _ => return Ok(unevaluated("URLQueryEncode", args)),
+  };
+
+  let encoded = pairs
+    .iter()
+    .map(|(k, v)| {
+      format!(
+        "{}={}",
+        query_encode_component(&query_stringify(k)),
+        query_encode_component(&query_stringify(v))
+      )
+    })
+    .collect::<Vec<_>>()
+    .join("&");
+  Ok(Expr::String(encoded))
+}
+
+/// URLQueryDecode[string] - parse a URL query string into a list of rules.
+pub fn url_query_decode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(unevaluated("URLQueryDecode", args));
+  }
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
+  let Expr::String(s) = &evaluated else {
+    return Ok(unevaluated("URLQueryDecode", args));
+  };
+  if s.is_empty() {
+    return Ok(Expr::List(Vec::new().into()));
+  }
+  // Query components separate "+" as space, so restore that before percent
+  // decoding (a literal "+" arrives percent-encoded as "%2B").
+  let decode = |part: &str| percent_decode(&part.replace('+', " "));
+  let rules = s
+    .split('&')
+    .map(|segment| {
+      let (raw_key, raw_val) = match segment.split_once('=') {
+        Some((k, v)) => (k, v),
+        None => (segment, ""),
+      };
+      Expr::Rule {
+        pattern: Box::new(Expr::String(decode(raw_key))),
+        replacement: Box::new(Expr::String(decode(raw_val))),
+      }
+    })
+    .collect::<Vec<_>>();
+  Ok(Expr::List(rules.into()))
+}
+
 fn percent_encode(s: &str) -> String {
   let mut result = String::with_capacity(s.len() * 3);
   for byte in s.as_bytes() {
