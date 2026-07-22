@@ -4542,6 +4542,32 @@ mod nintegrate {
     // ∫₀¹ x² dx = 1/3
     assert_approx("NIntegrate[x^2, {x, 0, 1}]", 1.0 / 3.0, 1e-10);
   }
+
+  // Iterated (multi-dimensional) integration: additional ranges are inner
+  // integration variables, not ignored. Verified against wolframscript.
+  #[test]
+  fn nintegrate_iterated_constant_bounds() {
+    // ∫₀¹∫₀³ 1 dy dx = 3 (previously ignored the y range and gave 1).
+    assert_approx("NIntegrate[1, {x, 0, 1}, {y, 0, 3}]", 3.0, 1e-8);
+    // ∫₀¹∫₀² x y dy dx = (1/2)(4/2) = 1.
+    assert_approx("NIntegrate[x y, {x, 0, 1}, {y, 0, 2}]", 1.0, 1e-8);
+    // ∫₀¹∫₀¹ x² dy dx = 1/3.
+    assert_approx("NIntegrate[x^2, {x, 0, 1}, {y, 0, 1}]", 1.0 / 3.0, 1e-8);
+  }
+
+  #[test]
+  fn nintegrate_iterated_dependent_bounds() {
+    // ∫₀¹∫₀ˣ x y dy dx = ∫₀¹ x³/2 dx = 1/8.
+    assert_approx("NIntegrate[x y, {x, 0, 1}, {y, 0, x}]", 0.125, 1e-8);
+    // Area of the triangle {0<=y<=x<=1} = 1/2.
+    assert_approx("NIntegrate[1, {x, 0, 1}, {y, 0, x}]", 0.5, 1e-8);
+    // Volume of the simplex {0<=z<=y<=x<=1} = 1/6.
+    assert_approx(
+      "NIntegrate[1, {x, 0, 1}, {y, 0, x}, {z, 0, y}]",
+      1.0 / 6.0,
+      1e-7,
+    );
+  }
   #[test]
   fn n_falls_back_to_nintegrate_for_unevaluated_integrate() {
     // Integrate[Abs[Sin[phi]], {phi, 0, 2 Pi}] doesn't reduce

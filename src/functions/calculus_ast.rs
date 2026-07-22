@@ -16688,6 +16688,79 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("NIntegrate", args));
   }
 
+  // Iterated / multi-dimensional integration: any argument after the first
+  // range that is itself a range `{var, lo, hi, …}` (rather than an option
+  // Rule) is an inner integration variable. Integrate over the outer variable
+  // and, for each sampled abscissa, substitute it into the integrand and the
+  // remaining ranges — whose bounds may depend on the outer variable, e.g.
+  // `{y, 0, x}` — before integrating the rest recursively.
+  let is_range = |e: &Expr| {
+    matches!(e, Expr::List(items)
+      if items.len() >= 3 && matches!(&items[0], Expr::Identifier(_)))
+  };
+  if args[2..].iter().any(is_range) {
+    let mut inner_ranges: Vec<Expr> = Vec::new();
+    let mut options: Vec<Expr> = Vec::new();
+    for a in &args[2..] {
+      if is_range(a) && options.is_empty() {
+        inner_ranges.push(a.clone());
+      } else {
+        options.push(a.clone());
+      }
+    }
+    let (Expr::List(outer), true) = (&args[1], is_range(&args[1])) else {
+      return Ok(unevaluated("NIntegrate", args));
+    };
+    let Expr::Identifier(ovar) = &outer[0] else {
+      return Ok(unevaluated("NIntegrate", args));
+    };
+    let ovar = ovar.clone();
+    let olo = crate::evaluator::evaluate_expr_to_expr(&outer[1])
+      .ok()
+      .and_then(|e| expr_to_bound(&e));
+    let ohi = crate::evaluator::evaluate_expr_to_expr(&outer[outer.len() - 1])
+      .ok()
+      .and_then(|e| expr_to_bound(&e));
+    let (Some(olo), Some(ohi)) = (olo, ohi) else {
+      return Ok(unevaluated("NIntegrate", args));
+    };
+    // Only finite outer bounds are handled here; an infinite outer range in an
+    // iterated integral falls through to the unevaluated form.
+    if !olo.is_finite() || !ohi.is_finite() {
+      return Ok(unevaluated("NIntegrate", args));
+    }
+    let integrand0 = args[0].clone();
+    let inner_eval = |x: f64| -> Option<f64> {
+      let x_expr = Expr::Real(x);
+      let mut inner_args: Vec<Expr> =
+        Vec::with_capacity(1 + inner_ranges.len() + options.len());
+      inner_args.push(crate::syntax::substitute_variable(
+        &integrand0,
+        &ovar,
+        &x_expr,
+      ));
+      for r in &inner_ranges {
+        inner_args.push(crate::syntax::substitute_variable(r, &ovar, &x_expr));
+      }
+      inner_args.extend(options.iter().cloned());
+      let result = nintegrate_ast(&inner_args).ok()?;
+      crate::functions::math_ast::try_eval_to_f64(&result)
+        .filter(|v| v.is_finite())
+    };
+    return match adaptive_simpson(
+      &inner_eval,
+      olo,
+      ohi,
+      tolerance,
+      max_recursion,
+    ) {
+      Some(v) => Ok(Expr::Real(v)),
+      None => Err(InterpreterError::EvaluationError(
+        "NIntegrate: failed to converge or integrand is not numeric".into(),
+      )),
+    };
+  }
+
   // Second argument is `{var, a, b}` or, with interior waypoints (e.g. a
   // singularity to break the interval at), `{var, a, b, c, …}`.
   let (var_name, bounds) = match &args[1] {
