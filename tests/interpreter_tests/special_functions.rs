@@ -840,10 +840,38 @@ mod coulomb_wave {
       interpret("Round[10^10 CoulombF[2, -1.0, 4.0]]").unwrap(),
       "3354572346"
     );
-    // Irregular G at nonzero eta has no single-term reduction: still symbolic.
+  }
+
+  // The irregular CoulombG and the outgoing/incoming H1/H2 at nonzero eta
+  // evaluate from the outgoing wave H+ = (-i)^L e^(pi eta/2) e^(i sigma_L)
+  // W_{-i eta, L+1/2}(-2 i rho), with G = Re(H+), H1 = H+, H2 = Conjugate(H+).
+  // Accuracy is limited by WhittakerW (~9 digits), so a 10^7 projection is used.
+  #[test]
+  fn nonzero_eta_irregular_numeric() {
     assert_eq!(
-      interpret("CoulombG[0, 1.0, 2.0]").unwrap(),
-      "CoulombG[0, 1., 2.]"
+      interpret("Round[10^7 CoulombG[0, 1.0, 2.0]]").unwrap(),
+      "12757788"
+    );
+    assert_eq!(
+      interpret("Round[10^7 CoulombG[1, 0.5, 3.0]]").unwrap(),
+      "5104848"
+    );
+    assert_eq!(
+      interpret("Round[10^7 CoulombG[2, -1.0, 4.0]]").unwrap(),
+      "-9081918"
+    );
+    // H1 = G + i F, H2 = G - i F.
+    assert_eq!(
+      interpret("Round[10^7 Re[CoulombH1[0, 1.0, 2.0]]]").unwrap(),
+      "12757788"
+    );
+    assert_eq!(
+      interpret("Round[10^7 Im[CoulombH1[0, 1.0, 2.0]]]").unwrap(),
+      "6617816"
+    );
+    assert_eq!(
+      interpret("Round[10^7 Im[CoulombH2[0, 1.0, 2.0]]]").unwrap(),
+      "-6617816"
     );
   }
 }

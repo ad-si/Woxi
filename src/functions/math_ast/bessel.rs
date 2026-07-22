@@ -1246,19 +1246,38 @@ fn coulomb_wave_reduce(
   let eta_zero = matches!(eta, Expr::Integer(0))
     || matches!(eta, Expr::Real(f) if *f == 0.0);
   if !eta_zero {
-    // Nonzero eta (the genuine Coulomb regime). The REGULAR function CoulombF
-    // with a non-negative integer order and numeric arguments (at least one
-    // inexact) evaluates via the confluent-hypergeometric form; G/H1/H2 have no
-    // such single-term reduction and stay symbolic.
-    if matches!(kind, CoulombKind::F)
-      && let Some(l_int) = expr_to_i128(l)
+    // Nonzero eta (the genuine Coulomb regime). With a non-negative integer
+    // order and numeric arguments (at least one inexact), evaluate numerically.
+    // The regular F uses its confluent-hypergeometric form; the irregular G and
+    // the outgoing/incoming H1/H2 derive from the outgoing wave
+    //   H+ = (-i)^L e^(pi eta/2) e^(i sigma_L) W_{-i eta, L+1/2}(-2 i rho)
+    // with sigma_L = Arg[Gamma[L+1+i eta]]. Then G = Re(H+), H1 = H+,
+    // H2 = Conjugate(H+).
+    if let Some(l_int) = expr_to_i128(l)
       && l_int >= 0
       && (crate::functions::math_ast::contains_inexact_real(eta)
         || crate::functions::math_ast::contains_inexact_real(z))
       && crate::functions::math_ast::try_eval_to_f64(eta).is_some()
       && crate::functions::math_ast::try_eval_to_f64(z).is_some()
     {
-      return coulomb_f_numeric(l_int, eta, z);
+      let fc = |name: &str, a: Vec<Expr>| Expr::FunctionCall {
+        name: name.to_string(),
+        args: a.into(),
+      };
+      return match kind {
+        CoulombKind::F => coulomb_f_numeric(l_int, eta, z),
+        CoulombKind::G => {
+          let hplus = coulomb_hplus_expr(l_int, eta, z);
+          crate::evaluator::evaluate_expr_to_expr(&fc("Re", vec![hplus]))
+        }
+        CoulombKind::H1 => crate::evaluator::evaluate_expr_to_expr(
+          &coulomb_hplus_expr(l_int, eta, z),
+        ),
+        CoulombKind::H2 => {
+          let hplus = coulomb_hplus_expr(l_int, eta, z);
+          crate::evaluator::evaluate_expr_to_expr(&fc("Conjugate", vec![hplus]))
+        }
+      };
     }
     return uneval();
   }
@@ -1319,6 +1338,73 @@ fn coulomb_wave_reduce(
     args: factors.into(),
   };
   crate::evaluator::evaluate_expr_to_expr(&result)
+}
+
+/// The outgoing Coulomb wave H+_L(eta, rho) = G_L + i F_L, as an (unevaluated)
+/// expression:
+///   H+ = (-i)^L e^(pi eta/2) e^(i sigma_L) W_{-i eta, L+1/2}(-2 i rho)
+/// with sigma_L = Arg[Gamma[L+1+i eta]] the Coulomb phase shift. G = Re(H+),
+/// H1 = H+, H2 = Conjugate(H+). Uses the evaluator's complex WhittakerW/Gamma.
+fn coulomb_hplus_expr(l: i128, eta: &Expr, rho: &Expr) -> Expr {
+  let fc = |name: &str, a: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: a.into(),
+  };
+  let i_unit = Expr::Identifier("I".to_string());
+  // (-i)^L
+  let neg_i_pow = fc(
+    "Power",
+    vec![
+      fc("Times", vec![Expr::Integer(-1), i_unit.clone()]),
+      Expr::Integer(l),
+    ],
+  );
+  // e^(pi eta / 2)
+  let exp_norm = fc(
+    "Exp",
+    vec![fc(
+      "Times",
+      vec![
+        fc("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+        Expr::Constant("Pi".to_string()),
+        eta.clone(),
+      ],
+    )],
+  );
+  // e^(i sigma_L), sigma_L = Arg[Gamma[L+1 + i eta]]
+  let sigma = fc(
+    "Arg",
+    vec![fc(
+      "Gamma",
+      vec![fc(
+        "Plus",
+        vec![
+          Expr::Integer(l + 1),
+          fc("Times", vec![i_unit.clone(), eta.clone()]),
+        ],
+      )],
+    )],
+  );
+  let exp_phase = fc("Exp", vec![fc("Times", vec![i_unit.clone(), sigma])]);
+  // WhittakerW[-i eta, L+1/2, -2 i rho]
+  let whittaker = fc(
+    "WhittakerW",
+    vec![
+      fc(
+        "Times",
+        vec![Expr::Integer(-1), i_unit.clone(), eta.clone()],
+      ),
+      fc(
+        "Plus",
+        vec![
+          Expr::Integer(l),
+          fc("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+        ],
+      ),
+      fc("Times", vec![Expr::Integer(-2), i_unit, rho.clone()]),
+    ],
+  );
+  fc("Times", vec![neg_i_pow, exp_norm, exp_phase, whittaker])
 }
 
 /// Numeric CoulombF[L, eta, rho] for a non-negative integer order L and real
