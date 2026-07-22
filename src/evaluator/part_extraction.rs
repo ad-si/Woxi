@@ -343,13 +343,15 @@ pub fn extract_part_ast(
     return extract_part_ast(&flat, index);
   }
 
-  // A 1-D SparseArray indexed by an integer yields the scalar entry at that
-  // position. (Spans/higher-rank keep sub-arrays sparse and fall through.)
-  if matches!(index, Expr::Integer(_) | Expr::BigInteger(_))
-    && let Expr::FunctionCall { name, args: sa } = expr
+  // A SparseArray indexed with Part is densified, then the part is taken from
+  // the dense nested list. This covers every rank and index form (a single
+  // integer, a multi-index chain like [[1, 2, 3]], spans, All, ...); without it
+  // a higher-rank SparseArray would be treated as an ordinary expression and
+  // Part would wrongly index into its stored {Automatic, dims, default, data}
+  // arguments (e.g. [[2, 2]] returning the second dimension).
+  if let Expr::FunctionCall { name, args: sa } = expr
     && name == "SparseArray"
     && sa.len() == 4
-    && matches!(&sa[1], Expr::List(d) if d.len() == 1)
   {
     let dense = crate::functions::list_helpers_ast::sparse_array_ast(sa)?;
     if matches!(&dense, Expr::List(_)) {

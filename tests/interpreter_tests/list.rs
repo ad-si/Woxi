@@ -10913,6 +10913,52 @@ mod array_reshape {
 mod sparse_array_list_ops {
   use super::*;
 
+  // Part with a full multi-index into a higher-rank SparseArray yields the
+  // scalar entry (densifying under the hood). Previously the SparseArray was
+  // treated as an ordinary expression and Part wrongly indexed its stored
+  // {Automatic, dims, default, data} arguments. Verified against wolframscript.
+  #[test]
+  fn multidimensional_part_scalar() {
+    // Levi-Civita symbol values.
+    assert_eq!(interpret("LeviCivitaTensor[3][[1, 2, 3]]").unwrap(), "1");
+    assert_eq!(interpret("LeviCivitaTensor[3][[2, 1, 3]]").unwrap(), "-1");
+    assert_eq!(interpret("LeviCivitaTensor[3][[1, 1, 1]]").unwrap(), "0");
+    // A stored entry and a default (zero) entry of a 2-D SparseArray.
+    assert_eq!(
+      interpret("SparseArray[{{1, 1} -> 5, {2, 2} -> 7}, {2, 2}][[1, 1]]")
+        .unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret("SparseArray[{{1, 1} -> 5}, {2, 2}][[2, 2]]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("SparseArray[{{1, 2} -> 9, {3, 1} -> 4}, {3, 3}][[3, 1]]")
+        .unwrap(),
+      "4"
+    );
+    // Sparse identity matrix element access.
+    assert_eq!(
+      interpret("IdentityMatrix[3, SparseArray][[2, 2]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("IdentityMatrix[3, SparseArray][[1, 2]]").unwrap(),
+      "0"
+    );
+  }
+
+  // A single integer index into a 1-D SparseArray still returns the scalar.
+  #[test]
+  fn one_dimensional_part_scalar() {
+    assert_eq!(
+      interpret("SparseArray[{1 -> 5, 3 -> 9}, 4][[3]]").unwrap(),
+      "9"
+    );
+    assert_eq!(interpret("SparseArray[{1 -> 5}, 4][[2]]").unwrap(), "0");
+  }
+
   #[test]
   fn take_drop() {
     assert_eq!(
