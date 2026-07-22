@@ -2163,6 +2163,14 @@ pub fn dispatch_math_functions(
       return Some(crate::functions::math_ast::arccsc_degrees_ast(args));
     }
     "Sinc" if args.len() == 1 => {
+      // Sinc is even: Sinc[-x] = Sinc[x]. Fold the negation before the Sin[x]/x
+      // rewrite below (Sin[-x] = -Sin[x] would otherwise expand it incorrectly).
+      if let Some(pos) = crate::functions::math_ast::strip_negation(&args[0]) {
+        return Some(crate::evaluator::evaluate_function_call_ast(
+          "Sinc",
+          &[pos],
+        ));
+      }
       // Sinc[0] = 1. An inexact zero gives the machine real 1., not the exact
       // integer 1.
       match &args[0] {
@@ -2197,14 +2205,27 @@ pub fn dispatch_math_functions(
         }
         _ => {}
       }
-      // For numeric/exact args, compute Sin[x]/x
+      // Expand to Sin[x]/x only when Sin[x] evaluated to a closed form with no
+      // residual Sin — i.e. a genuine value (number/radical) as for Sinc[Pi/2]
+      // or Sinc[2 Pi]. When Sin merely rewrites to another symbolic form still
+      // containing a Sin (e.g. Sin[Pi + x] = -Sin[x]), wolframscript keeps
+      // Sinc[x] symbolic, so leave it unevaluated.
+      fn contains_sin(e: &Expr) -> bool {
+        match e {
+          Expr::FunctionCall { name, args } => {
+            name == "Sin" || args.iter().any(contains_sin)
+          }
+          Expr::BinaryOp { left, right, .. } => {
+            contains_sin(left) || contains_sin(right)
+          }
+          Expr::UnaryOp { operand, .. } => contains_sin(operand),
+          _ => false,
+        }
+      }
       let sin_result = crate::functions::math_ast::sin_ast(args);
       match sin_result {
         Ok(ref sin_val) => {
-          // Only evaluate if Sin actually computed to a value (not symbolic Sin[x])
-          let is_symbolic = matches!(sin_val,
-            Expr::FunctionCall { name, .. } if name == "Sin");
-          if !is_symbolic {
+          if !contains_sin(sin_val) {
             let div_expr = Expr::BinaryOp {
               op: BinaryOperator::Divide,
               left: Box::new(sin_val.clone()),

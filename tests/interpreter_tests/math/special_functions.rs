@@ -1,5 +1,38 @@
 use super::*;
 
+mod sinc {
+  use super::*;
+
+  // Sinc is even: Sinc[-x] = Sinc[x]. It must NOT expand to Sin[x]/x for
+  // symbolic arguments (a regression where Sin[-x] = -Sin[x] tricked the
+  // Sin[x]/x rewrite).
+  #[test]
+  fn even_parity_stays_symbolic() {
+    assert_eq!(interpret("Sinc[x]").unwrap(), "Sinc[x]");
+    assert_eq!(interpret("Sinc[-x]").unwrap(), "Sinc[x]");
+    assert_eq!(interpret("Sinc[-2 x]").unwrap(), "Sinc[2*x]");
+    assert_eq!(interpret("Sinc[-3]").unwrap(), "Sinc[3]");
+    assert_eq!(interpret("Sinc[-1/2 x]").unwrap(), "Sinc[x/2]");
+    // Sin[Pi + x] = -Sin[x] must not trigger the expansion either.
+    assert_eq!(interpret("Sinc[Pi + x]").unwrap(), "Sinc[Pi + x]");
+    // Numeric args with no closed-form Sin stay symbolic.
+    assert_eq!(interpret("Sinc[2]").unwrap(), "Sinc[2]");
+    assert_eq!(interpret("Sinc[1/2]").unwrap(), "Sinc[1/2]");
+  }
+
+  // Sinc expands to Sin[x]/x only when Sin evaluates to a closed-form value.
+  #[test]
+  fn closed_form_values() {
+    assert_eq!(interpret("Sinc[0]").unwrap(), "1");
+    assert_eq!(interpret("Sinc[Pi/2]").unwrap(), "2/Pi");
+    assert_eq!(interpret("Sinc[Pi/3]").unwrap(), "(3*Sqrt[3])/(2*Pi)");
+    assert_eq!(interpret("Sinc[2 Pi]").unwrap(), "0");
+    assert_eq!(interpret("Sinc[Pi]").unwrap(), "0");
+    assert_eq!(interpret("Sinc[Infinity]").unwrap(), "0");
+    assert_eq!(interpret("Sinc[-Infinity]").unwrap(), "0");
+  }
+}
+
 mod gudermannian {
   use super::*;
 
