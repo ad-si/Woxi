@@ -851,6 +851,7 @@ pub fn quantile_distribution_closed_form(
     "BinomialDistribution"
     | "PoissonDistribution"
     | "GeometricDistribution"
+    | "NegativeBinomialDistribution"
     | "BernoulliDistribution"
     | "DiscreteUniformDistribution" => {
       quantile_discrete(dist_name, dargs, q, q_num)
@@ -978,6 +979,7 @@ fn discrete_support(
     }
     "PoissonDistribution" if dargs.len() == 1 => Some((0, None)),
     "GeometricDistribution" if dargs.len() == 1 => Some((0, None)),
+    "NegativeBinomialDistribution" if dargs.len() == 2 => Some((0, None)),
     "BernoulliDistribution" if dargs.len() == 1 => Some((0, Some(1))),
     "DiscreteUniformDistribution" if dargs.len() == 1 => match &dargs[0] {
       Expr::List(b) if b.len() == 2 => {
@@ -1855,6 +1857,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "FirstPassageTimeDistribution" => cdf_first_passage(dargs, x),
     "BernoulliDistribution" => cdf_bernoulli(dargs, x),
     "BinomialDistribution" => cdf_binomial(dargs, x),
+    "NegativeBinomialDistribution" => cdf_negative_binomial(dargs, x),
     "InverseGammaDistribution" => cdf_inverse_gamma(dargs, x),
     "GammaDistribution" => cdf_gamma(dargs, x),
     "BetaDistribution" => cdf_beta(dargs, x),
@@ -2086,6 +2089,27 @@ fn cdf_geometric(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let one_minus_p = minus(int(1), p);
   let floor_k_plus_1 = plus(call("Floor", vec![x.clone()]), int(1));
   let value = minus(int(1), power(one_minus_p, floor_k_plus_1));
+  let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// CDF[NegativeBinomialDistribution[n, p], k] =
+///   Piecewise[{{BetaRegularized[p, n, 1 + Floor[k]], k >= 0}}, 0]
+/// (the regularized incomplete beta form; collapses to the exact rational at
+/// integer points and stays symbolic otherwise).
+fn cdf_negative_binomial(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "NegativeBinomialDistribution expects 2 arguments".into(),
+    ));
+  }
+  let n = dargs[0].clone();
+  let p = dargs[1].clone();
+  let floor_k = call("Floor", vec![x.clone()]);
+  let value = call("BetaRegularized", vec![p, n, plus(int(1), floor_k)]);
   let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
   eval(piecewise(vec![(value, cond)], int(0)))
 }

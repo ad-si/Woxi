@@ -5466,6 +5466,102 @@ mod binomial_distribution_cdf {
   }
 }
 
+mod negative_binomial_distribution_cdf {
+  use super::*;
+
+  // CDF[NegativeBinomialDistribution[n, p], k] = BetaRegularized[p, n, 1+Floor[k]].
+  #[test]
+  fn exact_values() {
+    assert_eq!(
+      interpret("CDF[NegativeBinomialDistribution[3, 1/2], 2]").unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("CDF[NegativeBinomialDistribution[3, 1/2], 1]").unwrap(),
+      "5/16"
+    );
+    // Non-integer k floors first.
+    assert_eq!(
+      interpret("CDF[NegativeBinomialDistribution[3, 1/2], 5/2]").unwrap(),
+      "1/2"
+    );
+  }
+
+  // Below 0 the CDF is 0; the symbolic form is the regularized-beta piecewise.
+  #[test]
+  fn below_support_and_symbolic() {
+    assert_eq!(
+      interpret("CDF[NegativeBinomialDistribution[3, 1/2], -1]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("CDF[NegativeBinomialDistribution[n, p], k]").unwrap(),
+      "Piecewise[{{BetaRegularized[p, n, 1 + Floor[k]], k >= 0}}, 0]"
+    );
+  }
+
+  // CDF and PDF are consistent: F(k) - F(k-1) = f(k).
+  #[test]
+  fn consistent_with_pdf() {
+    assert_eq!(
+      interpret(
+        "CDF[NegativeBinomialDistribution[5, 2/3], 3] \
+         - CDF[NegativeBinomialDistribution[5, 2/3], 2] \
+         == PDF[NegativeBinomialDistribution[5, 2/3], 3]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
+mod negative_binomial_distribution_quantile {
+  use super::*;
+
+  // Quantile is the smallest k with CDF(k) >= q; Median is the 1/2 quantile.
+  #[test]
+  fn quantile_and_median() {
+    assert_eq!(
+      interpret("Quantile[NegativeBinomialDistribution[3, 1/2], 1/2]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("Quantile[NegativeBinomialDistribution[3, 1/2], 9/10]")
+        .unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret("Quantile[NegativeBinomialDistribution[5, 2/3], 1/4]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Quantile[NegativeBinomialDistribution[5, 2/3], 3/4]").unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret("Median[NegativeBinomialDistribution[3, 1/2]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("Median[NegativeBinomialDistribution[10, 3/10]]").unwrap(),
+      "22"
+    );
+  }
+
+  // q = 0 gives the support minimum; q = 1 gives Infinity (unbounded support).
+  #[test]
+  fn edges() {
+    assert_eq!(
+      interpret("Quantile[NegativeBinomialDistribution[3, 1/2], 0]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Quantile[NegativeBinomialDistribution[3, 1/2], 1]").unwrap(),
+      "Infinity"
+    );
+  }
+}
+
 mod discrete_quantile {
   use super::*;
 
