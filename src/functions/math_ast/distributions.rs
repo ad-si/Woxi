@@ -853,6 +853,7 @@ pub fn quantile_distribution_closed_form(
     | "GeometricDistribution"
     | "NegativeBinomialDistribution"
     | "PascalDistribution"
+    | "BetaBinomialDistribution"
     | "BernoulliDistribution"
     | "DiscreteUniformDistribution" => {
       quantile_discrete(dist_name, dargs, q, q_num)
@@ -984,6 +985,10 @@ fn discrete_support(
     // Pascal support starts at the number of successes n.
     "PascalDistribution" if dargs.len() == 2 => {
       Some((as_int(&dargs[0])?, None))
+    }
+    // BetaBinomialDistribution[a, b, n] has finite support 0..n.
+    "BetaBinomialDistribution" if dargs.len() == 3 => {
+      Some((0, Some(as_int(&dargs[2])?)))
     }
     "BernoulliDistribution" if dargs.len() == 1 => Some((0, Some(1))),
     "DiscreteUniformDistribution" if dargs.len() == 1 => match &dargs[0] {

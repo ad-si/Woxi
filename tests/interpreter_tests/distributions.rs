@@ -3287,6 +3287,40 @@ mod beta_binomial_distribution {
       "1"
     );
   }
+
+  // Quantile is the smallest k in 0..n with CDF(k) >= q; Median is the 1/2
+  // quantile. Support is finite, so q = 1 gives n (not Infinity).
+  #[test]
+  fn quantile_and_median() {
+    assert_eq!(
+      interpret("Quantile[BetaBinomialDistribution[1, 2, 10], 1/2]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("Quantile[BetaBinomialDistribution[1, 2, 10], 9/10]").unwrap(),
+      "7"
+    );
+    assert_eq!(
+      interpret("Quantile[BetaBinomialDistribution[2, 3, 8], 1/4]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("Median[BetaBinomialDistribution[1, 2, 10]]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn quantile_edges() {
+    assert_eq!(
+      interpret("Quantile[BetaBinomialDistribution[1, 2, 10], 0]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Quantile[BetaBinomialDistribution[1, 2, 10], 1]").unwrap(),
+      "10"
+    );
+  }
 }
 
 mod beta_prime_distribution {
