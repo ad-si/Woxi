@@ -3384,9 +3384,9 @@ fn handle_event(
           | keyboard::key::Named::ArrowUp
           | keyboard::key::Named::Enter,
         ) = key.as_ref()
-        {
-          return Some(Message::KeyPressed(key, modifiers));
-        }
+      {
+        return Some(Message::KeyPressed(key, modifiers));
+      }
     }
 
     // Ctrl shortcuts for text editing
@@ -5464,9 +5464,7 @@ async fn export_pdf(
           &mut y,
           trimmed,
           margin,
-          24.0,
-          "bold",
-          "sans-serif",
+          (24.0, "bold", "sans-serif"),
           "#000",
           30.0,
         );
@@ -5478,9 +5476,7 @@ async fn export_pdf(
           &mut y,
           trimmed,
           margin,
-          16.0,
-          "normal",
-          "sans-serif",
+          (16.0, "normal", "sans-serif"),
           "#555",
           22.0,
         );
@@ -5493,9 +5489,7 @@ async fn export_pdf(
           &mut y,
           trimmed,
           margin,
-          20.0,
-          "bold",
-          "sans-serif",
+          (20.0, "bold", "sans-serif"),
           "#000",
           26.0,
         );
@@ -5508,9 +5502,7 @@ async fn export_pdf(
           &mut y,
           trimmed,
           margin,
-          17.0,
-          "bold",
-          "sans-serif",
+          (17.0, "bold", "sans-serif"),
           "#000",
           22.0,
         );
@@ -5523,9 +5515,7 @@ async fn export_pdf(
           &mut y,
           trimmed,
           margin,
-          18.0,
-          "bold",
-          "sans-serif",
+          (18.0, "bold", "sans-serif"),
           "#000",
           24.0,
         );
@@ -5538,9 +5528,7 @@ async fn export_pdf(
           &mut y,
           trimmed,
           margin,
-          15.0,
-          "bold",
-          "sans-serif",
+          (15.0, "bold", "sans-serif"),
           "#000",
           20.0,
         );
@@ -5553,9 +5541,7 @@ async fn export_pdf(
           &mut y,
           trimmed,
           margin,
-          13.0,
-          "bold",
-          "sans-serif",
+          (13.0, "bold", "sans-serif"),
           "#000",
           18.0,
         );
@@ -5568,9 +5554,7 @@ async fn export_pdf(
           &mut y,
           &wrapped,
           margin,
-          12.0,
-          "normal",
-          "serif",
+          (12.0, "normal", "serif"),
           "#000",
           16.0,
         );
@@ -5583,9 +5567,7 @@ async fn export_pdf(
           &mut y,
           &format!("• {wrapped}"),
           margin + 8.0,
-          12.0,
-          "normal",
-          "serif",
+          (12.0, "normal", "serif"),
           "#000",
           16.0,
         );
@@ -5598,9 +5580,7 @@ async fn export_pdf(
           &mut y,
           &format!("◦ {wrapped}"),
           margin + 20.0,
-          12.0,
-          "normal",
-          "serif",
+          (12.0, "normal", "serif"),
           "#000",
           16.0,
         );
@@ -5618,10 +5598,14 @@ async fn export_pdf(
           block_h,
         );
         y += 10.0;
+        let x = margin;
+        let (font_size, font_weight, font_family) =
+          (11.0, "normal", "Atkinson Hyperlegible Mono, monospace");
+        let fill = "#333";
         for line in &lines {
           let _ = write!(
             elements,
-            r##"<text x="{margin}" y="{y}" font-size="11" font-family="Atkinson Hyperlegible Mono, monospace" fill="#333">{}</text>"##,
+            r##"<text x="{x}" y="{y}" font-size="{font_size}" font-weight="{font_weight}" font-family="{font_family}" fill="{fill}">{}</text>"##,
             escape_xml(line),
           );
           y += 14.0;
@@ -5640,9 +5624,7 @@ async fn export_pdf(
             &mut y,
             cleaned,
             margin,
-            11.0,
-            "normal",
-            "Atkinson Hyperlegible Mono, monospace",
+            (11.0, "normal", "Atkinson Hyperlegible Mono, monospace"),
             "#666",
             14.0,
           );
@@ -5661,9 +5643,7 @@ async fn export_pdf(
             &mut y,
             s,
             margin,
-            11.0,
-            "normal",
-            "Atkinson Hyperlegible Mono, monospace",
+            (11.0, "normal", "Atkinson Hyperlegible Mono, monospace"),
             "#888",
             14.0,
           );
@@ -5698,9 +5678,7 @@ async fn export_pdf(
             &mut y,
             s,
             margin,
-            11.0,
-            "normal",
-            "Atkinson Hyperlegible Mono, monospace",
+            (11.0, "normal", "Atkinson Hyperlegible Mono, monospace"),
             "#666",
             14.0,
           );
@@ -5772,13 +5750,12 @@ fn write_text_lines(
   y: &mut f64,
   text: &str,
   x: f64,
-  font_size: f64,
-  font_weight: &str,
-  font_family: &str,
+  font: (f64, &str, &str),
   fill: &str,
   line_height: f64,
 ) {
   use std::fmt::Write;
+  let (font_size, font_weight, font_family) = font;
   for line in text.lines() {
     let _ = write!(
       out,
