@@ -749,15 +749,17 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       };
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
-    // Median[dist] = Quantile[dist, 1/2]; delegate to the closed-form quantile
-    // for the gamma family. (BetaDistribution is handled by an earlier arm.)
-    "GammaDistribution" | "ChiSquareDistribution" => {
+    // Median[dist] = Quantile[dist, 1/2]. Any distribution not matched by a
+    // specific arm above (the gamma family, the discrete BinomialDistribution /
+    // PoissonDistribution / GeometricDistribution / DiscreteUniformDistribution,
+    // GumbelDistribution, FRatioDistribution, …) delegates to the closed-form
+    // 1/2 quantile, which wolframscript uses to define the median.
+    _ => {
       let half = crate::functions::math_ast::make_rational(1, 2);
       crate::functions::math_ast::quantile_distribution_closed_form(
         name, dargs, &half,
       )
     }
-    _ => None,
   }
 }
 

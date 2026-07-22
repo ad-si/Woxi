@@ -2040,6 +2040,52 @@ mod gamma_family_quantile {
     );
   }
 
+  // Median of a discrete distribution is the smallest m with CDF(m) >= 1/2,
+  // i.e. Quantile[dist, 1/2]; these previously stayed unevaluated.
+  #[test]
+  fn discrete_median() {
+    assert_eq!(
+      interpret("Median[BinomialDistribution[10, 1/2]]").unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret("Median[BinomialDistribution[9, 1/3]]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("Median[BinomialDistribution[20, 3/10]]").unwrap(),
+      "6"
+    );
+    assert_eq!(interpret("Median[PoissonDistribution[3]]").unwrap(), "3");
+    assert_eq!(interpret("Median[PoissonDistribution[10]]").unwrap(), "10");
+    assert_eq!(
+      interpret("Median[GeometricDistribution[1/2]]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Median[GeometricDistribution[1/3]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Median[BernoulliDistribution[3/4]]").unwrap(),
+      "1"
+    );
+  }
+
+  // Continuous distributions that lacked a dedicated Median arm now delegate to
+  // the closed-form 1/2 quantile too.
+  #[test]
+  fn quantile_fallback_median() {
+    assert_eq!(
+      interpret("Median[GumbelDistribution[1, 2]]").unwrap(),
+      "1 + 2*Log[Log[2]]"
+    );
+    assert_eq!(
+      interpret("Median[FRatioDistribution[3, 5]]").unwrap(),
+      "(5*(-1 + InverseBetaRegularized[1, -1/2, 5/2, 3/2]^(-1)))/3"
+    );
+  }
+
   // Beta edges are exact; the interior exact case stays unevaluated (a Root in
   // wolframscript), but the numeric path evaluates.
   #[test]
