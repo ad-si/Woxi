@@ -756,6 +756,16 @@ pub fn bessel_k_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(result);
   }
 
+  // Negative integer order: K is symmetric, K_{-n}(z) = K_n(z).
+  if let Expr::Integer(n) = n_expr
+    && *n < 0
+  {
+    return Ok(Expr::FunctionCall {
+      name: "BesselK".to_string(),
+      args: vec![Expr::Integer(-n), z_expr.clone()].into(),
+    });
+  }
+
   Ok(unevaluated("BesselK", args))
 }
 

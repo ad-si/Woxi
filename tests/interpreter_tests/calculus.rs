@@ -11865,6 +11865,32 @@ mod cases {
       r#"1."#,
     );
   }
+  // Derivatives of the other cylinder functions: Y/HankelH like J (subtract),
+  // I adds the neighbours, K adds and negates.
+  #[test]
+  fn d_bessel_y_i_k_hankel() {
+    assert_case(r#"D[BesselY[0, x], x]"#, r#"-BesselY[1, x]"#);
+    assert_case(
+      r#"D[BesselY[n, x], x]"#,
+      r#"(BesselY[-1 + n, x] - BesselY[1 + n, x])/2"#,
+    );
+    assert_case(r#"D[BesselI[0, x], x]"#, r#"BesselI[1, x]"#);
+    assert_case(
+      r#"D[BesselI[n, x], x]"#,
+      r#"(BesselI[-1 + n, x] + BesselI[1 + n, x])/2"#,
+    );
+    assert_case(r#"D[BesselK[0, x], x]"#, r#"-BesselK[1, x]"#);
+    assert_case(
+      r#"D[BesselK[n, x], x]"#,
+      r#"(-BesselK[-1 + n, x] - BesselK[1 + n, x])/2"#,
+    );
+    assert_case(
+      r#"D[HankelH1[n, x], x]"#,
+      r#"(HankelH1[-1 + n, x] - HankelH1[1 + n, x])/2"#,
+    );
+    // Chain rule.
+    assert_case(r#"D[BesselK[0, 2 x], x]"#, r#"-2*BesselK[1, 2*x]"#);
+  }
   #[test]
   fn series_6() {
     assert_case(

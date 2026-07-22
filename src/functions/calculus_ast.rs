@@ -3114,8 +3114,14 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             }))
           }
         }
-        // BesselJ[n, z]: D[BesselJ[n,z], z] = (BesselJ[n-1,z] - BesselJ[n+1,z]) / 2
-        "BesselJ" if args.len() == 2 => {
+        // Cylinder-function derivatives w.r.t. the argument z:
+        //   D[BesselJ/Y/HankelH1/HankelH2[n,z], z] = (F[n-1,z] - F[n+1,z]) / 2
+        //   D[BesselI[n,z], z]                    = (I[n-1,z] + I[n+1,z]) / 2
+        //   D[BesselK[n,z], z]                    = -(K[n-1,z] + K[n+1,z]) / 2
+        "BesselJ" | "BesselY" | "BesselI" | "BesselK" | "HankelH1"
+        | "HankelH2"
+          if args.len() == 2 =>
+        {
           let dn = differentiate(&args[0], var)?;
           let dz = differentiate(&args[1], var)?;
           if matches!(dn, Expr::Integer(0)) && matches!(dz, Expr::Integer(0)) {
@@ -3129,7 +3135,6 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
                 .into(),
             });
           }
-          // D[BesselJ[n,z], z] = (BesselJ[n-1,z] - BesselJ[n+1,z]) / 2
           // Use plus_ast for canonical ordering: n-1 → Plus[-1, n], n+1 → Plus[1, n]
           let n_minus_1 = crate::functions::math_ast::plus_ast(&[
             Expr::Integer(-1),
@@ -3153,22 +3158,44 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
               right: Box::new(Expr::Integer(1)),
             })
           });
-          let bessel_nm1 = Expr::FunctionCall {
-            name: "BesselJ".to_string(),
-            args: vec![n_minus_1, args[1].clone()].into(),
+          // Evaluate the neighbour orders so a concrete n resolves its
+          // negative-order symmetry (e.g. BesselK[-1, z] -> BesselK[1, z]).
+          let f_nm1 =
+            crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+              name: name.clone(),
+              args: vec![n_minus_1, args[1].clone()].into(),
+            })?;
+          let f_np1 =
+            crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+              name: name.clone(),
+              args: vec![n_plus_1, args[1].clone()].into(),
+            })?;
+          // BesselI adds the neighbours; BesselK adds and negates; the rest
+          // (J, Y, HankelH1, HankelH2) subtract.
+          let numer = match name.as_str() {
+            "BesselI" => simplify(Expr::BinaryOp {
+              op: BinaryOperator::Plus,
+              left: Box::new(f_nm1),
+              right: Box::new(f_np1),
+            }),
+            "BesselK" => simplify(Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(Expr::Integer(-1)),
+              right: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Plus,
+                left: Box::new(f_nm1),
+                right: Box::new(f_np1),
+              }),
+            }),
+            _ => simplify(Expr::BinaryOp {
+              op: BinaryOperator::Minus,
+              left: Box::new(f_nm1),
+              right: Box::new(f_np1),
+            }),
           };
-          let bessel_np1 = Expr::FunctionCall {
-            name: "BesselJ".to_string(),
-            args: vec![n_plus_1, args[1].clone()].into(),
-          };
-          let diff = simplify(Expr::BinaryOp {
-            op: BinaryOperator::Minus,
-            left: Box::new(bessel_nm1),
-            right: Box::new(bessel_np1),
-          });
           let half_diff = Expr::BinaryOp {
             op: BinaryOperator::Divide,
-            left: Box::new(diff),
+            left: Box::new(numer),
             right: Box::new(Expr::Integer(2)),
           };
           // Chain rule: multiply by dz
