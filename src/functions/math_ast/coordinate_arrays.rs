@@ -3,8 +3,9 @@
 //! differ only in how the region is written: per-dimension `{min, max}`
 //! pairs versus the two corner points `{mins, maxs}`.
 
+#[allow(unused_imports)]
+use super::*;
 use crate::InterpreterError;
-use crate::functions::math_ast::gcd;
 use crate::syntax::{Expr, UnaryOperator, expr_to_output, unevaluated};
 
 /// One coordinate value: an exact rational (p/q, q > 0) or a machine real.
@@ -36,7 +37,7 @@ impl Num {
     match self {
       Num::Exact(0, _) => Expr::Integer(0),
       Num::Exact(p, q) => {
-        let g = gcd(p.abs(), q).max(1);
+        let g = gcd_i128(p.abs(), q).max(1);
         let (p, q) = (p / g, q / g);
         if q == 1 {
           Expr::Integer(p)

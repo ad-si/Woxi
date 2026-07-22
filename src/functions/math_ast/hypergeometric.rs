@@ -1,7 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::functions::math_ast::gcd as gcd_i128;
 use crate::syntax::{BinaryOperator, Expr, expr_to_string, unevaluated};
 
 /// Hypergeometric0F1[a, z] - confluent hypergeometric limit function

@@ -1200,13 +1200,13 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Try exact complex extraction (handles Plus, Times, I, etc.)
   if let Some(((rn, rd), (in_, id))) = try_extract_complex_exact(&args[0]) {
     // Normalize signs to have positive denominators
-    let g_r = gcd(rn.abs(), rd.abs());
+    let g_r = gcd_i128(rn.abs(), rd.abs());
     let (rn, rd) = if rd < 0 {
       (-rn / g_r, -rd / g_r)
     } else {
       (rn / g_r, rd / g_r)
     };
-    let g_i = gcd(in_.abs(), id.abs());
+    let g_i = gcd_i128(in_.abs(), id.abs());
     let (in_, id) = if id < 0 {
       (-in_ / g_i, -id / g_i)
     } else {
@@ -1237,7 +1237,7 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let ratio_n = in_.abs().checked_mul(rd);
     let ratio_d = id.checked_mul(rn.abs());
     if let (Some(mut ratio_n), Some(mut ratio_d)) = (ratio_n, ratio_d) {
-      let g = gcd(ratio_n.abs(), ratio_d.abs());
+      let g = gcd_i128(ratio_n.abs(), ratio_d.abs());
       ratio_n /= g;
       ratio_d /= g;
 
@@ -1338,7 +1338,7 @@ pub fn make_rational_times_pi(n: i128, d: i128) -> Expr {
   if n == 0 {
     return Expr::Integer(0);
   }
-  let g = gcd(n.abs(), d.abs());
+  let g = gcd_i128(n.abs(), d.abs());
   let (n, d) = if d < 0 {
     (-n / g, -d / g)
   } else {
@@ -1828,13 +1828,13 @@ fn find_rational_smallest_denom(x: f64, tolerance: f64) -> (i64, i64) {
 /// isn't a pure exact complex rational.
 fn exact_complex_rational_numden(expr: &Expr) -> Option<(Expr, Expr)> {
   let ((rn, rd), (in_, id)) = try_extract_complex_exact(expr)?;
-  let g_r = gcd(rn.abs(), rd.abs().max(1));
+  let g_r = gcd_i128(rn.abs(), rd.abs().max(1));
   let (rn, rd) = if rd < 0 {
     (-rn / g_r, -rd / g_r)
   } else {
     (rn / g_r, rd / g_r)
   };
-  let g_i = gcd(in_.abs(), id.abs().max(1));
+  let g_i = gcd_i128(in_.abs(), id.abs().max(1));
   let (in_, id) = if id < 0 {
     (-in_ / g_i, -id / g_i)
   } else {
@@ -1843,7 +1843,7 @@ fn exact_complex_rational_numden(expr: &Expr) -> Option<(Expr, Expr)> {
   if rd == 0 || id == 0 {
     return None;
   }
-  let lcm_d = (rd / gcd(rd, id)) * id;
+  let lcm_d = (rd / gcd_i128(rd, id)) * id;
   let re_num = rn * (lcm_d / rd);
   let im_num = in_ * (lcm_d / id);
   let num_expr = if im_num == 0 {

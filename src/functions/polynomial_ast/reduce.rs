@@ -8,7 +8,7 @@ use crate::syntax::{
 };
 
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
-use crate::functions::math_ast::{gcd as gcd_i128, make_sqrt};
+use crate::functions::math_ast::{gcd_i128, make_sqrt};
 
 // ─── Reduce ──────────────────────────────────────────────────────────
 

@@ -1,3 +1,4 @@
+use crate::functions::math_ast::gcd_i128;
 use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
 
 /// Result of decomposing an expression into its canonical form.
@@ -418,7 +419,7 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
 /// Helper: render a rational (num, denom) pair in FullForm notation.
 fn render_rational_full_form(num: i128, denom: i128) -> String {
   // Reduce to lowest terms
-  let g = crate::functions::math_ast::gcd(num, denom);
+  let g = gcd_i128(num, denom);
   let (n, d) = if g > 0 {
     (num / g, denom / g)
   } else {

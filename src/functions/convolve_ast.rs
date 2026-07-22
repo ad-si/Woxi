@@ -11,13 +11,13 @@
 //! (e.g. Sqrt[Pi/2]/E^(y^2/2), (y*UnitStep[y])/E^(2*y)).
 
 use crate::InterpreterError;
-use crate::functions::math_ast::gcd;
+use crate::functions::math_ast::gcd_i128;
 use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 type Frac = (i128, i128);
 
 fn frac(n: i128, d: i128) -> Frac {
-  let g = gcd(n, d).max(1);
+  let g = gcd_i128(n, d).max(1);
   let (mut n, mut d) = (n / g, d / g);
   if d < 0 {
     n = -n;

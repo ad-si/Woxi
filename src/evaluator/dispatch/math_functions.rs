@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::{
-  expr_to_rational, gcd as gcd_i128, gcd_u64, make_sqrt,
+  expr_to_rational, gcd_i128, gcd_u64, make_sqrt,
 };
 use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator, unevaluated};
 
@@ -2830,7 +2830,7 @@ pub fn dispatch_math_functions(
           return Some(Ok(Expr::Integer(1)));
         }
         let a_mod = ((*a % *n) + *n) % *n;
-        if a_mod != 0 && crate::functions::math_ast::gcd(a_mod, *n) == 1 {
+        if a_mod != 0 && gcd_i128(a_mod, *n) == 1 {
           let mut power = a_mod;
           for k in 1..=*n {
             if power == 1 {
@@ -2877,7 +2877,7 @@ pub fn dispatch_math_functions(
           let phi = crate::functions::math_ast::euler_phi_i128(m);
           let start = if m == 2 { 1 } else { 2 };
           for g in start..m {
-            if crate::functions::math_ast::gcd(g, m) != 1 {
+            if gcd_i128(g, m) != 1 {
               continue;
             }
             let mut power = g % m;

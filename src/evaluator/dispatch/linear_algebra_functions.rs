@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::functions::math_ast::{gcd as gcd_i128, make_sqrt};
+use crate::functions::math_ast::{gcd_i128, make_sqrt};
 use crate::syntax::{BinaryOperator, UnaryOperator, bool_expr, unevaluated};
 
 pub fn dispatch_linear_algebra_functions(

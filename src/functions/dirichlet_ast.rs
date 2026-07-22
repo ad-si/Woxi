@@ -12,7 +12,7 @@
 //! (1, -1, I, -I, or E^((a*I)/b*Pi) forms on the principal branch).
 
 use crate::InterpreterError;
-use crate::functions::math_ast::{gcd as gcd_i128, gcd_bigint};
+use crate::functions::math_ast::{gcd_bigint, gcd_i128};
 use crate::syntax::Expr;
 use crate::syntax::{BinaryOperator, UnaryOperator, unevaluated};
 

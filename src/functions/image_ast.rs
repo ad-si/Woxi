@@ -1,4 +1,5 @@
 use crate::InterpreterError;
+use crate::functions::math_ast::gcd_i128;
 use crate::syntax::BinaryOperator;
 use crate::syntax::{Expr, ImageType, bool_expr, unevaluated};
 use std::sync::Arc;
@@ -567,7 +568,7 @@ pub fn image_aspect_ratio_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   fn ratio(h: i128, w: i128) -> Expr {
-    let g = crate::functions::math_ast::gcd(h, w);
+    let g = gcd_i128(h, w);
     let (num, den) = (h / g, w / g);
     if den == 1 {
       Expr::Integer(num)

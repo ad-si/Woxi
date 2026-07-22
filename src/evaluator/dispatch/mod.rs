@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 
-use crate::functions::math_ast::gcd as gcd_i128;
+use crate::functions::math_ast::gcd_i128;
 use crate::syntax::bool_expr;
 
 // Re-export crate types/functions for submodules (used by submodules via `use super::*`)

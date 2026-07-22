@@ -7,7 +7,7 @@
 
 use crate::InterpreterError;
 use crate::functions::geographics::{position_to_latlon, positions_from_arg};
-use crate::functions::math_ast::gcd as gcd_i128;
+use crate::functions::math_ast::gcd_i128;
 use crate::syntax::{Expr, UnaryOperator, unevaluated};
 use geographiclib_rs::{DirectGeodesic, Geodesic, InverseGeodesic};
 use std::sync::OnceLock;

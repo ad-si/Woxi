@@ -1056,7 +1056,7 @@ fn bernoulli_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
   fn rat_add(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
     let num = a.0 * b.1 + b.0 * a.1;
     let den = a.1 * b.1;
-    let g = gcd(num, den);
+    let g = gcd_i128(num, den);
     if den < 0 {
       (-num / g, -den / g)
     } else {
@@ -1067,7 +1067,7 @@ fn bernoulli_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
   fn rat_mul(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
     let num = a.0 * b.0;
     let den = a.1 * b.1;
-    let g = gcd(num, den);
+    let g = gcd_i128(num, den);
     if den < 0 {
       (-num / g, -den / g)
     } else {
@@ -1114,7 +1114,7 @@ fn bernoulli_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
     for k in (0..=n).rev() {
       let rn = result.0 * z_num;
       let rd = result.1 * z_den;
-      let g = gcd(rn, rd);
+      let g = gcd_i128(rn, rd);
       let (rn, rd) = if rd < 0 {
         (-rn / g, -rd / g)
       } else {
@@ -1254,7 +1254,7 @@ fn euler_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
   fn rat_add(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
     let num = a.0 * b.1 + b.0 * a.1;
     let den = a.1 * b.1;
-    let g = gcd(num, den);
+    let g = gcd_i128(num, den);
     if den < 0 {
       (-num / g, -den / g)
     } else {
@@ -1278,7 +1278,7 @@ fn euler_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
       let (cn, cd) = coeffs[k];
       let num = degree as i128 * cn;
       let den = cd * (k as i128 + 1);
-      let g = gcd(num, den);
+      let g = gcd_i128(num, den);
       let (num, den) = if den < 0 {
         (-num / g, -den / g)
       } else {
@@ -1299,7 +1299,7 @@ fn euler_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
     // C = -sum_at_1 / 2
     let c_num = -sum_at_1.0;
     let c_den = sum_at_1.1 * 2;
-    let g = gcd(c_num, c_den);
+    let g = gcd_i128(c_num, c_den);
     let (c_num, c_den) = if c_den < 0 {
       (-c_num / g, -c_den / g)
     } else {
@@ -1320,7 +1320,7 @@ fn euler_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
       // result = result * z + coeffs[k]
       let rn = result.0 * z_num;
       let rd = result.1 * z_den;
-      let g = gcd(rn, rd);
+      let g = gcd_i128(rn, rd);
       let (rn, rd) = if rd < 0 {
         (-rn / g, -rd / g)
       } else {
@@ -5715,7 +5715,7 @@ pub fn frobenius_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let mut g = nums[0];
   for &n in &nums[1..] {
-    g = gcd(g, n);
+    g = gcd_i128(g, n);
   }
 
   // If GCD > 1, infinitely many integers can't be represented

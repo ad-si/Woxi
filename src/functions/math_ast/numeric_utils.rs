@@ -698,7 +698,7 @@ pub fn format_bigfloat_value(value: f64, sig_digits: usize) -> String {
 }
 
 /// Compute GCD of two integers using Euclidean algorithm
-pub fn gcd(a: i128, b: i128) -> i128 {
+pub fn gcd_i128(a: i128, b: i128) -> i128 {
   // Use `unsigned_abs` (u128) so `i128::MIN` (whose `abs()` overflows) is
   // handled correctly, e.g. gcd(-2^127, 1).
   let (mut a, mut b) = (a.unsigned_abs(), b.unsigned_abs());
@@ -729,7 +729,7 @@ pub fn lcm_i128(a: i128, b: i128) -> i128 {
   if a == 0 || b == 0 {
     return 0;
   }
-  (a / gcd(a, b) * b).abs()
+  (a / gcd_i128(a, b) * b).abs()
 }
 
 /// Compute the (non-negative) GCD of two BigInts.
@@ -798,7 +798,7 @@ pub fn make_rational(numer: i128, denom: i128) -> Expr {
   };
 
   // Simplify by GCD
-  let g = gcd(numer, denom);
+  let g = gcd_i128(numer, denom);
   let (numer, denom) = (numer / g, denom / g);
 
   if denom == 1 {
@@ -1239,7 +1239,7 @@ pub fn build_complex_expr(
   im_den: i128,
 ) -> Expr {
   let re = make_rational(re_num, re_den);
-  let g_i = gcd(im_num.abs(), im_den.abs());
+  let g_i = gcd_i128(im_num.abs(), im_den.abs());
   let (in_s, id_s) = if im_den < 0 {
     (-im_num / g_i, -im_den / g_i)
   } else {
@@ -1267,7 +1267,7 @@ pub fn build_complex_expr(
   };
 
   // Check if real part is zero
-  let g_r = gcd(re_num.abs(), re_den.abs());
+  let g_r = gcd_i128(re_num.abs(), re_den.abs());
   let re_simplified = if re_den == 0 { re_num } else { re_num / g_r };
   if re_simplified == 0 {
     // Pure imaginary

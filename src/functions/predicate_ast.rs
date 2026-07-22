@@ -3,7 +3,7 @@
 //! These functions work directly with `Expr` AST nodes.
 
 use crate::InterpreterError;
-use crate::functions::math_ast::gcd as gcd_i128;
+use crate::functions::math_ast::gcd_i128;
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, unevaluated,
 };

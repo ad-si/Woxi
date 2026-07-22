@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::functions::math_ast::gcd_i128;
 use crate::syntax::{BinaryOperator, ComparisonOp, bool_expr, unevaluated};
 
 pub fn dispatch_polynomial_functions(
@@ -1403,7 +1404,7 @@ fn sinusoid_extremum(expr: &Expr, var: &str, maximize: bool) -> Option<Expr> {
     norm((a.0 * b.1 + b.0 * a.1, a.1 * b.1))
   }
   fn norm(f: Frac) -> Frac {
-    let g = crate::functions::math_ast::gcd(f.0, f.1).max(1);
+    let g = gcd_i128(f.0, f.1).max(1);
     let (mut n, mut d) = (f.0 / g, f.1 / g);
     if d < 0 {
       n = -n;

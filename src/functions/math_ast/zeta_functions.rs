@@ -322,7 +322,7 @@ fn hurwitz_zeta_ast(
               .and_then(|v| v.checked_add(sum_den));
             let new_den = sum_den.checked_mul(k_pow);
             if let (Some(new_num), Some(new_den)) = (new_num, new_den) {
-              let g = gcd(new_num.abs(), new_den.abs());
+              let g = gcd_i128(new_num.abs(), new_den.abs());
               sum_num = new_num / g;
               sum_den = new_den / g;
             } else {
@@ -437,7 +437,7 @@ fn bernoulli_polynomial_rational(
       .checked_mul(term_den)?
       .checked_add(term_num.checked_mul(sum_den)?)?;
     let new_den = sum_den.checked_mul(term_den)?;
-    let g = gcd(new_num.abs(), new_den.abs());
+    let g = gcd_i128(new_num.abs(), new_den.abs());
     sum_num = new_num / g;
     sum_den = new_den / g;
   }
@@ -582,7 +582,7 @@ pub fn bernoulli_number(n: usize) -> Option<(i128, i128)> {
         .checked_mul(term_d)?
         .checked_add(term_n.checked_mul(sum_d)?)?;
       let new_d = sum_d.checked_mul(term_d)?;
-      let g = gcd(new_n.abs(), new_d.abs());
+      let g = gcd_i128(new_n.abs(), new_d.abs());
       sum_n = new_n / g;
       sum_d = new_d / g;
     }
@@ -590,7 +590,7 @@ pub fn bernoulli_number(n: usize) -> Option<(i128, i128)> {
     // B_m = -sum / (m+1)
     let bm_n = -sum_n;
     let bm_d = sum_d.checked_mul((m + 1) as i128)?;
-    let g = gcd(bm_n.abs(), bm_d.abs());
+    let g = gcd_i128(bm_n.abs(), bm_d.abs());
     b[m] = (bm_n / g, bm_d / g);
   }
 
@@ -612,7 +612,7 @@ fn zeta_positive_even(two_n: usize) -> Option<Expr> {
   // Multiply by 2^(2n-1)
   for _ in 0..(two_n - 1) {
     num = num.checked_mul(2)?;
-    let g = gcd(num, den);
+    let g = gcd_i128(num, den);
     num /= g;
     den /= g;
   }
@@ -620,7 +620,7 @@ fn zeta_positive_even(two_n: usize) -> Option<Expr> {
   // Divide by (2n)!
   for k in 1..=two_n {
     den = den.checked_mul(k as i128)?;
-    let g = gcd(num, den);
+    let g = gcd_i128(num, den);
     num /= g;
     den /= g;
   }
@@ -1087,7 +1087,7 @@ fn harmonic_rational(n: usize) -> (i128, i128) {
     // num/den + 1/k = (num*k + den) / (den*k)
     num = num * (k as i128) + den;
     den *= k as i128;
-    let g = gcd(num.abs(), den.abs());
+    let g = gcd_i128(num.abs(), den.abs());
     num /= g;
     den /= g;
   }
@@ -1149,7 +1149,7 @@ fn polygamma_multiply_zeta_by_nfact(two_n: usize, nfact: i128) -> Option<Expr> {
   // Multiply by 2^(2n-1)
   for _ in 0..(two_n - 1) {
     num = num.checked_mul(2)?;
-    let g = gcd(num, den);
+    let g = gcd_i128(num, den);
     num /= g;
     den /= g;
   }
@@ -1157,7 +1157,7 @@ fn polygamma_multiply_zeta_by_nfact(two_n: usize, nfact: i128) -> Option<Expr> {
   // Divide by (2n)!
   for k in 1..=two_n {
     den = den.checked_mul(k as i128)?;
-    let g = gcd(num, den);
+    let g = gcd_i128(num, den);
     num /= g;
     den /= g;
   }
@@ -1203,7 +1203,7 @@ fn partial_sum_powers(n: usize, power: usize) -> Option<(i128, i128)> {
     let k_pow = (k as i128).checked_pow(power as u32)?;
     let new_n = sum_n.checked_mul(k_pow)?.checked_add(sum_d)?;
     let new_d = sum_d.checked_mul(k_pow)?;
-    let g = gcd(new_n.abs(), new_d.abs());
+    let g = gcd_i128(new_n.abs(), new_d.abs());
     sum_n = new_n / g;
     sum_d = new_d / g;
   }

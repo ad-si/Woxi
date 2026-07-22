@@ -2,7 +2,7 @@
 use super::*;
 use crate::InterpreterError;
 use crate::functions::calculus_ast::simplify;
-use crate::functions::math_ast::gcd as gcd_i128;
+use crate::functions::math_ast::gcd_i128;
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, expr_to_string,
 };
@@ -9676,7 +9676,7 @@ fn factor_common_power_base(terms: &[Expr]) -> Option<Expr> {
       let diff_n = pi.numer * min_d - min_n * pi.denom;
       let diff_d = pi.denom * min_d;
       // Simplify the fraction
-      let g = crate::functions::math_ast::gcd(diff_n, diff_d);
+      let g = gcd_i128(diff_n, diff_d);
       let sn = diff_n / g;
       let sd = diff_d / g;
 

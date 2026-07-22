@@ -4,7 +4,7 @@
 //! NDSolve solves initial-value problems numerically using RK4.
 
 use crate::InterpreterError;
-use crate::functions::math_ast::{gcd as gcd_i128, make_sqrt};
+use crate::functions::math_ast::{gcd_i128, make_sqrt};
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
 };
