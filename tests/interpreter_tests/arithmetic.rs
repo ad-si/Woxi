@@ -8551,6 +8551,25 @@ mod imaginary_argument_trig {
     assert_eq!(interpret("Exp[x + 2 Pi I]").unwrap(), "E^(x + (2*I)*Pi)");
   }
 
+  // Quarter turns of Pi*I swap Cosh<->Sinh (with a phase factor) and
+  // Tanh<->Coth, matching wolframscript.
+  #[test]
+  fn hyperbolic_quarter_period() {
+    assert_eq!(interpret("Cosh[x + Pi I/2]").unwrap(), "I*Sinh[x]");
+    assert_eq!(interpret("Sinh[x + Pi I/2]").unwrap(), "I*Cosh[x]");
+    assert_eq!(interpret("Cosh[x + 3 Pi I/2]").unwrap(), "-I*Sinh[x]");
+    assert_eq!(interpret("Sinh[x + 3 Pi I/2]").unwrap(), "-I*Cosh[x]");
+    assert_eq!(interpret("Cosh[x + 5 Pi I/2]").unwrap(), "I*Sinh[x]");
+    assert_eq!(interpret("Sech[x + Pi I/2]").unwrap(), "-I*Csch[x]");
+    assert_eq!(interpret("Csch[x + Pi I/2]").unwrap(), "-I*Sech[x]");
+    assert_eq!(interpret("Sech[x + 3 Pi I/2]").unwrap(), "I*Csch[x]");
+    assert_eq!(interpret("Tanh[x + Pi I/2]").unwrap(), "Coth[x]");
+    assert_eq!(interpret("Coth[x + Pi I/2]").unwrap(), "Tanh[x]");
+    assert_eq!(interpret("Tanh[x + 3 Pi I/2]").unwrap(), "Coth[x]");
+    // An eighth turn (Pi I/4) is not a period point and stays put.
+    assert_eq!(interpret("Cosh[x + Pi I/4]").unwrap(), "Cosh[x + I/4*Pi]");
+  }
+
   #[test]
   fn imaginary_with_coefficient() {
     assert_eq!(interpret("Cos[2 I x]").unwrap(), "Cosh[2*x]");

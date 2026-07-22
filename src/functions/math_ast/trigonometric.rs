@@ -1177,21 +1177,63 @@ fn is_indeterminate_or_complex_infinity(expr: &Expr) -> bool {
 /// If `arg` has the imaginary unit `I` as a factor, return the product of the
 /// remaining factors `z` (so `arg == I*z`). Handles `I` alone (z = 1) and the
 /// `Times` form (`I x`, `2 I x`, `-I x`, …).
-/// If `term` is `n Pi I` (an integer `n` times `Pi` times the imaginary unit),
-/// return `n`. The imaginary unit may appear as the identifier `I` or as the
-/// pure-imaginary `Complex[0, n]`. Non-integer coefficients (e.g. `Pi I/2`) and
-/// any other factor make this return None.
-fn imaginary_pi_coeff(term: &Expr) -> Option<i64> {
-  let Expr::FunctionCall { name, args } = term else {
-    return None;
-  };
-  if name != "Times" {
+/// If `term` is `c Pi I` for a rational `c` (times `Pi` times the imaginary
+/// unit), return `c` as `(num, den)` in lowest terms with `den > 0`. The
+/// imaginary unit may appear as the identifier `I` or as the pure-imaginary
+/// `Complex[0, c]`; integer and rational scalar factors are folded in. Any other
+/// factor makes this return None.
+fn imaginary_pi_coeff(term: &Expr) -> Option<(i128, i128)> {
+  // Flatten nested products: `3 Pi I / 2` parses as
+  // `Times[Rational[3,2], Times[I, Pi]]`, so gather all leaf factors first.
+  fn flatten(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        for a in args.iter() {
+          flatten(a, out);
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        flatten(left, out);
+        flatten(right, out);
+      }
+      _ => out.push(e.clone()),
+    }
+  }
+  let is_product = matches!(term, Expr::FunctionCall { name, .. } if name == "Times")
+    || matches!(
+      term,
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        ..
+      }
+    );
+  if !is_product {
     return None;
   }
-  let mut coeff: i64 = 1;
+  let mut factors = Vec::new();
+  flatten(term, &mut factors);
+  let rational_parts = |e: &Expr| -> Option<(i128, i128)> {
+    match e {
+      Expr::Integer(n) => Some((*n, 1)),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        match (&args[0], &args[1]) {
+          (Expr::Integer(a), Expr::Integer(b)) => Some((*a, *b)),
+          _ => None,
+        }
+      }
+      _ => None,
+    }
+  };
+  let (mut num, mut den): (i128, i128) = (1, 1);
   let mut has_pi = false;
   let mut has_imag = false;
-  for f in args.iter() {
+  for f in factors.iter() {
     match f {
       Expr::Constant(s) | Expr::Identifier(s) if s == "Pi" => {
         if has_pi {
@@ -1205,31 +1247,41 @@ fn imaginary_pi_coeff(term: &Expr) -> Option<i64> {
         }
         has_imag = true;
       }
-      Expr::Integer(n) => {
-        coeff = coeff.checked_mul(i64::try_from(*n).ok()?)?;
-      }
-      // Complex[0, m] = m*I (a pure-imaginary integer coefficient).
+      // Complex[0, c] = c*I (a pure-imaginary integer/rational coefficient).
       Expr::FunctionCall { name: cn, args: ca }
         if cn == "Complex" && ca.len() == 2 =>
       {
-        let (Expr::Integer(re), Expr::Integer(im)) = (&ca[0], &ca[1]) else {
-          return None;
-        };
-        if *re != 0 || has_imag {
+        if has_imag || !matches!(&ca[0], Expr::Integer(0)) {
           return None;
         }
         has_imag = true;
-        coeff = coeff.checked_mul(i64::try_from(*im).ok()?)?;
+        let (a, b) = rational_parts(&ca[1])?;
+        num = num.checked_mul(a)?;
+        den = den.checked_mul(b)?;
       }
-      _ => return None,
+      // Any remaining factor must be an integer or rational scalar.
+      _ => {
+        let (a, b) = rational_parts(f)?;
+        num = num.checked_mul(a)?;
+        den = den.checked_mul(b)?;
+      }
     }
   }
-  (has_pi && has_imag).then_some(coeff)
+  if !(has_pi && has_imag) {
+    return None;
+  }
+  if den < 0 {
+    num = -num;
+    den = -den;
+  }
+  let g = gcd_i128(num.abs().max(1), den).max(1);
+  Some((num / g, den / g))
 }
 
-/// If `arg` is a sum `rest + n Pi I` with a nonzero integer `n`, return
-/// `(n, rest)`. Drives the hyperbolic imaginary-period reductions
-/// `Cosh[z + n Pi I] = (-1)^n Cosh[z]`, `Tanh[z + n Pi I] = Tanh[z]`, etc.
+/// If `arg` is a sum `rest + c Pi I` whose imaginary-`Pi` coefficient `c` is a
+/// half-integer, return `(k, rest)` where `k = 2 c` is the number of quarter
+/// turns. Drives the hyperbolic imaginary-period reductions
+/// (`Cosh[z + Pi I] = -Cosh[z]`, `Cosh[z + Pi I/2] = I Sinh[z]`, …).
 fn extract_imaginary_pi_period(arg: &Expr) -> Option<(i64, Expr)> {
   let is_sum = matches!(arg, Expr::FunctionCall { name, .. } if name == "Plus")
     || matches!(
@@ -1244,15 +1296,27 @@ fn extract_imaginary_pi_period(arg: &Expr) -> Option<(i64, Expr)> {
   }
   let mut terms = Vec::new();
   collect_plus_terms(arg, &mut terms);
-  let mut n: i64 = 0;
+  let (mut num, mut den): (i128, i128) = (0, 1);
   let mut rest: Vec<Expr> = Vec::new();
   for t in terms {
     match imaginary_pi_coeff(&t) {
-      Some(c) => n = n.checked_add(c)?,
+      Some((n, d)) => {
+        num = num.checked_mul(d)?.checked_add(n.checked_mul(den)?)?;
+        den = den.checked_mul(d)?;
+      }
       None => rest.push(t),
     }
   }
-  if n == 0 || rest.is_empty() {
+  if rest.is_empty() {
+    return None;
+  }
+  // k = 2 * (num/den) quarter turns; require it to be an integer.
+  let k2 = num.checked_mul(2)?;
+  if den == 0 || k2 % den != 0 {
+    return None;
+  }
+  let k = k2 / den;
+  if k == 0 {
     return None;
   }
   let rest_expr = if rest.len() == 1 {
@@ -1263,29 +1327,60 @@ fn extract_imaginary_pi_period(arg: &Expr) -> Option<(i64, Expr)> {
       args: rest.into(),
     }
   };
-  Some((n, rest_expr))
+  Some((i64::try_from(k).ok()?, rest_expr))
 }
 
-/// Hyperbolic imaginary-period reduction: `Cosh`/`Sinh`/`Sech`/`Csch` have
-/// period `2 Pi I` (an odd multiple flips the sign); `Tanh`/`Coth` have period
-/// `Pi I` (no sign change). Returns None when `arg` has no `n Pi I` term.
+/// Quarter-turn table for `func[z + k Pi I/2]`: the reduced head and a phase
+/// factor encoded as 0 = 1, 1 = -1, 2 = I, 3 = -I.
+fn hyperbolic_quarter_turn(func: &str, k: i64) -> Option<(&'static str, u8)> {
+  let m4 = k.rem_euclid(4) as usize;
+  let m2 = k.rem_euclid(2) as usize;
+  Some(match func {
+    // Period 2 Pi I (4 quarter turns), with a Cosh <-> Sinh swap each turn.
+    "Cosh" => [("Cosh", 0), ("Sinh", 2), ("Cosh", 1), ("Sinh", 3)][m4],
+    "Sinh" => [("Sinh", 0), ("Cosh", 2), ("Sinh", 1), ("Cosh", 3)][m4],
+    "Sech" => [("Sech", 0), ("Csch", 3), ("Sech", 1), ("Csch", 2)][m4],
+    "Csch" => [("Csch", 0), ("Sech", 3), ("Csch", 1), ("Sech", 2)][m4],
+    // Period Pi I (2 quarter turns): a Tanh <-> Coth swap, no phase factor.
+    "Tanh" => [("Tanh", 0), ("Coth", 0)][m2],
+    "Coth" => [("Coth", 0), ("Tanh", 0)][m2],
+    _ => return None,
+  })
+}
+
+/// Hyperbolic imaginary-period reduction over quarter turns of `Pi I`, e.g.
+/// `Cosh[z + 2 Pi I] = Cosh[z]`, `Cosh[z + Pi I] = -Cosh[z]`,
+/// `Cosh[z + Pi I/2] = I Sinh[z]`, `Tanh[z + Pi I/2] = Coth[z]`. Returns None
+/// when `arg` has no half-integer `Pi I` term.
 fn hyperbolic_imaginary_period(
   func: &str,
   arg: &Expr,
 ) -> Option<Result<Expr, InterpreterError>> {
-  let (n, rest) = extract_imaginary_pi_period(arg)?;
+  let (k, rest) = extract_imaginary_pi_period(arg)?;
+  let (target, phase) = hyperbolic_quarter_turn(func, k)?;
   let reduced =
-    match crate::evaluator::evaluate_function_call_ast(func, &[rest]) {
+    match crate::evaluator::evaluate_function_call_ast(target, &[rest]) {
       Ok(v) => v,
       Err(e) => return Some(Err(e)),
     };
-  let flips = matches!(func, "Cosh" | "Sinh" | "Sech" | "Csch");
-  let result = if flips && n.rem_euclid(2) == 1 {
-    negate_expr(reduced)
-  } else {
-    reduced
+  let with_phase = match phase {
+    0 => reduced,
+    1 => negate_expr(reduced),
+    2 => Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Identifier("I".to_string()), reduced].into(),
+    },
+    _ => Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        Expr::Integer(-1),
+        Expr::Identifier("I".to_string()),
+        reduced,
+      ]
+      .into(),
+    },
   };
-  Some(Ok(result))
+  Some(crate::evaluator::evaluate_expr_to_expr(&with_phase))
 }
 
 fn extract_imaginary_factor(arg: &Expr) -> Option<Expr> {
