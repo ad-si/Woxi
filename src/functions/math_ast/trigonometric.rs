@@ -2164,6 +2164,16 @@ pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Otherwise keep the symbolic two-argument form.
     return Ok(unevaluated("Erf", args));
   }
+  // Erf is odd: Erf[-x] = -Erf[x]. Fold every negated argument form (including
+  // negative rational coefficients, e.g. Erf[-x/2]) via the shared helper;
+  // recursion evaluates special values such as Erf[-Infinity] = -1.
+  if let Some(pos) = crate::functions::math_ast::strip_negation(&args[0]) {
+    let inner = erf_ast(&[pos])?;
+    return crate::evaluator::evaluate_function_call_ast(
+      "Times",
+      &[Expr::Integer(-1), inner],
+    );
+  }
   // Helper: negate the Erf of the positive part
   let negate_erf = |inner: Expr| -> Expr {
     Expr::UnaryOp {
@@ -2295,6 +2305,16 @@ pub fn erfi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Erfi expects 1 argument".into(),
     ));
+  }
+  // Erfi is odd: Erfi[-x] = -Erfi[x]. Fold every negated argument form
+  // (including negative rational coefficients, e.g. Erfi[-x/2]) via the shared
+  // helper; recursion evaluates special values such as Erfi[-Infinity].
+  if let Some(pos) = crate::functions::math_ast::strip_negation(&args[0]) {
+    let inner = erfi_ast(&[pos])?;
+    return crate::evaluator::evaluate_function_call_ast(
+      "Times",
+      &[Expr::Integer(-1), inner],
+    );
   }
   // Helper: compute -Erfi[inner] by evaluating Erfi[inner] first, then negating
   let negate_erfi = |inner: Expr| -> Result<Expr, InterpreterError> {

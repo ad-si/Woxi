@@ -4785,6 +4785,17 @@ mod erf {
   }
 
   #[test]
+  fn erf_negative_rational_coefficient() {
+    // The odd-function fold also handles negative rational coefficients.
+    assert_eq!(interpret("Erf[-1/2 x]").unwrap(), "-Erf[x/2]");
+    assert_eq!(interpret("Erf[-2/3 x]").unwrap(), "-Erf[(2*x)/3]");
+    assert_eq!(interpret("Erf[-1/2]").unwrap(), "-Erf[1/2]");
+    assert_eq!(interpret("Erfi[-1/2 x]").unwrap(), "-Erfi[x/2]");
+    assert_eq!(interpret("FresnelS[-1/2 x]").unwrap(), "-FresnelS[x/2]");
+    assert_eq!(interpret("FresnelC[-1/2 x]").unwrap(), "-FresnelC[x/2]");
+  }
+
+  #[test]
   fn erf_infinity() {
     assert_eq!(interpret("Erf[Infinity]").unwrap(), "1");
     assert_eq!(interpret("Erf[-Infinity]").unwrap(), "-1");

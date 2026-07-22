@@ -179,6 +179,18 @@ pub fn fresnel_s_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // FresnelS is odd: FresnelS[-x] = -FresnelS[x]. Fold every negated argument
+  // form (including negative rational coefficients, e.g. FresnelS[-x/2]) via the
+  // shared helper; recursion evaluates special values such as
+  // FresnelS[-Infinity] = -1/2.
+  if let Some(pos) = crate::functions::math_ast::strip_negation(&args[0]) {
+    let inner = fresnel_s_ast(&[pos])?;
+    return crate::evaluator::evaluate_function_call_ast(
+      "Times",
+      &[Expr::Integer(-1), inner],
+    );
+  }
+
   // Helper: negate FresnelS (odd function)
   let negate_fresnel_s = |inner: Expr| -> Expr {
     Expr::UnaryOp {
@@ -293,6 +305,15 @@ pub fn fresnel_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "FresnelC expects exactly 1 argument".into(),
     ));
+  }
+
+  // FresnelC is odd: FresnelC[-x] = -FresnelC[x] (see fresnel_s_ast).
+  if let Some(pos) = crate::functions::math_ast::strip_negation(&args[0]) {
+    let inner = fresnel_c_ast(&[pos])?;
+    return crate::evaluator::evaluate_function_call_ast(
+      "Times",
+      &[Expr::Integer(-1), inner],
+    );
   }
 
   // Helper: negate FresnelC (odd function)
