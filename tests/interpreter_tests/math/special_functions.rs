@@ -1665,6 +1665,26 @@ mod polylog {
     let result: f64 = interpret("N[PolyLog[3, 1/2]]").unwrap().parse().unwrap();
     assert!((result - 0.5372131936080402).abs() < 1e-8);
   }
+
+  // A machine-real order numericizes the whole call even when the argument is
+  // an exact non-integer (a Rational, or a constant expression). Previously
+  // PolyLog[2., 1/2] was left unevaluated because only Integer/Real arguments
+  // were converted. Projected to an integer for a full-precision match.
+  #[test]
+  fn real_order_exact_argument() {
+    assert_eq!(
+      interpret("Round[10^13 PolyLog[2.0, 1/2]]").unwrap(),
+      "5822405264650"
+    );
+    assert_eq!(
+      interpret("Round[10^13 PolyLog[3.0, 1/2]]").unwrap(),
+      "5372131936080"
+    );
+    assert_eq!(
+      interpret("Round[10^13 PolyLog[2.5, 1/2]]").unwrap(),
+      "5549972787175"
+    );
+  }
 }
 
 mod legendre_p {
