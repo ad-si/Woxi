@@ -158,6 +158,61 @@ fn reduce_poly_over_integer(expr: Expr) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// Pull the integer content of a top-level `Plus` factor out in front, so
+/// `(-3 + 15*x^2)/2` becomes `(3*(-1 + 5*x^2))/2`. Wolfram's `D` leaves the
+/// content inside the sum, but `LegendreP[n, m, x]` presents the polynomial
+/// part of the associated Legendre function content-free, so the extraction
+/// happens here rather than in the shared derivative pipeline.
+fn hoist_plus_integer_content(expr: Expr) -> Result<Expr, InterpreterError> {
+  let (num, den) =
+    crate::functions::polynomial_ast::together::extract_num_den(&expr);
+  let mut factors =
+    crate::functions::polynomial_ast::collect_multiplicative_factors(&num);
+  let plus_idx = factors.iter().position(
+    |f| matches!(f, Expr::FunctionCall { name, .. } if name == "Plus"),
+  );
+  let Some(plus_idx) = plus_idx else {
+    return Ok(expr);
+  };
+  let mut content = BigInt::from(0);
+  let mut bail = false;
+  for_each_plus_term(
+    &factors[plus_idx],
+    &mut |t| match integer_coeff_of_term(t) {
+      Some(c) => content = gcd_bigint(&content, &c),
+      None => bail = true,
+    },
+  );
+  let g = if content < BigInt::from(0) {
+    -content
+  } else {
+    content
+  };
+  if bail || g <= BigInt::from(1) {
+    return Ok(expr);
+  }
+  // reduced Plus = Expand[(1/g) * Plus]
+  let scaled = Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    left: Box::new(make_rational_expr(BigInt::from(1), g.clone())),
+    right: Box::new(factors[plus_idx].clone()),
+  };
+  let reduced =
+    crate::evaluator::evaluate_function_call_ast("Expand", &[scaled])?;
+  factors[plus_idx] = reduced;
+  factors.insert(0, bigint_to_expr(g));
+  let new_num = crate::functions::polynomial_ast::build_product(factors);
+  if matches!(&den, Expr::Integer(1)) {
+    Ok(new_num)
+  } else {
+    Ok(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(new_num),
+      right: Box::new(den),
+    })
+  }
+}
+
 /// True for an exact numeric value (no free symbols), so the Jacobi series can
 /// be collapsed to a closed number rather than kept in the `(x-1)` form.
 fn jacobi_x_is_exact_numeric(x: &Expr) -> bool {
@@ -671,6 +726,10 @@ fn associated_legendre_p_ast(
     deriv = crate::syntax::substitute_variable(&deriv, &var_name, x_expr);
     deriv = crate::evaluator::evaluate_expr_to_expr(&deriv)?;
   }
+  // Wolfram presents the polynomial part content-free, e.g.
+  // LegendreP[3, 1, x] = (-3*Sqrt[1 - x^2]*(-1 + 5*x^2))/2 rather than
+  // keeping D's (-3 + 15*x^2)/2 derivative form.
+  deriv = hoist_plus_integer_content(deriv)?;
 
   // Multiply by (-1)^m * (1 - x^2)^(m/2)
   let sign = if m % 2 == 0 { 1i128 } else { -1i128 };

@@ -1453,6 +1453,12 @@ pub fn collect_multiplicative_factors(expr: &Expr) -> Vec<Expr> {
 
 /// Build a product from factors.
 pub fn build_product(factors: Vec<Expr>) -> Expr {
+  // Drop unit factors: Times[1, x] is just x. Keeping the literal 1 leaks
+  // into display forms (e.g. `(1+x)/10` rendering as `1 (1+x)` over 10).
+  let factors: Vec<Expr> = factors
+    .into_iter()
+    .filter(|f| !matches!(f, Expr::Integer(1)))
+    .collect();
   if factors.is_empty() {
     return Expr::Integer(1);
   }

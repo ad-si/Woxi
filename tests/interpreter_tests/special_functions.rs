@@ -2933,6 +2933,21 @@ mod cases {
     );
   }
   #[test]
+  fn legendre_p_assoc_content_free_polynomial() {
+    // The polynomial part of the associated Legendre function is presented
+    // content-free (3 pulled out of -3 + 15 x^2), matching wolframscript.
+    assert_case(
+      r#"LegendreP[3, 1, x]"#,
+      r#"(-3*Sqrt[1 - x^2]*(-1 + 5*x^2))/2"#,
+    );
+  }
+  #[test]
+  fn d_keeps_integer_content_inside_sum() {
+    // Issue #299 fix side-effect: plain D leaves the integer content inside
+    // the sum — wolframscript gives (-3 + 15*x^2)/2, not (3*(-1 + 5*x^2))/2.
+    assert_case(r#"D[(5 x^3 - 3 x)/2, x]"#, r#"(-3 + 15*x^2)/2"#);
+  }
+  #[test]
   fn legendre_q_1() {
     assert_case(
       r#"LegendreQ[5/2, 1.5]"#,

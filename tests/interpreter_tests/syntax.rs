@@ -8353,6 +8353,30 @@ mod cases {
     );
   }
   #[test]
+  fn to_boxes_fraction_sum_numerator() {
+    // Issue #299: (1+x)/10 rendered as `1 (1+x)` over 10 — the unit factor
+    // from Rational[1,10]'s numerator leaked into the box-form numerator.
+    assert_case(
+      r#"ToBoxes[(1 + x)/10]"#,
+      r#"FractionBox[RowBox[{"1", "+", "x"}], "10"]"#,
+    );
+  }
+  #[test]
+  fn to_boxes_fraction_symbol_numerator() {
+    assert_case(r#"ToBoxes[x/10]"#, r#"FractionBox["x", "10"]"#);
+  }
+  #[test]
+  fn to_boxes_fraction_explicit_one_times_symbol() {
+    assert_case(r#"ToBoxes[1 x/10]"#, r#"FractionBox["x", "10"]"#);
+  }
+  #[test]
+  fn to_boxes_fraction_explicit_one_times_sum() {
+    assert_case(
+      r#"ToBoxes[1 (1 + x)/10]"#,
+      r#"FractionBox[RowBox[{"1", "+", "x"}], "10"]"#,
+    );
+  }
+  #[test]
   fn take_largest_1() {
     assert_case(
       r#"TakeLargest[{100, -1, 50, 10}, 2]; TakeLargest[{-8, 150, Missing[abc]}, 2]"#,
