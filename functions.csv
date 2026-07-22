@@ -1443,7 +1443,7 @@ BellB,Returns the Bell number or Bell polynomial,✅,pure,6.0,1463
 LongRightArrow,Long right arrow notation for infix display,✅,pure,3.0,1463
 Rationals,Symbol representing the set of rational numbers,✅,pure,4.0,1463
 BooleanTable,Truth table for a boolean expression over all variable combinations,✅,pure,7.0,1464
-BSplineBasis,B-spline basis function,✅,pure,7.0,1466
+BSplineBasis,The i-th uniform B-spline basis function of a given degree,✅,pure,7.0,1466
 ComplexRegionPlot,Plot regions in the complex plane,✅,pure,12.1,1468
 StreamDensityPlot,Creates a stream density plot of a vector field,✅,pure,7.0,1468
 File,Symbolic file reference wrapper,✅,pure,11.0,1469

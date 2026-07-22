@@ -3104,7 +3104,15 @@ pub fn dispatch_math_functions(
         );
       }
       let sum = if terms.is_empty() {
-        Expr::Integer(0)
+        // Within/at the support but every truncated power vanishes (the left
+        // boundary y = -(d+1)/2): the value is 0, but a machine-real x must
+        // yield 0. rather than an exact 0 (strictly-outside already returned an
+        // exact 0 above). Matches wolframscript.
+        if crate::functions::math_ast::contains_inexact_real(&args[1]) {
+          Expr::Real(0.0)
+        } else {
+          Expr::Integer(0)
+        }
       } else {
         crate::functions::math_ast::plus_ast(&terms).ok()?
       };

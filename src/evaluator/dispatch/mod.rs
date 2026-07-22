@@ -9316,43 +9316,52 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::List(result.into()));
   }
 
-  // BSplineBasis[d, x] — zeroth uniform B-spline basis function of
-  // degree d, evaluated at x ∈ [0, 1] (Mathematica's convention).
-  // The cardinal B-spline N_d(t) on [0, d+1] is the (d+1)-fold
-  // convolution of the indicator of [0, 1] and has the closed form
-  //   N_d(t) = (1/d!) * Sum_{k=0}^{d+1} (-1)^k C(d+1, k) Max[t-k, 0]^d
-  // BSplineBasis[d, x] = N_d((d+1) * x), so the support shrinks to [0, 1].
+  // BSplineBasis[d, i, x] — the i-th uniform B-spline basis function of degree
+  // d, and its 2-argument shorthand BSplineBasis[d, x] (i = 0). On the default
+  // uniform knots this equals a shifted centered cardinal B-spline:
+  //   BSplineBasis[d, i, x] = CardinalBSplineBasis[d, (d + 1) (x - 1/2) - i]
+  // (verified against wolframscript). Delegating to CardinalBSplineBasis keeps
+  // the exact-input path (BSplineBasis[3, 0, 1/2] = 2/3) and the exact integer
+  // 0 outside the support. Index i must be a non-negative integer (i > d is
+  // allowed and gives 0); a negative i emits invidx and stays unevaluated.
   if name == "BSplineBasis"
-    && args.len() == 2
+    && (args.len() == 2 || args.len() == 3)
     && let Expr::Integer(d) = &args[0]
     && *d >= 0
-    && let Some(x) = crate::functions::math_ast::try_eval_to_f64(&args[1])
   {
-    let d = *d as usize;
-    if !(0.0..=1.0).contains(&x) {
-      return Ok(Expr::Integer(0));
-    }
-    let t = (d as f64 + 1.0) * x;
-    // Cardinal B-spline truncated-power formula.
-    let mut binom: Vec<i128> = vec![0; d + 2];
-    binom[0] = 1;
-    for k in 1..=d + 1 {
-      binom[k] = binom[k - 1] * (d as i128 + 1 - k as i128 + 1) / k as i128;
-    }
-    let mut sum = 0.0_f64;
-    for k in 0..=(d + 1) {
-      let diff = t - k as f64;
-      if diff <= 0.0 {
-        break;
+    let x_arg = args.last().unwrap();
+    let i = if args.len() == 3 {
+      match crate::functions::math_ast::expr_to_i128(&args[1]) {
+        Some(i) if i >= 0 => i,
+        Some(i) => {
+          crate::emit_message(&format!(
+            "BSplineBasis::invidx: Index {i} should be a non-negative machine-sized integer."
+          ));
+          return Ok(unevaluated("BSplineBasis", args));
+        }
+        None => return Ok(unevaluated("BSplineBasis", args)),
       }
-      let term = (binom[k] as f64) * diff.powi(d as i32);
-      sum += if k % 2 == 0 { term } else { -term };
+    } else {
+      0
+    };
+    // A symbolic coordinate stays unevaluated.
+    if crate::functions::math_ast::try_eval_to_f64(x_arg).is_none() {
+      return Ok(unevaluated("BSplineBasis", args));
     }
-    let mut factd = 1.0_f64;
-    for k in 1..=d {
-      factd *= k as f64;
-    }
-    return Ok(Expr::Real(sum / factd));
+    // arg = (d + 1) * (x - 1/2) - i
+    let half = Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
+    };
+    let x_shift = crate::functions::math_ast::plus_ast(&[x_arg.clone(), half])?;
+    let scaled =
+      crate::functions::math_ast::times_ast(&[Expr::Integer(d + 1), x_shift])?;
+    let arg =
+      crate::functions::math_ast::plus_ast(&[scaled, Expr::Integer(-i)])?;
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "CardinalBSplineBasis".to_string(),
+      args: vec![Expr::Integer(*d), arg].into(),
+    });
   }
 
   // TimeValue[s, i, t] — time value of a present sum s at interest rate

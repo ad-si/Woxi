@@ -308,6 +308,56 @@ mod batch_unevaluated_wrappers {
     assert_eq!(interpret("BSplineBasis[3, -0.5]").unwrap(), "0");
     assert_eq!(interpret("BSplineBasis[3, 1.5]").unwrap(), "0");
   }
+
+  // BSplineBasis[d, i, x] — the i-th uniform B-spline basis function of degree
+  // d, equal to CardinalBSplineBasis[d, (d+1)(x-1/2) - i]. Values verified
+  // against wolframscript.
+  #[test]
+  fn bspline_basis_indexed_real() {
+    let cases = [
+      ("BSplineBasis[3, 0, 0.5]", 2.0 / 3.0),
+      ("BSplineBasis[3, 1, 0.5]", 1.0 / 6.0),
+      ("BSplineBasis[1, 0, 0.25]", 0.5),
+      ("BSplineBasis[1, 1, 0.75]", 0.5),
+    ];
+    for (input, want) in cases {
+      let val: f64 = interpret(input).unwrap().parse().unwrap();
+      assert!((val - want).abs() < 1e-12, "{input}: got {val}");
+    }
+  }
+
+  #[test]
+  fn bspline_basis_indexed_exact() {
+    // Exact x gives an exact rational.
+    assert_eq!(interpret("BSplineBasis[3, 0, 1/2]").unwrap(), "2/3");
+    assert_eq!(interpret("BSplineBasis[2, 1, 7/10]").unwrap(), "59/100");
+  }
+
+  #[test]
+  fn bspline_basis_indexed_edges() {
+    // i > d gives 0 (the shifted spline is off-support). The support-edge value
+    // for a machine real is 0., strictly-outside is an exact 0.
+    assert_eq!(interpret("BSplineBasis[3, 2, 0.5]").unwrap(), "0.");
+    assert_eq!(interpret("BSplineBasis[3, 3, 0.5]").unwrap(), "0");
+    assert_eq!(interpret("BSplineBasis[3, 5, 0.5]").unwrap(), "0");
+    assert_eq!(interpret("BSplineBasis[2, 1, 0.3]").unwrap(), "0");
+    // Outside the unit interval.
+    assert_eq!(interpret("BSplineBasis[3, 0, 1.5]").unwrap(), "0");
+  }
+
+  #[test]
+  fn bspline_basis_indexed_invalid() {
+    // A negative index emits invidx and stays unevaluated.
+    assert_eq!(
+      interpret("BSplineBasis[3, -1, 0.5]").unwrap(),
+      "BSplineBasis[3, -1, 0.5]"
+    );
+    // Symbolic coordinate stays unevaluated.
+    assert_eq!(
+      interpret("BSplineBasis[3, 0, x]").unwrap(),
+      "BSplineBasis[3, 0, x]"
+    );
+  }
   #[test]
   fn parameter_mixture_distribution() {
     assert_eq!(
