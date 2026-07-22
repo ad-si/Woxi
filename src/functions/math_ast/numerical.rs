@@ -4698,10 +4698,40 @@ pub fn nproduct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let is_infinity_max =
     matches!(&items[2], Expr::Identifier(s) if s == "Infinity");
 
+  // Iterated multi-range NProduct: any argument after args[1] that is itself a
+  // range `{var, lo, hi}` (rather than an option Rule) is an inner product
+  // variable. Each outer factor is then the inner NProduct over the remaining
+  // ranges (with the outer variable substituted into the body and those ranges,
+  // whose bounds may depend on it, e.g. {j, 1, i}).
+  let is_range = |e: &Expr| {
+    matches!(e, Expr::List(it)
+      if it.len() >= 3 && matches!(&it[0], Expr::Identifier(_)))
+  };
+  let mut inner_ranges: Vec<Expr> = Vec::new();
+  let mut inner_options: Vec<Expr> = Vec::new();
+  for a in &args[2..] {
+    if is_range(a) && inner_options.is_empty() {
+      inner_ranges.push(a.clone());
+    } else {
+      inner_options.push(a.clone());
+    }
+  }
+
   let eval_term = |i: i64| -> Result<Option<f64>, InterpreterError> {
     let sub_val = Expr::Integer(i as i128);
-    let substituted = substitute_variable(body, &var_name, &sub_val);
-    let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+    let sub_body = substitute_variable(body, &var_name, &sub_val);
+    if inner_ranges.is_empty() {
+      let val = crate::evaluator::evaluate_expr_to_expr(&sub_body)?;
+      return Ok(try_eval_to_f64(&val));
+    }
+    let mut inner_args: Vec<Expr> =
+      Vec::with_capacity(1 + inner_ranges.len() + inner_options.len());
+    inner_args.push(sub_body);
+    for r in &inner_ranges {
+      inner_args.push(substitute_variable(r, &var_name, &sub_val));
+    }
+    inner_args.extend(inner_options.iter().cloned());
+    let val = nproduct_ast(&inner_args)?;
     Ok(try_eval_to_f64(&val))
   };
 

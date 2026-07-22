@@ -4665,6 +4665,38 @@ mod nproduct {
     assert_eq!(interpret("NProduct[i, {i, 1, 5}]").unwrap(), "120.");
   }
 
+  // Iterated (multi-range) NProduct multiplies over the additional ranges too,
+  // rather than leaving the multiplicand non-numeric. Verified against
+  // wolframscript.
+  #[test]
+  fn iterated_finite() {
+    // Prod_{i=1}^{3} Prod_{j=1}^{2} (i + j) = 1440.
+    assert_eq!(
+      interpret("NProduct[i + j, {i, 1, 3}, {j, 1, 2}]").unwrap(),
+      "1440."
+    );
+    // Prod_{i=1}^{3} Prod_{j=1}^{2} i = Prod_i i^2 = 36.
+    assert_eq!(
+      interpret("NProduct[i, {i, 1, 3}, {j, 1, 2}]").unwrap(),
+      "36."
+    );
+    // A 2x2 grid of (1 - 1/(i j)^2) factors.
+    let v: f64 = interpret("NProduct[1 - 1/(i j)^2, {i, 2, 4}, {j, 2, 3}]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((v - 0.8555422321977166).abs() < 1e-10, "got {v}");
+  }
+
+  #[test]
+  fn iterated_dependent_bounds() {
+    // Prod over the triangle {1 <= j <= i <= 3} of (i + j) = 2880.
+    assert_eq!(
+      interpret("NProduct[i + j, {i, 1, 3}, {j, 1, i}]").unwrap(),
+      "2880."
+    );
+  }
+
   #[test]
   fn product_of_squares() {
     assert_eq!(interpret("NProduct[i^2, {i, 1, 4}]").unwrap(), "576.");
