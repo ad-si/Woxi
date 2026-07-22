@@ -4556,6 +4556,44 @@ pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Check for infinite sum
   let is_infinite = matches!(&items[2], Expr::Identifier(s) if s == "Infinity");
 
+  // Iterated multi-range NSum: any argument after args[1] that is itself a
+  // range `{var, lo, hi}` (rather than an option Rule) is an inner summation
+  // variable. Each outer term is then the inner NSum over the remaining ranges
+  // (with the outer variable substituted into the body and those ranges, whose
+  // bounds may depend on it, e.g. {j, 1, i}).
+  let is_range = |e: &Expr| {
+    matches!(e, Expr::List(it)
+      if it.len() >= 3 && matches!(&it[0], Expr::Identifier(_)))
+  };
+  let mut inner_ranges: Vec<Expr> = Vec::new();
+  let mut inner_options: Vec<Expr> = Vec::new();
+  for a in &args[2..] {
+    if is_range(a) && inner_options.is_empty() {
+      inner_ranges.push(a.clone());
+    } else {
+      inner_options.push(a.clone());
+    }
+  }
+  // Compute the summand at integer index `i`: a plain numeric evaluation of the
+  // body, or a recursive inner NSum when there are further ranges.
+  let term_at = |i: i64| -> Option<f64> {
+    let sub_val = Expr::Integer(i as i128);
+    let sub_body = substitute_variable(body, &var_name, &sub_val);
+    if inner_ranges.is_empty() {
+      let val = crate::evaluator::evaluate_expr_to_expr(&sub_body).ok()?;
+      return try_eval_to_f64(&val);
+    }
+    let mut inner_args: Vec<Expr> =
+      Vec::with_capacity(1 + inner_ranges.len() + inner_options.len());
+    inner_args.push(sub_body);
+    for r in &inner_ranges {
+      inner_args.push(substitute_variable(r, &var_name, &sub_val));
+    }
+    inner_args.extend(inner_options.iter().cloned());
+    let val = nsum_ast(&inner_args).ok()?;
+    try_eval_to_f64(&val)
+  };
+
   if is_infinite {
     // Numerical infinite sum using polynomial extrapolation in 1/n
     // 1. Compute partial sums at several checkpoint values of n
@@ -4568,10 +4606,7 @@ pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     let max_n = *checkpoints.last().unwrap();
     for i in min_val..(min_val + max_n) {
-      let sub_val = Expr::Integer(i as i128);
-      let substituted = substitute_variable(body, &var_name, &sub_val);
-      let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
-      let term = match try_eval_to_f64(&val) {
+      let term = match term_at(i) {
         Some(f) => f,
         None => {
           return Ok(unevaluated("NSum", args));
@@ -4611,10 +4646,7 @@ pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let mut sum = 0.0_f64;
   for i in min_val..=max_val {
-    let sub_val = Expr::Integer(i as i128);
-    let substituted = substitute_variable(body, &var_name, &sub_val);
-    let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
-    let term = match try_eval_to_f64(&val) {
+    let term = match term_at(i) {
       Some(f) => f,
       None => {
         return Ok(unevaluated("NSum", args));

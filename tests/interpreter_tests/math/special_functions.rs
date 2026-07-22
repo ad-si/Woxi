@@ -4561,6 +4561,45 @@ mod nsum {
     assert_eq!(interpret("NSum[i, {i, 1, 5}]").unwrap(), "15.");
   }
 
+  // Iterated (multi-range) NSum sums over the additional ranges too, rather
+  // than leaving the summand non-numeric. Verified against wolframscript.
+  #[test]
+  fn iterated_finite() {
+    // Sum_{i=1}^{3} Sum_{j=1}^{3} i j = (1+2+3)^2 = 36.
+    let v: f64 = interpret("NSum[i j, {i, 1, 3}, {j, 1, 3}]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((v - 36.0).abs() < 1e-8, "got {v}");
+    // A mixed finite range and an outer factor: 2 * Sum_{i=1}^{10} 1/i^2.
+    let v2: f64 = interpret("NSum[1/i^2, {i, 1, 10}, {j, 1, 2}]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((v2 - 3.0995354623330815).abs() < 1e-8, "got {v2}");
+  }
+
+  #[test]
+  fn iterated_dependent_bounds() {
+    // Sum over the triangle {1 <= j <= i <= 3} of 1 = 1 + 2 + 3 = 6.
+    let v: f64 = interpret("NSum[1, {i, 1, 3}, {j, 1, i}]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((v - 6.0).abs() < 1e-8, "got {v}");
+  }
+
+  #[test]
+  fn iterated_double_infinite() {
+    // Sum_{i,j>=1} 1/(i^2 j^2) = Zeta[2]^2 = (Pi^2/6)^2 = 2.7058080842778....
+    let v: f64 =
+      interpret("NSum[1/(i^2 j^2), {i, 1, Infinity}, {j, 1, Infinity}]")
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!((v - 2.705808084277845).abs() < 1e-6, "got {v}");
+  }
+
   #[test]
   fn infinite_sum_reciprocal_squares() {
     // Pi^2/6 ≈ 1.6449340668482264
