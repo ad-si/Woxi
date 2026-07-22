@@ -5828,13 +5828,12 @@ fn try_integrate_trig_squared(base: &Expr, var: &str) -> Option<Expr> {
 /// Try to integrate Sin[a*x]^n or Cos[a*x]^n for positive integer n ≥ 3
 /// using Chebyshev expansion (multiple angle formula).
 ///
-/// For odd n = 2m+1:
-///   sin^n(x) = (1/4^m) * Sum_{k=0}^{m} (-1)^(m-k) * C(n,k) * sin((n-2k)*x)
-///   cos^n(x) = (1/4^m) * Sum_{k=0}^{m} C(n,k) * cos((n-2k)*x)
-///
-/// For even n = 2m:
-///   sin^n(x) = (1/4^m) * [C(n,m) + 2 * Sum_{k=0}^{m-1} (-1)^(m-k) * C(n,k) * cos((n-2k)*x)]
-///   cos^n(x) = (1/4^m) * [C(n,m) + 2 * Sum_{k=0}^{m-1} C(n,k) * cos((n-2k)*x)]
+/// For odd n = 2m+1, m = (n-1)/2:
+///   sin^n(x) = (1/2^n) * 2 * Sum_{k=0}^{m} (-1)^(m-k) * C(n,k) * sin((n-2k)*x)
+///   cos^n(x) = (1/2^n) * 2 * Sum_{k=0}^{m} C(n,k) * cos((n-2k)*x)
+/// For even n = 2m, m = n/2:
+///   sin^n(x) = (1/2^n) * [C(n,m) + 2 * Sum_{k=0}^{m-1} (-1)^(m-k) * C(n,k) * cos((n-2k)*x)]
+///   cos^n(x) = (1/2^n) * [C(n,m) + 2 * Sum_{k=0}^{m-1} C(n,k) * cos((n-2k)*x)]
 fn try_integrate_trig_power(base: &Expr, n: i128, var: &str) -> Option<Expr> {
   if n < 3 {
     return None;
@@ -5868,173 +5867,97 @@ fn try_integrate_trig_power(base: &Expr, n: i128, var: &str) -> Option<Expr> {
   let m = n / 2;
   let is_odd = n % 2 != 0;
 
-  if is_odd {
-    // Odd power: n = 2m+1
-    // For sin: integral of (-1)^(m-k)*C(n,k)*sin((n-2k)*x) → absorb -1/k into coefficient
-    //   coeff = (-1)^(m-k+1) * C(n,k), trig = Cos[(n-2k)*x]
-    // For cos: integral of C(n,k)*cos((n-2k)*x) → coeff = C(n,k)/k, trig = Sin[(n-2k)*x]
-    for k in 0..=m {
-      let freq = n - 2 * k; // always positive since k ≤ m and n=2m+1
-      let binom = crate::functions::binomial_coeff(n, k);
-
-      // Build the trig argument: freq * a * x
-      let freq_arg = if matches!(&coeff, Expr::Integer(1)) {
-        if freq == 1 {
-          Expr::Identifier(var.to_string())
-        } else {
-          Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::Integer(freq)),
-            right: Box::new(Expr::Identifier(var.to_string())),
-          }
-        }
-      } else {
-        simplify(Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(freq)),
-          right: Box::new(arg.clone()),
-        })
-      };
-
-      // For sin^n: integral coefficient includes the -1 from integrating sin
-      // sign = (-1)^(m-k) for the Chebyshev expansion, then *(-1) for integral of sin
-      // = (-1)^(m-k+1)
-      // For cos^n: sign = +1 (Chebyshev) and integral of cos gives sin (no sign change)
-      let coeff_num = if is_sin {
-        let exp = (m - k + 1) % 2;
-        if exp == 0 { binom } else { -binom }
-      } else {
-        binom
-      };
-
-      let integrated_trig = Expr::FunctionCall {
-        name: if is_sin { "Cos" } else { "Sin" }.to_string(),
-        args: vec![freq_arg].into(),
-      };
-
-      // Total coefficient: coeff_num / (freq * 4^m)
-      let denom = freq * (1i128 << (2 * m)); // freq * 4^m
-      let term = if matches!(&coeff, Expr::Integer(1)) {
-        let g = gcd_i128(coeff_num, denom);
-        let num = coeff_num / g;
-        let den = denom / g;
-        make_fraction_term(num, den, integrated_trig)
-      } else {
-        let g = gcd_i128(coeff_num, denom);
-        let num = coeff_num / g;
-        let den = denom / g;
-        let den_expr = simplify(Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(den)),
-          right: Box::new(coeff.clone()),
-        });
-        make_fraction_term_expr(num, den_expr, integrated_trig)
-      };
-      terms.push(term);
-    }
-  } else {
-    // Even power: n = 2m
-    // Constant term: C(n,m) / 4^m * x
+  if !is_odd {
+    // Constant term: C(n,m) / 2^n * x
     let binom_mid = crate::functions::binomial_coeff(n, m);
-    let power_4m = 1i128 << (2 * m); // 4^m
-    let g = gcd_i128(binom_mid, power_4m);
+    let denom = 1i128 << n; // 2^n
+    let g = gcd_i128(binom_mid, denom);
     let const_num = binom_mid / g;
-    let const_den = power_4m / g;
-    let const_term = if const_den == 1 {
-      if const_num == 1 {
-        Expr::Identifier(var.to_string())
-      } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(const_num)),
-          right: Box::new(Expr::Identifier(var.to_string())),
-        }
-      }
-    } else if matches!(&coeff, Expr::Integer(1)) {
+    let const_den = denom / g;
+    let numer_term = if const_num == 1 {
+      Expr::Identifier(var.to_string())
+    } else {
       Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(if const_num == 1 {
-          Expr::Identifier(var.to_string())
-        } else {
-          Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::Integer(const_num)),
-            right: Box::new(Expr::Identifier(var.to_string())),
-          }
-        }),
-        right: Box::new(Expr::Integer(const_den)),
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Integer(const_num)),
+        right: Box::new(Expr::Identifier(var.to_string())),
       }
+    };
+    let const_term = if const_den == 1 {
+      numer_term
     } else {
       Expr::BinaryOp {
         op: BinaryOperator::Divide,
-        left: Box::new(if const_num == 1 {
-          Expr::Identifier(var.to_string())
-        } else {
-          Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::Integer(const_num)),
-            right: Box::new(Expr::Identifier(var.to_string())),
-          }
-        }),
+        left: Box::new(numer_term),
         right: Box::new(Expr::Integer(const_den)),
       }
     };
     terms.push(const_term);
+  }
 
-    // Oscillating terms
-    for k in 0..m {
-      let freq = n - 2 * k;
-      let binom = crate::functions::binomial_coeff(n, k);
-      let sign = if is_sin {
-        if (m - k) % 2 == 0 { 1i128 } else { -1i128 }
-      } else {
-        1
-      };
-      let coeff_num = 2 * sign * binom;
+  // Odd power: n = 2m+1
+  // For sin: integral of (-1)^(m-k)*C(n,k)*sin((n-2k)*x) → absorb -1/k into coefficient
+  //   coeff = (-1)^(m-k+1) * C(n,k), trig = Cos[(n-2k)*x]
+  // For cos: integral of C(n,k)*cos((n-2k)*x) → coeff = C(n,k)/k, trig = Sin[(n-2k)*x]
+  for k in 0..n - m {
+    // n-m=m+1 for n odd, m for n even
+    let freq = n - 2 * k; // always positive since k ≤ m and n=2m+1
+    let binom = crate::functions::binomial_coeff(n, k);
 
-      let freq_arg = if matches!(&coeff, Expr::Integer(1)) {
-        if freq == 1 {
-          Expr::Identifier(var.to_string())
-        } else {
-          Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::Integer(freq)),
-            right: Box::new(Expr::Identifier(var.to_string())),
-          }
-        }
+    // Build the trig argument: freq * a * x
+    let freq_arg = if matches!(&coeff, Expr::Integer(1)) {
+      if freq == 1 {
+        Expr::Identifier(var.to_string())
       } else {
-        simplify(Expr::BinaryOp {
+        Expr::BinaryOp {
           op: BinaryOperator::Times,
           left: Box::new(Expr::Integer(freq)),
-          right: Box::new(arg.clone()),
-        })
-      };
+          right: Box::new(Expr::Identifier(var.to_string())),
+        }
+      }
+    } else {
+      simplify(Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Integer(freq)),
+        right: Box::new(arg.clone()),
+      })
+    };
 
-      // Integrated: sin(freq*x)/(freq) for both sin^n and cos^n even powers
-      let integrated_trig = Expr::FunctionCall {
-        name: "Sin".to_string(),
-        args: vec![freq_arg].into(),
-      };
+    // For sin^n: integral coefficient includes the -1 from integrating sin
+    // sign = (-1)^(m-k) for the Chebyshev expansion, then *(-1) for integral of sin
+    // = (-1)^(m-k+1)
+    // For cos^n: sign = +1 (Chebyshev) and integral of cos gives sin (no sign change)
+    let coeff_num = if is_sin && (m - k + is_odd as i128) % 2 != 0 {
+      -2 * binom
+    } else {
+      2 * binom
+    };
 
-      let denom = freq * power_4m;
-      let term = if matches!(&coeff, Expr::Integer(1)) {
-        let g = gcd_i128(coeff_num, denom);
-        let num = coeff_num / g;
-        let den = denom / g;
-        make_fraction_term(num, den, integrated_trig)
-      } else {
-        let g = gcd_i128(coeff_num, denom);
-        let num = coeff_num / g;
-        let den = denom / g;
-        let den_expr = simplify(Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(den)),
-          right: Box::new(coeff.clone()),
-        });
-        make_fraction_term_expr(num, den_expr, integrated_trig)
-      };
-      terms.push(term);
-    }
+    // Integrated: sin(freq*x)/(freq) for both sin^n and cos^n even powers
+    // cos(freq*x)/(freq) for sin^n odd powers.
+    let integrated_trig = Expr::FunctionCall {
+      name: if is_sin && is_odd { "Cos" } else { "Sin" }.to_string(),
+      args: vec![freq_arg].into(),
+    };
+
+    // Total coefficient: coeff_num / (freq * 4^m)
+    let power_2n = 1i128 << n; // 2^n
+    let denom = freq * power_2n; // freq * 2^n
+    let g = gcd_i128(coeff_num, denom);
+    let num = coeff_num / g;
+    let den = denom / g;
+
+    let term = if matches!(&coeff, Expr::Integer(1)) {
+      make_fraction_term(num, den, integrated_trig)
+    } else {
+      let den_expr = simplify(Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Integer(den)),
+        right: Box::new(coeff.clone()),
+      });
+      make_fraction_term_expr(num, den_expr, integrated_trig)
+    };
+    terms.push(term);
   }
 
   if terms.is_empty() {
