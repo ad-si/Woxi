@@ -3384,9 +3384,9 @@ fn handle_event(
           | keyboard::key::Named::ArrowUp
           | keyboard::key::Named::Enter,
         ) = key.as_ref()
-        {
-          return Some(Message::KeyPressed(key, modifiers));
-        }
+      {
+        return Some(Message::KeyPressed(key, modifiers));
+      }
     }
 
     // Ctrl shortcuts for text editing
