@@ -3307,6 +3307,70 @@ mod linear_model_fit {
   }
 }
 
+// NonlinearModelFit fits parameters with FindFit and returns a FittedModel
+// whose "BestFitParameters" property is the fitted {a -> …, b -> …} rules (in
+// contrast to LinearModelFit's bare values), and which evaluates the fitted
+// function. Verified against wolframscript.
+mod nonlinear_model_fit {
+  use super::*;
+
+  #[test]
+  fn returns_fitted_model() {
+    assert_eq!(
+      interpret(
+        "Head[NonlinearModelFit[{{1, 2}, {2, 5}}, a x + b, {a, b}, x]]"
+      )
+      .unwrap(),
+      "FittedModel"
+    );
+  }
+
+  #[test]
+  fn best_fit_parameters_are_rules() {
+    // Data is exactly x^2 + 1, so the fitted parameters are a = 1, b = 1
+    // (returned as rules). Rounded to expose the exact values.
+    assert_eq!(
+      interpret(
+        "Round[a /. NonlinearModelFit[{{1, 2}, {2, 5}, {3, 10}}, a x^2 + b, {a, b}, x][\"BestFitParameters\"], 10^-6]"
+      )
+      .unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret(
+        "Round[b /. NonlinearModelFit[{{1, 2}, {2, 5}, {3, 10}}, a x^2 + b, {a, b}, x][\"BestFitParameters\"], 10^-6]"
+      )
+      .unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn evaluate_and_normal() {
+    // The fitted function 1 + x^2 at x = 4 is 17.
+    assert_eq!(
+      interpret(
+        "Round[NonlinearModelFit[{{1, 2}, {2, 5}, {3, 10}}, a x^2 + b, {a, b}, x][4], 10^-4]"
+      )
+      .unwrap(),
+      "17"
+    );
+  }
+
+  #[test]
+  fn linear_in_parameters() {
+    // A model linear in its parameters is fitted by least squares; the slope
+    // of {1,4,9} vs {1,2,3} is 4.
+    assert_eq!(
+      interpret(
+        "Round[a /. NonlinearModelFit[{{1, 1}, {2, 4}, {3, 9}}, a x + b, {a, b}, x][\"BestFitParameters\"], 10^-4]"
+      )
+      .unwrap(),
+      "4"
+    );
+  }
+}
+
 mod translation_transform {
   use super::*;
 

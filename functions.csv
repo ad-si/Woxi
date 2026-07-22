@@ -489,7 +489,7 @@ MeijerG,Meijer G-function,✅,pure,3.0,492
 DiagonalMatrix,Creates a diagonal matrix from a list,✅,pure,1.0,493
 GraphicsRow,Arranges graphics in a horizontal row,✅,pure,6.0,494
 TrackedSymbols,Option for specifying which symbols trigger dynamic updates,✅,pure,6.0,495
-NonlinearModelFit,Construct a nonlinear model fit,🚫,stateful,7.0,496
+NonlinearModelFit,Fits a nonlinear model to data and returns a FittedModel object,✅,pure,7.0,496
 Brown,Named color evaluating to RGBColor[0.6 0.4 0.2],✅,pure,5.1,497
 MapAt,Applies a function at specific positions,✅,pure,1.0,498
 IntegerPart,Returns the integer part of a number (truncation towards zero),✅,pure,3.0,499

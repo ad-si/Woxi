@@ -6449,6 +6449,76 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// NonlinearModelFit[data, model, params, var] — fits a (possibly nonlinear)
+/// model and returns a FittedModel object. The parameters are fitted with
+/// FindFit; the FittedModel then answers property queries ("BestFitParameters"
+/// gives the fitted `{a -> …, b -> …}` rules, matching wolframscript) and
+/// evaluates the fitted function at a point.
+pub fn nonlinear_model_fit_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let uneval = || Ok(unevaluated("NonlinearModelFit", args));
+  if args.len() != 4 {
+    return uneval();
+  }
+  let (data, model, params, var) = (&args[0], &args[1], &args[2], &args[3]);
+
+  // Fit the parameters. FindFit returns `{a -> v, b -> v}` (rules) on success.
+  let param_rules =
+    find_fit_ast(&[data.clone(), model.clone(), params.clone(), var.clone()])?;
+  let Expr::List(rules) = &param_rules else {
+    return uneval();
+  };
+  if rules.is_empty() || !rules.iter().all(|r| matches!(r, Expr::Rule { .. })) {
+    return uneval();
+  }
+
+  // The independent variable name (a bare symbol, or a single-element list).
+  let var_name = match var {
+    Expr::Identifier(n) => n.clone(),
+    Expr::List(items) if items.len() == 1 => match &items[0] {
+      Expr::Identifier(n) => n.clone(),
+      _ => return uneval(),
+    },
+    _ => return uneval(),
+  };
+
+  // The fitted function: the model with the parameter rules substituted.
+  let fitted_expr = evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "ReplaceAll".to_string(),
+    args: vec![model.clone(), param_rules.clone()].into(),
+  })?;
+
+  let assoc = Expr::Association(vec![
+    (
+      Expr::String("Type".to_string()),
+      Expr::Identifier("Nonlinear".to_string()),
+    ),
+    (
+      Expr::String("FittedExpression".to_string()),
+      fitted_expr.clone(),
+    ),
+    (
+      Expr::String("BestFitParameters".to_string()),
+      param_rules.clone(),
+    ),
+    (
+      Expr::String("IndependentVariables".to_string()),
+      Expr::List(vec![Expr::Identifier(var_name.clone())].into()),
+    ),
+    (
+      Expr::String("VariableName".to_string()),
+      Expr::String(var_name),
+    ),
+    (Expr::String("BestFit".to_string()), fitted_expr),
+  ]);
+
+  Ok(Expr::FunctionCall {
+    name: "FittedModel".to_string(),
+    args: vec![assoc].into(),
+  })
+}
+
 /// `LinearModelFit[{X, y}]` — design-matrix form. Fits `y ≈ X · β` directly,
 /// using each column of `X` as its own basis "function" (`Slot[1]`,
 /// `Slot[2]`, …). Unlike the symbolic 3-arg form, no constant column is
