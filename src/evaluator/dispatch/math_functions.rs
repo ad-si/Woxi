@@ -3033,6 +3033,9 @@ pub fn dispatch_math_functions(
     "Binomial" if args.len() == 2 => {
       return Some(crate::functions::math_ast::binomial_ast(args));
     }
+    "PascalBinomial" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::pascal_binomial_ast(args));
+    }
     "CardinalBSplineBasis" if args.len() == 2 => {
       // CardinalBSplineBasis[d, x] is the centered cardinal B-spline of degree
       // d, supported on [-(d+1)/2, (d+1)/2]:

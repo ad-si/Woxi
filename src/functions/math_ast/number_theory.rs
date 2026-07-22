@@ -4635,6 +4635,39 @@ pub fn binomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// PascalBinomial[n, k] gives the binomial coefficient obtained by continuing
+/// Pascal's triangle. It agrees with Binomial[n, k] everywhere except that it
+/// is 0 whenever k is a negative integer — where Binomial can be nonzero on the
+/// negative diagonal (e.g. Binomial[-1, -1] == 1 but PascalBinomial[-1, -1] == 0).
+pub fn pascal_binomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "PascalBinomial expects exactly 2 arguments".into(),
+    ));
+  }
+  // A negative *integer* k forces 0 (Pascal's triangle has no entries left of
+  // the first column). The zero is inexact when n is inexact, matching Binomial.
+  if let Expr::Integer(k) = &args[1]
+    && *k < 0
+  {
+    let inexact = matches!(&args[0], Expr::Real(_) | Expr::BigFloat(_, _));
+    return Ok(if inexact {
+      Expr::Real(0.0)
+    } else {
+      Expr::Integer(0)
+    });
+  }
+  // Otherwise PascalBinomial agrees exactly with Binomial.
+  let result = binomial_ast(args)?;
+  // If Binomial stayed unevaluated, keep the PascalBinomial head.
+  if let Expr::FunctionCall { name, .. } = &result
+    && name == "Binomial"
+  {
+    return Ok(unevaluated("PascalBinomial", args));
+  }
+  Ok(result)
+}
+
 /// Compute a binomial coefficient as an arbitrary-precision BigInt, so large
 /// results (e.g. Binomial[1000, 500], 300 digits) don't overflow i128. The
 /// generalized negative-argument identities match `binomial_coeff`.

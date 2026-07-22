@@ -81,6 +81,7 @@ pub fn is_builtin_listable(name: &str) -> bool {
       | "GCD"
       | "LCM"
       | "Binomial"
+      | "PascalBinomial"
       | "Multinomial"
       | "IntegerDigits"
       | "DigitCount"

@@ -1890,6 +1890,55 @@ mod binomial {
   }
 }
 
+mod pascal_binomial {
+  use super::*;
+
+  #[test]
+  fn agrees_with_binomial_for_nonnegative_k() {
+    // For k >= 0, PascalBinomial matches Binomial exactly.
+    assert_eq!(interpret("PascalBinomial[5, 2]").unwrap(), "10");
+    assert_eq!(interpret("PascalBinomial[7, 3]").unwrap(), "35");
+    assert_eq!(interpret("PascalBinomial[10, 0]").unwrap(), "1");
+    assert_eq!(interpret("PascalBinomial[-3, 2]").unwrap(), "6");
+    assert_eq!(interpret("PascalBinomial[-2, 3]").unwrap(), "-4");
+  }
+
+  #[test]
+  fn negative_integer_k_is_zero() {
+    // A negative integer k gives 0 — even where Binomial is nonzero on the
+    // negative diagonal (Binomial[-1, -1] == 1, Binomial[-4, -4] == 1).
+    assert_eq!(interpret("PascalBinomial[-1, -1]").unwrap(), "0");
+    assert_eq!(interpret("PascalBinomial[-4, -4]").unwrap(), "0");
+    assert_eq!(interpret("PascalBinomial[4, -1]").unwrap(), "0");
+    assert_eq!(interpret("PascalBinomial[n, -2]").unwrap(), "0");
+    // Inexact n makes the zero inexact, matching Binomial.
+    assert_eq!(interpret("PascalBinomial[6.0, -2]").unwrap(), "0.");
+  }
+
+  #[test]
+  fn symbolic_stays_unevaluated() {
+    assert_eq!(
+      interpret("PascalBinomial[n, k]").unwrap(),
+      "PascalBinomial[n, k]"
+    );
+    assert_eq!(interpret("PascalBinomial[n, 2]").unwrap(), "((-1 + n)*n)/2");
+  }
+
+  #[test]
+  fn listable() {
+    assert_eq!(interpret("PascalBinomial[{5, 6}, 2]").unwrap(), "{10, 15}");
+    assert_eq!(
+      interpret("PascalBinomial[5, {0, 1, 2}]").unwrap(),
+      "{1, 5, 10}"
+    );
+  }
+
+  #[test]
+  fn complex_argument() {
+    assert_eq!(interpret("PascalBinomial[I, 2]").unwrap(), "-1/2 - I/2");
+  }
+}
+
 mod bernstein_basis {
   use super::*;
 

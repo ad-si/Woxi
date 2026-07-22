@@ -119,6 +119,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "BernsteinBasis" => Some((3, 3)),
     "CardinalBSplineBasis" => Some((2, 2)),
     "Binomial" => Some((2, 2)),
+    "PascalBinomial" => Some((2, 2)),
     "BitClear" => Some((2, 2)),
     "BitFlip" => Some((2, 2)),
     "BitGet" => Some((2, 2)),
