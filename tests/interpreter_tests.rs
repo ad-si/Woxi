@@ -942,6 +942,50 @@ mod interpreter_tests {
     assert_eq!(bytes.len(), 44 + (8000 * 7 / 10) * 2);
   }
 
+  #[test]
+  fn test_list_play_synthesizes_audio_in_visual_mode() {
+    // In visual mode (playground / woxi-studio), ListPlay[{levels…}] is
+    // normalized, encoded as a WAV, and exposed via the `sound` channel so the
+    // hosts render a playable audio widget instead of the -Sound- echo.
+    clear_state();
+    let r = interpret_with_stdout("ListPlay[{0.1, 0.2, 0.3, -0.1}]").unwrap();
+    let audio = r.sound.expect("ListPlay should produce synthesized audio");
+    let bytes = base64::engine::Engine::decode(
+      &base64::engine::general_purpose::STANDARD,
+      &audio.base64,
+    )
+    .expect("sound should be valid base64");
+    assert_eq!(&bytes[0..4], b"RIFF");
+    assert_eq!(&bytes[8..12], b"WAVE");
+    // Default ListPlay sample rate is 8000 Hz.
+    assert_eq!(u32::from_le_bytes(bytes[24..28].try_into().unwrap()), 8000);
+    // Four normalized samples, 16-bit mono, byte-verified against wolframscript.
+    assert_eq!(bytes.len(), 44 + 4 * 2);
+    assert_eq!(&bytes[44..52], &[0, 0, 0, 64, 255, 127, 0, 128]);
+  }
+
+  #[test]
+  fn test_list_play_target_waveform_in_visual_mode() {
+    // The motivating example: a 50 Hz sine sampled at 2000 Hz over 1 second
+    // (2001 samples) plays as a Sound in the visual hosts.
+    clear_state();
+    let r = interpret_with_stdout(
+      "ListPlay[Table[Sin[2 Pi 50 t], {t, 0, 1, 1./2000}]]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "-Sound-");
+    let audio = r.sound.expect("ListPlay should produce synthesized audio");
+    let bytes = base64::engine::Engine::decode(
+      &base64::engine::general_purpose::STANDARD,
+      &audio.base64,
+    )
+    .expect("sound should be valid base64");
+    assert_eq!(&bytes[0..4], b"RIFF");
+    assert_eq!(u32::from_le_bytes(bytes[24..28].try_into().unwrap()), 8000);
+    // 2001 samples, 16-bit mono.
+    assert_eq!(bytes.len(), 44 + 2001 * 2);
+  }
+
   /// Decode the base64 WAV payload of a captured audio output.
   fn decode_wav_bytes(audio: &woxi::AudioOutput) -> Vec<u8> {
     assert_eq!(audio.mime, "audio/wav");

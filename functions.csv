@@ -2310,7 +2310,7 @@ RankedMax,k-th largest element,✅,pure,8.0,2355
 WindowFrame,notebook UI,🚫,None,3.0,2355
 FindProcessParameters,stochastic process fitting,🚫,None,9.0,2360
 KirchhoffMatrix,Builds the Kirchhoff (Laplacian) matrix of a graph,✅,none,8.0,2360
-ListPlay,audio playback,🚫,None,2.0,2360
+ListPlay,Plays a list of amplitude levels as a sound,✅,None,2.0,2360
 SmoothHistogram3D,3D visualization,🚫,None,8.0,2360
 SyntaxQ,Test if a string is valid Wolfram Language syntax,✅,1,2.0,2360
 SurfaceArea,Total boundary area of a 3D solid region,✅,pure,12.0,2361
