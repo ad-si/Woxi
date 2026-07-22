@@ -1068,6 +1068,141 @@ pub fn date_bounds_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   ))
 }
 
+/// Absolute-seconds ordering key for a date specification. Bare numbers are
+/// already absolute times; date lists / DateObjects convert through their
+/// calendar components (missing month/day default to 1, times to 0).
+fn date_order_key(e: &Expr) -> Option<f64> {
+  match e {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    _ => {
+      let c = extract_date_components(e)?;
+      let mut k = [0.0, 1.0, 1.0, 0.0, 0.0, 0.0];
+      for (i, v) in c.iter().enumerate().take(6) {
+        k[i] = *v;
+      }
+      Some(date_to_absolute_seconds(
+        k[0] as i64,
+        k[1] as i64,
+        k[2] as i64,
+        k[3] as i64,
+        k[4] as i64,
+        k[5],
+      ))
+    }
+  }
+}
+
+/// Number of DateObject components corresponding to a granularity tag.
+fn granularity_component_count(gran: &str) -> usize {
+  match gran {
+    "Year" => 1,
+    "Quarter" | "Month" => 2,
+    "Week" | "Day" => 3,
+    "Hour" => 4,
+    "Minute" => 5,
+    _ => 6, // Second, Instant
+  }
+}
+
+/// End (want_max) or start point of a DateInterval, as a DateObject at the
+/// interval's granularity. Handles one or more `{start, end}` ranges.
+fn date_interval_endpoint(iargs: &[Expr], want_max: bool) -> Option<Expr> {
+  let Expr::List(ranges) = &iargs[0] else {
+    return None;
+  };
+  let granularity = match iargs.get(1) {
+    Some(Expr::Identifier(g)) | Some(Expr::String(g)) => g.clone(),
+    _ => "Day".to_string(),
+  };
+  let ncomp = granularity_component_count(&granularity);
+
+  let mut best: Option<(f64, Vec<f64>)> = None;
+  for r in ranges.iter() {
+    let Expr::List(pair) = r else {
+      return None;
+    };
+    if pair.len() != 2 {
+      return None;
+    }
+    let endpoint = if want_max { &pair[1] } else { &pair[0] };
+    let c = extract_date_components(endpoint)?;
+    let t = date_order_key(endpoint)?;
+    let better = match &best {
+      None => true,
+      Some((bt, _)) => {
+        if want_max {
+          t > *bt
+        } else {
+          t < *bt
+        }
+      }
+    };
+    if better {
+      best = Some((t, c));
+    }
+  }
+  let (_, comps) = best?;
+  let trimmed: Vec<Expr> = comps
+    .iter()
+    .take(ncomp)
+    .map(|v| {
+      if v.fract() == 0.0 {
+        Expr::Integer(*v as i128)
+      } else {
+        Expr::Real(*v)
+      }
+    })
+    .collect();
+  Some(Expr::FunctionCall {
+    name: "DateObject".to_string(),
+    args: vec![Expr::List(trimmed.into()), Expr::String(granularity)].into(),
+  })
+}
+
+/// MaxDate[{d1, d2, …}] / MinDate[...] give the latest / earliest date,
+/// preserving each element's original form. A DateInterval argument yields its
+/// end / start point as a DateObject at the interval's granularity.
+pub fn max_min_date_ast(
+  args: &[Expr],
+  want_max: bool,
+) -> Result<Expr, InterpreterError> {
+  let head = if want_max { "MaxDate" } else { "MinDate" };
+  let unevaluated = || Ok(unevaluated(head, args));
+  if args.len() != 1 {
+    return unevaluated();
+  }
+  match &args[0] {
+    Expr::List(items) => {
+      if items.is_empty() {
+        return unevaluated();
+      }
+      let keys: Option<Vec<f64>> = items.iter().map(date_order_key).collect();
+      let Some(keys) = keys else {
+        return unevaluated();
+      };
+      let mut best = 0usize;
+      for i in 1..keys.len() {
+        let want = if want_max {
+          std::cmp::Ordering::Greater
+        } else {
+          std::cmp::Ordering::Less
+        };
+        if keys[i].partial_cmp(&keys[best]).is_some_and(|o| o == want) {
+          best = i;
+        }
+      }
+      Ok(items[best].clone())
+    }
+    Expr::FunctionCall { name, args: iargs }
+      if name == "DateInterval" && !iargs.is_empty() =>
+    {
+      date_interval_endpoint(iargs, want_max).map_or_else(unevaluated, Ok)
+    }
+    _ => unevaluated(),
+  }
+}
+
 /// TimeZoneConvert[date, tz] — convert a DateObject between time zones.
 /// Numeric offsets work everywhere; named IANA zones resolve through
 /// chrono-tz (CLI builds only — the WASM build leaves named zones

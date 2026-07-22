@@ -22,6 +22,16 @@ pub fn dispatch_datetime_functions(
     "DateBounds" if args.len() == 1 => {
       return Some(crate::functions::datetime_ast::date_bounds_ast(args));
     }
+    "MaxDate" if args.len() == 1 => {
+      return Some(crate::functions::datetime_ast::max_min_date_ast(
+        args, true,
+      ));
+    }
+    "MinDate" if args.len() == 1 => {
+      return Some(crate::functions::datetime_ast::max_min_date_ast(
+        args, false,
+      ));
+    }
     "DayPlus" if args.len() >= 2 && args.len() <= 3 => {
       return Some(crate::functions::datetime_ast::day_plus_ast(args));
     }

@@ -209,6 +209,93 @@ mod date_bounds {
   }
 }
 
+mod max_min_date {
+  use super::*;
+
+  // MaxDate / MinDate pick the latest / earliest date from a list.
+  #[test]
+  fn latest_and_earliest() {
+    assert_eq!(
+      interpret(
+        "MaxDate[{DateObject[{2022, 4, 8}], DateObject[{2022, 4, 9}], \
+         DateObject[{2022, 4, 7}]}]"
+      )
+      .unwrap(),
+      "DateObject[{2022, 4, 9}, Day]"
+    );
+    assert_eq!(
+      interpret(
+        "MinDate[{DateObject[{2022, 4, 8}], DateObject[{2022, 4, 9}], \
+         DateObject[{2022, 4, 7}]}]"
+      )
+      .unwrap(),
+      "DateObject[{2022, 4, 7}, Day]"
+    );
+  }
+
+  // Each element keeps its original form (here bare date lists).
+  #[test]
+  fn preserves_element_form() {
+    assert_eq!(
+      interpret("MaxDate[{{2024, 6, 1}, {2024, 1, 1}, {2024, 3, 15}}]")
+        .unwrap(),
+      "{2024, 6, 1}"
+    );
+    assert_eq!(
+      interpret("MinDate[{{2024, 6, 1}, {2024, 1, 1}, {2024, 3, 15}}]")
+        .unwrap(),
+      "{2024, 1, 1}"
+    );
+  }
+
+  // Finer granularity wins the comparison and is returned as-is.
+  #[test]
+  fn mixed_granularity() {
+    assert_eq!(
+      interpret("MaxDate[{DateObject[{2020, 3}], DateObject[{2020, 3, 15}]}]")
+        .unwrap(),
+      "DateObject[{2020, 3, 15}, Day]"
+    );
+    assert_eq!(
+      interpret(
+        "MaxDate[{DateObject[{2020, 5, 3}], \
+         DateObject[{2020, 5, 3, 10, 0, 0}]}]"
+      )
+      .unwrap(),
+      "DateObject[{2020, 5, 3, 10, 0, 0}, Instant, Gregorian, 0.]"
+    );
+  }
+
+  // A single-element list returns that element.
+  #[test]
+  fn single_element() {
+    assert_eq!(
+      interpret("MaxDate[{DateObject[{2022, 4, 8}]}]").unwrap(),
+      "DateObject[{2022, 4, 8}, Day]"
+    );
+  }
+
+  // A DateInterval yields its end / start point at the interval granularity.
+  #[test]
+  fn date_interval_endpoints() {
+    assert_eq!(
+      interpret("MaxDate[DateInterval[{{2020, 1, 1}, {2021, 1, 1}}]]").unwrap(),
+      "DateObject[{2021, 1, 1}, Day]"
+    );
+    assert_eq!(
+      interpret("MinDate[DateInterval[{{2020, 1, 1}, {2021, 1, 1}}]]").unwrap(),
+      "DateObject[{2020, 1, 1}, Day]"
+    );
+  }
+
+  // A non-date argument stays unevaluated.
+  #[test]
+  fn non_date_unevaluated() {
+    assert_eq!(interpret("MaxDate[5]").unwrap(), "MaxDate[5]");
+    assert_eq!(interpret("MinDate[5]").unwrap(), "MinDate[5]");
+  }
+}
+
 mod date_plus {
   use super::*;
 
