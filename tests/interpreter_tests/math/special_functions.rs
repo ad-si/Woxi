@@ -954,6 +954,22 @@ mod carlson_integrals {
     assert!((num("CarlsonRF[1.0, 2, 3]") - 0.7269459354689082).abs() < 1e-9);
   }
 
+  // R_F with complex arguments: the real f64 kernel cannot handle them, so a
+  // dedicated complex duplication kernel is used. Values verified against
+  // wolframscript: CarlsonRF[1. + I, 2., 3. - I] and CarlsonRF[2. + 3. I, 1., 4.].
+  #[test]
+  fn rf_complex_values() {
+    let re = num("Re[CarlsonRF[1.0 + I, 2.0, 3.0 - I]]");
+    let im = num("Im[CarlsonRF[1.0 + I, 2.0, 3.0 - I]]");
+    assert!((re - 0.7003661771183686).abs() < 1e-10);
+    assert!((im - (-0.03345550903983366)).abs() < 1e-10);
+
+    let re2 = num("Re[CarlsonRF[2.0 + 3.0 I, 1.0, 4.0]]");
+    let im2 = num("Im[CarlsonRF[2.0 + 3.0 I, 1.0, 4.0]]");
+    assert!((re2 - 0.6191011861868503).abs() < 1e-10);
+    assert!((im2 - (-0.11759888698074268)).abs() < 1e-10);
+  }
+
   #[test]
   fn rd_value() {
     assert!((num("N[CarlsonRD[1, 2, 3]]") - 0.29046028102899024).abs() < 1e-9);

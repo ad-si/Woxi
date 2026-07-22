@@ -70,6 +70,95 @@ fn carlson_rf(x: f64, y: f64, z: f64) -> f64 {
   (1.0 + (C1 * e2 - C2 - C3 * e3) * e2 + C4 * e3) / ave.sqrt()
 }
 
+// --- Complex helpers for the R_F duplication algorithm ------------------
+// The codebase represents a machine complex number as an `(f64, f64)` pair
+// `(re, im)`; these tiny helpers give it the few operations R_F needs.
+
+type C = (f64, f64);
+
+fn cadd(a: C, b: C) -> C {
+  (a.0 + b.0, a.1 + b.1)
+}
+fn csub(a: C, b: C) -> C {
+  (a.0 - b.0, a.1 - b.1)
+}
+fn cmul(a: C, b: C) -> C {
+  (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0)
+}
+fn cscale(a: C, s: f64) -> C {
+  (a.0 * s, a.1 * s)
+}
+fn cdiv(a: C, b: C) -> C {
+  let d = b.0 * b.0 + b.1 * b.1;
+  ((a.0 * b.0 + a.1 * b.1) / d, (a.1 * b.0 - a.0 * b.1) / d)
+}
+fn cabs(a: C) -> f64 {
+  a.0.hypot(a.1)
+}
+/// Principal complex square root (branch cut on the negative real axis).
+fn csqrt(a: C) -> C {
+  if a.1 == 0.0 {
+    return if a.0 >= 0.0 {
+      (a.0.sqrt(), 0.0)
+    } else {
+      (0.0, (-a.0).sqrt())
+    };
+  }
+  let r = cabs(a);
+  let re = ((r + a.0) / 2.0).sqrt();
+  let im = ((r - a.0) / 2.0).sqrt() * if a.1 < 0.0 { -1.0 } else { 1.0 };
+  (re, im)
+}
+
+/// Complex R_F(x, y, z) via Carlson's duplication algorithm (same recurrence
+/// as the real kernel, carried out in complex arithmetic with the principal
+/// square-root branch). Handles arguments with nonzero imaginary part, which
+/// the real kernel cannot.
+fn carlson_rf_complex(x: C, y: C, z: C) -> C {
+  // A tighter tolerance than the real kernel: the extra duplication steps drive
+  // the del variables smaller so the fifth-order polynomial correction reaches
+  // full double precision (the complex regime is less forgiving than the real).
+  const ERRTOL: f64 = 1.0e-4;
+  const C1: f64 = 1.0 / 24.0;
+  const C2: f64 = 0.1;
+  const C3: f64 = 3.0 / 44.0;
+  const C4: f64 = 1.0 / 14.0;
+  let (mut xt, mut yt, mut zt) = (x, y, z);
+  let third = 1.0 / 3.0;
+  let (mut delx, mut dely, mut delz, mut ave);
+  // Each duplication step roughly quarters the del variables, so convergence to
+  // ERRTOL takes only a handful of steps; the cap is a safety net.
+  let mut iter = 0;
+  loop {
+    let sqrtx = csqrt(xt);
+    let sqrty = csqrt(yt);
+    let sqrtz = csqrt(zt);
+    let alamb = cadd(cmul(sqrtx, cadd(sqrty, sqrtz)), cmul(sqrty, sqrtz));
+    xt = cscale(cadd(xt, alamb), 0.25);
+    yt = cscale(cadd(yt, alamb), 0.25);
+    zt = cscale(cadd(zt, alamb), 0.25);
+    ave = cscale(cadd(cadd(xt, yt), zt), third);
+    delx = cdiv(csub(ave, xt), ave);
+    dely = cdiv(csub(ave, yt), ave);
+    delz = cdiv(csub(ave, zt), ave);
+    iter += 1;
+    if cabs(delx).max(cabs(dely)).max(cabs(delz)) <= ERRTOL || iter >= 100 {
+      break;
+    }
+  }
+  let e2 = csub(cmul(delx, dely), cmul(delz, delz));
+  let e3 = cmul(cmul(delx, dely), delz);
+  // 1 + (C1*e2 - C2 - C3*e3)*e2 + C4*e3
+  let poly = cadd(
+    cadd(
+      (1.0, 0.0),
+      cmul(csub(csub(cscale(e2, C1), (C2, 0.0)), cscale(e3, C3)), e2),
+    ),
+    cscale(e3, C4),
+  );
+  cdiv(poly, csqrt(ave))
+}
+
 /// R_D(x, y, z) — symmetric elliptic integral of the second kind (R_J with the
 /// last two arguments equal: R_D(x, y, z) = R_J(x, y, z, z)).
 fn carlson_rd(x: f64, y: f64, z: f64) -> f64 {
@@ -434,6 +523,21 @@ pub fn carlson_rf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Some(r) = rf_exact(&args[0], &args[1], &args[2])
   {
     return r;
+  }
+  // Complex numeric path: once an argument is inexact and any argument has a
+  // nonzero imaginary part, use the complex duplication kernel (the real
+  // kernel and `expr_to_f64` cannot handle complex arguments).
+  if args.len() == 3
+    && args.iter().any(is_inexact)
+    && let (Some(x), Some(y), Some(z)) = (
+      crate::functions::math_ast::try_extract_complex_f64(&args[0]),
+      crate::functions::math_ast::try_extract_complex_f64(&args[1]),
+      crate::functions::math_ast::try_extract_complex_f64(&args[2]),
+    )
+    && (x.1 != 0.0 || y.1 != 0.0 || z.1 != 0.0)
+  {
+    let (rr, ri) = carlson_rf_complex(x, y, z);
+    return Ok(crate::functions::math_ast::build_complex_float_expr(rr, ri));
   }
   carlson_ast("CarlsonRF", args, 3, |v| Some(carlson_rf(v[0], v[1], v[2])))
 }
