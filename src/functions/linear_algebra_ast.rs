@@ -5572,6 +5572,210 @@ pub fn find_integer_null_vector_ast(
   Ok(Expr::List(coeffs.into_iter().map(Expr::Integer).collect()))
 }
 
+/// Find an integer relation among `vals` via LLL: integers `a` with
+/// `sum(a_i * vals_i) ≈ 0`, returned together with the absolute residual. The
+/// lattice is the same one `FindIntegerNullVector` uses. Returns `None` if the
+/// reduction produces only the zero vector.
+fn lll_integer_relation(vals: &[f64], scale: f64) -> Option<(Vec<i128>, f64)> {
+  let n = vals.len();
+  let mut basis: Vec<Vec<i128>> = Vec::with_capacity(n);
+  for (i, &v) in vals.iter().enumerate() {
+    let mut row = vec![0i128; n + 1];
+    row[i] = 1;
+    row[n] = (v * scale).round() as i128;
+    basis.push(row);
+  }
+  let reduced = lll_reduce(&mut basis);
+  // Pick the genuine relation: the reduced vector whose ACTUAL residual
+  // `|sum(a_i * vals_i)|` (in f64, independent of the lattice scale) is
+  // smallest. A minimal integer relation sits at machine-zero; spurious short
+  // vectors have far larger residuals. Ties break toward the smaller-height
+  // (smaller coefficient-norm) vector, which is the minimal polynomial.
+  let mut best: Option<(Vec<i128>, f64)> = None;
+  for row in &reduced {
+    let coeff_norm_sq: i128 = row[..n].iter().map(|&c| c * c).sum();
+    if coeff_norm_sq == 0 {
+      continue;
+    }
+    let residual: f64 = row[..n]
+      .iter()
+      .zip(vals.iter())
+      .map(|(&a, &x)| a as f64 * x)
+      .sum::<f64>()
+      .abs();
+    let better = match &best {
+      None => true,
+      Some((cur, cur_res)) => {
+        let cur_norm_sq: i128 = cur.iter().map(|&c| c * c).sum();
+        residual < *cur_res * 0.999
+          || ((residual - *cur_res).abs() <= *cur_res * 0.001
+            && coeff_norm_sq < cur_norm_sq)
+      }
+    };
+    if better {
+      best = Some((row[..n].to_vec(), residual));
+    }
+  }
+  best
+}
+
+/// RootApproximant[x] / RootApproximant[x, n] — recover the algebraic number of
+/// least degree and height that `x` (a machine real) approximates to its
+/// precision. Searches increasing degrees for a minimal integer polynomial that
+/// `x` satisfies (via LLL), then returns `Root[poly, k, 0]` for the branch
+/// closest to `x`; the evaluator's `Root` machinery renders low-degree cases as
+/// radicals or rationals, matching wolframscript (`Sqrt[2]`, `(1 + Sqrt[5])/2`,
+/// `Root[-2 + #1^3 &, 1, 0]`, `1/2`).
+pub fn root_approximant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Ok(unevaluated("RootApproximant", args));
+  }
+
+  // Exact numeric input is already an algebraic number: return it unchanged.
+  if matches!(&args[0], Expr::Integer(_))
+    || matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Rational")
+  {
+    return Ok(args[0].clone());
+  }
+
+  let x = match &args[0] {
+    Expr::Real(v) => *v,
+    _ => match try_eval_to_f64(&args[0]) {
+      Some(v) => v,
+      None => return Ok(unevaluated("RootApproximant", args)),
+    },
+  };
+  if !x.is_finite() {
+    return Ok(unevaluated("RootApproximant", args));
+  }
+
+  // Maximum degree to search: an explicit second argument, else a default that
+  // is generous for machine precision without inviting spurious relations.
+  let max_degree = match args.get(1) {
+    Some(Expr::Integer(n)) if *n >= 1 => (*n as usize).min(16),
+    Some(_) => return Ok(unevaluated("RootApproximant", args)),
+    None => 8,
+  };
+
+  // Detect the integer relation whose residual is at machine-zero: that is the
+  // polynomial x genuinely satisfies. A degree-d LLL fit to a number that is
+  // NOT of degree d leaves a residual near SCALE^(-(d)/(d+1)) (e.g. ~1e-8 for a
+  // spurious quadratic), whereas a genuine relation sits at ~1e-15. The
+  // tolerance sits well below the spurious floor, scaled by |x|^d so large
+  // arguments are handled.
+  const SCALE: f64 = 1.0e12;
+
+  for d in 1..=max_degree {
+    let powers: Vec<f64> = (0..=d).map(|k| x.powi(k as i32)).collect();
+    let Some((coeffs, residual)) = lll_integer_relation(&powers, SCALE) else {
+      continue;
+    };
+    let res_tol = 1.0e-11 * x.abs().powi(d as i32).max(1.0);
+    // The leading coefficient must be nonzero for a genuine degree-d relation,
+    // and the fit must be tight (a spurious lower-degree fit is far looser).
+    if coeffs.last() == Some(&0) || residual >= res_tol {
+      continue;
+    }
+    if let Some(result) = build_root_from_coeffs(&coeffs, x) {
+      return Ok(result);
+    }
+  }
+
+  // No algebraic relation within the degree budget: fall back to the exact
+  // rational the machine real represents, as wolframscript does.
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Rationalize".to_string(),
+    args: vec![Expr::Real(x), Expr::Integer(0)].into(),
+  })
+}
+
+/// Build `Root[poly, k, 0]` for the integer polynomial with the given ascending
+/// coefficients, choosing the branch `k` whose numeric value is closest to `x`,
+/// and let the evaluator simplify it (to a radical / rational when possible).
+fn build_root_from_coeffs(coeffs: &[i128], x: f64) -> Option<Expr> {
+  // Trim any trailing zero coefficients and normalise the sign so the leading
+  // coefficient is positive (matching wolframscript's Root polynomials).
+  let mut c = coeffs.to_vec();
+  while c.len() > 1 && *c.last().unwrap() == 0 {
+    c.pop();
+  }
+  let degree = c.len().checked_sub(1)?;
+  if degree == 0 {
+    return None;
+  }
+  if *c.last().unwrap() < 0 {
+    for v in &mut c {
+      *v = -*v;
+    }
+  }
+
+  // Assemble the polynomial body in Slot[1], ascending, skipping zero terms.
+  let slot = Expr::Slot(1);
+  let mut terms: Vec<Expr> = Vec::new();
+  for (i, &coeff) in c.iter().enumerate() {
+    if coeff == 0 {
+      continue;
+    }
+    let var_pow = match i {
+      0 => None,
+      1 => Some(slot.clone()),
+      _ => Some(Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![slot.clone(), Expr::Integer(i as i128)].into(),
+      }),
+    };
+    let term = match (var_pow, coeff) {
+      (None, coeff) => Expr::Integer(coeff),
+      (Some(p), 1) => p,
+      (Some(p), coeff) => Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(coeff), p].into(),
+      },
+    };
+    terms.push(term);
+  }
+  let body = match terms.len() {
+    0 => return None,
+    1 => terms.remove(0),
+    _ => Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    },
+  };
+  let body = crate::evaluator::evaluate_expr_to_expr(&body).ok()?;
+  let func = Expr::Function {
+    body: Box::new(body),
+  };
+
+  // Pick the root index k (1-based, wolframscript's ordering) whose numeric
+  // value is closest to x, by numericising each Root[func, k, 0].
+  let make_root = |k: usize| Expr::FunctionCall {
+    name: "Root".to_string(),
+    args: vec![func.clone(), Expr::Integer(k as i128), Expr::Integer(0)].into(),
+  };
+  let mut best_k = 0usize;
+  let mut best_dist = f64::MAX;
+  for k in 1..=degree {
+    let n_expr = Expr::FunctionCall {
+      name: "N".to_string(),
+      args: vec![make_root(k)].into(),
+    };
+    if let Ok(v) = crate::evaluator::evaluate_expr_to_expr(&n_expr)
+      && let Some(rv) = try_eval_to_f64(&v)
+    {
+      let dist = (rv - x).abs();
+      if dist < best_dist {
+        best_dist = dist;
+        best_k = k;
+      }
+    }
+  }
+  if best_k == 0 || best_dist > 1e-6 {
+    return None;
+  }
+  crate::evaluator::evaluate_expr_to_expr(&make_root(best_k)).ok()
+}
+
 // ─── FindFit ──────────────────────────────────────────────────────────
 
 /// FindFit[data, model, params, var]

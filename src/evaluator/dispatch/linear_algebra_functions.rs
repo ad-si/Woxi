@@ -958,6 +958,11 @@ pub fn dispatch_linear_algebra_functions(
         ),
       );
     }
+    "RootApproximant" if !args.is_empty() && args.len() <= 2 => {
+      return Some(crate::functions::linear_algebra_ast::root_approximant_ast(
+        args,
+      ));
+    }
     "MatrixExp" if args.len() == 1 => {
       return Some(crate::functions::linear_algebra_ast::matrix_function_ast(
         args,

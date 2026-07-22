@@ -3967,6 +3967,91 @@ mod find_integer_null_vector {
   }
 }
 
+mod root_approximant {
+  use super::*;
+
+  // Full-precision machine reals of algebraic numbers are recovered as the
+  // minimal polynomial's root. Degree-2 cases render as radicals, higher
+  // degrees stay as Root[...], matching wolframscript. Inputs are the exact
+  // f64 values of the algebraic numbers so Woxi (machine precision) and
+  // wolframscript agree.
+  #[test]
+  fn quadratic_radicals() {
+    // Sqrt[2] = 1.4142135623730951
+    assert_eq!(
+      interpret("RootApproximant[1.4142135623730951]").unwrap(),
+      "Sqrt[2]"
+    );
+    // -Sqrt[2]: the other branch.
+    assert_eq!(
+      interpret("RootApproximant[-1.4142135623730951]").unwrap(),
+      "-Sqrt[2]"
+    );
+    // GoldenRatio = (1 + Sqrt[5])/2 = 1.6180339887498949
+    assert_eq!(
+      interpret("RootApproximant[1.6180339887498949]").unwrap(),
+      "(1 + Sqrt[5])/2"
+    );
+    // 1 + Sqrt[3]
+    assert_eq!(
+      interpret("RootApproximant[N[1 + Sqrt[3]]]").unwrap(),
+      "1 + Sqrt[3]"
+    );
+  }
+
+  #[test]
+  fn higher_degree_roots() {
+    // 2^(1/3): irreducible cubic, kept as Root.
+    assert_eq!(
+      interpret("RootApproximant[1.2599210498948732]").unwrap(),
+      "Root[-2 + #1^3 & , 1, 0]"
+    );
+    // 2^(1/5): irreducible quintic.
+    assert_eq!(
+      interpret("RootApproximant[N[2^(1/5)]]").unwrap(),
+      "Root[-2 + #1^5 & , 1, 0]"
+    );
+    // Sqrt[2] + Sqrt[3]: degree-4 minimal polynomial x^4 - 10 x^2 + 1.
+    assert_eq!(
+      interpret("RootApproximant[N[Sqrt[2] + Sqrt[3]]]").unwrap(),
+      "Root[1 - 10*#1^2 + #1^4 & , 4, 0]"
+    );
+    // Sqrt[2] - Sqrt[3]: same polynomial, a different branch.
+    assert_eq!(
+      interpret("RootApproximant[N[Sqrt[2] - Sqrt[3]]]").unwrap(),
+      "Root[1 - 10*#1^2 + #1^4 & , 2, 0]"
+    );
+  }
+
+  #[test]
+  fn rational_and_exact() {
+    // A simple rational.
+    assert_eq!(interpret("RootApproximant[0.5]").unwrap(), "1/2");
+    assert_eq!(
+      interpret("RootApproximant[0.3333333333333333]").unwrap(),
+      "1/3"
+    );
+    // No low-degree algebraic within precision -> the exact rational the
+    // machine real represents (matches wolframscript).
+    assert_eq!(
+      interpret("RootApproximant[3.14159]").unwrap(),
+      "314159/100000"
+    );
+    // Exact numeric input is already algebraic: returned unchanged.
+    assert_eq!(interpret("RootApproximant[2]").unwrap(), "2");
+    assert_eq!(interpret("RootApproximant[1/2]").unwrap(), "1/2");
+  }
+
+  // A bounded max degree restricts the search.
+  #[test]
+  fn max_degree_argument() {
+    assert_eq!(
+      interpret("RootApproximant[N[Sqrt[3]], 2]").unwrap(),
+      "Sqrt[3]"
+    );
+  }
+}
+
 mod vector_less {
   use super::*;
 

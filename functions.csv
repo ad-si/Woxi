@@ -1868,7 +1868,7 @@ SingleLetterItalics,Single letter italics option,,unevaluated,3.0,1897
 AbsArg,Returns {Abs[z] and Arg[z]} for a complex number z,✅,pure,10.1,1901
 Haversine,Haversine function (Listable),✅,pure,7.0,1901
 PolarGridLines,Polar grid lines option,,unevaluated,7.0,1901
-RootApproximant,Root approximant,✅,unevaluated,6.0,1901
+RootApproximant,Finds an algebraic number approximating a numeric value,✅,pure,6.0,1901
 Databin,Databin cloud storage,,unevaluated,10.0,1905
 Interpretation,Interpretation display wrapper (stays symbolic),✅,unevaluated,6.0,1905
 InverseJacobiSN,Inverse Jacobi elliptic function sn,✅,pure,1.0,1905
