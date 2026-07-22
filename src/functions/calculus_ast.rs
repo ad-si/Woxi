@@ -9510,6 +9510,75 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           }
           None
         }
+        // Integration by parts of the inverse hyperbolic functions (arg = x):
+        //   ∫ ArcSinh[x] = x ArcSinh[x] - Sqrt[1 + x^2]
+        //   ∫ ArcCosh[x] = x ArcCosh[x] - Sqrt[-1 + x] Sqrt[1 + x]
+        //   ∫ ArcTanh[x] = x ArcTanh[x] + Log[1 - x^2]/2
+        //   ∫ ArcCoth[x] = x ArcCoth[x] + Log[1 - x^2]/2
+        "ArcSinh" | "ArcCosh" | "ArcTanh" | "ArcCoth" if args.len() == 1 => {
+          if let Expr::Identifier(n) = &args[0]
+            && n == var
+          {
+            let x = Expr::Identifier(var.to_string());
+            let power = |b: Expr, e: Expr| Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(b),
+              right: Box::new(e),
+            };
+            let times = |a: Expr, b: Expr| Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(a),
+              right: Box::new(b),
+            };
+            let plus = |a: Expr, b: Expr| Expr::BinaryOp {
+              op: BinaryOperator::Plus,
+              left: Box::new(a),
+              right: Box::new(b),
+            };
+            let minus = |a: Expr, b: Expr| Expr::BinaryOp {
+              op: BinaryOperator::Minus,
+              left: Box::new(a),
+              right: Box::new(b),
+            };
+            let sqrt = |e: Expr| Expr::FunctionCall {
+              name: "Sqrt".to_string(),
+              args: vec![e].into(),
+            };
+            let x_sq = power(x.clone(), Expr::Integer(2));
+            let correction = match name.as_str() {
+              // -Sqrt[1 + x^2]
+              "ArcSinh" => {
+                times(Expr::Integer(-1), sqrt(plus(Expr::Integer(1), x_sq)))
+              }
+              // -Sqrt[-1 + x] Sqrt[1 + x] (wolframscript keeps the split radical)
+              "ArcCosh" => times(
+                Expr::Integer(-1),
+                times(
+                  sqrt(plus(Expr::Integer(-1), x.clone())),
+                  sqrt(plus(Expr::Integer(1), x.clone())),
+                ),
+              ),
+              // Log[1 - x^2]/2  (ArcTanh and ArcCoth share this)
+              _ => Expr::BinaryOp {
+                op: BinaryOperator::Divide,
+                left: Box::new(Expr::FunctionCall {
+                  name: "Log".to_string(),
+                  args: vec![minus(Expr::Integer(1), x_sq)].into(),
+                }),
+                right: Box::new(Expr::Integer(2)),
+              },
+            };
+            let x_f = times(
+              x,
+              Expr::FunctionCall {
+                name: name.clone(),
+                args: args.clone(),
+              },
+            );
+            return Some(simplify(plus(x_f, correction)));
+          }
+          None
+        }
         // Integration by parts of the error / Fresnel functions (argument = x):
         //   ∫ Erf[x]      = x Erf[x]      + E^(-x^2)/Sqrt[Pi]
         //   ∫ Erfc[x]     = x Erfc[x]     - E^(-x^2)/Sqrt[Pi]

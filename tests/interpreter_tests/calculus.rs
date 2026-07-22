@@ -192,6 +192,36 @@ mod integrate_with_sum {
     );
   }
 
+  // Integration by parts of the inverse hyperbolic functions.
+  #[test]
+  fn integrate_inverse_hyperbolic() {
+    assert_eq!(
+      interpret("Integrate[ArcSinh[x], x]").unwrap(),
+      "-Sqrt[1 + x^2] + x*ArcSinh[x]"
+    );
+    assert_eq!(
+      interpret("Integrate[ArcCosh[x], x]").unwrap(),
+      "-(Sqrt[-1 + x]*Sqrt[1 + x]) + x*ArcCosh[x]"
+    );
+    assert_eq!(
+      interpret("Integrate[ArcTanh[x], x]").unwrap(),
+      "x*ArcTanh[x] + Log[1 - x^2]/2"
+    );
+    assert_eq!(
+      interpret("Integrate[ArcCoth[x], x]").unwrap(),
+      "x*ArcCoth[x] + Log[1 - x^2]/2"
+    );
+    // Round-trips back to the integrand.
+    assert_eq!(
+      interpret("D[Integrate[ArcSinh[x], x], x]").unwrap(),
+      "ArcSinh[x]"
+    );
+    assert_eq!(
+      interpret("D[Integrate[ArcTanh[x], x], x]").unwrap(),
+      "ArcTanh[x]"
+    );
+  }
+
   // Integration by parts of the error / Fresnel functions.
   #[test]
   fn integrate_erf_fresnel_family() {
