@@ -192,6 +192,33 @@ mod integrate_with_sum {
     );
   }
 
+  // Integration by parts of the error / Fresnel functions.
+  #[test]
+  fn integrate_erf_fresnel_family() {
+    assert_eq!(
+      interpret("Integrate[Erf[x], x]").unwrap(),
+      "1/(E^x^2*Sqrt[Pi]) + x*Erf[x]"
+    );
+    assert_eq!(
+      interpret("Integrate[Erfc[x], x]").unwrap(),
+      "-(1/(E^x^2*Sqrt[Pi])) + x*Erfc[x]"
+    );
+    assert_eq!(
+      interpret("Integrate[Erfi[x], x]").unwrap(),
+      "-(E^x^2/Sqrt[Pi]) + x*Erfi[x]"
+    );
+    assert_eq!(
+      interpret("Integrate[FresnelS[x], x]").unwrap(),
+      "Cos[(Pi*x^2)/2]/Pi + x*FresnelS[x]"
+    );
+    assert_eq!(
+      interpret("Integrate[FresnelC[x], x]").unwrap(),
+      "x*FresnelC[x] - Sin[(Pi*x^2)/2]/Pi"
+    );
+    // Round-trips back to the integrand.
+    assert_eq!(interpret("D[Integrate[Erf[x], x], x]").unwrap(), "Erf[x]");
+  }
+
   #[test]
   fn integrate_arcsin_linear_reciprocal_integer() {
     // ∫ ArcSin[x/3] dx = Sqrt[9 - x^2] + x*ArcSin[x/3]

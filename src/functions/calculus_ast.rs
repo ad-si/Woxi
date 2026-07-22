@@ -9510,6 +9510,94 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           }
           None
         }
+        // Integration by parts of the error / Fresnel functions (argument = x):
+        //   ∫ Erf[x]      = x Erf[x]      + E^(-x^2)/Sqrt[Pi]
+        //   ∫ Erfc[x]     = x Erfc[x]     - E^(-x^2)/Sqrt[Pi]
+        //   ∫ Erfi[x]     = x Erfi[x]     - E^(x^2)/Sqrt[Pi]
+        //   ∫ FresnelS[x] = x FresnelS[x] + Cos[(Pi x^2)/2]/Pi
+        //   ∫ FresnelC[x] = x FresnelC[x] - Sin[(Pi x^2)/2]/Pi
+        "Erf" | "Erfc" | "Erfi" | "FresnelS" | "FresnelC"
+          if args.len() == 1 =>
+        {
+          if let Expr::Identifier(n) = &args[0]
+            && n == var
+          {
+            let x = Expr::Identifier(var.to_string());
+            let power = |b: Expr, e: Expr| Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(b),
+              right: Box::new(e),
+            };
+            let times = |a: Expr, b: Expr| Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(a),
+              right: Box::new(b),
+            };
+            let divide = |a: Expr, b: Expr| Expr::BinaryOp {
+              op: BinaryOperator::Divide,
+              left: Box::new(a),
+              right: Box::new(b),
+            };
+            let x_sq = power(x.clone(), Expr::Integer(2));
+            let sqrt_pi = Expr::FunctionCall {
+              name: "Sqrt".to_string(),
+              args: vec![Expr::Constant("Pi".to_string())].into(),
+            };
+            let neg = |e: Expr| times(Expr::Integer(-1), e);
+            // exp(-x^2)/Sqrt[Pi] used by Erf/Erfc.
+            let gauss = || {
+              divide(
+                Expr::Integer(1),
+                times(
+                  power(Expr::Constant("E".to_string()), x_sq.clone()),
+                  sqrt_pi.clone(),
+                ),
+              )
+            };
+            // (Pi x^2)/2 argument for the Fresnel corrections.
+            let fresnel_arg = || {
+              divide(
+                times(Expr::Constant("Pi".to_string()), x_sq.clone()),
+                Expr::Integer(2),
+              )
+            };
+            let correction = match name.as_str() {
+              "Erf" => gauss(),
+              "Erfc" => neg(gauss()),
+              "Erfi" => neg(divide(
+                power(Expr::Constant("E".to_string()), x_sq.clone()),
+                sqrt_pi.clone(),
+              )),
+              "FresnelS" => divide(
+                Expr::FunctionCall {
+                  name: "Cos".to_string(),
+                  args: vec![fresnel_arg()].into(),
+                },
+                Expr::Constant("Pi".to_string()),
+              ),
+              _ => neg(divide(
+                Expr::FunctionCall {
+                  name: "Sin".to_string(),
+                  args: vec![fresnel_arg()].into(),
+                },
+                Expr::Constant("Pi".to_string()),
+              )),
+            };
+            let x_f = times(
+              x,
+              Expr::FunctionCall {
+                name: name.clone(),
+                args: args.clone(),
+              },
+            );
+            return Some(simplify(Expr::BinaryOp {
+              op: BinaryOperator::Plus,
+              left: Box::new(x_f),
+              right: Box::new(correction),
+            }));
+          }
+          None
+        }
         "Cos" if args.len() == 1 => {
           // ∫ cos(a*x) dx = sin(a*x)/a
           if let Some(coeff) = try_match_linear_arg(&args[0], var) {
