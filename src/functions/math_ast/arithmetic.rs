@@ -10825,6 +10825,19 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     return crate::functions::sqrt_ast(&[base.clone()]);
   }
 
+  // A real-valued symbolic constant base (Pi, GoldenRatio, EulerGamma, …)
+  // raised to an inexact (machine-real) exponent numericizes under contagion,
+  // matching wolframscript (`Pi^0.5` = 1.7724…, `Pi^2.0` = 9.8696…). The numeric
+  // path below uses `expr_to_num`, which does not resolve named constants, so
+  // substitute the base's value here. E is handled by the exp/BigFloat paths.
+  if matches!(exp, Expr::Real(_))
+    && matches!(base, Expr::Constant(_) | Expr::Identifier(_))
+    && !matches!(base, Expr::Constant(c) if c == "E")
+    && let Some(bv) = try_eval_to_f64(base)
+  {
+    return power_two(&Expr::Real(bv), exp);
+  }
+
   // If either operand is Real, result is Real (even if whole number)
   let has_real = matches!(base, Expr::Real(_)) || matches!(exp, Expr::Real(_));
 

@@ -582,6 +582,22 @@ mod real_number_formatting {
     assert_eq!(interpret("Power[4, 0.5]").unwrap(), "2.");
   }
 
+  // A real-valued symbolic constant raised to an inexact exponent numericizes
+  // under contagion (Pi^0.5 = 1.7724…), while a free variable stays symbolic.
+  #[test]
+  fn power_constant_base_inexact_exponent() {
+    assert_eq!(interpret("Pi^0.5").unwrap(), "1.7724538509055159");
+    assert_eq!(interpret("Pi^2.0").unwrap(), "9.869604401089358");
+    assert_eq!(interpret("GoldenRatio^2.0").unwrap(), "2.618033988749895");
+    assert_eq!(interpret("E^0.5").unwrap(), "1.6487212707001282");
+    // Exact exponents keep the symbolic form.
+    assert_eq!(interpret("Pi^2").unwrap(), "Pi^2");
+    assert_eq!(interpret("Pi^(1/2)").unwrap(), "Sqrt[Pi]");
+    // A free variable base does not numericize.
+    assert_eq!(interpret("x^2.0").unwrap(), "x^2.");
+    assert_eq!(interpret("x^0.5").unwrap(), "x^0.5");
+  }
+
   #[test]
   fn accumulate_preserves_real() {
     assert_eq!(interpret("Accumulate[{1.5, 2.5}]").unwrap(), "{1.5, 4.}");
