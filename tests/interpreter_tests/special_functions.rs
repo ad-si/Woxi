@@ -804,7 +804,7 @@ mod coulomb_wave {
     );
   }
 
-  // Nonzero eta (the genuine Coulomb regime) stays unevaluated, like
+  // Nonzero eta with a symbolic coordinate stays unevaluated, like
   // wolframscript — not the generic "not implemented" message.
   #[test]
   fn nonzero_eta_unevaluated() {
@@ -817,6 +817,33 @@ mod coulomb_wave {
     assert_eq!(
       interpret("CoulombH2[1, 2, z]").unwrap(),
       "CoulombH2[1, 2, z]"
+    );
+    // Exact numeric arguments also stay symbolic.
+    assert_eq!(interpret("CoulombF[0, 1, 2]").unwrap(), "CoulombF[0, 1, 2]");
+  }
+
+  // The regular CoulombF at nonzero eta evaluates numerically (via the
+  // confluent-hypergeometric form) once an argument is inexact. Projected to an
+  // integer for a full-precision match against wolframscript.
+  #[test]
+  fn nonzero_eta_numeric() {
+    assert_eq!(
+      interpret("Round[10^10 CoulombF[0, 1.0, 2.0]]").unwrap(),
+      "6617816138"
+    );
+    assert_eq!(
+      interpret("Round[10^10 CoulombF[1, 0.5, 3.0]]").unwrap(),
+      "10610932285"
+    );
+    // Negative eta (attractive potential).
+    assert_eq!(
+      interpret("Round[10^10 CoulombF[2, -1.0, 4.0]]").unwrap(),
+      "3354572346"
+    );
+    // Irregular G at nonzero eta has no single-term reduction: still symbolic.
+    assert_eq!(
+      interpret("CoulombG[0, 1.0, 2.0]").unwrap(),
+      "CoulombG[0, 1., 2.]"
     );
   }
 }
