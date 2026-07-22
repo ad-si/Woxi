@@ -181,7 +181,7 @@ pub fn dispatch_evaluation_control(
     "SinghMaddalaDistribution" if args.len() == 3 => {
       return Some(Ok(unevaluated("SinghMaddalaDistribution", args)));
     }
-    "WaringYuleDistribution" if args.len() == 2 => {
+    "WaringYuleDistribution" if args.len() == 1 || args.len() == 2 => {
       return Some(Ok(unevaluated("WaringYuleDistribution", args)));
     }
     "Query" if !args.is_empty() => {

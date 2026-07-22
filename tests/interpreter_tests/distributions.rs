@@ -2364,6 +2364,58 @@ mod waring_yule_distribution {
       "31/35"
     );
   }
+
+  // The one-argument Yule form: PDF = a Beta[1 + a, 1 + k] for k >= 0.
+  #[test]
+  fn one_arg_pdf() {
+    assert_eq!(
+      interpret("PDF[WaringYuleDistribution[a], k]").unwrap(),
+      "Piecewise[{{a*Beta[1 + a, 1 + k], k >= 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[WaringYuleDistribution[2], 3]").unwrap(),
+      "1/30"
+    );
+    assert_eq!(
+      interpret("PDF[WaringYuleDistribution[2], 1]").unwrap(),
+      "1/6"
+    );
+    assert_eq!(
+      interpret("PDF[WaringYuleDistribution[2], -1]").unwrap(),
+      "0"
+    );
+  }
+
+  // The one-argument CDF = 1 - a Beta[a, 2 + Floor[k]] for k >= 0.
+  #[test]
+  fn one_arg_cdf() {
+    assert_eq!(
+      interpret("CDF[WaringYuleDistribution[a], k]").unwrap(),
+      "Piecewise[{{1 - a*Beta[a, 2 + Floor[k]], k >= 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[WaringYuleDistribution[2], 3]").unwrap(),
+      "14/15"
+    );
+  }
+
+  // Quantile is the smallest k >= 0 with CDF(k) >= q; Median is the 1/2 quantile.
+  #[test]
+  fn one_arg_quantile() {
+    assert_eq!(
+      interpret("Quantile[WaringYuleDistribution[2], 1/2]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Quantile[WaringYuleDistribution[2], 9/10]").unwrap(),
+      "2"
+    );
+    assert_eq!(interpret("Median[WaringYuleDistribution[2]]").unwrap(), "0");
+    assert_eq!(
+      interpret("Quantile[WaringYuleDistribution[3], 3/4]").unwrap(),
+      "0"
+    );
+  }
 }
 
 mod polynomial_expectation {

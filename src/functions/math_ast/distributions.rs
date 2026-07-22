@@ -854,6 +854,7 @@ pub fn quantile_distribution_closed_form(
     | "NegativeBinomialDistribution"
     | "PascalDistribution"
     | "BetaBinomialDistribution"
+    | "WaringYuleDistribution"
     | "BernoulliDistribution"
     | "DiscreteUniformDistribution" => {
       quantile_discrete(dist_name, dargs, q, q_num)
@@ -990,6 +991,8 @@ fn discrete_support(
     "BetaBinomialDistribution" if dargs.len() == 3 => {
       Some((0, Some(as_int(&dargs[2])?)))
     }
+    // One-argument Yule distribution: unbounded support 0..∞.
+    "WaringYuleDistribution" if dargs.len() == 1 => Some((0, None)),
     "BernoulliDistribution" if dargs.len() == 1 => Some((0, Some(1))),
     "DiscreteUniformDistribution" if dargs.len() == 1 => match &dargs[0] {
       Expr::List(b) if b.len() == 2 => {
@@ -5989,10 +5992,21 @@ fn cdf_f_ratio(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
 /// PDF[WaringYuleDistribution[a, b], k] =
 ///   Piecewise[{{a Pochhammer[b, k] / Pochhammer[a + b, 1 + k], k >= 0}}, 0].
+/// The one-argument Yule form is
+///   PDF[WaringYuleDistribution[a], k] = Piecewise[{{a Beta[1 + a, 1 + k], k >= 0}}, 0].
 fn pdf_waring_yule(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() == 1 {
+    let a = dargs[0].clone();
+    let pmf = times(
+      a.clone(),
+      call("Beta", vec![plus(int(1), a), plus(int(1), x.clone())]),
+    );
+    let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
+    return eval(piecewise(vec![(pmf, cond)], int(0)));
+  }
   if dargs.len() != 2 {
     return Err(InterpreterError::EvaluationError(
-      "WaringYuleDistribution expects 2 arguments".into(),
+      "WaringYuleDistribution expects 1 or 2 arguments".into(),
     ));
   }
   let a = dargs[0].clone();
@@ -6012,10 +6026,20 @@ fn pdf_waring_yule(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 /// CDF[WaringYuleDistribution[a, b], k] =
 ///   Piecewise[{{1 - Pochhammer[b, 1 + Floor[k]] / Pochhammer[a + b, 1 + Floor[k]],
 ///               k >= 0}}, 0].
+/// The one-argument Yule form is
+///   CDF[WaringYuleDistribution[a], k] = Piecewise[{{1 - a Beta[a, 2 + Floor[k]], k >= 0}}, 0].
 fn cdf_waring_yule(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() == 1 {
+    let a = dargs[0].clone();
+    let floor_k = call("Floor", vec![x.clone()]);
+    let beta = call("Beta", vec![a.clone(), plus(int(2), floor_k)]);
+    let cdf = minus(int(1), times(a, beta));
+    let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
+    return eval(piecewise(vec![(cdf, cond)], int(0)));
+  }
   if dargs.len() != 2 {
     return Err(InterpreterError::EvaluationError(
-      "WaringYuleDistribution expects 2 arguments".into(),
+      "WaringYuleDistribution expects 1 or 2 arguments".into(),
     ));
   }
   let a = dargs[0].clone();
