@@ -1734,6 +1734,8 @@ pub fn floor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ],
       )
     }
+  } else if let Some(r) = extract_integer_offset(&args[0], true)? {
+    Ok(r)
   } else if let Some(r) = try_symbolic_complex_rounding(&args[0], floor_ast) {
     Ok(r)
   } else {
@@ -1799,11 +1801,83 @@ pub fn ceiling_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ],
       )
     }
+  } else if let Some(r) = extract_integer_offset(&args[0], false)? {
+    Ok(r)
   } else if let Some(r) = try_symbolic_complex_rounding(&args[0], ceiling_ast) {
     Ok(r)
   } else {
     Ok(unevaluated("Ceiling", args))
   }
+}
+
+/// `Floor[c + rest] = c + Floor[rest]` (and likewise Ceiling) for an integer
+/// additive constant `c`. wolframscript extracts integer offsets from Floor and
+/// Ceiling — but not from Round, IntegerPart, or non-integer offsets. Returns
+/// None when the argument is not a sum containing an integer term.
+fn extract_integer_offset(
+  arg: &Expr,
+  is_floor: bool,
+) -> Result<Option<Expr>, InterpreterError> {
+  // Skip complex sums: wolframscript extracts the full Gaussian-integer offset
+  // (e.g. Floor[x + 3 + I] = (3 + I) + Floor[x]); rather than emit a partial
+  // real-only split, leave such arguments to the complex-rounding path.
+  fn has_imaginary_unit(e: &Expr) -> bool {
+    match e {
+      Expr::Identifier(s) => s == "I",
+      Expr::FunctionCall { args, .. } => args.iter().any(has_imaginary_unit),
+      Expr::BinaryOp { left, right, .. } => {
+        has_imaginary_unit(left) || has_imaginary_unit(right)
+      }
+      Expr::UnaryOp { operand, .. } => has_imaginary_unit(operand),
+      _ => false,
+    }
+  }
+  if has_imaginary_unit(arg) {
+    return Ok(None);
+  }
+  let terms: Vec<Expr> = match arg {
+    Expr::FunctionCall { name, args } if name == "Plus" => args.to_vec(),
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => vec![(**left).clone(), (**right).clone()],
+    _ => return Ok(None),
+  };
+  let Some(pos) = terms.iter().position(|t| matches!(t, Expr::Integer(_)))
+  else {
+    return Ok(None);
+  };
+  let Expr::Integer(c) = &terms[pos] else {
+    unreachable!()
+  };
+  let c = *c;
+  let rest: Vec<Expr> = terms
+    .iter()
+    .enumerate()
+    .filter(|(i, _)| *i != pos)
+    .map(|(_, t)| t.clone())
+    .collect();
+  if rest.is_empty() {
+    return Ok(None);
+  }
+  let rest_expr = if rest.len() == 1 {
+    rest.into_iter().next().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: rest.into(),
+    }
+  };
+  let rounded = if is_floor {
+    floor_ast(&[rest_expr])?
+  } else {
+    ceiling_ast(&[rest_expr])?
+  };
+  Ok(Some(crate::evaluator::evaluate_function_call_ast(
+    "Plus",
+    &[Expr::Integer(c), rounded],
+  )?))
 }
 
 /// Extract numerator/denominator from Integer or Rational expr

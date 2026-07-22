@@ -3844,6 +3844,27 @@ mod expand_threading {
   }
 
   #[test]
+  fn floor_ceiling_extract_integer_offset() {
+    // wolframscript extracts an integer additive constant from Floor and
+    // Ceiling: Floor[x + 3] = 3 + Floor[x].
+    assert_eq!(interpret("Floor[x + 3]").unwrap(), "3 + Floor[x]");
+    assert_eq!(interpret("Ceiling[x + 2]").unwrap(), "2 + Ceiling[x]");
+    assert_eq!(interpret("Floor[2 x + 3]").unwrap(), "3 + Floor[2*x]");
+    assert_eq!(interpret("Floor[x - 4]").unwrap(), "-4 + Floor[x]");
+    assert_eq!(interpret("Floor[a + b + 5]").unwrap(), "5 + Floor[a + b]");
+    assert_eq!(interpret("Ceiling[2 x + 5]").unwrap(), "5 + Ceiling[2*x]");
+    // Only integer offsets are extracted: non-integer constants and the Round /
+    // IntegerPart heads keep the sum inside.
+    assert_eq!(interpret("Ceiling[x + 3/2]").unwrap(), "Ceiling[3/2 + x]");
+    assert_eq!(interpret("Floor[3.5 + n]").unwrap(), "Floor[3.5 + n]");
+    assert_eq!(interpret("Round[x + 5]").unwrap(), "Round[5 + x]");
+    assert_eq!(
+      interpret("IntegerPart[x + 3]").unwrap(),
+      "IntegerPart[3 + x]"
+    );
+  }
+
+  #[test]
   fn rounding_of_infinity() {
     // Floor/Ceiling/Round/IntegerPart leave (un)signed infinities unchanged.
     assert_eq!(interpret("Floor[Infinity]").unwrap(), "Infinity");
