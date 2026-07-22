@@ -30,6 +30,17 @@ mod sinc {
     assert_eq!(interpret("Sinc[Pi]").unwrap(), "0");
     assert_eq!(interpret("Sinc[Infinity]").unwrap(), "0");
     assert_eq!(interpret("Sinc[-Infinity]").unwrap(), "0");
+    // A variable-free trig-reducible argument still folds.
+    assert_eq!(interpret("Sinc[5 Pi/6]").unwrap(), "3/(5*Pi)");
+  }
+
+  // A trig identity that eliminates the Sin head but keeps a free variable
+  // (Sin[Pi/2 + x] = Cos[x]) must NOT trigger the Sin[x]/x expansion.
+  #[test]
+  fn trig_shift_with_free_variable_stays_symbolic() {
+    assert_eq!(interpret("Sinc[Pi/2 + x]").unwrap(), "Sinc[Pi/2 + x]");
+    assert_eq!(interpret("Sinc[Pi/2 - x]").unwrap(), "Sinc[Pi/2 - x]");
+    assert_eq!(interpret("Sinc[2 Pi + x]").unwrap(), "Sinc[2*Pi + x]");
   }
 }
 

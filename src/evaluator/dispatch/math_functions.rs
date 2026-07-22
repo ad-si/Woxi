@@ -2205,27 +2205,30 @@ pub fn dispatch_math_functions(
         }
         _ => {}
       }
-      // Expand to Sin[x]/x only when Sin[x] evaluated to a closed form with no
-      // residual Sin — i.e. a genuine value (number/radical) as for Sinc[Pi/2]
-      // or Sinc[2 Pi]. When Sin merely rewrites to another symbolic form still
-      // containing a Sin (e.g. Sin[Pi + x] = -Sin[x]), wolframscript keeps
-      // Sinc[x] symbolic, so leave it unevaluated.
-      fn contains_sin(e: &Expr) -> bool {
+      // Expand to Sin[x]/x only when Sin[x] evaluated to a variable-free closed
+      // form — a genuine value (number/radical) as for Sinc[Pi/2] or Sinc[2 Pi].
+      // When Sin merely rewrites to another symbolic form (Sin[Pi + x] = -Sin[x],
+      // still containing a Sin; or Sin[Pi/2 + x] = Cos[x], still containing the
+      // free variable x), wolframscript keeps Sinc[x] symbolic, so leave it
+      // unevaluated. `not_a_value` flags either a residual Sin head or any free
+      // symbol.
+      fn not_a_value(e: &Expr) -> bool {
         match e {
+          Expr::Identifier(_) => true,
           Expr::FunctionCall { name, args } => {
-            name == "Sin" || args.iter().any(contains_sin)
+            name == "Sin" || args.iter().any(not_a_value)
           }
           Expr::BinaryOp { left, right, .. } => {
-            contains_sin(left) || contains_sin(right)
+            not_a_value(left) || not_a_value(right)
           }
-          Expr::UnaryOp { operand, .. } => contains_sin(operand),
+          Expr::UnaryOp { operand, .. } => not_a_value(operand),
           _ => false,
         }
       }
       let sin_result = crate::functions::math_ast::sin_ast(args);
       match sin_result {
         Ok(ref sin_val) => {
-          if !contains_sin(sin_val) {
+          if !not_a_value(sin_val) {
             let div_expr = Expr::BinaryOp {
               op: BinaryOperator::Divide,
               left: Box::new(sin_val.clone()),
