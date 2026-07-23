@@ -5663,6 +5663,79 @@ pub fn tukey_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// KaiserWindow[x] / KaiserWindow[x, alpha] — Kaiser (Kaiser–Bessel) window.
+/// Default alpha = 3. The window is 0 outside [-1/2, 1/2] and equals
+/// BesselI[0, alpha Sqrt[1 - 4 x^2]] / BesselI[0, alpha] within. Exact
+/// arguments stay symbolic (matching wolframscript's radical forms, e.g.
+/// KaiserWindow[1/4] -> BesselI[0, (3 Sqrt[3])/2]/BesselI[0, 3]); Real
+/// arguments numericize.
+pub fn kaiser_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || unevaluated("KaiserWindow", args);
+  if args.is_empty() || args.len() > 2 {
+    return Ok(unevaluated());
+  }
+  let x = &args[0];
+  let alpha = args.get(1).cloned().unwrap_or(Expr::Integer(3));
+
+  let xf = match try_eval_to_f64(x) {
+    Some(xf) => xf,
+    None => return Ok(unevaluated()),
+  };
+  if try_eval_to_f64(&alpha).is_none() {
+    return Ok(unevaluated());
+  }
+
+  let inexact = window_arg_inexact(x) || window_arg_inexact(&alpha);
+
+  // Outside the window support.
+  if xf.abs() > 0.5 {
+    return Ok(if inexact {
+      Expr::Real(0.0)
+    } else {
+      Expr::Integer(0)
+    });
+  }
+
+  // Build BesselI[0, alpha Sqrt[1 - 4 x^2]] / BesselI[0, alpha] and evaluate.
+  // Real arguments numericize; exact arguments stay symbolic.
+  let x_sq = Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![x.clone(), Expr::Integer(2)].into(),
+  };
+  let one_minus = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      Expr::Integer(1),
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-4), x_sq].into(),
+      },
+    ]
+    .into(),
+  };
+  let sqrt = Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![one_minus].into(),
+  };
+  let bessel_arg = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![alpha.clone(), sqrt].into(),
+  };
+  let numer = Expr::FunctionCall {
+    name: "BesselI".to_string(),
+    args: vec![Expr::Integer(0), bessel_arg].into(),
+  };
+  let denom = Expr::FunctionCall {
+    name: "BesselI".to_string(),
+    args: vec![Expr::Integer(0), alpha].into(),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(numer),
+    right: Box::new(denom),
+  })
+}
+
 /// True if `e` contains an inexact (machine) number, so a window function
 /// numericizes; exact arguments stay symbolic.
 fn window_arg_inexact(e: &Expr) -> bool {

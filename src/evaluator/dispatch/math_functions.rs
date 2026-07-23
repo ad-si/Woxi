@@ -548,6 +548,9 @@ pub fn dispatch_math_functions(
     "TukeyWindow" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::tukey_window_ast(args));
     }
+    "KaiserWindow" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::math_ast::kaiser_window_ast(args));
+    }
     "BlackmanHarrisWindow"
     | "BlackmanNuttallWindow"
     | "NuttallWindow"

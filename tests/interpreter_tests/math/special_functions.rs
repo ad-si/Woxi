@@ -6998,6 +6998,54 @@ mod window_functions {
     assert_eq!(interpret("TukeyWindow[x]").unwrap(), "TukeyWindow[x]");
   }
 
+  // KaiserWindow[x, alpha] (default alpha = 3):
+  // BesselI[0, alpha Sqrt[1 - 4 x^2]] / BesselI[0, alpha] on [-1/2, 1/2], else 0.
+  #[test]
+  fn kaiser_center_is_one() {
+    assert_eq!(interpret("KaiserWindow[0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn kaiser_edges_zero() {
+    assert_eq!(interpret("KaiserWindow[3/4]").unwrap(), "0");
+    assert_eq!(interpret("KaiserWindow[0.7]").unwrap(), "0.");
+    assert_eq!(interpret("KaiserWindow[-0.7]").unwrap(), "0.");
+  }
+
+  // Exact arguments give the symbolic BesselI radical form.
+  #[test]
+  fn kaiser_exact() {
+    assert_eq!(
+      interpret("KaiserWindow[1/4]").unwrap(),
+      "BesselI[0, (3*Sqrt[3])/2]/BesselI[0, 3]"
+    );
+    // The support edge with a custom alpha collapses the numerator argument.
+    assert_eq!(
+      interpret("KaiserWindow[1/2, 2]").unwrap(),
+      "BesselI[0, 2]^(-1)"
+    );
+    assert_eq!(
+      interpret("KaiserWindow[1/3, 5]").unwrap(),
+      "BesselI[0, (5*Sqrt[5])/3]/BesselI[0, 5]"
+    );
+  }
+
+  #[test]
+  fn kaiser_numeric() {
+    let v: f64 = interpret("KaiserWindow[0.2]").unwrap().parse().unwrap();
+    assert!((v - 0.818407858016696).abs() < 1e-12);
+    // Even function of x.
+    let v2: f64 = interpret("KaiserWindow[-0.2]").unwrap().parse().unwrap();
+    assert!((v2 - 0.818407858016696).abs() < 1e-12);
+    let v3: f64 = interpret("N[KaiserWindow[1/4]]").unwrap().parse().unwrap();
+    assert!((v3 - 0.7269255302876364).abs() < 1e-12);
+  }
+
+  #[test]
+  fn kaiser_symbolic() {
+    assert_eq!(interpret("KaiserWindow[x]").unwrap(), "KaiserWindow[x]");
+  }
+
   // ParzenWindow: piecewise cubic, exact (rational) for exact arguments.
   #[test]
   fn parzen_exact() {

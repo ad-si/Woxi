@@ -3371,7 +3371,7 @@ GaussianUnitaryMatrixDistribution,,,,10.3,3462
 HolidayCalendar,,,,9.0,3462
 HotellingTSquareDistribution,Hotelling T-squared distribution,✅,pure,8.0,3462
 JacobiNS,Jacobi elliptic function ns (1/sn),✅,pure,1.0,3462
-KaiserWindow,,,,9.0,3462
+KaiserWindow,Kaiser–Bessel window function; KaiserWindow[x] or KaiserWindow[x alpha] (default alpha 3),✅,pure,9.0,3462
 ListVectorDensityPlot,,🚫,,7.0,3462
 MersennePrimeExponent,Gives the nth Mersenne prime exponent,✅,pure,10.4,3462
 Once,Evaluates an expression once and returns the cached result,✅,pure,11.0,3462
