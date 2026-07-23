@@ -3064,6 +3064,143 @@ pub fn dispatch_io_functions(
   None
 }
 
+/// Helper for Read: read a single value of a given type from remaining stream content.
+/// Returns (result_expr, bytes_consumed).
+fn read_single_type(remaining: &str, read_type: &Expr) -> (Expr, usize) {
+  let type_name = match read_type {
+    Expr::Identifier(s) => s.as_str(),
+    _ => "Expression",
+  };
+
+  if remaining.is_empty() {
+    return (Expr::Identifier("EndOfFile".to_string()), 0);
+  }
+
+  match type_name {
+    "Word" => {
+      // Skip leading whitespace
+      let trimmed = remaining.trim_start();
+      let skipped = remaining.len() - trimmed.len();
+      if trimmed.is_empty() {
+        return (Expr::Identifier("EndOfFile".to_string()), remaining.len());
+      }
+      // Read until whitespace
+      let end = trimmed
+        .find(|c: char| c.is_whitespace())
+        .unwrap_or(trimmed.len());
+      let word = &trimmed[..end];
+      (Expr::String(word.to_string()), skipped + end)
+    }
+    "Number" => {
+      // Skip leading whitespace
+      let trimmed = remaining.trim_start();
+      let skipped = remaining.len() - trimmed.len();
+      if trimmed.is_empty() {
+        return (Expr::Identifier("EndOfFile".to_string()), remaining.len());
+      }
+      // Try to parse a number
+      let mut end = 0;
+      let chars: Vec<char> = trimmed.chars().collect();
+      // Optional sign
+      if end < chars.len() && (chars[end] == '+' || chars[end] == '-') {
+        end += 1;
+      }
+      // Digits before decimal
+      let start_digits = end;
+      while end < chars.len() && chars[end].is_ascii_digit() {
+        end += 1;
+      }
+      let has_int_part = end > start_digits;
+      // Decimal point and more digits
+      let mut is_real = false;
+      if end < chars.len() && chars[end] == '.' {
+        is_real = true;
+        end += 1;
+        while end < chars.len() && chars[end].is_ascii_digit() {
+          end += 1;
+        }
+      }
+      if end == 0 || (!has_int_part && !is_real) {
+        return (Expr::Identifier("$Failed".to_string()), skipped);
+      }
+      let num_str = &trimmed[..end];
+      if is_real {
+        if let Ok(f) = num_str.parse::<f64>() {
+          return (Expr::Real(f), skipped + end);
+        }
+      } else if let Ok(n) = num_str.parse::<i128>() {
+        return (Expr::Integer(n), skipped + end);
+      }
+      (Expr::Identifier("$Failed".to_string()), skipped)
+    }
+    "String" => {
+      // Read until newline
+      let end = remaining.find('\n').unwrap_or(remaining.len());
+      let line = &remaining[..end];
+      let advance = if end < remaining.len() { end + 1 } else { end };
+      (Expr::String(line.to_string()), advance)
+    }
+    "Character" => {
+      let ch = remaining.chars().next().unwrap();
+      (Expr::String(ch.to_string()), ch.len_utf8())
+    }
+    "Expression" | _ => {
+      // Read the next top-level Wolfram expression. Strings, comments,
+      // and bracketed groups are allowed to span newlines, so we scan
+      // forward tracking quote/bracket depth instead of cutting at the
+      // first newline — otherwise inputs like `"Tengo una\nvaca."`
+      // would only read the unbalanced opener `"Tengo una`.
+      let trimmed = remaining.trim_start();
+      let skipped = remaining.len() - trimmed.len();
+      if trimmed.is_empty() {
+        return (Expr::Identifier("EndOfFile".to_string()), remaining.len());
+      }
+      let bytes = trimmed.as_bytes();
+      let mut i = 0;
+      let mut depth: i32 = 0;
+      let mut in_string = false;
+      while i < bytes.len() {
+        let c = bytes[i];
+        if in_string {
+          if c == b'\\' && i + 1 < bytes.len() {
+            // Escape: skip next byte too.
+            i += 2;
+            continue;
+          }
+          if c == b'"' {
+            in_string = false;
+          }
+          i += 1;
+          continue;
+        }
+        match c {
+          b'"' => in_string = true,
+          b'(' | b'[' | b'{' => depth += 1,
+          b')' | b']' | b'}' => depth -= 1,
+          b'\n' if depth == 0 => break,
+          _ => {}
+        }
+        i += 1;
+      }
+      let end = i;
+      let line = &trimmed[..end];
+      let advance = if skipped + end < remaining.len() {
+        skipped + end + 1
+      } else {
+        remaining.len()
+      };
+      match crate::interpret(line) {
+        Ok(result_str) => {
+          let expr = crate::syntax::string_to_expr(&result_str)
+            .unwrap_or(Expr::Identifier(result_str));
+          (expr, advance)
+        }
+        Err(_) => (Expr::Identifier("$Failed".to_string()), advance),
+      }
+    }
+  }
+}
+
 /// Split an `OpenWrite[…]` / `OpenRead[…]` arg list into the optional
 /// filename argument and the remaining option-Rule arguments. Used so the
 /// `BinaryFormat -> True` option can be passed through alongside (or
