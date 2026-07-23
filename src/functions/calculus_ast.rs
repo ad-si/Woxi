@@ -15526,6 +15526,60 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // Zeta[var] around var == 1 has a simple pole (residue 1). Its Laurent
+  // series is 1/(var-1) + Sum_{n>=0} (-1)^n StieltjesGamma[n]/n! (var-1)^n,
+  // with StieltjesGamma[0] = EulerGamma. The generic Taylor path would hit the
+  // pole (Zeta[1] = ComplexInfinity) and emit Derivative[Zeta][1] terms.
+  if order >= 0
+    && matches!(&x0, Expr::Integer(1))
+    && let Expr::FunctionCall { name, args: fa } = &args[0]
+    && name == "Zeta"
+    && fa.len() == 1
+    && matches!(&fa[0], Expr::Identifier(v) if *v == var_name)
+  {
+    let mut coeffs = vec![Expr::Integer(1)]; // order -1: 1/(var-1)
+    for n in 0..=order {
+      let sign = if n % 2 == 0 { 1 } else { -1 };
+      let mut fact: i128 = 1;
+      for j in 2..=n {
+        fact *= j;
+      }
+      let sg = Expr::FunctionCall {
+        name: "StieltjesGamma".to_string(),
+        args: vec![Expr::Integer(n)].into(),
+      };
+      // (-1)^n StieltjesGamma[n] / n! (StieltjesGamma[0] folds to EulerGamma)
+      let coeff = if sign == 1 && fact == 1 {
+        sg
+      } else {
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![Expr::Integer(sign), Expr::Integer(fact)].into(),
+            },
+            sg,
+          ]
+          .into(),
+        }
+      };
+      coeffs.push(crate::evaluator::evaluate_expr_to_expr(&coeff)?);
+    }
+    return Ok(Expr::FunctionCall {
+      name: "SeriesData".to_string(),
+      args: vec![
+        Expr::Identifier(var_name.clone()),
+        Expr::Integer(1),
+        Expr::List(coeffs.into()),
+        Expr::Integer(-1),
+        Expr::Integer(order + 1),
+        Expr::Integer(1),
+      ]
+      .into(),
+    });
+  }
+
   // If the expression does not depend on the expansion variable, its series
   // is the expression itself (wolframscript returns it directly, with no
   // SeriesData wrapper or O-term).

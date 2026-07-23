@@ -2281,6 +2281,33 @@ mod series {
     );
   }
 
+  // Zeta[x] has a simple pole at x = 1: Laurent series 1/(x-1) + Sum_{n>=0}
+  // (-1)^n StieltjesGamma[n]/n! (x-1)^n, with StieltjesGamma[0] = EulerGamma.
+  #[test]
+  fn series_zeta_pole_at_one() {
+    assert_eq!(
+      interpret("Series[Zeta[x], {x, 1, 0}]").unwrap(),
+      "SeriesData[x, 1, {1, EulerGamma}, -1, 1, 1]"
+    );
+    assert_eq!(
+      interpret("Series[Zeta[x], {x, 1, 1}]").unwrap(),
+      "SeriesData[x, 1, {1, EulerGamma, -StieltjesGamma[1]}, -1, 2, 1]"
+    );
+    assert_eq!(
+      interpret("Series[Zeta[x], {x, 1, 2}]").unwrap(),
+      "SeriesData[x, 1, {1, EulerGamma, -StieltjesGamma[1], StieltjesGamma[2]/2}, -1, 3, 1]"
+    );
+    assert_eq!(
+      interpret("Series[Zeta[x], {x, 1, 3}]").unwrap(),
+      "SeriesData[x, 1, {1, EulerGamma, -StieltjesGamma[1], StieltjesGamma[2]/2, -1/6*StieltjesGamma[3]}, -1, 4, 1]"
+    );
+    // Any expansion variable.
+    assert_eq!(
+      interpret("Series[Zeta[s], {s, 1, 0}]").unwrap(),
+      "SeriesData[s, 1, {1, EulerGamma}, -1, 1, 1]"
+    );
+  }
+
   // Puiseux (fractional-power) expansion: f = x^(p/q) g(x) expands with den = q,
   // the cofactor g's coefficients interleaved with q-1 zeros. nmax follows the
   // rule max(order*q, nmin) + 1.
