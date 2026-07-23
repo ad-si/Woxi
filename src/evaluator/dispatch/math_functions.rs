@@ -1446,7 +1446,7 @@ pub fn dispatch_math_functions(
       return Some(crate::functions::math_ast::zeta_ast(args));
     }
     "HurwitzZeta" if args.len() == 2 => {
-      return Some(crate::functions::math_ast::hurwitz_zeta_public_ast(args));
+      return Some(crate::functions::math_ast::hurwitz_zeta_ast(args));
     }
     "DirichletEta" if args.len() == 1 => {
       return Some(crate::functions::math_ast::dirichlet_eta_ast(args));
