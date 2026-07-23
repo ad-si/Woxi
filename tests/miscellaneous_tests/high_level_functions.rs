@@ -3089,13 +3089,37 @@ mod high_level_functions {
         .unwrap(),
         "000-7"
       );
-      // A {n, f} spec pads the fixed-decimal rendering to width n+2.
+      // A {n, f} spec pads the integer field to n-f+1 columns; the right
+      // NumberPadding element fills the fractional part past the value's
+      // significant digits. An empty right pad suppresses trailing zeros,
+      // so 1.5 shows "001.5" (not "001.50").
       assert_eq!(
         interpret(
           "ToString[PaddedForm[1.5, {4, 2}, NumberPadding -> {\"0\", \"\"}]]"
         )
         .unwrap(),
-        "001.50"
+        "001.5"
+      );
+      // The default right pad "0" keeps the fixed-decimal rendering intact.
+      assert_eq!(
+        interpret("ToString[PaddedForm[1.5, {4, 2}]]").unwrap(),
+        "  1.50"
+      );
+      // A non-"0" right pad fills the missing fractional slots literally.
+      assert_eq!(
+        interpret(
+          "ToString[PaddedForm[1.5, {4, 3}, NumberPadding -> {\"0\", \"x\"}]]"
+        )
+        .unwrap(),
+        "01.5xx"
+      );
+      // Rounding to f decimals happens before trailing-zero suppression.
+      assert_eq!(
+        interpret(
+          "ToString[PaddedForm[1.567, {5, 2}, NumberPadding -> {\"0\", \"\"}]]"
+        )
+        .unwrap(),
+        "0001.57"
       );
       // Lists thread the option over every element.
       assert_eq!(

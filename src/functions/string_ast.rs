@@ -4759,6 +4759,7 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect();
     if positional.len() == 2 {
       let lpad = number_padding_left(inner_args);
+      let rpad = number_padding_right(inner_args);
       if let Some((digits, base)) =
         padded_base_form_digits(positional[0], positional[1], &lpad)
       {
@@ -4771,7 +4772,7 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(Expr::String(rendered));
       }
       if let Some(rendered) =
-        padded_form_to_string(positional[0], positional[1], &lpad)
+        padded_form_to_string(positional[0], positional[1], &lpad, &rpad)
       {
         return Ok(Expr::String(rendered));
       }
@@ -12482,6 +12483,27 @@ pub fn number_padding_left(args: &[Expr]) -> String {
   " ".to_string()
 }
 
+/// The right NumberPadding string of a display-form argument list: the second
+/// element of a `NumberPadding -> {p1, p2}` rule, or "0" when absent. This pads
+/// the fractional part past the value's significant digits, so an explicit ""
+/// suppresses trailing zeros (e.g. `PaddedForm[1.5, {4, 2}, NumberPadding ->
+/// {"0", ""}]` -> "001.5" rather than "001.50").
+pub fn number_padding_right(args: &[Expr]) -> String {
+  for a in args {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = a
+      && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "NumberPadding")
+      && let Expr::List(pad) = replacement.as_ref()
+      && let Some(Expr::String(p2)) = pad.get(1)
+    {
+      return p2.clone();
+    }
+  }
+  "0".to_string()
+}
+
 /// Left-pad `body` to `width` columns with the padding string `lpad`
 /// (one copy per missing column, so an empty `lpad` disables padding).
 fn pad_left(body: &str, width: usize, lpad: &str) -> String {
@@ -12552,12 +12574,13 @@ fn padded_form_to_string(
   value: &Expr,
   spec: &Expr,
   lpad: &str,
+  rpad: &str,
 ) -> Option<String> {
   // A list pads each element with the same spec and renders as `{e1, e2, ...}`.
   if let Expr::List(items) = value {
     let parts: Option<Vec<String>> = items
       .iter()
-      .map(|e| padded_form_to_string(e, spec, lpad))
+      .map(|e| padded_form_to_string(e, spec, lpad, rpad))
       .collect();
     return Some(format!("{{{}}}", parts?.join(", ")));
   }
@@ -12592,8 +12615,31 @@ fn padded_form_to_string(
           }
           _ => {
             let v = crate::functions::math_ast::expr_to_num(value)?;
-            let body = format!("{v:.prec$}", prec = *f as usize);
-            Some(pad_left(&body, (*n as usize) + 2, lpad))
+            let f_usize = *f as usize;
+            let n_usize = *n as usize;
+            let rounded = format!("{v:.prec$}", prec = f_usize);
+            if let Some(dot) = rounded.find('.') {
+              let int_str = &rounded[..dot];
+              let frac_str = &rounded[dot + 1..];
+              // Significant fractional digits = the fractional string minus
+              // trailing zeros (which are padding). The remaining slots are
+              // filled with the right NumberPadding string (default "0"), so
+              // an empty `rpad` suppresses trailing zeros entirely. When
+              // `rpad` is "0" this reproduces the plain fixed-precision form.
+              let keep = frac_str.trim_end_matches('0').chars().count();
+              let mut frac_out = frac_str[..keep].to_string();
+              for _ in keep..f_usize {
+                frac_out.push_str(rpad);
+              }
+              // The integer field spans n - f digit columns plus one sign
+              // column, left-padded with `lpad`; the fractional part follows
+              // the decimal point and shrinks as trailing digits are dropped.
+              let int_field = n_usize.saturating_sub(f_usize) + 1;
+              let padded_int = pad_left(int_str, int_field, lpad);
+              Some(format!("{padded_int}.{frac_out}"))
+            } else {
+              Some(pad_left(&rounded, n_usize + 2, lpad))
+            }
           }
         }
       } else {
