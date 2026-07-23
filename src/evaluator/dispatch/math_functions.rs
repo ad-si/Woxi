@@ -1947,20 +1947,19 @@ pub fn dispatch_math_functions(
         name: pname,
         args: dargs,
       } = &args[0]
-        && let Some(slice) = crate::functions::math_ast::process_slice_distribution(
-          pname, dargs, &args[1],
-        )
+        && let Some(slice) =
+          crate::functions::math_ast::process_slice_distribution(
+            pname, dargs, &args[1],
+          )
       {
         return Some(crate::evaluator::evaluate_expr_to_expr(&slice));
       }
       return Some(Ok(unevaluated("SliceDistribution", args)));
     }
     "CorrelationFunction" if args.len() == 3 => {
-      if let Some(result) =
-        crate::functions::math_ast::process_correlation(
-          &args[0], &args[1], &args[2],
-        )
-      {
+      if let Some(result) = crate::functions::math_ast::process_correlation(
+        &args[0], &args[1], &args[2],
+      ) {
         return Some(crate::evaluator::evaluate_expr_to_expr(&result));
       }
       return Some(Ok(unevaluated("CorrelationFunction", args)));
@@ -1979,9 +1978,7 @@ pub fn dispatch_math_functions(
       return Some(crate::functions::absolute_correlation_function_ast(args));
     }
     "BiweightMidvariance" => {
-      return Some(
-        crate::functions::math_ast::biweight_midvariance_ast(args),
-      );
+      return Some(crate::functions::math_ast::biweight_midvariance_ast(args));
     }
     // StieltjesGamma[0] is EulerGamma; positive integers and symbols stay
     // symbolic (N picks up the machine values via try_eval_to_f64); other

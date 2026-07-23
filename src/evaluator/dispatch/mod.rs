@@ -17,7 +17,6 @@ pub(crate) use crate::{
 
 pub mod arg_count;
 mod association_functions;
-mod attributes;
 mod audio_functions;
 mod boolean_functions;
 pub(crate) mod calculus_functions;
@@ -43,7 +42,6 @@ mod timeseries_functions;
 mod wavelet_functions;
 
 pub use association_functions::*;
-pub use attributes::*;
 pub use boolean_functions::*;
 pub use calculus_functions::*;
 pub use complex_and_special::*;
