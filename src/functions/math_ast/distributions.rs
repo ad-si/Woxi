@@ -3757,6 +3757,7 @@ pub fn distribution_mean_variance(
       benktander_gibrat_mean_variance(&dargs[0], &dargs[1])
     }
     "ZipfDistribution" => zipf_mean_variance(dargs),
+    "WaringYuleDistribution" => waring_yule_mean_variance(dargs),
     "BenfordDistribution" => benford_mean_variance(dargs),
     "BenktanderWeibullDistribution" => benktander_weibull_mean_variance(dargs),
     "GumbelDistribution" => gumbel_mean_variance(dargs),
@@ -16327,6 +16328,43 @@ fn cdf_zipf(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 /// Mean and variance for ZipfDistribution: Zeta ratios with existence
 /// thresholds (r > 1, r > 2) for the infinite form, HarmonicNumber
 /// ratios for the bounded form.
+/// Mean[WaringYuleDistribution[a]] = Piecewise[{{1/(a-1), a > 1}}, Indeterminate];
+/// the two-parameter form is Piecewise[{{b/(a-1), a > 1}}, Indeterminate].
+/// Variance stays unevaluated (its closed form uses Hypergeometric2F1), so the
+/// distribution is registered for Mean only and the variance slot is
+/// Indeterminate.
+fn waring_yule_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let (a, b) = match dargs {
+    [a] => (a.clone(), int(1)),
+    [a, b] => (a.clone(), b.clone()),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "WaringYuleDistribution expects 1 or 2 arguments".into(),
+      ));
+    }
+  };
+  let mean_value = divide(b, minus(a.clone(), int(1)));
+  let mean = match ms_numeric(&a) {
+    Some(av) => {
+      if av > 1.0 {
+        eval(mean_value)?
+      } else {
+        indeterminate()
+      }
+    }
+    None => piecewise(
+      vec![(
+        mean_value,
+        comparison(a.clone(), ComparisonOp::Greater, int(1)),
+      )],
+      indeterminate(),
+    ),
+  };
+  Ok((mean, indeterminate()))
+}
+
 fn zipf_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {

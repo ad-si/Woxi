@@ -2416,6 +2416,34 @@ mod waring_yule_distribution {
       "0"
     );
   }
+
+  // Mean = b/(a - 1) for a > 1 (b = 1 in the one-parameter form), else
+  // Indeterminate. Variance stays unevaluated (Hypergeometric2F1 closed form).
+  #[test]
+  fn mean() {
+    assert_eq!(
+      interpret("Mean[WaringYuleDistribution[a]]").unwrap(),
+      "Piecewise[{{(-1 + a)^(-1), a > 1}}, Indeterminate]"
+    );
+    assert_eq!(interpret("Mean[WaringYuleDistribution[3]]").unwrap(), "1/2");
+    assert_eq!(
+      interpret("Mean[WaringYuleDistribution[a, b]]").unwrap(),
+      "Piecewise[{{b/(-1 + a), a > 1}}, Indeterminate]"
+    );
+    assert_eq!(
+      interpret("Mean[WaringYuleDistribution[3, 2]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Mean[WaringYuleDistribution[5, 3]]").unwrap(),
+      "3/4"
+    );
+    // a <= 1: the mean does not exist.
+    assert_eq!(
+      interpret("Mean[WaringYuleDistribution[1]]").unwrap(),
+      "Indeterminate"
+    );
+  }
 }
 
 mod polynomial_expectation {

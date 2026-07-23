@@ -691,6 +691,8 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // (1 - ns/nt)*(-n + nt), but Woxi's Times canonicalization orders
         // those two factors the other way, diverging from wolframscript.
         | "HypergeometricDistribution"
+        // Mean only: the Variance closed form involves Hypergeometric2F1.
+        | "WaringYuleDistribution"
     ) =>
     {
       // Invalid parameters (e.g. BenktanderGibratDistribution[1, 2]) emit a
