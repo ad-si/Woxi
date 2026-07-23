@@ -1058,6 +1058,60 @@ fn incomplete_beta_ast(
     });
   }
 
+  // Beta[z, a, 0]: with the upper parameter zero the integrand is
+  // t^(a-1) (1 - t)^(-1). For a == 1 this is elementary,
+  //   Beta[z, 1, 0] = -Log[1 - z],
+  // which wolframscript returns even for exact/symbolic z. For a general a it
+  // equals z^a LerchPhi[z, 1, a]; wolframscript keeps the exact form symbolic
+  // but numericizes any inexact input.
+  if matches!(b, Expr::Integer(0)) || matches!(b, Expr::Real(f) if *f == 0.0) {
+    let inexact = contains_inexact_real(z)
+      || contains_inexact_real(a)
+      || matches!(b, Expr::Real(_));
+    let call = |n: &str, args: Vec<Expr>| Expr::FunctionCall {
+      name: n.to_string(),
+      args: args.into(),
+    };
+    let a_is_one =
+      matches!(a, Expr::Integer(1)) || matches!(a, Expr::Real(f) if *f == 1.0);
+    if a_is_one {
+      // -Log[1 - z]
+      let one_minus_z = call(
+        "Plus",
+        vec![
+          Expr::Integer(1),
+          call("Times", vec![Expr::Integer(-1), z.clone()]),
+        ],
+      );
+      let result = call(
+        "Times",
+        vec![Expr::Integer(-1), call("Log", vec![one_minus_z])],
+      );
+      let result = crate::evaluator::evaluate_expr_to_expr(&result)?;
+      return if inexact {
+        crate::evaluator::evaluate_function_call_ast("N", &[result])
+      } else {
+        Ok(result)
+      };
+    }
+    if inexact {
+      // z^a LerchPhi[z, 1, a]
+      let expr = call(
+        "Times",
+        vec![
+          call("Power", vec![z.clone(), a.clone()]),
+          call("LerchPhi", vec![z.clone(), Expr::Integer(1), a.clone()]),
+        ],
+      );
+      return crate::evaluator::evaluate_function_call_ast("N", &[expr]);
+    }
+    // Exact input with a non-unit a stays symbolic, matching wolframscript.
+    return Ok(Expr::FunctionCall {
+      name: "Beta".to_string(),
+      args: vec![z.clone(), a.clone(), b.clone()].into(),
+    });
+  }
+
   // The polynomial closed-form is only available when z is numeric and b is a
   // positive whole number (exact integer or a whole-valued machine real, as
   // arises from N[…]). Symbolic z is left unevaluated, matching wolframscript.

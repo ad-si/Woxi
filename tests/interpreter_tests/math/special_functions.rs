@@ -3831,6 +3831,32 @@ mod beta_fn {
     assert_eq!(interpret("Beta[z, 2, 2]").unwrap(), "Beta[z, 2, 2]");
   }
 
+  // Beta[z, a, 0] (zero upper parameter): a = 1 is elementary and evaluates for
+  // symbolic/exact z; a general a stays symbolic when exact and numericizes when
+  // inexact (Beta[z, a, 0] = z^a LerchPhi[z, 1, a]).
+  #[test]
+  fn incomplete_upper_parameter_zero() {
+    assert_eq!(interpret("Beta[z, 1, 0]").unwrap(), "-Log[1 - z]");
+    assert_eq!(interpret("Beta[1/2, 1, 0]").unwrap(), "Log[2]");
+    // a = 1 with inexact z uses the accurate -Log form.
+    assert_eq!(interpret("Beta[0.5, 1, 0]").unwrap(), "0.6931471805599453");
+    // Exact non-unit a stays symbolic (matching wolframscript).
+    assert_eq!(interpret("Beta[1/2, 2, 0]").unwrap(), "Beta[1/2, 2, 0]");
+    assert_eq!(interpret("Beta[1/2, 5/2, 0]").unwrap(), "Beta[1/2, 5/2, 0]");
+    assert_eq!(interpret("Beta[z, a, 0]").unwrap(), "Beta[z, a, 0]");
+  }
+
+  // Numeric values of Beta[z, a, 0] for a non-unit a (via LerchPhi).
+  #[test]
+  fn incomplete_upper_parameter_zero_numeric() {
+    let v: f64 = interpret("N[Beta[1/2, 2, 0]]").unwrap().parse().unwrap();
+    assert!((v - 0.1931471805599452).abs() < 1e-12, "got {v}");
+    let w: f64 = interpret("N[Beta[1/2, 3, 0]]").unwrap().parse().unwrap();
+    assert!((w - 0.06814718055994526).abs() < 1e-12, "got {w}");
+    let u: f64 = interpret("N[Beta[1/2, 5/2, 0]]").unwrap().parse().unwrap();
+    assert!((u - 0.1128313512704752).abs() < 1e-12, "got {u}");
+  }
+
   // ── Complete Beta with one integer + one rational argument ───────────
   // Beta[a, n] = (n-1)! / Pochhammer[a, n] is an exact rational for any
   // rational a; wolframscript evaluates these (regression for a gap where
