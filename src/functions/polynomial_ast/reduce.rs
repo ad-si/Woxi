@@ -1904,6 +1904,10 @@ fn try_factor_and_reduce_inequality(
 
     let mut intervals: Vec<Expr> = Vec::new();
 
+    // For an inclusive comparison every root satisfies the (in)equality, so the
+    // unbounded end pieces include their boundary root (x <= r0 / x >= r_last).
+    let inclusive = matches!(op, CompOp::LessEqual | CompOp::GreaterEqual);
+
     // Test point before first root
     if !roots.is_empty() {
       let test_x = roots[0].1 - 1.0;
@@ -1912,7 +1916,11 @@ fn try_factor_and_reduce_inequality(
         intervals.push(make_comparison(
           &Expr::Identifier(var.to_string()),
           &roots[0].0,
-          CompOp::Less,
+          if inclusive {
+            CompOp::LessEqual
+          } else {
+            CompOp::Less
+          },
         ));
       }
     }
@@ -1930,14 +1938,12 @@ fn try_factor_and_reduce_inequality(
       let test_x = (roots[i].1 + roots[i + 1].1) / 2.0;
       let sign = eval_poly_at(&poly, var, test_x);
       if sign_matches(sign, op) {
+        // A bounded interval (roots[i], roots[i+1]) is always written in
+        // ascending order; the comparison op only decides whether the
+        // endpoints are included (LessEqual) or excluded (Less).
         let ineq_op = if matches!(op, CompOp::LessEqual | CompOp::GreaterEqual)
         {
-          // Use matching inclusive operators
-          match op {
-            CompOp::LessEqual => CompOp::LessEqual,
-            CompOp::GreaterEqual => CompOp::GreaterEqual,
-            _ => CompOp::Less,
-          }
+          CompOp::LessEqual
         } else {
           CompOp::Less
         };
@@ -1959,7 +1965,11 @@ fn try_factor_and_reduce_inequality(
         intervals.push(make_comparison(
           &Expr::Identifier(var.to_string()),
           &roots.last().unwrap().0,
-          CompOp::Greater,
+          if inclusive {
+            CompOp::GreaterEqual
+          } else {
+            CompOp::Greater
+          },
         ));
       }
     }
@@ -1996,8 +2006,12 @@ fn try_factor_and_reduce_inequality(
 fn eval_poly_at(poly: &Expr, var: &str, x: f64) -> f64 {
   let substituted =
     crate::syntax::substitute_variable(poly, var, &Expr::Real(x));
-  let simplified = simplify(substituted);
-  expr_to_number(&simplified).unwrap_or(0.0)
+  // Use the full evaluator: the symbolic `simplify` does not fold
+  // Power[Real, Integer] (e.g. (-0.5)^3), which would leave the test value
+  // symbolic and collapse the sign to the 0.0 fallback.
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&substituted)
+    .unwrap_or_else(|_| simplify(substituted));
+  expr_to_number(&evaluated).unwrap_or(0.0)
 }
 
 /// Check if a sign value matches the comparison operator (compared to 0).

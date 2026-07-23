@@ -6457,6 +6457,49 @@ mod reduce {
     );
   }
 
+  // Higher-degree polynomial inequalities use a root sign chart. Previously
+  // these returned False (the numeric test point collapsed to the 0.0 fallback).
+  #[test]
+  fn cubic_and_quartic_inequalities() {
+    assert_eq!(
+      interpret("Reduce[x^3 - x > 0, x]").unwrap(),
+      "Inequality[-1, Less, x, Less, 0] || x > 1"
+    );
+    assert_eq!(
+      interpret("Reduce[x^3 - x < 0, x]").unwrap(),
+      "x < -1 || Inequality[0, Less, x, Less, 1]"
+    );
+    assert_eq!(interpret("Reduce[x^3 > 8, x]").unwrap(), "x > 2");
+    assert_eq!(
+      interpret("Reduce[x^4 - 1 > 0, x]").unwrap(),
+      "x < -1 || x > 1"
+    );
+    assert_eq!(
+      interpret("Reduce[(x - 1) (x - 2) (x - 3) > 0, x]").unwrap(),
+      "Inequality[1, Less, x, Less, 2] || x > 3"
+    );
+  }
+
+  // Inclusive comparisons include the boundary roots.
+  #[test]
+  fn higher_degree_inclusive_inequalities() {
+    assert_eq!(
+      interpret("Reduce[x^3 - x >= 0, x]").unwrap(),
+      "Inequality[-1, LessEqual, x, LessEqual, 0] || x >= 1"
+    );
+    assert_eq!(
+      interpret("Reduce[x^3 - x <= 0, x]").unwrap(),
+      "x <= -1 || Inequality[0, LessEqual, x, LessEqual, 1]"
+    );
+    assert_eq!(interpret("Reduce[x^3 >= 8, x]").unwrap(), "x >= 2");
+    assert_eq!(
+      interpret("Reduce[x^4 - 1 >= 0, x]").unwrap(),
+      "x <= -1 || x >= 1"
+    );
+    // A double root with no satisfied neighbourhood is an isolated point.
+    assert_eq!(interpret("Reduce[(x - 1)^2 <= 0, x]").unwrap(), "x == 1");
+  }
+
   #[test]
   fn quadratic_ineq_with_sign_constraint_negative() {
     // x^2 > 4 && x < 0  →  x < -2
