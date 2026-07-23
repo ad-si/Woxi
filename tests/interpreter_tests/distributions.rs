@@ -332,6 +332,40 @@ mod geometric_distribution {
       "Sqrt[6]"
     );
   }
+
+  // Skewness = (2 - p)/Sqrt[1 - p].
+  #[test]
+  fn skewness() {
+    assert_eq!(
+      interpret("Skewness[GeometricDistribution[p]]").unwrap(),
+      "(2 - p)/Sqrt[1 - p]"
+    );
+    assert_eq!(
+      interpret("Skewness[GeometricDistribution[1/2]]").unwrap(),
+      "3/Sqrt[2]"
+    );
+    assert_eq!(
+      interpret("Skewness[GeometricDistribution[1/3]]").unwrap(),
+      "5/Sqrt[6]"
+    );
+  }
+
+  // Kurtosis = 3 + (6 - 6 p + p^2)/(1 - p).
+  #[test]
+  fn kurtosis() {
+    assert_eq!(
+      interpret("Kurtosis[GeometricDistribution[p]]").unwrap(),
+      "3 + (6 - 6*p + p^2)/(1 - p)"
+    );
+    assert_eq!(
+      interpret("Kurtosis[GeometricDistribution[1/2]]").unwrap(),
+      "19/2"
+    );
+    assert_eq!(
+      interpret("Kurtosis[GeometricDistribution[1/3]]").unwrap(),
+      "55/6"
+    );
+  }
 }
 
 mod log_series_distribution {

@@ -3217,6 +3217,18 @@ fn two_params_of(dist: &Expr, head: &str) -> Option<(Expr, Expr)> {
   }
 }
 
+/// The single parameter of a one-argument distribution `head[p]`, or None.
+fn one_param_of(dist: &Expr, head: &str) -> Option<Expr> {
+  if let Expr::FunctionCall { name, args } = dist
+    && name == head
+    && args.len() == 1
+  {
+    Some(args[0].clone())
+  } else {
+    None
+  }
+}
+
 /// Parameters `(a, b)` of a `SkellamDistribution[a, b]`, or None.
 fn skellam_params(dist: &Expr) -> Option<(Expr, Expr)> {
   if let Expr::FunctionCall { name, args } = dist
@@ -3796,6 +3808,27 @@ pub fn kurtosis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let result = bin(B::Plus, Expr::Integer(3), bin(B::Divide, num, den));
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
+  // Geometric: Kurtosis = 3 + (6 - 6 p + p^2)/(1 - p).
+  if let Some(p) = one_param_of(&args[0], "GeometricDistribution") {
+    use BinaryOperator as B;
+    let bin = |op, l, r| Expr::BinaryOp {
+      op,
+      left: Box::new(l),
+      right: Box::new(r),
+    };
+    let num = bin(
+      B::Plus,
+      bin(
+        B::Plus,
+        Expr::Integer(6),
+        bin(B::Times, Expr::Integer(-6), p.clone()),
+      ),
+      bin(B::Power, p.clone(), Expr::Integer(2)),
+    );
+    let den = bin(B::Minus, Expr::Integer(1), p);
+    let result = bin(B::Plus, Expr::Integer(3), bin(B::Divide, num, den));
+    return crate::evaluator::evaluate_expr_to_expr(&result);
+  }
   let m4 = central_moment_ast(&[args[0].clone(), Expr::Integer(4)])?;
   let m2 = central_moment_ast(&[args[0].clone(), Expr::Integer(2)])?;
   // Compute m4 / m2^2 symbolically
@@ -3882,6 +3915,22 @@ pub fn skewness_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     let den = bin(B::Times, one_plus_p, sqrt);
     let result = bin(B::Divide, num, den);
+    return crate::evaluator::evaluate_expr_to_expr(&result);
+  }
+  // Geometric: Skewness = (2 - p)/Sqrt[1 - p]. Built directly to preserve the
+  // compact form (the generic moment ratio leaves CentralMoment unevaluated).
+  if let Some(p) = one_param_of(&args[0], "GeometricDistribution") {
+    use BinaryOperator as B;
+    let bin = |op, l, r| Expr::BinaryOp {
+      op,
+      left: Box::new(l),
+      right: Box::new(r),
+    };
+    let sqrt = Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![bin(B::Minus, Expr::Integer(1), p.clone())].into(),
+    };
+    let result = bin(B::Divide, bin(B::Minus, Expr::Integer(2), p), sqrt);
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
   let m3 = central_moment_ast(&[args[0].clone(), Expr::Integer(3)])?;
