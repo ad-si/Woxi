@@ -1335,6 +1335,72 @@ mod harmonic_number {
     );
   }
 
+  // A small integer n (<= 4) with a symbolic order expands to the finite sum
+  // Sum_{i=1}^n i^(-r) = 1 + 2^(-r) + ... + n^(-r), matching wolframscript.
+  #[test]
+  fn symbolic_order_expands_for_small_n() {
+    assert_eq!(
+      interpret("HarmonicNumber[3, r]").unwrap(),
+      "1 + 2^(-r) + 3^(-r)"
+    );
+    assert_eq!(
+      interpret("HarmonicNumber[4, s]").unwrap(),
+      "1 + 2^(-s) + 3^(-s) + 4^(-s)"
+    );
+    assert_eq!(interpret("HarmonicNumber[2, r]").unwrap(), "1 + 2^(-r)");
+    assert_eq!(interpret("HarmonicNumber[1, r]").unwrap(), "1");
+    assert_eq!(interpret("HarmonicNumber[0, r]").unwrap(), "0");
+    assert_eq!(
+      interpret("HarmonicNumber[3, Pi]").unwrap(),
+      "1 + 2^(-Pi) + 3^(-Pi)"
+    );
+    assert_eq!(
+      interpret("HarmonicNumber[4, 2 s]").unwrap(),
+      "1 + 2^(-2*s) + 3^(-2*s) + 4^(-2*s)"
+    );
+  }
+
+  // For n >= 5 wolframscript keeps a symbolic order unevaluated.
+  #[test]
+  fn symbolic_order_stays_unevaluated_for_large_n() {
+    assert_eq!(
+      interpret("HarmonicNumber[5, r]").unwrap(),
+      "HarmonicNumber[5, r]"
+    );
+    assert_eq!(
+      interpret("HarmonicNumber[5, 1/2]").unwrap(),
+      "HarmonicNumber[5, 1/2]"
+    );
+  }
+
+  // An exact non-integer order expands with the terms evaluated exactly.
+  #[test]
+  fn exact_non_integer_order() {
+    assert_eq!(
+      interpret("HarmonicNumber[3, 1/2]").unwrap(),
+      "1 + 1/Sqrt[2] + 1/Sqrt[3]"
+    );
+    assert_eq!(
+      interpret("HarmonicNumber[3, -1/2]").unwrap(),
+      "1 + Sqrt[2] + Sqrt[3]"
+    );
+  }
+
+  // An inexact (machine-real) order numericizes the finite sum for any n.
+  #[test]
+  fn inexact_order_numericizes() {
+    let v: f64 = interpret("HarmonicNumber[3, 1.5]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((v - 1.5460034803231488).abs() < 1e-12, "got {v}");
+    let w: f64 = interpret("HarmonicNumber[5, 1.5]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((w - 1.7604461994231404).abs() < 1e-12, "got {w}");
+  }
+
   // The limiting value of the (generalized) harmonic series at Infinity.
   #[test]
   fn at_infinity() {

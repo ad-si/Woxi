@@ -1879,6 +1879,49 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match expr_to_i128(&args[1]) {
       Some(r) => r,
       None => {
+        // A non-integer order with a non-negative integer n: the generalized
+        // harmonic number is the finite sum Sum_{i=1}^n i^(-r).
+        let order = &args[1];
+        // An inexact (machine-real) order numericizes for any n.
+        if harmonic_arg_is_inexact(order)
+          && let Some(rv) = expr_to_num(order)
+        {
+          let mut acc = 0.0_f64;
+          for i in 1..=n {
+            acc += (i as f64).powf(-rv);
+          }
+          return Ok(Expr::Real(acc));
+        }
+        // An exact non-integer order (symbolic, rational, Pi, …) is rendered
+        // expanded by wolframscript only for small n (n <= 4); larger n stays
+        // symbolic.
+        if n <= 4 {
+          let mut terms: Vec<Expr> = Vec::with_capacity(n as usize);
+          for i in 1..=n {
+            if i == 1 {
+              terms.push(Expr::Integer(1));
+            } else {
+              let neg_order = Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![Expr::Integer(-1), order.clone()].into(),
+              };
+              terms.push(Expr::BinaryOp {
+                op: BinaryOperator::Power,
+                left: Box::new(Expr::Integer(i)),
+                right: Box::new(neg_order),
+              });
+            }
+          }
+          let sum = match terms.len() {
+            0 => Expr::Integer(0),
+            1 => terms.pop().unwrap(),
+            _ => Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: terms.into(),
+            },
+          };
+          return crate::evaluator::evaluate_expr_to_expr(&sum);
+        }
         return Ok(unevaluated("HarmonicNumber", args));
       }
     }
