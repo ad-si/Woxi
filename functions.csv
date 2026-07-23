@@ -2126,7 +2126,7 @@ ArrayComponents,Replaces identical array elements with integer component indices
 MorphologicalTransform,Applies morphological operations to binary images,🚫,None,8.0,2165
 WebImageSearch,Searches the web for images matching a query,🚫,None,11.1,2165
 EventData,,🚫,,9.0,2167
-TensorExpand,Symbolic tensor algebra expansion,🚫,None,9.0,2167
+TensorExpand,Expand products of sums in tensor operations,✅,pure,9.0,2167
 StringStartsQ,Checks if a string starts with a specific substring; supports the one-argument operator form,✅,pure,10.1,2168
 BubbleChart3D,Creates a 3D bubble chart visualization,🚫,None,7.0,2170
 OverwriteTarget,Option specifying whether to overwrite an existing target file,🚫,None,11.0,2170

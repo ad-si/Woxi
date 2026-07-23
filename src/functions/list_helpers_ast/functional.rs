@@ -1121,15 +1121,44 @@ pub fn tensor_product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && crate::functions::predicate_ast::is_numeric_q(e)
   };
 
-  // Pull scalars out; they distribute over the tensor part via Times.
+  // Pull numeric coefficients out of each factor; they distribute over the
+  // tensor part via Times. A factor like `2 a` contributes the scalar 2 and
+  // the tensor `a`; `-b` (= Times[-1, b]) contributes -1 and `b`.
   let mut scalars: Vec<Expr> = Vec::new();
   let mut rest: Vec<Expr> = Vec::new();
   for a in flat {
     if is_scalar(&a) {
       scalars.push(a);
-    } else {
-      rest.push(a);
+      continue;
     }
+    let times_parts: Option<Vec<Expr>> = match &a {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        Some(args.to_vec())
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => Some(vec![(**left).clone(), (**right).clone()]),
+      _ => None,
+    };
+    if let Some(parts) = times_parts {
+      let (nums, others): (Vec<Expr>, Vec<Expr>) =
+        parts.into_iter().partition(|p| is_scalar(p));
+      if !nums.is_empty() && !others.is_empty() {
+        scalars.extend(nums);
+        rest.push(if others.len() == 1 {
+          others.into_iter().next().unwrap()
+        } else {
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: others.into(),
+          }
+        });
+        continue;
+      }
+    }
+    rest.push(a);
   }
 
   // Among the non-scalar factors, contract maximal runs of explicit arrays.
@@ -1177,6 +1206,151 @@ pub fn tensor_product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (_, None) => {
       crate::evaluator::evaluate_function_call_ast("Times", &scalars)
     }
+  }
+}
+
+/// Split an expression into additive terms if its head is `Plus`.
+fn plus_terms(e: &Expr) -> Option<Vec<Expr>> {
+  match e {
+    Expr::FunctionCall { name, args } if name == "Plus" => Some(args.to_vec()),
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => Some(vec![(**left).clone(), (**right).clone()]),
+    _ => None,
+  }
+}
+
+/// Split an expression into multiplicative factors if its head is `Times`.
+fn times_factors(e: &Expr) -> Option<Vec<Expr>> {
+  match e {
+    Expr::FunctionCall { name, args } if name == "Times" => Some(args.to_vec()),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => Some(vec![(**left).clone(), (**right).clone()]),
+    _ => None,
+  }
+}
+
+/// Re-evaluate `head[args…]` through the normal evaluator so the result is
+/// canonicalized exactly like a freshly parsed expression.
+fn reeval_head(head: &str, args: Vec<Expr>) -> Result<Expr, InterpreterError> {
+  crate::evaluator::evaluate_function_call_ast(head, &args)
+}
+
+/// Cartesian product of a list of summand-lists.
+fn cartesian(slots: &[Vec<Expr>]) -> Vec<Vec<Expr>> {
+  let mut combos: Vec<Vec<Expr>> = vec![Vec::new()];
+  for slot in slots {
+    let mut next = Vec::new();
+    for combo in &combos {
+      for item in slot {
+        let mut c = combo.clone();
+        c.push(item.clone());
+        next.push(c);
+      }
+    }
+    combos = next;
+  }
+  combos
+}
+
+/// TensorExpand[expr] — expand products of sums that appear inside tensor
+/// operations (TensorProduct, Dot, TensorContract, TensorTranspose) as well as
+/// ordinary scalar products, distributing multilinear operations over Plus.
+pub fn tensor_expand_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
+  tensor_expand_rec(expr)
+}
+
+fn tensor_expand_rec(expr: &Expr) -> Result<Expr, InterpreterError> {
+  // Plus: expand every term, then re-form the sum.
+  if let Some(terms) = plus_terms(expr) {
+    let mut out = Vec::with_capacity(terms.len());
+    for t in &terms {
+      out.push(tensor_expand_rec(t)?);
+    }
+    return reeval_head("Plus", out);
+  }
+
+  // Times: expand each factor, then distribute over any sums (Cartesian).
+  if let Some(factors) = times_factors(expr) {
+    let mut expanded: Vec<Vec<Expr>> = Vec::with_capacity(factors.len());
+    for f in &factors {
+      let ef = tensor_expand_rec(f)?;
+      expanded.push(plus_terms(&ef).unwrap_or_else(|| vec![ef]));
+    }
+    let mut out = Vec::new();
+    for combo in cartesian(&expanded) {
+      out.push(reeval_head("Times", combo)?);
+    }
+    return reeval_head("Plus", out);
+  }
+
+  match expr {
+    // Multilinear operations distribute over Plus in each argument slot.
+    Expr::FunctionCall { name, args }
+      if (name == "TensorProduct" || name == "Dot") && !args.is_empty() =>
+    {
+      let mut slots: Vec<Vec<Expr>> = Vec::with_capacity(args.len());
+      for a in args.iter() {
+        slots.push(slot_summands(a)?);
+      }
+      let mut out = Vec::new();
+      for combo in cartesian(&slots) {
+        out.push(reeval_head(name, combo)?);
+      }
+      reeval_head("Plus", out)
+    }
+    // TensorContract / TensorTranspose are linear in their tensor argument.
+    Expr::FunctionCall { name, args }
+      if (name == "TensorContract" || name == "TensorTranspose")
+        && args.len() == 2 =>
+    {
+      let t = tensor_expand_rec(&args[0])?;
+      let rest = args[1].clone();
+      if let Some(terms) = plus_terms(&t) {
+        let mut out = Vec::with_capacity(terms.len());
+        for term in terms {
+          out.push(reeval_head(name, vec![term, rest.clone()])?);
+        }
+        reeval_head("Plus", out)
+      } else {
+        reeval_head(name, vec![t, rest])
+      }
+    }
+    _ => Ok(expr.clone()),
+  }
+}
+
+/// Distribute a single multilinear slot over a top-level Plus. Nested tensor
+/// operations are expanded, but a scalar `Times` inside a slot is left opaque
+/// (matching TensorExpand[TensorProduct[x (a + b), c]] == (a + b) x ⊗ c).
+fn slot_summands(arg: &Expr) -> Result<Vec<Expr>, InterpreterError> {
+  let ex = tensor_expand_slot(arg)?;
+  Ok(plus_terms(&ex).unwrap_or_else(|| vec![ex]))
+}
+
+fn tensor_expand_slot(arg: &Expr) -> Result<Expr, InterpreterError> {
+  if let Some(terms) = plus_terms(arg) {
+    let mut out = Vec::with_capacity(terms.len());
+    for t in &terms {
+      out.push(tensor_expand_slot(t)?);
+    }
+    return reeval_head("Plus", out);
+  }
+  match arg {
+    Expr::FunctionCall { name, .. }
+      if matches!(
+        name.as_str(),
+        "TensorProduct" | "Dot" | "TensorContract" | "TensorTranspose"
+      ) =>
+    {
+      tensor_expand_rec(arg)
+    }
+    _ => Ok(arg.clone()),
   }
 }
 

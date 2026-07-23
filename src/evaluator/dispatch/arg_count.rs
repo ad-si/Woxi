@@ -1453,6 +1453,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "FileTemplate" => Some((1, 2)),
     "XMLTemplate" => Some((1, 2)),
     "TensorProduct" => Some((1, usize::MAX)),
+    "TensorExpand" => Some((1, 1)),
     "TensorContract" => Some((2, 2)),
     "TensorRank" => Some((1, 1)),
     "TensorSymmetry" => Some((1, 1)),

@@ -5058,6 +5058,9 @@ pub fn dispatch_list_operations(
     "TensorProduct" if !args.is_empty() => {
       return Some(list_helpers_ast::tensor_product_ast(args));
     }
+    "TensorExpand" if args.len() == 1 => {
+      return Some(list_helpers_ast::tensor_expand_ast(&args[0]));
+    }
     "Inner" if args.len() == 3 => {
       let plus = Expr::Identifier("Plus".to_string());
       return Some(list_helpers_ast::inner_ast(

@@ -3656,6 +3656,136 @@ mod tensor_rank {
   }
 }
 
+mod tensor_expand {
+  use super::*;
+
+  // The TensorProduct operator renders as U+F3DA (\[TensorProduct]) flanked by
+  // single spaces.
+  const TP: &str = "\u{f3da}";
+
+  #[test]
+  fn tensor_product_left_sum() {
+    assert_eq!(
+      interpret("TensorExpand[TensorProduct[a + b, c]]").unwrap(),
+      format!("a {TP} c + b {TP} c")
+    );
+  }
+
+  #[test]
+  fn tensor_product_both_sums() {
+    assert_eq!(
+      interpret("TensorExpand[TensorProduct[a + b, c + d]]").unwrap(),
+      format!("a {TP} c + a {TP} d + b {TP} c + b {TP} d")
+    );
+  }
+
+  #[test]
+  fn tensor_product_three_factors() {
+    assert_eq!(
+      interpret("TensorExpand[TensorProduct[a, b, c + d]]").unwrap(),
+      format!("a {TP} b {TP} c + a {TP} b {TP} d")
+    );
+  }
+
+  #[test]
+  fn dot_left_sum() {
+    assert_eq!(
+      interpret("TensorExpand[Dot[a + b, c]]").unwrap(),
+      "a . c + b . c"
+    );
+  }
+
+  #[test]
+  fn dot_both_sums() {
+    assert_eq!(
+      interpret("TensorExpand[Dot[a + b, c + d]]").unwrap(),
+      "a . c + a . d + b . c + b . d"
+    );
+  }
+
+  #[test]
+  fn numeric_coefficient_pulled_out() {
+    assert_eq!(
+      interpret("TensorExpand[TensorProduct[2 a, b]]").unwrap(),
+      format!("2*a {TP} b")
+    );
+    assert_eq!(
+      interpret("TensorExpand[TensorProduct[2 a, 3 b]]").unwrap(),
+      format!("6*a {TP} b")
+    );
+  }
+
+  #[test]
+  fn difference_keeps_sign() {
+    assert_eq!(
+      interpret("TensorExpand[TensorProduct[a - b, c]]").unwrap(),
+      format!("a {TP} c - b {TP} c")
+    );
+  }
+
+  #[test]
+  fn scalar_multiplier_distributes() {
+    assert_eq!(
+      interpret("TensorExpand[x TensorProduct[a + b, c]]").unwrap(),
+      format!("x*a {TP} c + x*b {TP} c")
+    );
+  }
+
+  #[test]
+  fn times_inside_slot_stays_opaque() {
+    // A scalar Times inside a tensor slot is not distributed.
+    assert_eq!(
+      interpret("TensorExpand[TensorProduct[x (a + b), c]]").unwrap(),
+      format!("((a + b)*x) {TP} c")
+    );
+  }
+
+  #[test]
+  fn nested_tensor_product_flattens() {
+    assert_eq!(
+      interpret(
+        "TensorExpand[TensorProduct[TensorProduct[a, b] \
+         + TensorProduct[c, d], e]]"
+      )
+      .unwrap(),
+      format!("a {TP} b {TP} e + c {TP} d {TP} e")
+    );
+  }
+
+  #[test]
+  fn plain_scalar_product_expands() {
+    assert_eq!(interpret("TensorExpand[x (a + b)]").unwrap(), "a*x + b*x");
+    assert_eq!(
+      interpret("TensorExpand[(a + b) (c + d)]").unwrap(),
+      "a*c + b*c + a*d + b*d"
+    );
+  }
+
+  #[test]
+  fn no_tensor_structure_unchanged() {
+    assert_eq!(interpret("TensorExpand[5]").unwrap(), "5");
+    assert_eq!(interpret("TensorExpand[a + b]").unwrap(), "a + b");
+  }
+
+  // Regression: TensorProduct must pull numeric coefficients out of a slot
+  // even without an enclosing TensorExpand.
+  #[test]
+  fn tensor_product_scalar_pull_regression() {
+    assert_eq!(
+      interpret("TensorProduct[2 a, b]").unwrap(),
+      format!("2*a {TP} b")
+    );
+    assert_eq!(
+      interpret("TensorProduct[-b, c]").unwrap(),
+      format!("-b {TP} c")
+    );
+    assert_eq!(
+      interpret("TensorProduct[2 a b, c]").unwrap(),
+      format!("2*(a*b) {TP} c")
+    );
+  }
+}
+
 mod array_depth {
   use super::*;
 
