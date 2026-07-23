@@ -4094,6 +4094,25 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           }
         }
         // UnitStep[x]: D[UnitStep[x], x] = Piecewise[{{Indeterminate, x == 0}}, 0]
+        // HeavisideTheta[z]: D[HeavisideTheta[z], z] = DiracDelta[z], with the
+        // chain rule for a composite argument: D[HeavisideTheta[u], x] =
+        // DiracDelta[u] D[u, x]. (Distinct from UnitStep, whose derivative is
+        // the Piecewise below.)
+        "HeavisideTheta" if args.len() == 1 => {
+          let dz = differentiate(&args[0], var)?;
+          if matches!(dz, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          let dirac = Expr::FunctionCall {
+            name: "DiracDelta".to_string(),
+            args: vec![args[0].clone()].into(),
+          };
+          Ok(simplify(Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(dz),
+            right: Box::new(dirac),
+          }))
+        }
         "UnitStep" if args.len() == 1 => {
           let dz = differentiate(&args[0], var)?;
           if matches!(dz, Expr::Integer(0)) {

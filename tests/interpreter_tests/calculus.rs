@@ -5448,6 +5448,37 @@ mod erf {
     );
   }
 
+  // D[HeavisideTheta[z], z] = DiracDelta[z], with the chain rule for a
+  // composite argument. Regression: this used to emit a garbage
+  // Derivative[1][HeavisideTheta] from the generic chain rule.
+  // (The pure-scaling argument D[HeavisideTheta[2 x], x] = 2 DiracDelta[2 x] is
+  // value-correct but not folded to DiracDelta[x], since Woxi does not yet
+  // apply the DiracDelta[a x] scaling identity — so it is not asserted here.)
+  #[test]
+  fn d_heaviside_theta() {
+    assert_eq!(
+      interpret("D[HeavisideTheta[x], x]").unwrap(),
+      "DiracDelta[x]"
+    );
+    // Chain rule with a linear shift.
+    assert_eq!(
+      interpret("D[HeavisideTheta[x - 2], x]").unwrap(),
+      "DiracDelta[-2 + x]"
+    );
+    // Chain rule with a nonlinear argument keeps the derivative factor.
+    assert_eq!(
+      interpret("D[HeavisideTheta[x^2 - 1], x]").unwrap(),
+      "2*x*DiracDelta[-1 + x^2]"
+    );
+    // Constant multiple carries through.
+    assert_eq!(
+      interpret("D[3 HeavisideTheta[x], x]").unwrap(),
+      "3*DiracDelta[x]"
+    );
+    // A constant argument differentiates to 0.
+    assert_eq!(interpret("D[HeavisideTheta[a], x]").unwrap(), "0");
+  }
+
   // The generic chain rule for an unknown function with a list-valued argument
   // must give a single Derivative[…][f][…] (with a structurally-matching list
   // of zero indices for the constant list argument), not a malformed list of
