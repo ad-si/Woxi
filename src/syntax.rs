@@ -10645,7 +10645,14 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       };
       format!("{}::{}", sym, tag)
     }
-    // StringExpression[a, b, c]: InputForm shows a~~b~~c with quoted strings
+    // StringExpression[a, b, c]: InputForm shows a~~b~~c with quoted strings.
+    // A single-element StringExpression has no infix form, so it keeps the
+    // head literal (`StringExpression[2]`), matching wolframscript.
+    Expr::FunctionCall { name, args }
+      if name == "StringExpression" && args.len() == 1 =>
+    {
+      format!("StringExpression[{}]", expr_to_input_form(&args[0]))
+    }
     Expr::FunctionCall { name, args }
       if name == "StringExpression" && !args.is_empty() =>
     {

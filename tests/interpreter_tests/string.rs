@@ -821,6 +821,16 @@ mod string_replace {
       interpret(r#"StringReplace["abc", "b" -> "X"]"#).unwrap(),
       "aXc"
     );
+    // InputForm of a single-element StringExpression keeps the head literal
+    // (there is no infix `~~` form for a lone operand); 2+ elements use `~~`.
+    assert_eq!(
+      interpret("ToString[StringExpression[2], InputForm]").unwrap(),
+      "StringExpression[2]"
+    );
+    assert_eq!(
+      interpret("ToString[StringExpression[2, 3], InputForm]").unwrap(),
+      "2~~3"
+    );
   }
 
   // A delayed rule (:>) must evaluate its RHS for each match, even when the
