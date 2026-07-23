@@ -73,8 +73,93 @@ fn mk_div(a: Expr, b: Expr) -> Expr {
   mk_times(a, mk_power(b, mk_int(-1)))
 }
 
+/// Whether `e` is `ArcSin[x]` / `ArcCos[x]` / … applied to a single argument.
+fn is_inverse_trig_call(e: &Expr) -> bool {
+  matches!(e, Expr::FunctionCall { name, args }
+  if args.len() == 1
+    && matches!(
+      name.as_str(),
+      "ArcSin" | "ArcCos" | "ArcTan" | "ArcCot" | "ArcSec" | "ArcCsc"
+    ))
+}
+
+/// Whether `arg` is an inverse-trig call, optionally with an integer multiplier
+/// (`ArcSin[x]`, `2 ArcSin[x]`, `3 ArcCos[x]`, …).
+fn is_multiple_of_inverse_trig(arg: &Expr) -> bool {
+  if is_inverse_trig_call(arg) {
+    return true;
+  }
+  let is_int_times = |a: &Expr, b: &Expr| {
+    (matches!(a, Expr::Integer(_)) && is_inverse_trig_call(b))
+      || (matches!(b, Expr::Integer(_)) && is_inverse_trig_call(a))
+  };
+  match arg {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => is_int_times(left, right),
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+      is_int_times(&args[0], &args[1])
+    }
+    _ => false,
+  }
+}
+
+/// Whether `e` is a polynomial with non-negative integer powers and numeric
+/// coefficients — i.e. free of Sqrt, negative/fractional powers, division, and
+/// any residual (inverse-)trig heads.
+fn is_clean_polynomial(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::Identifier(_) => true,
+    Expr::BinaryOp { op, left, right } => match op {
+      BinaryOperator::Plus | BinaryOperator::Minus | BinaryOperator::Times => {
+        is_clean_polynomial(left) && is_clean_polynomial(right)
+      }
+      BinaryOperator::Power => {
+        is_clean_polynomial(left)
+          && matches!(right.as_ref(), Expr::Integer(n) if *n >= 0)
+      }
+      _ => false,
+    },
+    Expr::UnaryOp { operand, .. } => is_clean_polynomial(operand),
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Plus" | "Times" => args.iter().all(is_clean_polynomial),
+      "Rational" => true,
+      "Power" if args.len() == 2 => {
+        is_clean_polynomial(&args[0])
+          && matches!(&args[1], Expr::Integer(n) if *n >= 0)
+      }
+      _ => false,
+    },
+    _ => false,
+  }
+}
+
 /// Try to expand a specific function call. Returns None if no expansion applies.
 fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
+  // Trig of an integer multiple of an inverse trig function (e.g.
+  // Cos[2 ArcSin[x]] = 1 - 2 x^2) expands to a polynomial via multiple-angle
+  // identities. Route through TrigExpand + Expand, but only accept a clean
+  // polynomial result so the Sqrt-split half-angle forms (Sin[2 ArcSin[x]] =
+  // 2 Sqrt[1 - x] x Sqrt[1 + x]) and messy Tan rationals are left untouched.
+  if matches!(name, "Sin" | "Cos" | "Tan" | "Cot" | "Sec" | "Csc")
+    && args.len() == 1
+    && is_multiple_of_inverse_trig(&args[0])
+  {
+    let trig =
+      mk_call("TrigExpand", vec![mk_call(name, vec![args[0].clone()])]);
+    let expanded = mk_call("Expand", vec![trig]);
+    if let Ok(result) = crate::evaluator::evaluate_expr_to_expr(&expanded)
+      && is_clean_polynomial(&result)
+    {
+      return Some(result);
+    }
+  }
+
   match name {
     // HurwitzZeta[m, a] with an integer m >= 2 → (-1)^m/(m-1)! PolyGamma[m-1, a].
     "HurwitzZeta" if args.len() == 2 => {

@@ -10739,6 +10739,51 @@ mod function_expand {
     );
   }
 
+  // Trig of an integer multiple of an inverse trig expands to a polynomial via
+  // the multiple-angle (Chebyshev) identities.
+  #[test]
+  fn trig_of_multiple_inverse_trig() {
+    assert_eq!(
+      interpret("FunctionExpand[Cos[2 ArcSin[x]]]").unwrap(),
+      "1 - 2*x^2"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Cos[2 ArcCos[x]]]").unwrap(),
+      "-1 + 2*x^2"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Sin[3 ArcSin[x]]]").unwrap(),
+      "3*x - 4*x^3"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Cos[3 ArcCos[x]]]").unwrap(),
+      "-3*x + 4*x^3"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Cos[4 ArcCos[x]]]").unwrap(),
+      "1 - 8*x^2 + 8*x^4"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Sin[5 ArcSin[x]]]").unwrap(),
+      "5*x - 20*x^3 + 16*x^5"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Cos[4 ArcSin[x]]]").unwrap(),
+      "1 - 8*x^2 + 8*x^4"
+    );
+  }
+
+  // Half-angle cases whose expansion involves a square root (Sin[2 ArcSin[x]] =
+  // 2 Sqrt[1-x] x Sqrt[1+x] in wolframscript) are gated out so Woxi does not
+  // emit a divergent Sqrt form; they stay unevaluated.
+  #[test]
+  fn sqrt_producing_cases_stay_unevaluated() {
+    assert_eq!(
+      interpret("FunctionExpand[Sin[2 ArcSin[x]]]").unwrap(),
+      "Sin[2*ArcSin[x]]"
+    );
+  }
+
   #[test]
   fn inverse_gudermannian() {
     // wolframscript: FunctionExpand[InverseGudermannian[x]] gives the standard
