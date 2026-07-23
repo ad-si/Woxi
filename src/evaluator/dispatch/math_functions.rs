@@ -1947,7 +1947,7 @@ pub fn dispatch_math_functions(
         name: pname,
         args: dargs,
       } = &args[0]
-        && let Some(slice) = crate::functions::math_ast::distributions_slice(
+        && let Some(slice) = crate::functions::math_ast::process_slice_distribution(
           pname, dargs, &args[1],
         )
       {
@@ -1957,7 +1957,7 @@ pub fn dispatch_math_functions(
     }
     "CorrelationFunction" if args.len() == 3 => {
       if let Some(result) =
-        crate::functions::math_ast::statistics_process_correlation(
+        crate::functions::math_ast::process_correlation(
           &args[0], &args[1], &args[2],
         )
       {
@@ -1967,7 +1967,7 @@ pub fn dispatch_math_functions(
     }
     "AbsoluteCorrelationFunction" if args.len() == 3 => {
       if let Some(result) =
-        crate::functions::math_ast::statistics_process_absolute_correlation(
+        crate::functions::math_ast::process_absolute_correlation(
           &args[0], &args[1], &args[2],
         )
       {
@@ -1980,7 +1980,7 @@ pub fn dispatch_math_functions(
     }
     "BiweightMidvariance" => {
       return Some(
-        crate::functions::math_ast::statistics_biweight_midvariance(args),
+        crate::functions::math_ast::biweight_midvariance_ast(args),
       );
     }
     // StieltjesGamma[0] is EulerGamma; positive integers and symbols stay
