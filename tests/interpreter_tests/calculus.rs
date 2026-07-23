@@ -5482,6 +5482,43 @@ mod erf {
     assert_eq!(interpret("D[HeavisideTheta[a], x]").unwrap(), "0");
   }
 
+  // KroneckerDelta is piecewise-constant, so its derivative is 0 for any
+  // argument list. Regression: this used to emit Derivative[1][KroneckerDelta].
+  #[test]
+  fn d_kronecker_delta() {
+    assert_eq!(interpret("D[KroneckerDelta[x], x]").unwrap(), "0");
+    assert_eq!(interpret("D[KroneckerDelta[x, 2], x]").unwrap(), "0");
+    assert_eq!(interpret("D[KroneckerDelta[x^2], x]").unwrap(), "0");
+  }
+
+  // Floor/Ceiling are locally constant with jumps at the integers:
+  //   D[Floor[u], x]   = D[u, x] Piecewise[{{0, u > Floor[u]}},   Indeterminate]
+  //   D[Ceiling[u], x] = D[u, x] Piecewise[{{0, u < Ceiling[u]}}, Indeterminate]
+  // Regression: these used to emit Derivative[1][Floor]/[Ceiling].
+  #[test]
+  fn d_floor_ceiling() {
+    assert_eq!(
+      interpret("D[Floor[x], x]").unwrap(),
+      "Piecewise[{{0, x > Floor[x]}}, Indeterminate]"
+    );
+    assert_eq!(
+      interpret("D[Ceiling[x], x]").unwrap(),
+      "Piecewise[{{0, x < Ceiling[x]}}, Indeterminate]"
+    );
+    // Chain-rule factor from a linear argument.
+    assert_eq!(
+      interpret("D[Floor[2 x], x]").unwrap(),
+      "2*Piecewise[{{0, 2*x > Floor[2*x]}}, Indeterminate]"
+    );
+    // Chain-rule factor from a nonlinear argument.
+    assert_eq!(
+      interpret("D[Floor[x^2], x]").unwrap(),
+      "2*x*Piecewise[{{0, x^2 > Floor[x^2]}}, Indeterminate]"
+    );
+    // A constant argument differentiates to 0.
+    assert_eq!(interpret("D[Floor[5], x]").unwrap(), "0");
+  }
+
   // The generic chain rule for an unknown function with a list-valued argument
   // must give a single Derivative[…][f][…] (with a structurally-matching list
   // of zero indices for the constant list argument), not a malformed list of

@@ -4093,6 +4093,47 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             }))
           }
         }
+        // KroneckerDelta is 0 away from the discrete coincidence locus and has
+        // zero derivative everywhere it is defined, so D[KroneckerDelta[…], x] = 0.
+        "KroneckerDelta" => Ok(Expr::Integer(0)),
+        // Floor/Ceiling are locally constant with a jump at the integers:
+        //   D[Floor[u], x]   = D[u, x] Piecewise[{{0, u > Floor[u]}},   Indeterminate]
+        //   D[Ceiling[u], x] = D[u, x] Piecewise[{{0, u < Ceiling[u]}}, Indeterminate]
+        // (0 off the jumps, Indeterminate on them).
+        "Floor" | "Ceiling" if args.len() == 1 => {
+          let dz = differentiate(&args[0], var)?;
+          if matches!(dz, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          let step_call = Expr::FunctionCall {
+            name: name.clone(),
+            args: vec![args[0].clone()].into(),
+          };
+          let cmp_op = if name == "Floor" {
+            ComparisonOp::Greater
+          } else {
+            ComparisonOp::Less
+          };
+          let cond = Expr::Comparison {
+            operands: vec![args[0].clone(), step_call],
+            operators: vec![cmp_op],
+          };
+          let pw = Expr::FunctionCall {
+            name: "Piecewise".to_string(),
+            args: vec![
+              Expr::List(
+                vec![Expr::List(vec![Expr::Integer(0), cond].into())].into(),
+              ),
+              Expr::Identifier("Indeterminate".to_string()),
+            ]
+            .into(),
+          };
+          Ok(simplify(Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(dz),
+            right: Box::new(pw),
+          }))
+        }
         // UnitStep[x]: D[UnitStep[x], x] = Piecewise[{{Indeterminate, x == 0}}, 0]
         // HeavisideTheta[z]: D[HeavisideTheta[z], z] = DiracDelta[z], with the
         // chain rule for a composite argument: D[HeavisideTheta[u], x] =
