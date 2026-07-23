@@ -5451,13 +5451,16 @@ mod erf {
   // D[HeavisideTheta[z], z] = DiracDelta[z], with the chain rule for a
   // composite argument. Regression: this used to emit a garbage
   // Derivative[1][HeavisideTheta] from the generic chain rule.
-  // (The pure-scaling argument D[HeavisideTheta[2 x], x] = 2 DiracDelta[2 x] is
-  // value-correct but not folded to DiracDelta[x], since Woxi does not yet
-  // apply the DiracDelta[a x] scaling identity — so it is not asserted here.)
   #[test]
   fn d_heaviside_theta() {
     assert_eq!(
       interpret("D[HeavisideTheta[x], x]").unwrap(),
+      "DiracDelta[x]"
+    );
+    // A pure-scaling argument folds via the DiracDelta scaling law:
+    // 2 DiracDelta[2 x] = 2 (DiracDelta[x]/2) = DiracDelta[x].
+    assert_eq!(
+      interpret("D[HeavisideTheta[2 x], x]").unwrap(),
       "DiracDelta[x]"
     );
     // Chain rule with a linear shift.

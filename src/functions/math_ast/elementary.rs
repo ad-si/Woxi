@@ -4017,6 +4017,120 @@ pub fn heaviside_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// True if `e` is a real-valued constant: a number, a named real constant
+/// (Pi, E, EulerGamma, …), a Rational, or a sum/product/power/negation of such.
+/// Deliberately excludes bare symbols and non-numeric heads so a symbolic
+/// coefficient (`a`) is not mistaken for a constant.
+fn is_real_constant(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(_, _)
+    | Expr::Constant(_) => true,
+    // Named real constants appear as bare Identifiers inside a product
+    // (e.g. the `Pi` in `Times[Pi, x]`), not as Expr::Constant.
+    Expr::Identifier(name) => matches!(
+      name.as_str(),
+      "Pi"
+        | "E"
+        | "EulerGamma"
+        | "GoldenRatio"
+        | "Degree"
+        | "Catalan"
+        | "Glaisher"
+        | "Khinchin"
+    ),
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Rational" | "Times" | "Plus" | "Power") =>
+    {
+      args.iter().all(is_real_constant)
+    }
+    Expr::BinaryOp {
+      op:
+        BinaryOperator::Times
+        | BinaryOperator::Divide
+        | BinaryOperator::Power
+        | BinaryOperator::Plus
+        | BinaryOperator::Minus,
+      left,
+      right,
+    } => is_real_constant(left) && is_real_constant(right),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => is_real_constant(operand),
+    _ => false,
+  }
+}
+
+/// True if `e` is a sum (`Plus`), where the numeric content lives inside a
+/// single additive expression rather than as a top-level product factor.
+fn is_additive(e: &Expr) -> bool {
+  matches!(
+    e,
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus | BinaryOperator::Minus,
+      ..
+    }
+  ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
+}
+
+/// The DiracDelta scaling law `DiracDelta[c g] = DiracDelta[g] / Abs[c]` for a
+/// nonzero real constant factor `c`. Returns `(Abs[c], g)` when `c != 1`, or
+/// `None` when there is no such factor (symbolic coefficient, coprime sum, bare
+/// symbol). A sum's content (`2 x - 4 = 2 (x - 2)`) is factored out first.
+fn dirac_delta_scale(arg: &Expr) -> Option<(Expr, Expr)> {
+  // Factor a sum's numeric content so it appears as a product factor.
+  let normalized = if is_additive(arg) {
+    crate::functions::polynomial_ast::factor_terms_ast(std::slice::from_ref(
+      arg,
+    ))
+    .ok()?
+  } else {
+    arg.clone()
+  };
+  let factors =
+    crate::functions::polynomial_ast::collect_multiplicative_factors(
+      &normalized,
+    );
+  if factors.len() < 2 {
+    return None;
+  }
+  let (consts, rest): (Vec<Expr>, Vec<Expr>) =
+    factors.into_iter().partition(is_real_constant);
+  if consts.is_empty() || rest.is_empty() {
+    return None;
+  }
+  let c = if consts.len() == 1 {
+    consts.into_iter().next().unwrap()
+  } else {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: consts.into(),
+    })
+    .ok()?
+  };
+  // `c == 1` leaves the argument unchanged; `c == -1` still normalizes the sign.
+  if matches!(&c, Expr::Integer(1)) {
+    return None;
+  }
+  let g = if rest.len() == 1 {
+    rest.into_iter().next().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: rest.into(),
+    }
+  };
+  let abs_c = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Abs".to_string(),
+    args: vec![c].into(),
+  })
+  .ok()?;
+  Some((abs_c, g))
+}
+
 pub fn dirac_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Err(InterpreterError::EvaluationError(
@@ -4035,6 +4149,19 @@ pub fn dirac_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       _ => {}
     }
+  }
+
+  // Scaling law: DiracDelta[c g] = DiracDelta[g] / Abs[c] (single-argument
+  // form). Pulls a nonzero real constant out of the argument, e.g.
+  // DiracDelta[2 x] -> DiracDelta[x]/2 and DiracDelta[-x] -> DiracDelta[x].
+  if args.len() == 1
+    && let Some((abs_c, g)) = dirac_delta_scale(&args[0])
+  {
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(unevaluated("DiracDelta", std::slice::from_ref(&g))),
+      right: Box::new(abs_c),
+    });
   }
 
   // If all args are zero, or mixed with symbolic, stay symbolic

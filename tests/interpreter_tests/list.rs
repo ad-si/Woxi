@@ -4845,6 +4845,64 @@ mod dirac_delta {
   fn constant_is_zero() {
     assert_eq!(interpret("DiracDelta[Pi]").unwrap(), "0");
   }
+
+  // Scaling law DiracDelta[c g] = DiracDelta[g] / Abs[c] for a nonzero real
+  // constant factor c. Regression: the constant factor used to stay inside.
+  #[test]
+  fn integer_scale() {
+    assert_eq!(interpret("DiracDelta[2 x]").unwrap(), "DiracDelta[x]/2");
+    assert_eq!(interpret("DiracDelta[-3 x]").unwrap(), "DiracDelta[x]/3");
+  }
+
+  #[test]
+  fn rational_scale() {
+    assert_eq!(interpret("DiracDelta[x/2]").unwrap(), "2*DiracDelta[x]");
+  }
+
+  #[test]
+  fn constant_coefficient_scale() {
+    assert_eq!(interpret("DiracDelta[Pi x]").unwrap(), "DiracDelta[x]/Pi");
+    assert_eq!(
+      interpret("DiracDelta[2 Pi x]").unwrap(),
+      "DiracDelta[x]/(2*Pi)"
+    );
+  }
+
+  // Sign is normalized (Abs[-1] = 1), so DiracDelta[-x] = DiracDelta[x].
+  #[test]
+  fn sign_normalized() {
+    assert_eq!(interpret("DiracDelta[-x]").unwrap(), "DiracDelta[x]");
+  }
+
+  // A sum's numeric content is factored out first: 2 x - 4 = 2 (x - 2).
+  #[test]
+  fn sum_content_scale() {
+    assert_eq!(
+      interpret("DiracDelta[2 x - 4]").unwrap(),
+      "DiracDelta[-2 + x]/2"
+    );
+  }
+
+  // A coprime sum has content 1 and is left unchanged.
+  #[test]
+  fn coprime_sum_unchanged() {
+    assert_eq!(
+      interpret("DiracDelta[2 x + 1]").unwrap(),
+      "DiracDelta[1 + 2*x]"
+    );
+  }
+
+  // A symbolic coefficient is not a constant, so no scaling occurs.
+  #[test]
+  fn symbolic_coefficient_unchanged() {
+    assert_eq!(interpret("DiracDelta[a x]").unwrap(), "DiracDelta[a*x]");
+  }
+
+  // Multivariate monomial: only the numeric factor is pulled out.
+  #[test]
+  fn multivariate_monomial() {
+    assert_eq!(interpret("DiracDelta[2 x y]").unwrap(), "DiracDelta[x*y]/2");
+  }
 }
 
 mod nest_while_list {

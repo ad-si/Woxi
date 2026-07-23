@@ -4103,10 +4103,15 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           if matches!(dz, Expr::Integer(0)) {
             return Ok(Expr::Integer(0));
           }
-          let dirac = Expr::FunctionCall {
+          // Evaluate DiracDelta[u] so the scaling law folds a constant factor
+          // (e.g. DiracDelta[2 x] -> DiracDelta[x]/2, giving the WL-canonical
+          // D[HeavisideTheta[2 x], x] = DiracDelta[x]).
+          let raw_dirac = Expr::FunctionCall {
             name: "DiracDelta".to_string(),
             args: vec![args[0].clone()].into(),
           };
+          let dirac = crate::evaluator::evaluate_expr_to_expr(&raw_dirac)
+            .unwrap_or(raw_dirac);
           Ok(simplify(Expr::BinaryOp {
             op: BinaryOperator::Times,
             left: Box::new(dz),
