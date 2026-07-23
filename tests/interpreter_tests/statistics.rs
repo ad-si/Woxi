@@ -7050,6 +7050,28 @@ mod characteristic_function {
     );
   }
 
+  // Cauchy has no MGF, but a well-defined characteristic function
+  // E^(I a t - b t Sign[t]).
+  #[test]
+  fn cauchy() {
+    assert_eq!(
+      interpret("CharacteristicFunction[CauchyDistribution[a, b], t]").unwrap(),
+      "E^(I*a*t - b*t*Sign[t])"
+    );
+    assert_eq!(
+      interpret("CharacteristicFunction[CauchyDistribution[0, 1], t]").unwrap(),
+      "E^(-(t*Sign[t]))"
+    );
+    assert_eq!(
+      interpret("CharacteristicFunction[CauchyDistribution[], t]").unwrap(),
+      "E^(-(t*Sign[t]))"
+    );
+    assert_eq!(
+      interpret("CharacteristicFunction[CauchyDistribution[2, 3], 1]").unwrap(),
+      "E^(-3 + 2*I)"
+    );
+  }
+
   #[test]
   fn discrete_distributions() {
     assert_eq!(

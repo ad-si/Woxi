@@ -8064,6 +8064,40 @@ pub fn characteristic_function_ast(
       ),
       true,
     )),
+    // E^(I*a*t - b*t*Sign[t]). Cauchy has no MGF, but its characteristic
+    // function is well defined (b t Sign[t] = b |t|).
+    ("CauchyDistribution", [a, b]) => Some((
+      pow(
+        e_sym(),
+        call(
+          "Plus",
+          vec![
+            call("Times", vec![i_unit(), a.clone(), t.clone()]),
+            call(
+              "Times",
+              vec![
+                Expr::Integer(-1),
+                b.clone(),
+                t.clone(),
+                call("Sign", vec![t.clone()]),
+              ],
+            ),
+          ],
+        ),
+      ),
+      true,
+    )),
+    // E^(-t*Sign[t]) for the standard Cauchy (a = 0, b = 1).
+    ("CauchyDistribution", []) => Some((
+      pow(
+        e_sym(),
+        call(
+          "Times",
+          vec![Expr::Integer(-1), t.clone(), call("Sign", vec![t.clone()])],
+        ),
+      ),
+      true,
+    )),
     _ => None,
   };
 
