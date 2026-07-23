@@ -28,25 +28,39 @@ jobs:
     - name: Run slow and network tests
       run: make test-slow
 
-  # Windows builds of the interpreter CLI and the Studio notebook editor.
-  # Neither is covered by the Linux-only CI, so this both catches
-  # Windows-specific build breakage and provides downloadable binaries.
+  # Windows builds of the interpreter CLI and the Studio notebook editor,
+  # plus the full unit test suite. Neither the build nor the tests are
+  # covered by the Linux-only CI, so this catches Windows-specific build
+  # breakage and test failures while also providing downloadable binaries.
+  # The `slow-tests` suite runs on Linux in the `test-slow` job above; the
+  # wolframscript/scrut conformance tests need tools unavailable here.
   build-windows:
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v5
     - uses: dtolnay/rust-toolchain@stable
     - uses: Swatinem/rust-cache@v2
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: nextest
     - name: Build woxi and woxi-studio
       run: cargo build --release -p woxi -p woxi-studio
-    - name: Upload Windows binaries
+    - name: Upload woxi binary
       uses: actions/upload-artifact@v6
       with:
         name: woxi-windows-x86_64
-        path: |
-          target/release/woxi.exe
-          target/release/woxi-studio.exe
+        path: target/release/woxi.exe
         if-no-files-found: error
+    - name: Upload woxi-studio binary
+      uses: actions/upload-artifact@v6
+      with:
+        name: woxi-studio-windows-x86_64
+        path: target/release/woxi-studio.exe
+        if-no-files-found: error
+    # Mirrors `make test` (the fast correctness suite the Linux CI runs),
+    # invoked directly since `make` is not available on the Windows runner.
+    - name: Run unit tests
+      run: cargo nextest run --show-progress=none --status-level=fail --failure-output=final
 
   # Coverage-guided crash fuzzing of the parser and interpreter (see
   # fuzz/README.md). A few minutes per target per night compounds into
