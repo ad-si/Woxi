@@ -2273,7 +2273,7 @@ MissingQ,Test whether an expression is a Missing value,✅,1,10.2,2317
 PlanckRadiationLaw,physics formula (external data),🚫,None,10.0,2317
 Raster3D,3D raster (voxel) graphics primitive,✅,unevaluated,9.0,2317
 GeoGridLines,Graticule option for GeoGraphics,✅,pure,10.0,2320
-NArgMax,numeric optimization,✅,None,7.0,2320
+NArgMax,Numerically finds the argument that maximizes an expression optionally subject to constraints given as {f cons} with a single variable or a variable list,✅,None,7.0,2320
 PrimePowerQ,Tests if a number is a prime power,✅,pure,6.0,2320
 ControllerLinking,dynamic interaction,🚫,None,6.0,2321
 KeyValuePattern,Pattern object matching an association or list of rules that contains the given key-value rules (order-independent subset),✅,pure,10.4,2324
@@ -2549,7 +2549,7 @@ ExpressionGraph,Create a graph from the tree structure of an expression,✅,pure
 ImageDifference,,🚫,,8.0,2605
 InverseGammaDistribution,represents an inverse gamma distribution,✅,Computation,7.0,2605
 LetterCounts,Counts letter occurrences in a string (or each string of a list); two-arg form counts letter n-grams (non-letters break the window),✅,pure,10.1,2605
-NArgMin,Numerical arg min,✅,none,7.0,2605
+NArgMin,Numerically finds the argument that minimizes an expression optionally subject to constraints given as {f cons} with a single variable or a variable list,✅,None,7.0,2605
 VertexOutComponent,Vertices reachable from a vertex,✅,1,8.0,2605
 ViewProjection,,🚫,,11.2,2605
 ArrayMesh,Create a MeshRegion from a binary 1D or 2D array,✅,pure,10.4,2611

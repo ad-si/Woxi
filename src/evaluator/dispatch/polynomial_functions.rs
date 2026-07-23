@@ -470,6 +470,24 @@ pub fn dispatch_polynomial_functions(
         return Some(Ok(result));
       }
     }
+    // Single-variable constrained arg-optimization: `NArgMax[{f, cons}, x]`.
+    // Return the *location* of the optimum (as a machine real), mirroring the
+    // value-returning NMaxValue/NMinValue path. `ArgMax`/`ArgMin` handle the
+    // exact case; this numeric sweep covers objectives (e.g. transcendental)
+    // that the exact optimizer leaves unevaluated.
+    "NArgMax" | "NArgMin"
+      if args.len() == 2
+        && matches!(&args[0], Expr::List(items) if items.len() == 2)
+        && matches!(&args[1], Expr::Identifier(_)) =>
+    {
+      let maximize = name == "NArgMax";
+      if let (Expr::List(items), Expr::Identifier(var)) = (&args[0], &args[1])
+        && let Some((arg, _)) =
+          try_bounded_1d_extremum(&items[0], &items[1], var, maximize)
+      {
+        return Some(Ok(Expr::Real(arg)));
+      }
+    }
     "FindArgMin" if args.len() == 2 => {
       // FindArgMin[f, x] => calls FindMinimum[f, {x, 0}] and extracts the arg
       if let Expr::Identifier(var) = &args[1] {
@@ -535,7 +553,7 @@ pub fn dispatch_polynomial_functions(
         // interval that `cons` (e.g. `0 <= x <= 20`) bounds x to.
         if let Expr::List(items) = &args[0]
           && items.len() == 2
-          && let Some(v) =
+          && let Some((_, v)) =
             try_bounded_1d_extremum(&items[0], &items[1], var, false)
         {
           return Some(Ok(Expr::Real(v)));
@@ -558,7 +576,7 @@ pub fn dispatch_polynomial_functions(
       if let Expr::Identifier(var) = &args[1] {
         if let Expr::List(items) = &args[0]
           && items.len() == 2
-          && let Some(v) =
+          && let Some((_, v)) =
             try_bounded_1d_extremum(&items[0], &items[1], var, true)
         {
           return Some(Ok(Expr::Real(v)));
@@ -1022,12 +1040,16 @@ fn constraint_interval(cons: &Expr, var: &str) -> Option<(f64, f64)> {
 /// locates the global basin and a golden-section search refines the best
 /// point. Returns `None` if the constraint has no finite interval or the
 /// objective can't be evaluated numerically.
+/// Optimize a 1-D objective `obj` over the interval that `cons` bounds `var`
+/// to, by a dense sweep plus golden-section refinement. Returns
+/// `(argument, value)` — the location of the optimum and the (correctly
+/// oriented) optimal value.
 fn try_bounded_1d_extremum(
   obj: &Expr,
   cons: &Expr,
   var: &str,
   maximize: bool,
-) -> Option<f64> {
+) -> Option<(f64, f64)> {
   let (lo, hi) = constraint_interval(cons, var)?;
   // Evaluate the objective at a point, returning it oriented so we always
   // minimize (negate when maximizing).
@@ -1087,8 +1109,19 @@ fn try_bounded_1d_extremum(
       fd = eval(d).unwrap_or(best_v);
     }
   }
-  let refined = best_v.min(fc).min(fd);
-  Some(if maximize { -refined } else { refined })
+  // Pick the smallest of the three tracked points, keeping its location.
+  let mut refined_v = best_v;
+  let mut refined_x = best_x;
+  if fc < refined_v {
+    refined_v = fc;
+    refined_x = c;
+  }
+  if fd < refined_v {
+    refined_v = fd;
+    refined_x = d;
+  }
+  let value = if maximize { -refined_v } else { refined_v };
+  Some((refined_x, value))
 }
 
 ///   * f is linear in v1, v2 with numeric coefficients,

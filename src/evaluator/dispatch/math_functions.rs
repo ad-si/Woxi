@@ -5482,7 +5482,13 @@ pub fn dispatch_math_functions(
       }
     }
     // NArgMin[f, x] — numerical arg min
-    "NArgMin" if args.len() == 2 => {
+    // Unconstrained form only. The constrained `{f, cons}` list form is
+    // handled by dispatch_polynomial_functions (single-var sweep); skipping it
+    // here avoids feeding the whole list to FindMinimum as the objective.
+    "NArgMin"
+      if args.len() == 2
+        && !matches!(&args[0], Expr::List(items) if items.len() == 2) =>
+    {
       if let Expr::Identifier(var) = &args[1] {
         let find_args = vec![
           args[0].clone(),
@@ -5520,8 +5526,12 @@ pub fn dispatch_math_functions(
         }
       }
     }
-    // NArgMax[f, x] — numerical arg max
-    "NArgMax" if args.len() == 2 => {
+    // NArgMax[f, x] — numerical arg max (unconstrained form only; the
+    // constrained `{f, cons}` list form is handled in polynomial_functions).
+    "NArgMax"
+      if args.len() == 2
+        && !matches!(&args[0], Expr::List(items) if items.len() == 2) =>
+    {
       if let Expr::Identifier(var) = &args[1] {
         let find_args = vec![
           args[0].clone(),

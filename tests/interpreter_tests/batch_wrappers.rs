@@ -5657,6 +5657,35 @@ mod batch_unevaluated_wrappers_2 {
   fn nargmax_basic() {
     assert_eq!(interpret("NArgMax[-x^2 + 3x + 1, x]").unwrap(), "1.5");
   }
+  // Single-variable constrained `{objective, constraints}` form. Regression:
+  // NArgMax/NArgMin used to pass the whole list to FindMinimum as the
+  // objective, erroring out and echoing unevaluated.
+  #[test]
+  fn nargmax_bounded_boundary_maximum() {
+    assert_eq!(interpret("NArgMax[{x^2, -2 <= x <= 1}, x]").unwrap(), "-2.");
+  }
+  #[test]
+  fn nargmax_bounded_linear() {
+    assert_eq!(interpret("NArgMax[{x, 0 <= x <= 5}, x]").unwrap(), "5.");
+  }
+  #[test]
+  fn nargmin_bounded_linear() {
+    assert_eq!(interpret("NArgMin[{x, 0 <= x <= 5}, x]").unwrap(), "0.");
+  }
+  #[test]
+  fn nargmax_bounded_interior_rounded() {
+    assert_eq!(
+      interpret("Round[NArgMax[{-x^2 + 4 x, 0 <= x <= 5}, x]]").unwrap(),
+      "2"
+    );
+  }
+  #[test]
+  fn nargmin_bounded_interior_rounded() {
+    assert_eq!(
+      interpret("Round[NArgMin[{(x - 3)^2, 0 <= x <= 10}, x]]").unwrap(),
+      "3"
+    );
+  }
 
   // AddSides / SubtractSides / MultiplySides / DivideSides / ApplySides
   #[test]
