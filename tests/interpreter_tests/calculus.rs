@@ -3319,6 +3319,24 @@ mod limit {
     assert_eq!(interpret("Limit[1/n!, n -> Infinity]").unwrap(), "0");
   }
 
+  // Gamma ratios collapse via FunctionExpand before the limit is taken, so
+  // Gamma[x+1]/Gamma[x] = x diverges and Gamma[x]/Gamma[x+1] = 1/x decays.
+  #[test]
+  fn limit_gamma_ratio() {
+    assert_eq!(
+      interpret("Limit[Gamma[x + 1]/Gamma[x], x -> Infinity]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("Limit[Gamma[x + 2]/Gamma[x], x -> Infinity]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("Limit[Gamma[x]/Gamma[x + 1], x -> Infinity]").unwrap(),
+      "0"
+    );
+  }
+
   // HarmonicNumber[n] at +Infinity is replaced by its asymptotic expansion
   // (Log[n] + EulerGamma + 1/(2n) - 1/(12 n^2) + …) so the limit resolves
   // symbolically. This also prevents a hang: the numeric fallback would
