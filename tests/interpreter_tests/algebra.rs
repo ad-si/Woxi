@@ -681,6 +681,18 @@ mod simplify {
       interpret("Simplify[-4/5 - 2/(5 x^2)]").unwrap(),
       "-4/5 - 2/(5*x^2)"
     );
+    // InputForm of a Plus term whose negative coefficient sits on the *right*
+    // factor of a Times (as Expand/Simplify can leave it, e.g.
+    // Times[x^(-2), Rational[-2, 5]]) must still fold to a subtraction, not
+    // render `+ -2/(5*x^2)`. Regression for the ToString[_, InputForm] path.
+    assert_eq!(
+      interpret("ToString[Expand[-4/5 - 2/(5 x^2)], InputForm]").unwrap(),
+      "-4/5 - 2/(5*x^2)"
+    );
+    assert_eq!(
+      interpret("ToString[Simplify[-4/5 - 2/(5 x^2)], InputForm]").unwrap(),
+      "-4/5 - 2/(5*x^2)"
+    );
     // Positive/mixed content split-extracts on a strict win with a
     // constant term present.
     assert_eq!(

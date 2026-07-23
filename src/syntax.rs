@@ -10245,6 +10245,19 @@ fn negate_neg_numeric_coeff(e: &Expr) -> Option<Expr> {
   }
 }
 
+/// Classify a `Times` factor as a negative numeric coefficient for InputForm
+/// subtraction folding. Returns `None` if the factor is not a negative number;
+/// `Some(None)` if it is exactly `-1` (the factor drops out entirely);
+/// `Some(Some(pos))` with the sign-flipped coefficient otherwise. Handles
+/// `Integer`, `Real`, `BigInteger`, and `Rational` numerator-negative factors.
+fn neg_times_coeff(e: &Expr) -> Option<Option<Expr>> {
+  match e {
+    Expr::Integer(-1) => Some(None),
+    Expr::Integer(n) if *n < 0 => Some(Some(Expr::Integer(-n))),
+    _ => negate_neg_numeric_coeff(e).map(Some),
+  }
+}
+
 pub fn expr_to_input_form(expr: &Expr) -> String {
   // Grow the stack when running low so rendering a deeply nested expression
   // (e.g. the script-mode display of Nest[f, x, 500], or FullForm of it) does
@@ -11076,35 +11089,38 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
           right,
         } = arg
         {
-          if matches!(left.as_ref(), Expr::Integer(-1)) {
+          // Pull out a negative numeric coefficient so the term renders as a
+          // subtraction (`- (15*x)/2`) instead of an addition of a negative
+          // coefficient (`+ (-15*x)/2`), matching wolframscript's InputForm.
+          // Canonicalizers such as Expand can leave the coefficient on the
+          // *right* factor (e.g. `Times[x^(-2), Rational[-2, 5]]`), so both
+          // sides are checked.
+          if let Some(pos_left) = neg_times_coeff(left.as_ref()) {
             result.push_str(" - ");
-            result.push_str(&expr_to_input_form(right));
-          } else if let Expr::Integer(n) = left.as_ref() {
-            if *n < 0 {
-              result.push_str(" - ");
-              let pos = Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(Expr::Integer(-n)),
-                right: right.clone(),
-              };
-              result.push_str(&expr_to_input_form(&pos));
-            } else {
-              result.push_str(" + ");
-              result.push_str(&expr_to_input_form(arg));
+            match pos_left {
+              None => result.push_str(&expr_to_input_form(right)),
+              Some(pl) => {
+                let pos = Expr::BinaryOp {
+                  op: BinaryOperator::Times,
+                  left: Box::new(pl),
+                  right: right.clone(),
+                };
+                result.push_str(&expr_to_input_form(&pos));
+              }
             }
-          } else if let Some(pos_left) = negate_neg_numeric_coeff(left.as_ref())
-          {
-            // Negative Real / Rational coefficient: pull the sign out so the
-            // term renders as a subtraction (`- (15*x)/2`) instead of an
-            // addition of a negative coefficient (`+ (-15*x)/2`), matching
-            // wolframscript's InputForm.
+          } else if let Some(pos_right) = neg_times_coeff(right.as_ref()) {
             result.push_str(" - ");
-            let pos = Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(pos_left),
-              right: right.clone(),
-            };
-            result.push_str(&expr_to_input_form(&pos));
+            match pos_right {
+              None => result.push_str(&expr_to_input_form(left)),
+              Some(pr) => {
+                let pos = Expr::BinaryOp {
+                  op: BinaryOperator::Times,
+                  left: left.clone(),
+                  right: Box::new(pr),
+                };
+                result.push_str(&expr_to_input_form(&pos));
+              }
+            }
           } else {
             result.push_str(" + ");
             result.push_str(&expr_to_input_form(arg));
