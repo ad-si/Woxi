@@ -837,6 +837,9 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
+    "SolidAngle" if args.len() == 2 => {
+      return Some(crate::functions::linear_algebra_ast::solid_angle_ast(args));
+    }
     "CoordinateTransform" if args.len() == 2 => {
       return Some(
         crate::functions::linear_algebra_ast::coordinate_transform_ast(args),

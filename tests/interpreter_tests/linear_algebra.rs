@@ -3101,6 +3101,88 @@ mod vector_angle {
   }
 }
 
+mod solid_angle {
+  use super::*;
+
+  // The positive octant of 3-space is one eighth of the sphere: 4 Pi / 8.
+  #[test]
+  fn octant() {
+    assert_eq!(
+      interpret("SolidAngle[{0, 0, 0}, {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}]")
+        .unwrap(),
+      "Pi/2"
+    );
+    // Scale-invariant: the same cone with stretched edges.
+    assert_eq!(
+      interpret("SolidAngle[{0, 0, 0}, {{2, 0, 0}, {0, 3, 0}, {0, 0, 5}}]")
+        .unwrap(),
+      "Pi/2"
+    );
+  }
+
+  // The u_i are points relative to p, so translating p and the u_i together
+  // leaves the angle unchanged.
+  #[test]
+  fn translation_invariant() {
+    assert_eq!(
+      interpret("SolidAngle[{1, 1, 1}, {{2, 1, 1}, {1, 2, 1}, {1, 1, 2}}]")
+        .unwrap(),
+      "Pi/2"
+    );
+  }
+
+  // In 2-D the two-vector form is the ordinary planar angle.
+  #[test]
+  fn planar_angle_2d() {
+    assert_eq!(
+      interpret("SolidAngle[{0, 0}, {{1, 0}, {0, 1}}]").unwrap(),
+      "Pi/2"
+    );
+    assert_eq!(
+      interpret("SolidAngle[{0, 0}, {{1, 0}, {1, 1}}]").unwrap(),
+      "Pi/4"
+    );
+  }
+
+  // Fewer vectors than the ambient dimension span a degenerate (zero-measure)
+  // cone.
+  #[test]
+  fn degenerate_low_dimensional() {
+    assert_eq!(
+      interpret("SolidAngle[{0, 0, 0}, {{1, 0, 0}, {0, 1, 0}}]").unwrap(),
+      "0"
+    );
+  }
+
+  // General trihedral angle (Van Oosterom–Strackee); checked numerically to
+  // avoid the symbolic-form and last-ULP divergences.
+  #[test]
+  fn general_trihedral_numeric() {
+    let v: f64 =
+      interpret("N[SolidAngle[{0, 0, 0}, {{1, 0, 0}, {0, 1, 0}, {1, 1, 1}}]]")
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!((v - 0.5235987755982989).abs() < 1e-12);
+    // A wide angle (> Pi) exercises the negative-denominator branch.
+    let w: f64 = interpret(
+      "N[SolidAngle[{0, 0, 0}, {{1, 0, 0}, {-1, 2, 0}, {-1, -2, 1}}]]",
+    )
+    .unwrap()
+    .parse()
+    .unwrap();
+    assert!((w - 4.81131758220984).abs() < 1e-11);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("SolidAngle[p, {u, v}]").unwrap(),
+      "SolidAngle[p, {u, v}]"
+    );
+  }
+}
+
 mod vector_order {
   use super::*;
 

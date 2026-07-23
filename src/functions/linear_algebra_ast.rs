@@ -6096,6 +6096,103 @@ pub fn dihedral_angle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   vector_angle_ast(&[v1p, v2p])
 }
 
+/// SolidAngle[p, {u1, …, ud}] — the solid angle at point `p` spanned by the
+/// vectors from `p` to the points `u_i`. In 2-D the two-vector form is the
+/// planar angle (VectorAngle); in 3-D the three-vector form is the trihedral
+/// solid angle via the Van Oosterom–Strackee formula
+///   Ω = 2 ArcTan[den, |Det[{v1, v2, v3}]|]
+/// with den = |v1||v2||v3| + (v1·v2)|v3| + (v1·v3)|v2| + (v2·v3)|v1|. A cone of
+/// fewer vectors than the ambient dimension is degenerate (solid angle 0).
+pub fn solid_angle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Ok(unevaluated("SolidAngle", args));
+  if args.len() != 2 {
+    return unevaluated();
+  }
+  let Expr::List(p) = &args[0] else {
+    return unevaluated();
+  };
+  let n = p.len();
+  if n == 0 || !p.iter().all(crate::functions::predicate_ast::is_numeric_q) {
+    return unevaluated();
+  }
+  let Expr::List(us) = &args[1] else {
+    return unevaluated();
+  };
+  // Vectors from p to each u_i (each u_i an n-coordinate numeric point).
+  let mut vecs: Vec<Expr> = Vec::with_capacity(us.len());
+  for u in us.iter() {
+    let Expr::List(uc) = u else {
+      return unevaluated();
+    };
+    if uc.len() != n
+      || !uc.iter().all(crate::functions::predicate_ast::is_numeric_q)
+    {
+      return unevaluated();
+    }
+    vecs.push(evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Subtract".to_string(),
+      args: vec![u.clone(), args[0].clone()].into(),
+    })?);
+  }
+  let d = vecs.len();
+  // Full-dimensional cones only: a lower-dimensional wedge has zero measure.
+  if d < n {
+    return Ok(Expr::Integer(0));
+  }
+  if d > n {
+    return unevaluated();
+  }
+  match n {
+    // Planar angle between the two vectors.
+    2 => vector_angle_ast(&[vecs[0].clone(), vecs[1].clone()]),
+    // Trihedral solid angle (Van Oosterom–Strackee).
+    3 => {
+      let dot = |a: &Expr, b: &Expr| Expr::FunctionCall {
+        name: "Dot".to_string(),
+        args: vec![a.clone(), b.clone()].into(),
+      };
+      let norm = |a: &Expr| Expr::FunctionCall {
+        name: "Norm".to_string(),
+        args: vec![a.clone()].into(),
+      };
+      let times = |factors: Vec<Expr>| Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: factors.into(),
+      };
+      let (v1, v2, v3) = (&vecs[0], &vecs[1], &vecs[2]);
+      let num = Expr::FunctionCall {
+        name: "Abs".to_string(),
+        args: vec![Expr::FunctionCall {
+          name: "Det".to_string(),
+          args: vec![Expr::List(
+            vec![v1.clone(), v2.clone(), v3.clone()].into(),
+          )]
+          .into(),
+        }]
+        .into(),
+      };
+      let den = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          times(vec![norm(v1), norm(v2), norm(v3)]),
+          times(vec![dot(v1, v2), norm(v3)]),
+          times(vec![dot(v1, v3), norm(v2)]),
+          times(vec![dot(v2, v3), norm(v1)]),
+        ]
+        .into(),
+      };
+      evaluate_expr_to_expr(&times(vec![
+        Expr::Integer(2),
+        Expr::FunctionCall {
+          name: "ArcTan".to_string(),
+          args: vec![den, num].into(),
+        },
+      ]))
+    }
+    _ => unevaluated(),
+  }
+}
+
 // ─── UpperTriangularize / LowerTriangularize ───────────────────────────
 
 /// UpperTriangularize[m] or UpperTriangularize[m, k]
