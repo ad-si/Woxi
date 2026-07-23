@@ -8754,6 +8754,119 @@ fn pyramid_centroid(pts: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
   Some(crate::evaluator::evaluate_expr_to_expr(&centroid))
 }
 
+/// Twice the area of the triangle (p_i, p_j, p_k) as the symbolic
+/// Sqrt[minor12^2 + minor20^2 + minor01^2] (the norm of the edge cross
+/// product), where c holds the vertex coordinate vectors.
+fn triangle_double_area(c: &[Vec<Expr>], i: usize, j: usize, k: usize) -> Expr {
+  let diff = |a: &Expr, b: &Expr| Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      a.clone(),
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), b.clone()].into(),
+      },
+    ]
+    .into(),
+  };
+  let u: Vec<Expr> = (0..3).map(|d| diff(&c[j][d], &c[i][d])).collect();
+  let v: Vec<Expr> = (0..3).map(|d| diff(&c[k][d], &c[i][d])).collect();
+  let minor = |a: usize, b: usize| Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![u[a].clone(), v[b].clone()].into(),
+      },
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), u[b].clone(), v[a].clone()].into(),
+      },
+    ]
+    .into(),
+  };
+  let sq = |e: Expr| Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![e, Expr::Integer(2)].into(),
+  };
+  Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![sq(minor(1, 2)), sq(minor(2, 0)), sq(minor(0, 1))].into(),
+    }]
+    .into(),
+  }
+}
+
+/// Total surface area of a polyhedron whose faces are given as triangles into
+/// the coordinate list `c`: Simplify[(Σ 2·area_face) / 2], so the radicals
+/// combine over a common denominator like wolframscript's forms
+/// (e.g. 16 + 6 Sqrt[2], 4 (1 + Sqrt[17])).
+fn triangulated_surface_area(
+  c: &[Vec<Expr>],
+  triangles: &[(usize, usize, usize)],
+) -> Result<Expr, InterpreterError> {
+  let terms: Vec<Expr> = triangles
+    .iter()
+    .map(|&(i, j, k)| triangle_double_area(c, i, j, k))
+    .collect();
+  let half = binop(
+    BinaryOperator::Divide,
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    },
+    Expr::Integer(2),
+  );
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Simplify".to_string(),
+    args: vec![half].into(),
+  })
+}
+
+/// SurfaceArea of a Prism[{p1, …, p6}] — two triangular caps plus three
+/// rectangular sides, each triangulated. Defined only for six 3-D points.
+fn prism_surface_area(pts: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
+  if pts.len() != 6 {
+    return None;
+  }
+  let c: Vec<Vec<Expr>> = pts.iter().map(as_pt3).collect::<Option<_>>()?;
+  // Caps (0,1,2) and (3,4,5); sides (0,1,4,3), (1,2,5,4), (2,0,3,5).
+  let tris = [
+    (0, 1, 2),
+    (3, 4, 5),
+    (0, 1, 4),
+    (0, 4, 3),
+    (1, 2, 5),
+    (1, 5, 4),
+    (2, 0, 3),
+    (2, 3, 5),
+  ];
+  Some(triangulated_surface_area(&c, &tris))
+}
+
+/// SurfaceArea of a square Pyramid[{p1, …, p4, apex}] — the quadrilateral base
+/// plus four side triangles. Defined only for five 3-D points.
+fn pyramid_surface_area(
+  pts: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  if pts.len() != 5 {
+    return None;
+  }
+  let c: Vec<Vec<Expr>> = pts.iter().map(as_pt3).collect::<Option<_>>()?;
+  // Base (0,1,2,3) fanned, plus side faces (0,1,4), (1,2,4), (2,3,4), (3,0,4).
+  let tris = [
+    (0, 1, 2),
+    (0, 2, 3),
+    (0, 1, 4),
+    (1, 2, 4),
+    (2, 3, 4),
+    (3, 0, 4),
+  ];
+  Some(triangulated_surface_area(&c, &tris))
+}
+
 /// If `pts` are `n` coordinate vectors each of length `n-1` (a full-dimensional
 /// simplex in its own space), return the `n-1` edge vectors from the first
 /// vertex; otherwise None.
@@ -10075,6 +10188,23 @@ fn compute_surface_area(expr: &Expr) -> Result<Expr, InterpreterError> {
       }
       unevaluated()
     }
+    // Prism / Pyramid — sum of the triangulated face areas.
+    "Prism" => {
+      if let Some(pts) = prism_pts(args)
+        && let Some(result) = prism_surface_area(&pts)
+      {
+        return result;
+      }
+      unevaluated()
+    }
+    "Pyramid" => {
+      if let Some(pts) = pyramid_pts(args)
+        && let Some(result) = pyramid_surface_area(&pts)
+      {
+        return result;
+      }
+      unevaluated()
+    }
     // Ball[c, r] — 4 Pi r^2, defined only for the 3-D ball.
     "Ball" => {
       let (n, radius) = match args.as_slice() {
@@ -11197,6 +11327,8 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
       "Circle" => Ok(Expr::Identifier("Undefined".to_string())),
       // A Tetrahedron is a 3-D solid, so its 2-area is Undefined.
       "Tetrahedron" => Ok(Expr::Identifier("Undefined".to_string())),
+      // Prism and Pyramid are 3-D solids: their 2-area is Undefined.
+      "Prism" | "Pyramid" => Ok(Expr::Identifier("Undefined".to_string())),
       // A Parallelogram is always a planar (2-D) region, so its Area equals
       // its RegionMeasure. Delegate to keep the two in sync. A two-vector
       // Parallelepiped is likewise planar; any other Parallelepiped is a

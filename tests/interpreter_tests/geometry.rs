@@ -844,6 +844,51 @@ mod prism_pyramid {
       "{2, 11/12, 3/2}"
     );
   }
+
+  // SurfaceArea: two triangular caps (area 1 total) plus three rectangular
+  // sides (1, 1, Sqrt[2]) for the default prism.
+  #[test]
+  fn prism_surface_area() {
+    assert_eq!(interpret("SurfaceArea[Prism[]]").unwrap(), "3 + Sqrt[2]");
+    assert_eq!(
+      interpret(
+        "SurfaceArea[Prism[{{0,0,0},{2,0,0},{0,2,0},{0,0,3},{2,0,3},{0,2,3}}]]"
+      )
+      .unwrap(),
+      "16 + 6*Sqrt[2]"
+    );
+  }
+
+  // SurfaceArea: 2×2 base (area 4) plus four slant triangles (Sqrt[2] each).
+  #[test]
+  fn pyramid_surface_area() {
+    assert_eq!(
+      interpret("SurfaceArea[Pyramid[]]").unwrap(),
+      "4*(1 + Sqrt[2])"
+    );
+    assert_eq!(
+      interpret(
+        "SurfaceArea[Pyramid[{{0,0,0},{2,0,0},{2,2,0},{0,2,0},{1,1,4}}]]"
+      )
+      .unwrap(),
+      "4*(1 + Sqrt[17])"
+    );
+    // A trapezoid base with an off-center apex: distinct slant heights.
+    assert_eq!(
+      interpret(
+        "SurfaceArea[Pyramid[{{0,0,0},{4,0,0},{3,2,0},{1,2,0},{2,1,6}}]]"
+      )
+      .unwrap(),
+      "3*(2 + Sqrt[21] + Sqrt[37])"
+    );
+  }
+
+  // Area (a 2-measure) is Undefined for these 3-D solids.
+  #[test]
+  fn prism_pyramid_area_undefined() {
+    assert_eq!(interpret("Area[Prism[]]").unwrap(), "Undefined");
+    assert_eq!(interpret("Area[Pyramid[]]").unwrap(), "Undefined");
+  }
 }
 
 mod region_measure {

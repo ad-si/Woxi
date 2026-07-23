@@ -2490,7 +2490,7 @@ NumberPoint,Symbol specifying the decimal point character in NumberForm,✅,pure
 WindowFrameElements,,🚫,,4.0,2541
 ChromaticPolynomial,gives the chromatic polynomial of a graph in the variable k,✅,none,10.0,2545
 EndOfLine,string pattern for end of line,✅,Symbolic,5.1,2545
-Pyramid,Square pyramid region primitive with volume measure and centroid,✅,pure,10.0,2545
+Pyramid,Square pyramid region primitive with volume centroid and surface area,✅,pure,10.0,2545
 TextStructure,,🚫,,10.3,2545
 ChessboardDistance,Chessboard (Chebyshev) distance between points,✅,none,6.0,2549
 DiscreteConvolve,Discrete convolution of two sequences,✅,pure,7.0,2549
@@ -2902,7 +2902,7 @@ CreateCloudExpression,,🚫,,10.4,2971
 GraphCenter,Vertices with minimum eccentricity,✅,1,8.0,2971
 LeapYearQ,Tests if a year is a leap year,✅,pure,9.0,2971
 PrimeZetaP,Prime zeta function,✅,pure,7.0,2971
-Prism,Triangular prism region primitive with volume measure and centroid,✅,pure,10.0,2971
+Prism,Triangular prism region primitive with volume centroid and surface area,✅,pure,10.0,2971
 RandomPolyhedron,,,,12.0,2971
 TextSearch,,🚫,,10.2,2971
 TextTranslation,,🚫,,11.1,2971
