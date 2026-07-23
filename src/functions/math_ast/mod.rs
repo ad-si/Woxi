@@ -2,8 +2,6 @@
 //!
 //! These functions work directly with `Expr` AST nodes.
 
-use crate::syntax::Expr;
-
 mod airy;
 mod arithmetic;
 mod bessel;
@@ -60,37 +58,3 @@ pub use triangles::*;
 pub use trigonometric::*;
 pub use weierstrass::*;
 pub use zeta_functions::*;
-
-/// Public accessor for the process time-slice distribution (used by
-/// SliceDistribution).
-pub fn distributions_slice(
-  proc_name: &str,
-  dargs: &[Expr],
-  t: &Expr,
-) -> Option<Expr> {
-  distributions::process_slice_distribution(proc_name, dargs, t)
-}
-
-/// Public accessors for the process correlation closed forms.
-pub fn statistics_process_correlation(
-  proc: &Expr,
-  t1: &Expr,
-  t2: &Expr,
-) -> Option<Expr> {
-  statistics::process_correlation(proc, t1, t2)
-}
-
-pub fn statistics_process_absolute_correlation(
-  proc: &Expr,
-  t1: &Expr,
-  t2: &Expr,
-) -> Option<Expr> {
-  statistics::process_absolute_correlation(proc, t1, t2)
-}
-
-/// Public accessor for BiweightMidvariance.
-pub fn statistics_biweight_midvariance(
-  args: &[Expr],
-) -> Result<Expr, crate::InterpreterError> {
-  statistics::biweight_midvariance_ast(args)
-}
