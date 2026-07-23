@@ -8012,6 +8012,38 @@ pub fn characteristic_function_ast(
         true,
       ))
     }
+    // (-4*(E^(I/2*a*t) - E^(I/2*b*t))^2)/((a - b)^2*t^2) — the symmetric
+    // two-argument triangular distribution.
+    ("TriangularDistribution", [Expr::List(bounds)]) if bounds.len() == 2 => {
+      let (a, b) = (bounds[0].clone(), bounds[1].clone());
+      let e_half = |v: &Expr| {
+        pow(
+          e_sym(),
+          div(
+            call("Times", vec![i_unit(), v.clone(), t.clone()]),
+            Expr::Integer(2),
+          ),
+        )
+      };
+      let diff = call("Plus", vec![e_half(&a), neg(e_half(&b))]);
+      let num = call(
+        "Times",
+        vec![Expr::Integer(-4), pow(diff, Expr::Integer(2))],
+      );
+      let den = call(
+        "Times",
+        vec![
+          pow(
+            call("Plus", vec![a.clone(), neg(b.clone())]),
+            Expr::Integer(2),
+          ),
+          pow(t.clone(), Expr::Integer(2)),
+        ],
+      );
+      // Evaluate so the exponent canonicalizes to I/2*a*t (matching
+      // wolframscript) rather than the raw (I*a*t)/2.
+      Some((div(num, den), false))
+    }
     // (1 - 2*I*t)^(-k/2)
     ("ChiSquareDistribution", [k]) => Some((
       pow(
@@ -8390,6 +8422,30 @@ pub fn moment_generating_function_ast(
         ),
         true,
       ))
+    }
+    // (4*(E^((a*t)/2) - E^((b*t)/2))^2)/((a - b)^2*t^2) — symmetric triangular.
+    ("TriangularDistribution", [Expr::List(bounds)]) if bounds.len() == 2 => {
+      let (a, b) = (bounds[0].clone(), bounds[1].clone());
+      let e_half = |v: &Expr| {
+        pow(
+          e_sym(),
+          div(call("Times", vec![v.clone(), t.clone()]), Expr::Integer(2)),
+        )
+      };
+      let diff = call("Plus", vec![e_half(&a), neg(e_half(&b))]);
+      let num =
+        call("Times", vec![Expr::Integer(4), pow(diff, Expr::Integer(2))]);
+      let den = call(
+        "Times",
+        vec![
+          pow(
+            call("Plus", vec![a.clone(), neg(b.clone())]),
+            Expr::Integer(2),
+          ),
+          pow(t.clone(), Expr::Integer(2)),
+        ],
+      );
+      Some((div(num, den), true))
     }
     // (1 - 2*t)^(-k/2)
     ("ChiSquareDistribution", [k]) => Some((

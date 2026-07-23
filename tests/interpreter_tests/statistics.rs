@@ -7085,6 +7085,21 @@ mod characteristic_function {
     );
   }
 
+  // Symmetric triangular CF: (-4 (E^(I a t/2) - E^(I b t/2))^2)/((a-b)^2 t^2).
+  #[test]
+  fn triangular() {
+    assert_eq!(
+      interpret("CharacteristicFunction[TriangularDistribution[{a, b}], t]")
+        .unwrap(),
+      "(-4*(E^(I/2*a*t) - E^(I/2*b*t))^2)/((a - b)^2*t^2)"
+    );
+    assert_eq!(
+      interpret("CharacteristicFunction[TriangularDistribution[{0, 1}], t]")
+        .unwrap(),
+      "(-4*(1 - E^(I/2*t))^2)/t^2"
+    );
+  }
+
   #[test]
   fn discrete_distributions() {
     assert_eq!(
@@ -7244,6 +7259,21 @@ mod moment_generating_function {
       interpret("MomentGeneratingFunction[GumbelDistribution[1, 2], t]")
         .unwrap(),
       "E^t*Gamma[1 + 2*t]"
+    );
+  }
+
+  // Symmetric triangular MGF: (4 (E^(a t/2) - E^(b t/2))^2)/((a-b)^2 t^2).
+  #[test]
+  fn triangular() {
+    assert_eq!(
+      interpret("MomentGeneratingFunction[TriangularDistribution[{a, b}], t]")
+        .unwrap(),
+      "(4*(E^((a*t)/2) - E^((b*t)/2))^2)/((a - b)^2*t^2)"
+    );
+    assert_eq!(
+      interpret("MomentGeneratingFunction[TriangularDistribution[{0, 2}], t]")
+        .unwrap(),
+      "(1 - E^t)^2/t^2"
     );
   }
 
