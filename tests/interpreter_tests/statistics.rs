@@ -4226,6 +4226,27 @@ mod negative_binomial_distribution {
       "Sqrt[n*(1 - p)]/p"
     );
   }
+
+  // Skewness = (2 - p)/Sqrt[(1 - p) r]; Kurtosis = 3 + (6 - 6 p + p^2)/((1 - p) r).
+  #[test]
+  fn skewness_and_kurtosis() {
+    assert_eq!(
+      interpret("Skewness[NegativeBinomialDistribution[r, p]]").unwrap(),
+      "(2 - p)/Sqrt[(1 - p)*r]"
+    );
+    assert_eq!(
+      interpret("Kurtosis[NegativeBinomialDistribution[r, p]]").unwrap(),
+      "3 + (6 - 6*p + p^2)/((1 - p)*r)"
+    );
+    assert_eq!(
+      interpret("Skewness[NegativeBinomialDistribution[3, 1/2]]").unwrap(),
+      "Sqrt[3/2]"
+    );
+    assert_eq!(
+      interpret("Kurtosis[NegativeBinomialDistribution[3, 1/2]]").unwrap(),
+      "31/6"
+    );
+  }
 }
 
 mod pascal_distribution {
@@ -4278,6 +4299,62 @@ mod pascal_distribution {
     assert_eq!(
       interpret("Variance[PascalDistribution[n, p]]").unwrap(),
       "(n*(1 - p))/p^2"
+    );
+  }
+
+  // Skewness = (2 - p)/Sqrt[n (1 - p)]; Kurtosis = 3 + (6 - 6 p + p^2)/(n (1 - p)).
+  #[test]
+  fn skewness_and_kurtosis() {
+    assert_eq!(
+      interpret("Skewness[PascalDistribution[n, p]]").unwrap(),
+      "(2 - p)/Sqrt[n*(1 - p)]"
+    );
+    assert_eq!(
+      interpret("Kurtosis[PascalDistribution[n, p]]").unwrap(),
+      "3 + (6 - 6*p + p^2)/(n*(1 - p))"
+    );
+    assert_eq!(
+      interpret("Skewness[PascalDistribution[3, 1/2]]").unwrap(),
+      "Sqrt[3/2]"
+    );
+    assert_eq!(
+      interpret("Kurtosis[PascalDistribution[3, 1/2]]").unwrap(),
+      "31/6"
+    );
+  }
+}
+
+mod binomial_distribution_skewness_kurtosis {
+  use super::*;
+
+  // Skewness = (1 - 2 p)/Sqrt[n (1 - p) p];
+  // Kurtosis = 3 + (1 - 6 (1 - p) p)/(n (1 - p) p).
+  #[test]
+  fn symbolic_forms() {
+    assert_eq!(
+      interpret("Skewness[BinomialDistribution[n, p]]").unwrap(),
+      "(1 - 2*p)/Sqrt[n*(1 - p)*p]"
+    );
+    assert_eq!(
+      interpret("Kurtosis[BinomialDistribution[n, p]]").unwrap(),
+      "3 + (1 - 6*(1 - p)*p)/(n*(1 - p)*p)"
+    );
+  }
+
+  #[test]
+  fn numeric_values() {
+    // p = 1/2 is symmetric ⇒ zero skewness.
+    assert_eq!(
+      interpret("Skewness[BinomialDistribution[10, 1/2]]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Kurtosis[BinomialDistribution[10, 1/2]]").unwrap(),
+      "14/5"
+    );
+    assert_eq!(
+      interpret("Skewness[BinomialDistribution[8, 1/3]]").unwrap(),
+      "1/4"
     );
   }
 }

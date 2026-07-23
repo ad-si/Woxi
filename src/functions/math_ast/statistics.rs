@@ -3829,6 +3829,58 @@ pub fn kurtosis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let result = bin(B::Plus, Expr::Integer(3), bin(B::Divide, num, den));
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
+  // Negative-binomial family: Kurtosis = 3 + (6 - 6 p + p^2)/(scale (1 - p)),
+  // scale = r (NegativeBinomial) or n (Pascal). Binomial has its own numerator.
+  {
+    use BinaryOperator as B;
+    let bin = |op, l, r| Expr::BinaryOp {
+      op,
+      left: Box::new(l),
+      right: Box::new(r),
+    };
+    let one_minus_p = |p: &Expr| bin(B::Minus, Expr::Integer(1), p.clone());
+    // 6 - 6 p + p^2
+    let nb_num = |p: &Expr| {
+      bin(
+        B::Plus,
+        bin(
+          B::Plus,
+          Expr::Integer(6),
+          bin(B::Times, Expr::Integer(-6), p.clone()),
+        ),
+        bin(B::Power, p.clone(), Expr::Integer(2)),
+      )
+    };
+    let three_plus =
+      |num, den| bin(B::Plus, Expr::Integer(3), bin(B::Divide, num, den));
+    if let Some((r, p)) =
+      two_params_of(&args[0], "NegativeBinomialDistribution")
+    {
+      let result = three_plus(nb_num(&p), bin(B::Times, one_minus_p(&p), r));
+      return crate::evaluator::evaluate_expr_to_expr(&result);
+    }
+    if let Some((n, p)) = two_params_of(&args[0], "PascalDistribution") {
+      let result = three_plus(nb_num(&p), bin(B::Times, n, one_minus_p(&p)));
+      return crate::evaluator::evaluate_expr_to_expr(&result);
+    }
+    if let Some((n, p)) = two_params_of(&args[0], "BinomialDistribution") {
+      // 3 + (1 - 6 (1 - p) p)/(n (1 - p) p)
+      let num = bin(
+        B::Minus,
+        Expr::Integer(1),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(6), one_minus_p(&p), p.clone()].into(),
+        },
+      );
+      let den = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![n, one_minus_p(&p), p.clone()].into(),
+      };
+      let result = three_plus(num, den);
+      return crate::evaluator::evaluate_expr_to_expr(&result);
+    }
+  }
   let m4 = central_moment_ast(&[args[0].clone(), Expr::Integer(4)])?;
   let m2 = central_moment_ast(&[args[0].clone(), Expr::Integer(2)])?;
   // Compute m4 / m2^2 symbolically
@@ -3932,6 +3984,53 @@ pub fn skewness_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     let result = bin(B::Divide, bin(B::Minus, Expr::Integer(2), p), sqrt);
     return crate::evaluator::evaluate_expr_to_expr(&result);
+  }
+  // Negative-binomial family: Skewness = (2 - p)/Sqrt[scale (1 - p)], with the
+  // scale being r (NegativeBinomial) or n (Pascal). Binomial has the (1 - 2 p)
+  // form. Built directly so the compact shapes are preserved.
+  {
+    use BinaryOperator as B;
+    let bin = |op, l, r| Expr::BinaryOp {
+      op,
+      left: Box::new(l),
+      right: Box::new(r),
+    };
+    let sqrt = |e| Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![e].into(),
+    };
+    let one_minus_p = |p: &Expr| bin(B::Minus, Expr::Integer(1), p.clone());
+    if let Some((r, p)) =
+      two_params_of(&args[0], "NegativeBinomialDistribution")
+    {
+      let result = bin(
+        B::Divide,
+        bin(B::Minus, Expr::Integer(2), p.clone()),
+        sqrt(bin(B::Times, one_minus_p(&p), r)),
+      );
+      return crate::evaluator::evaluate_expr_to_expr(&result);
+    }
+    if let Some((n, p)) = two_params_of(&args[0], "PascalDistribution") {
+      let result = bin(
+        B::Divide,
+        bin(B::Minus, Expr::Integer(2), p.clone()),
+        sqrt(bin(B::Times, n, one_minus_p(&p))),
+      );
+      return crate::evaluator::evaluate_expr_to_expr(&result);
+    }
+    if let Some((n, p)) = two_params_of(&args[0], "BinomialDistribution") {
+      let num = bin(
+        B::Minus,
+        Expr::Integer(1),
+        bin(B::Times, Expr::Integer(2), p.clone()),
+      );
+      let scale = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![n, one_minus_p(&p), p.clone()].into(),
+      };
+      let result = bin(B::Divide, num, sqrt(scale));
+      return crate::evaluator::evaluate_expr_to_expr(&result);
+    }
   }
   let m3 = central_moment_ast(&[args[0].clone(), Expr::Integer(3)])?;
   let m2 = central_moment_ast(&[args[0].clone(), Expr::Integer(2)])?;
