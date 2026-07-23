@@ -13235,6 +13235,41 @@ mod binomial_theorem_sum {
   }
 }
 
+mod harmonic_number_sum {
+  use super::*;
+
+  // Sum[HarmonicNumber[k], {k, 1, n}] = HyperHarmonicNumber[2, n]; the
+  // generalized order carries through as the third argument.
+  #[test]
+  fn cumulative_harmonic() {
+    assert_eq!(
+      interpret("Sum[HarmonicNumber[k], {k, 1, n}]").unwrap(),
+      "HyperHarmonicNumber[2, n]"
+    );
+    assert_eq!(
+      interpret("Sum[HarmonicNumber[k, 2], {k, 1, n}]").unwrap(),
+      "HyperHarmonicNumber[2, n, 2]"
+    );
+    assert_eq!(
+      interpret("Sum[HarmonicNumber[k, r], {k, 1, n}]").unwrap(),
+      "HyperHarmonicNumber[2, n, r]"
+    );
+    // A different expansion variable works, and numeric bounds still fold.
+    assert_eq!(
+      interpret("Sum[HarmonicNumber[k], {k, 1, m}]").unwrap(),
+      "HyperHarmonicNumber[2, m]"
+    );
+    assert_eq!(
+      interpret("Sum[HarmonicNumber[k], {k, 1, 5}]").unwrap(),
+      "87/10"
+    );
+    assert_eq!(
+      interpret("Sum[HarmonicNumber[k, 2], {k, 1, 5}]").unwrap(),
+      "3899/600"
+    );
+  }
+}
+
 mod symbolic_sum_constant_factor {
   use super::*;
 

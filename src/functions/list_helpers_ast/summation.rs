@@ -2739,6 +2739,38 @@ fn try_symbolic_sum(
       }));
     }
 
+    // Sum[HarmonicNumber[k], {k, 1, n}]      = HyperHarmonicNumber[2, n]
+    // Sum[HarmonicNumber[k, r], {k, 1, n}]   = HyperHarmonicNumber[2, n, r]
+    // (the r-fold cumulative sum of harmonic numbers), when the order r is
+    // constant with respect to the summation variable.
+    if let Expr::FunctionCall {
+      name: hname,
+      args: hargs,
+    } = body
+      && hname == "HarmonicNumber"
+      && !hargs.is_empty()
+      && matches!(&hargs[0], Expr::Identifier(v) if v == var_name)
+    {
+      let mut hhn = vec![Expr::Integer(2), max_expr.clone()];
+      let ok = match hargs.len() {
+        1 => true,
+        2 if !crate::functions::polynomial_ast::contains_var(
+          &hargs[1], var_name,
+        ) =>
+        {
+          hhn.push(hargs[1].clone());
+          true
+        }
+        _ => false,
+      };
+      if ok {
+        return Ok(Some(Expr::FunctionCall {
+          name: "HyperHarmonicNumber".to_string(),
+          args: hhn.into(),
+        }));
+      }
+    }
+
     // Sum[1/k^s, {k, 1, n}] = HarmonicNumber[n, s]
     if let Some(s) = match_reciprocal_power(body, var_name)
       && s >= 1
