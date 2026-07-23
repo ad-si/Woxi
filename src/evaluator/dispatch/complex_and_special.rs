@@ -7968,7 +7968,8 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
         return or_unevaluated(compute_area(expr));
       }
       // 3-dimensional solids: volume.
-      "Cuboid" | "Cylinder" | "Cone" | "Parallelepiped" => {
+      "Cuboid" | "Cylinder" | "Cone" | "Parallelepiped" | "Prism"
+      | "Pyramid" => {
         return or_unevaluated(compute_volume(expr));
       }
       // Platonic-solid primitives are 3-D solids: volume.
@@ -8150,7 +8151,7 @@ fn compute_region_dimension(expr: &Expr) -> Result<Expr, InterpreterError> {
       }
       "Cylinder" | "Cone" | "Tetrahedron" | "FilledTorus" | "Cube"
       | "Hexahedron" | "Octahedron" | "Dodecahedron" | "Icosahedron"
-      | "SphericalShell" | "CapsuleShape" => {
+      | "SphericalShell" | "CapsuleShape" | "Prism" | "Pyramid" => {
         return Ok(Expr::Integer(3));
       }
       "Point" => return Ok(Expr::Integer(0)),
@@ -8562,6 +8563,104 @@ fn det_measure(
     binop(BinaryOperator::Divide, abs, Expr::Integer(divisor))
   };
   crate::evaluator::evaluate_expr_to_expr(&vol)
+}
+
+/// A 3-D integer coordinate point `{a, b, c}`.
+fn pt3i(a: i128, b: i128, c: i128) -> Expr {
+  Expr::List(vec![Expr::Integer(a), Expr::Integer(b), Expr::Integer(c)].into())
+}
+
+/// The three coordinates of a 3-D point, or None if `p` is not a length-3 list.
+fn as_pt3(p: &Expr) -> Option<Vec<Expr>> {
+  match p {
+    Expr::List(c) if c.len() == 3 => Some(c.iter().cloned().collect()),
+    _ => None,
+  }
+}
+
+/// The vertex list for a Prism, applying the default triangular prism
+/// Prism[] == Prism[{{0,0,0},{1,0,0},{0,1,0},{0,0,1},{1,0,1},{0,1,1}}].
+/// Returns None for malformed arguments.
+fn prism_pts(args: &[Expr]) -> Option<Vec<Expr>> {
+  match args {
+    [] => Some(vec![
+      pt3i(0, 0, 0),
+      pt3i(1, 0, 0),
+      pt3i(0, 1, 0),
+      pt3i(0, 0, 1),
+      pt3i(1, 0, 1),
+      pt3i(0, 1, 1),
+    ]),
+    [Expr::List(pts)] => Some(pts.iter().cloned().collect()),
+    _ => None,
+  }
+}
+
+/// The vertex list for a (square) Pyramid, applying the default
+/// Pyramid[] == Pyramid[{{-1,-1,0},{1,-1,0},{1,1,0},{-1,1,0},{0,0,1}}].
+/// Returns None for malformed arguments.
+fn pyramid_pts(args: &[Expr]) -> Option<Vec<Expr>> {
+  match args {
+    [] => Some(vec![
+      pt3i(-1, -1, 0),
+      pt3i(1, -1, 0),
+      pt3i(1, 1, 0),
+      pt3i(-1, 1, 0),
+      pt3i(0, 0, 1),
+    ]),
+    [Expr::List(pts)] => Some(pts.iter().cloned().collect()),
+    _ => None,
+  }
+}
+
+/// Volume of a translational triangular Prism[{p1, …, p6}]:
+/// (1/2)|Det[p2-p1, p3-p1, p4-p1]|. Defined only for six 3-D points.
+fn prism_volume(pts: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
+  if pts.len() != 6 {
+    return None;
+  }
+  let c: Vec<Vec<Expr>> = pts.iter().map(as_pt3).collect::<Option<_>>()?;
+  let rows = vec![
+    coord_vec_sub(&c[1], &c[0]),
+    coord_vec_sub(&c[2], &c[0]),
+    coord_vec_sub(&c[3], &c[0]),
+  ];
+  Some(det_measure(rows, 2))
+}
+
+/// Volume of a square Pyramid[{p1, p2, p3, p4, apex}] with a quadrilateral base
+/// (p1..p4) and apex p5, via the fan triangulation of the base:
+/// (1/6)|Det[p2-p1, p3-p1, apex-p1] + Det[p3-p1, p4-p1, apex-p1]|.
+/// Defined only for five 3-D points (matching wolframscript, which leaves
+/// other vertex counts unevaluated).
+fn pyramid_volume(pts: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
+  if pts.len() != 5 {
+    return None;
+  }
+  let c: Vec<Vec<Expr>> = pts.iter().map(as_pt3).collect::<Option<_>>()?;
+  let apex = &c[4];
+  let det_term = |i: usize, j: usize| Expr::FunctionCall {
+    name: "Det".to_string(),
+    args: vec![Expr::List(
+      vec![
+        coord_vec_sub(&c[i], &c[0]),
+        coord_vec_sub(&c[j], &c[0]),
+        coord_vec_sub(apex, &c[0]),
+      ]
+      .into(),
+    )]
+    .into(),
+  };
+  let sum = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![det_term(1, 2), det_term(2, 3)].into(),
+  };
+  let abs = Expr::FunctionCall {
+    name: "Abs".to_string(),
+    args: vec![sum].into(),
+  };
+  let vol = binop(BinaryOperator::Divide, abs, Expr::Integer(6));
+  Some(crate::evaluator::evaluate_expr_to_expr(&vol))
 }
 
 /// If `pts` are `n` coordinate vectors each of length `n-1` (a full-dimensional
@@ -10504,6 +10603,22 @@ fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
           if vs.len() < 3 {
             return undefined();
           }
+        }
+      }
+      // Prism[{p1, …, p6}] — translational triangular prism.
+      "Prism" => {
+        if let Some(pts) = prism_pts(args)
+          && let Some(result) = prism_volume(&pts)
+        {
+          return result;
+        }
+      }
+      // Pyramid[{p1, …, p4, apex}] — square pyramid.
+      "Pyramid" => {
+        if let Some(pts) = pyramid_pts(args)
+          && let Some(result) = pyramid_volume(&pts)
+        {
+          return result;
         }
       }
       // A Sphere is a 2-D surface and the following are regions of dimension

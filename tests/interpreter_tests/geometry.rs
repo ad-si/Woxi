@@ -721,6 +721,85 @@ mod volume {
   }
 }
 
+mod prism_pyramid {
+  use super::*;
+
+  // Prism[] is the unit triangular prism (base area 1/2, height 1).
+  #[test]
+  fn prism_default_volume() {
+    assert_eq!(interpret("Volume[Prism[]]").unwrap(), "1/2");
+    assert_eq!(interpret("RegionMeasure[Prism[]]").unwrap(), "1/2");
+  }
+
+  // (1/2)|Det[p2-p1, p3-p1, p4-p1]| for a translational triangular prism.
+  #[test]
+  fn prism_explicit_volume() {
+    assert_eq!(
+      interpret(
+        "Volume[Prism[{{0,0,0},{2,0,0},{0,2,0},{0,0,3},{2,0,3},{0,2,3}}]]"
+      )
+      .unwrap(),
+      "6"
+    );
+    // An oblique prism: base area 1/2 sheared by translation {5, 5, 2}.
+    assert_eq!(
+      interpret(
+        "Volume[Prism[{{0,0,0},{1,0,0},{0,1,0},{5,5,2},{6,5,2},{5,6,2}}]]"
+      )
+      .unwrap(),
+      "1"
+    );
+  }
+
+  // Only the six-vertex form is a prism; other counts stay unevaluated.
+  #[test]
+  fn prism_wrong_vertex_count_unevaluated() {
+    assert_eq!(
+      interpret("Volume[Prism[{{0,0,0},{1,0,0},{0,1,0}}]]").unwrap(),
+      "Volume[Prism[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}]]"
+    );
+  }
+
+  // Pyramid[] is the unit-height square pyramid over a 2×2 base: (1/3)·4·1.
+  #[test]
+  fn pyramid_default_volume() {
+    assert_eq!(interpret("Volume[Pyramid[]]").unwrap(), "4/3");
+    assert_eq!(interpret("RegionMeasure[Pyramid[]]").unwrap(), "4/3");
+  }
+
+  // (1/3)·base_area·height for a quadrilateral-base pyramid.
+  #[test]
+  fn pyramid_explicit_volume() {
+    assert_eq!(
+      interpret("Volume[Pyramid[{{0,0,0},{2,0,0},{2,2,0},{0,2,0},{1,1,4}}]]")
+        .unwrap(),
+      "16/3"
+    );
+    // Volume is independent of where the apex sits above the base plane.
+    assert_eq!(
+      interpret("Volume[Pyramid[{{0,0,0},{1,0,0},{1,1,0},{0,1,0},{2,2,3}}]]")
+        .unwrap(),
+      "1"
+    );
+  }
+
+  // wolframscript evaluates Pyramid volume only for the five-vertex (square)
+  // form; a four-vertex argument stays unevaluated.
+  #[test]
+  fn pyramid_wrong_vertex_count_unevaluated() {
+    assert_eq!(
+      interpret("Volume[Pyramid[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}]]").unwrap(),
+      "Volume[Pyramid[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}}]]"
+    );
+  }
+
+  #[test]
+  fn prism_pyramid_region_dimension() {
+    assert_eq!(interpret("RegionDimension[Prism[]]").unwrap(), "3");
+    assert_eq!(interpret("RegionDimension[Pyramid[]]").unwrap(), "3");
+  }
+}
+
 mod region_measure {
   use super::*;
 
