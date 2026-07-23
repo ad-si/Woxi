@@ -9781,6 +9781,28 @@ mod root {
     assert_eq!(interpret("Root[# &, 1]").unwrap(), "0");
   }
 
+  // A polynomial expression in a single variable is normalized to the pure
+  // function form (variable -> Slot[1]), matching wolframscript.
+  #[test]
+  fn polynomial_expression_form() {
+    // Closed-form (quadratic) roots evaluate.
+    assert_eq!(interpret("Root[x^2 - 2, 2]").unwrap(), "Sqrt[2]");
+    assert_eq!(interpret("Root[x^2 - 2, 1]").unwrap(), "-Sqrt[2]");
+    // The variable name does not matter.
+    assert_eq!(interpret("Root[y^2 - 3, 1]").unwrap(), "-Sqrt[3]");
+    // Higher-degree roots keep the canonical Root[poly &, k, 0] form.
+    assert_eq!(
+      interpret("Root[x^3 - 2, 1]").unwrap(),
+      "Root[-2 + #1^3 & , 1, 0]"
+    );
+    assert_eq!(
+      interpret("Root[x^4 + x + 1, 2]").unwrap(),
+      "Root[1 + #1 + #1^4 & , 2, 0]"
+    );
+    // Two variables are ambiguous, so the call stays unevaluated.
+    assert_eq!(interpret("Root[x^2 + y, 1]").unwrap(), "Root[x^2 + y, 1]");
+  }
+
   #[test]
   fn quadratic_integer_roots() {
     assert_eq!(interpret("Root[#^2 - 3*# + 2 &, 1]").unwrap(), "1");

@@ -3975,6 +3975,28 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // A polynomial expression in a single variable (rather than a pure function)
+  // is normalized to the pure-function form by replacing that variable with
+  // Slot[1], then re-dispatched. Matches wolframscript, e.g.
+  //   Root[x^2 - 2, 2] = Sqrt[2],  Root[x^3 - 2, 1] = Root[-2 + #1^3 &, 1, 0].
+  // (Constants like Pi/E are Expr::Constant, so they are not mistaken for the
+  // variable; zero or more than one variable stays unevaluated.)
+  if !matches!(&args[0], Expr::Function { .. }) {
+    let mut vars = std::collections::HashSet::new();
+    super::simplify::collect_variables(&args[0], &mut vars);
+    if vars.len() == 1 {
+      let var = vars.into_iter().next().unwrap();
+      let body =
+        crate::syntax::substitute_variable(&args[0], &var, &Expr::Slot(1));
+      let mut new_args = vec![Expr::Function {
+        body: Box::new(body),
+      }];
+      new_args.extend_from_slice(&args[1..]);
+      return root_ast(&new_args);
+    }
+    return Ok(unevaluated("Root", args));
+  }
+
   // Extract pure function body
   let body = match &args[0] {
     Expr::Function { body } => body,
