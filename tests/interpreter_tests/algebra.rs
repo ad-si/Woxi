@@ -10834,6 +10834,54 @@ mod function_expand {
     );
   }
 
+  // FactorialPower[x, n] with integer n is the falling factorial
+  // x (x-1) … (x-n+1).
+  #[test]
+  fn factorial_power_integer_n() {
+    assert_eq!(
+      interpret("FunctionExpand[FactorialPower[x, 3]]").unwrap(),
+      "(-2 + x)*(-1 + x)*x"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[FactorialPower[x, 4]]").unwrap(),
+      "(-3 + x)*(-2 + x)*(-1 + x)*x"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[FactorialPower[x, 0]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[FactorialPower[x, 1]]").unwrap(),
+      "x"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[FactorialPower[5, 3]]").unwrap(),
+      "60"
+    );
+  }
+
+  // The step-h form x (x-h) … (x-(n-1)h) for a numeric step.
+  #[test]
+  fn factorial_power_numeric_step() {
+    assert_eq!(
+      interpret("FunctionExpand[FactorialPower[y, 2, 3]]").unwrap(),
+      "(-3 + y)*y"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[FactorialPower[a, 3, 2]]").unwrap(),
+      "(-4 + a)*(-2 + a)*a"
+    );
+  }
+
+  // A symbolic n expands to the Gamma-function ratio.
+  #[test]
+  fn factorial_power_symbolic_n() {
+    assert_eq!(
+      interpret("FunctionExpand[FactorialPower[x, n]]").unwrap(),
+      "Gamma[1 + x]/Gamma[1 - n + x]"
+    );
+  }
+
   #[test]
   fn binomial_n_2() {
     assert_eq!(

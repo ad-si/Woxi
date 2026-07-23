@@ -189,6 +189,63 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       ))
     }
 
+    // FactorialPower[x, n] = x (x-1) … (x-n+1); the step-h form
+    // FactorialPower[x, n, h] = x (x-h) … (x-(n-1)h). A non-negative integer n
+    // expands to the explicit product; a symbolic n gives the Gamma ratio
+    // Gamma[1+x]/Gamma[1-n+x].
+    "FactorialPower" if args.len() == 2 || args.len() == 3 => {
+      let x = &args[0];
+      let n = &args[1];
+      let h = if args.len() == 3 {
+        Some(&args[2])
+      } else {
+        None
+      };
+      match n {
+        // Product_{k=0}^{n-1} (x - k h), with h defaulting to 1. Only handled
+        // for a numeric (or absent) step h; a symbolic step is left to the
+        // caller since wolframscript's factored form uses a different Times
+        // ordering that Woxi's canonicalizer does not reproduce.
+        Expr::Integer(nn)
+          if *nn >= 0
+            && h.is_none_or(|e| {
+              crate::functions::predicate_ast::is_numeric_q(e)
+            }) =>
+        {
+          let nn = *nn as usize;
+          if nn == 0 {
+            return Some(mk_int(1));
+          }
+          let hexpr = h.cloned().unwrap_or_else(|| mk_int(1));
+          let factors: Vec<Expr> = (0..nn)
+            .map(|k| {
+              if k == 0 {
+                x.clone()
+              } else {
+                mk_plus(
+                  x.clone(),
+                  mk_times(mk_int(-(k as i128)), hexpr.clone()),
+                )
+              }
+            })
+            .collect();
+          Some(factors.into_iter().reduce(mk_times).unwrap_or(mk_int(1)))
+        }
+        // Symbolic n (2-argument form only): the Gamma-function ratio.
+        _ if h.is_none() => Some(mk_div(
+          mk_call("Gamma", vec![mk_plus(mk_int(1), x.clone())]),
+          mk_call(
+            "Gamma",
+            vec![mk_call(
+              "Plus",
+              vec![mk_int(1), mk_times(mk_int(-1), n.clone()), x.clone()],
+            )],
+          ),
+        )),
+        _ => None,
+      }
+    }
+
     // Beta[a, b] → Gamma[a] * Gamma[b] / Gamma[a + b]
     "Beta" if args.len() == 2 => {
       let a = &args[0];
