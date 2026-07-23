@@ -5465,6 +5465,52 @@ mod distribution_moments {
     );
   }
 
+  // Regression: symbolic Normal raw moments of order >= 5 previously returned 0
+  // (only orders 1..4 were templated). wolframscript factors out m for odd
+  // orders and leaves even orders expanded.
+  #[test]
+  fn normal_high_order_raw_moments() {
+    assert_eq!(
+      interpret("Moment[NormalDistribution[m, s], 5]").unwrap(),
+      "m*(m^4 + 10*m^2*s^2 + 15*s^4)"
+    );
+    assert_eq!(
+      interpret("Moment[NormalDistribution[m, s], 6]").unwrap(),
+      "m^6 + 15*m^4*s^2 + 45*m^2*s^4 + 15*s^6"
+    );
+    assert_eq!(
+      interpret("Moment[NormalDistribution[m, s], 7]").unwrap(),
+      "m*(m^6 + 21*m^4*s^2 + 105*m^2*s^4 + 105*s^6)"
+    );
+    assert_eq!(
+      interpret("Moment[NormalDistribution[m, s], 8]").unwrap(),
+      "m^8 + 28*m^6*s^2 + 210*m^4*s^4 + 420*m^2*s^6 + 105*s^8"
+    );
+  }
+
+  // The central moments (mean-independent) of order >= 6 were consequently
+  // wrong (0 for a zero mean); they are (n-1)!! s^n for even n.
+  #[test]
+  fn normal_high_order_central_moments() {
+    assert_eq!(
+      interpret("CentralMoment[NormalDistribution[m, s], 6]").unwrap(),
+      "15*s^6"
+    );
+    assert_eq!(
+      interpret("CentralMoment[NormalDistribution[0, s], 6]").unwrap(),
+      "15*s^6"
+    );
+    assert_eq!(
+      interpret("CentralMoment[NormalDistribution[m, s], 8]").unwrap(),
+      "105*s^8"
+    );
+    // Odd central moments vanish.
+    assert_eq!(
+      interpret("CentralMoment[NormalDistribution[m, s], 5]").unwrap(),
+      "0"
+    );
+  }
+
   // Skewness = m3 / m2^(3/2).
   #[test]
   fn skewness() {

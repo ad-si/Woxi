@@ -11358,7 +11358,56 @@ fn distribution_raw_moment(
             ),
             times(int(3), power(s.clone(), int(4))),
           )),
-          _ => None,
+          // General order: E[X^k] = Σ_{j even} C(k,j) (j-1)!! m^(k-j) s^j.
+          // wolframscript factors out m for odd k (every m-power is odd) and
+          // leaves even k expanded, e.g.
+          //   k=6 → m^6 + 15 m^4 s^2 + 45 m^2 s^4 + 15 s^6
+          //   k=5 → m (m^4 + 10 m^2 s^2 + 15 s^4).
+          _ => {
+            let odd = k % 2 == 1;
+            let mono = |c: i128, me: i128, se: i128| -> Expr {
+              let mut factors: Vec<Expr> = Vec::new();
+              if c != 1 {
+                factors.push(int(c));
+              }
+              match me {
+                0 => {}
+                1 => factors.push(m.clone()),
+                e => factors.push(power(m.clone(), int(e))),
+              }
+              match se {
+                0 => {}
+                1 => factors.push(s.clone()),
+                e => factors.push(power(s.clone(), int(e))),
+              }
+              match factors.len() {
+                0 => int(1),
+                1 => factors.pop().unwrap(),
+                _ => call("Times", factors),
+              }
+            };
+            let mut terms: Vec<Expr> = Vec::new();
+            let mut c_kj = 1i128; // C(k, j)
+            let mut fact2 = 1i128; // (j-1)!!, with (-1)!! = 1
+            let mut j = 0i128;
+            while j <= k {
+              if j != 0 {
+                c_kj = (c_kj * (k - j + 2)) / (j - 1);
+                c_kj = (c_kj * (k - j + 1)) / j;
+                fact2 *= j - 1;
+              }
+              let coeff = c_kj * fact2;
+              let m_exp = if odd { k - 1 - j } else { k - j };
+              terms.push(mono(coeff, m_exp, j));
+              j += 2;
+            }
+            let inner = if terms.len() == 1 {
+              terms.pop().unwrap()
+            } else {
+              call("Plus", terms)
+            };
+            Some(if odd { times(m.clone(), inner) } else { inner })
+          }
         };
       }
       // Numeric parameters: exact binomial sum over central moments
