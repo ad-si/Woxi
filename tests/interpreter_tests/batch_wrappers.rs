@@ -8558,6 +8558,35 @@ mod batch_unevaluated_wrappers_2 {
       "Piecewise[{{Erf[(t*x)/Sqrt[Pi]], x > 0}}, 0]"
     );
   }
+  // Raw moment E[x^k] = Pi^((k-1)/2) Gamma[(k+1)/2] / t^k, always a clean Pi
+  // power. Previously unevaluated for k >= 3.
+  #[test]
+  fn half_normal_distribution_moments() {
+    assert_eq!(
+      interpret("Moment[HalfNormalDistribution[t], 1]").unwrap(),
+      "t^(-1)"
+    );
+    assert_eq!(
+      interpret("Moment[HalfNormalDistribution[t], 2]").unwrap(),
+      "Pi/(2*t^2)"
+    );
+    assert_eq!(
+      interpret("Moment[HalfNormalDistribution[t], 3]").unwrap(),
+      "Pi/t^3"
+    );
+    assert_eq!(
+      interpret("Moment[HalfNormalDistribution[t], 4]").unwrap(),
+      "(3*Pi^2)/(4*t^4)"
+    );
+    assert_eq!(
+      interpret("Moment[HalfNormalDistribution[t], 5]").unwrap(),
+      "(2*Pi^2)/t^5"
+    );
+    assert_eq!(
+      interpret("Moment[HalfNormalDistribution[2], 2]").unwrap(),
+      "Pi/8"
+    );
+  }
 
   // PrincipalComponents
   #[test]

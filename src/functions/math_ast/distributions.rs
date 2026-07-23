@@ -3113,8 +3113,12 @@ pub fn expectation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // For LogNormal and Weibull, Var + Mean^2 does not simplify to the clean
     // closed-form second moment (E^(2 m + 2 s^2), b^2 Gamma[1 + 2/a]), so use
     // the raw-moment formula directly.
-    if matches!(dist_name, "LogNormalDistribution" | "WeibullDistribution")
-      && let Some(raw) = distribution_raw_moment(dist_name, dargs, 2)
+    if matches!(
+      dist_name,
+      "LogNormalDistribution"
+        | "WeibullDistribution"
+        | "HalfNormalDistribution"
+    ) && let Some(raw) = distribution_raw_moment(dist_name, dargs, 2)
     {
       return Ok(raw);
     }
@@ -11482,6 +11486,20 @@ fn distribution_raw_moment(
       } else {
         Some(result)
       }
+    }
+    // E[x^k] = Pi^((k-1)/2) Gamma[(k+1)/2] / t^k. The Pi^((k-1)/2) prefactor
+    // absorbs the Sqrt[Pi] from the Gamma, so the result is always a clean Pi
+    // power (no residual square root).
+    "HalfNormalDistribution" if dargs.len() == 1 => {
+      let t = dargs[0].clone();
+      let result = divide(
+        times(
+          power(pi(), divide(int(k - 1), int(2))),
+          call("Gamma", vec![divide(int(k + 1), int(2))]),
+        ),
+        power(t, int(k)),
+      );
+      eval(result).ok()
     }
     // E[x^k] = Sum[StirlingS2[k, j]*mu^j] (Touchard polynomial)
     "PoissonDistribution" if dargs.len() == 1 => {
