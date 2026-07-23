@@ -8870,6 +8870,51 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // InverseGammaRegularized[a, q] has a real solution only for q in [0, 1]
+  // (the range of GammaRegularized). Regression: an inexact q outside that
+  // range used to return a spurious 0. (q > 1) or Infinity (q < 0) instead of
+  // staying unevaluated, and an inexact q == 1 returned the exact integer 0.
+  #[test]
+  fn inverse_gamma_regularized_q_above_one_unevaluated() {
+    assert_eq!(
+      interpret("InverseGammaRegularized[0.5, 2]").unwrap(),
+      "InverseGammaRegularized[0.5, 2]"
+    );
+    assert_eq!(
+      interpret("InverseGammaRegularized[3, 1.5]").unwrap(),
+      "InverseGammaRegularized[3, 1.5]"
+    );
+  }
+
+  #[test]
+  fn inverse_gamma_regularized_q_below_zero_unevaluated() {
+    assert_eq!(
+      interpret("InverseGammaRegularized[2, -0.5]").unwrap(),
+      "InverseGammaRegularized[2, -0.5]"
+    );
+  }
+
+  #[test]
+  fn inverse_gamma_regularized_a_one_out_of_range_unevaluated() {
+    assert_eq!(
+      interpret("InverseGammaRegularized[1, 2.0]").unwrap(),
+      "InverseGammaRegularized[1, 2.]"
+    );
+  }
+
+  #[test]
+  fn inverse_gamma_regularized_inexact_one_boundary_is_real() {
+    assert_eq!(
+      interpret("InverseGammaRegularized[2.0, 1.0]").unwrap(),
+      "0."
+    );
+  }
+
+  #[test]
+  fn inverse_gamma_regularized_exact_one_boundary_is_integer() {
+    assert_eq!(interpret("InverseGammaRegularized[2, 1]").unwrap(), "0");
+  }
+
   // ResetDirectory
   #[test]
   fn reset_directory_restores_previous() {

@@ -2175,14 +2175,26 @@ pub fn inverse_gamma_regularized_ast(
   let q_num = expr_to_f64(q);
 
   // Boundary values for positive numeric a: q == 0 -> Infinity, q == 1 -> 0.
+  // `Q(a, z) = GammaRegularized[a, z]` ranges over [0, 1] for positive a, so an
+  // inexact target strictly outside [0, 1] has no real solution — like
+  // wolframscript, stay unevaluated rather than returning a spurious
+  // 0./Infinity. (An inexact q == 1 yields the machine real `0.`, not `0`.)
   if let (Some(av), Some(qv)) = (a_num, q_num)
     && av > 0.0
   {
+    let inexact = matches!(a, Expr::Real(_)) || matches!(q, Expr::Real(_));
     if qv == 0.0 {
       return Ok(Expr::Identifier("Infinity".to_string()));
     }
     if qv == 1.0 {
-      return Ok(Expr::Integer(0));
+      return Ok(if inexact {
+        Expr::Real(0.0)
+      } else {
+        Expr::Integer(0)
+      });
+    }
+    if inexact && !(0.0..=1.0).contains(&qv) {
+      return symbolic();
     }
   }
 
