@@ -7072,6 +7072,19 @@ mod characteristic_function {
     );
   }
 
+  // Gumbel CF is E^(I a t) Gamma[1 + I b t].
+  #[test]
+  fn gumbel() {
+    assert_eq!(
+      interpret("CharacteristicFunction[GumbelDistribution[a, b], t]").unwrap(),
+      "E^(I*a*t)*Gamma[1 + I*b*t]"
+    );
+    assert_eq!(
+      interpret("CharacteristicFunction[GumbelDistribution[0, 1], t]").unwrap(),
+      "Gamma[1 + I*t]"
+    );
+  }
+
   #[test]
   fn discrete_distributions() {
     assert_eq!(
@@ -7216,6 +7229,21 @@ mod moment_generating_function {
       interpret("MomentGeneratingFunction[GammaDistribution[a, b], t]")
         .unwrap(),
       "(1 - b*t)^(-a)"
+    );
+  }
+
+  // Gumbel MGF is E^(a t) Gamma[1 + b t].
+  #[test]
+  fn gumbel() {
+    assert_eq!(
+      interpret("MomentGeneratingFunction[GumbelDistribution[a, b], t]")
+        .unwrap(),
+      "E^(a*t)*Gamma[1 + b*t]"
+    );
+    assert_eq!(
+      interpret("MomentGeneratingFunction[GumbelDistribution[1, 2], t]")
+        .unwrap(),
+      "E^t*Gamma[1 + 2*t]"
     );
   }
 

@@ -7943,6 +7943,26 @@ pub fn characteristic_function_ast(
       ),
       true,
     )),
+    // E^(I*a*t)*Gamma[1 + I*b*t]
+    ("GumbelDistribution", [a, b]) => Some((
+      call(
+        "Times",
+        vec![
+          e_it(vec![a.clone()]),
+          call(
+            "Gamma",
+            vec![call(
+              "Plus",
+              vec![
+                Expr::Integer(1),
+                call("Times", vec![i_unit(), b.clone(), t.clone()]),
+              ],
+            )],
+          ),
+        ],
+      ),
+      true,
+    )),
     // (1 - I*b*t)^(-a) — raw: the evaluator's canonical Times order
     // would print b*I*t
     ("GammaDistribution", [a, b]) => Some((
@@ -8329,6 +8349,23 @@ pub fn moment_generating_function_ast(
           ],
         ),
         neg(a.clone()),
+      ),
+      true,
+    )),
+    // E^(a*t)*Gamma[1 + b*t]
+    ("GumbelDistribution", [a, b]) => Some((
+      call(
+        "Times",
+        vec![
+          e_t(vec![a.clone()]),
+          call(
+            "Gamma",
+            vec![call(
+              "Plus",
+              vec![Expr::Integer(1), call("Times", vec![b.clone(), t.clone()])],
+            )],
+          ),
+        ],
       ),
       true,
     )),
