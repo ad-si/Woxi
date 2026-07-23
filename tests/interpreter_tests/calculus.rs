@@ -1805,6 +1805,61 @@ mod differentiate_plus_times {
   }
 }
 
+mod differentiate_piecewise {
+  use super::*;
+
+  // D[Piecewise[...]] differentiates each piece value, keeps the condition, and
+  // sets the default to Indeterminate (the derivative is undefined at the piece
+  // boundaries). Regression: this used to emit a Derivative[1, 0][Piecewise]
+  // mess from the generic chain rule.
+  #[test]
+  fn multi_piece_covering() {
+    assert_eq!(
+      interpret("D[Piecewise[{{x^2, x < 0}, {x, x > 0}}], x]").unwrap(),
+      "Piecewise[{{2*x, x < 0}, {1, x > 0}}, Indeterminate]"
+    );
+  }
+
+  #[test]
+  fn explicit_default_ignored() {
+    assert_eq!(
+      interpret("D[Piecewise[{{x^2, x < 0}, {Sin[x], x > 0}}, x^3], x]")
+        .unwrap(),
+      "Piecewise[{{2*x, x < 0}, {Cos[x], x > 0}}, Indeterminate]"
+    );
+  }
+
+  #[test]
+  fn symbolic_coefficients() {
+    assert_eq!(
+      interpret("D[Piecewise[{{a x^2, x < 0}, {b x, x > 0}}], x]").unwrap(),
+      "Piecewise[{{2*a*x, x < 0}, {b, x > 0}}, Indeterminate]"
+    );
+  }
+
+  // Inclusive boundaries (<=, >=) tighten to strict (<, >) since the boundary
+  // point falls to the Indeterminate default.
+  #[test]
+  fn inclusive_boundary_tightened() {
+    assert_eq!(
+      interpret("D[Piecewise[{{Cos[x], x < 0}, {x^3, x >= 0}}], x]").unwrap(),
+      "Piecewise[{{-Sin[x], x < 0}, {3*x^2, x > 0}}, Indeterminate]"
+    );
+    assert_eq!(
+      interpret("D[Piecewise[{{x^2, x <= 0}, {x, x > 0}}], x]").unwrap(),
+      "Piecewise[{{2*x, x < 0}, {1, x > 0}}, Indeterminate]"
+    );
+  }
+
+  #[test]
+  fn second_derivative() {
+    assert_eq!(
+      interpret("D[Piecewise[{{x^2, x < 0}, {x, x > 0}}], {x, 2}]").unwrap(),
+      "Piecewise[{{2, x < 0}, {0, x > 0}}, Indeterminate]"
+    );
+  }
+}
+
 mod differentiate_nonconstants {
   use super::*;
 

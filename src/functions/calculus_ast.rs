@@ -1998,6 +1998,42 @@ fn parse_stringified_derivative_head(
   Some((indices.ok()?, fname.to_string()))
 }
 
+/// In the derivative of a `Piecewise`, each piece boundary becomes a point of
+/// non-differentiability that falls to the `Indeterminate` default, so an
+/// inclusive comparison (`x <= 0`, `x >= 0`) is tightened to its strict form
+/// (`x < 0`, `x > 0`) — matching wolframscript. Only bare two-operand
+/// comparisons are rewritten; compound/other conditions are left untouched.
+fn strip_piecewise_condition_boundary(cond: &Expr) -> Expr {
+  match cond {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operators.len() == 1 => {
+      let new_op = match operators[0] {
+        ComparisonOp::LessEqual => ComparisonOp::Less,
+        ComparisonOp::GreaterEqual => ComparisonOp::Greater,
+        other => other,
+      };
+      Expr::Comparison {
+        operands: operands.clone(),
+        operators: vec![new_op],
+      }
+    }
+    Expr::FunctionCall { name, args } if args.len() == 2 => {
+      let new_name = match name.as_str() {
+        "LessEqual" => "Less",
+        "GreaterEqual" => "Greater",
+        _ => return cond.clone(),
+      };
+      Expr::FunctionCall {
+        name: new_name.to_string(),
+        args: args.clone(),
+      }
+    }
+    _ => cond.clone(),
+  }
+}
+
 fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
   match expr {
     // Constants
@@ -2246,6 +2282,52 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             diffed.push(differentiate(a, var)?);
           }
           Ok(Expr::List(diffed.into()))
+        }
+        // `Piecewise[{{v_i, c_i}, …}, default]` differentiates value-by-value:
+        // each piece keeps its condition with the value differentiated, and the
+        // default becomes `Indeterminate` (the derivative is undefined at the
+        // piece boundaries). Without this the generic chain rule emits a
+        // `Derivative[1, 0][Piecewise][…]` mess. This matches wolframscript for
+        // the common multi-piece form whose conditions cover the line except at
+        // isolated boundary points; wolframscript's finer default handling
+        // (keeping D[default] for a single-piece continuous default, or
+        // splitting a discontinuous default region) is not reproduced.
+        "Piecewise" if !args.is_empty() => {
+          if let Expr::List(pieces) = &args[0] {
+            let mut diffed_pieces: Vec<Expr> = Vec::with_capacity(pieces.len());
+            for piece in pieces.iter() {
+              if let Expr::List(pair) = piece
+                && pair.len() == 2
+              {
+                let dval = differentiate(&pair[0], var)?;
+                diffed_pieces.push(Expr::List(
+                  vec![dval, strip_piecewise_condition_boundary(&pair[1])]
+                    .into(),
+                ));
+              } else {
+                // Unexpected piece shape — fall back to unevaluated D[…].
+                return Ok(Expr::FunctionCall {
+                  name: "D".to_string(),
+                  args: vec![expr.clone(), Expr::Identifier(var.to_string())]
+                    .into(),
+                });
+              }
+            }
+            Ok(Expr::FunctionCall {
+              name: "Piecewise".to_string(),
+              args: vec![
+                Expr::List(diffed_pieces.into()),
+                Expr::Identifier("Indeterminate".to_string()),
+              ]
+              .into(),
+            })
+          } else {
+            Ok(Expr::FunctionCall {
+              name: "D".to_string(),
+              args: vec![expr.clone(), Expr::Identifier(var.to_string())]
+                .into(),
+            })
+          }
         }
         // SeriesData[var, x0, {coeffs}, nmin, nmax, denom]: differentiate
         // element-wise through the coefficient list and, when the center
