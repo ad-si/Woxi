@@ -855,6 +855,7 @@ pub fn quantile_distribution_closed_form(
     | "PascalDistribution"
     | "BetaBinomialDistribution"
     | "WaringYuleDistribution"
+    | "BenfordDistribution"
     | "BernoulliDistribution"
     | "DiscreteUniformDistribution" => {
       quantile_discrete(dist_name, dargs, q, q_num)
@@ -993,6 +994,10 @@ fn discrete_support(
     }
     // One-argument Yule distribution: unbounded support 0..∞.
     "WaringYuleDistribution" if dargs.len() == 1 => Some((0, None)),
+    // BenfordDistribution[b] ranges over the leading digits 1..b-1.
+    "BenfordDistribution" if dargs.len() == 1 => {
+      Some((1, Some(as_int(&dargs[0])? - 1)))
+    }
     "BernoulliDistribution" if dargs.len() == 1 => Some((0, Some(1))),
     "DiscreteUniformDistribution" if dargs.len() == 1 => match &dargs[0] {
       Expr::List(b) if b.len() == 2 => {

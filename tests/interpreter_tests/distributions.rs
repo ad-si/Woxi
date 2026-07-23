@@ -5101,6 +5101,38 @@ mod benford_distribution {
     );
   }
 
+  // Quantile is the smallest leading digit k with CDF(k) >= q; Median is the
+  // 1/2 quantile. Support is the finite range 1..b-1.
+  #[test]
+  fn quantile_and_median() {
+    assert_eq!(
+      interpret("Quantile[BenfordDistribution[10], 1/2]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("Quantile[BenfordDistribution[10], 1/4]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Quantile[BenfordDistribution[10], 99/100]").unwrap(),
+      "9"
+    );
+    assert_eq!(interpret("Median[BenfordDistribution[10]]").unwrap(), "3");
+    assert_eq!(
+      interpret("Quantile[BenfordDistribution[16], 1/2]").unwrap(),
+      "3"
+    );
+    // q = 0 gives the support minimum 1; q = 1 gives the top digit b - 1.
+    assert_eq!(
+      interpret("Quantile[BenfordDistribution[10], 0]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Quantile[BenfordDistribution[10], 1]").unwrap(),
+      "9"
+    );
+  }
+
   #[test]
   fn distribution_object_stays_symbolic() {
     assert_eq!(
