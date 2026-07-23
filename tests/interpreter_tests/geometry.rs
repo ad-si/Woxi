@@ -798,6 +798,52 @@ mod prism_pyramid {
     assert_eq!(interpret("RegionDimension[Prism[]]").unwrap(), "3");
     assert_eq!(interpret("RegionDimension[Pyramid[]]").unwrap(), "3");
   }
+
+  // Prism centroid is the mean of the six vertices.
+  #[test]
+  fn prism_centroid() {
+    assert_eq!(
+      interpret("RegionCentroid[Prism[]]").unwrap(),
+      "{1/3, 1/3, 1/2}"
+    );
+    assert_eq!(
+      interpret(
+        "RegionCentroid[Prism[{{0,0,0},{2,0,0},{0,2,0},{0,0,3},{2,0,3},{0,2,3}}]]"
+      )
+      .unwrap(),
+      "{2/3, 2/3, 3/2}"
+    );
+  }
+
+  // Pyramid centroid sits 1/4 of the way from the base area-centroid to the
+  // apex.
+  #[test]
+  fn pyramid_centroid_square_base() {
+    assert_eq!(
+      interpret("RegionCentroid[Pyramid[]]").unwrap(),
+      "{0, 0, 1/4}"
+    );
+    assert_eq!(
+      interpret(
+        "RegionCentroid[Pyramid[{{0,0,0},{2,0,0},{2,2,0},{0,2,0},{1,1,4}}]]"
+      )
+      .unwrap(),
+      "{1, 1, 1}"
+    );
+  }
+
+  // A non-parallelogram (trapezoid) base exercises the area-weighted base
+  // centroid rather than a plain vertex mean.
+  #[test]
+  fn pyramid_centroid_trapezoid_base() {
+    assert_eq!(
+      interpret(
+        "RegionCentroid[Pyramid[{{0,0,0},{4,0,0},{3,2,0},{1,2,0},{2,1,6}}]]"
+      )
+      .unwrap(),
+      "{2, 11/12, 3/2}"
+    );
+  }
 }
 
 mod region_measure {

@@ -8663,6 +8663,97 @@ fn pyramid_volume(pts: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
   Some(crate::evaluator::evaluate_expr_to_expr(&vol))
 }
 
+/// Centroid of a translational triangular Prism[{p1, …, p6}] — the mean of the
+/// six vertices (equivalently the midpoint of the two triangle centroids).
+fn prism_centroid(pts: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
+  if pts.len() != 6 || !pts.iter().all(|p| as_pt3(p).is_some()) {
+    return None;
+  }
+  let mean = Expr::FunctionCall {
+    name: "Mean".to_string(),
+    args: vec![Expr::List(pts.to_vec().into())].into(),
+  };
+  Some(crate::evaluator::evaluate_expr_to_expr(&mean))
+}
+
+/// Centroid of a square Pyramid[{p1, …, p4, apex}]: it sits one quarter of the
+/// way from the (area) centroid of the quadrilateral base toward the apex,
+/// i.e. (3 base_centroid + apex)/4. The base centroid is the area-weighted
+/// average of the two fan triangles, with weights proportional to their signed
+/// areas along the base normal (so it is exact for any planar quadrilateral,
+/// convex or not).
+fn pyramid_centroid(pts: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
+  if pts.len() != 5 {
+    return None;
+  }
+  let c: Vec<Vec<Expr>> = pts.iter().map(as_pt3).collect::<Option<_>>()?;
+  let cross = |a: Expr, b: Expr| Expr::FunctionCall {
+    name: "Cross".to_string(),
+    args: vec![a, b].into(),
+  };
+  let dot = |a: Expr, b: Expr| Expr::FunctionCall {
+    name: "Dot".to_string(),
+    args: vec![a, b].into(),
+  };
+  let edge = |i: usize| coord_vec_sub(&c[i], &c[0]);
+  // Fixed (unnormalized) base normal; common factors cancel in the ratio.
+  let normal = cross(edge(1), edge(2));
+  // Fan the quadrilateral base (indices 0,1,2,3) from vertex 0.
+  let tris = [(1usize, 2usize), (2usize, 3usize)];
+  let mut num_terms: Vec<Expr> = Vec::new();
+  let mut weight_terms: Vec<Expr> = Vec::new();
+  for (i, j) in tris {
+    let w = dot(cross(edge(i), edge(j)), normal.clone());
+    let centroid = binop(
+      BinaryOperator::Divide,
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          Expr::List(c[0].clone().into()),
+          Expr::List(c[i].clone().into()),
+          Expr::List(c[j].clone().into()),
+        ]
+        .into(),
+      },
+      Expr::Integer(3),
+    );
+    num_terms.push(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![w.clone(), centroid].into(),
+    });
+    weight_terms.push(w);
+  }
+  let base_centroid = binop(
+    BinaryOperator::Divide,
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: num_terms.into(),
+    },
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: weight_terms.into(),
+    },
+  );
+  // (3 base_centroid + apex) / 4.
+  let apex = Expr::List(c[4].clone().into());
+  let centroid = binop(
+    BinaryOperator::Divide,
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(3), base_centroid].into(),
+        },
+        apex,
+      ]
+      .into(),
+    },
+    Expr::Integer(4),
+  );
+  Some(crate::evaluator::evaluate_expr_to_expr(&centroid))
+}
+
 /// If `pts` are `n` coordinate vectors each of length `n-1` (a full-dimensional
 /// simplex in its own space), return the `n-1` edge vectors from the first
 /// vertex; otherwise None.
@@ -11788,6 +11879,23 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
             args: vec![args[0].clone()].into(),
           };
           return crate::evaluator::evaluate_expr_to_expr(&mean);
+        }
+        unevaluated()
+      }
+      // Prism / Pyramid region primitives.
+      "Prism" => {
+        if let Some(pts) = prism_pts(args)
+          && let Some(result) = prism_centroid(&pts)
+        {
+          return result;
+        }
+        unevaluated()
+      }
+      "Pyramid" => {
+        if let Some(pts) = pyramid_pts(args)
+          && let Some(result) = pyramid_centroid(&pts)
+        {
+          return result;
         }
         unevaluated()
       }
