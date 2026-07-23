@@ -10882,6 +10882,29 @@ mod function_expand {
     );
   }
 
+  // Multinomial[a1, …, ak] → Gamma[1 + Σ ai] / ∏ Gamma[1 + ai].
+  #[test]
+  fn multinomial_symbolic() {
+    assert_eq!(
+      interpret("FunctionExpand[Multinomial[a, b, c]]").unwrap(),
+      "Gamma[1 + a + b + c]/(Gamma[1 + a]*Gamma[1 + b]*Gamma[1 + c])"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Multinomial[a, b]]").unwrap(),
+      "Gamma[1 + a + b]/(Gamma[1 + a]*Gamma[1 + b])"
+    );
+  }
+
+  // A single argument collapses to 1; all-integer arguments evaluate directly.
+  #[test]
+  fn multinomial_edge_cases() {
+    assert_eq!(interpret("FunctionExpand[Multinomial[n]]").unwrap(), "1");
+    assert_eq!(
+      interpret("FunctionExpand[Multinomial[2, 3]]").unwrap(),
+      "10"
+    );
+  }
+
   #[test]
   fn binomial_n_2() {
     assert_eq!(

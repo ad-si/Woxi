@@ -264,6 +264,19 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       Some(mk_call("Gamma", vec![mk_plus(mk_int(1), args[0].clone())]))
     }
 
+    // Multinomial[a1, …, ak] = (a1 + … + ak)! / (a1! ⋯ ak!) →
+    //   Gamma[1 + a1 + … + ak] / (Gamma[1 + a1] ⋯ Gamma[1 + ak]).
+    "Multinomial" if !args.is_empty() => {
+      let sum = mk_call("Plus", args.to_vec());
+      let numerator = mk_call("Gamma", vec![mk_plus(mk_int(1), sum)]);
+      let denominator = args
+        .iter()
+        .map(|a| mk_call("Gamma", vec![mk_plus(mk_int(1), a.clone())]))
+        .reduce(mk_times)
+        .unwrap_or_else(|| mk_int(1));
+      Some(mk_div(numerator, denominator))
+    }
+
     // Binomial[n, k]: a specific integer k expands to a polynomial; an
     // otherwise symbolic k expands to the Gamma-function form
     //   Gamma[1 + n] / (Gamma[1 + k] * Gamma[1 - k + n]).
