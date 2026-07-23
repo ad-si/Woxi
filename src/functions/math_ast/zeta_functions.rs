@@ -21,7 +21,7 @@ fn contains_float(expr: &Expr) -> bool {
 /// Zeta[s, a] - Hurwitz zeta function
 pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 2 {
-    return hurwitz_zeta_ast(&args[0], &args[1], args);
+    return hurwitz_zeta_ast_inner(&args[0], &args[1], args);
   }
 
   // Zeta[ZetaZero[k]] = 0 (by definition of the non-trivial zeros), but only
@@ -124,9 +124,7 @@ pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// `Zeta[s, a]` uses an analytic continuation that stays finite. For s <= 0
 /// both reduce to the same Bernoulli-polynomial value, so we delegate to the
 /// existing two-argument Zeta evaluation in every non-pole case.
-pub fn hurwitz_zeta_public_ast(
-  args: &[Expr],
-) -> Result<Expr, InterpreterError> {
+pub fn hurwitz_zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("HurwitzZeta", args));
   if args.len() != 2 {
     return unevaluated();
@@ -158,7 +156,7 @@ pub fn hurwitz_zeta_public_ast(
   Ok(result)
 }
 
-fn hurwitz_zeta_ast(
+fn hurwitz_zeta_ast_inner(
   s_expr: &Expr,
   a_expr: &Expr,
   args: &[Expr],
@@ -233,7 +231,7 @@ fn hurwitz_zeta_ast(
     let m = (p - 1) / q; // integer steps down to r in (0, 1]
     let r_p = p - m * q; // reduced numerator, 1 <= r_p < q
     let reduced_a = make_rational(r_p, q);
-    let base = hurwitz_zeta_ast(
+    let base = hurwitz_zeta_ast_inner(
       s_expr,
       &reduced_a,
       &[s_expr.clone(), reduced_a.clone()],
@@ -1018,10 +1016,8 @@ pub fn polygamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && n >= 1
         && n % 2 == 1 =>
     {
-      let hz = hurwitz_zeta_public_ast(&[
-        Expr::Integer((n + 1) as i128),
-        z_expr.clone(),
-      ])?;
+      let hz =
+        hurwitz_zeta_ast(&[Expr::Integer((n + 1) as i128), z_expr.clone()])?;
       // n! (the sign factor is +1 for odd n). Keep the product un-distributed
       // so e.g. PolyGamma[3, 3/2] prints 6*(-16 + Pi^4/6) like wolframscript.
       let factorial: i128 = (1..=n as i128).product();

@@ -556,7 +556,7 @@ fn is_identifier_like(s: &str) -> bool {
   }
 }
 
-pub fn evaluate_function_call_ast_inner(
+fn evaluate_function_call_ast_inner(
   name: &str,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
