@@ -3110,6 +3110,14 @@ pub fn expectation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Check if expr is x^2 (E[x^2] = Var + Mean^2)
   if is_power_of_var(expr, &var_name, 2) {
+    // For LogNormal and Weibull, Var + Mean^2 does not simplify to the clean
+    // closed-form second moment (E^(2 m + 2 s^2), b^2 Gamma[1 + 2/a]), so use
+    // the raw-moment formula directly.
+    if matches!(dist_name, "LogNormalDistribution" | "WeibullDistribution")
+      && let Some(raw) = distribution_raw_moment(dist_name, dargs, 2)
+    {
+      return Ok(raw);
+    }
     let result = plus(variance.clone(), power(mean.clone(), int(2)));
     return eval(result);
   }
@@ -11447,6 +11455,28 @@ fn distribution_raw_moment(
       }
       factors.push(power(b.clone(), int(k)));
       let result = call("Times", factors);
+      if numeric(&a) && numeric(&b) {
+        eval(result).ok()
+      } else {
+        Some(result)
+      }
+    }
+    // E[x^k] = E^(k m + k^2 s^2 / 2)
+    "LogNormalDistribution" if dargs.len() == 2 => {
+      let (m, s) = (dargs[0].clone(), dargs[1].clone());
+      let exponent = plus(
+        times(int(k), m),
+        divide(times(int(k * k), power(s, int(2))), int(2)),
+      );
+      eval(power(e(), exponent)).ok()
+    }
+    // E[x^k] = b^k Gamma[1 + k/a]
+    "WeibullDistribution" if dargs.len() == 2 => {
+      let (a, b) = (dargs[0].clone(), dargs[1].clone());
+      let result = times(
+        power(b.clone(), int(k)),
+        call("Gamma", vec![plus(int(1), divide(int(k), a.clone()))]),
+      );
       if numeric(&a) && numeric(&b) {
         eval(result).ok()
       } else {

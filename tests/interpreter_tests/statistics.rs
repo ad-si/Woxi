@@ -3370,6 +3370,53 @@ mod lognormal_distribution {
       "E^(2*mu + sigma^2)*(-1 + E^sigma^2)"
     );
   }
+
+  // Raw moment E[x^k] = E^(k m + k^2 s^2 / 2). Previously unevaluated (order
+  // >= 3) or left as the unsimplified Var + Mean^2 (order 2).
+  #[test]
+  fn raw_moments() {
+    assert_eq!(
+      interpret("Moment[LogNormalDistribution[m, s], 2]").unwrap(),
+      "E^(2*m + 2*s^2)"
+    );
+    assert_eq!(
+      interpret("Moment[LogNormalDistribution[m, s], 3]").unwrap(),
+      "E^(3*m + (9*s^2)/2)"
+    );
+    assert_eq!(
+      interpret("Moment[LogNormalDistribution[m, s], 4]").unwrap(),
+      "E^(4*m + 8*s^2)"
+    );
+    assert_eq!(
+      interpret("Moment[LogNormalDistribution[0, 1], 2]").unwrap(),
+      "E^2"
+    );
+  }
+}
+
+mod weibull_moments {
+  use super::*;
+
+  // Raw moment E[x^k] = b^k Gamma[1 + k/a].
+  #[test]
+  fn raw_moments() {
+    assert_eq!(
+      interpret("Moment[WeibullDistribution[a, b], 2]").unwrap(),
+      "b^2*Gamma[1 + 2/a]"
+    );
+    assert_eq!(
+      interpret("Moment[WeibullDistribution[a, b], 3]").unwrap(),
+      "b^3*Gamma[1 + 3/a]"
+    );
+    assert_eq!(
+      interpret("Moment[WeibullDistribution[a, b], 1]").unwrap(),
+      "b*Gamma[1 + a^(-1)]"
+    );
+    assert_eq!(
+      interpret("Moment[WeibullDistribution[2, 1], 2]").unwrap(),
+      "1"
+    );
+  }
 }
 
 mod chi_square_distribution {
