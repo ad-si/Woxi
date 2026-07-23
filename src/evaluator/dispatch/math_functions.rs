@@ -5732,6 +5732,18 @@ pub fn dispatch_math_functions(
   None
 }
 
+/// The value `1` for a q-series (QGamma/QFactorial) that collapses to unity,
+/// carried at the precision of `q`: an inexact (machine-real) `q` yields the
+/// machine real `1.`, matching wolframscript's numeric contagion, whereas an
+/// exact `q` (integer/rational/symbolic) yields the exact integer `1`.
+fn q_one(q_expr: &Expr) -> Expr {
+  if matches!(q_expr, Expr::Real(_)) {
+    Expr::Real(1.0)
+  } else {
+    Expr::Integer(1)
+  }
+}
+
 /// QGamma[z, q] — the q-gamma function. For a positive integer first argument
 /// `n`, `QGamma[n, q] = QFactorial[n-1, q] = ∏_{i=1}^{n-1} [i]_q`. Non-positive
 /// integers are poles (ComplexInfinity). With a numeric `q` the exact value is
@@ -5757,7 +5769,8 @@ fn qgamma_ast(z_expr: &Expr, q_expr: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier("ComplexInfinity".to_string()));
   }
   if n == 1 {
-    return Ok(Expr::Integer(1));
+    // QGamma[1, q] = 1, but an inexact (machine-real) q yields an inexact 1.
+    return Ok(q_one(q_expr));
   }
 
   // Numeric q: reuse the exact q-factorial of n-1.
@@ -6009,7 +6022,8 @@ fn qfactorial_ast(
   };
 
   if n == 0 || n == 1 {
-    return Ok(Expr::Integer(1));
+    // [0]_q! = [1]_q! = 1, but an inexact (machine-real) q yields an inexact 1.
+    return Ok(q_one(q_expr));
   }
 
   // When q is symbolic (not a numeric value), match wolframscript and keep

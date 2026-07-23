@@ -5057,6 +5057,40 @@ mod qfactorial {
     assert_eq!(interpret("QFactorial[3, 1/2]").unwrap(), "21/8");
   }
 
+  // An inexact (machine-real) q makes the collapsed value `1` inexact too,
+  // matching wolframscript's numeric contagion. Regression: these used to
+  // return the exact integer `1`.
+  #[test]
+  fn zero_real_q_is_real() {
+    assert_eq!(interpret("QFactorial[0, 0.5]").unwrap(), "1.");
+  }
+
+  #[test]
+  fn one_real_q_is_real() {
+    assert_eq!(interpret("QFactorial[1, 0.5]").unwrap(), "1.");
+  }
+
+  #[test]
+  fn qgamma_two_real_q_is_real() {
+    assert_eq!(interpret("QGamma[2, 0.5]").unwrap(), "1.");
+  }
+
+  #[test]
+  fn qgamma_one_real_q_is_real() {
+    assert_eq!(interpret("QGamma[1, 0.5]").unwrap(), "1.");
+  }
+
+  // Exact rational q keeps the value exact.
+  #[test]
+  fn qgamma_two_rational_q_is_exact() {
+    assert_eq!(interpret("QGamma[2, 1/2]").unwrap(), "1");
+  }
+
+  #[test]
+  fn qgamma_three_real_q() {
+    assert_eq!(interpret("QGamma[3, 0.5]").unwrap(), "1.5");
+  }
+
   #[test]
   fn four_half() {
     assert_eq!(interpret("QFactorial[4, 1/2]").unwrap(), "315/64");
