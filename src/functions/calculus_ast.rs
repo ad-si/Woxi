@@ -1053,6 +1053,57 @@ fn try_definite_integral(
     return Some(result);
   }
 
+  // Definite integral of Abs of a linear argument. The continuous antiderivative
+  // of |u| for u = a*var + b (a a non-zero constant) is u*Abs[u]/(2 a), so
+  //   ∫_lo^hi |u| dvar = F(hi) - F(lo).
+  // Restricted to finite numeric bounds; symbolic bounds return a conditional in
+  // wolframscript, which is out of scope here.
+  if let Expr::FunctionCall { name, args } = integrand
+    && name == "Abs"
+    && args.len() == 1
+    && is_finite_real_number(lo)
+    && is_finite_real_number(hi)
+    && let Ok(slope) = differentiate(&args[0], var)
+  {
+    let slope = crate::evaluator::evaluate_expr_to_expr(&simplify(slope))
+      .unwrap_or(Expr::Integer(0));
+    let slope_is_zero = matches!(&slope, Expr::Integer(0))
+      || matches!(&slope, Expr::Real(f) if *f == 0.0);
+    if !contains_var(&slope, var) && !slope_is_zero {
+      let u = args[0].clone();
+      let abs_u = Expr::FunctionCall {
+        name: "Abs".to_string(),
+        args: vec![u.clone()].into(),
+      };
+      // u * Abs[u] / (2 a)
+      let antideriv = Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(u),
+          right: Box::new(abs_u),
+        }),
+        right: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(2)),
+          right: Box::new(slope),
+        }),
+      };
+      let at_hi = crate::syntax::substitute_variable(&antideriv, var, hi);
+      let at_lo = crate::syntax::substitute_variable(&antideriv, var, lo);
+      let at_hi = crate::evaluator::evaluate_expr_to_expr(&at_hi).ok()?;
+      let at_lo = crate::evaluator::evaluate_expr_to_expr(&at_lo).ok()?;
+      let result = Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(at_hi),
+        right: Box::new(at_lo),
+      };
+      return Some(
+        crate::evaluator::evaluate_expr_to_expr(&result).unwrap_or(result),
+      );
+    }
+  }
+
   // DiracDelta sifting property:
   //   ∫_lo^hi g(x) DiracDelta[c x + d] dx = g(x0)/|c|  when lo < x0 < hi,
   // 0 when x0 is strictly outside [lo, hi], g(x0)/|c| * HeavisideTheta[0] when
@@ -10814,6 +10865,12 @@ fn expr_to_abs_int(expr: &Expr) -> Option<i128> {
 /// Cheap test: does `expr` mention `var_name` anywhere?
 fn contains_var(expr: &Expr, var_name: &str) -> bool {
   !is_constant_wrt(expr, var_name)
+}
+
+/// Whether `expr` is a finite real number literal (integer, rational, or real).
+fn is_finite_real_number(expr: &Expr) -> bool {
+  matches!(expr, Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_))
+    || matches!(expr, Expr::FunctionCall { name, .. } if name == "Rational")
 }
 
 /// Structurally determine whether `expr` diverges to +Infinity (`Some(1)`) or

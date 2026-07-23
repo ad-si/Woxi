@@ -900,6 +900,29 @@ mod integrate_with_sum {
 mod definite_integrals {
   use super::*;
 
+  // Definite integral of Abs of a linear argument, via the continuous
+  // antiderivative u*Abs[u]/(2 u').
+  #[test]
+  fn abs_linear() {
+    // Interval straddling the sign change at 0.
+    assert_eq!(interpret("Integrate[Abs[x], {x, -1, 1}]").unwrap(), "1");
+    assert_eq!(interpret("Integrate[Abs[x], {x, -2, 3}]").unwrap(), "13/2");
+    // Wholly positive / wholly negative sub-intervals.
+    assert_eq!(interpret("Integrate[Abs[x], {x, 0, 2}]").unwrap(), "2");
+    assert_eq!(interpret("Integrate[Abs[x], {x, 1, 3}]").unwrap(), "4");
+    assert_eq!(interpret("Integrate[Abs[x], {x, -3, -1}]").unwrap(), "4");
+    assert_eq!(interpret("Integrate[Abs[x], {x, 1/2, 2}]").unwrap(), "15/8");
+    // Shifted and scaled arguments.
+    assert_eq!(
+      interpret("Integrate[Abs[x - 1], {x, 0, 3}]").unwrap(),
+      "5/2"
+    );
+    assert_eq!(
+      interpret("Integrate[Abs[2 x + 1], {x, -2, 2}]").unwrap(),
+      "17/2"
+    );
+  }
+
   #[test]
   fn log_sin_over_half_period() {
     // Euler: ∫_0^{π/2} Log[Sin[x]] dx = -(π Log[2])/2
