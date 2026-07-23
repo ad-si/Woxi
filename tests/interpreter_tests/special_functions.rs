@@ -2693,6 +2693,19 @@ mod cases {
     // A scaled argument distributes the power.
     assert_case(r#"GegenbauerC[2, l, 2 x]"#, r#"-l + 8*l*(1 + l)*x^2"#);
   }
+  // GegenbauerC[n, 1/2, x] = LegendreP[n, x]: wolframscript returns the Legendre
+  // combined-fraction form, not the split Gegenbauer polynomial.
+  #[test]
+  fn gegenbauer_c_half_lambda_is_legendre() {
+    assert_case(r#"GegenbauerC[0, 1/2, x]"#, r#"1"#);
+    assert_case(r#"GegenbauerC[1, 1/2, x]"#, r#"x"#);
+    assert_case(r#"GegenbauerC[2, 1/2, x]"#, r#"(-1 + 3*x^2)/2"#);
+    assert_case(r#"GegenbauerC[3, 1/2, x]"#, r#"(-3*x + 5*x^3)/2"#);
+    assert_case(r#"GegenbauerC[4, 1/2, x]"#, r#"(3 - 30*x^2 + 35*x^4)/8"#);
+    assert_case(r#"GegenbauerC[5, 1/2, x]"#, r#"(15*x - 70*x^3 + 63*x^5)/8"#);
+    // A numeric argument still evaluates (= LegendreP[3, 2]).
+    assert_case(r#"GegenbauerC[3, 1/2, 2]"#, r#"17"#);
+  }
   #[test]
   fn hermite_h_1() {
     assert_case(

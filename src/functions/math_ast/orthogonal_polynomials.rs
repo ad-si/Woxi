@@ -2740,6 +2740,25 @@ pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // GegenbauerC[n, 1/2, x] = LegendreP[n, x]. wolframscript returns the Legendre
+  // form for this special case (a single combined fraction, e.g.
+  // (-3 x + 5 x^3)/2), so delegate to LegendreP rather than emit the split
+  // Gegenbauer polynomial.
+  let is_one_half = matches!(
+    &args[1],
+    Expr::FunctionCall { name, args: ra }
+      if name == "Rational"
+        && ra.len() == 2
+        && matches!(&ra[0], Expr::Integer(1))
+        && matches!(&ra[1], Expr::Integer(2))
+  );
+  if is_one_half {
+    return crate::evaluator::evaluate_function_call_ast(
+      "LegendreP",
+      &[args[0].clone(), args[2].clone()],
+    );
+  }
+
   // Extract lambda as rational (p/q)
   let lambda = match &args[1] {
     Expr::Integer(v) => Some((*v, 1i128)),
