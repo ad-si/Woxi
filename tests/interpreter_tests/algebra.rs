@@ -10834,6 +10834,43 @@ mod function_expand {
     );
   }
 
+  // Squared-modulus identity: Abs[z]^(2m) → (Re[z]^2 + Im[z]^2)^m. Odd powers
+  // keep the Abs.
+  #[test]
+  fn abs_squared() {
+    assert_eq!(
+      interpret("FunctionExpand[Abs[x]^2]").unwrap(),
+      "Im[x]^2 + Re[x]^2"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Abs[x]^4]").unwrap(),
+      "(Im[x]^2 + Re[x]^2)^2"
+    );
+    assert_eq!(interpret("FunctionExpand[Abs[x]^3]").unwrap(), "Abs[x]^3");
+    assert_eq!(interpret("FunctionExpand[Abs[3]^2]").unwrap(), "9");
+  }
+
+  // Re/Im distribute over a sum, so a composite modulus expands fully.
+  #[test]
+  fn abs_squared_of_sum() {
+    assert_eq!(
+      interpret("FunctionExpand[Abs[x + y]^2]").unwrap(),
+      "(Im[x] + Im[y])^2 + (Re[x] + Re[y])^2"
+    );
+  }
+
+  #[test]
+  fn re_im_distribute_over_plus() {
+    assert_eq!(
+      interpret("FunctionExpand[Re[x + y]]").unwrap(),
+      "Re[x] + Re[y]"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Im[a + b + c]]").unwrap(),
+      "Im[a] + Im[b] + Im[c]"
+    );
+  }
+
   // FactorialPower[x, n] with integer n is the falling factorial
   // x (x-1) … (x-n+1).
   #[test]

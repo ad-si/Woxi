@@ -44,6 +44,14 @@ fn function_expand_inner(expr: &Expr) -> Result<Expr, InterpreterError> {
     Expr::BinaryOp { op, left, right } => {
       let l = function_expand_inner(left)?;
       let r = function_expand_inner(right)?;
+      // A `base^exp` written with the Power operator is routed through the
+      // same expansion rules as the Power[...] head (e.g. Abs[z]^2).
+      if matches!(op, BinaryOperator::Power)
+        && let Some(expanded) =
+          try_expand_function("Power", &[l.clone(), r.clone()])
+      {
+        return Ok(expanded);
+      }
       Ok(Expr::BinaryOp {
         op: *op,
         left: Box::new(l),
@@ -67,6 +75,20 @@ fn mk_id(name: &str) -> Expr {
 
 fn mk_plus(a: Expr, b: Expr) -> Expr {
   mk_call("Plus", vec![a, b])
+}
+
+/// The additive terms of `e` if its head is `Plus` (either the `Plus[…]` call
+/// form or the `+` binary-operator form); otherwise None.
+fn as_plus_terms(e: &Expr) -> Option<Vec<Expr>> {
+  match e {
+    Expr::FunctionCall { name, args } if name == "Plus" => Some(args.to_vec()),
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => Some(vec![(**left).clone(), (**right).clone()]),
+    _ => None,
+  }
 }
 
 fn mk_div(a: Expr, b: Expr) -> Expr {
@@ -262,6 +284,44 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
     // Factorial[n] (i.e. n!) → Gamma[1 + n]
     "Factorial" if args.len() == 1 => {
       Some(mk_call("Gamma", vec![mk_plus(mk_int(1), args[0].clone())]))
+    }
+
+    // Abs[z]^(2m) → (Re[z]^2 + Im[z]^2)^m (the squared-modulus identity). Only
+    // even integer exponents expand; odd powers keep the Abs.
+    "Power"
+      if args.len() == 2
+        && matches!(&args[0], Expr::FunctionCall { name, args: a }
+          if name == "Abs" && a.len() == 1)
+        && matches!(&args[1], Expr::Integer(e) if *e > 0 && *e % 2 == 0) =>
+    {
+      let Expr::FunctionCall { args: a, .. } = &args[0] else {
+        unreachable!("guarded above");
+      };
+      let Expr::Integer(e) = &args[1] else {
+        unreachable!("guarded above");
+      };
+      let z = &a[0];
+      let sq_sum = mk_plus(
+        mk_power(mk_call("Re", vec![z.clone()]), mk_int(2)),
+        mk_power(mk_call("Im", vec![z.clone()]), mk_int(2)),
+      );
+      let m = e / 2;
+      let result = if m == 1 {
+        sq_sum
+      } else {
+        mk_power(sq_sum, mk_int(m))
+      };
+      // Re[z]/Im[z] of a sum distribute, so expand the freshly built form.
+      Some(function_expand_inner(&result).unwrap_or(result))
+    }
+
+    // Re[z] / Im[z] distribute over a sum: Re[a + b] → Re[a] + Re[b].
+    "Re" | "Im" if args.len() == 1 => {
+      let terms = as_plus_terms(&args[0])?;
+      Some(mk_call(
+        "Plus",
+        terms.into_iter().map(|t| mk_call(name, vec![t])).collect(),
+      ))
     }
 
     // Multinomial[a1, …, ak] = (a1 + … + ak)! / (a1! ⋯ ak!) →
