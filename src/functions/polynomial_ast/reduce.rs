@@ -718,6 +718,20 @@ fn reduce_single_var(
     }
   }
 
+  // An already-reduced compound bound — `Inequality[lo, op, var, op, hi]` or a
+  // 3-operand chained `Comparison` (`lo < var < hi`). These arise as Or-branches
+  // when distributing And over Or (e.g. reducing `x^3-x>0 && x<1/2`, whose cubic
+  // factor reduces to `-1<x<0 || x>1`). Pass them through unchanged so the
+  // caller's bound-combining logic can intersect them, rather than wrapping them
+  // in an unevaluated `Reduce[...]` that the bound extractor then ignores.
+  if matches!(expr, Expr::FunctionCall { name, args }
+    if name == "Inequality" && args.len() == 5)
+    || matches!(expr, Expr::Comparison { operands, operators }
+      if operands.len() == 3 && operators.len() == 2)
+  {
+    return Ok(expr.clone());
+  }
+
   // If expression is already a simple passthrough (like x > 0)
   Ok(Expr::FunctionCall {
     name: "Reduce".to_string(),

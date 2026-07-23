@@ -6411,6 +6411,48 @@ mod reduce {
     );
   }
 
+  // ── And of a higher-degree inequality with a linear constraint ──
+  // The cubic factor reduces to a disjunction (`-1<x<0 || x>1`); the And must
+  // distribute over that Or and intersect each branch with the linear bound.
+  // Regression: the compound-bound Or-branch used to be wrapped in an
+  // unevaluated Reduce[...] and silently dropped, so the whole result collapsed
+  // to just the linear constraint.
+
+  #[test]
+  fn reduce_cubic_and_upper_bound() {
+    assert_eq!(
+      interpret("ToString[Reduce[x^3 - x > 0 && x < 1/2, x], InputForm]")
+        .unwrap(),
+      "Inequality[-1, Less, x, Less, 0]"
+    );
+  }
+
+  #[test]
+  fn reduce_cubic_and_lower_bound_selects_branch() {
+    assert_eq!(
+      interpret("Reduce[x^3 - x > 0 && x > 0, x]").unwrap(),
+      "x > 1"
+    );
+  }
+
+  #[test]
+  fn reduce_cubic_and_inclusive_bound() {
+    assert_eq!(
+      interpret("ToString[Reduce[x^3 - x >= 0 && x <= 1/2, x], InputForm]")
+        .unwrap(),
+      "Inequality[-1, LessEqual, x, LessEqual, 0]"
+    );
+  }
+
+  #[test]
+  fn reduce_quartic_and_lower_bound() {
+    assert_eq!(
+      interpret("ToString[Reduce[x^4 - 5 x^2 + 4 < 0 && x > 0, x], InputForm]")
+        .unwrap(),
+      "Inequality[1, Less, x, Less, 2]"
+    );
+  }
+
   // ── Multi-variable systems ──
 
   #[test]
