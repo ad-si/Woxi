@@ -8126,6 +8126,30 @@ fn evaluate_function_call_ast_inner(
     }
   }
 
+  // RegionQ[expr] — True when expr is a geometric region (a call to a known
+  // region head), False otherwise. A bare region symbol like `Disk` (no
+  // arguments) is not a region.
+  if name == "RegionQ" && args.len() == 1 {
+    let is_region = matches!(&args[0], Expr::FunctionCall { name: rname, .. }
+      if matches!(rname.as_str(),
+        // Bounded primitives.
+        "Disk" | "Ball" | "Rectangle" | "Cuboid" | "Polygon" | "Triangle"
+        | "Line" | "BezierCurve" | "BSplineCurve" | "Circle" | "Sphere"
+        | "Ellipsoid" | "Cone" | "Cylinder" | "Tetrahedron" | "Hexahedron"
+        | "Prism" | "Pyramid" | "Point" | "Interval" | "Simplex"
+        | "Parallelepiped" | "Annulus" | "StadiumShape" | "DiskSegment"
+        | "SphericalShell" | "CapsuleShape" | "Torus" | "FilledTorus"
+        | "Parallelogram" | "RegularPolygon"
+        // Unbounded / affine regions.
+        | "HalfPlane" | "HalfSpace" | "InfiniteLine" | "InfinitePlane"
+        | "HalfLine" | "ConicHullRegion" | "AffineHalfSpace" | "AffineSpace"
+        | "Hyperplane"
+        // Derived / general regions.
+        | "ImplicitRegion" | "EmptyRegion" | "FullRegion" | "MeshRegion"
+        | "BoundaryMeshRegion" | "BooleanRegion" | "Region"));
+    return Ok(bool_expr(is_region));
+  }
+
   // FunctionContinuous[f, x] or FunctionContinuous[{f, cond}, x] or FunctionContinuous[f, {x, y, ...}]
   if name == "FunctionContinuous" && (args.len() == 2 || args.len() == 3) {
     // Helper: check if an expression is continuous over all reals w.r.t. given variables

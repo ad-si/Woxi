@@ -4116,6 +4116,38 @@ mod region {
   }
 }
 
+mod region_q {
+  use super::*;
+
+  // RegionQ is True for a call to a known region head, both bounded and
+  // unbounded, and for derived regions.
+  #[test]
+  fn known_region_heads_are_regions() {
+    assert_eq!(interpret("RegionQ[Disk[]]").unwrap(), "True");
+    assert_eq!(interpret("RegionQ[Ball[{0, 0, 0}, 1]]").unwrap(), "True");
+    assert_eq!(interpret("RegionQ[Point[{1, 2}]]").unwrap(), "True");
+    assert_eq!(interpret("RegionQ[Interval[{1, 2}]]").unwrap(), "True");
+    assert_eq!(interpret("RegionQ[RegularPolygon[5]]").unwrap(), "True");
+    assert_eq!(
+      interpret("RegionQ[HalfLine[{0, 0}, {1, 0}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("RegionQ[EmptyRegion[2]]").unwrap(), "True");
+  }
+
+  // Non-regions — numbers, symbols, lists, bare region symbols, and other
+  // heads — are False.
+  #[test]
+  fn non_regions_are_false() {
+    assert_eq!(interpret("RegionQ[5]").unwrap(), "False");
+    assert_eq!(interpret("RegionQ[x]").unwrap(), "False");
+    assert_eq!(interpret("RegionQ[{1, 2, 3}]").unwrap(), "False");
+    // A bare region symbol (no arguments) is not a region.
+    assert_eq!(interpret("RegionQ[Cuboid]").unwrap(), "False");
+    assert_eq!(interpret("RegionQ[Graph[{1 <-> 2}]]").unwrap(), "False");
+  }
+}
+
 // Graphics-object regions from the GraphicsObjects guide: Torus, FilledTorus,
 // Parallelogram, HalfPlane, InfinitePlane.
 mod graphics_object_regions {
