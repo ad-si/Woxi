@@ -18384,6 +18384,28 @@ mod angle_path_3d_tests {
     );
   }
 
+  // Two-angle {α, β} steps assume the third Euler angle γ = 0.
+  #[test]
+  fn two_angle_steps() {
+    assert_eq!(
+      interpret("AnglePath3D[{{Pi/2, 0}}]").unwrap(),
+      "{{0, 0, 0}, {0, 1, 0}}"
+    );
+    assert_eq!(
+      interpret("AnglePath3D[{{0, Pi/2}}]").unwrap(),
+      "{{0, 0, 0}, {0, 0, -1}}"
+    );
+    assert_eq!(
+      interpret("AnglePath3D[{{Pi/2, 0}, {Pi/2, 0}}]").unwrap(),
+      "{{0, 0, 0}, {0, 1, 0}, {-1, 1, 0}}"
+    );
+    // A {dist, {α, β}} step also drops to γ = 0.
+    assert_eq!(
+      interpret("AnglePath3D[{{1, {Pi/2, 0}}}]").unwrap(),
+      "{{0, 0, 0}, {0, 1, 0}}"
+    );
+  }
+
   // Real step data gives a real origin and machine coordinates matching
   // wolframscript to the last digit.
   #[test]

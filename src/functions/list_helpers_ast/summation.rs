@@ -5394,16 +5394,29 @@ pub fn angle_path_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
   let mut points: Vec<Expr> = vec![point.clone()];
 
+  // Pad a 2-angle {α, β} step to the full Euler triple {α, β, 0}.
+  let to_triple = |a: &crate::ExprList| -> Vec<Expr> {
+    if a.len() == 2 {
+      vec![a[0].clone(), a[1].clone(), Expr::Integer(0)]
+    } else {
+      a.to_vec()
+    }
+  };
   for step in steps.iter() {
-    // {α, β, γ} or {dist, {α, β, γ}}.
-    let (dist, angles): (Option<&Expr>, &crate::ExprList) = match step {
-      Expr::List(items) if items.len() == 3 => (None, items),
+    // {α, β, γ}, {α, β} (γ = 0), or the same wrapped as {dist, {…}}.
+    let (dist, angles): (Option<&Expr>, Vec<Expr>) = match step {
+      Expr::List(items)
+        if (items.len() == 2 || items.len() == 3)
+          && items.iter().all(|x| !matches!(x, Expr::List(_))) =>
+      {
+        (None, to_triple(items))
+      }
       Expr::List(items)
         if items.len() == 2
-          && matches!(&items[1], Expr::List(a) if a.len() == 3) =>
+          && matches!(&items[1], Expr::List(a) if a.len() == 2 || a.len() == 3) =>
       {
         match &items[1] {
-          Expr::List(a) => (Some(&items[0]), a),
+          Expr::List(a) => (Some(&items[0]), to_triple(a)),
           _ => unreachable!(),
         }
       }
