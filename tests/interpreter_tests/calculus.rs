@@ -10764,6 +10764,62 @@ mod discrete_convolve {
     assert!(!r.contains("$k"), "internal sum variable leaked: {r}");
     assert!(!r.contains("Sum["), "raw Sum leaked: {r}");
   }
+
+  // Convolving with KroneckerDelta[n] leaves the other sequence unchanged (at m).
+  #[test]
+  fn kronecker_delta_identity() {
+    clear_state();
+    assert_eq!(
+      interpret("DiscreteConvolve[a^n, KroneckerDelta[n], n, m]").unwrap(),
+      "a^m"
+    );
+    assert_eq!(
+      interpret("DiscreteConvolve[1, KroneckerDelta[n], n, m]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("DiscreteConvolve[n^2, KroneckerDelta[n], n, m]").unwrap(),
+      "m^2"
+    );
+    assert_eq!(
+      interpret("DiscreteConvolve[Sin[n], KroneckerDelta[n], n, m]").unwrap(),
+      "Sin[m]"
+    );
+    assert_eq!(
+      interpret("DiscreteConvolve[KroneckerDelta[n], KroneckerDelta[n], n, m]")
+        .unwrap(),
+      "KroneckerDelta[m]"
+    );
+  }
+
+  // A shifted delta KroneckerDelta[n - c] shifts the sequence by c.
+  #[test]
+  fn kronecker_delta_shift() {
+    clear_state();
+    assert_eq!(
+      interpret("DiscreteConvolve[a^n, KroneckerDelta[n - 2], n, m]").unwrap(),
+      "a^(-2 + m)"
+    );
+    // The delta may be either operand (convolution is commutative).
+    assert_eq!(
+      interpret("DiscreteConvolve[KroneckerDelta[n - 2], a^n, n, m]").unwrap(),
+      "a^(-2 + m)"
+    );
+    assert_eq!(
+      interpret("DiscreteConvolve[1, KroneckerDelta[n - 2], n, m]").unwrap(),
+      "1"
+    );
+  }
+
+  // An opaque undefined function of n is left symbolic, matching wolframscript.
+  #[test]
+  fn kronecker_delta_opaque_unevaluated() {
+    clear_state();
+    assert_eq!(
+      interpret("DiscreteConvolve[g[n], KroneckerDelta[n], n, m]").unwrap(),
+      "DiscreteConvolve[g[n], KroneckerDelta[n], n, m]"
+    );
+  }
 }
 
 mod list_fourier_sequence_transform {

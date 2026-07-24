@@ -18743,6 +18743,69 @@ fn extract_series_coefficients(expr: &Expr) -> Option<(Vec<Expr>, i128)> {
 ///
 /// Computes Sum[f /. n -> k, g /. m -> (m - k), {k, -Infinity, Infinity}]
 /// by building a Sum expression and evaluating it.
+/// If `kernel` is `KroneckerDelta[n + d]` with the coefficient of `n` equal to
+/// 1, return the constant offset `d` (which may itself be symbolic but must be
+/// free of `n`). Returns None for any other kernel.
+fn kronecker_delta_offset(kernel: &Expr, n_var: &str) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = kernel else {
+    return None;
+  };
+  if name != "KroneckerDelta" || args.len() != 1 {
+    return None;
+  }
+  let arg = &args[0];
+  let at = |v: i128| -> Option<Expr> {
+    crate::evaluator::evaluate_expr_to_expr(
+      &crate::syntax::substitute_variable(arg, n_var, &Expr::Integer(v)),
+    )
+    .ok()
+  };
+  let d = at(0)?; // arg(0) = d
+  let a1 = at(1)?; // arg(1) = 1 + d, so the coefficient of n is a1 - d
+  let slope = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+    op: BinaryOperator::Plus,
+    left: Box::new(a1),
+    right: Box::new(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Integer(-1), d.clone()].into(),
+    }),
+  })
+  .ok()?;
+  if matches!(slope, Expr::Integer(1)) && is_constant_wrt(&d, n_var) {
+    Some(d)
+  } else {
+    None
+  }
+}
+
+/// True if `expr` applies an unrecognized (non-built-in) function head to an
+/// argument that depends on `var` — e.g. an opaque `g[n]`. Used to keep
+/// DiscreteConvolve's KroneckerDelta sifting from evaluating expressions that
+/// wolframscript itself leaves symbolic.
+fn discrete_convolve_has_opaque_fn(expr: &Expr, var: &str) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      let head_opaque =
+        crate::evaluator::get_builtin_function_info(name).is_none();
+      if head_opaque && args.iter().any(|a| !is_constant_wrt(a, var)) {
+        return true;
+      }
+      args.iter().any(|a| discrete_convolve_has_opaque_fn(a, var))
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      discrete_convolve_has_opaque_fn(left, var)
+        || discrete_convolve_has_opaque_fn(right, var)
+    }
+    Expr::UnaryOp { operand, .. } => {
+      discrete_convolve_has_opaque_fn(operand, var)
+    }
+    Expr::List(items) => items
+      .iter()
+      .any(|e| discrete_convolve_has_opaque_fn(e, var)),
+    _ => false,
+  }
+}
+
 pub fn discrete_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 4 {
     return Ok(unevaluated("DiscreteConvolve", args));
@@ -18762,6 +18825,35 @@ pub fn discrete_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(unevaluated("DiscreteConvolve", args));
     }
   };
+
+  // KroneckerDelta sifting: convolving with KroneckerDelta[n + d] shifts the
+  // other sequence — DiscreteConvolve[h(n), KroneckerDelta[n + d], n, m] = h(m + d)
+  // (and symmetrically, since convolution is commutative). wolframscript fires
+  // this only for recognized functions, leaving an opaque undefined function of
+  // n unevaluated; replicate that so we do not out-evaluate wolframscript.
+  let sift = |other: &Expr, d: &Expr| -> Option<Expr> {
+    if discrete_convolve_has_opaque_fn(other, &n_var) {
+      return None;
+    }
+    let point = Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(Expr::Identifier(m_var.clone())),
+      right: Box::new(d.clone()),
+    };
+    let point = crate::evaluator::evaluate_expr_to_expr(&point).ok()?;
+    let substituted = crate::syntax::substitute_variable(other, &n_var, &point);
+    crate::evaluator::evaluate_expr_to_expr(&substituted).ok()
+  };
+  if let Some(d) = kronecker_delta_offset(g_expr, &n_var)
+    && let Some(res) = sift(f_expr, &d)
+  {
+    return Ok(res);
+  }
+  if let Some(d) = kronecker_delta_offset(f_expr, &n_var)
+    && let Some(res) = sift(g_expr, &d)
+  {
+    return Ok(res);
+  }
 
   // Build: Sum[(f /. n -> k$dc) * (g /. m -> (m - k$dc)), {k$dc, -Infinity, Infinity}]
   let k_var = "DiscreteConvolve$k";
