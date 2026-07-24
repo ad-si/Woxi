@@ -6014,6 +6014,15 @@ fn cdf_f_ratio(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 /// The one-argument Yule form is
 ///   PDF[WaringYuleDistribution[a], k] = Piecewise[{{a Beta[1 + a, 1 + k], k >= 0}}, 0].
 fn pdf_waring_yule(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  // A negative *integer* point sits left of the support {0, 1, 2, ...}. Unlike a
+  // non-integer point (which gives 0), Wolfram leaves the PDF unevaluated there,
+  // e.g. PDF[WaringYuleDistribution[2], -1] stays symbolic.
+  if let Expr::Integer(k) = &x
+    && *k < 0
+  {
+    let dist = call("WaringYuleDistribution", dargs.to_vec());
+    return Ok(unevaluated("PDF", &[dist, x]));
+  }
   if dargs.len() == 1 {
     let a = dargs[0].clone();
     let pmf = times(

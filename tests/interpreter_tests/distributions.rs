@@ -2414,9 +2414,11 @@ mod waring_yule_distribution {
       interpret("PDF[WaringYuleDistribution[2], 1]").unwrap(),
       "1/6"
     );
+    // A negative integer point sits left of the support {0, 1, 2, ...}; unlike a
+    // non-integer point (which gives 0), wolframscript leaves it unevaluated.
     assert_eq!(
       interpret("PDF[WaringYuleDistribution[2], -1]").unwrap(),
-      "0"
+      "PDF[WaringYuleDistribution[2], -1]"
     );
   }
 
