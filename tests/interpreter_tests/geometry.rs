@@ -4148,6 +4148,65 @@ mod region_q {
   }
 }
 
+// MeshRegionQ / BoundaryMeshRegionQ are True only for a well-formed object of
+// the matching head; every other expression (including the other head) is
+// False.
+mod mesh_region_q {
+  use super::*;
+
+  #[test]
+  fn well_formed_mesh_region_is_true() {
+    assert_eq!(
+      interpret(
+        "MeshRegionQ[MeshRegion[{{0,0},{1,0},{0,1}}, Polygon[{1,2,3}]]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn well_formed_boundary_mesh_region_is_true() {
+    assert_eq!(
+      interpret(
+        "BoundaryMeshRegionQ[BoundaryMeshRegion[{{0,0},{1,0},{0,1}}, \
+         Line[{1,2,3,1}]]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn other_expressions_are_false() {
+    assert_eq!(interpret("MeshRegionQ[5]").unwrap(), "False");
+    // A region primitive is not a MeshRegion.
+    assert_eq!(interpret("MeshRegionQ[Disk[]]").unwrap(), "False");
+    assert_eq!(interpret("BoundaryMeshRegionQ[5]").unwrap(), "False");
+  }
+
+  #[test]
+  fn heads_do_not_cross_match() {
+    // A MeshRegion is not a BoundaryMeshRegion and vice versa.
+    assert_eq!(
+      interpret(
+        "BoundaryMeshRegionQ[MeshRegion[{{0,0},{1,0},{0,1}}, \
+         Polygon[{1,2,3}]]]"
+      )
+      .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "MeshRegionQ[BoundaryMeshRegion[{{0,0},{1,0},{0,1}}, \
+         Line[{1,2,3,1}]]]"
+      )
+      .unwrap(),
+      "False"
+    );
+  }
+}
+
 // Graphics-object regions from the GraphicsObjects guide: Torus, FilledTorus,
 // Parallelogram, HalfPlane, InfinitePlane.
 mod graphics_object_regions {

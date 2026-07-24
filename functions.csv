@@ -3213,7 +3213,7 @@ DoubleLongLeftArrow,,,,3.0,3291
 HermiteDecomposition,Hermite normal form decomposition (unimodular u with u.m == h) for integer matrices,✅,pure,6.0,3291
 ListStreamDensityPlot,,🚫,,7.0,3291
 Majority,True when more than half the arguments are True (Orderless; symbolic simplifications),✅,pure,7.0,3291
-MeshRegionQ,,,,10.0,3291
+MeshRegionQ,Tests whether an expression is a valid MeshRegion object,✅,pure,10.0,3291
 SpeechRecognize,,🚫,,12.0,3291
 VerifyConvergence,,,,2.0,3291
 CalloutMarker,,🚫,,11.0,3298
@@ -3523,7 +3523,7 @@ StadiumShape,Two-dimensional stadium region,✅,pure,10.2,3612
 BernoulliProcess,Bernoulli process with time-independent Bernoulli slices,✅,unevaluated,9.0,3636
 BinaryDeserialize,Reconstructs an expression from WXF binary bytes,✅,pure,11.1,3636
 BlackmanWindow,Compute BlackmanWindow value,✅,pure,9.0,3636
-BoundaryMeshRegionQ,,,,10.0,3636
+BoundaryMeshRegionQ,Tests whether an expression is a valid BoundaryMeshRegion object,✅,pure,10.0,3636
 ButtonSource,,🚫,,3.0,3636
 CalloutStyle,,🚫,,11.0,3636
 ColorBalance,,🚫,,10.2,3636

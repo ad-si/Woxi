@@ -8156,6 +8156,22 @@ fn evaluate_function_call_ast_inner(
     return Ok(bool_expr(is_region));
   }
 
+  // MeshRegionQ[expr] / BoundaryMeshRegionQ[expr]: True only when expr is a
+  // well-formed MeshRegion / BoundaryMeshRegion object (a coordinate list plus
+  // at least one cell specification), False for anything else.
+  if (name == "MeshRegionQ" || name == "BoundaryMeshRegionQ") && args.len() == 1
+  {
+    let head = if name == "MeshRegionQ" {
+      "MeshRegion"
+    } else {
+      "BoundaryMeshRegion"
+    };
+    let ok = matches!(&args[0], Expr::FunctionCall { name: rname, args: rargs }
+      if rname == head && rargs.len() >= 2
+        && matches!(&rargs[0], Expr::List(coords) if !coords.is_empty()));
+    return Ok(bool_expr(ok));
+  }
+
   // FunctionContinuous[f, x] or FunctionContinuous[{f, cond}, x] or FunctionContinuous[f, {x, y, ...}]
   if name == "FunctionContinuous" && (args.len() == 2 || args.len() == 3) {
     // Helper: check if an expression is continuous over all reals w.r.t. given variables
