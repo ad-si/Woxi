@@ -186,38 +186,60 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return crate::evaluator::evaluate_expr_to_expr(&pow);
   }
 
-  // HypergeometricPFQ[{}, {b}, z] = Gamma[b] z^((1-b)/2) BesselI[b-1, 2 Sqrt[z]]
-  // (the 0F1 → modified Bessel relation). Reduced only for a positive integer b,
-  // where the BesselI form matches wolframscript exactly; symbolic and
-  // half-integer b are left symbolic (their displayed forms differ).
-  if a_list.is_empty()
-    && b_list.len() == 1
-    && let Expr::Integer(bn) = &b_list[0]
-    && *bn >= 1
-  {
-    let b = *bn;
-    let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.into(),
+  // HypergeometricPFQ[{}, {b}, z] = Gamma[b] z^(1/2 - b/2) BesselI[b-1, 2 Sqrt[z]]
+  // (the 0F1 → modified Bessel relation). Reduced for a positive integer b or a
+  // purely symbolic b, where the BesselI form matches wolframscript exactly;
+  // half-integer / other numeric b are left symbolic (their displayed forms,
+  // full of Sqrt[Pi]*Sqrt[1/Pi] artifacts, differ from Wolfram's).
+  if a_list.is_empty() && b_list.len() == 1 {
+    let is_number = |e: &Expr| {
+      matches!(
+        e,
+        Expr::Integer(_)
+          | Expr::BigInteger(_)
+          | Expr::Real(_)
+          | Expr::BigFloat(_, _)
+      ) || matches!(e, Expr::FunctionCall { name, .. }
+        if name == "Rational" || name == "Complex")
     };
-    let two_sqrt_z = call(
-      "Times",
-      vec![Expr::Integer(2), call("Sqrt", vec![z.clone()])],
-    );
-    let bessel = call("BesselI", vec![Expr::Integer(b - 1), two_sqrt_z]);
-    // z^((1 - b)/2)
-    let z_pow = call(
-      "Power",
-      vec![
-        z.clone(),
-        call("Divide", vec![Expr::Integer(1 - b), Expr::Integer(2)]),
-      ],
-    );
-    let gamma = call("Gamma", vec![Expr::Integer(b)]);
-    return crate::evaluator::evaluate_expr_to_expr(&call(
-      "Times",
-      vec![gamma, z_pow, bessel],
-    ));
+    let b_expr = &b_list[0];
+    let reducible =
+      matches!(b_expr, Expr::Integer(bn) if *bn >= 1) || !is_number(b_expr);
+    if reducible {
+      let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.into(),
+      };
+      let rational = |n: i128, d: i128| {
+        call("Rational", vec![Expr::Integer(n), Expr::Integer(d)])
+      };
+      let two_sqrt_z = call(
+        "Times",
+        vec![Expr::Integer(2), call("Sqrt", vec![z.clone()])],
+      );
+      let bessel = call(
+        "BesselI",
+        vec![
+          call("Plus", vec![Expr::Integer(-1), b_expr.clone()]),
+          two_sqrt_z,
+        ],
+      );
+      // z^(1/2 - b/2): keep the exponent expanded (as wolframscript does)
+      // rather than folded to (1 - b)/2.
+      let exponent = call(
+        "Plus",
+        vec![
+          rational(1, 2),
+          call("Times", vec![rational(-1, 2), b_expr.clone()]),
+        ],
+      );
+      let z_pow = call("Power", vec![z.clone(), exponent]);
+      let gamma = call("Gamma", vec![b_expr.clone()]);
+      return crate::evaluator::evaluate_expr_to_expr(&call(
+        "Times",
+        vec![gamma, z_pow, bessel],
+      ));
+    }
   }
 
   // When each upper parameter cancels a lower parameter (identical

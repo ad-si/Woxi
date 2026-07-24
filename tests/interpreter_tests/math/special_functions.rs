@@ -5489,10 +5489,16 @@ mod hypergeometric_pfq {
       interpret("HypergeometricPFQ[{}, {1}, 4]").unwrap(),
       "BesselI[0, 4]"
     );
-    // Symbolic and half-integer b are left symbolic.
+    // Symbolic b reduces to the Bessel form (with the exponent kept expanded,
+    // as wolframscript prints it).
     assert_eq!(
       interpret("HypergeometricPFQ[{}, {b}, z]").unwrap(),
-      "HypergeometricPFQ[{}, {b}, z]"
+      "z^(1/2 - b/2)*BesselI[-1 + b, 2*Sqrt[z]]*Gamma[b]"
+    );
+    // Half-integer b is left symbolic (its expanded form diverges from Wolfram).
+    assert_eq!(
+      interpret("HypergeometricPFQ[{}, {3/2}, z]").unwrap(),
+      "HypergeometricPFQ[{}, {3/2}, z]"
     );
   }
 
