@@ -3856,6 +3856,59 @@ mod replace_all_expression_rhs {
   }
 }
 
+// A rule targeting an operator symbol rewrites the operator of a held infix
+// expression, e.g. `Hold[a + b] /. Plus -> Times` → `Hold[a*b]`.
+mod replace_all_held_operator_head {
+  use super::*;
+
+  #[test]
+  fn plus_to_times() {
+    assert_eq!(
+      interpret("Hold[1 + 2] /. Plus -> Times").unwrap(),
+      "Hold[1*2]"
+    );
+    assert_eq!(
+      interpret("Hold[a + b + c] /. Plus -> Times").unwrap(),
+      "Hold[a*b*c]"
+    );
+  }
+
+  #[test]
+  fn times_and_power_and_and() {
+    assert_eq!(
+      interpret("Hold[a*b] /. Times -> Plus").unwrap(),
+      "Hold[a + b]"
+    );
+    assert_eq!(
+      interpret("Hold[x^2] /. Power -> f").unwrap(),
+      "Hold[f[x, 2]]"
+    );
+    assert_eq!(
+      interpret("Hold[a && b] /. And -> Or").unwrap(),
+      "Hold[a || b]"
+    );
+  }
+
+  #[test]
+  fn to_list_and_arbitrary_head() {
+    // Replacing with List yields an actual list, not List[...].
+    assert_eq!(
+      interpret("Hold[1 + 2] /. Plus -> List").unwrap(),
+      "Hold[{1, 2}]"
+    );
+    assert_eq!(
+      interpret("Hold[a + b] /. Plus -> f").unwrap(),
+      "Hold[f[a, b]]"
+    );
+  }
+
+  // Operand replacement (not the head) still returns the infix form.
+  #[test]
+  fn operand_replacement_unaffected() {
+    assert_eq!(interpret("Hold[a + b] /. a -> z").unwrap(), "Hold[z + b]");
+  }
+}
+
 mod replace_all_head_constraint {
   use super::*;
 

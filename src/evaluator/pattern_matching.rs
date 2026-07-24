@@ -448,6 +448,31 @@ fn try_ast_pattern_replace_impl(
         )? {
           return Ok(Some(result));
         }
+        // A rule may target the operator's head symbol itself, e.g.
+        // `Hold[a + b] /. Plus -> Times` → `Hold[a*b]`. Replace the head and,
+        // as ReplaceAll processes every position, the operands too, then
+        // rebuild as the corresponding FunctionCall.
+        let head_sym = Expr::Identifier(func_name.to_string());
+        if let Some(new_head) = try_ast_pattern_replace_single(
+          &head_sym,
+          pattern,
+          replacement,
+          condition,
+        )? {
+          let Expr::FunctionCall { args, .. } = &as_call else {
+            unreachable!("as_call is a FunctionCall");
+          };
+          let new_args: Vec<Expr> = args
+            .iter()
+            .map(|a| {
+              Ok(
+                try_ast_pattern_replace(a, pattern, replacement, condition)?
+                  .unwrap_or_else(|| a.clone()),
+              )
+            })
+            .collect::<Result<_, InterpreterError>>()?;
+          return Ok(Some(rebuild_call_with_head(new_head, new_args)));
+        }
       }
       let mut any_matched = false;
       let new_left =
@@ -1763,6 +1788,41 @@ fn try_symbol_replace_all(
 
     // Recurse into BinaryOp (Plus, Times, Divide, Power, etc.)
     Expr::BinaryOp { op, left, right } => {
+      // Head replacement: a rule targeting the operator's symbol (e.g.
+      // `Plus -> Times`) rewrites a held `a + b` into `a*b`, mirroring the
+      // FunctionCall-head case above. Flat operators are flattened first so
+      // `a + b + c` maps to a single new head over all operands.
+      let func_name = binary_op_to_func_name(op);
+      if !func_name.is_empty() && func_name == pattern_sym {
+        let operands: Vec<Expr> =
+          if matches!(func_name, "Plus" | "Times" | "And" | "Or") {
+            let mut ops = Vec::new();
+            collect_flat_binary_operands(expr, op, &mut ops);
+            ops
+          } else {
+            vec![left.as_ref().clone(), right.as_ref().clone()]
+          };
+        let new_operands: Vec<Expr> = operands
+          .iter()
+          .map(|a| {
+            try_symbol_replace_all(a, pattern_sym, replacement)
+              .unwrap_or_else(|| a.clone())
+          })
+          .collect();
+        return Some(match replacement {
+          Expr::Identifier(new_head) if new_head == "List" => {
+            Expr::List(new_operands.into())
+          }
+          Expr::Identifier(new_head) => Expr::FunctionCall {
+            name: new_head.clone(),
+            args: new_operands.into(),
+          },
+          _ => Expr::CurriedCall {
+            func: Box::new(replacement.clone()),
+            args: new_operands,
+          },
+        });
+      }
       let new_left = try_symbol_replace_all(left, pattern_sym, replacement);
       let new_right = try_symbol_replace_all(right, pattern_sym, replacement);
       if new_left.is_some() || new_right.is_some() {
