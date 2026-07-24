@@ -11289,6 +11289,70 @@ mod position_index {
   fn empty() {
     assert_eq!(interpret("PositionIndex[{}]").unwrap(), "<||>");
   }
+
+  #[test]
+  fn association_maps_values_to_keys() {
+    // PositionIndex[assoc] indexes the values by the keys they occur at.
+    assert_eq!(
+      interpret(
+        "PositionIndex[<|1 -> a, 2 -> b, 3 -> c, 4 -> d, 5 -> c, 6 -> a|>]"
+      )
+      .unwrap(),
+      "<|a -> {1, 6}, b -> {2}, c -> {3, 5}, d -> {4}|>"
+    );
+    assert_eq!(
+      interpret("PositionIndex[<|a -> 1, b -> 2, c -> 1|>]").unwrap(),
+      "<|1 -> {a, c}, 2 -> {b}|>"
+    );
+  }
+
+  #[test]
+  fn association_result_keys_follow_first_appearance() {
+    // Result keys are ordered by first appearance of the value, not sorted,
+    // and the key lists keep the association's own order.
+    assert_eq!(
+      interpret("PositionIndex[<|3 -> x, 1 -> y, 2 -> x|>]").unwrap(),
+      "<|x -> {3, 2}, y -> {1}|>"
+    );
+  }
+
+  #[test]
+  fn association_with_non_atomic_values() {
+    assert_eq!(
+      interpret(
+        "ToString[PositionIndex[<|\"a\" -> {1, 2}, \"b\" -> {1, 2}, \"c\" -> 3|>], InputForm]"
+      )
+      .unwrap(),
+      "<|{1, 2} -> {\"a\", \"b\"}, 3 -> {\"c\"}|>"
+    );
+  }
+
+  #[test]
+  fn empty_association() {
+    assert_eq!(interpret("PositionIndex[<||>]").unwrap(), "<||>");
+  }
+
+  #[test]
+  fn non_list_emits_invrp() {
+    for (input, shown, expected) in [
+      ("PositionIndex[5]", "5", "PositionIndex[5]"),
+      (
+        "PositionIndex[f[a, b, a]]",
+        "f[a, b, a]",
+        "PositionIndex[f[a, b, a]]",
+      ),
+      ("PositionIndex[\"abca\"]", "abca", "PositionIndex[abca]"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected);
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        msgs.iter().any(|m| m.contains(&format!(
+          "PositionIndex::invrp: The argument {shown} is not a valid Association or a list."
+        ))),
+        "expected invrp message for {input}, got {msgs:?}"
+      );
+    }
+  }
 }
 
 mod list_convolve {

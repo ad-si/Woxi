@@ -8455,9 +8455,22 @@ fn build_reshaped(
 }
 
 fn position_index_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
-  let items = match expr {
-    Expr::List(items) => items,
-    _ => {
+  // `PositionIndex[list]` indexes values by their integer positions;
+  // `PositionIndex[assoc]` indexes the association's values by their keys.
+  let pairs: Vec<(Expr, Expr)> = match expr {
+    Expr::List(items) => items
+      .iter()
+      .enumerate()
+      .map(|(i, item)| (Expr::Integer((i + 1) as i128), item.clone()))
+      .collect(),
+    Expr::Association(rules) => {
+      rules.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+    }
+    other => {
+      crate::emit_message(&format!(
+        "PositionIndex::invrp: The argument {} is not a valid Association or a list.",
+        crate::syntax::format_expr(other, crate::syntax::ExprForm::Output)
+      ));
       return Ok(Expr::FunctionCall {
         name: "PositionIndex".to_string(),
         args: vec![expr.clone()].into(),
@@ -8465,29 +8478,25 @@ fn position_index_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // Build ordered map: value -> list of positions (1-indexed)
-  let mut map: Vec<(Expr, Vec<i128>)> = Vec::new();
-  for (i, item) in items.iter().enumerate() {
-    let pos = (i + 1) as i128;
-    let item_str = crate::syntax::expr_to_string(item);
+  // Build ordered map: value -> list of positions/keys, in order of the
+  // value's first appearance.
+  let mut map: Vec<(Expr, Vec<Expr>)> = Vec::new();
+  for (pos, item) in pairs {
+    let item_str = crate::syntax::expr_to_string(&item);
     if let Some(entry) = map
       .iter_mut()
       .find(|(k, _)| crate::syntax::expr_to_string(k) == item_str)
     {
       entry.1.push(pos);
     } else {
-      map.push((item.clone(), vec![pos]));
+      map.push((item, vec![pos]));
     }
   }
 
   // Convert to Association
   let rules: Vec<(Expr, Expr)> = map
     .into_iter()
-    .map(|(key, positions)| {
-      let pos_list =
-        Expr::List(positions.into_iter().map(Expr::Integer).collect());
-      (key, pos_list)
-    })
+    .map(|(key, positions)| (key, Expr::List(positions.into())))
     .collect();
 
   Ok(Expr::Association(rules))

@@ -1107,7 +1107,7 @@ Surd,Returns the real-valued nth root,✅,pure,9.0,1116
 MemoryInUse,Current memory usage of the process,✅,pure,1.0,1117
 ParallelEvaluate,,🚫,,7.0,1118
 ListPolarPlot,Plots data in polar coordinates,✅,pure,6.0,1119
-PositionIndex,Maps each value to its list positions,✅,pure,10.0,1120
+PositionIndex,Maps each distinct value to the positions or keys where it occurs,✅,pure,10.0,1120
 AnimationRate,,🚫,,6.0,1122
 HoldAllComplete,Attribute that prevents all evaluation,✅,1,3.0,1122
 Blur,Applies Gaussian blur to an image,✅,pure,7.0,1124
