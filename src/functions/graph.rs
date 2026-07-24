@@ -2410,6 +2410,68 @@ pub fn find_postman_tour_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(vec![Expr::List(tour.into())].into()))
 }
 
+/// MeanNeighborDegree[g] gives, for each vertex (in VertexList order), the mean
+/// degree of its neighbours (0 for an isolated vertex). Degrees are total
+/// degrees, treating every edge as an undirected connection.
+pub fn mean_neighbor_degree_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Ok(unevaluated("MeanNeighborDegree", args));
+  // Only the plain single-argument form is handled (not "In"/"Out").
+  if args.len() != 1 {
+    return unevaluated();
+  }
+  let (vertices, raw_edges) = match fc_parse_input(&args[0]) {
+    Some(p) => p,
+    None => return unevaluated(),
+  };
+  let n = vertices.len();
+  if n == 0 {
+    return Ok(Expr::List(vec![].into()));
+  }
+  let mut rank: HashMap<String, usize> = HashMap::new();
+  for (i, v) in vertices.iter().enumerate() {
+    rank.entry(expr_to_string(v)).or_insert(i);
+  }
+  let mut neighbors: Vec<Vec<usize>> = vec![Vec::new(); n];
+  for e in &raw_edges {
+    let inner = fc_unwrap_edge(e);
+    let (src, dst) = match inner {
+      Expr::FunctionCall { args: ea, .. } if ea.len() == 2 => (&ea[0], &ea[1]),
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref()),
+      _ => continue,
+    };
+    let (si, di) = match (
+      rank.get(&expr_to_string(src)),
+      rank.get(&expr_to_string(dst)),
+    ) {
+      (Some(&s), Some(&d)) => (s, d),
+      _ => return unevaluated(),
+    };
+    neighbors[si].push(di);
+    neighbors[di].push(si);
+  }
+  let deg: Vec<usize> = neighbors.iter().map(|nb| nb.len()).collect();
+  let mut out = Vec::with_capacity(n);
+  for nb in &neighbors {
+    if nb.is_empty() {
+      out.push(Expr::Integer(0));
+      continue;
+    }
+    let sum: i128 = nb.iter().map(|&u| deg[u] as i128).sum();
+    let cnt = nb.len() as i128;
+    out.push(crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(Expr::Integer(sum)),
+      right: Box::new(Expr::Integer(cnt)),
+    })?);
+  }
+  Ok(Expr::List(out.into()))
+}
+
 fn collect_directives(expr: &Expr) -> Vec<Expr> {
   match expr {
     Expr::FunctionCall { name, args } if name == "Directive" => args.to_vec(),

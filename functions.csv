@@ -4497,7 +4497,7 @@ IncludeMetaInformation,,,,11.0,4660
 MailServerConnect,,🚫,,11.3,4660
 MailSettings,,🚫,,11.2,4660
 MassConcentrationCondition,,,,12.2,4660
-MeanNeighborDegree,,,,9.0,4660
+MeanNeighborDegree,Mean degree of each vertex's neighbors in a graph,✅,pure,9.0,4660
 NebulaData,,🚫,,10.0,4660
 NetNestOperator,,🚫,,11.1,4660
 NuclearExplosionData,,🚫,,10.0,4660

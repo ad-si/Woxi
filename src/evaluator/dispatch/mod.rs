@@ -5572,6 +5572,10 @@ fn evaluate_function_call_ast_inner(
     return crate::functions::graph::planar_graph_q_ast(args);
   }
 
+  if name == "MeanNeighborDegree" && args.len() == 1 {
+    return crate::functions::graph::mean_neighbor_degree_ast(args);
+  }
+
   if matches!(
     name,
     "HamiltonianGraphQ"

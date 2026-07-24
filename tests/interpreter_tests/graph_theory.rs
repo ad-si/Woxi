@@ -4620,6 +4620,38 @@ mod graph_metrics {
       "Infinity"
     );
   }
+
+  // MeanNeighborDegree[g] gives, per vertex, the mean degree of its neighbours.
+  #[test]
+  fn mean_neighbor_degree() {
+    // Every C5 vertex has two degree-2 neighbours.
+    assert_eq!(
+      interpret("MeanNeighborDegree[CycleGraph[5]]").unwrap(),
+      "{2, 2, 2, 2, 2}"
+    );
+    // Star: the centre sees degree-1 leaves; each leaf sees the degree-3 centre.
+    assert_eq!(
+      interpret("MeanNeighborDegree[StarGraph[4]]").unwrap(),
+      "{1, 3, 3, 3}"
+    );
+    assert_eq!(
+      interpret("MeanNeighborDegree[PathGraph[{1, 2, 3, 4}]]").unwrap(),
+      "{2, 3/2, 3/2, 2}"
+    );
+    // Triangle with a pendant vertex.
+    assert_eq!(
+      interpret(
+        "MeanNeighborDegree[Graph[{1 <-> 2, 2 <-> 3, 1 <-> 3, 3 <-> 4}]]"
+      )
+      .unwrap(),
+      "{5/2, 5/2, 5/3, 3}"
+    );
+    // An isolated vertex has mean neighbour degree 0.
+    assert_eq!(
+      interpret("MeanNeighborDegree[Graph[{1, 2, 3}, {1 <-> 2}]]").unwrap(),
+      "{1, 1, 0}"
+    );
+  }
 }
 
 mod graph_accessors {
