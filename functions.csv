@@ -804,7 +804,7 @@ RandomGraph,Generate a random graph,✅,contextual,8.0,810
 SphericalHarmonicY,Spherical harmonic function Y_l^m(theta phi),✅,pure,1.0,811
 TagSet,Defines an evaluated upvalue assignment associated with a tag symbol,✅,stateful,1.0,812
 Interpreter,Interprets a string as a typed value (Integer/Real/Number/Boolean/String) or resolves a Country name to an Entity,✅,pure,10.0,813
-ConvexHullMesh,Requires external services or GUI infrastructure,🚫,io,10.0,814
+ConvexHullMesh,Convex hull of a 2D point set as a BoundaryMeshRegion,✅,pure,10.0,814
 RevolutionAxis,Option for axis of revolution,✅,none,7.0,815
 Above,Placement symbol representing above position,✅,pure,1.0,816
 DifferentialD,Differential d notation symbol,✅,none,3.0,819

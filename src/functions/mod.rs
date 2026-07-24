@@ -9,6 +9,7 @@ pub mod calculus_ast;
 pub mod cellular_automaton_ast;
 pub mod chart;
 pub mod control_flow_ast;
+pub mod convex_hull;
 pub mod convolve_ast;
 pub mod count_roots_ast;
 pub mod country_data;

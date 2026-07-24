@@ -3945,6 +3945,11 @@ fn evaluate_function_call_ast_inner(
     return crate::functions::voronoi::voronoi_mesh_ast(args);
   }
 
+  // ConvexHullMesh[{{x1,y1},...}] → convex hull as a BoundaryMeshRegion (2D)
+  if name == "ConvexHullMesh" && args.len() == 1 {
+    return crate::functions::convex_hull::convex_hull_mesh_ast(args);
+  }
+
   // ExpressionGraph[expr] → Graph of the expression tree
   if name == "ExpressionGraph" && args.len() == 1 {
     let mut counter = 0u64;

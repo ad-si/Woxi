@@ -2409,6 +2409,135 @@ mod delaunay_mesh {
   }
 }
 
+mod convex_hull_mesh {
+  use super::*;
+
+  // Interior point dropped; a machine real switches every coordinate to a real
+  // and omits WorkingPrecision. Boundary walks CCW starting at vertex 1.
+  #[test]
+  fn interior_point_real() {
+    assert_eq!(
+      interpret("ConvexHullMesh[{{0,0},{1,0},{0,1},{1,1},{0.5,0.5}}]").unwrap(),
+      "BoundaryMeshRegion[{{0., 0.}, {1., 0.}, {0., 1.}, {1., 1.}}, \
+       {Line[{{1, 2}, {2, 4}, {4, 3}, {3, 1}}]}, \
+       Method -> {SeparateBoundaries -> False}]"
+    );
+  }
+
+  // Exact (integer) input keeps exact vertices and carries WorkingPrecision.
+  #[test]
+  fn exact_square() {
+    assert_eq!(
+      interpret("ConvexHullMesh[{{0,0},{2,0},{2,2},{0,2}}]").unwrap(),
+      "BoundaryMeshRegion[{{0, 0}, {2, 0}, {2, 2}, {0, 2}}, \
+       {Line[{{1, 2}, {2, 3}, {3, 4}, {4, 1}}]}, \
+       Method -> {SeparateBoundaries -> False}, WorkingPrecision -> Infinity]"
+    );
+  }
+
+  // Vertices stay in input order; the boundary walk still runs CCW from 1.
+  #[test]
+  fn scrambled_order() {
+    assert_eq!(
+      interpret("ConvexHullMesh[{{0,0},{2,2},{2,0},{0,2}}]").unwrap(),
+      "BoundaryMeshRegion[{{0, 0}, {2, 2}, {2, 0}, {0, 2}}, \
+       {Line[{{1, 3}, {3, 2}, {2, 4}, {4, 1}}]}, \
+       Method -> {SeparateBoundaries -> False}, WorkingPrecision -> Infinity]"
+    );
+  }
+
+  // A point lying on a hull edge is not a corner and is dropped.
+  #[test]
+  fn collinear_edge_point_dropped() {
+    assert_eq!(
+      interpret("ConvexHullMesh[{{0,0},{1,0},{2,0},{2,2},{0,2}}]").unwrap(),
+      "BoundaryMeshRegion[{{0, 0}, {2, 0}, {2, 2}, {0, 2}}, \
+       {Line[{{1, 2}, {2, 3}, {3, 4}, {4, 1}}]}, \
+       Method -> {SeparateBoundaries -> False}, WorkingPrecision -> Infinity]"
+    );
+  }
+
+  // Rational coordinates stay exact.
+  #[test]
+  fn rational_triangle() {
+    assert_eq!(
+      interpret("ConvexHullMesh[{{0,0},{1,0},{1/2,1}}]").unwrap(),
+      "BoundaryMeshRegion[{{0, 0}, {1, 0}, {1/2, 1}}, \
+       {Line[{{1, 2}, {2, 3}, {3, 1}}]}, \
+       Method -> {SeparateBoundaries -> False}, WorkingPrecision -> Infinity]"
+    );
+  }
+
+  // When the first input point is interior, vertex 1 is the first *hull* point
+  // in input order and the boundary walk still starts there.
+  #[test]
+  fn interior_point_first() {
+    assert_eq!(
+      interpret("ConvexHullMesh[{{1,1},{0,0},{2,0},{2,2},{0,2}}]").unwrap(),
+      "BoundaryMeshRegion[{{0, 0}, {2, 0}, {2, 2}, {0, 2}}, \
+       {Line[{{1, 2}, {2, 3}, {3, 4}, {4, 1}}]}, \
+       Method -> {SeparateBoundaries -> False}, WorkingPrecision -> Infinity]"
+    );
+  }
+
+  // A general convex polygon given in scrambled order.
+  #[test]
+  fn pentagon_scrambled() {
+    assert_eq!(
+      interpret("ConvexHullMesh[{{0,0},{4,1},{3,4},{-1,3},{1,-1}}]").unwrap(),
+      "BoundaryMeshRegion[{{0, 0}, {4, 1}, {3, 4}, {-1, 3}, {1, -1}}, \
+       {Line[{{1, 5}, {5, 2}, {2, 3}, {3, 4}, {4, 1}}]}, \
+       Method -> {SeparateBoundaries -> False}, WorkingPrecision -> Infinity]"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(
+      interpret("Head[ConvexHullMesh[{{0,0},{2,0},{2,2},{0,2}}]]").unwrap(),
+      "BoundaryMeshRegion"
+    );
+  }
+
+  // Fewer than three affinely independent points, all-collinear sets, 3D
+  // inputs, and symbolic arguments stay unevaluated (matching wolframscript,
+  // which issues a message and returns the input).
+  #[test]
+  fn two_points_unevaluated() {
+    assert_eq!(
+      interpret("ConvexHullMesh[{{0,0},{1,1}}]").unwrap(),
+      "ConvexHullMesh[{{0, 0}, {1, 1}}]"
+    );
+  }
+
+  #[test]
+  fn collinear_unevaluated() {
+    assert_eq!(
+      interpret("ConvexHullMesh[{{0,0},{1,1},{2,2}}]").unwrap(),
+      "ConvexHullMesh[{{0, 0}, {1, 1}, {2, 2}}]"
+    );
+  }
+
+  #[test]
+  fn three_d_unevaluated() {
+    assert_eq!(
+      interpret("ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0},{0,0,1},{1,1,1}}]")
+        .unwrap(),
+      "ConvexHullMesh[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}, {1, 1, 1}}]"
+    );
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("ConvexHullMesh[x]").unwrap(), "ConvexHullMesh[x]");
+  }
+
+  #[test]
+  fn head_symbol() {
+    assert_eq!(interpret("Head[ConvexHullMesh]").unwrap(), "Symbol");
+  }
+}
+
 mod cantor_mesh {
   use super::*;
 

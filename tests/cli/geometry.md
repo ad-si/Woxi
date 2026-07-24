@@ -73,3 +73,22 @@ all of them hold.
 $ wo 'GeometricTest[Polygon[{{0, 0}, {2, 0}, {2, 2}, {0, 2}}], "Convex", "Rectangle"]'
 True
 ```
+
+## `ConvexHullMesh`
+
+The convex hull of a 2D point set is returned as a `BoundaryMeshRegion`.
+Interior and collinear-on-edge points are dropped; the remaining corners stay
+in input order and the boundary `Line` walks them counter-clockwise.
+
+```scrut
+$ wo 'ConvexHullMesh[{{0, 0}, {2, 0}, {2, 2}, {0, 2}, {1, 1}}]'
+BoundaryMeshRegion[{{0, 0}, {2, 0}, {2, 2}, {0, 2}}, {Line[{{1, 2}, {2, 3}, {3, 4}, {4, 1}}]}, Method -> {SeparateBoundaries -> False}, WorkingPrecision -> Infinity]
+```
+
+A machine-real coordinate switches every vertex to a real and drops the
+`WorkingPrecision` option.
+
+```scrut
+$ wo 'ConvexHullMesh[{{0, 0}, {1, 0}, {0, 1}, {1, 1}, {0.5, 0.5}}]'
+BoundaryMeshRegion[{{0., 0.}, {1., 0.}, {0., 1.}, {1., 1.}}, {Line[{{1, 2}, {2, 4}, {4, 3}, {3, 1}}]}, Method -> {SeparateBoundaries -> False}]
+```
