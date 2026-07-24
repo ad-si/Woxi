@@ -4840,7 +4840,7 @@ AudioIdentify,,🚫,,12.0,5079
 AudioRecord,,🚫,,11.3,5079
 AutoRefreshed,,,,10.2,5079
 BioSequenceReverseComplement,,🚫,,12.2,5079
-BondCount,,,,12.0,5079
+BondCount,Number of bonds in a molecule,✅,pure,12.0,5079
 CheckArguments,,,,12.2,5079
 ClearPermissions,,🚫,,10.2,5079
 CommonUnits,,,,9.0,5079
@@ -4992,7 +4992,7 @@ AnomalyDetection,,🚫,,12.0,5390
 Anonymous,,,,11.0,5390
 AskState,,🚫,,11.1,5390
 AtomCoordinates,,,,12.0,5390
-AtomCount,,,,12.0,5390
+AtomCount,Number of atoms in a molecule,✅,pure,12.0,5390
 AuthenticationDialog,,🚫,,11.3,5390
 AutocompletionFunction,,🚫,,10.2,5390
 BaseDecode,Base64-decode a string to a ByteArray,✅,pure,11.3,5390

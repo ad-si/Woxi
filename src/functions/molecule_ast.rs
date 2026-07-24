@@ -998,6 +998,60 @@ pub fn bond_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(unevaluated("BondList", args))
 }
 
+/// AtomCount[mol] — total number of atoms; AtomCount[mol, "El"] — number of
+/// atoms of the given element.
+pub fn atom_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() == 1
+    && let Some(result) = molecule_property_from_expr(&args[0], "AtomCount")
+  {
+    return Ok(result);
+  }
+  if args.len() == 2
+    && let Expr::String(elem) = &args[1]
+    && let Some(list) = molecule_property_from_expr(&args[0], "AtomList")
+    && let Expr::List(atoms) = &list
+  {
+    let count = atoms
+      .iter()
+      .filter(|a| {
+        matches!(a, Expr::FunctionCall { name, args: aargs }
+          if name == "Atom" && !aargs.is_empty()
+            && matches!(&aargs[0],
+              Expr::Identifier(s) | Expr::String(s) if s == elem))
+      })
+      .count();
+    return Ok(Expr::Integer(count as i128));
+  }
+  Ok(unevaluated("AtomCount", args))
+}
+
+/// BondCount[mol] — total number of bonds; BondCount[mol, "Type"] — number of
+/// bonds of the given type ("Single", "Double", "Triple", "Aromatic").
+pub fn bond_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() == 1
+    && let Some(result) = molecule_property_from_expr(&args[0], "BondCount")
+  {
+    return Ok(result);
+  }
+  if args.len() == 2
+    && let Expr::String(kind) = &args[1]
+    && let Some(list) = molecule_property_from_expr(&args[0], "BondList")
+    && let Expr::List(bonds) = &list
+  {
+    let count = bonds
+      .iter()
+      .filter(|b| {
+        matches!(b, Expr::FunctionCall { name, args: bargs }
+          if name == "Bond" && bargs.len() >= 2
+            && matches!(&bargs[1],
+              Expr::Identifier(s) | Expr::String(s) if s == kind))
+      })
+      .count();
+    return Ok(Expr::Integer(count as i128));
+  }
+  Ok(unevaluated("BondCount", args))
+}
+
 /// MoleculeValue[mol, "prop"] / MoleculeValue[mol, {props…}].
 pub fn molecule_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 2 {

@@ -1470,6 +1470,12 @@ fn evaluate_function_call_ast_inner(
     "BondList" => {
       return crate::functions::molecule_ast::bond_list_ast(args);
     }
+    "AtomCount" => {
+      return crate::functions::molecule_ast::atom_count_ast(args);
+    }
+    "BondCount" => {
+      return crate::functions::molecule_ast::bond_count_ast(args);
+    }
     "MoleculeValue" => {
       return crate::functions::molecule_ast::molecule_value_ast(args);
     }

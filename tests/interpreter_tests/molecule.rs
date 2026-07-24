@@ -320,6 +320,62 @@ mod molecule_tests {
     assert_eq!(interpret("AtomList[5]").unwrap(), "AtomList[5]");
   }
 
+  // --- AtomCount and BondCount -------------------------------------------
+
+  #[test]
+  fn atom_count_totals() {
+    clear_state();
+    assert_eq!(interpret(r#"AtomCount[Molecule["water"]]"#).unwrap(), "3");
+    assert_eq!(interpret(r#"AtomCount[Molecule["ethanol"]]"#).unwrap(), "9");
+    assert_eq!(
+      interpret(r#"AtomCount[Molecule["caffeine"]]"#).unwrap(),
+      "24"
+    );
+  }
+
+  #[test]
+  fn atom_count_by_element() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"AtomCount[Molecule["water"], "H"]"#).unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(r#"AtomCount[Molecule["ethanol"], "C"]"#).unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(r#"AtomCount[Molecule["ethanol"], "H"]"#).unwrap(),
+      "6"
+    );
+  }
+
+  #[test]
+  fn bond_count_totals() {
+    clear_state();
+    assert_eq!(interpret(r#"BondCount[Molecule["water"]]"#).unwrap(), "2");
+    assert_eq!(interpret(r#"BondCount[Molecule["ethanol"]]"#).unwrap(), "8");
+  }
+
+  #[test]
+  fn bond_count_by_type() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"BondCount[Molecule["water"], "Single"]"#).unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(r#"BondCount[Molecule["ethanol"], "Single"]"#).unwrap(),
+      "8"
+    );
+  }
+
+  #[test]
+  fn atom_count_of_non_molecule_stays_unevaluated() {
+    clear_state();
+    assert_eq!(interpret("AtomCount[5]").unwrap(), "AtomCount[5]");
+  }
+
   // --- MoleculeValue and property access ---------------------------------
 
   #[test]
