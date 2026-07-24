@@ -6563,6 +6563,36 @@ fn try_match_si_ci_over_linear(
     "Cosh" => "CoshIntegral",
     _ => return None,
   };
+
+  // ∫ f[x^n] / (c*x) dx = FIntegral[x^n] / (n*c) via the substitution u = x^n
+  // (du = n x^(n-1) dx), which turns f[x^n]/x dx into f[u]/(n u) du.
+  // Only pure integer powers n ≥ 2 of the variable are handled here; the
+  // linear case (n = 1) falls through to the a*x branch below.
+  if let Some(n) = match_pure_power_of_var(&args[0], var)
+    && n >= 2
+    && let Some(denom_const) = try_match_linear_arg(denominator, var)
+  {
+    let si_expr = Expr::FunctionCall {
+      name: integral_name.to_string(),
+      args: vec![args[0].clone()].into(),
+    };
+    // divisor = n * c
+    let divisor = simplify(Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(n)),
+      right: Box::new(denom_const),
+    });
+    return Some(if matches!(&divisor, Expr::Integer(1)) {
+      si_expr
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(si_expr),
+        right: Box::new(divisor),
+      }
+    });
+  }
+
   let linear_coeff = try_match_linear_arg(&args[0], var)?; // a in f(a*x)
   let denom_const = try_match_linear_arg(denominator, var)?; // c in c*x
 
@@ -6588,6 +6618,30 @@ fn try_match_si_ci_over_linear(
       left: Box::new(si_expr),
       right: Box::new(denom_const),
     })
+  }
+}
+
+/// If `expr` is a pure integer power `var^n` of the integration variable,
+/// return `n`. Matches both the parsed `BinaryOp{Power}` and the normalized
+/// `FunctionCall "Power"` shapes.
+fn match_pure_power_of_var(expr: &Expr, var: &str) -> Option<i128> {
+  let (base, exp) = match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => (left.as_ref(), right.as_ref()),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    _ => return None,
+  };
+  if !matches!(base, Expr::Identifier(nm) if nm == var) {
+    return None;
+  }
+  match exp {
+    Expr::Integer(n) => Some(*n),
+    _ => None,
   }
 }
 

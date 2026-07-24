@@ -7680,10 +7680,26 @@ mod integrate_si_ci {
       interpret("Integrate[Tan[x]/x, x]").unwrap(),
       "Integrate[Tan[x]/x, x]"
     );
-    // A nonlinear argument is not the simple f(a x)/x pattern.
+  }
+
+  // ∫ f[x^n]/x dx = FIntegral[x^n]/n via the substitution u = x^n.
+  #[test]
+  fn power_argument_over_x() {
     assert_eq!(
       interpret("Integrate[Sin[x^2]/x, x]").unwrap(),
-      "Integrate[Sin[x^2]/x, x]"
+      "SinIntegral[x^2]/2"
+    );
+    assert_eq!(
+      interpret("Integrate[Cos[x^2]/x, x]").unwrap(),
+      "CosIntegral[x^2]/2"
+    );
+    assert_eq!(
+      interpret("Integrate[Sin[x^3]/x, x]").unwrap(),
+      "SinIntegral[x^3]/3"
+    );
+    assert_eq!(
+      interpret("Integrate[Sinh[x^2]/x, x]").unwrap(),
+      "SinhIntegral[x^2]/2"
     );
   }
 }
