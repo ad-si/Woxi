@@ -4014,6 +4014,43 @@ mod graph_predicates {
     );
   }
 
+  // FindPostmanTour: an Eulerian graph's tour is exactly its Eulerian cycle.
+  #[test]
+  fn find_postman_tour_eulerian() {
+    assert_eq!(
+      interpret("FindPostmanTour[CycleGraph[4]]").unwrap(),
+      "{{1 \u{f3d4} 4, 4 \u{f3d4} 3, 3 \u{f3d4} 2, 2 \u{f3d4} 1}}"
+    );
+    assert_eq!(
+      interpret("FindPostmanTour[CompleteGraph[5]]").unwrap(),
+      "{{1 \u{f3d4} 5, 5 \u{f3d4} 4, 4 \u{f3d4} 3, 3 \u{f3d4} 5, \
+       5 \u{f3d4} 2, 2 \u{f3d4} 4, 4 \u{f3d4} 1, 1 \u{f3d4} 3, \
+       3 \u{f3d4} 2, 2 \u{f3d4} 1}}"
+    );
+  }
+
+  // A non-Eulerian graph duplicates a minimum-weight pairing of the
+  // odd-degree vertices, then traces the tour over the augmented multigraph.
+  #[test]
+  fn find_postman_tour_non_eulerian() {
+    // Two odd endpoints: the whole path is retraced.
+    assert_eq!(
+      interpret("FindPostmanTour[PathGraph[{1, 2, 3}]]").unwrap(),
+      "{{1 \u{f3d4} 2, 2 \u{f3d4} 3, 3 \u{f3d4} 2, 2 \u{f3d4} 1}}"
+    );
+    // Four odd vertices in K4: the pairing {1,2},{3,4} duplicates edges 1-2
+    // and 3-4.
+    assert_eq!(
+      interpret("FindPostmanTour[CompleteGraph[4]]").unwrap(),
+      "{{1 \u{f3d4} 4, 4 \u{f3d4} 3, 3 \u{f3d4} 4, 4 \u{f3d4} 2, \
+       2 \u{f3d4} 3, 3 \u{f3d4} 1, 1 \u{f3d4} 2, 2 \u{f3d4} 1}}"
+    );
+    assert_eq!(
+      interpret("FindPostmanTour[GridGraph[{2, 2}]]").unwrap(),
+      "{{1 \u{f3d4} 3, 3 \u{f3d4} 4, 4 \u{f3d4} 2, 2 \u{f3d4} 1}}"
+    );
+  }
+
   #[test]
   fn bipartite_graph_q() {
     assert_eq!(interpret("BipartiteGraphQ[CycleGraph[4]]").unwrap(), "True");

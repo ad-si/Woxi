@@ -3256,7 +3256,7 @@ CommunityRegionStyle,,,,9.0,3344
 ControllerState,,,,6.0,3344
 DefaultValues,Returns the default values of a symbol,✅,pure,2.0,3344
 FindIndependentEdgeSet,,,,8.0,3344
-FindPostmanTour,,,,9.0,3344
+FindPostmanTour,Find a shortest closed walk traversing every edge (Chinese postman),✅,pure,9.0,3344
 GoldenAngle,The golden angle constant Pi(3 - Sqrt[5]),✅,pure,10.2,3344
 GroupStabilizer,Pointwise stabilizer subgroup with canonical generators (named groups; forced PermutationGroup cases),✅,pure,8.0,3344
 InputStream,Input stream object,✅,effectful,2.0,3344

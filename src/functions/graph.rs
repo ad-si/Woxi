@@ -2112,6 +2112,42 @@ pub fn find_hamiltonian_cycle_ast(
   Ok(Expr::List(vec![Expr::List(cycle.into())].into()))
 }
 
+/// Hierholzer's algorithm from vertex 0. `adj[v]` lists `(neighbour, edge id)`
+/// pairs (already sorted highest-neighbour-first); each edge id is consumed
+/// once. Returns the closed Euler tour as a vertex sequence if one exists that
+/// uses all `num_edges` edges and returns to the start, else None.
+fn hierholzer_euler_tour(
+  n: usize,
+  adj: &[Vec<(usize, usize)>],
+  num_edges: usize,
+) -> Option<Vec<usize>> {
+  let mut used = vec![false; num_edges];
+  let mut next_idx = vec![0usize; n];
+  let mut stack: Vec<usize> = vec![0];
+  let mut circuit: Vec<usize> = Vec::new();
+  while let Some(&v) = stack.last() {
+    let mut advanced = false;
+    while next_idx[v] < adj[v].len() {
+      let (u, id) = adj[v][next_idx[v]];
+      next_idx[v] += 1;
+      if !used[id] {
+        used[id] = true;
+        stack.push(u);
+        advanced = true;
+        break;
+      }
+    }
+    if !advanced {
+      circuit.push(stack.pop().unwrap());
+    }
+  }
+  if circuit.len() != num_edges + 1 || circuit.first() != circuit.last() {
+    return None;
+  }
+  circuit.reverse();
+  Some(circuit)
+}
+
 /// FindEulerianCycle[g] returns a length-1 list holding one Eulerian cycle
 /// (a closed walk using every edge exactly once) as a list of edges, or `{}`
 /// when the graph has no Eulerian cycle. The traversal is Hierholzer's
@@ -2180,34 +2216,10 @@ pub fn find_eulerian_cycle_ast(
     a.sort_by(|x, y| y.0.cmp(&x.0));
   }
 
-  // Hierholzer's algorithm from vertex 0.
-  let mut used = vec![false; num_edges];
-  let mut next_idx = vec![0usize; n]; // scan cursor into each adjacency list
-  let mut stack: Vec<usize> = vec![0];
-  let mut circuit: Vec<usize> = Vec::new();
-  while let Some(&v) = stack.last() {
-    let mut advanced = false;
-    while next_idx[v] < adj[v].len() {
-      let (u, id) = adj[v][next_idx[v]];
-      next_idx[v] += 1;
-      if !used[id] {
-        used[id] = true;
-        stack.push(u);
-        advanced = true;
-        break;
-      }
-    }
-    if !advanced {
-      circuit.push(stack.pop().unwrap());
-    }
-  }
-
-  // A valid Eulerian cycle uses every edge and closes back on its start
-  // vertex; otherwise the graph has none (e.g. odd-degree vertices).
-  if circuit.len() != num_edges + 1 || circuit.first() != circuit.last() {
-    return Ok(empty);
-  }
-  circuit.reverse();
+  let circuit = match hierholzer_euler_tour(n, &adj, num_edges) {
+    Some(c) => c,
+    None => return Ok(empty),
+  };
 
   let edge_kind = if edges.iter().any(|e| e.2) {
     "DirectedEdge"
@@ -2222,6 +2234,180 @@ pub fn find_eulerian_cycle_ast(
     })
     .collect();
   Ok(Expr::List(vec![Expr::List(cycle.into())].into()))
+}
+
+/// FindPostmanTour[g] returns a length-1 list holding a shortest closed walk
+/// that traverses every edge at least once (the Chinese-postman route). For an
+/// Eulerian graph this is the Eulerian cycle; otherwise a minimum-weight
+/// pairing of the odd-degree vertices is duplicated to make the graph
+/// Eulerian, then Hierholzer's algorithm (highest-ranked neighbour first, from
+/// vertex 0) traces the tour — matching wolframscript on the reproducible
+/// forms. Only undirected graphs are handled.
+pub fn find_postman_tour_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Ok(unevaluated("FindPostmanTour", args));
+  if args.len() != 1 {
+    return unevaluated();
+  }
+  let (vertices, raw_edges) = match fc_parse_input(&args[0]) {
+    Some(p) => p,
+    None => return unevaluated(),
+  };
+  let n = vertices.len();
+  let empty = Expr::List(vec![].into());
+  if n == 0 {
+    return Ok(empty);
+  }
+
+  let mut rank: HashMap<String, usize> = HashMap::new();
+  for (i, v) in vertices.iter().enumerate() {
+    rank.entry(expr_to_string(v)).or_insert(i);
+  }
+
+  // Undirected edges only; a directed edge defers to the symbolic form.
+  let mut edges: Vec<(usize, usize)> = Vec::new();
+  for e in &raw_edges {
+    let inner = fc_unwrap_edge(e);
+    let (src, dst) = match inner {
+      Expr::FunctionCall { name, args: eargs } if eargs.len() == 2 => {
+        if name != "UndirectedEdge" && name != "TwoWayRule" {
+          return unevaluated();
+        }
+        (&eargs[0], &eargs[1])
+      }
+      _ => return unevaluated(),
+    };
+    match (
+      rank.get(&expr_to_string(src)),
+      rank.get(&expr_to_string(dst)),
+    ) {
+      (Some(&s), Some(&d)) => edges.push((s, d)),
+      _ => return unevaluated(),
+    }
+  }
+  if edges.is_empty() {
+    return Ok(empty);
+  }
+
+  // Degrees (self-loops add 2, so never change parity) and simple adjacency.
+  let mut degree = vec![0usize; n];
+  let mut simple_adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+  for &(a, b) in &edges {
+    degree[a] += 1;
+    degree[b] += 1;
+    if a != b {
+      if !simple_adj[a].contains(&b) {
+        simple_adj[a].push(b);
+      }
+      if !simple_adj[b].contains(&a) {
+        simple_adj[b].push(a);
+      }
+    }
+  }
+  let odd: Vec<usize> = (0..n).filter(|&v| degree[v] % 2 == 1).collect();
+
+  // Start from the original edge multiset; odd-vertex pairing adds duplicates.
+  let mut aug_edges = edges.clone();
+
+  if !odd.is_empty() {
+    // BFS shortest paths (with predecessors) from each odd vertex.
+    let bfs = |src: usize| -> (Vec<i64>, Vec<isize>) {
+      let mut dist = vec![-1i64; n];
+      let mut pred = vec![-1isize; n];
+      let mut queue = std::collections::VecDeque::new();
+      dist[src] = 0;
+      queue.push_back(src);
+      while let Some(u) = queue.pop_front() {
+        for &w in &simple_adj[u] {
+          if dist[w] < 0 {
+            dist[w] = dist[u] + 1;
+            pred[w] = u as isize;
+            queue.push_back(w);
+          }
+        }
+      }
+      (dist, pred)
+    };
+    let mut dist_from: HashMap<usize, (Vec<i64>, Vec<isize>)> = HashMap::new();
+    for &o in &odd {
+      dist_from.insert(o, bfs(o));
+    }
+    // Odd vertices come in even count (handshaking); a disconnected pair is
+    // unreachable, so no postman tour exists.
+    // Minimum-weight perfect matching by depth-first enumeration; the first
+    // matching achieving the minimum total distance wins (lexicographically
+    // smallest, matching wolframscript's choice).
+    fn match_odd(
+      remaining: &[usize],
+      dist_from: &HashMap<usize, (Vec<i64>, Vec<isize>)>,
+      cur: i64,
+      pairs: &mut Vec<(usize, usize)>,
+      best: &mut Option<(i64, Vec<(usize, usize)>)>,
+    ) {
+      if remaining.is_empty() {
+        if best.as_ref().is_none_or(|(w, _)| cur < *w) {
+          *best = Some((cur, pairs.clone()));
+        }
+        return;
+      }
+      let a = remaining[0];
+      for j in 1..remaining.len() {
+        let b = remaining[j];
+        let d = dist_from[&a].0[b];
+        if d < 0 {
+          continue; // unreachable
+        }
+        if let Some((w, _)) = best.as_ref()
+          && cur + d >= *w
+        {
+          continue; // cannot beat the current best
+        }
+        let rest: Vec<usize> =
+          remaining[1..].iter().copied().filter(|&x| x != b).collect();
+        pairs.push((a, b));
+        match_odd(&rest, dist_from, cur + d, pairs, best);
+        pairs.pop();
+      }
+    }
+    let mut best: Option<(i64, Vec<(usize, usize)>)> = None;
+    match_odd(&odd, &dist_from, 0, &mut Vec::new(), &mut best);
+    let pairs = match best {
+      Some((_, p)) => p,
+      None => return Ok(empty),
+    };
+    // Duplicate each matched pair's shortest path.
+    for (a, b) in pairs {
+      let (_, pred) = &dist_from[&a];
+      let mut cur = b as isize;
+      while cur != a as isize && pred[cur as usize] >= 0 {
+        let p = pred[cur as usize];
+        aug_edges.push((p as usize, cur as usize));
+        cur = p;
+      }
+    }
+  }
+
+  // Build adjacency over the augmented multiset and trace the tour.
+  let num_edges = aug_edges.len();
+  let mut adj: Vec<Vec<(usize, usize)>> = vec![Vec::new(); n];
+  for (id, &(a, b)) in aug_edges.iter().enumerate() {
+    adj[a].push((b, id));
+    adj[b].push((a, id));
+  }
+  for a in &mut adj {
+    a.sort_by(|x, y| y.0.cmp(&x.0));
+  }
+  let circuit = match hierholzer_euler_tour(n, &adj, num_edges) {
+    Some(c) => c,
+    None => return Ok(empty),
+  };
+  let tour: Vec<Expr> = circuit
+    .windows(2)
+    .map(|w| Expr::FunctionCall {
+      name: "UndirectedEdge".to_string(),
+      args: vec![vertices[w[0]].clone(), vertices[w[1]].clone()].into(),
+    })
+    .collect();
+  Ok(Expr::List(vec![Expr::List(tour.into())].into()))
 }
 
 fn collect_directives(expr: &Expr) -> Vec<Expr> {
