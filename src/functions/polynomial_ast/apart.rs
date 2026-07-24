@@ -787,7 +787,7 @@ struct Rat {
 impl Rat {
   fn new(n: i128, d: i128) -> Rat {
     let (n, d) = rat_reduce(n, d);
-    Rat { n: n, d: d }
+    Rat { n, d }
   }
   fn int(n: i128) -> Rat {
     Rat { n, d: 1 }

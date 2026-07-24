@@ -19,7 +19,7 @@ impl Rat {
   fn new(n: i128, d: i128) -> Self {
     assert!(d != 0);
     let (n, d) = rat_reduce(n, d);
-    Rat { n: n, d: d }
+    Rat { n, d }
   }
 
   fn zero() -> Self {
