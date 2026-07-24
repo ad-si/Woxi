@@ -3969,6 +3969,51 @@ mod graph_predicates {
     );
   }
 
+  // FindEulerianCycle: Hierholzer from the first vertex, taking the
+  // highest-ranked available neighbour (reproduces wolframscript's cycle).
+  #[test]
+  fn find_eulerian_cycle() {
+    assert_eq!(
+      interpret("FindEulerianCycle[CycleGraph[4]]").unwrap(),
+      "{{1 \u{f3d4} 4, 4 \u{f3d4} 3, 3 \u{f3d4} 2, 2 \u{f3d4} 1}}"
+    );
+    assert_eq!(
+      interpret("FindEulerianCycle[CompleteGraph[3]]").unwrap(),
+      "{{1 \u{f3d4} 3, 3 \u{f3d4} 2, 2 \u{f3d4} 1}}"
+    );
+    // Every vertex of K5 has even degree, so it is Eulerian; the walk revisits
+    // vertices and is spliced by Hierholzer's algorithm.
+    assert_eq!(
+      interpret("FindEulerianCycle[CompleteGraph[5]]").unwrap(),
+      "{{1 \u{f3d4} 5, 5 \u{f3d4} 4, 4 \u{f3d4} 3, 3 \u{f3d4} 5, \
+       5 \u{f3d4} 2, 2 \u{f3d4} 4, 4 \u{f3d4} 1, 1 \u{f3d4} 3, \
+       3 \u{f3d4} 2, 2 \u{f3d4} 1}}"
+    );
+    // Two triangles sharing a vertex: the walk stitches the two loops.
+    assert_eq!(
+      interpret(
+        "FindEulerianCycle[Graph[{1 <-> 2, 2 <-> 3, 1 <-> 3, \
+         1 <-> 4, 4 <-> 5, 1 <-> 5}]]"
+      )
+      .unwrap(),
+      "{{1 \u{f3d4} 5, 5 \u{f3d4} 4, 4 \u{f3d4} 1, 1 \u{f3d4} 3, \
+       3 \u{f3d4} 2, 2 \u{f3d4} 1}}"
+    );
+  }
+
+  #[test]
+  fn find_eulerian_cycle_none() {
+    // Odd-degree endpoints → no Eulerian cycle.
+    assert_eq!(
+      interpret("FindEulerianCycle[PathGraph[{1, 2, 3}]]").unwrap(),
+      "{}"
+    );
+    assert_eq!(
+      interpret("FindEulerianCycle[Graph[{1 <-> 2, 2 <-> 3}]]").unwrap(),
+      "{}"
+    );
+  }
+
   #[test]
   fn bipartite_graph_q() {
     assert_eq!(interpret("BipartiteGraphQ[CycleGraph[4]]").unwrap(), "True");

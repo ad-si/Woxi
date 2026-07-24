@@ -2112,6 +2112,118 @@ pub fn find_hamiltonian_cycle_ast(
   Ok(Expr::List(vec![Expr::List(cycle.into())].into()))
 }
 
+/// FindEulerianCycle[g] returns a length-1 list holding one Eulerian cycle
+/// (a closed walk using every edge exactly once) as a list of edges, or `{}`
+/// when the graph has no Eulerian cycle. The traversal is Hierholzer's
+/// algorithm starting at the first vertex and always taking the
+/// highest-ranked available neighbour, which reproduces wolframscript's
+/// chosen cycle.
+pub fn find_eulerian_cycle_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Ok(unevaluated("FindEulerianCycle", args));
+  if args.len() != 1 {
+    return unevaluated();
+  }
+  let (vertices, raw_edges) = match fc_parse_input(&args[0]) {
+    Some(p) => p,
+    None => return unevaluated(),
+  };
+  let n = vertices.len();
+  let empty = Expr::List(vec![].into());
+  if n == 0 {
+    return Ok(empty);
+  }
+
+  let mut rank: HashMap<String, usize> = HashMap::new();
+  for (i, v) in vertices.iter().enumerate() {
+    rank.entry(expr_to_string(v)).or_insert(i);
+  }
+
+  // Edge list as (src rank, dst rank, directed). Adjacency stores
+  // (neighbour rank, edge id) so each edge is consumed exactly once.
+  let mut edges: Vec<(usize, usize, bool)> = Vec::new();
+  let mut adj: Vec<Vec<(usize, usize)>> = vec![Vec::new(); n];
+  for e in &raw_edges {
+    let inner = fc_unwrap_edge(e);
+    let (src, dst, directed) = match inner {
+      Expr::FunctionCall { name, args: eargs } if eargs.len() == 2 => {
+        let d = name != "UndirectedEdge" && name != "TwoWayRule";
+        (&eargs[0], &eargs[1], d)
+      }
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref(), true),
+      _ => continue,
+    };
+    let (si, di) = match (
+      rank.get(&expr_to_string(src)),
+      rank.get(&expr_to_string(dst)),
+    ) {
+      (Some(&s), Some(&d)) => (s, d),
+      _ => return unevaluated(),
+    };
+    let id = edges.len();
+    edges.push((si, di, directed));
+    adj[si].push((di, id));
+    if !directed {
+      adj[di].push((si, id));
+    }
+  }
+  let num_edges = edges.len();
+  if num_edges == 0 {
+    return Ok(empty);
+  }
+  // Highest-ranked neighbour first (wolframscript's tie-break).
+  for a in &mut adj {
+    a.sort_by(|x, y| y.0.cmp(&x.0));
+  }
+
+  // Hierholzer's algorithm from vertex 0.
+  let mut used = vec![false; num_edges];
+  let mut next_idx = vec![0usize; n]; // scan cursor into each adjacency list
+  let mut stack: Vec<usize> = vec![0];
+  let mut circuit: Vec<usize> = Vec::new();
+  while let Some(&v) = stack.last() {
+    let mut advanced = false;
+    while next_idx[v] < adj[v].len() {
+      let (u, id) = adj[v][next_idx[v]];
+      next_idx[v] += 1;
+      if !used[id] {
+        used[id] = true;
+        stack.push(u);
+        advanced = true;
+        break;
+      }
+    }
+    if !advanced {
+      circuit.push(stack.pop().unwrap());
+    }
+  }
+
+  // A valid Eulerian cycle uses every edge and closes back on its start
+  // vertex; otherwise the graph has none (e.g. odd-degree vertices).
+  if circuit.len() != num_edges + 1 || circuit.first() != circuit.last() {
+    return Ok(empty);
+  }
+  circuit.reverse();
+
+  let edge_kind = if edges.iter().any(|e| e.2) {
+    "DirectedEdge"
+  } else {
+    "UndirectedEdge"
+  };
+  let cycle: Vec<Expr> = circuit
+    .windows(2)
+    .map(|w| Expr::FunctionCall {
+      name: edge_kind.to_string(),
+      args: vec![vertices[w[0]].clone(), vertices[w[1]].clone()].into(),
+    })
+    .collect();
+  Ok(Expr::List(vec![Expr::List(cycle.into())].into()))
+}
+
 fn collect_directives(expr: &Expr) -> Vec<Expr> {
   match expr {
     Expr::FunctionCall { name, args } if name == "Directive" => args.to_vec(),

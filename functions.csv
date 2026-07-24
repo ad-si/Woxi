@@ -2755,7 +2755,7 @@ GeoCircle,Geodesic circle primitive for GeoGraphics,✅,pure,10.0,2812
 HyperbolicDistribution,Hyperbolic distribution with parameters for shape and location,✅,pure,8.0,2812
 ImageKeypoints,,🚫,,8.0,2812
 SectorSpacing,Option for pie chart sector spacing,✅,pure,7.0,2812
-FindEulerianCycle,,🚫,,8.0,2816
+FindEulerianCycle,Find an Eulerian cycle traversing every edge once,✅,pure,8.0,2816
 GaborWavelet,Gabor wavelet of a given frequency (continuous complex family),✅,pure,8.0,2816
 MultivariateHypergeometricDistribution,,🚫,,8.0,2816
 PolarAxesOrigin,Option for the origin of polar axes in polar plots,✅,pure,7.0,2816

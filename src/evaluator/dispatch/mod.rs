@@ -4192,6 +4192,11 @@ fn evaluate_function_call_ast_inner(
     return crate::functions::graph::find_hamiltonian_cycle_ast(args);
   }
 
+  // FindEulerianCycle[graph] → length-1 list with one Eulerian cycle, or {}
+  if name == "FindEulerianCycle" && args.len() == 1 {
+    return crate::functions::graph::find_eulerian_cycle_ast(args);
+  }
+
   // FindFundamentalCycles[graph | edgeList] → BFS fundamental cycle basis
   if name == "FindFundamentalCycles" {
     return crate::functions::graph::find_fundamental_cycles_ast(args);
