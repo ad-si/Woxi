@@ -12057,14 +12057,56 @@ fn one_sided_limit_ast(
 
   let result = limit_ast(&[args[0].clone(), args[1].clone(), direction_opt])?;
 
-  // Check if result is unevaluated Limit
-  if let Expr::FunctionCall { name, .. } = &result
-    && name == "Limit"
-  {
-    return Ok(unevaluated(fn_name, args));
+  let is_indeterminate =
+    matches!(&result, Expr::Identifier(s) if s == "Indeterminate");
+  let is_unevaluated =
+    matches!(&result, Expr::FunctionCall { name, .. } if name == "Limit");
+
+  // When the directional limit does not resolve, a bounded oscillation still
+  // has a definite limit superior / inferior. Sin[g] and Cos[g] with an
+  // argument g that grows without bound oscillate over [-1, 1], so their
+  // MaxLimit is 1 and MinLimit is -1 (matching wolframscript).
+  if is_indeterminate || is_unevaluated {
+    if let Some(v) = bounded_trig_extremum(&args[0], &args[1], fn_name)? {
+      return Ok(v);
+    }
+    if is_unevaluated {
+      return Ok(unevaluated(fn_name, args));
+    }
   }
 
   Ok(result)
+}
+
+/// For `Sin[g]` / `Cos[g]` whose argument `g` tends to (complex) infinity at
+/// the limit point, return the limsup (`MaxLimit` → 1) or liminf (`MinLimit`
+/// → -1); otherwise None.
+fn bounded_trig_extremum(
+  expr: &Expr,
+  rule: &Expr,
+  fn_name: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  let Expr::FunctionCall { name, args: fargs } = expr else {
+    return Ok(None);
+  };
+  if (name != "Sin" && name != "Cos") || fargs.len() != 1 {
+    return Ok(None);
+  }
+  // The argument oscillates without settling iff its magnitude diverges.
+  let abs_arg = Expr::FunctionCall {
+    name: "Abs".to_string(),
+    args: vec![fargs[0].clone()].into(),
+  };
+  let abs_limit = limit_ast(&[abs_arg, rule.clone()])?;
+  let unbounded = matches!(&abs_limit, Expr::Identifier(s) if s == "Infinity");
+  if !unbounded {
+    return Ok(None);
+  }
+  Ok(Some(Expr::Integer(if fn_name == "MaxLimit" {
+    1
+  } else {
+    -1
+  })))
 }
 
 /// Direction for one-sided limits

@@ -11087,6 +11087,20 @@ mod max_limit {
   fn constant() {
     assert_eq!(interpret("MaxLimit[5, x -> 0]").unwrap(), "5");
   }
+
+  // A bounded trig oscillation has limit superior 1 once its argument grows
+  // without bound.
+  #[test]
+  fn bounded_trig_oscillation() {
+    assert_eq!(interpret("MaxLimit[Sin[x], x -> Infinity]").unwrap(), "1");
+    assert_eq!(interpret("MaxLimit[Cos[x], x -> Infinity]").unwrap(), "1");
+    assert_eq!(interpret("MaxLimit[Sin[x^2], x -> Infinity]").unwrap(), "1");
+    assert_eq!(interpret("MaxLimit[Cos[3 x], x -> Infinity]").unwrap(), "1");
+    // Argument diverges as x -> 0.
+    assert_eq!(interpret("MaxLimit[Sin[1/x], x -> 0]").unwrap(), "1");
+    // At a finite point the trig is continuous, so the ordinary value stands.
+    assert_eq!(interpret("MaxLimit[Sin[x], x -> 5]").unwrap(), "Sin[5]");
+  }
 }
 
 mod min_limit {
@@ -11105,6 +11119,14 @@ mod min_limit {
   #[test]
   fn constant() {
     assert_eq!(interpret("MinLimit[5, x -> 0]").unwrap(), "5");
+  }
+
+  // A bounded trig oscillation has limit inferior -1.
+  #[test]
+  fn bounded_trig_oscillation() {
+    assert_eq!(interpret("MinLimit[Sin[x], x -> Infinity]").unwrap(), "-1");
+    assert_eq!(interpret("MinLimit[Cos[x], x -> Infinity]").unwrap(), "-1");
+    assert_eq!(interpret("MinLimit[Sin[1/x], x -> 0]").unwrap(), "-1");
   }
 }
 
