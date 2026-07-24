@@ -2638,6 +2638,62 @@ fn evaluate_function_call_ast_inner(
     }
   }
 
+  // TorusGraph[{n1, …, nk}] → the k-dimensional torus graph, i.e. the
+  // Cartesian product of cycles C_{n1} □ … □ C_{nk}. Vertices 1..(∏ ni) are
+  // laid out row-major (the first dimension is outermost); each vertex emits a
+  // forward edge in every dimension, wrapping around, in vertex-then-dimension
+  // order — reproducing wolframscript's EdgeList exactly (including the double
+  // edges a size-2 dimension produces).
+  if name == "TorusGraph"
+    && args.len() == 1
+    && let Expr::List(dims) = &args[0]
+    && !dims.is_empty()
+    && dims
+      .iter()
+      .all(|d| matches!(d, Expr::Integer(n) if *n >= 1))
+  {
+    let sizes: Vec<usize> = dims
+      .iter()
+      .map(|d| match d {
+        Expr::Integer(n) => *n as usize,
+        _ => unreachable!("guarded above"),
+      })
+      .collect();
+    let k = sizes.len();
+    let total: usize = sizes.iter().product();
+    // strides[d] = product of the sizes after dimension d.
+    let mut strides = vec![1usize; k];
+    for d in (0..k.saturating_sub(1)).rev() {
+      strides[d] = strides[d + 1] * sizes[d + 1];
+    }
+    let vertices: Vec<Expr> =
+      (1..=total).map(|i| Expr::Integer(i as i128)).collect();
+    let mut edges = Vec::new();
+    for v in 1..=total {
+      let idx0 = v - 1;
+      for d in 0..k {
+        let coord_d = (idx0 / strides[d]) % sizes[d];
+        let neighbor0 = if coord_d + 1 < sizes[d] {
+          idx0 + strides[d]
+        } else {
+          idx0 - coord_d * strides[d]
+        };
+        edges.push(Expr::FunctionCall {
+          name: "UndirectedEdge".to_string(),
+          args: vec![
+            Expr::Integer(v as i128),
+            Expr::Integer((neighbor0 + 1) as i128),
+          ]
+          .into(),
+        });
+      }
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Graph".to_string(),
+      args: vec![Expr::List(vertices.into()), Expr::List(edges.into())].into(),
+    });
+  }
+
   // StarGraph[n] → star graph with 1 center vertex connected to n-1 outer vertices
   if name == "StarGraph"
     && args.len() == 1

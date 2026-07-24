@@ -1250,6 +1250,50 @@ mod graph_rendering {
     assert_eq!(interpret("GridGraph[{3, 3}]").unwrap(), "Graph[<9>, <12>]");
   }
 
+  // TorusGraph[{n1, …, nk}] is the Cartesian product of cycles: ∏ ni vertices,
+  // each of degree 2k, so k·(∏ ni) edges.
+  #[test]
+  fn torus_graph_counts() {
+    assert_eq!(interpret("VertexCount[TorusGraph[{3, 3}]]").unwrap(), "9");
+    assert_eq!(interpret("EdgeCount[TorusGraph[{3, 3}]]").unwrap(), "18");
+    assert_eq!(
+      interpret("VertexCount[TorusGraph[{2, 2, 2}]]").unwrap(),
+      "8"
+    );
+    assert_eq!(interpret("EdgeCount[TorusGraph[{2, 2, 2}]]").unwrap(), "24");
+    // Every vertex of a k-torus has degree 2k.
+    assert_eq!(
+      interpret("Union[VertexDegree[TorusGraph[{3, 3}]]]").unwrap(),
+      "{4}"
+    );
+  }
+
+  // Each vertex emits a forward edge per dimension, in vertex-then-dimension
+  // order (the first dimension is outermost).
+  #[test]
+  fn torus_graph_edge_list_2x3() {
+    assert_eq!(
+      interpret("EdgeList[TorusGraph[{2, 3}]]").unwrap(),
+      format!(
+        "{{1 {ue} 4, 1 {ue} 2, 2 {ue} 5, 2 {ue} 3, 3 {ue} 6, 3 {ue} 1, \
+          4 {ue} 1, 4 {ue} 5, 5 {ue} 2, 5 {ue} 6, 6 {ue} 3, 6 {ue} 4}}",
+        ue = "\u{f3d4}"
+      )
+    );
+  }
+
+  // A one-dimensional torus is just a cycle.
+  #[test]
+  fn torus_graph_one_dimensional_is_cycle() {
+    assert_eq!(
+      interpret("EdgeList[TorusGraph[{4}]]").unwrap(),
+      format!(
+        "{{1 {ue} 2, 2 {ue} 3, 3 {ue} 4, 4 {ue} 1}}",
+        ue = "\u{f3d4}"
+      )
+    );
+  }
+
   #[test]
   fn graph_export_string_svg() {
     let result =

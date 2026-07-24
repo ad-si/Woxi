@@ -6063,7 +6063,7 @@ ToRawPointer,,,,13.1,
 ToTabular,Converts data into a Tabular object with specified orientation,✅,pure,14.2,
 ToonShading,,🚫,,12.1,
 Torus,Torus surface graphics and region primitive,✅,unevaluated,13.0,
-TorusGraph,,,,13.1,
+TorusGraph,K-dimensional torus graph (Cartesian product of cycles),✅,pure,13.1,6187
 Tour3DVideo,,🚫,,14.0,
 TourVideo,,🚫,,13.0,
 TrackCellChangeTimes,,,,13.3,
