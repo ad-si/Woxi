@@ -4,7 +4,7 @@
 //! and integration.
 
 use crate::InterpreterError;
-use crate::functions::math_ast::{gcd_i128, is_sqrt, make_sqrt};
+use crate::functions::math_ast::{gcd_i128, is_sqrt, make_sqrt, rat_reduce};
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
 };
@@ -6264,9 +6264,7 @@ fn try_integrate_trig_power(base: &Expr, n: i128, var: &str) -> Option<Expr> {
     // Constant term: C(n,m) / 2^n * x
     let binom_mid = crate::functions::binomial_coeff(n, m);
     let denom = 1i128 << n; // 2^n
-    let g = gcd_i128(binom_mid, denom);
-    let const_num = binom_mid / g;
-    let const_den = denom / g;
+    let (const_num, const_den) = rat_reduce(binom_mid, denom);
     let numer_term = if const_num == 1 {
       Expr::Identifier(var.to_string())
     } else {
@@ -6336,9 +6334,7 @@ fn try_integrate_trig_power(base: &Expr, n: i128, var: &str) -> Option<Expr> {
     // Total coefficient: coeff_num / (freq * 4^m)
     let power_2n = 1i128 << n; // 2^n
     let denom = freq * power_2n; // freq * 2^n
-    let g = gcd_i128(coeff_num, denom);
-    let num = coeff_num / g;
-    let den = denom / g;
+    let (num, den) = rat_reduce(coeff_num, denom);
 
     let term = if matches!(&coeff, Expr::Integer(1)) {
       make_fraction_term(num, den, integrated_trig)
@@ -6866,7 +6862,7 @@ fn try_integrate_rational(
 ) -> Option<Expr> {
   use crate::functions::polynomial_ast::{
     build_sum, coeffs_to_expr, divide_by_root, evaluate_poly,
-    expand_and_combine, extract_poly_coeffs, find_integer_root, gcd_i128,
+    expand_and_combine, extract_poly_coeffs, find_integer_root,
     poly_long_divide,
   };
 
@@ -6989,13 +6985,7 @@ fn try_integrate_rational(
     }
 
     // A_i = num_at_root / den_product as reduced fraction
-    let g = gcd_i128(num_at_root.abs(), den_product.abs());
-    let (mut an, mut ad) = (num_at_root / g, den_product / g);
-    if ad < 0 {
-      an = -an;
-      ad = -ad;
-    }
-
+    let (an, ad) = rat_reduce(num_at_root, den_product);
     if an == 0 {
       continue;
     }
@@ -7299,12 +7289,7 @@ fn try_integrate_rational(
       if den_prod == 0 {
         return None;
       }
-      let g = gcd_i128(num_at_root.abs(), den_prod.abs());
-      let (mut an, mut ad) = (num_at_root / g, den_prod / g);
-      if ad < 0 {
-        an = -an;
-        ad = -ad;
-      }
+      let (an, ad) = rat_reduce(num_at_root, den_prod);
       residues.push((an, ad));
     }
 
@@ -15175,9 +15160,7 @@ pub fn compose_series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Rational arithmetic helpers for coefficient-based series computation
 /// Represents a rational number as (numerator, denominator) with denominator > 0
 fn rat_add(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
-  let num = a.0 * b.1 + b.0 * a.1;
-  let den = a.1 * b.1;
-  rat_reduce(num, den)
+  rat_reduce(a.0 * b.1 + b.0 * a.1, a.1 * b.1)
 }
 
 fn rat_mul(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
@@ -15190,15 +15173,6 @@ fn rat_div(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
   } else {
     rat_reduce(a.0 * b.1, a.1 * b.0)
   }
-}
-
-fn rat_reduce(num: i128, den: i128) -> (i128, i128) {
-  if num == 0 {
-    return (0, 1);
-  }
-  let g = gcd_i128(num, den);
-  let (n, d) = (num / g, den / g);
-  if d < 0 { (-n, -d) } else { (n, d) }
 }
 
 fn rat_to_expr(r: (i128, i128)) -> Expr {
@@ -15533,17 +15507,6 @@ fn multiplicative_factors(expr: &Expr) -> Vec<Expr> {
   }
 }
 
-/// Reduce a fraction `(num, den)` (den > 0) to lowest terms with positive den.
-fn reduce_frac(num: i128, den: i128) -> (i128, i128) {
-  let g = gcd_i128(num.abs(), den.abs()).max(1);
-  let (mut n, mut d) = (num / g, den / g);
-  if d < 0 {
-    n = -n;
-    d = -d;
-  }
-  (n, d)
-}
-
 /// If `f` has a leading non-integer rational power of the shift `(var - x0)`
 /// (so that its expansion about `x0` is a genuine Puiseux series), return the
 /// reduced exponent `(p, q)` with `q > 1` together with the analytic cofactor
@@ -15629,14 +15592,14 @@ fn leading_fractional_power(
         // num/den += p/q
         num = num * q + p * den;
         den *= q;
-        let (rn, rd) = reduce_frac(num, den);
+        let (rn, rd) = rat_reduce(num, den);
         num = rn;
         den = rd;
       }
       None => g_factors.push(fac.clone()),
     }
   }
-  let (p, q) = reduce_frac(num, den);
+  let (p, q) = rat_reduce(num, den);
   if q <= 1 {
     return None; // integer total exponent — not a Puiseux case.
   }

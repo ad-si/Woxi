@@ -743,6 +743,13 @@ pub fn gcd_bigint(a: &BigInt, b: &BigInt) -> BigInt {
   a
 }
 
+/// Reduce n/d to lowest terms with a positive denominator.
+pub fn rat_reduce(n: i128, d: i128) -> (i128, i128) {
+  let g = gcd_i128(n, d).max(1);
+  let (n, d) = (n / g, d / g);
+  if d < 0 { (-n, -d) } else { (n, d) }
+}
+
 /// Extract the largest easily-found perfect-square factor from a positive
 /// i128: returns `(outside, inside)` with `n == outside^2 * inside`, so
 /// `Sqrt[n] = outside * Sqrt[inside]`. Square factors of primes below a
@@ -790,16 +797,8 @@ pub fn make_rational(numer: i128, denom: i128) -> Expr {
     };
   }
 
-  // Handle sign: put sign in numerator
-  let (numer, denom) = if denom < 0 {
-    (-numer, -denom)
-  } else {
-    (numer, denom)
-  };
-
-  // Simplify by GCD
-  let g = gcd_i128(numer, denom);
-  let (numer, denom) = (numer / g, denom / g);
+  // Simplify
+  let (numer, denom) = rat_reduce(numer, denom);
 
   if denom == 1 {
     Expr::Integer(numer)
@@ -1239,13 +1238,11 @@ pub fn build_complex_expr(
   im_den: i128,
 ) -> Expr {
   let re = make_rational(re_num, re_den);
-  let g_i = gcd_i128(im_num.abs(), im_den.abs());
-  let (in_s, id_s) = if im_den < 0 {
-    (-im_num / g_i, -im_den / g_i)
-  } else {
-    (im_num / g_i, im_den / g_i)
-  };
+  if im_num == 0 {
+    return re; // Pure real
+  }
 
+  let (in_s, id_s) = rat_reduce(im_num, im_den);
   let i_expr = Expr::Identifier("I".to_string());
 
   // Build the imaginary term with correct sign handling
@@ -1253,9 +1250,7 @@ pub fn build_complex_expr(
   let im_positive = in_s > 0;
 
   // Build |im| * I
-  let im_term = if im_abs_num == 0 {
-    return re; // Pure real
-  } else if im_abs_num == 1 && id_s == 1 {
+  let im_term = if im_abs_num == 1 && id_s == 1 {
     i_expr
   } else {
     let coeff = make_rational(im_abs_num, id_s);
@@ -1267,9 +1262,7 @@ pub fn build_complex_expr(
   };
 
   // Check if real part is zero
-  let g_r = gcd_i128(re_num.abs(), re_den.abs());
-  let re_simplified = if re_den == 0 { re_num } else { re_num / g_r };
-  if re_simplified == 0 {
+  if re_num == 0 {
     // Pure imaginary
     return if im_positive {
       im_term

@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 
-use crate::functions::math_ast::gcd_i128;
+use crate::functions::math_ast::{gcd_i128, rat_reduce};
 use crate::syntax::bool_expr;
 
 // Re-export crate types/functions for submodules (used by submodules via `use super::*`)
@@ -10922,8 +10922,7 @@ fn rational_to_expr(num: i128, den: i128) -> Expr {
   } else if num == 0 {
     Expr::Integer(0)
   } else {
-    let g = gcd_i128(num.abs(), den.abs());
-    let (n, d) = (num / g, den / g);
+    let (n, d) = rat_reduce(num, den);
     if d == 1 {
       Expr::Integer(n)
     } else {

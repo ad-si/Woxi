@@ -4,7 +4,7 @@ use crate::InterpreterError;
 use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 use crate::functions::calculus_ast::is_constant_wrt;
-use crate::functions::math_ast::gcd_i128;
+use crate::functions::math_ast::rat_reduce;
 
 // ─── Rational exponent helpers ─────────────────────────────────────
 
@@ -18,14 +18,8 @@ pub struct Rat {
 impl Rat {
   fn new(n: i128, d: i128) -> Self {
     assert!(d != 0);
-    let g = gcd_i128(n, d);
-    let (n2, d2) = (n / g, d / g);
-    // Keep denominator positive
-    if d2 < 0 {
-      Rat { n: -n2, d: -d2 }
-    } else {
-      Rat { n: n2, d: d2 }
-    }
+    let (n, d) = rat_reduce(n, d);
+    Rat { n: n, d: d }
   }
 
   fn zero() -> Self {

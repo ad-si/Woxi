@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::{
-  expr_to_rational, gcd_i128, is_sqrt, make_sqrt,
+  expr_to_rational, is_sqrt, make_sqrt, rat_reduce,
 };
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, unevaluated,
@@ -12109,37 +12109,20 @@ fn find_sequence_function(
 
 /// Convert a rational (n, d) back to an Expr.
 fn rational_to_expr(n: i128, d: i128) -> Expr {
-  if d == 1 {
-    Expr::Integer(n)
-  } else {
-    let g = gcd_i128(n.abs(), d.abs());
-    let (n, d) = (n / g, d / g);
-    if d < 0 {
-      rational_to_expr(-n, -d)
-    } else if d == 1 {
-      Expr::Integer(n)
-    } else {
-      Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(n), Expr::Integer(d)].into(),
-      }
-    }
-  }
+  crate::functions::math_ast::make_rational(n, d)
 }
 
 /// Rational arithmetic helpers
+fn rat_add(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+  rat_reduce(a.0 * b.1 + b.0 * a.1, a.1 * b.1)
+}
+
 fn rat_sub(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
-  let n = a.0 * b.1 - b.0 * a.1;
-  let d = a.1 * b.1;
-  let g = gcd_i128(n.abs(), d.abs());
-  (n / g, d / g)
+  rat_reduce(a.0 * b.1 - b.0 * a.1, a.1 * b.1)
 }
 
 fn rat_mul(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
-  let n = a.0 * b.0;
-  let d = a.1 * b.1;
-  let g = gcd_i128(n.abs(), d.abs());
-  (n / g, d / g)
+  rat_reduce(a.0 * b.0, a.1 * b.1)
 }
 
 fn rat_div(a: (i128, i128), b: (i128, i128)) -> Option<(i128, i128)> {
@@ -12147,13 +12130,6 @@ fn rat_div(a: (i128, i128), b: (i128, i128)) -> Option<(i128, i128)> {
     return None;
   }
   Some(rat_mul(a, (b.1, b.0)))
-}
-
-fn rat_add(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
-  let n = a.0 * b.1 + b.0 * a.1;
-  let d = a.1 * b.1;
-  let g = gcd_i128(n.abs(), d.abs());
-  (n / g, d / g)
 }
 
 /// Check if the sequence is n! (starting from n=1)

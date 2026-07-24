@@ -1119,18 +1119,18 @@ fn poly_sub_i128(a: &[i128], b: &[i128]) -> Vec<i128> {
 /// Exact rational as a normalized (numerator, positive denominator) pair.
 type Rat = (i128, i128);
 
-fn rat_norm(n: i128, d: i128) -> Rat {
+fn rat_reduce(n: i128, d: i128) -> Rat {
   let g = gcd_i128(n, d).max(1);
-  let s = if d < 0 { -1 } else { 1 };
-  (s * n / g, d.abs() / g)
+  let (n, d) = (n / g, d / g);
+  if d < 0 { (-n, -d) } else { (n, d) }
 }
 
 fn rat_add(a: Rat, b: Rat) -> Rat {
-  rat_norm(a.0 * b.1 + b.0 * a.1, a.1 * b.1)
+  rat_reduce(a.0 * b.1 + b.0 * a.1, a.1 * b.1)
 }
 
 fn rat_mul(a: Rat, b: Rat) -> Rat {
-  rat_norm(a.0 * b.0, a.1 * b.1)
+  rat_reduce(a.0 * b.0, a.1 * b.1)
 }
 
 /// A rational polynomial in r = base^(1/q); `base: None` means no radical
@@ -1337,7 +1337,7 @@ fn collect_rad_poly(expr: &Expr, depth: usize) -> Option<RadPoly> {
       if name == "Rational" && args.len() == 2 =>
     {
       if let (Expr::Integer(p), Expr::Integer(q)) = (&args[0], &args[1]) {
-        Some(rad_const(rat_norm(*p, *q)))
+        Some(rad_const(rat_reduce(*p, *q)))
       } else {
         None
       }
@@ -1480,7 +1480,7 @@ fn single_radical_minpoly(
         if name == "Rational" && args.len() == 2 =>
       {
         if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
-          rats.push(rat_norm(*n, *d));
+          rats.push(rat_reduce(*n, *d));
         } else {
           return Ok(None);
         }

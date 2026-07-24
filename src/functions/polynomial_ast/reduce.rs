@@ -2898,25 +2898,20 @@ impl Rat {
   }
 }
 
-fn rat_simplify(num: i128, den: i128) -> Rat {
-  if den == 0 {
-    return Rat { num, den };
+fn rat_reduce(n: i128, d: i128) -> Rat {
+  if d == 0 {
+    return Rat { num: n, den: d };
   }
-  let g = gcd_i128(num, den).max(1);
-  let (mut n, mut d) = (num / g, den / g);
-  if d < 0 {
-    n = -n;
-    d = -d;
-  }
+  let (n, d) = crate::functions::math_ast::rat_reduce(n, d);
   Rat { num: n, den: d }
 }
 
 fn mul_q(a: &Rat, b: &Rat) -> Rat {
-  rat_simplify(a.num * b.num, a.den * b.den)
+  rat_reduce(a.num * b.num, a.den * b.den)
 }
 
 fn sub_q(a: &Rat, b: &Rat) -> Rat {
-  rat_simplify(a.num * b.den - b.num * a.den, a.den * b.den)
+  rat_reduce(a.num * b.den - b.num * a.den, a.den * b.den)
 }
 
 fn inv_q(a: &Rat) -> Option<Rat> {
@@ -2953,7 +2948,7 @@ fn simplify_to_rational(e: &Expr) -> Option<Rat> {
         if *d == 0 {
           None
         } else {
-          Some(rat_simplify(*n, *d))
+          Some(rat_reduce(*n, *d))
         }
       } else {
         None
@@ -2971,7 +2966,7 @@ fn simplify_to_rational(e: &Expr) -> Option<Rat> {
       let mut acc = Rat::from_int(0);
       for arg in args {
         let r = simplify_to_rational(arg)?;
-        acc = rat_simplify(acc.num * r.den + r.num * acc.den, acc.den * r.den);
+        acc = rat_reduce(acc.num * r.den + r.num * acc.den, acc.den * r.den);
       }
       Some(acc)
     }
