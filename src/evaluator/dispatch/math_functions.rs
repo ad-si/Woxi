@@ -7521,6 +7521,44 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
         match name.as_str() {
           "Re" => return ce_simplify(re),
           "Im" => return ce_simplify(im),
+          // Log[z] = Log[Re[z]^2 + Im[z]^2]/2 + I Arg[z]. Holds whether or not
+          // the imaginary part is zero (e.g. Log[x] = I Arg[x] + Log[x^2]/2).
+          "Log" => {
+            let mag_sq = Expr::BinaryOp {
+              op: BinaryOperator::Plus,
+              left: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Power,
+                left: Box::new(re),
+                right: Box::new(Expr::Integer(2)),
+              }),
+              right: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Power,
+                left: Box::new(im),
+                right: Box::new(Expr::Integer(2)),
+              }),
+            };
+            let log_term = Expr::BinaryOp {
+              op: BinaryOperator::Divide,
+              left: Box::new(Expr::FunctionCall {
+                name: "Log".to_string(),
+                args: vec![mag_sq].into(),
+              }),
+              right: Box::new(Expr::Integer(2)),
+            };
+            let arg_term = Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(Expr::Identifier("I".to_string())),
+              right: Box::new(Expr::FunctionCall {
+                name: "Arg".to_string(),
+                args: vec![arg.clone()].into(),
+              }),
+            };
+            return ce_simplify(Expr::BinaryOp {
+              op: BinaryOperator::Plus,
+              left: Box::new(log_term),
+              right: Box::new(arg_term),
+            });
+          }
           // Real argument (im == 0): Abs[u] = Sqrt[u^2]. The im != 0 case is
           // handled in the block above. wolframscript treats every symbol as
           // real, so ComplexExpand[Abs[x]] = Sqrt[x^2] and hence

@@ -7602,6 +7602,37 @@ mod complex_expand {
       "x^2"
     );
   }
+
+  // Log[z] = Log[Re[z]^2 + Im[z]^2]/2 + I Arg[z].
+  #[test]
+  fn log_complex() {
+    assert_eq!(
+      interpret("ComplexExpand[Log[x + I y]]").unwrap(),
+      "I*Arg[x + I*y] + Log[x^2 + y^2]/2"
+    );
+  }
+
+  // A real symbol is still split: Log[x] = I Arg[x] + Log[x^2]/2.
+  #[test]
+  fn log_real_symbol() {
+    assert_eq!(
+      interpret("ComplexExpand[Log[x]]").unwrap(),
+      "I*Arg[x] + Log[x^2]/2"
+    );
+    assert_eq!(
+      interpret("ComplexExpand[Log[a]]").unwrap(),
+      "I*Arg[a] + Log[a^2]/2"
+    );
+  }
+
+  // The two-argument form treats named variables as complex.
+  #[test]
+  fn log_complex_variable() {
+    assert_eq!(
+      interpret("ComplexExpand[Log[z], {z}]").unwrap(),
+      "I*Arg[z] + Log[Im[z]^2 + Re[z]^2]/2"
+    );
+  }
 }
 
 mod abs_arg {
