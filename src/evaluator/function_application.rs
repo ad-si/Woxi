@@ -1235,6 +1235,25 @@ pub fn apply_curried_call(
       new_args.extend(args.iter().cloned());
       evaluate_function_call_ast(name, &new_args)
     }
+    // Region operator forms: RegionMember[reg][pt] -> RegionMember[reg, pt]
+    // (and the analogous RegionDistance / RegionNearest / SignedRegionDistance
+    // one-argument operators). The head holds a region object (a FunctionCall).
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if matches!(
+      name.as_str(),
+      "RegionMember"
+        | "RegionDistance"
+        | "RegionNearest"
+        | "SignedRegionDistance"
+    ) && func_args.len() == 1
+      && matches!(&func_args[0], Expr::FunctionCall { .. }) =>
+    {
+      let mut new_args = func_args.to_vec();
+      new_args.extend(args.iter().cloned());
+      evaluate_function_call_ast(name, &new_args)
+    }
     // LinearSolve operator form: LinearSolve[m][b] -> LinearSolve[m, b]. (The
     // bare LinearSolve[m] is wolframscript's opaque LinearSolveFunction, which
     // Woxi keeps unevaluated, but the application solves the system.)

@@ -3097,6 +3097,50 @@ mod region_member {
   }
 }
 
+// Operator (curried) forms: RegionMember[reg][pt] and the analogous
+// RegionDistance / RegionNearest / SignedRegionDistance operators match the
+// two-argument calls and compose with Map/Select.
+mod region_operator_forms {
+  use super::*;
+
+  #[test]
+  fn region_member_operator() {
+    assert_eq!(
+      interpret("RegionMember[Rectangle[{0,0},{2,2}]][{1,1}]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("RegionMember[Disk[]][{5,5}]").unwrap(), "False");
+  }
+
+  #[test]
+  fn region_member_operator_maps_and_selects() {
+    assert_eq!(
+      interpret("Map[RegionMember[Disk[]], {{0,0},{2,2}}]").unwrap(),
+      "{True, False}"
+    );
+    assert_eq!(
+      interpret("Select[{{0,0},{2,2},{0.5,0}}, RegionMember[Disk[]]]").unwrap(),
+      "{{0, 0}, {0.5, 0}}"
+    );
+  }
+
+  #[test]
+  fn distance_and_nearest_operators() {
+    assert_eq!(
+      interpret("RegionDistance[Point[{0,0}]][{3,4}]").unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret("RegionNearest[Line[{{0,0},{2,0}}]][{1,1}]").unwrap(),
+      "{1, 0}"
+    );
+    assert_eq!(
+      interpret("SignedRegionDistance[Disk[{0,0},1]][{2,0}]").unwrap(),
+      "1"
+    );
+  }
+}
+
 mod region_distance {
   use super::*;
 
