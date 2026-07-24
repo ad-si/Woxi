@@ -115,6 +115,20 @@ pub fn dispatch_string_functions(
     "ToExpression" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::string_ast::to_expression_ast(args));
     }
+    // MakeExpression[string] parses to a held expression, equivalent to
+    // ToExpression[string, InputForm, HoldComplete]. Only the string form is
+    // handled; box-expression input is left unevaluated.
+    "MakeExpression" if args.len() == 1 => {
+      if let Expr::String(_) = &args[0] {
+        let te_args = vec![
+          args[0].clone(),
+          Expr::Identifier("InputForm".to_string()),
+          Expr::Identifier("HoldComplete".to_string()),
+        ];
+        return Some(crate::functions::string_ast::to_expression_ast(&te_args));
+      }
+      return Some(Ok(unevaluated("MakeExpression", args)));
+    }
     "StringPadLeft" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::string_ast::string_pad_left_ast(args));
     }

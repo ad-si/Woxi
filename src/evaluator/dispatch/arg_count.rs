@@ -1472,6 +1472,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ToeplitzMatrix" => Some((1, 2)),
     "SavitzkyGolayMatrix" => Some((2, 3)),
     "ToExpression" => Some((1, 3)),
+    "MakeExpression" => Some((1, 2)),
     "ToFileName" => Some((1, 2)),
     "Together" => Some((1, 1)),
     "ToLowerCase" => Some((1, 1)),

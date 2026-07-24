@@ -5575,6 +5575,40 @@ mod to_expression {
   }
 }
 
+mod make_expression {
+  use super::*;
+
+  // MakeExpression[string] parses to a held (unevaluated) expression, like
+  // ToExpression[string, InputForm, HoldComplete].
+  #[test]
+  fn string_parses_to_held_expression() {
+    assert_eq!(
+      interpret("MakeExpression[\"1 + 2\"]").unwrap(),
+      "HoldComplete[1 + 2]"
+    );
+    assert_eq!(
+      interpret("MakeExpression[\"f[x, y]\"]").unwrap(),
+      "HoldComplete[f[x, y]]"
+    );
+    // Implicit multiplication is recognised.
+    assert_eq!(
+      interpret("MakeExpression[\"2 3\"]").unwrap(),
+      "HoldComplete[2*3]"
+    );
+  }
+
+  // The parsed expression is held, so an assignment inside it does not fire.
+  #[test]
+  fn assignment_is_held() {
+    clear_state();
+    assert_eq!(
+      interpret("MakeExpression[\"mkx = 5\"]").unwrap(),
+      "HoldComplete[mkx = 5]"
+    );
+    assert_eq!(interpret("mkx").unwrap(), "mkx");
+  }
+}
+
 mod base_form {
   use super::*;
 

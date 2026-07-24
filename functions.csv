@@ -1223,7 +1223,7 @@ MoebiusMu,Returns the Möbius function value,✅,pure,1.0,1235
 FinancialDerivative,,🚫,,8.0,1236
 Setter,Setter control element (stays symbolic in script mode),✅,unevaluated,6.0,1237
 GraphicsColumn,Arranges graphics in a vertical column,✅,pure,6.0,1239
-MakeExpression,,🚫,,3.0,1239
+MakeExpression,Parse a string into a held (unevaluated) expression,✅,pure,3.0,1239
 BoundaryDiscretizeRegion,,🚫,,10.0,1240
 StringRiffle,Joins a list of strings with a separator,✅,pure,10.1,1241
 HurwitzZeta,Hurwitz zeta function Sum 1/(k+a)^s,✅,pure,7.0,1242
