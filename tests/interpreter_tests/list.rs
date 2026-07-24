@@ -10237,6 +10237,30 @@ mod max_min_detect {
   fn empty_stays_unevaluated() {
     assert_eq!(interpret("MaxDetect[{}]").unwrap(), "MaxDetect[{}]");
   }
+
+  // A rectangular numeric matrix uses 2-D 8-connected regional-extrema
+  // detection (flat zones grouped diagonally).
+  #[test]
+  fn matrix_eight_connected() {
+    // Diagonal neighbours join a flat zone, so {2, 2} is one region.
+    assert_eq!(interpret("MaxDetect[{{1, 2, 1}}]").unwrap(), "{{0, 1, 0}}");
+    assert_eq!(
+      interpret("MaxDetect[{{1, 2, 1}, {2, 3, 2}, {1, 2, 1}}]").unwrap(),
+      "{{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}"
+    );
+    // Two 2's are one 8-connected zone; it touches the higher 3, so neither
+    // is a maximum — only the 3 is.
+    assert_eq!(
+      interpret("MaxDetect[{{2, 0, 0}, {0, 2, 3}}]").unwrap(),
+      "{{0, 0, 0}, {0, 0, 1}}"
+    );
+    assert_eq!(interpret("MinDetect[{{2, 1, 2}}]").unwrap(), "{{0, 1, 0}}");
+    // A uniform matrix is a single regional maximum.
+    assert_eq!(
+      interpret("MaxDetect[{{5, 5}, {5, 5}}]").unwrap(),
+      "{{1, 1}, {1, 1}}"
+    );
+  }
 }
 
 mod parallel_array {

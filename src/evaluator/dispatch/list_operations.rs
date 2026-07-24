@@ -701,6 +701,122 @@ fn regional_extrema(values: &[f64], find_max: bool) -> Vec<Expr> {
   result
 }
 
+/// Parse `items` as a rectangular numeric matrix (each element a non-empty
+/// list of equal length of real numbers); None if the shape is irregular or a
+/// value is non-numeric.
+fn parse_numeric_matrix(items: &[Expr]) -> Option<Vec<Vec<f64>>> {
+  let mut mat: Vec<Vec<f64>> = Vec::with_capacity(items.len());
+  let mut ncols: Option<usize> = None;
+  for it in items {
+    let Expr::List(cells) = it else {
+      return None;
+    };
+    if cells.is_empty() {
+      return None;
+    }
+    let row: Vec<f64> = cells
+      .iter()
+      .map(expr_to_f64)
+      .collect::<Option<Vec<f64>>>()?;
+    match ncols {
+      Some(nc) if nc != row.len() => return None,
+      _ => ncols = Some(row.len()),
+    }
+    mat.push(row);
+  }
+  Some(mat)
+}
+
+/// 2-D regional extrema (MaxDetect / MinDetect on a matrix): a 0/1 mask marking
+/// each 8-connected flat zone whose every external neighbour is strictly lower
+/// (maxima) or strictly higher (minima) than the zone's value.
+fn regional_extrema_2d(mat: &[Vec<f64>], find_max: bool) -> Expr {
+  let h = mat.len();
+  let w = mat[0].len();
+  const OFF: [(i64, i64); 8] = [
+    (-1, -1),
+    (-1, 0),
+    (-1, 1),
+    (0, -1),
+    (0, 1),
+    (1, -1),
+    (1, 0),
+    (1, 1),
+  ];
+  let mut zone = vec![vec![-1i64; w]; h];
+  let mut mask = vec![vec![0i64; w]; h];
+  let mut next_zone = 0i64;
+  for y0 in 0..h {
+    for x0 in 0..w {
+      if zone[y0][x0] != -1 {
+        continue;
+      }
+      let v = mat[y0][x0];
+      let id = next_zone;
+      next_zone += 1;
+      // Flood-fill the equal-valued 8-connected flat zone.
+      let mut cells = vec![(y0, x0)];
+      zone[y0][x0] = id;
+      let mut qi = 0;
+      while qi < cells.len() {
+        let (cy, cx) = cells[qi];
+        qi += 1;
+        for (dy, dx) in OFF {
+          let ny = cy as i64 + dy;
+          let nx = cx as i64 + dx;
+          if ny < 0 || nx < 0 || ny >= h as i64 || nx >= w as i64 {
+            continue;
+          }
+          let (ny, nx) = (ny as usize, nx as usize);
+          if zone[ny][nx] == -1 && mat[ny][nx] == v {
+            zone[ny][nx] = id;
+            cells.push((ny, nx));
+          }
+        }
+      }
+      // A flat zone is an extremum unless an external neighbour beats it.
+      let mut is_extremum = true;
+      'scan: for &(cy, cx) in &cells {
+        for (dy, dx) in OFF {
+          let ny = cy as i64 + dy;
+          let nx = cx as i64 + dx;
+          if ny < 0 || nx < 0 || ny >= h as i64 || nx >= w as i64 {
+            continue;
+          }
+          let (ny, nx) = (ny as usize, nx as usize);
+          if zone[ny][nx] != id {
+            let nv = mat[ny][nx];
+            if (find_max && nv > v) || (!find_max && nv < v) {
+              is_extremum = false;
+              break 'scan;
+            }
+          }
+        }
+      }
+      if is_extremum {
+        for &(cy, cx) in &cells {
+          mask[cy][cx] = 1;
+        }
+      }
+    }
+  }
+  Expr::List(
+    mask
+      .into_iter()
+      .map(|row| {
+        Expr::List(
+          row
+            .into_iter()
+            .map(|v| Expr::Integer(v as i128))
+            .collect::<Vec<_>>()
+            .into(),
+        )
+      })
+      .collect::<Vec<_>>()
+      .into(),
+  )
+}
+
 // LongestOrderedSequence[list] / [list, p]: longest subsequence whose
 // consecutive elements are "in order" per the comparator `p` (default
 // non-decreasing). Uses an O(n^2) DP; ties resolve to the largest predecessor
@@ -3731,11 +3847,18 @@ pub fn dispatch_list_operations(
     "MaxDetect" | "MinDetect" if args.len() == 1 => {
       if let Expr::List(items) = &args[0]
         && !items.is_empty()
-        && let Some(values) =
-          items.iter().map(expr_to_f64).collect::<Option<Vec<f64>>>()
       {
-        let mask = regional_extrema(&values, name == "MaxDetect");
-        return Some(Ok(Expr::List(mask.into())));
+        // A rectangular numeric matrix uses 2-D (8-connected) detection.
+        if let Some(mat) = parse_numeric_matrix(items) {
+          return Some(Ok(regional_extrema_2d(&mat, name == "MaxDetect")));
+        }
+        // Otherwise a flat numeric list.
+        if let Some(values) =
+          items.iter().map(expr_to_f64).collect::<Option<Vec<f64>>>()
+        {
+          let mask = regional_extrema(&values, name == "MaxDetect");
+          return Some(Ok(Expr::List(mask.into())));
+        }
       }
       // Empty list, non-list, or non-numeric entries: leave unevaluated.
       return Some(Ok(unevaluated(name, args)));
