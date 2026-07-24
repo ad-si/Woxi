@@ -4555,6 +4555,131 @@ fn filling_marker(mask: &[f64], w: usize, h: usize, add: f64) -> Vec<f64> {
 /// - marker form: per-pixel I + (F - I) * m where F is the plain fill
 ///   and m is the largest (clamped) marker value in each 4-connected
 ///   basin; the result is Real64 for Real64 inputs and Real32 otherwise.
+/// MorphologicalComponents[matrix] / [matrix, t] labels the connected
+/// foreground components (values above the threshold `t`, default 0) with
+/// consecutive integers assigned in raster order of first appearance.
+/// Connectivity is 8-way by default; `CornerNeighbors -> False` selects 4-way.
+pub fn morphological_components_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Ok(unevaluated("MorphologicalComponents", args));
+  if args.is_empty() {
+    return unevaluated();
+  }
+  // Parse a rectangular numeric matrix.
+  let Expr::List(rows) = &args[0] else {
+    return unevaluated();
+  };
+  let mut mat: Vec<Vec<f64>> = Vec::with_capacity(rows.len());
+  let mut ncols: Option<usize> = None;
+  for r in rows.iter() {
+    let Expr::List(cells) = r else {
+      return unevaluated();
+    };
+    let mut row = Vec::with_capacity(cells.len());
+    for c in cells.iter() {
+      match crate::functions::math_ast::try_eval_to_f64(c) {
+        Some(v) => row.push(v),
+        None => return unevaluated(),
+      }
+    }
+    match ncols {
+      Some(nc) if nc != row.len() => return unevaluated(),
+      _ => ncols = Some(row.len()),
+    }
+    mat.push(row);
+  }
+  let h = mat.len();
+  let w = ncols.unwrap_or(0);
+  if h == 0 || w == 0 {
+    return Ok(args[0].clone());
+  }
+
+  // Optional threshold (a bare number) and CornerNeighbors option.
+  let mut threshold = 0.0f64;
+  let mut corner = true;
+  for a in &args[1..] {
+    match a {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(),
+        Expr::Identifier(s) if s == "CornerNeighbors") =>
+      {
+        corner = matches!(replacement.as_ref(),
+          Expr::Identifier(s) if s == "True");
+      }
+      _ => match crate::functions::math_ast::try_eval_to_f64(a) {
+        Some(v) => threshold = v,
+        None => return unevaluated(),
+      },
+    }
+  }
+
+  // 8- or 4-connected flood fill in raster order.
+  let offsets: &[(i64, i64)] = if corner {
+    &[
+      (-1, -1),
+      (-1, 0),
+      (-1, 1),
+      (0, -1),
+      (0, 1),
+      (1, -1),
+      (1, 0),
+      (1, 1),
+    ]
+  } else {
+    &[(-1, 0), (0, -1), (0, 1), (1, 0)]
+  };
+  let fg = |y: usize, x: usize| mat[y][x] > threshold;
+  let mut labels = vec![vec![0i64; w]; h];
+  let mut next = 1i64;
+  for y0 in 0..h {
+    for x0 in 0..w {
+      if !fg(y0, x0) || labels[y0][x0] != 0 {
+        continue;
+      }
+      let lbl = next;
+      next += 1;
+      let mut queue = std::collections::VecDeque::new();
+      labels[y0][x0] = lbl;
+      queue.push_back((y0, x0));
+      while let Some((cy, cx)) = queue.pop_front() {
+        for &(dy, dx) in offsets {
+          let ny = cy as i64 + dy;
+          let nx = cx as i64 + dx;
+          if ny < 0 || nx < 0 || ny >= h as i64 || nx >= w as i64 {
+            continue;
+          }
+          let (ny, nx) = (ny as usize, nx as usize);
+          if fg(ny, nx) && labels[ny][nx] == 0 {
+            labels[ny][nx] = lbl;
+            queue.push_back((ny, nx));
+          }
+        }
+      }
+    }
+  }
+
+  let out: Vec<Expr> = labels
+    .into_iter()
+    .map(|row| {
+      Expr::List(
+        row
+          .into_iter()
+          .map(|v| Expr::Integer(v as i128))
+          .collect::<Vec<_>>()
+          .into(),
+      )
+    })
+    .collect();
+  Ok(Expr::List(out.into()))
+}
+
 pub fn filling_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use crate::syntax::ImageType;
   let unevaluated = || unevaluated("FillingTransform", args);

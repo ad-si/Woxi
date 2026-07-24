@@ -5263,3 +5263,58 @@ mod morphological_binarize {
     ));
   }
 }
+
+mod morphological_components {
+  use super::*;
+
+  // Labels connected foreground components with consecutive integers in
+  // raster order; the default connectivity is 8-way (corner neighbours join).
+  #[test]
+  fn eight_connectivity_default() {
+    // Diagonal pixels are one component under 8-connectivity.
+    assert_eq!(
+      interpret("MorphologicalComponents[{{1, 0}, {0, 1}}]").unwrap(),
+      "{{1, 0}, {0, 1}}"
+    );
+    // Four isolated corners → four components, numbered in raster order.
+    assert_eq!(
+      interpret("MorphologicalComponents[{{1, 0, 1}, {0, 0, 0}, {1, 0, 1}}]")
+        .unwrap(),
+      "{{1, 0, 2}, {0, 0, 0}, {3, 0, 4}}"
+    );
+    // Any nonzero value is foreground.
+    assert_eq!(
+      interpret("MorphologicalComponents[{{1, 2}, {3, 0}}]").unwrap(),
+      "{{1, 1}, {1, 0}}"
+    );
+  }
+
+  // CornerNeighbors -> False selects 4-way connectivity.
+  #[test]
+  fn four_connectivity() {
+    assert_eq!(
+      interpret(
+        "MorphologicalComponents[{{1, 0}, {0, 1}}, CornerNeighbors -> False]"
+      )
+      .unwrap(),
+      "{{1, 0}, {0, 2}}"
+    );
+    assert_eq!(
+      interpret(
+        "MorphologicalComponents[{{1, 0, 1, 1}}, CornerNeighbors -> False]"
+      )
+      .unwrap(),
+      "{{1, 0, 2, 2}}"
+    );
+  }
+
+  // A numeric threshold selects foreground as values strictly above it.
+  #[test]
+  fn threshold() {
+    assert_eq!(
+      interpret("MorphologicalComponents[{{0.2, 0.6}, {0, 0.9}}, 0.5]")
+        .unwrap(),
+      "{{0, 1}, {0, 1}}"
+    );
+  }
+}

@@ -385,6 +385,11 @@ pub fn dispatch_image_functions(
         args,
       ));
     }
+    "MorphologicalComponents" if !args.is_empty() => {
+      return Some(crate::functions::image_ast::morphological_components_ast(
+        args,
+      ));
+    }
     "ImageValue" if args.len() == 2 => {
       return Some(crate::functions::image_ast::image_value_ast(args));
     }

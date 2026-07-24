@@ -1035,7 +1035,7 @@ Today,Returns a DateObject representing the current date,✅,contextual,10.0,104
 ClippingStyle,,🚫,,6.0,1046
 Del,Symbolic nabla operator with Unicode display,✅,none,3.0,1046
 Resolve,Quantifier elimination for univariate and additively separable multivariate polynomial formulas,✅,pure,5.0,1047
-MorphologicalComponents,,🚫,,7.0,1048
+MorphologicalComponents,Label connected foreground components of an array,✅,pure,7.0,1048
 Wedge,Symbolic wedge product operator with Unicode display,✅,pure,3.0,1049
 SumConvergence,Tests convergence of infinite sums (rational geometric alternating and factorial terms),✅,pure,7.0,1050
 TextAlignment,,🚫,,3.0,1051
