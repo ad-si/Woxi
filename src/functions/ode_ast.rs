@@ -1187,9 +1187,19 @@ fn find_characteristic_roots(
       let c = coeffs[0];
       let disc = b * b - 4.0 * a * c;
       if disc > 1e-10 {
-        let r1 = (-b + disc.sqrt()) / (2.0 * a);
-        let r2 = (-b - disc.sqrt()) / (2.0 * a);
-        Ok(vec![(r1, 0.0, 1), (r2, 0.0, 1)])
+        let ra = (-b + disc.sqrt()) / (2.0 * a);
+        let rb = (-b - disc.sqrt()) / (2.0 * a);
+        // Match wolframscript's constant labeling: the fundamental solutions
+        // (and hence C[1], C[2]) are ordered by ascending root, except for a
+        // pair symmetric about zero (r, -r), where the positive root leads.
+        let (first, second) = if (ra + rb).abs() < 1e-10 {
+          if ra >= rb { (ra, rb) } else { (rb, ra) }
+        } else if ra <= rb {
+          (ra, rb)
+        } else {
+          (rb, ra)
+        };
+        Ok(vec![(first, 0.0, 1), (second, 0.0, 1)])
       } else if disc.abs() <= 1e-10 {
         let r = -b / (2.0 * a);
         Ok(vec![(r, 0.0, 2)])

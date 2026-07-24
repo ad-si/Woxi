@@ -6907,15 +6907,19 @@ mod dsolve {
       interpret("DSolve[y''[x] + y[x] == Sec[x], y[x], x]").unwrap(),
       "{{y[x] -> C[1]*Cos[x] + Cos[x]*Log[Cos[x]] + x*Sin[x] + C[2]*Sin[x]}}"
     );
-    // Distinct real roots with exponential forcing.
-    // wolframscript: {{y[x] -> E^(3*x)/2 + E^x*C[1] + E^(2*x)*C[2]}} — same
-    // solution; woxi's term order (and thus C[k] labels) for the homogeneous
-    // pair differs, a pre-existing canonical-ordering divergence that also
-    // affects DSolve[y''[x] - 3*y'[x] + 2*y[x] == 0, y[x], x].
+    // Distinct real roots with exponential forcing. The fundamental pair is
+    // ordered by ascending root, so C[1] attaches to E^x (r=1) and C[2] to
+    // E^(2*x) (r=2), matching wolframscript.
     assert_eq!(
       interpret("DSolve[y''[x] - 3*y'[x] + 2*y[x] == E^(3*x), y[x], x]")
         .unwrap(),
-      "{{y[x] -> E^(3*x)/2 + E^(2*x)*C[1] + E^x*C[2]}}"
+      "{{y[x] -> E^(3*x)/2 + E^x*C[1] + E^(2*x)*C[2]}}"
+    );
+    // Roots symmetric about zero (±1) are the exception: the positive root
+    // leads, so C[1] attaches to E^x and C[2] to E^(-x).
+    assert_eq!(
+      interpret("DSolve[y''[x] - y[x] == 0, y[x], x]").unwrap(),
+      "{{y[x] -> E^x*C[1] + C[2]/E^x}}"
     );
   }
 
