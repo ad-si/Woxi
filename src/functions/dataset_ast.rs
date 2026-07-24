@@ -215,6 +215,28 @@ pub fn dataset_query(
     });
   }
 
+  // Dataset[flat_list][f] — apply an aggregator or transform to the data. A
+  // scalar result (Mean, Total, Max, Length, …) is returned bare, while a list
+  // result (Sort, Reverse, …) is re-wrapped as a Dataset, matching Dataset's
+  // rule that atomic query results unwrap and collections stay Datasets.
+  if args.len() == 1
+    && let Expr::Identifier(f) = &args[0]
+    && let Expr::List(elems) = data
+    && elems
+      .iter()
+      .all(|e| !matches!(e, Expr::List(_) | Expr::Association(_)))
+  {
+    let result =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: f.clone(),
+        args: vec![data.clone()].into(),
+      })?;
+    return Ok(match &result {
+      Expr::List(_) => dataset_ast(&[result]),
+      _ => result,
+    });
+  }
+
   // Fallback: return unevaluated
   Ok(Expr::CurriedCall {
     func: Box::new(unevaluated("Dataset", func_args)),

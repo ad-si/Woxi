@@ -405,4 +405,34 @@ mod dataset_ast {
       "2"
     );
   }
+
+  // Dataset[flatlist][f] applies f to the data; a scalar result unwraps.
+  #[test]
+  fn dataset_apply_scalar_aggregator() {
+    clear_state();
+    assert_eq!(interpret("Dataset[{1, 2, 3}][Mean]").unwrap(), "2");
+    assert_eq!(interpret("Dataset[{1, 2, 3}][Total]").unwrap(), "6");
+    assert_eq!(interpret("Dataset[{3, 1, 2}][Max]").unwrap(), "3");
+    assert_eq!(interpret("Dataset[{3, 1, 2}][Min]").unwrap(), "1");
+    assert_eq!(interpret("Dataset[{1, 2, 3, 4}][Length]").unwrap(), "4");
+  }
+
+  // A list-valued result stays a Dataset (rendered as -Graphics-); its
+  // underlying data is the transformed list.
+  #[test]
+  fn dataset_apply_list_transform_rewraps() {
+    clear_state();
+    assert_eq!(
+      interpret("Head[Dataset[{3, 1, 2}][Sort]]").unwrap(),
+      "Dataset"
+    );
+    assert_eq!(
+      interpret("Normal[Dataset[{3, 1, 2}][Sort]]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("Normal[Dataset[{1, 2, 3, 4}][Reverse]]").unwrap(),
+      "{4, 3, 2, 1}"
+    );
+  }
 }
