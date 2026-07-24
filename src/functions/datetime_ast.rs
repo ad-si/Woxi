@@ -1928,12 +1928,26 @@ pub fn date_difference_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     )
   };
 
-  let (value, unit_name) = match unit.as_str() {
+  let real_or_int = |v: f64| {
+    if v == v.floor() {
+      Expr::Integer(v as i128)
+    } else {
+      Expr::Real(v)
+    }
+  };
+  // Sub-day units of an exact (integer-second) difference are exact rationals
+  // in wolframscript (e.g. 2h30m in hours is 5/2, not 2.5); day-and-larger
+  // units keep the machine-real form.
+  let secs_i = diff_seconds as i128;
+  let exact_seconds = diff_seconds == secs_i as f64;
+  let make_rational = crate::functions::math_ast::make_rational;
+
+  let (n, unit_name) = match unit.as_str() {
     "Year" => {
       let (y1, m1, d1) = ymd(&c1);
       let (y2, m2, d2) = ymd(&c2);
       (
-        calendar_step_difference(y1, m1, d1, y2, m2, d2, 12),
+        real_or_int(calendar_step_difference(y1, m1, d1, y2, m2, d2, 12)),
         "Years",
       )
     }
@@ -1941,23 +1955,21 @@ pub fn date_difference_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let (y1, m1, d1) = ymd(&c1);
       let (y2, m2, d2) = ymd(&c2);
       (
-        calendar_step_difference(y1, m1, d1, y2, m2, d2, 1),
+        real_or_int(calendar_step_difference(y1, m1, d1, y2, m2, d2, 1)),
         "Months",
       )
     }
-    "Week" => (diff_days / 7.0, "Weeks"),
-    "Day" => (diff_days, "Days"),
-    "Hour" => (diff_seconds / 3600.0, "Hours"),
-    "Minute" => (diff_seconds / 60.0, "Minutes"),
-    "Second" => (diff_seconds, "Seconds"),
-    _ => (diff_days, "Days"),
+    "Week" => (real_or_int(diff_days / 7.0), "Weeks"),
+    "Day" => (real_or_int(diff_days), "Days"),
+    "Hour" if exact_seconds => (make_rational(secs_i, 3600), "Hours"),
+    "Hour" => (real_or_int(diff_seconds / 3600.0), "Hours"),
+    "Minute" if exact_seconds => (make_rational(secs_i, 60), "Minutes"),
+    "Minute" => (real_or_int(diff_seconds / 60.0), "Minutes"),
+    "Second" if exact_seconds => (Expr::Integer(secs_i), "Seconds"),
+    "Second" => (real_or_int(diff_seconds), "Seconds"),
+    _ => (real_or_int(diff_days), "Days"),
   };
 
-  let n = if value == value.floor() {
-    Expr::Integer(value as i128)
-  } else {
-    Expr::Real(value)
-  };
   Ok(Expr::FunctionCall {
     name: "Quantity".to_string(),
     args: vec![n, Expr::String(unit_name.to_string())].into(),

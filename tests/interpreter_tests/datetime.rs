@@ -550,6 +550,50 @@ mod date_difference {
     );
   }
 
+  // A sub-day unit of an exact (integer-second) difference is an exact
+  // rational, not a machine real (2h30m in hours is 5/2).
+  #[test]
+  fn date_difference_subday_exact_rational() {
+    assert_eq!(
+      interpret(
+        "DateDifference[{2024,1,1,10,0,0}, {2024,1,1,12,30,0}, \"Hour\"]"
+      )
+      .unwrap(),
+      "Quantity[5/2, Hours]"
+    );
+    assert_eq!(
+      interpret(
+        "DateDifference[{2024,1,1,0,0,0}, {2024,1,1,0,0,10}, \"Hour\"]"
+      )
+      .unwrap(),
+      "Quantity[1/360, Hours]"
+    );
+    assert_eq!(
+      interpret(
+        "DateDifference[{2024,1,1,0,0,0}, {2024,1,1,0,0,10}, \"Minute\"]"
+      )
+      .unwrap(),
+      "Quantity[1/6, Minutes]"
+    );
+    assert_eq!(
+      interpret(
+        "DateDifference[{2024,1,1,0,0,0}, {2024,1,1,0,0,45}, \"Second\"]"
+      )
+      .unwrap(),
+      "Quantity[45, Seconds]"
+    );
+  }
+
+  // Week (and larger) units keep the machine-real form, matching wolframscript.
+  #[test]
+  fn date_difference_week_is_real() {
+    assert_eq!(
+      interpret("DateDifference[{2024, 1, 1}, {2024, 3, 1}, \"Week\"]")
+        .unwrap(),
+      "Quantity[8.571428571428571, Weeks]"
+    );
+  }
+
   #[test]
   fn date_object_subtraction() {
     assert_eq!(
