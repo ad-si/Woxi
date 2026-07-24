@@ -1,6 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
+use crate::functions::math_ast::{gcd_i128, rat_reduce};
 use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 // ─── Apart ──────────────────────────────────────────────────────────
@@ -361,12 +362,7 @@ fn apart_proper_fraction(
 
     // A_i = num_at_root / den_product
     // Term = A_i / (x - root) which in canonical form is A_i / (-root + x)
-    let g = gcd_i128(num_at_root.abs(), den_product.abs());
-    let (mut an, mut ad) = (num_at_root / g, den_product / g);
-    if ad < 0 {
-      an = -an;
-      ad = -ad;
-    }
+    let (an, ad) = rat_reduce(num_at_root, den_product);
 
     // A zero residue contributes nothing — skip it rather than emitting a
     // spurious `0/(...)` term (e.g. Apart[(x + 1)/(x^2 + x)] is just 1/x).
@@ -512,12 +508,7 @@ fn normalize_irreducible_quotient(
   }
   let num_prim: Vec<i128> = num_coeffs.iter().map(|c| c / cn).collect();
   let den_prim: Vec<i128> = den_coeffs.iter().map(|c| c / cd).collect();
-  let g = gcd_i128(cn.abs(), cd.abs()).max(1);
-  let (mut n_c, mut d_c) = (cn / g, cd / g);
-  if d_c < 0 {
-    n_c = -n_c;
-    d_c = -d_c;
-  }
+  let (n_c, d_c) = rat_reduce(cn, cd);
   // A ±1 numerator over an unscaled denominator displays as (den)^(-1) /
   // -(den)^(-1): Apart[2/(-2-2x-4x^2)] → -(1+x+2x^2)^(-1).
   if num_prim == [1] && n_c.abs() == 1 && d_c == 1 {
@@ -794,13 +785,9 @@ struct Rat {
 }
 
 impl Rat {
-  fn new(mut n: i128, mut d: i128) -> Rat {
-    if d < 0 {
-      n = -n;
-      d = -d;
-    }
-    let g = gcd_i128(n.abs(), d.abs()).max(1);
-    Rat { n: n / g, d: d / g }
+  fn new(n: i128, d: i128) -> Rat {
+    let (n, d) = rat_reduce(n, d);
+    Rat { n: n, d: d }
   }
   fn int(n: i128) -> Rat {
     Rat { n, d: 1 }
@@ -997,17 +984,6 @@ fn apart_repeated_roots(
     return None;
   }
   Some(build_sum(terms))
-}
-
-/// Reduce n/d to lowest terms with a positive denominator.
-fn rat_reduce(n: i128, d: i128) -> (i128, i128) {
-  let g = gcd_i128(n, d).max(1);
-  let (mut n, mut d) = (n / g, d / g);
-  if d < 0 {
-    n = -n;
-    d = -d;
-  }
-  (n, d)
 }
 
 /// a - b*c over i128 fractions, reduced; None on overflow.

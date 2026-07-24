@@ -58,15 +58,9 @@ pub fn decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 type Rat = (i128, i128); // (numerator, denominator), always reduced
 
 fn rat_reduce(n: i128, d: i128) -> Rat {
-  if d == 0 {
-    return (n, d);
-  }
-  let g = gcd_i128(n, d);
-  if d < 0 {
-    (-n / g, -d / g)
-  } else {
-    (n / g, d / g)
-  }
+  let g = gcd_i128(n, d).max(1);
+  let (n, d) = (n / g, d / g);
+  if d < 0 { (-n, -d) } else { (n, d) }
 }
 
 fn rat_add(a: Rat, b: Rat) -> Rat {

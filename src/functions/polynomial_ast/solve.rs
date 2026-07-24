@@ -8,7 +8,7 @@ use crate::syntax::{
 };
 
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
-use crate::functions::math_ast::{is_sqrt, make_sqrt};
+use crate::functions::math_ast::{gcd_i128, is_sqrt, make_sqrt, rat_reduce};
 
 /// In Solve context, simplify Sqrt[expr^(2n)] → expr^n since ± handles the sign.
 /// Also simplifies products containing such terms.
@@ -3675,22 +3675,7 @@ pub fn solve_divide(num: &Expr, den: &Expr) -> Expr {
     (Expr::Integer(0), _) => Expr::Integer(0),
     (_, Expr::Integer(1)) => num.clone(),
     (Expr::Integer(n), Expr::Integer(d)) if *d != 0 => {
-      let g = gcd_i128(*n, *d).abs();
-      let mut rn = n / g;
-      let mut rd = d / g;
-      // Normalize sign: denominator always positive
-      if rd < 0 {
-        rn = -rn;
-        rd = -rd;
-      }
-      if rd == 1 {
-        Expr::Integer(rn)
-      } else {
-        Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(rn), Expr::Integer(rd)].into(),
-        }
-      }
+      crate::functions::math_ast::make_rational(*n, *d)
     }
     // Non-integer denominator (a rational such as -1/2, or a symbolic
     // expression): evaluate the quotient so it is fully simplified
@@ -5522,14 +5507,7 @@ fn reduce_fraction(n: i128, d: i128) -> (i128, i128) {
   if d == 0 {
     return (n, d);
   }
-  let g = gcd_i128(n.abs(), d.abs()).abs();
-  let mut rn = n / g;
-  let mut rd = d / g;
-  if rd < 0 {
-    rn = -rn;
-    rd = -rd;
-  }
-  (rn, rd)
+  rat_reduce(n, d)
 }
 
 /// Extract integer polynomial coefficients of `poly` in `var`.

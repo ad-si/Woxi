@@ -23,7 +23,7 @@
 //! all give `MusicPitch["G3"]`. The conversions use the standard convention
 //! where middle C is MIDI 60 / C4 and A4 (MIDI 69) is 440 Hz.
 
-use crate::functions::math_ast::gcd_i128;
+use crate::functions::math_ast::{make_rational, rat_reduce};
 use crate::syntax::{
   BinaryOperator, Expr, UnaryOperator, bool_expr, unevaluated,
 };
@@ -1032,14 +1032,6 @@ pub fn music_pitch_midi(expr: &Expr) -> Option<i128> {
 //                "Root" -> MusicPitch[<|"Key" -> "G", "Accidental" -> 0|>]|>]
 // ```
 
-/// A small `Rational[n, d]` builder (Woxi stores rationals as `Rational[n, d]`).
-fn rational(n: i128, d: i128) -> Expr {
-  Expr::FunctionCall {
-    name: "Rational".to_string(),
-    args: vec![Expr::Integer(n), Expr::Integer(d)].into(),
-  }
-}
-
 /// A `MusicPitch[<|…|>]` / `MusicDuration[<|…|>]` / … object wrapping a
 /// key-ordered association.
 fn music_assoc(head: &str, pairs: Vec<(&str, Expr)>) -> Expr {
@@ -1174,7 +1166,7 @@ fn named_duration_value(name: &str) -> Option<Expr> {
     "SixtyFourth" => 64,
     _ => return None,
   };
-  Some(rational(1, denom))
+  Some(make_rational(1, denom))
 }
 
 /// Extract the rhythmic value from any duration specification: a bare number,
@@ -1803,7 +1795,7 @@ pub fn music_duration_plus_terms(args: &[Expr]) -> Option<Vec<Expr>> {
 pub fn music_duration_from_value(value: Expr) -> Expr {
   music_assoc(
     "MusicDuration",
-    vec![("Duration", value), ("BeatDuration", rational(1, 4))],
+    vec![("Duration", value), ("BeatDuration", make_rational(1, 4))],
   )
 }
 
@@ -1842,44 +1834,21 @@ pub fn music_rest(args: &[Expr]) -> Option<Expr> {
   }
 }
 
-/// Reduce `n/d` to lowest terms with a positive denominator, returning an
-/// `Integer` when the denominator is 1 and a `Rational[n, d]` otherwise.
-fn rational_reduced(mut n: i128, mut d: i128) -> Expr {
-  if d < 0 {
-    n = -n;
-    d = -d;
-  }
-  let g = gcd_i128(n.abs(), d).max(1);
-  n /= g;
-  d /= g;
-  if d == 1 {
-    Expr::Integer(n)
-  } else {
-    rational(n, d)
-  }
-}
-
 /// A rational number as a reduced `(numerator, denominator)` pair with a
 /// positive denominator.
 type Ratio = (i128, i128);
 
 /// Reduce a `(numerator, denominator)` pair.
-fn reduce(n: i128, d: i128) -> Ratio {
-  let (n, d) = if d < 0 { (-n, -d) } else { (n, d) };
-  let g = gcd_i128(n.abs(), d).max(1);
-  (n / g, d / g)
-}
-
 fn ratio_mul((an, ad): Ratio, (bn, bd): Ratio) -> Ratio {
-  reduce(an * bn, ad * bd)
+  rat_reduce(an * bn, ad * bd)
 }
 
 fn ratio_add((an, ad): Ratio, (bn, bd): Ratio) -> Ratio {
-  reduce(an * bd + bn * ad, ad * bd)
+  rat_reduce(an * bd + bn * ad, ad * bd)
 }
 
 fn ratio_sub((an, ad): Ratio, (bn, bd): Ratio) -> Ratio {
-  reduce(an * bd - bn * ad, ad * bd)
+  rat_reduce(an * bd - bn * ad, ad * bd)
 }
 
 fn ratio_cmp((an, ad): Ratio, (bn, bd): Ratio) -> std::cmp::Ordering {
@@ -1888,7 +1857,7 @@ fn ratio_cmp((an, ad): Ratio, (bn, bd): Ratio) -> std::cmp::Ordering {
 
 /// Render a `Ratio` as the `Expr` the Wolfram Language prints for it.
 fn ratio_expr((n, d): Ratio) -> Expr {
-  rational_reduced(n, d)
+  make_rational(n, d)
 }
 
 /// Parse a bare rhythmic value (`Integer` or `Rational`) into a `Ratio`.
@@ -1897,7 +1866,9 @@ fn duration_ratio(expr: &Expr) -> Option<Ratio> {
     Expr::Integer(n) => Some((*n, 1)),
     Expr::FunctionCall { name, args } if name == "Rational" => {
       match &args[..] {
-        [Expr::Integer(n), Expr::Integer(d)] if *d != 0 => Some(reduce(*n, *d)),
+        [Expr::Integer(n), Expr::Integer(d)] if *d != 0 => {
+          Some(rat_reduce(*n, *d))
+        }
         _ => None,
       }
     }
@@ -2072,12 +2043,12 @@ pub fn music_measure(args: &[Expr]) -> Option<Expr> {
   // Simple vs. compound meter fixes the beat unit and the beats per measure.
   let compound = numer % 3 == 0 && (numer >= 6 || denom >= 8);
   let beat_duration: Ratio = if compound {
-    reduce(3, denom)
+    rat_reduce(3, denom)
   } else {
-    reduce(1, denom)
+    rat_reduce(1, denom)
   };
   let capacity: Ratio = if compound {
-    reduce(numer, 3)
+    rat_reduce(numer, 3)
   } else {
     (numer, 1)
   };

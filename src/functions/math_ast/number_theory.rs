@@ -6,7 +6,7 @@ use crate::syntax::{
   unevaluated,
 };
 use num_bigint::BigInt;
-use num_traits::Signed;
+use num_traits::{Signed, Zero};
 
 fn nth_prime(n: i128) -> i128 {
   if n == 0 {
@@ -231,7 +231,6 @@ pub fn gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Extended Euclidean algorithm: returns (gcd, s, t) where a*s + b*t = gcd
 fn extended_gcd_bigint(a: &BigInt, b: &BigInt) -> (BigInt, BigInt, BigInt) {
-  use num_traits::Zero;
   if b.is_zero() {
     if a.is_zero() {
       return (BigInt::from(0), BigInt::from(0), BigInt::from(0));
@@ -1007,23 +1006,23 @@ pub fn bernoulli_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Represent each Bernoulli number as a reduced (numerator, denominator)
   // pair in BigInt, so large numerators (e.g. BernoulliB[60]) don't overflow
   // i128.
-  fn reduce(num: BigInt, den: BigInt) -> (BigInt, BigInt) {
+  fn rat_reduce(num: BigInt, den: BigInt) -> (BigInt, BigInt) {
     let mut g = gcd_bigint(&num, &den);
-    if g == BigInt::from(0) {
+    if g.is_zero() {
       g = BigInt::from(1);
     }
-    let (mut num, mut den) = (num / &g, den / &g);
+    let (num, den) = (num / &g, den / &g);
     if den < BigInt::from(0) {
-      num = -num;
-      den = -den;
+      (-num, -den)
+    } else {
+      (num, den)
     }
-    (num, den)
   }
   fn rat_add(a: &(BigInt, BigInt), b: &(BigInt, BigInt)) -> (BigInt, BigInt) {
-    reduce(&a.0 * &b.1 + &b.0 * &a.1, &a.1 * &b.1)
+    rat_reduce(&a.0 * &b.1 + &b.0 * &a.1, &a.1 * &b.1)
   }
   fn rat_mul(a: &(BigInt, BigInt), b: &(BigInt, BigInt)) -> (BigInt, BigInt) {
-    reduce(&a.0 * &b.0, &a.1 * &b.1)
+    rat_reduce(&a.0 * &b.0, &a.1 * &b.1)
   }
 
   let mut b: Vec<(BigInt, BigInt)> = Vec::with_capacity(n + 1);
@@ -1054,25 +1053,10 @@ pub fn bernoulli_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Compute the nth Bernoulli polynomial B_n(z) = sum_{k=0}^{n} C(n,k) * B_k * z^(n-k)
 fn bernoulli_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
   fn rat_add(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
-    let num = a.0 * b.1 + b.0 * a.1;
-    let den = a.1 * b.1;
-    let g = gcd_i128(num, den);
-    if den < 0 {
-      (-num / g, -den / g)
-    } else {
-      (num / g, den / g)
-    }
+    rat_reduce(a.0 * b.1 + b.0 * a.1, a.1 * b.1)
   }
-
   fn rat_mul(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
-    let num = a.0 * b.0;
-    let den = a.1 * b.1;
-    let g = gcd_i128(num, den);
-    if den < 0 {
-      (-num / g, -den / g)
-    } else {
-      (num / g, den / g)
-    }
+    rat_reduce(a.0 * b.0, a.1 * b.1)
   }
 
   // First compute all Bernoulli numbers B_0 through B_n as rationals
@@ -1112,14 +1096,7 @@ fn bernoulli_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
     let (z_num, z_den) = z_val;
     let mut result = (0i128, 1i128);
     for k in (0..=n).rev() {
-      let rn = result.0 * z_num;
-      let rd = result.1 * z_den;
-      let g = gcd_i128(rn, rd);
-      let (rn, rd) = if rd < 0 {
-        (-rn / g, -rd / g)
-      } else {
-        (rn / g, rd / g)
-      };
+      let (rn, rd) = rat_reduce(result.0 * z_num, result.1 * z_den);
       result = rat_add((rn, rd), coeffs[k]);
     }
     return Ok(make_rational(result.0, result.1));
@@ -1252,14 +1229,7 @@ pub fn euler_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Compute the nth Euler polynomial and either evaluate at a point or return symbolic expression
 fn euler_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
   fn rat_add(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
-    let num = a.0 * b.1 + b.0 * a.1;
-    let den = a.1 * b.1;
-    let g = gcd_i128(num, den);
-    if den < 0 {
-      (-num / g, -den / g)
-    } else {
-      (num / g, den / g)
-    }
+    rat_reduce(a.0 * b.1 + b.0 * a.1, a.1 * b.1)
   }
 
   // Build polynomial coefficients using recurrence
@@ -1278,12 +1248,7 @@ fn euler_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
       let (cn, cd) = coeffs[k];
       let num = degree as i128 * cn;
       let den = cd * (k as i128 + 1);
-      let g = gcd_i128(num, den);
-      let (num, den) = if den < 0 {
-        (-num / g, -den / g)
-      } else {
-        (num / g, den / g)
-      };
+      let (num, den) = rat_reduce(num, den);
       new_coeffs.push((num, den));
     }
 
@@ -1299,12 +1264,7 @@ fn euler_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
     // C = -sum_at_1 / 2
     let c_num = -sum_at_1.0;
     let c_den = sum_at_1.1 * 2;
-    let g = gcd_i128(c_num, c_den);
-    let (c_num, c_den) = if c_den < 0 {
-      (-c_num / g, -c_den / g)
-    } else {
-      (c_num / g, c_den / g)
-    };
+    let (c_num, c_den) = rat_reduce(c_num, c_den);
     new_coeffs[0] = (c_num, c_den);
 
     coeffs = new_coeffs;
@@ -1320,12 +1280,7 @@ fn euler_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
       // result = result * z + coeffs[k]
       let rn = result.0 * z_num;
       let rd = result.1 * z_den;
-      let g = gcd_i128(rn, rd);
-      let (rn, rd) = if rd < 0 {
-        (-rn / g, -rd / g)
-      } else {
-        (rn / g, rd / g)
-      };
+      let (rn, rd) = rat_reduce(rn, rd);
       result = rat_add((rn, rd), coeffs[k]);
     }
     return Ok(make_rational(result.0, result.1));
@@ -5788,7 +5743,6 @@ pub fn frobenius_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Compute GCD of all elements
-
   let mut g = nums[0];
   for &n in &nums[1..] {
     g = gcd_i128(g, n);

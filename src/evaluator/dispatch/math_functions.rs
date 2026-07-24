@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::{
-  expr_to_rational, gcd_i128, gcd_u64, make_sqrt,
+  expr_to_rational, gcd_i128, gcd_u64, make_rational, make_sqrt, rat_reduce,
 };
 use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator, unevaluated};
 
@@ -161,7 +161,7 @@ pub fn dispatch_math_functions(
         let mut results = Vec::with_capacity(3);
         let mut all_ok = true;
         for (qn, qd) in qs {
-          let q_expr = crate::functions::math_ast::make_rational(qn, qd);
+          let q_expr = make_rational(qn, qd);
           let call = Expr::FunctionCall {
             name: "Quantile".to_string(),
             args: vec![args[0].clone(), q_expr].into(),
@@ -249,9 +249,7 @@ pub fn dispatch_math_functions(
               if !any_real && lo_i as f64 == lo_v && hi_i as f64 == hi_v {
                 // Exact rational: (w_lo*lo_i + w_hi*hi_i) / pos_den
                 let num = w_lo * lo_i + w_hi * hi_i;
-                results.push(crate::functions::math_ast::make_rational(
-                  num, pos_den,
-                ));
+                results.push(make_rational(num, pos_den));
               } else {
                 let v =
                   (w_lo as f64 * lo_v + w_hi as f64 * hi_v) / pos_den as f64;
@@ -2664,7 +2662,7 @@ pub fn dispatch_math_functions(
         if base_int >= 2 {
           let denom = (base_int as f64).powi(e as i32) as i128;
           if denom > 0 {
-            let mantissa = crate::functions::math_ast::make_rational(*n, denom);
+            let mantissa = make_rational(*n, denom);
             return Some(Ok(Expr::List(
               vec![mantissa, Expr::Integer(e)].into(),
             )));
@@ -5858,7 +5856,6 @@ fn cantor_staircase_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
 
 /// Compute cantor staircase for exact rational p/q where 0 < p/q < 1
 fn cantor_staircase_rational(p: i128, q: i128) -> Expr {
-  use crate::functions::math_ast::make_rational;
   use std::collections::HashMap;
 
   // Use the ternary digit algorithm with cycle detection.
@@ -6134,7 +6131,7 @@ fn find_linear_recurrence_impl(seq: &[Expr]) -> Result<Expr, InterpreterError> {
       if valid {
         let result: Vec<Expr> = coeffs
           .iter()
-          .map(|&(num, den)| rational_to_expr_local(num, den))
+          .map(|&(num, den)| make_rational(num, den))
           .collect();
         return Ok(Expr::List(result.into()));
       }
@@ -6149,17 +6146,23 @@ fn find_linear_recurrence_impl(seq: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 fn rat_add(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
-  let n = a.0 * b.1 + b.0 * a.1;
-  let d = a.1 * b.1;
-  let g = gcd_i128(n.abs(), d.abs());
-  (n / g, d / g)
+  rat_reduce(a.0 * b.1 + b.0 * a.1, a.1 * b.1)
 }
 
 fn rat_mul(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
-  let n = a.0 * b.0;
-  let d = a.1 * b.1;
-  let g = gcd_i128(n.abs(), d.abs());
-  (n / g, d / g)
+  rat_reduce(a.0 * b.0, a.1 * b.1)
+}
+
+fn rat_sub(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+  rat_add(a, (-b.0, b.1))
+}
+
+fn rat_div(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+  if b.0 < 0 {
+    rat_mul(a, (-b.1, -b.0))
+  } else {
+    rat_mul(a, (b.1, b.0))
+  }
 }
 
 fn solve_rational_system(
@@ -6210,33 +6213,6 @@ fn solve_rational_system(
   }
 
   Some(solution)
-}
-
-fn rat_sub(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
-  rat_add(a, (-b.0, b.1))
-}
-
-fn rat_div(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
-  if b.0 < 0 {
-    rat_mul(a, (-b.1, -b.0))
-  } else {
-    rat_mul(a, (b.1, b.0))
-  }
-}
-
-fn rational_to_expr_local(n: i128, d: i128) -> Expr {
-  let g = gcd_i128(n.abs(), d.abs());
-  let (n, d) = (n / g, d / g);
-  if d < 0 {
-    rational_to_expr_local(-n, -d)
-  } else if d == 1 {
-    Expr::Integer(n)
-  } else {
-    Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![Expr::Integer(n), Expr::Integer(d)].into(),
-    }
-  }
 }
 
 /// Substitute each variable named in `vars` with `Re[v] + I*Im[v]` so that
