@@ -8623,7 +8623,19 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                     }
                   }
                 };
-                result.push_str(&fmt_plus_term(&pos_term));
+                // Wolfram parenthesises a subtracted prefix MinusPlus so the
+                // leading `-` doesn't fuse with the `∓`: a - MinusPlus[b] → a - (∓b).
+                let pos_term_str = fmt_plus_term(&pos_term);
+                let pos_term_str = if matches!(
+                  &pos_term,
+                  Expr::FunctionCall { name: n, args: a }
+                    if n == "MinusPlus" && a.len() == 1
+                ) {
+                  format!("({})", pos_term_str)
+                } else {
+                  pos_term_str
+                };
+                result.push_str(&pos_term_str);
               } else {
                 result.push_str(" + ");
                 result.push_str(&fmt(arg));

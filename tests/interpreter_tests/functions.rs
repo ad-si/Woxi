@@ -2390,7 +2390,7 @@ mod minus_plus {
 
   #[test]
   fn nested_in_subtraction() {
-    assert_eq!(interpret("a - MinusPlus[b]").unwrap(), "a - \u{2213}b");
+    assert_eq!(interpret("a - MinusPlus[b]").unwrap(), "a - (\u{2213}b)");
   }
 }
 
