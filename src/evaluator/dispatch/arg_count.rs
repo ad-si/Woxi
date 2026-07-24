@@ -137,7 +137,9 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "BooleanMinimize" => Some((1, 1)),
     "BooleanQ" => Some((1, 1)),
     "BooleanMinterms" => Some((2, 2)),
-    "BooleanTable" => Some((2, 2)),
+    // BooleanTable checks its own count: the 1-argument form is valid even
+    // though wolframscript's message names 2 as the minimum.
+    "BooleanTable" => None,
     "BooleanVariables" => Some((1, 1)),
     "UnateQ" => Some((1, 2)),
     "BooleanMaxterms" => Some((2, 2)),

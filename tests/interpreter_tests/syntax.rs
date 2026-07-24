@@ -6372,6 +6372,84 @@ mod boolean_table {
       "{True, True, True, True}"
     );
   }
+
+  #[test]
+  fn one_argument_form_uses_the_expressions_own_variables() {
+    assert_eq!(
+      interpret("BooleanTable[a && b]").unwrap(),
+      "{True, False, False, False}"
+    );
+    assert_eq!(
+      interpret("BooleanTable[Implies[p, q]]").unwrap(),
+      "{True, False, True, True}"
+    );
+    assert_eq!(interpret("BooleanTable[!p]").unwrap(), "{False, True}");
+    assert_eq!(
+      interpret("BooleanTable[Xor[p, q, r]]").unwrap(),
+      "{True, False, False, True, False, True, True, False}"
+    );
+  }
+
+  #[test]
+  fn one_argument_form_orders_variables_canonically() {
+    // The variables are taken in BooleanVariables order, not in the order
+    // they happen to appear in the expression.
+    assert_eq!(
+      interpret("BooleanTable[b && a]").unwrap(),
+      "{True, False, False, False}"
+    );
+    assert_eq!(
+      interpret("BooleanTable[b && a] === BooleanTable[b && a, {a, b}]")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn one_argument_form_without_variables_gives_a_single_value() {
+    assert_eq!(interpret("BooleanTable[True]").unwrap(), "{True}");
+  }
+
+  #[test]
+  fn several_variable_groups_nest_one_level_each() {
+    assert_eq!(
+      interpret("BooleanTable[p || q, {p}, {q}]").unwrap(),
+      "{{True, True}, {True, False}}"
+    );
+    assert_eq!(
+      interpret("BooleanTable[p && q || r, {p}, {q, r}]").unwrap(),
+      "{{True, True, True, False}, {True, False, True, False}}"
+    );
+  }
+
+  #[test]
+  fn an_empty_variable_group_still_adds_a_level() {
+    assert_eq!(
+      interpret("BooleanTable[p && q, {p, q}, {}]").unwrap(),
+      "{{True}, {False}, {False}, {False}}"
+    );
+  }
+
+  #[test]
+  fn a_bare_symbol_is_a_one_variable_group() {
+    assert_eq!(interpret("BooleanTable[p, p]").unwrap(), "{True, False}");
+    assert_eq!(
+      interpret("BooleanTable[p && q, {p}, q]").unwrap(),
+      "{{True, False}, {False, False}}"
+    );
+  }
+
+  #[test]
+  fn no_arguments_emits_argm() {
+    assert_eq!(interpret("BooleanTable[]").unwrap(), "BooleanTable[]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "BooleanTable::argm: BooleanTable called with 0 arguments; 2 or more arguments are expected."
+      )),
+      "expected argm message, got {msgs:?}"
+    );
+  }
 }
 
 mod framed {

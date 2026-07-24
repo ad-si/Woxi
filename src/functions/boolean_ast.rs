@@ -1095,18 +1095,41 @@ pub fn equivalent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
-/// BooleanTable[expr, {var1, var2, ...}] - Truth table for a boolean expression
-/// Evaluates expr for all 2^n combinations of True/False for the given variables.
-/// First variable cycles slowest (MSB), last variable cycles fastest (LSB).
-pub fn boolean_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
-    return Err(InterpreterError::EvaluationError(
-      "BooleanTable expects exactly 2 arguments".into(),
-    ));
+/// Evaluate `body` over every True/False assignment of each variable group,
+/// one nesting level per group. Within a group the first variable cycles
+/// slowest (MSB) and True comes before False, so `{p, q}` enumerates
+/// TT, TF, FT, FF. An empty group contributes a single (empty) assignment,
+/// which is why `BooleanTable[expr, vars, {}]` wraps each value in a list.
+fn boolean_table_levels(
+  body: &Expr,
+  groups: &[Vec<String>],
+) -> Result<Expr, InterpreterError> {
+  let Some((vars, rest)) = groups.split_first() else {
+    return evaluate_expr_to_expr(body);
+  };
+
+  let n = vars.len();
+  let num_combos = 1usize << n;
+  let mut results = Vec::with_capacity(num_combos);
+
+  for i in 0..num_combos {
+    let mut substituted = body.clone();
+    for (j, var_name) in vars.iter().enumerate() {
+      let bit = (i >> (n - 1 - j)) & 1;
+      let val = bool_expr(bit == 0);
+      substituted =
+        crate::syntax::substitute_variable(&substituted, var_name, &val);
+    }
+    results.push(boolean_table_levels(&substituted, rest)?);
   }
 
-  let body = &args[0];
-  let vars = match &args[1] {
+  Ok(Expr::List(results.into()))
+}
+
+/// Read one variable-group argument: a list of symbols, or a bare symbol
+/// standing for a one-element group.
+fn boolean_table_group(spec: &Expr) -> Result<Vec<String>, InterpreterError> {
+  match spec {
     Expr::List(items) => items
       .iter()
       .map(|item| match item {
@@ -1115,37 +1138,53 @@ pub fn boolean_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "BooleanTable: variables must be symbols".into(),
         )),
       })
-      .collect::<Result<Vec<String>, _>>()?,
-    Expr::Identifier(name) => vec![name.clone()],
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "BooleanTable: second argument must be a list of variables".into(),
-      ));
-    }
+      .collect(),
+    Expr::Identifier(name) => Ok(vec![name.clone()]),
+    _ => Err(InterpreterError::EvaluationError(
+      "BooleanTable: variable arguments must be lists of symbols".into(),
+    )),
+  }
+}
+
+/// BooleanTable[bf] - truth table over the expression's own variables
+/// BooleanTable[expr, {var1, var2, ...}] - truth table over the given variables
+/// BooleanTable[expr, {a1, ...}, {b1, ...}, ...] - one nesting level per
+/// variable group, outermost level varying the `ai`.
+pub fn boolean_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Wolfram states a minimum of two arguments even though the one-argument
+  // form is valid, so the count is checked here rather than in the generic
+  // arity table.
+  let Some(body) = args.first() else {
+    crate::emit_message(
+      "BooleanTable::argm: BooleanTable called with 0 arguments; 2 or more arguments are expected.",
+    );
+    return Ok(unevaluated("BooleanTable", args));
   };
 
-  let n = vars.len();
-  let num_combos = 1usize << n;
-  let mut results = Vec::with_capacity(num_combos);
+  let groups: Vec<Vec<String>> = if args.len() == 1 {
+    // BooleanTable[bf] varies every variable of bf, in BooleanVariables order.
+    let mut vars = Vec::new();
+    collect_boolean_variable_exprs(body, &mut vars);
+    vars.sort_by(|a, b| {
+      (-crate::functions::list_helpers_ast::compare_exprs(a, b)).cmp(&0)
+    });
+    vec![
+      vars
+        .iter()
+        .filter_map(|v| match v {
+          Expr::Identifier(name) => Some(name.clone()),
+          _ => None,
+        })
+        .collect(),
+    ]
+  } else {
+    args[1..]
+      .iter()
+      .map(boolean_table_group)
+      .collect::<Result<_, _>>()?
+  };
 
-  for i in 0..num_combos {
-    // Build substitutions: first variable = MSB, last = LSB
-    let mut substituted = body.clone();
-    for (j, var_name) in vars.iter().enumerate() {
-      let bit = (i >> (n - 1 - j)) & 1;
-      let val = if bit == 0 {
-        bool_expr(true)
-      } else {
-        bool_expr(false)
-      };
-      substituted =
-        crate::syntax::substitute_variable(&substituted, var_name, &val);
-    }
-    let result = evaluate_expr_to_expr(&substituted)?;
-    results.push(result);
-  }
-
-  Ok(Expr::List(results.into()))
+  boolean_table_levels(body, &groups)
 }
 
 /// LogicalExpand[expr] - expand logical expression to disjunctive normal form
