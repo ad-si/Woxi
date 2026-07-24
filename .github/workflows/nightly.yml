@@ -37,6 +37,10 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
+    - name: Set git to use LF
+      run: |
+        git config --global core.autocrlf input
+        git config --global core.eol lf
     - uses: actions/checkout@v5
     - uses: dtolnay/rust-toolchain@stable
     - uses: Swatinem/rust-cache@v2
