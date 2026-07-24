@@ -927,7 +927,7 @@ FontTracking,,🚫,,3.0,935
 MeshRegion,Requires external services or GUI infrastructure,🚫,io,10.0,935
 ScalingFunctions,,🚫,,8.0,936
 ChartElementFunction,,🚫,,7.0,937
-ComponentMeasurements,Requires external services or GUI infrastructure,🚫,io,8.0,938
+ComponentMeasurements,Measure labelled components of a label matrix (Count Area Label),✅,pure,8.0,938
 PolynomialMod,Reduce polynomial coefficients modulo m,✅,pure,2.0,939
 RegionMember,Tests whether a point lies in a region (Disk/Ball/Circle/Sphere/Rectangle/Triangle/Polygon),✅,pure,10.0,940
 Cycles,Permutation cycle notation wrapper,✅,none,8.0,941

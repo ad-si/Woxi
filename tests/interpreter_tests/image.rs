@@ -5318,3 +5318,61 @@ mod morphological_components {
     );
   }
 }
+
+mod component_measurements {
+  use super::*;
+
+  // Each distinct nonzero value is a component; "Count" gives the pixel count
+  // per label as a label -> count rule list.
+  #[test]
+  fn count_by_label() {
+    assert_eq!(
+      interpret("ComponentMeasurements[{{1, 0}, {0, 2}}, \"Count\"]").unwrap(),
+      "{1 -> 1, 2 -> 1}"
+    );
+    assert_eq!(
+      interpret("ComponentMeasurements[{{1, 1, 0}, {0, 0, 2}}, \"Count\"]")
+        .unwrap(),
+      "{1 -> 2, 2 -> 1}"
+    );
+    // Same value = same label, regardless of adjacency.
+    assert_eq!(
+      interpret("ComponentMeasurements[{{1, 0, 1}}, \"Count\"]").unwrap(),
+      "{1 -> 2}"
+    );
+    assert_eq!(
+      interpret("ComponentMeasurements[{{3, 0}, {0, 3}}, \"Count\"]").unwrap(),
+      "{3 -> 2}"
+    );
+  }
+
+  #[test]
+  fn area_label_and_property_list() {
+    // Area is the count as a real number.
+    assert_eq!(
+      interpret("ComponentMeasurements[{{1, 1, 0}, {0, 0, 2}}, \"Area\"]")
+        .unwrap(),
+      "{1 -> 2., 2 -> 1.}"
+    );
+    assert_eq!(
+      interpret("ComponentMeasurements[{{1, 0}, {0, 2}}, \"Label\"]").unwrap(),
+      "{1 -> 1, 2 -> 2}"
+    );
+    // A list of properties yields a tuple per component.
+    assert_eq!(
+      interpret(
+        "ComponentMeasurements[{{1, 0}, {0, 2}}, {\"Count\", \"Label\"}]"
+      )
+      .unwrap(),
+      "{1 -> {1, 1}, 2 -> {1, 2}}"
+    );
+  }
+
+  #[test]
+  fn empty_has_no_components() {
+    assert_eq!(
+      interpret("ComponentMeasurements[{{0, 0}, {0, 0}}, \"Count\"]").unwrap(),
+      "{}"
+    );
+  }
+}

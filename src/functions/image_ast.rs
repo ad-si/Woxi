@@ -4555,6 +4555,95 @@ fn filling_marker(mask: &[f64], w: usize, h: usize, add: f64) -> Vec<f64> {
 /// - marker form: per-pixel I + (F - I) * m where F is the plain fill
 ///   and m is the largest (clamped) marker value in each 4-connected
 ///   basin; the result is Real64 for Real64 inputs and Real32 otherwise.
+/// ComponentMeasurements[labelmatrix, property] measures each labelled
+/// component of a label matrix (each distinct nonzero value is a component).
+/// Returns a list of `label -> value` rules sorted by label. Supported
+/// properties: "Count" (pixel count), "Area" (count as a real), and "Label"
+/// (the label itself); a list of properties yields a tuple per component.
+pub fn component_measurements_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Ok(unevaluated("ComponentMeasurements", args));
+  if args.len() != 2 {
+    return unevaluated();
+  }
+  let Expr::List(rows) = &args[0] else {
+    return unevaluated();
+  };
+  // Parse the label matrix and collect pixel counts per nonzero label, keyed
+  // by the label's rounded-integer value (component labels are integers).
+  let mut counts: std::collections::BTreeMap<i128, usize> =
+    std::collections::BTreeMap::new();
+  for r in rows.iter() {
+    let Expr::List(cells) = r else {
+      return unevaluated();
+    };
+    for c in cells.iter() {
+      let v = match crate::functions::math_ast::try_eval_to_f64(c) {
+        Some(v) => v,
+        None => return unevaluated(),
+      };
+      if v == 0.0 {
+        continue;
+      }
+      if v.fract() != 0.0 {
+        return unevaluated(); // non-integer labels are not supported
+      }
+      *counts.entry(v as i128).or_insert(0) += 1;
+    }
+  }
+
+  // Which properties to report (a single property or a list of them).
+  let props: Vec<String> = match &args[1] {
+    Expr::String(s) => vec![s.clone()],
+    Expr::List(items) => {
+      let mut v = Vec::with_capacity(items.len());
+      for it in items.iter() {
+        match it {
+          Expr::String(s) => v.push(s.clone()),
+          _ => return unevaluated(),
+        }
+      }
+      v
+    }
+    _ => return unevaluated(),
+  };
+  let single = matches!(&args[1], Expr::String(_));
+
+  let measure = |prop: &str, label: i128, count: usize| -> Option<Expr> {
+    match prop {
+      "Count" => Some(Expr::Integer(count as i128)),
+      "Area" => Some(Expr::Real(count as f64)),
+      "Label" => Some(Expr::Integer(label)),
+      _ => None,
+    }
+  };
+
+  let mut rules = Vec::with_capacity(counts.len());
+  for (&label, &count) in &counts {
+    let value = if single {
+      match measure(&props[0], label, count) {
+        Some(v) => v,
+        None => return unevaluated(),
+      }
+    } else {
+      let mut tuple = Vec::with_capacity(props.len());
+      for p in &props {
+        match measure(p, label, count) {
+          Some(v) => tuple.push(v),
+          None => return unevaluated(),
+        }
+      }
+      Expr::List(tuple.into())
+    };
+    rules.push(Expr::Rule {
+      pattern: Box::new(Expr::Integer(label)),
+      replacement: Box::new(value),
+    });
+  }
+  Ok(Expr::List(rules.into()))
+}
+
 /// MorphologicalComponents[matrix] / [matrix, t] labels the connected
 /// foreground components (values above the threshold `t`, default 0) with
 /// consecutive integers assigned in raster order of first appearance.
