@@ -915,6 +915,12 @@ pub fn date_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let arg = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
 
+  // An empty date list carries no components at all, so it means "now" —
+  // the same as `DateList[]`.
+  if matches!(&arg, Expr::List(items) if items.is_empty()) {
+    return absolute_time_ast(&[]).and_then(|t| date_list_ast(&[t]));
+  }
+
   match &arg {
     Expr::Integer(n) => {
       let (y, m, d, h, min, sec) = absolute_seconds_to_date(*n as f64);
@@ -2394,36 +2400,62 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::String(result))
 }
 
-/// DayName[{year, month, day}] - return the name of the day of the week
-/// DayName[DateObject[{year, month, day}]] - also accepted
+/// DayName[] - the current day of the week
+/// DayName[date] - the day of the week for any date specification that
+/// `DateList` understands: a date list (possibly partial, like `{2024, 2}`),
+/// a `DateObject`, a date string, an absolute time in seconds, or one of
+/// `Today`/`Now`/`Yesterday`/`Tomorrow`.
 pub fn day_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
-    return Ok(unevaluated("DayName", args));
+  // Arguments beyond the date are options (calendar settings, which Woxi
+  // ignores since only the Gregorian calendar is supported); a non-rule
+  // there is reported as `nonopt`, like wolframscript.
+  if let Some(bad) = args.iter().skip(1).find(|a| {
+    !matches!(
+      a,
+      Expr::Rule { .. } | Expr::RuleDelayed { .. } | Expr::List(_)
+    )
+  }) {
+    let call = unevaluated("DayName", args);
+    crate::emit_message(&format!(
+      "DayName::nonopt: Options expected (instead of {}) beyond position 1 in {}. An option must be a rule or a list of rules.",
+      crate::syntax::expr_to_string(bad),
+      crate::syntax::expr_to_string(&call)
+    ));
+    return Ok(call);
   }
 
-  let arg = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
-
-  // Handle DateObject[{y,m,d,...}]
-  let date_expr = match &arg {
-    Expr::FunctionCall { name, args: dargs }
-      if name == "DateObject" && !dargs.is_empty() =>
-    {
-      &dargs[0]
-    }
-    _ => &arg,
+  // `DayName[]` and `DayName[{}]` both mean "today".
+  let spec = match args.first() {
+    Some(a) => crate::evaluator::evaluate_expr_to_expr(a)?,
+    None => Expr::List(Vec::new().into()),
   };
 
-  if let Some(components) = extract_date_components(date_expr)
-    && components.len() >= 3
+  if let Some(unevaluated) =
+    date_spec_error("DayName", args, std::slice::from_ref(&spec))
   {
-    let year = components[0] as i64;
-    let month = components[1] as i64;
-    let day = components[2] as i64;
-    let dow = day_of_week(year, month, day);
-    return Ok(Expr::Identifier(day_name(dow).to_string()));
+    return Ok(unevaluated);
   }
 
-  Ok(unevaluated("DayName", args))
+  // Every accepted spec is normalised through DateList, which returns
+  // `{y, m, d, h, min, sec}`; anything it cannot parse is not a date.
+  let components = match date_list_ast(std::slice::from_ref(&spec)) {
+    Ok(list) => extract_date_components(&list).filter(|c| c.len() >= 3),
+    Err(_) => None,
+  };
+  let Some(components) = components else {
+    crate::emit_message(&format!(
+      "DayName::date: Expression {} cannot be interpreted as a date specification.",
+      crate::syntax::format_expr(&spec, crate::syntax::ExprForm::Output)
+    ));
+    return Ok(unevaluated("DayName", args));
+  };
+
+  let dow = day_of_week(
+    components[0] as i64,
+    components[1] as i64,
+    components[2] as i64,
+  );
+  Ok(Expr::Identifier(day_name(dow).to_string()))
 }
 
 /// Day of the year (1–366) for a Gregorian date.

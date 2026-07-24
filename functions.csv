@@ -1945,7 +1945,7 @@ Selectable,Selectable display option wrapper (stays symbolic),✅,unevaluated,3.
 TableDirections,Option for TableForm display directions,🚫,,2.0,1977
 PermutationGroup,Group theory permutation group representation,✅,pure,8.0,1979
 WeightedAdjacencyMatrix,Builds the weighted adjacency matrix from a graph with EdgeWeight,✅,none,8.0,1979
-DayName,Return the name of the day of the week for a given date,✅,none,9.0,1981
+DayName,Return the name of the day of the week for a given date,✅,contextual,9.0,1981
 SuperPlus,Typesetting notation for superscript plus,✅,none,6.0,1982
 CommonName,Entity common name lookup,🚫,,10.0,1986
 KeyDrop,Drops specified keys from an association; supports the operator form KeyDrop[keys][assoc],✅,pure,10.0,1986

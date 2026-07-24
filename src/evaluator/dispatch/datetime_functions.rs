@@ -62,7 +62,7 @@ pub fn dispatch_datetime_functions(
     "TimeUsed" if args.is_empty() => {
       return Some(Ok(Expr::Real(crate::functions::memory::cpu_time_used())));
     }
-    "DayName" if args.len() == 1 => {
+    "DayName" => {
       return Some(crate::functions::datetime_ast::day_name_ast(args));
     }
     "DateValue" if args.len() == 2 => {

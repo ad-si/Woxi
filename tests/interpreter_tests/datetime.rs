@@ -1217,6 +1217,97 @@ mod day_name {
   fn sunday() {
     assert_eq!(interpret("DayName[{2024, 3, 3}]").unwrap(), "Sunday");
   }
+
+  #[test]
+  fn partial_date_lists_default_to_the_first_of_the_period() {
+    // {2024, 2} is Feb 1st 2024, {2024} is Jan 1st 2024.
+    assert_eq!(interpret("DayName[{2024, 2}]").unwrap(), "Thursday");
+    assert_eq!(interpret("DayName[{2024}]").unwrap(), "Monday");
+  }
+
+  #[test]
+  fn bare_numbers_are_absolute_times_not_years() {
+    // A number is seconds since 1900-01-01, so `2024` is not the year 2024
+    // but half an hour into Monday 1 Jan 1900.
+    assert_eq!(interpret("DayName[0]").unwrap(), "Monday");
+    assert_eq!(interpret("DayName[2024]").unwrap(), "Monday");
+    assert_eq!(interpret("DayName[2024.5]").unwrap(), "Monday");
+    assert_eq!(interpret("DayName[3155673600]").unwrap(), "Saturday");
+  }
+
+  #[test]
+  fn date_strings() {
+    assert_eq!(interpret(r#"DayName["Feb 1 2024"]"#).unwrap(), "Thursday");
+    assert_eq!(interpret(r#"DayName["1 Feb 2024"]"#).unwrap(), "Thursday");
+    assert_eq!(
+      interpret(r#"DayName["February 1 2024"]"#).unwrap(),
+      "Thursday"
+    );
+    assert_eq!(interpret(r#"DayName["2024-02-01"]"#).unwrap(), "Thursday");
+  }
+
+  #[test]
+  fn no_argument_and_empty_list_mean_today() {
+    assert_eq!(interpret("DayName[] === DayName[Today]").unwrap(), "True");
+    assert_eq!(interpret("DayName[{}] === DayName[Today]").unwrap(), "True");
+    // `DateList[{}]` is the "now" that backs it — not the 1900 epoch.
+    assert_eq!(
+      interpret("Take[DateList[{}], 3] === Take[DateList[Today], 3]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn relative_day_symbols() {
+    assert_eq!(
+      interpret("DayName[Yesterday] === DayName[DatePlus[Today, -1]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn calendar_options_are_accepted() {
+    assert_eq!(
+      interpret(r#"DayName[{2024, 2, 1}, CalendarType -> "Gregorian"]"#)
+        .unwrap(),
+      "Thursday"
+    );
+  }
+
+  #[test]
+  fn uninterpretable_specs_emit_date() {
+    for (input, shown, expected) in [
+      (r#"DayName["Wednesday"]"#, "Wednesday", "DayName[Wednesday]"),
+      (
+        r#"DayName["not a date"]"#,
+        "not a date",
+        "DayName[not a date]",
+      ),
+      ("DayName[{2024, \"a\"}]", "{2024, a}", "DayName[{2024, a}]"),
+      ("DayName[x]", "x", "DayName[x]"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected);
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        msgs.iter().any(|m| m.contains(&format!(
+          "DayName::date: Expression {shown} cannot be interpreted as a date specification."
+        ))),
+        "expected date message for {input}, got {msgs:?}"
+      );
+    }
+  }
+
+  #[test]
+  fn non_option_second_argument_emits_nonopt() {
+    assert_eq!(interpret("DayName[1, 2]").unwrap(), "DayName[1, 2]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "DayName::nonopt: Options expected (instead of 2) beyond position 1 in DayName[1, 2]. An option must be a rule or a list of rules."
+      )),
+      "expected nonopt message, got {msgs:?}"
+    );
+  }
 }
 
 mod day_plus {

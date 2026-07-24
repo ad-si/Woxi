@@ -285,7 +285,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "DateSelect" => Some((2, 2)),
     "DateWithinQ" => Some((2, 2)),
     "DayCount" => Some((2, 3)),
-    "DayName" => Some((1, 1)),
+    // DayName[] is the current day; anything past the date is an option.
+    "DayName" => Some((0, usize::MAX)),
     "EdgeRules" => Some((1, 1)),
     "DayPlus" => Some((2, 3)),
     "DayRange" => Some((2, 3)),
