@@ -712,7 +712,7 @@ NotebookDirectory,Directory of the current notebook,✅,none,6.0,719
 Tube,3D tube around a curve,✅,none,7.0,720
 Protect,Protects symbols from modification,✅,stateful,1.0,721
 StarData,,🚫,,10.0,722
-Verbatim,Inert wrapper to prevent interpretation,✅,none,3.0,723
+Verbatim,Requires an expression or head to be matched exactly as written,✅,pure,3.0,723
 StringQ,Tests if expression is a string,✅,pure,2.0,724
 GraphicsGroup,Group of graphics primitives,✅,none,6.0,725
 Precision,Returns the number of significant decimal digits,✅,pure,1.0,726

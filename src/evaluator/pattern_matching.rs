@@ -2605,6 +2605,55 @@ fn min_args_for_patterns(pats: &[Expr]) -> usize {
     .sum()
 }
 
+/// Split an expression into head and arguments the way `FullForm` sees it,
+/// so a literal head comparison also works for operator forms (`x^2` is
+/// `Power[x, 2]`) and for Woxi's dedicated pattern variants (`x_` is
+/// `Pattern[x, Blank[]]`). Returns `None` for atoms, which have no parts.
+fn full_form_head_args(expr: &Expr) -> Option<(Expr, Vec<Expr>)> {
+  let blank = |head: &Option<String>, blank_type: u8| Expr::Pattern {
+    name: String::new(),
+    head: head.clone(),
+    blank_type,
+  };
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      Some((Expr::Identifier(name.clone()), args.to_vec()))
+    }
+    Expr::List(items) => {
+      Some((Expr::Identifier("List".to_string()), items.to_vec()))
+    }
+    // `h[a][b]`: the head is the compound `h[a]`.
+    Expr::CurriedCall { func, args } => Some(((**func).clone(), args.clone())),
+    // A named pattern is `Pattern[name, blank]`; an anonymous one is the
+    // bare `Blank[…]`/`BlankSequence[…]`/`BlankNullSequence[…]`.
+    Expr::Pattern {
+      name,
+      head,
+      blank_type,
+    } => {
+      let blank_head = match blank_type {
+        2 => "BlankSequence",
+        3 => "BlankNullSequence",
+        _ => "Blank",
+      };
+      let blank_args: Vec<Expr> = head
+        .as_ref()
+        .map(|h| vec![Expr::Identifier(h.clone())])
+        .unwrap_or_default();
+      if name.is_empty() {
+        Some((Expr::Identifier(blank_head.to_string()), blank_args))
+      } else {
+        Some((
+          Expr::Identifier("Pattern".to_string()),
+          vec![Expr::Identifier(name.clone()), blank(head, *blank_type)],
+        ))
+      }
+    }
+    _ => crate::functions::expr_to_head_args(expr)
+      .map(|(h, a)| (Expr::Identifier(h), a)),
+  }
+}
+
 /// Match a slice of expression args against a slice of pattern args,
 /// handling BlankSequence (__) and BlankNullSequence (___) patterns
 /// that can consume variable numbers of arguments.
@@ -3275,6 +3324,25 @@ fn match_pattern_impl(
       } else {
         None
       }
+    }
+    // Verbatim[h][a1, …] — a `Verbatim` wrapper in head position forces the
+    // head to be compared literally instead of being read as a pattern, so
+    // `Verbatim[Power][_, _]` matches `x^2` and `Verbatim[Pattern][_, _]`
+    // matches `x_`. The arguments stay ordinary patterns.
+    Expr::CurriedCall {
+      func: pat_func,
+      args: pat_args,
+    } if matches!(pat_func.as_ref(),
+          Expr::FunctionCall { name, args } if name == "Verbatim" && args.len() == 1) =>
+    {
+      let Expr::FunctionCall { args: v_args, .. } = pat_func.as_ref() else {
+        return None;
+      };
+      let (expr_head, expr_args) = full_form_head_args(expr)?;
+      if expr_to_string(&expr_head) != expr_to_string(&v_args[0]) {
+        return None;
+      }
+      match_args_with_sequences(&expr_args, pat_args)
     }
     // Except[c] - matches anything that doesn't match c
     // Except[c, pattern] - matches pattern but not c

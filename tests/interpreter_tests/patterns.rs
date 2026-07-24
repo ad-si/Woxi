@@ -109,6 +109,92 @@ mod pattern_matching {
       // `_ -> t` used as a rule matches any expression, so `x /. _->t` → t.
       assert_eq!(interpret("x /. _->t").unwrap(), "t");
     }
+
+    #[test]
+    fn verbatim_head_matches_operator_forms() {
+      // `Verbatim[h][…]` compares the head literally, so it has to see
+      // through the operator spellings of Power/Plus/Times/Rule.
+      assert_eq!(
+        interpret("MatchQ[x^2, Verbatim[Power][_, _]]").unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret("MatchQ[x + y, Verbatim[Plus][_, _]]").unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret("MatchQ[a -> b, Verbatim[Rule][_, _]]").unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret("MatchQ[{1, 2}, Verbatim[List][_, _]]").unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn verbatim_head_requires_the_same_head() {
+      assert_eq!(interpret("MatchQ[g[1], Verbatim[f][_]]").unwrap(), "False");
+      assert_eq!(
+        interpret("MatchQ[a*b, Verbatim[Plus][_, _]]").unwrap(),
+        "False"
+      );
+      assert_eq!(
+        interpret("Cases[{a + b, a*b}, Verbatim[Plus][__]]").unwrap(),
+        "{a + b}"
+      );
+    }
+
+    #[test]
+    fn verbatim_head_binds_argument_patterns() {
+      assert_eq!(
+        interpret("ReplaceAll[x^2, Verbatim[Power][a_, b_] :> g[a, b]]")
+          .unwrap(),
+        "g[x, 2]"
+      );
+      assert_eq!(
+        interpret("Cases[{x^2, x^3, f[x]}, Verbatim[Power][x, n_] :> n]")
+          .unwrap(),
+        "{2, 3}"
+      );
+    }
+
+    #[test]
+    fn verbatim_head_matches_pattern_objects() {
+      // The point of a `Verbatim` head: reach the pattern machinery itself.
+      // `Pattern[…]`/`Blank[…]`/`HoldPattern[…]` would otherwise be read as
+      // patterns rather than as literal heads.
+      assert_eq!(
+        interpret("MatchQ[x_, Verbatim[Pattern][_, _]]").unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret("MatchQ[a_ + b_, Verbatim[Plus][_, _]]").unwrap(),
+        "True"
+      );
+      assert_eq!(interpret("MatchQ[_, Verbatim[Blank][]]").unwrap(), "True");
+      assert_eq!(interpret("MatchQ[a, Verbatim[Blank][]]").unwrap(), "False");
+      assert_eq!(
+        interpret("MatchQ[_Integer, Verbatim[Blank][Integer]]").unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret("MatchQ[HoldPattern[1], Verbatim[HoldPattern][_]]").unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(
+          "MatchQ[x_Integer, Verbatim[Pattern][_, Verbatim[_Integer]]]"
+        )
+        .unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret("ReplaceAll[{a_, b__}, Verbatim[Pattern][n_, _] :> n]")
+          .unwrap(),
+        "{a, b}"
+      );
+    }
   }
 
   mod blank_sequence_pattern {
