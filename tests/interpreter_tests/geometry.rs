@@ -1921,6 +1921,48 @@ mod region_bounds {
     );
   }
 
+  // A cylinder's box: axis endpoints, widened by the disk radius in the
+  // directions perpendicular to the axis.
+  #[test]
+  fn cylinder_axis_aligned() {
+    assert_eq!(
+      interpret("RegionBounds[Cylinder[{{0, 0, 0}, {0, 0, 4}}, 2]]").unwrap(),
+      "{{-2, 2}, {-2, 2}, {0, 4}}"
+    );
+    assert_eq!(
+      interpret("RegionBounds[Cylinder[{{0, 0, 0}, {4, 0, 0}}, 2]]").unwrap(),
+      "{{0, 4}, {-2, 2}, {-2, 2}}"
+    );
+    // Default axis {{0,0,-1},{0,0,1}}, radius 1.
+    assert_eq!(
+      interpret("RegionBounds[Cylinder[]]").unwrap(),
+      "{{-1, 1}, {-1, 1}, {-1, 1}}"
+    );
+  }
+
+  // A cone widens only its base end; the apex contributes a single point.
+  #[test]
+  fn cone_axis_aligned() {
+    assert_eq!(
+      interpret("RegionBounds[Cone[{{0, 0, 0}, {0, 0, 3}}, 2]]").unwrap(),
+      "{{-2, 2}, {-2, 2}, {0, 3}}"
+    );
+    assert_eq!(
+      interpret("RegionBounds[Cone[{{1, 1, 1}, {1, 1, 5}}, 2]]").unwrap(),
+      "{{-1, 3}, {-1, 3}, {1, 5}}"
+    );
+  }
+
+  // A tilted cylinder's perpendicular widening is a radical.
+  #[test]
+  fn cylinder_tilted_radicals() {
+    assert_eq!(
+      interpret("RegionBounds[Cylinder[{{0, 0, 0}, {1, 1, 1}}, 1]]").unwrap(),
+      "{{-Sqrt[2/3], 1 + Sqrt[2/3]}, {-Sqrt[2/3], 1 + Sqrt[2/3]}, \
+       {-Sqrt[2/3], 1 + Sqrt[2/3]}}"
+    );
+  }
+
   #[test]
   fn rectangle_cuboid_default() {
     assert_eq!(

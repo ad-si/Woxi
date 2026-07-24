@@ -8462,6 +8462,86 @@ fn compute_region_bounds(expr: &Expr) -> Result<Expr, InterpreterError> {
         .collect();
       return Ok(Expr::List(bounds.into()));
     }
+    // Cylinder/Cone[{{p1}, {p2}}, r] — the perpendicular extent of the base
+    // disk in dimension d is r·Sqrt[1 - (axis_d/|axis|)^2]. A cylinder extends
+    // that disk at both ends; a cone has the disk at p1 and a point apex p2.
+    if matches!(name.as_str(), "Cylinder" | "Cone") {
+      let (p1, p2): (Vec<Expr>, Vec<Expr>) = match args.first() {
+        Some(Expr::List(pts)) if pts.len() == 2 => match (&pts[0], &pts[1]) {
+          (Expr::List(a), Expr::List(b)) if a.len() == b.len() => {
+            (a.to_vec(), b.to_vec())
+          }
+          _ => return Ok(unevaluated()),
+        },
+        None => (
+          vec![Expr::Integer(0), Expr::Integer(0), Expr::Integer(-1)],
+          vec![Expr::Integer(0), Expr::Integer(0), Expr::Integer(1)],
+        ),
+        _ => return Ok(unevaluated()),
+      };
+      let dim = p1.len();
+      let r = args.get(1).cloned().unwrap_or(Expr::Integer(1));
+      // axis = p2 - p1 and its squared length.
+      let axis: Vec<Expr> = (0..dim)
+        .map(|d| eval_binop("Subtract", p2[d].clone(), p1[d].clone()))
+        .collect();
+      let sq = |e: &Expr| Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![e.clone(), Expr::Integer(2)].into(),
+      };
+      let sum = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: axis.iter().map(sq).collect::<Vec<_>>().into(),
+      })
+      .unwrap_or_else(|_| Expr::Integer(0));
+      let mut bounds = Vec::with_capacity(dim);
+      for d in 0..dim {
+        // e_d = r · Sqrt[(|axis|^2 - axis_d^2) / |axis|^2].
+        let frac = binop(
+          BinaryOperator::Divide,
+          eval_binop("Subtract", sum.clone(), sq(&axis[d])),
+          sum.clone(),
+        );
+        let e = crate::evaluator::evaluate_expr_to_expr(&binop(
+          BinaryOperator::Times,
+          r.clone(),
+          Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![frac].into(),
+          },
+        ))
+        .unwrap_or_else(|_| Expr::Integer(0));
+        let (lo, hi) = if name == "Cylinder" {
+          (
+            eval_binop(
+              "Subtract",
+              eval_binop("Min", p1[d].clone(), p2[d].clone()),
+              e.clone(),
+            ),
+            eval_binop(
+              "Plus",
+              eval_binop("Max", p1[d].clone(), p2[d].clone()),
+              e,
+            ),
+          )
+        } else {
+          (
+            eval_binop(
+              "Min",
+              eval_binop("Subtract", p1[d].clone(), e.clone()),
+              p2[d].clone(),
+            ),
+            eval_binop(
+              "Max",
+              eval_binop("Plus", p1[d].clone(), e),
+              p2[d].clone(),
+            ),
+          )
+        };
+        bounds.push(Expr::List(vec![lo, hi].into()));
+      }
+      return Ok(Expr::List(bounds.into()));
+    }
   }
   Ok(unevaluated())
 }
