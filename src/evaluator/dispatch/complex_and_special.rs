@@ -11989,6 +11989,43 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
           args: vec![args[0].clone()].into(),
         })
       }
+      // Cylinder is centered at the midpoint of its axis; a Cone's centroid
+      // lies one quarter of the way from the base p1 toward the apex p2,
+      // i.e. (3 p1 + p2)/4. The default axis is {{0,0,-1},{0,0,1}}.
+      "Cone" | "Cylinder" => {
+        let (p1, p2) = match args.first() {
+          Some(Expr::List(p)) if p.len() == 2 => (p[0].clone(), p[1].clone()),
+          None => (pt3i(0, 0, -1), pt3i(0, 0, 1)),
+          _ => return unevaluated(),
+        };
+        let centroid = if name == "Cylinder" {
+          binop(
+            BinaryOperator::Divide,
+            Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: vec![p1, p2].into(),
+            },
+            Expr::Integer(2),
+          )
+        } else {
+          binop(
+            BinaryOperator::Divide,
+            Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: vec![
+                Expr::FunctionCall {
+                  name: "Times".to_string(),
+                  args: vec![Expr::Integer(3), p1].into(),
+                },
+                p2,
+              ]
+              .into(),
+            },
+            Expr::Integer(4),
+          )
+        };
+        crate::evaluator::evaluate_expr_to_expr(&centroid)
+      }
       // Tetrahedron / Simplex — the centroid is the mean of the vertices.
       "Tetrahedron" | "Simplex" => {
         // Simplex[n]: the standard n-simplex has vertices {0, e1, …, en}, so

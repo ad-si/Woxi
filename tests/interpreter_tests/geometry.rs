@@ -510,6 +510,35 @@ mod region_centroid {
     );
   }
 
+  // A cylinder's centroid is the midpoint of its axis.
+  #[test]
+  fn cylinder_axis_midpoint() {
+    assert_eq!(
+      interpret("RegionCentroid[Cylinder[{{0, 0, 0}, {0, 0, 4}}, 2]]").unwrap(),
+      "{0, 0, 2}"
+    );
+    // Default axis {{0,0,-1},{0,0,1}}.
+    assert_eq!(
+      interpret("RegionCentroid[Cylinder[]]").unwrap(),
+      "{0, 0, 0}"
+    );
+  }
+
+  // A cone's centroid is one quarter of the way from base to apex.
+  #[test]
+  fn cone_quarter_point() {
+    assert_eq!(
+      interpret("RegionCentroid[Cone[{{0, 0, 0}, {0, 0, 3}}, 1]]").unwrap(),
+      "{0, 0, 3/4}"
+    );
+    assert_eq!(
+      interpret("RegionCentroid[Cone[{{1, 1, 1}, {1, 1, 5}}, 2]]").unwrap(),
+      "{1, 1, 2}"
+    );
+    // Default axis: base {0,0,-1}, apex {0,0,1}.
+    assert_eq!(interpret("RegionCentroid[Cone[]]").unwrap(), "{0, 0, -1/2}");
+  }
+
   #[test]
   fn circle_center() {
     assert_eq!(
