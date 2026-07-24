@@ -2261,6 +2261,21 @@ pub fn interpolation_ast(
     }
   }
 
+  // A positional `{{xmin, xmax}}` argument gives the coordinate domain for the
+  // (uniformly spaced) 1-D value list, overriding the default 1, 2, 3, … grid.
+  let mut domain_spec: Option<(f64, f64)> = None;
+  for opt in args.iter().skip(1) {
+    if let Expr::List(dims) = opt
+      && dims.len() == 1
+      && let Expr::List(pair) = &dims[0]
+      && pair.len() == 2
+      && let (Ok(a), Ok(b)) =
+        (interp_value_to_f64(&pair[0]), interp_value_to_f64(&pair[1]))
+    {
+      domain_spec = Some((a, b));
+    }
+  }
+
   // Evaluate the data argument
   let data_evaluated = crate::evaluator::evaluate_expr_to_expr(data_arg)?;
 
@@ -2315,10 +2330,18 @@ pub fn interpolation_ast(
       points.push((x, y));
     }
   } else {
-    // {y1, y2, ...} — x values are 1, 2, 3, ...
+    // {y1, y2, ...} — x values are 1, 2, 3, ... by default, or uniformly
+    // spaced across [xmin, xmax] when a domain was supplied.
+    let count = data_list.len();
     for (i, item) in data_list.iter().enumerate() {
       let y = interp_value_to_f64(item)?;
-      points.push(((i + 1) as f64, y));
+      let x = match domain_spec {
+        Some((xmin, xmax)) if count > 1 => {
+          xmin + (i as f64) * (xmax - xmin) / ((count - 1) as f64)
+        }
+        _ => (i + 1) as f64,
+      };
+      points.push((x, y));
     }
   }
 

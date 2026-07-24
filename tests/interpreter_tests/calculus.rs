@@ -9664,6 +9664,35 @@ mod list_interpolation {
     assert_eq!(result, "InterpolatingFunction");
   }
 
+  // A {{xmin, xmax}} domain spec spaces the values uniformly across the
+  // interval instead of over the default 1, 2, 3, … grid.
+  #[test]
+  fn domain_spec_maps_grid() {
+    // {1, 4, 9} over [0, 2] sits at x = 0, 1, 2.
+    assert_eq!(
+      interpret("ListInterpolation[{1, 4, 9}, {{0, 2}}][1]").unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret("ListInterpolation[{1, 4, 9}, {{0, 2}}][2]").unwrap(),
+      "9"
+    );
+    // A shifted domain: {1, 4, 9} over [10, 20] has its midpoint at 15.
+    assert_eq!(
+      interpret("ListInterpolation[{1, 4, 9}, {{10, 20}}][15]").unwrap(),
+      "4"
+    );
+    // Linear interpolation across a domain.
+    assert_eq!(
+      interpret(
+        "ListInterpolation[{1, 4, 9, 16}, {{0, 3}}, \
+         InterpolationOrder -> 1][1.5]"
+      )
+      .unwrap(),
+      "6.5"
+    );
+  }
+
   #[test]
   fn order_reduction_uses_listinterpolation_tag() {
     // The order-reduction warning must be tagged with the actual head
