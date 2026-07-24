@@ -395,6 +395,11 @@ pub fn dispatch_image_functions(
         args,
       ));
     }
+    "DeleteSmallComponents" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::image_ast::delete_small_components_ast(
+        args,
+      ));
+    }
     "ImageValue" if args.len() == 2 => {
       return Some(crate::functions::image_ast::image_value_ast(args));
     }

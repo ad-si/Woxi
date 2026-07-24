@@ -5376,3 +5376,36 @@ mod component_measurements {
     );
   }
 }
+
+mod delete_small_components {
+  use super::*;
+
+  // Components (distinct nonzero labels) with n-or-fewer pixels become 0.
+  #[test]
+  fn removes_small_labels() {
+    // Label 2 (1 pixel) drops at threshold 2; label 1 (3 pixels) survives.
+    assert_eq!(
+      interpret("DeleteSmallComponents[{{1, 1, 1}, {0, 0, 2}}, 2]").unwrap(),
+      "{{1, 1, 1}, {0, 0, 0}}"
+    );
+    // Both same-valued pixels are one label of count 2, deleted at n = 2.
+    assert_eq!(
+      interpret("DeleteSmallComponents[{{1, 0, 1}}, 2]").unwrap(),
+      "{{0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("DeleteSmallComponents[{{1, 1, 1, 1}, {0, 0, 0, 2}}, 3]")
+        .unwrap(),
+      "{{1, 1, 1, 1}, {0, 0, 0, 0}}"
+    );
+  }
+
+  // The default threshold (0) deletes nothing.
+  #[test]
+  fn default_is_no_op() {
+    assert_eq!(
+      interpret("DeleteSmallComponents[{{1, 1, 0}, {0, 0, 2}}]").unwrap(),
+      "{{1, 1, 0}, {0, 0, 2}}"
+    );
+  }
+}

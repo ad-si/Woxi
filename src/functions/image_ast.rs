@@ -4555,6 +4555,70 @@ fn filling_marker(mask: &[f64], w: usize, h: usize, add: f64) -> Vec<f64> {
 /// - marker form: per-pixel I + (F - I) * m where F is the plain fill
 ///   and m is the largest (clamped) marker value in each 4-connected
 ///   basin; the result is Real64 for Real64 inputs and Real32 otherwise.
+/// DeleteSmallComponents[m] / [m, n] replaces the positive integers of a label
+/// matrix with 0 wherever their component's tally is `n` or fewer (default
+/// n = 0, i.e. a no-op). Each distinct nonzero value is one component.
+pub fn delete_small_components_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Ok(unevaluated("DeleteSmallComponents", args));
+  if args.is_empty() || args.len() > 2 {
+    return unevaluated();
+  }
+  let Expr::List(rows) = &args[0] else {
+    return unevaluated();
+  };
+  // Parse the integer label matrix and tally each nonzero label.
+  let mut mat: Vec<Vec<i128>> = Vec::with_capacity(rows.len());
+  let mut counts: std::collections::HashMap<i128, usize> =
+    std::collections::HashMap::new();
+  for r in rows.iter() {
+    let Expr::List(cells) = r else {
+      return unevaluated();
+    };
+    let mut row = Vec::with_capacity(cells.len());
+    for c in cells.iter() {
+      let v = match crate::functions::math_ast::try_eval_to_f64(c) {
+        Some(v) => v,
+        None => return unevaluated(),
+      };
+      if v.fract() != 0.0 {
+        return unevaluated();
+      }
+      let iv = v as i128;
+      if iv != 0 {
+        *counts.entry(iv).or_insert(0) += 1;
+      }
+      row.push(iv);
+    }
+    mat.push(row);
+  }
+  // Threshold: components with `n` or fewer pixels are deleted (default 0).
+  let n = match args.get(1) {
+    None => 0usize,
+    Some(e) => match crate::functions::math_ast::try_eval_to_f64(e) {
+      Some(v) if v >= 0.0 && v.fract() == 0.0 => v as usize,
+      _ => return unevaluated(),
+    },
+  };
+  let out: Vec<Expr> = mat
+    .into_iter()
+    .map(|row| {
+      Expr::List(
+        row
+          .into_iter()
+          .map(|v| {
+            let keep = v != 0 && counts.get(&v).copied().unwrap_or(0) > n;
+            Expr::Integer(if keep { v } else { 0 })
+          })
+          .collect::<Vec<_>>()
+          .into(),
+      )
+    })
+    .collect();
+  Ok(Expr::List(out.into()))
+}
+
 /// ComponentMeasurements[labelmatrix, property] measures each labelled
 /// component of a label matrix (each distinct nonzero value is a component).
 /// Returns a list of `label -> value` rules sorted by label. Supported
