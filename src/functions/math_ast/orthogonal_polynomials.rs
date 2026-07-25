@@ -1233,8 +1233,7 @@ fn simplify_spherical_harmonic_form(expr: &Expr) -> Expr {
   }
 
   let mut sqrt_idx: Option<usize> = None;
-  let mut sqrt_n = 0_i128;
-  let mut sqrt_d = 1_i128;
+  let (mut sqrt_n, mut sqrt_d) = (0_i128, 1_i128);
   for (i, a) in args.iter().enumerate() {
     if Some(i) == rat_idx {
       continue;
@@ -1279,8 +1278,7 @@ fn simplify_spherical_harmonic_form(expr: &Expr) -> Expr {
       && has_pi_inv
     {
       sqrt_idx = Some(i);
-      sqrt_n = c;
-      sqrt_d = d;
+      (sqrt_n, sqrt_d) = (c, d);
       break;
     }
   }
@@ -1299,16 +1297,10 @@ fn simplify_spherical_harmonic_form(expr: &Expr) -> Expr {
     };
     let mut comb_n = comb_n_pre.abs();
     let mut comb_d = comb_d_pre.abs();
-    let g = gcd_i128(comb_n, comb_d);
-    if g > 1 {
-      comb_n /= g;
-      comb_d /= g;
-    }
+    (comb_n, comb_d) = rat_reduce(comb_n, comb_d);
     let (extract_n, residual_n) = extract_largest_square(comb_n);
     let (extract_d, residual_d) = extract_largest_square(comb_d);
-    let g2 = gcd_i128(extract_n, extract_d);
-    let coeff_n_abs = extract_n / g2;
-    let coeff_d = extract_d / g2;
+    let (coeff_n_abs, coeff_d) = rat_reduce(extract_n, extract_d);
     let sign: i128 = if (ra_n.signum() * ra_d.signum()) < 0 {
       -1
     } else {
@@ -1605,8 +1597,7 @@ fn legendre_coefficients(n: usize) -> Option<Vec<(i128, i128)>> {
       let (nn, nd) = next[k + 1];
       let new_n = nn.checked_mul(cd)?.checked_add(term_n.checked_mul(nd)?)?;
       let new_d = nd.checked_mul(cd)?;
-      let g = gcd_i128(new_n, new_d).max(1);
-      next[k + 1] = (new_n / g, new_d / g);
+      next[k + 1] = rat_reduce(new_n, new_d);
     }
 
     // -m*P_{m-1}(x)
@@ -1618,8 +1609,7 @@ fn legendre_coefficients(n: usize) -> Option<Vec<(i128, i128)>> {
       let (nn, nd) = next[k];
       let new_n = nn.checked_mul(cd)?.checked_add(term_n.checked_mul(nd)?)?;
       let new_d = nd.checked_mul(cd)?;
-      let g = gcd_i128(new_n, new_d).max(1);
-      next[k] = (new_n / g, new_d / g);
+      next[k] = rat_reduce(new_n, new_d);
     }
 
     // Divide by (m+1)
@@ -1628,8 +1618,7 @@ fn legendre_coefficients(n: usize) -> Option<Vec<(i128, i128)>> {
         continue;
       }
       let new_d = coeff.1.checked_mul(m_i + 1)?;
-      let g = gcd_i128(coeff.0, new_d).max(1);
-      *coeff = (coeff.0 / g, new_d / g);
+      *coeff = rat_reduce(coeff.0, new_d);
     }
 
     prev = curr;
@@ -2853,8 +2842,7 @@ fn gegenbauer_symbolic_lambda(n: usize, lambda: &Expr, x: &Expr) -> Expr {
     let mut num: i128 = if k % 2 == 0 { 1 } else { -1 };
     num *= 1i128 << power;
     let den = fact(k) * fact(power);
-    let g = gcd_i128(num, den).max(1);
-    let (num, den) = (num / g, den / g);
+    let (num, den) = rat_reduce(num, den);
 
     let mut factors: Vec<Expr> = Vec::new();
     if den == 1 {
@@ -3206,15 +3194,13 @@ fn gegenbauer_coefficients(
   if n == 1 {
     // 2λx: coefficient of x^1 is 2λ = 2*lam_n/lam_d
     let cn = 2i128.checked_mul(lam.0)?;
-    let g = gcd_i128(cn, lam.1).max(1);
-    return Some(vec![(0, 1), (cn / g, lam.1 / g)]);
+    return Some(vec![(0, 1), rat_reduce(cn, lam.1)]);
   }
 
   // Store coefficients as (numerator, denominator) vectors
   let mut prev: Vec<(i128, i128)> = vec![(1, 1)]; // C_0
   let cn = 2i128.checked_mul(lam.0)?;
-  let g = gcd_i128(cn, lam.1).max(1);
-  let mut curr: Vec<(i128, i128)> = vec![(0, 1), (cn / g, lam.1 / g)]; // C_1
+  let mut curr: Vec<(i128, i128)> = vec![(0, 1), rat_reduce(cn, lam.1)]; // C_1
 
   for k in 1..n {
     let kk = k as i128;
@@ -3236,8 +3222,7 @@ fn gegenbauer_coefficients(
       // a_n/a_d * cn/cd = a_n*cn / (a_d*cd)
       let nn = a_n.checked_mul(*cn)?;
       let nd = a_d.checked_mul(*cd)?;
-      let g = gcd_i128(nn, nd).max(1);
-      next[j + 1] = (nn / g, nd / g);
+      next[j + 1] = rat_reduce(nn, nd);
     }
 
     // Subtract b * prev
@@ -3252,19 +3237,14 @@ fn gegenbauer_coefficients(
         .checked_mul(sub_d)?
         .checked_sub(sub_n.checked_mul(*nd)?)?;
       let res_d = nd.checked_mul(sub_d)?;
-      let g = gcd_i128(res_n, res_d).max(1);
-      next[j] = (res_n / g, res_d / g);
+      next[j] = rat_reduce(res_n, res_d);
     }
 
     // Divide by (k+1)
     let div = kk + 1;
     for (cn, cd) in next.iter_mut() {
       *cd = cd.checked_mul(div)?;
-      let g = gcd_i128(*cn, *cd).max(1);
-      if g > 1 {
-        *cn /= g;
-        *cd /= g;
-      }
+      (*cn, *cd) = rat_reduce(*cn, *cd);
     }
 
     prev = curr;
@@ -3379,15 +3359,7 @@ fn generalized_laguerre_l_ast(
       binom_den *= i;
     }
     // Simplify
-    let g = gcd_i128(binom_num, binom_den).max(1);
-    if g > 1 {
-      binom_num /= g;
-      binom_den /= g;
-    }
-    if binom_den < 0 {
-      binom_num = -binom_num;
-      binom_den = -binom_den;
-    }
+    (binom_num, binom_den) = rat_reduce(binom_num, binom_den);
 
     // k = 0: coeff = C(n+a, n) / 0! = binom
     let mut factorial_k = 1i128;
@@ -3404,23 +3376,13 @@ fn generalized_laguerre_l_ast(
       let nf = n as i128;
       cur_binom_n *= nf - kf + 1;
       cur_binom_d *= a + kf;
-      let g2 = gcd_i128(cur_binom_n, cur_binom_d).max(1);
-      if g2 > 1 {
-        cur_binom_n /= g2;
-        cur_binom_d /= g2;
-      }
-      if cur_binom_d < 0 {
-        cur_binom_n = -cur_binom_n;
-        cur_binom_d = -cur_binom_d;
-      }
+      (cur_binom_n, cur_binom_d) = rat_reduce(cur_binom_n, cur_binom_d);
 
       // coeff[k] = (-1)^k * C(n+a, n-k) / k!
       let sign = if k % 2 == 0 { 1i128 } else { -1i128 };
       let cn = sign * cur_binom_n;
       let cd = cur_binom_d * factorial_k;
-      let g3 = gcd_i128(cn, cd).max(1);
-      let (cn, cd) = (cn / g3, cd / g3);
-      let (cn, cd) = if cd < 0 { (-cn, -cd) } else { (cn, cd) };
+      let (cn, cd) = rat_reduce(cn, cd);
       coeffs.push((cn, cd));
     }
 
@@ -4056,17 +4018,7 @@ fn rewrite_sqrt_one_minus_cos_sq(expr: &Expr, theta: &Expr) -> Expr {
         if name == "Rational" && args.len() == 2 =>
       {
         if let (Expr::Integer(a), Expr::Integer(b)) = (&args[0], &args[1]) {
-          let mut num = 2 * a;
-          let mut den = *b;
-          let g = gcd_i128(num, den);
-          if g > 1 {
-            num /= g;
-            den /= g;
-          }
-          if den < 0 {
-            num = -num;
-            den = -den;
-          }
+          let (num, den) = rat_reduce(2 * a, *b);
           if den == 1 {
             Some(Expr::Integer(num))
           } else {
@@ -4289,8 +4241,7 @@ fn zernike_eval_rational(coeffs: &[(i128, i128)], x: (i128, i128)) -> Expr {
         break;
       }
     };
-    let g = gcd_i128(new_n, new_d).max(1);
-    (acc_n, acc_d) = (new_n / g, new_d / g);
+    (acc_n, acc_d) = rat_reduce(new_n, new_d);
   }
   if overflow {
     // Fall back to floating point if exact arithmetic overflows.

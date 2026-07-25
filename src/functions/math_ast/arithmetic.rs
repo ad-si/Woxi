@@ -1603,15 +1603,7 @@ impl Coeff {
           d1.checked_mul(*d2),
         ) && let Some(sn) = a.checked_add(b)
         {
-          let mut sd = c;
-          let mut sn = sn;
-          let g = gcd_i128(sn, sd);
-          sn /= g;
-          sd /= g;
-          if sd < 0 {
-            sn = -sn;
-            sd = -sd;
-          }
+          let (sn, sd) = rat_reduce(sn, c);
           return Self::Exact(sn, sd);
         }
         // Overflow: promote to BigInt
@@ -1665,15 +1657,7 @@ impl Coeff {
       (Self::Exact(n1, d1), Self::Exact(n2, d2)) => {
         if let (Some(sn), Some(sd)) = (n1.checked_mul(*n2), d1.checked_mul(*d2))
         {
-          let mut sn = sn;
-          let mut sd = sd;
-          let g = gcd_i128(sn, sd);
-          sn /= g;
-          sd /= g;
-          if sd < 0 {
-            sn = -sn;
-            sd = -sd;
-          }
+          let (sn, sd) = rat_reduce(sn, sd);
           return Self::Exact(sn, sd);
         }
         let (n1, d1) = Self::to_big(*n1, *d1);
@@ -8017,9 +8001,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .and_then(|c2| c2.checked_mul(rn))
         .zip(cd.checked_mul(cd).and_then(|d2| d2.checked_mul(rd)));
       if let Some((mut num, mut den)) = merged {
-        let g = gcd_i128(num, den).max(1);
-        num /= g;
-        den /= g;
+        (num, den) = rat_reduce(num, den);
         let (s, p1) = extract_square_factor_i128(num.abs());
         let (t, q1) = extract_square_factor_i128(den);
         let sign = if cn < 0 { -1 } else { 1 };
@@ -9346,8 +9328,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     // Reduce mod 2*y_den (since y mod 2 means y_num mod 2*y_den).
     let modulus = 2 * y_den;
     y_num = y_num.rem_euclid(modulus);
-    let g = gcd_i128(y_num, y_den);
-    let (yn, yd) = (y_num / g, y_den / g);
+    let (yn, yd) = rat_reduce(y_num, y_den);
     // Build -(-1)^Rational[yn, yd]. If yn == 0, (-1)^0 = 1, so result = -1.
     if yn == 0 {
       return Ok(Expr::Integer(-1));
@@ -9384,18 +9365,13 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     // y = p / (2q), reduced mod 2 into [0, 2).
     let y_den = 2 * q;
     let y_num = p.rem_euclid(2 * y_den);
-    let g = gcd_i128(y_num, y_den);
-    let (mut yn, mut yd) = (y_num / g, y_den / g);
+    let (mut yn, mut yd) = rat_reduce(y_num, y_den);
     let mut sign = 1i128;
     if yn >= yd {
       // y in [1, 2): (-1)^y = -(-1)^(y-1).
       yn -= yd;
       sign = -1;
-      let g2 = gcd_i128(yn, yd);
-      if g2 > 1 {
-        yn /= g2;
-        yd /= g2;
-      }
+      (yn, yd) = rat_reduce(yn, yd);
     }
     if yn == 0 {
       return Ok(Expr::Integer(sign)); // (-1)^0 = 1
@@ -10724,10 +10700,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       // would loop as 2^(1/3)*3^(1/3) → 6^(1/3) → ...).
       let mut reduced: Vec<(i128, i128)> = radical_factors
         .iter()
-        .map(|(_, rem_exp)| {
-          let g = gcd_i128(*rem_exp as i128, d as i128);
-          (*rem_exp as i128 / g, d as i128 / g)
-        })
+        .map(|(_, rem_exp)| rat_reduce(*rem_exp as i128, d as i128))
         .collect();
       reduced.sort();
       reduced.dedup();
@@ -10763,9 +10736,8 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       // Build radical part: product of p_i^(rem_i/q)
       let mut rad_parts: Vec<Expr> = Vec::new();
       for (prime, rem_exp) in &radical_factors {
-        let g = gcd_i128(*rem_exp as i128, d as i128);
-        let reduced_num = *rem_exp as i128 / g;
-        let reduced_den = d as i128 / g;
+        let (reduced_num, reduced_den) =
+          rat_reduce(*rem_exp as i128, d as i128);
         if reduced_den == 1 {
           // Integer power
           rad_parts.push(Expr::Integer(prime.pow(reduced_num as u32)));
@@ -11335,12 +11307,7 @@ fn simplify_neg1_rational_power(
   p: i128,
   q: i128,
 ) -> Result<Expr, InterpreterError> {
-  let g = gcd_i128(p.abs(), q.abs());
-  let (mut p, mut q) = (p / g, q / g);
-  if q < 0 {
-    p = -p;
-    q = -q;
-  }
+  let (mut p, q) = rat_reduce(p, q);
   // Reduce p mod 2q to canonical range [0, 2q)
   let period = 2 * q;
   p = ((p % period) + period) % period;
@@ -11356,9 +11323,7 @@ fn simplify_neg1_rational_power(
   // If p > q, factor out (-1)^1 = -1: (-1)^(p/q) = -(-1)^((p-q)/q)
   if p > q {
     let remainder = p - q;
-    let g2 = gcd_i128(remainder, q);
-    let rp = remainder / g2;
-    let rq = q / g2;
+    let (rp, rq) = rat_reduce(remainder, q);
     let inner = Expr::FunctionCall {
       name: "Power".to_string(),
       args: vec![Expr::Integer(-1), make_rational(rp, rq)].into(),

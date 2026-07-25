@@ -165,18 +165,8 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Handle exact complex numbers and rationals: Abs[a + b*I] = Sqrt[a^2 + b^2]
   if let Some(((rn, rd), (in_, id))) = try_extract_complex_exact(&args[0]) {
-    let g_r = gcd_i128(rn, rd);
-    let (rn, rd) = if rd < 0 {
-      (-rn / g_r, -rd / g_r)
-    } else {
-      (rn / g_r, rd / g_r)
-    };
-    let g_i = gcd_i128(in_, id);
-    let (in_, id) = if id < 0 {
-      (-in_ / g_i, -id / g_i)
-    } else {
-      (in_ / g_i, id / g_i)
-    };
+    let (rn, rd) = rat_reduce(rn, rd);
+    let (in_, id) = rat_reduce(in_, id);
     if in_ == 0 {
       // Pure real
       return Ok(make_rational(rn.abs(), rd));
@@ -606,18 +596,8 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Handle complex numbers: Sign[a + b*I] = (a + b*I) / Abs[a + b*I]
   if let Some(((rn, rd), (in_, id))) = try_extract_complex_exact(&args[0]) {
-    let g_r = gcd_i128(rn, rd);
-    let (rn, rd) = if rd < 0 {
-      (-rn / g_r, -rd / g_r)
-    } else {
-      (rn / g_r, rd / g_r)
-    };
-    let g_i = gcd_i128(in_, id);
-    let (in_, id) = if id < 0 {
-      (-in_ / g_i, -id / g_i)
-    } else {
-      (in_ / g_i, id / g_i)
-    };
+    let (rn, rd) = rat_reduce(rn, rd);
+    let (in_, id) = rat_reduce(in_, id);
     if in_ == 0 {
       // Pure real - already handled above by try_eval_to_f64
       return Ok(Expr::Integer(if rn > 0 {
@@ -642,8 +622,7 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .and_then(|a| id.checked_mul(id).and_then(|b| a.checked_mul(b))),
     ) {
       // Simplify |z|^2 fraction
-      let g_abs = gcd_i128(abs2_num, abs2_den);
-      let (abs2_n, abs2_d) = (abs2_num / g_abs, abs2_den / g_abs);
+      let (abs2_n, abs2_d) = rat_reduce(abs2_num, abs2_den);
 
       // Check if |z|^2 is a perfect square (so |z| is rational)
       let abs2_sqrt = (abs2_n as f64).sqrt().round() as i128;
@@ -1401,10 +1380,8 @@ fn try_sqrt_gaussian(expr: &Expr) -> Option<Expr> {
   let ((rn, rd), (in_, id)) = try_extract_complex_exact(expr)?;
   // Normalize to integers a and b where z = a + b*I
   // Require both parts to be integers (denominator 1 after reducing)
-  let g_r = gcd_i128(rn, rd);
-  let (rn, rd) = (rn / g_r, rd / g_r);
-  let g_i = gcd_i128(in_, id);
-  let (in_, id) = (in_ / g_i, id / g_i);
+  let (rn, rd) = rat_reduce(rn, rd);
+  let (in_, id) = rat_reduce(in_, id);
   // Pure real cases are handled by existing code; skip to avoid duplication
   if in_ == 0 {
     return None;
@@ -1931,9 +1908,7 @@ fn floor_ceil_two_arg(
     if ad == 1 {
       return Ok(Expr::Integer(res_num));
     }
-    let g = gcd_i128(res_num.abs(), ad.abs());
-    let rn = res_num / g;
-    let rd = ad / g;
+    let (rn, rd) = rat_reduce(res_num, ad);
     if rd == 1 {
       return Ok(Expr::Integer(rn));
     }
@@ -1967,9 +1942,7 @@ fn floor_ceil_two_arg(
       if ad == 1 {
         return Ok(Expr::Integer(res_num));
       }
-      let g = gcd_i128(res_num.abs(), ad.abs());
-      let rn = res_num / g;
-      let rd = ad / g;
+      let (rn, rd) = rat_reduce(res_num, ad);
       if rd == 1 {
         return Ok(Expr::Integer(rn));
       }
@@ -3536,17 +3509,8 @@ fn nice_step_rational(raw: f64) -> Option<(i128, i128)> {
   } else {
     sd = sd.checked_mul(10i128.checked_pow((-k) as u32)?)?;
   }
-  let g = gcd_i128(sn.abs(), sd.abs()).max(1);
-  Some((sn / g, sd / g))
-}
-
-/// Reduce a (numerator, denominator) pair to lowest terms with a positive
-/// denominator.
-fn reduce_rat(n: i128, d: i128) -> (i128, i128) {
-  let s = if d < 0 { -1 } else { 1 };
-  let (n, d) = (n * s, d * s);
-  let g = gcd_i128(n.abs(), d).max(1);
-  (n / g, d / g)
+  let (sn, sd) = rat_reduce(sn, sd);
+  Some((sn, sd))
 }
 
 fn rat_to_f64((n, d): (i128, i128)) -> f64 {
@@ -3571,7 +3535,7 @@ fn division_points(
   }
   let mut pts = Vec::with_capacity((last - first + 1) as usize);
   for i in first..=last {
-    pts.push(reduce_rat(i * sn, sd));
+    pts.push(rat_reduce(i * sn, sd));
   }
   Some(pts)
 }
@@ -3611,7 +3575,7 @@ fn find_divisions_step(
       let units = raw * dd as f64 / dn as f64;
       let nice = nice_step_rational(units)?;
       let m = round_half_even_min1(nice);
-      Some(reduce_rat(m * dn, dd))
+      Some(rat_reduce(m * dn, dd))
     }
   }
 }
@@ -3666,12 +3630,12 @@ pub fn find_divisions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   else {
     return unevaluated();
   };
-  let (min, max) = (reduce_rat(min.0, min.1), reduce_rat(max.0, max.1));
+  let (min, max) = (rat_reduce(min.0, min.1), rat_reduce(max.0, max.1));
 
   // Optional spacing unit dx (the 3-element range form). Must be positive.
   let dx = if range.len() == 3 {
     match expr_to_rational(&range[2]) {
-      Some(d) if d.0 > 0 => Some(reduce_rat(d.0, d.1)),
+      Some(d) if d.0 > 0 => Some(rat_reduce(d.0, d.1)),
       _ => return unevaluated(),
     }
   } else {
