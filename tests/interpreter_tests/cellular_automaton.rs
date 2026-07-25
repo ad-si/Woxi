@@ -270,3 +270,132 @@ mod cellular_automaton {
     );
   }
 }
+
+// The `{tspec, xspec}` step specification restricts the returned cells, and
+// the 2-argument / operator forms run a single step. All values verified
+// against wolframscript.
+mod step_and_cell_specs {
+  use super::*;
+
+  #[test]
+  fn all_keeps_every_affected_cell() {
+    clear_state();
+    // `{t, All}` matches the plain `t` form for both init kinds.
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1}, 0}, {3, All}]").unwrap(),
+      "{{0, 0, 0, 1, 0, 0, 0}, {0, 0, 1, 0, 1, 0, 0}, \
+       {0, 1, 0, 0, 0, 1, 0}, {1, 0, 1, 0, 1, 0, 1}}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[30, {0, 0, 0, 1, 0, 0, 0}, {2, All}]")
+        .unwrap(),
+      "{{0, 0, 0, 1, 0, 0, 0}, {0, 0, 1, 1, 1, 0, 0}, {0, 1, 1, 0, 0, 1, 0}}"
+    );
+  }
+
+  // Offset 0 is the first cell of the initial condition.
+  #[test]
+  fn a_cell_range_windows_the_evolution() {
+    clear_state();
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1}, 0}, {3, {-2, 2}}]").unwrap(),
+      "{{0, 0, 1, 0, 0}, {0, 1, 0, 1, 0}, {1, 0, 0, 0, 1}, {0, 1, 0, 1, 0}}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1}, 0}, {3, {0, 0}}]").unwrap(),
+      "{{1}, {0}, {0}, {0}}"
+    );
+    // A multi-cell init still puts offset 0 on its first cell.
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1, 1, 1}, 0}, {2, {0, 2}}]").unwrap(),
+      "{{1, 1, 1}, {1, 0, 1}, {1, 0, 1}}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1, 1, 1}, 0}, {2, {-1, 3}}]").unwrap(),
+      "{{0, 1, 1, 1, 0}, {1, 1, 0, 1, 1}, {1, 1, 0, 1, 1}}"
+    );
+  }
+
+  // A window wider than the affected region reads the background.
+  #[test]
+  fn a_window_may_reach_past_the_affected_region() {
+    clear_state();
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1}, 0}, {2, {-5, 5}}]").unwrap(),
+      "{{0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0}, \
+       {0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0}, \
+       {0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0}}"
+    );
+  }
+
+  // A cyclic init wraps around instead.
+  #[test]
+  fn a_cyclic_window_wraps() {
+    clear_state();
+    assert_eq!(
+      interpret("CellularAutomaton[30, {0, 0, 0, 1, 0, 0, 0}, {2, {0, 2}}]")
+        .unwrap(),
+      "{{0, 0, 0}, {0, 0, 1}, {0, 1, 1}}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[30, {0, 0, 0, 1, 0, 0, 0}, {2, {-1, 1}}]")
+        .unwrap(),
+      "{{0, 0, 0}, {0, 0, 0}, {0, 0, 1}}"
+    );
+  }
+
+  #[test]
+  fn a_cell_range_may_carry_a_step() {
+    clear_state();
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1}, 0}, {3, {-2, 2, 2}}]").unwrap(),
+      "{{0, 1, 0}, {0, 0, 0}, {1, 0, 1}, {0, 0, 0}}"
+    );
+  }
+
+  // A bare integer xspec runs from the origin out to that offset.
+  #[test]
+  fn an_integer_cell_spec_runs_from_the_origin() {
+    clear_state();
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1}, 0}, {3, 2}]").unwrap(),
+      "{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}, {0, 1, 0}}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1}, 0}, {3, -2}]").unwrap(),
+      "{{0, 0, 1}, {0, 1, 0}, {1, 0, 0}, {0, 1, 0}}"
+    );
+  }
+
+  // Without a step count only one step runs, and the result is the new state
+  // alone — as a `{cells, {background}}` pair for a background init.
+  #[test]
+  fn the_two_argument_form_runs_one_step() {
+    clear_state();
+    assert_eq!(
+      interpret("CellularAutomaton[30, {0, 0, 0, 1, 0, 0, 0}]").unwrap(),
+      "{0, 0, 1, 1, 1, 0, 0}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[30, {{1}, 0}]").unwrap(),
+      "{{1, 1, 1}, {0}}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[30, {{1, 0, 1}, 0}]").unwrap(),
+      "{{1, 1, 0, 1, 1}, {0}}"
+    );
+  }
+
+  #[test]
+  fn the_operator_form_runs_one_step() {
+    clear_state();
+    assert_eq!(
+      interpret("CellularAutomaton[30][{0, 0, 1, 0, 0}]").unwrap(),
+      "{0, 1, 1, 1, 0}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[30][{{1}, 0}]").unwrap(),
+      "{{1, 1, 1}, {0}}"
+    );
+  }
+}

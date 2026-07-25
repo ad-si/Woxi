@@ -1321,6 +1321,19 @@ pub fn apply_curried_call(
     Expr::FunctionCall {
       name,
       args: func_args,
+    } if name == "CellularAutomaton"
+      && func_args.len() == 1
+      && args.len() == 1 =>
+    {
+      // CellularAutomaton[rule][init] — the operator form is one step.
+      crate::functions::cellular_automaton_ast::cellular_automaton_ast(&[
+        func_args[0].clone(),
+        args[0].clone(),
+      ])
+    }
+    Expr::FunctionCall {
+      name,
+      args: func_args,
     } if name == "Dataset" && func_args.len() == 3 => {
       // Dataset[data, type, meta][args...] — dataset querying
       crate::functions::dataset_ast::dataset_query(func_args, args)

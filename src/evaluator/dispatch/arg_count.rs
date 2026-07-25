@@ -159,7 +159,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Catenate" => Some((1, 1)),
     "CDF" => Some((1, 2)),
     "Ceiling" => Some((1, 2)),
-    "CellularAutomaton" => Some((3, 3)),
+    "CellularAutomaton" => Some((1, 3)),
     "CensoredDistribution" => Some((2, 2)),
     "CenterArray" => Some((1, 3)),
     "CentralMoment" => Some((2, 2)),

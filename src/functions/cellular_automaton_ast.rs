@@ -22,6 +22,38 @@ use crate::syntax::{Expr, unevaluated};
 pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("CellularAutomaton", args));
 
+  // CellularAutomaton[rule, init] — one step. The result is the new state on
+  // its own: a bare list for a cyclic init, or the `{cells, {background}}`
+  // pair that can be fed straight back in for a background init.
+  if args.len() == 2 {
+    let stepped = cellular_automaton_ast(&[
+      args[0].clone(),
+      args[1].clone(),
+      Expr::List(vec![Expr::List(vec![Expr::Integer(1)].into())].into()),
+    ])?;
+    let Expr::List(states) = &stepped else {
+      return unevaluated();
+    };
+    let Some(Expr::List(cells)) = states.iter().next() else {
+      return unevaluated();
+    };
+    // A `{cells, bg}` init keeps its background in the answer.
+    if let Expr::List(init) = &args[1]
+      && init.len() == 2
+      && matches!(&init[0], Expr::List(_))
+      && !matches!(&init[1], Expr::List(_))
+    {
+      return Ok(Expr::List(
+        vec![
+          Expr::List(cells.clone()),
+          Expr::List(vec![init[1].clone()].into()),
+        ]
+        .into(),
+      ));
+    }
+    return Ok(Expr::List(cells.clone()));
+  }
+
   if args.len() != 3 {
     return unevaluated();
   }
@@ -42,7 +74,13 @@ pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return unevaluated();
   };
 
-  let Some(states) = evolve(&rule, &init, background, &steps.times) else {
+  // A cell window only makes sense on the 1D cell axis.
+  if steps.cells.is_some() && rule.two_d {
+    return unevaluated();
+  }
+  let Some(states) =
+    evolve(&rule, &init, background, &steps.times, steps.cells)
+  else {
     return unevaluated();
   };
 
@@ -82,6 +120,9 @@ struct RuleSpec {
 struct StepSpec {
   /// The (ascending) time steps whose states are returned.
   times: Vec<usize>,
+  /// Cell offsets to keep, as `(from, to, step)` relative to the first cell
+  /// of the initial condition. `None` keeps the whole affected region.
+  cells: Option<(i64, i64, usize)>,
 }
 
 fn as_nonneg_int(expr: &Expr) -> Option<u128> {
@@ -267,6 +308,7 @@ fn parse_step_spec(expr: &Expr) -> Option<StepSpec> {
     Expr::Integer(t) if *t >= 0 && (*t as u128) < MAX_STATES as u128 => {
       Some(StepSpec {
         times: (0..=(*t as usize)).collect(),
+        cells: None,
       })
     }
     Expr::List(items) if items.len() == 1 => match &items[0] {
@@ -274,6 +316,7 @@ fn parse_step_spec(expr: &Expr) -> Option<StepSpec> {
       Expr::Integer(t) if *t >= 0 && (*t as u128) < MAX_STATES as u128 => {
         Some(StepSpec {
           times: (0..=(*t as usize)).collect(),
+          cells: None,
         })
       }
       // {{t}}, {{t1, t2}}, {{t1, t2, dt}} — a list of the selected states.
@@ -288,10 +331,48 @@ fn parse_step_spec(expr: &Expr) -> Option<StepSpec> {
         }
         Some(StepSpec {
           times: (t1..=t2).step_by(dt).collect(),
+          cells: None,
         })
       }
       _ => None,
     },
+    // {tspec, xspec} — the time steps of `tspec`, restricted to the cells
+    // `xspec` names. `All` keeps every cell that could be affected.
+    Expr::List(items) if items.len() == 2 => {
+      let mut spec = parse_step_spec(&items[0])?;
+      spec.cells = parse_cell_spec(&items[1])?;
+      Some(spec)
+    }
+    _ => None,
+  }
+}
+
+/// The cell offsets an `xspec` names, as `(from, to, step)`. `Ok(None)` means
+/// "every cell" (`All`); a spec that cannot be read yields `None`.
+#[allow(clippy::type_complexity)]
+fn parse_cell_spec(expr: &Expr) -> Option<Option<(i64, i64, usize)>> {
+  let as_int = |e: &Expr| -> Option<i64> {
+    match e {
+      Expr::Integer(n) => i64::try_from(*n).ok(),
+      _ => None,
+    }
+  };
+  match expr {
+    Expr::Identifier(s) if s == "All" => Some(None),
+    // A bare `n` runs from the origin out to offset n (either direction).
+    Expr::Integer(_) => {
+      let n = as_int(expr)?;
+      Some(Some(if n >= 0 { (0, n, 1) } else { (n, 0, 1) }))
+    }
+    Expr::List(items) if items.len() == 2 || items.len() == 3 => {
+      let from = as_int(&items[0])?;
+      let to = as_int(&items[1])?;
+      let step = match items.get(2) {
+        Some(d) => usize::try_from(as_int(d)?).ok().filter(|&d| d > 0)?,
+        None => 1,
+      };
+      (to >= from).then_some(Some((from, to, step)))
+    }
     _ => None,
   }
 }
@@ -384,15 +465,37 @@ fn evolve(
   init: &[Vec<u128>],
   background: Option<u128>,
   times: &[usize],
+  window: Option<(i64, i64, usize)>,
 ) -> Option<Vec<Vec<Vec<u128>>>> {
   let r1 = (rule.weights.len() - 1) / 2;
   let r2 = (rule.weights[0].len() - 1) / 2;
   let t_max = *times.last()?;
 
+  // Offset 0 sits at column `r2 * t_max` of a background grid (the init is
+  // centered there) or at column 0 of a cyclic one. A window reaching past the
+  // affected region needs extra background columns so those cells evolve too.
+  let base_origin = match background {
+    Some(_) => (r2.checked_mul(t_max)?) as i64,
+    None => 0,
+  };
+  let margin = match (background, window) {
+    (Some(_), Some((from, to, _))) => {
+      let right_edge = base_origin + init[0].len() as i64 - 1 + base_origin;
+      let need_left = (base_origin - from).max(0) - base_origin;
+      let need_right = to - right_edge;
+      need_left.max(need_right).max(0) as usize
+    }
+    _ => 0,
+  };
+  let origin = base_origin + margin as i64;
+
   let (height, width) = match background {
     Some(_) => (
       init.len().checked_add((2 * r1).checked_mul(t_max)?)?,
-      init[0].len().checked_add((2 * r2).checked_mul(t_max)?)?,
+      init[0]
+        .len()
+        .checked_add((2 * r2).checked_mul(t_max)?)?
+        .checked_add(2usize.checked_mul(margin)?)?,
     ),
     None => (init.len(), init[0].len()),
   };
@@ -414,7 +517,7 @@ fn evolve(
       let mut grid = vec![vec![bg; width]; height];
       for (i, row) in init.iter().enumerate() {
         for (j, &cell) in row.iter().enumerate() {
-          grid[r1 * t_max + i][r2 * t_max + j] = cell;
+          grid[r1 * t_max + i][origin as usize + j] = cell;
         }
       }
       grid
@@ -473,6 +576,36 @@ fn evolve(
     }
     grid = next;
     bg = rule_digit(rule.n, rule.k, bg.saturating_mul(weight_total));
+  }
+
+  // An explicit cell window replaces the automatic trimming: the named
+  // offsets are returned verbatim, wrapping around for a cyclic init and
+  // reading the evolving background outside a background grid.
+  if let Some((from, to, step)) = window {
+    return Some(
+      snapshots
+        .iter()
+        .map(|(g, bg)| {
+          let row: Vec<u128> = (from..=to)
+            .step_by(step)
+            .map(|x| {
+              let idx = origin + x;
+              match background {
+                Some(_) => {
+                  if idx < 0 || idx >= width as i64 {
+                    *bg
+                  } else {
+                    g[0][idx as usize]
+                  }
+                }
+                None => g[0][idx.rem_euclid(width as i64) as usize],
+              }
+            })
+            .collect();
+          vec![row]
+        })
+        .collect(),
+    );
   }
 
   if background.is_some() {

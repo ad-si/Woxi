@@ -24,6 +24,30 @@ $ wo 'ArrayPlot /@ CellularAutomaton[{942, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}
 {-Graphics-, -Graphics-, -Graphics-}
 ```
 
+A second element in the step specification restricts the cells returned.
+`All` keeps every affected cell, while `{x1, x2}` names offsets relative to
+the first cell of the initial condition:
+
+```scrut
+$ wo 'CellularAutomaton[90, {{1}, 0}, {3, {-2, 2}}]'
+{{0, 0, 1, 0, 0}, {0, 1, 0, 1, 0}, {1, 0, 0, 0, 1}, {0, 1, 0, 1, 0}}
+```
+
+Without a step count only one step runs, and just the new state comes back —
+as a `{cells, {background}}` pair when the initial condition has a background:
+
+```scrut
+$ wo 'CellularAutomaton[30, {{1}, 0}]'
+{{1, 1, 1}, {0}}
+```
+
+The operator form does the same:
+
+```scrut
+$ wo 'CellularAutomaton[30][{0, 0, 1, 0, 0}]'
+{0, 1, 1, 1, 0}
+```
+
 ```scrut
 $ wo 'CellularAutomaton[x, {{1}, 0}, 3]'
 
