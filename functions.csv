@@ -1915,7 +1915,7 @@ MessageDialog,GUI dialog for displaying messages,🚫,,6.0,1946
 SquaredEuclideanDistance,Squared Euclidean distance between two vectors,✅,pure,6.0,1946
 ColorSlider,Color slider control element (stays symbolic in script mode),✅,unevaluated,6.0,1949
 Saturday,Day of the week symbol,✅,unevaluated,9.0,1949
-TemplateApply,Applies arguments to a string template with backtick slots,✅,pure,10.0,1949
+TemplateApply,Fills backtick slots and evaluates expression slots in a template,✅,pure,10.0,1949
 ImageReflect,Reflects an image horizontally or vertically,✅,pure,7.0,1951
 URLBuild,Builds a URL from components and query parameters,✅,pure,10.0,1951
 CellGroup,Notebook structure element for grouping cells,🚫,,6.0,1954

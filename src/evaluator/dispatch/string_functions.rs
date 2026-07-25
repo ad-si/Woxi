@@ -28,7 +28,7 @@ pub fn dispatch_string_functions(
     "StringJoin" => {
       return Some(crate::functions::string_ast::string_join_ast(args));
     }
-    "TemplateApply" if args.len() == 2 => {
+    "TemplateApply" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::string_ast::template_apply_ast(args));
     }
     "StringExtract" if args.len() >= 2 => {

@@ -7085,6 +7085,92 @@ mod template_apply {
       "1 + 2 = 3"
     );
   }
+
+  // A StringTemplate object is just a wrapper around the template text.
+  // Values verified against wolframscript.
+  #[test]
+  fn accepts_a_string_template_object() {
+    assert_eq!(
+      interpret(r#"TemplateApply[StringTemplate["a `x`"], <|"x" -> 1|>]"#)
+        .unwrap(),
+      "a 1"
+    );
+    assert_eq!(
+      interpret(
+        r#"TemplateApply[StringTemplate["Hello, my name is ``. I am feeling ``."], {"Bob", "good"}]"#
+      )
+      .unwrap(),
+      "Hello, my name is Bob. I am feeling good."
+    );
+  }
+
+  // `<*expr*>` is an expression slot: it evaluates inline.
+  #[test]
+  fn expression_slots_evaluate() {
+    assert_eq!(interpret(r#"TemplateApply["<*1+1*>"]"#).unwrap(), "2");
+    assert_eq!(
+      interpret(r#"TemplateApply["x <*2^3*> y"]"#).unwrap(),
+      "x 8 y"
+    );
+    // Whitespace inside the slot is ignored, and several may appear.
+    assert_eq!(interpret(r#"TemplateApply["<* 2 + 3 *>"]"#).unwrap(), "5");
+    assert_eq!(
+      interpret(r#"TemplateApply["a<*1*>b<*2*>c"]"#).unwrap(),
+      "a1b2c"
+    );
+    // A non-string value is spliced in its usual rendering.
+    assert_eq!(
+      interpret(r#"TemplateApply["x<*Range[3]*>y"]"#).unwrap(),
+      "x{1, 2, 3}y"
+    );
+    // The result is always a string.
+    assert_eq!(
+      interpret(r#"Head[TemplateApply["<*5*>"]]"#).unwrap(),
+      "String"
+    );
+  }
+
+  // The template's arguments are visible to an expression slot as #1, #2, ….
+  #[test]
+  fn expression_slots_see_the_arguments() {
+    assert_eq!(
+      interpret(r#"TemplateApply["`1` <*#1*>", {5}]"#).unwrap(),
+      "5 5"
+    );
+    assert_eq!(
+      interpret(r#"TemplateApply["a<*1+1*>b", {5}]"#).unwrap(),
+      "a2b"
+    );
+  }
+
+  // The one-argument form fills no parameters but still runs the slots.
+  #[test]
+  fn one_argument_form() {
+    assert_eq!(
+      interpret(r#"TemplateApply["no slots"]"#).unwrap(),
+      "no slots"
+    );
+    assert_eq!(
+      interpret(r#"TemplateApply["<*Range[3]*>"]"#).unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  // The operator form runs expression slots too.
+  #[test]
+  fn string_template_operator_form_runs_slots() {
+    assert_eq!(
+      interpret(r#"StringTemplate["x <*2^3*> y"][]"#).unwrap(),
+      "x 8 y"
+    );
+    // Here the whole argument is #1, so it is the list itself.
+    assert_eq!(
+      interpret(r#"StringTemplate["<*#1+1*>"][{5}]"#).unwrap(),
+      "{6}"
+    );
+    // An undefined symbol renders as its own name.
+    assert_eq!(interpret(r#"StringTemplate["<*x*>"][]"#).unwrap(), "x");
+  }
 }
 
 mod dictionary_word_q {

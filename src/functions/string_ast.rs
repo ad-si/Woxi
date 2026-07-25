@@ -7384,6 +7384,7 @@ pub fn apply_string_template(
     }
   }
 
+  let tmpl = expand_expression_slots(&tmpl, args)?;
   let chars: Vec<char> = tmpl.chars().collect();
   let mut result = String::new();
   let mut i = 0;
@@ -11760,8 +11761,25 @@ fn template_object_apply(
 /// Replaces `n` with the nth argument (1-indexed) from a list,
 /// or `key` with the value from an association.
 pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.is_empty() || args.len() > 2 {
     return Ok(unevaluated("TemplateApply", args));
+  }
+  // `StringTemplate[s]` is just a wrapper around the template text.
+  if let Expr::FunctionCall { name, args: inner } = &args[0]
+    && name == "StringTemplate"
+    && inner.len() == 1
+  {
+    let mut unwrapped = vec![inner[0].clone()];
+    unwrapped.extend(args[1..].iter().cloned());
+    return template_apply_ast(&unwrapped);
+  }
+  // TemplateApply[template] evaluates the template's expression slots with no
+  // parameters to fill.
+  if args.len() == 1 {
+    return template_apply_ast(&[
+      args[0].clone(),
+      Expr::List(Vec::new().into()),
+    ]);
   }
 
   let template = match &args[0] {
@@ -11783,6 +11801,13 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(other.clone());
     }
   };
+
+  // Expression slots evaluate before the parameter slots are filled.
+  let slot_args: Vec<Expr> = match &args[1] {
+    Expr::List(items) => items.iter().cloned().collect(),
+    other => vec![other.clone()],
+  };
+  let template = expand_expression_slots(&template, &slot_args)?;
 
   // Build replacement map
   let replacements: std::collections::HashMap<String, String> = match &args[1] {
@@ -12855,4 +12880,38 @@ pub fn string_extract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   Ok(apply_steps(&Expr::String(s), &steps, &split, &pick))
+}
+
+/// Replace every `<* expr *>` expression slot in a template with the rendered
+/// value of `expr`. The template's arguments are available as `#1`, `#2`, …
+/// inside the slot, so `<*#1 + 1*>` sees the first argument. An expression
+/// that fails to parse is left in place.
+fn expand_expression_slots(
+  template: &str,
+  args: &[Expr],
+) -> Result<String, InterpreterError> {
+  let mut out = String::with_capacity(template.len());
+  let mut rest = template;
+  while let Some(start) = rest.find("<*") {
+    let Some(rel_end) = rest[start + 2..].find("*>") else {
+      break;
+    };
+    let end = start + 2 + rel_end;
+    out.push_str(&rest[..start]);
+    let body = rest[start + 2..end].trim();
+    match crate::syntax::string_to_expr(body) {
+      Ok(parsed) => {
+        let substituted = crate::syntax::substitute_slots(&parsed, args);
+        let value = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+        out.push_str(&match &value {
+          Expr::String(text) => text.clone(),
+          other => crate::syntax::expr_to_string(other),
+        });
+      }
+      Err(_) => out.push_str(&rest[start..end + 2]),
+    }
+    rest = &rest[end + 2..];
+  }
+  out.push_str(rest);
+  Ok(out)
 }
