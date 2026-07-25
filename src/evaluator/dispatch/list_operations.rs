@@ -2078,30 +2078,27 @@ pub fn dispatch_list_operations(
       };
       return Some(list_helpers_ast::fold_ast(&args[0], &init, &rest));
     }
-    "FoldWhile" if (3..=6).contains(&args.len()) => {
+    "FoldWhile" | "FoldWhileList" if (3..=6).contains(&args.len()) => {
       // FoldWhile[f, x, {a1, …}, test, m, n]  — full form
       // FoldWhile[f, list, test]  ==  FoldWhile[f, First[list], Rest[list], test]
       let func = &args[0];
+      let echo = || Some(Ok(unevaluated(name, args)));
       // The 3-arg form takes the initial value from the head of the list.
       let (init, items, tail): (Expr, Vec<Expr>, &[Expr]) = if args.len() == 3 {
         let list_items: &[Expr] = match &args[1] {
           Expr::List(items) => items.as_slice(),
           Expr::FunctionCall { args: fargs, .. } => fargs.as_slice(),
-          _ => {
-            return Some(Ok(unevaluated("FoldWhile", args)));
-          }
+          _ => return echo(),
         };
         if list_items.is_empty() {
-          return Some(Ok(unevaluated("FoldWhile", args)));
+          return echo();
         }
         (list_items[0].clone(), list_items[1..].to_vec(), &args[2..3])
       } else {
         let list_items: Vec<Expr> = match &args[2] {
           Expr::List(items) => items.to_vec(),
           Expr::FunctionCall { args: fargs, .. } => fargs.to_vec(),
-          _ => {
-            return Some(Ok(unevaluated("FoldWhile", args)));
-          }
+          _ => return echo(),
         };
         (args[1].clone(), list_items, &args[3..])
       };
@@ -2110,9 +2107,7 @@ pub fn dispatch_list_operations(
       let m = if tail.len() >= 2 {
         match parse_nest_while_m(&tail[1]) {
           Some(m) => m,
-          None => {
-            return Some(Ok(unevaluated("FoldWhile", args)));
-          }
+          None => return echo(),
         }
       } else {
         list_helpers_ast::NestWhileM::Last(1)
@@ -2122,9 +2117,18 @@ pub fn dispatch_list_operations(
       } else {
         0
       };
-      return Some(list_helpers_ast::fold_while_ast(
+      let history = match list_helpers_ast::fold_while_history_ast(
         func, &init, &items, test, m, extra_n,
-      ));
+      ) {
+        Ok(h) => h,
+        Err(e) => return Some(Err(e)),
+      };
+      // FoldWhile reports where the fold stopped; FoldWhileList the way there.
+      return Some(Ok(if name == "FoldWhileList" {
+        Expr::List(history.into())
+      } else {
+        history.last().cloned().unwrap_or(init)
+      }));
     }
     "GroupBy" if args.len() == 2 || args.len() == 3 => {
       // GroupBy needs a list (incl. list of rules) or an association as its
@@ -6901,66 +6905,6 @@ pub fn dispatch_list_operations(
       }
       // Non-list input
       return Some(Ok(bool_expr(false)));
-    }
-    // FoldWhileList — fold while test is True, returning the whole history.
-    // The 3-argument form takes the first list element as the initial value.
-    // (FoldWhile itself, including the `m`/`n` extended forms, is handled by
-    // the dedicated arm near Fold above.)
-    "FoldWhileList" if args.len() == 3 || args.len() == 4 => {
-      let (init, items) = if args.len() == 4 {
-        match &args[2] {
-          Expr::List(items) => {
-            (args[1].clone(), items.iter().cloned().collect::<Vec<_>>())
-          }
-          _ => return None,
-        }
-      } else {
-        match &args[1] {
-          Expr::List(items) if !items.is_empty() => (
-            items[0].clone(),
-            items.iter().skip(1).cloned().collect::<Vec<_>>(),
-          ),
-          _ => return None,
-        }
-      };
-      let f = &args[0];
-      let test = if args.len() == 4 { &args[3] } else { &args[2] };
-      let mut acc = init;
-      let mut results = vec![acc.clone()];
-      // The fold stops after the first result that fails the test (which
-      // is still included), matching wolframscript.
-      let passes = |v: &Expr| {
-        let r = apply_function_to_arg(test, v).unwrap_or(bool_expr(false));
-        matches!(&r, Expr::Identifier(s) if s == "True")
-      };
-      if passes(&acc) {
-        for item in &items {
-          let call = match f {
-            Expr::Identifier(fname) => Expr::FunctionCall {
-              name: fname.clone(),
-              args: vec![acc.clone(), item.clone()].into(),
-            },
-            Expr::Function { body } => crate::syntax::substitute_slots(
-              body,
-              &[acc.clone(), item.clone()],
-            ),
-            _ => Expr::FunctionCall {
-              name: expr_to_string(f),
-              args: vec![acc.clone(), item.clone()].into(),
-            },
-          };
-          acc = evaluate_expr_to_expr(&call).unwrap_or(call);
-          results.push(acc.clone());
-          if !passes(&acc) {
-            break;
-          }
-        }
-      }
-      return Some(Ok(if name == "FoldWhileList" {
-        Expr::List(results.into())
-      } else {
-        acc
-      }));
     }
     // (legacy 4-arg FoldWhileList arm, superseded above)
     "FoldWhileListLegacy" if args.len() == 4 => {

@@ -1321,6 +1321,20 @@ pub fn apply_curried_call(
     Expr::FunctionCall {
       name,
       args: func_args,
+    } if (name == "FoldWhile" || name == "FoldWhileList")
+      && func_args.len() == 2
+      && args.len() == 1 =>
+    {
+      // FoldWhile[f, test][list] — the operator form folds the given list,
+      // taking its first element as the initial value.
+      evaluate_function_call_ast(
+        name,
+        &[func_args[0].clone(), args[0].clone(), func_args[1].clone()],
+      )
+    }
+    Expr::FunctionCall {
+      name,
+      args: func_args,
     } if name == "TuringMachine" && func_args.len() == 1 && args.len() == 1 => {
       // TuringMachine[rule][init] — the operator form is one step.
       crate::functions::turing_machine_ast::turing_machine_ast(&[

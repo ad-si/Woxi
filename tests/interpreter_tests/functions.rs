@@ -5365,6 +5365,77 @@ mod fold_while {
       "{5}"
     );
   }
+
+  // FoldWhileList takes the same optional arguments as FoldWhile, and is
+  // exactly the history whose last element FoldWhile returns. All values
+  // verified against wolframscript.
+  #[test]
+  fn fold_while_list_takes_a_step_offset() {
+    // n = +1 folds one extra step past the failure, n = -1 stops one earlier.
+    assert_eq!(
+      interpret("FoldWhileList[#1 + #2 &, 0, {1, 2, 3, 4}, # < 4 &, 1, 1]")
+        .unwrap(),
+      "{0, 1, 3, 6, 10}"
+    );
+    assert_eq!(
+      interpret("FoldWhileList[#1 + #2 &, 0, {1, 2, 3, 4}, # < 4 &, 1, -1]")
+        .unwrap(),
+      "{0, 1, 3}"
+    );
+    assert_eq!(
+      interpret("FoldWhileList[#1 + #2 &, 0, {1, 2, 3, 4}, # < 4 &, 1, -2]")
+        .unwrap(),
+      "{0, 1}"
+    );
+  }
+
+  #[test]
+  fn fold_while_list_takes_a_test_window() {
+    // m = 2 hands the test the two most recent results.
+    assert_eq!(
+      interpret(
+        "FoldWhileList[#1 + #2 &, 0, {1, 2, 3, 4, 5}, Plus[##] < 10 &, 2]"
+      )
+      .unwrap(),
+      "{0, 1, 3, 6, 10}"
+    );
+    // All hands it every result so far.
+    assert_eq!(
+      interpret(
+        "FoldWhileList[#1 + #2 &, 0, {1, 2, 3, 4}, Total[{##}] < 6 &, All]"
+      )
+      .unwrap(),
+      "{0, 1, 3, 6}"
+    );
+  }
+
+  #[test]
+  fn fold_while_operator_forms() {
+    assert_eq!(
+      interpret("FoldWhile[#1 + #2 &, # < 4 &][{1, 2, 3, 4}]").unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret("FoldWhileList[#1 + #2 &, # < 4 &][{1, 2, 3, 4}]").unwrap(),
+      "{1, 3, 6}"
+    );
+  }
+
+  // The two heads must agree about where the fold stops.
+  #[test]
+  fn fold_while_is_the_last_of_fold_while_list() {
+    for extra in ["", ", 1, 1", ", 1, -1", ", 1, -2"] {
+      let value = interpret(&format!(
+        "FoldWhile[#1 + #2 &, 0, {{1, 2, 3, 4}}, # < 4 &{extra}]"
+      ))
+      .unwrap();
+      let history = interpret(&format!(
+        "Last[FoldWhileList[#1 + #2 &, 0, {{1, 2, 3, 4}}, # < 4 &{extra}]]"
+      ))
+      .unwrap();
+      assert_eq!(value, history, "mismatch for extra args '{extra}'");
+    }
+  }
 }
 
 mod numerator_denominator {

@@ -49,6 +49,22 @@ pub fn fold_while_ast(
   m: NestWhileM,
   extra_n: i128,
 ) -> Result<Expr, InterpreterError> {
+  let history = fold_while_history_ast(func, init, items, test, m, extra_n)?;
+  Ok(history.last().cloned().unwrap_or_else(|| init.clone()))
+}
+
+/// The accumulator history `FoldWhileList` reports: `init`, then each folded
+/// value up to and including the one that fails `test`, with the optional
+/// extra-step offset applied to where it stops. `FoldWhile` is its last
+/// element, so the two can never disagree about where the fold ends.
+pub fn fold_while_history_ast(
+  func: &Expr,
+  init: &Expr,
+  items: &[Expr],
+  test: &Expr,
+  m: NestWhileM,
+  extra_n: i128,
+) -> Result<Vec<Expr>, InterpreterError> {
   // Build the accumulator history: r0 = init, r1 = f[r0, a1], …
   // Wolfram tests the current value(s) before each further fold and, unlike
   // NestWhile, tests immediately even before m values are available.
@@ -77,22 +93,24 @@ pub fn fold_while_ast(
   // exhausted). Apply the optional extra-step offset.
   let target = (history.len() as i128 - 1) + extra_n;
   if target < 0 {
-    return Ok(history[0].clone());
+    return Ok(vec![history[0].clone()]);
   }
   if (target as usize) < history.len() {
-    return Ok(history[target as usize].clone());
+    history.truncate(target as usize + 1);
+    return Ok(history);
   }
   // Positive offset: keep folding with any remaining list elements.
-  let mut current = history.last().cloned().unwrap_or_else(|| init.clone());
   let extra = (target as usize) - (history.len() - 1);
   for i in 0..extra {
     let idx = consumed + i;
     if idx >= items.len() {
       break;
     }
-    current = apply_func_to_two_args(func, &current, &items[idx])?;
+    let next =
+      apply_func_to_two_args(func, history.last().unwrap(), &items[idx])?;
+    history.push(next);
   }
-  Ok(current)
+  Ok(history)
 }
 
 /// AST-based Nest: apply a function n times.
