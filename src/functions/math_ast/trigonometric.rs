@@ -1281,6 +1281,24 @@ fn imaginary_pi_coeff(term: &Expr) -> Option<(i128, i128)> {
 /// turns. Drives the hyperbolic imaginary-period reductions
 /// (`Cosh[z + Pi I] = -Cosh[z]`, `Cosh[z + Pi I/2] = I Sinh[z]`, …).
 fn extract_imaginary_pi_period(arg: &Expr) -> Option<(i64, Expr)> {
+  let ((num, den), rest_expr) = extract_imaginary_pi_shift(arg)?;
+  // k = 2 * (num/den) quarter turns; require it to be an integer.
+  let k2 = num.checked_mul(2)?;
+  if k2 % den != 0 {
+    return None;
+  }
+  let k = k2 / den;
+  if k == 0 {
+    return None;
+  }
+  Some((i64::try_from(k).ok()?, rest_expr))
+}
+
+/// Split a sum `rest + c Pi I` into the reduced rational `c` (numerator,
+/// positive denominator) and the remaining terms. Returns `None` when `arg` is
+/// not a sum, has no rational imaginary-`Pi` term, or consists of nothing but
+/// such terms.
+fn extract_imaginary_pi_shift(arg: &Expr) -> Option<((i128, i128), Expr)> {
   let is_sum = matches!(arg, Expr::FunctionCall { name, .. } if name == "Plus")
     || matches!(
       arg,
@@ -1296,27 +1314,26 @@ fn extract_imaginary_pi_period(arg: &Expr) -> Option<(i64, Expr)> {
   collect_plus_terms(arg, &mut terms);
   let (mut num, mut den): (i128, i128) = (0, 1);
   let mut rest: Vec<Expr> = Vec::new();
+  let mut saw_pi_term = false;
   for t in terms {
     match imaginary_pi_coeff(&t) {
       Some((n, d)) => {
+        saw_pi_term = true;
         num = num.checked_mul(d)?.checked_add(n.checked_mul(den)?)?;
         den = den.checked_mul(d)?;
       }
       None => rest.push(t),
     }
   }
-  if rest.is_empty() {
+  if rest.is_empty() || !saw_pi_term || den == 0 {
     return None;
   }
-  // k = 2 * (num/den) quarter turns; require it to be an integer.
-  let k2 = num.checked_mul(2)?;
-  if den == 0 || k2 % den != 0 {
-    return None;
+  if den < 0 {
+    num = -num;
+    den = -den;
   }
-  let k = k2 / den;
-  if k == 0 {
-    return None;
-  }
+  let g = gcd_i128(num.abs().max(1), den).max(1);
+  let (num, den) = (num / g, den / g);
   let rest_expr = if rest.len() == 1 {
     rest.into_iter().next().unwrap()
   } else {
@@ -1325,7 +1342,7 @@ fn extract_imaginary_pi_period(arg: &Expr) -> Option<(i64, Expr)> {
       args: rest.into(),
     }
   };
-  Some((i64::try_from(k).ok()?, rest_expr))
+  Some(((num, den), rest_expr))
 }
 
 /// Quarter-turn table for `func[z + k Pi I/2]`: the reduced head and a phase
@@ -1379,6 +1396,89 @@ fn hyperbolic_imaginary_period(
     },
   };
   Some(crate::evaluator::evaluate_expr_to_expr(&with_phase))
+}
+
+/// Rewrite a hyperbolic function of `rest + c Pi I` — with a rational `c` that
+/// is *not* a half-integer, so the quarter-turn table above doesn't apply — as
+/// the circular function of `c Pi - I rest`, the way wolframscript does:
+/// `Cosh[x + Pi I/4]` → `Cos[Pi/4 - I x]`, `Sinh[x + Pi I/4]` →
+/// `I Sin[Pi/4 - I x]`. Follows from `Cosh[z] = Cos[I z]` and its siblings;
+/// the circular evaluation then applies the usual `Pi`-phase canonicalization.
+fn hyperbolic_rational_pi_shift(
+  func: &str,
+  arg: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  // (circular counterpart, leading factor): 0 = 1, 1 = I, -1 = -I.
+  let (target, factor): (&str, i8) = match func {
+    "Cosh" => ("Cos", 0),
+    "Sinh" => ("Sin", 1),
+    "Tanh" => ("Tan", 1),
+    "Coth" => ("Cot", -1),
+    "Sech" => ("Sec", 0),
+    "Csch" => ("Csc", -1),
+    _ => return None,
+  };
+  let ((num, den), rest) = extract_imaginary_pi_shift(arg)?;
+  // Half-integer shifts stay with the quarter-turn reduction.
+  if (num * 2) % den == 0 {
+    return None;
+  }
+  let c_pi = mk_times(vec![
+    mk_rational(num, den),
+    Expr::Identifier("Pi".to_string()),
+  ]);
+  let minus_i_rest = mk_times(vec![
+    Expr::Integer(-1),
+    Expr::Identifier("I".to_string()),
+    rest,
+  ]);
+  let inner = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![c_pi, minus_i_rest].into(),
+  };
+  let inner = match crate::evaluator::evaluate_expr_to_expr(&inner) {
+    Ok(v) => v,
+    Err(e) => return Some(Err(e)),
+  };
+  let reduced =
+    match crate::evaluator::evaluate_function_call_ast(target, &[inner]) {
+      Ok(v) => v,
+      Err(e) => return Some(Err(e)),
+    };
+  let with_factor = match factor {
+    0 => reduced,
+    1 => mk_times(vec![Expr::Identifier("I".to_string()), reduced]),
+    _ => mk_times(vec![
+      Expr::Integer(-1),
+      Expr::Identifier("I".to_string()),
+      reduced,
+    ]),
+  };
+  Some(crate::evaluator::evaluate_expr_to_expr(&with_factor))
+}
+
+/// `Times[factors…]`, collapsing the single-factor case.
+fn mk_times(factors: Vec<Expr>) -> Expr {
+  if factors.len() == 1 {
+    factors.into_iter().next().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: factors.into(),
+    }
+  }
+}
+
+/// The exact rational `num/den`, collapsing an integral value to an `Integer`.
+fn mk_rational(num: i128, den: i128) -> Expr {
+  if den == 1 {
+    Expr::Integer(num)
+  } else {
+    Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(num), Expr::Integer(den)].into(),
+    }
+  }
 }
 
 fn extract_imaginary_factor(arg: &Expr) -> Option<Expr> {
@@ -4431,6 +4531,9 @@ pub fn sinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(r) = hyperbolic_imaginary_period("Sinh", &args[0]) {
     return r;
   }
+  if let Some(r) = hyperbolic_rational_pi_shift("Sinh", &args[0]) {
+    return r;
+  }
   // Sinh is monotonic increasing on ℝ: map over interval spans.
   if let Some(r) =
     crate::functions::interval_ast::map_monotonic_interval("Sinh", &args[0])
@@ -4484,6 +4587,9 @@ pub fn cosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(r) = hyperbolic_imaginary_period("Cosh", &args[0]) {
     return r;
   }
+  if let Some(r) = hyperbolic_rational_pi_shift("Cosh", &args[0]) {
+    return r;
+  }
   // Cosh[Interval[...]] — U-shaped (even, minimum Cosh[0] = 1 at the origin),
   // so a span containing 0 bottoms out at 1; otherwise it is monotonic.
   if let Some(r) = crate::functions::interval_ast::cosh_interval(&args[0]) {
@@ -4533,6 +4639,9 @@ pub fn tanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return r;
   }
   if let Some(r) = hyperbolic_imaginary_period("Tanh", &args[0]) {
+    return r;
+  }
+  if let Some(r) = hyperbolic_rational_pi_shift("Tanh", &args[0]) {
     return r;
   }
   // Tanh is monotonic increasing on ℝ: map over interval spans.
@@ -4586,6 +4695,9 @@ pub fn coth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return r;
   }
   if let Some(r) = hyperbolic_imaginary_period("Coth", &args[0]) {
+    return r;
+  }
+  if let Some(r) = hyperbolic_rational_pi_shift("Coth", &args[0]) {
     return r;
   }
   // Coth[Interval[...]] — range over each span (single pole at 0, decreasing).
@@ -4645,6 +4757,9 @@ pub fn sech_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(r) = hyperbolic_imaginary_period("Sech", &args[0]) {
     return r;
   }
+  if let Some(r) = hyperbolic_rational_pi_shift("Sech", &args[0]) {
+    return r;
+  }
   // Sech[Interval[...]] — even, max 1 at 0, no poles.
   if let Some(r) = crate::functions::interval_ast::sech_interval(&args[0]) {
     return Ok(r);
@@ -4693,6 +4808,9 @@ pub fn csch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return r;
   }
   if let Some(r) = hyperbolic_imaginary_period("Csch", &args[0]) {
+    return r;
+  }
+  if let Some(r) = hyperbolic_rational_pi_shift("Csch", &args[0]) {
     return r;
   }
   // Csch[Interval[...]] — range over each span (single pole at 0, decreasing).

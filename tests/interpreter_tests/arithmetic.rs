@@ -8616,8 +8616,34 @@ mod imaginary_argument_trig {
     assert_eq!(interpret("Tanh[x + Pi I/2]").unwrap(), "Coth[x]");
     assert_eq!(interpret("Coth[x + Pi I/2]").unwrap(), "Tanh[x]");
     assert_eq!(interpret("Tanh[x + 3 Pi I/2]").unwrap(), "Coth[x]");
-    // An eighth turn (Pi I/4) is not a period point and stays put.
-    assert_eq!(interpret("Cosh[x + Pi I/4]").unwrap(), "Cosh[x + I/4*Pi]");
+    // An eighth turn (Pi I/4) is not a period point; wolframscript rewrites it
+    // as the circular counterpart of `c Pi - I x` instead.
+    assert_eq!(interpret("Cosh[x + Pi I/4]").unwrap(), "Cos[Pi/4 - I*x]");
+  }
+
+  // A rational (non-half-integer) multiple of Pi*I turns the hyperbolic
+  // function into its circular counterpart, since Cosh[z] = Cos[I z]:
+  // Cosh[x + c Pi I] = Cos[c Pi - I x], and likewise for the whole family.
+  #[test]
+  fn hyperbolic_rational_pi_shift() {
+    assert_eq!(interpret("Cosh[x + Pi I/4]").unwrap(), "Cos[Pi/4 - I*x]");
+    assert_eq!(interpret("Sinh[x + Pi I/4]").unwrap(), "I*Sin[Pi/4 - I*x]");
+    assert_eq!(interpret("Tanh[x + Pi I/4]").unwrap(), "I*Tan[Pi/4 - I*x]");
+    assert_eq!(interpret("Coth[x + Pi I/4]").unwrap(), "-I*Cot[Pi/4 - I*x]");
+    assert_eq!(interpret("Sech[x + Pi I/4]").unwrap(), "Sec[Pi/4 - I*x]");
+    assert_eq!(interpret("Csch[x + Pi I/4]").unwrap(), "-I*Csc[Pi/4 - I*x]");
+    // The circular result then gets the usual Pi-phase canonicalization.
+    assert_eq!(interpret("Cosh[x + Pi I/3]").unwrap(), "Sin[Pi/6 + I*x]");
+    assert_eq!(interpret("Cosh[x - Pi I/4]").unwrap(), "Cos[Pi/4 + I*x]");
+    assert_eq!(interpret("Cosh[x + Pi I/6]").unwrap(), "Cos[Pi/6 - I*x]");
+    assert_eq!(interpret("Cosh[x + 2 Pi I/3]").unwrap(), "-Sin[Pi/6 - I*x]");
+    assert_eq!(interpret("Cosh[x + 5 Pi I/4]").unwrap(), "-Cos[Pi/4 - I*x]");
+    assert_eq!(
+      interpret("Cosh[2 x + Pi I/4]").unwrap(),
+      "Cos[Pi/4 - (2*I)*x]"
+    );
+    // A symbolic imaginary part is not a rational multiple of Pi: no rewrite.
+    assert_eq!(interpret("Cosh[x + I y]").unwrap(), "Cosh[x + I*y]");
   }
 
   #[test]
