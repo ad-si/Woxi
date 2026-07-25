@@ -1961,8 +1961,11 @@ pub fn dispatch_list_operations(
         return Some(Ok(Expr::List(result.into())));
       }
     }
-    "MovingMap" if args.len() == 3 => {
-      // MovingMap[f, list, n] - apply f to sublists of length n+1
+    // MovingMap[f, list, n] — apply f to each sublist of length n+1.
+    // MovingMap[f, list, n, padding] — pad the data on the left by n elements
+    // first, so every input position contributes a window and the result has
+    // the same length as the input.
+    "MovingMap" if args.len() == 3 || args.len() == 4 => {
       if let Expr::List(items) = &args[1]
         && let Some(n) = match &args[2] {
           Expr::Integer(n) => Some(*n as usize),
@@ -1975,14 +1978,22 @@ pub fn dispatch_list_operations(
           _ => None,
         }
       {
-        let window_size = n + 1;
-        if window_size > items.len() {
-          return Some(Ok(Expr::List(vec![].into())));
-        }
+        let items: Vec<Expr> = items.iter().cloned().collect();
+        let windows = match args.get(3) {
+          None => {
+            if n + 1 > items.len() {
+              return Some(Ok(Expr::List(vec![].into())));
+            }
+            (0..=(items.len() - n - 1))
+              .map(|i| items[i..i + n + 1].to_vec())
+              .collect()
+          }
+          Some(padding) => moving_map_padded_windows(&items, n, padding)?,
+        };
         let f = &args[0];
         let mut results = Vec::new();
-        for i in 0..=(items.len() - window_size) {
-          let sublist = Expr::List(items[i..i + window_size].to_vec().into());
+        for window in windows {
+          let sublist = Expr::List(window.into());
           // Apply f[sublist]; this handles named functions, pure functions
           // (`#[[1]] + #[[2]] &`), and explicit `Function[...]` alike.
           match crate::evaluator::function_application::apply_function_to_arg(
@@ -8452,6 +8463,61 @@ fn build_reshaped(
     }
     Expr::List(result.into())
   }
+}
+
+/// The windows `MovingMap[f, items, n, padding]` applies `f` to: one per input
+/// position, each of length `n + 1`, taken from `items` extended `n` elements
+/// to the left by `padding`.
+///
+/// `"Fixed"` repeats the first element, `"Periodic"` wraps around from the end,
+/// `"Reflected"` mirrors about the first element, `None` leaves the leading
+/// windows short, and anything else is used as a constant fill. Returns `None`
+/// for an empty list, so the caller leaves the call unevaluated.
+fn moving_map_padded_windows(
+  items: &[Expr],
+  n: usize,
+  padding: &Expr,
+) -> Option<Vec<Vec<Expr>>> {
+  if items.is_empty() {
+    return None;
+  }
+  let len = items.len();
+  let named = match padding {
+    Expr::String(s) | Expr::Identifier(s) => Some(s.as_str()),
+    _ => None,
+  };
+
+  if named == Some("None") {
+    // No fill: the first windows are simply shorter.
+    return Some(
+      (0..len)
+        .map(|i| items[i.saturating_sub(n)..=i].to_vec())
+        .collect(),
+    );
+  }
+
+  // `pad[k]` is the element `k` places to the left of the data (k = 1..n).
+  let pad = |k: usize| -> Expr {
+    match named {
+      Some("Fixed") => items[0].clone(),
+      Some("Periodic") => {
+        items[(len * n.div_ceil(len) + len - k) % len].clone()
+      }
+      // Mirror about the first element: a triangle wave over the data,
+      // 1 -> items[1], 2 -> items[2], … turning around at either end.
+      Some("Reflected") if len > 1 => {
+        let period = 2 * (len - 1);
+        let m = k % period;
+        items[if m > len - 1 { period - m } else { m }].clone()
+      }
+      Some("Reflected") => items[0].clone(),
+      _ => padding.clone(),
+    }
+  };
+
+  let mut padded: Vec<Expr> = (1..=n).rev().map(pad).collect();
+  padded.extend(items.iter().cloned());
+  Some((0..len).map(|i| padded[i..i + n + 1].to_vec()).collect())
 }
 
 fn position_index_ast(expr: &Expr) -> Result<Expr, InterpreterError> {

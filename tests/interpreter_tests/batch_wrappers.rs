@@ -805,6 +805,109 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // MovingMap[f, list, n, padding] extends the data n elements to the left,
+  // so every input position gets a window and the result keeps the input's
+  // length. Identity shows the windows themselves; values verified against
+  // wolframscript.
+  #[test]
+  fn moving_map_padding_modes() {
+    assert_eq!(
+      interpret("MovingMap[Identity, {1, 2, 3}, 1, \"Fixed\"]").unwrap(),
+      "{{1, 1}, {1, 2}, {2, 3}}"
+    );
+    assert_eq!(
+      interpret("MovingMap[Identity, {1, 2, 3}, 1, \"Periodic\"]").unwrap(),
+      "{{3, 1}, {1, 2}, {2, 3}}"
+    );
+    assert_eq!(
+      interpret("MovingMap[Identity, {1, 2, 3}, 1, \"Reflected\"]").unwrap(),
+      "{{2, 1}, {1, 2}, {2, 3}}"
+    );
+    // Anything that is not a named mode is a constant fill.
+    assert_eq!(
+      interpret("MovingMap[Identity, {1, 2, 3}, 1, 0]").unwrap(),
+      "{{0, 1}, {1, 2}, {2, 3}}"
+    );
+    assert_eq!(
+      interpret("MovingMap[Identity, {1, 2, 3, 4, 5}, 2, x]").unwrap(),
+      "{{x, x, 1}, {x, 1, 2}, {1, 2, 3}, {2, 3, 4}, {3, 4, 5}}"
+    );
+    // A bare symbol names the mode just as the string does.
+    assert_eq!(
+      interpret("MovingMap[Identity, {1, 2, 3}, 1, Fixed]").unwrap(),
+      "{{1, 1}, {1, 2}, {2, 3}}"
+    );
+  }
+
+  #[test]
+  fn moving_map_padding_over_a_wider_window() {
+    assert_eq!(
+      interpret("MovingMap[Identity, {1, 2, 3, 4, 5}, 2, \"Fixed\"]").unwrap(),
+      "{{1, 1, 1}, {1, 1, 2}, {1, 2, 3}, {2, 3, 4}, {3, 4, 5}}"
+    );
+    assert_eq!(
+      interpret("MovingMap[Identity, {1, 2, 3, 4, 5}, 2, \"Periodic\"]")
+        .unwrap(),
+      "{{4, 5, 1}, {5, 1, 2}, {1, 2, 3}, {2, 3, 4}, {3, 4, 5}}"
+    );
+    assert_eq!(
+      interpret("MovingMap[Identity, {1, 2, 3, 4, 5}, 2, \"Reflected\"]")
+        .unwrap(),
+      "{{3, 2, 1}, {2, 1, 2}, {1, 2, 3}, {2, 3, 4}, {3, 4, 5}}"
+    );
+  }
+
+  // A window wider than the data keeps wrapping / mirroring.
+  #[test]
+  fn moving_map_padding_wider_than_the_data() {
+    assert_eq!(
+      interpret("MovingMap[Identity, {1, 2, 3}, 5, \"Fixed\"]").unwrap(),
+      "{{1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 2}, {1, 1, 1, 1, 2, 3}}"
+    );
+    assert_eq!(
+      interpret("MovingMap[Identity, {1, 2, 3}, 4, \"Periodic\"]").unwrap(),
+      "{{3, 1, 2, 3, 1}, {1, 2, 3, 1, 2}, {2, 3, 1, 2, 3}}"
+    );
+    assert_eq!(
+      interpret("MovingMap[Identity, {1, 2, 3}, 4, \"Reflected\"]").unwrap(),
+      "{{1, 2, 3, 2, 1}, {2, 3, 2, 1, 2}, {3, 2, 1, 2, 3}}"
+    );
+  }
+
+  // `None` adds no elements, so the leading windows are simply shorter.
+  #[test]
+  fn moving_map_padding_none_leaves_short_windows() {
+    assert_eq!(
+      interpret("MovingMap[Identity, {1, 2, 3}, 1, None]").unwrap(),
+      "{{1}, {1, 2}, {2, 3}}"
+    );
+  }
+
+  #[test]
+  fn moving_map_padding_applies_the_function() {
+    assert_eq!(
+      interpret("MovingMap[Total, {1, 2, 3, 4, 5}, 1, \"Fixed\"]").unwrap(),
+      "{2, 3, 5, 7, 9}"
+    );
+    assert_eq!(
+      interpret("MovingMap[Total, {1, 2, 3, 4, 5}, 1, \"Periodic\"]").unwrap(),
+      "{6, 3, 5, 7, 9}"
+    );
+    assert_eq!(
+      interpret("MovingMap[Total, {1, 2, 3, 4, 5}, 1, \"Reflected\"]").unwrap(),
+      "{3, 3, 5, 7, 9}"
+    );
+    assert_eq!(
+      interpret("MovingMap[Total, {1, 2, 3, 4, 5}, 1, 0]").unwrap(),
+      "{1, 3, 5, 7, 9}"
+    );
+    // The window spec may still be given as a one-element list.
+    assert_eq!(
+      interpret("MovingMap[Total, {1, 2, 3}, {1}, \"Fixed\"]").unwrap(),
+      "{2, 3, 5}"
+    );
+  }
+
   // ─── Unevaluated batch ────────────────────────────────────────────
   #[test]
   fn notebook_find() {
