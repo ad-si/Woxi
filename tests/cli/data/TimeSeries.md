@@ -21,3 +21,18 @@ A bare list of values gets integer time stamps `1, 2, 3, …`:
 $ wo 'Mean[TimeSeries[{10., 20., 30., 40.}]]'
 25.
 ```
+
+`TimeSeriesWindow` keeps the points whose time stamps fall in a window,
+including both endpoints:
+
+```scrut
+$ wo 'TimeSeriesWindow[TimeSeries[{{1, 10}, {2, 20}, {3, 30}, {4, 40}}], {2, 3}]["Path"]'
+{{2, 20}, {3, 30}}
+```
+
+Either bound may be infinite to leave that end open:
+
+```scrut
+$ wo 'TimeSeriesWindow[TimeSeries[{{1, 10}, {2, 20}, {3, 30}, {4, 40}}], {3, Infinity}]["Values"]'
+{30, 40}
+```

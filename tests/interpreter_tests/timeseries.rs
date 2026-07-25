@@ -331,6 +331,133 @@ mod time_series {
   }
 }
 
+// TimeSeriesWindow[ts, {tmin, tmax}] — the points whose stamps fall in the
+// window, both ends included. All values verified against wolframscript.
+mod time_series_window {
+  use super::*;
+
+  const TS: &str =
+    "ts = TimeSeries[{{1, 10}, {2, 20}, {3, 30}, {4, 40}, {5, 50}}]; ";
+
+  #[test]
+  fn window_is_inclusive_at_both_ends() {
+    assert_eq!(
+      interpret(&format!("{TS}TimeSeriesWindow[ts, {{2, 4}}][\"Path\"]"))
+        .unwrap(),
+      "{{2, 20}, {3, 30}, {4, 40}}"
+    );
+    assert_eq!(
+      interpret(&format!("{TS}TimeSeriesWindow[ts, {{2, 4}}][\"Times\"]"))
+        .unwrap(),
+      "{2, 3, 4}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "{TS}TimeSeriesWindow[ts, {{2, 4}}][\"PathLength\"]"
+      ))
+      .unwrap(),
+      "3"
+    );
+    // A degenerate window still catches the point sitting on it.
+    assert_eq!(
+      interpret(&format!("{TS}TimeSeriesWindow[ts, {{3, 3}}][\"Path\"]"))
+        .unwrap(),
+      "{{3, 30}}"
+    );
+  }
+
+  #[test]
+  fn result_is_a_time_series() {
+    assert_eq!(
+      interpret(&format!("{TS}Head[TimeSeriesWindow[ts, {{2, 4}}]]")).unwrap(),
+      "TimeSeries"
+    );
+  }
+
+  #[test]
+  fn bounds_need_not_coincide_with_sample_times() {
+    assert_eq!(
+      interpret(&format!("{TS}TimeSeriesWindow[ts, {{0, 10}}][\"Path\"]"))
+        .unwrap(),
+      "{{1, 10}, {2, 20}, {3, 30}, {4, 40}, {5, 50}}"
+    );
+    assert_eq!(
+      interpret(&format!("{TS}TimeSeriesWindow[ts, {{2.5, 4.5}}][\"Path\"]"))
+        .unwrap(),
+      "{{3, 30}, {4, 40}}"
+    );
+  }
+
+  #[test]
+  fn open_ends_and_reversed_bounds() {
+    assert_eq!(
+      interpret(&format!(
+        "{TS}TimeSeriesWindow[ts, {{-Infinity, 3}}][\"Path\"]"
+      ))
+      .unwrap(),
+      "{{1, 10}, {2, 20}, {3, 30}}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "{TS}TimeSeriesWindow[ts, {{3, Infinity}}][\"Path\"]"
+      ))
+      .unwrap(),
+      "{{3, 30}, {4, 40}, {5, 50}}"
+    );
+    // The bounds may be given the other way round.
+    assert_eq!(
+      interpret(&format!("{TS}TimeSeriesWindow[ts, {{4, 2}}][\"Path\"]"))
+        .unwrap(),
+      "{{2, 20}, {3, 30}, {4, 40}}"
+    );
+  }
+
+  #[test]
+  fn date_stamps_are_compared_as_dates() {
+    assert_eq!(
+      interpret(
+        "d = TimeSeries[{{{2020, 1, 1}, 1}, {{2020, 1, 5}, 5}, \
+         {{2020, 1, 9}, 9}}]; \
+         TimeSeriesWindow[d, {{2020, 1, 4}, {2020, 1, 10}}][\"PathLength\"]"
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+
+  // An empty window yields an empty series and reports tswndt.
+  #[test]
+  fn empty_window_reports_tswndt() {
+    assert_eq!(
+      interpret(&format!("{TS}TimeSeriesWindow[ts, {{10, 20}}][\"Path\"]"))
+        .unwrap(),
+      "{}"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.starts_with(
+        "TimeSeriesWindow::tswndt: The window {10, 20} contains no values on the path(s)"
+      )),
+      "expected tswndt message, got {msgs:?}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "{TS}TimeSeriesWindow[ts, {{10, 20}}][\"PathLength\"]"
+      ))
+      .unwrap(),
+      "0"
+    );
+  }
+
+  // Properties stay meaningful on the empty series a missed window produces.
+  #[test]
+  fn empty_time_series_still_answers_properties() {
+    assert_eq!(interpret("TimeSeries[{}][\"Path\"]").unwrap(), "{}");
+    assert_eq!(interpret("TimeSeries[{}][\"Times\"]").unwrap(), "{}");
+    assert_eq!(interpret("TimeSeries[{}][\"PathLength\"]").unwrap(), "0");
+  }
+}
+
 // `TimeSeries[values, {DateObject[…]}]` — a single start date spaces the values
 // one day apart, and the series can then be sampled, queried, and plotted.
 mod date_start {

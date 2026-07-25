@@ -18,6 +18,7 @@ pub(super) fn dispatch_timeseries_functions(
     "TimeSeriesResample" => {
       Some(timeseries_ast::time_series_resample_ast(args))
     }
+    "TimeSeriesWindow" => Some(timeseries_ast::time_series_window_ast(args)),
     // `Length` of a TimeSeries reports the arity of the underlying
     // `TemporalData` object, which is always 4 (`TemporalData[tag, dataspec,
     // bool, version]`) — independent of the number of data points.

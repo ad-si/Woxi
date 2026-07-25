@@ -526,6 +526,69 @@ pub fn time_series_resample_ast(
   Ok(time_series(filtered))
 }
 
+/// `TimeSeriesWindow[ts, {tmin, tmax}]` — the points of `ts` whose time stamps
+/// lie in `[tmin, tmax]`, both ends included. The bounds may be given in either
+/// order and may be `±Infinity`. A window that catches nothing yields an empty
+/// TimeSeries and reports `TimeSeriesWindow::tswndt`.
+pub fn time_series_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let echo = || Ok(unevaluated("TimeSeriesWindow", args));
+  if args.len() != 2 {
+    return echo();
+  }
+  // A TemporalData argument is normalized through the TimeSeries constructor
+  // first, exactly as TimeSeriesResample does.
+  let pairs = match time_series_pairs(&args[0]) {
+    Some(p) => p,
+    None => match &args[0] {
+      Expr::FunctionCall { name, args: ta } if name == "TemporalData" => {
+        let ta: Vec<Expr> = ta.iter().cloned().collect();
+        let ts = temporal_data_ast(&ta)?;
+        match time_series_pairs(&ts) {
+          Some(p) => p,
+          None => return echo(),
+        }
+      }
+      _ => return echo(),
+    },
+  };
+
+  let Expr::List(bounds) = &args[1] else {
+    return echo();
+  };
+  let bounds: Vec<&Expr> = bounds.iter().collect();
+  let [lo, hi] = bounds[..] else { return echo() };
+  let (Some(lo), Some(hi)) = (window_bound(lo), window_bound(hi)) else {
+    return echo();
+  };
+  let (lo, hi) = if lo <= hi { (lo, hi) } else { (hi, lo) };
+
+  let kept: Vec<Expr> = pairs
+    .into_iter()
+    .filter(|(time, _)| to_time(time).is_some_and(|t| t >= lo && t <= hi))
+    .map(|(t, v)| Expr::List(vec![t, v].into()))
+    .collect();
+
+  if kept.is_empty() {
+    crate::emit_message(&format!(
+      "TimeSeriesWindow::tswndt: The window {} contains no values on the path(s) {}.",
+      crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output),
+      crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+    ));
+  }
+  Ok(time_series(kept))
+}
+
+/// A window endpoint: a time stamp, or `±Infinity` for an open end.
+fn window_bound(e: &Expr) -> Option<f64> {
+  if matches!(e, Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity") {
+    return Some(f64::INFINITY);
+  }
+  if crate::syntax::expr_to_string(e) == "-Infinity" {
+    return Some(f64::NEG_INFINITY);
+  }
+  to_time(e)
+}
+
 /// If `expr` is a `TimeSeries`, return the list of its values (the value path),
 /// for descriptive statistics such as `Mean`, `Total`, `Min`, `Max`.
 pub fn time_series_values(expr: &Expr) -> Option<Expr> {
@@ -703,9 +766,6 @@ pub fn apply_time_series(
   let Some(pairs) = time_series_pairs(ts) else {
     return unevaluated();
   };
-  if pairs.is_empty() {
-    return unevaluated();
-  }
 
   // Numeric times paired with the stored value expressions, kept in input
   // order (which the constructors already produce ascending).
@@ -718,8 +778,14 @@ pub fn apply_time_series(
   }
 
   // Property access: ts["Path"], ts["Values"], ts["Times"], ts["FirstDate"], …
+  // These stay meaningful on an empty series, which an empty window produces.
   if let Expr::String(prop) = arg {
     return apply_property(&pairs, &points, prop).map_or_else(unevaluated, Ok);
+  }
+
+  // A value lookup needs at least one point to read or interpolate from.
+  if pairs.is_empty() {
+    return unevaluated();
   }
 
   // Value lookup at a time stamp.
