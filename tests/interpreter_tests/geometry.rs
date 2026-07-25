@@ -2424,6 +2424,20 @@ mod convex_hull_mesh {
     );
   }
 
+  // The Method suboption name is a string, which only InputForm shows.
+  #[test]
+  fn method_suboption_is_a_string() {
+    assert_eq!(
+      interpret(
+        "ToString[ConvexHullMesh[{{0,0},{2,0},{2,2},{0,2}}], InputForm]"
+      )
+      .unwrap(),
+      "BoundaryMeshRegion[{{0, 0}, {2, 0}, {2, 2}, {0, 2}}, \
+       {Line[{{1, 2}, {2, 3}, {3, 4}, {4, 1}}]}, \
+       Method -> {\"SeparateBoundaries\" -> False}, WorkingPrecision -> Infinity]"
+    );
+  }
+
   // Exact (integer) input keeps exact vertices and carries WorkingPrecision.
   #[test]
   fn exact_square() {

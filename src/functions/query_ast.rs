@@ -88,7 +88,7 @@ pub fn apply_query(
 fn missing(tag: &str, detail: &Expr) -> Expr {
   Expr::FunctionCall {
     name: "Missing".to_string(),
-    args: vec![Expr::Identifier(tag.to_string()), detail.clone()].into(),
+    args: vec![Expr::String(tag.to_string()), detail.clone()].into(),
   }
 }
 

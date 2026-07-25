@@ -1919,6 +1919,28 @@ mod query {
     );
   }
 
+  // The Missing tags are strings, not symbols — visible only in InputForm,
+  // which is what wolframscript prints.
+  #[test]
+  fn missing_tags_are_strings() {
+    assert_eq!(
+      interpret("ToString[Query[{\"z\"}][<|\"a\" -> 1|>], InputForm]").unwrap(),
+      "<|\"z\" -> Missing[\"KeyAbsent\", \"z\"]|>"
+    );
+    assert_eq!(
+      interpret("ToString[Query[{5}][{a, b}], InputForm]").unwrap(),
+      "{Missing[\"PartAbsent\", 5]}"
+    );
+    assert_eq!(
+      interpret("ToString[Query[{\"a\"}][{1, 2, 3}], InputForm]").unwrap(),
+      "{Missing[\"PartInvalid\", \"a\"]}"
+    );
+    assert_eq!(
+      interpret("ToString[Query[{5}][<|\"a\" -> 1|>], InputForm]").unwrap(),
+      "Missing[\"PartAbsent\", {5}]"
+    );
+  }
+
   #[test]
   fn list_spec_queries_on_into_the_selected_parts() {
     assert_eq!(
