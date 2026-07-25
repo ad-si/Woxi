@@ -36,3 +36,16 @@ Either bound may be infinite to leave that end open:
 $ wo 'TimeSeriesWindow[TimeSeries[{{1, 10}, {2, 20}, {3, 30}, {4, 40}}], {3, Infinity}]["Values"]'
 {30, 40}
 ```
+
+`TimeSeriesResample` samples the piecewise-linear path at an even step,
+interpolating exactly:
+
+```scrut
+$ wo 'TimeSeriesResample[TimeSeries[{{1, 10}, {3, 30}, {4, 40}}], 1]["Path"]'
+{{1, 10}, {2, 20}, {3, 30}, {4, 40}}
+```
+
+```scrut
+$ wo 'TimeSeriesResample[TimeSeries[{{1, 10}, {2, 15}, {4, 20}}], 1]["Path"]'
+{{1, 10}, {2, 15}, {3, 35/2}, {4, 20}}
+```

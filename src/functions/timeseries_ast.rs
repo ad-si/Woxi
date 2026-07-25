@@ -507,23 +507,210 @@ pub fn time_series_resample_ast(
     },
   };
 
-  let target = match &args[1] {
-    Expr::Identifier(s) | Expr::String(s) => weekday_index(s),
-    _ => None,
+  if let Expr::Identifier(s) | Expr::String(s) = &args[1]
+    && let Some(target) = weekday_index(s)
+  {
+    let filtered: Vec<Expr> = pairs
+      .into_iter()
+      .filter(|(date, _)| {
+        date_components(date)
+          .map(|c| day_of_week(c[0] as i64, c[1] as i64, c[2] as i64) == target)
+          .unwrap_or(false)
+      })
+      .map(|(d, v)| Expr::List(vec![d, v].into()))
+      .collect();
+    return Ok(time_series(filtered));
+  }
+
+  match resample_times(&pairs, Some(&args[1]))? {
+    Some(times) => resample_at(&pairs, &times),
+    None => echo(),
+  }
+}
+
+/// `TimeSeriesResample[ts]` — resample at the series' own minimum time
+/// increment, over its full time span.
+pub fn time_series_resample_default(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let echo = || Ok(unevaluated("TimeSeriesResample", args));
+  let Some(pairs) = time_series_pairs(&args[0]) else {
+    return echo();
   };
-  let Some(target) = target else { return echo() };
+  match resample_times(&pairs, None)? {
+    Some(times) => resample_at(&pairs, &times),
+    None => echo(),
+  }
+}
 
-  let filtered: Vec<Expr> = pairs
-    .into_iter()
-    .filter(|(date, _)| {
-      date_components(date)
-        .map(|c| day_of_week(c[0] as i64, c[1] as i64, c[2] as i64) == target)
-        .unwrap_or(false)
-    })
-    .map(|(d, v)| Expr::List(vec![d, v].into()))
-    .collect();
+/// The smallest gap between consecutive (numeric) time stamps.
+fn minimum_increment(pairs: &[(Expr, Expr)]) -> Option<Expr> {
+  let mut best: Option<(f64, Expr)> = None;
+  for w in pairs.windows(2) {
+    let (a, b) = (to_time(&w[0].0)?, to_time(&w[1].0)?);
+    let gap = b - a;
+    if gap > 0.0 && best.as_ref().is_none_or(|(g, _)| gap < *g) {
+      best = Some((gap, arith("Subtract", &w[1].0, &w[0].0).ok()?));
+    }
+  }
+  best.map(|(_, e)| e)
+}
 
-  Ok(time_series(filtered))
+/// Evaluate a two-argument arithmetic head on expressions, so resampled times
+/// and interpolated values stay exact when the inputs are.
+fn arith(head: &str, a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: head.to_string(),
+    args: vec![a.clone(), b.clone()].into(),
+  })
+}
+
+/// The sample times a resampling specification asks for. `None` for the spec
+/// means "the series' own minimum increment over its full span". Returns
+/// `Ok(None)` when the spec is not one of the recognised numeric forms, so the
+/// caller can leave the call unevaluated.
+///
+/// Recognised: a bare step `dt`, `{tmin, tmax}`, `{tmin, tmax, dt}`, and an
+/// explicit list of stamps `{{t1, t2, …}}`.
+fn resample_times(
+  pairs: &[(Expr, Expr)],
+  spec: Option<&Expr>,
+) -> Result<Option<Vec<Expr>>, InterpreterError> {
+  if pairs.len() < 2 {
+    return Ok(None);
+  }
+  // Only numeric time axes are resampled here; date stamps keep the weekday
+  // form above.
+  if pairs
+    .iter()
+    .any(|(t, _)| !matches!(t, Expr::Integer(_) | Expr::Real(_)))
+  {
+    return Ok(None);
+  }
+
+  // An explicit `{{t1, t2, …}}` list of stamps needs no stepping.
+  if let Some(Expr::List(outer)) = spec
+    && outer.len() == 1
+    && let Expr::List(stamps) = &outer[0]
+  {
+    return Ok(Some(stamps.iter().cloned().collect()));
+  }
+
+  let first = pairs[0].0.clone();
+  let last = pairs[pairs.len() - 1].0.clone();
+  let (start, end, step) = match spec {
+    None => (first, last, minimum_increment(pairs)),
+    Some(Expr::List(range)) => match range.len() {
+      2 => (range[0].clone(), range[1].clone(), minimum_increment(pairs)),
+      3 => (range[0].clone(), range[1].clone(), Some(range[2].clone())),
+      _ => return Ok(None),
+    },
+    Some(dt @ (Expr::Integer(_) | Expr::Real(_))) => {
+      (first, last, Some(dt.clone()))
+    }
+    _ => return Ok(None),
+  };
+  let Some(step) = step else { return Ok(None) };
+
+  let (Some(t0), Some(t1), Some(dt)) =
+    (to_time(&start), to_time(&end), to_time(&step))
+  else {
+    return Ok(None);
+  };
+  if dt <= 0.0 || t1 < t0 {
+    return Ok(None);
+  }
+
+  // Build the stamps by exact arithmetic (`start + k*step`) so an integer
+  // step keeps integer stamps, while the count comes from the numeric span.
+  let count = ((t1 - t0) / dt + 1e-9).floor() as usize;
+  let mut times = Vec::with_capacity(count + 1);
+  for k in 0..=count {
+    times.push(
+      arith("Times", &Expr::Integer(k as i128), &step)
+        .and_then(|offset| arith("Plus", &start, &offset))?,
+    );
+  }
+  Ok(Some(times))
+}
+
+/// Sample `pairs` at each of `times` by linear interpolation, exactly.
+fn resample_at(
+  pairs: &[(Expr, Expr)],
+  times: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let mut out = Vec::with_capacity(times.len());
+  for t in times {
+    let Some(value) = interpolate_exact(pairs, t)? else {
+      return Ok(unevaluated(
+        "TimeSeriesResample",
+        &[time_series(
+          pairs
+            .iter()
+            .map(|(d, v)| Expr::List(vec![d.clone(), v.clone()].into()))
+            .collect(),
+        )],
+      ));
+    };
+    out.push(Expr::List(vec![t.clone(), value].into()));
+  }
+  Ok(time_series(out))
+}
+
+/// The value of the piecewise-linear path through `pairs` at time `q`, kept
+/// exact: interpolating integer data at an integer stamp gives an integer.
+/// Returns `None` when a time or value is not numeric.
+fn interpolate_exact(
+  pairs: &[(Expr, Expr)],
+  q: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  let Some(qt) = to_time(q) else {
+    return Ok(None);
+  };
+  let mut times = Vec::with_capacity(pairs.len());
+  for (t, _) in pairs {
+    match to_time(t) {
+      Some(v) => times.push(v),
+      None => return Ok(None),
+    }
+  }
+  // A stamp that lands on a data point returns the stored value. An inexact
+  // stamp still numericizes it, so a Real time axis carries Real values —
+  // the same precision the interpolated stamps get from the arithmetic.
+  if let Some(i) = times.iter().position(|t| (t - qt).abs() < 1e-9) {
+    let value = &pairs[i].1;
+    if matches!(q, Expr::Real(_)) {
+      return Ok(Some(crate::evaluator::evaluate_expr_to_expr(
+        &Expr::FunctionCall {
+          name: "N".to_string(),
+          args: vec![value.clone()].into(),
+        },
+      )?));
+    }
+    return Ok(Some(value.clone()));
+  }
+  // Outside the sampled span the path is held flat at its end value; Wolfram
+  // clamps rather than extrapolating the end segment's slope.
+  let last = times.len() - 1;
+  if qt < times[0] {
+    return Ok(Some(pairs[0].1.clone()));
+  }
+  if qt > times[last] {
+    return Ok(Some(pairs[last].1.clone()));
+  }
+  let seg = times
+    .windows(2)
+    .position(|w| qt <= w[1])
+    .unwrap_or(last - 1);
+  let (t0, y0) = (&pairs[seg].0, &pairs[seg].1);
+  let (t1, y1) = (&pairs[seg + 1].0, &pairs[seg + 1].1);
+  let slope = arith(
+    "Divide",
+    &arith("Subtract", y1, y0)?,
+    &arith("Subtract", t1, t0)?,
+  )?;
+  let offset = arith("Times", &slope, &arith("Subtract", q, t0)?)?;
+  Ok(Some(arith("Plus", y0, &offset)?))
 }
 
 /// `TimeSeriesWindow[ts, {tmin, tmax}]` — the points of `ts` whose time stamps
@@ -793,38 +980,12 @@ pub fn apply_time_series(
     return unevaluated();
   };
 
-  // Exact hit returns the stored value expression unchanged.
-  for (t, v) in &points {
-    if (*t - q).abs() < 1e-6 {
-      return Ok((*v).clone());
-    }
+  let _ = q;
+  // Piecewise-linear lookup, kept exact and clamped at both ends.
+  match interpolate_exact(&pairs, arg)? {
+    Some(value) => Ok(value),
+    None => unevaluated(),
   }
-
-  // Linear interpolation / extrapolation needs the numeric values.
-  let ys: Vec<f64> = match points.iter().map(|(_, v)| as_f64(v)).collect() {
-    Some(ys) => ys,
-    None => return unevaluated(),
-  };
-  if points.len() == 1 {
-    return Ok(Expr::Real(ys[0]));
-  }
-  let lerp = |i: usize, j: usize| {
-    let (t0, t1) = (points[i].0, points[j].0);
-    ys[i] + (ys[j] - ys[i]) * (q - t0) / (t1 - t0)
-  };
-  let last = points.len() - 1;
-  let y = if q < points[0].0 {
-    lerp(0, 1) // extrapolate below the first point
-  } else if q > points[last].0 {
-    lerp(last - 1, last) // extrapolate above the last point
-  } else {
-    let seg = points
-      .windows(2)
-      .position(|w| q <= w[1].0)
-      .unwrap_or(last - 1);
-    lerp(seg, seg + 1)
-  };
-  Ok(Expr::Real(y))
 }
 
 /// Resolve a string property access on a `TimeSeries`.

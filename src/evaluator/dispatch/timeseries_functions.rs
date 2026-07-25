@@ -15,6 +15,9 @@ pub(super) fn dispatch_timeseries_functions(
   match name {
     "TemporalData" => Some(timeseries_ast::temporal_data_ast(args)),
     "TimeSeries" => Some(timeseries_ast::time_series_ast(args)),
+    "TimeSeriesResample" if args.len() == 1 => {
+      Some(timeseries_ast::time_series_resample_default(args))
+    }
     "TimeSeriesResample" => {
       Some(timeseries_ast::time_series_resample_ast(args))
     }

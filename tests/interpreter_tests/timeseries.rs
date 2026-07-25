@@ -331,6 +331,131 @@ mod time_series {
   }
 }
 
+// TimeSeriesResample[ts, rspec] — sample the piecewise-linear path at evenly
+// spaced (or explicitly listed) stamps. All values verified against
+// wolframscript.
+mod time_series_resample_numeric {
+  use super::*;
+
+  const TS: &str = "ts = TimeSeries[{{1, 10}, {3, 30}, {4, 40}, {7, 70}}]; ";
+
+  #[test]
+  fn a_bare_step_spans_the_whole_series() {
+    assert_eq!(
+      interpret(&format!("{TS}TimeSeriesResample[ts, 1][\"Path\"]")).unwrap(),
+      "{{1, 10}, {2, 20}, {3, 30}, {4, 40}, {5, 50}, {6, 60}, {7, 70}}"
+    );
+    assert_eq!(
+      interpret(&format!("{TS}TimeSeriesResample[ts, 2][\"Path\"]")).unwrap(),
+      "{{1, 10}, {3, 30}, {5, 50}, {7, 70}}"
+    );
+    assert_eq!(
+      interpret(&format!("{TS}Head[TimeSeriesResample[ts, 1]]")).unwrap(),
+      "TimeSeries"
+    );
+  }
+
+  #[test]
+  fn no_spec_uses_the_minimum_time_increment() {
+    // The gaps are 2, 1 and 3, so the default step is 1.
+    assert_eq!(
+      interpret(&format!("{TS}TimeSeriesResample[ts][\"Path\"]")).unwrap(),
+      "{{1, 10}, {2, 20}, {3, 30}, {4, 40}, {5, 50}, {6, 60}, {7, 70}}"
+    );
+  }
+
+  #[test]
+  fn range_specs() {
+    assert_eq!(
+      interpret(&format!(
+        "{TS}TimeSeriesResample[ts, {{1, 7, 2}}][\"Path\"]"
+      ))
+      .unwrap(),
+      "{{1, 10}, {3, 30}, {5, 50}, {7, 70}}"
+    );
+    // Without a step the minimum increment is used.
+    assert_eq!(
+      interpret(&format!("{TS}TimeSeriesResample[ts, {{2, 6}}][\"Path\"]"))
+        .unwrap(),
+      "{{2, 20}, {3, 30}, {4, 40}, {5, 50}, {6, 60}}"
+    );
+    // A doubly-nested list is an explicit set of stamps.
+    assert_eq!(
+      interpret(&format!(
+        "{TS}TimeSeriesResample[ts, {{{{1, 4, 7}}}}][\"Path\"]"
+      ))
+      .unwrap(),
+      "{{1, 10}, {4, 40}, {7, 70}}"
+    );
+  }
+
+  // Outside the sampled span the path is held flat, not extrapolated.
+  #[test]
+  fn stamps_outside_the_span_clamp() {
+    assert_eq!(
+      interpret(&format!(
+        "{TS}TimeSeriesResample[ts, {{0, 9, 3}}][\"Path\"]"
+      ))
+      .unwrap(),
+      "{{0, 10}, {3, 30}, {6, 60}, {9, 70}}"
+    );
+    assert_eq!(
+      interpret(&format!("{TS}{{ts[0], ts[9]}}")).unwrap(),
+      "{10, 70}"
+    );
+  }
+
+  // Interpolation is exact: integer data at integer stamps stays integral,
+  // and an uneven split gives a Rational rather than a float.
+  #[test]
+  fn interpolation_stays_exact() {
+    assert_eq!(interpret(&format!("{TS}ts[2]")).unwrap(), "20");
+    assert_eq!(
+      interpret("TimeSeriesResample[TimeSeries[{{1, 10}, {2, 15}, {4, 20}}], 1][\"Path\"]")
+        .unwrap(),
+      "{{1, 10}, {2, 15}, {3, 35/2}, {4, 20}}"
+    );
+    assert_eq!(
+      interpret(
+        "TimeSeriesResample[TimeSeries[{{0, 0}, {2, 1}}], 1][\"Path\"]"
+      )
+      .unwrap(),
+      "{{0, 0}, {1, 1/2}, {2, 1}}"
+    );
+  }
+
+  // A Real step carries a Real time axis, and the values follow it.
+  #[test]
+  fn an_inexact_step_numericizes_the_values() {
+    assert_eq!(
+      interpret(&format!("{TS}TimeSeriesResample[ts, 0.5][\"Path\"]")).unwrap(),
+      "{{1., 10.}, {1.5, 15.}, {2., 20.}, {2.5, 25.}, {3., 30.}, {3.5, 35.}, \
+       {4., 40.}, {4.5, 45.}, {5., 50.}, {5.5, 55.}, {6., 60.}, {6.5, 65.}, \
+       {7., 70.}}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "{TS}TimeSeriesResample[ts, {{{{2.5}}}}][\"Path\"]"
+      ))
+      .unwrap(),
+      "{{2.5, 25.}}"
+    );
+  }
+
+  // The weekday form over date stamps is unaffected.
+  #[test]
+  fn weekday_form_still_selects_by_day_name() {
+    assert_eq!(
+      interpret(
+        "TimeSeriesResample[TimeSeries[{{{2026, 7, 20}, 1}, \
+         {{2026, 7, 21}, 2}, {{2026, 7, 27}, 3}}], Monday][\"PathLength\"]"
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+}
+
 // TimeSeriesWindow[ts, {tmin, tmax}] — the points whose stamps fall in the
 // window, both ends included. All values verified against wolframscript.
 mod time_series_window {
@@ -487,12 +612,20 @@ mod date_start {
   }
 
   #[test]
-  fn lookup_extrapolates_past_the_last_point() {
-    // 2025-09-10 is six days past the last point; extrapolate the final
-    // segment (slope 3.7/day): 25.5 + 6*3.7 = 47.7.
+  fn lookup_is_clamped_past_the_last_point() {
+    // Outside the sampled span the path is held flat at its end value rather
+    // than extrapolating the final segment's slope:
+    //   wolframscript -code 'ts = TimeSeries[{23.1, 24.4, 21.8, 25.5},
+    //     {DateObject[{2025, 9, 1}]}]; ts[DateObject[{2025, 9, 10}]]'
+    //   25.5
     assert_eq!(
       interpret(&format!("{TS} ts[DateObject[{{2025, 9, 10}}]]")).unwrap(),
-      "47.699999999999996"
+      "25.5"
+    );
+    // Same before the first point.
+    assert_eq!(
+      interpret(&format!("{TS} ts[DateObject[{{2025, 8, 20}}]]")).unwrap(),
+      "23.1"
     );
   }
 
