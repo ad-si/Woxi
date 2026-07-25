@@ -9814,22 +9814,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // prints `(s:A[x])[t]`, not `s:A[x][t]`.
       let args_str: Vec<String> = args.iter().map(&fmt).collect();
       let func_str = fmt(func);
-      let needs_parens = matches!(func.as_ref(), Expr::Function { .. })
-        || matches!(func.as_ref(), Expr::PatternOptional { .. })
-        || matches!(
-          func.as_ref(),
-          Expr::BinaryOp { .. }
-            | Expr::UnaryOp { .. }
-            | Expr::Comparison { .. }
-        )
-        || matches!(
-          func.as_ref(),
-          Expr::FunctionCall { name, args }
-            if matches!(
-              name.as_str(),
-              "Plus" | "Times" | "Power" | "Pattern" | "Optional" | "Condition"
-            ) && args.len() >= 2
-        );
+      let needs_parens = curried_head_needs_parens(func.as_ref());
       let func_display = if needs_parens {
         format!("({})", func_str)
       } else {
@@ -11373,22 +11358,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     Expr::CurriedCall { func, args } => {
       let args_str: Vec<String> = args.iter().map(expr_to_input_form).collect();
       let func_str = expr_to_input_form(func);
-      let needs_parens = matches!(func.as_ref(), Expr::Function { .. })
-        || matches!(func.as_ref(), Expr::PatternOptional { .. })
-        || matches!(
-          func.as_ref(),
-          Expr::BinaryOp { .. }
-            | Expr::UnaryOp { .. }
-            | Expr::Comparison { .. }
-        )
-        || matches!(
-          func.as_ref(),
-          Expr::FunctionCall { name, args }
-            if matches!(
-              name.as_str(),
-              "Plus" | "Times" | "Power" | "Pattern" | "Optional" | "Condition"
-            ) && args.len() >= 2
-        );
+      let needs_parens = curried_head_needs_parens(func.as_ref());
       let func_display = if needs_parens {
         format!("({})", func_str)
       } else {
@@ -11579,6 +11549,46 @@ fn substitute_slots_expand(exprs: &[Expr], values: &[Expr]) -> Vec<Expr> {
     result.push(substituted);
   }
   result
+}
+
+/// Whether a curried call's head has to be parenthesized so that `[args]`
+/// does not re-associate when the printed form is read back.
+///
+/// Heads that print as an atom or as a self-delimiting `f[...]` need nothing;
+/// heads that print in operator form (`u -> v`, `u ;; v`, `u!`, `u_`) would
+/// otherwise bind the trailing bracket to their last operand.
+fn curried_head_needs_parens(func: &Expr) -> bool {
+  matches!(
+    func,
+    Expr::Function { .. }
+      | Expr::PatternOptional { .. }
+      | Expr::BinaryOp { .. }
+      | Expr::UnaryOp { .. }
+      | Expr::Comparison { .. }
+      | Expr::Rule { .. }
+      | Expr::RuleDelayed { .. }
+  ) || matches!(
+    // A named pattern would re-parse as a pattern with a head (`u_[x]` is
+    // `Pattern[u, Blank[x]]`), so it needs parens; a bare `_[x]` does not.
+    func,
+    Expr::Pattern { name, .. } if !name.is_empty()
+  ) || matches!(
+    func,
+    Expr::FunctionCall { name, args }
+      if match name.as_str() {
+        // Infix operator forms: `u + v`, `u -> v`, `u ;; v`, …
+        "Plus" | "Times" | "Power" | "Pattern" | "Condition" | "Rule"
+        | "RuleDelayed" | "And" | "Or" | "Alternatives" | "Span"
+        | "Composition" | "RightComposition" => args.len() >= 2,
+        // Prefix / postfix operator forms: `u!`, `u++`, `u..`. `Optional`
+        // keeps its function spelling but still takes parens, matching
+        // wolframscript.
+        "Optional" | "Factorial" | "Factorial2" | "Increment" | "Decrement"
+        | "PreIncrement" | "PreDecrement" | "Repeated" | "RepeatedNull" =>
+          args.len() == 1,
+        _ => false,
+      }
+  )
 }
 
 pub fn substitute_slots(expr: &Expr, values: &[Expr]) -> Expr {

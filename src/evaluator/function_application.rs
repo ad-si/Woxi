@@ -326,13 +326,10 @@ pub fn apply_map_ast(
         .collect();
       Ok(Expr::Association(results?))
     }
-    _ => {
-      // Not a list or association, return unevaluated
-      Ok(Expr::Map {
-        func: Box::new(func.clone()),
-        list: Box::new(list.clone()),
-      })
-    }
+    // Any other expression maps over its arguments, keeping its head:
+    // `f /@ g[a, b]` is `g[f[a], f[b]]`, and an atom maps to itself.
+    // Delegating keeps the `/@` operator form and `Map[…]` from drifting.
+    _ => crate::functions::list_helpers_ast::map_ast(func, list),
   }
 }
 
@@ -435,12 +432,14 @@ pub fn apply_map_apply_ast(
 ) -> Result<Expr, InterpreterError> {
   let items = match list {
     Expr::List(items) => items.clone(),
+    // `f @@@ expr` is `Apply[f, expr, {1}]`: it replaces the head of each
+    // element of any expression, not just of a list.
     _ => {
-      // Not a list, return unevaluated
-      return Ok(Expr::MapApply {
-        func: Box::new(func.clone()),
-        list: Box::new(list.clone()),
-      });
+      return crate::functions::list_helpers_ast::apply_at_level_ast(
+        func,
+        list,
+        &Expr::List(vec![Expr::Integer(1)].into()),
+      );
     }
   };
 
@@ -1948,12 +1947,19 @@ pub fn apply_curried_call(
     }
     // A compound arithmetic/relational head stays an inert curried call,
     // e.g. `(f + g)[x]`, rather than being stringified to a function name.
-    Expr::BinaryOp { .. } | Expr::UnaryOp { .. } | Expr::Comparison { .. } => {
-      Ok(Expr::CurriedCall {
-        func: Box::new(func.clone()),
-        args: args.to_vec(),
-      })
-    }
+    // Rules and patterns are heads in the same sense: `(u -> v)[x]` has head
+    // `u -> v`, so collapsing it to a symbol named "u -> v" both misprints it
+    // and makes `Head[Head[…]]` report Symbol instead of Rule.
+    Expr::BinaryOp { .. }
+    | Expr::UnaryOp { .. }
+    | Expr::Comparison { .. }
+    | Expr::Rule { .. }
+    | Expr::RuleDelayed { .. }
+    | Expr::Pattern { .. }
+    | Expr::PatternOptional { .. } => Ok(Expr::CurriedCall {
+      func: Box::new(func.clone()),
+      args: args.to_vec(),
+    }),
     _ => {
       // Fallback: try to convert to string and evaluate
       let func_str = expr_to_string(func);

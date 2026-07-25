@@ -2883,3 +2883,173 @@ mod apply_to {
     ));
   }
 }
+
+// `f /@ expr` and `f @@@ expr` used to handle only lists and associations,
+// while the `Map[f, expr]` / `MapApply[f, expr]` spellings handled any head.
+// Both spellings now share one implementation.
+mod map_operator_forms {
+  use super::*;
+
+  //   wolframscript -code 'f /@ g[a, b]'
+  #[test]
+  fn map_operator_threads_over_any_head() {
+    clear_state();
+    assert_eq!(interpret("f /@ g[a, b]").unwrap(), "g[f[a], f[b]]");
+    assert_eq!(interpret("Map[f, g[a, b]]").unwrap(), "g[f[a], f[b]]");
+  }
+
+  // Atoms have no parts, so mapping leaves them alone.
+  //   wolframscript -code 'f /@ 5'
+  #[test]
+  fn map_over_atoms_is_the_identity() {
+    clear_state();
+    assert_eq!(interpret("f /@ g").unwrap(), "g");
+    assert_eq!(interpret("f /@ 5").unwrap(), "5");
+    assert_eq!(interpret("f /@ \"str\"").unwrap(), "str");
+    assert_eq!(interpret("MapIndexed[f, g]").unwrap(), "g");
+    assert_eq!(interpret("MapIndexed[f, 5]").unwrap(), "5");
+  }
+
+  // Nothing is dropped from lists but kept inside other heads, in both
+  // spellings.
+  //   wolframscript -code 'f /@ {a, Nothing, b}'
+  #[test]
+  fn map_nothing_handling_matches_function_form() {
+    clear_state();
+    assert_eq!(interpret("f /@ {a, Nothing, b}").unwrap(), "{f[a], f[b]}");
+    assert_eq!(
+      interpret("f /@ g[a, Nothing, b]").unwrap(),
+      "g[f[a], f[Nothing], f[b]]"
+    );
+  }
+
+  //   wolframscript -code 'f @@@ g[{a, b}, {c}]'
+  #[test]
+  fn map_apply_operator_threads_over_any_head() {
+    clear_state();
+    assert_eq!(
+      interpret("f @@@ g[{a, b}, {c}]").unwrap(),
+      "g[f[a, b], f[c]]"
+    );
+    // Elements that are atoms have no head to replace.
+    assert_eq!(interpret("f @@@ g[a, b]").unwrap(), "g[a, b]");
+    assert_eq!(interpret("f @@@ g").unwrap(), "g");
+    assert_eq!(interpret("f @@@ 5").unwrap(), "5");
+  }
+
+  // MapThread reports a bad second argument rather than failing outright.
+  //   wolframscript -code 'MapThread[f, {g}]'
+  #[test]
+  fn map_thread_reports_bad_arguments() {
+    clear_state();
+    let r = interpret_with_stdout("MapThread[f, {g}]").unwrap();
+    assert_eq!(r.result, "MapThread[f, {g}]");
+    assert!(r.warnings[0].contains(
+      "MapThread::mptd: Object g at position {2, 1} in MapThread[f, {g}] \
+       has only 0 of required 1 dimensions."
+    ));
+    clear_state();
+    let r = interpret_with_stdout("MapThread[f, g]").unwrap();
+    assert_eq!(r.result, "MapThread[f, g]");
+    assert!(r.warnings[0].contains(
+      "MapThread::list: List expected at position 2 in MapThread[f, g]."
+    ));
+    // Well-formed calls are unaffected.
+    clear_state();
+    assert_eq!(
+      interpret("MapThread[f, {{a, b}, {c, d}}]").unwrap(),
+      "{f[a, c], f[b, d]}"
+    );
+  }
+}
+
+// A composite head has to survive as a head, both structurally and when
+// printed. `(u -> v)[x]` used to collapse into a symbol literally named
+// "u -> v", which printed as `u -> v[x]` — a form that reads back as
+// something else entirely.
+mod composite_heads {
+  use super::*;
+
+  //   wolframscript -code 'ToString[(u -> v)[x], InputForm]'
+  #[test]
+  fn rule_and_pattern_heads_stay_composite() {
+    clear_state();
+    assert_eq!(interpret("Head[Head[(u -> v)[x]]]").unwrap(), "Rule");
+    assert_eq!(
+      interpret("ToString[(u -> v)[x], InputForm]").unwrap(),
+      "(u -> v)[x]"
+    );
+    assert_eq!(
+      interpret("ToString[(u :> v)[x], InputForm]").unwrap(),
+      "(u :> v)[x]"
+    );
+    assert_eq!(
+      interpret("ToString[Pattern[u, Blank[]][x], InputForm]").unwrap(),
+      "(u_)[x]"
+    );
+    assert_eq!(
+      interpret("ToString[Pattern[u, BlankSequence[]][x], InputForm]").unwrap(),
+      "(u__)[x]"
+    );
+    // A bare blank is unambiguous and takes no parentheses.
+    assert_eq!(
+      interpret("ToString[Blank[][x], InputForm]").unwrap(),
+      "_[x]"
+    );
+  }
+
+  // Heads that print in operator form need parentheses so the trailing
+  // bracket does not bind to their last operand on re-parse.
+  //   wolframscript -code 'ToString[And[u, v][x], InputForm]'
+  #[test]
+  fn operator_form_heads_are_parenthesized() {
+    clear_state();
+    assert_eq!(
+      interpret("ToString[And[u, v][x], InputForm]").unwrap(),
+      "(u && v)[x]"
+    );
+    assert_eq!(
+      interpret("ToString[Or[u, v][x], InputForm]").unwrap(),
+      "(u || v)[x]"
+    );
+    assert_eq!(
+      interpret("ToString[Alternatives[u, v][x], InputForm]").unwrap(),
+      "(u | v)[x]"
+    );
+    assert_eq!(
+      interpret("ToString[Span[u, v][x], InputForm]").unwrap(),
+      "(u ;; v)[x]"
+    );
+    assert_eq!(
+      interpret("ToString[Factorial[u][x], InputForm]").unwrap(),
+      "(u!)[x]"
+    );
+    assert_eq!(
+      interpret("ToString[Repeated[u][x], InputForm]").unwrap(),
+      "(u..)[x]"
+    );
+    assert_eq!(
+      interpret("ToString[Optional[u][x], InputForm]").unwrap(),
+      "(Optional[u])[x]"
+    );
+  }
+
+  // Heads that already print self-delimited stay bare.
+  #[test]
+  fn atomic_and_bracketed_heads_stay_bare() {
+    clear_state();
+    assert_eq!(
+      interpret("ToString[f[u][x], InputForm]").unwrap(),
+      "f[u][x]"
+    );
+    assert_eq!(
+      interpret("ToString[List[u, v][x], InputForm]").unwrap(),
+      "{u, v}[x]"
+    );
+    // Plus and Times were already parenthesized and stay that way.
+    assert_eq!(
+      interpret("ToString[Plus[u, v][x], InputForm]").unwrap(),
+      "(u + v)[x]"
+    );
+  }
+}

@@ -23,7 +23,7 @@ None,Symbol representing no value or absence of an option,✅,pure,1.0,23
 RGBColor,Specifies a color by RGB values,✅,pure,1.0,24
 Derivative,Represents the derivative of a function,✅,pure,1.0,26
 True,Boolean constant representing logical truth,✅,pure,1.0,27
-Map,Applies a function to each element of a list,✅,pure,1.0,28
+Map,Applies a function to each element of a list or to each argument of any other head,✅,pure,1.0,28
 Automatic,Symbol used as a default setting for automatically determined options,✅,pure,1.0,29
 Subscript,Represents a subscripted expression for display,✅,pure,1.0,30
 Cos,Returns the cosine of a number,✅,pure,1.0,31
@@ -5765,7 +5765,7 @@ MailItem,,🚫,,11.3,
 MailServerConnection,,🚫,,11.3,
 ManagedObject,,,,13.3,
 ManipulateVideo,,🚫,,14.1,
-MapApply,Applies a function to each sublist by replacing the head (equivalent to @@@),✅,pure,13.1,
+MapApply,Applies a function to each element by replacing its head (equivalent to @@@),✅,pure,13.1,
 MaterialShading,,🚫,,12.3,
 MatrixSymbol,,,,14.1,
 MaxColorDistance,,,,12.0,

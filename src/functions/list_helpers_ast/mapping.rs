@@ -775,6 +775,13 @@ pub fn map_indexed_ast(
         .collect();
       return Ok(Expr::Association(new_pairs?));
     }
+    // An atom has no parts to thread over, so it maps to itself.
+    Expr::Identifier(_)
+    | Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(_, _)
+    | Expr::String(_) => return Ok(list.clone()),
     _ => {
       return Ok(Expr::FunctionCall {
         name: "MapIndexed".to_string(),
@@ -1177,13 +1184,28 @@ pub fn map_thread_ast(
   lists: &Expr,
   level: Option<usize>,
 ) -> Result<Expr, InterpreterError> {
+  // The original call, for the messages below and as the unevaluated result.
+  let original = || {
+    let mut args = vec![func.clone(), lists.clone()];
+    if let Some(n) = level {
+      args.push(Expr::Integer(n as i128));
+    }
+    Expr::FunctionCall {
+      name: "MapThread".to_string(),
+      args: args.into(),
+    }
+  };
+  let show =
+    |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
+
   let outer_items = match lists {
     Expr::List(items) => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "MapThread".to_string(),
-        args: vec![func.clone(), lists.clone()].into(),
-      });
+      crate::emit_message(&format!(
+        "MapThread::list: List expected at position 2 in {}.",
+        show(&original())
+      ));
+      return Ok(original());
     }
   };
 
@@ -1198,19 +1220,26 @@ pub fn map_thread_ast(
     return Ok(Expr::List(vec![].into()));
   }
 
-  // Get each sublist
+  // Get each sublist. An element that is not a list has no dimension to
+  // thread over, which wolframscript reports rather than treating as an
+  // error.
+  let required = level.unwrap_or(1);
   let mut sublists: Vec<Vec<Expr>> = Vec::new();
-  for item in outer_items {
+  for (i, item) in outer_items.iter().enumerate() {
     match item {
       Expr::List(items) => sublists.push(items.to_vec()),
       _ => {
-        return Err(InterpreterError::EvaluationError(
-          "MapThread: second argument must be a list of lists".into(),
+        crate::emit_message(&format!(
+          "MapThread::mptd: Object {} at position {{2, {}}} in {} has only 0 of required {} dimensions.",
+          show(item),
+          i + 1,
+          show(&original()),
+          required
         ));
+        return Ok(original());
       }
     }
   }
-
   // Check all sublists have the same length
   let len = sublists[0].len();
   for sublist in &sublists {
