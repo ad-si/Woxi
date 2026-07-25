@@ -1913,10 +1913,52 @@ pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// ImageCrop[img, {{x1,y1},{x2,y2}}] - Crop to region
+/// How many pixels a cropping spec removes from the low side (left, or bottom
+/// in Wolfram's bottom-left origin) when `remove` pixels have to go in total.
+/// Centering splits the remainder with round-half-to-even, so cropping a
+/// 4-wide image to 3 keeps the leftmost three while cropping it to 1 keeps the
+/// third pixel.
+fn image_crop_low_margin(spec: Option<&str>, remove: i64, low: &str) -> i64 {
+  match spec {
+    // Naming a side says pixels come off *that* side.
+    Some(s) if s == low => remove,
+    Some(s) if s != "Center" => 0,
+    _ => (remove as f64 / 2.0).round_ties_even() as i64,
+  }
+}
+
+/// The cropping sides named by the third argument, as `(horizontal, vertical)`
+/// where each is `Left`/`Right`, `Bottom`/`Top`, or `Center`.
+fn image_crop_sides(spec: &Expr) -> Option<(String, String)> {
+  let mut horizontal = "Center".to_string();
+  let mut vertical = "Center".to_string();
+  let names: Vec<&Expr> = match spec {
+    Expr::List(items) => items.iter().collect(),
+    single => vec![single],
+  };
+  for name in names {
+    let (Expr::Identifier(s) | Expr::String(s)) = name else {
+      return None;
+    };
+    match s.as_str() {
+      "Left" | "Right" => horizontal = s.clone(),
+      "Top" | "Bottom" => vertical = s.clone(),
+      "Center" => {}
+      other => {
+        crate::emit_message(&format!(
+          "ImageCrop::cspecsym: Cropping value {other} is not one of Center, Left, Right, Top or Bottom."
+        ));
+        return None;
+      }
+    }
+  }
+  Some((horizontal, vertical))
+}
+
 pub fn image_crop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 2 {
+  if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "ImageCrop expects 1 or 2 arguments".into(),
+      "ImageCrop expects 1, 2 or 3 arguments".into(),
     ));
   }
 
@@ -1934,9 +1976,42 @@ pub fn image_crop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   };
 
-  if args.len() == 2 {
-    // ImageCrop[image, size] isn't implemented yet; return unevaluated.
-    return Ok(unevaluated("ImageCrop", args));
+  // ImageCrop[image, size] / ImageCrop[image, size, spec] — crop (or, when the
+  // requested size is larger, pad) to an explicit width and height.
+  if args.len() >= 2 {
+    let echo = || Ok(unevaluated("ImageCrop", args));
+    let (Some(target_w), Some(target_h)) = (match &args[1] {
+      Expr::List(size) if size.len() == 2 => {
+        (as_int(&size[0]), as_int(&size[1]))
+      }
+      other => (as_int(other), as_int(other)),
+    }) else {
+      return echo();
+    };
+    let (horizontal, vertical) = match args.get(2) {
+      Some(spec) => match image_crop_sides(spec) {
+        Some(sides) => sides,
+        None => return echo(),
+      },
+      None => ("Center".to_string(), "Center".to_string()),
+    };
+
+    let remove_w = *width as i64 - target_w;
+    let remove_h = *height as i64 - target_h;
+    let left = image_crop_low_margin(Some(&horizontal), remove_w, "Left");
+    let bottom = image_crop_low_margin(Some(&vertical), remove_h, "Bottom");
+    // The extents are removals, so they enter the padder negated.
+    return Ok(
+      image_pad_extents(
+        &args[0],
+        -left,
+        -(remove_w - left),
+        -bottom,
+        -(remove_h - bottom),
+        None,
+      )
+      .unwrap_or_else(|| unevaluated("ImageCrop", args)),
+    );
   }
 
   // Auto-crop: trim any uniform border that matches the (0, 0) pixel.
@@ -2088,17 +2163,9 @@ pub fn image_pad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 3 {
     return echo();
   }
-  let Expr::Image {
-    width,
-    height,
-    channels,
-    data,
-    image_type,
-    ..
-  } = &args[0]
-  else {
+  if !matches!(&args[0], Expr::Image { .. }) {
     return echo();
-  };
+  }
 
   // `m` pads every side; `{{left, right}, {bottom, top}}` names them.
   let ((left, right), (bottom, top)) = match &args[1] {
@@ -2117,19 +2184,50 @@ pub fn image_pad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     },
   };
 
+  match image_pad_extents(&args[0], left, right, bottom, top, args.get(2)) {
+    Some(image) => Ok(image),
+    None => {
+      crate::emit_message(&format!(
+        "ImagePad::padnull: Padding specification {} corresponds to an empty image.",
+        crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output)
+      ));
+      echo()
+    }
+  }
+}
+
+/// Grow `image` by the given per-side extents (negative extents trim), filling
+/// new pixels from `padding`: an edge-extension mode, a constant value or list
+/// of per-channel values, or black when absent. Returns `None` when the result
+/// would be empty or the fill cannot be read.
+fn image_pad_extents(
+  image: &Expr,
+  left: i64,
+  right: i64,
+  bottom: i64,
+  top: i64,
+  padding: Option<&Expr>,
+) -> Option<Expr> {
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+    ..
+  } = image
+  else {
+    return None;
+  };
   let (w, h, ch) = (*width as i64, *height as i64, *channels as usize);
   let new_w = w + left + right;
   let new_h = h + bottom + top;
   if new_w <= 0 || new_h <= 0 {
-    crate::emit_message(&format!(
-      "ImagePad::padnull: Padding specification {} corresponds to an empty image.",
-      crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output)
-    ));
-    return echo();
+    return None;
   }
 
   // The fill: an extension mode, or a constant (defaulting to black).
-  let mode = match args.get(2) {
+  let mode = match padding {
     Some(Expr::String(s)) | Some(Expr::Identifier(s))
       if image_pad_source(s, 0, 1).is_some() =>
     {
@@ -2137,23 +2235,19 @@ pub fn image_pad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => None,
   };
-  let fill: Vec<f64> = match (&mode, args.get(2)) {
+  let fill: Vec<f64> = match (&mode, padding) {
     (Some(_), _) | (None, None) => vec![0.0; ch],
     (None, Some(value)) => match value {
       Expr::List(items) if items.len() == ch => {
         let mut v = Vec::with_capacity(ch);
         for item in items.iter() {
-          match crate::functions::math_ast::try_eval_to_f64(item) {
-            Some(f) => v.push(f),
-            None => return echo(),
-          }
+          v.push(crate::functions::math_ast::try_eval_to_f64(item)?);
         }
         v
       }
-      other => match crate::functions::math_ast::try_eval_to_f64(other) {
-        Some(f) => vec![f; ch],
-        None => return echo(),
-      },
+      other => {
+        vec![crate::functions::math_ast::try_eval_to_f64(other)?; ch]
+      }
     },
   };
 
@@ -2181,7 +2275,7 @@ pub fn image_pad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(Expr::Image {
+  Some(Expr::Image {
     color_space: None,
     width: new_w as u32,
     height: new_h as u32,

@@ -5554,3 +5554,132 @@ mod image_pad {
     );
   }
 }
+
+// ImageCrop[img, size, spec] — crop to an explicit size, centered by default
+// or against a named side. All values verified against wolframscript.
+mod image_crop_to_size {
+  use super::*;
+
+  // Pixel values 1..16 (scaled), so a cropped region names itself.
+  const IM: &str = "im = Image[{{1, 2, 3, 4}, {5, 6, 7, 8}, {9, 10, 11, 12}, \
+     {13, 14, 15, 16}}/100.]; ";
+  const IM5: &str = "im5 = Image[Partition[Range[25], 5]/100.]; ";
+
+  fn crop(setup: &str, call: &str) -> String {
+    interpret(&format!("{setup}Round[ImageData[{call}]*100, 0.01]")).unwrap()
+  }
+
+  #[test]
+  fn even_remainders_split_evenly() {
+    assert_eq!(crop(IM, "ImageCrop[im, {2, 2}]"), "{{6., 7.}, {10., 11.}}");
+    // A scalar size is the same as the square pair.
+    assert_eq!(crop(IM, "ImageCrop[im, 2]"), "{{6., 7.}, {10., 11.}}");
+    assert_eq!(
+      crop(IM5, "ImageCrop[im5, {3, 3}]"),
+      "{{7., 8., 9.}, {12., 13., 14.}, {17., 18., 19.}}"
+    );
+  }
+
+  // An odd remainder is split with round-half-to-even in Wolfram's
+  // bottom-left origin, so 4 -> 3 keeps the leftmost three columns while
+  // 4 -> 1 keeps the third.
+  #[test]
+  fn odd_remainders_round_half_to_even() {
+    assert_eq!(
+      crop(IM, "ImageCrop[im, {3, 3}]"),
+      "{{5., 6., 7.}, {9., 10., 11.}, {13., 14., 15.}}"
+    );
+    assert_eq!(crop(IM, "ImageCrop[im, {1, 1}]"), "{{7.}}");
+    assert_eq!(
+      crop(IM5, "ImageCrop[im5, {4, 4}]"),
+      "{{6., 7., 8., 9.}, {11., 12., 13., 14.}, \
+       {16., 17., 18., 19.}, {21., 22., 23., 24.}}"
+    );
+    assert_eq!(
+      crop(IM5, "ImageCrop[im5, {2, 2}]"),
+      "{{8., 9.}, {13., 14.}}"
+    );
+  }
+
+  #[test]
+  fn width_and_height_crop_independently() {
+    assert_eq!(
+      crop(IM, "ImageCrop[im, {1, 4}]"),
+      "{{3.}, {7.}, {11.}, {15.}}"
+    );
+    assert_eq!(crop(IM, "ImageCrop[im, {4, 1}]"), "{{5., 6., 7., 8.}}");
+    assert_eq!(
+      crop(IM, "ImageCrop[im, {2, 4}]"),
+      "{{2., 3.}, {6., 7.}, {10., 11.}, {14., 15.}}"
+    );
+    assert_eq!(crop(IM, "ImageCrop[im, {3, 1}]"), "{{5., 6., 7.}}");
+  }
+
+  // A size larger than the image pads it out with black instead.
+  #[test]
+  fn an_oversized_request_pads() {
+    assert_eq!(
+      crop(IM, "ImageCrop[im, {6, 6}]"),
+      "{{0., 0., 0., 0., 0., 0.}, {0., 1., 2., 3., 4., 0.}, \
+       {0., 5., 6., 7., 8., 0.}, {0., 9., 10., 11., 12., 0.}, \
+       {0., 13., 14., 15., 16., 0.}, {0., 0., 0., 0., 0., 0.}}"
+    );
+  }
+
+  // The third argument names the side(s) pixels come off.
+  #[test]
+  fn a_side_spec_takes_the_pixels_from_that_side() {
+    assert_eq!(
+      crop(IM, "ImageCrop[im, {2, 2}, Left]"),
+      "{{7., 8.}, {11., 12.}}"
+    );
+    assert_eq!(
+      crop(IM, "ImageCrop[im, {2, 2}, Right]"),
+      "{{5., 6.}, {9., 10.}}"
+    );
+    assert_eq!(
+      crop(IM, "ImageCrop[im, {2, 2}, Top]"),
+      "{{10., 11.}, {14., 15.}}"
+    );
+    assert_eq!(
+      crop(IM, "ImageCrop[im, {2, 2}, Bottom]"),
+      "{{2., 3.}, {6., 7.}}"
+    );
+    assert_eq!(
+      crop(IM, "ImageCrop[im, {2, 2}, {Left, Top}]"),
+      "{{11., 12.}, {15., 16.}}"
+    );
+    assert_eq!(
+      crop(IM, "ImageCrop[im, {2, 2}, {Right, Bottom}]"),
+      "{{1., 2.}, {5., 6.}}"
+    );
+  }
+
+  #[test]
+  fn an_unknown_side_reports_cspecsym() {
+    assert_eq!(
+      interpret(&format!("{IM}ImageCrop[im, {{2, 2}}, All]")).unwrap(),
+      "ImageCrop[-Image-, {2, 2}, All]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "ImageCrop::cspecsym: Cropping value All is not one of Center, Left, Right, Top or Bottom."
+      )),
+      "expected cspecsym message, got {msgs:?}"
+    );
+  }
+
+  // The one-argument auto-crop is unaffected.
+  #[test]
+  fn auto_crop_still_trims_a_uniform_border() {
+    assert_eq!(
+      interpret(
+        "ImageData[ImageCrop[Image[{{0, 0, 0}, {0, 0.5, 0}, \
+       {0, 0, 0}}]]]"
+      )
+      .unwrap(),
+      "{{0.5}}"
+    );
+  }
+}
