@@ -720,6 +720,17 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     Expr::FunctionCall {
+      name: dist_name, ..
+    } if dist_name == "TruncatedDistribution"
+      && super::distributions::truncated_mean_variance(&args[0])?.is_some() =>
+    {
+      Ok(
+        super::distributions::truncated_mean_variance(&args[0])?
+          .expect("checked in the guard")
+          .0,
+      )
+    }
+    Expr::FunctionCall {
       name: dist_name,
       args: dargs,
     } if dist_name == "MixtureDistribution" && dargs.len() == 2 => {
@@ -940,6 +951,11 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if let Some(uneval) = rectt_if_ragged("Variance", args) {
     return Ok(uneval);
+  }
+  if let Some((_, variance)) =
+    super::distributions::truncated_mean_variance(&args[0])?
+  {
+    return Ok(variance);
   }
   match &args[0] {
     Expr::List(items) => {
@@ -4225,6 +4241,15 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut new_args = args.to_vec();
     new_args[0] = dense;
     return quantile_ast(&new_args);
+  }
+  // A truncated distribution maps the requested quantile onto the base
+  // distribution's scale.
+  if args.len() == 2
+    && let Some(value) = super::distributions::truncated_distribution_value(
+      "Quantile", &args[0], &args[1],
+    )?
+  {
+    return Ok(value);
   }
   // The probability q must lie in [0, 1]. A numeric q outside that range is
   // always rejected with nquan (rather than silently computing a clamped

@@ -8122,3 +8122,83 @@ mod wakeby_distribution {
     ));
   }
 }
+
+// TruncatedDistribution[{lo, hi}, dist] restricts a distribution to an
+// interval and renormalizes. All values verified against wolframscript.
+mod truncated_distribution {
+  use super::*;
+
+  const U: &str = "TruncatedDistribution[{1, 3}, UniformDistribution[{0, 4}]]";
+  const HALF: &str =
+    "TruncatedDistribution[{0, 2}, UniformDistribution[{0, 4}]]";
+
+  #[test]
+  fn pdf_renormalizes_inside_and_vanishes_outside() {
+    // The base density 1/4 over a kept mass of 1/2 gives 1/2.
+    assert_eq!(interpret(&format!("PDF[{U}, 2]")).unwrap(), "1/2");
+    assert_eq!(interpret(&format!("PDF[{U}, 0]")).unwrap(), "0");
+    assert_eq!(
+      interpret("PDF[TruncatedDistribution[{0, 1}, NormalDistribution[]], 2]")
+        .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn cdf_runs_from_zero_to_one_across_the_interval() {
+    assert_eq!(interpret(&format!("CDF[{U}, 2]")).unwrap(), "1/2");
+    assert_eq!(interpret(&format!("CDF[{U}, 0]")).unwrap(), "0");
+    assert_eq!(interpret(&format!("CDF[{U}, 5]")).unwrap(), "1");
+  }
+
+  #[test]
+  fn quantile_maps_onto_the_base_scale() {
+    assert_eq!(interpret(&format!("Quantile[{U}, 1/2]")).unwrap(), "2");
+    assert_eq!(interpret(&format!("Quantile[{U}, 0]")).unwrap(), "1");
+    assert_eq!(interpret(&format!("Quantile[{U}, 1]")).unwrap(), "3");
+  }
+
+  #[test]
+  fn moments_come_from_the_renormalized_density() {
+    // Uniform{0,4} kept on [0,2] is uniform on [0,2].
+    assert_eq!(interpret(&format!("Mean[{HALF}]")).unwrap(), "1");
+    assert_eq!(interpret(&format!("Variance[{HALF}]")).unwrap(), "1/3");
+    assert_eq!(
+      interpret(&format!("StandardDeviation[{HALF}]")).unwrap(),
+      "1/Sqrt[3]"
+    );
+  }
+
+  // A half-normal: the mean of a standard normal kept on [0, Infinity).
+  #[test]
+  fn a_continuous_base_integrates() {
+    assert_eq!(
+      interpret(
+        "N[Mean[TruncatedDistribution[{0, Infinity}, NormalDistribution[]]]]"
+      )
+      .unwrap(),
+      "0.7978845608028654"
+    );
+  }
+
+  // Rounded to dodge last-digit float noise in the normal CDF.
+  #[test]
+  fn a_normal_base_renormalizes_numerically() {
+    assert_eq!(
+      interpret(
+        "Round[PDF[TruncatedDistribution[{0, 1}, NormalDistribution[]], 0.5], \
+         10^-9]"
+      )
+      .unwrap(),
+      "1031406901/1000000000"
+    );
+    assert_eq!(
+      interpret(
+        "Round[CDF[TruncatedDistribution[{0, 1}, NormalDistribution[]], 0.5], \
+         10^-9]"
+      )
+      .unwrap(),
+      "22436257/40000000"
+    );
+  }
+}

@@ -38,6 +38,7 @@ icon: lucide/square-function
 - [`GeometricDistribution`](functions/GeometricDistribution.md)
 - [`GompertzMakehamDistribution`](functions/GompertzMakehamDistribution.md)
 - [`HalfNormalDistribution`](functions/HalfNormalDistribution.md)
+- [`TruncatedDistribution`](functions/TruncatedDistribution.md)
 - [`HoldForm`](functions/HoldForm.md)
 - [`If`](functions/If.md)
 - [`Increment`](functions/Increment.md)

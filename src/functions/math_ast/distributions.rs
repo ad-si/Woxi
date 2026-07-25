@@ -184,6 +184,14 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("PDF", args));
   }
 
+  // A truncated distribution renormalizes its base density over the kept
+  // interval, and is zero outside it.
+  if dist_name == "TruncatedDistribution"
+    && let Some(value) = truncated_distribution_value("PDF", dist, &args[1])?
+  {
+    return Ok(value);
+  }
+
   // PDF[MixtureDistribution[{w1, …}, {d1, …}], x] is the weight-normalized sum
   // of the component PDFs: Σ w_i PDF[d_i, x] / Σ w_i.
   if dist_name == "MixtureDistribution" && dargs.len() == 2 {
@@ -1793,6 +1801,12 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if args.len() == 1 {
     return Ok(unevaluated("CDF", args));
+  }
+
+  if dist_name == "TruncatedDistribution"
+    && let Some(value) = truncated_distribution_value("CDF", dist, &args[1])?
+  {
+    return Ok(value);
   }
 
   // CDF[MixtureDistribution[{w1, …}, {d1, …}], x] is the weight-normalized sum
@@ -17059,4 +17073,186 @@ fn pareto4_mean_variance(
     indeterminate(),
   );
   Ok((mean, variance))
+}
+
+/// The `{lo, hi}` bounds and base distribution of a
+/// `TruncatedDistribution[{lo, hi}, dist]`.
+pub fn truncated_parts(dist: &Expr) -> Option<(Expr, Expr, Expr)> {
+  let Expr::FunctionCall { name, args } = dist else {
+    return None;
+  };
+  if name != "TruncatedDistribution" || args.len() != 2 {
+    return None;
+  }
+  let Expr::List(bounds) = &args[0] else {
+    return None;
+  };
+  (bounds.len() == 2)
+    .then(|| (bounds[0].clone(), bounds[1].clone(), args[1].clone()))
+}
+
+/// The probability mass the truncation keeps: `CDF[base, hi] - CDF[base, lo]`.
+fn truncated_normalization(
+  lo: &Expr,
+  hi: &Expr,
+  base: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let at = |x: &Expr| -> Result<Expr, InterpreterError> {
+    cdf_ast(&[base.clone(), x.clone()])
+  };
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Subtract".to_string(),
+    args: vec![at(hi)?, at(lo)?].into(),
+  })
+}
+
+/// `Mean`/`Variance` of a truncated distribution, by integrating the
+/// renormalized density over the kept interval. Returns `None` when the
+/// integral does not close.
+pub fn truncated_mean_variance(
+  dist: &Expr,
+) -> Result<Option<(Expr, Expr)>, InterpreterError> {
+  let Some((lo, hi, base)) = truncated_parts(dist) else {
+    return Ok(None);
+  };
+  let z = truncated_normalization(&lo, &hi, &base)?;
+  let x = Expr::Identifier("Global`truncx".to_string());
+  // Integrate[x^k PDF[base, x], {x, lo, hi}] / z gives the k-th raw moment.
+  let moment = |k: i128| -> Result<Option<Expr>, InterpreterError> {
+    let density = pdf_ast(&[base.clone(), x.clone()])?;
+    if matches!(&density, Expr::FunctionCall { name, .. } if name == "PDF") {
+      return Ok(None);
+    }
+    let integrand = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![x.clone(), Expr::Integer(k)].into(),
+        },
+        density,
+      ]
+      .into(),
+    };
+    let integral =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Integrate".to_string(),
+        args: vec![
+          integrand,
+          Expr::List(vec![x.clone(), lo.clone(), hi.clone()].into()),
+        ]
+        .into(),
+      })?;
+    if matches!(&integral, Expr::FunctionCall { name, .. } if name == "Integrate")
+    {
+      return Ok(None);
+    }
+    Ok(Some(crate::evaluator::evaluate_expr_to_expr(
+      &Expr::FunctionCall {
+        name: "Divide".to_string(),
+        args: vec![integral, z.clone()].into(),
+      },
+    )?))
+  };
+
+  let (Some(m1), Some(m2)) = (moment(1)?, moment(2)?) else {
+    return Ok(None);
+  };
+  let variance =
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Subtract".to_string(),
+      args: vec![
+        m2,
+        Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![m1.clone(), Expr::Integer(2)].into(),
+        },
+      ]
+      .into(),
+    })?;
+  Ok(Some((m1, variance)))
+}
+
+/// `PDF`/`CDF`/`Quantile` of a truncated distribution, each expressed through
+/// the base distribution and the kept probability mass. Returns `None` when
+/// the argument is not a TruncatedDistribution.
+pub fn truncated_distribution_value(
+  head: &str,
+  dist: &Expr,
+  x: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  let Some((lo, hi, base)) = truncated_parts(dist) else {
+    return Ok(None);
+  };
+  let z = truncated_normalization(&lo, &hi, &base)?;
+  let eval = |name: &str, args: Vec<Expr>| -> Result<Expr, InterpreterError> {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.into(),
+    })
+  };
+  // Whether x lies in the kept interval, when that is decidable.
+  let inside = |x: &Expr| -> Option<bool> {
+    let cmp = eval(
+      "And",
+      vec![
+        Expr::Comparison {
+          operands: vec![lo.clone(), x.clone()],
+          operators: vec![crate::syntax::ComparisonOp::LessEqual],
+        },
+        Expr::Comparison {
+          operands: vec![x.clone(), hi.clone()],
+          operators: vec![crate::syntax::ComparisonOp::LessEqual],
+        },
+      ],
+    )
+    .ok()?;
+    match cmp {
+      Expr::Identifier(ref b) if b == "True" => Some(true),
+      Expr::Identifier(ref b) if b == "False" => Some(false),
+      _ => None,
+    }
+  };
+
+  match head {
+    "PDF" => match inside(x) {
+      Some(true) => {
+        Ok(Some(eval("Divide", vec![pdf_ast(&[base, x.clone()])?, z])?))
+      }
+      Some(false) => Ok(Some(Expr::Integer(0))),
+      None => Ok(None),
+    },
+    "CDF" => match inside(x) {
+      Some(true) => Ok(Some(eval(
+        "Divide",
+        vec![
+          eval(
+            "Subtract",
+            vec![cdf_ast(&[base.clone(), x.clone()])?, cdf_ast(&[base, lo])?],
+          )?,
+          z,
+        ],
+      )?)),
+      // Below the interval nothing has accumulated; above it, everything has.
+      Some(false) => {
+        let below = eval("Less", vec![x.clone(), lo.clone()])
+          .ok()
+          .is_some_and(|r| matches!(&r, Expr::Identifier(b) if b == "True"));
+        Ok(Some(Expr::Integer(if below { 0 } else { 1 })))
+      }
+      None => Ok(None),
+    },
+    // Map the requested quantile onto the base distribution's scale.
+    "Quantile" => {
+      let base_q = eval(
+        "Plus",
+        vec![
+          cdf_ast(&[base.clone(), lo])?,
+          eval("Times", vec![x.clone(), z])?,
+        ],
+      )?;
+      Ok(Some(super::statistics::quantile_ast(&[base, base_q])?))
+    }
+    _ => Ok(None),
+  }
 }
