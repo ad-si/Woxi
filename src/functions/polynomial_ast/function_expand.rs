@@ -87,6 +87,15 @@ fn as_plus_terms(e: &Expr) -> Option<Vec<Expr>> {
       left,
       right,
     } => Some(vec![(**left).clone(), (**right).clone()]),
+    // `a - b` is the same sum with the second term negated.
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => Some(vec![
+      (**left).clone(),
+      mk_times(mk_int(-1), (**right).clone()),
+    ]),
     _ => None,
   }
 }
@@ -161,13 +170,150 @@ fn is_clean_polynomial(e: &Expr) -> bool {
   }
 }
 
+/// The square root of `e` when `e` is a perfect square as an expression:
+/// a perfect-square integer, an even power `u^(2k)`, or a product of those.
+fn perfect_square_root(e: &Expr) -> Option<Expr> {
+  match e {
+    Expr::Integer(n) if *n >= 0 => {
+      let r = (*n as f64).sqrt().round() as i128;
+      (r * r == *n).then(|| mk_int(r))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => even_power_root(left, right),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      even_power_root(&args[0], &args[1])
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let roots = args
+        .iter()
+        .map(perfect_square_root)
+        .collect::<Option<Vec<_>>>()?;
+      Some(mk_call("Times", roots))
+    }
+    _ => None,
+  }
+}
+
+/// `u^(2k)` → `u^k` (with `u^2` → `u`), for a positive even integer exponent.
+fn even_power_root(base: &Expr, exponent: &Expr) -> Option<Expr> {
+  let Expr::Integer(n) = exponent else {
+    return None;
+  };
+  if *n <= 0 || n % 2 != 0 {
+    return None;
+  }
+  Some(if *n == 2 {
+    base.clone()
+  } else {
+    mk_power(base.clone(), mk_int(n / 2))
+  })
+}
+
+/// The negation of `t` when `t` is a negative term — a unary minus, or a
+/// product with a negative numeric leading (or trailing) coefficient. Returns
+/// None for a term that is not negative. Both the `Times[…]` call form and the
+/// `*` binary-operator form are recognised, since `Expand` produces either.
+fn negate_if_negative(t: &Expr) -> Option<Expr> {
+  let strip_neg_coeff = |coeff: &Expr, rest: Vec<Expr>| -> Option<Expr> {
+    let positive = match coeff {
+      Expr::Integer(-1) => None,
+      Expr::Integer(n) if *n < 0 => Some(mk_int(-n)),
+      Expr::Real(r) if *r < 0.0 => Some(Expr::Real(-r)),
+      _ => return None,
+    };
+    let mut factors: Vec<Expr> = positive.into_iter().collect();
+    factors.extend(rest);
+    Some(match factors.len() {
+      0 => mk_int(1),
+      1 => factors.into_iter().next().unwrap(),
+      _ => mk_call("Times", factors),
+    })
+  };
+  match t {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => Some((**operand).clone()),
+    Expr::Integer(n) if *n < 0 => Some(mk_int(-n)),
+    Expr::Real(r) if *r < 0.0 => Some(Expr::Real(-r)),
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
+      strip_neg_coeff(&args[0], args[1..].to_vec()).or_else(|| {
+        strip_neg_coeff(&args[args.len() - 1], args[..args.len() - 1].to_vec())
+      })
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => strip_neg_coeff(left, vec![(**right).clone()])
+      .or_else(|| strip_neg_coeff(right, vec![(**left).clone()])),
+    _ => None,
+  }
+}
+
+/// `Sqrt[a^2 - b^2]` → `Sqrt[a - b] Sqrt[a + b]`, applied recursively to the
+/// first factor so `Sqrt[1 - x^4]` becomes `Sqrt[1-x] Sqrt[1+x] Sqrt[1+x^2]`.
+/// This is the form `FunctionExpand` produces, since it assumes nothing about
+/// the sign of the parts. Returns None when the radicand is not a difference
+/// of two perfect squares.
+fn split_sqrt_of_square_difference(radicand: &Expr) -> Option<Expr> {
+  let terms = as_plus_terms(radicand)?;
+  if terms.len() != 2 {
+    return None;
+  }
+  // Exactly one term must be negated; it supplies b^2, the other a^2.
+  let negated = |t: &Expr| -> Option<Expr> { negate_if_negative(t) };
+  let (a_sq, b_sq) = match (negated(&terms[0]), negated(&terms[1])) {
+    (None, Some(b)) => (terms[0].clone(), b),
+    (Some(b), None) => (terms[1].clone(), b),
+    _ => return None,
+  };
+  let a = perfect_square_root(&a_sq)?;
+  let b = perfect_square_root(&b_sq)?;
+  let minus = mk_plus(a.clone(), mk_times(mk_int(-1), b.clone()));
+  let plus = mk_plus(a, b);
+  let first = split_sqrt_of_square_difference(&minus)
+    .unwrap_or_else(|| mk_call("Sqrt", vec![minus]));
+  Some(mk_times(first, mk_call("Sqrt", vec![plus])))
+}
+
+/// The radicand of `e` when `e` is `Sqrt[r]` or `r^(1/2)`.
+fn as_sqrt_radicand(e: &Expr) -> Option<&Expr> {
+  let is_half = |x: &Expr| {
+    matches!(x, Expr::FunctionCall { name, args }
+      if name == "Rational"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Integer(1))
+        && matches!(&args[1], Expr::Integer(2)))
+  };
+  match e {
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      Some(&args[0])
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2 && is_half(&args[1]) =>
+    {
+      Some(&args[0])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if is_half(right) => Some(left.as_ref()),
+    _ => None,
+  }
+}
+
 /// Try to expand a specific function call. Returns None if no expansion applies.
 fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
   // Trig of an integer multiple of an inverse trig function (e.g.
-  // Cos[2 ArcSin[x]] = 1 - 2 x^2) expands to a polynomial via multiple-angle
-  // identities. Route through TrigExpand + Expand, but only accept a clean
-  // polynomial result so the Sqrt-split half-angle forms (Sin[2 ArcSin[x]] =
-  // 2 Sqrt[1 - x] x Sqrt[1 + x]) and messy Tan rationals are left untouched.
+  // Cos[2 ArcSin[x]] = 1 - 2 x^2) expands via multiple-angle identities.
+  // Route through TrigExpand + Expand; a clean polynomial is the answer, and
+  // otherwise the residual `Sqrt[1 - x^2]` radicals are split the way Wolfram
+  // does (Sin[2 ArcSin[x]] = 2 Sqrt[1 - x] x Sqrt[1 + x]).
   if matches!(name, "Sin" | "Cos" | "Tan" | "Cot" | "Sec" | "Csc")
     && args.len() == 1
     && is_multiple_of_inverse_trig(&args[0])
@@ -175,10 +321,27 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
     let trig =
       mk_call("TrigExpand", vec![mk_call(name, vec![args[0].clone()])]);
     let expanded = mk_call("Expand", vec![trig]);
-    if let Ok(result) = crate::evaluator::evaluate_expr_to_expr(&expanded)
-      && is_clean_polynomial(&result)
+    if let Ok(result) = crate::evaluator::evaluate_expr_to_expr(&expanded) {
+      if is_clean_polynomial(&result) {
+        return Some(result);
+      }
+      if let Ok(split) = function_expand_inner(&result)
+        && crate::syntax::expr_to_string(&split)
+          != crate::syntax::expr_to_string(&result)
+        && let Ok(v) = crate::evaluator::evaluate_expr_to_expr(&split)
+      {
+        return Some(v);
+      }
+    }
+  }
+
+  // FunctionExpand[Sqrt[a^2 - b^2]] = Sqrt[a - b] Sqrt[a + b].
+  {
+    let call = mk_call(name, args.to_vec());
+    if let Some(radicand) = as_sqrt_radicand(&call)
+      && let Some(split) = split_sqrt_of_square_difference(radicand)
     {
-      return Some(result);
+      return Some(split);
     }
   }
 

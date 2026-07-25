@@ -11170,14 +11170,41 @@ mod function_expand {
     );
   }
 
-  // Half-angle cases whose expansion involves a square root (Sin[2 ArcSin[x]] =
-  // 2 Sqrt[1-x] x Sqrt[1+x] in wolframscript) are gated out so Woxi does not
-  // emit a divergent Sqrt form; they stay unevaluated.
+  // Expansions that leave a square root get the radical split the way
+  // wolframscript does, since FunctionExpand assumes nothing about the sign
+  // of the parts: Sqrt[1 - x^2] becomes Sqrt[1-x] Sqrt[1+x].
   #[test]
-  fn sqrt_producing_cases_stay_unevaluated() {
+  fn sqrt_producing_cases_split_the_radical() {
     assert_eq!(
       interpret("FunctionExpand[Sin[2 ArcSin[x]]]").unwrap(),
-      "Sin[2*ArcSin[x]]"
+      "2*Sqrt[1 - x]*x*Sqrt[1 + x]"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Sin[2 ArcCos[x]]]").unwrap(),
+      "2*Sqrt[1 - x]*x*Sqrt[1 + x]"
+    );
+  }
+
+  // FunctionExpand splits a Sqrt of a difference of squares on its own too,
+  // recursing so Sqrt[1 - x^4] fully factors.
+  #[test]
+  fn sqrt_of_square_difference_splits() {
+    assert_eq!(
+      interpret("FunctionExpand[Sqrt[1 - x^2]]").unwrap(),
+      "Sqrt[1 - x]*Sqrt[1 + x]"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Sqrt[4 - x^2]]").unwrap(),
+      "Sqrt[2 - x]*Sqrt[2 + x]"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Sqrt[1 - x^4]]").unwrap(),
+      "Sqrt[1 - x]*Sqrt[1 + x]*Sqrt[1 + x^2]"
+    );
+    // A radicand that is not a difference of two squares is left alone.
+    assert_eq!(
+      interpret("FunctionExpand[Sqrt[1 - 2 x^2]]").unwrap(),
+      "Sqrt[1 - 2*x^2]"
     );
   }
 
