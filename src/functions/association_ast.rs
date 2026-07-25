@@ -157,6 +157,34 @@ fn wrap_leaves(
   apply_optional_head(head, expr)
 }
 
+/// `Keys`/`Values` of a Dataset act on the wrapped data and hand back a
+/// Dataset, so `Keys[Dataset[{<|a -> 1|>, …}]]` gives the row keys. Returns
+/// `None` when the subject is not a Dataset, or when the inner call does not
+/// reduce (then the ordinary error path reports on the Dataset itself).
+fn try_dataset_subject(
+  head: &str,
+  args: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  let Some(Expr::FunctionCall { name, args: ds }) = args.first() else {
+    return Ok(None);
+  };
+  if name != "Dataset" || ds.len() != 3 {
+    return Ok(None);
+  }
+  let mut inner = vec![ds[0].clone()];
+  inner.extend(args[1..].iter().cloned());
+  let result = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: head.to_string(),
+    args: inner.into(),
+  })?;
+  if matches!(&result, Expr::FunctionCall { name, .. } if name == head) {
+    return Ok(None);
+  }
+  Ok(Some(crate::functions::dataset_ast::dataset_ast(
+    std::slice::from_ref(&result),
+  )))
+}
+
 pub fn keys_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -165,6 +193,9 @@ pub fn keys_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Optional second argument: a head wrapped around each key before evaluation.
   let head = args.get(1);
+  if let Some(result) = try_dataset_subject("Keys", args)? {
+    return Ok(result);
+  }
   match &args[0] {
     Expr::Association(items) => {
       let mut keys = Vec::with_capacity(items.len());
@@ -202,6 +233,9 @@ pub fn values_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Optional second argument: a head wrapped around each value before evaluation.
   let head = args.get(1);
+  if let Some(result) = try_dataset_subject("Values", args)? {
+    return Ok(result);
+  }
   match &args[0] {
     Expr::Association(items) => {
       let mut values = Vec::with_capacity(items.len());

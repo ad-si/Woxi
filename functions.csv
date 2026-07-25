@@ -602,7 +602,7 @@ Inactive,Wrapper to prevent evaluation,✅,none,10.0,606
 PowerMod,Computes modular exponentiation a^b mod m (b=1/n gives a modular n-th root),✅,pure,1.0,607
 Modulus,Option for modular arithmetic,✅,pure,1.0,608
 Break,Exits a loop,✅,pure,1.0,610
-Dataset,Wraps data with type information for structured data handling,✅,pure,10.0,610
+Dataset,Wraps data with type information and answers successive-level queries,✅,pure,10.0,610
 FoldList,Returns the list of intermediate results from Fold,✅,pure,2.0,611
 ReleaseHold,Removes Hold wrappers from an expression,✅,pure,2.0,612
 BesselK,Modified Bessel function of the second kind,✅,pure,1.0,613

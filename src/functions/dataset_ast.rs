@@ -159,88 +159,47 @@ fn infer_assoc_type(pairs: &[(Expr, Expr)], top_level: bool) -> Expr {
   }
 }
 
-/// Dataset[data, type, meta][row_spec, col_spec] — query a dataset.
+/// Dataset[data, type, meta][op1, op2, …] — query a dataset.
+///
+/// A dataset query is the same successive-level operator spec `Query` uses,
+/// applied to the wrapped data; a collection result is re-wrapped as a
+/// Dataset and an atomic one is returned bare.
 pub fn dataset_query(
   func_args: &[Expr],
   args: &[Expr],
 ) -> Result<Expr, crate::InterpreterError> {
   let data = &func_args[0];
 
-  // Extract the values of one column from a list of association rows, filling
-  // Missing["KeyAbsent", key] where a row lacks the key (matches Dataset).
-  let extract_column = |rows: &[Expr], col_key: &Expr| -> Vec<Expr> {
-    let col_key_str = crate::syntax::expr_to_string(col_key);
-    rows
-      .iter()
-      .map(|row| {
-        if let Expr::Association(pairs) = row {
-          for (k, v) in pairs {
-            if crate::syntax::expr_to_string(k) == col_key_str {
-              return v.clone();
-            }
-          }
-        }
-        Expr::FunctionCall {
-          name: "Missing".to_string(),
-          args: vec![Expr::String("KeyAbsent".to_string()), col_key.clone()]
-            .into(),
-        }
-      })
-      .collect()
+  let unsupported = || {
+    Ok(Expr::CurriedCall {
+      func: Box::new(unevaluated("Dataset", func_args)),
+      args: args.to_vec(),
+    })
   };
 
-  // Dataset[list_of_assocs][All, "column"] — extract a column
-  if args.len() == 2
-    && let Expr::Identifier(row_spec) = &args[0]
-    && row_spec == "All"
-    && let Expr::List(rows) = data
+  // A key spec addresses an association, not the rows of a list — Wolfram
+  // reports `Dataset::partnotapplicable` for `Dataset[{…}]["key"]`. Woxi does
+  // not build that Failure object, so the query stays unevaluated rather than
+  // silently looking the key up in every row.
+  if matches!(args.first(), Some(Expr::String(_)))
+    && matches!(data, Expr::List(_))
   {
-    let values = extract_column(rows, &args[1]);
-    return Ok(dataset_ast(&[Expr::List(values.into())]));
+    return unsupported();
   }
 
-  // Dataset[list_of_assocs][agg, "column"] — aggregate a single column with a
-  // scalar-valued function such as Total, Mean, Max, Min, Median, … The
-  // aggregator is applied to the column's values and the scalar result is
-  // returned bare (Dataset unwraps atomic query results).
-  if args.len() == 2
-    && let Expr::Identifier(agg) = &args[0]
-    && agg != "All"
-    && let Expr::List(rows) = data
-  {
-    let values = extract_column(rows, &args[1]);
-    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: agg.clone(),
-      args: vec![Expr::List(values.into())].into(),
-    });
+  let result = crate::functions::query_ast::apply_query(args, data)?;
+
+  // The query engine echoes an operator it cannot apply as a curried call;
+  // report that as an unevaluated dataset query instead.
+  if matches!(&result, Expr::CurriedCall { .. }) {
+    return unsupported();
   }
 
-  // Dataset[flat_list][f] — apply an aggregator or transform to the data. A
-  // scalar result (Mean, Total, Max, Length, …) is returned bare, while a list
-  // result (Sort, Reverse, …) is re-wrapped as a Dataset, matching Dataset's
-  // rule that atomic query results unwrap and collections stay Datasets.
-  if args.len() == 1
-    && let Expr::Identifier(f) = &args[0]
-    && let Expr::List(elems) = data
-    && elems
-      .iter()
-      .all(|e| !matches!(e, Expr::List(_) | Expr::Association(_)))
-  {
-    let result =
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: f.clone(),
-        args: vec![data.clone()].into(),
-      })?;
-    return Ok(match &result {
-      Expr::List(_) => dataset_ast(&[result]),
-      _ => result,
-    });
-  }
-
-  // Fallback: return unevaluated
-  Ok(Expr::CurriedCall {
-    func: Box::new(unevaluated("Dataset", func_args)),
-    args: args.to_vec(),
+  Ok(match &result {
+    Expr::List(_) | Expr::Association(_) => {
+      dataset_ast(std::slice::from_ref(&result))
+    }
+    _ => result,
   })
 }
 

@@ -435,4 +435,116 @@ mod dataset_ast {
       "{4, 3, 2, 1}"
     );
   }
+
+  // A dataset query is the same successive-level operator spec Query takes.
+  // All values verified against wolframscript.
+  const ROWS: &str = "ds = Dataset[{<|\"a\" -> 1, \"b\" -> \"x\"|>, \
+                      <|\"a\" -> 2, \"b\" -> \"y\"|>, \
+                      <|\"a\" -> 3, \"b\" -> \"z\"|>}]; ";
+
+  #[test]
+  fn dataset_filter_operator_rewraps() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!("{ROWS}Head[ds[Select[#a > 1 &]]]")).unwrap(),
+      "Dataset"
+    );
+    assert_eq!(
+      interpret(&format!("{ROWS}Normal[ds[Select[#a > 1 &]]]")).unwrap(),
+      "{<|a -> 2, b -> y|>, <|a -> 3, b -> z|>}"
+    );
+    assert_eq!(
+      interpret(&format!("{ROWS}Normal[ds[SortBy[-#a &], \"a\"]]")).unwrap(),
+      "{3, 2, 1}"
+    );
+  }
+
+  #[test]
+  fn dataset_row_index() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!("{ROWS}Normal[ds[2]]")).unwrap(),
+      "<|a -> 2, b -> y|>"
+    );
+    assert_eq!(interpret(&format!("{ROWS}Head[ds[2]]")).unwrap(), "Dataset");
+    // A deeper key spec reaches an atom, which unwraps.
+    assert_eq!(interpret(&format!("{ROWS}ds[2, \"a\"]")).unwrap(), "2");
+  }
+
+  #[test]
+  fn dataset_row_list_spec() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!("{ROWS}Normal[ds[{{1, 3}}]]")).unwrap(),
+      "{<|a -> 1, b -> x|>, <|a -> 3, b -> z|>}"
+    );
+    assert_eq!(
+      interpret(&format!("{ROWS}Normal[ds[{{1, 3}}, \"a\"]]")).unwrap(),
+      "{1, 3}"
+    );
+  }
+
+  #[test]
+  fn dataset_aggregator_returning_an_association() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!("{ROWS}Normal[ds[Counts, \"b\"]]")).unwrap(),
+      "<|x -> 1, y -> 1, z -> 1|>"
+    );
+  }
+
+  #[test]
+  fn dataset_applies_arbitrary_functions_on_the_way_up() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!("{ROWS}Normal[ds[All, \"a\", f]]")).unwrap(),
+      "{f[1], f[2], f[3]}"
+    );
+    assert_eq!(
+      interpret("Normal[Dataset[{1, 2, 3}][f]]").unwrap(),
+      "f[{1, 2, 3}]"
+    );
+  }
+
+  // A key spec addresses an association; on an association-valued dataset it
+  // looks the key up, on a list of rows Wolfram reports it as not applicable.
+  #[test]
+  fn dataset_key_spec() {
+    clear_state();
+    assert_eq!(
+      interpret("Dataset[<|\"a\" -> 1, \"b\" -> 2|>][\"a\"]").unwrap(),
+      "1"
+    );
+    assert!(
+      interpret(&format!("{ROWS}ds[\"a\"]"))
+        .unwrap()
+        .starts_with("Dataset["),
+      "a key spec over rows should stay unevaluated"
+    );
+  }
+
+  #[test]
+  fn keys_and_values_of_a_dataset() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!("{ROWS}Normal[Keys[ds]]")).unwrap(),
+      "{{a, b}, {a, b}, {a, b}}"
+    );
+    assert_eq!(
+      interpret(&format!("{ROWS}Normal[Values[ds]]")).unwrap(),
+      "{{1, x}, {2, y}, {3, z}}"
+    );
+    assert_eq!(
+      interpret(&format!("{ROWS}Normal[Keys[ds[1]]]")).unwrap(),
+      "{a, b}"
+    );
+    assert_eq!(
+      interpret(&format!("{ROWS}Normal[Values[ds[1]]]")).unwrap(),
+      "{1, x}"
+    );
+    assert_eq!(
+      interpret("Normal[Keys[Dataset[<|\"a\" -> 1, \"b\" -> 2|>]]]").unwrap(),
+      "{a, b}"
+    );
+  }
 }
