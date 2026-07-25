@@ -43,9 +43,8 @@ fn try_symbolic_pi_fraction(expr: &Expr) -> Option<(i64, i64)> {
     if k == 0 {
       return (0, 1);
     }
-    let g = gcd_i128(k as i128, n as i128) as i64;
-    let (k, n) = (k / g, n / g);
-    if n < 0 { (-k, -n) } else { (k, n) }
+    let (k, n) = rat_reduce(k as i128, n as i128);
+    (k as i64, n as i64)
   }
 
   match expr {

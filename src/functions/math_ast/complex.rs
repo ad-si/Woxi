@@ -1200,19 +1200,8 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Try exact complex extraction (handles Plus, Times, I, etc.)
   if let Some(((rn, rd), (in_, id))) = try_extract_complex_exact(&args[0]) {
     // Normalize signs to have positive denominators
-    let g_r = gcd_i128(rn.abs(), rd.abs());
-    let (rn, rd) = if rd < 0 {
-      (-rn / g_r, -rd / g_r)
-    } else {
-      (rn / g_r, rd / g_r)
-    };
-    let g_i = gcd_i128(in_.abs(), id.abs());
-    let (in_, id) = if id < 0 {
-      (-in_ / g_i, -id / g_i)
-    } else {
-      (in_ / g_i, id / g_i)
-    };
-
+    let (rn, rd) = rat_reduce(rn, rd);
+    let (in_, id) = rat_reduce(in_, id);
     // Pure real
     if in_ == 0 {
       return if rn > 0 {
@@ -1237,9 +1226,7 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let ratio_n = in_.abs().checked_mul(rd);
     let ratio_d = id.checked_mul(rn.abs());
     if let (Some(mut ratio_n), Some(mut ratio_d)) = (ratio_n, ratio_d) {
-      let g = gcd_i128(ratio_n.abs(), ratio_d.abs());
-      ratio_n /= g;
-      ratio_d /= g;
+      (ratio_n, ratio_d) = rat_reduce(ratio_n, ratio_d);
 
       // Try to find exact ArcTan value as a fraction of Pi
       // ArcTan[0] = 0, ArcTan[1] = Pi/4
@@ -1338,12 +1325,7 @@ pub fn make_rational_times_pi(n: i128, d: i128) -> Expr {
   if n == 0 {
     return Expr::Integer(0);
   }
-  let g = gcd_i128(n.abs(), d.abs());
-  let (n, d) = if d < 0 {
-    (-n / g, -d / g)
-  } else {
-    (n / g, d / g)
-  };
+  let (n, d) = rat_reduce(n, d);
   if d == 1 {
     if n == 1 {
       Expr::Identifier("Pi".to_string())
@@ -1828,18 +1810,8 @@ fn find_rational_smallest_denom(x: f64, tolerance: f64) -> (i64, i64) {
 /// isn't a pure exact complex rational.
 fn exact_complex_rational_numden(expr: &Expr) -> Option<(Expr, Expr)> {
   let ((rn, rd), (in_, id)) = try_extract_complex_exact(expr)?;
-  let g_r = gcd_i128(rn.abs(), rd.abs().max(1));
-  let (rn, rd) = if rd < 0 {
-    (-rn / g_r, -rd / g_r)
-  } else {
-    (rn / g_r, rd / g_r)
-  };
-  let g_i = gcd_i128(in_.abs(), id.abs().max(1));
-  let (in_, id) = if id < 0 {
-    (-in_ / g_i, -id / g_i)
-  } else {
-    (in_ / g_i, id / g_i)
-  };
+  let (rn, rd) = rat_reduce(rn, rd);
+  let (in_, id) = rat_reduce(in_, id);
   if rd == 0 || id == 0 {
     return None;
   }

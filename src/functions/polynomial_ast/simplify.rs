@@ -2,7 +2,7 @@
 use super::*;
 use crate::InterpreterError;
 use crate::functions::calculus_ast::simplify;
-use crate::functions::math_ast::gcd_i128;
+use crate::functions::math_ast::{gcd_i128, rat_reduce};
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, expr_to_string,
 };
@@ -134,26 +134,12 @@ fn normalize_refined_arith(expr: &Expr) -> Expr {
   }
 }
 
-/// Reduce a rational (num, den) to lowest terms with a positive denominator.
-fn reduce_rat((n, d): (i128, i128)) -> (i128, i128) {
-  if d == 0 {
-    return (n, d);
-  }
-  let g = gcd_i128(n.abs(), d.abs()).max(1);
-  let (mut n, mut d) = (n / g, d / g);
-  if d < 0 {
-    n = -n;
-    d = -d;
-  }
-  (n, d)
+fn rat_mul(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+  rat_reduce(a.0 * b.0, a.1 * b.1)
 }
 
-fn mul_rat(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
-  reduce_rat((a.0 * b.0, a.1 * b.1))
-}
-
-fn add_rat(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
-  reduce_rat((a.0 * b.1 + b.0 * a.1, a.1 * b.1))
+fn rat_add(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+  rat_reduce(a.0 * b.1 + b.0 * a.1, a.1 * b.1)
 }
 
 /// Split a term into its leading rational coefficient and the remaining
@@ -189,14 +175,14 @@ fn split_numeric_coeff(term: &Expr) -> ((i128, i128), Expr) {
     } => {
       let (lc, lr) = split_numeric_coeff(left);
       let (rc, rr) = split_numeric_coeff(right);
-      (mul_rat(lc, rc), mul_rest(lr, rr))
+      (rat_mul(lc, rc), mul_rest(lr, rr))
     }
     Expr::FunctionCall { name, args } if name == "Times" => {
       let mut coeff = (1i128, 1i128);
       let mut rests: Vec<Expr> = Vec::new();
       for a in args {
         let (c, r) = split_numeric_coeff(a);
-        coeff = mul_rat(coeff, c);
+        coeff = rat_mul(coeff, c);
         if !matches!(r, Expr::Integer(1)) {
           rests.push(r);
         }
@@ -247,7 +233,7 @@ fn rebuild_product(mut rests: Vec<Expr>) -> Expr {
 /// Rebuild `coeff * rest` in the canonical shape (bare number when rest is 1,
 /// bare rest when coeff is 1, `0` when coeff is 0).
 fn make_coeff_term((n, d): (i128, i128), rest: &Expr) -> Expr {
-  let (n, d) = reduce_rat((n, d));
+  let (n, d) = rat_reduce(n, d);
   if n == 0 {
     return Expr::Integer(0);
   }
@@ -282,7 +268,7 @@ fn combine_additive(expr: &Expr) -> Expr {
     let (c, rest) = split_numeric_coeff(t);
     let key = expr_to_string(&rest);
     if let Some(cc) = coeffs.get_mut(&key) {
-      *cc = add_rat(*cc, c);
+      *cc = rat_add(*cc, c);
     } else {
       order.push(key.clone());
       coeffs.insert(key.clone(), c);
@@ -8244,13 +8230,7 @@ fn simplify_quotient_select(
       }
       flip_opts.push((1, fn_terms));
       for (nc, nt) in flip_opts {
-        let mut coeff_n = nc;
-        let mut coeff_d = fdc;
-        let g = gcd_i128(coeff_n, coeff_d);
-        if g > 1 {
-          coeff_n /= g;
-          coeff_d /= g;
-        }
+        let (coeff_n, coeff_d) = rat_reduce(nc, fdc);
         cands.push(Cand {
           cost: sc_quotient((coeff_n, coeff_d), &nt, Some(&fdt), None),
           class: 3,
@@ -9794,9 +9774,7 @@ fn factor_common_power_base(terms: &[Expr]) -> Option<Expr> {
       let diff_n = pi.numer * min_d - min_n * pi.denom;
       let diff_d = pi.denom * min_d;
       // Simplify the fraction
-      let g = gcd_i128(diff_n, diff_d);
-      let sn = diff_n / g;
-      let sd = diff_d / g;
+      let (sn, sd) = rat_reduce(diff_n, diff_d);
 
       // Remove the old power factor and replace with the new exponent
       let factors = &term_factors[i];

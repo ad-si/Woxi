@@ -1431,9 +1431,7 @@ pub fn triangle_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let result_num = 2 * abs_val - den;
         let result_den = den;
         // Simplify result_num / result_den
-        let g = gcd_i128(result_num, result_den);
-        let sn = result_num / g;
-        let sd = result_den / g;
+        let (sn, sd) = rat_reduce(result_num, result_den);
         if sd == 1 {
           return Ok(Expr::Integer(sn));
         }
@@ -1499,9 +1497,7 @@ pub fn sawtooth_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if rem == 0 {
           return Ok(Expr::Integer(0));
         }
-        let g = gcd_i128(rem, *d);
-        let sn = rem / g;
-        let sd = d / g;
+        let (sn, sd) = rat_reduce(rem, *d);
         if sd == 1 {
           return Ok(Expr::Integer(sn));
         }
@@ -2348,9 +2344,7 @@ pub fn norlund_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               .and_then(|x| x.checked_add(tn.checked_mul(result_d)?));
             let new_d = result_d.checked_mul(cd);
             if let (Some(nn), Some(nd)) = (new_n, new_d) {
-              let g = gcd_i128(nn.abs(), nd.abs());
-              result_n = nn / g;
-              result_d = nd / g;
+              (result_n, result_d) = rat_reduce(nn, nd);
             } else {
               // Overflow - fall through to symbolic
               return evaluate_norlund_symbolic(&poly, a_expr);
@@ -2363,10 +2357,6 @@ pub fn norlund_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Some(v) => v,
           None => return evaluate_norlund_symbolic(&poly, a_expr),
         };
-      }
-      if result_d < 0 {
-        result_n = -result_n;
-        result_d = -result_d;
       }
       return Ok(crate::functions::math_ast::make_rational(
         result_n, result_d,
@@ -2480,15 +2470,7 @@ fn norlund_b_poly(n: usize) -> Vec<(i128, i128)> {
   }
   // Simplify s values
   for sval in &mut s {
-    let g = gcd_i128(sval.0.abs(), sval.1.abs());
-    if g > 0 {
-      sval.0 /= g;
-      sval.1 /= g;
-    }
-    if sval.1 < 0 {
-      sval.0 = -sval.0;
-      sval.1 = -sval.1;
-    }
+    *sval = rat_reduce(sval.0, sval.1);
   }
 
   // h_k is a polynomial in a of degree k, stored as Vec<(i128, i128)>
@@ -2538,15 +2520,7 @@ fn norlund_b_poly(n: usize) -> Vec<(i128, i128)> {
     // Divide by k
     for coeff in &mut hk {
       coeff.1 *= k as i128;
-      let g = gcd_i128(coeff.0.abs(), coeff.1.abs());
-      if g > 0 {
-        coeff.0 /= g;
-        coeff.1 /= g;
-      }
-      if coeff.1 < 0 {
-        coeff.0 = -coeff.0;
-        coeff.1 = -coeff.1;
-      }
+      *coeff = rat_reduce(coeff.0, coeff.1);
     }
 
     h.push(hk);
@@ -2560,15 +2534,7 @@ fn norlund_b_poly(n: usize) -> Vec<(i128, i128)> {
   let mut result = h[n].clone();
   for coeff in &mut result {
     coeff.0 *= factorial;
-    let g = gcd_i128(coeff.0.abs(), coeff.1.abs());
-    if g > 0 {
-      coeff.0 /= g;
-      coeff.1 /= g;
-    }
-    if coeff.1 < 0 {
-      coeff.0 = -coeff.0;
-      coeff.1 = -coeff.1;
-    }
+    *coeff = rat_reduce(coeff.0, coeff.1);
   }
   result
 }
@@ -2578,18 +2544,7 @@ fn rat_add_inplace(target: &mut (i128, i128), tn: i128, td: i128) {
   let (rn, rd) = target;
   let new_n = *rn * td + tn * *rd;
   let new_d = *rd * td;
-  let g = gcd_i128(new_n.abs(), new_d.abs());
-  if g > 0 {
-    *rn = new_n / g;
-    *rd = new_d / g;
-  } else {
-    *rn = new_n;
-    *rd = new_d;
-  }
-  if *rd < 0 {
-    *rn = -*rn;
-    *rd = -*rd;
-  }
+  (*rn, *rd) = rat_reduce(new_n, new_d);
 }
 
 /// AppellF1[a, b1, b2, c, x, y] - Appell hypergeometric function F1
