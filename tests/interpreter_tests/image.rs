@@ -3175,6 +3175,53 @@ mod image_advanced {
     assert_eq!(result, "1");
   }
 
+  // A {min, max} range is sampled directly. Values verified against
+  // wolframscript.
+  #[test]
+  fn random_image_range_spec() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageDimensions[RandomImage[{0.2, 0.8}, {2, 3}]]").unwrap(),
+      "{2, 3}"
+    );
+    assert_eq!(
+      interpret("Min[ImageData[RandomImage[{0.4, 0.5}, {6, 6}]]] >= 0.4")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Max[ImageData[RandomImage[{0.4, 0.5}, {6, 6}]]] <= 0.5")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  // Regression: an empty range used to panic the interpreter with
+  // "cannot sample empty range". Wolfram reports the equivalent uniform
+  // distribution as unusable and leaves the call unevaluated.
+  #[test]
+  fn random_image_empty_range_reports_bddist() {
+    clear_state();
+    for (call, reported) in [
+      ("RandomImage[0, {2, 2}]", "{0, 0}"),
+      ("RandomImage[{0, 0}, {2, 2}]", "{0, 0}"),
+      ("RandomImage[{3, 3}, {2, 2}]", "{3, 3}"),
+      // An inverted range is empty too.
+      ("RandomImage[{1, 0}, {2, 2}]", "{1, 0}"),
+    ] {
+      assert_eq!(interpret(call).unwrap(), call);
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        msgs.iter().any(|m| m.contains(&format!(
+          "RandomImage::bddist: The specified random distribution \
+           UniformDistribution[{reported}] should generate a real number or a \
+           list of real numbers."
+        ))),
+        "expected bddist message for {call}, got {msgs:?}"
+      );
+    }
+  }
+
   #[test]
   fn dominant_colors_returns_list() {
     clear_state();

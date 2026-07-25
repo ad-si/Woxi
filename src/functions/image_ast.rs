@@ -3548,13 +3548,39 @@ pub fn random_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // RandomImage[] → 150x150, [0,1]
-  // RandomImage[max] → 150x150, [0,max]
-  // RandomImage[max, {w, h}] → w×h, [0,max]
-  let max_val = if !args.is_empty() {
-    expr_to_f64(&args[0])?
-  } else {
-    1.0
+  // RandomImage[max] / RandomImage[{min, max}] → 150x150
+  // RandomImage[…, {w, h}] → w×h
+  let (min_val, max_val) = match args.first() {
+    None => (0.0, 1.0),
+    Some(Expr::List(range)) if range.len() == 2 => {
+      (expr_to_f64(&range[0])?, expr_to_f64(&range[1])?)
+    }
+    Some(other) => (0.0, expr_to_f64(other)?),
   };
+  // An empty range has nothing to sample; Wolfram reports the equivalent
+  // uniform distribution as unusable and leaves the call unevaluated.
+  if !(min_val < max_val) {
+    // Echo the bounds as written, so an integer 0 is not reported as 0.
+    let bound = |i: usize, fallback: f64| -> Expr {
+      match args.first() {
+        Some(Expr::List(range)) if range.len() == 2 => range[i].clone(),
+        Some(other) if i == 1 => other.clone(),
+        _ => {
+          if fallback.fract() == 0.0 {
+            Expr::Integer(fallback as i128)
+          } else {
+            Expr::Real(fallback)
+          }
+        }
+      }
+    };
+    let range = Expr::List(vec![bound(0, min_val), bound(1, max_val)].into());
+    crate::emit_message(&format!(
+      "RandomImage::bddist: The specified random distribution UniformDistribution[{}] should generate a real number or a list of real numbers.",
+      crate::syntax::expr_to_string(&range)
+    ));
+    return Ok(unevaluated("RandomImage", args));
+  }
 
   let (w, h) = if args.len() == 2 {
     match &args[1] {
@@ -3581,7 +3607,7 @@ pub fn random_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let channels = 1u8; // Grayscale by default (matches Wolfram)
   let len = (w as usize) * (h as usize) * (channels as usize);
   let data: Vec<f64> = crate::with_rng(|rng| {
-    (0..len).map(|_| rng.gen_range(0.0..max_val)).collect()
+    (0..len).map(|_| rng.gen_range(min_val..max_val)).collect()
   });
 
   Ok(Expr::Image {
