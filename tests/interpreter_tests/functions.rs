@@ -2392,6 +2392,15 @@ mod minus_plus {
   fn nested_in_subtraction() {
     assert_eq!(interpret("a - MinusPlus[b]").unwrap(), "a - (\u{2213}b)");
   }
+
+  // The same parenthesisation applies in InputForm, which has its own renderer.
+  #[test]
+  fn nested_in_subtraction_input_form() {
+    assert_eq!(
+      interpret("ToString[a - MinusPlus[b], InputForm]").unwrap(),
+      "a - (\u{2213}b)"
+    );
+  }
 }
 
 mod circle_times {

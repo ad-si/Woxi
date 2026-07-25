@@ -10255,6 +10255,21 @@ fn neg_times_coeff(e: &Expr) -> Option<Option<Expr>> {
   }
 }
 
+/// Render a term that follows a ` - ` in a `Plus`, parenthesising a prefix
+/// `MinusPlus` so the leading `-` doesn't fuse with the `∓`, the way Wolfram
+/// prints it: `a - MinusPlus[b]` → `a - (∓b)`.
+fn input_form_subtracted_term(term: &Expr) -> String {
+  let s = expr_to_input_form(term);
+  if matches!(
+    term,
+    Expr::FunctionCall { name, args } if name == "MinusPlus" && args.len() == 1
+  ) {
+    format!("({})", s)
+  } else {
+    s
+  }
+}
+
 pub fn expr_to_input_form(expr: &Expr) -> String {
   // Grow the stack when running low so rendering a deeply nested expression
   // (e.g. the script-mode display of Nest[f, x, 500], or FullForm of it) does
@@ -11102,7 +11117,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
           if let Some(pos_left) = neg_times_coeff(left.as_ref()) {
             result.push_str(" - ");
             match pos_left {
-              None => result.push_str(&expr_to_input_form(right)),
+              None => result.push_str(&input_form_subtracted_term(right)),
               Some(pl) => {
                 let pos = Expr::BinaryOp {
                   op: BinaryOperator::Times,
@@ -11115,7 +11130,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
           } else if let Some(pos_right) = neg_times_coeff(right.as_ref()) {
             result.push_str(" - ");
             match pos_right {
-              None => result.push_str(&expr_to_input_form(left)),
+              None => result.push_str(&input_form_subtracted_term(left)),
               Some(pr) => {
                 let pos = Expr::BinaryOp {
                   op: BinaryOperator::Times,
@@ -11195,7 +11210,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
               }
             };
             result.push_str(" - ");
-            result.push_str(&expr_to_input_form(&pos_term));
+            result.push_str(&input_form_subtracted_term(&pos_term));
           } else {
             result.push_str(" + ");
             result.push_str(&expr_to_input_form(arg));
