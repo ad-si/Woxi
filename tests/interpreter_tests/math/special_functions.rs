@@ -1779,7 +1779,7 @@ mod legendre_p {
   fn associated_legendre() {
     assert_eq!(
       interpret("LegendreP[2, 1, x]").unwrap(),
-      "-3*Sqrt[1 - x^2]*x"
+      "-3*x*Sqrt[1 - x^2]"
     );
   }
 

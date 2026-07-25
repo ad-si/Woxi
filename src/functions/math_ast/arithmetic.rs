@@ -2507,6 +2507,82 @@ fn is_underflow_term(e: &Expr) -> bool {
   matches!(&base, Expr::FunctionCall { name, args } if name == "Underflow" && args.is_empty())
 }
 
+/// Drop a pure-imaginary literal factor (`I` or `Complex[0, n]`) from a `Times`
+/// term, leaving the rest of the product. Returns `None` when the term carries
+/// no such factor, or when nothing but the imaginary literal is left (a bare
+/// imaginary number, which the numeric ordering rules already handle).
+fn strip_imaginary_literal_coeff(e: &Expr) -> Option<Expr> {
+  fn is_imaginary_literal(f: &Expr) -> bool {
+    match f {
+      Expr::Identifier(s) | Expr::Constant(s) => s == "I",
+      Expr::FunctionCall { name, args }
+        if name == "Complex" && args.len() == 2 =>
+      {
+        matches!(&args[0], Expr::Integer(0))
+          || matches!(&args[0], Expr::Real(v) if *v == 0.0)
+      }
+      _ => false,
+    }
+  }
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  if name != "Times" {
+    return None;
+  }
+  let mut rest: Vec<Expr> = Vec::with_capacity(args.len());
+  let mut found = false;
+  for f in args.iter() {
+    if !found && is_imaginary_literal(f) {
+      found = true;
+    } else {
+      rest.push(f.clone());
+    }
+  }
+  if !found || rest.is_empty() {
+    return None;
+  }
+  Some(if rest.len() == 1 {
+    rest.into_iter().next().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: rest.into(),
+    }
+  })
+}
+
+/// Whether `e` is a sum, or a power of one (`1 + x`, `Sqrt[1 - x^(-2)]`).
+fn is_sum_based(e: &Expr) -> bool {
+  let is_plus = |x: &Expr| {
+    matches!(x, Expr::FunctionCall { name, .. } if name == "Plus")
+      || matches!(
+        x,
+        Expr::BinaryOp {
+          op: BinaryOperator::Plus | BinaryOperator::Minus,
+          ..
+        }
+      )
+  };
+  if is_plus(e) {
+    return true;
+  }
+  match e {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      ..
+    } => is_plus(left),
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      is_plus(&args[0])
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      is_plus(&args[0])
+    }
+    _ => false,
+  }
+}
+
 /// Compare two Plus terms using Wolfram-compatible canonical ordering.
 /// For polynomial-like terms, sorts by (variable, exponent) pairs in reverse-lex order:
 /// each term's pairs are sorted by variable name descending, then compared
@@ -2559,6 +2635,27 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       _ => false,
     }
   }
+  // A pure-imaginary literal (`I`, `2 I`, `Complex[0, n]`) is as much a
+  // coefficient as a real one, and Wolfram orders a Plus by the terms with
+  // their coefficients stripped: `x + 2 Pi I` prints as `(2*I)*Pi + x`, and
+  // `y + I x` as `I*x + y`. Compare the stripped terms first; the
+  // "imaginary product sorts last" rule below only decides the leftovers.
+  let stripped_a = strip_imaginary_literal_coeff(a);
+  let stripped_b = strip_imaginary_literal_coeff(b);
+  if stripped_a.is_some() || stripped_b.is_some() {
+    let sa = stripped_a.as_ref().unwrap_or(a);
+    let sb = stripped_b.as_ref().unwrap_or(b);
+    // Terms built on a sum (`Sqrt[1 - x^(-2)]`) are left to the rule below:
+    // Woxi's ordering of a reciprocal monomial against a power of a sum does
+    // not yet match Wolfram, and the stripped comparison would surface that.
+    if !is_sum_based(sa) && !is_sum_based(sb) {
+      let cmp = compare_plus_terms(sa, sb);
+      if cmp != std::cmp::Ordering::Equal {
+        return cmp;
+      }
+    }
+  }
+
   if term_priority(a) == term_priority(b) {
     match (has_complex_i_factor(a), has_complex_i_factor(b)) {
       (true, false) => return std::cmp::Ordering::Greater,
@@ -4872,6 +4969,41 @@ fn plus_call_args(e: &Expr) -> Option<&[Expr]> {
   }
 }
 
+/// The additive base of a positive power, for factors like `Sqrt[1 + x]` and
+/// `(1 + x)^2` whose ordering follows the sum they wrap. A negative exponent
+/// puts the factor in a denominator, where the existing reciprocal-power
+/// comparison already has Wolfram's ordering decoded, so those are excluded.
+fn power_additive_base(e: &Expr) -> Option<&Expr> {
+  let is_positive_exp = |x: &Expr| match x {
+    Expr::Integer(n) => *n > 0,
+    Expr::Real(r) => *r > 0.0,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      matches!(&args[0], Expr::Integer(n) if *n > 0)
+        && matches!(&args[1], Expr::Integer(d) if *d > 0)
+    }
+    _ => false,
+  };
+  let base = match e {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if is_positive_exp(right) => left.as_ref(),
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      &args[0]
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2 && is_positive_exp(&args[1]) =>
+    {
+      &args[0]
+    }
+    _ => return None,
+  };
+  plus_call_args(base).is_some().then_some(base)
+}
+
 /// Order a non-additive Times factor against an additive (Plus) factor
 /// the way Wolfram does: compare the factor's base with the base of the
 /// Plus's highest (last) term — the smaller base sorts first, so
@@ -5150,6 +5282,35 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
         }
       }
       return sa.cmp(&sb);
+    }
+    // A power of a sum (`Sqrt[1 + x]`, `(1 + x)^2`) deliberately shares the
+    // identifier sub-priority, so the additive top-term rule above never sees
+    // it. Apply that same rule here, against the sum inside the power:
+    // `x*Sqrt[1 + x]` and `x*(1 + x)^2`, but `Sqrt[1 - x]*x` and `(1 + x)^2*y`.
+    if sa == 0 && sb == 0 {
+      // A sum holding the negation of the other factor's base (`(x - y)^-1`
+      // against `y^-1`) has its own rule further down; leave it to that.
+      let applies = |factor: &Expr, base: &Expr| {
+        power_const_base(factor).is_none()
+          && matches!(
+            times_term_base_exp(factor).0,
+            Expr::Identifier(_) | Expr::Constant(_)
+          )
+          && !additive_contains_negated(base, &times_term_base_exp(factor).0)
+      };
+      match (power_additive_base(a), power_additive_base(b)) {
+        (None, Some(base)) if applies(a, base) => {
+          if let Some(pargs) = plus_call_args(base) {
+            return order_factor_vs_additive(a, pargs);
+          }
+        }
+        (Some(base), None) if applies(b, base) => {
+          if let Some(pargs) = plus_call_args(base) {
+            return order_factor_vs_additive(b, pargs).reverse();
+          }
+        }
+        _ => {}
+      }
     }
     // For FunctionCall with same head, compare arguments structurally
     if let (

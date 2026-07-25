@@ -5152,6 +5152,19 @@ mod qfactorial {
 mod plus_term_ordering {
   use super::*;
 
+  // A pure-imaginary literal is a coefficient like any other, so the terms
+  // order by what is left once it is stripped.
+  #[test]
+  fn imaginary_literal_is_a_coefficient() {
+    assert_eq!(interpret("x + 2 Pi I").unwrap(), "(2*I)*Pi + x");
+    assert_eq!(interpret("x + Pi I").unwrap(), "I*Pi + x");
+    assert_eq!(interpret("x + I E").unwrap(), "I*E + x");
+    assert_eq!(interpret("x + I y").unwrap(), "x + I*y");
+    assert_eq!(interpret("y + I x").unwrap(), "I*x + y");
+    assert_eq!(interpret("b + I a").unwrap(), "I*a + b");
+    assert_eq!(interpret("Sin[x] + I Cos[x]").unwrap(), "I*Cos[x] + Sin[x]");
+  }
+
   #[test]
   fn monomial_before_multi_var_sqrt() {
     // When Sqrt has more variables than the monomial, monomial comes first
@@ -8615,8 +8628,9 @@ mod imaginary_argument_trig {
     assert_eq!(interpret("Coth[x + Pi I]").unwrap(), "Coth[x]");
     // A non-imaginary Pi shift is not a period and stays put.
     assert_eq!(interpret("Cosh[x + Pi]").unwrap(), "Cosh[Pi + x]");
-    // Exp is NOT reduced by 2*Pi*I in wolframscript.
-    assert_eq!(interpret("Exp[x + 2 Pi I]").unwrap(), "E^(x + (2*I)*Pi)");
+    // Exp is NOT reduced by 2*Pi*I in wolframscript. The imaginary literal is
+    // a coefficient like any other, so the Pi term leads the exponent's sum.
+    assert_eq!(interpret("Exp[x + 2 Pi I]").unwrap(), "E^((2*I)*Pi + x)");
   }
 
   // Quarter turns of Pi*I swap Cosh<->Sinh (with a phase factor) and
@@ -8811,6 +8825,25 @@ mod negative_half_times_sum_display {
 /// function calls and powers, not just bare identifiers.
 mod times_factor_vs_sum_ordering {
   use super::*;
+
+  // A power of a sum orders against a monomial by the sum's top term, the
+  // same way a bare sum does: `x*Sqrt[1 + x]` but `Sqrt[1 - x]*x`.
+  #[test]
+  fn monomial_vs_power_of_sum() {
+    assert_eq!(interpret("x*Sqrt[1+x]").unwrap(), "x*Sqrt[1 + x]");
+    assert_eq!(interpret("x*Sqrt[1-x]").unwrap(), "Sqrt[1 - x]*x");
+    assert_eq!(interpret("x*(1+x)^2").unwrap(), "x*(1 + x)^2");
+    assert_eq!(interpret("x*(x-1)^2").unwrap(), "(-1 + x)^2*x");
+    assert_eq!(interpret("y*(1+x)^2").unwrap(), "(1 + x)^2*y");
+    assert_eq!(interpret("a*(1+x)^2").unwrap(), "a*(1 + x)^2");
+    assert_eq!(interpret("z*Sqrt[1+x]").unwrap(), "Sqrt[1 + x]*z");
+    assert_eq!(interpret("x*Sqrt[2+y]").unwrap(), "x*Sqrt[2 + y]");
+    assert_eq!(interpret("x*Sqrt[1+x^2]").unwrap(), "x*Sqrt[1 + x^2]");
+    assert_eq!(
+      interpret("2*Sqrt[1-x]*x*Sqrt[1+x]").unwrap(),
+      "2*Sqrt[1 - x]*x*Sqrt[1 + x]"
+    );
+  }
 
   // A factor sorts before `1 + factor` regardless of its head.
   #[test]
