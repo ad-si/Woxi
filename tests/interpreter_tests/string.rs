@@ -484,6 +484,128 @@ mod string_split_rule_delimiters {
       "{{a, /, b}, {c, /, d}}"
     );
   }
+
+  // `x_`, `x__` and `x_?test` name their match just like `x : patt` does, so
+  // the right-hand side sees the delimiter text rather than a bare symbol.
+  #[test]
+  fn implicitly_named_blank_binds_the_delimiter() {
+    assert_eq!(
+      interpret("StringSplit[\"a1b2c3\", x_?LetterQ :> x]").unwrap(),
+      "{a, 1, b, 2, c, 3}"
+    );
+    assert_eq!(
+      interpret("StringSplit[\"a1b2c\", x_?LetterQ :> ToUpperCase[x]]")
+        .unwrap(),
+      "{A, 1, B, 2, C}"
+    );
+    assert_eq!(
+      interpret("StringSplit[\"a1b2\", x_?DigitQ :> \"[\" <> x <> \"]\"]")
+        .unwrap(),
+      "{a, [1], b, [2]}"
+    );
+    assert_eq!(
+      interpret("StringSplit[\"a1b2\", x_ :> f[x]]").unwrap(),
+      "{f[a], , f[1], , f[b], , f[2]}"
+    );
+  }
+
+  #[test]
+  fn implicitly_named_blank_sequence_binds_the_whole_run() {
+    assert_eq!(
+      interpret("StringSplit[\"a1b22c\", x__?DigitQ :> {x}]").unwrap(),
+      "{a, {1}, b, {22}, c}"
+    );
+    assert_eq!(
+      interpret("StringSplit[\"ab12cd\", x__?DigitQ :> ToExpression[x]]")
+        .unwrap(),
+      "{ab, 12, cd}"
+    );
+  }
+
+  // A list may mix rules with bare delimiters; a bare delimiter inserts
+  // nothing between the pieces.
+  #[test]
+  fn list_of_rules() {
+    assert_eq!(
+      interpret("StringSplit[\"a-b_c\", {\"-\" -> \"+\", \"_\" -> \"=\"}]")
+        .unwrap(),
+      "{a, +, b, =, c}"
+    );
+    assert_eq!(
+      interpret("StringSplit[\"xaybz\", {\"a\" -> 1, \"b\" -> 2}]").unwrap(),
+      "{x, 1, y, 2, z}"
+    );
+    assert_eq!(
+      interpret("StringSplit[\"a1b2\", {x_?DigitQ :> x, \"a\" -> \"A\"}]")
+        .unwrap(),
+      "{A, , 1, b, 2}"
+    );
+    assert_eq!(
+      interpret(
+        "StringSplit[\"a1b2c3\", {DigitCharacter :> \"D\", \"b\" -> \"B\"}]"
+      )
+      .unwrap(),
+      "{a, D, , B, , D, c, D}"
+    );
+    assert_eq!(
+      interpret("StringSplit[\"a-b_c\", {\"-\", \"_\" -> \"=\"}]").unwrap(),
+      "{a, b, =, c}"
+    );
+    assert_eq!(
+      interpret("StringSplit[\"a1b\", {DigitCharacter, \"a\" -> \"A\"}]")
+        .unwrap(),
+      "{A, , b}"
+    );
+  }
+
+  // Where two delimiters match at the same place the earlier rule wins, even
+  // when a later one would match more text.
+  #[test]
+  fn earlier_rule_wins_over_a_longer_later_match() {
+    assert_eq!(
+      interpret("StringSplit[\"ab\", {\"a\" -> 1, \"ab\" -> 2}]").unwrap(),
+      "{1, b}"
+    );
+    assert_eq!(
+      interpret("StringSplit[\"ab\", {\"ab\" -> 2, \"a\" -> 1}]").unwrap(),
+      "{2}"
+    );
+  }
+
+  // With an explicit maximum number of pieces, empty text segments at the
+  // ends survive — just as they do for plain delimiters.
+  #[test]
+  fn max_parts_keeps_the_edge_empties() {
+    assert_eq!(
+      interpret("StringSplit[\",a,b\", \",\" -> \"|\"]").unwrap(),
+      "{|, a, |, b}"
+    );
+    assert_eq!(
+      interpret("StringSplit[\",a,b\", \",\" -> \"|\", 2]").unwrap(),
+      "{, |, a,b}"
+    );
+    assert_eq!(
+      interpret("StringSplit[\"a,b,\", \",\" -> \"|\"]").unwrap(),
+      "{a, |, b, |}"
+    );
+    assert_eq!(
+      interpret("StringSplit[\"a,b,\", \",\" -> \"|\", 5]").unwrap(),
+      "{a, |, b, |, }"
+    );
+    assert_eq!(
+      interpret("StringSplit[\",a,\", \",\" -> \"|\", 9]").unwrap(),
+      "{, |, a, |, }"
+    );
+    assert_eq!(
+      interpret("StringSplit[\"a1b2c3\", x_?LetterQ :> x, 2]").unwrap(),
+      "{, a, 1b2c3}"
+    );
+    // A maximum larger than the number of pieces changes nothing.
+    assert_eq!(
+      interpret("StringSplit[\"a1b\", {x_?DigitQ :> x}, 5]").unwrap(),
+      "{a, 1, b}"
+    );
+  }
 }
 
 mod string_split_single_arg {

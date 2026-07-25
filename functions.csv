@@ -518,7 +518,7 @@ Tally,Counts occurrences of each distinct element (on an association tallies the
 MatrixRank,Returns the rank of a matrix,✅,pure,5.0,523
 Rescale,Rescales values to a specified range,✅,pure,5.1,523
 MatrixQ,Tests if an expression is a matrix,✅,pure,1.0,524
-StringSplit,Splits a string into a list of substrings,✅,pure,5.1,525
+StringSplit,Splits a string on literal/pattern delimiters or on rules that keep the replaced delimiters between the pieces,✅,pure,5.1,525
 FromDigits,Constructs integer from list of digits,✅,pure,3.0,526
 MeshStyle,Option specifying the style of mesh lines,✅,none,2.0,527
 FactorInteger,Returns prime factorization as {prime exponent} pairs (two-arg form does partial factorization into at most k factors or Gaussian-integer factorization via GaussianIntegers->True),✅,pure,1.0,528
