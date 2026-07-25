@@ -2122,22 +2122,27 @@ pub fn depth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       return 1 + dims.len() as i128;
     }
+    // An expression with no parts is still one level deeper than an atom:
+    // Depth[f[]] is 2, not 1, so the empty maximum is the depth of an atom.
+    const NO_PARTS: i128 = 1;
     match expr {
-      Expr::List(items) => 1 + items.iter().map(calc_depth).max().unwrap_or(0),
+      Expr::List(items) => {
+        1 + items.iter().map(calc_depth).max().unwrap_or(NO_PARTS)
+      }
       Expr::FunctionCall { args, .. } => {
-        1 + args.iter().map(calc_depth).max().unwrap_or(0)
+        1 + args.iter().map(calc_depth).max().unwrap_or(NO_PARTS)
       }
       // Depth counts positive-index parts only; the head (part 0) is
       // ignored, so only the arguments contribute.
       Expr::CurriedCall { args, .. } => {
-        1 + args.iter().map(calc_depth).max().unwrap_or(0)
+        1 + args.iter().map(calc_depth).max().unwrap_or(NO_PARTS)
       }
       Expr::Association(items) => {
         1 + items
           .iter()
           .flat_map(|(k, v)| [calc_depth(k), calc_depth(v)])
           .max()
-          .unwrap_or(0)
+          .unwrap_or(NO_PARTS)
       }
       // Operator and special forms (Power/Sqrt `x^2`, Comparison `a == b`,
       // Rule `a -> b`, Not `!a`, Slot `#`, DirectedInfinity, …) are decomposed

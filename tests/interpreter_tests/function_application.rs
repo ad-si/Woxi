@@ -3053,3 +3053,109 @@ mod composite_heads {
     );
   }
 }
+
+// An expression with no parts is still one level deeper than an atom: the
+// empty maximum over its parts is the depth of an atom, not zero. Woxi
+// reported Depth[{}] as 1, the same as Depth[a].
+mod depth_of_empty_expressions {
+  use super::*;
+
+  //   wolframscript -code 'Depth[{}]'
+  #[test]
+  fn empty_containers_are_one_deeper_than_atoms() {
+    clear_state();
+    assert_eq!(interpret("Depth[a]").unwrap(), "1");
+    assert_eq!(interpret("Depth[{}]").unwrap(), "2");
+    assert_eq!(interpret("Depth[f[]]").unwrap(), "2");
+    assert_eq!(interpret("Depth[<||>]").unwrap(), "2");
+  }
+
+  //   wolframscript -code 'Depth[{{}}]'
+  #[test]
+  fn empty_containers_nest() {
+    clear_state();
+    assert_eq!(interpret("Depth[{{}}]").unwrap(), "3");
+    assert_eq!(interpret("Depth[{{}, {}}]").unwrap(), "3");
+    assert_eq!(interpret("Depth[{{{}}}]").unwrap(), "4");
+    assert_eq!(interpret("Depth[f[g[]]]").unwrap(), "3");
+    assert_eq!(interpret("Depth[Hold[f[]]]").unwrap(), "3");
+  }
+
+  // Non-empty expressions are unaffected.
+  #[test]
+  fn populated_expressions_unchanged() {
+    clear_state();
+    assert_eq!(interpret("Depth[{a}]").unwrap(), "2");
+    assert_eq!(interpret("Depth[{{a}}]").unwrap(), "3");
+    assert_eq!(interpret("Depth[f[a, g[b]]]").unwrap(), "3");
+    assert_eq!(interpret("Depth[<|1 -> a|>]").unwrap(), "2");
+  }
+}
+
+// A replacement-rules argument that is not a rule, a list of rules, or a
+// dispatch table is reported and the call left unevaluated. Replace never
+// reported it at all, and the function-call spellings of ReplaceAll and
+// ReplaceRepeated silently returned the expression unchanged.
+mod invalid_replacement_rules {
+  use super::*;
+
+  //   wolframscript -code 'Replace[f[a], a, {1}]'
+  #[test]
+  fn replace_reports_non_rules() {
+    clear_state();
+    let r = interpret_with_stdout("Replace[f[a], a, {1}]").unwrap();
+    assert_eq!(r.result, "Replace[f[a], a, {1}]");
+    assert!(r.warnings[0].contains(
+      "Replace::reps: {a} is neither a list of replacement rules nor a \
+       valid dispatch table and so cannot be used for replacing."
+    ));
+    clear_state();
+    let r = interpret_with_stdout("Replace[x, b]").unwrap();
+    assert_eq!(r.result, "Replace[x, b]");
+    assert!(r.warnings[0].contains("Replace::reps: {b} is neither"));
+  }
+
+  // The function-call spellings validate exactly like `/.` and `//.`.
+  //   wolframscript -code 'ReplaceAll[x, 5]'
+  #[test]
+  fn function_forms_validate_like_the_operators() {
+    clear_state();
+    let r = interpret_with_stdout("ReplaceAll[x, 5]").unwrap();
+    assert_eq!(r.result, "ReplaceAll[x, 5]");
+    assert!(r.warnings[0].contains("ReplaceAll::reps: {5} is neither"));
+    clear_state();
+    let r = interpret_with_stdout("ReplaceRepeated[x, 5]").unwrap();
+    assert_eq!(r.result, "ReplaceRepeated[x, 5]");
+    assert!(r.warnings[0].contains("ReplaceRepeated::reps: {5} is neither"));
+  }
+
+  // The offending argument is shown as a list of rules, so a bare rule is
+  // wrapped in braces while one that is already a list is shown as is.
+  //   wolframscript -code 'x /. {a -> b, c}'
+  #[test]
+  fn message_shows_the_rules_as_a_list() {
+    clear_state();
+    let r = interpret_with_stdout("x /. {a -> b, c}").unwrap();
+    assert_eq!(r.result, "x /. {a -> b, c}");
+    assert!(
+      r.warnings[0].contains("ReplaceAll::reps: {a -> b, c} is neither"),
+      "unexpected message: {}",
+      r.warnings[0]
+    );
+  }
+
+  // Well-formed rules are unaffected, including the empty list and the
+  // nested list-of-lists form.
+  #[test]
+  fn valid_rules_still_replace() {
+    clear_state();
+    assert_eq!(interpret("Replace[x, {}]").unwrap(), "x");
+    assert_eq!(interpret("x /. {}").unwrap(), "x");
+    assert_eq!(interpret("Replace[x, a -> b]").unwrap(), "x");
+    assert_eq!(interpret("Replace[a, a -> b]").unwrap(), "b");
+    assert_eq!(interpret("Replace[x, {{a -> b}}]").unwrap(), "{x}");
+    assert_eq!(interpret("x /. {{a -> b}}").unwrap(), "{x}");
+    assert_eq!(interpret("ReplaceAll[a, a -> b]").unwrap(), "b");
+    assert_eq!(interpret("ReplaceRepeated[a, a -> b]").unwrap(), "b");
+  }
+}

@@ -1519,6 +1519,13 @@ pub fn dispatch_complex_and_special(
       } else {
         &args[1]
       };
+      // Same rules-shape validation as the `/.` operator form.
+      if crate::evaluator::core_eval::reject_invalid_replace_rules(
+        "ReplaceAll",
+        rules,
+      ) {
+        return Some(Ok(unevaluated("ReplaceAll", args)));
+      }
       // Re-evaluate the result so e.g. {1 + 2} becomes {3} after substitution.
       // This matches the /. operator form, which re-evaluates via TailCall.
       return Some(
@@ -1536,6 +1543,12 @@ pub fn dispatch_complex_and_special(
       } else {
         &args[1]
       };
+      if crate::evaluator::core_eval::reject_invalid_replace_rules(
+        "ReplaceRepeated",
+        rules,
+      ) {
+        return Some(Ok(unevaluated("ReplaceRepeated", args)));
+      }
       // Optional third argument: MaxIterations -> n (default 65536).
       let max_iterations = if args.len() == 3 {
         extract_max_iterations(&args[2])?
@@ -1551,6 +1564,11 @@ pub fn dispatch_complex_and_special(
       );
     }
     "Replace" if args.len() == 2 => {
+      if crate::evaluator::core_eval::reject_invalid_replace_rules(
+        "Replace", &args[1],
+      ) {
+        return Some(Ok(unevaluated("Replace", args)));
+      }
       return Some(
         apply_replace_ast(&args[0], &args[1])
           .and_then(|r| evaluate_expr_to_expr(&r)),
@@ -1803,6 +1821,11 @@ pub fn dispatch_complex_and_special(
                  && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True"))
         })
         .unwrap_or(false);
+      if crate::evaluator::core_eval::reject_invalid_replace_rules(
+        "Replace", &args[1],
+      ) {
+        return Some(Ok(unevaluated("Replace", args)));
+      }
       return Some(
         apply_replace_with_level_ast(&args[0], &args[1], &args[2], heads_on)
           .and_then(|r| evaluate_expr_to_expr(&r)),

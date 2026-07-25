@@ -448,6 +448,27 @@ fn is_valid_replace_rules(expr: &Expr) -> bool {
   }
 }
 
+/// Emit the `reps` message for a replacement-rules argument that is neither a
+/// rule, a list of rules, nor a dispatch table, and report whether it did.
+///
+/// wolframscript shows the offending argument as a list of rules, so a bare
+/// rule is displayed wrapped in braces while one that is already a list is
+/// shown as is.
+pub(crate) fn reject_invalid_replace_rules(head: &str, rules: &Expr) -> bool {
+  if is_valid_replace_rules(rules) {
+    return false;
+  }
+  let shown = match rules {
+    Expr::List(_) => crate::syntax::expr_to_output(rules),
+    _ => format!("{{{}}}", crate::syntax::expr_to_output(rules)),
+  };
+  crate::emit_message(&format!(
+    "{head}::reps: {shown} is neither a list of replacement rules nor a \
+     valid dispatch table and so cannot be used for replacing."
+  ));
+  true
+}
+
 /// Evaluate an Expr AST and return a new Expr (not a string).
 /// This is the core function for AST-based evaluation without string round-trips.
 pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
@@ -3070,11 +3091,7 @@ pub fn evaluate_expr_to_expr_inner(
       // (or list of such, possibly nested for multi-solution forms).
       // Mirror that here so `eqs /. sol` with `sol` unbound surfaces the
       // same diagnostic instead of silently returning `eqs`.
-      if !is_valid_replace_rules(unwrapped) {
-        crate::emit_message(&format!(
-          "ReplaceAll::reps: {{{}}} is neither a list of replacement rules nor a valid dispatch table, and so cannot be used for replacing.",
-          crate::syntax::expr_to_output(unwrapped),
-        ));
+      if reject_invalid_replace_rules("ReplaceAll", unwrapped) {
         return Ok(Expr::ReplaceAll {
           expr: Box::new(evaluated_expr),
           rules: Box::new(evaluated_rules),
@@ -3101,11 +3118,7 @@ pub fn evaluate_expr_to_expr_inner(
       // ReplaceRepeated::reps message and return the call unevaluated
       // when the rules slot isn't a Rule / RuleDelayed (or list of
       // such, possibly nested for multi-solution forms).
-      if !is_valid_replace_rules(unwrapped) {
-        crate::emit_message(&format!(
-          "ReplaceRepeated::reps: {{{}}} is neither a list of replacement rules nor a valid dispatch table, and so cannot be used for replacing.",
-          crate::syntax::expr_to_output(unwrapped),
-        ));
+      if reject_invalid_replace_rules("ReplaceRepeated", unwrapped) {
         return Ok(Expr::ReplaceRepeated {
           expr: Box::new(evaluated_expr),
           rules: Box::new(evaluated_rules),
