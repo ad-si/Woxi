@@ -1849,6 +1849,90 @@ mod query {
       "Missing[KeyAbsent, x]"
     );
   }
+
+  // A list operator picks several parts at its level, keeping the container
+  // type: a sub-association for association data, a list for list data.
+  #[test]
+  fn list_spec_over_an_association_keeps_the_keys() {
+    assert_eq!(
+      interpret(
+        "Query[{\"a\", \"b\"}][<|\"a\" -> 1, \"b\" -> 2, \"c\" -> 3|>]"
+      )
+      .unwrap(),
+      "<|a -> 1, b -> 2|>"
+    );
+    // The requested order wins over the association's own order.
+    assert_eq!(
+      interpret(
+        "Query[{\"c\", \"a\"}][<|\"a\" -> 1, \"b\" -> 2, \"c\" -> 3|>]"
+      )
+      .unwrap(),
+      "<|c -> 3, a -> 1|>"
+    );
+    // Integers name positions rather than keys, negatives count from the end.
+    assert_eq!(
+      interpret("Query[{1, 3}][<|\"a\" -> 1, \"b\" -> 2, \"c\" -> 3|>]")
+        .unwrap(),
+      "<|a -> 1, c -> 3|>"
+    );
+    assert_eq!(
+      interpret("Query[{-1}][<|\"a\" -> 1, \"b\" -> 2|>]").unwrap(),
+      "<|b -> 2|>"
+    );
+    // A repeated key does not repeat the entry.
+    assert_eq!(
+      interpret("Query[{\"a\", \"a\"}][<|\"a\" -> 1|>]").unwrap(),
+      "<|a -> 1|>"
+    );
+    assert_eq!(interpret("Query[{}][<|\"a\" -> 1|>]").unwrap(), "<||>");
+  }
+
+  #[test]
+  fn list_spec_over_a_list_picks_positions() {
+    assert_eq!(interpret("Query[{2, 1}][{a, b, c}]").unwrap(), "{b, a}");
+    assert_eq!(interpret("Query[{-1}][{a, b, c}]").unwrap(), "{c}");
+    // Unlike keys, repeated positions do repeat.
+    assert_eq!(interpret("Query[{1, 1}][{a, b}]").unwrap(), "{a, a}");
+    assert_eq!(interpret("Query[{}][{a, b}]").unwrap(), "{}");
+  }
+
+  // Query is lenient where Part would report partw/pspec1.
+  #[test]
+  fn list_spec_leaves_missing_in_place() {
+    assert_eq!(
+      interpret("Query[{\"z\"}][<|\"a\" -> 1|>]").unwrap(),
+      "<|z -> Missing[KeyAbsent, z]|>"
+    );
+    assert_eq!(
+      interpret("Query[{5}][{a, b}]").unwrap(),
+      "{Missing[PartAbsent, 5]}"
+    );
+    assert_eq!(
+      interpret("Query[{\"a\"}][{1, 2, 3}]").unwrap(),
+      "{Missing[PartInvalid, a]}"
+    );
+    // An out-of-range position on an association fails the whole query
+    // instead, reporting the spec as a whole.
+    assert_eq!(
+      interpret("Query[{5}][<|\"a\" -> 1|>]").unwrap(),
+      "Missing[PartAbsent, {5}]"
+    );
+  }
+
+  #[test]
+  fn list_spec_queries_on_into_the_selected_parts() {
+    assert_eq!(
+      interpret(
+        "Query[{1, 2}, \"a\"][{<|\"a\" -> 1|>, <|\"a\" -> 2|>, <|\"a\" -> 3|>}]"
+      )
+      .unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(
+      interpret("Query[{\"a\"}, \"x\"][<|\"a\" -> <|\"x\" -> 9|>|>]").unwrap(),
+      "<|a -> 9|>"
+    );
+  }
 }
 
 mod part_on_associations {
