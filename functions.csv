@@ -1077,7 +1077,7 @@ TextData,,🚫,,8.0,1086
 Classify,,🚫,,10.0,1087
 Whitespace,Represents whitespace characters in string patterns,✅,1,5.1,1088
 PatternSequence,Represents a sequence of patterns in pattern matching,✅,1,6.0,1089
-PiecewiseExpand,Expands functions to explicit Piecewise form,✅,1,5.1,1090
+PiecewiseExpand,Expands functions and nested cases to a single Piecewise,✅,pure,5.1,1090
 ImageAdd,Adds pixel values of two images pointwise,✅,pure,7.0,1091
 OwnValues,Returns the own values of a symbol,✅,pure,2.0,1092
 EstimatedDistribution,,🚫,,8.0,1093

@@ -1254,6 +1254,66 @@ mod piecewise_expand {
     );
   }
 
+  // A Piecewise nested inside another collapses into a single one, with the
+  // merged conditions reduced. Values verified against wolframscript.
+  #[test]
+  fn nested_piecewise_flattens() {
+    assert_eq!(
+      interpret(
+        "PiecewiseExpand[Piecewise[{{Piecewise[{{1, x < 1}}, 2], x > 0}}, 3]]"
+      )
+      .unwrap(),
+      "Piecewise[{{1, Inequality[0, Less, x, Less, 1]}, {2, x >= 1}}, 3]"
+    );
+  }
+
+  // Abs and Sign only split once an assumption puts them over the reals.
+  #[test]
+  fn abs_and_sign_need_a_real_domain() {
+    assert_eq!(interpret("PiecewiseExpand[Abs[x]]").unwrap(), "Abs[x]");
+    assert_eq!(
+      interpret("PiecewiseExpand[Abs[x], Reals]").unwrap(),
+      "Piecewise[{{-x, x < 0}}, x]"
+    );
+    assert_eq!(
+      interpret("PiecewiseExpand[Abs[x], True, Reals]").unwrap(),
+      "Piecewise[{{-x, x < 0}}, x]"
+    );
+    assert_eq!(
+      interpret("PiecewiseExpand[Abs[x], Element[x, Reals]]").unwrap(),
+      "Piecewise[{{-x, x < 0}}, x]"
+    );
+    assert_eq!(
+      interpret("PiecewiseExpand[Sign[x], Reals]").unwrap(),
+      "Piecewise[{{-1, x < 0}, {1, x > 0}}, 0]"
+    );
+    // Over the complexes neither splits.
+    assert_eq!(
+      interpret("PiecewiseExpand[Abs[x], Complexes]").unwrap(),
+      "Abs[x]"
+    );
+  }
+
+  // An assumption that decides the branch collapses the result.
+  #[test]
+  fn an_assumption_refines_the_result() {
+    assert_eq!(interpret("PiecewiseExpand[Abs[x], x > 0]").unwrap(), "x");
+    assert_eq!(interpret("PiecewiseExpand[Sign[x], x < 0]").unwrap(), "-1");
+  }
+
+  // The one-argument expansions are unchanged by a domain argument.
+  #[test]
+  fn a_domain_does_not_disturb_the_other_expansions() {
+    assert_eq!(
+      interpret("PiecewiseExpand[Clip[x], Reals]").unwrap(),
+      "Piecewise[{{-1, x < -1}, {1, x > 1}}, x]"
+    );
+    assert_eq!(
+      interpret("PiecewiseExpand[Max[x, y], Reals]").unwrap(),
+      "Piecewise[{{x, x - y >= 0}}, y]"
+    );
+  }
+
   #[test]
   fn ramp() {
     // Ramp[x] = x for x >= 0, else 0.

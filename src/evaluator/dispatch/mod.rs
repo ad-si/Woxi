@@ -9032,13 +9032,95 @@ fn evaluate_function_call_ast_inner(
   }
 
   // PiecewiseExpand — expand certain functions into Piecewise form
-  if name == "PiecewiseExpand" && args.len() == 1 {
+  if name == "PiecewiseExpand" && (1..=3).contains(&args.len()) {
+    // The optional second/third arguments are assumptions and a domain. Any
+    // of them (other than Complexes) puts the expansion over the reals, which
+    // is what unlocks Abs and Sign; the assumption then refines the result.
+    let over_reals = args.len() > 1
+      && !args[1..]
+        .iter()
+        .any(|a| matches!(a, Expr::Identifier(d) if d == "Complexes"));
+    let refined = |expanded: Expr| -> Result<Expr, InterpreterError> {
+      match args.get(1) {
+        Some(assumption)
+          if !matches!(assumption, Expr::Identifier(d)
+            if d == "Reals" || d == "Complexes" || d == "True") =>
+        {
+          evaluate_expr_to_expr(&Expr::FunctionCall {
+            name: "Refine".to_string(),
+            args: vec![expanded, assumption.clone()].into(),
+          })
+        }
+        _ => Ok(expanded),
+      }
+    };
+
+    // A Piecewise nested inside another collapses into a single one.
+    if let Some(flat) = flatten_nested_piecewise(&args[0])? {
+      return refined(flat);
+    }
+
     if let Expr::FunctionCall {
       name: fname,
       args: fargs,
     } = &args[0]
     {
       match fname.as_str() {
+        // Abs and Sign only split over the reals.
+        "Abs" if over_reals && fargs.len() == 1 => {
+          let x = fargs[0].clone();
+          let negative = Expr::Comparison {
+            operands: vec![x.clone(), Expr::Integer(0)],
+            operators: vec![ComparisonOp::Less],
+          };
+          let pw = Expr::FunctionCall {
+            name: "Piecewise".to_string(),
+            args: vec![
+              Expr::List(
+                vec![Expr::List(
+                  vec![
+                    Expr::UnaryOp {
+                      op: crate::syntax::UnaryOperator::Minus,
+                      operand: Box::new(x.clone()),
+                    },
+                    negative,
+                  ]
+                  .into(),
+                )]
+                .into(),
+              ),
+              x,
+            ]
+            .into(),
+          };
+          return refined(evaluate_expr_to_expr(&pw)?);
+        }
+        "Sign" if over_reals && fargs.len() == 1 => {
+          let x = fargs[0].clone();
+          let cmp = |op: ComparisonOp| Expr::Comparison {
+            operands: vec![x.clone(), Expr::Integer(0)],
+            operators: vec![op],
+          };
+          let pw = Expr::FunctionCall {
+            name: "Piecewise".to_string(),
+            args: vec![
+              Expr::List(
+                vec![
+                  Expr::List(
+                    vec![Expr::Integer(-1), cmp(ComparisonOp::Less)].into(),
+                  ),
+                  Expr::List(
+                    vec![Expr::Integer(1), cmp(ComparisonOp::Greater)].into(),
+                  ),
+                ]
+                .into(),
+              ),
+              Expr::Integer(0),
+            ]
+            .into(),
+          };
+          return refined(evaluate_expr_to_expr(&pw)?);
+        }
         "Min" if fargs.len() >= 2 => {
           let n = fargs.len();
           let mut cases = Vec::new();
@@ -9221,7 +9303,7 @@ fn evaluate_function_call_ast_inner(
     }
     // For functions that can't be expanded into Piecewise form,
     // return the argument unchanged (not wrapped in PiecewiseExpand).
-    return Ok(args[0].clone());
+    return refined(args[0].clone());
   }
 
   // AdjacencyGraph[matrix] or AdjacencyGraph[vertices, matrix] — create graph from adjacency matrix
@@ -12973,4 +13055,143 @@ fn substitute_grid(
     }
   }
   Some(out)
+}
+
+/// Collapse a `Piecewise` whose clause values are themselves `Piecewise` into
+/// a single one: an inner clause survives under the conjunction of the two
+/// conditions, and the inner default under the outer condition with every
+/// inner condition negated. Conditions are put through `Reduce` so the merged
+/// ranges come out as Wolfram writes them (`0 < x < 1` rather than
+/// `x > 0 && x < 1`). Returns `None` when nothing is nested.
+fn flatten_nested_piecewise(
+  expr: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  let as_piecewise = |e: &Expr| -> Option<(Vec<(Expr, Expr)>, Expr)> {
+    let Expr::FunctionCall { name, args } = e else {
+      return None;
+    };
+    if name != "Piecewise" || args.is_empty() || args.len() > 2 {
+      return None;
+    }
+    let Expr::List(clauses) = &args[0] else {
+      return None;
+    };
+    let mut out = Vec::with_capacity(clauses.len());
+    for clause in clauses.iter() {
+      let Expr::List(pair) = clause else {
+        return None;
+      };
+      if pair.len() != 2 {
+        return None;
+      }
+      out.push((pair[0].clone(), pair[1].clone()));
+    }
+    Some((out, args.get(1).cloned().unwrap_or(Expr::Integer(0))))
+  };
+
+  let Some((clauses, default)) = as_piecewise(expr) else {
+    return Ok(None);
+  };
+  if !clauses.iter().any(|(v, _)| as_piecewise(v).is_some()) {
+    return Ok(None);
+  }
+
+  let and = |parts: Vec<Expr>| -> Expr {
+    if parts.len() == 1 {
+      parts.into_iter().next().unwrap()
+    } else {
+      Expr::FunctionCall {
+        name: "And".to_string(),
+        args: parts.into(),
+      }
+    }
+  };
+  let not = |c: &Expr| Expr::FunctionCall {
+    name: "Not".to_string(),
+    args: vec![c.clone()].into(),
+  };
+
+  let mut merged: Vec<(Expr, Expr)> = Vec::new();
+  for (value, cond) in clauses {
+    match as_piecewise(&value) {
+      Some((inner, inner_default)) => {
+        let mut negated = vec![cond.clone()];
+        for (iv, ic) in &inner {
+          merged.push((iv.clone(), and(vec![cond.clone(), ic.clone()])));
+          negated.push(not(ic));
+        }
+        merged.push((inner_default, and(negated)));
+      }
+      None => merged.push((value, cond)),
+    }
+  }
+
+  // Reduce each condition over its own free variables, dropping the clauses
+  // that turn out to be unreachable.
+  let mut simplified: Vec<Expr> = Vec::new();
+  for (value, cond) in merged {
+    let mut vars = Vec::new();
+    collect_condition_symbols(&cond, &mut vars);
+    let reduced = if vars.is_empty() {
+      cond.clone()
+    } else {
+      evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Reduce".to_string(),
+        args: vec![cond.clone(), Expr::List(vars.into())].into(),
+      })
+      .unwrap_or_else(|_| cond.clone())
+    };
+    if matches!(&reduced, Expr::Identifier(b) if b == "False") {
+      continue;
+    }
+    simplified.push(Expr::List(vec![value, reduced].into()));
+  }
+
+  Ok(Some(evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Piecewise".to_string(),
+    args: vec![Expr::List(simplified.into()), default].into(),
+  })?))
+}
+
+/// Free symbols of a Piecewise condition, in first-appearance order, so it can
+/// be handed to `Reduce`. Built-in constants and the booleans are skipped.
+fn collect_condition_symbols(expr: &Expr, out: &mut Vec<Expr>) {
+  if let Expr::Identifier(name) = expr {
+    if matches!(
+      name.as_str(),
+      "True" | "False" | "Pi" | "E" | "I" | "Infinity" | "Indeterminate"
+    ) {
+      return;
+    }
+    if !out
+      .iter()
+      .any(|v| matches!(v, Expr::Identifier(n) if n == name))
+    {
+      out.push(expr.clone());
+    }
+    return;
+  }
+  match expr {
+    Expr::Comparison { operands, .. } => {
+      for o in operands {
+        collect_condition_symbols(o, out);
+      }
+    }
+    Expr::FunctionCall { args, .. } => {
+      for a in args.iter() {
+        collect_condition_symbols(a, out);
+      }
+    }
+    Expr::List(items) => {
+      for i in items.iter() {
+        collect_condition_symbols(i, out);
+      }
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      collect_condition_symbols(left, out);
+      collect_condition_symbols(right, out);
+    }
+    Expr::UnaryOp { operand, .. } => collect_condition_symbols(operand, out),
+    _ => {}
+  }
 }

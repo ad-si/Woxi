@@ -62,6 +62,7 @@ icon: lucide/square-function
 - [`NumericArray`](functions/NumericArray.md)
 - [`ParetoDistribution`](functions/ParetoDistribution.md)
 - [`Piecewise`](functions/Piecewise.md)
+- [`PiecewiseExpand`](functions/PiecewiseExpand.md)
 - [`PoissonDistribution`](functions/PoissonDistribution.md)
 - [`PreDecrement`](functions/PreDecrement.md)
 - [`PreIncrement`](functions/PreIncrement.md)
