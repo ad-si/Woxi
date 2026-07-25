@@ -1,5 +1,5 @@
 use crate::InterpreterError;
-use crate::functions::math_ast::{gcd_i128, is_sqrt, make_sqrt};
+use crate::functions::math_ast::{is_sqrt, make_sqrt, rat_reduce};
 use crate::syntax::{BinaryOperator, Expr, bool_expr, unevaluated};
 use std::collections::BTreeMap;
 
@@ -28,9 +28,8 @@ enum Dimension {
 struct UnitInfo {
   /// Dimension exponent map, e.g. Joules = {Mass: 1, Length: 2, Time: -2}
   dimensions: BTreeMap<Dimension, i64>,
-  /// to_si_numer / to_si_denom = number of SI base units per 1 of this unit
-  to_si_numer: i128,
-  to_si_denom: i128,
+  /// to_si = number of SI base units per 1 of this unit as rational
+  to_si: (i128, i128),
 }
 
 fn dims(pairs: &[(Dimension, i64)]) -> BTreeMap<Dimension, i64> {
@@ -43,178 +42,145 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
     // ── Length → Meters ───────────────────────────────────────────────
     "Meters" => UnitInfo {
       dimensions: dims(&[(Length, 1)]),
-      to_si_numer: 1,
-      to_si_denom: 1,
+      to_si: (1, 1),
     },
     "Kilometers" => UnitInfo {
       dimensions: dims(&[(Length, 1)]),
-      to_si_numer: 1000,
-      to_si_denom: 1,
+      to_si: (1000, 1),
     },
     "Centimeters" => UnitInfo {
       dimensions: dims(&[(Length, 1)]),
-      to_si_numer: 1,
-      to_si_denom: 100,
+      to_si: (1, 100),
     },
     "Millimeters" => UnitInfo {
       dimensions: dims(&[(Length, 1)]),
-      to_si_numer: 1,
-      to_si_denom: 1000,
+      to_si: (1, 1000),
     },
     "Feet" => UnitInfo {
       dimensions: dims(&[(Length, 1)]),
-      to_si_numer: 381,
-      to_si_denom: 1250,
+      to_si: (381, 1250),
     },
     "Inches" => UnitInfo {
       dimensions: dims(&[(Length, 1)]),
-      to_si_numer: 127,
-      to_si_denom: 5000,
+      to_si: (127, 5000),
     },
     "Miles" => UnitInfo {
       dimensions: dims(&[(Length, 1)]),
-      to_si_numer: 201168,
-      to_si_denom: 125,
+      to_si: (201168, 125),
     },
     "Yards" => UnitInfo {
       dimensions: dims(&[(Length, 1)]),
-      to_si_numer: 1143,
-      to_si_denom: 1250,
+      to_si: (1143, 1250),
     },
     "Micrometers" => UnitInfo {
       dimensions: dims(&[(Length, 1)]),
-      to_si_numer: 1,
-      to_si_denom: 1000000,
+      to_si: (1, 1000000),
     },
     "Nanometers" => UnitInfo {
       dimensions: dims(&[(Length, 1)]),
-      to_si_numer: 1,
-      to_si_denom: 1000000000,
+      to_si: (1, 1000000000),
     },
     "NauticalMiles" => UnitInfo {
       dimensions: dims(&[(Length, 1)]),
-      to_si_numer: 1852,
-      to_si_denom: 1,
+      to_si: (1852, 1),
     },
     // 1 ly = c (m/s) × Julian year (s) = 299792458 × 31557600 m (exact).
     "LightYears" => UnitInfo {
       dimensions: dims(&[(Length, 1)]),
-      to_si_numer: 9460730472580800,
-      to_si_denom: 1,
+      to_si: (9460730472580800, 1),
     },
     // IAU 2012 definition.
     "AstronomicalUnit" => UnitInfo {
       dimensions: dims(&[(Length, 1)]),
-      to_si_numer: 149597870700,
-      to_si_denom: 1,
+      to_si: (149597870700, 1),
     },
     "Angstroms" => UnitInfo {
       dimensions: dims(&[(Length, 1)]),
-      to_si_numer: 1,
-      to_si_denom: 10000000000,
+      to_si: (1, 10000000000),
     },
     // 1 furlong = 1/8 mile = 201168/1000 m = 25146/125 m.
     "Furlongs" => UnitInfo {
       dimensions: dims(&[(Length, 1)]),
-      to_si_numer: 25146,
-      to_si_denom: 125,
+      to_si: (25146, 125),
     },
 
     // ── Mass → Kilograms ─────────────────────────────────────────────
     "Kilograms" => UnitInfo {
       dimensions: dims(&[(Mass, 1)]),
-      to_si_numer: 1,
-      to_si_denom: 1,
+      to_si: (1, 1),
     },
     "Grams" => UnitInfo {
       dimensions: dims(&[(Mass, 1)]),
-      to_si_numer: 1,
-      to_si_denom: 1000,
+      to_si: (1, 1000),
     },
     "Milligrams" => UnitInfo {
       dimensions: dims(&[(Mass, 1)]),
-      to_si_numer: 1,
-      to_si_denom: 1000000,
+      to_si: (1, 1000000),
     },
     "Pounds" => UnitInfo {
       dimensions: dims(&[(Mass, 1)]),
-      to_si_numer: 45359237,
-      to_si_denom: 100000000,
+      to_si: (45359237, 100000000),
     },
     "Tonnes" | "MetricTons" => UnitInfo {
       dimensions: dims(&[(Mass, 1)]),
-      to_si_numer: 1000,
-      to_si_denom: 1,
+      to_si: (1000, 1),
     },
     "MetricKilotons" => UnitInfo {
       dimensions: dims(&[(Mass, 1)]),
-      to_si_numer: 1000000,
-      to_si_denom: 1,
+      to_si: (1000000, 1),
     },
     "Ounces" => UnitInfo {
       dimensions: dims(&[(Mass, 1)]),
-      to_si_numer: 45359237,
-      to_si_denom: 1600000000,
+      to_si: (45359237, 1600000000),
     },
 
     // ── Time → Seconds ───────────────────────────────────────────────
     "Seconds" => UnitInfo {
       dimensions: dims(&[(Time, 1)]),
-      to_si_numer: 1,
-      to_si_denom: 1,
+      to_si: (1, 1),
     },
     "Minutes" => UnitInfo {
       dimensions: dims(&[(Time, 1)]),
-      to_si_numer: 60,
-      to_si_denom: 1,
+      to_si: (60, 1),
     },
     "Hours" => UnitInfo {
       dimensions: dims(&[(Time, 1)]),
-      to_si_numer: 3600,
-      to_si_denom: 1,
+      to_si: (3600, 1),
     },
     "Days" => UnitInfo {
       dimensions: dims(&[(Time, 1)]),
-      to_si_numer: 86400,
-      to_si_denom: 1,
+      to_si: (86400, 1),
     },
     "Weeks" => UnitInfo {
       dimensions: dims(&[(Time, 1)]),
-      to_si_numer: 604800,
-      to_si_denom: 1,
+      to_si: (604800, 1),
     },
     "Milliseconds" => UnitInfo {
       dimensions: dims(&[(Time, 1)]),
-      to_si_numer: 1,
-      to_si_denom: 1000,
+      to_si: (1, 1000),
     },
     "Microseconds" => UnitInfo {
       dimensions: dims(&[(Time, 1)]),
-      to_si_numer: 1,
-      to_si_denom: 1000000,
+      to_si: (1, 1000000),
     },
     "Nanoseconds" => UnitInfo {
       dimensions: dims(&[(Time, 1)]),
-      to_si_numer: 1,
-      to_si_denom: 1000000000,
+      to_si: (1, 1000000000),
     },
 
     // ── Volume = Length^3, SI base Meters^3 ───────────────────────────
     // 1 L = 1/1000 m^3; factors are relative to Meters^3.
     "Liters" => UnitInfo {
       dimensions: dims(&[(Length, 3)]),
-      to_si_numer: 1,
-      to_si_denom: 1000,
+      to_si: (1, 1000),
     },
     "Milliliters" => UnitInfo {
       dimensions: dims(&[(Length, 3)]),
-      to_si_numer: 1,
-      to_si_denom: 1000000,
+      to_si: (1, 1000000),
     },
     "Gallons" => UnitInfo {
       dimensions: dims(&[(Length, 3)]),
-      to_si_numer: 473176473,
-      to_si_denom: 125000000000,
+      to_si: (473176473, 125000000000),
     },
 
     // ── Area = Length^2, SI base Meters^2 ─────────────────────────────
@@ -225,136 +191,112 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
     // "SquareFeet" are not standalone WL units — they stay unevaluated.
     "Hectares" => UnitInfo {
       dimensions: dims(&[(Length, 2)]),
-      to_si_numer: 10000,
-      to_si_denom: 1,
+      to_si: (10000, 1),
     },
     "Acres" => UnitInfo {
       dimensions: dims(&[(Length, 2)]),
-      to_si_numer: 316160658,
-      to_si_denom: 78125,
+      to_si: (316160658, 78125),
     },
 
     // ── Electric Current → Amperes ───────────────────────────────────
     "Amperes" => UnitInfo {
       dimensions: dims(&[(ElectricCurrent, 1)]),
-      to_si_numer: 1,
-      to_si_denom: 1,
+      to_si: (1, 1),
     },
     "Milliamperes" => UnitInfo {
       dimensions: dims(&[(ElectricCurrent, 1)]),
-      to_si_numer: 1,
-      to_si_denom: 1000,
+      to_si: (1, 1000),
     },
 
     // ── Amount of substance → Moles ──────────────────────────────────
     "Moles" => UnitInfo {
       dimensions: dims(&[(AmountOfSubstance, 1)]),
-      to_si_numer: 1,
-      to_si_denom: 1,
+      to_si: (1, 1),
     },
     "Millimoles" => UnitInfo {
       dimensions: dims(&[(AmountOfSubstance, 1)]),
-      to_si_numer: 1,
-      to_si_denom: 1000,
+      to_si: (1, 1000),
     },
 
     // ── Force: Newtons = kg⋅m/s² ─────────────────────────────────────
     "Newtons" => UnitInfo {
       dimensions: dims(&[(Mass, 1), (Length, 1), (Time, -2)]),
-      to_si_numer: 1,
-      to_si_denom: 1,
+      to_si: (1, 1),
     },
     // 1 dyne = 1e-5 N
     "Dynes" => UnitInfo {
       dimensions: dims(&[(Mass, 1), (Length, 1), (Time, -2)]),
-      to_si_numer: 1,
-      to_si_denom: 100000,
+      to_si: (1, 100000),
     },
 
     // ── Pressure: Pascals = kg/(m⋅s²) ────────────────────────────────
     "Pascals" => UnitInfo {
       dimensions: dims(&[(Mass, 1), (Length, -1), (Time, -2)]),
-      to_si_numer: 1,
-      to_si_denom: 1,
+      to_si: (1, 1),
     },
     "Bars" => UnitInfo {
       dimensions: dims(&[(Mass, 1), (Length, -1), (Time, -2)]),
-      to_si_numer: 100000,
-      to_si_denom: 1,
+      to_si: (100000, 1),
     },
     "Atmospheres" => UnitInfo {
       dimensions: dims(&[(Mass, 1), (Length, -1), (Time, -2)]),
-      to_si_numer: 101325,
-      to_si_denom: 1,
+      to_si: (101325, 1),
     },
     "Kilopascals" => UnitInfo {
       dimensions: dims(&[(Mass, 1), (Length, -1), (Time, -2)]),
-      to_si_numer: 1000,
-      to_si_denom: 1,
+      to_si: (1000, 1),
     },
     "Megapascals" => UnitInfo {
       dimensions: dims(&[(Mass, 1), (Length, -1), (Time, -2)]),
-      to_si_numer: 1_000_000,
-      to_si_denom: 1,
+      to_si: (1_000_000, 1),
     },
     "Gigapascals" => UnitInfo {
       dimensions: dims(&[(Mass, 1), (Length, -1), (Time, -2)]),
-      to_si_numer: 1_000_000_000,
-      to_si_denom: 1,
+      to_si: (1_000_000_000, 1),
     },
 
     // ── Energy: Joules = kg⋅m²/s² ────────────────────────────────────
     "Joules" => UnitInfo {
       dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -2)]),
-      to_si_numer: 1,
-      to_si_denom: 1,
+      to_si: (1, 1),
     },
     "Millijoules" => UnitInfo {
       dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -2)]),
-      to_si_numer: 1,
-      to_si_denom: 1000,
+      to_si: (1, 1000),
     },
     "Kilojoules" => UnitInfo {
       dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -2)]),
-      to_si_numer: 1000,
-      to_si_denom: 1,
+      to_si: (1000, 1),
     },
     "Calories" | "DietaryCalories" => UnitInfo {
       dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -2)]),
-      to_si_numer: 4184,
-      to_si_denom: 1,
+      to_si: (4184, 1),
     },
     "ThermochemicalCalories" => UnitInfo {
       dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -2)]),
-      to_si_numer: 4184,
-      to_si_denom: 1000,
+      to_si: (4184, 1000),
     },
     "Kilocalories" | "ThermochemicalKilocalories" => UnitInfo {
       dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -2)]),
-      to_si_numer: 4184,
-      to_si_denom: 1,
+      to_si: (4184, 1),
     },
     "ElectronVolts" | "Electronvolts" => UnitInfo {
       dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -2)]),
-      to_si_numer: 1602176634,
-      to_si_denom: 10000000000000000000000000000,
+      to_si: (1602176634, 10000000000000000000000000000),
     },
 
     // ── Power: Watts = kg⋅m²/s³ ──────────────────────────────────────
     "Watts" => UnitInfo {
       dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -3)]),
-      to_si_numer: 1,
-      to_si_denom: 1,
+      to_si: (1, 1),
     },
     "Milliwatts" => UnitInfo {
       dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -3)]),
-      to_si_numer: 1,
-      to_si_denom: 1000,
+      to_si: (1, 1000),
     },
     "Kilowatts" => UnitInfo {
       dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -3)]),
-      to_si_numer: 1000,
-      to_si_denom: 1,
+      to_si: (1000, 1),
     },
 
     // ── Voltage: Volts = kg⋅m²/(A⋅s³) ────────────────────────────────
@@ -365,8 +307,7 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
         (Time, -3),
         (ElectricCurrent, -1),
       ]),
-      to_si_numer: 1,
-      to_si_denom: 1,
+      to_si: (1, 1),
     },
     "Millivolts" => UnitInfo {
       dimensions: dims(&[
@@ -375,8 +316,7 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
         (Time, -3),
         (ElectricCurrent, -1),
       ]),
-      to_si_numer: 1,
-      to_si_denom: 1000,
+      to_si: (1, 1000),
     },
     "Kilovolts" => UnitInfo {
       dimensions: dims(&[
@@ -385,15 +325,13 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
         (Time, -3),
         (ElectricCurrent, -1),
       ]),
-      to_si_numer: 1000,
-      to_si_denom: 1,
+      to_si: (1000, 1),
     },
 
     // ── Charge: Coulombs = A⋅s ────────────────────────────────────────
     "Coulombs" => UnitInfo {
       dimensions: dims(&[(ElectricCurrent, 1), (Time, 1)]),
-      to_si_numer: 1,
-      to_si_denom: 1,
+      to_si: (1, 1),
     },
 
     // ── Capacitance: Farads = A²⋅s⁴/(kg⋅m²) ─────────────────────────
@@ -404,8 +342,7 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
         (Time, 4),
         (ElectricCurrent, 2),
       ]),
-      to_si_numer: 1,
-      to_si_denom: 1,
+      to_si: (1, 1),
     },
     "Millifarads" => UnitInfo {
       dimensions: dims(&[
@@ -414,8 +351,7 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
         (Time, 4),
         (ElectricCurrent, 2),
       ]),
-      to_si_numer: 1,
-      to_si_denom: 1000,
+      to_si: (1, 1000),
     },
     "Microfarads" => UnitInfo {
       dimensions: dims(&[
@@ -424,8 +360,7 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
         (Time, 4),
         (ElectricCurrent, 2),
       ]),
-      to_si_numer: 1,
-      to_si_denom: 1000000,
+      to_si: (1, 1000000),
     },
     "Nanofarads" => UnitInfo {
       dimensions: dims(&[
@@ -434,8 +369,7 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
         (Time, 4),
         (ElectricCurrent, 2),
       ]),
-      to_si_numer: 1,
-      to_si_denom: 1000000000,
+      to_si: (1, 1000000000),
     },
     "Picofarads" => UnitInfo {
       dimensions: dims(&[
@@ -444,8 +378,7 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
         (Time, 4),
         (ElectricCurrent, 2),
       ]),
-      to_si_numer: 1,
-      to_si_denom: 1000000000000,
+      to_si: (1, 1000000000000),
     },
 
     // ── Resistance: Ohms = kg⋅m²/(A²⋅s³) ─────────────────────────────
@@ -456,8 +389,7 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
         (Time, -3),
         (ElectricCurrent, -2),
       ]),
-      to_si_numer: 1,
-      to_si_denom: 1,
+      to_si: (1, 1),
     },
     "Kilohms" => UnitInfo {
       dimensions: dims(&[
@@ -466,8 +398,7 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
         (Time, -3),
         (ElectricCurrent, -2),
       ]),
-      to_si_numer: 1000,
-      to_si_denom: 1,
+      to_si: (1000, 1),
     },
     "Megohms" => UnitInfo {
       dimensions: dims(&[
@@ -476,8 +407,7 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
         (Time, -3),
         (ElectricCurrent, -2),
       ]),
-      to_si_numer: 1000000,
-      to_si_denom: 1,
+      to_si: (1000000, 1),
     },
 
     // ── Inductance: Henries = kg⋅m²/(A²⋅s²) ──────────────────────────
@@ -488,8 +418,7 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
         (Time, -2),
         (ElectricCurrent, -2),
       ]),
-      to_si_numer: 1,
-      to_si_denom: 1,
+      to_si: (1, 1),
     },
     "Millihenries" => UnitInfo {
       dimensions: dims(&[
@@ -498,8 +427,7 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
         (Time, -2),
         (ElectricCurrent, -2),
       ]),
-      to_si_numer: 1,
-      to_si_denom: 1000,
+      to_si: (1, 1000),
     },
 
     // ── Energy (time-based): WattHours = kg⋅m²/(s) ⋅ 3600 ────────────
@@ -508,122 +436,102 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
     // The verify script skips Quantity tests due to this variability.
     "WattHours" => UnitInfo {
       dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -2)]),
-      to_si_numer: 3600,
-      to_si_denom: 1,
+      to_si: (3600, 1),
     },
     "KilowattHours" => UnitInfo {
       dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -2)]),
-      to_si_numer: 3600000,
-      to_si_denom: 1,
+      to_si: (3600000, 1),
     },
 
     // ── Frequency: Hertz = 1/s ──────────────────────────────────────
     "Hertz" => UnitInfo {
       dimensions: dims(&[(Time, -1)]),
-      to_si_numer: 1,
-      to_si_denom: 1,
+      to_si: (1, 1),
     },
     "Kilohertz" => UnitInfo {
       dimensions: dims(&[(Time, -1)]),
-      to_si_numer: 1000,
-      to_si_denom: 1,
+      to_si: (1000, 1),
     },
     "Megahertz" => UnitInfo {
       dimensions: dims(&[(Time, -1)]),
-      to_si_numer: 1000000,
-      to_si_denom: 1,
+      to_si: (1000000, 1),
     },
     "Gigahertz" => UnitInfo {
       dimensions: dims(&[(Time, -1)]),
-      to_si_numer: 1000000000,
-      to_si_denom: 1,
+      to_si: (1000000000, 1),
     },
 
     // ── Magnetic flux density: Teslas = kg/(A⋅s²) ──────────────────
     "Teslas" => UnitInfo {
       dimensions: dims(&[(Mass, 1), (ElectricCurrent, -1), (Time, -2)]),
-      to_si_numer: 1,
-      to_si_denom: 1,
+      to_si: (1, 1),
     },
     "Milliteslas" => UnitInfo {
       dimensions: dims(&[(Mass, 1), (ElectricCurrent, -1), (Time, -2)]),
-      to_si_numer: 1,
-      to_si_denom: 1000,
+      to_si: (1, 1000),
     },
 
     // ── Speed (named): Knots = NauticalMiles/Hours ──────────────────
     "Knots" => UnitInfo {
       dimensions: dims(&[(Length, 1), (Time, -1)]),
-      to_si_numer: 1852,
-      to_si_denom: 3600,
+      to_si: (1852, 3600),
     },
 
     // ── Misc. mass / force / power / time units (exact SI factors) ──
     // 1 carat = 0.2 g = 1/5000 kg.
     "Carats" | "Carat" => UnitInfo {
       dimensions: dims(&[(Mass, 1)]),
-      to_si_numer: 1,
-      to_si_denom: 5000,
+      to_si: (1, 5000),
     },
     // 1 lbf = 0.45359237 kg * 9.80665 m/s^2 = 4.4482216152605 N.
     "PoundsForce" | "PoundForce" => UnitInfo {
       dimensions: dims(&[(Mass, 1), (Length, 1), (Time, -2)]),
-      to_si_numer: 8_896_443_230_521,
-      to_si_denom: 2_000_000_000_000,
+      to_si: (8_896_443_230_521, 2_000_000_000_000),
     },
     // 1 mechanical horsepower = 745.69987158227022 W.
     "Horsepower" => UnitInfo {
       dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -3)]),
-      to_si_numer: 37_284_993_579_113_511,
-      to_si_denom: 50_000_000_000_000,
+      to_si: (37_284_993_579_113_511, 50_000_000_000_000),
     },
     // wolframscript's year is exactly 365 days = 31536000 s.
     "Years" | "Year" => UnitInfo {
       dimensions: dims(&[(Time, 1)]),
-      to_si_numer: 31_536_000,
-      to_si_denom: 1,
+      to_si: (31_536_000, 1),
     },
     // 1 fortnight = 14 days = 1209600 s.
     "Fortnights" | "Fortnight" => UnitInfo {
       dimensions: dims(&[(Time, 1)]),
-      to_si_numer: 1_209_600,
-      to_si_denom: 1,
+      to_si: (1_209_600, 1),
     },
     // wolframscript's month is exactly a 365-day year / 12 = 2628000 s.
     "Months" | "Month" => UnitInfo {
       dimensions: dims(&[(Time, 1)]),
-      to_si_numer: 2_628_000,
-      to_si_denom: 1,
+      to_si: (2_628_000, 1),
     },
     // Decade / century use the Gregorian year (365.2425 days), not the 365-day
     // "Years" unit: 1 decade = 10·365.2425·86400 = 315569520 s.
     "Decades" | "Decade" => UnitInfo {
       dimensions: dims(&[(Time, 1)]),
-      to_si_numer: 315_569_520,
-      to_si_denom: 1,
+      to_si: (315_569_520, 1),
     },
     "Centuries" | "Century" => UnitInfo {
       dimensions: dims(&[(Time, 1)]),
-      to_si_numer: 3_155_695_200,
-      to_si_denom: 1,
+      to_si: (3_155_695_200, 1),
     },
     // 1 chain = 66 ft = 66·381/1250 = 12573/625 m.
     "Chains" | "Chain" => UnitInfo {
       dimensions: dims(&[(Length, 1)]),
-      to_si_numer: 12_573,
-      to_si_denom: 625,
+      to_si: (12_573, 625),
     },
     // 1 stone = 14 lb = 6.35029318 kg.
     "Stones" | "Stone" => UnitInfo {
       dimensions: dims(&[(Mass, 1)]),
-      to_si_numer: 317_514_659,
-      to_si_denom: 50_000_000,
+      to_si: (317_514_659, 50_000_000),
     },
     // 1 slug = 14.5939029372... kg (1 lbf·s²/ft).
     "Slugs" | "Slug" => UnitInfo {
       dimensions: dims(&[(Mass, 1)]),
-      to_si_numer: 8_896_443_230_521,
-      to_si_denom: 609_600_000_000,
+      to_si: (8_896_443_230_521, 609_600_000_000),
     },
 
     // ── Information → Bits (SI base, matching wolframscript) ─────────
@@ -631,58 +539,47 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
     // prefixes (Kibi-, …) powers of 1024 — both expressed in Bits here.
     "Bits" | "Bit" => UnitInfo {
       dimensions: dims(&[(Information, 1)]),
-      to_si_numer: 1,
-      to_si_denom: 1,
+      to_si: (1, 1),
     },
     "Bytes" | "Byte" => UnitInfo {
       dimensions: dims(&[(Information, 1)]),
-      to_si_numer: 8,
-      to_si_denom: 1,
+      to_si: (8, 1),
     },
     "Kilobytes" | "Kilobyte" => UnitInfo {
       dimensions: dims(&[(Information, 1)]),
-      to_si_numer: 8_000,
-      to_si_denom: 1,
+      to_si: (8_000, 1),
     },
     "Megabytes" | "Megabyte" => UnitInfo {
       dimensions: dims(&[(Information, 1)]),
-      to_si_numer: 8_000_000,
-      to_si_denom: 1,
+      to_si: (8_000_000, 1),
     },
     "Gigabytes" | "Gigabyte" => UnitInfo {
       dimensions: dims(&[(Information, 1)]),
-      to_si_numer: 8_000_000_000,
-      to_si_denom: 1,
+      to_si: (8_000_000_000, 1),
     },
     "Terabytes" | "Terabyte" => UnitInfo {
       dimensions: dims(&[(Information, 1)]),
-      to_si_numer: 8_000_000_000_000,
-      to_si_denom: 1,
+      to_si: (8_000_000_000_000, 1),
     },
     "Petabytes" | "Petabyte" => UnitInfo {
       dimensions: dims(&[(Information, 1)]),
-      to_si_numer: 8_000_000_000_000_000,
-      to_si_denom: 1,
+      to_si: (8_000_000_000_000_000, 1),
     },
     "Kibibytes" | "Kibibyte" => UnitInfo {
       dimensions: dims(&[(Information, 1)]),
-      to_si_numer: 8_192,
-      to_si_denom: 1,
+      to_si: (8_192, 1),
     },
     "Mebibytes" | "Mebibyte" => UnitInfo {
       dimensions: dims(&[(Information, 1)]),
-      to_si_numer: 8_388_608,
-      to_si_denom: 1,
+      to_si: (8_388_608, 1),
     },
     "Gibibytes" | "Gibibyte" => UnitInfo {
       dimensions: dims(&[(Information, 1)]),
-      to_si_numer: 8_589_934_592,
-      to_si_denom: 1,
+      to_si: (8_589_934_592, 1),
     },
     "Tebibytes" | "Tebibyte" => UnitInfo {
       dimensions: dims(&[(Information, 1)]),
-      to_si_numer: 8_796_093_022_208,
-      to_si_denom: 1,
+      to_si: (8_796_093_022_208, 1),
     },
 
     _ => return None,
@@ -728,22 +625,29 @@ struct CompoundUnitInfo {
   /// Each base unit and its exponent, e.g. [("Kilometers", 1), ("Seconds", -2)]
   components: Vec<(String, i64)>,
   /// Combined SI conversion factor as rational numer/denom
-  si_numer: i128,
-  si_denom: i128,
+  si: (i128, i128),
   /// Dimension exponent map for compatibility checking
   dimensions: BTreeMap<Dimension, i64>,
 }
 
+fn rat_div(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+  rat_reduce(a.0 * b.1, a.1 * b.0)
+}
+
+fn rat_mul(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+  rat_reduce(a.0 * b.0, a.1 * b.1)
+}
+
 /// Raise a rational to an integer power.
-fn rational_pow(numer: i128, denom: i128, exp: i64) -> (i128, i128) {
+fn rat_pow(a: (i128, i128), exp: i64) -> (i128, i128) {
   if exp == 0 {
     return (1, 1);
   }
   if exp > 0 {
-    (numer.pow(exp as u32), denom.pow(exp as u32))
+    rat_reduce(a.0.pow(exp as u32), a.1.pow(exp as u32))
   } else {
     // Negative exponent: swap numer/denom
-    (denom.pow((-exp) as u32), numer.pow((-exp) as u32))
+    rat_reduce(a.1.pow((-exp) as u32), a.0.pow((-exp) as u32))
   }
 }
 
@@ -918,14 +822,13 @@ fn resolve_unit_abbreviation(s: &str) -> Option<Expr> {
 }
 
 /// Resolve named compound constants like SpeedOfLight.
-/// Returns (magnitude_factor_numer, magnitude_factor_denom, unit_components).
+/// Returns (magnitude_factor, unit_components).
 fn resolve_compound_constant(
   name: &str,
-) -> Option<(i128, i128, Vec<(String, i64)>)> {
+) -> Option<((i128, i128), Vec<(String, i64)>)> {
   match name {
     "SpeedOfLight" => Some((
-      299792458,
-      1,
+      (299792458, 1),
       vec![("Meters".to_string(), 1), ("Seconds".to_string(), -1)],
     )),
     _ => None,
@@ -981,8 +884,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
       // Dimensionless numeric factor (e.g. the 1 in "1/Seconds")
       Some(CompoundUnitInfo {
         components: vec![],
-        si_numer: *n,
-        si_denom: 1,
+        si: (*n, 1),
         dimensions: BTreeMap::new(),
       })
     }
@@ -995,8 +897,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
       if let Some(info) = get_unit_info(name) {
         return Some(CompoundUnitInfo {
           components: vec![(name.clone(), 1)],
-          si_numer: info.to_si_numer,
-          si_denom: info.to_si_denom,
+          si: info.to_si,
           dimensions: info.dimensions,
         });
       }
@@ -1006,26 +907,22 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
         return decompose_unit_expr(&expanded);
       }
       // Try compound constants (e.g. SpeedOfLight)
-      if let Some((mag_n, mag_d, components)) = resolve_compound_constant(name)
-      {
-        let mut si_numer: i128 = mag_n;
-        let mut si_denom: i128 = mag_d;
+      if let Some((mag, components)) = resolve_compound_constant(name) {
+        let mut si: (i128, i128) = mag;
         let mut dims = BTreeMap::new();
         for (unit_name, exp) in &components {
           let uinfo = get_unit_info(unit_name)?;
-          let (pn, pd) =
-            rational_pow(uinfo.to_si_numer, uinfo.to_si_denom, *exp);
-          si_numer *= pn;
-          si_denom *= pd;
+          let (pn, pd) = rat_pow(uinfo.to_si, *exp);
+          si.0 *= pn;
+          si.1 *= pd;
           for (dim, dim_exp) in &uinfo.dimensions {
             *dims.entry(*dim).or_insert(0) += dim_exp * exp;
           }
         }
-        let g = gcd_i128(si_numer, si_denom);
+        si = rat_reduce(si.0, si.1);
         return Some(CompoundUnitInfo {
           components,
-          si_numer: si_numer / g,
-          si_denom: si_denom / g,
+          si: si,
           dimensions: dims,
         });
       }
@@ -1046,8 +943,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
       if let Some(info) = get_unit_info(&plural) {
         return Some(CompoundUnitInfo {
           components: vec![(plural, 1)],
-          si_numer: info.to_si_numer,
-          si_denom: info.to_si_denom,
+          si: info.to_si,
           dimensions: info.dimensions,
         });
       }
@@ -1057,8 +953,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
       {
         return Some(CompoundUnitInfo {
           components: vec![(canonical, 1)],
-          si_numer: info.to_si_numer,
-          si_denom: info.to_si_denom,
+          si: info.to_si,
           dimensions: info.dimensions,
         });
       }
@@ -1074,11 +969,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
             left_info.components.push((name.clone(), -exp));
           }
           // SI factor: left / right
-          left_info.si_numer *= right_info.si_denom;
-          left_info.si_denom *= right_info.si_numer;
-          let g = gcd_i128(left_info.si_numer, left_info.si_denom);
-          left_info.si_numer /= g;
-          left_info.si_denom /= g;
+          left_info.si = rat_div(left_info.si, right_info.si);
           // Merge dimensions
           for (dim, exp) in &right_info.dimensions {
             *left_info.dimensions.entry(*dim).or_insert(0) -= exp;
@@ -1092,11 +983,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
           for (name, exp) in &right_info.components {
             left_info.components.push((name.clone(), *exp));
           }
-          left_info.si_numer *= right_info.si_numer;
-          left_info.si_denom *= right_info.si_denom;
-          let g = gcd_i128(left_info.si_numer, left_info.si_denom);
-          left_info.si_numer /= g;
-          left_info.si_denom /= g;
+          left_info.si = rat_mul(left_info.si, right_info.si);
           for (dim, exp) in &right_info.dimensions {
             *left_info.dimensions.entry(*dim).or_insert(0) += exp;
           }
@@ -1114,9 +1001,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
             .iter()
             .map(|(n, e)| (n.clone(), e * exp_val))
             .collect();
-          let (pn, pd) =
-            rational_pow(base_info.si_numer, base_info.si_denom, exp_val);
-          let g = gcd_i128(pn, pd);
+          let (pn, pd) = rat_pow(base_info.si, exp_val);
           let dims: BTreeMap<Dimension, i64> = base_info
             .dimensions
             .iter()
@@ -1125,8 +1010,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
             .collect();
           Some(CompoundUnitInfo {
             components,
-            si_numer: pn / g,
-            si_denom: pd / g,
+            si: (pn, pd),
             dimensions: dims,
           })
         }
@@ -1143,11 +1027,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
             for (name, exp) in &info.components {
               r.components.push((name.clone(), *exp));
             }
-            r.si_numer *= info.si_numer;
-            r.si_denom *= info.si_denom;
-            let g = gcd_i128(r.si_numer, r.si_denom);
-            r.si_numer /= g;
-            r.si_denom /= g;
+            r.si = rat_mul(r.si, info.si);
             for (dim, exp) in &info.dimensions {
               *r.dimensions.entry(*dim).or_insert(0) += exp;
             }
@@ -1171,9 +1051,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
         .iter()
         .map(|(n, e)| (n.clone(), e * exp_val))
         .collect();
-      let (pn, pd) =
-        rational_pow(base_info.si_numer, base_info.si_denom, exp_val);
-      let g = gcd_i128(pn, pd);
+      let (pn, pd) = rat_pow(base_info.si, exp_val);
       let dims: BTreeMap<Dimension, i64> = base_info
         .dimensions
         .iter()
@@ -1182,8 +1060,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
         .collect();
       Some(CompoundUnitInfo {
         components,
-        si_numer: pn / g,
-        si_denom: pd / g,
+        si: (pn, pd),
         dimensions: dims,
       })
     }
@@ -1192,11 +1069,11 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
 }
 
 /// Simplify compound unit components by merging units with the same dimension signature.
-/// Returns (simplified_components, conversion_factor_numer, conversion_factor_denom).
+/// Returns (simplified_components, conversion_factor).
 /// The conversion factor should be applied to the magnitude.
 fn simplify_compound_unit(
   components: &[(String, i64)],
-) -> (Vec<(String, i64)>, i128, i128) {
+) -> (Vec<(String, i64)>, (i128, i128)) {
   // Group by dimension signature (full BTreeMap<Dimension, i64>)
   let mut sig_groups: BTreeMap<BTreeMap<Dimension, i64>, Vec<(String, i64)>> =
     BTreeMap::new();
@@ -1213,8 +1090,7 @@ fn simplify_compound_unit(
     }
   }
 
-  let mut conv_numer: i128 = 1;
-  let mut conv_denom: i128 = 1;
+  let mut conv: (i128, i128) = (1, 1);
   let mut simplified: Vec<(String, i64)> = Vec::new();
 
   for units in sig_groups.values() {
@@ -1230,14 +1106,9 @@ fn simplify_compound_unit(
       } else {
         // Convert this unit to canonical: factor = (this_si / canonical_si)^exp
         let this_info = get_unit_info(name).unwrap();
-        let unit_conv_n = this_info.to_si_numer * canonical_info.to_si_denom;
-        let unit_conv_d = this_info.to_si_denom * canonical_info.to_si_numer;
-        let (pn, pd) = rational_pow(unit_conv_n, unit_conv_d, *exp);
-        conv_numer *= pn;
-        conv_denom *= pd;
-        let g = gcd_i128(conv_numer, conv_denom);
-        conv_numer /= g;
-        conv_denom /= g;
+        let unit_conv = rat_div(this_info.to_si, canonical_info.to_si);
+        let (pn, pd) = rat_pow(unit_conv, *exp);
+        conv = rat_mul(conv, (pn, pd));
         total_exp += exp;
       }
     }
@@ -1249,7 +1120,7 @@ fn simplify_compound_unit(
 
   simplified.extend(unknown);
 
-  (simplified, conv_numer, conv_denom)
+  (simplified, conv)
 }
 
 /// Build a unit Expr from simplified components.
@@ -1306,14 +1177,14 @@ fn components_to_unit_expr(components: &[(String, i64)]) -> Expr {
 }
 
 /// Decompose, simplify, and rebuild a compound unit expression.
-/// Returns (simplified_unit_expr, conversion_factor_numer, conversion_factor_denom).
-fn simplify_unit_expr(unit: &Expr) -> Option<(Expr, i128, i128)> {
+/// Returns (simplified_unit_expr, conversion_factor).
+fn simplify_unit_expr(unit: &Expr) -> Option<(Expr, (i128, i128))> {
   let info = decompose_unit_expr(unit)?;
-  let (simplified, conv_n, conv_d) = simplify_compound_unit(&info.components);
+  let (simplified, conv) = simplify_compound_unit(&info.components);
   if simplified.is_empty() {
-    return Some((Expr::Integer(1), conv_n, conv_d));
+    return Some((Expr::Integer(1), conv));
   }
-  Some((components_to_unit_expr(&simplified), conv_n, conv_d))
+  Some((components_to_unit_expr(&simplified), conv))
 }
 
 /// Map a full unit name to its standard SI abbreviation.
@@ -1701,23 +1572,19 @@ fn convert_magnitude(
     )));
   }
 
-  // conversion = (from_numer * to_denom) / (from_denom * to_numer)
-  let conv_numer = from.to_si_numer * to.to_si_denom;
-  let conv_denom = from.to_si_denom * to.to_si_numer;
+  // conversion = from / to
+  let conv = rat_div(from.to_si, to.to_si);
 
-  multiply_magnitude_by_rational(magnitude, conv_numer, conv_denom)
+  multiply_magnitude_by_rational(magnitude, conv)
 }
 
 /// Multiply a magnitude expression by a rational (numer/denom).
 fn multiply_magnitude_by_rational(
   magnitude: &Expr,
-  numer: i128,
-  denom: i128,
+  (numer, denom): (i128, i128),
 ) -> Result<Expr, InterpreterError> {
   // Simplify the conversion factor
-  let g = gcd_i128(numer, denom);
-  let numer = numer / g;
-  let denom = denom / g;
+  let (numer, denom) = rat_reduce(numer, denom);
 
   if numer == 1 && denom == 1 {
     return Ok(magnitude.clone());
@@ -1725,11 +1592,7 @@ fn multiply_magnitude_by_rational(
 
   match magnitude {
     Expr::Integer(m) => {
-      let result_numer = m * numer;
-      let result_denom = denom;
-      let g2 = gcd_i128(result_numer, result_denom);
-      let rn = result_numer / g2;
-      let rd = result_denom / g2;
+      let (rn, rd) = rat_reduce(m * numer, denom);
       if rd == 1 {
         Ok(Expr::Integer(rn))
       } else {
@@ -2238,10 +2101,8 @@ pub fn unit_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         )));
       }
       // Convert: new_mag = mag * (from_si / to_si)
-      let conv_numer = from.si_numer * to.si_denom;
-      let conv_denom = from.si_denom * to.si_numer;
-      let new_mag =
-        multiply_magnitude_by_rational(mag, conv_numer, conv_denom)?;
+      let conv = rat_div(from.si, to.si);
+      let new_mag = multiply_magnitude_by_rational(mag, conv)?;
       // Build target unit expression from decomposed target components
       // (preserves the user's target unit naming)
       // UnitConvert normalizes the target to canonical form
@@ -2378,29 +2239,26 @@ pub fn try_quantity_plus(
   }
 
   // Pick the target unit: match Mathematica by choosing the smallest SI
-  // conversion factor (si_numer / si_denom). For example, meter vs centimeter
+  // conversion factor (si.0 / si.1). For example, meter vs centimeter
   // → centimeter (cm has 1/100 m, smaller than 1 m). Ties fall back to the
   // first quantity's unit.
   let mut target_idx = 0usize;
   {
-    let mut best_num: Option<i128> = None;
-    let mut best_den: Option<i128> = None;
+    let mut best: Option<(i128, i128)> = None;
     for (i, q) in quantity_args.iter().enumerate() {
       let (_m, u) = is_quantity(q).unwrap();
       if let Some(info) = decompose_unit_expr(u) {
-        // Compare (info.si_numer / info.si_denom) with best via cross-multiply.
-        match (best_num, best_den) {
-          (Some(bn), Some(bd)) => {
-            // info < best iff info.si_numer * bd < bn * info.si_denom
-            if info.si_numer * bd < bn * info.si_denom {
-              best_num = Some(info.si_numer);
-              best_den = Some(info.si_denom);
+        // Compare (info.si.0 / info.si.1) with best via cross-multiply.
+        match best {
+          Some((bn, bd)) => {
+            // info < best iff info.si.0 * bd < bn * info.si.1
+            if info.si.0 * bd < bn * info.si.1 {
+              best = Some(info.si);
               target_idx = i;
             }
           }
           _ => {
-            best_num = Some(info.si_numer);
-            best_den = Some(info.si_denom);
+            best = Some(info.si);
             target_idx = i;
           }
         }
@@ -2422,16 +2280,15 @@ pub fn try_quantity_plus(
     let (m, u) = is_quantity(q).unwrap();
     // Try compound unit conversion via decomposition. Convert source `u`
     // into `target_unit` by multiplying magnitude by
-    //   (u_si / target_si) = (u_si_numer/u_si_denom) * (target_si_denom/target_si_numer).
+    //   (u_si / target_si) = (u_si.0/u_si.1) * (target_si.1/target_si.0).
     if let (Some(source_info), Some(target_info)) =
       (decompose_unit_expr(u), &target_decomposed)
     {
-      let conv_numer = source_info.si_numer * target_info.si_denom;
-      let conv_denom = source_info.si_denom * target_info.si_numer;
-      if conv_numer == conv_denom {
+      let conv = rat_div(source_info.si, target_info.si);
+      if conv.0 == conv.1 {
         magnitudes.push(m.clone());
       } else {
-        match multiply_magnitude_by_rational(m, conv_numer, conv_denom) {
+        match multiply_magnitude_by_rational(m, conv) {
           Ok(converted) => magnitudes.push(converted),
           Err(e) => return Some(Err(e)),
         }
@@ -2525,8 +2382,8 @@ pub fn try_quantity_times(
     };
 
     // Try to simplify compound unit (merge same-dimension units)
-    let (final_unit, extra_conv_n, extra_conv_d) =
-      simplify_unit_expr(&raw_compound).unwrap_or((raw_compound, 1, 1));
+    let (final_unit, extra_conv) =
+      simplify_unit_expr(&raw_compound).unwrap_or((raw_compound, (1, 1)));
 
     let mut new_mag = match crate::functions::math_ast::times_ast(&all_mags) {
       Ok(m) => m,
@@ -2534,12 +2391,8 @@ pub fn try_quantity_times(
     };
 
     // Apply conversion factor from unit simplification
-    if extra_conv_n != 1 || extra_conv_d != 1 {
-      new_mag = match multiply_magnitude_by_rational(
-        &new_mag,
-        extra_conv_n,
-        extra_conv_d,
-      ) {
+    if extra_conv.0 != 1 || extra_conv.1 != 1 {
+      new_mag = match multiply_magnitude_by_rational(&new_mag, extra_conv) {
         Ok(m) => m,
         Err(e) => return Some(Err(e)),
       };
@@ -2631,14 +2484,13 @@ pub fn try_quantity_divide(
         let raw_compound =
           binop(BinaryOperator::Divide, unit_a.clone(), unit_b.clone());
         // Try to simplify (merge same-dimension units)
-        let (final_unit, conv_n, conv_d) =
-          simplify_unit_expr(&raw_compound).unwrap_or((raw_compound, 1, 1));
-        if conv_n != 1 || conv_d != 1 {
-          new_mag =
-            match multiply_magnitude_by_rational(&new_mag, conv_n, conv_d) {
-              Ok(m) => m,
-              Err(e) => return Some(Err(e)),
-            };
+        let (final_unit, conv) =
+          simplify_unit_expr(&raw_compound).unwrap_or((raw_compound, (1, 1)));
+        if conv.0 != 1 || conv.1 != 1 {
+          new_mag = match multiply_magnitude_by_rational(&new_mag, conv) {
+            Ok(m) => m,
+            Err(e) => return Some(Err(e)),
+          };
         }
         if matches!(&final_unit, Expr::Integer(1)) {
           Some(Ok(new_mag))
@@ -2668,10 +2520,10 @@ pub fn try_quantity_divide(
       let inv_unit =
         binop(BinaryOperator::Power, unit.clone(), Expr::Integer(-1));
       // Try to simplify
-      let (final_unit, conv_n, conv_d) =
-        simplify_unit_expr(&inv_unit).unwrap_or((inv_unit, 1, 1));
-      let final_mag = if conv_n != 1 || conv_d != 1 {
-        match multiply_magnitude_by_rational(&new_mag, conv_n, conv_d) {
+      let (final_unit, conv) =
+        simplify_unit_expr(&inv_unit).unwrap_or((inv_unit, (1, 1)));
+      let final_mag = if conv.0 != 1 || conv.1 != 1 {
+        match multiply_magnitude_by_rational(&new_mag, conv) {
           Ok(m) => m,
           Err(e) => return Some(Err(e)),
         }
@@ -2701,11 +2553,7 @@ fn power_unit_expr(unit: &Expr, p: i128, q: i128) -> Option<Expr> {
     if new_n == 0 {
       continue;
     }
-    let g = gcd_i128(new_n, new_d);
-    let (rn, rd) = (new_n / g, new_d / g);
-    // Ensure positive denominator
-    let (rn, rd) = if rd < 0 { (-rn, -rd) } else { (rn, rd) };
-
+    let (rn, rd) = rat_reduce(new_n, new_d);
     let base = Expr::String(name.clone());
     let abs_rn = rn.abs();
 
@@ -2807,12 +2655,11 @@ pub fn try_quantity_compare(
   let right_info = decompose_unit_expr(unit_r);
 
   let converted_r = if let (Some(li), Some(ri)) = (left_info, right_info) {
-    let conv_numer = ri.si_numer * li.si_denom;
-    let conv_denom = ri.si_denom * li.si_numer;
-    if conv_numer == conv_denom {
+    let conv = rat_div(ri.si, li.si);
+    if conv.0 == conv.1 {
       mag_r.clone()
     } else {
-      multiply_magnitude_by_rational(mag_r, conv_numer, conv_denom).ok()?
+      multiply_magnitude_by_rational(mag_r, conv).ok()?
     }
   } else {
     // Fallback to simple conversion
@@ -2838,12 +2685,11 @@ fn convert_mag(mag: &Expr, from_unit: &Expr, to_unit: &Expr) -> Option<Expr> {
     (decompose_unit_expr(from_unit), decompose_unit_expr(to_unit))
   {
     // factor = from_si / to_si.
-    let conv_numer = fi.si_numer * ti.si_denom;
-    let conv_denom = fi.si_denom * ti.si_numer;
-    if conv_numer == conv_denom {
+    let conv = rat_div(fi.si, ti.si);
+    if conv.0 == conv.1 {
       Some(mag.clone())
     } else {
-      multiply_magnitude_by_rational(mag, conv_numer, conv_denom).ok()
+      multiply_magnitude_by_rational(mag, conv).ok()
     }
   } else {
     let from = unit_name(from_unit)?;
