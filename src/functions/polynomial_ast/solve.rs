@@ -2937,6 +2937,39 @@ fn try_solve_abs_eq(
   Some(Ok(Expr::List(solutions.into())))
 }
 
+/// Drop a leading nonzero constant factor (one free of `var`) from a product,
+/// returning the remaining factor. Anything that is not such a product comes
+/// back unchanged.
+fn strip_constant_factor(expr: &Expr, var: &str) -> Expr {
+  let is_nonzero_const = |e: &Expr| -> bool {
+    !contains_var(e, var)
+      && crate::functions::math_ast::try_eval_to_f64(e)
+        .is_some_and(|v| v != 0.0)
+  };
+  match expr {
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => (**operand).clone(),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } if is_nonzero_const(left) => (**right).clone(),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } if is_nonzero_const(right) => (**left).clone(),
+    Expr::FunctionCall { name, args }
+      if name == "Times" && args.len() == 2 && is_nonzero_const(&args[0]) =>
+    {
+      args[1].clone()
+    }
+    other => other.clone(),
+  }
+}
+
 fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
   // Extract lhs == rhs.
   let (lhs, rhs) = match eq {
@@ -2954,6 +2987,17 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
     }
     _ => return None,
   };
+  // A nonzero constant factor does not change the roots of `… == 0`, so peel
+  // it off: `-Cos[x] == 0` and `3*Sin[x] == 0` solve like `Cos[x] == 0` and
+  // `Sin[x] == 0`.
+  let stripped;
+  let lhs = if matches!(rhs, Expr::Integer(0)) {
+    stripped = strip_constant_factor(lhs, var);
+    &stripped
+  } else {
+    lhs
+  };
+
   // lhs must be `Trig[var]` for some trig head.
   let (trig_name, trig_arg) = match lhs {
     Expr::FunctionCall { name, args } if args.len() == 1 => {
@@ -5859,6 +5903,55 @@ fn minimize_single_var(
 }
 
 /// Find critical points of f' = 0 in one variable.
+/// Periodic equations come back from `Solve` as a family
+/// `ConditionalExpression[Pi/2 + 2*Pi*C[1], Element[C[1], Integers]]`, which
+/// carries no usable numeric value. Instantiate the integer parameter over a
+/// small window around zero so the concrete critical points (`Pi/2`,
+/// `Pi/2 + 2*Pi`, …) become candidates; the caller's feasibility filter drops
+/// the ones outside the constraint region.
+fn minimize_instantiate_periodic_roots(roots: &[Expr]) -> Vec<Expr> {
+  const WINDOW: i128 = 3;
+  let mut out = Vec::new();
+  for root in roots {
+    let Expr::FunctionCall { name, args } = root else {
+      out.push(root.clone());
+      continue;
+    };
+    if name != "ConditionalExpression" || args.len() != 2 {
+      out.push(root.clone());
+      continue;
+    }
+    // The condition names the parameter: Element[C[k], Integers].
+    let Expr::FunctionCall {
+      name: cond,
+      args: cond_args,
+    } = &args[1]
+    else {
+      out.push(root.clone());
+      continue;
+    };
+    if cond != "Element"
+      || cond_args.len() != 2
+      || !matches!(&cond_args[1], Expr::Identifier(d) if d == "Integers")
+    {
+      out.push(root.clone());
+      continue;
+    }
+    // Walk outwards from k = 0 so the member nearest the origin is tried
+    // first: on a periodic objective every member is equally optimal, and
+    // wolframscript reports the one near the origin.
+    let order = std::iter::once(0).chain((1..=WINDOW).flat_map(|k| [-k, k]));
+    for k in order {
+      out.push(simplify(substitute_expr(
+        &args[0],
+        &cond_args[0],
+        &Expr::Integer(k),
+      )));
+    }
+  }
+  out
+}
+
 fn minimize_find_critical_points_1d(
   df: &Expr,
   var: &str,
@@ -5908,6 +6001,7 @@ fn minimize_find_critical_points_1d(
         if roots.is_empty() {
           return minimize_find_critical_points_numerical(f, var);
         }
+        let roots = minimize_instantiate_periodic_roots(&roots);
         return Ok(roots);
       }
       // Unevaluated Solve result - try numerical
@@ -6792,6 +6886,37 @@ fn minimize_extract_linear_expr(
 }
 
 /// Single-variable constrained minimize.
+/// `Infinity` or `-Infinity` as an expression.
+fn signed_infinity(positive: bool) -> Expr {
+  let infinity = Expr::Identifier("Infinity".to_string());
+  if positive {
+    infinity
+  } else {
+    negate_expr(&infinity)
+  }
+}
+
+/// Does `f` tend to -Infinity as `var` runs off to +/-Infinity? Used to
+/// detect an unbounded 1-D minimization; anything the limit machinery cannot
+/// decide counts as "no", so the caller falls back to its finite-candidate
+/// search.
+fn minimize_diverges_to_neg_infinity(
+  f: &Expr,
+  var: &str,
+  toward_positive: bool,
+) -> Result<bool, InterpreterError> {
+  let limit = crate::functions::calculus_ast::limit_ast(&[
+    f.clone(),
+    Expr::Rule {
+      pattern: Box::new(Expr::Identifier(var.to_string())),
+      replacement: Box::new(signed_infinity(toward_positive)),
+    },
+  ])?;
+  // `-Infinity` reaches here in several shapes (Times[-1, Infinity],
+  // DirectedInfinity[-1], a negated identifier); compare the rendered form.
+  Ok(expr_to_string(&limit) == "-Infinity")
+}
+
 fn minimize_constrained_1d(
   f: &Expr,
   constraints: &[Expr],
@@ -6805,7 +6930,27 @@ fn minimize_constrained_1d(
   let mut eq_constraints: Vec<Expr> = Vec::new();
   let mut other_constraints = false;
 
+  // A chained comparison (`1 < x < 3`) carries several relations in one node;
+  // split it into the pairwise relations the bound scan below understands.
+  let mut pairwise: Vec<Expr> = Vec::new();
   for con in constraints {
+    match con {
+      Expr::Comparison {
+        operands,
+        operators,
+      } if operands.len() > 2 && operators.len() == operands.len() - 1 => {
+        for (i, op) in operators.iter().enumerate() {
+          pairwise.push(Expr::Comparison {
+            operands: vec![operands[i].clone(), operands[i + 1].clone()],
+            operators: vec![*op],
+          });
+        }
+      }
+      other => pairwise.push(other.clone()),
+    }
+  }
+
+  for con in &pairwise {
     match con {
       Expr::Comparison {
         operands,
@@ -6854,11 +6999,20 @@ fn minimize_constrained_1d(
           ComparisonOp::Equal => {
             eq_constraints.push(con.clone());
           }
+          // Strict inequalities bound the same closure as their non-strict
+          // counterparts, so the boundary point is kept either way. Both
+          // orientations occur: `x > 1` and the `1 < x` a chained
+          // `1 < x < 3` splits into.
           ComparisonOp::Greater => {
-            // Strict inequality: treat as >= for boundary
             if matches!(lhs, Expr::Identifier(n) if n == var) {
               if let Some(v) = minimize_try_f64(rhs) {
                 lb = Some(lb.map_or(v, |cur: f64| cur.max(v)));
+              } else {
+                other_constraints = true;
+              }
+            } else if matches!(rhs, Expr::Identifier(n) if n == var) {
+              if let Some(v) = minimize_try_f64(lhs) {
+                ub = Some(ub.map_or(v, |cur: f64| cur.min(v)));
               } else {
                 other_constraints = true;
               }
@@ -6870,6 +7024,12 @@ fn minimize_constrained_1d(
             if matches!(lhs, Expr::Identifier(n) if n == var) {
               if let Some(v) = minimize_try_f64(rhs) {
                 ub = Some(ub.map_or(v, |cur: f64| cur.min(v)));
+              } else {
+                other_constraints = true;
+              }
+            } else if matches!(rhs, Expr::Identifier(n) if n == var) {
+              if let Some(v) = minimize_try_f64(lhs) {
+                lb = Some(lb.map_or(v, |cur: f64| cur.max(v)));
               } else {
                 other_constraints = true;
               }
@@ -6895,6 +7055,31 @@ fn minimize_constrained_1d(
       name: func_name.to_string(),
       args: vec![obj_with_cons, Expr::Identifier(var.to_string())].into(),
     });
+  }
+
+  // An unbounded feasible direction can carry the objective off to infinity,
+  // in which case there is no finite extremum. `f` here is the internally
+  // minimized objective (already negated for Maximize), so a limit of
+  // -Infinity toward a missing bound means the problem is unbounded.
+  for (bound, toward_positive) in [(lb, false), (ub, true)] {
+    if bound.is_some() {
+      continue;
+    }
+    if !minimize_diverges_to_neg_infinity(f, var, toward_positive)? {
+      continue;
+    }
+    crate::emit_message(&format!(
+      "{}::natt: The {} is not attained at any point satisfying the given constraints.",
+      func_name,
+      if maximize { "maximum" } else { "minimum" }
+    ));
+    let rule = Expr::Rule {
+      pattern: Box::new(Expr::Identifier(var.to_string())),
+      replacement: Box::new(signed_infinity(toward_positive)),
+    };
+    return Ok(Expr::List(
+      vec![signed_infinity(maximize), Expr::List(vec![rule].into())].into(),
+    ));
   }
 
   // Collect candidate x values: bounds + unconstrained critical points
@@ -6943,6 +7128,40 @@ fn minimize_constrained_1d(
       best_f = fx;
       best_x_f64 = cx;
     }
+  }
+
+  // An unbounded end with a finite limit is an infimum the interior can only
+  // approach, so it competes with the finite candidates (`1/x` on `x > 1`
+  // bottoms out at 0, not at any point of the region).
+  for (bound, toward_positive) in [(lb, false), (ub, true)] {
+    if bound.is_some() {
+      continue;
+    }
+    let limit = crate::functions::calculus_ast::limit_ast(&[
+      f.clone(),
+      Expr::Rule {
+        pattern: Box::new(Expr::Identifier(var.to_string())),
+        replacement: Box::new(signed_infinity(toward_positive)),
+      },
+    ])?;
+    let Some(lv) = minimize_try_f64(&limit) else {
+      continue;
+    };
+    if lv >= best_f {
+      continue;
+    }
+    let rule = Expr::Rule {
+      pattern: Box::new(Expr::Identifier(var.to_string())),
+      replacement: Box::new(signed_infinity(toward_positive)),
+    };
+    let value = if maximize {
+      simplify(negate_expr(&limit))
+    } else {
+      limit
+    };
+    return Ok(Expr::List(
+      vec![value, Expr::List(vec![rule].into())].into(),
+    ));
   }
 
   // Try to find exact expression for best_x from critical points

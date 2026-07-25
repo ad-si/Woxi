@@ -11452,6 +11452,66 @@ mod cases {
     assert_case(r#"Check[MaxValue[x^2, x], "msg emitted"]"#, r#"Infinity"#);
   }
   #[test]
+  fn extremum_value_unbounded_constraint_region() {
+    // An unbounded feasible direction that carries the objective off to
+    // infinity has no finite extremum — the boundary value is the *other*
+    // extremum, not this one.
+    assert_case(r#"MaxValue[{x^2, x > 1}, x]"#, r#"Infinity"#);
+    assert_case(r#"MinValue[{x^2, x > 1}, x]"#, r#"1"#);
+    assert_case(r#"MaxValue[{x^2, x >= 1}, x]"#, r#"Infinity"#);
+    assert_case(r#"MaxValue[{x^3, x > 1}, x]"#, r#"Infinity"#);
+    assert_case(r#"MinValue[{x^3, x > 1}, x]"#, r#"1"#);
+    // Unbounded downwards, and unbounded through the *lower* end.
+    assert_case(r#"MinValue[{-x^2, x > 1}, x]"#, r#"-Infinity"#);
+    assert_case(r#"MaxValue[{x^2, x < -1}, x]"#, r#"Infinity"#);
+    // Still no message, unlike Maximize/Minimize.
+    assert_case(
+      r#"Check[MaxValue[{x^2, x > 1}, x], "msg emitted"]"#,
+      r#"Infinity"#,
+    );
+  }
+  #[test]
+  fn extremum_value_chained_inequality_constraint() {
+    // `1 < x < 3` is one chained comparison, not two separate constraints.
+    assert_case(r#"MaxValue[{x^2, 1 < x < 3}, x]"#, r#"9"#);
+    assert_case(r#"MinValue[{x^2, 1 < x < 3}, x]"#, r#"1"#);
+    assert_case(r#"MinValue[{x^2, -2 < x < 1}, x]"#, r#"0"#);
+    assert_case(r#"MaxValue[{Sin[x], 0 < x < 2 Pi}, x]"#, r#"1"#);
+  }
+  #[test]
+  fn extremum_value_approached_only_at_infinity() {
+    // 1/x never reaches 0 on x > 1, but 0 is still the infimum.
+    assert_case(r#"MinValue[{1/x, x > 1}, x]"#, r#"0"#);
+    assert_case(r#"MaxValue[{1/x, x > 1}, x]"#, r#"1"#);
+    assert_case(r#"MaxValue[{-1/x, x > 1}, x]"#, r#"0"#);
+    assert_case(r#"MinValue[{-1/x, x > 1}, x]"#, r#"-1"#);
+  }
+  #[test]
+  fn maximize_periodic_objective_over_an_interval() {
+    // The critical points come back as a periodic family; the member inside
+    // the constraint region is reported exactly, not as a float.
+    assert_case(
+      r#"Maximize[{Sin[x], 0 < x < 2 Pi}, x]"#,
+      r#"{1, {x -> Pi/2}}"#,
+    );
+    assert_case(
+      r#"Minimize[{Sin[x], 0 < x < 2 Pi}, x]"#,
+      r#"{-1, {x -> (3*Pi)/2}}"#,
+    );
+  }
+  #[test]
+  fn solve_strips_a_constant_factor_from_a_trig_equation() {
+    // A nonzero constant multiplier does not move the roots of `... == 0`.
+    assert_case(
+      r#"Solve[-Cos[x] == 0, x] === Solve[Cos[x] == 0, x]"#,
+      r#"True"#,
+    );
+    assert_case(
+      r#"Solve[3 Sin[x] == 0, x] === Solve[Sin[x] == 0, x]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
   fn apart_1() {
     assert_case(
       r#"Apart[1 / (x^2 + 5x + 6)]"#,
