@@ -1262,15 +1262,18 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 "UniformDistribution: invalid max bound".into(),
               )
             })?;
+            // Bounds given the wrong way round still name the same
+            // interval, and a degenerate one has a single possible value —
+            // sampling either without care would panic on an empty range.
+            let (lo, hi) = if lo <= hi { (lo, hi) } else { (hi, lo) };
+            let draw = |rng: &mut dyn rand::RngCore| -> f64 {
+              if lo == hi { lo } else { rng.gen_range(lo..hi) }
+            };
             match n {
-              None => {
-                Ok(Expr::Real(crate::with_rng(|rng| rng.gen_range(lo..hi))))
-              }
+              None => Ok(Expr::Real(crate::with_rng(|rng| draw(rng)))),
               Some(count) => {
                 let results: Vec<Expr> = crate::with_rng(|rng| {
-                  (0..count)
-                    .map(|_| Expr::Real(rng.gen_range(lo..hi)))
-                    .collect()
+                  (0..count).map(|_| Expr::Real(draw(rng))).collect()
                 });
                 Ok(Expr::List(results.into()))
               }

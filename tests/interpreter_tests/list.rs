@@ -5818,6 +5818,41 @@ mod random_variate {
     );
   }
 
+  // Regression: a degenerate range used to panic the interpreter with
+  // "cannot sample empty range". Its single possible value is returned.
+  #[test]
+  fn uniform_degenerate_range_is_the_single_value() {
+    assert_eq!(
+      interpret("RandomVariate[UniformDistribution[{1, 1}]]").unwrap(),
+      "1."
+    );
+    assert_eq!(
+      interpret("RandomVariate[UniformDistribution[{1, 1}], 3]").unwrap(),
+      "{1., 1., 1.}"
+    );
+    assert_eq!(
+      interpret("RandomVariate[UniformDistribution[{0, 0}], 2]").unwrap(),
+      "{0., 0.}"
+    );
+    assert_eq!(
+      interpret("RandomVariate[UniformDistribution[{1, 1}], {2, 2}]").unwrap(),
+      "{{1., 1.}, {1., 1.}}"
+    );
+  }
+
+  // Bounds the wrong way round name the same interval, and used to panic.
+  #[test]
+  fn uniform_inverted_range_is_sampled_the_same_way() {
+    assert_eq!(
+      interpret(
+        "AllTrue[RandomVariate[UniformDistribution[{7, 3}], 100], \
+         (# >= 3 && # < 7) &]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   // A dimension list produces a nested array of that shape; a zero dimension
   // yields the corresponding empty structure.
   #[test]
