@@ -30,3 +30,15 @@ $ wo 'Series[3, {x, 0, 3}]'
 $ wo 'Series[a + b, {x, 0, 3}]'
 a + b
 ```
+
+An expansion point of `Infinity` gives powers of `1/x`:
+
+```scrut
+$ wo 'Series[1/(1 + x), {x, Infinity, 3}]'
+SeriesData[x, Infinity, {1, -1, 1}, 1, 4, 1]
+```
+
+```scrut
+$ wo 'Normal[Series[Sqrt[x^2 + 1], {x, Infinity, 2}]]'
+1/(2*x) + x
+```

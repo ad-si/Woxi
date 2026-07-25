@@ -15766,6 +15766,16 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // Series[f, {x, Infinity, n}] expands in powers of 1/x. Substituting
+  // x -> 1/t turns it into an ordinary expansion about t == 0, and the
+  // resulting SeriesData carries straight over: the exponents are already
+  // recorded as powers of 1/x once the base is Infinity.
+  if matches!(&x0, Expr::Identifier(s) if s == "Infinity")
+    && let Some(series) = series_at_infinity(&args[0], &var_name, order)?
+  {
+    return Ok(series);
+  }
+
   // Zeta[var] around var == 1 has a simple pole (residue 1). Its Laurent
   // series is 1/(var-1) + Sum_{n>=0} (-1)^n StieltjesGamma[n]/n! (var-1)^n,
   // with StieltjesGamma[0] = EulerGamma. The generic Taylor path would hit the
@@ -20664,4 +20674,79 @@ fn signed_stirling_first_row(n: usize) -> Vec<i128> {
     (row, next) = (next, row);
   }
   row
+}
+
+/// `Series[f, {x, Infinity, n}]` — expand `f` in powers of `1/x`.
+///
+/// Substituting `x -> 1/t` and expanding about `t == 0` gives exactly the
+/// coefficient list Wolfram reports at Infinity, so only the variable and the
+/// expansion point have to be swapped back. Anything the inner expansion
+/// cannot resolve yields `None`, so the caller falls through to the
+/// special-cased asymptotic expansions rather than producing a nonsensical
+/// series.
+fn series_at_infinity(
+  expr: &Expr,
+  var: &str,
+  order: i128,
+) -> Result<Option<Expr>, InterpreterError> {
+  let t = Expr::Identifier(format!("Global`{var}$inf"));
+  let reciprocal = Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![t.clone(), Expr::Integer(-1)].into(),
+  };
+  let substituted = crate::syntax::substitute_variable(expr, var, &reciprocal);
+
+  // Negative powers of t have to be cleared before expanding about t == 0, or
+  // the expansion divides by zero. Try progressively stronger normalizations
+  // and keep the first that yields a series. PowerExpand comes last because it
+  // assumes a positive base, which only holds as x runs to +Infinity.
+  let normalize = |head: &str, e: &Expr| -> Result<Expr, InterpreterError> {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: head.to_string(),
+      args: vec![e.clone()].into(),
+    })
+  };
+  let mut candidates = vec![normalize("Simplify", &substituted)?];
+  let together = normalize("Together", &substituted)?;
+  candidates.push(normalize("PowerExpand", &together)?);
+  candidates.push(together);
+
+  // Candidates that fail divide by zero along the way; those messages are an
+  // artifact of the search, not of the user's expression.
+  let snapshot = crate::snapshot_warnings();
+  crate::push_quiet();
+  let mut series_args = None;
+  for candidate in candidates {
+    let inner = series_ast(&[
+      candidate,
+      Expr::List(
+        vec![t.clone(), Expr::Integer(0), Expr::Integer(order)].into(),
+      ),
+    ])?;
+    if let Expr::FunctionCall { name, args: sa } = &inner
+      && name == "SeriesData"
+      && sa.len() == 6
+      // A coefficient list containing infinities means the expansion broke
+      // down rather than converged.
+      && !matches!(&sa[2], Expr::List(cs) if cs.iter().any(|c| {
+        let r = crate::syntax::expr_to_string(c);
+        r.contains("Infinity") || r.contains("Indeterminate")
+      }))
+    {
+      series_args = Some(sa.to_vec());
+      break;
+    }
+  }
+  crate::pop_quiet();
+  crate::restore_warnings(snapshot);
+  let Some(series_args) = series_args else {
+    return Ok(None);
+  };
+  let mut rebased = series_args;
+  rebased[0] = Expr::Identifier(var.to_string());
+  rebased[1] = Expr::Identifier("Infinity".to_string());
+  Ok(Some(Expr::FunctionCall {
+    name: "SeriesData".to_string(),
+    args: rebased.into(),
+  }))
 }

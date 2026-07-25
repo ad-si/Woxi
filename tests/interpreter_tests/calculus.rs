@@ -8831,6 +8831,104 @@ mod wronskian {
   }
 }
 
+// Series[f, {x, Infinity, n}] expands in powers of 1/x. All values verified
+// against wolframscript.
+mod series_at_infinity {
+  use super::*;
+
+  #[test]
+  fn rational_functions() {
+    assert_eq!(
+      interpret("Series[1/(1 + x), {x, Infinity, 3}]").unwrap(),
+      "SeriesData[x, Infinity, {1, -1, 1}, 1, 4, 1]"
+    );
+    assert_eq!(
+      interpret("Series[1/x, {x, Infinity, 1}]").unwrap(),
+      "SeriesData[x, Infinity, {1}, 1, 2, 1]"
+    );
+    assert_eq!(
+      interpret("Series[x/(x + 1), {x, Infinity, 2}]").unwrap(),
+      "SeriesData[x, Infinity, {1, -1, 1}, 0, 3, 1]"
+    );
+    // A nested reciprocal has to be cleared before expanding.
+    assert_eq!(
+      interpret("Series[(x + 1)/x, {x, Infinity, 2}]").unwrap(),
+      "SeriesData[x, Infinity, {1, 1}, 0, 3, 1]"
+    );
+    assert_eq!(
+      interpret("Series[1/(x^2 + 1), {x, Infinity, 4}]").unwrap(),
+      "SeriesData[x, Infinity, {1, 0, -1}, 2, 5, 1]"
+    );
+  }
+
+  // A term of positive degree keeps its place, so nmin goes negative.
+  #[test]
+  fn positive_powers() {
+    assert_eq!(
+      interpret("Series[x^2, {x, Infinity, 2}]").unwrap(),
+      "SeriesData[x, Infinity, {1}, -2, 3, 1]"
+    );
+  }
+
+  // Algebraic (non-rational) expressions previously failed here with an
+  // Infinity::indet error; the reciprocal substitution handles them.
+  #[test]
+  fn algebraic_expressions() {
+    assert_eq!(
+      interpret("Series[Sqrt[x^2 + 1], {x, Infinity, 2}]").unwrap(),
+      "SeriesData[x, Infinity, {1, 0, 1/2}, -1, 3, 1]"
+    );
+    assert_eq!(
+      interpret("Series[Sqrt[x^2 - 1], {x, Infinity, 3}]").unwrap(),
+      "SeriesData[x, Infinity, {1, 0, -1/2, 0, -1/8}, -1, 4, 1]"
+    );
+    assert_eq!(
+      interpret("Series[(x^3 + 1)^(1/3), {x, Infinity, 2}]").unwrap(),
+      "SeriesData[x, Infinity, {1, 0, 0, 1/3}, -1, 3, 1]"
+    );
+    // Half-integer powers give a fractional step, recorded as the denominator.
+    assert_eq!(
+      interpret("Series[Sqrt[x + 1], {x, Infinity, 2}]").unwrap(),
+      "SeriesData[x, Infinity, {1, 0, 1/2, 0, -1/8}, -1, 5, 2]"
+    );
+    assert_eq!(
+      interpret("Series[1/Sqrt[x], {x, Infinity, 2}]").unwrap(),
+      "SeriesData[x, Infinity, {1}, 1, 5, 2]"
+    );
+  }
+
+  #[test]
+  fn normal_gives_the_polynomial_in_one_over_x() {
+    assert_eq!(
+      interpret("Normal[Series[1/(1 + x), {x, Infinity, 3}]]").unwrap(),
+      "x^(-3) - x^(-2) + x^(-1)"
+    );
+    assert_eq!(
+      interpret("Normal[Series[x/(x + 1), {x, Infinity, 2}]]").unwrap(),
+      "1 + x^(-2) - x^(-1)"
+    );
+    assert_eq!(
+      interpret("Normal[Series[(2 x + 1)/(x - 1), {x, Infinity, 2}]]").unwrap(),
+      "2 + 3/x^2 + 3/x"
+    );
+    assert_eq!(
+      interpret("Normal[Series[Sqrt[x^2 + 1], {x, Infinity, 2}]]").unwrap(),
+      "1/(2*x) + x"
+    );
+  }
+
+  // The special-cased asymptotic expansions still take precedence.
+  #[test]
+  fn asymptotic_special_cases_still_apply() {
+    assert!(
+      interpret("Series[ExpIntegralEi[x], {x, Infinity, 6}]")
+        .unwrap()
+        .starts_with("E^x*("),
+      "the ExpIntegralEi asymptotic expansion should still be used"
+    );
+  }
+}
+
 mod series_coefficient {
   use super::*;
 
