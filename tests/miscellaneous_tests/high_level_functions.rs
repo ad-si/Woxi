@@ -1128,6 +1128,49 @@ mod high_level_functions {
         "ChineseRemainder[{2, 3}, {4, 6}]"
       );
     }
+
+    // Empty congruence lists used to index past the end of the value vector
+    // and panic. wolframscript leaves the call unevaluated, without a message.
+    //   wolframscript -code 'ChineseRemainder[{}, {}]'
+    #[test]
+    fn test_empty_lists_unevaluated() {
+      assert_eq!(
+        interpret("ChineseRemainder[{}, {}]").unwrap(),
+        "ChineseRemainder[{}, {}]"
+      );
+      assert_eq!(
+        interpret("ChineseRemainder[{}, {}, 5]").unwrap(),
+        "ChineseRemainder[{}, {}, 5]"
+      );
+    }
+
+    // Lists of differing length are an argument error that wolframscript
+    // reports via ChineseRemainder::pilist and then leaves unevaluated.
+    //   wolframscript -code 'ChineseRemainder[{1, 2}, {3}]'
+    #[test]
+    fn test_length_mismatch_unevaluated() {
+      assert_eq!(
+        interpret("ChineseRemainder[{1, 2}, {3}]").unwrap(),
+        "ChineseRemainder[{1, 2}, {3}]"
+      );
+      assert_eq!(
+        interpret("ChineseRemainder[{1}, {}]").unwrap(),
+        "ChineseRemainder[{1}, {}]"
+      );
+      assert_eq!(
+        interpret("ChineseRemainder[{}, {3}]").unwrap(),
+        "ChineseRemainder[{}, {3}]"
+      );
+    }
+
+    // A single congruence, and one whose modulus is 1, still reduce.
+    #[test]
+    fn test_single_congruence() {
+      assert_eq!(interpret("ChineseRemainder[{1}, {3}]").unwrap(), "1");
+      assert_eq!(interpret("ChineseRemainder[{1}, {1}]").unwrap(), "0");
+      // Non-coprime but compatible moduli combine over their lcm.
+      assert_eq!(interpret("ChineseRemainder[{0, 0}, {6, 10}]").unwrap(), "0");
+    }
   }
 
   mod divisor_sum_tests {

@@ -826,10 +826,16 @@ pub fn chinese_remainder_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(unevaluated("ChineseRemainder", args));
     }
   };
+  // Mismatched lengths are a reported argument error, not a hard failure.
   if remainders.len() != moduli.len() {
-    return Err(InterpreterError::EvaluationError(
-      "ChineseRemainder: lists must have the same length".into(),
-    ));
+    crate::emit_message(
+      "ChineseRemainder::pilist: The arguments to ChineseRemainder must be two lists of integers of identical length, with the second list containing only positive integers.",
+    );
+    return uneval();
+  }
+  // No congruences means nothing to solve.
+  if remainders.is_empty() {
+    return uneval();
   }
 
   let mut r_vals = Vec::new();
