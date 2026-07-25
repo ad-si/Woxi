@@ -620,6 +620,48 @@ pub fn position_extreme_ast(
   Ok(Expr::List(positions.into()))
 }
 
+/// Apply the position-count argument of `Ordering` / `OrderingBy` to the full
+/// ordering. `n` positions are taken from the front, `-n` from the back, and
+/// `All` keeps everything.
+///
+/// Asking for more positions than exist is a `Take` failure in wolframscript,
+/// reported against the ordering itself rather than the original list, after
+/// which the whole call is left unevaluated.
+fn limit_ordering(
+  count: Option<&Expr>,
+  ordering: Vec<Expr>,
+) -> Option<Vec<Expr>> {
+  let Some(count) = count else {
+    return Some(ordering);
+  };
+  if matches!(count, Expr::Identifier(n) if n == "All") {
+    return Some(ordering);
+  }
+  let Some(n) = expr_to_i128(count) else {
+    return Some(ordering);
+  };
+  if n.unsigned_abs() as usize > ordering.len() {
+    let (from, to) = if n >= 0 {
+      ("1".to_string(), n.to_string())
+    } else {
+      (n.to_string(), "-1".to_string())
+    };
+    crate::emit_message(&format!(
+      "Take::take: Cannot take positions {from} through {to} in {}.",
+      crate::syntax::expr_to_output(&Expr::List(ordering.into()))
+    ));
+    return None;
+  }
+  let mut ordering = ordering;
+  if n >= 0 {
+    ordering.truncate(n as usize);
+  } else {
+    let abs_n = n.unsigned_abs() as usize;
+    ordering = ordering.split_off(ordering.len() - abs_n);
+  }
+  Some(ordering)
+}
+
 pub fn ordering_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
@@ -699,29 +741,17 @@ pub fn ordering_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  let mut result: Vec<Expr> = indexed
+  let result: Vec<Expr> = indexed
     .iter()
     .map(|(idx, _)| Expr::Integer((*idx + 1) as i128))
     .collect();
 
   // The second argument, if present and not the symbol `All`, limits the
   // number of positions returned.
-  if args.len() >= 2 {
-    let is_all = matches!(&args[1], Expr::Identifier(n) if n == "All");
-    if !is_all && let Some(n) = expr_to_i128(&args[1]) {
-      if n >= 0 {
-        result.truncate(n as usize);
-      } else {
-        // Negative n: take last |n| elements (largest positions)
-        let abs_n = n.unsigned_abs() as usize;
-        if abs_n <= result.len() {
-          result = result.split_off(result.len() - abs_n);
-        }
-      }
-    }
+  match limit_ordering(args.get(1), result) {
+    Some(result) => Ok(Expr::List(result.into())),
+    None => Ok(unevaluated("Ordering", args)),
   }
-
-  Ok(Expr::List(result.into()))
 }
 
 /// OrderingBy[list, f] / OrderingBy[list, f, n] — the positions that order
@@ -798,28 +828,17 @@ pub fn ordering_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     keyed.sort_by(|a, b| by_key_cmp(&a.1, &b.1));
   }
 
-  let mut result: Vec<Expr> = keyed
+  let result: Vec<Expr> = keyed
     .iter()
     .map(|(idx, _)| Expr::Integer((*idx + 1) as i128))
     .collect();
 
   // The 3rd argument, if present and not `All`, limits how many positions are
   // returned: positive keeps the first n, negative the last |n|.
-  if let Some(nspec) = args.get(2) {
-    let is_all = matches!(nspec, Expr::Identifier(n) if n == "All");
-    if !is_all && let Some(n) = expr_to_i128(nspec) {
-      if n >= 0 {
-        result.truncate(n as usize);
-      } else {
-        let abs_n = n.unsigned_abs() as usize;
-        if abs_n <= result.len() {
-          result = result.split_off(result.len() - abs_n);
-        }
-      }
-    }
+  match limit_ordering(args.get(2), result) {
+    Some(result) => Ok(Expr::List(result.into())),
+    None => Ok(unevaluated("OrderingBy", args)),
   }
-
-  Ok(Expr::List(result.into()))
 }
 
 /// Comparator for *By key expressions: numeric when possible, lexicographic fallback.

@@ -1474,6 +1474,66 @@ mod ordering {
     assert_eq!(interpret("Ordering[{3, 1, 2}, 2]").unwrap(), "{2, 3}");
   }
 
+  // Asking for more positions than exist is a Take failure, reported against
+  // the ordering itself rather than the original list. Woxi used to silently
+  // hand back the full ordering.
+  //   wolframscript -code 'Ordering[{3, 1, 2}, 5]'
+  #[test]
+  fn limit_beyond_the_end_is_reported() {
+    clear_state();
+    let r = interpret_with_stdout("Ordering[{3, 1, 2}, 5]").unwrap();
+    assert_eq!(r.result, "Ordering[{3, 1, 2}, 5]");
+    assert!(
+      r.warnings[0].contains(
+        "Take::take: Cannot take positions 1 through 5 in {2, 3, 1}."
+      ),
+      "unexpected message: {}",
+      r.warnings[0]
+    );
+    // Negative counts report the span they tried to take from the end.
+    clear_state();
+    let r = interpret_with_stdout("Ordering[{3, 1, 2}, -5]").unwrap();
+    assert_eq!(r.result, "Ordering[{3, 1, 2}, -5]");
+    assert!(
+      r.warnings[0].contains(
+        "Take::take: Cannot take positions -5 through -1 in {2, 3, 1}."
+      ),
+      "unexpected message: {}",
+      r.warnings[0]
+    );
+    // An empty list has no positions at all.
+    clear_state();
+    let r = interpret_with_stdout("Ordering[{}, 1]").unwrap();
+    assert_eq!(r.result, "Ordering[{}, 1]");
+    assert!(r.warnings[0].contains("Cannot take positions 1 through 1 in {}."));
+    // A comparator does not change the check.
+    clear_state();
+    assert_eq!(
+      interpret("Ordering[{3, 1, 2}, 5, Greater]").unwrap(),
+      "Ordering[{3, 1, 2}, 5, Greater]"
+    );
+    // OrderingBy validates its third argument the same way.
+    clear_state();
+    assert_eq!(
+      interpret("OrderingBy[{3, 1, 2}, Identity, 5]").unwrap(),
+      "OrderingBy[{3, 1, 2}, Identity, 5]"
+    );
+  }
+
+  // Counts that exactly cover the list are still fine, in both directions.
+  #[test]
+  fn limit_at_the_boundary_is_allowed() {
+    clear_state();
+    assert_eq!(interpret("Ordering[{3, 1, 2}, 3]").unwrap(), "{2, 3, 1}");
+    assert_eq!(interpret("Ordering[{3, 1, 2}, -3]").unwrap(), "{2, 3, 1}");
+    assert_eq!(interpret("Ordering[{3, 1, 2}, 0]").unwrap(), "{}");
+    assert_eq!(interpret("Ordering[{3, 1, 2}, All]").unwrap(), "{2, 3, 1}");
+    assert_eq!(
+      interpret("OrderingBy[{3, 1, 2}, Identity, 2]").unwrap(),
+      "{2, 3}"
+    );
+  }
+
   #[test]
   fn already_sorted() {
     assert_eq!(interpret("Ordering[{1, 2, 3}]").unwrap(), "{1, 2, 3}");
@@ -18677,5 +18737,53 @@ mod subset_map {
       .unwrap(),
       "SubsetMap[Total, {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, {All, 1}]"
     );
+  }
+}
+
+// Union[] is the identity for the union and is legitimately {}, but an
+// intersection or a difference has no such starting point: wolframscript
+// reports the call and leaves it unevaluated. Woxi returned {} for all three.
+mod set_operations_with_no_arguments {
+  use super::*;
+
+  //   wolframscript -code 'Intersection[]'
+  #[test]
+  fn intersection_and_complement_require_an_argument() {
+    clear_state();
+    let r = interpret_with_stdout("Intersection[]").unwrap();
+    assert_eq!(r.result, "Intersection[]");
+    assert!(r.warnings[0].contains(
+      "Intersection::argm: Intersection called with 0 arguments; \
+       1 or more arguments are expected."
+    ));
+    clear_state();
+    let r = interpret_with_stdout("Complement[]").unwrap();
+    assert_eq!(r.result, "Complement[]");
+    assert!(r.warnings[0].contains(
+      "Complement::argm: Complement called with 0 arguments; \
+       1 or more arguments are expected."
+    ));
+  }
+
+  //   wolframscript -code 'Union[]'
+  #[test]
+  fn union_with_no_arguments_is_empty() {
+    clear_state();
+    assert_eq!(interpret("Union[]").unwrap(), "{}");
+  }
+
+  // One or more arguments are unaffected.
+  #[test]
+  fn ordinary_calls_still_work() {
+    clear_state();
+    assert_eq!(interpret("Intersection[{1}]").unwrap(), "{1}");
+    assert_eq!(interpret("Intersection[{1, 2}, {}]").unwrap(), "{}");
+    assert_eq!(
+      interpret("Intersection[{1, 2}, {2}, {2, 5}]").unwrap(),
+      "{2}"
+    );
+    assert_eq!(interpret("Complement[{1, 2}]").unwrap(), "{1, 2}");
+    assert_eq!(interpret("Complement[{}, {1}]").unwrap(), "{}");
+    assert_eq!(interpret("Complement[{1, 2, 3}, {2}]").unwrap(), "{1, 3}");
   }
 }

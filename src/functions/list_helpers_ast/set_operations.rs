@@ -444,9 +444,25 @@ pub fn union_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// AST-based Intersection: find common elements.
+/// Report a set operation called with no arguments and return it unevaluated.
+/// `Union[]` is the identity for the union and is legitimately `{}`, but an
+/// intersection or a difference has no such starting point.
+fn require_one_argument(
+  name: &str,
+  lists: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  if !lists.is_empty() {
+    return None;
+  }
+  crate::emit_message(&format!(
+    "{name}::argm: {name} called with 0 arguments; 1 or more arguments are expected."
+  ));
+  Some(Ok(unevaluated(name, lists)))
+}
+
 pub fn intersection_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
-  if lists.is_empty() {
-    return Ok(Expr::List(vec![].into()));
+  if let Some(msg) = require_one_argument("Intersection", lists) {
+    return msg;
   }
 
   // On associations, Intersection keeps the key->value pairs of the first
@@ -578,8 +594,8 @@ fn intersection_with_same_test(
 
 /// AST-based Complement: elements in first list not in others.
 pub fn complement_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
-  if lists.is_empty() {
-    return Ok(Expr::List(vec![].into()));
+  if let Some(msg) = require_one_argument("Complement", lists) {
+    return msg;
   }
 
   // On associations, Complement keeps the first association's key->value pairs

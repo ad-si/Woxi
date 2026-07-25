@@ -26,3 +26,12 @@ $ wo 'Intersection[{1, 2, 3}, {1, 2, 3}]'
 $ wo 'Intersection[{1, 2, 3}, {2, 3}, {3}]'
 {3}
 ```
+
+Unlike `Union`, an intersection needs at least one argument.
+
+```scrut
+$ wo 'Intersection[]'
+
+Intersection::argm: Intersection called with 0 arguments; 1 or more arguments are expected.
+Intersection[]
+```
