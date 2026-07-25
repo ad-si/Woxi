@@ -1321,6 +1321,16 @@ pub fn apply_curried_call(
     Expr::FunctionCall {
       name,
       args: func_args,
+    } if name == "TuringMachine" && func_args.len() == 1 && args.len() == 1 => {
+      // TuringMachine[rule][init] — the operator form is one step.
+      crate::functions::turing_machine_ast::turing_machine_ast(&[
+        func_args[0].clone(),
+        args[0].clone(),
+      ])
+    }
+    Expr::FunctionCall {
+      name,
+      args: func_args,
     } if name == "SubstitutionSystem"
       && func_args.len() == 1
       && args.len() == 1 =>

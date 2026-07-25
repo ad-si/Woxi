@@ -1505,7 +1505,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "TrimmedVariance" => Some((1, 2)),
     "TrueQ" => Some((1, 1)),
     "Tuples" => Some((1, 2)),
-    "TuringMachine" => Some((3, 3)),
+    "TuringMachine" => Some((1, 3)),
     "Uncompress" => Some((1, 1)),
     "Unequal" => Some((0, usize::MAX)),
     "UnequalTo" => Some((1, 1)),

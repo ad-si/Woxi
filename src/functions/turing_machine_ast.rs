@@ -10,8 +10,52 @@ use crate::syntax::{Expr, unevaluated};
 /// Returns list of {{state, head_pos, cumulative_shift}, tape} for each step (including initial).
 /// Tape uses periodic boundaries.
 pub fn turing_machine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // TuringMachine[rule, init] — one step, returning just the new state.
+  if args.len() == 2 {
+    let evolved = turing_machine_ast(&[
+      args[0].clone(),
+      args[1].clone(),
+      Expr::Integer(1),
+    ])?;
+    if let Expr::List(states) = &evolved
+      && states.len() == 2
+    {
+      let last = states[1].clone();
+      // An infinite-tape run reports its tape in `{cells, background}` form.
+      if let Some(bg) = infinite_tape_background(&args[1])
+        && let Expr::List(pair) = &last
+        && pair.len() == 2
+      {
+        return Ok(Expr::List(
+          vec![
+            pair[0].clone(),
+            Expr::List(vec![pair[1].clone(), bg].into()),
+          ]
+          .into(),
+        ));
+      }
+      return Ok(last);
+    }
+    return Ok(unevaluated("TuringMachine", args));
+  }
+
   if args.len() != 3 {
     return Ok(unevaluated("TuringMachine", args));
+  }
+
+  // Only a plain step count is accepted; `{t}` and friends are rejected.
+  if !matches!(&args[2], Expr::Integer(n) if *n >= 0) {
+    crate::emit_message(&format!(
+      "TuringMachine::tspec: The time specification {} must be an integer >= 0.",
+      crate::syntax::expr_to_string(&args[2])
+    ));
+    return Ok(unevaluated("TuringMachine", args));
+  }
+
+  // An infinite background tape runs on a pad wide enough that the head
+  // never wraps, then reports only the cells it actually visited.
+  if infinite_tape_background(&args[1]).is_some() {
+    return turing_machine_infinite(args);
   }
 
   // Parse rule specification
@@ -117,6 +161,8 @@ fn parse_init(
 
   // Parse state spec
   let (state, pos) = match &items[0] {
+    // The documented form names the state directly; the head starts at 1.
+    Expr::Integer(n) => (*n as usize, 1usize),
     Expr::List(spec) if spec.len() == 1 => {
       let s = match &spec[0] {
         Expr::Integer(n) => *n as usize,
@@ -277,4 +323,110 @@ fn simulate(
   }
 
   results
+}
+
+/// The background colour of an `{state, {cells, background}}` initial
+/// condition, or `None` when the tape is an ordinary finite (cyclic) list.
+fn infinite_tape_background(init: &Expr) -> Option<Expr> {
+  let Expr::List(items) = init else { return None };
+  if items.len() != 2 {
+    return None;
+  }
+  let Expr::List(tape) = &items[1] else {
+    return None;
+  };
+  // `{cells, background}`: a list of cells followed by a single colour.
+  (tape.len() == 2
+    && matches!(&tape[0], Expr::List(_))
+    && matches!(&tape[1], Expr::Integer(_)))
+  .then(|| tape[1].clone())
+}
+
+/// Run a machine on an infinite background tape. The head can move at most one
+/// cell per step, so a pad of `steps` cells on either side is enough for the
+/// wrap-around simulation never to wrap; afterwards the tape is cut down to
+/// the cells the run actually touched, which is what Wolfram reports.
+fn turing_machine_infinite(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let (rule_num, num_states, num_colors) = parse_rule_spec(&args[0])?;
+  let steps = match &args[2] {
+    Expr::Integer(n) => *n as usize,
+    _ => return Ok(unevaluated("TuringMachine", args)),
+  };
+
+  let Expr::List(items) = &args[1] else {
+    return Ok(unevaluated("TuringMachine", args));
+  };
+  let Expr::List(tape_spec) = &items[1] else {
+    return Ok(unevaluated("TuringMachine", args));
+  };
+  let (Expr::List(cells), Expr::Integer(bg)) = (&tape_spec[0], &tape_spec[1])
+  else {
+    return Ok(unevaluated("TuringMachine", args));
+  };
+  let bg = *bg as u8;
+  let content: Vec<u8> = cells
+    .iter()
+    .map(|e| match e {
+      Expr::Integer(n) => Ok(*n as u8),
+      _ => Err(InterpreterError::EvaluationError(
+        "TuringMachine: tape cells must be integers".into(),
+      )),
+    })
+    .collect::<Result<_, _>>()?;
+
+  // The state spec is shared with the finite form; only the tape differs.
+  let (state, start_pos, _) = parse_init(&Expr::List(
+    vec![items[0].clone(), Expr::List(vec![].into())].into(),
+  ))?;
+
+  // Offset 0 is the head's starting cell, and the given content starts there.
+  let pad = steps + 1;
+  let mut tape = vec![bg; pad];
+  tape.extend(content.iter().copied());
+  tape.resize(pad + content.len().max(1) + pad, bg);
+  let head = pad + start_pos - 1;
+
+  let transitions = decode_rule(rule_num, num_states, num_colors);
+  let results = simulate(
+    &transitions,
+    num_states,
+    num_colors,
+    state,
+    head + 1,
+    &tape,
+    steps,
+  );
+
+  // The reported window spans every offset the head reached plus the cells
+  // the initial content occupies.
+  let mut lo = 0i64;
+  let mut hi = content.len().saturating_sub(1) as i64;
+  for (_, _, offset, _) in &results {
+    lo = lo.min(*offset);
+    hi = hi.max(*offset);
+  }
+
+  let out: Vec<Expr> = results
+    .into_iter()
+    .map(|(st, _, offset, full_tape)| {
+      let window: Vec<Expr> = (lo..=hi)
+        .map(|x| Expr::Integer(full_tape[(head as i64 + x) as usize] as i128))
+        .collect();
+      Expr::List(
+        vec![
+          Expr::List(
+            vec![
+              Expr::Integer(st as i128),
+              Expr::Integer((offset - lo + 1) as i128),
+              Expr::Integer(offset as i128),
+            ]
+            .into(),
+          ),
+          Expr::List(window.into()),
+        ]
+        .into(),
+      )
+    })
+    .collect();
+  Ok(Expr::List(out.into()))
 }

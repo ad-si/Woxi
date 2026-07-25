@@ -1193,7 +1193,7 @@ pub fn dispatch_linear_algebra_functions(
         crate::functions::cellular_automaton_ast::cellular_automaton_ast(args),
       );
     }
-    "TuringMachine" if args.len() == 3 => {
+    "TuringMachine" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::turing_machine_ast::turing_machine_ast(
         args,
       ));
