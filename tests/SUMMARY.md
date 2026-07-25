@@ -1340,6 +1340,7 @@
     - [`Simplify`](symbolic/Simplify.md)
     - [`Solve`](symbolic/Solve.md)
     - [`SolveAlways`](symbolic/SolveAlways.md)
+    - [`SolveValues`](symbolic/SolveValues.md)
     - [`Sum`](symbolic/Sum.md)
     - [`SymmetricPolynomial`](symbolic/SymmetricPolynomial.md)
     - [`ToRadicals`](symbolic/ToRadicals.md)

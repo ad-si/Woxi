@@ -146,6 +146,7 @@ x + 2*x^2 + x^3
 - [`Root`](symbolic/Root.md)
 - [`Roots`](symbolic/Roots.md)
 - [`SolveAlways`](symbolic/SolveAlways.md)
+- [`SolveValues`](symbolic/SolveValues.md)
 - [`SymmetricPolynomial`](symbolic/SymmetricPolynomial.md)
 - [`ToRadicals`](symbolic/ToRadicals.md)
 - [`ToRules`](symbolic/ToRules.md)

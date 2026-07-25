@@ -977,33 +977,10 @@ pub fn to_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// It's `Solve[eqn, var]` flattened to just the right-hand sides.
 pub fn solve_values_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let solutions = solve_ast(args)?;
-  // `solve_ast` returns either a list of rule-lists like {{var->val}, {var->val2}}
-  // or stays unevaluated. If it stayed symbolic, mirror that for SolveValues.
-  let Expr::List(solution_sets) = &solutions else {
-    return Ok(unevaluated("SolveValues", args));
-  };
-
-  // The rules inside Solve's output use the dedicated `Expr::Rule` variant
-  // (not a generic `Rule[lhs, rhs]` function call), so we destructure it
-  // directly. Any unrecognised branch causes us to fall back to symbolic.
-  let mut values = Vec::with_capacity(solution_sets.len());
-  for branch in solution_sets.iter() {
-    let Expr::List(rules) = branch else {
-      return Ok(unevaluated("SolveValues", args));
-    };
-    if rules.len() != 1 {
-      // Multi-variable Solve: take the values in order so SolveValues mirrors
-      // wolframscript's `{{val_x, val_y}, …}` output. But the actuarial
-      // example uses only single-variable Solve, so fall back symbolically
-      // if we see something more elaborate.
-      return Ok(unevaluated("SolveValues", args));
-    }
-    let Expr::Rule { replacement, .. } = &rules[0] else {
-      return Ok(unevaluated("SolveValues", args));
-    };
-    values.push((**replacement).clone());
-  }
-  Ok(Expr::List(values.into()))
+  Ok(
+    solution_values(&solutions, &args[1])
+      .unwrap_or_else(|| unevaluated("SolveValues", args)),
+  )
 }
 
 /// NSolveValues[eqns, vars] / NSolveValues[eqns, vars, domain] — the numeric
@@ -1013,13 +990,26 @@ pub fn solve_values_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// order the variables are given.
 pub fn nsolve_values_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let solutions = nsolve_ast(args)?;
-  let Expr::List(solution_sets) = &solutions else {
-    return Ok(unevaluated("NSolveValues", args));
+  Ok(
+    solution_values(&solutions, &args[1])
+      .unwrap_or_else(|| unevaluated("NSolveValues", args)),
+  )
+}
+
+/// Strip the `{var -> value}` rules off a Solve/NSolve result, keeping just
+/// the values. The result's shape follows the variable specification: a bare
+/// symbol gives a flat list of values, while a list of variables gives one
+/// value-list per solution, in the order the variables were named. Returns
+/// `None` when the solutions are not in that rule form, so the caller can
+/// stay unevaluated.
+fn solution_values(solutions: &Expr, var_spec: &Expr) -> Option<Expr> {
+  let Expr::List(solution_sets) = solutions else {
+    return None;
   };
 
   // A list of variables ({x, y}) means each solution contributes a value-list;
   // a single variable contributes one value.
-  let vars: Option<Vec<String>> = match &args[1] {
+  let vars: Option<Vec<String>> = match var_spec {
     Expr::List(vs) => vs
       .iter()
       .map(|v| match v {
@@ -1029,45 +1019,50 @@ pub fn nsolve_values_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect(),
     _ => None,
   };
+  // A variable list that isn't all symbols is not something we can order by.
+  if matches!(var_spec, Expr::List(_)) && vars.is_none() {
+    return None;
+  }
 
   let mut out = Vec::with_capacity(solution_sets.len());
   for branch in solution_sets.iter() {
     let Expr::List(rules) = branch else {
-      return Ok(unevaluated("NSolveValues", args));
+      return None;
     };
     match &vars {
-      // Multi-variable: emit the values in the requested variable order.
+      // Multi-variable: emit the values in the requested variable order. A
+      // variable the equations do not pin down keeps its own symbol, matching
+      // wolframscript's `{{x, 2 - x}}`.
       Some(names) => {
         let mut branch_vals = Vec::with_capacity(names.len());
         for name in names {
           let value = rules.iter().find_map(|r| match r {
-            Expr::Rule { pattern, replacement }
-              if matches!(pattern.as_ref(), Expr::Identifier(p) if p == name) =>
-            {
+            Expr::Rule {
+              pattern,
+              replacement,
+            } if matches!(pattern.as_ref(), Expr::Identifier(p) if p == name) => {
               Some((**replacement).clone())
             }
             _ => None,
           });
-          match value {
-            Some(v) => branch_vals.push(v),
-            None => return Ok(unevaluated("NSolveValues", args)),
-          }
+          branch_vals
+            .push(value.unwrap_or_else(|| Expr::Identifier(name.clone())));
         }
         out.push(Expr::List(branch_vals.into()));
       }
       // Single variable: one rule per branch, emit its value.
       None => {
         if rules.len() != 1 {
-          return Ok(unevaluated("NSolveValues", args));
+          return None;
         }
         let Expr::Rule { replacement, .. } = &rules[0] else {
-          return Ok(unevaluated("NSolveValues", args));
+          return None;
         };
         out.push((**replacement).clone());
       }
     }
   }
-  Ok(Expr::List(out.into()))
+  Some(Expr::List(out.into()))
 }
 
 /// Whether `s` names a built-in constant rather than a solve variable.

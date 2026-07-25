@@ -6879,6 +6879,59 @@ mod nsolve_values {
   }
 }
 
+// SolveValues follows the shape of its variable specification: a bare symbol
+// gives a flat list of values, a list of variables gives one value-list per
+// solution. All values verified against wolframscript.
+mod solve_values_shape {
+  use super::*;
+
+  #[test]
+  fn a_bare_symbol_gives_a_flat_list() {
+    assert_eq!(interpret("SolveValues[x^2 == 1, x]").unwrap(), "{-1, 1}");
+    assert_eq!(interpret("SolveValues[a x == b, x]").unwrap(), "{b/a}");
+    assert_eq!(interpret("SolveValues[x^2 == -1, x]").unwrap(), "{-I, I}");
+    assert_eq!(
+      interpret("SolveValues[x^2 + a x + 1 == 0, x]").unwrap(),
+      "{(-a - Sqrt[-4 + a^2])/2, (-a + Sqrt[-4 + a^2])/2}"
+    );
+  }
+
+  // Even a one-element variable list nests the result.
+  #[test]
+  fn a_variable_list_gives_one_tuple_per_solution() {
+    assert_eq!(
+      interpret("SolveValues[x^2 == 1, {x}]").unwrap(),
+      "{{-1}, {1}}"
+    );
+    assert_eq!(interpret("SolveValues[{x == 1}, {x}]").unwrap(), "{{1}}");
+  }
+
+  #[test]
+  fn systems_of_equations() {
+    assert_eq!(
+      interpret("SolveValues[{x + y == 2, x - y == 0}, {x, y}]").unwrap(),
+      "{{1, 1}}"
+    );
+    // Values come out in the order the variables are named.
+    assert_eq!(
+      interpret("SolveValues[{x + y == 2, x - y == 0}, {y, x}]").unwrap(),
+      "{{1, 1}}"
+    );
+    assert_eq!(
+      interpret("SolveValues[{x^2 + y^2 == 1, y == x}, {x, y}]").unwrap(),
+      "{{-(1/Sqrt[2]), -(1/Sqrt[2])}, {1/Sqrt[2], 1/Sqrt[2]}}"
+    );
+  }
+
+  #[test]
+  fn a_domain_still_filters() {
+    assert_eq!(
+      interpret("SolveValues[x^2 == 1, x, Reals]").unwrap(),
+      "{-1, 1}"
+    );
+  }
+}
+
 // Solve[eqns, vars, Rationals] keeps only rational-valued solutions; an
 // irrational algebraic root such as Sqrt[2] is filtered out. Verified against
 // wolframscript.
