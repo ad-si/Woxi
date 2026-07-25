@@ -32,3 +32,21 @@ A dense nested list is converted by recording its non-default entries:
 $ wo 'SparseArray[{{0, a}, {b, 0}}]'
 SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 2}, {{2}, {1}}}, {a, b}}]
 ```
+
+Arithmetic with scalars or other sparse arrays stays sparse.
+Adding a scalar shifts the default fill value instead of densifying:
+
+```scrut
+$ wo 'SparseArray[{1 -> 1}, 3] + 1'
+SparseArray[Automatic, {3}, 1, {1, {{0, 1}, {{1}}}, {2}}]
+```
+
+```scrut
+$ wo 'Normal[SparseArray[{1 -> 1}, 3] + 1]'
+{2, 1, 1}
+```
+
+```scrut
+$ wo 'SparseArray[{1 -> 1}, 3] + SparseArray[{2 -> 5}, 3]'
+SparseArray[Automatic, {3}, 0, {1, {{0, 2}, {{1}, {2}}}, {1, 5}}]
+```

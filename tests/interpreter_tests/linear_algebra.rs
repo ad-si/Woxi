@@ -8393,6 +8393,100 @@ mod sparse_array_arithmetic {
       "{6, 4, 1}"
     );
   }
+
+  // Adding a scalar shifts the background rather than densifying.
+  #[test]
+  fn sparse_plus_scalar_shifts_the_background() {
+    assert_eq!(
+      interpret("SparseArray[{1 -> 1}, 3] + 1").unwrap(),
+      "SparseArray[Automatic, {3}, 1, {1, {{0, 1}, {{1}}}, {2}}]"
+    );
+    assert_eq!(
+      interpret("SparseArray[{{1, 1} -> 1}, {2, 2}] + 1").unwrap(),
+      "SparseArray[Automatic, {2, 2}, 1, {1, {{0, 1, 1}, {{1}}}, {2}}]"
+    );
+    // The stored entry survives even when it coincides with 0.
+    assert_eq!(
+      interpret("SparseArray[{1 -> 1}, 3] - 1").unwrap(),
+      "SparseArray[Automatic, {3}, -1, {1, {{0, 1}, {{1}}}, {0}}]"
+    );
+    assert_eq!(
+      interpret("Normal[SparseArray[{1 -> 1}, 3] + 1]").unwrap(),
+      "{2, 1, 1}"
+    );
+    assert_eq!(
+      interpret("Head[SparseArray[{1 -> 1}, 3] + 1]").unwrap(),
+      "SparseArray"
+    );
+    assert_eq!(
+      interpret("ArrayRules[SparseArray[{1 -> 1}, 3] + 1]").unwrap(),
+      "{{1} -> 2, {_} -> 1}"
+    );
+  }
+
+  #[test]
+  fn sparse_times_and_negated_scalar_keep_a_zero_background() {
+    assert_eq!(
+      interpret("SparseArray[{1 -> 1}, 3] * 2").unwrap(),
+      "SparseArray[Automatic, {3}, 0, {1, {{0, 1}, {{1}}}, {2}}]"
+    );
+    assert_eq!(
+      interpret("-SparseArray[{1 -> 1}, 3]").unwrap(),
+      "SparseArray[Automatic, {3}, 0, {1, {{0, 1}, {{1}}}, {-1}}]"
+    );
+    assert_eq!(
+      interpret("SparseArray[{1 -> 2}, 3]/2").unwrap(),
+      "SparseArray[Automatic, {3}, 0, {1, {{0, 1}, {{1}}}, {1}}]"
+    );
+  }
+
+  #[test]
+  fn sparse_raised_to_a_power() {
+    assert_eq!(
+      interpret("SparseArray[{1 -> 1}, 3]^2").unwrap(),
+      "SparseArray[Automatic, {3}, 0, {1, {{0, 1}, {{1}}}, {1}}]"
+    );
+    assert_eq!(
+      interpret("SparseArray[{1 -> 4}, 3]^(1/2)").unwrap(),
+      "SparseArray[Automatic, {3}, 0, {1, {{0, 1}, {{1}}}, {2}}]"
+    );
+  }
+
+  #[test]
+  fn two_sparse_arrays_combine_over_the_union_of_their_positions() {
+    assert_eq!(
+      interpret("SparseArray[{1 -> 1}, 3] + SparseArray[{2 -> 5}, 3]").unwrap(),
+      "SparseArray[Automatic, {3}, 0, {1, {{0, 2}, {{1}, {2}}}, {1, 5}}]"
+    );
+    assert_eq!(
+      interpret("SparseArray[{1 -> 1}, 3] * SparseArray[{1 -> 2}, 3]").unwrap(),
+      "SparseArray[Automatic, {3}, 0, {1, {{0, 1}, {{1}}}, {2}}]"
+    );
+  }
+
+  #[test]
+  fn chained_sparse_arithmetic() {
+    assert_eq!(
+      interpret("Normal[2 SparseArray[{1 -> 1, 3 -> 2}, 4] + 1]").unwrap(),
+      "{3, 1, 5, 1}"
+    );
+  }
+
+  // Dividing by a SparseArray whose background is 0 gives a ComplexInfinity
+  // background, reported once and tagged like the `1/x` syntax.
+  #[test]
+  fn dividing_by_a_sparse_array_reports_power_infy_once() {
+    assert_eq!(
+      interpret("1/SparseArray[{1 -> 2}, 3]").unwrap(),
+      "SparseArray[Automatic, {3}, ComplexInfinity, {1, {{0, 1}, {{1}}}, {1/2}}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    let infy: Vec<_> = msgs
+      .iter()
+      .filter(|m| m.contains("Power::infy: Infinite expression"))
+      .collect();
+    assert_eq!(infy.len(), 1, "expected one Power::infy, got {msgs:?}");
+  }
 }
 
 // StateSpaceModel objects and their structural control matrices.

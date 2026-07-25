@@ -327,7 +327,7 @@ MapIndexed,Applies a function to each element along with its index; on an associ
 RiemannR,Riemann prime counting function R(x) approximating PrimePi,✅,pure,7.0,331
 Item,Wrapper for specifying individual item options in Grid and similar constructs,✅,pure,6.0,332
 SetAttributes,Sets attributes for a symbol,✅,stateful,1.0,333
-SparseArray,Creates a sparse array representation,✅,pure,5.0,334
+SparseArray,Creates a sparse array representation that stays sparse under arithmetic,✅,pure,5.0,334
 ArcSech,Returns the inverse hyperbolic secant,✅,pure,1.0,335
 NumberForm,Displays a number with specified formatting; ToString renders x to n significant figures or with {n;f} to exactly f decimal places (the single-argument form uses the 6-significant-figure default; reals with exponent >= 6 or <= -6 switch to 2D scientific notation) and supports DigitBlock/NumberSeparator digit grouping and NumberPadding field padding,✅,pure,1.0,336
 FrameTicks,Option specifying tick marks on the frame of a plot,✅,none,2.0,337

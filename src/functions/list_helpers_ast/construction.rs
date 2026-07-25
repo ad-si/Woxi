@@ -2697,6 +2697,173 @@ pub fn densify_sparse_array(expr: &Expr) -> Option<Expr> {
   Some(dense)
 }
 
+/// The background (default) element of a canonical SparseArray.
+fn sparse_array_background(expr: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "SparseArray" || args.len() != 4 {
+    return None;
+  }
+  matches!(&args[0], Expr::Identifier(s) if s == "Automatic")
+    .then(|| args[2].clone())
+}
+
+/// Shape of a rectangular nested list, as a `List` of integers.
+fn nested_list_dims(expr: &Expr) -> Option<Expr> {
+  let mut dims = Vec::new();
+  let mut cur = expr;
+  while let Expr::List(items) = cur {
+    dims.push(Expr::Integer(items.len() as i128));
+    match items.first() {
+      Some(first) => cur = first,
+      None => break,
+    }
+  }
+  (!dims.is_empty()).then(|| Expr::List(dims.into()))
+}
+
+/// Row-major index paths (1-based) of the entries of a dense nested list that
+/// differ from `background` — i.e. the positions the SparseArray stores.
+fn sparse_stored_paths(dense: &Expr, background: &Expr) -> Vec<Vec<usize>> {
+  fn walk(
+    e: &Expr,
+    bg: &Expr,
+    path: &mut Vec<usize>,
+    out: &mut Vec<Vec<usize>>,
+  ) {
+    if let Expr::List(items) = e {
+      for (i, item) in items.iter().enumerate() {
+        path.push(i + 1);
+        walk(item, bg, path, out);
+        path.pop();
+      }
+      return;
+    }
+    if crate::syntax::expr_to_string(e) != crate::syntax::expr_to_string(bg) {
+      out.push(path.clone());
+    }
+  }
+  let mut out = Vec::new();
+  walk(dense, background, &mut Vec::new(), &mut out);
+  out
+}
+
+/// Element of a dense nested list at a 1-based index path.
+fn nested_list_at(dense: &Expr, path: &[usize]) -> Option<Expr> {
+  let mut cur = dense;
+  for &i in path {
+    let Expr::List(items) = cur else { return None };
+    cur = items.get(i - 1)?;
+  }
+  Some(cur.clone())
+}
+
+/// Elementwise arithmetic (`Plus`, `Times`, `Power`, …) over operands of which
+/// at least one is a SparseArray. Wolfram keeps the result sparse as long as
+/// the other operands are scalars or SparseArrays — the background is the head
+/// applied to the operands' backgrounds, so `sa + 1` shifts the background to
+/// 1 rather than densifying. A plain dense list operand makes the result
+/// dense, so those are left to the ordinary Listable path.
+///
+/// Returns `None` when no operand is a SparseArray, when one cannot be
+/// densified, or when a dense list is involved.
+pub fn try_sparse_array_arithmetic(head: &str, args: &[Expr]) -> Option<Expr> {
+  let is_sparse = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "SparseArray");
+  if !args.iter().any(is_sparse)
+    || args.iter().any(|a| matches!(a, Expr::List(_)))
+  {
+    return None;
+  }
+
+  // Each operand contributes its dense form (SparseArray) or itself (scalar);
+  // the background column uses the SparseArray backgrounds instead.
+  let mut dense_args = Vec::with_capacity(args.len());
+  let mut background_args = Vec::with_capacity(args.len());
+  for a in args {
+    if is_sparse(a) {
+      dense_args.push(Some(densify_sparse_array(a)?));
+      background_args.push(sparse_array_background(a)?);
+    } else {
+      dense_args.push(None);
+      background_args.push(a.clone());
+    }
+  }
+
+  let apply = |operands: Vec<Expr>| -> Option<Expr> {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: head.to_string(),
+      args: operands.into(),
+    })
+    .ok()
+  };
+
+  // Like Wolfram, evaluate the head once on the backgrounds and once per
+  // stored position — never on the whole dense array. `1/SparseArray[…]`
+  // therefore reports its `Power::infy` exactly once, from the background.
+  let background = apply(background_args.clone())?;
+  let dims = nested_list_dims(dense_args.iter().flatten().next()?)?;
+
+  // The union of the operands' stored positions: anywhere every operand sits
+  // at its background, the result sits at the result background too.
+  let mut paths: Vec<Vec<usize>> = Vec::new();
+  for (dense, bg) in dense_args.iter().zip(background_args.iter()) {
+    let Some(dense) = dense else { continue };
+    for path in sparse_stored_paths(dense, bg) {
+      if !paths.contains(&path) {
+        paths.push(path);
+      }
+    }
+  }
+  paths.sort();
+
+  let mut rules = Vec::with_capacity(paths.len());
+  for path in paths {
+    let mut operands = Vec::with_capacity(args.len());
+    for (dense, bg) in dense_args.iter().zip(background_args.iter()) {
+      operands.push(match dense {
+        Some(d) => nested_list_at(d, &path)?,
+        None => bg.clone(),
+      });
+    }
+    let value = apply(operands)?;
+    if crate::syntax::expr_to_string(&value)
+      == crate::syntax::expr_to_string(&background)
+    {
+      continue;
+    }
+    rules.push(Expr::Rule {
+      pattern: Box::new(Expr::List(
+        path.iter().map(|&i| Expr::Integer(i as i128)).collect(),
+      )),
+      replacement: Box::new(value),
+    });
+  }
+
+  sparse_array_normalize_ast(&[Expr::List(rules.into()), dims, background]).ok()
+}
+
+/// `a / b` with a SparseArray operand. Routed as `a * b^-1` rather than as a
+/// `Divide`, so that dividing by a SparseArray whose background is 0 reports
+/// `Power::infy` — the tag wolframscript uses for the `1/sparse` syntax.
+pub fn try_sparse_array_divide(a: &Expr, b: &Expr) -> Option<Expr> {
+  let is_sparse = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "SparseArray");
+  if !is_sparse(a) && !is_sparse(b) {
+    return None;
+  }
+  let minus_one = Expr::Integer(-1);
+  let inverse = if is_sparse(b) {
+    try_sparse_array_arithmetic("Power", &[b.clone(), minus_one])?
+  } else {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![b.clone(), minus_one].into(),
+    })
+    .ok()?
+  };
+  try_sparse_array_arithmetic("Times", &[a.clone(), inverse])
+}
+
 /// Expand a SparseArray (any recognized form) into a dense nested list.
 /// Called by `Normal[SparseArray[...]]`.
 pub fn sparse_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

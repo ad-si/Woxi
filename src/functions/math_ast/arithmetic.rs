@@ -873,6 +873,15 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(result);
   }
 
+  // A SparseArray summand keeps the sum sparse (the background shifts).
+  if let Some(result) =
+    crate::functions::list_helpers_ast::try_sparse_array_arithmetic(
+      "Plus", args,
+    )
+  {
+    return Ok(result);
+  }
+
   // Handle Quantity arithmetic before anything else
   if let Some(result) = crate::functions::quantity_ast::try_quantity_plus(args)
   {
@@ -6612,6 +6621,15 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // A SparseArray factor keeps the product sparse.
+  if let Some(result) =
+    crate::functions::list_helpers_ast::try_sparse_array_arithmetic(
+      "Times", args,
+    )
+  {
+    return Ok(result);
+  }
+
   // Handle Quantity arithmetic before anything else
   if let Some(result) = crate::functions::quantity_ast::try_quantity_times(args)
   {
@@ -8546,6 +8564,13 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // A SparseArray dividend/divisor divides elementwise and stays sparse.
+  if let Some(result) =
+    crate::functions::list_helpers_ast::try_sparse_array_divide(a, b)
+  {
+    return Ok(result);
+  }
+
   // Handle Quantity division
   if let Some(result) =
     crate::functions::quantity_ast::try_quantity_divide(a, b)
@@ -9179,6 +9204,16 @@ pub fn power_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Helper for Power of two arguments
 pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
+  // A SparseArray base (or exponent) raises elementwise and stays sparse.
+  if let Some(result) =
+    crate::functions::list_helpers_ast::try_sparse_array_arithmetic(
+      "Power",
+      &[base.clone(), exp.clone()],
+    )
+  {
+    return Ok(result);
+  }
+
   // Handle Quantity^n
   if let Some(result) =
     crate::functions::quantity_ast::try_quantity_power(base, exp)
