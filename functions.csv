@@ -630,7 +630,7 @@ ChartStyle,Style specification for chart elements,✅,pure,7.0,634
 OddQ,Checks if a number is odd,✅,pure,1.0,635
 SelectionMove,Move the selection in a notebook,✅,none,3.0,636
 RotateLeft,Rotates list elements to the left,✅,pure,1.0,637
-PadRight,Pads a list on the right to a specified length,✅,pure,4.0,638
+PadRight,Pads a list on the right to a given length or nested shape with a cyclically tiled padding array,✅,pure,4.0,638
 FourierTransform,computes the symbolic Fourier transform of an expression,✅,pure,4.0,639
 PowerExpand,Expands powers and logarithms assuming positive reals,✅,pure,2.0,640
 Fit,Performs a least-squares fit of data to a linear combination of basis functions,✅,pure,1.0,641
@@ -887,7 +887,7 @@ InfiniteLine,Geometric primitive representing an infinite line,✅,none,10.0,893
 GegenbauerC,Gegenbauer (ultraspherical) polynomial C_n^lambda(x); two-arg form GegenbauerC[n;x] is the renormalized (2/n) ChebyshevT[n;x],✅,pure,1.0,894
 SetterBar,Setter bar control (stays symbolic in script mode),✅,unevaluated,6.0,895
 StyleBox,Low-level box construct for styled content display,✅,pure,3.0,896
-PadLeft,Pads a list on the left to a specified length,✅,pure,4.0,897
+PadLeft,Pads a list on the left to a given length or nested shape with a cyclically tiled padding array,✅,pure,4.0,897
 Counts,Returns association of element counts (on an association counts the values),✅,pure,10.0,898
 PaddedForm,"Pads numbers (or a list of numbers) to fixed width via ToString rendering; supports NumberPadding -> {p1; p2} pad characters and BaseForm[x; b] inner values (padded base-b digits with a subscript base)",✅,pure,2.0,900
 TrigToExp,Convert trigonometric and hyperbolic functions to exponentials and inverse functions to logarithms,✅,pure,3.0,900

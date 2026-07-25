@@ -3514,4 +3514,106 @@ mod list {
       "10"
     );
   }
+
+  #[test]
+  fn pad_left_right_cyclic_padding() {
+    // A cyclic padding list aligns to the content edge: PadLeft counts
+    // backwards from the last content column, PadRight forwards from the
+    // first one.
+    assert_eq!(
+      interpret("PadLeft[{1, 2}, 7, {x, y, z}]").unwrap(),
+      "{z, x, y, z, x, 1, 2}"
+    );
+    assert_eq!(
+      interpret("PadRight[{1, 2}, 7, {x, y, z}]").unwrap(),
+      "{1, 2, z, x, y, z, x}"
+    );
+    // A margin shifts the content, and the cycle follows it.
+    assert_eq!(
+      interpret("PadRight[{1, 2}, 7, {x, y, z}, 1]").unwrap(),
+      "{z, 1, 2, z, x, y, z}"
+    );
+    assert_eq!(
+      interpret("PadLeft[{1, 2, 3}, 7, {x, y, z}, 2]").unwrap(),
+      "{y, z, 1, 2, 3, x, y}"
+    );
+  }
+
+  #[test]
+  fn pad_left_right_nested_padding() {
+    // A rank-2 padding array tiles a rank-2 result: it is indexed by both
+    // the row and the column, not spliced in whole as list elements.
+    assert_eq!(
+      interpret("PadLeft[{{1, 2}, {3, 4}}, {3, 4}, {{a, b}, {c, d}}]").unwrap(),
+      "{{c, d, c, d}, {a, b, 1, 2}, {c, d, 3, 4}}"
+    );
+    assert_eq!(
+      interpret("PadRight[{{1, 2}, {3, 4}}, {3, 4}, {{a, b}, {c, d}}]")
+        .unwrap(),
+      "{{1, 2, a, b}, {3, 4, c, d}, {a, b, a, b}}"
+    );
+    // Non-square padding tiles just as well.
+    assert_eq!(
+      interpret("PadLeft[{{1, 2}, {3, 4}}, {4, 5}, {{a, b, c}, {d, e, f}}]")
+        .unwrap(),
+      "{{b, c, a, b, c}, {e, f, d, e, f}, {b, c, a, 1, 2}, {e, f, d, 3, 4}}"
+    );
+    assert_eq!(
+      interpret("PadLeft[{{1, 2}, {3, 4}}, {3, 4}, {{a, b, c}}]").unwrap(),
+      "{{c, a, b, c}, {c, a, 1, 2}, {c, a, 3, 4}}"
+    );
+    assert_eq!(
+      interpret("PadRight[{{1, 2}, {3, 4}, {5, 6}}, {4, 5}, {{a, b}, {c, d}}]")
+        .unwrap(),
+      "{{1, 2, a, b, a}, {3, 4, c, d, c}, {5, 6, a, b, a}, {c, d, c, d, c}}"
+    );
+    // Margins apply to the tiling too.
+    assert_eq!(
+      interpret("PadLeft[{{1, 2}, {3, 4}}, {3, 4}, {{a, b}, {c, d}}, 1]")
+        .unwrap(),
+      "{{b, 1, 2, a}, {d, 3, 4, c}, {b, a, b, a}}"
+    );
+  }
+
+  #[test]
+  fn pad_left_right_padding_rank_alignment() {
+    // A padding array shallower than the result lines up with the result's
+    // innermost levels: {x, y} varies along the columns, not the rows.
+    assert_eq!(
+      interpret("PadLeft[{{1, 2}, {3, 4}}, {3, 4}, {x, y}]").unwrap(),
+      "{{x, y, x, y}, {x, y, 1, 2}, {x, y, 3, 4}}"
+    );
+    assert_eq!(
+      interpret("PadRight[{{1, 2}, {3, 4}}, {3, 4}, {x, y}, 1]").unwrap(),
+      "{{y, x, y, x}, {y, 1, 2, x}, {y, 3, 4, x}}"
+    );
+    assert_eq!(
+      interpret("PadLeft[{{{1, 2}}}, {2, 2, 3}, {x, y}]").unwrap(),
+      "{{{y, x, y}, {y, x, y}}, {{y, x, y}, {y, 1, 2}}}"
+    );
+    assert_eq!(
+      interpret("PadLeft[{{{1, 2}}}, {2, 2, 3}, {{a, b}, {c, d}}]").unwrap(),
+      "{{{b, a, b}, {d, c, d}}, {{b, a, b}, {d, 1, 2}}}"
+    );
+    // A padding array deeper than the result keeps its extra depth: the
+    // surplus levels are emitted verbatim as sublists.
+    assert_eq!(
+      interpret("PadLeft[{1, 2, 3}, 7, {{a, b}, {c, d}}]").unwrap(),
+      "{{c, d}, {a, b}, {c, d}, {a, b}, 1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("PadLeft[{1, 2, 3, 4}, 7, {{a, b}, {c, d}}]").unwrap(),
+      "{{c, d}, {a, b}, {c, d}, 1, 2, 3, 4}"
+    );
+    // A scalar length spec pads only the outer level, whatever the depth
+    // of the content or of the padding.
+    assert_eq!(
+      interpret("PadLeft[{{1, 2}, {3, 4}}, 3, {x, y}]").unwrap(),
+      "{y, {1, 2}, {3, 4}}"
+    );
+    assert_eq!(
+      interpret("PadRight[{{1, 2}, {3, 4}}, 3, {{a, b}, {c, d}}]").unwrap(),
+      "{{1, 2}, {3, 4}, {a, b}}"
+    );
+  }
 }

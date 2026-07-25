@@ -922,7 +922,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
         si = rat_reduce(si.0, si.1);
         return Some(CompoundUnitInfo {
           components,
-          si: si,
+          si,
           dimensions: dims,
         });
       }

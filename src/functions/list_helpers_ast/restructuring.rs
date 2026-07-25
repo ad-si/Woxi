@@ -1664,16 +1664,36 @@ fn pad_value(pad: &Expr, c: i128, n: i128, m: i128, side_left: bool) -> Expr {
   }
 }
 
+/// Nesting depth of a padding specification: the length of the shortest
+/// chain of lists from the root. Atoms have depth 0, `{x, y}` depth 1 and
+/// `{{a, b}, {c, d}}` depth 2. Used to line the padding array's levels up
+/// with the *innermost* levels of the result.
+fn pad_rank(pad: &Expr) -> usize {
+  match pad {
+    Expr::List(items) if !items.is_empty() => {
+      1 + items.iter().map(pad_rank).min().unwrap_or(0)
+    }
+    Expr::List(_) => 1,
+    _ => 0,
+  }
+}
+
 /// Pad one level: place `items` so they end at column `n - m` (PadLeft)
 /// or start at column `m + 1` (PadRight), fill the rest with padding, and
 /// recurse with the remaining spec. A negative length flips the side at
 /// that level only.
+///
+/// `skip` counts the outer levels the padding array does not reach: a
+/// rank-`k` padding lines up with the last `k` levels of a rank-`r` result,
+/// so the first `r - k` levels reuse the padding array whole and only the
+/// inner ones index into it.
 fn pad_items(
   items: &[Expr],
   spec: &[i128],
   margins: &[i128],
   pad: &Expr,
   is_left: bool,
+  skip: usize,
 ) -> Result<Vec<Expr>, InterpreterError> {
   if spec.is_empty() {
     return Ok(items.to_vec());
@@ -1696,8 +1716,16 @@ fn pad_items(
     (m + 1, m + len)
   };
 
+  let inner_skip = skip.saturating_sub(1);
   let mut out: Vec<Expr> = Vec::with_capacity(n.max(0) as usize);
   for c in 1..=n {
+    // Padding node governing this column: descend one level into the
+    // padding array unless it is still too shallow to reach this level.
+    let col_pad = if skip == 0 {
+      pad_value(pad, c, n, m, side_left)
+    } else {
+      pad.clone()
+    };
     if c >= start && c <= end {
       let item = &items[(c - start) as usize];
       if rest_spec.is_empty() {
@@ -1708,14 +1736,23 @@ fn pad_items(
           _ => &[],
         };
         out.push(Expr::List(
-          pad_items(sub_items, rest_spec, rest_margins, pad, is_left)?.into(),
+          pad_items(
+            sub_items,
+            rest_spec,
+            rest_margins,
+            &col_pad,
+            is_left,
+            inner_skip,
+          )?
+          .into(),
         ));
       }
     } else if rest_spec.is_empty() {
-      out.push(pad_value(pad, c, n, m, side_left));
+      out.push(col_pad);
     } else {
       out.push(Expr::List(
-        pad_items(&[], rest_spec, rest_margins, pad, is_left)?.into(),
+        pad_items(&[], rest_spec, rest_margins, &col_pad, is_left, inner_skip)?
+          .into(),
       ));
     }
   }
@@ -1734,7 +1771,8 @@ fn pad_level(
     Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.as_str())),
     _ => (&[], None),
   };
-  let out = pad_items(items, spec, margins, pad, is_left)?;
+  let skip = spec.len().saturating_sub(pad_rank(pad));
+  let out = pad_items(items, spec, margins, pad, is_left, skip)?;
   match head {
     Some(h) => crate::evaluator::evaluate_function_call_ast(h, &out),
     None => Ok(Expr::List(out.into())),
