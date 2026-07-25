@@ -368,6 +368,9 @@ pub fn dispatch_image_functions(
     "ImageCrop" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::image_ast::image_crop_ast(args));
     }
+    "ImagePad" if args.len() == 2 || args.len() == 3 => {
+      return Some(crate::functions::image_ast::image_pad_ast(args));
+    }
     "ImageTake" if args.len() >= 2 && args.len() <= 3 => {
       return Some(crate::functions::image_ast::image_take_ast(args));
     }

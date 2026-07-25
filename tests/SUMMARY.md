@@ -1448,6 +1448,7 @@
   - [`ImageData`](images/ImageData.md)
   - [`ImageDimensions`](images/ImageDimensions.md)
   - [`ImageMultiply`](images/ImageMultiply.md)
+  - [`ImagePad`](images/ImagePad.md)
   - [`ImageQ`](images/ImageQ.md)
   - [`ImageReflect`](images/ImageReflect.md)
   - [`ImageResize`](images/ImageResize.md)

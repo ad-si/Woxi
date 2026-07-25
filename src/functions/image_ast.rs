@@ -2036,6 +2036,161 @@ pub fn image_crop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// The source pixel a padded position maps to under an edge-extension mode,
+/// where `i` may run outside `0..len`. Returns `None` for a constant fill.
+fn image_pad_source(mode: &str, i: i64, len: i64) -> Option<i64> {
+  match mode {
+    "Fixed" => Some(i.clamp(0, len - 1)),
+    "Periodic" => Some(i.rem_euclid(len)),
+    // Mirror about the edges without repeating them: a b c b a b c …
+    "Reflected" if len > 1 => {
+      let period = 2 * (len - 1);
+      let m = i.rem_euclid(period);
+      Some(if m > len - 1 { period - m } else { m })
+    }
+    "Reflected" => Some(0),
+    _ => None,
+  }
+}
+
+/// An integer padding extent (negative extents trim).
+fn as_int(e: &Expr) -> Option<i64> {
+  match e {
+    Expr::Integer(n) => Some(*n as i64),
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => as_int(operand).map(|n| -n),
+    _ => None,
+  }
+}
+
+/// Read one padding extent pair `{lo, hi}`, or a scalar standing for both.
+fn image_pad_extent(spec: &Expr) -> Option<(i64, i64)> {
+  match spec {
+    Expr::List(pair) if pair.len() == 2 => {
+      Some((as_int(&pair[0])?, as_int(&pair[1])?))
+    }
+    other => {
+      let n = as_int(other)?;
+      Some((n, n))
+    }
+  }
+}
+
+/// ImagePad[img, m] / ImagePad[img, {{left, right}, {bottom, top}}] —
+/// grow (or, for negative extents, trim) an image on each side. The optional
+/// third argument is the fill: a constant value, or one of the edge-extension
+/// modes `"Fixed"`, `"Periodic"` and `"Reflected"`. Note that the vertical
+/// pair is `{bottom, top}` while `ImageData` lists rows top-first.
+pub fn image_pad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let echo = || Ok(unevaluated("ImagePad", args));
+  if args.len() < 2 || args.len() > 3 {
+    return echo();
+  }
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+    ..
+  } = &args[0]
+  else {
+    return echo();
+  };
+
+  // `m` pads every side; `{{left, right}, {bottom, top}}` names them.
+  let ((left, right), (bottom, top)) = match &args[1] {
+    Expr::List(sides)
+      if sides.len() == 2
+        && sides.iter().any(|s| matches!(s, Expr::List(_))) =>
+    {
+      match (image_pad_extent(&sides[0]), image_pad_extent(&sides[1])) {
+        (Some(h), Some(v)) => (h, v),
+        _ => return echo(),
+      }
+    }
+    other => match image_pad_extent(other) {
+      Some((a, b)) => ((a, b), (a, b)),
+      None => return echo(),
+    },
+  };
+
+  let (w, h, ch) = (*width as i64, *height as i64, *channels as usize);
+  let new_w = w + left + right;
+  let new_h = h + bottom + top;
+  if new_w <= 0 || new_h <= 0 {
+    crate::emit_message(&format!(
+      "ImagePad::padnull: Padding specification {} corresponds to an empty image.",
+      crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output)
+    ));
+    return echo();
+  }
+
+  // The fill: an extension mode, or a constant (defaulting to black).
+  let mode = match args.get(2) {
+    Some(Expr::String(s)) | Some(Expr::Identifier(s))
+      if image_pad_source(s, 0, 1).is_some() =>
+    {
+      Some(s.clone())
+    }
+    _ => None,
+  };
+  let fill: Vec<f64> = match (&mode, args.get(2)) {
+    (Some(_), _) | (None, None) => vec![0.0; ch],
+    (None, Some(value)) => match value {
+      Expr::List(items) if items.len() == ch => {
+        let mut v = Vec::with_capacity(ch);
+        for item in items.iter() {
+          match crate::functions::math_ast::try_eval_to_f64(item) {
+            Some(f) => v.push(f),
+            None => return echo(),
+          }
+        }
+        v
+      }
+      other => match crate::functions::math_ast::try_eval_to_f64(other) {
+        Some(f) => vec![f; ch],
+        None => return echo(),
+      },
+    },
+  };
+
+  let mut new_data = Vec::with_capacity((new_w * new_h) as usize * ch);
+  for row in 0..new_h {
+    // Row 0 of the output is the top, so the top extent shifts the source.
+    let sy = row - top;
+    for col in 0..new_w {
+      let sx = col - left;
+      let src = match &mode {
+        Some(m) => Some((
+          image_pad_source(m, sx, w).unwrap_or(0),
+          image_pad_source(m, sy, h).unwrap_or(0),
+        )),
+        None if (0..w).contains(&sx) && (0..h).contains(&sy) => Some((sx, sy)),
+        None => None,
+      };
+      match src {
+        Some((x, y)) => {
+          let base = ((y * w + x) as usize) * ch;
+          new_data.extend_from_slice(&data[base..base + ch]);
+        }
+        None => new_data.extend_from_slice(&fill),
+      }
+    }
+  }
+
+  Ok(Expr::Image {
+    color_space: None,
+    width: new_w as u32,
+    height: new_h as u32,
+    channels: *channels,
+    data: Arc::new(new_data),
+    image_type: *image_type,
+  })
+}
+
 /// ImageTrim[img, {{x1,y1},{x2,y2}}] - Trim image to a coordinate region.
 /// Coordinates use Wolfram's bottom-left origin system where pixel i spans [i, i+1].
 /// All pixels whose interval overlaps the specified rectangle are included.

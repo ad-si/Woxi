@@ -1170,7 +1170,7 @@ Volume,Volume (3-dimensional measure) of a solid region,✅,pure,2.0,1180
 TimeConstrained,Runs computation with time limit (no-op in Woxi),✅,effectful,1.0,1182
 VectorStyle,,🚫,,7.0,1182
 Monitor,,🚫,,6.0,1183
-ImagePad,,🚫,,7.0,1184
+ImagePad,Pads an image on each side with a constant fill or edge extension,✅,pure,7.0,1184
 ChiSquareDistribution,Represents a chi-square distribution,✅,1,6.0,1186
 ListInterpolation,Creates interpolation from uniformly spaced data,✅,pure,3.0,1186
 FindShortestPath,Find a shortest weighted path between two vertices of a graph,✅,pure,8.0,1187

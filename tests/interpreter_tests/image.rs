@@ -5409,3 +5409,148 @@ mod delete_small_components {
     );
   }
 }
+
+// ImagePad[img, spec, padding] — grow (or, for negative extents, trim) an
+// image on each side. All values verified against wolframscript.
+mod image_pad {
+  use super::*;
+
+  const IM: &str = "im = Image[{{0.1, 0.2}, {0.3, 0.4}}]; ";
+  const IM3: &str = "im3 = Image[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}/10.]; ";
+
+  #[test]
+  fn a_scalar_pads_every_side_with_black() {
+    assert_eq!(
+      interpret(&format!("{IM}ImageDimensions[ImagePad[im, 1]]")).unwrap(),
+      "{4, 4}"
+    );
+    assert_eq!(
+      interpret(&format!("{IM}ImageData[ImagePad[im, 1]]")).unwrap(),
+      "{{0., 0., 0., 0.}, \
+       {0., 0.10000000149011612, 0.20000000298023224, 0.}, \
+       {0., 0.30000001192092896, 0.4000000059604645, 0.}, \
+       {0., 0., 0., 0.}}"
+    );
+  }
+
+  #[test]
+  fn a_third_argument_is_the_fill_value() {
+    assert_eq!(
+      interpret(&format!("{IM}ImageData[ImagePad[im, 1, 1]]")).unwrap(),
+      "{{1., 1., 1., 1.}, \
+       {1., 0.10000000149011612, 0.20000000298023224, 1.}, \
+       {1., 0.30000001192092896, 0.4000000059604645, 1.}, \
+       {1., 1., 1., 1.}}"
+    );
+    assert_eq!(
+      interpret(&format!("{IM}ImageData[ImagePad[im, 1, 0.5]]")).unwrap(),
+      "{{0.5, 0.5, 0.5, 0.5}, \
+       {0.5, 0.10000000149011612, 0.20000000298023224, 0.5}, \
+       {0.5, 0.30000001192092896, 0.4000000059604645, 0.5}, \
+       {0.5, 0.5, 0.5, 0.5}}"
+    );
+  }
+
+  // The horizontal pair is {left, right} but the vertical one is
+  // {bottom, top}, while ImageData lists rows top-first.
+  #[test]
+  fn per_side_extents_are_left_right_bottom_top() {
+    assert_eq!(
+      interpret(&format!(
+        "{IM}ImageData[ImagePad[im, {{{{1, 0}}, {{0, 2}}}}]]"
+      ))
+      .unwrap(),
+      "{{0., 0., 0.}, {0., 0., 0.}, \
+       {0., 0.10000000149011612, 0.20000000298023224}, \
+       {0., 0.30000001192092896, 0.4000000059604645}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImagePad[Image[{{{1., 0., 0.}, {0., 1., 0.}}}], \
+         {{2, 1}, {0, 0}}]]"
+      )
+      .unwrap(),
+      "{5, 1}"
+    );
+  }
+
+  #[test]
+  fn edge_extension_modes() {
+    assert_eq!(
+      interpret(&format!(
+        "{IM3}Round[ImageData[ImagePad[im3, 1, \"Fixed\"]], 0.001]"
+      ))
+      .unwrap(),
+      "{{0.1, 0.1, 0.2, 0.3, 0.3}, {0.1, 0.1, 0.2, 0.3, 0.3}, \
+       {0.4, 0.4, 0.5, 0.6, 0.6}, \
+       {0.7000000000000001, 0.7000000000000001, 0.8, 0.9, 0.9}, \
+       {0.7000000000000001, 0.7000000000000001, 0.8, 0.9, 0.9}}"
+    );
+    // Reflection mirrors about the edges without repeating them.
+    assert_eq!(
+      interpret(&format!(
+        "{IM3}Round[ImageData[ImagePad[im3, 1, \"Reflected\"]], 0.001]"
+      ))
+      .unwrap(),
+      "{{0.5, 0.4, 0.5, 0.6, 0.5}, {0.2, 0.1, 0.2, 0.3, 0.2}, \
+       {0.5, 0.4, 0.5, 0.6, 0.5}, \
+       {0.8, 0.7000000000000001, 0.8, 0.9, 0.8}, \
+       {0.5, 0.4, 0.5, 0.6, 0.5}}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "{IM3}Round[ImageData[ImagePad[im3, 1, \"Periodic\"]], 0.001]"
+      ))
+      .unwrap(),
+      "{{0.9, 0.7000000000000001, 0.8, 0.9, 0.7000000000000001}, \
+       {0.3, 0.1, 0.2, 0.3, 0.1}, {0.6, 0.4, 0.5, 0.6, 0.4}, \
+       {0.9, 0.7000000000000001, 0.8, 0.9, 0.7000000000000001}, \
+       {0.3, 0.1, 0.2, 0.3, 0.1}}"
+    );
+  }
+
+  // A negative extent trims instead of growing.
+  #[test]
+  fn negative_extents_trim() {
+    assert_eq!(
+      interpret(&format!("{IM3}Round[ImageData[ImagePad[im3, -1]], 0.001]"))
+        .unwrap(),
+      "{{0.5}}"
+    );
+  }
+
+  // Trimming past the whole image reports padnull and stays unevaluated.
+  #[test]
+  fn an_empty_result_reports_padnull() {
+    assert_eq!(
+      interpret(&format!("{IM}ImagePad[im, -1]")).unwrap(),
+      "ImagePad[-Image-, -1]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "ImagePad::padnull: Padding specification -1 corresponds to an empty image."
+      )),
+      "expected padnull message, got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn colour_images_pad_per_channel() {
+    const RGB: &str = "rgb = Image[{{{1., 0., 0.}, {0., 1., 0.}}}]; ";
+    assert_eq!(
+      interpret(&format!("{RGB}ImageData[ImagePad[rgb, 1]]")).unwrap(),
+      "{{{0., 0., 0.}, {0., 0., 0.}, {0., 0., 0.}, {0., 0., 0.}}, \
+       {{0., 0., 0.}, {1., 0., 0.}, {0., 1., 0.}, {0., 0., 0.}}, \
+       {{0., 0., 0.}, {0., 0., 0.}, {0., 0., 0.}, {0., 0., 0.}}}"
+    );
+    // A list fill names one value per channel.
+    assert_eq!(
+      interpret(&format!("{RGB}ImageData[ImagePad[rgb, 1, {{0., 0., 1.}}]]"))
+        .unwrap(),
+      "{{{0., 0., 1.}, {0., 0., 1.}, {0., 0., 1.}, {0., 0., 1.}}, \
+       {{0., 0., 1.}, {1., 0., 0.}, {0., 1., 0.}, {0., 0., 1.}}, \
+       {{0., 0., 1.}, {0., 0., 1.}, {0., 0., 1.}, {0., 0., 1.}}}"
+    );
+  }
+}
