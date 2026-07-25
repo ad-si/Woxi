@@ -818,6 +818,29 @@ pub fn dispatch_calculus_functions(
         return Some(Ok(inverted));
       }
 
+      // A geometric transform inverts by inverting its homogeneous matrix,
+      // so every constructor (Translation/Rotation/Scaling/Affine/…) is
+      // covered at once — they all reduce to a TransformationFunction.
+      if let Expr::FunctionCall {
+        name: tf_name,
+        args: tf_args,
+      } = &args[0]
+        && tf_name == "TransformationFunction"
+        && tf_args.len() == 1
+      {
+        let inverse =
+          crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+            name: "Inverse".to_string(),
+            args: vec![tf_args[0].clone()].into(),
+          });
+        if let Ok(matrix @ Expr::List(_)) = inverse {
+          return Some(Ok(Expr::FunctionCall {
+            name: "TransformationFunction".to_string(),
+            args: vec![matrix].into(),
+          }));
+        }
+      }
+
       if let Expr::Identifier(func_name) = &args[0] {
         let inverse = match func_name.as_str() {
           // Trig -> ArcTrig

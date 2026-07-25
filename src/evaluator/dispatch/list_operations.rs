@@ -5062,6 +5062,11 @@ pub fn dispatch_list_operations(
         }
         flat.push(arg.clone());
       }
+      // Composing geometric transforms multiplies their matrices, so the
+      // chain collapses back to a single TransformationFunction.
+      if let Some(folded) = compose_transformation_functions(&flat) {
+        return Some(Ok(folded));
+      }
       return Some(Ok(Expr::FunctionCall {
         name: "Composition".to_string(),
         args: flat.into(),
@@ -8518,6 +8523,36 @@ fn moving_map_padded_windows(
   let mut padded: Vec<Expr> = (1..=n).rev().map(pad).collect();
   padded.extend(items.iter().cloned());
   Some((0..len).map(|i| padded[i..i + n + 1].to_vec()).collect())
+}
+
+/// Fold a composition chain of `TransformationFunction[m]`s into the single
+/// transform with the product matrix (leftmost applied last, so the matrices
+/// multiply in the order given). Returns `None` unless every element is a
+/// TransformationFunction, leaving mixed chains as an ordinary Composition.
+fn compose_transformation_functions(parts: &[Expr]) -> Option<Expr> {
+  let matrices: Vec<Expr> = parts
+    .iter()
+    .map(|p| match p {
+      Expr::FunctionCall { name, args }
+        if name == "TransformationFunction" && args.len() == 1 =>
+      {
+        Some(args[0].clone())
+      }
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  if matrices.len() < 2 {
+    return None;
+  }
+  let product = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Dot".to_string(),
+    args: matrices.into(),
+  })
+  .ok()?;
+  matches!(product, Expr::List(_)).then(|| Expr::FunctionCall {
+    name: "TransformationFunction".to_string(),
+    args: vec![product].into(),
+  })
 }
 
 fn position_index_ast(expr: &Expr) -> Result<Expr, InterpreterError> {

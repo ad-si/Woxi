@@ -578,7 +578,7 @@ LightBlue,Named light color evaluating to RGBColor[0.87 0.94 1],✅,pure,6.0,581
 FileNameJoin,Join file path components,✅,pure,7.0,582
 ToFileName,Join directory path components into a file name string,✅,pure,1.0,
 InverseLaplaceTransform,Compute the inverse Laplace transform,✅,none,4.0,583
-InverseFunction,Represents the inverse of a function,✅,none,2.0,584
+InverseFunction,Represents the inverse of a function or geometric transform,✅,pure,2.0,584
 Residue,Computes the residue of an expression at a point,✅,pure,2.0,585
 PieChart,Creates a pie chart from data,✅,pure,7.0,586
 NMinimize,Numerical global minimization with constraints using sampling and gradient refinement,✅,pure,5.0,587
@@ -2600,7 +2600,7 @@ InverseChiSquareDistribution,represents an inverse chi-square distribution,✅,C
 MeijerGReduce,Requires deep Meijer G-function theory,🚫,None,11.0,2656
 SelfLoopStyle,option for self-loop style in graphs,✅,Symbolic,6.0,2656
 StringPart,Extracts characters from a string by index,✅,pure,11.0,2656
-TransformationFunction,Represents a geometric transformation as a matrix,✅,pure,6.0,2656
+TransformationFunction,Represents a geometric transformation as a homogeneous matrix,✅,pure,6.0,2656
 DatabinAdd,,🚫,,10.0,2662
 DihedralGroup,Symbolic dihedral group of order 2n; stays unevaluated and is consumed by GroupOrder/GroupGenerators/GroupElements,✅,unevaluated,8.0,2662
 DistributedContexts,,🚫,,8.0,2662

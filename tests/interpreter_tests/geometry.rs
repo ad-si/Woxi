@@ -3113,6 +3113,140 @@ mod transformation_function_compose {
       "TransformationFunction[{{1, 0, a + c}, {0, 1, b + d}, {0, 0, 1}}]"
     );
   }
+
+  // Composition (and its @* shorthand) folds a chain of transforms into the
+  // single transform with the product matrix, exactly as Dot does.
+  #[test]
+  fn composition_folds_into_one_transform() {
+    assert_eq!(
+      interpret(
+        "Composition[TranslationTransform[{1, 2}], RotationTransform[Pi/2]]"
+      )
+      .unwrap(),
+      "TransformationFunction[{{0, -1, 1}, {1, 0, 2}, {0, 0, 1}}]"
+    );
+    assert_eq!(
+      interpret("TranslationTransform[{1, 2}] @* RotationTransform[Pi/2]")
+        .unwrap(),
+      "TransformationFunction[{{0, -1, 1}, {1, 0, 2}, {0, 0, 1}}]"
+    );
+    assert_eq!(
+      interpret(
+        "Composition[TranslationTransform[{a, b}], \
+         TranslationTransform[{c, d}]]"
+      )
+      .unwrap(),
+      "TransformationFunction[{{1, 0, a + c}, {0, 1, b + d}, {0, 0, 1}}]"
+    );
+    // The folded transform still applies: rotate first, then translate.
+    assert_eq!(
+      interpret(
+        "Composition[TranslationTransform[{1, 2}], \
+         RotationTransform[Pi/2]][{1, 0}]"
+      )
+      .unwrap(),
+      "{1, 3}"
+    );
+  }
+
+  // A chain that is not all transforms stays an ordinary composition.
+  #[test]
+  fn a_mixed_chain_is_left_alone() {
+    assert_eq!(
+      interpret("Composition[TranslationTransform[{1, 2}], f]").unwrap(),
+      "TransformationFunction[{{1, 0, 1}, {0, 1, 2}, {0, 0, 1}}] @* f"
+    );
+  }
+}
+
+// InverseFunction of a geometric transform inverts its homogeneous matrix,
+// which covers every constructor since they all reduce to a
+// TransformationFunction. Values verified against wolframscript.
+mod transformation_function_inverse {
+  use super::*;
+
+  #[test]
+  fn inverts_the_homogeneous_matrix() {
+    assert_eq!(
+      interpret("InverseFunction[TranslationTransform[{1, 2}]]").unwrap(),
+      "TransformationFunction[{{1, 0, -1}, {0, 1, -2}, {0, 0, 1}}]"
+    );
+    assert_eq!(
+      interpret("InverseFunction[TranslationTransform[{a, b}]]").unwrap(),
+      "TransformationFunction[{{1, 0, -a}, {0, 1, -b}, {0, 0, 1}}]"
+    );
+    assert_eq!(
+      interpret(
+        "InverseFunction[TransformationFunction[{{2, 0, 0}, {0, 2, 0}, \
+         {0, 0, 1}}]]"
+      )
+      .unwrap(),
+      "TransformationFunction[{{1/2, 0, 0}, {0, 1/2, 0}, {0, 0, 1}}]"
+    );
+  }
+
+  #[test]
+  fn every_constructor_inverts() {
+    assert_eq!(
+      interpret("InverseFunction[TranslationTransform[{1, 2}]][{5, 5}]")
+        .unwrap(),
+      "{4, 3}"
+    );
+    assert_eq!(
+      interpret("InverseFunction[RotationTransform[Pi/2]][{0, 1}]").unwrap(),
+      "{1, 0}"
+    );
+    assert_eq!(
+      interpret("InverseFunction[ScalingTransform[{2, 4}]][{2, 4}]").unwrap(),
+      "{1, 1}"
+    );
+    assert_eq!(
+      interpret("InverseFunction[AffineTransform[{{2, 0}, {0, 2}}]][{2, 2}]")
+        .unwrap(),
+      "{1, 1}"
+    );
+    assert_eq!(
+      interpret(
+        "InverseFunction[ShearingTransform[Pi/4, {1, 0}, {0, 1}]][{2, 1}]"
+      )
+      .unwrap(),
+      "{1, 1}"
+    );
+    assert_eq!(
+      interpret("InverseFunction[ReflectionTransform[{1, 0}]][{-1, 1}]")
+        .unwrap(),
+      "{1, 1}"
+    );
+  }
+
+  #[test]
+  fn round_trips_through_the_forward_transform() {
+    assert_eq!(
+      interpret(
+        "InverseFunction[TranslationTransform[{1, 2}]][\
+         TranslationTransform[{1, 2}][{3, 4}]]"
+      )
+      .unwrap(),
+      "{3, 4}"
+    );
+    assert_eq!(
+      interpret(
+        "Composition[TranslationTransform[{1, 2}], \
+         InverseFunction[TranslationTransform[{1, 2}]]]"
+      )
+      .unwrap(),
+      "TransformationFunction[{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}]"
+    );
+  }
+
+  // Inverse (as opposed to InverseFunction) is not defined on a transform.
+  #[test]
+  fn inverse_stays_unevaluated() {
+    assert_eq!(
+      interpret("Inverse[TranslationTransform[{1, 2}]]").unwrap(),
+      "Inverse[TransformationFunction[{{1, 0, 1}, {0, 1, 2}, {0, 0, 1}}]]"
+    );
+  }
 }
 
 mod region_member {
