@@ -10804,6 +10804,10 @@ fn evaluate_function_call_ast_inner(
         // empty region and the Boolean combination they fall back to.
         | "EmptyRegion"
         | "BooleanRegion"
+        // Template elements: inert markers that TemplateApply expands, so
+        // seeing them unevaluated is not a missing implementation.
+        | "TemplateIf"
+        | "TemplateSequence"
     )
   {
     let args_str = args

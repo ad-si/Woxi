@@ -3762,7 +3762,7 @@ RightTeeArrow,,,,3.0,3862
 SkellamDistribution,Skellam distribution of the difference of two Poisson variables,✅,pure,8.0,3862
 SocketListen,,🚫,,11.2,3862
 SpecificityGoal,,🚫,,10.1,3862
-TemplateIf,,,,10.0,3862
+TemplateIf,Template element inserting one of two clauses by a condition,✅,pure,10.0,3862
 TracyWidomDistribution,,,,10.3,3862
 AsymptoticLessEqual,,,,11.3,3889
 BirnbaumImportance,,,,9.0,3889
@@ -4586,7 +4586,7 @@ SequenceReverseLayer,,🚫,,11.1,4747
 SpaceCurveData,,🚫,,10.0,4747
 SpatialTransformationLayer,,🚫,,11.1,4747
 SystemModelPlot,,🚫,,11.3,4747
-TemplateSequence,,,,10.0,4747
+TemplateSequence,Template element splicing a body once per list element,✅,pure,10.0,4747
 TextSearchReport,,🚫,,10.2,4747
 UnityDimensions,,,,10.0,4747
 VectorRange,,,,12.1,4747

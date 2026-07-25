@@ -7156,6 +7156,107 @@ mod template_apply {
     );
   }
 
+  // A template need not be a string: TemplateApply walks any expression,
+  // filling TemplateSlot and expanding TemplateIf / TemplateSequence.
+  // Values verified against wolframscript.
+  #[test]
+  fn expression_template_slots() {
+    assert_eq!(
+      interpret("TemplateApply[{TemplateSlot[1], TemplateSlot[2]}, {10, 20}]")
+        .unwrap(),
+      "{10, 20}"
+    );
+    assert_eq!(
+      interpret(
+        r#"TemplateApply[{TemplateSlot["a"], TemplateSlot["b"]}, <|"a" -> 1, "b" -> 2|>]"#
+      )
+      .unwrap(),
+      "{1, 2}"
+    );
+    // Slots are filled wherever they sit, not just inside a list.
+    assert_eq!(
+      interpret("TemplateApply[f[TemplateSlot[1]], {3}]").unwrap(),
+      "f[3]"
+    );
+    // An expression with no template elements comes back unchanged.
+    assert_eq!(interpret("TemplateApply[{a, b}]").unwrap(), "{a, b}");
+  }
+
+  #[test]
+  fn template_expression_evaluates_after_filling() {
+    assert_eq!(
+      interpret("TemplateApply[TemplateExpression[1 + 1]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("TemplateApply[TemplateExpression[TemplateSlot[1]*2], {4}]")
+        .unwrap(),
+      "8"
+    );
+  }
+
+  // A false TemplateIf with no else-clause removes the element entirely.
+  #[test]
+  fn template_if_selects_or_removes() {
+    assert_eq!(
+      interpret("TemplateApply[{a, TemplateIf[True, x], c}]").unwrap(),
+      "{a, x, c}"
+    );
+    assert_eq!(
+      interpret("TemplateApply[{a, TemplateIf[False, x], c}]").unwrap(),
+      "{a, c}"
+    );
+    assert_eq!(
+      interpret("TemplateApply[{a, TemplateIf[False, x, y], c}]").unwrap(),
+      "{a, y, c}"
+    );
+    // The condition sees the slots, including through an operator.
+    assert_eq!(
+      interpret(
+        r#"TemplateApply[TemplateIf[TemplateSlot[1] > 0, "pos", "neg"], {5}]"#
+      )
+      .unwrap(),
+      "pos"
+    );
+    assert_eq!(
+      interpret(
+        r#"TemplateApply[{TemplateIf[TemplateSlot[1] > 3, "big"]}, {5}]"#
+      )
+      .unwrap(),
+      "{big}"
+    );
+    assert_eq!(
+      interpret(
+        r#"TemplateApply[{TemplateIf[TemplateSlot[1] > 3, "big"]}, {1}]"#
+      )
+      .unwrap(),
+      "{}"
+    );
+  }
+
+  // TemplateSequence splices one copy of the body per element, with slot 1
+  // bound to that element.
+  #[test]
+  fn template_sequence_splices() {
+    assert_eq!(
+      interpret("TemplateApply[{a, TemplateSequence[b, {1, 2, 3}], c}]")
+        .unwrap(),
+      "{a, b, b, b, c}"
+    );
+    assert_eq!(
+      interpret(
+        "TemplateApply[{a, TemplateSequence[TemplateSlot[1], {1, 2}], c}]"
+      )
+      .unwrap(),
+      "{a, 1, 2, c}"
+    );
+    // An empty list contributes nothing.
+    assert_eq!(
+      interpret("TemplateApply[{a, TemplateSequence[b, {}], c}]").unwrap(),
+      "{a, c}"
+    );
+  }
+
   // The operator form runs expression slots too.
   #[test]
   fn string_template_operator_form_runs_slots() {

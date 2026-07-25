@@ -11795,10 +11795,18 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       return Ok(args[0].clone());
     }
-    // Non-string template: if second arg is a list, apply like TemplateApply[expr, {args}]
+    // An expression template: walk it, filling TemplateSlot / TemplateExpression
+    // and expanding TemplateIf / TemplateSequence.
     other => {
-      // For non-string first arg, return as-is (like wolframscript returns 42 for TemplateApply[42, {1}])
-      return Ok(other.clone());
+      let parts = expand_template_parts(other, &args[1])?;
+      return Ok(match parts.len() {
+        1 => parts.into_iter().next().unwrap(),
+        // Nothing left, or several spliced pieces, is a Sequence.
+        _ => Expr::FunctionCall {
+          name: "Sequence".to_string(),
+          args: parts.into(),
+        },
+      });
     }
   };
 
@@ -12914,4 +12922,119 @@ fn expand_expression_slots(
   }
   out.push_str(rest);
   Ok(out)
+}
+
+/// Expand one node of an expression template into the pieces it contributes.
+/// Most nodes give exactly one piece; `TemplateIf` with a false condition
+/// gives none and `TemplateSequence` gives one per element, which is what lets
+/// them splice into the surrounding list.
+fn expand_template_parts(
+  expr: &Expr,
+  args: &Expr,
+) -> Result<Vec<Expr>, InterpreterError> {
+  let one = |e: Expr| Ok(vec![e]);
+  match expr {
+    Expr::FunctionCall { name, args: parts } => match name.as_str() {
+      "TemplateSlot" if parts.len() == 1 => {
+        match template_slot_value(&parts[0], args) {
+          Some(value) => one(value),
+          None => one(expr.clone()),
+        }
+      }
+      // The body is filled in first, then evaluated.
+      "TemplateExpression" if parts.len() == 1 => {
+        let filled = expand_template_parts(&parts[0], args)?;
+        let Some(body) = filled.into_iter().next() else {
+          return Ok(Vec::new());
+        };
+        one(crate::evaluator::evaluate_expr_to_expr(&body)?)
+      }
+      "TemplateIf" if parts.len() == 2 || parts.len() == 3 => {
+        let condition = expand_template_parts(&parts[0], args)?;
+        let Some(condition) = condition.into_iter().next() else {
+          return Ok(Vec::new());
+        };
+        let holds = matches!(
+          crate::evaluator::evaluate_expr_to_expr(&condition)?,
+          Expr::Identifier(ref b) if b == "True"
+        );
+        match (holds, parts.get(2)) {
+          (true, _) => expand_template_parts(&parts[1], args),
+          (false, Some(otherwise)) => expand_template_parts(otherwise, args),
+          (false, None) => Ok(Vec::new()),
+        }
+      }
+      // Each element of the list becomes the slot-1 argument for one copy of
+      // the body.
+      "TemplateSequence" if parts.len() == 2 => {
+        let Expr::List(items) = &parts[1] else {
+          return one(expr.clone());
+        };
+        let mut out = Vec::new();
+        for item in items.iter() {
+          let element = Expr::List(vec![item.clone()].into());
+          out.extend(expand_template_parts(&parts[0], &element)?);
+        }
+        Ok(out)
+      }
+      _ => {
+        let mut expanded = Vec::new();
+        for part in parts.iter() {
+          expanded.extend(expand_template_parts(part, args)?);
+        }
+        one(Expr::FunctionCall {
+          name: name.clone(),
+          args: expanded.into(),
+        })
+      }
+    },
+    Expr::List(items) => {
+      let mut expanded = Vec::new();
+      for item in items.iter() {
+        expanded.extend(expand_template_parts(item, args)?);
+      }
+      one(Expr::List(expanded.into()))
+    }
+    // Operator forms carry slots too, so a condition like
+    // `TemplateSlot[1] > 3` is filled before it is tested.
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      let mut filled = Vec::with_capacity(operands.len());
+      for operand in operands {
+        filled.extend(expand_template_parts(operand, args)?);
+      }
+      one(Expr::Comparison {
+        operands: filled,
+        operators: operators.clone(),
+      })
+    }
+    Expr::BinaryOp { op, left, right } => one(Expr::BinaryOp {
+      op: *op,
+      left: Box::new(expand_template_one(left, args)?),
+      right: Box::new(expand_template_one(right, args)?),
+    }),
+    Expr::UnaryOp { op, operand } => one(Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(expand_template_one(operand, args)?),
+    }),
+    other => one(other.clone()),
+  }
+}
+
+/// `expand_template_parts` for a position that must hold exactly one
+/// expression (an operand rather than a list element), so a vanishing
+/// `TemplateIf` leaves the original in place instead of collapsing the
+/// surrounding operator.
+fn expand_template_one(
+  expr: &Expr,
+  args: &Expr,
+) -> Result<Expr, InterpreterError> {
+  Ok(
+    expand_template_parts(expr, args)?
+      .into_iter()
+      .next()
+      .unwrap_or_else(|| expr.clone()),
+  )
 }
