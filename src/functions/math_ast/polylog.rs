@@ -369,18 +369,14 @@ fn polylog_at_neg1(s: i128) -> Result<Expr, InterpreterError> {
           Some(v) => v,
           None => return Ok(unevaluated_polylog(s, -1)),
         };
-        let g = gcd_i128(znum, zden);
-        znum /= g;
-        zden /= g;
+        (znum, zden) = rat_reduce(znum, zden);
       }
       for k in 1..=s_usize {
         zden = match zden.checked_mul(k as i128) {
           Some(v) => v,
           None => return Ok(unevaluated_polylog(s, -1)),
         };
-        let g = gcd_i128(znum, zden);
-        znum /= g;
-        zden /= g;
+        (znum, zden) = rat_reduce(znum, zden);
       }
 
       // Multiply by -(1 - 2^{1-s}) = (1 - 2^{s-1}) / 2^{s-1}
@@ -400,9 +396,7 @@ fn polylog_at_neg1(s: i128) -> Result<Expr, InterpreterError> {
         final_num = -final_num;
         final_den = -final_den;
       }
-      let g = gcd_i128(final_num.abs(), final_den);
-      final_num /= g;
-      final_den /= g;
+      (final_num, final_den) = rat_reduce(final_num, final_den);
 
       // Build coefficient * Pi^s
       let pi_power = Expr::BinaryOp {
@@ -451,9 +445,7 @@ fn polylog_at_neg1(s: i128) -> Result<Expr, InterpreterError> {
     let pow2 = 1_i128 << (s_usize - 1);
     let coeff_num = 1 - pow2;
     let coeff_den = pow2;
-    let g = gcd_i128(coeff_num.abs(), coeff_den);
-    let cn = coeff_num / g;
-    let cd = coeff_den / g;
+    let (cn, cd) = rat_reduce(coeff_num, coeff_den);
 
     let zeta_expr = Expr::FunctionCall {
       name: "Zeta".to_string(),

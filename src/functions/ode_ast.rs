@@ -4,7 +4,7 @@
 //! NDSolve solves initial-value problems numerically using RK4.
 
 use crate::InterpreterError;
-use crate::functions::math_ast::{gcd_i128, make_sqrt};
+use crate::functions::math_ast::{make_sqrt, rat_reduce};
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
 };
@@ -1537,11 +1537,8 @@ fn f64_to_nice_expr(f: f64) -> Expr {
   for denom in 2..=12 {
     let numer = f * denom as f64;
     if (numer - numer.round()).abs() < 1e-10 {
-      let n = numer.round() as i128;
-      let d = denom as i128;
-      let g = gcd_i128(n, d);
-      let nn = n / g;
-      let dd = d / g;
+      let (n, d) = (numer.round() as i128, denom as i128);
+      let (nn, dd) = rat_reduce(n, d);
       if dd == 1 {
         return Expr::Integer(nn);
       }
@@ -3137,10 +3134,7 @@ fn try_direct_linear_pde_body(
 /// `Rational` literal. Sign is folded into the numerator.
 fn make_neg_b_over_a(b: i128, a: i128) -> Expr {
   use crate::functions::math_ast::make_rational;
-  let g = gcd_i128(b.abs(), a.abs());
-  let g = if g == 0 { 1 } else { g };
-  let (num, den) = (-b / g, a / g);
-  let (num, den) = if den < 0 { (-num, -den) } else { (num, den) };
+  let (num, den) = rat_reduce(-b, a);
   if den == 1 {
     Expr::Integer(num)
   } else {
@@ -3150,10 +3144,7 @@ fn make_neg_b_over_a(b: i128, a: i128) -> Expr {
 
 fn make_c_over_a(c: i128, a: i128) -> Expr {
   use crate::functions::math_ast::make_rational;
-  let g = gcd_i128(c.abs(), a.abs());
-  let g = if g == 0 { 1 } else { g };
-  let (num, den) = (c / g, a / g);
-  let (num, den) = if den < 0 { (-num, -den) } else { (num, den) };
+  let (num, den) = rat_reduce(c, a);
   if den == 1 {
     Expr::Integer(num)
   } else {

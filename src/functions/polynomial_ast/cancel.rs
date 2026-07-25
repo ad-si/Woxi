@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::functions::math_ast::{is_sqrt, make_sqrt};
+use crate::functions::math_ast::{gcd_i128, is_sqrt, make_sqrt, rat_reduce};
 use crate::syntax::{BinaryOperator, Expr, expr_to_string};
 
 // ─── Cancel ─────────────────────────────────────────────────────────
@@ -757,14 +757,7 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
 
   // Subtract two rational exponents: (a/b) - (c/d)
   fn rat_sub(a: RatExp, b: RatExp) -> RatExp {
-    let num = a.0 * b.1 - b.0 * a.1;
-    let den = a.1 * b.1;
-    let g = gcd_i128(num.abs(), den.abs());
-    if g > 0 {
-      (num / g, den / g)
-    } else {
-      (num, den)
-    }
+    rat_reduce(a.0 * b.1 - b.0 * a.1, a.1 * b.1)
   }
 
   // Check if rational exponent is positive

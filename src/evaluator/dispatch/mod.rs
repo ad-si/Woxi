@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 
-use crate::functions::math_ast::{gcd_i128, rat_reduce};
+use crate::functions::math_ast::rat_reduce;
 use crate::syntax::bool_expr;
 
 // Re-export crate types/functions for submodules (used by submodules via `use super::*`)
@@ -6469,20 +6469,17 @@ fn evaluate_function_call_ast_inner(
             }
           }
         }
-        let possible = (k * (k - 1) / 2) as i128;
+        let mut possible = (k * (k - 1) / 2) as i128;
         if triangles == possible {
           Expr::Integer(1)
         } else if triangles == 0 {
           Expr::Integer(0)
         } else {
-          let g = gcd_i128(triangles, possible);
+          (triangles, possible) = rat_reduce(triangles, possible);
           Expr::FunctionCall {
             name: "Rational".to_string(),
-            args: vec![
-              Expr::Integer(triangles / g),
-              Expr::Integer(possible / g),
-            ]
-            .into(),
+            args: vec![Expr::Integer(triangles), Expr::Integer(possible)]
+              .into(),
           }
         }
       })
@@ -11106,9 +11103,9 @@ fn expr_to_rational(expr: &Expr) -> Option<(i128, i128)> {
         Some((1, 1))
       } else {
         // For other floats, use denominator 1000 and simplify
-        let n = (*f * 1000.0).round() as i128;
-        let g = gcd_i128(n.abs(), 1000);
-        Some((n / g, 1000 / g))
+        let (n, d) = ((*f * 1000.0).round() as i128, 1000i128);
+        let (n, d) = rat_reduce(n, d);
+        Some((n, d))
       }
     }
     _ => None,

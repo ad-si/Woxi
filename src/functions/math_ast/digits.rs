@@ -1200,18 +1200,7 @@ impl Rat {
     Rat { num: n, den: 1 }
   }
   fn reduce(&mut self) {
-    if self.den < 0 {
-      self.num = -self.num;
-      self.den = -self.den;
-    }
-    let g = gcd_i128(self.num, self.den);
-    if g > 1 {
-      self.num /= g;
-      self.den /= g;
-    }
-    if self.num == 0 {
-      self.den = 1;
-    }
+    (self.num, self.den) = rat_reduce(self.num, self.den);
   }
   fn add(self, o: Rat) -> Rat {
     Rat::new(self.num * o.den + o.num * self.den, self.den * o.den)
@@ -1301,8 +1290,7 @@ fn periodic_continued_fraction(
   let rn = acc_b.num * (q / acc_b.den);
   if rn == 0 {
     // Degenerate to a rational (shouldn't happen for a genuine periodic CF).
-    let g = gcd_i128(pn, q);
-    let (pn, q) = (pn / g, q / g);
+    let (pn, q) = rat_reduce(pn, q);
     return Some(if q == 1 {
       Expr::Integer(pn)
     } else {
@@ -1319,8 +1307,7 @@ fn periodic_continued_fraction(
   if d == 1 {
     // Perfect square under the root: the value is rational.
     let total = pn + s;
-    let g = gcd_i128(total, q);
-    let (total, q) = (total / g, q / g);
+    let (total, q) = rat_reduce(total, q);
     return Some(if q == 1 {
       Expr::Integer(total)
     } else {
@@ -1450,17 +1437,7 @@ pub fn from_continued_fraction_ast(
   }
 
   // Simplify by GCD
-
-  let g = gcd_i128(num, den);
-  num /= g;
-  den /= g;
-
-  // Normalize sign: keep denominator positive
-  if den < 0 {
-    num = -num;
-    den = -den;
-  }
-
+  (num, den) = rat_reduce(num, den);
   if den == 1 {
     Ok(Expr::Integer(num))
   } else {
@@ -3452,8 +3429,7 @@ fn make_rational_expr(num: i128, den: i128) -> Expr {
   } else if den == -1 {
     Expr::Integer(-num)
   } else {
-    let g = gcd_i128(num, den);
-    let (n, d) = (num / g, den / g);
+    let (n, d) = rat_reduce(num, den);
     if d < 0 {
       if -d == 1 {
         Expr::Integer(-n)
@@ -3924,9 +3900,7 @@ pub fn number_decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // rem -= q_int * u
         rn = rn * ud - q_int * un * rd;
         rd *= ud;
-        let g = gcd_i128(rn, rd).max(1);
-        rn /= g;
-        rd /= g;
+        (rn, rd) = rat_reduce(rn, rd);
       }
     }
   }

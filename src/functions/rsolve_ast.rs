@@ -913,12 +913,7 @@ fn rat_reduce(n: i128, d: i128) -> Option<(i128, i128)> {
   if d == 0 {
     return None;
   }
-  let g = gcd_i128(n, d);
-  let (mut n, mut d) = if g == 0 { (0, 1) } else { (n / g, d / g) };
-  if d < 0 {
-    n = -n;
-    d = -d;
-  }
+  let (n, d) = crate::functions::math_ast::rat_reduce(n, d);
   Some((n, d))
 }
 
@@ -1681,23 +1676,11 @@ fn solve_initial_conditions(
         // new = an/ad - (fn/fd)/(pn/pd) * bn/bd
         //     = an/ad - (fn*pd)/(fd*pn) * bn/bd
         //     = an/ad - (fn*pd*bn)/(fd*pn*bd)
-        let lhs_n = an * fd * pn * bd;
-        let lhs_d = ad * fd * pn * bd;
+        let (lhs_n, lhs_d) = (an * fd * pn * bd, ad * fd * pn * bd);
         let rhs_n = fn_ * pd * bn * ad;
-        let new_n = lhs_n - rhs_n;
-        let new_d = lhs_d;
-        let g = gcd_i128(new_n, new_d);
-        aug[row][j] = if g == 0 {
-          (0, 1)
-        } else {
-          let mut nn = new_n / g;
-          let mut nd = new_d / g;
-          if nd < 0 {
-            nn = -nn;
-            nd = -nd;
-          }
-          (nn, nd)
-        };
+        let (new_n, new_d) = (lhs_n - rhs_n, lhs_d);
+        let (nn, nd) = crate::functions::math_ast::rat_reduce(new_n, new_d);
+        aug[row][j] = (nn, nd);
       }
     }
   }
@@ -1715,29 +1698,13 @@ fn solve_initial_conditions(
       // sn/sd - sub_n/sub_d
       sn = sn * sub_d - sub_n * sd;
       sd *= sub_d;
-      let g = gcd_i128(sn, sd);
-      if g != 0 {
-        sn /= g;
-        sd /= g;
-      }
-      if sd < 0 {
-        sn = -sn;
-        sd = -sd;
-      }
+      (sn, sd) = crate::functions::math_ast::rat_reduce(sn, sd);
     }
     // solution[i] = (sn/sd) / aug[i][i]
     let (pn, pd) = aug[i][i];
     sn *= pd;
     sd *= pn;
-    let g = gcd_i128(sn, sd);
-    if g != 0 {
-      sn /= g;
-      sd /= g;
-    }
-    if sd < 0 {
-      sn = -sn;
-      sd = -sd;
-    }
+    (sn, sd) = crate::functions::math_ast::rat_reduce(sn, sd);
     solution[i] = (sn, sd);
   }
 

@@ -5521,11 +5521,12 @@ fn try_integrate_trig_quotient(
       ));
       for j in 1..=k {
         let binom = crate::functions::binomial_coeff(k as i128, j as i128);
+        let denom = 2 * j as i128;
         let sign = if j % 2 == 1 { 1 } else { -1 };
-        let g = gcd_i128(binom, 2 * j as i128).max(1);
+        let (binom, denom) = rat_reduce(binom, denom);
         terms.push(coeff_term(
-          sign * binom / g,
-          2 * j as i128 / g,
+          sign * binom,
+          denom,
           trig_pow("Cos", 2 * j),
           &coeff,
         ));
@@ -5564,11 +5565,12 @@ fn try_integrate_trig_quotient(
       ));
       for j in 1..=k {
         let binom = crate::functions::binomial_coeff(k as i128, j as i128);
+        let denom = 2 * j as i128;
         let sign = if j % 2 == 1 { -1 } else { 1 };
-        let g = gcd_i128(binom, 2 * j as i128).max(1);
+        let (binom, denom) = rat_reduce(binom, denom);
         terms.push(coeff_term(
-          sign * binom / g,
-          2 * j as i128 / g,
+          sign * binom,
+          denom,
           trig_pow("Sin", 2 * j),
           &coeff,
         ));
@@ -7480,8 +7482,7 @@ fn try_integrate_rational(
     // = big_b_int / (2 * common_den)
     let log_total_num = big_b_int;
     let log_total_den = 2 * common_den;
-    let g_log = gcd_i128(log_total_num.abs(), log_total_den);
-    let (log_num, log_den) = (log_total_num / g_log, log_total_den / g_log);
+    let (log_num, log_den) = rat_reduce(log_total_num, log_total_den);
 
     if log_num != 0 {
       let log_expr = Expr::FunctionCall {
@@ -7583,9 +7584,7 @@ fn try_integrate_rational(
 
       // Full coefficient: arctan_coeff_num / (common_den * k_reduced * sqrt(m))
       // Reduce: arctan_coeff_num / common_den first
-      let g_at = gcd_i128(arctan_coeff_num.abs(), common_den);
-      let at_num = arctan_coeff_num / g_at;
-      let at_den_int = common_den / g_at;
+      let (at_num, at_den_int) = rat_reduce(arctan_coeff_num, common_den);
 
       // Build effective sqrt expression combining at_den_int, k_reduced, and sqrt(m)
       let int_factor = at_den_int * k_reduced;
@@ -7640,9 +7639,7 @@ fn build_arctan_term(
 
   let term = if let Expr::Integer(s) = sqrt_expr {
     // sqrt is an integer - can simplify
-    let g = gcd_i128(abs_coeff, *s);
-    let reduced_num = abs_coeff / g;
-    let reduced_den = *s / g;
+    let (reduced_num, reduced_den) = rat_reduce(abs_coeff, *s);
 
     if reduced_den == 1 {
       if reduced_num == 1 {
@@ -16625,8 +16622,7 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // value / factorial
       match &value {
         Expr::Integer(n) => {
-          let g = gcd_i128(*n, factorial);
-          let (num, den) = (n / g, factorial / g);
+          let (num, den) = rat_reduce(*n, factorial);
           if den == 1 {
             Expr::Integer(num)
           } else {

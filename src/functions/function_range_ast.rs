@@ -7,7 +7,7 @@
 //! LessEqual, 1].
 
 use crate::InterpreterError;
-use crate::functions::math_ast::gcd_i128;
+use crate::functions::math_ast::rat_reduce;
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, bool_expr, unevaluated,
 };
@@ -126,7 +126,7 @@ pub fn function_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // v = c - b^2/(4a) computed exactly
       let num = c.0 * 4 * a.0 * b.1 * b.1 - b.0 * b.0 * c.1 * a.1;
       let den = c.1 * 4 * a.0 * b.1 * b.1;
-      let v = simplify_frac(num, den);
+      let v = rat_reduce(num, den);
       let v_expr = if v.1 == 1 {
         Expr::Integer(v.0)
       } else {
@@ -168,16 +168,6 @@ fn as_power(expr: &Expr) -> Option<(Expr, Expr)> {
     } => Some(((**left).clone(), (**right).clone())),
     _ => None,
   }
-}
-
-fn simplify_frac(n: i128, d: i128) -> (i128, i128) {
-  let g = gcd_i128(n, d).max(1);
-  let (mut n, mut d) = (n / g, d / g);
-  if d < 0 {
-    n = -n;
-    d = -d;
-  }
-  (n, d)
 }
 
 /// Ascending rational coefficients of a polynomial in `var`; None for

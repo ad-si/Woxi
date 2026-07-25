@@ -2,6 +2,7 @@
 use super::*;
 use crate::InterpreterError;
 use crate::functions::calculus_ast::simplify;
+use crate::functions::math_ast::{gcd_i128, lcm_i128, rat_reduce};
 use crate::syntax::{
   BinaryOperator, Expr, UnaryOperator, bool_expr, expr_to_string, unevaluated,
 };
@@ -2500,13 +2501,7 @@ fn product_square_free(expr: &Expr) -> Result<Option<Expr>, InterpreterError> {
     }
   }
 
-  if cden < 0 {
-    cnum = -cnum;
-    cden = -cden;
-  }
-  let g = gcd_i128(cnum, cden).max(1);
-  cnum /= g;
-  cden /= g;
+  (cnum, cden) = rat_reduce(cnum, cden);
 
   // A pure sign flip around one untouched square-free sum is not a
   // factorization: FactorSquareFree[-x - y] (Times[-1, x + y]) stays

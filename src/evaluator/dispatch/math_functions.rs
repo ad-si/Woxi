@@ -5165,8 +5165,7 @@ pub fn dispatch_math_functions(
             .checked_add(sn.checked_mul(dd)?.checked_mul(md)?)?;
           let den: i128 =
             dd.checked_mul(md)?.checked_mul(sd)?.checked_mul(3600)?;
-          let g = gcd_i128(num.abs(), den.abs()).max(1);
-          let (num, den) = (num / g, den / g);
+          let (num, den) = rat_reduce(num, den);
           // Now emit via the same logic as the scalar-rational path below.
           let d = num / den;
           let remainder = num - d * den;
@@ -5181,18 +5180,14 @@ pub fn dispatch_math_functions(
               vec![Expr::Integer(d), Expr::Integer(m), Expr::Integer(s)].into(),
             )));
           } else {
-            let g2 = gcd_i128(sec_num.abs(), den.abs());
+            let (sec_num, den) = rat_reduce(sec_num, den);
             return Some(Ok(Expr::List(
               vec![
                 Expr::Integer(d),
                 Expr::Integer(m),
                 Expr::FunctionCall {
                   name: "Rational".to_string(),
-                  args: vec![
-                    Expr::Integer(sec_num / g2),
-                    Expr::Integer(den / g2),
-                  ]
-                  .into(),
+                  args: vec![Expr::Integer(sec_num), Expr::Integer(den)].into(),
                 },
               ]
               .into(),
@@ -5215,15 +5210,14 @@ pub fn dispatch_math_functions(
             vec![Expr::Integer(d), Expr::Integer(m), Expr::Integer(s)].into(),
           )));
         } else {
-          let g = gcd_i128(sec_num.abs(), den.abs());
+          let (sec_num, den) = rat_reduce(sec_num, den);
           return Some(Ok(Expr::List(
             vec![
               Expr::Integer(d),
               Expr::Integer(m),
               Expr::FunctionCall {
                 name: "Rational".to_string(),
-                args: vec![Expr::Integer(sec_num / g), Expr::Integer(den / g)]
-                  .into(),
+                args: vec![Expr::Integer(sec_num), Expr::Integer(den)].into(),
               },
             ]
             .into(),

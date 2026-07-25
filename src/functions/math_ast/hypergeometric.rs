@@ -1516,8 +1516,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         denom /= (n - k + 1) as i128;
         denom *= k as i128;
       }
-      let g = gcd_i128(numer, denom);
-      let coeff = (numer / g, denom / g);
+      let coeff = rat_reduce(numer, denom);
       let z_pow = if k == 0 {
         Expr::Integer(1)
       } else if k == 1 {
@@ -2645,10 +2644,8 @@ fn hypergeometric2f1_1_b_c(
     for k in 1..=(m - 1 - j) {
       mj_fact *= k;
     }
-    let n = sign * prefactor;
-    let d = j_fact * mj_fact;
-    let g = gcd_i128(n, d);
-    cj.push((n / g, d / g));
+    let (n, d) = (sign * prefactor, j_fact * mj_fact);
+    cj.push(rat_reduce(n, d));
   }
 
   // Collect all distributed terms into (has_log, z_power) -> (num, den)
@@ -2668,8 +2665,7 @@ fn hypergeometric2f1_1_b_c(
     if new_num == 0 {
       *entry = (0, 1);
     } else {
-      let g = gcd_i128(new_num, new_den);
-      *entry = (new_num / g, new_den / g);
+      *entry = rat_reduce(new_num, new_den);
     }
   }
 
@@ -2681,10 +2677,8 @@ fn hypergeometric2f1_1_b_c(
 
     // Poly terms: -C_j/i * z^{m-1-j+i} for i = 1..b+j-1
     for i in 1..(b + j) {
-      let num = -cn;
-      let den = cd * i;
-      let g = gcd_i128(num, den);
-      add_rational(&mut collected, (false, m - 1 - j + i), num / g, den / g);
+      let (num, den) = rat_reduce(-cn, cd * i);
+      add_rational(&mut collected, (false, m - 1 - j + i), num, den);
     }
   }
 
@@ -2724,8 +2718,7 @@ fn hypergeometric2f1_1_b_c(
   // Overall factor = sign_adjust * num_gcd / common_den
   let factor_num = sign_adjust * num_gcd;
   let factor_den = common_den;
-  let fg = gcd_i128(factor_num, factor_den);
-  let (factor_n, factor_d) = (factor_num / fg, factor_den / fg);
+  let (factor_n, factor_d) = rat_reduce(factor_num, factor_den);
 
   // Build Log[1-z]
   let one_minus_z = Expr::FunctionCall {
@@ -2749,10 +2742,8 @@ fn hypergeometric2f1_1_b_c(
 
   for &((has_log, power), scaled_num) in &scaled {
     // Factored coefficient: scaled_num / (sign_adjust * num_gcd)
-    let cn = scaled_num * sign_adjust;
-    let cd = num_gcd;
-    let cg = gcd_i128(cn, cd);
-    let (cn, cd) = (cn / cg, cd / cg);
+    let (cn, cd) = (scaled_num * sign_adjust, num_gcd);
+    let (cn, cd) = rat_reduce(cn, cd);
 
     let mut factors: Vec<Expr> = Vec::new();
 

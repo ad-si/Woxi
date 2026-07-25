@@ -557,9 +557,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Ok(Expr::Integer(sum / count))
         } else {
           // Return as Rational
-          let g = gcd_i128(sum.abs(), count);
-          let num = sum / g;
-          let denom = count / g;
+          let (num, denom) = rat_reduce(sum, count);
           Ok(Expr::FunctionCall {
             name: "Rational".to_string(),
             args: vec![Expr::Integer(num), Expr::Integer(denom)].into(),
@@ -1829,9 +1827,7 @@ pub fn harmonic_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           sum_numer = sum_numer * x + sum_denom;
           sum_denom *= x;
           // Simplify to avoid overflow
-          let g = gcd_i128(sum_numer.abs(), sum_denom.abs());
-          sum_numer /= g;
-          sum_denom /= g;
+          (sum_numer, sum_denom) = rat_reduce(sum_numer, sum_denom);
         }
         // HarmonicMean = n / (sum_numer/sum_denom) = n * sum_denom / sum_numer
         let result_numer = n * sum_denom;
@@ -4175,9 +4171,7 @@ pub fn root_mean_square_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let n = int_vals.len() as i128;
         let sum_sq: i128 = int_vals.iter().map(|x| x * x).sum();
         // RMS = Sqrt[sum_sq / n]
-        let g = gcd_i128(sum_sq.abs(), n);
-        let numer = sum_sq / g;
-        let denom = n / g;
+        let (numer, denom) = rat_reduce(sum_sq, n);
         // Check if numer/denom is a perfect square
         if denom == 1 {
           let root = (numer as f64).sqrt() as i128;

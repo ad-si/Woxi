@@ -3,7 +3,7 @@
 //! These functions work directly with `Expr` AST nodes.
 
 use crate::InterpreterError;
-use crate::functions::math_ast::gcd_i128;
+use crate::functions::math_ast::rat_reduce;
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, unevaluated,
 };
@@ -184,13 +184,7 @@ fn qi_reduce(n: i128, d: i128) -> (i128, i128) {
   if d == 0 {
     return (n, 0);
   }
-  let g = gcd_i128(n, d).max(1);
-  let (mut n, mut d) = (n / g, d / g);
-  if d < 0 {
-    n = -n;
-    d = -d;
-  }
-  (n, d)
+  rat_reduce(n, d)
 }
 
 fn qi_add(x: (i128, i128), y: (i128, i128)) -> (i128, i128) {

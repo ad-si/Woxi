@@ -1729,9 +1729,8 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
         match denom {
           Some(d) => {
             // Simplify the fraction
-            let g = crate::functions::math_ast::gcd_i128(mantissa, d);
-            let num = mantissa / g;
-            let den = d / g;
+            let (num, den) =
+              crate::functions::math_ast::rat_reduce(mantissa, d);
             if den == 1 {
               Expr::Integer(num)
             } else {
