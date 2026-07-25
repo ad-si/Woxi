@@ -8202,3 +8202,76 @@ mod truncated_distribution {
     );
   }
 }
+
+// CensoredDistribution[{lo, hi}, dist] clamps values to an interval instead of
+// discarding them, so the mass outside piles up on the endpoints. All values
+// verified against wolframscript.
+mod censored_distribution_values {
+  use super::*;
+
+  const C: &str = "CensoredDistribution[{1, 3}, UniformDistribution[{0, 4}]]";
+
+  #[test]
+  fn cdf_is_the_base_cdf_held_at_the_ends() {
+    assert_eq!(interpret(&format!("CDF[{C}, 0]")).unwrap(), "0");
+    // Inside the range nothing changes.
+    assert_eq!(interpret(&format!("CDF[{C}, 1]")).unwrap(), "1/4");
+    assert_eq!(interpret(&format!("CDF[{C}, 2]")).unwrap(), "1/2");
+    // From the top of the range on, everything has accumulated.
+    assert_eq!(interpret(&format!("CDF[{C}, 3]")).unwrap(), "1");
+    assert_eq!(interpret(&format!("CDF[{C}, 5]")).unwrap(), "1");
+    assert_eq!(
+      interpret(
+        "CDF[CensoredDistribution[{0, 2}, ExponentialDistribution[1]], 1]"
+      )
+      .unwrap(),
+      "1 - E^(-1)"
+    );
+  }
+
+  // The clamped variable has atoms at the endpoints, so it has no ordinary
+  // density — wolframscript leaves PDF unevaluated too.
+  #[test]
+  fn pdf_stays_unevaluated() {
+    assert_eq!(
+      interpret(&format!("PDF[{C}, 2]")).unwrap(),
+      "PDF[CensoredDistribution[{1, 3}, UniformDistribution[{0, 4}]], 2]"
+    );
+  }
+
+  #[test]
+  fn quantile_clamps_the_base_quantile() {
+    assert_eq!(interpret(&format!("Quantile[{C}, 1/2]")).unwrap(), "2");
+    // Below the range the base quantile clamps up to lo, and above it to hi.
+    assert_eq!(interpret(&format!("Quantile[{C}, 1/8]")).unwrap(), "1");
+    assert_eq!(interpret(&format!("Quantile[{C}, 7/8]")).unwrap(), "3");
+    assert_eq!(interpret(&format!("Quantile[{C}, 0]")).unwrap(), "1");
+    assert_eq!(interpret(&format!("Quantile[{C}, 1]")).unwrap(), "3");
+  }
+
+  // Each moment is the two endpoint atoms plus the base integral between them.
+  #[test]
+  fn moments_include_the_endpoint_atoms() {
+    assert_eq!(interpret(&format!("Mean[{C}]")).unwrap(), "2");
+    assert_eq!(interpret(&format!("Variance[{C}]")).unwrap(), "2/3");
+    assert_eq!(
+      interpret(&format!("StandardDeviation[{C}]")).unwrap(),
+      "Sqrt[2/3]"
+    );
+    // One-sided censoring keeps the other end untouched.
+    assert_eq!(
+      interpret(
+        "Mean[CensoredDistribution[{0, 2}, UniformDistribution[{0, 4}]]]"
+      )
+      .unwrap(),
+      "3/2"
+    );
+    assert_eq!(
+      interpret(
+        "Variance[CensoredDistribution[{0, 2}, UniformDistribution[{0, 4}]]]"
+      )
+      .unwrap(),
+      "5/12"
+    );
+  }
+}

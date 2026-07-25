@@ -2526,7 +2526,7 @@ EqualTo,Operator form of Equal,✅,none,10.3,2578
 SubstitutionSystem,Applies substitution rules iteratively to sequences strings or grids,✅,pure,10.2,2578
 XMLTemplate,Reads an XML template string or file and yields a TemplateObject,✅,effectful,10.0,2578
 BorderDimensions,,🚫,,8.0,2587
-CensoredDistribution,Represents a censored distribution with specified bounds and underlying distribution,✅,pure,8.0,2587
+CensoredDistribution,Distribution with values clamped to an interval,✅,pure,8.0,2587
 FromDMS,Convert degrees-minutes-seconds to decimal degrees,✅,none,7.0,2587
 HermitianMatrixQ,Test whether a matrix is Hermitian,✅,none,6.0,2587
 IntervalMarkers,option for interval markers in plots,✅,Symbolic,12.0,2587

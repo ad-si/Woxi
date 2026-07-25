@@ -1809,6 +1809,14 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(value);
   }
 
+  // Censoring clamps rather than discards, so the CDF is held at 0 below the
+  // range and at 1 from its top on.
+  if dist_name == "CensoredDistribution"
+    && let Some(value) = censored_distribution_value("CDF", dist, &args[1])?
+  {
+    return Ok(value);
+  }
+
   // CDF[MixtureDistribution[{w1, …}, {d1, …}], x] is the weight-normalized sum
   // of the component CDFs: Σ w_i CDF[d_i, x] / Σ w_i.
   if dist_name == "MixtureDistribution" && dargs.len() == 2 {
@@ -17255,4 +17263,155 @@ pub fn truncated_distribution_value(
     }
     _ => Ok(None),
   }
+}
+
+/// The `{lo, hi}` bounds and base distribution of a
+/// `CensoredDistribution[{lo, hi}, dist]`.
+pub fn censored_parts(dist: &Expr) -> Option<(Expr, Expr, Expr)> {
+  let Expr::FunctionCall { name, args } = dist else {
+    return None;
+  };
+  if name != "CensoredDistribution" || args.len() != 2 {
+    return None;
+  }
+  let Expr::List(bounds) = &args[0] else {
+    return None;
+  };
+  (bounds.len() == 2)
+    .then(|| (bounds[0].clone(), bounds[1].clone(), args[1].clone()))
+}
+
+fn is_infinite_bound(e: &Expr, positive: bool) -> bool {
+  let rendered = expr_to_string(e);
+  rendered == if positive { "Infinity" } else { "-Infinity" }
+}
+
+/// `CDF`/`Quantile` of a censored distribution. Censoring clamps values to
+/// the interval rather than discarding them, so the CDF is the base CDF held
+/// at 0 below the range and at 1 from the top of the range on, and a quantile
+/// is the base quantile clamped. `PDF` is deliberately absent: the clamped
+/// variable has atoms at the endpoints, and wolframscript leaves it
+/// unevaluated too.
+pub fn censored_distribution_value(
+  head: &str,
+  dist: &Expr,
+  x: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  let Some((lo, hi, base)) = censored_parts(dist) else {
+    return Ok(None);
+  };
+  let eval = |name: &str, args: Vec<Expr>| -> Result<Expr, InterpreterError> {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.into(),
+    })
+  };
+  let decides =
+    |a: &Expr, op: crate::syntax::ComparisonOp, b: &Expr| -> Option<bool> {
+      let r = crate::evaluator::evaluate_expr_to_expr(&Expr::Comparison {
+        operands: vec![a.clone(), b.clone()],
+        operators: vec![op],
+      })
+      .ok()?;
+      match r {
+        Expr::Identifier(ref t) if t == "True" => Some(true),
+        Expr::Identifier(ref t) if t == "False" => Some(false),
+        _ => None,
+      }
+    };
+
+  match head {
+    "CDF" => {
+      use crate::syntax::ComparisonOp::{GreaterEqual, Less};
+      if decides(x, Less, &lo) == Some(true) {
+        return Ok(Some(Expr::Integer(0)));
+      }
+      if decides(x, GreaterEqual, &hi) == Some(true) {
+        return Ok(Some(Expr::Integer(1)));
+      }
+      // Inside the range the base CDF is unchanged.
+      match decides(x, Less, &hi) {
+        Some(true) => Ok(Some(cdf_ast(&[base, x.clone()])?)),
+        _ => Ok(None),
+      }
+    }
+    "Quantile" => {
+      let q = super::statistics::quantile_ast(&[base, x.clone()])?;
+      let clamped = eval("Max", vec![lo, eval("Min", vec![q, hi])?])?;
+      Ok(Some(clamped))
+    }
+    _ => Ok(None),
+  }
+}
+
+/// `Mean`/`Variance` of a censored distribution. The clamped variable puts the
+/// mass below the range onto `lo` and the mass above it onto `hi`, so each raw
+/// moment is those two atoms plus the base integral over the range. Returns
+/// `None` when the integral does not close (a discrete base, for instance).
+pub fn censored_mean_variance(
+  dist: &Expr,
+) -> Result<Option<(Expr, Expr)>, InterpreterError> {
+  let Some((lo, hi, base)) = censored_parts(dist) else {
+    return Ok(None);
+  };
+  let x = Expr::Identifier("Global`censx".to_string());
+  let eval = |name: &str, args: Vec<Expr>| -> Result<Expr, InterpreterError> {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.into(),
+    })
+  };
+
+  let moment = |k: i128| -> Result<Option<Expr>, InterpreterError> {
+    let density = pdf_ast(&[base.clone(), x.clone()])?;
+    if matches!(&density, Expr::FunctionCall { name, .. } if name == "PDF") {
+      return Ok(None);
+    }
+    let power = |base_expr: &Expr| Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![base_expr.clone(), Expr::Integer(k)].into(),
+    };
+    let integral = eval(
+      "Integrate",
+      vec![
+        eval("Times", vec![power(&x), density])?,
+        Expr::List(vec![x.clone(), lo.clone(), hi.clone()].into()),
+      ],
+    )?;
+    if matches!(&integral, Expr::FunctionCall { name, .. } if name == "Integrate")
+    {
+      return Ok(None);
+    }
+    let mut total = integral;
+    // An infinite endpoint carries no mass, so it contributes no atom.
+    if !is_infinite_bound(&lo, false) {
+      let below = cdf_ast(&[base.clone(), lo.clone()])?;
+      total =
+        eval("Plus", vec![total, eval("Times", vec![power(&lo), below])?])?;
+    }
+    if !is_infinite_bound(&hi, true) {
+      let above = eval(
+        "Subtract",
+        vec![Expr::Integer(1), cdf_ast(&[base.clone(), hi.clone()])?],
+      )?;
+      total =
+        eval("Plus", vec![total, eval("Times", vec![power(&hi), above])?])?;
+    }
+    Ok(Some(total))
+  };
+
+  let (Some(m1), Some(m2)) = (moment(1)?, moment(2)?) else {
+    return Ok(None);
+  };
+  let variance = eval(
+    "Subtract",
+    vec![
+      m2,
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![m1.clone(), Expr::Integer(2)].into(),
+      },
+    ],
+  )?;
+  Ok(Some((m1, variance)))
 }

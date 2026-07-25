@@ -721,6 +721,17 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     Expr::FunctionCall {
       name: dist_name, ..
+    } if dist_name == "CensoredDistribution"
+      && super::distributions::censored_mean_variance(&args[0])?.is_some() =>
+    {
+      Ok(
+        super::distributions::censored_mean_variance(&args[0])?
+          .expect("checked in the guard")
+          .0,
+      )
+    }
+    Expr::FunctionCall {
+      name: dist_name, ..
     } if dist_name == "TruncatedDistribution"
       && super::distributions::truncated_mean_variance(&args[0])?.is_some() =>
     {
@@ -954,6 +965,11 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if let Some((_, variance)) =
     super::distributions::truncated_mean_variance(&args[0])?
+  {
+    return Ok(variance);
+  }
+  if let Some((_, variance)) =
+    super::distributions::censored_mean_variance(&args[0])?
   {
     return Ok(variance);
   }
@@ -4246,6 +4262,14 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // distribution's scale.
   if args.len() == 2
     && let Some(value) = super::distributions::truncated_distribution_value(
+      "Quantile", &args[0], &args[1],
+    )?
+  {
+    return Ok(value);
+  }
+  // A censored distribution clamps the base quantile to the range.
+  if args.len() == 2
+    && let Some(value) = super::distributions::censored_distribution_value(
       "Quantile", &args[0], &args[1],
     )?
   {
