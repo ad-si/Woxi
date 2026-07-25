@@ -207,6 +207,16 @@ pub fn day_count_weekday_ast(
 fn date_to_absolute_days(year: i64, month: i64, day: i64) -> i64 {
   let mut total_days: i64 = 0;
 
+  // Months outside 1..=12 roll the year over, in either direction, so that
+  // e.g. month 0 is the previous December and month 25 is January two years on.
+  let (year, month) = {
+    let zero_based = month - 1;
+    (
+      year + zero_based.div_euclid(12),
+      zero_based.rem_euclid(12) + 1,
+    )
+  };
+
   if year >= 1900 {
     for y in 1900..year {
       total_days += days_in_year(y);
@@ -793,8 +803,8 @@ fn month_name_short(month: i64) -> &'static str {
 
 /// AbsoluteTime[] or AbsoluteTime[date]
 pub fn absolute_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() {
-    // Current time
+  // Current time, in seconds since the Wolfram epoch of 1900-01-01.
+  let now = || {
     use web_time::{SystemTime, UNIX_EPOCH};
     let unix_secs = SystemTime::now()
       .duration_since(UNIX_EPOCH)
@@ -802,8 +812,11 @@ pub fn absolute_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .as_secs_f64();
     // Unix epoch is 1970-01-01; Wolfram epoch is 1900-01-01
     // Difference: 70 years = 2208988800 seconds (accounting for leap years)
-    let wolfram_secs = unix_secs + 2208988800.0;
-    return Ok(Expr::Real(wolfram_secs));
+    Expr::Real(unix_secs + 2208988800.0)
+  };
+
+  if args.is_empty() {
+    return Ok(now());
   }
 
   if args.len() != 1 {
@@ -811,6 +824,21 @@ pub fn absolute_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let arg = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
+
+  // An empty date list carries no components at all, so every field falls back
+  // to its default: the current time, exactly like the zero-argument form.
+  if matches!(&arg, Expr::List(items) if items.is_empty()) {
+    return Ok(now());
+  }
+
+  // A DateObject carries its own granularity, calendar and time zone. Reduce
+  // it to a plain date list first and take the absolute time of that.
+  if matches!(&arg, Expr::FunctionCall { name, .. } if name == "DateObject") {
+    let list = date_list_ast(std::slice::from_ref(&arg))?;
+    if matches!(&list, Expr::List(_)) {
+      return absolute_time_ast(&[list]);
+    }
+  }
 
   match &arg {
     Expr::List(_) => {

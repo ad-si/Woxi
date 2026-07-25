@@ -47,6 +47,79 @@ mod absolute_time {
       "2885198400"
     );
   }
+
+  // An empty date list has no components to read, so every field takes its
+  // default and the result is the current time — like `AbsoluteTime[]`.
+  // It used to index past the end of the component vector and panic.
+  //   wolframscript -code 'Head[AbsoluteTime[{}]]'
+  #[test]
+  fn absolute_time_empty_list_is_now() {
+    assert_eq!(
+      interpret(
+        "With[{t = AbsoluteTime[{}]}, Head[t] === Real && t > 3155673600]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // AbsoluteTime accepts a DateObject, at any granularity.
+  //   wolframscript -code 'AbsoluteTime[DateObject[{2020, 3, 5}]]'
+  #[test]
+  fn absolute_time_date_object() {
+    assert_eq!(
+      interpret("AbsoluteTime[DateObject[{2020, 3, 5}]]").unwrap(),
+      "3792355200"
+    );
+    assert_eq!(
+      interpret("AbsoluteTime[DateObject[{2020, 3, 5, 6, 7, 8}]]").unwrap(),
+      "3792377228"
+    );
+    // Coarser granularities fall back to the start of the period.
+    assert_eq!(
+      interpret("AbsoluteTime[DateObject[{2020, 3}]]").unwrap(),
+      "3792009600"
+    );
+    assert_eq!(
+      interpret("AbsoluteTime[DateObject[{2020}]]").unwrap(),
+      "3786825600"
+    );
+  }
+
+  // Months outside 1..12 roll the year over in both directions. Month 0 used
+  // to clamp to January, and months past 13 counted 30-day filler months.
+  //   wolframscript -code 'DateList[AbsoluteTime[{2020, 0, 1}]]'
+  #[test]
+  fn absolute_time_month_rollover() {
+    // Month 0 is the previous December.
+    assert_eq!(
+      interpret("DateList[AbsoluteTime[{2020, 0, 1}]]").unwrap(),
+      "{2019, 12, 1, 0, 0, 0.}"
+    );
+    assert_eq!(
+      interpret("DateList[AbsoluteTime[{2020, -1, 1}]]").unwrap(),
+      "{2019, 11, 1, 0, 0, 0.}"
+    );
+    // A full year back.
+    assert_eq!(
+      interpret("DateList[AbsoluteTime[{2020, -12, 1}]]").unwrap(),
+      "{2018, 12, 1, 0, 0, 0.}"
+    );
+    // More than one year forward.
+    assert_eq!(
+      interpret("DateList[AbsoluteTime[{2020, 25, 1}]]").unwrap(),
+      "{2022, 1, 1, 0, 0, 0.}"
+    );
+    assert_eq!(
+      interpret("DateList[AbsoluteTime[{2020, 37, 15}]]").unwrap(),
+      "{2023, 1, 15, 0, 0, 0.}"
+    );
+    // Month and day underflow compose.
+    assert_eq!(
+      interpret("DateList[AbsoluteTime[{2020, 0, 0}]]").unwrap(),
+      "{2019, 11, 30, 0, 0, 0.}"
+    );
+  }
 }
 
 mod date_list {
