@@ -720,6 +720,11 @@ function main() {
     // fuzzer must not chase it (this expression was flip-flopped twice before).
     // Woxi returns the cold-kernel value, matching the unit test.
     "Attributes[ParallelDo]",
+    // The integer in InputStream[String, n] is wolframscript's per-session
+    // stream counter: a cold kernel hands out 4, 5, ... and every stream any
+    // earlier expression in the batch opened shifts it further. There is no
+    // stable reference value; Woxi numbers its own streams from 1.
+    'ReadString[StringToStream["abc"], 2]',
     "NSolve[x^3 - 3*x^2 + 2*x == 0, x]",
     // wolframscript leaks its internal System`HarmonicNumberDump`MQHN symbol
     // for a symbolic exponent (a WL bug); Woxi stays unevaluated instead.
