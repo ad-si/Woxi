@@ -3,6 +3,42 @@ use super::*;
 use crate::InterpreterError;
 use crate::syntax::{BinaryOperator, Expr, expr_to_string, unevaluated};
 
+/// Collect the factors of a product into `out`, descending through nested
+/// `Times` (both spellings) so that factors from separately evaluated parts
+/// end up as siblings.
+fn flatten_times(expr: &Expr, out: &mut Vec<Expr>) {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      for a in args.iter() {
+        flatten_times(a, out);
+      }
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      flatten_times(left, out);
+      flatten_times(right, out);
+    }
+    // A quotient is a product with a reciprocal factor; descending through it
+    // is what puts BesselI's Sqrt[2/Pi] next to Gamma's Sqrt[Pi].
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      flatten_times(left, out);
+      out.push(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: right.clone(),
+        right: Box::new(Expr::Integer(-1)),
+      });
+    }
+    other => out.push(other.clone()),
+  }
+}
+
 /// Hypergeometric0F1[a, z] - confluent hypergeometric limit function
 /// 0F1(a; z) = Σ z^k / (k! * Pochhammer(a,k)) for k = 0, 1, 2, ...
 pub fn hypergeometric_0f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -187,10 +223,11 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // HypergeometricPFQ[{}, {b}, z] = Gamma[b] z^(1/2 - b/2) BesselI[b-1, 2 Sqrt[z]]
-  // (the 0F1 → modified Bessel relation). Reduced for a positive integer b or a
-  // purely symbolic b, where the BesselI form matches wolframscript exactly;
-  // half-integer / other numeric b are left symbolic (their displayed forms,
-  // full of Sqrt[Pi]*Sqrt[1/Pi] artifacts, differ from Wolfram's).
+  // (the 0F1 → modified Bessel relation). Reduced for a positive integer b, a
+  // half-integer b (where BesselI collapses to Sinh/Cosh, e.g.
+  // 0F1[; 3/2; z] = Sinh[2 Sqrt[z]]/(2 Sqrt[z])), or a purely symbolic b —
+  // in each case the resulting form matches wolframscript. Other numeric b are
+  // left symbolic.
   if a_list.is_empty() && b_list.len() == 1 {
     let is_number = |e: &Expr| {
       matches!(
@@ -203,8 +240,19 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if name == "Rational" || name == "Complex")
     };
     let b_expr = &b_list[0];
-    let reducible =
-      matches!(b_expr, Expr::Integer(bn) if *bn >= 1) || !is_number(b_expr);
+    // Positive half-integers only: a negative one leaves the Bessel expansion
+    // in a factored form that diverges from wolframscript's expanded print.
+    let is_half_integer = matches!(
+      b_expr,
+      Expr::FunctionCall { name, args }
+        if name == "Rational"
+          && args.len() == 2
+          && matches!(&args[1], Expr::Integer(2))
+          && matches!(&args[0], Expr::Integer(n) if *n > 0)
+    );
+    let reducible = matches!(b_expr, Expr::Integer(bn) if *bn >= 1)
+      || is_half_integer
+      || !is_number(b_expr);
     if reducible {
       let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
         name: name.to_string(),
@@ -235,10 +283,16 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       );
       let z_pow = call("Power", vec![z.clone(), exponent]);
       let gamma = call("Gamma", vec![b_expr.clone()]);
-      return crate::evaluator::evaluate_expr_to_expr(&call(
-        "Times",
-        vec![gamma, z_pow, bessel],
-      ));
+      // Evaluate each part first and multiply the flattened factor lists: a
+      // half-integer b expands BesselI into Sinh/Cosh with its own Sqrt[1/Pi]
+      // prefactor, which only cancels against Gamma's Sqrt[Pi] when the two
+      // meet as siblings of one Times rather than across nested products.
+      let mut factors: Vec<Expr> = Vec::new();
+      for part in [gamma, z_pow, bessel] {
+        let v = crate::evaluator::evaluate_expr_to_expr(&part)?;
+        flatten_times(&v, &mut factors);
+      }
+      return crate::functions::math_ast::times_ast(&factors);
     }
   }
 

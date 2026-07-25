@@ -5495,10 +5495,23 @@ mod hypergeometric_pfq {
       interpret("HypergeometricPFQ[{}, {b}, z]").unwrap(),
       "z^(1/2 - b/2)*BesselI[-1 + b, 2*Sqrt[z]]*Gamma[b]"
     );
-    // Half-integer b is left symbolic (its expanded form diverges from Wolfram).
+    // A positive half-integer b collapses the Bessel factor into Sinh/Cosh.
+    assert_eq!(
+      interpret("HypergeometricPFQ[{}, {1/2}, z]").unwrap(),
+      "Cosh[2*Sqrt[z]]"
+    );
     assert_eq!(
       interpret("HypergeometricPFQ[{}, {3/2}, z]").unwrap(),
-      "HypergeometricPFQ[{}, {3/2}, z]"
+      "Sinh[2*Sqrt[z]]/(2*Sqrt[z])"
+    );
+    assert_eq!(
+      interpret("HypergeometricPFQ[{}, {5/2}, z]").unwrap(),
+      "(3*(2*Cosh[2*Sqrt[z]] - Sinh[2*Sqrt[z]]/Sqrt[z]))/(8*z)"
+    );
+    // A negative half-integer stays symbolic (its expanded form diverges).
+    assert_eq!(
+      interpret("HypergeometricPFQ[{}, {-1/2}, z]").unwrap(),
+      "HypergeometricPFQ[{}, {-1/2}, z]"
     );
   }
 
