@@ -586,6 +586,15 @@ pub fn interval_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// IntervalUnion[i1, i2, ...] — union of intervals.
 pub fn interval_union_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // The union of nothing is the empty interval. The CenteredInterval branch
+  // below is vacuously true for no arguments, so this has to come first.
+  if args.is_empty() {
+    return Ok(Expr::FunctionCall {
+      name: "Interval".to_string(),
+      args: vec![].into(),
+    });
+  }
+
   // CenteredInterval inputs: combine into the smallest enclosing
   // axis-aligned box (a CenteredInterval is itself such a box, even
   // when c and r are complex). Wolfram returns a CenteredInterval with
@@ -1202,9 +1211,14 @@ fn centered_interval_box_op(args: &[Expr], op: BoxOp) -> Expr {
   }
 }
 
+/// The largest (or smallest) of `xs`. An empty list has no extremum, so it
+/// yields Indeterminate rather than aborting — every caller is expected to
+/// have rejected the empty case already.
 fn extremum(xs: &[Expr], maximum: bool) -> Expr {
   let mut iter = xs.iter().cloned();
-  let mut best = iter.next().expect("non-empty list");
+  let Some(mut best) = iter.next() else {
+    return Expr::Identifier("Indeterminate".to_string());
+  };
   for x in iter {
     let ord = compare_numeric(&x, &best);
     let pick_x = matches!(

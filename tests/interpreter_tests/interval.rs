@@ -1023,3 +1023,39 @@ fn interval_equality() {
     "True"
   );
 }
+
+// Regression: IntervalUnion[] used to panic with "non-empty list". The
+// CenteredInterval branch is vacuously true for no arguments, so it reached
+// an extremum over an empty list. Values verified against wolframscript.
+#[test]
+fn interval_union_of_nothing_is_the_empty_interval() {
+  assert_eq!(interpret("IntervalUnion[]").unwrap(), "Interval[]");
+  // IntervalIntersection already guarded this; both agree.
+  assert_eq!(interpret("IntervalIntersection[]").unwrap(), "Interval[]");
+}
+
+#[test]
+fn interval_union_with_empty_intervals() {
+  assert_eq!(
+    interpret("IntervalUnion[Interval[]]").unwrap(),
+    "Interval[]"
+  );
+  assert_eq!(
+    interpret("IntervalUnion[Interval[], Interval[]]").unwrap(),
+    "Interval[]"
+  );
+  // An empty interval contributes nothing to a union.
+  assert_eq!(
+    interpret("IntervalUnion[Interval[{1, 2}], Interval[]]").unwrap(),
+    "Interval[{1, 2}]"
+  );
+  // A single interval is returned unchanged.
+  assert_eq!(
+    interpret("IntervalUnion[Interval[{1, 2}]]").unwrap(),
+    "Interval[{1, 2}]"
+  );
+  assert_eq!(
+    interpret("IntervalIntersection[Interval[{1, 2}]]").unwrap(),
+    "Interval[{1, 2}]"
+  );
+}
