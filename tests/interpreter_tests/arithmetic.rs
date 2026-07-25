@@ -2574,6 +2574,24 @@ mod power_of_power {
     // Real outer when the inner exponent satisfies |p| < 1 (branch safety).
     assert_eq!(interpret("(a^2)^3.").unwrap(), "(a^2)^3.");
   }
+
+  // The same |inner| < 1 branch-safety rule governs an exact fractional outer
+  // exponent, so Sqrt[Sqrt[z]] folds to z^(1/4) but Sqrt[z^2] does not fold.
+  #[test]
+  fn fractional_outer_exponent_combines_below_one() {
+    assert_eq!(interpret("Sqrt[Sqrt[z]]").unwrap(), "z^(1/4)");
+    assert_eq!(interpret("(z^(1/2))^(1/2)").unwrap(), "z^(1/4)");
+    assert_eq!(interpret("(z^(1/3))^(1/2)").unwrap(), "z^(1/6)");
+    assert_eq!(interpret("(z^(3/4))^(1/2)").unwrap(), "z^(3/8)");
+    assert_eq!(interpret("(z^(-1/2))^(1/2)").unwrap(), "z^(-1/4)");
+    assert_eq!(interpret("(z^(1/2))^(-1/2)").unwrap(), "z^(-1/4)");
+    assert_eq!(interpret("Sqrt[Sqrt[a + b]]").unwrap(), "(a + b)^(1/4)");
+    assert_eq!(interpret("Sqrt[Sqrt[2]]").unwrap(), "2^(1/4)");
+    // |inner| >= 1 keeps the nesting.
+    assert_eq!(interpret("(z^2)^(1/2)").unwrap(), "Sqrt[z^2]");
+    assert_eq!(interpret("(z^(-1))^(1/2)").unwrap(), "Sqrt[z^(-1)]");
+    assert_eq!(interpret("(z^(5/4))^(1/2)").unwrap(), "Sqrt[z^(5/4)]");
+  }
 }
 
 mod power_combining {

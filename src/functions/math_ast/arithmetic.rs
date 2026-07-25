@@ -5777,6 +5777,59 @@ fn combine_reciprocal_trig(
 }
 
 /// Combine like bases in a list of symbolic factors: x^a * x^b → x^(a+b)
+/// The standard Wolfram symbols that denote a positive real constant.
+fn is_pos_real_const(name: &str) -> bool {
+  matches!(
+    name,
+    "Pi"
+      | "E"
+      | "EulerGamma"
+      | "GoldenRatio"
+      | "Catalan"
+      | "Degree"
+      | "Glaisher"
+      | "Khinchin"
+  )
+}
+
+/// A value known to be a positive real: a positive integer or rational, one of
+/// the standard positive real constants (Pi, E, …), or a positive product or
+/// power of those. Free symbols are excluded, since nothing is known about
+/// their sign. Identities that need a positive base — `Sqrt[a]/Sqrt[b]` =
+/// `Sqrt[a/b]`, `(a^p)^q` = `a^(p q)` — are gated on this.
+pub fn is_pos_numeric(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(n) => *n > 0,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      matches!(&args[0], Expr::Integer(n) if *n > 0)
+        && matches!(&args[1], Expr::Integer(d) if *d > 0)
+    }
+    Expr::Constant(c) | Expr::Identifier(c) => is_pos_real_const(c),
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args.iter().all(is_pos_numeric)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => is_pos_numeric(left) && is_pos_numeric(right),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      is_pos_numeric(&args[0])
+    }
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      is_pos_numeric(&args[0])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      ..
+    } => is_pos_numeric(left),
+    _ => false,
+  }
+}
+
 fn combine_like_bases(args: Vec<Expr>) -> Result<Vec<Expr>, InterpreterError> {
   if args.len() <= 1 {
     return Ok(args);
@@ -6038,45 +6091,6 @@ fn combine_like_bases(args: Vec<Expr>) -> Result<Vec<Expr>, InterpreterError> {
   // Sqrt[2]/Sqrt[Pi] → Sqrt[2/Pi] and Sqrt[Pi]/Sqrt[2] → Sqrt[Pi/2], so the
   // constants must be admitted here (not just plain numbers). Free symbols are
   // excluded, leaving Sqrt[x]/Sqrt[y] split like wolframscript.
-  fn is_pos_real_const(name: &str) -> bool {
-    matches!(
-      name,
-      "Pi"
-        | "E"
-        | "EulerGamma"
-        | "GoldenRatio"
-        | "Catalan"
-        | "Degree"
-        | "Glaisher"
-        | "Khinchin"
-    )
-  }
-  fn is_pos_numeric(e: &Expr) -> bool {
-    match e {
-      Expr::Integer(n) => *n > 0,
-      Expr::FunctionCall { name, args }
-        if name == "Rational" && args.len() == 2 =>
-      {
-        matches!(&args[0], Expr::Integer(n) if *n > 0)
-          && matches!(&args[1], Expr::Integer(d) if *d > 0)
-      }
-      Expr::Constant(c) | Expr::Identifier(c) => is_pos_real_const(c),
-      Expr::FunctionCall { name, args } if name == "Times" => {
-        args.iter().all(is_pos_numeric)
-      }
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left,
-        right,
-      } => is_pos_numeric(left) && is_pos_numeric(right),
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left,
-        ..
-      } => is_pos_numeric(left),
-      _ => false,
-    }
-  }
   // First scan for pairs (i positive, j negative) and mark consumed.
   let mut consumed = vec![false; combined.len()];
   let mut pairs: Vec<(usize, usize)> = Vec::new(); // (pos_idx, neg_idx)
@@ -9141,7 +9155,7 @@ pub fn make_divide(a: Expr, b: Expr) -> Expr {
 /// True iff `exp` is a numeric constant whose absolute value is strictly
 /// less than 1. Used to decide whether `(a^p)^q` with Real `q` may combine
 /// exponents under Wolfram's branch-safety rule.
-fn inner_exp_abs_lt_one(exp: &Expr) -> bool {
+pub fn inner_exp_abs_lt_one(exp: &Expr) -> bool {
   match exp {
     Expr::Integer(0) => true,
     Expr::Real(f) => f.abs() < 1.0,
@@ -10085,12 +10099,16 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // (base^inner_exp)^outer_exp where outer is a machine Real and the inner
-  // exponent is numeric with absolute value strictly less than 1. Wolfram
-  // only combines exponents under these conditions so the result stays on
-  // the principal branch of the complex power; inner exponents with |p| ≥ 1
-  // are left as-is (e.g. `(a^2)^3.` stays `(a^2)^3.`).
-  if let Expr::Real(_) = exp {
+  // (base^inner_exp)^outer_exp where the outer exponent is a machine Real or an
+  // exact non-integer rational, and the inner exponent is numeric with absolute
+  // value strictly less than 1. Wolfram only combines exponents under these
+  // conditions so the result stays on the principal branch of the complex
+  // power: `Sqrt[Sqrt[z]]` → `z^(1/4)` and `(z^(-3/4))^(1/2)` → `z^(-3/8)`,
+  // while inner exponents with |p| ≥ 1 are left as-is (`(a^2)^3.` stays
+  // `(a^2)^3.`, `Sqrt[z^(5/4)]` stays `Sqrt[z^(5/4)]`).
+  if matches!(exp, Expr::Real(_))
+    || matches!(exp, Expr::FunctionCall { name, .. } if name == "Rational")
+  {
     let inner = match base {
       Expr::BinaryOp {
         op: BinaryOperator::Power,
@@ -10104,8 +10122,15 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       }
       _ => None,
     };
+    // `Sqrt[x]` is stored as its own head, so expose its 1/2 exponent too.
+    let half = make_rational(1, 2);
+    let inner = inner.or_else(|| is_sqrt(base).map(|arg| (arg, &half)));
+    // A base known to be a positive real has a single real power, so the
+    // exponents always combine there (`Sqrt[Pi^(-1)]` = `Pi^(-1/2)`,
+    // `Sqrt[Pi^2]` = `Pi`) — the |p| < 1 restriction only guards bases whose
+    // sign is unknown.
     if let Some((inner_base, inner_exp)) = inner
-      && inner_exp_abs_lt_one(inner_exp)
+      && (inner_exp_abs_lt_one(inner_exp) || is_pos_numeric(inner_base))
     {
       let new_exp = times_ast(&[inner_exp.clone(), exp.clone()])?;
       return power_two(inner_base, &new_exp);

@@ -849,6 +849,39 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &make_rational(1, 2),
     );
   }
+  // Sqrt of a power whose exponents combine — either the inner exponent is
+  // numeric with magnitude below 1 (`Sqrt[Sqrt[z]]` = z^(1/4)) or the inner
+  // base is a known-positive real (`Sqrt[Pi^(-1)]` = Pi^(-1/2)). Power[base,
+  // 1/2] owns that branch-safety rule, so delegate to it.
+  {
+    let nested = match &args[0] {
+      Expr::FunctionCall { name, args: a }
+        if name == "Sqrt" && a.len() == 1 =>
+      {
+        Some((a[0].clone(), make_rational(1, 2)))
+      }
+      Expr::FunctionCall { name, args: a }
+        if name == "Power" && a.len() == 2 =>
+      {
+        Some((a[0].clone(), a[1].clone()))
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => Some(((**left).clone(), (**right).clone())),
+      _ => None,
+    };
+    if let Some((base, e)) = nested
+      && (crate::functions::math_ast::inner_exp_abs_lt_one(&e)
+        || crate::functions::math_ast::is_pos_numeric(&base))
+    {
+      return crate::functions::math_ast::power_two(
+        &args[0],
+        &make_rational(1, 2),
+      );
+    }
+  }
   // Sqrt[I] / Sqrt[-I]: delegate to Power[base, 1/2] so the imaginary-unit
   // canonicalisation (Sqrt[I] = (-1)^(1/4), Sqrt[-I] = -(-1)^(3/4)) applies.
   if matches!(&args[0], Expr::Identifier(s) if s == "I")
