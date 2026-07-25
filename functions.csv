@@ -2952,7 +2952,7 @@ DiskSegment,Circular or elliptical disk segment region consumed by Area/Perimete
 FailureDistribution,Failure distribution of a system defined by a Boolean structure over component lifetimes,✅,none,9.0,3020
 FirstPassageTimeDistribution,First passage or return time distribution of a Markov process,✅,none,9.0,3020
 FisherRatioTest,One-sample variance ratio test (chi-square two-sided p-value),✅,pure,8.0,3020
-HammingWindow,Compute HammingWindow value,✅,pure,9.0,3020
+HammingWindow,Hamming window 25/46 + (21/46) Cos[2 Pi x] on [-1/2 1/2] (exact for exact input),✅,pure,9.0,3020
 NetReplacePart,,🚫,,11.0,3020
 TotalVariationFilter,Total-variation denoising of 1D/2D data or Audio objects,✅,pure,8.0,3020
 UniformSumDistribution,Irwin-Hall sum of n uniform variables (PDF and CDF and moments),✅,pure,8.0,3020
@@ -3156,7 +3156,7 @@ FindThreshold,,,,8.0,3233
 GaugeFrameStyle,,🚫,,9.0,3233
 GeoBoundingBox,,🚫,,10.0,3233
 GlobalClusteringCoefficient,Fraction of connected triples that close into triangles,✅,pure,9.0,3233
-HannWindow,Compute HannWindow value,✅,pure,9.0,3233
+HannWindow,Hann raised-cosine window (1 + Cos[2 Pi x])/2 on [-1/2 1/2] (exact for exact input),✅,pure,9.0,3233
 Share,Memory sharing optimization (no-op),✅,none,1.0,3233
 VerticalSeparator,,🚫,,3.0,3233
 AxiomaticTheory,,,,12.0,3242
@@ -3522,7 +3522,7 @@ SatisfiabilityCount,Number of satisfying assignments of a Boolean expression,✅
 StadiumShape,Two-dimensional stadium region,✅,pure,10.2,3612
 BernoulliProcess,Bernoulli process with time-independent Bernoulli slices,✅,unevaluated,9.0,3636
 BinaryDeserialize,Reconstructs an expression from WXF binary bytes,✅,pure,11.1,3636
-BlackmanWindow,Compute BlackmanWindow value,✅,pure,9.0,3636
+BlackmanWindow,Blackman window with the rounded coefficients {21 25 4}/50 on [-1/2 1/2],✅,pure,9.0,3636
 BoundaryMeshRegionQ,Tests whether an expression is a valid BoundaryMeshRegion object,✅,pure,10.0,3636
 ButtonSource,,🚫,,3.0,3636
 CalloutStyle,,🚫,,11.0,3636
@@ -3569,7 +3569,7 @@ AroundReplace,,,,12.0,3678
 AssessmentFunction,Symbolic assessment object; AssessmentFunction[spec][answer] grades the answer against the answer key and returns an AssessmentResultObject,✅,pure,12.2,3678
 DEigenvalues,,,,10.3,3678
 DeviceReadBuffer,,🚫,,10.0,3678
-DirichletWindow,Compute DirichletWindow value,✅,pure,9.0,3678
+DirichletWindow,Dirichlet rectangular window: 1 on [-1/2 1/2] and 0 outside,✅,pure,9.0,3678
 EdgeRules,Returns the edges of a graph as a list of rules in edge order,✅,pure,8.0,3678
 InitialSeeding,,,,12.0,3678
 JarqueBeraALMTest,,,,8.0,3678
@@ -3750,7 +3750,7 @@ AffineSpace,,,,10.2,3862
 AudioCapture,Record from a microphone ($Failed: no audio input device headless),✅,effectful,11.1,3862
 AudioJoin,Concatenate audio objects (conforming sample rates and channels),✅,pure,11.0,3862
 CallPacket,,🚫,,3.0,3862
-CosineWindow,Compute CosineWindow value,✅,pure,9.0,3862
+CosineWindow,Cosine window Cos[Pi x] on [-1/2 1/2] (radical values at exact grid points),✅,pure,9.0,3862
 GrammarRules,,🚫,,10.0,3862
 GraphAutomorphismGroup,,,,10.0,3862
 InverseSpectrogram,,🚫,,12.0,3862
@@ -3791,7 +3791,7 @@ TukeyWindow,Tukey (tapered-cosine) window function; TukeyWindow[x] or TukeyWindo
 WaringYuleDistribution,Waring (two-parameter) and Yule (one-parameter) discrete distribution; supports PDF CDF Quantile and Mean,✅,pure,8.0,3889
 AudioPartition,,🚫,,11.0,3916
 AudioPlay,,🚫,,11.2,3916
-BartlettWindow,Compute BartlettWindow value,✅,pure,9.0,3916
+BartlettWindow,Bartlett triangular window 1 - 2 Abs[x] on [-1/2 1/2],✅,pure,9.0,3916
 BenfordDistribution,Benford law distribution for leading digits in base b,✅,pure,8.0,3916
 BlockchainGet,,🚫,,11.3,3916
 CellFrameLabelMargins,,🚫,,4.0,3916
@@ -4120,7 +4120,7 @@ CalendarData,,🚫,,9.0,4262
 CauchyWindow,Cauchy window 1/(1+(2 alpha x)^2) on [-1/2 1/2] (default alpha 3; exact rationals),✅,pure,9.0,4262
 ClearCookies,,🚫,,11.0,4262
 ConfirmMatch,,,,12.2,4262
-ConnesWindow,Compute ConnesWindow value,✅,pure,9.0,4262
+ConnesWindow,Connes window (1 - 4 x^2)^2 on [-1/2 1/2],✅,pure,9.0,4262
 ContinuousWaveletData,Continuous wavelet coefficient object with octave/voice access,✅,pure,8.0,4262
 ErlangC,Erlang waiting probability for c servers and traffic a (1 for a >= c; 0 for a = 0; exact rationals),✅,pure,9.0,4262
 FindSettings,,,,4.0,4262
@@ -4147,7 +4147,7 @@ SnDispersion,,,,11.1,4262
 SokalSneathDissimilarity,Sokal-Sneath dissimilarity between binary vectors,✅,pure,6.0,4262
 SortedEntityClass,,🚫,,12.0,4262
 SpellingCorrectionList,,🚫,,10.4,4262
-WelchWindow,Compute WelchWindow value,✅,pure,9.0,4262
+WelchWindow,Welch parabolic window 1 - 4 x^2 on [-1/2 1/2],✅,pure,9.0,4262
 ActiveClassification,,🚫,,11.1,4291
 AudioReverb,,🚫,,11.0,4291
 AugmentedSymmetricPolynomial,Augmented monomial symmetric polynomial for a partition and variable list,✅,pure,8.0,4291
@@ -4244,7 +4244,7 @@ CurrentScreenImage,,🚫,,11.2,4387
 DecryptFile,,🚫,,11.1,4387
 EllipticFilterModel,,,,9.0,4387
 ErlangB,Erlang blocking probability for c servers and traffic a (exact rationals; symbolic arguments give the Piecewise Gamma closed form),✅,pure,9.0,4387
-ExactBlackmanWindow,Compute ExactBlackmanWindow value,✅,pure,9.0,4387
+ExactBlackmanWindow,Blackman window with the exact coefficients {7938 9240 1430}/18608 on [-1/2 1/2],✅,pure,9.0,4387
 FeatureDistance,,🚫,,11.0,4387
 FileSystemScan,,,,11.0,4387
 FindChannels,,,,11.0,4387
@@ -4254,7 +4254,7 @@ GaugeFaceElementFunction,,🚫,,9.0,4387
 ImageContents,,🚫,,12.0,4387
 JuliaSetBoettcher,,,,10.0,4387
 KaiserBesselWindow,Kaiser-Bessel window as wolframscript rational 4-term cosine sum {402 498 99 1}/1000,✅,pure,9.0,4387
-LanczosWindow,Compute LanczosWindow value,✅,pure,9.0,4387
+LanczosWindow,Lanczos window Sinc[2 Pi x] on [-1/2 1/2] (radical multiples of 1/Pi at exact points),✅,pure,9.0,4387
 MathieuGroupM24,Mathieu group M24 (order 244823040) as a formal permutation group,✅,pure,8.0,4387
 PolygonAngle,Interior angle(s) of a polygon at its vertices,✅,pure,12.0,4387
 PredictorFunction,,🚫,,10.0,4387

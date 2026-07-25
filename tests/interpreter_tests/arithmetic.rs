@@ -9220,6 +9220,102 @@ mod cosine_sum_window_tests {
   }
 }
 
+// The elementary windows on [-1/2, 1/2] (zero outside). Exact arguments
+// evaluate through the defining expression, so rational points give
+// rationals and the trig grid points give radicals.
+mod elementary_window_tests {
+  use woxi::interpret;
+
+  #[test]
+  fn exact_blackman_uses_blackmans_exact_coefficients() {
+    // w(x) = (7938 + 9240 Cos[2 Pi x] + 1430 Cos[4 Pi x]) / 18608 — the
+    // rationals BlackmanWindow rounds to 0.42, 0.5 and 0.08.
+    assert_eq!(interpret("ExactBlackmanWindow[0]").unwrap(), "1");
+    assert_eq!(
+      interpret("ExactBlackmanWindow[1/6]").unwrap(),
+      "11843/18608"
+    );
+    assert_eq!(interpret("ExactBlackmanWindow[1/4]").unwrap(), "1627/4652");
+    assert_eq!(interpret("ExactBlackmanWindow[1/3]").unwrap(), "2603/18608");
+    // The window is positive at the edge, unlike the rounded Blackman.
+    assert_eq!(interpret("ExactBlackmanWindow[1/2]").unwrap(), "8/1163");
+    assert_eq!(interpret("ExactBlackmanWindow[-1/4]").unwrap(), "1627/4652");
+    assert_eq!(interpret("ExactBlackmanWindow[3/4]").unwrap(), "0");
+    assert_eq!(
+      interpret("ExactBlackmanWindow[0.1]").unwrap(),
+      "0.8520642374237258"
+    );
+    assert_eq!(
+      interpret("ExactBlackmanWindow[0.5]").unwrap(),
+      "0.006878761822871883"
+    );
+    assert_eq!(interpret("ExactBlackmanWindow[0.75]").unwrap(), "0.");
+    assert_eq!(
+      interpret("ExactBlackmanWindow[x]").unwrap(),
+      "ExactBlackmanWindow[x]"
+    );
+  }
+
+  #[test]
+  fn blackman_is_exact_at_the_endpoints() {
+    // Summing integer numerators and dividing once keeps w(0) = 1 and
+    // w(1/2) = 0 exact in floating point.
+    assert_eq!(interpret("BlackmanWindow[0.]").unwrap(), "1.");
+    assert_eq!(interpret("BlackmanWindow[0.5]").unwrap(), "0.");
+    assert_eq!(
+      interpret("BlackmanWindow[0.1]").unwrap(),
+      "0.8492298567374695"
+    );
+    assert_eq!(
+      interpret("BlackmanWindow[-0.3]").unwrap(),
+      "0.20077014326253054"
+    );
+    assert_eq!(interpret("BlackmanWindow[1/4]").unwrap(), "17/50");
+    assert_eq!(interpret("BlackmanWindow[1/3]").unwrap(), "13/100");
+  }
+
+  #[test]
+  fn cosine_and_lanczos_stay_symbolic_on_exact_arguments() {
+    // Cos[Pi x] and Sinc[2 Pi x] at exact x, not a float rounded back to a
+    // nearby fraction.
+    assert_eq!(interpret("CosineWindow[1/6]").unwrap(), "Sqrt[3]/2");
+    assert_eq!(interpret("CosineWindow[1/4]").unwrap(), "1/Sqrt[2]");
+    assert_eq!(interpret("CosineWindow[-1/4]").unwrap(), "1/Sqrt[2]");
+    assert_eq!(interpret("CosineWindow[1/8]").unwrap(), "Cos[Pi/8]");
+    assert_eq!(interpret("CosineWindow[1/2]").unwrap(), "0");
+    assert_eq!(interpret("LanczosWindow[0]").unwrap(), "1");
+    assert_eq!(interpret("LanczosWindow[1/4]").unwrap(), "2/Pi");
+    assert_eq!(
+      interpret("LanczosWindow[1/6]").unwrap(),
+      "(3*Sqrt[3])/(2*Pi)"
+    );
+    assert_eq!(
+      interpret("LanczosWindow[1/3]").unwrap(),
+      "(3*Sqrt[3])/(4*Pi)"
+    );
+    assert_eq!(interpret("LanczosWindow[1/8]").unwrap(), "(2*Sqrt[2])/Pi");
+    assert_eq!(interpret("LanczosWindow[1/2]").unwrap(), "0");
+  }
+
+  #[test]
+  fn remaining_windows_on_exact_arguments() {
+    assert_eq!(
+      interpret("HammingWindow[1/8]").unwrap(),
+      "25/46 + 21/(46*Sqrt[2])"
+    );
+    assert_eq!(interpret("HammingWindow[1/6]").unwrap(), "71/92");
+    assert_eq!(interpret("HammingWindow[1/2]").unwrap(), "2/23");
+    assert_eq!(interpret("HannWindow[1/8]").unwrap(), "1/2 + 1/(2*Sqrt[2])");
+    assert_eq!(interpret("HannWindow[1/6]").unwrap(), "3/4");
+    assert_eq!(interpret("ConnesWindow[1/6]").unwrap(), "64/81");
+    assert_eq!(interpret("WelchWindow[1/8]").unwrap(), "15/16");
+    assert_eq!(interpret("BartlettWindow[-1/4]").unwrap(), "1/2");
+    // Dirichlet is flat inside the window, including at the edge.
+    assert_eq!(interpret("DirichletWindow[1/2]").unwrap(), "1");
+    assert_eq!(interpret("DirichletWindow[3/4]").unwrap(), "0");
+  }
+}
+
 mod champernowne_number_tests {
   use woxi::interpret;
 

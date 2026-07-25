@@ -5471,8 +5471,86 @@ pub fn list_fourier_sequence_transform_ast(
   evaluate_expr_to_expr(&sum)
 }
 
+/// The defining expression of a window function at `x`, built symbolically
+/// so the evaluator's exact trig tables can fold it: `CosineWindow[1/4]`
+/// becomes `Cos[Pi/4]` → `1/Sqrt[2]` and `LanczosWindow[1/4]` becomes
+/// `Sinc[Pi/2]` → `2/Pi`, instead of being rounded back from a float.
+fn window_expr(name: &str, x: &Expr) -> Option<Expr> {
+  let call = |f: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: f.to_string(),
+    args: args.into(),
+  };
+  // `k Pi x`, the argument of the trigonometric terms.
+  let pi_x = |k: i128| {
+    call(
+      "Times",
+      vec![
+        Expr::Integer(k),
+        Expr::Identifier("Pi".to_string()),
+        x.clone(),
+      ],
+    )
+  };
+  // Σ aₖ Cos[2πkx], the cosine-sum windows' common shape.
+  let cosine_sum = |numerators: &[i128], denom: i128| {
+    let terms: Vec<Expr> = numerators
+      .iter()
+      .enumerate()
+      .map(|(k, &n)| {
+        let coeff = make_rational(n, denom);
+        if k == 0 {
+          coeff
+        } else {
+          call("Times", vec![coeff, call("Cos", vec![pi_x(2 * k as i128)])])
+        }
+      })
+      .collect();
+    call("Plus", terms)
+  };
+  // 1 - 4x², the parabolic windows' common shape.
+  let parabola = || {
+    call(
+      "Plus",
+      vec![
+        Expr::Integer(1),
+        call(
+          "Times",
+          vec![
+            Expr::Integer(-4),
+            call("Power", vec![x.clone(), Expr::Integer(2)]),
+          ],
+        ),
+      ],
+    )
+  };
+  Some(match name {
+    "HammingWindow" => cosine_sum(&[25, 21], 46),
+    "HannWindow" => cosine_sum(&[1, 1], 2),
+    "BlackmanWindow" => cosine_sum(&[21, 25, 4], 50),
+    "ExactBlackmanWindow" => cosine_sum(&[7938, 9240, 1430], 18608),
+    "DirichletWindow" => Expr::Integer(1),
+    "BartlettWindow" => call(
+      "Plus",
+      vec![
+        Expr::Integer(1),
+        call(
+          "Times",
+          vec![Expr::Integer(-2), call("Abs", vec![x.clone()])],
+        ),
+      ],
+    ),
+    "WelchWindow" => parabola(),
+    "ConnesWindow" => call("Power", vec![parabola(), Expr::Integer(2)]),
+    "CosineWindow" => call("Cos", vec![pi_x(1)]),
+    "LanczosWindow" => call("Sinc", vec![pi_x(2)]),
+    _ => return None,
+  })
+}
+
 /// Generic window function evaluator.
 /// All window functions are defined on [-1/2, 1/2] and return 0 outside.
+/// Machine reals evaluate in floating point; every other numeric argument
+/// goes through the symbolic form, so exact input gives exact output.
 pub fn window_function_ast(
   name: &str,
   args: &[Expr],
@@ -5481,43 +5559,39 @@ pub fn window_function_ast(
     return Ok(unevaluated(name, args));
   }
 
-  // For exact rational arguments, try exact evaluation
-  if let Expr::FunctionCall {
-    name: fname,
-    args: fargs,
-  } = &args[0]
-    && fname == "Rational"
-    && fargs.len() == 2
-    && let (Some(n), Some(d)) =
-      (try_eval_to_f64(&fargs[0]), try_eval_to_f64(&fargs[1]))
-  {
-    let x = n / d;
-    if x.abs() > 0.5 {
-      return Ok(Expr::Integer(0));
-    }
-  }
-
   let x = match try_eval_to_f64(&args[0]) {
     Some(v) => v,
     None => {
       return Ok(unevaluated(name, args));
     }
   };
+  let is_real = matches!(&args[0], Expr::Real(_));
 
   if x.abs() > 0.5 {
-    return Ok(if matches!(&args[0], Expr::Real(_)) {
+    return Ok(if is_real {
       Expr::Real(0.0)
     } else {
       Expr::Integer(0)
     });
   }
 
+  if !is_real {
+    return match window_expr(name, &args[0]) {
+      Some(e) => crate::evaluator::evaluate_expr_to_expr(&e),
+      None => Ok(unevaluated(name, args)),
+    };
+  }
+
   let pi = std::f64::consts::PI;
   let val = match name {
     "HammingWindow" => 25.0 / 46.0 + 21.0 / 46.0 * (2.0 * pi * x).cos(),
     "HannWindow" => (1.0 + (2.0 * pi * x).cos()) / 2.0,
+    // Integer numerators summed and divided once at the end, like the
+    // other cosine-sum windows: the 0.42 / 0.5 / 0.08 literals lose the
+    // exact endpoints (BlackmanWindow[0.] came out 0.9999999999999999
+    // and BlackmanWindow[0.5] came out -1.4*^-17).
     "BlackmanWindow" => {
-      0.42 + 0.5 * (2.0 * pi * x).cos() + 0.08 * (4.0 * pi * x).cos()
+      (21.0 + 25.0 * (2.0 * pi * x).cos() + 4.0 * (4.0 * pi * x).cos()) / 50.0
     }
     "DirichletWindow" => 1.0,
     "BartlettWindow" => 1.0 - 2.0 * x.abs(),
@@ -5535,30 +5609,17 @@ pub fn window_function_ast(
         (pi * arg).sin() / (pi * arg)
       }
     }
+    // Blackman's exact coefficients {7938, 9240, 1430}/18608 — the
+    // "exact" in the name is about these rationals replacing the rounded
+    // 0.42 / 0.5 / 0.08 of BlackmanWindow.
     "ExactBlackmanWindow" => {
-      3946.0 / 18608.0
-        + 9274.0 / 18608.0 * (2.0 * pi * x).cos()
-        + 5388.0 / 18608.0 * (4.0 * pi * x).cos()
+      (7938.0 + 9240.0 * (2.0 * pi * x).cos() + 1430.0 * (4.0 * pi * x).cos())
+        / 18608.0
     }
     _ => {
       return Ok(unevaluated(name, args));
     }
   };
-
-  // For exact arguments, try to return exact results
-  if matches!(&args[0], Expr::Integer(_))
-    || matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Rational")
-  {
-    // Check for common exact values
-    let rounded = fourier_round(val);
-    if (rounded - rounded.round()).abs() < 1e-14 && rounded.abs() < 1e18 {
-      return Ok(Expr::Integer(rounded.round() as i128));
-    }
-    // Try to express as a simple fraction
-    if let Some((n, d)) = approximate_rational(rounded) {
-      return Ok(make_rational(n, d));
-    }
-  }
 
   Ok(Expr::Real(val))
 }
@@ -5950,23 +6011,6 @@ pub fn bohman_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "Plus".to_string(),
     args: vec![term1, term2].into(),
   })
-}
-
-/// Try to express a float as a simple rational p/q with small denominator.
-fn approximate_rational(val: f64) -> Option<(i128, i128)> {
-  if val == 0.0 {
-    return Some((0, 1));
-  }
-  // Try denominators up to 10000
-  for d in 1..=10000i128 {
-    let n = (val * d as f64).round() as i128;
-    let approx = n as f64 / d as f64;
-    if (approx - val).abs() < 1e-14 {
-      let g = gcd_i128(n.abs(), d);
-      return Some((n / g, d / g));
-    }
-  }
-  None
 }
 
 /// BandpassFilter[data, {omega1, omega2}] or BandpassFilter[data, {omega1, omega2}, n]

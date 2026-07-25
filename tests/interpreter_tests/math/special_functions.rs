@@ -6939,7 +6939,7 @@ mod window_functions {
   fn blackman_numeric() {
     assert_eq!(
       interpret("BlackmanWindow[0.3]").unwrap(),
-      "0.2007701432625305"
+      "0.20077014326253054"
     );
   }
 
