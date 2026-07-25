@@ -61,6 +61,18 @@ fn has_hold_attribute(name: &str, attr: &str) -> bool {
     })
 }
 
+/// Whether `expr`'s head suppresses evaluation of the arguments it holds.
+/// Used to decide whether a subexpression pulled out of it has to be evaluated
+/// once it leaves the wrapper.
+pub(crate) fn head_holds_arguments(expr: &Expr) -> bool {
+  let Expr::FunctionCall { name, .. } = expr else {
+    return false;
+  };
+  ["HoldAll", "HoldAllComplete", "HoldFirst", "HoldRest"]
+    .iter()
+    .any(|attr| has_hold_attribute(name, attr))
+}
+
 /// Evaluate function arguments respecting Hold attributes.
 /// Returns the evaluated (or held) arguments based on the function's attributes.
 /// Held arguments still honour `Evaluate[expr]`: it forces evaluation of the
@@ -3290,13 +3302,12 @@ pub fn evaluate_expr_to_expr_inner(
       // over — the spec is deeper than the object (Part::partd), as opposed
       // to an out-of-bounds index (Part::partw, already emitted).
       let mut hit_atom_mid = false;
+      let base_val = eval_part_base(base_expr)?;
       let result = if needs_mapping {
         // All requires collecting indices and mapping — must clone base
-        let base_val = eval_part_base(base_expr)?;
         apply_part_indices(&base_val, &indices)?
       } else {
         // Fast path: no All, use original optimized approach
-        let base_val = eval_part_base(base_expr)?;
         let mut result = extract_part_ast(&base_val, &indices[0])?;
 
         if indices.len() > 1 {
@@ -3327,7 +3338,7 @@ pub fn evaluate_expr_to_expr_inner(
             part_too_deep = true;
           }
           if part_too_deep {
-            result = base_val;
+            result = base_val.clone();
             for idx in &indices {
               result = Expr::Part {
                 expr: Box::new(result),
@@ -3340,6 +3351,18 @@ pub fn evaluate_expr_to_expr_inner(
         result
       };
       PART_DEPTH.with(|d| *d.borrow_mut() -= 1);
+
+      // Taking a part out of a held expression lifts it out of the wrapper
+      // that was suppressing evaluation, so the extracted piece evaluates:
+      // `Hold[1 + 1][[1]]` is 2. Results that keep the holding head (such as
+      // `Hold[1 + 1, 2 + 2][[{1, 2}]]`) are unaffected, since evaluating them
+      // just re-applies the same hold.
+      let result = if head_holds_arguments(&base_val) {
+        evaluate_expr_to_expr(&result)?
+      } else {
+        result
+      };
+
       // Part::partd / Part::pspec1: warn only at the outermost Part level
       let at_outermost = PART_DEPTH.with(|d| *d.borrow() == 0);
       if at_outermost && let Expr::Part { .. } = &result {

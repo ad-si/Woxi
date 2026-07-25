@@ -1590,6 +1590,33 @@ fn has_join_depth(e: &Expr, level: usize) -> bool {
   }
 }
 
+/// Evaluate `result` when it was pulled out of a held expression.
+///
+/// Extracting a part of `Hold[1 + 1]` lifts the subexpression out of the
+/// wrapper that was suppressing evaluation, so `First[Hold[1 + 1]]` is 2.
+/// Results extracted from an ordinary expression are already evaluated, so
+/// they are returned untouched rather than paying for a second traversal.
+fn evaluate_if_unheld(
+  name: &str,
+  source: &Expr,
+  result: Expr,
+) -> Result<Expr, InterpreterError> {
+  // A call that declined to extract anything (and has already reported why)
+  // must be left alone; re-evaluating it would just repeat the message.
+  let render =
+    |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Input);
+  let declined = match &result {
+    Expr::FunctionCall { name: n, args } if n == name => {
+      args.first().is_some_and(|a| render(a) == render(source))
+    }
+    _ => false,
+  };
+  if declined || !crate::evaluator::core_eval::head_holds_arguments(source) {
+    return Ok(result);
+  }
+  evaluate_expr_to_expr(&result)
+}
+
 pub fn dispatch_list_operations(
   name: &str,
   args: &[Expr],
@@ -3156,7 +3183,10 @@ pub fn dispatch_list_operations(
       } else {
         None
       };
-      return Some(list_helpers_ast::first_ast(&args[0], default));
+      return Some(
+        list_helpers_ast::first_ast(&args[0], default)
+          .and_then(|r| evaluate_if_unheld(name, &args[0], r)),
+      );
     }
     "Last" if args.len() == 1 || args.len() == 2 => {
       let default = if args.len() == 2 {
@@ -3164,7 +3194,10 @@ pub fn dispatch_list_operations(
       } else {
         None
       };
-      return Some(list_helpers_ast::last_ast(&args[0], default));
+      return Some(
+        list_helpers_ast::last_ast(&args[0], default)
+          .and_then(|r| evaluate_if_unheld(name, &args[0], r)),
+      );
     }
     "Rest" if args.len() == 1 => {
       return Some(list_helpers_ast::rest_ast(&args[0]));
@@ -5006,7 +5039,10 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::split_by_ast(&args[1], &args[0]));
     }
     "Extract" if args.len() == 2 || args.len() == 3 => {
-      return Some(list_helpers_ast::extract_unified_ast(args));
+      return Some(
+        list_helpers_ast::extract_unified_ast(args)
+          .and_then(|r| evaluate_if_unheld(name, &args[0], r)),
+      );
     }
     "Catenate" if args.len() == 1 => {
       return Some(list_helpers_ast::catenate_ast(&args[0]));

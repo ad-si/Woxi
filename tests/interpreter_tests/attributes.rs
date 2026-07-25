@@ -1408,3 +1408,120 @@ mod nhold_attributes {
     );
   }
 }
+
+// Taking a part out of a held expression lifts it out of the wrapper that was
+// suppressing evaluation, so the extracted piece evaluates. Woxi used to
+// return the raw subexpression, so `Hold[1 + 1][[1]]` came back as `1 + 1`.
+mod parts_of_held_expressions {
+  use super::*;
+
+  //   wolframscript -code 'Hold[1 + 1][[1]]'
+  #[test]
+  fn part_of_hold_evaluates() {
+    clear_state();
+    assert_eq!(interpret("Hold[1 + 1][[1]]").unwrap(), "2");
+    assert_eq!(interpret("Hold[1 + 1, 2 + 2][[2]]").unwrap(), "4");
+    // Indices reaching through the held expression evaluate the leaf.
+    assert_eq!(interpret("Hold[{1 + 1, 2 + 2}][[1, 2]]").unwrap(), "4");
+    // HoldForm and HoldComplete behave the same way.
+    assert_eq!(interpret("HoldForm[1 + 1][[1]]").unwrap(), "2");
+    assert_eq!(interpret("HoldComplete[1 + 1][[1]]").unwrap(), "2");
+  }
+
+  //   wolframscript -code 'First[Hold[1 + 1]]'
+  #[test]
+  fn first_and_last_of_hold_evaluate() {
+    clear_state();
+    assert_eq!(interpret("First[Hold[1 + 1]]").unwrap(), "2");
+    assert_eq!(interpret("Last[Hold[1 + 1, 2 + 2]]").unwrap(), "4");
+    // The default argument is only reached when there is no element at all.
+    assert_eq!(interpret("First[Hold[1 + 1, 2 + 2], \"d\"]").unwrap(), "2");
+  }
+
+  //   wolframscript -code 'Extract[Hold[1 + 1, 2 + 2], {2}]'
+  #[test]
+  fn extract_of_hold_evaluates() {
+    clear_state();
+    assert_eq!(interpret("Extract[Hold[1 + 1, 2 + 2], {1}]").unwrap(), "2");
+    assert_eq!(interpret("Extract[Hold[1 + 1, 2 + 2], {2}]").unwrap(), "4");
+    assert_eq!(interpret("Extract[Hold[1 + 1], 1]").unwrap(), "2");
+    assert_eq!(interpret("Extract[Hold[f[1 + 1]], {1, 1}]").unwrap(), "2");
+    // A list of positions extracts each one.
+    assert_eq!(
+      interpret("Extract[Hold[1 + 1, 2 + 2], {{1}, {2}}]").unwrap(),
+      "{2, 4}"
+    );
+    // The wrapper of the three-argument form is applied first, and then the
+    // whole thing evaluates — unless the wrapper itself holds.
+    assert_eq!(interpret("Extract[Hold[1 + 1], {1}, f]").unwrap(), "f[2]");
+    assert_eq!(
+      interpret("Extract[Hold[1 + 1], {1}, HoldForm]").unwrap(),
+      "HoldForm[1 + 1]"
+    );
+  }
+
+  // User-defined hold attributes count too, not just the built-in wrappers.
+  //   wolframscript -code 'SetAttributes[hh, HoldAll]; hh[1 + 1][[1]]'
+  #[test]
+  fn part_of_user_hold_attribute_evaluates() {
+    clear_state();
+    assert_eq!(
+      interpret("SetAttributes[hh, HoldAll]; hh[1 + 1][[1]]").unwrap(),
+      "2"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("SetAttributes[hh, HoldAll]; First[hh[1 + 1]]").unwrap(),
+      "2"
+    );
+  }
+
+  // Results that keep the holding head stay held, since evaluating them just
+  // re-applies the same hold.
+  //   wolframscript -code 'Hold[1 + 1, 2 + 2][[{1, 2}]]'
+  #[test]
+  fn re_wrapped_parts_stay_held() {
+    clear_state();
+    assert_eq!(
+      interpret("Hold[1 + 1, 2 + 2][[{1, 2}]]").unwrap(),
+      "Hold[1 + 1, 2 + 2]"
+    );
+    assert_eq!(
+      interpret("Rest[Hold[1 + 1, 2 + 2]]").unwrap(),
+      "Hold[2 + 2]"
+    );
+    assert_eq!(
+      interpret("Most[Hold[1 + 1, 2 + 2]]").unwrap(),
+      "Hold[1 + 1]"
+    );
+    assert_eq!(
+      interpret("Take[Hold[1 + 1, 2 + 2], 1]").unwrap(),
+      "Hold[1 + 1]"
+    );
+  }
+
+  // An empty held expression has nothing to extract: the call is reported and
+  // returned as is, rather than being re-evaluated (which repeated the
+  // message).
+  //   wolframscript -code 'First[Hold[]]'
+  #[test]
+  fn empty_hold_reports_once() {
+    clear_state();
+    assert_eq!(interpret("First[Hold[]]").unwrap(), "First[Hold[]]");
+    assert_eq!(interpret("Last[Hold[]]").unwrap(), "Last[Hold[]]");
+    // A default still wins over the message.
+    assert_eq!(interpret("First[Hold[], 1 + 1]").unwrap(), "2");
+  }
+
+  // Parts of ordinary expressions are unaffected.
+  #[test]
+  fn parts_of_unheld_expressions_unchanged() {
+    clear_state();
+    assert_eq!(interpret("{1 + 1, 3}[[1]]").unwrap(), "2");
+    assert_eq!(
+      interpret("Extract[{Hold[1 + 1]}, {1}]").unwrap(),
+      "Hold[1 + 1]"
+    );
+    assert_eq!(interpret("First[{Hold[1 + 1]}]").unwrap(), "Hold[1 + 1]");
+  }
+}
