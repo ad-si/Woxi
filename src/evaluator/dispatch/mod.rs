@@ -10800,6 +10800,10 @@ fn evaluate_function_call_ast_inner(
         | "LowerTriangularMatrix"
         | "UpperTriangularMatrix"
         | "PermutationMatrix"
+        // Inert region forms produced by the region set operations: the
+        // empty region and the Boolean combination they fall back to.
+        | "EmptyRegion"
+        | "BooleanRegion"
     )
   {
     let args_str = args

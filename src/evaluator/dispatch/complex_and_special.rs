@@ -1935,6 +1935,9 @@ pub fn dispatch_complex_and_special(
     "RegionDisjoint" => {
       return Some(compute_region_disjoint(args));
     }
+    "RegionIntersection" | "RegionUnion" | "RegionDifference" => {
+      return Some(compute_region_set_op(name, args));
+    }
     "RegionDistance" if args.len() == 2 => {
       return Some(compute_region_distance(
         strip_region_wrapper(&args[0]),
@@ -15025,3 +15028,184 @@ fn contains_unevaluated_integrate(expr: &Expr) -> bool {
 /// directions like `(1 + 2 I)/Sqrt[5]` from inexact ones like
 /// `1. + 2. I` — only the latter should be normalised numerically.
 use crate::functions::math_ast::expr_contains_real;
+
+/// `RegionIntersection` / `RegionUnion` / `RegionDifference`. Regions that
+/// obviously coincide, vanish, or are axis-aligned boxes are combined into a
+/// concrete region; anything else becomes the `BooleanRegion` combination
+/// Wolfram falls back to.
+fn compute_region_set_op(
+  name: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let echo = || Ok(unevaluated(name, args));
+  if args.is_empty() {
+    crate::emit_message(&format!(
+      "{name}::argm: {name} called with 0 arguments; 1 or more arguments are expected."
+    ));
+    return echo();
+  }
+  // Difference is strictly binary.
+  if name == "RegionDifference" && args.len() != 2 {
+    let n = args.len();
+    let tag = if n == 1 { "argr" } else { "argrx" };
+    let plural = if n == 1 { "argument" } else { "arguments" };
+    crate::emit_message(&format!(
+      "{name}::{tag}: {name} called with {n} {plural}; 2 arguments are expected."
+    ));
+    return echo();
+  }
+  if args.len() == 1 {
+    return Ok(args[0].clone());
+  }
+
+  let dimension = |r: &Expr| -> Option<i128> {
+    let d = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "RegionEmbeddingDimension".to_string(),
+      args: vec![r.clone()].into(),
+    })
+    .ok()?;
+    match d {
+      Expr::Integer(n) => Some(n),
+      _ => None,
+    }
+  };
+  let empty = |r: &Expr| -> Option<Expr> {
+    dimension(r).map(|n| Expr::FunctionCall {
+      name: "EmptyRegion".to_string(),
+      args: vec![Expr::Integer(n)].into(),
+    })
+  };
+  let is_empty = |r: &Expr| matches!(r, Expr::FunctionCall { name, .. } if name == "EmptyRegion");
+  let same = |a: &Expr, b: &Expr| expr_to_string(a) == expr_to_string(b);
+
+  // Fold the operands pairwise, left to right.
+  let mut acc = args[0].clone();
+  for next in &args[1..] {
+    acc = match name {
+      "RegionUnion" if same(&acc, next) || is_empty(next) => acc,
+      "RegionUnion" if is_empty(&acc) => next.clone(),
+      "RegionIntersection" if same(&acc, next) => acc,
+      "RegionIntersection" if is_empty(&acc) => acc,
+      "RegionIntersection" if is_empty(next) => next.clone(),
+      "RegionDifference" if same(&acc, next) => match empty(&acc) {
+        Some(e) => e,
+        None => return echo(),
+      },
+      "RegionIntersection" => match region_box_intersection(&acc, next) {
+        Some(region) => region,
+        None => match boolean_region(name, &acc, next) {
+          Some(r) => r,
+          None => return echo(),
+        },
+      },
+      _ => match boolean_region(name, &acc, next) {
+        Some(r) => r,
+        None => return echo(),
+      },
+    };
+  }
+  Ok(acc)
+}
+
+/// The `BooleanRegion[op, {a, b}]` form Wolfram leaves behind when a set
+/// operation cannot be carried out concretely.
+fn boolean_region(name: &str, a: &Expr, b: &Expr) -> Option<Expr> {
+  let combiner = match name {
+    "RegionUnion" => "#1 || #2 &",
+    "RegionIntersection" => "#1 && #2 &",
+    "RegionDifference" => "#1 && !#2 &",
+    _ => return None,
+  };
+  let func = crate::syntax::string_to_expr(combiner).ok()?;
+  Some(Expr::FunctionCall {
+    name: "BooleanRegion".to_string(),
+    args: vec![func, Expr::List(vec![a.clone(), b.clone()].into())].into(),
+  })
+}
+
+/// Intersect two axis-aligned boxes (`Rectangle`/`Cuboid`) or two `Point`s.
+/// Returns `EmptyRegion` when they do not meet, and `None` for anything else.
+fn region_box_intersection(a: &Expr, b: &Expr) -> Option<Expr> {
+  let corners = |r: &Expr| -> Option<(String, Vec<f64>, Vec<f64>)> {
+    let Expr::FunctionCall { name, args } = r else {
+      return None;
+    };
+    let numbers = |e: &Expr| -> Option<Vec<f64>> {
+      let Expr::List(items) = e else { return None };
+      items
+        .iter()
+        .map(crate::functions::math_ast::try_eval_to_f64)
+        .collect()
+    };
+    match name.as_str() {
+      "Point" if args.len() == 1 => {
+        let p = numbers(&args[0])?;
+        Some(("Point".to_string(), p.clone(), p))
+      }
+      "Rectangle" | "Cuboid" => {
+        let lo = numbers(args.first()?)?;
+        let hi = match args.get(1) {
+          Some(h) => numbers(h)?,
+          // A bare Rectangle[]/Cuboid[] is the unit box at the origin.
+          None => lo.iter().map(|v| v + 1.0).collect(),
+        };
+        Some((name.clone(), lo, hi))
+      }
+      _ => None,
+    }
+  };
+
+  let (head_a, lo_a, hi_a) = corners(a)?;
+  let (head_b, lo_b, hi_b) = corners(b)?;
+  if lo_a.len() != lo_b.len() {
+    return None;
+  }
+  let dims = lo_a.len();
+  let empty = Expr::FunctionCall {
+    name: "EmptyRegion".to_string(),
+    args: vec![Expr::Integer(dims as i128)].into(),
+  };
+
+  let lo: Vec<f64> = lo_a.iter().zip(&lo_b).map(|(x, y)| x.max(*y)).collect();
+  let hi: Vec<f64> = hi_a.iter().zip(&hi_b).map(|(x, y)| x.min(*y)).collect();
+  if lo.iter().zip(&hi).any(|(l, h)| l > h) {
+    return Some(empty);
+  }
+  // Two points meet only where they coincide; a degenerate box overlap is not
+  // a region Wolfram names, so leave those to BooleanRegion.
+  if head_a == "Point" || head_b == "Point" {
+    return Some(if lo.iter().zip(&hi).all(|(l, h)| l == h) {
+      Expr::FunctionCall {
+        name: "Point".to_string(),
+        args: vec![number_list(&lo, a)].into(),
+      }
+    } else {
+      empty
+    });
+  }
+  if lo.iter().zip(&hi).any(|(l, h)| l == h) {
+    return None;
+  }
+  Some(Expr::FunctionCall {
+    name: head_a,
+    args: vec![number_list(&lo, a), number_list(&hi, b)].into(),
+  })
+}
+
+/// Render coordinates back as integers when the source region used integers,
+/// so `Rectangle[{0, 0}, {2, 2}]` does not come back with `0.` corners.
+fn number_list(values: &[f64], source: &Expr) -> Expr {
+  let exact = !expr_to_string(source).contains('.');
+  Expr::List(
+    values
+      .iter()
+      .map(|v| {
+        if exact && v.fract() == 0.0 {
+          Expr::Integer(*v as i128)
+        } else {
+          Expr::Real(*v)
+        }
+      })
+      .collect(),
+  )
+}

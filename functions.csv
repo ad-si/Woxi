@@ -843,7 +843,7 @@ Texture,Apply a texture to a surface in graphics,✅,none,8.0,849
 Hypergeometric2F1Regularized,Regularized hypergeometric 2F1 function,✅,pure,3.0,850
 TransformedDistribution,Distribution of a linear transform of a random variable,✅,pure,8.0,851
 TrigExpand,Expand trigonometric functions of sums and multiples,✅,pure,3.0,852
-RegionIntersection,,🚫,,10.0,853
+RegionIntersection,Region common to several regions,✅,pure,10.0,853
 Variables,Returns the variables in a polynomial expression,✅,pure,1.0,854
 Antialiasing,Option for antialiasing in graphics,✅,none,6.0,855
 FontSlant,Option for font slant style,✅,none,3.0,856
@@ -916,7 +916,7 @@ StringPosition,Finds all positions of a substring or pattern (overlapping by def
 Roots,Finds roots of polynomial equations as Or conditions; roots are listed in ascending order (matching Solve) except a pure quadratic x^2==c lists the principal + root first,✅,pure,1.0,924
 InputNotebook,Requires external services or GUI infrastructure,🚫,io,3.0,926
 ListAnimate,Animation of a list of expressions (stays symbolic in script mode),✅,unevaluated,6.0,926
-RegionUnion,,🚫,,10.0,927
+RegionUnion,Region covered by any of several regions,✅,pure,10.0,927
 CloudObject,Requires external services or GUI infrastructure,🚫,io,10.0,928
 HarmonicNumber,Returns the n-th harmonic number,✅,pure,4.0,929
 WriteString,Write a string to an output stream,✅,effectful,1.0,930
@@ -979,7 +979,7 @@ StyleDefinitions,,🚫,,3.0,987
 RoundingRadius,,🚫,,7.0,988
 Ball,Geometric primitive representing a ball (filled sphere),✅,none,10.0,989
 FormBox,,🚫,,3.0,991
-RegionDifference,,🚫,,10.0,991
+RegionDifference,Region left after removing one region from another,✅,pure,10.0,991
 UpSetDelayed,Assign delayed upvalues to symbols appearing in the LHS,✅,side_effect,1.0,992
 Hypergeometric1F1,Kummer confluent hypergeometric function 1F1(a; b; z),✅,pure,1.0,993
 SuperscriptBox,Low-level box construct for superscript display,✅,pure,3.0,994
@@ -2064,7 +2064,7 @@ ImageConvolve,Convolve image with kernel,✅,,7.0,2100
 SemanticImport,Import with semantic interpretation,🚫,,10.0,2100
 AudioPlot,Plot the waveform of an Audio or Sound object,✅,pure,11.0,2102
 FlipView,Flippable view control (stays symbolic in script mode),✅,unevaluated,6.0,2102
-EmptyRegion,Empty geometric region,🚫,,10.0,2108
+EmptyRegion,Empty geometric region of a given embedding dimension,✅,pure,10.0,2108
 HorizontalGauge,Horizontal gauge display,🚫,,9.0,2108
 InverseGudermannian,Returns the inverse Gudermannian function value,✅,pure,7.0,2108
 Periodogram,Plot the power spectrum of data or audio in decibels,✅,pure,9.0,2108
@@ -2204,7 +2204,7 @@ StationaryWaveletTransform,Undecimated (a trous) stationary wavelet transform,�
 AlgebraicNumber,Algebraic number theory,🚫,None,6.0,2246
 DateHistogram,Date visualization,🚫,None,10.2,2246
 DirectedGraph,Directed version of a graph with each undirected edge as two arcs,✅,pure,8.0,2246
-BooleanRegion,Geometric region construction,🚫,None,10.0,2251
+BooleanRegion,Region built by combining regions with a Boolean function,✅,pure,10.0,2251
 GraphUnion,Union of the vertices and edges of graphs,✅,pure,8.0,2251
 PrimeOmega,Count prime factors with multiplicity (Listable),✅,pure,7.0,2251
 SubValues,Returns the sub values of a symbol,✅,pure,2.0,2251

@@ -6593,3 +6593,132 @@ mod stadium_shape {
     );
   }
 }
+
+// RegionIntersection / RegionUnion / RegionDifference. Regions that coincide,
+// vanish, or are axis-aligned boxes combine concretely; anything else becomes
+// the BooleanRegion form. Values verified against wolframscript.
+mod region_set_operations {
+  use super::*;
+
+  #[test]
+  fn coinciding_regions_collapse() {
+    assert_eq!(
+      interpret("RegionIntersection[Disk[], Disk[]]").unwrap(),
+      "Disk[{0, 0}]"
+    );
+    assert_eq!(
+      interpret("RegionUnion[Disk[], Disk[]]").unwrap(),
+      "Disk[{0, 0}]"
+    );
+    assert_eq!(
+      interpret("RegionDifference[Disk[], Disk[]]").unwrap(),
+      "EmptyRegion[2]"
+    );
+    assert_eq!(
+      interpret("RegionIntersection[Point[{0, 0}], Point[{0, 0}]]").unwrap(),
+      "Point[{0, 0}]"
+    );
+  }
+
+  // A single argument is that region; none is an argument-count error.
+  #[test]
+  fn arity() {
+    assert_eq!(
+      interpret("RegionIntersection[Disk[]]").unwrap(),
+      "Disk[{0, 0}]"
+    );
+    assert_eq!(interpret("RegionUnion[Disk[]]").unwrap(), "Disk[{0, 0}]");
+    assert_eq!(
+      interpret("RegionIntersection[]").unwrap(),
+      "RegionIntersection[]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "RegionIntersection::argm: RegionIntersection called with 0 arguments; 1 or more arguments are expected."
+      )),
+      "expected argm message, got {msgs:?}"
+    );
+    // Difference is strictly binary.
+    assert_eq!(
+      interpret("RegionDifference[Disk[]]").unwrap(),
+      "RegionDifference[Disk[{0, 0}]]"
+    );
+  }
+
+  #[test]
+  fn axis_aligned_boxes_intersect_concretely() {
+    assert_eq!(
+      interpret(
+        "RegionIntersection[Rectangle[{0, 0}, {2, 2}], \
+         Rectangle[{1, 1}, {3, 3}]]"
+      )
+      .unwrap(),
+      "Rectangle[{1, 1}, {2, 2}]"
+    );
+    assert_eq!(
+      interpret(
+        "RegionIntersection[Cuboid[{0, 0, 0}, {2, 2, 2}], \
+         Cuboid[{1, 1, 1}, {3, 3, 3}]]"
+      )
+      .unwrap(),
+      "Cuboid[{1, 1, 1}, {2, 2, 2}]"
+    );
+  }
+
+  #[test]
+  fn regions_that_do_not_meet_give_the_empty_region() {
+    assert_eq!(
+      interpret(
+        "RegionIntersection[Rectangle[{0, 0}, {1, 1}], \
+         Rectangle[{2, 2}, {3, 3}]]"
+      )
+      .unwrap(),
+      "EmptyRegion[2]"
+    );
+    assert_eq!(
+      interpret("RegionIntersection[Point[{0, 0}], Point[{1, 1}]]").unwrap(),
+      "EmptyRegion[2]"
+    );
+  }
+
+  // The empty region absorbs an intersection and drops out of a union.
+  #[test]
+  fn the_empty_region_is_an_identity() {
+    assert_eq!(
+      interpret("RegionIntersection[EmptyRegion[2], Disk[]]").unwrap(),
+      "EmptyRegion[2]"
+    );
+    assert_eq!(
+      interpret("RegionUnion[EmptyRegion[2], Disk[]]").unwrap(),
+      "Disk[{0, 0}]"
+    );
+  }
+
+  // Anything that cannot be combined concretely keeps both regions inside a
+  // BooleanRegion carrying the combining function.
+  #[test]
+  fn otherwise_a_boolean_region_is_built() {
+    assert_eq!(
+      interpret("RegionIntersection[Disk[], Disk[{1, 0}]]").unwrap(),
+      "BooleanRegion[#1 && #2 & , {Disk[{0, 0}], Disk[{1, 0}]}]"
+    );
+    assert_eq!(
+      interpret("RegionUnion[Disk[], Disk[{1, 0}]]").unwrap(),
+      "BooleanRegion[#1 || #2 & , {Disk[{0, 0}], Disk[{1, 0}]}]"
+    );
+    assert_eq!(
+      interpret("RegionUnion[Point[{0, 0}], Point[{1, 1}]]").unwrap(),
+      "BooleanRegion[#1 || #2 & , {Point[{0, 0}], Point[{1, 1}]}]"
+    );
+    // A difference of overlapping regions keeps both operands too.
+    assert_eq!(
+      interpret(
+        "RegionDifference[Rectangle[{0, 0}, {2, 2}], \
+         Rectangle[{1, 1}, {3, 3}]][[2]]"
+      )
+      .unwrap(),
+      "{Rectangle[{0, 0}, {2, 2}], Rectangle[{1, 1}, {3, 3}]}"
+    );
+  }
+}
