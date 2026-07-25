@@ -927,6 +927,98 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       expr.clone()
     }
 
+    // A boolean combination is refined conjunct by conjunct, then folded:
+    // parts the assumption settles drop out, and the whole collapses to
+    // True/False when that settles it.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "And" | "Or" | "Not") && !args.is_empty() =>
+    {
+      let refined: Vec<Expr> = args
+        .iter()
+        .map(|a| refine_expr(a, info, assumption))
+        .collect();
+      if name == "Not" {
+        return match crate::functions::expr_to_bool(&refined[0]) {
+          Some(b) => bool_expr(!b),
+          None => Expr::FunctionCall {
+            name: name.clone(),
+            args: refined.into(),
+          },
+        };
+      }
+      let conjunction = name == "And";
+      // An And short-circuits on False and drops True parts; Or is dual.
+      let mut kept = Vec::with_capacity(refined.len());
+      for part in refined {
+        match crate::functions::expr_to_bool(&part) {
+          Some(b) if b != conjunction => return bool_expr(b),
+          Some(_) => {}
+          None => kept.push(part),
+        }
+      }
+      match kept.len() {
+        0 => bool_expr(conjunction),
+        1 => kept.into_iter().next().unwrap(),
+        _ => Expr::FunctionCall {
+          name: name.clone(),
+          args: kept.into(),
+        },
+      }
+    }
+
+    // Boole[c] and If[c, …] collapse once the assumption decides `c`.
+    Expr::FunctionCall { name, args } if name == "Boole" && args.len() == 1 => {
+      match crate::functions::expr_to_bool(&refine_expr(
+        &args[0], info, assumption,
+      )) {
+        Some(true) => Expr::Integer(1),
+        Some(false) => Expr::Integer(0),
+        None => expr.clone(),
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "If" && (args.len() == 2 || args.len() == 3) =>
+    {
+      match crate::functions::expr_to_bool(&refine_expr(
+        &args[0], info, assumption,
+      )) {
+        Some(true) => refine_expr(&args[1], info, assumption),
+        Some(false) => match args.get(2) {
+          Some(otherwise) => refine_expr(otherwise, info, assumption),
+          None => Expr::Identifier("Null".to_string()),
+        },
+        None => expr.clone(),
+      }
+    }
+
+    // Step-like functions of one argument resolve once the assumption fixes
+    // the sign of that argument. The boundary matters: UnitStep[0] is 1 and
+    // Ramp[0] is 0, while HeavisideTheta[0] stays indeterminate.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "UnitStep" | "Ramp" | "HeavisideTheta")
+        && args.len() == 1 =>
+    {
+      let holds = |op: ComparisonOp| -> bool {
+        let cmp = Expr::Comparison {
+          operands: vec![args[0].clone(), Expr::Integer(0)],
+          operators: vec![op],
+        };
+        check_comparison_under_assumption(&cmp, info, assumption)
+          .or_else(|| check_algebraic_comparison(&cmp, info, assumption))
+          == Some(true)
+      };
+      let refined = refine_expr(&args[0], info, assumption);
+      match name.as_str() {
+        "UnitStep" if holds(ComparisonOp::GreaterEqual) => Expr::Integer(1),
+        "UnitStep" if holds(ComparisonOp::Less) => Expr::Integer(0),
+        "Ramp" if holds(ComparisonOp::GreaterEqual) => refined,
+        "Ramp" if holds(ComparisonOp::LessEqual) => Expr::Integer(0),
+        "HeavisideTheta" if holds(ComparisonOp::Greater) => Expr::Integer(1),
+        "HeavisideTheta" if holds(ComparisonOp::Less) => Expr::Integer(0),
+        _ => expr.clone(),
+      }
+    }
+
     // Max[a, b] / Min[a, b] collapse when the assumption orders the arguments:
     // Refine[Max[a, b], a > b] -> a, Refine[Min[a, b], a < b] -> a, etc.
     Expr::FunctionCall { name, args }

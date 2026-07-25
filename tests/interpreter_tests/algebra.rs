@@ -9073,6 +9073,70 @@ mod refine {
     assert_eq!(interpret("Refine[Max[a, b], a == b]").unwrap(), "Max[a, b]");
   }
 
+  // A condition the assumption settles collapses the enclosing head, rather
+  // than being left as Boole[True] / If[True, …]. Values verified against
+  // wolframscript.
+  #[test]
+  fn boole_and_if_collapse() {
+    assert_eq!(interpret("Refine[Boole[x > 0], x > 0]").unwrap(), "1");
+    assert_eq!(interpret("Refine[Boole[x > 0], x < 0]").unwrap(), "0");
+    assert_eq!(interpret("Simplify[Boole[x > 0], x > 0]").unwrap(), "1");
+    assert_eq!(interpret("Refine[If[x > 0, a, b], x > 0]").unwrap(), "a");
+    assert_eq!(interpret("Refine[If[x > 0, a, b], x < 0]").unwrap(), "b");
+    // A stronger assumption still decides it.
+    assert_eq!(interpret("Refine[If[x > 0, a, b], x > 1]").unwrap(), "a");
+  }
+
+  // Boolean combinations fold: settled parts drop out, and the whole
+  // collapses when that settles it.
+  #[test]
+  fn boolean_combinations_fold() {
+    assert_eq!(interpret("Refine[x > 0 && x < 1, x > 2]").unwrap(), "False");
+    assert_eq!(interpret("Refine[x > 0 && x < 3, x > 2]").unwrap(), "x < 3");
+    assert_eq!(interpret("Refine[x > 0 || x < 1, x > 2]").unwrap(), "True");
+    assert_eq!(interpret("Refine[!(x < 1), x > 2]").unwrap(), "True");
+    assert_eq!(
+      interpret("Refine[Boole[x > 0 && x < 1], x > 2]").unwrap(),
+      "0"
+    );
+  }
+
+  // Step functions resolve once the assumption fixes the sign. The boundary
+  // matters: UnitStep[0] is 1, Ramp[0] is 0, HeavisideTheta[0] is not fixed.
+  #[test]
+  fn step_functions_resolve_by_sign() {
+    assert_eq!(interpret("Refine[UnitStep[x], x > 0]").unwrap(), "1");
+    assert_eq!(interpret("Refine[UnitStep[x], x < 0]").unwrap(), "0");
+    assert_eq!(interpret("Refine[UnitStep[x], x >= 0]").unwrap(), "1");
+    // x <= 0 spans both sides of the step, so it stays.
+    assert_eq!(
+      interpret("Refine[UnitStep[x], x <= 0]").unwrap(),
+      "UnitStep[x]"
+    );
+
+    assert_eq!(interpret("Refine[Ramp[x], x > 0]").unwrap(), "x");
+    assert_eq!(interpret("Refine[Ramp[x], x >= 0]").unwrap(), "x");
+    assert_eq!(interpret("Refine[Ramp[x], x < 0]").unwrap(), "0");
+    assert_eq!(interpret("Refine[Ramp[x], x <= 0]").unwrap(), "0");
+
+    assert_eq!(interpret("Refine[HeavisideTheta[x], x > 0]").unwrap(), "1");
+    assert_eq!(interpret("Refine[HeavisideTheta[x], x < 0]").unwrap(), "0");
+    // HeavisideTheta[0] is indeterminate, so x >= 0 settles nothing.
+    assert_eq!(
+      interpret("Refine[HeavisideTheta[x], x >= 0]").unwrap(),
+      "HeavisideTheta[x]"
+    );
+  }
+
+  // Clip is not refined by a sign assumption, matching wolframscript.
+  #[test]
+  fn clip_is_left_alone() {
+    assert_eq!(
+      interpret("Refine[Clip[x, {0, 1}], x > 2]").unwrap(),
+      "Clip[x, {0, 1}]"
+    );
+  }
+
   // A finite factor with a known sign collapses `factor * Infinity` to the
   // correctly-signed infinity (matching wolframscript).
   #[test]
