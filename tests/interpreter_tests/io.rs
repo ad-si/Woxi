@@ -2104,6 +2104,96 @@ mod read_string {
   fn symbolic_returns_unevaluated() {
     assert_eq!(interpret("ReadString[x]").unwrap(), "ReadString[x]");
   }
+
+  // ReadString[stream] takes everything left and consumes it. All values
+  // verified against wolframscript.
+  #[test]
+  fn reads_a_whole_stream_once() {
+    assert_eq!(
+      interpret(r#"ReadString[StringToStream["hi there"]]"#).unwrap(),
+      "hi there"
+    );
+    assert_eq!(
+      interpret(r#"w = StringToStream["x"]; {ReadString[w], ReadString[w]}"#)
+        .unwrap(),
+      "{x, EndOfFile}"
+    );
+    // An empty stream is already at its end.
+    assert_eq!(
+      interpret(r#"ReadString[StringToStream[""]]"#).unwrap(),
+      "EndOfFile"
+    );
+  }
+
+  // With a terminator the read stops *at* the separator and leaves it in
+  // place, skipping it on the next terminated read. So repeated reads yield
+  // the fields, while a following plain read still sees the separator.
+  #[test]
+  fn a_terminator_splits_the_stream_into_fields() {
+    assert_eq!(
+      interpret(
+        r#"s = StringToStream["a-b-c"]; \
+           {ReadString[s, "-"], ReadString[s, "-"], \
+            ToCharacterCode[ReadString[s]]}"#
+      )
+      .unwrap(),
+      "{a, b, {45, 99}}"
+    );
+    assert_eq!(
+      interpret(
+        r#"t = StringToStream["a-b-c"]; \
+           {ReadString[t, "-"], ToCharacterCode[ReadString[t]]}"#
+      )
+      .unwrap(),
+      "{a, {45, 98, 45, 99}}"
+    );
+    // The last field runs to the end of the stream.
+    assert_eq!(
+      interpret(
+        r#"u = StringToStream["a-b"]; {ReadString[u, "-"], ReadString[u, "-"]}"#
+      )
+      .unwrap(),
+      "{a, b}"
+    );
+    assert_eq!(
+      interpret(
+        r#"v = StringToStream["a\nb\nc"]; \
+           {ReadString[v, "\n"], ReadString[v, "\n"], \
+            ToCharacterCode[ReadString[v]]}"#
+      )
+      .unwrap(),
+      "{a, b, {10, 99}}"
+    );
+  }
+
+  #[test]
+  fn a_terminator_also_applies_to_a_file() {
+    use std::io::Write;
+    let path = temp_file("woxi_readstring_term.txt");
+    let mut file = std::fs::File::create(&path).unwrap();
+    file.write_all(b"hello\nworld\n").unwrap();
+    drop(file);
+    assert_eq!(
+      interpret(&format!("ReadString[\"{path}\", \"\\n\"]")).unwrap(),
+      "hello"
+    );
+    let _ = std::fs::remove_file(path);
+  }
+
+  #[test]
+  fn a_non_string_terminator_reports_iterm() {
+    assert_eq!(
+      interpret(r#"ReadString[StringToStream["abc"], 2]"#).unwrap(),
+      "ReadString[InputStream[String, 1], 2]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs
+        .iter()
+        .any(|m| m.contains("ReadString::iterm: Invalid terminator value 2.")),
+      "expected iterm message, got {msgs:?}"
+    );
+  }
 }
 
 mod read_list {

@@ -272,26 +272,62 @@ pub fn dispatch_io_functions(
         ))),
       });
     }
-    // ReadString["file"] — read file contents as a string
+    // ReadString[src] — everything left in `src`;
+    // ReadString[src, term] — up to the next terminator.
+    // `src` is a file path or an InputStream, which the read consumes.
     #[cfg(not(target_arch = "wasm32"))]
-    "ReadString" if args.len() == 1 => {
-      let filename = match &args[0] {
-        Expr::String(s) => s.clone(),
-        _ => {
+    "ReadString" if args.len() == 1 || args.len() == 2 => {
+      // Only a string terminator is meaningful.
+      let terminator = match args.get(1) {
+        None => None,
+        Some(Expr::String(t)) if !t.is_empty() => Some(t.clone()),
+        Some(other) => {
+          crate::emit_message(&format!(
+            "ReadString::iterm: Invalid terminator value {}.",
+            crate::syntax::expr_to_string(other)
+          ));
           return Some(Ok(unevaluated("ReadString", args)));
         }
       };
-      let content = match std::fs::read_to_string(&filename) {
-        Ok(c) => c,
-        Err(_) => {
-          crate::emit_message(&format!(
-            "ReadString::noopen: Cannot open {}.",
-            filename
-          ));
-          return Some(Ok(Expr::Identifier("$Failed".to_string())));
+
+      let (content, position, stream_id) = match &args[0] {
+        Expr::String(path) => match std::fs::read_to_string(path) {
+          Ok(c) => (c, 0usize, None),
+          Err(_) => {
+            crate::emit_message(&format!(
+              "ReadString::noopen: Cannot open {}.",
+              path
+            ));
+            return Some(Ok(Expr::Identifier("$Failed".to_string())));
+          }
+        },
+        Expr::FunctionCall {
+          name: stream_head,
+          args: stream_args,
+        } if stream_head == "InputStream" && stream_args.len() == 2 => {
+          let Some(Expr::Integer(id)) = stream_args.get(1) else {
+            return Some(Ok(unevaluated("ReadString", args)));
+          };
+          match crate::get_stream_content(*id as usize) {
+            Some((c, pos)) => (c, pos, Some(*id as usize)),
+            None => {
+              return Some(Ok(Expr::Identifier("EndOfFile".to_string())));
+            }
+          }
         }
+        _ => return Some(Ok(unevaluated("ReadString", args))),
       };
-      return Some(Ok(Expr::String(content)));
+
+      let rest = &content[position.min(content.len())..];
+      let Some((text, consumed)) =
+        read_string_chunk(rest, terminator.as_deref())
+      else {
+        return Some(Ok(Expr::Identifier("EndOfFile".to_string())));
+      };
+      if let Some(id) = stream_id {
+        crate::set_stream_position(id, position + consumed);
+      }
+      return Some(Ok(Expr::String(text)));
     }
     // FileTemplate[src] / FileTemplate[src, args] — read a template file from
     // disk and produce a TemplateObject (the same object StringTemplate would
@@ -4306,4 +4342,31 @@ fn svg_to_pdf_bytes(svg_str: &str) -> Result<Vec<u8>, InterpreterError> {
   })?;
 
   Ok(pdf_bytes)
+}
+
+/// The text `ReadString` returns from the remaining input, plus how many bytes
+/// it consumes. Without a terminator that is everything; with one, a leading
+/// terminator is skipped first and the read stops *at* the next one, leaving
+/// it in place — so repeated reads yield the separated fields while a
+/// following plain read still sees the separator. Returns `None` at the end of
+/// the input, which `ReadString` reports as `EndOfFile`.
+fn read_string_chunk(
+  rest: &str,
+  terminator: Option<&str>,
+) -> Option<(String, usize)> {
+  if rest.is_empty() {
+    return None;
+  }
+  let Some(term) = terminator else {
+    return Some((rest.to_string(), rest.len()));
+  };
+  let (skipped, body) = match rest.strip_prefix(term) {
+    Some(after) => (term.len(), after),
+    None => (0, rest),
+  };
+  if body.is_empty() {
+    return None;
+  }
+  let end = body.find(term).unwrap_or(body.len());
+  Some((body[..end].to_string(), skipped + end))
 }
