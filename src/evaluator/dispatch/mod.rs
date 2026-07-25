@@ -8563,12 +8563,42 @@ fn evaluate_function_call_ast_inner(
     return Ok(unevaluated(name, args));
   }
 
-  // SubstitutionSystem[rules, init, n] — apply substitution rules iteratively
+  // SubstitutionSystem[rules, init] — one step, returning just the new state.
+  if name == "SubstitutionSystem" && args.len() == 2 {
+    let evolved = evaluate_function_call_ast(
+      name,
+      &[args[0].clone(), args[1].clone(), Expr::Integer(1)],
+    )?;
+    if let Expr::List(states) = &evolved
+      && states.len() == 2
+    {
+      return Ok(states[1].clone());
+    }
+    return Ok(unevaluated(name, args));
+  }
+
+  // SubstitutionSystem[rules, init, n] — apply substitution rules iteratively.
+  // `{n}` asks for the state at step n alone rather than the whole history.
   if name == "SubstitutionSystem"
     && args.len() == 3
-    && let Expr::Integer(n_steps) = &args[2]
+    && let Some((n_steps, only_last)) = match &args[2] {
+      Expr::Integer(n) => Some((*n, false)),
+      Expr::List(spec) if spec.len() == 1 => match &spec[0] {
+        Expr::Integer(n) => Some((*n, true)),
+        _ => None,
+      },
+      _ => None,
+    }
+    && n_steps >= 0
   {
-    let n = *n_steps as usize;
+    let n = n_steps as usize;
+    let finish = |history: Vec<Expr>| -> Expr {
+      if only_last {
+        Expr::List(history.into_iter().next_back().into_iter().collect())
+      } else {
+        Expr::List(history.into())
+      }
+    };
     // Extract rules from either Expr::Rule or Expr::FunctionCall{name:"Rule",...}
     let extract_rules = |rule_list: &[Expr]| -> Vec<(Expr, Expr)> {
       let mut rules = Vec::new();
@@ -8619,9 +8649,36 @@ fn evaluate_function_call_ast_inner(
           current = next;
           history.push(Expr::String(current.clone()));
         }
-        return Ok(Expr::List(history.into()));
+        return Ok(finish(history));
       }
     } else if let Expr::List(init_list) = &args[1] {
+      // 2D mode: every cell expands into a block and the blocks tile, so an
+      // m x n grid whose cells expand to p x q becomes (m*p) x (n*q).
+      if let Expr::List(rule_list) = &args[0]
+        && let Some(blocks) =
+          two_d_substitution_blocks(&extract_rules(rule_list))
+        && init_list.iter().all(|row| matches!(row, Expr::List(_)))
+      {
+        let mut grid: Vec<Vec<Expr>> = init_list
+          .iter()
+          .map(|row| match row {
+            Expr::List(cells) => cells.to_vec(),
+            _ => Vec::new(),
+          })
+          .collect();
+        let as_expr = |g: &[Vec<Expr>]| -> Expr {
+          Expr::List(g.iter().map(|r| Expr::List(r.clone().into())).collect())
+        };
+        let mut history: Vec<Expr> = vec![as_expr(&grid)];
+        for _ in 0..n {
+          let Some(next) = substitute_grid(&grid, &blocks) else {
+            return Ok(unevaluated(name, args));
+          };
+          grid = next;
+          history.push(as_expr(&grid));
+        }
+        return Ok(finish(history));
+      }
       // List mode: rules map elements to lists
       if let Expr::List(rule_list) = &args[0] {
         let raw_rules = extract_rules(rule_list);
@@ -8648,7 +8705,7 @@ fn evaluate_function_call_ast_inner(
           current = next.into();
           history.push(Expr::List(current.clone()));
         }
-        return Ok(Expr::List(history.into()));
+        return Ok(finish(history));
       }
     }
   }
@@ -12854,4 +12911,66 @@ fn bspline_structured(
     ]
     .into(),
   }
+}
+
+/// The `cell -> block` replacements of a 2D substitution system, keyed by the
+/// cell's rendered form. Returns `None` unless every rule replaces a cell with
+/// a rectangular block and all blocks share one shape (which is what makes the
+/// expanded grid rectangular).
+fn two_d_substitution_blocks(
+  rules: &[(Expr, Expr)],
+) -> Option<Vec<(String, Vec<Vec<Expr>>)>> {
+  let mut out: Vec<(String, Vec<Vec<Expr>>)> = Vec::new();
+  let mut shape: Option<(usize, usize)> = None;
+  for (from, to) in rules {
+    let Expr::List(rows) = to else { return None };
+    let mut block = Vec::with_capacity(rows.len());
+    for row in rows.iter() {
+      let Expr::List(cells) = row else { return None };
+      block.push(cells.to_vec());
+    }
+    let dims = (block.len(), block.first()?.len());
+    if dims.0 == 0 || dims.1 == 0 || block.iter().any(|r| r.len() != dims.1) {
+      return None;
+    }
+    match shape {
+      None => shape = Some(dims),
+      Some(s) if s != dims => return None,
+      _ => {}
+    }
+    out.push((expr_to_string(from), block));
+  }
+  (!out.is_empty()).then_some(out)
+}
+
+/// Expand every cell of `grid` into its block and tile the results.
+fn substitute_grid(
+  grid: &[Vec<Expr>],
+  blocks: &[(String, Vec<Vec<Expr>>)],
+) -> Option<Vec<Vec<Expr>>> {
+  let (bh, bw) = {
+    let b = &blocks.first()?.1;
+    (b.len(), b[0].len())
+  };
+  let width = grid.first()?.len();
+  if grid.iter().any(|r| r.len() != width) {
+    return None;
+  }
+  let mut out = vec![Vec::with_capacity(width * bw); grid.len() * bh];
+  for (i, row) in grid.iter().enumerate() {
+    for cell in row {
+      let key = expr_to_string(cell);
+      // A cell with no rule stands for a block of copies of itself.
+      let block = blocks.iter().find(|(k, _)| *k == key).map(|(_, b)| b);
+      for a in 0..bh {
+        for b in 0..bw {
+          out[i * bh + a].push(match block {
+            Some(block) => block[a][b].clone(),
+            None => cell.clone(),
+          });
+        }
+      }
+    }
+  }
+  Some(out)
 }

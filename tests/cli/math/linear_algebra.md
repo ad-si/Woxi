@@ -25,6 +25,7 @@ normalised to `##` in this file.
 - [`AntisymmetricMatrixQ`](linear_algebra/AntisymmetricMatrixQ.md)
 - [`BoxMatrix`](linear_algebra/BoxMatrix.md)
 - [`CellularAutomaton`](linear_algebra/CellularAutomaton.md)
+- [`SubstitutionSystem`](linear_algebra/SubstitutionSystem.md)
 - [`ConjugateTranspose`](linear_algebra/ConjugateTranspose.md)
 - [`Coordinates`](linear_algebra/Coordinates.md)
 - [`CoordinatesFromCartesian`](linear_algebra/CoordinatesFromCartesian.md)

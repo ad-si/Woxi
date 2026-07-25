@@ -9151,6 +9151,67 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // A rule replacing a cell with a matrix is a 2D substitution: every cell
+  // expands into a block and the blocks tile, so an m x n grid whose cells
+  // expand to p x q becomes (m*p) x (n*q). Verified against wolframscript.
+  #[test]
+  fn substitution_system_two_dimensional() {
+    assert_eq!(
+      interpret(
+        "SubstitutionSystem[{1 -> {{1, 0}, {1, 1}}, 0 -> {{0, 0}, {0, 0}}}, \
+         {{1}}, 2]"
+      )
+      .unwrap(),
+      "{{{1}}, {{1, 0}, {1, 1}}, \
+       {{1, 0, 0, 0}, {1, 1, 0, 0}, {1, 0, 1, 0}, {1, 1, 1, 1}}}"
+    );
+  }
+
+  // Without a step count only one step runs, and just the new state comes
+  // back rather than the whole history.
+  #[test]
+  fn substitution_system_one_step_forms() {
+    assert_eq!(
+      interpret("SubstitutionSystem[{1 -> {1, 0}, 0 -> {1}}, {1}]").unwrap(),
+      "{1, 0}"
+    );
+    assert_eq!(
+      interpret(r#"SubstitutionSystem[{"A" -> "AB"}, "A"]"#).unwrap(),
+      "AB"
+    );
+    // The operator form does the same.
+    assert_eq!(
+      interpret("SubstitutionSystem[{1 -> {1, 0}, 0 -> {1}}][{1}]").unwrap(),
+      "{1, 0}"
+    );
+    assert_eq!(
+      interpret(r#"SubstitutionSystem[{"A" -> "AB"}]["A"]"#).unwrap(),
+      "AB"
+    );
+    assert_eq!(
+      interpret(
+        "SubstitutionSystem[{1 -> {{1, 0}, {1, 1}}, \
+         0 -> {{0, 0}, {0, 0}}}][{{1}}]"
+      )
+      .unwrap(),
+      "{{1, 0}, {1, 1}}"
+    );
+  }
+
+  // `{n}` asks for the state at step n alone, still wrapped in a list.
+  #[test]
+  fn substitution_system_single_step_spec() {
+    assert_eq!(
+      interpret("SubstitutionSystem[{1 -> {1, 0}}, {1}, {2}]").unwrap(),
+      "{{1, 0, 0}}"
+    );
+    assert_eq!(
+      interpret(r#"SubstitutionSystem[{"A" -> "AB", "B" -> "A"}, "A", {3}]"#)
+        .unwrap(),
+      "{ABAAB}"
+    );
+  }
+
   #[test]
   fn inverse_gamma_distribution_head() {
     assert_eq!(

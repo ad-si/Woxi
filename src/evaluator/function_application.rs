@@ -1321,6 +1321,19 @@ pub fn apply_curried_call(
     Expr::FunctionCall {
       name,
       args: func_args,
+    } if name == "SubstitutionSystem"
+      && func_args.len() == 1
+      && args.len() == 1 =>
+    {
+      // SubstitutionSystem[rules][init] — the operator form is one step.
+      evaluate_function_call_ast(
+        "SubstitutionSystem",
+        &[func_args[0].clone(), args[0].clone()],
+      )
+    }
+    Expr::FunctionCall {
+      name,
+      args: func_args,
     } if name == "CellularAutomaton"
       && func_args.len() == 1
       && args.len() == 1 =>

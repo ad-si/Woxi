@@ -585,6 +585,7 @@ nav = [
         { "BoxMatrix" = "math/linear_algebra/BoxMatrix.md" },
         { "Cartesian" = "math/linear_algebra/Cartesian.md" },
         { "CellularAutomaton" = "math/linear_algebra/CellularAutomaton.md" },
+        { "SubstitutionSystem" = "math/linear_algebra/SubstitutionSystem.md" },
         { "CharacteristicPolynomial" = "math/linear_algebra/CharacteristicPolynomial.md" },
         { "CholeskyDecomposition" = "math/linear_algebra/CholeskyDecomposition.md" },
         { "ConjugateTranspose" = "math/linear_algebra/ConjugateTranspose.md" },

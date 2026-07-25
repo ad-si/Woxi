@@ -2523,7 +2523,7 @@ CrossMatrix,Gives the n-dimensional cross structuring element for a numeric radi
 DateInterval,Creates an interval between two dates with normalized date list representation,✅,pure,12.1,2578
 DeleteBorderComponents,,🚫,,8.0,2578
 EqualTo,Operator form of Equal,✅,none,10.3,2578
-SubstitutionSystem,applies substitution rules iteratively to generate sequences,✅,Computation,10.2,2578
+SubstitutionSystem,Applies substitution rules iteratively to sequences strings or grids,✅,pure,10.2,2578
 XMLTemplate,Reads an XML template string or file and yields a TemplateObject,✅,effectful,10.0,2578
 BorderDimensions,,🚫,,8.0,2587
 CensoredDistribution,Represents a censored distribution with specified bounds and underlying distribution,✅,pure,8.0,2587
