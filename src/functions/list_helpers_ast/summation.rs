@@ -4261,19 +4261,14 @@ fn try_infinite_sum(
   // Re-indexing by k = n + j gives the s^j prefactor while the dropped head
   // terms keep their own s^k signs. A base exponent offset b' /= b
   // contributes a plain x^(b'-b) factor (e.g. Sum[(-1)^n x^(2n)/(2n+1)!] =
-  // Sin[x]/x). Only min + j <= 1 is folded: wolframscript combines longer
-  // head corrections over a common denominator (e.g. (-6 x + x^3 +
-  // 6 Sin[x])/6), a form Woxi does not reproduce, so those sums are left
-  // unevaluated rather than diverge in display.
+  // Sin[x]/x). The dropped head terms are put over a common denominator, the
+  // way wolframscript prints them (e.g. (-6 x + x^3 + 6 Sin[x])/6).
   if min >= 0
     && let Some(series) = match_factorial_trig_series(body, var_name)
   {
     let j = series.fact_off / 2;
     let p = series.fact_off % 2;
     let shift = min + j;
-    if shift > 1 {
-      return Ok(None);
-    }
     let func = match (series.alternating, p) {
       (true, 1) => "Sin",
       (true, 0) => "Cos",
@@ -4297,16 +4292,42 @@ fn try_infinite_sum(
       args: vec![series.base.clone()].into(),
     };
     let mut terms = vec![signed(f_call, negate)?];
-    if shift == 1 {
-      // Subtract the k = 0 head term x^p (p! = 1 for p in {0, 1}).
-      let head = if p == 1 {
+    // Subtract the head terms x^(2k+p)/(2k+p)! for k = 0 .. shift-1; each
+    // carries its own alternating sign from the re-indexed series.
+    for k in 0..shift {
+      let exponent = 2 * k + p;
+      let head = if exponent == 0 {
+        Expr::Integer(1)
+      } else if exponent == 1 {
         series.base.clone()
       } else {
-        Expr::Integer(1)
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(series.base.clone()),
+          right: Box::new(Expr::Integer(exponent)),
+        }
       };
-      terms.push(signed(head, !negate)?);
+      let head = if exponent > 1 {
+        crate::functions::math_ast::divide_ast(&[
+          head,
+          Expr::FunctionCall {
+            name: "Factorial".to_string(),
+            args: vec![Expr::Integer(exponent)].into(),
+          },
+        ])?
+      } else {
+        head
+      };
+      let flip = !negate ^ (series.alternating && k % 2 != 0);
+      terms.push(signed(head, flip)?);
     }
+    // wolframscript prints the head-corrected sum over a common denominator.
     let inner = crate::functions::math_ast::plus_ast(&terms)?;
+    let inner = crate::evaluator::evaluate_function_call_ast(
+      "Together",
+      std::slice::from_ref(&inner),
+    )
+    .unwrap_or(inner);
     let mut outer: Vec<Expr> = Vec::new();
     if !matches!(series.coeff, Expr::Integer(1)) {
       outer.push(series.coeff.clone());

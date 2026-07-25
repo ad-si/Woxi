@@ -14153,14 +14153,14 @@ mod infinite_factorial_trig_series {
   }
 
   // Head corrections longer than one term are combined over a common
-  // denominator by wolframscript, a form Woxi does not reproduce, so those
-  // sums stay unevaluated. The plain exponential series is unaffected.
+  // denominator, the way wolframscript prints them. The plain exponential
+  // series is unaffected.
   #[test]
-  fn out_of_scope_cases() {
+  fn longer_head_corrections() {
     assert_eq!(
       interpret("Sum[(-1)^n x^(2n+1)/Factorial[2n+1], {n, 2, Infinity}]")
         .unwrap(),
-      "Sum[((-1)^n*x^(2*n + 1))/(2*n + 1)!, {n, 2, Infinity}]"
+      "(-6*x + x^3 + 6*Sin[x])/6"
     );
     assert_eq!(
       interpret("Sum[x^n/Factorial[n], {n, 0, Infinity}]").unwrap(),
