@@ -1992,6 +1992,192 @@ pub fn find_cycle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// The multi-cycle forms (FindHamiltonianCycle[g, k] / [g, All]) enumerate
 /// cycles in an order that does not match this greedy search, so they are left
 /// unevaluated.
+/// FindHamiltonianPath[g] / FindHamiltonianPath[g, s, t] — one path visiting
+/// every vertex once, as a vertex list, or `{}` when there is none. The search
+/// is a greedy depth-first one that tries the lowest-numbered neighbour first,
+/// starting from each vertex in vertex-list order.
+pub fn find_hamiltonian_path_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Ok(unevaluated("FindHamiltonianPath", args));
+  if args.len() != 1 && args.len() != 3 {
+    return unevaluated();
+  }
+  let Some((vertices, raw_edges)) = fc_parse_input(&args[0]) else {
+    return unevaluated();
+  };
+  let n = vertices.len();
+  let empty = Expr::List(vec![].into());
+  if n == 0 {
+    return Ok(empty);
+  }
+
+  let mut rank: HashMap<String, usize> = HashMap::new();
+  for (i, v) in vertices.iter().enumerate() {
+    rank.entry(expr_to_string(v)).or_insert(i);
+  }
+
+  // Adjacency by destination rank; an undirected edge goes both ways.
+  let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+  for e in &raw_edges {
+    let inner = fc_unwrap_edge(e);
+    let (src, dst, directed) = match inner {
+      Expr::FunctionCall { name, args: eargs } if eargs.len() == 2 => {
+        let d = name != "UndirectedEdge" && name != "TwoWayRule";
+        (&eargs[0], &eargs[1], d)
+      }
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref(), true),
+      _ => continue,
+    };
+    let (Some(&si), Some(&di)) = (
+      rank.get(&expr_to_string(src)),
+      rank.get(&expr_to_string(dst)),
+    ) else {
+      continue;
+    };
+    if si == di {
+      continue; // a self-loop never helps a Hamiltonian path
+    }
+    adj[si].push(di);
+    if !directed {
+      adj[di].push(si);
+    }
+  }
+  for a in &mut adj {
+    a.sort_unstable();
+    a.dedup();
+  }
+
+  // Optional endpoints.
+  let endpoint = |e: &Expr| rank.get(&expr_to_string(e)).copied();
+  let (start_only, target) = if args.len() == 3 {
+    match (endpoint(&args[1]), endpoint(&args[2])) {
+      (Some(s), Some(t)) => (Some(s), Some(t)),
+      _ => return Ok(empty),
+    }
+  } else {
+    (None, None)
+  };
+
+  fn dfs(
+    cur: usize,
+    depth: usize,
+    n: usize,
+    target: Option<usize>,
+    adj: &[Vec<usize>],
+    visited: &mut [bool],
+    path: &mut Vec<usize>,
+  ) -> bool {
+    if depth == n {
+      return target.is_none_or(|t| t == cur);
+    }
+    for &dst in &adj[cur] {
+      if visited[dst] {
+        continue;
+      }
+      visited[dst] = true;
+      path.push(dst);
+      if dfs(dst, depth + 1, n, target, adj, visited, path) {
+        return true;
+      }
+      path.pop();
+      visited[dst] = false;
+    }
+    false
+  }
+
+  let starts: Vec<usize> = match start_only {
+    Some(s) => vec![s],
+    None => (0..n).collect(),
+  };
+  for start in starts {
+    let mut visited = vec![false; n];
+    let mut path = vec![start];
+    visited[start] = true;
+    if dfs(start, 1, n, target, &adj, &mut visited, &mut path) {
+      return Ok(Expr::List(
+        path.into_iter().map(|i| vertices[i].clone()).collect(),
+      ));
+    }
+  }
+  Ok(empty)
+}
+
+/// UndirectedGraph[g] — the same graph with every edge undirected, duplicates
+/// dropped (`{1 -> 2, 2 -> 1}` becomes one edge).
+pub fn undirected_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || unevaluated("UndirectedGraph", args);
+  let not_a_graph = || {
+    crate::emit_message(&format!(
+      "UndirectedGraph::graph: A graph object is expected at position 1 in {}.",
+      crate::syntax::expr_to_string(&unevaluated())
+    ));
+    Ok(unevaluated())
+  };
+  if args.is_empty() {
+    return Ok(unevaluated());
+  }
+  let Some((vertices, raw_edges)) = fc_parse_input(&args[0]) else {
+    return not_a_graph();
+  };
+  let extra: Vec<Expr> = match &args[0] {
+    Expr::FunctionCall { name, args: gargs }
+      if name == "Graph" && gargs.len() > 2 =>
+    {
+      gargs[2..].to_vec()
+    }
+    _ => Vec::new(),
+  };
+
+  let key = |e: &Expr| expr_to_string(e);
+  let index: HashMap<String, usize> = vertices
+    .iter()
+    .enumerate()
+    .map(|(i, v)| (key(v), i))
+    .collect();
+
+  let mut seen: Vec<(usize, usize)> = Vec::new();
+  let mut out: Vec<Expr> = Vec::new();
+  for e in &raw_edges {
+    let inner = fc_unwrap_edge(e);
+    let (a, b) = match inner {
+      Expr::FunctionCall {
+        name: _,
+        args: eargs,
+      } if eargs.len() == 2 => (&eargs[0], &eargs[1]),
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref()),
+      _ => return not_a_graph(),
+    };
+    let (Some(&ia), Some(&ib)) = (index.get(&key(a)), index.get(&key(b)))
+    else {
+      return not_a_graph();
+    };
+    let pair = (ia.min(ib), ia.max(ib));
+    if seen.contains(&pair) {
+      continue;
+    }
+    seen.push(pair);
+    out.push(Expr::FunctionCall {
+      name: "UndirectedEdge".to_string(),
+      args: vec![vertices[pair.0].clone(), vertices[pair.1].clone()].into(),
+    });
+  }
+
+  let mut graph_args =
+    vec![Expr::List(vertices.into()), Expr::List(out.into())];
+  graph_args.extend(extra);
+  Ok(Expr::FunctionCall {
+    name: "Graph".to_string(),
+    args: graph_args.into(),
+  })
+}
+
 pub fn find_hamiltonian_cycle_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
@@ -5095,7 +5281,9 @@ pub fn neighborhood_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Parse a Graph expression into (vertex count, edge index pairs including
 /// duplicates and self-loops). Returns None for non-graphs.
-fn parse_graph_pairs(expr: &Expr) -> Option<(usize, Vec<(usize, usize)>)> {
+fn parse_graph_pairs(
+  expr: &Expr,
+) -> Option<(usize, Vec<(usize, usize, bool)>)> {
   let (vertices, edge_exprs) = match expr {
     Expr::FunctionCall {
       name: gname,
@@ -5109,21 +5297,33 @@ fn parse_graph_pairs(expr: &Expr) -> Option<(usize, Vec<(usize, usize)>)> {
   let vkeys: Vec<String> = vertices.iter().map(expr_to_string).collect();
   let mut pairs = Vec::with_capacity(edge_exprs.len());
   for e in edge_exprs.iter() {
+    // Directed and undirected edges both count; the flag records which, so
+    // `1 -> 2` and `2 -> 1` are two edges while `1 <-> 2` and `2 <-> 1` are one.
     if let Expr::FunctionCall {
       name: ename,
       args: eargs,
     } = e
-      && ename == "UndirectedEdge"
+      && (ename == "UndirectedEdge" || ename == "DirectedEdge")
       && eargs.len() == 2
     {
       let a = vkeys.iter().position(|k| *k == expr_to_string(&eargs[0]))?;
       let b = vkeys.iter().position(|k| *k == expr_to_string(&eargs[1]))?;
-      pairs.push((a, b));
+      pairs.push((a, b, ename == "DirectedEdge"));
     } else {
       return None;
     }
   }
   Some((vkeys.len(), pairs))
+}
+
+/// Like [`parse_graph_pairs`] but only for graphs whose every edge is
+/// undirected. The metrics that have a separate directed definition rely on
+/// this rejecting a digraph so they can route to it.
+fn parse_undirected_graph_pairs(
+  expr: &Expr,
+) -> Option<(usize, Vec<(usize, usize, bool)>)> {
+  let (n, pairs) = parse_graph_pairs(expr)?;
+  pairs.iter().all(|&(_, _, d)| !d).then_some((n, pairs))
 }
 
 pub fn graph_predicate_ast(
@@ -5134,19 +5334,37 @@ pub fn graph_predicate_ast(
     Some(g) => g,
     None => return Ok(bool_expr(false)),
   };
-  let has_loop = pairs.iter().any(|&(a, b)| a == b);
+  let has_loop = pairs.iter().any(|&(a, b, _)| a == b);
+  let all_directed = !pairs.is_empty() && pairs.iter().all(|&(_, _, d)| d);
+  // Multi-edge detection keeps the direction: a directed edge is identified by
+  // its ordered endpoints, an undirected one by the unordered pair.
+  let mut edge_keys: Vec<(usize, usize, bool)> = pairs
+    .iter()
+    .filter(|&&(a, b, _)| a != b)
+    .map(|&(a, b, d)| {
+      if d {
+        (a, b, d)
+      } else {
+        (a.min(b), a.max(b), d)
+      }
+    })
+    .collect();
+  edge_keys.sort_unstable();
+  let multi = {
+    let mut s = edge_keys.clone();
+    s.dedup();
+    s.len() != edge_keys.len()
+  };
+  // The underlying simple undirected graph, for the connectivity-flavoured
+  // predicates.
   let mut simple_pairs: Vec<(usize, usize)> = pairs
     .iter()
-    .filter(|&&(a, b)| a != b)
-    .map(|&(a, b)| (a.min(b), a.max(b)))
+    .filter(|&&(a, b, _)| a != b)
+    .map(|&(a, b, _)| (a.min(b), a.max(b)))
     .collect();
   simple_pairs.sort_unstable();
-  let multi = {
-    let mut s = simple_pairs.clone();
-    s.dedup();
-    s.len() != simple_pairs.len()
-  };
   simple_pairs.dedup();
+  edge_keys.dedup();
   let adj = |s: &[(usize, usize)]| {
     let mut a: Vec<Vec<usize>> = vec![Vec::new(); n];
     for &(x, y) in s {
@@ -5162,8 +5380,13 @@ pub fn graph_predicate_ast(
     "SimpleGraphQ" => !has_loop && !multi,
     "CompleteGraphQ" => {
       // Every pair adjacent exactly once, no loops (wolframscript:
-      // a doubled-edge K2 is not complete)
-      !has_loop && !multi && simple_pairs.len() == n * n.saturating_sub(1) / 2
+      // a doubled-edge K2 is not complete). A directed graph needs both
+      // arcs of every pair.
+      if all_directed {
+        !has_loop && !multi && edge_keys.len() == n * n.saturating_sub(1)
+      } else {
+        !has_loop && !multi && simple_pairs.len() == n * n.saturating_sub(1) / 2
+      }
     }
     "PathGraphQ" => {
       // A simple connected graph with all degrees <= 2 — wolframscript
@@ -5172,6 +5395,17 @@ pub fn graph_predicate_ast(
         false
       } else if n == 1 {
         pairs.is_empty()
+      } else if all_directed {
+        // A directed path (or directed cycle): every vertex has at most one
+        // arc in and one out, and the underlying graph is connected.
+        let mut indeg = vec![0usize; n];
+        let mut outdeg = vec![0usize; n];
+        for &(a, b, _) in &edge_keys {
+          outdeg[a] += 1;
+          indeg[b] += 1;
+        }
+        (0..n).all(|v| indeg[v] <= 1 && outdeg[v] <= 1)
+          && connected_from(&adj(&simple_pairs), 0) == n
       } else {
         let a = adj(&simple_pairs);
         (0..n).all(|v| a[v].len() <= 2) && connected_from(&a, 0) == n
@@ -5215,7 +5449,7 @@ pub fn graph_predicate_ast(
         true
       } else if n == 2 {
         // Needs two parallel edges to form the 2-cycle
-        pairs.iter().filter(|&&(a, b)| a != b).count() >= 2
+        pairs.iter().filter(|&&(a, b, _)| a != b).count() >= 2
       } else {
         let a = adj(&simple_pairs);
         if a.iter().any(|nb| nb.len() < 2) || connected_from(&a, 0) != n {
@@ -5559,8 +5793,8 @@ pub fn planar_graph_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Reduce to the underlying simple graph
   let mut simple: Vec<(usize, usize)> = pairs
     .iter()
-    .filter(|&&(a, b)| a != b)
-    .map(|&(a, b)| (a.min(b), a.max(b)))
+    .filter(|&&(a, b, _)| a != b)
+    .map(|&(a, b, _)| (a.min(b), a.max(b)))
     .collect();
   simple.sort_unstable();
   simple.dedup();
@@ -5981,11 +6215,11 @@ pub fn graph_metric_ast(
       }),
     });
   }
-  let (n, pairs) = match parse_graph_pairs(&args[0]) {
+  let (n, pairs) = match parse_undirected_graph_pairs(&args[0]) {
     Some(g) => g,
     None => {
-      // parse_graph_pairs only accepts undirected edges; handle the
-      // directed case for the metrics that have a directed definition.
+      // Only undirected graphs take the shared path; the metrics with a
+      // directed definition handle a digraph themselves.
       if name == "GraphDensity"
         && let Some(result) = directed_graph_density(&args[0])
       {
@@ -6040,8 +6274,8 @@ pub fn graph_metric_ast(
   // Underlying simple graph
   let mut simple: Vec<(usize, usize)> = pairs
     .iter()
-    .filter(|&&(a, b)| a != b)
-    .map(|&(a, b)| (a.min(b), a.max(b)))
+    .filter(|&&(a, b, _)| a != b)
+    .map(|&(a, b, _)| (a.min(b), a.max(b)))
     .collect();
   simple.sort_unstable();
   simple.dedup();
@@ -6332,14 +6566,14 @@ pub fn graph_assortativity_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let unevaluated = || unevaluated("GraphAssortativity", args);
-  let (n, pairs) = match parse_graph_pairs(&args[0]) {
+  let (n, pairs) = match parse_undirected_graph_pairs(&args[0]) {
     Some(g) => g,
     None => return Ok(unevaluated()),
   };
   let mut simple: Vec<(usize, usize)> = pairs
     .iter()
-    .filter(|&&(a, b)| a != b)
-    .map(|&(a, b)| (a.min(b), a.max(b)))
+    .filter(|&&(a, b, _)| a != b)
+    .map(|&(a, b, _)| (a.min(b), a.max(b)))
     .collect();
   simple.sort_unstable();
   simple.dedup();

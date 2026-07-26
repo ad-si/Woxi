@@ -6252,3 +6252,145 @@ mod graph_link_efficiency {
     );
   }
 }
+
+mod directed_predicates_undirected_graph_and_hamiltonian_path {
+  use super::*;
+
+  // The graph predicates read directed edges too; a directed edge and its
+  // reverse are two different edges, so neither makes the graph a multigraph.
+  #[test]
+  fn simple_graph_q_reads_directed_edges() {
+    assert_eq!(
+      interpret("SimpleGraphQ[Graph[{1 -> 2, 2 -> 3}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("SimpleGraphQ[Graph[{1 -> 2, 2 -> 1}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("SimpleGraphQ[Graph[{1 -> 2, 1 -> 2}]]").unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("SimpleGraphQ[Graph[{1 -> 1}]]").unwrap(), "False");
+    // A mixed graph: the undirected edge and the arc are different edges.
+    assert_eq!(
+      interpret("SimpleGraphQ[Graph[{1 <-> 2, 1 -> 2}]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn loop_free_and_planar_read_directed_edges() {
+    assert_eq!(
+      interpret("LoopFreeGraphQ[Graph[{1 -> 2}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("PlanarGraphQ[Graph[{1 -> 2}]]").unwrap(), "True");
+  }
+
+  // A digraph is a path when every vertex has at most one arc in and one out;
+  // a directed cycle counts, as it does in the undirected case.
+  #[test]
+  fn path_graph_q_on_a_digraph() {
+    assert_eq!(
+      interpret("PathGraphQ[Graph[{1 -> 2, 2 -> 3}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("PathGraphQ[Graph[{2 -> 1, 2 -> 3}]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("PathGraphQ[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]]").unwrap(),
+      "True"
+    );
+  }
+
+  // A complete digraph needs both arcs of every pair.
+  #[test]
+  fn complete_graph_q_on_a_digraph() {
+    assert_eq!(
+      interpret("CompleteGraphQ[Graph[{1 -> 2, 2 -> 1}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("CompleteGraphQ[Graph[{1 -> 2}]]").unwrap(),
+      "False"
+    );
+  }
+
+  // UndirectedGraph drops the directions and the duplicates they leave.
+  #[test]
+  fn undirected_graph() {
+    assert_eq!(
+      interpret(
+        "ToString[InputForm[EdgeList[UndirectedGraph[Graph[{1 -> 2, 2 -> 1}]]]]]"
+      )
+      .unwrap(),
+      "{UndirectedEdge[1, 2]}"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[InputForm[EdgeList[UndirectedGraph[Graph[{1 -> 2, 2 -> 3}]]]]]"
+      )
+      .unwrap(),
+      "{UndirectedEdge[1, 2], UndirectedEdge[2, 3]}"
+    );
+    assert_eq!(
+      interpret("VertexList[UndirectedGraph[Graph[{1 -> 2}]]]").unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(
+      interpret("UndirectedGraphQ[UndirectedGraph[Graph[{1 -> 2}]]]").unwrap(),
+      "True"
+    );
+  }
+
+  // FindHamiltonianPath reports the vertices of one path, or {} when the
+  // graph has none.
+  #[test]
+  fn find_hamiltonian_path() {
+    assert_eq!(
+      interpret("FindHamiltonianPath[CycleGraph[4]]").unwrap(),
+      "{1, 2, 3, 4}"
+    );
+    assert_eq!(
+      interpret("FindHamiltonianPath[PathGraph[{1, 2, 3}]]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("FindHamiltonianPath[CompleteGraph[4]]").unwrap(),
+      "{1, 2, 3, 4}"
+    );
+    assert_eq!(
+      interpret("FindHamiltonianPath[Graph[{1 <-> 2, 3 <-> 4}]]").unwrap(),
+      "{}"
+    );
+    // Directed edges are followed in their own direction only.
+    assert_eq!(
+      interpret("FindHamiltonianPath[Graph[{1 -> 2, 2 -> 3}]]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn find_hamiltonian_path_between_two_vertices() {
+    assert_eq!(
+      interpret("FindHamiltonianPath[Graph[{1 <-> 2, 2 <-> 3}], 1, 3]")
+        .unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("FindHamiltonianPath[Graph[{1 <-> 2, 2 <-> 3}], 3, 1]")
+        .unwrap(),
+      "{3, 2, 1}"
+    );
+    // No Hamiltonian path starts at the middle vertex.
+    assert_eq!(
+      interpret("FindHamiltonianPath[Graph[{1 <-> 2, 2 <-> 3}], 2, 3]")
+        .unwrap(),
+      "{}"
+    );
+  }
+}

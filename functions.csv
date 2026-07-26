@@ -2000,7 +2000,7 @@ LegendMargins,Margins around plot legends,🚫,,9.0,2034
 Spectrogram,Plot the magnitude of the short-time Fourier transform (time vs frequency),✅,pure,9.0,2034
 DateTicksFormat,Date format for plot tick labels,🚫,,6.0,2036
 RootLocusPlot,Root locus plot for control systems,🚫,,8.0,2036
-UndirectedGraph,Create undirected graph,🚫,,8.0,2038
+UndirectedGraph,Gives the graph with every edge undirected and duplicates dropped,✅,pure,8.0,2038
 DegreeGraphDistribution,Degree-based graph distribution,🚫,,8.0,2039
 NyquistPlot,Nyquist stability plot,🚫,,8.0,2040
 FlattenLayer,Neural network flatten layer,🚫,,11.0,2042
@@ -2750,7 +2750,7 @@ OrthogonalMatrixQ,Tests whether a matrix is orthogonal,✅,None,10.0,2807
 ParallelCombine,,🚫,,7.0,2807
 RandomEntity,,🚫,,10.2,2807
 TreeGraphQ,True if graph is a tree,✅,1,8.0,2807
-FindHamiltonianPath,,🚫,,10.2,2812
+FindHamiltonianPath,Finds a path visiting every vertex once (optionally between two given vertices) or {} when there is none,✅,pure,10.2,2812
 GeoCircle,Geodesic circle primitive for GeoGraphics,✅,pure,10.0,2812
 HyperbolicDistribution,Hyperbolic distribution with parameters for shape and location,✅,pure,8.0,2812
 ImageKeypoints,,🚫,,8.0,2812
@@ -3455,7 +3455,7 @@ AudioDelay,,🚫,,11.0,3566
 BasicRecurrentLayer,,🚫,,11.1,3566
 BooleanVariables,Boolean variables of an expression (canonically sorted; opaque subexpressions count),✅,pure,7.0,3566
 ChannelListen,,🚫,,11.0,3566
-CompleteGraphQ,Tests whether a graph is complete (every pair adjacent exactly once),✅,pure,8.0,3566
+CompleteGraphQ,Tests whether a graph is complete (every pair adjacent exactly once; a digraph needs both arcs of every pair),✅,pure,8.0,3566
 DGaussianWavelet,Derivative-of-Gaussian continuous wavelet of order n,✅,pure,8.0,3566
 DMSString,Formats an angle or lat/lon pair as a degrees-minutes-seconds string; accepts scalars and {d;m;s} triples and GeoPosition and DMS strings,✅,pure,7.0,3566
 DefaultNewCellStyle,,🚫,,3.0,3566
@@ -3670,7 +3670,7 @@ CornerFilter,,,,8.0,3765
 FunctionSingularities,,,,12.2,3765
 KalmanFilter,,,,9.0,3765
 MoyalDistribution,Moyal distribution (sign-folded PDF and Erfc CDF),✅,pure,8.0,3765
-PathGraphQ,Tests whether a graph is a simple connected graph with all degrees at most 2,✅,pure,8.0,3765
+PathGraphQ,Tests whether a graph is a simple connected graph with all degrees at most 2 (a digraph: at most one arc in and one out per vertex),✅,pure,8.0,3765
 RegionResize,,,,11.0,3765
 AudioChannelMix,,🚫,,11.0,3785
 BayesianMinimization,,,,11.0,3785
@@ -3725,7 +3725,7 @@ PeronaMalikFilter,,🚫,,8.0,3823
 RiccatiSolve,,,,8.0,3823
 ShellRegion,,,,11.0,3823
 ShrinkingDelay,,,,6.0,3823
-SimpleGraphQ,Tests whether a graph has no self-loops or multi-edges,✅,pure,8.0,3823
+SimpleGraphQ,Tests whether a graph has no self-loops or multi-edges (a directed edge and its reverse are different edges),✅,pure,8.0,3823
 VideoGenerator,,🚫,,12.2,3823
 AcousticPDEComponent,,🚫,,12.2,3843
 BattleLemarieWavelet,Battle-Lemarie orthonormalized B-spline wavelet family,✅,pure,8.0,3843

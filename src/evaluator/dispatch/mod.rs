@@ -4262,6 +4262,16 @@ fn evaluate_function_call_ast_inner(
     return crate::functions::graph::directed_graph_ast(args);
   }
 
+  // UndirectedGraph[graph] → the same graph with undirected, deduplicated edges
+  if name == "UndirectedGraph" && args.len() == 1 {
+    return crate::functions::graph::undirected_graph_ast(args);
+  }
+
+  // FindHamiltonianPath[graph] / [graph, s, t] → one Hamiltonian path
+  if name == "FindHamiltonianPath" && (args.len() == 1 || args.len() == 3) {
+    return crate::functions::graph::find_hamiltonian_path_ast(args);
+  }
+
   // IncidenceGraph[m] / IncidenceGraph[vertices, m] → graph from an
   // incidence matrix
   if name == "IncidenceGraph" && !args.is_empty() && args.len() <= 2 {
