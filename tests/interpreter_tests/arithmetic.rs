@@ -10253,3 +10253,116 @@ mod times_function_head_order {
     );
   }
 }
+
+mod negative_base_rational_powers {
+  use super::*;
+
+  // A negative base with a rational exponent splits the sign off as
+  // (-1)^(p/q) and the equal-exponent radical merge folds it back in, so
+  // only the part that cannot be extracted keeps the sign.
+  #[test]
+  fn sign_merges_back_into_the_radicand() {
+    assert_eq!(interpret("(-2)^(1/3)").unwrap(), "(-2)^(1/3)");
+    assert_eq!(interpret("(-2)^(2/3)").unwrap(), "(-2)^(2/3)");
+    assert_eq!(interpret("(-2)^(1/4)").unwrap(), "(-2)^(1/4)");
+    assert_eq!(interpret("(-2)^(1/6)").unwrap(), "(-2)^(1/6)");
+    assert_eq!(interpret("(-2)^(5/3)").unwrap(), "-2*(-2)^(2/3)");
+  }
+
+  #[test]
+  fn exact_positive_part_leaves_the_sign_behind() {
+    assert_eq!(interpret("(-8)^(1/3)").unwrap(), "2*(-1)^(1/3)");
+    assert_eq!(interpret("(-8)^(2/3)").unwrap(), "4*(-1)^(2/3)");
+    assert_eq!(interpret("(-27)^(1/3)").unwrap(), "3*(-1)^(1/3)");
+    assert_eq!(interpret("(-32)^(1/5)").unwrap(), "2*(-1)^(1/5)");
+    assert_eq!(interpret("(-1/8)^(1/3)").unwrap(), "(-1)^(1/3)/2");
+  }
+
+  #[test]
+  fn partial_extraction_attaches_the_sign_to_the_leftover_root() {
+    assert_eq!(interpret("(-24)^(1/3)").unwrap(), "2*(-3)^(1/3)");
+    assert_eq!(interpret("(-12)^(1/3)").unwrap(), "(-3)^(1/3)*2^(2/3)");
+  }
+
+  #[test]
+  fn half_integer_exponents_collapse_to_i() {
+    assert_eq!(interpret("(-1)^(3/2)").unwrap(), "-I");
+    assert_eq!(interpret("(-1)^(5/2)").unwrap(), "I");
+    assert_eq!(interpret("(-2)^(1/2)").unwrap(), "I*Sqrt[2]");
+    assert_eq!(interpret("(-2)^(3/2)").unwrap(), "(-2*I)*Sqrt[2]");
+    assert_eq!(interpret("(-4)^(3/2)").unwrap(), "-8*I");
+  }
+
+  #[test]
+  fn negative_exponents_keep_the_exact_form() {
+    assert_eq!(interpret("(-2)^(-1/3)").unwrap(), "-((-1)^(2/3)/2^(1/3))");
+  }
+
+  // b^r b^s = b^(r + s) holds for a fixed base whatever its sign.
+  #[test]
+  fn same_base_exponents_add() {
+    assert_eq!(interpret("(-1)^(1/3)*(-1)^(1/3)").unwrap(), "(-1)^(2/3)");
+    assert_eq!(interpret("(-1)^(1/3)*(-1)^(2/3)").unwrap(), "-1");
+    assert_eq!(interpret("(-1)^(2/3)*(-1)^(2/3)").unwrap(), "-(-1)^(1/3)");
+    assert_eq!(interpret("(-1)^(1/5)*(-1)^(1/5)").unwrap(), "(-1)^(2/5)");
+    assert_eq!(interpret("2^(1/3)*2^(1/2)").unwrap(), "2^(5/6)");
+  }
+
+  // Different bases merge under a shared exponent only while the principal
+  // values still line up, which allows at most one negative base.
+  #[test]
+  fn shared_exponent_merges_at_most_one_negative_base() {
+    assert_eq!(interpret("(-1)^(1/3)*2^(1/3)").unwrap(), "(-2)^(1/3)");
+    assert_eq!(interpret("2^(1/3)*(-1)^(1/3)").unwrap(), "(-2)^(1/3)");
+    assert_eq!(interpret("(-1)^(1/3)*3^(1/3)").unwrap(), "(-3)^(1/3)");
+    assert_eq!(
+      interpret("(-2)^(1/3)*(-1)^(1/3)").unwrap(),
+      "(-2)^(1/3)*(-1)^(1/3)"
+    );
+    assert_eq!(
+      interpret("(-1)^(2/3)*2^(1/3)").unwrap(),
+      "(-1)^(2/3)*2^(1/3)"
+    );
+  }
+
+  // I is (-1)^(1/2) when it meets another power of -1, but I I^n stays a
+  // power of I.
+  #[test]
+  fn imaginary_unit_folds_into_powers_of_minus_one() {
+    assert_eq!(interpret("I*(-1)^(1/4)").unwrap(), "(-1)^(3/4)");
+    assert_eq!(interpret("-I*(-1)^(1/4)").unwrap(), "-(-1)^(3/4)");
+    assert_eq!(interpret("I*(-1)^(1/3)").unwrap(), "(-1)^(5/6)");
+    assert_eq!(interpret("I*Sqrt[2]").unwrap(), "I*Sqrt[2]");
+    assert_eq!(interpret("I*I^n").unwrap(), "I^(1 + n)");
+    assert_eq!(interpret("I^n*I^m").unwrap(), "I^(m + n)");
+  }
+
+  // An imaginary coefficient orders like the number it is, between the
+  // negative and the positive real coefficients.
+  #[test]
+  fn imaginary_coefficients_sort_like_numbers() {
+    assert_eq!(
+      interpret("Sort[{-x, -I*x, I*x, x}]").unwrap(),
+      "{-x, -I*x, I*x, x}"
+    );
+    assert_eq!(
+      interpret("Sort[{-2^(1/4), I*2^(1/4), 2^(1/4), -I*2^(1/4)}]").unwrap(),
+      "{-2^(1/4), -I*2^(1/4), I*2^(1/4), 2^(1/4)}"
+    );
+    assert_eq!(interpret("Sort[{-1, -I, I, 1}]").unwrap(), "{-1, -I, I, 1}");
+  }
+
+  // Radicals of integer bases order by base and then by exponent, which
+  // decides the factor order when one of the bases is negative.
+  #[test]
+  fn signed_radicals_order_by_base() {
+    assert_eq!(
+      interpret("Sort[{(-1)^(2/3), (-2)^(1/3)}]").unwrap(),
+      "{(-2)^(1/3), (-1)^(2/3)}"
+    );
+    assert_eq!(
+      interpret("(-2)^(1/3)*(-1)^(2/3)").unwrap(),
+      "(-2)^(1/3)*(-1)^(2/3)"
+    );
+  }
+}

@@ -81,17 +81,22 @@ pub fn expr_to_complex_parts(e: &Expr) -> Option<(f64, f64)> {
       }
       None
     }
-    // FunctionCall Times[n, I]
-    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
-      if matches!(&args[1], Expr::Identifier(n) if n == "I")
-        && let Some(im) = try_eval_to_f64(&args[0])
-      {
-        return Some((0.0, im));
+    // FunctionCall Times[…, I, …] — one I among real factors, of which
+    // there may be more than one: `-I Sqrt[3]` is Times[-1, I, Sqrt[3]].
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
+      let mut imaginary_units = 0;
+      let mut coefficient = 1.0;
+      for arg in args.iter() {
+        if matches!(arg, Expr::Identifier(n) | Expr::Constant(n) if n == "I") {
+          imaginary_units += 1;
+        } else if let Some(v) = try_eval_to_f64(arg) {
+          coefficient *= v;
+        } else {
+          return None;
+        }
       }
-      if matches!(&args[0], Expr::Identifier(n) if n == "I")
-        && let Some(im) = try_eval_to_f64(&args[1])
-      {
-        return Some((0.0, im));
+      if imaginary_units == 1 {
+        return Some((0.0, coefficient));
       }
       None
     }
@@ -1737,22 +1742,32 @@ fn power_parts(e: &Expr) -> Option<(Expr, Expr)> {
 }
 
 /// Split a term into its leading number-literal coefficient and the
-/// remaining symbolic factors. Returns `(coefficient, Some(rest))` when a
+/// remaining symbolic factors. Returns `((re, im), Some(rest))` when a
 /// literal coefficient (or unary minus) was actually stripped, and
-/// `(1.0, None)` when the term carries no literal coefficient — so callers
-/// can tell `x` (nothing stripped) apart from `1.0*x`.
-fn numeric_coeff_and_rest_expr(e: &Expr) -> (f64, Option<Expr>) {
+/// `((1.0, 0.0), None)` when the term carries no literal coefficient — so
+/// callers can tell `x` (nothing stripped) apart from `1.0*x`. Imaginary
+/// coefficients count as literals so that `-I x` sorts between `-x` and
+/// `I x` the way number literals themselves do.
+fn numeric_coeff_and_rest_expr(e: &Expr) -> ((f64, f64), Option<Expr>) {
   use crate::functions::math_ast::try_eval_to_f64_with_infinity;
-  let literal = |x: &Expr| -> Option<f64> {
+  let literal = |x: &Expr| -> Option<(f64, f64)> {
     match x {
       Expr::Integer(_)
       | Expr::BigInteger(_)
       | Expr::Real(_)
-      | Expr::BigFloat(..) => try_eval_to_f64_with_infinity(x),
+      | Expr::BigFloat(..) => {
+        try_eval_to_f64_with_infinity(x).map(|v| (v, 0.0))
+      }
       Expr::FunctionCall { name, args }
         if name == "Rational" && args.len() == 2 =>
       {
-        try_eval_to_f64_with_infinity(x)
+        try_eval_to_f64_with_infinity(x).map(|v| (v, 0.0))
+      }
+      Expr::Identifier(s) | Expr::Constant(s) if s == "I" => Some((0.0, 1.0)),
+      Expr::FunctionCall { name, args }
+        if name == "Complex" && args.len() == 2 =>
+      {
+        crate::functions::math_ast::try_extract_complex_float(x)
       }
       _ => None,
     }
@@ -1762,19 +1777,33 @@ fn numeric_coeff_and_rest_expr(e: &Expr) -> (f64, Option<Expr>) {
       op: UnaryOperator::Minus,
       operand,
     } => {
-      let (c, r) = numeric_coeff_and_rest_expr(operand);
-      (-c, Some(r.unwrap_or_else(|| (**operand).clone())))
+      let ((cr, ci), r) = numeric_coeff_and_rest_expr(operand);
+      ((-cr, -ci), Some(r.unwrap_or_else(|| (**operand).clone())))
     }
     Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
-      if let Some(c) = literal(&args[0]) {
-        let rest = if args.len() == 2 {
-          args[1].clone()
+      // Every literal factor joins the coefficient, so `-I x` compares as
+      // coefficient -I against `x` rather than leaving `I x` in the
+      // symbolic part.
+      let mut coeff = (1.0, 0.0);
+      let mut rest: Vec<Expr> = Vec::new();
+      let mut stripped = false;
+      for arg in args.iter() {
+        if let Some((r, i)) = literal(arg) {
+          coeff = (coeff.0 * r - coeff.1 * i, coeff.0 * i + coeff.1 * r);
+          stripped = true;
         } else {
-          unevaluated("Times", &args[1..])
+          rest.push(arg.clone());
+        }
+      }
+      if stripped && !rest.is_empty() {
+        let rest = if rest.len() == 1 {
+          rest.remove(0)
+        } else {
+          unevaluated("Times", &rest)
         };
-        (c, Some(rest))
+        (coeff, Some(rest))
       } else {
-        (1.0, None)
+        ((1.0, 0.0), None)
       }
     }
     Expr::BinaryOp {
@@ -1782,14 +1811,17 @@ fn numeric_coeff_and_rest_expr(e: &Expr) -> (f64, Option<Expr>) {
       left,
       right,
     } => {
-      if let Some(c) = literal(left) {
-        let (cr, r) = numeric_coeff_and_rest_expr(right);
-        (c * cr, Some(r.unwrap_or_else(|| (**right).clone())))
+      if let Some((lr, li)) = literal(left) {
+        let ((rr, ri), r) = numeric_coeff_and_rest_expr(right);
+        (
+          (lr * rr - li * ri, lr * ri + li * rr),
+          Some(r.unwrap_or_else(|| (**right).clone())),
+        )
       } else {
-        (1.0, None)
+        ((1.0, 0.0), None)
       }
     }
-    _ => (1.0, None),
+    _ => ((1.0, 0.0), None),
   }
 }
 
@@ -1875,8 +1907,8 @@ fn term_is_negative(t: &Expr) -> bool {
   if let Some(v) = crate::functions::math_ast::try_eval_to_f64(t) {
     return v < 0.0;
   }
-  let (c, r) = numeric_coeff_and_rest_expr(t);
-  r.is_some() && c < 0.0
+  let ((cre, cim), r) = numeric_coeff_and_rest_expr(t);
+  r.is_some() && cim == 0.0 && cre < 0.0
 }
 
 /// Whether a sum sorts in the EARLY class — before monomials and atoms —

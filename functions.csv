@@ -2,7 +2,7 @@ name,description,implementation_status,effect_level,version,rank
 List,Represents a list of elements,✅,pure,1.0,1
 Rule,Represents a transformation rule lhs -> rhs,✅,pure,1.0,2
 Times,Multiply numbers — symbolic factors are ordered canonically by head then arguments,✅,pure,1.0,3
-Power,Raises a number to a power (infinite bases raise their direction and infinite exponents follow the modulus of the base),✅,pure,1.0,4
+Power,Raises a number to a power (infinite bases raise their direction; infinite exponents follow the modulus of the base; a negative base with a rational exponent keeps the sign in the radicand unless the positive part is exact),✅,pure,1.0,4
 Set,Assigns a value to a symbol,✅,stateful,1.0,5
 Plus,Adds numbers together,✅,pure,1.0,6
 Blank,Pattern object matching any expression,✅,pure,1.0,7
@@ -56,7 +56,7 @@ Log,Returns the natural logarithm of a number,✅,pure,1.0,58
 Line,Represents a line graphics primitive,✅,pure,1.0,59
 Apply,Applies a function to list elements as arguments,✅,pure,1.0,60
 Style,Applies styling to an expression for display,✅,pure,6.0,61
-Solve,Solves an equation or system of equations (unknowns may be applied functions like y[x] treated as generalized variables),✅,pure,1.0,62
+Solve,Solves an equation or system of equations (unknowns may be applied functions like y[x] treated as generalized variables; x^n == c is solved in radicals times the n-th roots of unity),✅,pure,1.0,62
 Out,Gives the expression on the nth output line in an interactive session,✅,contextual,1.0,63
 Abs,Returns the absolute value of a number,✅,pure,1.0,64
 Red,Named color evaluating to RGBColor[1 0 0],✅,pure,5.1,65
@@ -245,7 +245,7 @@ In,Returns a previous input expression,✅,pure,1.0,248
 ArcCos,Returns the arc cosine of a number,✅,pure,1.0,249
 ArcSin,Returns the arc sine of a number,✅,pure,1.0,250
 Det,Computes the determinant of a matrix,✅,pure,1.0,251
-NSolve,Solves equations numerically,✅,pure,2.0,252
+NSolve,Solves equations numerically (a x^n + c uses the same root finder as NRoots so conjugate pairs agree bit for bit),✅,pure,2.0,252
 Cross,Computes the generalized cross product of n-1 vectors of length n,✅,pure,3.0,253
 PDF,Probability density function,✅,pure,6.0,254
 TableForm,Formats data as a table,✅,pure,1.0,255
@@ -389,7 +389,7 @@ AbsolutePointSize,Graphics primitive for setting point size in absolute units,�
 Compile,Compiles a function for numerical evaluation,✅,pure,2.0,393
 Bottom,Symbol for bottom alignment,✅,pure,1.0,394
 Ceiling,Returns the smallest integer greater than or equal to a number,✅,pure,1.0,395
-Root,Represents the k-th root of a polynomial,✅,pure,3.0,396
+Root,Represents the k-th root of a polynomial (an explicit value only when the polynomial factors over the rationals into pieces of degree at most 2),✅,pure,3.0,396
 Labeled,Wrapper that attaches a label to an expression for display,✅,pure,6.0,397
 UnitSystem,Option for specifying the unit system for computations,✅,pure,10.0,398
 MatrixPower,Computes integer powers of a square matrix,✅,pure,2.0,399

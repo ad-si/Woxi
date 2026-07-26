@@ -77,6 +77,11 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(result) = try_nsolve_quadratic(args) {
     return result;
   }
+  // Roots of a x^n + c on their circle, computed once from the modulus and
+  // the angles rather than from the individual symbolic radicals.
+  if let Some(result) = try_nsolve_pure_power(args) {
+    return result;
+  }
   // Fall back to symbolic solve + numerize
   let symbolic = solve_ast(args)?;
   let numerized = nsolve_numerize(&symbolic)?;
@@ -287,6 +292,94 @@ fn try_nsolve_quadratic(
     .unwrap_or(Expr::Real(re));
     Some(Ok(Expr::List(vec![make_rule(c1), make_rule(c2)].into())))
   }
+}
+
+/// `NSolve[a x^n + c == 0, x]` for n >= 3 — the roots on a circle.
+///
+/// Numericizing the symbolic radicals instead would leave a conjugate pair
+/// differing in its last bits (`(-1)^(2/3) 2^(1/3)` and `-(-2)^(1/3)` round
+/// independently), so the roots come from the same Durand-Kerner iteration
+/// `NRoots` uses, which converges on wolframscript's values.
+fn try_nsolve_pure_power(
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  if args.len() != 2 {
+    return None;
+  }
+  let var = match &args[1] {
+    Expr::Identifier(name) => name.clone(),
+    _ => return None,
+  };
+  let poly = match &args[0] {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2
+      && operators.len() == 1
+      && operators[0] == ComparisonOp::Equal =>
+    {
+      Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(operands[0].clone()),
+        right: Box::new(operands[1].clone()),
+      }
+    }
+    Expr::FunctionCall { name, args: fargs }
+      if name == "Equal" && fargs.len() == 2 =>
+    {
+      Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(fargs[0].clone()),
+        right: Box::new(fargs[1].clone()),
+      }
+    }
+    _ => return None,
+  };
+  let expanded = expand_and_combine(&poly);
+  let terms = collect_additive_terms(&expanded);
+  let degree = max_power_int(&expanded, &var)? as usize;
+  if degree < 3 {
+    return None;
+  }
+  let mut coeffs_f64 = vec![0.0f64; degree + 1];
+  for (d, slot) in coeffs_f64.iter_mut().enumerate() {
+    for term in &terms {
+      if let Some(c) = extract_coefficient_of_power(term, &var, d as i128) {
+        *slot += crate::functions::math_ast::try_eval_to_f64(&simplify(c))?;
+      }
+    }
+  }
+  if coeffs_f64[1..degree].iter().any(|c| *c != 0.0) {
+    return None;
+  }
+  if coeffs_f64[degree] == 0.0 || coeffs_f64[0] == 0.0 {
+    return None;
+  }
+  let mut roots = durand_kerner_roots(&coeffs_f64);
+  roots.sort_by(|a, b| {
+    a.0
+      .partial_cmp(&b.0)
+      .unwrap_or(std::cmp::Ordering::Equal)
+      .then(a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+  });
+  let rules = roots
+    .into_iter()
+    .map(|(re, im)| {
+      let value = if im == 0.0 {
+        Expr::Real(re)
+      } else {
+        crate::functions::math_ast::build_complex_float_expr_keep_real(re, im)
+      };
+      Expr::List(
+        vec![Expr::Rule {
+          pattern: Box::new(Expr::Identifier(var.clone())),
+          replacement: Box::new(value),
+        }]
+        .into(),
+      )
+    })
+    .collect::<Vec<_>>();
+  Some(Ok(Expr::List(rules.into())))
 }
 
 /// Principal-branch complex power: (a+bi)^(c+di) = exp((c+di) * Log[a+bi]).
@@ -2317,20 +2410,37 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let val = simplify(solve_divide(&neg_c, a_coeff));
         let val = crate::evaluator::evaluate_expr_to_expr(&val).unwrap_or(val);
 
-        // Only use nth-root approach for symbolic values;
-        // integer values are handled better by the factoring path below
-        if !matches!(&val, Expr::Integer(_))
-          && !matches!(&val, Expr::FunctionCall { name, .. } if name == "Rational")
+        // x^n == 0 has the single root 0, reported with its multiplicity.
+        if matches!(&val, Expr::Integer(0)) {
+          let zeros = (0..degree)
+            .map(|_| make_rule(Expr::Integer(0)))
+            .collect::<Vec<_>>();
+          return Ok(Expr::List(zeros.into()));
+        }
+
+        // The nth-root approach also carries exact numeric values, which is
+        // what wolframscript reports: Solve[x^3 == 8, x] keeps the complex
+        // roots as `-2 (-1)^(1/3)` and `2 (-1)^(2/3)` rather than expanding
+        // them, and x^3 == 2 stays in radicals instead of falling back to
+        // Root objects.
         {
           let n = degree;
           let mut roots = Vec::new();
 
-          // Build val^(1/n)
-          let val_root = {
+          // Build val^(1/n). For an odd degree and a negative value the
+          // generating root is the REAL one, -|val|^(1/n), which is the
+          // basis wolframscript reports the remaining roots against:
+          // Solve[x^3 == -2, x] gives -2^(1/3), not (-2)^(1/3), as its
+          // second solution.
+          let negative_val = matches!(
+            crate::functions::math_ast::try_eval_to_f64(&val),
+            Some(v) if v < 0.0
+          );
+          let root_of = |value: &Expr| -> Expr {
             let raw = Expr::FunctionCall {
               name: "Power".to_string(),
               args: vec![
-                val.clone(),
+                value.clone(),
                 Expr::FunctionCall {
                   name: "Rational".to_string(),
                   args: vec![Expr::Integer(1), Expr::Integer(n)].into(),
@@ -2339,6 +2449,18 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               .into(),
             };
             crate::evaluator::evaluate_expr_to_expr(&raw).unwrap_or(raw)
+          };
+          let val_root = if n % 2 == 1 && negative_val {
+            let magnitude =
+              crate::evaluator::evaluate_expr_to_expr(&negate_expr(&val))
+                .unwrap_or_else(|_| negate_expr(&val));
+            let positive_root = root_of(&magnitude);
+            crate::evaluator::evaluate_expr_to_expr(&negate_expr(
+              &positive_root,
+            ))
+            .unwrap_or_else(|_| negate_expr(&positive_root))
+          } else {
+            root_of(&val)
           };
 
           // Generate n roots ordered by fractional exponent j/n
@@ -2420,7 +2542,45 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
           }
 
-          sort_solutions(&mut roots);
+          // The roots are built as raw products of a radical and a root of
+          // unity; evaluating them folds `(-1)^(2/3) 2` into `2 (-1)^(2/3)`
+          // and `(-1)^(2/5) (-1)^(1/5)` into `(-1)^(3/5)`. wolframscript
+          // then reports them in plain canonical order.
+          for root in roots.iter_mut() {
+            if let Expr::List(rules) = root
+              && rules.len() == 1
+              && let Expr::Rule {
+                pattern,
+                replacement,
+              } = &rules[0]
+            {
+              let evaluated =
+                crate::evaluator::evaluate_expr_to_expr(replacement)
+                  .unwrap_or_else(|_| (**replacement).clone());
+              *root = Expr::List(
+                vec![Expr::Rule {
+                  pattern: pattern.clone(),
+                  replacement: Box::new(evaluated),
+                }]
+                .into(),
+              );
+            }
+          }
+          let root_value = |e: &Expr| -> Expr {
+            match e {
+              Expr::List(rules) if rules.len() == 1 => match &rules[0] {
+                Expr::Rule { replacement, .. } => (**replacement).clone(),
+                other => other.clone(),
+              },
+              other => other.clone(),
+            }
+          };
+          roots.sort_by(|a, b| {
+            crate::functions::list_helpers_ast::canonical_cmp(
+              &root_value(a),
+              &root_value(b),
+            )
+          });
           return Ok(Expr::List(roots.into()));
         }
       }
@@ -4034,16 +4194,96 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let poly =
     crate::syntax::substitute_slots(body, &[Expr::Identifier(var_name.into())]);
 
+  // wolframscript reports an explicit value only when the polynomial factors
+  // over the rationals into pieces of degree at most 2, and then in the
+  // quadratic-formula form: Root[x^3 - 8, 2] is -1 - I Sqrt[3], while the
+  // irreducible Root[x^3 - 2, 1] keeps the canonical Root form even though
+  // Solve writes that root as 2^(1/3).
+  let expanded_poly = expand_and_combine(&poly);
+  let factor_degree = |factor: &Expr| -> Option<i128> {
+    let base = match factor {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        ..
+      } => left.as_ref(),
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        &args[0]
+      }
+      other => other,
+    };
+    max_power_int(base, var_name)
+  };
+  let mut factored_roots: Option<Vec<Expr>> = None;
+  if matches!(max_power_int(&expanded_poly, var_name), Some(d) if d >= 3) {
+    let factors =
+      crate::functions::polynomial_ast::factor_ast(&[expanded_poly.clone()])
+        .map(|factored| extract_times_factors(&factored))
+        .unwrap_or_default();
+    let irreducible = factors.is_empty()
+      || factors
+        .iter()
+        .any(|f| matches!(factor_degree(f), Some(d) if d >= 3));
+    if !irreducible {
+      // Each factor is solved on its own so the quadratic ones report the
+      // quadratic-formula form rather than the binomial radicals Solve
+      // would give for the product.
+      let mut collected: Vec<Expr> = Vec::new();
+      for factor in &factors {
+        if factor_degree(factor).is_none_or(|d| d < 1) {
+          continue;
+        }
+        let factor_eq = Expr::Comparison {
+          operands: vec![factor.clone(), Expr::Integer(0)],
+          operators: vec![ComparisonOp::Equal],
+        };
+        let solved =
+          solve_ast(&[factor_eq, Expr::Identifier(var_name.into())])?;
+        if let Expr::List(outer) = &solved {
+          for item in outer {
+            if let Expr::List(inner) = item {
+              for rule in inner {
+                if let Expr::Rule { replacement, .. } = rule {
+                  collected.push((**replacement).clone());
+                }
+              }
+            }
+          }
+        }
+      }
+      if !collected.is_empty() {
+        factored_roots = Some(collected);
+      }
+    }
+    if irreducible {
+      let canonical_body = match &args[0] {
+        Expr::Function { body } => Expr::Function {
+          body: Box::new(crate::evaluator::evaluate_expr_to_expr(body)?),
+        },
+        _ => args[0].clone(),
+      };
+      return Ok(Expr::FunctionCall {
+        name: "Root".to_string(),
+        args: vec![canonical_body, args[1].clone(), Expr::Integer(0)].into(),
+      });
+    }
+  }
+
   // Solve the polynomial equation poly == 0
   let eq = Expr::Comparison {
     operands: vec![poly, Expr::Integer(0)],
     operators: vec![ComparisonOp::Equal],
   };
 
-  let solutions = solve_ast(&[eq, Expr::Identifier(var_name.into())])?;
+  let solutions = match &factored_roots {
+    Some(_) => Expr::List(Vec::new().into()),
+    None => solve_ast(&[eq, Expr::Identifier(var_name.into())])?,
+  };
 
   // Extract root values from {{var -> val1}, {var -> val2}, ...}
-  let mut roots: Vec<Expr> = Vec::new();
+  let mut roots: Vec<Expr> = factored_roots.unwrap_or_default();
   if let Expr::List(outer) = &solutions {
     for item in outer {
       if let Expr::List(inner) = item {
@@ -4096,8 +4336,18 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// ascending, then complex roots sorted by (real, imag).
 pub fn root_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   use crate::functions::list_helpers_ast::expr_to_complex_parts;
-  let pa = expr_to_complex_parts(a);
-  let pb = expr_to_complex_parts(b);
+  // Radical roots such as (-1)^(1/3) carry no syntactic real and imaginary
+  // part, so fall back to their numeric value rather than leaving the pair
+  // unordered.
+  let parts = |e: &Expr| -> Option<(f64, f64)> {
+    expr_to_complex_parts(e).or_else(|| {
+      let numeric =
+        crate::evaluator::evaluate_function_call_ast("N", &[e.clone()]).ok()?;
+      expr_to_complex_parts(&numeric)
+    })
+  };
+  let pa = parts(a);
+  let pb = parts(b);
 
   match (pa, pb) {
     (Some((a_re, a_im)), Some((b_re, b_im))) => {

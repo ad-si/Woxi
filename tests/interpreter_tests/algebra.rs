@@ -15148,3 +15148,170 @@ mod fuzz_diff_round_2026_07_17 {
     assert_case("FactorTerms[2 - 4*x - 4*x^2]", "-2*(-1 + 2*x + 2*x^2)");
   }
 }
+
+mod binomial_equation_roots {
+  use super::*;
+
+  // wolframscript keeps the roots of x^n == c in radical form and lists them
+  // in canonical order, so the real root of x^3 == 8 comes first and the
+  // complex ones stay as roots of unity times the radical.
+  #[test]
+  fn perfect_power_keeps_roots_of_unity() {
+    assert_eq!(
+      interpret("Solve[x^3 == 8, x]").unwrap(),
+      "{{x -> 2}, {x -> -2*(-1)^(1/3)}, {x -> 2*(-1)^(2/3)}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^3 == 27, x]").unwrap(),
+      "{{x -> 3}, {x -> -3*(-1)^(1/3)}, {x -> 3*(-1)^(2/3)}}"
+    );
+    assert_eq!(
+      interpret("Solve[8 x^3 == 1, x]").unwrap(),
+      "{{x -> 1/2}, {x -> -1/2*(-1)^(1/3)}, {x -> (-1)^(2/3)/2}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^3 == 1/8, x]").unwrap(),
+      "{{x -> 1/2}, {x -> -1/2*(-1)^(1/3)}, {x -> (-1)^(2/3)/2}}"
+    );
+  }
+
+  // A radicand that is not a perfect power stays in radicals rather than
+  // falling back to Root objects.
+  #[test]
+  fn irrational_radicand_stays_in_radicals() {
+    assert_eq!(
+      interpret("Solve[x^3 - 2 == 0, x]").unwrap(),
+      "{{x -> -(-2)^(1/3)}, {x -> 2^(1/3)}, {x -> (-1)^(2/3)*2^(1/3)}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^3 == 5, x]").unwrap(),
+      "{{x -> -(-5)^(1/3)}, {x -> 5^(1/3)}, {x -> (-1)^(2/3)*5^(1/3)}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^3 == 12, x]").unwrap(),
+      "{{x -> -((-3)^(1/3)*2^(2/3))}, {x -> (-2)^(2/3)*3^(1/3)}, \
+       {x -> 2^(2/3)*3^(1/3)}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^4 == 2, x]").unwrap(),
+      "{{x -> -2^(1/4)}, {x -> -I*2^(1/4)}, {x -> I*2^(1/4)}, {x -> 2^(1/4)}}"
+    );
+  }
+
+  #[test]
+  fn roots_of_unity_of_every_degree() {
+    assert_eq!(
+      interpret("Solve[x^4 == 1, x]").unwrap(),
+      "{{x -> -1}, {x -> -I}, {x -> I}, {x -> 1}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^5 == 1, x]").unwrap(),
+      "{{x -> 1}, {x -> -(-1)^(1/5)}, {x -> (-1)^(2/5)}, \
+       {x -> -(-1)^(3/5)}, {x -> (-1)^(4/5)}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^6 == 1, x]").unwrap(),
+      "{{x -> -1}, {x -> 1}, {x -> -(-1)^(1/3)}, {x -> (-1)^(1/3)}, \
+       {x -> -(-1)^(2/3)}, {x -> (-1)^(2/3)}}"
+    );
+  }
+
+  // For an odd degree the generating root is the REAL one, so x^3 == -2
+  // reports -2^(1/3) rather than expanding (-2)^(1/3) everywhere.
+  #[test]
+  fn negative_right_hand_side() {
+    assert_eq!(
+      interpret("Solve[x^3 == -8, x]").unwrap(),
+      "{{x -> -2}, {x -> 2*(-1)^(1/3)}, {x -> -2*(-1)^(2/3)}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^3 == -2, x]").unwrap(),
+      "{{x -> (-2)^(1/3)}, {x -> -2^(1/3)}, {x -> -((-1)^(2/3)*2^(1/3))}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^5 == -1, x]").unwrap(),
+      "{{x -> -1}, {x -> (-1)^(1/5)}, {x -> -(-1)^(2/5)}, \
+       {x -> (-1)^(3/5)}, {x -> -(-1)^(4/5)}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^4 == -1, x]").unwrap(),
+      "{{x -> -(-1)^(1/4)}, {x -> (-1)^(1/4)}, {x -> -(-1)^(3/4)}, \
+       {x -> (-1)^(3/4)}}"
+    );
+  }
+
+  // x^n == 0 reports the single root with its multiplicity.
+  #[test]
+  fn zero_right_hand_side_repeats_the_root() {
+    assert_eq!(
+      interpret("Solve[x^3 == 0, x]").unwrap(),
+      "{{x -> 0}, {x -> 0}, {x -> 0}}"
+    );
+  }
+
+  #[test]
+  fn solve_values_and_replacement_agree() {
+    assert_eq!(
+      interpret("SolveValues[x^3 == 8, x]").unwrap(),
+      "{2, -2*(-1)^(1/3), 2*(-1)^(2/3)}"
+    );
+    assert_eq!(
+      interpret("x /. Solve[x^3 == 8, x]").unwrap(),
+      "{2, -2*(-1)^(1/3), 2*(-1)^(2/3)}"
+    );
+  }
+
+  // NSolve stays on the numeric root finder, so a conjugate pair agrees to
+  // the last bit instead of rounding each radical on its own.
+  #[test]
+  fn numeric_roots_are_conjugate_pairs() {
+    assert_eq!(
+      interpret("NSolve[x^3 == 8, x]").unwrap(),
+      "{{x -> -1. - 1.7320508075688772*I}, \
+       {x -> -1. + 1.7320508075688772*I}, {x -> 2.}}"
+    );
+    assert_eq!(
+      interpret("NSolve[x^3 == -2, x]").unwrap(),
+      "{{x -> -1.2599210498948732}, \
+       {x -> 0.6299605249474366 - 1.0911236359717214*I}, \
+       {x -> 0.6299605249474366 + 1.0911236359717214*I}}"
+    );
+    assert_eq!(
+      interpret("NSolve[x^3 == 2, x, Reals]").unwrap(),
+      "{{x -> 1.2599210498948732}}"
+    );
+  }
+
+  // Root reports an explicit value only when the polynomial factors over the
+  // rationals into pieces of degree at most 2; an irreducible cubic keeps the
+  // canonical Root form even though Solve writes that root as 2^(1/3).
+  #[test]
+  fn root_resolves_only_reducible_polynomials() {
+    assert_eq!(
+      interpret("Root[x^3 - 2, 1]").unwrap(),
+      "Root[-2 + #1^3 & , 1, 0]"
+    );
+    assert_eq!(
+      interpret("Root[x^4 - 2, 1]").unwrap(),
+      "Root[-2 + #1^4 & , 1, 0]"
+    );
+    assert_eq!(interpret("Root[x^3 - 8, 1]").unwrap(), "2");
+    assert_eq!(interpret("Root[x^3 - 8, 2]").unwrap(), "-1 - I*Sqrt[3]");
+    assert_eq!(interpret("Root[x^3 - 8, 3]").unwrap(), "-1 + I*Sqrt[3]");
+    assert_eq!(interpret("Root[x^4 - 16, 1]").unwrap(), "-2");
+  }
+
+  // Complex roots of a quadratic index by ascending imaginary part, which
+  // needs the -I Sqrt[3] term to be read as a number and not as a symbol.
+  #[test]
+  fn quadratic_roots_index_by_imaginary_part() {
+    assert_eq!(
+      interpret("Root[x^2 + 2 x + 4, 1]").unwrap(),
+      "-1 - I*Sqrt[3]"
+    );
+    assert_eq!(
+      interpret("Root[x^2 + 2 x + 4, 2]").unwrap(),
+      "-1 + I*Sqrt[3]"
+    );
+  }
+}

@@ -144,3 +144,28 @@ imaginary axis:
 $ wo '{(-Infinity)^(1/2), DirectedInfinity[I]^2, Infinity^Infinity}'
 {DirectedInfinity[I], -Infinity, ComplexInfinity}
 ```
+
+A negative base with a rational exponent splits its sign off as `(-1)^(p/q)`,
+and the radical merge folds that sign back into the radicand — so the answer
+keeps a negative base exactly when nothing can be extracted:
+
+```scrut
+$ wo '{(-2)^(1/3), (-8)^(1/3), (-24)^(1/3), (-12)^(1/3)}'
+{(-2)^(1/3), 2*(-1)^(1/3), 2*(-3)^(1/3), (-3)^(1/3)*2^(2/3)}
+```
+
+Half-integer exponents collapse to `I`:
+
+```scrut
+$ wo '{(-1)^(3/2), (-2)^(3/2), (-4)^(3/2)}'
+{-I, (-2*I)*Sqrt[2], -8*I}
+```
+
+Powers of one base add their exponents whatever its sign, while different
+bases merge under a shared exponent only while their principal values still
+line up — which allows at most one negative base:
+
+```scrut
+$ wo '{(-1)^(1/3) (-1)^(2/3), 2^(1/3) 2^(1/2), (-1)^(1/3) 2^(1/3), (-2)^(1/3) (-1)^(1/3)}'
+{-1, 2^(5/6), (-2)^(1/3), (-2)^(1/3)*(-1)^(1/3)}
+```

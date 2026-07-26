@@ -5132,7 +5132,52 @@ pub fn order_monomial_vs_sum(
 }
 
 pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
+  // Radicals of integer bases where at least one base is negative — the
+  // shape left behind by `(-2)^(1/3) (-1)^(2/3)`, which wolframscript keeps
+  // unmerged. They order by base ascending, then exponent ascending, the
+  // same rule canonical Sort uses.
+  let signed_radical_parts = |e: &Expr| -> Option<(i128, (i128, i128))> {
+    let (base, exp) = match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => (left.as_ref(), right.as_ref()),
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        (&args[0], &args[1])
+      }
+      _ => return None,
+    };
+    let Expr::Integer(b) = base else { return None };
+    let Expr::FunctionCall { name, args } = exp else {
+      return None;
+    };
+    if name != "Rational" || args.len() != 2 {
+      return None;
+    }
+    let (Expr::Integer(p), Expr::Integer(q)) = (&args[0], &args[1]) else {
+      return None;
+    };
+    Some((*b, (*p, *q)))
+  };
   symbolic_args.sort_by(|a, b| {
+    if let (Some((ba, (pa, qa))), Some((bb, (pb, qb)))) =
+      (signed_radical_parts(a), signed_radical_parts(b))
+      && (ba < 0 || bb < 0)
+    {
+      if ba != bb {
+        return ba.cmp(&bb);
+      }
+      let left = pa as f64 / qa as f64;
+      let right = pb as f64 / qb as f64;
+      if let Some(ord) = left.partial_cmp(&right)
+        && ord != std::cmp::Ordering::Equal
+      {
+        return ord;
+      }
+    }
     // Two plain function calls with different heads are ordered by those
     // heads, the way canonical order does: `Gamma[x]*Zeta[x]`, `f[x]*Zeta[x]`,
     // `Erf[x]*LogGamma[x]`. Without this they fall into the priority buckets
@@ -6015,11 +6060,35 @@ fn combine_like_bases(args: Vec<Expr>) -> Result<Vec<Expr>, InterpreterError> {
   let mut groups: Vec<(String, Expr, Vec<Expr>)> = Vec::new(); // (base_key, base, exponents)
   let mut non_combinable: Vec<Expr> = Vec::new();
 
+  // I counts as (-1)^(1/2) while powers of one base are collected, which is
+  // how wolframscript folds I (-1)^(1/4) into (-1)^(3/4). Only alongside
+  // another power of -1 though: I I^n stays I^(1 + n), not (-1)^(1/2 + n/2).
+  let rational_exponent = |exp: &Expr| matches!(exp, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2);
+  let merges_with_neg_one = args.iter().any(|arg| {
+    let (base, exp) = extract_base_exponent(arg);
+    matches!(&base, Expr::Integer(-1)) && rational_exponent(&exp)
+  });
   for arg in &args {
     // Don't combine Plus, Times, or complex expressions - only identifiers, constants, and powers thereof
     let (base, exp) = extract_base_exponent(arg);
+    let (base, exp) = if merges_with_neg_one
+      && matches!(&base, Expr::Identifier(s) | Expr::Constant(s) if s == "I")
+      && (matches!(&exp, Expr::Integer(_)) || rational_exponent(&exp))
+    {
+      (
+        Expr::Integer(-1),
+        multiply_exponents(&exp, &make_rational(1, 2)),
+      )
+    } else {
+      (base, exp)
+    };
     let combinable = match &base {
       Expr::Identifier(_) | Expr::Constant(_) => true,
+      // Exact numbers too: b^r b^s = b^(r+s) holds for a fixed base whatever
+      // its sign, so (-1)^(1/3) (-1)^(2/3) folds to -1 and 2^(1/3) 2^(1/2)
+      // to 2^(5/6). Merging different bases under one exponent is a separate,
+      // branch-sensitive rule handled in the second pass.
+      Expr::Integer(_) | Expr::BigInteger(_) => true,
       Expr::FunctionCall { .. } => true,
       Expr::BinaryOp {
         op: BinaryOperator::Plus,
@@ -6122,6 +6191,11 @@ fn combine_like_bases(args: Vec<Expr>) -> Result<Vec<Expr>, InterpreterError> {
       continue;
     }
     let exp_key = expr_to_string(&exp_i);
+    // a^r b^r = (a b)^r only holds while the arguments of the principal
+    // values still add up inside (-Pi, Pi], so at most one of the bases may
+    // be negative. (-1)^(1/3) (-1)^(1/3) is (-1)^(2/3), not 1^(1/3).
+    let mut negative_bases =
+      usize::from(negative_number_magnitude(&base_i).is_some());
     let mut bases_to_multiply = vec![base_i];
     for j in (i + 1)..result.len() {
       if used[j] {
@@ -6131,6 +6205,12 @@ fn combine_like_bases(args: Vec<Expr>) -> Result<Vec<Expr>, InterpreterError> {
       let combinable_j = is_numeric_like(&base_j)
         || (is_negative_exp && numeric_like_with_idents(&base_j));
       if combinable_j && expr_to_string(&exp_j) == exp_key {
+        if negative_number_magnitude(&base_j).is_some() {
+          if negative_bases > 0 {
+            continue;
+          }
+          negative_bases += 1;
+        }
         bases_to_multiply.push(base_j);
         used[j] = true;
       }
@@ -6246,9 +6326,20 @@ fn combine_like_bases(args: Vec<Expr>) -> Result<Vec<Expr>, InterpreterError> {
           power_two(&extracted, &Expr::Integer(-1)).ok()
         }
       })();
-      match extracted {
-        Some(e) => combined.push(e),
-        None => combined.push(power_two(&product, &exp_i)?),
+      // A negative merged radicand goes through the shared negative-base rule
+      // rather than power_two, which would split the sign back off and hand
+      // the pieces straight back to this merge.
+      let merged_negative =
+        match (negative_number_magnitude(&product), rational_parts(&exp_i)) {
+          (Some(magnitude), Some((p, q))) => {
+            Some(negative_base_rational_power(&magnitude, p, q)?)
+          }
+          _ => None,
+        };
+      match (extracted, merged_negative) {
+        (Some(e), _) => combined.push(e),
+        (None, Some(e)) => combined.push(e),
+        (None, None) => combined.push(power_two(&product, &exp_i)?),
       }
     }
   }
@@ -10860,6 +10951,11 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     && let (Expr::Integer(n), Expr::Integer(d)) = (&eargs[0], &eargs[1])
     && *d > 0
   {
+    // Negative rational base: route through the shared negative-base rule so
+    // (-1/8)^(1/3) stays exact as (-1)^(1/3)/2 instead of going numeric.
+    if *p < 0 {
+      return negative_base_rational_power(&make_rational(-*p, *q), *n, *d);
+    }
     // For a negative exponent, flip the base: (p/q)^(-n/d) = (q/p)^(n/d).
     // Only do this flip when p > 0 so the flipped base is still a plain
     // positive rational (handling signs of p is tricky and uncommon).
@@ -10944,6 +11040,20 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Negative BigInteger base with a rational exponent: same sign-splitting
+  // rule as the Integer case below, for bases beyond i128.
+  if let Expr::BigInteger(b) = base
+    && *b < BigInt::from(0)
+    && let Expr::FunctionCall { name, args: rargs } = exp
+    && name == "Rational"
+    && rargs.len() == 2
+    && let (Expr::Integer(numer), Expr::Integer(denom)) = (&rargs[0], &rargs[1])
+    && *denom > 0
+  {
+    let magnitude = crate::functions::math_ast::bigint_to_expr(-b.clone());
+    return negative_base_rational_power(&magnitude, *numer, *denom);
+  }
+
   // Special case: Integer^Rational — keep symbolic unless result is exact integer
   if let Expr::Integer(b) = base
     && let Expr::FunctionCall { name, args: rargs } = exp
@@ -10957,11 +11067,10 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     if *b == -1 {
       return simplify_neg1_rational_power(*numer, *denom);
     }
-    // Negative base (other than -1): (-n)^(p/q) = (-1)^(p/q) * n^(p/q)
-    if *b < -1 && *numer > 0 && *denom > 0 {
-      let neg1_part = simplify_neg1_rational_power(*numer, *denom)?;
-      let pos_part = power_two(&Expr::Integer(-*b), exp)?;
-      return times_ast(&[neg1_part, pos_part]);
+    // Negative base (other than -1): (-n)^(p/q) = (-1)^(p/q) * n^(p/q),
+    // re-merged into the radicand where wolframscript keeps it merged.
+    if *b < -1 && *denom > 0 {
+      return negative_base_rational_power(&Expr::Integer(-*b), *numer, *denom);
     }
     // Handle negative rational exponents for integer bases: b^(-p/q) = 1 / b^(p/q)
     // This allows the positive prime factorization code below to simplify the radical.
@@ -11665,14 +11774,12 @@ fn simplify_neg1_rational_power(
   if p == q {
     return Ok(Expr::Integer(-1));
   }
-  // If p > q, factor out (-1)^1 = -1: (-1)^(p/q) = -(-1)^((p-q)/q)
+  // If p > q, factor out (-1)^1 = -1: (-1)^(p/q) = -(-1)^((p-q)/q).
+  // The remainder goes back through this function so that a half-integer
+  // leftover still collapses to I, e.g. (-1)^(3/2) = -I rather than
+  // -Sqrt[-1].
   if p > q {
-    let remainder = p - q;
-    let (rp, rq) = rat_reduce(remainder, q);
-    let inner = Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![Expr::Integer(-1), make_rational(rp, rq)].into(),
-    };
+    let inner = simplify_neg1_rational_power(p - q, q)?;
     return Ok(negate_expr(inner));
   }
   // (-1)^(1/2) = I
@@ -11684,6 +11791,137 @@ fn simplify_neg1_rational_power(
     name: "Power".to_string(),
     args: vec![Expr::Integer(-1), make_rational(p, q)].into(),
   })
+}
+
+/// Numerator and denominator of a `Rational[p, q]` expression.
+fn rational_parts(expr: &Expr) -> Option<(i128, i128)> {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(p), Expr::Integer(q)) => Some((*p, *q)),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Magnitude of a negative exact number, or `None` when the expression is not
+/// a negative Integer/BigInteger/Rational.
+fn negative_number_magnitude(expr: &Expr) -> Option<Expr> {
+  match expr {
+    Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-*n)),
+    Expr::BigInteger(n) if *n < BigInt::from(0) => {
+      Some(crate::functions::math_ast::bigint_to_expr(-n.clone()))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Rational"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Integer(n) if *n < 0) =>
+    {
+      let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) else {
+        return None;
+      };
+      Some(make_rational(-*n, *d))
+    }
+    _ => None,
+  }
+}
+
+/// Canonical form of `(-m)^(p/q)` for a positive `magnitude`.
+///
+/// wolframscript splits the sign off as `(-1)^(p/q)` and then lets the
+/// equal-exponent radical merge fold it back into the radicand. Both steps
+/// happen here so that the two rules cannot bounce an expression between each
+/// other forever: `(-2)^(1/3)` stays put, `(-8)^(1/3)` becomes
+/// `2 (-1)^(1/3)` because the positive part is exact, `(-12)^(1/3)` becomes
+/// `(-3)^(1/3) 2^(2/3)` because only the leftover cube root can absorb the
+/// sign, and `(-2)^(5/3)` becomes `-2 (-2)^(2/3)`.
+fn negative_base_rational_power(
+  magnitude: &Expr,
+  p: i128,
+  q: i128,
+) -> Result<Expr, InterpreterError> {
+  fn flatten(expr: &Expr, out: &mut Vec<Expr>) {
+    match expr {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        for a in args {
+          flatten(a, out);
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        flatten(left, out);
+        flatten(right, out);
+      }
+      other => out.push(other.clone()),
+    }
+  }
+
+  let (p, q) = rat_reduce(p, q);
+  if q == 1 {
+    let negated = negate_expr(magnitude.clone());
+    return power_two(&negated, &Expr::Integer(p));
+  }
+  // (-1)^(p/q) = outer * (-1)^(rp/rq) with 0 <= rp/rq < 1.
+  let period = 2 * q;
+  let mut pn = ((p % period) + period) % period;
+  let mut outer = 1i128;
+  if pn >= q {
+    pn -= q;
+    outer = -1;
+  }
+  let (rp, rq) = rat_reduce(pn, q);
+
+  let pos_part = power_two(magnitude, &make_rational(p, q))?;
+  let mut factors = Vec::new();
+  flatten(&pos_part, &mut factors);
+
+  if rp != 0 {
+    if rq == 2 {
+      // (-1)^(1/2) is I, which never merges into a radicand.
+      factors.push(Expr::Identifier("I".to_string()));
+    } else {
+      let root_exp = make_rational(rp, rq);
+      let root_key = expr_to_string(&root_exp);
+      let mut merged = false;
+      for factor in factors.iter_mut() {
+        let (fbase, fexp) = extract_base_exponent(factor);
+        let positive_int = match &fbase {
+          Expr::Integer(n) => *n > 1,
+          Expr::BigInteger(n) => *n > BigInt::from(1),
+          _ => false,
+        };
+        if positive_int && expr_to_string(&fexp) == root_key {
+          *factor = Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![negate_expr(fbase), root_exp.clone()].into(),
+          };
+          merged = true;
+          break;
+        }
+      }
+      if !merged {
+        factors.push(Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![Expr::Integer(-1), root_exp].into(),
+        });
+      }
+    }
+  }
+  if outer < 0 {
+    factors.insert(0, Expr::Integer(-1));
+  }
+  match factors.len() {
+    0 => Ok(Expr::Integer(1)),
+    1 => Ok(factors.remove(0)),
+    _ => times_ast(&factors),
+  }
 }
 
 /// Thread a binary operation over lists
