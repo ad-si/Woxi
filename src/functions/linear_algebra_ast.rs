@@ -9605,7 +9605,7 @@ impl QNum {
       (n, d)
     };
     let (n, d) = rat_reduce(n, d);
-    Some(QNum { n: n, d: d })
+    Some(QNum { n, d })
   }
   fn zero() -> QNum {
     QNum { n: 0, d: 1 }

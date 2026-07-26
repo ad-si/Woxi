@@ -12788,3 +12788,173 @@ mod tex_form_arrays {
     );
   }
 }
+
+// CForm and FortranForm render an expression as C / Fortran source, which
+// means operator spellings and — for Fortran, whose `**` binds tighter than
+// everything — the parentheses the target language needs.
+mod c_and_fortran_form {
+  use super::*;
+
+  #[test]
+  fn fortran_power_parenthesizes() {
+    // Regression: these dropped the parentheses and produced wrong code —
+    // `(a + b)^2` came out as `a + b**2`.
+    assert_eq!(
+      interpret("ToString[FortranForm[(a + b)^2]]").unwrap(),
+      "(a + b)**2"
+    );
+    assert_eq!(
+      interpret("ToString[FortranForm[x^(y + 1)]]").unwrap(),
+      "x**(1 + y)"
+    );
+    assert_eq!(
+      interpret("ToString[FortranForm[(a^b)^c]]").unwrap(),
+      "(a**b)**c"
+    );
+    assert_eq!(
+      interpret("ToString[FortranForm[E^(2 x)]]").unwrap(),
+      "E**(2*x)"
+    );
+    assert_eq!(
+      interpret("ToString[FortranForm[x^(-a)]]").unwrap(),
+      "x**(-a)"
+    );
+    assert_eq!(interpret("ToString[FortranForm[x^-2]]").unwrap(), "x**(-2)");
+    // `**` is right-associative, so a power exponent needs no parentheses.
+    assert_eq!(
+      interpret("ToString[FortranForm[a^b^c]]").unwrap(),
+      "a**b**c"
+    );
+    assert_eq!(interpret("ToString[FortranForm[2^x]]").unwrap(), "2**x");
+    // A -1 exponent is a reciprocal instead.
+    assert_eq!(interpret("ToString[FortranForm[x^-1]]").unwrap(), "1/x");
+    assert_eq!(
+      interpret("ToString[FortranForm[1/(a + b)]]").unwrap(),
+      "1/(a + b)"
+    );
+  }
+
+  #[test]
+  fn sums_subtract_instead_of_adding_a_negative() {
+    // Regression: `a - b` used to print as `a + -b`.
+    assert_eq!(interpret("ToString[CForm[a - b]]").unwrap(), "a - b");
+    assert_eq!(
+      interpret("ToString[CForm[a - b - c]]").unwrap(),
+      "a - b - c"
+    );
+    assert_eq!(interpret("ToString[CForm[1 - x]]").unwrap(), "1 - x");
+    assert_eq!(interpret("ToString[CForm[3 - 2 x]]").unwrap(), "3 - 2*x");
+    assert_eq!(interpret("ToString[CForm[-(a + b)]]").unwrap(), "-a - b");
+    assert_eq!(
+      interpret("ToString[FortranForm[a - (b - c)]]").unwrap(),
+      "a - b + c"
+    );
+  }
+
+  #[test]
+  fn operator_spellings() {
+    // C uses its own operators; Fortran spells them between dots.
+    assert_eq!(interpret("ToString[CForm[x && y]]").unwrap(), "x && y");
+    assert_eq!(
+      interpret("ToString[CForm[And[a, b, c]]]").unwrap(),
+      "a && b && c"
+    );
+    assert_eq!(interpret("ToString[CForm[x || y]]").unwrap(), "x || y");
+    assert_eq!(interpret("ToString[CForm[Mod[a, b]]]").unwrap(), "a % b");
+    assert_eq!(
+      interpret("ToString[FortranForm[x && y]]").unwrap(),
+      "x.and.y"
+    );
+    assert_eq!(interpret("ToString[FortranForm[!x]]").unwrap(), ".not.x");
+    assert_eq!(interpret("ToString[FortranForm[x < y]]").unwrap(), "x.lt.y");
+    assert_eq!(
+      interpret("ToString[FortranForm[x <= y]]").unwrap(),
+      "x.le.y"
+    );
+    assert_eq!(interpret("ToString[FortranForm[x > y]]").unwrap(), "x.gt.y");
+    assert_eq!(
+      interpret("ToString[FortranForm[x >= y]]").unwrap(),
+      "x.ge.y"
+    );
+    assert_eq!(
+      interpret("ToString[FortranForm[x == y]]").unwrap(),
+      "x.eq.y"
+    );
+    assert_eq!(
+      interpret("ToString[FortranForm[x != y]]").unwrap(),
+      "x.ne.y"
+    );
+    // Fortran keeps Mod as a call, and a comparison chain becomes one.
+    assert_eq!(
+      interpret("ToString[FortranForm[Mod[a, b]]]").unwrap(),
+      "Mod(a,b)"
+    );
+    assert_eq!(
+      interpret("ToString[CForm[a < b < c]]").unwrap(),
+      "Less(a,b,c)"
+    );
+  }
+
+  #[test]
+  fn complex_numbers_and_infinities() {
+    assert_eq!(
+      interpret("ToString[CForm[1 + 2 I]]").unwrap(),
+      "Complex(1,2)"
+    );
+    assert_eq!(interpret("ToString[CForm[2 I]]").unwrap(), "Complex(0,2)");
+    assert_eq!(
+      interpret("ToString[CForm[1.5 + 2.5 I]]").unwrap(),
+      "Complex(1.5,2.5)"
+    );
+    assert_eq!(
+      interpret("ToString[FortranForm[3 - 4 I]]").unwrap(),
+      "(3,-4)"
+    );
+    assert_eq!(
+      interpret("ToString[CForm[Infinity]]").unwrap(),
+      "DirectedInfinity(1)"
+    );
+    assert_eq!(
+      interpret("ToString[CForm[-Infinity]]").unwrap(),
+      "DirectedInfinity(-1)"
+    );
+    assert_eq!(
+      interpret("ToString[FortranForm[ComplexInfinity]]").unwrap(),
+      "DirectedInfinity()"
+    );
+  }
+
+  // Reals switch to exponent notation outside a decimal exponent of ±6.
+  #[test]
+  fn real_number_notation() {
+    assert_eq!(interpret("ToString[CForm[100000.]]").unwrap(), "100000.");
+    assert_eq!(interpret("ToString[CForm[1000000.]]").unwrap(), "1.e6");
+    assert_eq!(interpret("ToString[CForm[0.00001]]").unwrap(), "0.00001");
+    assert_eq!(interpret("ToString[CForm[1.5*^-10]]").unwrap(), "1.5e-10");
+    assert_eq!(interpret("ToString[CForm[1.5*^100]]").unwrap(), "1.5e100");
+    assert_eq!(interpret("ToString[FortranForm[1.5*^7]]").unwrap(), "1.5e7");
+    assert_eq!(interpret("ToString[CForm[123456.7]]").unwrap(), "123456.7");
+    assert_eq!(interpret("ToString[CForm[0.001]]").unwrap(), "0.001");
+  }
+
+  #[test]
+  fn curried_calls_and_roots() {
+    assert_eq!(interpret("ToString[CForm[f[x][y]]]").unwrap(), "f(x)(y)");
+    assert_eq!(
+      interpret("ToString[CForm[D[f[x], x]]]").unwrap(),
+      "Derivative(1)(f)(x)"
+    );
+    assert_eq!(
+      interpret("ToString[CForm[Sqrt[2]/2]]").unwrap(),
+      "1/Sqrt(2)"
+    );
+    assert_eq!(
+      interpret("ToString[FortranForm[Sqrt[2]/2]]").unwrap(),
+      "1/Sqrt(2)"
+    );
+    assert_eq!(
+      interpret("ToString[FortranForm[Sqrt[a + b]]]").unwrap(),
+      "Sqrt(a + b)"
+    );
+  }
+}

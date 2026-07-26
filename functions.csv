@@ -1337,7 +1337,7 @@ FaceGrids,Option for Graphics3D specifying grid lines on bounding box faces,✅,
 GeoDistance,Geodesic distance between two geo positions as a Quantity,✅,pure,7.0,1351
 PolynomialRemainder,Remainder of polynomial division,✅,pure,1.0,1353
 Signature,Sign of the permutation that canonically sorts the parts of any non-atomic expression (0 if any are equal),✅,pure,1.0,1353
-CForm,Format expression as C code,✅,pure,1.0,1354
+CForm,Format expression as C code with C operator spellings and Complex(re im) numbers,✅,pure,1.0,1354
 Permute,Permute the elements of any expression by a permutation,✅,pure,8.0,1355
 Padding,Option specifying padding scheme for array and image operations,✅,pure,7.0,1357
 UnitVector,Generate a unit vector with a 1 at a specified position,✅,pure,6.0,1357
@@ -2745,7 +2745,7 @@ PrimitiveRoot,Finds a primitive root modulo n,✅,pure,6.0,2798
 CellEvaluationFunction,,🚫,,6.0,2807
 CurrencyConvert,,🚫,,10.0,2807
 ExpandFileName,expand a file name to an absolute path,✅,none,7.0,2807
-FortranForm,Format expression as Fortran code,✅,pure,1.0,2807
+FortranForm,Format expression as Fortran code with dotted operators and the parentheses ** needs,✅,pure,1.0,2807
 OrthogonalMatrixQ,Tests whether a matrix is orthogonal,✅,None,10.0,2807
 ParallelCombine,,🚫,,7.0,2807
 RandomEntity,,🚫,,10.2,2807

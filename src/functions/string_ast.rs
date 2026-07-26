@@ -11384,38 +11384,225 @@ fn c_like_times(args: &[Expr], fortran: bool) -> String {
   }
 }
 
+/// Is `expr` the exact rational `n/d` used as an exponent?
+fn is_rational_exponent(expr: &Expr, n: i128, d: i128) -> bool {
+  matches!(expr, Expr::FunctionCall { name, args }
+    if name == "Rational"
+      && args.len() == 2
+      && matches!(&args[0], Expr::Integer(a) if *a == n)
+      && matches!(&args[1], Expr::Integer(b) if *b == d))
+}
+
+/// A comparison. A single relation is infix (`a < b`, or `a.lt.b` in Fortran);
+/// a chain of two or more becomes the function form `Less(a,b,c)`.
+fn c_like_comparison(
+  operands: &[Expr],
+  operators: &[ComparisonOp],
+  render: &dyn Fn(&Expr) -> String,
+  fortran: bool,
+) -> String {
+  let head = |op: &ComparisonOp| match op {
+    ComparisonOp::Equal => "Equal",
+    ComparisonOp::NotEqual => "Unequal",
+    ComparisonOp::Less => "Less",
+    ComparisonOp::LessEqual => "LessEqual",
+    ComparisonOp::Greater => "Greater",
+    ComparisonOp::GreaterEqual => "GreaterEqual",
+    ComparisonOp::SameQ => "SameQ",
+    ComparisonOp::UnsameQ => "UnsameQ",
+  };
+  if operators.len() != 1 {
+    let name = operators.first().map_or("Equal", head);
+    let parts: Vec<String> = operands.iter().map(render).collect();
+    return format!("{}({})", name, parts.join(","));
+  }
+  let infix = match (&operators[0], fortran) {
+    (ComparisonOp::Equal, false) => " == ",
+    (ComparisonOp::NotEqual, false) => " != ",
+    (ComparisonOp::Less, false) => " < ",
+    (ComparisonOp::LessEqual, false) => " <= ",
+    (ComparisonOp::Greater, false) => " > ",
+    (ComparisonOp::GreaterEqual, false) => " >= ",
+    (ComparisonOp::Equal, true) => ".eq.",
+    (ComparisonOp::NotEqual, true) => ".ne.",
+    (ComparisonOp::Less, true) => ".lt.",
+    (ComparisonOp::LessEqual, true) => ".le.",
+    (ComparisonOp::Greater, true) => ".gt.",
+    (ComparisonOp::GreaterEqual, true) => ".ge.",
+    (op, _) => {
+      let parts: Vec<String> = operands.iter().map(render).collect();
+      return format!("{}({})", head(op), parts.join(","));
+    }
+  };
+  let parts: Vec<String> = operands.iter().map(render).collect();
+  parts.join(infix)
+}
+
+/// A machine real the way CForm and FortranForm print it: plain decimal while
+/// the decimal exponent stays within ±6, and `<mantissa>e<exp>` outside that
+/// (`1000000.` is `1.e6`, `0.000001` is `1.e-6`).
+fn c_like_real(value: f64) -> String {
+  let plain = |v: f64| -> String {
+    let s = format!("{}", v);
+    if s.contains('.') || s.contains('e') || s.contains('E') {
+      s
+    } else {
+      format!("{}.", s)
+    }
+  };
+  if value == 0.0 || !value.is_finite() {
+    return plain(value);
+  }
+  let exponent = value.abs().log10().floor() as i32;
+  if (-6..6).contains(&exponent) {
+    return plain(value);
+  }
+  let scientific = format!("{:e}", value);
+  match scientific.split_once('e') {
+    Some((mantissa, exp)) if !mantissa.contains('.') => {
+      format!("{}.e{}", mantissa, exp)
+    }
+    _ => scientific,
+  }
+}
+
+/// Is this term a negated one, so that the sum should read `a - b` rather than
+/// `a + -b`? Returns the term without its sign when it is.
+fn negated_term(expr: &Expr) -> Option<Expr> {
+  match expr {
+    Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-n)),
+    Expr::Real(f) if *f < 0.0 => Some(Expr::Real(-f)),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => Some((**operand).clone()),
+    Expr::FunctionCall { name, args }
+      if name == "Times" && !args.is_empty() =>
+    {
+      let head = negated_term(&args[0])?;
+      let mut rest: Vec<Expr> = vec![head];
+      rest.extend(args[1..].iter().cloned());
+      // A leading coefficient of -1 disappears entirely: -x, not -1*x.
+      if matches!(rest[0], Expr::Integer(1)) && rest.len() > 1 {
+        rest.remove(0);
+      }
+      Some(if rest.len() == 1 {
+        rest.remove(0)
+      } else {
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: rest.into(),
+        }
+      })
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let head = negated_term(left)?;
+      Some(if matches!(head, Expr::Integer(1)) {
+        (**right).clone()
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(head),
+          right: right.clone(),
+        }
+      })
+    }
+    _ => None,
+  }
+}
+
+/// Join the terms of a sum, turning a negated term into a subtraction.
+fn c_like_plus(args: &[Expr], render: &dyn Fn(&Expr) -> String) -> String {
+  let mut out = String::new();
+  for (i, term) in args.iter().enumerate() {
+    match (i, negated_term(term)) {
+      (0, _) => out.push_str(&render(term)),
+      (_, Some(positive)) => {
+        out.push_str(" - ");
+        out.push_str(&render(&positive));
+      }
+      (_, None) => {
+        out.push_str(" + ");
+        out.push_str(&render(term));
+      }
+    }
+  }
+  out
+}
+
+/// The direction of `Infinity`, `-Infinity`, `ComplexInfinity` or
+/// `DirectedInfinity[…]`, which both forms print as `DirectedInfinity(dir)`.
+fn c_like_infinity(expr: &Expr) -> Option<String> {
+  match expr {
+    Expr::Identifier(n) | Expr::Constant(n) if n == "Infinity" => {
+      Some("DirectedInfinity(1)".to_string())
+    }
+    Expr::Identifier(n) if n == "ComplexInfinity" => {
+      Some("DirectedInfinity()".to_string())
+    }
+    _ if crate::functions::math_ast::is_neg_infinity(expr) => {
+      Some("DirectedInfinity(-1)".to_string())
+    }
+    _ => None,
+  }
+}
+
+/// The real and imaginary parts of an explicitly numeric complex expression.
+fn c_like_complex_parts(expr: &Expr) -> Option<(Expr, Expr)> {
+  let (re, im) =
+    crate::evaluator::dispatch::complex_and_special::split_real_imag_symbolic(
+      expr,
+    )?;
+  let numeric = |e: &Expr| {
+    matches!(e, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
+      || matches!(e, Expr::UnaryOp { operand, .. }
+        if matches!(operand.as_ref(), Expr::Integer(_) | Expr::Real(_)))
+  };
+  if matches!(im, Expr::Integer(0)) || !numeric(&re) || !numeric(&im) {
+    return None;
+  }
+  Some((re, im))
+}
+
 pub fn expr_to_c(expr: &Expr) -> String {
+  if let Some(infinity) = c_like_infinity(expr) {
+    return infinity;
+  }
+  if let Some((re, im)) = c_like_complex_parts(expr) {
+    return format!("Complex({},{})", expr_to_c(&re), expr_to_c(&im));
+  }
   match expr {
     Expr::Integer(n) => n.to_string(),
     Expr::BigInteger(n) => n.to_string(),
-    Expr::Real(f) => {
-      let s = format!("{}", f);
-      // Ensure decimal point
-      if !s.contains('.') && !s.contains('e') && !s.contains('E') {
-        format!("{}.", s)
-      } else {
-        s
-      }
-    }
+    Expr::Real(f) => c_like_real(*f),
     Expr::String(s) => format!("\"{}\"", s),
     Expr::Identifier(name) => name.clone(),
     Expr::Constant(name) => name.clone(),
     Expr::FunctionCall { name, args } => match name.as_str() {
-      "Plus" => {
-        let parts: Vec<String> = args.iter().map(expr_to_c).collect();
-        parts.join(" + ")
-      }
+      "Plus" => c_like_plus(args, &expr_to_c),
       "Times" => {
         let mut factors = Vec::new();
         flatten_times(expr, &mut factors);
         c_like_times(&factors, false)
       }
+      // C spells these as operators rather than calls.
+      "And" => args.iter().map(expr_to_c).collect::<Vec<_>>().join(" && "),
+      "Or" => args.iter().map(expr_to_c).collect::<Vec<_>>().join(" || "),
+      "Not" if args.len() == 1 => format!("!{}", expr_to_c(&args[0])),
+      "Mod" if args.len() == 2 => {
+        format!("{} % {}", expr_to_c(&args[0]), expr_to_c(&args[1]))
+      }
       "Power" if args.len() == 2 => {
         if matches!(&args[1], Expr::Integer(-1)) {
           format!("1/{}", c_paren(&args[0]))
-        } else if matches!(&args[1], Expr::FunctionCall { name, args: ra } if name == "Rational" && ra.len() == 2 && matches!(&ra[0], Expr::Integer(1)) && matches!(&ra[1], Expr::Integer(2)))
-        {
+        } else if is_rational_exponent(&args[1], 1, 2) {
           format!("Sqrt({})", expr_to_c(&args[0]))
+        } else if is_rational_exponent(&args[1], -1, 2) {
+          format!("1/Sqrt({})", expr_to_c(&args[0]))
         } else {
           format!("Power({},{})", expr_to_c(&args[0]), expr_to_c(&args[1]))
         }
@@ -11450,9 +11637,10 @@ pub fn expr_to_c(expr: &Expr) -> String {
         BinaryOperator::Power => {
           if matches!(right.as_ref(), Expr::Integer(-1)) {
             format!("1/{}", c_paren(left))
-          } else if matches!(right.as_ref(), Expr::FunctionCall { name, args: ra } if name == "Rational" && ra.len() == 2 && matches!(&ra[0], Expr::Integer(1)) && matches!(&ra[1], Expr::Integer(2)))
-          {
+          } else if is_rational_exponent(right, 1, 2) {
             format!("Sqrt({})", expr_to_c(left))
+          } else if is_rational_exponent(right, -1, 2) {
+            format!("1/Sqrt({})", expr_to_c(left))
           } else {
             format!("Power({},{})", l, r)
           }
@@ -11470,6 +11658,14 @@ pub fn expr_to_c(expr: &Expr) -> String {
       let parts: Vec<String> = items.iter().map(expr_to_c).collect();
       format!("List({})", parts.join(","))
     }
+    // `f[a][b]` is `f(a)(b)`; this also covers Derivative[n][f][x].
+    Expr::CurriedCall { func, args } => {
+      format!("{}({})", expr_to_c(func), c_args(args))
+    }
+    Expr::Comparison {
+      operands,
+      operators,
+    } => c_like_comparison(operands, operators, &expr_to_c, false),
     // Rational numbers are FunctionCall{name:"Rational", args:[num, den]}
     // but they get evaluated before reaching here, so this pattern is rare
     _ => crate::syntax::expr_to_string(expr),
@@ -11500,39 +11696,41 @@ fn c_args(args: &[Expr]) -> String {
 
 /// Convert an expression to Fortran language format
 pub fn expr_to_fortran(expr: &Expr) -> String {
+  if let Some(infinity) = c_like_infinity(expr) {
+    return infinity;
+  }
+  if let Some((re, im)) = c_like_complex_parts(expr) {
+    return format!("({},{})", expr_to_fortran(&re), expr_to_fortran(&im));
+  }
   match expr {
     Expr::Integer(n) => n.to_string(),
     Expr::BigInteger(n) => n.to_string(),
-    Expr::Real(f) => {
-      let s = format!("{}", f);
-      // Ensure decimal point
-      if !s.contains('.') && !s.contains('e') && !s.contains('E') {
-        format!("{}.", s)
-      } else {
-        s
-      }
-    }
+    Expr::Real(f) => c_like_real(*f),
     Expr::String(s) => format!("\"{}\"", s),
     Expr::Identifier(name) => name.clone(),
     Expr::Constant(name) => name.clone(),
     Expr::FunctionCall { name, args } => match name.as_str() {
-      "Plus" => {
-        let parts: Vec<String> = args.iter().map(expr_to_fortran).collect();
-        parts.join(" + ")
-      }
+      "Plus" => c_like_plus(args, &expr_to_fortran),
       "Times" => {
         let mut factors = Vec::new();
         flatten_times(expr, &mut factors);
         c_like_times(&factors, true)
       }
-      "Power" if args.len() == 2 => {
-        if matches!(&args[1], Expr::FunctionCall { name, args: ra } if name == "Rational" && ra.len() == 2 && matches!(&ra[0], Expr::Integer(1)) && matches!(&ra[1], Expr::Integer(2)))
-        {
-          format!("Sqrt({})", expr_to_fortran(&args[0]))
-        } else {
-          format!("{}**{}", fortran_paren(&args[0]), fortran_paren(&args[1]))
-        }
+      // Fortran spells the logical operators between dots.
+      "And" => args
+        .iter()
+        .map(expr_to_fortran)
+        .collect::<Vec<_>>()
+        .join(".and."),
+      "Or" => args
+        .iter()
+        .map(expr_to_fortran)
+        .collect::<Vec<_>>()
+        .join(".or."),
+      "Not" if args.len() == 1 => {
+        format!(".not.{}", expr_to_fortran(&args[0]))
       }
+      "Power" if args.len() == 2 => fortran_power(&args[0], &args[1]),
       "Rational" if args.len() == 2 => {
         // Wolfram FortranForm evaluates rationals to decimal
         if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
@@ -11568,7 +11766,7 @@ pub fn expr_to_fortran(expr: &Expr) -> String {
           c_like_times(&factors, true)
         }
         BinaryOperator::Divide => format!("{}/{}", l, r),
-        BinaryOperator::Power => format!("{}**{}", l, r),
+        BinaryOperator::Power => fortran_power(left, right),
         _ => format!("{}({})", format!("{:?}", op), format!("{},{}", l, r)),
       }
     }
@@ -11578,12 +11776,88 @@ pub fn expr_to_fortran(expr: &Expr) -> String {
     } => {
       format!("-{}", fortran_paren(operand))
     }
+    Expr::UnaryOp {
+      op: UnaryOperator::Not,
+      operand,
+    } => {
+      format!(".not.{}", expr_to_fortran(operand))
+    }
     Expr::List(items) => {
       let parts: Vec<String> = items.iter().map(expr_to_fortran).collect();
       format!("List({})", parts.join(","))
     }
+    // `f[a][b]` is `f(a)(b)`; this also covers Derivative[n][f][x].
+    Expr::CurriedCall { func, args } => {
+      format!("{}({})", expr_to_fortran(func), fortran_args(args))
+    }
+    Expr::Comparison {
+      operands,
+      operators,
+    } => c_like_comparison(operands, operators, &expr_to_fortran, true),
     _ => crate::syntax::expr_to_string(expr),
   }
+}
+
+/// `base**exponent`, with the parentheses Fortran needs: `**` binds tighter
+/// than anything but an atom, so a compound or negative exponent — and a base
+/// that is itself a sum, product, quotient or power — has to be wrapped.
+/// An exponent of -1 (or -1/2) is written as a reciprocal instead.
+fn fortran_power(base: &Expr, exponent: &Expr) -> String {
+  if is_rational_exponent(exponent, 1, 2) {
+    return format!("Sqrt({})", expr_to_fortran(base));
+  }
+  if is_rational_exponent(exponent, -1, 2) {
+    return format!("1/Sqrt({})", expr_to_fortran(base));
+  }
+  if matches!(exponent, Expr::Integer(-1)) {
+    return format!("1/{}", fortran_paren(base));
+  }
+  // `**` is right-associative, so a Power exponent needs no parentheses; a
+  // sum, product or negative one does.
+  let exponent_needs_parens = matches!(exponent, Expr::FunctionCall { name, .. }
+      if matches!(name.as_str(), "Plus" | "Times"))
+    || matches!(
+      exponent,
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus
+          | BinaryOperator::Minus
+          | BinaryOperator::Times
+          | BinaryOperator::Divide,
+        ..
+      }
+    )
+    || matches!(
+      exponent,
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        ..
+      }
+    )
+    || matches!(exponent, Expr::Integer(n) if *n < 0)
+    || matches!(exponent, Expr::Real(f) if *f < 0.0);
+  let exponent_text = expr_to_fortran(exponent);
+  let base_needs_parens = !matches!(
+    base,
+    Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::Identifier(_)
+      | Expr::Constant(_)
+  ) && !matches!(base, Expr::FunctionCall { name, .. }
+      if !matches!(name.as_str(), "Plus" | "Times" | "Power" | "Rational"));
+  format!(
+    "{}**{}",
+    if base_needs_parens {
+      format!("({})", expr_to_fortran(base))
+    } else {
+      expr_to_fortran(base)
+    },
+    if exponent_needs_parens {
+      format!("({})", exponent_text)
+    } else {
+      exponent_text
+    }
+  )
 }
 
 /// Add parentheses for Fortran output if needed
