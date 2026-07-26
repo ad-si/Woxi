@@ -11906,6 +11906,20 @@ mod list_convolve {
       "{1, 3, 5, 7}"
     );
   }
+
+  // A 5th and 6th argument replace Times and Plus. With List for both, the
+  // terms come out in data order — convolution walks the kernel backwards.
+  #[test]
+  fn generalized_operations() {
+    assert_eq!(
+      interpret("ListConvolve[{x, y}, {a, b, c}, 1, p, Times, Plus]").unwrap(),
+      "{a*x + p*y, b*x + a*y, c*x + b*y}"
+    );
+    assert_eq!(
+      interpret("ListConvolve[{x, y}, {a, b, c}, 1, p, List, List]").unwrap(),
+      "{{{y, p}, {x, a}}, {{y, a}, {x, b}}, {{y, b}, {x, c}}}"
+    );
+  }
 }
 
 mod list_correlate {
@@ -11984,6 +11998,73 @@ mod list_correlate {
       interpret("ListCorrelate[{1, 1}, {1, 2, 3, 4}, {1, 1}, 0]").unwrap(),
       "{3, 5, 7, 4}"
     );
+  }
+
+  // A padding *list* extends the data cyclically: the element at index i
+  // outside the data is padding[[(i - 1) mod L + 1]], so which element the
+  // first overhanging position takes depends on how many there are.
+  #[test]
+  fn cyclic_padding_list() {
+    assert_eq!(
+      interpret("ListCorrelate[{x, y}, {a, b, c, d}, {1, 1}, {p, q}]").unwrap(),
+      "{a*x + b*y, b*x + c*y, c*x + d*y, d*x + p*y}"
+    );
+    assert_eq!(
+      interpret("ListCorrelate[{x, y}, {a, b, c, d}, {1, 1}, {p, q, r}]")
+        .unwrap(),
+      "{a*x + b*y, b*x + c*y, c*x + d*y, d*x + q*y}"
+    );
+    assert_eq!(
+      interpret("ListCorrelate[{x, y, z}, {a, b, c, d}, {1, 1}, {p, q}]")
+        .unwrap(),
+      "{a*x + b*y + c*z, b*x + c*y + d*z, c*x + d*y + p*z, d*x + p*y + q*z}"
+    );
+    // Padding on the left as well, from an overhang that starts inside the
+    // kernel.
+    assert_eq!(
+      interpret("ListCorrelate[{x, y, z}, {a, b, c}, {2, 1}, {p, q}]").unwrap(),
+      "{q*x + a*y + b*z, a*x + b*y + c*z, b*x + c*y + q*z, c*x + q*y + p*z}"
+    );
+    assert_eq!(
+      interpret("ListCorrelate[{x, y, z, w}, {a, b, c}, {3, 1}, {p, q, r}]")
+        .unwrap(),
+      "{b*w + q*x + r*y + a*z, c*w + r*x + a*y + b*z, \
+       p*w + a*x + b*y + c*z, q*w + b*x + c*y + p*z, \
+       r*w + c*x + p*y + q*z}"
+    );
+  }
+
+  // A 5th and 6th argument replace Times and Plus, giving each output
+  // element as h[g[k1, d1], g[k2, d2], ...].
+  #[test]
+  fn generalized_operations() {
+    assert_eq!(
+      interpret("ListCorrelate[{x, y}, {a, b, c}, 1, p, Times, Plus]").unwrap(),
+      "{a*x + b*y, b*x + c*y, c*x + p*y}"
+    );
+    assert_eq!(
+      interpret("ListCorrelate[{x, y}, {a, b, c}, 1, p, f, g]").unwrap(),
+      "{g[f[x, a], f[y, b]], g[f[x, b], f[y, c]], g[f[x, c], f[y, p]]}"
+    );
+    assert_eq!(
+      interpret("ListCorrelate[{x, y}, {a, b, c}, 1, p, List, List]").unwrap(),
+      "{{{x, a}, {y, b}}, {{x, b}, {y, c}}, {{x, c}, {y, p}}}"
+    );
+    assert_eq!(
+      interpret("ListCorrelate[{1, 1}, {1, 2, 3, 4}, {1, -1}, 0, Times, Max]")
+        .unwrap(),
+      "{2, 3, 4}"
+    );
+  }
+
+  // The overhang forms are one-dimensional. A multi-dimensional kernel used
+  // to be treated as a list of scalars, producing nonsense like
+  // `{1, 1}*{a, b, c} + {1, 1}*{d, e, f}`; it now stays unevaluated.
+  #[test]
+  fn multidimensional_overhang_stays_unevaluated() {
+    let input =
+      "ListCorrelate[{{1, 1}, {1, 1}}, {{a, b, c}, {d, e, f}, {g, h, i}}, 1]";
+    assert_eq!(interpret(input).unwrap(), input);
   }
 }
 

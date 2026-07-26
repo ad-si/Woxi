@@ -1097,7 +1097,7 @@ Goto,Jumps to a Label,✅,pure,1.0,1106
 AdjacencyGraph,Creates a graph from an adjacency matrix,✅,1,8.0,1107
 LerchPhi,Lerch transcendent special function,✅,pure,1.0,1108
 StringReverse,Reverses the characters in a string,✅,pure,2.0,1109
-ListConvolve,Computes discrete convolution of two lists,✅,pure,4.0,1110
+ListConvolve,Discrete convolution of two lists with optional overhang cyclic or list padding and generalized operations,✅,pure,4.0,1110
 EllipticF,Incomplete elliptic integral of the first kind F(phi m),✅,pure,1.0,1111
 LUDecomposition,LU decomposition with partial pivoting,✅,pure,3.0,1112
 TargetFunctions,,🚫,,3.0,1113
@@ -1116,7 +1116,7 @@ CirclePoints,Gives equally spaced points on a circle,✅,pure,10.1,1126
 NetChain,,🚫,,11.0,1126
 FiniteGroupData,,🚫,,7.0,1127
 Factorial2,Returns the double factorial,✅,pure,1.0,1128
-ListCorrelate,Computes discrete cross-correlation of two lists,✅,pure,4.0,1129
+ListCorrelate,Discrete cross-correlation of two lists with optional overhang cyclic or list padding and generalized operations,✅,pure,4.0,1129
 After,,🚫,,3.0,1130
 IntegerLength,Returns the number of digits in an integer,✅,pure,6.0,1132
 StirlingS2,Returns the Stirling number of the second kind,✅,pure,1.0,1133

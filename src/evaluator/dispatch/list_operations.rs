@@ -5299,10 +5299,15 @@ pub fn dispatch_list_operations(
     // ListConvolve[ker, list, k] / [ker, list, {kL, kR}] — cyclic convolution
     // with an alignment (overhang) spec; an optional 4th argument supplies a
     // scalar padding used instead of cyclic wraparound.
-    "ListConvolve" if args.len() == 3 || args.len() == 4 => {
-      let padding = args.get(3);
+    "ListConvolve" if (3..=6).contains(&args.len()) => {
       return Some(list_convolve_overhang(
-        &args[0], &args[1], &args[2], padding, args,
+        &args[0],
+        &args[1],
+        &args[2],
+        args.get(3),
+        args.get(4),
+        args.get(5),
+        args,
       ));
     }
     // ListCorrelate[kernel, list] — discrete cross-correlation
@@ -5312,10 +5317,15 @@ pub fn dispatch_list_operations(
     // ListCorrelate[ker, list, k] / [ker, list, {kL, kR}] — cyclic
     // cross-correlation with an alignment (overhang) spec; an optional 4th
     // argument supplies a scalar padding used instead of cyclic wraparound.
-    "ListCorrelate" if args.len() == 3 || args.len() == 4 => {
-      let padding = args.get(3);
+    "ListCorrelate" if (3..=6).contains(&args.len()) => {
       return Some(list_correlate_overhang(
-        &args[0], &args[1], &args[2], padding, args,
+        &args[0],
+        &args[1],
+        &args[2],
+        args.get(3),
+        args.get(4),
+        args.get(5),
+        args,
       ));
     }
     // CountsBy[list, f] — count elements grouped by f
@@ -8779,11 +8789,75 @@ fn list_convolve_ast(
 /// `result[t] = sum_i ker[i] * list[t + kL_pos - i]`,
 /// where out-of-range list indices wrap cyclically — or take the padding
 /// value when a 4th argument is given.
+/// The element at 1-based index `idx` of the data list conceptually extended
+/// past both ends. With no padding argument the extension wraps cyclically
+/// through the data; with a padding value it repeats that value; with a
+/// padding *list* the extension cycles through its elements, aligned so that
+/// index `i` takes element `(i - 1) mod L` — position n+1 of a 4-element list
+/// therefore takes the first padding element when there are two of them and
+/// the second when there are three.
+fn correlate_element(data: &[Expr], idx: i128, padding: Option<&Expr>) -> Expr {
+  let n = data.len() as i128;
+  if (1..=n).contains(&idx) {
+    return data[(idx - 1) as usize].clone();
+  }
+  match padding {
+    None => data[(idx - 1).rem_euclid(n) as usize].clone(),
+    Some(Expr::List(pads)) if !pads.is_empty() => {
+      pads[(idx - 1).rem_euclid(pads.len() as i128) as usize].clone()
+    }
+    Some(p) => p.clone(),
+  }
+}
+
+/// One output element of a (generalized) correlation: `h[g[k1, d1], …]`,
+/// with the kernel entry first in each `g` call. `g` and `h` default to
+/// Times and Plus.
+fn correlate_combine(
+  terms: Vec<(Expr, Expr)>,
+  g: Option<&Expr>,
+  h: Option<&Expr>,
+) -> Expr {
+  let apply = |f: Option<&Expr>, dflt: &str, args: Vec<Expr>| -> Expr {
+    match f {
+      Some(Expr::Identifier(name)) => Expr::FunctionCall {
+        name: name.clone(),
+        args: args.into(),
+      },
+      Some(other) => Expr::CurriedCall {
+        func: Box::new(other.clone()),
+        args,
+      },
+      None => Expr::FunctionCall {
+        name: dflt.to_string(),
+        args: args.into(),
+      },
+    }
+  };
+  let products: Vec<Expr> = terms
+    .into_iter()
+    .map(|(k, d)| apply(g, "Times", vec![k, d]))
+    .collect();
+  apply(h, "Plus", products)
+}
+
+/// True when either operand has list elements, i.e. the correlation would be
+/// multi-dimensional. The overhang forms below are one-dimensional, so they
+/// leave those calls unevaluated rather than treating the rows as scalars.
+fn correlate_is_multidimensional(ker: &[Expr], data: &[Expr]) -> bool {
+  ker
+    .iter()
+    .chain(data.iter())
+    .any(|e| matches!(e, Expr::List(_)))
+}
+
 fn list_convolve_overhang(
   kernel: &Expr,
   list: &Expr,
   spec: &Expr,
   padding: Option<&Expr>,
+  g: Option<&Expr>,
+  h: Option<&Expr>,
   all_args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("ListConvolve", all_args));
@@ -8822,8 +8896,7 @@ fn list_convolve_overhang(
     },
     _ => return unevaluated(),
   };
-  // A list-valued padding (cyclic padding from a list) is not supported.
-  if matches!(padding, Some(Expr::List(_))) {
+  if correlate_is_multidimensional(ker, data) {
     return unevaluated();
   }
 
@@ -8834,31 +8907,16 @@ fn list_convolve_overhang(
 
   let mut result = Vec::with_capacity(out_len as usize);
   for t in 1..=out_len {
-    let mut terms = Vec::with_capacity(m);
+    let mut terms: Vec<(Expr, Expr)> = Vec::with_capacity(m);
     for i in 1..=m {
       let idx = t + kl as i128 - i as i128; // 1-based index into data
-      let elem = match padding {
-        Some(p) => {
-          if (1..=n as i128).contains(&idx) {
-            data[(idx - 1) as usize].clone()
-          } else {
-            p.clone()
-          }
-        }
-        None => {
-          let w = (idx - 1).rem_euclid(n as i128) as usize;
-          data[w].clone()
-        }
-      };
-      terms.push(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![ker[i - 1].clone(), elem].into(),
-      });
+      terms.push((ker[i - 1].clone(), correlate_element(data, idx, padding)));
     }
-    let sum = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: terms.into(),
-    };
+    // Convolution walks the kernel backwards over the data, and
+    // wolframscript lists the terms in data order, which only shows up once
+    // `g`/`h` are something other than Times and Plus.
+    terms.reverse();
+    let sum = correlate_combine(terms, g, h);
     result.push(evaluate_expr_to_expr(&sum).unwrap_or(sum));
   }
   Ok(Expr::List(result.into()))
@@ -8877,6 +8935,8 @@ fn list_correlate_overhang(
   list: &Expr,
   spec: &Expr,
   padding: Option<&Expr>,
+  g: Option<&Expr>,
+  h: Option<&Expr>,
   all_args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("ListCorrelate", all_args));
@@ -8915,8 +8975,7 @@ fn list_correlate_overhang(
     },
     _ => return unevaluated(),
   };
-  // A list-valued padding (cyclic padding from a list) is not supported.
-  if matches!(padding, Some(Expr::List(_))) {
+  if correlate_is_multidimensional(ker, data) {
     return unevaluated();
   }
 
@@ -8927,31 +8986,12 @@ fn list_correlate_overhang(
 
   let mut result = Vec::with_capacity(out_len as usize);
   for t in 1..=out_len {
-    let mut terms = Vec::with_capacity(m);
+    let mut terms: Vec<(Expr, Expr)> = Vec::with_capacity(m);
     for i in 1..=m {
       let idx = t + i as i128 - kl as i128; // 1-based index into data
-      let elem = match padding {
-        Some(p) => {
-          if (1..=n as i128).contains(&idx) {
-            data[(idx - 1) as usize].clone()
-          } else {
-            p.clone()
-          }
-        }
-        None => {
-          let w = (idx - 1).rem_euclid(n as i128) as usize;
-          data[w].clone()
-        }
-      };
-      terms.push(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![ker[i - 1].clone(), elem].into(),
-      });
+      terms.push((ker[i - 1].clone(), correlate_element(data, idx, padding)));
     }
-    let sum = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: terms.into(),
-    };
+    let sum = correlate_combine(terms, g, h);
     result.push(evaluate_expr_to_expr(&sum).unwrap_or(sum));
   }
   Ok(Expr::List(result.into()))
