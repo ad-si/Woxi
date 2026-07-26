@@ -6,7 +6,7 @@
 //! c > 0 return their conditions.
 
 use crate::InterpreterError;
-use crate::functions::math_ast::gcd_i128;
+use crate::functions::math_ast::rat_reduce;
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, unevaluated,
 };
@@ -320,12 +320,7 @@ impl Q {
     Q { n, d: 1 }
   }
   fn new(n: i128, d: i128) -> Q {
-    let (mut n, mut d) = if d < 0 { (-n, -d) } else { (n, d) };
-    let g = gcd_i128(n, d);
-    if g != 0 {
-      n /= g;
-      d /= g;
-    }
+    let (n, d) = rat_reduce(n, d);
     Q { n, d }
   }
   fn add(self, o: Q) -> Q {

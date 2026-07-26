@@ -2,6 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
+use crate::functions::math_ast::gcd_i128;
 use crate::syntax::{
   BinaryOperator, ComparisonOp, UnaryOperator, bool_expr, unevaluated,
 };

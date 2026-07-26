@@ -2,11 +2,11 @@ use super::together::negate_expr;
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
+use crate::functions::calculus_ast::{is_constant_wrt, simplify};
+use crate::functions::math_ast::gcd_i128;
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, bool_expr, expr_to_string, unevaluated,
 };
-
-use crate::functions::calculus_ast::{is_constant_wrt, simplify};
 
 /// Eliminate[{eq1, eq2, ...}, var]  or  Eliminate[{eq1, eq2, ...}, {v1, v2, ...}]
 /// Eliminates variables from a system of equations.

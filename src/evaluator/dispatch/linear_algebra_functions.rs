@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::functions::math_ast::{gcd_i128, make_sqrt};
+use crate::functions::math_ast::{make_sqrt, rat_reduce};
 use crate::syntax::{BinaryOperator, UnaryOperator, bool_expr, unevaluated};
 
 /// `BoxMatrix[r, w]` / `DiamondMatrix[r, w]`: the structuring element of
@@ -3228,11 +3228,7 @@ pub fn dispatch_linear_algebra_functions(
             } else {
               // angle = 2*Pi*exp/n, compute (Cos[angle] + I*Sin[angle]) / Sqrt[n]
               // Simplify the fraction 2*exp/n
-              let num = 2 * exp;
-              let den = n as i128;
-              let g = gcd_i128(num.abs(), den);
-              let snum = num / g;
-              let sden = den / g;
+              let (snum, sden) = rat_reduce(2 * exp, n as i128);
               let angle = if sden == 1 {
                 Expr::FunctionCall {
                   name: "Times".to_string(),

@@ -37,8 +37,7 @@ impl Num {
     match self {
       Num::Exact(0, _) => Expr::Integer(0),
       Num::Exact(p, q) => {
-        let g = gcd_i128(p.abs(), q).max(1);
-        let (p, q) = (p / g, q / g);
+        let (p, q) = rat_reduce(p, q);
         if q == 1 {
           Expr::Integer(p)
         } else {

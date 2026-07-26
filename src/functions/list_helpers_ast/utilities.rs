@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-pub(crate) use crate::functions::math_ast::gcd_i128;
 use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator};
 
 /// Convert an Expr to a boolean value.

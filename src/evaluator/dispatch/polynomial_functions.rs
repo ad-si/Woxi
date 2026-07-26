@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::functions::math_ast::gcd_i128;
+use crate::functions::math_ast::rat_reduce;
 use crate::syntax::{BinaryOperator, ComparisonOp, bool_expr, unevaluated};
 
 pub fn dispatch_polynomial_functions(
@@ -1434,16 +1434,7 @@ fn try_constrained_linear_disk_symbolic(
 fn sinusoid_extremum(expr: &Expr, var: &str, maximize: bool) -> Option<Expr> {
   type Frac = (i128, i128);
   fn add(a: Frac, b: Frac) -> Frac {
-    norm((a.0 * b.1 + b.0 * a.1, a.1 * b.1))
-  }
-  fn norm(f: Frac) -> Frac {
-    let g = gcd_i128(f.0, f.1).max(1);
-    let (mut n, mut d) = (f.0 / g, f.1 / g);
-    if d < 0 {
-      n = -n;
-      d = -d;
-    }
-    (n, d)
+    rat_reduce(a.0 * b.1 + b.0 * a.1, a.1 * b.1)
   }
   fn as_frac(e: &Expr) -> Option<Frac> {
     match e {
@@ -1452,7 +1443,7 @@ fn sinusoid_extremum(expr: &Expr, var: &str, maximize: bool) -> Option<Expr> {
         if name == "Rational" && args.len() == 2 =>
       {
         if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
-          Some(norm((*n, *d)))
+          Some(rat_reduce(*n, *d))
         } else {
           None
         }

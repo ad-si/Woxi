@@ -14,7 +14,7 @@
 
 use crate::InterpreterError;
 use crate::functions::calculus_ast::is_constant_wrt;
-use crate::functions::math_ast::gcd_i128;
+use crate::functions::math_ast::{gcd_i128, rat_reduce};
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
 };
@@ -370,11 +370,7 @@ fn collect_factors(
 }
 
 fn reduce_base(parts: &mut TermParts) {
-  let g = gcd_i128(parts.base_num, parts.base_den);
-  if g > 1 {
-    parts.base_num /= g;
-    parts.base_den /= g;
-  }
+  (parts.base_num, parts.base_den) = rat_reduce(parts.base_num, parts.base_den);
 }
 
 fn as_power(expr: &Expr) -> Option<(Expr, Expr)> {
@@ -468,13 +464,7 @@ fn linear_coeff_in_n(arg: &Expr, n_var: &str) -> Option<Expr> {
 type Frac = (i128, i128); // (numerator, denominator), denominator > 0
 
 fn frac(n: i128, d: i128) -> Frac {
-  let g = gcd_i128(n, d);
-  let (mut n, mut d) = if g == 0 { (0, 1) } else { (n / g, d / g) };
-  if d < 0 {
-    n = -n;
-    d = -d;
-  }
-  (n, d)
+  rat_reduce(n, d)
 }
 
 fn frac_add(a: Frac, b: Frac) -> Frac {

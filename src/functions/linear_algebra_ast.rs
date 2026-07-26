@@ -5,7 +5,7 @@
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::{
-  expr_to_rational, gcd_i128, make_sqrt, try_eval_to_f64,
+  expr_to_rational, gcd_i128, make_sqrt, rat_reduce, try_eval_to_f64,
 };
 use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
@@ -1320,14 +1320,8 @@ fn eval_divide(a: &Expr, b: &Expr) -> Expr {
         Expr::Integer(x / y)
       } else {
         // Simplify the fraction
-        let g = gcd_i128(x.abs(), y.abs());
-        let (n, d) = (x / g, y / g);
-        if d < 0 {
-          // Keep denominator positive
-          crate::functions::math_ast::make_rational(-n, -d)
-        } else {
-          crate::functions::math_ast::make_rational(n, d)
-        }
+        let (n, d) = rat_reduce(*x, *y);
+        crate::functions::math_ast::make_rational(n, d)
       }
     }
     _ => {
@@ -2780,8 +2774,7 @@ fn quadratic_eigenvalues(b_coeff: i128, c_coeff: i128) -> Vec<Expr> {
   // Factor out GCD of neg_b and outer from the numerator:
   // (neg_b ± outer*Sqrt[inner]) / 2  =  common * (reduced_b ± reduced_outer*Sqrt[inner]) / 2
   let common = gcd_i128(neg_b.abs(), outer as i128);
-  let reduced_b = neg_b / common;
-  let reduced_outer = outer as i128 / common;
+  let (reduced_b, reduced_outer) = (neg_b / common, outer as i128 / common);
 
   let sqrt_expr = make_sqrt(Expr::Integer(inner as i128));
 
@@ -2824,9 +2817,7 @@ fn quadratic_eigenvalues(b_coeff: i128, c_coeff: i128) -> Vec<Expr> {
 
 /// Simplify fraction n/d, returning Expr::Integer or Expr::Rational.
 fn simplify_fraction(n: i128, d: i128) -> Expr {
-  let g = gcd_i128(n.abs(), d.abs());
-  let (n, d) = (n / g, d / g);
-  let (n, d) = if d < 0 { (-n, -d) } else { (n, d) };
+  let (n, d) = rat_reduce(n, d);
   if d == 1 {
     Expr::Integer(n)
   } else {
@@ -9312,8 +9303,8 @@ impl QNum {
     } else {
       (n, d)
     };
-    let g = gcd_i128(n.abs(), d).max(1);
-    Some(QNum { n: n / g, d: d / g })
+    let (n, d) = rat_reduce(n, d);
+    Some(QNum { n: n, d: d })
   }
   fn zero() -> QNum {
     QNum { n: 0, d: 1 }

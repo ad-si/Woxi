@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::functions::math_ast::gcd_i128;
+use crate::functions::math_ast::{gcd_i128, rat_reduce};
 use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
 
 // ─── Together ───────────────────────────────────────────────────────
@@ -2334,10 +2334,7 @@ fn rat_max(a: RatExp, b: RatExp) -> RatExp {
 
 /// Subtract two rational exponents: a - b
 fn rat_sub((an, ad): RatExp, (bn, bd): RatExp) -> RatExp {
-  let n = an * bd - bn * ad;
-  let d = ad * bd;
-  let g = gcd_i128(n, d);
-  (n / g, d / g)
+  rat_reduce(an * bd - bn * ad, ad * bd)
 }
 
 /// Extract base and exponent from a denominator expression.
@@ -2380,8 +2377,7 @@ fn compute_missing_factor(
     if let Some(entry) = den_map.iter_mut().find(|(k, _)| *k == key) {
       // Add exponents for same base
       entry.1 = (entry.1.0 * exp.1 + exp.0 * entry.1.1, entry.1.1 * exp.1);
-      let g = gcd_i128(entry.1.0, entry.1.1);
-      entry.1 = (entry.1.0 / g, entry.1.1 / g);
+      entry.1 = rat_reduce(entry.1.0, entry.1.1);
     } else {
       den_map.push((key, *exp));
     }

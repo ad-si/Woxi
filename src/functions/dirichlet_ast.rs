@@ -12,7 +12,7 @@
 //! (1, -1, I, -I, or E^((a*I)/b*Pi) forms on the principal branch).
 
 use crate::InterpreterError;
-use crate::functions::math_ast::{gcd_bigint, gcd_i128};
+use crate::functions::math_ast::{gcd_bigint, gcd_i128, rat_reduce};
 use crate::syntax::Expr;
 use crate::syntax::{BinaryOperator, UnaryOperator, unevaluated};
 
@@ -86,15 +86,11 @@ pub fn dirichlet_character_ast(
     } else {
       num = num * q + p * den;
       den *= q;
-      let g = gcd_i128(num, den).max(1);
-      num /= g;
-      den /= g;
+      (num, den) = rat_reduce(num, den);
     }
   }
   num = num.rem_euclid(den);
-  let g = gcd_i128(num, den).max(1);
-  num /= g;
-  den /= g;
+  (num, den) = rat_reduce(num, den);
   // A combined exponential that lands on a fourth root folds into the
   // coefficient too
   if den == 1 || den == 2 || den == 4 {
@@ -294,15 +290,10 @@ fn assemble_value(quarter: i128, num: i128, den: i128) -> Expr {
   }
   // Principal branch: the printed multiple of Pi is m = a/b = 2*num/den
   // reduced into (-1, 1]
-  let (mut a, mut b) = (2 * num, den);
-  let g = gcd_i128(a, b).max(1);
-  a /= g;
-  b /= g;
+  let (mut a, mut b) = rat_reduce(2 * num, den);
   if a > b {
     a -= 2 * b;
-    let g = gcd_i128(a, b).max(1);
-    a /= g;
-    b /= g;
+    (a, b) = rat_reduce(a, b);
   }
   let exp_form = |a: i128, b: i128| -> String {
     let inner = if a == 1 {
@@ -337,13 +328,10 @@ fn total_rotation(factors: &[Factor], exps: &[i128], a: i128) -> (i128, i128) {
     let (p, q) = (e * t, f.order);
     num = num * q + p * den;
     den *= q;
-    let g = gcd_i128(num, den).max(1);
-    num /= g;
-    den /= g;
+    (num, den) = rat_reduce(num, den);
   }
   num = num.rem_euclid(den);
-  let g = gcd_i128(num, den).max(1);
-  (num / g, den / g)
+  rat_reduce(num, den)
 }
 
 /// DirichletL[k, j, s] - Dirichlet L-function of the j-th character
