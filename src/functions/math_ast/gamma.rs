@@ -452,9 +452,7 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 fn gamma_half_expr(numer: BigInt, denom: BigInt, is_neg: bool) -> Expr {
   // Simplify the rational part
-  let g = gcd_bigint(&numer, &denom);
-  let num_simplified = &numer / &g;
-  let den_simplified = &denom / &g;
+  let (num_simplified, den_simplified) = rat_reduce_bigint(&numer, &denom);
   let coeff_num = if is_neg {
     -num_simplified.clone()
   } else {

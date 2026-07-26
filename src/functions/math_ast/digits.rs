@@ -2576,9 +2576,7 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       // Need a rational: int_val / base^(-shift)
       let denom = big_base.pow((-shift) as u32);
-      let g = gcd_bigint(&int_val, &denom);
-      let num = &int_val / &g;
-      let den = &denom / &g;
+      let (num, den) = rat_reduce_bigint(&int_val, &denom);
       if den == BigInt::from(1) {
         return Ok(bigint_to_expr(num));
       } else {
@@ -4077,18 +4075,8 @@ pub fn minkowski_question_mark_ast(
   };
 
   // Exact fraction arithmetic over BigInt
-  let gcd_bigint = |a: &BigInt, b: &BigInt| -> BigInt {
-    let g = crate::functions::math_ast::gcd_bigint(a, b);
-    if g.is_zero() { BigInt::from(1) } else { g }
-  };
   let reduce = |num: BigInt, den: BigInt| -> (BigInt, BigInt) {
-    let g = gcd_bigint(&num, &den);
-    let (mut n, mut d) = (num / &g, den / g);
-    if d < BigInt::from(0) {
-      n = -n;
-      d = -d;
-    }
-    (n, d)
+    rat_reduce_bigint(&num, &den)
   };
   let add = |a: &(BigInt, BigInt), b: &(BigInt, BigInt)| -> (BigInt, BigInt) {
     reduce(&a.0 * &b.1 + &b.0 * &a.1, &a.1 * &b.1)

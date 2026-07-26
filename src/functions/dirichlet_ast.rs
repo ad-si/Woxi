@@ -12,7 +12,7 @@
 //! (1, -1, I, -I, or E^((a*I)/b*Pi) forms on the principal branch).
 
 use crate::InterpreterError;
-use crate::functions::math_ast::{gcd_bigint, gcd_i128, rat_reduce};
+use crate::functions::math_ast::{gcd_i128, rat_reduce, rat_reduce_bigint};
 use crate::syntax::Expr;
 use crate::syntax::{BinaryOperator, UnaryOperator, unevaluated};
 
@@ -347,7 +347,6 @@ fn total_rotation(factors: &[Factor], exps: &[i128], a: i128) -> (i128, i128) {
 /// with higher-order values stay unevaluated.
 pub fn dirichlet_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use num_bigint::BigInt;
-  use num_traits::Zero;
   let unevaluated = |args: &[Expr]| unevaluated("DirichletL", args);
   if args.len() != 3 {
     return Ok(unevaluated(args));
@@ -487,18 +486,8 @@ pub fn dirichlet_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Fraction helpers over BigInt
   type Frac = (BigInt, BigInt);
-  let reduce = |num: BigInt, den: BigInt| -> Frac {
-    let mut g = gcd_bigint(&num, &den);
-    if g.is_zero() {
-      g = BigInt::from(1);
-    }
-    let (mut n, mut d) = (num / &g, den / g);
-    if d < BigInt::from(0) {
-      n = -n;
-      d = -d;
-    }
-    (n, d)
-  };
+  let reduce =
+    |num: BigInt, den: BigInt| -> Frac { rat_reduce_bigint(&num, &den) };
   let add = |a: &Frac, b: &Frac| reduce(&a.0 * &b.1 + &b.0 * &a.1, &a.1 * &b.1);
   let mul = |a: &Frac, b: &Frac| reduce(&a.0 * &b.0, &a.1 * &b.1);
 

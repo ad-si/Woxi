@@ -2,7 +2,7 @@
 use super::*;
 use crate::InterpreterError;
 use crate::functions::calculus_ast::simplify;
-use crate::functions::math_ast::{gcd_i128, rat_reduce};
+use crate::functions::math_ast::{gcd_i128, rat_reduce, rat_reduce_bigint};
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, expr_to_string,
 };
@@ -9383,9 +9383,7 @@ fn try_merge_logs(expr: &Expr) -> Option<Expr> {
         den *= n.pow((-c) as u32);
       }
     }
-    let g = crate::functions::math_ast::gcd_bigint(&num, &den);
-    let num = &num / &g;
-    let den = &den / &g;
+    let (num, den) = rat_reduce_bigint(&num, &den);
     let q = if den.is_one() {
       crate::functions::math_ast::bigint_to_expr(num)
     } else {

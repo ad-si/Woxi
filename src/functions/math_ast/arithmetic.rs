@@ -1620,27 +1620,13 @@ impl Coeff {
         // Overflow: promote to BigInt
         let (n1, d1) = Self::to_big(*n1, *d1);
         let (n2, d2) = Self::to_big(*n2, *d2);
-        let mut sn = &n1 * &d2 + &n2 * &d1;
-        let mut sd = d1 * d2;
-        let g = gcd_bigint(&sn, &sd);
-        sn /= &g;
-        sd /= g;
-        if sd < BigInt::from(0) {
-          sn = -sn;
-          sd = -sd;
-        }
+        let (mut sn, mut sd) = (&n1 * &d2 + &n2 * &d1, d1 * d2);
+        (sn, sd) = rat_reduce_bigint(&sn, &sd);
         Self::BigExact(sn, sd)
       }
       (Self::BigExact(n1, d1), Self::BigExact(n2, d2)) => {
-        let mut sn = n1 * d2 + n2 * d1;
-        let mut sd = d1 * d2;
-        let g = gcd_bigint(&sn, &sd);
-        sn /= &g;
-        sd /= g;
-        if sd < BigInt::from(0) {
-          sn = -sn;
-          sd = -sd;
-        }
+        let (mut sn, mut sd) = (n1 * d2 + n2 * d1, d1 * d2);
+        (sn, sd) = rat_reduce_bigint(&sn, &sd);
         Self::BigExact(sn, sd)
       }
       (Self::Exact(n, d), Self::BigExact(..))
@@ -1673,27 +1659,13 @@ impl Coeff {
         }
         let (n1, d1) = Self::to_big(*n1, *d1);
         let (n2, d2) = Self::to_big(*n2, *d2);
-        let mut sn = &n1 * &n2;
-        let mut sd = d1 * d2;
-        let g = gcd_bigint(&sn, &sd);
-        sn /= &g;
-        sd /= g;
-        if sd < BigInt::from(0) {
-          sn = -sn;
-          sd = -sd;
-        }
+        let (mut sn, mut sd) = (&n1 * &n2, d1 * d2);
+        (sn, sd) = rat_reduce_bigint(&sn, &sd);
         Self::BigExact(sn, sd)
       }
       (Self::BigExact(n1, d1), Self::BigExact(n2, d2)) => {
-        let mut sn = n1 * n2;
-        let mut sd = d1 * d2;
-        let g = gcd_bigint(&sn, &sd);
-        sn /= &g;
-        sd /= g;
-        if sd < BigInt::from(0) {
-          sn = -sn;
-          sd = -sd;
-        }
+        let (mut sn, mut sd) = (n1 * n2, d1 * d2);
+        (sn, sd) = rat_reduce_bigint(&sn, &sd);
         Self::BigExact(sn, sd)
       }
       (Self::Exact(n, d), Self::BigExact(..))
@@ -7543,17 +7515,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
 
     // Reduce the fraction by gcd and fix the sign onto the numerator.
-    {
-      let g = gcd_bigint(&big_numer, &big_denom);
-      if g != BigInt::from(0) {
-        big_numer /= &g;
-        big_denom /= &g;
-      }
-      if big_denom < BigInt::from(0) {
-        big_numer = -big_numer;
-        big_denom = -big_denom;
-      }
-    }
+    (big_numer, big_denom) = rat_reduce_bigint(&big_numer, &big_denom);
     let coeff_is_int = big_denom == BigInt::from(1);
 
     if all_int && coeff_is_int {
@@ -7886,13 +7848,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       let big_numer = BigInt::from(int_product) * BigInt::from(rat_numer);
       let big_denom = BigInt::from(rat_denom);
-      let g = gcd_bigint(&big_numer, &big_denom);
-      let mut sn = big_numer / &g;
-      let mut sd = big_denom / g;
-      if sd < BigInt::from(0) {
-        sn = -sn;
-        sd = -sd;
-      }
+      let (sn, sd) = rat_reduce_bigint(&big_numer, &big_denom);
       let coeff_expr = {
         use num_traits::One;
         if sd.is_one() {
@@ -8809,14 +8765,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
       if denom.is_zero() {
         return Ok(divide_by_zero_result(a));
       }
-      let g = gcd_bigint(&numer, &denom);
-      let mut rn = &numer / &g;
-      let mut rd = &denom / &g;
-      // Normalize sign: put sign in numerator
-      if rd < BigInt::from(0) {
-        rn = -rn;
-        rd = -rd;
-      }
+      let (rn, rd) = rat_reduce_bigint(&numer, &denom);
       if rd == BigInt::from(1) {
         return Ok(bigint_to_expr(rn));
       }
@@ -9068,13 +9017,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
         if denom.is_zero() {
           return Ok(divide_by_zero_result(a));
         }
-        let g = gcd_bigint(&numer, &denom);
-        let mut rn = &numer / &g;
-        let mut rd = &denom / &g;
-        if rd < BigInt::from(0) {
-          rn = -rn;
-          rd = -rd;
-        }
+        let (rn, rd) = rat_reduce_bigint(&numer, &denom);
         if rd == BigInt::from(1) {
           return Ok(bigint_to_expr(rn));
         }
@@ -10586,12 +10529,8 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     let k_n = num_traits::pow::pow(k_big, *n as usize);
 
     // Reduce fractions
-    let g_re = gcd_bigint(&result_re, &k_n);
-    let final_re_n = &result_re / &g_re;
-    let final_re_d = &k_n / &g_re;
-    let g_im = gcd_bigint(&result_im, &k_n);
-    let final_im_n = &result_im / &g_im;
-    let final_im_d = &k_n / &g_im;
+    let (final_re_n, final_re_d) = rat_reduce_bigint(&result_re, &k_n);
+    let (final_im_n, final_im_d) = rat_reduce_bigint(&result_im, &k_n);
 
     // Try to convert back to i128
     if let (Some(rn), Some(rd), Some(imn), Some(imd)) = (
