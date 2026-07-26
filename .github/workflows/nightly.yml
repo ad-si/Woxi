@@ -63,8 +63,11 @@ jobs:
         if-no-files-found: error
     # Mirrors `make test` (the fast correctness suite the Linux CI runs),
     # invoked directly since `make` is not available on the Windows runner.
+    # `--no-fail-fast` because this is the only place Windows-specific
+    # breakage shows up: stopping at the first failure would hide the rest
+    # and turn one bad night into a chain of them.
     - name: Run unit tests
-      run: cargo nextest run --show-progress=none --status-level=fail --failure-output=final
+      run: cargo nextest run --no-fail-fast --show-progress=none --status-level=fail --failure-output=final
 
   # Coverage-guided crash fuzzing of the parser and interpreter (see
   # fuzz/README.md). A few minutes per target per night compounds into

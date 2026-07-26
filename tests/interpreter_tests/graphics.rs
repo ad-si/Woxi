@@ -1152,14 +1152,15 @@ mod plot3d {
 
     #[test]
     fn export_svg() {
-      let result = interpret(
-        "Export[\"/tmp/test_plot3d.svg\", Plot3D[x + y, {x, -1, 1}, {y, -1, 1}]]",
-      );
+      let path = temp_file("test_plot3d.svg");
+      let result = interpret(&format!(
+        "Export[\"{path}\", Plot3D[x + y, {{x, -1, 1}}, {{y, -1, 1}}]]"
+      ));
       assert!(result.is_ok());
-      let content = std::fs::read_to_string("/tmp/test_plot3d.svg").unwrap();
+      let content = std::fs::read_to_string(&path).unwrap();
       assert!(content.starts_with("<svg"));
       assert!(content.contains("<polygon"));
-      std::fs::remove_file("/tmp/test_plot3d.svg").ok();
+      std::fs::remove_file(&path).ok();
     }
 
     /// Regression test: Export["foo.png", Plot[...]] used to write the raw
@@ -1168,12 +1169,12 @@ mod plot3d {
     /// dropped because "sans-serif" had no matching font in the db).
     #[test]
     fn export_png_from_plot() {
-      let path = "/tmp/test_plot_export.png";
+      let path = temp_file("test_plot_export.png");
       let result = interpret(&format!(
         "Export[\"{path}\", Plot[Sin[x], {{x, -2 Pi, 2 Pi}}]]"
       ));
       assert!(result.is_ok(), "Export returned error: {result:?}");
-      let bytes = std::fs::read(path).unwrap();
+      let bytes = std::fs::read(&path).unwrap();
       // PNG magic: 89 50 4E 47 0D 0A 1A 0A
       assert_eq!(
         &bytes[..8],
@@ -1209,7 +1210,7 @@ mod plot3d {
         "y-axis tick labels appear to be missing: only {inked_pixels} \
          non-white pixels in the left gutter"
       );
-      std::fs::remove_file(path).ok();
+      std::fs::remove_file(&path).ok();
     }
 
     /// Regression: Export[..., png, ImageResolution -> n] should scale
@@ -1217,8 +1218,8 @@ mod plot3d {
     /// with ImageSize -> 800 at 300 DPI should come out at 2500 px wide.
     #[test]
     fn export_png_with_image_resolution() {
-      let path_hi = "/tmp/test_plot_export_hi.png";
-      let path_lo = "/tmp/test_plot_export_lo.png";
+      let path_hi = temp_file("test_plot_export_hi.png");
+      let path_lo = temp_file("test_plot_export_lo.png");
       let result_hi = interpret(&format!(
         "Export[\"{path_hi}\", \
          Plot[Sin[x], {{x, -3 Pi, 3 Pi}}, ImageSize -> 800], \
@@ -1231,8 +1232,8 @@ mod plot3d {
       ));
       assert!(result_lo.is_ok(), "Export returned error: {result_lo:?}");
 
-      let bytes_hi = std::fs::read(path_hi).unwrap();
-      let bytes_lo = std::fs::read(path_lo).unwrap();
+      let bytes_hi = std::fs::read(&path_hi).unwrap();
+      let bytes_lo = std::fs::read(&path_lo).unwrap();
       // PNG magic
       assert_eq!(
         &bytes_hi[..8],
@@ -1247,24 +1248,24 @@ mod plot3d {
       // Height scales proportionally
       assert!(img_hi.height() > img_lo.height() * 3);
 
-      std::fs::remove_file(path_hi).ok();
-      std::fs::remove_file(path_lo).ok();
+      std::fs::remove_file(&path_hi).ok();
+      std::fs::remove_file(&path_lo).ok();
     }
 
     #[test]
     fn export_jpeg_from_plot() {
-      let path = "/tmp/test_plot_export.jpg";
+      let path = temp_file("test_plot_export.jpg");
       let result =
         interpret(&format!("Export[\"{path}\", Plot[Cos[x], {{x, 0, 2 Pi}}]]"));
       assert!(result.is_ok(), "Export returned error: {result:?}");
-      let bytes = std::fs::read(path).unwrap();
+      let bytes = std::fs::read(&path).unwrap();
       // JPEG SOI marker: FF D8 FF
       assert_eq!(
         &bytes[..3],
         &[0xFF, 0xD8, 0xFF],
         "file at {path} is not a JPEG"
       );
-      std::fs::remove_file(path).ok();
+      std::fs::remove_file(&path).ok();
     }
 
     #[test]
@@ -1274,8 +1275,8 @@ mod plot3d {
       // harness hit ARG_MAX before the image could even reach Export;
       // pin the behaviour here from a Rust test so the full path is
       // exercised.
-      let path = "/tmp/test_export_image_numericarray.jpg";
-      let _ = std::fs::remove_file(path);
+      let path = temp_file("test_export_image_numericarray.jpg");
+      let _ = std::fs::remove_file(&path);
       let code = format!(
         "Export[\"{path}\", Image[NumericArray[\
          {{{{{{62, 91, 147}}, {{69, 99, 160}}, {{74, 106, 167}}}}, \
@@ -1285,13 +1286,13 @@ mod plot3d {
       );
       let result = interpret(&code).unwrap();
       assert_eq!(result, path);
-      let bytes = std::fs::read(path).unwrap();
+      let bytes = std::fs::read(&path).unwrap();
       assert_eq!(
         &bytes[..3],
         &[0xFF, 0xD8, 0xFF],
         "file at {path} is not a JPEG"
       );
-      std::fs::remove_file(path).ok();
+      std::fs::remove_file(&path).ok();
     }
 
     /// Regression: `Export["foo.gif", Table[graphics, …]]` must produce
@@ -1300,7 +1301,7 @@ mod plot3d {
     /// GIF (1504×15 px) of the textual list representation.
     #[test]
     fn export_animated_gif_from_graphics_list() {
-      let path = "/tmp/test_animated.gif";
+      let path = temp_file("test_animated.gif");
       let result = interpret(&format!(
         "Export[\"{path}\", \
          Table[Graphics[{{Disk[{{0, 0}}, r/10]}}, \
@@ -1309,12 +1310,12 @@ mod plot3d {
       ));
       assert!(result.is_ok(), "Export returned error: {result:?}");
 
-      let bytes = std::fs::read(path).unwrap();
+      let bytes = std::fs::read(&path).unwrap();
       // GIF magic: "GIF89a"
       assert_eq!(&bytes[..6], b"GIF89a", "file at {path} is not a GIF");
 
       // Decode and verify it's actually multi-frame.
-      let file = std::io::BufReader::new(std::fs::File::open(path).unwrap());
+      let file = std::io::BufReader::new(std::fs::File::open(&path).unwrap());
       let decoder = ::image::codecs::gif::GifDecoder::new(file).unwrap();
       use ::image::AnimationDecoder;
       let frames: Vec<_> = decoder
@@ -1330,7 +1331,7 @@ mod plot3d {
         "frame dimensions {w}×{h} look like the text-rasterizer regression"
       );
 
-      std::fs::remove_file(path).ok();
+      std::fs::remove_file(&path).ok();
     }
   }
 
