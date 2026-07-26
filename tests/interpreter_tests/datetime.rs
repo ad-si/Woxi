@@ -4086,3 +4086,140 @@ mod date_time_ordering {
     );
   }
 }
+
+// Week-based, quarter-name and initial-letter date elements. An element name
+// Woxi does not know is emitted literally, so a missing one silently produced
+// its own name instead of a date component.
+mod week_and_name_date_elements {
+  use super::*;
+
+  #[test]
+  fn iso_week_date() {
+    // The last days of a year can belong to week 1 of the next ISO year.
+    assert_eq!(
+      interpret("DateString[{2024, 12, 31}, \"ISOWeekDate\"]").unwrap(),
+      "2025-W01-2"
+    );
+    assert_eq!(
+      interpret("DateString[{2024, 1, 5}, \"ISOWeekDate\"]").unwrap(),
+      "2024-W01-5"
+    );
+    // …and the first days of a year to the last week of the previous one.
+    assert_eq!(
+      interpret("DateString[{2023, 1, 1}, \"ISOWeekDate\"]").unwrap(),
+      "2022-W52-7"
+    );
+    assert_eq!(
+      interpret("DateString[{2021, 1, 3}, \"ISOWeekDate\"]").unwrap(),
+      "2020-W53-7"
+    );
+    assert_eq!(
+      interpret("DateString[{2019, 12, 30}, \"ISOWeekDate\"]").unwrap(),
+      "2020-W01-1"
+    );
+  }
+
+  #[test]
+  fn week_numbers_and_iso_year() {
+    // Both week forms are the zero-padded ISO week number.
+    assert_eq!(
+      interpret("DateString[{2024, 12, 31}, \"Week\"]").unwrap(),
+      "01"
+    );
+    assert_eq!(
+      interpret("DateString[{2024, 12, 31}, \"WeekShort\"]").unwrap(),
+      "01"
+    );
+    assert_eq!(
+      interpret("DateString[{2020, 12, 31}, \"Week\"]").unwrap(),
+      "53"
+    );
+    assert_eq!(
+      interpret("DateString[{2024, 6, 15}, \"Week\"]").unwrap(),
+      "24"
+    );
+    // "ISOYear" is the calendar year, not the ISO week-numbering one.
+    assert_eq!(
+      interpret("DateString[{2024, 12, 31}, \"ISOYear\"]").unwrap(),
+      "2024"
+    );
+    assert_eq!(
+      interpret("DateString[{2023, 1, 1}, \"ISOYear\"]").unwrap(),
+      "2023"
+    );
+  }
+
+  #[test]
+  fn quarter_names_and_initials() {
+    assert_eq!(
+      interpret("DateString[{2024, 12, 31}, \"QuarterName\"]").unwrap(),
+      "Quarter 4"
+    );
+    assert_eq!(
+      interpret("DateString[{2024, 1, 5}, \"QuarterNameShort\"]").unwrap(),
+      "Q1"
+    );
+    assert_eq!(
+      interpret("DateString[{2024, 12, 31}, \"MonthNameInitial\"]").unwrap(),
+      "D"
+    );
+    // 2024-12-31 was a Tuesday, 2024-01-05 a Friday.
+    assert_eq!(
+      interpret("DateString[{2024, 12, 31}, \"DayNameInitial\"]").unwrap(),
+      "T"
+    );
+    assert_eq!(
+      interpret("DateString[{2024, 1, 5}, \"DayNameInitial\"]").unwrap(),
+      "F"
+    );
+  }
+
+  #[test]
+  fn the_elements_compose_in_a_list_spec() {
+    assert_eq!(
+      interpret(
+        "DateString[{2024, 12, 31}, \
+         {\"ISOWeekDate\", \" \", \"QuarterNameShort\"}]"
+      )
+      .unwrap(),
+      "2025-W01-2 Q4"
+    );
+    assert_eq!(
+      interpret(
+        "DateString[{2024, 1, 5}, {\"MonthNameInitial\", \"DayNameInitial\"}]"
+      )
+      .unwrap(),
+      "JF"
+    );
+  }
+
+  // DateValue returns typed components: an unpadded integer week, strings for
+  // the names.
+  #[test]
+  fn date_value_components() {
+    assert_eq!(
+      interpret("DateValue[{2024, 12, 31}, \"WeekShort\"]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("DateValue[{2023, 1, 1}, \"WeekShort\"]").unwrap(),
+      "52"
+    );
+    assert_eq!(
+      interpret("DateValue[{2024, 12, 31}, \"QuarterName\"]").unwrap(),
+      "Quarter 4"
+    );
+    assert_eq!(
+      interpret("DateValue[{2024, 12, 31}, \"QuarterNameShort\"]").unwrap(),
+      "Q4"
+    );
+    assert_eq!(
+      interpret("DateValue[{2024, 12, 31}, \"MonthNameInitial\"]").unwrap(),
+      "D"
+    );
+    assert_eq!(
+      interpret("DateValue[{2019, 12, 30}, \"DayNameInitial\"]").unwrap(),
+      "M"
+    );
+  }
+}

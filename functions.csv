@@ -791,7 +791,7 @@ TensorProduct,Tensor product of arrays and symbolic factors,✅,pure,9.0,797
 Sinc,Sinc function (Sin[x]/x with Sinc[0]=1),✅,pure,6.0,798
 Minus,Subtracts numbers,✅,pure,1.0,800
 ReIm,Real and imaginary parts of a complex number,✅,pure,10.1,800
-DateString,Returns a string representing the current local date and time,✅,contextual,6.0,802
+DateString,Formats a date (the current one by default) from named elements including the ISO week date and quarter names,✅,contextual,6.0,802
 SphericalRegion,Option specifying spherical region in 3D plots,✅,none,2.0,802
 FourierParameters,Option for Fourier transform conventions,✅,none,4.0,803
 Check,Evaluates an expression and returns a fallback if messages are generated,✅,pure,1.0,804
@@ -1752,7 +1752,7 @@ TextRecognize,Recognize text in image,✅,unevaluated,8.0,1779
 LeviCivitaTensor,Levi-Civita totally antisymmetric tensor,✅,pure,7.0,1781
 WeierstrassZeta,Weierstrass zeta function,,unevaluated,3.0,1781
 CatalanNumber,Returns the nth Catalan number,✅,pure,6.0,1788
-DateValue,Extracts a named component or property of a date,✅,pure,10.0,1788
+DateValue,Extracts a named component or property of a date such as its week quarter name or name initials,✅,pure,10.0,1788
 DensityPlot3D,3D density plot,,unevaluated,10.2,1788
 DynamicModuleValues,,🚫,,6.0,1788
 FRatioDistribution,F-ratio (Fisher-Snedecor) distribution; supports PDF CDF Quantile Mean and Variance,✅,pure,6.0,1788

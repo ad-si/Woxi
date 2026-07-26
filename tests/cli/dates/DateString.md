@@ -33,3 +33,16 @@ $ wo 'DateString[{2026, 4, 15, 14, 5}, {"Hour24", ":", "Minute"}]'
 - `"Date"` → `Wed 15 Apr 2026`
 - `"Time"` → `12:34:56`
 - `"Year"`, `"Month"`, `"Day"` → individual components
+
+The ISO week date names the week a day belongs to, which near New Year can be
+in the neighbouring year:
+
+```scrut
+$ wo 'DateString[{2024, 12, 31}, "ISOWeekDate"]'
+2025-W01-2
+```
+
+```scrut
+$ wo 'DateString[{2024, 12, 31}, {"QuarterNameShort", " ", "MonthNameInitial"}]'
+Q4 D
+```

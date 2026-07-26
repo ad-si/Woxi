@@ -2420,6 +2420,31 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "AMPM" => result.push_str(if h < 12 { "AM" } else { "PM" }),
         "AMPMLowerCase" => result.push_str(if h < 12 { "am" } else { "pm" }),
         "Quarter" => result.push_str(&format!("{}", (m - 1) / 3 + 1)),
+        "QuarterName" => {
+          result.push_str(&format!("Quarter {}", (m - 1) / 3 + 1))
+        }
+        "QuarterNameShort" => result.push_str(&format!("Q{}", (m - 1) / 3 + 1)),
+        // The ISO-8601 week date: <ISO year>-W<week>-<weekday>, so
+        // 2024-12-31 is "2025-W01-2".
+        "ISOWeekDate" => result.push_str(&format!(
+          "{}-W{:02}-{}",
+          iso_week_year(y, m, d),
+          iso_week(y, m, d),
+          day_of_week(y, m, d) + 1
+        )),
+        // wolframscript's "ISOYear" is the calendar year, not the ISO
+        // week-numbering one — 2024-12-31 gives "2024" even though its week
+        // belongs to ISO year 2025.
+        "ISOYear" => result.push_str(&format!("{}", y)),
+        // Both week forms are the zero-padded ISO week number.
+        "Week" | "WeekShort" => {
+          result.push_str(&format!("{:02}", iso_week(y, m, d)))
+        }
+        // Just the first letter of the English name.
+        "MonthNameInitial" => result.push_str(&month_name(m)[..1]),
+        "DayNameInitial" => {
+          result.push_str(&day_name(day_of_week(y, m, d))[..1])
+        }
         _ => result.push_str(s), // literal separator
       }
     }
@@ -2594,9 +2619,16 @@ pub fn date_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // year (1..366), the same value as DayOfYear.
       "DayOfYear" | "ISOYearDay" => int(day_of_year(y, mo, d)),
       "ISOWeekDay" => int(day_of_week(y, mo, d) + 1),
-      "Week" => int(iso_week(y, mo, d)),
+      "Week" | "WeekShort" => int(iso_week(y, mo, d)),
       "ISOWeek" => int(iso_week(y, mo, d)),
       "ISOWeekYear" => int(iso_week_year(y, mo, d)),
+      "QuarterName" => Expr::String(format!("Quarter {}", (mo - 1) / 3 + 1)),
+      "QuarterNameShort" => Expr::String(format!("Q{}", (mo - 1) / 3 + 1)),
+      // Just the first letter of the English name.
+      "MonthNameInitial" => Expr::String(month_name(mo)[..1].to_string()),
+      "DayNameInitial" => {
+        Expr::String(day_name(day_of_week(y, mo, d))[..1].to_string())
+      }
       _ => return None,
     })
   };
