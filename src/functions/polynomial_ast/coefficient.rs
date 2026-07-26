@@ -880,15 +880,106 @@ pub fn add_exprs(a: &Expr, b: &Expr) -> Expr {
   }
 }
 
+/// The monomial orders `MonomialList` accepts, comparing exponent vectors so
+/// that the leading monomial of the order sorts first.
+#[derive(Clone, Copy)]
+enum MonomialOrder {
+  Lexicographic,
+  DegreeLexicographic,
+  DegreeReverseLexicographic,
+  NegativeLexicographic,
+  NegativeDegreeLexicographic,
+  NegativeDegreeReverseLexicographic,
+}
+
+impl MonomialOrder {
+  fn parse(name: &str) -> Option<Self> {
+    match name {
+      "Lexicographic" => Some(Self::Lexicographic),
+      "DegreeLexicographic" => Some(Self::DegreeLexicographic),
+      "DegreeReverseLexicographic" => Some(Self::DegreeReverseLexicographic),
+      "NegativeLexicographic" => Some(Self::NegativeLexicographic),
+      "NegativeDegreeLexicographic" => Some(Self::NegativeDegreeLexicographic),
+      "NegativeDegreeReverseLexicographic" => {
+        Some(Self::NegativeDegreeReverseLexicographic)
+      }
+      _ => None,
+    }
+  }
+
+  fn compare(&self, a: &[i128], b: &[i128]) -> std::cmp::Ordering {
+    // Larger exponent on the earlier variable leads.
+    let lex = |a: &[i128], b: &[i128]| -> std::cmp::Ordering {
+      for (ea, eb) in a.iter().zip(b.iter()) {
+        match eb.cmp(ea) {
+          std::cmp::Ordering::Equal => continue,
+          other => return other,
+        }
+      }
+      std::cmp::Ordering::Equal
+    };
+    // Reverse lexicographic: read from the last variable backwards, the
+    // SMALLER exponent leading.
+    let revlex = |a: &[i128], b: &[i128]| -> std::cmp::Ordering {
+      for (ea, eb) in a.iter().rev().zip(b.iter().rev()) {
+        match ea.cmp(eb) {
+          std::cmp::Ordering::Equal => continue,
+          other => return other,
+        }
+      }
+      std::cmp::Ordering::Equal
+    };
+    let total = |v: &[i128]| -> i128 { v.iter().sum() };
+    match self {
+      Self::Lexicographic => lex(a, b),
+      Self::NegativeLexicographic => lex(b, a),
+      Self::DegreeLexicographic => {
+        total(b).cmp(&total(a)).then_with(|| lex(a, b))
+      }
+      Self::DegreeReverseLexicographic => {
+        total(b).cmp(&total(a)).then_with(|| revlex(a, b))
+      }
+      Self::NegativeDegreeLexicographic => {
+        total(a).cmp(&total(b)).then_with(|| lex(a, b))
+      }
+      Self::NegativeDegreeReverseLexicographic => {
+        total(a).cmp(&total(b)).then_with(|| revlex(a, b))
+      }
+    }
+  }
+}
+
 // ─── MonomialList ────────────────────────────────────────────────────
 
-/// MonomialList[poly, {x, y, ...}] — list of monomials sorted by degree
+/// MonomialList[poly, {x, y, ...}, order] — the monomials of poly, listed in
+/// the given monomial order (lexicographic by default).
 pub fn monomial_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() != 2 && args.len() != 3 {
     return Err(InterpreterError::EvaluationError(
       "MonomialList expects 2 arguments".into(),
     ));
   }
+
+  let order = match args.get(2) {
+    None => MonomialOrder::Lexicographic,
+    Some(spec) => {
+      let name = match spec {
+        Expr::String(s) => Some(s.clone()),
+        Expr::Identifier(s) | Expr::Constant(s) => Some(s.clone()),
+        _ => None,
+      };
+      match name.as_deref().and_then(MonomialOrder::parse) {
+        Some(o) => o,
+        None => {
+          crate::emit_message(&format!(
+            "MonomialList::mnmord1: {} is not a valid monomial order.",
+            crate::syntax::format_expr(spec, crate::syntax::ExprForm::Output)
+          ));
+          return Ok(unevaluated("MonomialList", args));
+        }
+      }
+    }
+  };
 
   // Extract variable names
   let vars: Vec<String> = match &args[1] {
@@ -926,16 +1017,7 @@ pub fn monomial_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     term_info.push((exponents, evaled));
   }
 
-  // Sort by lexicographic order of exponent vectors (descending)
-  term_info.sort_by(|a, b| {
-    for (ea, eb) in a.0.iter().zip(b.0.iter()) {
-      match eb.cmp(ea) {
-        std::cmp::Ordering::Equal => continue,
-        other => return other,
-      }
-    }
-    std::cmp::Ordering::Equal
-  });
+  term_info.sort_by(|a, b| order.compare(&a.0, &b.0));
 
   Ok(Expr::List(term_info.into_iter().map(|(_, t)| t).collect()))
 }

@@ -2,28 +2,92 @@ use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::syntax::{BinaryOperator, Expr, unevaluated};
 
-/// PolynomialMod[poly, m] — reduce all integer coefficients in poly modulo m.
+/// PolynomialMod[poly, m] — reduce poly modulo m.
+///
+/// A numeric modulus reduces the integer coefficients; a polynomial modulus
+/// divides poly and keeps the remainder. A list of moduli reduces modulo all
+/// of them at once, i.e. modulo the ideal they generate — so
+/// `PolynomialMod[7 x^2 + 3, {x^2 - 1, 5}]` is 0 (the polynomial reduces to
+/// 10, which vanishes mod 5) and `PolynomialMod[7, {5, 3}]` is 0 (the
+/// integers generate everything).
 pub fn polynomial_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(unevaluated("PolynomialMod", args));
   }
 
-  let m = match &args[1] {
-    Expr::Integer(n) if *n > 0 => *n,
-    _ => {
-      // Symbolic modulus: return the expanded polynomial
-      let expanded = super::expand_ast(&[args[0].clone()])?;
-      return evaluate_expr_to_expr(&expanded);
-    }
+  // PolynomialMod is Listable in its first argument.
+  if let Expr::List(items) = &args[0] {
+    let mapped: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|item| polynomial_mod_ast(&[item.clone(), args[1].clone()]))
+      .collect();
+    return Ok(Expr::List(mapped?.into()));
+  }
+
+  let moduli: Vec<Expr> = match &args[1] {
+    Expr::List(items) => items.to_vec(),
+    other => vec![other.clone()],
   };
 
-  // Expand the polynomial first
-  let expanded = super::expand_ast(&[args[0].clone()])?;
+  let mut numeric_gcd: i128 = 0;
+  let mut polynomial_moduli: Vec<Expr> = Vec::new();
+  for modulus in &moduli {
+    let modulus = evaluate_expr_to_expr(modulus)?;
+    match &modulus {
+      // A zero modulus reduces nothing.
+      Expr::Integer(0) => {}
+      Expr::Integer(n) => numeric_gcd = gcd_i128(numeric_gcd, n.abs()),
+      _ => {
+        if crate::functions::math_ast::expr_to_f64(&modulus).is_some() {
+          // A non-integer numeric modulus is not supported.
+          return Ok(unevaluated("PolynomialMod", args));
+        }
+        polynomial_moduli.push(modulus);
+      }
+    }
+  }
 
-  // Collect terms as a flat sum
-  let terms = collect_sum_terms(&expanded);
+  let mut result =
+    evaluate_expr_to_expr(&super::expand_ast(&[args[0].clone()])?)?;
 
-  // For each term, extract its integer coefficient, apply mod, and reconstruct
+  // Divide out each polynomial modulus, in the variable it is written in.
+  for modulus in &polynomial_moduli {
+    let vars = crate::functions::math_ast::variables_ast(&[modulus.clone()])?;
+    let Expr::List(var_list) = &vars else {
+      return Ok(unevaluated("PolynomialMod", args));
+    };
+    let Some(var) = var_list.first() else {
+      return Ok(unevaluated("PolynomialMod", args));
+    };
+    result = crate::evaluator::evaluate_function_call_ast(
+      "PolynomialRemainder",
+      &[result, modulus.clone(), var.clone()],
+    )?;
+  }
+
+  if numeric_gcd == 1 {
+    return Ok(Expr::Integer(0));
+  }
+  if numeric_gcd > 1 {
+    result = reduce_coefficients(&result, numeric_gcd)?;
+  }
+  evaluate_expr_to_expr(&result)
+}
+
+fn gcd_i128(a: i128, b: i128) -> i128 {
+  let (mut a, mut b) = (a.abs(), b.abs());
+  while b != 0 {
+    let t = a % b;
+    a = b;
+    b = t;
+  }
+  a
+}
+
+/// Reduce every integer coefficient of an expanded polynomial modulo `m`,
+/// taking the non-negative representative.
+fn reduce_coefficients(expr: &Expr, m: i128) -> Result<Expr, InterpreterError> {
+  let terms = collect_sum_terms(expr);
   let mut new_terms = Vec::new();
   for term in &terms {
     let (coeff, monomial) = extract_coefficient(term);
@@ -49,18 +113,14 @@ pub fn polynomial_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if new_terms.is_empty() {
     return Ok(Expr::Integer(0));
   }
-
-  // Build the sum and simplify
   let result = if new_terms.len() == 1 {
     new_terms.pop().unwrap()
   } else {
-    // Build a Plus expression
     Expr::FunctionCall {
       name: "Plus".to_string(),
       args: new_terms.into(),
     }
   };
-
   evaluate_expr_to_expr(&result)
 }
 

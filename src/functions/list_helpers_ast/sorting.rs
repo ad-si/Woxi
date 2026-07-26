@@ -293,6 +293,32 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
           }
         }
       }
+      // A leading factor that is not a number literal behaves like a
+      // coefficient too: wolframscript compares products from their last
+      // factor backwards, so `(a + b) x` sorts before `x^2` (x precedes
+      // x^2) while `(a + b) x^2` sorts after `x^2` (same last factor, and
+      // the extra factor breaks the tie).
+      let (fa, fb) = (times_factors_for_order(a), times_factors_for_order(b));
+      if fa.is_some() || fb.is_some() {
+        let single_a = [a];
+        let single_b = [b];
+        let fa = fa.unwrap_or_else(|| single_a.to_vec());
+        let fb = fb.unwrap_or_else(|| single_b.to_vec());
+        let mut i = fa.len();
+        let mut j = fb.len();
+        while i > 0 && j > 0 {
+          let ord = canonical_cmp(fa[i - 1], fb[j - 1]);
+          if ord != std::cmp::Ordering::Equal {
+            return ord;
+          }
+          i -= 1;
+          j -= 1;
+        }
+        if i != j {
+          return i.cmp(&j);
+        }
+      }
+
       // Powers of integer or rational bases order by base then exponent,
       // ascending (Sort[{Sqrt[11], Sqrt[2]}] = {Sqrt[2], Sqrt[11]},
       // Sort[{Sqrt[3], Sqrt[5/3]}] = {Sqrt[5/3], Sqrt[3]}); the
@@ -1493,6 +1519,30 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
     }
   }
 
+  // A leading factor that is not a number literal behaves like a coefficient
+  // too, products comparing from their last factor backwards:
+  // Order[(a + b)*x, a*x] = -1 because the tie on x falls to a vs a + b.
+  let (fa, fb) = (times_factors_for_order(a), times_factors_for_order(b));
+  if fa.is_some() || fb.is_some() {
+    let single_a = [a];
+    let single_b = [b];
+    let fa = fa.unwrap_or_else(|| single_a.to_vec());
+    let fb = fb.unwrap_or_else(|| single_b.to_vec());
+    let mut i = fa.len();
+    let mut j = fb.len();
+    while i > 0 && j > 0 {
+      let ord = compare_exprs(fa[i - 1], fb[j - 1]);
+      if ord != 0 {
+        return ord;
+      }
+      i -= 1;
+      j -= 1;
+    }
+    if i != j {
+      return if i < j { 1 } else { -1 };
+    }
+  }
+
   // Two powers of integer or rational bases with numeric exponents compare
   // by base ascending, then exponent ascending: Order[Sqrt[2], Sqrt[11]] = 1,
   // Order[2^(1/3), Sqrt[2]] = 1, Order[Sqrt[5/3], Sqrt[3]] = 1 (all
@@ -2189,4 +2239,49 @@ pub fn wolfram_string_order(a: &str, b: &str) -> i64 {
 fn expr_le(a: &Expr, b: &Expr) -> bool {
   // Use canonical_cmp for consistency with Sort
   !matches!(canonical_cmp(a, b), std::cmp::Ordering::Greater)
+}
+
+/// The factors of a product, flattened, for the canonical order's
+/// last-factor-first comparison. `None` for anything that is not a product,
+/// and for a product whose leading factor is a number literal (that case is
+/// already handled by the numeric-coefficient rule).
+fn times_factors_for_order(e: &Expr) -> Option<Vec<&Expr>> {
+  fn flatten<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) -> bool {
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == "Times" && args.len() >= 2 =>
+      {
+        for a in args.iter() {
+          flatten(a, out);
+        }
+        true
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        flatten(left, out);
+        flatten(right, out);
+        true
+      }
+      other => {
+        out.push(other);
+        false
+      }
+    }
+  }
+  let mut factors = Vec::new();
+  if !flatten(e, &mut factors) || factors.len() < 2 {
+    return None;
+  }
+  if matches!(
+    factors[0],
+    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) | Expr::BigFloat(..)
+  ) || matches!(factors[0], Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2)
+  {
+    return None;
+  }
+  Some(factors)
 }

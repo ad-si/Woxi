@@ -19541,3 +19541,62 @@ mod sort_with_ordering_function {
     );
   }
 }
+
+mod canonical_order_symbolic_coefficients {
+  use super::*;
+
+  // A leading factor that is not a number behaves like a coefficient:
+  // products compare from their last factor backwards, so (a + b) x sorts
+  // where x does, not where a sum does.
+  #[test]
+  fn products_compare_from_the_last_factor() {
+    assert_eq!(
+      interpret("Sort[{x^2, (a + b)*x}]").unwrap(),
+      "{(a + b)*x, x^2}"
+    );
+    assert_eq!(
+      interpret("Sort[{x^3, (a + b)*x^2}]").unwrap(),
+      "{(a + b)*x^2, x^3}"
+    );
+    assert_eq!(
+      interpret("Sort[{x*y, (a + b)*x}]").unwrap(),
+      "{(a + b)*x, x*y}"
+    );
+    assert_eq!(
+      interpret("Sort[{x^2, (a + b)^2*x}]").unwrap(),
+      "{(a + b)^2*x, x^2}"
+    );
+  }
+
+  // A tie on the last factor falls to the factors before it, and the term
+  // with fewer factors leads.
+  #[test]
+  fn a_tie_falls_to_the_earlier_factors() {
+    assert_eq!(
+      interpret("Sort[{x^2, (a + b)*x^2}]").unwrap(),
+      "{x^2, (a + b)*x^2}"
+    );
+    assert_eq!(
+      interpret("Sort[{x^2, (a + b)*Sin[x]}]").unwrap(),
+      "{x^2, (a + b)*Sin[x]}"
+    );
+    assert_eq!(
+      interpret("Sort[{x^2, a*x, c*y, (a + b)*x}]").unwrap(),
+      "{a*x, (a + b)*x, x^2, c*y}"
+    );
+    assert_eq!(
+      interpret("Sort[{2*x, (a + b)*x}]").unwrap(),
+      "{2*x, (a + b)*x}"
+    );
+  }
+
+  // Order reports the same ordering as Sort.
+  #[test]
+  fn order_agrees_with_sort() {
+    assert_eq!(interpret("Order[(a + b)*x, a*x]").unwrap(), "-1");
+    assert_eq!(interpret("Order[(a + b)*x, x^2]").unwrap(), "1");
+    assert_eq!(interpret("Order[(a + b)*x, x]").unwrap(), "-1");
+    assert_eq!(interpret("Order[(a + b)*x, x*y]").unwrap(), "1");
+    assert_eq!(interpret("Order[(a + b)*x^2, x^3]").unwrap(), "1");
+  }
+}

@@ -928,7 +928,7 @@ MeshRegion,Requires external services or GUI infrastructure,🚫,io,10.0,935
 ScalingFunctions,,🚫,,8.0,936
 ChartElementFunction,,🚫,,7.0,937
 ComponentMeasurements,Measure labelled components of a label matrix (Count Area Label),✅,pure,8.0,938
-PolynomialMod,Reduce polynomial coefficients modulo m,✅,pure,2.0,939
+PolynomialMod,Reduces a polynomial modulo m (a number reduces the coefficients; a polynomial divides and leaves the remainder; a list reduces modulo the ideal they generate),✅,pure,2.0,939
 RegionMember,Tests whether a point lies in a region (Disk/Ball/Circle/Sphere/Rectangle/Triangle/Polygon),✅,pure,10.0,940
 Cycles,Permutation cycle notation wrapper,✅,none,8.0,941
 EdgeWeight,,🚫,,8.0,942
@@ -1200,7 +1200,7 @@ ToRadicals,Attempts to express in terms of radicals,✅,pure,3.0,1211
 LowerTriangularize,Zero out elements above a diagonal,✅,pure,7.0,1212
 BitAnd,Returns the bitwise AND of integers,✅,pure,4.0,1213
 ImageCompose,Overlays one image on another,✅,pure,7.0,1214
-Order,Returns the canonical ordering of two expressions,✅,pure,1.0,1216
+Order,Returns the canonical ordering of two expressions (products compare from their last factor backwards so a symbolic leading factor acts as a coefficient),✅,pure,1.0,1216
 ReplaceList,Returns a list of all results from applying a rule to an expression in every distinct way it matches,✅,pure,3.0,1216
 SixJSymbol,Wigner 6-j symbol,✅,pure,2.0,1217
 LinearLayer,,🚫,,11.0,1218
@@ -1357,7 +1357,7 @@ LegendLabel,Option for specifying legend labels in plots,✅,none,9.0,1371
 BesselJZero,Compute zeros of the Bessel function J_n using bisection and Newton method,✅,pure,6.0,1375
 DiscretePlot3D,3D surface plot at discrete integer grid points,✅,none,8.0,1375
 EllipticThetaPrime,Derivative of Jacobi theta function with respect to z,✅,pure,3.0,1375
-MonomialList,List of monomials sorted by lexicographic order of exponent vectors,✅,pure,7.0,1375
+MonomialList,Monomials of a polynomial listed in a monomial order (lexicographic by default),✅,pure,7.0,1375
 ComplexPlot,Domain coloring visualization of a complex function,✅,pure,12.0,1377
 RegionCentroid,Compute the centroid of a geometric region,✅,pure,10.0,1377
 APIFunction,Create a web API from a function,🚫,io,10.0,1379

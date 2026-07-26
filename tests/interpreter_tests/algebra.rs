@@ -15315,3 +15315,153 @@ mod binomial_equation_roots {
     );
   }
 }
+
+mod polynomial_mod_and_monomial_orders {
+  use super::*;
+
+  // A polynomial modulus divides and keeps the remainder, in the variable
+  // the modulus is written in.
+  #[test]
+  fn polynomial_modulus_divides() {
+    assert_eq!(interpret("PolynomialMod[x^3 + 2 x, x^2 + 1]").unwrap(), "x");
+    assert_eq!(interpret("PolynomialMod[x^2 - 1, x - 1]").unwrap(), "0");
+    assert_eq!(interpret("PolynomialMod[x^5, x^2 - 1]").unwrap(), "x");
+    assert_eq!(
+      interpret("PolynomialMod[a x^2 + 1, x^2 + 1]").unwrap(),
+      "1 - a"
+    );
+    assert_eq!(
+      interpret("PolynomialMod[2 x^2 + 1, 3 x + 1]").unwrap(),
+      "11/9"
+    );
+    assert_eq!(interpret("PolynomialMod[5, x]").unwrap(), "5");
+    assert_eq!(interpret("PolynomialMod[x, 0]").unwrap(), "x");
+  }
+
+  #[test]
+  fn polynomial_modulus_picks_its_own_variable() {
+    assert_eq!(
+      interpret("PolynomialMod[x^2 + y, y - 1]").unwrap(),
+      "1 + x^2"
+    );
+    assert_eq!(interpret("PolynomialMod[x^2, x + y]").unwrap(), "y^2");
+    assert_eq!(interpret("PolynomialMod[x^2 y + x, y]").unwrap(), "x");
+  }
+
+  // A list of moduli reduces modulo all of them at once — modulo the ideal
+  // they generate, so integers that are coprime kill the polynomial.
+  #[test]
+  fn a_list_of_moduli_reduces_by_all_of_them() {
+    assert_eq!(
+      interpret("PolynomialMod[7 x^2 + 3, {x^2 - 1, 5}]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("PolynomialMod[6 x^2 + 4 x + 2, {x + 1, 4}]").unwrap(),
+      "0"
+    );
+    assert_eq!(interpret("PolynomialMod[x^4, {x^2 - 2, 3}]").unwrap(), "1");
+    assert_eq!(interpret("PolynomialMod[3 x^2 + 2, {2, x}]").unwrap(), "0");
+    assert_eq!(
+      interpret("PolynomialMod[x^2 + y^2, {x + y, 3}]").unwrap(),
+      "2*y^2"
+    );
+    assert_eq!(interpret("PolynomialMod[7, {5, 3}]").unwrap(), "0");
+  }
+
+  // A numeric modulus keeps reducing the coefficients, and the whole thing
+  // threads over a list of polynomials.
+  #[test]
+  fn numeric_modulus_and_threading() {
+    assert_eq!(interpret("PolynomialMod[2 x + 7, 3]").unwrap(), "1 + 2*x");
+    assert_eq!(interpret("PolynomialMod[-3 x, 2]").unwrap(), "x");
+    assert_eq!(
+      interpret("PolynomialMod[{2 x, 4 x}, 3]").unwrap(),
+      "{2*x, x}"
+    );
+  }
+
+  // MonomialList takes a monomial order as its third argument.
+  #[test]
+  fn monomial_orders() {
+    let p = "x^2 + y^3 + x*y";
+    assert_eq!(
+      interpret(&format!("MonomialList[{p}, {{x, y}}, \"Lexicographic\"]"))
+        .unwrap(),
+      "{x^2, x*y, y^3}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "MonomialList[{p}, {{x, y}}, \"DegreeLexicographic\"]"
+      ))
+      .unwrap(),
+      "{y^3, x^2, x*y}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "MonomialList[{p}, {{x, y}}, \"DegreeReverseLexicographic\"]"
+      ))
+      .unwrap(),
+      "{y^3, x^2, x*y}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "MonomialList[{p}, {{x, y}}, \"NegativeLexicographic\"]"
+      ))
+      .unwrap(),
+      "{y^3, x*y, x^2}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "MonomialList[{p}, {{x, y}}, \"NegativeDegreeLexicographic\"]"
+      ))
+      .unwrap(),
+      "{x^2, x*y, y^3}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "MonomialList[{p}, {{x, y}}, \"NegativeDegreeReverseLexicographic\"]"
+      ))
+      .unwrap(),
+      "{x^2, x*y, y^3}"
+    );
+  }
+
+  #[test]
+  fn monomial_orders_keep_the_coefficients() {
+    assert_eq!(
+      interpret(
+        r#"MonomialList[(1 + x + y)^2, {x, y}, "DegreeReverseLexicographic"]"#
+      )
+      .unwrap(),
+      "{x^2, 2*x*y, y^2, 2*x, 2*y, 1}"
+    );
+    assert_eq!(
+      interpret(
+        r#"MonomialList[3 x^2 y + 2 x y^2 + z, {x, y, z}, "Lexicographic"]"#
+      )
+      .unwrap(),
+      "{3*x^2*y, 2*x*y^2, z}"
+    );
+    assert_eq!(
+      interpret(r#"MonomialList[x + 1, {x}, "NegativeLexicographic"]"#)
+        .unwrap(),
+      "{1, x}"
+    );
+  }
+
+  #[test]
+  fn an_unknown_monomial_order_is_refused() {
+    let r = woxi::interpret_with_stdout(
+      r#"MonomialList[x^2 + x*y + y^3, {x, y}, "Foo"]"#,
+    )
+    .unwrap();
+    assert_eq!(r.result, "MonomialList[x^2 + x*y + y^3, {x, y}, Foo]");
+    assert!(
+      r.warnings.iter().any(|w| w
+        .contains("MonomialList::mnmord1: Foo is not a valid monomial order.")),
+      "expected mnmord1, got {:?}",
+      r.warnings
+    );
+  }
+}
