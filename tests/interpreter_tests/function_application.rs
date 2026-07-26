@@ -3253,3 +3253,64 @@ mod subject_first_operator_forms {
     );
   }
 }
+
+mod apply_and_map_at_compound_heads {
+  use super::*;
+
+  // A compound head is a head: Apply replaces it, leaving the arguments of
+  // the outermost call.
+  #[test]
+  fn apply_replaces_a_compound_head() {
+    assert_eq!(interpret("Apply[f, g[x][y]]").unwrap(), "f[y]");
+    assert_eq!(interpret("Apply[f, g[x][y][z]]").unwrap(), "f[z]");
+    assert_eq!(interpret("Apply[f, g[x][y], {0}]").unwrap(), "f[y]");
+    assert_eq!(interpret("Apply[f, g[x][y], {0, 1}]").unwrap(), "f[y]");
+  }
+
+  // Level 1 of g[x][y] is its argument y, an atom with no head to replace.
+  #[test]
+  fn apply_at_level_one_leaves_an_atom_alone() {
+    assert_eq!(interpret("Apply[f, g[x][y], {1}]").unwrap(), "g[x][y]");
+    assert_eq!(interpret("Apply[f, {g[x][y]}, {1}]").unwrap(), "{f[y]}");
+  }
+
+  // Rules and comparison chains have heads too, so a level specification
+  // reaches them the same way the plain form does.
+  #[test]
+  fn apply_at_level_zero_reaches_rules_and_comparisons() {
+    assert_eq!(interpret("Apply[f, a -> b, {0}]").unwrap(), "f[a, b]");
+    assert_eq!(interpret("Apply[f, a == b, {0}]").unwrap(), "f[a, b]");
+    assert_eq!(interpret("Apply[f, a -> b, {0, 1}]").unwrap(), "f[a, b]");
+    // Level 1 alone is the two sides, which are atoms here.
+    assert_eq!(interpret("Apply[f, a -> b, 1]").unwrap(), "a -> b");
+  }
+
+  // MapAt addresses the head as position 0, and a longer path descends into
+  // a compound one.
+  #[test]
+  fn map_at_reaches_the_head() {
+    assert_eq!(interpret("MapAt[f, g[x], {0}]").unwrap(), "f[g][x]");
+    assert_eq!(interpret("MapAt[f, g[x][y], {0}]").unwrap(), "f[g[x]][y]");
+    assert_eq!(interpret("MapAt[f, g[x][y], {1}]").unwrap(), "g[x][f[y]]");
+    assert_eq!(
+      interpret("MapAt[f, g[x][y], {0, 1}]").unwrap(),
+      "g[f[x]][y]"
+    );
+  }
+
+  #[test]
+  fn map_at_reaches_both_sides_of_a_rule() {
+    assert_eq!(interpret("MapAt[f, a -> b, {1}]").unwrap(), "f[a] -> b");
+    assert_eq!(interpret("MapAt[f, a -> b, {2}]").unwrap(), "a -> f[b]");
+    assert_eq!(interpret("MapAt[f, a :> b, {2}]").unwrap(), "a :> f[b]");
+  }
+
+  // The rebuilt expression comes back evaluated, so an operator-form head
+  // prints as the operator and a sum is reordered canonically.
+  #[test]
+  fn map_at_returns_an_evaluated_expression() {
+    assert_eq!(interpret("MapAt[f, a == b, {1}]").unwrap(), "f[a] == b");
+    assert_eq!(interpret("MapAt[f, a + b, {1}]").unwrap(), "b + f[a]");
+    assert_eq!(interpret("MapAt[f, a && b, {2}]").unwrap(), "a && f[b]");
+  }
+}

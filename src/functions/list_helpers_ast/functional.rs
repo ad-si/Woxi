@@ -778,6 +778,9 @@ fn expr_children(expr: &Expr) -> Option<Vec<Expr>> {
   match expr {
     Expr::List(items) => Some(items.to_vec()),
     Expr::FunctionCall { args, .. } => Some(args.to_vec()),
+    // A compound head is still a head: the arguments of `g[x][y]` are `{y}`,
+    // so Apply[f, g[x][y]] is f[y].
+    Expr::CurriedCall { args, .. } => Some(args.clone()),
     Expr::BinaryOp { op, left, right } => {
       match op {
         // a - b → Plus[a, Times[-1, b]]
@@ -983,6 +986,11 @@ fn expr_depth(expr: &Expr) -> usize {
   let children: Vec<&Expr> = match expr {
     Expr::List(items) => items.iter().collect(),
     Expr::FunctionCall { args, .. } => args.iter().collect(),
+    Expr::CurriedCall { func, args } => {
+      let mut c: Vec<&Expr> = vec![func.as_ref()];
+      c.extend(args.iter());
+      c
+    }
     Expr::BinaryOp { left, right, .. } => vec![left.as_ref(), right.as_ref()],
     Expr::UnaryOp { operand, .. } => vec![operand.as_ref()],
     _ => return 1,
@@ -1012,12 +1020,44 @@ fn apply_at_level_recursive(
       name: unary_op_to_name(*op).to_string(),
       args: vec![(**operand).clone()].into(),
     },
+    // Rules and comparison chains have heads too, so a level specification
+    // reaches them: Apply[f, a -> b, {0}] is f[a, b].
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::FunctionCall {
+      name: "Rule".to_string(),
+      args: vec![(**pattern).clone(), (**replacement).clone()].into(),
+    },
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Expr::FunctionCall {
+      name: "RuleDelayed".to_string(),
+      args: vec![(**pattern).clone(), (**replacement).clone()].into(),
+    },
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      let (head, args) =
+        crate::syntax::comparison_head_and_args(operands, operators);
+      Expr::FunctionCall {
+        name: head,
+        args: args.into(),
+      }
+    }
     other => other.clone(),
   };
-  let (items, is_list, head_name) = match &normalized {
-    Expr::List(items) => (items.clone(), true, None),
+  let (items, is_list, head_name, curried_head) = match &normalized {
+    Expr::List(items) => (items.to_vec(), true, None, None),
     Expr::FunctionCall { name, args } => {
-      (args.clone(), false, Some(name.clone()))
+      (args.to_vec(), false, Some(name.clone()), None)
+    }
+    // A compound head counts as a head, so level 0 of `g[x][y]` replaces
+    // `g[x]` and leaves `{y}` as the arguments.
+    Expr::CurriedCall { func: head, args } => {
+      (args.clone(), false, None, Some(head.clone()))
     }
     _ => return Ok(expr.clone()),
   };
@@ -1047,6 +1087,11 @@ fn apply_at_level_recursive(
     Ok(Expr::List(new_items.into()))
   } else if let Some(name) = head_name {
     crate::evaluator::evaluate_function_call_ast(&name, &new_items)
+  } else if let Some(head) = curried_head {
+    Ok(Expr::CurriedCall {
+      func: head,
+      args: new_items,
+    })
   } else {
     Ok(expr.clone())
   }

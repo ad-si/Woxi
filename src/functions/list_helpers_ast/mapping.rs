@@ -486,6 +486,23 @@ pub fn map_at_ast_named(
   list: &Expr,
   pos_spec: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  let result = map_at_rebuilt(caller, func, list, pos_spec)?;
+  // The rebuilt expression is handed back evaluated, so a head that has an
+  // operator form (Equal, Plus, …) prints the way wolframscript reports it:
+  // MapAt[f, a == b, 1] is `f[a] == b`, not `Equal[f[a], b]`. An unevaluated
+  // MapAt result would re-enter this function, so it is passed through.
+  if matches!(&result, Expr::FunctionCall { name, .. } if name == caller) {
+    return Ok(result);
+  }
+  crate::evaluator::evaluate_expr_to_expr(&result)
+}
+
+fn map_at_rebuilt(
+  caller: &str,
+  func: &Expr,
+  list: &Expr,
+  pos_spec: &Expr,
+) -> Result<Expr, InterpreterError> {
   let unevaluated = || Expr::FunctionCall {
     name: "MapAt".to_string(),
     args: vec![func.clone(), list.clone(), pos_spec.clone()].into(),
@@ -566,10 +583,38 @@ pub fn map_at_ast_named(
   // Parts a path descends into. An association contributes its values, so a
   // positional path addresses them in order, like Part does.
   fn path_parts(expr: &Expr) -> Option<Vec<Expr>> {
-    if let Expr::Association(pairs) = expr {
-      return Some(pairs.iter().map(|(_, v)| v.clone()).collect());
+    match expr {
+      Expr::Association(pairs) => {
+        Some(pairs.iter().map(|(_, v)| v.clone()).collect())
+      }
+      // A compound head leaves its own arguments addressable, and a rule has
+      // its two sides: MapAt[f, g[x][y], {1}] is g[x][f[y]].
+      Expr::CurriedCall { args, .. } => Some(args.clone()),
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => Some(vec![(**pattern).clone(), (**replacement).clone()]),
+      _ => super::element_access::parts_and_head(expr).map(|(items, _)| items),
     }
-    super::element_access::parts_and_head(expr).map(|(items, _)| items)
+  }
+
+  /// The head of an expression as an expression, so that a compound head
+  /// (`g[x]` in `g[x][y]`) can be transformed like any other part.
+  fn head_expr(expr: &Expr) -> Expr {
+    match expr {
+      Expr::CurriedCall { func, .. } => (**func).clone(),
+      Expr::Rule { .. } => Expr::Identifier("Rule".to_string()),
+      Expr::RuleDelayed { .. } => Expr::Identifier("RuleDelayed".to_string()),
+      other => Expr::Identifier(
+        super::element_access::parts_and_head(other)
+          .and_then(|(_, h)| h)
+          .unwrap_or_else(|| "List".to_string()),
+      ),
+    }
   }
 
   // Put transformed parts back, keeping the head (or the association's keys).
@@ -582,6 +627,26 @@ pub fn map_at_ast_named(
           .map(|((k, _), v)| (k.clone(), v))
           .collect(),
       ),
+      Expr::CurriedCall { func, .. } => Expr::CurriedCall {
+        func: func.clone(),
+        args: parts,
+      },
+      Expr::Rule { .. } | Expr::RuleDelayed { .. } if parts.len() == 2 => {
+        let mut parts = parts;
+        let replacement = Box::new(parts.pop().unwrap());
+        let pattern = Box::new(parts.pop().unwrap());
+        if matches!(expr, Expr::Rule { .. }) {
+          Expr::Rule {
+            pattern,
+            replacement,
+          }
+        } else {
+          Expr::RuleDelayed {
+            pattern,
+            replacement,
+          }
+        }
+      }
       _ => match super::element_access::parts_and_head(expr) {
         Some((_, Some(h))) => Expr::FunctionCall {
           name: h,
@@ -654,15 +719,24 @@ pub fn map_at_ast_named(
     let parts = path_parts(expr);
     for i in level_indices(expr, &spec[0])? {
       prefix.push(i);
-      let child = parts.as_ref().and_then(|items| {
-        let idx = if i > 0 {
-          i - 1
-        } else {
-          items.len() as i128 + i
-        };
-        usize::try_from(idx).ok().and_then(|u| items.get(u))
-      });
-      match child {
+      // Index 0 addresses the head, which a longer specification then
+      // descends into: {0, 1} of g[x][y] reaches the x inside g[x].
+      let child: Option<Expr> = if i == 0 {
+        Some(head_expr(expr))
+      } else {
+        parts.as_ref().and_then(|items| {
+          let idx = if i > 0 {
+            i - 1
+          } else {
+            items.len() as i128 + i
+          };
+          usize::try_from(idx)
+            .ok()
+            .and_then(|u| items.get(u))
+            .cloned()
+        })
+      };
+      match &child {
         Some(c) => expand_spec(c, &spec[1..], prefix, out)?,
         None => out.push(prefix.clone()),
       }
@@ -688,17 +762,21 @@ pub fn map_at_ast_named(
     };
     let len = items.len() as i128;
     let n = path[0];
-    if n == 0 && path.len() == 1 {
-      // Wrap the head: f[head][args...]
-      let head = match super::element_access::parts_and_head(expr) {
-        Some((_, h)) => h,
-        None => None,
+    if n == 0 {
+      // Position 0 is the head: transform it (or descend into it) and put
+      // the arguments back, so {0} wraps the head and {0, 1} reaches inside
+      // a compound one.
+      let head = head_expr(expr);
+      let new_head = if path.len() == 1 {
+        apply_func_ast(func, &head)?
+      } else {
+        match apply_path(func, &head, &path[1..])? {
+          Ok(v) => v,
+          Err(()) => return Ok(Err(())),
+        }
       };
-      let head_expr =
-        Expr::Identifier(head.unwrap_or_else(|| "List".to_string()));
-      let wrapped = apply_func_ast(func, &head_expr)?;
       return Ok(Ok(Expr::CurriedCall {
-        func: Box::new(wrapped),
+        func: Box::new(new_head),
         args: items,
       }));
     }
