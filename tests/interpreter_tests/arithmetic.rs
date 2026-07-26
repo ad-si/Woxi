@@ -9857,3 +9857,328 @@ mod bigfloat_trig {
     assert!(r.contains("`30.192402324441726"), "precision tag: {r}");
   }
 }
+
+// Powers with an infinite base or exponent follow the direction and the
+// modulus, not just the sign: a unit-modulus base never settles, a base
+// outside the unit circle diverges (to Infinity only when it is a positive
+// real), and one inside it vanishes.
+mod infinite_power_rules {
+  use super::*;
+
+  #[test]
+  fn infinite_exponent_uses_the_modulus() {
+    // |z| > 1 diverges; only a positive real base keeps a direction.
+    assert_eq!(interpret("2^Infinity").unwrap(), "Infinity");
+    assert_eq!(interpret("(-2)^Infinity").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("(2 + I)^Infinity").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("(1 + I)^Infinity").unwrap(), "ComplexInfinity");
+    // |z| < 1 vanishes, whatever the direction. Regression: a negative base
+    // used to give ComplexInfinity here.
+    assert_eq!(interpret("(1/2)^Infinity").unwrap(), "0");
+    assert_eq!(interpret("(-1/2)^Infinity").unwrap(), "0");
+    assert_eq!(interpret("(1/2 + I/2)^Infinity").unwrap(), "0");
+    // A negative exponent direction swaps the two divergent cases.
+    assert_eq!(interpret("(-2)^(-Infinity)").unwrap(), "0");
+    assert_eq!(interpret("(2 + I)^(-Infinity)").unwrap(), "0");
+    assert_eq!(interpret("(1/2)^(-Infinity)").unwrap(), "Infinity");
+    assert_eq!(interpret("(-1/2)^(-Infinity)").unwrap(), "ComplexInfinity");
+    assert_eq!(
+      interpret("(1/2 + I/2)^(-Infinity)").unwrap(),
+      "ComplexInfinity"
+    );
+  }
+
+  #[test]
+  fn unit_modulus_bases_are_indeterminate() {
+    clear_state();
+    assert_eq!(interpret("(-1)^Infinity").unwrap(), "Indeterminate");
+    assert_eq!(interpret("(-1)^(-Infinity)").unwrap(), "Indeterminate");
+    assert_eq!(interpret("I^Infinity").unwrap(), "Indeterminate");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains("Infinity::indet")),
+      "got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn infinite_base_raises_its_direction() {
+    // DirectedInfinity[d]^p is DirectedInfinity[d^p] for a positive real p.
+    assert_eq!(interpret("Infinity^2").unwrap(), "Infinity");
+    assert_eq!(interpret("(-Infinity)^2").unwrap(), "Infinity");
+    assert_eq!(interpret("(-Infinity)^3").unwrap(), "-Infinity");
+    assert_eq!(
+      interpret("(-Infinity)^(1/2)").unwrap(),
+      "DirectedInfinity[I]"
+    );
+    assert_eq!(interpret("DirectedInfinity[I]^2").unwrap(), "-Infinity");
+    // Negative exponents vanish, whatever the direction.
+    assert_eq!(interpret("Infinity^(-2)").unwrap(), "0");
+    assert_eq!(interpret("DirectedInfinity[I]^(-1)").unwrap(), "0");
+    assert_eq!(interpret("ComplexInfinity^(-1)").unwrap(), "0");
+    // ComplexInfinity keeps its unknown direction.
+    assert_eq!(interpret("ComplexInfinity^2").unwrap(), "ComplexInfinity");
+    assert_eq!(
+      interpret("ComplexInfinity^(1/2)").unwrap(),
+      "ComplexInfinity"
+    );
+  }
+
+  #[test]
+  fn complex_exponents_on_an_infinite_base() {
+    // A purely imaginary exponent never settles; otherwise the real part
+    // decides between divergence and vanishing.
+    assert_eq!(interpret("Infinity^I").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Infinity^(2*I)").unwrap(), "Indeterminate");
+    assert_eq!(interpret("(-Infinity)^I").unwrap(), "Indeterminate");
+    assert_eq!(interpret("ComplexInfinity^I").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Infinity^(1 + I)").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("Infinity^(-1 - I)").unwrap(), "0");
+  }
+
+  #[test]
+  fn both_sides_infinite() {
+    // Only the exponent's direction matters — an infinite base is never a
+    // positive real, so a diverging power is ComplexInfinity.
+    assert_eq!(interpret("Infinity^Infinity").unwrap(), "ComplexInfinity");
+    assert_eq!(
+      interpret("(-Infinity)^Infinity").unwrap(),
+      "ComplexInfinity"
+    );
+    assert_eq!(
+      interpret("ComplexInfinity^Infinity").unwrap(),
+      "ComplexInfinity"
+    );
+    assert_eq!(interpret("Infinity^(-Infinity)").unwrap(), "0");
+    assert_eq!(interpret("(-Infinity)^(-Infinity)").unwrap(), "0");
+    assert_eq!(interpret("ComplexInfinity^(-Infinity)").unwrap(), "0");
+  }
+}
+
+// Indeterminate is not a symbol that happens to be called Indeterminate: it
+// absorbs arithmetic and refuses to be compared, even with itself.
+mod indeterminate_propagation {
+  use super::*;
+
+  #[test]
+  fn powers_absorb_it() {
+    // Regression: Indeterminate^0 and 1^Indeterminate used to be 1.
+    assert_eq!(interpret("Indeterminate^0").unwrap(), "Indeterminate");
+    assert_eq!(interpret("1^Indeterminate").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Indeterminate^2").unwrap(), "Indeterminate");
+    assert_eq!(interpret("2^Indeterminate").unwrap(), "Indeterminate");
+    assert_eq!(interpret("0^Indeterminate").unwrap(), "Indeterminate");
+    // The ordinary shortcuts still hold.
+    assert_eq!(interpret("1^2").unwrap(), "1");
+    assert_eq!(interpret("5^0").unwrap(), "1");
+  }
+
+  #[test]
+  fn it_does_not_cancel_against_itself() {
+    // Regression: Indeterminate/Indeterminate collapsed to 1.
+    assert_eq!(
+      interpret("Indeterminate/Indeterminate").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(interpret("Indeterminate/2").unwrap(), "Indeterminate");
+    assert_eq!(interpret("2/Indeterminate").unwrap(), "Indeterminate");
+    // Identical symbolic expressions still cancel.
+    assert_eq!(interpret("x/x").unwrap(), "1");
+  }
+
+  #[test]
+  fn abs_and_extrema() {
+    assert_eq!(interpret("Abs[Indeterminate]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Max[Indeterminate, 1]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Min[Indeterminate, 1]").unwrap(), "Indeterminate");
+    // Lists are flattened first, so a nested Indeterminate counts too.
+    assert_eq!(
+      interpret("Max[{Indeterminate, 2}]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(interpret("Max[{1, 2}, {3}]").unwrap(), "3");
+    assert_eq!(interpret("Abs[-3]").unwrap(), "3");
+  }
+
+  #[test]
+  fn comparisons_stay_unevaluated() {
+    // Regression: these decided structurally, so `x == Indeterminate` silently
+    // took a branch.
+    assert_eq!(
+      interpret("Indeterminate == Indeterminate").unwrap(),
+      "Indeterminate == Indeterminate"
+    );
+    assert_eq!(
+      interpret("Indeterminate == 1").unwrap(),
+      "Indeterminate == 1"
+    );
+    assert_eq!(
+      interpret("Indeterminate != Indeterminate").unwrap(),
+      "Indeterminate != Indeterminate"
+    );
+    assert_eq!(
+      interpret("Infinity == Indeterminate").unwrap(),
+      "Infinity == Indeterminate"
+    );
+    assert_eq!(
+      interpret("Equal[Indeterminate, 1, 2]").unwrap(),
+      "Indeterminate == 1 == 2"
+    );
+    assert_eq!(
+      interpret("Unequal[Indeterminate, 1]").unwrap(),
+      "Indeterminate != 1"
+    );
+    // SameQ is structural and still decides.
+    assert_eq!(
+      interpret("Indeterminate === Indeterminate").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("Indeterminate =!= 1").unwrap(), "True");
+    // Ordinary comparisons are untouched.
+    assert_eq!(interpret("1 == 1").unwrap(), "True");
+    assert_eq!(interpret("1 != 2").unwrap(), "True");
+    assert_eq!(interpret("1 == 1 == 1").unwrap(), "True");
+  }
+}
+
+// Sums and products of infinities follow their directions.
+mod directed_infinity_algebra {
+  use super::*;
+
+  #[test]
+  fn sums_of_infinities() {
+    // Same direction absorbs, finite terms are swallowed.
+    assert_eq!(interpret("Infinity + 1").unwrap(), "Infinity");
+    assert_eq!(interpret("-Infinity + 1").unwrap(), "-Infinity");
+    assert_eq!(
+      interpret("Infinity + Infinity + Infinity").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("DirectedInfinity[I] + DirectedInfinity[I]").unwrap(),
+      "DirectedInfinity[I]"
+    );
+    assert_eq!(
+      interpret("DirectedInfinity[I] + 1").unwrap(),
+      "DirectedInfinity[I]"
+    );
+    // Opposite directions are Indeterminate.
+    clear_state();
+    assert_eq!(interpret("Infinity - Infinity").unwrap(), "Indeterminate");
+    assert_eq!(
+      interpret("DirectedInfinity[I] + DirectedInfinity[-I]").unwrap(),
+      "Indeterminate"
+    );
+    // Regression: this used to drop one of the two infinities and give 0.
+    assert_eq!(
+      interpret("DirectedInfinity[I] - DirectedInfinity[I]").unwrap(),
+      "Indeterminate"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains("Infinity::indet")),
+      "got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn unrelated_directions_stay_unevaluated() {
+    // Regression: the sum used to collapse to Infinity, silently dropping the
+    // other direction.
+    assert_eq!(
+      interpret("DirectedInfinity[I] + Infinity").unwrap(),
+      "DirectedInfinity[I] + Infinity"
+    );
+  }
+
+  #[test]
+  fn complex_infinity_in_sums() {
+    // With finite terms it keeps its unknown direction, but meeting another
+    // infinity leaves nothing determined.
+    assert_eq!(interpret("ComplexInfinity + 1").unwrap(), "ComplexInfinity");
+    clear_state();
+    assert_eq!(
+      interpret("ComplexInfinity + Infinity").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("ComplexInfinity + ComplexInfinity").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("ComplexInfinity - ComplexInfinity").unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  #[test]
+  fn products_multiply_directions() {
+    assert_eq!(
+      interpret("DirectedInfinity[I]*2").unwrap(),
+      "DirectedInfinity[I]"
+    );
+    assert_eq!(
+      interpret("DirectedInfinity[I]*(-1)").unwrap(),
+      "DirectedInfinity[-I]"
+    );
+    assert_eq!(interpret("DirectedInfinity[I]*I").unwrap(), "-Infinity");
+    assert_eq!(
+      interpret("DirectedInfinity[I]*Infinity").unwrap(),
+      "DirectedInfinity[I]"
+    );
+    // The plain real cases are unchanged.
+    assert_eq!(interpret("2*Infinity").unwrap(), "Infinity");
+    assert_eq!(interpret("-2.5*Infinity").unwrap(), "-Infinity");
+    assert_eq!(interpret("Pi*Infinity").unwrap(), "Infinity");
+    assert_eq!(
+      interpret("(-1 + 2*I)*Infinity").unwrap(),
+      "DirectedInfinity[(-1 + 2*I)/Sqrt[5]]"
+    );
+  }
+}
+
+// Mod and Quotient with an infinite operand.
+mod mod_quotient_infinity {
+  use super::*;
+
+  #[test]
+  fn infinite_dividend() {
+    clear_state();
+    assert_eq!(interpret("Mod[Infinity, 2]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Mod[-Infinity, 2]").unwrap(), "Indeterminate");
+    assert_eq!(
+      interpret("Mod[ComplexInfinity, 2]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("Mod[Infinity, Infinity]").unwrap(),
+      "Indeterminate"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains("Infinity::indet")),
+      "got {msgs:?}"
+    );
+    // Quotient diverges in the direction of the dividend instead.
+    assert_eq!(interpret("Quotient[Infinity, 2]").unwrap(), "Infinity");
+    assert_eq!(interpret("Quotient[-Infinity, 2]").unwrap(), "-Infinity");
+    assert_eq!(interpret("Quotient[Infinity, -2]").unwrap(), "-Infinity");
+    assert_eq!(
+      interpret("Quotient[Infinity, Infinity]").unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  #[test]
+  fn infinite_divisor_takes_nothing_away() {
+    assert_eq!(interpret("Mod[2, Infinity]").unwrap(), "2");
+    assert_eq!(interpret("Mod[-2, Infinity]").unwrap(), "-2");
+    assert_eq!(interpret("Mod[2.5, Infinity]").unwrap(), "2.5");
+    assert_eq!(interpret("Mod[2, -Infinity]").unwrap(), "2");
+    assert_eq!(interpret("Quotient[2, Infinity]").unwrap(), "0");
+    assert_eq!(interpret("Quotient[-2, Infinity]").unwrap(), "0");
+    // Finite operands are unaffected.
+    assert_eq!(interpret("Mod[7, 3]").unwrap(), "1");
+    assert_eq!(interpret("Quotient[7, 3]").unwrap(), "2");
+  }
+}

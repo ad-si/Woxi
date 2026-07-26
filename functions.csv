@@ -2,7 +2,7 @@ name,description,implementation_status,effect_level,version,rank
 List,Represents a list of elements,✅,pure,1.0,1
 Rule,Represents a transformation rule lhs -> rhs,✅,pure,1.0,2
 Times,Multiply numbers,✅,pure,1.0,3
-Power,Raises a number to a power,✅,pure,1.0,4
+Power,Raises a number to a power (infinite bases raise their direction and infinite exponents follow the modulus of the base),✅,pure,1.0,4
 Set,Assigns a value to a symbol,✅,stateful,1.0,5
 Plus,Adds numbers together,✅,pure,1.0,6
 Blank,Pattern object matching any expression,✅,pure,1.0,7
@@ -126,7 +126,7 @@ Gamma,Returns the gamma function value,✅,pure,1.0,130
 Integer,Head type for integer numbers,✅,pure,1.0,131
 RandomReal,Generates a pseudorandom real number,✅,contextual,6.0,132
 ClearAll,Clears all values and definitions for symbols,✅,stateful,1.0,133
-Mod,Returns the remainder on division (m - n Floor[m/n]; Gaussian integers use m - n Round[m/n]),✅,pure,1.0,134
+Mod,Returns the remainder on division (m - n Floor[m/n]; Gaussian integers use m - n Round[m/n]; an infinite divisor takes nothing away),✅,pure,1.0,134
 Arg,Returns the argument (phase angle) of a complex number,✅,pure,1.0,135
 Or,Checks if at least one condition is true,✅,pure,1.0,136
 BaseStyle,Option specifying the base style for elements in a graphic or other output,✅,none,6.0,137
@@ -641,7 +641,7 @@ StandardDeviation,Returns the standard deviation of a list or an association's v
 MaxIterations,Option for maximum iterations,✅,pure,1.0,646
 GroupBy,Groups a list or association by one classifier or a list of them nesting a level each; an optional third argument reduces the innermost groups,✅,pure,10.0,647
 Nothing,Element that disappears from lists,✅,pure,10.2,648
-Quotient,Returns the integer quotient of division (Gaussian quotient Round[m/n] for complex integers),✅,pure,1.0,649
+Quotient,Returns the integer quotient of division (Gaussian quotient Round[m/n] for complex integers; an infinite dividend diverges),✅,pure,1.0,649
 FindInstance,finds instances of variables that satisfy constraints,✅,pure,5.0,650
 EntityClass,Represent a class of entities,✅,none,10.0,651
 DefaultLabelStyle,Default style for labels,✅,none,7.0,653
@@ -1253,7 +1253,7 @@ MapAll,Apply a function to every subexpression,✅,pure,1.0,1265
 HurwitzLerchPhi,Hurwitz-Lerch transcendent sum of z^k over (k+a)^s,✅,pure,7.0,1267
 WienerProcess,Wiener process with Normal time slices,✅,unevaluated,9.0,1268
 FindShortestTour,,🚫,,6.0,1269
-DirectedInfinity,Represents a directed infinity,✅,pure,1.0,1270
+DirectedInfinity,Represents a directed infinity whose direction propagates through sums products and powers,✅,pure,1.0,1270
 StringCount,Counts occurrences of a pattern in a string,✅,pure,5.1,1271
 ImageApply,Applies a function to each pixel of an image,✅,pure,7.0,1272
 BernoulliDistribution,Represents a Bernoulli distribution,✅,pure,6.0,1274
@@ -5693,7 +5693,7 @@ IncludeRelatedTables,,,,12.0,
 IncludeSingularSolutions,,,,13.1,
 IncludedContexts,,,,12.3,
 IndependentUnitDimension,,,,11.3,
-Indeterminate,Represents a numerical result of unknown magnitude,✅,pure,1.0,
+Indeterminate,Represents a numerical result of unknown magnitude — absorbs arithmetic and compares to nothing,✅,pure,1.0,
 InertEvaluate,,,,13.1,
 InertExpression,,,,13.1,
 InfiniteFuture,,,,12.1,

@@ -570,6 +570,13 @@ fn symbolic_comparison_chain(args: &[Expr], op: ComparisonOp) -> Expr {
 /// stay unevaluated), `Some(Some(eq))` when decisive: an infinity never
 /// equals a finite numeric quantity, and two explicit directions compare
 /// by direction (Infinity == DirectedInfinity[I] → False).
+/// `Indeterminate` compares to nothing — not even to itself — so `Equal` and
+/// `Unequal` stay unevaluated whenever one operand is it. (`SameQ` is
+/// structural and still says `True`.)
+fn is_indeterminate(e: &Expr) -> bool {
+  matches!(e, Expr::Identifier(s) | Expr::Constant(s) if s == "Indeterminate")
+}
+
 pub fn infinity_equal_verdict(a: &Expr, b: &Expr) -> Option<Option<bool>> {
   // None = not an infinity; Some(None) = ComplexInfinity (direction
   // unknown); Some(Some(d)) = explicit direction d.
@@ -619,6 +626,12 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Equal[] and Equal[x] return True (like wolframscript)
   if args.len() < 2 {
     return Ok(bool_expr(true));
+  }
+
+  // Nothing is known to equal (or differ from) Indeterminate, not even itself:
+  // the comparison stays unevaluated rather than deciding structurally.
+  if args.iter().any(is_indeterminate) {
+    return Ok(symbolic_comparison_chain(args, ComparisonOp::Equal));
   }
 
   // Infinity rules run before the string-identity fast path so
@@ -783,6 +796,10 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Unequal expects at least 2 arguments".into(),
     ));
+  }
+
+  if args.iter().any(is_indeterminate) {
+    return Ok(symbolic_comparison_chain(args, ComparisonOp::NotEqual));
   }
 
   // Infinity rules run before the duplicate collapse so

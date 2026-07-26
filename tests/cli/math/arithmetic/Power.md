@@ -118,3 +118,29 @@ $ wo 'Power[27, 1/3]'
 $ wo 'Power[1.5, 2.5]'
 2.7556759606310752
 ```
+
+A base outside the unit circle diverges — to `Infinity` only when it is a
+positive real — while one inside it vanishes:
+
+```scrut
+$ wo '{2^Infinity, (-2)^Infinity, (-1/2)^Infinity}'
+{Infinity, ComplexInfinity, 0}
+```
+
+Any base on the unit circle never settles:
+
+```scrut {output_stream: combined}
+$ wo '(-1)^Infinity'
+
+                                              Infinity
+Infinity::indet: Indeterminate expression (-1)         encountered.
+Indeterminate
+```
+
+An infinite base raises its direction, so `Sqrt[-Infinity]` points along the
+imaginary axis:
+
+```scrut
+$ wo '{(-Infinity)^(1/2), DirectedInfinity[I]^2, Infinity^Infinity}'
+{DirectedInfinity[I], -Infinity, ComplexInfinity}
+```

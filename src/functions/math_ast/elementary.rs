@@ -42,9 +42,11 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Abs expects exactly 1 argument".into(),
     ));
   }
-  // Abs[Undefined] = Undefined
-  if matches!(&args[0], Expr::Identifier(s) if s == "Undefined") {
-    return Ok(Expr::Identifier("Undefined".to_string()));
+  // Abs[Undefined] = Undefined, Abs[Indeterminate] = Indeterminate
+  if matches!(&args[0], Expr::Identifier(s)
+    if s == "Undefined" || s == "Indeterminate")
+  {
+    return Ok(args[0].clone());
   }
   // Abs[Interval[{a, b}, ...]] → the interval of absolute values.
   if let Some(result) = crate::functions::interval_ast::abs_interval(&args[0]) {
@@ -2221,6 +2223,63 @@ fn is_complex_number(expr: &Expr) -> bool {
 }
 
 /// Mod[m, n] - Modulus, or Mod[m, n, d] with offset
+/// Is `expr` an infinite quantity (`Infinity`, `-Infinity`, `ComplexInfinity`
+/// or any `DirectedInfinity`)?
+fn is_infinite_expr(expr: &Expr) -> bool {
+  matches!(expr, Expr::Identifier(n) | Expr::Constant(n)
+    if n == "Infinity" || n == "ComplexInfinity")
+    || crate::functions::math_ast::is_neg_infinity(expr)
+    || matches!(expr, Expr::FunctionCall { name, .. } if name == "DirectedInfinity")
+}
+
+/// `Mod` and `Quotient` with an infinite operand, following wolframscript:
+/// an infinite dividend has no remainder or quotient class, so `Mod` is
+/// `Indeterminate` (reported as the `Infinity - Infinity` it comes from) and
+/// `Quotient` diverges; an infinite divisor leaves the dividend unchanged with
+/// a zero quotient. Both infinite is `Indeterminate`.
+fn infinite_mod_quotient(
+  quotient: bool,
+  m: &Expr,
+  n: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  let indet = || Ok(Expr::Identifier("Indeterminate".to_string()));
+  let m_inf = is_infinite_expr(m);
+  let n_inf = is_infinite_expr(n);
+  if !m_inf && !n_inf {
+    return None;
+  }
+  if m_inf {
+    // An infinite divisor as well leaves nothing determined either way.
+    if n_inf || !quotient {
+      crate::emit_message(if quotient {
+        "Infinity::indet: Indeterminate expression 0 Infinity encountered."
+      } else {
+        "Infinity::indet: Indeterminate expression Infinity - Infinity \
+         encountered."
+      });
+      return Some(indet());
+    }
+    // Quotient[±Infinity, y] diverges in the direction of the dividend,
+    // flipped by the sign of the divisor.
+    let flip = matches!(
+      crate::functions::math_ast::try_eval_to_f64(n),
+      Some(v) if v < 0.0
+    );
+    let divided =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![m.clone(), Expr::Integer(if flip { -1 } else { 1 })].into(),
+      });
+    return Some(divided);
+  }
+  // Finite dividend, infinite divisor: nothing is taken away.
+  Some(Ok(if quotient {
+    Expr::Integer(0)
+  } else {
+    m.clone()
+  }))
+}
+
 pub fn mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(format!(
@@ -2232,6 +2291,10 @@ pub fn mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // 3-argument form: Mod[m, n, d] = m - n * Floor[(m - d) / n]
   if args.len() == 3 {
     return mod3_ast(&args[0], &args[1], &args[2]);
+  }
+
+  if let Some(result) = infinite_mod_quotient(false, &args[0], &args[1]) {
+    return result;
   }
 
   // 2-argument form: Mod[m, n]
@@ -2580,6 +2643,12 @@ pub fn quotient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Quotient expects 2 or 3 arguments; {} given",
       args.len()
     )));
+  }
+
+  if args.len() == 2
+    && let Some(result) = infinite_mod_quotient(true, &args[0], &args[1])
+  {
+    return result;
   }
 
   // Zero divisor (args[1] == 0). Matches wolframscript:

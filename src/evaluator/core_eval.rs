@@ -2699,6 +2699,21 @@ pub fn evaluate_expr_to_expr_inner(
         let right = &values[i + 1];
         let op = &operators[i];
 
+        // Nothing is known to equal (or differ from) Indeterminate, not even
+        // itself, so the whole chain stays unevaluated instead of being
+        // decided structurally.
+        if matches!(op, ComparisonOp::Equal | ComparisonOp::NotEqual)
+          && (matches!(left, Expr::Identifier(s) | Expr::Constant(s)
+                if s == "Indeterminate")
+            || matches!(right, Expr::Identifier(s) | Expr::Constant(s)
+                if s == "Indeterminate"))
+        {
+          return Ok(Expr::Comparison {
+            operands: values,
+            operators: operators.clone(),
+          });
+        }
+
         // Interval comparisons: Interval[{a,b}] < Interval[{c,d}], a scalar
         // counting as the degenerate interval {s,s}. A determinable result is
         // used directly; an indeterminate (overlapping) one falls through to

@@ -998,57 +998,59 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Propagate Indeterminate and ComplexInfinity through addition
+  // Propagate Indeterminate through addition.
   for arg in &flat_args {
     if matches!(arg, Expr::Identifier(n) if n == "Indeterminate") {
       return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
-    if matches!(arg, Expr::Identifier(n) if n == "ComplexInfinity") {
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
-    }
   }
 
-  // Check for Infinity + (-Infinity) → Indeterminate
+  // An infinite term swallows every finite one. Two infinities in the same
+  // direction collapse to that direction, exactly opposite ones (and any
+  // ComplexInfinity meeting another infinity) are Indeterminate, and two
+  // different-but-not-opposite directions stay unevaluated — wolframscript
+  // does not choose between them.
   {
-    let mut has_pos_inf = false;
-    let mut has_neg_inf = false;
-    for arg in &flat_args {
-      match arg {
-        Expr::Identifier(name) if name == "Infinity" => has_pos_inf = true,
-        Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand,
-        } if matches!(operand.as_ref(), Expr::Identifier(n) if n == "Infinity") => {
-          has_neg_inf = true
+    let infinite: Vec<Option<Expr>> =
+      flat_args.iter().filter_map(infinity_direction).collect();
+    if !infinite.is_empty() {
+      let complex_inf = infinite.iter().any(|d| d.is_none());
+      let mut directions: Vec<Expr> = Vec::new();
+      for dir in infinite.iter().flatten() {
+        let shown = expr_to_string(dir);
+        if !directions.iter().any(|d| expr_to_string(d) == shown) {
+          directions.push(dir.clone());
         }
-        Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left,
-          right,
-        } if matches!(left.as_ref(), Expr::Integer(-1))
-          && matches!(right.as_ref(), Expr::Identifier(n) if n == "Infinity") =>
-        {
-          has_neg_inf = true
-        }
-        _ => {}
       }
-    }
-    if has_pos_inf && has_neg_inf {
-      crate::emit_message(
-        "Infinity::indet: Indeterminate expression -Infinity + Infinity \
-         encountered.",
-      );
-      return Ok(Expr::Identifier("Indeterminate".to_string()));
-    }
-    // Infinity + finite terms → Infinity, -Infinity + finite terms → -Infinity
-    if has_pos_inf {
-      return Ok(Expr::Identifier("Infinity".to_string()));
-    }
-    if has_neg_inf {
-      return Ok(Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(Expr::Identifier("Infinity".to_string())),
-      });
+      // ComplexInfinity alone (with finite terms) keeps its direction.
+      if complex_inf && directions.is_empty() && infinite.len() == 1 {
+        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      }
+      let opposite = directions.len() == 2
+        && matches!(
+          crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![directions[0].clone(), directions[1].clone()].into(),
+          }),
+          Ok(Expr::Integer(0))
+        );
+      if complex_inf || opposite {
+        crate::emit_message(
+          "Infinity::indet: Indeterminate expression -Infinity + Infinity \
+           encountered.",
+        );
+        return Ok(Expr::Identifier("Indeterminate".to_string()));
+      }
+      if directions.len() == 1 {
+        return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "DirectedInfinity".to_string(),
+          args: vec![directions[0].clone()].into(),
+        });
+      }
+      // Several unrelated directions: leave the sum alone.
+      if directions.len() > 1 {
+        return Ok(unevaluated("Plus", &flat_args));
+      }
     }
   }
 
@@ -6941,6 +6943,45 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // ones with real-valued components (`-1 + 2 Pi I` → magnitude `Sqrt[1
   // + 4 Pi^2]`). Real-coefficient × Infinity is handled by the existing
   // numeric coefficient path further down.
+  // A DirectedInfinity with a general (non-real) direction absorbs the other
+  // factors: their product multiplies into the direction, which
+  // `DirectedInfinity` then re-normalizes. Two directed infinities multiply
+  // their directions the same way (`DirectedInfinity[I]^2` is `-Infinity`).
+  // Plain ±Infinity with real factors keeps the dedicated paths below.
+  {
+    let mut dirs: Vec<Expr> = Vec::new();
+    let mut rest: Vec<Expr> = Vec::new();
+    let mut complex_inf = false;
+    for a in &flat_args {
+      match infinity_direction(a) {
+        Some(Some(d)) => dirs.push(d),
+        Some(None) => complex_inf = true,
+        None => rest.push(a.clone()),
+      }
+    }
+    let general = dirs.len() > 1
+      || dirs.iter().any(
+        |d| !matches!(try_eval_to_f64(d), Some(v) if v == 1.0 || v == -1.0),
+      );
+    let rest_is_nonzero_numeric = rest.iter().all(|r| {
+      matches!(try_extract_complex_float(r), Some((re, im)) if re != 0.0 || im != 0.0)
+    });
+    if !complex_inf
+      && !dirs.is_empty()
+      && general
+      && (dirs.len() > 1 || !rest.is_empty())
+      && rest_is_nonzero_numeric
+    {
+      let mut factors = dirs;
+      factors.extend(rest);
+      let combined = times_ast(&factors)?;
+      return crate::evaluator::evaluate_function_call_ast(
+        "DirectedInfinity",
+        &[combined],
+      );
+    }
+  }
+
   let complex_idx = flat_args.iter().position(|a| {
     if let Some(((_re_n, _re_d), (im_n, _im_d))) =
       crate::functions::math_ast::try_extract_complex_exact(a)
@@ -9113,6 +9154,14 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
       }
     }
     _ => {
+      // Indeterminate does not cancel against itself: Indeterminate /
+      // Indeterminate stays Indeterminate, not 1.
+      if matches!(a, Expr::Identifier(s) if s == "Indeterminate")
+        || matches!(b, Expr::Identifier(s) if s == "Indeterminate")
+      {
+        return Ok(Expr::Identifier("Indeterminate".to_string()));
+      }
+
       // x / x → 1 for identical symbolic expressions
       if expr_to_string(a) == expr_to_string(b) {
         return Ok(Expr::Integer(1));
@@ -9334,6 +9383,169 @@ pub fn inner_exp_abs_lt_one(exp: &Expr) -> bool {
 }
 
 /// Power[a, b] - Exponentiation with list threading
+/// The two-line `<tag>::indet` report wolframscript prints for an
+/// indeterminate power: the exponent is set above the baseline where it would
+/// be typeset, e.g. `0^0` gives
+/// ```text
+///                                         0
+/// Power::indet: Indeterminate expression 0  encountered.
+/// ```
+fn emit_power_indet(tag: &str, base: &str, exp: &str) {
+  // A base that is not a single positive atom is parenthesized, the way it
+  // would be typeset: `(-1)^Infinity`, not `-1^Infinity`.
+  let needs_parens = base.starts_with('-')
+    || base.contains(' ')
+    || base.contains('+')
+    || base.contains('*')
+    || base.contains('/');
+  let base = if needs_parens {
+    format!("({base})")
+  } else {
+    base.to_string()
+  };
+  let prefix = format!("{tag}::indet: Indeterminate expression ");
+  let width = prefix.len() + base.len() + exp.len();
+  crate::emit_message(&format!(
+    "\n{exp:>width$}\n{prefix}{base}{} encountered.",
+    " ".repeat(exp.len())
+  ));
+}
+
+/// The direction of an infinite expression: `Some(dir)` for a `DirectedInfinity`
+/// with that direction (`Infinity` is 1, `-Infinity` is -1), `None` for
+/// `ComplexInfinity` (an infinity of unknown direction), and no result at all
+/// for a finite expression.
+fn infinity_direction(expr: &Expr) -> Option<Option<Expr>> {
+  if matches!(expr, Expr::Identifier(n) | Expr::Constant(n) if n == "Infinity")
+  {
+    return Some(Some(Expr::Integer(1)));
+  }
+  if crate::functions::math_ast::is_neg_infinity(expr) {
+    return Some(Some(Expr::Integer(-1)));
+  }
+  if matches!(expr, Expr::Identifier(n) if n == "ComplexInfinity") {
+    return Some(None);
+  }
+  match expr {
+    Expr::FunctionCall { name, args } if name == "DirectedInfinity" => {
+      match args.len() {
+        0 => Some(None),
+        1 => Some(Some(args[0].clone())),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// `base^exp` when either side is infinite, following wolframscript:
+///
+/// * an infinite base with a finite exponent `p` raises its direction,
+///   `DirectedInfinity[d]^p` = `DirectedInfinity[d^p]` for real `p > 0` and `0`
+///   for real `p < 0`; a genuinely complex `p` gives `Indeterminate` when it is
+///   purely imaginary and `ComplexInfinity` / `0` as its real part is positive /
+///   negative;
+/// * a finite base with an infinite exponent depends on the modulus: `|z| > 1`
+///   diverges (to `Infinity` for a positive real `z`, else `ComplexInfinity`),
+///   `|z| < 1` vanishes, and any unit-modulus base (including `1`) is
+///   `Indeterminate`; a negative exponent direction swaps the two divergent
+///   cases;
+/// * both infinite gives `ComplexInfinity` for a positive and `0` for a
+///   negative exponent direction.
+fn infinite_power(base: &Expr, exp: &Expr) -> Option<Expr> {
+  let complex_inf = || Expr::Identifier("ComplexInfinity".to_string());
+  let indet = || Expr::Identifier("Indeterminate".to_string());
+  let directed = |dir: Expr| {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "DirectedInfinity".to_string(),
+      args: vec![dir].into(),
+    })
+    .ok()
+  };
+  let base_dir = infinity_direction(base);
+  let exp_dir = infinity_direction(exp);
+
+  // Both sides infinite: only the exponent's direction matters.
+  if base_dir.is_some() && exp_dir.is_some() {
+    return match exp_dir? {
+      Some(d) => match try_eval_to_f64(&d) {
+        Some(v) if v > 0.0 => Some(complex_inf()),
+        Some(v) if v < 0.0 => Some(Expr::Integer(0)),
+        _ => None,
+      },
+      None => None,
+    };
+  }
+
+  // Infinite base, finite exponent.
+  if let Some(dir) = base_dir {
+    let (re, im) = try_extract_complex_float(exp)?;
+    if im != 0.0 {
+      if re == 0.0 {
+        emit_power_indet(
+          "Infinity",
+          &expr_to_string(base),
+          &expr_to_string(exp),
+        );
+        return Some(indet());
+      }
+      return Some(if re > 0.0 {
+        complex_inf()
+      } else {
+        Expr::Integer(0)
+      });
+    }
+    if re < 0.0 {
+      return Some(Expr::Integer(0));
+    }
+    if re == 0.0 {
+      return None; // x^0 is handled (as Indeterminate) by the caller
+    }
+    return match dir {
+      // ComplexInfinity keeps its unknown direction.
+      None => Some(complex_inf()),
+      Some(d) => directed(power_two(&d, exp).ok()?),
+    };
+  }
+
+  // Finite base, infinite exponent.
+  let dir = exp_dir?;
+  let sign = match &dir {
+    Some(d) => match try_eval_to_f64(d) {
+      Some(v) if v > 0.0 => 1.0,
+      Some(v) if v < 0.0 => -1.0,
+      // A complex exponent direction is left alone.
+      _ => return None,
+    },
+    // z^ComplexInfinity is handled by the caller.
+    None => return None,
+  };
+  let (re, im) = try_extract_complex_float(base)?;
+  let modulus = (re * re + im * im).sqrt();
+  let positive_real = im == 0.0 && re > 0.0;
+  if modulus == 0.0 {
+    return Some(if sign > 0.0 {
+      Expr::Integer(0)
+    } else {
+      complex_inf()
+    });
+  }
+  // Every unit-modulus base — 1 included — is Indeterminate: the power keeps
+  // circling the unit circle without settling.
+  if (modulus - 1.0).abs() < f64::EPSILON {
+    emit_power_indet("Infinity", &expr_to_string(base), &expr_to_string(exp));
+    return Some(indet());
+  }
+  let diverges = (modulus > 1.0) == (sign > 0.0);
+  Some(if !diverges {
+    Expr::Integer(0)
+  } else if positive_real {
+    Expr::Identifier("Infinity".to_string())
+  } else {
+    complex_inf()
+  })
+}
+
 pub fn power_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Power[] = 1, Power[x] = x, and Power[a, b, c, ...] folds right-
   // associatively to a^(b^(c^...)) (e.g. Power[2, 3, 2] = 2^(3^2) = 512).
@@ -9760,19 +9972,25 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // 1^x -> 1 for any finite x (1^Infinity is Indeterminate, handled below)
+  // 1^x -> 1 for any finite x (1^Infinity and 1^Indeterminate are
+  // Indeterminate, handled below)
   if matches!(base, Expr::Integer(1))
-    && !matches!(exp, Expr::Identifier(s) if s == "Infinity" || s == "ComplexInfinity")
+    && !matches!(exp, Expr::Identifier(s) if s == "Infinity"
+      || s == "ComplexInfinity"
+      || s == "Indeterminate")
     && !crate::functions::math_ast::is_neg_infinity(exp)
   {
     return Ok(Expr::Integer(1));
   }
 
-  // x^0 -> 1 (for non-zero finite x; 0^0 and Infinity^0 are Indeterminate)
+  // x^0 -> 1 (for non-zero finite x; 0^0, Infinity^0 and Indeterminate^0 are
+  // Indeterminate)
   if matches!(exp, Expr::Integer(0))
     && !matches!(base, Expr::Integer(0))
     && !matches!(base, Expr::Real(f) if *f == 0.0)
-    && !matches!(base, Expr::Identifier(s) if s == "Infinity" || s == "ComplexInfinity")
+    && !matches!(base, Expr::Identifier(s) if s == "Infinity"
+      || s == "ComplexInfinity"
+      || s == "Indeterminate")
     && !crate::functions::math_ast::is_neg_infinity(base)
   {
     // A raw inexact numeric base gives an inexact 1: 2.0^0 -> 1. and an
@@ -9810,47 +10028,21 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   if matches!(exp, Expr::Integer(0))
     && (base_is_pos_inf || base_is_neg_inf || base_is_complex_inf)
   {
-    crate::emit_message(&format!(
-      "\n{:>40}\nInfinity::indet: Indeterminate expression {}  encountered.",
-      "0",
-      expr_to_string(base)
-    ));
+    emit_power_indet("Infinity", &expr_to_string(base), "0");
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
 
-  // Infinity^n: Infinity for positive n, 0 for negative n, ComplexInfinity for complex
-  if base_is_pos_inf {
-    if let Some(n) = expr_to_num(exp) {
-      if n > 0.0 {
-        return Ok(Expr::Identifier("Infinity".to_string()));
-      } else if n < 0.0 {
-        return Ok(Expr::Integer(0));
-      }
-    }
-    if exp_is_pos_inf {
-      return Ok(Expr::Identifier("Infinity".to_string()));
-    }
-    if exp_is_neg_inf {
-      return Ok(Expr::Integer(0));
-    }
+  // Any Indeterminate operand makes the whole power Indeterminate — including
+  // Indeterminate^0 and 1^Indeterminate, which are not 1.
+  if matches!(base, Expr::Identifier(s) if s == "Indeterminate")
+    || matches!(exp, Expr::Identifier(s) if s == "Indeterminate")
+  {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
 
-  // (-Infinity)^n for integer n: Infinity if n>0 even, -Infinity if n>0 odd, 0 if n<0
-  if base_is_neg_inf {
-    if let Expr::Integer(n) = exp {
-      if *n > 0 {
-        if n % 2 == 0 {
-          return Ok(Expr::Identifier("Infinity".to_string()));
-        } else {
-          return Ok(negate_expr(Expr::Identifier("Infinity".to_string())));
-        }
-      } else if *n < 0 {
-        return Ok(Expr::Integer(0));
-      }
-    }
-    if exp_is_pos_inf {
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
-    }
+  // The general rules for an infinite base or exponent.
+  if let Some(result) = infinite_power(base, exp) {
+    return Ok(result);
   }
 
   // E^Infinity → Infinity, E^(-Infinity) → 0
@@ -9868,50 +10060,6 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     // symbolic exponents, which stay symbolic (e.g. E^2, E^x).
     if let Expr::Real(r) = exp {
       return Ok(Expr::Real(r.exp()));
-    }
-  }
-
-  // base^Infinity where base is a known positive real > 1 → Infinity
-  // base^Infinity where 0 < base < 1 → 0
-  // base^(-Infinity) where base > 1 → 0
-  // base^(-Infinity) where 0 < base < 1 → Infinity
-  if (exp_is_pos_inf || exp_is_neg_inf)
-    && let Some(b) = expr_to_num(base)
-  {
-    if b > 1.0 {
-      return Ok(if exp_is_pos_inf {
-        Expr::Identifier("Infinity".to_string())
-      } else {
-        Expr::Integer(0)
-      });
-    } else if b > 0.0 && b < 1.0 {
-      return Ok(if exp_is_pos_inf {
-        Expr::Integer(0)
-      } else {
-        Expr::Identifier("Infinity".to_string())
-      });
-    } else if b == 1.0 {
-      return Ok(Expr::Identifier("Indeterminate".to_string()));
-    } else if b == 0.0 {
-      if exp_is_pos_inf {
-        return Ok(Expr::Integer(0));
-      }
-      if exp_is_neg_inf {
-        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
-      }
-    }
-    // Negative base with infinite exponent
-    if b < 0.0 && (exp_is_pos_inf || exp_is_neg_inf) {
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
-    }
-  }
-
-  // ComplexInfinity^n → ComplexInfinity for positive n, 0 for negative n
-  if base_is_complex_inf && let Some(n) = expr_to_num(exp) {
-    if n > 0.0 {
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
-    } else if n < 0.0 {
-      return Ok(Expr::Integer(0));
     }
   }
 
@@ -11671,7 +11819,21 @@ fn densify_sparse_args(args: &[Expr]) -> Option<Vec<Expr>> {
   changed.then_some(out)
 }
 
+/// Is `expr` `Indeterminate`, or a list containing it at any depth?
+fn contains_indeterminate(expr: &Expr) -> bool {
+  match expr {
+    Expr::Identifier(s) | Expr::Constant(s) => s == "Indeterminate",
+    Expr::List(items) => items.iter().any(contains_indeterminate),
+    _ => false,
+  }
+}
+
 pub fn max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // An Indeterminate argument (at any depth, since lists are flattened)
+  // makes the extremum Indeterminate: it cannot be ordered against anything.
+  if args.iter().any(contains_indeterminate) {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
   if args.is_empty() {
     return Ok(Expr::Identifier("-Infinity".to_string()));
   }
@@ -11755,6 +11917,11 @@ pub fn max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Min[args...] or Min[list] - Minimum value
 pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // An Indeterminate argument (at any depth, since lists are flattened)
+  // makes the extremum Indeterminate: it cannot be ordered against anything.
+  if args.iter().any(contains_indeterminate) {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
   if args.is_empty() {
     return Ok(Expr::Identifier("Infinity".to_string()));
   }
