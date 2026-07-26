@@ -2996,7 +2996,7 @@ mod delete_file {
 
   #[test]
   fn delete_existing() {
-    let path = temp_file("test_delete_woxi.txt");
+    let path = temp_file("woxi_test_delete.txt");
     assert_eq!(
       interpret(&format!(
         "WriteString[\"{path}\", \"hello\"]; DeleteFile[\"{path}\"]; FileExistsQ[\"{path}\"]"

@@ -8,11 +8,6 @@ fn temp_path() -> String {
   tmp
 }
 
-fn temp_file(file: &str) -> String {
-  let tmp = std::env::temp_dir().join(file);
-  tmp.display().to_string()
-}
-
 mod batch_unevaluated_wrappers {
   use super::*;
 

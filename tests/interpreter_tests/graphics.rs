@@ -1152,7 +1152,7 @@ mod plot3d {
 
     #[test]
     fn export_svg() {
-      let path = temp_file("test_plot3d.svg");
+      let path = temp_file("woxi_test_plot3d.svg");
       let result = interpret(&format!(
         "Export[\"{path}\", Plot3D[x + y, {{x, -1, 1}}, {{y, -1, 1}}]]"
       ));
@@ -1169,7 +1169,7 @@ mod plot3d {
     /// dropped because "sans-serif" had no matching font in the db).
     #[test]
     fn export_png_from_plot() {
-      let path = temp_file("test_plot_export.png");
+      let path = temp_file("woxi_test_plot_export.png");
       let result = interpret(&format!(
         "Export[\"{path}\", Plot[Sin[x], {{x, -2 Pi, 2 Pi}}]]"
       ));
@@ -1218,8 +1218,8 @@ mod plot3d {
     /// with ImageSize -> 800 at 300 DPI should come out at 2500 px wide.
     #[test]
     fn export_png_with_image_resolution() {
-      let path_hi = temp_file("test_plot_export_hi.png");
-      let path_lo = temp_file("test_plot_export_lo.png");
+      let path_hi = temp_file("woxi_test_plot_export_hi.png");
+      let path_lo = temp_file("woxi_test_plot_export_lo.png");
       let result_hi = interpret(&format!(
         "Export[\"{path_hi}\", \
          Plot[Sin[x], {{x, -3 Pi, 3 Pi}}, ImageSize -> 800], \
@@ -1254,7 +1254,7 @@ mod plot3d {
 
     #[test]
     fn export_jpeg_from_plot() {
-      let path = temp_file("test_plot_export.jpg");
+      let path = temp_file("woxi_test_plot_export.jpg");
       let result =
         interpret(&format!("Export[\"{path}\", Plot[Cos[x], {{x, 0, 2 Pi}}]]"));
       assert!(result.is_ok(), "Export returned error: {result:?}");
@@ -1275,7 +1275,7 @@ mod plot3d {
       // harness hit ARG_MAX before the image could even reach Export;
       // pin the behaviour here from a Rust test so the full path is
       // exercised.
-      let path = temp_file("test_export_image_numericarray.jpg");
+      let path = temp_file("woxi_test_export_image_numericarray.jpg");
       let _ = std::fs::remove_file(&path);
       let code = format!(
         "Export[\"{path}\", Image[NumericArray[\
@@ -1301,7 +1301,7 @@ mod plot3d {
     /// GIF (1504×15 px) of the textual list representation.
     #[test]
     fn export_animated_gif_from_graphics_list() {
-      let path = temp_file("test_animated.gif");
+      let path = temp_file("woxi_test_animated.gif");
       let result = interpret(&format!(
         "Export[\"{path}\", \
          Table[Graphics[{{Disk[{{0, 0}}, r/10]}}, \
