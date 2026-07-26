@@ -159,12 +159,10 @@ pub fn group_by_ast(
   // GroupBy[<|a -> 1, b -> 2, c -> 3|>, EvenQ] gives
   // <|False -> <|a -> 1, c -> 3|>, True -> <|b -> 2|>|>.
   if let Expr::Association(assoc_pairs) = list {
-    if matches!(func, Expr::List(_)) {
-      // The nested {f1, f2, …} form on associations is not supported.
-      return Ok(Expr::FunctionCall {
-        name: "GroupBy".to_string(),
-        args: vec![list.clone(), func.clone()].into(),
-      });
+    // `{f1, f2, …}` sub-groups level by level, the innermost group still
+    // being a sub-association of the original keys.
+    if let Expr::List(funcs) = func {
+      return group_by_nested_assoc(assoc_pairs, funcs);
     }
     let (key_func, val_func): (&Expr, Option<&Expr>) = match func {
       Expr::Rule {
@@ -306,6 +304,74 @@ fn group_by_nested(
     pairs.push((key_expr, value));
   }
   Ok(Expr::Association(pairs))
+}
+
+/// `GroupBy[assoc, {f1, f2, …}]`: the association counterpart of
+/// [`group_by_nested`]. The level functions see the association's *values*,
+/// and the innermost group keeps the original keys, so with one level this
+/// agrees with `GroupBy[assoc, f]`.
+fn group_by_nested_assoc(
+  entries: &[(Expr, Expr)],
+  funcs: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if funcs.is_empty() {
+    return Ok(Expr::Association(entries.to_vec()));
+  }
+
+  use std::collections::HashMap;
+  let mut groups: HashMap<String, Vec<(Expr, Expr)>> = HashMap::new();
+  let mut order: Vec<String> = Vec::new();
+  for (k, v) in entries {
+    let key = apply_func_ast(&funcs[0], v)?;
+    let key_str = crate::syntax::expr_to_string(&key);
+    if let Some(group) = groups.get_mut(&key_str) {
+      group.push((k.clone(), v.clone()));
+    } else {
+      order.push(key_str.clone());
+      groups.insert(key_str, vec![(k.clone(), v.clone())]);
+    }
+  }
+
+  let rest = &funcs[1..];
+  let mut pairs: Vec<(Expr, Expr)> = Vec::with_capacity(order.len());
+  for k in order {
+    let group_entries = groups.remove(&k).unwrap();
+    let key_expr = crate::syntax::string_to_expr(&k).unwrap_or(Expr::Raw(k));
+    let value = if rest.is_empty() {
+      Expr::Association(group_entries)
+    } else {
+      group_by_nested_assoc(&group_entries, rest)?
+    };
+    pairs.push((key_expr, value));
+  }
+  Ok(Expr::Association(pairs))
+}
+
+/// Apply `GroupBy`'s reducer to the grouped values. A `{f1, …, fk}` spec
+/// nests the result k levels deep and the reducer runs on the innermost
+/// groups, so `depth` is the length of the spec (1 for a plain one). A depth
+/// of 0 — from the empty spec `{}`, which does not group at all — reduces the
+/// whole collection.
+pub fn reduce_groups_ast(
+  grouped: &Expr,
+  reducer: &Expr,
+  depth: usize,
+) -> Result<Expr, InterpreterError> {
+  if depth == 0 {
+    return apply_func_ast(reducer, grouped);
+  }
+  match grouped {
+    Expr::Association(pairs) => {
+      let reduced: Result<Vec<(Expr, Expr)>, InterpreterError> = pairs
+        .iter()
+        .map(|(k, v)| {
+          Ok((k.clone(), reduce_groups_ast(v, reducer, depth - 1)?))
+        })
+        .collect();
+      Ok(Expr::Association(reduced?))
+    }
+    other => Ok(other.clone()),
+  }
 }
 
 /// Closed-form Median for known distributions. Returns None for

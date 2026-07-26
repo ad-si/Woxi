@@ -9856,6 +9856,89 @@ mod join_non_list {
     );
   }
 
+  // With a {f1, …, fk} classifier the reducer runs on the innermost groups,
+  // not on the top-level association.
+  #[test]
+  fn group_by_nested_classifiers_reduce_the_innermost_groups() {
+    assert_eq!(
+      interpret(
+        "GroupBy[{{1, a, x}, {1, b, y}, {2, a, z}, {1, a, w}}, \
+         {First, #[[2]] &}, Length]"
+      )
+      .unwrap(),
+      "<|1 -> <|a -> 2, b -> 1|>, 2 -> <|a -> 1|>|>"
+    );
+    assert_eq!(
+      interpret(
+        "GroupBy[{{1, a, x}, {1, b, y}, {2, a, z}, {1, a, w}}, \
+         {First, #[[2]] &, Last}, Length]"
+      )
+      .unwrap(),
+      "<|1 -> <|a -> <|x -> 1, w -> 1|>, b -> <|y -> 1|>|>, \
+       2 -> <|a -> <|z -> 1|>|>|>"
+    );
+    // A one-element classifier list still reduces at the top.
+    assert_eq!(
+      interpret(
+        "GroupBy[{{1, a, x}, {1, b, y}, {2, a, z}, {1, a, w}}, {First}, \
+         Length]"
+      )
+      .unwrap(),
+      "<|1 -> 3, 2 -> 1|>"
+    );
+    assert_eq!(
+      interpret("GroupBy[{1, 2, 3, 4}, {EvenQ}, Total]").unwrap(),
+      "<|False -> 4, True -> 6|>"
+    );
+  }
+
+  // The nested classifier form works on associations too: the classifiers see
+  // the values and the innermost group keeps the original keys.
+  #[test]
+  fn group_by_nested_classifiers_on_an_association() {
+    assert_eq!(
+      interpret(
+        "GroupBy[<|p -> {1, x}, q -> {2, y}, r -> {1, z}|>, {First, Last}]"
+      )
+      .unwrap(),
+      "<|1 -> <|x -> <|p -> {1, x}|>, z -> <|r -> {1, z}|>|>, \
+       2 -> <|y -> <|q -> {2, y}|>|>|>"
+    );
+    // One level agrees with the bare-function form.
+    assert_eq!(
+      interpret("GroupBy[<|p -> {1, x}, q -> {2, y}, r -> {1, z}|>, {First}]")
+        .unwrap(),
+      interpret("GroupBy[<|p -> {1, x}, q -> {2, y}, r -> {1, z}|>, First]")
+        .unwrap()
+    );
+    assert_eq!(
+      interpret(
+        "GroupBy[<|p -> {1, x}, q -> {2, y}, r -> {1, z}|>, {First, Last}, \
+         Keys]"
+      )
+      .unwrap(),
+      "<|1 -> <|x -> {p}, z -> {r}|>, 2 -> <|y -> {q}|>|>"
+    );
+  }
+
+  // An empty classifier list does not group at all, so the reducer sees the
+  // whole collection.
+  #[test]
+  fn group_by_empty_classifier_list() {
+    assert_eq!(
+      interpret("GroupBy[{{1, a}, {1, b}, {2, c}}, {}]").unwrap(),
+      "{{1, a}, {1, b}, {2, c}}"
+    );
+    assert_eq!(
+      interpret("GroupBy[{{1, a}, {1, b}, {2, c}}, {}, Length]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("GroupBy[<|p -> 1, q -> 2, r -> 3|>, {}, Length]").unwrap(),
+      "3"
+    );
+  }
+
   #[test]
   fn counts_by_operator_form() {
     assert_eq!(

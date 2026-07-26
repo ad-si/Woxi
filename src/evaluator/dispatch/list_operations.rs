@@ -2179,22 +2179,14 @@ pub fn dispatch_list_operations(
       }
       let result = list_helpers_ast::group_by_ast(&args[0], &args[1]);
       if args.len() == 3 {
-        // GroupBy[list, f, reducer] - apply reducer to each group
-        return Some(result.and_then(|grouped| match &grouped {
-          Expr::Association(pairs) => {
-            let new_pairs: Result<Vec<(Expr, Expr)>, InterpreterError> = pairs
-              .iter()
-              .map(|(k, v)| {
-                let reduced =
-                  crate::functions::list_helpers_ast::apply_func_ast(
-                    &args[2], v,
-                  )?;
-                Ok((k.clone(), reduced))
-              })
-              .collect();
-            Ok(Expr::Association(new_pairs?))
-          }
-          _ => Ok(grouped),
+        // GroupBy[list, spec, reducer] — the reducer runs on the innermost
+        // groups, which a `{f1, …, fk}` spec nests k levels deep.
+        let depth = match &args[1] {
+          Expr::List(specs) => specs.len(),
+          _ => 1,
+        };
+        return Some(result.and_then(|grouped| {
+          list_helpers_ast::reduce_groups_ast(&grouped, &args[2], depth)
         }));
       }
       return Some(result);
