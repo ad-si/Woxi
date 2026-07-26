@@ -3420,6 +3420,8 @@ pub fn evaluate_expr_to_expr_inner(
               | Expr::Real(_)
               | Expr::String(_)
           )
+          // A tree is an atom, so a part specification is always too deep.
+          || matches!(base, Expr::FunctionCall { name, .. } if name == "Tree")
         {
           let part_str = crate::syntax::format_expr(
             &result,

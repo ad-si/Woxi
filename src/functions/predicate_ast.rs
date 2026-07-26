@@ -496,6 +496,17 @@ pub fn string_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// AtomQ[expr] - Tests if the expression is atomic (not compound)
+/// The compound-headed objects wolframscript treats as atoms: the packed
+/// array types and a `Tree`. They report `AtomQ -> True`, count as a single
+/// leaf and are not traversed into by FreeQ, Position or Level.
+pub fn is_atomic_object(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, .. }
+    if name == "ByteArray"
+      || name == "NumericArray"
+      || name == "SparseArray"
+      || name == "Tree")
+}
+
 pub fn atom_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -520,14 +531,11 @@ pub fn atom_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Rational[n, d] and Complex[re, im] are atoms in Mathematica; the packed
       // array objects (ByteArray, NumericArray, SparseArray) are atoms too.
       Expr::FunctionCall { name, .. }
-        if name == "Rational"
-          || name == "Complex"
-          || name == "ByteArray"
-          || name == "NumericArray"
-          || name == "SparseArray" =>
+        if name == "Rational" || name == "Complex" =>
       {
         true
       }
+      other if is_atomic_object(other) => true,
       _ => false,
     }
   };
@@ -1392,6 +1400,14 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let form = &args[1];
   let form_str = crate::syntax::expr_to_string(form);
 
+  // A packed array object or a tree is an atom: nothing inside it counts as
+  // a part, so only the object itself can match.
+  if is_atomic_object(&args[0]) {
+    let matches_whole =
+      crate::functions::list_helpers_ast::matches_pattern_ast(&args[0], form);
+    return Ok(bool_expr(!matches_whole));
+  }
+
   use crate::functions::calculus_ast::expr_str_eq;
 
   /// Check if `needles` args are a subset of `haystack` args (for Flat+Orderless ops)
@@ -2031,6 +2047,10 @@ pub fn length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Unevaluated[expr] is consumed by Length: count elements of expr directly.
   let stripped = crate::evaluator::strip_unevaluated(&args[0]);
+  // A Tree is an atom: it has no parts to count.
+  if matches!(&stripped, Expr::FunctionCall { name, .. } if name == "Tree") {
+    return Ok(Expr::Integer(0));
+  }
   // SparseArray[Automatic, dims, default, rules]: Length is its first
   // dimension, like a dense array (not the count of canonical-form parts).
   if let Expr::FunctionCall { name, args: sa } = &stripped
@@ -2109,6 +2129,11 @@ pub fn depth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       return 1;
     }
+    // A Tree is an atom through and through: Depth is 1, not the depth of
+    // the structure it stores.
+    if matches!(expr, Expr::FunctionCall { name, .. } if name == "Tree") {
+      return 1;
+    }
     // A SparseArray is an atom, but wolframscript reports its Depth as that of
     // the dense array it represents: 1 + rank (e.g. 2 for a vector, 3 for a
     // matrix). Do not descend into its stored {Automatic, dims, default, data}.
@@ -2169,6 +2194,10 @@ pub fn leaf_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   fn count_leaves(expr: &Expr) -> i128 {
+    // A packed array object or a tree is a single leaf.
+    if is_atomic_object(expr) {
+      return 1;
+    }
     match expr {
       // Atoms: count as 1
       Expr::Integer(_)

@@ -1314,6 +1314,7 @@
     - [`Integrate`](symbolic/Integrate.md)
     - [`InterpolatingPolynomial`](symbolic/InterpolatingPolynomial.md)
     - [`Interpolation`](symbolic/Interpolation.md)
+    - [`Tree`](symbolic/Tree.md)
     - [`InverseFourier`](symbolic/InverseFourier.md)
     - [`InverseFourierTransform`](symbolic/InverseFourierTransform.md)
     - [`InverseFunction`](symbolic/InverseFunction.md)

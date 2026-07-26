@@ -19753,3 +19753,134 @@ mod sparse_array_properties_and_predicates {
     );
   }
 }
+
+mod tree_leaves_cases_scan_and_atomicity {
+  use super::*;
+
+  // The leaf subtrees, left to right; a tree with no children is its own
+  // only leaf.
+  #[test]
+  fn tree_leaves() {
+    assert_eq!(
+      interpret("TreeLeaves[Tree[1, {Tree[2, None], Tree[3, None]}]]").unwrap(),
+      "{Tree[2, None], Tree[3, None]}"
+    );
+    assert_eq!(
+      interpret(
+        "TreeLeaves[Tree[1, {Tree[2, {Tree[4, None]}], Tree[3, None]}]]"
+      )
+      .unwrap(),
+      "{Tree[4, None], Tree[3, None]}"
+    );
+    assert_eq!(
+      interpret("TreeLeaves[Tree[1, None]]").unwrap(),
+      "{Tree[1, None]}"
+    );
+    assert_eq!(
+      interpret("TreeLeaves[ExpressionTree[f[a, g[b]]]]").unwrap(),
+      "{Tree[a, None], Tree[b, None]}"
+    );
+  }
+
+  // The subtrees whose data matches, children before their parent.
+  #[test]
+  fn tree_cases() {
+    assert_eq!(
+      interpret("TreeCases[Tree[1, {Tree[2, None], Tree[3, None]}], _Integer]")
+        .unwrap(),
+      "{Tree[2, None], Tree[3, None], Tree[1, {Tree[2, None], Tree[3, None]}]}"
+    );
+    assert_eq!(
+      interpret(
+        "TreeCases[Tree[1, {Tree[2, {Tree[4, None]}], Tree[3, None]}], _?EvenQ]"
+      )
+      .unwrap(),
+      "{Tree[4, None], Tree[2, {Tree[4, None]}]}"
+    );
+    assert_eq!(
+      interpret("TreeCases[Tree[1, {Tree[2, None]}], _String]").unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn tree_cases_with_a_level_specification() {
+    assert_eq!(
+      interpret(
+        "TreeCases[Tree[1, {Tree[2, {Tree[4, None]}]}], _Integer, {2}]"
+      )
+      .unwrap(),
+      "{Tree[4, None]}"
+    );
+  }
+
+  // TreeScan visits the nodes bottom-up and answers Null.
+  #[test]
+  fn tree_scan_runs_bottom_up() {
+    assert_eq!(
+      interpret(
+        "Reap[TreeScan[Sow, Tree[1, {Tree[2, {Tree[4, None]}], Tree[3, None]}]]]"
+      )
+      .unwrap(),
+      "{Null, {{4, 2, 3, 1}}}"
+    );
+  }
+
+  // A Tree object is an atom: it has no parts, no depth beyond itself and
+  // counts as a single leaf.
+  #[test]
+  fn a_tree_is_an_atom() {
+    assert_eq!(
+      interpret(
+        "{AtomQ[Tree[1, None]], Depth[Tree[1, {Tree[2, None]}]], Length[Tree[1, None]], LeafCount[Tree[1, {Tree[2, None]}]], Dimensions[Tree[1, None]]}"
+      )
+      .unwrap(),
+      "{True, 1, 0, 1, {}}"
+    );
+    assert_eq!(
+      interpret(
+        "{LeafCount[{Tree[1, None], 2}], FreeQ[Tree[1, None], 1], Position[Tree[1, None], 1], Level[Tree[1, {Tree[2, None]}], 1]}"
+      )
+      .unwrap(),
+      "{3, True, {}, {}}"
+    );
+  }
+
+  // Being an atom, it is left alone by Map and Apply.
+  #[test]
+  fn map_and_apply_leave_a_tree_alone() {
+    assert_eq!(
+      interpret("Map[f, Tree[1, {Tree[2, None]}]]").unwrap(),
+      "Tree[1, {Tree[2, None]}]"
+    );
+    assert_eq!(
+      interpret("Apply[f, Tree[1, {Tree[2, None]}]]").unwrap(),
+      "Tree[1, {Tree[2, None]}]"
+    );
+  }
+
+  #[test]
+  fn a_part_specification_is_too_deep_for_a_tree() {
+    let r =
+      woxi::interpret_with_stdout("Tree[1, {Tree[2, None]}][[1]]").unwrap();
+    assert_eq!(r.result, "Tree[1, {Tree[2, None]}][[1]]");
+    assert!(
+      r.warnings.iter().any(|w| w.contains("Part::partd")),
+      "expected partd, got {:?}",
+      r.warnings
+    );
+  }
+
+  // The packed array objects count as single leaves too, and hold nothing
+  // FreeQ can find.
+  #[test]
+  fn packed_objects_are_single_leaves() {
+    assert_eq!(
+      interpret(
+        "{LeafCount[SparseArray[{1 -> 5}, 3]], FreeQ[SparseArray[{1 -> 5}, 3], 5], LeafCount[ByteArray[{1, 2}]]}"
+      )
+      .unwrap(),
+      "{1, True, 1}"
+    );
+  }
+}

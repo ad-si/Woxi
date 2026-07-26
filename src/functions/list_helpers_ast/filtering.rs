@@ -1303,6 +1303,12 @@ pub fn count_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// level specs emit `::level` and return the call unevaluated.
 pub fn level_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let original = || unevaluated("Level", args);
+  // A packed array object or a tree is an atom: it has no levels.
+  if !args.is_empty()
+    && crate::functions::predicate_ast::is_atomic_object(&args[0])
+  {
+    return Ok(Expr::List(Vec::new().into()));
+  }
   let show =
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
 
@@ -1587,6 +1593,15 @@ pub fn delete_cases_unified_ast(
 /// return the call unevaluated.
 pub fn position_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let original = || unevaluated("Position", args);
+  // A packed array object or a tree is an atom: nothing inside it has a
+  // position, so only a match of the whole object could be reported — and
+  // Position never reports the empty path for a pattern match at level 0
+  // unless the level specification asks for it.
+  if args.len() >= 2
+    && crate::functions::predicate_ast::is_atomic_object(&args[0])
+  {
+    return Ok(Expr::List(Vec::new().into()));
+  }
   let show =
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
 

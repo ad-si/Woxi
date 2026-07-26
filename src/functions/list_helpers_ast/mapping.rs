@@ -8,6 +8,11 @@ use crate::syntax::{ComparisonOp, unevaluated};
 /// Map[f, {a, b, c}] -> {f[a], f[b], f[c]}
 /// Map[f, <|a -> 1, b -> 2|>] -> <|a -> f[1], b -> f[2]|>
 pub fn map_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
+  // A tree is an atom: there is nothing to map over. (A SparseArray keeps
+  // its array behaviour and is handled by the caller.)
+  if matches!(list, Expr::FunctionCall { name, .. } if name == "Tree") {
+    return Ok(list.clone());
+  }
   match list {
     Expr::List(items) => {
       let results: Result<Vec<Expr>, _> = items

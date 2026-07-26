@@ -908,6 +908,59 @@ fn longest_ordered_sequence(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 // View a canonical tree node `Tree[data, children]` as (data, child subtrees).
 // A leaf is `Tree[data, None]` (no children). Returns None if `e` is not a Tree.
+/// The leaf subtrees of a tree, left to right. A tree with no children is
+/// its own only leaf.
+fn tree_leaves(e: &Expr) -> Option<Vec<Expr>> {
+  let (_, children) = tree_node(e)?;
+  if children.is_empty() {
+    return Some(vec![e.clone()]);
+  }
+  let mut out = Vec::new();
+  for c in &children {
+    out.extend(tree_leaves(c)?);
+  }
+  Some(out)
+}
+
+/// The subtrees whose data matches `pattern`, bottom-up (children before
+/// their parent), optionally restricted to a level. Returns the matches and
+/// the height of `e`, mirroring `tree_count`.
+fn tree_cases(
+  e: &Expr,
+  pattern: &Expr,
+  depth: i128,
+  bounds: Option<(i128, Option<i128>)>,
+) -> Option<(Vec<Expr>, i128)> {
+  let (data, children) = tree_node(e)?;
+  let mut out = Vec::new();
+  let mut height = 0;
+  for c in &children {
+    let (sub, h) = tree_cases(c, pattern, depth + 1, bounds)?;
+    out.extend(sub);
+    height = height.max(h + 1);
+  }
+  let in_level =
+    bounds.is_none_or(|(lo, hi)| tree_level_in_spec(depth, height + 1, lo, hi));
+  if in_level && list_helpers_ast::matches_pattern_ast(data, pattern) {
+    out.push(e.clone());
+  }
+  Some((out, height))
+}
+
+/// Apply `func` to the data of every node bottom-up, for effect only.
+fn tree_scan(func: &Expr, e: &Expr) -> Result<Option<()>, InterpreterError> {
+  let Some((data, children)) = tree_node(e) else {
+    return Ok(None);
+  };
+  for c in &children {
+    if tree_scan(func, c)?.is_none() {
+      return Ok(None);
+    }
+  }
+  crate::evaluator::apply_function_to_arg(func, data)?;
+  Ok(Some(()))
+}
+
 fn tree_node(e: &Expr) -> Option<(&Expr, Vec<&Expr>)> {
   if let Expr::FunctionCall { name, args } = e
     && name == "Tree"
@@ -4559,6 +4612,49 @@ pub fn dispatch_list_operations(
     // TreeCount[tree, pattern]: count nodes whose data matches pattern.
     // TreeCount[tree, patt] counts all matching nodes; the optional third
     // argument restricts the count to the given level spec.
+    // TreeLeaves[tree] — the leaf subtrees, left to right.
+    "TreeLeaves" if args.len() == 1 => {
+      if let Some(leaves) = tree_leaves(&args[0]) {
+        return Some(Ok(Expr::List(leaves.into())));
+      }
+      crate::emit_message(&format!(
+        "TreeLeaves::tree: Tree expected at position 1 in {}.",
+        crate::syntax::expr_to_string(&unevaluated("TreeLeaves", args))
+      ));
+      return Some(Ok(unevaluated("TreeLeaves", args)));
+    }
+    // TreeCases[tree, patt] — the subtrees whose data matches, bottom-up.
+    "TreeCases" if args.len() == 2 || args.len() == 3 => {
+      let unevaluated = || unevaluated("TreeCases", args);
+      let bounds = if args.len() == 3 {
+        match parse_tree_level_spec(&args[2]) {
+          Some(b) => Some(b),
+          None => return Some(Ok(unevaluated())),
+        }
+      } else {
+        None
+      };
+      if let Some((matches, _)) = tree_cases(&args[0], &args[1], 0, bounds) {
+        return Some(Ok(Expr::List(matches.into())));
+      }
+      crate::emit_message(&format!(
+        "TreeCases::tree: Tree expected at position 1 in {}.",
+        crate::syntax::expr_to_string(&unevaluated())
+      ));
+      return Some(Ok(unevaluated()));
+    }
+    // TreeScan[f, tree] — apply f to every node's data bottom-up, for effect.
+    "TreeScan" if args.len() == 2 => match tree_scan(&args[0], &args[1]) {
+      Ok(Some(())) => return Some(Ok(Expr::Identifier("Null".to_string()))),
+      Ok(None) => {
+        crate::emit_message(&format!(
+          "TreeScan::tree: Tree expected at position 2 in {}.",
+          crate::syntax::expr_to_string(&unevaluated("TreeScan", args))
+        ));
+        return Some(Ok(unevaluated("TreeScan", args)));
+      }
+      Err(e) => return Some(Err(e)),
+    },
     "TreeCount" if args.len() == 2 || args.len() == 3 => {
       let unevaluated = || unevaluated("TreeCount", args);
       let bounds = if args.len() == 3 {

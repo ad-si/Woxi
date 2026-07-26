@@ -775,6 +775,10 @@ fn expr_children(expr: &Expr) -> Option<Vec<Expr>> {
   if crate::functions::predicate_ast::is_atomic_number(expr) {
     return None;
   }
+  // A tree is an atom too.
+  if matches!(expr, Expr::FunctionCall { name, .. } if name == "Tree") {
+    return None;
+  }
   match expr {
     Expr::List(items) => Some(items.to_vec()),
     Expr::FunctionCall { args, .. } => Some(args.to_vec()),

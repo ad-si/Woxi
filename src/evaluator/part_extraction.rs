@@ -343,6 +343,15 @@ pub fn extract_part_ast(
     return extract_part_ast(&flat, index);
   }
 
+  // A tree is an atom: Part cannot reach inside it, so the call stays
+  // unevaluated and the caller reports Part::partd.
+  if matches!(expr, Expr::FunctionCall { name, .. } if name == "Tree") {
+    return Ok(Expr::Part {
+      expr: Box::new(expr.clone()),
+      index: Box::new(index.clone()),
+    });
+  }
+
   // A SparseArray indexed with Part is densified, then the part is taken from
   // the dense nested list. This covers every rank and index form (a single
   // integer, a multi-index chain like [[1, 2, 3]], spans, All, ...); without it

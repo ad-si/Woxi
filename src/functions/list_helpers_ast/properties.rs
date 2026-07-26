@@ -877,6 +877,11 @@ pub fn dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None
   };
 
+  // A tree is an atom, so it has no dimensions.
+  if matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Tree") {
+    return Ok(Expr::List(Vec::new().into()));
+  }
+
   fn get_dimensions(expr: &Expr, max_level: Option<usize>) -> Vec<i128> {
     if let Some(0) = max_level {
       return vec![];
