@@ -663,6 +663,7 @@
       - [`CantorStaircase`](math/utility/CantorStaircase.md)
       - [`CentralMoment`](math/utility/CentralMoment.md)
       - [`ChessboardDistance`](math/utility/ChessboardDistance.md)
+      - [`CircumscribedBall`](math/utility/CircumscribedBall.md)
       - [`Chop`](math/utility/Chop.md)
       - [`Clip`](math/utility/Clip.md)
       - [`Complex`](math/utility/Complex.md)

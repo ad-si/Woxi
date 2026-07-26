@@ -3741,6 +3741,23 @@ mod circumsphere {
       "Circumsphere[{{0, 0}, {1, 1}, {2, 2}}]"
     );
   }
+
+  // Regression: large coordinates used to overflow the i128 rational solver and
+  // panic the interpreter. The exact solver now works over big integers.
+  #[test]
+  fn large_coordinates_stay_exact() {
+    assert_eq!(
+      interpret(
+        "Circumsphere[{{0, 0, 0}, {10^13, 0, 0}, {0, 10^13, 0}, \
+         {3, 7, 10^13}}]"
+      )
+      .unwrap(),
+      "Sphere[{5000000000000, 5000000000000, \
+       49999999999950000000000029/10000000000000}, \
+       (3*Sqrt[833333333332777777777778377777777777455555555555649])/\
+       10000000000000]"
+    );
+  }
 }
 
 // Insphere[{p1, …, p_{n+1}}] — the sphere inscribed in the simplex spanned by
@@ -3971,6 +3988,411 @@ mod bounding_region {
     assert_eq!(
       interpret("BoundingRegion[{{1, 2}, {3, 4, 5}}]").unwrap(),
       "BoundingRegion[{{1, 2}, {3, 4, 5}}]"
+    );
+  }
+
+  // Vertex-based region primitives are bounded like their vertex list.
+  #[test]
+  fn region_primitives() {
+    assert_eq!(
+      interpret("BoundingRegion[Triangle[{{0, 0}, {1, 0}, {0, 1}}]]").unwrap(),
+      "Rectangle[{0, 0}, {1, 1}]"
+    );
+    assert_eq!(
+      interpret("BoundingRegion[Line[{{0, 0}, {2, 1}}]]").unwrap(),
+      "Rectangle[{0, 0}, {2, 1}]"
+    );
+    assert_eq!(
+      interpret("BoundingRegion[Point[{{0, 0}, {2, 1}}]]").unwrap(),
+      "Rectangle[{0, 0}, {2, 1}]"
+    );
+  }
+
+  // "MinBall"/"MinDisk" give the smallest enclosing ball; "FastBall"/"FastDisk"
+  // the circumball of the bounding box; "MinCuboid"/"MinRectangle" the box.
+  #[test]
+  fn named_types() {
+    assert_eq!(
+      interpret("BoundingRegion[{{0, 0}, {1, 0}, {0, 1}}, \"MinBall\"]")
+        .unwrap(),
+      "Ball[{1/2, 1/2}, 1/Sqrt[2]]"
+    );
+    assert_eq!(
+      interpret("BoundingRegion[{{0, 0}, {1, 0}, {0, 1}}, \"MinDisk\"]")
+        .unwrap(),
+      "Disk[{1/2, 1/2}, 1/Sqrt[2]]"
+    );
+    assert_eq!(
+      interpret("BoundingRegion[{{1, 1}, {4, 8}, {16, 7}}, \"FastDisk\"]")
+        .unwrap(),
+      "Disk[{17/2, 9/2}, Sqrt[137/2]]"
+    );
+    assert_eq!(
+      interpret("BoundingRegion[{{0, 0}, {1, 0}, {0, 1}}, \"MinCuboid\"]")
+        .unwrap(),
+      "Cuboid[{0, 0}, {1, 1}]"
+    );
+    assert_eq!(
+      interpret("BoundingRegion[{{0, 0}, {1, 0}, {0, 1}}, \"MinRectangle\"]")
+        .unwrap(),
+      "Rectangle[{0, 0}, {1, 1}]"
+    );
+    assert_eq!(
+      interpret(
+        "BoundingRegion[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}, \
+                 \"MinCuboid\"]"
+      )
+      .unwrap(),
+      "Cuboid[{0, 0, 0}, {1, 1, 0}]"
+    );
+    assert_eq!(
+      interpret("BoundingRegion[Line[{{0, 0}, {2, 1}}], \"MinBall\"]").unwrap(),
+      "Ball[{1, 1/2}, Sqrt[5]/2]"
+    );
+  }
+
+  // "FastBall" is the circumball of the bounding box, which is generally
+  // larger than the smallest enclosing ball.
+  #[test]
+  fn fast_ball_differs_from_min_ball() {
+    assert_eq!(
+      interpret(
+        "pts = Table[{Mod[k^2, 17], Mod[k^3, 19]}, {k, 1, 12}]; \
+         BoundingRegion[pts, \"MinBall\"]"
+      )
+      .unwrap(),
+      "Ball[{8, 299/34}, Sqrt[126869]/34]"
+    );
+    assert_eq!(
+      interpret(
+        "pts = Table[{Mod[k^2, 17], Mod[k^3, 19]}, {k, 1, 12}]; \
+         BoundingRegion[pts, \"FastBall\"]"
+      )
+      .unwrap(),
+      "Ball[{17/2, 19/2}, Sqrt[257/2]]"
+    );
+  }
+
+  #[test]
+  fn type_messages() {
+    clear_state();
+    assert_eq!(
+      interpret("BoundingRegion[{{0, 0}, {1, 0}, {0, 1}}, \"Bogus\"]").unwrap(),
+      "BoundingRegion[{{0, 0}, {1, 0}, {0, 1}}, Bogus]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "BoundingRegion::spec: Bogus is not a valid type specification for \
+         bounding regions."
+      )),
+      "got {msgs:?}"
+    );
+    // Automatic is not a valid explicit type.
+    clear_state();
+    assert_eq!(
+      interpret("BoundingRegion[{{0, 0}, {1, 0}, {0, 1}}, Automatic]").unwrap(),
+      "BoundingRegion[{{0, 0}, {1, 0}, {0, 1}}, Automatic]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "BoundingRegion::spec: Automatic is not a valid type specification"
+      )),
+      "got {msgs:?}"
+    );
+    // The planar types reject non-planar points.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "BoundingRegion[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}, \
+                 \"MinDisk\"]"
+      )
+      .unwrap(),
+      "BoundingRegion[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}, MinDisk]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "BoundingRegion::spec: MinDisk is not a valid type specification"
+      )),
+      "got {msgs:?}"
+    );
+    // A malformed point list is reported before the type is even looked at.
+    clear_state();
+    assert_eq!(
+      interpret("BoundingRegion[{1, 2, 3}, \"Bogus\"]").unwrap(),
+      "BoundingRegion[{1, 2, 3}, Bogus]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "BoundingRegion::regl: The argument {1, 2, 3} should be a region or \
+         a list of points."
+      )),
+      "got {msgs:?}"
+    );
+    // MinOrientedCuboid is a valid type name but is not computed.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "BoundingRegion[{{0, 0}, {1, 0}, {0, 1}}, \
+                 \"MinOrientedCuboid\"]"
+      )
+      .unwrap(),
+      "BoundingRegion[{{0, 0}, {1, 0}, {0, 1}}, MinOrientedCuboid]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().all(|m| !m.contains("BoundingRegion::")),
+      "got {msgs:?}"
+    );
+  }
+}
+
+// CircumscribedBall[pts] — the ball of minimal radius enclosing the points.
+mod circumscribed_ball {
+  use super::*;
+
+  #[test]
+  fn planar_points() {
+    // The three vertices of a right triangle lie on the ball through them.
+    assert_eq!(
+      interpret("CircumscribedBall[{{0, 0}, {1, 0}, {0, 1}}]").unwrap(),
+      "Ball[{1/2, 1/2}, 1/Sqrt[2]]"
+    );
+    assert_eq!(
+      interpret("CircumscribedBall[{{0, 0}, {4, 0}, {0, 3}}]").unwrap(),
+      "Ball[{2, 3/2}, 5/2]"
+    );
+    // Two points: the ball on their diameter.
+    assert_eq!(
+      interpret("CircumscribedBall[{{0, 0}, {2, 0}}]").unwrap(),
+      "Ball[{1, 0}, 1]"
+    );
+    // A single point gives a degenerate ball.
+    assert_eq!(
+      interpret("CircumscribedBall[{{1, 2}}]").unwrap(),
+      "Ball[{1, 2}, 0]"
+    );
+    // 1-D points are supported too.
+    assert_eq!(
+      interpret("CircumscribedBall[{{0}, {2}}]").unwrap(),
+      "Ball[{1}, 1]"
+    );
+  }
+
+  #[test]
+  fn interior_points_do_not_enlarge_the_ball() {
+    // Collinear points: only the two extremes support the ball.
+    assert_eq!(
+      interpret("CircumscribedBall[{{0, 0}, {1, 0}, {2, 0}}]").unwrap(),
+      "Ball[{1, 0}, 1]"
+    );
+    // A point inside the ball of the others is ignored.
+    assert_eq!(
+      interpret(
+        "CircumscribedBall[{{0, 0}, {1, 0}, {0, 1}, {1, 1}, {1/2, 1/2}}]"
+      )
+      .unwrap(),
+      "Ball[{1/2, 1/2}, 1/Sqrt[2]]"
+    );
+  }
+
+  #[test]
+  fn three_dimensional_points() {
+    // The origin is inside the ball through the three unit points, so the
+    // enclosing ball is smaller than the circumsphere of the tetrahedron.
+    assert_eq!(
+      interpret(
+        "CircumscribedBall[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, \
+                 {0, 0, 1}}]"
+      )
+      .unwrap(),
+      "Ball[{1/3, 1/3, 1/3}, Sqrt[2/3]]"
+    );
+    assert_eq!(
+      interpret("Circumsphere[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}}]")
+        .unwrap(),
+      "Sphere[{1/2, 1/2, 1/2}, Sqrt[3]/2]"
+    );
+  }
+
+  #[test]
+  fn many_points_exact() {
+    assert_eq!(
+      interpret(
+        "pts = Table[{Mod[k^2, 17], Mod[k^3, 19]}, {k, 1, 12}]; \
+         CircumscribedBall[pts]"
+      )
+      .unwrap(),
+      "Ball[{8, 299/34}, Sqrt[126869]/34]"
+    );
+    assert_eq!(
+      interpret(
+        "pts = Table[{Mod[k^3, 97], Mod[k^5, 101]}, {k, 1, 150}]; \
+         CircumscribedBall[pts]"
+      )
+      .unwrap(),
+      "Ball[{97/2, 48}, Sqrt[17861]/2]"
+    );
+    assert_eq!(
+      interpret(
+        "pts = Table[{Mod[k^2, 23], Mod[k^3, 29], Mod[k^5, 31]}, {k, 1, 30}]; \
+         CircumscribedBall[pts]"
+      )
+      .unwrap(),
+      "Ball[{191453/27442, 339819/27442, 436861/27442}, \
+       Sqrt[292102915811]/27442]"
+    );
+  }
+
+  // Four dimensions: the support set has five points and the exact centre needs
+  // big-integer rational arithmetic (i128 used to overflow and panic here).
+  #[test]
+  fn four_dimensional_points() {
+    assert_eq!(
+      interpret(
+        "pts = Table[{Mod[k^2, 29], Mod[k^3, 31], Mod[k^5, 37], \
+         Mod[k^7, 41]}, {k, 1, 20}]; CircumscribedBall[pts]"
+      )
+      .unwrap(),
+      "Ball[{1239819/111353, 146805/10123, 1974454/111353, 1625706/111353}, \
+       Sqrt[83503490/111353]]"
+    );
+  }
+
+  #[test]
+  fn region_primitives() {
+    assert_eq!(
+      interpret("CircumscribedBall[Triangle[{{0, 0}, {1, 0}, {0, 1}}]]")
+        .unwrap(),
+      "Ball[{1/2, 1/2}, 1/Sqrt[2]]"
+    );
+    assert_eq!(
+      interpret("CircumscribedBall[Point[{{0, 0}, {2, 0}}]]").unwrap(),
+      "Ball[{1, 0}, 1]"
+    );
+    assert_eq!(
+      interpret("CircumscribedBall[Polygon[{{0, 0}, {4, 0}, {0, 3}}]]")
+        .unwrap(),
+      "Ball[{2, 3/2}, 5/2]"
+    );
+    assert_eq!(
+      interpret("CircumscribedBall[Simplex[{{0, 0}, {1, 0}, {0, 1}}]]")
+        .unwrap(),
+      "Ball[{1/2, 1/2}, 1/Sqrt[2]]"
+    );
+    assert_eq!(
+      interpret(
+        "CircumscribedBall[Tetrahedron[{{0, 0, 0}, {1, 0, 0}, \
+                 {0, 1, 0}, {0, 0, 1}}]]"
+      )
+      .unwrap(),
+      "Ball[{1/3, 1/3, 1/3}, Sqrt[2/3]]"
+    );
+    // Boxes contribute all of their corners.
+    assert_eq!(
+      interpret("CircumscribedBall[Rectangle[{0, 0}, {2, 1}]]").unwrap(),
+      "Ball[{1, 1/2}, Sqrt[5]/2]"
+    );
+    assert_eq!(
+      interpret("CircumscribedBall[Cuboid[{0, 0, 0}, {2, 1, 1}]]").unwrap(),
+      "Ball[{1, 1/2, 1/2}, Sqrt[3/2]]"
+    );
+    // The one-argument box form is the unit box at that corner, and the
+    // argument-less forms are the unit square / unit cube.
+    assert_eq!(
+      interpret("CircumscribedBall[Cuboid[{1, 1, 1}]]").unwrap(),
+      "Ball[{3/2, 3/2, 3/2}, Sqrt[3]/2]"
+    );
+    assert_eq!(
+      interpret("CircumscribedBall[Rectangle[{1, 1}]]").unwrap(),
+      "Ball[{3/2, 3/2}, 1/Sqrt[2]]"
+    );
+    assert_eq!(
+      interpret("CircumscribedBall[Cuboid[]]").unwrap(),
+      "Ball[{1/2, 1/2, 1/2}, Sqrt[3]/2]"
+    );
+    assert_eq!(
+      interpret("CircumscribedBall[Triangle[]]").unwrap(),
+      "Ball[{1/2, 1/2}, 1/Sqrt[2]]"
+    );
+  }
+
+  // Machine-precision input gives a machine-precision ball. The last digits
+  // differ from wolframscript's numeric solver, so the comparison is rounded.
+  #[test]
+  fn machine_precision_points() {
+    assert_eq!(
+      interpret(
+        "Round[List @@ CircumscribedBall[{{0., 0.}, {1., 0.}, {0., 1.}}], \
+         10^-6]"
+      )
+      .unwrap(),
+      "{{1/2, 1/2}, 707107/1000000}"
+    );
+  }
+
+  #[test]
+  fn invalid_specifications() {
+    clear_state();
+    assert_eq!(
+      interpret("CircumscribedBall[{1, 2, 3}]").unwrap(),
+      "CircumscribedBall[{1, 2, 3}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "CircumscribedBall::spec: {1, 2, 3} is not a valid CircumscribedBall \
+         specification."
+      )),
+      "got {msgs:?}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("CircumscribedBall[{}]").unwrap(),
+      "CircumscribedBall[{}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains("CircumscribedBall::spec")),
+      "got {msgs:?}"
+    );
+    // Points of differing length are not a valid specification either.
+    clear_state();
+    assert_eq!(
+      interpret("CircumscribedBall[{{0, 0}, {1, 1, 1}}]").unwrap(),
+      "CircumscribedBall[{{0, 0}, {1, 1, 1}}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains("CircumscribedBall::spec")),
+      "got {msgs:?}"
+    );
+  }
+
+  // Symbolic coordinates, and the regions wolframscript does not accept here,
+  // stay unevaluated without a message.
+  #[test]
+  fn silently_unevaluated_forms() {
+    clear_state();
+    assert_eq!(
+      interpret("CircumscribedBall[{{0, 0}, {x, 1}}]").unwrap(),
+      "CircumscribedBall[{{0, 0}, {x, 1}}]"
+    );
+    assert_eq!(
+      interpret("CircumscribedBall[Line[{{0, 0}, {2, 0}}]]").unwrap(),
+      "CircumscribedBall[Line[{{0, 0}, {2, 0}}]]"
+    );
+    assert_eq!(
+      interpret("CircumscribedBall[Ball[{0, 0}, 1]]").unwrap(),
+      "CircumscribedBall[Ball[{0, 0}, 1]]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().all(|m| !m.contains("CircumscribedBall::")),
+      "got {msgs:?}"
     );
   }
 }

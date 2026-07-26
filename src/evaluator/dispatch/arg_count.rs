@@ -184,6 +184,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Chop" => Some((1, 2)),
     "CircleThrough" => Some((1, 1)),
     "Circumsphere" => Some((1, 2)),
+    "CircumscribedBall" => Some((1, 1)),
     "ClearAttributes" => Some((2, 2)),
     "Clip" => Some((1, 3)),
     "Close" => Some((1, 1)),

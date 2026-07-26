@@ -31,6 +31,7 @@ and the membership predicate `MemberQ`.
 - [`CantorStaircase`](utility/CantorStaircase.md)
 - [`CentralMoment`](utility/CentralMoment.md)
 - [`ChessboardDistance`](utility/ChessboardDistance.md)
+- [`CircumscribedBall`](utility/CircumscribedBall.md)
 - [`Chop`](utility/Chop.md)
 - [`Clip`](utility/Clip.md)
 - [`Complex`](utility/Complex.md)

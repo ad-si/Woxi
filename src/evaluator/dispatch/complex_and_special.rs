@@ -2038,8 +2038,12 @@ pub fn dispatch_complex_and_special(
     // BoundingRegion[pts] — smallest axis-aligned bounding box of a point list:
     // Rectangle for 2D points, Cuboid for 1D or >=3D. Named-method and region
     // forms are left unevaluated.
-    "BoundingRegion" if args.len() == 1 => {
-      return Some(compute_bounding_region(&args[0]));
+    "BoundingRegion" if args.len() == 1 || args.len() == 2 => {
+      return Some(compute_bounding_region(args));
+    }
+    // CircumscribedBall[pts] — the smallest ball enclosing the points.
+    "CircumscribedBall" if args.len() == 1 => {
+      return Some(compute_circumscribed_ball(&args[0]));
     }
     "RegionWithin" if args.len() == 2 => {
       return Some(region_within(
@@ -12630,6 +12634,143 @@ fn rat_div(a: (i128, i128), b: (i128, i128)) -> Option<(i128, i128)> {
   Some(rat_mul(a, (b.1, b.0)))
 }
 
+/// An exact rational over big integers, kept reduced with a positive
+/// denominator. The geometry solvers below need it: the numerators and
+/// denominators of a circumcentre grow fast enough that `i128` arithmetic
+/// overflows (and panics) on inputs with large coordinates.
+#[derive(Clone, PartialEq, Eq)]
+struct BigRat {
+  num: num_bigint::BigInt,
+  den: num_bigint::BigInt,
+}
+
+impl BigRat {
+  fn new(num: num_bigint::BigInt, den: num_bigint::BigInt) -> Self {
+    use num_traits::Zero;
+    if den.is_zero() {
+      return Self {
+        num: num_bigint::BigInt::zero(),
+        den: num_bigint::BigInt::from(1),
+      };
+    }
+    // Euclid's algorithm; num-integer is not a dependency.
+    let mut a = if num < num_bigint::BigInt::zero() {
+      -num.clone()
+    } else {
+      num.clone()
+    };
+    let mut b = if den < num_bigint::BigInt::zero() {
+      -den.clone()
+    } else {
+      den.clone()
+    };
+    while !b.is_zero() {
+      let r = &a % &b;
+      a = b;
+      b = r;
+    }
+    let g = if a.is_zero() {
+      num_bigint::BigInt::from(1)
+    } else {
+      a
+    };
+    let sign = if den < num_bigint::BigInt::zero() {
+      -1
+    } else {
+      1
+    };
+    Self {
+      num: num * sign / &g,
+      den: den * sign / &g,
+    }
+  }
+
+  fn zero() -> Self {
+    Self {
+      num: num_bigint::BigInt::from(0),
+      den: num_bigint::BigInt::from(1),
+    }
+  }
+
+  fn from_pair((n, d): (i128, i128)) -> Self {
+    Self::new(num_bigint::BigInt::from(n), num_bigint::BigInt::from(d))
+  }
+
+  fn is_zero(&self) -> bool {
+    use num_traits::Zero;
+    self.num.is_zero()
+  }
+
+  fn add(&self, o: &Self) -> Self {
+    Self::new(&self.num * &o.den + &o.num * &self.den, &self.den * &o.den)
+  }
+
+  fn sub(&self, o: &Self) -> Self {
+    Self::new(&self.num * &o.den - &o.num * &self.den, &self.den * &o.den)
+  }
+
+  fn mul(&self, o: &Self) -> Self {
+    Self::new(&self.num * &o.num, &self.den * &o.den)
+  }
+
+  fn div(&self, o: &Self) -> Option<Self> {
+    if o.is_zero() {
+      return None;
+    }
+    Some(Self::new(&self.num * &o.den, &self.den * &o.num))
+  }
+
+  /// The corresponding Woxi number: an integer when the denominator is 1,
+  /// otherwise the reduced rational (built by evaluating `n/d`, which keeps
+  /// big numerators and denominators exact).
+  fn to_expr(&self) -> Result<Expr, InterpreterError> {
+    let int = |v: &num_bigint::BigInt| match i128::try_from(v.clone()) {
+      Ok(i) => Expr::Integer(i),
+      Err(_) => Expr::BigInteger(v.clone()),
+    };
+    if self.den == num_bigint::BigInt::from(1) {
+      return Ok(int(&self.num));
+    }
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Divide".to_string(),
+      args: vec![int(&self.num), int(&self.den)].into(),
+    })
+  }
+}
+
+/// Gauss-Jordan solve of a small exact system. `None` when singular.
+fn solve_bigrat_system(
+  mut a: Vec<Vec<BigRat>>,
+  b: &[BigRat],
+) -> Option<Vec<BigRat>> {
+  let n = a.len();
+  for (i, row) in a.iter_mut().enumerate() {
+    row.push(b[i].clone());
+  }
+  for col in 0..n {
+    let pivot_row = (col..n).find(|&r| !a[r][col].is_zero())?;
+    a.swap(col, pivot_row);
+    let pivot = a[col][col].clone();
+    for j in col..=n {
+      a[col][j] = a[col][j].div(&pivot)?;
+    }
+    for r in 0..n {
+      if r == col {
+        continue;
+      }
+      let factor = a[r][col].clone();
+      if factor.is_zero() {
+        continue;
+      }
+      for j in col..=n {
+        let term = factor.mul(&a[col][j]);
+        a[r][j] = a[r][j].sub(&term);
+      }
+    }
+  }
+  Some((0..n).map(|i| a[i][n].clone()).collect())
+}
+
 /// Check if the sequence is n! (starting from n=1)
 fn try_factorial(vals: &[(i128, i128)]) -> bool {
   let mut fact: i128 = 1;
@@ -13778,37 +13919,394 @@ fn compute_polygon_angle(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Compute the insphere (incircle) of a geometric region.
 /// For a 2D Triangle: returns Sphere[{cx, cy}, r]
 /// For a 3D Tetrahedron: returns Sphere[{cx, cy, cz}, r]
-/// Solve the square rational linear system `A x = b` by Gauss-Jordan
-/// elimination. Returns None if the matrix is singular (degenerate points).
-fn solve_rational_system(
-  mut a: Vec<Vec<(i128, i128)>>,
-  b: &[(i128, i128)],
-) -> Option<Vec<(i128, i128)>> {
-  let n = a.len();
-  for (i, row) in a.iter_mut().enumerate() {
-    row.push(b[i]);
-  }
-  for col in 0..n {
-    let pivot_row = (col..n).find(|&r| a[r][col].0 != 0)?;
-    a.swap(col, pivot_row);
-    let pivot = a[col][col];
-    for j in col..=n {
-      a[col][j] = rat_div(a[col][j], pivot)?;
+
+/// The point list a `CircumscribedBall` / `BoundingRegion` specification
+/// denotes: a bare list of equal-length coordinate vectors, or one of the
+/// vertex-based region primitives wolframscript accepts there (`Point`,
+/// `Triangle`, `Polygon`, `Simplex`, `Tetrahedron` hold their vertices
+/// directly; `Rectangle` and `Cuboid` contribute all of their corners).
+/// `Ball` is not accepted by wolframscript; `Line` is accepted by
+/// `BoundingRegion` but not by `CircumscribedBall`, hence `allow_line`.
+/// Returns `None` for anything else.
+fn region_point_list(expr: &Expr, allow_line: bool) -> Option<Vec<Vec<Expr>>> {
+  // All 2^d corners spanned by the opposite corners `lo` and `hi`.
+  fn box_corners(lo: &[Expr], hi: &[Expr]) -> Option<Vec<Vec<Expr>>> {
+    let d = lo.len();
+    if d == 0 || hi.len() != d {
+      return None;
     }
-    for r in 0..n {
-      if r == col {
+    let mut corners = Vec::with_capacity(1usize << d);
+    for mask in 0..(1usize << d) {
+      corners.push(
+        (0..d)
+          .map(|j| {
+            if mask & (1 << j) == 0 {
+              lo[j].clone()
+            } else {
+              hi[j].clone()
+            }
+          })
+          .collect(),
+      );
+    }
+    Some(corners)
+  }
+  // Cuboid[lo] / Rectangle[lo] is the unit box with its low corner at `lo`.
+  let shifted = |lo: &[Expr]| -> Option<Vec<Expr>> {
+    lo.iter()
+      .map(|c| {
+        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![c.clone(), Expr::Integer(1)].into(),
+        })
+        .ok()
+      })
+      .collect()
+  };
+  let unit_box =
+    |d: usize| -> Vec<Expr> { (0..d).map(|_| Expr::Integer(0)).collect() };
+
+  match expr {
+    Expr::List(points) if !points.is_empty() => {
+      let mut coords = Vec::with_capacity(points.len());
+      for p in points.iter() {
+        let Expr::List(c) = p else {
+          return None;
+        };
+        coords.push(c.to_vec());
+      }
+      let d = coords[0].len();
+      if d == 0 || coords.iter().any(|c| c.len() != d) {
+        return None;
+      }
+      Some(coords)
+    }
+    Expr::FunctionCall { name, args } => match (name.as_str(), args.len()) {
+      // Vertex-list primitives.
+      ("Point" | "Triangle" | "Polygon" | "Simplex" | "Tetrahedron", 1) => {
+        region_point_list(&args[0], allow_line)
+      }
+      ("Line", 1) if allow_line => region_point_list(&args[0], allow_line),
+      ("Triangle", 0) => region_point_list(
+        &Expr::List(
+          vec![
+            Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
+            Expr::List(vec![Expr::Integer(1), Expr::Integer(0)].into()),
+            Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into()),
+          ]
+          .into(),
+        ),
+        allow_line,
+      ),
+      // Boxes: the default forms are the unit square / unit cube.
+      ("Rectangle", 0) => {
+        let lo = unit_box(2);
+        let hi = shifted(&lo)?;
+        box_corners(&lo, &hi)
+      }
+      ("Cuboid", 0) => {
+        let lo = unit_box(3);
+        let hi = shifted(&lo)?;
+        box_corners(&lo, &hi)
+      }
+      ("Rectangle" | "Cuboid", 1) => {
+        let Expr::List(lo) = &args[0] else {
+          return None;
+        };
+        let hi = shifted(lo)?;
+        box_corners(lo, &hi)
+      }
+      ("Rectangle" | "Cuboid", 2) => {
+        let (Expr::List(lo), Expr::List(hi)) = (&args[0], &args[1]) else {
+          return None;
+        };
+        box_corners(lo, hi)
+      }
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+/// Whether `expr` is one of the geometric-region constructors. Used to tell a
+/// region whose bounding ball simply is not computed here from an argument that
+/// is no region at all — wolframscript stays silent for the former and reports
+/// an invalid specification for the latter.
+fn is_region_head(expr: &Expr) -> bool {
+  let Expr::FunctionCall { name, .. } = expr else {
+    return false;
+  };
+  matches!(
+    name.as_str(),
+    "Point"
+      | "Line"
+      | "HalfLine"
+      | "InfiniteLine"
+      | "Polygon"
+      | "Triangle"
+      | "Simplex"
+      | "Tetrahedron"
+      | "Rectangle"
+      | "Cuboid"
+      | "Parallelogram"
+      | "Parallelepiped"
+      | "Prism"
+      | "Pyramid"
+      | "Hexahedron"
+      | "Circle"
+      | "Disk"
+      | "DiskSegment"
+      | "Annulus"
+      | "Ball"
+      | "Sphere"
+      | "SphericalShell"
+      | "Ellipsoid"
+      | "Cylinder"
+      | "Cone"
+      | "CapsuleShape"
+      | "StadiumShape"
+      | "ConicHullRegion"
+      | "HalfPlane"
+      | "HalfSpace"
+      | "Hyperplane"
+      | "Polyhedron"
+      | "Cube"
+      | "Tetrahedron3D"
+      | "Dodecahedron"
+      | "Icosahedron"
+      | "Octahedron"
+      | "Region"
+      | "ImplicitRegion"
+      | "ParametricRegion"
+      | "MeshRegion"
+      | "BoundaryMeshRegion"
+      | "RegionUnion"
+      | "RegionIntersection"
+      | "RegionDifference"
+      | "RegionProduct"
+      | "TransformedRegion"
+  )
+}
+
+/// The circumball of the points `idx` in `pts`: the ball whose centre lies in
+/// their affine hull and whose boundary passes through all of them. With
+/// v_i = q_i - q_0 the centre is q_0 + sum_i lambda_i v_i, where lambda solves
+/// `2 (v_i . v_j) lambda_j = v_i . v_i`. `None` when the points are affinely
+/// dependent (a singular system).
+fn affine_circumball(
+  pts: &[Vec<f64>],
+  idx: &[usize],
+) -> Option<(Vec<f64>, f64)> {
+  let q0 = &pts[idx[0]];
+  let k = idx.len() - 1;
+  if k == 0 {
+    return Some((q0.clone(), 0.0));
+  }
+  let d = q0.len();
+  let v: Vec<Vec<f64>> = idx[1..]
+    .iter()
+    .map(|&i| (0..d).map(|j| pts[i][j] - q0[j]).collect())
+    .collect();
+  let dot = |a: &[f64], b: &[f64]| -> f64 { (0..d).map(|j| a[j] * b[j]).sum() };
+  let m: Vec<Vec<f64>> = (0..k)
+    .map(|i| (0..k).map(|j| 2.0 * dot(&v[i], &v[j])).collect())
+    .collect();
+  let b: Vec<f64> = (0..k).map(|i| dot(&v[i], &v[i])).collect();
+  let lambda = solve_float_system(m, b)?;
+  let center: Vec<f64> = (0..d)
+    .map(|j| q0[j] + (0..k).map(|i| lambda[i] * v[i][j]).sum::<f64>())
+    .collect();
+  let r2 = (0..d).map(|j| (center[j] - q0[j]).powi(2)).sum();
+  Some((center, r2))
+}
+
+/// Squared distance between two points.
+fn dist2(a: &[f64], b: &[f64]) -> f64 {
+  a.iter().zip(b).map(|(x, y)| (x - y).powi(2)).sum()
+}
+
+/// The smallest ball enclosing the points `idx` (a set of at most d + 2
+/// points), together with the sub-set carrying its boundary. Found by taking
+/// the smallest circumball over all sub-sets that still contains every point
+/// of `idx`.
+fn small_set_ball(
+  pts: &[Vec<f64>],
+  idx: &[usize],
+) -> Option<(Vec<f64>, f64, Vec<usize>)> {
+  let mut best: Option<(Vec<f64>, f64, Vec<usize>)> = None;
+  for mask in 1..(1usize << idx.len()) {
+    let subset: Vec<usize> = (0..idx.len())
+      .filter(|b| mask & (1 << b) != 0)
+      .map(|b| idx[b])
+      .collect();
+    let Some((center, r2)) = affine_circumball(pts, &subset) else {
+      continue;
+    };
+    let slack = r2 * 1e-9 + 1e-12;
+    if idx.iter().any(|&i| dist2(&pts[i], &center) > r2 + slack) {
+      continue;
+    }
+    if best.as_ref().is_none_or(|(_, br2, _)| r2 < *br2) {
+      best = Some((center, r2, subset));
+    }
+  }
+  best
+}
+
+/// The boundary support set of the smallest ball enclosing every point of
+/// `pts`. Starting from a single point, the smallest ball of the current
+/// support set is computed and the point furthest outside it is added; each
+/// round strictly grows the radius, so the loop terminates. The combinatorial
+/// search runs in machine arithmetic — the resulting ball is then rebuilt
+/// exactly from the support set by the caller.
+fn enclosing_ball_support(pts: &[Vec<f64>]) -> Option<Vec<usize>> {
+  let n = pts.len();
+  let mut support = vec![0usize];
+  for _ in 0..(20 * n + 100) {
+    let (center, r2, boundary) = small_set_ball(pts, &support)?;
+    let mut worst = r2 * (1.0 + 1e-10) + 1e-13;
+    let mut outside = None;
+    for i in 0..n {
+      if boundary.contains(&i) {
         continue;
       }
-      let factor = a[r][col];
-      if factor.0 == 0 {
-        continue;
+      let d2 = dist2(&pts[i], &center);
+      if d2 > worst {
+        worst = d2;
+        outside = Some(i);
       }
-      for j in col..=n {
-        a[r][j] = rat_sub(a[r][j], rat_mul(factor, a[col][j]));
+    }
+    match outside {
+      None => return Some(boundary),
+      Some(i) => {
+        support = boundary;
+        support.push(i);
       }
     }
   }
-  Some((0..n).map(|i| a[i][n]).collect())
+  None
+}
+
+/// The smallest ball enclosing `points`, as `(center, radius)`. The support set
+/// is found in machine arithmetic and the centre and radius are then recomputed
+/// exactly whenever every coordinate is an integer or a rational, so exact
+/// input gives an exact centre and a (possibly radical) radius like
+/// wolframscript. `None` for non-numeric coordinates.
+fn minimal_enclosing_ball(points: &[Vec<Expr>]) -> Option<(Expr, Expr)> {
+  let fpts: Vec<Vec<f64>> = points
+    .iter()
+    .map(|p| {
+      p.iter()
+        .map(crate::functions::math_ast::try_eval_to_f64)
+        .collect::<Option<Vec<_>>>()
+    })
+    .collect::<Option<Vec<_>>>()?;
+  let support = enclosing_ball_support(&fpts)?;
+  let d = fpts[0].len();
+
+  // Exact path: rational coordinates give a rational centre and radius^2.
+  let rpts: Option<Vec<Vec<(i128, i128)>>> = support
+    .iter()
+    .map(|&i| {
+      points[i]
+        .iter()
+        .map(expr_to_rational)
+        .collect::<Option<Vec<_>>>()
+    })
+    .collect();
+  if let Some(rpts) = rpts {
+    let rpts: Vec<Vec<BigRat>> = rpts
+      .iter()
+      .map(|pt| pt.iter().copied().map(BigRat::from_pair).collect())
+      .collect();
+    let two = BigRat::from_pair((2, 1));
+    let q0 = &rpts[0];
+    let k = rpts.len() - 1;
+    let v: Vec<Vec<BigRat>> = rpts[1..]
+      .iter()
+      .map(|q| (0..d).map(|j| q[j].sub(&q0[j])).collect())
+      .collect();
+    let dot = |a: &[BigRat], b: &[BigRat]| {
+      (0..d).fold(BigRat::zero(), |acc, j| acc.add(&a[j].mul(&b[j])))
+    };
+    let mut center = q0.clone();
+    if k > 0 {
+      let m: Vec<Vec<BigRat>> = (0..k)
+        .map(|i| (0..k).map(|j| two.mul(&dot(&v[i], &v[j]))).collect())
+        .collect();
+      let b: Vec<BigRat> = (0..k).map(|i| dot(&v[i], &v[i])).collect();
+      let lambda = solve_bigrat_system(m, &b)?;
+      for j in 0..d {
+        center[j] = (0..k)
+          .fold(q0[j].clone(), |acc, i| acc.add(&lambda[i].mul(&v[i][j])));
+      }
+    }
+    let mut r2 = BigRat::zero();
+    for j in 0..d {
+      let diff = center[j].sub(&q0[j]);
+      r2 = r2.add(&diff.mul(&diff));
+    }
+    let center_expr = Expr::List(
+      center
+        .iter()
+        .map(BigRat::to_expr)
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?
+        .into(),
+    );
+    let radius = crate::evaluator::evaluate_function_call_ast(
+      "Sqrt",
+      &[r2.to_expr().ok()?],
+    )
+    .ok()?;
+    return Some((center_expr, radius));
+  }
+
+  // Machine path: rebuild from the support set in floating point.
+  let (center, r2) = affine_circumball(&fpts, &support)?;
+  Some((
+    Expr::List(
+      center
+        .iter()
+        .map(|&c| Expr::Real(c))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    Expr::Real(r2.sqrt()),
+  ))
+}
+
+/// CircumscribedBall[{p1, …}] — the ball of minimal radius enclosing the
+/// points, returned as `Ball[center, radius]`. Point lists and the
+/// vertex-based region primitives are accepted; anything else reports
+/// `CircumscribedBall::spec`. Symbolic coordinates stay unevaluated without a
+/// message, like wolframscript.
+fn compute_circumscribed_ball(expr: &Expr) -> Result<Expr, InterpreterError> {
+  let uneval = || {
+    Ok(Expr::FunctionCall {
+      name: "CircumscribedBall".to_string(),
+      args: vec![expr.clone()].into(),
+    })
+  };
+  let Some(points) = region_point_list(expr, false) else {
+    // A geometric region whose points are not enumerable here (a curved or
+    // unbounded one) stays unevaluated silently, like wolframscript; anything
+    // that is not a region at all is reported.
+    if !is_region_head(expr) {
+      crate::emit_message(&format!(
+        "CircumscribedBall::spec: {} is not a valid CircumscribedBall specification.",
+        crate::syntax::expr_to_string(expr)
+      ));
+    }
+    return uneval();
+  };
+  match minimal_enclosing_ball(&points) {
+    Some((center, radius)) => Ok(Expr::FunctionCall {
+      name: "Ball".to_string(),
+      args: vec![center, radius].into(),
+    }),
+    None => uneval(),
+  }
 }
 
 /// Circumsphere[{p0, …, pd}] — the unique sphere through `d + 1` points in
@@ -13821,45 +14319,70 @@ fn solve_rational_system(
 /// BoundingRegion[{pt, ...}] — the smallest axis-aligned box containing the
 /// points. wolframscript returns Rectangle[{mins}, {maxs}] for 2D points and
 /// Cuboid[{mins}, {maxs}] for 1D or >=3D points. The min/max are exact (Min/Max
-/// preserve integers and rationals). Malformed or non-numeric input, and the
-/// two-argument (named-method) form, are left unevaluated.
-fn compute_bounding_region(expr: &Expr) -> Result<Expr, InterpreterError> {
+/// preserve integers and rationals).
+///
+/// BoundingRegion[spec, type] additionally understands the named types
+/// `"MinBall"` / `"MinDisk"` (the smallest enclosing ball, shared with
+/// [`compute_circumscribed_ball`]), `"FastBall"` / `"FastDisk"` (the
+/// circumball of the axis-aligned bounding box — what wolframscript's fast
+/// methods return) and `"MinCuboid"` / `"MinRectangle"` (the box itself).
+/// `"MinOrientedCuboid"` and `"MinOrientedRectangle"` are valid type names but
+/// stay unevaluated; every other type reports `BoundingRegion::spec`.
+/// Malformed input reports `BoundingRegion::regl`.
+fn compute_bounding_region(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let uneval = || {
     Ok(Expr::FunctionCall {
       name: "BoundingRegion".to_string(),
-      args: vec![expr.clone()].into(),
+      args: args.to_vec().into(),
     })
   };
   // wolframscript emits this when the argument is neither a region nor a
-  // structurally-valid list of equal-length coordinate vectors.
-  let regl = || {
+  // structurally-valid list of equal-length coordinate vectors. It is checked
+  // before the type specification.
+  let Some(coords) = region_point_list(&args[0], true) else {
     crate::emit_message(&format!(
       "BoundingRegion::regl: The argument {} should be a region or a list of points.",
-      crate::syntax::expr_to_string(expr)
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return uneval();
+  };
+  let d = coords[0].len();
+
+  let spec = match args.get(1) {
+    None => "Automatic",
+    Some(Expr::String(s)) => s.as_str(),
+    Some(_) => "",
+  };
+  let bad_spec = || {
+    let shown = match &args[1] {
+      Expr::String(s) => s.clone(),
+      other => crate::syntax::expr_to_string(other),
+    };
+    crate::emit_message(&format!(
+      "BoundingRegion::spec: {shown} is not a valid type specification for bounding regions."
     ));
     uneval()
   };
-
-  let Expr::List(points) = expr else {
-    return regl();
-  };
-  if points.is_empty() {
-    return regl();
+  // The planar types are only defined for planar input.
+  if matches!(spec, "MinDisk" | "FastDisk" | "MinRectangle") && d != 2 {
+    return bad_spec();
   }
-  // Every point must be a coordinate list of the same dimension d.
-  let coords: Vec<&[Expr]> = points
-    .iter()
-    .filter_map(|p| match p {
-      Expr::List(c) => Some(c.as_slice()),
-      _ => None,
-    })
-    .collect();
-  if coords.len() != points.len() {
-    return regl();
-  }
-  let d = coords[0].len();
-  if d == 0 || coords.iter().any(|c| c.len() != d) {
-    return regl();
+  match spec {
+    "MinBall" | "MinDisk" => {
+      let Some((center, radius)) = minimal_enclosing_ball(&coords) else {
+        return uneval();
+      };
+      let head = if spec == "MinDisk" { "Disk" } else { "Ball" };
+      return Ok(Expr::FunctionCall {
+        name: head.to_string(),
+        args: vec![center, radius].into(),
+      });
+    }
+    // Recognized but not implemented here; wolframscript 14 leaves
+    // MinOrientedCuboid unevaluated as well.
+    "MinOrientedCuboid" | "MinOrientedRectangle" => return uneval(),
+    "Automatic" | "FastBall" | "FastDisk" | "MinCuboid" | "MinRectangle" => {}
+    _ => return bad_spec(),
   }
 
   // Min/Max per coordinate; symbolic coordinates stay as Min[…]/Max[…],
@@ -13872,8 +14395,67 @@ fn compute_bounding_region(expr: &Expr) -> Result<Expr, InterpreterError> {
     maxs.push(crate::functions::math_ast::max_ast(&col)?);
   }
 
-  // 2D points give a Rectangle; 1D and >=3D give a Cuboid.
-  let head = if d == 2 { "Rectangle" } else { "Cuboid" };
+  if matches!(spec, "FastBall" | "FastDisk") {
+    // The circumball of the bounding box: centred on the box centre with the
+    // half-diagonal as its radius.
+    let half = |a: &Expr, b: &Expr| -> Result<Expr, InterpreterError> {
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Divide".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![a.clone(), b.clone()].into(),
+          },
+          Expr::Integer(2),
+        ]
+        .into(),
+      })
+    };
+    let mut center = Vec::with_capacity(d);
+    let mut squares = Vec::with_capacity(d);
+    for j in 0..d {
+      center.push(half(&mins[j], &maxs[j])?);
+      let extent =
+        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "Divide".to_string(),
+          args: vec![
+            Expr::FunctionCall {
+              name: "Subtract".to_string(),
+              args: vec![maxs[j].clone(), mins[j].clone()].into(),
+            },
+            Expr::Integer(2),
+          ]
+          .into(),
+        })?;
+      squares.push(Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![extent, Expr::Integer(2)].into(),
+      });
+    }
+    let radius =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: squares.into(),
+        }]
+        .into(),
+      })?;
+    let head = if spec == "FastDisk" { "Disk" } else { "Ball" };
+    return Ok(Expr::FunctionCall {
+      name: head.to_string(),
+      args: vec![Expr::List(center.into()), radius].into(),
+    });
+  }
+
+  // 2D points give a Rectangle; 1D and >=3D give a Cuboid. "MinCuboid" always
+  // gives a Cuboid and "MinRectangle" always a Rectangle.
+  let head = match spec {
+    "MinCuboid" => "Cuboid",
+    "MinRectangle" => "Rectangle",
+    _ if d == 2 => "Rectangle",
+    _ => "Cuboid",
+  };
   Ok(Expr::FunctionCall {
     name: head.to_string(),
     args: vec![Expr::List(mins.into()), Expr::List(maxs.into())].into(),
@@ -14062,40 +14644,42 @@ fn compute_circumsphere(expr: &Expr) -> Result<Expr, InterpreterError> {
     .map(|pt| pt.iter().map(expr_to_rational).collect::<Option<Vec<_>>>())
     .collect();
   if let Some(rpts) = rpts {
+    let rpts: Vec<Vec<BigRat>> = rpts
+      .iter()
+      .map(|pt| pt.iter().copied().map(BigRat::from_pair).collect())
+      .collect();
+    let two = BigRat::from_pair((2, 1));
     let p0 = &rpts[0];
-    let mut a: Vec<Vec<(i128, i128)>> = Vec::with_capacity(d);
-    let mut b: Vec<(i128, i128)> = Vec::with_capacity(d);
+    let mut a: Vec<Vec<BigRat>> = Vec::with_capacity(d);
+    let mut b: Vec<BigRat> = Vec::with_capacity(d);
     for pi in rpts.iter().skip(1) {
       let mut row = Vec::with_capacity(d);
-      let mut rhs = (0i128, 1i128);
+      let mut rhs = BigRat::zero();
       for j in 0..d {
-        row.push(rat_mul((2, 1), rat_sub(pi[j], p0[j])));
-        rhs =
-          rat_add(rhs, rat_sub(rat_mul(pi[j], pi[j]), rat_mul(p0[j], p0[j])));
+        row.push(two.mul(&pi[j].sub(&p0[j])));
+        rhs = rhs.add(&pi[j].mul(&pi[j]).sub(&p0[j].mul(&p0[j])));
       }
       a.push(row);
       b.push(rhs);
     }
-    let Some(center) = solve_rational_system(a, &b) else {
+    let Some(center) = solve_bigrat_system(a, &b) else {
       return uneval();
     };
     // radius^2 = sum (center_j - p0_j)^2
-    let mut r2 = (0i128, 1i128);
+    let mut r2 = BigRat::zero();
     for j in 0..d {
-      let diff = rat_sub(center[j], p0[j]);
-      r2 = rat_add(r2, rat_mul(diff, diff));
+      let diff = center[j].sub(&p0[j]);
+      r2 = r2.add(&diff.mul(&diff));
     }
     let center_expr = Expr::List(
       center
         .iter()
-        .map(|&(cn, cd)| rational_to_expr(cn, cd))
-        .collect::<Vec<_>>()
+        .map(BigRat::to_expr)
+        .collect::<Result<Vec<_>, _>>()?
         .into(),
     );
-    let radius = crate::evaluator::evaluate_function_call_ast(
-      "Sqrt",
-      &[rational_to_expr(r2.0, r2.1)],
-    )?;
+    let radius =
+      crate::evaluator::evaluate_function_call_ast("Sqrt", &[r2.to_expr()?])?;
     return Ok(Expr::FunctionCall {
       name: "Sphere".to_string(),
       args: vec![center_expr, radius].into(),

@@ -2238,7 +2238,7 @@ GeoProjectionData,,🚫,,7.0,2282
 KeyExistsQ,Checks if a key exists in an association,✅,pure,10.0,2282
 ReadString,Read a file or stream as a string up to an optional terminator,✅,effectful,10.0,2282
 WriteLine,File I O,🚫,None,10.0,2282
-BoundingRegion,Smallest axis-aligned bounding box of a point list (Rectangle in 2D; Cuboid in 1D or higher),✅,pure,10.4,2286
+BoundingRegion,Smallest bounding region of a point list or region — box by default and MinBall/MinDisk/FastBall/FastDisk/MinCuboid/MinRectangle on request,✅,pure,10.4,2286
 CellDingbat,Notebook UI,🚫,None,3.0,2286
 DistributionParameterAssumptions,Probability distribution,🚫,None,8.0,2286
 WheelGraph,Wheel graph with a hub vertex joined to a cycle of rim vertices,✅,pure,8.0,2286
@@ -5452,7 +5452,7 @@ ChemicalFormula,,🚫,,13.0,
 ChemicalInstance,,🚫,,13.1,
 ChemicalReaction,,🚫,,13.0,
 CircularArcThrough,,,,13.1,
-CircumscribedBall,,,,13.3,
+CircumscribedBall,Ball of minimal radius enclosing a set of points or a vertex-based region,✅,pure,13.3,
 ClassifierMeasurementsObject,,🚫,,10.1,
 ClearDistributedDefinitions,,🚫,,14.1,
 ClickToCopy,,🚫,,12.2,
