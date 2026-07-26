@@ -19282,3 +19282,136 @@ mod set_operations_with_no_arguments {
     assert_eq!(interpret("Complement[{1, 2, 3}, {2}]").unwrap(), "{1, 3}");
   }
 }
+
+// Take[expr] and Drop[expr] have no sequence specification: they take and drop
+// nothing, giving the expression back. In particular they are not operator
+// forms — `Drop[1][list]` is the inert `1[list]`, not `Drop[list, 1]`.
+mod take_drop_single_argument {
+  use super::*;
+
+  #[test]
+  fn one_argument_is_the_identity() {
+    clear_state();
+    assert_eq!(interpret("Take[{a, b, c}]").unwrap(), "{a, b, c}");
+    assert_eq!(interpret("Drop[{a, b, c}]").unwrap(), "{a, b, c}");
+    assert_eq!(interpret("Take[zz]").unwrap(), "zz");
+    assert_eq!(interpret("Drop[zz]").unwrap(), "zz");
+    // Regression: these used to report Take::argmu / Drop::argtu.
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(msgs.is_empty(), "got {msgs:?}");
+  }
+
+  #[test]
+  fn there_is_no_operator_form() {
+    clear_state();
+    assert_eq!(interpret("Take[2][{a, b, c}]").unwrap(), "2[{a, b, c}]");
+    assert_eq!(interpret("Drop[1][{a, b, c}]").unwrap(), "1[{a, b, c}]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(msgs.is_empty(), "got {msgs:?}");
+  }
+
+  #[test]
+  fn ordinary_calls_still_work() {
+    assert_eq!(interpret("Take[{a, b, c}, 2]").unwrap(), "{a, b}");
+    assert_eq!(interpret("Drop[{a, b, c}, 1]").unwrap(), "{b, c}");
+    assert_eq!(interpret("Take[{a, b, c}, -1]").unwrap(), "{c}");
+    assert_eq!(interpret("Drop[{{1, 2}, {3, 4}}, 1, 1]").unwrap(), "{{4}}");
+  }
+}
+
+// Outer ranges over any number of nonatomic arguments, all of which must share
+// a head.
+mod outer_arity_and_heads {
+  use super::*;
+
+  #[test]
+  fn fewer_than_two_lists() {
+    // No list to range over: f is applied to nothing.
+    assert_eq!(interpret("Outer[f]").unwrap(), "f[]");
+    assert_eq!(interpret("Outer[Plus]").unwrap(), "0");
+    // A single list makes Outer a Map.
+    assert_eq!(interpret("Outer[f, {1, 2}]").unwrap(), "{f[1], f[2]}");
+    assert_eq!(interpret("Outer[f, g[1, 2]]").unwrap(), "g[f[1], f[2]]");
+  }
+
+  #[test]
+  fn atomic_arguments_report_normal() {
+    clear_state();
+    assert_eq!(interpret("Outer[f, 2]").unwrap(), "Outer[f, 2]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Outer::normal: Nonatomic expression expected at position 2 in \
+         Outer[f, 2]."
+      )),
+      "got {msgs:?}"
+    );
+    clear_state();
+    assert_eq!(interpret("Outer[f, \"ab\"]").unwrap(), "Outer[f, ab]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains("Outer::normal")),
+      "got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn mismatched_heads_report_heads() {
+    clear_state();
+    assert_eq!(
+      interpret("Outer[f, {1, 2}, h[3, 4]]").unwrap(),
+      "Outer[f, {1, 2}, h[3, 4]]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Outer::heads: Heads h and List at positions 3 and 2 are expected \
+         to be the same."
+      )),
+      "got {msgs:?}"
+    );
+    // The head of the first argument is the reference one.
+    clear_state();
+    assert_eq!(
+      interpret("Outer[f, g[1], {2}, h[3]]").unwrap(),
+      "Outer[f, g[1], {2}, h[3]]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Outer::heads: Heads List and g at positions 3 and 2 are expected \
+         to be the same."
+      )),
+      "got {msgs:?}"
+    );
+    // Matching non-List heads are fine.
+    assert_eq!(
+      interpret("Outer[Times, g[1, 2], g[3, 4]]").unwrap(),
+      "g[g[3, 4], g[6, 8]]"
+    );
+    // Trailing integers are level specifications, not arguments to range over.
+    assert_eq!(interpret("Outer[f, {1}, 2]").unwrap(), "{f[1]}");
+  }
+}
+
+// Partition's sixth argument is the head to wrap every output block in.
+mod partition_block_head {
+  use super::*;
+
+  #[test]
+  fn head_replaces_list() {
+    assert_eq!(
+      interpret("Partition[{1, 2, 3}, 2, 1, {1, 1}, x, y]").unwrap(),
+      "{y[1, 2], y[2, 3], y[3, x]}"
+    );
+    assert_eq!(
+      interpret("Partition[{1, 2, 3, 4}, 2, 2, 1, {}, f]").unwrap(),
+      "{f[1, 2], f[3, 4]}"
+    );
+    // Without the head the blocks are lists, as before.
+    assert_eq!(
+      interpret("Partition[{1, 2, 3}, 2, 1, {1, 1}, x]").unwrap(),
+      "{{1, 2}, {2, 3}, {3, x}}"
+    );
+  }
+}

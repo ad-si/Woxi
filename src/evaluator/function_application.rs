@@ -618,51 +618,9 @@ pub fn apply_function_to_arg(
       // Curried function: f[a] applied to b becomes f[a, b]
       // Special case: operator forms where f[x][y] becomes f[y, x]
       // (the applied argument becomes the first parameter)
-      if matches!(
-        name.as_str(),
-        "ReplaceAll"
-          | "ReplaceRepeated"
-          | "StringStartsQ"
-          | "StringEndsQ"
-          | "StringContainsQ"
-          | "StringFreeQ"
-          | "StringMatchQ"
-          | "StringReplace"
-          | "StringCases"
-          | "MemberQ"
-          | "Select"
-          | "SelectFirst"
-          | "AllTrue"
-          | "AnyTrue"
-          | "NoneTrue"
-          | "Discard"
-          | "KeyTake"
-          | "KeyDrop"
-          | "KeySelect"
-          | "KeySortBy"
-          | "Merge"
-          | "Lookup"
-          | "TakeLargest"
-          | "TakeSmallest"
-          | "AllMatch"
-          | "AnyMatch"
-          | "FlattenAt"
-          | "Delete"
-          | "ReplacePart"
-          | "Extract"
-          | "Append"
-          | "Prepend"
-          | "FirstCase"
-          | "SubsetReplace"
-          | "ContainsAll"
-          | "ContainsAny"
-          | "ContainsNone"
-          | "ContainsOnly"
-          | "ContainsExactly"
-          | "GatherBy"
-          | "SplitBy"
-          | "DeleteDuplicatesBy"
-      ) && args.len() == 1
+      if is_subject_first_operator(name)
+        && args.len() == 1
+        && operator_form_accepts_subject(name, arg)
       {
         // Operator form: prepend the argument instead of appending
         let new_args = vec![arg.clone(), args[0].clone()];
@@ -857,6 +815,99 @@ fn try_apply_reverse_applied(
     }
   }
   Some(apply_curried_call(f, &head_args))
+}
+
+/// Whether an operator form may fire on this subject. `Merge`'s only does on a
+/// list of associations or rules; anything else reports `Merge::list1` and
+/// stays a curried call, so `Merge[{<|a -> 1|>}][Total]` is not rewritten to
+/// `Merge[Total, {<|a -> 1|>}]`.
+fn operator_form_accepts_subject(name: &str, subject: &Expr) -> bool {
+  if name != "Merge" {
+    return true;
+  }
+  let is_rule =
+    |e: &Expr| matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. });
+  let is_assoc_like = |e: &Expr| {
+    matches!(e, Expr::Association(_))
+      || is_rule(e)
+      || matches!(e, Expr::List(items) if items.iter().all(&is_rule))
+  };
+  let accepted =
+    matches!(subject, Expr::List(items) if items.iter().all(is_assoc_like));
+  if !accepted {
+    crate::emit_message(&format!(
+      "Merge::list1: The argument {} is not a valid list of Associations or rules or lists of rules.",
+      crate::syntax::expr_to_output(subject)
+    ));
+  }
+  accepted
+}
+
+/// Functions whose one-argument call is an operator form that takes the
+/// subject *first* once applied: `f[spec][expr]` is `f[expr, spec]`
+/// (`Select[EvenQ][list]` → `Select[list, EvenQ]`). Both application paths
+/// consult this one list so they cannot drift apart.
+pub fn is_subject_first_operator(name: &str) -> bool {
+  matches!(
+    name,
+    "ReplaceAll"
+      | "ReplaceRepeated"
+      | "StringStartsQ"
+      | "StringEndsQ"
+      | "StringContainsQ"
+      | "StringFreeQ"
+      | "StringMatchQ"
+      | "StringReplace"
+      | "StringCases"
+      | "StringPosition"
+      | "StringDelete"
+      | "SequenceReplace"
+      | "MemberQ"
+      | "Select"
+      | "SelectFirst"
+      | "AllTrue"
+      | "AnyTrue"
+      | "NoneTrue"
+      | "Discard"
+      | "KeyTake"
+      | "KeyDrop"
+      | "KeySelect"
+      | "KeySortBy"
+      | "Merge"
+      | "Lookup"
+      | "TakeLargest"
+      | "TakeSmallest"
+      | "SortBy"
+      | "OrderingBy"
+      | "GroupBy"
+      | "CountsBy"
+      | "MaximalBy"
+      | "MinimalBy"
+      | "Cases"
+      | "DeleteCases"
+      | "Position"
+      | "FreeQ"
+      | "MatchQ"
+      | "Count"
+      | "AllMatch"
+      | "AnyMatch"
+      | "FlattenAt"
+      | "Delete"
+      | "ReplacePart"
+      | "Extract"
+      | "Append"
+      | "Prepend"
+      | "FirstCase"
+      | "SubsetReplace"
+      | "ContainsAll"
+      | "ContainsAny"
+      | "ContainsNone"
+      | "ContainsOnly"
+      | "ContainsExactly"
+      | "GatherBy"
+      | "SplitBy"
+      | "DeleteDuplicatesBy"
+  )
 }
 
 pub fn apply_curried_call(
@@ -1523,64 +1574,10 @@ pub fn apply_curried_call(
         new_args.extend(args.iter().cloned());
         return evaluate_function_call_ast("Nearest", &new_args);
       }
-      if matches!(
-        name.as_str(),
-        "ReplaceAll"
-          | "ReplaceRepeated"
-          | "StringStartsQ"
-          | "StringEndsQ"
-          | "StringContainsQ"
-          | "StringFreeQ"
-          | "StringMatchQ"
-          | "StringReplace"
-          | "StringCases"
-          | "MemberQ"
-          | "Select"
-          | "SelectFirst"
-          | "AllTrue"
-          | "AnyTrue"
-          | "NoneTrue"
-          | "Discard"
-          | "KeyTake"
-          | "KeyDrop"
-          | "KeySelect"
-          | "KeySortBy"
-          | "Merge"
-          | "Lookup"
-          | "TakeLargest"
-          | "TakeSmallest"
-          | "SortBy"
-          | "OrderingBy"
-          | "GroupBy"
-          | "CountsBy"
-          | "MaximalBy"
-          | "MinimalBy"
-          | "Cases"
-          | "DeleteCases"
-          | "Position"
-          | "FreeQ"
-          | "MatchQ"
-          | "Count"
-          | "AllMatch"
-          | "AnyMatch"
-          | "FlattenAt"
-          | "Delete"
-          | "ReplacePart"
-          | "Extract"
-          | "Append"
-          | "Prepend"
-          | "FirstCase"
-          | "SubsetReplace"
-          | "ContainsAll"
-          | "ContainsAny"
-          | "ContainsNone"
-          | "ContainsOnly"
-          | "ContainsExactly"
-          | "GatherBy"
-          | "SplitBy"
-          | "DeleteDuplicatesBy"
-      ) && func_args.len() == 1
+      if is_subject_first_operator(name)
+        && func_args.len() == 1
         && args.len() == 1
+        && operator_form_accepts_subject(name, &args[0])
       {
         // Operator form: prepend the argument instead of appending
         let new_args = vec![args[0].clone(), func_args[0].clone()];

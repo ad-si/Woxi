@@ -183,7 +183,7 @@ Italic,Style directive for italic text,✅,pure,6.0,186
 AbsoluteThickness,Sets absolute line thickness in graphics,✅,pure,2.0,187
 Block,Scopes local variables within a block of code,✅,pure,1.0,188
 Alignment,Option symbol for specifying alignment in layouts,✅,pure,6.0,189
-Partition,Partitions a list into sublists of a given length,✅,pure,1.0,190
+Partition,Partitions a list into sublists of a given length (with offset padding alignment and an optional block head),✅,pure,1.0,190
 Norm,Returns the norm of a vector or matrix,✅,pure,5.0,191
 BSplineCurve,B-spline curve through control points in Graphics,✅,pure,7.0,192
 PlotPoints,Option for number of sample points in plots,✅,pure,1.0,193
@@ -224,7 +224,7 @@ Replace,Applies transformation rules to an expression,✅,pure,1.0,227
 Mean,Calculates the arithmetic mean (average) of a list,✅,pure,5.0,228
 Head,Returns the head of an expression,✅,pure,1.0,229
 AppendTo,Appends an element to a list stored in a variable,✅,stateful,1.0,230
-Take,Returns the first n elements of a list,✅,pure,1.0,231
+Take,Returns the first n elements of a list (the one-argument form takes nothing and returns the expression),✅,pure,1.0,231
 Options,Returns or sets the options associated with a symbol,✅,pure,1.0,232
 Array,Generates a list by applying a function to successive indices,✅,pure,1.0,233
 Orange,Named color evaluating to RGBColor[1 0.5 0],✅,pure,5.1,234
@@ -311,7 +311,7 @@ Purple,Named color evaluating to RGBColor[0.5 0 0.5],✅,pure,5.1,314
 Rotate,Rotates a graphics object,✅,pure,6.0,315
 ArcCot,Returns the arc cotangent,✅,pure,1.0,316
 TraditionalForm,Displays expressions in traditional mathematical notation,✅,pure,3.0,317
-Drop,Returns the list without its first n elements,✅,pure,1.0,318
+Drop,Returns the list without its first n elements (the one-argument form drops nothing and returns the expression),✅,pure,1.0,318
 IntegerQ,Tests if the expression evaluates to an integer,✅,pure,1.0,319
 Information,Displays information about a symbol,✅,pure,1.0,320
 ToExpression,Converts a string to an evaluated expression,✅,pure,1.0,321
@@ -427,7 +427,7 @@ CDF,Cumulative distribution function for a distribution,✅,pure,6.0,430
 TagSetDelayed,Defines a delayed upvalue assignment associated with a tag symbol,✅,stateful,1.0,431
 Magenta,Named color evaluating to RGBColor[1 0 1],✅,pure,5.1,432
 Boole,Converts True to 1 and False to 0,✅,pure,5.1,433
-Outer,Generalized outer product,✅,pure,1.0,434
+Outer,Generalized outer product over any number of nonatomic arguments sharing one head,✅,pure,1.0,434
 InterpolationOrder,Option for specifying the order of interpolation,✅,pure,3.0,435
 FindMinimum,Finds a local minimum of a function numerically,✅,pure,1.0,436
 LinearSolve,Solves a square or rectangular linear system of equations using Gaussian elimination,✅,pure,1.0,437
@@ -912,7 +912,7 @@ JacobiCD,Jacobi elliptic function cd (cn/dn),✅,pure,1.0,919
 NestWhileList,Returns intermediate results from NestWhile,✅,pure,4.0,920
 MaxCellMeasure,,🚫,,10.0,921
 RuntimeOptions,,🚫,,8.0,922
-StringPosition,Finds all positions of a substring or pattern (overlapping by default; Overlaps and IgnoreCase options),✅,pure,2.0,923
+StringPosition,Finds all positions of a substring or pattern (overlapping by default; Overlaps and IgnoreCase options); supports the one-argument operator form,✅,pure,2.0,923
 Roots,Finds roots of polynomial equations as Or conditions; roots are listed in ascending order (matching Solve) except a pure quadratic x^2==c lists the principal + root first,✅,pure,1.0,924
 InputNotebook,Requires external services or GUI infrastructure,🚫,io,3.0,926
 ListAnimate,Animation of a list of expressions (stays symbolic in script mode),✅,unevaluated,6.0,926
@@ -1703,7 +1703,7 @@ Between,Tests if a value is between bounds,✅,pure,10.3,1728
 Deployed,Deployed option,,unevaluated,6.0,1730
 FindGeometricTransform,Find geometric transformation,,unevaluated,8.0,1730
 DirichletDistribution,Dirichlet distribution over the probability simplex (Mean/Variance/Covariance/StandardDeviation/PDF),✅,pure,8.0,1733
-StringDelete,Deletes all occurrences of a substring or string pattern,✅,pure,10.1,1733
+StringDelete,Deletes all occurrences of a substring or string pattern; supports the one-argument operator form,✅,pure,10.1,1733
 RiemannSiegelTheta,Riemann-Siegel theta function on the critical line for real numeric arguments,✅,pure,2.0,1734
 RandomInstance,Random geometric instance,,unevaluated,12.0,1736
 TrigFactor,Factor trig expressions (Sin+Cos and half-angle and double-angle and Sin sum-to-product and hyperbolic Sinh/Cosh families),✅,pure,3.0,1736
@@ -2077,7 +2077,7 @@ SymmetrizedArray,Array with symmetry constraints,🚫,,9.0,2112
 ActionMenu,Dropdown action menu (stays symbolic in script mode),✅,unevaluated,6.0,2116
 BitShiftLeft,Shifts integer bits to the left,✅,pure,6.0,2116
 ButtonNotebook,Notebook containing buttons,🚫,,3.0,2116
-SequenceReplace,Replace non-overlapping subsequences matching a rule pattern with its replacement,✅,pure,11.3,2116
+SequenceReplace,Replace non-overlapping subsequences matching a rule pattern with its replacement; supports the one-argument operator form,✅,pure,11.3,2116
 RecordSeparators,Record separator option for streams,🚫,,2.0,2119
 VerificationTest,Testing framework function,🚫,,10.0,2119
 FileDate,Get file modification date,✅,,2.0,2121

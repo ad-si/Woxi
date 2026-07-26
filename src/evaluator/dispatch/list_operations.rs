@@ -2601,6 +2601,28 @@ pub fn dispatch_list_operations(
         );
       }
     }
+    // Partition[list, n, d, {kL, kR}, padding, h] wraps every output block in
+    // the head h instead of List.
+    "Partition" if args.len() == 6 => {
+      let Expr::Identifier(head) = &args[5] else {
+        return Some(Ok(unevaluated("Partition", args)));
+      };
+      let partitioned = dispatch_list_operations("Partition", &args[..5])?;
+      let Ok(Expr::List(blocks)) = &partitioned else {
+        return Some(partitioned);
+      };
+      let rewrapped: Vec<Expr> = blocks
+        .iter()
+        .map(|b| match b {
+          Expr::List(elems) => Expr::FunctionCall {
+            name: head.clone(),
+            args: elems.clone(),
+          },
+          other => other.clone(),
+        })
+        .collect();
+      return Some(Ok(Expr::List(rewrapped.into())));
+    }
     "Partition" if args.len() >= 2 && args.len() <= 5 => {
       // The subject must be nonatomic; its head is kept on the result.
       let (items, subject_head): (&[Expr], Option<&str>) = match &args[0] {
@@ -3224,6 +3246,12 @@ pub fn dispatch_list_operations(
     }
     "Most" if args.len() == 1 => {
       return Some(list_helpers_ast::most_ast(&args[0]));
+    }
+    // Take[expr] and Drop[expr] have no sequence specification, so they take
+    // and drop nothing and give back the expression itself. (In particular
+    // they are not operator forms — `Drop[1][list]` is `1[list]`.)
+    "Take" | "Drop" if args.len() == 1 => {
+      return Some(Ok(args[0].clone()));
     }
     "Take" if args.len() >= 2 => {
       if let Some(r) = invalid_seq_spec(name, args) {
@@ -5167,7 +5195,14 @@ pub fn dispatch_list_operations(
         args: flat.into(),
       }));
     }
-    "Outer" if args.len() >= 3 => {
+    // With no list to range over, Outer[f] applies f to nothing.
+    "Outer" if args.len() == 1 => {
+      return Some(crate::evaluator::function_application::apply_curried_call(
+        &args[0],
+        &[],
+      ));
+    }
+    "Outer" if args.len() >= 2 => {
       // Outer[f, list1, list2, ..., n] or Outer[f, list1, list2, ..., n1, n2, ...]
       // Detect trailing integer level specifications.
       let rest = &args[1..];
@@ -5193,6 +5228,65 @@ pub fn dispatch_list_operations(
       } else {
         (rest, &rest[0..0])
       };
+
+      // Every argument ranged over must be nonatomic — Outer takes the parts
+      // of each one, so an atom (a number, string or symbol) is reported.
+      for (i, l) in lists_in.iter().enumerate() {
+        let nonatomic = match l {
+          Expr::List(_) => true,
+          Expr::FunctionCall { name: h, .. } => {
+            !matches!(h.as_str(), "Rational" | "Complex")
+          }
+          _ => false,
+        };
+        if !nonatomic {
+          crate::emit_message(&format!(
+            "Outer::normal: Nonatomic expression expected at position {} in {}.",
+            i + 2,
+            crate::syntax::format_expr(
+              &unevaluated("Outer", args),
+              crate::syntax::ExprForm::Output
+            )
+          ));
+          return Some(Ok(unevaluated("Outer", args)));
+        }
+      }
+
+      // All of them must share one head; the first mismatch is reported
+      // against the head of the first argument.
+      // Array objects count as lists here: wolframscript ranges over their
+      // elements just like over a List.
+      let head_of = |e: &Expr| match e {
+        Expr::FunctionCall { name: h, .. }
+          if !matches!(
+            h.as_str(),
+            "SparseArray"
+              | "NumericArray"
+              | "QuantityArray"
+              | "StructuredArray"
+          ) =>
+        {
+          h.clone()
+        }
+        _ => "List".to_string(),
+      };
+      if let Some(first) = lists_in.first() {
+        let expected = head_of(first);
+        if let Some((i, offender)) = lists_in
+          .iter()
+          .enumerate()
+          .skip(1)
+          .find(|(_, l)| head_of(l) != expected)
+        {
+          crate::emit_message(&format!(
+            "Outer::heads: Heads {} and {} at positions {} and 2 are expected to be the same.",
+            head_of(offender),
+            expected,
+            i + 2
+          ));
+          return Some(Ok(unevaluated("Outer", args)));
+        }
+      }
 
       // Parse level specs
       let levels: Vec<usize> = level_args

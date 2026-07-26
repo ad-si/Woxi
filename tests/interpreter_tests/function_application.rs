@@ -3159,3 +3159,97 @@ mod invalid_replacement_rules {
     assert_eq!(interpret("ReplaceRepeated[a, a -> b]").unwrap(), "b");
   }
 }
+
+// The one-argument call of an operator-form function is the unapplied operator,
+// not an arity error, and applying it puts the subject first.
+mod subject_first_operator_forms {
+  use super::*;
+
+  #[test]
+  fn unapplied_operators_are_silent() {
+    clear_state();
+    for call in [
+      "ReplaceAll[a -> b]",
+      "ReplaceRepeated[a -> b]",
+      "StringReplace[\"a\" -> \"b\"]",
+      "SequenceReplace[{1, 2} -> x]",
+      "StringPosition[\"a\"]",
+      "StringDelete[\"a\"]",
+    ] {
+      let echoed = interpret(call).unwrap();
+      assert!(
+        echoed.starts_with(call.split('[').next().unwrap()),
+        "for {call}: got {echoed}"
+      );
+    }
+    // Regression: these used to report ReplaceAll::argr, StringReplace::argbu,
+    // StringPosition::argmu and friends.
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(msgs.is_empty(), "got {msgs:?}");
+  }
+
+  #[test]
+  fn applying_them_puts_the_subject_first() {
+    clear_state();
+    assert_eq!(interpret("ReplaceAll[a -> b][{a, c}]").unwrap(), "{b, c}");
+    assert_eq!(
+      interpret("ReplaceRepeated[a -> b][{a, c}]").unwrap(),
+      "{b, c}"
+    );
+    assert_eq!(
+      interpret("StringReplace[\"a\" -> \"b\"][{\"aa\"}]").unwrap(),
+      "{bb}"
+    );
+    // Newly wired operator forms.
+    assert_eq!(
+      interpret("SequenceReplace[{1, 2} -> x][{1, 2, 3}]").unwrap(),
+      "{x, 3}"
+    );
+    assert_eq!(
+      interpret("StringPosition[\"a\"][{\"aba\"}]").unwrap(),
+      "{{{1, 1}, {3, 3}}}"
+    );
+    assert_eq!(interpret("StringDelete[\"a\"][{\"aba\"}]").unwrap(), "{b}");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(msgs.is_empty(), "got {msgs:?}");
+  }
+
+  // Merge's operator form only fires on a list of associations or rules;
+  // anything else reports Merge::list1 and stays a curried call instead of
+  // being rewritten with the arguments swapped.
+  #[test]
+  fn merge_checks_its_subject() {
+    assert_eq!(
+      interpret("Merge[Total][{<|a -> 1|>, <|a -> 2, b -> 3|>}]").unwrap(),
+      "<|a -> 3, b -> 3|>"
+    );
+    assert_eq!(
+      interpret("Merge[Total][{a -> 1, a -> 2}]").unwrap(),
+      "<|a -> 3|>"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Merge[{<|a -> 1|>}][Total]").unwrap(),
+      "Merge[{<|a -> 1|>}][Total]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Merge::list1: The argument Total is not a valid list of \
+         Associations or rules or lists of rules."
+      )),
+      "got {msgs:?}"
+    );
+    // A bare association is not a list of associations either.
+    clear_state();
+    assert_eq!(
+      interpret("Merge[Total][<|a -> 1|>]").unwrap(),
+      "Merge[Total][<|a -> 1|>]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains("Merge::list1")),
+      "got {msgs:?}"
+    );
+  }
+}
