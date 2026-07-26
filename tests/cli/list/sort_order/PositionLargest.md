@@ -13,3 +13,11 @@ Every occurrence of the maximum is reported.
 $ wo 'PositionLargest[{1, 3, 2, 3}]'
 {2, 4}
 ```
+
+A second argument asks for the n largest values, each as its own sublist of
+positions.
+
+```scrut
+$ wo 'PositionLargest[{1, 5, 3, 5, 2}, 2]'
+{{4, 2}, {3}}
+```

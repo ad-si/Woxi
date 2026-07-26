@@ -2204,10 +2204,10 @@ pub fn dispatch_list_operations(
     "Ordering" if !args.is_empty() && args.len() <= 3 => {
       return Some(list_helpers_ast::ordering_ast(args));
     }
-    "PositionLargest" if args.len() == 1 => {
+    "PositionLargest" if args.len() == 1 || args.len() == 2 => {
       return Some(list_helpers_ast::position_extreme_ast(args, true));
     }
-    "PositionSmallest" if args.len() == 1 => {
+    "PositionSmallest" if args.len() == 1 || args.len() == 2 => {
       return Some(list_helpers_ast::position_extreme_ast(args, false));
     }
     "OrderingBy" if (2..=4).contains(&args.len()) => {

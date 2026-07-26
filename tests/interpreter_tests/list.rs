@@ -1321,6 +1321,98 @@ mod position_largest_smallest {
       "{2, 3}"
     );
   }
+
+  // A second argument asks for the n extreme *values*, each as its own
+  // sublist of positions.
+  #[test]
+  fn n_extreme_values() {
+    assert_eq!(
+      interpret("PositionLargest[{1, 5, 3, 5, 2}, 2]").unwrap(),
+      "{{4, 2}, {3}}"
+    );
+    assert_eq!(
+      interpret("PositionLargest[{1, 5, 3, 5, 2}, 3]").unwrap(),
+      "{{4, 2}, {3}, {5}}"
+    );
+    assert_eq!(
+      interpret("PositionLargest[{4, 1, 3, 2}, 2]").unwrap(),
+      "{{1}, {3}}"
+    );
+    assert_eq!(
+      interpret("PositionSmallest[{1, 5, 3, 5, 2}, 2]").unwrap(),
+      "{{1}, {5}}"
+    );
+    assert_eq!(
+      interpret("PositionSmallest[{4, 1, 3, 2}, 3]").unwrap(),
+      "{{2}, {4}, {3}}"
+    );
+    assert_eq!(
+      interpret("PositionSmallest[{1, 1, 2, 2}, 2]").unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+    // Asking for more values than there are distinct ones gives them all.
+    assert_eq!(
+      interpret("PositionLargest[{4, 1, 3, 2}, 10]").unwrap(),
+      "{{1}, {3}, {4}, {2}}"
+    );
+    assert_eq!(interpret("PositionLargest[{3}, 2]").unwrap(), "{{1}}");
+    // Zero values is an empty result, not an error.
+    assert_eq!(
+      interpret("PositionLargest[{1, 5, 3, 5, 2}, 0]").unwrap(),
+      "{}"
+    );
+    // Automatic is the one-argument form: a flat list of positions.
+    assert_eq!(
+      interpret("PositionLargest[{1, 5, 3, 5, 2}, Automatic]").unwrap(),
+      "{2, 4}"
+    );
+    assert_eq!(
+      interpret("PositionSmallest[{1, 5, 3, 5, 2}, Automatic]").unwrap(),
+      "{1}"
+    );
+  }
+
+  // Within a sublist wolframscript reports PositionLargest's positions
+  // descending — it builds the ascending grouping and reverses the whole
+  // structure — except when a single value is asked for, which takes the
+  // one-argument path and stays ascending. PositionSmallest never reverses.
+  #[test]
+  fn n_extreme_values_position_order() {
+    assert_eq!(
+      interpret("PositionLargest[{2, 2, 2}, 1]").unwrap(),
+      "{{1, 2, 3}}"
+    );
+    assert_eq!(
+      interpret("PositionLargest[{2, 2, 2}, 2]").unwrap(),
+      "{{3, 2, 1}}"
+    );
+    assert_eq!(
+      interpret("PositionLargest[{5, 1, 5, 1, 5}, 1]").unwrap(),
+      "{{1, 3, 5}}"
+    );
+    assert_eq!(
+      interpret("PositionLargest[{5, 1, 5, 1, 5}, 2]").unwrap(),
+      "{{5, 3, 1}, {4, 2}}"
+    );
+    assert_eq!(
+      interpret("PositionSmallest[{1, 1, 2, 2}, 1]").unwrap(),
+      "{{1, 2}}"
+    );
+  }
+
+  #[test]
+  fn negative_count_is_rejected() {
+    let r = woxi::interpret_with_stdout("PositionLargest[{1, 5, 3, 5, 2}, -1]")
+      .unwrap();
+    assert_eq!(r.result, "PositionLargest[{1, 5, 3, 5, 2}, -1]");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("PositionLargest::intpma")),
+      "expected intpma, got {:?}",
+      r.warnings
+    );
+  }
 }
 
 mod find_peaks {

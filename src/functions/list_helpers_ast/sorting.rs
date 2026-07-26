@@ -674,6 +674,67 @@ pub fn position_extreme_ast(
       None => return unevaluated(),
     }
   }
+  // `PositionLargest[list, n]` groups the positions by value and keeps the n
+  // extreme values, one sublist each. `Automatic` (and no second argument)
+  // asks for the single extreme value and gives its positions flat.
+  let n: Option<usize> = match args.get(1) {
+    None => None,
+    Some(Expr::Identifier(s)) if s == "Automatic" => None,
+    Some(Expr::Integer(n)) if *n >= 0 => Some(*n as usize),
+    // `PositionLargest[list, n, Order]` is the default ordering spelled out.
+    Some(_) => {
+      crate::emit_message(&format!(
+        "{name}::intpma: Positive machine-sized integer or Automatic expected at position 2 in {}.",
+        crate::syntax::format_expr(
+          &crate::syntax::unevaluated(name, args),
+          crate::syntax::ExprForm::Output
+        )
+      ));
+      return unevaluated();
+    }
+  };
+
+  if let Some(n) = n {
+    // Distinct values in ascending order, each with its ascending positions.
+    let mut groups: Vec<(f64, Vec<Expr>)> = Vec::new();
+    for (i, v) in vals.iter().enumerate() {
+      let pos = Expr::Integer((i + 1) as i128);
+      match groups.iter_mut().find(|(g, _)| g == v) {
+        Some((_, ps)) => ps.push(pos),
+        None => groups.push((*v, vec![pos])),
+      }
+    }
+    groups.sort_by(|a, b| {
+      a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let mut kept: Vec<Vec<Expr>> = if largest {
+      // The n largest, then reversed at both levels — wolframscript builds
+      // the ascending grouping and reverses the whole structure, so the
+      // positions inside each sublist come out descending too. Asking for a
+      // single value takes the same path as the one-argument form, which
+      // leaves those positions ascending.
+      let start = groups.len().saturating_sub(n);
+      groups[start..]
+        .iter()
+        .map(|(_, ps)| {
+          if n == 1 {
+            ps.clone()
+          } else {
+            ps.iter().rev().cloned().collect()
+          }
+        })
+        .collect()
+    } else {
+      groups.iter().take(n).map(|(_, ps)| ps.clone()).collect()
+    };
+    if largest {
+      kept.reverse();
+    }
+    return Ok(Expr::List(
+      kept.into_iter().map(|ps| Expr::List(ps.into())).collect(),
+    ));
+  }
+
   let target = if largest {
     vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
   } else {

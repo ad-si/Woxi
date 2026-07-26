@@ -5865,8 +5865,8 @@ PoissonPDEComponent,,,,12.2,
 PolarCurve,Polar curve graphics primitive with radius as a function of angle,✅,pure,14.1,
 PolynomialExpressionQ,,,,12.2,
 PolynomialSumOfSquaresList,,,,13.0,
-PositionLargest,Positions of the largest elements of a numeric list,✅,pure,13.2,5589
-PositionSmallest,Positions of the smallest elements of a numeric list,✅,pure,13.2,5590
+PositionLargest,Positions of the largest elements of a numeric list or of each of the n largest values,✅,pure,13.2,5589
+PositionSmallest,Positions of the smallest elements of a numeric list or of each of the n smallest values,✅,pure,13.2,5590
 PositivelyOrientedPoints,,,,12.2,
 PredictorMeasurementsObject,,🚫,,10.1,
 ProgressReporting,,🚫,,12.3,
