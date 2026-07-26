@@ -1021,10 +1021,14 @@ pub fn dispatch_io_functions(
           &args[0], '\t', false, false,
         ))));
       }
-      if (format_str == "JSON" || format_str == "RawJSON")
-        && let Some(json) = export_string_json(&args[0], 0, compact)
-      {
-        return Some(Ok(Expr::String(json)));
+      if format_str == "JSON" || format_str == "RawJSON" {
+        // A value JSON cannot represent fails the export outright (the
+        // offending part has already been reported); the call does not come
+        // back unevaluated.
+        return Some(Ok(match export_string_json(&args[0], 0, compact) {
+          Some(json) => Expr::String(json),
+          None => Expr::Identifier("$Failed".to_string()),
+        }));
       }
       // "String" is the expression's own text: ExportString[{{1, 2}}, "String"]
       // is "{{1, 2}}", not the row-per-line layout of "Text".
@@ -1507,6 +1511,16 @@ pub fn dispatch_io_functions(
     }
     "URLParse" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::http_ast::url_parse_ast(args));
+    }
+    // URLBuild[<|"Scheme" -> …, "Domain" -> …, "Path" -> …, …|>] assembles the
+    // parts of a URL back into one.
+    "URLBuild"
+      if args.len() == 1 && matches!(&args[0], Expr::Association(_)) =>
+    {
+      let Expr::Association(entries) = &args[0] else {
+        unreachable!();
+      };
+      return Some(Ok(Expr::String(url_build_from_parts(entries))));
     }
     "URLBuild" if args.len() == 1 || args.len() == 2 => {
       // URLBuild["url"] => "url"
@@ -3372,6 +3386,17 @@ fn export_string_json(
     Expr::Integer(n) => Some(n.to_string()),
     Expr::BigInteger(n) => Some(n.to_string()),
     Expr::Real(f) => real_json(*f),
+    // JSON has no rationals, so they go out as their machine value.
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(n), Expr::Integer(d)) if *d != 0 => {
+          real_json(*n as f64 / *d as f64)
+        }
+        _ => None,
+      }
+    }
     Expr::String(s) => Some(format!("\"{}\"", escape(s))),
     Expr::Identifier(s) if s == "True" => Some("true".to_string()),
     Expr::Identifier(s) if s == "False" => Some("false".to_string()),
@@ -3400,10 +3425,15 @@ fn export_string_json(
       }
       let mut parts = Vec::with_capacity(pairs.len());
       for (k, v) in pairs.iter() {
-        let key = match k {
-          Expr::String(s) => s.clone(),
-          other => crate::syntax::expr_to_string(other),
+        // Only string keys exist in JSON; anything else fails the export
+        // rather than being stringified into a key that was never there.
+        let Expr::String(key) = k else {
+          crate::emit_message(
+            "Export::jsonassockeynstr: Association contains a non-string key.",
+          );
+          return None;
         };
+        let key = key.clone();
         parts.push(format!(
           "\"{}\":{}",
           escape(&key),
@@ -3422,7 +3452,13 @@ fn export_string_json(
         "\t".repeat(indent)
       ))
     }
-    _ => None,
+    other => {
+      crate::emit_message(&format!(
+        "Export::jsonstrictencoding: Expression {} cannot be exported as JSON.",
+        crate::syntax::format_expr(other, crate::syntax::ExprForm::Output)
+      ));
+      None
+    }
   }
 }
 
@@ -3431,6 +3467,101 @@ fn export_string_json(
 /// rendered one element per row. Other expressions become a single row.
 /// Each row is terminated with a newline (Wolfram's `ExportString` always
 /// emits a trailing newline after the last record).
+/// Assemble the `URLParse` parts of an association back into a URL.
+///
+/// A `Domain` (or an absolute `Path` under a scheme, as in `file:///tmp/f`)
+/// introduces the `//` authority marker; without one the scheme is followed
+/// directly by the path, as in `mailto:a@b.c`. A `Path` given as a list is
+/// joined with `/`, so a leading `""` is what makes it absolute.
+fn url_build_from_parts(entries: &[(Expr, Expr)]) -> String {
+  let lookup = |key: &str| -> Option<&Expr> {
+    entries
+      .iter()
+      .find(|(k, _)| matches!(k, Expr::String(s) if s == key))
+      .map(|(_, v)| v)
+      .filter(|v| !matches!(v, Expr::Identifier(s) if s == "None"))
+  };
+  let text = |e: &Expr| match e {
+    Expr::String(s) => s.clone(),
+    other => crate::syntax::expr_to_string(other),
+  };
+
+  let scheme = lookup("Scheme").map(&text);
+  let user = lookup("User").map(&text);
+  let domain = lookup("Domain").map(&text);
+  let port = lookup("Port").map(&text);
+  let path = lookup("Path").map(|p| match p {
+    Expr::List(segments) => {
+      segments.iter().map(&text).collect::<Vec<_>>().join("/")
+    }
+    other => text(other),
+  });
+  let fragment = lookup("Fragment").map(&text);
+  let query: Vec<(String, String)> = match lookup("Query") {
+    Some(Expr::List(items)) => items
+      .iter()
+      .filter_map(|item| match item {
+        Expr::Rule {
+          pattern,
+          replacement,
+        }
+        | Expr::RuleDelayed {
+          pattern,
+          replacement,
+        } => Some((text(pattern), text(replacement))),
+        _ => None,
+      })
+      .collect(),
+    Some(Expr::Association(pairs)) => {
+      pairs.iter().map(|(k, v)| (text(k), text(v))).collect()
+    }
+    _ => Vec::new(),
+  };
+
+  let mut url = String::new();
+  if let Some(scheme) = &scheme {
+    url.push_str(scheme);
+    url.push(':');
+  }
+  let absolute_path = path.as_deref().is_some_and(|p| p.starts_with('/'));
+  if domain.is_some() || (scheme.is_some() && absolute_path) {
+    url.push_str("//");
+    if let Some(user) = &user {
+      url.push_str(user);
+      url.push('@');
+    }
+    if let Some(domain) = &domain {
+      url.push_str(domain);
+    }
+    if let Some(port) = &port {
+      url.push(':');
+      url.push_str(port);
+    }
+  }
+  if let Some(path) = &path {
+    url.push_str(path);
+  }
+  if !query.is_empty() {
+    url.push('?');
+    let encoded: Vec<String> = query
+      .iter()
+      .map(|(k, v)| {
+        format!(
+          "{}={}",
+          crate::functions::string_ast::url_query_component(k),
+          crate::functions::string_ast::url_query_component(v)
+        )
+      })
+      .collect();
+    url.push_str(&encoded.join("&"));
+  }
+  if let Some(fragment) = &fragment {
+    url.push('#');
+    url.push_str(fragment);
+  }
+  url
+}
+
 fn export_string_csv(
   expr: &Expr,
   sep: char,

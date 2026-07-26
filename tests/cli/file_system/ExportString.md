@@ -19,3 +19,12 @@ $ wo 'StringTrim[ExportString[{{a, 1, True, x + y}}, "CSV"]]'
 $ wo 'ExportString[{{1, 2}}, "String"]'
 {{1, 2}}
 ```
+
+A value JSON cannot represent fails the export rather than being approximated:
+
+```scrut {output_stream: combined}
+$ wo 'ExportString[<|"a" -> Pi|>, "JSON"]'
+
+Export::jsonstrictencoding: Expression Pi cannot be exported as JSON.
+$Failed
+```

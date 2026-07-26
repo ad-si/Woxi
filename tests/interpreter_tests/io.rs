@@ -7511,3 +7511,178 @@ mod csv_cells_and_string_format {
     assert_eq!(interpret("ExportString[{1, 2}, \"Text\"]").unwrap(), "1\n2");
   }
 }
+
+// JSON can only represent some expressions, and URLBuild assembles the parts
+// URLParse produces.
+mod json_limits_and_url_build {
+  use super::*;
+
+  #[test]
+  fn rationals_export_as_their_machine_value() {
+    assert_eq!(
+      interpret("ExportString[<|\"a\" -> 1/2|>, \"JSON\"]").unwrap(),
+      "{\n\t\"a\":0.5\n}"
+    );
+    assert_eq!(
+      interpret("ExportString[{1/2, 1/4}, \"JSON\"]").unwrap(),
+      "[\n\t0.5,\n\t0.25\n]"
+    );
+    assert_eq!(
+      interpret("ExportString[<|\"a\" -> 1/3|>, \"JSON\"]").unwrap(),
+      "{\n\t\"a\":0.3333333333333333\n}"
+    );
+  }
+
+  #[test]
+  fn unrepresentable_values_fail() {
+    // Regression: these used to come back as the unevaluated call.
+    clear_state();
+    assert_eq!(
+      interpret("ExportString[<|\"a\" -> x|>, \"JSON\"]").unwrap(),
+      "$Failed"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Export::jsonstrictencoding: Expression x cannot be exported as JSON."
+      )),
+      "got {msgs:?}"
+    );
+    for expr in [
+      "ExportString[<|\"a\" -> Sqrt[2]|>, \"JSON\"]",
+      "ExportString[{1, x}, \"JSON\"]",
+      "ExportString[<|\"a\" -> Infinity|>, \"JSON\"]",
+      "ExportString[<|\"a\" -> Pi|>, \"JSON\"]",
+    ] {
+      assert_eq!(interpret(expr).unwrap(), "$Failed", "for {expr}");
+    }
+  }
+
+  #[test]
+  fn non_string_keys_fail() {
+    // Regression: the key used to be stringified, inventing a key the
+    // association never had.
+    clear_state();
+    assert_eq!(
+      interpret("ExportString[<|1 -> \"a\"|>, \"JSON\"]").unwrap(),
+      "$Failed"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Export::jsonassockeynstr: Association contains a non-string key."
+      )),
+      "got {msgs:?}"
+    );
+    assert_eq!(
+      interpret("ExportString[<|x -> 1|>, \"JSON\"]").unwrap(),
+      "$Failed"
+    );
+    assert_eq!(
+      interpret("ExportString[<|True -> 1|>, \"JSON\"]").unwrap(),
+      "$Failed"
+    );
+    // A well-formed association still exports.
+    assert_eq!(
+      interpret("ExportString[<|\"a\" -> 1|>, \"JSON\"]").unwrap(),
+      "{\n\t\"a\":1\n}"
+    );
+  }
+
+  // URLBuild[<|…|>] is the inverse of URLParse.
+  #[test]
+  fn url_build_from_an_association() {
+    assert_eq!(
+      interpret(
+        "URLBuild[<|\"Scheme\" -> \"https\", \"Domain\" -> \"x.com\", \
+         \"Path\" -> {\"\", \"p\"}|>]"
+      )
+      .unwrap(),
+      "https://x.com/p"
+    );
+    // A domain without a scheme still gets the authority marker…
+    assert_eq!(
+      interpret("URLBuild[<|\"Domain\" -> \"x.com\"|>]").unwrap(),
+      "//x.com"
+    );
+    // …and a scheme without one is followed directly by the path.
+    assert_eq!(
+      interpret(
+        "URLBuild[<|\"Scheme\" -> \"mailto\", \"Path\" -> \"a@b.c\"|>]"
+      )
+      .unwrap(),
+      "mailto:a@b.c"
+    );
+    // An absolute path under a scheme introduces it, as in file URLs.
+    assert_eq!(
+      interpret(
+        "URLBuild[<|\"Scheme\" -> \"file\", \"Path\" -> {\"\", \"tmp\", \"f\"}|>]"
+      )
+      .unwrap(),
+      "file:///tmp/f"
+    );
+    assert_eq!(
+      interpret(
+        "URLBuild[<|\"Scheme\" -> \"https\", \"User\" -> \"u\", \
+         \"Domain\" -> \"x.com\"|>]"
+      )
+      .unwrap(),
+      "https://u@x.com"
+    );
+    assert_eq!(
+      interpret(
+        "URLBuild[<|\"Scheme\" -> \"https\", \"Domain\" -> \"x.com\", \
+         \"Port\" -> 8080|>]"
+      )
+      .unwrap(),
+      "https://x.com:8080"
+    );
+    assert_eq!(
+      interpret("URLBuild[<|\"Fragment\" -> \"f\"|>]").unwrap(),
+      "#f"
+    );
+    assert_eq!(interpret("URLBuild[<||>]").unwrap(), "");
+  }
+
+  #[test]
+  fn url_build_query_strings() {
+    assert_eq!(
+      interpret("URLBuild[<|\"Query\" -> {\"a\" -> \"1\", \"b\" -> \"2\"}|>]")
+        .unwrap(),
+      "?a=1&b=2"
+    );
+    assert_eq!(
+      interpret("URLBuild[<|\"Query\" -> <|\"a\" -> \"1\"|>|>]").unwrap(),
+      "?a=1"
+    );
+    // Query parts are encoded, spaces as `+`.
+    assert_eq!(
+      interpret(
+        "URLBuild[<|\"Scheme\" -> \"https\", \"Domain\" -> \"x.com\", \
+         \"Query\" -> {\"a b\" -> \"c d\"}|>]"
+      )
+      .unwrap(),
+      "https://x.com?a+b=c+d"
+    );
+    // Everything together, and a round trip through URLParse.
+    assert_eq!(
+      interpret(
+        "URLBuild[<|\"Scheme\" -> \"https\", \"Domain\" -> \"x.com\", \
+         \"Path\" -> {\"\", \"p\"}, \"Query\" -> {\"k\" -> \"v\"}, \
+         \"Fragment\" -> \"f\"|>]"
+      )
+      .unwrap(),
+      "https://x.com/p?k=v#f"
+    );
+    assert_eq!(
+      interpret("URLBuild[URLParse[\"https://x.com/p?q=1\"]]").unwrap(),
+      "https://x.com/p?q=1"
+    );
+    // The list form is unchanged.
+    assert_eq!(interpret("URLBuild[{\"a\", \"b\"}]").unwrap(), "a/b");
+    assert_eq!(
+      interpret("URLBuild[{\"a\", \"b\"}, {\"q\" -> \"1\"}]").unwrap(),
+      "a/b?q=1"
+    );
+  }
+}

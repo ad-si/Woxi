@@ -12591,6 +12591,11 @@ fn query_encode_component(s: &str) -> String {
   percent_encode(s).replace("%20", "+")
 }
 
+/// A query key or value encoded the way URLQueryEncode does (spaces as `+`).
+pub fn url_query_component(s: &str) -> String {
+  query_encode_component(s)
+}
+
 /// URLQueryEncode[assoc | {rules...}] - build a URL query string.
 pub fn url_query_encode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
