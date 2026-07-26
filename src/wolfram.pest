@@ -415,9 +415,11 @@ GetPathChar = _{ ASCII_ALPHANUMERIC | LETTER | "~" | "/" | "." | "\\" | "-" | "_
 // would parse as `Equal[Mod[#1,3], Function[Mod[#2,3]]]` instead of
 // `Function[Equal[Mod[#1,3], Mod[#2,3]]]`.
 FunctionCallImplicitSuffix = { ImplicitTimesFactor+ }
+// A prime after the brackets differentiates the whole call, and may itself be
+// applied to arguments: `f[data]'[x]` is `Derivative[1][f[data]][x]`.
 FunctionCallExtended = {
     (Identifier | NamedCharIdentifier) ~ DerivativePrime? ~ BracketArgs+
-    ~ DerivativePrime?
+    ~ (DerivativePrime ~ BracketArgs*)?
     ~ (
         PartIndexSuffix ~ (ImplicitPowerSuffix? ~ FunctionCallImplicitSuffix)?
       | ImplicitPowerSuffix? ~ FunctionCallImplicitSuffix

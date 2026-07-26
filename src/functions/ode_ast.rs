@@ -2326,6 +2326,9 @@ pub fn interpolation_ast(
 
   // Determine format: list of values or list of {x, y} pairs
   let mut points: Vec<(f64, f64)> = Vec::new();
+  // The exact coordinate expressions alongside their f64 values, so that
+  // interpolating at an exact point can stay exact.
+  let mut exact_coords: Vec<(Expr, Expr)> = Vec::new();
 
   let first = &data_list[0];
   let is_pair_format = matches!(first, Expr::List(items) if items.len() == 2);
@@ -2335,6 +2338,13 @@ pub fn interpolation_ast(
     for item in data_list {
       let (x, y) = extract_point(item)?;
       points.push((x, y));
+      let Expr::List(pair) = item else {
+        return Err(InterpreterError::EvaluationError(
+          "InterpolatingFunction: invalid data point format".into(),
+        ));
+      };
+      exact_coords
+        .push((exact_coordinate(&pair[0], x), exact_coordinate(&pair[1], y)));
     }
   } else {
     // {y1, y2, ...} — x values are 1, 2, 3, ... by default, or uniformly
@@ -2342,18 +2352,26 @@ pub fn interpolation_ast(
     let count = data_list.len();
     for (i, item) in data_list.iter().enumerate() {
       let y = interp_value_to_f64(item)?;
-      let x = match domain_spec {
+      let (x, x_expr) = match domain_spec {
         Some((xmin, xmax)) if count > 1 => {
-          xmin + (i as f64) * (xmax - xmin) / ((count - 1) as f64)
+          let x = xmin + (i as f64) * (xmax - xmin) / ((count - 1) as f64);
+          (x, Expr::Real(x))
         }
-        _ => (i + 1) as f64,
+        _ => ((i + 1) as f64, Expr::Integer(i as i128 + 1)),
       };
       points.push((x, y));
+      exact_coords.push((x_expr, exact_coordinate(item, y)));
     }
   }
 
-  // Sort by x value
-  points.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+  // Sort by x value, keeping each exact coordinate pair with its point.
+  let mut order_index: Vec<usize> = (0..points.len()).collect();
+  order_index.sort_by(|a, b| points[*a].0.partial_cmp(&points[*b].0).unwrap());
+  points = order_index.iter().map(|i| points[*i]).collect();
+  exact_coords = order_index
+    .iter()
+    .map(|i| exact_coords[*i].clone())
+    .collect();
 
   let n = points.len();
 
@@ -2379,40 +2397,14 @@ pub fn interpolation_ast(
     .into(),
   );
 
-  // Store data as list of {x, y} pairs, preserving original y-value types
-  // (e.g. Integer for integer inputs) so that evaluation at exact grid points
-  // returns the original type, matching Wolfram behavior.
+  // Store data as list of {x, y} pairs, keeping exact coordinates exact (an
+  // Integer grid, rational values) so that interpolating at an exact point
+  // gives an exact result, and evaluation at a grid point returns the
+  // original value unchanged.
   let data_expr = Expr::List(
-    points
+    exact_coords
       .iter()
-      .enumerate()
-      .map(|(i, (x, _y))| {
-        // Use original y-expression when available (non-pair format)
-        let y_expr = if !is_pair_format {
-          let orig = &data_list[i];
-          let evaluated = crate::evaluator::evaluate_expr_to_expr(orig)
-            .unwrap_or(orig.clone());
-          match &evaluated {
-            Expr::Integer(_) | Expr::Real(_) => evaluated,
-            _ => Expr::Real(*_y),
-          }
-        } else {
-          // For pair format, extract y from original {x, y} pair
-          if let Expr::List(pair) = &data_list[i]
-            && pair.len() == 2
-          {
-            let y_eval = crate::evaluator::evaluate_expr_to_expr(&pair[1])
-              .unwrap_or(pair[1].clone());
-            match &y_eval {
-              Expr::Integer(_) | Expr::Real(_) => y_eval,
-              _ => Expr::Real(*_y),
-            }
-          } else {
-            Expr::Real(*_y)
-          }
-        };
-        Expr::List(vec![Expr::Real(*x), y_expr].into())
-      })
+      .map(|(x, y)| Expr::List(vec![x.clone(), y.clone()].into()))
       .collect(),
   );
 
@@ -2554,6 +2546,43 @@ fn real_or_integer(v: f64) -> Expr {
   Expr::Real(v)
 }
 
+/// The stored form of one interpolation coordinate: the evaluated source
+/// expression when it is an exact number (so `1/2` stays a rational rather
+/// than becoming `0.5`), and the machine value otherwise.
+fn exact_coordinate(source: &Expr, value: f64) -> Expr {
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(source)
+    .unwrap_or_else(|_| source.clone());
+  match &evaluated {
+    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => evaluated,
+    Expr::FunctionCall { name, args }
+      if name == "Rational"
+        && args.len() == 2
+        && args
+          .iter()
+          .all(|a| matches!(a, Expr::Integer(_) | Expr::BigInteger(_))) =>
+    {
+      evaluated
+    }
+    _ => Expr::Real(value),
+  }
+}
+
+/// Whether an interpolation coordinate is an exact number, so that exact
+/// arithmetic through it is worthwhile.
+fn is_exact_number(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(_) | Expr::BigInteger(_) => true,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      args
+        .iter()
+        .all(|a| matches!(a, Expr::Integer(_) | Expr::BigInteger(_)))
+    }
+    _ => false,
+  }
+}
+
 /// Convert a whole-number `Real` to an `Integer` (the grid coordinates of an
 /// implicit-grid interpolation are integers in wolframscript even though they
 /// are stored as reals); other values pass through unchanged.
@@ -2572,6 +2601,7 @@ fn whole_real_to_int(e: &Expr) -> Expr {
 fn interpolating_function_property(
   data: &Expr,
   order: usize,
+  derivative_order: usize,
   prop: &str,
 ) -> Option<Expr> {
   let Expr::List(pairs) = data else {
@@ -2606,7 +2636,16 @@ fn interpolating_function_property(
     // The sampled values at the grid points.
     "ValuesOnGrid" => Some(list1(ys)),
     "InterpolationOrder" => Some(list1(vec![Expr::Integer(order as i128)])),
-    "DerivativeOrder" => Some(Expr::Integer(0)),
+    // wolframscript reports a differentiated interpolating function's order
+    // as the Derivative operator itself, and a plain one's as 0.
+    "DerivativeOrder" => Some(if derivative_order == 0 {
+      Expr::Integer(0)
+    } else {
+      Expr::FunctionCall {
+        name: "Derivative".to_string(),
+        args: vec![Expr::Integer(derivative_order as i128)].into(),
+      }
+    }),
     _ => None,
   }
 }
@@ -2627,7 +2666,7 @@ pub fn evaluate_interpolating_function(
     return evaluate_interpolating_function_2d(grid_rows, orders, call_args);
   }
 
-  if (func_args.len() != 2 && func_args.len() != 3) || call_args.len() != 1 {
+  if !(2..=4).contains(&func_args.len()) || call_args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "InterpolatingFunction expects domain and data, called with one argument"
         .into(),
@@ -2635,7 +2674,7 @@ pub fn evaluate_interpolating_function(
   }
 
   let data = &func_args[1];
-  let order = if func_args.len() == 3 {
+  let order = if func_args.len() >= 3 {
     match &func_args[2] {
       Expr::Integer(n) => *n as usize,
       _ => 3,
@@ -2643,19 +2682,26 @@ pub fn evaluate_interpolating_function(
   } else {
     1 // Default for NDSolve-generated (backwards compat)
   };
+  // A fourth argument is the derivative order, as left by `f'`.
+  let derivative_order = match func_args.get(3) {
+    Some(Expr::Integer(n)) if *n >= 0 => *n as usize,
+    _ => 0,
+  };
 
   // Property access: InterpolatingFunction[…]["Domain"], ["Grid"], etc.
   if let Expr::String(prop) = &call_args[0]
-    && let Some(result) = interpolating_function_property(data, order, prop)
+    && let Some(result) =
+      interpolating_function_property(data, order, derivative_order, prop)
   {
     return Ok(result);
   }
 
   let x_val_expr = crate::evaluator::evaluate_expr_to_expr(&call_args[0])?;
-  let x_val = match &x_val_expr {
-    Expr::Integer(n) => *n as f64,
-    Expr::Real(f) => *f,
-    _ => {
+  // Rationals and other exact numbers count as arguments too, not just
+  // machine numbers: Interpolation[{1, 4, 9}][5/2] is 25/4.
+  let x_val = match interp_value_to_f64(&x_val_expr) {
+    Ok(v) => v,
+    Err(_) => {
       // Can't evaluate symbolically — return unevaluated
       return Ok(Expr::CurriedCall {
         func: Box::new(unevaluated("InterpolatingFunction", func_args)),
@@ -2680,9 +2726,26 @@ pub fn evaluate_interpolating_function(
       "InterpolatingFunction: not enough data points".into(),
     ));
   }
+
+  // Outside the data range the boundary piece is extended rather than the
+  // value clamped, which is what wolframscript does after warning about it.
+  if let (Ok((x_lo, _)), Ok((x_hi, _))) = (
+    extract_point(&data_points[0]),
+    extract_point(&data_points[n - 1]),
+  ) && (x_val < x_lo || x_val > x_hi)
+  {
+    crate::emit_message(&format!(
+      "InterpolatingFunction::dmval: Input value {{{}}} lies outside the range of data in the interpolating function. Extrapolation will be used.",
+      crate::syntax::format_expr(&x_val_expr, crate::syntax::ExprForm::Output)
+    ));
+  }
+
   if n == 1 {
     // A single data point is a constant interpolation: return the stored y
-    // (preserving its Integer/Real type) for any input.
+    // (preserving its Integer/Real type) for any input; its derivative is 0.
+    if derivative_order > 0 {
+      return Ok(Expr::Integer(0));
+    }
     if let Expr::List(pair) = &data_points[0]
       && pair.len() == 2
     {
@@ -2696,34 +2759,57 @@ pub fn evaluate_interpolating_function(
   let (x_first, _) = extract_point(&data_points[0])?;
   let (x_last, _) = extract_point(&data_points[n - 1])?;
 
-  // Clamp to domain
-  let x_clamped = x_val.max(x_first).min(x_last);
-
   // Check for exact grid point match — return the stored y-value directly
   // to preserve original types (e.g. Integer for ListInterpolation with integer data).
-  for pt in data_points {
-    if let Expr::List(pair) = pt
-      && pair.len() == 2
-      && let Some(xp) = match &pair[0] {
-        Expr::Real(f) => Some(*f),
-        Expr::Integer(n) => Some(*n as f64),
-        _ => None,
+  if derivative_order == 0 {
+    for pt in data_points {
+      if let Expr::List(pair) = pt
+        && pair.len() == 2
+        && let Ok(xp) = interp_value_to_f64(&pair[0])
+        && (xp - x_val).abs() < 1e-15
+      {
+        return Ok(pair[1].clone());
       }
-      && (xp - x_clamped).abs() < 1e-15
-    {
-      return Ok(pair[1].clone());
     }
   }
 
-  // Binary search for the interval containing x_clamped
-  let idx = find_interval(data_points, x_clamped, n)?;
+  // Binary search for the interval containing x; a point outside the data
+  // range picks up the nearest interval and extrapolates along it.
+  let idx = find_interval(data_points, x_val.max(x_first).min(x_last), n)?;
+  let eff_order = if order == 1 || n <= 2 {
+    1
+  } else {
+    order.min(n - 1)
+  };
+  let (start, end) = lagrange_window(n, idx, eff_order);
 
-  if order == 1 || n <= 2 {
+  // `f'` differentiates the local polynomial piece, so the derivative is
+  // exact wherever the interpolation itself is.
+  if derivative_order > 0 {
+    return interpolating_derivative_value(
+      data_points,
+      &x_val_expr,
+      start,
+      end,
+      derivative_order,
+    );
+  }
+
+  // An exact query point over exact data interpolates exactly, the way
+  // wolframscript reports Interpolation[{1, 4, 9}][5/2] as 25/4.
+  if is_exact_number(&x_val_expr)
+    && let Some(exact) =
+      lagrange_interpolate_exact(data_points, &x_val_expr, start, end)?
+  {
+    return Ok(exact);
+  }
+
+  if eff_order == 1 {
     // Linear interpolation
     let (x0, y0) = extract_point(&data_points[idx])?;
     let (x1, y1) = extract_point(&data_points[idx + 1])?;
     let t = if (x1 - x0).abs() > 1e-15 {
-      (x_clamped - x0) / (x1 - x0)
+      (x_val - x0) / (x1 - x0)
     } else {
       0.0
     };
@@ -2736,9 +2822,7 @@ pub fn evaluate_interpolating_function(
     // exactly — unlike a natural cubic spline, whose zero-curvature
     // boundary conditions distort the fit (e.g. x^2 data would not yield
     // exact values).
-    let eff_order = order.min(n - 1);
-    let y_val =
-      lagrange_interpolate(data_points, x_clamped, n, idx, eff_order)?;
+    let y_val = lagrange_interpolate(data_points, x_val, n, idx, eff_order)?;
     Ok(real_or_integer(y_val))
   }
 }
@@ -2817,18 +2901,31 @@ fn evaluate_interpolating_function_2d(
   }
   // Other properties: leave unevaluated.
 
-  if call_args.len() != 2 {
+  // The coordinates may come either as two arguments or as one list.
+  let coord_args: Vec<Expr> = match call_args {
+    [Expr::List(pair)] if pair.len() == 2 => pair.to_vec(),
+    other => other.to_vec(),
+  };
+  if coord_args.len() != 2 {
     return Ok(unevaluated());
   }
 
+  let coord_exprs: Vec<Expr> = coord_args
+    .iter()
+    .map(|a| {
+      crate::evaluator::evaluate_expr_to_expr(a).unwrap_or_else(|_| a.clone())
+    })
+    .collect();
   let coord = |e: &Expr| -> Option<f64> {
-    match crate::evaluator::evaluate_expr_to_expr(e).ok()? {
-      Expr::Integer(n) => Some(n as f64),
-      Expr::Real(f) => Some(f),
+    match e {
+      Expr::Integer(n) => Some(*n as f64),
+      Expr::Real(f) => Some(*f),
+      _ if is_exact_number(e) => interp_value_to_f64(e).ok(),
       _ => None,
     }
   };
-  let (Some(x), Some(y)) = (coord(&call_args[0]), coord(&call_args[1])) else {
+  let (Some(x), Some(y)) = (coord(&coord_exprs[0]), coord(&coord_exprs[1]))
+  else {
     // Non-numeric coordinate: stay symbolic.
     return Ok(unevaluated());
   };
@@ -2836,12 +2933,7 @@ fn evaluate_interpolating_function_2d(
   // Exact grid point: return the stored entry, but only keep its (Integer)
   // type when both coordinates were given as integers — a real coordinate
   // forces a real result (matching wolframscript: `[1, 3]` → 9, `[1., 3.]` → 9.).
-  let int_coords = call_args.iter().all(|a| {
-    matches!(
-      crate::evaluator::evaluate_expr_to_expr(a),
-      Ok(Expr::Integer(_))
-    )
-  });
+  let int_coords = coord_exprs.iter().all(|a| matches!(a, Expr::Integer(_)));
   let xi = x.round();
   let yi = y.round();
   if (x - xi).abs() < 1e-12
@@ -2858,6 +2950,20 @@ fn evaluate_interpolating_function_2d(
     return Ok(Expr::Real(vals[xi as usize - 1][yi as usize - 1]));
   }
 
+  // Exact coordinates over an exact grid interpolate exactly, the way
+  // wolframscript reports ListInterpolation[{{1, 2}, {3, 4}}][{3/2, 3/2}]
+  // as 5/2.
+  if coord_exprs.iter().all(is_exact_number)
+    && exprs.iter().flatten().all(is_exact_number)
+    && let Some(rows) = exprs
+      .iter()
+      .map(|row| interp_1d_exact(row, &coord_exprs[1], y, order_c))
+      .collect::<Option<Vec<Expr>>>()
+    && let Some(result) = interp_1d_exact(&rows, &coord_exprs[0], x, order_r)
+  {
+    return Ok(result);
+  }
+
   // Interpolate each row along columns at y, then along rows at x.
   let col_interp: Vec<f64> = vals
     .iter()
@@ -2865,6 +2971,40 @@ fn evaluate_interpolating_function_2d(
     .collect();
   let result = interp_1d_f64(&col_interp, x, order_r);
   Ok(Expr::Real(result))
+}
+
+/// Exact counterpart of `interp_1d_f64`: interpolate `values` sitting on the
+/// integer grid 1..n at the exact coordinate `coord`, using the same stencil.
+fn interp_1d_exact(
+  values: &[Expr],
+  coord: &Expr,
+  coord_f64: f64,
+  order: usize,
+) -> Option<Expr> {
+  let n = values.len();
+  if n == 0 {
+    return None;
+  }
+  let clamped = coord_f64.max(1.0).min(n as f64);
+  let mut idx = (clamped.floor() as usize).saturating_sub(1);
+  if idx >= n - 1 {
+    idx = n - 2;
+  }
+  let needed = (order + 1).min(n);
+  let start = if needed <= 2 {
+    idx.min(n - needed)
+  } else {
+    idx.saturating_sub((needed - 2) / 2).min(n - needed)
+  };
+  let points: Vec<Expr> = values
+    .iter()
+    .enumerate()
+    .map(|(i, v)| {
+      Expr::List(vec![Expr::Integer(i as i128 + 1), v.clone()].into())
+    })
+    .collect();
+  let poly = lagrange_polynomial(&points, coord, start, start + needed, true)?;
+  crate::evaluator::evaluate_expr_to_expr(&poly).ok()
 }
 
 /// Find the interval index for x_val using binary search.
@@ -2888,6 +3028,116 @@ fn find_interval(
   Ok(lo)
 }
 
+/// The (order+1)-point stencil for the interval starting at `idx`, as centered
+/// as possible on it; it must contain both interval endpoints or the local
+/// polynomial would extrapolate and miss the next grid value.
+fn lagrange_window(n: usize, idx: usize, order: usize) -> (usize, usize) {
+  let needed = order + 1;
+  let start = idx
+    .saturating_sub((order.max(1) - 1) / 2)
+    .min(n.saturating_sub(needed));
+  (start, (start + needed).min(n))
+}
+
+/// The local Lagrange polynomial over the stencil `data_points[start..end]`,
+/// written in `var`. `require_exact` rejects machine numbers, which is what
+/// the exact-value path wants; the derivative path takes them.
+fn lagrange_polynomial(
+  data_points: &[Expr],
+  var: &Expr,
+  start: usize,
+  end: usize,
+  require_exact: bool,
+) -> Option<Expr> {
+  let usable = |e: &Expr| {
+    is_exact_number(e) || (!require_exact && matches!(e, Expr::Real(_)))
+  };
+  let mut xs: Vec<Expr> = Vec::with_capacity(end - start);
+  let mut ys: Vec<Expr> = Vec::with_capacity(end - start);
+  for pt in &data_points[start..end] {
+    let Expr::List(pair) = pt else {
+      return None;
+    };
+    if pair.len() != 2 || !usable(&pair[0]) || !usable(&pair[1]) {
+      return None;
+    }
+    xs.push(pair[0].clone());
+    ys.push(pair[1].clone());
+  }
+
+  let minus = |a: &Expr, b: &Expr| Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Minus,
+    left: Box::new(a.clone()),
+    right: Box::new(b.clone()),
+  };
+  let m = xs.len();
+  let mut terms: Vec<Expr> = Vec::with_capacity(m);
+  for i in 0..m {
+    let mut factors: Vec<Expr> = vec![ys[i].clone()];
+    for j in 0..m {
+      if j != i {
+        factors.push(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(minus(var, &xs[j])),
+          right: Box::new(minus(&xs[i], &xs[j])),
+        });
+      }
+    }
+    factors.retain(|f| !matches!(f, Expr::Integer(1)));
+    terms.push(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: factors.into(),
+    });
+  }
+  Some(Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  })
+}
+
+/// Lagrange interpolation over the stencil carried out in exact arithmetic.
+/// Returns `None` when a coordinate in the stencil is not an exact number,
+/// leaving the machine-precision path to handle it.
+fn lagrange_interpolate_exact(
+  data_points: &[Expr],
+  x: &Expr,
+  start: usize,
+  end: usize,
+) -> Result<Option<Expr>, InterpreterError> {
+  match lagrange_polynomial(data_points, x, start, end, true) {
+    Some(poly) => Ok(Some(crate::evaluator::evaluate_expr_to_expr(&poly)?)),
+    None => Ok(None),
+  }
+}
+
+/// The `derivative_order`-th derivative of the local polynomial piece,
+/// evaluated at `x`. Exact data and an exact point give an exact derivative.
+fn interpolating_derivative_value(
+  data_points: &[Expr],
+  x: &Expr,
+  start: usize,
+  end: usize,
+  derivative_order: usize,
+) -> Result<Expr, InterpreterError> {
+  let var = Expr::Identifier("\u{2620}ifderiv\u{2620}".to_string());
+  let Some(poly) = lagrange_polynomial(data_points, &var, start, end, false)
+  else {
+    return Err(InterpreterError::EvaluationError(
+      "InterpolatingFunction: invalid data point format".into(),
+    ));
+  };
+  let mut expr = crate::evaluator::evaluate_expr_to_expr(&poly)?;
+  for _ in 0..derivative_order {
+    expr = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "D".to_string(),
+      args: vec![expr, var.clone()].into(),
+    })?;
+  }
+  let substituted =
+    crate::syntax::substitute_variable(&expr, "\u{2620}ifderiv\u{2620}", x);
+  crate::evaluator::evaluate_expr_to_expr(&substituted)
+}
+
 /// Lagrange polynomial interpolation using (order+1) nearest points.
 fn lagrange_interpolate(
   data_points: &[Expr],
@@ -2896,14 +3146,7 @@ fn lagrange_interpolate(
   idx: usize,
   order: usize,
 ) -> Result<f64, InterpreterError> {
-  // Select the (order+1)-point stencil as centered as possible on the
-  // interval [x_idx, x_idx+1]; it must contain both interval endpoints or
-  // the local polynomial would extrapolate and miss the next grid value.
-  let needed = order + 1;
-  let start = idx
-    .saturating_sub((order - 1) / 2)
-    .min(n.saturating_sub(needed));
-  let end = (start + needed).min(n);
+  let (start, end) = lagrange_window(n, idx, order);
 
   let mut xs = Vec::with_capacity(end - start);
   let mut ys = Vec::with_capacity(end - start);

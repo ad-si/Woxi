@@ -376,7 +376,7 @@ Most,Returns the list without its last element,✅,pure,5.0,379
 StringReplace,Replaces occurrences of substrings in a string; RegularExpression backreferences expand before a delayed replacement is evaluated,✅,pure,2.0,380
 ControlType,Option for specifying the type of control in Manipulate,✅,pure,6.0,381
 Pick,Picks elements from a list based on a selector,✅,pure,5.1,382
-Interpolation,Constructs an interpolation of data,✅,pure,2.0,383
+Interpolation,Constructs an interpolation of data (an exact query point over exact data gives an exact value; outside the data range the boundary piece is extrapolated),✅,pure,2.0,383
 HoldPattern,Keeps a pattern from evaluating while staying transparent to matching and to replacement rules,✅,pure,3.0,384
 Top,Symbol for top alignment,✅,pure,1.0,385
 HypergeometricPFQ,Generalized hypergeometric function pFq,✅,pure,3.0,386
@@ -651,7 +651,7 @@ ChebyshevT,Chebyshev polynomial of the first kind,✅,pure,1.0,655
 PerformanceGoal,Option for performance vs quality tradeoff,✅,none,6.0,656
 VertexList,List of vertices in a graph (optionally matching a pattern),✅,pure,8.0,657
 ColorNegate,Negates the colors of an image or a color directive (preserving its color space),✅,pure,7.0,658
-InterpolatingFunction,Represents an interpolating function object,✅,none,2.0,659
+InterpolatingFunction,Represents an interpolating function object (differentiating one gives another interpolating function carrying the derivative order),✅,none,2.0,659
 Prolog,Option specifying graphics primitives drawn before the main plot,✅,none,2.0,660
 ChartLabels,Option for labeling elements in charts,✅,none,7.0,661
 RightComposition,Compose functions left-to-right,✅,pure,10.0,662
@@ -1172,7 +1172,7 @@ VectorStyle,,🚫,,7.0,1182
 Monitor,,🚫,,6.0,1183
 ImagePad,Pads an image on each side with a constant fill or edge extension,✅,pure,7.0,1184
 ChiSquareDistribution,Represents a chi-square distribution,✅,1,6.0,1186
-ListInterpolation,Creates interpolation from uniformly spaced data,✅,pure,3.0,1186
+ListInterpolation,Creates interpolation from uniformly spaced data (2-D coordinates may be given as separate arguments or as one list),✅,pure,3.0,1186
 FindShortestPath,Find a shortest weighted path between two vertices of a graph,✅,pure,8.0,1187
 LightYellow,Named light color evaluating to RGBColor[1 1 0.85],✅,pure,6.0,1188
 SetSystemOptions,,🚫,,6.0,1189

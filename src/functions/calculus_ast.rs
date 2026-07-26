@@ -4814,13 +4814,40 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
       }
       // Fallback for other CurriedCall forms
       if is_constant_wrt(expr, var) {
-        Ok(Expr::Integer(0))
-      } else {
-        Ok(Expr::FunctionCall {
-          name: "D".to_string(),
-          args: vec![expr.clone(), Expr::Identifier(var.to_string())].into(),
-        })
+        return Ok(Expr::Integer(0));
       }
+      // A compound head applied to one argument follows the same chain rule
+      // as a plain symbol head: D[h[g], x] = h'[g] g'. This is what makes
+      // D[InterpolatingFunction[…][x], x] and D[g[1][x], x] differentiate.
+      if args.len() == 1 && is_constant_wrt(func.as_ref(), var) {
+        let dg = differentiate(&args[0], var)?;
+        if matches!(dg, Expr::Integer(0)) {
+          return Ok(Expr::Integer(0));
+        }
+        let deriv_expr = Expr::CurriedCall {
+          func: Box::new(Expr::CurriedCall {
+            func: Box::new(Expr::FunctionCall {
+              name: "Derivative".to_string(),
+              args: vec![Expr::Integer(1)].into(),
+            }),
+            args: vec![(**func).clone()],
+          }),
+          args: args.clone(),
+        };
+        return Ok(if matches!(dg, Expr::Integer(1)) {
+          deriv_expr
+        } else {
+          simplify(Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(dg),
+            right: Box::new(deriv_expr),
+          })
+        });
+      }
+      Ok(Expr::FunctionCall {
+        name: "D".to_string(),
+        args: vec![expr.clone(), Expr::Identifier(var.to_string())].into(),
+      })
     }
 
     // Lists differentiate element-wise. The fallback below would fold a

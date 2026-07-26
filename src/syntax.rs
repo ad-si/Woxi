@@ -3269,26 +3269,31 @@ fn parse_function_call_extended(pair: Pair<Rule>) -> Expr {
         None
       }
     });
-  let last_bracket_idx_fce =
-    inner_pairs.iter().enumerate().rev().find_map(|(i, p)| {
-      if matches!(p.as_rule(), Rule::BracketArgs) {
-        Some(i)
-      } else {
-        None
-      }
-    });
   let derivative_order = first_bracket_idx_fce.and_then(|fb| {
     inner_pairs[..fb]
       .iter()
       .find(|p| matches!(p.as_rule(), Rule::DerivativePrime))
       .map(|p| p.as_str().len())
   });
-  let trailing_prime_order_fce = last_bracket_idx_fce.and_then(|lb| {
-    inner_pairs[lb + 1..]
+  // The prime after the brackets, plus any arguments it is applied to:
+  // `f[data]'[x]` is `Derivative[1][f[data]][x]`.
+  let trailing_prime_idx = first_bracket_idx_fce.and_then(|fb| {
+    inner_pairs[fb..]
       .iter()
-      .find(|p| matches!(p.as_rule(), Rule::DerivativePrime))
-      .map(|p| p.as_str().len())
+      .position(|p| matches!(p.as_rule(), Rule::DerivativePrime))
+      .map(|offset| fb + offset)
   });
+  let trailing_prime_order_fce =
+    trailing_prime_idx.map(|i| inner_pairs[i].as_str().len());
+  let post_prime_bracket_args: Vec<Vec<Expr>> = trailing_prime_idx
+    .map(|i| {
+      inner_pairs[i + 1..]
+        .iter()
+        .take_while(|p| matches!(p.as_rule(), Rule::BracketArgs))
+        .map(|bracket| bracket.clone().into_inner().map(pair_to_expr).collect())
+        .collect()
+    })
+    .unwrap_or_default();
 
   // Collect the function call's BracketArgs (consecutive BracketArgs after name, before any suffix)
   let fc_bracket_args: Vec<Vec<Expr>> = inner_pairs
@@ -3376,13 +3381,20 @@ fn parse_function_call_extended(pair: Pair<Rule>) -> Expr {
   // A trailing DerivativePrime wraps the entire constructed call in
   // `Derivative[n][...]` (e.g. `h[1]'` → `Derivative[1][h[1]]`).
   let base_func = if let Some(order) = trailing_prime_order_fce {
-    Expr::CurriedCall {
+    let mut wrapped = Expr::CurriedCall {
       func: Box::new(Expr::FunctionCall {
         name: "Derivative".to_string(),
         args: vec![Expr::Integer(order as i128)].into(),
       }),
       args: vec![base_func],
+    };
+    for args in &post_prime_bracket_args {
+      wrapped = Expr::CurriedCall {
+        func: Box::new(wrapped),
+        args: args.clone(),
+      };
     }
+    wrapped
   } else {
     base_func
   };

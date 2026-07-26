@@ -1414,7 +1414,7 @@ pub fn apply_curried_call(
       name,
       args: func_args,
     } if name == "InterpolatingFunction"
-      && (func_args.len() == 2 || func_args.len() == 3) =>
+      && (2..=4).contains(&func_args.len()) =>
     {
       // InterpolatingFunction[domain, data][x] — interpolate at x
       crate::functions::ode_ast::evaluate_interpolating_function(
@@ -1849,6 +1849,41 @@ pub fn apply_curried_call(
         // order interpretation: Real, Rational, Constant, BigFloat, Complex,
         // and Integer (since `Derivative[1, 0][f]` already routed through the
         // multi-index branch above and never reaches here).
+        // `Derivative[n][InterpolatingFunction[…]]` is another
+        // InterpolatingFunction that carries the derivative order, so `f'`
+        // stays an interpolating function the way wolframscript reports it.
+        if name == "Derivative"
+          && func_args.len() == 1
+          && args.len() == 1
+          && let Expr::Integer(extra) = &func_args[0]
+          && *extra >= 0
+          && let Expr::FunctionCall {
+            name: interp_name,
+            args: interp_args,
+          } = &args[0]
+          && interp_name == "InterpolatingFunction"
+          && (2..=4).contains(&interp_args.len())
+          && !matches!(interp_args.get(2), Some(Expr::List(_)))
+        {
+          let mut new_args: Vec<Expr> = interp_args.to_vec();
+          while new_args.len() < 3 {
+            new_args.push(Expr::Integer(1));
+          }
+          let previous = match new_args.get(3) {
+            Some(Expr::Integer(n)) => *n,
+            _ => 0,
+          };
+          let total = previous + extra;
+          if new_args.len() == 4 {
+            new_args[3] = Expr::Integer(total);
+          } else {
+            new_args.push(Expr::Integer(total));
+          }
+          return Ok(Expr::FunctionCall {
+            name: "InterpolatingFunction".to_string(),
+            args: new_args.into(),
+          });
+        }
         if name == "Derivative" && func_args.len() == 1 && args.len() == 1 {
           let arg0 = &args[0];
           let is_constant_arg = matches!(

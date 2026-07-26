@@ -14700,3 +14700,238 @@ mod inverse_mellin_transform_tests {
     )));
   }
 }
+
+mod interpolation_exact_and_derivative {
+  use super::*;
+
+  // An exact query point over exact data interpolates exactly rather than
+  // dropping to machine precision or staying unevaluated.
+  #[test]
+  fn exact_points_give_exact_values() {
+    assert_eq!(interpret("Interpolation[{1, 4, 9}][5/2]").unwrap(), "25/4");
+    assert_eq!(
+      interpret("Interpolation[{{0, 0}, {1, 1}, {2, 4}}][3/2]").unwrap(),
+      "9/4"
+    );
+    assert_eq!(
+      interpret("Interpolation[{1, 4, 9, 16}][7/2]").unwrap(),
+      "49/4"
+    );
+    assert_eq!(
+      interpret("Interpolation[{0, 1, 8, 27}][5/2]").unwrap(),
+      "27/8"
+    );
+  }
+
+  // Rational data stays rational.
+  #[test]
+  fn rational_data_stays_rational() {
+    assert_eq!(
+      interpret("Interpolation[{1/2, 3/2, 7/2}][3/2]").unwrap(),
+      "7/8"
+    );
+    assert_eq!(
+      interpret("Interpolation[{{0, 1/2}, {1, 3/2}, {2, 7/2}}][1/2]").unwrap(),
+      "7/8"
+    );
+  }
+
+  // Machine data keeps giving machine values, whatever the query point.
+  #[test]
+  fn machine_data_gives_machine_values() {
+    assert_eq!(
+      interpret("Interpolation[{1., 4., 9.}][3/2]").unwrap(),
+      "2.25"
+    );
+    assert_eq!(interpret("Interpolation[{1, 4., 9}][3/2]").unwrap(), "2.25");
+    assert_eq!(
+      interpret("Interpolation[{{0, 0}, {1, 1}, {2, 4}}][1.5]").unwrap(),
+      "2.25"
+    );
+  }
+
+  // The interpolation order picks the stencil, so a lower order gives the
+  // straight-line value between the neighbouring points.
+  #[test]
+  fn interpolation_order_selects_the_stencil() {
+    assert_eq!(
+      interpret("Interpolation[{1, 4, 9}, InterpolationOrder -> 1][3/2]")
+        .unwrap(),
+      "5/2"
+    );
+    assert_eq!(
+      interpret("Interpolation[{0, 1, 0, 1, 0}, InterpolationOrder -> 2][3/2]")
+        .unwrap(),
+      "3/4"
+    );
+    assert_eq!(
+      interpret("Interpolation[{0, 1, 0, 1, 0}][3/2]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Interpolation[{0, 1, 0, 1, 0}][7/2]").unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("Interpolation[{0, 1, 0, 1, 0}][9/2]").unwrap(),
+      "1"
+    );
+  }
+
+  // Outside the data range the boundary polynomial is extended rather than
+  // the value being clamped to the last data point.
+  #[test]
+  fn outside_the_range_extrapolates() {
+    assert_eq!(
+      interpret("Interpolation[{{0, 0}, {1, 1}, {2, 4}}][3]").unwrap(),
+      "9"
+    );
+    assert_eq!(
+      interpret("Interpolation[{{0, 0}, {1, 1}, {2, 4}}][5]").unwrap(),
+      "25"
+    );
+    assert_eq!(
+      interpret("Interpolation[{{0, 0}, {1, 1}, {2, 4}}][-1]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Interpolation[{{0, 0}, {1, 1}, {2, 4}}][3.]").unwrap(),
+      "9."
+    );
+    assert_eq!(interpret("Interpolation[{1, 4, 9}][1/2]").unwrap(), "1/4");
+  }
+
+  #[test]
+  fn extrapolation_warns() {
+    let r = woxi::interpret_with_stdout("Interpolation[{1, 4, 9}][5]").unwrap();
+    assert_eq!(r.result, "25");
+    assert!(
+      r.warnings.iter().any(|w| w.contains(
+        "InterpolatingFunction::dmval: Input value {5} lies outside the range of data in the interpolating function. Extrapolation will be used."
+      )),
+      "expected dmval, got {:?}",
+      r.warnings
+    );
+  }
+
+  // f' differentiates the local polynomial piece and stays an interpolating
+  // function.
+  #[test]
+  fn derivative_of_an_interpolating_function() {
+    assert_eq!(
+      interpret("f = Interpolation[{{0, 0}, {1, 1}, {2, 4}}]; f'[1]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("f = Interpolation[{{0, 0}, {1, 1}, {2, 4}}]; f'[3/2]")
+        .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("f = Interpolation[{{0, 0}, {1, 1}, {2, 4}}]; f''[1]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("f = Interpolation[{{0, 0}, {1, 1}, {2, 4}}]; f'[1.]").unwrap(),
+      "2."
+    );
+    assert_eq!(
+      interpret("f = Interpolation[{{0, 0}, {1, 1}, {2, 4}}]; Head[f']")
+        .unwrap(),
+      "InterpolatingFunction"
+    );
+    assert_eq!(interpret("Interpolation[{5}]'[2]").unwrap(), "0");
+  }
+
+  #[test]
+  fn higher_derivatives_run_out_of_polynomial() {
+    assert_eq!(
+      interpret("Interpolation[{1, 4, 9, 16}]'[5/2]").unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret("Interpolation[{1, 4, 9, 16}]''[5/2]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("Interpolation[{1, 4, 9, 16}]'''[5/2]").unwrap(),
+      "0"
+    );
+  }
+
+  // The derivative order shows up as the Derivative operator itself, and the
+  // grid metadata carries over.
+  #[test]
+  fn derivative_order_property() {
+    assert_eq!(
+      interpret(r#"Interpolation[{1, 4, 9, 16}]["DerivativeOrder"]"#).unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret(r#"Interpolation[{1, 4, 9, 16}]'["DerivativeOrder"]"#).unwrap(),
+      "Derivative[1]"
+    );
+    assert_eq!(
+      interpret(r#"Interpolation[{1, 4, 9, 16}]'["Domain"]"#).unwrap(),
+      "{{1, 4}}"
+    );
+  }
+
+  // D differentiates through a compound head the same way it does through a
+  // symbol head.
+  #[test]
+  fn d_through_a_compound_head() {
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{0, 0}, {1, 1}, {2, 4}}]; D[f[x], x] /. x -> 1"
+      )
+      .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("D[g[1][x], x]").unwrap(),
+      "Derivative[1][g[1]][x]"
+    );
+  }
+
+  // A prime may follow a bracketed call and be applied to arguments.
+  #[test]
+  fn prime_after_a_bracketed_call() {
+    assert_eq!(
+      interpret("Interpolation[{{0, 0}, {1, 1}, {2, 4}}]'[1]").unwrap(),
+      "2"
+    );
+    assert_eq!(interpret("Interpolation[{1, 4, 9}]''[2]").unwrap(), "2");
+    assert_eq!(interpret("g[1]'[2]").unwrap(), "Derivative[1][g[1]][2]");
+    assert_eq!(interpret("Sin[x]'").unwrap(), "Derivative[1][Sin[x]]");
+  }
+
+  // The 2-D grid form takes its coordinates either as two arguments or as
+  // one list, and interpolates exactly over an exact grid.
+  #[test]
+  fn two_dimensional_grid() {
+    assert_eq!(
+      interpret("ListInterpolation[{{1, 2}, {3, 4}}][{3/2, 3/2}]").unwrap(),
+      "5/2"
+    );
+    assert_eq!(
+      interpret("ListInterpolation[{{1, 2}, {3, 4}}][3/2, 3/2]").unwrap(),
+      "5/2"
+    );
+    assert_eq!(
+      interpret("ListInterpolation[{{1, 2}, {3, 4}}][{1.5, 1.5}]").unwrap(),
+      "2.5"
+    );
+    assert_eq!(
+      interpret("ListInterpolation[{{1, 2}, {3, 4}}][{2, 1}]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(
+        "ListInterpolation[{{1, 2, 3}, {4, 5, 6}, {7, 8, 10}}][{3/2, 5/2}]"
+      )
+      .unwrap(),
+      "253/64"
+    );
+  }
+}
