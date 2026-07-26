@@ -559,7 +559,7 @@ AbsoluteTime,Total seconds since January 1 1900,✅,contextual,2.0,562
 ExampleData,,🚫,,6.0,563
 TwoWayRule,Represent a two-way transformation rule,✅,none,11.2,564
 Initialization,Option for initialization code,✅,none,6.0,565
-StringCases,Returns substrings matching a pattern (supports a count limit and the Overlaps and IgnoreCase options),✅,pure,5.1,566
+StringCases,Returns substrings matching a pattern (threading over a list of strings; supports a count limit and the Overlaps and IgnoreCase options),✅,pure,5.1,566
 Subtract,Subtracts one number from another,✅,pure,1.0,567
 Listable,Attribute for automatic threading over lists,✅,pure,1.0,568
 ExpIntegralEi,Exponential integral Ei,✅,pure,1.0,569
@@ -2057,7 +2057,7 @@ GeoEntities,Geographic entities lookup,🚫,,10.0,2094
 HeavisidePi,Rectangular pulse function: 1 for |x| < 1/2,✅,1,7.0,2094
 MomentGeneratingFunction,Moment-generating function E[e^(tX)] of a probability distribution,✅,pure,8.0,2094
 NonPositive,Tests if a number is non-positive,✅,pure,3.0,2097
-StringPartition,Partition a string into substrings of a given length,✅,1,10.1,2097
+StringPartition,Partition a string into substrings of a given length,✅,pure,10.1,2097
 TimeUsed,Total CPU time (user+system) used by the current process in seconds,✅,nondeterministic,1.0,2097
 HTTPRequest,Symbolic HTTP request object,✅,pure,11.0,2100
 ImageConvolve,Convolve image with kernel,✅,,7.0,2100
@@ -2470,7 +2470,7 @@ AngerJ,Anger function AngerJ[nu z] which equals BesselJ for integer orders,✅,p
 LineGraph,Line graph: one vertex per edge with adjacency for shared endpoints,✅,pure,8.0,2525
 LocalizeVariables,,🚫,,6.0,2525
 MaxFilter,Maximum filter over a sliding window,✅,none,7.0,2525
-StringReplaceList,List of all single replacements in a string,✅,none,5.1,2525
+StringReplaceList,List of all single replacements in a string,✅,pure,5.1,2525
 VarianceEstimatorFunction,,🚫,,7.0,2525
 DeviceOpen,,🚫,,10.0,2528
 InverseWeierstrassP,Inverse Weierstrass elliptic function,✅,pure,3.0,2528

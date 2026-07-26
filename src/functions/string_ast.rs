@@ -146,6 +146,90 @@ fn is_string_subject(e: &Expr) -> bool {
   }
 }
 
+/// What a `String*` function accepts as its first argument.
+enum StringSubject {
+  /// A string or a list of strings (the function threads over the list).
+  Threaded,
+  /// A single string only.
+  Single,
+  /// A list (of anything) — `StringRiffle`.
+  ListOfParts,
+}
+
+/// The first-argument requirement of `name` when called with `argc` arguments,
+/// for the functions that must refuse a non-string subject. `None` means the
+/// call is not one of those (an operator form, say) and is left alone.
+fn string_subject_kind(name: &str, argc: usize) -> Option<StringSubject> {
+  use StringSubject::*;
+  Some(match name {
+    "StringCases" | "StringCount" | "StringDelete" | "StringPadLeft"
+    | "StringPadRight" | "StringPart" | "StringPosition"
+    | "StringReplaceList"
+      if argc >= 2 =>
+    {
+      Threaded
+    }
+    "StringFreeQ" | "StringMatchQ" | "StringStartsQ" | "StringEndsQ"
+    | "StringContainsQ"
+      if (2..=3).contains(&argc) =>
+    {
+      Threaded
+    }
+    "StringInsert" if argc == 3 => Threaded,
+    "StringTakeDrop" if argc == 2 => Threaded,
+    "StringTrim" if (1..=2).contains(&argc) => Threaded,
+    "StringRotateLeft" | "StringRotateRight" if (1..=2).contains(&argc) => {
+      Single
+    }
+    "StringReplacePart" if argc == 3 => Single,
+    "StringPartition" if (2..=3).contains(&argc) => Single,
+    "StringRepeat" if argc >= 2 => Single,
+    "StringToByteArray" if argc == 1 => Single,
+    "StringRiffle" if argc >= 1 => ListOfParts,
+    _ => return None,
+  })
+}
+
+/// Refuse a first argument that is not a string subject, the way
+/// wolframscript does, instead of silently coercing it to its printed form
+/// (`StringDelete[foo, "a"]` must not return `"foo"`). Returns the
+/// unevaluated call after emitting the message, or `None` when the argument
+/// is acceptable.
+pub fn guard_string_subject(
+  name: &str,
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  let kind = string_subject_kind(name, args.len())?;
+  let first = args.first()?;
+  let (ok, message) = match kind {
+    StringSubject::Threaded => (
+      is_string_subject(first),
+      "strse: A string or list of strings is expected at position 1",
+    ),
+    StringSubject::Single => (
+      matches!(first, Expr::String(_)),
+      "string: String expected at position 1",
+    ),
+    StringSubject::ListOfParts => (
+      matches!(first, Expr::List(_)),
+      "list: List expected at position 1",
+    ),
+  };
+  if ok {
+    return None;
+  }
+  crate::emit_message(&format!(
+    "{}::{} in {}.",
+    name,
+    message,
+    crate::syntax::format_expr(
+      &unevaluated(name, args),
+      crate::syntax::ExprForm::Output
+    )
+  ));
+  Some(Ok(unevaluated(name, args)))
+}
+
 /// Shared StringTake/StringDrop engine, mirroring the Take/Drop position
 /// conventions: scalar n / -n, {i}, {i, j}, {i, j, step}, All, None,
 /// UpTo[n]. The adjacent reversed range {i, i-1} is an empty take /
@@ -1793,10 +1877,11 @@ pub fn string_riffle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  if !matches!(&args[0], Expr::List(_)) {
-    return Err(InterpreterError::EvaluationError(
-      "StringRiffle: first argument must be a list".into(),
-    ));
+  // A non-list first argument reports StringRiffle::list and stays
+  // unevaluated (see guard_string_subject); aborting the evaluation here
+  // would kill the whole script.
+  if let Some(refused) = guard_string_subject("StringRiffle", args) {
+    return refused;
   }
 
   // Build the effective separator list. If none provided, use defaults
@@ -3106,6 +3191,18 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "StringCases expects at least 2 arguments".into(),
     ));
+  }
+  // A list of strings gives one list of matches per string, so
+  // StringCases[{"aba", "cd"}, "a"] is {{"a", "a"}, {}} rather than a single
+  // flattened list.
+  if let Expr::List(items) = &args[0] {
+    let mut per_string = Vec::with_capacity(items.len());
+    for item in items.iter() {
+      let mut rest = args.to_vec();
+      rest[0] = item.clone();
+      per_string.push(string_cases_ast(&rest)?);
+    }
+    return Ok(Expr::List(per_string.into()));
   }
   let s = expr_to_str(&args[0])?;
 
@@ -9960,6 +10057,14 @@ pub fn string_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "StringPart expects exactly 2 arguments".into(),
     ));
   }
+  // A list of strings is handled string by string.
+  if let Expr::List(items) = &args[0] {
+    let mut per_string = Vec::with_capacity(items.len());
+    for item in items.iter() {
+      per_string.push(string_part_ast(&[item.clone(), args[1].clone()])?);
+    }
+    return Ok(Expr::List(per_string.into()));
+  }
   let s = expr_to_str(&args[0])?;
   let chars: Vec<char> = s.chars().collect();
   let len = chars.len() as i128;
@@ -10013,6 +10118,16 @@ pub fn string_take_drop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "StringTakeDrop expects exactly 2 arguments".into(),
     ));
+  }
+  // Each string of a list gets its own {taken, dropped} pair, so
+  // StringTakeDrop[{"ab"}, 1] is {{"a", "b"}} — not the pair of threaded
+  // StringTake / StringDrop results.
+  if let Expr::List(items) = &args[0] {
+    let mut per_string = Vec::with_capacity(items.len());
+    for item in items.iter() {
+      per_string.push(string_take_drop_ast(&[item.clone(), args[1].clone()])?);
+    }
+    return Ok(Expr::List(per_string.into()));
   }
   let taken = string_take_ast(args)?;
   let dropped = string_drop_ast(args)?;

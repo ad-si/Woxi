@@ -12460,3 +12460,226 @@ mod date_pattern {
     );
   }
 }
+
+// The String* family refuses a first argument that is not a string (or a list
+// of strings, where it threads) instead of coercing it to its printed form.
+// Regression: StringDelete[foo, "a"] returned "foo", StringRotateLeft[foo, 1]
+// returned "oof", and StringRiffle[foo] aborted the whole evaluation.
+mod string_subject_conformance {
+  use super::*;
+
+  /// Every call is left unevaluated (echoed as `shown`, with strings
+  /// unquoted like every other echo) with `<name>::<tag>` reported.
+  fn refuses(call: &str, shown: &str, expected_message: &str) {
+    clear_state();
+    assert_eq!(interpret(call).unwrap(), shown, "for {call}");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(expected_message)),
+      "for {call}: got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn threading_functions_report_strse() {
+    for (call, shown) in [
+      ("StringTrim[foo]", "StringTrim[foo]"),
+      ("StringCases[foo, \"a\"]", "StringCases[foo, a]"),
+      ("StringCount[foo, \"a\"]", "StringCount[foo, a]"),
+      ("StringDelete[foo, \"a\"]", "StringDelete[foo, a]"),
+      ("StringInsert[foo, \"x\", 1]", "StringInsert[foo, x, 1]"),
+      ("StringPadLeft[foo, 3]", "StringPadLeft[foo, 3]"),
+      ("StringPadRight[foo, 3]", "StringPadRight[foo, 3]"),
+      ("StringPart[foo, 1]", "StringPart[foo, 1]"),
+      ("StringPosition[foo, \"a\"]", "StringPosition[foo, a]"),
+      (
+        "StringReplaceList[foo, \"a\" -> \"b\"]",
+        "StringReplaceList[foo, a -> b]",
+      ),
+      ("StringTakeDrop[foo, 1]", "StringTakeDrop[foo, 1]"),
+      ("StringFreeQ[foo, \"a\"]", "StringFreeQ[foo, a]"),
+      ("StringMatchQ[foo, \"a\"]", "StringMatchQ[foo, a]"),
+      ("StringStartsQ[foo, \"a\"]", "StringStartsQ[foo, a]"),
+      ("StringEndsQ[foo, \"a\"]", "StringEndsQ[foo, a]"),
+      ("StringContainsQ[foo, \"a\"]", "StringContainsQ[foo, a]"),
+    ] {
+      let name = call.split('[').next().unwrap();
+      refuses(
+        call,
+        shown,
+        &format!(
+          "{name}::strse: A string or list of strings is expected at \
+           position 1 in {shown}."
+        ),
+      );
+    }
+  }
+
+  #[test]
+  fn single_string_functions_report_string() {
+    for (call, shown) in [
+      ("StringRotateLeft[foo, 1]", "StringRotateLeft[foo, 1]"),
+      ("StringRotateRight[foo, 1]", "StringRotateRight[foo, 1]"),
+      (
+        "StringReplacePart[foo, \"x\", {1, 2}]",
+        "StringReplacePart[foo, x, {1, 2}]",
+      ),
+      ("StringPartition[foo, 2]", "StringPartition[foo, 2]"),
+      ("StringRepeat[foo, 2]", "StringRepeat[foo, 2]"),
+      ("StringToByteArray[foo]", "StringToByteArray[foo]"),
+    ] {
+      let name = call.split('[').next().unwrap();
+      refuses(
+        call,
+        shown,
+        &format!("{name}::string: String expected at position 1 in {shown}."),
+      );
+    }
+  }
+
+  // These take a single string, so a list of strings is refused as well.
+  #[test]
+  fn single_string_functions_refuse_lists() {
+    refuses(
+      "StringPartition[{\"abcd\"}, 2]",
+      "StringPartition[{abcd}, 2]",
+      "StringPartition::string: String expected at position 1 in \
+       StringPartition[{abcd}, 2].",
+    );
+    refuses(
+      "StringRotateLeft[{\"abc\"}, 1]",
+      "StringRotateLeft[{abc}, 1]",
+      "StringRotateLeft::string: String expected at position 1 in \
+       StringRotateLeft[{abc}, 1].",
+    );
+    refuses(
+      "StringReplacePart[{\"abcd\"}, \"x\", {2, 3}]",
+      "StringReplacePart[{abcd}, x, {2, 3}]",
+      "StringReplacePart::string: String expected at position 1 in \
+       StringReplacePart[{abcd}, x, {2, 3}].",
+    );
+    refuses(
+      "StringRepeat[{\"a\"}, 2]",
+      "StringRepeat[{a}, 2]",
+      "StringRepeat::string: String expected at position 1 in \
+       StringRepeat[{a}, 2].",
+    );
+  }
+
+  // A number is not a string either.
+  #[test]
+  fn numbers_are_refused() {
+    refuses(
+      "StringLength[123]",
+      "StringLength[123]",
+      "StringLength::string: String expected at position 1 in \
+       StringLength[123].",
+    );
+    refuses(
+      "StringTake[123, 1]",
+      "StringTake[123, 1]",
+      "StringTake::strse: A string or list of strings is expected at \
+       position 1 in StringTake[123, 1].",
+    );
+    refuses(
+      "StringRotateLeft[123, 1]",
+      "StringRotateLeft[123, 1]",
+      "StringRotateLeft::string: String expected at position 1 in \
+       StringRotateLeft[123, 1].",
+    );
+    refuses(
+      "StringPartition[123, 2]",
+      "StringPartition[123, 2]",
+      "StringPartition::string: String expected at position 1 in \
+       StringPartition[123, 2].",
+    );
+  }
+
+  // StringRiffle wants a list; a symbol used to abort the whole evaluation
+  // with an interpreter error instead of reporting StringRiffle::list.
+  #[test]
+  fn string_riffle_reports_list() {
+    refuses(
+      "StringRiffle[foo]",
+      "StringRiffle[foo]",
+      "StringRiffle::list: List expected at position 1 in StringRiffle[foo].",
+    );
+    refuses(
+      "StringRiffle[foo, \",\"]",
+      "StringRiffle[foo, ,]",
+      "StringRiffle::list: List expected at position 1 in \
+       StringRiffle[foo, ,].",
+    );
+    // A list of non-strings is fine — its parts are converted.
+    assert_eq!(interpret("StringRiffle[{1, 2}]").unwrap(), "1 2");
+  }
+
+  // ToUpperCase, ToLowerCase and Characters stay unevaluated without a
+  // message, like wolframscript.
+  #[test]
+  fn case_functions_are_silent() {
+    clear_state();
+    assert_eq!(interpret("ToUpperCase[foo]").unwrap(), "ToUpperCase[foo]");
+    assert_eq!(interpret("ToLowerCase[foo]").unwrap(), "ToLowerCase[foo]");
+    assert_eq!(interpret("Characters[foo]").unwrap(), "Characters[foo]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(msgs.is_empty(), "got {msgs:?}");
+  }
+}
+
+// A list of strings is handled string by string, giving one result per string.
+mod string_list_threading {
+  use super::*;
+
+  #[test]
+  fn string_cases_nests_per_string() {
+    // Regression: the matches of every string used to be returned in a single
+    // flat list, losing which string they came from.
+    assert_eq!(
+      interpret("StringCases[{\"aba\", \"cd\"}, \"a\"]").unwrap(),
+      "{{a, a}, {}}"
+    );
+    assert_eq!(
+      interpret("StringCases[{\"aba\"}, \"a\" -> \"x\"]").unwrap(),
+      "{{x, x}}"
+    );
+    assert_eq!(
+      interpret("StringCases[{\"a1\", \"b2\"}, DigitCharacter]").unwrap(),
+      "{{1}, {2}}"
+    );
+    assert_eq!(
+      interpret("StringCases[{\"aba\", \"cd\"}, RegularExpression[\"a\"]]")
+        .unwrap(),
+      "{{a, a}, {}}"
+    );
+    // A single string still gives a flat list of matches.
+    assert_eq!(
+      interpret("StringCases[\"hello world\", WordCharacter ..]").unwrap(),
+      "{hello, world}"
+    );
+  }
+
+  #[test]
+  fn string_part_and_take_drop_thread() {
+    assert_eq!(interpret("StringPart[{\"ab\"}, 1]").unwrap(), "{a}");
+    assert_eq!(interpret("StringPart[\"abc\", {1, 2}]").unwrap(), "{a, b}");
+    // Each string gets its own {taken, dropped} pair.
+    assert_eq!(
+      interpret("StringTakeDrop[{\"ab\"}, 1]").unwrap(),
+      "{{a, b}}"
+    );
+    assert_eq!(interpret("StringTakeDrop[\"ab\", 1]").unwrap(), "{a, b}");
+  }
+
+  #[test]
+  fn string_replace_list_threads() {
+    assert_eq!(
+      interpret("StringReplaceList[{\"ab\"}, \"a\" -> \"b\"]").unwrap(),
+      "{{bb}}"
+    );
+    assert_eq!(
+      interpret("StringReplaceList[\"aa\", \"a\" -> \"b\"]").unwrap(),
+      "{ba, ab}"
+    );
+  }
+}
