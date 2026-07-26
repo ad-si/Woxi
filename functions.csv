@@ -74,7 +74,7 @@ Entity,Symbolic representation of a real-world entity,✅,pure,10.0,76
 Sum,Computes a sum over a range,✅,pure,1.0,77
 HoldComplete,Holds arguments completely unevaluated,✅,pure,3.0,78
 Word,Symbol representing a word in string patterns,✅,none,2.0,79
-First,Returns the first element of a list,✅,pure,1.0,80
+First,Returns the first element of a list or the given default which is only evaluated when used,✅,pure,1.0,80
 Clear,Clears values and definitions of symbols but preserves attributes,✅,stateful,1.0,82
 Flatten,Flattens nested lists,✅,pure,1.0,83
 Element,Test or assert membership of an expression in a mathematical domain,✅,pure,4.0,84
@@ -132,7 +132,7 @@ Or,Checks if at least one condition is true,✅,pure,1.0,136
 BaseStyle,Option specifying the base style for elements in a graphic or other output,✅,none,6.0,137
 Dynamic,Dynamic display wrapper (stays symbolic in script mode),✅,unevaluated,6.0,138
 Not,Logical negation of an expression,✅,pure,1.0,139
-Last,Returns the last element of a list,✅,pure,1.0,140
+Last,Returns the last element of a list or the given default which is only evaluated when used,✅,pure,1.0,140
 AdministrativeDivisionData,,🚫,,10.0,141
 Increment,Increments a variable by 1 and returns the old value,✅,stateful,1.0,142
 Im,Returns the imaginary part of a complex number,✅,pure,1.0,143
@@ -349,7 +349,7 @@ ContourPlot3D,Placeholder 3D contour plot returning a Graphics3D shell,✅,pure,
 Catch,Catches a value thrown by Throw; the form is matched as a pattern and the 3-arg form applies f to the value and tag,✅,pure,1.0,353
 InputForm,Converts expression to input form,✅,pure,1.0,354
 Sow,Sows an expression for collection by Reap,✅,stateful,5.0,355
-Switch,Evaluates an expression and matches it against patterns,✅,pure,1.0,356
+Switch,Evaluates an expression and matches it against each pattern in turn — patterns after the match are never evaluated,✅,pure,1.0,356
 Export,Exports data to a file,✅,effectful,4.0,357
 Cot,Returns the cotangent,✅,pure,1.0,358
 PlotRangePadding,Option for specifying padding around plot ranges,✅,pure,6.0,359
@@ -675,7 +675,7 @@ SeriesCoefficient,Extract the nth coefficient from a power series,✅,pure,3.0,6
 BoxData,,🚫,,8.0,681
 FilterRules,Filters a list of rules by allowed keys,✅,pure,6.0,682
 Apart,Decomposes a rational expression into partial fractions,✅,pure,1.0,683
-Attributes,Returns the attributes of a symbol,✅,pure,1.0,684
+Attributes,Returns the attributes of a symbol or of each symbol in a list,✅,pure,1.0,684
 CellBaseline,Option for cell baseline alignment,✅,none,3.0,685
 AnimationRunning,Option controlling whether an animation is running,✅,none,6.0,686
 SelectedNotebook,Return the currently selected notebook,✅,none,3.0,687

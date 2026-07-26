@@ -32,11 +32,14 @@ pub fn switch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let rest = &args[1..];
   let mut i = 0;
   while i + 1 < rest.len() {
-    let pattern = &rest[i];
+    // Every candidate is evaluated as it is tried — `Switch[2, 1 + 1, "two"]`
+    // gives "two" — while the ones after the match are never touched. Patterns
+    // proper (`_Integer`, `x_ /; x > 1`, …) evaluate to themselves.
+    let pattern = evaluate_expr_to_expr(&rest[i])?;
     let value = &rest[i + 1];
 
     // Check if pattern matches
-    if pattern_matches(&test, pattern, &test_str) {
+    if pattern_matches(&test, &pattern, &test_str) {
       return evaluate_expr_to_expr(value);
     }
     i += 2;

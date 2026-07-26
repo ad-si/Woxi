@@ -1525,3 +1525,149 @@ mod parts_of_held_expressions {
     assert_eq!(interpret("First[{Hold[1 + 1]}]").unwrap(), "Hold[1 + 1]");
   }
 }
+
+// The reported attributes of the built-ins, and the behaviour that follows from
+// them.
+mod builtin_attribute_table {
+  use super::*;
+
+  #[test]
+  fn hold_attributes_match_wolframscript() {
+    // Switch evaluates its first argument and holds the rest.
+    assert_eq!(
+      interpret("Attributes[Switch]").unwrap(),
+      "{HoldRest, Protected}"
+    );
+    // Sum and Product hold their body and iterator.
+    assert_eq!(
+      interpret("Attributes[Sum]").unwrap(),
+      "{HoldAll, Protected, ReadProtected}"
+    );
+    assert_eq!(
+      interpret("Attributes[Product]").unwrap(),
+      "{HoldAll, Protected, ReadProtected}"
+    );
+    // First and Last hold their default.
+    assert_eq!(
+      interpret("Attributes[First]").unwrap(),
+      "{HoldRest, Protected}"
+    );
+    assert_eq!(
+      interpret("Attributes[Last]").unwrap(),
+      "{HoldRest, Protected}"
+    );
+    // Catch holds only the expression; Throw holds nothing.
+    assert_eq!(
+      interpret("Attributes[Catch]").unwrap(),
+      "{HoldFirst, Protected}"
+    );
+    assert_eq!(interpret("Attributes[Throw]").unwrap(), "{Protected}");
+    assert_eq!(
+      interpret("Attributes[Pattern]").unwrap(),
+      "{HoldFirst, Protected}"
+    );
+    assert_eq!(
+      interpret("Attributes[SetAttributes]").unwrap(),
+      "{HoldFirst, Protected}"
+    );
+    assert_eq!(
+      interpret("Attributes[Association]").unwrap(),
+      "{HoldAllComplete, Protected}"
+    );
+  }
+
+  #[test]
+  fn structural_attributes_match_wolframscript() {
+    assert_eq!(
+      interpret("Attributes[Join]").unwrap(),
+      "{Flat, OneIdentity, Protected}"
+    );
+    assert_eq!(
+      interpret("Attributes[StringJoin]").unwrap(),
+      "{Flat, OneIdentity, Protected}"
+    );
+    assert_eq!(
+      interpret("Attributes[Union]").unwrap(),
+      "{Flat, OneIdentity, Protected, ReadProtected}"
+    );
+    assert_eq!(
+      interpret("Attributes[Intersection]").unwrap(),
+      "{Flat, OneIdentity, Protected, ReadProtected}"
+    );
+    assert_eq!(
+      interpret("Attributes[Part]").unwrap(),
+      "{NHoldRest, Protected, ReadProtected}"
+    );
+    assert_eq!(
+      interpret("Attributes[Slot]").unwrap(),
+      "{NHoldAll, Protected}"
+    );
+    // List and Symbol cannot be unprotected at all.
+    assert_eq!(
+      interpret("Attributes[List]").unwrap(),
+      "{Locked, Protected}"
+    );
+    assert_eq!(
+      interpret("Attributes[Symbol]").unwrap(),
+      "{Locked, Protected}"
+    );
+  }
+
+  #[test]
+  fn symbols_that_were_missing_from_the_table() {
+    for sym in [
+      "Sequence",
+      "Insert",
+      "Delete",
+      "Return",
+      "Blank",
+      "Verbatim",
+      "Options",
+      "OptionValue",
+      "Evaluate",
+      "Indeterminate",
+    ] {
+      assert_eq!(
+        interpret(&format!("Attributes[{sym}]")).unwrap(),
+        "{Protected}",
+        "for {sym}"
+      );
+    }
+    assert_eq!(
+      interpret("Attributes[Limit]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+    assert_eq!(
+      interpret("Attributes[Missing]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+
+  // Attributes is Listable: a list of symbols gives one list per symbol.
+  #[test]
+  fn attributes_threads_over_a_list() {
+    assert_eq!(interpret("Attributes[{}]").unwrap(), "{}");
+    assert_eq!(
+      interpret("Attributes[{Plus, Hold}]").unwrap(),
+      "{{Flat, Listable, NumericFunction, OneIdentity, Orderless, Protected}, \
+       {HoldAll, Protected}}"
+    );
+  }
+
+  // First and Last only evaluate their default when they use it, and then they
+  // do evaluate it.
+  #[test]
+  fn the_default_is_evaluated_only_when_used() {
+    assert_eq!(interpret("First[{}, 2 + 2]").unwrap(), "4");
+    assert_eq!(interpret("Last[{}, 2 + 2]").unwrap(), "4");
+    assert_eq!(interpret("First[{1, 2}, 99]").unwrap(), "1");
+    assert_eq!(interpret("Last[{1, 2}, 99]").unwrap(), "2");
+    // The unused default is never evaluated, so nothing is printed here —
+    // while a used one is.
+    let unused =
+      interpret_with_stdout("First[{1, 2}, Print[\"unused\"]]").unwrap();
+    assert!(!unused.stdout.contains("unused"), "got {unused:?}");
+    let used = interpret_with_stdout("First[{}, Print[\"used\"]]").unwrap();
+    assert!(used.stdout.contains("used"), "got {used:?}");
+  }
+}

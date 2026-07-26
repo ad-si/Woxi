@@ -214,10 +214,10 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     // HoldAll + Protected
     "Hold" | "HoldForm" | "HoldPattern" | "Table" | "Do" | "While" | "For"
     | "Module" | "Block" | "With" | "Assuming" | "Trace" | "TraceScan"
-    | "Defer" | "Compile" | "CompoundExpression" | "Switch" | "Which"
-    | "Catch" | "Throw" | "Clear" | "ClearAll" | "Condition" | "Off" | "On"
+    | "Defer" | "Compile" | "Which"
+    | "Clear" | "ClearAll" | "Condition" | "Off" | "On"
     | "TimeConstrained" | "MemoryConstrained" | "TagUnset" | "NProduct"
-    | "Definition" | "FullDefinition" | "Attributes" | "Quiet" | "Assert"
+    | "Definition" | "FullDefinition" | "Quiet" | "Assert"
     | "OwnValues" | "DownValues" | "SubValues" | "UpValues"
     | "DefaultValues" | "FormatValues" | "NValues" | "Messages"
     // FindRoot holds its iterator `{var, x0}` so the variable name doesn't
@@ -344,6 +344,39 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     // Listable + NHoldFirst + Protected
     "In" | "Out" => vec!["Listable", "NHoldFirst", "Protected"],
 
+    // Locked + Protected (matches wolframscript: these symbols cannot be
+    // unprotected).
+    "List" | "Symbol" => vec!["Locked", "Protected"],
+    // HoldAll + Protected + ReadProtected. Sum and Product hold their body
+    // and iterator so the iteration variable is not substituted by an
+    // OwnValue before the sum starts.
+    "Sum" | "Product" | "CompoundExpression" => {
+      vec!["HoldAll", "Protected", "ReadProtected"]
+    }
+    // HoldRest + Protected. Switch evaluates its first argument and then
+    // each pattern in turn; First and Last hold their default so it is only
+    // evaluated when there is no element to return.
+    "Switch" | "First" | "Last" => vec!["HoldRest", "Protected"],
+    // HoldFirst + Protected
+    "Catch" | "Pattern" | "SetAttributes" => vec!["HoldFirst", "Protected"],
+    "Attributes" => vec!["HoldAll", "Listable", "Protected"],
+    "ToExpression" => vec!["Listable", "Protected"],
+    // Flat + OneIdentity + Protected
+    "Join" | "StringJoin" => vec!["Flat", "OneIdentity", "Protected"],
+    "Union" | "Intersection" => {
+      vec!["Flat", "OneIdentity", "Protected", "ReadProtected"]
+    }
+    "Association" => vec!["HoldAllComplete", "Protected"],
+    "Part" => vec!["NHoldRest", "Protected", "ReadProtected"],
+    "Slot" => vec!["NHoldAll", "Protected"],
+    // Protected + ReadProtected
+    "D" | "Limit" | "Mean" | "Median" | "Variance" | "Missing" => {
+      vec!["Protected", "ReadProtected"]
+    }
+    // Protected only — these were missing from the table entirely.
+    "Sequence" | "Insert" | "Delete" | "Return" | "Throw" | "Blank"
+    | "Verbatim" | "Options" | "OptionValue" | "Evaluate"
+    | "Indeterminate" => vec!["Protected"],
     // Protected only
     "Map"
     | "Apply"
@@ -352,14 +385,10 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "SortBy"
     | "Reverse"
     | "Flatten"
-    | "Join"
     | "Append"
     | "Prepend"
     | "Take"
     | "Drop"
-    | "Part"
-    | "First"
-    | "Last"
     | "Rest"
     | "Most"
     | "Length"
@@ -398,9 +427,6 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "TreeForm"
     | "Dimensions"
     | "Total"
-    | "Mean"
-    | "Median"
-    | "Variance"
     | "StandardDeviation"
     | "Not"
     | "Nand"
@@ -493,14 +519,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Print"
     | "Echo"
     | "ToString"
-    | "ToExpression"
-    | "List"
-    | "Association"
     | "SubsetQ"
     | "Complement"
-    | "Intersection"
-    | "Union"
-    | "StringJoin"
     | "StringSplit"
     | "StringTake"
     | "StringDrop"
@@ -517,10 +537,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Roots"
     | "Reduce"
     | "Eliminate"
-    | "D"
     | "NIntegrate"
-    | "Sum"
-    | "Product"
     | "Expand"
     | "ExpandAll"
     | "Factor"

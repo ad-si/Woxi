@@ -1241,6 +1241,22 @@ pub fn dispatch_predicate_functions(
     }
     // Attributes[symbol] - returns the attributes of a built-in symbol
     "Attributes" if args.len() == 1 => {
+      // Attributes is Listable: a list of symbols gives one attribute list per
+      // symbol (it holds its argument, so the list is threaded here rather
+      // than by the generic Listable machinery).
+      if let Expr::List(symbols) = &args[0] {
+        let per_symbol: Option<Vec<Expr>> = symbols
+          .iter()
+          .map(|sym| {
+            dispatch_predicate_functions("Attributes", &[sym.clone()])
+              .and_then(|r| r.ok())
+          })
+          .collect();
+        if let Some(lists) = per_symbol {
+          return Some(Ok(Expr::List(lists.into())));
+        }
+        return Some(Ok(unevaluated("Attributes", args)));
+      }
       let sym_name = match &args[0] {
         Expr::Identifier(name) => name.as_str(),
         Expr::Constant(name) => name.as_str(),

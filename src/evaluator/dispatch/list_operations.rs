@@ -1605,6 +1605,21 @@ fn has_join_depth(e: &Expr, level: usize) -> bool {
 /// wrapper that was suppressing evaluation, so `First[Hold[1 + 1]]` is 2.
 /// Results extracted from an ordinary expression are already evaluated, so
 /// they are returned untouched rather than paying for a second traversal.
+/// HoldRest keeps First's / Last's default argument unevaluated, so it is only
+/// computed when there is no element to return (`First[{1, 2}, Print["x"]]`
+/// prints nothing). Once it *is* the answer it has to evaluate.
+fn evaluate_used_default(
+  result: Expr,
+  default: Option<&Expr>,
+) -> Result<Expr, InterpreterError> {
+  let render =
+    |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Input);
+  match default {
+    Some(d) if render(&result) == render(d) => evaluate_expr_to_expr(&result),
+    _ => Ok(result),
+  }
+}
+
 fn evaluate_if_unheld(
   name: &str,
   source: &Expr,
@@ -3227,7 +3242,8 @@ pub fn dispatch_list_operations(
       };
       return Some(
         list_helpers_ast::first_ast(&args[0], default)
-          .and_then(|r| evaluate_if_unheld(name, &args[0], r)),
+          .and_then(|r| evaluate_if_unheld(name, &args[0], r))
+          .and_then(|r| evaluate_used_default(r, default)),
       );
     }
     "Last" if args.len() == 1 || args.len() == 2 => {
@@ -3238,7 +3254,8 @@ pub fn dispatch_list_operations(
       };
       return Some(
         list_helpers_ast::last_ast(&args[0], default)
-          .and_then(|r| evaluate_if_unheld(name, &args[0], r)),
+          .and_then(|r| evaluate_if_unheld(name, &args[0], r))
+          .and_then(|r| evaluate_used_default(r, default)),
       );
     }
     "Rest" if args.len() == 1 => {

@@ -82,7 +82,12 @@ fn evaluate_args_with_hold(
   name: &str,
   args: &[Expr],
 ) -> Result<Vec<Expr>, InterpreterError> {
-  let hold_all_complete = has_hold_attribute(name, "HoldAllComplete");
+  // wolframscript reports HoldAllComplete on Association, but the kernel still
+  // builds the association from evaluated parts (`<|a -> <|b -> 1|>|>` nests a
+  // real association) — the attribute does not suppress evaluation there, so
+  // neither does it here.
+  let hold_all_complete =
+    name != "Association" && has_hold_attribute(name, "HoldAllComplete");
   let hold_all = has_hold_attribute(name, "HoldAll") || hold_all_complete;
   let hold_first = has_hold_attribute(name, "HoldFirst");
   let hold_rest = has_hold_attribute(name, "HoldRest");

@@ -2711,3 +2711,68 @@ mod cases {
     assert_case(r#"Check[1^0, err]"#, r#"1"#);
   }
 }
+
+// Switch evaluates its first argument, then each candidate pattern as it is
+// tried — the ones after the match are never touched.
+mod switch_pattern_evaluation {
+  use super::*;
+
+  #[test]
+  fn candidates_are_evaluated() {
+    // Regression: the patterns were compared unevaluated, so this gave
+    // "other".
+    assert_eq!(
+      interpret("Switch[2, 1 + 1, \"two\", _, \"other\"]").unwrap(),
+      "two"
+    );
+    // And with no catch-all the call used to come back unevaluated.
+    assert_eq!(
+      interpret("Switch[3, 1 + 1, \"two\", 2 + 1, \"three\"]").unwrap(),
+      "three"
+    );
+  }
+
+  #[test]
+  fn patterns_still_match_as_patterns() {
+    assert_eq!(
+      interpret("Switch[2, _Integer, \"int\", _, \"other\"]").unwrap(),
+      "int"
+    );
+    assert_eq!(
+      interpret("Switch[\"s\", _String, \"str\", _, \"other\"]").unwrap(),
+      "str"
+    );
+    assert_eq!(
+      interpret("Switch[2, x_ /; x > 1, \"big\", _, \"small\"]").unwrap(),
+      "big"
+    );
+    assert_eq!(
+      interpret("Switch[3, 1, \"a\", 2, \"b\", _, \"c\"]").unwrap(),
+      "c"
+    );
+  }
+
+  #[test]
+  fn evaluation_stops_at_the_first_match() {
+    // The candidate before the match is evaluated…
+    let hit = interpret_with_stdout("Switch[2, (Print[\"pat1\"]; 2), \"two\"]")
+      .unwrap();
+    assert_eq!(hit.result, "two");
+    assert!(hit.stdout.contains("pat1"), "got {hit:?}");
+    // …the ones after it are not.
+    let miss =
+      interpret_with_stdout("Switch[1, 1, \"a\", (Print[\"pat2\"]; 2), \"b\"]")
+        .unwrap();
+    assert_eq!(miss.result, "a");
+    assert!(!miss.stdout.contains("pat2"), "got {miss:?}");
+  }
+
+  // The subject is evaluated exactly once.
+  #[test]
+  fn the_subject_is_evaluated_once() {
+    let out = interpret_with_stdout("Switch[(Print[\"subj\"]; 2), 2, \"two\"]")
+      .unwrap();
+    assert_eq!(out.result, "two");
+    assert_eq!(out.stdout.matches("subj").count(), 1, "got {out:?}");
+  }
+}
