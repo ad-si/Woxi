@@ -13,3 +13,11 @@ A list of functions sorts by each criterion in turn.
 $ wo 'SortBy[{1, 2, 3, 4}, {Mod[#, 2] &, # &}]'
 {2, 4, 1, 3}
 ```
+
+A third argument orders the criterion values with a comparison function
+instead of canonically.
+
+```scrut
+$ wo 'SortBy[{{1, 2}, {3, 1}, {2, 5}}, Last, Greater]'
+{{2, 5}, {1, 2}, {3, 1}}
+```

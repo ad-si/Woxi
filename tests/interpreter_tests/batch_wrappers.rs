@@ -6492,6 +6492,20 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // ReverseSortBy[list, f, p] reverses the order p puts the keys in.
+  #[test]
+  fn reverse_sort_by_with_ordering_function() {
+    assert_eq!(
+      interpret("ReverseSortBy[{{1, 2}, {3, 1}, {2, 5}}, Last, Greater]")
+        .unwrap(),
+      "{{3, 1}, {1, 2}, {2, 5}}"
+    );
+    assert_eq!(
+      interpret("ReverseSortBy[{1, 2, 3}, Identity, Greater]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
   // CorrelationDistance
   #[test]
   fn correlation_distance_perfect() {

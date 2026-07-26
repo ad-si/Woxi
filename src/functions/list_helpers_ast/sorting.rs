@@ -497,6 +497,74 @@ fn sort_key(func: &Expr, item: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Ordering induced by a user-supplied comparison function. `p[a, b]` giving
+/// True puts `a` first and `p[b, a]` giving True puts `b` first; anything else
+/// (a symbolic, non-Boolean result — `c < a` say) leaves the pair
+/// incomparable, so a stable sort keeps them in their original order.
+pub fn comparator_cmp(p: &Expr, a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  let is_true = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "True");
+  if matches!(apply_func_to_two_args(p, a, b), Ok(ref r) if is_true(r)) {
+    return std::cmp::Ordering::Less;
+  }
+  if matches!(apply_func_to_two_args(p, b, a), Ok(ref r) if is_true(r)) {
+    return std::cmp::Ordering::Greater;
+  }
+  std::cmp::Ordering::Equal
+}
+
+/// `SortBy[list, f, p]` — like [`sort_by_ast`], but the keys `f` produces are
+/// ordered by the comparison function `p` instead of canonically.
+pub fn sort_by_with_ordering_ast(
+  list: &Expr,
+  func: &Expr,
+  p: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // Sort `items` by their keys, returning the reordered items.
+  let ordered = |items: &[Expr],
+                 key_of: &dyn Fn(&Expr) -> &Expr|
+   -> Result<Vec<usize>, InterpreterError> {
+    let keys: Vec<Expr> = items
+      .iter()
+      .map(|i| sort_key(func, key_of(i)))
+      .collect::<Result<_, InterpreterError>>()?;
+    let mut idx: Vec<usize> = (0..items.len()).collect();
+    idx.sort_by(|&a, &b| comparator_cmp(p, &keys[a], &keys[b]));
+    Ok(idx)
+  };
+  match list {
+    Expr::List(items) => {
+      let idx = ordered(items, &|e| e)?;
+      Ok(Expr::List(idx.iter().map(|&i| items[i].clone()).collect()))
+    }
+    Expr::Association(pairs) => {
+      let values: Vec<Expr> = pairs.iter().map(|(_, v)| v.clone()).collect();
+      let idx = ordered(&values, &|e| e)?;
+      Ok(Expr::Association(
+        idx.iter().map(|&i| pairs[i].clone()).collect(),
+      ))
+    }
+    Expr::FunctionCall { name, args } => {
+      let idx = ordered(args, &|e| e)?;
+      Ok(Expr::FunctionCall {
+        name: name.clone(),
+        args: idx.iter().map(|&i| args[i].clone()).collect(),
+      })
+    }
+    other => {
+      if is_atomic_arg(other) {
+        emit_nonatomic_normal_message(
+          "SortBy",
+          &[list.clone(), func.clone(), p.clone()],
+        );
+      }
+      Ok(Expr::FunctionCall {
+        name: "SortBy".to_string(),
+        args: vec![list.clone(), func.clone(), p.clone()].into(),
+      })
+    }
+  }
+}
+
 pub fn sort_by_ast(list: &Expr, func: &Expr) -> Result<Expr, InterpreterError> {
   match list {
     Expr::List(items) => {

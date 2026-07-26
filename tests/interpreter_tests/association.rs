@@ -740,6 +740,36 @@ mod key_sort {
       "<|a -> 1, b -> 2|>"
     );
   }
+
+  // KeySort[assoc, p] orders the keys with the comparison function p.
+  #[test]
+  fn with_ordering_function() {
+    assert_eq!(
+      interpret("KeySort[<|3 -> a, 1 -> b, 2 -> c|>, Greater]").unwrap(),
+      "<|3 -> a, 2 -> c, 1 -> b|>"
+    );
+    assert_eq!(
+      interpret("KeySort[<|3 -> a, 1 -> b, 2 -> c|>, Less]").unwrap(),
+      "<|1 -> b, 2 -> c, 3 -> a|>"
+    );
+    assert_eq!(
+      interpret("KeySort[<|3 -> a, 1 -> b, 2 -> c|>, (#2 < #1 &)]").unwrap(),
+      "<|3 -> a, 2 -> c, 1 -> b|>"
+    );
+    assert_eq!(
+      interpret(
+        r#"KeySort[<|"bb" -> 1, "a" -> 2, "ccc" -> 3|>, StringLength[#1] > StringLength[#2] &]"#
+      )
+      .unwrap(),
+      "<|ccc -> 3, bb -> 1, a -> 2|>"
+    );
+    // Greater does not order strings, so nothing moves.
+    assert_eq!(
+      interpret(r#"KeySort[<|"b" -> 1, "a" -> 2, "c" -> 3|>, Greater]"#)
+        .unwrap(),
+      "<|b -> 1, a -> 2, c -> 3|>"
+    );
+  }
 }
 
 mod key_value_map {

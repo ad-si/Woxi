@@ -429,25 +429,32 @@ pub fn lookup_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// KeySort[assoc] - Sorts an association by its keys
+/// `KeySort[assoc]` orders the entries by key canonically; `KeySort[assoc, p]`
+/// orders them by the comparison function `p` applied to the keys.
 pub fn key_sort_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "KeySort expects exactly 1 argument".into(),
+      "KeySort expects 1 or 2 arguments".into(),
     ));
   }
 
   match &args[0] {
     Expr::Association(items) => {
       let mut sorted = items.clone();
-      sorted.sort_by(|a, b| {
-        let ka = crate::syntax::expr_to_string(&a.0);
-        let kb = crate::syntax::expr_to_string(&b.0);
-        if let (Ok(na), Ok(nb)) = (ka.parse::<f64>(), kb.parse::<f64>()) {
-          na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal)
-        } else {
-          ka.cmp(&kb)
-        }
-      });
+      match args.get(1) {
+        Some(p) => sorted.sort_by(|a, b| {
+          crate::functions::list_helpers_ast::comparator_cmp(p, &a.0, &b.0)
+        }),
+        None => sorted.sort_by(|a, b| {
+          let ka = crate::syntax::expr_to_string(&a.0);
+          let kb = crate::syntax::expr_to_string(&b.0);
+          if let (Ok(na), Ok(nb)) = (ka.parse::<f64>(), kb.parse::<f64>()) {
+            na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal)
+          } else {
+            ka.cmp(&kb)
+          }
+        }),
+      }
       Ok(Expr::Association(sorted))
     }
     _ => Ok(invalid_subject_message(

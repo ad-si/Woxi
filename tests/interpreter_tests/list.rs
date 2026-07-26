@@ -2553,6 +2553,52 @@ mod sort_by {
     );
   }
 
+  // SortBy[list, f, p] orders the keys f produces with the comparison
+  // function p instead of canonically.
+  #[test]
+  fn sort_by_with_ordering_function() {
+    assert_eq!(
+      interpret("SortBy[{{1, 2}, {3, 1}, {2, 5}}, Last, Greater]").unwrap(),
+      "{{2, 5}, {1, 2}, {3, 1}}"
+    );
+    assert_eq!(
+      interpret("SortBy[{1, 2, 3, 4}, Identity, Greater]").unwrap(),
+      "{4, 3, 2, 1}"
+    );
+    assert_eq!(
+      interpret("SortBy[{5, 1, 3}, Identity, Less]").unwrap(),
+      "{1, 3, 5}"
+    );
+    // A pure function works as well as an operator symbol.
+    assert_eq!(
+      interpret("SortBy[{3, 1, 2}, Identity, (#2 < #1 &)]").unwrap(),
+      "{3, 2, 1}"
+    );
+    // Associations sort their entries by the value keys; other heads keep
+    // their head.
+    assert_eq!(
+      interpret(
+        r#"SortBy[<|"a" -> 3, "b" -> 1, "c" -> 2|>, Identity, Greater]"#
+      )
+      .unwrap(),
+      "<|a -> 3, c -> 2, b -> 1|>"
+    );
+    assert_eq!(
+      interpret("SortBy[f[3, 1, 2], Identity, Greater]").unwrap(),
+      "f[3, 2, 1]"
+    );
+    // A comparison that never yields True leaves the order alone.
+    assert_eq!(
+      interpret("SortBy[{1, 2, 3}, Identity, x]").unwrap(),
+      "{1, 2, 3}"
+    );
+    // An atom is still rejected.
+    assert_eq!(
+      interpret("SortBy[5, Identity, Greater]").unwrap(),
+      "SortBy[5, Identity, Greater]"
+    );
+  }
+
   #[test]
   fn sort_by_string_length_tiebreaker() {
     assert_eq!(

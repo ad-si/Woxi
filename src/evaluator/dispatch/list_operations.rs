@@ -2194,6 +2194,13 @@ pub fn dispatch_list_operations(
     "SortBy" if args.len() == 2 => {
       return Some(list_helpers_ast::sort_by_ast(&args[0], &args[1]));
     }
+    // SortBy[list, f, p] — order the keys f produces with the comparison
+    // function p rather than canonically.
+    "SortBy" if args.len() == 3 => {
+      return Some(list_helpers_ast::sort_by_with_ordering_ast(
+        &args[0], &args[1], &args[2],
+      ));
+    }
     "Ordering" if !args.is_empty() && args.len() <= 3 => {
       return Some(list_helpers_ast::ordering_ast(args));
     }
@@ -6568,12 +6575,17 @@ pub fn dispatch_list_operations(
       )));
     }
     // ReverseSortBy[list, f] — sort list in reverse order by applying f
-    "ReverseSortBy" if args.len() == 2 => {
+    "ReverseSortBy" if args.len() == 2 || args.len() == 3 => {
       // ReverseSortBy[list, f] == Reverse[SortBy[list, f]] — this reuses
       // SortBy's stable, canonical, multi-criteria-aware key sorting (a list
       // of functions sorts by each in turn) and reverses the whole result, so
       // ties are reversed too (matching wolframscript).
-      let sorted = list_helpers_ast::sort_by_ast(&args[0], &args[1]);
+      let sorted = match args.get(2) {
+        Some(p) => {
+          list_helpers_ast::sort_by_with_ordering_ast(&args[0], &args[1], p)
+        }
+        None => list_helpers_ast::sort_by_ast(&args[0], &args[1]),
+      };
       return Some(sorted.map(|s| {
         if let Expr::List(items) = &s {
           Expr::List(items.iter().rev().cloned().collect::<Vec<_>>().into())

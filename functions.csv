@@ -398,7 +398,7 @@ Count,Counts occurrences of a pattern in a list,✅,pure,1.0,401
 Lighter,Makes a color lighter,✅,pure,6.0,402
 PolarPlot,Creates a polar plot of a function,✅,pure,6.0,403
 TrueQ,Returns True only for the symbol True,✅,pure,1.0,404
-SortBy,Sorts a list using a function as a criterion,✅,pure,6.0,405
+SortBy,Sorts a list by a criterion function or a list of them; an optional third argument orders the criterion values,✅,pure,6.0,405
 RegionPlot,Creates a plot of a region satisfying inequalities,✅,pure,6.0,406
 Unevaluated,Wrapper that prevents evaluation of its argument,✅,pure,2.0,407
 ZIPCodeData,,🚫,,10.0,408
@@ -1665,7 +1665,7 @@ MinValue,Global symbolic minimum value of a function over variables with optiona
 Exit,Terminates the kernel session with optional exit code,✅,effectful,1.0,1692
 SubPlus,Subscript plus notation,✅,none,6.0,1692
 Extension,Extension option,,unevaluated,3.0,1693
-KeySort,Sorts an association by its keys,✅,pure,10.0,1694
+KeySort,Sorts an association by its keys canonically or with a given ordering function,✅,pure,10.0,1694
 WeightedAdjacencyGraph,Graph from a weight matrix (Infinity marks absent edges),✅,pure,8.0,1695
 CellFrame,Cell frame option,,unevaluated,3.0,1696
 Compiled,Compiled option,,unevaluated,2.0,1697
@@ -3137,7 +3137,7 @@ HalfSpace,Unbounded half-space region consumed by RegionMember/RegionDistance/Re
 NegativeMultinomialDistribution,Multivariate discrete distribution counting failures of k types before n successes,✅,none,8.0,3215
 NumeratorDenominator,Gives the numerator and denominator as a pair,✅,pure,12.0,3215
 ResourceSearch,,🚫,,11.0,3215
-ReverseSortBy,Sort in reverse order by a function,✅,none,12.0,3215
+ReverseSortBy,Sorts in reverse order by a criterion function with an optional ordering function,✅,pure,12.0,3215
 RunThrough,Symbol for running external commands,✅,effectful,1.0,3215
 UsingFrontEnd,,🚫,,7.0,3215
 ZeroTest,Option for testing zero equivalence,✅,pure,1.0,3215
