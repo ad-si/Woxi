@@ -3,6 +3,7 @@ use super::*;
 use crate::InterpreterError;
 use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 use num_bigint::BigInt;
+use num_traits::{Signed, Zero};
 
 /// Helper - constants are kept symbolic, no direct f64 conversion in expr_to_num.
 pub fn constant_to_f64(_name: &str) -> Option<f64> {
@@ -562,7 +563,7 @@ pub fn expr_to_bigint(e: &Expr) -> Option<BigInt> {
 /// `num.to_f64() / den.to_f64()` would compute `inf / inf = NaN` there.
 /// Returns None when `den` is zero.
 fn big_rational_to_f64(num: &BigInt, den: &BigInt) -> Option<f64> {
-  use num_traits::{Signed, ToPrimitive, Zero};
+  use num_traits::ToPrimitive;
   if den.is_zero() {
     return None;
   }
@@ -734,7 +735,6 @@ pub fn lcm_i128(a: i128, b: i128) -> i128 {
 
 /// Compute the (non-negative) GCD of two BigInts.
 pub fn gcd_bigint(a: &BigInt, b: &BigInt) -> BigInt {
-  use num_traits::{Signed, Zero};
   let (mut a, mut b) = (a.abs(), b.abs());
   while !b.is_zero() {
     let r = &a % &b;
@@ -748,6 +748,15 @@ pub fn rat_reduce(n: i128, d: i128) -> (i128, i128) {
   let g = gcd_i128(n, d).max(1);
   let (n, d) = (n / g, d / g);
   if d < 0 { (-n, -d) } else { (n, d) }
+}
+
+pub fn rat_reduce_bigint(n: &BigInt, d: &BigInt) -> (BigInt, BigInt) {
+  let mut g = gcd_bigint(n, d);
+  if g.is_zero() {
+    g = BigInt::from(1);
+  }
+  let (n, d) = (n / &g, d / g);
+  if d.is_negative() { (-n, -d) } else { (n, d) }
 }
 
 /// Extract the largest easily-found perfect-square factor from a positive

@@ -1292,9 +1292,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       let denom = fact(n - k) * &b_pochhammer * &k_fact;
       // coeff = n! / denom (reduce GCD).
-      let g = gcd_bigint(&n_fact, &denom);
-      let cn = &n_fact / &g;
-      let cd = &denom / &g;
+      let (cn, cd) = rat_reduce_bigint(&n_fact, &denom);
       let z_pow = if k == 0 {
         Expr::Integer(1)
       } else if k == 1 {

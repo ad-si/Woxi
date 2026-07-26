@@ -13,7 +13,7 @@
 //! Real-valued bounds) returns the call unevaluated.
 
 use crate::InterpreterError;
-use crate::functions::math_ast::gcd_bigint;
+use crate::functions::math_ast::rat_reduce_bigint;
 use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
@@ -31,15 +31,7 @@ struct Rat {
 impl Rat {
   fn new(mut n: BigInt, mut d: BigInt) -> Rat {
     debug_assert!(!d.is_zero());
-    if d.is_negative() {
-      n = -n;
-      d = -d;
-    }
-    let g = gcd_bigint(&n, &d);
-    if !g.is_zero() && !g.is_one() {
-      n /= &g;
-      d /= &g;
-    }
+    (n, d) = rat_reduce_bigint(&n, &d);
     Rat { n, d }
   }
 

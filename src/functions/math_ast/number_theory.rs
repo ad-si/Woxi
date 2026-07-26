@@ -428,19 +428,13 @@ fn lcm_bigint(a: BigInt, b: BigInt) -> BigInt {
 /// Reduce numerator/denominator and emit either an Integer (when the
 /// denominator is 1) or a `Rational[p, q]` Expr.
 pub fn make_rational_expr(num: BigInt, den: BigInt) -> Expr {
-  use num_traits::{One, Zero};
+  use num_traits::One;
   if den.is_zero() {
     // Wolfram returns ComplexInfinity for 1/0 — preserve that here so
     // callers see the same surface behaviour.
     return Expr::Identifier("ComplexInfinity".to_string());
   }
-  let g = gcd_bigint(&num, &den);
-  let mut n = num / &g;
-  let mut d = den / g;
-  if d < BigInt::from(0) {
-    n = -n;
-    d = -d;
-  }
+  let (n, d) = rat_reduce_bigint(&num, &den);
   if d.is_one() {
     return bigint_to_expr(n);
   }
@@ -1013,16 +1007,7 @@ pub fn bernoulli_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // pair in BigInt, so large numerators (e.g. BernoulliB[60]) don't overflow
   // i128.
   fn rat_reduce(num: BigInt, den: BigInt) -> (BigInt, BigInt) {
-    let mut g = gcd_bigint(&num, &den);
-    if g.is_zero() {
-      g = BigInt::from(1);
-    }
-    let (num, den) = (num / &g, den / &g);
-    if den < BigInt::from(0) {
-      (-num, -den)
-    } else {
-      (num, den)
-    }
+    rat_reduce_bigint(&num, &den)
   }
   fn rat_add(a: &(BigInt, BigInt), b: &(BigInt, BigInt)) -> (BigInt, BigInt) {
     rat_reduce(&a.0 * &b.1 + &b.0 * &a.1, &a.1 * &b.1)
@@ -1896,23 +1881,16 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Compute as exact rational: sum of 1/k^r for k = 1 to n
   // Use BigInt numerator and denominator
-  let mut num = BigInt::from(0);
-  let mut den = BigInt::from(1);
+  let (mut num, mut den) = (BigInt::from(0), BigInt::from(1));
   if r >= 0 {
     // Standard case: sum of 1/k^r
     for k in 1..=n {
       let k_big = BigInt::from(k);
       let k_pow = num_traits::pow::pow(k_big, r as usize);
       // Add 1/k_pow to num/den: num/den + 1/k_pow = (num*k_pow + den) / (den*k_pow)
-      num = &num * &k_pow + &den;
-      den = &den * &k_pow;
+      (num, den) = (&num * &k_pow + &den, &den * &k_pow);
       // Reduce
-      let g = gcd_bigint(&num, &den);
-      use num_traits::One;
-      if g > BigInt::one() {
-        num /= &g;
-        den /= &g;
-      }
+      (num, den) = rat_reduce_bigint(&num, &den);
     }
   } else {
     // Negative r: sum of k^|r| (each term is an integer, result is integer)
@@ -2181,8 +2159,7 @@ pub fn alternating_harmonic_number_ast(
 
     if let Some(r) = expr_to_i128(&r_expr) {
       // Exact rational alternating sum, mirroring harmonic_number_ast.
-      let mut num = BigInt::from(0);
-      let mut den = BigInt::from(1);
+      let (mut num, mut den) = (BigInt::from(0), BigInt::from(1));
       if r >= 0 {
         for k in 1..=n {
           let k_pow = num_traits::pow::pow(BigInt::from(k), r as usize);
@@ -2191,14 +2168,8 @@ pub fn alternating_harmonic_number_ast(
           } else {
             den.clone()
           };
-          num = &num * &k_pow + signed;
-          den = &den * &k_pow;
-          let g = gcd_bigint(&num, &den);
-          use num_traits::One;
-          if g > BigInt::one() {
-            num /= &g;
-            den /= &g;
-          }
+          (num, den) = (&num * &k_pow + signed, &den * &k_pow);
+          (num, den) = rat_reduce_bigint(&num, &den);
         }
       } else {
         // Negative order: alternating power sum, always an integer.
@@ -9147,17 +9118,12 @@ fn extract_perfect_square_bigint(n: &BigInt) -> (BigInt, BigInt) {
 }
 
 fn bigint_rational_to_expr(num: BigInt, den: BigInt) -> Expr {
-  use num_traits::Zero;
+  use num_traits::One;
   if den.is_zero() {
     return Expr::Identifier("ComplexInfinity".to_string());
   }
-  let g = gcd_bigint(&num, &den);
-  let (mut n, mut d) = (num / &g, den / &g);
-  if d < BigInt::from(0) {
-    n = -n;
-    d = -d;
-  }
-  if d == BigInt::from(1) {
+  let (n, d) = rat_reduce_bigint(&num, &den);
+  if d.is_one() {
     return bigint_to_expr(n);
   }
   Expr::FunctionCall {
