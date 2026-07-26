@@ -13,3 +13,10 @@ $ wo 'ImportString["1,2,3\n4,5,6", "CSV"]'
 - **`"Numeric"`** — if `True`, numeric fields are converted to numbers.
 - **`"HeaderLines"`** — number of header lines to skip (format-dependent).
 - **`"Delimiter"`** — CSV/TSV field delimiter.
+
+An empty field has no value, which is reported as `Missing["NotAvailable"]`:
+
+```scrut
+$ wo 'ImportString["1,,3", "CSV"]'
+{{1, Missing[NotAvailable], 3}}
+```

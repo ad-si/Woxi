@@ -74,8 +74,13 @@ pub fn parse_tsv(content: &str) -> Vec<Vec<String>> {
 /// Auto-convert a string to Integer, Real, or keep as String.
 fn auto_convert(s: &str) -> Expr {
   let trimmed = s.trim();
+  // An empty field has no value at all, which wolframscript reports as
+  // Missing["NotAvailable"] rather than an empty string.
   if trimmed.is_empty() {
-    return Expr::String(s.to_string());
+    return Expr::FunctionCall {
+      name: "Missing".to_string(),
+      args: vec![Expr::String("NotAvailable".to_string())].into(),
+    };
   }
 
   // Try integer

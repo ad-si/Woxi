@@ -1026,6 +1026,17 @@ pub fn dispatch_io_functions(
       {
         return Some(Ok(Expr::String(json)));
       }
+      // "String" is the expression's own text: ExportString[{{1, 2}}, "String"]
+      // is "{{1, 2}}", not the row-per-line layout of "Text".
+      if format_str == "String" {
+        let text = match &args[0] {
+          Expr::String(s) => s.clone(),
+          other => {
+            crate::syntax::format_expr(other, crate::syntax::ExprForm::Output)
+          }
+        };
+        return Some(Ok(Expr::String(text)));
+      }
       // "Text"/"Lines"/"List": a string is emitted verbatim; a list has each
       // element rendered (OutputForm, strings unquoted) on its own line; an
       // atom is rendered directly.
@@ -3282,12 +3293,41 @@ fn io_stream_path(expr: &Expr) -> Option<String> {
 /// with embedded `"` doubled, matching wolframscript; the `"Table"` format
 /// passes `false`, emitting strings verbatim.
 fn csv_cell(expr: &Expr, quote_strings: bool) -> String {
-  match expr {
-    Expr::String(s) if quote_strings => {
-      format!("\"{}\"", s.replace('"', "\"\""))
+  let quoted = |text: String| -> String {
+    if quote_strings {
+      format!("\"{}\"", text.replace('"', "\"\""))
+    } else {
+      text
     }
-    Expr::String(s) => s.clone(),
-    _ => crate::syntax::expr_to_string(expr),
+  };
+  match expr {
+    Expr::String(s) => quoted(s.clone()),
+    // Machine numbers are written bare; a bigger integer is quoted, like
+    // every other non-machine value.
+    Expr::Integer(n) if i64::try_from(*n).is_ok() => n.to_string(),
+    Expr::Real(_) => crate::syntax::expr_to_string(expr),
+    // The booleans are lower-cased and left unquoted.
+    Expr::Identifier(name) if name == "True" || name == "False" => {
+      name.to_lowercase()
+    }
+    // A list is written out; any other compound expression has no CSV
+    // representation and becomes the placeholder `-Head-`.
+    Expr::List(_) => quoted(crate::syntax::expr_to_string(expr)),
+    Expr::FunctionCall { .. }
+    | Expr::BinaryOp { .. }
+    | Expr::UnaryOp { .. }
+    | Expr::Association(_)
+    | Expr::Comparison { .. }
+      if !matches!(expr, Expr::FunctionCall { name, .. } if name == "Rational") =>
+    {
+      let head =
+        crate::functions::predicate_ast::head_ast(std::slice::from_ref(expr))
+          .map(|h| crate::syntax::expr_to_string(&h))
+          .unwrap_or_else(|_| "Expression".to_string());
+      quoted(format!("-{head}-"))
+    }
+    // Symbols, rationals and the other atoms keep their text, quoted.
+    _ => quoted(crate::syntax::expr_to_string(expr)),
   }
 }
 

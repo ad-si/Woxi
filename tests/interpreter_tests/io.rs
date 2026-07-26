@@ -7379,3 +7379,135 @@ mod print_temporary {
     );
   }
 }
+
+// CSV/TSV round-tripping of values that are not strings or machine numbers,
+// and the "String" export format.
+mod csv_cells_and_string_format {
+  use super::*;
+
+  #[test]
+  fn only_machine_numbers_are_written_bare() {
+    // Regression: symbols used to be written unquoted, so they could not be
+    // told from numbers on re-import.
+    assert_eq!(
+      interpret("ExportString[{{a, b}}, \"CSV\"]").unwrap(),
+      "\"a\",\"b\"\n"
+    );
+    assert_eq!(
+      interpret("ExportString[{{a, 1, \"s\"}}, \"CSV\"]").unwrap(),
+      "\"a\",1,\"s\"\n"
+    );
+    assert_eq!(
+      interpret("ExportString[{{a, b}}, \"TSV\"]").unwrap(),
+      "\"a\"\t\"b\"\n"
+    );
+    assert_eq!(
+      interpret("ExportString[{{-1.5}}, \"CSV\"]").unwrap(),
+      "-1.5\n"
+    );
+    assert_eq!(
+      interpret("ExportString[{{Pi}}, \"CSV\"]").unwrap(),
+      "\"Pi\"\n"
+    );
+    assert_eq!(
+      interpret("ExportString[{{1/2}}, \"CSV\"]").unwrap(),
+      "\"1/2\"\n"
+    );
+    // An integer beyond the machine range is quoted like any other value.
+    assert_eq!(
+      interpret("ExportString[{{2^62, 2^63}}, \"CSV\"]").unwrap(),
+      "4611686018427387904,\"9223372036854775808\"\n"
+    );
+  }
+
+  #[test]
+  fn booleans_are_lower_cased() {
+    assert_eq!(
+      interpret("ExportString[{{True, False}}, \"CSV\"]").unwrap(),
+      "true,false\n"
+    );
+    assert_eq!(
+      interpret("ExportString[{{\"a\", True, 2, c}}, \"CSV\"]").unwrap(),
+      "\"a\",true,2,\"c\"\n"
+    );
+  }
+
+  // A list is written out; anything else compound has no CSV representation
+  // and becomes the placeholder -Head-.
+  #[test]
+  fn compound_values_become_a_placeholder() {
+    assert_eq!(
+      interpret("ExportString[{{{1, 2}}}, \"CSV\"]").unwrap(),
+      "\"{1, 2}\"\n"
+    );
+    assert_eq!(
+      interpret("ExportString[{{a + b}}, \"CSV\"]").unwrap(),
+      "\"-Plus-\"\n"
+    );
+    assert_eq!(
+      interpret("ExportString[{{f[1]}}, \"CSV\"]").unwrap(),
+      "\"-f-\"\n"
+    );
+    assert_eq!(
+      interpret("ExportString[{{Sqrt[2]}}, \"CSV\"]").unwrap(),
+      "\"-Power-\"\n"
+    );
+    // Table does no quoting at all.
+    assert_eq!(
+      interpret("ExportString[{{a, b}}, \"Table\"]").unwrap(),
+      "a\tb"
+    );
+  }
+
+  // An empty field has no value, which is Missing["NotAvailable"].
+  #[test]
+  fn empty_fields_import_as_missing() {
+    assert_eq!(
+      interpret("ImportString[\"1,,3\", \"CSV\"]").unwrap(),
+      "{{1, Missing[NotAvailable], 3}}"
+    );
+    assert_eq!(
+      interpret("ImportString[\"1,2,\", \"CSV\"]").unwrap(),
+      "{{1, 2, Missing[NotAvailable]}}"
+    );
+    assert_eq!(
+      interpret("ImportString[\",2,3\", \"CSV\"]").unwrap(),
+      "{{Missing[NotAvailable], 2, 3}}"
+    );
+    assert_eq!(
+      interpret("ImportString[\"1\t\t3\", \"TSV\"]").unwrap(),
+      "{{1, Missing[NotAvailable], 3}}"
+    );
+    // An empty *line* is still an empty row, and full rows are untouched.
+    assert_eq!(
+      interpret("ImportString[\"1 2\n\n3 4\", \"Table\"]").unwrap(),
+      "{{1, 2}, {}, {3, 4}}"
+    );
+    assert_eq!(
+      interpret("ImportString[\"1,2\n3,4\", \"CSV\"]").unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+  }
+
+  // "String" is the expression's own text, unlike "Text" which lays a list
+  // out one element per line.
+  #[test]
+  fn string_export_format() {
+    assert_eq!(
+      interpret("ExportString[\"hello\", \"String\"]").unwrap(),
+      "hello"
+    );
+    assert_eq!(
+      interpret("ExportString[{{1, 2}}, \"String\"]").unwrap(),
+      "{{1, 2}}"
+    );
+    assert_eq!(
+      interpret("ExportString[a + b, \"String\"]").unwrap(),
+      "a + b"
+    );
+    assert_eq!(interpret("ExportString[1.5, \"String\"]").unwrap(), "1.5");
+    assert_eq!(interpret("ExportString[True, \"String\"]").unwrap(), "True");
+    // "Text" still puts each element of a list on its own line.
+    assert_eq!(interpret("ExportString[{1, 2}, \"Text\"]").unwrap(), "1\n2");
+  }
+}

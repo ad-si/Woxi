@@ -776,7 +776,7 @@ Erfc,Returns the complementary error function value,✅,pure,2.0,784
 NSum,Numerical approximation of a sum using polynomial extrapolation,✅,pure,1.0,784
 Legended,Wrapper to attach a legend to a graphic,✅,none,7.0,785
 RotateRight,Rotates list elements to the right,✅,pure,1.0,786
-ExportString,Exports an expression to a string in a given format,✅,pure,4.0,787
+ExportString,Exports an expression to a string in a given format (CSV/TSV/Table/JSON/Lines/Text/String/SVG and image formats),✅,pure,4.0,787
 Quit,Terminates the kernel session with optional exit code,✅,effectful,1.0,788
 BaseForm,Displays numbers in a specified base with subscript notation,✅,pure,1.0,789
 Complexes,Domain of complex numbers,✅,none,4.0,790
@@ -799,7 +799,7 @@ BarLegend,Color bar legend for plots,✅,none,9.0,805
 ExponentialDistribution,Represents an exponential distribution,✅,pure,6.0,806
 MatrixExp,Computes the matrix exponential,✅,pure,2.0,807
 ImageResolution,Option for image resolution in DPI,✅,none,3.0,808
-ImportString,Imports data from a string (CSV/TSV/Table/JSON/Lines/Words/Text formats),✅,pure,4.0,809
+ImportString,Imports data from a string (CSV/TSV/Table/JSON/Lines/Words/Text formats) with empty fields as Missing[NotAvailable],✅,pure,4.0,809
 RandomGraph,Generate a random graph,✅,contextual,8.0,810
 SphericalHarmonicY,Spherical harmonic function Y_l^m(theta phi),✅,pure,1.0,811
 TagSet,Defines an evaluated upvalue assignment associated with a tag symbol,✅,stateful,1.0,812
