@@ -824,6 +824,12 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(r);
   }
+  // A time series keeps its stamps, the root taken value by value.
+  if let Some(r) =
+    crate::functions::timeseries_ast::try_series_arithmetic("Sqrt", args)
+  {
+    return Ok(r);
+  }
   // Strip a top-level Unevaluated wrapper before computing.
   if let Expr::FunctionCall { name, args: u_args } = &args[0]
     && name == "Unevaluated"

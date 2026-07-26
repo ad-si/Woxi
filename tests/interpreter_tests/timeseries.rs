@@ -812,3 +812,168 @@ mod component_time_series_plot {
     assert_eq!(svg_circles("ListPlot[ts -> {\"a\", \"c\"}]"), 6);
   }
 }
+
+mod series_transformations {
+  use super::*;
+
+  const TS: &str = "ts = TimeSeries[{{1, 10}, {2, 20}}]; ";
+
+  #[test]
+  fn time_series_shift_moves_the_stamps() {
+    assert_eq!(
+      interpret(&format!("{TS}TimeSeriesShift[ts, 5][\"Path\"]")).unwrap(),
+      "{{6, 10}, {7, 20}}"
+    );
+    assert_eq!(
+      interpret(&format!("{TS}TimeSeriesShift[ts, -1][\"Times\"]")).unwrap(),
+      "{0, 1}"
+    );
+    assert_eq!(
+      interpret(&format!("{TS}Head[TimeSeriesShift[ts, 5]]")).unwrap(),
+      "TimeSeries"
+    );
+  }
+
+  #[test]
+  fn time_series_map_transforms_the_values() {
+    assert_eq!(
+      interpret(&format!("{TS}TimeSeriesMap[f, ts][\"Path\"]")).unwrap(),
+      "{{1, f[10]}, {2, f[20]}}"
+    );
+    assert_eq!(
+      interpret(&format!("{TS}TimeSeriesMap[# + 1 &, ts][\"Path\"]")).unwrap(),
+      "{{1, 11}, {2, 21}}"
+    );
+  }
+
+  // The values several series share at a time stamp go to the function as a
+  // list.
+  #[test]
+  fn time_series_thread_combines_series() {
+    assert_eq!(
+      interpret(&format!(
+        "{TS}TimeSeriesThread[Total, {{ts, TimeSeries[{{{{1, 1}}, {{2, 2}}}}]}}][\"Path\"]"
+      ))
+      .unwrap(),
+      "{{1, 11}, {2, 22}}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "{TS}TimeSeriesThread[Mean, {{ts, TimeSeries[{{{{1, 20}}, {{2, 40}}}}]}}][\"Path\"]"
+      ))
+      .unwrap(),
+      "{{1, 15}, {2, 30}}"
+    );
+  }
+
+  // Fewer than three stamps are trivially evenly spaced.
+  #[test]
+  fn regularly_sampled_q() {
+    assert_eq!(
+      interpret("RegularlySampledQ[TimeSeries[{{1, 10}, {2, 20}, {3, 30}}]]")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegularlySampledQ[TimeSeries[{{1, 10}, {2, 20}, {4, 40}}]]")
+        .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("RegularlySampledQ[TimeSeries[{{1, 10}}]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn time_series_insert_keeps_the_path_sorted() {
+    assert_eq!(
+      interpret(
+        "TimeSeriesInsert[TimeSeries[{{1, 10}, {3, 30}}], {2, 20}][\"Path\"]"
+      )
+      .unwrap(),
+      "{{1, 10}, {2, 20}, {3, 30}}"
+    );
+  }
+
+  #[test]
+  fn first_and_last_time_and_value_dimensions() {
+    assert_eq!(interpret(&format!("{TS}ts[\"FirstTime\"]")).unwrap(), "1");
+    assert_eq!(interpret(&format!("{TS}ts[\"LastTime\"]")).unwrap(), "2");
+    assert_eq!(
+      interpret(&format!("{TS}ts[\"ValueDimensions\"]")).unwrap(),
+      "1"
+    );
+  }
+
+  // An EventSeries answers the same path queries and survives a map.
+  #[test]
+  fn event_series() {
+    assert_eq!(
+      interpret(r#"EventSeries[{{1, "a"}, {2, "b"}}]["Times"]"#).unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(
+      interpret(r#"EventSeries[{{1, "a"}, {2, "b"}}]["Path"]"#).unwrap(),
+      "{{1, a}, {2, b}}"
+    );
+    assert_eq!(
+      interpret("Head[TimeSeriesMap[# * 2 &, EventSeries[{{1, 10}}]]]")
+        .unwrap(),
+      "EventSeries"
+    );
+  }
+
+  // Arithmetic keeps the time stamps and works on the values.
+  #[test]
+  fn arithmetic_threads_over_the_values() {
+    assert_eq!(
+      interpret(&format!("{TS}Normal[ts + 1]")).unwrap(),
+      "{{1, 11}, {2, 21}}"
+    );
+    assert_eq!(
+      interpret(&format!("{TS}Normal[2*ts]")).unwrap(),
+      "{{1, 20}, {2, 40}}"
+    );
+    assert_eq!(
+      interpret(&format!("{TS}Normal[ts^2]")).unwrap(),
+      "{{1, 100}, {2, 400}}"
+    );
+    assert_eq!(
+      interpret(&format!("{TS}Normal[-ts]")).unwrap(),
+      "{{1, -10}, {2, -20}}"
+    );
+    assert_eq!(
+      interpret(&format!("{TS}Normal[ts/2]")).unwrap(),
+      "{{1, 5}, {2, 10}}"
+    );
+    assert_eq!(
+      interpret("Normal[Sqrt[TimeSeries[{{1, 4}, {2, 9}}]]]").unwrap(),
+      "{{1, 2}, {2, 3}}"
+    );
+  }
+
+  #[test]
+  fn two_series_combine_point_by_point() {
+    assert_eq!(
+      interpret(&format!(
+        "{TS}Normal[ts + TimeSeries[{{{{1, 1}}, {{2, 2}}}}]]"
+      ))
+      .unwrap(),
+      "{{1, 11}, {2, 22}}"
+    );
+  }
+
+  // A moving average over a series is stamped with the last time of each
+  // window.
+  #[test]
+  fn moving_average_over_a_series() {
+    assert_eq!(
+      interpret(
+        "MovingAverage[TimeSeries[{{1, 10}, {2, 20}, {3, 30}}], 2][\"Path\"]"
+      )
+      .unwrap(),
+      "{{2, 15.}, {3, 25.}}"
+    );
+  }
+}

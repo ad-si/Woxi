@@ -2189,7 +2189,7 @@ SimpleGraph,Graph construction,🚫,None,8.0,2229
 Threshold,Replaces array values below a threshold with zero,✅,pure,8.0,2229
 Hexahedron,3D geometric primitive,🚫,None,10.0,2233
 Nand,Logical NAND,✅,pure,4.1,2233
-TimeSeriesShift,Time series manipulation,🚫,None,10.0,2233
+TimeSeriesShift,Shifts every time stamp of a series by a given amount,✅,pure,10.0,2233
 WaitAll,Async parallel computation,🚫,None,7.0,2233
 ClickPane,Clickable pane feeding a handler; renders as an interactive 2D pane,✅,unevaluated,6.0,2236
 DiamondMatrix,Gives the diamond (L1-ball) structuring element for a scalar radius or list of radii (n-D) optionally centred in a grid of a given width,✅,pure,7.0,2236
@@ -2391,7 +2391,7 @@ TakeSmallest,Takes the n smallest elements from a list; supports the operator fo
 ARIMAProcess,time series model,🚫,None,9.0,2442
 ChoiceDialog,,🚫,,6.0,2442
 SystemsModelFeedbackConnect,,🚫,,8.0,2442
-TimeSeriesThread,,🚫,,10.0,2442
+TimeSeriesThread,Applies a function to the values several series share at each time stamp,✅,pure,10.0,2442
 ArithmeticGeometricMean,Arithmetic-geometric mean of two numbers,✅,pure,1.0,2449
 CellLabel,,🚫,,3.0,2449
 Infix,Symbol for infix display formatting,✅,pure,1.0,2449
@@ -2400,7 +2400,7 @@ PreserveImageOptions,,🚫,,6.0,2449
 ReverseSort,Sorts a list in reverse order (on an association sorts pairs descending by value),✅,pure,11.1,2449
 TimeSeriesResample,Resamples a time series at an even step or on a given weekday,✅,pure,10.0,2449
 Antisymmetric,represents the symmetry of a tensor that is antisymmetric in the specified slots,✅,none,9.0,2452
-EventSeries,,🚫,,10.0,2452
+EventSeries,Represents a series of events paired with time stamps,✅,pure,10.0,2452
 UnderscriptBox,a low-level typesetting box representing an expression with an underscript,✅,none,3.0,2452
 Definition,Display the definition of a symbol,✅,pure,1.0,2462
 FindArgMin,Find argument that minimizes a function,✅,none,7.0,2462
@@ -2531,7 +2531,7 @@ FromDMS,Convert degrees-minutes-seconds to decimal degrees,✅,none,7.0,2587
 HermitianMatrixQ,Test whether a matrix is Hermitian,✅,none,6.0,2587
 IntervalMarkers,option for interval markers in plots,✅,Symbolic,12.0,2587
 SetSharedFunction,,🚫,,7.0,2587
-TimeSeriesMap,,🚫,,10.0,2587
+TimeSeriesMap,Applies a function to every value of a series keeping the time stamps,✅,pure,10.0,2587
 WeberE,Weber function E_nu(z); exact closed form (polynomial over Pi minus StruveH) for integer order; numerical quadrature otherwise,✅,pure,7.0,2587
 WignerD,Wigner D-matrix elements for rotation group representations,✅,pure,8.0,2587
 ByteArray,Creates a byte array from a list of unsigned byte values or a Base64-encoded string,✅,pure,10.1,2591
@@ -3581,7 +3581,7 @@ MomentConvert,,,,8.0,3678
 PoissonConsulDistribution,Generalized Consul-Poisson distribution with PDF Mean and Variance,✅,pure,8.0,3678
 SechDistribution,Hyperbolic secant distribution (Sech PDF and ArcTan CDF),✅,pure,8.0,3678
 StartWebSession,,🚫,,12.0,3678
-TimeSeriesInsert,,🚫,,10.0,3678
+TimeSeriesInsert,Inserts a point into a series keeping the path sorted by time,✅,pure,10.0,3678
 TimeSeriesMapThread,,🚫,,10.0,3678
 TransferFunctionZeros,,🚫,,8.0,3678
 UnequalTo,Operator form of Unequal,✅,none,10.4,3678
@@ -3741,7 +3741,7 @@ KirchhoffGraph,Builds the graph with a given Kirchhoff (Laplacian) matrix; symme
 LeveneTest,,,,8.0,3843
 MandelbrotSetDistance,,,,10.0,3843
 MeanClusteringCoefficient,Mean of the local clustering coefficients,✅,pure,9.0,3843
-RegularlySampledQ,,,,10.0,3843
+RegularlySampledQ,Tests whether the time stamps of a series are evenly spaced,✅,pure,10.0,3843
 RelationalDatabase,,🚫,,12.0,3843
 RenameDirectory,Renames a directory returning the absolute destination path,✅,filesystem,2.0,3843
 TriangleMeasurement,Scalar triangle measurements: Area (default) Perimeter Semiperimeter Inradius Circumradius for Triangle or point-list input,✅,pure,12.0,3843

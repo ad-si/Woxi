@@ -1188,7 +1188,7 @@ pub fn apply_curried_call(
     // TimeSeries[…][t] — value lookup at time `t` (a date or number) or, for a
     // string argument, a path-property accessor (e.g. ts["Values"], ts["Path"]).
     Expr::FunctionCall { name, .. }
-      if name == "TimeSeries" && args.len() == 1 =>
+      if (name == "TimeSeries" || name == "EventSeries") && args.len() == 1 =>
     {
       crate::functions::timeseries_ast::apply_time_series(func, &args[0])
     }

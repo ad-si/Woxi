@@ -227,6 +227,245 @@ fn build_pairs_from_temporal(fields: &[Expr]) -> Option<Vec<Expr>> {
   )
 }
 
+/// `MovingAverage[ts, n]` — the mean of each window of `n` values, stamped
+/// with the last time of the window.
+pub fn time_series_moving_average_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let echo = || Ok(unevaluated("MovingAverage", args));
+  let Some(pairs) = series_pairs_of(&args[0]) else {
+    return echo();
+  };
+  let Some(n) = crate::functions::math_ast::expr_to_i128(&args[1]) else {
+    return echo();
+  };
+  if n < 1 || (n as usize) > pairs.len() {
+    return echo();
+  }
+  let n = n as usize;
+  let mut out = Vec::with_capacity(pairs.len() + 1 - n);
+  for window in pairs.windows(n) {
+    let values: Vec<Expr> = window.iter().map(|(_, v)| v.clone()).collect();
+    let mean = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "N".to_string(),
+      args: vec![Expr::FunctionCall {
+        name: "Mean".to_string(),
+        args: vec![Expr::List(values.into())].into(),
+      }]
+      .into(),
+    })?;
+    out.push(Expr::List(vec![window[n - 1].0.clone(), mean].into()));
+  }
+  Ok(rebuild_series(&args[0], out))
+}
+
+/// Arithmetic on a series works on its values and keeps the time stamps:
+/// `ts + 1` shifts every value, `2 ts` scales them, and two series combine
+/// point by point. Returns `None` when no argument is a series.
+pub fn try_series_arithmetic(head: &str, args: &[Expr]) -> Option<Expr> {
+  let series: Vec<Option<Vec<(Expr, Expr)>>> =
+    args.iter().map(series_pairs_of).collect();
+  let first = series.iter().position(|s| s.is_some())?;
+  let base = series[first].as_ref()?;
+  let mut out = Vec::with_capacity(base.len());
+  for (i, (time, _)) in base.iter().enumerate() {
+    let mut point_args = Vec::with_capacity(args.len());
+    for (arg, pairs) in args.iter().zip(series.iter()) {
+      match pairs {
+        Some(p) => point_args.push(p.get(i)?.1.clone()),
+        None => point_args.push(arg.clone()),
+      }
+    }
+    let combined =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: head.to_string(),
+        args: point_args.into(),
+      })
+      .ok()?;
+    out.push(Expr::List(vec![time.clone(), combined].into()));
+  }
+  Some(rebuild_series(&args[first], out))
+}
+
+/// `TimeSeriesShift[ts, dt]` — every time stamp moves by `dt`.
+pub fn time_series_shift_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let echo = || Ok(unevaluated("TimeSeriesShift", args));
+  if args.len() != 2 {
+    return echo();
+  }
+  let Some(pairs) = series_pairs_of(&args[0]) else {
+    return echo();
+  };
+  let mut out = Vec::with_capacity(pairs.len());
+  for (time, value) in pairs {
+    let shifted = arith("Plus", &time, &args[1])?;
+    out.push(Expr::List(vec![shifted, value].into()));
+  }
+  Ok(rebuild_series(&args[0], out))
+}
+
+/// `TimeSeriesMap[f, ts]` — apply `f` to every value, keeping the time stamps.
+pub fn time_series_map_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let echo = || Ok(unevaluated("TimeSeriesMap", args));
+  if args.len() != 2 {
+    return echo();
+  }
+  let Some(pairs) = series_pairs_of(&args[1]) else {
+    return echo();
+  };
+  let mut out = Vec::with_capacity(pairs.len());
+  for (time, value) in pairs {
+    let applied = crate::evaluator::apply_function_to_arg(&args[0], &value)?;
+    out.push(Expr::List(vec![time, applied].into()));
+  }
+  Ok(rebuild_series(&args[1], out))
+}
+
+/// `TimeSeriesThread[f, {ts1, ts2, …}]` — apply `f` to the list of values the
+/// series share at each time stamp.
+pub fn time_series_thread_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let echo = || Ok(unevaluated("TimeSeriesThread", args));
+  if args.len() != 2 {
+    return echo();
+  }
+  let Expr::List(series) = &args[1] else {
+    return echo();
+  };
+  let mut all: Vec<Vec<(Expr, Expr)>> = Vec::with_capacity(series.len());
+  for s in series.iter() {
+    match series_pairs_of(s) {
+      Some(p) => all.push(p),
+      None => return echo(),
+    }
+  }
+  let Some(first) = all.first() else {
+    return echo();
+  };
+  // Only the time stamps every series has take part.
+  let mut out = Vec::new();
+  for (time, _) in first {
+    let key = to_time(time);
+    let mut values = Vec::with_capacity(all.len());
+    for series in &all {
+      let found = series.iter().find(|(t, _)| match (to_time(t), key) {
+        (Some(a), Some(b)) => a == b,
+        _ => {
+          crate::syntax::expr_to_string(t)
+            == crate::syntax::expr_to_string(time)
+        }
+      });
+      match found {
+        Some((_, v)) => values.push(v.clone()),
+        None => break,
+      }
+    }
+    if values.len() != all.len() {
+      continue;
+    }
+    let applied = crate::evaluator::apply_function_to_arg(
+      &args[0],
+      &Expr::List(values.into()),
+    )?;
+    out.push(Expr::List(vec![time.clone(), applied].into()));
+  }
+  Ok(rebuild_series(&series[0], out))
+}
+
+/// `RegularlySampledQ[ts]` — True when the time stamps are evenly spaced.
+/// Fewer than three stamps are trivially even.
+pub fn regularly_sampled_q_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let echo = || Ok(unevaluated("RegularlySampledQ", args));
+  if args.len() != 1 {
+    return echo();
+  }
+  let Some(pairs) = series_pairs_of(&args[0]) else {
+    return echo();
+  };
+  let times: Option<Vec<f64>> = pairs.iter().map(|(t, _)| to_time(t)).collect();
+  let Some(times) = times else { return echo() };
+  if times.len() < 3 {
+    return Ok(crate::syntax::bool_expr(true));
+  }
+  let step = times[1] - times[0];
+  let even = times
+    .windows(2)
+    .all(|w| (w[1] - w[0] - step).abs() <= 1e-9 * step.abs().max(1.0));
+  Ok(crate::syntax::bool_expr(even))
+}
+
+/// `TimeSeriesInsert[ts, {t, v}]` — add a point, keeping the path sorted.
+pub fn time_series_insert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let echo = || Ok(unevaluated("TimeSeriesInsert", args));
+  if args.len() != 2 {
+    return echo();
+  }
+  let Some(pairs) = series_pairs_of(&args[0]) else {
+    return echo();
+  };
+  let Expr::List(point) = &args[1] else {
+    return echo();
+  };
+  if point.len() != 2 {
+    return echo();
+  }
+  let mut all: Vec<(Expr, Expr)> = pairs;
+  all.push((point[0].clone(), point[1].clone()));
+  all.sort_by(|a, b| match (to_time(&a.0), to_time(&b.0)) {
+    (Some(x), Some(y)) => {
+      x.partial_cmp(&y).unwrap_or(std::cmp::Ordering::Equal)
+    }
+    _ => std::cmp::Ordering::Equal,
+  });
+  Ok(rebuild_series(
+    &args[0],
+    all
+      .into_iter()
+      .map(|(t, v)| Expr::List(vec![t, v].into()))
+      .collect(),
+  ))
+}
+
+/// The `{time, value}` pairs of a `TimeSeries` or an `EventSeries`.
+pub fn series_pairs_of(expr: &Expr) -> Option<Vec<(Expr, Expr)>> {
+  if let Some(p) = time_series_pairs(expr) {
+    return Some(p);
+  }
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "EventSeries" || args.len() != 1 {
+    return None;
+  }
+  let Expr::List(items) = &args[0] else {
+    return None;
+  };
+  let mut out = Vec::with_capacity(items.len());
+  for item in items.iter() {
+    match item {
+      Expr::List(kv) if kv.len() == 2 => {
+        out.push((kv[0].clone(), kv[1].clone()))
+      }
+      _ => return None,
+    }
+  }
+  Some(out)
+}
+
+/// Wrap a path in the same head the source series had, so an EventSeries stays
+/// one.
+fn rebuild_series(source: &Expr, path: Vec<Expr>) -> Expr {
+  let head = match source {
+    Expr::FunctionCall { name, .. } if name == "EventSeries" => "EventSeries",
+    _ => "TimeSeries",
+  };
+  Expr::FunctionCall {
+    name: head.to_string(),
+    args: vec![Expr::List(path.into())].into(),
+  }
+}
+
 fn time_series(pairs: Vec<Expr>) -> Expr {
   Expr::FunctionCall {
     name: "TimeSeries".to_string(),
@@ -950,7 +1189,8 @@ pub fn apply_time_series(
       args: vec![arg.clone()],
     })
   };
-  let Some(pairs) = time_series_pairs(ts) else {
+  // An EventSeries answers the same property queries.
+  let Some(pairs) = series_pairs_of(ts) else {
     return unevaluated();
   };
 
@@ -1027,6 +1267,19 @@ fn apply_property(
     "FirstValue" => Some(pairs.first()?.1.clone()),
     "LastValue" => Some(pairs.last()?.1.clone()),
     "PathLength" => Some(Expr::Integer(pairs.len() as i128)),
+    "FirstTime" | "MinTime" => {
+      let (date, (t, _)) = (&pairs.first()?.0, points.first()?);
+      Some(time_stamp(date, *t))
+    }
+    "LastTime" | "MaxTime" => {
+      let (date, (t, _)) = (&pairs.last()?.0, points.last()?);
+      Some(time_stamp(date, *t))
+    }
+    // The rank of each value: 1 for scalars, the list length for vectors.
+    "ValueDimensions" => match &pairs.first()?.1 {
+      Expr::List(items) => Some(Expr::Integer(items.len() as i128)),
+      _ => Some(Expr::Integer(1)),
+    },
     _ => None,
   }
 }

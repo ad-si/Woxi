@@ -873,6 +873,13 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(result);
   }
 
+  // A time-series operand keeps the series, combining the values.
+  if let Some(result) =
+    crate::functions::timeseries_ast::try_series_arithmetic("Plus", args)
+  {
+    return Ok(result);
+  }
+
   // A SparseArray summand keeps the sum sparse (the background shifts).
   if let Some(result) =
     crate::functions::list_helpers_ast::try_sparse_array_arithmetic(
@@ -6882,6 +6889,13 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // A time-series operand keeps the series, combining the values.
+  if let Some(result) =
+    crate::functions::timeseries_ast::try_series_arithmetic("Times", args)
+  {
+    return Ok(result);
+  }
+
   // A SparseArray factor keeps the product sparse.
   if let Some(result) =
     crate::functions::list_helpers_ast::try_sparse_array_arithmetic(
@@ -8846,6 +8860,14 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // A time-series operand keeps the series, combining the values.
+  if let Some(result) = crate::functions::timeseries_ast::try_series_arithmetic(
+    "Divide",
+    &[a.clone(), b.clone()],
+  ) {
+    return Ok(result);
+  }
+
   // A SparseArray dividend/divisor divides elementwise and stays sparse.
   if let Some(result) =
     crate::functions::list_helpers_ast::try_sparse_array_divide(a, b)
@@ -9644,6 +9666,14 @@ pub fn power_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Helper for Power of two arguments
 pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
+  // A time-series operand keeps the series, combining the values.
+  if let Some(result) = crate::functions::timeseries_ast::try_series_arithmetic(
+    "Power",
+    &[base.clone(), exp.clone()],
+  ) {
+    return Ok(result);
+  }
+
   // A SparseArray base (or exponent) raises elementwise and stays sparse.
   if let Some(result) =
     crate::functions::list_helpers_ast::try_sparse_array_arithmetic(

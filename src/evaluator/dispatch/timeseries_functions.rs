@@ -58,6 +58,31 @@ pub(super) fn dispatch_timeseries_functions(
         },
       ))
     }
+    // EventSeries[{{t, v}, …}] stays inert like TimeSeries; its property
+    // queries are answered by the shared path handler.
+    "EventSeries"
+      if args.len() == 1
+        && timeseries_ast::series_pairs_of(&Expr::FunctionCall {
+          name: "EventSeries".to_string(),
+          args: vec![args[0].clone()].into(),
+        })
+        .is_some() =>
+    {
+      Some(Ok(crate::syntax::unevaluated("EventSeries", args)))
+    }
+    "TimeSeriesShift" => Some(timeseries_ast::time_series_shift_ast(args)),
+    "TimeSeriesMap" => Some(timeseries_ast::time_series_map_ast(args)),
+    "TimeSeriesThread" => Some(timeseries_ast::time_series_thread_ast(args)),
+    "TimeSeriesInsert" => Some(timeseries_ast::time_series_insert_ast(args)),
+    "RegularlySampledQ" => Some(timeseries_ast::regularly_sampled_q_ast(args)),
+    // MovingAverage over a series averages the values and keeps the later
+    // time stamp of each window, the way wolframscript reports it.
+    "MovingAverage"
+      if args.len() == 2
+        && timeseries_ast::series_pairs_of(&args[0]).is_some() =>
+    {
+      Some(timeseries_ast::time_series_moving_average_ast(args))
+    }
     _ => None,
   }
 }

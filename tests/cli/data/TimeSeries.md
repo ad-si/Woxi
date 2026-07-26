@@ -49,3 +49,44 @@ $ wo 'TimeSeriesResample[TimeSeries[{{1, 10}, {3, 30}, {4, 40}}], 1]["Path"]'
 $ wo 'TimeSeriesResample[TimeSeries[{{1, 10}, {2, 15}, {4, 20}}], 1]["Path"]'
 {{1, 10}, {2, 15}, {3, 35/2}, {4, 20}}
 ```
+
+`TimeSeriesShift` moves every time stamp, and `TimeSeriesMap` transforms every
+value:
+
+```scrut
+$ wo 'TimeSeriesShift[TimeSeries[{{1, 10}, {2, 20}}], 5]["Path"]'
+{{6, 10}, {7, 20}}
+```
+
+```scrut
+$ wo 'TimeSeriesMap[# + 1 &, TimeSeries[{{1, 10}, {2, 20}}]]["Path"]'
+{{1, 11}, {2, 21}}
+```
+
+`TimeSeriesThread` hands the function the values the series share at each time
+stamp:
+
+```scrut
+$ wo 'TimeSeriesThread[Total, {TimeSeries[{{1, 10}, {2, 20}}], TimeSeries[{{1, 1}, {2, 2}}]}]["Path"]'
+{{1, 11}, {2, 22}}
+```
+
+`RegularlySampledQ` asks whether the stamps are evenly spaced, and
+`TimeSeriesInsert` keeps the path sorted:
+
+```scrut
+$ wo '{RegularlySampledQ[TimeSeries[{{1, 10}, {2, 20}, {3, 30}}]], RegularlySampledQ[TimeSeries[{{1, 10}, {2, 20}, {4, 40}}]]}'
+{True, False}
+```
+
+```scrut
+$ wo 'TimeSeriesInsert[TimeSeries[{{1, 10}, {3, 30}}], {2, 20}]["Path"]'
+{{1, 10}, {2, 20}, {3, 30}}
+```
+
+Arithmetic keeps the time stamps and works on the values:
+
+```scrut
+$ wo 'Normal[2*TimeSeries[{{1, 10}, {2, 20}}] + 1]'
+{{1, 21}, {2, 41}}
+```
