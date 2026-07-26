@@ -17,7 +17,7 @@ fn unixify(path: String) -> String {
   path.replace("\\", "/")
 }
 
-fn temp_file(file: &str) -> String {
+pub(crate) fn temp_file(file: &str) -> String {
   let tmp = std::env::temp_dir().join(file);
   unixify(tmp.display().to_string())
 }

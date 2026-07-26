@@ -1,4 +1,5 @@
 use super::*;
+use crate::interpreter_tests::io::temp_file;
 
 mod image_core {
   use super::*;
@@ -3298,15 +3299,16 @@ mod image_io {
   #[test]
   fn export_image() {
     clear_state();
-    let result = interpret(
-      "Export[\"/tmp/woxi_test_export.png\", Image[{{0, 0.5, 1}, {1, 0.5, 0}}]]",
-    )
+    let file = temp_file("woxi_test_export.png");
+    let result = interpret(&format!(
+      "Export[\"{file}\", Image[{{{{0, 0.5, 1}}, {{1, 0.5, 0}}}}]]"
+    ))
     .unwrap();
-    assert_eq!(result, "/tmp/woxi_test_export.png");
+    assert_eq!(result, file);
     // Verify file was created
-    assert!(std::path::Path::new("/tmp/woxi_test_export.png").exists());
+    assert!(std::path::Path::new(&file).exists());
     // Clean up
-    std::fs::remove_file("/tmp/woxi_test_export.png").ok();
+    std::fs::remove_file(file).ok();
   }
 
   #[test]
@@ -3329,16 +3331,14 @@ mod image_io {
   #[test]
   fn export_and_reimport() {
     clear_state();
-    let _ = interpret(
-      "Export[\"/tmp/woxi_test_roundtrip.png\", Image[{{0, 0.5, 1}}]]",
-    )
-    .unwrap();
+    let file = temp_file("woxi_test_roundtrip.png");
+    let _ = interpret(&format!("Export[\"{file}\", Image[{{{{0, 0.5, 1}}}}]]"))
+      .unwrap();
     let result =
-      interpret("ImageDimensions[Import[\"/tmp/woxi_test_roundtrip.png\"]]")
-        .unwrap();
+      interpret(&format!("ImageDimensions[Import[\"{file}\"]]")).unwrap();
     assert_eq!(result, "{3, 1}");
     // Clean up
-    std::fs::remove_file("/tmp/woxi_test_roundtrip.png").ok();
+    std::fs::remove_file(file).ok();
   }
 }
 

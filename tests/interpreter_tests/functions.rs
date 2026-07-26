@@ -1,4 +1,5 @@
 use super::*;
+use crate::interpreter_tests::io::temp_file;
 
 mod unique {
   use super::*;
@@ -2871,7 +2872,11 @@ mod file_exists_q {
 
   #[test]
   fn existing_path() {
-    assert_eq!(interpret("FileExistsQ[\"/tmp\"]").unwrap(), "True");
+    let path = temp_file("");
+    assert_eq!(
+      interpret(&format!("FileExistsQ[\"{path}\"]")).unwrap(),
+      "True"
+    );
   }
 
   #[test]
@@ -2996,9 +3001,10 @@ mod delete_file {
 
   #[test]
   fn delete_existing() {
+    let file = temp_file("woxi_test_delete.txt");
     assert_eq!(
       interpret(
-        "WriteString[\"/tmp/test_delete_woxi.txt\", \"hello\"]; DeleteFile[\"/tmp/test_delete_woxi.txt\"]; FileExistsQ[\"/tmp/test_delete_woxi.txt\"]"
+        &format!("WriteString[\"{file}\", \"hello\"]; DeleteFile[\"{file}\"]; FileExistsQ[\"{file}\"]")
       )
       .unwrap(),
       "False"
