@@ -19415,3 +19415,129 @@ mod partition_block_head {
     );
   }
 }
+
+// `Sort[list, p]` and `Ordering[list, n, p]` follow wolframscript's merge
+// order: a pair stays as it is unless `p[a, b]` is a definite False, which
+// swaps it. A plain stable sort cannot express that.
+mod sort_with_ordering_function {
+  use super::*;
+
+  #[test]
+  fn a_definite_false_swaps_the_pair() {
+    // Regression: these used to keep the input order of the tied elements.
+    assert_eq!(
+      interpret("Sort[{-1, 0, 1}, Abs[#1] < Abs[#2] &]").unwrap(),
+      "{0, 1, -1}"
+    );
+    assert_eq!(
+      interpret("Sort[Range[5], Mod[#1, 2] > Mod[#2, 2] &]").unwrap(),
+      "{5, 3, 1, 4, 2}"
+    );
+    assert_eq!(
+      interpret("Sort[Range[6], Mod[#1, 3] < Mod[#2, 3] &]").unwrap(),
+      "{6, 3, 4, 1, 5, 2}"
+    );
+    assert_eq!(interpret("Sort[{1, 2}, #1 === #2 &]").unwrap(), "{2, 1}");
+    assert_eq!(
+      interpret("Sort[{2, 1, 4, 3}, EvenQ[#1] &]").unwrap(),
+      "{2, 4, 3, 1}"
+    );
+    assert_eq!(
+      interpret("Sort[{1, 2, 3, 4}, False &]").unwrap(),
+      "{4, 3, 2, 1}"
+    );
+  }
+
+  #[test]
+  fn a_true_comparison_keeps_the_pair() {
+    assert_eq!(
+      interpret("Sort[{1, 2, 3, 4}, True &]").unwrap(),
+      "{1, 2, 3, 4}"
+    );
+    assert_eq!(interpret("Sort[{a, b, c}, True &]").unwrap(), "{a, b, c}");
+    // `<=` holds for tied keys, so their order is kept.
+    assert_eq!(
+      interpret(
+        "Sort[{{1, \"a\"}, {2, \"x\"}, {1, \"b\"}}, \
+                 #1[[1]] <= #2[[1]] &]"
+      )
+      .unwrap(),
+      "{{1, a}, {1, b}, {2, x}}"
+    );
+    assert_eq!(
+      interpret(
+        "Sort[{\"b\", \"a\", \"c\"}, \
+                 StringLength[#1] <= StringLength[#2] &]"
+      )
+      .unwrap(),
+      "{b, a, c}"
+    );
+  }
+
+  // A symbolic (non-Boolean) comparison leaves the order alone.
+  #[test]
+  fn a_symbolic_comparison_keeps_the_order() {
+    assert_eq!(interpret("Sort[{c, a, b}, Less]").unwrap(), "{c, a, b}");
+    assert_eq!(interpret("Sort[{c, a, b}, Greater]").unwrap(), "{c, a, b}");
+    assert_eq!(interpret("Sort[{3, c, 1}, Less]").unwrap(), "{3, c, 1}");
+    assert_eq!(interpret("Sort[{c, a}, LessEqual]").unwrap(), "{c, a}");
+    // …but a definite False still swaps.
+    assert_eq!(
+      interpret("Sort[{c, a, b}, #1 === #2 &]").unwrap(),
+      "{b, a, c}"
+    );
+  }
+
+  #[test]
+  fn ordinary_comparators_are_unaffected() {
+    assert_eq!(interpret("Sort[{3, 1, 2}, Less]").unwrap(), "{1, 2, 3}");
+    assert_eq!(interpret("Sort[{3, 1, 2}, Greater]").unwrap(), "{3, 2, 1}");
+    assert_eq!(
+      interpret("Sort[{3, 1, 2}, #1 <= #2 &]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("Sort[{5, 3, 9, 3}, #1 > #2 &]").unwrap(),
+      "{9, 5, 3, 3}"
+    );
+    // The default (canonical) Sort and SortBy are stable as before.
+    assert_eq!(interpret("Sort[{3, 1, 2}]").unwrap(), "{1, 2, 3}");
+    assert_eq!(
+      interpret("SortBy[{{1, \"b\"}, {2, \"z\"}, {1, \"a\"}}, First]").unwrap(),
+      "{{1, a}, {1, b}, {2, z}}"
+    );
+  }
+
+  #[test]
+  fn ordering_uses_the_same_order() {
+    assert_eq!(
+      interpret("Ordering[Range[4], All, True &]").unwrap(),
+      "{1, 2, 3, 4}"
+    );
+    assert_eq!(
+      interpret("Ordering[Range[4], All, False &]").unwrap(),
+      "{4, 3, 2, 1}"
+    );
+    assert_eq!(
+      interpret("Ordering[{3, 1, 2}, All, #1 > #2 &]").unwrap(),
+      "{1, 3, 2}"
+    );
+    assert_eq!(
+      interpret("Ordering[{c, a, b}, All, Less]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  // Sorting an association by a comparison function orders its values.
+  #[test]
+  fn associations_use_the_same_order() {
+    assert_eq!(
+      interpret("Sort[<|a -> 1, b -> 2|>, False &]").unwrap(),
+      "<|b -> 2, a -> 1|>"
+    );
+    assert_eq!(
+      interpret("Sort[<|a -> 2, b -> 1|>, Less]").unwrap(),
+      "<|b -> 1, a -> 2|>"
+    );
+  }
+}

@@ -3372,31 +3372,21 @@ pub fn dispatch_list_operations(
       // Sort[assoc, p] - sort the association entries by their values using p,
       // mirroring Sort[assoc] (which orders by value). Keys ride along.
       if let Expr::Association(entries) = &args[0] {
-        let mut sorted = entries.clone();
         let comparator = args[1].clone();
-        let is_true =
-          |e: &Expr| matches!(e, Expr::Identifier(s) if s == "True");
-        let cmp_values = |a: &Expr, b: &Expr| -> std::cmp::Ordering {
-          // Apply the comparator both ways (see the list case below) so
-          // Less/Greater on symbolic values keep the original order.
-          let ab = crate::functions::list_helpers_ast::apply_func_to_two_args(
+        let mut take_left = |a: &(Expr, Expr), b: &(Expr, Expr)| {
+          crate::functions::list_helpers_ast::comparator_keeps_order(
             &comparator,
-            a,
-            b,
-          );
-          if matches!(ab, Ok(ref r) if is_true(r)) {
-            return std::cmp::Ordering::Less;
-          }
-          match crate::functions::list_helpers_ast::apply_func_to_two_args(
-            &comparator,
-            b,
-            a,
-          ) {
-            Ok(ref r) if is_true(r) => std::cmp::Ordering::Greater,
-            _ => std::cmp::Ordering::Equal,
-          }
+            &a.1,
+            &b.1,
+          )
         };
-        sorted.sort_by(|(_, va), (_, vb)| cmp_values(va, vb));
+        let sorted = match crate::functions::list_helpers_ast::wl_ordering_sort(
+          entries,
+          &mut take_left,
+        ) {
+          Ok(v) => v,
+          Err(e) => return Some(Err(e)),
+        };
         return Some(Ok(Expr::Association(sorted)));
       }
       // Sort[list, p] - sort using comparator p
@@ -3408,7 +3398,7 @@ pub fn dispatch_list_operations(
         }
         _ => (None, None),
       };
-      if let Some(mut sorted) = items {
+      if let Some(sorted) = items {
         let wrap = |items: Vec<Expr>| -> Expr {
           match &head_name {
             None => Expr::List(items.into()),
@@ -3420,34 +3410,27 @@ pub fn dispatch_list_operations(
         };
         // Apply the comparator p[a, b] via the normal function-application
         // machinery (so Less/Greater, pure Functions like `#1 > #2 &`,
-        // NamedFunctions and curried calls all work). It is applied both ways
-        // for a consistent ordering: a before b when p[a,b] is True, after when
-        // p[b,a] is True, otherwise incomparable (a symbolic non-Boolean
-        // result, e.g. `c < a`) so the stable sort keeps the original order —
-        // hence Sort[{c, a, b}, Less] is {c, a, b}, not the canonical
-        // {a, b, c}.
+        // NamedFunctions and curried calls all work), through the merge order
+        // wolframscript uses: the pair stays as it is unless p[a, b] is a
+        // definite False. A symbolic non-Boolean result (`c < a`) leaves the
+        // order alone — hence Sort[{c, a, b}, Less] is {c, a, b}, not the
+        // canonical {a, b, c} — while a definite False swaps it.
         let comparator = args[1].clone();
-        let is_true =
-          |e: &Expr| matches!(e, Expr::Identifier(s) if s == "True");
-        sorted.sort_by(|a, b| {
-          let ab = crate::functions::list_helpers_ast::apply_func_to_two_args(
+        let mut take_left = |a: &Expr, b: &Expr| {
+          crate::functions::list_helpers_ast::comparator_keeps_order(
             &comparator,
             a,
             b,
-          );
-          if matches!(ab, Ok(ref r) if is_true(r)) {
-            return std::cmp::Ordering::Less;
-          }
-          match crate::functions::list_helpers_ast::apply_func_to_two_args(
-            &comparator,
-            b,
-            a,
-          ) {
-            Ok(ref r) if is_true(r) => std::cmp::Ordering::Greater,
-            _ => std::cmp::Ordering::Equal,
-          }
-        });
-        return Some(Ok(wrap(sorted.to_vec())));
+          )
+        };
+        let ordered = match crate::functions::list_helpers_ast::wl_ordering_sort(
+          &sorted,
+          &mut take_left,
+        ) {
+          Ok(v) => v,
+          Err(e) => return Some(Err(e)),
+        };
+        return Some(Ok(wrap(ordered)));
       }
     }
     "ReverseSort" if args.len() == 1 || args.len() == 2 => {

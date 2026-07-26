@@ -187,7 +187,7 @@ Partition,Partitions a list into sublists of a given length (with offset padding
 Norm,Returns the norm of a vector or matrix,✅,pure,5.0,191
 BSplineCurve,B-spline curve through control points in Graphics,✅,pure,7.0,192
 PlotPoints,Option for number of sample points in plots,✅,pure,1.0,193
-Sort,Sorts a list in ascending order,✅,pure,1.0,194
+Sort,Sorts a list in ascending order or by an ordering function which leaves a pair alone unless it compares False,✅,pure,1.0,194
 Series,Computes a power series expansion about a point or at Infinity,✅,pure,1.0,195
 Return,Returns a value from a function or control structure,✅,pure,1.0,196
 Appearance,Option symbol for specifying visual appearance,✅,pure,6.0,197
@@ -538,7 +538,7 @@ Complex,Head type for complex numbers,✅,pure,1.0,541
 Delete,Deletes an element at a given position,✅,pure,2.0,542
 JacobiDN,Jacobi elliptic function dn,✅,pure,1.0,543
 JacobiSN,Jacobi elliptic function sn,✅,pure,1.0,544
-Ordering,Returns positions that would sort a list,✅,pure,4.1,545
+Ordering,Returns the positions that would sort a list optionally by an ordering function,✅,pure,4.1,545
 ElementData,Returns properties of chemical elements,✅,pure,6.0,546
 Dividers,Option for dividing lines in Grid,✅,none,6.0,547
 SetPrecision,Sets the precision of a number to a specified number of digits,✅,pure,2.0,548

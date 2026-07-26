@@ -41,3 +41,19 @@ $ wo 'Sort[{10, 5, 15, 5, 20}]'
 $ wo 'Sort[{-10, -5, -15, -20}]'
 {-20, -15, -10, -5}
 ```
+
+With an ordering function a pair is left as it is unless the comparison is a
+definite `False`, which swaps it — so the elements a comparison cannot separate
+come out reversed:
+
+```scrut
+$ wo 'Sort[Range[5], Mod[#1, 2] > Mod[#2, 2] &]'
+{5, 3, 1, 4, 2}
+```
+
+A symbolic comparison leaves the order alone:
+
+```scrut
+$ wo 'Sort[{c, a, b}, Less]'
+{c, a, b}
+```

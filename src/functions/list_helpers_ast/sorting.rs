@@ -791,6 +791,55 @@ fn limit_ordering(
   Some(ordering)
 }
 
+/// Sort with an explicit ordering function the way wolframscript does: a merge
+/// sort whose merge step takes from the left run unless `p[left, right]`
+/// evaluates to exactly `False`.
+///
+/// A definite `False` therefore *swaps* a pair the comparison cannot separate —
+/// `Sort[{1, 2}, #1 === #2 &]` is `{2, 1}` and `Sort[Range[5],
+/// Mod[#1, 2] > Mod[#2, 2] &]` is `{5, 3, 1, 4, 2}` — while a symbolic
+/// (non-Boolean) result keeps the original order, so `Sort[{c, a, b}, Less]` is
+/// unchanged. A plain stable sort cannot express this: it keeps the input order
+/// in both cases.
+pub fn wl_ordering_sort<T: Clone>(
+  items: &[T],
+  take_left: &mut impl FnMut(&T, &T) -> Result<bool, InterpreterError>,
+) -> Result<Vec<T>, InterpreterError> {
+  if items.len() <= 1 {
+    return Ok(items.to_vec());
+  }
+  let mid = items.len() / 2;
+  let left = wl_ordering_sort(&items[..mid], take_left)?;
+  let right = wl_ordering_sort(&items[mid..], take_left)?;
+  let mut out = Vec::with_capacity(items.len());
+  let (mut i, mut j) = (0usize, 0usize);
+  while i < left.len() && j < right.len() {
+    if take_left(&left[i], &right[j])? {
+      out.push(left[i].clone());
+      i += 1;
+    } else {
+      out.push(right[j].clone());
+      j += 1;
+    }
+  }
+  out.extend_from_slice(&left[i..]);
+  out.extend_from_slice(&right[j..]);
+  Ok(out)
+}
+
+/// `p[a, b]` for a sort comparison: `Ok(false)` only when it evaluates to a
+/// definite `False`, so a symbolic result leaves the pair in place.
+pub fn comparator_keeps_order(
+  comparator: &Expr,
+  a: &Expr,
+  b: &Expr,
+) -> Result<bool, InterpreterError> {
+  let verdict = crate::functions::list_helpers_ast::apply_func_to_two_args(
+    comparator, a, b,
+  )?;
+  Ok(!matches!(&verdict, Expr::Identifier(s) if s == "False"))
+}
+
 pub fn ordering_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
@@ -829,41 +878,10 @@ pub fn ordering_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // {2, 3, 1}. Without a comparator, the default canonical order is used.
   if let Some(comparator) = args.get(2) {
     let p = comparator.clone();
-    let mut err: Option<InterpreterError> = None;
-    // Apply the comparator both ways so the ordering is consistent: a < b when
-    // p[a, b] is True, a > b when p[b, a] is True, and otherwise the pair is
-    // incomparable (equal sort keys, or a symbolic non-Boolean result) and the
-    // stable sort keeps the original order.
-    let is_true = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "True");
-    indexed.sort_by(|a, b| {
-      if err.is_some() {
-        return std::cmp::Ordering::Equal;
-      }
-      let ab = crate::functions::list_helpers_ast::apply_func_to_two_args(
-        &p, a.1, b.1,
-      );
-      match ab {
-        Ok(ref r) if is_true(r) => return std::cmp::Ordering::Less,
-        Ok(_) => {}
-        Err(e) => {
-          err = Some(e);
-          return std::cmp::Ordering::Equal;
-        }
-      }
-      match crate::functions::list_helpers_ast::apply_func_to_two_args(
-        &p, b.1, a.1,
-      ) {
-        Ok(ref r) if is_true(r) => std::cmp::Ordering::Greater,
-        Ok(_) => std::cmp::Ordering::Equal,
-        Err(e) => {
-          err = Some(e);
-          std::cmp::Ordering::Equal
-        }
-      }
-    });
-    if let Some(e) = err {
-      return Err(e);
-    }
+    let mut take_left = |a: &(usize, &Expr), b: &(usize, &Expr)| {
+      comparator_keeps_order(&p, a.1, b.1)
+    };
+    indexed = wl_ordering_sort(&indexed, &mut take_left)?;
   } else {
     indexed.sort_by(|a, b| {
       crate::functions::list_helpers_ast::canonical_cmp(a.1, b.1)
