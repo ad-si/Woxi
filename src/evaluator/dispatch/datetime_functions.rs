@@ -2,6 +2,21 @@
 use super::*;
 use crate::syntax::{BinaryOperator, UnaryOperator, bool_expr, unevaluated};
 
+/// How many date components a granularity keeps: `"Month"` names a year and a
+/// month, `"Hour"` everything down to the hour, and so on. `None` for a
+/// granularity that is not one of the plain calendar levels.
+fn granularity_component_count(granularity: &str) -> Option<usize> {
+  Some(match granularity {
+    "Year" => 1,
+    "Month" => 2,
+    "Day" => 3,
+    "Hour" => 4,
+    "Minute" => 5,
+    "Second" | "Instant" => 6,
+    _ => return None,
+  })
+}
+
 pub fn dispatch_datetime_functions(
   name: &str,
   args: &[Expr],
@@ -373,6 +388,44 @@ pub fn dispatch_datetime_functions(
           name: "DateObject".to_string(),
           args: new_args.into(),
         }));
+      }
+      // DateObject[{…}, granularity] keeps only the components that
+      // granularity names — `DateObject[{2024, 2, 29}, "Month"]` is the whole
+      // of February 2024, so its component list is {2024, 2} — padding a
+      // short list with the first day / zero hour instead.
+      if args.len() >= 2
+        && let Expr::List(items) = &args[0]
+        && let Expr::String(granularity) = &args[1]
+        && let Some(width) = granularity_component_count(granularity)
+      {
+        let normalized =
+          crate::functions::datetime_ast::normalize_date_components(items)
+            .unwrap_or_else(|| items.to_vec());
+        // Rebuilt when the components have to change, and also when a
+        // sub-day granularity is still missing its calendar and offset.
+        let needs_calendar_suffix = width >= 4 && args.len() < 4;
+        if normalized.len() != width || needs_calendar_suffix {
+          let mut components: Vec<Expr> = Vec::with_capacity(width);
+          for i in 0..width {
+            components.push(match normalized.get(i) {
+              Some(c) => c.clone(),
+              // Days and months count from 1, the clock parts from 0.
+              None if i < 3 => Expr::Integer(1),
+              None => Expr::Integer(0),
+            });
+          }
+          let mut new_args = vec![Expr::List(components.into())];
+          new_args.push(args[1].clone());
+          // Only the sub-day granularities carry the calendar and offset.
+          if width >= 4 {
+            new_args.push(Expr::String("Gregorian".to_string()));
+            new_args.push(Expr::Real(0.0));
+          }
+          return Some(Ok(Expr::FunctionCall {
+            name: "DateObject".to_string(),
+            args: new_args.into(),
+          }));
+        }
       }
       // Explicit-granularity forms (and evaluated DateObjects passing
       // through again) still normalize their component list; the helper is

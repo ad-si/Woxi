@@ -18,3 +18,21 @@ DateObject[{2024, 3, 15}, Day]
 $ wo 'DateObject["2024-03"]'
 DateObject[{2024, 3}, Month]
 ```
+
+A granularity keeps only the components it names, so a `"Month"` object stands
+for the whole month:
+
+```scrut
+$ wo 'DateObject[{2024, 2, 29, 13, 5, 7}, "Month"]'
+DateObject[{2024, 2}, Month]
+```
+
+```scrut
+$ wo 'DateWithinQ[DateObject[{2024, 1, 1}, "Year"], DateObject[{2024, 5, 1}]]'
+True
+```
+
+```scrut
+$ wo 'DateObject[{2024, 2, 29}]["Granularity"]'
+Day
+```

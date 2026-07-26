@@ -334,7 +334,7 @@ FrameTicks,Option specifying tick marks on the frame of a plot,✅,none,2.0,337
 RandomChoice,Random selection with replacement,✅,contextual,6.0,338
 Collect,Collects terms with the same powers of a variable,✅,pure,1.0,339
 NumberQ,Checks if a value is a number,✅,pure,1.0,340
-DateObject,Represents a date or date-time object,✅,pure,10.0,341
+DateObject,Represents a date or date-time object keeping only the components its granularity names,✅,pure,10.0,341
 EntityValue,Retrieves property values from entities in the Wolfram Knowledgebase,✅,effectful,10.0,342
 Except,Represents a pattern matching everything except a given pattern,✅,pure,5.1,343
 FaceForm,Specifies face styling for filled graphics,✅,pure,1.0,344
@@ -4153,7 +4153,7 @@ AudioReverb,,🚫,,11.0,4291
 AugmentedSymmetricPolynomial,Augmented monomial symmetric polynomial for a partition and variable list,✅,pure,8.0,4291
 ControllableDecomposition,,,,8.0,4291
 CreatePermissionsGroup,,🚫,,10.0,4291
-DateBounds,Gives the earliest and latest of a list of dates preserving each date's representation,✅,pure,11.0,4291
+DateBounds,Gives the earliest and latest of a list of dates preserving each date's representation or the period a single DateObject covers,✅,pure,11.0,4291
 DeviceWriteBuffer,,🚫,,10.0,4291
 FindDevices,,,,10.0,4291
 FunctionConvexity,,,,12.2,4291

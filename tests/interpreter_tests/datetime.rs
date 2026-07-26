@@ -4223,3 +4223,186 @@ mod week_and_name_date_elements {
     );
   }
 }
+
+// A DateObject's granularity says which components it keeps: a "Month" object
+// is the whole month, so it holds only a year and a month.
+mod date_object_granularity {
+  use super::*;
+
+  #[test]
+  fn the_component_list_is_truncated() {
+    // Regression: the full list was kept, so a coarse DateObject still
+    // pointed at one instant.
+    assert_eq!(
+      interpret("DateObject[{2024, 2, 29, 13, 5, 7}, \"Year\"]").unwrap(),
+      "DateObject[{2024}, Year]"
+    );
+    assert_eq!(
+      interpret("DateObject[{2024, 2, 29, 13, 5, 7}, \"Month\"]").unwrap(),
+      "DateObject[{2024, 2}, Month]"
+    );
+    assert_eq!(
+      interpret("DateObject[{2024, 2, 29, 13, 5, 7}, \"Day\"]").unwrap(),
+      "DateObject[{2024, 2, 29}, Day]"
+    );
+    // The sub-day granularities also carry the calendar and UTC offset.
+    assert_eq!(
+      interpret("DateObject[{2024, 2, 29, 13, 5, 7}, \"Hour\"]").unwrap(),
+      "DateObject[{2024, 2, 29, 13}, Hour, Gregorian, 0.]"
+    );
+    assert_eq!(
+      interpret("DateObject[{2024, 2, 29, 13, 5, 7}, \"Minute\"]").unwrap(),
+      "DateObject[{2024, 2, 29, 13, 5}, Minute, Gregorian, 0.]"
+    );
+    assert_eq!(
+      interpret("DateObject[{2024, 2, 29, 13, 5, 7}, \"Instant\"]").unwrap(),
+      "DateObject[{2024, 2, 29, 13, 5, 7}, Instant, Gregorian, 0.]"
+    );
+  }
+
+  #[test]
+  fn a_short_list_is_padded() {
+    // Days and months count from 1, the clock parts from 0.
+    assert_eq!(
+      interpret("DateObject[{2024}, \"Day\"]").unwrap(),
+      "DateObject[{2024, 1, 1}, Day]"
+    );
+    assert_eq!(
+      interpret("DateObject[{2024, 2}, \"Day\"]").unwrap(),
+      "DateObject[{2024, 2, 1}, Day]"
+    );
+    assert_eq!(
+      interpret("DateObject[{2024, 2, 29}, \"Hour\"]").unwrap(),
+      "DateObject[{2024, 2, 29, 0}, Hour, Gregorian, 0.]"
+    );
+    // The list form is unchanged.
+    assert_eq!(
+      interpret("DateObject[{2024, 2, 29}]").unwrap(),
+      "DateObject[{2024, 2, 29}, Day]"
+    );
+    // …and so is the date the object stands for.
+    assert_eq!(
+      interpret("DateList[DateObject[{2024, 2, 29}, \"Month\"]]").unwrap(),
+      "{2024, 2, 1, 0, 0, 0.}"
+    );
+  }
+
+  #[test]
+  fn the_granularity_can_be_read_back() {
+    assert_eq!(
+      interpret("DateObject[{2024, 2, 29}][\"Granularity\"]").unwrap(),
+      "Day"
+    );
+    assert_eq!(
+      interpret("DateObject[{2024, 2, 29}, \"Month\"][\"Granularity\"]")
+        .unwrap(),
+      "Month"
+    );
+    assert_eq!(
+      interpret("DateObject[{2024, 2, 29, 13}][\"Granularity\"]").unwrap(),
+      "Hour"
+    );
+    assert_eq!(
+      interpret("DateObject[{2024}][\"Granularity\"]").unwrap(),
+      "Year"
+    );
+    // The other properties still resolve.
+    assert_eq!(
+      interpret("DateObject[{2024, 2, 29}][\"DayName\"]").unwrap(),
+      "Thursday"
+    );
+    assert_eq!(
+      interpret("DateObject[{2024, 2, 29}][\"Year\"]").unwrap(),
+      "2024"
+    );
+  }
+
+  #[test]
+  fn time_objects_report_their_components() {
+    assert_eq!(interpret("TimeObject[{13, 5, 0}][\"Hour\"]").unwrap(), "13");
+    assert_eq!(
+      interpret("TimeObject[{13, 5, 0}][\"Minute\"]").unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret("TimeObject[{13, 5, 7}][\"Second\"]").unwrap(),
+      "7"
+    );
+    assert_eq!(
+      interpret("TimeObject[{13, 5, 0}][\"Granularity\"]").unwrap(),
+      "Instant"
+    );
+  }
+
+  // Containment follows from the granularity: a date is within the year, month
+  // or day its object covers.
+  #[test]
+  fn containment_uses_the_covered_period() {
+    assert_eq!(
+      interpret(
+        "DateWithinQ[DateObject[{2024, 1, 1}, \"Year\"], \
+         DateObject[{2024, 5, 1}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "DateWithinQ[DateObject[{2024, 1, 1}, \"Year\"], \
+         DateObject[{2025, 5, 1}]]"
+      )
+      .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "DateWithinQ[DateObject[{2024, 1, 1}, \"Month\"], \
+         DateObject[{2024, 1, 15}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "DateOverlapsQ[DateObject[{2024, 1, 1}, \"Month\"], \
+         DateObject[{2024, 1, 15}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "DateOverlapsQ[DateObject[{2024, 1, 1}, \"Year\"], \
+         DateObject[{2024, 6, 1}, \"Month\"]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // DateBounds of one object is the period it covers, ending where the next
+  // one starts.
+  #[test]
+  fn bounds_of_a_single_object() {
+    assert_eq!(
+      interpret("DateBounds[DateObject[{2024, 1, 1}, \"Year\"]]").unwrap(),
+      "{DateObject[{2024, 1, 1, 0, 0, 0.}, Instant, Gregorian, None], \
+       DateObject[{2025, 1, 1, 0, 0, 0.}, Instant, Gregorian, None]}"
+    );
+    assert_eq!(
+      interpret("DateBounds[DateObject[{2024, 12}, \"Month\"]]").unwrap(),
+      "{DateObject[{2024, 12, 1, 0, 0, 0.}, Instant, Gregorian, None], \
+       DateObject[{2025, 1, 1, 0, 0, 0.}, Instant, Gregorian, None]}"
+    );
+    assert_eq!(
+      interpret("DateBounds[DateObject[{2024, 2, 29, 13}, \"Hour\"]]").unwrap(),
+      "{DateObject[{2024, 2, 29, 13, 0, 0.}, Instant, Gregorian, 0.], \
+       DateObject[{2024, 2, 29, 14, 0, 0.}, Instant, Gregorian, 0.]}"
+    );
+    // The list form still reports the earliest and latest date.
+    assert_eq!(
+      interpret("DateBounds[{{2024, 1, 1}, {2024, 3, 1}}]").unwrap(),
+      "{{2024, 1, 1}, {2024, 3, 1}}"
+    );
+  }
+}

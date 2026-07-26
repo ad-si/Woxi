@@ -910,6 +910,49 @@ pub fn is_subject_first_operator(name: &str) -> bool {
   )
 }
 
+/// `DateObject[…]["Granularity"]`, and the clock components of a
+/// `TimeObject[{h, m, s}, …]`. `None` for anything the caller should resolve
+/// through `DateValue` instead.
+fn date_object_tag_property(
+  head: &str,
+  obj_args: &[Expr],
+  property: &str,
+) -> Option<Expr> {
+  if property == "Granularity" {
+    return Some(match obj_args.get(1) {
+      Some(Expr::String(tag)) => Expr::String(tag.clone()),
+      // An untagged DateObject list is as fine-grained as its length.
+      _ => Expr::String(
+        match obj_args.first() {
+          Some(Expr::List(items)) => match items.len() {
+            1 => "Year",
+            2 => "Month",
+            3 => "Day",
+            4 => "Hour",
+            5 => "Minute",
+            _ => "Instant",
+          },
+          _ => return None,
+        }
+        .to_string(),
+      ),
+    });
+  }
+  if head != "TimeObject" {
+    return None;
+  }
+  let Some(Expr::List(components)) = obj_args.first() else {
+    return None;
+  };
+  let index = match property {
+    "Hour" => 0,
+    "Minute" => 1,
+    "Second" => 2,
+    _ => return None,
+  };
+  components.get(index).cloned()
+}
+
 pub fn apply_curried_call(
   func: &Expr,
   args: &[Expr],
@@ -1055,6 +1098,25 @@ pub fn apply_curried_call(
       println!("{}", line);
       crate::capture_stdout(&line);
       Ok(args[0].clone())
+    }
+    // DateObject[…]["Granularity"] / TimeObject[…]["Granularity"] report the
+    // granularity tag itself, and a TimeObject's components come from its
+    // {hour, minute, second} list.
+    Expr::FunctionCall {
+      name,
+      args: obj_args,
+    } if (name == "DateObject" || name == "TimeObject")
+      && args.len() == 1
+      && matches!(&args[0], Expr::String(p)
+        if date_object_tag_property(name, obj_args, p).is_some()) =>
+    {
+      let Expr::String(property) = &args[0] else {
+        unreachable!();
+      };
+      Ok(
+        date_object_tag_property(name, obj_args, property)
+          .expect("guarded above"),
+      )
     }
     // DateObject[...]["property"] — extract a date component (e.g. "Day",
     // "DayName", "Week"). Delegates to DateValue, which already resolves every

@@ -1057,12 +1057,84 @@ fn make_date_list(y: i64, m: i64, d: i64, h: i64, min: i64, sec: f64) -> Expr {
 
 /// DatePlus[date, n] — add n days to a date
 /// DatePlus[date, {{n1, "unit1"}, ...}] — add with units
+/// The start and end instants of the period a `DateObject` covers. The end is
+/// the start of the following period, so a `"Month"` object runs to the first
+/// of the next month. Sub-day granularities keep the zero UTC offset; the
+/// coarser ones report no time zone at all, like wolframscript.
+fn date_object_interval_bounds(obj_args: &[Expr]) -> Option<Expr> {
+  let Some(Expr::List(items)) = obj_args.first() else {
+    return None;
+  };
+  let granularity = match obj_args.get(1) {
+    Some(Expr::String(g)) => g.as_str(),
+    _ => return None,
+  };
+  let mut start = [0i64; 6];
+  let defaults = [0, 1, 1, 0, 0, 0];
+  for i in 0..6 {
+    start[i] = match items.get(i) {
+      Some(Expr::Integer(n)) => *n as i64,
+      Some(Expr::Real(r)) => *r as i64,
+      _ => defaults[i],
+    };
+  }
+  let mut end = start;
+  match granularity {
+    "Year" => end[0] += 1,
+    "Month" => end[1] += 1,
+    "Day" => end[2] += 1,
+    "Hour" => end[3] += 1,
+    "Minute" => end[4] += 1,
+    "Second" | "Instant" => end[5] += 1,
+    _ => return None,
+  }
+  // Roll the incremented component back into range (December → next January).
+  let normalized = |c: [i64; 6]| -> Vec<Expr> {
+    let raw: Vec<Expr> = c.iter().map(|v| Expr::Integer(*v as i128)).collect();
+    let fixed = normalize_date_components(&raw).unwrap_or(raw);
+    let mut out: Vec<Expr> = fixed.into_iter().take(6).collect();
+    // The seconds slot of an instant is a real, as wolframscript prints it.
+    if let Some(last) = out.get_mut(5)
+      && let Expr::Integer(n) = last
+    {
+      *last = Expr::Real(*n as f64);
+    }
+    out
+  };
+  let time_zone = if matches!(granularity, "Year" | "Month" | "Day") {
+    Expr::Identifier("None".to_string())
+  } else {
+    Expr::Real(0.0)
+  };
+  let instant = |components: Vec<Expr>| Expr::FunctionCall {
+    name: "DateObject".to_string(),
+    args: vec![
+      Expr::List(components.into()),
+      Expr::String("Instant".to_string()),
+      Expr::String("Gregorian".to_string()),
+      time_zone.clone(),
+    ]
+    .into(),
+  };
+  Some(Expr::List(
+    vec![instant(normalized(start)), instant(normalized(end))].into(),
+  ))
+}
+
 /// DateBounds[{date1, date2, …}] — the earliest and latest of the dates,
 /// returned in their original representation (DateObjects stay DateObjects,
 /// date lists stay date lists). Dates are ordered by their padded calendar
 /// components (year, month, day, hour, minute, second).
 pub fn date_bounds_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("DateBounds", args));
+  // A single DateObject is an interval of its own granularity: its bounds are
+  // the instant it starts at and the one the next period starts at.
+  if let Expr::FunctionCall { name, args: obj } = &args[0]
+    && name == "DateObject"
+    && let Some(bounds) = date_object_interval_bounds(obj)
+  {
+    return Ok(bounds);
+  }
   let Expr::List(items) = &args[0] else {
     return unevaluated();
   };
