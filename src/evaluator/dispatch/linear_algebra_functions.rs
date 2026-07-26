@@ -1947,7 +1947,13 @@ pub fn dispatch_linear_algebra_functions(
       }
     }
     // ScalingTransform[{s1, s2, ...}] or ScalingTransform[{s1, s2, ...}, {c1, c2, ...}]
-    "ScalingTransform" if args.len() == 1 || args.len() == 2 => {
+    // A list of factors scales along each axis; the optional second argument
+    // is then the centre. A scalar factor instead takes a direction vector,
+    // handled by the arm below.
+    "ScalingTransform"
+      if (args.len() == 1 || args.len() == 2)
+        && matches!(&args[0], Expr::List(_)) =>
+    {
       if let Expr::List(scales) = &args[0] {
         let n = scales.len();
         let center = if args.len() == 2 {
@@ -1992,6 +1998,83 @@ pub fn dispatch_linear_algebra_functions(
         return Some(evaluated);
       }
       return Some(Ok(unevaluated("ScalingTransform", args)));
+    }
+    // ScalingTransform[s, v] scales by s along the direction of v, leaving
+    // the perpendicular directions alone: M = I + (s - 1) (v⊗v)/(v·v).
+    // A third argument centres it at that point, giving the translation
+    // p - M·p.
+    "ScalingTransform" if args.len() == 2 || args.len() == 3 => {
+      let uneval = || Some(Ok(unevaluated("ScalingTransform", args)));
+      let Expr::List(v) = &args[1] else {
+        return uneval();
+      };
+      let n = v.len();
+      if n == 0 {
+        return uneval();
+      }
+      let center = match args.get(2) {
+        None => None,
+        Some(Expr::List(c)) if c.len() == n => Some(c.clone()),
+        Some(_) => return uneval(),
+      };
+      let power = |b: Expr, e: i128| Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![b, Expr::Integer(e)].into(),
+      };
+      let times = |factors: Vec<Expr>| Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: factors.into(),
+      };
+      let plus = |terms: Vec<Expr>| Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: terms.into(),
+      };
+      let vv = plus(v.iter().map(|vi| power(vi.clone(), 2)).collect());
+      let s_minus_1 = plus(vec![args[0].clone(), Expr::Integer(-1)]);
+      let m_entry = |i: usize, j: usize| {
+        let off = times(vec![
+          s_minus_1.clone(),
+          v[i].clone(),
+          v[j].clone(),
+          power(vv.clone(), -1),
+        ]);
+        if i == j {
+          plus(vec![Expr::Integer(1), off])
+        } else {
+          off
+        }
+      };
+      // Collect each entry over a common denominator, so a symbolic factor
+      // gives wolframscript's (1 + s)/2 rather than 1 + (-1 + s)/2.
+      let simplify = |e: Expr| Expr::FunctionCall {
+        name: "Simplify".to_string(),
+        args: vec![e].into(),
+      };
+      let mut rows = Vec::with_capacity(n + 1);
+      for i in 0..n {
+        let mut row: Vec<Expr> =
+          (0..n).map(|j| simplify(m_entry(i, j))).collect();
+        row.push(match &center {
+          Some(c) => simplify(plus(
+            std::iter::once(c[i].clone())
+              .chain(c.iter().enumerate().map(|(j, cj)| {
+                times(vec![Expr::Integer(-1), m_entry(i, j), cj.clone()])
+              }))
+              .collect(),
+          )),
+          None => Expr::Integer(0),
+        });
+        rows.push(Expr::List(row.into()));
+      }
+      let mut last_row = vec![Expr::Integer(0); n + 1];
+      last_row[n] = Expr::Integer(1);
+      rows.push(Expr::List(last_row.into()));
+      return Some(crate::evaluator::evaluate_expr_to_expr(
+        &Expr::FunctionCall {
+          name: "TransformationFunction".to_string(),
+          args: vec![Expr::List(rows.into())].into(),
+        },
+      ));
     }
     // ReflectionTransform[v] → reflection in the hyperplane through the origin
     // perpendicular to v. The linear part is M = I - 2 (v⊗v)/(v·v), embedded in
@@ -2080,11 +2163,17 @@ pub fn dispatch_linear_algebra_functions(
     // direction e perpendicular to n (i.e. e with its n-component removed,
     // then normalized). The shear matrix is therefore I + Tan[phi] (ep ⊗ nhat),
     // augmented to an (d+1)x(d+1) homogeneous matrix.
-    "ShearingTransform" if args.len() == 3 => {
+    "ShearingTransform" if args.len() == 3 || args.len() == 4 => {
       if let (Expr::List(e), Expr::List(n)) = (&args[1], &args[2])
         && e.len() == n.len()
         && !e.is_empty()
       {
+        // A 4th argument shears about that point instead of the origin.
+        let center = match args.get(3) {
+          None => None,
+          Some(Expr::List(c)) if c.len() == e.len() => Some(c.clone()),
+          Some(_) => return Some(Ok(unevaluated("ShearingTransform", args))),
+        };
         let phi = &args[0];
         let d = e.len();
         // Norm[v] = Sqrt[Plus @@ (v^2)]
@@ -2152,29 +2241,47 @@ pub fn dispatch_linear_algebra_functions(
           args: vec![phi.clone()].into(),
         };
         // Build (d+1)x(d+1) homogeneous matrix.
+        let m_entry = |i: usize, j: usize| {
+          // off[i][j] = Tan[phi] * ep[i] * nhat[j]
+          let off =
+            times(vec![tan_phi.clone(), ep[i].clone(), nhat[j].clone()]);
+          if i == j {
+            Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: vec![Expr::Integer(1), off].into(),
+            }
+          } else {
+            off
+          }
+        };
         let mut rows = Vec::with_capacity(d + 1);
         for i in 0..d {
           let mut row = Vec::with_capacity(d + 1);
           for j in 0..d {
-            // off[i][j] = Tan[phi] * ep[i] * nhat[j]
-            let off =
-              times(vec![tan_phi.clone(), ep[i].clone(), nhat[j].clone()]);
-            let entry = if i == j {
-              Expr::FunctionCall {
-                name: "Plus".to_string(),
-                args: vec![Expr::Integer(1), off].into(),
-              }
-            } else {
-              off
-            };
             // Simplify so that e.g. 1 + (-1/2) collapses to 1/2 (matching
             // Wolfram), while symbolic forms like Sqrt[3/5] are preserved.
             row.push(Expr::FunctionCall {
               name: "Simplify".to_string(),
-              args: vec![entry].into(),
+              args: vec![m_entry(i, j)].into(),
             });
           }
-          row.push(Expr::Integer(0)); // zero translation column
+          // Translation column p - M·p, zero when there is no centre.
+          row.push(match &center {
+            Some(c) => Expr::FunctionCall {
+              name: "Simplify".to_string(),
+              args: vec![Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: std::iter::once(c[i].clone())
+                  .chain(c.iter().enumerate().map(|(j, cj)| {
+                    times(vec![Expr::Integer(-1), m_entry(i, j), cj.clone()])
+                  }))
+                  .collect::<Vec<_>>()
+                  .into(),
+              }]
+              .into(),
+            },
+            None => Expr::Integer(0),
+          });
           rows.push(Expr::List(row.into()));
         }
         let mut last_row = vec![Expr::Integer(0); d + 1];

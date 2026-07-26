@@ -14,3 +14,10 @@ Only the component of the direction perpendicular to the normal drives the shear
 $ wo 'ShearingTransform[Pi/6, {3, 4}, {0, 1}]'
 TransformationFunction[{{1, 1/Sqrt[3], 0}, {0, 1, 0}, {0, 0, 1}}]
 ```
+
+A fourth argument shears about that point instead of the origin:
+
+```scrut
+$ wo 'ShearingTransform[Pi/4, {1, 0}, {0, 1}, {2, 3}]'
+TransformationFunction[{{1, 1, -3}, {0, 1, 0}, {0, 0, 1}}]
+```

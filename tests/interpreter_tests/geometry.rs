@@ -3089,11 +3089,112 @@ mod scaling_transform {
     );
   }
 
+  // A scalar factor with a direction vector scales along that direction only,
+  // leaving the perpendicular ones alone: M = I + (s - 1) (v⊗v)/(v·v).
+  #[test]
+  fn scalar_factor_along_a_direction() {
+    assert_eq!(
+      interpret("ScalingTransform[2, {1, 0}]").unwrap(),
+      "TransformationFunction[{{2, 0, 0}, {0, 1, 0}, {0, 0, 1}}]"
+    );
+    assert_eq!(
+      interpret("ScalingTransform[2, {1, 1}]").unwrap(),
+      "TransformationFunction[{{3/2, 1/2, 0}, {1/2, 3/2, 0}, {0, 0, 1}}]"
+    );
+    assert_eq!(
+      interpret("ScalingTransform[3, {1, 2, 2}]").unwrap(),
+      "TransformationFunction[{{11/9, 4/9, 4/9, 0}, {4/9, 17/9, 8/9, 0}, \
+       {4/9, 8/9, 17/9, 0}, {0, 0, 0, 1}}]"
+    );
+    // The entries are collected over a common denominator.
+    assert_eq!(
+      interpret("ScalingTransform[s, {1, 1}]").unwrap(),
+      "TransformationFunction[{{(1 + s)/2, (-1 + s)/2, 0}, \
+       {(-1 + s)/2, (1 + s)/2, 0}, {0, 0, 1}}]"
+    );
+  }
+
+  // A third argument centres the scaling at that point, so the translation
+  // column becomes p - M.p and the point is fixed.
+  #[test]
+  fn scalar_factor_about_a_point() {
+    assert_eq!(
+      interpret("ScalingTransform[2, {0, 1}, {3, 4}]").unwrap(),
+      "TransformationFunction[{{1, 0, 0}, {0, 2, -4}, {0, 0, 1}}]"
+    );
+    assert_eq!(
+      interpret("ScalingTransform[2, {1, 0}, {5, 5}]").unwrap(),
+      "TransformationFunction[{{2, 0, -5}, {0, 1, 0}, {0, 0, 1}}]"
+    );
+    assert_eq!(
+      interpret("ScalingTransform[2, {1, 1}, {1, 1}]").unwrap(),
+      "TransformationFunction[{{3/2, 1/2, -1}, {1/2, 3/2, -1}, {0, 0, 1}}]"
+    );
+    // The centre really is fixed.
+    assert_eq!(
+      interpret("ScalingTransform[2, {1, 1}, {1, 1}][{1, 1}]").unwrap(),
+      "{1, 1}"
+    );
+  }
+
+  // A list of factors keeps its old meaning: the second argument is the
+  // centre, not a direction.
+  #[test]
+  fn factor_list_second_argument_is_the_centre() {
+    assert_eq!(
+      interpret("ScalingTransform[{2, 3}, {5, 5}]").unwrap(),
+      "TransformationFunction[{{2, 0, -5}, {0, 3, -10}, {0, 0, 1}}]"
+    );
+    assert_eq!(
+      interpret("ScalingTransform[{2, 3, 4}, {1, 1, 1}]").unwrap(),
+      "TransformationFunction[{{2, 0, 0, -1}, {0, 3, 0, -2}, \
+       {0, 0, 4, -3}, {0, 0, 0, 1}}]"
+    );
+  }
+
   #[test]
   fn attributes() {
     assert_eq!(
       interpret("Attributes[ScalingTransform]").unwrap(),
       "{Protected, ReadProtected}"
+    );
+  }
+}
+
+// ShearingTransform[phi, e, n, p] shears about the point p instead of the
+// origin, giving the translation column p - M.p.
+mod shearing_transform_about_a_point {
+  use super::*;
+
+  #[test]
+  fn two_dimensional() {
+    assert_eq!(
+      interpret("ShearingTransform[Pi/4, {1, 0}, {0, 1}, {2, 3}]").unwrap(),
+      "TransformationFunction[{{1, 1, -3}, {0, 1, 0}, {0, 0, 1}}]"
+    );
+    assert_eq!(
+      interpret("ShearingTransform[Pi/6, {0, 1}, {1, 0}, {1, 1}]").unwrap(),
+      "TransformationFunction[{{1, 0, 0}, {1/Sqrt[3], 1, -(1/Sqrt[3])}, \
+       {0, 0, 1}}]"
+    );
+  }
+
+  #[test]
+  fn three_dimensional() {
+    assert_eq!(
+      interpret("ShearingTransform[Pi/4, {1, 0, 0}, {0, 1, 0}, {1, 2, 3}]")
+        .unwrap(),
+      "TransformationFunction[{{1, 1, 0, -2}, {0, 1, 0, 0}, {0, 0, 1, 0}, \
+       {0, 0, 0, 1}}]"
+    );
+  }
+
+  // Without a centre the origin is fixed, as before.
+  #[test]
+  fn origin_form_is_unchanged() {
+    assert_eq!(
+      interpret("ShearingTransform[Pi/4, {1, 0}, {0, 1}]").unwrap(),
+      "TransformationFunction[{{1, 1, 0}, {0, 1, 0}, {0, 0, 1}}]"
     );
   }
 }

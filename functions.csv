@@ -1421,7 +1421,7 @@ DecimalForm,Display a number in decimal notation without scientific notation; To
 GeneratingFunction,Compute generating function of a sequence,✅,pure,7.0,1440
 Proportional,Symbolic proportional relation,✅,pure,3.0,1440
 ConnectedComponents,Find connected components of a graph,✅,pure,8.0,1441
-ScalingTransform,Create a scaling transformation matrix,✅,pure,6.0,1442
+ScalingTransform,Scaling transformation by per-axis factors or by one factor along a direction optionally centred at a point,✅,pure,6.0,1442
 TriangleWave,gives a triangle wave with period 1,✅,pure,7.0,1443
 SessionTime,Elapsed time in seconds since session start,✅,pure,2.0,1444
 NetGraph,Neural network graph structure,✅,pure,11.0,1445
@@ -2167,7 +2167,7 @@ ImageFilter,Applies a filter function to an image,🚫,None,7.0,2205
 LightBrown,Named light color evaluating to RGBColor[0.94 0.91 0.88],✅,pure,6.0,2205
 DropoutLayer,Represents a dropout layer in a neural network,🚫,None,11.0,2208
 RegionQ,Geometric region predicate,✅,pure,10.0,2208
-ShearingTransform,Represent a shear transformation by an angle along a direction relative to a normal,✅,pure,6.0,2208
+ShearingTransform,Shear transformation by an angle along a direction relative to a normal optionally centred at a point,✅,pure,6.0,2208
 ComplexContourPlot,Visualization,🚫,None,12.1,2210
 GreenFunction,Differential equation Green's function,🚫,None,10.4,2210
 ContinuedFractionK,Evaluates a generalized continued fraction,✅,pure,7.0,2212
