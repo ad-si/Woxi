@@ -490,16 +490,17 @@ pub fn map_at_ast_named(
     name: "MapAt".to_string(),
     args: vec![func.clone(), list.clone(), pos_spec.clone()].into(),
   };
-  let partw = |path: &[i128]| {
+  // The reported part is the specification as written, so an `All` or a Span
+  // is echoed rather than one of the positions it expanded to.
+  let partw_parts = |parts: &[String]| {
     crate::emit_message(&format!(
       "{caller}::partw: Part {{{}}} of {} does not exist.",
-      path
-        .iter()
-        .map(|p| p.to_string())
-        .collect::<Vec<_>>()
-        .join(", "),
+      parts.join(", "),
       crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
     ));
+  };
+  let partw = |path: &[i128]| {
+    partw_parts(&path.iter().map(|p| p.to_string()).collect::<Vec<_>>());
   };
   let psl = || {
     crate::emit_message(&format!(
@@ -534,8 +535,15 @@ pub fn map_at_ast_named(
   // Association: key-based MapAt transforms the value stored at that key.
   // Accepts `Key[k]`, a bare key, and single-element wrappers `{Key[k]}` /
   // `{k}`.
+  // `All` and Span select positions rather than name a key, so a spec like
+  // `{All}` must not be read as a lookup of the key `All`.
+  let selects_positions = |e: &Expr| {
+    matches!(e, Expr::Identifier(s) if s == "All")
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "Span")
+  };
   if let Expr::Association(pairs) = list
     && let Some(key) = extract_assoc_key(pos_spec)
+    && !selects_positions(key)
   {
     let key_str = crate::syntax::expr_to_string(key);
     if let Some(idx) = pairs
@@ -555,6 +563,114 @@ pub fn map_at_ast_named(
     return Ok(unevaluated());
   }
 
+  // Parts a path descends into. An association contributes its values, so a
+  // positional path addresses them in order, like Part does.
+  fn path_parts(expr: &Expr) -> Option<Vec<Expr>> {
+    if let Expr::Association(pairs) = expr {
+      return Some(pairs.iter().map(|(_, v)| v.clone()).collect());
+    }
+    super::element_access::parts_and_head(expr).map(|(items, _)| items)
+  }
+
+  // Put transformed parts back, keeping the head (or the association's keys).
+  fn rebuild(expr: &Expr, parts: Vec<Expr>) -> Expr {
+    match expr {
+      Expr::Association(pairs) => Expr::Association(
+        pairs
+          .iter()
+          .zip(parts)
+          .map(|((k, _), v)| (k.clone(), v))
+          .collect(),
+      ),
+      _ => match super::element_access::parts_and_head(expr) {
+        Some((_, Some(h))) => Expr::FunctionCall {
+          name: h,
+          args: parts.into(),
+        },
+        _ => Expr::List(parts.into()),
+      },
+    }
+  }
+
+  // The 1-based indices one level of a position specification selects.
+  // `None` means the entry is not a usable position (→ ::psl).
+  fn level_indices(expr: &Expr, entry: &Expr) -> Option<Vec<i128>> {
+    let len = || path_parts(expr).map(|p| p.len() as i128);
+    match entry {
+      Expr::Identifier(s) if s == "All" => Some((1..=len()?).collect()),
+      Expr::FunctionCall { name, args }
+        if name == "Span" && (args.len() == 2 || args.len() == 3) =>
+      {
+        let len = len()?;
+        let resolve = |e: &Expr, dflt: i128| match e {
+          Expr::Identifier(s) if s == "All" => Some(dflt),
+          other => expr_to_i128(other),
+        };
+        let start = resolve(&args[0], 1)?;
+        let end = resolve(&args[1], len)?;
+        let step = match args.get(2) {
+          Some(s) => expr_to_i128(s)?,
+          None => 1,
+        };
+        if step <= 0 {
+          return None;
+        }
+        let norm = |i: i128| if i < 0 { len + i + 1 } else { i };
+        let (start, end) = (norm(start), norm(end));
+        Some((start..=end).step_by(step as usize).collect())
+      }
+      // On an association a level may also name a key.
+      _ if matches!(expr, Expr::Association(_)) => {
+        let Expr::Association(pairs) = expr else {
+          unreachable!()
+        };
+        if let Some(n) = expr_to_i128(entry) {
+          return Some(vec![n]);
+        }
+        let key = extract_assoc_key(entry)?;
+        let key_str = crate::syntax::expr_to_string(key);
+        pairs
+          .iter()
+          .position(|(k, _)| crate::syntax::expr_to_string(k) == key_str)
+          .map(|i| vec![i as i128 + 1])
+      }
+      other => expr_to_i128(other).map(|n| vec![n]),
+    }
+  }
+
+  // Expand a position specification whose levels may be `All`, a `Span` or an
+  // association key into the concrete integer paths it denotes. A level that
+  // runs past the end still yields its path, so the caller reports ::partw.
+  fn expand_spec(
+    expr: &Expr,
+    spec: &[Expr],
+    prefix: &mut Vec<i128>,
+    out: &mut Vec<Vec<i128>>,
+  ) -> Option<()> {
+    if spec.is_empty() {
+      out.push(prefix.clone());
+      return Some(());
+    }
+    let parts = path_parts(expr);
+    for i in level_indices(expr, &spec[0])? {
+      prefix.push(i);
+      let child = parts.as_ref().and_then(|items| {
+        let idx = if i > 0 {
+          i - 1
+        } else {
+          items.len() as i128 + i
+        };
+        usize::try_from(idx).ok().and_then(|u| items.get(u))
+      });
+      match child {
+        Some(c) => expand_spec(c, &spec[1..], prefix, out)?,
+        None => out.push(prefix.clone()),
+      }
+      prefix.pop();
+    }
+    Some(())
+  }
+
   // Apply f along one validated path (positions refer to the current
   // result; 0 as the final index wraps the head). Err(()) = invalid.
   fn apply_path(
@@ -562,22 +678,28 @@ pub fn map_at_ast_named(
     expr: &Expr,
     path: &[i128],
   ) -> Result<Result<Expr, ()>, InterpreterError> {
-    let (items, head): (Vec<Expr>, Option<String>) =
-      match super::element_access::parts_and_head(expr) {
-        Some(p) => p,
-        None => return Ok(Err(())),
-      };
-    let items = items.as_slice();
+    if path.is_empty() {
+      // The empty path is the expression itself.
+      return Ok(Ok(apply_func_ast(func, expr)?));
+    }
+    let items = match path_parts(expr) {
+      Some(p) => p,
+      None => return Ok(Err(())),
+    };
     let len = items.len() as i128;
     let n = path[0];
     if n == 0 && path.len() == 1 {
       // Wrap the head: f[head][args...]
+      let head = match super::element_access::parts_and_head(expr) {
+        Some((_, h)) => h,
+        None => None,
+      };
       let head_expr =
-        Expr::Identifier(head.clone().unwrap_or_else(|| "List".to_string()));
+        Expr::Identifier(head.unwrap_or_else(|| "List".to_string()));
       let wrapped = apply_func_ast(func, &head_expr)?;
       return Ok(Ok(Expr::CurriedCall {
         func: Box::new(wrapped),
-        args: items.to_vec(),
+        args: items,
       }));
     }
     let idx = if n > 0 { n - 1 } else { len + n };
@@ -585,7 +707,7 @@ pub fn map_at_ast_named(
       return Ok(Err(()));
     }
     let idx = idx as usize;
-    let mut new_items = items.to_vec();
+    let mut new_items = items.clone();
     if path.len() == 1 {
       new_items[idx] = apply_func_ast(func, &items[idx])?;
     } else {
@@ -594,47 +716,65 @@ pub fn map_at_ast_named(
         Err(()) => return Ok(Err(())),
       }
     }
-    Ok(Ok(match head {
-      Some(h) => Expr::FunctionCall {
-        name: h,
-        args: new_items.into(),
-      },
-      None => Expr::List(new_items.into()),
-    }))
+    Ok(Ok(rebuild(expr, new_items)))
   }
 
-  let (items, head): (Vec<Expr>, Option<String>) =
-    match super::element_access::parts_and_head(list) {
-      Some(p) => p,
-      None => {
-        // Atomic subject: partw with the spec (when it is positional)
-        match pos_spec {
-          Expr::Integer(n) => partw(&[*n]),
-          Expr::List(parts) => {
-            if let Some(path) = parts
-              .iter()
-              .map(expr_to_i128)
-              .collect::<Option<Vec<i128>>>()
-            {
-              partw(&path);
-            } else {
-              psl();
-            }
-          }
-          _ => psl(),
-        }
-        return Ok(unevaluated());
+  // Apply f at every expanded path. Deeper paths run first so that a nested
+  // pair like {{1}, {1, 1}} composes the way wolframscript's simultaneous
+  // application does, independently of the order they are listed in. Each
+  // path carries the specification it came from, for the ::partw message.
+  fn apply_paths(
+    func: &Expr,
+    expr: &Expr,
+    paths: &[(Vec<i128>, Vec<String>)],
+  ) -> Result<Result<Expr, Vec<String>>, InterpreterError> {
+    let mut order: Vec<&(Vec<i128>, Vec<String>)> = paths.iter().collect();
+    order.sort_by_key(|(p, _)| std::cmp::Reverse(p.len()));
+    let mut result = expr.clone();
+    for (path, spec) in order {
+      match apply_path(func, &result, path)? {
+        Ok(v) => result = v,
+        Err(()) => return Ok(Err(spec.clone())),
       }
-    };
+    }
+    Ok(Ok(result))
+  }
+
+  // How a position specification is written, for diagnostics.
+  fn spec_display(spec: &[Expr]) -> Vec<String> {
+    spec
+      .iter()
+      .map(|e| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output))
+      .collect()
+  }
+
+  // Associations take part in the positional forms too, with a level index
+  // addressing their values in order.
+  let items: Vec<Expr> = match path_parts(list) {
+    Some(p) => p,
+    None => {
+      // Atomic subject: partw with the spec (when it is positional)
+      match pos_spec {
+        Expr::Integer(n) => partw(&[*n]),
+        Expr::List(parts) => {
+          if let Some(path) = parts
+            .iter()
+            .map(expr_to_i128)
+            .collect::<Option<Vec<i128>>>()
+          {
+            partw(&path);
+          } else {
+            psl();
+          }
+        }
+        _ => psl(),
+      }
+      return Ok(unevaluated());
+    }
+  };
   let items = items.as_slice();
   let len = items.len() as i128;
-  let wrap = |v: Vec<Expr>| match &head {
-    Some(h) => Expr::FunctionCall {
-      name: h.clone(),
-      args: v.into(),
-    },
-    None => Expr::List(v.into()),
-  };
+  let wrap = |v: Vec<Expr>| rebuild(list, v);
 
   match pos_spec {
     // All: map every top-level element
@@ -655,45 +795,45 @@ pub fn map_at_ast_named(
         }
       }
     }
-    Expr::List(pos_list) if !pos_list.is_empty() => {
+    // An empty position list selects nothing, so the expression is unchanged.
+    Expr::List(pos_list) if pos_list.is_empty() => Ok(list.clone()),
+    Expr::List(pos_list) => {
       let all_lists = pos_list.iter().all(|p| matches!(p, Expr::List(_)));
       if all_lists {
-        // Multiple paths, applied in order
-        let mut paths: Vec<Vec<i128>> = Vec::with_capacity(pos_list.len());
+        // Several position specifications, each expanded on its own.
+        let mut paths: Vec<(Vec<i128>, Vec<String>)> = Vec::new();
         for p in pos_list {
           let Expr::List(inner) = p else { unreachable!() };
-          match inner
-            .iter()
-            .map(expr_to_i128)
-            .collect::<Option<Vec<i128>>>()
+          let mut expanded = Vec::new();
+          if expand_spec(list, inner, &mut Vec::new(), &mut expanded).is_none()
           {
-            Some(path) if !path.is_empty() => paths.push(path),
-            _ => {
-              psl();
-              return Ok(unevaluated());
-            }
+            psl();
+            return Ok(unevaluated());
           }
+          let shown = spec_display(inner);
+          paths.extend(expanded.into_iter().map(|p| (p, shown.clone())));
         }
-        let mut result = list.clone();
-        for path in &paths {
-          match apply_path(func, &result, path)? {
-            Ok(v) => result = v,
-            Err(()) => {
-              partw(path);
-              return Ok(unevaluated());
-            }
-          }
-        }
-        Ok(result)
-      } else if let Some(path) = pos_list
-        .iter()
-        .map(expr_to_i128)
-        .collect::<Option<Vec<i128>>>()
-      {
-        match apply_path(func, list, &path)? {
+        match apply_paths(func, list, &paths)? {
           Ok(v) => Ok(v),
-          Err(()) => {
-            partw(&path);
+          Err(spec) => {
+            partw_parts(&spec);
+            Ok(unevaluated())
+          }
+        }
+      } else if let Some(paths) = {
+        let mut expanded = Vec::new();
+        expand_spec(list, pos_list, &mut Vec::new(), &mut expanded).map(|()| {
+          let shown = spec_display(pos_list);
+          expanded
+            .into_iter()
+            .map(|p| (p, shown.clone()))
+            .collect::<Vec<_>>()
+        })
+      } {
+        match apply_paths(func, list, &paths)? {
+          Ok(v) => Ok(v),
+          Err(spec) => {
+            partw_parts(&spec);
             Ok(unevaluated())
           }
         }

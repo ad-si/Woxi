@@ -2288,6 +2288,126 @@ mod map_at {
     );
   }
 
+  // Every level of a position specification may be All or a Span, selecting
+  // a whole row/column rather than one element.
+  #[test]
+  fn map_at_all_and_span_inside_a_position() {
+    let m = "{{a, b, c}, {d, e, f}, {g, h, i}}";
+    assert_eq!(
+      interpret(&format!("MapAt[F, {m}, {{All, All}}]")).unwrap(),
+      "{{F[a], F[b], F[c]}, {F[d], F[e], F[f]}, {F[g], F[h], F[i]}}"
+    );
+    assert_eq!(
+      interpret(&format!("MapAt[F, {m}, {{All}}]")).unwrap(),
+      "{F[{a, b, c}], F[{d, e, f}], F[{g, h, i}]}"
+    );
+    assert_eq!(
+      interpret(&format!("MapAt[F, {m}, {{2, All}}]")).unwrap(),
+      "{{a, b, c}, {F[d], F[e], F[f]}, {g, h, i}}"
+    );
+    assert_eq!(
+      interpret(&format!("MapAt[F, {m}, {{All, -1}}]")).unwrap(),
+      "{{a, b, F[c]}, {d, e, F[f]}, {g, h, F[i]}}"
+    );
+    assert_eq!(
+      interpret(&format!("MapAt[F, {m}, {{Span[1, 2], Span[2, 3]}}]")).unwrap(),
+      "{{a, F[b], F[c]}, {d, F[e], F[f]}, {g, h, i}}"
+    );
+    assert_eq!(
+      interpret(&format!("MapAt[F, {m}, {{Span[1, 3, 2], 1}}]")).unwrap(),
+      "{{F[a], b, c}, {d, e, f}, {F[g], h, i}}"
+    );
+    assert_eq!(
+      interpret(&format!("MapAt[F, {m}, {{Span[-2, -1], 1}}]")).unwrap(),
+      "{{a, b, c}, {F[d], e, f}, {F[g], h, i}}"
+    );
+    // …including inside a list of positions.
+    assert_eq!(
+      interpret(&format!("MapAt[F, {m}, {{{{All, 1}}, {{3, 3}}}}]")).unwrap(),
+      "{{F[a], b, c}, {F[d], e, f}, {F[g], h, F[i]}}"
+    );
+    assert_eq!(
+      interpret("MapAt[F, {a, b, c, d, e}, {Span[1, -1, 2]}]").unwrap(),
+      "{F[a], b, F[c], d, F[e]}"
+    );
+    // A ragged row that the expansion runs past reports the position as
+    // written, not one of the positions it expanded to.
+    assert_eq!(
+      interpret("MapAt[F, {{a, b, c}, {d, e}}, {All, 2}]").unwrap(),
+      "{{a, F[b], c}, {d, F[e]}}"
+    );
+    assert_eq!(
+      interpret("MapAt[F, {{a, b, c}, {d, e}}, {All, 3}]").unwrap(),
+      "MapAt[F, {{a, b, c}, {d, e}}, {All, 3}]"
+    );
+  }
+
+  // An empty position list selects nothing; an empty position selects the
+  // whole expression.
+  #[test]
+  fn map_at_empty_position_specs() {
+    assert_eq!(interpret("MapAt[F, {a, b, c}, {}]").unwrap(), "{a, b, c}");
+    assert_eq!(
+      interpret("MapAt[F, {a, b, c}, {{}}]").unwrap(),
+      "F[{a, b, c}]"
+    );
+  }
+
+  // Nested positions compose the same way whichever order they are listed
+  // in: the inner application happens first, so the outer one wraps it.
+  #[test]
+  fn map_at_nested_positions_are_order_independent() {
+    assert_eq!(
+      interpret("MapAt[F, {{a, b}, {c, d}}, {{1}, {1, 1}}]").unwrap(),
+      "{F[{F[a], b}], {c, d}}"
+    );
+    assert_eq!(
+      interpret("MapAt[F, {{a, b}, {c, d}}, {{1, 1}, {1}}]").unwrap(),
+      "{F[{F[a], b}], {c, d}}"
+    );
+    assert_eq!(
+      interpret("MapAt[F, {{a, b}, {c, d}}, {{All}, {1, 1}}]").unwrap(),
+      "{F[{F[a], b}], F[{c, d}]}"
+    );
+  }
+
+  // On an association a level index addresses the values in order, and a
+  // level may also be All or a key.
+  #[test]
+  fn map_at_deep_positions_on_an_association() {
+    let a = "<|\"x\" -> {1, 2}, \"y\" -> {3, 4}|>";
+    assert_eq!(
+      interpret(&format!("MapAt[F, {a}, {{All}}]")).unwrap(),
+      "<|x -> F[{1, 2}], y -> F[{3, 4}]|>"
+    );
+    assert_eq!(
+      interpret(&format!("MapAt[F, {a}, {{All, 1}}]")).unwrap(),
+      "<|x -> {F[1], 2}, y -> {F[3], 4}|>"
+    );
+    assert_eq!(
+      interpret(&format!("MapAt[F, {a}, {{2, 1}}]")).unwrap(),
+      "<|x -> {1, 2}, y -> {F[3], 4}|>"
+    );
+    assert_eq!(
+      interpret(&format!("MapAt[F, {a}, {{Key[\"x\"], 2}}]")).unwrap(),
+      "<|x -> {1, F[2]}, y -> {3, 4}|>"
+    );
+  }
+
+  // ReplaceAt is built on the same position machinery.
+  #[test]
+  fn replace_at_all_and_span_inside_a_position() {
+    assert_eq!(
+      interpret("ReplaceAt[{{1, 2}, {3, 4}}, n_Integer :> n*10, {All, 1}]")
+        .unwrap(),
+      "{{10, 2}, {30, 4}}"
+    );
+    assert_eq!(
+      interpret("ReplaceAt[{a, b, c, d}, x_ :> X, {Span[2, 3]}]").unwrap(),
+      "{a, X, X, d}"
+    );
+  }
+
   #[test]
   fn empty_span_beyond_length() {
     // A start one past the end, or an end one before the start, is a valid
