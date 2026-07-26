@@ -2109,7 +2109,7 @@ KeyTake,Takes specified keys from an association; supports the operator form Key
 Paneled,Panel wrapper for display,🚫,,6.0,2147
 BinLists,Group data points into equal-width bins,✅,pure,6.0,2149
 VertexIndex,Returns the 1-based position of a vertex in VertexList of a graph,✅,none,8.0,2149
-BoxMatrix,Gives the all-ones box structuring element for a scalar radius or list of radii (n-D),✅,pure,7.0,2152
+BoxMatrix,Gives the all-ones box structuring element for a scalar radius or list of radii (n-D) optionally centred in a grid of a given width,✅,pure,7.0,2152
 CircleMinus,Symbolic circle-minus operator displayed with the Unicode glyph,✅,pure,3.0,2152
 DiscreteLimit,Discrete limit of sequence,✅,pure,11.2,2152
 FixedOrder,Fixed ordering pattern constraint,🚫,,10.1,2157
@@ -2192,7 +2192,7 @@ Nand,Logical NAND,✅,pure,4.1,2233
 TimeSeriesShift,Time series manipulation,🚫,None,10.0,2233
 WaitAll,Async parallel computation,🚫,None,7.0,2233
 ClickPane,Clickable pane feeding a handler; renders as an interactive 2D pane,✅,unevaluated,6.0,2236
-DiamondMatrix,Gives the diamond (L1-ball) structuring element for a scalar radius or list of radii (n-D),✅,pure,7.0,2236
+DiamondMatrix,Gives the diamond (L1-ball) structuring element for a scalar radius or list of radii (n-D) optionally centred in a grid of a given width,✅,pure,7.0,2236
 MaxItems,Display option,🚫,None,10.1,2236
 SSSTriangle,Constructs a triangle from three side lengths,✅,None,10.0,2239
 ThreadingLayer,Machine learning,🚫,None,11.1,2239

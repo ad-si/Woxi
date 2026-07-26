@@ -3,6 +3,101 @@ use super::*;
 use crate::functions::math_ast::{gcd_i128, make_sqrt};
 use crate::syntax::{BinaryOperator, UnaryOperator, bool_expr, unevaluated};
 
+/// `BoxMatrix[r, w]` / `DiamondMatrix[r, w]`: the structuring element of
+/// radius `r` centred in a grid `w` wide along each dimension, zero
+/// elsewhere. Both radius and width may be given per dimension.
+///
+/// The grid is addressed in doubled coordinates `d = |2 i - (w + 1)|`, which
+/// keeps the centre exact for an even width — there the centre falls between
+/// two cells and the element ends up one cell wider, so `BoxMatrix[0, 4]`
+/// covers a 2 x 2 block rather than a single one. The threshold along a
+/// dimension is `t = 2 r + (w + 1) mod 2`; a box keeps the cells with
+/// `d <= t` in every dimension, a diamond those with `sum d/t <= 1`.
+fn structuring_element_in_width(
+  name: &str,
+  radius: &Expr,
+  width: &Expr,
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  let spec = |e: &Expr| -> Option<Vec<i128>> {
+    match e {
+      Expr::List(elems) => elems.iter().map(cross_radius).collect(),
+      other => cross_radius(other).map(|r| vec![r]),
+    }
+  };
+  let ilsmp = || {
+    crate::emit_message(&format!(
+      "{name}::ilsmp: Single or list of positive machine-sized integers expected at position 2 of {}.",
+      crate::syntax::format_expr(width, crate::syntax::ExprForm::Output)
+    ));
+    Some(Ok(unevaluated(name, args)))
+  };
+  let (Some(radii), Some(widths)) = (spec(radius), spec(width)) else {
+    return ilsmp();
+  };
+  if radii.is_empty() || widths.is_empty() || widths.iter().any(|w| *w < 1) {
+    return ilsmp();
+  }
+  // A scalar broadcasts over the rank the other argument implies; a plain
+  // `BoxMatrix[r, w]` with both scalar is two-dimensional.
+  let rank = match (radius, width) {
+    (Expr::List(_), _) | (_, Expr::List(_)) => radii.len().max(widths.len()),
+    _ => 2,
+  };
+  let at = |v: &[i128], i: usize| v[if v.len() == 1 { 0 } else { i }];
+  if radii.len() != 1 && radii.len() != rank
+    || widths.len() != 1 && widths.len() != rank
+  {
+    return ilsmp();
+  }
+
+  let dims: Vec<usize> = (0..rank).map(|i| at(&widths, i) as usize).collect();
+  let thresholds: Vec<i128> = (0..rank)
+    .map(|i| 2 * at(&radii, i) + (at(&widths, i) + 1) % 2)
+    .collect();
+  let diamond = name == "DiamondMatrix";
+
+  // Build the tensor by walking every cell in row-major order.
+  fn build(
+    dims: &[usize],
+    thresholds: &[i128],
+    diamond: bool,
+    idx: &mut Vec<i128>,
+  ) -> Expr {
+    let level = idx.len();
+    if level == dims.len() {
+      let inside = if diamond {
+        // sum d/t <= 1, cleared of denominators.
+        let denom: i128 = thresholds.iter().product();
+        let total: i128 = (0..dims.len())
+          .map(|i| {
+            let d = (2 * (idx[i] + 1) - (dims[i] as i128 + 1)).abs();
+            d * (denom / thresholds[i].max(1))
+          })
+          .sum();
+        thresholds.iter().all(|t| *t > 0) && total <= denom
+          || thresholds.contains(&0)
+            && (0..dims.len()).all(|i| {
+              (2 * (idx[i] + 1) - (dims[i] as i128 + 1)).abs() <= thresholds[i]
+            })
+      } else {
+        (0..dims.len()).all(|i| {
+          (2 * (idx[i] + 1) - (dims[i] as i128 + 1)).abs() <= thresholds[i]
+        })
+      };
+      return Expr::Integer(if inside { 1 } else { 0 });
+    }
+    let mut row = Vec::with_capacity(dims[level]);
+    for i in 0..dims[level] {
+      idx.push(i as i128);
+      row.push(build(dims, thresholds, diamond, idx));
+      idx.pop();
+    }
+    Expr::List(row.into())
+  }
+  Some(Ok(build(&dims, &thresholds, diamond, &mut Vec::new())))
+}
+
 pub fn dispatch_linear_algebra_functions(
   name: &str,
   args: &[Expr],
@@ -299,6 +394,9 @@ pub fn dispatch_linear_algebra_functions(
           radii.iter().map(|r| (2 * r + 1) as usize).collect();
         return Some(Ok(build_ones_tensor(&dims)));
       }
+    }
+    "BoxMatrix" | "DiamondMatrix" if args.len() == 2 => {
+      return structuring_element_in_width(name, &args[0], &args[1], args);
     }
     "DiagonalMatrix" if (1..=3).contains(&args.len()) => {
       return Some(crate::functions::linear_algebra_ast::diagonal_matrix_ast(

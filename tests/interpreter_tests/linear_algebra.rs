@@ -5636,6 +5636,57 @@ mod cases {
     // Three radii give a 3D box of shape (2ri+1).
     assert_case(r#"Dimensions[BoxMatrix[{1, 2, 1}]]"#, r#"{3, 5, 3}"#);
   }
+  // BoxMatrix[r, w] centres the box in a w-wide grid of zeros, clipping it
+  // when the grid is too small.
+  #[test]
+  fn box_matrix_in_a_width() {
+    assert_case(
+      r#"BoxMatrix[1, 5]"#,
+      r#"{{0, 0, 0, 0, 0}, {0, 1, 1, 1, 0}, {0, 1, 1, 1, 0}, {0, 1, 1, 1, 0}, {0, 0, 0, 0, 0}}"#,
+    );
+    assert_case(r#"BoxMatrix[0, 3]"#, r#"{{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}"#);
+    // A grid no larger than the box is filled.
+    assert_case(r#"BoxMatrix[1, 3]"#, r#"{{1, 1, 1}, {1, 1, 1}, {1, 1, 1}}"#);
+    assert_case(r#"BoxMatrix[2, 3]"#, r#"{{1, 1, 1}, {1, 1, 1}, {1, 1, 1}}"#);
+    assert_case(r#"BoxMatrix[2, 1]"#, r#"{{1}}"#);
+    // Radii and widths may both be given per dimension.
+    assert_case(
+      r#"BoxMatrix[{1, 2}, 5]"#,
+      r#"{{0, 0, 0, 0, 0}, {1, 1, 1, 1, 1}, {1, 1, 1, 1, 1}, {1, 1, 1, 1, 1}, {0, 0, 0, 0, 0}}"#,
+    );
+    assert_case(
+      r#"BoxMatrix[{1, 2}, {3, 5}]"#,
+      r#"{{1, 1, 1, 1, 1}, {1, 1, 1, 1, 1}, {1, 1, 1, 1, 1}}"#,
+    );
+  }
+  // An even width has no centre cell, so the element straddles the two
+  // middle ones and comes out a cell wider than 2r+1.
+  #[test]
+  fn box_matrix_in_an_even_width() {
+    assert_case(
+      r#"BoxMatrix[0, 4]"#,
+      r#"{{0, 0, 0, 0}, {0, 1, 1, 0}, {0, 1, 1, 0}, {0, 0, 0, 0}}"#,
+    );
+    assert_case(
+      r#"BoxMatrix[1, 6]"#,
+      r#"{{0, 0, 0, 0, 0, 0}, {0, 1, 1, 1, 1, 0}, {0, 1, 1, 1, 1, 0}, {0, 1, 1, 1, 1, 0}, {0, 1, 1, 1, 1, 0}, {0, 0, 0, 0, 0, 0}}"#,
+    );
+    assert_case(
+      r#"BoxMatrix[1, 4]"#,
+      r#"{{1, 1, 1, 1}, {1, 1, 1, 1}, {1, 1, 1, 1}, {1, 1, 1, 1}}"#,
+    );
+    assert_case(r#"BoxMatrix[0, 2]"#, r#"{{1, 1}, {1, 1}}"#);
+  }
+  #[test]
+  fn box_matrix_rejects_a_non_positive_width() {
+    let r = woxi::interpret_with_stdout("BoxMatrix[1, 0]").unwrap();
+    assert_eq!(r.result, "BoxMatrix[1, 0]");
+    assert!(
+      r.warnings.iter().any(|w| w.contains("BoxMatrix::ilsmp")),
+      "expected ilsmp, got {:?}",
+      r.warnings
+    );
+  }
   // CrossMatrix is the n-dimensional cross structuring element.
   #[test]
   fn cross_matrix_scalar() {
@@ -5704,6 +5755,36 @@ mod cases {
     assert_case(
       r#"DiamondMatrix[{1, 1, 1}]"#,
       r#"{{{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}, {{0, 1, 0}, {1, 1, 1}, {0, 1, 0}}, {{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}}"#,
+    );
+  }
+  // DiamondMatrix[r, w] centres the L1 ball the same way BoxMatrix centres
+  // its box, including the even-width straddle.
+  #[test]
+  fn diamond_matrix_in_a_width() {
+    assert_case(
+      r#"DiamondMatrix[1, 5]"#,
+      r#"{{0, 0, 0, 0, 0}, {0, 0, 1, 0, 0}, {0, 1, 1, 1, 0}, {0, 0, 1, 0, 0}, {0, 0, 0, 0, 0}}"#,
+    );
+    assert_case(
+      r#"DiamondMatrix[0, 3]"#,
+      r#"{{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}"#,
+    );
+    assert_case(
+      r#"DiamondMatrix[2, 3]"#,
+      r#"{{1, 1, 1}, {1, 1, 1}, {1, 1, 1}}"#,
+    );
+    assert_case(
+      r#"DiamondMatrix[1, 4]"#,
+      r#"{{0, 0, 0, 0}, {0, 1, 1, 0}, {0, 1, 1, 0}, {0, 0, 0, 0}}"#,
+    );
+    assert_case(
+      r#"DiamondMatrix[2, 6]"#,
+      r#"{{0, 0, 0, 0, 0, 0}, {0, 0, 1, 1, 0, 0}, {0, 1, 1, 1, 1, 0}, {0, 1, 1, 1, 1, 0}, {0, 0, 1, 1, 0, 0}, {0, 0, 0, 0, 0, 0}}"#,
+    );
+    // Per-dimension radii scale each axis of the ball independently.
+    assert_case(
+      r#"DiamondMatrix[{1, 2}, 5]"#,
+      r#"{{0, 0, 0, 0, 0}, {0, 0, 1, 0, 0}, {1, 1, 1, 1, 1}, {0, 0, 1, 0, 0}, {0, 0, 0, 0, 0}}"#,
     );
   }
   #[test]
