@@ -477,6 +477,7 @@ pub fn structured_matrix_to_dense(e: &Expr) -> Option<Expr> {
       | "UpperTriangularMatrix"
       | "PermutationMatrix"
       | "BlockDiagonalMatrix"
+      | "CauchyMatrix"
   ) || args.len() != 1
   {
     return None;
@@ -531,6 +532,16 @@ pub fn structured_matrix_to_dense(e: &Expr) -> Option<Expr> {
         .collect::<Vec<_>>()
         .into(),
     ));
+  }
+  if name == "CauchyMatrix" {
+    // Payload is {x, y}; entry (i, j) is 1/(x_i + y_j).
+    let Expr::List(payload) = &sd_args[1] else {
+      return None;
+    };
+    let [Expr::List(x), Expr::List(y)] = &payload[..] else {
+      return None;
+    };
+    return cauchy_dense(x, y).ok();
   }
   if name == "PermutationMatrix" {
     // Payload is {Cycles[{{…}, …}], workingLength}; row i of the dense form
@@ -671,6 +682,296 @@ pub fn block_diagonal_matrix_ast(
     name: "BlockDiagonalMatrix".to_string(),
     args: vec![structured].into(),
   })
+}
+
+/// An explicit number: the only entries wolframscript accepts when recovering
+/// the generating vectors of a Cauchy matrix (a symbolic matrix such as
+/// `{{1/(a+c), 1/(a+d)}, {1/(b+c), 1/(b+d)}}` is rejected there).
+fn is_explicit_number(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(_, _) => true,
+    Expr::FunctionCall { name, args } => {
+      (name == "Rational" || name == "Complex")
+        && args.len() == 2
+        && args.iter().all(is_explicit_number)
+    }
+    _ => false,
+  }
+}
+
+/// Recover the generating vectors of an explicit Cauchy matrix `mat`: writing
+/// s_ij = 1/mat_ij = x_i + y_j, the normalization y_1 == 0 gives x_i = s_i1 and
+/// y_j = s_1j - s_11 — the same choice wolframscript makes. Returns `None` when
+/// `mat` has a zero or non-numeric entry, or when the reciprocals are not
+/// consistent with any pair of generating vectors. Inexact matrices are matched
+/// to a relative tolerance, so a Cauchy matrix that has been through machine
+/// arithmetic is still recognized.
+fn cauchy_generating_vectors(
+  mat: &[Vec<Expr>],
+) -> Result<Option<(Vec<Expr>, Vec<Expr>)>, InterpreterError> {
+  if mat.is_empty() || mat[0].is_empty() {
+    return Ok(None);
+  }
+  let mut inexact = false;
+  for row in mat {
+    for e in row {
+      if is_zero_expr(e) || !is_explicit_number(e) {
+        return Ok(None);
+      }
+      inexact |= matches!(e, Expr::Real(_) | Expr::BigFloat(_, _));
+    }
+  }
+
+  // s_ij = 1/mat_ij
+  let mut s: Vec<Vec<Expr>> = Vec::with_capacity(mat.len());
+  for row in mat {
+    let mut sr = Vec::with_capacity(row.len());
+    for e in row {
+      sr.push(evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![e.clone(), Expr::Integer(-1)].into(),
+      })?);
+    }
+    s.push(sr);
+  }
+
+  let sub = |a: &Expr, b: &Expr| -> Result<Expr, InterpreterError> {
+    evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        a.clone(),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), b.clone()].into(),
+        },
+      ]
+      .into(),
+    })
+  };
+
+  let x: Vec<Expr> = s.iter().map(|r| r[0].clone()).collect();
+  let mut y: Vec<Expr> = Vec::with_capacity(s[0].len());
+  for j in 0..s[0].len() {
+    y.push(sub(&s[0][j], &s[0][0])?);
+  }
+
+  for (i, row) in s.iter().enumerate() {
+    for (j, sij) in row.iter().enumerate() {
+      let want = evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![x[i].clone(), y[j].clone()].into(),
+      })?;
+      let diff = sub(sij, &want)?;
+      if is_zero_expr(&diff) {
+        continue;
+      }
+      let close = inexact
+        && match (
+          crate::functions::math_ast::expr_to_f64(&diff),
+          crate::functions::math_ast::expr_to_f64(sij),
+        ) {
+          (Some(d), Some(v)) => d.abs() <= 1e-8 * v.abs().max(1.0),
+          _ => false,
+        };
+      if !close {
+        return Ok(None);
+      }
+    }
+  }
+  Ok(Some((x, y)))
+}
+
+/// `CauchyMatrix[x, y]` — the Cauchy matrix whose entry (i, j) is
+/// 1/(x_i + y_j), kept as the structured array
+///   CauchyMatrix[StructuredArray`StructuredData[{m, n}, {x, y}]]
+/// `CauchyMatrix[x]` is `CauchyMatrix[x, x]`, and `CauchyMatrix[mat]` recovers
+/// the generating vectors of an explicit Cauchy matrix. `TargetStructure` ->
+/// "Dense" returns the dense matrix instead of the structured array; Automatic
+/// and "Structured" keep the structured form. Generating vectors with
+/// x_i + y_j == 0 for some pair have no Cauchy matrix (`::cmvecs`), and a
+/// matrix that is not a Cauchy matrix reports `::cmat` — both like
+/// wolframscript.
+pub fn cauchy_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unchanged = || Ok(unevaluated("CauchyMatrix", args));
+  if args.is_empty() {
+    return unchanged();
+  }
+
+  // Already in the canonical StructuredData form — keep it as-is.
+  if let Expr::FunctionCall { name, .. } = &args[0]
+    && name == "StructuredArray`StructuredData"
+  {
+    return unchanged();
+  }
+
+  // A rule or a (possibly empty) list of rules is an option, not a generating
+  // vector: `CauchyMatrix[x, {}]` is `CauchyMatrix[x]` with no options.
+  let is_option = |e: &Expr| match e {
+    Expr::List(items) => items.iter().all(|i| rule_parts(i).is_some()),
+    other => rule_parts(other).is_some(),
+  };
+  let positional = if args.len() >= 2 && !is_option(&args[1]) {
+    2
+  } else {
+    1
+  };
+
+  let mut dense = false;
+  for extra in &args[positional..] {
+    let rules: Vec<&Expr> = match extra {
+      Expr::List(items) => items.iter().collect(),
+      other => vec![other],
+    };
+    for item in rules {
+      let Some((lhs, rhs)) = rule_parts(item) else {
+        crate::emit_message(&format!(
+          "CauchyMatrix::nonopt: Options expected (instead of {}) beyond position {} in {}. An option must be a rule or a list of rules.",
+          crate::syntax::expr_to_string(extra),
+          positional,
+          crate::syntax::expr_to_string(&unevaluated("CauchyMatrix", args))
+        ));
+        return unchanged();
+      };
+      match lhs {
+        Expr::Identifier(name) if name == "TargetStructure" => match rhs {
+          Expr::String(s) if s == "Dense" => dense = true,
+          Expr::String(s) if s == "Structured" => dense = false,
+          Expr::Identifier(a) if a == "Automatic" => dense = false,
+          other => {
+            let shown = match other {
+              Expr::String(s) => s.clone(),
+              e => crate::syntax::expr_to_string(e),
+            };
+            crate::emit_message(&format!(
+              "CauchyMatrix::badts: {shown} is not a valid target structure."
+            ));
+            return unchanged();
+          }
+        },
+        other => {
+          crate::emit_message(&format!(
+            "CauchyMatrix::optx: Unknown option {} in {}.",
+            crate::syntax::expr_to_string(other),
+            crate::syntax::expr_to_string(&unevaluated("CauchyMatrix", args))
+          ));
+          return unchanged();
+        }
+      }
+    }
+  }
+
+  let cmat = |shown: &Expr| {
+    crate::emit_message(&format!(
+      "CauchyMatrix::cmat: A Cauchy matrix could not be constructed from {}.",
+      crate::syntax::expr_to_string(shown)
+    ));
+  };
+
+  // Resolve the generating vectors.
+  let (x, y) = if positional == 2 {
+    match (
+      expr_to_vector(&args[0]).filter(|v| !v.is_empty()),
+      expr_to_vector(&args[1]).filter(|v| !v.is_empty()),
+    ) {
+      (Some(x), Some(y)) => (x, y),
+      // An empty generating vector, or a matrix in the first position, stays
+      // unevaluated without a message in wolframscript.
+      (Some(_), None) if matches!(&args[1], Expr::List(_)) => {
+        cmat(&unevaluated("CauchyMatrix", args));
+        return unchanged();
+      }
+      (None, _) if is_explicit_number(&args[0]) => {
+        cmat(&unevaluated("CauchyMatrix", args));
+        return unchanged();
+      }
+      _ => return unchanged(),
+    }
+  } else if let Some(v) = expr_to_vector(&args[0]).filter(|v| !v.is_empty()) {
+    (v.clone(), v)
+  } else if let Some(mat) = expr_to_matrix(&args[0]) {
+    match cauchy_generating_vectors(&mat)? {
+      Some(pair) => pair,
+      None => {
+        cmat(&args[0]);
+        return unchanged();
+      }
+    }
+  } else if matches!(&args[0], Expr::List(items) if items.is_empty()) {
+    // CauchyMatrix[{}] stays unevaluated without a message.
+    return unchanged();
+  } else if matches!(&args[0], Expr::List(_)) || is_explicit_number(&args[0]) {
+    // A ragged list or a bare number is reported against the whole call.
+    cmat(&unevaluated("CauchyMatrix", args));
+    return unchanged();
+  } else {
+    return unchanged();
+  };
+
+  // No entry may have a vanishing denominator.
+  for xi in &x {
+    for yj in &y {
+      let sum = evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![xi.clone(), yj.clone()].into(),
+      })?;
+      if is_zero_expr(&sum) {
+        crate::emit_message(&format!(
+          "CauchyMatrix::cmvecs: A Cauchy matrix could not be constructed from the vectors {} and {}.",
+          crate::syntax::expr_to_string(&Expr::List(x.clone().into())),
+          crate::syntax::expr_to_string(&Expr::List(y.clone().into()))
+        ));
+        return unchanged();
+      }
+    }
+  }
+
+  if dense {
+    return cauchy_dense(&x, &y);
+  }
+  let structured = Expr::FunctionCall {
+    name: "StructuredArray`StructuredData".to_string(),
+    args: vec![
+      Expr::List(
+        vec![
+          Expr::Integer(x.len() as i128),
+          Expr::Integer(y.len() as i128),
+        ]
+        .into(),
+      ),
+      Expr::List(vec![Expr::List(x.into()), Expr::List(y.into())].into()),
+    ]
+    .into(),
+  };
+  Ok(Expr::FunctionCall {
+    name: "CauchyMatrix".to_string(),
+    args: vec![structured].into(),
+  })
+}
+
+/// The dense m x n matrix with entry (i, j) equal to 1/(x_i + y_j).
+fn cauchy_dense(x: &[Expr], y: &[Expr]) -> Result<Expr, InterpreterError> {
+  let mut rows = Vec::with_capacity(x.len());
+  for xi in x {
+    let mut row = Vec::with_capacity(y.len());
+    for yj in y {
+      row.push(evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![xi.clone(), yj.clone()].into(),
+          },
+          Expr::Integer(-1),
+        ]
+        .into(),
+      })?);
+    }
+    rows.push(Expr::List(row.into()));
+  }
+  Ok(Expr::List(rows.into()))
 }
 
 pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

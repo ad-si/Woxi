@@ -646,6 +646,18 @@ pub fn dispatch_math_functions(
       return Some(crate::functions::math_ast::lcm_ast(args));
     }
     "Total" => {
+      // A structured matrix (CauchyMatrix[…], BlockDiagonalMatrix[…], …) is
+      // totalled over the matrix it represents, not over its stored payload.
+      if let Some(first) = args.first()
+        && let Some(dense) =
+          crate::functions::linear_algebra_ast::structured_matrix_to_dense(
+            first,
+          )
+      {
+        let mut densified = args.to_vec();
+        densified[0] = dense;
+        return Some(crate::functions::math_ast::total_ast(&densified));
+      }
       return Some(crate::functions::math_ast::total_ast(args));
     }
     "HammingWindow"

@@ -5438,7 +5438,7 @@ CarlsonRJ,Carlson symmetric elliptic integral of the third kind R_J,✅,pure,12.
 CarlsonRK,,,,12.3,
 CarlsonRM,,,,12.3,
 Cast,,,,13.1,
-CauchyMatrix,,,,13.2,
+CauchyMatrix,Cauchy matrix with entry (i j) equal to 1/(x_i + y_j) for generating vectors x and y,✅,pure,13.2,
 CellDingbatMargin,,🚫,,13.1,
 CellLabelTemplate,,🚫,,13.1,
 CellStyleImportRules,,🚫,,14.0,

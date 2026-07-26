@@ -2323,6 +2323,18 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::delete_elements_ast(args));
     }
     "Dimensions" | "TensorDimensions" if args.len() == 1 || args.len() == 2 => {
+      // A structured-matrix wrapper (CauchyMatrix[…], BlockDiagonalMatrix[…],
+      // …) reports the dimensions of the matrix it represents, not of the
+      // wrapper expression.
+      if let Some(dense) =
+        crate::functions::linear_algebra_ast::structured_matrix_to_dense(
+          &args[0],
+        )
+      {
+        let mut densified = args.to_vec();
+        densified[0] = dense;
+        return Some(list_helpers_ast::dimensions_ast(&densified));
+      }
       return Some(list_helpers_ast::dimensions_ast(args));
     }
     "Delete" if args.len() == 2 => {
@@ -3234,6 +3246,16 @@ pub fn dispatch_list_operations(
       ));
     }
     "ArrayRules" if args.len() == 1 || args.len() == 2 => {
+      // Structured matrices report the rules of the matrix they represent.
+      if let Some(dense) =
+        crate::functions::linear_algebra_ast::structured_matrix_to_dense(
+          &args[0],
+        )
+      {
+        let mut densified = args.to_vec();
+        densified[0] = dense;
+        return Some(array_rules_ast(&densified));
+      }
       return Some(array_rules_ast(args));
     }
     "TakeDrop" if args.len() == 2 => {

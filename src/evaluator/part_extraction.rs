@@ -359,6 +359,15 @@ pub fn extract_part_ast(
     }
   }
 
+  // A structured matrix (CauchyMatrix[…], BlockDiagonalMatrix[…], the
+  // LUDecomposition wrappers, …) is likewise densified first, so Part indexes
+  // the matrix it represents rather than its stored StructuredData payload.
+  if let Some(dense) =
+    crate::functions::linear_algebra_ast::structured_matrix_to_dense(expr)
+  {
+    return extract_part_ast(&dense, index);
+  }
+
   // For associations, handle key-based lookup and integer position indexing
   if let Expr::Association(items) = expr {
     // Positional lookup shared by the single-integer and list-index forms.

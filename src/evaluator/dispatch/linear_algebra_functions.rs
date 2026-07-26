@@ -413,6 +413,11 @@ pub fn dispatch_linear_algebra_functions(
         crate::functions::linear_algebra_ast::block_diagonal_matrix_ast(args),
       );
     }
+    "CauchyMatrix" if !args.is_empty() => {
+      return Some(crate::functions::linear_algebra_ast::cauchy_matrix_ast(
+        args,
+      ));
+    }
     "VandermondeMatrix" if args.len() == 1 => {
       return Some(
         crate::functions::linear_algebra_ast::vandermonde_matrix_ast(args),

@@ -525,6 +525,7 @@
       - [`AntisymmetricMatrixQ`](math/linear_algebra/AntisymmetricMatrixQ.md)
       - [`BoxMatrix`](math/linear_algebra/BoxMatrix.md)
       - [`Cartesian`](math/linear_algebra/Cartesian.md)
+      - [`CauchyMatrix`](math/linear_algebra/CauchyMatrix.md)
       - [`CellularAutomaton`](math/linear_algebra/CellularAutomaton.md)
       - [`SubstitutionSystem`](math/linear_algebra/SubstitutionSystem.md)
       - [`CharacteristicPolynomial`](math/linear_algebra/CharacteristicPolynomial.md)

@@ -879,6 +879,302 @@ mod block_diagonal_matrix {
       "BlockDiagonalMatrix[{{{1, 2, 3}}, {{4}, {5}}}]"
     );
   }
+
+  #[test]
+  fn generic_array_access() {
+    // Regression: Dimensions, Part and ArrayRules used to index into the
+    // StructuredData payload instead of the matrix the wrapper represents,
+    // giving `{1}`, a Part::partw error and a pair of nonsense rules.
+    assert_eq!(
+      interpret("Dimensions[BlockDiagonalMatrix[{{{1, 2}, {3, 4}}, {{5}}}]]")
+        .unwrap(),
+      "{3, 3}"
+    );
+    assert_eq!(
+      interpret("BlockDiagonalMatrix[{{{1, 2}, {3, 4}}, {{5}}}][[2, 2]]")
+        .unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret("ArrayRules[BlockDiagonalMatrix[{{{1, 2}, {3, 4}}, {{5}}}]]")
+        .unwrap(),
+      "{{1, 1} -> 1, {1, 2} -> 2, {2, 1} -> 3, {2, 2} -> 4, {3, 3} -> 5, \
+       {_, _} -> 0}"
+    );
+  }
+}
+
+mod cauchy_matrix {
+  use super::*;
+
+  #[test]
+  fn structured_form() {
+    // CauchyMatrix[x, y] keeps the generating vectors in a structured array.
+    assert_eq!(
+      interpret("CauchyMatrix[{1, 2, 3}, {1, 5, 6}]").unwrap(),
+      "CauchyMatrix[StructuredArray`StructuredData[{3, 3}, \
+       {{1, 2, 3}, {1, 5, 6}}]]"
+    );
+    // CauchyMatrix[x] is CauchyMatrix[x, x].
+    assert_eq!(
+      interpret("CauchyMatrix[{1, 2, 3}]").unwrap(),
+      "CauchyMatrix[StructuredArray`StructuredData[{3, 3}, \
+       {{1, 2, 3}, {1, 2, 3}}]]"
+    );
+    // An empty list of options is not a generating vector.
+    assert_eq!(
+      interpret("CauchyMatrix[{1, 2}, {}]").unwrap(),
+      "CauchyMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {{1, 2}, {1, 2}}]]"
+    );
+  }
+
+  #[test]
+  fn normal_densifies() {
+    // Entry (i, j) is 1/(x_i + y_j).
+    assert_eq!(
+      interpret("Normal[CauchyMatrix[{1, 2, 3}, {1, 5, 6}]]").unwrap(),
+      "{{1/2, 1/6, 1/7}, {1/3, 1/7, 1/8}, {1/4, 1/8, 1/9}}"
+    );
+    assert_eq!(
+      interpret("Normal[CauchyMatrix[{1, 2, 3}]]").unwrap(),
+      "{{1/2, 1/3, 1/4}, {1/3, 1/4, 1/5}, {1/4, 1/5, 1/6}}"
+    );
+    // Rectangular: m = Length[x], n = Length[y].
+    assert_eq!(
+      interpret("Normal[CauchyMatrix[{1, 2, 3}, {1, 5}]]").unwrap(),
+      "{{1/2, 1/6}, {1/3, 1/7}, {1/4, 1/8}}"
+    );
+    // Symbolic generating vectors are kept symbolic.
+    assert_eq!(
+      interpret("Normal[CauchyMatrix[{a, b}, {c, d}]]").unwrap(),
+      "{{(a + c)^(-1), (a + d)^(-1)}, {(b + c)^(-1), (b + d)^(-1)}}"
+    );
+    // Machine reals stay machine reals.
+    assert_eq!(
+      interpret("Normal[CauchyMatrix[{1., 2.}, {3., 4.}]]").unwrap(),
+      "{{0.25, 0.2}, {0.2, 0.16666666666666666}}"
+    );
+  }
+
+  #[test]
+  fn dense_target_structure() {
+    // TargetStructure -> "Dense" skips the structured array.
+    assert_eq!(
+      interpret("CauchyMatrix[{1, 2}, {3, 4}, TargetStructure -> \"Dense\"]")
+        .unwrap(),
+      "{{1/4, 1/5}, {1/5, 1/6}}"
+    );
+    assert_eq!(
+      interpret("CauchyMatrix[{1, 2}, TargetStructure -> \"Dense\"]").unwrap(),
+      "{{1/2, 1/3}, {1/3, 1/4}}"
+    );
+    // Automatic and "Structured" both keep the structured form.
+    assert_eq!(
+      interpret("CauchyMatrix[{1, 2}, {3, 4}, TargetStructure -> Automatic]")
+        .unwrap(),
+      "CauchyMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {{1, 2}, {3, 4}}]]"
+    );
+    assert_eq!(
+      interpret(
+        "CauchyMatrix[{1, 2}, {3, 4}, TargetStructure -> \"Structured\"]"
+      )
+      .unwrap(),
+      "CauchyMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {{1, 2}, {3, 4}}]]"
+    );
+  }
+
+  #[test]
+  fn generic_array_access() {
+    assert_eq!(
+      interpret("Dimensions[CauchyMatrix[{1, 2, 3}, {1, 5}]]").unwrap(),
+      "{3, 2}"
+    );
+    assert_eq!(
+      interpret("CauchyMatrix[{1, 2, 3}, {1, 5}][[3, 2]]").unwrap(),
+      "1/8"
+    );
+    assert_eq!(
+      interpret("ArrayRules[CauchyMatrix[{1, 2}, {1, 2}]]").unwrap(),
+      "{{1, 1} -> 1/2, {1, 2} -> 1/3, {2, 1} -> 1/3, {2, 2} -> 1/4, \
+       {_, _} -> 0}"
+    );
+    // The structured matrix densifies in Dot products.
+    assert_eq!(
+      interpret("CauchyMatrix[{1, 2}, {3, 4}] . {1, 1}").unwrap(),
+      "{9/20, 11/30}"
+    );
+    assert_eq!(
+      interpret("Total[CauchyMatrix[{1, 2}, {3, 4}]]").unwrap(),
+      "{9/20, 11/30}"
+    );
+  }
+
+  #[test]
+  fn recovers_generating_vectors() {
+    // CauchyMatrix[mat] recovers the generating vectors, normalized so that
+    // y_1 == 0.
+    assert_eq!(
+      interpret("CauchyMatrix[{{1/2, 1/3}, {1/3, 1/4}}]").unwrap(),
+      "CauchyMatrix[StructuredArray`StructuredData[{2, 2}, {{2, 3}, {0, 1}}]]"
+    );
+    assert_eq!(
+      interpret("CauchyMatrix[Normal[CauchyMatrix[{1, 2}, {5, 7}]]]").unwrap(),
+      "CauchyMatrix[StructuredArray`StructuredData[{2, 2}, {{6, 7}, {0, 2}}]]"
+    );
+    // A single row is always a Cauchy matrix.
+    assert_eq!(
+      interpret("CauchyMatrix[{{1, 2, 3}}]").unwrap(),
+      "CauchyMatrix[StructuredArray`StructuredData[{1, 3}, \
+       {{1}, {0, -1/2, -2/3}}]]"
+    );
+    // Machine-arithmetic entries are matched to a tolerance.
+    assert_eq!(
+      interpret("CauchyMatrix[N[Normal[CauchyMatrix[{1, 2}, {3, 4}]]]]")
+        .unwrap(),
+      "CauchyMatrix[StructuredArray`StructuredData[{2, 2}, \
+       {{4., 5.}, {0., 1.}}]]"
+    );
+  }
+
+  #[test]
+  fn vanishing_denominator_reports_cmvecs() {
+    clear_state();
+    assert_eq!(
+      interpret("CauchyMatrix[{1, 2}, {-1, 3}]").unwrap(),
+      "CauchyMatrix[{1, 2}, {-1, 3}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "CauchyMatrix::cmvecs: A Cauchy matrix could not be constructed \
+         from the vectors {1, 2} and {-1, 3}."
+      )),
+      "got {msgs:?}"
+    );
+    // The one-argument form duplicates the vector, so x_i + x_j can vanish.
+    clear_state();
+    assert_eq!(
+      interpret("CauchyMatrix[{1, -1}]").unwrap(),
+      "CauchyMatrix[{1, -1}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "CauchyMatrix::cmvecs: A Cauchy matrix could not be constructed \
+         from the vectors {1, -1} and {1, -1}."
+      )),
+      "got {msgs:?}"
+    );
+    // Symbolic sums that cancel are caught too.
+    clear_state();
+    assert_eq!(
+      interpret("CauchyMatrix[{x, y}, {-x, 1}]").unwrap(),
+      "CauchyMatrix[{x, y}, {-x, 1}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains("CauchyMatrix::cmvecs")),
+      "got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn non_cauchy_matrix_reports_cmat() {
+    clear_state();
+    assert_eq!(
+      interpret("CauchyMatrix[{{1, 2}, {3, 4}}]").unwrap(),
+      "CauchyMatrix[{{1, 2}, {3, 4}}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "CauchyMatrix::cmat: A Cauchy matrix could not be constructed \
+         from {{1, 2}, {3, 4}}."
+      )),
+      "got {msgs:?}"
+    );
+    // wolframscript only recovers generating vectors from explicit numbers, so
+    // a symbolic Cauchy matrix is reported as well.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "CauchyMatrix[{{1/(a + c), 1/(a + d)}, {1/(b + c), 1/(b + d)}}]"
+      )
+      .unwrap(),
+      "CauchyMatrix[{{(a + c)^(-1), (a + d)^(-1)}, \
+       {(b + c)^(-1), (b + d)^(-1)}}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains("CauchyMatrix::cmat")),
+      "got {msgs:?}"
+    );
+    // A bare number is reported against the whole call.
+    clear_state();
+    assert_eq!(interpret("CauchyMatrix[5]").unwrap(), "CauchyMatrix[5]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "CauchyMatrix::cmat: A Cauchy matrix could not be constructed \
+         from CauchyMatrix[5]."
+      )),
+      "got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn silently_unevaluated_forms() {
+    // An empty generating vector, or a second argument that is neither a
+    // vector nor an option, stays unevaluated without a message.
+    clear_state();
+    assert_eq!(interpret("CauchyMatrix[{}]").unwrap(), "CauchyMatrix[{}]");
+    assert_eq!(
+      interpret("CauchyMatrix[{}, {1}]").unwrap(),
+      "CauchyMatrix[{}, {1}]"
+    );
+    assert_eq!(
+      interpret("CauchyMatrix[{1, 2}, foo]").unwrap(),
+      "CauchyMatrix[{1, 2}, foo]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().all(|m| !m.contains("CauchyMatrix::")),
+      "got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn option_messages() {
+    clear_state();
+    assert_eq!(
+      interpret("CauchyMatrix[{1, 2}, {3, 4}, TargetStructure -> \"Bogus\"]")
+        .unwrap(),
+      "CauchyMatrix[{1, 2}, {3, 4}, TargetStructure -> Bogus]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "CauchyMatrix::badts: Bogus is not a valid target structure."
+      )),
+      "got {msgs:?}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("CauchyMatrix[{1, 2}, {3, 4}, {5, 6}]").unwrap(),
+      "CauchyMatrix[{1, 2}, {3, 4}, {5, 6}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "CauchyMatrix::nonopt: Options expected (instead of {5, 6}) beyond \
+         position 2 in CauchyMatrix[{1, 2}, {3, 4}, {5, 6}]."
+      )),
+      "got {msgs:?}"
+    );
+  }
 }
 
 mod cross {
