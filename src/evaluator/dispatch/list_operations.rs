@@ -2416,7 +2416,7 @@ pub fn dispatch_list_operations(
         return Some(Ok(bool_expr(ordered)));
       }
     }
-    "DeleteAdjacentDuplicates" if args.len() == 1 => {
+    "DeleteAdjacentDuplicates" if args.len() == 1 || args.len() == 2 => {
       return Some(list_helpers_ast::delete_adjacent_duplicates_ast(args));
     }
     "Commonest" if !args.is_empty() && args.len() <= 2 => {
@@ -5545,18 +5545,31 @@ pub fn dispatch_list_operations(
       }
     }
     // CountDistinct[list] — count unique elements
-    "CountDistinct" if args.len() == 1 => {
-      // Lists count distinct elements; associations count distinct values.
-      let elems: Option<Vec<&Expr>> = match &args[0] {
-        Expr::List(elems) => Some(elems.iter().collect()),
+    // CountDistinct[list] counts distinct elements (an association's values);
+    // CountDistinct[list, test] counts the elements DeleteDuplicates keeps
+    // under that sameness test, which is not a transitive grouping:
+    // CountDistinct[{1, 2, 3, 4, 5}, Abs[#1 - #2] < 2 &] is 3, not 1.
+    "CountDistinct" if args.len() == 1 || args.len() == 2 => {
+      let elems: Option<Vec<Expr>> = match &args[0] {
+        Expr::List(elems) => Some(elems.to_vec()),
         Expr::Association(pairs) => {
-          Some(pairs.iter().map(|(_, v)| v).collect())
+          Some(pairs.iter().map(|(_, v)| v.clone()).collect())
         }
         _ => None,
       };
       if let Some(elems) = elems {
+        if let Some(test) = args.get(1) {
+          let kept = list_helpers_ast::delete_duplicates_ast(
+            &Expr::List(elems.into()),
+            Some(test),
+          );
+          return Some(kept.map(|k| match &k {
+            Expr::List(items) => Expr::Integer(items.len() as i128),
+            _ => k,
+          }));
+        }
         let mut seen = std::collections::HashSet::new();
-        for e in elems {
+        for e in &elems {
           seen.insert(expr_to_string(e));
         }
         return Some(Ok(Expr::Integer(seen.len() as i128)));

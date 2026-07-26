@@ -862,35 +862,60 @@ pub fn delete_duplicates_by_ast(
   Ok(Expr::List(result.into()))
 }
 
-/// DeleteAdjacentDuplicates[list] - removes consecutive duplicate elements
+/// `DeleteAdjacentDuplicates[list]` keeps the first element of each run of
+/// identical elements. `DeleteAdjacentDuplicates[list, test]` decides what
+/// counts as a run by applying `test` to consecutive elements — the same
+/// grouping `Split[list, test]` makes, keeping each run's first element. On
+/// an association the runs are formed from the values and the first key of
+/// each run is kept.
 pub fn delete_adjacent_duplicates_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "DeleteAdjacentDuplicates expects exactly 1 argument".into(),
+      "DeleteAdjacentDuplicates expects 1 or 2 arguments".into(),
     ));
   }
-  let items = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(unevaluated("DeleteAdjacentDuplicates", args));
+  let test = args.get(1);
+  // True when `b` continues the run `a` starts.
+  let same = |a: &Expr, b: &Expr| -> Result<bool, InterpreterError> {
+    match test {
+      None => {
+        Ok(crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b))
+      }
+      Some(t) => {
+        let r = apply_func_to_two_args(t, a, b)?;
+        Ok(matches!(&r, Expr::Identifier(s) if s == "True"))
+      }
     }
   };
-
-  if items.is_empty() {
-    return Ok(Expr::List(vec![].into()));
-  }
-
-  let mut result = vec![items[0].clone()];
-  for item in items.iter().skip(1) {
-    if crate::syntax::expr_to_string(item)
-      != crate::syntax::expr_to_string(result.last().unwrap())
-    {
-      result.push(item.clone());
+  // Indices of the elements that start a run.
+  let run_starts = |values: &[Expr]| -> Result<Vec<usize>, InterpreterError> {
+    let mut keep = Vec::new();
+    for (i, v) in values.iter().enumerate() {
+      if i == 0 || !same(&values[i - 1], v)? {
+        keep.push(i);
+      }
     }
+    Ok(keep)
+  };
+
+  match &args[0] {
+    Expr::List(items) => {
+      let keep = run_starts(items)?;
+      Ok(Expr::List(
+        keep.into_iter().map(|i| items[i].clone()).collect(),
+      ))
+    }
+    Expr::Association(pairs) => {
+      let values: Vec<Expr> = pairs.iter().map(|(_, v)| v.clone()).collect();
+      let keep = run_starts(&values)?;
+      Ok(Expr::Association(
+        keep.into_iter().map(|i| pairs[i].clone()).collect(),
+      ))
+    }
+    _ => Ok(unevaluated("DeleteAdjacentDuplicates", args)),
   }
-  Ok(Expr::List(result.into()))
 }
 
 /// Commonest[list] - returns the most common element(s)

@@ -2517,7 +2517,7 @@ ButtonBar,,🚫,,7.0,2570
 ColumnSpacings,option for column spacing in grids,✅,Symbolic,3.0,2570
 DiagonalizableMatrixQ,Test whether a matrix is diagonalizable,✅,none,10.0,2570
 StreamPosition,Returns the current position in an open stream,✅,io,2.0,2570
-CountDistinct,Count distinct elements in a list,✅,none,10.0,2578
+CountDistinct,Count distinct elements of a list or an association's values under an optional sameness test,✅,pure,10.0,2578
 CriterionFunction,option specifying criterion function,✅,Symbolic,10.4,2578
 CrossMatrix,Gives the n-dimensional cross structuring element for a numeric radius or list of radii,✅,pure,7.0,2578
 DateInterval,Creates an interval between two dates with normalized date list representation,✅,pure,12.1,2578
@@ -5520,7 +5520,7 @@ DateScale,,,,13.0,
 DeclareCompiledComponent,,,,13.2,
 DefaultDiffStyle,,,,14.1,
 DefaultFontProperties,,,,4.0,
-DeleteAdjacentDuplicates,Removes consecutive duplicate elements from a list,✅,pure,13.1,
+DeleteAdjacentDuplicates,Keeps the first element of each run of duplicates in a list or an association's values under an optional sameness test,✅,pure,13.1,
 DeleteElements,Removes elements from a list (SameQ matching) with optional multiplicity control via n->{elems},✅,pure,13.1,
 DelimiterAutoMatching,,,,12.3,
 Diff,,,,14.1,

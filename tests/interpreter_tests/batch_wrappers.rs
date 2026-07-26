@@ -4091,6 +4091,98 @@ mod batch_unevaluated_wrappers_2 {
     );
     assert_eq!(interpret("CountDistinct[<||>]").unwrap(), "0");
   }
+
+  // CountDistinct[list, test] counts what DeleteDuplicates keeps under that
+  // sameness test. The grouping is not transitive: with `Abs[#1 - #2] < 2`
+  // every consecutive pair of {1, 2, 3, 4, 5} is "the same", yet the answer
+  // is 3, because each element is only compared with the ones already kept.
+  #[test]
+  fn count_distinct_with_sameness_test() {
+    assert_eq!(
+      interpret("CountDistinct[{1, 2, 4}, Abs[#1 - #2] < 2 &]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("CountDistinct[{1, 2, 3, 4, 5}, Abs[#1 - #2] < 2 &]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("CountDistinct[{1, 5, 2, 6}, Abs[#1 - #2] < 2 &]").unwrap(),
+      "2"
+    );
+    // An association is counted by its values.
+    assert_eq!(
+      interpret(
+        "CountDistinct[<|\"a\" -> 1, \"b\" -> 2, \"c\" -> 4|>, \
+         Abs[#1 - #2] < 2 &]"
+      )
+      .unwrap(),
+      "2"
+    );
+    assert_eq!(interpret("CountDistinct[{}, Equal]").unwrap(), "0");
+  }
+
+  // DeleteAdjacentDuplicates keeps the first element of each run, where a
+  // test decides what continues a run — the same grouping Split makes.
+  #[test]
+  fn delete_adjacent_duplicates_with_test() {
+    assert_eq!(
+      interpret("DeleteAdjacentDuplicates[{1, 2, 4, 7}, Abs[#1 - #2] < 3 &]")
+        .unwrap(),
+      "{1, 7}"
+    );
+    assert_eq!(
+      interpret(
+        "DeleteAdjacentDuplicates[{1, 2, 4, 7, 8}, Abs[#1 - #2] < 2 &]"
+      )
+      .unwrap(),
+      "{1, 4, 7}"
+    );
+    // Consecutive elements are compared, so a whole chain collapses.
+    assert_eq!(
+      interpret("DeleteAdjacentDuplicates[{1, 2, 3}, Abs[#1 - #2] < 2 &]")
+        .unwrap(),
+      "{1}"
+    );
+    assert_eq!(
+      interpret(
+        "DeleteAdjacentDuplicates[{\"a\", \"A\", \"b\", \"B\"}, \
+         SameQ[ToLowerCase[#1], ToLowerCase[#2]] &]"
+      )
+      .unwrap(),
+      "{a, b}"
+    );
+    assert_eq!(
+      interpret("DeleteAdjacentDuplicates[{}, Equal]").unwrap(),
+      "{}"
+    );
+    assert_eq!(
+      interpret("DeleteAdjacentDuplicates[{1}, Equal]").unwrap(),
+      "{1}"
+    );
+  }
+
+  // On an association the runs come from the values, and the first key of
+  // each run is kept.
+  #[test]
+  fn delete_adjacent_duplicates_on_an_association() {
+    assert_eq!(
+      interpret(
+        "DeleteAdjacentDuplicates[\
+         Association[a -> 1, b -> 1, c -> 2, d -> 2, e -> 1]]"
+      )
+      .unwrap(),
+      "<|a -> 1, c -> 2, e -> 1|>"
+    );
+    assert_eq!(
+      interpret(
+        "DeleteAdjacentDuplicates[Association[a -> 1, b -> 1, c -> 2], Equal]"
+      )
+      .unwrap(),
+      "<|a -> 1, c -> 2|>"
+    );
+  }
+
   #[test]
   fn count_distinct_by() {
     // Count distinct values of f applied to each element.
