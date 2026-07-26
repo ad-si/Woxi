@@ -4768,6 +4768,26 @@ fn strip_negation(e: &Expr) -> Expr {
 /// polynomial-like terms first (variables, powers), then transcendental functions,
 /// with alphabetical ordering within each group.
 /// Compute term priority for sorting: 0 = polynomial-like, 1 = transcendental.
+/// The head of a plain function call — one that is not an arithmetic or
+/// pattern structure, whose ordering rules live elsewhere.
+fn plain_call_head(e: &Expr) -> Option<&str> {
+  match e {
+    Expr::FunctionCall { name, .. }
+      if !matches!(
+        name.as_str(),
+        "Plus" | "Times" | "Power" | "Rational" | "Complex" | "List"
+          // Derivative[n][f][x] is stored flat here, but its head is really
+          // the compound Derivative[n][f], which orders after a symbol-headed
+          // call: wolframscript gives `g[w]*Derivative[1][f][0]`.
+          | "Derivative"
+      ) =>
+    {
+      Some(name.as_str())
+    }
+    _ => None,
+  }
+}
+
 pub fn term_priority(e: &Expr) -> i32 {
   match e {
     Expr::Identifier(_) => 0,
@@ -5113,6 +5133,23 @@ pub fn order_monomial_vs_sum(
 
 pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
   symbolic_args.sort_by(|a, b| {
+    // Two plain function calls with different heads are ordered by those
+    // heads, the way canonical order does: `Gamma[x]*Zeta[x]`, `f[x]*Zeta[x]`,
+    // `Erf[x]*LogGamma[x]`. Without this they fall into the priority buckets
+    // below, which only coincidentally agree with the head order — every head
+    // outside the transcendental list sorted first, however late its name.
+    if let (Some(na), Some(nb)) = (plain_call_head(a), plain_call_head(b))
+      && na != nb
+    {
+      // wolfram_string_order returns 1 when the first name comes first.
+      let ord = crate::functions::list_helpers_ast::wolfram_string_order(na, nb);
+      if ord > 0 {
+        return std::cmp::Ordering::Less;
+      }
+      if ord < 0 {
+        return std::cmp::Ordering::Greater;
+      }
+    }
     // A Plus factor takes the max priority of its terms (like Times) so a
     // transcendental sum such as (Cos[x]+Sin[x]) shares the bucket with
     // Sin[x] and gets ordered by the top-term rule below. term_priority

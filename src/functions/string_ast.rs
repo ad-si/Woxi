@@ -1334,6 +1334,17 @@ fn expand_dollar_in_expr(expr: &Expr, caps: &regex::Captures) -> Expr {
         .collect::<Vec<_>>()
         .into(),
     },
+    // `"<" <> "$1" <> ">"` is a BinaryOp, so the operators have to be walked
+    // too or the backreference never reaches its string literal.
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(expand_dollar_in_expr(left, caps)),
+      right: Box::new(expand_dollar_in_expr(right, caps)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(expand_dollar_in_expr(operand, caps)),
+    },
     other => other.clone(),
   }
 }
@@ -1403,6 +1414,10 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       condition: Option<Expr>,
       /// Back-reference constraints (see `Regex::constraints`).
       constraints: Vec<(String, String)>,
+      /// Whether `$0`/`$1`/… in the replacement expand to capture groups.
+      /// Only a RegularExpression pattern has them; a literal or symbolic
+      /// string pattern leaves `$1` alone.
+      expand_dollar: bool,
     },
   }
 
@@ -1466,6 +1481,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         replacement_expr: replacement_expr.clone(),
         condition: Some(test.clone()),
         constraints,
+        expand_dollar: false,
       });
     }
 
@@ -1489,6 +1505,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           replacement_expr: replacement_expr.clone(),
           condition: None,
           constraints: Vec::new(),
+          expand_dollar: false,
         });
       }
       let replacement = expr_to_str(replacement_expr)?;
@@ -1536,12 +1553,20 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // A *plain-string* RHS is constant, so the delayed/immediate distinction
       // is moot: route it like a Rule below so `$1`/`$2` backreferences expand
       // (RegularExpression["(a)(b)"] :> "$2$1" -> "ba", matching wolframscript).
+      // A RegularExpression pattern is what gives `$1`… their meaning, and
+      // the expansion happens before the right-hand side is evaluated —
+      // `RegularExpression["(b)"] :> "<" <> "$1" <> ">"` gives "<b>".
+      let from_regular_expression = matches!(
+        pattern_expr,
+        Expr::FunctionCall { name, .. } if name == "RegularExpression"
+      );
       if !replacement_is_string {
         return Ok(ReplaceRule::RegexDelayed {
           regex: re,
           replacement_expr: replacement_expr.clone(),
           condition: None,
           constraints,
+          expand_dollar: from_regular_expression,
         });
       }
 
@@ -1553,6 +1578,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           replacement_expr: replacement_expr.clone(),
           condition: None,
           constraints,
+          expand_dollar: from_regular_expression,
         });
       }
 
@@ -1716,6 +1742,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             replacement_expr,
             condition,
             constraints,
+            expand_dollar,
           } => {
             if let Some(caps) = regex.captures_at(s, i)
               && let Some(m) = caps.get(0)
@@ -1733,8 +1760,13 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   continue;
                 }
               }
-              // Substitute named captures into the replacement expr
-              let substituted = substitute_captures(replacement_expr, &caps);
+              // Substitute named captures into the replacement expr, and the
+              // numbered backreferences before it is evaluated.
+              let mut substituted =
+                substitute_captures(replacement_expr, &caps);
+              if *expand_dollar {
+                substituted = expand_dollar_in_expr(&substituted, &caps);
+              }
               // Evaluate the substituted expression
               let evaluated =
                 crate::evaluator::evaluate_expr_to_expr(&substituted)?;

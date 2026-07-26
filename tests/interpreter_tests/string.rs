@@ -12958,3 +12958,81 @@ mod c_and_fortran_form {
     );
   }
 }
+
+// `$1`… backreferences expand into the replacement before it is evaluated, so
+// they reach string literals inside a compound right-hand side.
+mod regex_backreferences_in_delayed_rules {
+  use super::*;
+
+  #[test]
+  fn a_compound_replacement_still_sees_the_captures() {
+    // Regression: the RHS was evaluated with the literal "$1" left in place.
+    assert_eq!(
+      interpret(
+        "StringReplace[\"abc\", RegularExpression[\"(b)\"] :> \"<\" <> \"$1\" <> \">\"]"
+      )
+      .unwrap(),
+      "a<b>c"
+    );
+    assert_eq!(
+      interpret(
+        "StringCases[\"ab\", RegularExpression[\"(a)\"] :> \"[\" <> \"$1\" <> \"]\"]"
+      )
+      .unwrap(),
+      "{[a]}"
+    );
+    // The expansion happens first, so the function sees the captured text.
+    assert_eq!(
+      interpret(
+        "StringReplace[\"abc\", RegularExpression[\"(b)\"] :> ToUpperCase[\"$1\"]]"
+      )
+      .unwrap(),
+      "aBc"
+    );
+  }
+
+  #[test]
+  fn plain_string_replacements_are_unchanged() {
+    assert_eq!(
+      interpret(
+        "StringReplace[\"abc\", RegularExpression[\"(b)\"] :> \"$1$1\"]"
+      )
+      .unwrap(),
+      "abbc"
+    );
+    assert_eq!(
+      interpret(
+        "StringReplace[\"abc\", RegularExpression[\"(b)\"] -> \"$1$1\"]"
+      )
+      .unwrap(),
+      "abbc"
+    );
+    assert_eq!(
+      interpret(
+        "StringReplace[\"2024-01-02\", \
+         RegularExpression[\"(\\\\d+)-(\\\\d+)-(\\\\d+)\"] -> \"$3/$2/$1\"]"
+      )
+      .unwrap(),
+      "02/01/2024"
+    );
+  }
+
+  // Only a RegularExpression pattern gives `$1` its meaning; a literal or
+  // symbolic string pattern leaves it alone.
+  #[test]
+  fn literal_patterns_do_not_expand() {
+    assert_eq!(
+      interpret("StringReplace[\"abc\", \"b\" :> \"$1\"]").unwrap(),
+      "a$1c"
+    );
+    assert_eq!(
+      interpret("StringReplace[\"abc\", \"b\" :> \"<\" <> \"$1\" <> \">\"]")
+        .unwrap(),
+      "a<$1>c"
+    );
+    assert_eq!(
+      interpret("StringReplace[\"abc\", LetterCharacter :> \"$1\"]").unwrap(),
+      "$1$1$1"
+    );
+  }
+}

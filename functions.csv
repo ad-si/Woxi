@@ -1,7 +1,7 @@
 name,description,implementation_status,effect_level,version,rank
 List,Represents a list of elements,✅,pure,1.0,1
 Rule,Represents a transformation rule lhs -> rhs,✅,pure,1.0,2
-Times,Multiply numbers,✅,pure,1.0,3
+Times,Multiply numbers — symbolic factors are ordered canonically by head then arguments,✅,pure,1.0,3
 Power,Raises a number to a power (infinite bases raise their direction and infinite exponents follow the modulus of the base),✅,pure,1.0,4
 Set,Assigns a value to a symbol,✅,stateful,1.0,5
 Plus,Adds numbers together,✅,pure,1.0,6
@@ -373,7 +373,7 @@ Product,Computes the product of an expression over one or more ranges,✅,pure,1
 FontWeight,Option for specifying font weight (Bold etc),✅,pure,3.0,377
 Right,Symbol for right alignment,✅,pure,1.0,378
 Most,Returns the list without its last element,✅,pure,5.0,379
-StringReplace,Replaces occurrences of substrings in a string,✅,pure,2.0,380
+StringReplace,Replaces occurrences of substrings in a string; RegularExpression backreferences expand before a delayed replacement is evaluated,✅,pure,2.0,380
 ControlType,Option for specifying the type of control in Manipulate,✅,pure,6.0,381
 Pick,Picks elements from a list based on a selector,✅,pure,5.1,382
 Interpolation,Constructs an interpolation of data,✅,pure,2.0,383

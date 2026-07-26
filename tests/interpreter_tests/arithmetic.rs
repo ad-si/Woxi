@@ -10182,3 +10182,74 @@ mod mod_quotient_infinity {
     assert_eq!(interpret("Quotient[7, 3]").unwrap(), "2");
   }
 }
+
+// Two plain function-call factors are ordered by their heads, the way
+// canonical order does.
+mod times_function_head_order {
+  use super::*;
+
+  #[test]
+  fn heads_decide_the_order() {
+    // Regression: heads outside the transcendental list sorted first however
+    // late their name, so Zeta and PolyGamma jumped in front of everything.
+    assert_eq!(
+      interpret("Gamma[x] PolyGamma[0, x]").unwrap(),
+      "Gamma[x]*PolyGamma[0, x]"
+    );
+    assert_eq!(interpret("Gamma[x] Zeta[x]").unwrap(), "Gamma[x]*Zeta[x]");
+    assert_eq!(interpret("Zeta[x] Sin[x]").unwrap(), "Sin[x]*Zeta[x]");
+    assert_eq!(interpret("Zeta[x] Log[x]").unwrap(), "Log[x]*Zeta[x]");
+    assert_eq!(
+      interpret("Erf[x] LogGamma[x]").unwrap(),
+      "Erf[x]*LogGamma[x]"
+    );
+    assert_eq!(
+      interpret("PolyGamma[0, x] Erf[x]").unwrap(),
+      "Erf[x]*PolyGamma[0, x]"
+    );
+    // The order does not depend on how the product was written.
+    assert_eq!(
+      interpret("PolyGamma[0, x] Gamma[x]").unwrap(),
+      "Gamma[x]*PolyGamma[0, x]"
+    );
+  }
+
+  #[test]
+  fn head_comparison_ignores_case() {
+    assert_eq!(interpret("Sin[x] f[x]").unwrap(), "f[x]*Sin[x]");
+    assert_eq!(interpret("Zeta[x] f[x]").unwrap(), "f[x]*Zeta[x]");
+    assert_eq!(interpret("Zeta[x] aa[x]").unwrap(), "aa[x]*Zeta[x]");
+    assert_eq!(interpret("Sin[x] G[x]").unwrap(), "G[x]*Sin[x]");
+    assert_eq!(interpret("g[x] Sin[x]").unwrap(), "g[x]*Sin[x]");
+  }
+
+  #[test]
+  fn the_established_orders_are_unchanged() {
+    assert_eq!(interpret("Sin[x] Cos[x]").unwrap(), "Cos[x]*Sin[x]");
+    assert_eq!(interpret("Gamma[x] Sin[x]").unwrap(), "Gamma[x]*Sin[x]");
+    assert_eq!(
+      interpret("BesselJ[0, x] Gamma[x]").unwrap(),
+      "BesselJ[0, x]*Gamma[x]"
+    );
+    assert_eq!(interpret("f[x] g[x, y]").unwrap(), "f[x]*g[x, y]");
+    // Same head: the arguments decide.
+    assert_eq!(interpret("h[1, 2] h[1]").unwrap(), "h[1]*h[1, 2]");
+    assert_eq!(interpret("Gamma[x] Gamma[y]").unwrap(), "Gamma[x]*Gamma[y]");
+    // A symbol still comes before a function call.
+    assert_eq!(interpret("Sin[x] x").unwrap(), "x*Sin[x]");
+    // Derivative is stored flat but stands for a compound head, which orders
+    // after a symbol-headed call.
+    assert_eq!(
+      interpret("g[w] Derivative[1][f][0]").unwrap(),
+      "g[w]*Derivative[1][f][0]"
+    );
+  }
+
+  #[test]
+  fn the_gamma_derivative_reads_in_order() {
+    assert_eq!(
+      interpret("D[Gamma[x], x]").unwrap(),
+      "Gamma[x]*PolyGamma[0, x]"
+    );
+  }
+}
