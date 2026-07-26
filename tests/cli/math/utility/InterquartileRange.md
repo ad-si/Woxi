@@ -13,3 +13,10 @@ A matrix is reduced columnwise.
 $ wo 'InterquartileRange[{{1, 10}, {2, 20}, {3, 30}, {4, 40}}]'
 {2, 20}
 ```
+
+A second argument supplies the Quantile parameters.
+
+```scrut
+$ wo 'InterquartileRange[{1, 2, 3, 4, 5, 6, 7, 8}, {{0, 0}, {1, 0}}]'
+4
+```

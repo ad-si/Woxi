@@ -20,11 +20,92 @@ fn is_numeric_literal(e: &Expr) -> bool {
     || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
 }
 
+fn binop(op: BinaryOperator, left: Expr, right: Expr) -> Expr {
+  Expr::BinaryOp {
+    op,
+    left: Box::new(left),
+    right: Box::new(right),
+  }
+}
+
+/// True if `param` is a usable Quantile parameter specification: the 2 x 2
+/// matrix `{{a, b}, {c, d}}` or a bare pair of "plot point" parameters.
+fn is_quantile_param(param: &Expr) -> bool {
+  let numeric =
+    |e: &Expr| crate::functions::math_ast::try_eval_to_f64(e).is_some();
+  match param {
+    Expr::List(rows) if rows.len() == 2 => {
+      if rows.iter().all(numeric) {
+        return true;
+      }
+      rows.iter().all(
+        |r| matches!(r, Expr::List(inner) if inner.len() == 2 && inner.iter().all(numeric)),
+      )
+    }
+    _ => false,
+  }
+}
+
+/// The three quartiles of `data` under the Quantile parameters `param`, or
+/// `None` if any of them stays symbolic (a non-numeric column, say).
+fn quartiles_with_params(
+  data: &Expr,
+  param: &Expr,
+) -> Result<Option<Vec<Expr>>, InterpreterError> {
+  let mut out = Vec::with_capacity(3);
+  for (qn, qd) in [(1i128, 4i128), (1, 2), (3, 4)] {
+    let call = Expr::FunctionCall {
+      name: "Quantile".to_string(),
+      args: vec![data.clone(), make_rational(qn, qd), param.clone()].into(),
+    };
+    let v = crate::evaluator::evaluate_expr_to_expr(&call)?;
+    if matches!(&v, Expr::FunctionCall { name, .. } if name == "Quantile") {
+      return Ok(None);
+    }
+    out.push(v);
+  }
+  Ok(Some(out))
+}
+
+/// `Quartiles[data, param]` and friends: the parametric two-argument forms,
+/// built on Quantile. `combine` turns the three quartiles into the result.
+fn quartile_stat_with_params(
+  name: &str,
+  args: &[Expr],
+  combine: impl Fn(&Expr, &Expr, &Expr) -> Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  let [data, param] = args else {
+    return None;
+  };
+  if !is_quantile_param(param) {
+    crate::emit_message(&format!(
+      "{name}::parm: The Quantile parameters {} should be given as a 2 x 2 matrix of real numbers {{{{a,b}},{{c,d}}}} or as a pair of real plot point parameters {{a,b}}.",
+      crate::syntax::format_expr(param, crate::syntax::ExprForm::Output)
+    ));
+    return Some(Ok(unevaluated(name, args)));
+  }
+  // A matrix of data is handled column by column, like the one-argument form.
+  if let Expr::List(items) = data
+    && !items.is_empty()
+    && items.iter().all(|i| matches!(i, Expr::List(_)))
+  {
+    return columnwise_quartile_stat(name, args);
+  }
+  match quartiles_with_params(data, param) {
+    Err(e) => Some(Err(e)),
+    Ok(None) => Some(Ok(unevaluated(name, args))),
+    Ok(Some(q)) => {
+      let combined = combine(&q[0], &q[1], &q[2]);
+      Some(crate::evaluator::evaluate_expr_to_expr(&combined))
+    }
+  }
+}
+
 fn columnwise_quartile_stat(
   name: &str,
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
-  let [Expr::List(items)] = args else {
+  let (Expr::List(items), rest) = (&args[0], &args[1..]) else {
     return None;
   };
   if items.is_empty() || !items.iter().all(|i| matches!(i, Expr::List(_))) {
@@ -44,9 +125,11 @@ fn columnwise_quartile_stat(
   let mut out = Vec::with_capacity(ncols);
   for c in 0..ncols {
     let col: Vec<Expr> = rows.iter().map(|r| r[c].clone()).collect();
+    let mut call_args = vec![Expr::List(col.into())];
+    call_args.extend(rest.iter().cloned());
     let call = Expr::FunctionCall {
       name: name.to_string(),
-      args: vec![Expr::List(col.into())].into(),
+      args: call_args.into(),
     };
     match crate::evaluator::evaluate_expr_to_expr(&call) {
       // A still-symbolic result means a column wasn't numeric; leave the whole
@@ -152,6 +235,42 @@ pub fn dispatch_math_functions(
     }
     "Quantile" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::quantile_ast(args));
+    }
+    // The parametric forms Quartiles[data, param] & co. Unlike the
+    // one-argument forms these take plain data only — wolframscript leaves
+    // Quartiles[dist, param] unevaluated.
+    "Quartiles" if args.len() == 2 => {
+      return quartile_stat_with_params(name, args, |q1, q2, q3| {
+        Expr::List(vec![q1.clone(), q2.clone(), q3.clone()].into())
+      });
+    }
+    "InterquartileRange" if args.len() == 2 => {
+      return quartile_stat_with_params(name, args, |q1, _q2, q3| {
+        binop(BinaryOperator::Minus, q3.clone(), q1.clone())
+      });
+    }
+    "QuartileDeviation" if args.len() == 2 => {
+      return quartile_stat_with_params(name, args, |q1, _q2, q3| {
+        binop(
+          BinaryOperator::Divide,
+          binop(BinaryOperator::Minus, q3.clone(), q1.clone()),
+          Expr::Integer(2),
+        )
+      });
+    }
+    // Bowley skewness: ((q3 - q2) - (q2 - q1)) / (q3 - q1).
+    "QuartileSkewness" if args.len() == 2 => {
+      return quartile_stat_with_params(name, args, |q1, q2, q3| {
+        binop(
+          BinaryOperator::Divide,
+          binop(
+            BinaryOperator::Minus,
+            binop(BinaryOperator::Minus, q3.clone(), q2.clone()),
+            binop(BinaryOperator::Minus, q2.clone(), q1.clone()),
+          ),
+          binop(BinaryOperator::Minus, q3.clone(), q1.clone()),
+        )
+      });
     }
     "Quartiles" if args.len() == 1 => {
       // Quartiles[dist] for a distribution head — produce

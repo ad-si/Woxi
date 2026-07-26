@@ -728,7 +728,7 @@ FromCharacterCode,Converts character codes to a string,✅,pure,2.0,735
 Div,Compute the divergence of a vector or tensor field (contracts the last index),✅,pure,9.0,736
 ToBoxes,Converts an expression to its box form representation for typesetting,✅,pure,3.0,737
 CompilationTarget,Option for compilation target,✅,none,8.0,738
-Quantile,Compute quantiles of a dataset or distribution (accepts an association by value),✅,pure,5.0,739
+Quantile,Compute quantiles of a dataset or distribution (accepts an association by value; optional Quantile parameters as a 2x2 matrix or a plot-point pair),✅,pure,5.0,739
 Scan,Applies a function to each element for side effects,✅,pure,1.0,740
 GeoGraphics,Creates geographic maps and visualizations,✅,pure,10.0,741
 Annotation,Attach an annotation to an expression,✅,none,6.0,742
@@ -1472,7 +1472,7 @@ Ratios,Returns successive ratios of list elements,✅,pure,7.0,1492
 SolveAlways,Find conditions on parameters for equation to hold for all variable values,✅,pure,1.0,1492
 WeightedData,Represents data with associated weights for weighted statistics,✅,pure,9.0,1493
 JacobiZeta,Jacobi zeta function,✅,pure,2.0,1494
-Quartiles,Returns the quartiles of a list (or columnwise for a matrix),✅,pure,6.0,1495
+Quartiles,Returns the quartiles of a list under optional Quantile parameters (or columnwise for a matrix),✅,pure,6.0,1495
 LegendFunction,Option for legend formatting function,✅,pure,9.0,1499
 LengthWhile,Returns the length of the longest initial run satisfying a test,✅,pure,6.0,1499
 RasterSize,Option for raster resolution,✅,pure,6.0,1499
@@ -2378,7 +2378,7 @@ Manual,documentation system,🚫,None,6.0,2425
 SystemsModelExtract,control systems,🚫,None,8.0,2425
 DisplayAllSteps,display option,🚫,None,6.0,2431
 ExternalEvaluate,external code execution,🚫,None,11.2,2431
-InterquartileRange,Difference between third and first quartiles (of a list or an association's values; columnwise for a matrix),✅,pure,6.0,2431
+InterquartileRange,Difference between third and first quartiles under optional Quantile parameters (of a list or an association's values; columnwise for a matrix),✅,pure,6.0,2431
 InverseFunctions,option for inverse computation,🚫,None,2.0,2431
 KolmogorovSmirnovTest,statistical test,🚫,None,8.0,2431
 Arrays,type system,🚫,None,9.0,2435
@@ -3704,7 +3704,7 @@ LocatorRegion,,🚫,,6.0,3803
 MatrixTDistribution,,,,10.3,3803
 NetArrayLayer,,🚫,,12.2,3803
 PersonData,,🚫,,10.0,3803
-QuartileDeviation,Half the interquartile range of a list (or columnwise for a matrix),✅,pure,6.0,3803
+QuartileDeviation,Half the interquartile range of a list under optional Quantile parameters (or columnwise for a matrix),✅,pure,6.0,3803
 RamanujanTau,Ramanujan tau function,✅,pure,6.0,3803
 RowMinHeight,,,,3.0,3803
 StateSpaceRealization,,🚫,,8.0,3803
@@ -4141,7 +4141,7 @@ ObservabilityGramian,,,,8.0,4262
 OperatorApplied,Builds an operator that applies a function to arguments supplied one at a time,✅,pure,12.1,4262
 OrderingBy,Gives the positions that order a list by a function applied to each element,✅,pure,12.0,4262
 PoissonWindow,Poisson window E^(-2 alpha abs x) on [-1/2 1/2] (default alpha 3; unfolded E powers),✅,pure,9.0,4262
-QuartileSkewness,Bowley (quartile) skewness coefficient of a list (or columnwise for a matrix),✅,pure,6.0,4262
+QuartileSkewness,Bowley (quartile) skewness coefficient of a list under optional Quantile parameters (or columnwise for a matrix),✅,pure,6.0,4262
 SequencePredict,,🚫,,11.1,4262
 SnDispersion,,,,11.1,4262
 SokalSneathDissimilarity,Sokal-Sneath dissimilarity between binary vectors,✅,pure,6.0,4262

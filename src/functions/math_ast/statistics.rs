@@ -4346,6 +4346,19 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         (r0[0].clone(), r0[1].clone(), r1[0].clone(), r1[1].clone())
       }
+      // A bare pair of "plot point" parameters {a, b} is shorthand for
+      // {{a, b}, {0, 1}}.
+      Expr::List(pair)
+        if pair.len() == 2
+          && pair.iter().all(|e| try_eval_to_f64(e).is_some()) =>
+      {
+        (
+          pair[0].clone(),
+          pair[1].clone(),
+          Expr::Integer(0),
+          Expr::Integer(1),
+        )
+      }
       _ => {
         return Ok(unevaluated("Quantile", args));
       }

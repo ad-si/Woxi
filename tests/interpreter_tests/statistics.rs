@@ -6362,6 +6362,7 @@ mod standardize {
 
 mod cases {
   use super::super::case_helpers::assert_case;
+  use woxi::{interpret, interpret_with_stdout};
 
   #[test]
   fn quantile_1() {
@@ -6384,6 +6385,126 @@ mod cases {
   #[test]
   fn quartiles() {
     assert_case(r#"Quartiles[Range[25]]"#, r#"{27 / 4, 13, 77 / 4}"#);
+  }
+
+  // The quartile statistics take the same Quantile parameters Quantile does,
+  // the one-argument forms being the {{1/2, 0}, {0, 1}} case.
+  #[test]
+  fn quartile_statistics_take_quantile_parameters() {
+    let d = "{1, 2, 3, 4, 5, 6, 7, 8}";
+    assert_eq!(
+      interpret(&format!("Quartiles[{d}, {{{{0, 0}}, {{1, 0}}}}]")).unwrap(),
+      "{2, 4, 6}"
+    );
+    assert_eq!(
+      interpret(&format!("Quartiles[{d}, {{{{1/2, 0}}, {{0, 1}}}}]")).unwrap(),
+      interpret(&format!("Quartiles[{d}]")).unwrap()
+    );
+    assert_eq!(
+      interpret(&format!("Quartiles[{d}, {{{{0, 1}}, {{0, 1}}}}]")).unwrap(),
+      "{9/4, 9/2, 27/4}"
+    );
+    assert_eq!(
+      interpret(&format!("InterquartileRange[{d}, {{{{0, 0}}, {{1, 0}}}}]"))
+        .unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret(&format!("QuartileDeviation[{d}, {{{{0, 0}}, {{1, 0}}}}]"))
+        .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(&format!("QuartileSkewness[{d}, {{{{0, 0}}, {{1, 0}}}}]"))
+        .unwrap(),
+      "0"
+    );
+    // Asymmetric data: the default parameters give a nonzero Bowley skewness
+    // where these ones land on data points and give zero.
+    assert_eq!(
+      interpret("QuartileSkewness[{1, 2, 3, 4, 10}]").unwrap(),
+      "1/3"
+    );
+    assert_eq!(
+      interpret("QuartileSkewness[{1, 2, 3, 4, 10}, {{0, 0}, {1, 0}}]")
+        .unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("InterquartileRange[{1, 2, 3, 4, 10}, {{0, 0}, {1, 0}}]")
+        .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("QuartileDeviation[{1, 2, 3, 4, 10}, {{0, 0}, {1, 0}}]")
+        .unwrap(),
+      "1"
+    );
+    // Machine reals stay real.
+    assert_eq!(
+      interpret("Quartiles[{1., 2., 3., 4., 10.}, {{0, 0}, {1, 0}}]").unwrap(),
+      "{2., 3., 4.}"
+    );
+  }
+
+  // A bare pair {a, b} is shorthand for the parameters {{a, b}, {0, 1}}.
+  #[test]
+  fn quantile_plot_point_parameter_pair() {
+    assert_eq!(
+      interpret("Quantile[{1, 2, 3, 4, 10}, 1/4, {0, 0}]").unwrap(),
+      "5/4"
+    );
+    assert_eq!(
+      interpret("Quartiles[{1, 2, 3, 4, 10}, {0, 0}]").unwrap(),
+      "{5/4, 5/2, 15/4}"
+    );
+    assert_eq!(
+      interpret("Quartiles[{1, 2, 3, 4, 10}, {1/2, 0}]").unwrap(),
+      interpret("Quartiles[{1, 2, 3, 4, 10}, {{1/2, 0}, {0, 1}}]").unwrap()
+    );
+  }
+
+  // A matrix is handled column by column, like the one-argument forms.
+  #[test]
+  fn quartile_statistics_with_parameters_go_columnwise() {
+    let m = "{{1, 10}, {2, 20}, {3, 30}, {4, 40}}";
+    assert_eq!(
+      interpret(&format!("Quartiles[{m}, {{{{0, 0}}, {{1, 0}}}}]")).unwrap(),
+      "{{1, 2, 3}, {10, 20, 30}}"
+    );
+    assert_eq!(
+      interpret(&format!("InterquartileRange[{m}, {{{{0, 0}}, {{1, 0}}}}]"))
+        .unwrap(),
+      "{2, 20}"
+    );
+  }
+
+  // Parameters of any other shape are rejected, and a distribution has no
+  // parametric form at all.
+  #[test]
+  fn quartile_statistics_reject_bad_parameters() {
+    for f in [
+      "Quartiles",
+      "InterquartileRange",
+      "QuartileDeviation",
+      "QuartileSkewness",
+    ] {
+      let input = format!("{f}[{{1, 2, 3, 4, 10}}, x]");
+      let r = interpret_with_stdout(&input).unwrap();
+      assert_eq!(r.result, format!("{f}[{{1, 2, 3, 4, 10}}, x]"));
+      assert!(
+        r.warnings
+          .iter()
+          .any(|m| m.contains(&format!("{f}::parm:"))),
+        "expected {f}::parm, got {:?}",
+        r.warnings
+      );
+    }
+    assert_eq!(
+      interpret("Quartiles[NormalDistribution[0, 1], {{0, 0}, {1, 0}}]")
+        .unwrap(),
+      "Quartiles[NormalDistribution[0, 1], {{0, 0}, {1, 0}}]"
+    );
   }
   // A probability outside [0, 1] (or a symbolic one for plain data) is
   // rejected with nquan and stays unevaluated, rather than silently
