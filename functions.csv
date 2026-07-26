@@ -691,7 +691,7 @@ Off,Turns off messages (no-op in Woxi),✅,effectful,1.0,697
 Delimiter,Separator element in menus and palettes,✅,none,6.0,698
 VertexColors,Option for specifying vertex colors in graphics,✅,none,6.0,699
 ExpandAll,Expands all products and powers in an expression,✅,pure,1.0,700
-Default,Default value for optional arguments,✅,pure,1.0,701
+Default,Default value for optional arguments — an optional slot whose function has no Default does not match at all,✅,pure,1.0,701
 Beta,Euler beta function and incomplete beta Beta[z a b]; exact (BigInt) for integer half-integer and rational args via rising factorials and Gamma half-integer forms; numeric for inexact args,✅,pure,1.0,702
 Csch,Returns the hyperbolic cosecant,✅,pure,1.0,703
 HeavisideTheta,Heaviside step function,✅,pure,6.0,705
@@ -947,7 +947,7 @@ TrigReduce,Reduce products and powers of trig functions to sums,✅,pure,3.0,954
 PreIncrement,Increments a variable by 1 and returns the new value,✅,stateful,1.0,955
 DisplayForm,Wrapper that causes box expressions to be rendered visually,✅,pure,3.0,956
 TransferFunctionModel,Requires external services or GUI infrastructure,🚫,io,8.0,957
-Shortest,Pattern wrapper for shortest (non-greedy) matching in strings,✅,1,6.0,958
+Shortest,Pattern wrapper that tries the shortest match first — the default for both string and expression sequences,✅,pure,6.0,958
 Region,Represents a geometric region and renders it as a plot (Point/Line/Circle/Disk/Rectangle/Triangle/Polygon/RegularPolygon/MeshRegion in 2D; Ball/Sphere/Cuboid/Cylinder/Cone/Polygon in 3D; Style[reg + directives] applies styling),✅,pure,11.1,959
 EdgeDetect,Detects edges in an image with Gaussian smoothing and Sobel operator,✅,pure,8.0,962
 JacobiP,Jacobi polynomial,✅,pure,1.0,962
@@ -1246,7 +1246,7 @@ RandomComplex,Gives a pseudorandom complex number in a rectangular region,✅,ef
 Random,Legacy pseudorandom generator (wraps RandomReal/RandomInteger/RandomComplex),✅,effectful,1.0,1258
 Hypergeometric0F1,Confluent hypergeometric limit function,✅,pure,1.0,1259
 InverseFourier,Inverse discrete Fourier transform of a list,✅,pure,1.0,1260
-Longest,Pattern wrapper for longest matching,✅,1,6.0,1261
+Longest,Pattern wrapper that tries the longest match first; transparent around anything that is not a sequence,✅,pure,6.0,1261
 BetaRegularized,Regularized incomplete beta function I_z(a b),✅,pure,2.0,1263
 Gather,Groups identical elements together (optional custom equivalence test),✅,pure,7.0,1264
 MapAll,Apply a function to every subexpression,✅,pure,1.0,1265
@@ -1956,7 +1956,7 @@ DayRange,Generate the list of DateObject days between two dates inclusive,✅,pu
 ImageSizeAction,Option controlling image size behavior,🚫,,6.0,1991
 MeanFilter,Replace each element by the mean of values in a clipped neighborhood of radius r (1D/2D lists and Audio objects),✅,pure,7.0,1991
 PeriodicBoundaryCondition,PDE boundary condition specification,🚫,,11.0,1991
-OrderlessPatternSequence,Pattern matching construct for orderless sequences,🚫,,10.1,1992
+OrderlessPatternSequence,Matches the contiguous block of arguments at its position in any order,✅,pure,10.1,1992
 Character,Symbol used in string patterns to represent a single character,✅,pure,1.0,1993
 EdgeAdd,Add one or more edges to a graph adding any new endpoint vertices,✅,pure,8.0,1995
 FourierCosSeries,Fourier cosine series expansion (requires symbolic integration),🚫,,7.0,1995

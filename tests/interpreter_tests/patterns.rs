@@ -4124,3 +4124,149 @@ mod hold_pattern_in_rules {
     );
   }
 }
+
+mod longest_shortest_and_orderless_sequences {
+  use super::*;
+
+  // Longest tries the longest split of a sequence first; the default (and
+  // Shortest) tries the shortest.
+  #[test]
+  fn longest_and_shortest_choose_the_split() {
+    assert_eq!(
+      interpret("{1, 2} /. {Longest[x__], y_} :> {{x}, y}").unwrap(),
+      "{{1}, 2}"
+    );
+    assert_eq!(
+      interpret("{1, 2, 3} /. {Longest[x__], y__} :> {{x}, {y}}").unwrap(),
+      "{{1, 2}, {3}}"
+    );
+    assert_eq!(
+      interpret("{1, 2, 3} /. {Shortest[x__], y__} :> {{x}, {y}}").unwrap(),
+      "{{1}, {2, 3}}"
+    );
+    assert_eq!(
+      interpret("{a, b, c} /. {Shortest[x__], ___} :> {x}").unwrap(),
+      "{a}"
+    );
+    assert_eq!(
+      interpret("{a, b, c} /. {Longest[x__], ___} :> {x}").unwrap(),
+      "{a, b, c}"
+    );
+    assert_eq!(
+      interpret("Cases[{{1, 2, 3}}, {Shortest[x__], ___} :> {x}]").unwrap(),
+      "{{1}}"
+    );
+  }
+
+  // Around anything that is not a sequence they are transparent.
+  #[test]
+  fn longest_is_transparent_elsewhere() {
+    assert_eq!(
+      interpret("MatchQ[{1, 2}, {Longest[__], _}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[{1, 2}, {Shortest[__], _}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("{1, 2, 3} /. {Longest[x_], ___} :> x").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("{1, 2, 3} /. Longest[{x__}] :> {x}").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn a_definition_may_wrap_its_parameter() {
+    assert_eq!(
+      interpret("lgf[Longest[x__]] := {x}; lgf[1, 2]").unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  // OrderlessPatternSequence matches the block of arguments at its position
+  // in any order — so the elements it takes stay contiguous.
+  #[test]
+  fn orderless_pattern_sequence_permutes_a_block() {
+    assert_eq!(
+      interpret("MatchQ[{1, 2}, {OrderlessPatternSequence[2, 1]}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[{1, 2, 3}, {_, OrderlessPatternSequence[3, 2]}]")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[{1, 2, 3}, {OrderlessPatternSequence[3, 1], _}]")
+        .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("MatchQ[{1, 2}, {OrderlessPatternSequence[2, 1, 3]}]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("Cases[{{1, 2}, {2, 1}}, {OrderlessPatternSequence[1, 2]}]")
+        .unwrap(),
+      "{{1, 2}, {2, 1}}"
+    );
+  }
+
+  #[test]
+  fn orderless_pattern_sequence_binds_in_pattern_order() {
+    assert_eq!(
+      interpret("{3, 1, 2} /. {OrderlessPatternSequence[1, x_], ___} :> x")
+        .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("{1, 2} /. {OrderlessPatternSequence[x_, y_]} :> {x, y}")
+        .unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn an_empty_orderless_sequence_takes_nothing() {
+    assert_eq!(
+      interpret("MatchQ[{}, {OrderlessPatternSequence[]}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[{1, 2, 3}, {OrderlessPatternSequence[]}]").unwrap(),
+      "False"
+    );
+  }
+
+  // `y_.` needs a Default for its function; without one the definition does
+  // not apply at all rather than leaving a Default[…] behind.
+  #[test]
+  fn an_optional_without_a_default_does_not_fire() {
+    assert_eq!(
+      interpret("dfg[x_, y_.] := {x, y}; dfg[1]").unwrap(),
+      "dfg[1]"
+    );
+    assert_eq!(interpret("dfq[x_.] := {x}; dfq[]").unwrap(), "dfq[]");
+    // The definition still applies when every argument is given.
+    assert_eq!(
+      interpret("dfk[x_, y_.] := {x, y}; dfk[1, 2]").unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn a_set_default_fills_the_optional() {
+    assert_eq!(
+      interpret("Default[dfh] = 5; dfh[x_, y_.] := {x, y}; dfh[1]").unwrap(),
+      "{1, 5}"
+    );
+    assert_eq!(
+      interpret("Default[dfm, 2] = 7; dfm[x_, y_.] := {x, y}; dfm[1]").unwrap(),
+      "{1, 7}"
+    );
+  }
+}

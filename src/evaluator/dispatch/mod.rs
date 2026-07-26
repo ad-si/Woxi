@@ -106,6 +106,26 @@ fn next_permutation(arr: &mut [usize]) -> bool {
   true
 }
 
+/// Resolve a stored optional-parameter default. `f[x_, y_.]` stores the
+/// deferred placeholder `Default[f, i]`, which only becomes a value once a
+/// `Default[f]` is set; until then the definition does not apply at all,
+/// the way wolframscript leaves `g[1]` unevaluated for `g[x_, y_.] := …`.
+fn resolve_param_default(default: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, .. } = default else {
+    return Some(default.clone());
+  };
+  if name != "Default" {
+    return Some(default.clone());
+  }
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(default).ok()?;
+  if crate::syntax::expr_to_string(&evaluated)
+    == crate::syntax::expr_to_string(default)
+  {
+    return None;
+  }
+  Some(evaluated)
+}
+
 pub fn evaluate_function_call_ast(
   name: &str,
   args: &[Expr],
@@ -796,10 +816,10 @@ fn evaluate_function_call_ast_inner(
                 }
               } else if param_args.is_empty() {
                 // Must be a default param
-                if let Some(default) = &param_defaults[i] {
-                  eff.push(default.clone());
-                } else {
-                  break;
+                match param_defaults[i].as_ref().and_then(resolve_param_default)
+                {
+                  Some(default) => eff.push(default),
+                  None => break,
                 }
               } else {
                 eff.push(param_args[0].clone());
@@ -1057,7 +1077,12 @@ fn evaluate_function_call_ast_inner(
               };
 
               if should_default {
-                effective.push(param_defaults[i].clone().unwrap());
+                let Some(resolved) =
+                  param_defaults[i].as_ref().and_then(resolve_param_default)
+                else {
+                  break;
+                };
+                effective.push(resolved);
                 defaults_used += 1;
               } else if arg_idx < perm_args.len() {
                 if let Some(head) = &param_heads[i]

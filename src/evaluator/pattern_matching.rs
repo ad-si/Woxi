@@ -2383,6 +2383,9 @@ struct SeqInfo {
   element_pattern: Option<Box<Expr>>,
   /// Condition test to evaluate after the sequence is matched (for x__ /; cond patterns).
   condition: Option<Box<Expr>>,
+  /// `Longest[…]` tries the longest split first; the default (and
+  /// `Shortest[…]`) tries the shortest.
+  greedy: bool,
 }
 
 /// Recognise `OptionsPattern[]` / `OptionsPattern[{a -> v1, …}]` and return
@@ -2440,6 +2443,14 @@ fn merge_option_rules(defaults: &[Expr], explicit: &[Expr]) -> Vec<Expr> {
 /// Check if a pattern is a sequence pattern (BlankSequence or BlankNullSequence).
 fn get_sequence_info(pattern: &Expr) -> Option<SeqInfo> {
   match pattern {
+    // Longest[p] / Shortest[p] only choose which split to try first.
+    Expr::FunctionCall { name, args }
+      if (name == "Longest" || name == "Shortest") && args.len() == 1 =>
+    {
+      let mut inner = get_sequence_info(&args[0])?;
+      inner.greedy = name == "Longest";
+      Some(inner)
+    }
     Expr::Pattern {
       name,
       head,
@@ -2454,6 +2465,7 @@ fn get_sequence_info(pattern: &Expr) -> Option<SeqInfo> {
         test: None,
         element_pattern: None,
         condition: None,
+        greedy: false,
       })
     }
     // Condition wrapping a sequence pattern: x__Integer /; test
@@ -2482,6 +2494,7 @@ fn get_sequence_info(pattern: &Expr) -> Option<SeqInfo> {
         test: Some(test.clone()),
         element_pattern: None,
         condition: None,
+        greedy: false,
       })
     }
     // BlankSequence[] or BlankSequence[h] as FunctionCall
@@ -2506,6 +2519,7 @@ fn get_sequence_info(pattern: &Expr) -> Option<SeqInfo> {
         test: None,
         element_pattern: None,
         condition: None,
+        greedy: false,
       })
     }
     // Pattern[name, Repeated[...]] / Pattern[name, RepeatedNull[...]]:
@@ -2585,6 +2599,7 @@ fn get_sequence_info(pattern: &Expr) -> Option<SeqInfo> {
         test: None,
         element_pattern: Some(Box::new(args[0].clone())),
         condition: None,
+        greedy: false,
       })
     }
     _ => None,
@@ -2695,11 +2710,40 @@ fn acts_as_sequence(pattern: &Expr) -> bool {
   {
     return true;
   }
+  // OrderlessPatternSequence consumes a whole block of arguments, so the
+  // argument list has to go through the sequence matcher.
+  if matches!(pattern, Expr::FunctionCall { name, .. }
+    if name == "OrderlessPatternSequence")
+  {
+    return true;
+  }
   matches!(pattern, Expr::FunctionCall { name, args }
     if name == "Pattern"
       && args.len() == 2
       && matches!(&args[1], Expr::FunctionCall { name: inner, .. }
         if inner == "PatternSequence"))
+}
+
+/// All permutations of `0..n`, the identity first, in lexicographic order.
+fn index_permutations(n: usize) -> Vec<Vec<usize>> {
+  let mut current: Vec<usize> = (0..n).collect();
+  let mut out = vec![current.clone()];
+  loop {
+    // Next lexicographic permutation.
+    let Some(i) = (0..current.len().saturating_sub(1))
+      .rev()
+      .find(|&i| current[i] < current[i + 1])
+    else {
+      return out;
+    };
+    let j = (i + 1..current.len())
+      .rev()
+      .find(|&j| current[j] > current[i])
+      .unwrap();
+    current.swap(i, j);
+    current[i + 1..].reverse();
+    out.push(current.clone());
+  }
 }
 
 fn match_args_with_sequences(
@@ -2717,6 +2761,50 @@ fn match_args_with_sequences(
 
   let pat = &pat_args[0];
   let rest_pats = &pat_args[1..];
+
+  // OrderlessPatternSequence[p1, …, pk] consumes the next k arguments in any
+  // order: wolframscript matches `{OrderlessPatternSequence[2, 1], _}`
+  // against {1, 2, 3} but not `{OrderlessPatternSequence[3, 1], _}`, so the
+  // arguments it takes are the contiguous block at this position.
+  if let Expr::FunctionCall {
+    name,
+    args: ordered_pats,
+  } = pat
+    && name == "OrderlessPatternSequence"
+  {
+    let k = ordered_pats.len();
+    if expr_args.len() < k || k > 8 {
+      return None;
+    }
+    let block = &expr_args[..k];
+    for perm in index_permutations(k) {
+      let mut bindings: Vec<(String, Expr)> = Vec::new();
+      let mut ok = true;
+      for (slot, pat_index) in perm.iter().enumerate() {
+        match match_pattern(&block[*pat_index], &ordered_pats[slot]) {
+          Some(b) => {
+            if !merge_bindings(&mut bindings, b) {
+              ok = false;
+              break;
+            }
+          }
+          None => {
+            ok = false;
+            break;
+          }
+        }
+      }
+      if !ok {
+        continue;
+      }
+      if let Some(rest) = match_args_with_sequences(&expr_args[k..], rest_pats)
+        && merge_bindings(&mut bindings, rest)
+      {
+        return Some(bindings);
+      }
+    }
+    return None;
+  }
 
   // OptionsPattern[defaults?] — consumes the remaining expr args (which
   // must all be Rule/RuleDelayed) and emits a sentinel binding under the
@@ -2866,7 +2954,12 @@ fn match_args_with_sequences(
       return None;
     }
 
-    for count in seq.min_count..=max_count {
+    let counts: Vec<usize> = if seq.greedy {
+      (seq.min_count..=max_count).rev().collect()
+    } else {
+      (seq.min_count..=max_count).collect()
+    };
+    for count in counts {
       let seq_args = &expr_args[..count];
 
       // Check head constraints for all elements
@@ -3331,6 +3424,15 @@ fn match_pattern_impl(
   // should treat it as if it were just `p`.
   if let Expr::FunctionCall { name, args } = pattern
     && name == "HoldPattern"
+    && args.len() == 1
+  {
+    return match_pattern_impl(expr, &args[0]);
+  }
+  // Longest[p] / Shortest[p] only pick which split of a sequence to try
+  // first (handled where the sequence is matched); around anything else
+  // they are transparent.
+  if let Expr::FunctionCall { name, args } = pattern
+    && (name == "Longest" || name == "Shortest")
     && args.len() == 1
   {
     return match_pattern_impl(expr, &args[0]);

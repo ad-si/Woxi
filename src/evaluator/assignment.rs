@@ -81,6 +81,20 @@ fn format_pattern_head(pat: &Expr) -> Option<String> {
 
 /// Register a user-defined print form (e.g. via `Format[expr, FORM] := …`).
 /// No-op if already registered or if `name` is one of the builtin forms.
+
+/// `Longest[p]` / `Shortest[p]` around a definition's parameter only choose
+/// which split of a sequence to try first; the parameter itself is `p`.
+fn unwrap_longest_shortest(arg: &Expr) -> &Expr {
+  match arg {
+    Expr::FunctionCall { name, args }
+      if (name == "Longest" || name == "Shortest") && args.len() == 1 =>
+    {
+      unwrap_longest_shortest(&args[0])
+    }
+    other => other,
+  }
+}
+
 pub fn register_user_print_form(name: &str) {
   const BUILTIN: &[&str] = &[
     "InputForm",
@@ -1527,6 +1541,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     let mut blank_types: Vec<u8> = Vec::new();
 
     for (i, arg) in lhs_args.iter().enumerate() {
+      let arg = unwrap_longest_shortest(arg);
       let param_name = format!("_dv{}", i);
 
       // Check if arg is a pattern (Blank, BlankSequence, named pattern, etc.)
@@ -2080,6 +2095,7 @@ pub fn set_delayed_ast(
     let mut inline_opts_defaults: Option<Vec<Expr>> = None;
 
     for (i, arg) in lhs_args.iter().enumerate() {
+      let arg = unwrap_longest_shortest(arg);
       match arg {
         // OptionsPattern[] or OptionsPattern[{defaults...}] — matches zero or more Rule arguments
         Expr::FunctionCall {
@@ -3128,6 +3144,7 @@ pub fn tag_set_delayed_ast(
   let mut extra_conditions: Vec<Expr> = Vec::new();
 
   for (i, arg) in lhs_args.iter().enumerate() {
+    let arg = unwrap_longest_shortest(arg);
     match arg {
       Expr::FunctionCall {
         name: arg_func_name,
