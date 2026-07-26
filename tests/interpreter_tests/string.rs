@@ -12683,3 +12683,108 @@ mod string_list_threading {
     );
   }
 }
+
+// TeXForm lays a matrix out as a LaTeX array; the table heads differ in how
+// they handle rows that are not a matrix.
+mod tex_form_arrays {
+  use super::*;
+
+  const MATRIX_2X2: &str = "\\left(\n\\begin{array}{cc}\n 1 & 2 \\\\\n \
+                            3 & 4 \\\\\n\\end{array}\n\\right)";
+
+  #[test]
+  fn a_bare_matrix_becomes_an_array() {
+    // Regression: this used to render as the brace form \{\{1,2\},\{3,4\}\}.
+    assert_eq!(
+      interpret("ToString[TeXForm[{{1, 2}, {3, 4}}]]").unwrap(),
+      MATRIX_2X2
+    );
+    assert_eq!(
+      interpret("ToString[TeXForm[{{a}, {b}}]]").unwrap(),
+      "\\left(\n\\begin{array}{c}\n a \\\\\n b \\\\\n\\end{array}\n\\right)"
+    );
+    assert_eq!(
+      interpret("ToString[TeXForm[{{1, 2, 3}}]]").unwrap(),
+      "\\left(\n\\begin{array}{ccc}\n 1 & 2 & 3 \\\\\n\\end{array}\n\\right)"
+    );
+    // The entries are rendered as TeX in turn.
+    assert_eq!(
+      interpret("ToString[TeXForm[{{1/2, x}, {Sqrt[2], a + b}}]]").unwrap(),
+      "\\left(\n\\begin{array}{cc}\n \\frac{1}{2} & x \\\\\n \
+       \\sqrt{2} & a+b \\\\\n\\end{array}\n\\right)"
+    );
+  }
+
+  #[test]
+  fn only_a_rectangular_list_of_rows_is_a_matrix() {
+    // A vector, a ragged list and empty rows keep the brace form.
+    assert_eq!(interpret("ToString[TeXForm[{1, 2}]]").unwrap(), "\\{1,2\\}");
+    assert_eq!(
+      interpret("ToString[TeXForm[{{1, 2}, {3}}]]").unwrap(),
+      "\\{\\{1,2\\},\\{3\\}\\}"
+    );
+    assert_eq!(
+      interpret("ToString[TeXForm[{{}}]]").unwrap(),
+      "\\{\\{\\}\\}"
+    );
+    // The entries themselves may be lists: this is a one-column array.
+    assert_eq!(
+      interpret("ToString[TeXForm[{{{1, 2}}, {{3, 4}}}]]").unwrap(),
+      "\\left(\n\\begin{array}{c}\n \\{1,2\\} \\\\\n \\{3,4\\} \\\\\n\
+       \\end{array}\n\\right)"
+    );
+  }
+
+  // MatrixForm lays anything that is not a matrix out in a single column.
+  #[test]
+  fn matrix_form() {
+    assert_eq!(
+      interpret("ToString[TeXForm[MatrixForm[{{1, 2}, {3, 4}}]]]").unwrap(),
+      MATRIX_2X2
+    );
+    assert_eq!(
+      interpret("ToString[TeXForm[MatrixForm[{{1, 2}, {3}}]]]").unwrap(),
+      "\\left(\n\\begin{array}{c}\n \\{1,2\\} \\\\\n \\{3\\} \\\\\n\
+       \\end{array}\n\\right)"
+    );
+    assert_eq!(
+      interpret("ToString[TeXForm[MatrixForm[{1, 2}]]]").unwrap(),
+      "\\left(\n\\begin{array}{c}\n 1 \\\\\n 2 \\\\\n\\end{array}\n\\right)"
+    );
+    // A non-list argument is transparent.
+    assert_eq!(interpret("ToString[TeXForm[MatrixForm[x]]]").unwrap(), "x");
+  }
+
+  // TableForm pads short rows out to the widest one instead.
+  #[test]
+  fn table_form_pads_short_rows() {
+    assert_eq!(
+      interpret("ToString[TeXForm[TableForm[{{1}, {2, 3, 4}, {5, 6}}]]]")
+        .unwrap(),
+      "\\begin{array}{ccc}\n 1 & \\text{} & \\text{} \\\\\n \
+       2 & 3 & 4 \\\\\n 5 & 6 & \\text{} \\\\\n\\end{array}"
+    );
+    assert_eq!(
+      interpret("ToString[TeXForm[TableForm[{1, 2}]]]").unwrap(),
+      "\\begin{array}{c}\n 1 \\\\\n 2 \\\\\n\\end{array}"
+    );
+    assert_eq!(interpret("ToString[TeXForm[TableForm[x]]]").unwrap(), "x");
+  }
+
+  // Grid needs a list of rows; anything else stays as text, in brackets.
+  #[test]
+  fn grid_needs_rows() {
+    assert_eq!(
+      interpret("ToString[TeXForm[Grid[{{1, 2}, {3}}]]]").unwrap(),
+      "\\begin{array}{cc}\n 1 & 2 \\\\\n 3 & \\text{} \\\\\n\\end{array}"
+    );
+    assert_eq!(
+      interpret("ToString[TeXForm[Grid[{1, 2}]]]").unwrap(),
+      "\\text{Grid}[\\{1,2\\}]"
+    );
+    assert_eq!(
+      interpret("ToString[TeXForm[Grid[x]]]").unwrap(),
+      "\\text{Grid}[x]"
+    );
+  }
+}

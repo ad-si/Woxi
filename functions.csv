@@ -771,7 +771,7 @@ BezierCurve,Represents a Bezier curve graphics primitive,✅,pure,7.0,778
 MeshShading,Option for alternating shading between mesh lines,✅,none,6.0,779
 WhenEvent,Specify events in differential equations,✅,none,9.0,780
 Unitize,Returns 0 for zero and 1 for nonzero values,✅,pure,6.0,781
-TeXForm,Convert expressions to LaTeX notation,✅,pure,1.0,782
+TeXForm,Convert expressions to LaTeX notation — a matrix becomes a parenthesized array,✅,pure,1.0,782
 Erfc,Returns the complementary error function value,✅,pure,2.0,784
 NSum,Numerical approximation of a sum using polynomial extrapolation,✅,pure,1.0,784
 Legended,Wrapper to attach a legend to a graphic,✅,none,7.0,785

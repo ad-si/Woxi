@@ -5448,6 +5448,28 @@ fn pad_bigfloat_to_precision(digits: &str, prec: f64) -> String {
   }
 }
 
+/// The rows of `items` when it is a matrix for TeX purposes: every element is
+/// a list, they all have the same length, and that length is not zero. (Their
+/// entries may be anything, including lists — `{{{1, 2}}, {{3, 4}}}` is a
+/// one-column array of two lists.)
+fn tex_matrix_rows(items: &[Expr]) -> Option<Vec<Vec<Expr>>> {
+  if items.is_empty() {
+    return None;
+  }
+  let mut rows = Vec::with_capacity(items.len());
+  for item in items {
+    let Expr::List(row) = item else {
+      return None;
+    };
+    rows.push(row.to_vec());
+  }
+  let width = rows[0].len();
+  if width == 0 || rows.iter().any(|r| r.len() != width) {
+    return None;
+  }
+  Some(rows)
+}
+
 pub fn expr_to_tex(expr: &Expr) -> String {
   // HoldForm[x] is a display wrapper; render its content transparently.
   if let Expr::FunctionCall { name, args } = expr
@@ -5576,6 +5598,13 @@ pub fn expr_to_tex(expr: &Expr) -> String {
       result
     }
     Expr::List(items) => {
+      // A rectangular list of non-empty rows is typeset as an array; anything
+      // else (a vector, a ragged list, empty rows) keeps the brace form.
+      if tex_matrix_rows(items).is_some()
+        && let Some(array) = tex_array_body(expr, false)
+      {
+        return format!("\\left(\n{}\n\\right)", array);
+      }
       let parts: Vec<String> = items.iter().map(expr_to_tex).collect();
       format!("\\{{{}\\}}", parts.join(","))
     }
@@ -5961,22 +5990,52 @@ fn tex_base_with_parens(base: &Expr) -> String {
 
 /// Render a matrix (list of equal-length row lists) as a LaTeX `array`
 /// environment. Returns `None` when the argument is not a list of row lists.
-fn tex_array(expr: &Expr) -> Option<String> {
-  let Expr::List(rows) = expr else {
+/// The LaTeX array body of a table-like argument, or `None` when the argument
+/// is not a list at all.
+///
+/// A proper matrix keeps its rows. Otherwise `pad_ragged` decides: TableForm
+/// and Grid pad short rows with `\text{}` up to the widest row, while
+/// MatrixForm lays the elements out in a single column (so a ragged
+/// `{{1, 2}, {3}}` becomes one column of `\{1,2\}` and `\{3\}`).
+fn tex_array_body(expr: &Expr, pad_ragged: bool) -> Option<String> {
+  let Expr::List(items) = expr else {
     return None;
   };
-  let mut ncols = 1;
-  let mut lines = Vec::with_capacity(rows.len());
-  for (i, row) in rows.iter().enumerate() {
-    let Expr::List(cols) = row else {
-      return None;
-    };
-    if i == 0 {
-      ncols = cols.len();
+  let rows: Vec<Vec<String>> = if let Some(matrix) = tex_matrix_rows(items) {
+    matrix
+      .iter()
+      .map(|row| row.iter().map(expr_to_tex).collect())
+      .collect()
+  } else {
+    let all_rows: Option<Vec<Vec<Expr>>> = items
+      .iter()
+      .map(|i| match i {
+        Expr::List(row) => Some(row.to_vec()),
+        _ => None,
+      })
+      .collect();
+    let widest = all_rows
+      .as_ref()
+      .and_then(|rows| rows.iter().map(Vec::len).max())
+      .unwrap_or(0);
+    match all_rows {
+      Some(rows) if pad_ragged && widest > 0 => rows
+        .iter()
+        .map(|row| {
+          let mut cells: Vec<String> = row.iter().map(expr_to_tex).collect();
+          cells.resize(widest, "\\text{}".to_string());
+          cells
+        })
+        .collect(),
+      // A single column: one cell per element.
+      _ => items.iter().map(|i| vec![expr_to_tex(i)]).collect(),
     }
-    let cells: Vec<String> = cols.iter().map(expr_to_tex).collect();
-    lines.push(format!(" {} \\\\", cells.join(" & ")));
-  }
+  };
+  let ncols = rows.first().map_or(1, Vec::len);
+  let lines: Vec<String> = rows
+    .iter()
+    .map(|r| format!(" {} \\\\", r.join(" & ")))
+    .collect();
   let col_spec: String =
     std::iter::repeat_n("c", ncols).collect::<Vec<_>>().join("");
   Some(format!(
@@ -6703,16 +6762,28 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
         expr_to_tex(&args[1])
       )
     }
-    // MatrixForm — a parenthesized LaTeX array.
-    "MatrixForm" if args.len() == 1 => match tex_array(&args[0]) {
+    // MatrixForm — a parenthesized LaTeX array. A non-list argument is
+    // transparent: `MatrixForm[x] // TeXForm` is just `x`.
+    "MatrixForm" if args.len() == 1 => match tex_array_body(&args[0], false) {
       Some(arr) => format!("\\left(\n{}\n\\right)", arr),
-      None => format!("\\text{{MatrixForm}}({})", expr_to_tex(&args[0])),
+      None => expr_to_tex(&args[0]),
     },
-    // TableForm/Grid — a bare LaTeX array (no surrounding parentheses).
-    "TableForm" | "Grid" if args.len() == 1 => match tex_array(&args[0]) {
+    // TableForm — a bare LaTeX array (no surrounding parentheses).
+    "TableForm" if args.len() == 1 => match tex_array_body(&args[0], true) {
       Some(arr) => arr,
-      None => format!("\\text{{{}}}({})", name, expr_to_tex(&args[0])),
+      None => expr_to_tex(&args[0]),
     },
+    // Grid needs a list of rows; anything else stays as text (in brackets,
+    // unlike the other heads).
+    "Grid" if args.len() == 1 => {
+      let rows_of_lists = matches!(&args[0], Expr::List(items)
+        if !items.is_empty()
+          && items.iter().all(|i| matches!(i, Expr::List(_))));
+      match tex_array_body(&args[0], true).filter(|_| rows_of_lists) {
+        Some(arr) => arr,
+        None => format!("\\text{{Grid}}[{}]", expr_to_tex(&args[0])),
+      }
+    }
     // Piecewise[{{v1, c1}, …}, default] -> a LaTeX cases environment.
     "Piecewise" if !args.is_empty() => {
       if let Expr::List(cases) = &args[0] {
