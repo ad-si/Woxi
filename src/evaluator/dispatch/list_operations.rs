@@ -4785,6 +4785,26 @@ pub fn dispatch_list_operations(
     "TensorContract" if args.len() == 2 => {
       return Some(list_helpers_ast::tensor_contract_ast(args));
     }
+    // A SparseArray is an array, a vector and a matrix just like its dense
+    // form, so these predicates look at that form.
+    "SparseArrayQ" if args.len() == 1 => {
+      let is_sparse = matches!(&args[0], Expr::FunctionCall { name, args: sa }
+        if name == "SparseArray"
+          && sa.len() == 4
+          && matches!(&sa[0], Expr::Identifier(s) if s == "Automatic"));
+      return Some(Ok(bool_expr(is_sparse)));
+    }
+    "ArrayQ" | "VectorQ" | "MatrixQ"
+      if !args.is_empty()
+        && list_helpers_ast::densify_sparse_array(&args[0]).is_some() =>
+    {
+      let mut dense_args = args.to_vec();
+      dense_args[0] = list_helpers_ast::densify_sparse_array(&args[0])?;
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        name,
+        &dense_args,
+      ));
+    }
     "ArrayQ" if !args.is_empty() && args.len() <= 3 => {
       let is_array = match list_helpers_ast::array_q_ast(&args[0]) {
         Ok(v) => v,

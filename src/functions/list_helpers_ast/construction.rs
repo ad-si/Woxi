@@ -2588,7 +2588,32 @@ pub fn sparse_array_extract_rules(
       .collect();
   }
 
-  // CSR form: {1, {row_ptr, inner_positions}, values}
+  // CSR form: {1, {row_ptr, inner_positions}, values}. The values slot may
+  // also be the marker `Pattern`, which a "PatternArray" query leaves there:
+  // every stored entry is then a blank.
+  let pattern_values: Option<Vec<Expr>> = match (&items.get(1), &items.get(2)) {
+    (Some(Expr::List(structure)), Some(Expr::Identifier(marker)))
+      if marker == "Pattern" && structure.len() == 2 =>
+    {
+      match &structure[1] {
+        Expr::List(inner) => Some(vec![
+          Expr::FunctionCall {
+            name: "Blank".to_string(),
+            args: vec![].into(),
+          };
+          inner.len()
+        ]),
+        _ => None,
+      }
+    }
+    _ => None,
+  };
+  let pattern_values_expr = pattern_values.map(|v| Expr::List(v.into()));
+  let items: Vec<Expr> = match &pattern_values_expr {
+    Some(values) => vec![items[0].clone(), items[1].clone(), values.clone()],
+    None => items.to_vec(),
+  };
+  let items = items.as_slice();
   if items.len() == 3
     && matches!(&items[0], Expr::Integer(1))
     && let (Expr::List(structure), Expr::List(values)) = (&items[1], &items[2])
@@ -3117,4 +3142,126 @@ pub fn distance_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(Expr::List(rows.into()))
+}
+
+/// Answer a `SparseArray[…]["property"]` query. Returns `None` for an
+/// unrecognized property so the caller can report `SparseArray::nomthd`.
+pub fn sparse_array_property(sa_args: &[Expr], prop: &str) -> Option<Expr> {
+  if sa_args.len() != 4
+    || !matches!(&sa_args[0], Expr::Identifier(s) if s == "Automatic")
+  {
+    return None;
+  }
+  let Expr::List(dim_items) = &sa_args[1] else {
+    return None;
+  };
+  let dims: Vec<usize> = dim_items
+    .iter()
+    .map(|d| expr_to_i128(d).and_then(|n| usize::try_from(n).ok()))
+    .collect::<Option<Vec<usize>>>()?;
+  let background = &sa_args[2];
+  let entries = sparse_array_extract_rules(&dims, &sa_args[3]);
+  let total: usize = dims.iter().product();
+  // The CSR triple `{1, {rowPointers, columnIndices}, values}`.
+  let csr = match &sa_args[3] {
+    Expr::List(items) if items.len() == 3 => match &items[1] {
+      Expr::List(structure) if structure.len() == 2 => {
+        Some((structure[0].clone(), structure[1].clone()))
+      }
+      _ => None,
+    },
+    _ => None,
+  };
+  let positions = || {
+    Expr::List(
+      entries
+        .iter()
+        .map(|(pos, _)| {
+          Expr::List(pos.iter().map(|p| Expr::Integer(*p)).collect())
+        })
+        .collect(),
+    )
+  };
+
+  match prop {
+    "ExplicitValues" | "NonzeroValues" => {
+      Some(Expr::List(entries.iter().map(|(_, v)| v.clone()).collect()))
+    }
+    "ExplicitPositions" | "NonzeroPositions" => Some(positions()),
+    "ExplicitLength" => Some(Expr::Integer(entries.len() as i128)),
+    "ImplicitValue" | "Background" => Some(background.clone()),
+    "Dimensions" => Some(sa_args[1].clone()),
+    "Density" => {
+      if total == 0 {
+        return Some(Expr::Real(0.0));
+      }
+      Some(Expr::Real(entries.len() as f64 / total as f64))
+    }
+    "RowPointers" => csr.map(|(rp, _)| rp),
+    "ColumnIndices" => csr.map(|(_, ci)| ci),
+    // One flat list of indices for a vector, one list per row otherwise.
+    "AdjacencyLists" => {
+      if dims.len() <= 1 {
+        return Some(Expr::List(
+          entries
+            .iter()
+            .filter_map(|(pos, _)| pos.first().map(|p| Expr::Integer(*p)))
+            .collect(),
+        ));
+      }
+      let mut rows: Vec<Vec<Expr>> = vec![Vec::new(); dims[0]];
+      for (pos, _) in &entries {
+        let (Some(row), Some(col)) = (pos.first(), pos.get(1)) else {
+          continue;
+        };
+        let row = usize::try_from(*row).ok()?;
+        if row >= 1 && row <= dims[0] {
+          rows[row - 1].push(Expr::Integer(*col));
+        }
+      }
+      Some(Expr::List(
+        rows.into_iter().map(|r| Expr::List(r.into())).collect(),
+      ))
+    }
+    // The same array with `_` wherever a value is stored.
+    "PatternArray" => {
+      let Expr::List(structure) = &sa_args[3] else {
+        return None;
+      };
+      Some(Expr::FunctionCall {
+        name: "SparseArray".to_string(),
+        args: vec![
+          sa_args[0].clone(),
+          sa_args[1].clone(),
+          sa_args[2].clone(),
+          Expr::List(
+            vec![
+              structure[0].clone(),
+              structure[1].clone(),
+              Expr::Identifier("Pattern".to_string()),
+            ]
+            .into(),
+          ),
+        ]
+        .into(),
+      })
+    }
+    "Properties" => Some(Expr::List(
+      [
+        "AdjacencyLists",
+        "ColumnIndices",
+        "Density",
+        "ExplicitLength",
+        "ExplicitPositions",
+        "ExplicitValues",
+        "ImplicitValue",
+        "RowPointers",
+        "ReplaceValues",
+      ]
+      .iter()
+      .map(|p| Expr::String((*p).to_string()))
+      .collect(),
+    )),
+    _ => None,
+  }
 }

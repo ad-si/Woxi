@@ -1410,6 +1410,32 @@ pub fn apply_curried_call(
         func_args, args,
       )
     }
+    // SparseArray[…]["property"] — grid metadata queries.
+    Expr::FunctionCall {
+      name,
+      args: sa_args,
+    } if name == "SparseArray"
+      && args.len() == 1
+      && matches!(&args[0], Expr::String(_)) =>
+    {
+      let Expr::String(prop) = &args[0] else {
+        unreachable!()
+      };
+      match crate::functions::list_helpers_ast::sparse_array_property(
+        sa_args, prop,
+      ) {
+        Some(result) => Ok(result),
+        None => {
+          crate::emit_message(&format!(
+            "SparseArray::nomthd: There is no method {prop} for SparseArray objects."
+          ));
+          Ok(Expr::CurriedCall {
+            func: Box::new(func.clone()),
+            args: args.to_vec(),
+          })
+        }
+      }
+    }
     Expr::FunctionCall {
       name,
       args: func_args,

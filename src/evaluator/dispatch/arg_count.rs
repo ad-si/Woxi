@@ -80,6 +80,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ArrayFlatten" => Some((1, 2)),
     "ArrayPad" => Some((2, 3)),
     "ArrayQ" => Some((1, 3)),
+    "SparseArrayQ" => Some((1, 1)),
     "ArrayResample" => Some((2, 2)),
     "ArrayReshape" => Some((2, 3)),
     "ArrayRules" => Some((1, 2)),

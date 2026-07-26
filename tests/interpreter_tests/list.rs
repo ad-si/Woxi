@@ -19600,3 +19600,156 @@ mod canonical_order_symbolic_coefficients {
     assert_eq!(interpret("Order[(a + b)*x^2, x^3]").unwrap(), "1");
   }
 }
+
+mod sparse_array_properties_and_predicates {
+  use super::*;
+
+  // The stored entries, in order, and where they sit.
+  #[test]
+  fn explicit_values_and_positions() {
+    assert_eq!(
+      interpret(r#"SparseArray[{1 -> 5, 3 -> 7}, 4]["NonzeroValues"]"#)
+        .unwrap(),
+      "{5, 7}"
+    );
+    assert_eq!(
+      interpret(r#"SparseArray[{1 -> 5, 3 -> 7}, 4]["ExplicitValues"]"#)
+        .unwrap(),
+      "{5, 7}"
+    );
+    assert_eq!(
+      interpret(r#"SparseArray[{1 -> 5, 3 -> 7}, 4]["NonzeroPositions"]"#)
+        .unwrap(),
+      "{{1}, {3}}"
+    );
+    assert_eq!(
+      interpret(r#"SparseArray[{1 -> 5, 3 -> 7}, 4]["ExplicitLength"]"#)
+        .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(r#"SparseArray[{{0, 1}, {2, 0}}]["NonzeroPositions"]"#)
+        .unwrap(),
+      "{{1, 2}, {2, 1}}"
+    );
+  }
+
+  // Density counts the stored entries against the whole array, and the
+  // background is whatever the unstored elements are.
+  #[test]
+  fn density_and_background() {
+    assert_eq!(
+      interpret(r#"SparseArray[{1 -> 5, 3 -> 7}, 4]["Density"]"#).unwrap(),
+      "0.5"
+    );
+    assert_eq!(
+      interpret(r#"SparseArray[{1 -> 5}, 3, 9]["Density"]"#).unwrap(),
+      "0.3333333333333333"
+    );
+    assert_eq!(
+      interpret(r#"SparseArray[{1 -> 5}, 3, 9]["Background"]"#).unwrap(),
+      "9"
+    );
+    assert_eq!(
+      interpret(r#"SparseArray[{1 -> 5}, 3, 9]["ImplicitValue"]"#).unwrap(),
+      "9"
+    );
+    assert_eq!(
+      interpret(r#"SparseArray[{1 -> 5, 3 -> 7}, 4]["Dimensions"]"#).unwrap(),
+      "{4}"
+    );
+  }
+
+  // The compressed-row structure, and the adjacency lists it stands for:
+  // one flat list for a vector, one list per row for a matrix.
+  #[test]
+  fn compressed_row_structure() {
+    assert_eq!(
+      interpret(r#"SparseArray[{1 -> 5, 3 -> 7}, 4]["RowPointers"]"#).unwrap(),
+      "{0, 2}"
+    );
+    assert_eq!(
+      interpret(r#"SparseArray[{1 -> 5, 3 -> 7}, 4]["ColumnIndices"]"#)
+        .unwrap(),
+      "{{1}, {3}}"
+    );
+    assert_eq!(
+      interpret(r#"SparseArray[{1 -> 5, 3 -> 7}, 4]["AdjacencyLists"]"#)
+        .unwrap(),
+      "{1, 3}"
+    );
+    assert_eq!(
+      interpret(r#"SparseArray[{{0, 1}, {2, 0}}]["RowPointers"]"#).unwrap(),
+      "{0, 1, 2}"
+    );
+    assert_eq!(
+      interpret(r#"SparseArray[{{0, 1}, {2, 0}}]["AdjacencyLists"]"#).unwrap(),
+      "{{2}, {1}}"
+    );
+  }
+
+  // The pattern array carries a blank wherever a value is stored.
+  #[test]
+  fn pattern_array() {
+    assert_eq!(
+      interpret(r#"Normal[SparseArray[{1 -> 5, 3 -> 7}, 4]["PatternArray"]]"#)
+        .unwrap(),
+      "{_, 0, _, 0}"
+    );
+  }
+
+  #[test]
+  fn an_unknown_property_is_refused() {
+    let r = woxi::interpret_with_stdout(r#"SparseArray[{1 -> 5}, 3]["Foo"]"#)
+      .unwrap();
+    assert!(
+      r.warnings.iter().any(|w| w.contains(
+        "SparseArray::nomthd: There is no method Foo for SparseArray objects."
+      )),
+      "expected nomthd, got {:?}",
+      r.warnings
+    );
+  }
+
+  #[test]
+  fn sparse_array_q() {
+    assert_eq!(
+      interpret("SparseArrayQ[SparseArray[{1 -> 5}, 3]]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("SparseArrayQ[{1, 2, 3}]").unwrap(), "False");
+  }
+
+  // A SparseArray counts as the array it stands for.
+  #[test]
+  fn array_predicates_see_through_a_sparse_array() {
+    assert_eq!(
+      interpret("ArrayQ[SparseArray[{1 -> 5}, 3]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("ArrayQ[SparseArray[{1 -> 5}, 3], 2]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("ArrayQ[SparseArray[{1 -> 5}, 3], 1, IntegerQ]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("VectorQ[SparseArray[{1 -> 5}, 3]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("VectorQ[SparseArray[{1 -> 5}, 3], IntegerQ]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatrixQ[SparseArray[{{1, 2}, {3, 4}}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("VectorQ[SparseArray[{{1, 2}, {3, 4}}]]").unwrap(),
+      "False"
+    );
+  }
+}

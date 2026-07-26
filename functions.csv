@@ -327,7 +327,7 @@ MapIndexed,Applies a function to each element along with its index; on an associ
 RiemannR,Riemann prime counting function R(x) approximating PrimePi,✅,pure,7.0,331
 Item,Wrapper for specifying individual item options in Grid and similar constructs,✅,pure,6.0,332
 SetAttributes,Sets attributes for a symbol,✅,stateful,1.0,333
-SparseArray,Creates a sparse array representation that stays sparse under arithmetic,✅,pure,5.0,334
+SparseArray,Creates a sparse array representation that stays sparse under arithmetic and answers grid queries like "NonzeroValues" or "Density",✅,pure,5.0,334
 ArcSech,Returns the inverse hyperbolic secant,✅,pure,1.0,335
 NumberForm,Displays a number with specified formatting; ToString renders x to n significant figures or with {n;f} to exactly f decimal places (the single-argument form uses the 6-significant-figure default; reals with exponent >= 6 or <= -6 switch to 2D scientific notation) and supports DigitBlock/NumberSeparator digit grouping and NumberPadding field padding,✅,pure,1.0,336
 FrameTicks,Option specifying tick marks on the frame of a plot,✅,none,2.0,337
@@ -1639,7 +1639,7 @@ ClearAttributes,Removes attributes from a symbol,✅,stateful,1.0,1665
 DiscreteMarkovProcess,Discrete-time finite-state Markov process consumed by PDF/StationaryDistribution,✅,unevaluated,9.0,1665
 Ket,Dirac ket notation (stays symbolic),✅,unevaluated,13.3,1665
 TradingChart,Financial trading chart,,unevaluated,8.0,1666
-ArrayQ,Tests if an expression is a full array,✅,pure,5.0,1668
+ArrayQ,Tests if an expression is a full array (a SparseArray counts as the array it stands for),✅,pure,5.0,1668
 FindMaxValue,Finds the value at a local maximum of a function numerically,✅,pure,7.0,1668
 DistributeDefinitions,Distribute definitions to kernels,,unevaluated,7.0,1672
 FilePrint,Prints the contents of a file to standard output,✅,io,6.0,1672
@@ -5973,7 +5973,7 @@ SolidMechanicsStress,,,,13.0,
 SolveValues,Returns the values from solving equations shaped by the variable spec,✅,pure,12.3,
 SourcePDETerm,,,,12.2,
 SowVideo,,🚫,,14.1,
-SparseArrayQ,,,,13.0,
+SparseArrayQ,Tests whether an expression is a SparseArray object,✅,pure,13.0,
 SpatialBinnedPointData,,🚫,,12.2,
 SpatialBoundaryCorrection,,,,12.2,
 SpatialEstimate,,,,13.0,

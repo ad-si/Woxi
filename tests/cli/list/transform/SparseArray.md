@@ -50,3 +50,25 @@ $ wo 'Normal[SparseArray[{1 -> 1}, 3] + 1]'
 $ wo 'SparseArray[{1 -> 1}, 3] + SparseArray[{2 -> 5}, 3]'
 SparseArray[Automatic, {3}, 0, {1, {{0, 2}, {{1}, {2}}}, {1, 5}}]
 ```
+
+A sparse array answers queries about the grid it stores:
+
+```scrut
+$ wo 'sa = SparseArray[{1 -> 5, 3 -> 7}, 4]; {sa["NonzeroValues"], sa["NonzeroPositions"], sa["Density"], sa["Background"]}'
+{{5, 7}, {{1}, {3}}, 0.5, 0}
+```
+
+The compressed-row structure is reported as it is stored, and the adjacency
+lists it stands for are flat for a vector and per row for a matrix:
+
+```scrut
+$ wo 'm = SparseArray[{{0, 1}, {2, 0}}]; {m["RowPointers"], m["ColumnIndices"], m["AdjacencyLists"]}'
+{{0, 1, 2}, {{2}, {1}}, {{2}, {1}}}
+```
+
+It counts as the array it stands for:
+
+```scrut
+$ wo '{SparseArrayQ[SparseArray[{1 -> 5}, 3]], ArrayQ[SparseArray[{1 -> 5}, 3]], MatrixQ[SparseArray[{{1, 2}, {3, 4}}]]}'
+{True, True, True}
+```
