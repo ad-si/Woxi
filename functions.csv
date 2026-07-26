@@ -753,7 +753,7 @@ LineLegend,Legend with line samples,✅,none,9.0,760
 ChebyshevU,Chebyshev polynomial of the second kind,✅,pure,1.0,761
 WordList,Returns a list of common English words,🚫,io,10.3,762
 EdgeList,List of edges in a graph (optionally matching a pattern),✅,pure,8.0,763
-Refine,Simplifies expressions and resolves conditions using assumptions,✅,pure,5.0,764
+Refine,Simplifies expressions and resolves conditions using assumptions (a chained inequality gives both the sign and the numeric bounds),✅,pure,5.0,764
 Expression,Type specifier for reading expressions,✅,pure,1.0,765
 ColorConvert,Convert colors or images between color spaces (RGB Grayscale CMYK HSB),✅,pure,7.0,766
 ReadList,Read a list of items from a file or stream,✅,effectful,1.0,767

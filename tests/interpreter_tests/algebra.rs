@@ -15548,3 +15548,81 @@ mod constrained_numeric_optimization {
     assert_eq!(interpret("NArgMin[x^2 + y^2, {x, y}]").unwrap(), "{0., 0.}");
   }
 }
+
+mod refine_bounded_variables {
+  use super::*;
+
+  // A chained inequality pins Floor when the range cannot straddle an
+  // integer boundary.
+  #[test]
+  fn floor_of_a_bounded_variable() {
+    assert_eq!(interpret("Refine[Floor[x], 0 < x < 1]").unwrap(), "0");
+    assert_eq!(interpret("Refine[Floor[x], 2 < x < 3]").unwrap(), "2");
+    assert_eq!(interpret("Refine[Floor[x], -1 < x < 0]").unwrap(), "-1");
+    assert_eq!(interpret("Refine[Floor[x], 0 <= x < 1]").unwrap(), "0");
+    // x could be 1 here, so the floor is not settled.
+    assert_eq!(
+      interpret("Refine[Floor[x], 0 < x <= 1]").unwrap(),
+      "Floor[x]"
+    );
+  }
+
+  #[test]
+  fn ceiling_of_a_bounded_variable() {
+    assert_eq!(interpret("Refine[Ceiling[x], 0 < x < 1]").unwrap(), "1");
+    assert_eq!(interpret("Refine[Ceiling[x], 1 < x < 2]").unwrap(), "2");
+    // x could be 0 here, which ceils to 0 rather than 1.
+    assert_eq!(
+      interpret("Refine[Ceiling[x], 0 <= x < 1]").unwrap(),
+      "Ceiling[x]"
+    );
+  }
+
+  // IntegerPart truncates toward zero, so it settles on either side of it.
+  #[test]
+  fn integer_and_fractional_part_of_a_bounded_variable() {
+    assert_eq!(interpret("Refine[IntegerPart[x], 0 < x < 1]").unwrap(), "0");
+    assert_eq!(
+      interpret("Refine[IntegerPart[x], -1 < x < 0]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Refine[FractionalPart[x], 0 < x < 1]").unwrap(),
+      "x"
+    );
+  }
+
+  // Round is not settled by that range: it is 0 below 1/2 and 1 above.
+  #[test]
+  fn round_stays_when_the_range_does_not_settle_it() {
+    assert_eq!(
+      interpret("Refine[Round[x], 0 < x < 1]").unwrap(),
+      "Round[x]"
+    );
+  }
+
+  // The sign facts of a chained inequality reach the other refinements too.
+  #[test]
+  fn a_chained_inequality_gives_the_sign() {
+    assert_eq!(interpret("Refine[Sign[x], 0 < x < 1]").unwrap(), "1");
+    assert_eq!(interpret("Refine[Abs[x], 0 < x < 1]").unwrap(), "x");
+  }
+
+  #[test]
+  fn simplify_and_assuming_take_the_same_route() {
+    assert_eq!(interpret("Simplify[Floor[x], 0 < x < 1]").unwrap(), "0");
+    assert_eq!(
+      interpret("Assuming[0 < x < 1, Simplify[Floor[x]]]").unwrap(),
+      "0"
+    );
+  }
+
+  // The explicit Inequality form works the same way.
+  #[test]
+  fn the_inequality_head_is_understood() {
+    assert_eq!(
+      interpret("Refine[Floor[x], Inequality[0, Less, x, Less, 1]]").unwrap(),
+      "0"
+    );
+  }
+}

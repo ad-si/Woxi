@@ -403,6 +403,56 @@ fn extract_assumptions_inner(assumption: &Expr, info: &mut AssumptionInfo) {
   info.raw_assumptions.push(assumption.clone());
 
   match assumption {
+    // `Inequality[a, Less, b, Less, c]` is the explicit form of a chained
+    // comparison; rewrite it and take the same route.
+    Expr::FunctionCall { name, args }
+      if name == "Inequality" && args.len() >= 3 && args.len() % 2 == 1 =>
+    {
+      let mut operands = Vec::with_capacity(args.len() / 2 + 1);
+      let mut operators = Vec::with_capacity(args.len() / 2);
+      let mut ok = true;
+      for (i, a) in args.iter().enumerate() {
+        if i % 2 == 0 {
+          operands.push(a.clone());
+        } else {
+          match a {
+            Expr::Identifier(op) => match op.as_str() {
+              "Less" => operators.push(ComparisonOp::Less),
+              "LessEqual" => operators.push(ComparisonOp::LessEqual),
+              "Greater" => operators.push(ComparisonOp::Greater),
+              "GreaterEqual" => operators.push(ComparisonOp::GreaterEqual),
+              "Equal" => operators.push(ComparisonOp::Equal),
+              "Unequal" => operators.push(ComparisonOp::NotEqual),
+              _ => ok = false,
+            },
+            _ => ok = false,
+          }
+        }
+      }
+      if ok {
+        extract_assumptions_inner(
+          &Expr::Comparison {
+            operands,
+            operators,
+          },
+          info,
+        );
+      }
+    }
+    // A chained comparison (`0 < x < 1`) is the conjunction of its links, so
+    // each one contributes its own facts.
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() > 2 && operators.len() == operands.len() - 1 => {
+      for (i, op) in operators.iter().enumerate() {
+        let link = Expr::Comparison {
+          operands: vec![operands[i].clone(), operands[i + 1].clone()],
+          operators: vec![*op],
+        };
+        extract_assumptions_inner(&link, info);
+      }
+    }
     Expr::Comparison {
       operands,
       operators,
@@ -1316,6 +1366,36 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       Expr::FunctionCall {
         name: "Floor".to_string(),
         args: vec![refined_arg].into(),
+      }
+    }
+
+    // IntegerPart[x] truncates toward zero, so a range that stays on one
+    // side of zero settles it: (0, 1) gives 0 and so does (-1, 0).
+    Expr::FunctionCall { name, args }
+      if name == "IntegerPart"
+        && args.len() == 1
+        && refine_integer_part(&args[0], info).is_some() =>
+    {
+      refine_integer_part(&args[0], info).unwrap_or_else(|| expr.clone())
+    }
+
+    // FractionalPart[x] is x minus its integer part.
+    Expr::FunctionCall { name, args }
+      if name == "FractionalPart"
+        && args.len() == 1
+        && refine_integer_part(&args[0], info).is_some() =>
+    {
+      match refine_integer_part(&args[0], info) {
+        Some(Expr::Integer(0)) => args[0].clone(),
+        Some(Expr::Integer(k)) => {
+          crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+            op: BinaryOperator::Minus,
+            left: Box::new(args[0].clone()),
+            right: Box::new(Expr::Integer(k)),
+          })
+          .unwrap_or_else(|_| expr.clone())
+        }
+        _ => expr.clone(),
       }
     }
 
@@ -2813,40 +2893,151 @@ fn refine_element(
 /// Refine Floor/Ceiling with numeric bounds.
 /// For Floor: if we know a < x <= b with a, b integers and b = a + 1, then Floor[x] = a.
 /// For Ceiling: if we know a < x <= b with integer b, then Ceiling[x] = b.
+/// `IntegerPart[x]` when the assumed range pins it. Truncation toward zero is
+/// Floor on a non-negative range and Ceiling on a non-positive one; a range
+/// straddling zero settles only if both agree.
+fn refine_integer_part(arg: &Expr, info: &AssumptionInfo) -> Option<Expr> {
+  let Expr::Identifier(var_name) = arg else {
+    return None;
+  };
+  let (lo, lo_strict, hi, hi_strict) = variable_numeric_bounds(var_name, info)?;
+  if lo >= 0.0 {
+    return bounded_rounding(lo, lo_strict, hi, hi_strict, true);
+  }
+  if hi <= 0.0 {
+    return bounded_rounding(lo, lo_strict, hi, hi_strict, false);
+  }
+  // Straddles zero: only a range inside (-1, 1) settles it, at 0.
+  let low_ok = lo > -1.0 || (lo == -1.0 && lo_strict);
+  let high_ok = hi < 1.0 || (hi == 1.0 && hi_strict);
+  (low_ok && high_ok).then(|| Expr::Integer(0))
+}
+
+/// The tightest numeric bounds an assumption puts on a variable, as
+/// `(lo, lo_strict, hi, hi_strict)`. Both ends must be known.
+fn variable_numeric_bounds(
+  var_name: &str,
+  info: &AssumptionInfo,
+) -> Option<(f64, bool, f64, bool)> {
+  let value = |e: &Expr| crate::functions::math_ast::try_eval_to_f64(e);
+  let mut lo: Option<(f64, bool)> = None;
+  let mut hi: Option<(f64, bool)> = None;
+  let mut tighten_lo = |v: f64, strict: bool| {
+    lo = Some(match lo {
+      Some((cur, cur_strict)) if cur > v || (cur == v && cur_strict) => {
+        (cur, cur_strict)
+      }
+      _ => (v, strict),
+    });
+  };
+  let mut tighten_hi = |v: f64, strict: bool| {
+    hi = Some(match hi {
+      Some((cur, cur_strict)) if cur < v || (cur == v && cur_strict) => {
+        (cur, cur_strict)
+      }
+      _ => (v, strict),
+    });
+  };
+
+  for raw in &info.raw_assumptions {
+    // Chained form: lo < var < hi.
+    if let Some((lo_e, lo_strict, hi_e, hi_strict)) =
+      extract_bounds_for_var(var_name, raw)
+      && let (Some(l), Some(h)) = (value(&lo_e), value(&hi_e))
+    {
+      tighten_lo(l, lo_strict);
+      tighten_hi(h, hi_strict);
+      continue;
+    }
+    // Plain form: var < c, c <= var, …
+    let Expr::Comparison {
+      operands,
+      operators,
+    } = raw
+    else {
+      continue;
+    };
+    if operands.len() != 2 || operators.len() != 1 {
+      continue;
+    }
+    let is_var = |e: &Expr| matches!(e, Expr::Identifier(n) if n == var_name);
+    if is_var(&operands[0])
+      && let Some(c) = value(&operands[1])
+    {
+      match operators[0] {
+        ComparisonOp::Less => tighten_hi(c, true),
+        ComparisonOp::LessEqual => tighten_hi(c, false),
+        ComparisonOp::Greater => tighten_lo(c, true),
+        ComparisonOp::GreaterEqual => tighten_lo(c, false),
+        _ => {}
+      }
+    } else if is_var(&operands[1])
+      && let Some(c) = value(&operands[0])
+    {
+      match operators[0] {
+        ComparisonOp::Less => tighten_lo(c, true),
+        ComparisonOp::LessEqual => tighten_lo(c, false),
+        ComparisonOp::Greater => tighten_hi(c, true),
+        ComparisonOp::GreaterEqual => tighten_hi(c, false),
+        _ => {}
+      }
+    }
+  }
+  match (lo, hi) {
+    (Some((l, ls)), Some((h, hs))) => Some((l, ls, h, hs)),
+    _ => None,
+  }
+}
+
+/// `Floor[x]` / `Ceiling[x]` when the assumed range pins the value: the
+/// smallest and the largest the result can take over the range agree.
 fn refine_floor_ceiling(
   arg: &Expr,
   info: &AssumptionInfo,
   _assumption: &Expr,
   is_floor: bool,
 ) -> Option<Expr> {
-  // Look for bounds on the variable from raw assumptions
-  if let Expr::Identifier(var_name) = arg {
-    // Look for chained comparison: a < var <= b or a <= var < b etc.
-    for raw in &info.raw_assumptions {
-      if let Some((lo, lo_strict, hi, hi_strict)) =
-        extract_bounds_for_var(var_name, raw)
-        && !is_floor
-      {
-        // Ceiling[x] with a < x <= b (integer b) → b
-        if !hi_strict {
-          // hi is inclusive
-          if let Expr::Integer(hi_val) = &hi
-            && lo_strict
-          {
-            // a < x <= b
-            if let Expr::Integer(lo_val) = &lo
-              && *hi_val > *lo_val
-            {
-              return Some(Expr::Integer(*hi_val));
-            }
-          }
-        }
-        // Ceiling[x] with a < x < b (and no integers between a and b except possibly b-like)
-        // General: if a < x and x is NOT an integer, ceiling = floor(a) + 1
-      }
-    }
+  let Expr::Identifier(var_name) = arg else {
+    return None;
+  };
+  let (lo, lo_strict, hi, hi_strict) = variable_numeric_bounds(var_name, info)?;
+  bounded_rounding(lo, lo_strict, hi, hi_strict, is_floor)
+}
+
+/// The constant value of Floor (or Ceiling) over the range `lo..hi`, when the
+/// range pins it.
+fn bounded_rounding(
+  lo: f64,
+  lo_strict: bool,
+  hi: f64,
+  hi_strict: bool,
+  is_floor: bool,
+) -> Option<Expr> {
+  if !lo.is_finite() || !hi.is_finite() || lo > hi {
+    return None;
   }
-  None
+  let (min_v, max_v) = if is_floor {
+    // A value just above `lo` floors to floor(lo) whether or not the bound is
+    // strict; a value just below an excluded `hi` floors to ceil(hi) - 1.
+    (
+      lo.floor(),
+      if hi_strict {
+        hi.ceil() - 1.0
+      } else {
+        hi.floor()
+      },
+    )
+  } else {
+    (
+      if lo_strict {
+        lo.floor() + 1.0
+      } else {
+        lo.ceil()
+      },
+      hi.ceil(),
+    )
+  };
+  (min_v == max_v && min_v.abs() < 9e15).then(|| Expr::Integer(min_v as i128))
 }
 
 /// Extract bounds (lo, lo_is_strict, hi, hi_is_strict) for a variable from a comparison.
