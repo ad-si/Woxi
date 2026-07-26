@@ -8096,6 +8096,47 @@ pub fn find_min_value_ast(
 /// Returns {min_value, {x -> x_min, ...}}
 ///
 /// FindMaximum is implemented by negating f and negating the result.
+/// The variable names of an optimization specification: `x`, `{x, x0}`,
+/// `{x, y}` or `{{x, x0}, {y, y0}}`. `None` when the shape is not one of
+/// those.
+pub fn optimization_variable_names(spec: &Expr) -> Option<Vec<String>> {
+  match spec {
+    Expr::Identifier(name) => Some(vec![name.clone()]),
+    Expr::List(items) if items.is_empty() => Some(Vec::new()),
+    Expr::List(items) if items.iter().all(|i| matches!(i, Expr::List(_))) => {
+      // {{x, x0}, {y, y0}, …}
+      items
+        .iter()
+        .map(|item| match item {
+          Expr::List(pair) if !pair.is_empty() => match &pair[0] {
+            Expr::Identifier(name) => Some(name.clone()),
+            _ => None,
+          },
+          _ => None,
+        })
+        .collect()
+    }
+    Expr::List(items)
+      if items.iter().all(|i| matches!(i, Expr::Identifier(_))) =>
+    {
+      // {x, y, …}
+      items
+        .iter()
+        .map(|i| match i {
+          Expr::Identifier(name) => Some(name.clone()),
+          _ => None,
+        })
+        .collect()
+    }
+    // {x, x0} — one variable with a starting value.
+    Expr::List(items) if items.len() == 2 => match &items[0] {
+      Expr::Identifier(name) => Some(vec![name.clone()]),
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
 pub fn find_minimum_ast(
   args: &[Expr],
   maximize: bool,
@@ -8110,6 +8151,24 @@ pub fn find_minimum_ast(
       "{func_name} expects at least 2 arguments"
     )));
   }
+  // A `{f, cons}` first argument states a constrained problem, which the
+  // constrained solver handles; the starting values are only a hint and it
+  // takes the variables on their own. wolframscript reports the same
+  // `{value, {var -> …}}` shape from either.
+  if let Expr::List(items) = &args[0]
+    && items.len() == 2
+    && let Some(vars) = optimization_variable_names(&args[1])
+    && !vars.is_empty()
+  {
+    return nminimize_ast(
+      &[
+        args[0].clone(),
+        Expr::List(vars.into_iter().map(Expr::Identifier).collect()),
+      ],
+      maximize,
+    );
+  }
+
   // Trailing arguments are options (e.g. MaxIterations -> 2,
   // Method -> "Newton"). They aren't honoured yet, but we accept them
   // silently rather than aborting so call shapes match Wolfram.

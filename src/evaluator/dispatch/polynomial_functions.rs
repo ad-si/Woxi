@@ -469,6 +469,11 @@ pub fn dispatch_polynomial_functions(
       if let Some(result) = try_constrained_linear_disk(name, args) {
         return Some(Ok(result));
       }
+      if matches!(name, "NArgMax" | "NArgMin" | "FindArgMax" | "FindArgMin")
+        && let Some(result) = numeric_arg_extremum(name, args)
+      {
+        return Some(Ok(result));
+      }
     }
     // Single-variable constrained arg-optimization: `NArgMax[{f, cons}, x]`.
     // Return the *location* of the optimum (as a machine real), mirroring the
@@ -487,6 +492,15 @@ pub fn dispatch_polynomial_functions(
       {
         return Some(Ok(Expr::Real(arg)));
       }
+      if let Some(result) = numeric_arg_extremum(name, args) {
+        return Some(Ok(result));
+      }
+    }
+    // NArgMin/NArgMax in general: solve the (possibly constrained) problem
+    // and report where the optimum sits. The closed-form arms above have
+    // already had their chance.
+    "NArgMin" | "NArgMax" if args.len() == 2 => {
+      return numeric_arg_extremum(name, args).map(Ok);
     }
     "FindArgMin" if args.len() == 2 => {
       // FindArgMin[f, x] => calls FindMinimum[f, {x, 0}] and extracts the arg
@@ -1519,5 +1533,55 @@ fn sinusoid_extremum(expr: &Expr, var: &str, maximize: bool) -> Option<Expr> {
     Expr::Integer(value.0)
   } else {
     crate::functions::math_ast::make_rational(value.0, value.1)
+  })
+}
+
+/// `NArgMin[f, vars]` / `NArgMax[…]` in general: solve the (possibly
+/// constrained) problem with the numeric optimizer and report where the
+/// optimum sits — one value for a single variable, a list for several.
+fn numeric_arg_extremum(name: &str, args: &[Expr]) -> Option<Expr> {
+  let maximize = name == "NArgMax" || name == "FindArgMax";
+  let vars =
+    crate::functions::polynomial_ast::optimization_variable_names(&args[1])?;
+  if vars.is_empty() {
+    return None;
+  }
+  let solved = crate::functions::polynomial_ast::nminimize_ast(
+    &[
+      args[0].clone(),
+      Expr::List(
+        vars
+          .iter()
+          .cloned()
+          .map(Expr::Identifier)
+          .collect::<Vec<_>>()
+          .into(),
+      ),
+    ],
+    maximize,
+  );
+  let Ok(Expr::List(ref parts)) = solved else {
+    return None;
+  };
+  let Some(Expr::List(rules)) = parts.get(1) else {
+    return None;
+  };
+  let mut values: Vec<Expr> = Vec::with_capacity(vars.len());
+  for var in &vars {
+    let value = rules.iter().find_map(|r| match r {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(v) if v == var) => {
+        Some((**replacement).clone())
+      }
+      _ => None,
+    })?;
+    values.push(value);
+  }
+  Some(if values.len() == 1 {
+    values.remove(0)
+  } else {
+    Expr::List(values.into())
   })
 }

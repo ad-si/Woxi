@@ -15465,3 +15465,86 @@ mod polynomial_mod_and_monomial_orders {
     );
   }
 }
+
+mod constrained_numeric_optimization {
+  use super::*;
+
+  // A `{f, cons}` objective states a constrained problem; the starting
+  // values are only a hint. wolframscript's interior-point method reports
+  // these to about 8 digits (e.g. 1.000000013 for the second one) — the
+  // values below agree with it and are the exact optima.
+  #[test]
+  fn find_minimum_with_constraints() {
+    assert_eq!(
+      interpret("FindMinimum[{x^2 + y^2, x + y == 1}, {{x, 0}, {y, 0}}]")
+        .unwrap(),
+      "{0.5, {x -> 0.5, y -> 0.5}}"
+    );
+    assert_eq!(
+      interpret("FindMinimum[{x^2, x >= 1}, {x, 0}]").unwrap(),
+      "{1., {x -> 1.}}"
+    );
+    assert_eq!(
+      interpret("FindMinimum[{-x, x <= 5}, {x, 0}]").unwrap(),
+      "{-5., {x -> 5.}}"
+    );
+  }
+
+  // The variables may be given without starting values.
+  #[test]
+  fn find_minimum_without_starting_values() {
+    assert_eq!(
+      interpret("FindMinimum[{x^2, x >= 1}, x]").unwrap(),
+      "{1., {x -> 1.}}"
+    );
+  }
+
+  #[test]
+  fn find_maximum_with_constraints() {
+    assert_eq!(
+      interpret("FindMaximum[{2 x, x <= 3}, {x, 0}]").unwrap(),
+      "{6., {x -> 3.}}"
+    );
+    assert_eq!(
+      interpret("FindMaximum[{x + y, x^2 + y^2 <= 1}, {{x, 0.5}, {y, 0.5}}]")
+        .unwrap(),
+      "{1.4142135623730951, {x -> 0.7071067811865476, y -> 0.7071067811865476}}"
+    );
+  }
+
+  // Several constraints combine with And.
+  #[test]
+  fn several_constraints() {
+    assert_eq!(
+      interpret(
+        "FindMinimum[{x^2 + y^2, x + y == 1 && x >= 0.7}, {{x, 0}, {y, 0}}]"
+      )
+      .unwrap(),
+      "{0.5800000000000001, {x -> 0.7000000000000001, y -> 0.30000000000000004}}"
+    );
+  }
+
+  // NArgMin and NArgMax report where the optimum sits: one value for a
+  // single variable, a list for several.
+  #[test]
+  fn narg_min_and_max_with_constraints() {
+    assert_eq!(
+      interpret("NArgMin[{x^2 + y^2, x + y == 1}, {x, y}]").unwrap(),
+      "{0.5, 0.5}"
+    );
+    assert_eq!(
+      interpret("NArgMin[{x^2 + y^2, x + y == 2}, {x, y}]").unwrap(),
+      "{1., 1.}"
+    );
+    assert_eq!(
+      interpret("NArgMax[{x + y, x^2 + y^2 <= 1}, {x, y}]").unwrap(),
+      "{0.7071067811865475, 0.7071067811865475}"
+    );
+    assert_eq!(interpret("NArgMin[{x^2, x >= 1}, x]").unwrap(), "1.");
+  }
+
+  #[test]
+  fn narg_min_over_several_variables_without_constraints() {
+    assert_eq!(interpret("NArgMin[x^2 + y^2, {x, y}]").unwrap(), "{0., 0.}");
+  }
+}

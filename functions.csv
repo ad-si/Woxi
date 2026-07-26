@@ -429,7 +429,7 @@ Magenta,Named color evaluating to RGBColor[1 0 1],✅,pure,5.1,432
 Boole,Converts True to 1 and False to 0,✅,pure,5.1,433
 Outer,Generalized outer product over any number of nonatomic arguments sharing one head,✅,pure,1.0,434
 InterpolationOrder,Option for specifying the order of interpolation,✅,pure,3.0,435
-FindMinimum,Finds a local minimum of a function numerically,✅,pure,1.0,436
+FindMinimum,Finds a local minimum of a function numerically; a {f cons} objective states a constrained problem and the starting values may be omitted,✅,pure,1.0,436
 LinearSolve,Solves a square or rectangular linear system of equations using Gaussian elimination,✅,pure,1.0,437
 StringLength,Returns the length of a string,✅,pure,1.0,438
 NDSolveValue,Numerically solve a differential equation and return the solution,✅,pure,9.0,439
@@ -550,7 +550,7 @@ Intersection,Returns sorted intersection of lists or associations,✅,pure,1.0,5
 Erf,Returns the error function value,✅,pure,1.0,554
 ImageDimensions,Returns the dimensions of an image,✅,pure,7.0,555
 InputField,Input field for interactive interfaces,✅,none,6.0,556
-FindMaximum,Finds a local maximum of a function numerically,✅,pure,5.0,557
+FindMaximum,Finds a local maximum of a function numerically; a {f cons} objective states a constrained problem and the starting values may be omitted,✅,pure,5.0,557
 RegionFunction,Option to restrict plotting to a region,✅,none,6.0,558
 ColorFunctionScaling,Option to scale color function input,✅,none,4.0,559
 Values,Returns the values of an association (optionally wrapping each with a head),✅,pure,10.0,560
