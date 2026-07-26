@@ -4820,6 +4820,122 @@ mod batch_unevaluated_wrappers_2 {
       "{{a}, {b}, {c}}"
     );
   }
+  // `patt -> rhs` / `patt :> rhs` keeps rhs where the separator was, with the
+  // separator's pattern variables bound.
+  #[test]
+  fn sequence_split_rule_keeps_the_replacement() {
+    assert_eq!(
+      interpret("SequenceSplit[{1, 2, 3, 4, 5}, {3} -> {\"X\"}]").unwrap(),
+      "{{1, 2}, {X}, {4, 5}}"
+    );
+    assert_eq!(
+      interpret("SequenceSplit[{x, x, a, b, y, a, c, z}, {a, e_} :> {e}]")
+        .unwrap(),
+      "{{x, x}, {b}, {y}, {c}, {z}}"
+    );
+    assert_eq!(
+      interpret("SequenceSplit[{1, 2, 3, 4, 5, 6}, {x_?EvenQ} :> {x*10}]")
+        .unwrap(),
+      "{{1}, {20}, {3}, {40}, {5}, {60}}"
+    );
+    // The replacement is inserted verbatim — an empty list survives where an
+    // empty *sublist* would be dropped, and Nothing vanishes.
+    assert_eq!(
+      interpret("SequenceSplit[{1, 2, 3}, {2} -> 99]").unwrap(),
+      "{{1}, 99, {3}}"
+    );
+    assert_eq!(
+      interpret("SequenceSplit[{1, 2, 3}, {2} -> {}]").unwrap(),
+      "{{1}, {}, {3}}"
+    );
+    assert_eq!(
+      interpret("SequenceSplit[{a, b, c}, {b} -> Nothing]").unwrap(),
+      "{{a}, {c}}"
+    );
+  }
+  #[test]
+  fn sequence_split_list_of_rules() {
+    assert_eq!(
+      interpret("SequenceSplit[{1, 2, 1, 2, 3}, {{1, 2} -> {a}, {3} -> {b}}]")
+        .unwrap(),
+      "{{a}, {a}, {b}}"
+    );
+    // The earlier rule wins even when a later one would match more.
+    assert_eq!(
+      interpret("SequenceSplit[{1, 2, 1, 2}, {{1, 2} -> {a}, {1} -> {b}}]")
+        .unwrap(),
+      "{{a}, {a}}"
+    );
+    assert_eq!(
+      interpret("SequenceSplit[{1, 2, 1, 2}, {{1} -> {b}, {1, 2} -> {a}}]")
+        .unwrap(),
+      "{{b}, {2}, {b}, {2}}"
+    );
+  }
+  // The third argument caps the number of sublists; the last one holds the
+  // unsplit remainder. An empty *leading* sublist is skipped without counting
+  // toward the cap, while later empty ones count and are then dropped.
+  #[test]
+  fn sequence_split_max_sublists() {
+    assert_eq!(
+      interpret("SequenceSplit[{x, x, a, b, y, a, c, z}, {a, _}, 2]").unwrap(),
+      "{{x, x}, {y, a, c, z}}"
+    );
+    assert_eq!(
+      interpret("SequenceSplit[{1, 2, 3, 4, 5}, {_?EvenQ}, 2]").unwrap(),
+      "{{1}, {3, 4, 5}}"
+    );
+    assert_eq!(
+      interpret("SequenceSplit[{1, 2, 3, 4, 5}, {_?EvenQ} :> {q}, 2]").unwrap(),
+      "{{1}, {q}, {3, 4, 5}}"
+    );
+    // n = 1 never splits, whatever the separator matches.
+    assert_eq!(
+      interpret("SequenceSplit[{1, 2, 3, 4, 5}, {_?EvenQ}, 1]").unwrap(),
+      "{{1, 2, 3, 4, 5}}"
+    );
+    assert_eq!(
+      interpret("SequenceSplit[{1, 1, 1}, {1}, 1]").unwrap(),
+      "{{1, 1, 1}}"
+    );
+    assert_eq!(
+      interpret("SequenceSplit[{1, 1, 1}, {1}, 2]").unwrap(),
+      "{{1}}"
+    );
+    assert_eq!(interpret("SequenceSplit[{1, 1, 1}, {1}, 3]").unwrap(), "{}");
+    assert_eq!(
+      interpret("SequenceSplit[{0, 1, 1, 0}, {1}, 2]").unwrap(),
+      "{{0}, {1, 0}}"
+    );
+    assert_eq!(
+      interpret("SequenceSplit[{0, 1, 1, 0}, {1}, 3]").unwrap(),
+      "{{0}, {0}}"
+    );
+    assert_eq!(
+      interpret("SequenceSplit[{1, 0, 1, 0, 1}, {1}, 2]").unwrap(),
+      "{{0}, {0, 1}}"
+    );
+    assert_eq!(
+      interpret("SequenceSplit[{1, 2, 3, 4, 5}, {_}, 3]").unwrap(),
+      "{{4, 5}}"
+    );
+    // Infinity is the same as leaving the cap out.
+    assert_eq!(
+      interpret("SequenceSplit[{1, 2, 3}, {2}, Infinity]").unwrap(),
+      "{{1}, {3}}"
+    );
+  }
+  #[test]
+  fn sequence_split_rejects_a_non_positive_cap() {
+    assert_eq!(
+      interpret("SequenceSplit[{1, 2, 3}, {2}, 0]").unwrap(),
+      "SequenceSplit[{1, 2, 3}, {2}, 0]"
+    );
+    assert_eq!(
+      interpret("SequenceSplit[{1, 2, 3}, {2}, x]").unwrap(),
+      "SequenceSplit[{1, 2, 3}, {2}, x]"
+    );
+  }
   #[test]
   fn sequence_cases_pattern() {
     assert_eq!(

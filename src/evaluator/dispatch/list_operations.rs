@@ -309,27 +309,10 @@ struct SeqRule<'a> {
   replacement: Option<&'a Expr>,
 }
 
-/// Extract the list-pattern elements and replacement from a `lhs -> rhs` or
-/// `lhs :> rhs` rule. Returns `None` if `arg` is not a rule whose LHS is a list
-/// pattern (or a Pattern/Condition-wrapped list pattern).
-fn parse_seq_rule(arg: &Expr) -> Option<SeqRule<'_>> {
-  let (match_pat, replacement) = match arg {
-    Expr::Rule {
-      pattern,
-      replacement,
-    }
-    | Expr::RuleDelayed {
-      pattern,
-      replacement,
-    } => (pattern.as_ref(), Some(replacement.as_ref())),
-    Expr::FunctionCall { name, args }
-      if (name == "Rule" || name == "RuleDelayed") && args.len() == 2 =>
-    {
-      (&args[0], Some(&args[1]))
-    }
-    _ => return None,
-  };
-
+/// A bare list pattern used as a subsequence matcher, with no replacement.
+/// Returns `None` unless the pattern is a list (possibly wrapped in
+/// `Pattern[name, …]` / `Condition[…, test]`).
+fn parse_seq_pattern(match_pat: &Expr) -> Option<SeqRule<'_>> {
   // Unwrap `Pattern[name, inner]` and `Condition[inner, test]` to reach the
   // underlying list pattern for length calculations.
   let mut list_pat = match_pat;
@@ -357,8 +340,34 @@ fn parse_seq_rule(arg: &Expr) -> Option<SeqRule<'_>> {
   Some(SeqRule {
     match_pat,
     sub,
-    replacement,
+    replacement: None,
   })
+}
+
+/// Extract the list-pattern elements and replacement from a `lhs -> rhs` or
+/// `lhs :> rhs` rule. Returns `None` if `arg` is not a rule whose LHS is a list
+/// pattern (or a Pattern/Condition-wrapped list pattern).
+fn parse_seq_rule(arg: &Expr) -> Option<SeqRule<'_>> {
+  let (match_pat, replacement) = match arg {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => (pattern.as_ref(), Some(replacement.as_ref())),
+    Expr::FunctionCall { name, args }
+      if (name == "Rule" || name == "RuleDelayed") && args.len() == 2 =>
+    {
+      (&args[0], Some(&args[1]))
+    }
+    _ => return None,
+  };
+
+  let mut rule = parse_seq_pattern(match_pat)?;
+  rule.replacement = replacement;
+  Some(rule)
 }
 
 /// Parse `ExcludedForms -> {pat1, pat2, ...}` into the list of patterns.
@@ -5830,7 +5839,11 @@ pub fn dispatch_list_operations(
     // (non-overlapping, left-to-right) subsequences matching patt. The
     // separators are dropped; empty segments are dropped too, except that when
     // patt matches nothing the whole list is returned as a single segment.
-    "SequenceSplit" if args.len() == 2 => {
+    //
+    // `patt -> rhs` / `patt :> rhs` (or a list of such rules) keeps `rhs` at
+    // the position of each match instead of dropping it, and the optional
+    // third argument caps the number of sublists.
+    "SequenceSplit" if args.len() == 2 || args.len() == 3 => {
       if !matches!(&args[0], Expr::List(_)) {
         crate::emit_message(&format!(
           "SequenceSplit::list: List expected at position 1 in SequenceSplit[{}, {}].",
@@ -5839,85 +5852,104 @@ pub fn dispatch_list_operations(
         ));
         return Some(Ok(unevaluated("SequenceSplit", args)));
       }
-      if let Expr::List(list) = &args[0] {
-        let match_pat = &args[1];
-        // Unwrap Pattern/Condition wrappers to get the list pattern used for
-        // length calculations (matching uses the original `match_pat`).
-        let mut list_pat = match_pat;
-        loop {
-          match list_pat {
-            Expr::FunctionCall { name, args: ia }
-              if name == "Pattern" && ia.len() == 2 =>
-            {
-              list_pat = &ia[1];
-            }
-            Expr::FunctionCall { name, args: ca }
-              if name == "Condition" && ca.len() == 2 =>
-            {
-              list_pat = &ca[0];
-            }
-            _ => break,
-          }
+      // Maximum number of sublists; Infinity means unlimited.
+      let n_limit: Option<usize> = match args.get(2) {
+        None => None,
+        Some(Expr::Integer(n)) if *n >= 1 => Some(*n as usize),
+        Some(Expr::Identifier(s)) if s == "Infinity" => None,
+        Some(_) => {
+          let call = unevaluated("SequenceSplit", args);
+          crate::emit_message(&format!(
+            "SequenceSplit::ipnf: Positive integer or Infinity expected at position 3 in {}.",
+            crate::syntax::expr_to_string(&call)
+          ));
+          return Some(Ok(call));
         }
-        let sub = match list_pat {
-          Expr::List(items) => items,
-          _ => {
-            return Some(Ok(unevaluated("SequenceSplit", args)));
-          }
+      };
+      if let Expr::List(list) = &args[0] {
+        // A list every element of which is a rule is a list of delimiter
+        // rules; anything else is a single delimiter (rule or bare pattern).
+        let is_rule = |e: &Expr| {
+          matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+            || matches!(e, Expr::FunctionCall { name, args }
+              if (name == "Rule" || name == "RuleDelayed") && args.len() == 2)
         };
+        let rules: Vec<SeqRule> = match &args[1] {
+          Expr::List(items)
+            if !items.is_empty() && items.iter().all(is_rule) =>
+          {
+            items.iter().filter_map(parse_seq_rule).collect()
+          }
+          single => parse_seq_rule(single)
+            .or_else(|| parse_seq_pattern(single))
+            .into_iter()
+            .collect(),
+        };
+        if rules.is_empty() {
+          return Some(Ok(unevaluated("SequenceSplit", args)));
+        }
 
-        // Collect non-overlapping match ranges [start, end).
-        let mut matches: Vec<(usize, usize)> = Vec::new();
-        if !sub.is_empty() {
-          let has_patterns = sub.iter().any(has_pattern_element);
-          let has_sequence = sub.iter().any(has_sequence_pattern);
-          if has_patterns {
-            let mut i = 0;
-            while i < list.len() {
-              let remaining = list.len() - i;
-              let min_len = if has_sequence { 1 } else { sub.len() };
-              let try_max =
-                if has_sequence { remaining } else { sub.len() }.min(remaining);
-              let mut matched = false;
-              if remaining >= min_len {
-                for len in (min_len..=try_max).rev() {
-                  let subseq = Expr::List(list[i..i + len].to_vec().into());
-                  if crate::evaluator::pattern_matching::match_pattern(
-                    &subseq, match_pat,
-                  )
-                  .is_some()
-                  {
-                    matches.push((i, i + len));
-                    i += len;
-                    matched = true;
-                    break;
-                  }
-                }
-              }
-              if !matched {
-                i += 1;
-              }
+        // Collect non-overlapping matches left to right with the replacement
+        // each one produces. At a given position the rules are tried in order
+        // and the longest subsequence first within a rule — wolframscript
+        // prefers the earlier rule even when a later one would match more.
+        let mut matches: Vec<(usize, usize, Option<Expr>)> = Vec::new();
+        let mut i = 0usize;
+        while i < list.len() {
+          let mut hit: Option<(usize, Option<Expr>)> = None;
+          'rules: for rule in &rules {
+            if rule.sub.is_empty() {
+              continue;
             }
-          } else {
-            let sub_len = sub.len();
-            let sub_strs: Vec<String> =
-              sub.iter().map(expr_to_string).collect();
-            let mut i = 0;
-            while i + sub_len <= list.len() {
-              let mut is_match = true;
-              for j in 0..sub_len {
-                if expr_to_string(&list[i + j]) != sub_strs[j] {
-                  is_match = false;
-                  break;
-                }
-              }
-              if is_match {
-                matches.push((i, i + sub_len));
-                i += sub_len;
+            let has_seq = rule.sub.iter().any(has_sequence_pattern);
+            let has_pat = rule.sub.iter().any(has_pattern_element);
+            let remaining = list.len() - i;
+            let min_len = if has_seq { 1 } else { rule.sub.len() };
+            let max_len = if has_seq {
+              remaining
+            } else {
+              rule.sub.len().min(remaining)
+            };
+            if remaining < min_len {
+              continue;
+            }
+            for len in (min_len..=max_len).rev() {
+              let subseq = Expr::List(list[i..i + len].to_vec().into());
+              let bindings = if has_pat {
+                crate::evaluator::pattern_matching::match_pattern(
+                  &subseq,
+                  rule.match_pat,
+                )
+              } else if len == rule.sub.len()
+                && (0..len).all(|j| {
+                  expr_to_string(&list[i + j]) == expr_to_string(&rule.sub[j])
+                })
+              {
+                Some(Vec::new())
               } else {
-                i += 1;
+                None
+              };
+              if let Some(bindings) = bindings {
+                let repl = rule.replacement.map(|repl| {
+                  match crate::evaluator::pattern_matching::apply_bindings(
+                    repl, &bindings,
+                  ) {
+                    Ok(r) => evaluate_expr_to_expr(&r)
+                      .unwrap_or_else(|_| subseq.clone()),
+                    Err(_) => subseq.clone(),
+                  }
+                });
+                hit = Some((i + len, repl));
+                break 'rules;
               }
             }
+          }
+          match hit {
+            Some((end, repl)) => {
+              matches.push((i, end, repl));
+              i = end;
+            }
+            None => i += 1,
           }
         }
 
@@ -5926,14 +5958,31 @@ pub fn dispatch_list_operations(
           return Some(Ok(Expr::List(vec![Expr::List(list.clone())].into())));
         }
 
-        // Otherwise emit the non-empty segments between separators.
+        // Emit the non-empty segments between separators, interleaved with the
+        // replacements. `n` caps the number of sublists, the last of which is
+        // the unsplit remainder; an empty *leading* sublist is skipped without
+        // counting toward it, while later empty ones count but are dropped.
         let mut segments: Vec<Expr> = Vec::new();
         let mut prev = 0usize;
-        for &(s, e) in &matches {
-          if s > prev {
-            segments.push(Expr::List(list[prev..s].to_vec().into()));
+        let mut committed = 0usize;
+        let mut leading = true;
+        for (s, e, repl) in &matches {
+          if n_limit == Some(committed + 1) {
+            break;
           }
-          prev = e;
+          if *s > prev {
+            segments.push(Expr::List(list[prev..*s].to_vec().into()));
+            committed += 1;
+          } else if !leading {
+            committed += 1;
+          }
+          leading = false;
+          if let Some(r) = repl
+            && !matches!(r, Expr::Identifier(s) if s == "Nothing")
+          {
+            segments.push(r.clone());
+          }
+          prev = *e;
         }
         if prev < list.len() {
           segments.push(Expr::List(list[prev..].to_vec().into()));

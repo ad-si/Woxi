@@ -1240,7 +1240,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "SequenceCount" => Some((2, 3)),
     "SequencePosition" => Some((2, 4)),
     "SequenceReplace" => Some((2, 3)),
-    "SequenceSplit" => Some((2, 2)),
+    "SequenceSplit" => Some((2, 3)),
     "SubsetReplace" => Some((1, 2)),
     "Series" => Some((2, usize::MAX)),
     "SeriesCoefficient" => Some((2, 2)),

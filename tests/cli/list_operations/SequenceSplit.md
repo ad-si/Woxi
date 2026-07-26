@@ -31,3 +31,25 @@ $ wo 'SequenceSplit[{1, 2, 3, 4}, {x_ /; EvenQ[x]}]'
 $ wo 'SequenceSplit[{1, 2, 3, 4, 5, 6}, {a_, b_} /; a + b == 7]'
 {{1, 2}, {5, 6}}
 ```
+
+A rule keeps its right-hand side where the separator was:
+
+```scrut
+$ wo 'SequenceSplit[{x, x, a, b, y, a, c, z}, {a, e_} :> {e}]'
+{{x, x}, {b}, {y}, {c}, {z}}
+```
+
+Each rule in a list gets its own replacement:
+
+```scrut
+$ wo 'SequenceSplit[{1, 2, 1, 2, 3}, {{1, 2} -> {a}, {3} -> {b}}]'
+{{a}, {a}, {b}}
+```
+
+A third argument caps the number of sublists, the last of which holds the
+unsplit remainder:
+
+```scrut
+$ wo 'SequenceSplit[{x, x, a, b, y, a, c, z}, {a, _}, 2]'
+{{x, x}, {y, a, c, z}}
+```
