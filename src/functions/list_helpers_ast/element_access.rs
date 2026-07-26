@@ -1762,6 +1762,107 @@ pub(crate) fn parts_and_head(
   }
 }
 
+/// `ReplacePart[expr, new, pos]` — the positional spelling of
+/// `ReplacePart[expr, pos -> new]`. `pos` is a machine integer, a list of them
+/// naming one part, or a list of such lists naming several; anything else
+/// (a pattern, an association key) is rejected with `::psl`. A position that
+/// does not exist is reported with `::partw`, where the rule form would just
+/// leave the expression alone.
+pub fn replace_part_positional_ast(
+  expr: &Expr,
+  new: &Expr,
+  pos: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "ReplacePart".to_string(),
+    args: vec![expr.clone(), new.clone(), pos.clone()].into(),
+  };
+  let int_of = |e: &Expr| match e {
+    Expr::Integer(n) => Some(*n),
+    Expr::BigInteger(n) => {
+      use num_traits::ToPrimitive;
+      n.to_i128()
+    }
+    _ => None,
+  };
+  // The paths `pos` names, or None when it is not a positional specification.
+  let paths: Option<Vec<Vec<i128>>> = match pos {
+    Expr::Integer(_) | Expr::BigInteger(_) => {
+      int_of(pos).map(|n| vec![vec![n]])
+    }
+    Expr::List(items) if items.iter().all(|i| matches!(i, Expr::List(_))) => {
+      items
+        .iter()
+        .map(|i| {
+          let Expr::List(inner) = i else { unreachable!() };
+          inner.iter().map(&int_of).collect::<Option<Vec<i128>>>()
+        })
+        .collect()
+    }
+    Expr::List(items) => items
+      .iter()
+      .map(&int_of)
+      .collect::<Option<Vec<i128>>>()
+      .map(|p| vec![p]),
+    _ => None,
+  };
+  let Some(paths) = paths else {
+    crate::emit_message(&format!(
+      "ReplacePart::psl: Position specification {} in {} is not a machine-sized integer or a list of machine-sized integers.",
+      crate::syntax::format_expr(pos, crate::syntax::ExprForm::Output),
+      crate::syntax::format_expr(
+        &unevaluated(),
+        crate::syntax::ExprForm::Output
+      )
+    ));
+    return Ok(unevaluated());
+  };
+
+  // Every named part must exist; `{}` names none, leaving expr untouched.
+  for path in &paths {
+    if !path.is_empty() && part_at_path(expr, path).is_none() {
+      crate::emit_message(&format!(
+        "ReplacePart::partw: Part {{{}}} of {} does not exist.",
+        path
+          .iter()
+          .map(|p| p.to_string())
+          .collect::<Vec<_>>()
+          .join(", "),
+        crate::syntax::format_expr(expr, crate::syntax::ExprForm::Output)
+      ));
+      return Ok(unevaluated());
+    }
+  }
+
+  replace_part_ast(
+    expr,
+    &Expr::Rule {
+      pattern: Box::new(pos.clone()),
+      replacement: Box::new(new.clone()),
+    },
+  )
+}
+
+/// The subexpression at a 1-based integer path, or None if it does not exist.
+/// Index 0 names the head, which always exists on a non-atomic expression.
+fn part_at_path(expr: &Expr, path: &[i128]) -> Option<Expr> {
+  let mut current = expr.clone();
+  for &n in path {
+    let (items, head) = parts_and_head(&current)?;
+    if n == 0 {
+      current = Expr::Identifier(head.unwrap_or_else(|| "List".to_string()));
+      continue;
+    }
+    let len = items.len() as i128;
+    let idx = if n > 0 { n - 1 } else { len + n };
+    current = usize::try_from(idx)
+      .ok()
+      .and_then(|u| items.get(u))?
+      .clone();
+  }
+  Some(current)
+}
+
 pub fn replace_part_ast(
   expr: &Expr,
   rule: &Expr,

@@ -10187,6 +10187,79 @@ mod join_non_list {
     );
   }
 
+  // ReplacePart[expr, new, pos] is the same replacement written the other way
+  // round, for a single position or a list of them.
+  #[test]
+  fn replace_part_positional_form() {
+    assert_eq!(
+      interpret("ReplacePart[{a, b, c}, x, 2]").unwrap(),
+      "{a, x, c}"
+    );
+    assert_eq!(
+      interpret("ReplacePart[{a, b, c}, x, -1]").unwrap(),
+      "{a, b, x}"
+    );
+    // Position 0 replaces the head.
+    assert_eq!(
+      interpret("ReplacePart[{a, b, c}, x, 0]").unwrap(),
+      "x[a, b, c]"
+    );
+    assert_eq!(
+      interpret("ReplacePart[g[a, b, c], x, 2]").unwrap(),
+      "g[a, x, c]"
+    );
+    assert_eq!(
+      interpret("ReplacePart[{{a, b}, {c, d}}, x, {1, 2}]").unwrap(),
+      "{{a, x}, {c, d}}"
+    );
+    assert_eq!(
+      interpret("ReplacePart[{a, b, c, d}, x, {{1}, {3}}]").unwrap(),
+      "{x, b, x, d}"
+    );
+    // Operator expressions are addressed by their FullForm parts.
+    assert_eq!(
+      interpret("ReplacePart[a + b + c^n, y, {3, 2}]").unwrap(),
+      "a + b + c^y"
+    );
+    // An empty position names no part, so nothing changes.
+    assert_eq!(
+      interpret("ReplacePart[{a, b, c}, x, {}]").unwrap(),
+      "{a, b, c}"
+    );
+  }
+
+  // The positional form only takes machine integers, and unlike the rule form
+  // it complains about a part that does not exist instead of doing nothing.
+  #[test]
+  fn replace_part_positional_form_is_strict() {
+    assert_eq!(
+      interpret("ReplacePart[{a, b, c}, x, 5]").unwrap(),
+      "ReplacePart[{a, b, c}, x, 5]"
+    );
+    // The rule form stays silent on the same position.
+    assert_eq!(
+      interpret("ReplacePart[{a, b, c}, 5 -> x]").unwrap(),
+      "{a, b, c}"
+    );
+    assert_eq!(
+      interpret("ReplacePart[{{a, b}, {c, d}}, xx, {i_, i_}]").unwrap(),
+      "ReplacePart[{{a, b}, {c, d}}, xx, {i_, i_}]"
+    );
+    // …though the rule form does accept a pattern position.
+    assert_eq!(
+      interpret("ReplacePart[{{a, b}, {c, d}}, {i_, i_} -> xx]").unwrap(),
+      "{{xx, b}, {c, xx}}"
+    );
+    assert_eq!(
+      interpret(r#"ReplacePart[<|"a" -> 1, "b" -> 2|>, x, Key["a"]]"#).unwrap(),
+      "ReplacePart[<|a -> 1, b -> 2|>, x, Key[a]]"
+    );
+    assert_eq!(
+      interpret(r#"ReplacePart[<|"a" -> 1, "b" -> 2|>, x, 1]"#).unwrap(),
+      "ReplacePart[<|a -> 1, b -> 2|>, x, 1]"
+    );
+  }
+
   #[test]
   fn map_on_power_expression() {
     // Map[f, x^2] applies f to each part of Power[x, 2]

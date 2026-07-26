@@ -5255,6 +5255,16 @@ pub fn dispatch_list_operations(
     "ReplacePart" if args.len() == 2 => {
       return Some(list_helpers_ast::replace_part_ast(&args[0], &args[1]));
     }
+    // ReplacePart[expr, new, pos] — the same replacement written the other way
+    // round. Unlike the rule form it accepts only machine integers, so a
+    // pattern position or an association key is rejected with ::psl, and a
+    // position that does not exist is reported with ::partw rather than
+    // silently skipped.
+    "ReplacePart" if args.len() == 3 => {
+      return Some(list_helpers_ast::replace_part_positional_ast(
+        &args[0], &args[1], &args[2],
+      ));
+    }
     "Nearest" if (2..=3).contains(&args.len()) => {
       return Some(nearest_ast(args));
     }

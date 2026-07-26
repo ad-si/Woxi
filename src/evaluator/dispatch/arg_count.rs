@@ -1185,7 +1185,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ReplaceAll" => Some((2, 2)),
     // 2-arg form is the operator form ReplaceAt[rules, pos][expr].
     "ReplaceAt" => Some((2, 3)),
-    "ReplacePart" => Some((1, 2)),
+    "ReplacePart" => Some((1, 3)),
     "ReplaceRepeated" => Some((2, 3)),
     "Rescale" => Some((1, 3)),
     "Rest" => Some((1, 1)),
