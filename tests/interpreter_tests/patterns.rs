@@ -3834,3 +3834,293 @@ Options[r] := {Opt -> 3}"#,
     }
   }
 }
+
+// `Optional[p, default]` is the explicit form of `p : default`, and the
+// arguments that are present fill the slots from the left, so the optionals
+// that fall back on their defaults are the rightmost ones.
+mod optional_explicit_form {
+  use super::*;
+
+  #[test]
+  fn matches_like_the_shorthand() {
+    // Regression: the explicit Optional[…] form took no part in matching.
+    assert_eq!(
+      interpret("MatchQ[f[a, b], f[x_, Optional[y_, 2]]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[f[a], f[x_, Optional[y_, 2]]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("f[a] /. f[x_, Optional[y_, 2]] -> {x, y}").unwrap(),
+      "{a, 2}"
+    );
+    assert_eq!(
+      interpret("f[a, b] /. f[x_, Optional[y_, 2]] -> {x, y}").unwrap(),
+      "{a, b}"
+    );
+    assert_eq!(interpret("f[] /. f[Optional[x_, 7]] -> x").unwrap(), "7");
+    // A named pattern inside works too.
+    assert_eq!(
+      interpret("MatchQ[f[1], f[Optional[x : _Integer, 5]]]").unwrap(),
+      "True"
+    );
+    // An Optional slot before a required one takes its default.
+    assert_eq!(
+      interpret("f[2] /. f[Optional[x_, 0], y_] -> {x, y}").unwrap(),
+      "{0, 2}"
+    );
+    assert_eq!(
+      interpret("Cases[{f[1], f[1, 2]}, f[x_, Optional[y_, 5]] -> {x, y}]")
+        .unwrap(),
+      "{{1, 5}, {1, 2}}"
+    );
+  }
+
+  #[test]
+  fn head_of_an_optional_pattern() {
+    // The shorthand builds the same object, so its head is Optional.
+    assert_eq!(interpret("Head[y_ : 2]").unwrap(), "Optional");
+    assert_eq!(interpret("Head[Optional[y_, 2]]").unwrap(), "Optional");
+  }
+
+  #[test]
+  fn present_arguments_fill_from_the_left() {
+    // Regression: the *first* optional used to take the default instead of
+    // the last, giving {0, 1} here.
+    assert_eq!(
+      interpret("g[1] /. g[x_ : 0, y_ : 0] -> {x, y}").unwrap(),
+      "{1, 0}"
+    );
+    assert_eq!(
+      interpret("g[1] /. g[Optional[x_, 0], Optional[y_, 0]] -> {x, y}")
+        .unwrap(),
+      "{1, 0}"
+    );
+    assert_eq!(
+      interpret("g[1] /. g[x_ : 0, y_ : 0, z_ : 0] -> {x, y, z}").unwrap(),
+      "{1, 0, 0}"
+    );
+    assert_eq!(
+      interpret("g[1, 2] /. g[x_ : 0, y_ : 0, z_ : 0] -> {x, y, z}").unwrap(),
+      "{1, 2, 0}"
+    );
+    assert_eq!(
+      interpret("f[] /. f[x_ : 1, y_ : 2] -> {x, y}").unwrap(),
+      "{1, 2}"
+    );
+  }
+}
+
+// `PatternSequence[p1, …]` stands for several arguments in a row.
+mod pattern_sequence {
+  use super::*;
+
+  #[test]
+  fn splices_into_the_enclosing_arguments() {
+    assert_eq!(
+      interpret("MatchQ[f[1, 2], f[PatternSequence[1, 2]]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[f[], f[PatternSequence[]]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[f[1, 2], f[PatternSequence[x_, y_]]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[f[1], f[PatternSequence[_]]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[f[1, 2], f[PatternSequence[_], PatternSequence[_]]]")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[{1, 2}, {PatternSequence[1, 2]}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[{1, 2, 3}, {PatternSequence[_, _], _}]").unwrap(),
+      "True"
+    );
+    // The parts bind as usual.
+    assert_eq!(
+      interpret("f[1, 2, 3] /. f[a_, PatternSequence[b_, c_]] -> {a, b, c}")
+        .unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("Cases[{{1, 2}, {3}}, {PatternSequence[x_, y_]} -> {x, y}]")
+        .unwrap(),
+      "{{1, 2}}"
+    );
+    assert_eq!(
+      interpret("Count[{f[1, 2], f[3]}, f[PatternSequence[_, _]]]").unwrap(),
+      "1"
+    );
+    // Outside a pattern it stays symbolic.
+    assert_eq!(
+      interpret("{PatternSequence[1, 2], 3}").unwrap(),
+      "{PatternSequence[1, 2], 3}"
+    );
+  }
+
+  #[test]
+  fn a_name_binds_the_whole_sequence() {
+    assert_eq!(
+      interpret("MatchQ[f[1, 2], f[x : PatternSequence[_, _]]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[f[1], f[x : PatternSequence[_, _]]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("f[1, 2] /. f[x : PatternSequence[_, _]] -> {x}").unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(
+      interpret("f[1, 2] /. f[x : PatternSequence[a_, b_]] -> {x, a, b}")
+        .unwrap(),
+      "{1, 2, 1, 2}"
+    );
+    assert_eq!(
+      interpret("f[1, 2, 3] /. f[x : PatternSequence[_, _], y_] -> {x, y}")
+        .unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("{1, 2} /. {x : PatternSequence[_, _]} -> {x}").unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn repeats_as_a_group() {
+    // `..` over a PatternSequence repeats the whole group, so only an even
+    // number of arguments matches a pair.
+    assert_eq!(
+      interpret("MatchQ[f[1, 2, 3, 4], f[PatternSequence[_, _] ..]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[f[1, 2, 3], f[PatternSequence[_, _] ..]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("MatchQ[f[1, 2, 3, 4, 5, 6], f[PatternSequence[_, _, _] ..]]")
+        .unwrap(),
+      "True"
+    );
+    // `...` also admits zero repetitions.
+    assert_eq!(
+      interpret("MatchQ[f[], f[PatternSequence[_, _] ...]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[f[], f[PatternSequence[_, _] ..]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("MatchQ[f[1, 2], f[PatternSequence[x_, _] ...]]").unwrap(),
+      "True"
+    );
+    // Names have to bind consistently across the repetitions.
+    assert_eq!(
+      interpret("MatchQ[f[1, 1, 2, 2], f[PatternSequence[x_, x_] ..]]")
+        .unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn in_string_patterns() {
+    assert_eq!(
+      interpret("StringMatchQ[\"ab\", PatternSequence[\"a\", \"b\"]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("StringCases[\"abab\", PatternSequence[\"a\", \"b\"]]")
+        .unwrap(),
+      "{ab, ab}"
+    );
+    assert_eq!(
+      interpret(
+        "StringCases[\"a1b2\", \
+         PatternSequence[LetterCharacter, DigitCharacter]]"
+      )
+      .unwrap(),
+      "{a1, b2}"
+    );
+  }
+}
+
+// HoldPattern is transparent to matching, including on the left-hand side of a
+// replacement rule.
+mod hold_pattern_in_rules {
+  use super::*;
+
+  #[test]
+  fn rules_see_through_it() {
+    // Regression: only MatchQ and Cases stripped the wrapper, so these
+    // replacements silently did nothing.
+    assert_eq!(
+      interpret("{a + b} /. HoldPattern[a + b] -> c").unwrap(),
+      "{c}"
+    );
+    assert_eq!(
+      interpret("{f[a + b]} /. HoldPattern[a + b] -> c").unwrap(),
+      "{f[c]}"
+    );
+    assert_eq!(
+      interpret("Hold[a + b] /. HoldPattern[a + b] -> c").unwrap(),
+      "Hold[c]"
+    );
+    assert_eq!(
+      interpret("ReplaceAll[a b, HoldPattern[a b] -> c]").unwrap(),
+      "c"
+    );
+    assert_eq!(
+      interpret("Hold[1 + 1] /. HoldPattern[1 + 1] -> 2").unwrap(),
+      "Hold[2]"
+    );
+    assert_eq!(
+      interpret("{1, 2, 3} //. HoldPattern[3] -> 4").unwrap(),
+      "{1, 2, 4}"
+    );
+    assert_eq!(
+      interpret("ReplaceRepeated[f[f[a]], HoldPattern[f[x_]] -> x]").unwrap(),
+      "a"
+    );
+  }
+
+  #[test]
+  fn the_other_users_still_work() {
+    assert_eq!(
+      interpret("MatchQ[a + b, HoldPattern[a + b]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Cases[{a + b, a*b}, HoldPattern[a + b]]").unwrap(),
+      "{a + b}"
+    );
+    assert_eq!(
+      interpret("Position[{a + b, c}, HoldPattern[a + b]]").unwrap(),
+      "{{1}}"
+    );
+    assert_eq!(
+      interpret("{1, 2} /. HoldPattern[x_] :> x + 1").unwrap(),
+      "{2, 3}"
+    );
+    // Unapplied it stays symbolic.
+    assert_eq!(
+      interpret("HoldPattern[a + b]").unwrap(),
+      "HoldPattern[a + b]"
+    );
+  }
+}

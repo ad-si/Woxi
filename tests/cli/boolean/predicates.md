@@ -98,6 +98,7 @@ Questions about the type, shape, or value of an expression. Predicates in the Wo
 - [`Messages`](predicates/Messages.md)
 - [`NValues`](predicates/NValues.md)
 - [`Optional`](predicates/Optional.md)
+- [`PatternSequence`](predicates/PatternSequence.md)
 - [`Options`](predicates/Options.md)
 - [`OwnValues`](predicates/OwnValues.md)
 - [`Pattern`](predicates/Pattern.md)

@@ -1939,6 +1939,9 @@ pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Identifier(_) => "Symbol",
     Expr::List(_) => "List",
     Expr::Association(_) => "Association",
+    // `y_ : 2` is the shorthand for Optional[y_, 2] (Blank / Pattern /
+    // PatternTest already report their own heads further down).
+    Expr::PatternOptional { .. } => "Optional",
     Expr::FunctionCall { name, .. } => {
       return Ok(Expr::Identifier(name.clone()));
     }

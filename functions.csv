@@ -156,7 +156,7 @@ Limit,Computes the limit of an expression,✅,pure,1.0,160
 CountryData,Returns properties (e.g. Population) for countries from a bundled static dataset,✅,pure,6.0,161
 Sequence,Represents a sequence of arguments that are automatically spliced into any function,✅,pure,3.0,162
 White,Named color evaluating to GrayLevel[1],✅,pure,5.1,163
-Optional,Represents a pattern with an optional default value,✅,pure,1.0,164
+Optional,Represents a pattern with an optional default value — present arguments fill the slots from the left,✅,pure,1.0,164
 Mesh,Option for mesh lines in plots,✅,pure,1.0,165
 AxesOrigin,Option specifying the origin point for plot axes,✅,none,2.0,166
 Grid,Displays data in a grid layout; ToString renders the matrix as an aligned text grid (left-aligned columns padded to the widest cell with three-space separators and a blank line between rows) like TableForm,✅,pure,6.0,167
@@ -377,7 +377,7 @@ StringReplace,Replaces occurrences of substrings in a string,✅,pure,2.0,380
 ControlType,Option for specifying the type of control in Manipulate,✅,pure,6.0,381
 Pick,Picks elements from a list based on a selector,✅,pure,5.1,382
 Interpolation,Constructs an interpolation of data,✅,pure,2.0,383
-HoldPattern,Hold pattern from evaluation,✅,pure,3.0,384
+HoldPattern,Keeps a pattern from evaluating while staying transparent to matching and to replacement rules,✅,pure,3.0,384
 Top,Symbol for top alignment,✅,pure,1.0,385
 HypergeometricPFQ,Generalized hypergeometric function pFq,✅,pure,3.0,386
 MortalityData,,🚫,,10.3,387
@@ -1076,7 +1076,7 @@ MaxMemoryUsed,Peak memory usage in the current session,✅,pure,1.0,1085
 TextData,,🚫,,8.0,1086
 Classify,,🚫,,10.0,1087
 Whitespace,Represents whitespace characters in string patterns,✅,1,5.1,1088
-PatternSequence,Represents a sequence of patterns in pattern matching,✅,1,6.0,1089
+PatternSequence,Represents a sequence of patterns spliced into the enclosing arguments (also as a named or repeated group),✅,pure,6.0,1089
 PiecewiseExpand,Expands functions and nested cases to a single Piecewise,✅,pure,5.1,1090
 ImageAdd,Adds pixel values of two images pointwise,✅,pure,7.0,1091
 OwnValues,Returns the own values of a symbol,✅,pure,2.0,1092

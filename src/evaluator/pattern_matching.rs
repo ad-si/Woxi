@@ -2136,19 +2136,48 @@ fn try_flat_replace_all(
 /// is transparent to matching — it only prevents evaluation of the wrapped
 /// expression when parsing.
 fn strip_hold_pattern(pattern: &Expr) -> Expr {
-  if let Expr::FunctionCall { name, args } = pattern
-    && name == "HoldPattern"
-    && args.len() == 1
-  {
-    return args[0].clone();
+  canonicalize_pattern(pattern)
+}
+
+/// Canonicalize the left-hand side of every rule in `rules` (see
+/// [`canonicalize_pattern`]), so the AST, Flat and string-based replacement
+/// paths below all see the same pattern — a `HoldPattern[…]` left in place
+/// would make the string path compare against the wrapper.
+fn canonicalize_rules(rules: &Expr) -> Expr {
+  match rules {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: Box::new(canonicalize_pattern(pattern)),
+      replacement: replacement.clone(),
+    },
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Expr::RuleDelayed {
+      pattern: Box::new(canonicalize_pattern(pattern)),
+      replacement: replacement.clone(),
+    },
+    Expr::List(items) => {
+      Expr::List(items.iter().map(canonicalize_rules).collect())
+    }
+    other => other.clone(),
   }
-  pattern.clone()
 }
 
 pub fn apply_replace_all_ast(
   expr: &Expr,
   rules: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  let canonical;
+  let rules = if needs_canonicalization(rules) {
+    canonical = canonicalize_rules(rules);
+    &canonical
+  } else {
+    rules
+  };
+
   // Try AST-based structural pattern matching first for single rules
   match rules {
     Expr::Rule {
@@ -2657,6 +2686,22 @@ fn full_form_head_args(expr: &Expr) -> Option<(Expr, Vec<Expr>)> {
 /// Match a slice of expression args against a slice of pattern args,
 /// handling BlankSequence (__) and BlankNullSequence (___) patterns
 /// that can consume variable numbers of arguments.
+/// Does this pattern consume a variable (or, for a named `PatternSequence`,
+/// a fixed but not-one) number of arguments, so that the argument list has to
+/// be matched by [`match_args_with_sequences`] rather than element by element?
+fn acts_as_sequence(pattern: &Expr) -> bool {
+  if get_sequence_info(pattern).is_some()
+    || match_options_pattern(pattern).is_some()
+  {
+    return true;
+  }
+  matches!(pattern, Expr::FunctionCall { name, args }
+    if name == "Pattern"
+      && args.len() == 2
+      && matches!(&args[1], Expr::FunctionCall { name: inner, .. }
+        if inner == "PatternSequence"))
+}
+
 fn match_args_with_sequences(
   expr_args: &[Expr],
   pat_args: &[Expr],
@@ -2696,6 +2741,109 @@ fn match_args_with_sequences(
       "__OptionsPattern__".to_string(),
       Expr::List(merged.into()),
     )]);
+  }
+
+  // `PatternSequence[p1, …, pk] ..` (and `...`) repeats a *group* of k
+  // arguments: every consecutive block of k has to match p1, …, pk in turn.
+  if let Expr::FunctionCall { name, args } = pat
+    && (name == "Repeated" || name == "RepeatedNull")
+    && (args.len() == 1 || args.len() == 2)
+    && let Expr::FunctionCall {
+      name: group_name,
+      args: group,
+    } = &args[0]
+    && group_name == "PatternSequence"
+    && !group.is_empty()
+  {
+    let k = group.len();
+    let mut min_reps = if name == "Repeated" { 1 } else { 0 };
+    let mut max_reps = usize::MAX;
+    if let Some(spec) = args.get(1) {
+      match spec {
+        Expr::Integer(n) if *n >= 0 => max_reps = *n as usize,
+        Expr::List(bounds) => match &bounds[..] {
+          [Expr::Integer(n)] if *n >= 0 => {
+            min_reps = *n as usize;
+            max_reps = *n as usize;
+          }
+          [Expr::Integer(lo), Expr::Integer(hi)] if *lo >= 0 && *hi >= *lo => {
+            min_reps = *lo as usize;
+            max_reps = *hi as usize;
+          }
+          _ => {}
+        },
+        _ => {}
+      }
+    }
+    let rest_min = min_args_for_patterns(rest_pats);
+    let available = expr_args.len().checked_sub(rest_min)?;
+    max_reps = max_reps.min(available / k);
+    for reps in min_reps..=max_reps {
+      let consumed = reps * k;
+      let mut bindings: Vec<(String, Expr)> = vec![];
+      let mut matched = true;
+      for block in 0..reps {
+        for (i, p) in group.iter().enumerate() {
+          let step = match_pattern(&expr_args[block * k + i], p);
+          if !step.is_some_and(|b| merge_bindings(&mut bindings, b)) {
+            matched = false;
+            break;
+          }
+        }
+        if !matched {
+          break;
+        }
+      }
+      if !matched {
+        continue;
+      }
+      if let Some(rest) =
+        match_args_with_sequences(&expr_args[consumed..], rest_pats)
+        && merge_bindings(&mut bindings, rest)
+      {
+        return Some(bindings);
+      }
+    }
+    return None;
+  }
+
+  // `x : PatternSequence[p1, …, pk]` consumes exactly k arguments — matching
+  // them one by one — and binds `x` to the Sequence of them. (An unnamed
+  // PatternSequence has already been spliced into this list by
+  // `canonicalize_pattern`.)
+  if let Expr::FunctionCall { name, args } = pat
+    && name == "Pattern"
+    && args.len() == 2
+    && let Expr::Identifier(bind_name) = &args[0]
+    && let Expr::FunctionCall {
+      name: seq_name,
+      args: seq_pats,
+    } = &args[1]
+    && seq_name == "PatternSequence"
+  {
+    let k = seq_pats.len();
+    if expr_args.len() < k {
+      return None;
+    }
+    let mut bindings: Vec<(String, Expr)> = vec![];
+    for (arg, p) in expr_args[..k].iter().zip(seq_pats.iter()) {
+      let b = match_pattern(arg, p)?;
+      if !merge_bindings(&mut bindings, b) {
+        return None;
+      }
+    }
+    let bound = match k {
+      1 => expr_args[0].clone(),
+      _ => unevaluated("Sequence", &expr_args[..k]),
+    };
+    if !merge_bindings(&mut bindings, vec![(bind_name.clone(), bound)]) {
+      return None;
+    }
+    let rest = match_args_with_sequences(&expr_args[k..], rest_pats)?;
+    if !merge_bindings(&mut bindings, rest) {
+      return None;
+    }
+    return Some(bindings);
   }
 
   if let Some(seq) = get_sequence_info(pat) {
@@ -2846,12 +2994,159 @@ fn match_args_with_sequences(
 }
 
 /// Match a pattern against an expression, returning bindings if successful
+/// Rewrite a pattern into the matcher's canonical form, once, before matching:
+///
+/// * `HoldPattern[p]` is transparent to matching, so it is dropped wherever it
+///   appears (it only keeps `p` from evaluating when the rule was built);
+/// * the explicit `Optional[p, d]` and `Optional[p]` forms become the same
+///   `PatternOptional` node the `p : d` and `p.` shorthands parse to;
+/// * `PatternSequence[p1, …]` is spliced into the argument (or element) list
+///   that contains it, which is exactly what it means.
+///
+/// `x : PatternSequence[…]`, which binds the whole sequence to a name, keeps
+/// its `Pattern[…]` wrapper and is left alone.
+pub fn canonicalize_pattern(pattern: &Expr) -> Expr {
+  // Splice PatternSequence[…] elements of an argument list into it.
+  fn splice(items: &[Expr]) -> Vec<Expr> {
+    let mut out = Vec::with_capacity(items.len());
+    for item in items {
+      match item {
+        Expr::FunctionCall { name, args } if name == "PatternSequence" => {
+          out.extend(args.iter().cloned());
+        }
+        other => out.push(other.clone()),
+      }
+    }
+    out
+  }
+
+  // Heads whose arguments are not an argument sequence: a PatternSequence
+  // inside them is one pattern object, not several (`Repeated[
+  // PatternSequence[_, _]]` repeats a *pair*, and splicing it would turn it
+  // into `Repeated[_, _]`, a repetition count).
+  fn holds_one_pattern(name: &str) -> bool {
+    matches!(
+      name,
+      "Repeated"
+        | "RepeatedNull"
+        | "Optional"
+        | "Pattern"
+        | "Condition"
+        | "PatternTest"
+        | "Longest"
+        | "Shortest"
+        | "Except"
+        | "Verbatim"
+        | "Alternatives"
+        | "Blank"
+        | "BlankSequence"
+        | "BlankNullSequence"
+    )
+  }
+
+  match pattern {
+    Expr::FunctionCall { name, args }
+      if name == "HoldPattern" && args.len() == 1 =>
+    {
+      canonicalize_pattern(&args[0])
+    }
+    // Optional[p] / Optional[p, default] over a simple blank pattern.
+    Expr::FunctionCall { name, args }
+      if name == "Optional" && (args.len() == 1 || args.len() == 2) =>
+    {
+      let default = args.get(1).map(|d| Box::new(canonicalize_pattern(d)));
+      match &args[0] {
+        Expr::Pattern {
+          name: pname,
+          head,
+          blank_type: 1,
+        } => Expr::PatternOptional {
+          name: pname.clone(),
+          head: head.clone(),
+          default,
+        },
+        // Anything else (a sequence pattern, a compound pattern, …) keeps the
+        // Optional wrapper; only its parts are canonicalized.
+        _ => Expr::FunctionCall {
+          name: name.clone(),
+          args: args.iter().map(canonicalize_pattern).collect(),
+        },
+      }
+    }
+    // `Pattern[x, body]` keeps its shape: splicing into it would destroy the
+    // name/body pair.
+    Expr::FunctionCall { name, args }
+      if name == "Pattern" && args.len() == 2 =>
+    {
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: vec![args[0].clone(), canonicalize_pattern(&args[1])].into(),
+      }
+    }
+    Expr::FunctionCall { name, args } if holds_one_pattern(name) => {
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: args.iter().map(canonicalize_pattern).collect(),
+      }
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: splice(&args.iter().map(canonicalize_pattern).collect::<Vec<_>>())
+        .into(),
+    },
+    Expr::List(items) => Expr::List(
+      splice(&items.iter().map(canonicalize_pattern).collect::<Vec<_>>())
+        .into(),
+    ),
+    other => other.clone(),
+  }
+}
+
+/// Does `pattern` contain anything `canonicalize_pattern` would rewrite?
+/// Checked first so the common case avoids rebuilding the whole tree.
+fn needs_canonicalization(pattern: &Expr) -> bool {
+  match pattern {
+    Expr::FunctionCall { name, args } => {
+      matches!(
+        name.as_str(),
+        "HoldPattern" | "Optional" | "PatternSequence"
+      ) || args.iter().any(needs_canonicalization)
+    }
+    Expr::List(items) => items.iter().any(needs_canonicalization),
+    // Rules are checked through, so `expr /. HoldPattern[lhs] -> rhs` is
+    // canonicalized as well.
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => needs_canonicalization(pattern) || needs_canonicalization(replacement),
+    Expr::BinaryOp { left, right, .. } => {
+      needs_canonicalization(left) || needs_canonicalization(right)
+    }
+    Expr::UnaryOp { operand, .. } => needs_canonicalization(operand),
+    _ => false,
+  }
+}
+
+/// `canonicalize_pattern`, skipped when there is nothing to rewrite.
+pub fn canonical_pattern(pattern: &Expr) -> std::borrow::Cow<'_, Expr> {
+  if needs_canonicalization(pattern) {
+    std::borrow::Cow::Owned(canonicalize_pattern(pattern))
+  } else {
+    std::borrow::Cow::Borrowed(pattern)
+  }
+}
+
 pub fn match_pattern(
   expr: &Expr,
   pattern: &Expr,
 ) -> Option<Vec<(String, Expr)>> {
+  let pattern = canonical_pattern(pattern);
   stacker::maybe_grow(2 * 1024 * 1024, 4 * 1024 * 1024, || {
-    match_pattern_impl(expr, pattern)
+    match_pattern_impl(expr, &pattern)
   })
 }
 
@@ -3247,8 +3542,7 @@ fn match_pattern_impl(
     Expr::List(pat_items) => {
       if let Expr::List(expr_items) = expr {
         // Check if any pattern item is a sequence pattern
-        let has_sequence =
-          pat_items.iter().any(|p| get_sequence_info(p).is_some());
+        let has_sequence = pat_items.iter().any(acts_as_sequence);
         if has_sequence {
           match_args_with_sequences(expr_items, pat_items)
         } else {
@@ -3487,9 +3781,7 @@ fn match_pattern_impl(
         // Check if any pattern arg is a sequence pattern (or an
         // OptionsPattern slot, which acts like one — it consumes any
         // remaining Rule arguments).
-        let has_sequence = pat_args.iter().any(|p| {
-          get_sequence_info(p).is_some() || match_options_pattern(p).is_some()
-        });
+        let has_sequence = pat_args.iter().any(acts_as_sequence);
         if has_sequence {
           // For Orderless functions (Plus, Times, …) with a sequence pattern
           // we need to try every permutation of the expression args, since
@@ -3527,6 +3819,12 @@ fn match_pattern_impl(
                 .map(|(i, _)| i)
                 .collect();
               if opt_positions.len() >= missing {
+                // The arguments fill the slots from the left, so the optionals
+                // that fall back on their defaults are the *rightmost* ones:
+                // `g[1]` against `g[x_ : 0, y_ : 0]` gives x = 1, y = 0. The
+                // candidate skip sets are therefore enumerated from the right.
+                let opt_positions: Vec<usize> =
+                  opt_positions.into_iter().rev().collect();
                 let mut skip_buf: Vec<usize> = Vec::with_capacity(missing);
                 if let Some(b) = try_skip_optional_subsets(
                   pat_args,

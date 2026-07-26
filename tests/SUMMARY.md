@@ -193,6 +193,7 @@
       - [`NValues`](boolean/predicates/NValues.md)
       - [`OddQ`](boolean/predicates/OddQ.md)
       - [`Optional`](boolean/predicates/Optional.md)
+      - [`PatternSequence`](boolean/predicates/PatternSequence.md)
       - [`OptionQ`](boolean/predicates/OptionQ.md)
       - [`Options`](boolean/predicates/Options.md)
       - [`OptionValue`](boolean/predicates/OptionValue.md)

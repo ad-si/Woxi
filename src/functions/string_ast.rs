@@ -3013,8 +3013,11 @@ fn string_pattern_to_regex_inner(
     }
 
     // StringExpression[pat1, pat2, ...] = pat1 ~~ pat2 ~~ ...
+    // PatternSequence[pat1, …] means the same thing in a string pattern: the
+    // parts follow one another.
     Expr::FunctionCall { name, args }
-      if name == "StringExpression" && !args.is_empty() =>
+      if (name == "StringExpression" || name == "PatternSequence")
+        && !args.is_empty() =>
     {
       let parts: Option<Vec<String>> = args
         .iter()
