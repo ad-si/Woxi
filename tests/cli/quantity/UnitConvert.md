@@ -37,3 +37,8 @@ Quantity[316160658/78125, Meters^2]
 $ wo 'UnitConvert[Quantity[1, "Hectares"], "SquareMeters"]'
 Quantity[10000, Meters^2]
 ```
+
+```scrut
+$ wo 'ToString[InputForm[UnitConvert[Quantity[1, "Meters"/"Seconds"], "Kilometers"/"Hours"]]]'
+Quantity[18/5, "Kilometers"/"Hours"]
+```

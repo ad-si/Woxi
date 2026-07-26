@@ -2881,3 +2881,102 @@ fn unit_dimensions_compound_and_quantity() {
     "{{LengthUnit, 1}, {MassUnit, 1}, {TimeUnit, -2}}"
   );
 }
+
+mod compound_unit_input_form {
+  use super::*;
+
+  // A negative exponent moves to a denominator even when the factors are
+  // strings, which is what a compound unit is made of.
+  #[test]
+  fn a_string_product_prints_as_a_quotient() {
+    assert_eq!(
+      interpret(r#"ToString[InputForm["a"/"b"]]"#).unwrap(),
+      r#""a"/"b""#
+    );
+    assert_eq!(
+      interpret(r#"ToString[InputForm["a"*"b"^-2]]"#).unwrap(),
+      r#""a"/"b"^2"#
+    );
+    assert_eq!(
+      interpret(r#"ToString[InputForm["a"*"b"*"c"^-1]]"#).unwrap(),
+      r#"("a"*"b")/"c""#
+    );
+    assert_eq!(
+      interpret(r#"ToString[InputForm[2*"b"^-1]]"#).unwrap(),
+      r#"2/"b""#
+    );
+    assert_eq!(
+      interpret(r#"ToString[InputForm[-"a"/"b"]]"#).unwrap(),
+      r#"-("a"/"b")"#
+    );
+  }
+
+  // A string on either side of the product is enough.
+  #[test]
+  fn mixed_string_and_symbol_products() {
+    assert_eq!(
+      interpret(r#"ToString[InputForm[x*"b"^-1]]"#).unwrap(),
+      r#"x/"b""#
+    );
+    assert_eq!(
+      interpret(r#"ToString[InputForm["a"*y^-1]]"#).unwrap(),
+      r#""a"/y"#
+    );
+  }
+
+  // A lone negative power stays a power, with its exponent parenthesised.
+  #[test]
+  fn a_lone_negative_power_keeps_its_form() {
+    assert_eq!(
+      interpret(r#"ToString[InputForm["b"^-1]]"#).unwrap(),
+      r#""b"^(-1)"#
+    );
+    assert_eq!(
+      interpret(r#"ToString[InputForm["b"^2]]"#).unwrap(),
+      r#""b"^2"#
+    );
+  }
+
+  // The unit of a Quantity is written the same way.
+  #[test]
+  fn quantity_units_print_as_quotients() {
+    assert_eq!(
+      interpret(r#"ToString[InputForm[Quantity[1, "Meters"/"Seconds"]]]"#)
+        .unwrap(),
+      r#"Quantity[1, "Meters"/"Seconds"]"#
+    );
+    assert_eq!(
+      interpret(r#"ToString[InputForm[Quantity[1, "Seconds"^-1]]]"#).unwrap(),
+      r#"Quantity[1, "Seconds"^(-1)]"#
+    );
+    assert_eq!(
+      interpret(r#"ToString[InputForm[Quantity[1, "Meters"^2/"Seconds"]]]"#)
+        .unwrap(),
+      r#"Quantity[1, "Meters"^2/"Seconds"]"#
+    );
+    assert_eq!(
+      interpret(
+        r#"ToString[InputForm[Quantity[1, "Meters"/("Seconds"*"Kilograms")]]]"#
+      )
+      .unwrap(),
+      r#"Quantity[1, "Meters"/("Kilograms"*"Seconds")]"#
+    );
+    // A product of units keeps its product form.
+    assert_eq!(
+      interpret(r#"ToString[InputForm[Quantity[1, "Meters"*"Seconds"]]]"#)
+        .unwrap(),
+      r#"Quantity[1, "Meters"*"Seconds"]"#
+    );
+  }
+
+  #[test]
+  fn converted_compound_units_print_as_quotients() {
+    assert_eq!(
+      interpret(
+        r#"ToString[InputForm[UnitConvert[Quantity[1, "Meters"/"Seconds"], "Kilometers"/"Hours"]]]"#
+      )
+      .unwrap(),
+      r#"Quantity[18/5, "Kilometers"/"Hours"]"#
+    );
+  }
+}

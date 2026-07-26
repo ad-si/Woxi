@@ -50,3 +50,24 @@ True
 $ wo 'Mod[Quantity[7, "Meters"], Quantity[300, "Centimeters"]]'
 Quantity[100, Centimeters]
 ```
+
+A compound unit with a negative exponent is written as a quotient, the way
+the unit itself reads:
+
+```scrut
+$ wo 'ToString[InputForm[Quantity[1, "Meters"/"Seconds"]]]'
+Quantity[1, "Meters"/"Seconds"]
+```
+
+```scrut
+$ wo 'ToString[InputForm[Quantity[1, "Meters"/("Seconds"*"Kilograms")]]]'
+Quantity[1, "Meters"/("Kilograms"*"Seconds")]
+```
+
+A unit that is only a negative power keeps that form, with the exponent
+parenthesised:
+
+```scrut
+$ wo 'ToString[InputForm[Quantity[1, "Seconds"^-1]]]'
+Quantity[1, "Seconds"^(-1)]
+```

@@ -5806,61 +5806,10 @@ fn negate_leading_negative_in_times(expr: &Expr) -> Option<Expr> {
 /// Format a Quantity unit expression for InputForm (strings are quoted).
 /// Wolfram InputForm: "Meters"/"Seconds"^2
 fn quantity_unit_to_input_form(unit: &Expr) -> String {
-  match unit {
-    Expr::Identifier(s) => s.clone(),
-    Expr::String(s) => format!("\"{}\"", s),
-    Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left,
-      right,
-    } => {
-      let exp_str = expr_to_input_form(right);
-      let exp_fmt = if matches!(right.as_ref(), Expr::Integer(_)) {
-        exp_str
-      } else {
-        format!("({})", exp_str)
-      };
-      format!("{}^{}", quantity_unit_to_input_form(left), exp_fmt)
-    }
-    Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left,
-      right,
-    } => {
-      format!(
-        "{}/{}",
-        quantity_unit_to_input_form(left),
-        quantity_unit_to_input_form(right)
-      )
-    }
-    Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left,
-      right,
-    } => {
-      format!(
-        "{}*{}",
-        quantity_unit_to_input_form(left),
-        quantity_unit_to_input_form(right)
-      )
-    }
-    Expr::BinaryOp { .. } => expr_to_input_form(unit),
-    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
-      let exp_str = expr_to_input_form(&args[1]);
-      let exp_fmt = if matches!(args[1], Expr::Integer(_)) {
-        exp_str
-      } else {
-        format!("({})", exp_str)
-      };
-      format!("{}^{}", quantity_unit_to_input_form(&args[0]), exp_fmt)
-    }
-    Expr::FunctionCall { name, args } if name == "Times" => {
-      let parts: Vec<String> =
-        args.iter().map(quantity_unit_to_input_form).collect();
-      parts.join("*")
-    }
-    _ => expr_to_input_form(unit),
-  }
+  // A unit is an ordinary expression, so the InputForm renderer writes it:
+  // string names stay quoted, a negative exponent becomes a quotient
+  // (`"Meters"/"Seconds"`) and a compound one is parenthesised.
+  expr_to_input_form(unit)
 }
 
 /// Extract (base, negative_exponent) from a Power expression with a negative integer exponent.
@@ -11251,6 +11200,42 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     }
     // Times in InputForm: use expr_to_output for structure, but render via
     // expr_to_input_form for args to preserve string quoting
+    // A power whose base or exponent is a string: `expr_to_output` would drop
+    // the quotes, so write it here. This is what a Quantity unit is made of.
+    Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2 && contains_string(expr) =>
+    {
+      let base = expr_to_input_form(&args[0]);
+      let base_str = if matches!(&args[0], Expr::FunctionCall { name, .. }
+        if name == "Times" || name == "Plus" || name == "Power")
+        || matches!(
+          &args[0],
+          Expr::BinaryOp {
+            op: BinaryOperator::Times
+              | BinaryOperator::Plus
+              | BinaryOperator::Minus
+              | BinaryOperator::Power,
+            ..
+          }
+        ) {
+        format!("({})", base)
+      } else {
+        base
+      };
+      let exp = expr_to_input_form(&args[1]);
+      // A plain non-negative literal or symbol needs no parentheses.
+      let exp_str = if matches!(&args[1], Expr::Integer(n) if *n >= 0)
+        || matches!(&args[1], Expr::Real(r) if *r >= 0.0)
+        || matches!(
+          &args[1],
+          Expr::Identifier(_) | Expr::Constant(_) | Expr::String(_)
+        ) {
+        exp
+      } else {
+        format!("({})", exp)
+      };
+      format!("{}^{}", base_str, exp_str)
+    }
     Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
       // Flatten nested Times so I and -1 are reachable at the top level
       // (Sin[-I] typically comes back as Times[-1, Times[I, Sinh[1]]]).
@@ -11275,6 +11260,20 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       // would mis-quote embedded strings).
       let needs_input_form = args.iter().any(contains_string);
       if needs_input_form {
+        // A negative-exponent factor still moves to a denominator — a string
+        // among the factors only changes how each factor is written, not the
+        // shape: `"a"*"b"^-1` is `"a"/"b"`.
+        if matches!(&args[0], Expr::Integer(-1)) {
+          if let Some(frac) =
+            format_times_with_denominator(&args[1..], expr_to_input_form)
+          {
+            return format!("-({})", frac);
+          }
+        } else if let Some(frac) =
+          format_times_with_denominator(args, expr_to_input_form)
+        {
+          return frac;
+        }
         // Handle Times[-1, ...] as negation
         if matches!(&args[0], Expr::Integer(-1)) {
           let rest: Vec<String> = args[1..]
