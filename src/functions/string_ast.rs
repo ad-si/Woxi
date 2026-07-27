@@ -12596,6 +12596,149 @@ fn is_abbreviation(before: &[char], after: &[char]) -> bool {
   false
 }
 
+/// `TextString[expr]` — the human-readable text form. Numbers differ from
+/// `ToString`: every approximate real is written in full decimal (never
+/// `1.23457*^6`), a real whose integer part is shorter than six digits keeps a
+/// fractional digit (`2.` is "2.0"), and an exact numeric expression that is
+/// not a bare symbol is numericized to six significant digits (`1/3` is
+/// "0.333333", `Sqrt[2]` is "1.41421", while `Pi` stays "Pi").
+pub fn text_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return to_string_ast(args);
+  }
+  match text_string_render(&args[0]) {
+    Some(rendered) => Ok(Expr::String(rendered)),
+    None => to_string_ast(args),
+  }
+}
+
+/// The `TextString` rendering of a real: full decimal notation, with a
+/// fractional digit kept when the integer part is shorter than the six
+/// significant digits of machine display (`100.` is "100.0", `123456.` stays
+/// "123456.").
+fn text_string_real(f: f64) -> String {
+  let mut s = decimal_form_default(f);
+  if s.ends_with('.')
+    && s
+      .trim_start_matches('-')
+      .trim_end_matches('.')
+      .chars()
+      .count()
+      < 6
+  {
+    s.push('0');
+  }
+  s
+}
+
+/// The numeric value of an expression that `TextString` numericizes. A bare
+/// symbol is left alone (`Pi`, `E`, `GoldenRatio` print as themselves) and so
+/// is anything `N` cannot reduce to a machine real.
+fn text_string_numeric_value(expr: &Expr) -> Option<f64> {
+  if matches!(expr, Expr::Identifier(_) | Expr::Constant(_)) {
+    return None;
+  }
+  match crate::evaluator::evaluate_function_call_ast(
+    "N",
+    std::slice::from_ref(expr),
+  ) {
+    Ok(Expr::Real(f)) => Some(f),
+    _ => None,
+  }
+}
+
+/// The `TextString` form of a list element or association entry: anything the
+/// number rules do not cover keeps its ordinary `ToString` rendering, so
+/// `TextString[{1/2, Pi}]` is "{0.5, Pi}".
+fn text_string_part(expr: &Expr) -> String {
+  text_string_render(expr).unwrap_or_else(|| text_string_to_string_form(expr))
+}
+
+/// The ordinary `ToString` rendering of an expression, used wherever
+/// `TextString` has no rule of its own.
+fn text_string_to_string_form(expr: &Expr) -> String {
+  match to_string_ast(std::slice::from_ref(expr)) {
+    Ok(Expr::String(ref s)) => s.clone(),
+    _ => to_string_default_form(expr),
+  }
+}
+
+fn text_string_render(expr: &Expr) -> Option<String> {
+  match expr {
+    // Exact integers keep every digit.
+    Expr::Integer(i) => return Some(i.to_string()),
+    Expr::BigInteger(i) => return Some(i.to_string()),
+    Expr::Real(f) => return Some(text_string_real(*f)),
+    Expr::String(s) => return Some(s.clone()),
+    Expr::List(items) => {
+      let parts: Vec<String> = items.iter().map(text_string_part).collect();
+      return Some(format!("{{{}}}", parts.join(", ")));
+    }
+    Expr::Association(pairs) => {
+      let parts: Vec<String> = pairs
+        .iter()
+        .map(|(k, v)| {
+          format!("{} -> {}", text_string_part(k), text_string_part(v))
+        })
+        .collect();
+      return Some(format!("<|{}|>", parts.join(", ")));
+    }
+    // An extended-precision number keeps every digit it carries.
+    Expr::BigFloat(..) => return Some(text_string_to_string_form(expr)),
+    // A missing value contributes nothing to the text.
+    Expr::FunctionCall { name, .. } if name == "Missing" => {
+      return Some(String::new());
+    }
+    _ => {}
+  }
+
+  // Infinities print as the symbol.
+  if crate::functions::predicate_ast::is_directed_infinity(expr) {
+    let negative = matches!(
+      crate::evaluator::evaluate_function_call_ast(
+        "Sign",
+        std::slice::from_ref(expr),
+      ),
+      Ok(Expr::Integer(-1))
+    );
+    return Some(if negative { "-\u{221e}" } else { "\u{221e}" }.to_string());
+  }
+
+  // A complex number shows both parts, the imaginary one always as a real and
+  // its sign carried by the operator: `2 + 3 I` is "2 + 3.0i".
+  if crate::functions::predicate_ast::is_complex_number(expr) {
+    let part = |head: &str| {
+      crate::evaluator::evaluate_function_call_ast(
+        head,
+        std::slice::from_ref(expr),
+      )
+      .ok()
+    };
+    if let (Some(re), Some(im)) = (part("Re"), part("Im"))
+      && let Some(im_value) = text_string_numeric_value(&im).or(match im {
+        Expr::Integer(i) => Some(i as f64),
+        Expr::Real(f) => Some(f),
+        _ => None,
+      })
+      && let Some(re_text) = match (&re, &im) {
+        // An approximate complex prints both parts as reals, so `-1.5 I`
+        // (whose real part is the exact 0 here) shows "0.0 - 1.5i".
+        (Expr::Integer(i), Expr::Real(_)) => Some(text_string_real(*i as f64)),
+        _ => text_string_render(&re),
+      }
+    {
+      let sign = if im_value < 0.0 { "-" } else { "+" };
+      return Some(format!(
+        "{re_text} {sign} {}i",
+        text_string_real(im_value.abs())
+      ));
+    }
+  }
+
+  // Any other exact numeric expression is numericized.
+  text_string_numeric_value(expr).map(text_string_real)
+}
+
 /// The options shared by the `NumberForm` display family (`NumberForm`,
 /// `PaddedForm`, `AccountingForm`). Parsed once by `number_form_options` so
 /// every head applies them the same way.

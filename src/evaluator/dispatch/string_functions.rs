@@ -88,8 +88,13 @@ pub fn dispatch_string_functions(
     "StringCases" if args.len() >= 2 => {
       return Some(crate::functions::string_ast::string_cases_ast(args));
     }
-    "ToString" | "TextString" if args.len() == 1 || args.len() == 2 => {
+    "ToString" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::string_ast::to_string_ast(args));
+    }
+    // TextString has its own number rules; everything it does not special-case
+    // falls through to the ToString rendering.
+    "TextString" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::string_ast::text_string_ast(args));
     }
     // Display wrapper: stays unevaluated in script-mode echo (rendering
     // happens through ToString), without the not-yet-implemented warning.

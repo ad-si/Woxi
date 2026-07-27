@@ -13050,3 +13050,126 @@ fn to_string_keeps_the_trailing_spaces_of_a_string() {
   );
   assert_eq!(interpret(r#"ToString[Row[{1, 2}, "  "]]"#).unwrap(), "1  2");
 }
+
+mod text_string_numbers {
+  use super::*;
+
+  #[test]
+  fn a_real_is_written_in_full_decimal() {
+    clear_state();
+    for (code, expected) in [
+      // A fractional digit is kept while the integer part is shorter than the
+      // six significant digits of machine display.
+      ("TextString[1.0]", "1.0"),
+      ("TextString[2.]", "2.0"),
+      ("TextString[0.0]", "0.0"),
+      ("TextString[-100.]", "-100.0"),
+      ("TextString[99999.]", "99999.0"),
+      ("TextString[123456.]", "123456."),
+      ("TextString[999999.]", "999999."),
+      // Never the `*^` notation ToString switches to.
+      ("TextString[1234567.]", "1234567."),
+      ("TextString[123456789.]", "123456789."),
+      ("TextString[1.5*^10]", "15000000000."),
+      ("TextString[1.23456789]", "1.23457"),
+      ("TextString[0.00001234]", "0.00001234"),
+      ("TextString[-2.5]", "-2.5"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn an_exact_number_is_numericized() {
+    clear_state();
+    for (code, expected) in [
+      ("TextString[1/3]", "0.333333"),
+      ("TextString[-2/7]", "-0.285714"),
+      ("TextString[1/2]", "0.5"),
+      ("TextString[1/2 + 1/3]", "0.833333"),
+      ("TextString[Sqrt[2]]", "1.41421"),
+      ("TextString[Sqrt[2] + 1]", "2.41421"),
+      ("TextString[2^(1/3)]", "1.25992"),
+      ("TextString[Log[2]]", "0.693147"),
+      ("TextString[Sin[1]]", "0.841471"),
+      ("TextString[Sin[Pi/3]]", "0.866025"),
+      ("TextString[Pi/2]", "1.5708"),
+      ("TextString[2 Pi]", "6.28319"),
+      ("TextString[Pi^2]", "9.8696"),
+      ("TextString[E^2]", "7.38906"),
+      ("TextString[1/3 + Pi]", "3.47493"),
+      // An integer stays exact, however large.
+      ("TextString[10]", "10"),
+      ("TextString[10^20]", "100000000000000000000"),
+      ("TextString[2^70]", "1180591620717411303424"),
+      // And so does an extended-precision number.
+      ("TextString[N[Pi, 20]]", "3.1415926535897932385"),
+      ("TextString[N[1/3, 20]]", "0.33333333333333333333"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn a_bare_symbol_is_not_numericized() {
+    clear_state();
+    for (code, expected) in [
+      ("TextString[Pi]", "Pi"),
+      ("TextString[E]", "E"),
+      ("TextString[GoldenRatio]", "GoldenRatio"),
+      ("TextString[Degree]", "Degree"),
+      ("TextString[Indeterminate]", "Indeterminate"),
+      ("TextString[True]", "True"),
+      ("TextString[abc]", "abc"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn a_complex_number_shows_both_parts() {
+    clear_state();
+    for (code, expected) in [
+      ("TextString[1.5 + 2.5 I]", "1.5 + 2.5i"),
+      ("TextString[I]", "0 + 1.0i"),
+      ("TextString[2 + 3 I]", "2 + 3.0i"),
+      ("TextString[-1.5 I]", "0.0 - 1.5i"),
+      ("TextString[Sqrt[-4]]", "0 + 2.0i"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn infinities_and_missing_values() {
+    clear_state();
+    assert_eq!(interpret("TextString[Infinity]").unwrap(), "\u{221e}");
+    assert_eq!(interpret("TextString[-Infinity]").unwrap(), "-\u{221e}");
+    assert_eq!(
+      interpret("TextString[ComplexInfinity]").unwrap(),
+      "\u{221e}"
+    );
+    // A missing value contributes nothing to the text.
+    assert_eq!(interpret("TextString[Missing[]]").unwrap(), "");
+    assert_eq!(interpret(r#"TextString[Missing["x"]]"#).unwrap(), "");
+    assert_eq!(
+      interpret(r#"TextString[{Missing["x"], 1}]"#).unwrap(),
+      "{, 1}"
+    );
+  }
+
+  #[test]
+  fn lists_and_associations_apply_the_rules_element_wise() {
+    clear_state();
+    for (code, expected) in [
+      ("TextString[{1/2, Pi}]", "{0.5, Pi}"),
+      ("TextString[{{1/2}}]", "{{0.5}}"),
+      (r#"TextString[<|"a" -> 1/2|>]"#, "<|a -> 0.5|>"),
+      (r#"TextString[{1.5, "a"}]"#, "{1.5, a}"),
+      ("TextString[{}]", "{}"),
+      ("TextString[Range[3]]", "{1, 2, 3}"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+}
