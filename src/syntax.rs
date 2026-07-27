@@ -6090,16 +6090,51 @@ pub fn singularize_unit_if_one(mag: &Expr, unit_str: &str) -> String {
 /// (contains variables, not a purely numeric expression like Sqrt[2]).
 /// Symbols and Plus/Times expressions containing identifiers are considered symbolic.
 fn is_symbolic_neg_int_power(expr: &Expr) -> bool {
+  // A negative exponent that is not a literal — `-x`, `-2 x`, `-y/2` — keeps
+  // the power form whatever the base is: wolframscript writes `-2^(-x)` and
+  // `-E^(-x)`, not `-(1/2^x)`.
+  let symbolic_negative = |exponent: &Expr| -> bool {
+    match exponent {
+      Expr::FunctionCall { name, args }
+        if name == "Times"
+          && !args.is_empty()
+          && (matches!(&args[0], Expr::Integer(n) if *n < 0)
+            || matches!(&args[0], Expr::FunctionCall { name, args }
+              if name == "Rational" && args.len() == 2
+              && matches!(&args[0], Expr::Integer(n) if *n < 0))) =>
+      {
+        true
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        ..
+      } => matches!(left.as_ref(), Expr::Integer(n) if *n < 0),
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        ..
+      } => true,
+      _ => false,
+    }
+  };
   let (base, neg_exp) = match expr {
     Expr::BinaryOp {
       op: BinaryOperator::Power,
       left,
       right,
-    } => (
-      left.as_ref(),
-      matches!(right.as_ref(), Expr::Integer(n) if *n < 0),
-    ),
+    } => {
+      if symbolic_negative(right.as_ref()) {
+        return true;
+      }
+      (
+        left.as_ref(),
+        matches!(right.as_ref(), Expr::Integer(n) if *n < 0),
+      )
+    }
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      if symbolic_negative(&args[1]) {
+        return true;
+      }
       (&args[0], matches!(&args[1], Expr::Integer(n) if *n < 0))
     }
     _ => return false,

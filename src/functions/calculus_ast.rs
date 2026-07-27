@@ -773,10 +773,185 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let simplified = simplify(result);
       let evaluated = crate::evaluator::evaluate_expr_to_expr(&simplified)
         .unwrap_or(simplified);
-      Ok(evaluated)
+      Ok(
+        factor_logarithmic_antiderivative(&evaluated, &var_name)
+          .unwrap_or(evaluated),
+      )
     }
     None => Ok(unevaluated("Integrate", args)),
   }
+}
+
+/// An antiderivative of `x^n Log[x]^m` comes out of integration by parts as a
+/// sum sharing a power of the variable, and wolframscript writes that power
+/// (and the common denominator) out front: `∫ x Log[x] dx` is
+/// `(x^2 (-1 + 2 Log[x]))/4`, not `-x^2/4 + x^2 Log[x]/2`. Returns None when
+/// the terms share nothing to pull out or none of them carries a logarithm.
+fn factor_logarithmic_antiderivative(expr: &Expr, var: &str) -> Option<Expr> {
+  fn flatten_plus(expr: &Expr, out: &mut Vec<Expr>) {
+    match expr {
+      Expr::FunctionCall { name, args } if name == "Plus" => {
+        for a in args.iter() {
+          flatten_plus(a, out);
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left,
+        right,
+      } => {
+        flatten_plus(left, out);
+        flatten_plus(right, out);
+      }
+      other => out.push(other.clone()),
+    }
+  }
+  fn contains_log(expr: &Expr) -> bool {
+    match expr {
+      Expr::FunctionCall { name, .. } if name == "Log" => true,
+      Expr::FunctionCall { args, .. } => args.iter().any(contains_log),
+      Expr::BinaryOp { left, right, .. } => {
+        contains_log(left) || contains_log(right)
+      }
+      Expr::UnaryOp { operand, .. } => contains_log(operand),
+      _ => false,
+    }
+  }
+  /// The factors of a product, however it is written.
+  fn factors(expr: &Expr, out: &mut Vec<Expr>) {
+    match expr {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        for a in args.iter() {
+          factors(a, out);
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        factors(left, out);
+        factors(right, out);
+      }
+      other => out.push(other.clone()),
+    }
+  }
+
+  let mut terms = Vec::new();
+  flatten_plus(expr, &mut terms);
+  if terms.len() < 2 || !terms.iter().any(contains_log) {
+    return None;
+  }
+  // Each term as (numerator, denominator, power of var, remaining factors).
+  let mut split: Vec<(i128, i128, i128, Vec<Expr>)> =
+    Vec::with_capacity(terms.len());
+  for term in &terms {
+    let mut parts = Vec::new();
+    factors(term, &mut parts);
+    let (mut num, mut den, mut power) = (1i128, 1i128, 0i128);
+    let mut rest: Vec<Expr> = Vec::new();
+    for part in parts {
+      if let Some((n, d)) = crate::functions::math_ast::expr_to_rational(&part)
+      {
+        num *= n;
+        den *= d;
+        continue;
+      }
+      match &part {
+        Expr::Identifier(name) if name == var => power += 1,
+        Expr::FunctionCall { name, args }
+          if name == "Power"
+            && args.len() == 2
+            && matches!(&args[0], Expr::Identifier(v) if v == var) =>
+        {
+          match &args[1] {
+            Expr::Integer(k) => power += k,
+            _ => return None,
+          }
+        }
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left,
+          right,
+        } if matches!(left.as_ref(), Expr::Identifier(v) if v == var) => {
+          match right.as_ref() {
+            Expr::Integer(k) => power += k,
+            _ => return None,
+          }
+        }
+        _ => rest.push(part),
+      }
+    }
+    if power < 1 || den == 0 {
+      return None;
+    }
+    split.push((num, den, power, rest));
+  }
+  let common_power = split.iter().map(|(_, _, p, _)| *p).min()?;
+  // Every term has to carry the same power for the factored form to be the
+  // one wolframscript writes.
+  if split.iter().any(|(_, _, p, _)| *p != common_power) {
+    return None;
+  }
+  let gcd = |mut a: i128, mut b: i128| {
+    while b != 0 {
+      let t = b;
+      b = a % b;
+      a = t;
+    }
+    a.abs()
+  };
+  let denominator = split
+    .iter()
+    .fold(1i128, |acc, (_, d, _, _)| acc / gcd(acc, *d) * d);
+  if denominator == 1 {
+    return None;
+  }
+  let mut inner: Vec<Expr> = Vec::with_capacity(split.len());
+  for (num, den, _, rest) in &split {
+    let scaled = num * (denominator / den);
+    let mut term_factors: Vec<Expr> = Vec::new();
+    if scaled != 1 || rest.is_empty() {
+      term_factors.push(Expr::Integer(scaled));
+    }
+    term_factors.extend(rest.iter().cloned());
+    inner.push(if term_factors.len() == 1 {
+      term_factors.remove(0)
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: term_factors.into(),
+      }
+    });
+  }
+  let power_expr = if common_power == 1 {
+    Expr::Identifier(var.to_string())
+  } else {
+    Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![
+        Expr::Identifier(var.to_string()),
+        Expr::Integer(common_power),
+      ]
+      .into(),
+    }
+  };
+  let product = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(denominator)].into(),
+      },
+      power_expr,
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: inner.into(),
+      },
+    ]
+    .into(),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&product).ok()
 }
 
 /// Apply Horner form to polynomial factors within product expressions.
@@ -9236,9 +9411,9 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             });
           }
           // ∫ Log[x]^n dx = x · Σ_{k=0}^{n} (-1)^(n-k) (n!/k!) Log[x]^k
-          // for integer n ≥ 1 (repeated integration by parts). Building the
-          // expanded form reproduces wolframscript's ordering, e.g.
-          // ∫ Log[x]^2 dx → 2 x - 2 x Log[x] + x Log[x]^2.
+          // for integer n ≥ 1 (repeated integration by parts). wolframscript
+          // keeps the x factored out, e.g. ∫ Log[x]^2 dx →
+          // x (2 - 2 Log[x] + Log[x]^2).
           if let Expr::FunctionCall {
             name: lname,
             args: largs,
@@ -9283,16 +9458,11 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
                 },
               });
             }
-            let prod = Expr::BinaryOp {
+            return Some(Expr::BinaryOp {
               op: B::Times,
               left: Box::new(Expr::Identifier(var.to_string())),
               right: Box::new(sum.unwrap()),
-            };
-            if let Ok(expanded) =
-              crate::evaluator::evaluate_function_call_ast("Expand", &[prod])
-            {
-              return Some(expanded);
-            }
+            });
           }
           // ∫ 1/(a + b*x)^n dx for n ≥ 2 integer → -(a+b*x)^(1-n)/(b*(n-1))
           // Wolfram keeps this factored, matching wolframscript's
@@ -10166,9 +10336,41 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           None
         }
         "Log" if args.len() == 1 => {
-          // ∫ Log[x] dx = -x + x*Log[x]
+          // ∫ Log[u] dx = x (Log[u] - 1) for u = x, and -x + x Log[a x] for a
+          // linear argument — the forms wolframscript writes.
           if let Expr::Identifier(name) = &args[0]
             && name == var
+          {
+            let x = Expr::Identifier(var.to_string());
+            return Some(Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(x),
+              right: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Plus,
+                left: Box::new(Expr::Integer(-1)),
+                right: Box::new(Expr::FunctionCall {
+                  name: "Log".to_string(),
+                  args: args.clone(),
+                }),
+              }),
+            });
+          }
+          // ∫ Log[a x] dx = -x + x Log[a x]: the scale does not factor out.
+          if let Some(coefficient) = extract_linear_coefficient(&args[0], var)
+            && matches!(
+              crate::evaluator::evaluate_function_call_ast(
+                "Subtract",
+                &[
+                  args[0].clone(),
+                  Expr::BinaryOp {
+                    op: BinaryOperator::Times,
+                    left: Box::new(coefficient),
+                    right: Box::new(Expr::Identifier(var.to_string())),
+                  },
+                ],
+              ),
+              Ok(Expr::Integer(0))
+            )
           {
             let x = Expr::Identifier(var.to_string());
             return Some(Expr::BinaryOp {

@@ -7277,7 +7277,10 @@ mod integrate_log {
 
   #[test]
   fn integrate_log_x() {
-    assert_eq!(interpret("Integrate[Log[x], x]").unwrap(), "-x + x*Log[x]");
+    assert_eq!(
+      interpret("Integrate[Log[x], x]").unwrap(),
+      "x*(-1 + Log[x])"
+    );
   }
 
   // ∫ Log[x]^n dx = x Σ (-1)^(n-k) (n!/k!) Log[x]^k.
@@ -7285,7 +7288,7 @@ mod integrate_log {
   fn integrate_log_squared() {
     assert_eq!(
       interpret("Integrate[Log[x]^2, x]").unwrap(),
-      "2*x - 2*x*Log[x] + x*Log[x]^2"
+      "x*(2 - 2*Log[x] + Log[x]^2)"
     );
   }
 
@@ -7293,7 +7296,7 @@ mod integrate_log {
   fn integrate_log_cubed() {
     assert_eq!(
       interpret("Integrate[Log[x]^3, x]").unwrap(),
-      "-6*x + 6*x*Log[x] - 3*x*Log[x]^2 + x*Log[x]^3"
+      "x*(-6 + 6*Log[x] - 3*Log[x]^2 + Log[x]^3)"
     );
   }
 
@@ -7301,7 +7304,7 @@ mod integrate_log {
   fn integrate_log_power_other_variable() {
     assert_eq!(
       interpret("Integrate[Log[y]^2, y]").unwrap(),
-      "2*y - 2*y*Log[y] + y*Log[y]^2"
+      "y*(2 - 2*Log[y] + Log[y]^2)"
     );
   }
 
@@ -7428,7 +7431,7 @@ mod integrate_by_parts {
   fn x_log_x() {
     assert_eq!(
       interpret("Integrate[x*Log[x], x]").unwrap(),
-      "-1/4*x^2 + (x^2*Log[x])/2"
+      "(x^2*(-1 + 2*Log[x]))/4"
     );
   }
 
@@ -14933,5 +14936,63 @@ mod interpolation_exact_and_derivative {
       .unwrap(),
       "253/64"
     );
+  }
+}
+
+/// `∫ Log[a x] dx` and the negative-exponent rendering that shows up in
+/// antiderivatives.
+mod integrate_log_scaled {
+  use super::*;
+
+  #[test]
+  fn a_scaled_logarithm_integrates() {
+    clear_state();
+    // The scale does not factor out the way the plain logarithm's x does.
+    assert_eq!(
+      interpret("ToString[Integrate[Log[2 x], x], InputForm]").unwrap(),
+      "-x + x*Log[2*x]"
+    );
+    assert_eq!(
+      interpret("ToString[Simplify[D[Integrate[Log[2 x], x], x]], InputForm]")
+        .unwrap(),
+      "Log[2*x]"
+    );
+  }
+
+  #[test]
+  fn a_negative_exponent_keeps_its_power_form_after_a_minus() {
+    clear_state();
+    for (code, expected) in [
+      ("ToString[Integrate[E^(-x), x], InputForm]", "-E^(-x)"),
+      ("ToString[-E^(-x), InputForm]", "-E^(-x)"),
+      ("ToString[-2^(-x), InputForm]", "-2^(-x)"),
+      ("ToString[-a^(-x), InputForm]", "-a^(-x)"),
+      ("ToString[-x^(-y), InputForm]", "-x^(-y)"),
+      // More than the -1 coefficient, and the reciprocal form is the one
+      // wolframscript writes.
+      ("ToString[-2 E^(-x), InputForm]", "-2/E^x"),
+      ("ToString[a E^(-x), InputForm]", "a/E^x"),
+      ("ToString[-E^(-x) y, InputForm]", "-(y/E^x)"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn a_logarithmic_antiderivative_keeps_its_common_factor() {
+    clear_state();
+    for (code, expected) in [
+      ("Integrate[x*Log[x], x]", "(x^2*(-1 + 2*Log[x]))/4"),
+      ("Integrate[x^2*Log[x], x]", "(x^3*(-1 + 3*Log[x]))/9"),
+      // A sum with nothing logarithmic in it stays as it was.
+      ("Integrate[x^3 + 2 x, x]", "x^2 + x^4/4"),
+      ("Integrate[x/(x + 1), x]", "x - Log[1 + x]"),
+    ] {
+      assert_eq!(
+        interpret(&format!("ToString[{code}, InputForm]")).unwrap(),
+        expected,
+        "{code}"
+      );
+    }
   }
 }

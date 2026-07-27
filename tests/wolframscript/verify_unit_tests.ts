@@ -1369,13 +1369,6 @@ function main() {
     // MovingMap[Mean, ...]: value-correct windows but Woxi keeps exact rationals
     // (5/2) where Wolfram coerces to reals (2.5).
     "MovingMap[Mean, {1, 2, 3, 4, 5}, 3]",
-    // Integrate[Log[...]]: Wolfram factors out x (x*(-1 + Log[x])); Woxi keeps
-    // the expanded antiderivative. Same value.
-    "Integrate[Log[x], x]",
-    "Integrate[Log[x]^2, x]",
-    "Integrate[Log[x]^3, x]",
-    "Integrate[Log[y]^2, y]",
-    "Integrate[x*Log[x], x]",
     // SeriesCoefficient[Exp[x^2], {x, 0, n}]: Wolfram returns a symbolic-n
     // Piecewise/Gamma closed form; Woxi keeps it unevaluated.
     "SeriesCoefficient[Exp[x^2], {x, 0, n}]",
