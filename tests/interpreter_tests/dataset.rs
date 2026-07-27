@@ -547,4 +547,173 @@ mod dataset_ast {
       "{a, b}"
     );
   }
+
+  #[test]
+  fn statistics_heads_see_the_wrapped_data() {
+    clear_state();
+    for (code, expected) in [
+      ("Total[Dataset[{1, 2, 3}]]", "6"),
+      ("Mean[Dataset[{1, 2, 3}]]", "2"),
+      ("Max[Dataset[{1, 2, 3}]]", "3"),
+      ("Min[Dataset[{1, 2, 3}]]", "1"),
+      ("Median[Dataset[{1, 2, 3}]]", "2"),
+      ("First[Dataset[{1, 2, 3}]]", "1"),
+      ("Last[Dataset[{1, 2, 3}]]", "3"),
+      ("Length[Dataset[{1, 2, 3}]]", "3"),
+      ("Length[Dataset[{1, 2}]]", "2"),
+      ("Dimensions[Dataset[{{1, 2}, {3, 4}}]]", "{2, 2}"),
+      ("Count[Dataset[{1, 2, 2}], 2]", "2"),
+      ("Position[Dataset[{1, 2}], 2]", "{{2}}"),
+      ("Total[Dataset[{1, 2}], 2]", "3"),
+      ("Head[Total[Dataset[{1, 2}]]]", "Integer"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn list_heads_return_another_dataset() {
+    clear_state();
+    for (code, expected) in [
+      ("Head[Sort[Dataset[{3, 1, 2}]]]", "Dataset"),
+      ("Normal[Sort[Dataset[{3, 1, 2}]]]", "{1, 2, 3}"),
+      ("Normal[Reverse[Dataset[{1, 2, 3}]]]", "{3, 2, 1}"),
+      ("Normal[Take[Dataset[{1, 2, 3}], 2]]", "{1, 2}"),
+      ("Normal[Rest[Dataset[{1, 2, 3}]]]", "{2, 3}"),
+      ("Normal[Select[Dataset[{1, 2, 3}], # > 1 &]]", "{2, 3}"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn a_dataset_is_an_atom_for_traversal() {
+    clear_state();
+    for (code, expected) in [
+      ("AtomQ[Dataset[{1, 2}]]", "True"),
+      ("LeafCount[Dataset[{1, 2}]]", "1"),
+      ("Depth[Dataset[{1, 2}]]", "1"),
+      ("Level[Dataset[{1, 2}], {1}]", "{}"),
+      ("Length[Level[Dataset[{1, 2}], {0}]]", "1"),
+      ("Head[First[Level[Dataset[{1, 2}], {-1}]]]", "Dataset"),
+      // FreeQ still looks at the data — unlike the packed arrays.
+      ("FreeQ[Dataset[{1, 2}], 2]", "False"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn a_part_that_is_a_collection_stays_a_dataset() {
+    clear_state();
+    for (code, expected) in [
+      ("Head[Dataset[{1, 2, 3}][[{1, 3}]]]", "Dataset"),
+      ("Head[Dataset[{{1, 2}, {3, 4}}][[1]]]", "Dataset"),
+      ("Head[Dataset[{{1, 2}, {3, 4}}][[1, 2]]]", "Integer"),
+      ("Head[First[Dataset[{{1, 2}, {3}}]]]", "Dataset"),
+      ("Head[Last[Dataset[{{1, 2}, {3}}]]]", "Dataset"),
+      // A reducing head never rewraps, even when its answer is a list.
+      ("Head[Total[Dataset[{{1, 2}, {3, 4}}]]]", "List"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn dimensions_of_a_dataset_count_association_values() {
+    clear_state();
+    for (code, expected) in [
+      ("Dimensions[Dataset[{1, 2, 3}]]", "{3}"),
+      ("Dimensions[Dataset[<|\"a\" -> 1|>]]", "{1}"),
+      ("Dimensions[Dataset[<|\"a\" -> {1, 2}|>]]", "{1, 2}"),
+      ("Dimensions[Dataset[{<|\"a\" -> {1, 2}|>}]]", "{1, 1, 2}"),
+      (
+        "Dimensions[Dataset[{<|\"a\" -> 1, \"b\" -> 2|>, \
+         <|\"a\" -> 3, \"b\" -> 4|>}]]",
+        "{2, 2}",
+      ),
+      // A bare association is shallower: a list value is opaque there, and
+      // only association values are looked into.
+      ("Dimensions[<|\"a\" -> {1, 2}|>]", "{1}"),
+      ("Dimensions[<|1 -> <|2 -> 3|>|>]", "{1, 1}"),
+      (
+        "Dimensions[<|\"a\" -> <|\"x\" -> 1|>, \
+         \"b\" -> <|\"x\" -> 2, \"y\" -> 3|>|>]",
+        "{2}",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn part_indexes_the_data_not_the_wrapper() {
+    clear_state();
+    assert_eq!(interpret("Dataset[{1, 2, 3}][[2]]").unwrap(), "2");
+    assert_eq!(interpret("Dataset[{1, 2, 3}][[-1]]").unwrap(), "3");
+    assert_eq!(
+      interpret("Normal[Dataset[{1, 2, 3}][[{1, 3}]]]").unwrap(),
+      "{1, 3}"
+    );
+    assert_eq!(interpret("Dataset[{{1, 2}, {3, 4}}][[2, 1]]").unwrap(), "3");
+    assert_eq!(
+      interpret("Dataset[{<|\"a\" -> 1, \"b\" -> 2|>}][[1, \"a\"]]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn a_string_is_a_key_extractor_for_grouping_operators() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Normal[Dataset[{<|\"a\" -> 1, \"b\" -> 5|>, <|\"a\" -> 1, \"b\" -> 6|>}][\
+         GroupBy[\"a\"]]]"
+      )
+      .unwrap(),
+      "<|1 -> {<|a -> 1, b -> 5|>, <|a -> 1, b -> 6|>}|>"
+    );
+    assert_eq!(
+      interpret(
+        "Normal[Dataset[{<|\"a\" -> 2|>, <|\"a\" -> 1|>}][SortBy[\"a\"], \"a\"]]"
+      )
+      .unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn query_operator_form_applies_to_a_dataset() {
+    clear_state();
+    assert_eq!(interpret("Query[Total][Dataset[{1, 2, 3}]]").unwrap(), "6");
+    assert_eq!(
+      interpret("Normal[Query[Select[# > 1 &]][Dataset[{1, 2, 3}]]]").unwrap(),
+      "{2, 3}"
+    );
+    assert_eq!(
+      interpret(
+        "Normal[Query[All, \"a\"][Dataset[{<|\"a\" -> 1|>, <|\"a\" -> 2|>}]]]"
+      )
+      .unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn a_rule_at_an_operator_position_is_read_as_an_option() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Normal[Dataset[{<|\"a\" -> 1|>, <|\"a\" -> 2|>}][All, \"a\" -> \"b\"]]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "{<|a -> 1|>, <|a -> 2|>}");
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|m| m.contains("Unknown option a for Query")),
+      "expected an OptionValue::nodef message, got {:?}",
+      result.warnings
+    );
+  }
 }

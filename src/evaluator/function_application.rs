@@ -1019,7 +1019,20 @@ pub fn apply_curried_call(
       name,
       args: func_args,
     } if name == "Query" && args.len() == 1 => {
-      // Query[ops...][data] — successive-level query application
+      // Query[ops...][data] — successive-level query application. A Dataset
+      // subject goes through the Dataset query so the answer keeps (or drops)
+      // the wrapper the same way `ds[ops…]` does.
+      if let Expr::FunctionCall {
+        name: ds_name,
+        args: ds_args,
+      } = &args[0]
+        && ds_name == "Dataset"
+        && !ds_args.is_empty()
+      {
+        return crate::functions::dataset_ast::dataset_query(
+          ds_args, func_args,
+        );
+      }
       crate::functions::query_ast::apply_query(func_args, &args[0])
     }
     Expr::FunctionCall {

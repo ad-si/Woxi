@@ -19884,3 +19884,24 @@ mod tree_leaves_cases_scan_and_atomicity {
     );
   }
 }
+
+#[test]
+fn level_reports_an_atomic_object_at_its_own_level() {
+  clear_state();
+  // A packed array or a tree has no levels inside it, but the object itself
+  // sits at level 0 from the top and at level -1 from the bottom.
+  assert_eq!(interpret("Level[SparseArray[{1, 2}], {1}]").unwrap(), "{}");
+  assert_eq!(interpret("Level[SparseArray[{1, 2}], -1]").unwrap(), "{}");
+  assert_eq!(
+    interpret("Level[Tree[1, {}], {-1}]").unwrap(),
+    "{Tree[1, {}]}"
+  );
+  assert_eq!(
+    interpret("Length[Level[SparseArray[{1, 2}], {-1}]]").unwrap(),
+    "1"
+  );
+  assert_eq!(
+    interpret("Head[First[Level[SparseArray[{1, 2}], {0}]]]").unwrap(),
+    "SparseArray"
+  );
+}

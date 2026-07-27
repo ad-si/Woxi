@@ -164,6 +164,64 @@ fn infer_assoc_type(pairs: &[(Expr, Expr)], top_level: bool) -> Expr {
 /// A dataset query is the same successive-level operator spec `Query` uses,
 /// applied to the wrapped data; a collection result is re-wrapped as a
 /// Dataset and an atomic one is returned bare.
+/// Whether `expr` is a constructed `Dataset[…]`.
+pub fn is_dataset(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, args }
+    if name == "Dataset" && !args.is_empty())
+}
+
+/// The data a Dataset wraps.
+pub fn dataset_contents(expr: &Expr) -> Option<Expr> {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Dataset" && !args.is_empty() =>
+    {
+      Some(args[0].clone())
+    }
+    _ => None,
+  }
+}
+
+/// Heads that a Dataset argument passes straight through to its data. The
+/// second field says whether the answer is wrapped back up as a Dataset:
+/// `Sort[ds]` is a Dataset, `Total[ds]` a plain value.
+pub fn dataset_passthrough_head(name: &str) -> bool {
+  dataset_passthrough_kind(name).is_some()
+}
+
+fn dataset_passthrough_kind(name: &str) -> Option<bool> {
+  match name {
+    // Reducing: answer a plain value.
+    "Total" | "Mean" | "Max" | "Min" | "Median" | "Variance"
+    | "StandardDeviation" | "Norm" | "Commonest" | "Quantile" | "Length"
+    | "Count" | "Position" => Some(false),
+    // Structure-preserving: answer another Dataset when the result is itself a
+    // collection. `First[Dataset[{{1, 2}, {3}}]]` is `Dataset[{1, 2}]` while
+    // `First[Dataset[{1, 2, 3}]]` is the plain `1`.
+    "Sort" | "SortBy" | "Reverse" | "Take" | "Drop" | "Rest" | "Most"
+    | "Accumulate" | "Select" | "Map" | "Counts" | "GroupBy"
+    | "DeleteDuplicates" | "First" | "Last" | "Part" => Some(true),
+    _ => None,
+  }
+}
+
+/// Apply `name` to the data of every Dataset argument.
+pub fn dataset_passthrough(
+  name: &str,
+  args: &[Expr],
+) -> Result<Expr, crate::InterpreterError> {
+  let unwrapped: Vec<Expr> = args
+    .iter()
+    .map(|a| dataset_contents(a).unwrap_or_else(|| a.clone()))
+    .collect();
+  let result = crate::evaluator::evaluate_function_call_ast(name, &unwrapped)?;
+  let keeps_wrapper = dataset_passthrough_kind(name).unwrap_or(false);
+  if keeps_wrapper && matches!(&result, Expr::List(_) | Expr::Association(_)) {
+    return Ok(dataset_ast(std::slice::from_ref(&result)));
+  }
+  Ok(result)
+}
+
 pub fn dataset_query(
   func_args: &[Expr],
   args: &[Expr],

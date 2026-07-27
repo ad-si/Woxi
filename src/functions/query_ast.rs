@@ -8,7 +8,71 @@
 use crate::InterpreterError;
 use crate::syntax::Expr;
 
+/// Inside a query a bare string names a key, so `GroupBy["a"]` groups by the
+/// value stored at "a" rather than applying the string as a function.
+fn key_extractor_strings(op: &Expr) -> Expr {
+  match op {
+    Expr::FunctionCall { name, args }
+      if (name == "GroupBy" || name == "SortBy" || name == "CountsBy")
+        && args.len() == 1
+        && matches!(&args[0], Expr::String(_)) =>
+    {
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: vec![Expr::FunctionCall {
+          name: "Key".to_string(),
+          args: vec![args[0].clone()].into(),
+        }]
+        .into(),
+      }
+    }
+    other => other.clone(),
+  }
+}
+
+/// A rule among the operators is an option to `Query`, not a spec for a level:
+/// it is reported once (not once per row) and then dropped. `MissingBehavior`
+/// is the only option Wolfram knows, and it validates its value.
+fn strip_query_options(ops: &[Expr]) -> Vec<Expr> {
+  let show =
+    |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
+  ops
+    .iter()
+    .filter(|op| {
+      let (lhs, rhs) = match op {
+        Expr::Rule { pattern, replacement }
+        | Expr::RuleDelayed { pattern, replacement } => (pattern, replacement),
+        _ => return true,
+      };
+      if matches!(&**lhs, Expr::Identifier(s) if s == "MissingBehavior") {
+        if !matches!(&**rhs, Expr::Identifier(s) if s == "Automatic" || s == "None")
+        {
+          crate::emit_message(&format!(
+            "Query::invmb: The value of MissingBehavior -> {} should be \
+             Automatic or None.",
+            show(rhs)
+          ));
+        }
+      } else {
+        crate::emit_message(&format!(
+          "OptionValue::nodef: Unknown option {} for Query.",
+          show(lhs)
+        ));
+      }
+      false
+    })
+    .cloned()
+    .collect()
+}
+
 pub fn apply_query(
+  ops: &[Expr],
+  data: &Expr,
+) -> Result<Expr, InterpreterError> {
+  apply_query_inner(&strip_query_options(ops), data)
+}
+
+fn apply_query_inner(
   ops: &[Expr],
   data: &Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -16,6 +80,7 @@ pub fn apply_query(
     return Ok(data.clone());
   };
   let eval = crate::evaluator::evaluate_expr_to_expr;
+  let op = &key_extractor_strings(op);
   match op {
     Expr::Identifier(s) if s == "All" => map_rest(rest, data),
     Expr::Integer(_) => {
@@ -23,14 +88,14 @@ pub fn apply_query(
         name: "Part".to_string(),
         args: vec![data.clone(), op.clone()].into(),
       })?;
-      apply_query(rest, &part)
+      apply_query_inner(rest, &part)
     }
     Expr::String(_) => {
       let value = eval(&Expr::FunctionCall {
         name: "Lookup".to_string(),
         args: vec![data.clone(), op.clone()].into(),
       })?;
-      apply_query(rest, &value)
+      apply_query_inner(rest, &value)
     }
     // `Query[{s1, s2, …}]` picks several parts at this level, keeping the
     // container type, then queries on inside each of them.
@@ -170,7 +235,7 @@ fn map_rest(rest: &[Expr], data: &Expr) -> Result<Expr, InterpreterError> {
   match data {
     Expr::List(items) => {
       let mapped: Result<Vec<Expr>, InterpreterError> =
-        items.iter().map(|e| apply_query(rest, e)).collect();
+        items.iter().map(|e| apply_query_inner(rest, e)).collect();
       Ok(Expr::List(mapped?.into()))
     }
     // Association literal `<|k -> v, …|>`: map the rest of the spec over the
@@ -178,7 +243,7 @@ fn map_rest(rest: &[Expr], data: &Expr) -> Result<Expr, InterpreterError> {
     Expr::Association(pairs) => {
       let mapped: Result<Vec<(Expr, Expr)>, InterpreterError> = pairs
         .iter()
-        .map(|(k, v)| Ok((k.clone(), apply_query(rest, v)?)))
+        .map(|(k, v)| Ok((k.clone(), apply_query_inner(rest, v)?)))
         .collect();
       Ok(Expr::Association(mapped?))
     }
@@ -191,7 +256,7 @@ fn map_rest(rest: &[Expr], data: &Expr) -> Result<Expr, InterpreterError> {
             replacement,
           } => Ok(Expr::Rule {
             pattern: pattern.clone(),
-            replacement: Box::new(apply_query(rest, replacement)?),
+            replacement: Box::new(apply_query_inner(rest, replacement)?),
           }),
           other => Ok(other.clone()),
         })
@@ -201,6 +266,6 @@ fn map_rest(rest: &[Expr], data: &Expr) -> Result<Expr, InterpreterError> {
         args: mapped?.into(),
       })
     }
-    other => apply_query(rest, other),
+    other => apply_query_inner(rest, other),
   }
 }

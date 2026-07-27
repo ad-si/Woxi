@@ -1303,12 +1303,6 @@ pub fn count_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// level specs emit `::level` and return the call unevaluated.
 pub fn level_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let original = || unevaluated("Level", args);
-  // A packed array object or a tree is an atom: it has no levels.
-  if !args.is_empty()
-    && crate::functions::predicate_ast::is_atomic_object(&args[0])
-  {
-    return Ok(Expr::List(Vec::new().into()));
-  }
   let show =
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
 
@@ -1394,9 +1388,19 @@ pub fn level_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args: vec![].into(),
   };
   let mut out: Vec<Expr> = Vec::new();
-  cases_visit(
-    subject, &blank, None, 0, &mut out, min_level, max_level, heads, None,
-  )?;
+  // A packed array object, a tree or a dataset is an atom: nothing inside it
+  // is a level. The object itself sits at level 0 counted from the top and at
+  // level -1 counted from the bottom, so a spec covering either reports it.
+  if crate::functions::predicate_ast::is_atomic_traversal_object(subject) {
+    let covers = |l: i64| min_level <= l && max_level >= l;
+    if covers(0) || covers(-1) {
+      out.push(subject.clone());
+    }
+  } else {
+    cases_visit(
+      subject, &blank, None, 0, &mut out, min_level, max_level, heads, None,
+    )?;
+  }
 
   match wrap {
     None => Ok(Expr::List(out.into())),

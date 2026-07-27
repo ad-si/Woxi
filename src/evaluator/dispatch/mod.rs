@@ -1387,6 +1387,15 @@ fn evaluate_function_call_ast_inner(
   {
     return result;
   }
+  // A Dataset behaves as the data it wraps, so the list and statistics heads
+  // see that data rather than the `Dataset[data, type, metadata]` structure.
+  // Checked before the list handlers, which would otherwise index the
+  // structure itself.
+  if args.iter().any(crate::functions::dataset_ast::is_dataset)
+    && crate::functions::dataset_ast::dataset_passthrough_head(name)
+  {
+    return crate::functions::dataset_ast::dataset_passthrough(name, args);
+  }
   if let Some(result) = audio_functions::dispatch_audio_functions(name, args) {
     return result;
   }

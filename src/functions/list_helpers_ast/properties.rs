@@ -882,6 +882,42 @@ pub fn dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(Vec::new().into()));
   }
 
+  // A Dataset reports the dimensions of the data it wraps, and there an
+  // association counts as a container of its values: `Dataset[{<|"a" ->
+  // {1, 2}|>}]` is 1 x 1 x 2. A bare association is shallower than that
+  // (see the Association arm of `get_dimensions`).
+  if let Some(data) = crate::functions::dataset_ast::dataset_contents(&args[0])
+  {
+    fn dataset_dims(expr: &Expr, max_level: Option<usize>) -> Vec<i128> {
+      if let Some(0) = max_level {
+        return vec![];
+      }
+      let child_max = max_level.map(|m| m - 1);
+      let parts: Vec<&Expr> = match expr {
+        Expr::List(items) => items.iter().collect(),
+        Expr::Association(pairs) => pairs.iter().map(|(_, v)| v).collect(),
+        _ => return vec![],
+      };
+      let mut dims = vec![parts.len() as i128];
+      let sub: Vec<Vec<i128>> =
+        parts.iter().map(|p| dataset_dims(p, child_max)).collect();
+      if let Some(first) = sub.first()
+        && !first.is_empty()
+        && sub.iter().all(|d| d == first)
+      {
+        dims.extend(first.iter());
+      }
+      dims
+    }
+    return Ok(Expr::List(
+      dataset_dims(&data, max_level)
+        .into_iter()
+        .map(Expr::Integer)
+        .collect::<Vec<_>>()
+        .into(),
+    ));
+  }
+
   fn get_dimensions(expr: &Expr, max_level: Option<usize>) -> Vec<i128> {
     if let Some(0) = max_level {
       return vec![];
@@ -915,6 +951,25 @@ pub fn dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let sub_dims: Vec<Vec<i128>> = args
             .iter()
             .map(|it| get_dimensions(it, child_max))
+            .collect();
+          if sub_dims.iter().all(|d| d == &sub_dims[0]) {
+            dims.extend(sub_dims[0].iter());
+          }
+        }
+        dims
+      }
+      // An association is as long as its number of keys. Wolfram only looks
+      // deeper when every value is itself an association: a list value is
+      // opaque here (`Dimensions[<|"a" -> {1, 2}|>]` is {1}).
+      Expr::Association(pairs) => {
+        let mut dims = vec![pairs.len() as i128];
+        if !pairs.is_empty()
+          && child_max.map(|m| m > 0).unwrap_or(true)
+          && pairs.iter().all(|(_, v)| matches!(v, Expr::Association(_)))
+        {
+          let sub_dims: Vec<Vec<i128>> = pairs
+            .iter()
+            .map(|(_, v)| get_dimensions(v, child_max))
             .collect();
           if sub_dims.iter().all(|d| d == &sub_dims[0]) {
             dims.extend(sub_dims[0].iter());

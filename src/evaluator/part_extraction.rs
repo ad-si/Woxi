@@ -343,6 +343,19 @@ pub fn extract_part_ast(
     return extract_part_ast(&flat, index);
   }
 
+  // A Dataset indexes the data it wraps, not its `Dataset[data, type,
+  // metadata]` structure. A part that is itself a collection stays a Dataset,
+  // a scalar part comes out bare.
+  if let Some(data) = crate::functions::dataset_ast::dataset_contents(expr) {
+    let part = extract_part_ast(&data, index)?;
+    return Ok(match &part {
+      Expr::List(_) | Expr::Association(_) => {
+        crate::functions::dataset_ast::dataset_ast(std::slice::from_ref(&part))
+      }
+      _ => part,
+    });
+  }
+
   // A tree is an atom: Part cannot reach inside it, so the call stays
   // unevaluated and the caller reports Part::partd.
   if matches!(expr, Expr::FunctionCall { name, .. } if name == "Tree") {

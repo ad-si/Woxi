@@ -507,6 +507,13 @@ pub fn is_atomic_object(expr: &Expr) -> bool {
       || name == "Tree")
 }
 
+/// A Dataset is an atom for traversal (`AtomQ`, `LeafCount`, `Level`, `Depth`)
+/// while `Length` and `Dimensions` still describe the data it wraps. Unlike the
+/// packed arrays it is NOT opaque to `FreeQ`, which finds what the data holds.
+pub fn is_atomic_traversal_object(expr: &Expr) -> bool {
+  is_atomic_object(expr) || crate::functions::dataset_ast::is_dataset(expr)
+}
+
 pub fn atom_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -535,7 +542,7 @@ pub fn atom_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         true
       }
-      other if is_atomic_object(other) => true,
+      other if is_atomic_traversal_object(other) => true,
       _ => false,
     }
   };
@@ -2129,9 +2136,11 @@ pub fn depth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       return 1;
     }
-    // A Tree is an atom through and through: Depth is 1, not the depth of
-    // the structure it stores.
-    if matches!(expr, Expr::FunctionCall { name, .. } if name == "Tree") {
+    // A Tree or a Dataset is an atom through and through: Depth is 1, not the
+    // depth of the structure it stores.
+    if matches!(expr, Expr::FunctionCall { name, .. } if name == "Tree")
+      || crate::functions::dataset_ast::is_dataset(expr)
+    {
       return 1;
     }
     // A SparseArray is an atom, but wolframscript reports its Depth as that of
@@ -2194,8 +2203,8 @@ pub fn leaf_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   fn count_leaves(expr: &Expr) -> i128 {
-    // A packed array object or a tree is a single leaf.
-    if is_atomic_object(expr) {
+    // A packed array object, a tree or a dataset is a single leaf.
+    if is_atomic_traversal_object(expr) {
       return 1;
     }
     match expr {
