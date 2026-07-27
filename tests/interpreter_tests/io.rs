@@ -3253,32 +3253,50 @@ mod file_name_depth {
 mod expand_file_name {
   use super::*;
 
+  /// Expand `path`, which is written POSIX-style. On Windows a path is
+  /// only absolute once it carries a drive letter, so one is prepended
+  /// there; forward slashes are accepted on both platforms and avoid
+  /// backslash escapes inside the Wolfram string literal.
+  fn expand(path: &str) -> String {
+    let input = if cfg!(target_os = "windows") {
+      format!("C:{path}")
+    } else {
+      path.to_string()
+    };
+    interpret(&format!(r#"ExpandFileName["{input}"]"#)).unwrap()
+  }
+
+  /// The same POSIX-style path as the host spells it: unchanged on Unix,
+  /// drive-qualified with backslash separators on Windows.
+  fn host_path(path: &str) -> String {
+    if cfg!(target_os = "windows") {
+      format!("C:{}", path.replace('/', "\\"))
+    } else {
+      path.to_string()
+    }
+  }
+
   #[test]
   fn absolute_path_unchanged() {
-    assert_eq!(
-      interpret(r#"ExpandFileName["/absolute/path"]"#).unwrap(),
-      "/absolute/path"
-    );
+    assert_eq!(expand("/absolute/path"), host_path("/absolute/path"));
   }
 
   #[test]
   fn resolves_parent_directory() {
-    let result = interpret(r#"ExpandFileName["/a/b/../c"]"#).unwrap();
-    assert_eq!(result, "/a/c");
+    assert_eq!(expand("/a/b/../c"), host_path("/a/c"));
   }
 
   #[test]
   fn resolves_current_directory() {
-    let result = interpret(r#"ExpandFileName["/a/./b"]"#).unwrap();
-    assert_eq!(result, "/a/b");
+    assert_eq!(expand("/a/./b"), host_path("/a/b"));
   }
 
   #[test]
-  #[cfg(not(target_os = "windows"))]
   fn tilde_expansion() {
     let result = interpret(r#"ExpandFileName["~/test.txt"]"#).unwrap();
+    let sep = std::path::MAIN_SEPARATOR;
     assert!(
-      result.ends_with("/test.txt") && !result.starts_with('~'),
+      result.ends_with(&format!("{sep}test.txt")) && !result.starts_with('~'),
       "Expected expanded path, got: {}",
       result
     );
@@ -3287,8 +3305,10 @@ mod expand_file_name {
   #[test]
   fn relative_path_becomes_absolute() {
     let result = interpret(r#"ExpandFileName["foo/bar"]"#).unwrap();
+    let sep = std::path::MAIN_SEPARATOR;
     assert!(
-      result.starts_with('/') && result.ends_with("foo/bar"),
+      std::path::Path::new(&result).is_absolute()
+        && result.ends_with(&format!("foo{sep}bar")),
       "Expected absolute path, got: {}",
       result
     );
@@ -5180,16 +5200,19 @@ mod set_directory {
     // to flaky CI failures (observed in interpreter_tests::io and
     // interpreter_tests::image::image_io).
     let before = std::env::current_dir().unwrap();
-    let result = interpret(
-      r#"Block[{}, SetDirectory["/tmp"]; d = Directory[]; ResetDirectory[]; d]"#,
-    )
+    let tmp = temp_file("");
+    let result = interpret(&format!(
+      r#"Block[{{}}, SetDirectory["{tmp}"]; d = Directory[]; ResetDirectory[]; d]"#
+    ))
     .unwrap();
     let after = std::env::current_dir().unwrap();
     assert_eq!(before, after, "process CWD must not change");
-    // On macOS, /tmp is a symlink to /private/tmp, so Directory[] may
-    // return the canonicalized path.
-    assert!(
-      result == "/tmp" || result == "/private/tmp",
+    // Compare canonicalized: on macOS the temp dir lives under the
+    // /var → /private/var symlink, and on Windows it comes back in its
+    // short (8.3) form.
+    assert_eq!(
+      std::fs::canonicalize(&result).unwrap(),
+      std::fs::canonicalize(&tmp).unwrap(),
       "virtual CWD must reflect SetDirectory, got: {result}"
     );
   }
@@ -5208,7 +5231,10 @@ mod set_directory {
   fn set_directory_to_user_documents() {
     // Regression for the audit case: SetDirectory[$UserDocumentsDirectory]
     // should return the documents path (when that directory exists).
-    let home = std::env::var("HOME").unwrap();
+    // Windows has no HOME, so fall back to USERPROFILE the way woxi does.
+    let home = std::env::var("HOME")
+      .or_else(|_| std::env::var("USERPROFILE"))
+      .unwrap();
     let docs = format!("{}/Documents", home.trim_end_matches('/'));
     if std::path::Path::new(&docs).is_dir() {
       let result = interpret(

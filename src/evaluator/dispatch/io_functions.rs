@@ -1491,11 +1491,14 @@ pub fn dispatch_io_functions(
     }
     "ExpandFileName" if args.len() == 1 => {
       if let Expr::String(s) = &args[0] {
+        // Windows has no HOME; fall back to USERPROFILE the way the rest
+        // of the home-directory handling does (SetDirectory[],
+        // $HomeDirectory, …).
         let expanded = if s.starts_with('~') {
-          if let Ok(home) = std::env::var("HOME") {
-            format!("{}{}", home, &s[1..])
-          } else {
-            s.clone()
+          match std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE"))
+          {
+            Ok(home) => format!("{}{}", home, &s[1..]),
+            Err(_) => s.clone(),
           }
         } else {
           s.clone()
