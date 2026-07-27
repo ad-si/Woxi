@@ -3013,7 +3013,7 @@ GeoLocation,,🚫,,10.0,3083
 GeologicalPeriodData,,🚫,,10.0,3083
 ImageAlign,,🚫,,8.0,3083
 MoleculePlot,Draws the 2-D skeletal structure diagram of a molecule as a Graphics object,✅,pure,12.0,3083
-SchurDecomposition,,,,2.0,3083
+SchurDecomposition,Real Schur decomposition {q; t} of a machine-precision square matrix with m == q . t . Transpose[q]; q is orthogonal and t quasi-upper-triangular (a 2x2 block per complex pair),✅,pure,2.0,3083
 SpherePoints,,,,11.1,3083
 ToSphericalCoordinates,Converts Cartesian coordinates to spherical,✅,None,10.1,3083
 VectorColorFunctionScaling,,,,7.0,3083

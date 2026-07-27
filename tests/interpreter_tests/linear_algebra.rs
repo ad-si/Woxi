@@ -8947,3 +8947,169 @@ mod control_systems {
     );
   }
 }
+
+/// `SchurDecomposition[m]` gives `{q, t}` with `m == q . t . Transpose[q]`,
+/// `q` orthogonal and `t` quasi-upper-triangular. The factors are not unique
+/// — the eigenvalue order along `t` and the column signs of `q` follow the
+/// iteration — so only the cases where the answer is canonical are pinned
+/// exactly; the rest are checked through the properties that define them.
+mod schur_decomposition {
+  use super::*;
+
+  #[test]
+  fn an_already_triangular_matrix_is_its_own_schur_form() {
+    clear_state();
+    for (code, expected) in [
+      (
+        "ToString[SchurDecomposition[N[{{2, 0}, {0, 3}}]], InputForm]",
+        "{{{1., 0.}, {0., 1.}}, {{2., 0.}, {0., 3.}}}",
+      ),
+      (
+        "ToString[SchurDecomposition[N[{{1, 2}, {0, 3}}]], InputForm]",
+        "{{{1., 0.}, {0., 1.}}, {{1., 2.}, {0., 3.}}}",
+      ),
+      // A rotation block is already the real Schur form of a complex pair.
+      (
+        "ToString[SchurDecomposition[N[{{0, 1}, {-1, 0}}]], InputForm]",
+        "{{{1., 0.}, {0., 1.}}, {{0., 1.}, {-1., 0.}}}",
+      ),
+      (
+        "ToString[SchurDecomposition[N[{{0, -2}, {1, 0}}]], InputForm]",
+        "{{{1., 0.}, {0., 1.}}, {{0., -2.}, {1., 0.}}}",
+      ),
+      (
+        "ToString[SchurDecomposition[{{2.}}], InputForm]",
+        "{{{1.}}, {{2.}}}",
+      ),
+      (
+        "ToString[SchurDecomposition[N[{{0, 1, 0}, {-1, 0, 0}, {0, 0, 5}}]], InputForm]",
+        "{{{1., 0., 0.}, {0., 1., 0.}, {0., 0., 1.}}, \
+         {{0., 1., 0.}, {-1., 0., 0.}, {0., 0., 5.}}}",
+      ),
+    ] {
+      assert_eq!(
+        interpret(code).unwrap(),
+        expected.replace("         ", ""),
+        "{code}"
+      );
+    }
+  }
+
+  #[test]
+  fn the_factors_rebuild_the_matrix() {
+    clear_state();
+    for matrix in [
+      "N[{{1, 2}, {3, 4}}]",
+      "N[{{4, 1, 0}, {1, 3, 1}, {0, 1, 2}}]",
+      "N[{{1, 2, 3}, {4, 5, 6}, {7, 8, 10}}]",
+    ] {
+      let setup = format!("a = {matrix}; {{q, t}} = SchurDecomposition[a]; ");
+      let zeros = interpret(&format!(
+        "ToString[ConstantArray[0, Dimensions[{matrix}]], InputForm]"
+      ))
+      .unwrap();
+      // q is orthogonal.
+      assert_eq!(
+        interpret(&format!(
+          "{setup}ToString[Chop[q . Transpose[q] - IdentityMatrix[Length[a]]], InputForm]"
+        ))
+        .unwrap(),
+        zeros,
+        "{matrix}"
+      );
+      // and it conjugates t back to the matrix.
+      assert_eq!(
+        interpret(&format!(
+          "{setup}ToString[Chop[q . t . Transpose[q] - a], InputForm]"
+        ))
+        .unwrap(),
+        zeros,
+        "{matrix}"
+      );
+    }
+  }
+
+  #[test]
+  fn the_diagonal_carries_the_eigenvalues() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ToString[Round[Sort[Diagonal[Last[SchurDecomposition[\
+         N[{{4, 1, 0}, {1, 3, 1}, {0, 1, 2}}]]]]], 0.0001], InputForm]"
+      )
+      .unwrap(),
+      "{1.2679, 3., 4.7321}"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[Round[Sort[Diagonal[Last[SchurDecomposition[\
+         N[{{1, 2, 3}, {4, 5, 6}, {7, 8, 10}}]]]]], 0.00001], InputForm]"
+      )
+      .unwrap(),
+      "{-0.9057400000000001, 0.19825, 16.70749}"
+    );
+  }
+
+  #[test]
+  fn t_is_quasi_upper_triangular() {
+    clear_state();
+    // Nothing survives below the first subdiagonal, and a real pair leaves
+    // the subdiagonal itself at zero.
+    assert_eq!(
+      interpret(
+        "t = Last[SchurDecomposition[N[{{1, 2, 3}, {4, 5, 6}, {7, 8, 10}}]]]; \
+         ToString[{Chop[t[[2, 1]]], Chop[t[[3, 1]]], Chop[t[[3, 2]]]}, InputForm]"
+      )
+      .unwrap(),
+      "{0, 0, 0}"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[Dimensions[SchurDecomposition[N[{{1, 2}, {3, 4}}]]], InputForm]"
+      )
+      .unwrap(),
+      "{2, 2, 2}"
+    );
+  }
+
+  #[test]
+  fn an_exact_matrix_has_no_machine_precision_form() {
+    clear_state();
+    let result =
+      interpret_with_stdout("SchurDecomposition[{{1, 2}, {3, 4}}]").unwrap();
+    assert_eq!(result.result, "SchurDecomposition[{{1, 2}, {3, 4}}]");
+    assert!(
+      result.warnings.iter().any(|m| m.contains(
+        "SchurDecomposition::schurf: SchurDecomposition has received a matrix \
+         with infinite precision."
+      )),
+      "expected a schurf message, got {:?}",
+      result.warnings
+    );
+    // A single inexact entry is enough to make it a machine-precision matrix.
+    assert_eq!(
+      interpret("ToString[SchurDecomposition[{{1., 2}, {0, 3}}], InputForm]")
+        .unwrap(),
+      "{{{1., 0.}, {0., 1.}}, {{1., 2.}, {0., 3.}}}"
+    );
+  }
+
+  #[test]
+  fn a_non_square_argument_is_reported() {
+    clear_state();
+    for code in [
+      "SchurDecomposition[{{1., 2., 3.}, {4., 5., 6.}}]",
+      "SchurDecomposition[5]",
+    ] {
+      let result = interpret_with_stdout(code).unwrap();
+      assert!(
+        result
+          .warnings
+          .iter()
+          .any(|m| m.starts_with("SchurDecomposition::matsq")),
+        "expected a matsq message for {code}, got {:?}",
+        result.warnings
+      );
+    }
+  }
+}

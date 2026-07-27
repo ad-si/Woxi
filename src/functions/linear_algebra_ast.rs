@@ -11370,3 +11370,330 @@ pub fn savitzky_golay_matrix_ast(
     }
   }
 }
+
+// ── Schur decomposition ─────────────────────────────────────────────────
+
+/// In-place Householder reduction to upper Hessenberg form, accumulating the
+/// orthogonal transformation into `q` so that the original matrix is
+/// `q · h · qᵀ`. Columns that are already reduced are skipped, so a
+/// triangular input passes through untouched and keeps `q` the identity.
+fn hessenberg_reduce_accumulating(
+  a: &mut [Vec<f64>],
+  q: &mut [Vec<f64>],
+  n: usize,
+) {
+  for k in 0..n.saturating_sub(2) {
+    let norm_x: f64 = (k + 1..n).map(|i| a[i][k] * a[i][k]).sum::<f64>().sqrt();
+    if norm_x == 0.0 || (k + 2..n).all(|i| a[i][k] == 0.0) {
+      continue;
+    }
+    let alpha = if a[k + 1][k] >= 0.0 { -norm_x } else { norm_x };
+    let m = n - k - 1;
+    let mut v: Vec<f64> = (k + 1..n).map(|i| a[i][k]).collect();
+    v[0] -= alpha;
+    let vnorm2: f64 = v.iter().map(|x| x * x).sum();
+    if vnorm2 == 0.0 {
+      continue;
+    }
+    // A ← H A
+    for j in 0..n {
+      let dot: f64 = (0..m).map(|t| v[t] * a[k + 1 + t][j]).sum();
+      let f = 2.0 * dot / vnorm2;
+      for t in 0..m {
+        a[k + 1 + t][j] -= f * v[t];
+      }
+    }
+    // A ← A H and Q ← Q H (the reflection is its own inverse)
+    for row in a.iter_mut().take(n) {
+      let dot: f64 = (0..m).map(|t| row[k + 1 + t] * v[t]).sum();
+      let f = 2.0 * dot / vnorm2;
+      for t in 0..m {
+        row[k + 1 + t] -= f * v[t];
+      }
+    }
+    for row in q.iter_mut().take(n) {
+      let dot: f64 = (0..m).map(|t| row[k + 1 + t] * v[t]).sum();
+      let f = 2.0 * dot / vnorm2;
+      for t in 0..m {
+        row[k + 1 + t] -= f * v[t];
+      }
+    }
+    a[k + 1][k] = alpha;
+    for i in k + 2..n {
+      a[i][k] = 0.0;
+    }
+  }
+}
+
+/// Apply the Givens rotation `(cs, sn)` acting on rows/columns `i` and `i + 1`
+/// to `h` (both sides) and to the accumulated `q` (right side only).
+fn apply_givens(
+  h: &mut [Vec<f64>],
+  q: &mut [Vec<f64>],
+  n: usize,
+  i: usize,
+  cs: f64,
+  sn: f64,
+) {
+  // Rows i, i+1 of H ← Gᵀ H
+  for col in 0..n {
+    let (a, b) = (h[i][col], h[i + 1][col]);
+    h[i][col] = cs * a + sn * b;
+    h[i + 1][col] = -sn * a + cs * b;
+  }
+  // Columns i, i+1 of H ← H G, and the same on Q
+  for row in h.iter_mut().take(n) {
+    let (a, b) = (row[i], row[i + 1]);
+    row[i] = cs * a + sn * b;
+    row[i + 1] = -sn * a + cs * b;
+  }
+  for row in q.iter_mut().take(n) {
+    let (a, b) = (row[i], row[i + 1]);
+    row[i] = cs * a + sn * b;
+    row[i + 1] = -sn * a + cs * b;
+  }
+}
+
+/// Split a 2×2 block with real eigenvalues into an upper-triangular one by
+/// rotating its first column onto an eigenvector.
+fn split_two_by_two(
+  h: &mut [Vec<f64>],
+  q: &mut [Vec<f64>],
+  n: usize,
+  i: usize,
+) -> bool {
+  let (a, b, c, d) = (h[i][i], h[i][i + 1], h[i + 1][i], h[i + 1][i + 1]);
+  let disc = (a - d) * (a - d) + 4.0 * b * c;
+  if disc < 0.0 {
+    // A complex pair stays as a real 2×2 block.
+    return false;
+  }
+  let sq = disc.sqrt();
+  // The eigenvalue nearer d keeps the block well conditioned.
+  let lambda = if (a + d + sq) / 2.0 - d < d - (a + d - sq) / 2.0 {
+    (a + d + sq) / 2.0
+  } else {
+    (a + d - sq) / 2.0
+  };
+  let (x, y) = if b.abs() > (lambda - a).abs().max(c.abs()) {
+    (b, lambda - a)
+  } else {
+    (lambda - d, c)
+  };
+  let norm = (x * x + y * y).sqrt();
+  if norm == 0.0 {
+    return true;
+  }
+  apply_givens(h, q, n, i, x / norm, y / norm);
+  h[i + 1][i] = 0.0;
+  true
+}
+
+/// Real Schur decomposition `a = q · t · qᵀ`: `q` orthogonal and `t`
+/// quasi-upper-triangular (1×1 blocks for real eigenvalues, 2×2 for a complex
+/// pair). Returns None when the shifted QR iteration does not converge.
+fn real_schur(a: &[Vec<f64>]) -> Option<(Vec<Vec<f64>>, Vec<Vec<f64>>)> {
+  let n = a.len();
+  let mut h = a.to_vec();
+  let mut q: Vec<Vec<f64>> = (0..n)
+    .map(|i| (0..n).map(|j| if i == j { 1.0 } else { 0.0 }).collect())
+    .collect();
+  hessenberg_reduce_accumulating(&mut h, &mut q, n);
+
+  let mut hi = n;
+  let mut iterations = 0usize;
+  while hi > 1 {
+    // Deflate every negligible subdiagonal entry, then find the start of the
+    // active unreduced block.
+    for i in 1..hi {
+      if h[i][i - 1].abs()
+        <= 1e-14 * (h[i][i].abs() + h[i - 1][i - 1].abs()).max(1e-300)
+      {
+        h[i][i - 1] = 0.0;
+      }
+    }
+    let mut lo = hi - 1;
+    while lo > 0 && h[lo][lo - 1] != 0.0 {
+      lo -= 1;
+    }
+    if lo == hi - 1 {
+      hi -= 1;
+      iterations = 0;
+      continue;
+    }
+    if lo == hi - 2 {
+      // A trailing 2×2 either splits or stays as a real block.
+      split_two_by_two(&mut h, &mut q, n, lo);
+      hi -= 2;
+      iterations = 0;
+      continue;
+    }
+    iterations += 1;
+    if iterations > 200 {
+      return None;
+    }
+    // Wilkinson shift from the trailing 2×2 of the active block; a complex
+    // pair contributes its real part, and every tenth step takes an
+    // exceptional shift to break cycles.
+    let (a1, b1, c1, d1) = (
+      h[hi - 2][hi - 2],
+      h[hi - 2][hi - 1],
+      h[hi - 1][hi - 2],
+      h[hi - 1][hi - 1],
+    );
+    let disc = (a1 - d1) * (a1 - d1) + 4.0 * b1 * c1;
+    let mut mu = if disc >= 0.0 {
+      let sq = disc.sqrt();
+      let l1 = (a1 + d1 + sq) / 2.0;
+      let l2 = (a1 + d1 - sq) / 2.0;
+      if (l1 - d1).abs() < (l2 - d1).abs() {
+        l1
+      } else {
+        l2
+      }
+    } else {
+      (a1 + d1) / 2.0
+    };
+    if iterations.is_multiple_of(10) {
+      mu += h[hi - 1][hi - 2].abs();
+    }
+    // One explicit QR step on H − μI, rotation by rotation.
+    for i in lo..hi {
+      h[i][i] -= mu;
+    }
+    let mut rotations: Vec<(usize, f64, f64)> = Vec::new();
+    for i in lo..hi - 1 {
+      let (x, y) = (h[i][i], h[i + 1][i]);
+      let norm = (x * x + y * y).sqrt();
+      let (cs, sn) = if norm == 0.0 {
+        (1.0, 0.0)
+      } else {
+        (x / norm, y / norm)
+      };
+      // Rows i, i+1 ← Gᵀ H
+      for col in 0..n {
+        let (p, r) = (h[i][col], h[i + 1][col]);
+        h[i][col] = cs * p + sn * r;
+        h[i + 1][col] = -sn * p + cs * r;
+      }
+      rotations.push((i, cs, sn));
+    }
+    // H ← R G, accumulating the same rotations into Q.
+    for (i, cs, sn) in rotations {
+      for row in h.iter_mut().take(n) {
+        let (p, r) = (row[i], row[i + 1]);
+        row[i] = cs * p + sn * r;
+        row[i + 1] = -sn * p + cs * r;
+      }
+      for row in q.iter_mut().take(n) {
+        let (p, r) = (row[i], row[i + 1]);
+        row[i] = cs * p + sn * r;
+        row[i + 1] = -sn * p + cs * r;
+      }
+    }
+    for i in lo..hi {
+      h[i][i] += mu;
+    }
+  }
+
+  // Below the (quasi-)diagonal everything is zero by construction.
+  for i in 0..n {
+    for j in 0..i.saturating_sub(1) {
+      h[i][j] = 0.0;
+    }
+  }
+  Some((q, h))
+}
+
+/// `SchurDecomposition[m]` — the real Schur decomposition `{q, t}` of a
+/// square machine-precision matrix, with `m == q · t · Transpose[q]`.
+pub fn schur_decomposition_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let original = || unevaluated("SchurDecomposition", args);
+  if args.len() != 1 {
+    return Ok(original());
+  }
+  let rows = match &args[0] {
+    Expr::List(rows) if !rows.is_empty() => rows,
+    _ => {
+      crate::emit_message(&format!(
+        "SchurDecomposition::matsq: Argument {} at position 1 is not a \
+         nonempty square matrix.",
+        crate::syntax::expr_to_output(&args[0])
+      ));
+      return Ok(original());
+    }
+  };
+  let n = rows.len();
+  let mut matrix: Vec<Vec<f64>> = Vec::with_capacity(n);
+  let mut exact = true;
+  for row in rows.iter() {
+    let Expr::List(entries) = row else {
+      matrix.clear();
+      break;
+    };
+    if entries.len() != n {
+      matrix.clear();
+      break;
+    }
+    let mut values = Vec::with_capacity(n);
+    for entry in entries.iter() {
+      match entry {
+        Expr::Real(v) => {
+          exact = false;
+          values.push(*v);
+        }
+        Expr::BigFloat(..) => {
+          exact = false;
+          match crate::functions::math_ast::expr_to_num(entry) {
+            Some(v) => values.push(v),
+            None => {
+              matrix.clear();
+              break;
+            }
+          }
+        }
+        _ => match crate::functions::math_ast::expr_to_num(entry) {
+          Some(v) => values.push(v),
+          None => {
+            matrix.clear();
+            break;
+          }
+        },
+      }
+    }
+    if values.len() != n {
+      matrix.clear();
+      break;
+    }
+    matrix.push(values);
+  }
+  if matrix.len() != n {
+    crate::emit_message(&format!(
+      "SchurDecomposition::matsq: Argument {} at position 1 is not a nonempty \
+       square matrix.",
+      crate::syntax::expr_to_output(&args[0])
+    ));
+    return Ok(original());
+  }
+  // An exact matrix has no machine-precision Schur form to compute.
+  if exact {
+    crate::emit_message(
+      "SchurDecomposition::schurf: SchurDecomposition has received a matrix \
+       with infinite precision.",
+    );
+    return Ok(original());
+  }
+  let Some((q, t)) = real_schur(&matrix) else {
+    return Ok(original());
+  };
+  let to_expr = |m: Vec<Vec<f64>>| {
+    Expr::List(
+      m.into_iter()
+        .map(|row| Expr::List(row.into_iter().map(Expr::Real).collect()))
+        .collect(),
+    )
+  };
+  Ok(Expr::List(vec![to_expr(q), to_expr(t)].into()))
+}

@@ -2363,6 +2363,11 @@ pub fn dispatch_linear_algebra_functions(
         }
       }
     }
+    "SchurDecomposition" if !args.is_empty() => {
+      return Some(
+        crate::functions::linear_algebra_ast::schur_decomposition_ast(args),
+      );
+    }
     "QRDecomposition" if args.len() == 1 => {
       return Some(crate::functions::linear_algebra_ast::qr_decomposition_ast(
         args,

@@ -590,6 +590,7 @@
       - [`Projection`](math/linear_algebra/Projection.md)
       - [`PseudoInverse`](math/linear_algebra/PseudoInverse.md)
       - [`QRDecomposition`](math/linear_algebra/QRDecomposition.md)
+      - [`SchurDecomposition`](math/linear_algebra/SchurDecomposition.md)
       - [`ReflectionMatrix`](math/linear_algebra/ReflectionMatrix.md)
       - [`RotationMatrix`](math/linear_algebra/RotationMatrix.md)
       - [`RotationTransform`](math/linear_algebra/RotationTransform.md)
