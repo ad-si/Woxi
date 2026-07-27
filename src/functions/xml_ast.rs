@@ -8,6 +8,8 @@ use crate::syntax::Expr;
 /// report the line and character wolframscript names.
 pub struct XmlError {
   pub offset: usize,
+  /// Set when the failure is an XML namespace prefix with no declaration.
+  pub unresolved_prefix: Option<String>,
 }
 
 /// `(line, character)` of a byte offset, both 1-based.
@@ -21,10 +23,15 @@ pub fn line_and_character(text: &str, offset: usize) -> (usize, usize) {
   (line, character)
 }
 
+/// The namespace URI of the `xmlns` attributes themselves.
+const XMLNS_URI: &str = "http://www.w3.org/2000/xmlns/";
+
 struct Parser<'a> {
   text: &'a [u8],
   source: &'a str,
   pos: usize,
+  /// Prefix → URI, one frame per open element.
+  namespaces: Vec<Vec<(String, String)>>,
 }
 
 /// Decode the predefined XML entities and numeric character references.
@@ -85,11 +92,15 @@ impl<'a> Parser<'a> {
       text: source.as_bytes(),
       source,
       pos: 0,
+      namespaces: Vec::new(),
     }
   }
 
   fn error<T>(&self) -> Result<T, XmlError> {
-    Err(XmlError { offset: self.pos })
+    Err(XmlError {
+      offset: self.pos,
+      unresolved_prefix: None,
+    })
   }
 
   fn peek(&self) -> Option<u8> {
@@ -134,8 +145,8 @@ impl<'a> Parser<'a> {
   }
 
   /// `name="value"` pairs up to the end of the start tag.
-  fn parse_attributes(&mut self) -> Result<Vec<Expr>, XmlError> {
-    let mut attributes = Vec::new();
+  fn parse_attributes(&mut self) -> Result<Vec<(String, String)>, XmlError> {
+    let mut attributes: Vec<(String, String)> = Vec::new();
     loop {
       self.skip_whitespace();
       match self.peek() {
@@ -163,10 +174,7 @@ impl<'a> Parser<'a> {
       }
       let value = decode_entities(&self.source[start..self.pos]);
       self.pos += 1;
-      attributes.push(Expr::Rule {
-        pattern: Box::new(Expr::String(name)),
-        replacement: Box::new(Expr::String(value)),
-      });
+      attributes.push((name, value));
     }
   }
 
@@ -177,16 +185,46 @@ impl<'a> Parser<'a> {
     }
     self.pos += 1;
     let name = self.parse_name()?;
-    let attributes = self.parse_attributes()?;
+    let raw_attributes = self.parse_attributes()?;
     self.skip_whitespace();
-    if self.starts_with("/>") {
+    // The xmlns declarations on this tag are in scope for its own name and
+    // attributes as well as for everything inside it.
+    self.namespaces.push(
+      raw_attributes
+        .iter()
+        .filter_map(|(key, value)| match key.split_once(':') {
+          Some(("xmlns", prefix)) => Some((prefix.to_string(), value.clone())),
+          _ => None,
+        })
+        .collect(),
+    );
+    // The tag is consumed before its names are resolved, so an unresolvable
+    // prefix is reported at the end of the tag — the position wolframscript
+    // names.
+    let empty_element = if self.starts_with("/>") {
       self.pos += 2;
-      return Ok(xml_element(&name, attributes, Vec::new()));
-    }
-    if self.peek() != Some(b'>') {
+      true
+    } else if self.peek() == Some(b'>') {
+      self.pos += 1;
+      false
+    } else {
+      self.namespaces.pop();
       return self.error();
+    };
+    let qualified = self
+      .qualified_name(&name, false)
+      .and_then(|n| Ok((n, self.qualified_attributes(&raw_attributes)?)));
+    let (element_name, attributes) = match qualified {
+      Ok(pair) => pair,
+      Err(e) => {
+        self.namespaces.pop();
+        return Err(e);
+      }
+    };
+    if empty_element {
+      self.namespaces.pop();
+      return Ok(xml_element(element_name, attributes, Vec::new()));
     }
-    self.pos += 1;
     let mut children: Vec<Expr> = Vec::new();
     loop {
       if self.pos >= self.text.len() {
@@ -197,10 +235,12 @@ impl<'a> Parser<'a> {
         let closing = self.parse_name()?;
         self.skip_whitespace();
         if closing != name || self.peek() != Some(b'>') {
+          self.namespaces.pop();
           return self.error();
         }
         self.pos += 1;
-        return Ok(xml_element(&name, attributes, children));
+        self.namespaces.pop();
+        return Ok(xml_element(element_name, attributes, children));
       }
       if self.starts_with("<!--") {
         // Comments carry no content of their own.
@@ -236,6 +276,62 @@ impl<'a> Parser<'a> {
     }
   }
 
+  /// The URI a prefix is bound to by the innermost declaration in scope.
+  fn namespace_uri(&self, prefix: &str) -> Option<&str> {
+    self
+      .namespaces
+      .iter()
+      .rev()
+      .flat_map(|frame| frame.iter().rev())
+      .find(|(p, _)| p == prefix)
+      .map(|(_, uri)| uri.as_str())
+  }
+
+  /// An element or attribute name as wolframscript writes it: a prefixed name
+  /// becomes `{namespace-uri, local-name}`, an unprefixed one stays a plain
+  /// string — even under a default `xmlns`, which only wolframscript's
+  /// attribute list records.
+  fn qualified_name(
+    &self,
+    name: &str,
+    is_attribute: bool,
+  ) -> Result<Expr, XmlError> {
+    let Some((prefix, local)) = name.split_once(':') else {
+      return Ok(Expr::String(name.to_string()));
+    };
+    if is_attribute && prefix == "xmlns" {
+      return Ok(namespaced_name(XMLNS_URI, local));
+    }
+    match self.namespace_uri(prefix) {
+      Some(uri) => Ok(namespaced_name(uri, local)),
+      None => Err(XmlError {
+        offset: self.pos,
+        unresolved_prefix: Some(prefix.to_string()),
+      }),
+    }
+  }
+
+  /// The attribute rules of a start tag, `xmlns` declarations included: they
+  /// are written under the namespace of the `xmlns` attributes themselves.
+  fn qualified_attributes(
+    &self,
+    raw: &[(String, String)],
+  ) -> Result<Vec<Expr>, XmlError> {
+    let mut attributes = Vec::with_capacity(raw.len());
+    for (name, value) in raw {
+      let key = if name == "xmlns" {
+        namespaced_name(XMLNS_URI, "xmlns")
+      } else {
+        self.qualified_name(name, true)?
+      };
+      attributes.push(Expr::Rule {
+        pattern: Box::new(key),
+        replacement: Box::new(Expr::String(value.clone())),
+      });
+    }
+    Ok(attributes)
+  }
+
   /// The `<?xml … ?>` declaration, comments and doctype ahead of the root.
   fn parse_prolog(&mut self) -> Result<Vec<Expr>, XmlError> {
     let mut prolog = Vec::new();
@@ -253,18 +349,9 @@ impl<'a> Parser<'a> {
         // wolframscript writes them.
         let renamed: Vec<Expr> = attributes
           .iter()
-          .map(|a| match a {
-            Expr::Rule {
-              pattern,
-              replacement,
-            } => Expr::Rule {
-              pattern: Box::new(match pattern.as_ref() {
-                Expr::String(s) => Expr::String(capitalize(s)),
-                other => other.clone(),
-              }),
-              replacement: replacement.clone(),
-            },
-            other => other.clone(),
+          .map(|(name, value)| Expr::Rule {
+            pattern: Box::new(Expr::String(capitalize(name))),
+            replacement: Box::new(Expr::String(value.clone())),
           })
           .collect();
         prolog.push(Expr::CurriedCall {
@@ -298,11 +385,23 @@ fn capitalize(s: &str) -> String {
   }
 }
 
-fn xml_element(name: &str, attributes: Vec<Expr>, children: Vec<Expr>) -> Expr {
+/// `{namespace-uri, local-name}`, the name form wolframscript gives a
+/// prefixed element or attribute.
+fn namespaced_name(uri: &str, local: &str) -> Expr {
+  Expr::List(
+    vec![
+      Expr::String(uri.to_string()),
+      Expr::String(local.to_string()),
+    ]
+    .into(),
+  )
+}
+
+fn xml_element(name: Expr, attributes: Vec<Expr>, children: Vec<Expr>) -> Expr {
   Expr::FunctionCall {
     name: "XMLElement".to_string(),
     args: vec![
-      Expr::String(name.to_string()),
+      name,
       Expr::List(attributes.into()),
       Expr::List(children.into()),
     ]
@@ -401,4 +500,102 @@ pub fn xml_to_string(expr: &Expr) -> Option<String> {
     }
     _ => None,
   }
+}
+
+/// The import elements wolframscript offers for an XML document.
+pub const XML_ELEMENTS: [&str; 9] = [
+  "CDATA",
+  "Comments",
+  "EmbeddedDTD",
+  "Plaintext",
+  "Summary",
+  "Tags",
+  "Tree",
+  "XMLElement",
+  "XMLObject",
+];
+
+/// The root element of a parsed document.
+fn document_root(document: &Expr) -> Option<&Expr> {
+  match document {
+    Expr::CurriedCall { args, .. } if args.len() == 3 => Some(&args[1]),
+    _ => None,
+  }
+}
+
+/// Every tag name in the document, in document order.
+fn collect_tags(expr: &Expr, out: &mut Vec<String>) {
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "XMLElement"
+    && args.len() == 3
+  {
+    match &args[0] {
+      Expr::String(tag) => out.push(tag.clone()),
+      // A namespaced name is written `{uri, local}`; the tag is its local part.
+      Expr::List(parts) if parts.len() == 2 => {
+        if let Expr::String(local) = &parts[1] {
+          out.push(local.clone());
+        }
+      }
+      _ => {}
+    }
+    if let Expr::List(children) = &args[2] {
+      for child in children.iter() {
+        collect_tags(child, out);
+      }
+    }
+  }
+}
+
+/// Every run of character data in the document, in document order.
+fn collect_text(expr: &Expr, out: &mut Vec<String>) {
+  match expr {
+    Expr::String(text) => out.push(text.clone()),
+    Expr::FunctionCall { name, args }
+      if name == "XMLElement" && args.len() == 3 =>
+    {
+      if let Expr::List(children) = &args[2] {
+        for child in children.iter() {
+          collect_text(child, out);
+        }
+      }
+    }
+    _ => {}
+  }
+}
+
+/// One import element of a parsed XML document. `None` means the element is
+/// not one wolframscript knows.
+pub fn xml_import_element(document: &Expr, element: &str) -> Option<Expr> {
+  let root = document_root(document);
+  Some(match element {
+    "XMLObject" => document.clone(),
+    "XMLElement" => Expr::List(vec![root?.clone()].into()),
+    "Tags" => {
+      let mut tags = Vec::new();
+      collect_tags(root?, &mut tags);
+      tags.sort();
+      tags.dedup();
+      Expr::List(tags.into_iter().map(Expr::String).collect())
+    }
+    "CDATA" => {
+      let mut text = Vec::new();
+      collect_text(root?, &mut text);
+      Expr::List(text.into_iter().map(Expr::String).collect())
+    }
+    "Plaintext" => {
+      let mut text = Vec::new();
+      collect_text(root?, &mut text);
+      Expr::String(text.join("\n"))
+    }
+    // A comment carries no content, so wolframscript reports none.
+    "Comments" | "EmbeddedDTD" => Expr::List(Vec::new().into()),
+    "Elements" => Expr::List(
+      XML_ELEMENTS
+        .iter()
+        .map(|n| Expr::String((*n).to_string()))
+        .collect(),
+    ),
+    _ => return None,
+  })
 }

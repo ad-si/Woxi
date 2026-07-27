@@ -72,3 +72,38 @@ $ wo 'ImportString["not xml", "XML"]'
 Import::nfprserr: invalid document structure at line: 1 character: 1 in input string.
 $Failed
 ```
+
+A prefixed name carries its namespace URI, written `{uri, local}`, and the
+`xmlns` declarations become attributes of their own namespace:
+
+```scrut
+$ wo 'ToString[ImportString["<ns:a xmlns:ns=\"u\"><ns:b>t</ns:b></ns:a>", "XML"], InputForm]'
+XMLObject["Document"][{}, XMLElement[{"u", "a"}, {{"http://www.w3.org/2000/xmlns/", "ns"} -> "u"}, {XMLElement[{"u", "b"}, {}, {"t"}]}], {}]
+```
+
+A `{format, element}` spec reads one part of the document:
+
+```scrut
+$ wo 'ToString[ImportString["<a><b>t1</b><b>t2</b></a>", {"XML", "Tags"}], InputForm]'
+{"a", "b"}
+```
+
+```scrut
+$ wo 'ImportString["<a><b>t1</b><b>t2</b></a>", {"XML", "Plaintext"}]'
+t1
+t2
+```
+
+```scrut {output_stream: combined}
+$ wo 'ImportString["<a>1</a>", {"XML", "Bogus"}]'
+
+Import::noelem: The Import element "Bogus" is not present when importing as XML.
+$Failed
+```
+
+The tabular formats take an element as well:
+
+```scrut
+$ wo 'ToString[ImportString["1,2\n3,4", {"CSV", "Data"}], InputForm]'
+{{1, 2}, {3, 4}}
+```

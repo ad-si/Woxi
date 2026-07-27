@@ -474,7 +474,7 @@ EuclideanDistance,Euclidean distance between two vectors,✅,pure,6.0,477
 Subsets,Returns all subsets of a list,✅,pure,5.1,478
 SoundNote,Represents a musical note for sound generation,✅,pure,6.0,479
 Accumulate,Returns cumulative sums of a list,✅,pure,6.0,480
-XMLElement,Represents an XML element with tag and attributes,✅,pure,4.2,481
+XMLElement,Represents an XML element with tag and attributes; a namespaced name is written {uri; local},✅,pure,4.2,481
 Zeta,Riemann and Hurwitz zeta function,✅,pure,1.0,482
 RowReduce,Returns the row echelon form of a matrix,✅,pure,1.0,483
 Direction,Option specifying the direction for operations,✅,none,2.0,484
@@ -799,7 +799,7 @@ BarLegend,Color bar legend for plots,✅,none,9.0,805
 ExponentialDistribution,Represents an exponential distribution,✅,pure,6.0,806
 MatrixExp,Computes the matrix exponential,✅,pure,2.0,807
 ImageResolution,Option for image resolution in DPI,✅,none,3.0,808
-ImportString,Imports data from a string (CSV/TSV/Table/JSON/Lines/Words/Text/List/XML) with trailing rules read as options; an empty document fails for the formats that need rows,✅,pure,4.0,809
+ImportString,Imports data from a string (CSV/TSV/Table/JSON/Lines/Words/Text/List/XML) with a {format; element} spec selecting part of the document and trailing rules read as options; an empty document fails for the formats that need rows,✅,pure,4.0,809
 RandomGraph,Generate a random graph,✅,contextual,8.0,810
 SphericalHarmonicY,Spherical harmonic function Y_l^m(theta phi),✅,pure,1.0,811
 TagSet,Defines an evaluated upvalue assignment associated with a tag symbol,✅,stateful,1.0,812

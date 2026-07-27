@@ -7872,3 +7872,148 @@ mod import_string_formats {
     }
   }
 }
+
+mod xml_namespaces_and_elements {
+  use super::*;
+
+  #[test]
+  fn a_prefixed_name_carries_its_namespace_uri() {
+    clear_state();
+    // The element name becomes {uri, local} and the xmlns declaration is an
+    // attribute under the namespace of the xmlns attributes themselves.
+    assert_eq!(
+      interpret(
+        r#"ToString[ImportString["<ns:a xmlns:ns=\"u\" id=\"1\"><ns:b>t</ns:b></ns:a>", "XML"], InputForm]"#
+      )
+      .unwrap(),
+      r#"XMLObject["Document"][{}, XMLElement[{"u", "a"}, {{"http://www.w3.org/2000/xmlns/", "ns"} -> "u", "id" -> "1"}, {XMLElement[{"u", "b"}, {}, {"t"}]}], {}]"#
+    );
+    // A prefixed attribute is qualified too.
+    assert_eq!(
+      interpret(
+        r#"ToString[ImportString["<a xmlns:n=\"u\" n:id=\"1\"/>", "XML"], InputForm]"#
+      )
+      .unwrap(),
+      r#"XMLObject["Document"][{}, XMLElement["a", {{"http://www.w3.org/2000/xmlns/", "n"} -> "u", {"u", "id"} -> "1"}, {}], {}]"#
+    );
+    // A declaration is in scope for the whole subtree, and an unprefixed
+    // name stays a plain string.
+    assert_eq!(
+      interpret(
+        r#"ToString[ImportString["<a xmlns:n=\"u\"><n:b/><c/></a>", "XML"], InputForm]"#
+      )
+      .unwrap(),
+      r#"XMLObject["Document"][{}, XMLElement["a", {{"http://www.w3.org/2000/xmlns/", "n"} -> "u"}, {XMLElement[{"u", "b"}, {}, {}], XMLElement["c", {}, {}]}], {}]"#
+    );
+    // A default namespace is recorded as an attribute but does not qualify
+    // the names.
+    assert_eq!(
+      interpret(
+        r#"ToString[ImportString["<a xmlns=\"http://d\"><b/></a>", "XML"], InputForm]"#
+      )
+      .unwrap(),
+      r#"XMLObject["Document"][{}, XMLElement["a", {{"http://www.w3.org/2000/xmlns/", "xmlns"} -> "http://d"}, {XMLElement["b", {}, {}]}], {}]"#
+    );
+  }
+
+  #[test]
+  fn an_undeclared_prefix_fails_the_import() {
+    clear_state();
+    let result =
+      interpret_with_stdout(r#"ImportString["<n:a n:x=\"1\"/>", "XML"]"#)
+        .unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert!(
+      result.warnings.iter().any(|m| m.contains(
+        "prefix 'n' can not be resolved to namespace URI at line: 1 \
+         character: 15"
+      )),
+      "expected an nfprserr message naming the prefix, got {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
+  fn an_element_spec_reads_part_of_the_document() {
+    clear_state();
+    const DOC: &str = r#""<a id=\"1\"><b>t1</b><b>t2</b></a>""#;
+    for (element, expected) in [
+      ("Tags", r#"{"a", "b"}"#),
+      ("Plaintext", r#""t1\nt2""#),
+      ("CDATA", r#"{"t1", "t2"}"#),
+      (
+        "XMLElement",
+        r#"{XMLElement["a", {"id" -> "1"}, {XMLElement["b", {}, {"t1"}], XMLElement["b", {}, {"t2"}]}]}"#,
+      ),
+      (
+        "XMLObject",
+        r#"XMLObject["Document"][{}, XMLElement["a", {"id" -> "1"}, {XMLElement["b", {}, {"t1"}], XMLElement["b", {}, {"t2"}]}], {}]"#,
+      ),
+      // A comment carries no content, so none are reported.
+      ("Comments", "{}"),
+    ] {
+      let code = format!(
+        r#"ToString[ImportString[{DOC}, {{"XML", "{element}"}}], InputForm]"#
+      );
+      assert_eq!(interpret(&code).unwrap(), expected, "{element}");
+    }
+    // Tag names are reported sorted and without repeats.
+    assert_eq!(
+      interpret(
+        r#"ToString[ImportString["<a><b><c>x</c></b></a>", {"XML", "Tags"}], InputForm]"#
+      )
+      .unwrap(),
+      r#"{"a", "b", "c"}"#
+    );
+    // The element list names what an XML document can be read as.
+    assert_eq!(
+      interpret(
+        r#"ToString[ImportString["<a/>", {"XML", "Elements"}], InputForm]"#
+      )
+      .unwrap(),
+      r#"{"CDATA", "Comments", "EmbeddedDTD", "Plaintext", "Summary", "Tags", "Tree", "XMLElement", "XMLObject"}"#
+    );
+  }
+
+  #[test]
+  fn an_unknown_element_is_reported() {
+    clear_state();
+    let result =
+      interpret_with_stdout(r#"ImportString["<a>1</a>", {"XML", "Bogus"}]"#)
+        .unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert!(
+      result.warnings.iter().any(|m| m.contains(
+        "Import::noelem: The Import element \"Bogus\" is not present when \
+         importing as XML."
+      )),
+      "expected a noelem message, got {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
+  fn a_tabular_format_takes_an_element_too() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"ToString[ImportString["1,2\n3,4", {"CSV", "Data"}], InputForm]"#
+      )
+      .unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+    assert_eq!(
+      interpret(
+        r#"ToString[ImportString["a\tb", {"TSV", "Data"}], InputForm]"#
+      )
+      .unwrap(),
+      r#"{{"a", "b"}}"#
+    );
+    // A one-element list is just the format.
+    assert_eq!(
+      interpret(r#"ToString[ImportString["1,2", {"CSV"}], InputForm]"#)
+        .unwrap(),
+      "{{1, 2}}"
+    );
+  }
+}

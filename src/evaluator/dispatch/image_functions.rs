@@ -864,10 +864,18 @@ pub fn dispatch_image_functions(
                           &content,
                           error.offset,
                         );
-                      crate::emit_message(&format!(
-                        "Import::nfprserr: invalid document structure at \
-                         line: {line} character: {character} in input string."
-                      ));
+                      crate::emit_message(&match &error.unresolved_prefix {
+                        Some(prefix) => format!(
+                          "Import::nfprserr: prefix '{prefix}' can not be \
+                           resolved to namespace URI at line: {line} \
+                           character: {character} in input string."
+                        ),
+                        None => format!(
+                          "Import::nfprserr: invalid document structure at \
+                           line: {line} character: {character} in input \
+                           string."
+                        ),
+                      });
                       Expr::Identifier("$Failed".to_string())
                     }
                   }
@@ -1214,20 +1222,48 @@ pub fn dispatch_image_functions(
 
       // ImportString[str] — default to CSV
       // ImportString[str, "CSV"] — explicit CSV
-      let format = if args.len() == 2 {
-        match &args[1] {
-          Expr::String(s) => s.as_str(),
-          _ => {
-            return Some(Ok(unevaluated("ImportString", args)));
+      // The format argument is either a name or a `{name, element}` list
+      // naming the part of the document to read.
+      let (format, requested_element): (&str, Option<String>) =
+        if args.len() == 2 {
+          match &args[1] {
+            Expr::String(s) => (s.as_str(), None),
+            Expr::List(spec) if !spec.is_empty() && spec.len() <= 2 => {
+              let Expr::String(name) = &spec[0] else {
+                return Some(Ok(unevaluated("ImportString", args)));
+              };
+              let element = match spec.get(1) {
+                None => None,
+                Some(Expr::String(e)) => Some(e.clone()),
+                Some(_) => {
+                  return Some(Ok(unevaluated("ImportString", args)));
+                }
+              };
+              (name.as_str(), element)
+            }
+            _ => {
+              return Some(Ok(unevaluated("ImportString", args)));
+            }
           }
-        }
-      } else {
-        "CSV"
+        } else {
+          ("CSV", None)
+        };
+      // An element the format does not offer is reported and fails the import.
+      let unknown_element = |element: &str, format: &str| {
+        crate::emit_message(&format!(
+          "Import::noelem: The Import element \"{element}\" is not present \
+           when importing as {format}."
+        ));
+        Some(Ok(Expr::Identifier("$Failed".to_string())))
       };
 
       // `"Numeric" -> False` keeps every field as the string it was written
-      // as, which is exactly the RawData element.
-      let table_element = if numeric { None } else { Some("RawData") };
+      // as, which is exactly the RawData element. An explicit element wins.
+      let table_element = match (&requested_element, numeric) {
+        (Some(element), _) => Some(element.as_str()),
+        (None, false) => Some("RawData"),
+        (None, true) => None,
+      };
 
       // Plain-text format elements that don't depend on a parser.
       // `Elements` returns the static list of supported plain-text
@@ -1303,17 +1339,34 @@ pub fn dispatch_image_functions(
       if format == "XML" {
         return Some(Ok(
           match crate::functions::xml_ast::parse_xml_document(&content) {
-            Ok(document) => document,
+            Ok(document) => match &requested_element {
+              None => document,
+              Some(element) => {
+                match crate::functions::xml_ast::xml_import_element(
+                  &document, element,
+                ) {
+                  Some(part) => part,
+                  None => return unknown_element(element, "XML"),
+                }
+              }
+            },
             Err(error) => {
               let (line, character) =
                 crate::functions::xml_ast::line_and_character(
                   &content,
                   error.offset,
                 );
-              crate::emit_message(&format!(
-                "Import::nfprserr: invalid document structure at line: \
-                 {line} character: {character} in input string."
-              ));
+              crate::emit_message(&match &error.unresolved_prefix {
+                Some(prefix) => format!(
+                  "Import::nfprserr: prefix '{prefix}' can not be resolved \
+                   to namespace URI at line: {line} character: {character} \
+                   in input string."
+                ),
+                None => format!(
+                  "Import::nfprserr: invalid document structure at line: \
+                   {line} character: {character} in input string."
+                ),
+              });
               Expr::Identifier("$Failed".to_string())
             }
           },
