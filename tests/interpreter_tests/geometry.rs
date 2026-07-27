@@ -7412,3 +7412,251 @@ mod mesh_regions {
     );
   }
 }
+
+// RegionProduct. The Cartesian product of regions, which wolframscript always
+// answers with a named primitive rather than a product object: the
+// coordinates of the earlier arguments come first. Values verified against
+// wolframscript.
+mod region_product {
+  use super::*;
+
+  /// The result of `code`, written the way `InputForm` writes it.
+  fn form(code: &str) -> String {
+    interpret(&format!("ToString[{code}, InputForm]")).unwrap()
+  }
+
+  #[test]
+  fn boxes_multiply_into_boxes() {
+    clear_state();
+    for (code, expected) in [
+      (
+        "RegionProduct[Line[{{0}, {2}}], Line[{{0}, {3}}]]",
+        "Rectangle[{0, 0}, {2, 3}]",
+      ),
+      (
+        "RegionProduct[Line[{{0}, {1}}], Line[{{2}, {3}}]]",
+        "Rectangle[{0, 2}, {1, 3}]",
+      ),
+      (
+        "RegionProduct[Interval[{0, 1}], Interval[{0, 2}]]",
+        "Rectangle[{0, 0}, {1, 2}]",
+      ),
+      // A segment written back to front spans the same box.
+      (
+        "RegionProduct[Line[{{1}, {0}}], Line[{{0}, {1}}]]",
+        "Rectangle[{0, 0}, {1, 1}]",
+      ),
+      // Three or more arguments are multiplied two at a time from the left.
+      (
+        "RegionProduct[Interval[{0, 1}], Interval[{2, 3}], Interval[{4, 5}]]",
+        "Cuboid[{0, 2, 4}, {1, 3, 5}]",
+      ),
+      (
+        "RegionProduct[Rectangle[{0, 0}, {2, 3}], Rectangle[{0, 0}, {4, 5}]]",
+        "Cuboid[{0, 0, 0, 0}, {2, 3, 4, 5}]",
+      ),
+      (
+        "RegionProduct[Cuboid[{0, 0, 0}, {1, 2, 3}], \
+         Rectangle[{0, 0}, {4, 5}]]",
+        "Cuboid[{0, 0, 0, 0, 0}, {1, 2, 3, 4, 5}]",
+      ),
+      (
+        "RegionProduct[Rectangle[], Rectangle[{1, 1}, {2, 2}]]",
+        "Cuboid[{0, 0, 1, 1}, {1, 1, 2, 2}]",
+      ),
+      (
+        "RegionProduct[Interval[{0, 1}], Rectangle[]]",
+        "Cuboid[{0, 0, 0}, {1, 1, 1}]",
+      ),
+    ] {
+      let code = code.replace("         ", "");
+      assert_eq!(form(&code), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn a_disk_swept_along_a_segment_is_a_cylinder() {
+    clear_state();
+    assert_eq!(
+      form("RegionProduct[Disk[{0, 0}, 1], Line[{{0}, {1}}]]"),
+      "Cylinder[{{0, 0, 0}, {0, 0, 1}}, 1]"
+    );
+    assert_eq!(
+      form("RegionProduct[Disk[{1, 2}, 3], Interval[{4, 6}]]"),
+      "Cylinder[{{1, 2, 4}, {1, 2, 6}}, 3]"
+    );
+    // The segment leads when it is written first.
+    assert_eq!(
+      form("RegionProduct[Interval[{4, 6}], Disk[{1, 2}, 3]]"),
+      "Cylinder[{{4, 1, 2}, {6, 1, 2}}, 3]"
+    );
+    assert_eq!(
+      form("RegionProduct[Line[{{0}, {1}}], Disk[]]"),
+      "Cylinder[{{0, 0, 0}, {1, 0, 0}}, 1]"
+    );
+  }
+
+  #[test]
+  fn a_triangle_swept_along_a_segment_is_a_prism() {
+    clear_state();
+    assert_eq!(
+      form(
+        "RegionProduct[Triangle[{{0, 0}, {2, 0}, {0, 3}}], \
+            Line[{{1}, {4}}]]"
+          .replace("            ", "")
+          .as_str()
+      ),
+      "Prism[{{0, 0, 1}, {2, 0, 1}, {0, 3, 1}, {0, 0, 4}, {2, 0, 4}, \
+       {0, 3, 4}}]"
+        .replace("       ", "")
+    );
+    assert_eq!(
+      form("RegionProduct[Interval[{0, 2}], Triangle[]]"),
+      "Prism[{{0, 0, 0}, {0, 1, 0}, {0, 0, 1}, {2, 0, 0}, {2, 1, 0}, \
+       {2, 0, 1}}]"
+        .replace("       ", "")
+    );
+    // The prism keeps the measure of the triangle times that of the segment.
+    assert_eq!(
+      interpret("RegionMeasure[RegionProduct[Triangle[], Line[{{0}, {2}}]]]")
+        .unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn points_and_slanted_segments_keep_their_shape() {
+    clear_state();
+    for (code, expected) in [
+      // A point contributes coordinates but no extent.
+      (
+        "RegionProduct[Point[{1}], Line[{{0}, {1}}]]",
+        "Line[{{1, 0}, {1, 1}}]",
+      ),
+      (
+        "RegionProduct[Line[{{0}, {1}}], Point[{2, 3}]]",
+        "Line[{{0, 2, 3}, {1, 2, 3}}]",
+      ),
+      // Two points give the segment that goes nowhere.
+      (
+        "RegionProduct[Point[{1, 2}], Point[{3}]]",
+        "Line[{{1, 2, 3}, {1, 2, 3}}]",
+      ),
+      (
+        "RegionProduct[Point[{1}], Rectangle[]]",
+        "Parallelepiped[{1, 0, 0}, {{0, 1, 0}, {0, 0, 1}}]",
+      ),
+      // A segment that does not run along an axis spans a parallelotope.
+      (
+        "RegionProduct[Line[{{0, 0}, {1, 1}}], Line[{{0}, {1}}]]",
+        "Parallelepiped[{0, 0, 0}, {{1, 1, 0}, {0, 0, 1}}]",
+      ),
+      (
+        "RegionProduct[Line[{{0, 0}, {1, 1}}], Line[{{0, 0}, {1, -1}}]]",
+        "Parallelepiped[{0, 0, 0, 0}, {{1, 1, 0, 0}, {0, 0, 1, -1}}]",
+      ),
+      (
+        "RegionProduct[Line[{{0}, {1}}], Point[{2}], Line[{{0}, {3}}]]",
+        "Parallelepiped[{0, 2, 0}, {{1, 0, 0}, {0, 0, 3}}]",
+      ),
+    ] {
+      assert_eq!(form(code), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn a_product_wolfram_does_not_name_stands_over_what_was_combined() {
+    clear_state();
+    for (code, expected) in [
+      // One argument is that region.
+      ("RegionProduct[Line[{{0}, {1}}]]", "Line[{{0}, {1}}]"),
+      // Curved and higher-dimensional pairs have no primitive to become.
+      (
+        "RegionProduct[Circle[], Line[{{0}, {1}}]]",
+        "RegionProduct[Circle[{0, 0}], Line[{{0}, {1}}]]",
+      ),
+      (
+        "RegionProduct[Disk[], Disk[]]",
+        "RegionProduct[Disk[{0, 0}], Disk[{0, 0}]]",
+      ),
+      (
+        "RegionProduct[Disk[], Rectangle[]]",
+        "RegionProduct[Disk[{0, 0}], Rectangle[{0, 0}]]",
+      ),
+      (
+        "RegionProduct[Point[{1}], Disk[]]",
+        "RegionProduct[Point[{1}], Disk[{0, 0}]]",
+      ),
+      // What has already been combined stays combined.
+      (
+        "RegionProduct[Disk[], Line[{{0}, {1}}], Line[{{0}, {2}}]]",
+        "RegionProduct[Cylinder[{{0, 0, 0}, {0, 0, 1}}, 1], Line[{{0}, {2}}]]",
+      ),
+      (
+        "RegionProduct[Point[{1}], Point[{2}], Line[{{0}, {1}}]]",
+        "RegionProduct[Line[{{1, 2}, {1, 2}}], Line[{{0}, {1}}]]",
+      ),
+    ] {
+      assert_eq!(form(code), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn the_product_is_measured_like_any_other_region() {
+    clear_state();
+    for (code, expected) in [
+      (
+        "RegionDimension[RegionProduct[Disk[], Line[{{0}, {1}}]]]",
+        "3",
+      ),
+      (
+        "RegionEmbeddingDimension[RegionProduct[Disk[], Line[{{0}, {1}}]]]",
+        "3",
+      ),
+      (
+        "RegionMeasure[RegionProduct[Disk[], Line[{{0}, {1}}]]]",
+        "Pi",
+      ),
+      (
+        "RegionMeasure[RegionProduct[Line[{{0}, {2}}], Line[{{0}, {3}}]]]",
+        "6",
+      ),
+      (
+        "RegionMember[RegionProduct[Line[{{0}, {1}}], \
+         Line[{{0}, {1}}]], {0.5, 0.5}]",
+        "True",
+      ),
+      (
+        "RegionMember[RegionProduct[Line[{{0}, {1}}], \
+         Line[{{0}, {1}}]], {2, 0.5}]",
+        "False",
+      ),
+      ("RegionQ[RegionProduct[Disk[], Line[{{0}, {1}}]]]", "True"),
+      (
+        "BoundedRegionQ[RegionProduct[Disk[], Line[{{0}, {1}}]]]",
+        "True",
+      ),
+    ] {
+      let code = code.replace("         ", "");
+      assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+    }
+    assert_eq!(
+      form("RegionBounds[RegionProduct[Line[{{0}, {2}}], Line[{{0}, {3}}]]]"),
+      "{{0, 2}, {0, 3}}"
+    );
+    assert_eq!(
+      form("RegionCentroid[RegionProduct[Line[{{0}, {2}}], Line[{{0}, {3}}]]]"),
+      "{1, 3/2}"
+    );
+  }
+
+  #[test]
+  fn an_argument_that_is_not_a_region_is_refused() {
+    clear_state();
+    assert_eq!(
+      form("RegionProduct[5, Line[{{0}, {1}}]]"),
+      "RegionProduct[5, Line[{{0}, {1}}]]"
+    );
+    assert_eq!(form("RegionProduct[]"), "RegionProduct[]");
+  }
+}

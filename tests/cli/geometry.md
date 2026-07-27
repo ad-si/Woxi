@@ -92,3 +92,41 @@ A machine-real coordinate switches every vertex to a real and drops the
 $ wo 'ConvexHullMesh[{{0, 0}, {1, 0}, {0, 1}, {1, 1}, {0.5, 0.5}}]'
 BoundaryMeshRegion[{{0., 0.}, {1., 0.}, {0., 1.}, {1., 1.}}, {Line[{{1, 2}, {2, 4}, {4, 3}, {3, 1}}]}, Method -> {SeparateBoundaries -> False}]
 ```
+
+## `RegionProduct`
+
+The Cartesian product of regions, which is answered with a named primitive
+rather than a product object. Coordinates of the earlier arguments come
+first, so two segments span a rectangle:
+
+```scrut
+$ wo 'RegionProduct[Line[{{0}, {2}}], Line[{{0}, {3}}]]'
+Rectangle[{0, 0}, {2, 3}]
+```
+
+A disk swept along a segment is a cylinder, a triangle swept along one a
+prism:
+
+```scrut
+$ wo 'RegionProduct[Disk[{1, 2}, 3], Interval[{4, 6}]]'
+Cylinder[{{1, 2, 4}, {1, 2, 6}}, 3]
+```
+
+```scrut
+$ wo 'RegionProduct[Triangle[], Interval[{0, 2}]]'
+Prism[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 2}, {1, 0, 2}, {0, 1, 2}}]
+```
+
+The product is measured like any other region:
+
+```scrut
+$ wo 'RegionMeasure[RegionProduct[Disk[], Line[{{0}, {1}}]]]'
+Pi
+```
+
+A pair with no primitive to become is left standing:
+
+```scrut
+$ wo 'RegionProduct[Disk[], Disk[]]'
+RegionProduct[Disk[{0, 0}], Disk[{0, 0}]]
+```

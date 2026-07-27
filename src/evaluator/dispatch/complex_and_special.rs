@@ -1457,6 +1457,9 @@ pub fn dispatch_complex_and_special(
     "RegionIntersection" | "RegionUnion" | "RegionDifference" => {
       return Some(compute_region_set_op(name, args));
     }
+    "RegionProduct" => {
+      return Some(compute_region_product(args));
+    }
     "RegionDistance" if args.len() == 2 => {
       return Some(compute_region_distance(
         strip_region_wrapper(&args[0]),
@@ -15314,6 +15317,368 @@ fn region_box_intersection(a: &Expr, b: &Expr) -> Option<Expr> {
     name: head_a,
     args: vec![number_list(&lo, a), number_list(&hi, b)].into(),
   })
+}
+
+// ── RegionProduct ────────────────────────────────────────────────────────
+
+/// The exact difference `a - b`, kept symbolic.
+fn coord_sub(a: &Expr, b: &Expr) -> Expr {
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Subtract".to_string(),
+    args: vec![a.clone(), b.clone()].into(),
+  })
+  .unwrap_or_else(|_| Expr::Integer(0))
+}
+
+/// The exact sum of a run of coordinates, kept symbolic.
+fn coord_sum(terms: Vec<Expr>) -> Expr {
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  })
+  .unwrap_or_else(|_| Expr::Integer(0))
+}
+
+/// Whether a coordinate is the exact zero every unused axis of a product
+/// vector carries.
+fn is_exact_zero(e: &Expr) -> bool {
+  matches!(e, Expr::Integer(0))
+}
+
+/// The coordinates of a point expression.
+fn point_coords(e: &Expr) -> Option<Vec<Expr>> {
+  match e {
+    Expr::List(items) => Some(items.iter().cloned().collect()),
+    _ => None,
+  }
+}
+
+/// A region as an origin and the edge vectors spanning it — the shape shared
+/// by points, segments, axis-aligned boxes and parallelotopes. Regions with
+/// no such description (disks, triangles, spheres) give `None`.
+fn parallelotope_parts(reg: &Expr) -> Option<(Vec<Expr>, Vec<Vec<Expr>>)> {
+  let Expr::FunctionCall { name, args } = reg else {
+    return None;
+  };
+  // The unit box `Rectangle[]`/`Cuboid[]` writes only its lower corner, or
+  // nothing at all for the two-dimensional one.
+  let box_corners = |dim_default: usize| -> Option<(Vec<Expr>, Vec<Expr>)> {
+    let lo = match args.first() {
+      Some(p) => point_coords(p)?,
+      None => vec![Expr::Integer(0); dim_default],
+    };
+    let hi = match args.get(1) {
+      Some(p) => point_coords(p)?,
+      None => lo
+        .iter()
+        .map(|c| coord_sum(vec![c.clone(), Expr::Integer(1)]))
+        .collect(),
+    };
+    (lo.len() == hi.len()).then_some((lo, hi))
+  };
+  match name.as_str() {
+    "Point" if args.len() == 1 => Some((point_coords(&args[0])?, Vec::new())),
+    "Interval" if args.len() == 1 => {
+      let ends = point_coords(&args[0])?;
+      let [lo, hi] = ends.as_slice() else {
+        return None;
+      };
+      Some((vec![lo.clone()], vec![vec![coord_sub(hi, lo)]]))
+    }
+    "Line" if args.len() == 1 => {
+      let points = point_coords(&args[0])?;
+      let [from, to] = points.as_slice() else {
+        return None;
+      };
+      let (from, to) = (point_coords(from)?, point_coords(to)?);
+      if from.len() != to.len() {
+        return None;
+      }
+      let edge = to.iter().zip(&from).map(|(t, f)| coord_sub(t, f)).collect();
+      Some((from, vec![edge]))
+    }
+    "Rectangle" | "Cuboid" => {
+      let (lo, hi) = box_corners(if name == "Rectangle" { 2 } else { 3 })?;
+      let dim = lo.len();
+      let edges = (0..dim)
+        .map(|axis| {
+          (0..dim)
+            .map(|i| {
+              if i == axis {
+                coord_sub(&hi[i], &lo[i])
+              } else {
+                Expr::Integer(0)
+              }
+            })
+            .collect()
+        })
+        .collect();
+      Some((lo, edges))
+    }
+    "Parallelogram" | "Parallelepiped" if args.len() == 2 => {
+      let origin = point_coords(&args[0])?;
+      let Expr::List(vectors) = &args[1] else {
+        return None;
+      };
+      let vectors: Option<Vec<Vec<Expr>>> =
+        vectors.iter().map(point_coords).collect();
+      let vectors = vectors?;
+      vectors
+        .iter()
+        .all(|v| v.len() == origin.len())
+        .then_some((origin, vectors))
+    }
+    _ => None,
+  }
+}
+
+/// The lower and upper end of a one-dimensional region, which is what a disk
+/// or a triangle is swept along to make a cylinder or a prism.
+fn segment_ends(reg: &Expr) -> Option<(Expr, Expr)> {
+  let (origin, vectors) = parallelotope_parts(reg)?;
+  let ([from], [edge]) = (origin.as_slice(), vectors.as_slice()) else {
+    return None;
+  };
+  let [step] = edge.as_slice() else {
+    return None;
+  };
+  Some((from.clone(), coord_sum(vec![from.clone(), step.clone()])))
+}
+
+/// The centre and radius of a disk written with either of its two spellings.
+fn disk_parts(reg: &Expr) -> Option<(Vec<Expr>, Expr)> {
+  let Expr::FunctionCall { name, args } = reg else {
+    return None;
+  };
+  if name != "Disk" {
+    return None;
+  }
+  let centre = match args.first() {
+    Some(p) => point_coords(p)?,
+    None => vec![Expr::Integer(0), Expr::Integer(0)],
+  };
+  if centre.len() != 2 {
+    return None;
+  }
+  let radius = args.get(1).cloned().unwrap_or(Expr::Integer(1));
+  Some((centre, radius))
+}
+
+/// The corners of a triangle, filling in the unit one written bare.
+fn triangle_corners(reg: &Expr) -> Option<Vec<Vec<Expr>>> {
+  let Expr::FunctionCall { name, args } = reg else {
+    return None;
+  };
+  if name != "Triangle" {
+    return None;
+  }
+  let corners = match args.first() {
+    Some(p) => point_coords(p)?,
+    None => {
+      return Some(vec![
+        vec![Expr::Integer(0), Expr::Integer(0)],
+        vec![Expr::Integer(1), Expr::Integer(0)],
+        vec![Expr::Integer(0), Expr::Integer(1)],
+      ]);
+    }
+  };
+  let corners: Option<Vec<Vec<Expr>>> =
+    corners.iter().map(point_coords).collect();
+  corners.filter(|c| c.len() == 3)
+}
+
+/// Coordinates of one space followed by coordinates of the next.
+fn join_coords(a: &[Expr], b: &[Expr]) -> Expr {
+  Expr::List(a.iter().chain(b).cloned().collect())
+}
+
+/// The region an origin and its edge vectors describe, named the way Wolfram
+/// names it: a segment when at most one edge spans it, an axis-aligned box
+/// when the edges run one per axis, and a parallelotope otherwise.
+fn parallelotope_region(origin: &[Expr], vectors: &[Vec<Expr>]) -> Expr {
+  let point = |coords: Vec<Expr>| Expr::List(coords.into());
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  match vectors {
+    [] => call(
+      "Line",
+      vec![Expr::List(
+        vec![point(origin.to_vec()), point(origin.to_vec())].into(),
+      )],
+    ),
+    [edge] => {
+      let far = origin
+        .iter()
+        .zip(edge)
+        .map(|(o, e)| coord_sum(vec![o.clone(), e.clone()]))
+        .collect();
+      call(
+        "Line",
+        vec![Expr::List(vec![point(origin.to_vec()), point(far)].into())],
+      )
+    }
+    _ => {
+      // One edge per axis, each running along that axis alone, is a box; its
+      // corners are the ends of the edges, whichever way round they run.
+      let dim = origin.len();
+      let axis_of = |v: &Vec<Expr>| -> Option<usize> {
+        let mut found = None;
+        for (i, c) in v.iter().enumerate() {
+          if !is_exact_zero(c) {
+            if found.is_some() {
+              return None;
+            }
+            found = Some(i);
+          }
+        }
+        found
+      };
+      let axes: Option<Vec<usize>> = vectors.iter().map(axis_of).collect();
+      let boxed = axes.filter(|axes| {
+        axes.len() == dim && (0..dim).all(|a| axes.contains(&a))
+      });
+      if let Some(axes) = boxed {
+        let mut lo = origin.to_vec();
+        let mut hi = origin.to_vec();
+        for (vector, axis) in vectors.iter().zip(axes) {
+          let end = coord_sum(vec![origin[axis].clone(), vector[axis].clone()]);
+          let backwards = matches!(
+            crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+              name: "Negative".to_string(),
+              args: vec![vector[axis].clone()].into(),
+            }),
+            Ok(Expr::Identifier(ref s)) if s == "True"
+          );
+          if backwards {
+            lo[axis] = end;
+          } else {
+            hi[axis] = end;
+          }
+        }
+        let head = if dim == 2 { "Rectangle" } else { "Cuboid" };
+        return call(head, vec![point(lo), point(hi)]);
+      }
+      call(
+        "Parallelepiped",
+        vec![
+          point(origin.to_vec()),
+          Expr::List(vectors.iter().cloned().map(point).collect()),
+        ],
+      )
+    }
+  }
+}
+
+/// The Cartesian product of two regions, when Wolfram names the result. The
+/// coordinates of the first region come before those of the second.
+fn region_product_pair(a: &Expr, b: &Expr) -> Option<Expr> {
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  // A disk swept along a segment is a cylinder, a triangle swept along one a
+  // prism — neither side of which is a parallelotope.
+  for (disk, segment, disk_first) in [(a, b, true), (b, a, false)].into_iter() {
+    let (Some((centre, radius)), Some((lo, hi))) =
+      (disk_parts(disk), segment_ends(segment))
+    else {
+      continue;
+    };
+    let ends = |z: Expr| {
+      if disk_first {
+        join_coords(&centre, &[z])
+      } else {
+        join_coords(&[z], &centre)
+      }
+    };
+    return Some(call(
+      "Cylinder",
+      vec![Expr::List(vec![ends(lo), ends(hi)].into()), radius],
+    ));
+  }
+  for (triangle, segment, triangle_first) in
+    [(a, b, true), (b, a, false)].into_iter()
+  {
+    let (Some(corners), Some((lo, hi))) =
+      (triangle_corners(triangle), segment_ends(segment))
+    else {
+      continue;
+    };
+    let face = |z: &Expr| -> Vec<Expr> {
+      corners
+        .iter()
+        .map(|corner| {
+          if triangle_first {
+            join_coords(corner, std::slice::from_ref(z))
+          } else {
+            join_coords(std::slice::from_ref(z), corner)
+          }
+        })
+        .collect()
+    };
+    return Some(call(
+      "Prism",
+      vec![Expr::List([face(&lo), face(&hi)].concat().into())],
+    ));
+  }
+  let (origin_a, vectors_a) = parallelotope_parts(a)?;
+  let (origin_b, vectors_b) = parallelotope_parts(b)?;
+  let (dim_a, dim_b) = (origin_a.len(), origin_b.len());
+  let zeros = |n: usize| vec![Expr::Integer(0); n];
+  let vectors: Vec<Vec<Expr>> = vectors_a
+    .iter()
+    .map(|v| [v.clone(), zeros(dim_b)].concat())
+    .chain(vectors_b.iter().map(|v| [zeros(dim_a), v.clone()].concat()))
+    .collect();
+  // A side that has collapsed to nothing — a `Line` whose ends coincide, say —
+  // spans no region Wolfram names.
+  if vectors.iter().any(|v| v.iter().all(is_exact_zero)) {
+    return None;
+  }
+  Some(parallelotope_region(
+    &[origin_a, origin_b].concat(),
+    &vectors,
+  ))
+}
+
+/// `RegionProduct[reg1, reg2, …]` — the Cartesian product of its arguments,
+/// taken two at a time from the left. A product Wolfram does not name is left
+/// standing over whatever has been combined so far.
+fn compute_region_product(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() {
+    crate::emit_message(
+      "RegionProduct::argm: RegionProduct called with 0 arguments; \
+       1 or more arguments are expected.",
+    );
+    return Ok(unevaluated("RegionProduct", args));
+  }
+  for arg in args {
+    let is_region =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "RegionQ".to_string(),
+        args: vec![arg.clone()].into(),
+      });
+    if !matches!(is_region, Ok(Expr::Identifier(ref s)) if s == "True") {
+      crate::emit_message(&format!(
+        "RegionProduct::reg: {} is not a correctly specified region.",
+        expr_to_string(arg)
+      ));
+      return Ok(unevaluated("RegionProduct", args));
+    }
+  }
+  let mut product = args[0].clone();
+  for (i, next) in args.iter().enumerate().skip(1) {
+    match region_product_pair(&product, next) {
+      Some(combined) => product = combined,
+      None => {
+        let rest = [&[product], &args[i..]].concat();
+        return Ok(unevaluated("RegionProduct", &rest));
+      }
+    }
+  }
+  Ok(product)
 }
 
 /// Render coordinates back as integers when the source region used integers,
