@@ -5374,7 +5374,7 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
             .iter()
             .map(|(n, _)| *n)
             .filter(|&n| n != 0)
-            .fold(0i128, |a, b| gcd_i128(a, b));
+            .fold(0i128, gcd_i128);
           if content <= 1 {
             return None;
           }
@@ -8726,7 +8726,7 @@ fn radical_quotient_num_content(num: &Expr, den: &Expr) -> Option<Expr> {
     .iter()
     .map(|(n, _)| *n)
     .filter(|&n| n != 0)
-    .fold(0i128, |a, b| gcd_i128(a, b));
+    .fold(0i128, gcd_i128);
   if content <= 1 {
     return None;
   }

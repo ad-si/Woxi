@@ -4860,7 +4860,7 @@ fn lyapunov_solve_common(
         d = d.checked_neg()?;
       }
       (n, d) = rat_reduce(n, d);
-      Some(Q { n: n, d: d })
+      Some(Q { n, d })
     }
     fn zero() -> Q {
       Q { n: 0, d: 1 }
