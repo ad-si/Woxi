@@ -2,7 +2,7 @@
 use super::*;
 use crate::InterpreterError;
 use crate::syntax::{
-  BinaryOperator, Expr, UnaryOperator, expr_to_string, unevaluated,
+  BinaryOperator, Expr, UnaryOperator, binop, expr_to_string, unevaluated,
 };
 use num_bigint::BigInt;
 
@@ -1064,21 +1064,16 @@ fn struve_half_integer_closed_form(
   z: &Expr,
 ) -> Option<Result<Expr, InterpreterError>> {
   use BinaryOperator as B;
-  let bin = |op, a: Expr, b: Expr| Expr::BinaryOp {
-    op,
-    left: Box::new(a),
-    right: Box::new(b),
-  };
   let call1 = |name: &str, e: Expr| Expr::FunctionCall {
     name: name.to_string(),
     args: vec![e].into(),
   };
   let i = Expr::Integer;
-  let plus = |a, b| bin(B::Plus, a, b);
-  let minus = |a, b| bin(B::Minus, a, b);
-  let times = |a, b| bin(B::Times, a, b);
-  let div = |a, b| bin(B::Divide, a, b);
-  let neg = |a| bin(B::Times, i(-1), a);
+  let plus = |a, b| binop(B::Plus, a, b);
+  let minus = |a, b| binop(B::Minus, a, b);
+  let times = |a, b| binop(B::Times, a, b);
+  let div = |a, b| binop(B::Divide, a, b);
+  let neg = |a| binop(B::Times, i(-1), a);
   let pi = || Expr::Constant("Pi".to_string());
   let sqrt = |e: Expr| call1("Sqrt", e);
   let z = || z.clone();
@@ -1090,7 +1085,7 @@ fn struve_half_integer_closed_form(
   let cz = || call1(if is_l { "Cosh" } else { "Cos" }, z());
   let sz = || call1(if is_l { "Sinh" } else { "Sin" }, z());
   // z^(3/2)
-  let z_32 = || bin(B::Power, z(), make_rational(3, 2));
+  let z_32 = || binop(B::Power, z(), make_rational(3, 2));
 
   let expr = match two_nu {
     1 => {
@@ -1756,11 +1751,7 @@ fn weber_e_integer_closed_form(
     r
   };
   let pi = Expr::Constant("Pi".to_string());
-  let pi_inv = Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(pi),
-    right: Box::new(Expr::Integer(-1)),
-  };
+  let pi_inv = binop(BinaryOperator::Power, pi, Expr::Integer(-1));
 
   // Polynomial terms: c_k * z^(m-2k-1) / Pi with
   //   c_k = (2k)! (m-k)! 2^(m-2k+1) / [ (2(m-k))! k! ].
@@ -1809,44 +1800,24 @@ fn weber_e_integer_closed_form(
 /// AngerJ[ν, 0] closed form: Sin[ν*Pi] / (ν*Pi).
 fn anger_j_at_zero_symbolic(nu: &Expr) -> Expr {
   let pi = Expr::Constant("Pi".to_string());
-  let nu_pi = Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(nu.clone()),
-    right: Box::new(pi.clone()),
-  };
+  let nu_pi = binop(BinaryOperator::Times, nu.clone(), pi.clone());
   let sin_nu_pi = Expr::FunctionCall {
     name: "Sin".to_string(),
     args: vec![nu_pi.clone()].into(),
   };
-  Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(sin_nu_pi),
-    right: Box::new(nu_pi),
-  }
+  binop(BinaryOperator::Divide, sin_nu_pi, nu_pi)
 }
 
 /// WeberE[ν, 0] closed form: (1 - Cos[ν*Pi]) / (ν*Pi).
 fn weber_e_at_zero_symbolic(nu: &Expr) -> Expr {
   let pi = Expr::Constant("Pi".to_string());
-  let nu_pi = Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(nu.clone()),
-    right: Box::new(pi.clone()),
-  };
+  let nu_pi = binop(BinaryOperator::Times, nu.clone(), pi.clone());
   let cos_nu_pi = Expr::FunctionCall {
     name: "Cos".to_string(),
     args: vec![nu_pi.clone()].into(),
   };
-  let one_minus_cos = Expr::BinaryOp {
-    op: BinaryOperator::Minus,
-    left: Box::new(Expr::Integer(1)),
-    right: Box::new(cos_nu_pi),
-  };
-  Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(one_minus_cos),
-    right: Box::new(nu_pi),
-  }
+  let one_minus_cos = binop(BinaryOperator::Minus, Expr::Integer(1), cos_nu_pi);
+  binop(BinaryOperator::Divide, one_minus_cos, nu_pi)
 }
 
 /// Compute WeberE[nu, z] numerically using Gauss-Legendre quadrature.
@@ -2573,16 +2544,10 @@ pub fn appell_f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Symbolic reduction: F1(a, b1, b2; a; x, y) = 1 / ((1-x)^b1 * (1-y)^b2)
   if exprs_structurally_equal(&args[0], &args[3]) {
     let one = Expr::Integer(1);
-    let one_minus_x = Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left: Box::new(one.clone()),
-      right: Box::new(args[4].clone()),
-    };
-    let one_minus_y = Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left: Box::new(one.clone()),
-      right: Box::new(args[5].clone()),
-    };
+    let one_minus_x =
+      binop(BinaryOperator::Minus, one.clone(), args[4].clone());
+    let one_minus_y =
+      binop(BinaryOperator::Minus, one.clone(), args[5].clone());
     let factor_x = Expr::FunctionCall {
       name: "Power".to_string(),
       args: vec![one_minus_x, args[1].clone()].into(),
@@ -2591,16 +2556,8 @@ pub fn appell_f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Power".to_string(),
       args: vec![one_minus_y, args[2].clone()].into(),
     };
-    let denom = Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(factor_x),
-      right: Box::new(factor_y),
-    };
-    let result = Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(one),
-      right: Box::new(denom),
-    };
+    let denom = binop(BinaryOperator::Times, factor_x, factor_y);
+    let result = binop(BinaryOperator::Divide, one, denom);
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
 

@@ -14262,3 +14262,12 @@ pub fn unevaluated(name: &str, args: &[Expr]) -> Expr {
     args: args.to_vec().into(),
   }
 }
+
+/// Helper to build a binary operation expression
+pub fn binop(op: BinaryOperator, a: Expr, b: Expr) -> Expr {
+  Expr::BinaryOp {
+    op: op,
+    left: Box::new(a),
+    right: Box::new(b),
+  }
+}

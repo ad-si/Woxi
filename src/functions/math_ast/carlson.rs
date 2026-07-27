@@ -8,7 +8,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{Expr, unevaluated};
+use crate::syntax::{Expr, binop, unevaluated};
 
 /// True if `e` contains an inexact (machine) number anywhere.
 use crate::functions::math_ast::contains_inexact_real as is_inexact;
@@ -299,14 +299,6 @@ fn is_exact_num(e: &Expr) -> bool {
     || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
 }
 
-fn bin(op: BinaryOperator, a: Expr, b: Expr) -> Expr {
-  Expr::BinaryOp {
-    op,
-    left: Box::new(a),
-    right: Box::new(b),
-  }
-}
-
 fn sqrt_of(x: &Expr) -> Expr {
   make_sqrt(x.clone())
 }
@@ -321,19 +313,19 @@ fn cinf() -> Expr {
 
 /// `1 / Sqrt[x]`.
 fn recip_sqrt(x: &Expr) -> Result<Expr, InterpreterError> {
-  eval_expr(&bin(BinaryOperator::Divide, Expr::Integer(1), sqrt_of(x)))
+  eval_expr(&binop(BinaryOperator::Divide, Expr::Integer(1), sqrt_of(x)))
 }
 
 /// `x^(-3/2)`.
 fn recip_sqrt_cubed(x: &Expr) -> Result<Expr, InterpreterError> {
-  let exp = bin(BinaryOperator::Divide, Expr::Integer(-3), Expr::Integer(2));
-  eval_expr(&bin(BinaryOperator::Power, x.clone(), exp))
+  let exp = binop(BinaryOperator::Divide, Expr::Integer(-3), Expr::Integer(2));
+  eval_expr(&binop(BinaryOperator::Power, x.clone(), exp))
 }
 
 /// `Pi / (2 Sqrt[y])`.
 fn pi_over_2sqrt(y: &Expr) -> Result<Expr, InterpreterError> {
-  let den = bin(BinaryOperator::Times, Expr::Integer(2), sqrt_of(y));
-  eval_expr(&bin(BinaryOperator::Divide, pi(), den))
+  let den = binop(BinaryOperator::Times, Expr::Integer(2), sqrt_of(y));
+  eval_expr(&binop(BinaryOperator::Divide, pi(), den))
 }
 
 fn rc_exact(x: &Expr, y: &Expr) -> Option<Result<Expr, InterpreterError>> {
@@ -433,7 +425,7 @@ fn rg_exact(
   if zeros >= 2 {
     // R_G(0, 0, z) = Sqrt[z]/2.
     let nz = args.iter().copied().find(|e| !is_zero(e)).unwrap();
-    return Some(eval_expr(&bin(
+    return Some(eval_expr(&binop(
       BinaryOperator::Divide,
       sqrt_of(nz),
       Expr::Integer(2),
@@ -444,8 +436,8 @@ fn rg_exact(
       args.iter().copied().filter(|e| !is_zero(e)).collect();
     // R_G(0, y, y) = Pi Sqrt[y]/4.
     if expr_equal(others[0], others[1]) {
-      let num = bin(BinaryOperator::Times, pi(), sqrt_of(others[0]));
-      return Some(eval_expr(&bin(
+      let num = binop(BinaryOperator::Times, pi(), sqrt_of(others[0]));
+      return Some(eval_expr(&binop(
         BinaryOperator::Divide,
         num,
         Expr::Integer(4),

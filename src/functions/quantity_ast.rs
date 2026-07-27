@@ -1,15 +1,7 @@
 use crate::InterpreterError;
 use crate::functions::math_ast::{is_sqrt, make_sqrt, rat_reduce};
-use crate::syntax::{BinaryOperator, Expr, bool_expr, unevaluated};
+use crate::syntax::{BinaryOperator, Expr, binop, bool_expr, unevaluated};
 use std::collections::BTreeMap;
-
-fn binop(op: BinaryOperator, left: Expr, right: Expr) -> Expr {
-  Expr::BinaryOp {
-    op,
-    left: Box::new(left),
-    right: Box::new(right),
-  }
-}
 
 // ─── Unit dimension system ──────────────────────────────────────────────────
 

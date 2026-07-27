@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, expr_to_string, unevaluated};
+use crate::syntax::{BinaryOperator, Expr, binop, expr_to_string, unevaluated};
 
 /// Collect the factors of a product into `out`, descending through nested
 /// `Times` (both spellings) so that factors from separately evaluated parts
@@ -930,18 +930,18 @@ pub fn hypergeometric_pfq_regularized_ast(
   let mut gamma_product = Expr::Integer(1);
   for b_expr in &b_list {
     let gamma_val = gamma_ast(&[b_expr.clone()])?;
-    gamma_product = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(gamma_product),
-      right: Box::new(gamma_val),
-    })?;
+    gamma_product = crate::evaluator::evaluate_expr_to_expr(&binop(
+      BinaryOperator::Times,
+      gamma_product,
+      gamma_val,
+    ))?;
   }
 
-  crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(pfq_result),
-    right: Box::new(gamma_product),
-  })
+  crate::evaluator::evaluate_expr_to_expr(&binop(
+    BinaryOperator::Divide,
+    pfq_result,
+    gamma_product,
+  ))
 }
 
 /// Hypergeometric2F1Regularized[a, b, c, z] = HypergeometricPFQRegularized[{a,b},{c},z]
@@ -1011,11 +1011,7 @@ fn hypergeometric_2f1_regularized_non_positive_c(
         if k == 0 {
           x.clone()
         } else {
-          Expr::BinaryOp {
-            op: BinaryOperator::Plus,
-            left: Box::new(x.clone()),
-            right: Box::new(Expr::Integer(k)),
-          }
+          binop(BinaryOperator::Plus, x.clone(), Expr::Integer(k))
         }
       })
       .collect();
@@ -1042,23 +1038,11 @@ fn hypergeometric_2f1_regularized_non_positive_c(
   };
 
   // z^{m+1}
-  let z_pow = Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(z.clone()),
-    right: Box::new(Expr::Integer(shift)),
-  };
+  let z_pow = binop(BinaryOperator::Power, z.clone(), Expr::Integer(shift));
 
   // 2F1(a + m + 1, b + m + 1; m + 2; z)
-  let inner_a = Expr::BinaryOp {
-    op: BinaryOperator::Plus,
-    left: Box::new(a.clone()),
-    right: Box::new(Expr::Integer(shift)),
-  };
-  let inner_b = Expr::BinaryOp {
-    op: BinaryOperator::Plus,
-    left: Box::new(b.clone()),
-    right: Box::new(Expr::Integer(shift)),
-  };
+  let inner_a = binop(BinaryOperator::Plus, a.clone(), Expr::Integer(shift));
+  let inner_b = binop(BinaryOperator::Plus, b.clone(), Expr::Integer(shift));
   let inner_c = Expr::Integer(shift + 1);
   let inner_2f1 = Expr::FunctionCall {
     name: "Hypergeometric2F1".to_string(),
@@ -1134,16 +1118,12 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Kummer identity: 1F1[1/2, 1, z] = E^(z/2) * BesselI[0, z/2].
   if is_half(&args[0]) && matches!(&args[1], Expr::Integer(1)) {
     let z = &args[2];
-    let half_z = Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(z.clone()),
-      right: Box::new(Expr::Integer(2)),
-    };
-    let exp_part = Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(Expr::Constant("E".to_string())),
-      right: Box::new(half_z.clone()),
-    };
+    let half_z = binop(BinaryOperator::Divide, z.clone(), Expr::Integer(2));
+    let exp_part = binop(
+      BinaryOperator::Power,
+      Expr::Constant("E".to_string()),
+      half_z.clone(),
+    );
     let bessel = Expr::FunctionCall {
       name: "BesselI".to_string(),
       args: vec![Expr::Integer(0), half_z].into(),
@@ -1162,11 +1142,11 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && !matches!(&args[2], Expr::Real(_) | Expr::BigFloat(_, _))
   {
     let z = &args[2];
-    let exp_z = Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(Expr::Constant("E".to_string())),
-      right: Box::new(z.clone()),
-    };
+    let exp_z = binop(
+      BinaryOperator::Power,
+      Expr::Constant("E".to_string()),
+      z.clone(),
+    );
     let sqrt_pi = Expr::FunctionCall {
       name: "Sqrt".to_string(),
       args: vec![Expr::Constant("Pi".to_string())].into(),
@@ -1347,20 +1327,12 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Plus".to_string(),
       args: vec![Expr::Integer(b_int), z.clone()].into(),
     };
-    let ratio = Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(plus),
-      right: Box::new(Expr::Integer(b_int)),
-    };
+    let ratio = binop(BinaryOperator::Divide, plus, Expr::Integer(b_int));
     let exp_z = Expr::FunctionCall {
       name: "Power".to_string(),
       args: vec![Expr::Identifier("E".to_string()), z.clone()].into(),
     };
-    let prod = Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(ratio),
-      right: Box::new(exp_z),
-    };
+    let prod = binop(BinaryOperator::Times, ratio, exp_z);
     return crate::evaluator::evaluate_expr_to_expr(&prod);
   }
 
@@ -1408,9 +1380,9 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let n_idx = (a - 1 + k) as usize;
       let scale_pow = (max_pow - 1 - n_idx as i128) as u32;
       let scale = z.pow(scale_pow);
-      let bin = crate::functions::binomial_coeff_big(b - a - 1, k);
+      let binom = crate::functions::binomial_coeff_big(b - a - 1, k);
       let sign: i128 = if k.rem_euclid(2) == 0 { 1 } else { -1 };
-      let coeff = BigInt::from(sign) * &bin;
+      let coeff = BigInt::from(sign) * &binom;
       e_num += &coeff * &scale * &p_vec[n_idx];
       const_num += &coeff * &scale * &q_vec[n_idx];
     }
