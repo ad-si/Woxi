@@ -28,3 +28,10 @@ $ wo 'ExportString[<|"a" -> Pi|>, "JSON"]'
 Export::jsonstrictencoding: Expression Pi cannot be exported as JSON.
 $Failed
 ```
+
+Symbolic XML is written back out as markup:
+
+```scrut
+$ wo 'ExportString[XMLElement["a", {"x" -> "1"}, {"t"}], "XML"]'
+<a x="1">t</a>
+```

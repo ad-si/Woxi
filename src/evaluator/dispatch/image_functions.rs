@@ -250,6 +250,112 @@ fn import_virtual(
 /// to atoms. A JSON object becomes a list of `key -> value` rules for the
 /// "JSON" format, or an `Association` for "RawJSON" (`raw == true`); both keep
 /// the source key order.
+/// The number literals of a JSON document, in the order they are written.
+/// String contents are skipped, so a digit inside a string is not a token.
+fn json_number_tokens(text: &str) -> Vec<String> {
+  let bytes: Vec<char> = text.chars().collect();
+  let mut tokens = Vec::new();
+  let mut i = 0;
+  while i < bytes.len() {
+    let c = bytes[i];
+    if c == '"' {
+      i += 1;
+      while i < bytes.len() && bytes[i] != '"' {
+        i += if bytes[i] == '\\' { 2 } else { 1 };
+      }
+      i += 1;
+      continue;
+    }
+    let starts_number = c.is_ascii_digit()
+      || (c == '-' && bytes.get(i + 1).is_some_and(|n| n.is_ascii_digit()));
+    if starts_number {
+      let start = i;
+      i += 1;
+      while i < bytes.len()
+        && (bytes[i].is_ascii_digit()
+          || matches!(bytes[i], '.' | 'e' | 'E')
+          || (matches!(bytes[i], '+' | '-')
+            && matches!(bytes[i - 1], 'e' | 'E')))
+      {
+        i += 1;
+      }
+      tokens.push(bytes[start..i].iter().collect());
+      continue;
+    }
+    i += 1;
+  }
+  tokens
+}
+
+/// The exact value of a JSON number literal that carries no decimal point:
+/// wolframscript reads `1e3` as the integer 1000 and `1e-3` as the rational
+/// 1/1000. A literal with a decimal point stays an approximate real.
+fn exact_json_number(token: &str) -> Option<Expr> {
+  if token.contains('.') {
+    return None;
+  }
+  let (mantissa, exponent) = match token.split_once(['e', 'E']) {
+    Some((m, e)) => (m, e.parse::<i32>().ok()?),
+    None => (token, 0),
+  };
+  let value: i128 = mantissa.parse().ok()?;
+  if exponent >= 0 {
+    let scale = 10i128.checked_pow(exponent as u32)?;
+    return Some(Expr::Integer(value.checked_mul(scale)?));
+  }
+  let scale = 10i128.checked_pow(exponent.unsigned_abs())?;
+  Some(crate::functions::math_ast::make_rational(value, scale))
+}
+
+/// Replace the approximate numbers that came from exponent-notation literals
+/// with their exact values, walking the tree in the order the literals appear.
+/// Anything unexpected (a token that does not match the parsed value) leaves
+/// the whole document as serde read it.
+fn exact_json_numbers(
+  expr: &Expr,
+  tokens: &[String],
+  index: &mut usize,
+) -> Option<Expr> {
+  match expr {
+    Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_) => {
+      let token = tokens.get(*index)?;
+      *index += 1;
+      let parsed: f64 = token.parse().ok()?;
+      let current = match expr {
+        Expr::Integer(i) => *i as f64,
+        Expr::Real(f) => *f,
+        _ => parsed,
+      };
+      if (parsed - current).abs() > f64::EPSILON * parsed.abs().max(1.0) {
+        return None;
+      }
+      Some(exact_json_number(token).unwrap_or_else(|| expr.clone()))
+    }
+    Expr::List(items) => {
+      let mut out = Vec::with_capacity(items.len());
+      for item in items.iter() {
+        out.push(exact_json_numbers(item, tokens, index)?);
+      }
+      Some(Expr::List(out.into()))
+    }
+    Expr::Association(pairs) => {
+      let mut out = Vec::with_capacity(pairs.len());
+      for (k, v) in pairs.iter() {
+        out.push((k.clone(), exact_json_numbers(v, tokens, index)?));
+      }
+      Some(Expr::Association(out))
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Some(Expr::Rule {
+      pattern: pattern.clone(),
+      replacement: Box::new(exact_json_numbers(replacement, tokens, index)?),
+    }),
+    other => Some(other.clone()),
+  }
+}
+
 fn json_value_to_expr(value: &serde_json::Value, raw: bool) -> Expr {
   use serde_json::Value;
   match value {
@@ -738,6 +844,36 @@ pub fn dispatch_image_functions(
           "root" => {
             return Some(crate::functions::root_ast::root_import_file(&path));
           }
+          // An XML document reads into the same symbolic form ImportString
+          // gives.
+          "xml" => {
+            return Some(
+              std::fs::read_to_string(&path)
+                .map_err(|e| {
+                  InterpreterError::EvaluationError(format!(
+                    "Import: cannot open \"{path}\": {e}"
+                  ))
+                })
+                .map(|content| {
+                  match crate::functions::xml_ast::parse_xml_document(&content)
+                  {
+                    Ok(document) => document,
+                    Err(error) => {
+                      let (line, character) =
+                        crate::functions::xml_ast::line_and_character(
+                          &content,
+                          error.offset,
+                        );
+                      crate::emit_message(&format!(
+                        "Import::nfprserr: invalid document structure at \
+                         line: {line} character: {character} in input string."
+                      ));
+                      Expr::Identifier("$Failed".to_string())
+                    }
+                  }
+                }),
+            );
+          }
           "wav" | "wave" | "flac" | "mp3" | "ogg" | "oga" | "opus" | "m4a"
           | "aac" | "aif" | "aiff" => {
             return Some(crate::functions::audio_ast::import_audio_file(&path));
@@ -1040,7 +1176,29 @@ pub fn dispatch_image_functions(
       // Fall through for unsupported formats
       return Some(Ok(unevaluated("Import", args)));
     }
-    "ImportString" if !args.is_empty() && args.len() <= 2 => {
+    "ImportString" if !args.is_empty() => {
+      // Trailing rules are options; anything else past the format is an
+      // argument-count error, as wolframscript reports.
+      let (positional, options): (Vec<&Expr>, Vec<&Expr>) =
+        args.iter().partition(|a| {
+          !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+        });
+      if positional.len() > 2 {
+        crate::emit_message(&format!(
+          "ImportString::argt: ImportString called with {} arguments; 1 or 2 \
+           arguments are expected.",
+          args.len()
+        ));
+        return Some(Ok(unevaluated("ImportString", args)));
+      }
+      // `"Numeric" -> False` keeps the fields of a tabular format as strings.
+      let numeric = !options.iter().any(|o| {
+        matches!(o, Expr::Rule { pattern, replacement }
+          if matches!(pattern.as_ref(), Expr::String(s) if s == "Numeric")
+            && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "False"))
+      });
+      let args: Vec<Expr> = positional.iter().map(|a| (*a).clone()).collect();
+      let args = &args[..];
       let content = match &args[0] {
         Expr::String(s) => s.clone(),
         _ => {
@@ -1066,6 +1224,10 @@ pub fn dispatch_image_functions(
       } else {
         "CSV"
       };
+
+      // `"Numeric" -> False` keeps every field as the string it was written
+      // as, which is exactly the RawData element.
+      let table_element = if numeric { None } else { Some("RawData") };
 
       // Plain-text format elements that don't depend on a parser.
       // `Elements` returns the static list of supported plain-text
@@ -1099,15 +1261,85 @@ pub fn dispatch_image_functions(
       if format == "String" || format == "Plaintext" || format == "Text" {
         return Some(Ok(Expr::String(content)));
       }
+      // `List` reads one field per line, typed like a CSV field: a number
+      // becomes a number, a quoted string loses its quotes, anything else
+      // stays the text of the line.
+      if format == "List" {
+        let trimmed = content.strip_suffix('\n').unwrap_or(&content);
+        let rows: Vec<Vec<String>> = if trimmed.is_empty() {
+          Vec::new()
+        } else {
+          trimmed
+            .split('\n')
+            .map(|line| {
+              // A quoted line loses its quotes, as a quoted CSV field does.
+              let field = match line
+                .strip_prefix('"')
+                .and_then(|r| r.strip_suffix('"'))
+              {
+                Some(inner) if line.len() >= 2 => inner.replace("\"\"", "\""),
+                _ => line.to_string(),
+              };
+              vec![field]
+            })
+            .collect()
+        };
+        let table =
+          crate::functions::csv_ast::csv_import_element(&rows, table_element);
+        return Some(Ok(match &table {
+          Expr::List(items) => Expr::List(
+            items
+              .iter()
+              .map(|row| match row {
+                Expr::List(fields) if fields.len() == 1 => fields[0].clone(),
+                other => other.clone(),
+              })
+              .collect(),
+          ),
+          other => other.clone(),
+        }));
+      }
+      // `XML` parses the document into wolframscript's symbolic XML.
+      if format == "XML" {
+        return Some(Ok(
+          match crate::functions::xml_ast::parse_xml_document(&content) {
+            Ok(document) => document,
+            Err(error) => {
+              let (line, character) =
+                crate::functions::xml_ast::line_and_character(
+                  &content,
+                  error.offset,
+                );
+              crate::emit_message(&format!(
+                "Import::nfprserr: invalid document structure at line: \
+                 {line} character: {character} in input string."
+              ));
+              Expr::Identifier("$Failed".to_string())
+            }
+          },
+        ));
+      }
       // `JSON` parses the string into nested lists: a JSON array becomes a
       // List, a JSON object becomes a list of `key -> value` rules (string
       // keys, insertion order preserved), and scalars/true/false/null map to
       // the corresponding atoms. Invalid JSON yields $Failed.
       if format == "JSON" || format == "RawJSON" {
+        if content.trim().is_empty() {
+          crate::emit_message("Import::jsonnullinput: Data in input is null.");
+          return Some(Ok(Expr::Identifier("$Failed".to_string())));
+        }
         let raw = format == "RawJSON";
         return Some(Ok(
           match serde_json::from_str::<serde_json::Value>(&content) {
-            Ok(value) => json_value_to_expr(&value, raw),
+            Ok(value) => {
+              let parsed = json_value_to_expr(&value, raw);
+              let tokens = json_number_tokens(&content);
+              let mut index = 0;
+              match exact_json_numbers(&parsed, &tokens, &mut index) {
+                Some(exact) if index == tokens.len() => exact,
+                _ => parsed,
+              }
+            }
             Err(_) => Expr::Identifier("$Failed".to_string()),
           },
         ));
@@ -1116,6 +1348,13 @@ pub fn dispatch_image_functions(
       // whitespace. Both reuse the CSV element machinery (number auto-typing,
       // {{…}, …} shape) after splitting into string rows.
       if format == "TSV" || format == "Table" {
+        // An empty TSV document has no rows to read at all.
+        if format == "TSV" && content.is_empty() {
+          crate::emit_message(
+            "Import::fmterr: Cannot import data as TSV format.",
+          );
+          return Some(Ok(Expr::Identifier("$Failed".to_string())));
+        }
         let trimmed = content.strip_suffix('\n').unwrap_or(&content);
         let rows: Vec<Vec<String>> = if trimmed.is_empty() {
           Vec::new()
@@ -1132,7 +1371,8 @@ pub fn dispatch_image_functions(
             .collect()
         };
         return Some(Ok(crate::functions::csv_ast::csv_import_element(
-          &rows, None,
+          &rows,
+          table_element,
         )));
       }
       // `Words` splits on ASCII whitespace and drops empty fragments.
@@ -1148,9 +1388,16 @@ pub fn dispatch_image_functions(
         return Some(Ok(unevaluated("ImportString", args)));
       }
 
+      if content.is_empty() {
+        crate::emit_message(
+          "Import::fmterr: Cannot import data as CSV format.",
+        );
+        return Some(Ok(Expr::Identifier("$Failed".to_string())));
+      }
       let rows = crate::functions::csv_ast::parse_csv(&content);
       return Some(Ok(crate::functions::csv_ast::csv_import_element(
-        &rows, None,
+        &rows,
+        table_element,
       )));
     }
     _ => {}

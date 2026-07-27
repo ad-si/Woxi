@@ -700,7 +700,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Implies" => Some((2, 2)),
     "Indexed" => Some((2, 2)),
     "Import" => Some((1, 2)),
-    "ImportString" => Some((1, 2)),
+    // Beyond the format come options, which the handler checks itself.
+    "ImportString" => Some((1, usize::MAX)),
     "IncidenceGraph" => Some((1, 2)),
     "KirchhoffGraph" => Some((1, usize::MAX)),
     "InexactNumberQ" => Some((1, 1)),

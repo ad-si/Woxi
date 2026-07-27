@@ -7686,3 +7686,189 @@ mod json_limits_and_url_build {
     );
   }
 }
+
+mod xml_import {
+  use super::*;
+
+  #[test]
+  fn a_document_reads_into_symbolic_xml() {
+    clear_state();
+    for (code, expected) in [
+      (
+        r#"ToString[ImportString["<a><b>1</b></a>", "XML"], InputForm]"#,
+        r#"XMLObject["Document"][{}, XMLElement["a", {}, {XMLElement["b", {}, {"1"}]}], {}]"#,
+      ),
+      (
+        r#"ToString[ImportString["<a x=\"1\">t</a>", "XML"], InputForm]"#,
+        r#"XMLObject["Document"][{}, XMLElement["a", {"x" -> "1"}, {"t"}], {}]"#,
+      ),
+      (
+        r#"ToString[ImportString["<a></a>", "XML"], InputForm]"#,
+        r#"XMLObject["Document"][{}, XMLElement["a", {}, {}], {}]"#,
+      ),
+      // Mixed content keeps its order.
+      (
+        r#"ToString[ImportString["<a>x<b/>y</a>", "XML"], InputForm]"#,
+        r#"XMLObject["Document"][{}, XMLElement["a", {}, {"x", XMLElement["b", {}, {}], "y"}], {}]"#,
+      ),
+      // A comment carries no content, and whitespace between elements is
+      // layout rather than text.
+      (
+        r#"ToString[ImportString["<a><!-- c --><b/></a>", "XML"], InputForm]"#,
+        r#"XMLObject["Document"][{}, XMLElement["a", {}, {XMLElement["b", {}, {}]}], {}]"#,
+      ),
+      (
+        r#"ToString[ImportString["<a>\n  <b>1</b>\n</a>", "XML"], InputForm]"#,
+        r#"XMLObject["Document"][{}, XMLElement["a", {}, {XMLElement["b", {}, {"1"}]}], {}]"#,
+      ),
+      // The declaration becomes the document prolog.
+      (
+        r#"ToString[ImportString["<?xml version=\"1.0\"?><a/>", "XML"], InputForm]"#,
+        r#"XMLObject["Document"][{XMLObject["Declaration"]["Version" -> "1.0"]}, XMLElement["a", {}, {}], {}]"#,
+      ),
+      // Entities are decoded.
+      (
+        r#"ToString[ImportString["<a>&amp;&lt;</a>", "XML"], InputForm]"#,
+        r#"XMLObject["Document"][{}, XMLElement["a", {}, {"&<"}], {}]"#,
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn a_malformed_document_fails_with_a_message() {
+    clear_state();
+    let result =
+      interpret_with_stdout(r#"ImportString["not xml", "XML"]"#).unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert!(
+      result.warnings.iter().any(|m| m.starts_with(
+        "Import::nfprserr: invalid document structure at line: 1 character: 1"
+      )),
+      "expected an nfprserr message, got {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
+  fn symbolic_xml_exports_back_to_markup() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"ExportString[XMLElement["a", {}, {"1"}], "XML"]"#).unwrap(),
+      "<a>1</a>"
+    );
+    // A round trip keeps the attributes and re-escapes the entities.
+    assert_eq!(
+      interpret(
+        r#"ExportString[ImportString["<a x=\"1\">t&amp;</a>", "XML"], "XML"]"#
+      )
+      .unwrap(),
+      "<a x=\"1\">t&amp;</a>"
+    );
+  }
+}
+
+mod import_string_formats {
+  use super::*;
+
+  #[test]
+  fn the_list_format_types_one_field_per_line() {
+    clear_state();
+    for (code, expected) in [
+      (
+        r#"ToString[ImportString["1\n2", "List"], InputForm]"#,
+        "{1, 2}",
+      ),
+      (
+        r#"ToString[ImportString["a\nb", "List"], InputForm]"#,
+        r#"{"a", "b"}"#,
+      ),
+      // Only a whole quoted line loses its quotes; anything else stays text.
+      (
+        r#"ToString[ImportString["\"x\"\n2", "List"], InputForm]"#,
+        r#"{"x", 2}"#,
+      ),
+      (
+        r#"ToString[ImportString["1 + 1\n2", "List"], InputForm]"#,
+        r#"{"1 + 1", 2}"#,
+      ),
+      (r#"ToString[ImportString["", "List"], InputForm]"#, "{}"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn an_empty_document_fails_for_the_formats_that_need_rows() {
+    clear_state();
+    for code in [
+      r#"ImportString["", "CSV"]"#,
+      r#"ImportString["", "TSV"]"#,
+      r#"ImportString["", "JSON"]"#,
+    ] {
+      assert_eq!(interpret(code).unwrap(), "$Failed", "{code}");
+    }
+    // Table and List simply have no rows.
+    assert_eq!(interpret(r#"ImportString["", "Table"]"#).unwrap(), "{}");
+  }
+
+  #[test]
+  fn trailing_rules_are_options_and_anything_else_is_an_error() {
+    clear_state();
+    // An option Woxi does not act on still leaves the import working.
+    assert_eq!(
+      interpret(
+        r#"ToString[ImportString["a,b\n1,2", "CSV", "HeaderLines" -> 1], InputForm]"#
+      )
+      .unwrap(),
+      r#"{{"a", "b"}, {1, 2}}"#
+    );
+    // "Numeric" -> False keeps every field as the string it was written as.
+    assert_eq!(
+      interpret(
+        r#"ToString[ImportString["a,b\n1,2", "CSV", "Numeric" -> False], InputForm]"#
+      )
+      .unwrap(),
+      r#"{{"a", "b"}, {"1", "2"}}"#
+    );
+    let result =
+      interpret_with_stdout(r#"ImportString["a", "CSV", "Plaintext"]"#)
+        .unwrap();
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|m| m.starts_with("ImportString::argt")),
+      "expected an argt message, got {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
+  fn a_json_number_without_a_decimal_point_stays_exact() {
+    clear_state();
+    for (code, expected) in [
+      // 1e3 is the integer 1000, 1e-3 the rational 1/1000.
+      (
+        r#"ToString[ImportString["{\"a\": 1e3}", "JSON"], InputForm]"#,
+        r#"{"a" -> 1000}"#,
+      ),
+      (
+        r#"ToString[ImportString["{\"a\": 1e-3}", "JSON"], InputForm]"#,
+        r#"{"a" -> 1/1000}"#,
+      ),
+      // A decimal point makes it approximate.
+      (
+        r#"ToString[ImportString["{\"a\": 1.5e3}", "JSON"], InputForm]"#,
+        r#"{"a" -> 1500.}"#,
+      ),
+      (
+        r#"ToString[ImportString["{\"a\": 12345678901234567890}", "JSON"], InputForm]"#,
+        r#"{"a" -> 12345678901234567890}"#,
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+}

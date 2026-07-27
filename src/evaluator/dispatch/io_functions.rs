@@ -854,6 +854,16 @@ pub fn dispatch_io_functions(
 
       let bytes: Vec<u8> = match fmt.as_str() {
         "CSV" => export_string_csv(data, ',', true, true).into_bytes(),
+        // Symbolic XML (an XMLElement or a whole XMLObject document) is
+        // written back out as markup.
+        "XML" => match crate::functions::xml_ast::xml_to_string(data) {
+          Some(text) => text.into_bytes(),
+          None => {
+            return Some(Err(InterpreterError::EvaluationError(
+              "Export: value is not symbolic XML".into(),
+            )));
+          }
+        },
         "TSV" => export_string_csv(data, '\t', true, true).into_bytes(),
         "JSON" | "RAWJSON" => match export_string_json(data, 0, false) {
           Some(mut json) => {
@@ -1013,6 +1023,15 @@ pub fn dispatch_io_functions(
         return Some(Ok(Expr::String(export_string_csv(
           &args[0], sep, true, true,
         ))));
+      }
+      // Symbolic XML is written back out as markup.
+      if format_str == "XML" {
+        return Some(Ok(
+          match crate::functions::xml_ast::xml_to_string(&args[0]) {
+            Some(text) => Expr::String(text),
+            None => Expr::Identifier("$Failed".to_string()),
+          },
+        ));
       }
       // "Table" is tab-separated like TSV but leaves strings unquoted and
       // emits no trailing newline.
