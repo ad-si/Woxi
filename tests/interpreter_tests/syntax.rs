@@ -9608,3 +9608,76 @@ mod comparison_structural_ops {
     assert_eq!(interpret("Part[a < b <= c, 0]").unwrap(), "Inequality");
   }
 }
+
+/// `//`, `/.` and `//.` all bind looser than `->`, so a rule written as an
+/// argument or a list item can be handed to a postfix function or replaced
+/// in. Woxi's grammar used to end an argument at the rule, and the whole
+/// input then failed to parse.
+mod rule_argument_suffixes {
+  use super::*;
+
+  #[test]
+  fn a_rule_argument_takes_a_postfix_function() {
+    clear_state();
+    for (code, expected) in [
+      ("f[a -> 5 // Head]", "f[Rule]"),
+      ("{a -> 5 // Head}", "{Rule}"),
+      ("f[a :> 5 // Head]", "f[RuleDelayed]"),
+      ("f[a -> 5 // Head, b -> 6 // Head]", "f[Rule, Rule]"),
+      ("{{a -> 5 // Head}}", "{{Rule}}"),
+      ("f[g[a -> 5 // Head]]", "f[g[Rule]]"),
+      // Chained postfixes still work.
+      ("{a -> 5 // Head // Head}", "{Symbol}"),
+      // and a plain rule argument is unchanged.
+      ("f[a -> 5]", "f[a -> 5]"),
+    ] {
+      assert_eq!(
+        interpret(&format!("ToString[{code}, InputForm]")).unwrap(),
+        expected,
+        "{code}"
+      );
+    }
+  }
+
+  #[test]
+  fn a_rule_argument_takes_a_replacement() {
+    clear_state();
+    for (code, expected) in [
+      ("f[a -> 5 /. 5 -> 6]", "f[a -> 6]"),
+      ("{a -> 5 /. 5 -> 6}", "{a -> 6}"),
+      ("f[a -> 5 //. 5 -> 6]", "f[a -> 6]"),
+      ("f[a -> 5 /. {5 -> 6}]", "f[a -> 6]"),
+    ] {
+      assert_eq!(
+        interpret(&format!("ToString[{code}, InputForm]")).unwrap(),
+        expected,
+        "{code}"
+      );
+    }
+  }
+}
+
+/// A rule answers to a head replacement the way any other expression does.
+mod rule_head_replacement {
+  use super::*;
+
+  #[test]
+  fn the_head_of_a_rule_can_be_replaced() {
+    clear_state();
+    for (code, expected) in [
+      ("(1 -> 2) /. Rule -> List", "{1, 2}"),
+      ("{1 -> 2} /. Rule -> List", "{{1, 2}}"),
+      ("{a -> 1} /. Rule -> ff", "{ff[a, 1]}"),
+      ("(1 :> 2) /. RuleDelayed -> List", "{1, 2}"),
+      // Replacing something else inside a rule still works.
+      ("{a -> 1} /. a -> b", "{b -> 1}"),
+      ("(a -> b) /. b -> c", "a -> c"),
+    ] {
+      assert_eq!(
+        interpret(&format!("ToString[{code}, InputForm]")).unwrap(),
+        expected,
+        "{code}"
+      );
+    }
+  }
+}

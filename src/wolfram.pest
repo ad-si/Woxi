@@ -650,7 +650,10 @@ List = { "{" ~ (ListItem ~ ("," ~ ListItem)*)? ~ "}" }
 // nesting depth. This avoids exponential backtracking for deeply nested lists by
 // skipping the ReplacementRule attempt when no rule operator exists.
 RuleAnonSuffix = { "&" ~ !"&" }
-ListItemRule = { ReplacementRule ~ RuleAnonSuffix? }
+ListItemRule = { ReplacementRule ~ RuleAnonSuffix? ~ RuleReplaceSuffix* ~ ("//" ~ PostfixFunction)* }
+// `/.` and `//.` bind looser than `->`, so a rule written as an argument may
+// itself be replaced in: `f[a -> 5 /. 5 -> 6]` is `f[(a -> 5) /. (5 -> 6)]`.
+RuleReplaceSuffix = { ("//." | "/.") ~ (&HasRuleOperator ~ ReplacementRule | List | ConditionExpr) }
 // Scan forward looking for -> or :> at the current nesting depth
 NestedContent = _{ (
     "<|" ~ NestedContent ~ "|>"
@@ -713,7 +716,9 @@ AssociationExtended = { Association ~ (PartIndexSuffix | AssociationCallSuffix) 
 // FunctionArg: ReplacementRule (with optional & suffix), CompoundExpression, or Expression
 // Merged RuleAnonymousFunction with ReplacementRule to reduce backtracking.
 // Uses HasRuleOperator lookahead to skip rule parsing when no rule operator exists.
-FunctionArgRule = { ReplacementRule ~ RuleAnonSuffix? }
+// A rule may be handed to a postfix function: `f[a -> 5 // Head]` is
+// `f[Head[a -> 5]]`, since `//` binds looser than `->`.
+FunctionArgRule = { ReplacementRule ~ RuleAnonSuffix? ~ RuleReplaceSuffix* ~ ("//" ~ PostfixFunction)* }
 FunctionArg = _{ &HasRuleOperator ~ FunctionArgRule | &HasSemicolon ~ CompoundExpression | &HasSpanSep ~ SpanExpr | Expression }
 // BracketArgs groups arguments within a single bracket pair, allowing proper chained call parsing
 BracketArgs = { "[" ~ (FunctionArg ~ ("," ~ FunctionArg)*)? ~ "]" }

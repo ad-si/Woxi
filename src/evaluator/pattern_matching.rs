@@ -265,6 +265,34 @@ fn rebuild_call_with_head(head: Expr, args: Vec<Expr>) -> Expr {
   }
 }
 
+/// Rebuild a rule under a new head, with its two parts replaced through as
+/// well. `Rule -> List` turns `1 -> 2` into `{1, 2}`, `Rule -> f` into
+/// `f[1, 2]`.
+fn rule_with_new_head(
+  parts: &[Expr],
+  pattern_sym: &str,
+  replacement: &Expr,
+) -> Expr {
+  let new_parts: Vec<Expr> = parts
+    .iter()
+    .map(|p| {
+      try_symbol_replace_all(p, pattern_sym, replacement)
+        .unwrap_or_else(|| p.clone())
+    })
+    .collect();
+  match replacement {
+    Expr::Identifier(head) if head == "List" => Expr::List(new_parts.into()),
+    Expr::Identifier(head) => Expr::FunctionCall {
+      name: head.clone(),
+      args: new_parts.into(),
+    },
+    other => Expr::CurriedCall {
+      func: Box::new(other.clone()),
+      args: new_parts,
+    },
+  }
+}
+
 /// Multi-rule variant of head replacement: run the rules against a compound's
 /// head symbol and return the rewritten head, or `None` when no rule matched
 /// it. Literal `head -> x` rules are handled by the per-arm head loops that
@@ -1851,6 +1879,15 @@ fn try_symbol_replace_all(
       pattern: pat,
       replacement: repl,
     } => {
+      // A rule's own head answers to a head replacement, the way a
+      // FunctionCall's does: `(1 -> 2) /. Rule -> List` is `{1, 2}`.
+      if pattern_sym == "Rule" {
+        return Some(rule_with_new_head(
+          &[pat.as_ref().clone(), repl.as_ref().clone()],
+          pattern_sym,
+          replacement,
+        ));
+      }
       let new_pat = try_symbol_replace_all(pat, pattern_sym, replacement);
       let new_repl = try_symbol_replace_all(repl, pattern_sym, replacement);
       if new_pat.is_some() || new_repl.is_some() {
@@ -1870,6 +1907,13 @@ fn try_symbol_replace_all(
       pattern: pat,
       replacement: repl,
     } => {
+      if pattern_sym == "RuleDelayed" {
+        return Some(rule_with_new_head(
+          &[pat.as_ref().clone(), repl.as_ref().clone()],
+          pattern_sym,
+          replacement,
+        ));
+      }
       let new_pat = try_symbol_replace_all(pat, pattern_sym, replacement);
       let new_repl = try_symbol_replace_all(repl, pattern_sym, replacement);
       if new_pat.is_some() || new_repl.is_some() {

@@ -2765,19 +2765,48 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       }
     }
     Rule::ListItemRule | Rule::FunctionArgRule => {
-      // Combined ReplacementRule + optional anonymous function suffix (&)
+      // Combined ReplacementRule + optional anonymous function suffix (&),
+      // then any postfix applications: `f[a -> 5 // Head]` hands the whole
+      // rule to Head, because `//` binds looser than `->`.
       let inner_pairs: Vec<_> = pair.into_inner().collect();
       let rule_expr = pair_to_expr(inner_pairs[0].clone());
       let has_anon = inner_pairs
         .iter()
         .any(|p| matches!(p.as_rule(), Rule::RuleAnonSuffix));
-      if has_anon {
+      let mut result = if has_anon {
         Expr::Function {
           body: Box::new(rule_expr),
         }
       } else {
         rule_expr
+      };
+      for p in inner_pairs.iter() {
+        match p.as_rule() {
+          Rule::RuleReplaceSuffix => {
+            let repeated = p.as_str().trim_start().starts_with("//.");
+            let rules = pair_to_expr(p.clone().into_inner().next().unwrap());
+            result = if repeated {
+              Expr::ReplaceRepeated {
+                expr: Box::new(result),
+                rules: Box::new(rules),
+              }
+            } else {
+              Expr::ReplaceAll {
+                expr: Box::new(result),
+                rules: Box::new(rules),
+              }
+            };
+          }
+          Rule::PostfixFunction => {
+            result = Expr::Postfix {
+              expr: Box::new(result),
+              func: Box::new(parse_postfix_function(p.clone())),
+            };
+          }
+          _ => {}
+        }
       }
+      result
     }
     Rule::PartExtract => {
       let mut inner = pair.into_inner();
