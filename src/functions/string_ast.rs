@@ -4356,6 +4356,42 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::String(joined));
   }
 
+  // Quantity[m, unit] — the two string conversions spell the unit out
+  // ("3 meters") or abbreviate it ("3 m"); the script-mode echo keeps the
+  // `Quantity[3, Meters]` wrapper, so only this path renders words.
+  if let Expr::FunctionCall {
+    name,
+    args: inner_args,
+  } = &args[0]
+    && name == "Quantity"
+    && !is_input_form
+    && !is_tex_form
+    && let Some(rendered) = quantity_to_text(inner_args, false)
+  {
+    return Ok(Expr::String(rendered));
+  }
+
+  // A list holding a quantity renders element-wise, so the units inside it
+  // are spelled out too: `{1 meter, 2 feet}`.
+  if let Expr::List(items) = &args[0]
+    && !is_input_form
+    && !is_tex_form
+    && items.iter().any(contains_quantity)
+  {
+    let parts: Vec<String> = items
+      .iter()
+      .map(|e| {
+        let mut recursed = args.to_vec();
+        recursed[0] = e.clone();
+        match to_string_ast(&recursed) {
+          Ok(Expr::String(ref s)) => s.clone(),
+          _ => to_string_default_form(e),
+        }
+      })
+      .collect();
+    return Ok(Expr::String(format!("{{{}}}", parts.join(", "))));
+  }
+
   // NumberForm[x, n], PaddedForm[x, {n, f}], AccountingForm[x] and every
   // option combination they take (NumberPoint, NumberSeparator, DigitBlock,
   // NumberPadding, NumberSigns, SignPadding) go through one renderer, so the
@@ -12596,6 +12632,74 @@ fn is_abbreviation(before: &[char], after: &[char]) -> bool {
   false
 }
 
+/// Whether the expression is (or contains) a `Quantity`.
+fn contains_quantity(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, .. } if name == "Quantity" => true,
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_quantity),
+    Expr::List(items) => items.iter().any(contains_quantity),
+    _ => false,
+  }
+}
+
+/// Render `Quantity[magnitude, unit]` as text. `abbreviated` picks the
+/// `TextString` form (which also applies the TextString number rules to the
+/// magnitude); otherwise the unit is spelled out, as `ToString` writes it.
+fn quantity_to_text(args: &[Expr], abbreviated: bool) -> Option<String> {
+  if args.len() != 2 {
+    return None;
+  }
+  let (magnitude, unit) = (&args[0], &args[1]);
+  let is_one = matches!(magnitude, Expr::Integer(1));
+  let magnitude_text = if abbreviated {
+    text_string_render(magnitude)
+      .unwrap_or_else(|| text_string_to_string_form(magnitude))
+  } else {
+    // The full ToString path, so an exact fraction keeps its 2D layout.
+    text_string_to_string_form(magnitude)
+  };
+  let unit_text = crate::functions::quantity_ast::quantity_unit_text(
+    unit,
+    is_one,
+    abbreviated,
+  )?;
+  use crate::functions::quantity_ast::UnitText;
+  Some(match unit_text {
+    UnitText::Prefix(p) => format!("{p}{magnitude_text}"),
+    UnitText::PrefixWords(p, words) => {
+      format!("{p}{magnitude_text} {words}")
+    }
+    UnitText::Suffix(s) => format!("{magnitude_text}{s}"),
+    UnitText::Words(words) => {
+      // A magnitude that spans several lines (a fraction) carries the unit on
+      // its baseline: "1250" over "---- feet" over "381".
+      let lines: Vec<&str> = magnitude_text.split('\n').collect();
+      if lines.len() > 1 {
+        let bar = lines
+          .iter()
+          .position(|l| {
+            !l.trim().is_empty() && l.trim().chars().all(|c| c == '-')
+          })
+          .unwrap_or(lines.len() - 1);
+        lines
+          .iter()
+          .enumerate()
+          .map(|(i, l)| {
+            if i == bar {
+              format!("{l} {words}")
+            } else {
+              (*l).to_string()
+            }
+          })
+          .collect::<Vec<_>>()
+          .join("\n")
+      } else {
+        format!("{magnitude_text} {words}")
+      }
+    }
+  })
+}
+
 /// `TextString[expr]` — the human-readable text form. Numbers differ from
 /// `ToString`: every approximate real is written in full decimal (never
 /// `1.23457*^6`), a real whose integer part is shorter than six digits keeps a
@@ -12688,6 +12792,10 @@ fn text_string_render(expr: &Expr) -> Option<String> {
     // A missing value contributes nothing to the text.
     Expr::FunctionCall { name, .. } if name == "Missing" => {
       return Some(String::new());
+    }
+    // A quantity abbreviates its unit: "3 m".
+    Expr::FunctionCall { name, args } if name == "Quantity" => {
+      return quantity_to_text(args, true);
     }
     _ => {}
   }

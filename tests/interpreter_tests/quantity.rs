@@ -2980,3 +2980,165 @@ mod compound_unit_input_form {
     );
   }
 }
+
+/// `ToString` spells a unit out ("3 meters") and `TextString` abbreviates it
+/// ("3 m"); the script-mode echo keeps the `Quantity[3, Meters]` wrapper.
+mod quantity_text_forms {
+  use super::*;
+
+  #[test]
+  fn to_string_spells_the_unit_out() {
+    clear_state();
+    for (code, expected) in [
+      (r#"ToString[Quantity[3, "Meters"]]"#, "3 meters"),
+      (r#"ToString[Quantity[1, "Meters"]]"#, "1 meter"),
+      // Irregular plurals read correctly in both directions.
+      (r#"ToString[Quantity[1, "Feet"]]"#, "1 foot"),
+      (r#"ToString[Quantity[3, "Feet"]]"#, "3 feet"),
+      (r#"ToString[Quantity[3, "Inches"]]"#, "3 inches"),
+      (r#"ToString[Quantity[1, "Henries"]]"#, "1 henry"),
+      (r#"ToString[Quantity[1, "Hertz"]]"#, "1 hertz"),
+      // A CamelCase name becomes words; an acronym keeps its capitals and a
+      // proper noun its own.
+      (
+        r#"ToString[Quantity[1, "NauticalMiles"]]"#,
+        "1 nautical mile",
+      ),
+      (r#"ToString[Quantity[1, "MetricTons"]]"#, "1 metric ton"),
+      (r#"ToString[Quantity[3, "USDollars"]]"#, "3 US dollars"),
+      (
+        r#"ToString[Quantity[1, "DegreesCelsius"]]"#,
+        "1 degree Celsius",
+      ),
+      (
+        r#"ToString[Quantity[3, "ThermochemicalCalories"]]"#,
+        "3 thermochemical calories",
+      ),
+      (r#"ToString[Quantity[2.5, "Kilograms"]]"#, "2.5 kilograms"),
+      (r#"ToString[Quantity[-2, "Meters"]]"#, "-2 meters"),
+      // The one-argument form has magnitude 1.
+      (r#"ToString[Quantity["Meters"]]"#, "1 meter"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn text_string_abbreviates_the_unit() {
+    clear_state();
+    for (code, expected) in [
+      (r#"TextString[Quantity[3, "Meters"]]"#, "3 m"),
+      (r#"TextString[Quantity[2.5, "Kilograms"]]"#, "2.5 kg"),
+      (r#"TextString[Quantity[3, "Feet"]]"#, "3 ft"),
+      (r#"TextString[Quantity[5, "Seconds"]]"#, "5 s"),
+      (r#"TextString[Quantity[3, "Hours"]]"#, "3 h"),
+      (r#"TextString[Quantity[3, "Amperes"]]"#, "3 A"),
+      (r#"TextString[Quantity[1, "DegreesCelsius"]]"#, "1 \u{b0}C"),
+      // A unit with no abbreviation of its own keeps its words.
+      (r#"TextString[Quantity[3, "Days"]]"#, "3 days"),
+      // The TextString number rules apply to the magnitude.
+      (r#"TextString[Quantity[1/2, "Meters"]]"#, "0.5 m"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn a_currency_or_percent_attaches_to_the_magnitude() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"TextString[Quantity[2.5, "USDollars"]]"#).unwrap(),
+      "$2.5"
+    );
+    assert_eq!(
+      interpret(r#"TextString[Quantity[1, "Percent"]]"#).unwrap(),
+      "1%"
+    );
+    assert_eq!(
+      interpret(r#"ToString[Quantity[1, "USDollars"]]"#).unwrap(),
+      "1 US dollar"
+    );
+    // In a quotient the symbol stays on the magnitude and the rest is spelled
+    // out.
+    assert_eq!(
+      interpret(r#"TextString[Quantity[3, "USDollars"/"Hours"]]"#).unwrap(),
+      "$3 per hour"
+    );
+  }
+
+  #[test]
+  fn compound_units_read_as_a_phrase() {
+    clear_state();
+    for (code, expected) in [
+      (
+        r#"ToString[Quantity[3, "Meters"/"Seconds"]]"#,
+        "3 meters per second",
+      ),
+      (r#"TextString[Quantity[3, "Meters"/"Seconds"]]"#, "3 m/s"),
+      (
+        r#"ToString[Quantity[1, "Meters"/"Seconds"]]"#,
+        "1 meter per second",
+      ),
+      (r#"TextString[Quantity[3, "Kilometers"/"Hours"]]"#, "3 km/h"),
+      // An exponent reads as a word, and then even TextString spells the
+      // whole phrase out.
+      (r#"ToString[Quantity[3, "Meters"^2]]"#, "3 meters squared"),
+      (r#"TextString[Quantity[3, "Meters"^3]]"#, "3 meters cubed"),
+      (
+        r#"TextString[Quantity[3, "Meters"/"Seconds"^2]]"#,
+        "3 meters per second squared",
+      ),
+      // A product pluralizes only its last factor.
+      (
+        r#"ToString[Quantity[3, "Newtons" "Meters"]]"#,
+        "3 meter newtons",
+      ),
+      (
+        r#"ToString[Quantity[3, "Kilograms" "Meters"^2/"Seconds"^2]]"#,
+        "3 kilogram meters squared per second squared",
+      ),
+      // A reciprocal unit spells its denominator out in both forms.
+      (
+        r#"ToString[Quantity[3, 1/"Seconds"]]"#,
+        "3 reciprocal seconds",
+      ),
+      (r#"TextString[Quantity[3, 1/"Seconds"]]"#, "3 per second"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn an_exact_fraction_keeps_its_two_dimensional_layout() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"ToString[Quantity[1/2, "Meters"]]"#).unwrap(),
+      "1\n- meters\n2"
+    );
+    assert_eq!(
+      interpret(r#"ToString[UnitConvert[Quantity[1, "Meters"], "Feet"]]"#)
+        .unwrap(),
+      "1250\n---- feet\n381"
+    );
+  }
+
+  #[test]
+  fn a_list_of_quantities_renders_element_wise() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"ToString[{Quantity[1, "Meters"], Quantity[2, "Feet"]}]"#)
+        .unwrap(),
+      "{1 meter, 2 feet}"
+    );
+    assert_eq!(
+      interpret(r#"TextString[{Quantity[1, "Meters"], Quantity[2, "Feet"]}]"#)
+        .unwrap(),
+      "{1 m, 2 ft}"
+    );
+    // InputForm keeps the wrapper, quoted unit included.
+    assert_eq!(
+      interpret(r#"ToString[Quantity[3, "Meters"], InputForm]"#).unwrap(),
+      "Quantity[3, \"Meters\"]"
+    );
+  }
+}

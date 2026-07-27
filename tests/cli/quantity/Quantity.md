@@ -71,3 +71,59 @@ parenthesised:
 $ wo 'ToString[InputForm[Quantity[1, "Seconds"^-1]]]'
 Quantity[1, "Seconds"^(-1)]
 ```
+
+`ToString` spells the unit out, using the singular for a magnitude of 1:
+
+```scrut
+$ wo 'ToString[Quantity[3, "Meters"]]'
+3 meters
+```
+
+```scrut
+$ wo 'ToString[Quantity[1, "Feet"]]'
+1 foot
+```
+
+`TextString` abbreviates it instead:
+
+```scrut
+$ wo 'TextString[Quantity[2.5, "Kilograms"]]'
+2.5 kg
+```
+
+A currency or percent attaches directly to the magnitude:
+
+```scrut
+$ wo 'TextString[Quantity[3, "USDollars"]]'
+$3
+```
+
+```scrut
+$ wo 'TextString[Quantity[1, "Percent"]]'
+1%
+```
+
+A compound unit reads as a phrase — and an exponent forces the spelled-out
+form even for `TextString`:
+
+```scrut
+$ wo 'ToString[Quantity[3, "Meters"/"Seconds"]]'
+3 meters per second
+```
+
+```scrut
+$ wo 'TextString[Quantity[3, "Kilometers"/"Hours"]]'
+3 km/h
+```
+
+```scrut
+$ wo 'TextString[Quantity[3, "Meters"/"Seconds"^2]]'
+3 meters per second squared
+```
+
+A list is rendered element-wise:
+
+```scrut
+$ wo 'ToString[{Quantity[1, "Meters"], Quantity[2, "Feet"]}]'
+{1 meter, 2 feet}
+```

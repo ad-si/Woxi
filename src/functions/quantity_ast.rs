@@ -2725,3 +2725,416 @@ pub fn try_quantity_mod(
     Err(e) => Some(Err(e)),
   }
 }
+
+// ── Text forms ───────────────────────────────────────────────────────────
+//
+// `ToString[Quantity[3, "Meters"]]` is "3 meters" and
+// `TextString[Quantity[3, "Meters"]]` is "3 m" — the wrapper form
+// `Quantity[3, Meters]` is what the script-mode echo shows, so only the two
+// string conversions go through here.
+
+/// How a unit attaches to its magnitude.
+pub enum UnitText {
+  /// Written after the magnitude, separated by a space ("3 meters").
+  Words(String),
+  /// Written directly in front of the magnitude ("$3").
+  Prefix(String),
+  /// Written directly after the magnitude ("3%").
+  Suffix(String),
+  /// A prefix on the magnitude plus trailing words ("$3 per hour").
+  PrefixWords(String, String),
+}
+
+/// The abbreviation of a unit, as `TextString` writes it. A unit with no
+/// abbreviation of its own (Days, Percent, …) falls back to its words.
+fn unit_abbreviation(name: &str) -> Option<&'static str> {
+  Some(match name {
+    "Meters" => "m",
+    "Kilometers" => "km",
+    "Centimeters" => "cm",
+    "Millimeters" => "mm",
+    "Micrometers" => "\u{3bc}m",
+    "Nanometers" => "nm",
+    "NauticalMiles" => "nmi",
+    "Feet" => "ft",
+    "Inches" => "in",
+    "Miles" => "mi",
+    "Yards" => "yd",
+    "Kilograms" => "kg",
+    "Grams" => "g",
+    "Milligrams" => "mg",
+    "Pounds" => "lb",
+    "Ounces" => "oz",
+    "MetricTons" => "t",
+    "Seconds" => "s",
+    "Milliseconds" => "ms",
+    "Microseconds" => "\u{3bc}s",
+    "Nanoseconds" => "ns",
+    "Minutes" => "min",
+    "Hours" => "h",
+    "Weeks" => "wk",
+    "Months" => "mo",
+    "Years" => "yr",
+    "Liters" => "L",
+    "Milliliters" => "mL",
+    "Gallons" => "gal",
+    "Amperes" => "A",
+    "Milliamperes" => "mA",
+    "Volts" => "V",
+    "Millivolts" => "mV",
+    "Kilovolts" => "kV",
+    "Joules" => "J",
+    "Millijoules" => "mJ",
+    "Kilojoules" => "kJ",
+    "Electronvolts" => "eV",
+    "Watts" => "W",
+    "Milliwatts" => "mW",
+    "Kilowatts" => "kW",
+    "Farads" => "F",
+    "Millifarads" => "mF",
+    "Microfarads" => "\u{3bc}F",
+    "Nanofarads" => "nF",
+    "Picofarads" => "pF",
+    "Coulombs" => "C",
+    "Newtons" => "N",
+    "Dynes" => "dyn",
+    "Pascals" => "Pa",
+    "Kilopascals" => "kPa",
+    "Megapascals" => "MPa",
+    "Gigapascals" => "GPa",
+    "Bars" => "bar",
+    "Atmospheres" => "atm",
+    "Ohms" => "\u{3a9}",
+    "Kilohms" => "k\u{3a9}",
+    "Megohms" => "M\u{3a9}",
+    "WattHours" => "Wh",
+    "KilowattHours" => "kWh",
+    "Henries" => "H",
+    "Millihenries" => "mH",
+    "Hertz" => "Hz",
+    "Kilohertz" => "kHz",
+    "Megahertz" => "MHz",
+    "Gigahertz" => "GHz",
+    "Teslas" => "T",
+    "Milliteslas" => "mT",
+    "Knots" => "kn",
+    "Kelvins" => "K",
+    "DegreesCelsius" => "\u{b0}C",
+    "DegreesFahrenheit" => "\u{b0}F",
+    "Radians" => "rad",
+    "Moles" => "mol",
+    "Candelas" => "cd",
+    "DietaryCalories" => "Cal",
+    "Bytes" => "B",
+    "Bits" => "b",
+    _ => return None,
+  })
+}
+
+/// A unit written as an affix of the magnitude rather than a following word.
+fn unit_affix(name: &str) -> Option<UnitText> {
+  Some(match name {
+    "USDollars" => UnitText::Prefix("$".to_string()),
+    "Euros" => UnitText::Prefix("\u{20ac}".to_string()),
+    "BritishPounds" => UnitText::Prefix("\u{a3}".to_string()),
+    "Percent" => UnitText::Suffix("%".to_string()),
+    "AngularDegrees" | "Degrees" => UnitText::Suffix("\u{b0}".to_string()),
+    _ => return None,
+  })
+}
+
+/// Split a CamelCase unit name into its words, keeping acronym runs together
+/// ("NauticalMiles" → ["Nautical", "Miles"], "USDollars" → ["US", "Dollars"]).
+fn camel_case_words(name: &str) -> Vec<String> {
+  let chars: Vec<char> = name.chars().collect();
+  let mut words: Vec<String> = Vec::new();
+  let mut current = String::new();
+  for (i, c) in chars.iter().enumerate() {
+    let starts_word = c.is_uppercase()
+      && i > 0
+      && (!chars[i - 1].is_uppercase()
+        || chars.get(i + 1).is_some_and(|n| n.is_lowercase()));
+    if starts_word && !current.is_empty() {
+      words.push(std::mem::take(&mut current));
+    }
+    current.push(*c);
+  }
+  if !current.is_empty() {
+    words.push(current);
+  }
+  words
+}
+
+/// The singular of an English unit noun.
+fn singularize(word: &str) -> String {
+  match word {
+    "feet" => return "foot".to_string(),
+    // "henries" is the plural of "henry"; "calories" of "calorie", so the
+    // "-ies" ending alone does not decide the stem.
+    "henries" => return "henry".to_string(),
+    _ => {}
+  }
+  for ending in ["ches", "shes", "sses", "xes", "zes"] {
+    if let Some(stem) = word.strip_suffix(ending) {
+      return format!("{stem}{}", &ending[..ending.len() - 2]);
+    }
+  }
+  // A word that does not end in a plural "s" (hertz, percent) is invariant.
+  match word.strip_suffix('s') {
+    Some(stem) if !word.ends_with("ss") && !word.ends_with("us") => {
+      stem.to_string()
+    }
+    _ => word.to_string(),
+  }
+}
+
+/// Units whose spelled-out words the derivation cannot reach.
+fn unit_word_override(name: &str) -> Option<(&'static str, &'static str)> {
+  Some(match name {
+    // The dietary Calorie keeps its capital; the thermochemical one does not.
+    "DietaryCalories" => ("dietary Calorie", "dietary Calories"),
+    _ => return None,
+  })
+}
+
+/// The words of a unit name: `(singular, plural)`. Derived from the name
+/// itself, so a unit the table does not know still reads correctly.
+fn unit_words(name: &str) -> (String, String) {
+  if let Some((one, many)) = unit_word_override(name) {
+    return (one.to_string(), many.to_string());
+  }
+  // Qualifiers that keep their capital in the spelled-out form.
+  let proper = |w: &str| matches!(w, "Celsius" | "Fahrenheit" | "Rankine");
+  let words: Vec<String> = camel_case_words(name)
+    .into_iter()
+    .map(|w| {
+      if w.chars().all(|c| c.is_uppercase() && c.is_alphabetic())
+        && w.chars().count() > 1
+        || proper(&w)
+      {
+        w
+      } else {
+        w.to_lowercase()
+      }
+    })
+    .collect();
+  if words.is_empty() {
+    return (name.to_string(), name.to_string());
+  }
+  let plural = words.join(" ");
+  // Only the head noun is singularized: "degrees Celsius" → "degree Celsius".
+  let head = if words.len() > 1 && proper(&words[words.len() - 1]) {
+    words.len() - 2
+  } else {
+    words.len() - 1
+  };
+  let mut singular_words = words.clone();
+  singular_words[head] = singularize(&words[head]);
+  (singular_words.join(" "), plural)
+}
+
+/// The unit name behind a unit expression leaf.
+fn unit_leaf_name(unit: &Expr) -> Option<String> {
+  match unit {
+    Expr::String(s) => Some(s.clone()),
+    Expr::Identifier(s) => Some(s.clone()),
+    _ => None,
+  }
+}
+
+/// Whether the unit carries an exponent other than ±1. Such a unit is always
+/// spelled out, even by `TextString`: `Quantity[3, "Meters"/"Seconds"^2]` is
+/// "3 meters per second squared" in both forms.
+fn unit_has_named_power(unit: &Expr) -> bool {
+  match unit {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      !matches!(&args[1], Expr::Integer(-1))
+    }
+    Expr::FunctionCall { args, .. } => args.iter().any(unit_has_named_power),
+    Expr::BinaryOp { op, left, right } => {
+      matches!(op, BinaryOperator::Power)
+        && !matches!(right.as_ref(), Expr::Integer(-1))
+        || unit_has_named_power(left)
+        || unit_has_named_power(right)
+    }
+    _ => false,
+  }
+}
+
+/// `base^|exponent|` — the factor a negative exponent contributes to the
+/// other side of the quotient (the bare base when the exponent is -1).
+fn unit_power(base: &Expr, exponent: &Expr) -> Expr {
+  match exponent {
+    Expr::Integer(-1) => base.clone(),
+    Expr::Integer(n) => Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![base.clone(), Expr::Integer(-n)].into(),
+    },
+    _ => base.clone(),
+  }
+}
+
+/// Split a unit expression into its numerator and denominator factors.
+fn unit_factors(unit: &Expr) -> (Vec<Expr>, Vec<Expr>) {
+  let mut numerator = Vec::new();
+  let mut denominator = Vec::new();
+  fn walk(e: &Expr, num: &mut Vec<Expr>, den: &mut Vec<Expr>, flip: bool) {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        for a in args.iter() {
+          walk(a, num, den, flip);
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        walk(left, num, den, flip);
+        walk(right, num, den, flip);
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left,
+        right,
+      } => {
+        walk(left, num, den, flip);
+        walk(right, num, den, !flip);
+      }
+      // A negative exponent moves the factor to the other side, keeping the
+      // magnitude of the exponent: `Seconds^-2` is a "per second squared".
+      Expr::FunctionCall { name, args }
+        if name == "Power"
+          && args.len() == 2
+          && matches!(&args[1], Expr::Integer(n) if *n < 0) =>
+      {
+        walk(&unit_power(&args[0], &args[1]), num, den, !flip);
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } if matches!(right.as_ref(), Expr::Integer(n) if *n < 0) => {
+        walk(&unit_power(left, right), num, den, !flip);
+      }
+      // A bare 1 numerator (`1/"Seconds"`) contributes nothing.
+      Expr::Integer(1) => {}
+      other => {
+        if flip {
+          den.push(other.clone());
+        } else {
+          num.push(other.clone());
+        }
+      }
+    }
+  }
+  walk(unit, &mut numerator, &mut denominator, false);
+  (numerator, denominator)
+}
+
+/// One factor of a unit phrase, spelled out or abbreviated.
+fn unit_factor_text(
+  factor: &Expr,
+  singular: bool,
+  abbreviated: bool,
+) -> Option<String> {
+  // An exponent of 2 or 3 reads as "squared" / "cubed".
+  let power_parts = match factor {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Some((&args[0], &args[1]))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => Some((left.as_ref(), right.as_ref())),
+    _ => None,
+  };
+  if let Some((base, exponent)) = power_parts {
+    let word = match exponent {
+      Expr::Integer(2) => "squared",
+      Expr::Integer(3) => "cubed",
+      _ => return None,
+    };
+    // The base carries the number: "meters squared" but "per second squared".
+    let base_text = unit_factor_text(base, singular, false)?;
+    return Some(format!("{base_text} {word}"));
+  }
+  let name = unit_leaf_name(factor)?;
+  if abbreviated && let Some(abbr) = unit_abbreviation(&name) {
+    return Some(abbr.to_string());
+  }
+  let (one, many) = unit_words(&name);
+  Some(if singular { one } else { many })
+}
+
+/// The spelled-out singular words of the denominator factors, used where an
+/// abbreviation would not read as English ("per second", "$3 per hour").
+fn spelled_out_denominator(factors: &[Expr]) -> Option<String> {
+  let mut parts = Vec::with_capacity(factors.len());
+  for f in factors {
+    parts.push(unit_factor_text(f, true, false)?);
+  }
+  Some(parts.join(" "))
+}
+
+/// The text of a whole unit expression: `(3, "Meters"/"Seconds")` reads
+/// "meters per second" spelled out and "m/s" abbreviated. `singular` selects
+/// the form for a magnitude of 1.
+pub fn quantity_unit_text(
+  unit: &Expr,
+  singular: bool,
+  abbreviated: bool,
+) -> Option<UnitText> {
+  // A named power is always spelled out.
+  let abbreviated = abbreviated && !unit_has_named_power(unit);
+  if let Some(name) = unit_leaf_name(unit) {
+    if abbreviated && let Some(affix) = unit_affix(&name) {
+      return Some(affix);
+    }
+    return unit_factor_text(unit, singular, abbreviated).map(UnitText::Words);
+  }
+  let (numerator, denominator) = unit_factors(unit);
+  let join = |factors: &[Expr], last_plural: bool| -> Option<String> {
+    let mut parts = Vec::with_capacity(factors.len());
+    for (i, f) in factors.iter().enumerate() {
+      let is_last = i + 1 == factors.len();
+      parts.push(unit_factor_text(f, !(is_last && last_plural), abbreviated)?);
+    }
+    // Abbreviated factors are separated by a thin space: "m N".
+    Some(parts.join(if abbreviated { "\u{2009}" } else { " " }))
+  };
+  let numerator_text = if numerator.is_empty() {
+    None
+  } else {
+    Some(join(&numerator, !singular)?)
+  };
+  if denominator.is_empty() {
+    return numerator_text.map(UnitText::Words);
+  }
+  // Denominator factors are always singular: "meters per second".
+  let denominator_text = join(&denominator, false)?;
+  // A currency keeps its symbol on the magnitude and spells the rest out:
+  // "$3 per hour".
+  if abbreviated
+    && numerator.len() == 1
+    && let Some(name) = unit_leaf_name(&numerator[0])
+    && let Some(UnitText::Prefix(prefix)) = unit_affix(&name)
+  {
+    let words = spelled_out_denominator(&denominator)?;
+    return Some(UnitText::PrefixWords(prefix, format!("per {words}")));
+  }
+  Some(UnitText::Words(match numerator_text {
+    Some(n) if abbreviated => format!("{n}/{denominator_text}"),
+    Some(n) => format!("{n} per {denominator_text}"),
+    // A reciprocal unit spells its denominator out in both forms:
+    // "3 per second" and "3 reciprocal seconds".
+    None if abbreviated => {
+      format!("per {}", spelled_out_denominator(&denominator)?)
+    }
+    None => {
+      let plural = join(&denominator, true)?;
+      format!("reciprocal {plural}")
+    }
+  }))
+}

@@ -42,7 +42,7 @@ FinancialData,,🚫,,6.0,43
 Length,Returns the number of elements in a list,✅,pure,1.0,44
 PlotStyle,Option specifying the style of lines and points in a plot,✅,pure,1.0,45
 GrayLevel,Specifies a gray color level,✅,pure,1.0,46
-Quantity,Represents a physical quantity with a unit (a compound unit prints as a quotient when it has negative exponents),✅,pure,9.0,47
+Quantity,Represents a physical quantity with a unit (a compound unit prints as a quotient when it has negative exponents); ToString spells the unit out and TextString abbreviates it,✅,pure,9.0,47
 Greater,Checks if one value is greater than another,✅,pure,1.0,48
 N,Gives the numerical value of an expression,✅,pure,1.0,49
 And,Checks if all conditions are true,✅,pure,1.0,50
