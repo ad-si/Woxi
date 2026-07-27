@@ -83,6 +83,7 @@
       - [`NumericalSort`](strings/conversion/NumericalSort.md)
       - [`StringToByteArray`](strings/conversion/StringToByteArray.md)
       - [`TextString`](strings/conversion/TextString.md)
+      - [`Snippet`](strings/conversion/Snippet.md)
       - [`TextWords`](strings/conversion/TextWords.md)
       - [`ToCharacterCode`](strings/conversion/ToCharacterCode.md)
       - [`ToExpression`](strings/conversion/ToExpression.md)

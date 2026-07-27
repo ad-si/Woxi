@@ -2828,12 +2828,15 @@ fn is_single_char_atom(re: &str) -> bool {
 /// numeric — wolframscript accepts "31/4" and "2/30" (no calendar logic)
 /// but rejects month 13, day 32, hour 24, minute/second 60.
 fn date_pattern_element_regex(name: &str) -> Option<&'static str> {
+  // The alternatives run longest first: the engine takes the leftmost one
+  // that matches, so `0?[1-9]` ahead of `[12][0-9]` would read only the "1"
+  // of a day written "15".
   Some(match name {
     "Year" => "[0-9]{1,4}",
-    "Month" => "(?:0?[1-9]|1[0-2])",
-    "Day" => "(?:0?[1-9]|[12][0-9]|3[01])",
-    "Hour" | "Hour24" => "(?:[01]?[0-9]|2[0-3])",
-    "Hour12" => "(?:0?[1-9]|1[0-2])",
+    "Month" => "(?:1[0-2]|0?[1-9])",
+    "Day" => "(?:3[01]|[12][0-9]|0?[1-9])",
+    "Hour" | "Hour24" => "(?:2[0-3]|1[0-9]|0?[0-9])",
+    "Hour12" => "(?:1[0-2]|0?[1-9])",
     "Minute" => "(?:[0-5]?[0-9])",
     "Second" => "(?:[0-5]?[0-9])",
     // Case-insensitive, longest alternatives first so StringCases
@@ -13863,4 +13866,74 @@ fn expand_template_one(
       .next()
       .unwrap_or_else(|| expr.clone()),
   )
+}
+
+/// `Snippet[text]` / `Snippet[text, spec]` — the opening lines of a text, each
+/// cut to 80 characters. The spec selects lines the way `Take` selects
+/// elements: a count from the front, a negative count from the end, or a span.
+pub fn snippet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let original = || unevaluated("Snippet", args);
+  if args.is_empty() || args.len() > 2 {
+    return Ok(original());
+  }
+  let Expr::String(text) = &args[0] else {
+    crate::emit_message(
+      "Snippet::invcnt: Content should be string, File, URL, or valid \
+       ContentObject.",
+    );
+    return Ok(Expr::Identifier("$Failed".to_string()));
+  };
+  let lines: Vec<&str> = text.split('\n').collect();
+  let count = lines.len() as i128;
+  let clamp = |i: i128| -> usize { i.clamp(0, count) as usize };
+  // Which lines the spec asks for, as a half-open range.
+  let range: (usize, usize) = match args.get(1) {
+    None => (0, clamp(1)),
+    Some(Expr::Integer(n)) if *n > 0 => (0, clamp(*n)),
+    Some(Expr::Integer(n)) if *n < 0 => (clamp(count + n), clamp(count)),
+    Some(spec) => {
+      let span = match spec {
+        Expr::FunctionCall { name, args: parts }
+          if name == "Span" && parts.len() == 2 =>
+        {
+          Some((parts[0].clone(), parts[1].clone()))
+        }
+        _ => None,
+      };
+      match span {
+        Some((from, to)) => {
+          let start = match &from {
+            Expr::Integer(i) if *i > 0 => clamp(i - 1),
+            Expr::Integer(i) if *i < 0 => clamp(count + i),
+            Expr::Identifier(s) if s == "All" => 0,
+            _ => return Ok(original()),
+          };
+          let end = match &to {
+            Expr::Integer(i) if *i > 0 => clamp(*i),
+            Expr::Integer(i) if *i < 0 => clamp(count + i + 1),
+            Expr::Identifier(s) if s == "All" => clamp(count),
+            _ => return Ok(original()),
+          };
+          (start, end.max(start))
+        }
+        // `All` and anything else that is not a count are left as written or
+        // reported, as wolframscript does.
+        None => {
+          if matches!(spec, Expr::Identifier(s) if s == "All") {
+            return Ok(original());
+          }
+          crate::emit_message(&format!(
+            "Snippet::invspec: Specification {} should be an integer or Span.",
+            crate::syntax::expr_to_output(spec)
+          ));
+          return Ok(Expr::Identifier("$Failed".to_string()));
+        }
+      }
+    }
+  };
+  let snippet: Vec<String> = lines[range.0..range.1]
+    .iter()
+    .map(|line| line.chars().take(80).collect())
+    .collect();
+  Ok(Expr::String(snippet.join("\n")))
 }

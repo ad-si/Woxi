@@ -1409,6 +1409,27 @@ fn evaluate_function_call_ast_inner(
   }
   if let Some(result) = string_functions::dispatch_string_functions(name, args)
   {
+    // A pattern the regex engine cannot compile must not take the whole
+    // evaluation down with it: report it and leave the call as written, the
+    // way wolframscript answers an unusable regular expression.
+    if let Err(InterpreterError::EvaluationError(message)) = &result
+      && let Some(reason) = message.strip_prefix("Invalid regular expression: ")
+    {
+      crate::emit_message(&format!(
+        "RegularExpression::badregex: The regular expression in {} could not \
+         be compiled: {}",
+        name,
+        // The engine's message spans several lines of parse art; its last
+        // line names the reason.
+        reason
+          .lines()
+          .map(str::trim)
+          .rfind(|l| !l.is_empty())
+          .unwrap_or(reason)
+          .trim_start_matches("error: ")
+      ));
+      return Ok(unevaluated(name, args));
+    }
     return result;
   }
   if let Some(result) = image_functions::dispatch_image_functions(name, args) {

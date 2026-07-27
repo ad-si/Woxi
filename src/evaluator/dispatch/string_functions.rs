@@ -88,6 +88,9 @@ pub fn dispatch_string_functions(
     "StringCases" if args.len() >= 2 => {
       return Some(crate::functions::string_ast::string_cases_ast(args));
     }
+    "Snippet" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::string_ast::snippet_ast(args));
+    }
     "ToString" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::string_ast::to_string_ast(args));
     }

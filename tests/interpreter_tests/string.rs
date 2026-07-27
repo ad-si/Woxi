@@ -13173,3 +13173,162 @@ mod text_string_numbers {
     }
   }
 }
+
+mod snippet {
+  use super::*;
+
+  #[test]
+  fn it_takes_the_opening_lines() {
+    clear_state();
+    for (code, expected) in [
+      // One line by default, and a short text comes back whole.
+      (r#"Snippet["a b c d e", 2]"#, "a b c d e"),
+      (r#"Snippet["line one\nline two\nline three"]"#, "line one"),
+      (
+        r#"Snippet["line one\nline two\nline three", 2]"#,
+        "line one\nline two",
+      ),
+      (r#"Snippet["a\nb", 5]"#, "a\nb"),
+      // The spec selects lines the way Take selects elements.
+      (r#"Snippet["a\nb\nc", -1]"#, "c"),
+      (r#"Snippet["a\nb\nc\nd", 2 ;; 3]"#, "b\nc"),
+      (r#"Snippet["a\nb\nc\nd", ;; 2]"#, "a\nb"),
+      (r#"Snippet["a\nb\nc", 2 ;;]"#, "b\nc"),
+      // A blank line counts.
+      (r#"Snippet["a\n\nb", 2]"#, "a\n"),
+      (r#"Snippet[""]"#, ""),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn a_line_is_cut_at_eighty_characters() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"StringLength[Snippet[StringRepeat["x", 200]]]"#).unwrap(),
+      "80"
+    );
+    // Each line is cut on its own: 80 + newline + 80.
+    assert_eq!(
+      interpret(
+        r#"s = StringRepeat["x", 200]; StringLength[Snippet[s <> "\n" <> s, 2]]"#
+      )
+      .unwrap(),
+      "161"
+    );
+  }
+
+  #[test]
+  fn content_and_specification_are_checked() {
+    clear_state();
+    let result = interpret_with_stdout("Snippet[123]").unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|m| m.starts_with("Snippet::invcnt")),
+      "expected an invcnt message, got {:?}",
+      result.warnings
+    );
+    for code in [r#"Snippet["a\nb", 0]"#, r#"Snippet["a\nb", 2.5]"#] {
+      let result = interpret_with_stdout(code).unwrap();
+      assert_eq!(result.result, "$Failed", "{code}");
+      assert!(
+        result
+          .warnings
+          .iter()
+          .any(|m| m.starts_with("Snippet::invspec")),
+        "expected an invspec message for {code}, got {:?}",
+        result.warnings
+      );
+    }
+    // `All` is left as written.
+    assert_eq!(
+      interpret(r#"ToString[Snippet["a\nb", All], InputForm]"#).unwrap(),
+      "Snippet[\"a\\nb\", All]"
+    );
+  }
+}
+
+mod date_pattern_fields {
+  use super::*;
+
+  #[test]
+  fn a_two_digit_field_is_read_whole() {
+    clear_state();
+    // The field alternatives run longest first, so a day written "15" is not
+    // read as just its "1".
+    for (code, expected) in [
+      (
+        r#"StringCases["2024-01-15", DatePattern[{"Year", "Month", "Day"}]]"#,
+        "{2024-01-15}",
+      ),
+      (
+        r#"StringCases["2024-12-25", DatePattern[{"Year", "Month", "Day"}]]"#,
+        "{2024-12-25}",
+      ),
+      (
+        r#"StringCases["2024-10-30", DatePattern[{"Year", "Month", "Day"}]]"#,
+        "{2024-10-30}",
+      ),
+      (
+        r#"StringCases["31/12/1999", DatePattern[{"Day", "Month", "Year"}]]"#,
+        "{31/12/1999}",
+      ),
+      // Single-digit and zero-padded fields still read whole.
+      (
+        r#"StringCases["2024-1-5", DatePattern[{"Year", "Month", "Day"}]]"#,
+        "{2024-1-5}",
+      ),
+      (
+        r#"StringCases["2024-01-05", DatePattern[{"Year", "Month", "Day"}]]"#,
+        "{2024-01-05}",
+      ),
+      (
+        r#"StringCases["23:45", DatePattern[{"Hour", "Minute"}]]"#,
+        "{23:45}",
+      ),
+      (
+        r#"StringCases["09:05", DatePattern[{"Hour", "Minute"}]]"#,
+        "{09:05}",
+      ),
+      (
+        r#"StringCases["19:59:59", DatePattern[{"Hour", "Minute", "Second"}]]"#,
+        "{19:59:59}",
+      ),
+      // A field out of range still matches nothing.
+      (
+        r#"StringCases["2024-13-01", DatePattern[{"Year", "Month", "Day"}]]"#,
+        "{}",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+}
+
+#[test]
+fn an_unusable_regular_expression_does_not_stop_the_evaluation() {
+  clear_state();
+  // The engine has no look-around; the call is reported and left as written
+  // rather than taking the rest of the program down with it.
+  let result = interpret_with_stdout(
+    r#"StringSplit["camelCase", RegularExpression["(?=[A-Z])"]]"#,
+  )
+  .unwrap();
+  assert!(
+    result.result.starts_with("StringSplit["),
+    "expected the call to stay as written, got {}",
+    result.result
+  );
+  assert!(
+    result
+      .warnings
+      .iter()
+      .any(|m| m.starts_with("RegularExpression::badregex")),
+    "expected a badregex message, got {:?}",
+    result.warnings
+  );
+}
