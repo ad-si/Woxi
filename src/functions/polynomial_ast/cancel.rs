@@ -799,16 +799,10 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
   // Cancel numeric GCD
   let mut numeric_changed = false;
   if num_coeff != 0 && den_coeff != 0 {
-    let g = gcd_i128(num_coeff.abs(), den_coeff.abs());
-    if g > 1 {
-      num_coeff /= g;
-      den_coeff /= g;
+    let (n, d) = rat_reduce(num_coeff, den_coeff);
+    if n != num_coeff {
       numeric_changed = true;
-    }
-    // Keep signs normalized: negative in numerator
-    if den_coeff < 0 {
-      num_coeff = -num_coeff;
-      den_coeff = -den_coeff;
+      (num_coeff, den_coeff) = (n, d);
     }
   }
 

@@ -3026,7 +3026,7 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
     .iter()
     .copied()
     .filter(|&c| c != 0)
-    .fold(0i128, |a, b| gcd_i128(a, b.abs()));
+    .fold(0i128, |a, b| gcd_i128(a, b));
   if abs_gcd == 0 {
     return Expr::List(vec![Expr::Integer(1), expanded.clone()].into());
   }

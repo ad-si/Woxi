@@ -4850,12 +4850,6 @@ fn lyapunov_solve_common(
     n: i128,
     d: i128,
   }
-  fn qgcd(mut a: i128, mut b: i128) -> i128 {
-    while b != 0 {
-      (a, b) = (b, a % b);
-    }
-    a.max(1)
-  }
   impl Q {
     fn new(mut n: i128, mut d: i128) -> Option<Q> {
       if d == 0 {
@@ -4865,8 +4859,8 @@ fn lyapunov_solve_common(
         n = n.checked_neg()?;
         d = d.checked_neg()?;
       }
-      let g = qgcd(n.abs(), d);
-      Some(Q { n: n / g, d: d / g })
+      (n, d) = rat_reduce(n, d);
+      Some(Q { n: n, d: d })
     }
     fn zero() -> Q {
       Q { n: 0, d: 1 }

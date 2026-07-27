@@ -2,7 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
-use crate::functions::math_ast::gcd_i128;
+use crate::functions::math_ast::{gcd_i128, rat_reduce};
 use crate::syntax::{BinaryOperator, UnaryOperator, unevaluated};
 
 /// AnglePath[{θ1, θ2, ...}] - path with unit steps and cumulative turning angles.
@@ -5315,9 +5315,7 @@ fn zeta_even(s: i64) -> Result<Expr, InterpreterError> {
   let coeff_den = factorial * b_den.abs();
 
   // Simplify the fraction
-  let g = gcd_i128(coeff_num.abs(), coeff_den.abs());
-  let final_num = coeff_num / g;
-  let final_den = coeff_den / g;
+  let (final_num, final_den) = rat_reduce(coeff_num, coeff_den);
 
   // Build the expression: (final_num / final_den) * Pi^s
   let pi_power = if s == 1 {

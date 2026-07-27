@@ -2093,8 +2093,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           } else {
             // Irrational roots: (-bi ± sqrt_out*Sqrt[sqrt_in]) / (2*ai)
             // Simplify by dividing common factors
-            let g =
-              gcd_i128(gcd_i128(-bi, sqrt_out).abs(), (2 * ai).abs()).abs();
+            let g = gcd_i128(gcd_i128(-bi, sqrt_out), 2 * ai);
             let nb = -bi / g;
             let so = sqrt_out / g;
             let den = 2 * ai / g;
@@ -2237,8 +2236,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             ));
           } else {
             // Complex roots with irrational imaginary part
-            let g =
-              gcd_i128(gcd_i128(-bi, sqrt_out).abs(), (2 * ai).abs()).abs();
+            let g = gcd_i128(gcd_i128(-bi, sqrt_out), 2 * ai);
             let nb = -bi / g;
             let so = sqrt_out / g;
             let den = 2 * ai / g;
@@ -3801,9 +3799,7 @@ fn try_solve_factoring_powers(
               // New exponent = (pf.exp_num/pf.exp_den) - (min_n/min_d)
               let new_num = pf.exp_num * min_d - min_n * pf.exp_den;
               let new_den = pf.exp_den * min_d;
-              let g = gcd_i128(new_num.abs(), new_den.abs());
-              let new_num = new_num / g;
-              let new_den = new_den / g;
+              let (new_num, new_den) = rat_reduce(new_num, new_den);
 
               // Get the base expression
               let base_expr =
@@ -5618,9 +5614,7 @@ fn minimize_poly_roots_int(coeffs: &[i128], var: &str) -> Vec<Expr> {
             }
           } else {
             // Irrational roots: (-b ± sqrt_out * √sqrt_in) / (2a)
-            let g =
-              gcd_i128(gcd_i128((-b).abs(), sqrt_out.abs()), (2 * a).abs())
-                .abs();
+            let g = gcd_i128(gcd_i128(-b, sqrt_out), 2 * a);
             let nb = -b / g;
             let so = sqrt_out / g;
             let den = 2 * a / g;
