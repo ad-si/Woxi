@@ -5946,3 +5946,279 @@ mod map_thread_mptc_message {
     );
   }
 }
+
+/// `BooleanCountingFunction[spec, n]` is an operator: applied to boolean
+/// arguments it answers whether their number of Trues is one the spec names.
+/// With a variable list it writes out the expression instead.
+mod boolean_counting_function_operator {
+  use super::*;
+
+  #[test]
+  fn the_operator_form_counts_true_arguments() {
+    clear_state();
+    for (code, expected) in [
+      // `k` — at most k.
+      (
+        "BooleanCountingFunction[2, 4][True, True, False, False]",
+        "True",
+      ),
+      (
+        "BooleanCountingFunction[2, 4][True, True, True, False]",
+        "False",
+      ),
+      (
+        "BooleanCountingFunction[2, 4][False, False, False, False]",
+        "True",
+      ),
+      ("BooleanCountingFunction[0, 2][False, False]", "True"),
+      ("BooleanCountingFunction[3, 3][True, True, True]", "True"),
+      // `{k}` — exactly k.
+      ("BooleanCountingFunction[{2}, 3][True, True, False]", "True"),
+      (
+        "BooleanCountingFunction[{2}, 3][True, False, False]",
+        "False",
+      ),
+      ("BooleanCountingFunction[{0}, 2][False, False]", "True"),
+      // `{kmin, kmax}` — between.
+      (
+        "BooleanCountingFunction[{1, 2}, 3][True, False, False]",
+        "True",
+      ),
+      (
+        "BooleanCountingFunction[{1, 2}, 3][False, False, False]",
+        "False",
+      ),
+      (
+        "BooleanCountingFunction[{1, 2}, 3][True, True, True]",
+        "False",
+      ),
+      // `{{k1, k2, …}}` — any of those counts.
+      (
+        "BooleanCountingFunction[{{1, 3}}, 3][True, True, True]",
+        "True",
+      ),
+      (
+        "BooleanCountingFunction[{{1, 3}}, 3][True, True, False]",
+        "False",
+      ),
+      // A count past the number of variables simply never matches.
+      ("BooleanCountingFunction[{4}, 3][True, True, True]", "False"),
+      (
+        "BooleanCountingFunction[{{4, 1}}, 3][True, False, False]",
+        "True",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+    // Symbolic arguments leave the call as it stands.
+    assert_eq!(
+      interpret("ToString[BooleanCountingFunction[{1}, 2][a, b], InputForm]")
+        .unwrap(),
+      "BooleanCountingFunction[{1}, 2][a, b]"
+    );
+  }
+
+  #[test]
+  fn a_set_spec_writes_out_its_expression() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ToString[BooleanCountingFunction[{{2}}, {a, b, c}], InputForm]"
+      )
+      .unwrap(),
+      "(a && b &&  !c) || (a &&  !b && c) || ( !a && b && c)"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[BooleanCountingFunction[{{0, 2}}, {a, b}], InputForm]"
+      )
+      .unwrap(),
+      "(a && b) || ( !a &&  !b)"
+    );
+    // Out of range, so nothing satisfies it.
+    assert_eq!(
+      interpret("BooleanCountingFunction[{4}, {a, b, c}]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("BooleanCountingFunction[5, {a, b}]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn a_third_argument_names_the_form() {
+    clear_state();
+    // The clauses are the ones wolframscript names; it writes them in the
+    // order its own minimizer produces, so compare them as a set.
+    assert_eq!(
+      interpret(
+        "ToString[Sort[List @@ BooleanCountingFunction[{1}, {a, b, c}, \"CNF\"]], \
+         InputForm]"
+      )
+      .unwrap(),
+      "{ !a ||  !b,  !a ||  !c,  !b ||  !c, a || b || c}"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[BooleanCountingFunction[{1}, {a, b, c}, \"DNF\"], InputForm]"
+      )
+      .unwrap(),
+      "(a &&  !b &&  !c) || ( !a && b &&  !c) || ( !a &&  !b && c)"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[BooleanCountingFunction[2, {a, b, c}, \"CNF\"], InputForm]"
+      )
+      .unwrap(),
+      " !a ||  !b ||  !c"
+    );
+  }
+
+  #[test]
+  fn literal_variables_fold_away() {
+    clear_state();
+    // A variable list of literals — what a BooleanTable substitutes — reduces
+    // to a value.
+    assert_eq!(
+      interpret("BooleanCountingFunction[{1}, {True, False}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("ToString[BooleanCountingFunction[{1}, {a, True}], InputForm]")
+        .unwrap(),
+      " !a"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[BooleanTable[BooleanCountingFunction[{1}, {a, b}], {a, b}], \
+         InputForm]"
+      )
+      .unwrap(),
+      "{False, True, True, False}"
+    );
+  }
+
+  #[test]
+  fn an_invalid_specification_is_reported() {
+    clear_state();
+    for code in [
+      "BooleanCountingFunction[{-1}, 2]",
+      "BooleanCountingFunction[{-1}, {a, b}]",
+      "BooleanCountingFunction[foo, 2]",
+    ] {
+      let result = interpret_with_stdout(code).unwrap();
+      assert!(
+        result
+          .warnings
+          .iter()
+          .any(|m| m.starts_with("BooleanCountingFunction::bspec")),
+        "expected a bspec message for {code}, got {:?}",
+        result.warnings
+      );
+    }
+  }
+}
+
+/// `BooleanMinimize` writes its terms the way wolframscript does: descending
+/// by the literal pattern, reading the variables left to right with a
+/// positive literal ranked above a negative one and an absent variable below
+/// both.
+mod boolean_minimize_term_order {
+  use super::*;
+
+  #[test]
+  fn terms_follow_their_literal_pattern() {
+    clear_state();
+    for (code, expected) in [
+      (
+        "BooleanMinimize[(a && b) || (!a && !b)]",
+        "(a && b) || ( !a &&  !b)",
+      ),
+      (
+        "BooleanMinimize[(!a && !b && !c) || (a && b && c)]",
+        "(a && b && c) || ( !a &&  !b &&  !c)",
+      ),
+      (
+        "BooleanMinimize[Xor[a, b, c]]",
+        "(a && b && c) || (a &&  !b &&  !c) || ( !a && b &&  !c) || \
+         ( !a &&  !b && c)",
+      ),
+      // An absent variable ranks below both polarities.
+      (
+        "BooleanMinimize[(a && b) || (b && c) || (a && c)]",
+        "(a && b) || (a && c) || (b && c)",
+      ),
+      (
+        "BooleanMinimize[(a && b && c) || (a && b && !c) || (!a && b && c)]",
+        "(a && b) || (b && c)",
+      ),
+      // A disjunction of single literals is ordered by variable.
+      ("BooleanMinimize[!a || !b]", " !a ||  !b"),
+    ] {
+      assert_eq!(
+        interpret(&format!("ToString[{code}, InputForm]")).unwrap(),
+        expected.replace("         ", ""),
+        "{code}"
+      );
+    }
+  }
+}
+
+/// Converting a DNF to CNF distributes, which leaves repeated literals and
+/// clauses that say nothing the shorter ones do not.
+mod boolean_convert_cnf_redundancy {
+  use super::*;
+
+  #[test]
+  fn clauses_carry_no_redundancy() {
+    clear_state();
+    // Every clause is one wolframscript names too — it writes them in its own
+    // minimizer's order, so compare them as a set.
+    assert_eq!(
+      interpret(
+        "ToString[Sort[List @@ BooleanConvert[(a && !b && !c) || \
+         (!a && b && !c) || (!a && !b && c), \"CNF\"]], InputForm]"
+      )
+      .unwrap(),
+      "{ !a ||  !b,  !a ||  !c,  !b ||  !c, a || b || c}"
+    );
+    // and the conversion still says the same thing.
+    assert_eq!(
+      interpret(
+        "TautologyQ[Equivalent[BooleanConvert[(a && !b && !c) || \
+         (!a && b && !c) || (!a && !b && c), \"CNF\"], \
+         (a && !b && !c) || (!a && b && !c) || (!a && !b && c)]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn literals_inside_a_clause_follow_their_variable() {
+    clear_state();
+    for (code, expected) in [
+      (
+        "BooleanConvert[Equivalent[a, b], \"CNF\"]",
+        "( !a || b) && (a ||  !b)",
+      ),
+      (
+        "BooleanConvert[Xor[a, b, c], \"CNF\"]",
+        "( !a ||  !b || c) && ( !a || b ||  !c) && (a ||  !b ||  !c) && \
+         (a || b || c)",
+      ),
+      (
+        "BooleanConvert[Xor[a, b], \"CNF\"]",
+        "( !a ||  !b) && (a || b)",
+      ),
+      ("BooleanConvert[Implies[a, b], \"CNF\"]", " !a || b"),
+    ] {
+      assert_eq!(
+        interpret(&format!("ToString[{code}, InputForm]")).unwrap(),
+        expected.replace("         ", ""),
+        "{code}"
+      );
+    }
+  }
+}

@@ -1562,7 +1562,7 @@ Tolerance,Tolerance specification,,unevaluated,2.0,1583
 NetInitialize,Initialize a neural net,,unevaluated,11.0,1584
 BoundaryMeshRegion,Boundary mesh region,,unevaluated,10.0,1586
 Cumulant,Computes the r-th cumulant of a list or distribution,✅,pure,8.0,1586
-BooleanConvert,Convert Boolean expressions,✅,pure,7.0,1588
+BooleanConvert,Convert Boolean expressions; the CNF form carries no repeated or subsumed clauses,✅,pure,7.0,1588
 GeometricBrownianMotionProcess,Geometric Brownian motion process with LogNormal time slices,✅,unevaluated,9.0,1588
 DiscreteUniformDistribution,Discrete uniform distribution over integers,✅,computation,6.0,1593
 MeshCellStyle,Style mesh cells,,unevaluated,10.0,1593
@@ -1973,7 +1973,7 @@ PixelValue,Get pixel value from image (image processing),✅,,8.0,2005
 WaveletPsi,Wavelet function psi of a wavelet family evaluated at a point,✅,pure,8.0,2006
 FindCurvePath,Find smooth path through points (computational geometry),🚫,,7.0,2008
 Shallow,Control output depth display (notebook display),🚫,,2.0,2008
-BooleanCountingFunction,Boolean function from a count specification (DNF over true-variable counts),✅,pure,7.0,2012
+BooleanCountingFunction,Boolean function from a count specification (k; {k}; {kmin; kmax} or {{k1; k2; ...}}); applied to boolean arguments it counts their Trues and with a variable list it writes out the expression in an optional form,✅,pure,7.0,2012
 DeleteStopwords,Remove stopwords from text (NLP),🚫,,10.1,2012
 Downsample,Take every n-th element from a list,✅,none,9.0,2012
 SliceContourPlot3D,3D contour slice plot (plotting),🚫,,10.2,2012
@@ -2451,7 +2451,7 @@ HilbertMatrix,Generate a Hilbert matrix of given size,✅,1,6.0,2503
 MenuSortingValue,,🚫,,8.0,2503
 Messages,Returns the messages associated with a symbol,✅,pure,1.0,2503
 MorphologicalPerimeter,,🚫,,7.0,2503
-BooleanMinimize,Find the minimal sum-of-products Boolean expression,✅,pure,7.0,2509
+BooleanMinimize,Find the minimal sum-of-products Boolean expression; terms are ordered by their literal pattern,✅,pure,7.0,2509
 ChiDistribution,represents a chi distribution with n degrees of freedom,✅,none,6.0,2509
 CloudPublish,,🚫,,10.2,2509
 Glaisher,Glaisher-Kinkelin constant,✅,none,4.0,2509

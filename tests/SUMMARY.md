@@ -106,6 +106,7 @@
       - [`And`](boolean/logic/And.md)
       - [`Boole`](boolean/logic/Boole.md)
       - [`BooleanConvert`](boolean/logic/BooleanConvert.md)
+      - [`BooleanCountingFunction`](boolean/logic/BooleanCountingFunction.md)
       - [`BooleanMinimize`](boolean/logic/BooleanMinimize.md)
       - [`BooleanQ`](boolean/logic/BooleanQ.md)
       - [`BooleanTable`](boolean/logic/BooleanTable.md)

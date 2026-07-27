@@ -1339,6 +1339,45 @@ pub fn apply_curried_call(
         args: args.to_vec(),
       })
     }
+    // BooleanCountingFunction[spec, n][b1, …] — True when the number of True
+    // arguments is one of the counts the spec names. Only literal arguments
+    // decide it; a symbolic one leaves the call as it stands.
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if name == "BooleanCountingFunction"
+      && func_args.len() == 2
+      && matches!(&func_args[1], Expr::Integer(k) if *k >= 0) =>
+    {
+      let Expr::Integer(n) = &func_args[1] else {
+        unreachable!()
+      };
+      let mut true_count = 0usize;
+      let mut literal = true;
+      for a in args {
+        match a {
+          Expr::Identifier(s) if s == "True" => true_count += 1,
+          Expr::Identifier(s) if s == "False" => {}
+          _ => {
+            literal = false;
+            break;
+          }
+        }
+      }
+      if literal
+        && let Some(counts) =
+          crate::functions::boolean_ast::counting_spec_counts(
+            &func_args[0],
+            *n as usize,
+          )
+      {
+        return Ok(bool_expr(counts.contains(&true_count)));
+      }
+      Ok(Expr::CurriedCall {
+        func: Box::new(func.clone()),
+        args: args.to_vec(),
+      })
+    }
     // Distribution operator forms: CDF[dist][x] -> CDF[dist, x] (and PDF,
     // Quantile, InverseCDF, SurvivalFunction, HazardFunction). Guarded so the
     // head holds a distribution object (a FunctionCall).

@@ -2057,26 +2057,27 @@ pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let expr = &args[0];
-  // Helper: sort literals within And/Or clauses for canonical output
-  // BooleanConvert puts negated variables before positive ones
+  // Helper: sort literals within And/Or clauses for canonical output.
+  // wolframscript orders them by the variable they mention, whether or not it
+  // is negated: `(a || !b)`, not `(!b || a)`.
   fn sort_boolean_expr(expr: &Expr) -> Expr {
     match expr {
       Expr::FunctionCall { name, args } if name == "Or" || name == "And" => {
         let mut sorted_args: Vec<Expr> =
           args.iter().map(sort_boolean_expr).collect();
         sorted_args.sort_by(|a, b| {
-          let key = |e: &Expr| -> (u8, String) {
+          let key = |e: &Expr| -> (String, u8) {
             match e {
               Expr::FunctionCall { name, args }
                 if name == "Not" && args.len() == 1 =>
               {
-                (0, crate::syntax::expr_to_string(&args[0]))
+                (crate::syntax::expr_to_string(&args[0]), 0)
               }
               Expr::UnaryOp {
                 op: UnaryOperator::Not,
                 operand,
-              } => (0, crate::syntax::expr_to_string(operand)),
-              _ => (1, crate::syntax::expr_to_string(e)),
+              } => (crate::syntax::expr_to_string(operand), 0),
+              _ => (crate::syntax::expr_to_string(e), 1),
             }
           };
           key(a).cmp(&key(b))
@@ -2107,7 +2108,7 @@ pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       canonicalize_dnf(&normalize_not(&dnf))
     }
     "CNF" => {
-      let cnf = to_cnf(expr);
+      let cnf = reduce_cnf_clauses(&to_cnf(expr));
       sort_boolean_expr(&normalize_not(&cnf))
     }
     "OR" => {
@@ -2120,7 +2121,8 @@ pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "AND" => {
       // Express with And and Not only: take the CNF and rewrite every
       // disjunctive clause Or[l…] as Not[And[!l…]] (De Morgan).
-      let cnf = sort_boolean_expr(&normalize_not(&to_cnf(expr)));
+      let cnf =
+        sort_boolean_expr(&normalize_not(&reduce_cnf_clauses(&to_cnf(expr))));
       normalize_not(&bc_to_single_connective(&cnf, "And", "Or", "And"))
     }
     _ => {
@@ -2129,6 +2131,97 @@ pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   Ok(result)
+}
+
+/// Drop the redundancy distributing a DNF into a CNF leaves behind: a literal
+/// repeated inside a clause, a clause holding both polarities of a variable
+/// (it is always true), and a clause implied by a shorter one. The surviving
+/// clauses keep the order they first appeared in.
+fn reduce_cnf_clauses(expr: &Expr) -> Expr {
+  /// The literals of a clause as `(negated, name)` keys, or None when the
+  /// clause is not a disjunction of literals.
+  fn clause_literals(clause: &Expr) -> Option<Vec<((bool, String), Expr)>> {
+    let parts: Vec<&Expr> = match clause {
+      Expr::FunctionCall { name, args } if name == "Or" => {
+        args.iter().collect()
+      }
+      other => vec![other],
+    };
+    let mut out = Vec::with_capacity(parts.len());
+    for part in parts {
+      let key = match part {
+        Expr::FunctionCall { name, args }
+          if name == "Not" && args.len() == 1 =>
+        {
+          (true, crate::syntax::expr_to_string(&args[0]))
+        }
+        Expr::UnaryOp {
+          op: UnaryOperator::Not,
+          operand,
+        } => (true, crate::syntax::expr_to_string(operand)),
+        Expr::Identifier(name) => (false, name.clone()),
+        _ => return None,
+      };
+      out.push((key, part.clone()));
+    }
+    Some(out)
+  }
+
+  let clauses: Vec<&Expr> = match expr {
+    Expr::FunctionCall { name, args } if name == "And" => args.iter().collect(),
+    _ => return expr.clone(),
+  };
+  let mut reduced: Vec<(Vec<(bool, String)>, Expr)> = Vec::new();
+  for clause in clauses {
+    let Some(literals) = clause_literals(clause) else {
+      return expr.clone();
+    };
+    let mut keys: Vec<(bool, String)> = Vec::new();
+    let mut kept: Vec<Expr> = Vec::new();
+    for (key, literal) in literals {
+      if keys.contains(&key) {
+        continue;
+      }
+      keys.push(key.clone());
+      kept.push(literal);
+    }
+    // A clause holding a variable and its negation is satisfied by anything.
+    if keys
+      .iter()
+      .any(|(negated, name)| keys.contains(&(!negated, name.clone())))
+    {
+      continue;
+    }
+    let rebuilt = if kept.len() == 1 {
+      kept.remove(0)
+    } else {
+      Expr::FunctionCall {
+        name: "Or".to_string(),
+        args: kept.into(),
+      }
+    };
+    reduced.push((keys, rebuilt));
+  }
+  // A clause implied by a shorter one carries nothing of its own.
+  let mut survivors: Vec<Expr> = Vec::new();
+  for (i, (keys, clause)) in reduced.iter().enumerate() {
+    let subsumed = reduced.iter().enumerate().any(|(j, (other, _))| {
+      j != i
+        && other.iter().all(|k| keys.contains(k))
+        && (other.len() < keys.len() || (other.len() == keys.len() && j < i))
+    });
+    if !subsumed {
+      survivors.push(clause.clone());
+    }
+  }
+  match survivors.len() {
+    0 => bool_expr(true),
+    1 => survivors.remove(0),
+    _ => Expr::FunctionCall {
+      name: "And".to_string(),
+      args: survivors.into(),
+    },
+  }
 }
 
 /// Extract free boolean variables (identifiers) from a boolean expression.
@@ -2426,6 +2519,27 @@ fn implicants_to_expr(
     return Ok(bool_expr(false));
   }
 
+  // wolframscript writes the terms in descending order of their literal
+  // pattern, reading the variables left to right and ranking a positive
+  // literal above a negative one and a variable that does not appear at all
+  // below both: `(a && b) || (a && c) || (b && c)`, `(a && b) || (!a && !b)`.
+  let rank = |imp: &Implicant| -> Vec<i8> {
+    (0..vars.len())
+      .map(|i| {
+        let bit = 1u64 << i;
+        if imp.mask & bit == 0 {
+          -1
+        } else if imp.value & bit != 0 {
+          2
+        } else {
+          0
+        }
+      })
+      .collect()
+  };
+  let mut implicants: Vec<&Implicant> = implicants.iter().collect();
+  implicants.sort_by(|a, b| rank(b).cmp(&rank(a)));
+
   let mut terms: Vec<Expr> = Vec::new();
   for imp in implicants {
     let mut literals: Vec<Expr> = Vec::new();
@@ -2485,9 +2599,41 @@ fn implicants_to_expr(
 pub fn boolean_counting_function_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 || args.len() > 3 {
     return Ok(unevaluated("BooleanCountingFunction", args));
   }
+  // A third argument names the form the expression is written in, exactly as
+  // `BooleanConvert` writes it.
+  if args.len() == 3 {
+    let built = boolean_counting_function_ast(&args[..2])?;
+    if matches!(&built, Expr::FunctionCall { name, .. }
+      if name == "BooleanCountingFunction")
+    {
+      return Ok(unevaluated("BooleanCountingFunction", args));
+    }
+    return boolean_convert_ast(&[built, args[2].clone()]);
+  }
+  // The number of variables the spec is read against: a count, or the length
+  // of an explicit variable list.
+  let width = match &args[1] {
+    Expr::Integer(n) if *n >= 0 => Some(*n as usize),
+    Expr::List(items) => Some(items.len()),
+    _ => None,
+  };
+  if let Some(width) = width
+    && parse_counting_spec(&args[0], width).is_none()
+  {
+    crate::emit_message(&format!(
+      "BooleanCountingFunction::bspec: {} is not a valid \
+       BooleanCountingFunction specification.",
+      crate::syntax::expr_to_output(&unevaluated(
+        "BooleanCountingFunction",
+        args
+      ))
+    ));
+    return Ok(unevaluated("BooleanCountingFunction", args));
+  }
+
   let vars: Vec<String> = match &args[1] {
     Expr::List(items) => {
       let mut out = Vec::with_capacity(items.len());
@@ -2524,10 +2670,20 @@ pub fn boolean_counting_function_ast(
     return Ok(bool_expr(true));
   }
 
+  // A variable list holding literals (`{True, False}`, or the substitution a
+  // BooleanTable makes) folds down to a value.
+  let fold = |expr: Expr| -> Expr {
+    if vars.iter().any(|v| v == "True" || v == "False") {
+      crate::evaluator::evaluate_expr_to_expr(&expr).unwrap_or(expr)
+    } else {
+      expr
+    }
+  };
+
   // "Exactly k" — natural sum-of-minterms in lex order over which
   // variables are true.
   if count_set.len() == 1 {
-    return Ok(exactly_k_dnf(&vars, count_set[0]));
+    return Ok(fold(exactly_k_dnf(&vars, count_set[0])));
   }
 
   // "At most k" — Or over (n-k)-subsets of negated variables.
@@ -2535,12 +2691,18 @@ pub fn boolean_counting_function_ast(
   if let Some(kmax) = detect_at_most(&count_set)
     && kmax < n
   {
-    return Ok(at_most_k_dnf(&vars, kmax));
+    return Ok(fold(at_most_k_dnf(&vars, kmax)));
   }
 
   // General case: emit sum-of-minterms and minimize.
   let dnf = minterms_to_dnf(&vars, &count_set);
-  boolean_minimize_ast(&[dnf])
+  boolean_minimize_ast(&[dnf]).map(fold)
+}
+
+/// The counts of True arguments a `BooleanCountingFunction` spec accepts over
+/// `n` variables, for the applied form `BooleanCountingFunction[spec, n][…]`.
+pub fn counting_spec_counts(spec: &Expr, n: usize) -> Option<Vec<usize>> {
+  parse_counting_spec(spec, n)
 }
 
 /// Parse the first argument of `BooleanCountingFunction` into the set of
@@ -2562,14 +2724,27 @@ fn parse_counting_spec(spec: &Expr, n: usize) -> Option<Vec<usize>> {
       Some((0..=kmax).collect())
     }
     Expr::List(items) => match items.len() {
-      // {k} — exactly k.
-      1 => {
-        if let Expr::Integer(k) = &items[0] {
-          in_range(*k).map(|v| vec![v])
-        } else {
-          None
+      // {k} — exactly k; {{k1, k2, …}} — any of those counts.
+      1 => match &items[0] {
+        // A count past the number of variables simply never matches.
+        Expr::Integer(k) if *k >= 0 => Some(in_range(*k).into_iter().collect()),
+        Expr::Integer(_) => None,
+        Expr::List(counts) => {
+          let mut out = Vec::with_capacity(counts.len());
+          for c in counts.iter() {
+            let Expr::Integer(k) = c else {
+              return None;
+            };
+            if let Some(v) = in_range(*k) {
+              out.push(v);
+            }
+          }
+          out.sort_unstable();
+          out.dedup();
+          Some(out)
         }
-      }
+        _ => None,
+      },
       // {kmin, kmax} — between kmin and kmax inclusive.
       2 => {
         if let (Expr::Integer(a), Expr::Integer(b)) = (&items[0], &items[1])
