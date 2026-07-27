@@ -472,15 +472,15 @@ pub fn dispatch_math_functions(
         dispatch_math_functions("Quartiles", args)
         && qs.len() == 3
       {
-        use BinaryOperator::{Divide, Minus, Plus, Times};
+        use BinaryOperator as B;
         // numerator = Q1 - 2*Q2 + Q3
         let numerator = Expr::BinaryOp {
-          op: Plus,
+          op: B::Plus,
           left: Box::new(Expr::BinaryOp {
-            op: Minus,
+            op: B::Minus,
             left: Box::new(qs[0].clone()),
             right: Box::new(Expr::BinaryOp {
-              op: Times,
+              op: B::Times,
               left: Box::new(Expr::Integer(2)),
               right: Box::new(qs[1].clone()),
             }),
@@ -488,12 +488,12 @@ pub fn dispatch_math_functions(
           right: Box::new(qs[2].clone()),
         };
         let denominator = Expr::BinaryOp {
-          op: Minus,
+          op: B::Minus,
           left: Box::new(qs[2].clone()),
           right: Box::new(qs[0].clone()),
         };
         let skew = Expr::BinaryOp {
-          op: Divide,
+          op: B::Divide,
           left: Box::new(numerator),
           right: Box::new(denominator),
         };

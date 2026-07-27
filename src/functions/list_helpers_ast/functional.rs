@@ -1053,25 +1053,25 @@ fn apply_at_level_recursive(
 }
 
 fn binary_op_to_name(op: BinaryOperator) -> &'static str {
-  use BinaryOperator::*;
+  use BinaryOperator as B;
   match op {
-    Plus => "Plus",
-    Minus => "Subtract",
-    Times => "Times",
-    Divide => "Divide",
-    Power => "Power",
-    And => "And",
-    Or => "Or",
-    StringJoin => "StringJoin",
-    Alternatives => "Alternatives",
+    B::Plus => "Plus",
+    B::Minus => "Subtract",
+    B::Times => "Times",
+    B::Divide => "Divide",
+    B::Power => "Power",
+    B::And => "And",
+    B::Or => "Or",
+    B::StringJoin => "StringJoin",
+    B::Alternatives => "Alternatives",
   }
 }
 
 fn unary_op_to_name(op: UnaryOperator) -> &'static str {
-  use UnaryOperator::*;
+  use UnaryOperator as U;
   match op {
-    Minus => "Times",
-    Not => "Not",
+    U::Minus => "Times",
+    U::Not => "Not",
   }
 }
 

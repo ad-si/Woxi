@@ -2074,47 +2074,47 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
 
     // Binary operations
     Expr::BinaryOp { op, left, right } => {
-      use BinaryOperator::*;
+      use BinaryOperator as B;
       match op {
-        Plus => {
+        B::Plus => {
           // d/dx[a + b] = d/dx[a] + d/dx[b]
           let da = differentiate(left, var)?;
           let db = differentiate(right, var)?;
           Ok(simplify(Expr::BinaryOp {
-            op: Plus,
+            op: B::Plus,
             left: Box::new(da),
             right: Box::new(db),
           }))
         }
-        Minus => {
+        B::Minus => {
           // d/dx[a - b] = d/dx[a] - d/dx[b]
           let da = differentiate(left, var)?;
           let db = differentiate(right, var)?;
           Ok(simplify(Expr::BinaryOp {
-            op: Minus,
+            op: B::Minus,
             left: Box::new(da),
             right: Box::new(db),
           }))
         }
-        Times => {
+        B::Times => {
           // Product rule: d/dx[a * b] = a' * b + a * b'
           let da = differentiate(left, var)?;
           let db = differentiate(right, var)?;
           Ok(simplify(Expr::BinaryOp {
-            op: Plus,
+            op: B::Plus,
             left: Box::new(Expr::BinaryOp {
-              op: Times,
+              op: B::Times,
               left: Box::new(da),
               right: right.clone(),
             }),
             right: Box::new(Expr::BinaryOp {
-              op: Times,
+              op: B::Times,
               left: left.clone(),
               right: Box::new(db),
             }),
           }))
         }
-        Divide => {
+        B::Divide => {
           // Rewrite a/b as a * b^(-1) to use power+product rule
           // instead of quotient rule (avoids exponential expression growth)
           if is_constant_wrt(right, var) {
@@ -2124,13 +2124,13 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             let result = crate::functions::math_ast::times_ast(&[
               da,
               Expr::BinaryOp {
-                op: Power,
+                op: B::Power,
                 left: right.clone(),
                 right: Box::new(Expr::Integer(-1)),
               },
             ])
             .unwrap_or_else(|_| Expr::BinaryOp {
-              op: Divide,
+              op: B::Divide,
               left: Box::new(
                 differentiate(left, var).unwrap_or(Expr::Integer(0)),
               ),
@@ -2140,10 +2140,10 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           } else if is_constant_wrt(left, var) {
             // d/dx[c / b] = c * d/dx[b^(-1)] = -c * b' / b^2
             let rewritten = Expr::BinaryOp {
-              op: Times,
+              op: B::Times,
               left: left.clone(),
               right: Box::new(Expr::BinaryOp {
-                op: Power,
+                op: B::Power,
                 left: right.clone(),
                 right: Box::new(Expr::Integer(-1)),
               }),
@@ -2152,10 +2152,10 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           } else {
             // d/dx[a / b] = d/dx[a * b^(-1)] (product rule + power rule)
             let rewritten = Expr::BinaryOp {
-              op: Times,
+              op: B::Times,
               left: left.clone(),
               right: Box::new(Expr::BinaryOp {
-                op: Power,
+                op: B::Power,
                 left: right.clone(),
                 right: Box::new(Expr::Integer(-1)),
               }),
@@ -2163,21 +2163,21 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             differentiate(&rewritten, var)
           }
         }
-        Power => {
+        B::Power => {
           // Power rule for x^n: n * x^(n-1) * x'
           // Use Plus[-1, n] to match Wolfram's canonical form (-1 + n)
           if is_constant_wrt(right, var) {
             let df = differentiate(left, var)?;
             Ok(simplify(Expr::BinaryOp {
-              op: Times,
+              op: B::Times,
               left: Box::new(Expr::BinaryOp {
-                op: Times,
+                op: B::Times,
                 left: right.clone(),
                 right: Box::new(Expr::BinaryOp {
-                  op: Power,
+                  op: B::Power,
                   left: left.clone(),
                   right: Box::new(Expr::BinaryOp {
-                    op: Plus,
+                    op: B::Plus,
                     left: Box::new(Expr::Integer(-1)),
                     right: right.clone(),
                   }),
@@ -2189,7 +2189,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             // d/dx[E^g(x)] = E^g(x) * g'(x)  (since Log[E] = 1)
             let dg = differentiate(right, var)?;
             Ok(simplify(Expr::BinaryOp {
-              op: Times,
+              op: B::Times,
               left: Box::new(expr.clone()),
               right: Box::new(dg),
             }))
@@ -2197,9 +2197,9 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             // d/dx[a^g(x)] = a^g(x) * ln(a) * g'(x)
             let dg = differentiate(right, var)?;
             Ok(simplify(Expr::BinaryOp {
-              op: Times,
+              op: B::Times,
               left: Box::new(Expr::BinaryOp {
-                op: Times,
+                op: B::Times,
                 left: Box::new(expr.clone()),
                 right: Box::new(Expr::FunctionCall {
                   name: "Log".to_string(),
@@ -2214,12 +2214,12 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             let df = differentiate(left, var)?;
             let dg = differentiate(right, var)?;
             Ok(simplify(Expr::BinaryOp {
-              op: Times,
+              op: B::Times,
               left: Box::new(expr.clone()), // f^g
               right: Box::new(Expr::BinaryOp {
-                op: Plus,
+                op: B::Plus,
                 left: Box::new(Expr::BinaryOp {
-                  op: Times,
+                  op: B::Times,
                   left: Box::new(dg), // g'
                   right: Box::new(Expr::FunctionCall {
                     name: "Log".to_string(),
@@ -2227,13 +2227,13 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
                   }),
                 }),
                 right: Box::new(Expr::BinaryOp {
-                  op: Times,
+                  op: B::Times,
                   left: right.clone(), // g
                   right: Box::new(Expr::BinaryOp {
-                    op: Times,
+                    op: B::Times,
                     left: Box::new(df), // f'
                     right: Box::new(Expr::BinaryOp {
-                      op: Power,
+                      op: B::Power,
                       left: left.clone(),                 // f
                       right: Box::new(Expr::Integer(-1)), // f^(-1)
                     }),
@@ -6761,7 +6761,7 @@ fn try_integrate_inverse_sqrt(base: &Expr, var: &str) -> Option<Expr> {
 /// forms are continuous, so substituting the integration bounds yields exact
 /// closed forms. Returns the antiderivative expression `F(var)`.
 fn sqrt_quadratic_antiderivative(base: &Expr, var: &str) -> Option<Expr> {
-  use BinaryOperator::*;
+  use BinaryOperator as B;
   let base_eval = crate::evaluator::evaluate_expr_to_expr(base)
     .unwrap_or_else(|_| base.clone());
   let var_expr = Expr::Identifier(var.to_string());
@@ -6801,9 +6801,9 @@ fn sqrt_quadratic_antiderivative(base: &Expr, var: &str) -> Option<Expr> {
   let x = Expr::Identifier(var.to_string());
   // First term: (x*Sqrt[base])/2.
   let first = Expr::BinaryOp {
-    op: Divide,
+    op: B::Divide,
     left: Box::new(Expr::BinaryOp {
-      op: Times,
+      op: B::Times,
       left: Box::new(x.clone()),
       right: Box::new(sqrt_base),
     }),
@@ -6820,12 +6820,12 @@ fn sqrt_quadratic_antiderivative(base: &Expr, var: &str) -> Option<Expr> {
   };
   // arc_arg = x * Sqrt[|b|/a]
   let ratio = simplify(Expr::BinaryOp {
-    op: Divide,
+    op: B::Divide,
     left: Box::new(abs_b.clone()),
     right: Box::new(a.clone()),
   });
   let arc_arg = simplify(Expr::BinaryOp {
-    op: Times,
+    op: B::Times,
     left: Box::new(x),
     right: Box::new(make_sqrt(ratio)),
   });
@@ -6835,20 +6835,20 @@ fn sqrt_quadratic_antiderivative(base: &Expr, var: &str) -> Option<Expr> {
   };
   // Second term: (a*arc) / (2*Sqrt[|b|]).
   let denom = simplify(Expr::BinaryOp {
-    op: Times,
+    op: B::Times,
     left: Box::new(Expr::Integer(2)),
     right: Box::new(make_sqrt(abs_b)),
   });
   let second = make_divided(
     Expr::BinaryOp {
-      op: Times,
+      op: B::Times,
       left: Box::new(a.clone()),
       right: Box::new(arc),
     },
     denom,
   );
   Some(Expr::BinaryOp {
-    op: Plus,
+    op: B::Plus,
     left: Box::new(first),
     right: Box::new(second),
   })
@@ -7868,11 +7868,11 @@ fn try_integrate_one_over_poly_rootsum(expr: &Expr, var: &str) -> Option<Expr> {
   use crate::functions::polynomial_ast::{
     expand_and_combine, extract_poly_coeffs, find_integer_root,
   };
-  use BinaryOperator::*;
+  use BinaryOperator as B;
   // Match `Power[poly, -1]` in either BinaryOp or FunctionCall form.
   let poly_raw: Expr = match expr {
     Expr::BinaryOp {
-      op: Power,
+      op: B::Power,
       left,
       right,
     } if matches!(right.as_ref(), Expr::Integer(-1)) => (**left).clone(),
@@ -7910,7 +7910,7 @@ fn try_integrate_one_over_poly_rootsum(expr: &Expr, var: &str) -> Option<Expr> {
   // Inner function body: Log[x - #1] / p'(#1).
   let var_expr = Expr::Identifier(var.to_string());
   let log_arg = Expr::BinaryOp {
-    op: Minus,
+    op: B::Minus,
     left: Box::new(var_expr),
     right: Box::new(Expr::Slot(1)),
   };
@@ -7919,7 +7919,7 @@ fn try_integrate_one_over_poly_rootsum(expr: &Expr, var: &str) -> Option<Expr> {
     args: vec![log_arg].into(),
   };
   let body = Expr::BinaryOp {
-    op: Divide,
+    op: B::Divide,
     left: Box::new(log_term),
     right: Box::new(pprime_in_slot),
   };
@@ -7945,7 +7945,7 @@ fn try_integrate_poly_times_const_exp(
   coeff: &Expr,
   var: &str,
 ) -> Option<Expr> {
-  use BinaryOperator::*;
+  use BinaryOperator as B;
 
   // For base E, Log[E] = 1, so rate = coeff directly.
   // For other bases, rate = coeff * Log[base].
@@ -7957,7 +7957,7 @@ fn try_integrate_poly_times_const_exp(
       args: vec![base.clone()].into(),
     };
     simplify(Expr::BinaryOp {
-      op: Times,
+      op: B::Times,
       left: Box::new(coeff.clone()),
       right: Box::new(log_base),
     })
@@ -7994,7 +7994,7 @@ fn try_integrate_poly_times_const_exp(
     let inv_rate =
       crate::functions::math_ast::divide_ast(&[Expr::Integer(1), rate.clone()])
         .unwrap_or_else(|_| Expr::BinaryOp {
-          op: Divide,
+          op: B::Divide,
           left: Box::new(Expr::Integer(1)),
           right: Box::new(rate.clone()),
         });
@@ -8007,21 +8007,21 @@ fn try_integrate_poly_times_const_exp(
       } else {
         crate::functions::math_ast::power_two(&inv_rate, &Expr::Integer(k1))
           .unwrap_or_else(|_| Expr::BinaryOp {
-            op: Power,
+            op: B::Power,
             left: Box::new(inv_rate.clone()),
             right: Box::new(Expr::Integer(k1)),
           })
       };
 
       let mut term = simplify(Expr::BinaryOp {
-        op: Times,
+        op: B::Times,
         left: Box::new(deriv.clone()),
         right: Box::new(inv_rate_factor),
       });
 
       if k % 2 == 1 {
         term = simplify(Expr::BinaryOp {
-          op: Times,
+          op: B::Times,
           left: Box::new(Expr::Integer(-1)),
           right: Box::new(term),
         });
@@ -8041,7 +8041,7 @@ fn try_integrate_poly_times_const_exp(
     };
 
     let result = simplify(Expr::BinaryOp {
-      op: Times,
+      op: B::Times,
       left: Box::new(exponential.clone()),
       right: Box::new(numerator),
     });
@@ -8058,21 +8058,21 @@ fn try_integrate_poly_times_const_exp(
         rate.clone()
       } else {
         Expr::BinaryOp {
-          op: Power,
+          op: B::Power,
           left: Box::new(rate.clone()),
           right: Box::new(Expr::Integer(rate_power)),
         }
       };
 
       let mut term = simplify(Expr::BinaryOp {
-        op: Times,
+        op: B::Times,
         left: Box::new(deriv.clone()),
         right: Box::new(rate_factor),
       });
 
       if k % 2 == 1 {
         term = simplify(Expr::BinaryOp {
-          op: Times,
+          op: B::Times,
           left: Box::new(Expr::Integer(-1)),
           right: Box::new(term),
         });
@@ -8095,20 +8095,20 @@ fn try_integrate_poly_times_const_exp(
       rate
     } else {
       Expr::BinaryOp {
-        op: Power,
+        op: B::Power,
         left: Box::new(rate),
         right: Box::new(Expr::Integer(n as i128)),
       }
     };
 
     let result_num = simplify(Expr::BinaryOp {
-      op: Times,
+      op: B::Times,
       left: Box::new(exponential.clone()),
       right: Box::new(numerator),
     });
 
     Some(Expr::BinaryOp {
-      op: Divide,
+      op: B::Divide,
       left: Box::new(result_num),
       right: Box::new(denom),
     })
@@ -9075,41 +9075,41 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
 
     // Binary operations
     Expr::BinaryOp { op, left, right } => {
-      use BinaryOperator::*;
+      use BinaryOperator as B;
       match op {
-        Plus => {
+        B::Plus => {
           // ∫ (a + b) dx = ∫ a dx + ∫ b dx
           let int_a = integrate(left, var)?;
           let int_b = integrate(right, var)?;
           Some(Expr::BinaryOp {
-            op: Plus,
+            op: B::Plus,
             left: Box::new(int_a),
             right: Box::new(int_b),
           })
         }
-        Minus => {
+        B::Minus => {
           // ∫ (a - b) dx = ∫ a dx - ∫ b dx
           let int_a = integrate(left, var)?;
           let int_b = integrate(right, var)?;
           Some(Expr::BinaryOp {
-            op: Minus,
+            op: B::Minus,
             left: Box::new(int_a),
             right: Box::new(int_b),
           })
         }
-        Times => {
+        B::Times => {
           // c * f(x) where c is constant
           if is_constant_wrt(left, var) {
             let int_b = integrate(right, var)?;
             Some(Expr::BinaryOp {
-              op: Times,
+              op: B::Times,
               left: left.clone(),
               right: Box::new(int_b),
             })
           } else if is_constant_wrt(right, var) {
             let int_a = integrate(left, var)?;
             Some(Expr::BinaryOp {
-              op: Times,
+              op: B::Times,
               left: right.clone(),
               right: Box::new(int_a),
             })
@@ -9134,19 +9134,19 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             try_integration_by_parts(&[left, right], var)
           }
         }
-        Divide => {
+        B::Divide => {
           // f(x) / c where c is constant
           if is_constant_wrt(right, var) {
             let int_a = integrate(left, var)?;
             Some(Expr::BinaryOp {
-              op: Divide,
+              op: B::Divide,
               left: Box::new(int_a),
               right: right.clone(),
             })
           } else {
             // If denominator is x^n, rewrite as numerator * x^(-n)
             if let Expr::BinaryOp {
-              op: Power,
+              op: B::Power,
               left: base,
               right: exp,
             } = right.as_ref()
@@ -9159,12 +9159,12 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
                 operand: exp.clone(),
               };
               let x_neg_n = Expr::BinaryOp {
-                op: Power,
+                op: B::Power,
                 left: base.clone(),
                 right: Box::new(neg_exp),
               };
               let rewritten = Expr::BinaryOp {
-                op: Times,
+                op: B::Times,
                 left: left.clone(),
                 right: Box::new(x_neg_n),
               };
@@ -9192,7 +9192,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             try_integrate_rational(left, right, var)
           }
         }
-        Power => {
+        B::Power => {
           // ∫ 1/Log[x] dx = LogIntegral[x]
           if let Expr::FunctionCall {
             name: lname,
@@ -9237,27 +9237,27 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
                 0 => Expr::Integer(1),
                 1 => logx.clone(),
                 _ => Expr::BinaryOp {
-                  op: Power,
+                  op: B::Power,
                   left: Box::new(logx.clone()),
                   right: Box::new(Expr::Integer(k)),
                 },
               };
               let term = Expr::BinaryOp {
-                op: Times,
+                op: B::Times,
                 left: Box::new(Expr::Integer(coeff)),
                 right: Box::new(logpow),
               };
               sum = Some(match sum {
                 None => term,
                 Some(s) => Expr::BinaryOp {
-                  op: Plus,
+                  op: B::Plus,
                   left: Box::new(s),
                   right: Box::new(term),
                 },
               });
             }
             let prod = Expr::BinaryOp {
-              op: Times,
+              op: B::Times,
               left: Box::new(Expr::Identifier(var.to_string())),
               right: Box::new(sum.unwrap()),
             };
@@ -9278,17 +9278,17 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           {
             let new_exp = Expr::Integer(*n + 1);
             let new_pow = Expr::BinaryOp {
-              op: Power,
+              op: B::Power,
               left: left.clone(),
               right: Box::new(new_exp.clone()),
             };
             let divisor = simplify(Expr::BinaryOp {
-              op: Times,
+              op: B::Times,
               left: Box::new(slope),
               right: Box::new(new_exp),
             });
             return Some(Expr::BinaryOp {
-              op: Divide,
+              op: B::Divide,
               left: Box::new(new_pow),
               right: Box::new(divisor),
             });
@@ -9318,7 +9318,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               )
             } else {
               let s = simplify(Expr::BinaryOp {
-                op: Plus,
+                op: B::Plus,
                 left: right.clone(),
                 right: Box::new(Expr::Integer(1)),
               });
@@ -9332,7 +9332,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               });
             }
             let power_expr = Expr::BinaryOp {
-              op: Power,
+              op: B::Power,
               left: left.clone(),
               right: Box::new(new_exp.clone()),
             };
@@ -9359,7 +9359,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               }
             }
             return Some(Expr::BinaryOp {
-              op: Divide,
+              op: B::Divide,
               left: Box::new(power_expr),
               right: Box::new(divisor_exp),
             });
@@ -9429,7 +9429,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               && n == var
             {
               return Some(Expr::BinaryOp {
-                op: Divide,
+                op: B::Divide,
                 left: Box::new(expr.clone()),
                 right: Box::new(log_a),
               });
@@ -9437,12 +9437,12 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             // ∫ a^(c*x) dx = a^(c*x) / (c * Log[a])
             if let Some(coeff) = try_match_linear_arg(exp_arg, var) {
               let divisor = simplify(Expr::BinaryOp {
-                op: Times,
+                op: B::Times,
                 left: Box::new(coeff),
                 right: Box::new(log_a),
               });
               return Some(Expr::BinaryOp {
-                op: Divide,
+                op: B::Divide,
                 left: Box::new(expr.clone()),
                 right: Box::new(divisor),
               });
@@ -9483,7 +9483,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               recip_call
             } else {
               Expr::BinaryOp {
-                op: Power,
+                op: B::Power,
                 left: Box::new(recip_call),
                 right: Box::new(Expr::Integer(-*n)),
               }
@@ -9544,7 +9544,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               left.as_ref().clone()
             } else {
               Expr::BinaryOp {
-                op: Power,
+                op: B::Power,
                 left: left.clone(),
                 right: Box::new(Expr::Integer(-*n)),
               }
@@ -10516,29 +10516,29 @@ pub fn simplify(mut expr: Expr) -> Expr {
       let right =
         simplify(*std::mem::replace(right, Box::new(Expr::Integer(0))));
 
-      use BinaryOperator::*;
+      use BinaryOperator as B;
       match (&op, &left, &right) {
         // 0 + x = x
-        (Plus, Expr::Integer(0), _) => return right,
+        (B::Plus, Expr::Integer(0), _) => return right,
         // x + 0 = x
-        (Plus, _, Expr::Integer(0)) => return left,
+        (B::Plus, _, Expr::Integer(0)) => return left,
         // 0 * x = 0
-        (Times, Expr::Integer(0), _) | (Times, _, Expr::Integer(0)) => {
+        (B::Times, Expr::Integer(0), _) | (B::Times, _, Expr::Integer(0)) => {
           return Expr::Integer(0);
         }
         // 1 * x = x
-        (Times, Expr::Integer(1), _) => return right,
+        (B::Times, Expr::Integer(1), _) => return right,
         // x * 1 = x
-        (Times, _, Expr::Integer(1)) => return left,
+        (B::Times, _, Expr::Integer(1)) => return left,
         // x - 0 = x
-        (Minus, _, Expr::Integer(0)) => return left,
+        (B::Minus, _, Expr::Integer(0)) => return left,
         // 0 - n = -n  (for integers)
-        (Minus, Expr::Integer(0), Expr::Integer(n)) => {
+        (B::Minus, Expr::Integer(0), Expr::Integer(n)) => {
           return Expr::Integer(-n);
         }
         // 0 - (-x) = x
         (
-          Minus,
+          B::Minus,
           Expr::Integer(0),
           Expr::UnaryOp {
             op: UnaryOperator::Minus,
@@ -10548,32 +10548,32 @@ pub fn simplify(mut expr: Expr) -> Expr {
           return *operand.clone();
         }
         // 0 - x = -x  (general)
-        (Minus, Expr::Integer(0), _) => {
+        (B::Minus, Expr::Integer(0), _) => {
           return Expr::UnaryOp {
             op: UnaryOperator::Minus,
             operand: Box::new(right),
           };
         }
         // x / 1 = x
-        (Divide, _, Expr::Integer(1)) => return left,
+        (B::Divide, _, Expr::Integer(1)) => return left,
         // x^0 = 1
-        (Power, _, Expr::Integer(0)) => return Expr::Integer(1),
+        (B::Power, _, Expr::Integer(0)) => return Expr::Integer(1),
         // x^1 = x
-        (Power, _, Expr::Integer(1)) => return left,
+        (B::Power, _, Expr::Integer(1)) => return left,
         // 0^n = 0 (for n > 0)
-        (Power, Expr::Integer(0), Expr::Integer(n)) if *n > 0 => {
+        (B::Power, Expr::Integer(0), Expr::Integer(n)) if *n > 0 => {
           return Expr::Integer(0);
         }
         // 1^n = 1
-        (Power, Expr::Integer(1), _) => return Expr::Integer(1),
+        (B::Power, Expr::Integer(1), _) => return Expr::Integer(1),
         // Numeric simplification
-        (Plus, Expr::Integer(a), Expr::Integer(b)) => {
+        (B::Plus, Expr::Integer(a), Expr::Integer(b)) => {
           return Expr::Integer(a + b);
         }
-        (Minus, Expr::Integer(a), Expr::Integer(b)) => {
+        (B::Minus, Expr::Integer(a), Expr::Integer(b)) => {
           return Expr::Integer(a - b);
         }
-        (Times, Expr::Integer(a), Expr::Integer(b)) => {
+        (B::Times, Expr::Integer(a), Expr::Integer(b)) => {
           return Expr::Integer(a * b);
         }
         _ => {}
@@ -10581,21 +10581,21 @@ pub fn simplify(mut expr: Expr) -> Expr {
 
       // For Power, delegate to power_two for proper expansion (e.g. (3*x)^2 → 9*x^2)
       // Only for non-negative exponents to preserve canonical form
-      if matches!(op, Power)
+      if matches!(op, B::Power)
         && matches!(&right, Expr::Integer(n) if *n >= 0)
         && let Ok(result) = crate::functions::math_ast::power_two(&left, &right)
       {
         return result;
       }
       // For Times, delegate to times_ast for proper flattening and sorting
-      if matches!(op, Times)
+      if matches!(op, B::Times)
         && let Ok(result) =
           crate::functions::math_ast::times_ast(&[left.clone(), right.clone()])
       {
         return result;
       }
       // For Plus, delegate to plus_ast for proper sorting
-      if matches!(op, Plus)
+      if matches!(op, B::Plus)
         && let Ok(result) =
           crate::functions::math_ast::plus_ast(&[left.clone(), right.clone()])
       {
@@ -12421,24 +12421,24 @@ fn negate_bound(c: &Expr) -> Expr {
 }
 
 fn flip_comparison_op(op: ComparisonOp) -> ComparisonOp {
-  use ComparisonOp::*;
+  use ComparisonOp as C;
   match op {
-    Less => Greater,
-    LessEqual => GreaterEqual,
-    Greater => Less,
-    GreaterEqual => LessEqual,
+    C::Less => C::Greater,
+    C::LessEqual => C::GreaterEqual,
+    C::Greater => C::Less,
+    C::GreaterEqual => C::LessEqual,
     other => other,
   }
 }
 
 fn comparison_op_from_symbol(e: &Expr) -> Option<ComparisonOp> {
-  use ComparisonOp::*;
+  use ComparisonOp as C;
   match e {
     Expr::Identifier(s) => match s.as_str() {
-      "Less" => Some(Less),
-      "LessEqual" => Some(LessEqual),
-      "Greater" => Some(Greater),
-      "GreaterEqual" => Some(GreaterEqual),
+      "Less" => Some(C::Less),
+      "LessEqual" => Some(C::LessEqual),
+      "Greater" => Some(C::Greater),
+      "GreaterEqual" => Some(C::GreaterEqual),
       _ => None,
     },
     _ => None,
@@ -13885,7 +13885,7 @@ fn rewrite_reciprocal_trig(e: &Expr) -> Option<Expr> {
 /// Power of `var` in a monomial `c*var^k` (c free of `var`); None when the
 /// expression is not a monomial in `var`.
 fn monomial_power_in(e: &Expr, var: &str) -> Option<i128> {
-  use BinaryOperator as Op;
+  use BinaryOperator as B;
   if !crate::functions::polynomial_ast::contains_var(e, var) {
     return Some(0);
   }
@@ -13896,7 +13896,7 @@ fn monomial_power_in(e: &Expr, var: &str) -> Option<i128> {
       operand,
     } => monomial_power_in(operand, var),
     Expr::BinaryOp {
-      op: Op::Power,
+      op: B::Power,
       left,
       right,
     } => match right.as_ref() {
@@ -13904,12 +13904,12 @@ fn monomial_power_in(e: &Expr, var: &str) -> Option<i128> {
       _ => None,
     },
     Expr::BinaryOp {
-      op: Op::Times,
+      op: B::Times,
       left,
       right,
     } => Some(monomial_power_in(left, var)? + monomial_power_in(right, var)?),
     Expr::BinaryOp {
-      op: Op::Divide,
+      op: B::Divide,
       left,
       right,
     } => Some(monomial_power_in(left, var)? - monomial_power_in(right, var)?),
@@ -13942,7 +13942,7 @@ const ENTIRE_HEADS: [&str; 5] = ["Exp", "Sin", "Cos", "Sinh", "Cosh"];
 /// local Laurent series, so the gate must reject it even though the series
 /// machinery would happily expand it. Returns (safe, has_essential).
 fn essential_series_safe(e: &Expr, var: &str) -> (bool, bool) {
-  use BinaryOperator as Op;
+  use BinaryOperator as B;
   if !crate::functions::polynomial_ast::contains_var(e, var) {
     return (true, false);
   }
@@ -13958,12 +13958,12 @@ fn essential_series_safe(e: &Expr, var: &str) -> (bool, bool) {
       operand,
     } => essential_series_safe(operand, var),
     Expr::BinaryOp {
-      op: Op::Plus | Op::Minus | Op::Times,
+      op: B::Plus | B::Minus | B::Times,
       left,
       right,
     } => both(left, right),
     Expr::BinaryOp {
-      op: Op::Divide,
+      op: B::Divide,
       left,
       right,
     } => {
@@ -13974,7 +13974,7 @@ fn essential_series_safe(e: &Expr, var: &str) -> (bool, bool) {
       }
     }
     Expr::BinaryOp {
-      op: Op::Power,
+      op: B::Power,
       left,
       right,
     } => match right.as_ref() {
@@ -14006,7 +14006,7 @@ fn essential_series_safe(e: &Expr, var: &str) -> (bool, bool) {
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       essential_series_safe(
         &Expr::BinaryOp {
-          op: Op::Power,
+          op: B::Power,
           left: Box::new(args[0].clone()),
           right: Box::new(args[1].clone()),
         },
@@ -14087,7 +14087,7 @@ fn rewrite_pole_models(
   applied: &mut bool,
   gamma_applied: &mut bool,
 ) -> Expr {
-  use BinaryOperator as Op;
+  use BinaryOperator as B;
   let value_at = |u: &Expr| -> Option<Expr> {
     crate::evaluator::evaluate_expr_to_expr(
       &crate::syntax::substitute_variable(u, var, z0),
@@ -14103,7 +14103,7 @@ fn rewrite_pole_models(
     args: items.into(),
   };
   let pow = |b: Expr, k: i128| Expr::BinaryOp {
-    op: Op::Power,
+    op: B::Power,
     left: Box::new(b),
     right: Box::new(Expr::Integer(k)),
   };
@@ -18116,7 +18116,7 @@ fn total_differentiate(
   expr: &Expr,
   var: &str,
 ) -> Result<Expr, InterpreterError> {
-  use BinaryOperator::*;
+  use BinaryOperator as B;
 
   match expr {
     // Constants
@@ -18139,80 +18139,80 @@ fn total_differentiate(
 
     // Binary operations
     Expr::BinaryOp { op, left, right } => match op {
-      Plus => {
+      B::Plus => {
         let da = total_differentiate(left, var)?;
         let db = total_differentiate(right, var)?;
         Ok(simplify(Expr::BinaryOp {
-          op: Plus,
+          op: B::Plus,
           left: Box::new(da),
           right: Box::new(db),
         }))
       }
-      Minus => {
+      B::Minus => {
         let da = total_differentiate(left, var)?;
         let db = total_differentiate(right, var)?;
         Ok(simplify(Expr::BinaryOp {
-          op: Minus,
+          op: B::Minus,
           left: Box::new(da),
           right: Box::new(db),
         }))
       }
-      Times => {
+      B::Times => {
         let da = total_differentiate(left, var)?;
         let db = total_differentiate(right, var)?;
         Ok(simplify(Expr::BinaryOp {
-          op: Plus,
+          op: B::Plus,
           left: Box::new(Expr::BinaryOp {
-            op: Times,
+            op: B::Times,
             left: Box::new(da),
             right: right.clone(),
           }),
           right: Box::new(Expr::BinaryOp {
-            op: Times,
+            op: B::Times,
             left: left.clone(),
             right: Box::new(db),
           }),
         }))
       }
-      Divide => {
+      B::Divide => {
         let da = total_differentiate(left, var)?;
         let db = total_differentiate(right, var)?;
         Ok(simplify(Expr::BinaryOp {
-          op: Divide,
+          op: B::Divide,
           left: Box::new(Expr::BinaryOp {
-            op: Minus,
+            op: B::Minus,
             left: Box::new(Expr::BinaryOp {
-              op: Times,
+              op: B::Times,
               left: Box::new(da),
               right: right.clone(),
             }),
             right: Box::new(Expr::BinaryOp {
-              op: Times,
+              op: B::Times,
               left: left.clone(),
               right: Box::new(db),
             }),
           }),
           right: Box::new(Expr::BinaryOp {
-            op: Power,
+            op: B::Power,
             left: right.clone(),
             right: Box::new(Expr::Integer(2)),
           }),
         }))
       }
-      Power => {
+      B::Power => {
         if is_true_constant(right) || is_constant_wrt(right, var) {
           // f(x)^n: n * f(x)^(n-1) * Dt[f, x]
           let df = total_differentiate(left, var)?;
           Ok(simplify(Expr::BinaryOp {
-            op: Times,
+            op: B::Times,
             left: Box::new(Expr::BinaryOp {
-              op: Times,
+              op: B::Times,
               left: right.clone(),
               right: Box::new(Expr::BinaryOp {
-                op: Power,
+                op: B::Power,
                 left: left.clone(),
                 right: Box::new(Expr::BinaryOp {
-                  op: Plus,
+                  op: B::Plus,
                   left: Box::new(Expr::Integer(-1)),
                   right: right.clone(),
                 }),
@@ -18224,7 +18224,7 @@ fn total_differentiate(
           // E^g: E^g * Dt[g, x]
           let dg = total_differentiate(right, var)?;
           Ok(simplify(Expr::BinaryOp {
-            op: Times,
+            op: B::Times,
             left: Box::new(expr.clone()),
             right: Box::new(dg),
           }))
@@ -18264,7 +18264,7 @@ fn total_differentiate(
         "Sin" if args.len() == 1 => {
           let df = total_differentiate(&args[0], var)?;
           Ok(simplify(Expr::BinaryOp {
-            op: Times,
+            op: B::Times,
             left: Box::new(Expr::FunctionCall {
               name: "Cos".to_string(),
               args: args.clone(),
@@ -18275,7 +18275,7 @@ fn total_differentiate(
         "Cos" if args.len() == 1 => {
           let df = total_differentiate(&args[0], var)?;
           Ok(simplify(Expr::BinaryOp {
-            op: Times,
+            op: B::Times,
             left: Box::new(Expr::UnaryOp {
               op: UnaryOperator::Minus,
               operand: Box::new(Expr::FunctionCall {
@@ -18289,9 +18289,9 @@ fn total_differentiate(
         "Tan" if args.len() == 1 => {
           let df = total_differentiate(&args[0], var)?;
           Ok(simplify(Expr::BinaryOp {
-            op: Times,
+            op: B::Times,
             left: Box::new(Expr::BinaryOp {
-              op: Power,
+              op: B::Power,
               left: Box::new(Expr::FunctionCall {
                 name: "Sec".to_string(),
                 args: args.clone(),
@@ -18304,9 +18304,9 @@ fn total_differentiate(
         "Log" if args.len() == 1 => {
           let df = total_differentiate(&args[0], var)?;
           Ok(simplify(Expr::BinaryOp {
-            op: Times,
+            op: B::Times,
             left: Box::new(Expr::BinaryOp {
-              op: Power,
+              op: B::Power,
               left: Box::new(args[0].clone()),
               right: Box::new(Expr::Integer(-1)),
             }),
@@ -18316,7 +18316,7 @@ fn total_differentiate(
         "Exp" if args.len() == 1 => {
           let df = total_differentiate(&args[0], var)?;
           Ok(simplify(Expr::BinaryOp {
-            op: Times,
+            op: B::Times,
             left: Box::new(expr.clone()),
             right: Box::new(df),
           }))
@@ -18325,10 +18325,10 @@ fn total_differentiate(
           // d/dx[sqrt(f)] = f'/(2*sqrt(f))
           let df = total_differentiate(&args[0], var)?;
           Ok(simplify(Expr::BinaryOp {
-            op: Divide,
+            op: B::Divide,
             left: Box::new(df),
             right: Box::new(Expr::BinaryOp {
-              op: Times,
+              op: B::Times,
               left: Box::new(Expr::Integer(2)),
               right: Box::new(expr.clone()),
             }),
@@ -18346,7 +18346,7 @@ fn total_differentiate(
           let mut result = terms.remove(0);
           for t in terms {
             result = Expr::BinaryOp {
-              op: Plus,
+              op: B::Plus,
               left: Box::new(result),
               right: Box::new(t),
             };
@@ -18362,7 +18362,7 @@ fn total_differentiate(
             for (j, arg) in args.iter().enumerate() {
               if j != i {
                 product = Expr::BinaryOp {
-                  op: Times,
+                  op: B::Times,
                   left: Box::new(product),
                   right: Box::new(arg.clone()),
                 };
@@ -18373,7 +18373,7 @@ fn total_differentiate(
           let mut result = sum_terms.remove(0);
           for t in sum_terms {
             result = Expr::BinaryOp {
-              op: Plus,
+              op: B::Plus,
               left: Box::new(result),
               right: Box::new(t),
             };

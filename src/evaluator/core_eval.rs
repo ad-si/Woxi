@@ -3621,12 +3621,12 @@ fn interval_compare(
   left: &Expr,
   right: &Expr,
 ) -> Option<bool> {
-  use ComparisonOp::*;
+  use ComparisonOp as C;
   let (xlo, xhi) = interval_numeric_bounds(left)?;
   let (ylo, yhi) = interval_numeric_bounds(right)?;
   let disjoint = xhi < ylo || yhi < xlo;
   match op {
-    Less => {
+    C::Less => {
       if xhi < ylo {
         Some(true)
       } else if xlo >= yhi {
@@ -3635,7 +3635,7 @@ fn interval_compare(
         None
       }
     }
-    LessEqual => {
+    C::LessEqual => {
       if xhi <= ylo {
         Some(true)
       } else if xlo > yhi {
@@ -3644,7 +3644,7 @@ fn interval_compare(
         None
       }
     }
-    Greater => {
+    C::Greater => {
       if xlo > yhi {
         Some(true)
       } else if xhi <= ylo {
@@ -3653,7 +3653,7 @@ fn interval_compare(
         None
       }
     }
-    GreaterEqual => {
+    C::GreaterEqual => {
       if xlo >= yhi {
         Some(true)
       } else if xhi < ylo {
@@ -3664,14 +3664,14 @@ fn interval_compare(
     }
     // Equal/Unequal resolve only when the ranges cannot overlap; identical
     // intervals are still caught by the structural string-equality fallback.
-    Equal if disjoint => Some(false),
-    NotEqual if disjoint => Some(true),
+    C::Equal if disjoint => Some(false),
+    C::NotEqual if disjoint => Some(true),
     _ => None,
   }
 }
 
 fn all_same_comparison_family(ops: &[ComparisonOp]) -> bool {
-  use ComparisonOp::*;
+  use ComparisonOp as C;
   let mixed = ops.iter().skip(1).any(|op| op != &ops[0]);
   if !mixed {
     return true;
@@ -3681,10 +3681,10 @@ fn all_same_comparison_family(ops: &[ComparisonOp]) -> bool {
   let mut has_greater = false;
   for op in ops {
     match op {
-      NotEqual | UnsameQ => has_unequal = true,
-      Less | LessEqual => has_less = true,
-      Greater | GreaterEqual => has_greater = true,
-      Equal | SameQ => {}
+      C::NotEqual | C::UnsameQ => has_unequal = true,
+      C::Less | C::LessEqual => has_less = true,
+      C::Greater | C::GreaterEqual => has_greater = true,
+      C::Equal | C::SameQ => {}
     }
   }
   if has_unequal {
