@@ -792,6 +792,7 @@
       - [`Reap`](math/utility/Reap.md)
       - [`Rectangle`](math/utility/Rectangle.md)
       - [`RegionCentroid`](math/utility/RegionCentroid.md)
+      - [`MeshRegion`](math/utility/MeshRegion.md)
       - [`RegionEqual`](math/utility/RegionEqual.md)
       - [`RegionWithin`](math/utility/RegionWithin.md)
       - [`ReplaceList`](math/utility/ReplaceList.md)

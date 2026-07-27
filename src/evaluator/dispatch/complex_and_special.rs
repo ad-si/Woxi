@@ -1918,6 +1918,132 @@ pub fn dispatch_complex_and_special(
     "FormBox" if args.len() == 2 => {
       return Some(Ok(unevaluated(name, args)));
     }
+    // The mesh objects ConvexHullMesh/DelaunayMesh/VoronoiMesh build are read
+    // through their own accessors.
+    "MeshCoordinates" | "MeshCells" | "MeshPrimitives" | "MeshCellCount"
+      if !args.is_empty()
+        && crate::functions::mesh_region::is_mesh_region(&args[0]) =>
+    {
+      return Some(crate::functions::mesh_region::mesh_accessor_ast(
+        name, args,
+      ));
+    }
+    // `RegionMeasure[region, d]` asks for the d-dimensional measure; below the
+    // region's own dimension that is unbounded.
+    "RegionMeasure"
+      if args.len() == 2
+        && crate::functions::mesh_region::is_mesh_region(&args[0]) =>
+    {
+      return Some(Ok(
+        match (
+          crate::functions::mesh_region::parse_mesh(&args[0]),
+          &args[1],
+        ) {
+          (Some(mesh), Expr::Integer(d)) if *d >= 0 => {
+            if *d as usize == mesh.dimension() {
+              crate::functions::mesh_region::mesh_measure(&mesh)
+                .unwrap_or_else(|| unevaluated(name, args))
+            } else if (*d as usize) < mesh.dimension() {
+              Expr::Identifier("Infinity".to_string())
+            } else {
+              Expr::Integer(0)
+            }
+          }
+          _ => unevaluated(name, args),
+        },
+      ));
+    }
+    // A mesh region measures like the polygons it covers.
+    "RegionMeasure" | "Area"
+      if args.len() == 1
+        && crate::functions::mesh_region::is_mesh_region(&args[0]) =>
+    {
+      return Some(Ok(
+        crate::functions::mesh_region::parse_mesh(&args[0])
+          .as_ref()
+          .and_then(crate::functions::mesh_region::mesh_measure)
+          .unwrap_or_else(|| unevaluated(name, args)),
+      ));
+    }
+    "Perimeter"
+      if args.len() == 1
+        && crate::functions::mesh_region::is_mesh_region(&args[0]) =>
+    {
+      return Some(Ok(
+        crate::functions::mesh_region::parse_mesh(&args[0])
+          .as_ref()
+          .and_then(crate::functions::mesh_region::mesh_perimeter)
+          .unwrap_or_else(|| unevaluated(name, args)),
+      ));
+    }
+    "RegionCentroid"
+      if args.len() == 1
+        && crate::functions::mesh_region::is_mesh_region(&args[0]) =>
+    {
+      return Some(Ok(
+        crate::functions::mesh_region::parse_mesh(&args[0])
+          .as_ref()
+          .and_then(crate::functions::mesh_region::mesh_centroid)
+          .unwrap_or_else(|| unevaluated(name, args)),
+      ));
+    }
+    "RegionMember"
+      if args.len() == 2
+        && crate::functions::mesh_region::is_mesh_region(&args[0]) =>
+    {
+      return Some(Ok(
+        crate::functions::mesh_region::parse_mesh(&args[0])
+          .as_ref()
+          .and_then(|mesh| {
+            crate::functions::mesh_region::mesh_member(mesh, &args[1])
+          })
+          .unwrap_or_else(|| unevaluated(name, args)),
+      ));
+    }
+    "RegionDimension"
+      if args.len() == 1
+        && crate::functions::mesh_region::is_mesh_region(&args[0]) =>
+    {
+      return Some(Ok(
+        match crate::functions::mesh_region::parse_mesh(&args[0]) {
+          Some(mesh) => Expr::Integer(mesh.dimension() as i128),
+          None => unevaluated(name, args),
+        },
+      ));
+    }
+    "RegionEmbeddingDimension"
+      if args.len() == 1
+        && crate::functions::mesh_region::is_mesh_region(&args[0]) =>
+    {
+      return Some(Ok(
+        match crate::functions::mesh_region::parse_mesh(&args[0]).and_then(
+          |mesh| match mesh.coordinates.first() {
+            Some(Expr::List(pt)) => Some(pt.len()),
+            _ => None,
+          },
+        ) {
+          Some(n) => Expr::Integer(n as i128),
+          None => unevaluated(name, args),
+        },
+      ));
+    }
+    "BoundedRegionQ"
+      if args.len() == 1
+        && crate::functions::mesh_region::is_mesh_region(&args[0]) =>
+    {
+      return Some(Ok(crate::syntax::bool_expr(true)));
+    }
+    "RegionBounds"
+      if args.len() == 1
+        && crate::functions::mesh_region::is_mesh_region(&args[0]) =>
+    {
+      return Some(Ok(
+        crate::functions::mesh_region::parse_mesh(&args[0])
+          .as_ref()
+          .and_then(crate::functions::mesh_region::mesh_bounds)
+          .unwrap_or_else(|| unevaluated(name, args)),
+      ));
+    }
     // Area[region] — compute the area of a geometric region
     "Area" if args.len() == 1 => {
       return Some(compute_area(strip_region_wrapper(&args[0])));

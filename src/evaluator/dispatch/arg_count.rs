@@ -1168,7 +1168,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "RegionCentroid" => Some((1, 1)),
     "RegionDimension" => Some((1, 1)),
     "RegionEmbeddingDimension" => Some((1, 1)),
-    "RegionMeasure" => Some((1, 1)),
+    "RegionMeasure" => Some((1, 2)),
     "RegionMember" => Some((1, 2)),
     "RegionDistance" => Some((1, 2)),
     "RegionNearest" => Some((1, 2)),

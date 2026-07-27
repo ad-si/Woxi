@@ -924,7 +924,7 @@ SynchronousUpdating,,🚫,,6.0,931
 Diagonal,Extract diagonal of a matrix,✅,pure,6.0,932
 IntegerString,Converts an integer to a string in a given base,✅,pure,6.0,933
 FontTracking,,🚫,,3.0,935
-MeshRegion,Requires external services or GUI infrastructure,🚫,io,10.0,935
+MeshRegion,Mesh region built from coordinates and cells; measured and read like any other region,✅,pure,10.0,935
 ScalingFunctions,,🚫,,8.0,936
 ChartElementFunction,,🚫,,7.0,937
 ComponentMeasurements,Measure labelled components of a label matrix (Count Area Label),✅,pure,8.0,938
@@ -940,7 +940,7 @@ Exists,Represents the existential quantifier,✅,1,5.0,948
 NotebookRead,Requires external services or GUI infrastructure,🚫,io,3.0,948
 Level,Extracts subexpressions at specified levels,✅,pure,1.0,950
 StringDrop,Removes a substring from a string,✅,pure,2.0,950
-MeshCoordinates,Requires external services or GUI infrastructure,🚫,io,10.0,951
+MeshCoordinates,Coordinates of a mesh region,✅,pure,10.0,951
 MousePosition,Requires external services or GUI infrastructure,🚫,io,6.0,952
 Expectation,Compute expected value of a function of a random variable,✅,pure,8.0,954
 TrigReduce,Reduce products and powers of trig functions to sums,✅,pure,3.0,954
@@ -957,7 +957,7 @@ SubscriptBox,Represents a subscript box for typesetting,✅,pure,3.0,964
 ArrayReshape,Reshapes a list into specified dimensions,✅,pure,9.0,965
 Key,Operator form for extracting values from associations by key,✅,none,10.0,966
 ProbabilityDistribution,Defines a custom probability distribution,✅,1,8.0,967
-MeshCells,Requires external services or GUI infrastructure,🚫,io,10.0,968
+MeshCells,Cells of a mesh region of a given dimension as index primitives,✅,pure,10.0,968
 VertexStyle,,🚫,,8.0,969
 OverHat,Display form with a hat accent,✅,none,6.0,970
 ListLogLogPlot,Plots data with logarithmic x and y axes,✅,pure,6.0,971
@@ -1004,7 +1004,7 @@ TagBox,Low-level box construct that associates a tag with box content,✅,pure,3
 Divisible,Tests if one number is divisible by another,✅,pure,6.0,1013
 PlusMinus,Symbolic plus-or-minus operator with Unicode display,✅,none,3.0,1014
 Callout,Annotates a plot element with a label,✅,pure,11.0,1015
-MeshPrimitives,Requires external services or GUI infrastructure,🚫,io,10.0,1016
+MeshPrimitives,Cells of a mesh region of a given dimension with their coordinates,✅,pure,10.0,1016
 CircleTimes,Symbolic tensor product operator with Unicode display,✅,pure,3.0,1017
 VectorPlot3D,Creates a 3D vector field plot,✅,pure,7.0,1018
 RandomPoint,,🚫,,10.2,1020
@@ -1436,7 +1436,7 @@ AbsoluteDashing,Graphics directive for absolute dash pattern,✅,pure,2.0,1455
 DataReversed,Option for reversing data in plots,✅,pure,6.0,1455
 BodePlot,Bode magnitude and phase plot,✅,pure,8.0,1456
 AxesEdge,Option for specifying axes edge positions,✅,pure,2.0,1459
-DelaunayMesh,Delaunay triangulation mesh,✅,pure,10.0,1459
+DelaunayMesh,Delaunay triangulation of a 2D point set as a MeshRegion (cell order follows the triangulation not qhull),✅,pure,10.0,1459
 TaggingRules,Option for attaching metadata tags,✅,pure,4.0,1459
 PolynomialQuotient,Quotient of polynomial division,✅,pure,1.0,1460
 BellB,Returns the Bell number or Bell polynomial,✅,pure,6.0,1463
@@ -1560,7 +1560,7 @@ NetDecoder,Neural net decoder,,unevaluated,11.0,1582
 Thinning,Morphological thinning,,unevaluated,8.0,1582
 Tolerance,Tolerance specification,,unevaluated,2.0,1583
 NetInitialize,Initialize a neural net,,unevaluated,11.0,1584
-BoundaryMeshRegion,Boundary mesh region,,unevaluated,10.0,1586
+BoundaryMeshRegion,Region given by the mesh of its boundary; measured and read like any other region,✅,pure,10.0,1586
 Cumulant,Computes the r-th cumulant of a list or distribution,✅,pure,8.0,1586
 BooleanConvert,Convert Boolean expressions; the CNF form carries no repeated or subsumed clauses,✅,pure,7.0,1588
 GeometricBrownianMotionProcess,Geometric Brownian motion process with LogNormal time slices,✅,unevaluated,9.0,1588
@@ -1937,7 +1937,7 @@ BitOr,Returns the bitwise OR of integers,✅,pure,4.0,1968
 Monday,Day of the week symbol,✅,unevaluated,9.0,1970
 Nor,Logical NOR,✅,pure,4.1,1970
 CellChangeTimes,Notebook cell option for tracking changes,🚫,,6.0,1975
-MeshCellCount,Count mesh cells in a region,🚫,,10.0,1975
+MeshCellCount,Number of cells of each dimension in a mesh region,✅,pure,10.0,1975
 ModularInverse,Returns the modular multiplicative inverse,✅,pure,11.1,1975
 PopupWindow,GUI popup window element,🚫,,6.0,1975
 Resultant,Resultant of two polynomials via Sylvester matrix determinant,✅,pure,1.0,1975

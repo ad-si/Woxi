@@ -7259,3 +7259,156 @@ mod region_set_operations {
     );
   }
 }
+
+/// The mesh objects `ConvexHullMesh`, `DelaunayMesh` and `VoronoiMesh` build
+/// are read by the ordinary region functions and by the mesh accessors.
+mod mesh_regions {
+  use super::*;
+
+  const HULL: &str = "ConvexHullMesh[{{0, 0}, {2, 0}, {0, 2}}]";
+  const SQUARE: &str = "DelaunayMesh[{{0, 0}, {2, 0}, {0, 2}, {2, 2}}]";
+
+  #[test]
+  fn a_mesh_measures_like_the_polygons_it_covers() {
+    clear_state();
+    for (code, expected) in [
+      (format!("RegionMeasure[{HULL}]"), "2"),
+      (format!("Area[{HULL}]"), "2"),
+      (
+        "RegionMeasure[ConvexHullMesh[{{0, 0}, {2, 0}, {2, 2}, {0, 2}}]]"
+          .to_string(),
+        "4",
+      ),
+      // Exact coordinates keep exact answers.
+      (format!("Perimeter[{HULL}]"), "4 + 2*Sqrt[2]"),
+      (format!("RegionMeasure[{SQUARE}]"), "4"),
+      (format!("Area[{SQUARE}]"), "4"),
+      // A dimension below the region's own is unbounded.
+      (format!("RegionMeasure[{SQUARE}, 1]"), "Infinity"),
+      (format!("RegionMeasure[{SQUARE}, 2]"), "4"),
+    ] {
+      assert_eq!(
+        interpret(&format!("ToString[{code}, InputForm]")).unwrap(),
+        expected,
+        "{code}"
+      );
+    }
+  }
+
+  #[test]
+  fn the_region_properties_read_the_mesh() {
+    clear_state();
+    for (code, expected) in [
+      (
+        "ToString[RegionCentroid[ConvexHullMesh[{{0, 0}, {2, 0}, {2, 2}, \
+         {0, 2}}]], InputForm]",
+        "{1, 1}",
+      ),
+      (
+        format!("ToString[RegionBounds[{HULL}], InputForm]").leak(),
+        "{{0, 2}, {0, 2}}",
+      ),
+      (format!("RegionDimension[{HULL}]").leak(), "2"),
+      (format!("RegionEmbeddingDimension[{HULL}]").leak(), "2"),
+      (format!("BoundedRegionQ[{HULL}]").leak(), "True"),
+      (format!("RegionMember[{HULL}, {{0.5, 0.5}}]").leak(), "True"),
+      (format!("RegionMember[{HULL}, {{3, 3}}]").leak(), "False"),
+      (
+        format!("RegionMember[{SQUARE}, {{0.5, 0.5}}]").leak(),
+        "True",
+      ),
+      (format!("RegionMember[{SQUARE}, {{3, 3}}]").leak(), "False"),
+      (
+        format!("ToString[RegionCentroid[{SQUARE}], InputForm]").leak(),
+        "{1, 1}",
+      ),
+      (
+        format!("ToString[RegionBounds[{SQUARE}], InputForm]").leak(),
+        "{{0, 2}, {0, 2}}",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn the_accessors_read_coordinates_and_cells() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!("ToString[MeshCoordinates[{HULL}], InputForm]"))
+        .unwrap(),
+      "{{0, 0}, {2, 0}, {0, 2}}"
+    );
+    assert_eq!(
+      interpret(&format!("ToString[MeshCells[{HULL}, 0], InputForm]")).unwrap(),
+      "{Point[1], Point[2], Point[3]}"
+    );
+    assert_eq!(
+      interpret(&format!("ToString[MeshCells[{HULL}, 1], InputForm]")).unwrap(),
+      "{Line[{1, 2}], Line[{2, 3}], Line[{3, 1}]}"
+    );
+    // A boundary mesh fills its interior, so it has a 2-cell too.
+    assert_eq!(
+      interpret(&format!("ToString[MeshCells[{HULL}, 2], InputForm]")).unwrap(),
+      "{Polygon[{1, 2, 3}]}"
+    );
+    assert_eq!(
+      interpret(&format!("ToString[MeshPrimitives[{HULL}, 1], InputForm]"))
+        .unwrap(),
+      "{Line[{{0, 0}, {2, 0}}], Line[{{2, 0}, {0, 2}}], \
+       Line[{{0, 2}, {0, 0}}]}"
+        .replace("       ", "")
+        .as_str()
+    );
+    // The counts a boundary mesh names are its points and lines; a mesh of
+    // faces also counts its edges and faces.
+    assert_eq!(
+      interpret(&format!("ToString[MeshCellCount[{HULL}], InputForm]"))
+        .unwrap(),
+      "{3, 3}"
+    );
+    assert_eq!(
+      interpret(&format!("ToString[MeshCellCount[{SQUARE}], InputForm]"))
+        .unwrap(),
+      "{4, 5, 2}"
+    );
+    assert_eq!(
+      interpret(&format!("ToString[MeshPrimitives[{SQUARE}, 0], InputForm]"))
+        .unwrap(),
+      "{Point[{0, 0}], Point[{2, 0}], Point[{0, 2}], Point[{2, 2}]}"
+    );
+  }
+
+  #[test]
+  fn delaunay_triangulates_the_point_set() {
+    clear_state();
+    // The triangles are wolframscript's; which vertex each one starts at
+    // follows the triangulation rather than qhull, so compare them as sets.
+    assert_eq!(
+      interpret(&format!(
+        "ToString[Sort[Sort /@ MeshCells[{SQUARE}, 2][[All, 1]]], InputForm]"
+      ))
+      .unwrap(),
+      "{{1, 2, 3}, {2, 3, 4}}"
+    );
+    assert_eq!(interpret(&format!("Head[{SQUARE}]")).unwrap(), "MeshRegion");
+    // Three points cannot be lifted into a triangulation at all, and
+    // wolframscript answers with the points themselves.
+    assert_eq!(
+      interpret("ToString[DelaunayMesh[{{0, 0}, {2, 0}, {0, 2}}], InputForm]")
+        .unwrap(),
+      "MeshRegion[{{0, 0}, {2, 0}, {0, 2}}, {Point[{{1}, {2}, {3}}]}, \
+       WorkingPrecision -> Infinity]"
+        .replace("       ", "")
+    );
+    // Inexact coordinates drop the exactness option.
+    assert_eq!(
+      interpret(
+        "Head[DelaunayMesh[{{0., 0.}, {1., 0.}, {0., 1.}, {1., 1.}, \
+         {0.5, 0.5}}]]"
+      )
+      .unwrap(),
+      "MeshRegion"
+    );
+  }
+}
