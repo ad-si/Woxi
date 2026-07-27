@@ -5116,7 +5116,7 @@ pub fn expr_to_tex(expr: &Expr) -> String {
   match expr {
     Expr::Integer(n) => n.to_string(),
     Expr::BigInteger(n) => n.to_string(),
-    Expr::Real(f) => crate::syntax::format_real(*f),
+    Expr::Real(f) => tex_real(*f),
     Expr::BigFloat(digits, prec) => {
       // TeX rendering of a precision-tagged BigFloat uses the
       // plain decimal digits (no `…` precision marker), padded
@@ -5125,7 +5125,7 @@ pub fn expr_to_tex(expr: &Expr) -> String {
       // (3 sig digits = "14" + "0").
       pad_bigfloat_to_precision(digits, *prec)
     }
-    Expr::String(s) => format!("\\text{{{}}}", s),
+    Expr::String(s) => format!("\\text{{{}}}", tex_escape_text(s)),
     // Raw is the rendered output of OutputForm / 2d boxes — treat as text.
     Expr::Raw(s) => format!("\\text{{{}}}", s),
     Expr::Identifier(name) | Expr::Constant(name) => tex_identifier(name),
@@ -5234,13 +5234,57 @@ pub fn expr_to_tex(expr: &Expr) -> String {
       format!("\\{{{}\\}}", parts.join(","))
     }
     Expr::FunctionCall { name, args } => tex_function_call(name, args),
+    // wolframscript writes the arrow tight on its left: `x\to y` — unless
+    // the left side ends in a macro, which needs the separating space
+    // (`\alpha \to y`).
     Expr::Rule {
       pattern,
       replacement,
-    } => {
-      format!("{} \\to {}", expr_to_tex(pattern), expr_to_tex(replacement))
+    } => format!(
+      "{}\\to {}",
+      tex_arrow_lhs(pattern),
+      expr_to_tex(replacement)
+    ),
+    // A delayed rule keeps the colon of `:>`: `x:\to y`.
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => format!(
+      "{}:\\to {}",
+      tex_arrow_lhs(pattern),
+      expr_to_tex(replacement)
+    ),
+    // An association is bracketed with the private-use code points
+    // wolframscript uses for `<|` and `|>`.
+    Expr::Association(pairs) => {
+      let parts: Vec<String> = pairs
+        .iter()
+        .map(|(k, v)| match v {
+          Expr::RuleDelayed { replacement, .. } => {
+            format!("{}:\\to {}", tex_arrow_lhs(k), expr_to_tex(replacement))
+          }
+          _ => format!("{}\\to {}", tex_arrow_lhs(k), expr_to_tex(v)),
+        })
+        .collect();
+      format!("\\unicode{{f113}}{}\\unicode{{f114}}", parts.join(","))
     }
     Expr::CurriedCall { func, args } => {
+      // `Inactive[f][x…]` typesets like the active call, except that an
+      // inactive product shows its `\times`.
+      if let Expr::FunctionCall { name, args: inner } = func.as_ref()
+        && name == "Inactive"
+        && inner.len() == 1
+        && let Expr::Identifier(head) = &inner[0]
+      {
+        if head == "Times" {
+          return args
+            .iter()
+            .map(expr_to_tex)
+            .collect::<Vec<_>>()
+            .join("\\times ");
+        }
+        return tex_function_call(head, args);
+      }
       // Derivative[orders…][f]  -> f', f'', f^{(n)}, …
       if let Expr::FunctionCall { name, args: orders } = func.as_ref()
         && name == "Derivative"
@@ -5283,6 +5327,231 @@ fn tex_delimited(inner: &str, ldelim: &str, rdelim: &str) -> String {
   }
 }
 
+/// The superscript a `Direction` option puts on a one-sided limit point:
+/// `"FromAbove"` and `Direction -> -1` approach from the right (`^+`),
+/// `"FromBelow"` and `Direction -> 1` from the left (`^-`).
+fn tex_limit_direction(option: &Expr) -> Option<&'static str> {
+  let Expr::Rule {
+    pattern,
+    replacement,
+  } = option
+  else {
+    return None;
+  };
+  if !matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Direction") {
+    return None;
+  }
+  match replacement.as_ref() {
+    Expr::String(s) if s == "FromAbove" => Some("^+"),
+    Expr::String(s) if s == "FromBelow" => Some("^-"),
+    Expr::Integer(-1) => Some("^+"),
+    Expr::Integer(1) => Some("^-"),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } if matches!(operand.as_ref(), Expr::Integer(1)) => Some("^+"),
+    _ => None,
+  }
+}
+
+/// TeX rendering of a machine real. wolframscript typesets the DISPLAY form
+/// (six significant figures), writing a large magnitude as
+/// `1.23457\times 10^6`. A magnitude below `1e-5` is the one case it gives
+/// up on: it prints the InputForm text — precision backtick, `*^` and all —
+/// inside a `\text{…}`.
+fn tex_real(f: f64) -> String {
+  if !f.is_finite() {
+    return crate::syntax::format_real(f);
+  }
+  let parts = crate::functions::graphics::machine_real_display_parts(f);
+  match parts.exponent {
+    None => parts.mantissa,
+    Some(exponent) if exponent > 0 => {
+      // TeX braces are only needed once the exponent has more than one
+      // character: `10^6` but `10^{10}`.
+      let exponent = exponent.to_string();
+      if exponent.len() == 1 {
+        format!("{}\\times 10^{}", parts.mantissa, exponent)
+      } else {
+        format!("{}\\times 10^{{{}}}", parts.mantissa, exponent)
+      }
+    }
+    Some(_) => {
+      let raw = crate::syntax::format_real(f);
+      match raw.split_once("*^") {
+        Some((mantissa, exponent)) => format!(
+          "\\text{{{}$\\grave{{ }}$*${{}}^{{\\wedge}}${}}}",
+          mantissa, exponent
+        ),
+        None => raw,
+      }
+    }
+  }
+}
+
+/// Whether a term is a numeric multiple of `I` — the imaginary half of a
+/// complex number (`I`, `2 I`, `-3.5 I`).
+fn is_imaginary_term(expr: &Expr) -> bool {
+  match expr {
+    Expr::Identifier(name) | Expr::Constant(name) => name == "I",
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => is_imaginary_term(operand),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      (is_imaginary_term(left) && is_tex_number(right))
+        || (is_tex_number(left) && is_imaginary_term(right))
+    }
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+      (is_imaginary_term(&args[0]) && is_tex_number(&args[1]))
+        || (is_tex_number(&args[0]) && is_imaginary_term(&args[1]))
+    }
+    _ => false,
+  }
+}
+
+/// Whether a term is a plain number for the purpose of the complex-atom test.
+fn is_tex_number(expr: &Expr) -> bool {
+  matches!(
+    expr,
+    Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_) | Expr::BigFloat(..)
+  )
+}
+
+/// The TeX of a complex number written as its two halves. wolframscript
+/// separates a NON-NEGATIVE machine-real real part from the sign of the
+/// imaginary part with a thin space: `2.\, +3.5 i`, but `-2.-3.5 i`.
+fn tex_complex_atom(re: &Expr, im: &Expr) -> String {
+  let re_tex = expr_to_tex(re);
+  let im_tex = expr_to_tex(im);
+  let thin_space = matches!(re, Expr::Real(f) if *f >= 0.0);
+  let separator = if thin_space { "\\, " } else { "" };
+  if let Some(rest) = im_tex.strip_prefix('-') {
+    format!("{}{}-{}", re_tex, separator, rest)
+  } else {
+    format!("{}{}+{}", re_tex, separator, im_tex)
+  }
+}
+
+/// A TeX subscript operand: braces only when it is more than one character
+/// (`\gamma _1` but `\gamma _{10}`).
+fn tex_subscript_arg(expr: &Expr) -> String {
+  let rendered = expr_to_tex(expr);
+  if rendered.chars().count() == 1 {
+    rendered
+  } else {
+    format!("{{{}}}", rendered)
+  }
+}
+
+/// Escape the characters wolframscript protects inside a `\text{…}` run:
+/// each is written as its own inline-math group (`a_b` → `a$\_$b`).
+fn tex_escape_text(text: &str) -> String {
+  let mut out = String::with_capacity(text.len());
+  for c in text.chars() {
+    match c {
+      '_' | '#' | '$' | '%' | '&' | '{' | '}' => {
+        out.push_str(&format!("${}{}$", '\\', c));
+      }
+      '^' => out.push_str("${}^{\\wedge}$"),
+      '~' => out.push_str("$\\sim $"),
+      '<' | '>' => out.push_str(&format!("${}$", c)),
+      other => out.push(other),
+    }
+  }
+  out
+}
+
+/// An exponent's TeX. wolframscript writes a simple quotient inline up in the
+/// superscript (`x^{3/2}`, `e^{-x/2}`) instead of stacking it, as long as
+/// neither half is a sum and the denominator is a single token.
+fn tex_exponent(exp: &Expr) -> String {
+  let rendered = expr_to_tex(exp);
+  let (sign, body) = match rendered.strip_prefix('-') {
+    Some(rest) => ("-", rest),
+    None => ("", rendered.as_str()),
+  };
+  let Some(rest) = body.strip_prefix("\\frac{") else {
+    return rendered;
+  };
+  let Some((numerator, rest)) = rest.split_once("}{") else {
+    return rendered;
+  };
+  let Some(denominator) = rest.strip_suffix('}') else {
+    return rendered;
+  };
+  let simple = |part: &str| {
+    !part.contains('{')
+      && !part.contains('}')
+      && !part.contains('+')
+      && !part.contains('-')
+  };
+  // A negative quotient only goes inline when its denominator is a number:
+  // wolframscript writes `e^{-x/2}` but `x^{-\frac{a}{b}}`.
+  let numeric_denominator = denominator.chars().all(|c| c.is_ascii_digit());
+  if simple(numerator)
+    && simple(denominator)
+    && !denominator.contains(' ')
+    && (sign.is_empty() || numeric_denominator)
+  {
+    format!("{}{}/{}", sign, numerator, denominator)
+  } else {
+    rendered
+  }
+}
+
+/// The positive counterpart of a NUMERIC negative exponent (`-3/2` → `3/2`),
+/// or `None` when the exponent is not a negative number. Used to move the
+/// power into a denominator the way wolframscript does.
+fn negated_numeric_exponent(exp: &Expr) -> Option<Expr> {
+  match exp {
+    Expr::FunctionCall { name, args }
+      if name == "Rational"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Integer(n) if *n < 0) =>
+    {
+      let Expr::Integer(n) = &args[0] else {
+        return None;
+      };
+      Some(Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(-n), args[1].clone()].into(),
+      })
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::Integer(n) if *n < 0)
+      && matches!(right.as_ref(), Expr::Integer(_)) =>
+    {
+      let Expr::Integer(n) = left.as_ref() else {
+        return None;
+      };
+      Some(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(Expr::Integer(-n)),
+        right: right.clone(),
+      })
+    }
+    _ => None,
+  }
+}
+
+/// The left side of a rule arrow, with the space a trailing TeX macro needs
+/// before the following control word.
+fn tex_arrow_lhs(expr: &Expr) -> String {
+  let mut rendered = expr_to_tex(expr);
+  if ends_with_tex_macro(&rendered) {
+    rendered.push(' ');
+  }
+  rendered
+}
+
 fn tex_identifier(name: &str) -> String {
   match name {
     "Pi" => "\\pi".to_string(),
@@ -5291,32 +5560,96 @@ fn tex_identifier(name: &str) -> String {
     "Infinity" => "\\infty".to_string(),
     "True" => "\\text{True}".to_string(),
     "False" => "\\text{False}".to_string(),
-    // Single letter identifiers stay as-is
+    // Single ASCII letter identifiers stay as-is
     s if s.len() == 1 => s.to_string(),
-    // Greek letters
-    "Alpha" | "alpha" => "\\alpha".to_string(),
-    "Beta" | "beta" => "\\beta".to_string(),
-    "Gamma" | "gamma" => "\\gamma".to_string(),
-    "Delta" | "delta" => "\\delta".to_string(),
-    "Epsilon" | "epsilon" => "\\epsilon".to_string(),
-    "Zeta" | "zeta" => "\\zeta".to_string(),
-    "Eta" | "eta" => "\\eta".to_string(),
-    "Theta" | "theta" => "\\theta".to_string(),
-    "Iota" | "iota" => "\\iota".to_string(),
-    "Kappa" | "kappa" => "\\kappa".to_string(),
-    "Lambda" | "lambda" => "\\lambda".to_string(),
-    "Mu" | "mu" => "\\mu".to_string(),
-    "Nu" | "nu" => "\\nu".to_string(),
-    "Xi" | "xi" => "\\xi".to_string(),
-    "Omicron" | "omicron" => "o".to_string(),
-    "Rho" | "rho" => "\\rho".to_string(),
-    "Sigma" | "sigma" => "\\sigma".to_string(),
-    "Tau" | "tau" => "\\tau".to_string(),
-    "Upsilon" | "upsilon" => "\\upsilon".to_string(),
-    "Phi" | "phi" => "\\phi".to_string(),
-    "Chi" | "chi" => "\\chi".to_string(),
-    "Psi" | "psi" => "\\psi".to_string(),
-    "Omega" | "omega" => "\\omega".to_string(),
+    // Lower-case Greek NAMES carry the macro; the capitalised spellings are
+    // ordinary symbols in wolframscript (`Alpha` → `\text{Alpha}`), so only
+    // the lower-case ones are listed here.
+    "alpha" => "\\alpha".to_string(),
+    "beta" => "\\beta".to_string(),
+    "gamma" => "\\gamma".to_string(),
+    "delta" => "\\delta".to_string(),
+    "epsilon" => "\\epsilon".to_string(),
+    "zeta" => "\\zeta".to_string(),
+    "eta" => "\\eta".to_string(),
+    "theta" => "\\theta".to_string(),
+    "iota" => "\\iota".to_string(),
+    "kappa" => "\\kappa".to_string(),
+    "lambda" => "\\lambda".to_string(),
+    "mu" => "\\mu".to_string(),
+    "nu" => "\\nu".to_string(),
+    "xi" => "\\xi".to_string(),
+    "omicron" => "o".to_string(),
+    "pi" => "\\pi".to_string(),
+    "rho" => "\\rho".to_string(),
+    "sigma" => "\\sigma".to_string(),
+    "tau" => "\\tau".to_string(),
+    "upsilon" => "\\upsilon".to_string(),
+    "phi" => "\\phi".to_string(),
+    "chi" => "\\chi".to_string(),
+    "psi" => "\\psi".to_string(),
+    "omega" => "\\omega".to_string(),
+    // Greek CHARACTERS (\[Alpha] and friends) carry the macro too. The
+    // capitals that look like Latin letters render as that letter.
+    s if s.chars().count() == 1 => match s.chars().next().unwrap() {
+      '\u{03b1}' => "\\alpha".to_string(),
+      '\u{03b2}' => "\\beta".to_string(),
+      '\u{03b3}' => "\\gamma".to_string(),
+      '\u{03b4}' => "\\delta".to_string(),
+      '\u{03f5}' => "\\epsilon".to_string(),
+      '\u{03b5}' => "\\varepsilon".to_string(),
+      '\u{03b6}' => "\\zeta".to_string(),
+      '\u{03b7}' => "\\eta".to_string(),
+      '\u{03b8}' => "\\theta".to_string(),
+      '\u{03d1}' => "\\vartheta".to_string(),
+      '\u{03b9}' => "\\iota".to_string(),
+      '\u{03ba}' => "\\kappa".to_string(),
+      '\u{03f0}' => "\\varkappa".to_string(),
+      '\u{03bb}' => "\\lambda".to_string(),
+      '\u{03bc}' => "\\mu".to_string(),
+      '\u{03bd}' => "\\nu".to_string(),
+      '\u{03be}' => "\\xi".to_string(),
+      '\u{03bf}' => "o".to_string(),
+      '\u{03c0}' => "\\pi".to_string(),
+      '\u{03d6}' => "\\varpi".to_string(),
+      '\u{03c1}' => "\\rho".to_string(),
+      '\u{03f1}' => "\\varrho".to_string(),
+      '\u{03c3}' => "\\sigma".to_string(),
+      '\u{03c2}' => "\\varsigma".to_string(),
+      '\u{03c4}' => "\\tau".to_string(),
+      '\u{03c5}' => "\\upsilon".to_string(),
+      '\u{03d5}' => "\\phi".to_string(),
+      '\u{03c6}' => "\\varphi".to_string(),
+      '\u{03c7}' => "\\chi".to_string(),
+      '\u{03c8}' => "\\psi".to_string(),
+      '\u{03c9}' => "\\omega".to_string(),
+      '\u{0393}' => "\\Gamma".to_string(),
+      '\u{0394}' => "\\Delta".to_string(),
+      '\u{0398}' => "\\Theta".to_string(),
+      '\u{039b}' => "\\Lambda".to_string(),
+      '\u{039e}' => "\\Xi".to_string(),
+      '\u{03a0}' => "\\Pi".to_string(),
+      '\u{03a3}' => "\\Sigma".to_string(),
+      '\u{03a5}' => "\\Upsilon".to_string(),
+      '\u{03a6}' => "\\Phi".to_string(),
+      '\u{03a8}' => "\\Psi".to_string(),
+      '\u{03a9}' => "\\Omega".to_string(),
+      // The capitals spelled with a Latin lookalike.
+      '\u{0391}' => "A".to_string(),
+      '\u{0392}' => "B".to_string(),
+      '\u{0395}' => "E".to_string(),
+      '\u{0396}' => "Z".to_string(),
+      '\u{0397}' => "H".to_string(),
+      '\u{0399}' => "I".to_string(),
+      '\u{039a}' => "K".to_string(),
+      '\u{039c}' => "M".to_string(),
+      '\u{039d}' => "N".to_string(),
+      '\u{039f}' => "O".to_string(),
+      '\u{03a1}' => "P".to_string(),
+      '\u{03a4}' => "T".to_string(),
+      '\u{03a7}' => "X".to_string(),
+      other => format!("\\text{{{}}}", other),
+    },
     // Multi-letter identifiers get \text{}
     s => format!("\\text{{{}}}", s),
   }
@@ -5551,6 +5884,11 @@ fn tex_power(base: &Expr, exp: &Expr) -> String {
   {
     return format!("\\frac{{1}}{{{}}}", tex_denom_factor(base, -n));
   }
+  // A negative rational exponent moves into the denominator as well:
+  // `x^(-3/2)` → `\frac{1}{x^{3/2}}`, `x^(-1/2)` → `\frac{1}{\sqrt{x}}`.
+  if let Some(positive) = negated_numeric_exponent(exp) {
+    return format!("\\frac{{1}}{{{}}}", tex_power(base, &positive));
+  }
 
   // Powers of trig/hyperbolic/log functions move the exponent onto the
   // function name: Sin[x]^2 -> \sin ^2(x), Sech[x]^2 -> \text{sech}^2(x).
@@ -5586,8 +5924,13 @@ fn tex_power(base: &Expr, exp: &Expr) -> String {
     }
   }
 
-  let base_tex = tex_base_with_parens(base);
-  let exp_tex = expr_to_tex(exp);
+  let mut base_tex = tex_base_with_parens(base);
+  let exp_tex = tex_exponent(exp);
+  // A base that ends in a TeX macro needs a space before the caret, or the
+  // caret would be read as part of the macro name: `\pi ^2`.
+  if ends_with_tex_macro(&base_tex) {
+    base_tex.push(' ');
+  }
 
   // Single-character exponents don't need braces in Wolfram TeXForm
   if exp_tex.chars().count() == 1 {
@@ -5595,6 +5938,20 @@ fn tex_power(base: &Expr, exp: &Expr) -> String {
   } else {
     format!("{}^{{{}}}", base_tex, exp_tex)
   }
+}
+
+/// Whether rendered TeX ends with a control word (`\pi`, `\infty`, …), which
+/// must be separated from a following `^` or `_`.
+fn ends_with_tex_macro(tex: &str) -> bool {
+  let trailing_letters: String = tex
+    .chars()
+    .rev()
+    .take_while(char::is_ascii_alphabetic)
+    .collect();
+  if trailing_letters.is_empty() {
+    return false;
+  }
+  tex[..tex.len() - trailing_letters.len()].ends_with('\\')
 }
 
 /// Wrap base in parens if needed for power
@@ -6193,9 +6550,109 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       let inner: Vec<String> = args.iter().map(expr_to_tex).collect();
       format!("\\Gamma ({})", inner.join(","))
     }
-    "Zeta" if args.len() == 1 => {
-      format!("\\zeta ({})", expr_to_tex(&args[0]))
+    "Zeta" if args.len() == 1 || args.len() == 2 => {
+      format!(
+        "\\zeta ({})",
+        args.iter().map(expr_to_tex).collect::<Vec<_>>().join(",")
+      )
     }
+    // The Stieltjes constants carry their index as a subscript.
+    "StieltjesGamma" if args.len() == 1 => {
+      format!("\\gamma _{}", tex_subscript_arg(&args[0]))
+    }
+    // Gauss hypergeometric function: `\, _2F_1(a,b;c;x)`.
+    "Hypergeometric2F1" if args.len() == 4 => format!(
+      "\\, _2F_1({},{};{};{})",
+      expr_to_tex(&args[0]),
+      expr_to_tex(&args[1]),
+      expr_to_tex(&args[2]),
+      expr_to_tex(&args[3])
+    ),
+    // Set operations.
+    "Union" if args.len() >= 2 => args
+      .iter()
+      .map(expr_to_tex)
+      .collect::<Vec<_>>()
+      .join("\\cup "),
+    "Intersection" if args.len() >= 2 => args
+      .iter()
+      .map(expr_to_tex)
+      .collect::<Vec<_>>()
+      .join("\\cap "),
+    "Subset" if args.len() == 2 => format!(
+      "{}\\subset {}",
+      expr_to_tex(&args[0]),
+      expr_to_tex(&args[1])
+    ),
+    "SubsetEqual" if args.len() == 2 => format!(
+      "{}\\subseteq {}",
+      expr_to_tex(&args[0]),
+      expr_to_tex(&args[1])
+    ),
+    // Quantifiers put the bound variable under the sign.
+    "ForAll" if args.len() == 2 => format!(
+      "\\forall _{}{}",
+      tex_subscript_arg(&args[0]),
+      expr_to_tex(&args[1])
+    ),
+    "Exists" if args.len() == 2 => format!(
+      "\\exists _{}{}",
+      tex_subscript_arg(&args[0]),
+      expr_to_tex(&args[1])
+    ),
+    // The remaining logical connectives.
+    "Equivalent" if args.len() >= 2 => args
+      .iter()
+      .map(|a| tex_logic_operand(a, "Equivalent", 20))
+      .collect::<Vec<_>>()
+      .join("\\unicode{29e6}"),
+    "Nand" if args.len() >= 2 => args
+      .iter()
+      .map(|a| tex_logic_operand(a, "Nand", 20))
+      .collect::<Vec<_>>()
+      .join("\\barwedge "),
+    "Nor" if args.len() >= 2 => args
+      .iter()
+      .map(|a| tex_logic_operand(a, "Nor", 20))
+      .collect::<Vec<_>>()
+      .join("\\bar{\\vee}"),
+    // Display wrappers that only affect styling render their content.
+    "Style" if !args.is_empty() => expr_to_tex(&args[0]),
+    "Defer" | "Inactive" if args.len() == 1 => expr_to_tex(&args[0]),
+    // Row concatenates its items, with the optional separator between them.
+    "Row" if !args.is_empty() => {
+      let items: Vec<String> = match &args[0] {
+        Expr::List(items) => items.iter().map(expr_to_tex).collect(),
+        other => vec![expr_to_tex(other)],
+      };
+      // A string separator is written literally, not as a `\text{…}` run.
+      let separator = match args.get(1) {
+        Some(Expr::String(text)) => text.clone(),
+        Some(other) => expr_to_tex(other),
+        None => String::new(),
+      };
+      items.join(&separator)
+    }
+    // Column stacks its items in a left-aligned array.
+    "Column" if !args.is_empty() => {
+      let items: Vec<String> = match &args[0] {
+        Expr::List(items) => items.iter().map(expr_to_tex).collect(),
+        other => vec![expr_to_tex(other)],
+      };
+      let mut out = String::from("\\begin{array}{l}\n");
+      for item in items {
+        out.push_str(&format!(" {} \\\\\n", item));
+      }
+      out.push_str("\\end{array}");
+      out
+    }
+    // Underoverscript[base, under, over] stacks both scripts on the base.
+    "Underoverscript" if args.len() == 3 => format!(
+      "\\underset{{{}}}{{\\overset{{{}}}{{{}}}}}",
+      expr_to_tex(&args[1]),
+      expr_to_tex(&args[2]),
+      expr_to_tex(&args[0])
+    ),
     "Re" if args.len() == 1 => {
       format!("\\Re({})", expr_to_tex(&args[0]))
     }
@@ -6247,20 +6704,46 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     // constants to the end (matching Wolfram's TeXForm convention),
     // then rotate so a non-negative term leads (avoid starting with -z+x, prefer x-z)
     "Plus" if !args.is_empty() => {
-      // Partition into symbolic and numeric terms, keeping relative order
+      // Partition into symbolic and numeric terms, keeping relative order.
+      // A numeric multiple of `I` counts as numeric: wolframscript treats a
+      // complex number as one atom, so it trails the symbolic terms just as
+      // a plain number does.
       let mut symbolic: Vec<&Expr> = Vec::new();
       let mut numeric: Vec<&Expr> = Vec::new();
       for arg in args {
-        if matches!(arg, Expr::Integer(_) | Expr::Real(_)) {
+        if matches!(arg, Expr::Integer(_) | Expr::Real(_))
+          || is_imaginary_term(arg)
+        {
           numeric.push(arg);
         } else {
           symbolic.push(arg);
         }
       }
-      let reordered_args: Vec<&Expr> =
-        symbolic.into_iter().chain(numeric).collect();
-      let tex_strs: Vec<String> =
+      // Real part and imaginary part together form one complex atom, printed
+      // in that order and bracketed when other terms surround it.
+      let complex_unit = match numeric.as_slice() {
+        [re, im]
+          if !is_imaginary_term(re)
+            && is_imaginary_term(im)
+            && !symbolic.is_empty() =>
+        {
+          Some(format!("({})", tex_complex_atom(re, im)))
+        }
+        [re, im] if !is_imaginary_term(re) && is_imaginary_term(im) => {
+          Some(tex_complex_atom(re, im))
+        }
+        _ => None,
+      };
+      let reordered_args: Vec<&Expr> = if complex_unit.is_some() {
+        symbolic.clone()
+      } else {
+        symbolic.iter().copied().chain(numeric).collect()
+      };
+      let mut tex_strs: Vec<String> =
         reordered_args.iter().map(|a| expr_to_tex(a)).collect();
+      if let Some(unit) = complex_unit {
+        tex_strs.push(unit);
+      }
       // Find first non-negative term to lead with
       let lead = tex_strs
         .iter()
@@ -6367,17 +6850,21 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
         expr_to_tex(&args[1])
       )
     }
-    // Limit
-    "Limit" if args.len() == 2 => {
+    // Limit. wolframscript sets the limit point under an upright `lim`, and
+    // marks a one-sided limit with a superscript sign on the point:
+    // `\underset{x\to 0^+}{\text{lim}}f(x)`.
+    "Limit" if args.len() == 2 || args.len() == 3 => {
       if let Expr::Rule {
         pattern,
         replacement,
       } = &args[1]
       {
+        let side = args.get(2).and_then(tex_limit_direction).unwrap_or("");
         return format!(
-          "\\lim_{{{} \\to {}}} {}",
+          "\\underset{{{}\\to {}{}}}{{\\text{{lim}}}}{}",
           expr_to_tex(pattern),
           expr_to_tex(replacement),
+          side,
           expr_to_tex(&args[0])
         );
       }

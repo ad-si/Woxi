@@ -3451,9 +3451,9 @@ fn truncate_bigfloat_digits(digits: &str, prec: usize) -> String {
 /// Information about how a BigFloat should be displayed graphically.
 /// For normal numbers, only `mantissa` is set.
 /// For scientific notation, `exponent` contains the power of 10.
-struct BigFloatDisplay {
-  mantissa: String,
-  exponent: Option<i64>,
+pub(crate) struct BigFloatDisplay {
+  pub(crate) mantissa: String,
+  pub(crate) exponent: Option<i64>,
 }
 
 /// Prepare BigFloat digits for graphical display, using scientific notation
@@ -3545,7 +3545,7 @@ fn bigfloat_display_parts(digits: &str, prec: f64) -> BigFloatDisplay {
 /// display, so grid cells and typeset labels apply this. Returns the mantissa
 /// and an optional power-of-ten exponent (rendered as a superscript by the
 /// caller). Non-finite values (Infinity / NaN) fall back to the plain form.
-fn machine_real_display_parts(f: f64) -> BigFloatDisplay {
+pub(crate) fn machine_real_display_parts(f: f64) -> BigFloatDisplay {
   if !f.is_finite() {
     return BigFloatDisplay {
       mantissa: crate::syntax::format_real(f),

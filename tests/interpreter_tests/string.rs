@@ -13332,3 +13332,158 @@ fn an_unusable_regular_expression_does_not_stop_the_evaluation() {
     result.warnings
   );
 }
+
+/// TeXForm details checked against wolframscript in July 2026: the Greek
+/// tables, arrow spacing, associations, limits, machine-real display,
+/// complex atoms, escaped text and superscript quotients.
+mod tex_form_conformance {
+  use super::*;
+
+  fn tex(input: &str) -> String {
+    interpret(&format!("ToString[TeXForm[{}]]", input)).unwrap()
+  }
+
+  #[test]
+  fn greek_names_and_characters() {
+    // Only the lower-case spellings carry a macro; the capitalised names are
+    // ordinary symbols (`Pi` is the constant, so it keeps \pi).
+    assert_eq!(tex("alpha"), "\\alpha");
+    assert_eq!(tex("Alpha"), "\\text{Alpha}");
+    assert_eq!(tex("Beta"), "\\text{Beta}");
+    assert_eq!(tex("Pi"), "\\pi");
+    // The characters themselves map to the macro, capitals included.
+    assert_eq!(tex("\\[Alpha]"), "\\alpha");
+    assert_eq!(tex("\\[Omega]"), "\\omega");
+    assert_eq!(tex("\\[CapitalGamma]"), "\\Gamma");
+    assert_eq!(tex("\\[CapitalOmega]"), "\\Omega");
+    // Capitals that look like a Latin letter render as that letter.
+    assert_eq!(tex("\\[CapitalAlpha]"), "A");
+    assert_eq!(tex("\\[CapitalRho]"), "P");
+    // The curly variants have their own macros.
+    assert_eq!(tex("\\[CurlyPhi]"), "\\varphi");
+    assert_eq!(tex("\\[CurlyEpsilon]"), "\\varepsilon");
+  }
+
+  #[test]
+  fn rules_and_associations() {
+    assert_eq!(tex("x -> y"), "x\\to y");
+    // A macro on the left needs the separating space.
+    assert_eq!(tex("\\[Alpha] -> y"), "\\alpha \\to y");
+    assert_eq!(tex("x :> y"), "x:\\to y");
+    assert_eq!(tex("{a -> b, c -> d}"), "\\{a\\to b,c\\to d\\}");
+    assert_eq!(
+      tex("<|a -> 1, b -> 2|>"),
+      "\\unicode{f113}a\\to 1,b\\to 2\\unicode{f114}"
+    );
+    assert_eq!(tex("<||>"), "\\unicode{f113}\\unicode{f114}");
+  }
+
+  #[test]
+  fn limits_set_the_point_under_lim() {
+    assert_eq!(
+      tex("Limit[f[x], x -> 0]"),
+      "\\underset{x\\to 0}{\\text{lim}}f(x)"
+    );
+    assert_eq!(
+      tex("Limit[f[x], x -> 0, Direction -> \"FromAbove\"]"),
+      "\\underset{x\\to 0^+}{\\text{lim}}f(x)"
+    );
+    assert_eq!(
+      tex("Limit[f[x], x -> 0, Direction -> 1]"),
+      "\\underset{x\\to 0^-}{\\text{lim}}f(x)"
+    );
+  }
+
+  #[test]
+  fn machine_reals_use_the_display_form() {
+    // Six significant figures, and scientific notation past 1e6.
+    assert_eq!(tex("N[Pi]"), "3.14159");
+    assert_eq!(tex("1/3."), "0.333333");
+    assert_eq!(tex("123456.7"), "123457.");
+    assert_eq!(tex("1234567.89"), "1.23457\\times 10^6");
+    assert_eq!(tex("1.*10^10"), "1.\\times 10^{10}");
+    assert_eq!(tex("0.00001"), "0.00001");
+  }
+
+  #[test]
+  fn complex_numbers_print_as_one_atom() {
+    // Real part first, and bracketed when other terms surround it.
+    assert_eq!(tex("Complex[1, 2]"), "1+2 i");
+    assert_eq!(tex("2 - 3 I"), "2-3 i");
+    assert_eq!(tex("1/2 + 3 I"), "\\frac{1}{2}+3 i");
+    assert_eq!(tex("x + 2 I"), "x+2 i");
+    assert_eq!(tex("3 I + x + 1"), "x+(1+3 i)");
+    // A non-negative machine-real real part is set off with a thin space.
+    assert_eq!(tex("2. - 3.5 I"), "2.\\, -3.5 i");
+    assert_eq!(tex("1.5 + 2 I"), "1.5\\, +2. i");
+    assert_eq!(tex("-2. + 3.5 I"), "-2.+3.5 i");
+  }
+
+  #[test]
+  fn text_runs_escape_special_characters() {
+    assert_eq!(tex("\"a_b\""), "\\text{a$\\_$b}");
+    assert_eq!(tex("\"a#b\""), "\\text{a$\\#$b}");
+    assert_eq!(tex("\"a&b\""), "\\text{a$\\&$b}");
+    assert_eq!(tex("\"a^b\""), "\\text{a${}^{\\wedge}$b}");
+    assert_eq!(tex("\"a~b\""), "\\text{a$\\sim $b}");
+    assert_eq!(tex("\"a b\""), "\\text{a b}");
+  }
+
+  #[test]
+  fn superscripts_keep_quotients_inline() {
+    assert_eq!(tex("x^(3/2)"), "x^{3/2}");
+    assert_eq!(tex("x^(2 a/3)"), "x^{2 a/3}");
+    assert_eq!(tex("E^(-x/2)"), "e^{-x/2}");
+    assert_eq!(tex("x^(a/b)"), "x^{a/b}");
+    // A sum in either half stays stacked, and so does a negative quotient
+    // over a symbolic denominator.
+    assert_eq!(tex("x^(a/(b + c))"), "x^{\\frac{a}{b+c}}");
+    assert_eq!(tex("x^(-a/b)"), "x^{-\\frac{a}{b}}");
+    // Negative numeric exponents move into a denominator.
+    assert_eq!(tex("x^(-3/2)"), "\\frac{1}{x^{3/2}}");
+    assert_eq!(tex("x^(-1/2)"), "\\frac{1}{\\sqrt{x}}");
+    // A macro base needs a space before the caret.
+    assert_eq!(tex("Pi^2"), "\\pi ^2");
+    assert_eq!(tex("Sum[1/n^2, {n, 1, Infinity}]"), "\\frac{\\pi ^2}{6}");
+  }
+
+  #[test]
+  fn set_operations_quantifiers_and_connectives() {
+    assert_eq!(tex("Union[a, b]"), "a\\cup b");
+    assert_eq!(tex("Intersection[a, b]"), "a\\cap b");
+    assert_eq!(tex("Subset[a, b]"), "a\\subset b");
+    assert_eq!(tex("SubsetEqual[a, b]"), "a\\subseteq b");
+    assert_eq!(tex("ForAll[x, P[x]]"), "\\forall _xP(x)");
+    assert_eq!(tex("Exists[x, P[x]]"), "\\exists _xP(x)");
+    assert_eq!(tex("Equivalent[a, b]"), "a\\unicode{29e6}b");
+    assert_eq!(tex("Nand[a, b]"), "a\\barwedge b");
+    assert_eq!(tex("Nor[a, b]"), "a\\bar{\\vee}b");
+    assert_eq!(tex("Xor[a, b]"), "a\\veebar b");
+  }
+
+  #[test]
+  fn special_functions_and_display_wrappers() {
+    assert_eq!(tex("Zeta[2, x]"), "\\zeta (2,x)");
+    assert_eq!(tex("StieltjesGamma[1]"), "\\gamma _1");
+    assert_eq!(tex("StieltjesGamma[10]"), "\\gamma _{10}");
+    assert_eq!(tex("Hypergeometric2F1[a, b, c, x]"), "\\, _2F_1(a,b;c;x)");
+    // Styling wrappers are transparent; Row concatenates; Column stacks.
+    assert_eq!(tex("Style[x, Red]"), "x");
+    assert_eq!(tex("Defer[a b]"), "a b");
+    assert_eq!(tex("Row[{1, 2, 3}]"), "123");
+    assert_eq!(tex("Row[{a, b}, \",\"]"), "a,b");
+    assert_eq!(
+      tex("Column[{1, 2}]"),
+      "\\begin{array}{l}\n 1 \\\\\n 2 \\\\\n\\end{array}"
+    );
+    assert_eq!(
+      tex("Underoverscript[Sum, i, n]"),
+      "\\underset{i}{\\overset{n}{\\text{Sum}}}"
+    );
+    // An inactive call typesets like the active one, with an explicit
+    // multiplication sign for Times.
+    assert_eq!(tex("Inactive[Plus][a, b]"), "a+b");
+    assert_eq!(tex("Inactive[Times][a, b]"), "a\\times b");
+    assert_eq!(tex("Inactive[Sin][x]"), "\\sin (x)");
+  }
+}
