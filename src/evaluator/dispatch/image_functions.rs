@@ -1401,6 +1401,34 @@ pub fn dispatch_image_functions(
       // whitespace. Both reuse the CSV element machinery (number auto-typing,
       // {{…}, …} shape) after splitting into string rows.
       if format == "TSV" || format == "Table" {
+        // `Table` is a plain grid: it offers none of the column metadata the
+        // CSV element list carries.
+        if let Some(element) = &requested_element {
+          let known = if format == "Table" {
+            crate::functions::csv_ast::TABLE_ELEMENTS
+              .contains(&element.as_str())
+              || element == "Elements"
+          } else {
+            crate::functions::csv_ast::is_csv_element(element)
+          };
+          if !known {
+            return unknown_element(element, format);
+          }
+          if format == "Table" && element == "Elements" {
+            return Some(Ok(Expr::List(
+              crate::functions::csv_ast::TABLE_ELEMENTS
+                .iter()
+                .map(|n| Expr::String((*n).to_string()))
+                .collect(),
+            )));
+          }
+          // The remaining Table elements have no implementation of their own.
+          if format == "Table"
+            && !matches!(element.as_str(), "Data" | "Summary" | "Tabular")
+          {
+            return Some(Ok(unevaluated("ImportString", args)));
+          }
+        }
         // An empty TSV document has no rows to read at all.
         if format == "TSV" && content.is_empty() {
           crate::emit_message(
@@ -1446,6 +1474,11 @@ pub fn dispatch_image_functions(
           "Import::fmterr: Cannot import data as CSV format.",
         );
         return Some(Ok(Expr::Identifier("$Failed".to_string())));
+      }
+      if let Some(element) = &requested_element
+        && !crate::functions::csv_ast::is_csv_element(element)
+      {
+        return unknown_element(element, "CSV");
       }
       let rows = crate::functions::csv_ast::parse_csv(&content);
       return Some(Ok(crate::functions::csv_ast::csv_import_element(

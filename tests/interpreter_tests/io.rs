@@ -8017,3 +8017,196 @@ mod xml_namespaces_and_elements {
     );
   }
 }
+
+mod csv_header_inference {
+  use super::*;
+
+  #[test]
+  fn the_first_row_names_the_columns_only_when_it_reads_as_labels() {
+    clear_state();
+    for (code, expected) in [
+      // Text on top and typed data below: labels.
+      (
+        r#"ToString[ImportString["a,b\n1,2", {"CSV", "ColumnLabels"}], InputForm]"#,
+        r#"{"a", "b"}"#,
+      ),
+      (
+        r#"ToString[ImportString["a\n1", {"CSV", "ColumnLabels"}], InputForm]"#,
+        r#"{"a"}"#,
+      ),
+      (
+        r#"ToString[ImportString["name,qty\napple,3\npear,4", {"CSV", "ColumnLabels"}], InputForm]"#,
+        r#"{"name", "qty"}"#,
+      ),
+      // Numbers on top: data.
+      (
+        r#"ToString[ImportString["1,2\n3,4", {"CSV", "ColumnLabels"}], InputForm]"#,
+        "None",
+      ),
+      (
+        r#"ToString[ImportString["a,1\nb,2", {"CSV", "ColumnLabels"}], InputForm]"#,
+        "None",
+      ),
+      // Every column reads as text, so there is nothing to label.
+      (
+        r#"ToString[ImportString["a,b\nc,d", {"CSV", "ColumnLabels"}], InputForm]"#,
+        "None",
+      ),
+      (
+        r#"ToString[ImportString["a,b\n1,2\nc,d", {"CSV", "ColumnLabels"}], InputForm]"#,
+        "None",
+      ),
+      // A single row is never a header.
+      (
+        r#"ToString[ImportString["x", {"CSV", "ColumnLabels"}], InputForm]"#,
+        "None",
+      ),
+      // A boolean row is data, not labels.
+      (
+        r#"ToString[ImportString["true\nfalse", {"CSV", "ColumnLabels"}], InputForm]"#,
+        "None",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn the_row_count_follows_the_header_decision() {
+    clear_state();
+    for (code, expected) in [
+      (r#"ImportString["a,b\n1,2", {"CSV", "RowCount"}]"#, "1"),
+      (r#"ImportString["1,2\n3,4", {"CSV", "RowCount"}]"#, "2"),
+      (r#"ImportString["a,b\nc,d", {"CSV", "RowCount"}]"#, "2"),
+      (r#"ImportString["a,b\n1,2\nc,d", {"CSV", "RowCount"}]"#, "3"),
+      (
+        r#"ToString[ImportString["1,2\n3,4", {"CSV", "Dimensions"}], InputForm]"#,
+        "{2, 2}",
+      ),
+      (
+        r#"ToString[ImportString["a,b\n1,2", {"CSV", "Dimensions"}], InputForm]"#,
+        "{1, 2}",
+      ),
+      // Data always holds every row, labels included.
+      (
+        r#"ToString[ImportString["a,b\n1,2\n3,4", {"CSV", "Data"}], InputForm]"#,
+        r#"{{"a", "b"}, {1, 2}, {3, 4}}"#,
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn column_types_are_named_the_way_the_importer_names_them() {
+    clear_state();
+    for (code, expected) in [
+      // Without labels the types come as a list.
+      (
+        r#"ToString[ImportString["1,2\n3,4", {"CSV", "ColumnTypes"}], InputForm]"#,
+        r#"{"Integer64", "Integer64"}"#,
+      ),
+      (
+        r#"ToString[ImportString["1\n2.5", {"CSV", "ColumnTypes"}], InputForm]"#,
+        r#"{"Real64"}"#,
+      ),
+      (
+        r#"ToString[ImportString["true\nfalse", {"CSV", "ColumnTypes"}], InputForm]"#,
+        r#"{"Boolean"}"#,
+      ),
+      // A column mixing kinds reads as text.
+      (
+        r#"ToString[ImportString["1\na", {"CSV", "ColumnTypes"}], InputForm]"#,
+        r#"{"String"}"#,
+      ),
+      // A column of empty fields has no type at all.
+      (
+        r#"ToString[ImportString[",\n,", {"CSV", "ColumnTypes"}], InputForm]"#,
+        r#"{"Null", "Null"}"#,
+      ),
+      // With labels they come keyed by them.
+      (
+        r#"ToString[ImportString["a,b,c\n1,2,3", {"CSV", "ColumnTypes"}], InputForm]"#,
+        r#"<|"a" -> "Integer64", "b" -> "Integer64", "c" -> "Integer64"|>"#,
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn a_boolean_field_is_read_as_a_boolean() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"ToString[ImportString["true,false", "CSV"], InputForm]"#)
+        .unwrap(),
+      "{{True, False}}"
+    );
+    // Only the conventional spellings; anything else stays text.
+    assert_eq!(
+      interpret(
+        r#"ToString[ImportString["True,FALSE,tRue,yes", "CSV"], InputForm]"#
+      )
+      .unwrap(),
+      r#"{{True, False, "tRue", "yes"}}"#
+    );
+  }
+
+  #[test]
+  fn a_dataset_without_labels_keeps_plain_rows() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"ToString[Normal[ImportString["1,2\n3,4", {"CSV", "Dataset"}]], InputForm]"#
+      )
+      .unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+    assert_eq!(
+      interpret(
+        r#"ToString[Normal[ImportString["a,b\n1,2", {"CSV", "Dataset"}]], InputForm]"#
+      )
+      .unwrap(),
+      r#"{<|"a" -> 1, "b" -> 2|>}"#
+    );
+  }
+
+  #[test]
+  fn each_format_offers_its_own_elements() {
+    clear_state();
+    // The whitespace-separated Table format is a plain grid.
+    assert_eq!(
+      interpret(
+        r#"ToString[ImportString["a b", {"Table", "Elements"}], InputForm]"#
+      )
+      .unwrap(),
+      r#"{"Data", "EventSeries", "Grid", "Summary", "Tabular", "TimeSeries"}"#
+    );
+    let result = interpret_with_stdout(
+      r#"ImportString["a b\n1 2", {"Table", "ColumnLabels"}]"#,
+    )
+    .unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert!(
+      result.warnings.iter().any(|m| m.contains(
+        "The Import element \"ColumnLabels\" is not present when importing \
+         as Table."
+      )),
+      "expected a noelem message, got {:?}",
+      result.warnings
+    );
+    // An element CSV does not offer is reported the same way.
+    let result =
+      interpret_with_stdout(r#"ImportString["1,2", {"CSV", "Bogus"}]"#)
+        .unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|m| m.starts_with("Import::noelem")),
+      "expected a noelem message, got {:?}",
+      result.warnings
+    );
+  }
+}

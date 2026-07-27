@@ -107,3 +107,48 @@ The tabular formats take an element as well:
 $ wo 'ToString[ImportString["1,2\n3,4", {"CSV", "Data"}], InputForm]'
 {{1, 2}, {3, 4}}
 ```
+
+The first row names the columns only when it reads as labels: text on top and
+typed data below. A file of numbers, or one whose columns all read as text,
+has no labels at all:
+
+```scrut
+$ wo 'ToString[ImportString["a,b\n1,2", {"CSV", "ColumnLabels"}], InputForm]'
+{"a", "b"}
+```
+
+```scrut
+$ wo 'ToString[ImportString["1,2\n3,4", {"CSV", "ColumnLabels"}], InputForm]'
+None
+```
+
+The row count follows that decision, while `"Data"` always holds every row:
+
+```scrut
+$ wo 'ImportString["a,b\n1,2\n3,4", {"CSV", "RowCount"}]'
+2
+```
+
+```scrut
+$ wo 'ToString[ImportString["1,2\n3,4", {"CSV", "RowCount"}], InputForm]'
+2
+```
+
+Column types are keyed by the labels when there are any:
+
+```scrut
+$ wo 'ToString[ImportString["a,b,c\n1,2,3", {"CSV", "ColumnTypes"}], InputForm]'
+<|"a" -> "Integer64", "b" -> "Integer64", "c" -> "Integer64"|>
+```
+
+```scrut
+$ wo 'ToString[ImportString["1\n2.5", {"CSV", "ColumnTypes"}], InputForm]'
+{"Real64"}
+```
+
+A field written `true` or `false` is read as a boolean:
+
+```scrut
+$ wo 'ToString[ImportString["true,false", "CSV"], InputForm]'
+{{True, False}}
+```

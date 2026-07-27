@@ -95,7 +95,61 @@ fn auto_convert(s: &str) -> Expr {
     return Expr::Real(f);
   }
 
+  // The three conventional spellings of a boolean field become True/False;
+  // anything else (`tRue`) stays the text it was written as.
+  match trimmed {
+    "true" | "True" | "TRUE" => return crate::syntax::bool_expr(true),
+    "false" | "False" | "FALSE" => return crate::syntax::bool_expr(false),
+    _ => {}
+  }
+
   Expr::String(s.to_string())
+}
+
+/// The type name wolframscript reports for a CSV column: `Integer64`,
+/// `Real64`, `Boolean` or `String`, the last also standing for a column that
+/// mixes kinds. Empty fields carry no type of their own.
+fn csv_column_type(values: &[&Expr]) -> String {
+  let mut kinds: Vec<&str> = Vec::new();
+  for value in values {
+    let kind = match value {
+      Expr::Integer(_) | Expr::BigInteger(_) => "Integer64",
+      Expr::Real(_) | Expr::BigFloat(_, _) => "Real64",
+      Expr::Identifier(s) if s == "True" || s == "False" => "Boolean",
+      Expr::FunctionCall { name, .. } if name == "Missing" => continue,
+      Expr::Identifier(s) if s == "Missing" || s == "Null" => continue,
+      _ => "String",
+    };
+    if !kinds.contains(&kind) {
+      kinds.push(kind);
+    }
+  }
+  match kinds.as_slice() {
+    // A column with nothing but empty fields carries no type.
+    [] => "Null".to_string(),
+    [only] => (*only).to_string(),
+    // Integers among reals are reals; every other mixture reads as text.
+    kinds if kinds.iter().all(|k| matches!(*k, "Integer64" | "Real64")) => {
+      "Real64".to_string()
+    }
+    _ => "String".to_string(),
+  }
+}
+
+/// The element names the whitespace-separated `Table` format offers. It is a
+/// plain grid, so it has none of the column metadata CSV carries.
+pub const TABLE_ELEMENTS: &[&str] = &[
+  "Data",
+  "EventSeries",
+  "Grid",
+  "Summary",
+  "Tabular",
+  "TimeSeries",
+];
+
+/// Whether an element name is one the format offers at all.
+pub fn is_csv_element(element: &str) -> bool {
+  ELEMENTS.contains(&element) || element == "Elements"
 }
 
 /// Available CSV element names.
@@ -112,6 +166,34 @@ const ELEMENTS: &[&str] = &[
   "Summary",
   "Tabular",
 ];
+
+/// Whether the first row names the columns. wolframscript reads it as a header
+/// only when it holds no number itself AND the rows below type as something
+/// other than text: `"a,b\n1,2"` is labelled, while `"1,2\n3,4"` (numbers up
+/// top), `"a,b\nc,d"` and `"a,b\n1,2\nc,d"` (every column reads as a string)
+/// are not.
+fn has_header_row(rows: &[Vec<String>]) -> bool {
+  if rows.len() < 2 {
+    return false;
+  }
+  // Every label has to be text: a number, a boolean or an empty field up top
+  // means the row is data.
+  if !rows[0]
+    .iter()
+    .all(|field| matches!(auto_convert(field), Expr::String(_)))
+  {
+    return false;
+  }
+  let body = &rows[1..];
+  (0..rows[0].len()).any(|col| {
+    let values: Vec<Expr> = body
+      .iter()
+      .filter_map(|row| row.get(col).map(|s| auto_convert(s)))
+      .collect();
+    let refs: Vec<&Expr> = values.iter().collect();
+    csv_column_type(&refs) != "String"
+  })
+}
 
 /// Extract a specific element from parsed CSV rows.
 /// If `element` is None, returns "Data" by default.
@@ -156,8 +238,9 @@ pub fn csv_import_element(rows: &[Vec<String>], element: Option<&str>) -> Expr {
     };
   }
 
+  let labelled = has_header_row(rows);
   let header = &rows[0];
-  let data_rows = if rows.len() > 1 { &rows[1..] } else { &[] };
+  let data_rows: &[Vec<String>] = if labelled { &rows[1..] } else { rows };
   let num_cols = header.len();
   let num_data_rows = data_rows.len();
 
@@ -169,17 +252,13 @@ pub fn csv_import_element(rows: &[Vec<String>], element: Option<&str>) -> Expr {
         .collect(),
     ),
 
-    "Data" => {
-      let mut all_rows = Vec::with_capacity(rows.len());
-      // Include header row with auto-conversion
-      all_rows
-        .push(Expr::List(header.iter().map(|s| auto_convert(s)).collect()));
-      for row in data_rows {
-        all_rows
-          .push(Expr::List(row.iter().map(|s| auto_convert(s)).collect()));
-      }
-      Expr::List(all_rows.into())
-    }
+    // Every row, the labels included: the header is data too.
+    "Data" => Expr::List(
+      rows
+        .iter()
+        .map(|row| Expr::List(row.iter().map(|s| auto_convert(s)).collect()))
+        .collect(),
+    ),
 
     "RawData" => {
       let all_rows: Vec<Expr> = rows
@@ -192,7 +271,11 @@ pub fn csv_import_element(rows: &[Vec<String>], element: Option<&str>) -> Expr {
     }
 
     "ColumnLabels" => {
-      Expr::List(header.iter().map(|s| Expr::String(s.clone())).collect())
+      if labelled {
+        Expr::List(header.iter().map(|s| Expr::String(s.clone())).collect())
+      } else {
+        Expr::Identifier("None".to_string())
+      }
     }
 
     "ColumnCount" => Expr::Integer(num_cols as i128),
@@ -215,14 +298,31 @@ pub fn csv_import_element(rows: &[Vec<String>], element: Option<&str>) -> Expr {
             .filter_map(|row| row.get(col).map(|s| auto_convert(s)))
             .collect();
           let refs: Vec<&Expr> = values.iter().collect();
-          let t = super::tabular_ast::infer_column_type(&refs);
-          Expr::Identifier(t)
+          Expr::String(csv_column_type(&refs))
         })
         .collect();
-      Expr::List(types.into())
+      if labelled {
+        Expr::Association(
+          header
+            .iter()
+            .map(|h| Expr::String(h.clone()))
+            .zip(types)
+            .collect(),
+        )
+      } else {
+        Expr::List(types.into())
+      }
     }
 
     "Dataset" => {
+      // Without column labels the rows stay plain lists.
+      if !labelled {
+        let lists: Vec<Expr> = data_rows
+          .iter()
+          .map(|row| Expr::List(row.iter().map(|s| auto_convert(s)).collect()))
+          .collect();
+        return super::dataset_ast::dataset_ast(&[Expr::List(lists.into())]);
+      }
       // Build list of associations: each data row becomes <|col1 -> val1, ...|>
       let assocs: Vec<Expr> = data_rows
         .iter()
