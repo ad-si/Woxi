@@ -1,0 +1,61 @@
+# Attach prebuilt binaries to a GitHub release: the `woxi` interpreter CLI
+# and the Woxi Studio notebook editor, for Linux, macOS and Windows (x86_64
+# plus arm64 wherever a runner exists).
+#
+# Triggered by publishing a release (step 4 of `make release`), so the
+# assets show up on the release the announcement links to. A manual
+# workflow_dispatch works too — pick the tag of an existing release in the
+# "Run workflow" dialog. Uploads use --clobber, so re-running replaces the
+# assets instead of failing on duplicates.
+#
+# The builds themselves live in build-archives.yml, which nightly.yml runs
+# every night against main.
+#
+# Python wheels are published to PyPI by publish-pypi.yml on the same tag
+# and are deliberately not duplicated here.
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-archives.yml
+    with:
+      # A published release carries its tag in the event payload; a manual
+      # dispatch runs on the ref picked in the UI.
+      version: ${{ github.event.release.tag_name || github.ref_name }}
+      ref: ${{ github.event.release.tag_name || github.ref_name }}
+
+  publish:
+    needs: build
+    # Attach whatever did build, rather than dropping a whole release
+    # because one platform broke.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      # `gh release upload` writes assets to the release.
+      contents: write
+    env:
+      TAG: ${{ github.event.release.tag_name || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+      # Lets `gh` find the repo without checking out the source.
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: archives-*
+          path: dist
+          merge-multiple: true
+      # A single checksum file over every asset — what a Homebrew formula
+      # or a manual download verifies against.
+      - name: Compute the checksums
+        # `--` so an asset name starting with a dash stays an argument.
+        run: cd dist && sha256sum -- * > ../SHA256SUMS.txt
+      - name: Attach the archives to the release
+        run: gh release upload "$TAG" dist/* SHA256SUMS.txt --clobber

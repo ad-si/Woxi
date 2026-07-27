@@ -28,13 +28,19 @@ jobs:
     - name: Run slow and network tests
       run: make test-slow
 
-  # Windows builds of the interpreter CLI and the Studio notebook editor,
-  # plus the full unit test suite. Neither the build nor the tests are
-  # covered by the Linux-only CI, so this catches Windows-specific build
-  # breakage and test failures while also providing downloadable binaries.
-  # The `slow-tests` suite runs on Linux in the `test-slow` job above; the
-  # wolframscript/scrut conformance tests need tools unavailable here.
-  build-windows:
+  # Release-ready archives of the interpreter CLI and the Studio notebook
+  # editor for every platform a release ships (see build-archives.yml).
+  # Only Linux is covered by the per-push CI, so this is where
+  # platform-specific build breakage surfaces — on the night it lands
+  # rather than on release day — and it doubles as a nightly download.
+  build:
+    uses: ./.github/workflows/build-archives.yml
+
+  # The full unit test suite on Windows. Neither the Linux-only CI nor the
+  # `test-slow` job above covers it, so this is the only place
+  # Windows-specific test failures show up; the wolframscript/scrut
+  # conformance tests need tools unavailable here.
+  test-windows:
     runs-on: windows-latest
     steps:
     - name: Set git to use LF
@@ -47,20 +53,6 @@ jobs:
     - uses: taiki-e/install-action@v2
       with:
         tool: nextest
-    - name: Build woxi and woxi-studio
-      run: cargo build --release -p woxi -p woxi-studio
-    - name: Upload woxi binary
-      uses: actions/upload-artifact@v6
-      with:
-        name: woxi-windows-x86_64
-        path: target/release/woxi.exe
-        if-no-files-found: error
-    - name: Upload woxi-studio binary
-      uses: actions/upload-artifact@v6
-      with:
-        name: woxi-studio-windows-x86_64
-        path: target/release/woxi-studio.exe
-        if-no-files-found: error
     # Mirrors `make test` (the fast correctness suite the Linux CI runs),
     # invoked directly since `make` is not available on the Windows runner.
     # `--no-fail-fast` because this is the only place Windows-specific

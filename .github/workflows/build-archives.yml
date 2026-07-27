@@ -1,0 +1,141 @@
+# Build the `woxi` interpreter CLI and the Woxi Studio notebook editor for
+# every supported platform and upload them as release-ready archives.
+#
+# Called by release.yml (which attaches the archives to the GitHub release)
+# and by nightly.yml (which keeps them as build artifacts), so the nightly
+# run exercises the exact build and packaging path a release depends on —
+# including the macOS .app bundle assembly — and platform-specific
+# breakage surfaces on the night it lands instead of on release day.
+name: Build archives
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: >
+          Version embedded in the archive names. Defaults to
+          nightly-<short sha>.
+        type: string
+        required: false
+        default: ""
+      ref:
+        description: >
+          Git ref to build. Defaults to the ref that triggered the calling
+          workflow.
+        type: string
+        required: false
+        default: ""
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      # One broken platform must not keep the others off the release.
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+          # The last x86_64 macOS image, supported until August 2027
+          # (see the note in publish-pypi.yml).
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+    env:
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          # build.rs stamps WOXI_GIT_VERSION from `git describe --tags`;
+          # a shallow clone without tags would silently fall back to the
+          # Cargo.toml version.
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Determine the version for the archive names
+        shell: bash
+        env:
+          VERSION_INPUT: ${{ inputs.version }}
+        run: |
+          version="$VERSION_INPUT"
+          [ -n "$version" ] || version="nightly-$(git rev-parse --short HEAD)"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Install the Studio's Linux build dependencies
+        if: runner.os == 'Linux'
+        # The iced/winit stack reaches for the X11, Wayland and xkbcommon
+        # development packages on Linux. Crates that dlopen them instead
+        # simply ignore these.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwayland-dev libxkbcommon-dev libx11-dev
+
+      # Both binaries in one invocation and one profile, so the woxi crate
+      # is compiled once rather than once per profile.
+      - name: Build the CLI and the Studio
+        run: cargo build --release --locked -p woxi -p woxi-studio
+
+      - name: Package the archives
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -eu
+          mkdir -p dist stage/woxi stage/woxi-studio
+          cp target/release/woxi readme.md license.txt stage/woxi/
+          tar -czf "dist/woxi-$VERSION-$TARGET.tar.gz" \
+            -C stage/woxi woxi readme.md license.txt
+          # macOS gets the Studio as a double-clickable .app instead of a
+          # bare binary; the bundle is assembled by the same make target
+          # `make install-macos-app` uses locally.
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            make macos-app APP_DEST="$PWD/stage-app" STUDIO_PROFILE=release
+            # Seal the bundle with an ad-hoc signature: on arm64 the
+            # linker only signs the executable, leaving Info.plist and the
+            # icon uncovered. This is not a Developer ID signature, so a
+            # download still needs its quarantine flag removed (see the
+            # readme).
+            codesign --force --deep --sign - "stage-app/Woxi Studio.app"
+            # ditto, not zip: it preserves the bundle's symlinks and
+            # extended attributes.
+            ditto -c -k --keepParent "stage-app/Woxi Studio.app" \
+              "dist/woxi-studio-$VERSION-$TARGET.zip"
+          else
+            cp target/release/woxi-studio readme.md license.txt stage/woxi-studio/
+            tar -czf "dist/woxi-studio-$VERSION-$TARGET.tar.gz" \
+              -C stage/woxi-studio woxi-studio readme.md license.txt
+          fi
+
+      - name: Package the archives
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist, stage/woxi, stage/woxi-studio | Out-Null
+          Copy-Item target/release/woxi.exe, readme.md, license.txt stage/woxi
+          Copy-Item target/release/woxi-studio.exe, readme.md, license.txt stage/woxi-studio
+          Compress-Archive -Path stage/woxi/* `
+            -DestinationPath "dist/woxi-$env:VERSION-$env:TARGET.zip"
+          Compress-Archive -Path stage/woxi-studio/* `
+            -DestinationPath "dist/woxi-studio-$env:VERSION-$env:TARGET.zip"
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: archives-${{ matrix.target }}
+          path: dist
+          if-no-files-found: error
+          # Released binaries live on the release itself, and a nightly
+          # older than two weeks is not worth keeping around.
+          retention-days: 14

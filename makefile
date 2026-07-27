@@ -197,18 +197,26 @@ install-debug:
 	cargo install --debug --path .
 
 
-# Build Woxi Studio and install it as a macOS .app bundle in
-# /Applications. The bundle's icon is generated on the fly from
-# images/favicon.png via sips + iconutil (both shipped with macOS).
-APP_BUNDLE := /Applications/Woxi Studio.app
+# Build Woxi Studio and assemble it as a macOS .app bundle. The bundle's
+# icon is generated on the fly from images/favicon.png via sips +
+# iconutil (both shipped with macOS).
+#
+# APP_DEST selects where the bundle is written — /Applications for a
+# local install, a staging directory for the release workflow, which
+# zips it up as a release asset. STUDIO_PROFILE selects the cargo
+# profile; the release workflow overrides it to `release` so the CLI and
+# the Studio share a single compile of the woxi crate.
+APP_DEST ?= /Applications
+APP_BUNDLE := $(APP_DEST)/Woxi Studio.app
+STUDIO_PROFILE ?= studio
 
-.PHONY: install-macos-app
-install-macos-app:
-	cargo build --profile studio -p woxi-studio
+.PHONY: macos-app
+macos-app:
+	cargo build --profile $(STUDIO_PROFILE) -p woxi-studio
 	rm -rf "$(APP_BUNDLE)"
 	mkdir -p "$(APP_BUNDLE)/Contents/MacOS"
 	mkdir -p "$(APP_BUNDLE)/Contents/Resources"
-	cp target/studio/woxi-studio "$(APP_BUNDLE)/Contents/MacOS/woxi-studio"
+	cp target/$(STUDIO_PROFILE)/woxi-studio "$(APP_BUNDLE)/Contents/MacOS/woxi-studio"
 	cp woxi-studio/macos/Info.plist "$(APP_BUNDLE)/Contents/Info.plist"
 	@tmp=$$(mktemp -d) && \
 		iconset="$$tmp/icon.iconset" && \
@@ -223,6 +231,13 @@ install-macos-app:
 		iconutil -c icns "$$iconset" \
 			-o "$(APP_BUNDLE)/Contents/Resources/icon.icns" && \
 		rm -rf "$$tmp"
+
+
+# Install the bundle into /Applications and register it with
+# LaunchServices, so Finder picks up the icon and the .nb/.wls file
+# associations. Registering is the only part a staged CI build skips.
+.PHONY: install-macos-app
+install-macos-app: macos-app
 	@/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
 		-f "$(APP_BUNDLE)"
 	@echo "Installed $(APP_BUNDLE)"
@@ -391,7 +406,9 @@ release:
 	@echo '2. `git add ./changelog.md && git commit -m "Update changelog"`'
 	@echo '3. `cargo release major / minor / patch`'
 	@echo '4. Create a new GitHub release at https://github.com/ad-si/Woxi/releases/new'
-	@echo "5. Announce release on \n" \
+	@echo '5. Wait for the "Release" workflow to attach the Woxi and' \
+		'Woxi Studio binaries (publishing the release triggers it)'
+	@echo "6. Announce release on \n" \
 		"   - https://x.com \n" \
 		"   - https://bsky.app \n" \
 		"   - https://this-week-in-rust.org \n" \

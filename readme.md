@@ -48,6 +48,21 @@ You can easily install it with [Rust's cargo](https://doc.rust-lang.org/cargo/):
 cargo install woxi
 ```
 
+### Prebuilt Binaries
+
+Every [GitHub release](https://github.com/ad-si/Woxi/releases) ships archives
+of the `woxi` CLI and the Woxi Studio notebook editor for
+Linux, macOS, and Windows (x86-64 and arm64),
+alongside a `SHA256SUMS.txt` to verify them against.
+
+The macOS build of Woxi Studio comes as a `Woxi Studio.app` bundle.
+It is not notarized, so macOS quarantines it after the download —
+remove the flag once after unzipping:
+
+```sh
+xattr -dr com.apple.quarantine "Woxi Studio.app"
+```
+
 ### JavaScript / Node.js
 
 Woxi is also available [on npm as `woxi-wasm`](https://www.npmjs.com/package/woxi-wasm)
