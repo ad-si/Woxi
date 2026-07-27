@@ -1268,12 +1268,7 @@ fn imaginary_pi_coeff(term: &Expr) -> Option<(i128, i128)> {
   if !(has_pi && has_imag) {
     return None;
   }
-  if den < 0 {
-    num = -num;
-    den = -den;
-  }
-  let g = gcd_i128(num.abs().max(1), den).max(1);
-  Some((num / g, den / g))
+  Some(rat_reduce(num, den))
 }
 
 /// If `arg` is a sum `rest + c Pi I` whose imaginary-`Pi` coefficient `c` is a
@@ -1332,8 +1327,7 @@ fn extract_imaginary_pi_shift(arg: &Expr) -> Option<((i128, i128), Expr)> {
     num = -num;
     den = -den;
   }
-  let g = gcd_i128(num.abs().max(1), den).max(1);
-  let (num, den) = (num / g, den / g);
+  let (num, den) = rat_reduce(num, den);
   let rest_expr = if rest.len() == 1 {
     rest.into_iter().next().unwrap()
   } else {

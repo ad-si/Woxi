@@ -3,7 +3,7 @@ use super::together::negate_expr;
 use super::*;
 use crate::InterpreterError;
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
-use crate::functions::math_ast::gcd_i128;
+use crate::functions::math_ast::rat_reduce;
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, bool_expr, expr_to_string, unevaluated,
 };
@@ -680,17 +680,7 @@ fn normalize_eliminate_result(eq: &Expr, _eliminated_vars: &[String]) -> Expr {
     // rather than solving for the variable: `2 x == 3`, not `x == 3/2`. Only
     // when the content divides the constant evenly does it become `x == k`.
     if let (Expr::Integer(c), Expr::Integer(r)) = (&coeff, &rest) {
-      let (mut c, mut r) = (*c, *r);
-      if c < 0 {
-        c = -c;
-        r = -r;
-      }
-      let g = {
-        let g = gcd_i128(c.abs(), r.abs());
-        if g == 0 { 1 } else { g }
-      };
-      let c = c / g;
-      let r = r / g;
+      let (r, c) = rat_reduce(*r, *c);
       // c*var + r == 0  =>  c*var == -r
       let lhs = if c == 1 {
         Expr::Identifier(var.clone())

@@ -477,7 +477,7 @@ fn solve_rat_system(
 /// coefficient (the FactorTerms sign convention). Returns 0 for the zero
 /// polynomial.
 fn signed_content(coeffs: &[i128]) -> i128 {
-  let g = coeffs.iter().fold(0i128, |acc, &c| gcd_i128(acc, c.abs()));
+  let g = coeffs.iter().fold(0i128, |acc, &c| gcd_i128(acc, c));
   if coeffs
     .iter()
     .rev()
@@ -569,7 +569,7 @@ fn build_apart_term(
   let mut inum: Vec<i128> = pnum.iter().map(|r| r.n * (l / r.d)).collect();
   let mut g = l.abs();
   for &c in &inum {
-    g = gcd_i128(g, c.abs());
+    g = gcd_i128(g, c);
   }
   if g > 1 {
     for c in inum.iter_mut() {
@@ -651,7 +651,7 @@ fn apart_general(
       // (-19 + 16*x)/(5*(-1 - x + 5*x^2)), not (19-16*x)/(5+5*x-25*x^2).
       // Content and sign are absorbed by `scale` (= den / prod of factors)
       // below, and the content resurfaces as the term's scalar multiplier.
-      let content = c.iter().fold(0i128, |acc, &v| gcd_i128(acc, v.abs()));
+      let content = c.iter().fold(0i128, |acc, &v| gcd_i128(acc, v));
       if content > 1 {
         for v in c.iter_mut() {
           *v /= content;

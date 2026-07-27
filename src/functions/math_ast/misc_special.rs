@@ -2462,7 +2462,7 @@ fn norlund_b_poly(n: usize) -> Vec<(i128, i128)> {
       factorial *= j as i128;
     }
     if let Some((bn, bd)) = bernoulli_number(j) {
-      let g = gcd_i128(bn.abs(), factorial.abs());
+      let g = gcd_i128(bn, factorial);
       s.push((bn / g, bd * (factorial / g)));
     } else {
       s.push((0, 1));

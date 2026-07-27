@@ -1,5 +1,6 @@
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
+use crate::functions::math_ast::gcd_i128;
 use crate::syntax::{BinaryOperator, Expr, unevaluated};
 
 /// PolynomialMod[poly, m] — reduce poly modulo m.
@@ -36,7 +37,7 @@ pub fn polynomial_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match &modulus {
       // A zero modulus reduces nothing.
       Expr::Integer(0) => {}
-      Expr::Integer(n) => numeric_gcd = gcd_i128(numeric_gcd, n.abs()),
+      Expr::Integer(n) => numeric_gcd = gcd_i128(numeric_gcd, *n),
       _ => {
         if crate::functions::math_ast::expr_to_f64(&modulus).is_some() {
           // A non-integer numeric modulus is not supported.
@@ -72,16 +73,6 @@ pub fn polynomial_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     result = reduce_coefficients(&result, numeric_gcd)?;
   }
   evaluate_expr_to_expr(&result)
-}
-
-fn gcd_i128(a: i128, b: i128) -> i128 {
-  let (mut a, mut b) = (a.abs(), b.abs());
-  while b != 0 {
-    let t = a % b;
-    a = b;
-    b = t;
-  }
-  a
 }
 
 /// Reduce every integer coefficient of an expanded polynomial modulo `m`,

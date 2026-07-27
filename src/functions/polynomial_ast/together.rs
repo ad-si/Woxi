@@ -442,7 +442,7 @@ pub(super) fn reduce_shared_integer_content(
       _ => None,
     })
   {
-    let g = gcd_i128(c.abs(), den_int);
+    let g = gcd_i128(c, den_int);
     if g <= 1 {
       return None;
     }
@@ -487,7 +487,7 @@ pub(super) fn reduce_shared_integer_content(
   if d != 1 || n.abs() <= 1 {
     return None;
   }
-  let g = gcd_i128(n.abs(), den_int);
+  let g = gcd_i128(n, den_int);
   if g <= 1 {
     return None;
   }
@@ -1671,7 +1671,7 @@ fn shares_cancelable_factor(num: &Expr, den: &Expr) -> bool {
   };
   let (num_content, num_bases) = side(num);
   let (den_content, den_bases) = side(den);
-  if gcd_i128(num_content, den_content).abs() > 1 {
+  if gcd_i128(num_content, den_content) > 1 {
     return true;
   }
   num_bases.iter().any(|b| den_bases.contains(b))
@@ -1863,7 +1863,7 @@ pub fn together_expr(expr: &Expr) -> Expr {
         && exp.0 > 0
         && let Ok(e) = u32::try_from(exp.0)
         && let Some(p) = n.checked_pow(e)
-        && let Some(l) = int_lcm.checked_mul(p / gcd_i128(int_lcm, p).abs())
+        && let Some(l) = int_lcm.checked_mul(p / gcd_i128(int_lcm, p))
       {
         int_lcm = l;
         merged += 1;

@@ -893,17 +893,9 @@ fn factor_logarithmic_antiderivative(expr: &Expr, var: &str) -> Option<Expr> {
   if split.iter().any(|(_, _, p, _)| *p != common_power) {
     return None;
   }
-  let gcd = |mut a: i128, mut b: i128| {
-    while b != 0 {
-      let t = b;
-      b = a % b;
-      a = t;
-    }
-    a.abs()
-  };
   let denominator = split
     .iter()
-    .fold(1i128, |acc, (_, d, _, _)| acc / gcd(acc, *d) * d);
+    .fold(1i128, |acc, (_, d, _, _)| acc / gcd_i128(acc, *d) * d);
   if denominator == 1 {
     return None;
   }
@@ -7376,7 +7368,7 @@ fn try_integrate_rational(
       // than `4 + 2*Sqrt[3] - 2x`. The outer denominator stays at the
       // unsimplified `k * Sqrt[m]` (the Log[g] terms cancel between the two
       // arguments).
-      let g_bk = gcd_i128(b.abs(), k);
+      let g_bk = gcd_i128(b, k);
       let g = gcd_i128(g_bk, 2);
       let neg_b_g = -b / g;
       let b_g = b / g;
@@ -7634,9 +7626,9 @@ fn try_integrate_rational(
     let bc_b_scaled = if bc_scaled.len() < 2 { 0 } else { bc_scaled[1] };
 
     // Divide by lcm to get B and C as rationals
-    let g_b = gcd_i128(bc_b_scaled.abs(), lcm);
+    let g_b = gcd_i128(bc_b_scaled, lcm);
     let (big_b_num, big_b_den) = (bc_b_scaled / g_b, lcm / g_b);
-    let g_c = gcd_i128(bc_c_scaled.abs(), lcm);
+    let g_c = gcd_i128(bc_c_scaled, lcm);
     let (big_c_num, big_c_den) = (bc_c_scaled / g_c, lcm / g_c);
 
     // Convert to common B and C as integers (if possible) or rationals
@@ -7716,7 +7708,7 @@ fn try_integrate_rational(
 
       // Simplify ArcTan argument: (b + 2*x) / (k * sqrt(m))
       // The numerator coefficients are b and 2; divide both and k by their common factor.
-      let inner_gcd = if b == 0 { 2 } else { gcd_i128(b.abs(), 2) };
+      let inner_gcd = gcd_i128(b, 2);
       let g = gcd_i128(inner_gcd, k);
       let k_reduced = k / g;
       let b_simplified = b / g;

@@ -2,7 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
-use crate::functions::math_ast::gcd_i128;
+use crate::functions::math_ast::rat_reduce;
 use crate::syntax::{BinaryOperator, unevaluated};
 
 /// AST-based Table: generate a table of values.
@@ -594,11 +594,7 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       cur_d *= step_d;
 
       // Simplify to avoid overflow
-      let g = gcd_i128(cur_n.abs(), cur_d.abs());
-      if g > 1 {
-        cur_n /= g;
-        cur_d /= g;
-      }
+      (cur_n, cur_d) = rat_reduce(cur_n, cur_d);
 
       if results.len() > 1_000_000 {
         return Err(InterpreterError::EvaluationError(
@@ -900,11 +896,7 @@ pub fn power_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       cur_d *= fac_d;
 
       // Simplify
-      let g = gcd_i128(cur_n.abs(), cur_d.abs());
-      if g > 1 {
-        cur_n /= g;
-        cur_d /= g;
-      }
+      (cur_n, cur_d) = rat_reduce(cur_n, cur_d);
 
       if results.len() > 1_000_000 {
         return Err(InterpreterError::EvaluationError(

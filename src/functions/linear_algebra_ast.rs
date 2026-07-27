@@ -2930,7 +2930,7 @@ fn matrix_to_scaled_i128(
       if den != 1 {
         any_rational = true;
       }
-      scale = scale.checked_mul(den / gcd_i128(scale, den.abs()))?;
+      scale = scale.checked_mul(den / gcd_i128(scale, den))?;
       out_row.push((num, den));
     }
     entries.push(out_row);
@@ -3074,7 +3074,7 @@ fn quadratic_eigenvalues(b_coeff: i128, c_coeff: i128) -> Vec<Expr> {
 
   // Factor out GCD of neg_b and outer from the numerator:
   // (neg_b ± outer*Sqrt[inner]) / 2  =  common * (reduced_b ± reduced_outer*Sqrt[inner]) / 2
-  let common = gcd_i128(neg_b.abs(), outer as i128);
+  let common = gcd_i128(neg_b, outer as i128);
   let (reduced_b, reduced_outer) = (neg_b / common, outer as i128 / common);
 
   let sqrt_expr = make_sqrt(Expr::Integer(inner as i128));
@@ -3610,9 +3610,7 @@ fn int_poly_derivative(p: &[i128]) -> Vec<i128> {
 
 /// Content (gcd of all coefficients) of a nonzero integer polynomial.
 fn int_poly_content(p: &[i128]) -> i128 {
-  p.iter()
-    .fold(0i128, |acc, &c| gcd_i128(acc, c.abs()))
-    .max(1)
+  p.iter().fold(0i128, |acc, &c| gcd_i128(acc, c)).max(1)
 }
 
 /// Primitive part: divide out the content and drop leading zeros.
@@ -4061,7 +4059,7 @@ fn scale_to_integers(vec: &[Expr]) -> Vec<Expr> {
 
   // Find LCM of denominators
   let lcm_den = rats.iter().fold(1i128, |acc, &(_, d)| {
-    let g = gcd_i128(acc.abs(), d.abs());
+    let g = gcd_i128(acc, d);
     if g == 0 { acc } else { (acc / g) * d.abs() }
   });
 
@@ -4070,9 +4068,7 @@ fn scale_to_integers(vec: &[Expr]) -> Vec<Expr> {
     rats.iter().map(|&(n, d)| n * (lcm_den / d)).collect();
 
   // Find GCD of all entries
-  let g = scaled
-    .iter()
-    .fold(0i128, |acc, &x| gcd_i128(acc.abs(), x.abs()));
+  let g = scaled.iter().fold(0i128, |acc, &x| gcd_i128(acc, x));
 
   if g == 0 || g == 1 {
     scaled.iter().map(|&x| Expr::Integer(x)).collect()
@@ -4238,7 +4234,7 @@ fn eigenvectors_2x2_symbolic(int_matrix: &[Vec<i128>]) -> Vec<Vec<Expr>> {
     let build_v1 = |sign: i128| -> Expr {
       let signed_outer = sign * outer as i128;
       // Simplify: GCD of |diff|, |signed_outer|, |denom|
-      let g = gcd_i128(gcd_i128(diff.abs(), signed_outer.abs()), denom.abs());
+      let g = gcd_i128(gcd_i128(diff, signed_outer), denom);
       let rd = diff / g;
       let ro = (signed_outer / g).abs();
       let rden = denom / g;
@@ -4401,9 +4397,7 @@ fn normalize_symbolic_eigenvector(v: Vec<Expr>) -> Vec<Expr> {
         }
       })
       .collect();
-    let g = ints
-      .iter()
-      .fold(0i128, |acc, &x| gcd_i128(acc.abs(), x.abs()));
+    let g = ints.iter().fold(0i128, |acc, &x| gcd_i128(acc, x));
     if g == 0 {
       return v;
     }

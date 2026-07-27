@@ -235,12 +235,8 @@ fn extended_gcd_bigint(a: &BigInt, b: &BigInt) -> (BigInt, BigInt, BigInt) {
     if a.is_zero() {
       return (BigInt::from(0), BigInt::from(0), BigInt::from(0));
     }
-    let sign = if a >= &BigInt::from(0) {
-      BigInt::from(1)
-    } else {
-      BigInt::from(-1)
-    };
-    return (a.abs(), sign, BigInt::from(0));
+    let sign = if a.is_negative() { -1 } else { 1 };
+    return (a.abs(), BigInt::from(sign), BigInt::from(0));
   }
   let (mut old_r, mut r) = (a.clone(), b.clone());
   let (mut old_s, mut s) = (BigInt::from(1), BigInt::from(0));
@@ -249,21 +245,16 @@ fn extended_gcd_bigint(a: &BigInt, b: &BigInt) -> (BigInt, BigInt, BigInt) {
   while !r.is_zero() {
     let q = &old_r / &r;
     let new_r = &old_r - &q * &r;
-    old_r = r;
-    r = new_r;
+    (old_r, r) = (r, new_r);
     let new_s = &old_s - &q * &s;
-    old_s = s;
-    s = new_s;
+    (old_s, s) = (s, new_s);
     let new_t = &old_t - &q * &t;
-    old_t = t;
-    t = new_t;
+    (old_t, t) = (t, new_t);
   }
 
   // Ensure gcd is positive
   if old_r < BigInt::from(0) {
-    old_r = -old_r;
-    old_s = -old_s;
-    old_t = -old_t;
+    (old_r, old_s, old_t) = (-old_r, -old_s, -old_t);
   }
   (old_r, old_s, old_t)
 }
@@ -5439,8 +5430,8 @@ pub fn modular_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Extended Euclidean algorithm. `a` and the modulus must be coprime.
-  let (gcd, x, _) = extended_gcd(&a, &m_abs);
-  if !gcd.abs().is_one() {
+  let (gcd, x, _) = extended_gcd_bigint(&a, &m_abs);
+  if !gcd.is_one() {
     crate::emit_message(&format!(
       "ModularInverse::ninv: {} is not invertible modulo {}.",
       expr_to_string(&args[0]),
@@ -5456,16 +5447,6 @@ pub fn modular_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     result -= &m_abs;
   }
   Ok(bigint_to_expr(result))
-}
-
-/// Extended GCD: returns (gcd, x, y) such that a*x + b*y = gcd
-fn extended_gcd(a: &BigInt, b: &BigInt) -> (BigInt, BigInt, BigInt) {
-  use num_traits::Zero;
-  if a.is_zero() {
-    return (b.clone(), BigInt::zero(), BigInt::from(1));
-  }
-  let (g, x, y) = extended_gcd(&(b % a), a);
-  (g, y - (b / a) * &x, x)
 }
 
 // ─── BitLength ─────────────────────────────────────────────────────

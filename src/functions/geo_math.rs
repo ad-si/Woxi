@@ -7,7 +7,7 @@
 
 use crate::InterpreterError;
 use crate::functions::geographics::{position_to_latlon, positions_from_arg};
-use crate::functions::math_ast::gcd_i128;
+use crate::functions::math_ast::rat_reduce;
 use crate::syntax::{Expr, UnaryOperator, unevaluated};
 use geographiclib_rs::{DirectGeodesic, Geodesic, InverseGeodesic};
 use std::sync::OnceLock;
@@ -312,8 +312,7 @@ impl AngleVal {
 fn rat_add(a: (i128, i128), b: (i128, i128)) -> Option<(i128, i128)> {
   let num = a.0.checked_mul(b.1)?.checked_add(b.0.checked_mul(a.1)?)?;
   let den = a.1.checked_mul(b.1)?;
-  let g = gcd_i128(num.abs().max(1), den);
-  Some((num / g, den / g))
+  Some(rat_reduce(num, den))
 }
 
 /// Convert a numeric scalar expression to an `AngleVal`. Exactness is

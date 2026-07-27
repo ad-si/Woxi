@@ -5354,7 +5354,7 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
         .map(term_sqrt_radicand)
         .collect::<Option<Vec<i128>>>()
     {
-      let g = radicands.iter().fold(0i128, |a, &b| gcd_i128(a, b).abs());
+      let g = radicands.iter().fold(0i128, |a, &b| gcd_i128(a, b));
       // A MIXED-SIGN sum whose integer coefficients share |content| > 1
       // with unit cofactors extracts BOTH the content and the radical —
       // wolframscript's true SimplifyCount ties the content-only and
@@ -5374,7 +5374,7 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
             .iter()
             .map(|(n, _)| *n)
             .filter(|&n| n != 0)
-            .fold(0i128, |a, b| gcd_i128(a, b).abs());
+            .fold(0i128, |a, b| gcd_i128(a, b));
           if content <= 1 {
             return None;
           }
@@ -8070,13 +8070,9 @@ fn simplify_quotient_select(
   // can hand over — reduces before candidate selection so the built
   // displays never show the shared factor.
   {
-    let ng = n_terms
-      .iter()
-      .fold(0i128, |g, &(n, _, _)| gcd_i128(g, n).abs());
-    let dg = d_terms
-      .iter()
-      .fold(0i128, |g, &(n, _, _)| gcd_i128(g, n).abs());
-    let shared = gcd_i128(ng, dg).abs();
+    let ng = n_terms.iter().fold(0i128, |g, &(n, _, _)| gcd_i128(g, n));
+    let dg = d_terms.iter().fold(0i128, |g, &(n, _, _)| gcd_i128(g, n));
+    let shared = gcd_i128(ng, dg);
     if shared > 1 {
       let rn: Vec<(i128, i128, i128)> = n_terms
         .iter()
@@ -8288,7 +8284,7 @@ fn simplify_quotient_select(
   // through: Simplify[(2-4x+8x^2)/(2x^2+4x^3)] → (1-2x+4x^2)/(x^2+2x^3)
   // (wolframscript-verified).
   if !den_is_mono {
-    let shared = gcd_i128(n_content.abs(), d_content.abs());
+    let shared = gcd_i128(n_content, d_content);
     if shared > 1 {
       let sn = scale(&n_terms, shared);
       let sd = scale(&d_terms, shared);
@@ -8730,7 +8726,7 @@ fn radical_quotient_num_content(num: &Expr, den: &Expr) -> Option<Expr> {
     .iter()
     .map(|(n, _)| *n)
     .filter(|&n| n != 0)
-    .fold(0i128, |a, b| gcd_i128(a, b).abs());
+    .fold(0i128, |a, b| gcd_i128(a, b));
   if content <= 1 {
     return None;
   }
@@ -8756,7 +8752,7 @@ fn radical_quotient_num_content(num: &Expr, den: &Expr) -> Option<Expr> {
     },
     _ => 1,
   };
-  if gcd_i128(content, den_int).abs() > 1 {
+  if gcd_i128(content, den_int) > 1 {
     return None;
   }
   let signed = if coeffs.last()?.0 < 0 {

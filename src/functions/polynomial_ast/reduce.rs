@@ -1803,7 +1803,7 @@ fn reduce_quadratic_inequality(
 
 /// Make a quadratic root expression: (nb + so*Sqrt[si]) / den
 fn make_quadratic_root(nb: i128, so: i128, si: i128, den: i128) -> Expr {
-  let g = gcd_i128(gcd_i128(nb, so).abs(), den.abs()).abs();
+  let g = gcd_i128(gcd_i128(nb, so), den);
   let nb = nb / g;
   let so = so / g;
   let den = den / g;

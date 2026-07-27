@@ -2,7 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
-use crate::functions::math_ast::gcd_i128;
+use crate::functions::math_ast::{gcd_i128, rat_reduce};
 use crate::syntax::{
   BinaryOperator, ComparisonOp, UnaryOperator, bool_expr, unevaluated,
 };
@@ -909,13 +909,7 @@ fn hypoexponential_median(arg: &Expr) -> Option<Expr> {
     let new_num =
       sum_num.checked_mul(term_den)? + term_num.checked_mul(sum_den)?;
     let new_den = sum_den.checked_mul(term_den)?;
-    let g = gcd_i128(new_num.abs(), new_den.abs()).max(1);
-    sum_num = new_num / g;
-    sum_den = new_den / g;
-    if sum_den < 0 {
-      sum_num = -sum_num;
-      sum_den = -sum_den;
-    }
+    (sum_num, sum_den) = rat_reduce(new_num, new_den);
   }
 
   // sum equals 1/2 iff 2 * sum_num == sum_den.
@@ -1099,10 +1093,9 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
         Ok(Expr::Integer(sum / 2))
       } else {
         // Return as Rational
-        let g = gcd_i128(sum.abs(), 2);
         Ok(Expr::FunctionCall {
           name: "Rational".to_string(),
-          args: vec![Expr::Integer(sum / g), Expr::Integer(2 / g)].into(),
+          args: vec![Expr::Integer(sum), Expr::Integer(2)].into(),
         })
       }
     }
