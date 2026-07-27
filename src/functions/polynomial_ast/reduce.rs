@@ -636,8 +636,8 @@ fn expand_numeric_two_sided_bound(expr: &Expr, var: &str) -> Option<Expr> {
     right: Box::new(right),
   };
   let is_ineq_op = |op: ComparisonOp| {
-    use ComparisonOp::*;
-    matches!(op, Less | LessEqual | Greater | GreaterEqual)
+    use ComparisonOp as C;
+    matches!(op, C::Less | C::LessEqual | C::Greater | C::GreaterEqual)
   };
 
   match expr {

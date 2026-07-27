@@ -5778,12 +5778,12 @@ fn tex_parens_plain(expr: &Expr) -> String {
 /// Handle n-ary Times in TeX, splitting into \frac when negative-integer
 /// Power factors are present (matching Wolfram TeXForm).
 fn tex_times_nary(args: &[Expr]) -> String {
-  use BinaryOperator::{Minus, Plus};
+  use BinaryOperator as B;
   let tex_needs_product_parens = |arg: &Expr| -> bool {
     matches!(
       arg,
       Expr::BinaryOp {
-        op: Plus | Minus,
+        op: B::Plus | B::Minus,
         ..
       }
     ) || matches!(arg, Expr::FunctionCall { name, args }

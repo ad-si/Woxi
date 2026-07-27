@@ -865,7 +865,7 @@ fn get_lower_bound(var_name: &str, assumption: &Expr) -> Option<Expr> {
 /// comparison in the assumptions: `Some(1)` when `a >= b` is known, `Some(-1)`
 /// when `a <= b` is known, `None` otherwise. Used to collapse Max/Min.
 fn compare_operands(a: &Expr, b: &Expr, info: &AssumptionInfo) -> Option<i32> {
-  use ComparisonOp::{Greater, GreaterEqual, Less, LessEqual};
+  use ComparisonOp as C;
   let a_s = expr_to_string(a);
   let b_s = expr_to_string(b);
   for asm in &info.raw_assumptions {
@@ -881,8 +881,8 @@ fn compare_operands(a: &Expr, b: &Expr, info: &AssumptionInfo) -> Option<i32> {
     }
     let l = expr_to_string(&operands[0]);
     let r = expr_to_string(&operands[1]);
-    let geq = matches!(operators[0], Greater | GreaterEqual);
-    let leq = matches!(operators[0], Less | LessEqual);
+    let geq = matches!(operators[0], C::Greater | C::GreaterEqual);
+    let leq = matches!(operators[0], C::Less | C::LessEqual);
     if !geq && !leq {
       continue;
     }

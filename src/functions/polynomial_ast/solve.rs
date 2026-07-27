@@ -9311,15 +9311,15 @@ fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
       operand,
     } => Some(NumNode::Neg(Box::new(c(operand)?))),
     Expr::BinaryOp { op, left, right } => {
-      use BinaryOperator::*;
+      use BinaryOperator as B;
       let l = Box::new(c(left)?);
       let r = Box::new(c(right)?);
       match op {
-        Plus => Some(NumNode::Add(vec![*l, *r])),
-        Minus => Some(NumNode::Sub(l, r)),
-        Times => Some(NumNode::Mul(vec![*l, *r])),
-        Divide => Some(NumNode::Div(l, r)),
-        Power => Some(NumNode::Pow(l, r)),
+        B::Plus => Some(NumNode::Add(vec![*l, *r])),
+        B::Minus => Some(NumNode::Sub(l, r)),
+        B::Times => Some(NumNode::Mul(vec![*l, *r])),
+        B::Divide => Some(NumNode::Div(l, r)),
+        B::Power => Some(NumNode::Pow(l, r)),
         _ => None,
       }
     }
@@ -9561,7 +9561,7 @@ fn constraint_violation(
   vars: &[String],
   point: &[f64],
 ) -> f64 {
-  use ComparisonOp::*;
+  use ComparisonOp as C;
   let mut total = 0.0;
   for c in comparisons {
     let l = eval_expr_at_point(&c.left, vars, point);
@@ -9570,9 +9570,9 @@ fn constraint_violation(
       return f64::INFINITY;
     }
     total += match c.op {
-      Less | LessEqual => (l - r).max(0.0),
-      Greater | GreaterEqual => (r - l).max(0.0),
-      Equal => (l - r).abs(),
+      C::Less | C::LessEqual => (l - r).max(0.0),
+      C::Greater | C::GreaterEqual => (r - l).max(0.0),
+      C::Equal => (l - r).abs(),
       _ => 0.0,
     };
   }
@@ -9815,7 +9815,7 @@ fn nminimize_penalty(
 
   // Total constraint violation at a point (0 when feasible).
   let violation = |point: &[f64]| -> f64 {
-    use ComparisonOp::*;
+    use ComparisonOp as C;
     let mut total = 0.0;
     for (c, compiled) in comparisons.iter().zip(cmp_compiled.iter()) {
       let (l, r) = match compiled {
@@ -9829,9 +9829,9 @@ fn nminimize_penalty(
         return f64::INFINITY;
       }
       total += match c.op {
-        Less | LessEqual => (l - r).max(0.0),
-        Greater | GreaterEqual => (r - l).max(0.0),
-        Equal => (l - r).abs(),
+        C::Less | C::LessEqual => (l - r).max(0.0),
+        C::Greater | C::GreaterEqual => (r - l).max(0.0),
+        C::Equal => (l - r).abs(),
         _ => 0.0,
       };
     }

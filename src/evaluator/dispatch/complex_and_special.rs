@@ -6618,7 +6618,7 @@ fn line_nearest_point(
   pt: &[Expr],
   n: usize,
 ) -> Result<Option<Expr>, InterpreterError> {
-  use BinaryOperator::{Divide, Minus, Plus, Times};
+  use BinaryOperator as B;
   if verts.len() < 2 {
     return Ok(None);
   }
@@ -6650,9 +6650,9 @@ fn line_nearest_point(
       (0..n)
         .map(|i| {
           binop(
-            Times,
-            binop(Minus, pt[i].clone(), a[i].clone()),
-            binop(Minus, b[i].clone(), a[i].clone()),
+            B::Times,
+            binop(B::Minus, pt[i].clone(), a[i].clone()),
+            binop(B::Minus, b[i].clone(), a[i].clone()),
           )
         })
         .collect(),
@@ -6660,8 +6660,8 @@ fn line_nearest_point(
     let den = plus(
       (0..n)
         .map(|i| {
-          let d = binop(Minus, b[i].clone(), a[i].clone());
-          binop(Times, d.clone(), d)
+          let d = binop(B::Minus, b[i].clone(), a[i].clone());
+          binop(B::Times, d.clone(), d)
         })
         .collect(),
     );
@@ -6669,7 +6669,7 @@ fn line_nearest_point(
     let cand: Vec<Expr> = if den_val.is_none_or(|d| d.abs() < 1e-15) {
       a.clone() // degenerate (zero-length) segment
     } else {
-      let t = binop(Divide, num, den);
+      let t = binop(B::Divide, num, den);
       let t_val = to_f64(&eval(&t)?).unwrap_or(0.0);
       if t_val <= 0.0 {
         a.clone()
@@ -6679,9 +6679,13 @@ fn line_nearest_point(
         (0..n)
           .map(|i| {
             binop(
-              Plus,
+              B::Plus,
               a[i].clone(),
-              binop(Times, t.clone(), binop(Minus, b[i].clone(), a[i].clone())),
+              binop(
+                B::Times,
+                t.clone(),
+                binop(B::Minus, b[i].clone(), a[i].clone()),
+              ),
             )
           })
           .collect()

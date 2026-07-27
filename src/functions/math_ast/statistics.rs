@@ -2137,7 +2137,7 @@ fn symbolic_covariance(
   xs: &[Expr],
   ys: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  use BinaryOperator::{Divide, Minus, Times};
+  use BinaryOperator as B;
   let n = xs.len();
   let conj = |e: &Expr| Expr::FunctionCall {
     name: "Conjugate".to_string(),
@@ -2145,19 +2145,19 @@ fn symbolic_covariance(
   };
   let result = if n == 2 {
     let dx = Expr::BinaryOp {
-      op: Minus,
+      op: B::Minus,
       left: Box::new(xs[0].clone()),
       right: Box::new(xs[1].clone()),
     };
     let dy = Expr::BinaryOp {
-      op: Minus,
+      op: B::Minus,
       left: Box::new(conj(&ys[0])),
       right: Box::new(conj(&ys[1])),
     };
     Expr::BinaryOp {
-      op: Divide,
+      op: B::Divide,
       left: Box::new(Expr::BinaryOp {
-        op: Times,
+        op: B::Times,
         left: Box::new(dx),
         right: Box::new(dy),
       }),
@@ -2168,22 +2168,22 @@ fn symbolic_covariance(
     let mut terms = Vec::with_capacity(n);
     for (x, y) in xs.iter().zip(ys.iter()) {
       let coeff = Expr::BinaryOp {
-        op: Minus,
+        op: B::Minus,
         left: Box::new(Expr::BinaryOp {
-          op: Times,
+          op: B::Times,
           left: Box::new(Expr::Integer(n as i128)),
           right: Box::new(x.clone()),
         }),
         right: Box::new(sum_x.clone()),
       };
       terms.push(Expr::BinaryOp {
-        op: Times,
+        op: B::Times,
         left: Box::new(coeff),
         right: Box::new(conj(y)),
       });
     }
     Expr::BinaryOp {
-      op: Divide,
+      op: B::Divide,
       left: Box::new(Expr::FunctionCall {
         name: "Plus".to_string(),
         args: terms.into(),
@@ -2234,17 +2234,17 @@ pub fn covariance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Some((_, _, s1, s2, rho)) =
       super::distributions::binormal_params(dargs)
   {
-    use BinaryOperator::{Power, Times};
+    use BinaryOperator as B;
     let sq = |s: Expr| Expr::BinaryOp {
-      op: Power,
+      op: B::Power,
       left: Box::new(s),
       right: Box::new(Expr::Integer(2)),
     };
     let off = Expr::BinaryOp {
-      op: Times,
+      op: B::Times,
       left: Box::new(rho),
       right: Box::new(Expr::BinaryOp {
-        op: Times,
+        op: B::Times,
         left: Box::new(s1.clone()),
         right: Box::new(s2.clone()),
       }),
