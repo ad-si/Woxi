@@ -6743,31 +6743,245 @@ pub fn weighted_kind_q_ast(
   Ok(bool_expr(weighted))
 }
 
-/// The value of a graph-level or item-level annotation. `item` is a vertex or
-/// an edge; without one the whole option value is returned.
+/// Annotation names in Wolfram's own symbol order, which puts `VertexLabels`
+/// before `VertexLabelStyle` where a byte-wise sort would not.
+fn sort_property_names(names: &mut [String]) {
+  names.sort_by(|a, b| {
+    crate::functions::list_helpers_ast::sorting::wolfram_string_order(a, b)
+      .cmp(&0)
+      .reverse()
+  });
+}
+
+/// The annotations every vertex offers, in the order wolframscript lists them
+/// for a graph that carries none of its own.
+const BASE_VERTEX_PROPERTIES: [&str; 5] = [
+  "VertexCoordinates",
+  "VertexShapeFunction",
+  "VertexShape",
+  "VertexSize",
+  "VertexStyle",
+];
+
+/// The annotations every edge offers.
+const BASE_EDGE_PROPERTIES: [&str; 2] = ["EdgeShapeFunction", "EdgeStyle"];
+
+/// Which part of a graph an annotation describes.
+#[derive(Clone, Copy, PartialEq)]
+enum Scope {
+  Vertex,
+  Edge,
+}
+
+impl Scope {
+  /// The annotations every item of this kind offers.
+  fn base_properties(self) -> &'static [&'static str] {
+    match self {
+      Scope::Vertex => &BASE_VERTEX_PROPERTIES,
+      Scope::Edge => &BASE_EDGE_PROPERTIES,
+    }
+  }
+
+  /// The prefix the names of this kind's annotations start with.
+  fn prefix(self) -> &'static str {
+    match self {
+      Scope::Vertex => "Vertex",
+      Scope::Edge => "Edge",
+    }
+  }
+}
+
+/// The part of the graph a property name describes. `Graph…` options and
+/// anything else describe the graph as a whole.
+fn property_scope(property: &str) -> Option<Scope> {
+  if property.starts_with("Vertex") {
+    Some(Scope::Vertex)
+  } else if property.starts_with("Edge") {
+    Some(Scope::Edge)
+  } else {
+    None
+  }
+}
+
+/// The value an annotation the graph does not set reads back as.
+fn annotation_default(property: &str) -> Expr {
+  match property {
+    "GraphHighlight" => Expr::List(vec![].into()),
+    "VertexLabels" | "EdgeLabels" => Expr::Identifier("None".to_string()),
+    _ => Expr::Identifier("Automatic".to_string()),
+  }
+}
+
+/// The value an item loses when its annotation is deleted: a weight falls back
+/// to 1, everything else to the annotation's own default.
+fn annotation_item_default(property: &str) -> Expr {
+  match property {
+    "EdgeWeight" | "VertexWeight" => Expr::Integer(1),
+    other => annotation_default(other),
+  }
+}
+
+/// Whether a graph option value spells out one entry per item (`{5, 7}`)
+/// rather than naming the items it applies to (`{1 -> "a"}`).
+fn is_positional_value(value: &Expr) -> bool {
+  matches!(value, Expr::List(items)
+    if !items.is_empty()
+      && !items.iter().any(|i| matches!(i, Expr::Rule { .. })))
+}
+
+/// The rules an option value carries, i.e. the items it names explicitly.
+fn value_rules(value: &Expr) -> Vec<(&Expr, &Expr)> {
+  let Expr::List(items) = value else {
+    return Vec::new();
+  };
+  items
+    .iter()
+    .filter_map(|i| match i {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => Some((pattern.as_ref(), replacement.as_ref())),
+      _ => None,
+    })
+    .collect()
+}
+
+/// The value an option value holds for every item it does not name, i.e. the
+/// lone non-rule element of a `{value, item -> value, …}` list, or the whole
+/// value when it is not a list at all.
+fn value_fallback(value: &Expr) -> Option<Expr> {
+  match value {
+    Expr::List(items) => {
+      let mut plain = items.iter().filter(|i| !matches!(i, Expr::Rule { .. }));
+      let first = plain.next()?;
+      plain.next().is_none().then(|| first.clone())
+    }
+    other => Some(other.clone()),
+  }
+}
+
+/// Whether `item` is the vertex or edge the rule on the left names.
+fn names_item(lhs: &Expr, item: &Expr, scope: Scope) -> bool {
+  match scope {
+    Scope::Vertex => {
+      crate::syntax::expr_to_string(lhs) == crate::syntax::expr_to_string(item)
+    }
+    Scope::Edge => same_edge(lhs, item),
+  }
+}
+
+/// Where `item` sits in the graph, and which kind of item it is. An expression
+/// that is neither a vertex nor an edge of the graph has no place.
+fn item_position(
+  vertices: &[Expr],
+  edges: &[Expr],
+  item: &Expr,
+) -> Option<(Scope, usize)> {
+  if let Some(i) = vertices.iter().position(|v| {
+    crate::syntax::expr_to_string(v) == crate::syntax::expr_to_string(item)
+  }) {
+    return Some((Scope::Vertex, i));
+  }
+  edges
+    .iter()
+    .position(|e| same_edge(e, item))
+    .map(|i| (Scope::Edge, i))
+}
+
+/// The value one vertex or edge carries for an annotation. An item the graph
+/// does not hold, or an annotation that does not describe items of its kind,
+/// has none; one the graph simply leaves unset falls back to the annotation's
+/// default, as long as every item offers that annotation at all.
+fn item_annotation_value(
+  graph: &Expr,
+  vertices: &[Expr],
+  edges: &[Expr],
+  options: &[Expr],
+  item: &Expr,
+  property: &str,
+) -> Option<Expr> {
+  let (scope, index) = item_position(vertices, edges, item)?;
+  if property_scope(property) != Some(scope) {
+    return None;
+  }
+  if let Some(value) = graph_option(options, property) {
+    // An item the option names explicitly takes the value it is given.
+    if let Some((_, v)) = value_rules(&value)
+      .into_iter()
+      .find(|(lhs, _)| names_item(lhs, item, scope))
+    {
+      return Some(v.clone());
+    }
+    if is_positional_value(&value) {
+      if let Expr::List(items) = &value {
+        return items.get(index).cloned();
+      }
+    } else if let Some(fallback) = value_fallback(&value) {
+      return Some(fallback);
+    }
+  }
+  if !scope.base_properties().contains(&property) {
+    return None;
+  }
+  // Every vertex has coordinates, whether or not the graph spells them out.
+  if property == "VertexCoordinates" {
+    let embedding =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "GraphEmbedding".to_string(),
+        args: vec![graph.clone()].into(),
+      })
+      .ok()?;
+    if let Expr::List(points) = &embedding {
+      return points.get(index).cloned();
+    }
+    return None;
+  }
+  Some(annotation_default(property))
+}
+
+/// The items an item specification names, or `None` when it names a single
+/// vertex or edge. A list is only a specification when every entry is an item
+/// of the graph, since a vertex may itself be a list.
+fn item_spec_list(
+  vertices: &[Expr],
+  edges: &[Expr],
+  spec: &Expr,
+) -> Option<Vec<Expr>> {
+  let Expr::List(items) = spec else {
+    return None;
+  };
+  if item_position(vertices, edges, spec).is_some() {
+    return None;
+  }
+  items
+    .iter()
+    .all(|i| item_position(vertices, edges, i).is_some())
+    .then(|| items.iter().cloned().collect())
+}
+
+/// The value of a graph-level or item-level annotation. `item` is a vertex, an
+/// edge or a list of them; without one the whole option value is returned.
 fn annotation_value(
   graph: &Expr,
   item: Option<&Expr>,
   property: &str,
 ) -> Option<Expr> {
   let (vertices, edges, options) = graph_parts(graph)?;
-  let value = graph_option(&options, property)?;
   let Some(item) = item else {
-    return Some(value);
+    // Every annotation a graph offers reads back, set or not.
+    return graph_option(&options, property)
+      .or_else(|| annotation_default(property).into());
   };
-  let Expr::List(values) = &value else {
-    return Some(value);
-  };
-  // A vertex property is indexed by the vertex list, an edge property by the
-  // edge list.
-  let index = if property.starts_with("Vertex") {
-    vertices.iter().position(|v| {
-      crate::syntax::expr_to_string(v) == crate::syntax::expr_to_string(item)
-    })
-  } else {
-    edges.iter().position(|e| same_edge(e, item))
-  }?;
-  values.get(index).cloned()
+  if let Some(items) = item_spec_list(&vertices, &edges, item) {
+    return items
+      .iter()
+      .map(|i| {
+        item_annotation_value(graph, &vertices, &edges, &options, i, property)
+      })
+      .collect::<Option<Vec<_>>>()
+      .map(|values| Expr::List(values.into()));
+  }
+  item_annotation_value(graph, &vertices, &edges, &options, item, property)
 }
 
 /// `AnnotationValue` / `PropertyValue` over a graph and, optionally, one of
@@ -6794,6 +7008,237 @@ pub fn graph_annotation_ast(
     annotation_value(graph, item, property)
       .unwrap_or_else(|| Expr::Identifier("$Failed".to_string())),
   )
+}
+
+/// The annotations one vertex or edge offers: the ones every item of its kind
+/// has, plus the ones the graph sets for it. A graph that carries nothing of
+/// that kind keeps wolframscript's own order; any other lists them
+/// alphabetically.
+fn item_annotation_keys(
+  vertices: &[Expr],
+  edges: &[Expr],
+  options: &[Expr],
+  item: &Expr,
+) -> Option<Expr> {
+  let (scope, _) = item_position(vertices, edges, item)?;
+  let mut names: Vec<String> = scope
+    .base_properties()
+    .iter()
+    .map(|p| p.to_string())
+    .collect();
+  // An annotation the graph sets for this item joins the list; one it sets for
+  // other items only, or one that describes the graph as a whole, does not.
+  // A graph that carries an annotation about any of its items lists the keys
+  // alphabetically; one that only carries whole-graph options does not.
+  let mut sorted = false;
+  for option in options {
+    let Expr::Rule { pattern, .. } = option else {
+      continue;
+    };
+    let Expr::Identifier(property) = pattern.as_ref() else {
+      continue;
+    };
+    if property_scope(property).is_some() {
+      sorted = true;
+    }
+    if !property.starts_with(scope.prefix()) || names.contains(property) {
+      continue;
+    }
+    let value = graph_option(options, property)?;
+    let names_this_item = value_rules(&value)
+      .into_iter()
+      .any(|(lhs, _)| names_item(lhs, item, scope))
+      || is_positional_value(&value)
+      || value_fallback(&value).is_some();
+    if names_this_item {
+      names.push(property.clone());
+    }
+  }
+  if sorted {
+    sort_property_names(&mut names);
+  }
+  Some(Expr::List(
+    names.into_iter().map(Expr::Identifier).collect(),
+  ))
+}
+
+/// `AnnotationKeys[graph]` — the annotations the graph offers;
+/// `AnnotationKeys[{graph, item}]` — the ones one vertex or edge offers.
+pub fn graph_annotation_keys_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let original = || unevaluated("AnnotationKeys", args);
+  if args.len() != 1 {
+    return Ok(original());
+  }
+  let (graph, item) = match &args[0] {
+    Expr::List(parts)
+      if parts.len() == 2 && graph_parts(&parts[0]).is_some() =>
+    {
+      (&parts[0], Some(&parts[1]))
+    }
+    other => (other, None),
+  };
+  let Some((vertices, edges, options)) = graph_parts(graph) else {
+    crate::emit_message(&format!(
+      "AnnotationKeys::pvobj: {} is not an object with annotations.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(original());
+  };
+  let Some(item) = item else {
+    return graph_property_list_ast(&[graph.clone()]);
+  };
+  if let Some(items) = item_spec_list(&vertices, &edges, item) {
+    let keys: Option<Vec<Expr>> = items
+      .iter()
+      .map(|i| item_annotation_keys(&vertices, &edges, &options, i))
+      .collect();
+    return Ok(match keys {
+      Some(keys) => Expr::List(keys.into()),
+      None => original(),
+    });
+  }
+  Ok(
+    item_annotation_keys(&vertices, &edges, &options, item)
+      .unwrap_or_else(original),
+  )
+}
+
+/// The option value with everything `item` contributes taken out, or `None`
+/// when nothing is left of it. An option that names its items drops the entry;
+/// one that spells out a value per item resets that slot to the default; one
+/// value shared by every item grows an entry that opts this item out.
+fn annotation_without_item(
+  value: &Expr,
+  property: &str,
+  item: &Expr,
+  scope: Scope,
+  index: usize,
+) -> Option<Expr> {
+  if is_positional_value(value) {
+    let Expr::List(items) = value else {
+      return Some(value.clone());
+    };
+    let mut items: Vec<Expr> = items.iter().cloned().collect();
+    if let Some(slot) = items.get_mut(index) {
+      *slot = annotation_item_default(property);
+    }
+    return Some(Expr::List(items.into()));
+  }
+  let Expr::List(items) = value else {
+    // One value shared by every item: keep it, but opt this item out of it.
+    return Some(Expr::List(
+      vec![
+        value.clone(),
+        Expr::Rule {
+          pattern: Box::new(item.clone()),
+          replacement: Box::new(annotation_item_default(property)),
+        },
+      ]
+      .into(),
+    ));
+  };
+  let kept: Vec<Expr> = items
+    .iter()
+    .filter(|i| {
+      !matches!(i, Expr::Rule { pattern, .. }
+        if names_item(pattern.as_ref(), item, scope))
+    })
+    .cloned()
+    .collect();
+  (!kept.is_empty()).then(|| Expr::List(kept.into()))
+}
+
+/// `AnnotationDelete[graph]` / `AnnotationDelete[{graph, item}]`, either for
+/// every annotation or for the named ones only.
+pub fn graph_annotation_delete_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let original = || unevaluated("AnnotationDelete", args);
+  if args.is_empty() || args.len() > 2 {
+    return Ok(original());
+  }
+  let (graph, item) = match &args[0] {
+    Expr::List(parts)
+      if parts.len() == 2 && graph_parts(&parts[0]).is_some() =>
+    {
+      (&parts[0], Some(&parts[1]))
+    }
+    other => (other, None),
+  };
+  let Some((vertices, edges, options)) = graph_parts(graph) else {
+    crate::emit_message(&format!(
+      "AnnotationDelete::pvobj: {} is not an object with annotations.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(original());
+  };
+  // Without a key every annotation goes; with one only the named keys do.
+  let wanted: Option<Vec<String>> = match args.get(1) {
+    None => None,
+    Some(Expr::Identifier(key)) => Some(vec![key.clone()]),
+    Some(Expr::List(keys)) => {
+      let mut out = Vec::with_capacity(keys.len());
+      for key in keys.iter() {
+        let Expr::Identifier(key) = key else {
+          return Ok(original());
+        };
+        out.push(key.clone());
+      }
+      Some(out)
+    }
+    Some(_) => return Ok(original()),
+  };
+  let doomed = |property: &String| {
+    wanted.as_ref().is_none_or(|keys| keys.contains(property))
+  };
+  let position = item.and_then(|i| item_position(&vertices, &edges, i));
+  if item.is_some() && position.is_none() {
+    return Ok(original());
+  }
+  let mut kept: Vec<Expr> = Vec::with_capacity(options.len());
+  for option in &options {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = option
+    else {
+      kept.push(option.clone());
+      continue;
+    };
+    let Expr::Identifier(property) = pattern.as_ref() else {
+      kept.push(option.clone());
+      continue;
+    };
+    if !doomed(property) {
+      kept.push(option.clone());
+      continue;
+    }
+    let Some((item, (scope, index))) = item.zip(position) else {
+      continue;
+    };
+    // Only an annotation of the item's own kind has anything to lose.
+    if property_scope(property) != Some(scope) {
+      kept.push(option.clone());
+      continue;
+    }
+    if let Some(value) =
+      annotation_without_item(replacement, property, item, scope, index)
+    {
+      kept.push(Expr::Rule {
+        pattern: pattern.clone(),
+        replacement: Box::new(value),
+      });
+    }
+  }
+  let mut graph_args =
+    vec![Expr::List(vertices.into()), Expr::List(edges.into())];
+  graph_args.extend(kept);
+  Ok(Expr::FunctionCall {
+    name: "Graph".to_string(),
+    args: graph_args.into(),
+  })
 }
 
 /// `SetProperty[{graph, item}, property -> value]` — the graph with that
@@ -6871,12 +7316,27 @@ pub fn graph_set_property_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// `Options[graph]` / `Options[graph, name]` — the annotations the graph
-/// carries.
+/// carries, named in alphabetical order however the graph was written.
 pub fn graph_options_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let original = || unevaluated("Options", args);
-  let Some((_, _, options)) = graph_parts(&args[0]) else {
+  let Some((_, _, mut options)) = graph_parts(&args[0]) else {
     return Ok(original());
   };
+  let name_of = |o: &Expr| match o {
+    Expr::Rule { pattern, .. } => match pattern.as_ref() {
+      Expr::Identifier(s) => s.clone(),
+      other => crate::syntax::expr_to_string(other),
+    },
+    other => crate::syntax::expr_to_string(other),
+  };
+  options.sort_by(|a, b| {
+    crate::functions::list_helpers_ast::sorting::wolfram_string_order(
+      &name_of(a),
+      &name_of(b),
+    )
+    .cmp(&0)
+    .reverse()
+  });
   if args.len() == 1 {
     return Ok(Expr::List(options.into()));
   }
@@ -6946,9 +7406,14 @@ const BASE_GRAPH_PROPERTIES: [&str; 11] = [
   "VertexStyle",
 ];
 
+/// The annotations a graph only offers once it carries them. Every other
+/// option — `VertexLabels`, `EdgeCapacity`, `ImageSize` and the rest — leaves
+/// the whole-graph key list as it was.
+const EXTRA_GRAPH_PROPERTIES: [&str; 2] = ["EdgeWeight", "VertexWeight"];
+
 /// `PropertyList[graph]` — the annotations the graph offers. A graph that
-/// carries one of its own lists the whole set alphabetically; a bare graph
-/// keeps wolframscript's own order.
+/// carries a weight lists the whole set alphabetically; any other keeps
+/// wolframscript's own order.
 pub fn graph_property_list_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
@@ -6963,7 +7428,7 @@ pub fn graph_property_list_ast(
     .iter()
     .filter_map(|o| match o {
       Expr::Rule { pattern, .. } => match pattern.as_ref() {
-        Expr::Identifier(s) if !BASE_GRAPH_PROPERTIES.contains(&s.as_str()) => {
+        Expr::Identifier(s) if EXTRA_GRAPH_PROPERTIES.contains(&s.as_str()) => {
           Some(s.clone())
         }
         _ => None,
@@ -6984,7 +7449,7 @@ pub fn graph_property_list_ast(
     .map(|p| p.to_string())
     .collect();
   names.append(&mut extra);
-  names.sort();
+  sort_property_names(&mut names);
   names.dedup();
   Ok(Expr::List(
     names.into_iter().map(Expr::Identifier).collect(),

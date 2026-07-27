@@ -5234,6 +5234,12 @@ fn evaluate_function_call_ast_inner(
   if matches!(name, "AnnotationValue" | "PropertyValue") && args.len() == 2 {
     return crate::functions::graph::graph_annotation_ast(name, args);
   }
+  if name == "AnnotationKeys" && args.len() == 1 {
+    return crate::functions::graph::graph_annotation_keys_ast(args);
+  }
+  if name == "AnnotationDelete" && (args.len() == 1 || args.len() == 2) {
+    return crate::functions::graph::graph_annotation_delete_ast(args);
+  }
   if name == "SetProperty" && args.len() == 2 {
     return crate::functions::graph::graph_set_property_ast(args);
   }

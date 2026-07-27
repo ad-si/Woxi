@@ -21,6 +21,34 @@ $ wo 'AnnotationValue[{Graph[{1 <-> 2}, EdgeWeight -> {5}], 1}, VertexWeight]'
 $Failed
 ```
 
+An item named by a rule reads back the bare value the rule gives it:
+
+```scrut
+$ wo 'AnnotationValue[{Graph[{1 -> 2, 2 -> 3}, VertexLabels -> {1 -> "a"}], 1}, VertexLabels]'
+a
+```
+
+`AnnotationKeys` lists the annotations a graph, or one of its vertices or
+edges, offers:
+
+```scrut
+$ wo 'AnnotationKeys[{Graph[{1 -> 2, 2 -> 3}], 1}]'
+{VertexCoordinates, VertexShapeFunction, VertexShape, VertexSize, VertexStyle}
+```
+
+`AnnotationDelete` drops a whole annotation, or just one item's share of it —
+a weight spelled out per item falls back to 1 rather than losing the key:
+
+```scrut
+$ wo 'Options[AnnotationDelete[Graph[{1 <-> 2}, EdgeWeight -> {5}], EdgeWeight]]'
+{}
+```
+
+```scrut
+$ wo 'Options[AnnotationDelete[{Graph[{1 <-> 2, 2 <-> 3}, EdgeWeight -> {5, 7}], 1 <-> 2}, EdgeWeight]]'
+{EdgeWeight -> {1, 7}}
+```
+
 `SetProperty` writes one:
 
 ```scrut

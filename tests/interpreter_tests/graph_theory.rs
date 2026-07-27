@@ -6568,6 +6568,247 @@ mod graph_annotations {
     );
   }
 
+  /// The graph the annotation tests below read from: two of its three
+  /// vertices are labelled, one vertex is styled and one of its two edges is.
+  const ANNOTATED: &str = "Graph[{1 -> 2, 2 -> 3}, \
+     VertexLabels -> {1 -> \"a\", 2 -> \"b\"}, \
+     EdgeStyle -> {DirectedEdge[1, 2] -> Red}, VertexStyle -> {1 -> Blue}]";
+
+  /// The same graph with a single label, so that every annotation it carries
+  /// names exactly one item.
+  const LABELLED: &str = "Graph[{1 -> 2, 2 -> 3}, \
+     VertexLabels -> {1 -> \"a\"}, \
+     EdgeStyle -> {DirectedEdge[1, 2] -> Red}]";
+
+  #[test]
+  fn an_item_annotation_reads_back_as_its_bare_value() {
+    clear_state();
+    for (code, expected) in [
+      // The item named by a rule takes the value the rule gives it, not the
+      // rule itself.
+      (
+        format!("AnnotationValue[{{{ANNOTATED}, 1}}, VertexLabels]"),
+        "\"a\"",
+      ),
+      (
+        format!("AnnotationValue[{{{ANNOTATED}, 2}}, VertexLabels]"),
+        "\"b\"",
+      ),
+      (
+        format!("AnnotationValue[{{{ANNOTATED}, 1}}, VertexStyle]"),
+        "RGBColor[0, 0, 1]",
+      ),
+      (
+        format!(
+          "AnnotationValue[{{{ANNOTATED}, DirectedEdge[1, 2]}}, EdgeStyle]"
+        ),
+        "RGBColor[1, 0, 0]",
+      ),
+      // A list of items reads a value for each of them.
+      (
+        format!("AnnotationValue[{{{ANNOTATED}, {{1, 2}}}}, VertexLabels]"),
+        "{\"a\", \"b\"}",
+      ),
+      // An annotation every item of that kind offers falls back to its own
+      // default; one only some items carry has nothing to fall back on.
+      (
+        format!("AnnotationValue[{{{ANNOTATED}, 3}}, VertexStyle]"),
+        "Automatic",
+      ),
+      (
+        format!(
+          "AnnotationValue[{{{ANNOTATED}, DirectedEdge[2, 3]}}, EdgeStyle]"
+        ),
+        "Automatic",
+      ),
+      (
+        format!("AnnotationValue[{{{ANNOTATED}, 3}}, VertexLabels]"),
+        "$Failed",
+      ),
+      (
+        format!(
+          "AnnotationValue[{{{ANNOTATED}, DirectedEdge[2, 3]}}, EdgeLabels]"
+        ),
+        "$Failed",
+      ),
+      // An annotation of the wrong kind, or an item the graph does not hold.
+      (
+        format!("AnnotationValue[{{{ANNOTATED}, 1}}, EdgeStyle]"),
+        "$Failed",
+      ),
+      (
+        format!("AnnotationValue[{{{ANNOTATED}, 99}}, VertexStyle]"),
+        "$Failed",
+      ),
+      // Whole-graph reads give the option's default when it is unset.
+      (
+        format!("AnnotationValue[{ANNOTATED}, GraphLayout]"),
+        "Automatic",
+      ),
+      (
+        format!("AnnotationValue[{ANNOTATED}, VertexWeight]"),
+        "Automatic",
+      ),
+      (format!("AnnotationValue[{ANNOTATED}, EdgeLabels]"), "None"),
+      (
+        format!("AnnotationValue[{ANNOTATED}, GraphHighlight]"),
+        "{}",
+      ),
+    ] {
+      let code = format!("ToString[{code}, InputForm]");
+      assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn annotation_keys_list_what_the_graph_or_one_item_offers() {
+    clear_state();
+    const BASE_VERTEX: &str = "{VertexCoordinates, VertexShapeFunction, \
+       VertexShape, VertexSize, VertexStyle}";
+    const SORTED_VERTEX: &str = "{VertexCoordinates, VertexShape, \
+       VertexShapeFunction, VertexSize, VertexStyle}";
+    for (code, expected) in [
+      // A whole-graph read lists the same annotations PropertyList does.
+      (
+        format!("AnnotationKeys[{ANNOTATED}]"),
+        "{GraphHighlight, GraphHighlightStyle, GraphLayout, GraphStyle, \
+         EdgeShapeFunction, EdgeStyle, VertexCoordinates, \
+         VertexShapeFunction, VertexShape, VertexSize, VertexStyle}"
+          .to_string(),
+      ),
+      // An annotation the graph sets for an item joins that item's list.
+      (
+        format!("AnnotationKeys[{{{ANNOTATED}, 1}}]"),
+        "{VertexCoordinates, VertexLabels, VertexShape, VertexShapeFunction, \
+         VertexSize, VertexStyle}"
+          .to_string(),
+      ),
+      // One it sets for other items only does not.
+      (
+        format!("AnnotationKeys[{{{ANNOTATED}, 3}}]"),
+        SORTED_VERTEX.to_string(),
+      ),
+      (
+        format!("AnnotationKeys[{{{ANNOTATED}, DirectedEdge[1, 2]}}]"),
+        "{EdgeShapeFunction, EdgeStyle}".to_string(),
+      ),
+      // A graph that carries nothing about its items keeps wolframscript's
+      // own order; one that carries anything lists them alphabetically.
+      (
+        "AnnotationKeys[{Graph[{1 -> 2, 2 -> 3}], 1}]".to_string(),
+        BASE_VERTEX.to_string(),
+      ),
+      (
+        "AnnotationKeys[{Graph[{1 -> 2, 2 -> 3}, EdgeWeight -> {5, 7}], 1}]"
+          .to_string(),
+        SORTED_VERTEX.to_string(),
+      ),
+      (
+        "AnnotationKeys[{Graph[{1 -> 2, 2 -> 3}], DirectedEdge[1, 2]}]"
+          .to_string(),
+        "{EdgeShapeFunction, EdgeStyle}".to_string(),
+      ),
+      // A list of items gives a list of key lists.
+      (
+        "AnnotationKeys[{Graph[{1 -> 2, 2 -> 3}], {1, 2}}]".to_string(),
+        format!("{{{BASE_VERTEX}, {BASE_VERTEX}}}").replace("       ", ""),
+      ),
+      // Only a weight extends the whole-graph list — a label does not.
+      (
+        "AnnotationKeys[Graph[{1 -> 2}, VertexLabels -> {1 -> \"a\"}]]"
+          .to_string(),
+        "{GraphHighlight, GraphHighlightStyle, GraphLayout, GraphStyle, \
+         EdgeShapeFunction, EdgeStyle, VertexCoordinates, \
+         VertexShapeFunction, VertexShape, VertexSize, VertexStyle}"
+          .to_string(),
+      ),
+    ] {
+      let code = format!("ToString[{code}, InputForm]");
+      assert_eq!(
+        interpret(&code).unwrap(),
+        expected.replace("         ", "").replace("       ", ""),
+        "{code}"
+      );
+    }
+  }
+
+  #[test]
+  fn annotation_delete_drops_a_whole_key_or_one_items_share_of_it() {
+    clear_state();
+    for (code, expected) in [
+      // Without a key every annotation goes.
+      (format!("Options[AnnotationDelete[{LABELLED}]]"), "{}"),
+      // With one only that key does; the rest keep their values.
+      (
+        format!("Options[AnnotationDelete[{LABELLED}, VertexLabels]]"),
+        "{EdgeStyle -> {DirectedEdge[1, 2] -> RGBColor[1, 0, 0]}}",
+      ),
+      (
+        format!(
+          "Options[AnnotationDelete[{LABELLED}, {{VertexLabels, EdgeStyle}}]]"
+        ),
+        "{}",
+      ),
+      // A key the graph does not carry leaves it alone.
+      (
+        "Options[AnnotationDelete[Graph[{1 -> 2}], VertexStyle]]".to_string(),
+        "{}",
+      ),
+      // Naming an item takes only that item's share, and drops the key once
+      // nothing is left of it.
+      (
+        format!("Options[AnnotationDelete[{{{ANNOTATED}, 1}}, VertexLabels]]"),
+        "{EdgeStyle -> {DirectedEdge[1, 2] -> RGBColor[1, 0, 0]}, \
+         VertexLabels -> {2 -> \"b\"}, VertexStyle -> {1 -> RGBColor[0, 0, 1]}}",
+      ),
+      (
+        format!("Options[AnnotationDelete[{{{ANNOTATED}, 1}}]]"),
+        "{EdgeStyle -> {DirectedEdge[1, 2] -> RGBColor[1, 0, 0]}, \
+         VertexLabels -> {2 -> \"b\"}}",
+      ),
+      (
+        format!(
+          "Options[AnnotationDelete[{{{LABELLED}, DirectedEdge[1, 2]}}, \
+           EdgeStyle]]"
+        ),
+        "{VertexLabels -> {1 -> \"a\"}}",
+      ),
+      // An annotation that spells out a value per item resets that item's
+      // slot to the default weight rather than losing the key.
+      (
+        "Options[AnnotationDelete[{Graph[{1 <-> 2, 2 <-> 3}, \
+         EdgeWeight -> {5, 7}], 1 <-> 2}, EdgeWeight]]"
+          .to_string(),
+        "{EdgeWeight -> {1, 7}}",
+      ),
+      // The graph itself is untouched.
+      (
+        format!("VertexList[AnnotationDelete[{ANNOTATED}]]"),
+        "{1, 2, 3}",
+      ),
+      (format!("Head[AnnotationDelete[{ANNOTATED}]]"), "Graph"),
+    ] {
+      let code =
+        format!("ToString[{}, InputForm]", code.replace("           ", ""));
+      assert_eq!(
+        interpret(&code).unwrap(),
+        expected.replace("         ", ""),
+        "{code}"
+      );
+    }
+  }
+
+  #[test]
+  fn graph_options_are_named_in_alphabetical_order() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!("ToString[Options[{LABELLED}], InputForm]")).unwrap(),
+      "{EdgeStyle -> {DirectedEdge[1, 2] -> RGBColor[1, 0, 0]}, \
+       VertexLabels -> {1 -> \"a\"}}"
+        .replace("       ", "")
+    );
+  }
+
   #[test]
   fn every_edge_of_a_tagged_graph_carries_a_tag() {
     clear_state();
