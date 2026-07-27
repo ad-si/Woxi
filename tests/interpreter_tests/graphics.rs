@@ -14196,3 +14196,81 @@ mod plot_body_resolution {
     assert_has_curve("Plot[Im[Sqrt[-1 + I (y + 1)]], {y, -2, 0}]");
   }
 }
+
+/// `ColorData[n, k]` — the indexed color schemes. Scheme 1 is generated: its
+/// hues start at 0.67 and advance by √5 - 2 turns with every component mapped
+/// into 0.24 … 0.6, so it never repeats and takes any index. The tabulated
+/// schemes cycle.
+mod color_data_indexed {
+  use super::*;
+
+  #[test]
+  fn scheme_one_is_generated() {
+    clear_state();
+    // Rounded: the last digits follow the arithmetic each engine uses.
+    assert_eq!(
+      interpret(
+        "ToString[Round[List @@@ Table[ColorData[1, k], {k, 1, 6}], 0.000001], \
+         InputForm]"
+          .replace("         ", "")
+          .as_str()
+      )
+      .unwrap(),
+      "{{0.24719999999999998, 0.24, 0.6}, {0.6, 0.24, 0.442893}, \
+       {0.6, 0.547014, 0.24}, {0.24, 0.6, 0.33692}, \
+       {0.24, 0.35317299999999996, 0.6}, {0.6, 0.24, 0.5632659999999999}}"
+        .replace("       ", "")
+    );
+    // It carries on past the fifteen colors ColorList reports.
+    assert_eq!(
+      interpret(
+        "ToString[Round[List @@ ColorData[1, 16], 0.000001], InputForm]"
+      )
+      .unwrap(),
+      "{0.5041979999999999, 0.6, 0.24}"
+    );
+    assert_eq!(
+      interpret("Length[ColorData[1, \"ColorList\"]]").unwrap(),
+      "15"
+    );
+  }
+
+  #[test]
+  fn the_tabulated_schemes_cycle() {
+    clear_state();
+    for (code, expected) in [
+      (
+        "ToString[List @@ ColorData[2, 1], InputForm]",
+        "{0.8588235294117647, 0.00784313725490196, 0.00784313725490196}",
+      ),
+      (
+        "ToString[List @@ ColorData[2, 9], InputForm]",
+        "{0.33725490196078434, 0.403921568627451, 0.6235294117647059}",
+      ),
+      // Past its end the palette starts over.
+      (
+        "ToString[List @@ ColorData[2, 10], InputForm]",
+        "{0.8588235294117647, 0.00784313725490196, 0.00784313725490196}",
+      ),
+      (
+        "ToString[List @@ ColorData[3, 5], InputForm]",
+        "{0.1450980392156863, 0.43529411764705883, 0.3843137254901961}",
+      ),
+      (
+        "ToString[List @@ ColorData[3, 10], InputForm]",
+        "{0.9058823529411765, 0.027450980392156862, 0.12941176470588237}",
+      ),
+      ("Length[ColorData[2, \"ColorList\"]]", "9"),
+      ("Length[ColorData[3, \"ColorList\"]]", "10"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn an_indexed_color_has_the_rgb_head() {
+    clear_state();
+    assert_eq!(interpret("Head[ColorData[1, 1]]").unwrap(), "RGBColor");
+    assert_eq!(interpret("Head[ColorData[2, 1]]").unwrap(), "RGBColor");
+  }
+}
