@@ -323,40 +323,6 @@ fn extract_rule_parts(expr: &Expr) -> (&Expr, Option<&Expr>) {
   }
 }
 
-/// Simple pattern matching for Cases.
-/// This handles basic patterns like x_, _Integer, etc.
-fn matches_pattern_simple(value: &str, pattern: &str) -> bool {
-  // Match any value
-  if pattern == "_" {
-    return true;
-  }
-
-  // Named blank pattern like x_
-  if pattern.ends_with('_')
-    && !pattern.contains("_Integer")
-    && !pattern.contains("_Real")
-  {
-    return true;
-  }
-
-  // Type patterns
-  if pattern == "_Integer" {
-    return value.parse::<i128>().is_ok();
-  }
-  if pattern == "_Real" {
-    return value.parse::<f64>().is_ok() && value.contains('.');
-  }
-  if pattern == "_String" {
-    return value.starts_with('"') && value.ends_with('"');
-  }
-  if pattern == "_List" {
-    return value.starts_with('{') && value.ends_with('}');
-  }
-
-  // Literal match
-  value == pattern
-}
-
 /// Sequence pattern info for boolean matching.
 struct SeqInfoBool {
   head: Option<String>,
@@ -1723,6 +1689,11 @@ pub fn position_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// FirstPosition[list, pattern] - finds the position of the first element matching pattern
 /// Returns {index} or Missing["NotFound"] if not found
+/// `FirstPosition[expr, patt]` / `[expr, patt, default]` /
+/// `[expr, patt, default, levelspec]` — the first position `Position` reports,
+/// or the default when there is none. Delegating keeps the two in step: a
+/// head counts as position `{0}`, so `FirstPosition[{1, a, 2}, _Symbol]` is
+/// `{0}` (the `List` head), not `{2}`.
 pub fn first_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
@@ -1737,130 +1708,16 @@ pub fn first_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: vec![Expr::String("NotFound".to_string())].into(),
     }
   };
-
-  // Level bounds (lmin, lmax) measured as depth from the root (0 = the whole
-  // expression). The default searches all levels; a 4th argument restricts
-  // them: `n` -> levels 1..n, `{n}` -> exactly level n, `{a, b}` -> a..b,
-  // `Infinity` -> all.
-  const INF: i128 = i128::MAX;
-  let (lmin, lmax) = if args.len() >= 4 {
-    match parse_level_bounds(&args[3]) {
-      Some(b) => b,
-      None => (0, INF),
-    }
-  } else {
-    (0, INF)
-  };
-
-  // Path components are integer indices for list/function/operator positions
-  // and `Key[k]` for association positions.
-  fn find_first(
-    expr: &Expr,
-    pattern: &Expr,
-    path: &mut Vec<Expr>,
-    depth: i128,
-    lmin: i128,
-    lmax: i128,
-  ) -> Option<Vec<Expr>> {
-    if depth >= lmin && depth <= lmax {
-      let pattern_str = crate::syntax::expr_to_string(pattern);
-      let expr_str = crate::syntax::expr_to_string(expr);
-      if matches_pattern_simple(&expr_str, &pattern_str)
-        || matches_pattern_ast(expr, pattern)
-      {
-        return Some(path.clone());
-      }
-    }
-    if depth >= lmax {
-      return None;
-    }
-    // Recurse into every structurally composite expression — List args,
-    // FunctionCall args, BinaryOp operands, UnaryOp operand — so patterns
-    // like `x^2` can be found inside `1 + x^2` (a Plus) at position {1, 2}.
-    let recurse = |item: &Expr, component: Expr, path: &mut Vec<Expr>| {
-      path.push(component);
-      let r = find_first(item, pattern, path, depth + 1, lmin, lmax);
-      path.pop();
-      r
-    };
-    match expr {
-      Expr::List(items) => {
-        for (i, item) in items.iter().enumerate() {
-          if let Some(result) =
-            recurse(item, Expr::Integer((i + 1) as i128), path)
-          {
-            return Some(result);
-          }
-        }
-      }
-      // An association element is located by its key: `Key[k]`.
-      Expr::Association(pairs) => {
-        for (k, v) in pairs {
-          let key = Expr::FunctionCall {
-            name: "Key".to_string(),
-            args: vec![k.clone()].into(),
-          };
-          if let Some(result) = recurse(v, key, path) {
-            return Some(result);
-          }
-        }
-      }
-      Expr::FunctionCall { args, .. } => {
-        for (i, item) in args.iter().enumerate() {
-          if let Some(result) =
-            recurse(item, Expr::Integer((i + 1) as i128), path)
-          {
-            return Some(result);
-          }
-        }
-      }
-      Expr::BinaryOp { left, right, .. } => {
-        if let Some(result) = recurse(left, Expr::Integer(1), path) {
-          return Some(result);
-        }
-        if let Some(result) = recurse(right, Expr::Integer(2), path) {
-          return Some(result);
-        }
-      }
-      Expr::UnaryOp { operand, .. } => {
-        if let Some(result) = recurse(operand, Expr::Integer(1), path) {
-          return Some(result);
-        }
-      }
-      _ => {}
-    }
-    None
+  let mut position_args = vec![args[0].clone(), args[1].clone()];
+  if args.len() >= 4 {
+    position_args.push(args[3].clone());
   }
-
-  let mut path = Vec::new();
-  match find_first(&args[0], &args[1], &mut path, 0, lmin, lmax) {
-    Some(indices) => Ok(Expr::List(indices.into())),
-    None => Ok(default),
-  }
-}
-
-/// Parse a Wolfram level specification into inclusive `(min, max)` depth
-/// bounds. Returns `None` for unrecognized forms.
-fn parse_level_bounds(spec: &Expr) -> Option<(i128, i128)> {
-  const INF: i128 = i128::MAX;
-  let as_level = |e: &Expr| -> Option<i128> {
-    match e {
-      Expr::Integer(n) => Some(*n),
-      Expr::Identifier(s) if s == "Infinity" => Some(INF),
-      _ => None,
-    }
-  };
-  match spec {
-    Expr::Integer(n) => Some((1, *n)),
-    Expr::Identifier(s) if s == "Infinity" => Some((1, INF)),
-    Expr::List(items) if items.len() == 1 => {
-      let n = as_level(&items[0])?;
-      Some((n, n))
-    }
-    Expr::List(items) if items.len() == 2 => {
-      Some((as_level(&items[0])?, as_level(&items[1])?))
-    }
-    _ => None,
+  // Any trailing options (Heads -> …) are Position's too.
+  position_args.extend(args.iter().skip(4).cloned());
+  match position_unified_ast(&position_args)? {
+    Expr::List(ref found) => Ok(found.first().cloned().unwrap_or(default)),
+    // Position left itself unevaluated (a malformed level spec, say).
+    _ => Ok(unevaluated("FirstPosition", args)),
   }
 }
 

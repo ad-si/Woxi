@@ -19905,3 +19905,61 @@ fn level_reports_an_atomic_object_at_its_own_level() {
     "SparseArray"
   );
 }
+
+/// `FirstPosition` reports the first position `Position` finds, heads
+/// included: the head of an expression sits at position `{0}`.
+mod first_position_heads {
+  use super::*;
+
+  #[test]
+  fn a_head_is_the_first_position() {
+    clear_state();
+    for (code, expected) in [
+      // The List head matches _Symbol before the element a does.
+      ("FirstPosition[{1, a, 2}, _Symbol]", "{0}"),
+      ("FirstPosition[f[1, a], _Symbol]", "{0}"),
+      ("FirstPosition[a + b, _Symbol]", "{0}"),
+      ("FirstPosition[{{1}, {a}}, _Symbol]", "{0}"),
+      // A level specification does not hide the head.
+      (
+        "FirstPosition[{1, 2, 3}, _, Missing[\"NotFound\"], {1}]",
+        "{0}",
+      ),
+    ] {
+      assert_eq!(
+        interpret(&format!("ToString[{code}, InputForm]")).unwrap(),
+        expected,
+        "{code}"
+      );
+    }
+  }
+
+  #[test]
+  fn it_still_finds_the_ordinary_positions() {
+    clear_state();
+    for (code, expected) in [
+      ("FirstPosition[{1, 2, 3}, 2]", "{2}"),
+      ("FirstPosition[{1, 2}, _Integer]", "{1}"),
+      ("FirstPosition[{{1, 2}, {3, 4}}, 3]", "{2, 1}"),
+      ("FirstPosition[{1, {2, {3}}}, 3]", "{2, 2, 1}"),
+      ("FirstPosition[f[1, g[2]], _Integer]", "{1}"),
+      // The whole expression is position {}.
+      ("FirstPosition[{1, a}, _List]", "{}"),
+      ("FirstPosition[\"abc\", _String]", "{}"),
+      // An association element is located by its key.
+      (
+        "FirstPosition[<|\"a\" -> 1, \"b\" -> 2|>, 2]",
+        "{Key[\"b\"]}",
+      ),
+      // Nothing found gives the default.
+      ("FirstPosition[{1, 2, 3}, 5]", "Missing[\"NotFound\"]"),
+      ("FirstPosition[{1, 2, 3}, 5, none]", "none"),
+    ] {
+      assert_eq!(
+        interpret(&format!("ToString[{code}, InputForm]")).unwrap(),
+        expected,
+        "{code}"
+      );
+    }
+  }
+}
