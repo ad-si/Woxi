@@ -485,6 +485,52 @@ mod check {
     );
   }
 
+  // `$MessageList` holds the messages raised so far in the current
+  // calculation, each as HoldForm[MessageName[sym, tag]]. Verified against
+  // wolframscript.
+  #[test]
+  fn message_list_tracks_raised_messages() {
+    clear_state();
+    assert_eq!(interpret("$MessageList").unwrap(), "{}");
+    assert_eq!(interpret("Head[$MessageList]").unwrap(), "List");
+    clear_state();
+    assert_eq!(
+      interpret(r#"ff::test = "hi"; Message[ff::test]; $MessageList"#).unwrap(),
+      "{HoldForm[MessageName[ff, test]]}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("1/0; $MessageList").unwrap(),
+      "{HoldForm[MessageName[Power, infy]]}"
+    );
+    // Quieted messages are not recorded, and neither are switched-off ones.
+    clear_state();
+    assert_eq!(
+      interpret(r#"ff::test = "hi"; Quiet[Message[ff::test]]; $MessageList"#)
+        .unwrap(),
+      "{}"
+    );
+    // The held entry is the message name itself, so releasing the hold
+    // gives the message text.
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"ff::test = "hi"; Message[ff::test]; ReleaseHold[First[$MessageList]]"#
+      )
+      .unwrap(),
+      "hi"
+    );
+    clear_state();
+    assert_eq!(interpret("1/0; 1/0; Length[$MessageList]").unwrap(), "2");
+    // `Off` keeps the message out of the list too. Kept last: the switch
+    // outlives `clear_state`.
+    clear_state();
+    assert_eq!(
+      interpret("Off[Power::infy]; 1/0; $MessageList").unwrap(),
+      "{}"
+    );
+  }
+
   // Messages silenced by an inner Quiet don't trigger an outer Check.
   #[test]
   fn check_ignores_quieted_messages() {

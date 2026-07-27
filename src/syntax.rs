@@ -6715,6 +6715,27 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       let parts: Vec<String> = items.iter().map(&fmt).collect();
       format!("{{{}}}", parts.join(", "))
     }
+    // `Definition[sym]` and `FullDefinition[sym]` stay held (like
+    // wolframscript) and print as the symbol's definition text.
+    Expr::FunctionCall { name, args }
+      if (name == "Definition" || name == "FullDefinition")
+        && args.len() == 1
+        && matches!(&args[0], Expr::Identifier(_)) =>
+    {
+      match &args[0] {
+        Expr::Identifier(sym) if name == "Definition" => {
+          crate::evaluator::dispatch::complex_and_special::definition_text(sym)
+            .unwrap_or_default()
+        }
+        Expr::Identifier(sym) => {
+          crate::evaluator::dispatch::complex_and_special::full_definition_text(
+            sym,
+          )
+          .unwrap_or_default()
+        }
+        _ => unreachable!(),
+      }
+    }
     Expr::FunctionCall { name, args } => {
       // Named slot Slot["name"] displays as #name (matching wolframscript).
       if name == "Slot"
@@ -10307,6 +10328,15 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
 fn expr_to_input_form_impl(expr: &Expr) -> String {
   let _guard = TrueInputFormGuard(IN_TRUE_INPUT_FORM.with(|c| c.replace(true)));
   match expr {
+    // `Definition[sym]` / `FullDefinition[sym]` print as the definition text
+    // in every form, InputForm included (as wolframscript does).
+    Expr::FunctionCall { name, args }
+      if (name == "Definition" || name == "FullDefinition")
+        && args.len() == 1
+        && matches!(&args[0], Expr::Identifier(_)) =>
+    {
+      expr_to_string(expr)
+    }
     Expr::String(s) => {
       let escaped = escape_string_for_input_form(s);
       format!("\"{}\"", escaped)
@@ -13038,6 +13068,14 @@ fn expr_to_textbox(expr: &Expr) -> TextBox {
     Expr::String(s) => TextBox::atom(s),
     Expr::Identifier(s) | Expr::Constant(s) => TextBox::atom(s),
     Expr::Raw(s) => TextBox::atom(s),
+    // `Definition[sym]` / `FullDefinition[sym]` print as the definition text.
+    Expr::FunctionCall { name, args }
+      if (name == "Definition" || name == "FullDefinition")
+        && args.len() == 1
+        && matches!(&args[0], Expr::Identifier(_)) =>
+    {
+      TextBox::atom(&expr_to_string(expr))
+    }
 
     // Power[base, 1/2] → Sqrt[base] display
     expr if crate::functions::is_sqrt(expr).is_some() => {

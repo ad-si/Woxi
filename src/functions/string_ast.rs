@@ -12800,6 +12800,15 @@ fn text_string_render(expr: &Expr) -> Option<String> {
     Expr::FunctionCall { name, args } if name == "Quantity" => {
       return quantity_to_text(args, true);
     }
+    // `TextString` does not apply format rules, so a held `Definition[sym]`
+    // reads as the call itself rather than as the definition text.
+    Expr::FunctionCall { name, args }
+      if (name == "Definition" || name == "FullDefinition")
+        && args.len() == 1
+        && matches!(&args[0], Expr::Identifier(_)) =>
+    {
+      return Some(format!("{}[{}]", name, text_string_part(&args[0])));
+    }
     _ => {}
   }
 

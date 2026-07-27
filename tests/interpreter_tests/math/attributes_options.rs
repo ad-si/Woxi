@@ -350,6 +350,81 @@ mod options {
   }
 
   #[test]
+  fn definition_stays_held_like_wolfram() {
+    // wolframscript keeps `Definition[sym]` unevaluated and only formats it,
+    // so the head is Definition, the single part the symbol itself, and the
+    // expression is not atomic. Woxi used to hand back a bare text blob.
+    clear_state();
+    assert_eq!(
+      interpret("g2[x_] := x; Head[Definition[g2]]").unwrap(),
+      "Definition"
+    );
+    assert_eq!(
+      interpret("g2[x_] := x; Length[Definition[g2]]").unwrap(),
+      "1"
+    );
+    assert_eq!(interpret("g2[x_] := x; Definition[g2][[1]]").unwrap(), "g2");
+    assert_eq!(
+      interpret("g2[x_] := x; AtomQ[Definition[g2]]").unwrap(),
+      "False"
+    );
+    // The displayed text is unchanged by the held form.
+    assert_eq!(
+      interpret("g2[x_] := x; Definition[g2]").unwrap(),
+      "g2[x_] := x"
+    );
+    assert_eq!(
+      interpret("g2[x_] := x; ToString[Definition[g2]]").unwrap(),
+      "g2[x_] := x"
+    );
+  }
+
+  #[test]
+  fn definition_of_undefined_symbol_is_held_and_blank() {
+    clear_state();
+    assert_eq!(
+      interpret("Head[Definition[undefinedxyz]]").unwrap(),
+      "Definition"
+    );
+    assert_eq!(interpret("Definition[undefinedxyz]").unwrap(), "");
+  }
+
+  #[test]
+  fn full_definition_stays_held_like_wolfram() {
+    clear_state();
+    assert_eq!(
+      interpret("g1[x_] := x + 1; g2[x_] := g1[x]; Head[FullDefinition[g2]]")
+        .unwrap(),
+      "FullDefinition"
+    );
+    assert_eq!(
+      interpret("g1[x_] := x + 1; g2[x_] := g1[x]; FullDefinition[g2][[1]]")
+        .unwrap(),
+      "g2"
+    );
+    assert_eq!(
+      interpret("g1[x_] := x + 1; g2[x_] := g1[x]; FullDefinition[g2]")
+        .unwrap(),
+      "g2[x_] := g1[x]\n \ng1[x_] := x + 1"
+    );
+  }
+
+  #[test]
+  fn text_string_of_definition_keeps_the_call() {
+    // TextString does not apply format rules, so it shows the held call
+    // rather than the definition text (unlike ToString / OutputForm).
+    clear_state();
+    assert_eq!(
+      interpret("b5[x_] := x; TextString[Definition[b5]]").unwrap(),
+      "Definition[b5]"
+    );
+    assert_eq!(
+      interpret("b5[x_] := x; TextString[FullDefinition[b5]]").unwrap(),
+      "FullDefinition[b5]"
+    );
+  }
+
+  #[test]
   fn definition_includes_upvalues() {
     // Definition[f] must include any UpValues attached to f (rules
     // installed via `... /: expr[f] := ...` or `expr[f] ^:= ...`), not

@@ -3884,7 +3884,7 @@ InverseJacobiCD,Inverse Jacobi elliptic function cd,✅,pure,1.0,4006
 ListZTransform,Finite Z transform of a list: Sum of a_k z^(-k-n) with optional starting index n,✅,pure,9.0,4006
 MandelbrotSetIterationCount,Number of z->z^2+c iterates with abs z <= 2 up to MaxIterations (cap+1 for exact cardioid/bulb points; Listable),✅,pure,10.0,4006
 MardiaSkewnessTest,,,,8.0,4006
-MessageList,,,,2.0,4006
+MessageList,Messages generated during the current calculation,✅,stateful,2.0,4006
 NeedlemanWunschSimilarity,Global sequence-alignment similarity score,✅,pure,7.0,4006
 PaulWavelet,Paul continuous complex wavelet of order m,✅,pure,8.0,4006
 Precedence,Returns the parsing precedence of a symbol or expression,✅,pure,1.0,4005

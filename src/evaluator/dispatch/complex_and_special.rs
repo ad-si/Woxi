@@ -707,639 +707,16 @@ pub fn dispatch_complex_and_special(
     }
 
     // Definition[symbol] - show definition of a symbol
+    // `Definition[sym]` stays unevaluated the way wolframscript keeps it
+    // (`Head` is `Definition`, part 1 the symbol); the definition text is
+    // produced by the formatter via `definition_text`.
     "Definition" if args.len() == 1 => {
-      if let Expr::Identifier(sym) = &args[0] {
-        let mut lines: Vec<String> = Vec::new();
-
-        // 1. Show user-set attributes if present, otherwise fall back to
-        // built-in attributes — `Definition[In]` should print
-        // `Attributes[In] = {Listable, NHoldFirst, Protected}` even with no
-        // user-installed attrs, matching wolframscript.
-        let user_attrs =
-          crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
-        let attrs_to_show: Vec<String> = match &user_attrs {
-          Some(a) if !a.is_empty() => a.clone(),
-          _ => crate::evaluator::attributes::get_builtin_attributes(sym)
-            .into_iter()
-            .map(|s| s.to_string())
-            .collect(),
-        };
-        if !attrs_to_show.is_empty() {
-          lines.push(format!(
-            "Attributes[{}] = {{{}}}",
-            sym,
-            attrs_to_show.join(", ")
-          ));
-        }
-
-        // 2. Show OwnValues (variable assignments)
-        let own_value = crate::ENV.with(|e| {
-          let env = e.borrow();
-          env.get(sym).cloned()
-        });
-        if let Some(stored) = own_value {
-          let val_str = match stored {
-            crate::StoredValue::ExprVal(e) => expr_to_string(&e),
-            crate::StoredValue::Raw(val) => val,
-            crate::StoredValue::Association(items) => {
-              let items_expr: Vec<(Expr, Expr)> = items
-                .iter()
-                .map(|(k, v)| {
-                  let key_expr = crate::syntax::string_to_expr(k)
-                    .unwrap_or(Expr::Identifier(k.clone()));
-                  (key_expr, v.clone())
-                })
-                .collect();
-              expr_to_string(&Expr::Association(items_expr))
-            }
-          };
-          lines.push(format!("{} = {}", sym, val_str));
-        }
-
-        // ReadProtected hides the symbol's implementation details
-        // (DownValues, UpValues, Format/MakeBoxes, NValues, SubValues),
-        // surfacing only Attributes / Default / Options. Skip those
-        // sections when the symbol is read-protected.
-        let read_protected = attrs_to_show.iter().any(|a| a == "ReadProtected");
-        // 3. Show UpValues first (rules attached via Real /: F[x_Real] := x
-        // etc.), matching wolframscript's ordering. UpValues precede
-        // DownValues in Definition output.
-        let up_values = if read_protected {
-          None
-        } else {
-          crate::UPVALUES.with(|m| {
-            let defs = m.borrow();
-            defs.get(sym).cloned()
-          })
-        };
-        if let Some(entries) = up_values {
-          for (
-            _outer,
-            _params,
-            _conds,
-            _defaults,
-            _heads,
-            _body,
-            orig_lhs,
-            orig_body,
-          ) in &entries
-          {
-            lines.push(format!(
-              "{} ^:= {}",
-              expr_to_string(orig_lhs),
-              expr_to_string(orig_body)
-            ));
-          }
-        }
-
-        // 4. Show DownValues (function definitions). Filter out entries
-        // that were stored via TagSet/TagSetDelayed — those belong in
-        // UpValues, not DownValues, even though Woxi stores them in
-        // FUNC_DEFS too so ordinary dispatch can find them.
-        let upvalue_keys: std::collections::HashSet<(
-          Vec<String>,
-          Vec<Option<String>>,
-        )> = crate::UPVALUES.with(|m| {
-          let defs = m.borrow();
-          let mut keys = std::collections::HashSet::new();
-          for entries in defs.values() {
-            for (outer, params, _, _, heads, _, _, _) in entries {
-              if outer == sym {
-                keys.insert((params.clone(), heads.clone()));
-              }
-            }
-          }
-          keys
-        });
-        let down_values = if read_protected {
-          None
-        } else {
-          crate::down_values_with_memo(sym)
-        };
-        if let Some(overloads) = down_values {
-          for (params, conds, _defaults, heads, blank_types, body) in
-            overloads.iter().filter(|(params, _, _, heads, _, _)| {
-              !upvalue_keys.contains(&(params.clone(), heads.clone()))
-            })
-          {
-            // List-pattern params reconstruct to a surface `{…}` pattern with
-            // the original element names, body, and `/;` guard.
-            if let Some((pattern_args, display_body)) =
-              crate::evaluator::assignment::reconstruct_list_downvalue(
-                params,
-                conds,
-                heads,
-                blank_types,
-                body,
-              )
-            {
-              let params_str = pattern_args
-                .iter()
-                .map(expr_to_string)
-                .collect::<Vec<_>>()
-                .join(", ");
-              lines.push(format!(
-                "{}[{}] := {}",
-                sym,
-                params_str,
-                expr_to_string(&display_body)
-              ));
-              continue;
-            }
-            // Check if this is a specific-value definition (SameQ conditions)
-            let has_sameq_conds = conds.iter().any(|c| {
-              if let Some(Expr::Comparison { operators, .. }) = c {
-                operators.iter().any(|op| matches!(op, ComparisonOp::SameQ))
-              } else {
-                false
-              }
-            });
-
-            if has_sameq_conds {
-              // Reconstruct f[val1, val2] = body
-              let args_strs: Vec<String> = params
-                .iter()
-                .zip(conds.iter())
-                .map(|(p, c)| {
-                  if let Some(Expr::Comparison {
-                    operands,
-                    operators,
-                    ..
-                  }) = c
-                    && operators
-                      .iter()
-                      .any(|op| matches!(op, ComparisonOp::SameQ))
-                    && operands.len() == 2
-                    && matches!(&operands[0], Expr::Identifier(n) if n == p)
-                  {
-                    return expr_to_string(&operands[1]);
-                  }
-                  format!("{}_", p)
-                })
-                .collect();
-              lines.push(format!(
-                "{}[{}] = {}",
-                sym,
-                args_strs.join(", "),
-                expr_to_string(body)
-              ));
-            } else {
-              // Reconstruct f[x_, y_Integer] := body
-              let params_str: Vec<String> = params
-                .iter()
-                .enumerate()
-                .map(|(i, p)| {
-                  if let Some(head) = heads.get(i).and_then(|h| h.as_ref()) {
-                    format!("{}_{}", p, head)
-                  } else {
-                    format!("{}_", p)
-                  }
-                })
-                .collect();
-              lines.push(format!(
-                "{}[{}] := {}",
-                sym,
-                params_str.join(", "),
-                expr_to_string(body)
-              ));
-            }
-          }
-        }
-
-        // 4b. Show SubValues (rules like `f[1][x_] := x` keyed under f).
-        let sub_value_entries = if read_protected {
-          None
-        } else {
-          crate::evaluator::assignment::SUB_VALUES
-            .with(|m| m.borrow().get(sym).cloned())
-        };
-        if let Some(entries) = sub_value_entries {
-          for (lhs, rhs) in &entries {
-            lines.push(format!(
-              "{} := {}",
-              expr_to_string(lhs),
-              expr_to_string(rhs)
-            ));
-          }
-        }
-
-        // For built-in symbols: show attributes
-        if lines.is_empty() {
-          let builtin_attrs =
-            crate::evaluator::attributes::get_builtin_attributes(sym);
-          if !builtin_attrs.is_empty() {
-            lines.push(format!(
-              "Attributes[{}] = {{{}}}",
-              sym,
-              builtin_attrs.join(", ")
-            ));
-          }
-        }
-
-        // Show built-in DefaultValues (e.g. Default[Plus] := 0)
-        if let Some(def_str) = builtin_default_value_str(sym) {
-          lines.push(format!("Default[{}] := {}", sym, def_str));
-        }
-        // Show user-set DefaultValues. They live in `FUNC_DEFS["Default"]`
-        // because that's how Default[r, n] := v is dispatched, but
-        // wolframscript surfaces them as a TagSet line: `r /: Default[r, n] := v`.
-        let default_defs = crate::FUNC_DEFS
-          .with(|m| m.borrow().get("Default").cloned().unwrap_or_default());
-        for (params, _conds, _defaults, _heads, _blanks, body) in &default_defs
-        {
-          // Our SetDelayed stores `Default[r, 1]` with the first param named
-          // `"r"` (a pattern variable named after the symbol). Match by name.
-          if params.first().is_none_or(|p| p != sym) {
-            continue;
-          }
-          // Reconstruct the inner Default[sym, …] arguments. The first
-          // arg is the literal symbol; trailing slot-literal conditions
-          // give the additional args (e.g. `1` for `Default[r, 1]`).
-          let mut default_args = vec![sym.to_string()];
-          for p in params.iter().skip(1) {
-            // Skip the param name; the actual literal lives in the
-            // SameQ condition on this slot. Reconstruct via the same
-            // helper used by DefaultValues.
-            let lit = _conds.iter().find_map(|c| {
-              if let Some(Expr::Comparison {
-                operands,
-                operators,
-              }) = c
-                && operators.len() == 1
-                && matches!(operators[0], ComparisonOp::SameQ)
-                && operands.len() == 2
-                && let Expr::Identifier(name) = &operands[0]
-                && name == p
-              {
-                Some(expr_to_string(&operands[1]))
-              } else {
-                None
-              }
-            });
-            if let Some(s) = lit {
-              default_args.push(s);
-            }
-          }
-          lines.push(format!(
-            "{} /: Default[{}] := {}",
-            sym,
-            default_args.join(", "),
-            expr_to_string(body)
-          ));
-        }
-
-        // Show Options if the symbol has any (user-stored or built-in).
-        let stored_opts =
-          crate::FUNC_OPTIONS.with(|m| m.borrow().get(sym).cloned());
-        let is_user_stored = stored_opts.is_some();
-        let opts = stored_opts.unwrap_or_else(|| {
-          crate::evaluator::dispatch::predicate_functions::builtin_default_options(sym)
-        });
-        if !opts.is_empty() {
-          let opts_str: Vec<String> = opts.iter().map(expr_to_string).collect();
-          // For user-stored options, use the operator the user wrote
-          // (tracked in `FUNC_OPTIONS_DELAYED`). For built-in options,
-          // wolframscript prints `:=` when the symbol carries
-          // `ReadProtected` and `=` otherwise — matches the Definition
-          // outputs of `D`/`Integrate` (`:=`) vs. `Solve`/`Reduce` (`=`).
-          let user_delayed =
-            crate::FUNC_OPTIONS_DELAYED.with(|m| m.borrow().contains(sym));
-          let op = if is_user_stored {
-            if user_delayed { ":=" } else { "=" }
-          } else if get_builtin_attributes(sym).contains(&"ReadProtected") {
-            ":="
-          } else {
-            "="
-          };
-          lines.push(format!(
-            "Options[{}] {} {{{}}}",
-            sym,
-            op,
-            opts_str.join(", ")
-          ));
-        }
-
-        if lines.is_empty() {
-          // Undefined symbol — wolframscript displays a blank
-          // `Definition[…]` panel (printable form is empty), so emit
-          // an empty raw string here to match.
-          return Some(Ok(Expr::Raw(String::new())));
-        }
-
-        return Some(Ok(Expr::Raw(lines.join("\n \n"))));
-      }
-
       return Some(Ok(unevaluated("Definition", args)));
     }
 
     // FullDefinition[symbol] - show definition of a symbol and all its dependencies
+    // Held like wolframscript keeps it; the text comes from the formatter.
     "FullDefinition" if args.len() == 1 => {
-      if let Expr::Identifier(sym) = &args[0] {
-        // Helper: collect all Identifier names referenced in an expression
-        fn collect_identifiers(expr: &Expr, out: &mut Vec<String>) {
-          match expr {
-            Expr::Identifier(name) => out.push(name.clone()),
-            Expr::FunctionCall { name, args } => {
-              out.push(name.clone());
-              for a in args {
-                collect_identifiers(a, out);
-              }
-            }
-            Expr::List(elems) => {
-              for e in elems {
-                collect_identifiers(e, out);
-              }
-            }
-            Expr::CompoundExpr(elems) => {
-              for e in elems {
-                collect_identifiers(e, out);
-              }
-            }
-            Expr::BinaryOp { left, right, .. } => {
-              collect_identifiers(left, out);
-              collect_identifiers(right, out);
-            }
-            Expr::UnaryOp { operand, .. } => collect_identifiers(operand, out),
-            Expr::Comparison { operands, .. } => {
-              for o in operands {
-                collect_identifiers(o, out);
-              }
-            }
-            Expr::Rule {
-              pattern,
-              replacement,
-            }
-            | Expr::RuleDelayed {
-              pattern,
-              replacement,
-            } => {
-              collect_identifiers(pattern, out);
-              collect_identifiers(replacement, out);
-            }
-            Expr::ReplaceAll { expr, rules }
-            | Expr::ReplaceRepeated { expr, rules } => {
-              collect_identifiers(expr, out);
-              collect_identifiers(rules, out);
-            }
-            Expr::Map { func, list }
-            | Expr::Apply { func, list }
-            | Expr::MapApply { func, list } => {
-              collect_identifiers(func, out);
-              collect_identifiers(list, out);
-            }
-            Expr::PrefixApply { func, arg } => {
-              collect_identifiers(func, out);
-              collect_identifiers(arg, out);
-            }
-            Expr::Postfix { expr, func } => {
-              collect_identifiers(expr, out);
-              collect_identifiers(func, out);
-            }
-            Expr::Part { expr, index } => {
-              collect_identifiers(expr, out);
-              collect_identifiers(index, out);
-            }
-            Expr::CurriedCall { func, args } => {
-              collect_identifiers(func, out);
-              for a in args {
-                collect_identifiers(a, out);
-              }
-            }
-            Expr::Function { body } | Expr::NamedFunction { body, .. } => {
-              collect_identifiers(body, out);
-            }
-            Expr::Association(pairs) => {
-              for (k, v) in pairs {
-                collect_identifiers(k, out);
-                collect_identifiers(v, out);
-              }
-            }
-            Expr::PatternOptional { default, .. } => {
-              if let Some(d) = default {
-                collect_identifiers(d, out)
-              }
-            }
-            Expr::PatternTest { test, .. } => collect_identifiers(test, out),
-            _ => {}
-          }
-        }
-
-        // Helper: get definition lines for a symbol (same logic as Definition)
-        fn get_definition_lines(sym: &str) -> Vec<String> {
-          let mut lines = Vec::new();
-
-          let user_attrs =
-            crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
-          if let Some(attrs) = &user_attrs
-            && !attrs.is_empty()
-          {
-            lines.push(format!(
-              "Attributes[{}] = {{{}}}",
-              sym,
-              attrs.join(", ")
-            ));
-          }
-
-          let own_value = crate::ENV.with(|e| {
-            let env = e.borrow();
-            env.get(sym).cloned()
-          });
-          if let Some(stored) = own_value {
-            let val_str = match stored {
-              crate::StoredValue::ExprVal(e) => expr_to_string(&e),
-              crate::StoredValue::Raw(val) => val,
-              crate::StoredValue::Association(items) => {
-                let items_expr: Vec<(Expr, Expr)> = items
-                  .iter()
-                  .map(|(k, v)| {
-                    let key_expr = crate::syntax::string_to_expr(k)
-                      .unwrap_or(Expr::Identifier(k.clone()));
-                    (key_expr, v.clone())
-                  })
-                  .collect();
-                expr_to_string(&Expr::Association(items_expr))
-              }
-            };
-            lines.push(format!("{} = {}", sym, val_str));
-          }
-
-          let down_values = crate::down_values_with_memo(sym);
-          if let Some(overloads) = down_values {
-            for (params, conds, _defaults, heads, _blank_types, body) in
-              &overloads
-            {
-              let has_sameq_conds = conds.iter().any(|c| {
-                if let Some(Expr::Comparison { operators, .. }) = c {
-                  operators.iter().any(|op| matches!(op, ComparisonOp::SameQ))
-                } else {
-                  false
-                }
-              });
-
-              if has_sameq_conds {
-                let args_strs: Vec<String> = params
-                  .iter()
-                  .zip(conds.iter())
-                  .map(|(p, c)| {
-                    if let Some(Expr::Comparison {
-                      operands,
-                      operators,
-                      ..
-                    }) = c
-                      && operators
-                        .iter()
-                        .any(|op| matches!(op, ComparisonOp::SameQ))
-                      && operands.len() == 2
-                      && matches!(&operands[0], Expr::Identifier(n) if n == p)
-                    {
-                      return expr_to_string(&operands[1]);
-                    }
-                    format!("{}_", p)
-                  })
-                  .collect();
-                lines.push(format!(
-                  "{}[{}] = {}",
-                  sym,
-                  args_strs.join(", "),
-                  expr_to_string(body)
-                ));
-              } else {
-                let params_str: Vec<String> = params
-                  .iter()
-                  .enumerate()
-                  .map(|(i, p)| {
-                    if let Some(head) = heads.get(i).and_then(|h| h.as_ref()) {
-                      format!("{}_{}", p, head)
-                    } else {
-                      format!("{}_", p)
-                    }
-                  })
-                  .collect();
-                lines.push(format!(
-                  "{}[{}] := {}",
-                  sym,
-                  params_str.join(", "),
-                  expr_to_string(body)
-                ));
-              }
-            }
-          }
-
-          if lines.is_empty() {
-            let builtin_attrs =
-              crate::evaluator::attributes::get_builtin_attributes(sym);
-            if !builtin_attrs.is_empty() {
-              lines.push(format!(
-                "Attributes[{}] = {{{}}}",
-                sym,
-                builtin_attrs.join(", ")
-              ));
-            }
-          }
-
-          // Show built-in DefaultValues (e.g. Default[Plus] := 0)
-          if let Some(def_str) = builtin_default_value_str(sym) {
-            lines.push(format!("Default[{}] := {}", sym, def_str));
-          }
-
-          lines
-        }
-
-        // Helper: check if a symbol has user-defined values
-        fn has_user_definition(sym: &str) -> bool {
-          let has_own = crate::ENV.with(|e| e.borrow().contains_key(sym));
-          let has_down =
-            crate::FUNC_DEFS.with(|m| m.borrow().contains_key(sym));
-          let has_attrs =
-            crate::FUNC_ATTRS.with(|m| m.borrow().contains_key(sym));
-          has_own || has_down || has_attrs
-        }
-
-        // Helper: collect body expressions from a symbol's definitions
-        fn get_body_exprs(sym: &str) -> Vec<Expr> {
-          let mut bodies = Vec::new();
-
-          // OwnValues body
-          let own_value = crate::ENV.with(|e| {
-            let env = e.borrow();
-            env.get(sym).cloned()
-          });
-          if let Some(crate::StoredValue::ExprVal(e)) = own_value {
-            bodies.push(e);
-          }
-
-          // DownValues bodies
-          let down_values = crate::down_values_with_memo(sym);
-          if let Some(overloads) = down_values {
-            for (_params, _conds, _defaults, _heads, _blank_types, body) in
-              overloads
-            {
-              bodies.push(body);
-            }
-          }
-
-          bodies
-        }
-
-        // Get main definition
-        let main_lines = get_definition_lines(sym);
-        if main_lines.is_empty() {
-          return Some(Ok(Expr::Raw("".to_string())));
-        }
-
-        let mut all_sections: Vec<String> = vec![main_lines.join("\n \n")];
-        let mut seen: std::collections::HashSet<String> =
-          std::collections::HashSet::new();
-        seen.insert(sym.clone());
-
-        // BFS for dependent symbols
-        let mut queue: std::collections::VecDeque<String> =
-          std::collections::VecDeque::new();
-
-        // Collect symbols from main symbol's bodies
-        let bodies = get_body_exprs(sym);
-        let mut referenced = Vec::new();
-        for body in &bodies {
-          collect_identifiers(body, &mut referenced);
-        }
-        // Deduplicate while preserving first-occurrence order
-        let mut seen_in_queue: std::collections::HashSet<String> =
-          std::collections::HashSet::new();
-        for name in &referenced {
-          if !seen.contains(name) && seen_in_queue.insert(name.clone()) {
-            queue.push_back(name.clone());
-          }
-        }
-
-        while let Some(dep_sym) = queue.pop_front() {
-          if !seen.insert(dep_sym.clone()) {
-            continue;
-          }
-          if !has_user_definition(&dep_sym) {
-            continue;
-          }
-
-          let dep_lines = get_definition_lines(&dep_sym);
-          if !dep_lines.is_empty() {
-            all_sections.push(dep_lines.join("\n \n"));
-          }
-
-          // Collect further dependencies
-          let dep_bodies = get_body_exprs(&dep_sym);
-          let mut dep_referenced = Vec::new();
-          for body in &dep_bodies {
-            collect_identifiers(body, &mut dep_referenced);
-          }
-          for name in &dep_referenced {
-            if !seen.contains(name) {
-              queue.push_back(name.clone());
-            }
-          }
-        }
-
-        return Some(Ok(Expr::Raw(all_sections.join("\n \n"))));
-      }
-
       return Some(Ok(unevaluated("FullDefinition", args)));
     }
 
@@ -3040,7 +2417,7 @@ fn format_builtin_information(
   let _ = is_full; // is_full controls which fields appear above; the
   // wrapper is single-arg in wolframscript regardless.
   let result_str = format!("InformationData[<|{}|>]", fields.join(", "));
-  Expr::Raw(result_str)
+  information_record(result_str)
 }
 
 /// Look up `sym::usage` in the global MessageName DownValues, returning the
@@ -3272,7 +2649,7 @@ fn format_user_information(
        Attributes -> {attrs_str}, \
        FullName -> Global`{sym}|>]"
     );
-    Expr::Raw(result_str)
+    information_record(result_str)
   } else {
     let result_str = format!(
       "InformationData[<|ObjectType -> Symbol, \
@@ -3289,7 +2666,24 @@ fn format_user_information(
        Attributes -> {attrs_str}, \
        FullName -> Global`{sym}|>]"
     );
-    Expr::Raw(result_str)
+    information_record(result_str)
+  }
+}
+
+/// The `InformationData[…]` record as an expression rather than pre-rendered
+/// text, so `Head` answers `InformationData` the way wolframscript does. The
+/// record body stays raw — it holds usage text and URLs that are not
+/// expressions — so the printed form is unchanged.
+fn information_record(rendered: String) -> Expr {
+  match rendered
+    .strip_prefix("InformationData[")
+    .and_then(|body| body.strip_suffix(']'))
+  {
+    Some(body) => Expr::FunctionCall {
+      name: "InformationData".to_string(),
+      args: vec![Expr::Raw(body.to_string())].into(),
+    },
+    None => Expr::Raw(rendered),
   }
 }
 
@@ -15945,4 +15339,623 @@ fn number_list(values: &[f64], source: &Expr) -> Expr {
       })
       .collect(),
   )
+}
+
+/// The text `Definition[sym]` displays: attributes, defaults, options and
+/// the symbol's own rules, one per paragraph. `None` when the symbol
+/// carries nothing at all (wolframscript shows a blank panel then).
+pub fn definition_text(sym: &str) -> Option<String> {
+  let mut lines: Vec<String> = Vec::new();
+
+  // 1. Show user-set attributes if present, otherwise fall back to
+  // built-in attributes — `Definition[In]` should print
+  // `Attributes[In] = {Listable, NHoldFirst, Protected}` even with no
+  // user-installed attrs, matching wolframscript.
+  let user_attrs = crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
+  let attrs_to_show: Vec<String> = match &user_attrs {
+    Some(a) if !a.is_empty() => a.clone(),
+    _ => crate::evaluator::attributes::get_builtin_attributes(sym)
+      .into_iter()
+      .map(|s| s.to_string())
+      .collect(),
+  };
+  if !attrs_to_show.is_empty() {
+    lines.push(format!(
+      "Attributes[{}] = {{{}}}",
+      sym,
+      attrs_to_show.join(", ")
+    ));
+  }
+
+  // 2. Show OwnValues (variable assignments)
+  let own_value = crate::ENV.with(|e| {
+    let env = e.borrow();
+    env.get(sym).cloned()
+  });
+  if let Some(stored) = own_value {
+    let val_str = match stored {
+      crate::StoredValue::ExprVal(e) => expr_to_string(&e),
+      crate::StoredValue::Raw(val) => val,
+      crate::StoredValue::Association(items) => {
+        let items_expr: Vec<(Expr, Expr)> = items
+          .iter()
+          .map(|(k, v)| {
+            let key_expr = crate::syntax::string_to_expr(k)
+              .unwrap_or(Expr::Identifier(k.clone()));
+            (key_expr, v.clone())
+          })
+          .collect();
+        expr_to_string(&Expr::Association(items_expr))
+      }
+    };
+    lines.push(format!("{} = {}", sym, val_str));
+  }
+
+  // ReadProtected hides the symbol's implementation details
+  // (DownValues, UpValues, Format/MakeBoxes, NValues, SubValues),
+  // surfacing only Attributes / Default / Options. Skip those
+  // sections when the symbol is read-protected.
+  let read_protected = attrs_to_show.iter().any(|a| a == "ReadProtected");
+  // 3. Show UpValues first (rules attached via Real /: F[x_Real] := x
+  // etc.), matching wolframscript's ordering. UpValues precede
+  // DownValues in Definition output.
+  let up_values = if read_protected {
+    None
+  } else {
+    crate::UPVALUES.with(|m| {
+      let defs = m.borrow();
+      defs.get(sym).cloned()
+    })
+  };
+  if let Some(entries) = up_values {
+    for (
+      _outer,
+      _params,
+      _conds,
+      _defaults,
+      _heads,
+      _body,
+      orig_lhs,
+      orig_body,
+    ) in &entries
+    {
+      lines.push(format!(
+        "{} ^:= {}",
+        expr_to_string(orig_lhs),
+        expr_to_string(orig_body)
+      ));
+    }
+  }
+
+  // 4. Show DownValues (function definitions). Filter out entries
+  // that were stored via TagSet/TagSetDelayed — those belong in
+  // UpValues, not DownValues, even though Woxi stores them in
+  // FUNC_DEFS too so ordinary dispatch can find them.
+  let upvalue_keys: std::collections::HashSet<(
+    Vec<String>,
+    Vec<Option<String>>,
+  )> = crate::UPVALUES.with(|m| {
+    let defs = m.borrow();
+    let mut keys = std::collections::HashSet::new();
+    for entries in defs.values() {
+      for (outer, params, _, _, heads, _, _, _) in entries {
+        if outer == sym {
+          keys.insert((params.clone(), heads.clone()));
+        }
+      }
+    }
+    keys
+  });
+  let down_values = if read_protected {
+    None
+  } else {
+    crate::down_values_with_memo(sym)
+  };
+  if let Some(overloads) = down_values {
+    for (params, conds, _defaults, heads, blank_types, body) in
+      overloads.iter().filter(|(params, _, _, heads, _, _)| {
+        !upvalue_keys.contains(&(params.clone(), heads.clone()))
+      })
+    {
+      // List-pattern params reconstruct to a surface `{…}` pattern with
+      // the original element names, body, and `/;` guard.
+      if let Some((pattern_args, display_body)) =
+        crate::evaluator::assignment::reconstruct_list_downvalue(
+          params,
+          conds,
+          heads,
+          blank_types,
+          body,
+        )
+      {
+        let params_str = pattern_args
+          .iter()
+          .map(expr_to_string)
+          .collect::<Vec<_>>()
+          .join(", ");
+        lines.push(format!(
+          "{}[{}] := {}",
+          sym,
+          params_str,
+          expr_to_string(&display_body)
+        ));
+        continue;
+      }
+      // Check if this is a specific-value definition (SameQ conditions)
+      let has_sameq_conds = conds.iter().any(|c| {
+        if let Some(Expr::Comparison { operators, .. }) = c {
+          operators.iter().any(|op| matches!(op, ComparisonOp::SameQ))
+        } else {
+          false
+        }
+      });
+
+      if has_sameq_conds {
+        // Reconstruct f[val1, val2] = body
+        let args_strs: Vec<String> = params
+          .iter()
+          .zip(conds.iter())
+          .map(|(p, c)| {
+            if let Some(Expr::Comparison {
+              operands,
+              operators,
+              ..
+            }) = c
+              && operators.iter().any(|op| matches!(op, ComparisonOp::SameQ))
+              && operands.len() == 2
+              && matches!(&operands[0], Expr::Identifier(n) if n == p)
+            {
+              return expr_to_string(&operands[1]);
+            }
+            format!("{}_", p)
+          })
+          .collect();
+        lines.push(format!(
+          "{}[{}] = {}",
+          sym,
+          args_strs.join(", "),
+          expr_to_string(body)
+        ));
+      } else {
+        // Reconstruct f[x_, y_Integer] := body
+        let params_str: Vec<String> = params
+          .iter()
+          .enumerate()
+          .map(|(i, p)| {
+            if let Some(head) = heads.get(i).and_then(|h| h.as_ref()) {
+              format!("{}_{}", p, head)
+            } else {
+              format!("{}_", p)
+            }
+          })
+          .collect();
+        lines.push(format!(
+          "{}[{}] := {}",
+          sym,
+          params_str.join(", "),
+          expr_to_string(body)
+        ));
+      }
+    }
+  }
+
+  // 4b. Show SubValues (rules like `f[1][x_] := x` keyed under f).
+  let sub_value_entries = if read_protected {
+    None
+  } else {
+    crate::evaluator::assignment::SUB_VALUES
+      .with(|m| m.borrow().get(sym).cloned())
+  };
+  if let Some(entries) = sub_value_entries {
+    for (lhs, rhs) in &entries {
+      lines.push(format!(
+        "{} := {}",
+        expr_to_string(lhs),
+        expr_to_string(rhs)
+      ));
+    }
+  }
+
+  // For built-in symbols: show attributes
+  if lines.is_empty() {
+    let builtin_attrs =
+      crate::evaluator::attributes::get_builtin_attributes(sym);
+    if !builtin_attrs.is_empty() {
+      lines.push(format!(
+        "Attributes[{}] = {{{}}}",
+        sym,
+        builtin_attrs.join(", ")
+      ));
+    }
+  }
+
+  // Show built-in DefaultValues (e.g. Default[Plus] := 0)
+  if let Some(def_str) = builtin_default_value_str(sym) {
+    lines.push(format!("Default[{}] := {}", sym, def_str));
+  }
+  // Show user-set DefaultValues. They live in `FUNC_DEFS["Default"]`
+  // because that's how Default[r, n] := v is dispatched, but
+  // wolframscript surfaces them as a TagSet line: `r /: Default[r, n] := v`.
+  let default_defs = crate::FUNC_DEFS
+    .with(|m| m.borrow().get("Default").cloned().unwrap_or_default());
+  for (params, _conds, _defaults, _heads, _blanks, body) in &default_defs {
+    // Our SetDelayed stores `Default[r, 1]` with the first param named
+    // `"r"` (a pattern variable named after the symbol). Match by name.
+    if params.first().is_none_or(|p| p != sym) {
+      continue;
+    }
+    // Reconstruct the inner Default[sym, …] arguments. The first
+    // arg is the literal symbol; trailing slot-literal conditions
+    // give the additional args (e.g. `1` for `Default[r, 1]`).
+    let mut default_args = vec![sym.to_string()];
+    for p in params.iter().skip(1) {
+      // Skip the param name; the actual literal lives in the
+      // SameQ condition on this slot. Reconstruct via the same
+      // helper used by DefaultValues.
+      let lit = _conds.iter().find_map(|c| {
+        if let Some(Expr::Comparison {
+          operands,
+          operators,
+        }) = c
+          && operators.len() == 1
+          && matches!(operators[0], ComparisonOp::SameQ)
+          && operands.len() == 2
+          && let Expr::Identifier(name) = &operands[0]
+          && name == p
+        {
+          Some(expr_to_string(&operands[1]))
+        } else {
+          None
+        }
+      });
+      if let Some(s) = lit {
+        default_args.push(s);
+      }
+    }
+    lines.push(format!(
+      "{} /: Default[{}] := {}",
+      sym,
+      default_args.join(", "),
+      expr_to_string(body)
+    ));
+  }
+
+  // Show Options if the symbol has any (user-stored or built-in).
+  let stored_opts = crate::FUNC_OPTIONS.with(|m| m.borrow().get(sym).cloned());
+  let is_user_stored = stored_opts.is_some();
+  let opts = stored_opts.unwrap_or_else(|| {
+    crate::evaluator::dispatch::predicate_functions::builtin_default_options(
+      sym,
+    )
+  });
+  if !opts.is_empty() {
+    let opts_str: Vec<String> = opts.iter().map(expr_to_string).collect();
+    // For user-stored options, use the operator the user wrote
+    // (tracked in `FUNC_OPTIONS_DELAYED`). For built-in options,
+    // wolframscript prints `:=` when the symbol carries
+    // `ReadProtected` and `=` otherwise — matches the Definition
+    // outputs of `D`/`Integrate` (`:=`) vs. `Solve`/`Reduce` (`=`).
+    let user_delayed =
+      crate::FUNC_OPTIONS_DELAYED.with(|m| m.borrow().contains(sym));
+    let op = if is_user_stored {
+      if user_delayed { ":=" } else { "=" }
+    } else if get_builtin_attributes(sym).contains(&"ReadProtected") {
+      ":="
+    } else {
+      "="
+    };
+    lines.push(format!(
+      "Options[{}] {} {{{}}}",
+      sym,
+      op,
+      opts_str.join(", ")
+    ));
+  }
+
+  if lines.is_empty() {
+    // Undefined symbol — wolframscript displays a blank
+    // `Definition[…]` panel, so the formatter prints nothing.
+    return None;
+  }
+  Some(lines.join("\n \n"))
+}
+
+/// The text `FullDefinition[sym]` displays: the symbol's own definition
+/// followed by the definitions of every symbol it refers to. `None` when
+/// nothing is defined (wolframscript shows a blank panel then).
+pub fn full_definition_text(sym: &str) -> Option<String> {
+  // Helper: collect all Identifier names referenced in an expression
+  fn collect_identifiers(expr: &Expr, out: &mut Vec<String>) {
+    match expr {
+      Expr::Identifier(name) => out.push(name.clone()),
+      Expr::FunctionCall { name, args } => {
+        out.push(name.clone());
+        for a in args {
+          collect_identifiers(a, out);
+        }
+      }
+      Expr::List(elems) => {
+        for e in elems {
+          collect_identifiers(e, out);
+        }
+      }
+      Expr::CompoundExpr(elems) => {
+        for e in elems {
+          collect_identifiers(e, out);
+        }
+      }
+      Expr::BinaryOp { left, right, .. } => {
+        collect_identifiers(left, out);
+        collect_identifiers(right, out);
+      }
+      Expr::UnaryOp { operand, .. } => collect_identifiers(operand, out),
+      Expr::Comparison { operands, .. } => {
+        for o in operands {
+          collect_identifiers(o, out);
+        }
+      }
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => {
+        collect_identifiers(pattern, out);
+        collect_identifiers(replacement, out);
+      }
+      Expr::ReplaceAll { expr, rules }
+      | Expr::ReplaceRepeated { expr, rules } => {
+        collect_identifiers(expr, out);
+        collect_identifiers(rules, out);
+      }
+      Expr::Map { func, list }
+      | Expr::Apply { func, list }
+      | Expr::MapApply { func, list } => {
+        collect_identifiers(func, out);
+        collect_identifiers(list, out);
+      }
+      Expr::PrefixApply { func, arg } => {
+        collect_identifiers(func, out);
+        collect_identifiers(arg, out);
+      }
+      Expr::Postfix { expr, func } => {
+        collect_identifiers(expr, out);
+        collect_identifiers(func, out);
+      }
+      Expr::Part { expr, index } => {
+        collect_identifiers(expr, out);
+        collect_identifiers(index, out);
+      }
+      Expr::CurriedCall { func, args } => {
+        collect_identifiers(func, out);
+        for a in args {
+          collect_identifiers(a, out);
+        }
+      }
+      Expr::Function { body } | Expr::NamedFunction { body, .. } => {
+        collect_identifiers(body, out);
+      }
+      Expr::Association(pairs) => {
+        for (k, v) in pairs {
+          collect_identifiers(k, out);
+          collect_identifiers(v, out);
+        }
+      }
+      Expr::PatternOptional { default, .. } => {
+        if let Some(d) = default {
+          collect_identifiers(d, out)
+        }
+      }
+      Expr::PatternTest { test, .. } => collect_identifiers(test, out),
+      _ => {}
+    }
+  }
+
+  // Helper: get definition lines for a symbol (same logic as Definition)
+  fn get_definition_lines(sym: &str) -> Vec<String> {
+    let mut lines = Vec::new();
+
+    let user_attrs = crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
+    if let Some(attrs) = &user_attrs
+      && !attrs.is_empty()
+    {
+      lines.push(format!("Attributes[{}] = {{{}}}", sym, attrs.join(", ")));
+    }
+
+    let own_value = crate::ENV.with(|e| {
+      let env = e.borrow();
+      env.get(sym).cloned()
+    });
+    if let Some(stored) = own_value {
+      let val_str = match stored {
+        crate::StoredValue::ExprVal(e) => expr_to_string(&e),
+        crate::StoredValue::Raw(val) => val,
+        crate::StoredValue::Association(items) => {
+          let items_expr: Vec<(Expr, Expr)> = items
+            .iter()
+            .map(|(k, v)| {
+              let key_expr = crate::syntax::string_to_expr(k)
+                .unwrap_or(Expr::Identifier(k.clone()));
+              (key_expr, v.clone())
+            })
+            .collect();
+          expr_to_string(&Expr::Association(items_expr))
+        }
+      };
+      lines.push(format!("{} = {}", sym, val_str));
+    }
+
+    let down_values = crate::down_values_with_memo(sym);
+    if let Some(overloads) = down_values {
+      for (params, conds, _defaults, heads, _blank_types, body) in &overloads {
+        let has_sameq_conds = conds.iter().any(|c| {
+          if let Some(Expr::Comparison { operators, .. }) = c {
+            operators.iter().any(|op| matches!(op, ComparisonOp::SameQ))
+          } else {
+            false
+          }
+        });
+
+        if has_sameq_conds {
+          let args_strs: Vec<String> = params
+            .iter()
+            .zip(conds.iter())
+            .map(|(p, c)| {
+              if let Some(Expr::Comparison {
+                operands,
+                operators,
+                ..
+              }) = c
+                && operators.iter().any(|op| matches!(op, ComparisonOp::SameQ))
+                && operands.len() == 2
+                && matches!(&operands[0], Expr::Identifier(n) if n == p)
+              {
+                return expr_to_string(&operands[1]);
+              }
+              format!("{}_", p)
+            })
+            .collect();
+          lines.push(format!(
+            "{}[{}] = {}",
+            sym,
+            args_strs.join(", "),
+            expr_to_string(body)
+          ));
+        } else {
+          let params_str: Vec<String> = params
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+              if let Some(head) = heads.get(i).and_then(|h| h.as_ref()) {
+                format!("{}_{}", p, head)
+              } else {
+                format!("{}_", p)
+              }
+            })
+            .collect();
+          lines.push(format!(
+            "{}[{}] := {}",
+            sym,
+            params_str.join(", "),
+            expr_to_string(body)
+          ));
+        }
+      }
+    }
+
+    if lines.is_empty() {
+      let builtin_attrs =
+        crate::evaluator::attributes::get_builtin_attributes(sym);
+      if !builtin_attrs.is_empty() {
+        lines.push(format!(
+          "Attributes[{}] = {{{}}}",
+          sym,
+          builtin_attrs.join(", ")
+        ));
+      }
+    }
+
+    // Show built-in DefaultValues (e.g. Default[Plus] := 0)
+    if let Some(def_str) = builtin_default_value_str(sym) {
+      lines.push(format!("Default[{}] := {}", sym, def_str));
+    }
+
+    lines
+  }
+
+  // Helper: check if a symbol has user-defined values
+  fn has_user_definition(sym: &str) -> bool {
+    let has_own = crate::ENV.with(|e| e.borrow().contains_key(sym));
+    let has_down = crate::FUNC_DEFS.with(|m| m.borrow().contains_key(sym));
+    let has_attrs = crate::FUNC_ATTRS.with(|m| m.borrow().contains_key(sym));
+    has_own || has_down || has_attrs
+  }
+
+  // Helper: collect body expressions from a symbol's definitions
+  fn get_body_exprs(sym: &str) -> Vec<Expr> {
+    let mut bodies = Vec::new();
+
+    // OwnValues body
+    let own_value = crate::ENV.with(|e| {
+      let env = e.borrow();
+      env.get(sym).cloned()
+    });
+    if let Some(crate::StoredValue::ExprVal(e)) = own_value {
+      bodies.push(e);
+    }
+
+    // DownValues bodies
+    let down_values = crate::down_values_with_memo(sym);
+    if let Some(overloads) = down_values {
+      for (_params, _conds, _defaults, _heads, _blank_types, body) in overloads
+      {
+        bodies.push(body);
+      }
+    }
+
+    bodies
+  }
+
+  // Get main definition
+  let main_lines = get_definition_lines(sym);
+  if main_lines.is_empty() {
+    return None;
+  }
+
+  let mut all_sections: Vec<String> = vec![main_lines.join("\n \n")];
+  let mut seen: std::collections::HashSet<String> =
+    std::collections::HashSet::new();
+  seen.insert(sym.to_string());
+
+  // BFS for dependent symbols
+  let mut queue: std::collections::VecDeque<String> =
+    std::collections::VecDeque::new();
+
+  // Collect symbols from main symbol's bodies
+  let bodies = get_body_exprs(sym);
+  let mut referenced = Vec::new();
+  for body in &bodies {
+    collect_identifiers(body, &mut referenced);
+  }
+  // Deduplicate while preserving first-occurrence order
+  let mut seen_in_queue: std::collections::HashSet<String> =
+    std::collections::HashSet::new();
+  for name in &referenced {
+    if !seen.contains(name) && seen_in_queue.insert(name.clone()) {
+      queue.push_back(name.clone());
+    }
+  }
+
+  while let Some(dep_sym) = queue.pop_front() {
+    if !seen.insert(dep_sym.clone()) {
+      continue;
+    }
+    if !has_user_definition(&dep_sym) {
+      continue;
+    }
+
+    let dep_lines = get_definition_lines(&dep_sym);
+    if !dep_lines.is_empty() {
+      all_sections.push(dep_lines.join("\n \n"));
+    }
+
+    // Collect further dependencies
+    let dep_bodies = get_body_exprs(&dep_sym);
+    let mut dep_referenced = Vec::new();
+    for body in &dep_bodies {
+      collect_identifiers(body, &mut dep_referenced);
+    }
+    for name in &dep_referenced {
+      if !seen.contains(name) {
+        queue.push_back(name.clone());
+      }
+    }
+  }
+
+  if all_sections.is_empty() {
+    return None;
+  }
+  Some(all_sections.join("\n \n"))
 }

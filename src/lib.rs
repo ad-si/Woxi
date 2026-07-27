@@ -353,6 +353,14 @@ thread_local! {
     /// wolframscript's General::stop suppression of repeated messages.
     static MESSAGE_STOP_COUNTS: RefCell<std::collections::HashMap<String, usize>> =
       RefCell::new(std::collections::HashMap::new());
+    /// `Symbol::tag` names of the messages generated during the current
+    /// calculation, in order — the content of `$MessageList`.
+    static MESSAGE_LIST: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The `Symbol::tag` names behind `$MessageList`, oldest first.
+pub fn message_list_names() -> Vec<String> {
+  MESSAGE_LIST.with(|m| m.borrow().clone())
 }
 
 // Set of message tags suppressed via `Off[head::tag]`. Keys are formatted as
@@ -750,7 +758,11 @@ fn emit_message_core(msg: &str) -> (bool, Option<String>) {
     buffer.borrow_mut().push(msg.to_string());
   });
   if is_quiet() {
+    // Quieted messages are not recorded in `$MessageList` either.
     return (false, None);
+  }
+  if let Some(name) = message_name(msg) {
+    MESSAGE_LIST.with(|m| m.borrow_mut().push(name));
   }
   let mut stop_line: Option<String> = None;
   if let Some(name) = message_name(msg)
@@ -805,6 +817,7 @@ fn emit_message_core(msg: &str) -> (bool, Option<String>) {
 /// evaluation is a new "calculation").
 fn reset_message_stop_counts() {
   MESSAGE_STOP_COUNTS.with(|m| m.borrow_mut().clear());
+  MESSAGE_LIST.with(|m| m.borrow_mut().clear());
 }
 
 /// Like [`emit_message`], but also mirrors the message — with wolframscript's

@@ -386,6 +386,22 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     })),
     "$SessionID" => Some(Expr::Integer(std::process::id() as i128)),
     "$ProcessID" => Some(Expr::Integer(std::process::id() as i128)),
+    // Messages generated so far in this calculation, each held: e.g.
+    // `{HoldForm[MessageName[Power, infy]]}`.
+    "$MessageList" => Some(Expr::List(
+      crate::message_list_names()
+        .iter()
+        // The entry is the `sym::tag` message name itself, held — parsing it
+        // keeps it the very expression `sym::tag` writes, so releasing the
+        // hold yields the message text as it does in wolframscript.
+        .filter_map(|name| crate::syntax::string_to_expr(name).ok())
+        .map(|message_name| Expr::FunctionCall {
+          name: "HoldForm".to_string(),
+          args: vec![message_name].into(),
+        })
+        .collect::<Vec<_>>()
+        .into(),
+    )),
     #[cfg(unix)]
     "$ParentProcessID" => {
       Some(Expr::Integer(unsafe { libc::getppid() } as i128))
