@@ -5200,6 +5200,34 @@ fn evaluate_function_call_ast_inner(
   // WeightedGraphQ[graph] — True if the graph carries explicit edge or vertex
   // weights (an EdgeWeight/VertexWeight option set to something other than
   // Automatic).
+  // VertexReplace / the weighted-kind predicates / the annotation readers and
+  // writers all work on the Graph[vertices, edges, opts…] object.
+  if name == "VertexReplace" && args.len() == 2 {
+    return crate::functions::graph::vertex_replace_ast(args);
+  }
+  if matches!(name, "EdgeWeightedGraphQ" | "VertexWeightedGraphQ")
+    && args.len() == 1
+  {
+    return crate::functions::graph::weighted_kind_q_ast(name, args);
+  }
+  if matches!(name, "AnnotationValue" | "PropertyValue") && args.len() == 2 {
+    return crate::functions::graph::graph_annotation_ast(name, args);
+  }
+  if name == "SetProperty" && args.len() == 2 {
+    return crate::functions::graph::graph_set_property_ast(args);
+  }
+  if name == "PropertyList" && args.len() == 1 {
+    return crate::functions::graph::graph_property_list_ast(args);
+  }
+  if name == "EdgeTaggedGraph" && !args.is_empty() {
+    return crate::functions::graph::edge_tagged_graph_ast(args);
+  }
+  if name == "EdgeTaggedGraphQ" && args.len() == 1 {
+    return crate::functions::graph::edge_tagged_graph_q_ast(args);
+  }
+  if name == "EdgeTags" && args.len() == 1 {
+    return crate::functions::graph::edge_tags_ast(args);
+  }
   if name == "WeightedGraphQ" && args.len() == 1 {
     if let Expr::FunctionCall {
       name: gname,

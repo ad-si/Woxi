@@ -6394,3 +6394,222 @@ mod directed_predicates_undirected_graph_and_hamiltonian_path {
     );
   }
 }
+
+/// The annotations a `Graph[vertices, edges, opts…]` carries: reading them
+/// back, setting them, and the predicates over them.
+mod graph_annotations {
+  use super::*;
+
+  #[test]
+  fn vertices_can_be_renamed() {
+    clear_state();
+    for (code, expected) in [
+      (
+        "ToString[VertexList[VertexReplace[Graph[{1 <-> 2}], 1 -> 5]], InputForm]",
+        "{5, 2}",
+      ),
+      (
+        "ToString[EdgeList[VertexReplace[Graph[{1 <-> 2}], 1 -> 5]], InputForm]",
+        "{UndirectedEdge[5, 2]}",
+      ),
+      (
+        "ToString[VertexList[VertexReplace[Graph[{1 <-> 2, 2 <-> 3}], \
+         {1 -> a, 3 -> c}]], InputForm]",
+        "{a, 2, c}",
+      ),
+      (
+        "ToString[EdgeList[VertexReplace[Graph[{1 -> 2}], 2 -> y]], InputForm]",
+        "{DirectedEdge[1, y]}",
+      ),
+      // Renaming onto a vertex that is already there merges the two.
+      (
+        "ToString[VertexList[VertexReplace[Graph[{1 <-> 2, 2 <-> 3}], \
+         {1 -> 3}]], InputForm]",
+        "{3, 2}",
+      ),
+    ] {
+      assert_eq!(
+        interpret(&code.replace("         ", "")).unwrap(),
+        expected,
+        "{code}"
+      );
+    }
+  }
+
+  #[test]
+  fn the_weight_predicates_see_what_the_graph_carries() {
+    clear_state();
+    for (code, expected) in [
+      (
+        "EdgeWeightedGraphQ[Graph[{1 <-> 2}, EdgeWeight -> {5}]]",
+        "True",
+      ),
+      ("EdgeWeightedGraphQ[Graph[{1 <-> 2}]]", "False"),
+      (
+        "VertexWeightedGraphQ[Graph[{1 <-> 2}, VertexWeight -> {1, 2}]]",
+        "True",
+      ),
+      (
+        "VertexWeightedGraphQ[Graph[{1 <-> 2}, EdgeWeight -> {5}]]",
+        "False",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn annotations_are_read_by_graph_or_by_item() {
+    clear_state();
+    const G: &str = "Graph[{1 <-> 2, 2 <-> 3}, EdgeWeight -> {5, 7}]";
+    for (code, expected) in [
+      (
+        format!("ToString[Options[{G}], InputForm]"),
+        "{EdgeWeight -> {5, 7}}",
+      ),
+      (
+        format!("ToString[Options[{G}, EdgeWeight], InputForm]"),
+        "{EdgeWeight -> {5, 7}}",
+      ),
+      (
+        "ToString[Options[Graph[{1 <-> 2}]], InputForm]".to_string(),
+        "{}",
+      ),
+      (
+        format!("ToString[AnnotationValue[{G}, EdgeWeight], InputForm]"),
+        "{5, 7}",
+      ),
+      // An item names one of the values.
+      (
+        format!("AnnotationValue[{{{G}, 2 <-> 3}}, EdgeWeight]"),
+        "7",
+      ),
+      (format!("PropertyValue[{{{G}, 2 <-> 3}}, EdgeWeight]"), "7"),
+      (format!("PropertyValue[{{{G}, 1 <-> 2}}, EdgeWeight]"), "5"),
+      (
+        "PropertyValue[{Graph[{1 <-> 2}, VertexWeight -> {3, 4}], 1}, \
+         VertexWeight]"
+          .to_string(),
+        "3",
+      ),
+      // A property the graph does not carry, or an item it does not hold.
+      (
+        format!("AnnotationValue[{{{G}, 1}}, VertexWeight]"),
+        "$Failed",
+      ),
+      (
+        format!("PropertyValue[{{{G}, 5 <-> 6}}, EdgeWeight]"),
+        "$Failed",
+      ),
+    ] {
+      assert_eq!(
+        interpret(&code.replace("         ", "")).unwrap(),
+        expected,
+        "{code}"
+      );
+    }
+  }
+
+  #[test]
+  fn a_property_can_be_set_on_an_edge() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "EdgeWeightedGraphQ[SetProperty[{Graph[{1 <-> 2}], 1 <-> 2}, \
+         EdgeWeight -> 7]]"
+          .replace("         ", "")
+          .as_str()
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[Options[SetProperty[{Graph[{1 <-> 2}], 1 <-> 2}, \
+         EdgeWeight -> 7]], InputForm]"
+          .replace("         ", "")
+          .as_str()
+      )
+      .unwrap(),
+      "{EdgeWeight -> {7}}"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[EdgeList[SetProperty[{Graph[{1 <-> 2}], 1 <-> 2}, \
+         EdgeWeight -> 7]], InputForm]"
+          .replace("         ", "")
+          .as_str()
+      )
+      .unwrap(),
+      "{UndirectedEdge[1, 2]}"
+    );
+  }
+
+  #[test]
+  fn the_property_list_grows_with_what_the_graph_carries() {
+    clear_state();
+    assert_eq!(
+      interpret("ToString[PropertyList[Graph[{1 <-> 2}]], InputForm]").unwrap(),
+      "{GraphHighlight, GraphHighlightStyle, GraphLayout, GraphStyle, \
+       EdgeShapeFunction, EdgeStyle, VertexCoordinates, VertexShapeFunction, \
+       VertexShape, VertexSize, VertexStyle}"
+        .replace("       ", "")
+    );
+    // A graph carrying one of its own lists the whole set alphabetically.
+    assert_eq!(
+      interpret(
+        "ToString[PropertyList[Graph[{1 <-> 2}, EdgeWeight -> {5}]], InputForm]"
+      )
+      .unwrap(),
+      "{EdgeShapeFunction, EdgeStyle, EdgeWeight, GraphHighlight, \
+       GraphHighlightStyle, GraphLayout, GraphStyle, VertexCoordinates, \
+       VertexShape, VertexShapeFunction, VertexSize, VertexStyle}"
+        .replace("       ", "")
+    );
+  }
+
+  #[test]
+  fn every_edge_of_a_tagged_graph_carries_a_tag() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ToString[EdgeList[EdgeTaggedGraph[{1 <-> 2, 2 <-> 3}]], InputForm]"
+      )
+      .unwrap(),
+      "{UndirectedEdge[1, 2, 1], UndirectedEdge[2, 3, 1]}"
+    );
+    // An edge written with a tag keeps it.
+    assert_eq!(
+      interpret(
+        "ToString[EdgeTags[EdgeTaggedGraph[{UndirectedEdge[1, 2, \"a\"], \
+         2 <-> 3}]], InputForm]"
+          .replace("         ", "")
+          .as_str()
+      )
+      .unwrap(),
+      "{\"a\", 1}"
+    );
+    assert_eq!(
+      interpret("ToString[EdgeTags[Graph[{1 <-> 2}]], InputForm]").unwrap(),
+      "{}"
+    );
+    assert_eq!(
+      interpret("EdgeTaggedGraphQ[EdgeTaggedGraph[{1 <-> 2}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("EdgeTaggedGraphQ[Graph[{1 <-> 2}]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[VertexList[EdgeTaggedGraph[{1 <-> 2, 2 <-> 3}]], \
+       InputForm]"
+          .replace("       ", "")
+          .as_str()
+      )
+      .unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+}

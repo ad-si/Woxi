@@ -1395,6 +1395,14 @@ pub fn dispatch_predicate_functions(
     }
     // Options[f] - return stored options for function f
     // Options[f, opt] - return specific option for function f
+    // A graph carries its annotations as options of its own.
+    "Options"
+      if (args.len() == 1 || args.len() == 2)
+        && matches!(&args[0], Expr::FunctionCall { name, .. }
+          if name == "Graph") =>
+    {
+      return Some(crate::functions::graph::graph_options_ast(args));
+    }
     "Options" if args.len() == 1 || args.len() == 2 => {
       let func_arg = match evaluate_expr_to_expr(&args[0]) {
         Ok(v) => v,

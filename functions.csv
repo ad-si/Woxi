@@ -2354,7 +2354,7 @@ Stack,Return the current evaluation call stack as a list of function names,✅,p
 HaarWavelet,Haar wavelet family,✅,pure,8.0,2404
 LineIntegralConvolutionPlot,visualization,🚫,None,7.0,2404
 PolynomialExtendedGCD,Extended GCD of two polynomials returning the monic GCD and Bezout cofactors,✅,pure,6.0,2404
-VertexReplace,graph operation,🚫,None,8.0,2404
+VertexReplace,Renames the vertices of a graph in its vertex list and its edges,✅,pure,8.0,2404
 Cashflow,Financial cashflow stream (passthrough used by TimeValue),✅,pure,8.0,2408
 ChanVeseBinarize,image processing,🚫,None,8.0,2408
 CopulaDistribution,probability distribution,🚫,None,8.0,2408
@@ -3450,7 +3450,7 @@ ReverseGraph,Graph with every directed edge reversed; edges emitted in vertex-po
 SemialgebraicComponentInstances,,,,6.0,3537
 SubStar,Subscript star notation,✅,none,6.0,3537
 AbsoluteCorrelation,Uncentered (second-moment) correlation Mean[v1*Conjugate[v2]] of two vectors or the correlation matrix of a data matrix,✅,pure,9.0,3566
-AnnotationValue,,,,12.1,3566
+AnnotationValue,Value a graph annotation carries for the graph or for one of its vertices or edges,✅,pure,12.1,3566
 AudioDelay,,🚫,,11.0,3566
 BasicRecurrentLayer,,🚫,,11.1,3566
 BooleanVariables,Boolean variables of an expression (canonically sorted; opaque subexpressions count),✅,pure,7.0,3566
@@ -4006,7 +4006,7 @@ ControllerMethod,,,,6.0,4138
 CriticalityFailureImportance,,,,9.0,4138
 DirichletTransform,,,,7.0,4138
 DiscreteLyapunovSolve,Solves a.x.aT - x == c (3-arg a.x.b - x == c) exactly for real numeric matrices; diagonal symbolic a gives Conjugate closed forms,✅,pure,8.0,4138
-EdgeTaggedGraph,,,,12.1,4138
+EdgeTaggedGraph,Graph whose edges all carry a tag; an untagged edge is tagged by how many copies of it came before,✅,pure,12.1,4138
 EstimatorRegulator,,,,8.0,4138
 ExportByteArray,,,,11.2,4138
 FindEdgeCut,,,,9.0,4138
@@ -4850,7 +4850,7 @@ CurrentNotebookImage,,🚫,,11.2,5079
 DeliveryFunction,,,,10.1,5079
 DialogProlog,,🚫,,2.0,5079
 DialogSymbols,,🚫,,2.0,5079
-EdgeTags,,,,12.1,5079
+EdgeTags,Tags of the edges of a graph,✅,pure,12.1,5079
 EqualTilde,,,,3.0,5079
 EstimatedPointProcess,,🚫,,12.2,5079
 GeoPolygon,Geographic polygon primitive for GeoGraphics,✅,pure,12.2,5079
@@ -4923,7 +4923,7 @@ DayCountConvention,,,,9.0,5184
 DefaultFieldHintStyle,,,,8.0,5184
 DefaultMenuStyle,,🚫,,8.0,5184
 DocumentWeightingRules,,🚫,,11.1,5184
-EdgeTaggedGraphQ,,,,12.1,5184
+EdgeTaggedGraphQ,Tests whether every edge of a graph carries a tag,✅,pure,12.1,5184
 ElidedForms,,,,10.0,5184
 ExpirationDate,,,,11.1,5184
 ExternalBundle,,🚫,,10.0,5184
@@ -5549,7 +5549,7 @@ EdgeChromaticNumber,,,,13.0,
 EdgeTransitiveGraphQ,,,,12.3,
 EdgeValueRange,,,,13.0,
 EdgeValueSizes,,,,13.0,
-EdgeWeightedGraphQ,,,,12.0,
+EdgeWeightedGraphQ,Tests whether a graph carries edge weights,✅,pure,12.0,
 ElectricCurrentDensityValue,,,,14.1,
 ElectricCurrentPDEComponent,,,,14.1,
 ElectricFluxDensityValue,,,,14.0,
@@ -6148,7 +6148,7 @@ VertexChromaticNumber,,,,13.0,
 VertexInComponentGraph,,,,12.3,
 VertexOutComponentGraph,,,,12.3,
 VertexTransitiveGraphQ,,,,12.3,
-VertexWeightedGraphQ,,,,12.0,
+VertexWeightedGraphQ,Tests whether a graph carries vertex weights,✅,pure,12.0,
 VideoCapture,,🚫,,13.1,
 VideoCombine,,🚫,,12.2,
 VideoEncoding,,🚫,,12.1,
@@ -6286,3 +6286,6 @@ ShortestCurveDistance,Geodesic distance between two points on a region (Circle/S
 MidDate,Gives the date at the midpoint of a date interval or list of dates,✅,pure,14.2,
 LinearProgramming,Finds a vector minimizing a linear objective subject to linear constraints solved with an exact simplex,✅,pure,1.0,
 CardinalBSplineBasis,Centered cardinal B-spline basis function of a given degree,✅,pure,9.0,
+PropertyValue,Value a property carries for a vertex or an edge of a graph,✅,pure,8.0,
+PropertyList,Annotations a graph offers,✅,pure,8.0,
+SetProperty,Graph with an annotation set for one of its vertices or edges,✅,pure,8.0,

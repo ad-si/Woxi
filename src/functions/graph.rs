@@ -6603,3 +6603,486 @@ pub fn graph_assortativity_ast(
   }
   crate::evaluator::evaluate_expr_to_expr(&make_rational(num, den))
 }
+
+// ── Graph annotations ────────────────────────────────────────────────────
+
+/// The parts of a `Graph[vertices, edges, opts…]` object.
+fn graph_parts(expr: &Expr) -> Option<(Vec<Expr>, Vec<Expr>, Vec<Expr>)> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Graph" || args.len() < 2 {
+    return None;
+  }
+  let (Expr::List(vertices), Expr::List(edges)) = (&args[0], &args[1]) else {
+    return None;
+  };
+  Some((
+    vertices.iter().cloned().collect(),
+    edges.iter().cloned().collect(),
+    args.iter().skip(2).cloned().collect(),
+  ))
+}
+
+/// The value a graph option carries, if the graph sets it.
+fn graph_option(options: &[Expr], name: &str) -> Option<Expr> {
+  options.iter().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == name) => {
+      Some((**replacement).clone())
+    }
+    _ => None,
+  })
+}
+
+/// Whether two edge expressions join the same pair, ignoring how they are
+/// written (an undirected edge matches either way round).
+fn same_edge(a: &Expr, b: &Expr) -> bool {
+  let Some((a1, a2, a_directed)) = edge_endpoints(a) else {
+    return false;
+  };
+  let Some((b1, b2, b_directed)) = edge_endpoints(b) else {
+    return false;
+  };
+  let eq = |x: &Expr, y: &Expr| {
+    crate::syntax::expr_to_string(x) == crate::syntax::expr_to_string(y)
+  };
+  (eq(&a1, &b1) && eq(&a2, &b2))
+    || (!a_directed && !b_directed && eq(&a1, &b2) && eq(&a2, &b1))
+}
+
+/// `VertexReplace[graph, rules]` — rename vertices, in the vertex list and in
+/// every edge. Renaming onto a vertex that is already there merges the two.
+pub fn vertex_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let original = || unevaluated("VertexReplace", args);
+  if args.len() != 2 {
+    return Ok(original());
+  }
+  let Some((vertices, edges, options)) = graph_parts(&args[0]) else {
+    return Ok(original());
+  };
+  let rules: Vec<(Expr, Expr)> = match &args[1] {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => vec![((**pattern).clone(), (**replacement).clone())],
+    Expr::List(items) => {
+      let mut out = Vec::with_capacity(items.len());
+      for item in items.iter() {
+        let Expr::Rule {
+          pattern,
+          replacement,
+        } = item
+        else {
+          return Ok(original());
+        };
+        out.push(((**pattern).clone(), (**replacement).clone()));
+      }
+      out
+    }
+    _ => return Ok(original()),
+  };
+  let rename = |v: &Expr| -> Expr {
+    let key = crate::syntax::expr_to_string(v);
+    rules
+      .iter()
+      .find(|(from, _)| crate::syntax::expr_to_string(from) == key)
+      .map(|(_, to)| to.clone())
+      .unwrap_or_else(|| v.clone())
+  };
+  let mut new_vertices: Vec<Expr> = Vec::with_capacity(vertices.len());
+  for v in &vertices {
+    let renamed = rename(v);
+    let key = crate::syntax::expr_to_string(&renamed);
+    if !new_vertices
+      .iter()
+      .any(|existing| crate::syntax::expr_to_string(existing) == key)
+    {
+      new_vertices.push(renamed);
+    }
+  }
+  let new_edges: Vec<Expr> = edges
+    .iter()
+    .map(|edge| match edge {
+      Expr::FunctionCall { name, args } => Expr::FunctionCall {
+        name: name.clone(),
+        args: args.iter().map(rename).collect::<Vec<_>>().into(),
+      },
+      other => other.clone(),
+    })
+    .collect();
+  let mut graph_args = vec![
+    Expr::List(new_vertices.into()),
+    Expr::List(new_edges.into()),
+  ];
+  graph_args.extend(options);
+  Ok(Expr::FunctionCall {
+    name: "Graph".to_string(),
+    args: graph_args.into(),
+  })
+}
+
+/// `EdgeWeightedGraphQ` / `VertexWeightedGraphQ` — whether the graph carries
+/// that kind of weight.
+pub fn weighted_kind_q_ast(
+  name: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let option = if name == "EdgeWeightedGraphQ" {
+    "EdgeWeight"
+  } else {
+    "VertexWeight"
+  };
+  let weighted = graph_parts(&args[0])
+    .and_then(|(_, _, options)| graph_option(&options, option))
+    .is_some_and(
+      |value| !matches!(&value, Expr::Identifier(s) if s == "Automatic"),
+    );
+  Ok(bool_expr(weighted))
+}
+
+/// The value of a graph-level or item-level annotation. `item` is a vertex or
+/// an edge; without one the whole option value is returned.
+fn annotation_value(
+  graph: &Expr,
+  item: Option<&Expr>,
+  property: &str,
+) -> Option<Expr> {
+  let (vertices, edges, options) = graph_parts(graph)?;
+  let value = graph_option(&options, property)?;
+  let Some(item) = item else {
+    return Some(value);
+  };
+  let Expr::List(values) = &value else {
+    return Some(value);
+  };
+  // A vertex property is indexed by the vertex list, an edge property by the
+  // edge list.
+  let index = if property.starts_with("Vertex") {
+    vertices.iter().position(|v| {
+      crate::syntax::expr_to_string(v) == crate::syntax::expr_to_string(item)
+    })
+  } else {
+    edges.iter().position(|e| same_edge(e, item))
+  }?;
+  values.get(index).cloned()
+}
+
+/// `AnnotationValue` / `PropertyValue` over a graph and, optionally, one of
+/// its vertices or edges. A property the graph does not carry gives `$Failed`.
+pub fn graph_annotation_ast(
+  name: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let original = || unevaluated(name, args);
+  if args.len() != 2 {
+    return Ok(original());
+  }
+  let Expr::Identifier(property) = &args[1] else {
+    return Ok(original());
+  };
+  let (graph, item) = match &args[0] {
+    Expr::List(parts) if parts.len() == 2 => (&parts[0], Some(&parts[1])),
+    other => (other, None),
+  };
+  if graph_parts(graph).is_none() {
+    return Ok(original());
+  }
+  Ok(
+    annotation_value(graph, item, property)
+      .unwrap_or_else(|| Expr::Identifier("$Failed".to_string())),
+  )
+}
+
+/// `SetProperty[{graph, item}, property -> value]` — the graph with that
+/// annotation set for the given vertex or edge.
+pub fn graph_set_property_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let original = || unevaluated("SetProperty", args);
+  if args.len() != 2 {
+    return Ok(original());
+  }
+  let Expr::Rule {
+    pattern,
+    replacement,
+  } = &args[1]
+  else {
+    return Ok(original());
+  };
+  let Expr::Identifier(property) = pattern.as_ref() else {
+    return Ok(original());
+  };
+  let (graph, item) = match &args[0] {
+    Expr::List(parts) if parts.len() == 2 => (&parts[0], Some(&parts[1])),
+    other => (other, None),
+  };
+  let Some((vertices, edges, options)) = graph_parts(graph) else {
+    return Ok(original());
+  };
+  let slots = if property.starts_with("Vertex") {
+    &vertices
+  } else {
+    &edges
+  };
+  // Every slot keeps whatever it had; the named one takes the new value.
+  let existing = graph_option(&options, property);
+  let mut values: Vec<Expr> = (0..slots.len())
+    .map(|i| match &existing {
+      Some(Expr::List(items)) => items
+        .get(i)
+        .cloned()
+        .unwrap_or_else(|| Expr::Identifier("Automatic".to_string())),
+      _ => Expr::Identifier("Automatic".to_string()),
+    })
+    .collect();
+  if let Some(item) = item {
+    let index = if property.starts_with("Vertex") {
+      vertices.iter().position(|v| {
+        crate::syntax::expr_to_string(v) == crate::syntax::expr_to_string(item)
+      })
+    } else {
+      edges.iter().position(|e| same_edge(e, item))
+    };
+    match index {
+      Some(i) => values[i] = (**replacement).clone(),
+      None => return Ok(original()),
+    }
+  }
+  let mut new_options: Vec<Expr> = options
+    .iter()
+    .filter(|o| {
+      !matches!(o, Expr::Rule { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(s) if s == property))
+    })
+    .cloned()
+    .collect();
+  new_options.push(Expr::Rule {
+    pattern: Box::new(Expr::Identifier(property.clone())),
+    replacement: Box::new(Expr::List(values.into())),
+  });
+  let mut graph_args =
+    vec![Expr::List(vertices.into()), Expr::List(edges.into())];
+  graph_args.extend(new_options);
+  Ok(Expr::FunctionCall {
+    name: "Graph".to_string(),
+    args: graph_args.into(),
+  })
+}
+
+/// `Options[graph]` / `Options[graph, name]` — the annotations the graph
+/// carries.
+pub fn graph_options_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let original = || unevaluated("Options", args);
+  let Some((_, _, options)) = graph_parts(&args[0]) else {
+    return Ok(original());
+  };
+  if args.len() == 1 {
+    return Ok(Expr::List(options.into()));
+  }
+  let wanted: Vec<String> = match &args[1] {
+    Expr::Identifier(s) => vec![s.clone()],
+    Expr::List(items) => {
+      let mut out = Vec::with_capacity(items.len());
+      for item in items.iter() {
+        let Expr::Identifier(s) = item else {
+          return Ok(original());
+        };
+        out.push(s.clone());
+      }
+      out
+    }
+    _ => return Ok(original()),
+  };
+  Ok(Expr::List(
+    options
+      .into_iter()
+      .filter(|o| {
+        matches!(o, Expr::Rule { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(s)
+            if wanted.contains(s)))
+      })
+      .collect(),
+  ))
+}
+
+/// `EdgeTags[graph]` — the tag each edge carries, or `{}` when none do.
+pub fn edge_tags_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let original = || unevaluated("EdgeTags", args);
+  if args.len() != 1 {
+    return Ok(original());
+  }
+  let Some((_, edges, _)) = graph_parts(&args[0]) else {
+    return Ok(original());
+  };
+  let tags: Vec<Expr> = edges
+    .iter()
+    .filter_map(|edge| match edge {
+      Expr::FunctionCall { name, args }
+        if matches!(name.as_str(), "UndirectedEdge" | "DirectedEdge")
+          && args.len() == 3 =>
+      {
+        Some(args[2].clone())
+      }
+      _ => None,
+    })
+    .collect();
+  Ok(Expr::List(tags.into()))
+}
+
+/// The annotations every graph offers, in the order wolframscript lists them
+/// for a graph that carries none of its own.
+const BASE_GRAPH_PROPERTIES: [&str; 11] = [
+  "GraphHighlight",
+  "GraphHighlightStyle",
+  "GraphLayout",
+  "GraphStyle",
+  "EdgeShapeFunction",
+  "EdgeStyle",
+  "VertexCoordinates",
+  "VertexShapeFunction",
+  "VertexShape",
+  "VertexSize",
+  "VertexStyle",
+];
+
+/// `PropertyList[graph]` — the annotations the graph offers. A graph that
+/// carries one of its own lists the whole set alphabetically; a bare graph
+/// keeps wolframscript's own order.
+pub fn graph_property_list_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let original = || unevaluated("PropertyList", args);
+  if args.len() != 1 {
+    return Ok(original());
+  }
+  let Some((_, _, options)) = graph_parts(&args[0]) else {
+    return Ok(original());
+  };
+  let mut extra: Vec<String> = options
+    .iter()
+    .filter_map(|o| match o {
+      Expr::Rule { pattern, .. } => match pattern.as_ref() {
+        Expr::Identifier(s) if !BASE_GRAPH_PROPERTIES.contains(&s.as_str()) => {
+          Some(s.clone())
+        }
+        _ => None,
+      },
+      _ => None,
+    })
+    .collect();
+  if extra.is_empty() {
+    return Ok(Expr::List(
+      BASE_GRAPH_PROPERTIES
+        .iter()
+        .map(|p| Expr::Identifier((*p).to_string()))
+        .collect(),
+    ));
+  }
+  let mut names: Vec<String> = BASE_GRAPH_PROPERTIES
+    .iter()
+    .map(|p| p.to_string())
+    .collect();
+  names.append(&mut extra);
+  names.sort();
+  names.dedup();
+  Ok(Expr::List(
+    names.into_iter().map(Expr::Identifier).collect(),
+  ))
+}
+
+/// `EdgeTaggedGraph[edges]` — a graph whose edges all carry a tag. An edge
+/// written without one is tagged by how many copies of it have come before.
+pub fn edge_tagged_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let original = || unevaluated("EdgeTaggedGraph", args);
+  if args.is_empty() {
+    return Ok(original());
+  }
+  let (edges, options): (Vec<Expr>, Vec<Expr>) = match &args[0] {
+    Expr::List(items) => (
+      items.iter().cloned().collect(),
+      args.iter().skip(1).cloned().collect(),
+    ),
+    _ => return Ok(original()),
+  };
+  let mut tagged: Vec<Expr> = Vec::with_capacity(edges.len());
+  let mut seen: Vec<(String, usize)> = Vec::new();
+  let mut vertices: Vec<Expr> = Vec::new();
+  for edge in &edges {
+    // An edge already written with a tag carries three arguments, which the
+    // endpoint reader does not take.
+    let plain = match edge {
+      Expr::FunctionCall { name, args } if args.len() == 3 => {
+        Expr::FunctionCall {
+          name: name.clone(),
+          args: vec![args[0].clone(), args[1].clone()].into(),
+        }
+      }
+      other => other.clone(),
+    };
+    let Some((a, b, directed)) = edge_endpoints(&plain) else {
+      return Ok(original());
+    };
+    for v in [&a, &b] {
+      let key = crate::syntax::expr_to_string(v);
+      if !vertices
+        .iter()
+        .any(|existing| crate::syntax::expr_to_string(existing) == key)
+      {
+        vertices.push((*v).clone());
+      }
+    }
+    let head = if directed {
+      "DirectedEdge"
+    } else {
+      "UndirectedEdge"
+    };
+    // An edge already written with a tag keeps it.
+    let existing_tag = match edge {
+      Expr::FunctionCall { args, .. } if args.len() == 3 => {
+        Some(args[2].clone())
+      }
+      _ => None,
+    };
+    let tag = existing_tag.unwrap_or_else(|| {
+      let key = format!("{head}:{a:?}:{b:?}");
+      let count = match seen.iter_mut().find(|(k, _)| *k == key) {
+        Some((_, n)) => {
+          *n += 1;
+          *n
+        }
+        None => {
+          seen.push((key, 1));
+          1
+        }
+      };
+      Expr::Integer(count as i128)
+    });
+    tagged.push(Expr::FunctionCall {
+      name: head.to_string(),
+      args: vec![a, b, tag].into(),
+    });
+  }
+  let mut graph_args =
+    vec![Expr::List(vertices.into()), Expr::List(tagged.into())];
+  graph_args.extend(options);
+  Ok(Expr::FunctionCall {
+    name: "Graph".to_string(),
+    args: graph_args.into(),
+  })
+}
+
+/// `EdgeTaggedGraphQ[graph]` — whether every edge carries a tag.
+pub fn edge_tagged_graph_q_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let tagged = graph_parts(&args[0]).is_some_and(|(_, edges, _)| {
+    !edges.is_empty()
+      && edges.iter().all(|e| {
+        matches!(e, Expr::FunctionCall { name, args }
+          if matches!(name.as_str(), "UndirectedEdge" | "DirectedEdge")
+            && args.len() == 3)
+      })
+  });
+  Ok(bool_expr(tagged))
+}
