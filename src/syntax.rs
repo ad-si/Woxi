@@ -12906,8 +12906,14 @@ impl TextBox {
     Self { lines, baseline }
   }
 
-  /// Convert to final string (trim trailing whitespace per line).
+  /// Convert to final string. Trailing whitespace is stripped per line
+  /// because a 2D layout pads its lines to a common width — but a single-line
+  /// box carries no such padding, so a string that genuinely ends in spaces
+  /// (`ToString[", "]`, the separator of a `Row`) keeps them.
   fn to_string(&self) -> String {
+    if self.lines.len() == 1 {
+      return self.lines[0].clone();
+    }
     self
       .lines
       .iter()

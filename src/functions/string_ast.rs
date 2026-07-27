@@ -3684,110 +3684,10 @@ fn group_digits_from_left(digits: &str, block: usize, sep: &str) -> String {
   groups.join(sep)
 }
 
-/// Render `NumberForm[x, DigitBlock -> n]` (with optional positional precision
-/// and `NumberSeparator`): group the integer-part digits into blocks of `n`
-/// from the right and the fractional-part digits into blocks of `n` from the
-/// left, with the given separators (default `,` integer side, ` ` fractional
-/// side). Returns None for cases wolframscript renders in scientific notation
-/// (integer part wider than the precision), so the caller keeps the symbolic
-/// form.
-fn number_form_digit_block_to_string(
-  x: &Expr,
-  prec: i64,
-  block: i64,
-  int_sep: &str,
-  frac_sep: &str,
-) -> Option<String> {
-  if block < 1 {
-    return None;
-  }
-  let block = block as usize;
-
-  // A real whose decimal exponent (of the value rounded to `prec` significant
-  // figures) is >= 6 or <= -6 switches to 2D scientific notation, with the
-  // mantissa digit-blocked (e.g. NumberForm[1234567., DigitBlock -> 3] ->
-  // "1.234 57 × 10^6"). This matches the non-DigitBlock NumberForm threshold.
-  if let Expr::Real(f) = x
-    && *f != 0.0
-    && prec >= 1
-  {
-    let ax = f.abs();
-    let m0 = ax.log10().floor() as i64;
-    let factor = 10f64.powi((prec - 1 - m0) as i32);
-    let rounded = (ax * factor).round() / factor;
-    let m = if rounded == 0.0 {
-      0
-    } else {
-      rounded.log10().floor() as i64
-    };
-    if m >= 6 || m <= -6 {
-      let prec_digits = (prec - 1).max(0) as usize;
-      let formatted = format!("{:.*e}", prec_digits, ax);
-      let (mantissa_raw, exp_raw) = formatted.split_once('e')?;
-      let exp: i64 = exp_raw.parse().ok()?;
-      let (int_part, frac_part) = match mantissa_raw.split_once('.') {
-        Some((ip, fp)) => {
-          (ip.to_string(), fp.trim_end_matches('0').to_string())
-        }
-        None => (mantissa_raw.to_string(), String::new()),
-      };
-      let mut mantissa = group_digits_from_right(&int_part, block, int_sep);
-      mantissa.push('.');
-      if !frac_part.is_empty() {
-        mantissa.push_str(&group_digits_from_left(&frac_part, block, frac_sep));
-      }
-      if *f < 0.0 {
-        mantissa = format!("-{mantissa}");
-      }
-      if exp == 0 {
-        return Some(mantissa);
-      }
-      let line2 = format!("{mantissa} \u{00d7} 10");
-      let indent = " ".repeat(line2.chars().count());
-      return Some(format!("{indent}{exp}\n{line2}"));
-    }
-  }
-
-  let (neg, int_digits, frac_digits, real_no_frac) = match x {
-    Expr::Integer(i) => {
-      (*i < 0, i.unsigned_abs().to_string(), String::new(), false)
-    }
-    Expr::Real(f) => {
-      let f = *f;
-      let s = number_form_to_string(&Expr::Real(f.abs()), prec)?;
-      match s.split_once('.') {
-        Some((ip, fp)) => {
-          (f < 0.0, ip.to_string(), fp.to_string(), fp.is_empty())
-        }
-        None => (f < 0.0, s, String::new(), true),
-      }
-    }
-    _ => return None,
-  };
-  let mut out = String::new();
-  if neg {
-    out.push('-');
-  }
-  out.push_str(&group_digits_from_right(&int_digits, block, int_sep));
-  if !frac_digits.is_empty() {
-    out.push('.');
-    out.push_str(&group_digits_from_left(&frac_digits, block, frac_sep));
-  } else if real_no_frac {
-    // A real with no fractional digits keeps its trailing point ("123,457.").
-    out.push('.');
-  }
-  Some(out)
-}
-
 /// Render `ScientificForm[x]` / `ScientificForm[x, n]` to a string: a real `x`
 /// is shown as `mantissa × 10` with the exponent placed as a superscript on the
 /// line above (e.g. `1.23457 × 10` over `4`). Default `n` is 6 significant
 /// figures. An exponent of 0 collapses to just the mantissa (`5.`). An integer
-/// `x` is shown unchanged.
-fn scientific_form_to_string(x: &Expr, n: i64) -> Option<String> {
-  let (mantissa, exp) = scientific_form_parts(x, n)?;
-  Some(sci_parts_to_2d_string(&mantissa, exp))
-}
 
 /// Decompose `ScientificForm[x]` / `ScientificForm[x, n]` into its mantissa
 /// string and (optional) base-10 exponent. The exponent is `None` when the
@@ -3975,11 +3875,6 @@ where
 /// `ScientificForm` but the exponent is forced to a multiple of 3, so the
 /// mantissa lies in `[1, 1000)` (e.g. `12.3457 × 10` over `3`). Default `n` is 6
 /// significant figures. An exponent of 0 collapses to just the mantissa. An
-/// integer `x` is shown unchanged.
-fn engineering_form_to_string(x: &Expr, n: i64) -> Option<String> {
-  let (mantissa, exp) = engineering_form_parts(x, n)?;
-  Some(sci_parts_to_2d_string(&mantissa, exp))
-}
 
 /// Decompose `EngineeringForm[x]` / `EngineeringForm[x, n]` into its mantissa
 /// string and (optional) base-10 exponent — like [`scientific_form_parts`] but
@@ -4461,111 +4356,24 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::String(joined));
   }
 
-  // NumberForm[x, DigitBlock -> n, ...] — group digits into blocks. Detected by
-  // the presence of a `DigitBlock` option among the arguments.
+  // NumberForm[x, n], PaddedForm[x, {n, f}], AccountingForm[x] and every
+  // option combination they take (NumberPoint, NumberSeparator, DigitBlock,
+  // NumberPadding, NumberSigns, SignPadding) go through one renderer, so the
+  // three heads cannot drift apart.
   if let Expr::FunctionCall {
     name,
     args: inner_args,
   } = &args[0]
-    && name == "NumberForm"
-    && !is_input_form && inner_args.iter().any(|a| {
-    matches!(
-      a,
-      Expr::Rule { pattern, .. }
-        if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "DigitBlock")
+    && matches!(
+      name.as_str(),
+      "NumberForm" | "PaddedForm" | "AccountingForm"
     )
-  }) {
-    // Defaults: comma between integer groups, space between fractional groups.
-    let mut block: Option<i64> = None;
-    let mut int_sep = ",".to_string();
-    let mut frac_sep = " ".to_string();
-    for a in inner_args.iter() {
-      if let Expr::Rule {
-        pattern,
-        replacement,
-      } = a
-        && let Expr::Identifier(opt) = pattern.as_ref()
-      {
-        match opt.as_str() {
-          "DigitBlock" => {
-            if let Expr::Integer(n) = replacement.as_ref() {
-              block = Some(*n as i64);
-            }
-          }
-          "NumberSeparator" => match replacement.as_ref() {
-            Expr::String(s) => {
-              int_sep = s.clone();
-              frac_sep = s.clone();
-            }
-            Expr::List(items) if items.len() == 2 => {
-              if let Expr::String(s) = &items[0] {
-                int_sep = s.clone();
-              }
-              if let Expr::String(s) = &items[1] {
-                frac_sep = s.clone();
-              }
-            }
-            _ => {}
-          },
-          _ => {}
-        }
-      }
-    }
-    let positional: Vec<&Expr> = inner_args
-      .iter()
-      .filter(|a| !matches!(a, Expr::Rule { .. }))
-      .collect();
-    let prec = match positional.get(1) {
-      Some(Expr::Integer(n)) => *n as i64,
-      _ => 6,
-    };
-    if let (Some(x), Some(block)) = (positional.first(), block)
-      && let Some(rendered) =
-        number_form_digit_block_to_string(x, prec, block, &int_sep, &frac_sep)
-    {
-      return Ok(Expr::String(rendered));
-    }
-  }
-
-  // NumberForm[x, n, NumberPadding -> {p1, p2}] — pad the rendered number to a
-  // fixed field width. For the integer-precision form the whole rendering
-  // (sign and decimal point included) is left-padded with p1 to a total of
-  // n + 1 digit positions, e.g. NumberForm[1.5, 3, {"0", " "}] -> "001.5",
-  // NumberForm[42, 3, …] -> "0042", NumberForm[-1.5, 3, …] -> "0-1.5".
-  if let Expr::FunctionCall {
-    name,
-    args: inner_args,
-  } = &args[0]
-    && name == "NumberForm"
     && !is_input_form
-    && let Some(Expr::List(pad)) = inner_args.iter().find_map(|a| match a {
-      Expr::Rule {
-        pattern,
-        replacement,
-      } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "NumberPadding") => {
-        Some(replacement.as_ref())
-      }
-      _ => None,
-    })
-    && pad.len() == 2
+    && !is_tex_form
+    && !inner_args.is_empty()
+    && let Some(rendered) = number_form_family_to_string(name, inner_args)
   {
-    let p1 = match &pad[0] {
-      Expr::String(s) => s.clone(),
-      _ => " ".to_string(),
-    };
-    let positional: Vec<&Expr> = inner_args
-      .iter()
-      .filter(|a| !matches!(a, Expr::Rule { .. }))
-      .collect();
-    if let (Some(x), Some(Expr::Integer(n))) =
-      (positional.first(), positional.get(1))
-      && let Some(rendered) = number_form_to_string(x, *n as i64)
-    {
-      let has_dot = rendered.contains('.');
-      let width = (*n as usize + 1) + usize::from(has_dot);
-      let pad_count = width.saturating_sub(rendered.chars().count());
-      return Ok(Expr::String(format!("{}{}", p1.repeat(pad_count), rendered)));
-    }
+    return Ok(Expr::String(rendered));
   }
 
   // NumberForm[x, n, ExponentFunction -> f] / ScientificForm[x, n, …] — apply a
@@ -4603,116 +4411,6 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // NumberForm[x, NumberSigns -> {neg, pos}] (with optional positional
-  // precision) — override the sign strings: a non-negative number (including
-  // zero) is prefixed with `pos`, a negative one with `neg` before its
-  // magnitude. e.g. NumberForm[2.5, NumberSigns -> {"-", "+"}] -> "+2.5",
-  // NumberForm[-2.5, …] -> "-2.5", NumberForm[-3.14, {"", ""}] -> "3.14".
-  if let Expr::FunctionCall {
-    name,
-    args: inner_args,
-  } = &args[0]
-    && name == "NumberForm"
-    && !is_input_form
-    && let Some(Expr::List(signs)) = inner_args.iter().find_map(|a| match a {
-      Expr::Rule {
-        pattern,
-        replacement,
-      } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "NumberSigns") => {
-        Some(replacement.as_ref())
-      }
-      _ => None,
-    })
-    && signs.len() == 2
-  {
-    let neg = match &signs[0] {
-      Expr::String(s) => s.clone(),
-      _ => "-".to_string(),
-    };
-    let pos = match &signs[1] {
-      Expr::String(s) => s.clone(),
-      _ => String::new(),
-    };
-    let positional: Vec<&Expr> = inner_args
-      .iter()
-      .filter(|a| !matches!(a, Expr::Rule { .. }))
-      .collect();
-    if let Some(&x) = positional.first() {
-      let (is_neg, abs_x) = match x {
-        Expr::Real(f) => (*f < 0.0, Expr::Real(f.abs())),
-        Expr::Integer(i) => (*i < 0, Expr::Integer(i.abs())),
-        _ => (false, x.clone()),
-      };
-      // The magnitude is rendered by the usual precision path: an integer
-      // second argument gives significant figures, a {n, f} list fixes the
-      // digits after the point, and no precision defaults to 6.
-      let rendered = match positional.get(1) {
-        Some(Expr::Integer(n)) => number_form_render(&abs_x, *n as i64),
-        Some(Expr::List(spec)) if spec.len() == 2 => match &spec[1] {
-          Expr::Integer(f) => number_form_fixed_to_string(&abs_x, *f as i64),
-          _ => None,
-        },
-        _ => number_form_render(&abs_x, 6),
-      };
-      if let Some(rendered) = rendered {
-        let sign = if is_neg { &neg } else { &pos };
-        return Ok(Expr::String(format!("{sign}{rendered}")));
-      }
-    }
-  }
-
-  // NumberForm[x, n] — render x to n significant figures.
-  // NumberForm[x, {n, f}] — render x with exactly f digits after the decimal
-  // point (zero-padded).
-  if let Expr::FunctionCall {
-    name,
-    args: inner_args,
-  } = &args[0]
-    && name == "NumberForm"
-    && !is_input_form
-    && inner_args.len() == 2
-  {
-    let rendered = match &inner_args[1] {
-      Expr::Integer(n) => {
-        if number_form_reqsigz(&inner_args[0], *n as i64) {
-          crate::emit_message(
-            "NumberForm::reqsigz: Requested number precision is lower than number of digits shown; padding with zeros.",
-          );
-        }
-        render_form_threaded(&inner_args[0], |x| {
-          number_form_render(x, *n as i64)
-        })
-      }
-      Expr::List(spec) if spec.len() == 2 => match &spec[1] {
-        Expr::Integer(f) => render_form_threaded(&inner_args[0], |x| {
-          number_form_fixed_to_string(x, *f as i64)
-        }),
-        _ => None,
-      },
-      _ => None,
-    };
-    if let Some(rendered) = rendered {
-      return Ok(Expr::String(rendered));
-    }
-  }
-
-  // NumberForm[x] — no precision spec. wolframscript renders this exactly like
-  // NumberForm[x, 6] (the machine-precision display default: 6 significant
-  // figures), e.g. NumberForm[12345.678] -> "12345.7", NumberForm[-3.5] ->
-  // "-3.5", NumberForm[42] -> "42".
-  if let Expr::FunctionCall {
-    name,
-    args: inner_args,
-  } = &args[0]
-    && name == "NumberForm"
-    && !is_input_form
-    && inner_args.len() == 1
-    && let Some(rendered) =
-      render_form_threaded(&inner_args[0], |x| number_form_render(x, 6))
-  {
-    return Ok(Expr::String(rendered));
-  }
-
   // ScientificForm[x] / ScientificForm[x, n] — scientific (mantissa × 10^exp)
   // rendering. Default 6 significant figures; the exponent is shown as a
   // superscript on the line above. Exponent 0 collapses to just the mantissa.
@@ -4722,20 +4420,9 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "ScientificForm"
     && !is_input_form
-    && (inner_args.len() == 1 || inner_args.len() == 2)
+    && let Some(rendered) = exponent_form_to_string(name, inner_args)
   {
-    let n = match inner_args.get(1) {
-      None => Some(6),
-      Some(Expr::Integer(n)) => Some(*n as i64),
-      _ => None,
-    };
-    if let Some(n) = n
-      && let Some(rendered) = render_form_threaded(&inner_args[0], |x| {
-        scientific_form_to_string(x, n)
-      })
-    {
-      return Ok(Expr::String(rendered));
-    }
+    return Ok(Expr::String(rendered));
   }
 
   // EngineeringForm[x] / EngineeringForm[x, n] — like ScientificForm but the
@@ -4746,142 +4433,9 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "EngineeringForm"
     && !is_input_form
-    && (inner_args.len() == 1 || inner_args.len() == 2)
+    && let Some(rendered) = exponent_form_to_string(name, inner_args)
   {
-    let n = match inner_args.get(1) {
-      None => Some(6),
-      Some(Expr::Integer(n)) => Some(*n as i64),
-      _ => None,
-    };
-    if let Some(n) = n
-      && let Some(rendered) = render_form_threaded(&inner_args[0], |x| {
-        engineering_form_to_string(x, n)
-      })
-    {
-      return Ok(Expr::String(rendered));
-    }
-  }
-
-  // AccountingForm[x] / AccountingForm[x, n] — like NumberForm but negatives
-  // are shown in parentheses, e.g. -1234.5 -> (1234.5). A `DigitBlock` option
-  // groups the digits (e.g. AccountingForm[-1234.5, DigitBlock->3] -> (1,234.5));
-  // unlike NumberForm, AccountingForm always renders in full decimal.
-  if let Expr::FunctionCall {
-    name,
-    args: inner_args,
-  } = &args[0]
-    && name == "AccountingForm"
-    && !is_input_form
-    && !inner_args.is_empty()
-  {
-    let positional: Vec<&Expr> = inner_args
-      .iter()
-      .filter(|a| !matches!(a, Expr::Rule { .. }))
-      .collect();
-    // Parse DigitBlock / NumberSeparator options.
-    let mut block: Option<usize> = None;
-    let mut int_sep = ",".to_string();
-    let mut frac_sep = " ".to_string();
-    for a in inner_args.iter() {
-      if let Expr::Rule {
-        pattern,
-        replacement,
-      } = a
-        && let Expr::Identifier(opt) = pattern.as_ref()
-      {
-        match opt.as_str() {
-          "DigitBlock" => {
-            if let Expr::Integer(n) = replacement.as_ref()
-              && *n >= 1
-            {
-              block = Some(*n as usize);
-            }
-          }
-          "NumberSeparator" => match replacement.as_ref() {
-            Expr::String(s) => {
-              int_sep = s.clone();
-              frac_sep = s.clone();
-            }
-            Expr::List(items) if items.len() == 2 => {
-              if let Expr::String(s) = &items[0] {
-                int_sep = s.clone();
-              }
-              if let Expr::String(s) = &items[1] {
-                frac_sep = s.clone();
-              }
-            }
-            _ => {}
-          },
-          _ => {}
-        }
-      }
-    }
-    let n = match positional.get(1) {
-      None => None,
-      Some(Expr::Integer(n)) => Some(*n as i64),
-      _ => None,
-    };
-    // Reject a non-integer second positional argument by falling through.
-    if let Some(x0) = positional.first()
-      && (positional.len() == 1 || n.is_some())
-    {
-      let (is_neg, magnitude) = match x0 {
-        Expr::Integer(i) => (*i < 0, Expr::Integer(i.abs())),
-        Expr::Real(f) => (*f < 0.0, Expr::Real(f.abs())),
-        _ => (false, (*x0).clone()),
-      };
-      // When the requested number of significant figures is lower than the
-      // count of digits to the left of the decimal point, the trailing
-      // integer digits are padded with zeros (e.g. 1234.5678 -> 1230. at
-      // n = 3). wolframscript warns about this with `<Head>::reqsigz`.
-      if let Some(n) = n
-        && let Some(int_digits) = integer_digit_count(&magnitude)
-        && n < int_digits
-      {
-        crate::emit_message(
-          "AccountingForm::reqsigz: Requested number precision is lower \
-           than number of digits shown; padding with zeros.",
-        );
-      }
-      let mag_str = match n {
-        Some(n) => number_form_to_string(&magnitude, n),
-        // AccountingForm never uses scientific notation, so a large/small
-        // Real is rendered in full decimal (like DecimalForm) rather than via
-        // the default OutputForm `*^` notation.
-        None => match &magnitude {
-          Expr::Integer(i) => Some(i.to_string()),
-          Expr::Real(f) => Some(decimal_form_default(*f)),
-          _ => match to_string_ast(std::slice::from_ref(&magnitude)) {
-            Ok(Expr::String(ref s)) => Some(s.clone()),
-            _ => None,
-          },
-        },
-      };
-      if let Some(mut mag_str) = mag_str {
-        if let Some(block) = block {
-          mag_str = match mag_str.split_once('.') {
-            Some((ip, fp)) => {
-              let grouped_int = group_digits_from_right(ip, block, &int_sep);
-              if fp.is_empty() {
-                format!("{grouped_int}.")
-              } else {
-                format!(
-                  "{}.{}",
-                  grouped_int,
-                  group_digits_from_left(fp, block, &frac_sep)
-                )
-              }
-            }
-            None => group_digits_from_right(&mag_str, block, &int_sep),
-          };
-        }
-        return Ok(Expr::String(if is_neg {
-          format!("({mag_str})")
-        } else {
-          mag_str
-        }));
-      }
-    }
+    return Ok(Expr::String(rendered));
   }
 
   // DecimalForm[x] / DecimalForm[x, n] — decimal (non-scientific) rendering.
@@ -13040,6 +12594,479 @@ fn is_abbreviation(before: &[char], after: &[char]) -> bool {
   }
 
   false
+}
+
+/// The options shared by the `NumberForm` display family (`NumberForm`,
+/// `PaddedForm`, `AccountingForm`). Parsed once by `number_form_options` so
+/// every head applies them the same way.
+pub(crate) struct NumberFormOptions {
+  /// `NumberPoint` — the string standing in for the decimal point.
+  point: String,
+  /// `NumberSeparator[[1]]` — between integer-side digit blocks.
+  int_sep: String,
+  /// `NumberSeparator[[2]]` — between fractional-side digit blocks.
+  frac_sep: String,
+  /// `DigitBlock` — digits per block, `None` for one unbroken run.
+  block: Option<usize>,
+  /// `NumberPadding[[1]]` — fills the integer field to its width.
+  lpad: String,
+  /// `NumberPadding[[2]]` — fills the fraction past its significant digits.
+  rpad: String,
+  /// `NumberSigns -> {neg, pos}`, when given: a prefix replacing the default
+  /// sign (and, for AccountingForm, the parentheses).
+  signs: Option<(String, String)>,
+  /// `SignPadding` — True puts the sign before the padding, False (the
+  /// default) keeps it next to the digits.
+  sign_padding: bool,
+}
+
+/// Parse the `NumberForm`-family options out of a display-form argument list.
+/// The padding defaults differ per head: `PaddedForm` pads the integer field
+/// with spaces, `NumberForm` does not pad it at all, and `AccountingForm`
+/// pads neither side (so `AccountingForm[12.345, {5, 2}]` is "12.35", not
+/// "12.35" padded out to the field).
+pub(crate) fn number_form_options(
+  head: &str,
+  args: &[Expr],
+) -> NumberFormOptions {
+  let mut opts = NumberFormOptions {
+    point: ".".to_string(),
+    int_sep: ",".to_string(),
+    frac_sep: " ".to_string(),
+    block: None,
+    lpad: if head == "PaddedForm" { " " } else { "" }.to_string(),
+    rpad: if head == "AccountingForm" { "" } else { "0" }.to_string(),
+    signs: None,
+    sign_padding: false,
+  };
+  let text = |e: &Expr| match e {
+    Expr::String(s) => Some(s.clone()),
+    _ => None,
+  };
+  for a in args {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = a
+    else {
+      continue;
+    };
+    let Expr::Identifier(opt) = pattern.as_ref() else {
+      continue;
+    };
+    match opt.as_str() {
+      "NumberPoint" => {
+        if let Some(p) = text(replacement) {
+          opts.point = p;
+        }
+      }
+      "NumberSeparator" => match replacement.as_ref() {
+        Expr::String(s) => {
+          opts.int_sep = s.clone();
+          opts.frac_sep = s.clone();
+        }
+        Expr::List(items) if items.len() == 2 => {
+          if let Some(s) = text(&items[0]) {
+            opts.int_sep = s;
+          }
+          if let Some(s) = text(&items[1]) {
+            opts.frac_sep = s;
+          }
+        }
+        _ => {}
+      },
+      "DigitBlock" => {
+        if let Expr::Integer(n) = replacement.as_ref()
+          && *n >= 1
+        {
+          opts.block = Some(*n as usize);
+        }
+      }
+      // A single string sets the integer-side padding only.
+      "NumberPadding" => match replacement.as_ref() {
+        Expr::String(s) => opts.lpad = s.clone(),
+        Expr::List(pad) if pad.len() == 2 => {
+          if let Some(s) = text(&pad[0]) {
+            opts.lpad = s;
+          }
+          if let Some(s) = text(&pad[1]) {
+            opts.rpad = s;
+          }
+        }
+        _ => {}
+      },
+      "NumberSigns" => {
+        if let Expr::List(signs) = replacement.as_ref()
+          && signs.len() == 2
+          && let (Some(neg), Some(pos)) = (text(&signs[0]), text(&signs[1]))
+        {
+          opts.signs = Some((neg, pos));
+        }
+      }
+      "SignPadding" => {
+        opts.sign_padding =
+          matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True");
+      }
+      _ => {}
+    }
+  }
+  opts
+}
+
+/// Separators a full digit field of `digits` columns receives at this block
+/// size. They widen the padded field, so `PaddedForm[123456, 8, DigitBlock ->
+/// 3]` reserves 8 digit columns plus the two separators that a full field
+/// would carry.
+fn digit_block_separators(digits: usize, block: Option<usize>) -> usize {
+  match block {
+    Some(b) if b >= 1 && digits >= 1 => (digits - 1) / b,
+    _ => 0,
+  }
+}
+
+/// Render one scalar of the `NumberForm` display family with its options
+/// applied. `spec` is the positional precision argument (`n`, `{n, f}` or
+/// none). Returns None when the value is not a machine number, when the spec
+/// is malformed, or when the number renders in scientific notation and the
+/// caller must fall back to the 2D form.
+fn number_form_family_scalar(
+  head: &str,
+  value: &Expr,
+  spec: Option<&Expr>,
+  opts: &NumberFormOptions,
+) -> Option<String> {
+  let (neg, magnitude) = match value {
+    Expr::Integer(i) => (*i < 0, Expr::Integer(i.abs())),
+    Expr::Real(f) => (*f < 0.0, Expr::Real(f.abs())),
+    _ => return None,
+  };
+  let is_integer = matches!(magnitude, Expr::Integer(_));
+  // The fixed `{n, f}` spec is the only one that pads the fraction; the
+  // significant-figure specs render the value as-is.
+  let fixed = match spec {
+    Some(Expr::List(parts)) if parts.len() == 2 => {
+      match (&parts[0], &parts[1]) {
+        (Expr::Integer(n), Expr::Integer(f)) if *n >= 0 && *f >= 0 => {
+          Some((*n as i64, *f as i64))
+        }
+        _ => return None,
+      }
+    }
+    _ => None,
+  };
+  // Body digits, and the exponent when the value goes to scientific notation.
+  let (body, exp) = match (fixed, spec) {
+    (Some((_, f)), _) => (number_form_fixed_to_string(&magnitude, f)?, None),
+    (None, Some(Expr::Integer(n))) => {
+      if head == "AccountingForm" {
+        // AccountingForm never switches to scientific notation.
+        (number_form_to_string(&magnitude, *n as i64)?, None)
+      } else {
+        let (mantissa, exp) = number_form_parts(&magnitude, *n as i64)?;
+        (mantissa, exp)
+      }
+    }
+    (None, None) => {
+      if head == "AccountingForm" {
+        match &magnitude {
+          Expr::Integer(i) => (i.to_string(), None),
+          Expr::Real(f) => (decimal_form_default(*f), None),
+          _ => return None,
+        }
+      } else {
+        let (mantissa, exp) = number_form_parts(&magnitude, 6)?;
+        (mantissa, exp)
+      }
+    }
+    (None, Some(_)) => return None,
+  };
+
+  // `had_point` keeps the decimal point in place even when every fractional
+  // digit turns out to be padding (`NumberForm[50., {3, 1}]` is "50.0").
+  let (int_digits, mut frac_digits, had_point) = match body.split_once('.') {
+    Some((ip, fp)) => (ip.to_string(), fp.to_string(), true),
+    None => (body.clone(), String::new(), false),
+  };
+  // AccountingForm brackets a negative value; the closing bracket sits right
+  // after the significant fractional digits, before any padding.
+  let close = if head == "AccountingForm" && neg && opts.signs.is_none() {
+    ")"
+  } else {
+    ""
+  };
+  // Past the value's significant fractional digits the right NumberPadding
+  // string fills the remaining slots, so an empty one suppresses the trailing
+  // zeros that the fixed rendering produced. AccountingForm keeps one extra
+  // slot for the closing bracket.
+  let mut fill = String::new();
+  // An integer ignores the fractional spec entirely: no point, no padding.
+  if let Some((_, f)) = fixed.filter(|_| !is_integer) {
+    let slots = f as usize + usize::from(head == "AccountingForm");
+    let keep = frac_digits.trim_end_matches('0').chars().count();
+    frac_digits = frac_digits.chars().take(keep).collect();
+    if !opts.rpad.is_empty() {
+      let mut used = keep + close.chars().count();
+      while used < slots {
+        fill.push_str(&opts.rpad);
+        used += 1;
+      }
+    }
+  }
+
+  // Digit blocks, then the decimal point stand-in.
+  let int_body = match opts.block {
+    Some(b) => group_digits_from_right(&int_digits, b, &opts.int_sep),
+    None => int_digits.clone(),
+  };
+  if let Some(b) = opts.block
+    && !frac_digits.is_empty()
+  {
+    frac_digits = group_digits_from_left(&frac_digits, b, &opts.frac_sep);
+  }
+
+  let sign = match &opts.signs {
+    Some((n, p)) => {
+      if neg {
+        n.clone()
+      } else {
+        p.clone()
+      }
+    }
+    None => match (head, neg) {
+      ("AccountingForm", true) => "(".to_string(),
+      (_, true) => "-".to_string(),
+      _ => String::new(),
+    },
+  };
+
+  // Scientific notation carries no padded field: the 2D form is assembled
+  // straight from the mantissa.
+  if let Some(e) = exp {
+    let mut mantissa = format!("{sign}{int_body}");
+    if had_point || !frac_digits.is_empty() {
+      mantissa.push_str(&opts.point);
+      mantissa.push_str(&frac_digits);
+    }
+    return Some(sci_parts_to_2d_string(&mantissa, Some(e)));
+  }
+
+  let point = if had_point || !frac_digits.is_empty() {
+    opts.point.clone()
+  } else {
+    String::new()
+  };
+  let tail = format!("{point}{frac_digits}{close}{fill}");
+
+  // Field widths. A significant-figure spec pads the whole rendering to
+  // n digit columns plus a sign column (and a column for the decimal point);
+  // the fixed `{n, f}` spec pads the integer field only, since the fraction
+  // already occupies its f columns. Digit-block separators widen the field by
+  // the number a full field would carry.
+  let (field, padded_part) = match (fixed, spec) {
+    (Some((n, f)), _) => {
+      // The integer field spans the n - f digit columns the fraction leaves
+      // over, plus a sign column; an integer value keeps all n columns.
+      let digits = if is_integer {
+        n.max(0) as usize
+      } else {
+        (n - f).max(0) as usize
+      };
+      (
+        digits + 1 + digit_block_separators(digits, opts.block),
+        int_body.clone(),
+      )
+    }
+    (None, Some(Expr::Integer(n))) => {
+      let digits = (*n).max(0) as usize;
+      let has_point = had_point && !is_integer;
+      (
+        digits
+          + 1
+          + usize::from(has_point)
+          + digit_block_separators(digits, opts.block),
+        format!("{int_body}{tail}"),
+      )
+    }
+    _ => {
+      return Some(format!("{sign}{int_body}{tail}"));
+    }
+  };
+
+  // A value wider than the requested field widens it, but a column is always
+  // reserved for the sign.
+  let field = field.max(padded_part.chars().count() + 1);
+  // With SignPadding the sign leads the padding; by default it stays next to
+  // the digits, so the padding fills the columns before it.
+  let padded = if opts.sign_padding && !sign.is_empty() {
+    let inner = pad_left(
+      &padded_part,
+      field.saturating_sub(sign.chars().count()),
+      &opts.lpad,
+    );
+    format!("{sign}{inner}")
+  } else {
+    pad_left(&format!("{sign}{padded_part}"), field, &opts.lpad)
+  };
+  Some(if fixed.is_some() {
+    format!("{padded}{tail}")
+  } else {
+    padded
+  })
+}
+
+/// Render `NumberForm[…]`, `PaddedForm[…]` or `AccountingForm[…]` (options
+/// included) to its plain-text form. Lists thread element-wise, non-numeric
+/// arguments render as the expression itself (wolframscript shows
+/// `NumberForm[Pi, 5]` as "Pi"), and the `ExponentFunction`/`NumberFormat`
+/// options are left to their dedicated renderers.
+pub(crate) fn number_form_family_to_string(
+  head: &str,
+  inner: &[Expr],
+) -> Option<String> {
+  let positional: Vec<&Expr> = inner
+    .iter()
+    .filter(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+    .collect();
+  if positional.is_empty() || positional.len() > 2 {
+    return None;
+  }
+  let has_custom_format = inner.iter().any(|a| {
+    matches!(a, Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(s)
+        if s == "ExponentFunction" || s == "NumberFormat"))
+  });
+  if has_custom_format {
+    return None;
+  }
+  let value = positional[0];
+  let spec = positional.get(1).copied();
+  let opts = number_form_options(head, inner);
+
+  // A list renders element-wise; `list_form_2d_string` lifts a 2D exponent
+  // line above the whole list rather than breaking it mid-element.
+  if let Expr::List(_) = value {
+    let options: Vec<Expr> = inner
+      .iter()
+      .filter(|a| matches!(a, Expr::Rule { .. }))
+      .cloned()
+      .collect();
+    return render_form_threaded(value, |e| {
+      let mut one = vec![e.clone()];
+      if let Some(spec) = spec {
+        one.push(spec.clone());
+      }
+      one.extend(options.iter().cloned());
+      number_form_family_to_string(head, &one)
+    });
+  }
+
+  // A `BaseForm` value keeps its own (subscripted) rendering, padded by the
+  // dedicated PaddedForm path.
+  if matches!(value, Expr::FunctionCall { name, .. } if name == "BaseForm") {
+    return None;
+  }
+
+  // Requesting fewer significant figures than the number has integer digits
+  // pads them with zeros, which wolframscript reports.
+  if let Some(Expr::Integer(n)) = spec {
+    let reqsigz = if head == "AccountingForm" {
+      integer_digit_count(value).is_some_and(|d| (*n as i64) < d)
+    } else {
+      number_form_reqsigz(value, *n as i64)
+    };
+    if reqsigz {
+      crate::emit_message(&format!(
+        "{head}::reqsigz: Requested number precision is lower than number of \
+         digits shown; padding with zeros.",
+      ));
+    }
+  }
+
+  if let Some(rendered) = number_form_family_scalar(head, value, spec, &opts) {
+    return Some(rendered);
+  }
+  // Anything that is not a machine number renders as itself: wolframscript
+  // shows `NumberForm[Pi, 5]` as "Pi" and `NumberForm[3/4]` as the 2D
+  // fraction, dropping the wrapper.
+  if matches!(
+    value,
+    Expr::Integer(_)
+      | Expr::Real(_)
+      | Expr::BigInteger(_)
+      | Expr::BigFloat(_, _)
+  ) {
+    return None;
+  }
+  match to_string_ast(std::slice::from_ref(value)) {
+    Ok(Expr::String(ref rendered)) => Some(rendered.clone()),
+    _ => None,
+  }
+}
+
+/// Render `ScientificForm[…]` / `EngineeringForm[…]`, honoring the shared
+/// `NumberForm` options that apply to a mantissa (`NumberPoint`, `DigitBlock`
+/// and `NumberSeparator`). Both heads take an optional precision argument and
+/// thread over lists.
+fn exponent_form_to_string(head: &str, inner: &[Expr]) -> Option<String> {
+  let positional: Vec<&Expr> = inner
+    .iter()
+    .filter(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+    .collect();
+  if positional.is_empty() || positional.len() > 2 {
+    return None;
+  }
+  // The exponent-function renderer has its own path.
+  if inner.iter().any(|a| {
+    matches!(a, Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(s)
+        if s == "ExponentFunction" || s == "NumberFormat"))
+  }) {
+    return None;
+  }
+  let n = match positional.get(1) {
+    None => 6,
+    Some(Expr::Integer(n)) => *n as i64,
+    Some(_) => return None,
+  };
+  let opts = number_form_options(head, inner);
+  render_form_threaded(positional[0], |x| {
+    let (mantissa, exp) = if head == "ScientificForm" {
+      scientific_form_parts(x, n)?
+    } else {
+      engineering_form_parts(x, n)?
+    };
+    let mantissa = apply_mantissa_options(&mantissa, &opts);
+    Some(sci_parts_to_2d_string(&mantissa, exp))
+  })
+}
+
+/// Apply the digit-block and decimal-point options to an already rendered
+/// mantissa string.
+fn apply_mantissa_options(mantissa: &str, opts: &NumberFormOptions) -> String {
+  let (sign, body) = match mantissa.strip_prefix('-') {
+    Some(rest) => ("-", rest),
+    None => ("", mantissa),
+  };
+  let (int_part, frac_part) = match body.split_once('.') {
+    Some((ip, fp)) => (ip.to_string(), Some(fp.to_string())),
+    None => (body.to_string(), None),
+  };
+  let int_part = match opts.block {
+    Some(b) => group_digits_from_right(&int_part, b, &opts.int_sep),
+    None => int_part,
+  };
+  match frac_part {
+    None => format!("{sign}{int_part}"),
+    Some(fp) => {
+      let fp = match opts.block {
+        Some(b) if !fp.is_empty() => {
+          group_digits_from_left(&fp, b, &opts.frac_sep)
+        }
+        _ => fp,
+      };
+      format!("{sign}{int_part}{}{fp}", opts.point)
+    }
+  }
 }
 
 /// Render PaddedForm[value, spec] as wolframscript's padded string.

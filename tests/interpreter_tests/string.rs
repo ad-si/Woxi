@@ -13036,3 +13036,17 @@ mod regex_backreferences_in_delayed_rules {
     );
   }
 }
+
+#[test]
+fn to_string_keeps_the_trailing_spaces_of_a_string() {
+  clear_state();
+  // A 2D layout pads its lines to a common width and those pad columns are
+  // stripped — but a single-line rendering carries no padding, so a string
+  // that ends in spaces keeps them (and a Row separator survives).
+  assert_eq!(interpret(r#"StringLength[ToString[" x "]]"#).unwrap(), "3");
+  assert_eq!(
+    interpret(r#"ToString[Row[{1, 2, 3}, ", "]]"#).unwrap(),
+    "1, 2, 3"
+  );
+  assert_eq!(interpret(r#"ToString[Row[{1, 2}, "  "]]"#).unwrap(), "1  2");
+}

@@ -66,6 +66,8 @@
       - [`UpperCaseQ`](strings/matching/UpperCaseQ.md)
     - [Conversion & Encoding](strings/conversion.md)
       - [`AccountingForm`](strings/conversion/AccountingForm.md)
+      - [`NumberForm`](strings/conversion/NumberForm.md)
+      - [`PaddedForm`](strings/conversion/PaddedForm.md)
       - [`DecimalForm`](strings/conversion/DecimalForm.md)
       - [`WordFrequency`](strings/conversion/WordFrequency.md)
       - [`Alphabet`](strings/conversion/Alphabet.md)

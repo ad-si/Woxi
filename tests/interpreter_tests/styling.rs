@@ -1100,3 +1100,232 @@ mod cases {
     );
   }
 }
+
+/// The `NumberForm` display family (`NumberForm`, `PaddedForm`,
+/// `AccountingForm`, plus the exponent-carrying `ScientificForm` and
+/// `EngineeringForm`) shares one option-aware renderer, so every head reads
+/// `NumberPoint`, `NumberSeparator`, `DigitBlock`, `NumberPadding`,
+/// `NumberSigns` and `SignPadding` the same way.
+mod number_form_options {
+  use super::*;
+
+  #[test]
+  fn number_point_replaces_the_decimal_point() {
+    clear_state();
+    for (code, expected) in [
+      (
+        r#"ToString[NumberForm[1234.5, NumberPoint -> ","]]"#,
+        "1234,5",
+      ),
+      (
+        r#"ToString[NumberForm[1234.5678, 6, NumberPoint -> ","]]"#,
+        "1234,57",
+      ),
+      (
+        r#"ToString[PaddedForm[1.5, 5, NumberPoint -> ","]]"#,
+        "    1,5",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn number_padding_fills_the_field() {
+    clear_state();
+    for (code, expected) in [
+      // A {n, f} spec pads the integer field to n - f + 1 columns.
+      (
+        r#"ToString[NumberForm[12.3, {5, 3}, NumberPadding -> {" ", "0"}]]"#,
+        " 12.300",
+      ),
+      (
+        r#"ToString[NumberForm[12.3, {8, 3}, NumberPadding -> {"*", "0"}]]"#,
+        "****12.300",
+      ),
+      // A single string sets the integer-side padding only.
+      (
+        r#"ToString[PaddedForm[123, 6, NumberPadding -> "0"]]"#,
+        "0000123",
+      ),
+      (
+        r#"ToString[PaddedForm[-123, 6, NumberPadding -> "0"]]"#,
+        "000-123",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn sign_padding_moves_the_sign_before_the_padding() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"ToString[NumberForm[-12.3, {6, 2}, NumberPadding -> {"0", "0"}]]"#
+      )
+      .unwrap(),
+      "00-12.30"
+    );
+    assert_eq!(
+      interpret(
+        r#"ToString[NumberForm[-12.3, {6, 2}, SignPadding -> True, NumberPadding -> {"0", "0"}]]"#
+      )
+      .unwrap(),
+      "-0012.30"
+    );
+    assert_eq!(
+      interpret(
+        r#"ToString[PaddedForm[-123, 6, NumberPadding -> "0", SignPadding -> True]]"#
+      )
+      .unwrap(),
+      "-000123"
+    );
+  }
+
+  #[test]
+  fn number_signs_replace_the_sign_strings() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"ToString[PaddedForm[123, 6, NumberSigns -> {"", "+"}]]"#)
+        .unwrap(),
+      "   +123"
+    );
+    assert_eq!(
+      interpret(
+        r#"ToString[NumberForm[-1234.5, {6, 1}, NumberSigns -> {"n", "p"}]]"#
+      )
+      .unwrap(),
+      "n1234.5"
+    );
+    // For AccountingForm they replace the brackets.
+    assert_eq!(
+      interpret(
+        r#"ToString[AccountingForm[-12.3, NumberSigns -> {"<", ">"}]]"#
+      )
+      .unwrap(),
+      "<12.3"
+    );
+  }
+
+  #[test]
+  fn digit_blocks_widen_the_padded_field() {
+    clear_state();
+    for (code, expected) in [
+      // The separators a full field would carry count towards the width.
+      (
+        "ToString[PaddedForm[123456, 8, DigitBlock -> 3]]",
+        "    123,456",
+      ),
+      (
+        r#"ToString[PaddedForm[123456, 10, DigitBlock -> 2, NumberSeparator -> "'"]]"#,
+        "       12'34'56",
+      ),
+      // A {n, f} spec blocks the fraction from the left as well.
+      (
+        "ToString[NumberForm[1234.5678, {8, 4}, DigitBlock -> 2]]",
+        "12,34.56 78",
+      ),
+      (
+        r#"ToString[NumberForm[1234.5678, {8, 4}, DigitBlock -> 3, NumberSeparator -> {"'", "_"}]]"#,
+        "1'234.567_8",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn accounting_form_takes_a_fixed_spec() {
+    clear_state();
+    // The bracket sits right after the significant fractional digits and gets
+    // a column of its own, so the padded fraction is one slot wider.
+    assert_eq!(
+      interpret("ToString[AccountingForm[-12.3, {5, 2}]]").unwrap(),
+      "(12.3)"
+    );
+    assert_eq!(
+      interpret("ToString[AccountingForm[12.345, {5, 2}]]").unwrap(),
+      "12.35"
+    );
+    assert_eq!(
+      interpret(
+        r#"ToString[AccountingForm[12.3, {6, 3}, NumberPadding -> {" ", "0"}]]"#
+      )
+      .unwrap(),
+      "  12.3000"
+    );
+    assert_eq!(
+      interpret(
+        r#"ToString[AccountingForm[-12.3, {6, 2}, NumberPadding -> {" ", "0"}]]"#
+      )
+      .unwrap(),
+      "  (12.3)0"
+    );
+    // A list threads element-wise.
+    assert_eq!(
+      interpret("ToString[AccountingForm[{-1.5, 2.5}]]").unwrap(),
+      "{(1.5), 2.5}"
+    );
+  }
+
+  #[test]
+  fn a_non_numeric_argument_renders_as_itself() {
+    clear_state();
+    for (code, expected) in [
+      ("ToString[NumberForm[Pi, 5]]", "Pi"),
+      ("ToString[NumberForm[x + y, 3]]", "x + y"),
+      (r#"ToString[NumberForm["abc", 3]]"#, "abc"),
+      ("ToString[NumberForm[1.5 + 2.5 I, 3]]", "1.5 + 2.5 I"),
+      ("ToString[PaddedForm[Pi, 5]]", "Pi"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+    // An exact fraction keeps its 2D rendering.
+    assert_eq!(interpret("ToString[NumberForm[3/4]]").unwrap(), "3\n-\n4");
+  }
+
+  #[test]
+  fn padded_form_warns_when_precision_is_below_the_integer_digits() {
+    clear_state();
+    let result =
+      interpret_with_stdout("ToString[PaddedForm[1234.5678, 3]]").unwrap();
+    assert_eq!(result.result, " 1230.");
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|m| m.starts_with("PaddedForm::reqsigz")),
+      "expected a PaddedForm::reqsigz message, got {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
+  fn the_exponent_forms_take_the_mantissa_options() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"ToString[ScientificForm[1234.5, NumberPoint -> ","]]"#)
+        .unwrap(),
+      "           3\n1,2345 \u{00d7} 10"
+    );
+    assert_eq!(
+      interpret(r#"ToString[EngineeringForm[1234.5, NumberPoint -> ","]]"#)
+        .unwrap(),
+      "           3\n1,2345 \u{00d7} 10"
+    );
+    assert_eq!(
+      interpret("ToString[ScientificForm[1234567.8, 8, DigitBlock -> 3]]")
+        .unwrap(),
+      "                6\n1.234 567 8 \u{00d7} 10"
+    );
+    // NumberForm switches to the same 2D form past 10^6.
+    assert_eq!(
+      interpret(
+        r#"ToString[NumberForm[1234567.8, 8, DigitBlock -> 3, NumberPoint -> ","]]"#
+      )
+      .unwrap(),
+      "                6\n1,234 567 8 \u{00d7} 10"
+    );
+  }
+}
