@@ -1562,7 +1562,7 @@ Tolerance,Tolerance specification,,unevaluated,2.0,1583
 NetInitialize,Initialize a neural net,,unevaluated,11.0,1584
 BoundaryMeshRegion,Region given by the mesh of its boundary; measured and read like any other region,✅,pure,10.0,1586
 Cumulant,Computes the r-th cumulant of a list or distribution,✅,pure,8.0,1586
-BooleanConvert,Convert Boolean expressions; the CNF form carries no repeated or subsumed clauses,✅,pure,7.0,1588
+BooleanConvert,Convert Boolean expressions to the DNF/SOP CNF/POS AND OR NAND NOR ANF or IF form; a normal form carries no clause the others already say and an expression with one value collapses to it,✅,pure,7.0,1588
 GeometricBrownianMotionProcess,Geometric Brownian motion process with LogNormal time slices,✅,unevaluated,9.0,1588
 DiscreteUniformDistribution,Discrete uniform distribution over integers,✅,computation,6.0,1593
 MeshCellStyle,Style mesh cells,,unevaluated,10.0,1593

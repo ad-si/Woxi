@@ -6222,3 +6222,223 @@ mod boolean_convert_cnf_redundancy {
     }
   }
 }
+
+// BooleanConvert forms beyond DNF and CNF. Values verified against
+// wolframscript.
+mod boolean_convert_forms {
+  use super::*;
+
+  /// The result of `code`, written the way `InputForm` writes it.
+  fn form(code: &str) -> String {
+    interpret(&format!("ToString[{code}, InputForm]")).unwrap()
+  }
+
+  #[test]
+  fn sop_and_pos_name_the_two_normal_forms() {
+    clear_state();
+    assert_eq!(
+      form("BooleanConvert[Xor[a, b], \"SOP\"]"),
+      "(a &&  !b) || ( !a && b)"
+    );
+    assert_eq!(
+      form("BooleanConvert[Xor[a, b], \"POS\"]"),
+      "( !a ||  !b) && (a || b)"
+    );
+  }
+
+  #[test]
+  fn a_disjunction_of_conjunctions_becomes_a_nand_of_nands() {
+    clear_state();
+    for (code, expected) in [
+      (
+        "BooleanConvert[Xor[a, b], \"NAND\"]",
+        "Nand[Nand[a,  !b], Nand[ !a, b]]",
+      ),
+      (
+        "BooleanConvert[(a || b) && c, \"NAND\"]",
+        "Nand[Nand[a, c], Nand[b, c]]",
+      ),
+      // A disjunction of bare literals joins them negated.
+      ("BooleanConvert[a || b, \"NAND\"]", "Nand[ !a,  !b]"),
+      ("BooleanConvert[Implies[a, b], \"NAND\"]", "Nand[a,  !b]"),
+      // One conjunction on its own is negated twice.
+      ("BooleanConvert[a && b, \"NAND\"]", " !(Nand[a, b])"),
+      // A literal needs no connective at all.
+      ("BooleanConvert[a, \"NAND\"]", "a"),
+      ("BooleanConvert[!a, \"NAND\"]", " !a"),
+    ] {
+      assert_eq!(form(code), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn a_conjunction_of_disjunctions_becomes_a_nor_of_nors() {
+    clear_state();
+    for (code, expected) in [
+      ("BooleanConvert[a && b, \"NOR\"]", "Nor[ !a,  !b]"),
+      (
+        "BooleanConvert[(a || b) && c, \"NOR\"]",
+        "Nor[Nor[a, b],  !c]",
+      ),
+      ("BooleanConvert[a || b, \"NOR\"]", " !(Nor[a, b])"),
+      ("BooleanConvert[Implies[a, b], \"NOR\"]", " !(Nor[ !a, b])"),
+      (
+        "BooleanConvert[Xor[a, b], \"NOR\"]",
+        "Nor[Nor[ !a,  !b], Nor[a, b]]",
+      ),
+      ("BooleanConvert[a, \"NOR\"]", "a"),
+    ] {
+      assert_eq!(form(code), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn the_algebraic_normal_form_xors_conjunctions_of_plain_variables() {
+    clear_state();
+    for (code, expected) in [
+      ("BooleanConvert[a || b, \"ANF\"]", "Xor[a, b, a && b]"),
+      ("BooleanConvert[a && b, \"ANF\"]", "a && b"),
+      ("BooleanConvert[Xor[a, b, c], \"ANF\"]", "Xor[a, b, c]"),
+      // Shorter conjunctions come first.
+      (
+        "BooleanConvert[(a || b) && c, \"ANF\"]",
+        "Xor[a && c, b && c, a && b && c]",
+      ),
+      (
+        "BooleanConvert[Majority[a, b, c], \"ANF\"]",
+        "Xor[a && b, a && c, b && c]",
+      ),
+      // A leading constant is written as a Not around the rest.
+      (
+        "BooleanConvert[Implies[a, b], \"ANF\"]",
+        " !(Xor[a, a && b])",
+      ),
+      ("BooleanConvert[!a, \"ANF\"]", " !a"),
+      (
+        "BooleanConvert[(a && b) || (!a && !b), \"ANF\"]",
+        " !(Xor[a, b])",
+      ),
+    ] {
+      assert_eq!(form(code), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn the_if_form_is_a_decision_tree_over_the_variables() {
+    clear_state();
+    for (code, expected) in [
+      ("BooleanConvert[a, \"IF\"]", "If[a, True, False]"),
+      ("BooleanConvert[!a, \"IF\"]", "If[a, False, True]"),
+      (
+        "BooleanConvert[a && b, \"IF\"]",
+        "If[a, If[b, True, False], False]",
+      ),
+      (
+        "BooleanConvert[a || b, \"IF\"]",
+        "If[a, True, If[b, True, False]]",
+      ),
+      (
+        "BooleanConvert[Implies[a, b], \"IF\"]",
+        "If[a, If[b, True, False], True]",
+      ),
+      // A variable both branches agree on is skipped: the a-branch here does
+      // not look at b at all.
+      (
+        "BooleanConvert[(a || b) && c, \"IF\"]",
+        "If[a, If[c, True, False], If[b, If[c, True, False], False]]",
+      ),
+    ] {
+      assert_eq!(form(code), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn an_expression_with_one_value_has_no_normal_form_to_write() {
+    clear_state();
+    for suffix in [
+      "",
+      ", \"DNF\"",
+      ", \"CNF\"",
+      ", \"AND\"",
+      ", \"OR\"",
+      ", \"NAND\"",
+      ", \"NOR\"",
+      ", \"ANF\"",
+      ", \"IF\"",
+    ] {
+      assert_eq!(form(&format!("BooleanConvert[a || !a{suffix}]")), "True");
+      assert_eq!(form(&format!("BooleanConvert[a && !a{suffix}]")), "False");
+    }
+    // Not only the obvious ones: every assignment is tried.
+    assert_eq!(
+      form(
+        "BooleanConvert[(a && b) || (!a && b) || (a && !b) || (!a && !b), \
+         \"DNF\"]"
+          .replace("         ", "")
+          .as_str()
+      ),
+      "True"
+    );
+    assert_eq!(
+      form(
+        "BooleanConvert[(a || b) && (!a || b) && (a || !b) && (!a || !b), \
+         \"CNF\"]"
+          .replace("         ", "")
+          .as_str()
+      ),
+      "False"
+    );
+  }
+
+  #[test]
+  fn majority_holds_when_more_than_half_its_arguments_do() {
+    clear_state();
+    assert_eq!(
+      form("BooleanConvert[Majority[a, b, c], \"DNF\"]"),
+      "(a && b) || (a && c) || (b && c)"
+    );
+    assert_eq!(
+      form("BooleanConvert[Majority[a, b, c], \"CNF\"]"),
+      "(a || b) && (a || c) && (b || c)"
+    );
+    // Four arguments need three of them.
+    assert_eq!(
+      form("BooleanConvert[Majority[a, b, c, d], \"DNF\"]"),
+      "(a && b && c) || (a && b && d) || (a && c && d) || (b && c && d)"
+    );
+    assert_eq!(
+      form("BooleanConvert[Majority[a, b, c], \"NAND\"]"),
+      "Nand[Nand[a, b], Nand[a, c], Nand[b, c]]"
+    );
+  }
+
+  #[test]
+  fn a_clause_the_others_already_say_is_dropped() {
+    clear_state();
+    // Distributing this into a CNF leaves the consensus clause (b || c)
+    // behind, which neither subsumption nor a tautology test can see.
+    assert_eq!(
+      form("BooleanConvert[(a && b) || (!a && c), \"CNF\"]"),
+      "( !a || b) && (a || c)"
+    );
+    assert_eq!(
+      form("BooleanConvert[(a && b) || (!a && c), \"NOR\"]"),
+      "Nor[Nor[ !a, b], Nor[a, c]]"
+    );
+  }
+
+  #[test]
+  fn clauses_follow_the_variables_they_mention_before_their_polarity() {
+    clear_state();
+    // `(a || !b)` sorts after `(!a || b)` because they name the same
+    // variables, but before `(!b || c)`, which names later ones.
+    assert_eq!(
+      form("BooleanConvert[Equivalent[a, b, c], \"CNF\"]"),
+      "( !a || b) && (a ||  !b) && ( !b || c) && (b ||  !c)"
+    );
+    assert_eq!(
+      form("BooleanConvert[Implies[Implies[a, b], c], \"CNF\"]"),
+      "(a || c) && ( !b || c)"
+    );
+  }
+}

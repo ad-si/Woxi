@@ -1410,6 +1410,32 @@ fn canonicalize_dnf(expr: &Expr) -> Expr {
 }
 
 /// Step 1: Eliminate Implies, Equivalent, Xor, Nand, Nor
+/// Every way of picking `wanted` of the first `n` positions, in increasing
+/// order.
+fn bc_combinations(n: usize, wanted: usize) -> Vec<Vec<usize>> {
+  let mut out = Vec::new();
+  let mut picked = Vec::with_capacity(wanted);
+  fn walk(
+    n: usize,
+    wanted: usize,
+    next: usize,
+    picked: &mut Vec<usize>,
+    out: &mut Vec<Vec<usize>>,
+  ) {
+    if picked.len() == wanted {
+      out.push(picked.clone());
+      return;
+    }
+    for i in next..n {
+      picked.push(i);
+      walk(n, wanted, i + 1, picked, out);
+      picked.pop();
+    }
+  }
+  walk(n, wanted, 0, &mut picked, &mut out);
+  out
+}
+
 fn eliminate_connectives(expr: &Expr) -> Expr {
   match expr {
     Expr::FunctionCall { name, args } => {
@@ -1574,6 +1600,28 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
               },
             ]
             .into(),
+          }
+        }
+        // Majority[e₁, …, eₙ] holds when more than half its arguments do,
+        // which is the Or of every conjunction of ⌊n/2⌋ + 1 of them.
+        "Majority" if args.len() >= 3 => {
+          let elim_args: Vec<Expr> =
+            args.iter().map(eliminate_connectives).collect();
+          let wanted = elim_args.len() / 2 + 1;
+          let clauses: Vec<Expr> = bc_combinations(elim_args.len(), wanted)
+            .into_iter()
+            .map(|picked| Expr::FunctionCall {
+              name: "And".to_string(),
+              args: picked
+                .into_iter()
+                .map(|i| elim_args[i].clone())
+                .collect::<Vec<_>>()
+                .into(),
+            })
+            .collect();
+          Expr::FunctionCall {
+            name: "Or".to_string(),
+            args: clauses.into(),
           }
         }
         "And" | "Or" | "Not" => {
@@ -2046,9 +2094,211 @@ fn bc_to_single_connective(
   }
 }
 
+/// Rewrite a normal form with one Sheffer connective. `top` is the connective
+/// joining the clauses of the normal form (`Or` for a DNF, `And` for a CNF),
+/// `clause_head` the one inside a clause, and `sheffer` the `Nand`/`Nor` that
+/// replaces both. `Nand[Nand[t₁…], Nand[t₂…]]` is `t₁ ∨ t₂` and dually for
+/// `Nor`, so a clause that is a bare literal joins negated.
+fn bc_to_sheffer(
+  nf: &Expr,
+  top: &str,
+  clause_head: &str,
+  sheffer: &str,
+) -> Expr {
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let clause = |c: &Expr| match c {
+    Expr::FunctionCall { name, args } if name == clause_head => {
+      call(sheffer, args.iter().cloned().collect())
+    }
+    literal => bc_negate_literal(literal),
+  };
+  match nf {
+    Expr::FunctionCall { name, args } if name == top => {
+      call(sheffer, args.iter().map(clause).collect())
+    }
+    // One clause on its own is that clause negated twice: the Sheffer
+    // connective already negates it, so a Not goes back on the outside.
+    Expr::FunctionCall { name, args } if name == clause_head => {
+      call("Not", vec![call(sheffer, args.iter().cloned().collect())])
+    }
+    // A bare literal, `True` or `False` needs no connective at all.
+    other => other.clone(),
+  }
+}
+
+/// The value of `expr` for every assignment of `variables`, indexed by the
+/// assignment read as a binary number whose lowest bit is the last variable.
+/// `None` when the expression is not Boolean-valued or has too many variables
+/// to enumerate.
+fn bc_truth_table(
+  expr: &Expr,
+  variables: &[String],
+) -> Result<Option<Vec<bool>>, InterpreterError> {
+  let n = variables.len();
+  if n > 16 {
+    return Ok(None);
+  }
+  let mut table = Vec::with_capacity(1usize << n);
+  for bits in 0..(1usize << n) {
+    let mut substituted = expr.clone();
+    for (i, name) in variables.iter().enumerate() {
+      let set = (bits >> (n - 1 - i)) & 1 == 1;
+      substituted =
+        crate::syntax::substitute_variable(&substituted, name, &bool_expr(set));
+    }
+    match &evaluate_expr_to_expr(&substituted)? {
+      Expr::Identifier(s) if s == "True" => table.push(true),
+      Expr::Identifier(s) if s == "False" => table.push(false),
+      _ => return Ok(None),
+    }
+  }
+  Ok(Some(table))
+}
+
+/// The conjunction of the named variables, which is the variable itself when
+/// only one is named and `True` when none are.
+fn bc_conjunction(variables: &[String], mask: usize) -> Expr {
+  let chosen: Vec<Expr> = variables
+    .iter()
+    .enumerate()
+    .filter(|(i, _)| (mask >> i) & 1 == 1)
+    .map(|(_, name)| Expr::Identifier(name.clone()))
+    .collect();
+  match chosen.len() {
+    0 => bool_expr(true),
+    1 => chosen.into_iter().next().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "And".to_string(),
+      args: chosen.into(),
+    },
+  }
+}
+
+/// The algebraic normal form: an `Xor` of conjunctions of plain variables,
+/// which is the Möbius transform of the truth table over GF(2). A leading
+/// constant `True` is written as a `Not` around the rest, the way
+/// wolframscript writes it.
+fn bc_algebraic_normal_form(variables: &[String], table: &[bool]) -> Expr {
+  let n = variables.len();
+  // `table` counts the first variable in the highest bit; the transform is
+  // easier with each variable owning its own bit from the bottom up.
+  let mut coefficients: Vec<bool> = (0..table.len())
+    .map(|mask| {
+      let index = (0..n)
+        .filter(|i| (mask >> i) & 1 == 1)
+        .fold(0usize, |acc, i| acc | (1 << (n - 1 - i)));
+      table[index]
+    })
+    .collect();
+  for i in 0..n {
+    for mask in 0..coefficients.len() {
+      if (mask >> i) & 1 == 1 {
+        coefficients[mask] ^= coefficients[mask ^ (1 << i)];
+      }
+    }
+  }
+  let constant = coefficients[0];
+  // Shorter conjunctions come first, and among equals the ones naming the
+  // earlier variables.
+  let mut masks: Vec<usize> = (1..coefficients.len())
+    .filter(|mask| coefficients[*mask])
+    .collect();
+  masks.sort_by_key(|mask| {
+    let named: Vec<usize> = (0..n).filter(|i| (mask >> i) & 1 == 1).collect();
+    (named.len(), named)
+  });
+  let terms: Vec<Expr> = masks
+    .into_iter()
+    .map(|mask| bc_conjunction(variables, mask))
+    .collect();
+  let joined = match terms.len() {
+    0 => return bool_expr(constant),
+    1 => terms.into_iter().next().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "Xor".to_string(),
+      args: terms.into(),
+    },
+  };
+  if constant {
+    Expr::FunctionCall {
+      name: "Not".to_string(),
+      args: vec![joined].into(),
+    }
+  } else {
+    joined
+  }
+}
+
+/// The nested `If` a Shannon decomposition gives: each variable in turn splits
+/// the truth table, and a variable both halves agree on is skipped.
+fn bc_decision_tree(variables: &[String], table: &[bool]) -> Expr {
+  let Some((first, rest)) = variables.split_first() else {
+    return bool_expr(table[0]);
+  };
+  let (low, high) = table.split_at(table.len() / 2);
+  if low == high {
+    return bc_decision_tree(rest, low);
+  }
+  Expr::FunctionCall {
+    name: "If".to_string(),
+    args: vec![
+      Expr::Identifier(first.clone()),
+      bc_decision_tree(rest, high),
+      bc_decision_tree(rest, low),
+    ]
+    .into(),
+  }
+}
+
+/// Drop the clauses a normal form does not need. Distributing a DNF into a
+/// CNF leaves consensus clauses behind — `(b || c)` in
+/// `(!a || b) && (a || c) && (b || c)` — which subsumption alone cannot see.
+/// Clauses are tried from the left, and one whose removal leaves the same
+/// truth table goes.
+fn bc_drop_redundant_clauses(
+  nf: &Expr,
+  top: &str,
+  variables: &[String],
+  table: &[bool],
+) -> Result<Expr, InterpreterError> {
+  let Expr::FunctionCall { name, args } = nf else {
+    return Ok(nf.clone());
+  };
+  if name != top || args.len() < 2 {
+    return Ok(nf.clone());
+  }
+  let mut kept: Vec<Expr> = args.iter().cloned().collect();
+  let mut i = 0;
+  while i < kept.len() && kept.len() > 1 {
+    let mut without = kept.clone();
+    without.remove(i);
+    let candidate = Expr::FunctionCall {
+      name: top.to_string(),
+      args: without.clone().into(),
+    };
+    if bc_truth_table(&candidate, variables)?.as_deref() == Some(table) {
+      kept = without;
+    } else {
+      i += 1;
+    }
+  }
+  Ok(if kept.len() == 1 {
+    kept.into_iter().next().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: top.to_string(),
+      args: kept.into(),
+    }
+  })
+}
+
 /// BooleanConvert[expr] or BooleanConvert[expr, form]
 /// Convert boolean expressions to different normal forms.
-/// Supported forms: "DNF", "CNF", "AND", "OR", or default (DNF).
+/// Supported forms: "DNF"/"SOP", "CNF"/"POS", "AND", "OR", "NAND", "NOR",
+/// "ANF", "IF", or default (DNF).
 pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -2057,31 +2307,43 @@ pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let expr = &args[0];
-  // Helper: sort literals within And/Or clauses for canonical output.
-  // wolframscript orders them by the variable they mention, whether or not it
-  // is negated: `(a || !b)`, not `(!b || a)`.
+  // Helper: sort literals within And/Or clauses, and the clauses themselves,
+  // for canonical output. wolframscript orders literals by the variable they
+  // mention whether or not it is negated — `(a || !b)`, not `(!b || a)` — and
+  // orders clauses by the variables they mention before their polarities, so
+  // `(!a || b) && (a || !b)` and not the other way round.
   fn sort_boolean_expr(expr: &Expr) -> Expr {
+    /// The variable each literal mentions and whether it is negated, with a
+    /// negated literal sorting first.
+    fn sort_key(e: &Expr) -> (Vec<String>, Vec<u8>) {
+      match e {
+        Expr::FunctionCall { name, args } if name == "Or" || name == "And" => {
+          let mut names = Vec::with_capacity(args.len());
+          let mut polarities = Vec::with_capacity(args.len());
+          for arg in args.iter() {
+            let (n, p) = sort_key(arg);
+            names.extend(n);
+            polarities.extend(p);
+          }
+          (names, polarities)
+        }
+        Expr::FunctionCall { name, args }
+          if name == "Not" && args.len() == 1 =>
+        {
+          (vec![crate::syntax::expr_to_string(&args[0])], vec![0])
+        }
+        Expr::UnaryOp {
+          op: UnaryOperator::Not,
+          operand,
+        } => (vec![crate::syntax::expr_to_string(operand)], vec![0]),
+        _ => (vec![crate::syntax::expr_to_string(e)], vec![1]),
+      }
+    }
     match expr {
       Expr::FunctionCall { name, args } if name == "Or" || name == "And" => {
         let mut sorted_args: Vec<Expr> =
           args.iter().map(sort_boolean_expr).collect();
-        sorted_args.sort_by(|a, b| {
-          let key = |e: &Expr| -> (String, u8) {
-            match e {
-              Expr::FunctionCall { name, args }
-                if name == "Not" && args.len() == 1 =>
-              {
-                (crate::syntax::expr_to_string(&args[0]), 0)
-              }
-              Expr::UnaryOp {
-                op: UnaryOperator::Not,
-                operand,
-              } => (crate::syntax::expr_to_string(operand), 0),
-              _ => (crate::syntax::expr_to_string(e), 1),
-            }
-          };
-          key(a).cmp(&key(b))
-        });
+        sorted_args.sort_by_key(sort_key);
         Expr::FunctionCall {
           name: name.clone(),
           args: sorted_args.into(),
@@ -2102,28 +2364,58 @@ pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "DNF".to_string()
   };
 
+  // An expression true (or false) under every assignment has no normal form
+  // to write out, whichever one was asked for.
+  let mut names = BTreeSet::new();
+  collect_boolean_variables(expr, &mut names);
+  let variables: Vec<String> = names.into_iter().collect();
+  let table = bc_truth_table(expr, &variables)?;
+  if let Some(table) = &table {
+    if table.iter().all(|v| *v) {
+      return Ok(bool_expr(true));
+    }
+    if table.iter().all(|v| !*v) {
+      return Ok(bool_expr(false));
+    }
+  }
+
+  let dnf = || canonicalize_dnf(&normalize_not(&to_dnf(expr)));
+  let cnf = || -> Result<Expr, InterpreterError> {
+    let cnf =
+      sort_boolean_expr(&normalize_not(&reduce_cnf_clauses(&to_cnf(expr))));
+    match &table {
+      Some(table) => bc_drop_redundant_clauses(&cnf, "And", &variables, table),
+      None => Ok(cnf),
+    }
+  };
+
   let result = match form.as_str() {
-    "DNF" => {
-      let dnf = to_dnf(expr);
-      canonicalize_dnf(&normalize_not(&dnf))
+    // `SOP` and `POS` are the sum-of-products and product-of-sums names for
+    // the same two normal forms.
+    "DNF" | "SOP" => dnf(),
+    "CNF" | "POS" => cnf()?,
+    // A DNF is a Nand of Nands, a CNF a Nor of Nors.
+    "NAND" => normalize_not(&bc_to_sheffer(&dnf(), "Or", "And", "Nand")),
+    "NOR" => normalize_not(&bc_to_sheffer(&cnf()?, "And", "Or", "Nor")),
+    "ANF" | "IF" => {
+      let Some(table) = &table else {
+        return Ok(unevaluated("BooleanConvert", args));
+      };
+      let built = if form == "ANF" {
+        bc_algebraic_normal_form(&variables, table)
+      } else {
+        bc_decision_tree(&variables, table)
+      };
+      normalize_not(&built)
     }
-    "CNF" => {
-      let cnf = reduce_cnf_clauses(&to_cnf(expr));
-      sort_boolean_expr(&normalize_not(&cnf))
-    }
-    "OR" => {
-      // Express with Or and Not only: take the DNF and rewrite every
-      // conjunctive clause And[l…] as Not[Or[!l…]] (De Morgan). normalize_not
-      // renders the introduced Not[…] wrappers with the `!` operator.
-      let dnf = canonicalize_dnf(&normalize_not(&to_dnf(expr)));
-      normalize_not(&bc_to_single_connective(&dnf, "Or", "And", "Or"))
-    }
+    // Express with Or and Not only: take the DNF and rewrite every
+    // conjunctive clause And[l…] as Not[Or[!l…]] (De Morgan). normalize_not
+    // renders the introduced Not[…] wrappers with the `!` operator.
+    "OR" => normalize_not(&bc_to_single_connective(&dnf(), "Or", "And", "Or")),
+    // Express with And and Not only: take the CNF and rewrite every
+    // disjunctive clause Or[l…] as Not[And[!l…]] (De Morgan).
     "AND" => {
-      // Express with And and Not only: take the CNF and rewrite every
-      // disjunctive clause Or[l…] as Not[And[!l…]] (De Morgan).
-      let cnf =
-        sort_boolean_expr(&normalize_not(&reduce_cnf_clauses(&to_cnf(expr))));
-      normalize_not(&bc_to_single_connective(&cnf, "And", "Or", "And"))
+      normalize_not(&bc_to_single_connective(&cnf()?, "And", "Or", "And"))
     }
     _ => {
       return Ok(unevaluated("BooleanConvert", args));
@@ -2241,6 +2533,7 @@ fn collect_boolean_variables(expr: &Expr, vars: &mut BTreeSet<String>) {
           | "Nor"
           | "Implies"
           | "Equivalent"
+          | "Majority"
       ) =>
     {
       for arg in args {
