@@ -72,11 +72,6 @@ jobs:
             arch: aarch64
     steps:
       - uses: actions/checkout@v5
-      - name: Use the system linker
-        # .cargo/config.toml links aarch64-apple-darwin host builds with
-        # lld from the nix dev shell, which the GitHub runners don't have
-        # ("invalid linker name in argument '-fuse-ld=lld'").
-        run: rm .cargo/config.toml
       - uses: PyO3/maturin-action@v1
         with:
           working-directory: woxi-py
