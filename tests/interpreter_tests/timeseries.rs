@@ -1130,3 +1130,130 @@ mod time_series_rescale {
     );
   }
 }
+
+// MovingMap over a series windows by TIME rather than by count: `f` sees the
+// values whose stamps fall in `[t - n, t]`, and the result is stamped at `t`.
+// Values verified against wolframscript.
+mod moving_map_series {
+  use super::*;
+
+  /// The result of `code`, written the way `InputForm` writes it.
+  fn form(code: &str) -> String {
+    interpret(&format!("ToString[{code}, InputForm]")).unwrap()
+  }
+
+  #[test]
+  fn the_window_is_a_span_of_time() {
+    clear_state();
+    for (code, expected) in [
+      (
+        "MovingMap[Total, TimeSeries[{{1, 1}, {2, 2}, {3, 3}}], 1][\"Path\"]",
+        "{{2, 3}, {3, 5}}",
+      ),
+      // Unevenly spaced stamps put different numbers of points in a window.
+      (
+        "MovingMap[Total, TimeSeries[{{1, 1}, {2, 2}, {4, 4}, {7, 7}}], \
+         2][\"Path\"]",
+        "{{4, 6}, {7, 7}}",
+      ),
+      (
+        "MovingMap[Total, TimeSeries[{{1, 1}, {2, 2}, {4, 4}, {7, 7}}], \
+         3][\"Path\"]",
+        "{{4, 7}, {7, 11}}",
+      ),
+      (
+        "MovingMap[Length, TimeSeries[{{1, 1}, {2, 2}, {4, 4}, {7, 7}}], \
+         3][\"Path\"]",
+        "{{4, 3}, {7, 2}}",
+      ),
+      // A one-element spec means the same as the bare width.
+      (
+        "MovingMap[Total, TimeSeries[{{1, 1}, {2, 2}, {3, 3}}], {1}][\"Path\"]",
+        "{{2, 3}, {3, 5}}",
+      ),
+      // The width need not be whole.
+      (
+        "MovingMap[Total, TimeSeries[{{1, 1}, {2, 2}, {3, 3}}], 1.5][\"Path\"]",
+        "{{3, 5}}",
+      ),
+      (
+        "MovingMap[Max, TimeSeries[{{1, 5}, {2, 2}, {3, 9}}], 1][\"Path\"]",
+        "{{2, 5}, {3, 9}}",
+      ),
+      // Any function sees the window as a list.
+      (
+        "MovingMap[f, TimeSeries[{{1, 1}, {2, 2}, {3, 3}}], 1][\"Path\"]",
+        "{{2, f[{1, 2}]}, {3, f[{2, 3}]}}",
+      ),
+    ] {
+      let code = code.replace("         ", "");
+      assert_eq!(form(&code), expected, "{code}");
+    }
+  }
+
+  // A window that would reach back past the start of the series is not one,
+  // so the result is shorter at the front — and empty when nothing fits.
+  #[test]
+  fn a_window_that_does_not_fit_is_dropped() {
+    clear_state();
+    assert_eq!(
+      form(
+        "MovingMap[Total, TimeSeries[{{1, 1}, {2, 2}, {3, 3}}], 5][\"Path\"]"
+      ),
+      "{}"
+    );
+    assert_eq!(
+      form(
+        "MovingMap[Total, TimeSeries[{{1, 1}, {2, 2}, {3, 3}, {4, 4}}], \
+         2][\"Path\"]"
+          .replace("         ", "")
+          .as_str()
+      ),
+      "{{3, 6}, {4, 9}}"
+    );
+    assert_eq!(
+      form(
+        "MovingMap[Total, TimeSeries[{{1, 1}, {2, 2}, {3, 3}}], 1][\"Times\"]"
+      ),
+      "{2, 3}"
+    );
+  }
+
+  #[test]
+  fn the_head_of_the_series_is_kept() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Head[MovingMap[Total, TimeSeries[{{1, 1}, {2, 2}, {3, 3}}], 1]]"
+      )
+      .unwrap(),
+      "TimeSeries"
+    );
+    assert_eq!(
+      interpret(
+        "Head[MovingMap[Total, EventSeries[{{1, 1}, {2, 2}, {3, 3}}], 1]]"
+      )
+      .unwrap(),
+      "EventSeries"
+    );
+    assert_eq!(
+      form(
+        "MovingMap[Total, EventSeries[{{1, 1}, {2, 2}, {3, 3}}], 1][\"Path\"]"
+      ),
+      "{{2, 3}, {3, 5}}"
+    );
+  }
+
+  // A plain list still windows by count, which is a different thing.
+  #[test]
+  fn a_list_still_windows_by_count() {
+    clear_state();
+    for (code, expected) in [
+      ("MovingMap[Total, {1, 2, 3, 4}, 1]", "{3, 5, 7}"),
+      ("MovingMap[Total, {1, 2, 3, 4}, {2}]", "{6, 9}"),
+      ("MovingMap[f, {1, 2, 3}, 1]", "{f[{1, 2}], f[{2, 3}]}"),
+    ] {
+      assert_eq!(form(code), expected, "{code}");
+    }
+  }
+}

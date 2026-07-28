@@ -105,3 +105,21 @@ A series runs in time order however its points were written:
 $ wo 'TimeSeries[{{1, 10}, {5, 50}, {2, 20}}]["Path"]'
 {{1, 10}, {2, 20}, {5, 50}}
 ```
+
+`MovingMap` over a series windows by *time* rather than by count: the function
+sees the values whose stamps fall in `[t - n, t]`, and the result is stamped
+at `t`. Unevenly spaced stamps therefore put different numbers of points in
+each window, and one that would reach back past the start of the series is
+dropped:
+
+```scrut
+$ wo 'MovingMap[Total, TimeSeries[{{1, 1}, {2, 2}, {4, 4}, {7, 7}}], 2]["Path"]'
+{{4, 6}, {7, 7}}
+```
+
+A plain list still windows by count:
+
+```scrut
+$ wo 'MovingMap[Total, {1, 2, 3, 4}, 1]'
+{3, 5, 7}
+```

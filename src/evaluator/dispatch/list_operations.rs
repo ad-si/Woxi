@@ -2070,6 +2070,12 @@ pub fn dispatch_list_operations(
     // first, so every input position contributes a window and the result has
     // the same length as the input.
     "MovingMap" if args.len() == 3 || args.len() == 4 => {
+      // A time series windows by time rather than by count.
+      if let Some(result) =
+        crate::functions::timeseries_ast::moving_map_series_ast(args)
+      {
+        return Some(result);
+      }
       if let Expr::List(items) = &args[1]
         && let Some(n) = match &args[2] {
           Expr::Integer(n) => Some(*n as usize),

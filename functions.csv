@@ -1566,7 +1566,7 @@ BooleanConvert,Convert Boolean expressions to the DNF/SOP CNF/POS AND OR NAND NO
 GeometricBrownianMotionProcess,Geometric Brownian motion process with LogNormal time slices,✅,unevaluated,9.0,1588
 DiscreteUniformDistribution,Discrete uniform distribution over integers,✅,computation,6.0,1593
 MeshCellStyle,Style mesh cells,,unevaluated,10.0,1593
-MovingMap,Apply a function to a sliding window with optional edge padding,✅,pure,10.0,1593
+MovingMap,Apply a function to a sliding window with optional edge padding — a list windows by count a time series by a span of time,✅,pure,10.0,1593
 SelectComponents,Select image components,,unevaluated,8.0,1593
 CoprimeQ,Tests whether integers (or Gaussian integers) are pairwise coprime (Listable),✅,pure,6.0,1597
 NotebookPut,Create notebook from expression,,unevaluated,3.0,1597

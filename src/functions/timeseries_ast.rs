@@ -310,6 +310,59 @@ pub fn time_series_shift_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(rebuild_series(&args[0], out))
 }
 
+/// `MovingMap[f, series, n]` — `f` applied to the values in each time window
+/// `[t - n, t]`, stamped at `t`. `n` is a width in time, not a count, and a
+/// window that would reach back past the start of the series is not one, so
+/// the result is shorter at the front. `None` when the arguments are not a
+/// series and a positive width, leaving the call to the list handling.
+pub fn moving_map_series_ast(
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  if args.len() != 3 {
+    return None;
+  }
+  let pairs = series_pairs_of(&args[1])?;
+  // A one-element window spec means the same as the bare width.
+  let width_expr = match &args[2] {
+    Expr::List(spec) if spec.len() == 1 => &spec[0],
+    other => other,
+  };
+  let width = to_time(width_expr)?;
+  if !(width > 0.0) {
+    return None;
+  }
+  let times: Vec<f64> = pairs
+    .iter()
+    .map(|(t, _)| to_time(t))
+    .collect::<Option<Vec<_>>>()?;
+  let first = *times.first()?;
+  // Times are stored to the precision of a float, so compare with the slack
+  // an exact stamp would otherwise fail by.
+  let slack = 1e-9 * (1.0 + width.abs() + first.abs());
+  let mut out = Vec::new();
+  for (i, (time, _)) in pairs.iter().enumerate() {
+    let start = times[i] - width;
+    if start < first - slack {
+      continue;
+    }
+    let window: Vec<Expr> = pairs
+      .iter()
+      .zip(times.iter())
+      .filter(|(_, t)| **t >= start - slack && **t <= times[i] + slack)
+      .map(|((_, v), _)| v.clone())
+      .collect();
+    let applied = match crate::evaluator::apply_function_to_arg(
+      &args[0],
+      &Expr::List(window.into()),
+    ) {
+      Ok(v) => v,
+      Err(e) => return Some(Err(e)),
+    };
+    out.push(Expr::List(vec![time.clone(), applied].into()));
+  }
+  Some(Ok(rebuild_series(&args[1], out)))
+}
+
 /// `TimeSeriesRescale[ts, {tmin, tmax}]` — the same values, with the time
 /// stamps carried linearly onto the given span.
 pub fn time_series_rescale_ast(
