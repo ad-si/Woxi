@@ -5508,10 +5508,44 @@ mod hypergeometric_pfq {
       interpret("HypergeometricPFQ[{}, {5/2}, z]").unwrap(),
       "(3*(2*Cosh[2*Sqrt[z]] - Sinh[2*Sqrt[z]]/Sqrt[z]))/(8*z)"
     );
-    // A negative half-integer stays symbolic (its expanded form diverges).
+    // A negative half-integer steps up to the positive ones by the downward
+    // recurrence 0F1[;b;z] = 0F1[;b+1;z] + z/(b(b+1)) 0F1[;b+2;z], collected
+    // over one denominator.
     assert_eq!(
       interpret("HypergeometricPFQ[{}, {-1/2}, z]").unwrap(),
-      "HypergeometricPFQ[{}, {-1/2}, z]"
+      "Cosh[2*Sqrt[z]] - 2*Sqrt[z]*Sinh[2*Sqrt[z]]"
+    );
+    assert_eq!(
+      interpret("HypergeometricPFQ[{}, {-3/2}, z]").unwrap(),
+      "(3*Cosh[2*Sqrt[z]] + 4*z*Cosh[2*Sqrt[z]] - 6*Sqrt[z]*Sinh[2*Sqrt[z]])/3"
+    );
+    assert_eq!(
+      interpret("HypergeometricPFQ[{}, {-5/2}, z]").unwrap(),
+      "(15*Cosh[2*Sqrt[z]] + 24*z*Cosh[2*Sqrt[z]] - \
+       30*Sqrt[z]*Sinh[2*Sqrt[z]] - 8*z^(3/2)*Sinh[2*Sqrt[z]])/15"
+    );
+    // A numeric argument keeps the Bessel form, at either sign.
+    assert_eq!(
+      interpret("HypergeometricPFQ[{}, {-1/2}, 4]").unwrap(),
+      "-4*Sqrt[2*Pi]*BesselI[-3/2, 4]"
+    );
+    assert_eq!(
+      interpret("HypergeometricPFQ[{}, {-5/2}, 4]").unwrap(),
+      "(-64*Sqrt[2*Pi]*BesselI[-7/2, 4])/15"
+    );
+    // A negative argument is the J-Bessel of the magnitude, not the I-Bessel
+    // of an imaginary square root.
+    assert_eq!(
+      interpret("HypergeometricPFQ[{}, {-1/2}, -4]").unwrap(),
+      "-4*Sqrt[2*Pi]*BesselJ[-3/2, 4]"
+    );
+    assert_eq!(
+      interpret("HypergeometricPFQ[{}, {7/2}, -4]").unwrap(),
+      "(15*Sqrt[Pi/2]*BesselJ[5/2, 4])/32"
+    );
+    assert_eq!(
+      interpret("HypergeometricPFQ[{}, {3}, -4]").unwrap(),
+      "BesselJ[2, 4]/2"
     );
   }
 

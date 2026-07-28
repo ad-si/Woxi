@@ -240,15 +240,70 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if name == "Rational" || name == "Complex")
     };
     let b_expr = &b_list[0];
-    // Positive half-integers only: a negative one leaves the Bessel expansion
-    // in a factored form that diverges from wolframscript's expanded print.
+    // A negative half-integer over a symbolic argument is stepped up to the
+    // positive ones by the downward recurrence
+    //   0F1[; b; z] = 0F1[; b+1; z] + z/(b (b+1)) 0F1[; b+2; z],
+    // which is the shape wolframscript prints down to b = -5/2 (below that it
+    // keeps the nested Bessel form, which this collected one only differs
+    // from in shape). A numeric argument stays on the Bessel path below,
+    // where wolframscript leaves it too.
+    if !is_number(z)
+      && let Expr::FunctionCall { name, args } = b_expr
+      && name == "Rational"
+      && args.len() == 2
+      && let (Expr::Integer(p), Expr::Integer(2)) = (&args[0], &args[1])
+      && *p < 0
+    {
+      let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.into(),
+      };
+      let step = |numerator: i128| {
+        call(
+          "HypergeometricPFQ",
+          vec![
+            Expr::List(vec![].into()),
+            Expr::List(
+              vec![call(
+                "Rational",
+                vec![Expr::Integer(numerator), Expr::Integer(2)],
+              )]
+              .into(),
+            ),
+            z.clone(),
+          ],
+        )
+      };
+      // b (b+1) = p (p+2) / 4, so the coefficient of the second term is
+      // 4 z / (p (p+2)).
+      let denominator = p * (p + 2);
+      let coefficient = call(
+        "Rational",
+        vec![
+          Expr::Integer(4 * denominator.signum()),
+          Expr::Integer(denominator.abs()),
+        ],
+      );
+      // `Together` collects the rational coefficients the recurrence
+      // introduces over one denominator, as wolframscript prints them.
+      let recurrence = call(
+        "Together",
+        vec![call(
+          "Plus",
+          vec![
+            step(p + 2),
+            call("Times", vec![coefficient, z.clone(), step(p + 4)]),
+          ],
+        )],
+      );
+      return crate::evaluator::evaluate_expr_to_expr(&recurrence);
+    }
     let is_half_integer = matches!(
       b_expr,
       Expr::FunctionCall { name, args }
         if name == "Rational"
           && args.len() == 2
           && matches!(&args[1], Expr::Integer(2))
-          && matches!(&args[0], Expr::Integer(n) if *n > 0)
     );
     let reducible = matches!(b_expr, Expr::Integer(bn) if *bn >= 1)
       || is_half_integer
@@ -261,12 +316,30 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let rational = |n: i128, d: i128| {
         call("Rational", vec![Expr::Integer(n), Expr::Integer(d)])
       };
+      // A negative real argument goes to the J-Bessel of its magnitude,
+      //   0F1[; b; -w] = Gamma[b] w^((1-b)/2) BesselJ[b-1, 2 Sqrt[w]],
+      // which is what wolframscript prints. Keeping the I-form would make
+      // `Sqrt[z]` imaginary and expand into a complex Sinh/Cosh product.
+      let is_negative_real = is_number(z)
+        && crate::functions::math_ast::try_eval_to_f64(z)
+          .is_some_and(|v| v < 0.0);
+      let (radicand, bessel_name) = if is_negative_real {
+        (
+          crate::evaluator::evaluate_expr_to_expr(&call(
+            "Times",
+            vec![Expr::Integer(-1), z.clone()],
+          ))?,
+          "BesselJ",
+        )
+      } else {
+        (z.clone(), "BesselI")
+      };
       let two_sqrt_z = call(
         "Times",
-        vec![Expr::Integer(2), call("Sqrt", vec![z.clone()])],
+        vec![Expr::Integer(2), call("Sqrt", vec![radicand.clone()])],
       );
       let bessel = call(
-        "BesselI",
+        bessel_name,
         vec![
           call("Plus", vec![Expr::Integer(-1), b_expr.clone()]),
           two_sqrt_z,
@@ -281,7 +354,7 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           call("Times", vec![rational(-1, 2), b_expr.clone()]),
         ],
       );
-      let z_pow = call("Power", vec![z.clone(), exponent]);
+      let z_pow = call("Power", vec![radicand, exponent]);
       let gamma = call("Gamma", vec![b_expr.clone()]);
       // Evaluate each part first and multiply the flattened factor lists: a
       // half-integer b expands BesselI into Sinh/Cosh with its own Sqrt[1/Pi]
