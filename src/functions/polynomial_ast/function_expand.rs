@@ -170,59 +170,33 @@ fn is_clean_polynomial(e: &Expr) -> bool {
   }
 }
 
-/// The square root of `e` when `e` is a perfect square as an expression:
-/// a perfect-square integer, an even power `u^(2k)`, or a product of those.
-fn perfect_square_root(e: &Expr) -> Option<Expr> {
-  match e {
-    Expr::Integer(n) if *n >= 0 => {
-      let r = (*n as f64).sqrt().round() as i128;
-      (r * r == *n).then(|| mk_int(r))
-    }
-    Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left,
-      right,
-    } => even_power_root(left, right),
-    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
-      even_power_root(&args[0], &args[1])
-    }
-    Expr::FunctionCall { name, args } if name == "Times" => {
-      let roots = args
-        .iter()
-        .map(perfect_square_root)
-        .collect::<Option<Vec<_>>>()?;
-      Some(mk_call("Times", roots))
-    }
-    _ => None,
-  }
-}
-
-/// `u^(2k)` → `u^k` (with `u^2` → `u`), for a positive even integer exponent.
-fn even_power_root(base: &Expr, exponent: &Expr) -> Option<Expr> {
-  let Expr::Integer(n) = exponent else {
-    return None;
-  };
-  if *n <= 0 || n % 2 != 0 {
-    return None;
-  }
-  Some(if *n == 2 {
-    base.clone()
-  } else {
-    mk_power(base.clone(), mk_int(n / 2))
-  })
-}
-
 /// The negation of `t` when `t` is a negative term — a unary minus, or a
 /// product with a negative numeric leading (or trailing) coefficient. Returns
 /// None for a term that is not negative. Both the `Times[…]` call form and the
 /// `*` binary-operator form are recognised, since `Expand` produces either.
 fn negate_if_negative(t: &Expr) -> Option<Expr> {
+  // `Rational[-p, q]` → `Rational[p, q]`, the coefficient form `-x^2/2` takes.
+  let negate_ratio = |e: &Expr| -> Option<Expr> {
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        match (&args[0], &args[1]) {
+          (Expr::Integer(p), Expr::Integer(q)) if *p < 0 => {
+            Some(mk_ratio(-p, *q))
+          }
+          _ => None,
+        }
+      }
+      _ => None,
+    }
+  };
   let strip_neg_coeff = |coeff: &Expr, rest: Vec<Expr>| -> Option<Expr> {
     let positive = match coeff {
       Expr::Integer(-1) => None,
       Expr::Integer(n) if *n < 0 => Some(mk_int(-n)),
       Expr::Real(r) if *r < 0.0 => Some(Expr::Real(-r)),
-      _ => return None,
+      _ => Some(negate_ratio(coeff)?),
     };
     let mut factors: Vec<Expr> = positive.into_iter().collect();
     factors.extend(rest);
@@ -239,6 +213,7 @@ fn negate_if_negative(t: &Expr) -> Option<Expr> {
     } => Some((**operand).clone()),
     Expr::Integer(n) if *n < 0 => Some(mk_int(-n)),
     Expr::Real(r) if *r < 0.0 => Some(Expr::Real(-r)),
+    Expr::FunctionCall { name, .. } if name == "Rational" => negate_ratio(t),
     Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
       strip_neg_coeff(&args[0], args[1..].to_vec()).or_else(|| {
         strip_neg_coeff(&args[args.len() - 1], args[..args.len() - 1].to_vec())
@@ -254,11 +229,183 @@ fn negate_if_negative(t: &Expr) -> Option<Expr> {
   }
 }
 
-/// `Sqrt[a^2 - b^2]` → `Sqrt[a - b] Sqrt[a + b]`, applied recursively to the
-/// first factor so `Sqrt[1 - x^4]` becomes `Sqrt[1-x] Sqrt[1+x] Sqrt[1+x^2]`.
-/// This is the form `FunctionExpand` produces, since it assumes nothing about
-/// the sign of the parts. Returns None when the radicand is not a difference
-/// of two perfect squares.
+/// A positive rational as a normalised `(numerator, denominator)` pair.
+type Ratio = (i128, i128);
+
+fn gcd_i128(a: i128, b: i128) -> i128 {
+  if b == 0 { a.abs() } else { gcd_i128(b, a % b) }
+}
+
+fn ratio(n: i128, d: i128) -> Ratio {
+  let g = gcd_i128(n, d).max(1);
+  (n / g, d / g)
+}
+
+fn ratio_times(a: Ratio, b: Ratio) -> Ratio {
+  ratio(a.0 * b.0, a.1 * b.1)
+}
+
+fn ratio_over(a: Ratio, b: Ratio) -> Ratio {
+  ratio(a.0 * b.1, a.1 * b.0)
+}
+
+/// The exact square root of a non-negative integer, if it has one.
+fn integer_sqrt(n: i128) -> Option<i128> {
+  if n < 0 {
+    return None;
+  }
+  let mut r = (n as f64).sqrt().round() as i128;
+  // The float round-trip can be off by one for large inputs.
+  while r > 0 && r * r > n {
+    r -= 1;
+  }
+  while (r + 1) * (r + 1) <= n {
+    r += 1;
+  }
+  (r * r == n).then_some(r)
+}
+
+/// The exact square root of a positive rational, if it has one.
+fn ratio_sqrt(r: Ratio) -> Option<Ratio> {
+  Some((integer_sqrt(r.0)?, integer_sqrt(r.1)?))
+}
+
+/// The squarefree kernel of a positive integer: the smallest `k` with `n * k`
+/// a perfect square.
+fn squarefree_kernel(mut n: i128) -> i128 {
+  let mut kernel = 1;
+  let mut factor = 2;
+  while factor * factor <= n {
+    let mut multiplicity = 0;
+    while n % factor == 0 {
+      n /= factor;
+      multiplicity += 1;
+    }
+    if multiplicity % 2 == 1 {
+      kernel *= factor;
+    }
+    factor += 1;
+  }
+  kernel * n
+}
+
+/// The positive rational value of `e`, when it is one written exactly.
+fn as_positive_ratio(e: &Expr) -> Option<Ratio> {
+  match e {
+    Expr::Integer(n) if *n > 0 => Some((*n, 1)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(p), Expr::Integer(q)) if *p > 0 && *q > 0 => {
+          Some(ratio(*p, *q))
+        }
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// The multiplicative factors of `e`, flattening `Times[…]` and `a * b`.
+fn as_times_factors(e: &Expr) -> Vec<Expr> {
+  match e {
+    Expr::FunctionCall { name, args } if name == "Times" => args.to_vec(),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => vec![(**left).clone(), (**right).clone()],
+    _ => vec![e.clone()],
+  }
+}
+
+/// `u^2` or `u^4` (whichever it is), as `(exponent, u)`.
+fn as_even_power(e: &Expr) -> Option<(i128, Expr)> {
+  let (base, exponent) = match e {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => ((**left).clone(), (**right).clone()),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (args[0].clone(), args[1].clone())
+    }
+    _ => return None,
+  };
+  match exponent {
+    // wolframscript only splits the radicand of a quadratic or a quartic;
+    // `Sqrt[1 - x^6]` and higher stay as written.
+    Expr::Integer(n @ (2 | 4)) => Some((n, base)),
+    _ => None,
+  }
+}
+
+/// A negated term of the form `c u^2` or `c u^4`, split into the positive
+/// rational `c` and the square root `u` (or `u^2`) of the power.
+fn as_scaled_square(e: &Expr) -> Option<(Ratio, Expr)> {
+  let mut coefficient: Ratio = (1, 1);
+  let mut power: Option<(i128, Expr)> = None;
+  for factor in as_times_factors(e) {
+    if let Some(r) = as_positive_ratio(&factor) {
+      coefficient = ratio_times(coefficient, r);
+    } else if power.is_none() {
+      power = Some(as_even_power(&factor)?);
+    } else {
+      // More than one symbolic factor (`x^2 y^2`): not a form wolframscript
+      // splits.
+      return None;
+    }
+  }
+  let (exponent, base) = power?;
+  let root = if exponent == 2 {
+    base
+  } else {
+    mk_power(base, mk_int(exponent / 2))
+  };
+  Some((coefficient, root))
+}
+
+/// Whether `e` is an exact positive constant — a rational, `Pi`, `Sqrt[2]`, …
+/// The `a^2` side of the split has to be one: wolframscript leaves
+/// `Sqrt[x^2 - 1]` and `Sqrt[x^2 - y^2]` alone, where the sign of the leading
+/// term is unknown.
+fn is_exact_positive_constant(e: &Expr) -> bool {
+  if !crate::functions::predicate_ast::is_numeric_q(e) || contains_real(e) {
+    return false;
+  }
+  let value = mk_call("N", vec![e.clone()]);
+  matches!(
+    crate::evaluator::evaluate_expr_to_expr(&value),
+    Ok(Expr::Real(r)) if r > 0.0
+  )
+}
+
+/// Whether `e` contains a machine or arbitrary-precision real anywhere.
+fn contains_real(e: &Expr) -> bool {
+  match e {
+    Expr::Real(_) | Expr::BigFloat(_, _) => true,
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_real),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_real(left) || contains_real(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_real(operand),
+    _ => false,
+  }
+}
+
+/// `Sqrt[a - c u^2]` → `Sqrt[a'] (Sqrt[a'' - b] Sqrt[a'' + b])`, applied
+/// recursively to the first factor so `Sqrt[1 - x^4]` becomes
+/// `Sqrt[1-x] Sqrt[1+x] Sqrt[1+x^2]`. This is the form `FunctionExpand`
+/// produces, since it assumes nothing about the sign of the parts.
+///
+/// The positive term must be an exact positive constant and the negated one a
+/// rational multiple of a square or fourth power. When neither coefficient is
+/// a perfect square the radicand is scaled by the squarefree kernel of the
+/// negated coefficient so that one becomes a square, and the compensating
+/// factor stays outside — `Sqrt[1 - 2 x^2]` gives
+/// `Sqrt[Sqrt[2] - 2 x] Sqrt[Sqrt[2] + 2 x] / Sqrt[2]`, as wolframscript
+/// prints it. Returns None for a radicand of any other shape.
 fn split_sqrt_of_square_difference(radicand: &Expr) -> Option<Expr> {
   let terms = as_plus_terms(radicand)?;
   if terms.len() != 2 {
@@ -271,13 +418,74 @@ fn split_sqrt_of_square_difference(radicand: &Expr) -> Option<Expr> {
     (Some(b), None) => (terms[1].clone(), b),
     _ => return None,
   };
-  let a = perfect_square_root(&a_sq)?;
-  let b = perfect_square_root(&b_sq)?;
+  if !is_exact_positive_constant(&a_sq) {
+    return None;
+  }
+  let (cb, base) = as_scaled_square(&b_sq)?;
+  let ca = as_positive_ratio(&a_sq);
+
+  // `prefactor` is pulled out of the radical as `Sqrt[prefactor]`; `a` and
+  // `b` are the two sides of the rescaled difference of squares.
+  let (prefactor, a, b): (Ratio, Expr, Expr) = if let Some(ca) = ca
+    && ca != (1, 1)
+    && ratio_over(cb, ca).1 == 1
+    && integer_sqrt(ratio_over(cb, ca).0).is_some()
+  {
+    // The whole constant divides out and leaves a perfect square behind:
+    // `Sqrt[3 - 12 x^2]` → `Sqrt[3] Sqrt[1 - 2 x] Sqrt[1 + 2 x]`.
+    let scale = integer_sqrt(ratio_over(cb, ca).0)?;
+    (ca, mk_int(1), mk_times(mk_int(scale), base))
+  } else if let Some(ca) = ca
+    && let (Some(ra), Some(rb)) = (ratio_sqrt(ca), ratio_sqrt(cb))
+  {
+    // Both coefficients are already squares: `Sqrt[4 - 9 x^2]` →
+    // `Sqrt[2 - 3 x] Sqrt[2 + 3 x]`.
+    (
+      (1, 1),
+      mk_exact_ratio(ra),
+      mk_times(mk_exact_ratio(rb), base),
+    )
+  } else {
+    // Scale the radicand so the negated coefficient becomes a square, and
+    // divide the result by the square root of that scale.
+    let scale = squarefree_kernel(cb.0 * cb.1);
+    let scaled_b = ratio_sqrt(ratio_times(cb, (scale, 1)))?;
+    let scaled_a = match ca {
+      Some(ca) => {
+        mk_call("Sqrt", vec![mk_exact_ratio(ratio_times(ca, (scale, 1)))])
+      }
+      None if scale == 1 => mk_call("Sqrt", vec![a_sq.clone()]),
+      None => mk_call("Sqrt", vec![mk_times(mk_int(scale), a_sq.clone())]),
+    };
+    (
+      (1, scale),
+      scaled_a,
+      mk_times(mk_exact_ratio(scaled_b), base),
+    )
+  };
+
   let minus = mk_plus(a.clone(), mk_times(mk_int(-1), b.clone()));
   let plus = mk_plus(a, b);
+  // Each side is expanded, so `Sqrt[9 - 4 (x + 1)^2]` prints as
+  // `Sqrt[1 - 2 x] Sqrt[5 + 2 x]` rather than keeping the shifted square.
   let first = split_sqrt_of_square_difference(&minus)
-    .unwrap_or_else(|| mk_call("Sqrt", vec![minus]));
-  Some(mk_times(first, mk_call("Sqrt", vec![plus])))
+    .unwrap_or_else(|| mk_call("Sqrt", vec![mk_call("Expand", vec![minus])]));
+  let split =
+    mk_times(first, mk_call("Sqrt", vec![mk_call("Expand", vec![plus])]));
+  Some(if prefactor == (1, 1) {
+    split
+  } else {
+    mk_times(mk_call("Sqrt", vec![mk_exact_ratio(prefactor)]), split)
+  })
+}
+
+/// A positive rational as an `Integer` or `Rational[…]` expression.
+fn mk_exact_ratio(r: Ratio) -> Expr {
+  if r.1 == 1 {
+    mk_int(r.0)
+  } else {
+    mk_ratio(r.0, r.1)
+  }
 }
 
 /// The radicand of `e` when `e` is `Sqrt[r]` or `r^(1/2)`.

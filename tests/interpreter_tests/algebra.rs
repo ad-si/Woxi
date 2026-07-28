@@ -11272,11 +11272,86 @@ mod function_expand {
       interpret("FunctionExpand[Sqrt[1 - x^4]]").unwrap(),
       "Sqrt[1 - x]*Sqrt[1 + x]*Sqrt[1 + x^2]"
     );
-    // A radicand that is not a difference of two squares is left alone.
+    // When the squared term's coefficient is not a perfect square the
+    // radicand is scaled by its squarefree part, and the scale stays outside.
     assert_eq!(
       interpret("FunctionExpand[Sqrt[1 - 2 x^2]]").unwrap(),
-      "Sqrt[1 - 2*x^2]"
+      "(Sqrt[Sqrt[2] - 2*x]*Sqrt[Sqrt[2] + 2*x])/Sqrt[2]"
     );
+    assert_eq!(
+      interpret("FunctionExpand[Sqrt[3 - 5 x^2]]").unwrap(),
+      "(Sqrt[Sqrt[15] - 5*x]*Sqrt[Sqrt[15] + 5*x])/Sqrt[5]"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Sqrt[1 - 8 x^2]]").unwrap(),
+      "(Sqrt[Sqrt[2] - 4*x]*Sqrt[Sqrt[2] + 4*x])/Sqrt[2]"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Sqrt[1 - x^2/2]]").unwrap(),
+      "(Sqrt[Sqrt[2] - x]*Sqrt[Sqrt[2] + x])/Sqrt[2]"
+    );
+    // A constant that divides out into a perfect square comes out front.
+    assert_eq!(
+      interpret("FunctionExpand[Sqrt[3 - 12 x^2]]").unwrap(),
+      "Sqrt[3]*Sqrt[1 - 2*x]*Sqrt[1 + 2*x]"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Sqrt[1/4 - x^2]]").unwrap(),
+      "(Sqrt[1 - 2*x]*Sqrt[1 + 2*x])/2"
+    );
+    // Both coefficients square: no scaling at all.
+    assert_eq!(
+      interpret("FunctionExpand[Sqrt[4 - 9 x^2]]").unwrap(),
+      "Sqrt[2 - 3*x]*Sqrt[2 + 3*x]"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Sqrt[6 - 4 x^2]]").unwrap(),
+      "Sqrt[Sqrt[6] - 2*x]*Sqrt[Sqrt[6] + 2*x]"
+    );
+    // The squared term need not be a monomial, and both sides are expanded.
+    assert_eq!(
+      interpret("FunctionExpand[Sqrt[9 - 4 (x + 1)^2]]").unwrap(),
+      "Sqrt[1 - 2*x]*Sqrt[5 + 2*x]"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Sqrt[1 - 2 Sin[x]^2]]").unwrap(),
+      "(Sqrt[Sqrt[2] - 2*Sin[x]]*Sqrt[Sqrt[2] + 2*Sin[x]])/Sqrt[2]"
+    );
+    // An exact constant that is not rational works the same way.
+    assert_eq!(
+      interpret("FunctionExpand[Sqrt[Pi - x^2]]").unwrap(),
+      "Sqrt[Sqrt[Pi] - x]*Sqrt[Sqrt[Pi] + x]"
+    );
+  }
+
+  // The split needs a positive constant on one side and a square (or fourth
+  // power) of a single expression on the other — wolframscript leaves every
+  // other shape alone, and so does Woxi.
+  #[test]
+  fn sqrt_of_square_difference_leaves_other_radicands_alone() {
+    for code in [
+      // The sign of the leading term is unknown.
+      "FunctionExpand[Sqrt[x^2 - 1]]",
+      "FunctionExpand[Sqrt[x^2 - y^2]]",
+      // Several symbolic factors, or a higher power.
+      "FunctionExpand[Sqrt[1 - x^2 y^2]]",
+      "FunctionExpand[Sqrt[1 - x^6]]",
+      "FunctionExpand[Sqrt[1 - x^8]]",
+      // A symbolic coefficient, and an inexact one.
+      "FunctionExpand[Sqrt[1 - a x^2]]",
+      "FunctionExpand[Sqrt[1.5 - x^2]]",
+      // Not a difference at all.
+      "FunctionExpand[Sqrt[1 + x^2]]",
+    ] {
+      let radicand = code
+        .trim_start_matches("FunctionExpand[Sqrt[")
+        .trim_end_matches("]]");
+      assert_eq!(
+        interpret(code).unwrap(),
+        interpret(&format!("Sqrt[{radicand}]")).unwrap(),
+        "{code}"
+      );
+    }
   }
 
   #[test]
