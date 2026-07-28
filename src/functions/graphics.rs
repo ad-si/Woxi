@@ -12674,10 +12674,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
         _ => return None,
       }
     }
-    pt => match list2_f64(pt) {
-      Some(p) => ("p".to_string(), Some(p)),
-      None => return None,
-    },
+    pt => ("p".to_string(), Some(list2_f64(pt)?)),
   };
   let body_code = crate::syntax::expr_to_input_form(&args[1]);
   let ((x_min, y_min), (x_max, y_max)) = pane_range(args.get(2));

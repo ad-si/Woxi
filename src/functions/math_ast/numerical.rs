@@ -672,8 +672,7 @@ pub fn bigfloat_to_string(
     let dp = decimal_exp as usize;
     if dp >= digit_str.len() {
       // All digits are in the integer part
-      let padded =
-        format!("{}{}", &digit_str, "0".repeat(dp - digit_str.len()));
+      let padded = format!("{}{}", digit_str, "0".repeat(dp - digit_str.len()));
       Ok(format!("{}{}.", prefix, padded))
     } else {
       // Some digits before decimal, some after
@@ -7050,10 +7049,8 @@ fn complex_from_expr(e: &Expr) -> Option<(f64, f64)> {
         if let Some((r, i)) = complex_from_expr(a) {
           re += r;
           im += i;
-        } else if let Some(coef) = imaginary_coeff(a) {
-          im += coef;
         } else {
-          return None;
+          im += imaginary_coeff(a)?;
         }
       }
       Some((re, im))

@@ -6435,10 +6435,7 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
     {
       let mut result_factors = Vec::new();
       for arg in args {
-        match discrete_asymptotic_leading(arg, var) {
-          Some(a) => result_factors.push(a),
-          None => return None,
-        }
+        result_factors.push(discrete_asymptotic_leading(arg, var)?);
       }
       if result_factors.len() == 1 {
         Some(result_factors.into_iter().next().unwrap())
@@ -6605,11 +6602,7 @@ fn growth_order(expr: &Expr, var: &str) -> Option<f64> {
       // Product: max of growth orders (approximately)
       let mut max_order = 0.0f64;
       for arg in args {
-        if let Some(o) = growth_order(arg, var) {
-          max_order = max_order.max(o);
-        } else {
-          return None;
-        }
+        max_order = max_order.max(growth_order(arg, var)?);
       }
       Some(max_order)
     }

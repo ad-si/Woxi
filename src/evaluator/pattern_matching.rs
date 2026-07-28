@@ -1472,13 +1472,8 @@ fn try_align_groups(
     push_match_context(&bindings);
     let r = match_pattern(&eff, &pat_args[pi]);
     pop_match_context();
-    match r {
-      Some(b) => {
-        if !merge_bindings(&mut bindings, b) {
-          return None;
-        }
-      }
-      None => return None,
+    if !merge_bindings(&mut bindings, r?) {
+      return None;
     }
   }
   Some(bindings)
@@ -3402,17 +3397,13 @@ fn try_skip_optional_subsets(
               .or_else(|| lookup_user_default(pat_name, i + 1, pat_args.len()))
             }
           };
-          match def {
-            Some(d) => {
-              if !name.is_empty() {
-                bindings.push((name.clone(), d));
-              }
-            }
-            // `x_.` with no inline default and no Default[f] for this
-            // position: the optional cannot fire, so the partial-fill attempt
-            // fails (matching wolframscript's behavior of leaving f[x_,y_.]
-            // unmatched against f[a] when Default[f] is unset).
-            None => return None,
+          // `x_.` with no inline default and no Default[f] for this
+          // position: the optional cannot fire, so the partial-fill attempt
+          // fails (matching wolframscript's behavior of leaving f[x_,y_.]
+          // unmatched against f[a] when Default[f] is unset).
+          let d = def?;
+          if !name.is_empty() {
+            bindings.push((name.clone(), d));
           }
         }
         continue;
@@ -3421,13 +3412,8 @@ fn try_skip_optional_subsets(
       push_match_context(&bindings);
       let result = match_pattern(e, p);
       pop_match_context();
-      match result {
-        Some(b) => {
-          if !merge_bindings(&mut bindings, b) {
-            return None;
-          }
-        }
-        None => return None,
+      if !merge_bindings(&mut bindings, result?) {
+        return None;
       }
     }
     return Some(bindings);
@@ -3688,11 +3674,7 @@ fn match_pattern_impl(
           }
           let mut bindings = Vec::new();
           for (p, e) in pat_items.iter().zip(expr_items.iter()) {
-            if let Some(b) = match_pattern(e, p) {
-              if !merge_bindings(&mut bindings, b) {
-                return None;
-              }
-            } else {
+            if !merge_bindings(&mut bindings, match_pattern(e, p)?) {
               return None;
             }
           }
@@ -4085,11 +4067,7 @@ fn match_pattern_impl(
               push_match_context(&bindings);
               let result = match_pattern(e, p);
               pop_match_context();
-              if let Some(b) = result {
-                if !merge_bindings(&mut bindings, b) {
-                  return None;
-                }
-              } else {
+              if !merge_bindings(&mut bindings, result?) {
                 return None;
               }
             }
@@ -4161,21 +4139,13 @@ fn match_pattern_impl(
         push_match_context(&bindings);
         let left_result = match_pattern(expr_left, pat_left);
         pop_match_context();
-        if let Some(b) = left_result {
-          if !merge_bindings(&mut bindings, b) {
-            return None;
-          }
-        } else {
+        if !merge_bindings(&mut bindings, left_result?) {
           return None;
         }
         push_match_context(&bindings);
         let right_result = match_pattern(expr_right, pat_right);
         pop_match_context();
-        if let Some(b) = right_result {
-          if !merge_bindings(&mut bindings, b) {
-            return None;
-          }
-        } else {
+        if !merge_bindings(&mut bindings, right_result?) {
           return None;
         }
         Some(bindings)

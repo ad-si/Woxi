@@ -7259,11 +7259,7 @@ fn minimize_extract_linear_expr(
   for (i, var) in vars.iter().enumerate() {
     for term in &terms {
       if let Some(c) = extract_coefficient_of_power(term, var, 1) {
-        if let Some(cv) = minimize_try_f64(&c) {
-          coeffs[i] += cv;
-        } else {
-          return None;
-        }
+        coeffs[i] += minimize_try_f64(&c)?;
       }
     }
   }
@@ -7735,11 +7731,8 @@ fn minimize_extract_linear_constraint(
     let terms = collect_additive_terms(&expanded);
     for term in &terms {
       if let Some(c) = extract_coefficient_of_power(term, var, 1) {
-        if let Some(cv) = minimize_try_f64(&c) {
-          coeffs[i] += cv;
-        } else {
-          return None; // non-constant coefficient
-        }
+        // A non-constant coefficient means this is not a linear system.
+        coeffs[i] += minimize_try_f64(&c)?;
       }
     }
   }

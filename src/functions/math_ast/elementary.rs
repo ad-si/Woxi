@@ -1357,10 +1357,7 @@ fn try_sqrt_plus_gcd(expr: &Expr) -> Option<Expr> {
   // Extract integer coefficients from each Plus term
   let mut pairs: Vec<(i128, Expr)> = Vec::new();
   for term in terms {
-    match extract_int_coeff(term) {
-      Some(pair) => pairs.push(pair),
-      None => return None,
-    }
+    pairs.push(extract_int_coeff(term)?);
   }
 
   // Compute GCD of absolute values of all coefficients

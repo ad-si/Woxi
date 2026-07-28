@@ -1095,16 +1095,14 @@ pub fn dispatch_math_functions(
               _ => return None,
             }
           }
-          other => match expr_to_f64(other) {
-            Some(f) => {
-              if !(0.0..0.5).contains(&f) {
-                return arg2_error();
-              }
-              let t = (n as f64 * f).floor() as usize;
-              (t, t)
+          other => {
+            let f = expr_to_f64(other)?;
+            if !(0.0..0.5).contains(&f) {
+              return arg2_error();
             }
-            None => return None,
-          },
+            let t = (n as f64 * f).floor() as usize;
+            (t, t)
+          }
         };
         if trim_lo + trim_hi < n {
           let mut sorted: Vec<Expr> = elems.to_vec();

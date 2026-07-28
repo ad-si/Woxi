@@ -3087,12 +3087,8 @@ fn string_pattern_to_regex_inner(
         let quantifier = match &args[1] {
           Expr::Integer(n) => format!("{{1,{}}}", n),
           Expr::List(items) if items.len() == 1 => {
-            if let Some(n) = crate::functions::math_ast::expr_to_i128(&items[0])
-            {
-              format!("{{{}}}", n)
-            } else {
-              return None;
-            }
+            let n = crate::functions::math_ast::expr_to_i128(&items[0])?;
+            format!("{{{}}}", n)
           }
           Expr::List(items) if items.len() == 2 => {
             let min = crate::functions::math_ast::expr_to_i128(&items[0])?;
