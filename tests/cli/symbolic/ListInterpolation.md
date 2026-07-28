@@ -7,10 +7,16 @@ one list, and an exact point over an exact grid interpolates exactly:
 
 ```scrut
 $ wo '{ListInterpolation[{{1, 2}, {3, 4}}][{3/2, 3/2}], ListInterpolation[{{1, 2}, {3, 4}}][3/2, 3/2]}'
+
+ListInterpolation::inhr: Requested order is too high; order has been reduced to {1, 1}.
+
+ListInterpolation::inhr: Requested order is too high; order has been reduced to {1, 1}.
 {5/2, 5/2}
 ```
 
 ```scrut
 $ wo 'ListInterpolation[{{1, 2, 3}, {4, 5, 6}, {7, 8, 10}}][{3/2, 5/2}]'
+
+ListInterpolation::inhr: Requested order is too high; order has been reduced to {2, 2}.
 253/64
 ```

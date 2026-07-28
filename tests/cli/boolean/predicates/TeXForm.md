@@ -32,7 +32,7 @@ $ wo 'ToString[TeXForm[TableForm[{{1}, {2, 3}}]]]'
 Greek letters carry their macro, and a rule its arrow:
 
 ```scrut
-$ wo 'ToString[TeXForm[\\[Alpha] -> 2 \\[CapitalOmega]]]'
+$ wo 'ToString[TeXForm[\[Alpha] -> 2 \[CapitalOmega]]]'
 \alpha \to 2 \Omega
 ```
 

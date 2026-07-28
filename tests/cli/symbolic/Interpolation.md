@@ -12,6 +12,10 @@ giving machine values:
 
 ```scrut
 $ wo '{Interpolation[{1, 4, 9}][5/2], Interpolation[{1., 4., 9.}][3/2]}'
+
+Interpolation::inhr: Requested order is too high; order has been reduced to {2}.
+
+Interpolation::inhr: Requested order is too high; order has been reduced to {2}.
 {25/4, 2.25}
 ```
 
@@ -31,5 +35,7 @@ function, so the prime may be applied directly to the call:
 
 ```scrut
 $ wo "f = Interpolation[{{0, 0}, {1, 1}, {2, 4}}]; {f'[1], f''[1], Head[f']}"
+
+Interpolation::inhr: Requested order is too high; order has been reduced to {2}.
 {2, 2, InterpolatingFunction}
 ```

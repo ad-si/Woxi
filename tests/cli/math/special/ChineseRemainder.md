@@ -25,6 +25,7 @@ Lists of differing length are reported as an argument error.
 
 ```scrut
 $ wo 'ChineseRemainder[{1, 2}, {3}]'
+
 ChineseRemainder::pilist: The arguments to ChineseRemainder must be two lists of integers of identical length, with the second list containing only positive integers.
 ChineseRemainder[{1, 2}, {3}]
 ```
