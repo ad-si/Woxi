@@ -3764,7 +3764,7 @@ SocketListen,,🚫,,11.2,3862
 SpecificityGoal,,🚫,,10.1,3862
 TemplateIf,Template element inserting one of two clauses by a condition,✅,pure,10.0,3862
 TracyWidomDistribution,,,,10.3,3862
-AsymptoticLessEqual,,,,11.3,3889
+AsymptoticLessEqual,Tests whether one expression is big-O of another at a limit point,✅,pure,11.3,3889
 BirnbaumImportance,,,,9.0,3889
 ByteArrayToString,Convert byte array to string,✅,pure,11.2,3889
 CellBracketOptions,,🚫,,4.0,3889
@@ -3977,7 +3977,7 @@ TrimmedVariance,Variance after trimming extreme values,✅,none,11.1,4081
 URLDownloadSubmit,,🚫,,11.2,4081
 UpperRightArrow,,,,3.0,4081
 AskDisplay,,🚫,,10.4,4104
-AsymptoticEqual,,,,11.3,4104
+AsymptoticEqual,Tests whether two expressions have the same asymptotic order at a limit point,✅,pure,11.3,4104
 AtomList,List of atoms in a molecule,✅,pure,12.0,4104
 AutoItalicWords,,,,3.0,4104
 CircularOrthogonalMatrixDistribution,,,,10.3,4104
@@ -4592,7 +4592,7 @@ UnityDimensions,,,,10.0,4747
 VectorRange,,,,12.1,4747
 ZoomFactor,,,,10.4,4747
 AdjustTimeSeriesForecast,,🚫,,9.0,4809
-AsymptoticEquivalent,,,,11.3,4809
+AsymptoticEquivalent,Tests whether the ratio of two expressions tends to one at a limit point,✅,pure,11.3,4809
 BlockchainKeyEncode,,🚫,,12.0,4809
 BusinessDayQ,,,,9.0,4809
 Censoring,,,,8.0,4809
@@ -4648,7 +4648,7 @@ WeierstrassInvariantG2,,,,11.2,4809
 ZoomCenter,,,,10.4,4809
 Annotate,,,,12.1,4881
 AssumeDeterministic,,,,11.0,4881
-AsymptoticGreater,,,,11.3,4881
+AsymptoticGreater,Tests whether one expression dominates another at a limit point,✅,pure,11.3,4881
 AudioOverlay,,🚫,,11.0,4881
 AutoRemove,,,,10.0,4881
 BridgeData,,🚫,,10.0,4881
@@ -4834,7 +4834,7 @@ VerticalBar,,,,3.0,5013
 WithCleanup,,,,12.2,5013
 AcousticNormalVelocityValue,,🚫,,12.2,5079
 ArrayReduce,Reduces an array over specified dimensions by applying a function,✅,pure,12.2,5079
-AsymptoticLess,,,,11.3,5079
+AsymptoticLess,Tests whether one expression is little-o of another at a limit point,✅,pure,11.3,5079
 AttentionLayer,,🚫,,12.0,5079
 AudioIdentify,,🚫,,12.0,5079
 AudioRecord,,🚫,,11.3,5079
@@ -5386,7 +5386,7 @@ AstroRiseSet,,🚫,,14.1,
 AstroStyling,,🚫,,13.2,
 AstroSubpoint,,🚫,,14.0,
 AstroZoomLevel,,🚫,,13.2,
-AsymptoticGreaterEqual,,,,11.3,
+AsymptoticGreaterEqual,Tests whether one expression is big-Omega of another at a limit point,✅,pure,11.3,
 AsymptoticProduct,,,,12.1,
 AtomLabelStyle,,,,13.0,
 AtomLabels,,,,13.0,

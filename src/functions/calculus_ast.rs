@@ -12332,14 +12332,44 @@ fn one_sided_limit_ast(
 /// For `Sin[g]` / `Cos[g]` whose argument `g` tends to (complex) infinity at
 /// the limit point, return the limsup (`MaxLimit` → 1) or liminf (`MinLimit`
 /// → -1); otherwise None.
+///
+/// Two wrappers ride along, because they are what an asymptotic comparison
+/// hands to `MaxLimit`: `Abs[Sin[g]]` sweeps [0, 1], so its liminf is 0 rather
+/// than -1, and its reciprocal `1/Abs[Sin[g]]` sweeps [1, Infinity).
 fn bounded_trig_extremum(
   expr: &Expr,
   rule: &Expr,
   fn_name: &str,
 ) -> Result<Option<Expr>, InterpreterError> {
+  // 1/Abs[Sin[g]] — the reciprocal of something that gets arbitrarily close
+  // to 0 while never exceeding 1.
+  if let Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left,
+    right,
+  } = expr
+    && matches!(&**right, Expr::Integer(-1))
+    && let Expr::FunctionCall { name, args: iargs } = &**left
+    && name == "Abs"
+    && iargs.len() == 1
+    && bounded_trig_extremum(&iargs[0], rule, "MaxLimit")?.is_some()
+  {
+    return Ok(Some(if fn_name == "MaxLimit" {
+      Expr::Identifier("Infinity".to_string())
+    } else {
+      Expr::Integer(1)
+    }));
+  }
   let Expr::FunctionCall { name, args: fargs } = expr else {
     return Ok(None);
   };
+  if name == "Abs" && fargs.len() == 1 {
+    // The oscillation is the same; only the lower end of the range moves.
+    let inner = bounded_trig_extremum(&fargs[0], rule, "MaxLimit")?;
+    return Ok(
+      inner.map(|_| Expr::Integer(if fn_name == "MaxLimit" { 1 } else { 0 })),
+    );
+  }
   if (name != "Sin" && name != "Cos") || fargs.len() != 1 {
     return Ok(None);
   }
@@ -20957,4 +20987,187 @@ fn series_at_infinity(
     name: "SeriesData".to_string(),
     args: rebased.into(),
   }))
+}
+
+// ---------------------------------------------------------------------------
+// Asymptotic comparisons (Landau notation)
+// ---------------------------------------------------------------------------
+
+/// The answer to one asymptotic comparison. `Unknown` means the underlying
+/// limit did not resolve, in which case the call stays unevaluated rather
+/// than guessing.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Verdict {
+  True,
+  False,
+  Unknown,
+}
+
+impl Verdict {
+  fn and(self, other: Verdict) -> Verdict {
+    match (self, other) {
+      // One definite `False` settles the conjunction even if the other side
+      // never resolved.
+      (Verdict::False, _) | (_, Verdict::False) => Verdict::False,
+      (Verdict::True, Verdict::True) => Verdict::True,
+      _ => Verdict::Unknown,
+    }
+  }
+
+  fn into_expr(self) -> Option<Expr> {
+    match self {
+      Verdict::True => Some(Expr::Identifier("True".to_string())),
+      Verdict::False => Some(Expr::Identifier("False".to_string())),
+      Verdict::Unknown => None,
+    }
+  }
+}
+
+fn is_literal_zero(e: &Expr) -> bool {
+  matches!(e, Expr::Integer(0)) || matches!(e, Expr::Real(r) if *r == 0.0)
+}
+
+/// True when the expression is a definite (non-symbolic) limit value, i.e. the
+/// limit resolved to something we can decide on.
+fn limit_resolved(e: &Expr) -> bool {
+  !matches!(e, Expr::FunctionCall { name, .. }
+    if name == "Limit" || name == "MaxLimit" || name == "MinLimit")
+}
+
+/// `f/g`, evaluated. `Limit` is much stronger on a canonicalized quotient
+/// (`Sqrt[x]/x` resolves only once it has folded to `1/Sqrt[x]`), so the
+/// division is put through the evaluator before the limit is taken.
+fn ratio(f: &Expr, g: &Expr) -> Expr {
+  let quotient = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(f.clone()),
+    right: Box::new(g.clone()),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&quotient).unwrap_or(quotient)
+}
+
+/// `f ∈ o(g)`: the ratio tends to zero.
+fn little_o(
+  f: &Expr,
+  g: &Expr,
+  rule: &Expr,
+) -> Result<Verdict, InterpreterError> {
+  // 0/0 is treated as satisfying every comparison, as wolframscript does.
+  if is_literal_zero(f) {
+    return Ok(Verdict::True);
+  }
+  if is_literal_zero(g) {
+    return Ok(Verdict::False);
+  }
+  let l = limit_ast(&[ratio(f, g), rule.clone()])?;
+  if !limit_resolved(&l) {
+    return Ok(Verdict::Unknown);
+  }
+  Ok(if is_literal_zero(&l) {
+    Verdict::True
+  } else {
+    Verdict::False
+  })
+}
+
+/// `f ∈ O(g)`: the ratio stays bounded, i.e. `limsup |f/g| < Infinity`.
+fn big_o(f: &Expr, g: &Expr, rule: &Expr) -> Result<Verdict, InterpreterError> {
+  if is_literal_zero(f) {
+    return Ok(Verdict::True);
+  }
+  if is_literal_zero(g) {
+    return Ok(Verdict::False);
+  }
+  let abs_ratio = Expr::FunctionCall {
+    name: "Abs".to_string(),
+    args: vec![ratio(f, g)].into(),
+  };
+  // As with the quotient itself, `MaxLimit` sees much more of the structure
+  // once `Abs` has been pushed through it (`Abs[1/Sin[x]]` → `1/Abs[Sin[x]]`).
+  let abs_ratio =
+    crate::evaluator::evaluate_expr_to_expr(&abs_ratio).unwrap_or(abs_ratio);
+  let m = max_limit_ast(&[abs_ratio, rule.clone()])?;
+  if !limit_resolved(&m) {
+    return Ok(Verdict::Unknown);
+  }
+  if is_infinite_value(&m) {
+    return Ok(Verdict::False);
+  }
+  // An indeterminate limit superior tells us nothing about boundedness.
+  if matches!(&m, Expr::Identifier(s) if s == "Indeterminate") {
+    return Ok(Verdict::Unknown);
+  }
+  Ok(Verdict::True)
+}
+
+/// `f ~ g`: the ratio tends to one.
+fn asymptotically_equivalent(
+  f: &Expr,
+  g: &Expr,
+  rule: &Expr,
+) -> Result<Verdict, InterpreterError> {
+  if is_literal_zero(f) && is_literal_zero(g) {
+    return Ok(Verdict::True);
+  }
+  if is_literal_zero(f) || is_literal_zero(g) {
+    return Ok(Verdict::False);
+  }
+  let l = limit_ast(&[ratio(f, g), rule.clone()])?;
+  if !limit_resolved(&l) {
+    return Ok(Verdict::Unknown);
+  }
+  Ok(match &l {
+    Expr::Integer(1) => Verdict::True,
+    Expr::Real(r) if *r == 1.0 => Verdict::True,
+    _ => Verdict::False,
+  })
+}
+
+/// AsymptoticLess / AsymptoticLessEqual / AsymptoticGreater /
+/// AsymptoticGreaterEqual / AsymptoticEqual / AsymptoticEquivalent —
+/// `f ≺ g`, `f ⪯ g`, `f ≻ g`, `f ⪰ g`, `f ≍ g`, and `f ~ g` as the variable
+/// approaches the limit point.
+///
+/// Each one is decided from `Limit` (or `MaxLimit`, for the `O`-style
+/// relations) applied to `f/g`, so the coverage is exactly `Limit`'s. When the
+/// limit does not resolve the call stays unevaluated instead of guessing; the
+/// same goes for the multivariate `{x, …} -> {a, …}` form and for parametric
+/// answers, which wolframscript reports as a `ConditionalExpression`.
+pub fn asymptotic_comparison_ast(
+  name: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let original = || unevaluated(name, args);
+
+  // A fourth argument is only allowed as options (`Assumptions -> …`); the
+  // assumptions themselves are not used yet.
+  if args.len() == 4 && !matches!(&args[3], Expr::Rule { .. } | Expr::List(_)) {
+    return Ok(original());
+  }
+
+  let rule = &args[2];
+  let Expr::Rule { pattern, .. } = rule else {
+    crate::emit_message(&format!(
+      "{}::lim: Limit specification {} is not of the form x -> x0.",
+      name,
+      crate::syntax::expr_to_output(rule)
+    ));
+    return Ok(original());
+  };
+  // Only the single-variable form is decided here.
+  if !matches!(&**pattern, Expr::Identifier(_)) {
+    return Ok(original());
+  }
+
+  let (f, g) = (&args[0], &args[1]);
+  let verdict = match name {
+    "AsymptoticLess" => little_o(f, g, rule)?,
+    "AsymptoticGreater" => little_o(g, f, rule)?,
+    "AsymptoticLessEqual" => big_o(f, g, rule)?,
+    "AsymptoticGreaterEqual" => big_o(g, f, rule)?,
+    "AsymptoticEqual" => big_o(f, g, rule)?.and(big_o(g, f, rule)?),
+    "AsymptoticEquivalent" => asymptotically_equivalent(f, g, rule)?,
+    _ => Verdict::Unknown,
+  };
+  Ok(verdict.into_expr().unwrap_or_else(original))
 }

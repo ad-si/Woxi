@@ -534,6 +534,18 @@ pub fn dispatch_calculus_functions(
     "MaxLimit" if args.len() == 2 => {
       return Some(crate::functions::calculus_ast::max_limit_ast(args));
     }
+    "AsymptoticLess"
+    | "AsymptoticLessEqual"
+    | "AsymptoticGreater"
+    | "AsymptoticGreaterEqual"
+    | "AsymptoticEqual"
+    | "AsymptoticEquivalent"
+      if args.len() == 3 || args.len() == 4 =>
+    {
+      return Some(crate::functions::calculus_ast::asymptotic_comparison_ast(
+        name, args,
+      ));
+    }
     "MinLimit" if args.len() == 2 => {
       return Some(crate::functions::calculus_ast::min_limit_ast(args));
     }

@@ -15187,3 +15187,373 @@ mod caputo_d {
     }
   }
 }
+
+mod bounded_oscillation_extrema {
+  use super::*;
+
+  #[test]
+  fn abs_of_a_bounded_oscillation_sweeps_zero_to_one() {
+    // |Sin[x]| oscillates over [0, 1], so its liminf is 0 rather than the -1
+    // of the unwrapped Sin.
+    assert_eq!(
+      interpret("MaxLimit[Abs[Sin[x]], x -> Infinity]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("MinLimit[Abs[Sin[x]], x -> Infinity]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("MaxLimit[Abs[Cos[x]], x -> Infinity]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("MinLimit[Abs[Cos[x]], x -> Infinity]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn reciprocal_of_a_bounded_oscillation_is_unbounded_above() {
+    // 1/|Sin[x]| comes arbitrarily close to 1 and grows without bound.
+    assert_eq!(
+      interpret("MaxLimit[1/Abs[Sin[x]], x -> Infinity]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("MinLimit[1/Abs[Sin[x]], x -> Infinity]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("MaxLimit[Abs[1/Sin[x]], x -> Infinity]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("MaxLimit[1/Abs[Cos[x]], x -> Infinity]").unwrap(),
+      "Infinity"
+    );
+  }
+}
+
+mod asymptotic_comparisons {
+  use super::*;
+
+  #[test]
+  fn little_o_ordering_of_powers() {
+    assert_eq!(
+      interpret("AsymptoticLess[x, x^2, x -> Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticLess[x^2, x, x -> Infinity]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("AsymptoticLess[x^2, x^3, x -> Infinity]").unwrap(),
+      "True"
+    );
+    // Near 0 the ordering flips: the higher power is the smaller one.
+    assert_eq!(
+      interpret("AsymptoticLess[x, x^2, x -> 0]").unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("AsymptoticLess[x^2, x, x -> 0]").unwrap(), "True");
+    assert_eq!(
+      interpret("AsymptoticLess[1/x, 1/x^2, x -> 0]").unwrap(),
+      "True"
+    );
+    // A function is never little-o of itself.
+    assert_eq!(
+      interpret("AsymptoticLess[x, x, x -> Infinity]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("AsymptoticGreater[x, x, x -> Infinity]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn little_o_across_growth_classes() {
+    assert_eq!(
+      interpret("AsymptoticLess[Log[x], x, x -> Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticLess[x, Exp[x], x -> Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticLess[Exp[-x], 1/x, x -> Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticLess[1, x, x -> Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticLess[1/x, 1, x -> Infinity]").unwrap(),
+      "True"
+    );
+    // Two constants are the same order, so neither is little-o of the other.
+    assert_eq!(
+      interpret("AsymptoticLess[2, 3, x -> Infinity]").unwrap(),
+      "False"
+    );
+    // A limit point other than infinity is honoured.
+    assert_eq!(
+      interpret("AsymptoticLess[x, x^2, x -> 1]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("AsymptoticLess[x, x^2, x -> -Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticLess[Sin[x], x, x -> 0]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn greater_is_less_with_the_arguments_swapped() {
+    assert_eq!(
+      interpret("AsymptoticGreater[x^2, x, x -> Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticGreater[x, x^2, x -> Infinity]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("AsymptoticGreater[x, Log[x], x -> Infinity]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn big_o_allows_the_same_order() {
+    assert_eq!(
+      interpret("AsymptoticLessEqual[x, x^2, x -> Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticLessEqual[x, x, x -> Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticLessEqual[x^2, x, x -> Infinity]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("AsymptoticLessEqual[2, 3, x -> Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticGreaterEqual[x, x, x -> Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticGreaterEqual[x, x^2, x -> Infinity]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("AsymptoticGreaterEqual[x^2, x, x -> Infinity]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn big_o_tolerates_bounded_oscillation() {
+    // Sin[x] has no limit, but it stays bounded, so it is O(1) without being
+    // o(1) — and x Sin[x] is O(x) without being Theta[x].
+    assert_eq!(
+      interpret("AsymptoticLess[Sin[x], 1, x -> Infinity]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("AsymptoticLessEqual[Sin[x], 1, x -> Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticLessEqual[Cos[x], 1, x -> Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticEqual[Sin[x], 1, x -> Infinity]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("AsymptoticLessEqual[x*Sin[x], x, x -> Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticLess[x*Sin[x], x^2, x -> Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticEqual[x*Sin[x], x, x -> Infinity]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn theta_ignores_constant_factors_and_lower_order_terms() {
+    assert_eq!(
+      interpret("AsymptoticEqual[x, x, x -> Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticEqual[2 x, x, x -> Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticEqual[3 x + 1, x, x -> Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticEqual[x^2 + x, x^2, x -> Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticEqual[x, x^2, x -> Infinity]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("AsymptoticEqual[2, 3, x -> Infinity]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn equivalence_needs_the_ratio_to_reach_one() {
+    // Unlike Theta, a constant factor breaks asymptotic equivalence.
+    assert_eq!(
+      interpret("AsymptoticEquivalent[x, x, x -> Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticEquivalent[2 x, x, x -> Infinity]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("AsymptoticEquivalent[2, 3, x -> Infinity]").unwrap(),
+      "False"
+    );
+    // A lower-order additive term does not.
+    assert_eq!(
+      interpret("AsymptoticEquivalent[x + 1, x, x -> Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticEquivalent[x^2 + x, x^2, x -> Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticEquivalent[Sin[x], x, x -> 0]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticEquivalent[Sin[x], x, x -> Infinity]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn zero_arguments() {
+    // 0/0 satisfies every comparison; a zero divisor satisfies none of the
+    // "at most" ones.
+    assert_eq!(
+      interpret("AsymptoticLess[0, 0, x -> Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticEqual[0, 0, x -> Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticEquivalent[0, 0, x -> Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticLess[0, x, x -> Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticLessEqual[0, x, x -> Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticLess[x, 0, x -> Infinity]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("AsymptoticLessEqual[x, 0, x -> Infinity]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("AsymptoticEqual[x, 0, x -> Infinity]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("AsymptoticEquivalent[x, 0, x -> Infinity]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("AsymptoticGreater[x, 0, x -> Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AsymptoticGreaterEqual[x, 0, x -> Infinity]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn options_are_accepted_as_a_fourth_argument() {
+    assert_eq!(
+      interpret("AsymptoticLess[x, x^2, x -> Infinity, Assumptions -> True]")
+        .unwrap(),
+      "True"
+    );
+    // A fourth argument that is not an option leaves the call alone.
+    assert_eq!(
+      interpret("AsymptoticLess[x, x^2, x -> Infinity, 5]").unwrap(),
+      "AsymptoticLess[x, x^2, x -> Infinity, 5]"
+    );
+  }
+
+  #[test]
+  fn bad_limit_specification_and_argument_count() {
+    assert_eq!(
+      interpret("AsymptoticLess[x, x^2, x]").unwrap(),
+      "AsymptoticLess[x, x^2, x]"
+    );
+    assert_eq!(
+      interpret("AsymptoticLess[x, x^2, {x -> Infinity}]").unwrap(),
+      "AsymptoticLess[x, x^2, {x -> Infinity}]"
+    );
+    assert_eq!(
+      interpret("AsymptoticLess[x, x^2]").unwrap(),
+      "AsymptoticLess[x, x^2]"
+    );
+  }
+
+  #[test]
+  fn undecided_forms_stay_unevaluated() {
+    // The multivariate form and parametric answers (which wolframscript
+    // reports as a ConditionalExpression) are out of scope, and so is any
+    // comparison whose underlying limit does not resolve.
+    assert_eq!(
+      interpret(
+        "AsymptoticLess[x + y, x^2 + y^2, {x, y} -> {Infinity, Infinity}]"
+      )
+      .unwrap(),
+      "AsymptoticLess[x + y, x^2 + y^2, {x, y} -> {Infinity, Infinity}]"
+    );
+    assert_eq!(
+      interpret("AsymptoticLess[x^a, x^2, x -> Infinity]").unwrap(),
+      "AsymptoticLess[x^a, x^2, x -> Infinity]"
+    );
+  }
+}

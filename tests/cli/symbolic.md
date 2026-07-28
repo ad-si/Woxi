@@ -109,6 +109,7 @@ x + 2*x^2 + x^3
 
 - [`ArcCurvature`](symbolic/ArcCurvature.md)
 - [`AsymptoticIntegrate`](symbolic/AsymptoticIntegrate.md)
+- [Asymptotic comparisons](symbolic/AsymptoticLess.md)
 - [`CaputoD`](symbolic/CaputoD.md)
 - [`CoefficientRules`](symbolic/CoefficientRules.md)
 - [`Cyclotomic`](symbolic/Cyclotomic.md)
