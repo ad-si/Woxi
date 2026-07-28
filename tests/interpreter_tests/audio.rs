@@ -749,3 +749,138 @@ mod duration {
     assert!(r.warnings[0].contains("Duration::durinv"));
   }
 }
+
+// The audio accessors: what an audio object is made of. Values verified
+// against wolframscript.
+mod audio_accessors {
+  use super::*;
+
+  /// The result of `code`, written the way `InputForm` writes it.
+  fn form(code: &str) -> String {
+    interpret(&format!("ToString[{code}, InputForm]")).unwrap()
+  }
+
+  // The samples come back one list per channel, even when there is one.
+  #[test]
+  fn the_data_is_a_list_per_channel() {
+    clear_state();
+    assert_eq!(form("AudioData[Audio[{0., 0.5, 1.}]]"), "{{0., 0.5, 1.}}");
+    assert_eq!(
+      form("AudioData[Audio[{{0., 0.5}, {1., 0.}}]]"),
+      "{{0., 0.5}, {1., 0.}}"
+    );
+    // Whole-number samples are still samples.
+    assert_eq!(form("AudioData[Audio[{0, 1}]]"), "{{0., 1.}}");
+  }
+
+  #[test]
+  fn the_shape_and_rate_are_read_off_the_object() {
+    clear_state();
+    for (code, expected) in [
+      ("AudioChannels[Audio[{0., 0.5, 1.}]]", "1"),
+      ("AudioChannels[Audio[{{0., 0.5}, {1., 0.}}]]", "2"),
+      (
+        "AudioLength[Audio[{0., 0.5, 1.}]]",
+        "Quantity[3, \"Samples\"]",
+      ),
+      (
+        "AudioLength[Audio[{{0., 0.5}, {1., 0.}}]]",
+        "Quantity[2, \"Samples\"]",
+      ),
+      (
+        "AudioSampleRate[Audio[{0., 0.5, 1.}]]",
+        "Quantity[44100, \"Hertz\"]",
+      ),
+      (
+        "AudioSampleRate[Audio[{0., 0.5}, SampleRate -> 8000]]",
+        "Quantity[8000, \"Hertz\"]",
+      ),
+      ("AudioType[Audio[{0., 0.5}]]", "\"Real32\""),
+      ("AudioType[Audio[{{0., 0.5}, {1., 0.}}]]", "\"Real32\""),
+    ] {
+      assert_eq!(form(code), expected, "{code}");
+    }
+  }
+
+  // An integer type scales the samples onto its range and clips at the ends,
+  // so a full-scale 1. lands one below the top.
+  #[test]
+  fn an_integer_type_scales_the_samples() {
+    clear_state();
+    for (code, expected) in [
+      (
+        "AudioData[Audio[{0., 0.5, 1., -1.}], \"SignedInteger16\"]",
+        "{{0, 16384, 32767, -32768}}",
+      ),
+      (
+        "AudioData[Audio[{0., 0.5, 1., -1.}], \"SignedInteger8\"]",
+        "{{0, 64, 127, -128}}",
+      ),
+      // The real types and Automatic hand back the samples themselves.
+      (
+        "AudioData[Audio[{0., 0.5, 1., -1.}], \"Real32\"]",
+        "{{0., 0.5, 1., -1.}}",
+      ),
+      (
+        "AudioData[Audio[{0., 0.5, 1., -1.}], \"Real64\"]",
+        "{{0., 0.5, 1., -1.}}",
+      ),
+      (
+        "AudioData[Audio[{0., 0.5, 1., -1.}], Automatic]",
+        "{{0., 0.5, 1., -1.}}",
+      ),
+    ] {
+      assert_eq!(form(code), expected, "{code}");
+    }
+  }
+
+  // AudioQ asks whether the expression IS an audio object, which a Sound is
+  // not however readily it turns into samples.
+  #[test]
+  fn audio_q_wants_an_audio_object() {
+    clear_state();
+    assert_eq!(interpret("AudioQ[Audio[{0., 0.5}]]").unwrap(), "True");
+    assert_eq!(
+      interpret("AudioQ[Audio[{{0., 0.5}, {1., 0.}}]]").unwrap(),
+      "True"
+    );
+    for code in ["AudioQ[5]", "AudioQ[{1, 2}]", "AudioQ[Sound[SoundNote[0]]]"] {
+      assert_eq!(interpret(code).unwrap(), "False", "{code}");
+    }
+  }
+
+  #[test]
+  fn anything_that_is_not_audio_is_reported() {
+    clear_state();
+    for name in [
+      "AudioData",
+      "AudioChannels",
+      "AudioLength",
+      "AudioSampleRate",
+      "AudioType",
+    ] {
+      let code = format!("{name}[5]");
+      let result = interpret_with_stdout(&code).unwrap();
+      assert_eq!(result.result, format!("{name}[5]"), "{code}");
+      assert!(
+        result
+          .warnings
+          .iter()
+          .any(|w| w.contains(&format!("{name}::audio"))),
+        "expected {name}::audio, got {:?}",
+        result.warnings
+      );
+    }
+    // A sample type it does not know is reported too.
+    let result =
+      interpret_with_stdout("AudioData[Audio[{0., 0.5}], \"Byte\"]").unwrap();
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|w| w.contains("AudioData::audiodtype")),
+      "expected ::audiodtype, got {:?}",
+      result.warnings
+    );
+  }
+}

@@ -17,6 +17,7 @@ pub mod filters;
 pub mod measure;
 pub mod spectral;
 
+use crate::InterpreterError;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::sound;
 use crate::syntax::{Expr, unevaluated};
@@ -496,4 +497,153 @@ pub fn duration_ast(args: &[Expr]) -> Result<Expr, crate::InterpreterError> {
     });
   }
   ev(&quantity)
+}
+
+// ---------------------------------------------------------------------------
+// The audio accessors
+// ---------------------------------------------------------------------------
+
+/// The audio an accessor was handed, or the `::audio` complaint for anything
+/// that is not one.
+fn audio_argument(name: &str, args: &[Expr]) -> Option<AudioData> {
+  let audio = args.first().and_then(parse_audio);
+  if audio.is_none() {
+    crate::emit_message(&format!(
+      "{name}::audio: Expecting an audio object instead of {}.",
+      args
+        .first()
+        .map(crate::syntax::expr_to_string)
+        .unwrap_or_default()
+    ));
+  }
+  audio
+}
+
+/// `Quantity[magnitude, unit]` with a whole magnitude written as an integer.
+fn audio_quantity(magnitude: f64, unit: &str) -> Expr {
+  let value = if magnitude.fract() == 0.0 && magnitude.abs() < i128::MAX as f64
+  {
+    Expr::Integer(magnitude as i128)
+  } else {
+    Expr::Real(magnitude)
+  };
+  Expr::FunctionCall {
+    name: "Quantity".to_string(),
+    args: vec![value, Expr::String(unit.to_string())].into(),
+  }
+}
+
+/// `AudioQ[expr]` — whether `expr` is an audio object. A `Sound` is not one,
+/// however readily it turns into samples.
+pub fn audio_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(unevaluated("AudioQ", args));
+  }
+  let is_audio = matches!(&args[0], Expr::FunctionCall { name, .. }
+    if name == "Audio")
+    && parse_audio(&args[0]).is_some();
+  Ok(crate::syntax::bool_expr(is_audio))
+}
+
+/// `AudioChannels[audio]` — how many channels it carries.
+pub fn audio_channels_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(unevaluated("AudioChannels", args));
+  }
+  match audio_argument("AudioChannels", args) {
+    Some(audio) => Ok(Expr::Integer(audio.channels.len() as i128)),
+    None => Ok(unevaluated("AudioChannels", args)),
+  }
+}
+
+/// `AudioLength[audio]` — how many samples each channel holds.
+pub fn audio_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(unevaluated("AudioLength", args));
+  }
+  match audio_argument("AudioLength", args) {
+    Some(audio) => {
+      Ok(audio_quantity(audio.channels[0].len() as f64, "Samples"))
+    }
+    None => Ok(unevaluated("AudioLength", args)),
+  }
+}
+
+/// `AudioSampleRate[audio]` — the rate its samples were taken at.
+pub fn audio_sample_rate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(unevaluated("AudioSampleRate", args));
+  }
+  match audio_argument("AudioSampleRate", args) {
+    Some(audio) => Ok(audio_quantity(audio.rate, "Hertz")),
+    None => Ok(unevaluated("AudioSampleRate", args)),
+  }
+}
+
+/// `AudioType[audio]` — the type its samples are held as, which for audio
+/// built from sample data is always `Real32`.
+pub fn audio_type_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(unevaluated("AudioType", args));
+  }
+  match audio_argument("AudioType", args) {
+    Some(_) => Ok(Expr::String("Real32".to_string())),
+    None => Ok(unevaluated("AudioType", args)),
+  }
+}
+
+/// `AudioData[audio]` / `AudioData[audio, type]` — the samples, one list per
+/// channel even when there is only one. An integer type scales the samples
+/// onto its range and clips at the ends.
+pub fn audio_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let echo = || Ok(unevaluated("AudioData", args));
+  if args.is_empty() || args.len() > 2 {
+    return echo();
+  }
+  // The sample type asked for, as the number of bits an integer one holds.
+  let bits = match args.get(1) {
+    None => None,
+    Some(Expr::Identifier(s)) if s == "Automatic" => None,
+    Some(Expr::String(s)) => match s.as_str() {
+      "Real32" | "Real64" => None,
+      "SignedInteger8" => Some(8u32),
+      "SignedInteger16" => Some(16),
+      "SignedInteger32" => Some(32),
+      other => {
+        crate::emit_message(&format!(
+          "AudioData::audiodtype: The specified data type {other} should be \
+           \"SignedInteger8\", \"SignedInteger16\", \"SignedInteger32\", \
+           \"Real32\", \"Real64\" or Automatic."
+        ));
+        return echo();
+      }
+    },
+    Some(other) => {
+      crate::emit_message(&format!(
+        "AudioData::audiodtype: The specified data type {} should be \
+         \"SignedInteger8\", \"SignedInteger16\", \"SignedInteger32\", \
+         \"Real32\", \"Real64\" or Automatic.",
+        crate::syntax::expr_to_string(other)
+      ));
+      return echo();
+    }
+  };
+  let Some(audio) = audio_argument("AudioData", args) else {
+    return echo();
+  };
+  let sample = |v: f64| match bits {
+    None => Expr::Real(v),
+    Some(n) => {
+      let scale = 2f64.powi(n as i32 - 1);
+      let raw = (v * scale).round();
+      Expr::Integer(raw.clamp(-scale, scale - 1.0) as i128)
+    }
+  };
+  Ok(Expr::List(
+    audio
+      .channels
+      .iter()
+      .map(|ch| Expr::List(ch.iter().map(|v| sample(*v)).collect()))
+      .collect(),
+  ))
 }

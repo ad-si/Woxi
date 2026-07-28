@@ -361,3 +361,39 @@ three notes play as quarter, quarter, half at 120 BPM.
 $ wo 'Export["score.mid", MusicScore[{MusicVoice[{"A", "G", "E"}], MusicVoice[{"F", "E", "C"}]}]]; FileByteCount["score.mid"]'
 130
 ```
+
+## Reading an audio object
+
+The accessors say what an audio object is made of. `AudioData` hands back the
+samples, one list per channel even when there is only one:
+
+```scrut
+$ wo 'AudioData[Audio[{0., 0.5, 1.}]]'
+{{0., 0.5, 1.}}
+```
+
+```scrut
+$ wo 'AudioChannels[Audio[{{0., 0.5}, {1., 0.}}]]'
+2
+```
+
+```scrut
+$ wo 'AudioSampleRate[Audio[{0., 0.5}, SampleRate -> 8000]]'
+Quantity[8000, Hertz]
+```
+
+An integer sample type scales the samples onto its range and clips at the
+ends, so a full-scale `1.` lands one below the top:
+
+```scrut
+$ wo 'AudioData[Audio[{0., 0.5, 1., -1.}], "SignedInteger16"]'
+{{0, 16384, 32767, -32768}}
+```
+
+`AudioQ` asks whether the expression *is* an audio object, which a `Sound` is
+not however readily it turns into samples:
+
+```scrut
+$ wo 'AudioQ[Sound[SoundNote[0]]]'
+False
+```

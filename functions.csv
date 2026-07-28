@@ -2443,7 +2443,7 @@ TraceScan,Apply a function as a side effect to each sub-expression during evalua
 ImageType,Returns the data type of an image,✅,pure,7.0,2495
 ResetDirectory,resets the current directory to the previous one set by SetDirectory,✅,io,2.0,2495
 SpanFromBoth,,🚫,,6.0,2495
-AudioData,,🚫,,11.0,2503
+AudioData,Samples of an audio object one list per channel optionally scaled onto an integer sample type,✅,pure,11.0,2503
 BinomialProcess,Binomial counting process with Binomial time slices,✅,unevaluated,9.0,2503
 ExponentialGeneratingFunction,Compute the exponential generating function of a sequence,✅,pure,7.0,2503
 GeoIdentify,,🚫,,10.0,2503
@@ -3005,7 +3005,7 @@ SeriesTermGoal,,,,12.1,3070
 ShowGroupOpener,,🚫,,6.0,3070
 SphericalShell,Filled spherical shell region between two radii consumed by Volume/SurfaceArea/RegionCentroid,✅,pure,10.2,3070
 UpArrow,,,,3.0,3070
-AudioSampleRate,,🚫,,11.0,3083
+AudioSampleRate,Sample rate of an audio object as a Quantity in Hertz,✅,pure,11.0,3083
 Canvas,,🚫,,12.2,3083
 CurrentDate,,,,11.1,3083
 FieldHintStyle,,,,8.0,3083
@@ -3949,7 +3949,7 @@ TideData,,🚫,,11.2,4052
 WinsorizedVariance,Variance after winsorizing extreme values,✅,none,11.1,4052
 AlgebraicIntegerQ,Tests whether a number is an algebraic integer,✅,pure,6.0,4081
 AsymptoticSum,,,,12.0,4081
-AudioChannels,,🚫,,11.0,4081
+AudioChannels,Number of channels an audio object carries,✅,pure,11.0,4081
 AudioLoudness,,🚫,,11.1,4081
 AutoSpacing,,,,3.0,4081
 BiweightLocation,,,,11.1,4081
@@ -4268,7 +4268,7 @@ TextPosition,,,,10.2,4387
 TransitionEffect,,🚫,,9.0,4387
 AnnuityDue,Annuity paying at interval start: TimeValue is (1+i)^q times the ordinary annuity (symbolic passthrough object),✅,pure,8.0,4437
 AskAppend,,🚫,,10.4,4437
-AudioLength,,🚫,,11.0,4437
+AudioLength,Number of samples per channel of an audio object as a Quantity in Samples,✅,pure,11.0,4437
 AutoIndent,,,,3.0,4437
 BiweightMidvariance,Robust biweight midvariance dispersion estimate of data,✅,pure,11.1,4437
 CentralFeature,Element minimizing total distance to all others (Euclidean/EditDistance/equality metric),✅,pure,11.1,4437
@@ -4396,7 +4396,7 @@ WilksW,,,,9.0,4527
 Antonyms,,🚫,,12.0,4567
 AskTemplateDisplay,,🚫,,10.4,4567
 AudioSpectralMap,,🚫,,11.1,4567
-AudioType,,🚫,,11.0,4567
+AudioType,Sample type an audio object is held as,✅,pure,11.0,4567
 ClassifierFunction,,🚫,,10.0,4567
 ContrastiveLossLayer,,🚫,,11.1,4567
 DefaultNaturalLanguage,,,,4.0,4567
@@ -4718,7 +4718,7 @@ ZeroSymmetric,,,,9.0,4881
 AlternatingFactorial,Alternating sum of factorials,✅,none,10.0,4947
 AudioLabel,,🚫,,11.0,4947
 AudioOutputDevice,,🚫,,11.2,4947
-AudioQ,,🚫,,11.0,4947
+AudioQ,Whether an expression is an audio object — a Sound is not one,✅,pure,11.0,4947
 AudioReplace,,🚫,,11.1,4947
 AugmentedPolyhedron,,,,12.0,4947
 BabyMonsterGroupB,,,,8.0,4947
