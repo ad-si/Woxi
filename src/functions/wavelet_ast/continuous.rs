@@ -11,9 +11,20 @@
 //! w(u, s) = 1/Sqrt[s] Sum_k x_k Conjugate[psi]((k - u)/s), the same length
 //! as the data.
 
-use super::{ContinuousWaveletSpec, parse_continuous_wavelet, unevaluated};
 use crate::InterpreterError;
-use crate::syntax::{Expr, expr_to_string};
+use crate::syntax::{Expr, expr_to_string, unevaluated};
+
+/// A continuous wavelet family used by ContinuousWaveletTransform,
+/// WaveletPsi, and WaveletPhi. Parameters are kept as expressions so the
+/// symbolic formulas stay exact.
+#[derive(Clone, Debug)]
+pub enum ContinuousWaveletSpec {
+  MexicanHat(Expr),
+  Morlet,
+  Paul(Expr),
+  DGaussian(Expr),
+  Gabor(Expr),
+}
 
 fn num(e: &Expr) -> Option<f64> {
   crate::functions::math_ast::expr_to_num(e)
@@ -842,4 +853,31 @@ pub fn cwd_map_indexed(
     dims: cwd.dims.clone(),
   };
   Ok(Some(new_cwd.to_expr()))
+}
+
+/// Recognize a continuous wavelet family expression with defaults.
+pub fn parse_continuous_wavelet(e: &Expr) -> Option<ContinuousWaveletSpec> {
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  match (name.as_str(), args.len()) {
+    ("MexicanHatWavelet", 0) => {
+      Some(ContinuousWaveletSpec::MexicanHat(Expr::Integer(1)))
+    }
+    ("MexicanHatWavelet", 1) => {
+      Some(ContinuousWaveletSpec::MexicanHat(args[0].clone()))
+    }
+    ("MorletWavelet", 0) => Some(ContinuousWaveletSpec::Morlet),
+    ("PaulWavelet", 0) => Some(ContinuousWaveletSpec::Paul(Expr::Integer(4))),
+    ("PaulWavelet", 1) => Some(ContinuousWaveletSpec::Paul(args[0].clone())),
+    ("DGaussianWavelet", 0) => {
+      Some(ContinuousWaveletSpec::DGaussian(Expr::Integer(2)))
+    }
+    ("DGaussianWavelet", 1) => {
+      Some(ContinuousWaveletSpec::DGaussian(args[0].clone()))
+    }
+    ("GaborWavelet", 0) => Some(ContinuousWaveletSpec::Gabor(Expr::Integer(6))),
+    ("GaborWavelet", 1) => Some(ContinuousWaveletSpec::Gabor(args[0].clone())),
+    _ => None,
+  }
 }

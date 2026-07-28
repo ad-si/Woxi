@@ -11,13 +11,11 @@
 //! - MeyerWavelet and BattleLemarieWavelet evaluate numerically from their
 //!   Fourier-domain definitions.
 
-use super::filters::meyer_nu;
-use super::{
-  ContinuousWaveletSpec, WaveletSpec, parse_continuous_wavelet,
-  parse_discrete_wavelet, unevaluated,
-};
+use super::continuous::{ContinuousWaveletSpec, parse_continuous_wavelet};
+use super::data::{WaveletSpec, parse_discrete_wavelet};
+use super::filters::{meyer_nu, wavelet_filters};
 use crate::InterpreterError;
-use crate::syntax::{Expr, expr_to_string};
+use crate::syntax::{Expr, expr_to_string, unevaluated};
 
 fn num(e: &Expr) -> Option<f64> {
   crate::functions::math_ast::expr_to_num(e)
@@ -113,7 +111,7 @@ fn wavelet_phi_psi_ast(
     },
     WaveletSpec::BattleLemarie(_, _) => match num(x) {
       Some(t) => {
-        let filters = super::wavelet_filters(&spec).unwrap();
+        let filters = wavelet_filters(&spec).unwrap();
         Ok(wrap_real_if_numeric(
           x,
           cascade_eval(&filters, t, phi, dual),
@@ -123,7 +121,7 @@ fn wavelet_phi_psi_ast(
     },
     _ => match num(x) {
       Some(t) => {
-        let Some(filters) = super::wavelet_filters(&spec) else {
+        let Some(filters) = wavelet_filters(&spec) else {
           return Ok(unevaluated(fname, args));
         };
         Ok(wrap_real_if_numeric(

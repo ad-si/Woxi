@@ -12,13 +12,29 @@
 
 use std::collections::BTreeMap;
 
+use super::filters::wavelet_filters;
 use super::transforms::{
   CoefArray, Padding, TransformKind, basis_index, default_refinement,
   forward_transform, inverse_transform, node_dims,
 };
-use super::{WaveletSpec, parse_discrete_wavelet, unevaluated};
 use crate::InterpreterError;
-use crate::syntax::{Expr, expr_to_string};
+use crate::syntax::{Expr, expr_to_string, unevaluated};
+
+/// A validated discrete wavelet family (one that has filter coefficients
+/// and works with the discrete transforms).
+#[derive(Clone, Debug, PartialEq)]
+pub enum WaveletSpec {
+  Haar,
+  Daubechies(usize),
+  Symlet(usize),
+  Coiflet(usize),
+  BattleLemarie(u32, f64),
+  BiorthogonalSpline(u32, u32),
+  ReverseBiorthogonalSpline(u32, u32),
+  Cdf(bool), // true = "9/7", false = "5/3"
+  Meyer(u32, f64),
+  Shannon(f64),
+}
 
 fn num(e: &Expr) -> Option<f64> {
   crate::functions::math_ast::expr_to_num(e)
@@ -296,7 +312,7 @@ fn symbolic_dot(pairs: Vec<(Expr, Expr)>) -> Expr {
 fn exact_filters(
   spec: &WaveletSpec,
 ) -> Option<(Vec<(i64, Expr)>, Vec<(i64, Expr)>)> {
-  let f = super::wavelet_filters(spec)?;
+  let f = wavelet_filters(spec)?;
   let dual = f.dual_lo_exact.clone()?;
   let primal = f.primal_lo_exact.clone()?;
   Some((primal, dual))
@@ -525,7 +541,7 @@ pub fn wavelet_transform_ast(
     ));
     return Ok(unevaluated(fname, args));
   };
-  let Some(filters) = super::wavelet_filters(&spec) else {
+  let Some(filters) = wavelet_filters(&spec) else {
     return Ok(unevaluated(fname, args));
   };
 
@@ -667,7 +683,7 @@ pub fn inverse_wavelet_transform_ast(
     ));
     return Ok(unevaluated(fname, args));
   };
-  let Some(filters) = super::wavelet_filters(&spec) else {
+  let Some(filters) = wavelet_filters(&spec) else {
     return Ok(unevaluated(fname, args));
   };
 
@@ -817,7 +833,7 @@ fn symbolic_inverse(
     synth_hi = super::filters::negate_filter_exact(&synth_hi);
     analysis_hi = super::filters::negate_filter_exact(&analysis_hi);
   }
-  let filters_num = super::wavelet_filters(spec)?;
+  let filters_num = wavelet_filters(spec)?;
   let r = dwd.refinement();
   let n0 = dwd.dims[0];
 
@@ -1747,4 +1763,119 @@ pub fn wavelet_best_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     dims: dwd.dims.clone(),
   };
   Ok(new_dwd.to_expr())
+}
+
+fn pos_int(e: &Expr) -> Option<i128> {
+  match e {
+    Expr::Integer(n) if *n > 0 => Some(*n),
+    _ => None,
+  }
+}
+
+fn pos_real(e: &Expr) -> Option<f64> {
+  crate::functions::math_ast::expr_to_num(e).filter(|v| *v > 0.0)
+}
+
+/// Recognize (and validate) a discrete wavelet family expression,
+/// filling in the documented default parameters.
+pub fn parse_discrete_wavelet(e: &Expr) -> Option<WaveletSpec> {
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  match (name.as_str(), args.len()) {
+    ("HaarWavelet", 0) => Some(WaveletSpec::Haar),
+    ("DaubechiesWavelet", 0) => Some(WaveletSpec::Daubechies(2)),
+    ("DaubechiesWavelet", 1) => {
+      let n = pos_int(&args[0])?;
+      // Root finding at machine precision degrades for very large orders.
+      if n <= 60 {
+        Some(WaveletSpec::Daubechies(n as usize))
+      } else {
+        None
+      }
+    }
+    ("SymletWavelet", 0) => Some(WaveletSpec::Symlet(4)),
+    ("SymletWavelet", 1) => {
+      let n = pos_int(&args[0])?;
+      if n < 20 {
+        Some(WaveletSpec::Symlet(n as usize))
+      } else {
+        None
+      }
+    }
+    ("CoifletWavelet", 0) => Some(WaveletSpec::Coiflet(2)),
+    ("CoifletWavelet", 1) => {
+      let n = pos_int(&args[0])?;
+      if n <= 5 {
+        Some(WaveletSpec::Coiflet(n as usize))
+      } else {
+        None
+      }
+    }
+    ("BattleLemarieWavelet", 0) => Some(WaveletSpec::BattleLemarie(3, 10.0)),
+    ("BattleLemarieWavelet", 1) => {
+      let n = pos_int(&args[0])?;
+      if n < 15 {
+        Some(WaveletSpec::BattleLemarie(n as u32, 10.0))
+      } else {
+        None
+      }
+    }
+    ("BattleLemarieWavelet", 2) => {
+      let n = pos_int(&args[0])?;
+      let lim = pos_real(&args[1])?;
+      if n < 15 {
+        Some(WaveletSpec::BattleLemarie(n as u32, lim))
+      } else {
+        None
+      }
+    }
+    ("BiorthogonalSplineWavelet", 0) => {
+      Some(WaveletSpec::BiorthogonalSpline(4, 2))
+    }
+    ("BiorthogonalSplineWavelet", 2) => {
+      let n = pos_int(&args[0])?;
+      let m = pos_int(&args[1])?;
+      if (n + m) % 2 == 0 && n <= 9 && m <= 9 {
+        Some(WaveletSpec::BiorthogonalSpline(n as u32, m as u32))
+      } else {
+        None
+      }
+    }
+    ("ReverseBiorthogonalSplineWavelet", 0) => {
+      Some(WaveletSpec::ReverseBiorthogonalSpline(4, 2))
+    }
+    ("ReverseBiorthogonalSplineWavelet", 2) => {
+      let n = pos_int(&args[0])?;
+      let m = pos_int(&args[1])?;
+      if (n + m) % 2 == 0 && n <= 9 && m <= 9 {
+        Some(WaveletSpec::ReverseBiorthogonalSpline(n as u32, m as u32))
+      } else {
+        None
+      }
+    }
+    ("CDFWavelet", 0) => Some(WaveletSpec::Cdf(true)),
+    ("CDFWavelet", 1) => match &args[0] {
+      Expr::String(s) if s == "9/7" || s == "CDF9/7" => {
+        Some(WaveletSpec::Cdf(true))
+      }
+      Expr::String(s) if s == "5/3" || s == "CDF5/3" => {
+        Some(WaveletSpec::Cdf(false))
+      }
+      _ => None,
+    },
+    ("MeyerWavelet", 0) => Some(WaveletSpec::Meyer(3, 8.0)),
+    ("MeyerWavelet", 1) => {
+      let n = pos_int(&args[0])?;
+      Some(WaveletSpec::Meyer(n as u32, 8.0))
+    }
+    ("MeyerWavelet", 2) => {
+      let n = pos_int(&args[0])?;
+      let lim = pos_real(&args[1])?;
+      Some(WaveletSpec::Meyer(n as u32, lim))
+    }
+    ("ShannonWavelet", 0) => Some(WaveletSpec::Shannon(10.0)),
+    ("ShannonWavelet", 1) => Some(WaveletSpec::Shannon(pos_real(&args[0])?)),
+    _ => None,
+  }
 }

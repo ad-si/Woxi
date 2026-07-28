@@ -1262,7 +1262,7 @@ pub fn apply_curried_call(
       match prop.as_str() {
         "Wavelet" => Ok(func_args[0].clone()),
         "PrimalLowpass" | "PrimalHighpass" | "DualLowpass" | "DualHighpass" => {
-          crate::functions::wavelet_ast::wavelet_filter_coefficients_ast(&[
+          crate::functions::wavelet_ast::filters::wavelet_filter_coefficients_ast(&[
             func_args[0].clone(),
             args[0].clone(),
           ])
