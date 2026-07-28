@@ -874,3 +874,276 @@ pub fn simple_polygon_q_ast(
     _ => Some(Ok(bool_expr(false))),
   }
 }
+
+// ---------------------------------------------------------------------------
+// ConvexPolyhedronQ
+// ---------------------------------------------------------------------------
+
+type Pt3 = [f64; 3];
+
+fn sub3(a: Pt3, b: Pt3) -> Pt3 {
+  [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+fn cross3(a: Pt3, b: Pt3) -> Pt3 {
+  [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ]
+}
+
+fn dot3(a: Pt3, b: Pt3) -> f64 {
+  a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+fn norm3(a: Pt3) -> f64 {
+  dot3(a, a).sqrt()
+}
+
+/// A single spatial point, when the expression is one with numeric
+/// coordinates.
+fn point3(expr: &Expr) -> Option<Pt3> {
+  let Expr::List(items) = expr else {
+    return None;
+  };
+  if items.len() != 3 {
+    return None;
+  }
+  let mut out = [0.0; 3];
+  for (slot, item) in out.iter_mut().zip(items.iter()) {
+    *slot = crate::functions::math_ast::try_eval_to_f64(item)?;
+  }
+  Some(out)
+}
+
+/// A list of spatial points.
+fn points3(expr: &Expr) -> Option<Vec<Pt3>> {
+  let Expr::List(items) = expr else {
+    return None;
+  };
+  items.iter().map(point3).collect()
+}
+
+/// The faces of a hexahedron, in the vertex order Wolfram lists its corners.
+const HEXAHEDRON_FACES: [[usize; 4]; 6] = [
+  [0, 1, 2, 3],
+  [4, 5, 6, 7],
+  [0, 1, 5, 4],
+  [1, 2, 6, 5],
+  [2, 3, 7, 6],
+  [3, 0, 4, 7],
+];
+
+/// The faces of a triangular prism: the two triangles and the three sides.
+const PRISM_FACES: [&[usize]; 5] = [
+  &[0, 1, 2],
+  &[3, 4, 5],
+  &[0, 1, 4, 3],
+  &[1, 2, 5, 4],
+  &[2, 0, 3, 5],
+];
+
+/// The vertices and faces of a polyhedron expression, as far as its head
+/// pins them down. `None` when the expression does not describe one with
+/// numeric coordinates.
+fn polyhedron_faces(expr: &Expr) -> Option<(Vec<Pt3>, Vec<Vec<usize>>)> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  let simplex = |points: Vec<Pt3>| {
+    (points.len() == 4).then(|| {
+      (
+        points,
+        vec![vec![0, 1, 2], vec![0, 1, 3], vec![0, 2, 3], vec![1, 2, 3]],
+      )
+    })
+  };
+  match name.as_str() {
+    "Polyhedron" if args.len() == 2 => {
+      let points = points3(&args[0])?;
+      let Expr::List(face_list) = &args[1] else {
+        return None;
+      };
+      let mut faces = Vec::with_capacity(face_list.len());
+      for face in face_list.iter() {
+        let Expr::List(indices) = face else {
+          return None;
+        };
+        let mut resolved = Vec::with_capacity(indices.len());
+        for index in indices.iter() {
+          let Expr::Integer(i) = index else {
+            return None;
+          };
+          // Wolfram numbers the vertices from one.
+          let i = usize::try_from(*i - 1).ok()?;
+          if i >= points.len() {
+            return None;
+          }
+          resolved.push(i);
+        }
+        faces.push(resolved);
+      }
+      Some((points, faces))
+    }
+    "Tetrahedron" | "Simplex" if args.len() == 1 => simplex(points3(&args[0])?),
+    "Hexahedron" if args.len() == 1 => {
+      let points = points3(&args[0])?;
+      (points.len() == 8).then(|| {
+        (
+          points,
+          HEXAHEDRON_FACES.iter().map(|f| f.to_vec()).collect(),
+        )
+      })
+    }
+    "Prism" if args.len() == 1 => {
+      let points = points3(&args[0])?;
+      (points.len() == 6)
+        .then(|| (points, PRISM_FACES.iter().map(|f| f.to_vec()).collect()))
+    }
+    "Pyramid" if args.len() == 1 => {
+      let points = points3(&args[0])?;
+      // Every point but the last spans the base; the last is the apex.
+      let base = points.len().checked_sub(1)?;
+      if base < 3 {
+        return None;
+      }
+      let mut faces = vec![(0..base).collect::<Vec<_>>()];
+      for i in 0..base {
+        faces.push(vec![i, (i + 1) % base, base]);
+      }
+      Some((points, faces))
+    }
+    _ => None,
+  }
+}
+
+/// Whether the vertices and faces describe a convex solid: every face flat,
+/// every vertex on one side of every face, and some vertex off each of them
+/// so that the whole thing has volume.
+fn convex_polyhedron(points: &[Pt3], faces: &[Vec<usize>]) -> bool {
+  if points.len() < 4 || faces.len() < 4 {
+    return false;
+  }
+  for face in faces {
+    if face.len() < 3 {
+      return false;
+    }
+    // The face's plane, from the first corner and the first pair of edges
+    // that are not in line with each other.
+    let origin = points[face[0]];
+    let mut normal = None;
+    for i in 1..face.len() - 1 {
+      let candidate = cross3(
+        sub3(points[face[i]], origin),
+        sub3(points[face[i + 1]], origin),
+      );
+      if norm3(candidate) > EPS {
+        normal = Some(candidate);
+        break;
+      }
+    }
+    let Some(normal) = normal else {
+      return false;
+    };
+    let scale = norm3(normal);
+    // Every corner of the face has to lie in that plane, or the face is bent
+    // and the solid cannot be convex.
+    for &corner in face {
+      if dot3(normal, sub3(points[corner], origin)).abs() / scale > EPS {
+        return false;
+      }
+    }
+    // Every vertex has to fall on one side of it, and at least one strictly
+    // off it.
+    let mut above = false;
+    let mut below = false;
+    for point in points {
+      let side = dot3(normal, sub3(*point, origin)) / scale;
+      if side > EPS {
+        above = true;
+      } else if side < -EPS {
+        below = true;
+      }
+    }
+    if above == below {
+      return false;
+    }
+  }
+  true
+}
+
+/// `ConvexPolyhedronQ[expr]` — whether `expr` is a convex polyhedron. Only a
+/// bounded, flat-faced, three-dimensional solid qualifies, so a ball or a
+/// cylinder is not one, and neither is a polygon.
+pub fn convex_polyhedron_q_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    let n = args.len();
+    let noun = if n == 1 { "argument" } else { "arguments" };
+    crate::emit_message(&format!(
+      "ConvexPolyhedronQ::argx: ConvexPolyhedronQ called with {n} {noun}; \
+       1 argument is expected."
+    ));
+    return Ok(crate::syntax::unevaluated("ConvexPolyhedronQ", args));
+  }
+  if let Some((points, faces)) = polyhedron_faces(&args[0]) {
+    return Ok(bool_expr(convex_polyhedron(&points, &faces)));
+  }
+  let positive = |expr: Option<&Expr>| match expr {
+    None => true,
+    Some(e) => {
+      crate::functions::math_ast::try_eval_to_f64(e).is_some_and(|v| v > EPS)
+    }
+  };
+  let Expr::FunctionCall { name, args: sargs } = &args[0] else {
+    return Ok(bool_expr(false));
+  };
+  let convex = match name.as_str() {
+    // The regular solids, which are convex whenever they have any size. Each
+    // takes an optional centre and an optional size.
+    "Cube" | "Dodecahedron" | "Octahedron" | "Icosahedron" | "Tetrahedron"
+    | "Hexahedron"
+      if sargs.len() <= 2 =>
+    {
+      sargs.first().is_none_or(|c| point3(c).is_some())
+        && positive(sargs.get(1))
+    }
+    // A box has to be the three-dimensional one, with every side non-empty.
+    "Cuboid" if sargs.len() <= 2 => {
+      let corner = |e: Option<&Expr>| match e {
+        None => Some([0.0, 0.0, 0.0]),
+        Some(expr) => point3(expr),
+      };
+      match (corner(sargs.first()), sargs.get(1)) {
+        // A lower corner on its own means the unit box at it.
+        (Some(_), None) => true,
+        (Some(lo), Some(hi)) => match point3(hi) {
+          Some(hi) => {
+            lo.iter().zip(hi.iter()).all(|(l, h)| (h - l).abs() > EPS)
+          }
+          None => false,
+        },
+        (None, _) => false,
+      }
+    }
+    // `Simplex[n]` is a solid only in three dimensions.
+    "Simplex" if sargs.len() == 1 => {
+      matches!(&sargs[0], Expr::Integer(3))
+    }
+    // Three independent edges span a parallelepiped.
+    "Parallelepiped" if sargs.len() == 2 => {
+      match (point3(&sargs[0]), points3(&sargs[1])) {
+        (Some(_), Some(edges)) if edges.len() == 3 => {
+          dot3(cross3(edges[0], edges[1]), edges[2]).abs() > EPS
+        }
+        _ => false,
+      }
+    }
+    // Prisms and pyramids without explicit corners are the standard ones.
+    "Prism" | "Pyramid" if sargs.is_empty() => true,
+    _ => false,
+  };
+  Ok(bool_expr(convex))
+}

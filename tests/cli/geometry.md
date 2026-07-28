@@ -163,3 +163,38 @@ $ wo 'CircularArcThrough[{{0, 0}, {1, 0}, {2, 0}}]'
 CircularArcThrough::indep: CircularArcThrough does not exist for {{0, 0}, {1, 0}, {2, 0}}.
 CircularArcThrough[{{0, 0}, {1, 0}, {2, 0}}]
 ```
+
+## `ConvexPolyhedronQ`
+
+Whether a region is a convex polyhedron: bounded, flat-faced and
+three-dimensional.
+
+```scrut
+$ wo 'ConvexPolyhedronQ[Cube[]]'
+True
+```
+
+A curved solid is not one, and neither is a flat region:
+
+```scrut
+$ wo 'ConvexPolyhedronQ[Ball[]]'
+False
+```
+
+```scrut
+$ wo 'ConvexPolyhedronQ[Simplex[2]]'
+False
+```
+
+Corners of your own are measured — skewing one so a side stops being flat
+takes the convexity with it:
+
+```scrut
+$ wo 'ConvexPolyhedronQ[Prism[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}, {1, 0, 1}, {0, 1, 1}}]]'
+True
+```
+
+```scrut
+$ wo 'ConvexPolyhedronQ[Prism[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}, {5, 0, 1}, {0, 1, 1}}]]'
+False
+```

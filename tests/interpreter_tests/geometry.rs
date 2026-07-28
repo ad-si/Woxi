@@ -7828,3 +7828,185 @@ mod circular_arc_through {
     }
   }
 }
+
+// ConvexPolyhedronQ. Only a bounded, flat-faced, three-dimensional solid
+// qualifies, and it has to be convex. Values verified against wolframscript.
+mod convex_polyhedron_q {
+  use super::*;
+
+  #[test]
+  fn the_named_solids_are_convex() {
+    clear_state();
+    for code in [
+      "ConvexPolyhedronQ[Cube[]]",
+      "ConvexPolyhedronQ[Cube[{0, 0, 0}, 2]]",
+      "ConvexPolyhedronQ[Tetrahedron[]]",
+      "ConvexPolyhedronQ[Dodecahedron[]]",
+      "ConvexPolyhedronQ[Dodecahedron[{0, 0, 0}, 2]]",
+      "ConvexPolyhedronQ[Octahedron[]]",
+      "ConvexPolyhedronQ[Icosahedron[]]",
+      "ConvexPolyhedronQ[Hexahedron[]]",
+      "ConvexPolyhedronQ[Prism[]]",
+      "ConvexPolyhedronQ[Pyramid[]]",
+      "ConvexPolyhedronQ[Simplex[3]]",
+      "ConvexPolyhedronQ[Cuboid[]]",
+      "ConvexPolyhedronQ[Cuboid[{0, 0, 0}]]",
+      "ConvexPolyhedronQ[Cuboid[{0, 0, 0}, {1, 2, 3}]]",
+      "ConvexPolyhedronQ[Parallelepiped[{0, 0, 0}, \
+       {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}]]",
+    ] {
+      let code = code.replace("       ", "");
+      assert_eq!(interpret(&code).unwrap(), "True", "{code}");
+    }
+  }
+
+  #[test]
+  fn corners_of_ones_own_are_measured() {
+    clear_state();
+    for (code, expected) in [
+      (
+        "ConvexPolyhedronQ[Tetrahedron[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, \
+         {0, 0, 1}}]]",
+        "True",
+      ),
+      (
+        "ConvexPolyhedronQ[Simplex[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, \
+         {0, 0, 1}}]]",
+        "True",
+      ),
+      (
+        "ConvexPolyhedronQ[Hexahedron[{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, \
+         {0, 1, 0}, {0, 0, 1}, {1, 0, 1}, {1, 1, 1}, {0, 1, 1}}]]",
+        "True",
+      ),
+      (
+        "ConvexPolyhedronQ[Prism[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, \
+         {0, 0, 1}, {1, 0, 1}, {0, 1, 1}}]]",
+        "True",
+      ),
+      // A pyramid stays convex with its apex under the base.
+      (
+        "ConvexPolyhedronQ[Pyramid[{{0, 0, 0}, {2, 0, 0}, {2, 2, 0}, \
+         {0, 2, 0}, {1, 1, -1}}]]",
+        "True",
+      ),
+      // A corner pushed inside bends a face, so the solid is not convex.
+      (
+        "ConvexPolyhedronQ[Hexahedron[{{0, 0, 0}, {2, 0, 0}, {2, 2, 0}, \
+         {0, 2, 0}, {0, 0, 2}, {2, 0, 2}, {2, 2, 2}, {1, 1, 1}}]]",
+        "False",
+      ),
+      (
+        "ConvexPolyhedronQ[Prism[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, \
+         {0, 0, 1}, {5, 0, 1}, {0, 1, 1}}]]",
+        "False",
+      ),
+      // Four corners in one plane enclose nothing.
+      (
+        "ConvexPolyhedronQ[Tetrahedron[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, \
+         {2, 2, 0}}]]",
+        "False",
+      ),
+      (
+        "ConvexPolyhedronQ[Tetrahedron[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}]]",
+        "False",
+      ),
+    ] {
+      let code = code.replace("         ", "");
+      assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn a_polyhedron_is_measured_face_by_face() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ConvexPolyhedronQ[Polyhedron[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, \
+         {0, 0, 1}}, {{1, 2, 3}, {1, 2, 4}, {1, 3, 4}, {2, 3, 4}}]]"
+          .replace("         ", "")
+          .as_str()
+      )
+      .unwrap(),
+      "True"
+    );
+    // The same corners with one pushed in bend the top face.
+    assert_eq!(
+      interpret(
+        "ConvexPolyhedronQ[Polyhedron[{{0, 0, 0}, {2, 0, 0}, {2, 2, 0}, \
+         {0, 2, 0}, {0, 0, 2}, {2, 0, 2}, {2, 2, 2}, {1, 1, 1}}, \
+         {{1, 2, 3, 4}, {5, 6, 7, 8}, {1, 2, 6, 5}, {2, 3, 7, 6}, \
+         {3, 4, 8, 7}, {4, 1, 5, 8}}]]"
+          .replace("         ", "")
+          .as_str()
+      )
+      .unwrap(),
+      "False"
+    );
+    // One face on its own encloses nothing.
+    assert_eq!(
+      interpret(
+        "ConvexPolyhedronQ[Polyhedron[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, \
+         {0, 0, 1}}, {{1, 2, 3}}]]"
+          .replace("         ", "")
+          .as_str()
+      )
+      .unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn anything_that_is_not_a_flat_sided_solid_is_not_one() {
+    clear_state();
+    for code in [
+      // Curved.
+      "ConvexPolyhedronQ[Ball[]]",
+      "ConvexPolyhedronQ[Cylinder[]]",
+      "ConvexPolyhedronQ[Cone[]]",
+      // Flat but not three-dimensional.
+      "ConvexPolyhedronQ[Polygon[{{0, 0}, {1, 0}, {0, 1}}]]",
+      "ConvexPolyhedronQ[Simplex[1]]",
+      "ConvexPolyhedronQ[Simplex[2]]",
+      "ConvexPolyhedronQ[Simplex[4]]",
+      "ConvexPolyhedronQ[Cuboid[{0, 0}, {1, 1}]]",
+      "ConvexPolyhedronQ[Cuboid[{0, 0, 0, 0}, {1, 1, 1, 1}]]",
+      "ConvexPolyhedronQ[Parallelepiped[{0, 0, 0}, {{1, 0, 0}, {0, 1, 0}}]]",
+      // Three edges that do not span a volume.
+      "ConvexPolyhedronQ[Parallelepiped[{0, 0, 0}, \
+       {{1, 0, 0}, {2, 0, 0}, {0, 0, 1}}]]",
+      // No size at all.
+      "ConvexPolyhedronQ[Cube[{0, 0, 0}, 0]]",
+      // Not a region.
+      "ConvexPolyhedronQ[5]",
+      "ConvexPolyhedronQ[{1, 2}]",
+      "ConvexPolyhedronQ[x]",
+    ] {
+      let code = code.replace("       ", "");
+      assert_eq!(interpret(&code).unwrap(), "False", "{code}");
+    }
+  }
+
+  #[test]
+  fn it_takes_exactly_one_argument() {
+    clear_state();
+    for (code, expected) in [
+      ("ConvexPolyhedronQ[]", "ConvexPolyhedronQ[]"),
+      (
+        "ConvexPolyhedronQ[Cube[], 2]",
+        "ConvexPolyhedronQ[Cube[], 2]",
+      ),
+    ] {
+      let result = interpret_with_stdout(code).unwrap();
+      assert_eq!(result.result, expected, "{code}");
+      assert!(
+        result
+          .warnings
+          .iter()
+          .any(|w| w.contains("ConvexPolyhedronQ::argx")),
+        "expected ::argx for {code}, got {:?}",
+        result.warnings
+      );
+    }
+  }
+}
