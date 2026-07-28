@@ -6,6 +6,7 @@ pub mod astronomy_ast;
 pub mod audio_ast;
 pub mod boolean_ast;
 pub mod calculus_ast;
+pub mod caputo_d;
 pub mod cellular_automaton_ast;
 pub mod chart;
 pub mod control_flow_ast;

@@ -14996,3 +14996,179 @@ mod integrate_log_scaled {
     }
   }
 }
+
+// CaputoD — the Caputo fractional differintegral. For a power the answer is a
+// single Gamma ratio, and the operator is linear, so a polynomial goes term by
+// term. Values verified against wolframscript.
+mod caputo_d {
+  use super::*;
+
+  /// The result of `code`, written the way `InputForm` writes it.
+  fn form(code: &str) -> String {
+    interpret(&format!("ToString[{code}, InputForm]")).unwrap()
+  }
+
+  #[test]
+  fn a_power_gives_a_gamma_ratio() {
+    clear_state();
+    for (code, expected) in [
+      ("CaputoD[t^2, {t, 1/2}]", "(8*t^(3/2))/(3*Sqrt[Pi])"),
+      ("CaputoD[t^3, {t, 1/2}]", "(16*t^(5/2))/(5*Sqrt[Pi])"),
+      ("CaputoD[t, {t, 1/2}]", "(2*Sqrt[t])/Sqrt[Pi]"),
+      ("CaputoD[t^4, {t, 1/2}]", "(128*t^(7/2))/(35*Sqrt[Pi])"),
+      (
+        "CaputoD[t^10, {t, 1/2}]",
+        "(262144*t^(19/2))/(46189*Sqrt[Pi])",
+      ),
+      // An order past one differentiates further before integrating back.
+      ("CaputoD[t^2, {t, 3/2}]", "(4*Sqrt[t])/Sqrt[Pi]"),
+      ("CaputoD[t^5, {t, 5/2}]", "(64*t^(5/2))/Sqrt[Pi]"),
+      // A Gamma that does not reduce is left standing.
+      ("CaputoD[t^2, {t, 1/3}]", "(2*t^(5/3))/Gamma[8/3]"),
+      (
+        "CaputoD[t^(2/3), {t, 1/2}]",
+        "(t^(1/6)*Gamma[5/3])/Gamma[7/6]",
+      ),
+      // The power need not be whole.
+      ("CaputoD[t^(1/2), {t, 1/2}]", "Sqrt[Pi]/2"),
+      ("CaputoD[t^(3/2), {t, 1/2}]", "(3*Sqrt[Pi]*t)/4"),
+      // A whole order is the ordinary derivative.
+      ("CaputoD[t^2, {t, 1}]", "2*t"),
+      ("CaputoD[t^2, {t, 2}]", "2"),
+      ("CaputoD[t^3, {t, 3}]", "6"),
+      // Order zero asks for nothing.
+      ("CaputoD[t^2, {t, 0}]", "t^2"),
+      // A negative order integrates instead.
+      ("CaputoD[t^2, {t, -1}]", "t^3/3"),
+      ("CaputoD[t^2, {t, -2}]", "t^4/12"),
+      ("CaputoD[t^2, {t, -1/2}]", "(16*t^(5/2))/(15*Sqrt[Pi])"),
+      ("CaputoD[1, {t, -1/2}]", "(2*Sqrt[t])/Sqrt[Pi]"),
+    ] {
+      assert_eq!(form(code), expected, "{code}");
+    }
+  }
+
+  // The property Caputo is chosen for: a constant differentiates away, where
+  // Riemann–Liouville would leave a `t^(-α)` behind.
+  #[test]
+  fn a_constant_vanishes_under_a_positive_order() {
+    clear_state();
+    for code in [
+      "CaputoD[1, {t, 1/2}]",
+      "CaputoD[2, {t, 1/2}]",
+      "CaputoD[c, {t, 1/2}]",
+      "CaputoD[1, {t, 1}]",
+      "CaputoD[0, {t, 1/2}]",
+      // Nothing in the expression depends on the variable asked about.
+      "CaputoD[t^2, {s, 1/2}]",
+    ] {
+      assert_eq!(interpret(code).unwrap(), "0", "{code}");
+    }
+  }
+
+  #[test]
+  fn the_operator_is_linear_over_the_expanded_input() {
+    clear_state();
+    for (code, expected) in [
+      (
+        "CaputoD[t^2 + t, {t, 1/2}]",
+        "(2*Sqrt[t])/Sqrt[Pi] + (8*t^(3/2))/(3*Sqrt[Pi])",
+      ),
+      ("CaputoD[3 t^2, {t, 1/2}]", "(8*t^(3/2))/Sqrt[Pi]"),
+      ("CaputoD[t^2/3, {t, 1/2}]", "(8*t^(3/2))/(9*Sqrt[Pi])"),
+      ("CaputoD[-t^2, {t, 1/2}]", "(-8*t^(3/2))/(3*Sqrt[Pi])"),
+      // A symbolic factor rides along as a coefficient.
+      ("CaputoD[c t^2, {t, 1/2}]", "(8*c*t^(3/2))/(3*Sqrt[Pi])"),
+      ("CaputoD[t^2 u, {t, 1/2}]", "(8*t^(3/2)*u)/(3*Sqrt[Pi])"),
+      (
+        "CaputoD[a t^2 + b t + c, {t, 1/2}]",
+        "(2*b*Sqrt[t])/Sqrt[Pi] + (8*a*t^(3/2))/(3*Sqrt[Pi])",
+      ),
+      // The input is expanded first.
+      (
+        "CaputoD[(t + 1)^2, {t, 1/2}]",
+        "(4*Sqrt[t])/Sqrt[Pi] + (8*t^(3/2))/(3*Sqrt[Pi])",
+      ),
+      (
+        "CaputoD[5 t^3 + 2 t, {t, 1/2}]",
+        "(4*Sqrt[t])/Sqrt[Pi] + (16*t^(5/2))/Sqrt[Pi]",
+      ),
+    ] {
+      assert_eq!(form(code), expected, "{code}");
+    }
+  }
+
+  // A symbolic order stands for the plain Gamma ratio only for a whole power
+  // of at least two; below that wolframscript splits on the order's sign,
+  // which is left unevaluated here.
+  #[test]
+  fn a_symbolic_order_covers_the_whole_powers() {
+    clear_state();
+    for (code, expected) in [
+      (
+        "CaputoD[t^2, {t, alpha}]",
+        "(2*t^(2 - alpha))/Gamma[3 - alpha]",
+      ),
+      (
+        "CaputoD[t^3, {t, alpha}]",
+        "(6*t^(3 - alpha))/Gamma[4 - alpha]",
+      ),
+      (
+        "CaputoD[t^5, {t, alpha}]",
+        "(120*t^(5 - alpha))/Gamma[6 - alpha]",
+      ),
+    ] {
+      assert_eq!(form(code), expected, "{code}");
+    }
+  }
+
+  // A power the integration step cannot reach reports ::sing; one the
+  // differentiation step already flattens is left standing, as wolframscript
+  // leaves it.
+  #[test]
+  fn orders_the_integral_cannot_reach_are_reported() {
+    clear_state();
+    for code in [
+      "CaputoD[t^(-1/2), {t, 1/2}]",
+      "CaputoD[t^(-1/4), {t, 1/2}]",
+      "CaputoD[t^(1/2), {t, 3/2}]",
+      "CaputoD[t^(1/2), {t, 2}]",
+      "CaputoD[t^(3/2), {t, 5/2}]",
+      "CaputoD[t^(1/4), {t, 3/2}]",
+    ] {
+      let result = interpret_with_stdout(code).unwrap();
+      assert!(
+        result.warnings.iter().any(|w| w.contains("CaputoD::sing")),
+        "expected ::sing for {code}, got {:?}",
+        result.warnings
+      );
+    }
+    // A whole power below the order, and a specification that is not one.
+    for (code, expected) in [
+      ("CaputoD[t^2, {t, 3}]", "CaputoD[t^2, {t, 3}]"),
+      ("CaputoD[t, {t, 2}]", "CaputoD[t, {t, 2}]"),
+      ("CaputoD[t^2, {t, 5/2}]", "CaputoD[t^2, {t, 5/2}]"),
+      ("CaputoD[t, {t, 3/2}]", "CaputoD[t, {t, 3/2}]"),
+      ("CaputoD[f[t], {t, 1/2}]", "CaputoD[f[t], {t, 1/2}]"),
+      ("CaputoD[t^2, {t}]", "CaputoD[t^2, {t}]"),
+      ("CaputoD[t^2, t]", "CaputoD[t^2, t]"),
+    ] {
+      assert_eq!(form(code), expected, "{code}");
+    }
+  }
+
+  // A power that stays exact where the integral converges, including below
+  // the axis when the order integrates rather than differentiates.
+  #[test]
+  fn a_negative_order_reaches_powers_a_positive_one_cannot() {
+    clear_state();
+    for (code, expected) in [
+      ("CaputoD[t^(-1/2), {t, -1/2}]", "Sqrt[Pi]"),
+      ("CaputoD[t^(-1/2), {t, -1}]", "2*Sqrt[t]"),
+      ("CaputoD[t^(-3/2), {t, -1/2}]", "0"),
+      ("CaputoD[t, {t, -1/2}]", "(4*t^(3/2))/(3*Sqrt[Pi])"),
+    ] {
+      assert_eq!(form(code), expected, "{code}");
+    }
+  }
+}

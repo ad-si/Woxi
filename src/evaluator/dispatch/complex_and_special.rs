@@ -1518,6 +1518,9 @@ pub fn dispatch_complex_and_special(
     "CircularArcThrough" if (1..=3).contains(&args.len()) => {
       return Some(compute_circular_arc_through(args));
     }
+    "CaputoD" if args.len() == 2 => {
+      return Some(crate::functions::caputo_d::caputo_d_ast(args));
+    }
     // AngleBisector[{q1, p, q2}] — the interior-angle bisector at p, as an
     // InfiniteLine through p (2-D points only).
     "AngleBisector" if args.len() == 1 => {
