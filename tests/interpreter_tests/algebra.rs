@@ -4633,6 +4633,77 @@ mod solve {
     );
   }
 
+  // Inverting `Abs` splits the equation into a positive and a negative branch,
+  // and over the complexes that loses the rest of the circle — wolframscript
+  // says so with `Solve::ifun`, tagged with whichever solver was called.
+  #[test]
+  fn solve_abs_reports_inverse_function_use() {
+    assert_eq!(
+      interpret("Solve[Abs[x] == 2, x]; $MessageList").unwrap(),
+      "{HoldForm[MessageName[Solve, ifun]]}"
+    );
+    assert_eq!(
+      interpret("SolveValues[Abs[x] == 2, x]; $MessageList").unwrap(),
+      "{HoldForm[MessageName[SolveValues, ifun]]}"
+    );
+    assert_eq!(
+      interpret("NSolve[Abs[x] == 2, x]; $MessageList").unwrap(),
+      "{HoldForm[MessageName[NSolve, ifun]]}"
+    );
+    assert_eq!(
+      interpret("NSolveValues[Abs[x] == 2, x]; $MessageList").unwrap(),
+      "{HoldForm[MessageName[NSolveValues, ifun]]}"
+    );
+  }
+
+  // Nothing is lost when the branches are the whole answer: a `Reals` domain
+  // rules out the circle, a constraint narrows the split to one side, and a
+  // right-hand side of zero or a negative number never splits at all.
+  #[test]
+  fn solve_abs_reports_nothing_when_no_solutions_are_lost() {
+    for code in [
+      "Solve[Abs[x] == 2, x, Reals]",
+      "SolveValues[Abs[x] == 2, x, Reals]",
+      "Solve[{Abs[x] == 2, x > 0}, x]",
+      "Solve[Abs[x] == 2 && x > 0, x]",
+      "Solve[Abs[x] == 0, x]",
+      "Solve[Abs[x] == -1, x]",
+    ] {
+      assert_eq!(
+        interpret(&format!("{code}; $MessageList")).unwrap(),
+        "{}",
+        "{code} should raise no message"
+      );
+    }
+    // `Complexes` is the default domain, so it does report.
+    assert_eq!(
+      interpret("Solve[Abs[x] == 2, x, Complexes]; $MessageList").unwrap(),
+      "{HoldForm[MessageName[Solve, ifun]]}"
+    );
+  }
+
+  // A constraint list is the same system as the conjunction, and used to leak
+  // an unreduced `ToRules[Reduce[...]]` whenever the equation was one the
+  // multi-variable elimination could not take apart on its own.
+  #[test]
+  fn solve_constraint_list_matches_the_conjunction() {
+    for (constraints, expected) in [
+      ("{Abs[x] == 2, x > 0}", "{{x -> 2}}"),
+      ("{Abs[x] == 2, x < 0}", "{{x -> -2}}"),
+      ("{Sin[x] == 0, 0 < x < 7}", "{{x -> Pi}, {x -> 2*Pi}}"),
+      ("{x^2 == 4, x > 0}", "{{x -> 2}}"),
+    ] {
+      let listed = interpret(&format!("Solve[{constraints}, x]")).unwrap();
+      assert_eq!(listed, expected);
+      let conjunction =
+        constraints.trim_matches(['{', '}']).replace(", ", "&&");
+      assert_eq!(
+        interpret(&format!("Solve[{conjunction}, x]")).unwrap(),
+        expected
+      );
+    }
+  }
+
   #[test]
   fn solve_log_equation() {
     assert_eq!(interpret("Solve[Log[x] == 2, x]").unwrap(), "{{x -> E^2}}");

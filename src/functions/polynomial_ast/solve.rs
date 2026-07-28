@@ -73,6 +73,7 @@ fn strip_sqrt_square(expr: Expr) -> Expr {
 /// match Wolfram's machine-precision output. For all other equations,
 /// solves symbolically first, then converts to numerical form via N[].
 pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let _head = IfunHead::new("NSolve");
   // Try numerically stable quadratic formula for degree-2 polynomials
   if let Some(result) = try_nsolve_quadratic(args) {
     return result;
@@ -1069,6 +1070,7 @@ pub fn to_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// `SolveValues[eqn, var]` returns the values directly (not as rules).
 /// It's `Solve[eqn, var]` flattened to just the right-hand sides.
 pub fn solve_values_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let _head = IfunHead::new("SolveValues");
   let solutions = solve_ast(args)?;
   Ok(
     solution_values(&solutions, &args[1])
@@ -1082,6 +1084,7 @@ pub fn solve_values_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// list of variables yields a list of value-lists (one per solution), in the
 /// order the variables are given.
 pub fn nsolve_values_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let _head = IfunHead::new("NSolveValues");
   let solutions = nsolve_ast(args)?;
   Ok(
     solution_values(&solutions, &args[1])
@@ -1212,7 +1215,110 @@ fn collect_solve_vars(expr: &Expr, out: &mut Vec<String>) {
   }
 }
 
+thread_local! {
+  /// Nesting depth of a solve that must not report `ifun`. The solvers reach
+  /// the inverted-function step through several layers of recursion, and by
+  /// then the arguments no longer say what asked for it.
+  static IFUN_SUPPRESS: std::cell::Cell<usize> = const {
+    std::cell::Cell::new(0)
+  };
+  /// The head the `ifun` message is reported against — wolframscript tags it
+  /// with the function the user called, not the `Solve` doing the work.
+  static IFUN_HEAD: std::cell::RefCell<&'static str> = const {
+    std::cell::RefCell::new("Solve")
+  };
+}
+
+/// Suppresses the `ifun` report for as long as it is alive.
+struct SuppressIfun(bool);
+
+impl SuppressIfun {
+  fn new(active: bool) -> Self {
+    if active {
+      IFUN_SUPPRESS.with(|d| d.set(d.get() + 1));
+    }
+    Self(active)
+  }
+}
+
+impl Drop for SuppressIfun {
+  fn drop(&mut self) {
+    if self.0 {
+      IFUN_SUPPRESS.with(|d| d.set(d.get() - 1));
+    }
+  }
+}
+
+/// Reports the message against `head` for as long as it is alive.
+struct IfunHead(&'static str);
+
+impl IfunHead {
+  /// The outermost wrapper names the message, so an inner solver that also
+  /// sets a head (`NSolveValues` delegating to `NSolve`) leaves it alone.
+  fn new(head: &'static str) -> Self {
+    Self(IFUN_HEAD.with(|h| {
+      let mut current = h.borrow_mut();
+      if *current == "Solve" {
+        std::mem::replace(&mut *current, head)
+      } else {
+        *current
+      }
+    }))
+  }
+}
+
+impl Drop for IfunHead {
+  fn drop(&mut self) {
+    IFUN_HEAD.with(|h| *h.borrow_mut() = self.0);
+  }
+}
+
+/// Whether `expr` constrains the solution with anything beyond equations.
+/// An inequality alongside an equation narrows the answer to a set the solver
+/// can report in full, which is what takes an inverted function off the hook.
+fn has_inequality(expr: &Expr) -> bool {
+  const INEQUALITY_HEADS: [&str; 6] = [
+    "Less",
+    "Greater",
+    "LessEqual",
+    "GreaterEqual",
+    "Unequal",
+    "Inequality",
+  ];
+  match expr {
+    Expr::Comparison { operators, .. } => {
+      operators.iter().any(|o| !matches!(o, ComparisonOp::Equal))
+    }
+    Expr::List(items) => items.iter().any(has_inequality),
+    Expr::FunctionCall { name, args } => {
+      INEQUALITY_HEADS.contains(&name.as_str())
+        || args.iter().any(has_inequality)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      has_inequality(left) || has_inequality(right)
+    }
+    Expr::UnaryOp { operand, .. } => has_inequality(operand),
+    _ => false,
+  }
+}
+
+/// Report that an inverted function may have cost some solutions.
+fn report_inverse_function_use() {
+  if IFUN_SUPPRESS.with(|d| d.get()) > 0 {
+    return;
+  }
+  let head = IFUN_HEAD.with(|h| *h.borrow());
+  crate::emit_message(&format!(
+    "{head}::ifun: Inverse functions are being used by {head}, so some \
+     solutions may not be found; use Reduce for complete solution information."
+  ));
+}
+
 pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let _constrained = SuppressIfun::new(
+    args.first().is_some_and(has_inequality)
+      || matches!(args.get(2), Some(Expr::Identifier(d)) if d == "Reals"),
+  );
   // One-argument form Solve[eqns]: auto-detect the variables and delegate to
   // the two-argument form. Only the unambiguous cases are handled — a single
   // variable, or a determined/overdetermined system (variables <= equations).
@@ -1588,6 +1694,29 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // to_rules_ast returns Sequence for Or (multi-solution) or List for single solution
       // Solve always wraps into {{...}, {...}, ...} format
       let rules = to_rules_ast(&[reduce_result])?;
+      // The multi-variable elimination does not reach every constraint system
+      // — a transcendental or `Abs` equation narrowed by an inequality comes
+      // back as an unreduced `Reduce[...]`, which `ToRules` then leaves
+      // wrapped. The conjunction spelling of the same system goes down the
+      // single-expression path, which does handle those, so retry there
+      // rather than hand back a `ToRules[Reduce[...]]` nobody asked for.
+      if matches!(&rules, Expr::FunctionCall { name, .. } if name == "ToRules")
+      {
+        let conjunction =
+          constraints
+            .iter()
+            .cloned()
+            .reduce(|left, right| Expr::BinaryOp {
+              op: BinaryOperator::And,
+              left: Box::new(left),
+              right: Box::new(right),
+            });
+        if let Some(conjunction) = conjunction {
+          let mut retry = args.to_vec();
+          retry[0] = conjunction;
+          return solve_ast(&retry);
+        }
+      }
       let mut wrapped = match &rules {
         // Sequence of rule-lists → wrap in outer List
         Expr::FunctionCall {
@@ -3073,6 +3202,12 @@ fn try_solve_abs_eq(
       solutions.extend(solve_branch(Expr::Integer(0))?);
     }
     _ => {
+      // Inverting `Abs` splits the equation into two branches, and over the
+      // complexes that throws solutions away — `Abs[x] == 2` also holds all
+      // around the circle of radius 2, which only `Reduce` reports. Over the
+      // reals nothing is lost, so the message is confined to the other
+      // domains, exactly as wolframscript does it.
+      report_inverse_function_use();
       // Positive numeric or symbolic value: both signs. The negative branch
       // is added first so the symbolic case keeps wolframscript's order
       // ({x -> -a} before {x -> a}); numeric cases are reordered by

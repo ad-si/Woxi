@@ -52,3 +52,33 @@ last bit:
 $ wo 'NSolve[x^3 == 8, x]'
 {{x -> -1. - 1.7320508075688772*I}, {x -> -1. + 1.7320508075688772*I}, {x -> 2.}}
 ```
+
+Inverting `Abs` splits the equation into a positive and a negative branch, and
+over the complexes that leaves out the rest of the circle — `Solve` says so:
+
+```scrut {output_stream: combined}
+$ wo 'Solve[Abs[x] == 2, x]'
+
+Solve::ifun: Inverse functions are being used by Solve, so some solutions may not be found; use Reduce for complete solution information.
+{{x -> -2}, {x -> 2}}
+```
+
+Restricting the domain to the reals, or narrowing the split with a constraint,
+loses nothing and so reports nothing:
+
+```scrut {output_stream: combined}
+$ wo 'Solve[Abs[x] == 2, x, Reals]'
+{{x -> -2}, {x -> 2}}
+```
+
+```scrut {output_stream: combined}
+$ wo 'Solve[{Abs[x] == 2, x > 0}, x]'
+{{x -> 2}}
+```
+
+A list of constraints is the same system as the conjunction of them:
+
+```scrut
+$ wo 'Solve[{Sin[x] == 0, 0 < x < 7}, x]'
+{{x -> Pi}, {x -> 2*Pi}}
+```
