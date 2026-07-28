@@ -3,7 +3,9 @@ use super::*;
 use crate::functions::math_ast::{
   expr_to_rational, gcd_i128, gcd_u64, make_rational, make_sqrt, rat_reduce,
 };
-use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator, unevaluated};
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, UnaryOperator, binop, unevaluated,
+};
 
 /// Columnwise quartile-family statistic for a matrix argument.
 ///
@@ -18,14 +20,6 @@ use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator, unevaluated};
 fn is_numeric_literal(e: &Expr) -> bool {
   matches!(e, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
     || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
-}
-
-fn binop(op: BinaryOperator, left: Expr, right: Expr) -> Expr {
-  Expr::BinaryOp {
-    op,
-    left: Box::new(left),
-    right: Box::new(right),
-  }
 }
 
 /// True if `param` is a usable Quantile parameter specification: the 2 x 2
@@ -415,11 +409,7 @@ pub fn dispatch_math_functions(
             name: "Log".to_string(),
             args: vec![Expr::Integer(3)].into(),
           };
-          let iqr = Expr::BinaryOp {
-            op: BinaryOperator::Divide,
-            left: Box::new(log3),
-            right: Box::new(lambda),
-          };
+          let iqr = binop(BinaryOperator::Divide, log3, lambda);
           return Some(crate::evaluator::evaluate_expr_to_expr(&iqr));
         }
       }
@@ -433,11 +423,7 @@ pub fn dispatch_math_functions(
         dispatch_math_functions("Quartiles", args)
         && qs.len() == 3
       {
-        let diff = Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(qs[2].clone()),
-          right: Box::new(qs[0].clone()),
-        };
+        let diff = binop(BinaryOperator::Minus, qs[2].clone(), qs[0].clone());
         return Some(crate::evaluator::evaluate_expr_to_expr(&diff));
       }
     }
@@ -450,15 +436,11 @@ pub fn dispatch_math_functions(
         dispatch_math_functions("Quartiles", args)
         && qs.len() == 3
       {
-        let half_iqr = Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Minus,
-            left: Box::new(qs[2].clone()),
-            right: Box::new(qs[0].clone()),
-          }),
-          right: Box::new(Expr::Integer(2)),
-        };
+        let half_iqr = binop(
+          BinaryOperator::Divide,
+          binop(BinaryOperator::Minus, qs[2].clone(), qs[0].clone()),
+          Expr::Integer(2),
+        );
         return Some(crate::evaluator::evaluate_expr_to_expr(&half_iqr));
       }
     }
@@ -474,29 +456,17 @@ pub fn dispatch_math_functions(
       {
         use BinaryOperator as B;
         // numerator = Q1 - 2*Q2 + Q3
-        let numerator = Expr::BinaryOp {
-          op: B::Plus,
-          left: Box::new(Expr::BinaryOp {
-            op: B::Minus,
-            left: Box::new(qs[0].clone()),
-            right: Box::new(Expr::BinaryOp {
-              op: B::Times,
-              left: Box::new(Expr::Integer(2)),
-              right: Box::new(qs[1].clone()),
-            }),
-          }),
-          right: Box::new(qs[2].clone()),
-        };
-        let denominator = Expr::BinaryOp {
-          op: B::Minus,
-          left: Box::new(qs[2].clone()),
-          right: Box::new(qs[0].clone()),
-        };
-        let skew = Expr::BinaryOp {
-          op: B::Divide,
-          left: Box::new(numerator),
-          right: Box::new(denominator),
-        };
+        let numerator = binop(
+          B::Plus,
+          binop(
+            B::Minus,
+            qs[0].clone(),
+            binop(B::Times, Expr::Integer(2), qs[1].clone()),
+          ),
+          qs[2].clone(),
+        );
+        let denominator = binop(B::Minus, qs[2].clone(), qs[0].clone());
+        let skew = binop(B::Divide, numerator, denominator);
         return Some(crate::evaluator::evaluate_expr_to_expr(&skew));
       }
     }
@@ -1090,11 +1060,11 @@ pub fn dispatch_math_functions(
           });
           let trimmed = &sorted[trim_lo..n - trim_hi];
           let sum_expr = unevaluated("Plus", trimmed);
-          let result = Expr::BinaryOp {
-            op: BinaryOperator::Divide,
-            left: Box::new(sum_expr),
-            right: Box::new(Expr::Integer(trimmed.len() as i128)),
-          };
+          let result = binop(
+            BinaryOperator::Divide,
+            sum_expr,
+            Expr::Integer(trimmed.len() as i128),
+          );
           return Some(evaluate_expr_to_expr(&result));
         }
       }
@@ -1164,11 +1134,8 @@ pub fn dispatch_math_functions(
             name: "Plus".to_string(),
             args: winsorized.into(),
           };
-          let result = Expr::BinaryOp {
-            op: BinaryOperator::Divide,
-            left: Box::new(sum_expr),
-            right: Box::new(Expr::Integer(n as i128)),
-          };
+          let result =
+            binop(BinaryOperator::Divide, sum_expr, Expr::Integer(n as i128));
           return Some(evaluate_expr_to_expr(&result));
         }
       }
@@ -1702,11 +1669,7 @@ pub fn dispatch_math_functions(
           name: "BetaRegularized".to_string(),
           args: vec![z.clone(), args[2].clone(), args[3].clone()].into(),
         };
-        let diff = Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(f(&args[1])),
-          right: Box::new(f(&args[0])),
-        };
+        let diff = binop(BinaryOperator::Minus, f(&args[1]), f(&args[0]));
         return Some(crate::evaluator::evaluate_expr_to_expr(&diff));
       }
       return Some(Ok(unevaluated("BetaRegularized", args)));
@@ -1743,11 +1706,7 @@ pub fn dispatch_math_functions(
           name: "GammaRegularized".to_string(),
           args: vec![args[0].clone(), z.clone()].into(),
         };
-        let diff = Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(g(&args[1])),
-          right: Box::new(g(&args[2])),
-        };
+        let diff = binop(BinaryOperator::Minus, g(&args[1]), g(&args[2]));
         return Some(crate::evaluator::evaluate_expr_to_expr(&diff));
       }
       if matches!(&args[0], Expr::Integer(1)) {
@@ -1762,11 +1721,8 @@ pub fn dispatch_math_functions(
           ]
           .into(),
         };
-        let diff = Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(exp_neg(&args[1])),
-          right: Box::new(exp_neg(&args[2])),
-        };
+        let diff =
+          binop(BinaryOperator::Minus, exp_neg(&args[1]), exp_neg(&args[2]));
         return Some(crate::evaluator::evaluate_expr_to_expr(&diff));
       }
       return Some(Ok(unevaluated("GammaRegularized", args)));
@@ -1917,11 +1873,7 @@ pub fn dispatch_math_functions(
           name: "Beta".to_string(),
           args: vec![z.clone(), args[2].clone(), args[3].clone()].into(),
         };
-        let diff = Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(f(&args[1])),
-          right: Box::new(f(&args[0])),
-        };
+        let diff = binop(BinaryOperator::Minus, f(&args[1]), f(&args[0]));
         return Some(crate::evaluator::evaluate_expr_to_expr(&diff));
       }
       return Some(Ok(unevaluated("Beta", args)));
@@ -2358,11 +2310,8 @@ pub fn dispatch_math_functions(
       match sin_result {
         Ok(ref sin_val) => {
           if !not_a_value(sin_val) {
-            let div_expr = Expr::BinaryOp {
-              op: BinaryOperator::Divide,
-              left: Box::new(sin_val.clone()),
-              right: Box::new(args[0].clone()),
-            };
+            let div_expr =
+              binop(BinaryOperator::Divide, sin_val.clone(), args[0].clone());
             return Some(crate::evaluator::evaluate_expr_to_expr(&div_expr));
           }
         }
@@ -2392,20 +2341,13 @@ pub fn dispatch_math_functions(
         }
       }
       if contains_real(&args[0]) {
-        let half = Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(args[0].clone()),
-          right: Box::new(Expr::Integer(2)),
-        };
+        let half =
+          binop(BinaryOperator::Divide, args[0].clone(), Expr::Integer(2));
         let sin_expr = Expr::FunctionCall {
           name: "Sin".to_string(),
           args: vec![half].into(),
         };
-        let expr = Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(sin_expr),
-          right: Box::new(Expr::Integer(2)),
-        };
+        let expr = binop(BinaryOperator::Power, sin_expr, Expr::Integer(2));
         return Some(crate::evaluator::evaluate_expr_to_expr(&expr));
       }
       // Exact args: Haversine[x] = (1 - Cos[x])/2. wolframscript evaluates the
@@ -2417,15 +2359,11 @@ pub fn dispatch_math_functions(
         name: "Cos".to_string(),
         args: vec![args[0].clone()].into(),
       };
-      let half = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(Expr::Integer(1)),
-          right: Box::new(cos_x),
-        }),
-        right: Box::new(Expr::Integer(2)),
-      };
+      let half = binop(
+        BinaryOperator::Divide,
+        binop(BinaryOperator::Minus, Expr::Integer(1), cos_x),
+        Expr::Integer(2),
+      );
       if let Ok(result) = crate::evaluator::evaluate_expr_to_expr(&half) {
         let is_rational = matches!(&result, Expr::Integer(_))
           || matches!(&result, Expr::FunctionCall { name, args }
@@ -2543,11 +2481,7 @@ pub fn dispatch_math_functions(
         name: "ArcSin".to_string(),
         args: vec![sqrt_expr].into(),
       };
-      let expr = Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Integer(2)),
-        right: Box::new(asin_expr),
-      };
+      let expr = binop(BinaryOperator::Times, Expr::Integer(2), asin_expr);
       let result = match crate::evaluator::evaluate_expr_to_expr(&expr) {
         Ok(r) => r,
         Err(e) => return Some(Err(e)),
@@ -3639,19 +3573,11 @@ pub fn dispatch_math_functions(
         if elems.len() == 2 {
           let x = &elems[0];
           let y = &elems[1];
-          let r = make_sqrt(Expr::BinaryOp {
-            op: BinaryOperator::Plus,
-            left: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(x.clone()),
-              right: Box::new(Expr::Integer(2)),
-            }),
-            right: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(y.clone()),
-              right: Box::new(Expr::Integer(2)),
-            }),
-          });
+          let r = make_sqrt(binop(
+            BinaryOperator::Plus,
+            binop(BinaryOperator::Power, x.clone(), Expr::Integer(2)),
+            binop(BinaryOperator::Power, y.clone(), Expr::Integer(2)),
+          ));
           let theta = Expr::FunctionCall {
             name: "ArcTan".to_string(),
             args: vec![x.clone(), y.clone()].into(),
@@ -3667,10 +3593,8 @@ pub fn dispatch_math_functions(
         // Helper: Sqrt[Σ_{i=start..n} x_i^2].
         let radical = |start: usize| -> Expr {
           let squares: Vec<Expr> = (start..n)
-            .map(|i| Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(elems[i].clone()),
-              right: Box::new(Expr::Integer(2)),
+            .map(|i| {
+              binop(BinaryOperator::Power, elems[i].clone(), Expr::Integer(2))
             })
             .collect();
           let sum = if squares.len() == 1 {
@@ -3692,11 +3616,7 @@ pub fn dispatch_math_functions(
         result.push(r);
         for k in 0..(n - 2) {
           let denom = radical(k);
-          let frac = Expr::BinaryOp {
-            op: BinaryOperator::Divide,
-            left: Box::new(elems[k].clone()),
-            right: Box::new(denom),
-          };
+          let frac = binop(BinaryOperator::Divide, elems[k].clone(), denom);
           result.push(Expr::FunctionCall {
             name: "ArcCos".to_string(),
             args: vec![frac].into(),
@@ -3767,41 +3687,21 @@ pub fn dispatch_math_functions(
         let x = &elems[0];
         let y = &elems[1];
         let z = &elems[2];
-        let sum_sq = Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Plus,
-            left: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(x.clone()),
-              right: Box::new(Expr::Integer(2)),
-            }),
-            right: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(y.clone()),
-              right: Box::new(Expr::Integer(2)),
-            }),
-          }),
-          right: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(z.clone()),
-            right: Box::new(Expr::Integer(2)),
-          }),
-        };
+        let sum_sq = binop(
+          BinaryOperator::Plus,
+          binop(
+            BinaryOperator::Plus,
+            binop(BinaryOperator::Power, x.clone(), Expr::Integer(2)),
+            binop(BinaryOperator::Power, y.clone(), Expr::Integer(2)),
+          ),
+          binop(BinaryOperator::Power, z.clone(), Expr::Integer(2)),
+        );
         let r = make_sqrt(sum_sq);
-        let xy_sq = Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(x.clone()),
-            right: Box::new(Expr::Integer(2)),
-          }),
-          right: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(y.clone()),
-            right: Box::new(Expr::Integer(2)),
-          }),
-        };
+        let xy_sq = binop(
+          BinaryOperator::Plus,
+          binop(BinaryOperator::Power, x.clone(), Expr::Integer(2)),
+          binop(BinaryOperator::Power, y.clone(), Expr::Integer(2)),
+        );
         let theta = Expr::FunctionCall {
           name: "ArcTan".to_string(),
           args: vec![z.clone(), make_sqrt(xy_sq)].into(),
@@ -3859,16 +3759,8 @@ pub fn dispatch_math_functions(
             );
             let fk_eval =
               crate::evaluator::evaluate_expr_to_expr(&fk).unwrap_or(fk);
-            let denom = Expr::BinaryOp {
-              op: BinaryOperator::Plus,
-              left: Box::new(fk_eval),
-              right: Box::new(acc),
-            };
-            acc = Expr::BinaryOp {
-              op: BinaryOperator::Divide,
-              left: Box::new(Expr::Integer(1)),
-              right: Box::new(denom),
-            };
+            let denom = binop(BinaryOperator::Plus, fk_eval, acc);
+            acc = binop(BinaryOperator::Divide, Expr::Integer(1), denom);
             acc = crate::evaluator::evaluate_expr_to_expr(&acc).unwrap_or(acc);
           }
           return Some(Ok(acc));
@@ -3915,16 +3807,8 @@ pub fn dispatch_math_functions(
             let gk_eval =
               crate::evaluator::evaluate_expr_to_expr(&gk).unwrap_or(gk);
             // acc = fk / (gk + acc)
-            let denom = Expr::BinaryOp {
-              op: BinaryOperator::Plus,
-              left: Box::new(gk_eval),
-              right: Box::new(acc),
-            };
-            acc = Expr::BinaryOp {
-              op: BinaryOperator::Divide,
-              left: Box::new(fk_eval),
-              right: Box::new(denom),
-            };
+            let denom = binop(BinaryOperator::Plus, gk_eval, acc);
+            acc = binop(BinaryOperator::Divide, fk_eval, denom);
             acc = crate::evaluator::evaluate_expr_to_expr(&acc).unwrap_or(acc);
           }
           return Some(Ok(acc));
@@ -3952,59 +3836,35 @@ pub fn dispatch_math_functions(
       let b = &args[1];
       let c = &args[2];
       // cos(A) = (b^2 + c^2 - a^2) / (2*b*c)
-      let cos_a = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Plus,
-            left: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(b.clone()),
-              right: Box::new(Expr::Integer(2)),
-            }),
-            right: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(c.clone()),
-              right: Box::new(Expr::Integer(2)),
-            }),
-          }),
-          right: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(a.clone()),
-            right: Box::new(Expr::Integer(2)),
-          }),
-        }),
-        right: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(2)),
-          right: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(b.clone()),
-            right: Box::new(c.clone()),
-          }),
-        }),
-      };
+      let cos_a = binop(
+        BinaryOperator::Divide,
+        binop(
+          BinaryOperator::Minus,
+          binop(
+            BinaryOperator::Plus,
+            binop(BinaryOperator::Power, b.clone(), Expr::Integer(2)),
+            binop(BinaryOperator::Power, c.clone(), Expr::Integer(2)),
+          ),
+          binop(BinaryOperator::Power, a.clone(), Expr::Integer(2)),
+        ),
+        binop(
+          BinaryOperator::Times,
+          Expr::Integer(2),
+          binop(BinaryOperator::Times, b.clone(), c.clone()),
+        ),
+      );
       // cx = b * cos(A)
-      let cx = Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(b.clone()),
-        right: Box::new(cos_a.clone()),
-      };
+      let cx = binop(BinaryOperator::Times, b.clone(), cos_a.clone());
       // cy = b * sin(A) = b * sqrt(1 - cos(A)^2)
-      let cy = Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(b.clone()),
-        right: Box::new(make_sqrt(Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(Expr::Integer(1)),
-          right: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(cos_a),
-            right: Box::new(Expr::Integer(2)),
-          }),
-        })),
-      };
+      let cy = binop(
+        BinaryOperator::Times,
+        b.clone(),
+        make_sqrt(binop(
+          BinaryOperator::Minus,
+          Expr::Integer(1),
+          binop(BinaryOperator::Power, cos_a, Expr::Integer(2)),
+        )),
+      );
       let cx_eval = crate::evaluator::evaluate_expr_to_expr(&cx).unwrap_or(cx);
       let cy_eval = crate::evaluator::evaluate_expr_to_expr(&cy).unwrap_or(cy);
       let c_eval = crate::evaluator::evaluate_expr_to_expr(c)
@@ -4029,11 +3889,8 @@ pub fn dispatch_math_functions(
         && !elems.is_empty()
       {
         let alpha = &args[1];
-        let one_minus_alpha = Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(Expr::Integer(1)),
-          right: Box::new(alpha.clone()),
-        };
+        let one_minus_alpha =
+          binop(BinaryOperator::Minus, Expr::Integer(1), alpha.clone());
         let one_minus_alpha_eval =
           crate::evaluator::evaluate_expr_to_expr(&one_minus_alpha)
             .unwrap_or(one_minus_alpha);
@@ -4041,19 +3898,11 @@ pub fn dispatch_math_functions(
         let mut result = vec![ema.clone()];
         for elem in &elems[1..] {
           // ema = alpha * x + (1 - alpha) * ema
-          let new_ema = Expr::BinaryOp {
-            op: BinaryOperator::Plus,
-            left: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(alpha.clone()),
-              right: Box::new(elem.clone()),
-            }),
-            right: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(one_minus_alpha_eval.clone()),
-              right: Box::new(ema),
-            }),
-          };
+          let new_ema = binop(
+            BinaryOperator::Plus,
+            binop(BinaryOperator::Times, alpha.clone(), elem.clone()),
+            binop(BinaryOperator::Times, one_minus_alpha_eval.clone(), ema),
+          );
           ema = crate::evaluator::evaluate_expr_to_expr(&new_ema)
             .unwrap_or(new_ema);
           result.push(ema.clone());
@@ -4084,159 +3933,101 @@ pub fn dispatch_math_functions(
           let (x3, y3) = coords[2];
           // Build the circumcenter formula as AST and evaluate
           // D = 2*(x1*(y2-y3) + x2*(y3-y1) + x3*(y1-y2))
-          let d_expr = Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::Integer(2)),
-            right: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Plus,
-              left: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Plus,
-                left: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Times,
-                  left: Box::new(x1.clone()),
-                  right: Box::new(Expr::BinaryOp {
-                    op: BinaryOperator::Minus,
-                    left: Box::new(y2.clone()),
-                    right: Box::new(y3.clone()),
-                  }),
-                }),
-                right: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Times,
-                  left: Box::new(x2.clone()),
-                  right: Box::new(Expr::BinaryOp {
-                    op: BinaryOperator::Minus,
-                    left: Box::new(y3.clone()),
-                    right: Box::new(y1.clone()),
-                  }),
-                }),
-              }),
-              right: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(x3.clone()),
-                right: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Minus,
-                  left: Box::new(y1.clone()),
-                  right: Box::new(y2.clone()),
-                }),
-              }),
-            }),
-          };
+          let d_expr = binop(
+            BinaryOperator::Times,
+            Expr::Integer(2),
+            binop(
+              BinaryOperator::Plus,
+              binop(
+                BinaryOperator::Plus,
+                binop(
+                  BinaryOperator::Times,
+                  x1.clone(),
+                  binop(BinaryOperator::Minus, y2.clone(), y3.clone()),
+                ),
+                binop(
+                  BinaryOperator::Times,
+                  x2.clone(),
+                  binop(BinaryOperator::Minus, y3.clone(), y1.clone()),
+                ),
+              ),
+              binop(
+                BinaryOperator::Times,
+                x3.clone(),
+                binop(BinaryOperator::Minus, y1.clone(), y2.clone()),
+              ),
+            ),
+          );
           // sq(p) = x^2 + y^2
-          let sq = |x: &Expr, y: &Expr| Expr::BinaryOp {
-            op: BinaryOperator::Plus,
-            left: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(x.clone()),
-              right: Box::new(Expr::Integer(2)),
-            }),
-            right: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(y.clone()),
-              right: Box::new(Expr::Integer(2)),
-            }),
+          let sq = |x: &Expr, y: &Expr| {
+            binop(
+              BinaryOperator::Plus,
+              binop(BinaryOperator::Power, x.clone(), Expr::Integer(2)),
+              binop(BinaryOperator::Power, y.clone(), Expr::Integer(2)),
+            )
           };
           // h_num = sq1*(y2-y3) + sq2*(y3-y1) + sq3*(y1-y2)
-          let h_num = Expr::BinaryOp {
-            op: BinaryOperator::Plus,
-            left: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Plus,
-              left: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(sq(x1, y1)),
-                right: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Minus,
-                  left: Box::new(y2.clone()),
-                  right: Box::new(y3.clone()),
-                }),
-              }),
-              right: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(sq(x2, y2)),
-                right: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Minus,
-                  left: Box::new(y3.clone()),
-                  right: Box::new(y1.clone()),
-                }),
-              }),
-            }),
-            right: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(sq(x3, y3)),
-              right: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Minus,
-                left: Box::new(y1.clone()),
-                right: Box::new(y2.clone()),
-              }),
-            }),
-          };
+          let h_num = binop(
+            BinaryOperator::Plus,
+            binop(
+              BinaryOperator::Plus,
+              binop(
+                BinaryOperator::Times,
+                sq(x1, y1),
+                binop(BinaryOperator::Minus, y2.clone(), y3.clone()),
+              ),
+              binop(
+                BinaryOperator::Times,
+                sq(x2, y2),
+                binop(BinaryOperator::Minus, y3.clone(), y1.clone()),
+              ),
+            ),
+            binop(
+              BinaryOperator::Times,
+              sq(x3, y3),
+              binop(BinaryOperator::Minus, y1.clone(), y2.clone()),
+            ),
+          );
           // k_num = sq1*(x3-x2) + sq2*(x1-x3) + sq3*(x2-x1)
-          let k_num = Expr::BinaryOp {
-            op: BinaryOperator::Plus,
-            left: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Plus,
-              left: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(sq(x1, y1)),
-                right: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Minus,
-                  left: Box::new(x3.clone()),
-                  right: Box::new(x2.clone()),
-                }),
-              }),
-              right: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(sq(x2, y2)),
-                right: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Minus,
-                  left: Box::new(x1.clone()),
-                  right: Box::new(x3.clone()),
-                }),
-              }),
-            }),
-            right: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(sq(x3, y3)),
-              right: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Minus,
-                left: Box::new(x2.clone()),
-                right: Box::new(x1.clone()),
-              }),
-            }),
-          };
-          let h = Expr::BinaryOp {
-            op: BinaryOperator::Divide,
-            left: Box::new(h_num),
-            right: Box::new(d_expr.clone()),
-          };
-          let k = Expr::BinaryOp {
-            op: BinaryOperator::Divide,
-            left: Box::new(k_num),
-            right: Box::new(d_expr),
-          };
+          let k_num = binop(
+            BinaryOperator::Plus,
+            binop(
+              BinaryOperator::Plus,
+              binop(
+                BinaryOperator::Times,
+                sq(x1, y1),
+                binop(BinaryOperator::Minus, x3.clone(), x2.clone()),
+              ),
+              binop(
+                BinaryOperator::Times,
+                sq(x2, y2),
+                binop(BinaryOperator::Minus, x1.clone(), x3.clone()),
+              ),
+            ),
+            binop(
+              BinaryOperator::Times,
+              sq(x3, y3),
+              binop(BinaryOperator::Minus, x2.clone(), x1.clone()),
+            ),
+          );
+          let h = binop(BinaryOperator::Divide, h_num, d_expr.clone());
+          let k = binop(BinaryOperator::Divide, k_num, d_expr);
           let h_eval = crate::evaluator::evaluate_expr_to_expr(&h).unwrap_or(h);
           let k_eval = crate::evaluator::evaluate_expr_to_expr(&k).unwrap_or(k);
           // r = sqrt((x1-h)^2 + (y1-k)^2)
-          let r = make_sqrt(Expr::BinaryOp {
-            op: BinaryOperator::Plus,
-            left: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Minus,
-                left: Box::new(x1.clone()),
-                right: Box::new(h_eval.clone()),
-              }),
-              right: Box::new(Expr::Integer(2)),
-            }),
-            right: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Minus,
-                left: Box::new(y1.clone()),
-                right: Box::new(k_eval.clone()),
-              }),
-              right: Box::new(Expr::Integer(2)),
-            }),
-          });
+          let r = make_sqrt(binop(
+            BinaryOperator::Plus,
+            binop(
+              BinaryOperator::Power,
+              binop(BinaryOperator::Minus, x1.clone(), h_eval.clone()),
+              Expr::Integer(2),
+            ),
+            binop(
+              BinaryOperator::Power,
+              binop(BinaryOperator::Minus, y1.clone(), k_eval.clone()),
+              Expr::Integer(2),
+            ),
+          ));
           let r_eval = crate::evaluator::evaluate_expr_to_expr(&r).unwrap_or(r);
           return Some(Ok(Expr::FunctionCall {
             name: "Circle".to_string(),
@@ -4315,11 +4106,11 @@ pub fn dispatch_math_functions(
         // Per-dimension widths: maxs[d] - mins[d]
         let widths: Vec<Expr> = (0..dim)
           .map(|d| {
-            evaluate_expr_to_expr(&Expr::BinaryOp {
-              op: BinaryOperator::Minus,
-              left: Box::new(maxs[d].clone()),
-              right: Box::new(mins[d].clone()),
-            })
+            evaluate_expr_to_expr(&binop(
+              BinaryOperator::Minus,
+              maxs[d].clone(),
+              mins[d].clone(),
+            ))
             .unwrap_or_else(|_| Expr::Integer(0))
           })
           .collect();
@@ -4356,17 +4147,17 @@ pub fn dispatch_math_functions(
         if let Some(pads) = pad_pairs {
           let bounds: Vec<Expr> = (0..dim)
             .map(|d| {
-              let new_min = evaluate_expr_to_expr(&Expr::BinaryOp {
-                op: BinaryOperator::Minus,
-                left: Box::new(mins[d].clone()),
-                right: Box::new(pads[d].0.clone()),
-              })
+              let new_min = evaluate_expr_to_expr(&binop(
+                BinaryOperator::Minus,
+                mins[d].clone(),
+                pads[d].0.clone(),
+              ))
               .unwrap_or_else(|_| mins[d].clone());
-              let new_max = evaluate_expr_to_expr(&Expr::BinaryOp {
-                op: BinaryOperator::Plus,
-                left: Box::new(maxs[d].clone()),
-                right: Box::new(pads[d].1.clone()),
-              })
+              let new_max = evaluate_expr_to_expr(&binop(
+                BinaryOperator::Plus,
+                maxs[d].clone(),
+                pads[d].1.clone(),
+              ))
               .unwrap_or_else(|_| maxs[d].clone());
               Expr::List(vec![new_min, new_max].into())
             })
@@ -4419,15 +4210,11 @@ pub fn dispatch_math_functions(
           .zip(b.iter())
           .map(|(ai, bi)| Expr::FunctionCall {
             name: "Abs".to_string(),
-            args: vec![Expr::BinaryOp {
-              op: BinaryOperator::Plus,
-              left: Box::new(ai.clone()),
-              right: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(Expr::Integer(-1)),
-                right: Box::new(bi.clone()),
-              }),
-            }]
+            args: vec![binop(
+              BinaryOperator::Plus,
+              ai.clone(),
+              binop(BinaryOperator::Times, Expr::Integer(-1), bi.clone()),
+            )]
             .into(),
           })
           .collect();
@@ -4443,15 +4230,11 @@ pub fn dispatch_math_functions(
       {
         let abs_expr = Expr::FunctionCall {
           name: "Abs".to_string(),
-          args: vec![Expr::BinaryOp {
-            op: BinaryOperator::Plus,
-            left: Box::new(args[0].clone()),
-            right: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(Expr::Integer(-1)),
-              right: Box::new(args[1].clone()),
-            }),
-          }]
+          args: vec![binop(
+            BinaryOperator::Plus,
+            args[0].clone(),
+            binop(BinaryOperator::Times, Expr::Integer(-1), args[1].clone()),
+          )]
           .into(),
         };
         return Some(evaluate_expr_to_expr(&abs_expr));
@@ -4465,31 +4248,23 @@ pub fn dispatch_math_functions(
       {
         let num = Expr::FunctionCall {
           name: "Abs".to_string(),
-          args: vec![Expr::BinaryOp {
-            op: BinaryOperator::Plus,
-            left: Box::new(args[0].clone()),
-            right: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(Expr::Integer(-1)),
-              right: Box::new(args[1].clone()),
-            }),
-          }]
+          args: vec![binop(
+            BinaryOperator::Plus,
+            args[0].clone(),
+            binop(BinaryOperator::Times, Expr::Integer(-1), args[1].clone()),
+          )]
           .into(),
         };
         let den = Expr::FunctionCall {
           name: "Abs".to_string(),
-          args: vec![Expr::BinaryOp {
-            op: BinaryOperator::Plus,
-            left: Box::new(args[0].clone()),
-            right: Box::new(args[1].clone()),
-          }]
+          args: vec![binop(
+            BinaryOperator::Plus,
+            args[0].clone(),
+            args[1].clone(),
+          )]
           .into(),
         };
-        let result = Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(num),
-          right: Box::new(den),
-        };
+        let result = binop(BinaryOperator::Divide, num, den);
         return Some(evaluate_expr_to_expr(&result));
       }
       if let (Expr::List(a), Expr::List(b)) = (&args[0], &args[1])
@@ -4501,25 +4276,17 @@ pub fn dispatch_math_functions(
         for (ai, bi) in a.iter().zip(b.iter()) {
           num_terms.push(Expr::FunctionCall {
             name: "Abs".to_string(),
-            args: vec![Expr::BinaryOp {
-              op: BinaryOperator::Plus,
-              left: Box::new(ai.clone()),
-              right: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(Expr::Integer(-1)),
-                right: Box::new(bi.clone()),
-              }),
-            }]
+            args: vec![binop(
+              BinaryOperator::Plus,
+              ai.clone(),
+              binop(BinaryOperator::Times, Expr::Integer(-1), bi.clone()),
+            )]
             .into(),
           });
           den_terms.push(Expr::FunctionCall {
             name: "Abs".to_string(),
-            args: vec![Expr::BinaryOp {
-              op: BinaryOperator::Plus,
-              left: Box::new(ai.clone()),
-              right: Box::new(bi.clone()),
-            }]
-            .into(),
+            args: vec![binop(BinaryOperator::Plus, ai.clone(), bi.clone())]
+              .into(),
           });
         }
         let num = Expr::FunctionCall {
@@ -4530,11 +4297,7 @@ pub fn dispatch_math_functions(
           name: "Plus".to_string(),
           args: den_terms.into(),
         };
-        let result = Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(num),
-          right: Box::new(den),
-        };
+        let result = binop(BinaryOperator::Divide, num, den);
         return Some(evaluate_expr_to_expr(&result));
       }
     }
@@ -4546,15 +4309,11 @@ pub fn dispatch_math_functions(
       {
         let num = Expr::FunctionCall {
           name: "Abs".to_string(),
-          args: vec![Expr::BinaryOp {
-            op: BinaryOperator::Plus,
-            left: Box::new(args[0].clone()),
-            right: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(Expr::Integer(-1)),
-              right: Box::new(args[1].clone()),
-            }),
-          }]
+          args: vec![binop(
+            BinaryOperator::Plus,
+            args[0].clone(),
+            binop(BinaryOperator::Times, Expr::Integer(-1), args[1].clone()),
+          )]
           .into(),
         };
         let den = Expr::BinaryOp {
@@ -4568,11 +4327,7 @@ pub fn dispatch_math_functions(
             args: vec![args[1].clone()].into(),
           }),
         };
-        let result = Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(num),
-          right: Box::new(den),
-        };
+        let result = binop(BinaryOperator::Divide, num, den);
         return Some(evaluate_expr_to_expr(&result));
       }
       if let (Expr::List(a), Expr::List(b)) = (&args[0], &args[1])
@@ -4583,15 +4338,11 @@ pub fn dispatch_math_functions(
         for (ai, bi) in a.iter().zip(b.iter()) {
           let num = Expr::FunctionCall {
             name: "Abs".to_string(),
-            args: vec![Expr::BinaryOp {
-              op: BinaryOperator::Plus,
-              left: Box::new(ai.clone()),
-              right: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(Expr::Integer(-1)),
-                right: Box::new(bi.clone()),
-              }),
-            }]
+            args: vec![binop(
+              BinaryOperator::Plus,
+              ai.clone(),
+              binop(BinaryOperator::Times, Expr::Integer(-1), bi.clone()),
+            )]
             .into(),
           };
           let den = Expr::BinaryOp {
@@ -4605,11 +4356,7 @@ pub fn dispatch_math_functions(
               args: vec![bi.clone()].into(),
             }),
           };
-          terms.push(Expr::BinaryOp {
-            op: BinaryOperator::Divide,
-            left: Box::new(num),
-            right: Box::new(den),
-          });
+          terms.push(binop(BinaryOperator::Divide, num, den));
         }
         let sum = Expr::FunctionCall {
           name: "Plus".to_string(),
@@ -4675,30 +4422,16 @@ pub fn dispatch_math_functions(
           name: "Conjugate".to_string(),
           args: vec![args[1].clone()].into(),
         };
-        let u_over_abs_u = Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(args[0].clone()),
-          right: Box::new(abs_u),
-        };
-        let conj_v_over_abs_v = Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(conj_v),
-          right: Box::new(abs_v),
-        };
-        let ratio = Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(u_over_abs_u),
-          right: Box::new(conj_v_over_abs_v),
-        };
-        let result = Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(Expr::Integer(1)),
-          right: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::Integer(-1)),
-            right: Box::new(ratio),
-          }),
-        };
+        let u_over_abs_u =
+          binop(BinaryOperator::Divide, args[0].clone(), abs_u);
+        let conj_v_over_abs_v = binop(BinaryOperator::Divide, conj_v, abs_v);
+        let ratio =
+          binop(BinaryOperator::Times, u_over_abs_u, conj_v_over_abs_v);
+        let result = binop(
+          BinaryOperator::Plus,
+          Expr::Integer(1),
+          binop(BinaryOperator::Times, Expr::Integer(-1), ratio),
+        );
         return Some(evaluate_expr_to_expr(&result));
       }
       if let (Expr::List(a), Expr::List(b)) = (&args[0], &args[1])
@@ -4739,23 +4472,19 @@ pub fn dispatch_math_functions(
           name: "Norm".to_string(),
           args: vec![args[1].clone()].into(),
         };
-        let result = Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(Expr::Integer(1)),
-          right: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::Integer(-1)),
-            right: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Divide,
-              left: Box::new(dot),
-              right: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(norm_a),
-                right: Box::new(norm_b),
-              }),
-            }),
-          }),
-        };
+        let result = binop(
+          BinaryOperator::Plus,
+          Expr::Integer(1),
+          binop(
+            BinaryOperator::Times,
+            Expr::Integer(-1),
+            binop(
+              BinaryOperator::Divide,
+              dot,
+              binop(BinaryOperator::Times, norm_a, norm_b),
+            ),
+          ),
+        );
         return Some(evaluate_expr_to_expr(&result));
       }
     }
@@ -6119,11 +5848,7 @@ fn midpoint_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
     name: "Plus".to_string(),
     args: vec![p1.clone(), p2.clone()].into(),
   };
-  let result = Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(sum),
-    right: Box::new(Expr::Integer(2)),
-  };
+  let result = binop(BinaryOperator::Divide, sum, Expr::Integer(2));
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
@@ -6164,26 +5889,15 @@ fn qfactorial_ast(
   let mut factors = Vec::new();
   for k in 1..=n {
     // [k]_q = (1 - q^k) / (1 - q)
-    let q_k = Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(q_expr.clone()),
-      right: Box::new(Expr::Integer(k as i128)),
-    };
-    let numerator = Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left: Box::new(Expr::Integer(1)),
-      right: Box::new(q_k),
-    };
-    let denominator = Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left: Box::new(Expr::Integer(1)),
-      right: Box::new(q_expr.clone()),
-    };
-    let factor = Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(numerator),
-      right: Box::new(denominator),
-    };
+    let q_k = binop(
+      BinaryOperator::Power,
+      q_expr.clone(),
+      Expr::Integer(k as i128),
+    );
+    let numerator = binop(BinaryOperator::Minus, Expr::Integer(1), q_k);
+    let denominator =
+      binop(BinaryOperator::Minus, Expr::Integer(1), q_expr.clone());
+    let factor = binop(BinaryOperator::Divide, numerator, denominator);
     factors.push(factor);
   }
 
@@ -6404,11 +6118,11 @@ fn substitute_complex_vars(expr: &Expr, vars: &[String]) -> Expr {
         .map(|a| substitute_complex_vars(a, vars))
         .collect(),
     },
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(substitute_complex_vars(left, vars)),
-      right: Box::new(substitute_complex_vars(right, vars)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      substitute_complex_vars(left, vars),
+      substitute_complex_vars(right, vars),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(substitute_complex_vars(operand, vars)),
@@ -6515,11 +6229,11 @@ fn expand_log_in_complex_expand(expr: &Expr) -> Expr {
           name: "Log".to_string(),
           args: vec![x.clone()].into(),
         };
-        return ce_simplify(Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(log_x),
-          right: Box::new(Expr::Integer(2)),
-        });
+        return ce_simplify(binop(
+          BinaryOperator::Divide,
+          log_x,
+          Expr::Integer(2),
+        ));
       }
       // Log[Times[positive_const, …]] → Log[positive_const] + Log[Times[…]]
       if let Expr::FunctionCall {
@@ -6573,11 +6287,7 @@ fn expand_log_in_complex_expand(expr: &Expr) -> Expr {
             name: "Log".to_string(),
             args: vec![rest].into(),
           });
-          return ce_simplify(Expr::BinaryOp {
-            op: BinaryOperator::Plus,
-            left: Box::new(log_pos),
-            right: Box::new(log_rest),
-          });
+          return ce_simplify(binop(BinaryOperator::Plus, log_pos, log_rest));
         }
       }
       Expr::FunctionCall {
@@ -6589,11 +6299,11 @@ fn expand_log_in_complex_expand(expr: &Expr) -> Expr {
       name: name.clone(),
       args: args.iter().map(expand_log_in_complex_expand).collect(),
     },
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(expand_log_in_complex_expand(left)),
-      right: Box::new(expand_log_in_complex_expand(right)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      expand_log_in_complex_expand(left),
+      expand_log_in_complex_expand(right),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(expand_log_in_complex_expand(operand)),
@@ -6819,16 +6529,8 @@ fn split_real_imag(expr: &Expr) -> Option<(Expr, Expr)> {
       let (lr, li) = split_real_imag(left)?;
       let (rr, ri) = split_real_imag(right)?;
       Some((
-        ce_simplify(Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(lr),
-          right: Box::new(rr),
-        }),
-        ce_simplify(Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(li),
-          right: Box::new(ri),
-        }),
+        ce_simplify(binop(BinaryOperator::Plus, lr, rr)),
+        ce_simplify(binop(BinaryOperator::Plus, li, ri)),
       ))
     }
     // a - b
@@ -6840,16 +6542,8 @@ fn split_real_imag(expr: &Expr) -> Option<(Expr, Expr)> {
       let (lr, li) = split_real_imag(left)?;
       let (rr, ri) = split_real_imag(right)?;
       Some((
-        ce_simplify(Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(lr),
-          right: Box::new(rr),
-        }),
-        ce_simplify(Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(li),
-          right: Box::new(ri),
-        }),
+        ce_simplify(binop(BinaryOperator::Minus, lr, rr)),
+        ce_simplify(binop(BinaryOperator::Minus, li, ri)),
       ))
     }
     // c * expr — split each side and combine via complex multiplication.
@@ -6862,32 +6556,16 @@ fn split_real_imag(expr: &Expr) -> Option<(Expr, Expr)> {
       let (rr, ri) = split_real_imag(right)?;
       // (lr + li i) * (rr + ri i) = (lr*rr - li*ri) + (lr*ri + li*rr) i
       Some((
-        ce_simplify(Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(lr.clone()),
-            right: Box::new(rr.clone()),
-          }),
-          right: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(li.clone()),
-            right: Box::new(ri.clone()),
-          }),
-        }),
-        ce_simplify(Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(lr),
-            right: Box::new(ri),
-          }),
-          right: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(li),
-            right: Box::new(rr),
-          }),
-        }),
+        ce_simplify(binop(
+          BinaryOperator::Minus,
+          binop(BinaryOperator::Times, lr.clone(), rr.clone()),
+          binop(BinaryOperator::Times, li.clone(), ri.clone()),
+        )),
+        ce_simplify(binop(
+          BinaryOperator::Plus,
+          binop(BinaryOperator::Times, lr, ri),
+          binop(BinaryOperator::Times, li, rr),
+        )),
       ))
     }
     // I itself
@@ -6903,32 +6581,16 @@ fn split_real_imag(expr: &Expr) -> Option<(Expr, Expr)> {
       for arg in &args[1..] {
         let (rr, ri) = split_real_imag(arg)?;
         // (acc_re + acc_im*I) * (rr + ri*I)
-        let new_re = ce_simplify(Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(acc_re.clone()),
-            right: Box::new(rr.clone()),
-          }),
-          right: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(acc_im.clone()),
-            right: Box::new(ri.clone()),
-          }),
-        });
-        let new_im = ce_simplify(Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(acc_re.clone()),
-            right: Box::new(ri),
-          }),
-          right: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(acc_im),
-            right: Box::new(rr),
-          }),
-        });
+        let new_re = ce_simplify(binop(
+          BinaryOperator::Minus,
+          binop(BinaryOperator::Times, acc_re.clone(), rr.clone()),
+          binop(BinaryOperator::Times, acc_im.clone(), ri.clone()),
+        ));
+        let new_im = ce_simplify(binop(
+          BinaryOperator::Plus,
+          binop(BinaryOperator::Times, acc_re.clone(), ri),
+          binop(BinaryOperator::Times, acc_im, rr),
+        ));
         acc_re = new_re;
         acc_im = new_im;
       }
@@ -6995,11 +6657,7 @@ fn split_real_imag(expr: &Expr) -> Option<(Expr, Expr)> {
     } => {
       let (r, i) = split_real_imag(operand)?;
       let neg = |e: Expr| {
-        ce_simplify(Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(-1)),
-          right: Box::new(e),
-        })
+        ce_simplify(binop(BinaryOperator::Times, Expr::Integer(-1), e))
       };
       Some((neg(r), neg(i)))
     }
@@ -7012,43 +6670,27 @@ fn split_real_imag(expr: &Expr) -> Option<(Expr, Expr)> {
     } => {
       let (nr, ni) = split_real_imag(left)?;
       let (dr, di) = split_real_imag(right)?;
-      let div = |a: Expr, b: Expr| {
-        ce_simplify(Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(a),
-          right: Box::new(b),
-        })
-      };
+      let div =
+        |a: Expr, b: Expr| ce_simplify(binop(BinaryOperator::Divide, a, b));
       if is_expr_zero(&di) {
         Some((div(nr, dr.clone()), div(ni, dr)))
       } else {
         // denom = dr^2 + di^2; result = (n * conj(d)) / denom
-        let sq = |e: Expr| Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(e),
-          right: Box::new(Expr::Integer(2)),
-        };
-        let denom = ce_simplify(Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(sq(dr.clone())),
-          right: Box::new(sq(di.clone())),
-        });
-        let mul = |a: Expr, b: Expr| Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(a),
-          right: Box::new(b),
-        };
+        let sq = |e: Expr| binop(BinaryOperator::Power, e, Expr::Integer(2));
+        let denom = ce_simplify(binop(
+          BinaryOperator::Plus,
+          sq(dr.clone()),
+          sq(di.clone()),
+        ));
+        let mul = |a: Expr, b: Expr| binop(BinaryOperator::Times, a, b);
         // (nr + ni i)(dr - di i) = (nr*dr + ni*di) + (ni*dr - nr*di) i
-        let re_num = ce_simplify(Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(mul(nr.clone(), dr.clone())),
-          right: Box::new(mul(ni.clone(), di.clone())),
-        });
-        let im_num = ce_simplify(Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(mul(ni, dr)),
-          right: Box::new(mul(nr, di)),
-        });
+        let re_num = ce_simplify(binop(
+          BinaryOperator::Plus,
+          mul(nr.clone(), dr.clone()),
+          mul(ni.clone(), di.clone()),
+        ));
+        let im_num =
+          ce_simplify(binop(BinaryOperator::Minus, mul(ni, dr), mul(nr, di)));
         Some((div(re_num, denom.clone()), div(im_num, denom)))
       }
     }
@@ -7097,11 +6739,7 @@ fn power_split_real_imag(base: &Expr, exp: &Expr) -> Option<(Expr, Expr)> {
     && let Some((re_e, im_e)) = split_real_imag(exp)
     && !is_expr_zero(&im_e)
   {
-    let exp_a = Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(base.clone()),
-      right: Box::new(re_e),
-    };
+    let exp_a = binop(BinaryOperator::Power, base.clone(), re_e);
     let inner_arg = if matches!(base, Expr::Identifier(s) | Expr::Constant(s) if s == "E")
     {
       im_e.clone()
@@ -7123,16 +6761,9 @@ fn power_split_real_imag(base: &Expr, exp: &Expr) -> Option<(Expr, Expr)> {
       name: "Sin".to_string(),
       args: vec![inner_arg].into(),
     };
-    let real = ce_simplify(Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(exp_a.clone()),
-      right: Box::new(cos_part),
-    });
-    let imag = ce_simplify(Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(exp_a),
-      right: Box::new(sin_part),
-    });
+    let real =
+      ce_simplify(binop(BinaryOperator::Times, exp_a.clone(), cos_part));
+    let imag = ce_simplify(binop(BinaryOperator::Times, exp_a, sin_part));
     return Some((real, imag));
   }
   // Exponent must be a non-negative integer literal.
@@ -7175,22 +6806,14 @@ fn make_term(coef: i128, a: &Expr, ai: i128, b: &Expr, bi: i128) -> Expr {
     if ai == 1 {
       factors.push(a.clone());
     } else {
-      factors.push(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(a.clone()),
-        right: Box::new(Expr::Integer(ai)),
-      });
+      factors.push(binop(BinaryOperator::Power, a.clone(), Expr::Integer(ai)));
     }
   }
   if bi > 0 {
     if bi == 1 {
       factors.push(b.clone());
     } else {
-      factors.push(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(b.clone()),
-        right: Box::new(Expr::Integer(bi)),
-      });
+      factors.push(binop(BinaryOperator::Power, b.clone(), Expr::Integer(bi)));
     }
   }
   if factors.is_empty() {
@@ -7316,24 +6939,11 @@ fn abs_complex_expand_rewrite(arg: &Expr) -> Option<Expr> {
       args: vec![w.clone()].into(),
     };
     let arg_w = complex_expand_recursive(&arg_w);
-    let log_sq = Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(log_abs_w),
-      right: Box::new(Expr::Integer(2)),
-    };
-    let arg_sq = Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(arg_w),
-      right: Box::new(Expr::Integer(2)),
-    };
+    let log_sq = binop(BinaryOperator::Power, log_abs_w, Expr::Integer(2));
+    let arg_sq = binop(BinaryOperator::Power, arg_w, Expr::Integer(2));
     return Some(Expr::FunctionCall {
       name: "Sqrt".to_string(),
-      args: vec![Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(log_sq),
-        right: Box::new(arg_sq),
-      }]
-      .into(),
+      args: vec![binop(BinaryOperator::Plus, log_sq, arg_sq)].into(),
     });
   }
   None
@@ -7379,23 +6989,15 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
                 name: "Sinh".to_string(),
                 args: vec![im].into(),
               };
-              return ce_simplify(Expr::BinaryOp {
-                op: BinaryOperator::Plus,
-                left: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Times,
-                  left: Box::new(sin_a),
-                  right: Box::new(cosh_b),
-                }),
-                right: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Times,
-                  left: Box::new(Expr::Identifier("I".to_string())),
-                  right: Box::new(Expr::BinaryOp {
-                    op: BinaryOperator::Times,
-                    left: Box::new(cos_a),
-                    right: Box::new(sinh_b),
-                  }),
-                }),
-              });
+              return ce_simplify(binop(
+                BinaryOperator::Plus,
+                binop(BinaryOperator::Times, sin_a, cosh_b),
+                binop(
+                  BinaryOperator::Times,
+                  Expr::Identifier("I".to_string()),
+                  binop(BinaryOperator::Times, cos_a, sinh_b),
+                ),
+              ));
             }
             // Cos[a + I*b] = Cos[a]*Cosh[b] - I*Sin[a]*Sinh[b]
             "Cos" => {
@@ -7415,23 +7017,15 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
                 name: "Sinh".to_string(),
                 args: vec![im].into(),
               };
-              return ce_simplify(Expr::BinaryOp {
-                op: BinaryOperator::Minus,
-                left: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Times,
-                  left: Box::new(cos_a),
-                  right: Box::new(cosh_b),
-                }),
-                right: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Times,
-                  left: Box::new(Expr::Identifier("I".to_string())),
-                  right: Box::new(Expr::BinaryOp {
-                    op: BinaryOperator::Times,
-                    left: Box::new(sin_a),
-                    right: Box::new(sinh_b),
-                  }),
-                }),
-              });
+              return ce_simplify(binop(
+                BinaryOperator::Minus,
+                binop(BinaryOperator::Times, cos_a, cosh_b),
+                binop(
+                  BinaryOperator::Times,
+                  Expr::Identifier("I".to_string()),
+                  binop(BinaryOperator::Times, sin_a, sinh_b),
+                ),
+              ));
             }
             // Sinh[a + I*b] = Sinh[a]*Cos[b] + I*Cosh[a]*Sin[b]
             "Sinh" => {
@@ -7451,39 +7045,25 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
                 name: "Sin".to_string(),
                 args: vec![im].into(),
               };
-              return ce_simplify(Expr::BinaryOp {
-                op: BinaryOperator::Plus,
-                left: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Times,
-                  left: Box::new(sinh_a),
-                  right: Box::new(cos_b),
-                }),
-                right: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Times,
-                  left: Box::new(Expr::Identifier("I".to_string())),
-                  right: Box::new(Expr::BinaryOp {
-                    op: BinaryOperator::Times,
-                    left: Box::new(cosh_a),
-                    right: Box::new(sin_b),
-                  }),
-                }),
-              });
+              return ce_simplify(binop(
+                BinaryOperator::Plus,
+                binop(BinaryOperator::Times, sinh_a, cos_b),
+                binop(
+                  BinaryOperator::Times,
+                  Expr::Identifier("I".to_string()),
+                  binop(BinaryOperator::Times, cosh_a, sin_b),
+                ),
+              ));
             }
             // Tanh[a + I*b] = (Sinh[2a] + I*Sin[2b]) / (Cos[2b] + Cosh[2a]).
             // The split-into-real-and-imag form Wolfram emits keeps the
             // shared denominator Cos[2b] + Cosh[2a] under both numerators
             // — emit it the same way so display matches `ComplexExpand`'s.
             "Tanh" => {
-              let two_a = Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(Expr::Integer(2)),
-                right: Box::new(re.clone()),
-              };
-              let two_b = Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(Expr::Integer(2)),
-                right: Box::new(im.clone()),
-              };
+              let two_a =
+                binop(BinaryOperator::Times, Expr::Integer(2), re.clone());
+              let two_b =
+                binop(BinaryOperator::Times, Expr::Integer(2), im.clone());
               let sinh_2a = Expr::FunctionCall {
                 name: "Sinh".to_string(),
                 args: vec![two_a.clone()].into(),
@@ -7500,30 +7080,19 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
                 name: "Cosh".to_string(),
                 args: vec![two_a].into(),
               };
-              let denom = Expr::BinaryOp {
-                op: BinaryOperator::Plus,
-                left: Box::new(cos_2b),
-                right: Box::new(cosh_2a),
-              };
-              let real_part = Expr::BinaryOp {
-                op: BinaryOperator::Divide,
-                left: Box::new(sinh_2a),
-                right: Box::new(denom.clone()),
-              };
-              let imag_part = Expr::BinaryOp {
-                op: BinaryOperator::Divide,
-                left: Box::new(sin_2b),
-                right: Box::new(denom),
-              };
-              return ce_simplify(Expr::BinaryOp {
-                op: BinaryOperator::Plus,
-                left: Box::new(real_part),
-                right: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Times,
-                  left: Box::new(Expr::Identifier("I".to_string())),
-                  right: Box::new(imag_part),
-                }),
-              });
+              let denom = binop(BinaryOperator::Plus, cos_2b, cosh_2a);
+              let real_part =
+                binop(BinaryOperator::Divide, sinh_2a, denom.clone());
+              let imag_part = binop(BinaryOperator::Divide, sin_2b, denom);
+              return ce_simplify(binop(
+                BinaryOperator::Plus,
+                real_part,
+                binop(
+                  BinaryOperator::Times,
+                  Expr::Identifier("I".to_string()),
+                  imag_part,
+                ),
+              ));
             }
             // Cosh[a + I*b] = Cosh[a]*Cos[b] + I*Sinh[a]*Sin[b]
             "Cosh" => {
@@ -7543,23 +7112,15 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
                 name: "Sin".to_string(),
                 args: vec![im].into(),
               };
-              return ce_simplify(Expr::BinaryOp {
-                op: BinaryOperator::Plus,
-                left: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Times,
-                  left: Box::new(cosh_a),
-                  right: Box::new(cos_b),
-                }),
-                right: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Times,
-                  left: Box::new(Expr::Identifier("I".to_string())),
-                  right: Box::new(Expr::BinaryOp {
-                    op: BinaryOperator::Times,
-                    left: Box::new(sinh_a),
-                    right: Box::new(sin_b),
-                  }),
-                }),
-              });
+              return ce_simplify(binop(
+                BinaryOperator::Plus,
+                binop(BinaryOperator::Times, cosh_a, cos_b),
+                binop(
+                  BinaryOperator::Times,
+                  Expr::Identifier("I".to_string()),
+                  binop(BinaryOperator::Times, sinh_a, sin_b),
+                ),
+              ));
             }
             // Exp[a + I*b] = E^a*Cos[b] + I*E^a*Sin[b]
             "Exp" => {
@@ -7575,41 +7136,25 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
                 name: "Sin".to_string(),
                 args: vec![im].into(),
               };
-              return ce_simplify(Expr::BinaryOp {
-                op: BinaryOperator::Plus,
-                left: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Times,
-                  left: Box::new(exp_a.clone()),
-                  right: Box::new(cos_b),
-                }),
-                right: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Times,
-                  left: Box::new(Expr::Identifier("I".to_string())),
-                  right: Box::new(Expr::BinaryOp {
-                    op: BinaryOperator::Times,
-                    left: Box::new(exp_a),
-                    right: Box::new(sin_b),
-                  }),
-                }),
-              });
+              return ce_simplify(binop(
+                BinaryOperator::Plus,
+                binop(BinaryOperator::Times, exp_a.clone(), cos_b),
+                binop(
+                  BinaryOperator::Times,
+                  Expr::Identifier("I".to_string()),
+                  binop(BinaryOperator::Times, exp_a, sin_b),
+                ),
+              ));
             }
             // Abs[a + I*b] = Sqrt[a^2 + b^2]
             "Abs" => {
               return ce_simplify(Expr::FunctionCall {
                 name: "Sqrt".to_string(),
-                args: vec![Expr::BinaryOp {
-                  op: BinaryOperator::Plus,
-                  left: Box::new(Expr::BinaryOp {
-                    op: BinaryOperator::Power,
-                    left: Box::new(re),
-                    right: Box::new(Expr::Integer(2)),
-                  }),
-                  right: Box::new(Expr::BinaryOp {
-                    op: BinaryOperator::Power,
-                    left: Box::new(im),
-                    right: Box::new(Expr::Integer(2)),
-                  }),
-                }]
+                args: vec![binop(
+                  BinaryOperator::Plus,
+                  binop(BinaryOperator::Power, re, Expr::Integer(2)),
+                  binop(BinaryOperator::Power, im, Expr::Integer(2)),
+                )]
                 .into(),
               });
             }
@@ -7625,19 +7170,11 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
           // Log[z] = Log[Re[z]^2 + Im[z]^2]/2 + I Arg[z]. Holds whether or not
           // the imaginary part is zero (e.g. Log[x] = I Arg[x] + Log[x^2]/2).
           "Log" => {
-            let mag_sq = Expr::BinaryOp {
-              op: BinaryOperator::Plus,
-              left: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Power,
-                left: Box::new(re),
-                right: Box::new(Expr::Integer(2)),
-              }),
-              right: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Power,
-                left: Box::new(im),
-                right: Box::new(Expr::Integer(2)),
-              }),
-            };
+            let mag_sq = binop(
+              BinaryOperator::Plus,
+              binop(BinaryOperator::Power, re, Expr::Integer(2)),
+              binop(BinaryOperator::Power, im, Expr::Integer(2)),
+            );
             let log_term = Expr::BinaryOp {
               op: BinaryOperator::Divide,
               left: Box::new(Expr::FunctionCall {
@@ -7654,11 +7191,11 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
                 args: vec![arg.clone()].into(),
               }),
             };
-            return ce_simplify(Expr::BinaryOp {
-              op: BinaryOperator::Plus,
-              left: Box::new(log_term),
-              right: Box::new(arg_term),
-            });
+            return ce_simplify(binop(
+              BinaryOperator::Plus,
+              log_term,
+              arg_term,
+            ));
           }
           // Real argument (im == 0): Abs[u] = Sqrt[u^2]. The im != 0 case is
           // handled in the block above. wolframscript treats every symbol as
@@ -7668,32 +7205,24 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
           "Abs" => {
             return ce_simplify(Expr::FunctionCall {
               name: "Sqrt".to_string(),
-              args: vec![Expr::BinaryOp {
-                op: BinaryOperator::Plus,
-                left: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Power,
-                  left: Box::new(re),
-                  right: Box::new(Expr::Integer(2)),
-                }),
-                right: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Power,
-                  left: Box::new(im),
-                  right: Box::new(Expr::Integer(2)),
-                }),
-              }]
+              args: vec![binop(
+                BinaryOperator::Plus,
+                binop(BinaryOperator::Power, re, Expr::Integer(2)),
+                binop(BinaryOperator::Power, im, Expr::Integer(2)),
+              )]
               .into(),
             });
           }
           "Conjugate" => {
-            return ce_simplify(Expr::BinaryOp {
-              op: BinaryOperator::Minus,
-              left: Box::new(re),
-              right: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(Expr::Identifier("I".to_string())),
-                right: Box::new(im),
-              }),
-            });
+            return ce_simplify(binop(
+              BinaryOperator::Minus,
+              re,
+              binop(
+                BinaryOperator::Times,
+                Expr::Identifier("I".to_string()),
+                im,
+              ),
+            ));
           }
           _ => {}
         }
@@ -7745,37 +7274,29 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
             name: "Sin".to_string(),
             args: vec![inner_arg].into(),
           };
-          return ce_simplify(Expr::BinaryOp {
-            op: BinaryOperator::Plus,
-            left: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(exp_a.clone()),
-              right: Box::new(cos_b),
-            }),
-            right: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(Expr::Identifier("I".to_string())),
-              right: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(exp_a),
-                right: Box::new(sin_b),
-              }),
-            }),
-          });
+          return ce_simplify(binop(
+            BinaryOperator::Plus,
+            binop(BinaryOperator::Times, exp_a.clone(), cos_b),
+            binop(
+              BinaryOperator::Times,
+              Expr::Identifier("I".to_string()),
+              binop(BinaryOperator::Times, exp_a, sin_b),
+            ),
+          ));
         }
       }
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(complex_expand_recursive(base)),
-        right: Box::new(complex_expand_recursive(exp)),
-      }
+      binop(
+        BinaryOperator::Power,
+        complex_expand_recursive(base),
+        complex_expand_recursive(exp),
+      )
     }
     // Recurse into binary ops
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(complex_expand_recursive(left)),
-      right: Box::new(complex_expand_recursive(right)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      complex_expand_recursive(left),
+      complex_expand_recursive(right),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(complex_expand_recursive(operand)),
@@ -7826,11 +7347,11 @@ fn exp_to_trig_recursive(expr: &Expr) -> Expr {
       args: args.iter().map(exp_to_trig_recursive).collect(),
     },
     // Recurse into binary ops
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(exp_to_trig_recursive(left)),
-      right: Box::new(exp_to_trig_recursive(right)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      exp_to_trig_recursive(left),
+      exp_to_trig_recursive(right),
+    ),
     // Recurse into unary ops
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
@@ -8214,11 +7735,11 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
       name: name.clone(),
       args: args.iter().map(trig_to_exp_recursive).collect(),
     },
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(trig_to_exp_recursive(left)),
-      right: Box::new(trig_to_exp_recursive(right)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      trig_to_exp_recursive(left),
+      trig_to_exp_recursive(right),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(trig_to_exp_recursive(operand)),

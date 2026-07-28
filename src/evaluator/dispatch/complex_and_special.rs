@@ -4,16 +4,9 @@ use crate::functions::math_ast::{
   expr_to_rational, is_sqrt, make_sqrt, rat_reduce,
 };
 use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, unevaluated,
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, binop, bool_expr,
+  unevaluated,
 };
-
-fn binop(op: BinaryOperator, left: Expr, right: Expr) -> Expr {
-  Expr::BinaryOp {
-    op,
-    left: Box::new(left),
-    right: Box::new(right),
-  }
-}
 
 pub fn dispatch_complex_and_special(
   name: &str,

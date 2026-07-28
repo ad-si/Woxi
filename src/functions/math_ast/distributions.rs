@@ -3,18 +3,9 @@ use super::*;
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, expr_to_string,
-  unevaluated,
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, binop, bool_expr,
+  expr_to_string, unevaluated,
 };
-
-/// Helper to build a binary operation expression
-fn binop(op: BinaryOperator, left: Expr, right: Expr) -> Expr {
-  Expr::BinaryOp {
-    op,
-    left: Box::new(left),
-    right: Box::new(right),
-  }
-}
 
 fn plus(a: Expr, b: Expr) -> Expr {
   binop(BinaryOperator::Plus, a, b)
@@ -6581,11 +6572,9 @@ fn failure_read_once_form(bexpr: &Expr) -> Option<Expr> {
       return r;
     }
     match e {
-      Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-        op: *op,
-        left: Box::new(map_leaves(left, f)),
-        right: Box::new(map_leaves(right, f)),
-      },
+      Expr::BinaryOp { op, left, right } => {
+        binop(*op, map_leaves(left, f), map_leaves(right, f))
+      }
       Expr::UnaryOp { op, operand } => Expr::UnaryOp {
         op: *op,
         operand: Box::new(map_leaves(operand, f)),
