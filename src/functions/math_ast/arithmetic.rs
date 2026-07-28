@@ -829,16 +829,37 @@ fn machine_tree_fold(xs: &[f64], op: fn(f64, f64) -> f64) -> f64 {
   }
 }
 
-/// Machine-precision Plus over the numeric terms, in input order. Every
-/// exact term converts to f64 individually — Wolfram does NOT coalesce
-/// exact terms into a rational sum first: Plus[2^60, 1, -2^60, 0.5] is
-/// 0. (the 1 is absorbed into 2^60 in f64) and Plus[22, -59, 34, 14.6]
-/// is 11.600000000000001, not (-3 + 14.6) = 11.6.
-fn machine_sum(terms: &[f64]) -> f64 {
+/// Machine-precision Plus over the numeric terms, in input order, as the
+/// balanced machine tree (see `coeff_tree_fold`): Plus[2^60, 1, -2^60, 0.5]
+/// is 0. and Plus[22, -59, 34, 14.6] is 11.600000000000001, not
+/// (-3 + 14.6) = 11.6, while adjacent exact terms combine exactly
+/// (Plus[19/27, 49/3, 0.1, 0.2] is 17.33703703703704, one ulp away from
+/// the per-term f64 sum).
+fn machine_sum(terms: &[Coeff]) -> f64 {
   if terms.is_empty() {
     return 0.0;
   }
-  machine_tree_fold(terms, |a, b| a + b)
+  coeff_tree_fold(terms, Coeff::add).to_f64()
+}
+
+/// Balanced machine tree fold over numeric Plus/Times operands in input
+/// order: the left half takes ceil(n/2) operands. A node whose two sides
+/// are both exact combines exactly (with BigInt promotion); a node mixing
+/// exact and Real converts the exact side to f64. Mirrors wolframscript's
+/// n-ary numeric folding (verified over random batches by the
+/// differential fuzzer).
+fn coeff_tree_fold(xs: &[Coeff], op: fn(&Coeff, &Coeff) -> Coeff) -> Coeff {
+  match xs.len() {
+    1 => xs[0].clone(),
+    2 => op(&xs[0], &xs[1]),
+    n => {
+      let m = n.div_ceil(2);
+      op(
+        &coeff_tree_fold(&xs[..m], op),
+        &coeff_tree_fold(&xs[m..], op),
+      )
+    }
+  }
 }
 
 pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -1180,16 +1201,15 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return bigfloat_plus(&flat_args);
   }
 
-  // If all numeric but has Reals, use f64: every term (exact or real)
-  // converts to f64 individually, in input order, and folds as the
-  // balanced machine tree (see machine_sum).
+  // If all numeric but has Reals, fold to f64 as the balanced machine
+  // tree over the terms in input order (see machine_sum).
   if all_numeric && !has_bigfloat {
-    let mut terms: Vec<f64> = Vec::new();
+    let mut terms: Vec<Coeff> = Vec::new();
     for arg in &flat_args {
       if let Expr::Real(f) = arg {
-        terms.push(*f);
+        terms.push(Coeff::Real(*f));
       } else if let Some(c) = expr_to_coeff(arg) {
-        terms.push(c.to_f64());
+        terms.push(c);
       }
     }
     return Ok(Expr::Real(machine_sum(&terms)));
@@ -1212,17 +1232,17 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut symbolic_args: Vec<Expr> = Vec::new();
     let mut has_exact = false;
     let mut exact_sum = Coeff::Exact(0, 1);
-    let mut numeric_terms: Vec<f64> = Vec::new();
+    let mut numeric_terms: Vec<Coeff> = Vec::new();
     let mut has_real_term = false;
 
     for arg in &flat_args {
       if let Some(c) = expr_to_coeff(arg) {
-        numeric_terms.push(c.to_f64());
         // Coeff::add promotes to BigInt on i128 overflow.
         exact_sum = exact_sum.add(&c);
         has_exact = true;
+        numeric_terms.push(c);
       } else if let Expr::Real(f) = arg {
-        numeric_terms.push(*f);
+        numeric_terms.push(Coeff::Real(*f));
         has_real_term = true;
       } else {
         symbolic_args.push(arg.clone());
@@ -3568,8 +3588,8 @@ fn quotient_sum_terms_vector_order(
         },
         other => (other, 1),
       };
-      let (v, coeffs, is_sum) = if let Expr::Identifier(v) = fb {
-        (v.clone(), vec![0, 1], false)
+      let (v, coeffs, is_sum) = if let Some(v) = sym_var_name(fb) {
+        (v.to_string(), vec![0, 1], false)
       } else if cmp_is_sum_base(fb) {
         let (v, c) = univar_int_coeffs(fb)?;
         (v, c, true)
@@ -3668,36 +3688,38 @@ fn quotient_sum_terms_vector_order(
 fn sum_recip_vs_univar_order(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
   use std::cmp::Ordering;
   // (var, ascending base-polynomial coeffs, is_sum_reciprocal).
-  fn base_info(e: &Expr) -> Option<(String, Vec<i128>, bool)> {
+  fn base_info(e: &Expr) -> Option<(String, Vec<(i128, i128)>, bool)> {
     let (_, base) = decompose_term(e);
     if let Some((inner, _)) = cmp_neg_pow(&base) {
       if cmp_is_sum_base(inner) {
-        let (v, c) = univar_int_coeffs(inner)?;
+        let (v, c) = univar_rat_coeffs(inner)?;
         return Some((v, c, true));
       }
-      if let Expr::Identifier(v) = inner {
-        return Some((v.clone(), vec![0, 1], false));
+      if let Some(v) = sym_var_name(inner) {
+        return Some((v.to_string(), vec![(0, 1), (1, 1)], false));
       }
       return None;
     }
     let var_power = |b: &Expr, e: &Expr| -> Option<String> {
-      match (b, e) {
-        (Expr::Identifier(v), Expr::Integer(n)) if *n > 0 => Some(v.clone()),
+      match (sym_var_name(b), e) {
+        (Some(v), Expr::Integer(n)) if *n > 0 => Some(v.to_string()),
         _ => None,
       }
     };
+    if let Some(v) = sym_var_name(&base) {
+      return Some((v.to_string(), vec![(0, 1), (1, 1)], false));
+    }
     match &base {
-      Expr::Identifier(v) => Some((v.clone(), vec![0, 1], false)),
       Expr::FunctionCall { name, args }
         if name == "Power" && args.len() == 2 =>
       {
-        var_power(&args[0], &args[1]).map(|v| (v, vec![0, 1], false))
+        var_power(&args[0], &args[1]).map(|v| (v, vec![(0, 1), (1, 1)], false))
       }
       Expr::BinaryOp {
         op: BinaryOperator::Power,
         left,
         right,
-      } => var_power(left, right).map(|v| (v, vec![0, 1], false)),
+      } => var_power(left, right).map(|v| (v, vec![(0, 1), (1, 1)], false)),
       _ => None,
     }
   }
@@ -3706,15 +3728,16 @@ fn sum_recip_vs_univar_order(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
   if (!ra && !rb) || va != vb {
     return None;
   }
-  let degree = |c: &[i128]| c.iter().rposition(|&k| k != 0).unwrap_or(0);
+  let degree =
+    |c: &[(i128, i128)]| c.iter().rposition(|&(n, _)| n != 0).unwrap_or(0);
   let (da, db) = (degree(&ca), degree(&cb));
   if da != db {
     return Some(da.cmp(&db));
   }
   for i in (0..=da).rev() {
-    let x = ca.get(i).copied().unwrap_or(0);
-    let y = cb.get(i).copied().unwrap_or(0);
-    match x.cmp(&y) {
+    let x = ca.get(i).copied().unwrap_or((0, 1));
+    let y = cb.get(i).copied().unwrap_or((0, 1));
+    match rat_cmp(x, y) {
       Ordering::Equal => {}
       ord => return Some(ord),
     }
@@ -3896,20 +3919,57 @@ fn cmp_is_sum_base(e: &Expr) -> bool {
     )
 }
 
-/// Ascending integer coefficients of a univariate polynomial with number
-/// coefficients (sums of Integer / k*var / k*var^n terms, or a bare
-/// monomial). Returns (var, coeffs) or None for anything else.
-fn univar_int_coeffs(e: &Expr) -> Option<(String, Vec<i128>)> {
-  fn monomial(e: &Expr) -> Option<(Option<String>, usize, i128)> {
+/// The name of a symbol-like atom for univariate polynomial ordering: a
+/// bare Identifier or a named constant (Pi, E, …), which Wolfram orders
+/// exactly like a symbol (`Pi + (1 + Pi)^(-1)` keeps Pi first just as
+/// `x + (1 + x)^(-1)` keeps x first). The imaginary unit is excluded —
+/// sums containing I are complex numbers, not univariate polynomials.
+fn sym_var_name(e: &Expr) -> Option<&str> {
+  match e {
+    Expr::Identifier(v) => Some(v),
+    Expr::Constant(v) if v != "I" => Some(v),
+    _ => None,
+  }
+}
+
+/// A rational number literal as (numerator, denominator > 0), covering
+/// Integer and evaluated Rational[a, b] atoms.
+fn rat_literal(e: &Expr) -> Option<(i128, i128)> {
+  match e {
+    Expr::Integer(n) => Some((*n, 1)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(a), Expr::Integer(b)) if *b != 0 => {
+          Some(if *b < 0 { (-a, -b) } else { (*a, *b) })
+        }
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Ascending rational coefficients (numerator, denominator > 0, reduced) of
+/// a univariate polynomial with number coefficients (sums of number /
+/// k*var / k*var^n terms, or a bare monomial). Returns (var, coeffs) or
+/// None for anything else.
+fn univar_rat_coeffs(e: &Expr) -> Option<(String, Vec<(i128, i128)>)> {
+  fn monomial(e: &Expr) -> Option<(Option<String>, usize, (i128, i128))> {
+    if let Some(c) = rat_literal(e) {
+      return Some((None, 0, c));
+    }
     match e {
-      Expr::Integer(n) => Some((None, 0, *n)),
-      Expr::Identifier(v) => Some((Some(v.clone()), 1, 1)),
+      _ if sym_var_name(e).is_some() => {
+        Some((Some(sym_var_name(e)?.to_string()), 1, (1, 1)))
+      }
       Expr::FunctionCall { name, args }
         if name == "Power" && args.len() == 2 =>
       {
-        match (&args[0], &args[1]) {
-          (Expr::Identifier(v), Expr::Integer(n)) if *n > 0 => {
-            Some((Some(v.clone()), *n as usize, 1))
+        match (sym_var_name(&args[0]), &args[1]) {
+          (Some(v), Expr::Integer(n)) if *n > 0 => {
+            Some((Some(v.to_string()), *n as usize, (1, 1)))
           }
           _ => None,
         }
@@ -3918,18 +3978,18 @@ fn univar_int_coeffs(e: &Expr) -> Option<(String, Vec<i128>)> {
         op: BinaryOperator::Power,
         left,
         right,
-      } => match (left.as_ref(), right.as_ref()) {
-        (Expr::Identifier(v), Expr::Integer(n)) if *n > 0 => {
-          Some((Some(v.clone()), *n as usize, 1))
+      } => match (sym_var_name(left), right.as_ref()) {
+        (Some(v), Expr::Integer(n)) if *n > 0 => {
+          Some((Some(v.to_string()), *n as usize, (1, 1)))
         }
         _ => None,
       },
       Expr::FunctionCall { name, args }
         if name == "Times" && args.len() == 2 =>
       {
-        match (&args[0], monomial(&args[1])) {
-          (Expr::Integer(k), Some((v, d, c))) => {
-            Some((v, d, k.checked_mul(c)?))
+        match (rat_literal(&args[0]), monomial(&args[1])) {
+          (Some((kn, kd)), Some((v, d, (cn, cd)))) => {
+            Some((v, d, (kn.checked_mul(cn)?, kd.checked_mul(cd)?)))
           }
           _ => None,
         }
@@ -3938,19 +3998,40 @@ fn univar_int_coeffs(e: &Expr) -> Option<(String, Vec<i128>)> {
         op: BinaryOperator::Times,
         left,
         right,
-      } => match (left.as_ref(), monomial(right)) {
-        (Expr::Integer(k), Some((v, d, c))) => Some((v, d, k.checked_mul(c)?)),
+      } => match (rat_literal(left), monomial(right)) {
+        (Some((kn, kd)), Some((v, d, (cn, cd)))) => {
+          Some((v, d, (kn.checked_mul(cn)?, kd.checked_mul(cd)?)))
+        }
         _ => None,
       },
       Expr::UnaryOp {
         op: UnaryOperator::Minus,
         operand,
       } => {
-        let (v, d, c) = monomial(operand)?;
-        Some((v, d, c.checked_neg()?))
+        let (v, d, (cn, cd)) = monomial(operand)?;
+        Some((v, d, (cn.checked_neg()?, cd)))
       }
       _ => None,
     }
+  }
+  fn gcd(mut a: i128, mut b: i128) -> i128 {
+    while b != 0 {
+      (a, b) = (b, a % b);
+    }
+    a.abs().max(1)
+  }
+  // Reduced form with denominator > 0, so coefficient vectors compare
+  // consistently by value.
+  fn rat_norm((n, d): (i128, i128)) -> (i128, i128) {
+    let g = gcd(n, d);
+    let (n, d) = (n / g, d / g);
+    if d < 0 { (-n, -d) } else { (n, d) }
+  }
+  fn rat_add(a: (i128, i128), b: (i128, i128)) -> Option<(i128, i128)> {
+    Some(rat_norm((
+      a.0.checked_mul(b.1)?.checked_add(b.0.checked_mul(a.1)?)?,
+      a.1.checked_mul(b.1)?,
+    )))
   }
   let terms: Vec<&Expr> = match e {
     Expr::FunctionCall { name, args } if name == "Plus" => {
@@ -3959,7 +4040,7 @@ fn univar_int_coeffs(e: &Expr) -> Option<(String, Vec<i128>)> {
     other => vec![other],
   };
   let mut var: Option<String> = None;
-  let mut coeffs: Vec<i128> = Vec::new();
+  let mut coeffs: Vec<(i128, i128)> = Vec::new();
   for t in terms {
     let (v, d, c) = monomial(t)?;
     if let Some(v) = v {
@@ -3970,11 +4051,29 @@ fn univar_int_coeffs(e: &Expr) -> Option<(String, Vec<i128>)> {
       }
     }
     if coeffs.len() <= d {
-      coeffs.resize(d + 1, 0);
+      coeffs.resize(d + 1, (0, 1));
     }
-    coeffs[d] = coeffs[d].checked_add(c)?;
+    coeffs[d] = rat_add(coeffs[d], rat_norm(c))?;
   }
   Some((var?, coeffs))
+}
+
+/// Compare two rationals in (numerator, denominator > 0) form by value.
+fn rat_cmp(a: (i128, i128), b: (i128, i128)) -> std::cmp::Ordering {
+  (a.0 * b.1).cmp(&(b.0 * a.1))
+}
+
+/// Ascending integer coefficients of a univariate polynomial with number
+/// coefficients (sums of Integer / k*var / k*var^n terms, or a bare
+/// monomial). Returns (var, coeffs) or None for anything else (including
+/// polynomials with non-integer rational coefficients).
+fn univar_int_coeffs(e: &Expr) -> Option<(String, Vec<i128>)> {
+  let (var, rats) = univar_rat_coeffs(e)?;
+  let ints: Option<Vec<i128>> = rats
+    .iter()
+    .map(|&(n, d)| if d == 1 { Some(n) } else { None })
+    .collect();
+  Some((var, ints?))
 }
 
 /// WL polynomial term order for two univariate polynomials in the same
@@ -5020,6 +5119,40 @@ fn order_factor_vs_additive(
   use std::cmp::Ordering;
   let top = plus_args.last().unwrap();
   let (fb, fe) = times_term_base_exp(factor);
+  // A variable-power factor against a univariate polynomial sum in the
+  // SAME variable compares by coefficient vector, the factor flattening
+  // to plain-x coefficients [0, 1] whatever its positive exponent:
+  // degree ascending, then coefficients from the leading term down, a
+  // full tie keeping the factor first. All wolframscript-verified:
+  // x^2*(1 + x), x^3*(-1 + x^2), (-1 + x)*x^2, x^2*(-1 + x^2),
+  // (-2 + x)*x^2, x^2*(-1 + 2*x), (-1/2 + x)*x^2, Pi^2*(-1 + Pi^2).
+  if let Some(v) = sym_var_name(&fb)
+    && fe.is_some_and(|e| e > 0.0)
+  {
+    let sum_expr = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: plus_args.to_vec().into(),
+    };
+    if let Some((sv, coeffs)) = univar_rat_coeffs(&sum_expr)
+      && sv == v
+    {
+      let deg = coeffs.iter().rposition(|&(n, _)| n != 0).unwrap_or(0);
+      match 1.cmp(&deg) {
+        Ordering::Equal => {}
+        ord => return ord,
+      }
+      let fvec = [(0i128, 1i128), (1, 1)];
+      for i in (0..=deg).rev() {
+        let x = fvec.get(i).copied().unwrap_or((0, 1));
+        let y = coeffs.get(i).copied().unwrap_or((0, 1));
+        match rat_cmp(x, y) {
+          Ordering::Equal => {}
+          ord => return ord,
+        }
+      }
+      return Ordering::Less;
+    }
+  }
   let (hb, he) = times_term_base_exp(top);
   // Atom bases compare by name only — compare_exprs would evaluate
   // constants numerically and order Pi (numeric) before I (non-numeric),
@@ -7778,28 +7911,20 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Separate into: integers, rationals, reals, and symbolic arguments.
-  // real_factors keeps the machine Reals in input order, and
-  // first_numeric_exact records whether the first numeric factor was
-  // exact — Wolfram coalesces the exact factors into ONE exact product
-  // which seeds the machine fold when it comes first and multiplies
-  // after the reals otherwise (Times[3, 1/7, 0.1, 0.2, 0.3] →
-  // 0.002571428571428571 but Times[0.1, 0.2, 3, 1/7, 0.3] →
-  // 0.0025714285714285717).
+  // num_factors keeps EVERY numeric factor in input order (exact ones as
+  // exact Coeffs) — when a machine Real is present the product folds as
+  // the balanced machine tree over these factors (see coeff_tree_fold):
+  // Times[68, 63.599999999999994, 57] is (68*63.6)*57 =
+  // 246513.59999999995, one ulp away from the coalesced (68*57)*63.6
+  // (wolframscript-verified; differential fuzzer).
   let mut int_product: i128 = 1;
   let mut int_overflow = false;
   let mut has_int = false;
   let mut rat_numer: i128 = 1;
   let mut rat_denom: i128 = 1;
   let mut has_rational = false;
-  let mut real_factors: Vec<f64> = Vec::new();
   let mut any_real = false;
-  let mut first_numeric_exact: Option<bool> = None;
-  // Each exact factor's f64 value in input order — when the FIRST numeric
-  // factor is a Real, wolframscript multiplies the exact factors one at a
-  // time in input order rather than folding them into one coefficient:
-  // Times[r, -10, -3] is (r*-10)*-3, one ulp away from r*30
-  // (wolframscript-verified; differential fuzzer follow-up case).
-  let mut exact_factor_seq: Vec<f64> = Vec::new();
+  let mut num_factors: Vec<Coeff> = Vec::new();
   let mut symbolic_args: Vec<Expr> = Vec::new();
 
   // Pre-check: is there an explicit Rational or non-unity Integer coefficient among the args?
@@ -7820,13 +7945,11 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           int_overflow = true;
         }
         has_int = true;
-        first_numeric_exact.get_or_insert(true);
-        exact_factor_seq.push(*n as f64);
+        num_factors.push(Coeff::Exact(*n, 1));
       }
       Expr::Real(f) => {
-        real_factors.push(*f);
         any_real = true;
-        first_numeric_exact.get_or_insert(false);
+        num_factors.push(Coeff::Real(*f));
       }
       Expr::FunctionCall { name, args: rargs }
         if name == "Rational" && rargs.len() == 2 =>
@@ -7841,10 +7964,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             int_overflow = true;
           }
           has_rational = true;
-          first_numeric_exact.get_or_insert(true);
-          if let Some(v) = try_eval_to_f64(arg) {
-            exact_factor_seq.push(v);
-          }
+          num_factors.push(Coeff::Exact(*n, *d));
         } else {
           symbolic_args.push(arg.clone());
         }
@@ -7866,8 +7986,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             if let Some(rd) = rat_denom.checked_mul(pow) {
               rat_denom = rd;
               has_rational = true;
-              first_numeric_exact.get_or_insert(true);
-              exact_factor_seq.push(1.0 / pow as f64);
+              num_factors.push(Coeff::Exact(1, pow));
             } else {
               int_overflow = true;
             }
@@ -7894,14 +8013,14 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if let Some(rd) = rat_denom.checked_mul(*d) {
             rat_denom = rd;
             has_rational = true;
+            num_factors.push(Coeff::Exact(1, *d));
             symbolic_args.push(*num_expr.clone());
           } else {
             symbolic_args.push(arg.clone());
           }
         } else if let Some(n) = expr_to_num(arg) {
-          real_factors.push(n);
           any_real = true;
-          first_numeric_exact.get_or_insert(false);
+          num_factors.push(Coeff::Real(n));
         } else {
           symbolic_args.push(arg.clone());
         }
@@ -7957,36 +8076,15 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     symbolic_args = remaining_symbolic;
 
-    // Machine fold in Wolfram's order: the coalesced exact coefficient
-    // joins the tree fold as the leading factor when the first numeric
-    // factor was exact, and multiplies after the reals otherwise; the
-    // numerified constants come last.
-    let has_exact_coeff = has_int || has_rational;
-    let exact_f = Coeff::Exact(int_product, 1)
-      .mul(&Coeff::Exact(rat_numer, rat_denom))
-      .to_f64();
-    let mut fold_factors: Vec<f64> = Vec::new();
-    if has_exact_coeff && first_numeric_exact == Some(true) {
-      fold_factors.push(exact_f);
-    }
-    fold_factors.extend_from_slice(&real_factors);
-    let mut total = if fold_factors.is_empty() {
+    // Machine fold in Wolfram's order: the balanced machine tree over
+    // every numeric factor in input order (exact subtrees combine
+    // exactly — see coeff_tree_fold); the numerified constants come
+    // last, one at a time.
+    let mut total = if num_factors.is_empty() {
       1.0
     } else {
-      machine_tree_fold(&fold_factors, |a, b| a * b)
+      coeff_tree_fold(&num_factors, Coeff::mul).to_f64()
     };
-    if has_exact_coeff && first_numeric_exact != Some(true) {
-      // Per-factor sequential multiply in input order (see
-      // exact_factor_seq above); the coalesced coefficient remains the
-      // fallback for factors that escaped tracking (overflow paths).
-      if exact_factor_seq.is_empty() {
-        total *= exact_f;
-      } else {
-        for f in &exact_factor_seq {
-          total *= f;
-        }
-      }
-    }
     for f in &numerified_tail {
       total *= f;
     }
@@ -11383,7 +11481,14 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
 
   match (expr_to_num(base), expr_to_num(exp)) {
     (Some(a), Some(b)) => {
-      let result = a.powf(b);
+      // A machine-real base with an exact Integer exponent must use
+      // wolframscript's multiplication chains rather than libm pow — the
+      // two round differently in the last ULP.
+      let result = if let (true, Expr::Integer(e)) = (has_real, exp) {
+        crate::functions::math_ast::numeric_utils::wolfram_powi(a, *e)
+      } else {
+        a.powf(b)
+      };
       if result.is_nan() && a < 0.0 {
         // Negative base with fractional exponent: use complex arithmetic
         // (-x)^r = x^r * e^(i*pi*r) = x^r * (cos(pi*r) + i*sin(pi*r))
@@ -11431,23 +11536,21 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       }
     }
     _ => {
-      // Small positive integer exponent on a complex float: compute by
-      // repeated multiplication for better precision than the log/exp
-      // path below. (a+bI)^2 this way loses no ULPs, whereas
-      // exp(2 log(z)) can drift by one.
+      // Exact Integer exponent on a complex float: wolframscript uses the
+      // same multiplication chains as for real bases (and a Smith-style
+      // reciprocal for negative exponents), which the log/exp path below
+      // misses by a ULP.
       if let Expr::Integer(n) = exp
-        && (2..=16).contains(n)
+        && *n != 0
+        && *n != 1
         && let Some((a, b)) = try_extract_complex_float(base)
         && b != 0.0
         && contains_real(base)
       {
-        let (mut re, mut im) = (a, b);
-        for _ in 1..*n {
-          let new_re = re * a - im * b;
-          let new_im = re * b + im * a;
-          re = new_re;
-          im = new_im;
-        }
+        let (re, im) =
+          crate::functions::math_ast::numeric_utils::wolfram_powi_complex(
+            a, b, *n,
+          );
         return Ok(build_complex_float_expr(re, im));
       }
       // Try complex float evaluation: z^w = exp(w * log(z))

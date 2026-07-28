@@ -1769,6 +1769,31 @@ pub fn together_expr(expr: &Expr) -> Expr {
           return cancelled;
         }
       }
+      // A FACTORED denominator (e.g. the preprocessed -2*(-x + x^3), or
+      // x*(-1 + x^2)) can still share a polynomial factor with the
+      // numerator that string-level factor matching can't see —
+      // (1+x)*(1+3x) over 2x - 2x^3 shares 1+x. wolframscript's Together
+      // always divides out the polynomial GCD:
+      // Together[((1+x)*(1+3x))/(2x - 2x^3)] → (-1 - 3*x)/(2*(-1 + x)*x).
+      // Only a non-trivial (degree ≥ 1) GCD triggers the rewrite, so
+      // factored quotients with nothing to cancel keep their form
+      // ((5*x*(1+x))/((1-x)*(2+x)) stays put).
+      if !is_plus_polynomial(&ed)
+        && single_variable_fraction(&en, &ed)
+        && fraction_has_polynomial_gcd(&en, &ed)
+      {
+        let frac = Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: Box::new(en.clone()),
+          right: Box::new(
+            crate::functions::polynomial_ast::expand::expand_and_combine(&ed),
+          ),
+        };
+        let cancelled = super::cancel::cancel_expr_keep_quotient_sign(&frac);
+        if expr_to_string(&cancelled) != expr_to_string(&frac) {
+          return cancelled;
+        }
+      }
       // A numeric-content wrapper on the denominator (x/(4*(x^2 + x^3)),
       // the canonical form of x/(4*x^2 + 4*x^3)) hides the polynomial from
       // the GCD cancellation above. Expand the content back through and
@@ -2027,6 +2052,28 @@ pub fn together_expr(expr: &Expr) -> Expr {
         return cancelled;
       }
     }
+    // A FACTORED single-variable denominator can still share a polynomial
+    // factor with the numerator ((1+x)*(1+3x) over 2*x*(-1+x^2) shares
+    // 1+x — string-level factor matching can't see it). wolframscript's
+    // Together always divides out the polynomial GCD:
+    // Together[((1+x)*(1+3x))/(2x - 2x^3)] → (-1 - 3*x)/(2*(-1 + x)*x).
+    // Only a non-trivial (degree ≥ 1) GCD triggers the rewrite, so
+    // factored quotients with nothing to cancel keep their form
+    // ((5*x*(1+x))/((1-x)*(2+x)) stays put).
+    if !is_plus_polynomial(&simplified_den)
+      && single_variable_fraction(&simplified_num, &simplified_den)
+      && fraction_has_polynomial_gcd(&simplified_num, &simplified_den)
+    {
+      let frac = Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(simplified_num.clone()),
+        right: Box::new(simplified_den.clone()),
+      };
+      let cancelled = super::cancel::cancel_expr_keep_quotient_sign(&frac);
+      if expr_to_string(&cancelled) != expr_to_string(&frac) {
+        return cancelled;
+      }
+    }
     if matches!(&simplified_den, Expr::Integer(1)) {
       simplified_num
     } else {
@@ -2080,6 +2127,29 @@ fn expand_numeric_content_denominator(den: &Expr) -> Option<Expr> {
     Expr::Integer(int_content),
     plus,
   ])))
+}
+
+/// True when expanded `num` and `den` are univariate integer-coefficient
+/// polynomials in the same variable with a non-trivial (degree ≥ 1)
+/// polynomial GCD — the cases where wolframscript's Together cancels even
+/// a factored denominator. Integer-content-only GCDs don't count (they
+/// are handled by the content reductions).
+fn fraction_has_polynomial_gcd(num: &Expr, den: &Expr) -> bool {
+  let Some(var) = super::cancel::find_single_variable_both(num, den) else {
+    return false;
+  };
+  let n = crate::functions::polynomial_ast::expand::expand_and_combine(num);
+  let d = crate::functions::polynomial_ast::expand::expand_and_combine(den);
+  let (Some(cn), Some(cd)) = (
+    super::simplify::extract_poly_coeffs(&n, &var),
+    super::simplify::extract_poly_coeffs(&d, &var),
+  ) else {
+    return false;
+  };
+  match super::cancel::poly_gcd(&cn, &cd) {
+    Some(g) => g.iter().rposition(|&c| c != 0).unwrap_or(0) >= 1,
+    None => false,
+  }
 }
 
 /// True when `num`/`den` together involve exactly one symbolic variable, the

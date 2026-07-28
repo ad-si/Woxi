@@ -4879,29 +4879,35 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
       None => raw,
     }
   };
-  let tc = leaf_count(&togethered);
-  if tc < best_c {
+  // Acceptance counts Wolfram's FullForm tree (complexity_digits), not the
+  // display tree: leaf_count rated the content-extracted den display
+  // (1+3x)/(-2*(-x+x^2)) below the expanded (1+3x)/(2x-2x^2) Wolfram
+  // keeps, because -x costs 2 display nodes but 3 FullForm nodes
+  // (differential fuzzer, seed 1785246333519574598 follow-up).
+  let tc = complexity_digits(&togethered);
+  if tc < complexity_digits(&best) {
     // Re-run simplify_expr to absorb any cancellations Together exposed.
     let resimplified = simplify_expr(&togethered);
-    let rc = leaf_count(&resimplified);
+    let rc = complexity_digits(&resimplified);
     if rc <= tc {
       best = resimplified;
-      best_c = rc;
     } else {
       best = togethered;
-      best_c = tc;
     }
+    best_c = leaf_count(&best);
   }
 
   // Candidate 2: Together sub-expressions (leaves outer structure alone).
   // This helps cases like `1 + 1/(1 + 1/x)` where the whole-expression Together
   // is tied with the original, but combining only the inner fraction is
   // strictly better.
+  // Same FullForm-based acceptance as candidate 1: the display-tree
+  // leaf count rated a den content extraction ((1+3x)/(-2*(-x+x^2)))
+  // below the expanded form Wolfram keeps.
   let sub_togethered = together_subexpressions(&simplified);
-  let sc = leaf_count(&sub_togethered);
-  if sc < best_c {
+  if complexity_digits(&sub_togethered) < complexity_digits(&best) {
+    best_c = leaf_count(&sub_togethered);
     best = sub_togethered;
-    best_c = sc;
   }
 
   // Candidate 3: Expand — wolframscript prefers `-1 + x^2` over
@@ -4946,14 +4952,42 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
     // For a top-level sum the negative-count tie-break applies (keep
     // `3 - 3x` over `-3*(-1 + x)`); other shapes (fractions, lists)
     // keep the plain leaf-count preference for factored forms.
-    let is_sum = matches!(&best, Expr::FunctionCall { name, .. } if name == "Plus")
-      || matches!(
-        &best,
-        Expr::BinaryOp {
-          op: BinaryOperator::Plus | BinaryOperator::Minus,
-          ..
+    let is_sum_shape = |e: &Expr| {
+      matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
+        || matches!(
+          e,
+          Expr::BinaryOp {
+            op: BinaryOperator::Plus | BinaryOperator::Minus,
+            ..
+          }
+        )
+    };
+    let is_sum = is_sum_shape(&best);
+    // A numeric content times a polynomial sum — simplify_expr's
+    // content-extracted form of a sum, e.g. -2*(-x + x^3) — follows the
+    // SUM rules below: the square-free candidate must compete
+    // (Simplify[2x - 2x^3] → -2*x*(-1 + x^2), wolframscript-verified)
+    // while the full Factor split -2*(-1+x)*x*(1+x) must not.
+    let content_sum = !is_sum && {
+      let numeric_lit = |e: &Expr| {
+        matches!(e, Expr::Integer(_))
+          || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+      };
+      match &best {
+        Expr::FunctionCall { name, args }
+          if name == "Times" && args.len() == 2 =>
+        {
+          numeric_lit(&args[0]) && is_sum_shape(&args[1])
         }
-      );
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left,
+          right,
+        } => numeric_lit(left) && is_sum_shape(right),
+        _ => false,
+      }
+    };
+    let is_sum = is_sum || content_sum;
     // The square-free rule is decoded for POLYNOMIAL sums; sums carrying
     // other functions (trig etc.) keep the full Factor candidate, whose
     // numeric-content extraction the pipeline relies on.
@@ -4974,6 +5008,22 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
       super::factor::factor_ast(&[best.clone()])
     };
     if let Ok(factored) = factored {
+      // A univariate integer-polynomial quotient keeps Factor's
+      // CANCELLATION but not its display — wolframscript shows the
+      // reduced parts in FactorSquareFree form (squarefree numerators
+      // stay expanded: (2+3x+x^2)/(2+3x) keeps its form, x/(x-3x^2) →
+      // (1-3x)^(-1); perfect powers and monomial content still come
+      // out: (1+2x+x^2)/(2x+3x^2) → (1+x)^2/(x*(2+3x)));
+      // wolframscript-verified (differential fuzzer seed
+      // 1785082426573174375).
+      let (factored, den_gated) = if !is_sum {
+        match settled_quotient_factor_display(&best, &factored) {
+          Some(r) => (r, true),
+          None => (factored, false),
+        }
+      } else {
+        (factored, false)
+      };
       // Wolfram never factors a reciprocal INTO a sum factor:
       // Simplify[-4 - 2/x] keeps the split form (never -2*(2 + x^(-1)))
       // and Simplify[(-2-4x)/(5x)] keeps -1/5*(2+4x)/x;
@@ -4985,9 +5035,14 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
           // Wolfram never factors a quotient's DENOMINATOR into a product
           // of distinct factors: Simplify[1/(4x+3x^2)] stays
           // (4x+3x^2)^(-1), not 1/(x(4+3x)). Powers still collapse
-          // (x^2/(1-3x+3x^2-x^3) → -(x^2/(-1+x)^3)).
-          leaf_count(&factored) <= best_c
-            && factored_den_acceptable(&best, &factored)
+          // (x^2/(1-3x+3x^2-x^3) → -(x^2/(-1+x)^3)). The squarefree
+          // redisplay above gates its own denominator. The FullForm cost
+          // key (not the display-tree leaf count) decides, so a den
+          // content extraction like (1+3x)/(-2*(-x+x^2)) loses its tie
+          // against the expanded (1+3x)/(2x-2x^2) on the negative-leaf
+          // tie-break, matching wolframscript.
+          simplify_cost_key(&factored) <= simplify_cost_key(&best)
+            && (den_gated || factored_den_acceptable(&best, &factored))
         };
       if accept && !exprs_equal(&factored, &best) {
         // Canonicalize a factored POLYNOMIAL product's factor order
@@ -7678,8 +7733,46 @@ pub(crate) fn simplify_division_impl(
     if matches!(&bd, Expr::Integer(1)) {
       basic
     } else if extract_minus
-      && let Some((chosen, terminal)) =
-        simplify_quotient_select(&basic, &bn, &bd)
+      && let Some((chosen, terminal)) = {
+        // Analyze the INPUT display pair first: the selection expands
+        // internally, but its plain candidate keeps the given
+        // denominator verbatim, so an already-canonical factored
+        // quotient like (2+x)/((-1+x)*x) survives Simplify unchanged
+        // just as in wolframscript, while a flip still normalizes
+        // (-1-3x)/(2*(-1+x)*x) → (1+3x)/(2x-2x^2). Shapes the
+        // selection cannot hold (multivariate, radicals, factored
+        // numerators) fall back to the expanded pair.
+        //
+        // One exception: a content-wrapped den whose primitive part has
+        // no constant term (2*(-x+x^2) — the sum pipeline's operand
+        // display) is not a Wolfram quotient display; hand the
+        // selection its expanded polynomial so the plain candidate
+        // rebuilds (1+3x)/(2x-2x^2).
+        let den_for_select = {
+          let factors =
+            super::together::flatten_times_args(std::slice::from_ref(den));
+          let non_numeric: Vec<&Expr> = factors
+            .iter()
+            .filter(|f| !matches!(f, Expr::Integer(_)))
+            .collect();
+          let content_wrapped_sum = factors.len() >= 2
+            && non_numeric.len() == 1
+            && super::coefficient::collect_additive_terms(non_numeric[0]).len()
+              > 1;
+          if content_wrapped_sum {
+            let expanded = expand_and_combine(den);
+            let no_constant = find_single_variable(&expanded)
+              .and_then(|v| extract_poly_coeffs(&expanded, &v))
+              .map(|c| c.first().copied() == Some(0))
+              .unwrap_or(false);
+            if no_constant { expanded } else { den.clone() }
+          } else {
+            den.clone()
+          }
+        };
+        simplify_quotient_select(&basic, num, &den_for_select)
+          .or_else(|| simplify_quotient_select(&basic, &bn, &bd))
+      }
     {
       if terminal {
         return chosen;
@@ -7701,8 +7794,41 @@ pub(crate) fn simplify_division_impl(
   // (power of a) single factor — Simplify[1/(4x+3x^2)] stays
   // (4x+3x^2)^(-1), never 1/(x(4+3x)) — while quotient numerators factor
   // freely (Simplify[(4x^2-2x)/(2+3x)] → (2x(-1+2x))/(2+3x)).
-  if let Ok(factored) = super::factor::factor_ast(std::slice::from_ref(&basic))
-  {
+  //
+  // Once the SimplifyCount candidate selection has settled the quotient,
+  // the display factoring is FactorSquareFree, not Factor: a squarefree
+  // numerator stays expanded (Simplify[(-4-5x-5x^2-4x^3)/(-2x-3x^2)] →
+  // (4+5x+5x^2+4x^3)/(2x+3x^2), (2+3x+x^2)/(2+3x) keeps its form) while
+  // monomial content and perfect powers still come out ((4x^2-2x)/(2+3x)
+  // → (2x(-1+2x))/(2+3x)); the denominator follows the numerator into
+  // squarefree form when the numerator changed ((1+2x+x^2)/(2x+3x^2) →
+  // (1+x)^2/(x*(2+3x))) or when it collapses to a single factor
+  // (x^2/(1-3x+3x^2-x^3) → -(x^2/(-1+x)^3), but 1/(4x+3x^2) and
+  // Simplify[x/(x-3x^2)] = (1-3x)^(-1) keep their denominators);
+  // wolframscript-verified (differential fuzzer seed 1785082426573174375).
+  let mut settled_display = false;
+  let factored_display = if sign_settled {
+    match super::factor::factor_ast(std::slice::from_ref(&basic)) {
+      Ok(f) => match settled_quotient_factor_display(&basic, &f) {
+        // A "keep the input" decision must fall through to the
+        // numerator-only handling below, not short-circuit as an
+        // accepted no-op.
+        Some(r) => {
+          settled_display = true;
+          if exprs_equal(&r, &basic) {
+            None
+          } else {
+            Some(r)
+          }
+        }
+        None => Some(f),
+      },
+      Err(_) => None,
+    }
+  } else {
+    super::factor::factor_ast(std::slice::from_ref(&basic)).ok()
+  };
+  if let Some(factored) = factored_display {
     let fc = leaf_count(&factored);
     let bc = leaf_count(&basic);
     let num_ok = factor_num || {
@@ -7760,7 +7886,7 @@ pub(crate) fn simplify_division_impl(
     if fc <= bc
       && num_ok
       && !content_only_rewrite
-      && factored_den_acceptable(&basic, &factored)
+      && (settled_display || factored_den_acceptable(&basic, &factored))
     {
       // A factored quotient (den collapsed to a power / real numerator
       // factorization) was never among the candidate-selection forms, so
@@ -7787,6 +7913,23 @@ pub(crate) fn simplify_division_impl(
           super::factor::factor_ast(std::slice::from_ref(&bn))
           && leaf_count(&factored_num) <= leaf_count(&bn)
           && !exprs_equal(&factored_num, &bn)
+          // A settled quotient's numerator never splits into two or more
+          // SUM factors — that is Factor's display, not Simplify's
+          // ((-4-5x-5x^2-4x^3)/(-2x-3x^2) keeps its numerator expanded
+          // instead of becoming ((1+x)*(4+x+4x^2))/…). Monomial/content
+          // extraction with a single sum factor ((4x^2-2x)/(5-5x) →
+          // (2*(1-2x)*x)/(5*(-1+x))) and perfect powers still apply.
+          && !(sign_settled && {
+            super::together::flatten_times_args(std::slice::from_ref(
+              &factored_num,
+            ))
+            .iter()
+            .filter(|f| {
+              super::coefficient::collect_additive_terms(f).len() > 1
+            })
+            .count()
+              >= 2
+          })
         {
           // Once the SimplifyCount candidate selection has settled the
           // quotient's form, a content-only rewrite (Times[c, Plus[…]])
@@ -8004,7 +8147,7 @@ fn simplify_quotient_select(
   // here would rebuild expanded displays and destroy x^2/(-1+x)^3-style
   // forms. Only a plain sum, a monomial, or a content-wrapped sum
   // (Times[c, Plus[…]]) may pass.
-  let simple_part = |e: &Expr| -> bool {
+  let count_parts = |e: &Expr| -> Option<usize> {
     let factors = super::together::flatten_times_args(std::slice::from_ref(e));
     let mut non_numeric = 0usize;
     for f in &factors {
@@ -8031,13 +8174,23 @@ fn simplify_quotient_select(
         _ => false,
       };
       if power_sum_base {
-        return false;
+        return None;
       }
       non_numeric += 1;
     }
-    non_numeric <= 1
+    Some(non_numeric)
   };
-  if !simple_part(num) || !simple_part(den) {
+  let simple_part =
+    |e: &Expr| -> bool { count_parts(e).map(|n| n <= 1).unwrap_or(false) };
+  // The numerator must be plain (a sum, monomial, or content-wrapped sum)
+  // — factored numerators like 2x(-1+2x) are Factor-pipeline displays
+  // that a re-analysis would destroy. The DENOMINATOR may additionally
+  // be a power-free product of sums/monomials (2*(-1+x)*x from a
+  // cancelled quotient): the plain candidate keeps its display verbatim
+  // while the flip normalizes Simplify[(-1-3x)/(2(-1+x)x)] to
+  // (1+3x)/(2x-2x^2) like wolframscript (differential fuzzer, seed
+  // 1785246333519574598).
+  if !simple_part(num) || count_parts(den).is_none() {
     return None;
   }
   let var = vars.into_iter().next().unwrap();
@@ -8178,12 +8331,17 @@ fn simplify_quotient_select(
   // keeps the extraction (Simplify[(-5-10x)/(1+7x)] → (-5*(1+2x))/(1+7x));
   // wolframscript-verified (differential fuzzer, seed 5520550946540289960).
   let num_pullable = !den_gate_open && n_terms.len() > 1 && n_content < 0;
-  let den_extractable = !den_gate_open && !den_is_mono && d_content > 1;
   // A denominator sum with monomial content x^k (k >= 1) can split it out
   // as its own reciprocal power factor: 1/(-3x^2+5x^3) → 1/(x^2*(-3+5x))
   // (15 < 17), while 1/(4x+3x^2) stays expanded (13 > 12);
   // wolframscript-verified (differential fuzzer, seed 862368627941598145).
   let den_min_exp = d_terms.iter().map(|&(_, _, e)| e).min().unwrap_or(0);
+  // Integer content only extracts from a den whose primitive part has a
+  // constant term; a den divisible by x belongs to the x^k split or the
+  // plain display, never the content-only form — wolframscript keeps
+  // (1+3x)/(-2x+2x^2), never showing (1+3x)/(2*(-x+x^2)).
+  let den_extractable =
+    !den_gate_open && !den_is_mono && d_content > 1 && den_min_exp == 0;
   // With a negative LEADING coefficient the split only applies to a
   // mixed-sign denominator (1/(3x^2-5x^3) → 1/((3-5x)*x^2)); an
   // all-nonpositive one pulls the minus out instead
@@ -8405,6 +8563,28 @@ fn simplify_quotient_select(
       } else {
         (1, fd)
       };
+      // Like the unflipped side, a flipped den divisible by x offers the
+      // x^k-split variant, competing by cost with the plain flipped
+      // display — Simplify[(-1-3x)/(2x-2x^2)] → (1+3x)/(2*(-1+x)*x)
+      // (split wins) but (-4-5x-5x^2-4x^3)/(-2x-3x^2) →
+      // (4+5x+5x^2+4x^3)/(2x+3x^2) (plain wins); the content-only form
+      // ((1+3x)/(2*(-x+x^2))) is never a Wolfram display, so a
+      // content-carrying fd with no constant term only competes split
+      // (all wolframscript-verified).
+      let fd_min_exp = fdt.iter().map(|&(_, _, e)| e).min().unwrap_or(0);
+      let mut den_variants: Vec<(i128, Vec<(i128, i128, i128)>)> = Vec::new();
+      if fd_min_exp == 0 || fdc == 1 {
+        den_variants.push((0, fdt.clone()));
+      }
+      if fd_min_exp >= 1 {
+        den_variants.push((
+          fd_min_exp,
+          fdt
+            .iter()
+            .map(|&(n, d, e)| (n, d, e - fd_min_exp))
+            .collect::<Vec<_>>(),
+        ));
+      }
       let mut flip_opts: Vec<(i128, Vec<(i128, i128, i128)>)> = Vec::new();
       if fn_terms.len() > 1 && fn_content.abs() > 1 {
         flip_opts.push((fn_content, scale(&fn_terms, fn_content)));
@@ -8412,18 +8592,25 @@ fn simplify_quotient_select(
       flip_opts.push((1, fn_terms));
       for (nc, nt) in flip_opts {
         let (coeff_n, coeff_d) = rat_reduce(nc, fdc);
-        cands.push(Cand {
-          cost: sc_quotient((coeff_n, coeff_d), &nt, Some(&fdt), None),
-          class: 3,
-          minus_pull: false,
-          num_content: nc,
-          num_terms: nt,
-          den_content: fdc,
-          den_terms: fdt.clone(),
-          den_mono: 0,
-          split: false,
-          terminal: false,
-        });
+        for (fd_mono, fdt) in &den_variants {
+          cands.push(Cand {
+            cost: sc_quotient(
+              (coeff_n, coeff_d),
+              &nt,
+              Some(fdt),
+              (*fd_mono > 0).then_some(*fd_mono),
+            ),
+            class: 3,
+            minus_pull: false,
+            num_content: nc,
+            num_terms: nt.clone(),
+            den_content: fdc,
+            den_terms: fdt.clone(),
+            den_mono: *fd_mono,
+            split: false,
+            terminal: false,
+          });
+        }
       }
     } else {
       if n_terms.first().map(|&(n, _, _)| n < 0).unwrap_or(false) {
@@ -8547,14 +8734,12 @@ fn simplify_quotient_select(
     if chosen.den_content > 1 {
       factors.push(Expr::Integer(chosen.den_content));
     }
-    // wolframscript orders a negative-LEADING primitive sum before the
-    // power (1/((3 - 5*x)*x^2)) but a positive-leading one after it
-    // (1/(x^2*(-3 + 5*x))).
-    if chosen
-      .den_terms
-      .last()
-      .map(|&(n, _, _)| n < 0)
-      .unwrap_or(false)
+    // Canonical Times order between the power and the primitive sum:
+    // 1/((3 - 5*x)*x^2) but 1/(x^2*(-3 + 5*x)), and (-1 + x) precedes a
+    // bare x (2*(-1+x)*x) — the coefficient-vector rule decides
+    // (wolframscript-verified).
+    if crate::functions::math_ast::order_monomial_vs_sum(&var_pow, &den_body)
+      == Some(std::cmp::Ordering::Greater)
     {
       factors.push(den_body);
       factors.push(var_pow);
@@ -8850,6 +9035,152 @@ fn finish_quotient_sign(e: Expr, canonicalize_sign: bool) -> Expr {
     return e;
   }
   super::together::extract_quotient_minus(&n, &d).unwrap_or(e)
+}
+
+/// Display decision for a univariate integer-polynomial quotient given
+/// Factor's output, following wolframscript's Simplify (differential
+/// fuzzer seed 1785082426573174375; all cases wolframscript-verified):
+/// - the numerator never splits into two or more SUM factors — a
+///   squarefree sum stays expanded ((2+3x+x^2)/(2+3x) and
+///   (-4-5x-5x^2-4x^3)/(-2x-3x^2) keep their numerators) — while
+///   content/monomial extraction with at most one sum factor and
+///   perfect powers keep Factor's display ((4x^2-2x)/(5-5x) →
+///   (2*(1-2x)*x)/(5*(-1+x)), (1+2x+x^2)/(2x+3x^2) →
+///   (1+x)^2/(x*(2+3x)));
+/// - a rejected numerator still adopts a same-orientation collapsed
+///   denominator ((2+3x+x^2)/(1-2x+x^2) → (2+3x+x^2)/(-1+x)^2);
+/// - a denominator that neither collapses nor accompanies a factored
+///   numerator keeps the input display (1/(4x+3x^2) stays expanded);
+/// - a cancellation leaving a negative constant over a plain
+///   negative-constant-led denominator re-orients the pair
+///   (x/(x-3x^2) → (1-3x)^(-1)).
+///
+/// Returns None when the quotient is not univariate integer-polynomial
+/// (or the input numerator is itself a negative constant) — the caller
+/// keeps its legacy handling of the Factor output.
+fn settled_quotient_factor_display(
+  basic: &Expr,
+  factored: &Expr,
+) -> Option<Expr> {
+  let (fn_, fd) = super::together::extract_num_den(factored);
+  if matches!(&fd, Expr::Integer(1)) {
+    return None;
+  }
+  let mut vars = std::collections::HashSet::new();
+  collect_variables(&fn_, &mut vars);
+  collect_variables(&fd, &mut vars);
+  if vars.len() != 1 {
+    return None;
+  }
+  let var = vars.into_iter().next().unwrap();
+  let fn_e = expand_and_combine(&fn_);
+  let fd_e = expand_and_combine(&fd);
+  let n_c = extract_poly_coeffs(&fn_e, &var)?;
+  let d_c = extract_poly_coeffs(&fd_e, &var)?;
+  let (bn0, bd0) = super::together::extract_num_den(basic);
+  let bn0_e = expand_and_combine(&bn0);
+  let bd0_e = expand_and_combine(&bd0);
+  let bn_c = extract_poly_coeffs(&bn0_e, &var)?;
+  let bd_c = extract_poly_coeffs(&bd0_e, &var)?;
+
+  // A part is "shaped" when Factor gave it structure beyond a plain
+  // sum: a negation wrapper, a multi-factor product, or a power of a
+  // sum. Unshaped parts are only re-orientations of the input.
+  let shaped = |e: &Expr| -> bool {
+    if matches!(
+      e,
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        ..
+      }
+    ) {
+      return true;
+    }
+    let factors = super::together::flatten_times_args(std::slice::from_ref(e));
+    factors.len() > 1
+      || factors.iter().any(|f| {
+        let power_of_sum_base = |base: &Expr, exp: &Expr| {
+          matches!(exp, Expr::Integer(k) if *k >= 2)
+            && super::coefficient::collect_additive_terms(base).len() > 1
+        };
+        match f {
+          Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left,
+            right,
+          } => power_of_sum_base(left, right),
+          Expr::FunctionCall { name, args }
+            if name == "Power" && args.len() == 2 =>
+          {
+            power_of_sum_base(&args[0], &args[1])
+          }
+          _ => false,
+        }
+      })
+  };
+  let sum_factor_count = |e: &Expr| {
+    super::together::flatten_times_args(std::slice::from_ref(e))
+      .iter()
+      .filter(|f| super::coefficient::collect_additive_terms(f).len() > 1)
+      .count()
+  };
+
+  // A constant numerator out of Factor (the input numerator cancelled
+  // away, or Factor re-canonicalized a reciprocal's sign).
+  if n_c.len() == 1 {
+    if bn_c.len() == 1 && bn_c[0] < 0 {
+      // The input numerator is itself a negative constant — the legacy
+      // reciprocal handling owns those (-1/(1+x) → -(1+x)^(-1)).
+      return None;
+    }
+    if n_c[0] < 0
+      && !shaped(&fd)
+      && d_c.iter().find(|&&c| c != 0).is_some_and(|&c| c < 0)
+    {
+      let terms: Vec<(i128, i128, i128)> = d_c
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| **c != 0)
+        .map(|(e, c)| (-*c, 1, e as i128))
+        .collect();
+      return Some(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(Expr::Integer(-n_c[0])),
+        right: Box::new(coeffs_from_terms(&terms, &var)),
+      });
+    }
+    return Some(if factored_den_acceptable(basic, factored) {
+      factored.clone()
+    } else {
+      basic.clone()
+    });
+  }
+
+  if sum_factor_count(&fn_) >= 2 {
+    // The numerator split is rejected; a same-orientation collapsed
+    // denominator still applies over the input numerator.
+    if shaped(&fd)
+      && factored_den_acceptable(basic, factored)
+      && d_c == bd_c
+      && n_c == bn_c
+      && !exprs_equal(&fd, &bd0)
+    {
+      return Some(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(bn0),
+        right: Box::new(fd),
+      });
+    }
+    return Some(basic.clone());
+  }
+
+  if !shaped(&fn_) && !shaped(&fd) {
+    return Some(basic.clone());
+  }
+  if factored_den_acceptable(basic, factored) || shaped(&fn_) {
+    return Some(factored.clone());
+  }
+  Some(basic.clone())
 }
 
 /// Accept a factored quotient only when its denominator stayed unchanged
@@ -9353,8 +9684,87 @@ fn leaf_count(expr: &Expr) -> usize {
 /// `Log[1048576]` is considered *more* complex than `20*Log[2]` even though it
 /// has fewer nodes. Used to decide whether folding `c*Log[n]` → `Log[n^c]`
 /// actually simplifies.
+///
+/// The count follows Wolfram's FullForm tree, not woxi's display tree:
+/// Times/Plus chains count ONE head however the display nests them, `-x`
+/// counts as `Times[-1, x]` (3 nodes), and `a - b` as
+/// `Plus[a, Times[-1, b]]`. Counting display shapes literally rated
+/// `-2*(-x + x^3)` (8) below `-2*x*(-1 + x^2)` (9) where Wolfram's
+/// FullForm has them 9 and 8, so Simplify picked the wrong form
+/// (differential fuzzer, seed 1785246333519574598).
 fn complexity_digits(expr: &Expr) -> usize {
-  let digits = |s: String| s.trim_start_matches('-').len().max(1);
+  fn digits(s: String) -> usize {
+    s.trim_start_matches('-').len().max(1)
+  }
+  fn is_number(e: &Expr) -> bool {
+    matches!(e, Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_))
+  }
+  /// Cost of `e` inside an enclosing Times' flat factor list (no
+  /// additional Times head of its own).
+  fn times_factor_cost(e: &Expr) -> usize {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        args.iter().map(times_factor_cost).sum()
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => times_factor_cost(left) + times_factor_cost(right),
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand,
+      } => {
+        if is_number(operand) {
+          // A negative literal factor: the sign folds into the number.
+          complexity_digits(operand)
+        } else {
+          // The -1 joins the enclosing factor list as one extra leaf.
+          1 + times_factor_cost(operand)
+        }
+      }
+      other => complexity_digits(other),
+    }
+  }
+  /// Cost of `e` inside an enclosing Plus' flat term list. `negated`
+  /// accounts for a leading minus from `a - b` / `-x` display forms.
+  fn plus_term_cost(e: &Expr, negated: bool) -> usize {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Plus" && !negated => {
+        args.iter().map(|t| plus_term_cost(t, false)).sum()
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left,
+        right,
+      } if !negated => {
+        plus_term_cost(left, false) + plus_term_cost(right, false)
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left,
+        right,
+      } if !negated => {
+        plus_term_cost(left, false) + plus_term_cost(right, true)
+      }
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand,
+      } => plus_term_cost(operand, !negated),
+      _ if !negated => complexity_digits(e),
+      _ if is_number(e) => complexity_digits(e),
+      // A negated product keeps its Times head; the -1 is one more leaf.
+      Expr::FunctionCall { name, .. } if name == "Times" => {
+        1 + complexity_digits(e)
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        ..
+      } => 1 + complexity_digits(e),
+      // Anything else gains the full Times[-1, …] wrapper.
+      _ => 2 + complexity_digits(e),
+    }
+  }
   match expr {
     Expr::Integer(n) => digits(n.to_string()),
     Expr::BigInteger(n) => digits(n.to_string()),
@@ -9362,6 +9772,39 @@ fn complexity_digits(expr: &Expr) -> usize {
     | Expr::String(_)
     | Expr::Constant(_)
     | Expr::Identifier(_) => 1,
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      1 + args.iter().map(times_factor_cost).sum::<usize>()
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => 1 + times_factor_cost(left) + times_factor_cost(right),
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      1 + args.iter().map(|t| plus_term_cost(t, false)).sum::<usize>()
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => 1 + plus_term_cost(left, false) + plus_term_cost(right, false),
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => 1 + plus_term_cost(left, false) + plus_term_cost(right, true),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => {
+      if is_number(operand) {
+        complexity_digits(operand)
+      } else {
+        // Times[-1, …]: a Times head, the -1 leaf, and the operand's
+        // factors flattened into that head.
+        2 + times_factor_cost(operand)
+      }
+    }
     Expr::BinaryOp { left, right, .. } => {
       1 + complexity_digits(left) + complexity_digits(right)
     }
