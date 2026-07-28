@@ -4974,6 +4974,22 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
       super::factor::factor_ast(&[best.clone()])
     };
     if let Ok(factored) = factored {
+      // A univariate integer-polynomial quotient keeps Factor's
+      // CANCELLATION but not its display — wolframscript shows the
+      // reduced parts in FactorSquareFree form (squarefree numerators
+      // stay expanded: (2+3x+x^2)/(2+3x) keeps its form, x/(x-3x^2) →
+      // (1-3x)^(-1); perfect powers and monomial content still come
+      // out: (1+2x+x^2)/(2x+3x^2) → (1+x)^2/(x*(2+3x)));
+      // wolframscript-verified (differential fuzzer seed
+      // 1785082426573174375).
+      let (factored, den_gated) = if !is_sum {
+        match settled_quotient_factor_display(&best, &factored) {
+          Some(r) => (r, true),
+          None => (factored, false),
+        }
+      } else {
+        (factored, false)
+      };
       // Wolfram never factors a reciprocal INTO a sum factor:
       // Simplify[-4 - 2/x] keeps the split form (never -2*(2 + x^(-1)))
       // and Simplify[(-2-4x)/(5x)] keeps -1/5*(2+4x)/x;
@@ -4985,9 +5001,10 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
           // Wolfram never factors a quotient's DENOMINATOR into a product
           // of distinct factors: Simplify[1/(4x+3x^2)] stays
           // (4x+3x^2)^(-1), not 1/(x(4+3x)). Powers still collapse
-          // (x^2/(1-3x+3x^2-x^3) → -(x^2/(-1+x)^3)).
+          // (x^2/(1-3x+3x^2-x^3) → -(x^2/(-1+x)^3)). The squarefree
+          // redisplay above gates its own denominator.
           leaf_count(&factored) <= best_c
-            && factored_den_acceptable(&best, &factored)
+            && (den_gated || factored_den_acceptable(&best, &factored))
         };
       if accept && !exprs_equal(&factored, &best) {
         // Canonicalize a factored POLYNOMIAL product's factor order
@@ -7701,8 +7718,37 @@ pub(crate) fn simplify_division_impl(
   // (power of a) single factor — Simplify[1/(4x+3x^2)] stays
   // (4x+3x^2)^(-1), never 1/(x(4+3x)) — while quotient numerators factor
   // freely (Simplify[(4x^2-2x)/(2+3x)] → (2x(-1+2x))/(2+3x)).
-  if let Ok(factored) = super::factor::factor_ast(std::slice::from_ref(&basic))
-  {
+  //
+  // Once the SimplifyCount candidate selection has settled the quotient,
+  // the display factoring is FactorSquareFree, not Factor: a squarefree
+  // numerator stays expanded (Simplify[(-4-5x-5x^2-4x^3)/(-2x-3x^2)] →
+  // (4+5x+5x^2+4x^3)/(2x+3x^2), (2+3x+x^2)/(2+3x) keeps its form) while
+  // monomial content and perfect powers still come out ((4x^2-2x)/(2+3x)
+  // → (2x(-1+2x))/(2+3x)); the denominator follows the numerator into
+  // squarefree form when the numerator changed ((1+2x+x^2)/(2x+3x^2) →
+  // (1+x)^2/(x*(2+3x))) or when it collapses to a single factor
+  // (x^2/(1-3x+3x^2-x^3) → -(x^2/(-1+x)^3), but 1/(4x+3x^2) and
+  // Simplify[x/(x-3x^2)] = (1-3x)^(-1) keep their denominators);
+  // wolframscript-verified (differential fuzzer seed 1785082426573174375).
+  let mut settled_display = false;
+  let factored_display = if sign_settled {
+    match super::factor::factor_ast(std::slice::from_ref(&basic)) {
+      Ok(f) => match settled_quotient_factor_display(&basic, &f) {
+        // A "keep the input" decision must fall through to the
+        // numerator-only handling below, not short-circuit as an
+        // accepted no-op.
+        Some(r) => {
+          settled_display = true;
+          if exprs_equal(&r, &basic) { None } else { Some(r) }
+        }
+        None => Some(f),
+      },
+      Err(_) => None,
+    }
+  } else {
+    super::factor::factor_ast(std::slice::from_ref(&basic)).ok()
+  };
+  if let Some(factored) = factored_display {
     let fc = leaf_count(&factored);
     let bc = leaf_count(&basic);
     let num_ok = factor_num || {
@@ -7760,7 +7806,7 @@ pub(crate) fn simplify_division_impl(
     if fc <= bc
       && num_ok
       && !content_only_rewrite
-      && factored_den_acceptable(&basic, &factored)
+      && (settled_display || factored_den_acceptable(&basic, &factored))
     {
       // A factored quotient (den collapsed to a power / real numerator
       // factorization) was never among the candidate-selection forms, so
@@ -7787,6 +7833,23 @@ pub(crate) fn simplify_division_impl(
           super::factor::factor_ast(std::slice::from_ref(&bn))
           && leaf_count(&factored_num) <= leaf_count(&bn)
           && !exprs_equal(&factored_num, &bn)
+          // A settled quotient's numerator never splits into two or more
+          // SUM factors — that is Factor's display, not Simplify's
+          // ((-4-5x-5x^2-4x^3)/(-2x-3x^2) keeps its numerator expanded
+          // instead of becoming ((1+x)*(4+x+4x^2))/…). Monomial/content
+          // extraction with a single sum factor ((4x^2-2x)/(5-5x) →
+          // (2*(1-2x)*x)/(5*(-1+x))) and perfect powers still apply.
+          && !(sign_settled && {
+            super::together::flatten_times_args(std::slice::from_ref(
+              &factored_num,
+            ))
+            .iter()
+            .filter(|f| {
+              super::coefficient::collect_additive_terms(f).len() > 1
+            })
+            .count()
+              >= 2
+          })
         {
           // Once the SimplifyCount candidate selection has settled the
           // quotient's form, a content-only rewrite (Times[c, Plus[…]])
@@ -8850,6 +8913,151 @@ fn finish_quotient_sign(e: Expr, canonicalize_sign: bool) -> Expr {
     return e;
   }
   super::together::extract_quotient_minus(&n, &d).unwrap_or(e)
+}
+
+/// Display decision for a univariate integer-polynomial quotient given
+/// Factor's output, following wolframscript's Simplify (differential
+/// fuzzer seed 1785082426573174375; all cases wolframscript-verified):
+/// - the numerator never splits into two or more SUM factors — a
+///   squarefree sum stays expanded ((2+3x+x^2)/(2+3x) and
+///   (-4-5x-5x^2-4x^3)/(-2x-3x^2) keep their numerators) — while
+///   content/monomial extraction with at most one sum factor and
+///   perfect powers keep Factor's display ((4x^2-2x)/(5-5x) →
+///   (2*(1-2x)*x)/(5*(-1+x)), (1+2x+x^2)/(2x+3x^2) →
+///   (1+x)^2/(x*(2+3x)));
+/// - a rejected numerator still adopts a same-orientation collapsed
+///   denominator ((2+3x+x^2)/(1-2x+x^2) → (2+3x+x^2)/(-1+x)^2);
+/// - a denominator that neither collapses nor accompanies a factored
+///   numerator keeps the input display (1/(4x+3x^2) stays expanded);
+/// - a cancellation leaving a negative constant over a plain
+///   negative-constant-led denominator re-orients the pair
+///   (x/(x-3x^2) → (1-3x)^(-1)).
+/// Returns None when the quotient is not univariate integer-polynomial
+/// (or the input numerator is itself a negative constant) — the caller
+/// keeps its legacy handling of the Factor output.
+fn settled_quotient_factor_display(
+  basic: &Expr,
+  factored: &Expr,
+) -> Option<Expr> {
+  let (fn_, fd) = super::together::extract_num_den(factored);
+  if matches!(&fd, Expr::Integer(1)) {
+    return None;
+  }
+  let mut vars = std::collections::HashSet::new();
+  collect_variables(&fn_, &mut vars);
+  collect_variables(&fd, &mut vars);
+  if vars.len() != 1 {
+    return None;
+  }
+  let var = vars.into_iter().next().unwrap();
+  let fn_e = expand_and_combine(&fn_);
+  let fd_e = expand_and_combine(&fd);
+  let n_c = extract_poly_coeffs(&fn_e, &var)?;
+  let d_c = extract_poly_coeffs(&fd_e, &var)?;
+  let (bn0, bd0) = super::together::extract_num_den(basic);
+  let bn0_e = expand_and_combine(&bn0);
+  let bd0_e = expand_and_combine(&bd0);
+  let bn_c = extract_poly_coeffs(&bn0_e, &var)?;
+  let bd_c = extract_poly_coeffs(&bd0_e, &var)?;
+
+  // A part is "shaped" when Factor gave it structure beyond a plain
+  // sum: a negation wrapper, a multi-factor product, or a power of a
+  // sum. Unshaped parts are only re-orientations of the input.
+  let shaped = |e: &Expr| -> bool {
+    if matches!(
+      e,
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        ..
+      }
+    ) {
+      return true;
+    }
+    let factors = super::together::flatten_times_args(std::slice::from_ref(e));
+    factors.len() > 1
+      || factors.iter().any(|f| {
+        let power_of_sum_base = |base: &Expr, exp: &Expr| {
+          matches!(exp, Expr::Integer(k) if *k >= 2)
+            && super::coefficient::collect_additive_terms(base).len() > 1
+        };
+        match f {
+          Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left,
+            right,
+          } => power_of_sum_base(left, right),
+          Expr::FunctionCall { name, args }
+            if name == "Power" && args.len() == 2 =>
+          {
+            power_of_sum_base(&args[0], &args[1])
+          }
+          _ => false,
+        }
+      })
+  };
+  let sum_factor_count = |e: &Expr| {
+    super::together::flatten_times_args(std::slice::from_ref(e))
+      .iter()
+      .filter(|f| super::coefficient::collect_additive_terms(f).len() > 1)
+      .count()
+  };
+
+  // A constant numerator out of Factor (the input numerator cancelled
+  // away, or Factor re-canonicalized a reciprocal's sign).
+  if n_c.len() == 1 {
+    if bn_c.len() == 1 && bn_c[0] < 0 {
+      // The input numerator is itself a negative constant — the legacy
+      // reciprocal handling owns those (-1/(1+x) → -(1+x)^(-1)).
+      return None;
+    }
+    if n_c[0] < 0
+      && !shaped(&fd)
+      && d_c.iter().find(|&&c| c != 0).is_some_and(|&c| c < 0)
+    {
+      let terms: Vec<(i128, i128, i128)> = d_c
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| **c != 0)
+        .map(|(e, c)| (-*c, 1, e as i128))
+        .collect();
+      return Some(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(Expr::Integer(-n_c[0])),
+        right: Box::new(coeffs_from_terms(&terms, &var)),
+      });
+    }
+    return Some(if factored_den_acceptable(basic, factored) {
+      factored.clone()
+    } else {
+      basic.clone()
+    });
+  }
+
+  if sum_factor_count(&fn_) >= 2 {
+    // The numerator split is rejected; a same-orientation collapsed
+    // denominator still applies over the input numerator.
+    if shaped(&fd)
+      && factored_den_acceptable(basic, factored)
+      && d_c == bd_c
+      && n_c == bn_c
+      && !exprs_equal(&fd, &bd0)
+    {
+      return Some(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(bn0),
+        right: Box::new(fd),
+      });
+    }
+    return Some(basic.clone());
+  }
+
+  if !shaped(&fn_) && !shaped(&fd) {
+    return Some(basic.clone());
+  }
+  if factored_den_acceptable(basic, factored) || shaped(&fn_) {
+    return Some(factored.clone());
+  }
+  Some(basic.clone())
 }
 
 /// Accept a factored quotient only when its denominator stayed unchanged

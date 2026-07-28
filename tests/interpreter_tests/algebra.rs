@@ -15816,3 +15816,59 @@ mod refine_bounded_variables {
     );
   }
 }
+
+mod fuzz_diff_round_2026_07_26 {
+  use super::super::case_helpers::assert_case;
+
+  // Simplify displays a univariate polynomial quotient's parts in
+  // FactorSquareFree form, never fully factored: a squarefree numerator
+  // stays expanded even when the factored form has a lower SimplifyCount
+  // (case seed 13512828096256521534; wolframscript-verified).
+  #[test]
+  fn simplify_squarefree_quotient_numerator_stays_expanded() {
+    assert_case(
+      "Simplify[Divide[Plus[-4, Times[-5, x], Times[-5, Power[x, 2]], Times[-4, Power[x, 3]]], Plus[0, Times[-2, x], Times[-3, Power[x, 2]]]]]",
+      "(4 + 5*x + 5*x^2 + 4*x^3)/(2*x + 3*x^2)",
+    );
+    assert_case(
+      "Simplify[(-4 - 5*x - 5*x^2 - 4*x^3)/(2*x + 3*x^2)]",
+      "-((4 + 5*x + 5*x^2 + 4*x^3)/(2*x + 3*x^2))",
+    );
+    assert_case(
+      "Simplify[(2 + 3*x + x^2)/(2 + 3*x)]",
+      "(2 + 3*x + x^2)/(2 + 3*x)",
+    );
+    assert_case(
+      "Simplify[(2 + 3*x + x^2)/(1 - 2*x + x^2)]",
+      "(2 + 3*x + x^2)/(-1 + x)^2",
+    );
+    // Monomial content and perfect powers still come out, and the
+    // denominator follows into squarefree form when the numerator
+    // changed.
+    assert_case(
+      "Simplify[(4*x^2 - 2*x)/(2 + 3*x)]",
+      "(2*x*(-1 + 2*x))/(2 + 3*x)",
+    );
+    assert_case(
+      "Simplify[(1 + 2*x + x^2)/(2*x + 3*x^2)]",
+      "(1 + x)^2/(x*(2 + 3*x))",
+    );
+    // Full cancellation keeps the reduced pair's own orientation:
+    // x/(x*(1-3x)) leaves a positive constant numerator.
+    assert_case(
+      "Simplify[Divide[x, Plus[0, x, Times[-3, Power[x, 2]]]]]",
+      "(1 - 3*x)^(-1)",
+    );
+    // Sign handling around the squarefree display is unchanged.
+    assert_case(
+      "Simplify[x^2/(1 - 3*x + 3*x^2 - x^3)]",
+      "-(x^2/(-1 + x)^3)",
+    );
+    assert_case("Simplify[1/(1 - 3*x + 3*x^2 - x^3)]", "-(-1 + x)^(-3)");
+    assert_case("Simplify[-1/(2 - 4*x)]", "(-2 + 4*x)^(-1)");
+    assert_case(
+      "Simplify[(2 + 3*x + x^2)/(4 + 5*x + 5*x^2 + 4*x^3)]",
+      "(2 + x)/(4 + x + 4*x^2)",
+    );
+  }
+}

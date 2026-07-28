@@ -85,6 +85,26 @@ mod fractional_part {
       "EulerGamma"
     );
   }
+
+  // FractionalPart truncates toward zero, so a NEGATIVE symbolic value
+  // subtracts its Ceiling, not its Floor: 81*(Pi - 29/2) ≈ -920.03 keeps
+  // integer part -920 (differential fuzzer seed 228602237882039336;
+  // wolframscript-verified).
+  #[test]
+  fn symbolic_negative_truncates_toward_zero() {
+    assert_eq!(
+      interpret("FractionalPart[Times[Subtract[Pi, Plus[7, Divide[15, 2]]], 81]]")
+        .unwrap(),
+      "920 + 81*(-29/2 + Pi)"
+    );
+    assert_eq!(interpret("FractionalPart[-Pi]").unwrap(), "3 - Pi");
+    assert_eq!(interpret("FractionalPart[-E]").unwrap(), "2 - E");
+    // Positive values still subtract their Floor.
+    assert_eq!(
+      interpret("FractionalPart[Pi^20]").unwrap(),
+      "-8769956796 + Pi^20"
+    );
+  }
 }
 
 mod mixed_fraction_parts {
