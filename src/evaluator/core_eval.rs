@@ -976,10 +976,7 @@ pub fn evaluate_expr_to_expr_inner(
           });
           if has_setdelayed_rules {
             let result =
-              crate::evaluator::dispatch::evaluate_function_call_ast(
-                "SetDelayed",
-                args,
-              )?;
+              crate::evaluator::evaluate_function_call_ast("SetDelayed", args)?;
             // If a user-defined rule matched, the result will differ from
             // the original `SetDelayed[…]` shell. Otherwise fall through
             // to the built-in handler. `Expr` doesn't impl `PartialEq` so
@@ -1303,7 +1300,7 @@ pub fn evaluate_expr_to_expr_inner(
         // inspection (handled in the Information dispatcher).
         if (name == "Definition" || name == "FullDefinition") && args.len() == 1
         {
-          return dispatch::evaluate_function_call_ast(name, args);
+          return evaluate_function_call_ast(name, args);
         }
         // ApplyTo[x, f] (x //= f): set x to f[x] and return the new
         // value. HoldFirst; an unset variable emits rvalue.
