@@ -878,7 +878,7 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
 }
 
 /// Find the single variable that appears in either or both expressions
-fn find_single_variable_both(a: &Expr, b: &Expr) -> Option<String> {
+pub(super) fn find_single_variable_both(a: &Expr, b: &Expr) -> Option<String> {
   let mut vars = std::collections::HashSet::new();
   collect_variables(a, &mut vars);
   collect_variables(b, &mut vars);

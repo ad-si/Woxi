@@ -3585,8 +3585,8 @@ fn quotient_sum_terms_vector_order(
         },
         other => (other, 1),
       };
-      let (v, coeffs, is_sum) = if let Expr::Identifier(v) = fb {
-        (v.clone(), vec![0, 1], false)
+      let (v, coeffs, is_sum) = if let Some(v) = sym_var_name(fb) {
+        (v.to_string(), vec![0, 1], false)
       } else if cmp_is_sum_base(fb) {
         let (v, c) = univar_int_coeffs(fb)?;
         (v, c, true)
@@ -3685,36 +3685,38 @@ fn quotient_sum_terms_vector_order(
 fn sum_recip_vs_univar_order(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
   use std::cmp::Ordering;
   // (var, ascending base-polynomial coeffs, is_sum_reciprocal).
-  fn base_info(e: &Expr) -> Option<(String, Vec<i128>, bool)> {
+  fn base_info(e: &Expr) -> Option<(String, Vec<(i128, i128)>, bool)> {
     let (_, base) = decompose_term(e);
     if let Some((inner, _)) = cmp_neg_pow(&base) {
       if cmp_is_sum_base(inner) {
-        let (v, c) = univar_int_coeffs(inner)?;
+        let (v, c) = univar_rat_coeffs(inner)?;
         return Some((v, c, true));
       }
-      if let Expr::Identifier(v) = inner {
-        return Some((v.clone(), vec![0, 1], false));
+      if let Some(v) = sym_var_name(inner) {
+        return Some((v.to_string(), vec![(0, 1), (1, 1)], false));
       }
       return None;
     }
     let var_power = |b: &Expr, e: &Expr| -> Option<String> {
-      match (b, e) {
-        (Expr::Identifier(v), Expr::Integer(n)) if *n > 0 => Some(v.clone()),
+      match (sym_var_name(b), e) {
+        (Some(v), Expr::Integer(n)) if *n > 0 => Some(v.to_string()),
         _ => None,
       }
     };
+    if let Some(v) = sym_var_name(&base) {
+      return Some((v.to_string(), vec![(0, 1), (1, 1)], false));
+    }
     match &base {
-      Expr::Identifier(v) => Some((v.clone(), vec![0, 1], false)),
       Expr::FunctionCall { name, args }
         if name == "Power" && args.len() == 2 =>
       {
-        var_power(&args[0], &args[1]).map(|v| (v, vec![0, 1], false))
+        var_power(&args[0], &args[1]).map(|v| (v, vec![(0, 1), (1, 1)], false))
       }
       Expr::BinaryOp {
         op: BinaryOperator::Power,
         left,
         right,
-      } => var_power(left, right).map(|v| (v, vec![0, 1], false)),
+      } => var_power(left, right).map(|v| (v, vec![(0, 1), (1, 1)], false)),
       _ => None,
     }
   }
@@ -3723,15 +3725,16 @@ fn sum_recip_vs_univar_order(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
   if (!ra && !rb) || va != vb {
     return None;
   }
-  let degree = |c: &[i128]| c.iter().rposition(|&k| k != 0).unwrap_or(0);
+  let degree =
+    |c: &[(i128, i128)]| c.iter().rposition(|&(n, _)| n != 0).unwrap_or(0);
   let (da, db) = (degree(&ca), degree(&cb));
   if da != db {
     return Some(da.cmp(&db));
   }
   for i in (0..=da).rev() {
-    let x = ca.get(i).copied().unwrap_or(0);
-    let y = cb.get(i).copied().unwrap_or(0);
-    match x.cmp(&y) {
+    let x = ca.get(i).copied().unwrap_or((0, 1));
+    let y = cb.get(i).copied().unwrap_or((0, 1));
+    match rat_cmp(x, y) {
       Ordering::Equal => {}
       ord => return Some(ord),
     }
@@ -3913,20 +3916,57 @@ fn cmp_is_sum_base(e: &Expr) -> bool {
     )
 }
 
-/// Ascending integer coefficients of a univariate polynomial with number
-/// coefficients (sums of Integer / k*var / k*var^n terms, or a bare
-/// monomial). Returns (var, coeffs) or None for anything else.
-fn univar_int_coeffs(e: &Expr) -> Option<(String, Vec<i128>)> {
-  fn monomial(e: &Expr) -> Option<(Option<String>, usize, i128)> {
+/// The name of a symbol-like atom for univariate polynomial ordering: a
+/// bare Identifier or a named constant (Pi, E, …), which Wolfram orders
+/// exactly like a symbol (`Pi + (1 + Pi)^(-1)` keeps Pi first just as
+/// `x + (1 + x)^(-1)` keeps x first). The imaginary unit is excluded —
+/// sums containing I are complex numbers, not univariate polynomials.
+fn sym_var_name(e: &Expr) -> Option<&str> {
+  match e {
+    Expr::Identifier(v) => Some(v),
+    Expr::Constant(v) if v != "I" => Some(v),
+    _ => None,
+  }
+}
+
+/// A rational number literal as (numerator, denominator > 0), covering
+/// Integer and evaluated Rational[a, b] atoms.
+fn rat_literal(e: &Expr) -> Option<(i128, i128)> {
+  match e {
+    Expr::Integer(n) => Some((*n, 1)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(a), Expr::Integer(b)) if *b != 0 => {
+          Some(if *b < 0 { (-a, -b) } else { (*a, *b) })
+        }
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Ascending rational coefficients (numerator, denominator > 0, reduced) of
+/// a univariate polynomial with number coefficients (sums of number /
+/// k*var / k*var^n terms, or a bare monomial). Returns (var, coeffs) or
+/// None for anything else.
+fn univar_rat_coeffs(e: &Expr) -> Option<(String, Vec<(i128, i128)>)> {
+  fn monomial(e: &Expr) -> Option<(Option<String>, usize, (i128, i128))> {
+    if let Some(c) = rat_literal(e) {
+      return Some((None, 0, c));
+    }
     match e {
-      Expr::Integer(n) => Some((None, 0, *n)),
-      Expr::Identifier(v) => Some((Some(v.clone()), 1, 1)),
+      _ if sym_var_name(e).is_some() => {
+        Some((Some(sym_var_name(e)?.to_string()), 1, (1, 1)))
+      }
       Expr::FunctionCall { name, args }
         if name == "Power" && args.len() == 2 =>
       {
-        match (&args[0], &args[1]) {
-          (Expr::Identifier(v), Expr::Integer(n)) if *n > 0 => {
-            Some((Some(v.clone()), *n as usize, 1))
+        match (sym_var_name(&args[0]), &args[1]) {
+          (Some(v), Expr::Integer(n)) if *n > 0 => {
+            Some((Some(v.to_string()), *n as usize, (1, 1)))
           }
           _ => None,
         }
@@ -3935,19 +3975,21 @@ fn univar_int_coeffs(e: &Expr) -> Option<(String, Vec<i128>)> {
         op: BinaryOperator::Power,
         left,
         right,
-      } => match (left.as_ref(), right.as_ref()) {
-        (Expr::Identifier(v), Expr::Integer(n)) if *n > 0 => {
-          Some((Some(v.clone()), *n as usize, 1))
+      } => match (sym_var_name(left), right.as_ref()) {
+        (Some(v), Expr::Integer(n)) if *n > 0 => {
+          Some((Some(v.to_string()), *n as usize, (1, 1)))
         }
         _ => None,
       },
       Expr::FunctionCall { name, args }
         if name == "Times" && args.len() == 2 =>
       {
-        match (&args[0], monomial(&args[1])) {
-          (Expr::Integer(k), Some((v, d, c))) => {
-            Some((v, d, k.checked_mul(c)?))
-          }
+        match (rat_literal(&args[0]), monomial(&args[1])) {
+          (Some((kn, kd)), Some((v, d, (cn, cd)))) => Some((
+            v,
+            d,
+            (kn.checked_mul(cn)?, kd.checked_mul(cd)?),
+          )),
           _ => None,
         }
       }
@@ -3955,19 +3997,40 @@ fn univar_int_coeffs(e: &Expr) -> Option<(String, Vec<i128>)> {
         op: BinaryOperator::Times,
         left,
         right,
-      } => match (left.as_ref(), monomial(right)) {
-        (Expr::Integer(k), Some((v, d, c))) => Some((v, d, k.checked_mul(c)?)),
+      } => match (rat_literal(left), monomial(right)) {
+        (Some((kn, kd)), Some((v, d, (cn, cd)))) => {
+          Some((v, d, (kn.checked_mul(cn)?, kd.checked_mul(cd)?)))
+        }
         _ => None,
       },
       Expr::UnaryOp {
         op: UnaryOperator::Minus,
         operand,
       } => {
-        let (v, d, c) = monomial(operand)?;
-        Some((v, d, c.checked_neg()?))
+        let (v, d, (cn, cd)) = monomial(operand)?;
+        Some((v, d, (cn.checked_neg()?, cd)))
       }
       _ => None,
     }
+  }
+  fn gcd(mut a: i128, mut b: i128) -> i128 {
+    while b != 0 {
+      (a, b) = (b, a % b);
+    }
+    a.abs().max(1)
+  }
+  // Reduced form with denominator > 0, so coefficient vectors compare
+  // consistently by value.
+  fn rat_norm((n, d): (i128, i128)) -> (i128, i128) {
+    let g = gcd(n, d);
+    let (n, d) = (n / g, d / g);
+    if d < 0 { (-n, -d) } else { (n, d) }
+  }
+  fn rat_add(a: (i128, i128), b: (i128, i128)) -> Option<(i128, i128)> {
+    Some(rat_norm((
+      a.0.checked_mul(b.1)?.checked_add(b.0.checked_mul(a.1)?)?,
+      a.1.checked_mul(b.1)?,
+    )))
   }
   let terms: Vec<&Expr> = match e {
     Expr::FunctionCall { name, args } if name == "Plus" => {
@@ -3976,7 +4039,7 @@ fn univar_int_coeffs(e: &Expr) -> Option<(String, Vec<i128>)> {
     other => vec![other],
   };
   let mut var: Option<String> = None;
-  let mut coeffs: Vec<i128> = Vec::new();
+  let mut coeffs: Vec<(i128, i128)> = Vec::new();
   for t in terms {
     let (v, d, c) = monomial(t)?;
     if let Some(v) = v {
@@ -3987,11 +4050,29 @@ fn univar_int_coeffs(e: &Expr) -> Option<(String, Vec<i128>)> {
       }
     }
     if coeffs.len() <= d {
-      coeffs.resize(d + 1, 0);
+      coeffs.resize(d + 1, (0, 1));
     }
-    coeffs[d] = coeffs[d].checked_add(c)?;
+    coeffs[d] = rat_add(coeffs[d], rat_norm(c))?;
   }
   Some((var?, coeffs))
+}
+
+/// Compare two rationals in (numerator, denominator > 0) form by value.
+fn rat_cmp(a: (i128, i128), b: (i128, i128)) -> std::cmp::Ordering {
+  (a.0 * b.1).cmp(&(b.0 * a.1))
+}
+
+/// Ascending integer coefficients of a univariate polynomial with number
+/// coefficients (sums of Integer / k*var / k*var^n terms, or a bare
+/// monomial). Returns (var, coeffs) or None for anything else (including
+/// polynomials with non-integer rational coefficients).
+fn univar_int_coeffs(e: &Expr) -> Option<(String, Vec<i128>)> {
+  let (var, rats) = univar_rat_coeffs(e)?;
+  let ints: Option<Vec<i128>> = rats
+    .iter()
+    .map(|&(n, d)| if d == 1 { Some(n) } else { None })
+    .collect();
+  Some((var, ints?))
 }
 
 /// WL polynomial term order for two univariate polynomials in the same
@@ -5037,6 +5118,40 @@ fn order_factor_vs_additive(
   use std::cmp::Ordering;
   let top = plus_args.last().unwrap();
   let (fb, fe) = times_term_base_exp(factor);
+  // A variable-power factor against a univariate polynomial sum in the
+  // SAME variable compares by coefficient vector, the factor flattening
+  // to plain-x coefficients [0, 1] whatever its positive exponent:
+  // degree ascending, then coefficients from the leading term down, a
+  // full tie keeping the factor first. All wolframscript-verified:
+  // x^2*(1 + x), x^3*(-1 + x^2), (-1 + x)*x^2, x^2*(-1 + x^2),
+  // (-2 + x)*x^2, x^2*(-1 + 2*x), (-1/2 + x)*x^2, Pi^2*(-1 + Pi^2).
+  if let Some(v) = sym_var_name(&fb)
+    && fe.is_some_and(|e| e > 0.0)
+  {
+    let sum_expr = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: plus_args.to_vec().into(),
+    };
+    if let Some((sv, coeffs)) = univar_rat_coeffs(&sum_expr)
+      && sv == v
+    {
+      let deg = coeffs.iter().rposition(|&(n, _)| n != 0).unwrap_or(0);
+      match 1.cmp(&deg) {
+        Ordering::Equal => {}
+        ord => return ord,
+      }
+      let fvec = [(0i128, 1i128), (1, 1)];
+      for i in (0..=deg).rev() {
+        let x = fvec.get(i).copied().unwrap_or((0, 1));
+        let y = coeffs.get(i).copied().unwrap_or((0, 1));
+        match rat_cmp(x, y) {
+          Ordering::Equal => {}
+          ord => return ord,
+        }
+      }
+      return Ordering::Less;
+    }
+  }
   let (hb, he) = times_term_base_exp(top);
   // Atom bases compare by name only — compare_exprs would evaluate
   // constants numerically and order Pi (numeric) before I (non-numeric),

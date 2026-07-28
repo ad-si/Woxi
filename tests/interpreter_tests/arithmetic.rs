@@ -341,6 +341,40 @@ mod arithmetic {
       assert_eq!(interpret("D[Sin[x]^2, x]").unwrap(), "2*Cos[x]*Sin[x]");
     }
 
+    // A variable-power factor against a univariate polynomial sum in the
+    // same variable compares by coefficient vector, the power flattening
+    // to plain-x coefficients [0, 1] whatever its exponent: degree
+    // ascending, then coefficients from the leading term down, a full
+    // tie keeping the factor first. All wolframscript-verified
+    // (differential fuzzer, seed 1785246333519574598 follow-up).
+    #[test]
+    fn var_power_vs_univar_sum_orders_by_coefficients() {
+      assert_eq!(interpret("x^2*(1 + x)").unwrap(), "x^2*(1 + x)");
+      assert_eq!(interpret("x^2*(2 + x)").unwrap(), "x^2*(2 + x)");
+      assert_eq!(interpret("x^2*(1/2 + x)").unwrap(), "x^2*(1/2 + x)");
+      assert_eq!(interpret("x^2*(-1 + 2*x)").unwrap(), "x^2*(-1 + 2*x)");
+      assert_eq!(interpret("x^3*(-1 + x^2)").unwrap(), "x^3*(-1 + x^2)");
+      assert_eq!(interpret("x^2*(-1 + x^2)").unwrap(), "x^2*(-1 + x^2)");
+      assert_eq!(interpret("x^2*(-1 + x - x^2)").unwrap(), "x^2*(-1 + x - x^2)");
+      assert_eq!(interpret("Pi^2*(-1 + Pi^2)").unwrap(), "Pi^2*(-1 + Pi^2)");
+      assert_eq!(
+        interpret("x^2*y*(-1 + x^2)").unwrap(),
+        "x^2*(-1 + x^2)*y"
+      );
+      assert_eq!(
+        interpret("x^2*(-1 + x^2)*(1 + x^2)").unwrap(),
+        "x^2*(-1 + x^2)*(1 + x^2)"
+      );
+      // Negative constants / leading coefficients pull the sum forward.
+      assert_eq!(interpret("x^2*(-1 + x)").unwrap(), "(-1 + x)*x^2");
+      assert_eq!(interpret("x^2*(-2 + x)").unwrap(), "(-2 + x)*x^2");
+      assert_eq!(interpret("x^2*(-1/2 + x)").unwrap(), "(-1/2 + x)*x^2");
+      assert_eq!(interpret("x^3*(-1 + x)").unwrap(), "(-1 + x)*x^3");
+      // Bare x keeps its existing behaviour.
+      assert_eq!(interpret("x*(1 + x)").unwrap(), "x*(1 + x)");
+      assert_eq!(interpret("x*(-1 + x^2)").unwrap(), "x*(-1 + x^2)");
+    }
+
     // When two reciprocal factors share the same sort key (e.g. y vs (x-y)),
     // the additive base sorts FIRST when it contains the negation of the
     // bare identifier — matching Wolfram. Regression for `Apart` output.

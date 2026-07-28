@@ -592,6 +592,60 @@ mod simplify {
     assert_eq!(interpret("Simplify[x + x]").unwrap(), "2*x");
   }
 
+  // Simplify prefers the square-free factored form when its FullForm node
+  // count wins: -2*x*(-1 + x^2) is 8 nodes vs 9 for 2*x - 2*x^3 and for
+  // -2*(-x + x^3). The count follows Wolfram's FullForm (Times/Plus
+  // chains flat, -x as Times[-1, x]), not the display tree
+  // (differential fuzzer, seed 1785246333519574598;
+  // all wolframscript-verified).
+  #[test]
+  fn square_free_factored_form_wins_on_node_count() {
+    assert_eq!(
+      interpret("Simplify[2*x - 2*x^3]").unwrap(),
+      "-2*x*(-1 + x^2)"
+    );
+    assert_eq!(
+      interpret("Simplify[3*x - 3*x^3]").unwrap(),
+      "-3*x*(-1 + x^2)"
+    );
+    assert_eq!(
+      interpret("Simplify[6*x - 6*x^3]").unwrap(),
+      "-6*x*(-1 + x^2)"
+    );
+    assert_eq!(
+      interpret("Simplify[3*x^2 - 3*x^4]").unwrap(),
+      "-3*x^2*(-1 + x^2)"
+    );
+    // The content-only extraction stays when it is cheaper …
+    assert_eq!(interpret("Simplify[2*x + 2*x^3]").unwrap(), "2*(x + x^3)");
+    // … the plain sum stays when everything else is more complex …
+    assert_eq!(interpret("Simplify[x - x^3]").unwrap(), "x - x^3");
+    assert_eq!(interpret("Simplify[3 - 3*x]").unwrap(), "3 - 3*x");
+    assert_eq!(interpret("Simplify[9 - 9*x]").unwrap(), "9 - 9*x");
+    // … and the fully factored linear split still wins where it should.
+    assert_eq!(
+      interpret("Simplify[2*x - 2*x^2]").unwrap(),
+      "-2*(-1 + x)*x"
+    );
+    assert_eq!(interpret("Simplify[-2*x - 2]").unwrap(), "-2*(1 + x)");
+    assert_eq!(
+      interpret("Simplify[100 - 100*x]").unwrap(),
+      "-100*(-1 + x)"
+    );
+  }
+
+  // A rational function whose numerator and denominator share a
+  // polynomial factor cancels it, and the surviving denominator is
+  // displayed expanded (differential fuzzer, seed 1785246333519574598;
+  // wolframscript-verified).
+  #[test]
+  fn rational_function_cancels_shared_factor() {
+    assert_eq!(
+      interpret("Simplify[(1 + 4*x + 3*x^2)/(2*x - 2*x^3)]").unwrap(),
+      "(1 + 3*x)/(2*x - 2*x^2)"
+    );
+  }
+
   // On a SimplifyCount tie the sign-only -(…) pull beats the numeric
   // content extraction (both count 16), while a strict win keeps the
   // extraction; wolframscript-verified (differential fuzzer, seed
@@ -2513,6 +2567,29 @@ mod together {
     assert_eq!(interpret("Together[1/x + 1/y]").unwrap(), "(x + y)/(x*y)");
   }
 
+  // Together divides out the polynomial GCD even when the denominator is
+  // held in factored/content-extracted form, where string-level factor
+  // matching can't see the shared factor ((1+x) divides -1+x^2). A
+  // quotient with nothing to cancel keeps its factored form. All
+  // wolframscript-verified (differential fuzzer, seed
+  // 1785246333519574598).
+  #[test]
+  fn together_cancels_gcd_behind_factored_denominator() {
+    assert_eq!(
+      interpret("Together[((1 + x)*(1 + 3*x))/(2*x - 2*x^3)]").unwrap(),
+      "(-1 - 3*x)/(2*(-1 + x)*x)"
+    );
+    assert_eq!(
+      interpret("Together[(1 + 4*x + 3*x^2)/(2*x - 2*x^3)]").unwrap(),
+      "(-1 - 3*x)/(2*(-1 + x)*x)"
+    );
+    // No shared polynomial factor: the factored quotient stays put.
+    assert_eq!(
+      interpret("Together[(5*x*(1 + x))/((1 - x)*(2 + x))]").unwrap(),
+      "(-5*x*(1 + x))/((-1 + x)*(2 + x))"
+    );
+  }
+
   // A negative numeric factor produced by denominator factoring flips
   // out of the quotient: sum numerators negate termwise with the content
   // staying in the denominator; monomial/unit numerators get a rational
@@ -3219,6 +3296,61 @@ mod apart {
     assert_eq!(
       interpret("1/x + 1/(1 + x)").unwrap(),
       "x^(-1) + (1 + x)^(-1)"
+    );
+  }
+
+  // Named constants (Pi, E, …) order exactly like symbols in the
+  // reciprocal-of-sum rule, and base polynomials may carry rational
+  // coefficients (differential fuzzer, seed 1785246333519574598:
+  // Pi - 59/(9/2 + Pi) put Pi last). All wolframscript-verified.
+  #[test]
+  fn sum_reciprocal_term_order_constants_and_rationals() {
+    assert_eq!(interpret("Pi + 1/(1 + Pi)").unwrap(), "Pi + (1 + Pi)^(-1)");
+    assert_eq!(interpret("E + 1/(1 + E)").unwrap(), "E + (1 + E)^(-1)");
+    assert_eq!(
+      interpret("Pi + 1/(-1 + Pi)").unwrap(),
+      "(-1 + Pi)^(-1) + Pi"
+    );
+    assert_eq!(
+      interpret("Pi + 1/(1 - 2 Pi)").unwrap(),
+      "(1 - 2*Pi)^(-1) + Pi"
+    );
+    assert_eq!(interpret("Pi + 2/(-1 + Pi)").unwrap(), "2/(-1 + Pi) + Pi");
+    assert_eq!(
+      interpret("Pi^2 + 1/(1 + Pi)").unwrap(),
+      "Pi^2 + (1 + Pi)^(-1)"
+    );
+    assert_eq!(
+      interpret("Pi + 1/(1 + Pi^2)").unwrap(),
+      "Pi + (1 + Pi^2)^(-1)"
+    );
+    // Mixed variables fall back to the general rules unchanged.
+    assert_eq!(interpret("Pi + 1/(1 + x)").unwrap(), "Pi + (1 + x)^(-1)");
+    assert_eq!(interpret("x + 1/(1 + Pi)").unwrap(), "(1 + Pi)^(-1) + x");
+    // Rational coefficients in the base compare by value.
+    assert_eq!(
+      interpret("Pi + 1/(9/2 + Pi)").unwrap(),
+      "Pi + (9/2 + Pi)^(-1)"
+    );
+    assert_eq!(interpret("x + 1/(9/2 + x)").unwrap(), "x + (9/2 + x)^(-1)");
+    assert_eq!(
+      interpret("x + 1/(-1/2 + x)").unwrap(),
+      "(-1/2 + x)^(-1) + x"
+    );
+    assert_eq!(interpret("x + 1/(1/2 - x)").unwrap(), "(1/2 - x)^(-1) + x");
+    assert_eq!(
+      interpret("x + 1/(3/2 + 2 x)").unwrap(),
+      "x + (3/2 + 2*x)^(-1)"
+    );
+    assert_eq!(
+      interpret("x^2 + 2/(-1/2 + x)").unwrap(),
+      "2/(-1/2 + x) + x^2"
+    );
+    // The full fuzzer case.
+    assert_eq!(
+      interpret("Pi + Divide[Plus[14, -73], Plus[Pi, Divide[9, 2]]]")
+        .unwrap(),
+      "Pi - 59/(9/2 + Pi)"
     );
   }
 

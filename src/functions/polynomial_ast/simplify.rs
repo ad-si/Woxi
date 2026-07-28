@@ -4946,14 +4946,42 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
     // For a top-level sum the negative-count tie-break applies (keep
     // `3 - 3x` over `-3*(-1 + x)`); other shapes (fractions, lists)
     // keep the plain leaf-count preference for factored forms.
-    let is_sum = matches!(&best, Expr::FunctionCall { name, .. } if name == "Plus")
-      || matches!(
-        &best,
-        Expr::BinaryOp {
-          op: BinaryOperator::Plus | BinaryOperator::Minus,
-          ..
+    let is_sum_shape = |e: &Expr| {
+      matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
+        || matches!(
+          e,
+          Expr::BinaryOp {
+            op: BinaryOperator::Plus | BinaryOperator::Minus,
+            ..
+          }
+        )
+    };
+    let is_sum = is_sum_shape(&best);
+    // A numeric content times a polynomial sum — simplify_expr's
+    // content-extracted form of a sum, e.g. -2*(-x + x^3) — follows the
+    // SUM rules below: the square-free candidate must compete
+    // (Simplify[2x - 2x^3] → -2*x*(-1 + x^2), wolframscript-verified)
+    // while the full Factor split -2*(-1+x)*x*(1+x) must not.
+    let content_sum = !is_sum && {
+      let numeric_lit = |e: &Expr| {
+        matches!(e, Expr::Integer(_))
+          || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+      };
+      match &best {
+        Expr::FunctionCall { name, args }
+          if name == "Times" && args.len() == 2 =>
+        {
+          numeric_lit(&args[0]) && is_sum_shape(&args[1])
         }
-      );
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left,
+          right,
+        } => numeric_lit(left) && is_sum_shape(right),
+        _ => false,
+      }
+    };
+    let is_sum = is_sum || content_sum;
     // The square-free rule is decoded for POLYNOMIAL sums; sums carrying
     // other functions (trig etc.) keep the full Factor candidate, whose
     // numeric-content extraction the pipeline relies on.
@@ -9561,8 +9589,85 @@ fn leaf_count(expr: &Expr) -> usize {
 /// `Log[1048576]` is considered *more* complex than `20*Log[2]` even though it
 /// has fewer nodes. Used to decide whether folding `c*Log[n]` → `Log[n^c]`
 /// actually simplifies.
+///
+/// The count follows Wolfram's FullForm tree, not woxi's display tree:
+/// Times/Plus chains count ONE head however the display nests them, `-x`
+/// counts as `Times[-1, x]` (3 nodes), and `a - b` as
+/// `Plus[a, Times[-1, b]]`. Counting display shapes literally rated
+/// `-2*(-x + x^3)` (8) below `-2*x*(-1 + x^2)` (9) where Wolfram's
+/// FullForm has them 9 and 8, so Simplify picked the wrong form
+/// (differential fuzzer, seed 1785246333519574598).
 fn complexity_digits(expr: &Expr) -> usize {
-  let digits = |s: String| s.trim_start_matches('-').len().max(1);
+  fn digits(s: String) -> usize {
+    s.trim_start_matches('-').len().max(1)
+  }
+  fn is_number(e: &Expr) -> bool {
+    matches!(e, Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_))
+  }
+  /// Cost of `e` inside an enclosing Times' flat factor list (no
+  /// additional Times head of its own).
+  fn times_factor_cost(e: &Expr) -> usize {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        args.iter().map(times_factor_cost).sum()
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => times_factor_cost(left) + times_factor_cost(right),
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand,
+      } => {
+        if is_number(operand) {
+          // A negative literal factor: the sign folds into the number.
+          complexity_digits(operand)
+        } else {
+          // The -1 joins the enclosing factor list as one extra leaf.
+          1 + times_factor_cost(operand)
+        }
+      }
+      other => complexity_digits(other),
+    }
+  }
+  /// Cost of `e` inside an enclosing Plus' flat term list. `negated`
+  /// accounts for a leading minus from `a - b` / `-x` display forms.
+  fn plus_term_cost(e: &Expr, negated: bool) -> usize {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Plus" && !negated => {
+        args.iter().map(|t| plus_term_cost(t, false)).sum()
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left,
+        right,
+      } if !negated => {
+        plus_term_cost(left, false) + plus_term_cost(right, false)
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left,
+        right,
+      } if !negated => plus_term_cost(left, false) + plus_term_cost(right, true),
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand,
+      } => plus_term_cost(operand, !negated),
+      _ if !negated => complexity_digits(e),
+      _ if is_number(e) => complexity_digits(e),
+      // A negated product keeps its Times head; the -1 is one more leaf.
+      Expr::FunctionCall { name, .. } if name == "Times" => {
+        1 + complexity_digits(e)
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        ..
+      } => 1 + complexity_digits(e),
+      // Anything else gains the full Times[-1, …] wrapper.
+      _ => 2 + complexity_digits(e),
+    }
+  }
   match expr {
     Expr::Integer(n) => digits(n.to_string()),
     Expr::BigInteger(n) => digits(n.to_string()),
@@ -9570,6 +9675,39 @@ fn complexity_digits(expr: &Expr) -> usize {
     | Expr::String(_)
     | Expr::Constant(_)
     | Expr::Identifier(_) => 1,
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      1 + args.iter().map(times_factor_cost).sum::<usize>()
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => 1 + times_factor_cost(left) + times_factor_cost(right),
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      1 + args.iter().map(|t| plus_term_cost(t, false)).sum::<usize>()
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => 1 + plus_term_cost(left, false) + plus_term_cost(right, false),
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => 1 + plus_term_cost(left, false) + plus_term_cost(right, true),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => {
+      if is_number(operand) {
+        complexity_digits(operand)
+      } else {
+        // Times[-1, …]: a Times head, the -1 leaf, and the operand's
+        // factors flattened into that head.
+        2 + times_factor_cost(operand)
+      }
+    }
     Expr::BinaryOp { left, right, .. } => {
       1 + complexity_digits(left) + complexity_digits(right)
     }
