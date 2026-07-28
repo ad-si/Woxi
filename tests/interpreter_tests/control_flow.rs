@@ -584,12 +584,31 @@ mod check {
       interpret("1/0; $MessageList").unwrap(),
       "{HoldForm[MessageName[Power, infy]]}"
     );
-    // Quieted messages are not recorded, and neither are switched-off ones.
+    // `Quiet` saves and restores `$MessageList` around its body: a message
+    // raised inside is visible while still inside …
+    clear_state();
+    assert_eq!(
+      interpret(r#"ff::test = "hi"; Quiet[Message[ff::test]; $MessageList]"#)
+        .unwrap(),
+      "{HoldForm[MessageName[ff, test]]}"
+    );
+    // … and gone once the block returns.
     clear_state();
     assert_eq!(
       interpret(r#"ff::test = "hi"; Quiet[Message[ff::test]]; $MessageList"#)
         .unwrap(),
       "{}"
+    );
+    // A message-specific Quiet only rolls back the messages it names.
+    clear_state();
+    assert_eq!(
+      interpret("Quiet[1/0, Power::infy]; $MessageList").unwrap(),
+      "{}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Quiet[1/0, zz::qq]; $MessageList").unwrap(),
+      "{HoldForm[MessageName[Power, infy]]}"
     );
     // The held entry is the message name itself, so releasing the hold
     // gives the message text.
@@ -603,12 +622,19 @@ mod check {
     );
     clear_state();
     assert_eq!(interpret("1/0; 1/0; Length[$MessageList]").unwrap(), "2");
-    // `Off` keeps the message out of the list too. Kept last: the switch
-    // outlives `clear_state`.
+    // `Off` keeps the message out of the list too. The switch outlives
+    // `clear_state`, so the next line turns it back on — otherwise every
+    // later `Power::infy` in the same process (and in the wolframscript
+    // conformance run, which shares one kernel) would stay silenced.
     clear_state();
     assert_eq!(
       interpret("Off[Power::infy]; 1/0; $MessageList").unwrap(),
       "{}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("On[Power::infy]; 1/0; $MessageList").unwrap(),
+      "{HoldForm[MessageName[Power, infy]]}"
     );
   }
 

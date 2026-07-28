@@ -328,20 +328,32 @@ pub fn quiet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Suppress all: restore all buffers to snapshot (discard everything added during eval)
     crate::restore_warnings(snapshot);
   } else if !suppress_msgs.is_empty() {
-    // Suppress specific messages: remove only matching entries from the messages buffer
-    let (snap_unimpl, snap_msgs) = snapshot;
-    // Get current messages state
-    let current_msgs = crate::get_captured_messages_raw();
-    // Keep only messages that were in the snapshot OR don't match the filter
-    let new_msgs: Vec<String> = current_msgs
+    // Suppress specific messages: remove only matching entries from the
+    // messages buffer and from `$MessageList` (entries already there when the
+    // block started are kept regardless of the filter).
+    let snap_msgs = snapshot.messages().len();
+    let snap_list = snapshot.message_list().len();
+    let new_msgs: Vec<String> = crate::get_captured_messages_raw()
       .into_iter()
       .enumerate()
-      .filter(|(i, w)| {
-        *i < snap_msgs.len() || !message_matches(w, &suppress_msgs)
-      })
+      .filter(|(i, w)| *i < snap_msgs || !message_matches(w, &suppress_msgs))
       .map(|(_, w)| w)
       .collect();
-    crate::restore_warnings((snap_unimpl, new_msgs));
+    // `$MessageList` holds bare `Head::tag` names, so the filter matches
+    // against the name with a colon appended.
+    let new_list: Vec<String> = crate::message_list_names()
+      .into_iter()
+      .enumerate()
+      .filter(|(i, n)| {
+        *i < snap_list || !message_matches(&format!("{n}:"), &suppress_msgs)
+      })
+      .map(|(_, n)| n)
+      .collect();
+    crate::restore_warnings_filtered(
+      snapshot.unimplemented().to_vec(),
+      new_msgs,
+      new_list,
+    );
   }
 
   result

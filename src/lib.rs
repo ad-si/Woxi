@@ -649,17 +649,60 @@ pub fn pop_quiet() {
   });
 }
 
+/// A saved copy of every message buffer, taken before a speculative or quieted
+/// evaluation so it can be rolled back afterwards.
+#[derive(Clone, Default)]
+pub struct WarningSnapshot {
+  unimplemented: Vec<String>,
+  messages: Vec<String>,
+  message_list: Vec<String>,
+}
+
+impl WarningSnapshot {
+  /// The `UNIMPLEMENTED_CALLS` entries present when the snapshot was taken.
+  pub fn unimplemented(&self) -> &[String] {
+    &self.unimplemented
+  }
+
+  /// The `CAPTURED_MESSAGES` entries present when the snapshot was taken.
+  pub fn messages(&self) -> &[String] {
+    &self.messages
+  }
+
+  /// The `$MessageList` entries present when the snapshot was taken.
+  pub fn message_list(&self) -> &[String] {
+    &self.message_list
+  }
+}
+
 /// Snapshot the current state of all warning/message buffers (for Quiet save/restore)
-pub fn snapshot_warnings() -> (Vec<String>, Vec<String>) {
-  let unimpl = UNIMPLEMENTED_CALLS.with(|b| b.borrow().clone());
-  let msgs = CAPTURED_MESSAGES.with(|b| b.borrow().clone());
-  (unimpl, msgs)
+pub fn snapshot_warnings() -> WarningSnapshot {
+  WarningSnapshot {
+    unimplemented: UNIMPLEMENTED_CALLS.with(|b| b.borrow().clone()),
+    messages: CAPTURED_MESSAGES.with(|b| b.borrow().clone()),
+    message_list: MESSAGE_LIST.with(|b| b.borrow().clone()),
+  }
 }
 
 /// Restore all warning/message buffers to a previous snapshot
-pub fn restore_warnings(snapshot: (Vec<String>, Vec<String>)) {
-  UNIMPLEMENTED_CALLS.with(|b| *b.borrow_mut() = snapshot.0);
-  CAPTURED_MESSAGES.with(|b| *b.borrow_mut() = snapshot.1);
+pub fn restore_warnings(snapshot: WarningSnapshot) {
+  UNIMPLEMENTED_CALLS.with(|b| *b.borrow_mut() = snapshot.unimplemented);
+  CAPTURED_MESSAGES.with(|b| *b.borrow_mut() = snapshot.messages);
+  MESSAGE_LIST.with(|b| *b.borrow_mut() = snapshot.message_list);
+}
+
+/// Replace the message buffers with explicit contents (used by `Quiet` when
+/// only some of the messages raised inside the block are rolled back).
+pub fn restore_warnings_filtered(
+  unimplemented: Vec<String>,
+  messages: Vec<String>,
+  message_list: Vec<String>,
+) {
+  restore_warnings(WarningSnapshot {
+    unimplemented,
+    messages,
+    message_list,
+  });
 }
 
 /// Capture the current evaluation stack trace for the most recent error.
@@ -757,12 +800,14 @@ fn emit_message_core(msg: &str) -> (bool, Option<String>) {
   CAPTURED_MESSAGES.with(|buffer| {
     buffer.borrow_mut().push(msg.to_string());
   });
-  if is_quiet() {
-    // Quieted messages are not recorded in `$MessageList` either.
-    return (false, None);
-  }
+  // A quieted message still joins `$MessageList` — wolframscript's `Quiet`
+  // saves and restores the list around the block, so the entry is visible to
+  // code *inside* the block and gone once it returns (see `quiet_ast`).
   if let Some(name) = message_name(msg) {
     MESSAGE_LIST.with(|m| m.borrow_mut().push(name));
+  }
+  if is_quiet() {
+    return (false, None);
   }
   let mut stop_line: Option<String> = None;
   if let Some(name) = message_name(msg)
