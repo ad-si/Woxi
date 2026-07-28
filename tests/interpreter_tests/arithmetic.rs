@@ -2043,6 +2043,39 @@ mod infinity_arithmetic {
     assert_eq!(interpret("Infinity^0").unwrap(), "Indeterminate");
   }
 
+  // Every `::indet` report sets the exponent above the baseline where it
+  // would be typeset, and none of them carries a leading blank line of its
+  // own — the emitter already prints one, so a second would print two where
+  // wolframscript prints one.
+  #[test]
+  fn indeterminate_power_messages_are_typeset_alike() {
+    for (code, message) in [
+      (
+        "0^0",
+        "                                        0\n\
+         Power::indet: Indeterminate expression 0  encountered.",
+      ),
+      (
+        "(-1)^Infinity",
+        "                                              Infinity\n\
+         Infinity::indet: Indeterminate expression (-1)         encountered.",
+      ),
+      (
+        "Infinity^0",
+        "                                                  0\n\
+         Infinity::indet: Indeterminate expression Infinity  encountered.",
+      ),
+    ] {
+      clear_state();
+      assert_eq!(interpret(code).unwrap(), "Indeterminate");
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        msgs.iter().any(|m| m == message),
+        "{code}: expected {message:?}, got {msgs:?}"
+      );
+    }
+  }
+
   #[test]
   fn sqrt_infinity() {
     assert_eq!(interpret("Sqrt[Infinity]").unwrap(), "Infinity");

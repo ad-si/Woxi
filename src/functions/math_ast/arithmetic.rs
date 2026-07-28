@@ -9570,7 +9570,7 @@ fn emit_power_indet(tag: &str, base: &str, exp: &str) {
   let prefix = format!("{tag}::indet: Indeterminate expression ");
   let width = prefix.len() + base.len() + exp.len();
   crate::emit_message(&format!(
-    "\n{exp:>width$}\n{prefix}{base}{} encountered.",
+    "{exp:>width$}\n{prefix}{base}{} encountered.",
     " ".repeat(exp.len())
   ));
 }
@@ -10941,18 +10941,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   let exp_is_zero = matches!(exp, Expr::Integer(0))
     || matches!(exp, Expr::Real(f) if *f == 0.0);
   if base_is_zero && exp_is_zero {
-    let base_str = expr_to_string(base);
-    let exp_str = expr_to_string(exp);
-    // Align exponent above the base in the warning message
-    // "Power::indet: Indeterminate expression " is 39 chars
-    // Exponent starts at column 39 + len(base), right-align needs + len(exp)
-    let padding = 39 + base_str.len() + exp_str.len();
-    crate::emit_message(&format!(
-      "{:>width$}\nPower::indet: Indeterminate expression {}  encountered.",
-      exp_str,
-      base_str,
-      width = padding
-    ));
+    emit_power_indet("Power", &expr_to_string(base), &expr_to_string(exp));
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
 
