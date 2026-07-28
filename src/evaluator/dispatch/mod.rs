@@ -27,7 +27,7 @@ mod datetime_functions;
 mod evaluation_control;
 mod image_functions;
 mod interval_functions;
-mod io_functions;
+pub(crate) mod io_functions;
 mod linear_algebra_functions;
 pub(crate) mod list_operations;
 mod math_functions;

@@ -1,6 +1,100 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::syntax::unevaluated;
+use std::cell::RefCell;
+
+// Stream registry for open streams (InputStream/OutputStream)
+#[derive(Clone, Debug)]
+enum StreamKind {
+  StringStream(String), // content of the string
+  FileStream(String),   // file path
+}
+
+#[derive(Clone, Debug)]
+#[allow(unused)] // id is unused
+struct OpenStream {
+  pub name: String,
+  pub kind: StreamKind,
+  pub id: usize,
+  pub position: usize,
+}
+
+thread_local! {
+    static STREAM_REGISTRY: RefCell<HashMap<usize, OpenStream>> = RefCell::new(HashMap::new());
+    static STREAM_COUNTER: RefCell<usize> = const { RefCell::new(1) };
+}
+
+/// Register a new open stream and return its ID
+fn register_stream(name: String, kind: StreamKind) -> usize {
+  let id = STREAM_COUNTER.with(|c| {
+    let mut counter = c.borrow_mut();
+    let id = *counter;
+    *counter += 1;
+    id
+  });
+  let stream = OpenStream {
+    name,
+    kind,
+    id,
+    position: 0,
+  };
+  STREAM_REGISTRY.with(|reg| {
+    reg.borrow_mut().insert(id, stream);
+  });
+  id
+}
+
+/// Close a stream by ID, returning the stream name and kind if it was open
+fn close_stream(id: usize) -> Option<(String, StreamKind)> {
+  STREAM_REGISTRY
+    .with(|reg| reg.borrow_mut().remove(&id).map(|s| (s.name, s.kind)))
+}
+
+/// Check if a stream is open
+fn is_stream_open(id: usize) -> bool {
+  STREAM_REGISTRY.with(|reg| reg.borrow().contains_key(&id))
+}
+
+/// Get the remaining content of a stream (for reading)
+fn get_stream_content(id: usize) -> Option<(String, usize)> {
+  STREAM_REGISTRY.with(|reg| {
+    let registry = reg.borrow();
+    registry.get(&id).map(|s| {
+      let content = match &s.kind {
+        StreamKind::StringStream(text) => text.clone(),
+        StreamKind::FileStream(path) => {
+          std::fs::read_to_string(path).unwrap_or_default()
+        }
+      };
+      (content, s.position)
+    })
+  })
+}
+
+/// Get the current read position of a stream
+fn get_stream_position(id: usize) -> Option<usize> {
+  STREAM_REGISTRY.with(|reg| reg.borrow().get(&id).map(|s| s.position))
+}
+
+/// Set the read position of a stream to an absolute position
+fn set_stream_position(id: usize, new_position: usize) {
+  STREAM_REGISTRY.with(|reg| {
+    let mut registry = reg.borrow_mut();
+    if let Some(stream) = registry.get_mut(&id) {
+      stream.position = new_position;
+    }
+  });
+}
+
+/// Advance the read position of a stream
+fn advance_stream_position(id: usize, new_position: usize) {
+  STREAM_REGISTRY.with(|reg| {
+    let mut registry = reg.borrow_mut();
+    if let Some(stream) = registry.get_mut(&id) {
+      stream.position = new_position;
+    }
+  });
+}
 
 // Virtual working-directory stack used by SetDirectory / ResetDirectory.
 //
@@ -308,7 +402,7 @@ pub fn dispatch_io_functions(
           let Some(Expr::Integer(id)) = stream_args.get(1) else {
             return Some(Ok(unevaluated("ReadString", args)));
           };
-          match crate::get_stream_content(*id as usize) {
+          match get_stream_content(*id as usize) {
             Some((c, pos)) => (c, pos, Some(*id as usize)),
             None => {
               return Some(Ok(Expr::Identifier("EndOfFile".to_string())));
@@ -325,7 +419,7 @@ pub fn dispatch_io_functions(
         return Some(Ok(Expr::Identifier("EndOfFile".to_string())));
       };
       if let Some(id) = stream_id {
-        crate::set_stream_position(id, position + consumed);
+        set_stream_position(id, position + consumed);
       }
       return Some(Ok(Expr::String(text)));
     }
@@ -1134,7 +1228,7 @@ pub fn dispatch_io_functions(
         {
           if let Expr::Integer(id) = &stream_args[1] {
             let id_usize = *id as usize;
-            match crate::get_stream_content(id_usize) {
+            match get_stream_content(id_usize) {
               Some((c, p)) => (c, p, Some(id_usize)),
               None => return Some(Ok(Expr::Identifier("$Failed".to_string()))),
             }
@@ -1162,13 +1256,13 @@ pub fn dispatch_io_functions(
         consumed += line.len();
         if search_terms.iter().any(|t| stripped.contains(t)) {
           if let Some(id) = stream_id {
-            crate::set_stream_position(id, start_pos + consumed);
+            set_stream_position(id, start_pos + consumed);
           }
           return Some(Ok(Expr::String(stripped.to_string())));
         }
       }
       if let Some(id) = stream_id {
-        crate::set_stream_position(id, content.len());
+        set_stream_position(id, content.len());
       }
       return Some(Ok(Expr::Identifier("EndOfFile".to_string())));
     }
@@ -1653,9 +1747,9 @@ pub fn dispatch_io_functions(
         ));
         return Some(Ok(Expr::Identifier("$Failed".to_string())));
       }
-      let id = crate::register_stream(
+      let id = register_stream(
         filename.clone(),
-        crate::StreamKind::FileStream(filename.clone()),
+        StreamKind::FileStream(filename.clone()),
       );
       return Some(Ok(Expr::FunctionCall {
         name: "InputStream".to_string(),
@@ -1694,9 +1788,9 @@ pub fn dispatch_io_functions(
       }) {
         return Some(Err(e));
       }
-      let id = crate::register_stream(
+      let id = register_stream(
         filename.clone(),
-        crate::StreamKind::FileStream(filename.clone()),
+        StreamKind::FileStream(filename.clone()),
       );
       return Some(Ok(Expr::FunctionCall {
         name: "OutputStream".to_string(),
@@ -1849,8 +1943,7 @@ pub fn dispatch_io_functions(
           ))));
         }
       };
-      let start_pos =
-        stream_id.and_then(crate::get_stream_position).unwrap_or(0);
+      let start_pos = stream_id.and_then(get_stream_position).unwrap_or(0);
       let form = if args.len() == 2 {
         args[1].clone()
       } else {
@@ -1892,7 +1985,7 @@ pub fn dispatch_io_functions(
             } else {
               1
             };
-            crate::set_stream_position(id, start_pos + advance);
+            set_stream_position(id, start_pos + advance);
           }
           return Some(Ok(result));
         }
@@ -1909,7 +2002,7 @@ pub fn dispatch_io_functions(
             out.push(value);
           }
           if let Some(id) = stream_id {
-            crate::set_stream_position(id, offset);
+            set_stream_position(id, offset);
           }
           return Some(Ok(Expr::List(out.into())));
         }
@@ -1999,9 +2092,9 @@ pub fn dispatch_io_functions(
       {
         return Some(Err(e));
       }
-      let id = crate::register_stream(
+      let id = register_stream(
         filename.clone(),
-        crate::StreamKind::FileStream(filename.clone()),
+        StreamKind::FileStream(filename.clone()),
       );
       return Some(Ok(Expr::FunctionCall {
         name: "OutputStream".to_string(),
@@ -2019,10 +2112,8 @@ pub fn dispatch_io_functions(
           ))));
         }
       };
-      let id = crate::register_stream(
-        "String".to_string(),
-        crate::StreamKind::StringStream(text),
-      );
+      let id =
+        register_stream("String".to_string(), StreamKind::StringStream(text));
       // Use Symbol `String` (not the string literal "String") so the
       // formatted form matches wolframscript: `InputStream[String, id]`.
       return Some(Ok(Expr::FunctionCall {
@@ -2051,10 +2142,10 @@ pub fn dispatch_io_functions(
               return Some(Ok(unevaluated("Close", args)));
             }
           };
-          match crate::close_stream(id) {
+          match close_stream(id) {
             // Close[FileStream] returns the file path as a String;
             // Close[StringToStream[…]] returns the symbol `String`.
-            Some((name, crate::StreamKind::StringStream(_))) => {
+            Some((name, StreamKind::StringStream(_))) => {
               let _ = name;
               return Some(Ok(Expr::Identifier("String".to_string())));
             }
@@ -2093,7 +2184,7 @@ pub fn dispatch_io_functions(
           && stream_args.len() == 2 =>
         {
           if let Expr::Integer(id) = &stream_args[1] {
-            match crate::get_stream_position(*id as usize) {
+            match get_stream_position(*id as usize) {
               Some(pos) => return Some(Ok(Expr::Integer(pos as i128))),
               None => {
                 let stream_str = crate::syntax::expr_to_string(stream);
@@ -2144,8 +2235,8 @@ pub fn dispatch_io_functions(
         {
           if let Expr::Integer(id) = &stream_args[1] {
             let id_usize = *id as usize;
-            if crate::is_stream_open(id_usize) {
-              let stream_len = crate::get_stream_content(id_usize)
+            if is_stream_open(id_usize) {
+              let stream_len = get_stream_content(id_usize)
                 .map(|(content, _)| content.len())
                 .unwrap_or(0);
               let pos = match pos_explicit {
@@ -2165,7 +2256,7 @@ pub fn dispatch_io_functions(
                 }
                 None => stream_len, // Infinity → end of stream
               };
-              crate::set_stream_position(id_usize, pos);
+              set_stream_position(id_usize, pos);
               return Some(Ok(Expr::Integer(pos as i128)));
             } else {
               let stream_str = crate::syntax::expr_to_string(stream);
@@ -2208,7 +2299,7 @@ pub fn dispatch_io_functions(
         } if stream_head == "InputStream" && stream_args.len() == 2 => {
           if let Expr::Integer(id) = &stream_args[1] {
             let id = *id as usize;
-            match crate::get_stream_content(id) {
+            match get_stream_content(id) {
               Some((content, pos)) => (content, pos, Some(id)),
               None => {
                 return Some(Ok(Expr::Identifier("EndOfFile".to_string())));
@@ -2239,7 +2330,7 @@ pub fn dispatch_io_functions(
 
       // Advance position if it's a stream
       if let Some(id) = stream_id {
-        crate::advance_stream_position(id, position + advance);
+        advance_stream_position(id, position + advance);
       }
 
       return Some(Ok(result));
@@ -2277,7 +2368,7 @@ pub fn dispatch_io_functions(
       };
 
       if let Some(id) = stream_id
-        && let Some((content, mut position)) = crate::get_stream_content(id)
+        && let Some((content, mut position)) = get_stream_content(id)
       {
         let mut hit_eof = false;
         for _ in 0..count {
@@ -2294,7 +2385,7 @@ pub fn dispatch_io_functions(
           }
           position += advance;
         }
-        crate::advance_stream_position(id, position);
+        advance_stream_position(id, position);
         return Some(Ok(Expr::Identifier(
           if hit_eof { "EndOfFile" } else { "Null" }.to_string(),
         )));
@@ -2323,7 +2414,7 @@ pub fn dispatch_io_functions(
       };
 
       if let Some(id) = stream_id
-        && let Some((content, position)) = crate::get_stream_content(id)
+        && let Some((content, position)) = get_stream_content(id)
       {
         let remaining = &content[position.min(content.len())..];
 
@@ -2344,12 +2435,12 @@ pub fn dispatch_io_functions(
             current_pos += advance;
             results.push(val);
           }
-          crate::advance_stream_position(id, current_pos);
+          advance_stream_position(id, current_pos);
           return Some(Ok(Expr::List(results.into())));
         }
 
         let (result, advance) = read_single_type(remaining, read_type);
-        crate::advance_stream_position(id, position + advance);
+        advance_stream_position(id, position + advance);
         return Some(Ok(result));
       }
 
@@ -2369,10 +2460,10 @@ pub fn dispatch_io_functions(
         {
           if let Expr::Integer(id) = &stream_args[1] {
             let stream_id = *id as usize;
-            crate::STREAM_REGISTRY.with(|reg| {
+            STREAM_REGISTRY.with(|reg| {
               let registry = reg.borrow();
               registry.get(&stream_id).and_then(|s| match &s.kind {
-                crate::StreamKind::FileStream(path) => Some(path.clone()),
+                StreamKind::FileStream(path) => Some(path.clone()),
                 _ => None,
               })
             })
@@ -2464,10 +2555,10 @@ pub fn dispatch_io_functions(
         {
           if let Expr::Integer(id) = &stream_args[1] {
             let stream_id = *id as usize;
-            crate::STREAM_REGISTRY.with(|reg| {
+            STREAM_REGISTRY.with(|reg| {
               let registry = reg.borrow();
               registry.get(&stream_id).and_then(|s| match &s.kind {
-                crate::StreamKind::FileStream(path) => Some(path.clone()),
+                StreamKind::FileStream(path) => Some(path.clone()),
                 _ => None,
               })
             })
@@ -4562,4 +4653,35 @@ fn read_string_chunk(
   }
   let end = body.find(term).unwrap_or(body.len());
   Some((body[..end].to_string(), skipped + end))
+}
+
+pub(crate) fn readlist_inputstream(
+  args: &[Expr],
+) -> Result<String, InterpreterError> {
+  if let Expr::Integer(id) = &args[1] {
+    let stream_id = *id as usize;
+    STREAM_REGISTRY.with(|reg| {
+      let registry = reg.borrow();
+      if let Some(stream) = registry.get(&stream_id) {
+        match &stream.kind {
+          StreamKind::StringStream(text) => Ok(text.clone()),
+          StreamKind::FileStream(path) => std::fs::read_to_string(path)
+            .map_err(|_| {
+              InterpreterError::EvaluationError(format!(
+                "ReadList::noopen: Cannot open {}.",
+                path
+              ))
+            }),
+        }
+      } else {
+        Err(InterpreterError::EvaluationError(
+          "ReadList: stream is not open".into(),
+        ))
+      }
+    })
+  } else {
+    Err(InterpreterError::EvaluationError(
+      "ReadList: invalid stream object".into(),
+    ))
+  }
 }
