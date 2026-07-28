@@ -762,9 +762,102 @@ mod file_date {
 mod file_hash {
   use super::*;
 
+  /// A scratch file holding exactly `bytes`.
+  #[cfg(not(target_arch = "wasm32"))]
+  fn write_bytes(name: &str, bytes: &[u8]) -> String {
+    let path = temp_file(&format!("woxi_filehash_{name}"));
+    std::fs::write(&path, bytes).unwrap();
+    path
+  }
+
+  // The file's bytes are hashed, so the digest is the one the same bytes give
+  // as a string. MD5 as an Integer is the default. Values verified against
+  // wolframscript.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn a_file_hashes_its_bytes() {
+    let path = write_bytes("abc.txt", b"abc");
+    for (code, expected) in [
+      (
+        format!(r#"FileHash["{path}"]"#),
+        "191415658344158766168031473277922803570",
+      ),
+      (
+        format!(r#"FileHash[File["{path}"]]"#),
+        "191415658344158766168031473277922803570",
+      ),
+      (
+        format!(r#"FileHash["{path}", "SHA256", "HexString"]"#),
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+      ),
+      (
+        format!(r#"FileHash["{path}", "SHA3-256", "HexString"]"#),
+        "3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532",
+      ),
+      (format!(r#"FileHash["{path}", "CRC32"]"#), "891568578"),
+      (
+        format!(r#"FileHash["{path}", "MD5", "Base64Encoding"]"#),
+        "kAFQmDzST7DWlj99KOF/cg==",
+      ),
+    ] {
+      assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+    }
+    std::fs::remove_file(path).ok();
+  }
+
+  // Bytes no string could hold, and none at all.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn binary_and_empty_files_hash_too() {
+    let path = write_bytes("bin.bin", &[0, 1, 255, 254]);
+    assert_eq!(
+      interpret(&format!(r#"FileHash["{path}", "SHA256", "HexString"]"#))
+        .unwrap(),
+      "5e90fe977790507860b03456633c9ad88ea951cd8a6620d3e37ca43c160c15ae"
+    );
+    std::fs::remove_file(path).ok();
+    let path = write_bytes("empty.bin", b"");
+    assert_eq!(
+      interpret(&format!(r#"FileHash["{path}", "CRC32"]"#)).unwrap(),
+      "0"
+    );
+    std::fs::remove_file(path).ok();
+  }
+
+  // A format FileHash does not know is reported under its own name and leaves
+  // the call standing; an algorithm it does not know is Hash's to report and
+  // fails the call.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn unknown_algorithms_and_formats_are_refused() {
+    let path = write_bytes("refuse.txt", b"abc");
+    let result =
+      interpret_with_stdout(&format!(r#"FileHash["{path}", "MD5", "Bogus"]"#))
+        .unwrap();
+    assert_eq!(result.result, format!("FileHash[{path}, MD5, Bogus]"));
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|w| w.contains("FileHash::uform: Invalid hash format Bogus.")),
+      "expected FileHash::uform, got {:?}",
+      result.warnings
+    );
+    let result =
+      interpret_with_stdout(&format!(r#"FileHash["{path}", "Bogus"]"#))
+        .unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert!(
+      result.warnings.iter().any(|w| w
+        .contains("Hash::invhash: Bogus is not a valid Hash specification.")),
+      "expected Hash::invhash, got {:?}",
+      result.warnings
+    );
+    std::fs::remove_file(path).ok();
+  }
+
   // Missing file: emit `FileHash::noopen` with an absolute path and
-  // return $Failed. Actual hashing isn't supported yet, so existing
-  // files still return an unevaluated FileHash[…].
+  // return $Failed.
   #[test]
   #[cfg(not(target_arch = "wasm32"))]
   fn missing_file_returns_failed() {

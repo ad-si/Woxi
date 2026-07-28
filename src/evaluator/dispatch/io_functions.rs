@@ -2896,19 +2896,41 @@ pub fn dispatch_io_functions(
       }
       return Some(Ok(unevaluated("FileDate", args)));
     }
-    // FileHash["name"] / FileHash["name", "Algorithm"] — return the
-    // hash as an Integer. Missing files emit `FileHash::noopen` and
-    // return `$Failed`, matching wolframscript.
+    // FileHash[file] / FileHash[file, type] / FileHash[file, type, format] —
+    // the hash of the file's bytes, `MD5` as an Integer by default. Anything
+    // that cannot be read emits `FileHash::noopen` and returns `$Failed`; a
+    // type or format Hash does not know reports it the same way Hash does.
     #[cfg(not(target_arch = "wasm32"))]
-    "FileHash" if args.len() == 1 || args.len() == 2 => {
-      let Expr::String(name) = &args[0] else {
+    "FileHash" if (1..=3).contains(&args.len()) => {
+      let name = match &args[0] {
+        Expr::String(s) => s.clone(),
+        // `File["…"]` names a file just as its path does.
+        Expr::FunctionCall { name, args: inner }
+          if name == "File"
+            && inner.len() == 1
+            && matches!(&inner[0], Expr::String(_)) =>
+        {
+          match &inner[0] {
+            Expr::String(s) => s.clone(),
+            _ => unreachable!(),
+          }
+        }
+        _ => return Some(Ok(unevaluated("FileHash", args))),
+      };
+      let as_string = |i: usize, default: &str| match args.get(i) {
+        None => Some(default.to_string()),
+        Some(Expr::String(s)) => Some(s.clone()),
+        Some(_) => None,
+      };
+      let (Some(hash_type), Some(format)) =
+        (as_string(1, "MD5"), as_string(2, "Integer"))
+      else {
         return Some(Ok(unevaluated("FileHash", args)));
       };
-      // Only emit the matching error message — actual hashing isn't
-      // supported yet. wolframscript reports the absolute path, so
-      // resolve relative paths against the current working directory.
-      let path = std::path::Path::new(name);
-      if !path.exists() {
+      // wolframscript reports the absolute path, so resolve relative paths
+      // against the current working directory.
+      let path = std::path::Path::new(&name);
+      let Ok(data) = std::fs::read(path) else {
         let abs = if path.is_absolute() {
           name.clone()
         } else {
@@ -2918,8 +2940,28 @@ pub fn dispatch_io_functions(
         };
         crate::emit_message(&format!("FileHash::noopen: Cannot open {}.", abs));
         return Some(Ok(Expr::Identifier("$Failed".to_string())));
-      }
-      return Some(Ok(unevaluated("FileHash", args)));
+      };
+      let Some(hex) =
+        crate::functions::string_ast::hash_bytes(&data, &hash_type)
+      else {
+        crate::emit_message(&format!(
+          "Hash::invhash: {hash_type} is not a valid Hash specification."
+        ));
+        return Some(Ok(Expr::Identifier("$Failed".to_string())));
+      };
+      return Some(Ok(
+        match crate::functions::string_ast::format_digest(&hex, &format) {
+          Some(result) => result,
+          // A format it does not know is reported under its own name, and
+          // leaves the call standing rather than failing it.
+          None => {
+            crate::emit_message(&format!(
+              "FileHash::uform: Invalid hash format {format}."
+            ));
+            unevaluated("FileHash", args)
+          }
+        },
+      ));
     }
     // FileSize["name"] — the size as Quantity[bytes, "Bytes"] with a Real
     // magnitude. Unlike FileByteCount, errors echo the call unevaluated:

@@ -1316,7 +1316,7 @@ AngleBracket,Symbolic representation of angle brackets,✅,,3.0,1329
 GeoPath,Geographic path primitive for GeoGraphics,✅,pure,10.0,1330
 MixtureDistribution,Mixture of component distributions with given weights; Mean Variance PDF and CDF combine the components,✅,pure,8.0,1331
 RemoveBackground,,🚫,,10.0,1332
-Hash,Computes a hash of a string using MD2/MD5/SHA/SHA256/SHA384/SHA512/CRC32/Adler32,✅,pure,1.0,1333
+Hash,Hash of a string or of a ByteArray's bytes using MD2/MD4/MD5/SHA/SHA224/SHA256/SHA384/SHA512/SHA3-224/SHA3-256/SHA3-384/SHA3-512/Keccak256/RIPEMD160/RIPEMD160SHA256/CRC32/Adler32,✅,pure,1.0,1333
 DeleteSmallComponents,Zero out label-matrix components with few pixels,✅,pure,8.0,1334
 DeleteMissing,Delete Missing elements from a list or pairs with a missing value from an association,✅,pure,10.0,1338
 GalaxyData,,🚫,,10.0,1338
@@ -3062,7 +3062,7 @@ CellEventActions,,🚫,,6.0,3134
 CharacterCounts,Returns an association of character frequencies in a string (or each string of a list); two-arg form counts character n-grams,✅,pure,10.1,3134
 DayMatchQ,Tests whether a date matches a day-of-week specification,✅,pure,9.0,3134
 ExponentialFamily,,,,7.0,3134
-FileHash,,✅,,6.0,3134
+FileHash,Hash of a file's bytes with the algorithms and output formats Hash takes — MD5 as an integer by default,✅,io,6.0,3134
 HararyGraph,Minimal k-connected Harary graph on n vertices,✅,pure,8.0,3134
 InitializationCell,,🚫,,3.0,3134
 NegativeDefiniteMatrixQ,Test whether a matrix is negative definite,✅,none,10.0,3134

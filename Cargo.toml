@@ -170,6 +170,9 @@ lz4_flex = { version = "0.11", default-features = false, features = ["std", "saf
 # name→country lookup ourselves at runtime from `translations` (see
 # `country_name_index` in src/functions/geographics.rs), which is identical.
 keshvar = { version = "0.7", features = ["subdivisions", "geo", "translations"] }
+sha3 = "0.10"
+ripemd = "0.1"
+md4 = "0.10"
 
 # Kept on the same resvg minor as svg2pdf 0.13 and iced 0.14 (woxi-studio),
 # so only ONE copy of the resvg/usvg/tiny-skia stack is compiled and linked

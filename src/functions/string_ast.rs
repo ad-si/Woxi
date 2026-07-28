@@ -10879,7 +10879,12 @@ pub fn hash_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(h as i128));
   }
 
-  let s = expr_to_str(&args[0])?;
+  // A `ByteArray` is hashed over its bytes, so it gives the same digest as
+  // the string of those bytes; anything else is hashed over how it prints.
+  let data = match byte_array_bytes(&args[0]) {
+    Some(bytes) => bytes,
+    None => expr_to_str(&args[0])?.into_bytes(),
+  };
 
   let format = if args.len() == 3 {
     expr_to_str(&args[2])?
@@ -10887,76 +10892,119 @@ pub fn hash_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "Integer".to_string()
   };
 
-  let hex_string = match hash_type.as_str() {
+  let Some(hex_string) = hash_bytes(&data, &hash_type) else {
+    crate::emit_message(&format!(
+      "Hash::invhash: {hash_type} is not a valid Hash specification."
+    ));
+    return Ok(unevaluated("Hash", args));
+  };
+  match format_digest(&hex_string, &format) {
+    Some(result) => Ok(result),
+    None => {
+      crate::emit_message(&format!(
+        "Hash::uform: Invalid hash format {format}."
+      ));
+      Ok(unevaluated("Hash", args))
+    }
+  }
+}
+
+/// The digest of `data` as a hex string, or `None` when the algorithm is not
+/// one wolframscript names.
+pub fn hash_bytes(data: &[u8], hash_type: &str) -> Option<String> {
+  let hex = |digest: &[u8]| -> String {
+    digest.iter().map(|b| format!("{:02x}", b)).collect()
+  };
+  let hex_string = match hash_type {
+    "MD2" => hex(&md2(data)),
+    "MD4" => {
+      use md4::Digest;
+      hex(&md4::Md4::digest(data))
+    }
     "MD5" => {
       use md5::Digest;
-      let result = md5::Md5::digest(s.as_bytes());
-      result
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect::<String>()
+      hex(&md5::Md5::digest(data))
     }
     "SHA" | "SHA1" => {
       use sha1::Digest;
-      let result = sha1::Sha1::digest(s.as_bytes());
-      result
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect::<String>()
+      hex(&sha1::Sha1::digest(data))
+    }
+    "SHA224" => {
+      use sha2::Digest;
+      hex(&sha2::Sha224::digest(data))
     }
     "SHA256" => {
       use sha2::Digest;
-      let result = sha2::Sha256::digest(s.as_bytes());
-      result
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect::<String>()
+      hex(&sha2::Sha256::digest(data))
     }
-    "CRC32" => format!("{:08x}", crc32(s.as_bytes())),
-    "Adler32" => format!("{:08x}", adler32(s.as_bytes())),
-    "MD2" => md2(s.as_bytes())
-      .iter()
-      .map(|b| format!("{:02x}", b))
-      .collect::<String>(),
     "SHA384" => {
       use sha2::Digest;
-      let result = sha2::Sha384::digest(s.as_bytes());
-      result
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect::<String>()
+      hex(&sha2::Sha384::digest(data))
     }
     "SHA512" => {
       use sha2::Digest;
-      let result = sha2::Sha512::digest(s.as_bytes());
-      result
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect::<String>()
+      hex(&sha2::Sha512::digest(data))
     }
-    _ => {
-      return Ok(unevaluated("Hash", args));
+    "SHA3-224" => {
+      use sha3::Digest;
+      hex(&sha3::Sha3_224::digest(data))
     }
+    "SHA3-256" => {
+      use sha3::Digest;
+      hex(&sha3::Sha3_256::digest(data))
+    }
+    "SHA3-384" => {
+      use sha3::Digest;
+      hex(&sha3::Sha3_384::digest(data))
+    }
+    "SHA3-512" => {
+      use sha3::Digest;
+      hex(&sha3::Sha3_512::digest(data))
+    }
+    // The pre-standard Keccak padding, which Ethereum kept.
+    "Keccak256" => {
+      use sha3::Digest;
+      hex(&sha3::Keccak256::digest(data))
+    }
+    "RIPEMD160" => {
+      use ripemd::Digest;
+      hex(&ripemd::Ripemd160::digest(data))
+    }
+    // The Bitcoin address digest: RIPEMD160 of the SHA256.
+    "RIPEMD160SHA256" => {
+      use ripemd::Digest;
+      hex(&ripemd::Ripemd160::digest(
+        <sha2::Sha256 as ripemd::Digest>::digest(data),
+      ))
+    }
+    "CRC32" => format!("{:08x}", crc32(data)),
+    "Adler32" => format!("{:08x}", adler32(data)),
+    _ => return None,
   };
+  Some(hex_string)
+}
 
+/// A hex digest written the way one of wolframscript's hash formats asks for,
+/// or `None` when the format is not one of them.
+pub fn format_digest(hex_string: &str, format: &str) -> Option<Expr> {
   // Raw digest bytes, recovered from the hex string.
   let bytes: Vec<u8> = (0..hex_string.len())
     .step_by(2)
     .filter_map(|i| u8::from_str_radix(&hex_string[i..i + 2], 16).ok())
     .collect();
 
-  match format.as_str() {
-    "HexString" => Ok(Expr::String(hex_string)),
+  match format {
+    "HexString" => Some(Expr::String(hex_string.to_string())),
     "Base64Encoding" => {
       use base64::Engine;
       let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-      Ok(Expr::String(b64))
+      Some(Expr::String(b64))
     }
     // A Woxi ByteArray stores its bytes as an internal base64 string.
     "ByteArray" => {
       use base64::Engine;
       let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-      Ok(Expr::FunctionCall {
+      Some(Expr::FunctionCall {
         name: "ByteArray".to_string(),
         args: vec![Expr::String(b64)].into(),
       })
@@ -10970,20 +11018,18 @@ pub fn hash_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .pow(bytes.len() as u32)
         .to_string()
         .len();
-      Ok(Expr::String(format!("{:0>width$}", n, width = width)))
+      Some(Expr::String(format!("{:0>width$}", n, width = width)))
     }
-    "Integer" | _ => {
-      // Convert hex to big integer
+    "Integer" => {
       let n = num_bigint::BigInt::parse_bytes(hex_string.as_bytes(), 16)
         .unwrap_or_default();
-      // Try to fit in i128
       use num_traits::ToPrimitive;
-      if let Some(i) = n.to_i128() {
-        Ok(Expr::Integer(i))
-      } else {
-        Ok(Expr::BigInteger(n))
-      }
+      Some(match n.to_i128() {
+        Some(i) => Expr::Integer(i),
+        None => Expr::BigInteger(n),
+      })
     }
+    _ => None,
   }
 }
 

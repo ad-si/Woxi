@@ -3506,6 +3506,109 @@ mod hash {
        246}"
     );
   }
+
+  // Types beyond MD2/MD5/SHA/SHA256/SHA384/SHA512, all against the published
+  // test vectors for "abc" (which wolframscript agrees with).
+  #[test]
+  fn the_remaining_named_algorithms() {
+    for (algorithm, digest) in [
+      ("MD4", "a448017aaf21d8525fc10ae87aa6729d"),
+      (
+        "SHA224",
+        "23097d223405d8228642a477bda255b32aadbce4bda0b3f7e36c9da7",
+      ),
+      (
+        "SHA3-224",
+        "e642824c3f8cf24ad09234ee7d3c766fc9a3a5168d0c94ad73b46fdf",
+      ),
+      (
+        "SHA3-256",
+        "3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532",
+      ),
+      (
+        "SHA3-384",
+        "ec01498288516fc926459f58e2c6ad8df9b473cb0fc08c2596da7cf0e49be4b2\
+         98d88cea927ac7f539f1edf228376d25",
+      ),
+      (
+        "SHA3-512",
+        "b751850b1a57168a5693cd924b6b096e08f621827444f70d884f5d0240d2712e\
+         10e116e9192af3c91a7ec57647e3934057340b4cf408d5a56592f8274eec53f0",
+      ),
+      // The pre-standard padding Ethereum kept, which differs from SHA3-256.
+      (
+        "Keccak256",
+        "4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45",
+      ),
+      ("RIPEMD160", "8eb208f7e05d987a9b044a8e98c6b087f15a0bfc"),
+      // RIPEMD160 of the SHA256, the digest a Bitcoin address is built from.
+      (
+        "RIPEMD160SHA256",
+        "bb1be98c142444d7a56aa3981c3942a978e4dc33",
+      ),
+    ] {
+      assert_eq!(
+        interpret(&format!(r#"Hash["abc", "{algorithm}", "HexString"]"#))
+          .unwrap(),
+        digest.replace("         ", ""),
+        "{algorithm}"
+      );
+    }
+  }
+
+  // A ByteArray is hashed over its bytes, so it gives the same digest as the
+  // string those bytes spell.
+  #[test]
+  fn a_byte_array_hashes_its_bytes() {
+    for algorithm in ["MD5", "SHA256", "CRC32", "Adler32", "SHA3-256"] {
+      assert_eq!(
+        interpret(&format!(
+          r#"Hash[ByteArray[{{97, 98, 99}}], "{algorithm}", "HexString"]"#
+        ))
+        .unwrap(),
+        interpret(&format!(r#"Hash["abc", "{algorithm}", "HexString"]"#))
+          .unwrap(),
+        "{algorithm}"
+      );
+    }
+    // Including the empty one, which used to hash its printed form instead.
+    assert_eq!(interpret(r#"Hash[ByteArray[{}], "CRC32"]"#).unwrap(), "0");
+    // Bytes no string could hold hash all the same.
+    assert_eq!(
+      interpret(r#"Hash[ByteArray[{0, 1, 255, 254}], "SHA256", "HexString"]"#)
+        .unwrap(),
+      "5e90fe977790507860b03456633c9ad88ea951cd8a6620d3e37ca43c160c15ae"
+    );
+  }
+
+  // A format Hash does not know is reported rather than quietly replaced by
+  // the default one.
+  #[test]
+  fn an_unknown_format_is_refused() {
+    let result =
+      interpret_with_stdout(r#"Hash["abc", "MD5", "Bogus"]"#).unwrap();
+    assert_eq!(result.result, "Hash[abc, MD5, Bogus]");
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|w| w.contains("Hash::uform: Invalid hash format Bogus.")),
+      "expected Hash::uform, got {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
+  fn an_unknown_algorithm_is_reported() {
+    let result = interpret_with_stdout(r#"Hash["abc", "Bogus"]"#).unwrap();
+    assert_eq!(result.result, "Hash[abc, Bogus]");
+    assert!(
+      result.warnings.iter().any(|w| w
+        .contains("Hash::invhash: Bogus is not a valid Hash specification.")),
+      "expected Hash::invhash, got {:?}",
+      result.warnings
+    );
+  }
 }
 
 mod string_riffle_extended {
