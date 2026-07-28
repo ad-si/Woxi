@@ -5729,3 +5729,189 @@ mod image_crop_to_size {
     );
   }
 }
+
+// ImageMeasurements — a named measurement of an image. Values verified
+// against wolframscript.
+mod image_measurements {
+  use super::*;
+
+  /// The grey image the statistics below are taken over: samples 0, 1, 0.5
+  /// and 0.25.
+  const GREY: &str = "Image[{{0., 1.}, {0.5, 0.25}}]";
+  /// A two-pixel colour image, red then green.
+  const RGB: &str = "Image[{{{1., 0., 0.}, {0., 1., 0.}}}]";
+
+  /// The result of `code`, written the way `InputForm` writes it.
+  fn form(code: &str) -> String {
+    interpret(&format!("ToString[{code}, InputForm]")).unwrap()
+  }
+
+  fn measure(image: &str, property: &str) -> String {
+    form(&format!("ImageMeasurements[{image}, \"{property}\"]"))
+  }
+
+  #[test]
+  fn the_statistics_are_taken_over_the_samples() {
+    clear_state();
+    for (property, expected) in [
+      ("Mean", "0.4375"),
+      ("Total", "1.75"),
+      ("Min", "0."),
+      ("Max", "1."),
+      ("Median", "0.375"),
+      // The sample deviation, with the n - 1 divisor.
+      ("StandardDeviation", "0.42695628191498325"),
+      ("MinMax", "{0., 1.}"),
+    ] {
+      assert_eq!(measure(GREY, property), expected, "{property}");
+      // For a grey image the intensity measures read the same samples.
+      assert_eq!(
+        measure(GREY, &format!("{property}Intensity")),
+        expected,
+        "{property}Intensity"
+      );
+    }
+  }
+
+  // Entropy and Energy are taken over the histogram of distinct PIXELS, so a
+  // colour pixel counts once however many channels it carries.
+  #[test]
+  fn the_information_measures_count_pixels() {
+    clear_state();
+    // Four distinct samples, each once: Log[4].
+    assert_eq!(measure(GREY, "Entropy"), "1.3862943611198906");
+    assert_eq!(measure(GREY, "Energy"), "0.25");
+    // Two distinct values, twice each: Log[2] and 2 (1/2)^2.
+    assert_eq!(
+      measure("Image[{{0., 0.}, {1., 1.}}]", "Entropy"),
+      "0.6931471805599453"
+    );
+    assert_eq!(measure("Image[{{0., 0.}, {1., 1.}}]", "Energy"), "0.5");
+    // Two distinct colour pixels, not six pooled samples.
+    assert_eq!(measure(RGB, "Entropy"), "0.6931471805599453");
+    assert_eq!(measure(RGB, "Energy"), "0.5");
+  }
+
+  // The centre of mass of the intensities, over pixel centres measured from
+  // the bottom left.
+  #[test]
+  fn the_intensity_centroid_is_weighted_by_brightness() {
+    clear_state();
+    assert_eq!(
+      measure(GREY, "IntensityCentroid"),
+      "{1.2142857142857142, 1.0714285714285714}"
+    );
+    assert_eq!(
+      measure("Image[{{0., 0.}, {1., 1.}}]", "IntensityCentroid"),
+      "{1., 0.5}"
+    );
+  }
+
+  #[test]
+  fn a_colour_image_is_measured_channel_by_channel() {
+    clear_state();
+    for (property, expected) in [
+      ("Mean", "{0.5, 0.5, 0.}"),
+      ("Total", "{1., 1., 0.}"),
+      ("Min", "{0., 0., 0.}"),
+      ("Max", "{1., 1., 0.}"),
+      ("Median", "{0.5, 0.5, 0.}"),
+      (
+        "StandardDeviation",
+        "{0.7071067811865476, 0.7071067811865476, 0.}",
+      ),
+      ("MinMax", "{{0., 1.}, {0., 1.}, {0., 0.}}"),
+    ] {
+      assert_eq!(measure(RGB, property), expected, "{property}");
+    }
+  }
+
+  #[test]
+  fn the_structural_properties_describe_the_array() {
+    clear_state();
+    for (image, property, expected) in [
+      (GREY, "Channels", "1"),
+      (GREY, "ColorSpace", "Automatic"),
+      (GREY, "Dimensions", "{2, 2}"),
+      (GREY, "ImageDimensions", "{2, 2}"),
+      (GREY, "AspectRatio", "1"),
+      (GREY, "DataType", "\"Real32\""),
+      (GREY, "DataRange", "{0., 1.}"),
+      (GREY, "Interleaving", "None"),
+      (GREY, "SampleDepth", "32"),
+      (GREY, "Transparency", "False"),
+      // A colour image carries its channel count in Dimensions, and
+      // interleaves.
+      (RGB, "Channels", "3"),
+      (RGB, "Dimensions", "{1, 2, 3}"),
+      (RGB, "ImageDimensions", "{2, 1}"),
+      (RGB, "AspectRatio", "1/2"),
+      (RGB, "Interleaving", "True"),
+    ] {
+      assert_eq!(measure(image, property), expected, "{property}");
+    }
+  }
+
+  #[test]
+  fn a_list_of_names_gives_a_list_of_measurements() {
+    clear_state();
+    assert_eq!(
+      form(&format!(
+        "ImageMeasurements[{GREY}, {{\"Mean\", \"Total\"}}]"
+      )),
+      "{0.4375, 1.75}"
+    );
+    // The names it knows are a measurement of their own.
+    assert_eq!(
+      form(&format!(
+        "Take[ImageMeasurements[{GREY}, \"Properties\"], 3]"
+      )),
+      "{\"AspectRatio\", \"Channels\", \"ColorSpace\"}"
+    );
+  }
+
+  // A single sample has no sample deviation; wolframscript reports that as a
+  // one-element list for the plain measure and bare for the intensity one.
+  #[test]
+  fn one_sample_has_no_deviation() {
+    clear_state();
+    assert_eq!(
+      measure("Image[{{1.}}]", "StandardDeviation"),
+      "{Indeterminate}"
+    );
+    assert_eq!(
+      measure("Image[{{1.}}]", "StandardDeviationIntensity"),
+      "Indeterminate"
+    );
+    assert_eq!(
+      measure("Image[{{1., 0.}}]", "StandardDeviation"),
+      "0.7071067811865476"
+    );
+  }
+
+  #[test]
+  fn a_name_it_does_not_know_is_reported() {
+    clear_state();
+    let result =
+      interpret_with_stdout(&format!("ImageMeasurements[{GREY}, \"Bogus\"]"))
+        .unwrap();
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|w| w.contains("ImageMeasurements::invprop")),
+      "expected ::invprop, got {:?}",
+      result.warnings
+    );
+    let result =
+      interpret_with_stdout(&format!("ImageMeasurements[{GREY}]")).unwrap();
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|w| w.contains("ImageMeasurements::argtu")),
+      "expected ::argtu, got {:?}",
+      result.warnings
+    );
+  }
+}

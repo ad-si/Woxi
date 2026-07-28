@@ -1992,7 +1992,7 @@ TracePrint,Print evaluation trace (debugging/tracing),🚫,,2.0,2025
 Circumsphere,Circumsphere of a simplex (computational geometry),✅,pure,10.0,2026
 AnyTrue,Checks if any element in a list is true,✅,pure,10.0,2031
 Convergents,List of convergents of a continued fraction representation,✅,none,6.0,2031
-ImageMeasurements,Measure image properties (image processing),🚫,,9.0,2031
+ImageMeasurements,Named measurement of an image — statistics per channel information measures over distinct pixels and the structural properties,✅,pure,9.0,2031
 MedianFilter,Apply median filter to data (signal processing),✅,,7.0,2031
 VertexOutDegree,Number of outgoing edges per vertex of a graph or edge list,✅,none,8.0,2031
 BernsteinBasis,Bernstein basis polynomial,✅,pure,7.0,2034

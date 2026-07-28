@@ -20,6 +20,7 @@ matrix of greyscale values as a stand-in for a real image file.
 - [`ImageAspectRatio`](images/ImageAspectRatio.md)
 - [`ImageChannels`](images/ImageChannels.md)
 - [`ImageType`](images/ImageType.md)
+- [`ImageMeasurements`](images/ImageMeasurements.md)
 - [`PixelValuePositions`](images/PixelValuePositions.md)
 - [`BMP`](images/BMP.md)
 - [`Binarize`](images/Binarize.md)

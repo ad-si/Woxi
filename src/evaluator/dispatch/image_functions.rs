@@ -485,6 +485,9 @@ pub fn dispatch_image_functions(
     "ImageAspectRatio" if args.len() == 1 => {
       return Some(crate::functions::image_ast::image_aspect_ratio_ast(args));
     }
+    "ImageMeasurements" => {
+      return Some(crate::functions::image_ast::image_measurements_ast(args));
+    }
     "ImageChannels" if args.len() == 1 => {
       return Some(crate::functions::image_ast::image_channels_ast(args));
     }

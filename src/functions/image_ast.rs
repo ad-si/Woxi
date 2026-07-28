@@ -8059,3 +8059,342 @@ pub fn crossing_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => unevaluated(),
   }
 }
+
+// ---------------------------------------------------------------------------
+// ImageMeasurements
+// ---------------------------------------------------------------------------
+
+/// The measurements `ImageMeasurements` names, in the order it lists them.
+const IMAGE_MEASUREMENT_PROPERTIES: [&str; 32] = [
+  "AspectRatio",
+  "Channels",
+  "ColorSpace",
+  "ContourHierarchy",
+  "Contours",
+  "DataRange",
+  "DataType",
+  "Dimensions",
+  "Energy",
+  "Entropy",
+  "ImageDimensions",
+  "IntensityCentroid",
+  "IntensityMomentsMatrix",
+  "Interleaving",
+  "Max",
+  "MaxIntensity",
+  "Mean",
+  "MeanIntensity",
+  "Median",
+  "MedianIntensity",
+  "Min",
+  "MinIntensity",
+  "MinMax",
+  "MinMaxIntensity",
+  "PerimeterPositions",
+  "SampleDepth",
+  "Skew",
+  "StandardDeviation",
+  "StandardDeviationIntensity",
+  "Total",
+  "TotalIntensity",
+  "Transparency",
+];
+
+/// The samples of one channel, in row order.
+fn channel_samples(data: &[f64], channels: usize, channel: usize) -> Vec<f64> {
+  data
+    .iter()
+    .skip(channel)
+    .step_by(channels)
+    .copied()
+    .collect()
+}
+
+/// The median of a run of samples.
+fn samples_median(samples: &[f64]) -> f64 {
+  let mut sorted = samples.to_vec();
+  sorted.sort_by(f64::total_cmp);
+  let n = sorted.len();
+  if n % 2 == 1 {
+    sorted[n / 2]
+  } else {
+    (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0
+  }
+}
+
+/// The sample standard deviation of a run of samples.
+fn samples_standard_deviation(samples: &[f64]) -> f64 {
+  let n = samples.len();
+  if n < 2 {
+    return 0.0;
+  }
+  let mean = samples.iter().sum::<f64>() / n as f64;
+  let sum: f64 = samples.iter().map(|v| (v - mean).powi(2)).sum();
+  (sum / (n - 1) as f64).sqrt()
+}
+
+/// One measurement over each channel in turn, as a bare value for a
+/// single-channel image and a list for any other.
+fn per_channel(
+  data: &[f64],
+  channels: usize,
+  measure: impl Fn(&[f64]) -> Expr,
+) -> Expr {
+  if channels == 1 {
+    return measure(data);
+  }
+  Expr::List(
+    (0..channels)
+      .map(|c| measure(&channel_samples(data, channels, c)))
+      .collect(),
+  )
+}
+
+/// A single named measurement, or `None` when it is not one this handles.
+fn image_measurement(
+  width: u32,
+  height: u32,
+  channels: u8,
+  data: &[f64],
+  image_type: &ImageType,
+  color_space: Option<&'static str>,
+  property: &str,
+) -> Option<Expr> {
+  let (w, h, ch) = (width as usize, height as usize, channels as usize);
+  let real = |v: f64| Expr::Real(v);
+  let count = data.len().max(1) as f64;
+  // The histogram the information measures are taken over counts distinct
+  // PIXELS, not distinct samples — a colour pixel is one observation however
+  // many channels it carries.
+  let pixels = (data.len() / ch.max(1)).max(1) as f64;
+  let _ = count;
+  let histogram = || -> Vec<f64> {
+    let mut sorted: Vec<Vec<u64>> = data
+      .chunks(ch.max(1))
+      .map(|p| p.iter().map(|v| v.to_bits()).collect())
+      .collect();
+    sorted.sort();
+    let mut counts = Vec::new();
+    let mut run = 0.0;
+    for i in 0..sorted.len() {
+      run += 1.0;
+      if i + 1 == sorted.len() || sorted[i + 1] != sorted[i] {
+        counts.push(run / pixels);
+        run = 0.0;
+      }
+    }
+    counts
+  };
+  match property {
+    "Mean" => Some(per_channel(data, ch, |s| {
+      real(s.iter().sum::<f64>() / s.len().max(1) as f64)
+    })),
+    "Total" => Some(per_channel(data, ch, |s| real(s.iter().sum()))),
+    "Min" => Some(per_channel(data, ch, |s| {
+      real(s.iter().copied().fold(f64::INFINITY, f64::min))
+    })),
+    "Max" => Some(per_channel(data, ch, |s| {
+      real(s.iter().copied().fold(f64::NEG_INFINITY, f64::max))
+    })),
+    "Median" => Some(per_channel(data, ch, |s| real(samples_median(s)))),
+    // A single sample has no sample deviation. wolframscript reports that as
+    // a one-element list for the plain measure and bare for the intensity
+    // one, which is its own inconsistency rather than a rule.
+    "StandardDeviation" if data.len() / ch.max(1) < 2 => Some(Expr::List(
+      vec![Expr::Identifier("Indeterminate".to_string()); ch].into(),
+    )),
+    "StandardDeviation" => Some(per_channel(data, ch, |s| {
+      real(samples_standard_deviation(s))
+    })),
+    "MinMax" => Some(per_channel(data, ch, |s| {
+      Expr::List(
+        vec![
+          real(s.iter().copied().fold(f64::INFINITY, f64::min)),
+          real(s.iter().copied().fold(f64::NEG_INFINITY, f64::max)),
+        ]
+        .into(),
+      )
+    })),
+    // The intensity measures read the grey level, which for a single-channel
+    // image is the sample itself. A colour image would need its luma, which
+    // is not handled here.
+    "MeanIntensity"
+    | "TotalIntensity"
+    | "MinIntensity"
+    | "MaxIntensity"
+    | "MedianIntensity"
+    | "StandardDeviationIntensity"
+    | "MinMaxIntensity"
+      if ch == 1 =>
+    {
+      let plain = image_measurement(
+        width,
+        height,
+        channels,
+        data,
+        image_type,
+        color_space,
+        property.trim_end_matches("Intensity"),
+      )?;
+      // `MinMax` is a pair either way; a lone `Indeterminate` is not wrapped
+      // here the way the plain measure wraps it.
+      Some(match (&plain, property) {
+        (Expr::List(items), "StandardDeviationIntensity")
+          if items.len() == 1 =>
+        {
+          items[0].clone()
+        }
+        _ => plain,
+      })
+    }
+    // Shannon entropy of the sample histogram, in nats.
+    "Entropy" => Some(real(
+      -histogram()
+        .iter()
+        .map(|p| if *p > 0.0 { p * p.ln() } else { 0.0 })
+        .sum::<f64>(),
+    )),
+    // The histogram's own squared weight.
+    "Energy" => Some(real(histogram().iter().map(|p| p * p).sum())),
+    // The centre of mass of the intensities, over pixel centres measured from
+    // the bottom left.
+    "IntensityCentroid" if ch == 1 => {
+      let total: f64 = data.iter().sum();
+      if total == 0.0 {
+        return None;
+      }
+      let mut cx = 0.0;
+      let mut cy = 0.0;
+      for (i, value) in data.iter().enumerate() {
+        let (col, row) = (i % w, i / w);
+        cx += (col as f64 + 0.5) * value;
+        // Rows are stored from the top, and the axis runs from the bottom.
+        cy += (h as f64 - row as f64 - 0.5) * value;
+      }
+      Some(Expr::List(vec![real(cx / total), real(cy / total)].into()))
+    }
+    "Channels" => Some(Expr::Integer(ch as i128)),
+    "ColorSpace" => Some(match color_space {
+      Some(name) => Expr::String(name.to_string()),
+      None => Expr::Identifier("Automatic".to_string()),
+    }),
+    "ImageDimensions" => Some(Expr::List(
+      vec![Expr::Integer(w as i128), Expr::Integer(h as i128)].into(),
+    )),
+    "Dimensions" => Some(Expr::List(
+      if ch == 1 {
+        vec![Expr::Integer(h as i128), Expr::Integer(w as i128)]
+      } else {
+        vec![
+          Expr::Integer(h as i128),
+          Expr::Integer(w as i128),
+          Expr::Integer(ch as i128),
+        ]
+      }
+      .into(),
+    )),
+    "AspectRatio" => {
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Divide".to_string(),
+        args: vec![Expr::Integer(h as i128), Expr::Integer(w as i128)].into(),
+      })
+      .ok()
+    }
+    "DataType" => Some(Expr::String(
+      match image_type {
+        ImageType::Bit => "Bit",
+        ImageType::Byte => "UnsignedInteger8",
+        ImageType::Bit16 => "UnsignedInteger16",
+        ImageType::Real32 => "Real32",
+        ImageType::Real64 => "Real64",
+      }
+      .to_string(),
+    )),
+    "DataRange" => Some(Expr::List(vec![real(0.0), real(1.0)].into())),
+    "Interleaving" => Some(Expr::Identifier(
+      if ch == 1 { "None" } else { "True" }.to_string(),
+    )),
+    "SampleDepth" => Some(Expr::Integer(match image_type {
+      ImageType::Bit => 1,
+      ImageType::Byte => 8,
+      ImageType::Bit16 => 16,
+      ImageType::Real32 => 32,
+      ImageType::Real64 => 64,
+    })),
+    "Transparency" => Some(bool_expr(false)),
+    _ => None,
+  }
+}
+
+/// `ImageMeasurements[image, property]` — a named measurement of an image, or
+/// a list of them for a list of names.
+pub fn image_measurements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let echo = || Ok(unevaluated("ImageMeasurements", args));
+  if args.len() < 2 || args.len() > 3 {
+    let n = args.len();
+    let noun = if n == 1 { "argument" } else { "arguments" };
+    crate::emit_message(&format!(
+      "ImageMeasurements::argtu: ImageMeasurements called with {n} {noun}; \
+       2 or 3 arguments are expected."
+    ));
+    return echo();
+  }
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+    color_space,
+  } = &args[0]
+  else {
+    return echo();
+  };
+  let one = |property: &Expr| -> Option<Result<Expr, InterpreterError>> {
+    let Expr::String(name) = property else {
+      return None;
+    };
+    if name == "Properties" {
+      return Some(Ok(Expr::List(
+        IMAGE_MEASUREMENT_PROPERTIES
+          .iter()
+          .map(|p| Expr::String((*p).to_string()))
+          .collect(),
+      )));
+    }
+    if !IMAGE_MEASUREMENT_PROPERTIES.contains(&name.as_str()) {
+      crate::emit_message(&format!(
+        "ImageMeasurements::invprop: {name} is not a known image-measurement \
+         property."
+      ));
+      return Some(echo());
+    }
+    image_measurement(
+      *width,
+      *height,
+      *channels,
+      data,
+      image_type,
+      *color_space,
+      name,
+    )
+    .map(Ok)
+  };
+  match &args[1] {
+    Expr::List(names) => {
+      let mut out = Vec::with_capacity(names.len());
+      for name in names.iter() {
+        match one(name) {
+          Some(Ok(value)) => out.push(value),
+          Some(Err(e)) => return Err(e),
+          None => return echo(),
+        }
+      }
+      Ok(Expr::List(out.into()))
+    }
+    property => match one(property) {
+      Some(result) => result,
+      None => echo(),
+    },
+  }
+}
