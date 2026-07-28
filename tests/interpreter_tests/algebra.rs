@@ -646,6 +646,60 @@ mod simplify {
     );
   }
 
+  // Quotient displays around sign normalization and factored
+  // denominators, all wolframscript-verified (differential fuzzer, seed
+  // 1785246333519574598 follow-up):
+  // - an already-canonical quotient is a fixed point, keeping even a
+  //   factored denominator verbatim;
+  // - a negative-content numerator flips both parts, the rebuilt
+  //   denominator showing expanded when its leading coefficient ends up
+  //   negative and in x^k-split form when positive;
+  // - integer content never extracts from a denominator divisible by x
+  //   ((1+3x)/(2*(-x+x^2)) is not a Wolfram display).
+  #[test]
+  fn quotient_sign_normalization_displays() {
+    assert_eq!(
+      interpret("Simplify[(1 + 3*x)/(2*(-1 + x)*x)]").unwrap(),
+      "(1 + 3*x)/(2*(-1 + x)*x)"
+    );
+    assert_eq!(
+      interpret("Simplify[(2 + x)/((-1 + x)*x)]").unwrap(),
+      "(2 + x)/((-1 + x)*x)"
+    );
+    assert_eq!(
+      interpret("Simplify[(1 + 3*x)/(2*x - 2*x^2)]").unwrap(),
+      "(1 + 3*x)/(2*x - 2*x^2)"
+    );
+    assert_eq!(
+      interpret("Simplify[(1 + 3*x)/(2*x^2 - 2*x)]").unwrap(),
+      "(1 + 3*x)/(-2*x + 2*x^2)"
+    );
+    assert_eq!(
+      interpret("Simplify[(-1 - 3*x)/(2*x^2 - 2*x)]").unwrap(),
+      "(1 + 3*x)/(2*x - 2*x^2)"
+    );
+    assert_eq!(
+      interpret("Simplify[(-1 - 3*x)/(2*(-1 + x)*x)]").unwrap(),
+      "(1 + 3*x)/(2*x - 2*x^2)"
+    );
+    assert_eq!(
+      interpret("Simplify[(-1 - 3*x)/(2*x - 2*x^2)]").unwrap(),
+      "(1 + 3*x)/(2*(-1 + x)*x)"
+    );
+    assert_eq!(
+      interpret("Simplify[(5*x)/((1 - x)*(2 + x))]").unwrap(),
+      "(-5*x)/(-2 + x + x^2)"
+    );
+    assert_eq!(
+      interpret("Simplify[(1 + x)/((1 - x)*(2 + x))]").unwrap(),
+      "-((1 + x)/(-2 + x + x^2))"
+    );
+    assert_eq!(
+      interpret("Simplify[1/(x^2*(-3 + 5*x))]").unwrap(),
+      "1/(x^2*(-3 + 5*x))"
+    );
+  }
+
   // On a SimplifyCount tie the sign-only -(…) pull beats the numeric
   // content extraction (both count 16), while a strict win keeps the
   // extraction; wolframscript-verified (differential fuzzer, seed
