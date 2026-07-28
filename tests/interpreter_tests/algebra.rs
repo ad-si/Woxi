@@ -15643,6 +15643,16 @@ mod constrained_numeric_optimization {
       interpret("FindMinimum[{x^2, x >= 1}, x]").unwrap(),
       "{1., {x -> 1.}}"
     );
+    // Rounded restatement of the same call: wolframscript's interior-point
+    // method stops at 1.000000013282579 here, so only a rounded projection
+    // can be compared against it.
+    assert_eq!(
+      interpret(
+        "Round[{#[[1]], x /. #[[2]]} &[FindMinimum[{x^2, x >= 1}, x]], 10^-6]"
+      )
+      .unwrap(),
+      "{1, 1}"
+    );
   }
 
   #[test]
@@ -15656,6 +15666,16 @@ mod constrained_numeric_optimization {
         .unwrap(),
       "{1.4142135623730951, {x -> 0.7071067811865476, y -> 0.7071067811865476}}"
     );
+    // wolframscript answers the circle case with 1.4142157575770362, so the
+    // agreement is only to about 5 digits — round to 10^-4 to compare.
+    assert_eq!(
+      interpret(
+        "Round[{#[[1]], {x, y} /. #[[2]]} &[\
+         FindMaximum[{x + y, x^2 + y^2 <= 1}, {{x, 0.5}, {y, 0.5}}]], 10^-4]"
+      )
+      .unwrap(),
+      "{7071/5000, {7071/10000, 7071/10000}}"
+    );
   }
 
   // Several constraints combine with And.
@@ -15667,6 +15687,16 @@ mod constrained_numeric_optimization {
       )
       .unwrap(),
       "{0.5800000000000001, {x -> 0.7000000000000001, y -> 0.30000000000000004}}"
+    );
+    // wolframscript lands on 0.580000011263976 for the same problem; the
+    // rounded projection is what both engines agree on.
+    assert_eq!(
+      interpret(
+        "Round[{#[[1]], {x, y} /. #[[2]]} &[\
+         FindMinimum[{x^2 + y^2, x + y == 1 && x >= 0.7}, {{x, 0}, {y, 0}}]], 10^-6]"
+      )
+      .unwrap(),
+      "{29/50, {7/10, 3/10}}"
     );
   }
 
@@ -15687,6 +15717,11 @@ mod constrained_numeric_optimization {
       "{0.7071067811865475, 0.7071067811865475}"
     );
     assert_eq!(interpret("NArgMin[{x^2, x >= 1}, x]").unwrap(), "1.");
+    // wolframscript stops at 1.0000000066412895 for the inequality case.
+    assert_eq!(
+      interpret("Round[NArgMin[{x^2, x >= 1}, x], 10^-6]").unwrap(),
+      "1"
+    );
   }
 
   #[test]
