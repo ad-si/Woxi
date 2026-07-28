@@ -6037,27 +6037,29 @@ fn minimize_bounded_below_numerical(f: &Expr, var: &str) -> bool {
   true
 }
 
-/// Build the -Infinity result for minimize (no minimum exists).
-fn minimize_neg_infinity_result(vars: &[String], maximize: bool) -> Expr {
+/// Build the unbounded result for minimize/maximize (no optimum exists):
+/// `{-Infinity, {x -> ±Infinity}}`, or `{Infinity, …}` when maximizing.
+/// `var_toward_positive` says which end of the axis the objective runs off
+/// at, which is independent of the direction of the optimization:
+/// `Maximize[-x, x]` is unbounded as `x -> -Infinity`.
+fn minimize_neg_infinity_result(
+  vars: &[String],
+  maximize: bool,
+  var_toward_positive: bool,
+) -> Expr {
+  let neg_infinity = || Expr::UnaryOp {
+    op: UnaryOperator::Minus,
+    operand: Box::new(Expr::Identifier("Infinity".to_string())),
+  };
   let inf_val = if maximize {
-    // Maximize returns {Infinity, {x -> Infinity}}
     Expr::Identifier("Infinity".to_string())
   } else {
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(Expr::Identifier("Infinity".to_string())),
-    }
+    neg_infinity()
   };
-  let x_val = if maximize {
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(Expr::Identifier("Infinity".to_string())),
-    }
+  let x_val = if var_toward_positive {
+    Expr::Identifier("Infinity".to_string())
   } else {
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(Expr::Identifier("Infinity".to_string())),
-    }
+    neg_infinity()
   };
   let rules: Vec<Expr> = vars
     .iter()
@@ -6069,7 +6071,24 @@ fn minimize_neg_infinity_result(vars: &[String], maximize: bool) -> Expr {
   Expr::List(vec![inf_val, Expr::List(rules.into())].into())
 }
 
-/// Single-variable unconstrained minimize.
+/// The end of the axis at which the (already sign-normalized, i.e. always
+/// minimized) objective `f` runs off to -Infinity: `true` for
+/// `var -> +Infinity`. Probed numerically at large magnitudes; an objective
+/// that cannot be evaluated there falls back to `var -> -Infinity`.
+fn minimize_unbounded_direction(f: &Expr, var: &str) -> bool {
+  let probe = |x: f64| -> Option<f64> {
+    let substituted =
+      crate::syntax::substitute_variable(f, var, &Expr::Real(x));
+    crate::evaluator::evaluate_expr_to_expr(&substituted)
+      .ok()
+      .and_then(|e| minimize_try_f64(&e))
+  };
+  match (probe(1e6), probe(-1e6)) {
+    (Some(at_pos), Some(at_neg)) => at_pos < at_neg,
+    _ => false,
+  }
+}
+
 /// True if `e` is a genuinely complex value: it contains the imaginary unit
 /// (via `contains_complex`) or a `Complex[re, im]` node with a nonzero imaginary
 /// part (which `contains_complex` alone does not detect).
@@ -6180,7 +6199,11 @@ fn minimize_single_var(
       "{}::natt: The {} is not attained at any point satisfying the given constraints.",
       head, kind
     ));
-    return Ok(minimize_neg_infinity_result(&[var.to_string()], maximize));
+    return Ok(minimize_neg_infinity_result(
+      &[var.to_string()],
+      maximize,
+      minimize_unbounded_direction(&f_inner, var),
+    ));
   }
 
   // Find critical points: solve df == 0
@@ -7103,7 +7126,9 @@ fn minimize_try_ilp(
   }
   if shifted_target < 0 {
     // Infeasible
-    return Ok(Some(minimize_neg_infinity_result(vars, maximize)));
+    // Infeasible integer program: there is no divergence direction to
+    // report, so keep the -Infinity end for the variable values.
+    return Ok(Some(minimize_neg_infinity_result(vars, maximize, false)));
   }
   let shifted_target = shifted_target as usize;
 

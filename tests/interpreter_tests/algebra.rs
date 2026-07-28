@@ -11761,6 +11761,15 @@ mod cases {
     );
   }
   #[test]
+  fn unbounded_optimum_reports_the_diverging_end() {
+    // The variable value is the end of the axis the objective runs off at,
+    // which is not determined by the direction of the optimization.
+    assert_case(r#"Maximize[x, x]"#, r#"{Infinity, {x -> Infinity}}"#);
+    assert_case(r#"Minimize[x, x]"#, r#"{-Infinity, {x -> -Infinity}}"#);
+    assert_case(r#"Maximize[-x, x]"#, r#"{Infinity, {x -> -Infinity}}"#);
+    assert_case(r#"Minimize[-x, x]"#, r#"{-Infinity, {x -> Infinity}}"#);
+  }
+  #[test]
   fn extremum_value_chained_inequality_constraint() {
     // `1 < x < 3` is one chained comparison, not two separate constraints.
     assert_case(r#"MaxValue[{x^2, 1 < x < 3}, x]"#, r#"9"#);
