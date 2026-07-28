@@ -846,6 +846,61 @@ pub fn drawable_molecule(expr: &Expr) -> Option<DrawMolecule> {
   Some(DrawMolecule { atoms, bonds })
 }
 
+/// Resolve a molecule *argument*: either an evaluated canonical
+/// `Molecule[{atoms…}, {bonds…}]` expression or a string that `Molecule`
+/// itself would accept (a chemical name or a SMILES string). Connectivity
+/// queries take strings directly in wolframscript — `ConnectedMoleculeQ["CCO"]`
+/// is `True` even though `MoleculeQ["CCO"]` is `False`.
+fn graph_from_molecule_arg(expr: &Expr) -> Option<MolGraph> {
+  if let Expr::String(spec) = expr {
+    // A chemical name materializes its hydrogens; a bare SMILES string keeps
+    // them implicit — exactly as `Molecule[spec]` stores them.
+    if let Some(smiles) = smiles_for_name(spec)
+      && let Some(mut graph) = parse_smiles(smiles)
+    {
+      add_explicit_hydrogens(&mut graph);
+      return Some(graph);
+    }
+    return parse_smiles(spec);
+  }
+  graph_from_molecule_expr(expr)
+}
+
+/// Connected components of the molecular graph, as 0-based atom indices.
+/// Components come out ordered by their smallest atom index and each keeps
+/// its atoms in the original order, matching wolframscript's numbering.
+fn connected_components(graph: &MolGraph) -> Vec<Vec<usize>> {
+  let n = graph.atoms.len();
+  let mut neighbors: Vec<Vec<usize>> = vec![Vec::new(); n];
+  for (a, b, _) in &graph.bonds {
+    neighbors[*a].push(*b);
+    neighbors[*b].push(*a);
+  }
+  let mut component_of = vec![usize::MAX; n];
+  let mut components: Vec<Vec<usize>> = Vec::new();
+  for start in 0..n {
+    if component_of[start] != usize::MAX {
+      continue;
+    }
+    let id = components.len();
+    let mut stack = vec![start];
+    component_of[start] = id;
+    let mut members = Vec::new();
+    while let Some(i) = stack.pop() {
+      members.push(i);
+      for &j in &neighbors[i] {
+        if component_of[j] == usize::MAX {
+          component_of[j] = id;
+          stack.push(j);
+        }
+      }
+    }
+    members.sort_unstable();
+    components.push(members);
+  }
+  components
+}
+
 /// Extract the validated graph from an already-evaluated
 /// `Molecule[{atoms…}, {bonds…}]` expression.
 fn graph_from_molecule_expr(expr: &Expr) -> Option<MolGraph> {
@@ -976,6 +1031,111 @@ pub fn molecule_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::Identifier(
     if valid { "True" } else { "False" }.to_string(),
   ))
+}
+
+/// ConnectedMoleculeQ[mol] — True when every atom is reachable from every
+/// other one through bonds. A non-molecule argument is simply False (no
+/// message); a SMILES or name string is accepted like `Molecule[spec]`.
+pub fn connected_molecule_q_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let connected = match graph_from_molecule_arg(&args[0]) {
+    Some(graph) => connected_components(&graph).len() <= 1,
+    None => false,
+  };
+  Ok(Expr::Identifier(
+    if connected { "True" } else { "False" }.to_string(),
+  ))
+}
+
+/// ConnectedMoleculeComponents[mol] — the connected components of `mol`, each
+/// as its own `Molecule[…]`. Atom numbering within a component follows the
+/// original order; an invalid argument emits `::mol` and stays unevaluated.
+pub fn connected_molecule_components_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let Some(graph) = graph_from_molecule_arg(&args[0]) else {
+    crate::emit_message(&format!(
+      "ConnectedMoleculeComponents::mol: Argument {} is not a valid molecule.",
+      crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+    ));
+    return Ok(unevaluated("ConnectedMoleculeComponents", args));
+  };
+  let components = connected_components(&graph);
+  // Map every atom to its index inside its own component so the component's
+  // bonds can be renumbered.
+  let mut local_index = vec![0usize; graph.atoms.len()];
+  let mut owner = vec![0usize; graph.atoms.len()];
+  for (c, members) in components.iter().enumerate() {
+    for (k, &i) in members.iter().enumerate() {
+      local_index[i] = k;
+      owner[i] = c;
+    }
+  }
+  let mut sub_bonds: Vec<Vec<(usize, usize, BondKind)>> =
+    vec![Vec::new(); components.len()];
+  for (a, b, kind) in &graph.bonds {
+    sub_bonds[owner[*a]].push((local_index[*a], local_index[*b], *kind));
+  }
+  let molecules: Vec<Expr> = components
+    .iter()
+    .zip(sub_bonds)
+    .map(|(members, bonds)| {
+      graph_to_expr(&MolGraph {
+        atoms: members.iter().map(|&i| graph.atoms[i].clone()).collect(),
+        bonds,
+      })
+    })
+    .collect();
+  Ok(Expr::List(molecules.into()))
+}
+
+/// BondQ[mol, bond] — True when `bond` is a bond of `mol`. The atom pair is
+/// unordered and indexes the hydrogen-complete atom list (the same numbering
+/// `AtomList` uses); omitting the bond type matches a bond of any type. Any
+/// argument that is not a molecule or a bond gives False.
+pub fn bond_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let found = bond_present(&args[0], &args[1]);
+  Ok(Expr::Identifier(
+    if found { "True" } else { "False" }.to_string(),
+  ))
+}
+
+fn bond_present(mol: &Expr, bond: &Expr) -> bool {
+  let Some(mut graph) = graph_from_molecule_arg(mol) else {
+    return false;
+  };
+  add_explicit_hydrogens(&mut graph);
+  let Expr::FunctionCall { name, args } = bond else {
+    return false;
+  };
+  if name != "Bond" || args.is_empty() || args.len() > 2 {
+    return false;
+  }
+  let Expr::List(pair) = &args[0] else {
+    return false;
+  };
+  let [Expr::Integer(i), Expr::Integer(j)] = pair.as_slice() else {
+    return false;
+  };
+  // An omitted type matches any bond; a given one must match exactly.
+  let kind = match args.get(1) {
+    None => None,
+    Some(Expr::String(s)) => match BondKind::from_str(s) {
+      Some(k) => Some(k),
+      None => return false,
+    },
+    Some(_) => return false,
+  };
+  let n = graph.atoms.len() as i128;
+  if *i < 1 || *j < 1 || *i > n || *j > n || i == j {
+    return false;
+  }
+  let (i, j) = ((*i - 1) as usize, (*j - 1) as usize);
+  graph.bonds.iter().any(|(a, b, k)| {
+    ((*a == i && *b == j) || (*a == j && *b == i))
+      && kind.is_none_or(|want| want == *k)
+  })
 }
 
 /// AtomList[mol] — the list of atoms.

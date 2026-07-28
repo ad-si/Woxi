@@ -532,6 +532,295 @@ mod molecule_tests {
     );
   }
 
+  // --- ConnectedMoleculeQ --------------------------------------------------
+
+  #[test]
+  fn connected_molecule_q_single_fragment() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"ConnectedMoleculeQ[Molecule["CCO"]]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"ConnectedMoleculeQ[Molecule["water"]]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"ConnectedMoleculeQ[Molecule["c1ccccc1"]]"#).unwrap(),
+      "True"
+    );
+    // A lone atom is trivially connected.
+    assert_eq!(
+      interpret(r#"ConnectedMoleculeQ[Molecule[{"C"}, {}]]"#).unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn connected_molecule_q_disconnected_fragments() {
+    clear_state();
+    // A `.` in SMILES separates fragments — a salt is not connected.
+    assert_eq!(
+      interpret(r#"ConnectedMoleculeQ[Molecule["[Na+].[Cl-]"]]"#).unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(r#"ConnectedMoleculeQ[Molecule["CC.O"]]"#).unwrap(),
+      "False"
+    );
+    // Explicit atom lists with a missing bond are disconnected too.
+    assert_eq!(
+      interpret(r#"ConnectedMoleculeQ[Molecule[{"C", "O"}, {}]]"#).unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        r#"ConnectedMoleculeQ[Molecule[{"C", "O", "N"}, {Bond[{1, 3}]}]]"#
+      )
+      .unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn connected_molecule_q_accepts_a_specification_string() {
+    clear_state();
+    // Unlike MoleculeQ, the connectivity test takes any `Molecule`
+    // specification directly.
+    assert_eq!(interpret(r#"ConnectedMoleculeQ["CCO"]"#).unwrap(), "True");
+    assert_eq!(interpret(r#"MoleculeQ["CCO"]"#).unwrap(), "False");
+  }
+
+  #[test]
+  fn connected_molecule_q_rejects_non_molecules() {
+    clear_state();
+    // A non-molecule is False rather than unevaluated.
+    assert_eq!(interpret("ConnectedMoleculeQ[5]").unwrap(), "False");
+  }
+
+  #[test]
+  fn connected_molecule_q_wrong_arg_count() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"ConnectedMoleculeQ[Molecule["CCO"], 2]"#).unwrap(),
+      "ConnectedMoleculeQ[Molecule[{C, C, O}, \
+       {Bond[{1, 2}, Single], Bond[{2, 3}, Single]}, {}], 2]"
+    );
+    assert_eq!(
+      interpret("ConnectedMoleculeQ[]").unwrap(),
+      "ConnectedMoleculeQ[]"
+    );
+  }
+
+  // --- ConnectedMoleculeComponents -----------------------------------------
+
+  #[test]
+  fn connected_molecule_components_splits_fragments() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"ConnectedMoleculeComponents[Molecule["CC.O"]]"#).unwrap(),
+      "{Molecule[{C, C}, {Bond[{1, 2}, Single]}, {}], \
+       Molecule[{O}, {}, {}]}"
+    );
+    assert_eq!(
+      interpret(r#"ConnectedMoleculeComponents[Molecule["CC.O.N"]]"#).unwrap(),
+      "{Molecule[{C, C}, {Bond[{1, 2}, Single]}, {}], \
+       Molecule[{O}, {}, {}], Molecule[{N}, {}, {}]}"
+    );
+    // Atom properties ride along into the component.
+    assert_eq!(
+      interpret(r#"ConnectedMoleculeComponents[Molecule["[Na+].[Cl-]"]]"#)
+        .unwrap(),
+      "{Molecule[{Atom[Na, FormalCharge -> 1]}, {}, {}], \
+       Molecule[{Atom[Cl, FormalCharge -> -1]}, {}, {}]}"
+    );
+  }
+
+  #[test]
+  fn connected_molecule_components_renumbers_bonds() {
+    clear_state();
+    // Atoms keep their original relative order inside a component and the
+    // bonds are renumbered against it; components come out ordered by their
+    // smallest atom index.
+    assert_eq!(
+      interpret(
+        r#"ConnectedMoleculeComponents[
+             Molecule[{"C", "O", "N"}, {Bond[{1, 3}]}]]"#
+      )
+      .unwrap(),
+      "{Molecule[{C, N}, {Bond[{1, 2}, Single]}, {}], \
+       Molecule[{O}, {}, {}]}"
+    );
+    assert_eq!(
+      interpret(
+        r#"ConnectedMoleculeComponents[
+             Molecule[{"O", "C", "C"}, {Bond[{2, 3}, "Double"]}]]"#
+      )
+      .unwrap(),
+      "{Molecule[{O}, {}, {}], \
+       Molecule[{C, C}, {Bond[{1, 2}, Double]}, {}]}"
+    );
+  }
+
+  #[test]
+  fn connected_molecule_components_of_connected_molecule() {
+    clear_state();
+    // A connected molecule yields a one-element list holding itself.
+    assert_eq!(
+      interpret(r#"ConnectedMoleculeComponents[Molecule["CCO"]]"#).unwrap(),
+      "{Molecule[{C, C, O}, \
+       {Bond[{1, 2}, Single], Bond[{2, 3}, Single]}, {}]}"
+    );
+    assert_eq!(
+      interpret(r#"ConnectedMoleculeComponents[Molecule["water"]]"#).unwrap(),
+      "{Molecule[{O, H, H}, \
+       {Bond[{1, 2}, Single], Bond[{1, 3}, Single]}, {}]}"
+    );
+  }
+
+  #[test]
+  fn connected_molecule_components_accepts_a_specification_string() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"ConnectedMoleculeComponents["CC.O"]"#).unwrap(),
+      "{Molecule[{C, C}, {Bond[{1, 2}, Single]}, {}], \
+       Molecule[{O}, {}, {}]}"
+    );
+  }
+
+  #[test]
+  fn connected_molecule_components_rejects_non_molecules() {
+    clear_state();
+    // Unlike the Q-function this one reports `::mol` and stays unevaluated.
+    assert_eq!(
+      interpret("ConnectedMoleculeComponents[5]").unwrap(),
+      "ConnectedMoleculeComponents[5]"
+    );
+    assert_eq!(
+      interpret(r#"ConnectedMoleculeComponents[Molecule["CC.O"], 2]"#).unwrap(),
+      "ConnectedMoleculeComponents[Molecule[{C, C, O}, \
+       {Bond[{1, 2}, Single]}, {}], 2]"
+    );
+  }
+
+  // --- BondQ ---------------------------------------------------------------
+
+  #[test]
+  fn bond_q_matches_bonds_of_a_molecule() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"BondQ[Molecule["CCO"], Bond[{1, 2}]]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"BondQ[Molecule["CCO"], Bond[{2, 3}]]"#).unwrap(),
+      "True"
+    );
+    // The atom pair is unordered.
+    assert_eq!(
+      interpret(r#"BondQ[Molecule["CCO"], Bond[{2, 1}, "Single"]]"#).unwrap(),
+      "True"
+    );
+    // A non-existent bond, a self-bond, and an out-of-range index are False.
+    assert_eq!(
+      interpret(r#"BondQ[Molecule["CCO"], Bond[{1, 3}]]"#).unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(r#"BondQ[Molecule["CCO"], Bond[{1, 1}]]"#).unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(r#"BondQ[Molecule["CCO"], Bond[{1, 20}]]"#).unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn bond_q_checks_the_bond_type() {
+    clear_state();
+    // An omitted type matches a bond of any type; a given one must match.
+    assert_eq!(
+      interpret(r#"BondQ[Molecule["CC=O"], Bond[{2, 3}, "Double"]]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"BondQ[Molecule["CC=O"], Bond[{2, 3}, "Single"]]"#).unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(r#"BondQ[Molecule["CC=O"], Bond[{2, 3}]]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"BondQ[Molecule["c1ccccc1"], Bond[{1, 2}, "Aromatic"]]"#)
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"BondQ[Molecule["c1ccccc1"], Bond[{1, 2}, "Single"]]"#)
+        .unwrap(),
+      "False"
+    );
+    // Ring closure: benzene's last bond joins atoms 6 and 1.
+    assert_eq!(
+      interpret(r#"BondQ[Molecule["c1ccccc1"], Bond[{1, 6}, "Aromatic"]]"#)
+        .unwrap(),
+      "True"
+    );
+    // An unknown bond type never matches.
+    assert_eq!(
+      interpret(r#"BondQ[Molecule["CCO"], Bond[{1, 2}, "Quintuple"]]"#)
+        .unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn bond_q_sees_implicit_hydrogens() {
+    clear_state();
+    // Bond indices refer to the hydrogen-complete `AtomList` numbering, so
+    // ethanol's implicit hydrogens (atoms 4-9) are addressable.
+    assert_eq!(
+      interpret(
+        r#"Select[Subsets[Range[9], {2}],
+             BondQ[Molecule["CCO"], Bond[#]] &]"#
+      )
+      .unwrap(),
+      "{{1, 2}, {1, 4}, {1, 5}, {1, 6}, {2, 3}, {2, 7}, {2, 8}, {3, 9}}"
+    );
+  }
+
+  #[test]
+  fn bond_q_accepts_a_specification_string() {
+    clear_state();
+    assert_eq!(interpret(r#"BondQ["CCO", Bond[{1, 2}]]"#).unwrap(), "True");
+  }
+
+  #[test]
+  fn bond_q_rejects_non_molecules_and_non_bonds() {
+    clear_state();
+    assert_eq!(interpret("BondQ[5, Bond[{1, 2}]]").unwrap(), "False");
+    assert_eq!(
+      interpret(r#"BondQ[Molecule["CCO"], "x"]"#).unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn bond_q_wrong_arg_count() {
+    clear_state();
+    assert_eq!(
+      interpret("BondQ[Bond[{1, 2}]]").unwrap(),
+      "BondQ[Bond[{1, 2}]]"
+    );
+    assert_eq!(
+      interpret(r#"BondQ[Molecule["CCO"], Bond[{1, 2}], 3]"#).unwrap(),
+      "BondQ[Molecule[{C, C, O}, \
+       {Bond[{1, 2}, Single], Bond[{2, 3}, Single]}, {}], Bond[{1, 2}], 3]"
+    );
+  }
+
   // --- MoleculePlot structure diagram --------------------------------------
 
   #[test]

@@ -1453,6 +1453,17 @@ fn evaluate_function_call_ast_inner(
     "MoleculeQ" => {
       return crate::functions::molecule_ast::molecule_q_ast(args);
     }
+    "ConnectedMoleculeQ" if args.len() == 1 => {
+      return crate::functions::molecule_ast::connected_molecule_q_ast(args);
+    }
+    "ConnectedMoleculeComponents" if args.len() == 1 => {
+      return crate::functions::molecule_ast::connected_molecule_components_ast(
+        args,
+      );
+    }
+    "BondQ" if args.len() == 2 => {
+      return crate::functions::molecule_ast::bond_q_ast(args);
+    }
     "AtomList" => {
       return crate::functions::molecule_ast::atom_list_ast(args);
     }

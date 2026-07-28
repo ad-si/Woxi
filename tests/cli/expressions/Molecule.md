@@ -62,6 +62,71 @@ $ wo 'BondList[Molecule["ammonia"]]'
 {Bond[{1, 2}, Single], Bond[{1, 3}, Single], Bond[{1, 4}, Single]}
 ```
 
+## `BondQ`
+
+`BondQ[mol, bond]` tests whether `bond` is a bond of `mol`. The atom pair is
+unordered, and it indexes the same hydrogen-complete atom list `AtomList`
+returns — so ethanol's implicit hydrogens (atoms 4 to 9) are addressable:
+
+```scrut
+$ wo 'BondQ[Molecule["CCO"], Bond[{2, 1}]]'
+True
+```
+
+```scrut
+$ wo 'BondQ[Molecule["CCO"], Bond[{1, 4}]]'
+True
+```
+
+```scrut
+$ wo 'BondQ[Molecule["CCO"], Bond[{1, 3}]]'
+False
+```
+
+Omitting the bond type matches a bond of any type; giving one requires an
+exact match:
+
+```scrut
+$ wo 'BondQ[Molecule["c1ccccc1"], Bond[{1, 2}, "Aromatic"]]'
+True
+```
+
+```scrut
+$ wo 'BondQ[Molecule["c1ccccc1"], Bond[{1, 2}, "Single"]]'
+False
+```
+
+## `ConnectedMoleculeQ` and `ConnectedMoleculeComponents`
+
+`ConnectedMoleculeQ[mol]` tests whether the atoms of `mol` are all joined by
+bonds. A `.` in a SMILES string separates fragments, so a salt is not
+connected:
+
+```scrut
+$ wo 'ConnectedMoleculeQ[Molecule["ethanol"]]'
+True
+```
+
+```scrut
+$ wo 'ConnectedMoleculeQ[Molecule["[Na+].[Cl-]"]]'
+False
+```
+
+`ConnectedMoleculeComponents[mol]` returns each connected fragment as its own
+molecule, with the bonds renumbered against the fragment's atoms:
+
+```scrut
+$ wo 'ConnectedMoleculeComponents[Molecule["CC.O"]]'
+{Molecule[{C, C}, {Bond[{1, 2}, Single]}, {}], Molecule[{O}, {}, {}]}
+```
+
+Both take any specification `Molecule` accepts, not just a molecule:
+
+```scrut
+$ wo 'ConnectedMoleculeQ["CCO"]'
+True
+```
+
 ## `MoleculeValue`
 
 Computes properties of a molecule

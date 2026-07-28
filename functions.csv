@@ -5274,7 +5274,7 @@ BooleanConsecutiveFunction,,,,9.0,5587
 ByteArrayFormat,,,,12.0,5587
 CellEvaluationDuplicate,,🚫,,3.0,5587
 ConfidenceTransform,,,,9.0,5587
-ConnectedMoleculeComponents,,,,12.0,5587
+ConnectedMoleculeComponents,Gives the connected components of a molecule as separate molecules,✅,pure,12.0,5587
 CovarianceEstimatorFunction,,,,7.0,5587
 DefaultElement,,,,6.0,5587
 DefaultFaceGridsStyle,,,,7.0,5587
@@ -5420,7 +5420,7 @@ BlockUpperTriangularMatrix,,,,13.1,
 Blurring,,🚫,,13.2,
 BondLabelStyle,,,,13.0,
 BondLabels,,,,13.0,
-BondQ,,,,12.0,
+BondQ,Tests whether a bond is a bond of a molecule,✅,pure,12.0,
 BuckyballGraph,,,,13.1,
 BuildCompiledComponent,,🚫,,13.2,
 CSGRegion,,,,13.0,
@@ -5482,7 +5482,7 @@ ConformDates,,,,14.1,
 ConformationMethod,,,,13.0,
 ConicOptimization,,,,12.0,
 ConnectSystemModelController,,,,12.3,
-ConnectedMoleculeQ,,,,12.0,
+ConnectedMoleculeQ,Tests whether the atoms of a molecule are all connected by bonds,✅,pure,12.0,
 ConnectionSettings,,,,12.0,
 ConstantVideo,,,,14.1,
 ContentDetectorFunction,,🚫,,13.0,
