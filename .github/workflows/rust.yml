@@ -10,6 +10,30 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Formatting and lint gates — mirror `make format-check` / `make lint`,
+  # i.e. the two halves of `make format`. Fails the build when a workspace
+  # crate is unformatted or clippy reports any warning.
+  format:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt
+    - name: Check formatting
+      run: make format-check
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+    - uses: Swatinem/rust-cache@v2
+    - name: Run clippy
+      run: make lint
+
   # Fast correctness suite — mirrors `make test`. The heavy script
   # snapshots (see `slow_script_test!`) and the wikidata live-API tests are
   # gated behind the `slow-tests` cargo feature and run in the nightly

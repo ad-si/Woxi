@@ -180,6 +180,21 @@ format:
 #	nix fmt
 
 
+# Verify that all workspace crates are formatted without modifying them.
+# Run by CI; fix any failure with `make format`.
+.PHONY: format-check
+format-check:
+	cargo fmt --all --check
+
+
+# Fail on any clippy warning. The three lints this codebase deliberately
+# does not follow are allowed in Cargo.toml's [lints.clippy]; everything
+# else must stay clean. Most findings are fixed by `make format`.
+.PHONY: lint
+lint:
+	cargo clippy --all-targets -- -D warnings
+
+
 .PHONY: install-cli
 install-cli:
 	cargo install --path .
