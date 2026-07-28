@@ -512,6 +512,21 @@ mod absolute_file_name {
       "$Failed"
     );
   }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn existing_file_becomes_a_plain_absolute_path() {
+    // Windows regression: the result must not carry the extended-length
+    // `\\?\` prefix `std::fs::canonicalize` produces there.
+    let result = interpret(r#"AbsoluteFileName["Cargo.toml"]"#).unwrap();
+    let sep = std::path::MAIN_SEPARATOR;
+    assert!(
+      !result.starts_with(r"\\?\")
+        && std::path::Path::new(&result).is_absolute()
+        && result.ends_with(&format!("{sep}Cargo.toml")),
+      "expected a plain absolute path, got: {result}"
+    );
+  }
 }
 
 mod close_error {
@@ -5248,6 +5263,24 @@ mod file_names {
 mod set_directory {
   use super::*;
 
+  /// The user's home directory as woxi reads it: Windows has no HOME, so
+  /// fall back to USERPROFILE.
+  fn host_home() -> String {
+    std::env::var("HOME")
+      .or_else(|_| std::env::var("USERPROFILE"))
+      .unwrap()
+  }
+
+  /// `sub` under the home directory, spelled with the host's separator —
+  /// the form the directory variables report.
+  fn home_subdir(sub: &str) -> String {
+    let sep = std::path::MAIN_SEPARATOR_STR;
+    format!(
+      "{}{sep}{sub}",
+      host_home().trim_end_matches(std::path::MAIN_SEPARATOR)
+    )
+  }
+
   #[test]
   fn set_and_check() {
     // SetDirectory returns the new directory path as a string
@@ -5271,10 +5304,7 @@ mod set_directory {
   #[test]
   fn no_args_matches_home_env() {
     // SetDirectory[] should set to the HOME environment variable
-    let home = std::env::var("HOME")
-      .or_else(|_| std::env::var("USERPROFILE"))
-      .unwrap();
-    let home = std::fs::canonicalize(&home)
+    let home = woxi::utils::canonicalize(host_home())
       .unwrap()
       .to_string_lossy()
       .into_owned();
@@ -5312,23 +5342,19 @@ mod set_directory {
 
   #[test]
   fn user_documents_directory_is_home_documents() {
-    // $UserDocumentsDirectory → $HOME/Documents on macOS/Linux.
-    let home = std::env::var("HOME")
-      .or_else(|_| std::env::var("USERPROFILE"))
-      .unwrap();
-    let expected = format!("{}/Documents", home.trim_end_matches('/'));
-    assert_eq!(interpret("$UserDocumentsDirectory").unwrap(), expected);
+    // $UserDocumentsDirectory → the Documents folder under the home
+    // directory, spelled the way the host spells paths.
+    assert_eq!(
+      interpret("$UserDocumentsDirectory").unwrap(),
+      home_subdir("Documents")
+    );
   }
 
   #[test]
   fn set_directory_to_user_documents() {
     // Regression for the audit case: SetDirectory[$UserDocumentsDirectory]
     // should return the documents path (when that directory exists).
-    // Windows has no HOME, so fall back to USERPROFILE the way woxi does.
-    let home = std::env::var("HOME")
-      .or_else(|_| std::env::var("USERPROFILE"))
-      .unwrap();
-    let docs = format!("{}/Documents", home.trim_end_matches('/'));
+    let docs = home_subdir("Documents");
     if std::path::Path::new(&docs).is_dir() {
       let result = interpret(
         r#"Block[{}, d = SetDirectory[$UserDocumentsDirectory]; ResetDirectory[]; d]"#,
@@ -5336,6 +5362,58 @@ mod set_directory {
       .unwrap();
       assert_eq!(result, docs);
     }
+  }
+
+  // Windows regression: `std::fs::canonicalize` hands back an
+  // extended-length path (`\\?\C:\Users\me\Documents`), a form Wolfram
+  // never reports and one that no longer compares equal to the same
+  // directory as `$UserDocumentsDirectory` spells it. `SetDirectory` must
+  // return the plain spelling.
+  #[test]
+  fn returns_a_plain_path() {
+    let result =
+      interpret(r#"Block[{}, d = SetDirectory["src"]; ResetDirectory[]; d]"#)
+        .unwrap();
+    assert!(
+      !result.starts_with(r"\\?\"),
+      "expected a plain path, got: {result}"
+    );
+  }
+}
+
+// The Windows extended-length prefix `SetDirectory`, `AbsoluteFileName`,
+// `$TemporaryDirectory` and friends have to strip. Exercised on every host
+// so the mapping cannot rot between nightly Windows runs.
+mod verbatim_paths {
+  use woxi::utils::strip_windows_verbatim_prefix as strip;
+
+  #[test]
+  fn drive_letter_prefix_is_dropped() {
+    assert_eq!(
+      strip(r"\\?\C:\Users\me\Documents").as_deref(),
+      Some(r"C:\Users\me\Documents")
+    );
+  }
+
+  #[test]
+  fn unc_prefix_becomes_a_plain_share_path() {
+    assert_eq!(
+      strip(r"\\?\UNC\server\share\dir").as_deref(),
+      Some(r"\\server\share\dir")
+    );
+  }
+
+  #[test]
+  fn device_paths_keep_the_prefix() {
+    // \\?\Volume{…} has no plain equivalent.
+    assert_eq!(strip(r"\\?\Volume{12345678-0000}\dir"), None);
+  }
+
+  #[test]
+  fn plain_paths_are_left_alone() {
+    assert_eq!(strip(r"C:\Users\me"), None);
+    assert_eq!(strip("/home/me"), None);
+    assert_eq!(strip(r"\\server\share"), None);
   }
 }
 

@@ -2875,7 +2875,7 @@ pub fn dispatch_io_functions(
           "SetDirectory: cannot determine home directory.".into(),
         )));
       }
-      match std::fs::canonicalize(&home) {
+      match crate::utils::canonicalize(&home) {
         Ok(canonical) if canonical.is_dir() => {
           let new_dir = canonical.to_string_lossy().into_owned();
           DIRECTORY_STACK.with(|s| s.borrow_mut().push(new_dir.clone()));
@@ -2907,7 +2907,7 @@ pub fn dispatch_io_functions(
         std::path::PathBuf::from(virtual_current_dir()).join(requested)
       };
       // Canonicalize both to validate existence and normalize the result.
-      match std::fs::canonicalize(&resolved) {
+      match crate::utils::canonicalize(&resolved) {
         Ok(canonical) if canonical.is_dir() => {
           let new_dir = canonical.to_string_lossy().into_owned();
           DIRECTORY_STACK.with(|s| s.borrow_mut().push(new_dir.clone()));
@@ -3136,7 +3136,7 @@ pub fn dispatch_io_functions(
       let Expr::String(name) = &args[0] else {
         return Some(Ok(unevaluated("AbsoluteFileName", args)));
       };
-      match std::fs::canonicalize(name) {
+      match crate::utils::canonicalize(name) {
         Ok(p) => {
           return Some(Ok(Expr::String(p.to_string_lossy().into_owned())));
         }
@@ -3162,7 +3162,7 @@ pub fn dispatch_io_functions(
       if name.contains('`') {
         return Some(Ok(Expr::Identifier("$Failed".to_string())));
       }
-      return Some(Ok(match std::fs::canonicalize(name) {
+      return Some(Ok(match crate::utils::canonicalize(name) {
         Ok(p) => Expr::String(p.to_string_lossy().into_owned()),
         Err(_) => Expr::Identifier("$Failed".to_string()),
       }));
