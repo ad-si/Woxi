@@ -338,7 +338,10 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
       }
       let original_str = expr_to_string(expr);
       let n_call_str = format!("N[{}]", original_str);
-      match crate::evaluator::evaluate_function_call_ast("N", &[expr.clone()]) {
+      match crate::evaluator::evaluate_function_call_ast(
+        "N",
+        std::slice::from_ref(expr),
+      ) {
         Ok(result) => {
           let result_str = expr_to_string(&result);
           if result_str == n_call_str {
@@ -2288,11 +2291,6 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Normalize[{0, 0, 0}] => {0, 0, 0}
 /// Norm[v] - Euclidean norm (L2) of a vector
 /// Norm[v, p] - Lp norm
-/// Recursively check whether an expression tree contains any
-/// inexact-Real or BigFloat leaf. Used by Norm (and similar) to
-/// decide between exact/symbolic and machine-precision numerical
-/// evaluation.
-
 pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -2858,8 +2856,10 @@ pub fn unitize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Real(f) if *f == 0.0 => Ok(Expr::Integer(0)),
     Expr::Real(_) => Ok(Expr::Integer(1)),
     Expr::List(items) => {
-      let results: Result<Vec<Expr>, InterpreterError> =
-        items.iter().map(|x| unitize_ast(&[x.clone()])).collect();
+      let results: Result<Vec<Expr>, InterpreterError> = items
+        .iter()
+        .map(|x| unitize_ast(std::slice::from_ref(x)))
+        .collect();
       Ok(Expr::List(results?.into()))
     }
     _ => {
@@ -2927,7 +2927,7 @@ pub fn precision_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut saw_machine = false;
       let mut saw_arb = false;
       for item in items {
-        let p = precision_ast(&[item.clone()])?;
+        let p = precision_ast(std::slice::from_ref(item))?;
         match p {
           Expr::Identifier(ref name) if name == "Infinity" => {}
           Expr::Identifier(ref name) if name == "MachinePrecision" => {
@@ -2980,7 +2980,7 @@ pub fn precision_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut min_prec: Option<f64> = None;
       let mut min_is_machine = false;
       for arg in fargs {
-        let p = precision_ast(&[arg.clone()])?;
+        let p = precision_ast(std::slice::from_ref(arg))?;
         match p {
           Expr::Identifier(ref name) if name == "Infinity" => {}
           Expr::Identifier(ref name) if name == "MachinePrecision" => {
@@ -3095,7 +3095,7 @@ pub fn accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } => {
       let mut min_finite: Option<f64> = None;
       for arg in [left.as_ref(), right.as_ref()] {
-        let a = accuracy_ast(&[arg.clone()])?;
+        let a = accuracy_ast(std::slice::from_ref(arg))?;
         match a {
           Expr::Identifier(ref n) if n == "Infinity" => {}
           Expr::Real(v) => {
@@ -3120,7 +3120,7 @@ pub fn accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::FunctionCall { args: fargs, .. } | Expr::List(fargs) => {
       let mut min_finite: Option<f64> = None;
       for arg in fargs {
-        let a = accuracy_ast(&[arg.clone()])?;
+        let a = accuracy_ast(std::slice::from_ref(arg))?;
         match a {
           Expr::Identifier(ref n) if n == "Infinity" => {}
           Expr::Real(v) => {
@@ -4298,7 +4298,7 @@ pub fn fourier_dct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut data: Vec<f64> = Vec::with_capacity(items.len());
   for item in items.iter() {
     match try_extract_complex_float(item) {
-      Some((re, im)) if im == 0.0 => data.push(re),
+      Some((re, 0.0)) => data.push(re),
       _ => return unevaluated(),
     }
   }
@@ -4353,7 +4353,7 @@ pub fn discrete_hilbert_transform_ast(
   let mut data: Vec<(f64, f64)> = Vec::with_capacity(items.len());
   for item in items.iter() {
     match try_extract_complex_float(item) {
-      Some((re, im)) if im == 0.0 => data.push((re, 0.0)),
+      Some((re, 0.0)) => data.push((re, 0.0)),
       _ => return data_err(),
     }
   }
@@ -4469,7 +4469,7 @@ pub fn fourier_dst_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut data: Vec<f64> = Vec::with_capacity(items.len());
   for item in items.iter() {
     match try_extract_complex_float(item) {
-      Some((re, im)) if im == 0.0 => data.push(re),
+      Some((re, 0.0)) => data.push(re),
       _ => return unevaluated(),
     }
   }

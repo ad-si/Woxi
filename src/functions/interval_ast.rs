@@ -46,10 +46,16 @@ pub fn map_monotonic_interval(head: &str, expr: &Expr) -> Option<Expr> {
   for (a, b) in spans {
     expr_to_f64(a)?;
     expr_to_f64(b)?;
-    let fa =
-      crate::evaluator::evaluate_function_call_ast(head, &[a.clone()]).ok()?;
-    let fb =
-      crate::evaluator::evaluate_function_call_ast(head, &[b.clone()]).ok()?;
+    let fa = crate::evaluator::evaluate_function_call_ast(
+      head,
+      std::slice::from_ref(a),
+    )
+    .ok()?;
+    let fb = crate::evaluator::evaluate_function_call_ast(
+      head,
+      std::slice::from_ref(b),
+    )
+    .ok()?;
     // Require real-numeric images so the endpoints stay orderable.
     expr_to_f64(&fa)?;
     expr_to_f64(&fb)?;
@@ -84,10 +90,16 @@ pub fn trig_interval(head: &str, expr: &Expr) -> Option<Expr> {
     let af = expr_to_f64(a)?;
     let bf = expr_to_f64(b)?;
     // Endpoint images, kept symbolic (1/2, Sqrt[3]/2, …) but required numeric.
-    let fa =
-      crate::evaluator::evaluate_function_call_ast(head, &[a.clone()]).ok()?;
-    let fb =
-      crate::evaluator::evaluate_function_call_ast(head, &[b.clone()]).ok()?;
+    let fa = crate::evaluator::evaluate_function_call_ast(
+      head,
+      std::slice::from_ref(a),
+    )
+    .ok()?;
+    let fb = crate::evaluator::evaluate_function_call_ast(
+      head,
+      std::slice::from_ref(b),
+    )
+    .ok()?;
     expr_to_f64(&fa)?;
     expr_to_f64(&fb)?;
     let lo = if critical_point_in(min_offset, period, af, bf) {
@@ -118,10 +130,16 @@ pub fn abs_interval(expr: &Expr) -> Option<Expr> {
     // Require numeric endpoints; otherwise leave Abs unevaluated.
     expr_to_f64(a)?;
     expr_to_f64(b)?;
-    let abs_a =
-      crate::evaluator::evaluate_function_call_ast("Abs", &[a.clone()]).ok()?;
-    let abs_b =
-      crate::evaluator::evaluate_function_call_ast("Abs", &[b.clone()]).ok()?;
+    let abs_a = crate::evaluator::evaluate_function_call_ast(
+      "Abs",
+      std::slice::from_ref(a),
+    )
+    .ok()?;
+    let abs_b = crate::evaluator::evaluate_function_call_ast(
+      "Abs",
+      std::slice::from_ref(b),
+    )
+    .ok()?;
     let contains_zero = matches!(
       compare_numeric(a, &zero),
       Some(Ordering::Less | Ordering::Equal)
@@ -152,10 +170,16 @@ pub fn cosh_interval(expr: &Expr) -> Option<Expr> {
   for (a, b) in spans {
     expr_to_f64(a)?;
     expr_to_f64(b)?;
-    let ca = crate::evaluator::evaluate_function_call_ast("Cosh", &[a.clone()])
-      .ok()?;
-    let cb = crate::evaluator::evaluate_function_call_ast("Cosh", &[b.clone()])
-      .ok()?;
+    let ca = crate::evaluator::evaluate_function_call_ast(
+      "Cosh",
+      std::slice::from_ref(a),
+    )
+    .ok()?;
+    let cb = crate::evaluator::evaluate_function_call_ast(
+      "Cosh",
+      std::slice::from_ref(b),
+    )
+    .ok()?;
     expr_to_f64(&ca)?;
     expr_to_f64(&cb)?;
     let contains_zero = matches!(
@@ -187,10 +211,16 @@ pub fn sech_interval(expr: &Expr) -> Option<Expr> {
   for (a, b) in spans {
     expr_to_f64(a)?;
     expr_to_f64(b)?;
-    let sa = crate::evaluator::evaluate_function_call_ast("Sech", &[a.clone()])
-      .ok()?;
-    let sb = crate::evaluator::evaluate_function_call_ast("Sech", &[b.clone()])
-      .ok()?;
+    let sa = crate::evaluator::evaluate_function_call_ast(
+      "Sech",
+      std::slice::from_ref(a),
+    )
+    .ok()?;
+    let sb = crate::evaluator::evaluate_function_call_ast(
+      "Sech",
+      std::slice::from_ref(b),
+    )
+    .ok()?;
     expr_to_f64(&sa)?;
     expr_to_f64(&sb)?;
     let contains_zero = matches!(
@@ -238,16 +268,22 @@ pub fn coth_csch_interval(head: &str, expr: &Expr) -> Option<Expr> {
     let fa = if a_zero {
       None
     } else {
-      let v = crate::evaluator::evaluate_function_call_ast(head, &[a.clone()])
-        .ok()?;
+      let v = crate::evaluator::evaluate_function_call_ast(
+        head,
+        std::slice::from_ref(a),
+      )
+      .ok()?;
       expr_to_f64(&v)?;
       Some(v)
     };
     let fb = if b_zero {
       None
     } else {
-      let v = crate::evaluator::evaluate_function_call_ast(head, &[b.clone()])
-        .ok()?;
+      let v = crate::evaluator::evaluate_function_call_ast(
+        head,
+        std::slice::from_ref(b),
+      )
+      .ok()?;
       expr_to_f64(&v)?;
       Some(v)
     };
@@ -306,10 +342,16 @@ pub fn tan_cot_interval(head: &str, expr: &Expr) -> Option<Expr> {
   for (a, b) in spans {
     let af = expr_to_f64(a)?;
     let bf = expr_to_f64(b)?;
-    let fa =
-      crate::evaluator::evaluate_function_call_ast(head, &[a.clone()]).ok()?;
-    let fb =
-      crate::evaluator::evaluate_function_call_ast(head, &[b.clone()]).ok()?;
+    let fa = crate::evaluator::evaluate_function_call_ast(
+      head,
+      std::slice::from_ref(a),
+    )
+    .ok()?;
+    let fb = crate::evaluator::evaluate_function_call_ast(
+      head,
+      std::slice::from_ref(b),
+    )
+    .ok()?;
     expr_to_f64(&fa)?;
     expr_to_f64(&fb)?;
     match count_poles_in(offset, period, af, bf) {
@@ -375,8 +417,11 @@ pub fn sec_csc_interval(head: &str, expr: &Expr) -> Option<Expr> {
       if (pos - (pole_off + k * PI)).abs() < eps {
         return Some((pos, None)); // endpoint lands on a pole
       }
-      let fe = crate::evaluator::evaluate_function_call_ast(head, &[e.clone()])
-        .ok()?;
+      let fe = crate::evaluator::evaluate_function_call_ast(
+        head,
+        std::slice::from_ref(e),
+      )
+      .ok()?;
       expr_to_f64(&fe)?;
       Some((pos, Some(fe)))
     };

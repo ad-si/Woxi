@@ -298,15 +298,13 @@ fn extract_cell_content(s: &str) -> String {
   let s = s.trim();
 
   // Handle BoxData[RowBox[{...}]], BoxData["..."], or BoxData[{...}]
-  if s.starts_with("BoxData[") {
-    let inner = &s[8..];
+  if let Some(inner) = s.strip_prefix("BoxData[") {
     let inner = inner.strip_suffix(']').unwrap_or(inner);
     return extract_cell_content(inner);
   }
 
   // Handle RowBox[{"...", ...}]
-  if s.starts_with("RowBox[") {
-    let inner = &s[7..];
+  if let Some(inner) = s.strip_prefix("RowBox[") {
     let inner = inner.strip_suffix(']').unwrap_or(inner);
     return extract_rowbox_content(inner);
   }
@@ -317,8 +315,7 @@ fn extract_cell_content(s: &str) -> String {
   // templates embed the section label as the leading string, followed by an
   // inline `Cell[...]` "more info" opener button that carries no textual
   // content — see `extract_textdata`.
-  if s.starts_with("TextData[") {
-    let inner = &s[9..];
+  if let Some(inner) = s.strip_prefix("TextData[") {
     let inner = inner.strip_suffix(']').unwrap_or(inner);
     return extract_textdata(inner);
   }
@@ -929,6 +926,12 @@ impl fmt::Display for Cell {
 }
 
 // ── Convenience constructors ────────────────────────────────────────
+
+impl Default for Notebook {
+  fn default() -> Self {
+    Self::new()
+  }
+}
 
 impl Notebook {
   /// Create an empty notebook.

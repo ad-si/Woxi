@@ -493,11 +493,6 @@ fn gamma_half_expr(numer: BigInt, denom: BigInt, is_neg: bool) -> Expr {
   }
 }
 
-/// Returns true if the expression contains a Real (machine-precision)
-/// number anywhere in the tree. Used to distinguish exact symbolic
-/// arguments (which Gamma should not evaluate numerically) from inexact
-/// ones (which should be evaluated to floats).
-
 /// Upper incomplete gamma function Gamma[a, z]
 fn gamma_incomplete_upper(
   a: &Expr,
@@ -1263,7 +1258,7 @@ pub fn log_gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Integer(0)); // Log[0!] = Log[1!] = 0
     }
     // LogGamma[n] = Log[(n-1)!]
-    let gamma_result = gamma_ast(&[z.clone()])?;
+    let gamma_result = gamma_ast(std::slice::from_ref(z))?;
     return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
       name: "Log".to_string(),
       args: vec![gamma_result].into(),
@@ -1278,7 +1273,7 @@ pub fn log_gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     if *d == 2 && *n > 0 {
       // Half-integer: LogGamma[k/2] = Log[Gamma[k/2]]
-      let gamma_result = gamma_ast(&[z.clone()])?;
+      let gamma_result = gamma_ast(std::slice::from_ref(z))?;
       return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
         name: "Log".to_string(),
         args: vec![gamma_result].into(),

@@ -77,7 +77,7 @@ pub fn discriminant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: vec![leading_coeff, Expr::Integer(-2)].into(),
     };
     let simplified = crate::evaluator::evaluate_expr_to_expr(&inv_sq)?;
-    return match super::cancel_ast(&[simplified.clone()]) {
+    return match super::cancel_ast(std::slice::from_ref(&simplified)) {
       Ok(c) => Ok(c),
       Err(_) => Ok(simplified),
     };
@@ -119,7 +119,7 @@ pub fn discriminant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Simplify the result
   let simplified = crate::evaluator::evaluate_expr_to_expr(&result)?;
   // Apply Cancel to simplify rational expressions
-  let cancelled = super::cancel_ast(&[simplified.clone()]);
+  let cancelled = super::cancel_ast(std::slice::from_ref(&simplified));
   match cancelled {
     Ok(c) => Ok(c),
     Err(_) => Ok(simplified),

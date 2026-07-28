@@ -990,9 +990,9 @@ fn try_horner_if_poly(expr: &Expr) -> Expr {
   }
   // Try to apply HornerForm; it will auto-detect variables and
   // return the expression unchanged if it's not a polynomial of degree >= 2.
-  match crate::functions::polynomial_ast::horner::horner_form_ast(&[
-    expr.clone()
-  ]) {
+  match crate::functions::polynomial_ast::horner::horner_form_ast(
+    std::slice::from_ref(expr),
+  ) {
     Ok(ref h)
       if crate::syntax::expr_to_string(h)
         != crate::syntax::expr_to_string(expr) =>
@@ -7190,14 +7190,8 @@ fn try_integrate_rational(
   while remaining.len() > 1 && remaining.last() == Some(&0) {
     remaining.pop();
   }
-  let remaining_deg =
-    if remaining.len() <= 1 && remaining.first().copied().unwrap_or(0) != 0 {
-      0 // constant
-    } else if remaining.len() <= 1 {
-      0
-    } else {
-      remaining.len() - 1
-    };
+  // A single coefficient (zero or not) is a constant, i.e. degree 0.
+  let remaining_deg = remaining.len().saturating_sub(1);
   if remaining_deg > 2 {
     return None;
   }
@@ -20164,7 +20158,7 @@ pub fn discrete_ratio_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // unreduced display for another.
   let expanded = crate::evaluator::evaluate_function_call_ast(
     "FunctionExpand",
-    &[canceled.clone()],
+    std::slice::from_ref(&canceled),
   )?;
   let fully_reduced = !expr_mentions_head(&expanded, "Gamma")
     && !expr_mentions_head(&expanded, "Factorial");

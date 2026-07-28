@@ -2741,17 +2741,14 @@ mod tests {
     // Compound (octave-plus) interval via the canonical association form.
     let assoc = func(
       "MusicInterval",
-      vec![Expr::Association(
-        vec![
-          (Expr::String("Semitones".into()), Expr::Integer(4)),
-          (
-            Expr::String("Name".into()),
-            Expr::String("MajorThird".into()),
-          ),
-          (Expr::String("CompoundOctaves".into()), Expr::Integer(1)),
-        ]
-        .into(),
-      )],
+      vec![Expr::Association(vec![
+        (Expr::String("Semitones".into()), Expr::Integer(4)),
+        (
+          Expr::String("Name".into()),
+          Expr::String("MajorThird".into()),
+        ),
+        (Expr::String("CompoundOctaves".into()), Expr::Integer(1)),
+      ])],
     );
     assert_eq!(music_interval_axes(&assoc), Some((9, 16)));
   }
@@ -2811,8 +2808,7 @@ mod tests {
     let Some(Expr::List(items)) = assoc_get(pairs, "PitchList") else {
       panic!("expected a PitchList entry, got {pairs:?}");
     };
-    let midis: Vec<i128> =
-      items.iter().filter_map(|p| music_pitch_midi(p)).collect();
+    let midis: Vec<i128> = items.iter().filter_map(music_pitch_midi).collect();
     assert_eq!(midis, vec![65, 69, 72]);
     // A bare-semitone interval spells the tones straight from MIDI: F, A, C.
     let keys: Vec<String> = items

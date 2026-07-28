@@ -3598,6 +3598,8 @@ pub fn random_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   // An empty range has nothing to sample; Wolfram reports the equivalent
   // uniform distribution as unusable and leaves the call unevaluated.
+  // Negated on purpose: NaN bounds are not a usable range either.
+  #[allow(clippy::neg_cmp_op_on_partial_ord)]
   if !(min_val < max_val) {
     // Echo the bounds as written, so an integer 0 is not reported as 0.
     let bound = |i: usize, fallback: f64| -> Expr {
@@ -5083,9 +5085,9 @@ fn filling_marker(mask: &[f64], w: usize, h: usize, add: f64) -> Vec<f64> {
 /// - marker form: per-pixel I + (F - I) * m where F is the plain fill
 ///   and m is the largest (clamped) marker value in each 4-connected
 ///   basin; the result is Real64 for Real64 inputs and Real32 otherwise.
-/// DeleteSmallComponents[m] / [m, n] replaces the positive integers of a label
-/// matrix with 0 wherever their component's tally is `n` or fewer (default
-/// n = 0, i.e. a no-op). Each distinct nonzero value is one component.
+///   DeleteSmallComponents[m] / [m, n] replaces the positive integers of a label
+///   matrix with 0 wherever their component's tally is `n` or fewer (default
+///   n = 0, i.e. a no-op). Each distinct nonzero value is one component.
 pub fn delete_small_components_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
@@ -7594,8 +7596,10 @@ pub fn rasterize_svg(
   load_embedded_fonts(&mut fontdb);
 
   // Parse SVG
-  let mut opt = resvg::usvg::Options::default();
-  opt.fontdb = StdArc::new(fontdb);
+  let opt = resvg::usvg::Options {
+    fontdb: StdArc::new(fontdb),
+    ..Default::default()
+  };
 
   let tree = resvg::usvg::Tree::from_str(svg_str, &opt).map_err(|e| {
     InterpreterError::EvaluationError(format!(

@@ -23,11 +23,6 @@ fn nth_prime(n: i128) -> i128 {
   num
 }
 
-/// True if `e` denotes a concrete number (an integer, real, big-float, or
-/// rational, possibly negated) rather than a symbolic expression. Used to
-/// decide whether a "not a valid index" message should fire: a concrete
-/// non-integer argument is an error, but a symbolic one stays unevaluated.
-
 /// Primality test for i128 values (Miller-Rabin via BigInt beyond 1u128 << 53).
 pub fn is_prime_i128(n: i128) -> bool {
   if n < 2 {
@@ -464,9 +459,6 @@ fn factorial2_extract_real(expr: &Expr) -> Option<(f64, Option<f64>)> {
     _ => None,
   }
 }
-
-/// Returns true if the expression contains a Real or BigFloat anywhere
-/// in the tree — i.e., the value is inexact.
 
 /// Factorial[n] or n!
 /// Factorial[n] = Gamma[n+1]
@@ -2579,11 +2571,11 @@ fn extract_gaussian_integer(expr: &Expr) -> Option<(i128, i128)> {
 ///
 /// Each rational prime `p` of `|n|` lifts as:
 ///   * `p = 2`:        the ramified prime `(1 + I)`, exponent doubled,
-///                     contributing a unit factor `(-I)^e`.
+///     contributing a unit factor `(-I)^e`.
 ///   * `p ≡ 1 (mod 4)`: splits into conjugates `(a + b I)` and `(b + a I)`
-///                     where `a² + b² = p`, `0 < a < b`, contributing `(-I)^e`.
+///     where `a² + b² = p`, `0 < a < b`, contributing `(-I)^e`.
 ///   * `p ≡ 3 (mod 4)`: inert — the rational prime `p` itself, unit unchanged.
-/// A negative `n` contributes an extra `-1` to the unit.
+///     A negative `n` contributes an extra `-1` to the unit.
 fn factor_integer_gaussian(n_expr: &Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = || {
     Ok(Expr::FunctionCall {
@@ -3120,8 +3112,8 @@ fn factor_integer_rational(
   use std::collections::BTreeMap;
 
   // Factor numerator and denominator
-  let numer_factors = factor_integer_ast(&[numer.clone()])?;
-  let denom_factors = factor_integer_ast(&[denom.clone()])?;
+  let numer_factors = factor_integer_ast(std::slice::from_ref(numer))?;
+  let denom_factors = factor_integer_ast(std::slice::from_ref(denom))?;
 
   // Collect into a map: prime -> exponent
   let mut factor_map: BTreeMap<i128, i128> = BTreeMap::new();

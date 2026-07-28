@@ -6879,7 +6879,8 @@ fn invert_pure_function(body: &Expr) -> Option<Expr> {
   let y_name = "$inv_y$";
   let x_expr = Expr::Identifier(x_name.to_string());
   let y_expr = Expr::Identifier(y_name.to_string());
-  let body_x = crate::syntax::substitute_slots(body, &[x_expr.clone()]);
+  let body_x =
+    crate::syntax::substitute_slots(body, std::slice::from_ref(&x_expr));
 
   // Build `Equal[body_x, y]` and solve for x.
   let eq = Expr::FunctionCall {

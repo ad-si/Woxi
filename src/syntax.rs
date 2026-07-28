@@ -4707,9 +4707,6 @@ fn parse_paren_extended(pair: Pair<Rule>) -> Expr {
   }
 }
 
-/// Get precedence of an operator (higher = binds tighter)
-/// Matches Wolfram Language operator precedence ordering.
-
 /// Build a call to a Flat logical head, collapsing a same-head left
 /// operand: Xor[a, b] \[Xor] c becomes Xor[a, b, c].
 fn flat_logical_call(head: &str, left: &Expr, right: &Expr) -> Expr {
@@ -4726,6 +4723,8 @@ fn flat_logical_call(head: &str, left: &Expr, right: &Expr) -> Expr {
   }
 }
 
+/// Get precedence of an operator (higher = binds tighter).
+/// Matches Wolfram Language operator precedence ordering.
 fn operator_precedence(op: &str) -> u8 {
   match op {
     ">>" | ">>>" => 0,      // Put/PutAppend (lowest precedence)
@@ -7337,12 +7336,12 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               } else {
                 s
               };
-              if s.starts_with('-') {
+              if let Some(rest) = s.strip_prefix('-') {
                 plus_str.push_str(" - ");
-                plus_str.push_str(&s[1..]);
-              } else if s.starts_with("(-") {
-                plus_str.push_str(" - ");
-                plus_str.push_str(&format!("({}", &s[2..]));
+                plus_str.push_str(rest);
+              } else if let Some(rest) = s.strip_prefix("(-") {
+                plus_str.push_str(" - (");
+                plus_str.push_str(rest);
               } else {
                 plus_str.push_str(" + ");
                 plus_str.push_str(&s);
@@ -8564,17 +8563,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             let pos_rat_idx = if neg_idx.is_some() {
               None
             } else {
-              factor_refs.iter().position(|f| match f {
-                Expr::FunctionCall { name, args }
-                  if name == "Rational"
+              factor_refs.iter().position(|f| matches!(f, Expr::FunctionCall { name, args } if name == "Rational"
                     && args.len() == 2
                     && matches!(&args[0], Expr::Integer(n) if *n > 0)
-                    && matches!(&args[1], Expr::Integer(d) if d.abs() > 1) =>
-                {
-                  true
-                }
-                _ => false,
-              })
+                    && matches!(&args[1], Expr::Integer(d) if d.abs() > 1)))
             };
             if let Some(idx) = neg_idx {
               let pos_factor = match factor_refs[idx] {
@@ -8757,9 +8749,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           } else if !is_output {
             // InputForm: Fallback check if the rendered form starts with "-"
             let s = fmt_plus_term(arg);
-            if s.starts_with('-') {
+            if let Some(rest) = s.strip_prefix('-') {
               result.push_str(" - ");
-              result.push_str(&s[1..]);
+              result.push_str(rest);
             } else {
               result.push_str(" + ");
               result.push_str(&s);
@@ -9993,10 +9985,7 @@ pub fn expr_to_message_form(expr: &Expr) -> String {
 /// Replace Derivative[n][f][args] patterns with short form: f'[args], f''[args], etc.
 fn replace_derivative_shorthand(s: &str) -> String {
   let mut result = s.to_string();
-  loop {
-    let Some(start) = result.find("Derivative[") else {
-      break;
-    };
+  while let Some(start) = result.find("Derivative[") {
     let after_prefix = start + "Derivative[".len();
     // Parse the order n from Derivative[n]
     let Some(close1) = result[after_prefix..].find(']') else {
@@ -11628,17 +11617,12 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
 fn numeric_array_dims(payload: &Expr) -> Vec<usize> {
   let mut dims = Vec::new();
   let mut cur = payload;
-  loop {
-    match cur {
-      Expr::List(items) => {
-        dims.push(items.len());
-        if items.is_empty() {
-          break;
-        }
-        cur = &items[0];
-      }
-      _ => break,
+  while let Expr::List(items) = cur {
+    dims.push(items.len());
+    if items.is_empty() {
+      break;
     }
+    cur = &items[0];
   }
   dims
 }
@@ -13117,21 +13101,24 @@ impl TextBox {
     let baseline = num.height();
     Self { lines, baseline }
   }
+}
 
-  /// Convert to final string. Trailing whitespace is stripped per line
-  /// because a 2D layout pads its lines to a common width — but a single-line
-  /// box carries no such padding, so a string that genuinely ends in spaces
-  /// (`ToString[", "]`, the separator of a `Row`) keeps them.
-  fn to_string(&self) -> String {
+/// Renders to the final string. Trailing whitespace is stripped per line
+/// because a 2D layout pads its lines to a common width — but a single-line
+/// box carries no such padding, so a string that genuinely ends in spaces
+/// (`ToString[", "]`, the separator of a `Row`) keeps them.
+impl std::fmt::Display for TextBox {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     if self.lines.len() == 1 {
-      return self.lines[0].clone();
+      return f.write_str(&self.lines[0]);
     }
-    self
+    let joined = self
       .lines
       .iter()
-      .map(|l| l.trim_end().to_string())
+      .map(|l| l.trim_end())
       .collect::<Vec<_>>()
-      .join("\n")
+      .join("\n");
+    f.write_str(&joined)
   }
 }
 

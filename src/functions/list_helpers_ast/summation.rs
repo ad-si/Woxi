@@ -411,10 +411,10 @@ fn body_is_one_minus_one_over_var_quartic(body: &Expr, var_name: &str) -> bool {
 
 /// If `body` is `var + a` — a sum of exactly one bare `var` factor (coefficient
 /// 1) and at least one term free of `var` — return the constant shift `a`.
-/// Higher-degree or scaled var terms (`var^2`, `2 var`) return None.
-/// The integer shift `a` if `expr` is the monic linear polynomial `var + a`
-/// (`var` alone gives `0`). Non-monic (`2 var`), non-integer or non-linear
-/// expressions give `None`.
+///    Higher-degree or scaled var terms (`var^2`, `2 var`) return None.
+///    The integer shift `a` if `expr` is the monic linear polynomial `var + a`
+///    (`var` alone gives `0`). Non-monic (`2 var`), non-integer or non-linear
+///    expressions give `None`.
 fn monic_int_shift(expr: &Expr, var_name: &str) -> Option<i128> {
   if matches!(expr, Expr::Identifier(n) if n == var_name) {
     return Some(0);
@@ -712,9 +712,9 @@ fn integer_roots_with_mult(mut c: Vec<i128>) -> Option<Vec<i128>> {
 ///   * `Σr_i = Σs_j` → converges to `∏_j Γ(n0 - s_j) / ∏_i Γ(n0 - r_i)`
 ///   * `Σr_i > Σs_j` → `0`
 ///   * `Σr_i < Σs_j` → diverges (emits `Product::div`, left unevaluated)
-/// Returns None when the body is not such a rational function. Rational
-/// (non-integer) roots — e.g. `Product[1 - 1/(4 n^2), …] = 2/Pi` — are left
-/// unevaluated.
+///     Returns None when the body is not such a rational function. Rational
+///     (non-integer) roots — e.g. `Product[1 - 1/(4 n^2), …] = 2/Pi` — are left
+///     unevaluated.
 fn infinite_integer_root_product(
   body: &Expr,
   var_name: &str,

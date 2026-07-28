@@ -146,7 +146,7 @@ pub fn polynomial_extended_gcd_ast(
 
 /// Apply `Together` to collapse common rational denominators.
 fn together(expr: &Expr) -> Result<Expr, InterpreterError> {
-  crate::functions::polynomial_ast::together_ast(&[expr.clone()])
+  crate::functions::polynomial_ast::together_ast(std::slice::from_ref(expr))
 }
 
 /// Compute `a - quot*b` and return it expanded/combined.

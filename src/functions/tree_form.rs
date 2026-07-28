@@ -440,19 +440,18 @@ pub fn tree_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   fn build_graph_tree(
     key: &str,
     children_map: &HashMap<String, Vec<String>>,
-    vertex_labels: bool,
   ) -> TreeNode {
     let children = children_map.get(key).cloned().unwrap_or_default();
     TreeNode {
       label: key.to_string(),
       children: children
         .iter()
-        .map(|c| build_graph_tree(c, children_map, vertex_labels))
+        .map(|c| build_graph_tree(c, children_map))
         .collect(),
     }
   }
 
-  let tree = build_graph_tree(&root_key, &children_map, vertex_labels);
+  let tree = build_graph_tree(&root_key, &children_map);
 
   // Reuse the same layout and rendering logic as tree_form_ast
   tree_to_graphics(&tree)

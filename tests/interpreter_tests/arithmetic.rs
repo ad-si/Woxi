@@ -7954,7 +7954,7 @@ mod zero_divisor {
     assert_eq!(r.result, "ComplexInfinity");
     let expected = format!("{lead}5\n{pfx}- encountered.\n{lead}0");
     assert!(
-      r.warnings.iter().any(|w| *w == expected),
+      r.warnings.contains(&expected),
       "Divide[5,0] message mismatch, got: {:?}",
       r.warnings
     );
@@ -7964,7 +7964,7 @@ mod zero_divisor {
     assert_eq!(r.result, "ComplexInfinity");
     let expected = format!("{lead}-3\n{pfx}-- encountered.\n{lead}0");
     assert!(
-      r.warnings.iter().any(|w| *w == expected),
+      r.warnings.contains(&expected),
       "Divide[-3,0] message mismatch, got: {:?}",
       r.warnings
     );
@@ -7976,7 +7976,7 @@ mod zero_divisor {
     let ilead = " ".repeat(ipfx.len());
     let expected = format!("{ilead}0\n{ipfx}- encountered.\n{ilead}0");
     assert!(
-      r.warnings.iter().any(|w| *w == expected),
+      r.warnings.contains(&expected),
       "Divide[0,0] message mismatch, got: {:?}",
       r.warnings
     );
@@ -7993,7 +7993,7 @@ mod zero_divisor {
 {lead}   0"
     );
     assert!(
-      r.warnings.iter().any(|w| *w == expected),
+      r.warnings.contains(&expected),
       "real-numerator message mismatch, got: {:?}",
       r.warnings
     );
@@ -8056,7 +8056,7 @@ mod zero_divisor {
       "{lead}  13\n{lead}-(--)\n{lead}  2\n{pfx}----- encountered.\n{lead}  0"
     );
     assert!(
-      r.warnings.iter().any(|w| *w == expected),
+      r.warnings.contains(&expected),
       "Divide[-13/2,0] message mismatch, got: {:?}",
       r.warnings
     );
@@ -8066,7 +8066,7 @@ mod zero_divisor {
     let expected =
       format!("{lead}3\n{lead}-\n{lead}4\n{pfx}- encountered.\n{lead}0");
     assert!(
-      r.warnings.iter().any(|w| *w == expected),
+      r.warnings.contains(&expected),
       "Divide[3/4,0] message mismatch, got: {:?}",
       r.warnings
     );
@@ -8077,7 +8077,7 @@ mod zero_divisor {
     let expected =
       format!("{lead}1\n{lead}--\n{lead}22\n{pfx}-- encountered.\n{lead}0");
     assert!(
-      r.warnings.iter().any(|w| *w == expected),
+      r.warnings.contains(&expected),
       "Divide[1/22,0] message mismatch, got: {:?}",
       r.warnings
     );
@@ -8096,7 +8096,7 @@ mod zero_divisor {
     assert_eq!(r.result, "ComplexInfinity");
     let expected = format!("{lead}1\n{pfx}- encountered.\n{lead}0");
     assert!(
-      r.warnings.iter().any(|w| *w == expected),
+      r.warnings.contains(&expected),
       "Power[0,-1] message mismatch, got: {:?}",
       r.warnings
     );
@@ -8108,7 +8108,7 @@ mod zero_divisor {
     let sup_lead = " ".repeat(pfx.len() + 1);
     let expected = format!("{sup_lead}-2\n{pfx}0   encountered.");
     assert!(
-      r.warnings.iter().any(|w| *w == expected),
+      r.warnings.contains(&expected),
       "Power[0,-2] superscript box mismatch, got: {:?}",
       r.warnings
     );

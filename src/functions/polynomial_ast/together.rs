@@ -1568,8 +1568,11 @@ fn make_fraction(num: Expr, den: Expr) -> Expr {
 /// result (e.g. 2 + 2 x -> 2 (1 + x)), matching FactorTerms. Applied only to
 /// the fully-cancelled polynomial output of a fraction.
 fn factor_numeric_content(poly: &Expr) -> Expr {
-  crate::evaluator::evaluate_function_call_ast("FactorTerms", &[poly.clone()])
-    .unwrap_or_else(|_| poly.clone())
+  crate::evaluator::evaluate_function_call_ast(
+    "FactorTerms",
+    std::slice::from_ref(poly),
+  )
+  .unwrap_or_else(|_| poly.clone())
 }
 
 /// Count the leaf nodes (atoms) of an expression, used to bound work.
@@ -2140,7 +2143,7 @@ fn factor_common_monomial_from_terms(num: &Expr) -> Expr {
   }
 
   fn term_factors(term: &Expr) -> Vec<(String, Expr, i128)> {
-    let factors = flatten_times_args(&[term.clone()]);
+    let factors = flatten_times_args(std::slice::from_ref(term));
     let mut map: Vec<(String, Expr, i128)> = Vec::new();
     for f in &factors {
       let (key, base, exp) = match f {
@@ -2197,7 +2200,8 @@ fn factor_common_monomial_from_terms(num: &Expr) -> Expr {
   // Build cofactor: divide each term by the common monomial.
   let mut new_terms: Vec<Expr> = Vec::new();
   for term in &terms {
-    let mut t_factors: Vec<Expr> = flatten_times_args(&[term.clone()]);
+    let mut t_factors: Vec<Expr> =
+      flatten_times_args(std::slice::from_ref(term));
     for (cancel_key, cancel_exp) in common
       .iter()
       .map(|(k, _, e)| (k.clone(), *e))
@@ -2454,7 +2458,7 @@ fn cancel_common_monomial_factors(num: &Expr, den: &Expr) -> (Expr, Expr) {
 
   // For each term, extract base→exp map of its multiplicative factors (ignoring integers)
   fn term_base_exp(term: &Expr) -> Vec<(String, Expr, i128)> {
-    let factors = flatten_times_args(&[term.clone()]);
+    let factors = flatten_times_args(std::slice::from_ref(term));
     let mut map: Vec<(String, Expr, i128)> = Vec::new();
     for f in &factors {
       let (base_str, base, exp) = match f {
@@ -2517,7 +2521,7 @@ fn cancel_common_monomial_factors(num: &Expr, den: &Expr) -> (Expr, Expr) {
   }
 
   // Check which common factors also appear in the denominator and can be cancelled
-  let den_factors = flatten_times_args(&[den.clone()]);
+  let den_factors = flatten_times_args(std::slice::from_ref(den));
   let mut den_map: Vec<(String, Expr, i128)> = Vec::new();
   for f in &den_factors {
     let (base_str, base, exp) = match f {
@@ -2569,7 +2573,8 @@ fn cancel_common_monomial_factors(num: &Expr, den: &Expr) -> (Expr, Expr) {
   // Divide each numerator term by the cancelled factors
   let mut new_terms = Vec::new();
   for term in &terms {
-    let mut t_factors: Vec<Expr> = flatten_times_args(&[term.clone()]);
+    let mut t_factors: Vec<Expr> =
+      flatten_times_args(std::slice::from_ref(term));
     for (cancel_key, cancel_exp) in &cancel_map {
       let mut remaining = *cancel_exp;
       let mut new_factors = Vec::new();

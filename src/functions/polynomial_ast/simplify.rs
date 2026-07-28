@@ -1590,7 +1590,7 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
 
     // Mod[a, m] under assumptions
     Expr::FunctionCall { name, args } if name == "Mod" && args.len() == 2 => {
-      if let Some(result) = refine_mod(&args[0], &args[1], info, assumption) {
+      if let Some(result) = refine_mod(&args[0], &args[1], assumption) {
         return result;
       }
       let refined_args: Vec<Expr> = args
@@ -1828,17 +1828,14 @@ fn simplify_abs_with_signs(expr: &Expr, info: &AssumptionInfo) -> Option<Expr> {
           // We know both signs, compute sign of product
           let left_abs = abs_of_known_sign(left, info)?;
           let right_abs = abs_of_known_sign(right, info)?;
-          let product_sign = get_sign(expr, info)?;
-          let abs_product = Expr::BinaryOp {
+          // Only simplify when the product's own sign is known; |a b| is
+          // |a| |b| either way.
+          get_sign(expr, info)?;
+          Some(Expr::BinaryOp {
             op: BinaryOperator::Times,
             left: Box::new(left_abs),
             right: Box::new(right_abs),
-          };
-          if product_sign > 0 {
-            Some(abs_product)
-          } else {
-            Some(abs_product)
-          }
+          })
         }
         _ => None,
       }
@@ -1878,10 +1875,11 @@ fn simplify_abs_with_signs(expr: &Expr, info: &AssumptionInfo) -> Option<Expr> {
 fn get_sign(expr: &Expr, info: &AssumptionInfo) -> Option<i8> {
   match expr {
     Expr::Identifier(name) => {
-      if info.positive_vars.contains(name) {
+      // Non-negative counts as positive for Abs simplification.
+      if info.positive_vars.contains(name)
+        || info.nonnegative_vars.contains(name)
+      {
         Some(1)
-      } else if info.nonnegative_vars.contains(name) {
-        Some(1) // treat nonneg as positive for Abs simplification
       } else if info.negative_vars.contains(name) {
         Some(-1)
       } else {
@@ -3163,16 +3161,11 @@ fn is_mod_of(target_expr: &Expr, m: i128, check_expr: &Expr) -> bool {
 }
 
 /// Refine Mod[a, m] under assumptions.
-fn refine_mod(
-  a: &Expr,
-  m: &Expr,
-  info: &AssumptionInfo,
-  assumption: &Expr,
-) -> Option<Expr> {
+fn refine_mod(a: &Expr, m: &Expr, assumption: &Expr) -> Option<Expr> {
   // If Element[(a + k)/m, Integers] for some k, then Mod[a, m] = m - k
   if let Expr::Integer(m_val) = m
     && let Some(result) =
-      find_mod_from_integer_assumption(a, *m_val, info, assumption)
+      find_mod_from_integer_assumption(a, *m_val, assumption)
   {
     return Some(result);
   }
@@ -3184,7 +3177,6 @@ fn refine_mod(
 fn find_mod_from_integer_assumption(
   a: &Expr,
   m_val: i128,
-  info: &AssumptionInfo,
   assumption: &Expr,
 ) -> Option<Expr> {
   match assumption {
@@ -3206,9 +3198,7 @@ fn find_mod_from_integer_assumption(
     }
     Expr::FunctionCall { name, args } if name == "And" => {
       for arg in args {
-        if let Some(result) =
-          find_mod_from_integer_assumption(a, m_val, info, arg)
-        {
+        if let Some(result) = find_mod_from_integer_assumption(a, m_val, arg) {
           return Some(result);
         }
       }
@@ -6194,11 +6184,13 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
     );
   let factored_candidate = if is_sum_shape && polynomial_like(&trig_simplified)
   {
-    crate::functions::polynomial_ast::factor_square_free_ast(&[
-      trig_simplified.clone()
-    ])
+    crate::functions::polynomial_ast::factor_square_free_ast(
+      std::slice::from_ref(&trig_simplified),
+    )
   } else {
-    crate::functions::polynomial_ast::factor_ast(&[trig_simplified.clone()])
+    crate::functions::polynomial_ast::factor_ast(std::slice::from_ref(
+      &trig_simplified,
+    ))
   };
   if let Ok(factored) = factored_candidate
     && simplify_cost_key(&factored) <= simplify_cost_key(&best)
@@ -6215,9 +6207,9 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
   // but `3 - 3x` and `9 - 9x` stay unfactored (ties keep the original).
   let terms = collect_additive_terms(&trig_simplified);
   if terms.len() >= 2 {
-    if let Ok(factored) = crate::functions::polynomial_ast::factor_terms_ast(&[
-      trig_simplified.clone(),
-    ]) && simplify_cost_key(&factored) <= simplify_cost_key(&best)
+    if let Ok(factored) = crate::functions::polynomial_ast::factor_terms_ast(
+      std::slice::from_ref(&trig_simplified),
+    ) && simplify_cost_key(&factored) <= simplify_cost_key(&best)
     {
       let c = leaf_count(&factored);
       best = factored;
@@ -6592,9 +6584,9 @@ fn try_partial_factor_components(expr: &Expr) -> Option<Expr> {
   let mut result_parts: Vec<Expr> = Vec::new();
   for (_, group_terms) in groups {
     let group_sum = build_sum(group_terms);
-    if let Ok(factored) =
-      crate::functions::polynomial_ast::factor_ast(&[group_sum.clone()])
-    {
+    if let Ok(factored) = crate::functions::polynomial_ast::factor_ast(
+      std::slice::from_ref(&group_sum),
+    ) {
       // Pick whichever is simpler for this component.
       if leaf_count(&factored) <= leaf_count(&group_sum) {
         result_parts.push(factored);
@@ -7709,7 +7701,8 @@ pub(crate) fn simplify_division_impl(
   // (power of a) single factor — Simplify[1/(4x+3x^2)] stays
   // (4x+3x^2)^(-1), never 1/(x(4+3x)) — while quotient numerators factor
   // freely (Simplify[(4x^2-2x)/(2+3x)] → (2x(-1+2x))/(2+3x)).
-  if let Ok(factored) = super::factor::factor_ast(&[basic.clone()]) {
+  if let Ok(factored) = super::factor::factor_ast(std::slice::from_ref(&basic))
+  {
     let fc = leaf_count(&factored);
     let bc = leaf_count(&basic);
     let num_ok = factor_num || {
@@ -7790,7 +7783,8 @@ pub(crate) fn simplify_division_impl(
     let (bn, bd) = super::together::extract_num_den(&basic);
     if !matches!(&bd, Expr::Integer(1)) && polynomial_like(&bn) {
       if factor_num {
-        if let Ok(factored_num) = super::factor::factor_ast(&[bn.clone()])
+        if let Ok(factored_num) =
+          super::factor::factor_ast(std::slice::from_ref(&bn))
           && leaf_count(&factored_num) <= leaf_count(&bn)
           && !exprs_equal(&factored_num, &bn)
         {
@@ -9137,8 +9131,9 @@ fn try_together_simplify(expr: &Expr) -> Expr {
 fn factor_numerator_fully(num: &Expr) -> Expr {
   // First try FactorTerms (numeric GCD)
   let after_numeric = if let Ok(f) =
-    crate::functions::polynomial_ast::factor_terms_ast(&[num.clone()])
-  {
+    crate::functions::polynomial_ast::factor_terms_ast(std::slice::from_ref(
+      num,
+    )) {
     f
   } else {
     num.clone()
@@ -9734,8 +9729,9 @@ fn factor_common_symbolic(_expr: &Expr, terms: &[Expr]) -> Option<Expr> {
 
   // Also try to factor numeric GCD from the inner sum
   let inner = if let Ok(factored) =
-    crate::functions::polynomial_ast::factor_terms_ast(&[sum.clone()])
-  {
+    crate::functions::polynomial_ast::factor_terms_ast(std::slice::from_ref(
+      &sum,
+    )) {
     factored
   } else {
     sum

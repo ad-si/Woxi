@@ -1139,12 +1139,16 @@ fn variation_of_parameters(
     left: Box::new(times(negate_expr(&y1), int1)),
     right: Box::new(times(y2, int2)),
   };
-  let y_p =
-    crate::evaluator::evaluate_function_call_ast("Expand", &[y_p.clone()])
-      .unwrap_or(y_p);
-  let y_p =
-    crate::evaluator::evaluate_function_call_ast("Simplify", &[y_p.clone()])
-      .unwrap_or(y_p);
+  let y_p = crate::evaluator::evaluate_function_call_ast(
+    "Expand",
+    std::slice::from_ref(&y_p),
+  )
+  .unwrap_or(y_p);
+  let y_p = crate::evaluator::evaluate_function_call_ast(
+    "Simplify",
+    std::slice::from_ref(&y_p),
+  )
+  .unwrap_or(y_p);
   Some(y_p)
 }
 
@@ -2083,9 +2087,7 @@ fn rk4_step(
    -> Result<Vec<f64>, InterpreterError> {
     let mut derivs = vec![0.0; n];
     // d/dx y_0 = y_1, d/dx y_1 = y_2, ..., d/dx y_{n-2} = y_{n-1}
-    for i in 0..n - 1 {
-      derivs[i] = s[i + 1];
-    }
+    derivs[..(n - 1)].copy_from_slice(&s[1..((n - 1) + 1)]);
     // d/dx y_{n-1} = rhs_expr evaluated with substitutions
     let mut expr = rhs_expr.clone();
     // Substitute x
@@ -2385,7 +2387,7 @@ pub fn interpolation_ast(
   // Clamp order to valid range. A single data point is allowed: the order is
   // reduced to 0 (with inhr) and the result is a constant interpolation,
   // matching wolframscript.
-  let mut order = interp_order.max(1).min(3) as usize;
+  let mut order = interp_order.clamp(1, 3) as usize;
   if order >= n {
     let reduced = n - 1;
     crate::emit_message(&format!(
@@ -2474,7 +2476,7 @@ fn build_2d_list_interpolation(
   let (exprs, _vals) = &grid;
   let nr = exprs.len();
   let nc = exprs[0].len();
-  let want = interp_order.max(1).min(3) as usize;
+  let want = interp_order.clamp(1, 3) as usize;
   let order_r = want.min(nr - 1);
   let order_c = want.min(nc - 1);
   if order_r < want || order_c < want {

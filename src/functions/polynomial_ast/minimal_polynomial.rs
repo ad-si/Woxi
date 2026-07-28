@@ -61,7 +61,10 @@ pub fn minimal_polynomial_pure_ast(
   // If the two-argument form could not reduce α, keep the call unevaluated.
   if matches!(&poly, Expr::FunctionCall { name, .. } if name == "MinimalPolynomial")
   {
-    return Ok(unevaluated("MinimalPolynomial", &[alpha.clone()]));
+    return Ok(unevaluated(
+      "MinimalPolynomial",
+      std::slice::from_ref(alpha),
+    ));
   }
   Ok(Expr::Function {
     body: Box::new(replace_identifier_with_slot1(&poly, dummy)),
@@ -1110,10 +1113,6 @@ fn poly_sub_i128(a: &[i128], b: &[i128]) -> Vec<i128> {
   result
 }
 
-/// Reduce a polynomial to its square-free part (remove repeated factors).
-/// A minimal polynomial is always square-free, so this corrects a candidate
-/// like `(x^2+2)^2` to `x^2+2`. For a square-free input, gcd(p, p') is a
-/// constant and the polynomial is returned unchanged.
 // ---- minimal polynomials inside a single radical extension Q(m^(1/q)) ----
 
 /// Exact rational as a normalized (numerator, positive denominator) pair.
@@ -1499,6 +1498,10 @@ fn single_radical_minpoly(
   Ok(Some(make_square_free(&make_primitive_monic(&ints))))
 }
 
+/// Reduce a polynomial to its square-free part (remove repeated factors).
+/// A minimal polynomial is always square-free, so this corrects a candidate
+/// like `(x^2+2)^2` to `x^2+2`. For a square-free input, gcd(p, p') is a
+/// constant and the polynomial is returned unchanged.
 fn make_square_free(coeffs: &[i128]) -> Vec<i128> {
   if coeffs.len() <= 2 {
     return make_primitive_monic(coeffs);

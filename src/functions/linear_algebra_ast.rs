@@ -2866,7 +2866,7 @@ fn sort_eigenvalues(eigenvalues: &mut [Expr]) {
 /// value and not a symbolic expression with free variables.
 fn is_real_numeric_value(e: &Expr) -> bool {
   matches!(
-    crate::functions::math_ast::n_ast(&[e.clone()]),
+    crate::functions::math_ast::n_ast(std::slice::from_ref(e)),
     Ok(Expr::Real(_) | Expr::Integer(_))
   )
 }
@@ -2889,7 +2889,9 @@ fn eigenvalue_sort_key(e: &Expr) -> f64 {
     }
     _ => {
       // Try to evaluate numerically
-      if let Ok(n_result) = crate::functions::math_ast::n_ast(&[e.clone()]) {
+      if let Ok(n_result) =
+        crate::functions::math_ast::n_ast(std::slice::from_ref(e))
+      {
         match &n_result {
           Expr::Real(r) => *r,
           Expr::Integer(n) => *n as f64,
@@ -3937,7 +3939,7 @@ pub fn eigenvectors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// - upper triangular: (1, 0) for λ = a, (b/(d − a), 1) for λ = d
 /// - diagonal: permuted basis vectors; defective matrices append a zero
 ///   vector after the single eigenvector.
-/// Returns Ok(None) when the eigenvalues don't come out as a clean pair.
+///   Returns Ok(None) when the eigenvalues don't come out as a clean pair.
 fn complex_2x2_eigenvectors(
   matrix: &[Vec<Expr>],
 ) -> Result<Option<Expr>, InterpreterError> {
@@ -4359,7 +4361,7 @@ fn simplify_vec(v: Vec<Expr>) -> Vec<Expr> {
 }
 
 fn simplify_via_full_simplify(e: &Expr) -> Expr {
-  crate::functions::polynomial_ast::simplify_ast(&[e.clone()])
+  crate::functions::polynomial_ast::simplify_ast(std::slice::from_ref(e))
     .unwrap_or_else(|_| e.clone())
 }
 
@@ -5645,7 +5647,7 @@ fn dot_f64(a: &[f64], b: &[f64]) -> f64 {
 
 /// LLL lattice basis reduction algorithm (delta = 3/4)
 /// Uses floating-point Gram-Schmidt with integer basis vectors
-fn lll_reduce(basis: &mut Vec<Vec<i128>>) -> Vec<Vec<i128>> {
+fn lll_reduce(basis: &mut [Vec<i128>]) -> Vec<Vec<i128>> {
   let n = basis.len();
   if n <= 1 {
     return basis
@@ -8610,7 +8612,7 @@ pub fn tensor_wedge_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // For indices (i1, i2, ..., ik), the value is:
   //   Sum over permutations σ of {0,...,k-1}: sign(σ) * v_{σ(0)}[i0] * v_{σ(1)}[i1] * ... * v_{σ(k-1)}[ik-1]
   let perms = permutations(k);
-  build_wedge_tensor(&vectors, n, k, &perms, &vec![])
+  build_wedge_tensor(&vectors, n, k, &perms, &[])
 }
 
 /// Recursively build the wedge product tensor.
@@ -8619,7 +8621,7 @@ fn build_wedge_tensor(
   n: usize,
   k: usize,
   perms: &[(Vec<usize>, i32)],
-  indices: &Vec<usize>,
+  indices: &[usize],
 ) -> Result<Expr, InterpreterError> {
   if indices.len() == k {
     // Compute the element at this multi-index
@@ -8647,7 +8649,7 @@ fn build_wedge_tensor(
   // Build the next level of the tensor
   let mut elements = Vec::with_capacity(n);
   for i in 0..n {
-    let mut new_indices = indices.clone();
+    let mut new_indices = indices.to_vec();
     new_indices.push(i);
     elements.push(build_wedge_tensor(vectors, n, k, perms, &new_indices)?);
   }
@@ -9335,10 +9337,10 @@ pub fn jordan_decomposition_ast(
 /// - any repeated eigenvalue: blocks sorted ascending by eigenvalue
 ///   (real part, then imaginary part), and within one eigenvalue by
 ///   ascending block size.
-/// Block sizes come from the ranks of (m − λI)^k. Matrices whose
-/// eigenvalues need Root objects stay unevaluated (wolframscript's Root
-/// ordering there is undecoded), as do inexact matrices of size ≥ 3 with
-/// repeated eigenvalues (the float eigensolver cannot separate clusters).
+///   Block sizes come from the ranks of (m − λI)^k. Matrices whose
+///   eigenvalues need Root objects stay unevaluated (wolframscript's Root
+///   ordering there is undecoded), as do inexact matrices of size ≥ 3 with
+///   repeated eigenvalues (the float eigensolver cannot separate clusters).
 pub fn jordan_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use crate::syntax::expr_to_string;
   let unevaluated = || unevaluated("JordanReduce", args);

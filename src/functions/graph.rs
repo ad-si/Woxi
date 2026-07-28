@@ -308,7 +308,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .map(move |&(x2, y2)| ((x2 - x1).powi(2) + (y2 - y1).powi(2)).sqrt())
       })
       .fold(f64::INFINITY, f64::min);
-    (min_dist * 0.08).min(0.06).max(0.018)
+    (min_dist * 0.08).clamp(0.018, 0.06)
   };
   let vertex_radius = base_radius * vertex_size_scale;
 
@@ -2399,7 +2399,7 @@ pub fn find_eulerian_cycle_ast(
   }
   // Highest-ranked neighbour first (wolframscript's tie-break).
   for a in &mut adj {
-    a.sort_by(|x, y| y.0.cmp(&x.0));
+    a.sort_by_key(|x| std::cmp::Reverse(x.0));
   }
 
   let circuit = match hierholzer_euler_tour(n, &adj, num_edges) {
@@ -2580,7 +2580,7 @@ pub fn find_postman_tour_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     adj[b].push((a, id));
   }
   for a in &mut adj {
-    a.sort_by(|x, y| y.0.cmp(&x.0));
+    a.sort_by_key(|x| std::cmp::Reverse(x.0));
   }
   let circuit = match hierholzer_euler_tour(n, &adj, num_edges) {
     Some(c) => c,
@@ -3783,10 +3783,10 @@ pub fn vertex_reach_component_ast(
 
 /// WeightedAdjacencyGraph[wmat] / WeightedAdjacencyGraph[{v...}, wmat]
 /// - graph from a weight matrix, with Infinity marking absent edges
-/// (zero is a real weight). Symmetric matrices give undirected graphs
-/// (upper triangle incl. self-loops, row-major); anything else gives
-/// directed edges in row-major order. Weights land in the Graph's
-/// EdgeWeight option.
+///   (zero is a real weight). Symmetric matrices give undirected graphs
+///   (upper triangle incl. self-loops, row-major); anything else gives
+///   directed edges in row-major order. Weights land in the Graph's
+///   EdgeWeight option.
 pub fn weighted_adjacency_graph_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
@@ -7087,7 +7087,7 @@ pub fn graph_annotation_keys_ast(
     return Ok(original());
   };
   let Some(item) = item else {
-    return graph_property_list_ast(&[graph.clone()]);
+    return graph_property_list_ast(std::slice::from_ref(graph));
   };
   if let Some(items) = item_spec_list(&vertices, &edges, item) {
     let keys: Option<Vec<Expr>> = items

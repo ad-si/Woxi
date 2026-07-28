@@ -507,8 +507,9 @@ pub fn dispatch_datetime_functions(
         }
         other => (other.clone(), 0.0),
       };
-      let abs =
-        crate::functions::datetime_ast::absolute_time_ast(&[date_spec.clone()]);
+      let abs = crate::functions::datetime_ast::absolute_time_ast(
+        std::slice::from_ref(&date_spec),
+      );
       let abs_secs = match abs {
         Ok(Expr::Integer(n)) => Some(n as f64),
         Ok(Expr::Real(r)) => Some(r),

@@ -1026,12 +1026,8 @@ pub fn dispatch_math_functions(
             (t, t)
           }
           Some(Expr::List(fs)) if fs.len() == 2 => {
-            let Some(f1) = expr_to_f64(&fs[0]) else {
-              return None;
-            };
-            let Some(f2) = expr_to_f64(&fs[1]) else {
-              return None;
-            };
+            let f1 = expr_to_f64(&fs[0])?;
+            let f2 = expr_to_f64(&fs[1])?;
             if f1 < 0.0 || f2 < 0.0 || f1 + f2 >= 1.0 {
               return arg2_error();
             }
@@ -1041,9 +1037,7 @@ pub fn dispatch_math_functions(
             )
           }
           Some(other) => {
-            let Some(f) = expr_to_f64(other) else {
-              return None;
-            };
+            let f = expr_to_f64(other)?;
             if !(0.0..0.5).contains(&f) {
               return arg2_error();
             }
@@ -1160,12 +1154,8 @@ pub fn dispatch_math_functions(
             (t, t)
           }
           Some(Expr::List(fs)) if fs.len() == 2 => {
-            let Some(f1) = expr_to_f64(&fs[0]) else {
-              return None;
-            };
-            let Some(f2) = expr_to_f64(&fs[1]) else {
-              return None;
-            };
+            let f1 = expr_to_f64(&fs[0])?;
+            let f2 = expr_to_f64(&fs[1])?;
             if f1 < 0.0 || f2 < 0.0 || f1 + f2 >= 1.0 {
               return arg2_error();
             }
@@ -1175,9 +1165,7 @@ pub fn dispatch_math_functions(
             )
           }
           Some(other) => {
-            let Some(f) = expr_to_f64(other) else {
-              return None;
-            };
+            let f = expr_to_f64(other)?;
             if !(0.0..0.5).contains(&f) {
               return arg2_error();
             }
@@ -6147,8 +6135,11 @@ fn complex_expand_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
   // ComplexExpand[(x+1)^2] = 1 + 2 x + x^2, and hence
   // ComplexExpand[Abs[x+1]^2] = 1 + 2 x + x^2 (via Abs[x+1] = Sqrt[(x+1)^2]).
   Ok(
-    crate::evaluator::evaluate_function_call_ast("Expand", &[folded.clone()])
-      .unwrap_or(folded),
+    crate::evaluator::evaluate_function_call_ast(
+      "Expand",
+      std::slice::from_ref(&folded),
+    )
+    .unwrap_or(folded),
   )
 }
 
@@ -6157,9 +6148,11 @@ fn complex_expand_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
 /// polynomial result is a single distributed Plus chain.
 fn complex_expand_with_expand(expr: &Expr) -> Result<Expr, InterpreterError> {
   let expanded = complex_expand_recursive(expr);
-  let distributed =
-    crate::evaluator::evaluate_function_call_ast("Expand", &[expanded.clone()])
-      .unwrap_or(expanded);
+  let distributed = crate::evaluator::evaluate_function_call_ast(
+    "Expand",
+    std::slice::from_ref(&expanded),
+  )
+  .unwrap_or(expanded);
   // Distribute Log over positive multipliers and `Sqrt`:
   //   Log[positive_real * X] → Log[positive_real] + Log[X]
   //   Log[Sqrt[Y]] → Log[Y]/2
@@ -8139,13 +8132,15 @@ fn standardize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else if args.len() == 2 {
     let loc =
       crate::functions::list_helpers_ast::apply_func_ast(&args[1], data)?;
-    let sc =
-      crate::functions::math_ast::standard_deviation_ast(&[data.clone()])?;
+    let sc = crate::functions::math_ast::standard_deviation_ast(
+      std::slice::from_ref(data),
+    )?;
     (loc, sc)
   } else {
-    let loc = crate::functions::math_ast::mean_ast(&[data.clone()])?;
-    let sc =
-      crate::functions::math_ast::standard_deviation_ast(&[data.clone()])?;
+    let loc = crate::functions::math_ast::mean_ast(std::slice::from_ref(data))?;
+    let sc = crate::functions::math_ast::standard_deviation_ast(
+      std::slice::from_ref(data),
+    )?;
     (loc, sc)
   };
 

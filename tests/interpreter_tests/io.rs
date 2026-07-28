@@ -870,7 +870,7 @@ mod file_hash {
         .warnings
         .iter()
         .any(|w| w.contains("FileHash::noopen: Cannot open")
-          && w.contains(&format!("{path}"))),
+          && w.contains(&path.to_string())),
       "expected FileHash::noopen warning with absolute path, got {:?}",
       result.warnings
     );

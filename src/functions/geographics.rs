@@ -8,7 +8,7 @@
 //! Supported geo primitives inside the content list:
 //!   * `GeoMarker[pos]` / `GeoMarker[{pos, …}]` — a map pin at each position
 //!   * `Point[pos]` / `Point[{pos, …}]`         — a filled dot at each position
-//! plus the color directives and `PointSize` understood by ordinary Graphics.
+//!     plus the color directives and `PointSize` understood by ordinary Graphics.
 //!
 //! A position is `GeoPosition[{lat, lon}]`, `GeoPosition[{lat, lon, h}]` or a
 //! bare `{lat, lon}` pair (latitude first, matching the Wolfram Language).
@@ -1788,6 +1788,16 @@ fn render_legend(svg: &mut String, leg: &Legend, map_width: f64, height: f64) {
   }
 }
 
+/// Format a legend tick value compactly (drop a redundant trailing `.0`).
+fn format_legend_value(v: f64) -> String {
+  if v.fract() == 0.0 && v.abs() < 1e15 {
+    format!("{}", v as i64)
+  } else {
+    let s = format!("{v:.2}");
+    s.trim_end_matches('0').trim_end_matches('.').to_string()
+  }
+}
+
 #[cfg(test)]
 mod entity_resolution_tests {
   use super::*;
@@ -1850,15 +1860,5 @@ mod entity_resolution_tests {
     let (lat, lon) = entity_to_latlon(&e).unwrap();
     assert!((lat - 46.227638).abs() < 1e-2, "lat {lat}");
     assert!((lon - 2.213749).abs() < 1e-2, "lon {lon}");
-  }
-}
-
-/// Format a legend tick value compactly (drop a redundant trailing `.0`).
-fn format_legend_value(v: f64) -> String {
-  if v.fract() == 0.0 && v.abs() < 1e15 {
-    format!("{}", v as i64)
-  } else {
-    let s = format!("{v:.2}");
-    s.trim_end_matches('0').trim_end_matches('.').to_string()
   }
 }

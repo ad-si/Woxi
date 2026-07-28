@@ -1,3 +1,7 @@
+// Each test file wraps its tests in a module named after the file, which
+// keeps `cargo nextest run <name>` filters matching the file they live in.
+#![allow(clippy::module_inception)]
+
 use woxi::{
   clear_state, interpret, interpret_with_stdout, split_into_statements,
 };
@@ -1521,13 +1525,10 @@ mod interpreter_tests {
 
     let mut results = Vec::new();
     for stmt in &statements {
-      match interpret_with_stdout(stmt) {
-        Ok(result) => {
-          if result.result != "\0" {
-            results.push(result.result);
-          }
-        }
-        Err(_) => {}
+      if let Ok(result) = interpret_with_stdout(stmt)
+        && result.result != "\0"
+      {
+        results.push(result.result);
       }
     }
     assert_eq!(results, vec!["3", "8"]);

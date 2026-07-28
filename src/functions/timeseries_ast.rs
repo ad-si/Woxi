@@ -328,6 +328,8 @@ pub fn moving_map_series_ast(
     other => other,
   };
   let width = to_time(width_expr)?;
+  // Negated on purpose: a NaN width is not a valid width either.
+  #[allow(clippy::neg_cmp_op_on_partial_ord)]
   if !(width > 0.0) {
     return None;
   }
@@ -391,6 +393,8 @@ pub fn time_series_rescale_ast(
   let (Some(low), Some(high)) = (to_time(&span[0]), to_time(&span[1])) else {
     return echo();
   };
+  // Negated on purpose: NaN endpoints are not strictly increasing either.
+  #[allow(clippy::neg_cmp_op_on_partial_ord)]
   if !(high > low) {
     crate::emit_message(&format!(
       "TimeSeriesRescale::trng: The argument {} is not a valid pair of \
@@ -409,6 +413,8 @@ pub fn time_series_rescale_ast(
     times.iter().copied().fold(f64::INFINITY, f64::min),
     times.iter().copied().fold(f64::NEG_INFINITY, f64::max),
   );
+  // Negated on purpose: NaN times give no usable span either.
+  #[allow(clippy::neg_cmp_op_on_partial_ord)]
   if !(last > first) {
     return echo();
   }

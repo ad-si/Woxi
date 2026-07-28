@@ -512,7 +512,7 @@ fn extract_nd_points(expr: &Expr) -> Option<Vec<Vec<Expr>>> {
 /// reduces to a definite number (integers, rationals, reals, Pi, Sqrt[2], …).
 fn coord_is_numeric(e: &Expr) -> bool {
   matches!(
-    crate::evaluator::evaluate_function_call_ast("NumericQ", &[e.clone()]),
+    crate::evaluator::evaluate_function_call_ast("NumericQ", std::slice::from_ref(e)),
     Ok(Expr::Identifier(ref s)) if s == "True"
   )
 }

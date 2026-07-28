@@ -719,9 +719,8 @@ fn music_chord_short_symbols_resolve() {
     ("CMinorMajorSeventh", "Minor Major Seventh"),
   ];
   for (input, name) in cases {
-    assert_eq!(
+    assert!(
       interpret(&format!("MusicChord[\"{input}\"][\"PitchList\"]")).is_ok(),
-      true,
       "{input} should have a pitch list"
     );
     assert_eq!(

@@ -2132,7 +2132,7 @@ fn chebyshev_general_numeric(
   Some(
     crate::evaluator::evaluate_function_call_ast(
       "Expand",
-      &[evaluated.clone()],
+      std::slice::from_ref(&evaluated),
     )
     .unwrap_or(evaluated),
   )

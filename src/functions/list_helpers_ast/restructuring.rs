@@ -803,7 +803,7 @@ pub fn reverse_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     _ => {
       crate::functions::list_helpers_ast::sorting::emit_nonatomic_normal_message(
         "Reverse",
-        &[list.clone()],
+        std::slice::from_ref(list),
       );
       Ok(Expr::FunctionCall {
         name: "Reverse".to_string(),

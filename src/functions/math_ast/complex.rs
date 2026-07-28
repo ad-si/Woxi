@@ -26,8 +26,8 @@ fn has_i_factor(t: &Expr) -> bool {
 ///     (so `Re[2 a] = 2 Re[a]`).
 ///   - Plus: split off the terms that carry an explicit `I`,
 ///     `Re[rest + b I] = Re[rest] - Im[b]` (the non-I terms stay grouped).
-/// Returns None when neither simplification applies. The constructed pieces are
-/// re-evaluated, so nested `Re[I x]`/`Im[I x]` collapse via the recursion.
+///     Returns None when neither simplification applies. The constructed pieces are
+///     re-evaluated, so nested `Re[I x]`/`Im[I x]` collapse via the recursion.
 fn distribute_re_im(
   head: &str,
   expr: &Expr,
@@ -432,9 +432,7 @@ fn try_extract_complex_bigfloat(expr: &Expr) -> Option<(Expr, Expr)> {
         right,
       } => {
         // Flatten one level
-        let mut v: Vec<&Expr> = Vec::new();
-        v.push(left.as_ref());
-        v.push(right.as_ref());
+        let v: Vec<&Expr> = vec![left.as_ref(), right.as_ref()];
         v
       }
       _ => return None,
@@ -1066,10 +1064,14 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => None,
     };
     if let Some(z) = e_exp {
-      let imz =
-        crate::evaluator::evaluate_function_call_ast("Im", &[z.clone()])?;
-      let rez =
-        crate::evaluator::evaluate_function_call_ast("Re", &[z.clone()])?;
+      let imz = crate::evaluator::evaluate_function_call_ast(
+        "Im",
+        std::slice::from_ref(z),
+      )?;
+      let rez = crate::evaluator::evaluate_function_call_ast(
+        "Re",
+        std::slice::from_ref(z),
+      )?;
       if let (Some(im_f), Some(_re_f)) = (
         crate::functions::math_ast::try_eval_to_f64(&imz),
         crate::functions::math_ast::try_eval_to_f64(&rez),
@@ -1466,7 +1468,9 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     fn map_reals(e: &Expr) -> Result<Expr, InterpreterError> {
       match e {
-        Expr::Real(_) | Expr::BigFloat(_, _) => rationalize_ast(&[e.clone()]),
+        Expr::Real(_) | Expr::BigFloat(_, _) => {
+          rationalize_ast(std::slice::from_ref(e))
+        }
         Expr::BinaryOp { op, left, right } => Ok(Expr::BinaryOp {
           op: *op,
           left: Box::new(map_reals(left)?),

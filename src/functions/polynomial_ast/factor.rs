@@ -199,7 +199,7 @@ fn factor_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::List(items) = &args[0] {
     let results: Result<Vec<Expr>, InterpreterError> = items
       .iter()
-      .map(|item| factor_ast(&[item.clone()]))
+      .map(|item| factor_ast(std::slice::from_ref(item)))
       .collect();
     return Ok(Expr::List(results?.into()));
   }
@@ -210,8 +210,10 @@ fn factor_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
     operators,
   } = &args[0]
   {
-    let factored: Result<Vec<Expr>, InterpreterError> =
-      operands.iter().map(|o| factor_ast(&[o.clone()])).collect();
+    let factored: Result<Vec<Expr>, InterpreterError> = operands
+      .iter()
+      .map(|o| factor_ast(std::slice::from_ref(o)))
+      .collect();
     return Ok(Expr::Comparison {
       operands: factored?,
       operators: operators.clone(),
@@ -1165,24 +1167,19 @@ fn factor_sub_poly(coeffs: &[i128], var: &str) -> Vec<Expr> {
   // Try rational roots first
   let mut remaining = coeffs.to_vec();
   let mut factors: Vec<Expr> = Vec::new();
-  loop {
-    match find_integer_root(&remaining) {
-      Some(root) => {
-        factors.push(Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(Expr::Integer(-root)),
-          right: Box::new(Expr::Identifier(var.to_string())),
-        });
-        remaining = divide_by_root(&remaining, root);
-        if remaining.len() <= 1 {
-          break;
-        }
-        if remaining.len() == 2 {
-          factors.push(linear_to_expr(remaining[0], remaining[1], var));
-          return factors;
-        }
-      }
-      None => break,
+  while let Some(root) = find_integer_root(&remaining) {
+    factors.push(Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(Expr::Integer(-root)),
+      right: Box::new(Expr::Identifier(var.to_string())),
+    });
+    remaining = divide_by_root(&remaining, root);
+    if remaining.len() <= 1 {
+      break;
+    }
+    if remaining.len() == 2 {
+      factors.push(linear_to_expr(remaining[0], remaining[1], var));
+      return factors;
     }
   }
 
@@ -2154,7 +2151,7 @@ fn multivariate_square_free(
   original: &Expr,
   expanded: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let factored = factor_ast(&[expanded.clone()])?;
+  let factored = factor_ast(std::slice::from_ref(expanded))?;
   let (mut negated, product) = match &factored {
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
@@ -2472,7 +2469,7 @@ fn product_square_free(expr: &Expr) -> Result<Option<Expr>, InterpreterError> {
 
     // Square-free factor the primitive (a sum, so this recursion cannot
     // re-enter the product path).
-    let factored = factor_square_free_ast(&[primitive.clone()])?;
+    let factored = factor_square_free_ast(std::slice::from_ref(&primitive))?;
     if crate::syntax::expr_to_string(&factored)
       != crate::syntax::expr_to_string(&primitive)
     {
@@ -2630,7 +2627,7 @@ fn factor_square_free_ast_impl(
   if let Expr::List(items) = &args[0] {
     let results: Result<Vec<Expr>, InterpreterError> = items
       .iter()
-      .map(|item| factor_square_free_ast(&[item.clone()]))
+      .map(|item| factor_square_free_ast(std::slice::from_ref(item)))
       .collect();
     return Ok(Expr::List(results?.into()));
   }
@@ -3261,7 +3258,7 @@ pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // If the primitive doesn't actually depend on `var`, route to the
       // existing fallback below.
       if contains_var(primitive, &var) {
-        let factored = factor_ast(&[primitive.clone()])?;
+        let factored = factor_ast(std::slice::from_ref(primitive))?;
         let factors = collect_times_factors(&factored);
         let mut var_factors: Vec<Expr> = Vec::new();
         let mut non_var_factors: Vec<Expr> = Vec::new();
@@ -3928,16 +3925,10 @@ fn multivar_to_univar_coeffs(
     let mut index: usize = 0;
     let mut multiplier: usize = 1;
     for &exp in &exponents {
-      let Some(term) = (exp as usize).checked_mul(multiplier) else {
-        return None;
-      };
-      let Some(new_index) = index.checked_add(term) else {
-        return None;
-      };
+      let term = (exp as usize).checked_mul(multiplier)?;
+      let new_index = index.checked_add(term)?;
       index = new_index;
-      let Some(new_mult) = multiplier.checked_mul(d) else {
-        return None;
-      };
+      let new_mult = multiplier.checked_mul(d)?;
       multiplier = new_mult;
     }
 

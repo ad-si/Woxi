@@ -12,7 +12,9 @@ pub fn array_depth_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   // dimension list (Dimensions handles the internal representation).
   if matches!(list, Expr::FunctionCall { name, .. } if name == "SparseArray")
     && let Ok(Expr::List(ref dims)) =
-      crate::functions::list_helpers_ast::dimensions_ast(&[list.clone()])
+      crate::functions::list_helpers_ast::dimensions_ast(std::slice::from_ref(
+        list,
+      ))
   {
     return Ok(Expr::Integer(dims.len() as i128));
   }

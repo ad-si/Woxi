@@ -83,9 +83,9 @@ pub fn parse_wolfram_pattern(pattern: &str) -> Option<WolframPattern> {
   // Check for pattern test: x_?test
   if let Some(underscore_idx) = pattern.find('_') {
     let after_underscore = &pattern[underscore_idx + 1..];
-    if after_underscore.starts_with('?') {
+    if let Some(after_question) = after_underscore.strip_prefix('?') {
       let var_name = pattern[..underscore_idx].trim().to_string();
-      let test_func = after_underscore[1..].trim().to_string();
+      let test_func = after_question.trim().to_string();
       if !var_name.is_empty()
         && var_name.chars().all(|c| c.is_alphanumeric() || c == '$')
         && !test_func.is_empty()

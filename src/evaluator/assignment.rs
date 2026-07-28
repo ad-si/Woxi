@@ -79,9 +79,6 @@ fn format_pattern_head(pat: &Expr) -> Option<String> {
   }
 }
 
-/// Register a user-defined print form (e.g. via `Format[expr, FORM] := …`).
-/// No-op if already registered or if `name` is one of the builtin forms.
-
 /// `Longest[p]` / `Shortest[p]` around a definition's parameter only choose
 /// which split of a sequence to try first; the parameter itself is `p`.
 fn unwrap_longest_shortest(arg: &Expr) -> &Expr {

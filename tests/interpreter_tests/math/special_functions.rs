@@ -561,7 +561,7 @@ mod hypergeometric_1f1 {
       .unwrap()
       .parse()
       .unwrap();
-    assert!((result - 1.71828182845904535).abs() < 1e-10);
+    assert!((result - 1.718_281_828_459_045_3).abs() < 1e-10);
   }
 
   #[test]
@@ -4936,7 +4936,7 @@ mod lerch_phi {
     let result = interpret("LerchPhi[1, 2, 1/4]").unwrap();
     let val: f64 = result.parse().expect("should be a number");
     let pi = std::f64::consts::PI;
-    let catalan = 0.915_965_594_177_219_015;
+    let catalan = 0.915_965_594_177_219;
     let expected = pi * pi + 8.0 * catalan;
     assert!(
       (val - expected).abs() < 1e-12,
@@ -6433,7 +6433,7 @@ mod anger_j_tests {
     // AngerJ[1, 3.0] = BesselJ[1, 3.0] ≈ 0.33905895852593644
     let result: f64 = interpret("AngerJ[1, 3.0]").unwrap().parse().unwrap();
     assert!(
-      (result - 0.33905895852593644).abs() < 1e-8,
+      (result - 0.339_058_958_525_936_4).abs() < 1e-8,
       "got {}",
       result
     );
@@ -6470,7 +6470,7 @@ mod anger_j_tests {
     // AngerJ[-1, 3.0] = BesselJ[-1, 3.0] = -BesselJ[1, 3.0]
     let result: f64 = interpret("AngerJ[-1, 3.0]").unwrap().parse().unwrap();
     assert!(
-      (result - (-0.33905895852593644)).abs() < 1e-8,
+      (result - (-0.339_058_958_525_936_4)).abs() < 1e-8,
       "got {}",
       result
     );
@@ -8123,7 +8123,7 @@ mod dirichlet_beta {
     assert!((b1 - std::f64::consts::FRAC_PI_4).abs() < 1e-12, "got {b1}");
     // β(2) = Catalan ≈ 0.9159655941772190.
     let b2: f64 = interpret("DirichletBeta[2.0]").unwrap().parse().unwrap();
-    assert!((b2 - 0.9159655941772190).abs() < 1e-12, "got {b2}");
+    assert!((b2 - 0.915_965_594_177_219).abs() < 1e-12, "got {b2}");
   }
 }
 

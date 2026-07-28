@@ -2857,7 +2857,7 @@ mod image_advanced {
       .parse()
       .unwrap();
     assert!(
-      total >= 16.0 && total <= 30.0,
+      (16.0..=30.0).contains(&total),
       "Expected 16-30 edge pixels for rectangle, got {}",
       total
     );

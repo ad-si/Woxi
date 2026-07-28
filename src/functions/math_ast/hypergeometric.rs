@@ -1002,7 +1002,7 @@ pub fn hypergeometric_pfq_regularized_ast(
   // Symbolic path: construct the division
   let mut gamma_product = Expr::Integer(1);
   for b_expr in &b_list {
-    let gamma_val = gamma_ast(&[b_expr.clone()])?;
+    let gamma_val = gamma_ast(std::slice::from_ref(b_expr))?;
     gamma_product = crate::evaluator::evaluate_expr_to_expr(&binop(
       BinaryOperator::Times,
       gamma_product,
@@ -1588,8 +1588,10 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     let polynomial =
       crate::evaluator::evaluate_function_call_ast("Plus", &terms)?;
-    let exp_part =
-      crate::evaluator::evaluate_function_call_ast("Exp", &[z.clone()])?;
+    let exp_part = crate::evaluator::evaluate_function_call_ast(
+      "Exp",
+      std::slice::from_ref(z),
+    )?;
     return crate::evaluator::evaluate_function_call_ast(
       "Times",
       &[exp_part, polynomial],
@@ -1806,8 +1808,10 @@ fn hypergeometric_1f1_complex(
 /// Recursively apply Distribute so every nested `Rational · Plus[…]` and
 /// `Integer · Plus[…]` factor inside a Times is fully distributed.
 fn distribute_recursive(e: &Expr) -> Result<Expr, InterpreterError> {
-  let dist =
-    crate::evaluator::evaluate_function_call_ast("Distribute", &[e.clone()])?;
+  let dist = crate::evaluator::evaluate_function_call_ast(
+    "Distribute",
+    std::slice::from_ref(e),
+  )?;
   match &dist {
     Expr::FunctionCall { name, args } if name == "Plus" => {
       let mut new_args = Vec::with_capacity(args.len());
@@ -3033,7 +3037,7 @@ pub fn whittaker_m_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 ///   * Re(m) ∈ (-1/2, 1/2)  -> 0
 ///   * Re(m) = 1/2          -> Γ(2 m) / Γ(m - k + 1/2)   ( = 1/Γ(1-k) )
 ///   * Re(m) > 1/2          -> ComplexInfinity, unless m - k + 1/2 is a
-///                             non-positive integer (Γ pole), giving 0
+///     non-positive integer (Γ pole), giving 0
 ///   * Re(m) < -1/2         -> ComplexInfinity
 ///   * Re(m) = -1/2         -> stays symbolic
 pub fn whittaker_w_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

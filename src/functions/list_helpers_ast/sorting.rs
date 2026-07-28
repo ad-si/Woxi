@@ -1332,7 +1332,7 @@ pub fn sort_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     }
     other => {
       if is_atomic_arg(other) {
-        emit_nonatomic_normal_message("Sort", &[other.clone()]);
+        emit_nonatomic_normal_message("Sort", std::slice::from_ref(other));
       }
       Ok(Expr::FunctionCall {
         name: "Sort".to_string(),

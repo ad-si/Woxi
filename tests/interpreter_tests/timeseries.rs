@@ -27,9 +27,7 @@ mod compressed_data {
   #[test]
   fn decodes_wl_binary_packed_array() {
     // First five daily step counts of the embedded packed Integer32 array.
-    let code = format!(
-      "Take[CompressedData[\"\n1:eJwdkk1IVGEUhh+FjCRTzJrMn3Eya/Ina3TKMQdEVEIMyhYKgoIL0RIjWhYF\nIVTQxhKDBEUUgqlFhKJgtptFuBCUIoIWoRGBtXAjKIJPXjic+93znvd9z/lu\nqOdO22AqkGK8NkKl8KcCZvIgkQPjR+FIAbRUw0IZrF6AZWP9PMSMlCz4dBnC\nYXjreewiZMeh/D+uCK5mQ+QsfCmGRfmul8CvY/CvCt7Le/cQ+0/xAbglpk/t\nbnsy1Hopx7a5SM7UCHTWwdBxseXQXgn3zFP6WtTrjUJ4ZB60d1vur9Zbrd2U\nI67e7yg81U9pEL7pM2FMyjst7tVJeKDuG9/r7Ilece4a6LoEyRhsyRl0Lx8z\nYaAW1uRZt6e60f5TMOK8NX5fUueJ+5o1T2dAvZgW9xPTe5de0+X5oLc0uWud\ne+Ic3D4IjblwX3/P9RM5487k28h3VvU7miFX/LD+KuQd0UdQj6t6Tao54z6y\n7H2nt2F1ctRJsy8sLi6mROyctXm5v3v+bL3X/EzsuDmq1qg7eew+rnn+q86K\nuVncgLwJffQcdjbvLuTdJb2PhwEION9P/Td49z/ccZ/4DTn6ne+FuJ02/412\n2JU/0ASVp+Xy25D73DwBez7dZgU=\n\"], 5]"
-    );
+    let code = "Take[CompressedData[\"\n1:eJwdkk1IVGEUhh+FjCRTzJrMn3Eya/Ina3TKMQdEVEIMyhYKgoIL0RIjWhYF\nIVTQxhKDBEUUgqlFhKJgtptFuBCUIoIWoRGBtXAjKIJPXjic+93znvd9z/lu\nqOdO22AqkGK8NkKl8KcCZvIgkQPjR+FIAbRUw0IZrF6AZWP9PMSMlCz4dBnC\nYXjreewiZMeh/D+uCK5mQ+QsfCmGRfmul8CvY/CvCt7Le/cQ+0/xAbglpk/t\nbnsy1Hopx7a5SM7UCHTWwdBxseXQXgn3zFP6WtTrjUJ4ZB60d1vur9Zbrd2U\nI67e7yg81U9pEL7pM2FMyjst7tVJeKDuG9/r7Ilece4a6LoEyRhsyRl0Lx8z\nYaAW1uRZt6e60f5TMOK8NX5fUueJ+5o1T2dAvZgW9xPTe5de0+X5oLc0uWud\ne+Ic3D4IjblwX3/P9RM5487k28h3VvU7miFX/LD+KuQd0UdQj6t6Tao54z6y\n7H2nt2F1ctRJsy8sLi6mROyctXm5v3v+bL3X/EzsuDmq1qg7eew+rnn+q86K\nuVncgLwJffQcdjbvLuTdJb2PhwEION9P/Td49z/ccZ/4DTn6ne+FuJ02/412\n2JU/0ASVp+Xy25D73DwBez7dZgU=\n\"], 5]".to_string();
     assert_eq!(
       interpret(&code).unwrap(),
       "{10785, 11753, 7092, 5290, 5022}"

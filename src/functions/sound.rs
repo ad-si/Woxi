@@ -99,6 +99,8 @@ fn sample_play(play: &Expr) -> Option<Vec<f64>> {
   };
   let tmin = try_eval_to_f64(&iter[1])?;
   let tmax = try_eval_to_f64(&iter[2])?;
+  // Negated on purpose: a NaN bound is not a usable range either.
+  #[allow(clippy::neg_cmp_op_on_partial_ord)]
   if !(tmax > tmin) {
     return None;
   }

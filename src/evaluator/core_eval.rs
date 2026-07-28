@@ -337,6 +337,9 @@ fn evaluate_expr_to_expr_early_dispatch(
       let mut result = Expr::Identifier("Null".to_string());
       let mut start_index = 0;
       'goto_loop: loop {
+        // `start_index` is reassigned on a Goto and only takes effect on the
+        // next `'goto_loop` pass, which is exactly the intent.
+        #[allow(clippy::mut_range_bound)]
         for i in start_index..args.len() {
           match evaluate_expr_to_expr(&args[i]) {
             Ok(val) => {
@@ -3039,6 +3042,9 @@ pub fn evaluate_expr_to_expr_inner(
       let mut result = Expr::Identifier("Null".to_string());
       let mut start_index = 0;
       'goto_loop: loop {
+        // `start_index` is reassigned on a Goto and only takes effect on the
+        // next `'goto_loop` pass, which is exactly the intent.
+        #[allow(clippy::mut_range_bound)]
         for i in start_index..exprs.len() {
           match evaluate_expr_to_expr(&exprs[i]) {
             Ok(val) => result = val,
@@ -3608,10 +3614,10 @@ fn unwrap_evaluate_in_body(body: &Expr) -> Result<Expr, InterpreterError> {
 ///   - Otherwise (Equal/SameQ mixed with one direction of inequalities,
 ///     or only Less-direction / only Greater-direction ops) → keep as a
 ///     single chain.  These print either as `a == b == c` or `Inequality[…]`.
-/// Numeric range [lo, hi] of an expression for interval comparison: an
-/// `Interval[{a,b}, …]` collapses to its overall min/max, and a scalar number
-/// `s` becomes the degenerate range [s, s]. Returns None if any bound is not a
-/// finite real (e.g. a symbol).
+///     Numeric range [lo, hi] of an expression for interval comparison: an
+///     `Interval[{a,b}, …]` collapses to its overall min/max, and a scalar number
+///     `s` becomes the degenerate range [s, s]. Returns None if any bound is not a
+///     finite real (e.g. a symbol).
 fn interval_numeric_bounds(expr: &Expr) -> Option<(f64, f64)> {
   use crate::functions::math_ast::try_eval_to_f64_with_infinity as to_f64;
   if let Some(subs) = crate::functions::interval_ast::is_interval(expr) {

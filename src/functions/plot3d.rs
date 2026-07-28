@@ -2063,17 +2063,13 @@ fn bspline_sample_weights(n: usize, num_samples: usize) -> Vec<Vec<f64>> {
   let degree = 3usize.min(n - 1);
   let num_knots = n + degree + 1;
   let mut knots = Vec::with_capacity(num_knots);
-  for _ in 0..=degree {
-    knots.push(0.0);
-  }
+  knots.extend(std::iter::repeat_n(0.0, degree + 1));
   let num_internal = num_knots - 2 * (degree + 1);
   for i in 1..=num_internal {
     knots.push(i as f64);
   }
   let max_knot = (num_internal + 1) as f64;
-  for _ in 0..=degree {
-    knots.push(max_knot);
-  }
+  knots.extend(std::iter::repeat_n(max_knot, degree + 1));
   let t_min = knots[degree];
   let t_max = knots[n];
   (0..num_samples)

@@ -13,11 +13,8 @@ pub fn select_ast(
   n: Option<&Expr>,
 ) -> Result<Expr, InterpreterError> {
   let limit = match n {
-    Some(expr) => match expr {
-      Expr::Integer(i) => Some(*i as usize),
-      _ => None,
-    },
-    None => None,
+    Some(Expr::Integer(i)) => Some(*i as usize),
+    _ => None,
   };
 
   // Handle associations: Select on values, preserve key-value pairs
@@ -454,7 +451,8 @@ fn apply_test_bool(test: &Expr, elem: &Expr) -> bool {
       crate::evaluator::evaluate_expr_to_expr(&call).ok()
     }
     Expr::Function { body } => {
-      let substituted = crate::syntax::substitute_slots(body, &[elem.clone()]);
+      let substituted =
+        crate::syntax::substitute_slots(body, std::slice::from_ref(elem));
       crate::evaluator::evaluate_expr_to_expr(&substituted).ok()
     }
     _ => {
@@ -576,7 +574,7 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
         Expr::Function { body } => {
           // Anonymous function: substitute slots in the body (not the Function wrapper)
           let substituted =
-            crate::syntax::substitute_slots(body, &[expr.clone()]);
+            crate::syntax::substitute_slots(body, std::slice::from_ref(expr));
           crate::evaluator::evaluate_expr_to_expr(&substituted).ok()
         }
         _ => {

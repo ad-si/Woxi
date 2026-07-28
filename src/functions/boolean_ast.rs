@@ -2831,7 +2831,7 @@ fn implicants_to_expr(
       .collect()
   };
   let mut implicants: Vec<&Implicant> = implicants.iter().collect();
-  implicants.sort_by(|a, b| rank(b).cmp(&rank(a)));
+  implicants.sort_by_key(|b| std::cmp::Reverse(rank(b)));
 
   let mut terms: Vec<Expr> = Vec::new();
   for imp in implicants {

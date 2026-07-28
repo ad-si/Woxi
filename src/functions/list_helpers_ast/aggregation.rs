@@ -1713,7 +1713,8 @@ pub fn split_with_test_ast(
   list: &Expr,
   test: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let Some((items, head)) = split_subject(list, &[test.clone()]) else {
+  let Some((items, head)) = split_subject(list, std::slice::from_ref(test))
+  else {
     return Ok(Expr::FunctionCall {
       name: "Split".to_string(),
       args: vec![list.clone(), test.clone()].into(),
@@ -2385,6 +2386,8 @@ fn ws_smooth_width(w: f64) -> Option<(i128, i32)> {
 /// `MantissaExponent` mantissa equals 0.1/0.2/0.5/1. up to machine-`Equal`
 /// tolerance (so float noise like 0.09999999999999998 still passes as 1.).
 fn ws_gran_mantissa_nice(g: f64) -> bool {
+  // Negated on purpose: a NaN granularity is not nice either.
+  #[allow(clippy::neg_cmp_op_on_partial_ord)]
   if !(g > 0.0) || !g.is_finite() {
     return false;
   }
@@ -3337,7 +3340,7 @@ fn find_clusters_distance_fn(
   }
   // Wolframscript orders the clusters with the highest first-input-index
   // first (later-encountered cluster first).
-  groups.sort_by(|a, b| b.0.cmp(&a.0));
+  groups.sort_by_key(|g| std::cmp::Reverse(g.0));
   let result: Vec<Expr> = groups
     .into_iter()
     .map(|(_, g)| Expr::List(g.into()))

@@ -38,7 +38,7 @@ pub fn apart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if args.len() == 2 {
           apart_ast(&[item.clone(), args[1].clone()])
         } else {
-          apart_ast(&[item.clone()])
+          apart_ast(std::slice::from_ref(item))
         }
       })
       .collect();
@@ -1273,7 +1273,7 @@ fn apart_symbolic(
   var: &str,
 ) -> Result<Expr, InterpreterError> {
   // Factor the denominator
-  let den_factored = factor_ast(&[den.clone()])?;
+  let den_factored = factor_ast(std::slice::from_ref(den))?;
   // Collect factors
   let mut factors = Vec::new();
   flatten_product_factors(&den_factored, &mut factors);

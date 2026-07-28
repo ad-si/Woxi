@@ -182,9 +182,7 @@ pub fn dispatch_linear_algebra_functions(
       if args.len() == 2 =>
     {
       use crate::functions::linear_algebra_ast as la;
-      let Some(m) = la::extract_modulus_option_la(&args[1]) else {
-        return None;
-      };
+      let m = la::extract_modulus_option_la(&args[1])?;
       if m == 0 {
         return dispatch_linear_algebra_functions(name, &args[..1]);
       }
@@ -267,7 +265,7 @@ pub fn dispatch_linear_algebra_functions(
           } else {
             "Transpose"
           },
-          &[a.clone()],
+          std::slice::from_ref(&a),
         ) {
           Ok(v) => v,
           Err(e) => return Some(Err(e)),
@@ -282,11 +280,11 @@ pub fn dispatch_linear_algebra_functions(
         };
         // A singular Gram matrix (exact zero determinant) means rank
         // deficiency: skip straight to the pseudoinverse.
-        let det_ata = eval("Det", &[ata.clone()]).ok();
+        let det_ata = eval("Det", std::slice::from_ref(&ata)).ok();
         let singular = matches!(det_ata, Some(Expr::Integer(0)))
           || matches!(det_ata, Some(Expr::Real(v)) if v == 0.0);
         if !singular {
-          let inv_ata = match eval("Inverse", &[ata.clone()]) {
+          let inv_ata = match eval("Inverse", std::slice::from_ref(&ata)) {
             Ok(v) => v,
             Err(e) => return Some(Err(e)),
           };
@@ -1233,9 +1231,9 @@ pub fn dispatch_linear_algebra_functions(
 
           let (base, exp) = if n < 0 {
             // Compute inverse first
-            match crate::functions::linear_algebra_ast::inverse_ast(&[
-              mat.clone()
-            ]) {
+            match crate::functions::linear_algebra_ast::inverse_ast(
+              std::slice::from_ref(mat),
+            ) {
               Ok(inv) => (inv, (-n) as u64),
               Err(e) => return Some(Err(e)),
             }

@@ -558,9 +558,6 @@ fn nice_date_step_spec(range_seconds: f64) -> DateStep {
     DateStep::Months(3)
   } else if range_days > 60.0 {
     DateStep::Months(1)
-  } else if range_days > 14.0 {
-    let step = nice_step(range_days, 5) as i64;
-    DateStep::Days(step.max(1))
   } else {
     let step = nice_step(range_days, 5) as i64;
     DateStep::Days(step.max(1))
@@ -7000,7 +6997,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Adaptive sampling: start with initial points, then refine where needed
-  let initial_samples = plot_opts.plot_points.max(2).min(200);
+  let initial_samples = plot_opts.plot_points.clamp(2, 200);
   let max_total = plot_opts.plot_points.max(500);
   let mut all_points: Vec<Vec<(f64, f64)>> = Vec::with_capacity(bodies.len());
 
@@ -7282,7 +7279,7 @@ fn log_scale_plot_ast(
     }
   }
 
-  let num_samples = plot_opts.plot_points.max(2).min(2000);
+  let num_samples = plot_opts.plot_points.clamp(2, 2000);
   let mut all_points: Vec<Vec<(f64, f64)>> = Vec::with_capacity(bodies.len());
 
   for func_body in &bodies {

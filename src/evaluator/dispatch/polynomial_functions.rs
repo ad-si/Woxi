@@ -933,18 +933,9 @@ fn try_reduce_modulus(expr: &Expr, vars: &Expr, opt: &Expr) -> Option<Expr> {
     let eqs: Vec<Expr> = sol
       .iter()
       .zip(var_names.iter())
-      .map(|(v, name)| {
-        if k == 1 {
-          Expr::Comparison {
-            operands: vec![Expr::Identifier(name.clone()), Expr::Integer(*v)],
-            operators: vec![ComparisonOp::Equal],
-          }
-        } else {
-          Expr::Comparison {
-            operands: vec![Expr::Identifier(name.clone()), Expr::Integer(*v)],
-            operators: vec![ComparisonOp::Equal],
-          }
-        }
+      .map(|(v, name)| Expr::Comparison {
+        operands: vec![Expr::Identifier(name.clone()), Expr::Integer(*v)],
+        operators: vec![ComparisonOp::Equal],
       })
       .collect();
     let clause = if eqs.len() == 1 {
@@ -1141,8 +1132,8 @@ fn try_bounded_1d_extremum(
 ///   * f is linear in v1, v2 with numeric coefficients,
 ///   * cons is `v1^2 + v2^2 op R^2` (with op being `LessEqual`, `Less`,
 ///     `GreaterEqual`, `Greater`, or `Equal`),
-/// returning the optimum value or argument depending on `name`. Linear
-/// objective on a disk has the closed form `R * sqrt(a^2 + b^2)`.
+///     returning the optimum value or argument depending on `name`. Linear
+///     objective on a disk has the closed form `R * sqrt(a^2 + b^2)`.
 fn try_constrained_linear_disk(name: &str, args: &[Expr]) -> Option<Expr> {
   let (f, cons) = match &args[0] {
     Expr::List(items) if items.len() == 2 => (&items[0], &items[1]),

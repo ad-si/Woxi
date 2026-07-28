@@ -53,7 +53,8 @@ pub fn polynomial_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Divide out each polynomial modulus, in the variable it is written in.
   for modulus in &polynomial_moduli {
-    let vars = crate::functions::math_ast::variables_ast(&[modulus.clone()])?;
+    let vars =
+      crate::functions::math_ast::variables_ast(std::slice::from_ref(modulus))?;
     let Expr::List(var_list) = &vars else {
       return Ok(unevaluated("PolynomialMod", args));
     };

@@ -168,13 +168,8 @@ pub fn caputo_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `⌈α⌉` is how many times the function is differentiated before the
   // remaining order is integrated away.
   let derivatives = match order_value {
-    Some(_) => {
-      match whole_number(&eval_call("Ceiling", vec![order.clone()])?) {
-        Some(n) => n,
-        // A negative order integrates instead, and differentiates nothing.
-        None => 0,
-      }
-    }
+    Some(_) => whole_number(&eval_call("Ceiling", vec![order.clone()])?)
+      .unwrap_or_default(),
     None => 0,
   };
 

@@ -470,7 +470,7 @@ pub fn elliptic_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     // EllipticPi[0, m] = EllipticK[m]
     if is_expr_zero(n_expr) {
-      return elliptic_k_ast(&[m_expr.clone()]);
+      return elliptic_k_ast(std::slice::from_ref(m_expr));
     }
 
     let n_val = try_eval_to_f64(n_expr);

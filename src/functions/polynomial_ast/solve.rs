@@ -2167,9 +2167,10 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let solution = simplify(solve_divide(&neg_b, a));
       // Run the user-level Simplify so forms like -((1 - z)/2) collapse
       // to (-1 + z)/2, matching wolframscript's canonical output.
-      let solution =
-        crate::functions::polynomial_ast::simplify_ast(&[solution.clone()])
-          .unwrap_or(solution);
+      let solution = crate::functions::polynomial_ast::simplify_ast(
+        std::slice::from_ref(&solution),
+      )
+      .unwrap_or(solution);
       Ok(Expr::List(vec![make_rule(solution)].into()))
     }
     2 => {
@@ -2447,8 +2448,9 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           (negate_expr(c), Expr::Integer(*a_int))
         };
         let sqrt_numer = {
-          let raw = crate::functions::sqrt_ast(&[numer_under_sqrt.clone()])
-            .unwrap_or_else(|_| make_sqrt(numer_under_sqrt));
+          let raw =
+            crate::functions::sqrt_ast(std::slice::from_ref(&numer_under_sqrt))
+              .unwrap_or_else(|_| make_sqrt(numer_under_sqrt));
           let evaled =
             crate::evaluator::evaluate_expr_to_expr(&raw).unwrap_or(raw);
           // In Solve context, Sqrt[expr^2] → expr because ± handles sign
@@ -2456,7 +2458,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           simplify(evaled)
         };
         let sqrt_denom =
-          crate::functions::sqrt_ast(&[denom_under_sqrt.clone()])
+          crate::functions::sqrt_ast(std::slice::from_ref(&denom_under_sqrt))
             .unwrap_or_else(|_| make_sqrt(denom_under_sqrt));
         let sol_pos = if matches!(&sqrt_denom, Expr::Integer(1)) {
           sqrt_numer.clone()
@@ -2713,9 +2715,9 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
 
       // Higher degree: try Factor-based solving
-      if let Ok(factored) =
-        crate::functions::polynomial_ast::factor_ast(&[expanded.clone()])
-      {
+      if let Ok(factored) = crate::functions::polynomial_ast::factor_ast(
+        std::slice::from_ref(&expanded),
+      ) {
         let factors = extract_times_factors(&factored);
         if factors.len() > 1 {
           // Solve each factor separately
@@ -2863,7 +2865,7 @@ fn make_root_solutions(coeffs: &[Expr], var: &str) -> Option<Expr> {
 /// Sort a list of Solve solutions (each is `{var -> val}`) by root value.
 /// Uses `solve_order` so complex roots interleave with reals by real
 /// part, matching wolframscript's `Solve[x^5 == x, x]` output.
-fn sort_solutions(solutions: &mut Vec<Expr>) {
+fn sort_solutions(solutions: &mut [Expr]) {
   solutions.sort_by(|a, b| {
     let val_a = match a {
       Expr::List(rules) if !rules.is_empty() => match &rules[0] {
@@ -3198,7 +3200,7 @@ fn try_solve_abs_eq(
   let mut solutions: Vec<Expr> = Vec::new();
   match crate::functions::math_ast::try_eval_to_f64(&eff) {
     Some(v) if v < 0.0 => {} // no real solution → {}
-    Some(v) if v == 0.0 => {
+    Some(0.0) => {
       solutions.extend(solve_branch(Expr::Integer(0))?);
     }
     _ => {
@@ -4349,10 +4351,11 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let mut factored_roots: Option<Vec<Expr>> = None;
   if matches!(max_power_int(&expanded_poly, var_name), Some(d) if d >= 3) {
-    let factors =
-      crate::functions::polynomial_ast::factor_ast(&[expanded_poly.clone()])
-        .map(|factored| extract_times_factors(&factored))
-        .unwrap_or_default();
+    let factors = crate::functions::polynomial_ast::factor_ast(
+      std::slice::from_ref(&expanded_poly),
+    )
+    .map(|factored| extract_times_factors(&factored))
+    .unwrap_or_default();
     let irreducible = factors.is_empty()
       || factors
         .iter()
@@ -4472,8 +4475,11 @@ pub fn root_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   // unordered.
   let parts = |e: &Expr| -> Option<(f64, f64)> {
     expr_to_complex_parts(e).or_else(|| {
-      let numeric =
-        crate::evaluator::evaluate_function_call_ast("N", &[e.clone()]).ok()?;
+      let numeric = crate::evaluator::evaluate_function_call_ast(
+        "N",
+        std::slice::from_ref(e),
+      )
+      .ok()?;
       expr_to_complex_parts(&numeric)
     })
   };
@@ -4683,12 +4689,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       x_curr = x_next;
     }
 
-    let result_val =
-      if x_curr == 0.0 || (x_curr.abs() > 1e-15 && x_curr.abs() < 1e15) {
-        Expr::Real(x_curr)
-      } else {
-        Expr::Real(x_curr)
-      };
+    let result_val = Expr::Real(x_curr);
     return Ok(Expr::List(
       vec![Expr::Rule {
         pattern: Box::new(Expr::Identifier(var)),
@@ -4744,17 +4745,11 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Format the result
-  let result_val = if x == 0.0 || (x.abs() > 1e-15 && x.abs() < 1e15) {
-    Expr::Real(x)
-  } else {
-    Expr::Real(x)
-  };
-
   // Clean up -0.0
   let result_val = if x == 0.0 {
     Expr::Real(0.0)
   } else {
-    result_val
+    Expr::Real(x)
   };
 
   // Re-evaluate the LHS so a held variable name with an OwnValue (e.g.
@@ -4807,7 +4802,8 @@ fn build_find_root_func(arg: &Expr) -> Expr {
 /// Try to evaluate `expr` to a complex `(re, im)` pair using f64
 /// arithmetic. Returns None when the expression isn't fully numeric.
 fn try_extract_complex_f64(expr: &Expr) -> Option<(f64, f64)> {
-  let n_result = crate::functions::math_ast::n_ast(&[expr.clone()]).ok()?;
+  let n_result =
+    crate::functions::math_ast::n_ast(std::slice::from_ref(expr)).ok()?;
   expr_to_complex_f64(&n_result)
 }
 
@@ -5674,7 +5670,9 @@ fn minimize_try_f64(expr: &Expr) -> Option<f64> {
       }
     }
     _ => {
-      if let Ok(n_result) = crate::functions::math_ast::n_ast(&[expr.clone()]) {
+      if let Ok(n_result) =
+        crate::functions::math_ast::n_ast(std::slice::from_ref(expr))
+      {
         match n_result {
           Expr::Real(r) => Some(r),
           Expr::Integer(n) => Some(n as f64),
@@ -8897,9 +8895,10 @@ fn solve_linear_symbolic(eqs: &[Expr], var_names: &[String]) -> Option<Expr> {
       // Run the user-level Simplify so the RHS collapses forms like
       // -1*(1 - E^3)/2 into (-1 + E^3)/2 (matching wolframscript).
       let intermediate = eval_entry(rhs_expr);
-      let simplified_rhs =
-        crate::functions::polynomial_ast::simplify_ast(&[intermediate.clone()])
-          .unwrap_or(intermediate);
+      let simplified_rhs = crate::functions::polynomial_ast::simplify_ast(
+        std::slice::from_ref(&intermediate),
+      )
+      .unwrap_or(intermediate);
       rules.push(Expr::Rule {
         pattern: Box::new(Expr::Identifier(var_names[col].clone())),
         replacement: Box::new(simplified_rhs),
@@ -9066,7 +9065,8 @@ fn expr_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
       }
     }
     _ => {
-      let n_result = crate::functions::math_ast::n_ast(&[expr.clone()])?;
+      let n_result =
+        crate::functions::math_ast::n_ast(std::slice::from_ref(expr))?;
       match &n_result {
         Expr::Real(r) => Ok(*r),
         Expr::Integer(n) => Ok(*n as f64),
@@ -10680,7 +10680,7 @@ pub fn find_instance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // If Solve failed or returned no solutions, try numerical search
   if solutions.is_empty() && !var_names.is_empty() && !complete {
-    solutions = find_instance_numerical(cond, &var_names, n, domain.as_deref());
+    solutions = find_instance_numerical(cond, &var_names, n);
   }
 
   if solutions.is_empty() {
@@ -10738,20 +10738,13 @@ fn find_instance_numerical(
   cond: &Expr,
   var_names: &[String],
   n: usize,
-  domain: Option<&str>,
 ) -> Vec<Expr> {
   use crate::evaluator::evaluate_expr_to_expr;
   use crate::functions::plot::substitute_var;
 
-  let is_integer_domain = domain == Some("Integers");
-
-  // Sample range and step
-  let (range_lo, range_hi, step) = if is_integer_domain {
-    (-100i64, 100i64, 1i64)
-  } else {
-    // Use integer grid for simplicity, then convert
-    (-100i64, 100i64, 1i64)
-  };
+  // Sample range and step. Real domains are scanned on the same integer
+  // grid — only instances at integer points are found either way.
+  let (range_lo, range_hi, step) = (-100i64, 100i64, 1i64);
 
   let mut results: Vec<Expr> = Vec::new();
 
@@ -10760,11 +10753,7 @@ fn find_instance_numerical(
     let var = &var_names[0];
     let mut val = range_lo;
     while val <= range_hi && results.len() < n {
-      let test_val: Expr = if is_integer_domain {
-        Expr::Integer(val as i128)
-      } else {
-        Expr::Integer(val as i128)
-      };
+      let test_val = Expr::Integer(val as i128);
       let subst = substitute_var(cond, var, &test_val);
       if let Ok(evaled) = evaluate_expr_to_expr(&subst)
         && matches!(evaled, Expr::Identifier(ref s) if s == "True")
@@ -10783,7 +10772,7 @@ fn find_instance_numerical(
     // For two variables, scan a grid
     let var1 = &var_names[0];
     let var2 = &var_names[1];
-    let step2 = if is_integer_domain { 1i64 } else { 1i64 };
+    let step2 = step;
     let mut val1 = range_lo;
     'outer: while val1 <= range_hi && results.len() < n {
       let test1 = Expr::Integer(val1 as i128);

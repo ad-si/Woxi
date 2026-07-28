@@ -99,6 +99,23 @@ diff-fuzz = ["cli"]
 [lints.rust]
 unreachable_pub = "warn"
 
+# CI gates on `cargo clippy -- -D warnings` (`make lint`). These three lints
+# are allowed crate-wide because following them would make this code worse,
+# not better; every other clippy lint must stay clean.
+[lints.clippy]
+# Numeric kernels (matrix decompositions, quadrature, image convolutions)
+# index several parallel arrays inside one loop, where `for i in 0..n` is
+# both the conventional notation and clearer than zipped iterators.
+needless_range_loop = "allow"
+# The thread_local evaluator state (definitions, option contexts) is a
+# tuple-of-vectors by design; naming each shape adds indirection without
+# making the storage easier to follow.
+type_complexity = "allow"
+# Evaluator entry points thread the full call context (args, head,
+# attributes, options, precision, …) explicitly rather than through a
+# struct, so the argument counts are deliberate.
+too_many_arguments = "allow"
+
 [dependencies]
 anyhow = "1.0.98"
 clap = { version = "4.3", features = ["derive"], optional = true }

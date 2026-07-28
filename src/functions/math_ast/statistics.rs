@@ -1409,7 +1409,7 @@ pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Apply Sqrt to each element
       let mut results = Vec::new();
       for item in items {
-        results.push(sqrt_ast(&[item.clone()])?);
+        results.push(sqrt_ast(std::slice::from_ref(item))?);
       }
       Ok(Expr::List(results.into()))
     }
@@ -1435,7 +1435,7 @@ pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // (b-a)*1/(2 Sqrt[6]) -> (b-a)/(2 Sqrt[6]).
         return crate::evaluator::evaluate_expr_to_expr(&result);
       }
-      sqrt_ast(&[var.clone()])
+      sqrt_ast(std::slice::from_ref(&var))
     }
     _ => {
       emit_rectt_if_numeric("StandardDeviation", args);
@@ -1523,7 +1523,7 @@ fn sqrt_of_value(v: &Expr, is_dist: bool) -> Result<Expr, InterpreterError> {
   if is_dist && let Some(r) = try_sqrt_extract_denom_factors(v)? {
     return crate::evaluator::evaluate_expr_to_expr(&r);
   }
-  sqrt_ast(&[v.clone()])
+  sqrt_ast(std::slice::from_ref(v))
 }
 
 /// If `var` is a `Piecewise[{{v1, c1}, ...}, default]`, return the StandardDeviation
@@ -2061,7 +2061,8 @@ pub fn absolute_correlation_ast(
   let n = xs.len();
   let mut terms = Vec::with_capacity(n);
   for (x, y) in xs.iter().zip(ys.iter()) {
-    let conj_y = evaluate_function_call_ast("Conjugate", &[y.clone()])?;
+    let conj_y =
+      evaluate_function_call_ast("Conjugate", std::slice::from_ref(y))?;
     terms.push(evaluate_function_call_ast("Times", &[x.clone(), conj_y])?);
   }
   let total = evaluate_function_call_ast("Plus", &terms)?;
@@ -3429,7 +3430,7 @@ fn distribution_moment(
     return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
   }
 
-  let mean = mean_ast(&[dist.clone()])?;
+  let mean = mean_ast(std::slice::from_ref(dist))?;
   // CentralMoment = Sum_{k=0}^n Binomial[n, k] (-mean)^(n-k) E[x^k]
   let mut terms = Vec::with_capacity((n + 1) as usize);
   for k in 0..=n {
@@ -4902,7 +4903,7 @@ fn format_location_test_result(
 ) -> Result<Expr, InterpreterError> {
   match property {
     "TestStatistic" => Ok(num_to_expr(t_stat)),
-    "PValue" | _ if property == "PValue" => {
+    "PValue" => {
       let p = t_test_p_value(t_stat, df);
       Ok(num_to_expr(p))
     }
@@ -6591,7 +6592,7 @@ fn growth_order(expr: &Expr, var: &str) -> Option<f64> {
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       if is_pure_var(&args[0], var) && !contains_var(&args[1], var) {
         // var^k - polynomial
-        try_eval_to_f64(&args[1]).map(|k| k)
+        try_eval_to_f64(&args[1])
       } else if !contains_var(&args[0], var) && contains_var(&args[1], var) {
         // const^var - exponential
         try_eval_to_f64(&args[0]).map(|base| 100.0 + base.ln())

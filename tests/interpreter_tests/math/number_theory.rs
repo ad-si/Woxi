@@ -4194,7 +4194,7 @@ mod random_prime {
     // Seed for determinism
     interpret("SeedRandom[42]").unwrap();
     let result: i128 = interpret("RandomPrime[100]").unwrap().parse().unwrap();
-    assert!(result >= 2 && result <= 100);
+    assert!((2..=100).contains(&result));
     assert!(is_prime_i128(result));
   }
 
@@ -4203,7 +4203,7 @@ mod random_prime {
     interpret("SeedRandom[42]").unwrap();
     let result: i128 =
       interpret("RandomPrime[{10, 30}]").unwrap().parse().unwrap();
-    assert!(result >= 10 && result <= 30);
+    assert!((10..=30).contains(&result));
     assert!(is_prime_i128(result));
   }
 
@@ -4337,7 +4337,7 @@ mod random_prime {
       .unwrap()
       .parse()
       .unwrap();
-    assert!(result >= 1_000_000_000 && result <= 10_000_000_000);
+    assert!((1_000_000_000..=10_000_000_000).contains(&result));
   }
 }
 

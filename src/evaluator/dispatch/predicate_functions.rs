@@ -1253,8 +1253,11 @@ pub fn dispatch_predicate_functions(
         let per_symbol: Option<Vec<Expr>> = symbols
           .iter()
           .map(|sym| {
-            dispatch_predicate_functions("Attributes", &[sym.clone()])
-              .and_then(|r| r.ok())
+            dispatch_predicate_functions(
+              "Attributes",
+              std::slice::from_ref(sym),
+            )
+            .and_then(|r| r.ok())
           })
           .collect();
         if let Some(lists) = per_symbol {

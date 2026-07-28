@@ -175,7 +175,7 @@ mod plus {
     #[test]
     fn symbolic_identity(a in symbolic_expr(1)) {
       let result_with_zero = eval(&format!("{a} + 0"));
-      let result_alone = eval(&format!("{a}"));
+      let result_alone = eval(&a.to_string());
       prop_assert_eq!(result_with_zero, result_alone);
     }
 

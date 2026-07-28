@@ -155,8 +155,8 @@ enum TakeExtreme {
 ///     valid `UpTo[k]` (e.g. `-1`, `2.5`, `{2}`);
 ///   * `insuff` when more elements than the list holds are requested (a plain
 ///     integer larger than the length, or `Infinity`).
-/// Returns `None` when the first argument is not a plain list, so the caller's
-/// other paths (associations, operator forms) are left untouched.
+///     Returns `None` when the first argument is not a plain list, so the caller's
+///     other paths (associations, operator forms) are left untouched.
 fn validate_take_extreme(name: &str, args: &[Expr]) -> Option<TakeExtreme> {
   let Expr::List(items) = &args[0] else {
     return None;
@@ -3858,7 +3858,7 @@ pub fn dispatch_list_operations(
           if is_sparse(a) {
             match crate::evaluator::evaluate_function_call_ast(
               "Normal",
-              &[a.clone()],
+              std::slice::from_ref(a),
             ) {
               Ok(n) => dense.push(n),
               Err(e) => return Some(Err(e)),
@@ -5730,7 +5730,7 @@ pub fn dispatch_list_operations(
                   let g_applied = match g {
                     Expr::Function { body } => crate::syntax::substitute_slots(
                       body,
-                      &[pair_expr.clone()],
+                      std::slice::from_ref(&pair_expr),
                     ),
                     Expr::Identifier(gname) => Expr::FunctionCall {
                       name: gname.clone(),
@@ -6721,9 +6721,7 @@ pub fn dispatch_list_operations(
         };
         let mut shape = vec![items.len()];
         if items.is_empty() {
-          for _ in 1..depth {
-            shape.push(0);
-          }
+          shape.resize(depth.max(1), 0);
           return Some(shape);
         }
         let inner_shape = block_shape(&items[0], depth - 1)?;

@@ -93,7 +93,7 @@ pub fn string_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::List(items) = &args[0] {
     let results: Result<Vec<Expr>, InterpreterError> = items
       .iter()
-      .map(|e| string_length_ast(&[e.clone()]))
+      .map(|e| string_length_ast(std::slice::from_ref(e)))
       .collect();
     return Ok(Expr::List(results?.into()));
   }
@@ -286,11 +286,7 @@ fn string_take_drop(
   let empty_or_all = |empty: bool| -> Expr {
     if empty == is_take {
       // empty take or full drop -> ""
-      if is_take {
-        Expr::String(String::new())
-      } else {
-        Expr::String(String::new())
-      }
+      Expr::String(String::new())
     } else {
       Expr::String(s.clone())
     }
@@ -652,7 +648,7 @@ fn split_delim_regex(
       let (re, _) = split_delim_regex(it)?;
       alts.push(format!("(?:{})", re));
     }
-    alts.sort_by(|a, b| b.len().cmp(&a.len()));
+    alts.sort_by_key(|b| std::cmp::Reverse(b.len()));
     return Ok((alts.join("|"), None));
   }
   // The implicitly named blanks — `x_`, `x__`, `x_?test` — bind their name to
@@ -965,8 +961,7 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let spans = find_constraint_spans(&re, &split_constraints, &s, false);
       let mut pieces: Vec<Expr> = Vec::new();
       let mut last = 0usize;
-      let mut splits = 0usize;
-      for (start, end) in spans {
+      for (splits, (start, end)) in spans.into_iter().enumerate() {
         if let Some(n) = max_parts
           && splits + 1 >= n
         {
@@ -974,7 +969,6 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         pieces.push(Expr::String(s[last..start].to_string()));
         last = end;
-        splits += 1;
       }
       pieces.push(Expr::String(s[last..].to_string()));
       pieces
@@ -1039,7 +1033,7 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // stop splitting so the final piece keeps the original remainder verbatim
     // (mirroring `splitn`), matching wolframscript.
     let mut sorted_delims = delims.clone();
-    sorted_delims.sort_by(|a, b| b.len().cmp(&a.len()));
+    sorted_delims.sort_by_key(|b| std::cmp::Reverse(b.len()));
     let mut result = Vec::new();
     let mut current = String::new();
     let chars: Vec<char> = s.chars().collect();
@@ -1839,7 +1833,7 @@ pub fn to_upper_case_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::List(items) = &args[0] {
     let results: Result<Vec<Expr>, InterpreterError> = items
       .iter()
-      .map(|item| to_upper_case_ast(&[item.clone()]))
+      .map(|item| to_upper_case_ast(std::slice::from_ref(item)))
       .collect();
     return Ok(Expr::List(results?.into()));
   }
@@ -1863,7 +1857,7 @@ pub fn to_lower_case_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::List(items) = &args[0] {
     let results: Result<Vec<Expr>, InterpreterError> = items
       .iter()
-      .map(|item| to_lower_case_ast(&[item.clone()]))
+      .map(|item| to_lower_case_ast(std::slice::from_ref(item)))
       .collect();
     return Ok(Expr::List(results?.into()));
   }
@@ -1885,7 +1879,7 @@ pub fn characters_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::List(items) = &args[0] {
     let results: Result<Vec<Expr>, InterpreterError> = items
       .iter()
-      .map(|item| characters_ast(&[item.clone()]))
+      .map(|item| characters_ast(std::slice::from_ref(item)))
       .collect();
     return Ok(Expr::List(results?.into()));
   }
@@ -2306,7 +2300,7 @@ pub fn string_reverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::List(items) = &args[0] {
     let results: Result<Vec<Expr>, InterpreterError> = items
       .iter()
-      .map(|item| string_reverse_ast(&[item.clone()]))
+      .map(|item| string_reverse_ast(std::slice::from_ref(item)))
       .collect();
     return Ok(Expr::List(results?.into()));
   }
@@ -3687,11 +3681,6 @@ fn group_digits_from_left(digits: &str, block: usize, sep: &str) -> String {
   groups.join(sep)
 }
 
-/// Render `ScientificForm[x]` / `ScientificForm[x, n]` to a string: a real `x`
-/// is shown as `mantissa × 10` with the exponent placed as a superscript on the
-/// line above (e.g. `1.23457 × 10` over `4`). Default `n` is 6 significant
-/// figures. An exponent of 0 collapses to just the mantissa (`5.`). An integer
-
 /// Decompose `ScientificForm[x]` / `ScientificForm[x, n]` into its mantissa
 /// string and (optional) base-10 exponent. The exponent is `None` when the
 /// value renders without a `× 10^e` factor (integer argument, or an exponent of
@@ -3873,11 +3862,6 @@ where
     render(arg)
   }
 }
-
-/// Render `EngineeringForm[x]` / `EngineeringForm[x, n]` to a string: like
-/// `ScientificForm` but the exponent is forced to a multiple of 3, so the
-/// mantissa lies in `[1, 1000)` (e.g. `12.3457 × 10` over `3`). Default `n` is 6
-/// significant figures. An exponent of 0 collapses to just the mantissa. An
 
 /// Decompose `EngineeringForm[x]` / `EngineeringForm[x, n]` into its mantissa
 /// string and (optional) base-10 exponent — like [`scientific_form_parts`] but
@@ -8475,7 +8459,7 @@ pub fn from_character_code_ast(
       if !items.is_empty() && matches!(&items[0], Expr::List(_)) {
         let mut results = Vec::new();
         for item in items {
-          let sub_result = from_character_code_ast(&[item.clone()])?;
+          let sub_result = from_character_code_ast(std::slice::from_ref(item))?;
           results.push(sub_result);
         }
         return Ok(Expr::List(results.into()));
@@ -9578,7 +9562,7 @@ pub fn decapitalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::List(items) = &args[0] {
     let results: Result<Vec<Expr>, InterpreterError> = items
       .iter()
-      .map(|item| decapitalize_ast(&[item.clone()]))
+      .map(|item| decapitalize_ast(std::slice::from_ref(item)))
       .collect();
     return Ok(Expr::List(results?.into()));
   }
@@ -10562,7 +10546,7 @@ pub fn letter_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Sort by frequency descending, breaking ties by reverse first-occurrence
   // (reverse, then stable-sort), matching CharacterCounts and wolframscript.
   counts.reverse();
-  counts.sort_by(|a, b| b.1.cmp(&a.1));
+  counts.sort_by_key(|c| std::cmp::Reverse(c.1));
   Ok(Expr::Association(
     counts
       .into_iter()
@@ -10647,7 +10631,7 @@ pub fn character_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Sort by frequency descending, then by reverse first-occurrence for ties
   // (reverse the list, then stable-sort by frequency descending)
   counts.reverse();
-  counts.sort_by(|a, b| b.1.cmp(&a.1));
+  counts.sort_by_key(|c| std::cmp::Reverse(c.1));
 
   let items: Vec<(Expr, Expr)> = counts
     .into_iter()
@@ -11302,7 +11286,8 @@ pub fn read_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Skip non-numeric tokens
       }
     }
-    "Expression" | _ => {
+    // "Expression", and any unrecognized type, is read as an expression.
+    _ => {
       // Parse and evaluate each line as a Wolfram expression
       for line in text.lines() {
         let trimmed = line.trim();
@@ -11777,7 +11762,7 @@ pub fn expr_to_c(expr: &Expr) -> String {
             format!("Power({},{})", l, r)
           }
         }
-        _ => format!("{}({})", format!("{:?}", op), format!("{},{}", l, r)),
+        _ => format!("{:?}({},{})", op, l, r),
       }
     }
     Expr::UnaryOp {
@@ -11899,7 +11884,7 @@ pub fn expr_to_fortran(expr: &Expr) -> String {
         }
         BinaryOperator::Divide => format!("{}/{}", l, r),
         BinaryOperator::Power => fortran_power(left, right),
-        _ => format!("{}({})", format!("{:?}", op), format!("{},{}", l, r)),
+        _ => format!("{:?}({},{})", op, l, r),
       }
     }
     Expr::UnaryOp {
@@ -12681,7 +12666,7 @@ pub fn url_encode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Thread over lists
       let encoded: Result<Vec<Expr>, _> = items
         .iter()
-        .map(|item| url_encode_ast(&[item.clone()]))
+        .map(|item| url_encode_ast(std::slice::from_ref(item)))
         .collect();
       Ok(Expr::List(encoded?.into()))
     }
@@ -12697,7 +12682,7 @@ pub fn url_decode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) => {
       let decoded: Result<Vec<Expr>, _> = items
         .iter()
-        .map(|item| url_decode_ast(&[item.clone()]))
+        .map(|item| url_decode_ast(std::slice::from_ref(item)))
         .collect();
       Ok(Expr::List(decoded?.into()))
     }

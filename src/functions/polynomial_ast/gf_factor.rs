@@ -328,7 +328,8 @@ fn univariate_int_coeffs(
       name: "Expand".to_string(),
       args: vec![expr.clone()].into(),
     })?;
-  let vars = crate::functions::math_ast::variables_ast(&[expanded.clone()])?;
+  let vars =
+    crate::functions::math_ast::variables_ast(std::slice::from_ref(&expanded))?;
   let Expr::List(ref vars) = vars else {
     return Ok(None);
   };

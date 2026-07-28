@@ -52,7 +52,7 @@ pub fn expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if modulus.is_some() {
           expand_ast(&[item.clone(), args[1].clone()])
         } else {
-          expand_ast(&[item.clone()])
+          expand_ast(std::slice::from_ref(item))
         }
       })
       .collect();
@@ -1672,7 +1672,7 @@ pub fn expand_numerator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::List(items) = &args[0] {
     let results: Result<Vec<Expr>, InterpreterError> = items
       .iter()
-      .map(|item| expand_numerator_ast(&[item.clone()]))
+      .map(|item| expand_numerator_ast(std::slice::from_ref(item)))
       .collect();
     return Ok(Expr::List(results?.into()));
   }
@@ -1818,7 +1818,7 @@ pub fn expand_denominator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::List(items) = &args[0] {
     let results: Result<Vec<Expr>, InterpreterError> = items
       .iter()
-      .map(|item| expand_denominator_ast(&[item.clone()]))
+      .map(|item| expand_denominator_ast(std::slice::from_ref(item)))
       .collect();
     return Ok(Expr::List(results?.into()));
   }

@@ -46,7 +46,7 @@ impl Color {
     self
   }
 
-  pub(crate) fn to_svg_rgb(&self) -> String {
+  pub(crate) fn to_svg_rgb(self) -> String {
     let r = (self.r.clamp(0.0, 1.0) * 255.0).round() as u8;
     let g = (self.g.clamp(0.0, 1.0) * 255.0).round() as u8;
     let b = (self.b.clamp(0.0, 1.0) * 255.0).round() as u8;
@@ -81,7 +81,7 @@ impl Color {
   }
 
   /// Convert to an Expr (RGBColor or GrayLevel) for embedding in Graphics expressions.
-  pub(crate) fn to_expr(&self) -> Expr {
+  pub(crate) fn to_expr(self) -> Expr {
     if (self.r - self.g).abs() < 1e-14 && (self.g - self.b).abs() < 1e-14 {
       Expr::FunctionCall {
         name: "GrayLevel".to_string(),
@@ -2196,17 +2196,13 @@ fn evaluate_bspline(
 
   // Clamped uniform knot vector
   let mut knots = Vec::with_capacity(num_knots);
-  for _ in 0..=degree {
-    knots.push(0.0);
-  }
+  knots.extend(std::iter::repeat_n(0.0, degree + 1));
   let num_internal = num_knots - 2 * (degree + 1);
   for i in 1..=num_internal {
     knots.push(i as f64);
   }
   let max_knot = (num_internal + 1) as f64;
-  for _ in 0..=degree {
-    knots.push(max_knot);
-  }
+  knots.extend(std::iter::repeat_n(max_knot, degree + 1));
 
   let t_min = knots[degree];
   let t_max = knots[n];
@@ -4701,20 +4697,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Compute margins for axis/frame tick labels.
-  let margin_left: f64 = if frame {
-    50.0
-  } else if axes.1 {
-    50.0
-  } else {
-    0.0
-  };
-  let margin_bottom: f64 = if frame {
-    25.0
-  } else if axes.0 {
-    25.0
-  } else {
-    0.0
-  };
+  let margin_left: f64 = if frame || axes.1 { 50.0 } else { 0.0 };
+  let margin_bottom: f64 = if frame || axes.0 { 25.0 } else { 0.0 };
   let margin_right: f64 = if frame { 10.0 } else { 0.0 };
   let margin_top: f64 = if frame { 10.0 } else { 0.0 };
   let total_width = svg_w + margin_left + margin_right;
@@ -6016,7 +6000,7 @@ fn group_digits_svg(s: &str) -> String {
   if remainder > 0 {
     result.push_str(&digits[..remainder]);
   }
-  for (i, chunk) in digits[remainder..].as_bytes().chunks(3).enumerate() {
+  for (i, chunk) in digits.as_bytes()[remainder..].chunks(3).enumerate() {
     let chunk_str = std::str::from_utf8(chunk).unwrap();
     if i > 0 || remainder > 0 {
       // Thin space between groups (~30% of a monospace character width)
@@ -14227,95 +14211,6 @@ fn display_node_to_json(node: &DisplayNode) -> String {
   }
 }
 
-#[cfg(test)]
-mod manipulate_label_tests {
-  use super::*;
-
-  fn call(name: &str, args: Vec<Expr>) -> Expr {
-    Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.into(),
-    }
-  }
-
-  fn runs(expr: &Expr) -> Vec<LabelRun> {
-    manipulate_label_runs(expr, false)
-  }
-
-  fn run(text: &str, italic: bool) -> LabelRun {
-    LabelRun {
-      text: text.to_string(),
-      italic,
-    }
-  }
-
-  #[test]
-  fn style_italic_string_is_one_italic_run() {
-    let label = call(
-      "Style",
-      vec![Expr::String("t".into()), Expr::Identifier("Italic".into())],
-    );
-    assert_eq!(runs(&label), vec![run("t", true)]);
-  }
-
-  #[test]
-  fn style_fontslant_rule_is_italic() {
-    let label = call(
-      "Style",
-      vec![
-        Expr::String("t".into()),
-        Expr::Rule {
-          pattern: Box::new(Expr::Identifier("FontSlant".into())),
-          replacement: Box::new(Expr::String("Italic".into())),
-        },
-      ],
-    );
-    assert_eq!(runs(&label), vec![run("t", true)]);
-  }
-
-  #[test]
-  fn text_subscript_style_renders_italic_base_and_upright_subscript() {
-    // Text[Subscript[Style["m", Italic], 1]]  ->  italic "m", upright "₁"
-    let styled = call(
-      "Style",
-      vec![Expr::String("m".into()), Expr::Identifier("Italic".into())],
-    );
-    let subscript = call("Subscript", vec![styled, Expr::Integer(1)]);
-    let label = call("Text", vec![subscript]);
-    assert_eq!(runs(&label), vec![run("m", true), run("\u{2081}", false)]);
-  }
-
-  #[test]
-  fn plain_identifier_passthrough() {
-    let label = Expr::Identifier("\u{03B8}".into());
-    assert_eq!(runs(&label), vec![run("\u{03B8}", false)]);
-    assert_eq!(flatten_label_runs(&runs(&label)), "\u{03B8}");
-  }
-
-  #[test]
-  fn superscript_renders_unicode() {
-    let label = call(
-      "Superscript",
-      vec![Expr::Identifier("x".into()), Expr::Integer(2)],
-    );
-    assert_eq!(runs(&label), vec![run("x", false), run("\u{00B2}", false)]);
-  }
-
-  #[test]
-  fn row_concatenates_parts_preserving_style() {
-    let italic_a = call(
-      "Style",
-      vec![Expr::String("a".into()), Expr::Identifier("Italic".into())],
-    );
-    let row = call(
-      "Row",
-      vec![Expr::List(vec![italic_a, Expr::String("b".into())].into())],
-    );
-    assert_eq!(runs(&row), vec![run("a", true), run("b", false)]);
-    assert_eq!(flatten_label_runs(&runs(&row)), "ab");
-  }
-}
-
 // ─── HilbertCurve / PeanoCurve ─────────────────────────────────────
 
 /// Shared plumbing for the integer-grid space-filling curves: parses the
@@ -14603,4 +14498,93 @@ pub fn sierpinski_curve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "Line".to_string(),
     args: vec![Expr::List(point_exprs.into())].into(),
   })
+}
+
+#[cfg(test)]
+mod manipulate_label_tests {
+  use super::*;
+
+  fn call(name: &str, args: Vec<Expr>) -> Expr {
+    Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.into(),
+    }
+  }
+
+  fn runs(expr: &Expr) -> Vec<LabelRun> {
+    manipulate_label_runs(expr, false)
+  }
+
+  fn run(text: &str, italic: bool) -> LabelRun {
+    LabelRun {
+      text: text.to_string(),
+      italic,
+    }
+  }
+
+  #[test]
+  fn style_italic_string_is_one_italic_run() {
+    let label = call(
+      "Style",
+      vec![Expr::String("t".into()), Expr::Identifier("Italic".into())],
+    );
+    assert_eq!(runs(&label), vec![run("t", true)]);
+  }
+
+  #[test]
+  fn style_fontslant_rule_is_italic() {
+    let label = call(
+      "Style",
+      vec![
+        Expr::String("t".into()),
+        Expr::Rule {
+          pattern: Box::new(Expr::Identifier("FontSlant".into())),
+          replacement: Box::new(Expr::String("Italic".into())),
+        },
+      ],
+    );
+    assert_eq!(runs(&label), vec![run("t", true)]);
+  }
+
+  #[test]
+  fn text_subscript_style_renders_italic_base_and_upright_subscript() {
+    // Text[Subscript[Style["m", Italic], 1]]  ->  italic "m", upright "₁"
+    let styled = call(
+      "Style",
+      vec![Expr::String("m".into()), Expr::Identifier("Italic".into())],
+    );
+    let subscript = call("Subscript", vec![styled, Expr::Integer(1)]);
+    let label = call("Text", vec![subscript]);
+    assert_eq!(runs(&label), vec![run("m", true), run("\u{2081}", false)]);
+  }
+
+  #[test]
+  fn plain_identifier_passthrough() {
+    let label = Expr::Identifier("\u{03B8}".into());
+    assert_eq!(runs(&label), vec![run("\u{03B8}", false)]);
+    assert_eq!(flatten_label_runs(&runs(&label)), "\u{03B8}");
+  }
+
+  #[test]
+  fn superscript_renders_unicode() {
+    let label = call(
+      "Superscript",
+      vec![Expr::Identifier("x".into()), Expr::Integer(2)],
+    );
+    assert_eq!(runs(&label), vec![run("x", false), run("\u{00B2}", false)]);
+  }
+
+  #[test]
+  fn row_concatenates_parts_preserving_style() {
+    let italic_a = call(
+      "Style",
+      vec![Expr::String("a".into()), Expr::Identifier("Italic".into())],
+    );
+    let row = call(
+      "Row",
+      vec![Expr::List(vec![italic_a, Expr::String("b".into())].into())],
+    );
+    assert_eq!(runs(&row), vec![run("a", true), run("b", false)]);
+    assert_eq!(flatten_label_runs(&runs(&row)), "ab");
+  }
 }

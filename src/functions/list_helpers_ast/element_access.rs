@@ -523,10 +523,6 @@ pub fn most_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// AST-based Take: take first n elements.
-/// Returns unevaluated if n exceeds list length (to let fallback handle error).
-/// Multi-dimensional Take: Take[list, spec1, spec2, ...]
-
 /// Emit the Take::take / Drop::drop message for an invalid position range.
 fn take_drop_message(fname: &str, from: i128, to: i128, list: &Expr) {
   let (tag, verb) = if fname == "Take" {
@@ -632,6 +628,7 @@ fn spec_range(n: &Expr) -> Option<(i128, i128)> {
   }
 }
 
+/// Multi-dimensional Take: `Take[list, spec1, spec2, …]`.
 pub fn take_multi_ast(
   list: &Expr,
   specs: &[Expr],
@@ -688,6 +685,8 @@ fn span_to_take_spec(span: &Expr) -> Option<Expr> {
   Some(Expr::List(spec.into()))
 }
 
+/// AST-based Take: take the first `n` elements. Returns unevaluated if `n`
+/// exceeds the list length (so the fallback path can emit the error).
 fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   // Normalize a nested Alternatives chain (`a | b | c`) into a flat
   // Alternatives[a, b, c] so Take sees all operands as siblings, matching WS.
@@ -1998,7 +1997,6 @@ pub fn replace_part_ast(
         }
       }
     }
-    let len = len;
     let mut out: Vec<Expr> = Vec::with_capacity(items.len());
     'next_item: for (i0, item) in items.iter().enumerate() {
       let idx = (i0 + 1) as i128;

@@ -489,10 +489,13 @@ pub fn apply_function_to_arg(
       }
       // Resolve variable holding a function name: t = Flatten; t @ x → Flatten[x]
       if let Some(resolved_name) = resolve_identifier_to_func_name(name) {
-        return evaluate_function_call_ast(&resolved_name, &[arg.clone()]);
+        return evaluate_function_call_ast(
+          &resolved_name,
+          std::slice::from_ref(arg),
+        );
       }
       // Simple function name: f applied to arg
-      evaluate_function_call_ast(name, &[arg.clone()])
+      evaluate_function_call_ast(name, std::slice::from_ref(arg))
     }
     Expr::Function { body } => {
       // Anonymous function: first substitute #0 with the whole function (to
@@ -503,9 +506,12 @@ pub fn apply_function_to_arg(
       let substituted = if crate::syntax::contains_slot_zero(body) {
         let self_substituted =
           crate::syntax::substitute_slot_zero_with_self(body, func);
-        crate::syntax::substitute_slots(&self_substituted, &[arg.clone()])
+        crate::syntax::substitute_slots(
+          &self_substituted,
+          std::slice::from_ref(arg),
+        )
       } else {
-        crate::syntax::substitute_slots(body, &[arg.clone()])
+        crate::syntax::substitute_slots(body, std::slice::from_ref(arg))
       };
       evaluate_expr_to_expr(&substituted)
     }
@@ -675,11 +681,11 @@ pub fn apply_function_to_arg(
         // It's an anonymous function like "#^2&"
         let body = string_to_expr(name)?;
         let substituted =
-          crate::syntax::substitute_slots(&body, &[arg.clone()]);
+          crate::syntax::substitute_slots(&body, std::slice::from_ref(arg));
         evaluate_expr_to_expr(&substituted)
       } else {
         // Treat as a function name
-        evaluate_function_call_ast(&func_str, &[arg.clone()])
+        evaluate_function_call_ast(&func_str, std::slice::from_ref(arg))
       }
     }
   }

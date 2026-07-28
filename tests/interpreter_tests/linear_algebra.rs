@@ -3459,7 +3459,8 @@ mod solid_angle {
         .unwrap()
         .parse()
         .unwrap();
-    assert!((v - 0.5235987755982989).abs() < 1e-12);
+    // The exact value is Pi/6.
+    assert!((v - std::f64::consts::FRAC_PI_6).abs() < 1e-12);
     // A wide angle (> Pi) exercises the negative-denominator branch.
     let w: f64 = interpret(
       "N[SolidAngle[{0, 0, 0}, {{1, 0, 0}, {-1, 2, 0}, {-1, -2, 1}}]]",

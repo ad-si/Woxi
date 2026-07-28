@@ -159,7 +159,7 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Abs[base^exp] = Abs[base]^exp for a real numeric exponent (|z^n| = |z|^n).
   if let Some((base, exp)) = power_with_real_exponent(&args[0]) {
-    let abs_base = abs_ast(&[base.clone()])?;
+    let abs_base = abs_ast(std::slice::from_ref(base))?;
     return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
       name: "Power".to_string(),
       args: vec![abs_base, exp.clone()].into(),
@@ -759,7 +759,7 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Sign[base^exp] = Sign[base]^exp for a real numeric exponent
   // (z^n / |z^n| = (z/|z|)^n).
   if let Some((base, exp)) = power_with_real_exponent(&args[0]) {
-    let sign_base = sign_ast(&[base.clone()])?;
+    let sign_base = sign_ast(std::slice::from_ref(base))?;
     return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
       name: "Power".to_string(),
       args: vec![sign_base, exp.clone()].into(),
@@ -3111,7 +3111,6 @@ pub fn integer_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Returns (num, den) with |num| < den.
 fn rational_fractional_part(n: i128, d: i128) -> (i128, i128) {
   let d = d.abs().max(1);
-  let n = if d == 0 { n } else { n };
   // Truncate n/d toward zero.
   let trunc = n / d;
   let frac = n - trunc * d;
@@ -3461,10 +3460,6 @@ pub fn cube_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Subdivide[n] - subdivide [0,1] into n equal parts
 /// Subdivide[xmax, n] - subdivide [0, xmax] into n equal parts
 /// Subdivide[xmin, xmax, n] - subdivide [xmin, xmax] into n equal parts
-/// True when `e` is a fully concrete number (integer, real, big number, or a
-/// Rational), possibly negated. Used to distinguish a bad numeric argument
-/// (which triggers a message) from a symbolic one (left unevaluated silently).
-
 pub fn subdivide_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
@@ -3818,8 +3813,10 @@ pub fn ramp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Real(0.0)
     }),
     Expr::List(items) => {
-      let results: Result<Vec<Expr>, InterpreterError> =
-        items.iter().map(|x| ramp_ast(&[x.clone()])).collect();
+      let results: Result<Vec<Expr>, InterpreterError> = items
+        .iter()
+        .map(|x| ramp_ast(std::slice::from_ref(x)))
+        .collect();
       Ok(Expr::List(results?.into()))
     }
     // Exact rationals and real-valued symbolic numerics (Pi, Sqrt[2], E - 3,
@@ -3996,8 +3993,10 @@ pub fn unit_step_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => Ok(unevaluated("UnitStep", args)),
     },
     Expr::List(items) => {
-      let results: Result<Vec<Expr>, InterpreterError> =
-        items.iter().map(|x| unit_step_ast(&[x.clone()])).collect();
+      let results: Result<Vec<Expr>, InterpreterError> = items
+        .iter()
+        .map(|x| unit_step_ast(std::slice::from_ref(x)))
+        .collect();
       Ok(Expr::List(results?.into()))
     }
     // Exact rationals and real-valued symbolic numerics (Sqrt[2] - 2, …):

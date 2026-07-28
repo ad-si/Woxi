@@ -5537,19 +5537,19 @@ mod random_real {
   #[test]
   fn no_args() {
     let result: f64 = interpret("RandomReal[]").unwrap().parse().unwrap();
-    assert!(result >= 0.0 && result < 1.0);
+    assert!((0.0..1.0).contains(&result));
   }
 
   #[test]
   fn with_max() {
     let result: f64 = interpret("RandomReal[5]").unwrap().parse().unwrap();
-    assert!(result >= 0.0 && result < 5.0);
+    assert!((0.0..5.0).contains(&result));
   }
 
   #[test]
   fn with_range() {
     let result: f64 = interpret("RandomReal[{2, 5}]").unwrap().parse().unwrap();
-    assert!(result >= 2.0 && result < 5.0);
+    assert!((2.0..5.0).contains(&result));
   }
 
   #[test]
@@ -5927,7 +5927,7 @@ mod random_integer {
   #[test]
   fn with_max() {
     let result: i128 = interpret("RandomInteger[10]").unwrap().parse().unwrap();
-    assert!(result >= 0 && result <= 10);
+    assert!((0..=10).contains(&result));
   }
 
   #[test]
@@ -6096,7 +6096,7 @@ mod random_variate {
       .unwrap()
       .parse()
       .unwrap();
-    assert!(result >= 0.0 && result < 1.0);
+    assert!((0.0..1.0).contains(&result));
   }
 
   #[test]
@@ -6519,7 +6519,7 @@ mod seed_random {
     assert_eq!(interpret("SeedRandom[]").unwrap(), "\0");
     // Should still produce valid results
     let result: f64 = interpret("RandomReal[]").unwrap().parse().unwrap();
-    assert!(result >= 0.0 && result < 1.0);
+    assert!((0.0..1.0).contains(&result));
   }
 
   #[test]
@@ -6632,7 +6632,7 @@ mod select {
        {pad}3"
     );
     assert!(
-      msgs.iter().any(|m| *m == expected),
+      msgs.contains(&expected),
       "expected {expected:?}, got {msgs:?}"
     );
   }

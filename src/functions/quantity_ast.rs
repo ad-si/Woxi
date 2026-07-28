@@ -1744,7 +1744,7 @@ pub fn quantity_unit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::List(items) = &args[0] {
     let results: Result<Vec<Expr>, InterpreterError> = items
       .iter()
-      .map(|item| quantity_unit_ast(&[item.clone()]))
+      .map(|item| quantity_unit_ast(std::slice::from_ref(item)))
       .collect();
     return Ok(Expr::List(results?.into()));
   }

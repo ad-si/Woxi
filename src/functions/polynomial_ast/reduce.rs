@@ -507,11 +507,7 @@ fn reduce_expr(
   // Handle True/False
   if let Expr::Identifier(s) = expr {
     if s == "True" {
-      return Ok(if domain == Some("Reals") || domain == Some("Integers") {
-        bool_expr(true)
-      } else {
-        bool_expr(true)
-      });
+      return Ok(bool_expr(true));
     }
     if s == "False" {
       return Ok(bool_expr(false));
@@ -1020,7 +1016,7 @@ fn reduce_equation(
   }
 
   // Solve returned unevaluated — try factoring
-  let factored = factor_ast(&[expanded.clone()])?;
+  let factored = factor_ast(std::slice::from_ref(&expanded))?;
   let factors = collect_multiplicative_factors(&factored);
   if factors.len() > 1 {
     // Each factor == 0 gives solutions

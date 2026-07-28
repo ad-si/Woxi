@@ -1653,7 +1653,7 @@ pub fn wavelet_best_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let user_fn_cost = |values_expr: &Expr| -> Option<f64> {
     let applied = crate::evaluator::function_application::apply_curried_call(
       cspec,
-      &[values_expr.clone()],
+      std::slice::from_ref(values_expr),
     )
     .ok()?;
     num(&applied)

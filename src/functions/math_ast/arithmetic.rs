@@ -3468,8 +3468,8 @@ fn extract_poly_degree_in_product(e: &Expr) -> f64 {
 ///   - BinaryOp::Plus/Times: compare left then right
 ///   - UnaryOp::Minus(x) < x (negative sorts before positive)
 ///   - Fall back to string comparison
-/// Factor is a call-like expression (opaque function call, pure function)
-/// that overrides the shared-denominator exponent ordering rules.
+///     Factor is a call-like expression (opaque function call, pure function)
+///     that overrides the shared-denominator exponent ordering rules.
 fn cmp_is_call_like(e: &Expr) -> bool {
   match e {
     Expr::FunctionCall { name, args } => {
@@ -10813,7 +10813,8 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     let k_pi =
       crate::functions::math_ast::complex::make_rational_times_pi(numer, denom);
     // Evaluate Cos[k*Pi] and Sin[k*Pi] symbolically
-    let cos_val = crate::functions::math_ast::cos_ast(&[k_pi.clone()])?;
+    let cos_val =
+      crate::functions::math_ast::cos_ast(std::slice::from_ref(&k_pi))?;
     let sin_val = crate::functions::math_ast::sin_ast(&[k_pi])?;
     // Build result: cos_val + I*sin_val
     let sin_is_zero = matches!(&sin_val, Expr::Integer(0));
@@ -11100,7 +11101,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     }
     // n == 1 with d == 2: delegate to sqrt_ast for exact simplification.
     if *n == 1 && *d == 2 && *p > 0 {
-      return crate::functions::sqrt_ast(&[base.clone()]);
+      return crate::functions::sqrt_ast(std::slice::from_ref(base));
     }
     // n == 1 with d > 2 (e.g. (8/27)^(1/3)): try to extract the d-th root
     // of the numerator and denominator separately. If both simplify to
@@ -11363,7 +11364,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   // x^(1/2) → delegate to sqrt_ast for symbolic simplification
   // This must come before the numeric evaluation to preserve exact results.
   if is_half(exp) {
-    return crate::functions::sqrt_ast(&[base.clone()]);
+    return crate::functions::sqrt_ast(std::slice::from_ref(base));
   }
 
   // A real-valued symbolic constant base (Pi, GoldenRatio, EulerGamma, …)
@@ -12694,8 +12695,6 @@ fn bigfloat_times(args: &[Expr]) -> Result<Expr, InterpreterError> {
   )?;
   Ok(Expr::BigFloat(result_str, result_prec))
 }
-
-/// Format an f64 value as a BigFloat digit string with the given significant digits.
 
 /// Check if Plus args represent DateObject subtraction (d1 - d2) and handle it.
 /// Returns Some(Ok(Quantity[n, "Days"])) if applicable.

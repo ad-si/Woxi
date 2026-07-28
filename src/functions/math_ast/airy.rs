@@ -43,8 +43,6 @@ pub fn airy_ai_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(unevaluated("AiryAi", args))
 }
 
-/// True if the expression tree contains a Real or BigFloat node.
-
 /// Complex Airy Ai via the power series
 ///   Ai(z) = c1·f(z) − c2·g(z)
 ///   f(z) = Σ z^(3k) / [(2·3)(5·6)…((3k−1)·3k)]

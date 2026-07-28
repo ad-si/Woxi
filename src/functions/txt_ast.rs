@@ -61,10 +61,10 @@ fn token_to_expr(tok: &str) -> Expr {
 /// - `"Lines"` → list of line strings.
 /// - `"Words"` → flat list of whitespace-separated tokens.
 /// - `"Data"`  → if every non-empty line has the same whitespace-token
-///               count, a list-of-lists with numeric tokens auto-converted;
-///               otherwise a list of line strings (same as `"Lines"`).
+///   count, a list-of-lists with numeric tokens auto-converted;
+///   otherwise a list of line strings (same as `"Lines"`).
 /// - `"Table"` → list-of-lists of auto-converted tokens, one row per line,
-///               regardless of whether the rows are uniform in length.
+///   regardless of whether the rows are uniform in length.
 pub fn import_element(content: &str, element: &str) -> Option<Expr> {
   match element {
     "Plaintext" | "String" | "Text" => {

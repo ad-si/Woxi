@@ -2585,7 +2585,9 @@ pub(crate) fn render_matrixform_if_needed(expr: syntax::Expr) -> syntax::Expr {
             .iter()
             .all(|item| matches!(item, syntax::Expr::List(_))) =>
         {
-          match functions::graphics::grid_ast_with_parens(&[data.clone()]) {
+          match functions::graphics::grid_ast_with_parens(std::slice::from_ref(
+            data,
+          )) {
             Ok(result) => result,
             Err(_) => expr,
           }
@@ -2632,7 +2634,9 @@ pub(crate) fn render_traditionalform_list_if_needed(
             .iter()
             .all(|item| matches!(item, syntax::Expr::List(_))) =>
         {
-          match functions::graphics::grid_ast_with_parens(&[data.clone()]) {
+          match functions::graphics::grid_ast_with_parens(std::slice::from_ref(
+            data,
+          )) {
             Ok(result) => result,
             Err(_) => expr,
           }

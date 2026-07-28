@@ -1696,8 +1696,6 @@ fn collect_primes_in_range(min: i128, max: i128) -> Vec<i128> {
   primes
 }
 
-/// Primality test for i128 values, using Miller-Rabin for large numbers
-
 /// SeedRandom[n] - Seed the random number generator
 /// SeedRandom[] - Reset to non-deterministic RNG
 pub fn seed_random_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

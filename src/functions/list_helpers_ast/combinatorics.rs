@@ -64,9 +64,7 @@ pub fn permutations_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let sizes: Option<Vec<i128>> = match args.get(1) {
     None => Some(vec![len]),
-    Some(e) if matches!(e, Expr::Identifier(s) if s == "All") => {
-      Some((0..=len).collect())
-    }
+    Some(Expr::Identifier(s)) if s == "All" => Some((0..=len).collect()),
     Some(e) if is_infinity(e) => Some((0..=len).collect()),
     Some(Expr::List(spec)) if spec.len() == 1 => {
       nonneg(&spec[0]).map(|n| vec![n])
@@ -238,9 +236,7 @@ pub fn subsets_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // The size sequence requested by nspec.
   let sizes: Option<Vec<i128>> = match args.get(1) {
     None => Some((0..=len).collect()),
-    Some(e) if matches!(e, Expr::Identifier(s) if s == "All") => {
-      Some((0..=len).collect())
-    }
+    Some(Expr::Identifier(s)) if s == "All" => Some((0..=len).collect()),
     Some(e) if is_infinity(e) => Some((0..=len).collect()),
     Some(Expr::List(spec)) if spec.len() == 1 => {
       nonneg(&spec[0]).map(|n| vec![n])
@@ -627,7 +623,7 @@ fn groupings_multi(elements: &[Expr], ops: &[GroupingOp]) -> Vec<Expr> {
   }
 
   let mut sorted_ops: Vec<&GroupingOp> = ops.iter().collect();
-  sorted_ops.sort_by(|a, b| b.arity.cmp(&a.arity));
+  sorted_ops.sort_by_key(|op| std::cmp::Reverse(op.arity));
 
   let mut results = Vec::new();
   for op in &sorted_ops {

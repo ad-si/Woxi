@@ -1793,7 +1793,7 @@ pub fn divisible_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // (stay unevaluated, no message), or Err-signalled `::exact` for a Real.
   enum Exact {
     Rational(BigInt, BigInt),
-    NonExact,
+    Inexact,
     Symbolic,
   }
   let classify = |e: &Expr| -> Exact {
@@ -1811,7 +1811,7 @@ pub fn divisible_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
       // Reals (even integer-valued like 12.) are not exact numbers.
-      Expr::Real(_) | Expr::BigFloat(_, _) => Exact::NonExact,
+      Expr::Real(_) | Expr::BigFloat(_, _) => Exact::Inexact,
       _ => Exact::Symbolic,
     }
   };
@@ -1827,7 +1827,7 @@ pub fn divisible_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // wolframscript reports the FIRST non-exact argument.
   let (na, da) = match classify(&args[0]) {
     Exact::Rational(n, d) => (n, d),
-    Exact::NonExact => {
+    Exact::Inexact => {
       exact_message(&args[0]);
       return Ok(unevaluated());
     }
@@ -1835,7 +1835,7 @@ pub fn divisible_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let (nb, db) = match classify(&args[1]) {
     Exact::Rational(n, d) => (n, d),
-    Exact::NonExact => {
+    Exact::Inexact => {
       exact_message(&args[1]);
       return Ok(unevaluated());
     }

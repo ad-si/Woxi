@@ -746,17 +746,9 @@ fn evaluate_function_call_ast_inner(
           .iter()
           .zip(param_defaults.iter())
           .map(|(&bt, d)| {
-            if d.is_some() {
-              0
-            }
-            // optional params
-            else if bt == 3 {
-              0
-            }
-            // BlankNullSequence: 0 or more
-            else {
-              1
-            } // Blank or BlankSequence: at least 1
+            // Optional params and BlankNullSequence (bt == 3) match zero
+            // arguments; Blank and BlankSequence need at least one.
+            if d.is_some() || bt == 3 { 0 } else { 1 }
           })
           .sum();
         if args.len() < min_args {
@@ -1114,30 +1106,55 @@ fn evaluate_function_call_ast_inner(
         let mut conditions_met = true;
         // Collect bindings from structural pattern matches for body substitution
         let mut structural_bindings: Vec<(String, Expr)> = Vec::new();
-        for cond_opt in conditions.iter() {
-          if let Some(cond_expr) = cond_opt {
-            // Check for __StructuralPattern__ marker — use match_pattern instead of eval
-            if let Expr::FunctionCall {
-              name: marker_name,
-              args: marker_args,
-            } = cond_expr
-              && marker_name == "__StructuralPattern__"
-              && marker_args.len() == 2
-              && let Expr::Identifier(param_name) = &marker_args[0]
-            {
-              let pattern = &marker_args[1];
-              // Find the effective arg for this structural param
-              if let Some(idx) = params.iter().position(|p| p == param_name) {
-                if idx < effective_args.len() {
-                  // Canonicalize the expression to match the canonical pattern form
-                  // (e.g., BinaryOp::Divide → Times[..., Power[..., -1]])
-                  let canonical_arg =
-                    crate::evaluator::assignment::canonicalize_divide_in_expr(
-                      &effective_args[idx],
-                    );
-                  // Push positional parameter bindings as context so inner
-                  // Orderless matching can check compatibility.
-                  let mut positional_ctx: Vec<(String, Expr)> = Vec::new();
+        for cond_expr in conditions.iter().flatten() {
+          // Check for __StructuralPattern__ marker — use match_pattern instead of eval
+          if let Expr::FunctionCall {
+            name: marker_name,
+            args: marker_args,
+          } = cond_expr
+            && marker_name == "__StructuralPattern__"
+            && marker_args.len() == 2
+            && let Expr::Identifier(param_name) = &marker_args[0]
+          {
+            let pattern = &marker_args[1];
+            // Find the effective arg for this structural param
+            if let Some(idx) = params.iter().position(|p| p == param_name) {
+              if idx < effective_args.len() {
+                // Canonicalize the expression to match the canonical pattern form
+                // (e.g., BinaryOp::Divide → Times[..., Power[..., -1]])
+                let canonical_arg =
+                  crate::evaluator::assignment::canonicalize_divide_in_expr(
+                    &effective_args[idx],
+                  );
+                // Push positional parameter bindings as context so inner
+                // Orderless matching can check compatibility.
+                let mut positional_ctx: Vec<(String, Expr)> = Vec::new();
+                for (pi, param) in params.iter().enumerate() {
+                  if pi == idx
+                    || pi >= effective_args.len()
+                    || param.starts_with("__sp")
+                    || param.starts_with("_dv")
+                  {
+                    continue;
+                  }
+                  positional_ctx
+                    .push((param.clone(), effective_args[pi].clone()));
+                }
+                crate::evaluator::pattern_matching::push_match_context(
+                  &positional_ctx,
+                );
+                let match_result =
+                  crate::evaluator::pattern_matching::match_pattern(
+                    &canonical_arg,
+                    pattern,
+                  );
+                crate::evaluator::pattern_matching::pop_match_context();
+                if let Some(bindings) = match_result {
+                  // Check consistency: structural bindings must not conflict
+                  // with positional parameter bindings (skip the structural
+                  // param itself and synthetic names)
+                  let mut check = bindings.clone();
+                  let mut consistent = true;
                   for (pi, param) in params.iter().enumerate() {
                     if pi == idx
                       || pi >= effective_args.len()
@@ -1146,91 +1163,64 @@ fn evaluate_function_call_ast_inner(
                     {
                       continue;
                     }
-                    positional_ctx
-                      .push((param.clone(), effective_args[pi].clone()));
-                  }
-                  crate::evaluator::pattern_matching::push_match_context(
-                    &positional_ctx,
-                  );
-                  let match_result =
-                    crate::evaluator::pattern_matching::match_pattern(
-                      &canonical_arg,
-                      pattern,
-                    );
-                  crate::evaluator::pattern_matching::pop_match_context();
-                  if let Some(bindings) = match_result {
-                    // Check consistency: structural bindings must not conflict
-                    // with positional parameter bindings (skip the structural
-                    // param itself and synthetic names)
-                    let mut check = bindings.clone();
-                    let mut consistent = true;
-                    for (pi, param) in params.iter().enumerate() {
-                      if pi == idx
-                        || pi >= effective_args.len()
-                        || param.starts_with("__sp")
-                        || param.starts_with("_dv")
-                      {
-                        continue;
-                      }
-                      if !crate::evaluator::pattern_matching::merge_bindings(
-                        &mut check,
-                        vec![(param.clone(), effective_args[pi].clone())],
-                      ) {
-                        consistent = false;
-                        break;
-                      }
-                    }
-                    if !consistent {
-                      conditions_met = false;
+                    if !crate::evaluator::pattern_matching::merge_bindings(
+                      &mut check,
+                      vec![(param.clone(), effective_args[pi].clone())],
+                    ) {
+                      consistent = false;
                       break;
                     }
-                    structural_bindings.extend(bindings);
-                  } else {
+                  }
+                  if !consistent {
                     conditions_met = false;
                     break;
                   }
+                  structural_bindings.extend(bindings);
                 } else {
                   conditions_met = false;
                   break;
                 }
+              } else {
+                conditions_met = false;
+                break;
               }
-              continue;
             }
-            // Build combined bindings for simultaneous substitution
-            let mut all_bindings: Vec<(&str, &Expr)> = Vec::new();
-            for (param, arg) in params.iter().zip(effective_args.iter()) {
-              all_bindings.push((param.as_str(), arg));
-            }
-            for (bind_name, bind_val) in &structural_bindings {
-              all_bindings.push((bind_name.as_str(), bind_val));
-            }
-            let substituted_cond =
-              crate::syntax::substitute_variables(cond_expr, &all_bindings);
-            // Evaluate the condition - it must return True. A `?test` whose
-            // test is a pure function can be stored as a FunctionCall whose
-            // head is the function's *string form* (e.g. `#1 > 0 & [arg]`),
-            // which doesn't reduce as a call; if the direct evaluation leaves
-            // it unapplied, re-parse the string form (which yields a proper
-            // application) and evaluate that — same approach MatchQ uses.
-            let mut cond_ok = matches!(
-              evaluate_expr_to_expr(&substituted_cond),
-              Ok(Expr::Identifier(ref s)) if s == "True"
+            continue;
+          }
+          // Build combined bindings for simultaneous substitution
+          let mut all_bindings: Vec<(&str, &Expr)> = Vec::new();
+          for (param, arg) in params.iter().zip(effective_args.iter()) {
+            all_bindings.push((param.as_str(), arg));
+          }
+          for (bind_name, bind_val) in &structural_bindings {
+            all_bindings.push((bind_name.as_str(), bind_val));
+          }
+          let substituted_cond =
+            crate::syntax::substitute_variables(cond_expr, &all_bindings);
+          // Evaluate the condition - it must return True. A `?test` whose
+          // test is a pure function can be stored as a FunctionCall whose
+          // head is the function's *string form* (e.g. `#1 > 0 & [arg]`),
+          // which doesn't reduce as a call; if the direct evaluation leaves
+          // it unapplied, re-parse the string form (which yields a proper
+          // application) and evaluate that — same approach MatchQ uses.
+          let mut cond_ok = matches!(
+            evaluate_expr_to_expr(&substituted_cond),
+            Ok(Expr::Identifier(ref s)) if s == "True"
+          );
+          if !cond_ok
+            && matches!(&substituted_cond, Expr::FunctionCall { name, .. }
+              if !is_identifier_like(name))
+          {
+            cond_ok = matches!(
+              crate::interpret(&crate::syntax::expr_to_string(
+                &substituted_cond
+              )),
+              Ok(ref s) if s == "True"
             );
-            if !cond_ok
-              && matches!(&substituted_cond, Expr::FunctionCall { name, .. }
-                if !is_identifier_like(name))
-            {
-              cond_ok = matches!(
-                crate::interpret(&crate::syntax::expr_to_string(
-                  &substituted_cond
-                )),
-                Ok(ref s) if s == "True"
-              );
-            }
-            if !cond_ok {
-              conditions_met = false;
-              break;
-            }
+          }
+          if !cond_ok {
+            conditions_met = false;
+            break;
           }
         }
         if !conditions_met {
@@ -3729,7 +3719,7 @@ fn evaluate_function_call_ast_inner(
         ));
       }
       "NormalDistribution" => {
-        let mean = crate::functions::mean_ast(&[data.clone()])?;
+        let mean = crate::functions::mean_ast(std::slice::from_ref(&data))?;
         let mean = crate::evaluator::evaluate_expr_to_expr(&mean)?;
         // population variance: sum((x - mean)^2) / n
         let (n, squared_diffs) = if let Expr::List(items) = &data {
@@ -5737,11 +5727,9 @@ fn evaluate_function_call_ast_inner(
     || name == "EccentricityCentrality")
     && (args.len() == 1 || (name == "VertexEccentricity" && args.len() == 2))
   {
-    let graph = if name == "VertexEccentricity" && args.len() == 2 {
-      &args[0]
-    } else {
-      &args[0]
-    };
+    // The graph is the first argument in every one of these forms,
+    // including the two-argument `VertexEccentricity[g, v]`.
+    let graph = &args[0];
     if let Expr::FunctionCall {
       name: gname,
       args: gargs,
@@ -7185,7 +7173,7 @@ fn evaluate_function_call_ast_inner(
         }
         components.retain(|c| !c.is_empty());
         // Sort components by size (largest first)
-        components.sort_by(|a, b| b.len().cmp(&a.len()));
+        components.sort_by_key(|b| std::cmp::Reverse(b.len()));
         components
       };
 
@@ -7305,7 +7293,7 @@ fn evaluate_function_call_ast_inner(
         comp.reverse();
       }
     }
-    components.sort_by(|a, b| b.len().cmp(&a.len()));
+    components.sort_by_key(|b| std::cmp::Reverse(b.len()));
     return Ok(Expr::List(
       components
         .into_iter()
@@ -8286,13 +8274,9 @@ fn evaluate_function_call_ast_inner(
         | Expr::BigInteger(_)
         | Expr::BigFloat(_, _)
         | Expr::Constant(_) => Some(true),
-        Expr::Identifier(s) => {
-          if vars.contains(s) {
-            Some(true) // Variable itself is continuous (identity)
-          } else {
-            Some(true) // Constant w.r.t. the variable
-          }
-        }
+        // Continuous either way: as the identity when `s` is one of the
+        // variables, and as a constant when it is not.
+        Expr::Identifier(_) => Some(true),
         Expr::FunctionCall { name, args } => {
           match name.as_str() {
             // Everywhere-continuous elementary functions

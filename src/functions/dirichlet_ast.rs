@@ -343,8 +343,8 @@ fn total_rotation(factors: &[Factor], exps: &[i128], a: i128) -> (i128, i128) {
 /// - odd real characters at s == 1 for k <= 4: the classic Pi forms
 ///   via the cotangent sum (higher conductors use Wolfram-internal
 ///   radical/log canonicalizations we do not reproduce).
-/// Principal characters (k > 1), s >= 2, non-integer s, and characters
-/// with higher-order values stay unevaluated.
+///   Principal characters (k > 1), s >= 2, non-integer s, and characters
+///   with higher-order values stay unevaluated.
 pub fn dirichlet_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use num_bigint::BigInt;
   let unevaluated = |args: &[Expr]| unevaluated("DirichletL", args);

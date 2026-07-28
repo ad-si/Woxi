@@ -1353,14 +1353,15 @@ mod tests {
       };
       // In the box pipeline, DisplayForm passes its content directly as boxes
       // (handled in generate_output_svg). Here we test the box extraction directly.
-      if let Expr::FunctionCall { name, args } = &expr {
-        if name == "DisplayForm" && args.len() == 1 {
-          let svg = boxes_to_svg(&args[0]);
-          assert!(
-            svg.contains("x") && svg.contains("baseline-shift=\"super\""),
-            "DisplayForm inner boxes should render as superscript SVG: got '{svg}'"
-          );
-        }
+      if let Expr::FunctionCall { name, args } = &expr
+        && name == "DisplayForm"
+        && args.len() == 1
+      {
+        let svg = boxes_to_svg(&args[0]);
+        assert!(
+          svg.contains("x") && svg.contains("baseline-shift=\"super\""),
+          "DisplayForm inner boxes should render as superscript SVG: got '{svg}'"
+        );
       }
     }
 

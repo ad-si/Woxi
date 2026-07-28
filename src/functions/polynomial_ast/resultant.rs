@@ -1042,7 +1042,7 @@ fn sylvester_det_integer(
 }
 
 /// Bareiss algorithm for exact integer determinant computation
-fn bareiss_determinant(matrix: &mut Vec<Vec<i128>>) -> i128 {
+fn bareiss_determinant(matrix: &mut [Vec<i128>]) -> i128 {
   let n = matrix.len();
   if n == 0 {
     return 1;

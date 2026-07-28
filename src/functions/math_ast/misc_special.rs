@@ -1556,7 +1556,7 @@ pub fn parabolic_cylinder_d_ast(
 /// D_ν(z) = 2^(ν/2) * exp(-z²/4) * [
 ///   √π / Γ((1-ν)/2) * 1F1(-ν/2, 1/2, z²/2)
 ///   - √2 * z / Γ(-ν/2) * 1F1((1-ν)/2, 3/2, z²/2)
-/// ]
+///     ]
 fn parabolic_cylinder_d(nu: f64, z: f64) -> f64 {
   use std::f64::consts::PI;
   let z2_half = z * z / 2.0;

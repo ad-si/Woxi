@@ -163,7 +163,7 @@ fn hurwitz_zeta_ast_inner(
 ) -> Result<Expr, InterpreterError> {
   // Zeta[s, 1] = Zeta[s]
   if matches!(a_expr, Expr::Integer(1)) {
-    return zeta_ast(&[s_expr.clone()]);
+    return zeta_ast(std::slice::from_ref(s_expr));
   }
 
   // Zeta[1, a] = ComplexInfinity (pole)

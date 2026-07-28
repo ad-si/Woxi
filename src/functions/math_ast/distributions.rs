@@ -3329,7 +3329,7 @@ fn strip_constant_multiplier(expr: &Expr, var: &str) -> (Expr, Expr) {
 ///   - `x < k`, `x <= k`        → Integrate[pdf, {x, lo, min(k,hi)}]
 ///   - `a < x < b`, `a ≤ x ≤ b` → Integrate[pdf, {x, max(a,lo), min(b,hi)}]
 ///   - `x \[Conditioned] y`     → P[x ∧ y] / P[y]
-/// Returns `None` if the shape isn't recognised so the caller can fall back.
+///     Returns `None` if the shape isn't recognised so the caller can fall back.
 fn try_probability_probability_distribution(
   event: &Expr,
   var_name: &str,
@@ -7523,8 +7523,8 @@ pub fn wakeby_quantile(
   let inf = infinity();
   match crate::functions::math_ast::try_eval_to_f64(q) {
     Some(qv) if qv > 0.0 && qv < 1.0 => eval(wakeby_quantile_body(dargs, q)),
-    Some(qv) if qv == 0.0 => eval(dargs[4].clone()),
-    Some(qv) if qv == 1.0 => Ok(inf),
+    Some(0.0) => eval(dargs[4].clone()),
+    Some(1.0) => Ok(inf),
     Some(_) => unevaluated(),
     None => {
       let body = wakeby_quantile_body(dargs, q);
@@ -8194,7 +8194,7 @@ fn tsallis_qgaussian_pdf(
   }
   let parts = tsallis_parts(&m, &b, &q, &x);
   match crate::functions::math_ast::try_eval_to_f64(&q) {
-    Some(qv) if qv == 1.0 => eval(parts.gaussian),
+    Some(1.0) => eval(parts.gaussian),
     Some(qv) if qv > 1.0 => eval(parts.branch_wide),
     Some(_) => {
       let cond = comparison3(
@@ -8270,7 +8270,7 @@ fn tsallis_qgaussian_cdf(
     int(2),
   );
   match crate::functions::math_ast::try_eval_to_f64(&q) {
-    Some(qv) if qv == 1.0 => eval(erf_form),
+    Some(1.0) => eval(erf_form),
     Some(_) => unevaluated(x),
     None => unevaluated(x),
   }
@@ -9732,8 +9732,8 @@ fn negative_multinomial_success(probs: &[Expr]) -> Expr {
 /// PDF[NegativeMultinomialDistribution[n, {p1, ..., pk}], {x1, ..., xk}]
 /// = (1 - p1 - ... - pk)^n * p1^x1 * ... * pk^xk
 ///   * Pochhammer[n, x1 + ... + xk] / (x1! * ... * xk!)
-///   when all xi >= 0
-/// = 0 otherwise
+///     when all xi >= 0
+///     = 0 otherwise
 fn pdf_negative_multinomial(
   dargs: &[Expr],
   x: Expr,
@@ -13881,7 +13881,7 @@ fn pdf_min_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let g_num = ms_numeric(&g);
   let numeric_x = ms_numeric(&x).is_some();
   match g_num {
-    Some(gv) if gv == 0.0 => {
+    Some(0.0) => {
       if numeric_x {
         return eval(gumbel(&x));
       }
@@ -13991,7 +13991,7 @@ fn cdf_min_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let g_num = ms_numeric(&g);
   let numeric_x = ms_numeric(&x).is_some();
   match g_num {
-    Some(gv) if gv == 0.0 => {
+    Some(0.0) => {
       if numeric_x || matches!(&x, Expr::Identifier(_)) {
         eval(gumbel(&x))
       } else {
@@ -14114,7 +14114,7 @@ fn min_stable_mean_variance(
   );
 
   match ms_numeric(g) {
-    Some(gv) if gv == 0.0 => Ok((eval(mean_gumbel())?, eval(var_gumbel())?)),
+    Some(0.0) => Ok((eval(mean_gumbel())?, eval(var_gumbel())?)),
     Some(gv) => {
       let mean = if gv < 1.0 {
         eval(mean_general)?
@@ -14264,7 +14264,7 @@ fn pdf_max_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let g_num = ms_numeric(&g);
   let numeric_x = ms_numeric(&x).is_some();
   match g_num {
-    Some(gv) if gv == 0.0 => {
+    Some(0.0) => {
       if numeric_x {
         return eval(gumbel(&x));
       }
@@ -14346,7 +14346,7 @@ fn cdf_max_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let g_num = ms_numeric(&g);
   let numeric_x = ms_numeric(&x).is_some();
   match g_num {
-    Some(gv) if gv == 0.0 => {
+    Some(0.0) => {
       if numeric_x {
         return eval(gumbel(&x));
       }
@@ -14441,7 +14441,7 @@ fn max_stable_mean_variance(
   // Variance is identical to MinStable's
   let (_, var) = min_stable_mean_variance(a, b, g)?;
   match ms_numeric(g) {
-    Some(gv) if gv == 0.0 => Ok((eval(mean_gumbel())?, var)),
+    Some(0.0) => Ok((eval(mean_gumbel())?, var)),
     Some(gv) => {
       let mean = if gv < 1.0 {
         eval(mean_general)?

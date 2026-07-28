@@ -53,12 +53,9 @@ pub(super) fn dispatch_wavelet_functions(
     "WaveletImagePlot" => Some(wa::plots::wavelet_image_plot_ast(args)),
     // Normal[dwd] / Normal[cwd] gives the list of coefficient rules.
     "Normal" if args.len() == 1 => {
-      if wa::data::Dwd::from_expr(&args[0]).is_some() {
-        Some(crate::evaluator::function_application::apply_curried_call(
-          &args[0],
-          &[Expr::Identifier("All".to_string())],
-        ))
-      } else if wa::continuous::Cwd::from_expr(&args[0]).is_some() {
+      if wa::data::Dwd::from_expr(&args[0]).is_some()
+        || wa::continuous::Cwd::from_expr(&args[0]).is_some()
+      {
         Some(crate::evaluator::function_application::apply_curried_call(
           &args[0],
           &[Expr::Identifier("All".to_string())],

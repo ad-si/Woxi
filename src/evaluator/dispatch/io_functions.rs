@@ -1588,10 +1588,10 @@ pub fn dispatch_io_functions(
         // Windows has no HOME; fall back to USERPROFILE the way the rest
         // of the home-directory handling does (SetDirectory[],
         // $HomeDirectory, …).
-        let expanded = if s.starts_with('~') {
+        let expanded = if let Some(rest) = s.strip_prefix('~') {
           match std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE"))
           {
-            Ok(home) => format!("{}{}", home, &s[1..]),
+            Ok(home) => format!("{}{}", home, rest),
             Err(_) => s.clone(),
           }
         } else {
@@ -3360,7 +3360,8 @@ fn read_single_type(remaining: &str, read_type: &Expr) -> (Expr, usize) {
       let ch = remaining.chars().next().unwrap();
       (Expr::String(ch.to_string()), ch.len_utf8())
     }
-    "Expression" | _ => {
+    // "Expression", and any unrecognized type, reads a whole expression.
+    _ => {
       // Read the next top-level Wolfram expression. Strings, comments,
       // and bracketed groups are allowed to span newlines, so we scan
       // forward tracking quote/bracket depth instead of cutting at the
@@ -3978,14 +3979,11 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       name: gfx_name,
       args: gfx_args,
     } if gfx_name == "Graphics" && !gfx_args.is_empty() => {
-      if let Ok(ref rendered) =
-        crate::functions::graphics::graphics_ast(gfx_args)
+      if let Ok(Expr::Graphics {
+        svg: ref svg_data, ..
+      }) = crate::functions::graphics::graphics_ast(gfx_args)
       {
-        if let Expr::Graphics { svg: svg_data, .. } = rendered {
-          svg_data.clone()
-        } else {
-          String::new()
-        }
+        svg_data.clone()
       } else {
         String::new()
       }
@@ -3994,14 +3992,11 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       name: gfx_name,
       args: gfx_args,
     } if gfx_name == "Graphics3D" && !gfx_args.is_empty() => {
-      if let Ok(ref rendered) =
-        crate::functions::plot3d::graphics3d_ast(gfx_args)
+      if let Ok(Expr::Graphics {
+        svg: ref svg_data, ..
+      }) = crate::functions::plot3d::graphics3d_ast(gfx_args)
       {
-        if let Expr::Graphics { svg: svg_data, .. } = rendered {
-          svg_data.clone()
-        } else {
-          String::new()
-        }
+        svg_data.clone()
       } else {
         String::new()
       }
@@ -4128,16 +4123,11 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       name: tf_name,
       args: tf_args,
     } if tf_name == "TreeForm" && !tf_args.is_empty() => {
-      if let Ok(rendered) = crate::functions::tree_form::tree_form_ast(tf_args)
+      if let Ok(Expr::Graphics {
+        svg: ref svg_data, ..
+      }) = crate::functions::tree_form::tree_form_ast(tf_args)
       {
-        if let Expr::Graphics {
-          svg: ref svg_data, ..
-        } = rendered
-        {
-          svg_data.clone()
-        } else {
-          String::new()
-        }
+        svg_data.clone()
       } else {
         String::new()
       }
@@ -4146,16 +4136,11 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       name: tg_name,
       args: tg_args,
     } if tg_name == "TreeGraph" && !tg_args.is_empty() => {
-      if let Ok(rendered) = crate::functions::tree_form::tree_graph_ast(tg_args)
+      if let Ok(Expr::Graphics {
+        svg: ref svg_data, ..
+      }) = crate::functions::tree_form::tree_graph_ast(tg_args)
       {
-        if let Expr::Graphics {
-          svg: ref svg_data, ..
-        } = rendered
-        {
-          svg_data.clone()
-        } else {
-          String::new()
-        }
+        svg_data.clone()
       } else {
         String::new()
       }
@@ -4164,15 +4149,11 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       name: g_name,
       args: g_args,
     } if g_name == "Graph" && g_args.len() >= 2 => {
-      if let Ok(rendered) = crate::functions::graph::graph_ast(g_args) {
-        if let Expr::Graphics {
-          svg: ref svg_data, ..
-        } = rendered
-        {
-          svg_data.clone()
-        } else {
-          String::new()
-        }
+      if let Ok(Expr::Graphics {
+        svg: ref svg_data, ..
+      }) = crate::functions::graph::graph_ast(g_args)
+      {
+        svg_data.clone()
       } else {
         String::new()
       }
@@ -4647,8 +4628,10 @@ fn svg_to_pdf_bytes(svg_str: &str) -> Result<Vec<u8>, InterpreterError> {
   fontdb.set_cursive_family("Atkinson Hyperlegible Next");
   fontdb.set_fantasy_family("Atkinson Hyperlegible Next");
 
-  let mut opt = svg2pdf::usvg::Options::default();
-  opt.fontdb = StdArc::new(fontdb);
+  let opt = svg2pdf::usvg::Options {
+    fontdb: StdArc::new(fontdb),
+    ..Default::default()
+  };
 
   let tree = svg2pdf::usvg::Tree::from_str(svg_str, &opt).map_err(|e| {
     InterpreterError::EvaluationError(format!(

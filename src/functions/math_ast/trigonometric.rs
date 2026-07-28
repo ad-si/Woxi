@@ -275,8 +275,8 @@ fn term_is_negative(e: &Expr) -> bool {
 ///   * the phase is reduced into `[-Pi/4, Pi/4]` by quarter-turn (`Pi/2`)
 ///     steps; the step count `k` rounds half-to-even, so `Sin[a + Pi/4]`
 ///     stays while `Sin[a + 3*Pi/4]` becomes `-Sin[a - Pi/4]`.
-/// Returns `(k mod 4, flip, (pn, pd), rest_terms)` with the residual phase
-/// `pn/pd * Pi`, or None when the argument is already canonical.
+///     Returns `(k mod 4, flip, (pn, pd), rest_terms)` with the residual phase
+///     `pn/pd * Pi`, or None when the argument is already canonical.
 fn extract_pi_phase(arg: &Expr) -> Option<(i64, bool, (i64, i64), Vec<Expr>)> {
   let is_sum = matches!(arg, Expr::FunctionCall { name, .. } if name == "Plus")
     || matches!(
@@ -341,14 +341,12 @@ fn extract_pi_phase(arg: &Expr) -> Option<(i64, bool, (i64, i64), Vec<Expr>)> {
   let num = 2 * pn;
   let div = num.div_euclid(pd);
   let rem = num.rem_euclid(pd);
-  let k = if 2 * rem > pd {
+  // Round up above the halfway point, and at exactly half only when that
+  // lands on an even step (round-half-to-even).
+  let k = if 2 * rem > pd || (2 * rem == pd && div % 2 != 0) {
     div + 1
-  } else if 2 * rem < pd {
-    div
-  } else if div % 2 == 0 {
-    div
   } else {
-    div + 1
+    div
   };
   if k == 0 && !flip {
     return None;
@@ -920,8 +918,6 @@ fn exact_cot(k: i64, n: i64) -> Option<Expr> {
     Some(val)
   }
 }
-
-/// Negate an Expr, simplifying integer, rational, and division cases
 
 /// Canonicalize an exact-value table result with one evaluation pass. The
 /// tables build raw BinaryOp trees (e.g. Divide[1, Sqrt[2]]) that would
@@ -1777,7 +1773,7 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let im_expr = make_rational(im_num, im_den);
       let cosh_b = crate::evaluator::evaluate_function_call_ast(
         "Cosh",
-        &[im_expr.clone()],
+        std::slice::from_ref(&im_expr),
       )?;
       let sinh_b =
         crate::evaluator::evaluate_function_call_ast("Sinh", &[im_expr])?;
@@ -1828,7 +1824,7 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let im_expr = make_rational(im_num, im_den);
       let cosh_b = crate::evaluator::evaluate_function_call_ast(
         "Cosh",
-        &[im_expr.clone()],
+        std::slice::from_ref(&im_expr),
       )?;
       let sinh_b =
         crate::evaluator::evaluate_function_call_ast("Sinh", &[im_expr])?;
@@ -1969,7 +1965,7 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let im_expr = make_rational(im_num, im_den);
       let cosh_b = crate::evaluator::evaluate_function_call_ast(
         "Cosh",
-        &[im_expr.clone()],
+        std::slice::from_ref(&im_expr),
       )?;
       let sinh_b =
         crate::evaluator::evaluate_function_call_ast("Sinh", &[im_expr])?;
@@ -2013,7 +2009,7 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let im_expr = make_rational(im_num, im_den);
       let cosh_b = crate::evaluator::evaluate_function_call_ast(
         "Cosh",
-        &[im_expr.clone()],
+        std::slice::from_ref(&im_expr),
       )?;
       let sinh_b =
         crate::evaluator::evaluate_function_call_ast("Sinh", &[im_expr])?;
@@ -2997,10 +2993,14 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => None,
         };
         if let Some(z) = e_exp {
-          let imz =
-            crate::evaluator::evaluate_function_call_ast("Im", &[z.clone()])?;
-          let rez =
-            crate::evaluator::evaluate_function_call_ast("Re", &[z.clone()])?;
+          let imz = crate::evaluator::evaluate_function_call_ast(
+            "Im",
+            std::slice::from_ref(z),
+          )?;
+          let rez = crate::evaluator::evaluate_function_call_ast(
+            "Re",
+            std::slice::from_ref(z),
+          )?;
           if let (Some(im_f), Some(_re_f)) = (
             crate::functions::math_ast::try_eval_to_f64(&imz),
             crate::functions::math_ast::try_eval_to_f64(&rez),
@@ -4944,9 +4944,6 @@ pub fn arccosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(unevaluated("ArcCosh", args))
 }
 
-/// True if `expr` contains a Real or BigFloat anywhere — used to gate
-/// numeric evaluation of otherwise-exact symbolic inputs.
-
 /// ArcTanh[x] - Inverse hyperbolic tangent
 pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -5905,7 +5902,7 @@ fn expand_trig_function(name: &str, arg: &Expr) -> Expr {
         let s = expand_sinh_sum(&terms);
         make_divide(&Expr::Integer(1), &s)
       }
-      _ => make_fn(name, &[arg.clone()]),
+      _ => make_fn(name, std::slice::from_ref(arg)),
     }
   } else {
     // Single term — check for integer multiple
@@ -5952,11 +5949,11 @@ fn expand_trig_function(name: &str, arg: &Expr) -> Expr {
           let s = expand_sinh_multiple(coeff as usize, &base);
           make_divide(&Expr::Integer(1), &s)
         }
-        _ => make_fn(name, &[arg.clone()]),
+        _ => make_fn(name, std::slice::from_ref(arg)),
       }
     } else {
       // Nothing to expand
-      make_fn(name, &[arg.clone()])
+      make_fn(name, std::slice::from_ref(arg))
     }
   }
 }
@@ -6065,8 +6062,8 @@ fn expand_cos_sum(terms: &[Expr]) -> Expr {
 /// Expand Sin[n*x] using Chebyshev-like formula:
 /// Sin[n*x] = Sum_{k} (-1)^k * C(n, 2k+1) * cos(x)^(n-2k-1) * sin(x)^(2k+1)
 fn expand_sin_multiple(n: usize, x: &Expr) -> Expr {
-  let sin_x = make_fn("Sin", &[x.clone()]);
-  let cos_x = make_fn("Cos", &[x.clone()]);
+  let sin_x = make_fn("Sin", std::slice::from_ref(x));
+  let cos_x = make_fn("Cos", std::slice::from_ref(x));
   let mut terms = Vec::new();
 
   for k in 0..=(n - 1) / 2 {
@@ -6093,8 +6090,8 @@ fn expand_sin_multiple(n: usize, x: &Expr) -> Expr {
 /// Expand Cos[n*x] using Chebyshev-like formula:
 /// Cos[n*x] = Sum_{k} (-1)^k * C(n, 2k) * cos(x)^(n-2k) * sin(x)^(2k)
 fn expand_cos_multiple(n: usize, x: &Expr) -> Expr {
-  let sin_x = make_fn("Sin", &[x.clone()]);
-  let cos_x = make_fn("Cos", &[x.clone()]);
+  let sin_x = make_fn("Sin", std::slice::from_ref(x));
+  let cos_x = make_fn("Cos", std::slice::from_ref(x));
   let mut terms = Vec::new();
 
   for k in 0..=n / 2 {
@@ -6128,8 +6125,14 @@ fn expand_sinh_sum(terms: &[Expr]) -> Expr {
   let rest = &terms[1..];
   // Sinh[a + rest] = Sinh[a]*Cosh[rest] + Cosh[a]*Sinh[rest]
   make_plus(
-    &make_times(&make_fn("Sinh", &[a.clone()]), &expand_cosh_sum(rest)),
-    &make_times(&make_fn("Cosh", &[a.clone()]), &expand_sinh_sum(rest)),
+    &make_times(
+      &make_fn("Sinh", std::slice::from_ref(a)),
+      &expand_cosh_sum(rest),
+    ),
+    &make_times(
+      &make_fn("Cosh", std::slice::from_ref(a)),
+      &expand_sinh_sum(rest),
+    ),
   )
 }
 
@@ -6142,15 +6145,21 @@ fn expand_cosh_sum(terms: &[Expr]) -> Expr {
   let rest = &terms[1..];
   // Cosh[a + rest] = Cosh[a]*Cosh[rest] + Sinh[a]*Sinh[rest]
   make_plus(
-    &make_times(&make_fn("Cosh", &[a.clone()]), &expand_cosh_sum(rest)),
-    &make_times(&make_fn("Sinh", &[a.clone()]), &expand_sinh_sum(rest)),
+    &make_times(
+      &make_fn("Cosh", std::slice::from_ref(a)),
+      &expand_cosh_sum(rest),
+    ),
+    &make_times(
+      &make_fn("Sinh", std::slice::from_ref(a)),
+      &expand_sinh_sum(rest),
+    ),
   )
 }
 
 /// Expand Sinh[n*x] using the multiple-angle formula.
 fn expand_sinh_multiple(n: usize, x: &Expr) -> Expr {
-  let sinh_x = make_fn("Sinh", &[x.clone()]);
-  let cosh_x = make_fn("Cosh", &[x.clone()]);
+  let sinh_x = make_fn("Sinh", std::slice::from_ref(x));
+  let cosh_x = make_fn("Cosh", std::slice::from_ref(x));
   let mut terms = Vec::new();
 
   // Sinh[n*x] = Sum_{k} C(n, 2k+1) * cosh(x)^(n-2k-1) * sinh(x)^(2k+1)
@@ -6176,8 +6185,8 @@ fn expand_sinh_multiple(n: usize, x: &Expr) -> Expr {
 
 /// Expand Cosh[n*x] using the multiple-angle formula.
 fn expand_cosh_multiple(n: usize, x: &Expr) -> Expr {
-  let sinh_x = make_fn("Sinh", &[x.clone()]);
-  let cosh_x = make_fn("Cosh", &[x.clone()]);
+  let sinh_x = make_fn("Sinh", std::slice::from_ref(x));
+  let cosh_x = make_fn("Cosh", std::slice::from_ref(x));
   let mut terms = Vec::new();
 
   // Cosh[n*x] = Sum_{k} C(n, 2k) * cosh(x)^(n-2k) * sinh(x)^(2k)

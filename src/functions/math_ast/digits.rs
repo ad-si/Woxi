@@ -1894,8 +1894,7 @@ fn real_digits_rational_base(
   // Compute exponent: number of digits in integer part
   let integer_part = n / d;
 
-  let exponent: i128;
-  if integer_part == 0 {
+  let exponent: i128 = if integer_part == 0 {
     // For numbers < 1, exponent is 0 or negative
     // Count leading zeros after decimal point
     let mut temp = n * base;
@@ -1904,7 +1903,7 @@ fn real_digits_rational_base(
       leading_zeros += 1;
       temp *= base;
     }
-    exponent = -leading_zeros;
+    -leading_zeros
   } else {
     // Count digits in integer part
     let mut count = 0i128;
@@ -1913,8 +1912,8 @@ fn real_digits_rational_base(
       count += 1;
       temp /= base;
     }
-    exponent = count;
-  }
+    count
+  };
 
   // Normalize: bring remainder into [0, d) range and extract integer part digits
   let mut remainder = n;
@@ -4173,7 +4172,7 @@ pub fn from_roman_numeral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) => {
       let mut results = Vec::with_capacity(items.len());
       for item in items.iter() {
-        results.push(from_roman_numeral_ast(&[item.clone()])?);
+        results.push(from_roman_numeral_ast(std::slice::from_ref(item))?);
       }
       Ok(Expr::List(results.into()))
     }

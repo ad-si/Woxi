@@ -3435,21 +3435,17 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     Expr::BinaryOp { op, left, right }
       if !matches!(op, BinaryOperator::Power | BinaryOperator::Divide) =>
     {
-      let (op_str, spaced) = match op {
-        BinaryOperator::Plus => ("+", true),
-        BinaryOperator::Minus => ("-", true),
-        BinaryOperator::Times => (" ", false),
-        BinaryOperator::And => ("&&", true),
-        BinaryOperator::Or => ("||", true),
-        BinaryOperator::StringJoin => ("<>", false),
-        BinaryOperator::Alternatives => ("|", true),
+      let sep = match op {
+        BinaryOperator::Plus => "+",
+        BinaryOperator::Minus => "-",
+        BinaryOperator::Times => " ",
+        BinaryOperator::And => "&&",
+        BinaryOperator::Or => "||",
+        BinaryOperator::StringJoin => "<>",
+        BinaryOperator::Alternatives => "|",
         BinaryOperator::Power | BinaryOperator::Divide => unreachable!(),
-      };
-      let sep = if spaced {
-        op_str.to_string()
-      } else {
-        op_str.to_string()
-      };
+      }
+      .to_string();
       // Additive operands of a product need parens so `(-5+n) (-4+n)`
       // doesn't render as `-5+n -4+n` (issue #135).
       let box_operand = |e: &Expr| {
@@ -13442,10 +13438,6 @@ fn compute_polygon_angle(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 // ─── Insphere ──────────────────────────────────────────────────────────────
 
-/// Compute the insphere (incircle) of a geometric region.
-/// For a 2D Triangle: returns Sphere[{cx, cy}, r]
-/// For a 3D Tetrahedron: returns Sphere[{cx, cy, cz}, r]
-
 /// The point list a `CircumscribedBall` / `BoundingRegion` specification
 /// denotes: a bare list of equal-length coordinate vectors, or one of the
 /// vertex-based region primitives wolframscript accepts there (`Point`,
@@ -14499,6 +14491,9 @@ fn solve_float_system(
   Some(b)
 }
 
+/// Compute the insphere (incircle) of a geometric region.
+/// For a 2D Triangle: returns Sphere[{cx, cy}, r]
+/// For a 3D Tetrahedron: returns Sphere[{cx, cy, cz}, r]
 fn compute_insphere(expr: &Expr) -> Result<Expr, InterpreterError> {
   match expr {
     // Raw point-list form: Insphere[{p1, …, p_{n+1}}] — the sphere inscribed
@@ -16321,11 +16316,9 @@ pub fn full_definition_text(sym: &str) -> Option<String> {
           collect_identifiers(v, out);
         }
       }
-      Expr::PatternOptional { default, .. } => {
-        if let Some(d) = default {
-          collect_identifiers(d, out)
-        }
-      }
+      Expr::PatternOptional {
+        default: Some(d), ..
+      } => collect_identifiers(d, out),
       Expr::PatternTest { test, .. } => collect_identifiers(test, out),
       _ => {}
     }

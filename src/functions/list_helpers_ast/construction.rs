@@ -1956,9 +1956,7 @@ fn expand_band_rules(data: &Expr, dims: &[usize]) -> Option<Expr> {
       && name == "Band"
       && !args.is_empty()
     {
-      let Some(start) = list_of_positive_ints(&args[0], dims.len()) else {
-        return None;
-      };
+      let start = list_of_positive_ints(&args[0], dims.len())?;
       let end: Vec<usize> = if args.len() >= 2 {
         match list_of_positive_ints(&args[1], dims.len()) {
           Some(e) => e

@@ -1183,12 +1183,7 @@ fn replace_at_depth(
       let head_level = pos_level + 1;
       let new_name = if heads_on {
         let head_expr = Expr::Identifier(name.clone());
-        let head_in_range = if min_level >= 0 {
-          head_level >= min_level
-        } else {
-          head_level >= min_level
-        };
-        if head_in_range && head_level <= max_level {
+        if head_level >= min_level && head_level <= max_level {
           let replaced = apply_replace_ast(&head_expr, rules)?;
           match &replaced {
             Expr::Identifier(s) | Expr::Constant(s) => s.clone(),
@@ -1453,16 +1448,11 @@ fn try_align_groups(
           }
         }
       }
-      let value = if elements.len() == 1 {
-        Expr::FunctionCall {
-          name: "Sequence".to_string(),
-          args: elements.into(),
-        }
-      } else {
-        Expr::FunctionCall {
-          name: "Sequence".to_string(),
-          args: elements.into(),
-        }
+      // A sequence binds to Sequence[…] even when it matched a single
+      // element, so that splicing it back keeps the flattening semantics.
+      let value = Expr::FunctionCall {
+        name: "Sequence".to_string(),
+        args: elements.into(),
       };
       if !seq_info.name.is_empty()
         && !merge_bindings(&mut bindings, vec![(seq_info.name, value)])
@@ -2661,7 +2651,8 @@ fn apply_pattern_test(test: &Expr, elem: &Expr) -> bool {
       evaluate_expr_to_expr(&call).ok()
     }
     Expr::Function { body } => {
-      let substituted = crate::syntax::substitute_slots(body, &[elem.clone()]);
+      let substituted =
+        crate::syntax::substitute_slots(body, std::slice::from_ref(elem));
       evaluate_expr_to_expr(&substituted).ok()
     }
     _ => {
@@ -3566,7 +3557,7 @@ fn match_pattern_impl(
         Expr::Function { body } => {
           // Anonymous function: substitute slots in the body (not the Function wrapper)
           let substituted =
-            crate::syntax::substitute_slots(body, &[expr.clone()]);
+            crate::syntax::substitute_slots(body, std::slice::from_ref(expr));
           evaluate_expr_to_expr(&substituted).ok()
         }
         _ => {
@@ -3745,7 +3736,8 @@ fn match_pattern_impl(
       let opt_defaults = match_options_pattern(pattern).unwrap_or_default();
       match expr {
         Expr::Rule { .. } | Expr::RuleDelayed { .. } => {
-          let merged = merge_option_rules(&opt_defaults, &[expr.clone()]);
+          let merged =
+            merge_option_rules(&opt_defaults, std::slice::from_ref(expr));
           Some(vec![(
             "__OptionsPattern__".to_string(),
             Expr::List(merged.into()),

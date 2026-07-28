@@ -1942,10 +1942,10 @@ mod plot3d {
       for (i, line) in lines.iter().enumerate() {
         if line.contains("text-anchor=\"end\"") {
           // The tick label text is on the next line
-          if let Some(text) = lines.get(i + 1) {
-            if let Ok(v) = text.trim().parse::<f64>() {
-              y_ticks.push(v);
-            }
+          if let Some(text) = lines.get(i + 1)
+            && let Ok(v) = text.trim().parse::<f64>()
+          {
+            y_ticks.push(v);
           }
         }
       }
@@ -5271,8 +5271,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       // occupy 71/250 of the plot height (~1926 px) ≈ 547 px.
       let last_bar_line = svg
         .lines()
-        .filter(|l| l.contains("fill=\"#5E81B5\"") && l.contains("<rect"))
-        .next_back()
+        .rfind(|l| l.contains("fill=\"#5E81B5\"") && l.contains("<rect"))
         .unwrap();
       let h_str = last_bar_line
         .split("height=\"")

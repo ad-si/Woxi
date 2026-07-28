@@ -2108,9 +2108,9 @@ pub fn bubble_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// An optional second argument controls the binning, mirroring `Histogram`:
 ///   - `n`    — use `n` equal-width bins along each axis
 ///   - `{dx}` — use bins of width `dx` along each axis
-/// When omitted, each axis is binned like `HistogramList` (Freedman-Diaconis
-/// width rounded to a nice number, edges aligned to multiples of the width,
-/// bins centered on commensurate data).
+///     When omitted, each axis is binned like `HistogramList` (Freedman-Diaconis
+///     width rounded to a nice number, edges aligned to multiples of the width,
+///     bins centered on commensurate data).
 ///
 /// Each bubble is colored by its bin count via Wolfram's
 /// "WL12DefaultVectorGradient" and drawn without an edge, matching

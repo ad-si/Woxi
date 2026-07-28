@@ -771,7 +771,7 @@ pub fn inverse_z_transform_ast(
       want == got
     };
     // -(z/(a - z)) → a^n
-    if m == 1 && sign == -1 && matches_multiset(&[z_var.clone()]) {
+    if m == 1 && sign == -1 && matches_multiset(std::slice::from_ref(&z_var)) {
       return Ok(a_pow_n);
     }
     // (a*z)/(a - z)^2 → a^n*n
