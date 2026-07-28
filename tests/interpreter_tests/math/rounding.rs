@@ -93,8 +93,10 @@ mod fractional_part {
   #[test]
   fn symbolic_negative_truncates_toward_zero() {
     assert_eq!(
-      interpret("FractionalPart[Times[Subtract[Pi, Plus[7, Divide[15, 2]]], 81]]")
-        .unwrap(),
+      interpret(
+        "FractionalPart[Times[Subtract[Pi, Plus[7, Divide[15, 2]]], 81]]"
+      )
+      .unwrap(),
       "920 + 81*(-29/2 + Pi)"
     );
     assert_eq!(interpret("FractionalPart[-Pi]").unwrap(), "3 - Pi");

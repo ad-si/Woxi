@@ -355,12 +355,12 @@ mod arithmetic {
       assert_eq!(interpret("x^2*(-1 + 2*x)").unwrap(), "x^2*(-1 + 2*x)");
       assert_eq!(interpret("x^3*(-1 + x^2)").unwrap(), "x^3*(-1 + x^2)");
       assert_eq!(interpret("x^2*(-1 + x^2)").unwrap(), "x^2*(-1 + x^2)");
-      assert_eq!(interpret("x^2*(-1 + x - x^2)").unwrap(), "x^2*(-1 + x - x^2)");
-      assert_eq!(interpret("Pi^2*(-1 + Pi^2)").unwrap(), "Pi^2*(-1 + Pi^2)");
       assert_eq!(
-        interpret("x^2*y*(-1 + x^2)").unwrap(),
-        "x^2*(-1 + x^2)*y"
+        interpret("x^2*(-1 + x - x^2)").unwrap(),
+        "x^2*(-1 + x - x^2)"
       );
+      assert_eq!(interpret("Pi^2*(-1 + Pi^2)").unwrap(), "Pi^2*(-1 + Pi^2)");
+      assert_eq!(interpret("x^2*y*(-1 + x^2)").unwrap(), "x^2*(-1 + x^2)*y");
       assert_eq!(
         interpret("x^2*(-1 + x^2)*(1 + x^2)").unwrap(),
         "x^2*(-1 + x^2)*(1 + x^2)"
@@ -10087,10 +10087,7 @@ mod bigfloat_trig {
         "17.33703703703704"
       );
       // The rational tail sums exactly to 1.
-      assert_eq!(
-        interpret("Plus[0.1, 1/3, 1/3, 1/3]").unwrap(),
-        "1.1"
-      );
+      assert_eq!(interpret("Plus[0.1, 1/3, 1/3, 1/3]").unwrap(), "1.1");
       // But exact terms in separate subtrees still convert individually.
       assert_eq!(
         interpret("Plus[22, -59, 34, 14.6]").unwrap(),

@@ -623,15 +623,9 @@ mod simplify {
     assert_eq!(interpret("Simplify[3 - 3*x]").unwrap(), "3 - 3*x");
     assert_eq!(interpret("Simplify[9 - 9*x]").unwrap(), "9 - 9*x");
     // … and the fully factored linear split still wins where it should.
-    assert_eq!(
-      interpret("Simplify[2*x - 2*x^2]").unwrap(),
-      "-2*(-1 + x)*x"
-    );
+    assert_eq!(interpret("Simplify[2*x - 2*x^2]").unwrap(), "-2*(-1 + x)*x");
     assert_eq!(interpret("Simplify[-2*x - 2]").unwrap(), "-2*(1 + x)");
-    assert_eq!(
-      interpret("Simplify[100 - 100*x]").unwrap(),
-      "-100*(-1 + x)"
-    );
+    assert_eq!(interpret("Simplify[100 - 100*x]").unwrap(), "-100*(-1 + x)");
   }
 
   // A rational function whose numerator and denominator share a
@@ -3402,8 +3396,7 @@ mod apart {
     );
     // The full fuzzer case.
     assert_eq!(
-      interpret("Pi + Divide[Plus[14, -73], Plus[Pi, Divide[9, 2]]]")
-        .unwrap(),
+      interpret("Pi + Divide[Plus[14, -73], Plus[Pi, Divide[9, 2]]]").unwrap(),
       "Pi - 59/(9/2 + Pi)"
     );
   }
@@ -16046,10 +16039,7 @@ mod fuzz_diff_round_2026_07_26 {
       "(1 - 3*x)^(-1)",
     );
     // Sign handling around the squarefree display is unchanged.
-    assert_case(
-      "Simplify[x^2/(1 - 3*x + 3*x^2 - x^3)]",
-      "-(x^2/(-1 + x)^3)",
-    );
+    assert_case("Simplify[x^2/(1 - 3*x + 3*x^2 - x^3)]", "-(x^2/(-1 + x)^3)");
     assert_case("Simplify[1/(1 - 3*x + 3*x^2 - x^3)]", "-(-1 + x)^(-3)");
     assert_case("Simplify[-1/(2 - 4*x)]", "(-2 + 4*x)^(-1)");
     assert_case(

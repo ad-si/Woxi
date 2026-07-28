@@ -58,7 +58,12 @@ pub fn wolfram_powi(x: f64, n: i128) -> f64 {
 
 /// The multiplication chain shared by real and complex machine integer
 /// powers (see `wolfram_powi` for the empirically derived structure).
-fn wolfram_pow_chain<T: Copy>(x: T, x2: T, k: u128, mul: &impl Fn(T, T) -> T) -> T {
+fn wolfram_pow_chain<T: Copy>(
+  x: T,
+  x2: T,
+  k: u128,
+  mul: &impl Fn(T, T) -> T,
+) -> T {
   let chain = |k| wolfram_pow_chain(x, x2, k, mul);
   match k {
     1 => x,
@@ -98,7 +103,7 @@ fn wolfram_pow_chain<T: Copy>(x: T, x2: T, k: u128, mul: &impl Fn(T, T) -> T) ->
           2 => mul(x2, chain(k - 2)),
           _ => mul(mul(x, x2), chain(k - 3)),
         }
-      } else if k % 2 == 0 {
+      } else if k.is_multiple_of(2) {
         let h = chain(k / 2);
         mul(h, h)
       } else {

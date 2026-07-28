@@ -5076,7 +5076,6 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
         super::together::extract_quotient_minus(&n, &d)
       {
         best = signed;
-      } else {
       }
     }
   }
@@ -7816,7 +7815,11 @@ pub(crate) fn simplify_division_impl(
         // accepted no-op.
         Some(r) => {
           settled_display = true;
-          if exprs_equal(&r, &basic) { None } else { Some(r) }
+          if exprs_equal(&r, &basic) {
+            None
+          } else {
+            Some(r)
+          }
         }
         None => Some(f),
       },
@@ -8177,9 +8180,8 @@ fn simplify_quotient_select(
     }
     Some(non_numeric)
   };
-  let simple_part = |e: &Expr| -> bool {
-    count_parts(e).map(|n| n <= 1).unwrap_or(false)
-  };
+  let simple_part =
+    |e: &Expr| -> bool { count_parts(e).map(|n| n <= 1).unwrap_or(false) };
   // The numerator must be plain (a sum, monomial, or content-wrapped sum)
   // — factored numerators like 2x(-1+2x) are Factor-pipeline displays
   // that a re-analysis would destroy. The DENOMINATOR may additionally
@@ -9741,7 +9743,9 @@ fn complexity_digits(expr: &Expr) -> usize {
         op: BinaryOperator::Minus,
         left,
         right,
-      } if !negated => plus_term_cost(left, false) + plus_term_cost(right, true),
+      } if !negated => {
+        plus_term_cost(left, false) + plus_term_cost(right, true)
+      }
       Expr::UnaryOp {
         op: UnaryOperator::Minus,
         operand,

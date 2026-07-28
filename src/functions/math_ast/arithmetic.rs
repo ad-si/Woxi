@@ -854,7 +854,10 @@ fn coeff_tree_fold(xs: &[Coeff], op: fn(&Coeff, &Coeff) -> Coeff) -> Coeff {
     2 => op(&xs[0], &xs[1]),
     n => {
       let m = n.div_ceil(2);
-      op(&coeff_tree_fold(&xs[..m], op), &coeff_tree_fold(&xs[m..], op))
+      op(
+        &coeff_tree_fold(&xs[..m], op),
+        &coeff_tree_fold(&xs[m..], op),
+      )
     }
   }
 }
@@ -3985,11 +3988,9 @@ fn univar_rat_coeffs(e: &Expr) -> Option<(String, Vec<(i128, i128)>)> {
         if name == "Times" && args.len() == 2 =>
       {
         match (rat_literal(&args[0]), monomial(&args[1])) {
-          (Some((kn, kd)), Some((v, d, (cn, cd)))) => Some((
-            v,
-            d,
-            (kn.checked_mul(cn)?, kd.checked_mul(cd)?),
-          )),
+          (Some((kn, kd)), Some((v, d, (cn, cd)))) => {
+            Some((v, d, (kn.checked_mul(cn)?, kd.checked_mul(cd)?)))
+          }
           _ => None,
         }
       }
