@@ -24,7 +24,7 @@ pub fn select_ast(
   if let Expr::Association(pairs) = list {
     let mut kept = Vec::new();
     for (key, val) in pairs {
-      let result = apply_func_ast(pred, val)?;
+      let result = apply_func_value(pred, val)?;
       if expr_to_bool(&result) == Some(true) {
         kept.push((key.clone(), val.clone()));
         if let Some(lim) = limit
@@ -90,7 +90,7 @@ pub fn select_ast(
 
   let mut kept = Vec::new();
   for item in items {
-    let result = apply_func_ast(pred, item)?;
+    let result = apply_func_value(pred, item)?;
     if expr_to_bool(&result) == Some(true) {
       kept.push(item.clone());
       if let Some(lim) = limit

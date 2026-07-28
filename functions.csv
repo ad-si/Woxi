@@ -189,7 +189,7 @@ BSplineCurve,B-spline curve through control points in Graphics,✅,pure,7.0,192
 PlotPoints,Option for number of sample points in plots,✅,pure,1.0,193
 Sort,Sorts a list in ascending order or by an ordering function which leaves a pair alone unless it compares False,✅,pure,1.0,194
 Series,Computes a power series expansion about a point or at Infinity,✅,pure,1.0,195
-Return,Returns a value from a function or control structure,✅,pure,1.0,196
+Return,Returns a value from a definition body Do or Scan — anywhere else it stands as Return[value] and is collected like any other,✅,pure,1.0,196
 Appearance,Option symbol for specifying visual appearance,✅,pure,6.0,197
 Needs,Loads a package (no-op in Woxi),✅,effectful,1.0,198
 Center,Symbol for centering alignment,✅,pure,1.0,199

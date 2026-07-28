@@ -474,6 +474,23 @@ pub(crate) fn reject_invalid_replace_rules(head: &str, rules: &Expr) -> bool {
   true
 }
 
+/// Evaluate `expr` for its value, at a boundary a `Return` does not cross.
+///
+/// Wolfram only lets a `Return` out of a definition body, `Do` and `Scan`;
+/// a `Table` body or a pure function applied to an argument keeps it, so
+/// `Table[Return[1], {2}]` is `{Return[1], Return[1]}` and not `1`. Woxi
+/// raises `Return` as a signal, so those boundaries turn it back into the
+/// expression it names — the same wrapping `Module` and `Block` already do.
+pub fn evaluate_value(expr: &Expr) -> Result<Expr, InterpreterError> {
+  match evaluate_expr_to_expr(expr) {
+    Err(InterpreterError::ReturnValue(val)) => Ok(Expr::FunctionCall {
+      name: "Return".to_string(),
+      args: vec![*val].into(),
+    }),
+    other => other,
+  }
+}
+
 /// Evaluate an Expr AST and return a new Expr (not a string).
 /// This is the core function for AST-based evaluation without string round-trips.
 pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {

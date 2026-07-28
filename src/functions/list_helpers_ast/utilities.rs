@@ -21,6 +21,22 @@ pub fn apply_func_ast(
   crate::evaluator::apply_function_to_arg(func, arg)
 }
 
+/// Apply `func` to `arg` for its value, at a boundary a `Return` does not
+/// cross. `Map` keeps whatever its function produced, `Return[…]` included,
+/// where `Scan` — which uses [`apply_func_ast`] — lets it out.
+pub fn apply_func_value(
+  func: &Expr,
+  arg: &Expr,
+) -> Result<Expr, InterpreterError> {
+  match apply_func_ast(func, arg) {
+    Err(InterpreterError::ReturnValue(val)) => Ok(Expr::FunctionCall {
+      name: "Return".to_string(),
+      args: vec![*val].into(),
+    }),
+    other => other,
+  }
+}
+
 /// Apply a binary function to two arguments.
 pub fn apply_func_to_two_args(
   func: &Expr,

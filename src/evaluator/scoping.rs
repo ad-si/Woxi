@@ -1013,8 +1013,9 @@ pub fn with_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let substituted =
     crate::syntax::substitute_variables(body_expr, &binding_refs);
 
-  // Evaluate the substituted body
-  evaluate_expr_to_expr(&substituted)
+  // Evaluate the substituted body. Like Module and Block, With leaves a
+  // Return that reaches its boundary standing as `Return[val]`.
+  crate::evaluator::evaluate_value(&substituted)
 }
 
 /// Recursively set a value at a path of indices within an Expr.

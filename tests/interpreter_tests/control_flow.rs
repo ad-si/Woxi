@@ -170,6 +170,87 @@ mod return_value {
       "11"
     );
   }
+
+  // A Return only leaves a definition body, `Do` and `Scan`. Anywhere a
+  // value is being collected it stands as the expression it names, so a
+  // `Table` still gives back a list of the same length. Values verified
+  // against wolframscript.
+  #[test]
+  fn a_collected_value_keeps_the_return_it_names() {
+    clear_state();
+    for (code, expected) in [
+      (
+        "ToString[Table[Return[1], {2}], InputForm]",
+        "{Return[1], Return[1]}",
+      ),
+      (
+        "ToString[Table[If[i == 2, Return[i], i], {i, 3}], InputForm]",
+        "{1, Return[2], 3}",
+      ),
+      (
+        "ToString[Map[Return[#] &, {1, 2}], InputForm]",
+        "{Return[1], Return[2]}",
+      ),
+      (
+        "ToString[Map[Return, {1, 2}], InputForm]",
+        "{Return[1], Return[2]}",
+      ),
+      // The criterion never says True, so nothing is selected.
+      ("ToString[Select[{1, 2}, Return[True] &], InputForm]", "{}"),
+      // Like Module and Block, With hands the Return on rather than
+      // unwrapping it.
+      (
+        "ToString[With[{a = 1}, Return[a]; 4], InputForm]",
+        "Return[1]",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  // A Return that a Table swallowed used to escape the whole function.
+  #[test]
+  fn a_return_inside_a_table_does_not_leave_the_function() {
+    clear_state();
+    assert_eq!(
+      interpret("f[] := (Table[Return[1], {2}]; 9); f[]").unwrap(),
+      "9"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("f[x_] := (Map[Return, {1, 2}]; 5); f[0]").unwrap(),
+      "5"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("f[] := With[{a = 1}, Return[a]; 4]; f[]").unwrap(),
+      "1"
+    );
+  }
+
+  // The three places a Return does leave, which the change had to keep.
+  #[test]
+  fn a_definition_body_do_and_scan_still_take_it() {
+    for (code, expected) in [
+      ("f[x_] := (Return[1]; 2); f[0]", "1"),
+      ("Do[Return[5], {2}]", "5"),
+      ("Scan[Return, {1, 2}]", "1"),
+      ("Scan[If[# > 2, Return[#]] &, {1, 2, 3, 4}, {1}]", "3"),
+      (
+        "f[x_] := (Do[If[i == 2, Return[i]], {i, 3}]; -1); f[0]",
+        "-1",
+      ),
+      (
+        "f[x_] := Module[{r = 0}, Do[If[i == 2, Return[i]], {i, 3}]; r]; f[0]",
+        "0",
+      ),
+      ("f[] := While[True, Return[7]]; f[]", "7"),
+      ("h[] := (Return[1]; 2); h[] + 10", "11"),
+    ] {
+      clear_state();
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
 }
 
 mod if_function_extended {

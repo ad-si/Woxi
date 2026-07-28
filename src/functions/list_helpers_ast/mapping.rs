@@ -17,7 +17,7 @@ pub fn map_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
     Expr::List(items) => {
       let results: Result<Vec<Expr>, _> = items
         .iter()
-        .map(|item| apply_func_ast(func, item))
+        .map(|item| apply_func_value(func, item))
         .collect();
       let results: Vec<Expr> =
         results?.into_iter().filter(|e| !is_nothing(e)).collect();
