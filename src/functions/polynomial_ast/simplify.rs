@@ -9054,6 +9054,7 @@ fn finish_quotient_sign(e: Expr, canonicalize_sign: bool) -> Expr {
 /// - a cancellation leaving a negative constant over a plain
 ///   negative-constant-led denominator re-orients the pair
 ///   (x/(x-3x^2) → (1-3x)^(-1)).
+///
 /// Returns None when the quotient is not univariate integer-polynomial
 /// (or the input numerator is itself a negative constant) — the caller
 /// keeps its legacy handling of the Factor output.
