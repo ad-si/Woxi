@@ -5915,3 +5915,140 @@ mod image_measurements {
     );
   }
 }
+
+// MeanFilter over an image, and ImageDifference. Values verified against
+// wolframscript.
+mod mean_filter_and_difference {
+  use super::*;
+
+  /// The result of `code`, written the way `InputForm` writes it.
+  fn form(code: &str) -> String {
+    interpret(&format!("ToString[{code}, InputForm]")).unwrap()
+  }
+
+  #[test]
+  fn the_mean_filter_averages_a_clipped_neighbourhood() {
+    clear_state();
+    // The centre sees all nine samples, four of them 1: 4/9, which the
+    // image's own Real32 precision reports as 0.4444444477558136.
+    assert_eq!(
+      form(
+        "ImageData[MeanFilter[Image[{{0., 1., 0.}, {1., 0., 1.}, \
+         {0., 1., 0.}}], 1]]"
+          .replace("         ", "")
+          .as_str()
+      ),
+      "{{0.5, 0.5, 0.5}, {0.5, 0.4444444477558136, 0.5}, {0.5, 0.5, 0.5}}"
+    );
+    // Every window of a two-by-two image is the whole image.
+    assert_eq!(
+      form("ImageData[MeanFilter[Image[{{0., 1.}, {1., 0.}}], 1]]"),
+      "{{0.5, 0.5}, {0.5, 0.5}}"
+    );
+    // A single row clips at both ends.
+    assert_eq!(
+      form("ImageData[MeanFilter[Image[{{0., 1., 0., 1.}}], 1]]"),
+      "{{0.5, 0.3333333432674408, 0.6666666865348816, 0.5}}"
+    );
+    // Radius zero changes nothing.
+    assert_eq!(
+      form(
+        "ImageData[MeanFilter[Image[{{0., 1., 0.}, {1., 0., 1.}, \
+         {0., 1., 0.}}], 0]]"
+          .replace("         ", "")
+          .as_str()
+      ),
+      "{{0., 1., 0.}, {1., 0., 1.}, {0., 1., 0.}}"
+    );
+    // Each channel is filtered on its own.
+    assert_eq!(
+      form("ImageData[MeanFilter[Image[{{{1., 0., 0.}, {0., 1., 0.}}}], 1]]"),
+      "{{{0.5, 0.5, 0.}, {0.5, 0.5, 0.}}}"
+    );
+    assert_eq!(
+      interpret("Head[MeanFilter[Image[{{0., 1.}}], 1]]").unwrap(),
+      "Image"
+    );
+    // A list is still filtered as a list, exactly.
+    assert_eq!(form("MeanFilter[{1, 2, 3, 4}, 1]"), "{3/2, 2, 3, 7/2}");
+  }
+
+  #[test]
+  fn the_difference_of_two_images_is_taken_sample_by_sample() {
+    clear_state();
+    for (code, expected) in [
+      (
+        "ImageData[ImageDifference[Image[{{0., 1.}}], Image[{{1., 0.}}]]]",
+        "{{1., 1.}}",
+      ),
+      (
+        "ImageData[ImageDifference[Image[{{0., 0.5}}], \
+         Image[{{0.25, 0.25}}]]]",
+        "{{0.25, 0.25}}",
+      ),
+      (
+        "ImageData[ImageDifference[Image[{{0., 1.}, {0.5, 0.25}}], \
+         Image[{{1., 1.}, {0., 0.}}]]]",
+        "{{1., 0.}, {0.5, 0.25}}",
+      ),
+      // Colour images difference channel by channel.
+      (
+        "ImageData[ImageDifference[Image[{{{1., 0., 0.}}}], \
+         Image[{{{0., 1., 0.}}}]]]",
+        "{{{1., 1., 0.}}}",
+      ),
+      // The samples an image actually holds are what is differenced, so the
+      // answer carries their Real32 precision rather than the literals'.
+      (
+        "ImageData[ImageDifference[Image[{{0.1, 0.7}}], \
+         Image[{{0.3, 0.2}}]]]",
+        "{{0.20000001788139343, 0.5}}",
+      ),
+      // A bit image differences into a real one.
+      (
+        "ImageData[ImageDifference[Image[{{0, 1}, {1, 0}}], \
+         Image[{{1, 0}, {0, 1}}]]]",
+        "{{1., 1.}, {1., 1.}}",
+      ),
+    ] {
+      let code = code.replace("         ", "");
+      assert_eq!(form(&code), expected, "{code}");
+    }
+    assert_eq!(
+      interpret("Head[ImageDifference[Image[{{0., 1.}}], Image[{{1., 0.}}]]]")
+        .unwrap(),
+      "Image"
+    );
+    assert_eq!(
+      form("ImageType[ImageDifference[Image[{{0., 1.}}], Image[{{1., 0.}}]]]"),
+      "\"Real32\""
+    );
+  }
+
+  #[test]
+  fn images_of_different_shapes_are_refused() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "ImageDifference[Image[{{0., 1.}}], Image[{{1., 0.}, {0., 1.}}]]",
+    )
+    .unwrap();
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|w| w.contains("ImageDifference::imginvd")),
+      "expected ::imginvd, got {:?}",
+      result.warnings
+    );
+    let result =
+      interpret_with_stdout("ImageDifference[Image[{{0., 1.}}], 0.5]").unwrap();
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|w| w.contains("ImageDifference::imginv")),
+      "expected ::imginv, got {:?}",
+      result.warnings
+    );
+  }
+}

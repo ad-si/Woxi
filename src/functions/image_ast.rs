@@ -4089,7 +4089,144 @@ pub fn median_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// wolframscript). Non-integer radii emit MeanFilter::bdrad and the
 /// expression is returned unevaluated.
 pub fn mean_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // MeanFilter[Image, r] — the mean of each clipped neighbourhood, per
+  // channel, on the pixel buffer. Samples land back in the image's own
+  // precision, which for the usual Real32 image is what rounds 4/9 to
+  // 0.4444444477558136 the way wolframscript reports it.
+  if let (
+    Expr::Image {
+      color_space,
+      width,
+      height,
+      channels,
+      data,
+      image_type,
+    },
+    Some(r),
+  ) = (
+    &args[0],
+    crate::functions::math_ast::try_eval_to_f64(&args[1])
+      .filter(|v| v.fract() == 0.0)
+      .map(|v| v.abs() as usize),
+  ) {
+    let (w, h, ch) = (*width as usize, *height as usize, *channels as usize);
+    let mut new_data = vec![0.0; data.len()];
+    for c_idx in 0..ch {
+      for y in 0..h {
+        for x in 0..w {
+          let y0 = y.saturating_sub(r);
+          let y1 = (y + r).min(h.saturating_sub(1));
+          let x0 = x.saturating_sub(r);
+          let x1 = (x + r).min(w.saturating_sub(1));
+          let mut sum = 0.0;
+          let mut count = 0.0;
+          for yy in y0..=y1 {
+            for xx in x0..=x1 {
+              sum += data[(yy * w + xx) * ch + c_idx];
+              count += 1.0;
+            }
+          }
+          new_data[(y * w + x) * ch + c_idx] = sum / count;
+        }
+      }
+    }
+    return Ok(quantize_image(Expr::Image {
+      color_space: *color_space,
+      width: *width,
+      height: *height,
+      channels: *channels,
+      data: Arc::new(new_data),
+      image_type: *image_type,
+    }));
+  }
   aggregating_filter_ast(args, "Mean", "MeanFilter")
+}
+
+/// The same image with every sample stored at its own precision, so a
+/// `Real32` image reports the values it can actually hold.
+fn quantize_image(image: Expr) -> Expr {
+  let Expr::Image {
+    color_space,
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = &image
+  else {
+    return image;
+  };
+  let rounded: Vec<f64> = match image_type {
+    ImageType::Real32 => data.iter().map(|v| *v as f32 as f64).collect(),
+    _ => data.to_vec(),
+  };
+  Expr::Image {
+    color_space: *color_space,
+    width: *width,
+    height: *height,
+    channels: *channels,
+    data: Arc::new(rounded),
+    image_type: *image_type,
+  }
+}
+
+/// `ImageDifference[a, b]` — the absolute difference of two images of the
+/// same size, sample by sample.
+pub fn image_difference_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let echo = || Ok(unevaluated("ImageDifference", args));
+  if args.len() != 2 {
+    return echo();
+  }
+  // Samples are stored at full precision and only reported at the image's
+  // own, so the difference has to be taken between the values the image
+  // actually holds.
+  let parts = |e: &Expr| match e {
+    Expr::Image {
+      width,
+      height,
+      channels,
+      data,
+      image_type,
+      ..
+    } => {
+      let held: Vec<f64> = match image_type {
+        ImageType::Real32 => data.iter().map(|v| *v as f32 as f64).collect(),
+        _ => data.to_vec(),
+      };
+      Some((*width, *height, *channels, held))
+    }
+    _ => None,
+  };
+  for arg in args {
+    if parts(arg).is_none() {
+      crate::emit_message(&format!(
+        "ImageDifference::imginv: Expecting an image or graphics instead of {}.",
+        crate::syntax::expr_to_string(arg)
+      ));
+      return echo();
+    }
+  }
+  let (w1, h1, c1, a) = parts(&args[0]).expect("checked above");
+  let (w2, h2, c2, b) = parts(&args[1]).expect("checked above");
+  if (w1, h1, c1) != (w2, h2, c2) {
+    crate::emit_message(
+      "ImageDifference::imginvd: Expecting images of the same size in the \
+       input.",
+    );
+    return echo();
+  }
+  let data: Vec<f64> =
+    a.iter().zip(b.iter()).map(|(x, y)| (x - y).abs()).collect();
+  // The difference of two images is reported at Real32 whatever they were
+  // stored as.
+  Ok(quantize_image(Expr::Image {
+    color_space: None,
+    width: w1,
+    height: h1,
+    channels: c1,
+    data: Arc::new(data),
+    image_type: ImageType::Real32,
+  }))
 }
 
 /// StandardDeviationFilter[data, r] — like MeanFilter but each window is
