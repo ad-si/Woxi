@@ -33,5 +33,15 @@ Symbolic XML is written back out as markup:
 
 ```scrut
 $ wo 'ExportString[XMLElement["a", {"x" -> "1"}, {"t"}], "XML"]'
-<a x="1">t</a>
+<a x='1'>t</a>
+```
+
+Elements without children are self-closing, and element-only content is
+indented one space per level:
+
+```scrut
+$ wo 'ExportString[XMLElement["a", {}, {XMLElement["b", {}, {}]}], "XML"]'
+<a>
+ <b />
+</a>
 ```

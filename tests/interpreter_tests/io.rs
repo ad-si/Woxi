@@ -7878,12 +7878,83 @@ mod xml_import {
       "<a>1</a>"
     );
     // A round trip keeps the attributes and re-escapes the entities.
+    // Attribute values are single-quoted, as wolframscript writes them.
     assert_eq!(
       interpret(
         r#"ExportString[ImportString["<a x=\"1\">t&amp;</a>", "XML"], "XML"]"#
       )
       .unwrap(),
-      "<a x=\"1\">t&amp;</a>"
+      "<a x='1'>t&amp;</a>"
+    );
+    // Both quote characters are escaped inside an attribute value.
+    assert_eq!(
+      interpret(
+        r#"ExportString[XMLElement["a", {"x" -> "q\"z", "y" -> "it's"}, {}], "XML"]"#
+      )
+      .unwrap(),
+      "<a x='q&quot;z' y='it&apos;s' />"
+    );
+    // An element without children is written self-closing.
+    assert_eq!(
+      interpret(r#"ExportString[XMLElement["a", {}, {}], "XML"]"#).unwrap(),
+      "<a />"
+    );
+  }
+
+  // Element-only content is laid out one child per line with a one-space
+  // indent per level; mixed content stays on a single line.
+  #[test]
+  fn nested_xml_elements_are_indented() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"ExportString[XMLElement["a", {}, {XMLElement["b", {}, {XMLElement["c", {}, {"x"}]}]}], "XML"]"#
+      )
+      .unwrap(),
+      "<a>\n <b>\n  <c>x</c>\n </b>\n</a>"
+    );
+    assert_eq!(
+      interpret(
+        r#"ExportString[XMLElement["a", {}, {"t", XMLElement["b", {}, {}], "u"}], "XML"]"#
+      )
+      .unwrap(),
+      "<a>t<b />u</a>"
+    );
+  }
+
+  // The document prolog is written back as an XML declaration, and namespaced
+  // names reuse the prefix their `xmlns:` declaration binds.
+  #[test]
+  fn xml_declaration_and_namespaces_round_trip() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"ExportString[ImportString["<?xml version=\"1.0\"?><a/>", "XML"], "XML"]"#
+      )
+      .unwrap(),
+      "<?xml version='1.0'?>\n<a />"
+    );
+    assert_eq!(
+      interpret(
+        r#"ExportString[ImportString["<a xmlns:n=\"u\" n:id=\"1\"/>", "XML"], "XML"]"#
+      )
+      .unwrap(),
+      "<a xmlns:n='u' n:id='1' />"
+    );
+    assert_eq!(
+      interpret(
+        r#"ExportString[ImportString["<ns:a xmlns:ns=\"u\"><ns:b>t</ns:b></ns:a>", "XML"], "XML"]"#
+      )
+      .unwrap(),
+      "<ns:a xmlns:ns='u'>\n <ns:b>t</ns:b>\n</ns:a>"
+    );
+    // With no declaration in scope the namespace URI stands in for the prefix.
+    assert_eq!(
+      interpret(
+        r#"ExportString[XMLElement[{"u", "a"}, {}, {XMLElement[{"u", "b"}, {}, {}]}], "XML"]"#
+      )
+      .unwrap(),
+      "<u:a>\n <u:b />\n</u:a>"
     );
   }
 }

@@ -435,17 +435,168 @@ pub fn parse_xml_document(source: &str) -> Result<Expr, XmlError> {
   })
 }
 
+/// Escape the characters that cannot stand for themselves inside a
+/// single-quoted attribute value. wolframscript escapes both quote characters
+/// regardless of the delimiter it picked.
+fn escape_attribute(text: &str) -> String {
+  escape_text(text)
+    .replace('"', "&quot;")
+    .replace('\'', "&apos;")
+}
+
+/// An element or attribute name: either a plain string or wolframscript's
+/// `{namespace-uri, local-name}` pair. A pair is written with the prefix the
+/// enclosing `xmlns:` declarations bind to that URI, and with the URI itself
+/// as the prefix when nothing declares it.
+fn xml_name(expr: &Expr, prefixes: &[(String, String)]) -> Option<String> {
+  match expr {
+    Expr::String(s) => Some(s.clone()),
+    Expr::List(parts) if parts.len() == 2 => {
+      let (Expr::String(uri), Expr::String(local)) = (&parts[0], &parts[1])
+      else {
+        return None;
+      };
+      // An xmlns declaration names itself: {xmlns-uri, "xmlns"} is the
+      // default-namespace attribute, any other local name a prefix binding.
+      if uri == XMLNS_URI {
+        return Some(if local == "xmlns" {
+          local.clone()
+        } else {
+          format!("xmlns:{local}")
+        });
+      }
+      let prefix = prefixes
+        .iter()
+        .rev()
+        .find(|(_, u)| u == uri)
+        .map(|(p, _)| p.as_str())
+        .unwrap_or(uri);
+      Some(format!("{prefix}:{local}"))
+    }
+    _ => None,
+  }
+}
+
+/// The prefix bindings an element's own attribute list declares.
+fn declared_prefixes(attributes: &Expr) -> Vec<(String, String)> {
+  let Expr::List(items) = attributes else {
+    return Vec::new();
+  };
+  let mut out = Vec::new();
+  for a in items.iter() {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = a
+    else {
+      continue;
+    };
+    let (Expr::List(name), Expr::String(uri)) =
+      (pattern.as_ref(), replacement.as_ref())
+    else {
+      continue;
+    };
+    if name.len() == 2
+      && let (Expr::String(ns), Expr::String(prefix)) = (&name[0], &name[1])
+      && ns == XMLNS_URI
+      && prefix != "xmlns"
+    {
+      out.push((prefix.clone(), uri.clone()));
+    }
+  }
+  out
+}
+
+/// The head arguments of an `XMLObject["kind"][…]` expression.
+fn xml_object<'a>(expr: &'a Expr, kind: &str) -> Option<&'a [Expr]> {
+  let Expr::CurriedCall { func, args } = expr else {
+    return None;
+  };
+  let Expr::FunctionCall { name, args: head } = func.as_ref() else {
+    return None;
+  };
+  if name != "XMLObject" || head.len() != 1 {
+    return None;
+  }
+  match &head[0] {
+    Expr::String(k) if k == kind => Some(args),
+    _ => None,
+  }
+}
+
+/// Serialize the `XMLObject["Declaration"][…]` entries of a document prolog.
+/// wolframscript prints `<?xml version='1.0' encoding='UTF-8'?>` followed by a
+/// line break, with the option names lower-cased.
+fn prolog_to_string(prolog: &Expr) -> Option<String> {
+  let Expr::List(items) = prolog else {
+    return None;
+  };
+  let mut out = String::new();
+  for item in items.iter() {
+    if let Some(options) = xml_object(item, "Declaration") {
+      out.push_str("<?xml");
+      for option in options {
+        let (Expr::Rule {
+          pattern,
+          replacement,
+        }
+        | Expr::RuleDelayed {
+          pattern,
+          replacement,
+        }) = option
+        else {
+          return None;
+        };
+        let (Expr::String(key), Expr::String(value)) =
+          (pattern.as_ref(), replacement.as_ref())
+        else {
+          return None;
+        };
+        out.push_str(&format!(
+          " {}='{}'",
+          key.to_lowercase(),
+          escape_attribute(value)
+        ));
+      }
+      out.push_str("?>\n");
+    } else if let Some(text) = xml_to_string_at(item, 0, &[]) {
+      out.push_str(&text);
+    } else {
+      return None;
+    }
+  }
+  Some(out)
+}
+
 /// Serialize symbolic XML back to text. Accepts an `XMLElement`, a whole
 /// `XMLObject["Document"][…]`, or a bare string (character data).
 pub fn xml_to_string(expr: &Expr) -> Option<String> {
+  xml_to_string_at(expr, 0, &[])
+}
+
+/// Serialize `expr` as the content of an element nested `depth` levels deep,
+/// with `prefixes` the `xmlns:` bindings in scope. An element whose children
+/// are all elements is laid out one child per line, indented by one space per
+/// level; anything else (in particular mixed content) stays on a single line —
+/// the layout wolframscript writes.
+fn xml_to_string_at(
+  expr: &Expr,
+  depth: usize,
+  prefixes: &[(String, String)],
+) -> Option<String> {
   match expr {
     Expr::String(s) => Some(escape_text(s)),
     Expr::FunctionCall { name, args }
       if name == "XMLElement" && args.len() == 3 =>
     {
-      let Expr::String(tag) = &args[0] else {
-        return None;
-      };
+      let mut prefixes = prefixes.to_vec();
+      prefixes.extend(declared_prefixes(&args[1]));
+      let prefixes = prefixes.as_slice();
+      let tag = xml_name(&args[0], prefixes)?;
       let mut out = format!("<{tag}");
       if let Expr::List(attributes) = &args[1] {
         for a in attributes.iter() {
@@ -460,12 +611,11 @@ pub fn xml_to_string(expr: &Expr) -> Option<String> {
           else {
             return None;
           };
-          let (Expr::String(key), Expr::String(value)) =
-            (pattern.as_ref(), replacement.as_ref())
-          else {
+          let key = xml_name(pattern, prefixes)?;
+          let Expr::String(value) = replacement.as_ref() else {
             return None;
           };
-          out.push_str(&format!(" {key}=\"{}\"", escape_text(value)));
+          out.push_str(&format!(" {key}='{}'", escape_attribute(value)));
         }
       }
       let children = match &args[2] {
@@ -473,30 +623,48 @@ pub fn xml_to_string(expr: &Expr) -> Option<String> {
         _ => return None,
       };
       if children.is_empty() {
-        out.push_str(&format!("></{tag}>"));
+        out.push_str(" />");
         return Some(out);
       }
+      let all_elements = children.iter().all(|c| {
+        matches!(c, Expr::FunctionCall { name, args }
+          if name == "XMLElement" && args.len() == 3)
+      });
       out.push('>');
-      for child in children.iter() {
-        out.push_str(&xml_to_string(child)?);
+      if all_elements {
+        for child in children.iter() {
+          out.push('\n');
+          out.push_str(&" ".repeat(depth + 1));
+          out.push_str(&xml_to_string_at(child, depth + 1, prefixes)?);
+        }
+        out.push('\n');
+        out.push_str(&" ".repeat(depth));
+      } else {
+        for child in children.iter() {
+          out.push_str(&xml_to_string_at(child, depth, prefixes)?);
+        }
       }
       out.push_str(&format!("</{tag}>"));
       Some(out)
     }
-    // XMLObject["Document"][prolog, root, epilog]
-    Expr::CurriedCall { func, args } => {
-      let Expr::FunctionCall { name, args: head } = func.as_ref() else {
-        return None;
-      };
-      if name != "XMLObject" || head.len() != 1 {
-        return None;
+    Expr::CurriedCall { .. } => {
+      // XMLObject["Document"][prolog, root, epilog]
+      if let Some(parts) = xml_object(expr, "Document")
+        && parts.len() == 3
+      {
+        let mut out = prolog_to_string(&parts[0])?;
+        out.push_str(&xml_to_string_at(&parts[1], depth, prefixes)?);
+        return Some(out);
       }
-      match &head[0] {
-        Expr::String(kind) if kind == "Document" && args.len() == 3 => {
-          xml_to_string(&args[1])
-        }
-        _ => None,
+      // XMLObject["Comment"]["text"] — wolframscript breaks the line after a
+      // comment even in otherwise inline content.
+      if let Some(parts) = xml_object(expr, "Comment")
+        && parts.len() == 1
+        && let Expr::String(text) = &parts[0]
+      {
+        return Some(format!("<!--{text}-->\n"));
       }
+      None
     }
     _ => None,
   }
