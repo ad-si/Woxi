@@ -977,3 +977,156 @@ mod series_transformations {
     );
   }
 }
+
+// TimeSeriesRescale carries the time stamps linearly onto a given span,
+// keeping the values and the head. Values verified against wolframscript.
+mod time_series_rescale {
+  use super::*;
+
+  /// The result of `code`, written the way `InputForm` writes it.
+  fn form(code: &str) -> String {
+    interpret(&format!("ToString[{code}, InputForm]")).unwrap()
+  }
+
+  #[test]
+  fn the_stamps_land_on_the_span_keeping_their_spacing() {
+    clear_state();
+    for (code, expected) in [
+      (
+        "TimeSeriesRescale[TimeSeries[{{1, 10}, {2, 20}}], {0, 1}][\"Times\"]",
+        "{0, 1}",
+      ),
+      (
+        "TimeSeriesRescale[TimeSeries[{{1, 10}, {2, 20}}], {5, 7}][\"Times\"]",
+        "{5, 7}",
+      ),
+      (
+        "TimeSeriesRescale[TimeSeries[{{0, 1}, {10, 2}}], {0, 100}][\"Times\"]",
+        "{0, 100}",
+      ),
+      // Uneven spacing survives, exactly.
+      (
+        "TimeSeriesRescale[TimeSeries[{{1, 10}, {2, 20}, {4, 40}}], \
+         {0, 1}][\"Times\"]",
+        "{0, 1/3, 1}",
+      ),
+      (
+        "TimeSeriesRescale[TimeSeries[{{1, 10}, {2, 20}, {3, 30}}], \
+         {0, 1}][\"Times\"]",
+        "{0, 1/2, 1}",
+      ),
+      (
+        "TimeSeriesRescale[TimeSeries[{{1, 10}, {2, 20}, {4, 40}}], \
+         {0, 6}][\"Times\"]",
+        "{0, 2, 6}",
+      ),
+      // Bare values are stamped 1, 2, 3, … before rescaling.
+      (
+        "TimeSeriesRescale[TimeSeries[{10, 20, 30}], {0, 1}][\"Times\"]",
+        "{0, 1/2, 1}",
+      ),
+    ] {
+      let code = code.replace("         ", "");
+      assert_eq!(form(&code), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn the_values_and_the_head_are_left_alone() {
+    clear_state();
+    assert_eq!(
+      form(
+        "TimeSeriesRescale[TimeSeries[{{1, 10}, {2, 20}, {4, 40}}], \
+         {0, 1}][\"Path\"]"
+          .replace("         ", "")
+          .as_str()
+      ),
+      "{{0, 10}, {1/3, 20}, {1, 40}}"
+    );
+    assert_eq!(
+      interpret(
+        "Head[TimeSeriesRescale[TimeSeries[{{1, 10}, {2, 20}}], \
+       {0, 1}]]"
+          .replace("       ", "")
+          .as_str()
+      )
+      .unwrap(),
+      "TimeSeries"
+    );
+    // An EventSeries stays one.
+    assert_eq!(
+      interpret(
+        "Head[TimeSeriesRescale[EventSeries[{{1, 10}, {2, 20}}], \
+       {0, 1}]]"
+          .replace("       ", "")
+          .as_str()
+      )
+      .unwrap(),
+      "EventSeries"
+    );
+    assert_eq!(
+      form(
+        "TimeSeriesRescale[EventSeries[{{1, 10}, {2, 20}}], {0, 1}][\"Times\"]"
+      ),
+      "{0, 1}"
+    );
+  }
+
+  #[test]
+  fn a_span_that_does_not_increase_is_refused() {
+    clear_state();
+    for code in [
+      "TimeSeriesRescale[TimeSeries[{{1, 10}, {2, 20}}], {1, 0}]",
+      "TimeSeriesRescale[TimeSeries[{{1, 10}, {2, 20}}], {0, 0}]",
+    ] {
+      let result = interpret_with_stdout(code).unwrap();
+      assert!(
+        result
+          .warnings
+          .iter()
+          .any(|w| w.contains("TimeSeriesRescale::trng")),
+        "expected ::trng for {code}, got {:?}",
+        result.warnings
+      );
+    }
+    let result =
+      interpret_with_stdout("TimeSeriesRescale[TimeSeries[{{1, 10}}]]")
+        .unwrap();
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|w| w.contains("TimeSeriesRescale::argr")),
+      "expected ::argr, got {:?}",
+      result.warnings
+    );
+    // A span that is not a pair leaves the series as it was.
+    assert_eq!(
+      form("TimeSeriesRescale[TimeSeries[{{1, 10}, {2, 20}}], 5][\"Times\"]"),
+      "{1, 2}"
+    );
+  }
+
+  // A series runs in time order however its points were written.
+  #[test]
+  fn out_of_order_stamps_are_sorted() {
+    clear_state();
+    assert_eq!(
+      form("TimeSeries[{{1, 10}, {5, 50}, {2, 20}}][\"Path\"]"),
+      "{{1, 10}, {2, 20}, {5, 50}}"
+    );
+    assert_eq!(
+      form("TimeSeries[{{1, 10}, {5, 50}, {2, 20}}][\"Times\"]"),
+      "{1, 2, 5}"
+    );
+    assert_eq!(
+      form(
+        "TimeSeriesRescale[TimeSeries[{{1, 10}, {5, 50}, {2, 20}}], \
+         {0, 1}][\"Times\"]"
+          .replace("         ", "")
+          .as_str()
+      ),
+      "{0, 1/4, 1}"
+    );
+  }
+}

@@ -22,6 +22,12 @@ fn as_f64(e: &Expr) -> Option<f64> {
       use num_traits::ToPrimitive;
       b.to_f64()
     }
+    // A rescaled series carries rational stamps, so they count as times too.
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      Some(as_f64(&args[0])? / as_f64(&args[1])?)
+    }
     _ => None,
   }
 }
@@ -300,6 +306,87 @@ pub fn time_series_shift_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for (time, value) in pairs {
     let shifted = arith("Plus", &time, &args[1])?;
     out.push(Expr::List(vec![shifted, value].into()));
+  }
+  Ok(rebuild_series(&args[0], out))
+}
+
+/// `TimeSeriesRescale[ts, {tmin, tmax}]` — the same values, with the time
+/// stamps carried linearly onto the given span.
+pub fn time_series_rescale_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let echo = || Ok(unevaluated("TimeSeriesRescale", args));
+  if args.len() != 2 {
+    let n = args.len();
+    let noun = if n == 1 { "argument" } else { "arguments" };
+    crate::emit_message(&format!(
+      "TimeSeriesRescale::argr: TimeSeriesRescale called with {n} {noun}; \
+       2 arguments are expected."
+    ));
+    return echo();
+  }
+  let Some(pairs) = series_pairs_of(&args[0]) else {
+    return echo();
+  };
+  // A span written as anything but a pair leaves the series as it was.
+  let Expr::List(span) = &args[1] else {
+    return Ok(args[0].clone());
+  };
+  if span.len() != 2 {
+    return Ok(args[0].clone());
+  };
+  let (Some(low), Some(high)) = (to_time(&span[0]), to_time(&span[1])) else {
+    return echo();
+  };
+  if !(high > low) {
+    crate::emit_message(&format!(
+      "TimeSeriesRescale::trng: The argument {} is not a valid pair of \
+       strictly increasing time points.",
+      crate::syntax::expr_to_string(&args[1])
+    ));
+    return echo();
+  }
+  // The stamps keep their spacing, so the span they already cover is what
+  // maps onto the new one.
+  let times: Vec<f64> = pairs.iter().filter_map(|(t, _)| to_time(t)).collect();
+  if times.len() != pairs.len() {
+    return echo();
+  }
+  let (first, last) = (
+    times.iter().copied().fold(f64::INFINITY, f64::min),
+    times.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+  );
+  if !(last > first) {
+    return echo();
+  }
+  let start = &pairs
+    .iter()
+    .min_by(|a, b| {
+      to_time(&a.0)
+        .unwrap_or(f64::NAN)
+        .total_cmp(&to_time(&b.0).unwrap_or(f64::NAN))
+    })
+    .expect("a series with a span has points")
+    .0;
+  let end = &pairs
+    .iter()
+    .max_by(|a, b| {
+      to_time(&a.0)
+        .unwrap_or(f64::NAN)
+        .total_cmp(&to_time(&b.0).unwrap_or(f64::NAN))
+    })
+    .expect("a series with a span has points")
+    .0;
+  let width = arith("Subtract", end, start)?;
+  let reach = arith("Subtract", &span[1], &span[0])?;
+  let mut out = Vec::with_capacity(pairs.len());
+  for (time, value) in &pairs {
+    // tmin + (t - first) / (last - first) * (tmax - tmin), kept exact.
+    let offset = arith("Subtract", time, start)?;
+    let fraction = arith("Divide", &offset, &width)?;
+    let scaled = arith("Times", &fraction, &reach)?;
+    let moved = arith("Plus", &span[0], &scaled)?;
+    out.push(Expr::List(vec![moved, value.clone()].into()));
   }
   Ok(rebuild_series(&args[0], out))
 }
@@ -621,6 +708,25 @@ pub fn time_series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .iter()
           .all(|e| matches!(e, Expr::List(kv) if kv.len() == 2));
       if is_pairs {
+        // A series runs in time order however its points were written, so
+        // out-of-order stamps are sorted here rather than left as given.
+        let mut pairs: Vec<Expr> = elems.iter().map(|e| (*e).clone()).collect();
+        let ordered = pairs
+          .iter()
+          .all(|p| matches!(p, Expr::List(kv) if to_time(&kv[0]).is_some()));
+        if ordered {
+          pairs.sort_by(|a, b| {
+            let key = |e: &Expr| match e {
+              Expr::List(kv) => to_time(&kv[0]).unwrap_or(f64::NAN),
+              _ => f64::NAN,
+            };
+            key(a).total_cmp(&key(b))
+          });
+          return Ok(Expr::FunctionCall {
+            name: "TimeSeries".to_string(),
+            args: vec![Expr::List(pairs.into())].into(),
+          });
+        }
         return Ok(echo());
       }
       // Bare value path → assign integer times 1, 2, 3, …
@@ -1238,6 +1344,13 @@ fn apply_property(
   // Numeric stamps echo verbatim; date stamps surface as AbsoluteTime Reals.
   let time_stamp = |date: &Expr, t: f64| match date {
     Expr::Integer(_) | Expr::Real(_) => date.clone(),
+    // A rescaled series carries rational stamps; those are numbers too and
+    // stay exact rather than turning into their AbsoluteTime.
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      date.clone()
+    }
     _ => Expr::Real(t),
   };
   match prop {

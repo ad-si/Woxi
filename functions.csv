@@ -2691,7 +2691,7 @@ BitNot,Returns the bitwise NOT of an integer,✅,pure,4.0,2748
 DiscreteWaveletData,Discrete wavelet coefficient object with properties and coefficient access,✅,pure,8.0,2748
 LocalClusteringCoefficient,local clustering coefficient of graph vertices,✅,Computation,9.0,2748
 MixedRadix,mixed-radix number representation,✅,Symbolic,10.2,2748
-TimeSeriesRescale,,🚫,,10.0,2748
+TimeSeriesRescale,Carries the time stamps of a series linearly onto a given span keeping the values,✅,pure,10.0,2748
 BreadthFirstScan,,🚫,,8.0,2755
 CellGrouping,,🚫,,3.0,2755
 ImageColorSpace,Returns the color space of an image,✅,pure,8.0,2755

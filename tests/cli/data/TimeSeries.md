@@ -90,3 +90,18 @@ Arithmetic keeps the time stamps and works on the values:
 $ wo 'Normal[2*TimeSeries[{{1, 10}, {2, 20}}] + 1]'
 {{1, 21}, {2, 41}}
 ```
+
+`TimeSeriesRescale` carries the time stamps linearly onto a given span,
+keeping their spacing and the values:
+
+```scrut
+$ wo 'TimeSeriesRescale[TimeSeries[{{1, 10}, {2, 20}, {4, 40}}], {0, 1}]["Times"]'
+{0, 1/3, 1}
+```
+
+A series runs in time order however its points were written:
+
+```scrut
+$ wo 'TimeSeries[{{1, 10}, {5, 50}, {2, 20}}]["Path"]'
+{{1, 10}, {2, 20}, {5, 50}}
+```

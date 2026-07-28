@@ -71,6 +71,7 @@ pub(super) fn dispatch_timeseries_functions(
       Some(Ok(crate::syntax::unevaluated("EventSeries", args)))
     }
     "TimeSeriesShift" => Some(timeseries_ast::time_series_shift_ast(args)),
+    "TimeSeriesRescale" => Some(timeseries_ast::time_series_rescale_ast(args)),
     "TimeSeriesMap" => Some(timeseries_ast::time_series_map_ast(args)),
     "TimeSeriesThread" => Some(timeseries_ast::time_series_thread_ast(args)),
     "TimeSeriesInsert" => Some(timeseries_ast::time_series_insert_ast(args)),
