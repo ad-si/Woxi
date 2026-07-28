@@ -9681,3 +9681,136 @@ mod rule_head_replacement {
     }
   }
 }
+
+// A held `Not` and a held leading minus are written with their operators, the
+// way wolframscript writes them, and parenthesised wherever the operator would
+// otherwise reach past what it negates. Values verified against wolframscript.
+mod held_prefix_operators {
+  use super::*;
+
+  /// The `InputForm` of `Hold[body]`, which keeps `body` unevaluated.
+  fn held(body: &str) -> String {
+    interpret(&format!("ToString[Hold[{body}], InputForm]")).unwrap()
+  }
+
+  #[test]
+  fn a_held_negation_is_written_with_the_operator() {
+    clear_state();
+    for (body, expected) in [
+      ("Not[a]", "Hold[ !a]"),
+      ("Not[Not[a]]", "Hold[ !( !a)]"),
+      ("Not[a && b]", "Hold[ !(a && b)]"),
+      ("Not[a > 1]", "Hold[ !a > 1]"),
+      ("f[Not[a]]", "Hold[f[ !a]]"),
+      ("{Not[a]}", "Hold[{ !a}]"),
+      ("Xor[Not[a], b]", "Hold[Xor[ !a, b]]"),
+    ] {
+      assert_eq!(held(body), expected, "{body}");
+    }
+  }
+
+  #[test]
+  fn a_negation_is_parenthesised_wherever_it_would_reach_too_far() {
+    clear_state();
+    for (body, expected) in [
+      // Arithmetic, comparison, `;;`, `!` and application all bind tighter
+      // than `!`, so the negation needs bracketing inside them.
+      ("Not[a]^2", "Hold[( !a)^2]"),
+      ("Not[a]*b", "Hold[( !a)*b]"),
+      ("Not[a]/b", "Hold[( !a)/b]"),
+      ("Not[a] + b", "Hold[( !a) + b]"),
+      ("b + Not[a]", "Hold[b + ( !a)]"),
+      ("Not[a] == b", "Hold[( !a) == b]"),
+      ("Not[a] < b < c", "Hold[( !a) < b < c]"),
+      ("Not[a][x]", "Hold[( !a)[x]]"),
+      ("Not[a]!", "Hold[( !a)!]"),
+      ("Not[a] ;; b", "Hold[( !a) ;; b]"),
+      ("Not[a] /@ {1}", "Hold[( !a) /@ {1}]"),
+      ("f /@ Not[a]", "Hold[f /@ ( !a)]"),
+      // And, Or and a rule bind looser, so they need nothing.
+      ("Not[a] && b", "Hold[ !a && b]"),
+      ("Not[a] || b", "Hold[ !a || b]"),
+      ("Not[a] -> b", "Hold[ !a -> b]"),
+    ] {
+      assert_eq!(held(body), expected, "{body}");
+    }
+  }
+
+  #[test]
+  fn a_held_leading_minus_stays_a_leading_minus() {
+    clear_state();
+    for (body, expected) in [
+      ("-x", "Hold[-x]"),
+      ("-x + y", "Hold[-x + y]"),
+      ("-Sin[x]", "Hold[-Sin[x]]"),
+      ("{-a, !b}", "Hold[{-a,  !b}]"),
+      ("-x^2", "Hold[-x^2]"),
+      ("(-x)^2", "Hold[(-x)^2]"),
+      ("-x[[1]]", "Hold[-x[[1]]]"),
+      // A subtraction written out keeps both of its sides.
+      ("0 - x", "Hold[0 - x]"),
+      ("a - b", "Hold[a - b]"),
+      ("1 - x", "Hold[1 - x]"),
+    ] {
+      assert_eq!(held(body), expected, "{body}");
+    }
+  }
+
+  #[test]
+  fn a_leading_minus_is_parenthesised_where_it_would_swallow_a_factor() {
+    clear_state();
+    for (body, expected) in [
+      // `-(a + b)` printed as `-a + b` would re-parse as `(-a) + b`.
+      ("-(a + b)", "Hold[-(a + b)]"),
+      ("-(a b)", "Hold[-(a*b)]"),
+      ("-(-a)", "Hold[-(-a)]"),
+      ("-Not[a]", "Hold[-( !a)]"),
+      ("(-x)!", "Hold[(-x)!]"),
+      // Either side of a product, and a divisor, need bracketing too.
+      ("(-a)*b", "Hold[(-a)*b]"),
+      ("a*(-b)", "Hold[a*(-b)]"),
+      ("a/-b", "Hold[a/(-b)]"),
+      ("a^-b", "Hold[a^(-b)]"),
+      // A dividend, an argument and a list entry do not.
+      ("f[a, -b]", "Hold[f[a, -b]]"),
+      ("{-b}", "Hold[{-b}]"),
+      ("-a == b", "Hold[-a == b]"),
+      ("-a && b", "Hold[-a && b]"),
+    ] {
+      assert_eq!(held(body), expected, "{body}");
+    }
+  }
+
+  #[test]
+  fn a_function_body_is_written_the_same_way() {
+    clear_state();
+    for (code, expected) in [
+      ("!#1 &", " !#1 & "),
+      ("!#1 || !#2 &", " !#1 ||  !#2 & "),
+      ("#1 && !#2 &", "#1 &&  !#2 & "),
+      ("!(#1 && #2) &", " !(#1 && #2) & "),
+      ("(!#1)[x] &", "( !#1)[x] & "),
+      ("Function[u, !u]", "Function[u,  !u]"),
+      ("-#1 &", "-#1 & "),
+      ("-#1 - #2 &", "-#1 - #2 & "),
+      ("Abs[-#1] &", "Abs[-#1] & "),
+      ("-#1^2 &", "-#1^2 & "),
+      ("(-#1)^2 &", "(-#1)^2 & "),
+      // The printed form re-parses to the same function, which `0 - #1 + #2`
+      // would not.
+      ("-(#1 + #2) &", "-(#1 + #2) & "),
+    ] {
+      assert_eq!(
+        interpret(&format!("ToString[{code}, InputForm]")).unwrap(),
+        expected,
+        "{code}"
+      );
+    }
+    // and it really is the same function.
+    assert_eq!(
+      interpret("ToExpression[ToString[-(#1 + #2) &, InputForm]][1, 2]")
+        .unwrap(),
+      "-3"
+    );
+  }
+}

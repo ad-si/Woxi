@@ -11038,8 +11038,8 @@ mod manipulate {
       spec.control_enabled,
       vec![
         ("a".to_string(), "YinYang".to_string()),
-        ("b".to_string(), "Not[YinYang]".to_string()),
-        ("c".to_string(), "Not[YinYang]".to_string()),
+        ("b".to_string(), " !YinYang".to_string()),
+        ("c".to_string(), " !YinYang".to_string()),
       ]
     );
 
@@ -11080,7 +11080,7 @@ mod manipulate {
     let spec = extract_manipulate_spec(&expr).unwrap();
     let json = manipulate_spec_to_json(&spec);
     // The gated control carries its condition; the ungated one does not.
-    assert!(json.contains(r#""enabledWhen":"Not[b]""#), "json: {json}");
+    assert!(json.contains(r#""enabledWhen":" !b""#), "json: {json}");
     let b_obj = json.split(r#""name":"b""#).nth(1).unwrap_or("");
     let b_obj = b_obj.split('}').next().unwrap_or("");
     assert!(

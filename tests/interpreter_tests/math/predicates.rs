@@ -775,10 +775,11 @@ mod equivalent_logic {
   }
 
   // A False among symbolic terms reduces to And of the negations: each
-  // remaining term must be False.
+  // remaining term must be False. wolframscript writes the negation with the
+  // operator, not the call.
   #[test]
   fn false_with_symbolic_reduces_to_not() {
-    assert_eq!(interpret("Equivalent[a, False]").unwrap(), "Not[a]");
+    assert_eq!(interpret("Equivalent[a, False]").unwrap(), " !a");
   }
 
   // Duplicate operands are redundant: a single distinct operand is vacuously
