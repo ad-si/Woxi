@@ -1896,9 +1896,116 @@ mod radical_coefficient_merge {
     );
   }
 
+  // The same merge runs when the radicand carries a named positive constant
+  // alongside its rational part: the coefficient folds in, the constant stays
+  // inside. All wolframscript-verified.
+  #[test]
+  fn coefficient_merges_into_radical_with_constants() {
+    assert_eq!(
+      interpret("InputForm[Sqrt[2*Pi]/2]").unwrap(),
+      "InputForm[Sqrt[Pi/2]]"
+    );
+    assert_eq!(
+      interpret("InputForm[Sqrt[2*Pi]/4]").unwrap(),
+      "InputForm[Sqrt[Pi/2]/2]"
+    );
+    assert_eq!(
+      interpret("InputForm[Sqrt[2*Pi]/6]").unwrap(),
+      "InputForm[Sqrt[Pi/2]/3]"
+    );
+    assert_eq!(
+      interpret("InputForm[(3/2)*Sqrt[2*Pi]]").unwrap(),
+      "InputForm[3*Sqrt[Pi/2]]"
+    );
+    assert_eq!(
+      interpret("InputForm[Sqrt[3*Pi]/3]").unwrap(),
+      "InputForm[Sqrt[Pi/3]]"
+    );
+    assert_eq!(
+      interpret("InputForm[Sqrt[2*E]/2]").unwrap(),
+      "InputForm[Sqrt[E/2]]"
+    );
+    // A reciprocal radical flips only once its numerator carries something.
+    assert_eq!(
+      interpret("InputForm[2/Sqrt[2*Pi]]").unwrap(),
+      "InputForm[Sqrt[2/Pi]]"
+    );
+    assert_eq!(
+      interpret("InputForm[4/Sqrt[2*Pi]]").unwrap(),
+      "InputForm[2*Sqrt[2/Pi]]"
+    );
+    assert_eq!(
+      interpret("InputForm[6/Sqrt[2*Pi]]").unwrap(),
+      "InputForm[3*Sqrt[2/Pi]]"
+    );
+    assert_eq!(
+      interpret("InputForm[1/Sqrt[Pi/2]]").unwrap(),
+      "InputForm[Sqrt[2/Pi]]"
+    );
+    assert_eq!(
+      interpret("InputForm[1/(3*Sqrt[Pi/2])]").unwrap(),
+      "InputForm[Sqrt[2/Pi]/3]"
+    );
+    assert_eq!(
+      interpret("InputForm[(Pi/2)^(-1/3)]").unwrap(),
+      "InputForm[(2/Pi)^(1/3)]"
+    );
+    // Sqrt itself extracts the square part of a rational denominator, not
+    // just of the numerator.
+    assert_eq!(
+      interpret("InputForm[Sqrt[Pi/4]]").unwrap(),
+      "InputForm[Sqrt[Pi]/2]"
+    );
+    assert_eq!(
+      interpret("InputForm[Sqrt[Pi/8]]").unwrap(),
+      "InputForm[Sqrt[Pi/2]/2]"
+    );
+    assert_eq!(
+      interpret("InputForm[Sqrt[Pi/18]]").unwrap(),
+      "InputForm[Sqrt[Pi/2]/3]"
+    );
+  }
+
   // Already-canonical shapes are fixed points and must not be rewritten.
   #[test]
   fn canonical_shapes_are_fixed_points() {
+    // A radicand whose rational part has no square factor stays put, and a
+    // radicand that would come out a pure reciprocal keeps the reciprocal
+    // spelling — wolframscript writes 3/Sqrt[2 Pi], not 3 Sqrt[1/(2 Pi)].
+    assert_eq!(
+      interpret("InputForm[Sqrt[2*Pi]]").unwrap(),
+      "InputForm[Sqrt[2*Pi]]"
+    );
+    assert_eq!(
+      interpret("InputForm[2*Sqrt[2*Pi]]").unwrap(),
+      "InputForm[2*Sqrt[2*Pi]]"
+    );
+    assert_eq!(
+      interpret("InputForm[Sqrt[Pi/2]]").unwrap(),
+      "InputForm[Sqrt[Pi/2]]"
+    );
+    assert_eq!(
+      interpret("InputForm[1/Sqrt[2*Pi]]").unwrap(),
+      "InputForm[1/Sqrt[2*Pi]]"
+    );
+    assert_eq!(
+      interpret("InputForm[3/Sqrt[2*Pi]]").unwrap(),
+      "InputForm[3/Sqrt[2*Pi]]"
+    );
+    assert_eq!(
+      interpret("InputForm[1/(2*Sqrt[2*Pi])]").unwrap(),
+      "InputForm[1/(2*Sqrt[2*Pi])]"
+    );
+    assert_eq!(
+      interpret("InputForm[(2*Pi)^(-1/3)]").unwrap(),
+      "InputForm[(2*Pi)^(-1/3)]"
+    );
+    // A free symbol is not a constant: wolframscript splits those radicals
+    // instead, so the merge leaves them alone.
+    assert_eq!(
+      interpret("InputForm[Sqrt[2*x]/2]").unwrap(),
+      "InputForm[Sqrt[2*x]/2]"
+    );
     assert_eq!(
       interpret("InputForm[2/Sqrt[3]]").unwrap(),
       "InputForm[2/Sqrt[3]]"

@@ -6192,7 +6192,7 @@ mod johnson_distribution {
   fn pdf_sb_numeric() {
     assert_eq!(
       interpret(r#"PDF[JohnsonDistribution["SB", 0, 1, 0, 1], 1/2]"#).unwrap(),
-      "4/Sqrt[2*Pi]"
+      "2*Sqrt[2/Pi]"
     );
   }
 

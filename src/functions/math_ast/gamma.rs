@@ -462,7 +462,10 @@ fn gamma_half_expr(numer: BigInt, denom: BigInt, is_neg: bool) -> Expr {
   let sqrt_pi = Expr::FunctionCall {
     name: "Power".to_string(),
     args: vec![
-      Expr::Identifier("Pi".to_string()),
+      // `Constant`, not `Identifier`: only the former counts as numeric-like
+      // when `Times` merges radicals, so `Gamma[-1/2] Sqrt[2]` folds to
+      // `-2 Sqrt[2 Pi]` the way wolframscript prints it.
+      Expr::Constant("Pi".to_string()),
       Expr::FunctionCall {
         name: "Rational".to_string(),
         args: vec![Expr::Integer(1), Expr::Integer(2)].into(),

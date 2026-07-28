@@ -6016,6 +6016,61 @@ fn is_pos_real_const(name: &str) -> bool {
   )
 }
 
+/// A positive exact value split into its rational part and the named positive
+/// constants multiplying it: `2 Pi` → `(2, 1, [Pi])`, `Pi/18` → `(1, 18,
+/// [Pi])`, `3/2` → `(3, 2, [])`.
+///
+/// Radical canonicalisation uses this to fold a rational coefficient into a
+/// radicand while leaving the constants inside, the way wolframscript prints
+/// `Sqrt[2 Pi]/2` as `Sqrt[Pi/2]`. Only named constants qualify: for a free
+/// symbol wolframscript splits the radical instead (the Sqrt product-split
+/// divergence), so rewriting those here would drift further from it.
+fn split_positive_rational_and_constants(
+  expr: &Expr,
+) -> Option<(i128, i128, Vec<Expr>)> {
+  fn rational_part(e: &Expr) -> Option<(i128, i128)> {
+    match e {
+      Expr::Integer(n) if *n > 0 => Some((*n, 1i128)),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        match (&args[0], &args[1]) {
+          (Expr::Integer(n), Expr::Integer(d)) if *n > 0 && *d > 0 => {
+            Some((*n, *d))
+          }
+          _ => None,
+        }
+      }
+      _ => None,
+    }
+  }
+  if let Some((n, d)) = rational_part(expr) {
+    return Some((n, d, Vec::new()));
+  }
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Times" {
+    return None;
+  }
+  let (mut n, mut d) = (1i128, 1i128);
+  let mut constants: Vec<Expr> = Vec::new();
+  for factor in args.iter() {
+    if let Some((fnum, fden)) = rational_part(factor) {
+      n = n.checked_mul(fnum)?;
+      d = d.checked_mul(fden)?;
+    } else if matches!(factor,
+      Expr::Identifier(name) | Expr::Constant(name)
+        if is_pos_real_const(name))
+    {
+      constants.push(factor.clone());
+    } else {
+      return None;
+    }
+  }
+  (!constants.is_empty()).then_some((n, d, constants))
+}
+
 /// A value known to be a positive real: a positive integer or rational, one of
 /// the standard positive real constants (Pi, E, …), or a positive product or
 /// power of those. Free symbols are excluded, since nothing is known about
@@ -8310,21 +8365,9 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       _ => None,
     };
-    let base_frac = match &base {
-      Expr::Integer(n) if *n > 0 => Some((*n, 1i128)),
-      Expr::FunctionCall { name, args }
-        if name == "Rational" && args.len() == 2 =>
-      {
-        match (&args[0], &args[1]) {
-          (Expr::Integer(n), Expr::Integer(d)) if *n > 0 && *d > 0 => {
-            Some((*n, *d))
-          }
-          _ => None,
-        }
-      }
-      _ => None,
-    };
-    if let (Some(half), Some((bn, bd))) = (half, base_frac) {
+    if let (Some(half), Some((bn, bd, rest))) =
+      (half, split_positive_rational_and_constants(&base))
+    {
       // Radicand of the whole product squared: cn^2*bn / (cd^2*bd), with
       // the base fraction inverted for a -1/2 exponent.
       let (rn, rd) = if half > 0 { (bn, bd) } else { (bd, bn) };
@@ -8338,26 +8381,54 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let (t, q1) = extract_square_factor_i128(den);
         let sign = if cn < 0 { -1 } else { 1 };
         let new_coeff = make_rational(sign * s, t);
-        if p1 == 1 && q1 == 1 {
+        if p1 == 1 && q1 == 1 && rest.is_empty() {
           // The radical vanished entirely — c*Sqrt[r] is exactly rational.
           return Ok(new_coeff);
         }
-        let rebuilt: Expr = if q1 == 1 {
-          sqrt_ast(&[Expr::Integer(p1)])?
-        } else {
-          sqrt_ast(&[make_rational(p1, q1)])?
-        };
-        // Only rewrite when something actually changed; canonical inputs
-        // are fixed points and must return through the generic path.
-        let coeff_str = expr_to_string(&coeff);
-        let new_coeff_str = expr_to_string(&new_coeff);
-        let factor_str = expr_to_string(&symbolic_args[0]);
-        let rebuilt_str = expr_to_string(&rebuilt);
-        if coeff_str != new_coeff_str || factor_str != rebuilt_str {
-          if matches!(&new_coeff, Expr::Integer(1)) {
-            return Ok(rebuilt);
+        // A radicand that would come out a pure reciprocal keeps the
+        // reciprocal-radical spelling instead: wolframscript writes
+        // `3/Sqrt[2 Pi]`, not `3 Sqrt[1/(2 Pi)]`, and only flips once the
+        // numerator carries something (`6/Sqrt[2 Pi]` → `3 Sqrt[2/Pi]`).
+        let pure_reciprocal = !rest.is_empty() && half < 0 && p1 == 1 && q1 > 1;
+        if !pure_reciprocal {
+          let radicand: Expr = if q1 == 1 {
+            Expr::Integer(p1)
+          } else {
+            make_rational(p1, q1)
+          };
+          let rebuilt: Expr = if rest.is_empty() {
+            sqrt_ast(&[radicand])?
+          } else {
+            // A -1/2 exponent inverted the rational part above; the constants
+            // that rode along with it invert here, so `4/Sqrt[2 Pi]` reaches
+            // wolframscript's `2 Sqrt[2/Pi]`.
+            let mut factors: Vec<Expr> = rest
+              .into_iter()
+              .map(|c| {
+                if half > 0 {
+                  c
+                } else {
+                  power_two(&c, &Expr::Integer(-1)).unwrap_or(c)
+                }
+              })
+              .collect();
+            if !matches!(radicand, Expr::Integer(1)) {
+              factors.insert(0, radicand);
+            }
+            sqrt_ast(&[times_ast(&factors)?])?
+          };
+          // Only rewrite when something actually changed; canonical inputs
+          // are fixed points and must return through the generic path.
+          let coeff_str = expr_to_string(&coeff);
+          let new_coeff_str = expr_to_string(&new_coeff);
+          let factor_str = expr_to_string(&symbolic_args[0]);
+          let rebuilt_str = expr_to_string(&rebuilt);
+          if coeff_str != new_coeff_str || factor_str != rebuilt_str {
+            if matches!(&new_coeff, Expr::Integer(1)) {
+              return Ok(rebuilt);
+            }
+            return times_ast(&[new_coeff, rebuilt]);
           }
-          return times_ast(&[new_coeff, rebuilt]);
         }
       }
     }
@@ -10960,6 +11031,32 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         return Ok(make_rational(new_num, new_den));
       }
     }
+  }
+
+  // `(r c)^(-n/d)` for a positive rational `r` and named positive constants
+  // `c` flips to `(c^-1/r)^(n/d)`, the same rule the plain-rational base
+  // takes below: `1/Sqrt[Pi/2]` prints as `Sqrt[2/Pi]`. Only a base that is a
+  // genuine fraction flips — wolframscript leaves `1/Sqrt[2 Pi]` alone, just
+  // as it leaves `1/Sqrt[3]` alone, and flipping it would bounce against the
+  // reciprocal normalisation forever.
+  if let Expr::FunctionCall {
+    name: ename,
+    args: eargs,
+  } = exp
+    && ename == "Rational"
+    && eargs.len() == 2
+    && let (Expr::Integer(n), Expr::Integer(d)) = (&eargs[0], &eargs[1])
+    && *n < 0
+    && *d > 0
+    && let Some((p, q, constants)) = split_positive_rational_and_constants(base)
+    && q > 1
+  {
+    let mut factors = vec![make_rational(q, p)];
+    for c in constants {
+      factors.push(power_two(&c, &Expr::Integer(-1))?);
+    }
+    let flipped_base = times_ast(&factors)?;
+    return power_two(&flipped_base, &make_rational(-*n, *d));
   }
 
   // Special case: Rational^Rational — keep the result exact/symbolic

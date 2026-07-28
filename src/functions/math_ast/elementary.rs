@@ -1142,6 +1142,9 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         );
       // Separate into: integer part, squared symbolic factors, remainder
       let mut int_product: i128 = 1;
+      // The denominator of a rational factor, whose square part comes out of
+      // the radical just like the numerator's: Sqrt[Pi/18] → Sqrt[Pi/2]/3.
+      let mut den_product: i128 = 1;
       let mut outside: Vec<Expr> = Vec::new(); // factors to move outside sqrt
       let mut inside: Vec<Expr> = Vec::new(); // factors to keep inside sqrt
 
@@ -1149,6 +1152,17 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         match f {
           Expr::Integer(n) => {
             int_product *= n;
+          }
+          Expr::FunctionCall { name, args: rargs }
+            if name == "Rational" && rargs.len() == 2 =>
+          {
+            match (&rargs[0], &rargs[1]) {
+              (Expr::Integer(n), Expr::Integer(d)) if *d > 0 => {
+                int_product *= n;
+                den_product *= d;
+              }
+              _ => inside.push(f.clone()),
+            }
           }
           // expr^2 → move expr outside only if expr is known non-negative
           Expr::BinaryOp {
@@ -1211,21 +1225,27 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
 
-      // Handle the integer part: extract perfect square factors
-      let sign = if int_product < 0 { -1i128 } else { 1i128 };
-      let abs_int = (int_product * sign) as u64;
-      let mut int_outside = 1u64;
-      let mut int_inside = abs_int;
-      let mut factor = 2u64;
-      while factor * factor <= int_inside {
-        while int_inside.is_multiple_of(factor * factor) {
-          int_outside *= factor;
-          int_inside /= factor * factor;
+      // Handle the rational part: extract perfect square factors from the
+      // numerator and the denominator separately.
+      let extract_square = |value: u64| -> (u64, u64) {
+        let mut out = 1u64;
+        let mut inside = value;
+        let mut factor = 2u64;
+        while factor * factor <= inside {
+          while inside.is_multiple_of(factor * factor) {
+            out *= factor;
+            inside /= factor * factor;
+          }
+          factor += 1;
         }
-        factor += 1;
-      }
+        (out, inside)
+      };
+      let sign = if int_product < 0 { -1i128 } else { 1i128 };
+      let (int_outside, int_inside) =
+        extract_square((int_product * sign) as u64);
+      let (den_outside, den_inside) = extract_square(den_product as u64);
 
-      if int_outside <= 1 && outside.is_empty() {
+      if int_outside <= 1 && den_outside <= 1 && outside.is_empty() {
         // No simplification possible
         if let Some(result) = try_sqrt_gaussian(&args[0]) {
           return Ok(result);
@@ -1234,13 +1254,14 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
 
       // Build outside factors
-      if int_outside > 1 {
-        outside.insert(0, Expr::Integer(int_outside as i128));
+      if int_outside > 1 || den_outside > 1 {
+        outside
+          .insert(0, make_rational(int_outside as i128, den_outside as i128));
       }
 
       // Build inside factors
-      if int_inside > 1 {
-        inside.insert(0, Expr::Integer(int_inside as i128));
+      if int_inside > 1 || den_inside > 1 {
+        inside.insert(0, make_rational(int_inside as i128, den_inside as i128));
       }
       if sign < 0 {
         inside.insert(0, Expr::Integer(-1));
