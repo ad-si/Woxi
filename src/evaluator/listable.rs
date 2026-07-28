@@ -344,6 +344,23 @@ pub fn thread_listable(
   Ok(Some(Expr::List(results.into())))
 }
 
+/// Append the relative `sub` to the directory `base` using the host's path
+/// separator, so the derived directory variables (`$UserDocumentsDirectory`,
+/// `$UserBaseDirectory`, `$Path`, …) are spelled the way the platform spells
+/// paths. On Windows that keeps the result all-backslashes instead of the
+/// mixed `C:\Users\me/Documents` a hardcoded `/` produces — a form no
+/// Wolfram value takes, and one that no longer compares equal to the same
+/// directory as `SetDirectory` reports it.
+#[cfg(not(target_arch = "wasm32"))]
+fn join_path(base: &str, sub: &str) -> String {
+  let sep = std::path::MAIN_SEPARATOR_STR;
+  format!(
+    "{}{sep}{}",
+    base.trim_end_matches(['/', std::path::MAIN_SEPARATOR]),
+    sub.replace('/', sep)
+  )
+}
+
 /// Flatten Sequence[...] arguments into the parent function's argument list.
 /// In Wolfram Language, Sequence[a, b] appearing as an argument to f produces f[..., a, b, ...].
 /// Functions with the SequenceHold attribute suppress this.
@@ -757,17 +774,14 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
       let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .ok()?;
-      Some(Expr::String(format!(
-        "{}/Documents",
-        home.trim_end_matches('/')
-      )))
+      Some(Expr::String(join_path(&home, "Documents")))
     }
     #[cfg(not(target_arch = "wasm32"))]
     "$TemporaryDirectory" => {
       // Canonicalize to match wolframscript's output on macOS
       // (/var/folders/... -> /private/var/folders/...) and strip trailing slash.
       let tmp = std::env::temp_dir();
-      let canon = std::fs::canonicalize(&tmp).unwrap_or(tmp);
+      let canon = crate::utils::canonicalize(&tmp).unwrap_or(tmp);
       let mut s = canon.to_string_lossy().into_owned();
       while s.len() > 1 && s.ends_with('/') {
         s.pop();
@@ -793,11 +807,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
       } else {
         ".Wolfram"
       };
-      Some(Expr::String(format!(
-        "{}/{}",
-        home.trim_end_matches('/'),
-        sub
-      )))
+      Some(Expr::String(join_path(&home, sub)))
     }
     // System-wide Wolfram config directory.
     #[cfg(not(target_arch = "wasm32"))]
@@ -843,14 +853,14 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
       } else {
         "/usr/share/Wolfram"
       };
-      let user_base = format!("{}/{}", home.trim_end_matches('/'), user_sub);
+      let user_base = join_path(&home, user_sub);
       let mut entries: Vec<String> = vec![
-        format!("{}/Kernel", user_base),
-        format!("{}/Autoload", user_base),
-        format!("{}/Applications", user_base),
-        format!("{}/Kernel", base_root),
-        format!("{}/Autoload", base_root),
-        format!("{}/Applications", base_root),
+        join_path(&user_base, "Kernel"),
+        join_path(&user_base, "Autoload"),
+        join_path(&user_base, "Applications"),
+        join_path(base_root, "Kernel"),
+        join_path(base_root, "Autoload"),
+        join_path(base_root, "Applications"),
         ".".to_string(),
       ];
       if !home.is_empty() {

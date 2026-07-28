@@ -162,10 +162,8 @@ fn exp_step_rate(expr: &Expr, x_var: &str) -> Option<Frac> {
         && matches!(&args[0], Expr::Identifier(v) if v == x_var))
     {
       has_step = true;
-    } else if let Some(exponent) = exp_exponent(f) {
-      rate = neg_coeff_of(&exponent, x_var, 1);
     } else {
-      return None;
+      rate = neg_coeff_of(&exp_exponent(f)?, x_var, 1);
     }
   }
   if has_step { rate } else { None }

@@ -9674,15 +9674,13 @@ fn infinite_power(base: &Expr, exp: &Expr) -> Option<Expr> {
 
   // Finite base, infinite exponent.
   let dir = exp_dir?;
-  let sign = match &dir {
-    Some(d) => match try_eval_to_f64(d) {
-      Some(v) if v > 0.0 => 1.0,
-      Some(v) if v < 0.0 => -1.0,
-      // A complex exponent direction is left alone.
-      _ => return None,
-    },
-    // z^ComplexInfinity is handled by the caller.
-    None => return None,
+  // z^ComplexInfinity is handled by the caller.
+  let d = dir.as_ref()?;
+  let sign = match try_eval_to_f64(d) {
+    Some(v) if v > 0.0 => 1.0,
+    Some(v) if v < 0.0 => -1.0,
+    // A complex exponent direction is left alone.
+    _ => return None,
   };
   let (re, im) = try_extract_complex_float(base)?;
   let modulus = (re * re + im * im).sqrt();
@@ -11618,10 +11616,8 @@ fn try_around_plus(args: &[Expr]) -> Option<Expr> {
       var_minus += ar.minus * ar.minus;
       var_plus += ar.plus * ar.plus;
       asym |= ar.asym;
-    } else if let Some(c) = around_literal(a) {
-      value += c;
     } else {
-      return None;
+      value += around_literal(a)?;
     }
   }
   Some(make_around_general(
@@ -11652,10 +11648,8 @@ fn try_around_times(args: &[Expr]) -> Option<Expr> {
       value *= ar.value;
       asym |= ar.asym;
       arounds.push(ar);
-    } else if let Some(c) = around_literal(a) {
-      value *= c;
     } else {
-      return None;
+      value *= around_literal(a)?;
     }
   }
   let mut var_minus = 0.0;

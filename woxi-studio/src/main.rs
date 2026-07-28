@@ -5192,7 +5192,9 @@ const CELL_STYLES: &[CellStyle] = &[
 fn parse_cli_file_arg() -> Option<PathBuf> {
   let arg = std::env::args().skip(1).find(|a| !a.starts_with('-'))?;
   let path = PathBuf::from(arg);
-  Some(std::fs::canonicalize(&path).unwrap_or(path))
+  // `woxi::utils::canonicalize` rather than `std::fs`'s so the window
+  // title shows `C:\dir\notebook.nb` on Windows, not `\\?\C:\dir\…`.
+  Some(woxi::utils::canonicalize(&path).unwrap_or(path))
 }
 
 // ── State persistence ────────────────────────────────────────────────

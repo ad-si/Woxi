@@ -468,10 +468,10 @@ pub fn geometric_test(args: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
   // Every requested property must hold (`True` only if all are satisfied).
   let mut all = true;
   for p in props {
-    match test_property(obj, p) {
-      Some(b) => all = all && b,
-      None => return None, // symbolic / unsupported → leave unevaluated
-    }
+    // Every property is tested, even once one has already failed: a
+    // symbolic / unsupported one leaves the whole test unevaluated.
+    let b = test_property(obj, p)?;
+    all = all && b;
   }
   Some(Ok(bool_expr(all)))
 }

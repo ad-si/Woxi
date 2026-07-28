@@ -594,10 +594,7 @@ pub fn dispatch_calculus_functions(
             }
           }
           Expr::List(spec) if spec.len() == 3 => {
-            match crate::functions::math_ast::expr_to_i128(&spec[2]) {
-              Some(n) => (n, 1),
-              None => return None,
-            }
+            (crate::functions::math_ast::expr_to_i128(&spec[2])?, 1)
           }
           _ => return None,
         };
@@ -976,10 +973,8 @@ fn laplace_affine(arg: &Expr, t: &str) -> Option<(Expr, Expr)> {
   for term in &terms {
     if !depends_on(term, t) {
       b_terms.push(term.clone());
-    } else if let Some(c) = extract_linear_coeff(term, t) {
-      c_terms.push(c);
     } else {
-      return None;
+      c_terms.push(extract_linear_coeff(term, t)?);
     }
   }
   if c_terms.is_empty() {
@@ -1317,11 +1312,7 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
     if fname == "Plus" {
       let mut terms = Vec::new();
       for arg in &fargs {
-        if let Some(lt) = laplace_transform_inner(arg, t, s) {
-          terms.push(lt);
-        } else {
-          return None;
-        }
+        terms.push(laplace_transform_inner(arg, t, s)?);
       }
       return Some(Expr::FunctionCall {
         name: "Plus".to_string(),
@@ -2007,11 +1998,7 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
     if fname == "Plus" {
       let mut terms = Vec::new();
       for arg in &fargs {
-        if let Some(inv) = inverse_laplace_inner(arg, s, t) {
-          terms.push(inv);
-        } else {
-          return None;
-        }
+        terms.push(inverse_laplace_inner(arg, s, t)?);
       }
       return Some(Expr::FunctionCall {
         name: "Plus".to_string(),
@@ -3468,13 +3455,12 @@ fn match_inv_quadratic(base: &Expr, var: &str) -> Option<(Expr, Expr)> {
   for term in &args {
     if !depends_on(term, var) {
       p_terms.push((*term).clone());
-    } else if let Some(coeff) = match_var_squared(term, var) {
+    } else {
+      let coeff = match_var_squared(term, var)?;
       if q.is_some() {
         return None;
       }
       q = Some(coeff);
-    } else {
-      return None;
     }
   }
   if p_terms.is_empty() {
@@ -3842,16 +3828,12 @@ fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
     if fname == "Plus" {
       let mut terms = Vec::new();
       for arg in &fargs {
-        if let Some(ft) = fourier_transform_inner(arg, t, w) {
-          // Flatten nested Plus results
-          match ft {
-            Expr::FunctionCall { ref name, ref args } if name == "Plus" => {
-              terms.extend(args.iter().cloned());
-            }
-            _ => terms.push(ft),
+        // Flatten nested Plus results
+        match fourier_transform_inner(arg, t, w)? {
+          Expr::FunctionCall { ref name, ref args } if name == "Plus" => {
+            terms.extend(args.iter().cloned());
           }
-        } else {
-          return None;
+          ft => terms.push(ft),
         }
       }
       // Collect like terms that share the same DiracDelta factor
@@ -4119,11 +4101,7 @@ fn inverse_fourier_inner(expr: &Expr, w: &str, t: &Expr) -> Option<Expr> {
     if fname == "Plus" {
       let mut terms = Vec::new();
       for arg in &fargs {
-        if let Some(ft) = inverse_fourier_inner(arg, w, t) {
-          terms.push(ft);
-        } else {
-          return None;
-        }
+        terms.push(inverse_fourier_inner(arg, w, t)?);
       }
       return Some(make_plus(terms));
     }
@@ -6413,11 +6391,7 @@ fn fourier_sin_cos_transform_inner(
     } else if fname == "Plus" {
       let mut results = Vec::new();
       for a in &fargs {
-        if let Some(r) = fourier_sin_cos_transform_inner(a, t, w, is_sin) {
-          results.push(r);
-        } else {
-          return None;
-        }
+        results.push(fourier_sin_cos_transform_inner(a, t, w, is_sin)?);
       }
       return Some(make_plus(results));
     }

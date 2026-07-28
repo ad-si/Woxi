@@ -563,10 +563,8 @@ fn prolog_to_string(prolog: &Expr) -> Option<String> {
         ));
       }
       out.push_str("?>\n");
-    } else if let Some(text) = xml_to_string_at(item, 0, &[]) {
-      out.push_str(&text);
     } else {
-      return None;
+      out.push_str(&xml_to_string_at(item, 0, &[])?);
     }
   }
   Some(out)

@@ -13058,11 +13058,11 @@ impl TextBox {
 
     // Exponent lines (shifted right by base width)
     for i in 0..exp.height() {
-      lines.push(format!("{}{}", " ".repeat(bw), &exp.lines[i]));
+      lines.push(format!("{}{}", " ".repeat(bw), exp.lines[i]));
     }
     // Base lines (padded right by exponent width)
     for i in 0..base.height() {
-      lines.push(format!("{}{}", &base.lines[i], " ".repeat(ew)));
+      lines.push(format!("{}{}", base.lines[i], " ".repeat(ew)));
     }
 
     Self {

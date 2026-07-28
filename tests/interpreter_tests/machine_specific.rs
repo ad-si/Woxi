@@ -97,7 +97,7 @@ mod machine_specific {
 
   fn host_temp_dir() -> String {
     let tmp = std::env::temp_dir();
-    let canon = std::fs::canonicalize(&tmp).unwrap_or(tmp);
+    let canon = woxi::utils::canonicalize(&tmp).unwrap_or(tmp);
     let mut s = canon.to_string_lossy().into_owned();
     while s.len() > 1 && s.ends_with('/') {
       s.pop();
@@ -138,8 +138,14 @@ mod machine_specific {
     } else {
       ".Wolfram"
     };
-    let expected =
-      format!(r#""{}/{}""#, host_home().trim_end_matches('/'), sub);
+    // Windows spells the whole path with backslashes; the other hosts
+    // with forward slashes.
+    let sep = std::path::MAIN_SEPARATOR_STR;
+    let expected = format!(
+      r#""{}{sep}{}""#,
+      host_home().trim_end_matches(std::path::MAIN_SEPARATOR),
+      sub.replace('/', sep),
+    );
     assert_eval(r#"$UserBaseDirectory"#, &expected);
   }
 

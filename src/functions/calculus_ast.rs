@@ -12960,14 +12960,11 @@ fn numerical_one_sided_limit(
   let deltas = [1e-2, 1e-4, 1e-6, 1e-8, 1e-10, 1e-12];
   let mut vals = Vec::new();
   for &d in &deltas {
-    if let Some(v) = eval_near_point(expr, var_name, point, sign * d) {
-      if v.is_nan() {
-        return None;
-      }
-      vals.push(v);
-    } else {
+    let v = eval_near_point(expr, var_name, point, sign * d)?;
+    if v.is_nan() {
       return None;
     }
+    vals.push(v);
   }
 
   // Check for immediate infinity (even at the first sample point)

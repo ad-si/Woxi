@@ -3887,10 +3887,7 @@ fn kronecker_factor_multivar(
   // Convert factor expressions back to coefficient vectors
   let mut factor_coeffs: Vec<Vec<i128>> = Vec::new();
   for f in &factor_exprs {
-    match extract_poly_coeffs(f, primary) {
-      Some(c) => factor_coeffs.push(c),
-      None => return None,
-    }
+    factor_coeffs.push(extract_poly_coeffs(f, primary)?);
   }
 
   // Group identical factors
@@ -3979,11 +3976,9 @@ fn extract_multivar_term_data(
   for factor in &var_factors {
     match factor {
       Expr::Identifier(name) => {
-        if let Some(pos) = sorted_vars.iter().position(|v| v == name) {
-          exponents[pos] += 1;
-        } else {
-          return None; // Unknown variable
-        }
+        // An unknown variable leaves the term unhandled.
+        let pos = sorted_vars.iter().position(|v| v == name)?;
+        exponents[pos] += 1;
       }
       Expr::BinaryOp {
         op: BinaryOperator::Power,
@@ -3992,11 +3987,8 @@ fn extract_multivar_term_data(
       } => {
         if let Expr::Identifier(name) = left.as_ref() {
           if let Expr::Integer(exp) = right.as_ref() {
-            if let Some(pos) = sorted_vars.iter().position(|v| v == name) {
-              exponents[pos] += exp;
-            } else {
-              return None;
-            }
+            let pos = sorted_vars.iter().position(|v| v == name)?;
+            exponents[pos] += exp;
           } else {
             return None;
           }

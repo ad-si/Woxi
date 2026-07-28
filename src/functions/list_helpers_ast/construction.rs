@@ -1958,14 +1958,11 @@ fn expand_band_rules(data: &Expr, dims: &[usize]) -> Option<Expr> {
     {
       let start = list_of_positive_ints(&args[0], dims.len())?;
       let end: Vec<usize> = if args.len() >= 2 {
-        match list_of_positive_ints(&args[1], dims.len()) {
-          Some(e) => e
-            .into_iter()
-            .enumerate()
-            .map(|(i, v)| v.min(dims[i]))
-            .collect(),
-          None => return None,
-        }
+        list_of_positive_ints(&args[1], dims.len())?
+          .into_iter()
+          .enumerate()
+          .map(|(i, v)| v.min(dims[i]))
+          .collect()
       } else {
         dims.to_vec()
       };

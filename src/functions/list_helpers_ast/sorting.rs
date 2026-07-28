@@ -89,10 +89,8 @@ pub fn expr_to_complex_parts(e: &Expr) -> Option<(f64, f64)> {
       for arg in args.iter() {
         if matches!(arg, Expr::Identifier(n) | Expr::Constant(n) if n == "I") {
           imaginary_units += 1;
-        } else if let Some(v) = try_eval_to_f64(arg) {
-          coefficient *= v;
         } else {
-          return None;
+          coefficient *= try_eval_to_f64(arg)?;
         }
       }
       if imaginary_units == 1 {

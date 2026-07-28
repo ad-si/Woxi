@@ -3295,10 +3295,7 @@ fn evaluate_function_call_ast_inner(
         left: Box::new(sum),
         right: Box::new(a_coeffs[0].clone()),
       };
-      match evaluate_expr_to_expr(&result) {
-        Ok(v) => output.push(v),
-        Err(e) => return Err(e),
-      }
+      output.push(evaluate_expr_to_expr(&result)?);
     }
     return Ok(Expr::List(output.into()));
   }
