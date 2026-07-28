@@ -7075,6 +7075,21 @@ mod ndsolve {
   }
 
   #[test]
+  fn dependent_variable_form_keeps_the_argument() {
+    // `NDSolve[…, y[x], …]` solves for y[x], so both sides of the rule carry
+    // the argument; only the `y` form returns the bare function.
+    assert_eq!(
+      interpret("NDSolve[{y'[x] == y[x], y[0] == 1}, y[x], {x, 0, 1}]")
+        .unwrap(),
+      "{{y[x] -> InterpolatingFunction[{{0., 1.}}, <>][x]}}"
+    );
+    assert_eq!(
+      interpret("NDSolve[{y'[x] == y[x], y[0] == 1}, y, {x, 0, 1}]").unwrap(),
+      "{{y -> InterpolatingFunction[{{0., 1.}}, <>]}}"
+    );
+  }
+
+  #[test]
   fn second_order_harmonic() {
     // NDSolve y'' + y = 0, y(0)=1, y'(0)=0, check y(Pi) ≈ -1
     let result = interpret(

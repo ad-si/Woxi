@@ -400,7 +400,8 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args: vec![domain, data_expr].into(),
   };
 
-  // Build result: {{y -> InterpolatingFunction[...]}} or {{y[x] -> InterpolatingFunction[...][x]}}
+  // Build result: {{y -> InterpolatingFunction[...]}} for the `y` form, or
+  // {{y[x] -> InterpolatingFunction[...][x]}} for the `y[x]` form.
   let rule = if function_form {
     Expr::Rule {
       pattern: Box::new(Expr::Identifier(y_name)),
@@ -408,8 +409,14 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   } else {
     Expr::Rule {
-      pattern: Box::new(Expr::Identifier(y_name)),
-      replacement: Box::new(interp_func),
+      pattern: Box::new(Expr::FunctionCall {
+        name: y_name,
+        args: vec![Expr::Identifier(x_name.clone())].into(),
+      }),
+      replacement: Box::new(Expr::CurriedCall {
+        func: Box::new(interp_func),
+        args: vec![Expr::Identifier(x_name)],
+      }),
     }
   };
 
