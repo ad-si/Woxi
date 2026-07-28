@@ -130,3 +130,36 @@ A pair with no primitive to become is left standing:
 $ wo 'RegionProduct[Disk[], Disk[]]'
 RegionProduct[Disk[{0, 0}], Disk[{0, 0}]]
 ```
+
+## `CircularArcThrough`
+
+The arc of the circle through the given points, written as a `Circle` running
+from the smallest of their angles about the centre to the largest.
+
+```scrut
+$ wo 'CircularArcThrough[{{1, 0}, {0, 1}, {-1, 0}}]'
+Circle[{0, 0}, 1, {0, Pi}]
+```
+
+Two points alone are the ends of a diameter:
+
+```scrut
+$ wo 'CircularArcThrough[{{1, 0}, {0, 1}}]'
+Circle[{1/2, 1/2}, 1/Sqrt[2], {(3*Pi)/4, (7*Pi)/4}]
+```
+
+The result is a region like any other arc:
+
+```scrut
+$ wo 'ArcLength[CircularArcThrough[{{1, 0}, {0, 1}, {-1, 0}}]]'
+Pi
+```
+
+Points no circle passes through — collinear ones, or too few — are refused:
+
+```scrut
+$ wo 'CircularArcThrough[{{0, 0}, {1, 0}, {2, 0}}]'
+
+CircularArcThrough::indep: CircularArcThrough does not exist for {{0, 0}, {1, 0}, {2, 0}}.
+CircularArcThrough[{{0, 0}, {1, 0}, {2, 0}}]
+```

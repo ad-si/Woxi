@@ -1515,6 +1515,9 @@ pub fn dispatch_complex_and_special(
     "Circumsphere" if args.len() == 1 => {
       return Some(compute_circumsphere(&args[0]));
     }
+    "CircularArcThrough" if (1..=3).contains(&args.len()) => {
+      return Some(compute_circular_arc_through(args));
+    }
     // AngleBisector[{q1, p, q2}] — the interior-angle bisector at p, as an
     // InfiniteLine through p (2-D points only).
     "AngleBisector" if args.len() == 1 => {
@@ -14124,6 +14127,220 @@ fn compute_angle_bisector(expr: &Expr) -> Result<Expr, InterpreterError> {
   Ok(Expr::FunctionCall {
     name: "InfiniteLine".to_string(),
     args: vec![Expr::List(p.clone()), dir].into(),
+  })
+}
+
+// ── CircularArcThrough ───────────────────────────────────────────────────
+
+/// `f[args…]`, evaluated.
+fn eval_call(name: &str, args: Vec<Expr>) -> Result<Expr, InterpreterError> {
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  })
+}
+
+/// Whether two expressions are the same number, decided by simplifying their
+/// difference rather than by comparing how they are written — the radicals a
+/// circumcentre picks up do not cancel on their own.
+fn same_value(a: &Expr, b: &Expr) -> bool {
+  let difference = Expr::FunctionCall {
+    name: "Subtract".to_string(),
+    args: vec![a.clone(), b.clone()].into(),
+  };
+  matches!(
+    eval_call("Simplify", vec![difference]),
+    Ok(Expr::Integer(0)) | Ok(Expr::Real(0.0))
+  )
+}
+
+/// `expr` in the form wolframscript writes it, radicals collected.
+fn simplified(expr: Expr) -> Result<Expr, InterpreterError> {
+  eval_call("Simplify", vec![expr])
+}
+
+/// The squared distance between two planar points, kept exact.
+fn squared_distance(p: &[Expr], q: &[Expr]) -> Result<Expr, InterpreterError> {
+  let term = |i: usize| Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "Subtract".to_string(),
+        args: vec![p[i].clone(), q[i].clone()].into(),
+      },
+      Expr::Integer(2),
+    ]
+    .into(),
+  };
+  eval_call("Plus", vec![term(0), term(1)])
+}
+
+/// The centre of the circle through three planar points, or `None` when they
+/// are collinear and no circle passes through all of them.
+fn circumcentre(
+  a: &[Expr],
+  b: &[Expr],
+  c: &[Expr],
+) -> Result<Option<Vec<Expr>>, InterpreterError> {
+  // d = 2 (ax (by - cy) + bx (cy - ay) + cx (ay - by))
+  let sub = |x: &Expr, y: &Expr| Expr::FunctionCall {
+    name: "Subtract".to_string(),
+    args: vec![x.clone(), y.clone()].into(),
+  };
+  let times = |x: Expr, y: Expr| Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![x, y].into(),
+  };
+  let d = eval_call(
+    "Times",
+    vec![
+      Expr::Integer(2),
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          times(a[0].clone(), sub(&b[1], &c[1])),
+          times(b[0].clone(), sub(&c[1], &a[1])),
+          times(c[0].clone(), sub(&a[1], &b[1])),
+        ]
+        .into(),
+      },
+    ],
+  )?;
+  if same_value(&d, &Expr::Integer(0)) {
+    return Ok(None);
+  }
+  let norm =
+    |p: &[Expr]| squared_distance(p, &[Expr::Integer(0), Expr::Integer(0)]);
+  let (na, nb, nc) = (norm(a)?, norm(b)?, norm(c)?);
+  // The circumcentre coordinates are the usual determinant ratios.
+  let coordinate = |i: usize| -> Result<Expr, InterpreterError> {
+    let j = 1 - i;
+    let sign = if i == 0 { 1 } else { -1 };
+    let sum = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        times(na.clone(), sub(&b[j], &c[j])),
+        times(nb.clone(), sub(&c[j], &a[j])),
+        times(nc.clone(), sub(&a[j], &b[j])),
+      ]
+      .into(),
+    };
+    simplified(eval_call(
+      "Divide",
+      vec![times(Expr::Integer(sign), sum), d.clone()],
+    )?)
+  };
+  Ok(Some(vec![coordinate(0)?, coordinate(1)?]))
+}
+
+/// `CircularArcThrough[{p1, …}]`, optionally with a centre and a radius — the
+/// arc of the circle through the points, written as a `Circle` running from
+/// the smallest of their angles about the centre to the largest.
+fn compute_circular_arc_through(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let uneval = || Ok(unevaluated("CircularArcThrough", args));
+  let indep = || {
+    crate::emit_message(&format!(
+      "CircularArcThrough::indep: CircularArcThrough does not exist for {}.",
+      expr_to_string(&args[0])
+    ));
+    uneval()
+  };
+  let Expr::List(points) = &args[0] else {
+    return uneval();
+  };
+  if points.is_empty() {
+    crate::emit_message(&format!(
+      "CircularArcThrough::spec: {} is not a valid CircularArcThrough specification.",
+      expr_to_string(&args[0])
+    ));
+    return uneval();
+  }
+  // Only planar points, and at least two of them, describe an arc.
+  let mut coords: Vec<Vec<Expr>> = Vec::with_capacity(points.len());
+  for point in points.iter() {
+    let Expr::List(c) = point else {
+      return indep();
+    };
+    if c.len() != 2 {
+      return indep();
+    }
+    coords.push(c.iter().cloned().collect());
+  }
+  if coords.len() < 2 {
+    return indep();
+  }
+
+  let centre: Vec<Expr> = match args.get(1) {
+    Some(Expr::List(c)) if c.len() == 2 => c.iter().cloned().collect(),
+    // A centre that is not a planar point — `Automatic`, say — is not one
+    // wolframscript works out for itself.
+    Some(_) => return uneval(),
+    None => {
+      if coords.len() == 2 {
+        // Two points alone are the ends of a diameter.
+        let midpoint = |i: usize| -> Result<Expr, InterpreterError> {
+          eval_call(
+            "Divide",
+            vec![
+              Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![coords[0][i].clone(), coords[1][i].clone()].into(),
+              },
+              Expr::Integer(2),
+            ],
+          )
+        };
+        vec![midpoint(0)?, midpoint(1)?]
+      } else {
+        match circumcentre(&coords[0], &coords[1], &coords[2])? {
+          Some(c) => c,
+          None => return indep(),
+        }
+      }
+    }
+  };
+
+  // Every point has to sit on one circle about that centre.
+  let squared_radius = simplified(squared_distance(&coords[0], &centre)?)?;
+  for point in &coords[1..] {
+    if !same_value(&squared_distance(point, &centre)?, &squared_radius) {
+      // A centre the caller named simply does not fit; one worked out here
+      // means the points are not concyclic.
+      return if args.len() > 1 { uneval() } else { indep() };
+    }
+  }
+  let radius = eval_call("Sqrt", vec![squared_radius])?;
+  if let Some(given) = args.get(2)
+    && !same_value(given, &radius)
+  {
+    return uneval();
+  }
+
+  // The arc spans the angles the points make about the centre, taken over a
+  // full turn so that the smallest and largest of them are its ends.
+  let mut angles = Vec::with_capacity(coords.len());
+  for point in &coords {
+    let delta = |i: usize| Expr::FunctionCall {
+      name: "Subtract".to_string(),
+      args: vec![point[i].clone(), centre[i].clone()].into(),
+    };
+    let turn = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Integer(2), Expr::Identifier("Pi".to_string())].into(),
+    };
+    angles.push(eval_call(
+      "Mod",
+      vec![eval_call("ArcTan", vec![delta(0), delta(1)])?, turn],
+    )?);
+  }
+  let span = Expr::List(
+    vec![eval_call("Min", angles.clone())?, eval_call("Max", angles)?].into(),
+  );
+  Ok(Expr::FunctionCall {
+    name: "Circle".to_string(),
+    args: vec![Expr::List(centre.into()), radius, span].into(),
   })
 }
 

@@ -7660,3 +7660,171 @@ mod region_product {
     assert_eq!(form("RegionProduct[]"), "RegionProduct[]");
   }
 }
+
+// CircularArcThrough. The arc of the circle through the given points, written
+// as a Circle running from the smallest of their angles about the centre to
+// the largest. Values verified against wolframscript.
+mod circular_arc_through {
+  use super::*;
+
+  /// The result of `code`, written the way `InputForm` writes it.
+  fn form(code: &str) -> String {
+    interpret(&format!("ToString[{code}, InputForm]")).unwrap()
+  }
+
+  #[test]
+  fn three_points_name_their_circle() {
+    clear_state();
+    for (code, expected) in [
+      (
+        "CircularArcThrough[{{1, 0}, {0, 1}, {-1, 0}}]",
+        "Circle[{0, 0}, 1, {0, Pi}]",
+      ),
+      // The points need not be given in order round the circle.
+      (
+        "CircularArcThrough[{{1, 0}, {-1, 0}, {0, 1}}]",
+        "Circle[{0, 0}, 1, {0, Pi}]",
+      ),
+      (
+        "CircularArcThrough[{{-1, 0}, {0, 1}, {1, 0}}]",
+        "Circle[{0, 0}, 1, {0, Pi}]",
+      ),
+      // A centre away from the origin, and a radius that stays a radical.
+      (
+        "CircularArcThrough[{{1, 1}, {2, 2}, {3, 1}}]",
+        "Circle[{2, 1}, 1, {0, Pi}]",
+      ),
+      (
+        "CircularArcThrough[{{1, 0}, {0, 1}, {2, 3}}]",
+        "Circle[{3/2, 3/2}, Sqrt[5/2], {ArcTan[3], Pi + ArcTan[3]}]",
+      ),
+      // Radicals in the coordinates cancel to an exact centre.
+      (
+        "CircularArcThrough[{{Sqrt[2], 0}, {1, 1}, {0, Sqrt[2]}}]",
+        "Circle[{0, 0}, Sqrt[2], {0, Pi/2}]",
+      ),
+      // More than three points is fine as long as they all lie on it.
+      (
+        "CircularArcThrough[{{1, 0}, {0, 1}, {-1, 0}, {0, -1}}]",
+        "Circle[{0, 0}, 1, {0, (3*Pi)/2}]",
+      ),
+      // The arc spans the smallest angle to the largest, which need not be
+      // the shortest way round: these three want {0, 3 Pi/2}, not {3 Pi/2,
+      // 5 Pi/2}.
+      (
+        "CircularArcThrough[{{0, 1}, {1, 0}, {0, -1}}]",
+        "Circle[{0, 0}, 1, {0, (3*Pi)/2}]",
+      ),
+    ] {
+      assert_eq!(form(code), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn two_points_are_the_ends_of_a_diameter() {
+    clear_state();
+    assert_eq!(
+      form("CircularArcThrough[{{1, 0}, {0, 1}}]"),
+      "Circle[{1/2, 1/2}, 1/Sqrt[2], {(3*Pi)/4, (7*Pi)/4}]"
+    );
+    assert_eq!(
+      form("CircularArcThrough[{{0, 0}, {1, 1}}]"),
+      "Circle[{1/2, 1/2}, 1/Sqrt[2], {Pi/4, (5*Pi)/4}]"
+    );
+  }
+
+  #[test]
+  fn a_named_centre_and_radius_are_taken_as_given() {
+    clear_state();
+    for (code, expected) in [
+      (
+        "CircularArcThrough[{{1, 0}, {-1, 0}}, {0, 0}]",
+        "Circle[{0, 0}, 1, {0, Pi}]",
+      ),
+      (
+        "CircularArcThrough[{{0, 0}, {2, 0}}, {1, 0}]",
+        "Circle[{1, 0}, 1, {0, Pi}]",
+      ),
+      (
+        "CircularArcThrough[{{3, 0}, {0, 3}}, {0, 0}]",
+        "Circle[{0, 0}, 3, {0, Pi/2}]",
+      ),
+      (
+        "CircularArcThrough[{{0, 0}, {2, 0}}, {1, 0}, 1]",
+        "Circle[{1, 0}, 1, {0, Pi}]",
+      ),
+      (
+        "CircularArcThrough[{{1, 0}, {0, 1}, {-1, 0}}, {0, 0}, 1]",
+        "Circle[{0, 0}, 1, {0, Pi}]",
+      ),
+    ] {
+      assert_eq!(form(code), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn the_arc_is_a_region_like_any_other_circle() {
+    clear_state();
+    assert_eq!(
+      interpret("ArcLength[CircularArcThrough[{{1, 0}, {0, 1}, {-1, 0}}]]")
+        .unwrap(),
+      "Pi"
+    );
+    assert_eq!(
+      interpret("RegionQ[CircularArcThrough[{{1, 0}, {0, 1}, {-1, 0}}]]")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn points_no_circle_passes_through_are_refused() {
+    clear_state();
+    // Collinear points, a single point, and three-dimensional ones all get
+    // the ::indep message.
+    for code in [
+      "CircularArcThrough[{{0, 0}, {1, 0}, {2, 0}}]",
+      "CircularArcThrough[{{1, 0}}]",
+      "CircularArcThrough[{{1, 0, 0}, {0, 1, 0}, {-1, 0, 0}}]",
+      "CircularArcThrough[{{1, 0}, {0, 1}, {0, -1}, {2, 0}}]",
+    ] {
+      let result = interpret_with_stdout(code).unwrap();
+      assert!(
+        result
+          .warnings
+          .iter()
+          .any(|w| w.contains("CircularArcThrough::indep")),
+        "expected ::indep for {code}, got {:?}",
+        result.warnings
+      );
+    }
+    // An empty list is not a specification at all.
+    let result = interpret_with_stdout("CircularArcThrough[{}]").unwrap();
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|w| w.contains("CircularArcThrough::spec")),
+      "expected ::spec, got {:?}",
+      result.warnings
+    );
+    // A centre or radius that does not fit leaves the call standing, without
+    // a message.
+    for (code, expected) in [
+      (
+        "CircularArcThrough[{{1, 0}, {0, 2}}, {0, 0}]",
+        "CircularArcThrough[{{1, 0}, {0, 2}}, {0, 0}]",
+      ),
+      (
+        "CircularArcThrough[{{1, 0}, {0, 1}}, {0, 0}, 2]",
+        "CircularArcThrough[{{1, 0}, {0, 1}}, {0, 0}, 2]",
+      ),
+      (
+        "CircularArcThrough[{{0, 0}, {2, 0}}, Automatic, 2]",
+        "CircularArcThrough[{{0, 0}, {2, 0}}, Automatic, 2]",
+      ),
+    ] {
+      assert_eq!(form(code), expected, "{code}");
+    }
+  }
+}
