@@ -457,6 +457,17 @@ pub fn apply_postfix_ast(
   expr: &Expr,
   func: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // `expr // f` is `f[expr]`, so a `Sequence` argument spreads into f's
+  // arguments the way it would if the call had been written out.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Sequence"
+    && let Expr::Identifier(head) = func
+  {
+    return evaluate_function_call_ast(
+      head,
+      &args.iter().cloned().collect::<Vec<_>>(),
+    );
+  }
   apply_function_to_arg(func, expr)
 }
 

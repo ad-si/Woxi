@@ -9814,3 +9814,72 @@ mod held_prefix_operators {
     );
   }
 }
+
+// `expr // f` is `f[expr]`, so a Sequence argument spreads into f's arguments
+// the way it would if the call had been written out. Values verified against
+// wolframscript.
+mod postfix_spreads_a_sequence {
+  use super::*;
+
+  /// The result of `code`, written the way `InputForm` writes it.
+  fn form(code: &str) -> String {
+    interpret(&format!("ToString[{code}, InputForm]")).unwrap()
+  }
+
+  #[test]
+  fn a_sequence_handed_to_a_postfix_head_spreads() {
+    clear_state();
+    for (code, expected) in [
+      ("Sequence[1, 2] // List", "{1, 2}"),
+      ("Sequence[1, 2] // f", "f[1, 2]"),
+      ("Sequence[a, b] // f", "f[a, b]"),
+      ("Sequence[1] // f", "f[1]"),
+      ("Sequence[] // List", "{}"),
+      // The head then sees two arguments, and computes with both.
+      ("Sequence[1, 2] // Plus", "3"),
+      ("Sequence[1, 2] // Times", "2"),
+      ("Sequence[1, 2, 3] // Max", "3"),
+      // Which is what `Sequence @@ list` feeds it.
+      ("Sequence @@ {1, 2} // List", "{1, 2}"),
+    ] {
+      assert_eq!(form(code), expected, "{code}");
+    }
+  }
+
+  // A Sequence one level down is already spread by the head holding it, so
+  // the postfix head sees a single argument.
+  #[test]
+  fn a_sequence_further_in_is_not_the_postfix_argument() {
+    clear_state();
+    for (code, expected) in [
+      ("{Sequence[1, 2]} // Length", "2"),
+      ("g[Sequence[1, 2]] // f", "f[g[1, 2]]"),
+      ("Sequence[{1, 2}] // Length", "2"),
+      // Ordinary postfix is untouched.
+      ("{1, 2} // Length", "2"),
+      ("{1, 2, 3} // Total", "6"),
+      ("{1, 2, 3} // Reverse", "{3, 2, 1}"),
+      ("{1, 2} // f", "f[{1, 2}]"),
+      ("x // f", "f[x]"),
+      // A held postfix surfaces as the call it stands for, with the
+      // Sequence still waiting inside it.
+      ("Hold[Sequence[1, 2] // f]", "Hold[f[Sequence[1, 2]]]"),
+    ] {
+      assert_eq!(form(code), expected, "{code}");
+    }
+  }
+
+  // Spreading can hand the head the wrong number of arguments, and it says so
+  // rather than quietly counting the Sequence as one.
+  #[test]
+  fn spreading_can_overfill_the_head() {
+    clear_state();
+    let result = interpret_with_stdout("Sequence[1, 2] // Length").unwrap();
+    assert_eq!(result.result, "Length[1, 2]");
+    assert!(
+      result.warnings.iter().any(|w| w.contains("Length::argx")),
+      "expected Length::argx, got {:?}",
+      result.warnings
+    );
+  }
+}

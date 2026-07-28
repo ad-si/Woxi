@@ -21,6 +21,22 @@ $ wo '{1, 2, 3} // Length'
 3
 ```
 
+Because it really is `f[expr]`, a `Sequence` on the left spreads into `f`'s
+arguments rather than arriving as one:
+
+```scrut
+$ wo 'Sequence[1, 2] // f'
+f[1, 2]
+```
+
+A `Sequence` one level down has already been spread by the head holding it,
+so `f` still sees a single argument:
+
+```scrut
+$ wo '{Sequence[1, 2]} // Length'
+2
+```
+
 Postfix after an operator chain:
 
 ```scrut
