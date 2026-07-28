@@ -19,4 +19,5 @@ Inserting, deleting, replacing, padding, rotating, and partitioning strings.
 - [`ToLowerCase`](manipulation/ToLowerCase.md)
 - [`ToUpperCase`](manipulation/ToUpperCase.md)
 - [`RemoveDiacritics`](manipulation/RemoveDiacritics.md)
+- [`CharacterNormalize`](manipulation/CharacterNormalize.md)
 - [`Transliterate`](manipulation/Transliterate.md)

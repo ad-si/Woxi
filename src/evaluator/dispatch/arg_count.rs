@@ -172,6 +172,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "CumulantGeneratingFunction" => Some((2, 2)),
     "CForm" => Some((1, 1)),
     "CharacterCounts" => Some((1, 2)),
+    "CharacterNormalize" => Some((2, 2)),
     "CharacteristicPolynomial" => Some((2, 2)),
     "MatrixMinimalPolynomial" => Some((2, 2)),
     "CharacterName" => Some((1, 1)),

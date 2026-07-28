@@ -13590,3 +13590,161 @@ mod tex_form_conformance {
     assert_eq!(tex("Inactive[Sin][x]"), "\\sin (x)");
   }
 }
+
+mod character_normalize {
+  use super::*;
+
+  /// Code points in, code points out — keeps the test source ASCII-only so
+  /// nothing depends on the encoding of this file.
+  fn norm(codes: &str, form: &str) -> String {
+    interpret(&format!(
+      "ToCharacterCode[CharacterNormalize[FromCharacterCode[{{{}}}], \"{}\"]]",
+      codes, form
+    ))
+    .unwrap()
+  }
+
+  #[test]
+  fn canonical_decomposition_and_composition() {
+    clear_state();
+    // U+00C5 (A with ring) <-> U+0041 U+030A.
+    assert_eq!(norm("197", "NFD"), "{65, 778}");
+    assert_eq!(norm("65, 778", "NFC"), "{197}");
+    // U+212B (angstrom sign) is canonically equivalent to U+00C5.
+    assert_eq!(norm("8491", "NFC"), "{197}");
+    assert_eq!(norm("8491", "NFD"), "{65, 778}");
+    // Composition only merges the base with the first mark it can take.
+    assert_eq!(norm("65, 776, 769", "NFC"), "{196, 769}");
+  }
+
+  #[test]
+  fn compatibility_decomposition_and_composition() {
+    clear_state();
+    // U+00B2 (superscript two) is a compatibility, not a canonical, variant.
+    assert_eq!(norm("178", "NFKC"), "{50}");
+    assert_eq!(norm("178", "NFC"), "{178}");
+    // U+00BC (vulgar fraction one quarter) -> "1", fraction slash, "4".
+    assert_eq!(norm("188", "NFKD"), "{49, 8260, 52}");
+    // U+01C4 (DZ with caron) -> "D", "Z with caron".
+    assert_eq!(norm("452", "NFKC"), "{68, 381}");
+    assert_eq!(norm("452", "NFC"), "{452}");
+  }
+
+  #[test]
+  fn casefold_uses_full_case_folding() {
+    clear_state();
+    // Full case folding, not lowercasing: U+00DF and U+1E9E both fold to "ss".
+    assert_eq!(norm("223", "NFKCCasefold"), "{115, 115}");
+    assert_eq!(norm("7838", "NFKCCasefold"), "{115, 115}");
+    // U+0130 folds to "i" plus a combining dot above.
+    assert_eq!(norm("304", "NFKCCasefold"), "{105, 775}");
+    // Both sigma forms fold to the lowercase sigma U+03C3.
+    assert_eq!(norm("931, 963, 962", "NFKCCasefold"), "{963, 963, 963}");
+    // The Kelvin sign folds through its canonical equivalent to "k".
+    assert_eq!(norm("8490", "NFKCCasefold"), "{107}");
+    // Compatibility expansion happens before folding: the fi ligature.
+    assert_eq!(norm("64257", "NFKCCasefold"), "{102, 105}");
+    // Iota subscript expands to a full iota.
+    assert_eq!(norm("8064", "NFKCCasefold"), "{7936, 953}");
+    // U+01C4 folds all the way down to lowercase.
+    assert_eq!(norm("452", "NFKCCasefold"), "{100, 382}");
+    assert_eq!(norm("329", "NFKCCasefold"), "{700, 110}");
+    // A character with no folding is left alone.
+    assert_eq!(norm("5176", "NFKCCasefold"), "{5176}");
+    assert_eq!(
+      interpret(r#"CharacterNormalize["ABC", "NFKCCasefold"]"#).unwrap(),
+      "abc"
+    );
+  }
+
+  #[test]
+  fn casefold_drops_default_ignorable_characters() {
+    clear_state();
+    // U+00AD (soft hyphen) is default-ignorable and maps to nothing.
+    assert_eq!(norm("173", "NFKCCasefold"), "{}");
+    assert_eq!(norm("65, 173, 66", "NFKCCasefold"), "{97, 98}");
+    // The other forms keep it.
+    assert_eq!(norm("65, 173, 66", "NFC"), "{65, 173, 66}");
+  }
+
+  #[test]
+  fn normalizes_a_list_of_strings_elementwise() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"CharacterNormalize[{"ab", "cd"}, "NFC"]"#).unwrap(),
+      "{ab, cd}"
+    );
+    // The empty list is accepted and returned unchanged, even though the
+    // message for a bad first argument speaks of a *non-empty* list.
+    assert_eq!(interpret(r#"CharacterNormalize[{}, "NFC"]"#).unwrap(), "{}");
+  }
+
+  #[test]
+  fn ascii_is_unchanged_by_every_form() {
+    clear_state();
+    for form in ["NFC", "NFD", "NFKC", "NFKD"] {
+      assert_eq!(
+        interpret(&format!(r#"CharacterNormalize["abc", "{}"]"#, form))
+          .unwrap(),
+        "abc"
+      );
+    }
+    assert_eq!(interpret(r#"CharacterNormalize["", "NFC"]"#).unwrap(), "");
+  }
+
+  #[test]
+  fn non_string_first_argument_is_rejected() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"CharacterNormalize[5, "NFC"]"#).unwrap(),
+      "CharacterNormalize[5, NFC]"
+    );
+    // A list has to be strings all the way through, and only one level deep.
+    assert_eq!(
+      interpret(r#"CharacterNormalize[{"a", 5}, "NFC"]"#).unwrap(),
+      "CharacterNormalize[{a, 5}, NFC]"
+    );
+    assert_eq!(
+      interpret(r#"CharacterNormalize[{{"a"}}, "NFC"]"#).unwrap(),
+      "CharacterNormalize[{{a}}, NFC]"
+    );
+  }
+
+  #[test]
+  fn unknown_normalization_form_is_rejected() {
+    clear_state();
+    // The form name is case-sensitive.
+    assert_eq!(
+      interpret(r#"CharacterNormalize["abc", "nfd"]"#).unwrap(),
+      "CharacterNormalize[abc, nfd]"
+    );
+    assert_eq!(
+      interpret(r#"CharacterNormalize["abc", "NFX"]"#).unwrap(),
+      "CharacterNormalize[abc, NFX]"
+    );
+    // A symbol named NFC is not the string "NFC".
+    assert_eq!(
+      interpret(r#"CharacterNormalize["abc", NFC]"#).unwrap(),
+      "CharacterNormalize[abc, NFC]"
+    );
+    // When both arguments are bad the text is what gets reported, so the
+    // call still just stays unevaluated.
+    assert_eq!(
+      interpret(r#"CharacterNormalize[5, "NFX"]"#).unwrap(),
+      "CharacterNormalize[5, NFX]"
+    );
+  }
+
+  #[test]
+  fn wrong_argument_count() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"CharacterNormalize["abc"]"#).unwrap(),
+      "CharacterNormalize[abc]"
+    );
+    assert_eq!(
+      interpret(r#"CharacterNormalize["abc", "NFC", 1]"#).unwrap(),
+      "CharacterNormalize[abc, NFC, 1]"
+    );
+  }
+}

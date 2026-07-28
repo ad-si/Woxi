@@ -14434,3 +14434,176 @@ pub fn snippet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
   Ok(Expr::String(snippet.join("\n")))
 }
+
+// ---------------------------------------------------------------------------
+// CharacterNormalize
+// ---------------------------------------------------------------------------
+
+/// The five normalization forms wolframscript accepts, in the order its
+/// messages list them.
+const NORMALIZATION_FORMS: [&str; 5] =
+  ["NFC", "NFD", "NFKC", "NFKCCasefold", "NFKD"];
+
+/// Full case folding of one character (Unicode `CaseFolding.txt`, statuses
+/// `C` + `F`). Characters that fold to themselves are absent from the table.
+fn full_case_fold(c: char) -> Option<&'static str> {
+  let table = crate::functions::unicode_casefold_data::CASE_FOLDING;
+  table
+    .binary_search_by_key(&(c as u32), |(cp, _)| *cp)
+    .ok()
+    .map(|i| table[i].1)
+}
+
+fn is_default_ignorable(c: char) -> bool {
+  let cp = c as u32;
+  crate::functions::unicode_casefold_data::DEFAULT_IGNORABLE
+    .binary_search_by(|(lo, hi)| {
+      if cp < *lo {
+        std::cmp::Ordering::Greater
+      } else if cp > *hi {
+        std::cmp::Ordering::Less
+      } else {
+        std::cmp::Ordering::Equal
+      }
+    })
+    .is_ok()
+}
+
+/// Apply one normalization form to a string. `NFKCCasefold` is the derived
+/// `NFKC_Casefold` mapping: drop the default-ignorable characters, then
+/// `NFKC`, full case fold, and `NFKC` again.
+fn normalize_with(text: &str, form: &str) -> String {
+  use unicode_normalization::UnicodeNormalization;
+  match form {
+    "NFC" => text.nfc().collect(),
+    "NFD" => text.nfd().collect(),
+    "NFKC" => text.nfkc().collect(),
+    "NFKD" => text.nfkd().collect(),
+    "NFKCCasefold" => {
+      let stripped: String =
+        text.chars().filter(|c| !is_default_ignorable(*c)).collect();
+      let compat: String = stripped.nfkc().collect();
+      let folded: String = compat
+        .chars()
+        .flat_map(|c| match full_case_fold(c) {
+          Some(f) => f.chars().collect::<Vec<_>>(),
+          None => vec![c],
+        })
+        .collect();
+      folded.nfkc().collect()
+    }
+    _ => text.to_string(),
+  }
+}
+
+/// Levenshtein distance, used to decide whether a mistyped form name is close
+/// enough to a real one for wolframscript's "Did you mean …" suggestion.
+fn edit_distance(a: &str, b: &str) -> usize {
+  let a: Vec<char> = a.chars().collect();
+  let b: Vec<char> = b.chars().collect();
+  let mut prev: Vec<usize> = (0..=b.len()).collect();
+  let mut cur = vec![0usize; b.len() + 1];
+  for i in 1..=a.len() {
+    cur[0] = i;
+    for j in 1..=b.len() {
+      let sub = prev[j - 1] + usize::from(a[i - 1] != b[j - 1]);
+      cur[j] = sub.min(prev[j] + 1).min(cur[j - 1] + 1);
+    }
+    std::mem::swap(&mut prev, &mut cur);
+  }
+  prev[b.len()]
+}
+
+/// The form wolframscript suggests for an unrecognized specification: the
+/// closest name whose edit distance is within `Ceiling[len / 3]` of the text
+/// the user wrote, ties going to the earlier name in the canonical order.
+fn suggested_form(text: &str) -> Option<&'static str> {
+  let threshold = text.chars().count().div_ceil(3);
+  NORMALIZATION_FORMS
+    .iter()
+    .map(|f| (edit_distance(text, f), *f))
+    .filter(|(d, _)| *d <= threshold)
+    .min_by_key(|(d, _)| *d)
+    .map(|(_, f)| f)
+}
+
+/// CharacterNormalize[string | {strings…}, form] — convert characters to the
+/// given Unicode normalization form ("NFC", "NFD", "NFKC", "NFKD", or
+/// "NFKCCasefold").
+pub fn character_normalize_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let original = || unevaluated("CharacterNormalize", args);
+
+  // The text is validated first: wolframscript reports only `::nlpstr` when
+  // both arguments are unusable.
+  let texts: Vec<String> = match &args[0] {
+    Expr::String(s) => vec![s.clone()],
+    // A list of strings normalizes elementwise. The empty list is accepted
+    // and returned unchanged, despite what the message below claims.
+    Expr::List(items) if items.iter().all(|e| matches!(e, Expr::String(_))) => {
+      items
+        .iter()
+        .map(|e| match e {
+          Expr::String(s) => s.clone(),
+          _ => unreachable!("checked above"),
+        })
+        .collect()
+    }
+    _ => {
+      crate::emit_message(
+        "CharacterNormalize::nlpstr: String or non-empty list of strings \
+         expected at position 1.",
+      );
+      return Ok(original());
+    }
+  };
+
+  let form = match &args[1] {
+    Expr::String(s) if NORMALIZATION_FORMS.contains(&s.as_str()) => s.clone(),
+    other => {
+      // Strings show quoted in the message; anything else in OutputForm.
+      let shown = match other {
+        Expr::String(s) => format!("\"{}\"", s),
+        _ => crate::syntax::expr_to_output(other),
+      };
+      let text = match other {
+        Expr::String(s) => s.clone(),
+        _ => crate::syntax::expr_to_output(other),
+      };
+      let listing = |skip: Option<&str>| {
+        let names: Vec<String> = NORMALIZATION_FORMS
+          .iter()
+          .filter(|f| Some(**f) != skip)
+          .map(|f| format!("\"{}\"", f))
+          .collect();
+        let (last, rest) = names.split_last().expect("five forms");
+        format!("{}, and {}", rest.join(", "), last)
+      };
+      match suggested_form(&text) {
+        Some(best) => crate::emit_message(&format!(
+          "CharacterNormalize::elmntavsl: {} is not an available \
+           normalization type. Did you mean \"{}\" instead? Possible \
+           normalization types also include {}.",
+          shown,
+          best,
+          listing(Some(best))
+        )),
+        None => crate::emit_message(&format!(
+          "CharacterNormalize::elmntavl: {} is not an available \
+           normalization type. Possible normalization types include {}.",
+          shown,
+          listing(None)
+        )),
+      }
+      return Ok(original());
+    }
+  };
+
+  let mut normalized =
+    texts.iter().map(|t| Expr::String(normalize_with(t, &form)));
+  if matches!(&args[0], Expr::String(_)) {
+    return Ok(normalized.next().expect("one string"));
+  }
+  Ok(Expr::List(normalized.collect::<Vec<_>>().into()))
+}
