@@ -52,25 +52,30 @@ mod machine_specific {
   /// `src/evaluator/listable.rs`: USER / USERNAME env vars first, then the
   /// account name of the effective uid.
   fn host_user() -> String {
-    std::env::var("USER")
+    let mut user = std::env::var("USER")
       .or_else(|_| std::env::var("USERNAME"))
-      .ok()
-      .or_else(|| {
-        #[cfg(unix)]
-        unsafe {
-          let pw = libc::getpwuid(libc::geteuid());
-          if pw.is_null() {
-            return None;
-          }
-          std::ffi::CStr::from_ptr((*pw).pw_name)
-            .to_str()
-            .ok()
-            .map(str::to_string)
+      .ok();
+
+    #[cfg(unix)]
+    {
+      user = user.or_else(|| unsafe {
+        let pw = libc::getpwuid(libc::geteuid());
+        if pw.is_null() {
+          return None;
         }
-        #[cfg(not(unix))]
-        None
-      })
-      .expect("could not determine the current user name")
+        std::ffi::CStr::from_ptr((*pw).pw_name)
+          .to_str()
+          .ok()
+          .map(str::to_string)
+      });
+    }
+
+    #[cfg(not(unix))]
+    {
+      user = user.or(None);
+    }
+
+    user.expect("could not determine the current user name")
   }
 
   /// Short hostname, stripped of trailing `.local` / `.lan` etc, to
