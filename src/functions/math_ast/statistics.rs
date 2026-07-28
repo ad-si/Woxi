@@ -946,6 +946,13 @@ fn mean_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Variance[list] - Sample variance (unbiased, divides by n-1)
 /// Variance[{1, 2, 3}] => 1
 /// Variance[{1.0, 2.0, 3.0}] => 1.0
+/// Whether `e` is a machine number, which makes anything computed from it
+/// inexact. A Rational or a symbol keeps a statistic exact, so the two must
+/// not be lumped together as "not an Integer".
+fn is_inexact_number(e: &Expr) -> bool {
+  matches!(e, Expr::Real(_) | Expr::BigFloat(..))
+}
+
 pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -1020,24 +1027,29 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           numer, denom,
         ));
       }
-      if has_real || !all_int {
-        // Try float path first
-        let mut vals = Vec::new();
-        let mut all_numeric = true;
-        for item in items {
-          if let Some(v) = expr_to_num(item) {
-            vals.push(v);
-          } else {
-            all_numeric = false;
-            break;
+      let _ = has_real;
+      if !all_int {
+        // Machine numbers make the variance inexact; a Rational or a symbol
+        // keeps it exact, so only the former takes the float path — and its
+        // result stays a Real even when it lands on a whole number.
+        if items.iter().any(is_inexact_number) {
+          let mut vals = Vec::new();
+          let mut all_numeric = true;
+          for item in items {
+            if let Some(v) = expr_to_num(item) {
+              vals.push(v);
+            } else {
+              all_numeric = false;
+              break;
+            }
           }
-        }
-        if all_numeric && !vals.is_empty() {
-          let n = vals.len() as f64;
-          let mean = vals.iter().sum::<f64>() / n;
-          let var =
-            vals.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
-          return Ok(num_to_expr(var));
+          if all_numeric && !vals.is_empty() {
+            let n = vals.len() as f64;
+            let mean = vals.iter().sum::<f64>() / n;
+            let var =
+              vals.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
+            return Ok(Expr::Real(var));
+          }
         }
         // Check for list-of-lists → compute column-wise
         if items.iter().all(|item| matches!(item, Expr::List(_))) {
@@ -1835,7 +1847,7 @@ pub fn harmonic_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         let n = vals.len() as f64;
         let sum_recip: f64 = vals.iter().map(|x| 1.0 / x).sum();
-        return Ok(num_to_expr(n / sum_recip));
+        return Ok(Expr::Real(n / sum_recip));
       }
       // List-of-lists (matrix) → column-wise harmonic mean.
       if items.iter().all(|item| matches!(item, Expr::List(_))) {
@@ -3053,7 +3065,7 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Wolfram emits Correlation::zerosd and leaves the expression unevaluated.
       return Ok(unevaluated("Correlation", args));
     }
-    return Ok(num_to_expr(cov / denom));
+    return Ok(Expr::Real(cov / denom));
   }
   // All inputs are exact (Integer/Rational): compute symbolically.
   // r = Cov(x,y) / Sqrt[Cov(x,x) * Cov(y,y)]
@@ -3982,7 +3994,7 @@ pub fn root_mean_square_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           make_rational(numer, denom),
         ));
       }
-      if has_real || !all_int {
+      if items.iter().any(is_inexact_number) {
         let mut vals = Vec::new();
         for item in items {
           if let Some(v) = expr_to_num(item) {
@@ -3993,9 +4005,33 @@ pub fn root_mean_square_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         let n = vals.len() as f64;
         let mean_sq = vals.iter().map(|x| x * x).sum::<f64>() / n;
-        return Ok(num_to_expr(mean_sq.sqrt()));
+        return Ok(Expr::Real(mean_sq.sqrt()));
       }
-      Ok(unevaluated("RootMeanSquare", args))
+      let _ = has_real;
+      // Exact but not all whole — a Rational among them, say. Sqrt of the
+      // mean square, evaluated so the radical reduces the way Wolfram writes
+      // it.
+      let squares: Vec<Expr> = items
+        .iter()
+        .map(|item| Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![item.clone(), Expr::Integer(2)].into(),
+        })
+        .collect();
+      let mean_square = Expr::FunctionCall {
+        name: "Divide".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: squares.into(),
+          },
+          Expr::Integer(items.len() as i128),
+        ]
+        .into(),
+      };
+      Ok(crate::evaluator::evaluate_expr_to_expr(&make_sqrt(
+        mean_square,
+      ))?)
     }
     _ => Ok(unevaluated("RootMeanSquare", args)),
   }

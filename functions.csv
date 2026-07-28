@@ -637,7 +637,7 @@ Fit,Performs a least-squares fit of data to a linear combination of basis functi
 Input,Reads user input (inert in Woxi),✅,effectful,1.0,642
 UnitConvert,Converts a quantity to a different unit; with one argument converts to SI base units,✅,pure,9.0,643
 BoundaryStyle,Option for boundary styling in plots,✅,none,6.0,644
-StandardDeviation,Returns the standard deviation of a list or an association's values,✅,pure,5.0,645
+StandardDeviation,Returns the standard deviation of a list or an association's values — exact unless a machine number is among them,✅,pure,5.0,645
 MaxIterations,Option for maximum iterations,✅,pure,1.0,646
 GroupBy,Groups a list or association by one classifier or a list of them nesting a level each; an optional third argument reduces the innermost groups,✅,pure,10.0,647
 Nothing,Element that disappears from lists,✅,pure,10.2,648
@@ -747,7 +747,7 @@ StringForm,Format a string with placeholder substitution,✅,pure,1.0,754
 FrameMargins,Option specifying margins within a frame,✅,none,6.0,755
 RandomColor,Generate a random color,✅,none,10.0,756
 UniformDistribution,Represents a continuous uniform probability distribution,✅,pure,6.0,757
-Variance,Returns the variance of a list or an association's values,✅,pure,5.0,758
+Variance,Returns the variance of a list or an association's values — exact unless a machine number is among them,✅,pure,5.0,758
 ImageResize,Resizes an image to specified dimensions,✅,pure,7.0,759
 LineLegend,Legend with line samples,✅,none,9.0,760
 ChebyshevU,Chebyshev polynomial of the second kind,✅,pure,1.0,761
@@ -2026,7 +2026,7 @@ ContainsAny,Test if any elements of the second list appear in the first,✅,pure
 ImagePerspectiveTransformation,Perspective transform on image,🚫,,8.0,2061
 Atom,Represents an atom in a molecule (chemistry),✅,pure,12.0,2065
 InverseSeries,Computes the reversion (inverse) of a power series,✅,pure,1.0,2065
-RootMeanSquare,Returns the root mean square of a list or the column-wise root mean square of a matrix,✅,pure,6.0,2065
+RootMeanSquare,Returns the root mean square of a list or the column-wise root mean square of a matrix — exact for exact values symbols included,✅,pure,6.0,2065
 SquareMatrixQ,Test if an expression is a square matrix,✅,none,10.0,2065
 CholeskyDecomposition,Returns the upper-triangular Cholesky factor U of a Hermitian positive-definite matrix such that ConjugateTranspose[U].U equals the input,✅,None,5.0,2067
 IntegerReverse,Reverses the digits of an integer in base b optionally over a fixed digit count (Listable),✅,pure,10.3,2067

@@ -20,3 +20,16 @@ sigma
 $ wo 'StandardDeviation[PoissonDistribution[lambda]]'
 Sqrt[lambda]
 ```
+
+The exactness follows the values: a `Rational` keeps the result symbolic,
+a machine number makes it a machine number.
+
+```scrut
+$ wo 'StandardDeviation[{1/2, 3/2}]'
+1/Sqrt[2]
+```
+
+```scrut
+$ wo 'StandardDeviation[{1., 3.}]'
+1.4142135623730951
+```

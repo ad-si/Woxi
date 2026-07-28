@@ -589,9 +589,10 @@ fn median_of_audio() {
 
 #[test]
 fn variance_of_multichannel_audio() {
+  // Machine-real samples give a machine-real variance, whole number or not.
   assert_eq!(
     interpret("Variance[Audio[{{0., 1.}, {2., 4.}}]]").unwrap(),
-    "{0.5, 2}"
+    "{0.5, 2.}"
   );
 }
 

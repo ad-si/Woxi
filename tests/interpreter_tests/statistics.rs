@@ -2107,6 +2107,87 @@ mod variance_extended {
   }
 }
 
+// Whether a statistic comes back exact follows the input: a machine number
+// anywhere makes it inexact, a Rational or a symbol keeps it exact. Both were
+// decided by an "is every element an Integer" test, which sent Rationals down
+// the float path and let a whole-number float collapse back to an Integer.
+// Values verified against wolframscript.
+mod statistic_exactness {
+  use super::*;
+
+  /// The head of `code`'s value, which is what the exactness shows up as.
+  fn head(code: &str) -> String {
+    interpret(&format!("Head[{code}]")).unwrap()
+  }
+
+  #[test]
+  fn a_machine_number_makes_the_result_a_machine_number() {
+    for (code, expected) in [
+      ("Variance[{1., 2., 3.}]", "Real"),
+      ("StandardDeviation[{1., 2., 3.}]", "Real"),
+      ("StandardDeviation[{1., 3.}]", "Real"),
+      ("RootMeanSquare[{1., 1.}]", "Real"),
+      ("HarmonicMean[{1., 1.}]", "Real"),
+      ("Correlation[{1., 2.}, {1., 2.}]", "Real"),
+      // One inexact element among exact ones is enough.
+      ("Variance[{1, 2, 3.}]", "Real"),
+    ] {
+      assert_eq!(head(code), expected, "{code}");
+    }
+    // `StandardDeviation[{1., 3.}]` used to answer the symbolic `Sqrt[2]`.
+    assert_eq!(
+      interpret("StandardDeviation[{1., 3.}]").unwrap(),
+      "1.4142135623730951"
+    );
+    assert_eq!(interpret("HarmonicMean[{1., 1.}]").unwrap(), "1.");
+    assert_eq!(interpret("RootMeanSquare[{1., 1.}]").unwrap(), "1.");
+    assert_eq!(interpret("Correlation[{1., 2.}, {1., 2.}]").unwrap(), "1.");
+  }
+
+  #[test]
+  fn a_rational_keeps_the_result_exact() {
+    for (code, expected) in [
+      ("Variance[{1/2, 3/2}]", "1/2"),
+      ("Variance[{1/3, 2/3, 1}]", "1/9"),
+      ("StandardDeviation[{1/2, 3/2}]", "1/Sqrt[2]"),
+      ("RootMeanSquare[{1/2, 1/2}]", "1/2"),
+      ("RootMeanSquare[{1/2, 3/2}]", "Sqrt[5]/2"),
+      ("RootMeanSquare[{1, 1/2}]", "Sqrt[5/2]/2"),
+      ("RootMeanSquare[{1/2, 1/3}]", "Sqrt[13/2]/6"),
+      ("HarmonicMean[{1/2, 1/3}]", "2/5"),
+    ] {
+      assert_eq!(
+        interpret(&format!("ToString[{code}, InputForm]")).unwrap(),
+        expected,
+        "{code}"
+      );
+    }
+  }
+
+  #[test]
+  fn integers_and_symbols_are_unaffected() {
+    for (code, expected) in [
+      ("Variance[{1, 2, 3}]", "1"),
+      ("StandardDeviation[{1, 3}]", "Sqrt[2]"),
+      ("RootMeanSquare[{3, 4}]", "5/Sqrt[2]"),
+      ("RootMeanSquare[{1, 2, 3}]", "Sqrt[14/3]"),
+      ("HarmonicMean[{1, 2}]", "4/3"),
+      ("Correlation[{1, 2, 3}, {4, 5, 7}]", "(3*Sqrt[3/7])/2"),
+      ("RootMeanSquare[{a, b}]", "Sqrt[a^2 + b^2]/Sqrt[2]"),
+      (
+        "Variance[{a, b}]",
+        "((a - b)*(Conjugate[a] - Conjugate[b]))/2",
+      ),
+    ] {
+      assert_eq!(
+        interpret(&format!("ToString[{code}, InputForm]")).unwrap(),
+        expected,
+        "{code}"
+      );
+    }
+  }
+}
+
 mod stddev_extended {
   use super::*;
 
