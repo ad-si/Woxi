@@ -11507,6 +11507,200 @@ fn net_poly_order(expr: &Expr, var: &str) -> Option<f64> {
   }
 }
 
+/// The leading asymptotic behaviour of `expr` at `var -> +Infinity`, as the
+/// pair `(order, coeff)` meaning `expr ~ coeff * var^order`.
+///
+/// Only expressions built from finite numeric constants, `var`, `+`, `-`, `*`,
+/// `/`, `Sqrt`, and powers with constant real exponents qualify — everything
+/// else (logarithms, exponentials, trig, symbolic parameters or exponents)
+/// returns `None` and is left to the other limit paths. A sum whose
+/// highest-order terms cancel also returns `None`, since its true leading
+/// order is then something this analysis cannot see (`Sqrt[x^2 + x] - x`).
+///
+/// The literal zero has order `-Infinity`, which makes it absorb correctly in
+/// sums and still classify as a zero limit.
+fn leading_power_behavior(expr: &Expr, var: &str) -> Option<(f64, Expr)> {
+  const ORDER_EPS: f64 = 1e-9;
+
+  // Combine two factors: orders add, coefficients multiply.
+  let combine = |a: (f64, Expr), b: (f64, Expr)| -> Option<(f64, Expr)> {
+    let coeff = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(a.1),
+      right: Box::new(b.1),
+    })
+    .ok()?;
+    Some((a.0 + b.0, coeff))
+  };
+
+  // A constant contributes order 0; zero is the additive identity of the
+  // whole analysis. A symbolic constant (`a` in `(a x + 1)/(x + 1)`) is kept
+  // as-is — its value is only ever needed for a sign, and the callers that
+  // need one check for it.
+  if is_constant_wrt(expr, var) {
+    match crate::functions::math_ast::try_eval_to_f64(expr) {
+      Some(value) if !value.is_finite() => return None,
+      Some(0.0) => return Some((f64::NEG_INFINITY, Expr::Integer(0))),
+      _ => return Some((0.0, expr.clone())),
+    }
+  }
+
+  match expr {
+    Expr::Identifier(name) if name == var => Some((1.0, Expr::Integer(1))),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => {
+      let (order, coeff) = leading_power_behavior(operand, var)?;
+      combine((order, coeff), (0.0, Expr::Integer(-1)))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => combine(
+      leading_power_behavior(left, var)?,
+      leading_power_behavior(right, var)?,
+    ),
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      let (no, nc) = leading_power_behavior(left, var)?;
+      let (do_, dc) = leading_power_behavior(right, var)?;
+      // A vanishing denominator is not a power-sum limit at infinity.
+      if do_ == f64::NEG_INFINITY {
+        return None;
+      }
+      let coeff = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(nc),
+        right: Box::new(dc),
+      })
+      .ok()?;
+      Some((no - do_, coeff))
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut acc = (0.0, Expr::Integer(1));
+      for a in args.iter() {
+        acc = combine(acc, leading_power_behavior(a, var)?)?;
+      }
+      Some(acc)
+    }
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      leading_power_of(&args[0], 0.5, &Expr::Integer(1), var)
+    }
+    // Sums: the highest-order terms decide, and their coefficients add.
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      leading_of_sum(args.iter().cloned().collect::<Vec<_>>(), var, ORDER_EPS)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      leading_of_sum(vec![(**left).clone(), (**right).clone()], var, ORDER_EPS)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => leading_of_sum(
+      vec![
+        (**left).clone(),
+        Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand: right.clone(),
+        },
+      ],
+      var,
+      ORDER_EPS,
+    ),
+    _ => {
+      let (base, exponent) = extract_power(expr)?;
+      if !is_constant_wrt(&exponent, var) {
+        return None;
+      }
+      let p = crate::functions::math_ast::try_eval_to_f64(&exponent)?;
+      if !p.is_finite() {
+        return None;
+      }
+      leading_power_of(&base, p, &exponent, var)
+    }
+  }
+}
+
+/// `base^p` where `p` is the numeric value of `exponent`. Split out so `Sqrt`
+/// and `Power` share the sign handling: a non-integer power of a negative
+/// leading coefficient is not real, so those are declined.
+fn leading_power_of(
+  base: &Expr,
+  p: f64,
+  exponent: &Expr,
+  var: &str,
+) -> Option<(f64, Expr)> {
+  let (order, coeff) = leading_power_behavior(base, var)?;
+  if order == f64::NEG_INFINITY {
+    return None;
+  }
+  // A non-integer power needs a non-negative leading coefficient to stay real,
+  // so a symbolic one (whose sign is unknown) is declined there.
+  if p.fract() != 0.0 {
+    match crate::functions::math_ast::try_eval_to_f64(&coeff) {
+      Some(c) if c >= 0.0 => {}
+      _ => return None,
+    }
+  }
+  let new_coeff = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+    op: BinaryOperator::Power,
+    left: Box::new(coeff),
+    right: Box::new(exponent.clone()),
+  })
+  .ok()?;
+  Some((order * p, new_coeff))
+}
+
+fn leading_of_sum(
+  terms: Vec<Expr>,
+  var: &str,
+  order_eps: f64,
+) -> Option<(f64, Expr)> {
+  let behaviors: Vec<(f64, Expr)> = terms
+    .iter()
+    .map(|t| leading_power_behavior(t, var))
+    .collect::<Option<Vec<_>>>()?;
+  let top = behaviors
+    .iter()
+    .map(|(o, _)| *o)
+    .fold(f64::NEG_INFINITY, f64::max);
+  if top == f64::NEG_INFINITY {
+    return Some((f64::NEG_INFINITY, Expr::Integer(0)));
+  }
+  let leading: Vec<Expr> = behaviors
+    .into_iter()
+    .filter(|(o, _)| (top - *o).abs() <= order_eps)
+    .map(|(_, c)| c)
+    .collect();
+  let sum = if leading.len() == 1 {
+    leading.into_iter().next()?
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: leading.into(),
+    }
+  };
+  let coeff = crate::evaluator::evaluate_expr_to_expr(&sum).ok()?;
+  // Cancellation among the leading terms hides the real leading order. A
+  // symbolic sum that did not fold to zero is taken to be nonzero.
+  let cancelled = matches!(&coeff, Expr::Integer(0))
+    || crate::functions::math_ast::try_eval_to_f64(&coeff) == Some(0.0);
+  if cancelled {
+    return None;
+  }
+  Some((top, coeff))
+}
+
 fn tends_to_zero(expr: &Expr, var: &str) -> bool {
   // A negative constant power of a base that diverges to +/-Infinity.
   if let Some((base, exp)) = extract_power(expr)
@@ -11768,6 +11962,31 @@ fn limit_at_infinity(
   // If the expression is constant wrt the variable, return it
   if is_constant_wrt(expr, var_name) {
     return crate::evaluator::evaluate_expr_to_expr(expr);
+  }
+
+  // Exact leading-order analysis for generalized power sums. The numeric
+  // fallback below needs the expression to be within 1e-4 of its limit at
+  // x = 10^7, which a slowly-approaching term never manages: `x/(x + Sqrt[x])`
+  // is still 3e-4 away there, and `x/(x + x^(2/3))` is 5e-3 away. Deciding
+  // those from the leading exponent instead is both exact and immediate.
+  if is_infinity(point)
+    && let Some((order, coeff)) = leading_power_behavior(expr, var_name)
+  {
+    const ORDER_EPS: f64 = 1e-9;
+    if order > ORDER_EPS {
+      // The limit diverges with the sign of the leading coefficient. Leaving
+      // it as `coeff * Infinity` folds to ±Infinity for a numeric coefficient
+      // and keeps wolframscript's `a Infinity` for a symbolic one.
+      return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(coeff),
+        right: Box::new(Expr::Identifier("Infinity".to_string())),
+      });
+    } else if order < -ORDER_EPS {
+      return Ok(Expr::Integer(0));
+    } else {
+      return Ok(coeff);
+    }
   }
 
   // Pull out multiplicative factors that are constant w.r.t. `var_name`.

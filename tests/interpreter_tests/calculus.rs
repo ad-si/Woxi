@@ -15557,3 +15557,147 @@ mod asymptotic_comparisons {
     );
   }
 }
+
+mod limits_of_power_sums_at_infinity {
+  use super::*;
+
+  #[test]
+  fn fractional_powers_in_a_sum() {
+    // The approach to these limits is only O(x^(-1/2)) or O(x^(-1/3)), far too
+    // slow for a numeric probe at x = 10^7 to recognize; they are decided from
+    // the leading exponent instead.
+    assert_eq!(
+      interpret("Limit[x/(x + Sqrt[x]), x -> Infinity]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Limit[(x + Sqrt[x])/x, x -> Infinity]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Limit[x/(x + x^(2/3)), x -> Infinity]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Limit[Sqrt[x]/(Sqrt[x] + 1), x -> Infinity]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Limit[(Sqrt[x] + 1)/(Sqrt[x] + 2), x -> Infinity]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Limit[(x + Sqrt[x])/(x - Sqrt[x]), x -> Infinity]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret(
+        "Limit[(x^(1/2) + x^(1/3))/(x^(1/2) - x^(1/3)), x -> Infinity]"
+      )
+      .unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn leading_coefficient_ratio() {
+    assert_eq!(
+      interpret("Limit[(2 x + 3)/(x + Sqrt[x]), x -> Infinity]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("Limit[(3 x^(3/2) + x)/(2 x^(3/2) - 1), x -> Infinity]")
+        .unwrap(),
+      "3/2"
+    );
+    assert_eq!(
+      interpret("Limit[(2 x + 1)/(3 x - 1), x -> Infinity]").unwrap(),
+      "2/3"
+    );
+    assert_eq!(
+      interpret("Limit[(x^2 + 1)/(2 x^2 - 3), x -> Infinity]").unwrap(),
+      "1/2"
+    );
+  }
+
+  #[test]
+  fn unequal_orders_give_zero_or_infinity() {
+    assert_eq!(
+      interpret("Limit[Sqrt[x]/(x + 1), x -> Infinity]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Limit[(x + 1)/(x^2 + Sqrt[x]), x -> Infinity]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Limit[1/(Sqrt[x] + 1), x -> Infinity]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Limit[(x^2 + Sqrt[x])/(x + 1), x -> Infinity]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("Limit[Sqrt[x] + 1, x -> Infinity]").unwrap(),
+      "Infinity"
+    );
+    // The sign comes from the leading coefficient, not from the lower terms.
+    assert_eq!(
+      interpret("Limit[(-x^2 + x)/(x + 1), x -> Infinity]").unwrap(),
+      "-Infinity"
+    );
+    assert_eq!(
+      interpret("Limit[(1 - x)/Sqrt[x], x -> Infinity]").unwrap(),
+      "-Infinity"
+    );
+    assert_eq!(
+      interpret("Limit[(2 - x^3)/(x^2 + 1), x -> Infinity]").unwrap(),
+      "-Infinity"
+    );
+  }
+
+  #[test]
+  fn symbolic_leading_coefficients() {
+    // A symbolic coefficient survives into the answer instead of being
+    // silently dropped.
+    assert_eq!(
+      interpret("Limit[(a x + 1)/(x + 1), x -> Infinity]").unwrap(),
+      "a"
+    );
+    assert_eq!(interpret("Limit[(a x + 5)/x, x -> Infinity]").unwrap(), "a");
+    assert_eq!(
+      interpret("Limit[(a x + b)/(c x + d), x -> Infinity]").unwrap(),
+      "a/c"
+    );
+    // With an unknown sign the divergence stays symbolic.
+    assert_eq!(
+      interpret("Limit[(a x^2 + 1)/(x + 1), x -> Infinity]").unwrap(),
+      "a*Infinity"
+    );
+    assert_eq!(
+      interpret("Limit[a Sqrt[x], x -> Infinity]").unwrap(),
+      "a*Infinity"
+    );
+    // A lower-order symbolic term does not change a zero limit.
+    assert_eq!(
+      interpret("Limit[(a x + 1)/(x^2 + 1), x -> Infinity]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn cancelling_leading_terms_defer_to_the_other_paths() {
+    // Sqrt[x^2 + x] - x has both leading terms of order 1 with coefficients
+    // that cancel, so the leading-order analysis declines and the
+    // conjugate-difference path answers.
+    assert_eq!(
+      interpret("Limit[Sqrt[x^2 + x] - x, x -> Infinity]").unwrap(),
+      "1/2"
+    );
+    // Logarithms and exponentials are outside the analysis entirely.
+    assert_eq!(interpret("Limit[Log[x]/x, x -> Infinity]").unwrap(), "0");
+    assert_eq!(interpret("Limit[(1 + 1/n)^n, n -> Infinity]").unwrap(), "E");
+    assert_eq!(interpret("Limit[x/Exp[x], x -> Infinity]").unwrap(), "0");
+  }
+}
