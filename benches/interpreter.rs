@@ -129,7 +129,6 @@ fn bench_script_build_summary(c: &mut Criterion) {
   let script_src = manifest_dir.join("scripts/build_summary.wls");
   let summary_src = manifest_dir.join("tests/SUMMARY.md");
   let zensical_src = manifest_dir.join("tests/zensical.toml");
-  let cli_src = manifest_dir.join("tests/cli");
 
   // Create a tempdir with `scripts/`, `tests/SUMMARY.md`, `tests/zensical.toml`,
   // and a symlink at `tests/cli` pointing at the real cli docs (the docs
@@ -143,13 +142,16 @@ fn bench_script_build_summary(c: &mut Criterion) {
   std::fs::copy(&summary_src, tmp.join("tests/SUMMARY.md")).unwrap();
   std::fs::copy(&zensical_src, tmp.join("tests/zensical.toml")).unwrap();
   #[cfg(unix)]
-  std::os::unix::fs::symlink(&cli_src, tmp.join("tests/cli")).unwrap_or_else(
-    |_| {
-      // Fall back to an empty dir if symlink fails — the script will
-      // still run, just with no children to enumerate.
-      std::fs::create_dir_all(tmp.join("tests/cli")).unwrap();
-    },
-  );
+  {
+    let cli_src = manifest_dir.join("tests/cli");
+    std::os::unix::fs::symlink(&cli_src, tmp.join("tests/cli")).unwrap_or_else(
+      |_| {
+        // Fall back to an empty dir if symlink fails — the script will
+        // still run, just with no children to enumerate.
+        std::fs::create_dir_all(tmp.join("tests/cli")).unwrap();
+      },
+    );
+  }
   #[cfg(not(unix))]
   std::fs::create_dir_all(tmp.join("tests/cli")).unwrap();
 

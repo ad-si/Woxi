@@ -8,6 +8,7 @@ use std::mem::size_of;
 #[cfg(target_os = "windows")]
 #[repr(C)]
 #[allow(non_snake_case)]
+#[allow(clippy::upper_case_acronyms)]
 struct MEMORYSTATUSEX {
   dwLength: u32,
   dwMemoryLoad: u32,
