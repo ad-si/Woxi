@@ -3544,7 +3544,7 @@ TaskRemove,,🚫,,11.2,3636
 TopHatTransform,,🚫,,7.0,3636
 WarpingCorrespondence,Dynamic time warping alignment path between two numeric sequences,✅,pure,11.0,3636
 WindVectorData,,🚫,,10.0,3636
-AudioNormalize,,🚫,,11.0,3656
+AudioNormalize,Scales audio so its loudest sample sits at full scale — the scale is taken over every channel at once,✅,pure,11.0,3656
 CombinerFunction,,,,10.0,3656
 CompatibleUnitQ,Tests if two quantities have compatible units,✅,pure,9.0,3656
 GaussianOrthogonalMatrixDistribution,,,,10.3,3656
@@ -3691,7 +3691,7 @@ ShiftedGompertzDistribution,,,,10.3,3785
 TextClipboardType,,,,7.0,3785
 UnderBar,Display form with an underbar accent,✅,none,6.0,3785
 UnitRootTest,,,,9.0,3785
-AudioPad,,🚫,,11.0,3803
+AudioPad,Pads audio with a given amount in seconds or samples — a bare amount goes on the end a pair on each side,✅,pure,11.0,3803
 BenktanderGibratDistribution,Benktander-Gibrat actuarial distribution,✅,pure,8.0,3803
 DeviceReadTimeSeries,,🚫,,10.0,3803
 FindHiddenMarkovStates,,,,10.0,3803
@@ -5395,7 +5395,7 @@ AudioAnnotate,,🚫,,12.0,
 AudioAnnotationLookup,,🚫,,12.0,
 AudioDistance,,🚫,,11.3,
 AudioInstanceQ,,🚫,,12.1,
-AudioReverse,,🚫,,12.1,
+AudioReverse,Plays each channel of an audio object backwards,✅,pure,12.1,
 AudioTrackSelection,,🚫,,12.2,
 AutoOperatorRenderings,,,,12.3,
 AxisLabel,,,,12.3,

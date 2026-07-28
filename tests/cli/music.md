@@ -397,3 +397,33 @@ not however readily it turns into samples:
 $ wo 'AudioQ[Sound[SoundNote[0]]]'
 False
 ```
+
+## Editing audio
+
+`AudioNormalize` brings the loudest sample to full scale. The scale is taken
+over every channel at once, so the balance between them survives:
+
+```scrut
+$ wo 'AudioData[AudioNormalize[Audio[{0., 0.25, -0.5}]]]'
+{{0., 0.5, -1.}}
+```
+
+`AudioReverse` plays each channel backwards:
+
+```scrut
+$ wo 'AudioData[AudioReverse[Audio[{0., 0.5, 1.}]]]'
+{{1., 0.5, 0.}}
+```
+
+`AudioPad` measures in seconds unless told otherwise, and a bare amount goes
+on the end while a pair puts one on each side:
+
+```scrut
+$ wo 'AudioData[AudioPad[Audio[{1.}, SampleRate -> 2], {1, 2}]]'
+{{0., 0., 1., 0., 0., 0., 0.}}
+```
+
+```scrut
+$ wo 'AudioData[AudioPad[Audio[{1., 2.}], Quantity[2, "Samples"]]]'
+{{1., 2., 0., 0.}}
+```

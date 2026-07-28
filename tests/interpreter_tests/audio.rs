@@ -884,3 +884,148 @@ mod audio_accessors {
     );
   }
 }
+
+// AudioNormalize, AudioReverse and AudioPad. Values verified against
+// wolframscript.
+mod audio_normalize_reverse_pad {
+  use super::*;
+
+  /// The result of `code`, written the way `InputForm` writes it.
+  fn form(code: &str) -> String {
+    interpret(&format!("ToString[{code}, InputForm]")).unwrap()
+  }
+
+  // The scale is taken over every channel at once, so the balance between
+  // them survives — the quieter channel does not reach full scale.
+  #[test]
+  fn normalizing_brings_the_loudest_sample_to_full_scale() {
+    clear_state();
+    for (code, expected) in [
+      ("AudioData[AudioNormalize[Audio[{0., 0.5}]]]", "{{0., 1.}}"),
+      (
+        "AudioData[AudioNormalize[Audio[{0., 0.25, -0.5}]]]",
+        "{{0., 0.5, -1.}}",
+      ),
+      // The peak may be negative, and may already be past full scale.
+      (
+        "AudioData[AudioNormalize[Audio[{0., -0.5}]]]",
+        "{{0., -1.}}",
+      ),
+      ("AudioData[AudioNormalize[Audio[{0., 2.}]]]", "{{0., 1.}}"),
+      (
+        "AudioData[AudioNormalize[Audio[{{0., 0.5}, {0., 0.25}}]]]",
+        "{{0., 1.}, {0., 0.5}}",
+      ),
+      // Silence is left alone rather than divided by nothing.
+      ("AudioData[AudioNormalize[Audio[{0., 0.}]]]", "{{0., 0.}}"),
+    ] {
+      assert_eq!(form(code), expected, "{code}");
+    }
+    assert_eq!(
+      form("AudioLength[AudioNormalize[Audio[{0., 0.5}]]]"),
+      "Quantity[2, \"Samples\"]"
+    );
+    assert_eq!(
+      interpret("Head[AudioNormalize[Audio[{0., 0.5}]]]").unwrap(),
+      "Audio"
+    );
+  }
+
+  #[test]
+  fn reversing_plays_each_channel_backwards() {
+    clear_state();
+    for (code, expected) in [
+      (
+        "AudioData[AudioReverse[Audio[{0., 0.5, 1.}]]]",
+        "{{1., 0.5, 0.}}",
+      ),
+      (
+        "AudioData[AudioReverse[Audio[{{0., 0.5}, {1., 0.}}]]]",
+        "{{0.5, 0.}, {0., 1.}}",
+      ),
+      ("AudioData[AudioReverse[Audio[{1.}]]]", "{{1.}}"),
+    ] {
+      assert_eq!(form(code), expected, "{code}");
+    }
+    // The rate rides along.
+    assert_eq!(
+      form(
+        "AudioSampleRate[AudioReverse[Audio[{0., 0.5}, SampleRate -> 8000]]]"
+      ),
+      "Quantity[8000, \"Hertz\"]"
+    );
+  }
+
+  // A bare amount counts SECONDS and goes on the end only; a pair puts one
+  // amount on each side.
+  #[test]
+  fn padding_measures_in_seconds_unless_told_otherwise() {
+    clear_state();
+    for (code, expected) in [
+      // One second at two samples a second is two samples, at the end.
+      (
+        "AudioData[AudioPad[Audio[{1.}, SampleRate -> 2], 1]]",
+        "{{1., 0., 0.}}",
+      ),
+      (
+        "AudioData[AudioPad[Audio[{1.}, SampleRate -> 2], {1, 2}]]",
+        "{{0., 0., 1., 0., 0., 0., 0.}}",
+      ),
+      (
+        "AudioData[AudioPad[Audio[{1.}, SampleRate -> 2], 0]]",
+        "{{1.}}",
+      ),
+      (
+        "AudioData[AudioPad[Audio[{1.}, SampleRate -> 2], {0, 1}]]",
+        "{{1., 0., 0.}}",
+      ),
+      // A Quantity in Samples counts samples instead.
+      (
+        "AudioData[AudioPad[Audio[{1., 2.}], Quantity[2, \"Samples\"]]]",
+        "{{1., 2., 0., 0.}}",
+      ),
+      (
+        "AudioData[AudioPad[Audio[{{1., 2.}, {3., 4.}}, SampleRate -> 2], \
+         Quantity[1, \"Samples\"]]]",
+        "{{1., 2., 0.}, {3., 4., 0.}}",
+      ),
+      // A third argument says what to pad with.
+      (
+        "AudioData[AudioPad[Audio[{1.}, SampleRate -> 2], 1, 0.5]]",
+        "{{1., 0.5, 0.5}}",
+      ),
+    ] {
+      let code = code.replace("         ", "");
+      assert_eq!(form(&code), expected, "{code}");
+    }
+    // A second at the default rate is a second's worth of samples.
+    assert_eq!(
+      form("AudioLength[AudioPad[Audio[{1.}], 1]]"),
+      "Quantity[44101, \"Samples\"]"
+    );
+    assert_eq!(
+      form("AudioSampleRate[AudioPad[Audio[{1.}, SampleRate -> 2], 1]]"),
+      "Quantity[2, \"Hertz\"]"
+    );
+  }
+
+  #[test]
+  fn anything_that_is_not_audio_is_reported() {
+    clear_state();
+    for (code, name) in [
+      ("AudioNormalize[5]", "AudioNormalize"),
+      ("AudioReverse[5]", "AudioReverse"),
+      ("AudioPad[5, 1]", "AudioPad"),
+    ] {
+      let result = interpret_with_stdout(code).unwrap();
+      assert!(
+        result
+          .warnings
+          .iter()
+          .any(|w| w.contains(&format!("{name}::audio"))),
+        "expected {name}::audio, got {:?}",
+        result.warnings
+      );
+    }
+  }
+}

@@ -261,3 +261,117 @@ pub fn audio_pitch_shift_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   Ok(make_audio(&shifted))
 }
+
+/// The audio a function was handed, or the `::audio` complaint for anything
+/// that is not one.
+fn require_audio(
+  name: &str,
+  args: &[Expr],
+) -> Option<crate::functions::audio_ast::AudioData> {
+  let audio = args.first().and_then(parse_audio);
+  if audio.is_none() {
+    crate::emit_message(&format!(
+      "{name}::audio: Expecting an audio object instead of {}.",
+      args
+        .first()
+        .map(crate::syntax::expr_to_string)
+        .unwrap_or_default()
+    ));
+  }
+  audio
+}
+
+/// `AudioNormalize[audio]` — the same audio scaled so its loudest sample sits
+/// at full scale. The scale is taken over every channel at once, so their
+/// balance is kept; silence is left alone rather than divided by nothing.
+pub fn audio_normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(unevaluated("AudioNormalize", args));
+  }
+  let Some(mut audio) = require_audio("AudioNormalize", args) else {
+    return Ok(unevaluated("AudioNormalize", args));
+  };
+  let peak = audio
+    .channels
+    .iter()
+    .flat_map(|ch| ch.iter())
+    .fold(0.0f64, |acc, v| acc.max(v.abs()));
+  if peak > 0.0 {
+    for ch in &mut audio.channels {
+      for x in ch.iter_mut() {
+        *x /= peak;
+      }
+    }
+  }
+  Ok(make_audio(&audio))
+}
+
+/// `AudioReverse[audio]` — the same audio played backwards.
+pub fn audio_reverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(unevaluated("AudioReverse", args));
+  }
+  let Some(mut audio) = require_audio("AudioReverse", args) else {
+    return Ok(unevaluated("AudioReverse", args));
+  };
+  for ch in &mut audio.channels {
+    ch.reverse();
+  }
+  Ok(make_audio(&audio))
+}
+
+/// A padding amount in samples: a bare number counts seconds, a
+/// `Quantity[n, "Samples"]` counts samples.
+fn pad_samples(spec: &Expr, rate: f64) -> Option<usize> {
+  if let Expr::FunctionCall { name, args } = spec
+    && name == "Quantity"
+    && args.len() == 2
+    && matches!(&args[1], Expr::String(u) if u == "Samples")
+  {
+    let n = try_eval_to_f64(&args[0])?;
+    return (n >= 0.0).then_some(n.round() as usize);
+  }
+  let seconds = try_eval_to_f64(spec)?;
+  (seconds >= 0.0).then_some((seconds * rate).round() as usize)
+}
+
+/// `AudioPad[audio, n]` / `AudioPad[audio, {before, after}]` /
+/// `AudioPad[audio, n, value]` — the same audio with padding added. A bare
+/// amount goes on the END only; a pair puts one on each side.
+pub fn audio_pad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 2 || args.len() > 3 {
+    return Ok(unevaluated("AudioPad", args));
+  }
+  let Some(mut audio) = require_audio("AudioPad", args) else {
+    return Ok(unevaluated("AudioPad", args));
+  };
+  let (before, after) = match &args[1] {
+    Expr::List(pair) if pair.len() == 2 => {
+      let (Some(b), Some(a)) = (
+        pad_samples(&pair[0], audio.rate),
+        pad_samples(&pair[1], audio.rate),
+      ) else {
+        return Ok(unevaluated("AudioPad", args));
+      };
+      (b, a)
+    }
+    spec => match pad_samples(spec, audio.rate) {
+      Some(n) => (0, n),
+      None => return Ok(unevaluated("AudioPad", args)),
+    },
+  };
+  let value = match args.get(2) {
+    None => 0.0,
+    Some(v) => match try_eval_to_f64(v) {
+      Some(v) => v,
+      None => return Ok(unevaluated("AudioPad", args)),
+    },
+  };
+  for ch in &mut audio.channels {
+    let mut padded = vec![value; before];
+    padded.extend_from_slice(ch);
+    padded.extend(std::iter::repeat_n(value, after));
+    *ch = padded;
+  }
+  Ok(make_audio(&audio))
+}
