@@ -8561,23 +8561,28 @@ fn simplify_quotient_select(
       } else {
         (1, fd)
       };
-      // Like the unflipped side, the content form only exists for a
-      // primitive part with a constant term; a flipped den divisible by
-      // x splits its x^k out instead — Simplify[(-1-3x)/(2x-2x^2)] →
-      // (1+3x)/(2*(-1+x)*x), never (1+3x)/(2*(-x+x^2))
-      // (wolframscript-verified).
+      // Like the unflipped side, a flipped den divisible by x offers the
+      // x^k-split variant, competing by cost with the plain flipped
+      // display — Simplify[(-1-3x)/(2x-2x^2)] → (1+3x)/(2*(-1+x)*x)
+      // (split wins) but (-4-5x-5x^2-4x^3)/(-2x-3x^2) →
+      // (4+5x+5x^2+4x^3)/(2x+3x^2) (plain wins); the content-only form
+      // ((1+3x)/(2*(-x+x^2))) is never a Wolfram display, so a
+      // content-carrying fd with no constant term only competes split
+      // (all wolframscript-verified).
       let fd_min_exp = fdt.iter().map(|&(_, _, e)| e).min().unwrap_or(0);
-      let (fd_mono, fdt) = if fd_min_exp >= 1 {
-        (
+      let mut den_variants: Vec<(i128, Vec<(i128, i128, i128)>)> = Vec::new();
+      if fd_min_exp == 0 || fdc == 1 {
+        den_variants.push((0, fdt.clone()));
+      }
+      if fd_min_exp >= 1 {
+        den_variants.push((
           fd_min_exp,
           fdt
             .iter()
             .map(|&(n, d, e)| (n, d, e - fd_min_exp))
             .collect::<Vec<_>>(),
-        )
-      } else {
-        (0, fdt)
-      };
+        ));
+      }
       let mut flip_opts: Vec<(i128, Vec<(i128, i128, i128)>)> = Vec::new();
       if fn_terms.len() > 1 && fn_content.abs() > 1 {
         flip_opts.push((fn_content, scale(&fn_terms, fn_content)));
@@ -8585,23 +8590,25 @@ fn simplify_quotient_select(
       flip_opts.push((1, fn_terms));
       for (nc, nt) in flip_opts {
         let (coeff_n, coeff_d) = rat_reduce(nc, fdc);
-        cands.push(Cand {
-          cost: sc_quotient(
-            (coeff_n, coeff_d),
-            &nt,
-            Some(&fdt),
-            (fd_mono > 0).then_some(fd_mono),
-          ),
-          class: 3,
-          minus_pull: false,
-          num_content: nc,
-          num_terms: nt,
-          den_content: fdc,
-          den_terms: fdt.clone(),
-          den_mono: fd_mono,
-          split: false,
-          terminal: false,
-        });
+        for (fd_mono, fdt) in &den_variants {
+          cands.push(Cand {
+            cost: sc_quotient(
+              (coeff_n, coeff_d),
+              &nt,
+              Some(fdt),
+              (*fd_mono > 0).then_some(*fd_mono),
+            ),
+            class: 3,
+            minus_pull: false,
+            num_content: nc,
+            num_terms: nt.clone(),
+            den_content: fdc,
+            den_terms: fdt.clone(),
+            den_mono: *fd_mono,
+            split: false,
+            terminal: false,
+          });
+        }
       }
     } else {
       if n_terms.first().map(|&(n, _, _)| n < 0).unwrap_or(false) {
