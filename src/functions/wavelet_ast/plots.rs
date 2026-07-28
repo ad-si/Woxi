@@ -11,7 +11,7 @@ use crate::InterpreterError;
 use crate::syntax::{Expr, expr_to_string};
 
 fn call(name: &str, args: Vec<Expr>) -> Result<Expr, InterpreterError> {
-  crate::evaluator::dispatch::evaluate_function_call_ast(name, &args)
+  crate::evaluator::evaluate_function_call_ast(name, &args)
 }
 
 fn apply_func(
