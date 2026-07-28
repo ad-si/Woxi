@@ -6052,3 +6052,137 @@ mod mean_filter_and_difference {
     );
   }
 }
+
+// ImageFilter, and the colour space a converted image records. Values
+// verified against wolframscript.
+mod image_filter_and_color_space {
+  use super::*;
+
+  /// A checkerboard whose corners see the same window as its centre once the
+  /// edges are repeated.
+  const CHECKER: &str = "Image[{{0., 1., 0.}, {1., 0., 1.}, {0., 1., 0.}}]";
+
+  /// The result of `code`, written the way `InputForm` writes it.
+  fn form(code: &str) -> String {
+    interpret(&format!("ToString[{code}, InputForm]")).unwrap()
+  }
+
+  // The window is always the full (2r+1) square: the image is extended by
+  // repeating its edge samples rather than clipped, which is what sets
+  // ImageFilter apart from MeanFilter and its siblings.
+  #[test]
+  fn the_edges_are_repeated_rather_than_clipped() {
+    clear_state();
+    // Every pixel, corners included, averages nine samples of which four are
+    // 1. MeanFilter would give 0.5 at a corner, seeing only four.
+    assert_eq!(
+      form(&format!(
+        "ImageData[ImageFilter[Mean[Flatten[#]] &, {CHECKER}, 1]]"
+      )),
+      "{{0.4444444477558136, 0.4444444477558136, 0.4444444477558136}, \
+       {0.4444444477558136, 0.4444444477558136, 0.4444444477558136}, \
+       {0.4444444477558136, 0.4444444477558136, 0.4444444477558136}}"
+        .replace("       ", "")
+    );
+    // Which sample the repeated edge puts in the corner of the window.
+    assert_eq!(
+      form(&format!(
+        "ImageData[ImageFilter[#[[1, 1]] &, {CHECKER}, 1]]"
+      )),
+      "{{0., 0., 1.}, {0., 0., 1.}, {1., 1., 0.}}"
+    );
+    // A single row is extended sideways the same way.
+    assert_eq!(
+      form("ImageData[ImageFilter[Mean[Flatten[#]] &, Image[{{0., 1.}}], 1]]"),
+      "{{0.3333333432674408, 0.6666666865348816}}"
+    );
+    // Radius zero hands the function a one-by-one window.
+    assert_eq!(
+      form(&format!(
+        "ImageData[ImageFilter[Mean[Flatten[#]] &, {CHECKER}, 0]]"
+      )),
+      "{{0., 1., 0.}, {1., 0., 1.}, {0., 1., 0.}}"
+    );
+  }
+
+  #[test]
+  fn the_function_sees_the_window_as_a_matrix() {
+    clear_state();
+    // Nine samples at radius one, twenty-five at radius two.
+    assert_eq!(
+      form(&format!(
+        "ImageData[ImageFilter[Length[Flatten[#]] &, {CHECKER}, 2]]"
+      )),
+      "{{25., 25., 25.}, {25., 25., 25.}, {25., 25., 25.}}"
+    );
+    // The middle of the window is the pixel itself.
+    assert_eq!(
+      form(&format!(
+        "ImageData[ImageFilter[#[[2, 2]] &, {CHECKER}, 1]]"
+      )),
+      "{{0., 1., 0.}, {1., 0., 1.}, {0., 1., 0.}}"
+    );
+    assert_eq!(
+      form(&format!(
+        "ImageData[ImageFilter[Max[Flatten[#]] &, {CHECKER}, 1]]"
+      )),
+      "{{1., 1., 1.}, {1., 1., 1.}, {1., 1., 1.}}"
+    );
+    // Each channel is filtered on its own.
+    assert_eq!(
+      form(
+        "ImageData[ImageFilter[Mean[Flatten[#]] &, \
+         Image[{{{1., 0., 0.}, {0., 1., 0.}}}], 1]]"
+          .replace("         ", "")
+          .as_str()
+      ),
+      "{{{0.6666666865348816, 0.3333333432674408, 0.}, \
+       {0.3333333432674408, 0.6666666865348816, 0.}}}"
+        .replace("       ", "")
+    );
+    assert_eq!(
+      interpret(&format!(
+        "Head[ImageFilter[Mean[Flatten[#]] &, {CHECKER}, 1]]"
+      ))
+      .unwrap(),
+      "Image"
+    );
+  }
+
+  // A converted image records the space it was converted to; one that was
+  // never converted has none.
+  #[test]
+  fn a_converted_image_records_its_colour_space() {
+    clear_state();
+    for (code, expected) in [
+      ("ImageColorSpace[Image[{{0., 1.}}]]", "Automatic"),
+      (
+        "ImageColorSpace[ColorConvert[Image[{{0., 1.}}], \"RGB\"]]",
+        "\"RGB\"",
+      ),
+      (
+        "ImageColorSpace[ColorConvert[Image[{{0., 1.}}], \"Grayscale\"]]",
+        "\"Grayscale\"",
+      ),
+      // Converting to the space it is already in still records it.
+      (
+        "ImageColorSpace[ColorConvert[Image[{{{1., 0., 0.}}}], \"RGB\"]]",
+        "\"RGB\"",
+      ),
+      (
+        "ImageColorSpace[ColorConvert[ColorConvert[Image[{{0., 1.}}], \
+         \"RGB\"], \"Grayscale\"]]",
+        "\"Grayscale\"",
+      ),
+      // ImageMeasurements reads the same tag.
+      (
+        "ImageMeasurements[ColorConvert[Image[{{0., 1.}}], \"RGB\"], \
+         \"ColorSpace\"]",
+        "\"RGB\"",
+      ),
+    ] {
+      let code = code.replace("         ", "");
+      assert_eq!(form(&code), expected, "{code}");
+    }
+  }
+}

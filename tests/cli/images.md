@@ -40,6 +40,7 @@ matrix of greyscale values as a stand-in for a real image file.
 - [`ImageCompose`](images/ImageCompose.md)
 - [`ImageCrop`](images/ImageCrop.md)
 - [`ImageDifference`](images/ImageDifference.md)
+- [`ImageFilter`](images/ImageFilter.md)
 - [`ImageMultiply`](images/ImageMultiply.md)
 - [`ImagePad`](images/ImagePad.md)
 - [`ImageReflect`](images/ImageReflect.md)

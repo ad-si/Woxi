@@ -3103,6 +3103,44 @@ fn rgb_to_cmyk(r: f64, g: f64, b: f64) -> (f64, f64, f64, f64) {
 }
 
 /// ColorConvert[img, "Grayscale"] - Convert between color spaces
+/// The static name a converted image records as its colour space, or `None`
+/// for one that is not named.
+fn color_space_tag(space: &str) -> Option<&'static str> {
+  match space {
+    "Grayscale" => Some("Grayscale"),
+    "RGB" => Some("RGB"),
+    "CMYK" => Some("CMYK"),
+    "HSB" | "Hue" => Some("HSB"),
+    "LAB" => Some("LAB"),
+    "LCH" => Some("LCH"),
+    "LUV" => Some("LUV"),
+    "XYZ" => Some("XYZ"),
+    _ => None,
+  }
+}
+
+/// The same image, recorded as being in `tag`'s colour space.
+fn retag(image: &Expr, tag: Option<&'static str>) -> Expr {
+  match image {
+    Expr::Image {
+      width,
+      height,
+      channels,
+      data,
+      image_type,
+      ..
+    } => Expr::Image {
+      color_space: tag,
+      width: *width,
+      height: *height,
+      channels: *channels,
+      data: data.clone(),
+      image_type: *image_type,
+    },
+    other => other.clone(),
+  }
+}
+
 pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
@@ -3196,11 +3234,13 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let w = *width as usize;
       let h = *height as usize;
       let ch = *channels as usize;
+      // The converted image carries the space it was converted to.
+      let tag = color_space_tag(target_space);
 
       match target_space {
         "Grayscale" => {
           if ch == 1 {
-            return Ok(args[0].clone()); // Already grayscale
+            return Ok(retag(&args[0], tag)); // Already grayscale
           }
           let mut new_data = Vec::with_capacity(w * h);
           for i in 0..(w * h) {
@@ -3211,7 +3251,7 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             new_data.push(lum);
           }
           Ok(Expr::Image {
-            color_space: None,
+            color_space: tag,
             width: *width,
             height: *height,
             channels: 1,
@@ -3221,7 +3261,7 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         "RGB" => {
           if ch == 3 {
-            return Ok(args[0].clone()); // Already RGB
+            return Ok(retag(&args[0], tag)); // Already RGB
           }
           if ch == 1 {
             // Grayscale → RGB
@@ -3232,7 +3272,7 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               new_data.push(v);
             }
             Ok(Expr::Image {
-              color_space: None,
+              color_space: tag,
               width: *width,
               height: *height,
               channels: 3,
@@ -3249,7 +3289,7 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               new_data.push(data[base + 2]);
             }
             Ok(Expr::Image {
-              color_space: None,
+              color_space: tag,
               width: *width,
               height: *height,
               channels: 3,
@@ -4168,6 +4208,83 @@ fn quantize_image(image: Expr) -> Expr {
     data: Arc::new(rounded),
     image_type: *image_type,
   }
+}
+
+/// `ImageFilter[f, image, r]` — `f` applied to the range-`r` neighbourhood of
+/// every pixel, in each channel. Unlike the aggregating filters, the window is
+/// always the full `(2r+1)` square: the image is extended by repeating its
+/// edge samples rather than clipped, so a corner sees as many values as the
+/// centre does.
+pub fn image_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let echo = || Ok(unevaluated("ImageFilter", args));
+  if args.len() != 3 {
+    return echo();
+  }
+  let Expr::Image {
+    color_space,
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = &args[1]
+  else {
+    return echo();
+  };
+  let Some(r) = crate::functions::math_ast::try_eval_to_f64(&args[2])
+    .filter(|v| v.fract() == 0.0 && *v >= 0.0)
+    .map(|v| v as usize)
+  else {
+    return echo();
+  };
+  let (w, h, ch) = (*width as usize, *height as usize, *channels as usize);
+  if w == 0 || h == 0 {
+    return echo();
+  }
+  // Samples are reported at the image's own precision, so that is what the
+  // filter sees.
+  let held: Vec<f64> = match image_type {
+    ImageType::Real32 => data.iter().map(|v| *v as f32 as f64).collect(),
+    _ => data.to_vec(),
+  };
+  let span = 2 * r + 1;
+  let mut new_data = vec![0.0; held.len()];
+  for c_idx in 0..ch {
+    for y in 0..h {
+      for x in 0..w {
+        let mut rows = Vec::with_capacity(span);
+        for dy in 0..span {
+          // An index past an edge takes the edge sample.
+          let yy = (y + dy).saturating_sub(r).min(h - 1);
+          let mut row = Vec::with_capacity(span);
+          for dx in 0..span {
+            let xx = (x + dx).saturating_sub(r).min(w - 1);
+            row.push(Expr::Real(held[(yy * w + xx) * ch + c_idx]));
+          }
+          rows.push(Expr::List(row.into()));
+        }
+        let applied = crate::evaluator::apply_function_to_arg(
+          &args[0],
+          &Expr::List(rows.into()),
+        )?;
+        // A filter that does not answer one number per pixel is not one this
+        // builds an image from.
+        let Some(value) = crate::functions::math_ast::try_eval_to_f64(&applied)
+        else {
+          return echo();
+        };
+        new_data[(y * w + x) * ch + c_idx] = value;
+      }
+    }
+  }
+  Ok(quantize_image(Expr::Image {
+    color_space: *color_space,
+    width: *width,
+    height: *height,
+    channels: *channels,
+    data: Arc::new(new_data),
+    image_type: *image_type,
+  }))
 }
 
 /// `ImageDifference[a, b]` — the absolute difference of two images of the

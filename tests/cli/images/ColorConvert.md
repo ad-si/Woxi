@@ -18,3 +18,16 @@ Hue[0., 1., 1.]
 $ wo 'ColorConvert[CMYKColor[0, 1, 1, 0], "RGB"]'
 RGBColor[1., 0., 0.]
 ```
+
+A converted image records the space it was converted to, where one that was
+never converted has none:
+
+```scrut
+$ wo 'ImageColorSpace[ColorConvert[Image[{{0., 1.}}], "RGB"]]'
+RGB
+```
+
+```scrut
+$ wo 'ImageColorSpace[Image[{{0., 1.}}]]'
+Automatic
+```
