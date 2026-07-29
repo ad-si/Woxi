@@ -40,7 +40,9 @@ PowGap = _{ (" " | "\t" | "\r" | "\n")* }
 // digits-then-`^` — let the outer LeadingMinus path handle it.
 Integer = @{ ("-" ~ !(ASCII_DIGIT+ ~ PowGap ~ "^"))? ~ ASCII_DIGIT+ }
 // Integer with scientific notation: 5*^3 → 5000, 5*^-13 → Rational[1, 2000000000000]
-IntegerScientific = @{ ("-")? ~ ASCII_DIGIT+ ~ "*^" ~ ("-")? ~ ASCII_DIGIT+ }
+// The exponent may carry an explicit sign: Wolfram reads `1*^+150` too.
+ExponentSign = _{ "-" | "+" }
+IntegerScientific = @{ ("-")? ~ ASCII_DIGIT+ ~ "*^" ~ ExponentSign? ~ ASCII_DIGIT+ }
 // Real: digits followed by a single `.` (optionally more digits). The `!"."`
 // guards prevent `0..` and `0...` from being consumed as `0. ...` — those
 // must fall through so the Repeated/RepeatedNull suffix handlers can see
@@ -48,7 +50,7 @@ IntegerScientific = @{ ("-")? ~ ASCII_DIGIT+ ~ "*^" ~ ("-")? ~ ASCII_DIGIT+ }
 // The body of a real literal (no sign): a decimal/scientific mantissa.
 RealBody = _{
     ((ASCII_DIGIT+ ~ "." ~ !"." ~ ASCII_DIGIT*) | ("." ~ !"." ~ ASCII_DIGIT+))
-    ~ ("*^" ~ ("-")? ~ ASCII_DIGIT+)?
+    ~ ("*^" ~ ExponentSign? ~ ASCII_DIGIT+)?
 }
 // Like the Integer rule, do NOT consume a leading `-` when the literal is
 // immediately followed by `^`: `-10.0^2` must parse as `-(10.0^2) = -100.`
@@ -58,10 +60,10 @@ Real = @{
     ~ RealBody
 }
 UnsignedInteger = @{ ASCII_DIGIT+ }
-UnsignedIntegerScientific = @{ ASCII_DIGIT+ ~ "*^" ~ ("-")? ~ ASCII_DIGIT+ }
+UnsignedIntegerScientific = @{ ASCII_DIGIT+ ~ "*^" ~ ExponentSign? ~ ASCII_DIGIT+ }
 UnsignedReal = @{
     (ASCII_DIGIT+ ~ "." ~ !"." ~ ASCII_DIGIT* | "." ~ !"." ~ ASCII_DIGIT+)
-    ~ ("*^" ~ ("-")? ~ ASCII_DIGIT+)?
+    ~ ("*^" ~ ExponentSign? ~ ASCII_DIGIT+)?
 }
 // Precision-tagged real: 0.1`1 means 0.1 with precision 1 digit
 // 0.1` means machine precision (bare backtick)

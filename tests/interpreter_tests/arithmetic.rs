@@ -1786,6 +1786,27 @@ mod exact_value_returns {
   }
 
   #[test]
+  fn integer_scientific_notation_signed_exponent() {
+    // An explicit `+` on the exponent is legal Wolfram; it used to be a
+    // parse error.
+    assert_eq!(interpret("2*^+5").unwrap(), "200000");
+    assert_eq!(interpret("-3*^+2").unwrap(), "-300");
+    assert_eq!(interpret("1.5*^+3").unwrap(), "1500.");
+    assert_eq!(interpret("Head[2*^+5]").unwrap(), "Integer");
+  }
+
+  #[test]
+  fn integer_scientific_notation_stays_exact_past_i128() {
+    // The rational stayed exact only while 10^|exp| fit in an i128; beyond
+    // that it fell back to a machine real and lost the value.
+    assert_eq!(interpret("Head[1*^-300]").unwrap(), "Rational");
+    assert_eq!(interpret("1*^-300 * 10^300").unwrap(), "1");
+    assert_eq!(interpret("Head[1*^+150]").unwrap(), "Integer");
+    assert_eq!(interpret("1*^+150 / 10^150").unwrap(), "1");
+    assert_eq!(interpret("2*^-40 * 5*^40").unwrap(), "10");
+  }
+
+  #[test]
   fn mean_returns_rational() {
     // Mean[{0, 0, 0, 10}] = 10/4 = 5/2
     assert_eq!(interpret("Mean[{0, 0, 0, 10}]").unwrap(), "5/2");

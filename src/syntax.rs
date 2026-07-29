@@ -1744,6 +1744,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       let mantissa_str = &s[..idx];
       let exponent_str = &s[idx + 2..];
       let mantissa: i128 = mantissa_str.parse().unwrap_or(0);
+      // `parse::<i32>` accepts a leading `+`, so `1*^+150` needs no stripping.
       let exponent: i32 = exponent_str.parse().unwrap_or(0);
       if exponent >= 0 {
         // Positive exponent: multiply mantissa by 10^exp → Integer
@@ -1776,8 +1777,28 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
             }
           }
           None => {
-            // Overflow: fall back to Real
-            Expr::Real(mantissa as f64 * 10_f64.powi(exponent))
+            // Overflow: keep the value exact with big integers, the way the
+            // positive branch does. `1*^-300` is the rational 1/10^300 in
+            // Wolfram, not a machine real.
+            let m = num_bigint::BigInt::from(mantissa);
+            let d = num_bigint::BigInt::from(10).pow(abs_exp);
+            let zero = num_bigint::BigInt::from(0);
+            let (mut a, mut b) =
+              (if m < zero { -m.clone() } else { m.clone() }, d.clone());
+            while b != zero {
+              let r = &a % &b;
+              a = b;
+              b = r;
+            }
+            let (num, den) = (m / &a, d / &a);
+            if den == num_bigint::BigInt::from(1) {
+              Expr::BigInteger(num)
+            } else {
+              Expr::FunctionCall {
+                name: "Rational".to_string(),
+                args: vec![Expr::BigInteger(num), Expr::BigInteger(den)].into(),
+              }
+            }
           }
         }
       }
