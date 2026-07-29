@@ -123,6 +123,58 @@ fn string_take_drop_message(fname: &str, from: i128, to: i128, s: &str) {
   ));
 }
 
+/// Emit the `<fname>::seqs: Sequence specification … expected at position 2`
+/// message, rendering the call in OutputForm.
+fn emit_seqs(fname: &str, args: &[Expr]) {
+  crate::emit_message(&format!(
+    "{}::seqs: Sequence specification (+n, -n, {{+n}}, {{-n}}, {{m, n}} or \
+     {{m, n, s}}) expected at position 2 in {}.",
+    fname,
+    crate::syntax::format_expr(
+      &unevaluated(fname, args),
+      crate::syntax::ExprForm::Output
+    )
+  ));
+}
+
+fn emit_ambgsntx(fname: &str) {
+  crate::emit_message(&format!(
+    "{}::ambgsntx: Warning: interpreting list of integers as a list of \
+     sequence specifications.",
+    fname
+  ));
+}
+
+/// True for a specification that cannot be a span at all: four or more
+/// entries, every one an integer.
+fn is_ambiguous_int_list(spec: &Expr) -> bool {
+  matches!(spec, Expr::List(elems)
+  if elems.len() >= 4
+    && elems.iter().all(|e| {
+      crate::functions::list_helpers_ast::expr_to_i128(e).is_some()
+    }))
+}
+
+/// Re-read a list of integers as a list of independent sequence
+/// specifications: `StringTake[s, {n1, n2, …}]` is
+/// `{StringTake[s, n1], StringTake[s, n2], …}`. Each element keeps its own
+/// out-of-range reporting, so a bad one is left unevaluated in place.
+fn list_of_specs(
+  fname: &str,
+  subject: &Expr,
+  elems: &crate::expr_list::ExprList,
+  warn: bool,
+) -> Result<Expr, InterpreterError> {
+  if warn {
+    emit_ambgsntx(fname);
+  }
+  let results: Result<Vec<Expr>, InterpreterError> = elems
+    .iter()
+    .map(|e| string_take_drop(fname, &[subject.clone(), e.clone()]))
+    .collect();
+  Ok(Expr::List(results?.into()))
+}
+
 /// Emit the `<fname>::strse: A string or list of strings is expected at
 /// position 1 in <call>.` message, rendering the call in OutputForm.
 fn emit_strse(fname: &str, args: &[Expr]) {
@@ -241,11 +293,26 @@ fn string_take_drop(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let unevaluated = || unevaluated(fname, args);
-  // Thread over a list of strings
+  // Thread over a list of strings. The ambiguity warning belongs to the call
+  // as a whole, so it is emitted here and suppressed for the elements.
   if let Expr::List(items) = &args[0] {
+    let ambiguous = fname == "StringTake" && is_ambiguous_int_list(&args[1]);
+    if ambiguous {
+      emit_ambgsntx(fname);
+    }
     let results: Result<Vec<Expr>, InterpreterError> = items
       .iter()
-      .map(|item| string_take_drop(fname, &[item.clone(), args[1].clone()]))
+      .map(|item| {
+        let inner = [item.clone(), args[1].clone()];
+        if ambiguous {
+          let Expr::List(elems) = &args[1] else {
+            unreachable!("checked by is_ambiguous_int_list")
+          };
+          list_of_specs(fname, &inner[0], elems, false)
+        } else {
+          string_take_drop(fname, &inner)
+        }
+      })
       .collect();
     return Ok(Expr::List(results?.into()));
   }
@@ -317,6 +384,8 @@ fn string_take_drop(
         .collect();
       Ok(Expr::List(results?.into()))
     }
+    // `{}` is an empty sequence specification: take nothing / drop nothing.
+    Expr::List(elems) if elems.is_empty() => Ok(empty_or_all(true)),
     Expr::List(elems) if elems.len() == 1 => {
       let Some(i) = crate::functions::list_helpers_ast::expr_to_i128(&elems[0])
       else {
@@ -340,7 +409,13 @@ fn string_take_drop(
       };
       let (m, n) = (nums[0], nums[1]);
       let step = if nums.len() == 3 { nums[2] } else { 1 };
+      // A zero step is not a usable span. `StringTake` then re-reads the list
+      // as a list of separate specifications; `StringDrop` refuses.
       if step == 0 {
+        if is_take {
+          return list_of_specs(fname, &args[0], elems, false);
+        }
+        emit_seqs(fname, args);
         return Ok(unevaluated());
       }
       let real_start = if m >= 0 { m } else { len + m + 1 };
@@ -376,6 +451,21 @@ fn string_take_drop(
         }
         _ => Ok(unevaluated()),
       }
+    }
+    // Four or more entries cannot be a span at all. `StringTake` reads them
+    // as separate specifications (warning that it is doing so); `StringDrop`
+    // refuses.
+    Expr::List(elems)
+      if elems.len() >= 4
+        && elems.iter().all(|e| {
+          crate::functions::list_helpers_ast::expr_to_i128(e).is_some()
+        }) =>
+    {
+      if is_take {
+        return list_of_specs(fname, &args[0], elems, true);
+      }
+      emit_seqs(fname, args);
+      Ok(unevaluated())
     }
     other => {
       let Some(count) = crate::functions::list_helpers_ast::expr_to_i128(other)

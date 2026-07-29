@@ -449,7 +449,7 @@ Assuming,Evaluate expression under given assumptions,✅,pure,5.0,452
 VertexLabels,Option for specifying labels on graph vertices,✅,pure,8.0,453
 UpSet,Assign upvalues to symbols appearing in the LHS,✅,side_effect,1.0,454
 Together,Puts terms over a common denominator,✅,pure,1.0,455
-StringTake,Returns a substring of a string,✅,pure,2.0,456
+StringTake,Returns a substring of a string; a list of integers that cannot be a span is read as separate specifications,✅,pure,2.0,456
 ImageData,Extracts pixel data from an image as nested lists,✅,pure,7.0,457
 LaplaceTransform,Compute the Laplace transform of an expression,✅,none,4.0,458
 PlotTheme,Option for specifying the visual theme for plots,✅,pure,10.0,459
@@ -939,7 +939,7 @@ SpanFromLeft,,🚫,,6.0,946
 Exists,Represents the existential quantifier,✅,1,5.0,948
 NotebookRead,Requires external services or GUI infrastructure,🚫,io,3.0,948
 Level,Extracts subexpressions at specified levels,✅,pure,1.0,950
-StringDrop,Removes a substring from a string,✅,pure,2.0,950
+StringDrop,Removes a substring from a string; only span specifications are accepted,✅,pure,2.0,950
 MeshCoordinates,Coordinates of a mesh region,✅,pure,10.0,951
 MousePosition,Requires external services or GUI infrastructure,🚫,io,6.0,952
 Expectation,Compute expected value of a function of a random variable,✅,pure,8.0,954

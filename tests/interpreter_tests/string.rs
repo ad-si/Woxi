@@ -13748,3 +13748,102 @@ mod character_normalize {
     );
   }
 }
+
+mod string_take_sequence_specifications {
+  use super::*;
+
+  #[test]
+  fn an_empty_specification_takes_or_drops_nothing() {
+    clear_state();
+    assert_eq!(interpret(r#"StringTake["abcde", {}]"#).unwrap(), "");
+    assert_eq!(interpret(r#"StringDrop["abcde", {}]"#).unwrap(), "abcde");
+  }
+
+  #[test]
+  fn a_zero_step_is_re_read_as_separate_specifications() {
+    clear_state();
+    // {m, n, 0} is not a usable span, so StringTake re-reads the list as
+    // three independent specs: StringTake[s, 1], [s, 5], [s, 0].
+    assert_eq!(
+      interpret(r#"StringTake["abcde", {1, 5, 0}]"#).unwrap(),
+      "{a, abcde, }"
+    );
+    assert_eq!(
+      interpret(r#"StringTake["abcde", {3, 1, 0}]"#).unwrap(),
+      "{abc, a, }"
+    );
+    // Negative entries count from the end, as a bare spec does.
+    assert_eq!(
+      interpret(r#"StringTake["abcde", {1, -1, 0}]"#).unwrap(),
+      "{a, e, }"
+    );
+    assert_eq!(
+      interpret(r#"StringTake["abcde", {-1, -2, 0}]"#).unwrap(),
+      "{e, de, }"
+    );
+    assert_eq!(
+      interpret(r#"StringTake["abcde", {0, 0, 0}]"#).unwrap(),
+      "{, , }"
+    );
+  }
+
+  #[test]
+  fn a_nonzero_step_is_still_a_span() {
+    clear_state();
+    assert_eq!(interpret(r#"StringTake["abcde", {2, 3}]"#).unwrap(), "bc");
+    assert_eq!(
+      interpret(r#"StringTake["abcde", {1, 5, 2}]"#).unwrap(),
+      "ace"
+    );
+    assert_eq!(
+      interpret(r#"StringTake["abcde", {2, 3, 1}]"#).unwrap(),
+      "bc"
+    );
+  }
+
+  #[test]
+  fn four_or_more_entries_cannot_be_a_span() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"StringTake["abcde", {1, 2, 3, 4}]"#).unwrap(),
+      "{a, ab, abc, abcd}"
+    );
+    assert_eq!(
+      interpret(r#"StringTake["abcde", {1, 2, 0, 3}]"#).unwrap(),
+      "{a, ab, , abc}"
+    );
+    assert_eq!(
+      interpret(r#"StringTake["abcde", {1, 2, 3, 4, 5}]"#).unwrap(),
+      "{a, ab, abc, abcd, abcde}"
+    );
+    // It threads over a list of strings, each getting its own result list.
+    assert_eq!(
+      interpret(r#"StringTake[{"abcde", "xy"}, {1, 2, 3, 4}]"#).unwrap(),
+      "{{a, ab, abc, abcd}, {x, xy, StringTake[xy, 3], StringTake[xy, 4]}}"
+    );
+  }
+
+  #[test]
+  fn an_out_of_range_entry_is_left_in_place() {
+    clear_state();
+    // Each specification reports and fails on its own; the others still work.
+    assert_eq!(
+      interpret(r#"StringTake["abcde", {2, 9, 0}]"#).unwrap(),
+      "{ab, StringTake[abcde, 9], }"
+    );
+  }
+
+  #[test]
+  fn string_drop_has_no_such_fallback() {
+    clear_state();
+    // StringDrop refuses these specifications instead of re-reading them.
+    assert_eq!(
+      interpret(r#"StringDrop["abcde", {1, 5, 0}]"#).unwrap(),
+      "StringDrop[abcde, {1, 5, 0}]"
+    );
+    assert_eq!(
+      interpret(r#"StringDrop["abcde", {1, 2, 3, 4}]"#).unwrap(),
+      "StringDrop[abcde, {1, 2, 3, 4}]"
+    );
+  }
+}
