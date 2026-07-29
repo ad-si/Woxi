@@ -113,12 +113,37 @@ fn wolfram_pow_chain<T: Copy>(
   }
 }
 
+/// Reciprocal of a machine complex number, `1/(c + d*I)`, as wolframscript
+/// computes it: scale both parts by a power of two (exact) so the squares stay
+/// in range, form the denominator `c*c + d*d` with a single rounding via a
+/// fused multiply-add, then divide.
+///
+/// Smith's algorithm — the usual overflow-safe alternative, and what this used
+/// to do — is a ULP off on more than half of all inputs; the scaled fused form
+/// reproduces wolframscript on every sampled case, including denormal and
+/// near-overflow magnitudes where the unscaled form loses bits outright.
+pub fn complex_reciprocal(c: f64, d: f64) -> (f64, f64) {
+  let m = c.abs().max(d.abs());
+  if !m.is_finite() || m == 0.0 {
+    let den = c.mul_add(c, d * d);
+    return (c / den, -d / den);
+  }
+  // Put the larger part in [0.5, 1). The scale is a power of two, so applying
+  // and undoing it is exact. Denormals report a biased exponent of 0; the
+  // clamp keeps the resulting factor representable.
+  let biased = ((m.to_bits() >> 52) & 0x7ff) as i32;
+  let scale_exp = (1022 - biased).clamp(-1000, 1000);
+  let s = f64::from_bits(((scale_exp + 1023) as u64) << 52);
+  let (cs, ds) = (c * s, d * s);
+  let den = cs.mul_add(cs, ds * ds);
+  (s * (cs / den), -s * (ds / den))
+}
+
 /// Machine-complex `z^n` for an exact `Integer` exponent: the same
 /// multiplication chains as `wolfram_powi` with complex multiplications,
-/// and — for negative exponents — the reciprocal of the positive power via
-/// Smith's complex-division algorithm, both matching wolframscript
-/// bit-for-bit (verified over random batches by the differential fuzzer).
-/// Returns `(re, im)`.
+/// and — for negative exponents — `complex_reciprocal` of the positive
+/// power, both matching wolframscript bit-for-bit (verified over random
+/// batches by the differential fuzzer). Returns `(re, im)`.
 pub fn wolfram_powi_complex(re: f64, im: f64, n: i128) -> (f64, f64) {
   if n == 0 {
     return (1.0, 0.0);
@@ -136,16 +161,7 @@ pub fn wolfram_powi_complex(re: f64, im: f64, n: i128) -> (f64, f64) {
   if n > 0 {
     return (c, d);
   }
-  // 1/(c + d*I) via Smith's algorithm.
-  if c.abs() >= d.abs() {
-    let r = d / c;
-    let den = c + d * r;
-    (1.0 / den, -r / den)
-  } else {
-    let r = c / d;
-    let den = c * r + d;
-    (r / den, -1.0 / den)
-  }
+  complex_reciprocal(c, d)
 }
 
 /// Compute the error function erf(x) using the Taylor series.

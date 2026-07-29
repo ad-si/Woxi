@@ -10030,11 +10030,12 @@ mod bigfloat_trig {
 
     #[test]
     fn complex_float_integer_powers_use_chains() {
-      // Complex machine bases use the same chains, with a Smith-style
-      // reciprocal for negative exponents (the log/exp path is a ULP off).
+      // Complex machine bases use the same chains, with a scaled fused
+      // reciprocal for negative exponents (the log/exp path is a ULP off,
+      // and so was the Smith-style division this used to do).
       assert_eq!(
         interpret("(1.5 + 2.5 I)^-2").unwrap(),
-        "-0.05536332179930796 - 0.10380622837370243*I"
+        "-0.05536332179930796 - 0.10380622837370242*I"
       );
       assert_eq!(
         interpret("(1.5 + 2.5 I)^-1").unwrap(),
@@ -10047,6 +10048,24 @@ mod bigfloat_trig {
       assert_eq!(
         interpret("(-2.914 - 3.775221291 I)^-10").unwrap(),
         "-1.57443249348989*^-7 - 4.704549167242218*^-8*I"
+      );
+      // Regression: Smith's algorithm was a ULP off here, and lost bits
+      // outright once the squares reached the denormal range.
+      assert_eq!(
+        interpret("(6.037379 - 17.102549 I)^-1").unwrap(),
+        "0.018353645602933035 + 0.05199178704083292*I"
+      );
+      assert_eq!(
+        interpret("(-17.680043 + 0.297429 I)^-1").unwrap(),
+        "-0.056544945690458245 - 0.0009512480626753738*I"
+      );
+      assert_eq!(
+        interpret("(1.5*^-160 + 2.5*^-160 I)^-1").unwrap(),
+        "1.7647058823529415*^159 - 2.941176470588236*^159*I"
+      );
+      assert_eq!(
+        interpret("(1.5*^155 + 2.5*^155 I)^-1").unwrap(),
+        "1.7647058823529413*^-156 - 2.9411764705882355*^-156*I"
       );
     }
   }

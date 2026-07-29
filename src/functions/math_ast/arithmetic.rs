@@ -11562,7 +11562,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     }
     _ => {
       // Exact Integer exponent on a complex float: wolframscript uses the
-      // same multiplication chains as for real bases (and a Smith-style
+      // same multiplication chains as for real bases (and a scaled fused
       // reciprocal for negative exponents), which the log/exp path below
       // misses by a ULP.
       if let Expr::Integer(n) = exp
