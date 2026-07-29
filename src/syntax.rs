@@ -6718,6 +6718,81 @@ fn prints_as_not(e: &Expr) -> bool {
     if name == "Not" && args.len() == 1)
 }
 
+/// Parse-side precedence (the `operator_precedence` scale) of the operator an
+/// expression prints with at top level, or `None` for forms that print
+/// self-delimiting (atoms, `f[…]`, `{…}`). Used to decide whether an operand
+/// of an infix shorthand (`@@`, `/@`, `@@@`, `.`) needs parentheses so the
+/// printed form re-parses to the same tree — e.g. `Plus @@ (x*y)` must not
+/// print as `Plus @@ x*y`, which re-parses as `(Plus @@ x)*y`.
+fn printed_infix_precedence(e: &Expr) -> Option<u8> {
+  match e {
+    Expr::BinaryOp { op, .. } => Some(match op {
+      BinaryOperator::Or => 15,
+      BinaryOperator::And => 18,
+      BinaryOperator::Alternatives => 27,
+      BinaryOperator::Plus
+      | BinaryOperator::Minus
+      | BinaryOperator::StringJoin => 30,
+      BinaryOperator::Times | BinaryOperator::Divide => 33,
+      BinaryOperator::Power => 48,
+    }),
+    Expr::Comparison { .. } => Some(21),
+    Expr::Rule { .. } | Expr::RuleDelayed { .. } => Some(12),
+    Expr::ReplaceAll { .. } | Expr::ReplaceRepeated { .. } => Some(7),
+    Expr::CompoundExpr(_) => Some(1),
+    // `body &` binds looser than every operator shorthand.
+    Expr::Function { .. } => Some(5),
+    Expr::Map { .. } => Some(44),
+    Expr::Apply { .. } | Expr::MapApply { .. } => Some(43),
+    // ` !x` sits between `&&` and the application shorthands.
+    Expr::UnaryOp {
+      op: UnaryOperator::Not,
+      ..
+    } => Some(20),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      ..
+    } => Some(45),
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Not" if args.len() == 1 => Some(20),
+      "Dot" if args.len() == 2 => Some(40),
+      "Plus" if args.len() >= 2 => Some(30),
+      "Times" if args.len() >= 2 => Some(33),
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+/// Render an application shorthand (`f /@ list`, `f @@ list`, `f @@@ list`)
+/// in InputForm, parenthesizing either operand when it would otherwise bind
+/// differently on re-parse. `prec` is the shorthand's own parse precedence
+/// (`operator_precedence`): the left operand needs parens at equal precedence
+/// too (the shorthands are right-associative), the right one only below it.
+fn format_map_apply_shorthand(
+  func: &Expr,
+  list: &Expr,
+  op: &str,
+  prec: u8,
+) -> String {
+  let func_str = format_expr(func, ExprForm::Input);
+  let func_needs_parens = matches!(func, Expr::NamedFunction { .. })
+    || printed_infix_precedence(func).is_some_and(|p| p <= prec);
+  let func_display = if func_needs_parens {
+    format!("({})", func_str)
+  } else {
+    func_str
+  };
+  let list_str = format_expr(list, ExprForm::Input);
+  let list_display = if printed_infix_precedence(list).is_some_and(|p| p < prec)
+  {
+    format!("({})", list_str)
+  } else {
+    list_str
+  };
+  format!("{} {} {}", func_display, op, list_display)
+}
+
 fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
   let fmt = |e: &Expr| -> String { format_expr(e, form) };
   let fmt_fn: fn(&Expr) -> String = match form {
@@ -7509,9 +7584,19 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       if name == "ReverseElement" && args.len() == 2 {
         return format!("{} \u{220B} {}", fmt(&args[0]), fmt(&args[1]));
       }
-      // Special case: Dot[a, b] displays as a . b (infix notation)
+      // Special case: Dot[a, b] displays as a . b (infix notation).
+      // Operands that bind looser than `.` (Plus, Times, …) keep their
+      // parens so e.g. `a . (b - c)` doesn't re-parse as `(a . b) - c`.
       if name == "Dot" && args.len() == 2 {
-        return format!("{} . {}", fmt(&args[0]), fmt(&args[1]));
+        let operand = |a: &Expr| {
+          let s = fmt(a);
+          if printed_infix_precedence(a).is_some_and(|p| p < 40) {
+            format!("({})", s)
+          } else {
+            s
+          }
+        };
+        return format!("{} . {}", operand(&args[0]), operand(&args[1]));
       }
       if name == "Composition" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(&fmt).collect();
@@ -9828,36 +9913,13 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       )
     }
     Expr::Map { func, list } => {
-      let func_str = format_expr(func, ExprForm::Input);
-      // Parenthesize func if it's a Function or NamedFunction (lower precedence than /@ )
-      let func_display = match func.as_ref() {
-        Expr::Function { .. } | Expr::NamedFunction { .. } => {
-          format!("({})", func_str)
-        }
-        head if prints_as_not(head) => format!("({})", func_str),
-        _ => func_str,
-      };
-      let list_str = format_expr(list, ExprForm::Input);
-      let list_display = if prints_as_not(list) {
-        format!("({})", list_str)
-      } else {
-        list_str
-      };
-      format!("{} /@ {}", func_display, list_display)
+      format_map_apply_shorthand(func, list, "/@", 44)
     }
     Expr::Apply { func, list } => {
-      format!(
-        "{} @@ {}",
-        format_expr(func, ExprForm::Input),
-        format_expr(list, ExprForm::Input)
-      )
+      format_map_apply_shorthand(func, list, "@@", 43)
     }
     Expr::MapApply { func, list } => {
-      format!(
-        "{} @@@ {}",
-        format_expr(func, ExprForm::Input),
-        format_expr(list, ExprForm::Input)
-      )
+      format_map_apply_shorthand(func, list, "@@@", 43)
     }
     Expr::PrefixApply { func, arg } => {
       // f @ g is displayed as f[g] (Wolfram converts @ to function call notation)

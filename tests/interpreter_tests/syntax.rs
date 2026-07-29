@@ -447,6 +447,60 @@ mod implicit_times_with_strings {
   }
 }
 
+mod operator_shorthand_parens {
+  use super::*;
+
+  // `@@`, `/@`, `@@@`, and `.` bind tighter than arithmetic; an operand
+  // that prints with a looser operator must keep its parens or the printed
+  // form re-parses to a different expression. (Woxi Studio re-evaluates
+  // Manipulate bodies from their InputForm, so a paren lost here silently
+  // changes the math — e.g. the polygon-area formula of the "Center of
+  // Mass of a Polygon" Demonstration.)
+  #[test]
+  fn held_apply_map_dot_keep_operand_parens() {
+    assert_eq!(interpret("Hold[a . (b - c)]").unwrap(), "Hold[a . (b - c)]");
+    assert_eq!(
+      interpret("Hold[f @@ (a + b)]").unwrap(),
+      "Hold[f @@ (a + b)]"
+    );
+    assert_eq!(
+      interpret("Hold[f @@@ (a + b)]").unwrap(),
+      "Hold[f @@@ (a + b)]"
+    );
+    assert_eq!(interpret("Hold[f /@ (a*b)]").unwrap(), "Hold[f /@ (a*b)]");
+    assert_eq!(
+      interpret("Hold[Plus @@ (x*y)/2]").unwrap(),
+      "Hold[Plus @@ (x*y)/2]"
+    );
+    // Higher-precedence operands stay unparenthesized.
+    assert_eq!(interpret("Hold[f /@ a + b]").unwrap(), "Hold[f /@ a + b]");
+    assert_eq!(interpret("Hold[f @@ a^2]").unwrap(), "Hold[f @@ a^2]");
+  }
+
+  // The InputForm of a held expression must re-parse to the very same
+  // expression (checked via FullForm equality).
+  #[test]
+  fn input_form_reparses_to_the_same_expression() {
+    for src in [
+      "Plus @@ (x*y)/2",
+      "a . (b - c)",
+      "Plus @@ ((#1^2 + #1*#2 + #2^2 & ) @@ x*y)",
+      "x /. p:{_?NumericQ, _?NumericQ} :> c + RotationMatrix[Pi/4] . (p - c)",
+      "(f & ) @@ (a + b)",
+      "f /@ a + b",
+    ] {
+      let full = interpret(&format!("FullForm[Hold[{src}]]")).unwrap();
+      let printed =
+        interpret(&format!("ToString[InputForm[Hold[{src}]]]")).unwrap();
+      let reparsed_full = interpret(&format!("FullForm[{printed}]")).unwrap();
+      assert_eq!(
+        full, reparsed_full,
+        "InputForm of `{src}` re-parses differently: `{printed}`"
+      );
+    }
+  }
+}
+
 mod plus_formatting {
   use super::*;
 
