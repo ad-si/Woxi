@@ -169,3 +169,18 @@ line up — which allows at most one negative base:
 $ wo '{(-1)^(1/3) (-1)^(2/3), 2^(1/3) 2^(1/2), (-1)^(1/3) 2^(1/3), (-2)^(1/3) (-1)^(1/3)}'
 {-1, 2^(5/6), (-2)^(1/3), (-2)^(1/3)*(-1)^(1/3)}
 ```
+
+`^` binds tighter than a leading minus, so `-2 ^ 2` is `-(2^2)` rather than
+`(-2)^2` — spacing around the `^` makes no difference:
+
+```scrut
+$ wo 'Table[-2 ^ n, {n, 2, 4}]'
+{-4, -8, -16}
+```
+
+Group explicitly to negate the base:
+
+```scrut
+$ wo '(-2) ^ 2'
+4
+```

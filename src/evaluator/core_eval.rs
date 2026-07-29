@@ -2913,6 +2913,31 @@ pub fn evaluate_expr_to_expr_inner(
           });
         }
 
+        // `True`/`False` and `Null` are each only comparable with their own
+        // kind. `True == False` is False and `Null == Null` is True, but a
+        // Boolean against Null, a number, a string or a list has no value and
+        // stays unevaluated — `1 == True` is not False.
+        if matches!(op, ComparisonOp::Equal | ComparisonOp::NotEqual) {
+          let kind = |e: &Expr| match e {
+            Expr::Identifier(s) | Expr::Constant(s) => match s.as_str() {
+              "True" | "False" => Some(0u8),
+              "Null" => Some(1u8),
+              _ => None,
+            },
+            _ => None,
+          };
+          let (kl, kr) = (kind(left), kind(right));
+          if (kl.is_some() || kr.is_some()) && kl != kr {
+            // Segments before this one already held, so only the
+            // undecidable remainder comes back: `2 > 1 == True` is
+            // `1 == True`, not the whole chain.
+            return Ok(Expr::Comparison {
+              operands: values[i..].to_vec(),
+              operators: operators[i..].to_vec(),
+            });
+          }
+        }
+
         // Interval comparisons: Interval[{a,b}] < Interval[{c,d}], a scalar
         // counting as the degenerate interval {s,s}. A determinable result is
         // used directly; an indeterminate (overlapping) one falls through to

@@ -10606,3 +10606,96 @@ mod negative_base_rational_powers {
     );
   }
 }
+
+mod unary_minus_binds_looser_than_power {
+  use super::*;
+
+  #[test]
+  fn a_spaced_caret_still_binds_tighter_than_the_sign() {
+    clear_state();
+    // `-2 ^ 2` is -(2^2). Woxi got this right without spaces but read the
+    // spaced form as (-2)^2, which only shows up for even exponents.
+    assert_eq!(interpret("-2 ^ 2").unwrap(), "-4");
+    assert_eq!(interpret("-2^2").unwrap(), "-4");
+    assert_eq!(interpret("- 2 ^ 2").unwrap(), "-4");
+    assert_eq!(interpret("-2 ^ 2 + 1").unwrap(), "-3");
+    assert_eq!(interpret("3 * -2 ^ 2").unwrap(), "-12");
+    assert_eq!(interpret("-2 ^ -2").unwrap(), "-1/4");
+    // An odd exponent hides the bug, since (-2)^3 and -(2^3) agree.
+    assert_eq!(interpret("-2 ^ 3").unwrap(), "-8");
+    // A real base went complex under the wrong reading.
+    assert_eq!(interpret("-4 ^ 0.5").unwrap(), "-2.");
+    assert_eq!(interpret("-2.5 ^ 2").unwrap(), "-6.25");
+  }
+
+  #[test]
+  fn explicit_grouping_and_ordinary_arithmetic_are_unchanged() {
+    clear_state();
+    assert_eq!(interpret("(-2) ^ 2").unwrap(), "4");
+    assert_eq!(interpret("-(2 ^ 2)").unwrap(), "-4");
+    assert_eq!(interpret("a - 2 ^ 2").unwrap(), "-4 + a");
+    assert_eq!(interpret("2 - 3 ^ 2").unwrap(), "-7");
+    assert_eq!(interpret("1 - 2").unwrap(), "-1");
+    assert_eq!(interpret("{1, -2}").unwrap(), "{1, -2}");
+    assert_eq!(interpret("-x ^ 2").unwrap(), "-x^2");
+    clear_state();
+    assert_eq!(interpret("n = 5; n - 1").unwrap(), "4");
+  }
+}
+
+mod equal_needs_comparable_operands {
+  use super::*;
+
+  #[test]
+  fn a_boolean_is_not_comparable_with_anything_else() {
+    clear_state();
+    // These used to answer False, which is wrong: nothing is known about
+    // whether 1 equals True, so the comparison has no value.
+    assert_eq!(interpret("1 == True").unwrap(), "1 == True");
+    assert_eq!(interpret("1 == False").unwrap(), "1 == False");
+    assert_eq!(interpret("0 == False").unwrap(), "0 == False");
+    assert_eq!(interpret("True == 1").unwrap(), "True == 1");
+    assert_eq!(interpret("True == 1.").unwrap(), "True == 1.");
+    assert_eq!(interpret(r#"True == "a""#).unwrap(), "True == a");
+    assert_eq!(interpret("True == {1}").unwrap(), "True == {1}");
+    assert_eq!(interpret("1 != True").unwrap(), "1 != True");
+  }
+
+  #[test]
+  fn null_is_its_own_kind_too() {
+    clear_state();
+    assert_eq!(interpret("1 == Null").unwrap(), "1 == Null");
+    assert_eq!(interpret("Null == 1.5").unwrap(), "Null == 1.5");
+    assert_eq!(interpret(r#""a" == Null"#).unwrap(), "a == Null");
+    assert_eq!(interpret("Null != 1").unwrap(), "Null != 1");
+    // Booleans and Null are separate kinds, so they do not compare either.
+    assert_eq!(interpret("True == Null").unwrap(), "True == Null");
+    assert_eq!(interpret("False == Null").unwrap(), "False == Null");
+  }
+
+  #[test]
+  fn comparisons_within_one_kind_still_resolve() {
+    clear_state();
+    assert_eq!(interpret("True == True").unwrap(), "True");
+    assert_eq!(interpret("True == False").unwrap(), "False");
+    assert_eq!(interpret("True != False").unwrap(), "True");
+    assert_eq!(interpret("Null == Null").unwrap(), "True");
+    // Numbers, strings and symbols are unaffected.
+    assert_eq!(interpret("1 == 1").unwrap(), "True");
+    assert_eq!(interpret("1 == 2").unwrap(), "False");
+    assert_eq!(interpret(r#""a" == 1"#).unwrap(), "False");
+    assert_eq!(interpret("1 == Infinity").unwrap(), "False");
+    assert_eq!(interpret("1 == a").unwrap(), "1 == a");
+  }
+
+  #[test]
+  fn a_chain_keeps_only_the_undecidable_remainder() {
+    clear_state();
+    // `2 > 1` holds, so only the part that cannot be decided comes back.
+    assert_eq!(interpret("2 > 1 == True").unwrap(), "1 == True");
+    assert_eq!(interpret("1 < 2 == True").unwrap(), "2 == True");
+    // A segment that fails still short-circuits the whole chain.
+    assert_eq!(interpret("2 > 3 == True").unwrap(), "False");
+    assert_eq!(interpret("3 > 2 > 1").unwrap(), "True");
+  }
+}

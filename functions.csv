@@ -9,7 +9,7 @@ Blank,Pattern object matching any expression,✅,pure,1.0,7
 CompoundExpression,Evaluates expressions sequentially and returns the last result,✅,pure,1.0,8
 Pattern,Names a pattern object for use in transformation rules,✅,pure,1.0,9
 Alternatives,Pattern object representing any of several alternatives,✅,pure,2.0,10
-Equal,Checks if two values are equal,✅,pure,1.0,11
+Equal,Checks if two values are equal; operands of different kinds (a Boolean or Null against anything else) stay unevaluated,✅,pure,1.0,11
 Part,Extracts parts of expressions: positional/Span/list indices and string/Key lookup on associations,✅,pure,1.0,12
 SetDelayed,Defines a delayed assignment that evaluates the RHS each time,✅,stateful,1.0,15
 Pi,Represents the ratio of circumference to diameter,✅,pure,1.0,16
@@ -193,7 +193,7 @@ Return,Returns a value from a definition body Do or Scan — anywhere else it st
 Appearance,Option symbol for specifying visual appearance,✅,pure,6.0,197
 Needs,Loads a package (no-op in Woxi),✅,effectful,1.0,198
 Center,Symbol for centering alignment,✅,pure,1.0,199
-Unequal,Checks if two values are not equal,✅,pure,1.0,200
+Unequal,Checks if two values are not equal; operands of different kinds (a Boolean or Null against anything else) stay unevaluated,✅,pure,1.0,200
 UndirectedEdge,Undirected graph edge,✅,pure,8.0,201
 Filling,Option for filling areas under curves in plots,✅,pure,6.0,202
 MatchQ,Tests if an expression matches a pattern,✅,pure,1.0,203
