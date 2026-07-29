@@ -19963,3 +19963,47 @@ mod first_position_heads {
     }
   }
 }
+
+mod nearest_rejects_unusable_data {
+  use super::*;
+
+  #[test]
+  fn empty_data_is_unusable_not_empty_result() {
+    clear_state();
+    // Woxi used to answer `{}`, as though nothing happened to be near.
+    // An empty point set is unusable and is reported instead.
+    assert_eq!(interpret("Nearest[{}, 1]").unwrap(), "Nearest[{}, 1]");
+    assert_eq!(interpret("Nearest[{}, 1, 2]").unwrap(), "Nearest[{}, 1, 2]");
+    assert_eq!(
+      interpret("Nearest[{}, {1, 2}]").unwrap(),
+      "Nearest[{}, {1, 2}]"
+    );
+    // The labelled rule form too.
+    assert_eq!(
+      interpret("Nearest[{} -> {}, 1]").unwrap(),
+      "Nearest[{} -> {}, 1]"
+    );
+  }
+
+  #[test]
+  fn data_that_is_not_a_point_list_is_reported() {
+    clear_state();
+    assert_eq!(interpret("Nearest[5, 1]").unwrap(), "Nearest[5, 1]");
+  }
+
+  #[test]
+  fn usable_data_is_unaffected() {
+    clear_state();
+    assert_eq!(interpret("Nearest[{1, 2, 3}, 2.2]").unwrap(), "{2}");
+    assert_eq!(interpret("Nearest[{1, 2, 3}, 2.2, 2]").unwrap(), "{2, 3}");
+    assert_eq!(interpret("Nearest[{5}, 1]").unwrap(), "{5}");
+    assert_eq!(
+      interpret("Nearest[{1, 2, 3}, {1.1, 2.9}]").unwrap(),
+      "{{1}, {3}}"
+    );
+    assert_eq!(
+      interpret(r#"Nearest[{1, 2, 3} -> "Index", 2.2]"#).unwrap(),
+      "{2}"
+    );
+  }
+}

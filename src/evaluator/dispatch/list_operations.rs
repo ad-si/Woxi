@@ -8413,6 +8413,24 @@ fn color_to_rgb(e: &Expr) -> Option<[f64; 3]> {
 /// Nearest[list, x, n] - find n nearest elements
 /// Nearest[points -> values, x] - return the labels whose points are closest
 fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Data that is not a list of points — including an empty list, which is
+  // unusable rather than "nothing is near" — is reported and stood down on.
+  // Woxi used to answer `{}` for the empty case and stay silent for the rest.
+  let usable = match &args[0] {
+    Expr::List(v) => !v.is_empty(),
+    Expr::Rule { pattern, .. } => {
+      matches!(pattern.as_ref(), Expr::List(v) if !v.is_empty())
+    }
+    _ => false,
+  };
+  if !usable {
+    crate::emit_message(&format!(
+      "Nearest::near1: {} is neither a list of real points nor a valid list \
+       of rules.",
+      crate::syntax::expr_to_output(&args[0])
+    ));
+    return Ok(unevaluated("Nearest", args));
+  }
   // View modes for the Rule form `points -> "Index" | "Distance" | "Element"`.
   #[derive(Clone, Copy, PartialEq)]
   enum View {
