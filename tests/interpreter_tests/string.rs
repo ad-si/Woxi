@@ -13847,3 +13847,88 @@ mod string_take_sequence_specifications {
     );
   }
 }
+
+mod to_expression_definitions {
+  use super::*;
+
+  #[test]
+  fn a_definition_with_a_pattern_takes_effect() {
+    clear_state();
+    // This used to hang: a definition whose left side carries a pattern has
+    // no Expr form of its own, and the shape it fell back to looped forever
+    // when evaluated.
+    assert_eq!(
+      interpret(r#"ToExpression["f6[x_] := x*2"]; f6[3]"#).unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret(r#"ToExpression["k2[x_] := x + 1; k2[2]"]"#).unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(r#"ToExpression["h[x__] := {x}; h[1, 2]"]"#).unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn the_pattern_may_be_of_any_kind() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"ToExpression["g[x_, y_: 2] := {x, y}; g[1]"]"#).unwrap(),
+      "{1, 2}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(r#"ToExpression["gg[x_Integer?Positive] := x; gg[3]"]"#)
+        .unwrap(),
+      "3"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(r#"ToExpression["m1[x_] := x; m2[y_] := 2 y; m1[3] + m2[4]"]"#)
+        .unwrap(),
+      "11"
+    );
+  }
+
+  #[test]
+  fn the_forms_that_already_worked_still_do() {
+    clear_state();
+    assert_eq!(interpret(r#"ToExpression["zz = 7; zz + 1"]"#).unwrap(), "8");
+    clear_state();
+    assert_eq!(interpret(r#"ToExpression["a3 := 5"]; a3"#).unwrap(), "5");
+    clear_state();
+    assert_eq!(
+      interpret(r#"ToExpression["p[x_] = x + 1"]; p[2]"#).unwrap(),
+      "3"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(r#"ToExpression["SetDelayed[k3[x_], x + 1]"]; k3[2]"#).unwrap(),
+      "3"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(r#"ToExpression["f5[1] := 9"]; f5[1]"#).unwrap(),
+      "9"
+    );
+  }
+
+  #[test]
+  fn a_held_definition_can_be_released_later() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"ToExpression["q[x_] := x^2", InputForm, Hold]"#).unwrap(),
+      "Hold[q[x_] := x^2]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"ReleaseHold[ToExpression["r1[x_] := x + 1", InputForm, Hold]]; r1[4]"#
+      )
+      .unwrap(),
+      "5"
+    );
+  }
+}

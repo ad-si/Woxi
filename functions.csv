@@ -314,7 +314,7 @@ TraditionalForm,Displays expressions in traditional mathematical notation,✅,pu
 Drop,Returns the list without its first n elements (the one-argument form drops nothing and returns the expression),✅,pure,1.0,318
 IntegerQ,Tests if the expression evaluates to an integer,✅,pure,1.0,319
 Information,Displays information about a symbol,✅,pure,1.0,320
-ToExpression,Converts a string to an evaluated expression,✅,pure,1.0,321
+ToExpression,Converts a string to an evaluated expression; definitions in the string take effect,✅,pure,1.0,321
 Identity,Returns its argument unchanged,✅,pure,1.0,322
 TestID,Option symbol for specifying a test identifier in testing functions,✅,pure,10.0,323
 ArcCosh,Returns the inverse hyperbolic cosine,✅,pure,1.0,324

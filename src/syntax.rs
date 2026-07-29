@@ -1687,6 +1687,31 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       let inner = pair.into_inner().next().unwrap();
       pair_to_expr(inner)
     }
+    // A definition whose left side carries a pattern (`f[x_] := rhs`) parses
+    // as its own rule, handled at the top level by `store_function_definition`
+    // on the pest pair. Nested uses (inside `ToExpression`, `ReleaseHold`, …)
+    // reach `pair_to_expr` instead, so give it the `SetDelayed[lhs, rhs]` form
+    // it means — without this it fell through to a shape that looped forever
+    // when evaluated.
+    Rule::FunctionDefinition => {
+      let mut inner = pair.into_inner();
+      let name = inner.next().map(|p| p.as_str().to_string());
+      let mut parts: Vec<Expr> = inner.map(pair_to_expr).collect();
+      match (name, parts.pop()) {
+        (Some(name), Some(rhs)) => Expr::FunctionCall {
+          name: "SetDelayed".to_string(),
+          args: vec![
+            Expr::FunctionCall {
+              name,
+              args: parts.into(),
+            },
+            rhs,
+          ]
+          .into(),
+        },
+        _ => Expr::Identifier("Null".to_string()),
+      }
+    }
     Rule::List => parse_list(pair),
     Rule::ListExtended => parse_list_extended(pair),
     Rule::FunctionCallExtended => parse_function_call_extended(pair),
