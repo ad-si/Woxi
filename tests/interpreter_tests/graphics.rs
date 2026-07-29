@@ -691,6 +691,21 @@ mod graphics {
     }
 
     #[test]
+    fn plot_range_reversed_bounds_normalize() {
+      // Wolfram normalizes a reversed range: `PlotRange -> {3, -3}` plots
+      // exactly like `{-3, 3}` (the oscilloscope Demonstration uses the
+      // reversed form; its FrontEnd-saved raster shows the normal axis).
+      let normal =
+        export_svg("Plot[Sin[x], {x, 0, 10}, PlotRange -> {{0, 10}, {-3, 3}}]");
+      let reversed =
+        export_svg("Plot[Sin[x], {x, 0, 10}, PlotRange -> {{0, 10}, {3, -3}}]");
+      assert_eq!(normal, reversed);
+      let x_reversed =
+        export_svg("Plot[Sin[x], {x, 0, 10}, PlotRange -> {{10, 0}, {-3, 3}}]");
+      assert_eq!(normal, x_reversed);
+    }
+
+    #[test]
     fn background() {
       insta::assert_snapshot!(export_svg(
         "Graphics[{Circle[]}, Background -> LightGray]"
@@ -11170,6 +11185,274 @@ mod manipulate {
     let json = manipulate_spec_to_json(&spec);
     assert!(json.contains(r#""values":["True","False"]"#));
     assert!(json.contains(r#""valueLabels":["on","off"]"#));
+  }
+
+  #[test]
+  fn spec_style_and_delimiter_are_annotation_rows() {
+    // `Style["…", …]` and `Delimiter` arguments are static annotation rows
+    // between controls (Wolfram's ThisIsNotAControl), keeping their
+    // position among the control rows and binding no variable.
+    let expr = interpret_to_expr(
+      "Manipulate[a + b, Style[\"first\", Bold], {a, 0, 1}, Delimiter, \
+       \"second\", {b, 0, 1}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    let kinds: Vec<&str> = spec
+      .controls
+      .iter()
+      .map(|c| match c {
+        ManipulateControl::Heading { .. } => "heading",
+        ManipulateControl::Divider => "divider",
+        ManipulateControl::Continuous { .. } => "continuous",
+        _ => "other",
+      })
+      .collect();
+    assert_eq!(
+      kinds,
+      vec!["heading", "continuous", "divider", "heading", "continuous"]
+    );
+    match &spec.controls[0] {
+      ManipulateControl::Heading { label, .. } => assert_eq!(label, "first"),
+      _ => panic!("expected heading row"),
+    }
+    // Annotation rows contribute no bindings.
+    let bindings = manipulate_initial_bindings(&spec);
+    assert_eq!(
+      bindings,
+      vec![
+        ("a".to_string(), "0".to_string()),
+        ("b".to_string(), "0".to_string()),
+      ]
+    );
+    // JSON carries the annotation rows for the Playground frontend.
+    let json = manipulate_spec_to_json(&spec);
+    assert!(json.contains(r#""kind":"heading""#));
+    assert!(json.contains(r#""kind":"delimiter""#));
+  }
+
+  #[test]
+  fn spec_style_and_delimiter_emit_no_vsform_message() {
+    // wolframscript accepts Style[…]/Delimiter/string arguments silently —
+    // no Manipulate::vsform message.
+    let result = woxi::interpret_with_stdout(
+      "Manipulate[a, Style[\"s\", Bold], Delimiter, \"t\", {a, 0, 1}];",
+    )
+    .unwrap();
+    assert!(
+      result.warnings.iter().all(|w| !w.contains("vsform")),
+      "unexpected vsform warnings: {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
+  fn spec_subscript_variables_are_renamed() {
+    // Compound control variables like `Subscript[signal, 1]` cannot be
+    // bound by name; they are renamed to synthesized plain symbols and
+    // every occurrence in the body is rewritten (including call heads).
+    let expr = interpret_to_expr(
+      "Manipulate[Subscript[r, 1] Subscript[signal, 1][x], \
+       {{Subscript[signal, 1], SquareWave, \"\"}, {Sin -> \"sine\", \
+       SquareWave -> \"square wave\"}, ControlType -> PopupMenu}, \
+       {{Subscript[r, 1], 1, \"amplitude\"}, 0, 3}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    assert_eq!(spec.body_code, "r$1*signal$1[x]");
+    match &spec.controls[0] {
+      ManipulateControl::Discrete {
+        name,
+        values,
+        value_labels,
+        initial_index,
+        popup,
+        ..
+      } => {
+        assert_eq!(name, "signal$1");
+        assert_eq!(values, &["Sin".to_string(), "SquareWave".to_string()]);
+        assert_eq!(
+          value_labels,
+          &["sine".to_string(), "square wave".to_string()]
+        );
+        // Explicit initial SquareWave matches values[1].
+        assert_eq!(*initial_index, 1);
+        // `ControlType -> PopupMenu` always renders a dropdown.
+        assert!(*popup);
+      }
+      other => panic!("expected discrete control, got {other:?}"),
+    }
+    match &spec.controls[1] {
+      ManipulateControl::Continuous {
+        name,
+        label,
+        min,
+        max,
+        initial,
+        ..
+      } => {
+        assert_eq!(name, "r$1");
+        assert_eq!(label, "amplitude");
+        assert_eq!((*min, *max, *initial), (0.0, 3.0, 1.0));
+      }
+      other => panic!("expected continuous control, got {other:?}"),
+    }
+    // The synthesized names must survive a full Block round-trip: the
+    // rewritten body evaluates with the initial bindings.
+    let bindings = manipulate_initial_bindings(&spec);
+    let code = manipulate_block_code(&spec.body_code, &bindings);
+    assert_eq!(interpret(&format!("{} /. x -> 0.3", code)).unwrap(), "1");
+  }
+
+  #[test]
+  fn spec_subscript_variable_default_label_is_pretty() {
+    // A renamed compound variable with no explicit label shows the
+    // original subscripted form (signal₁), not the synthesized symbol.
+    let expr = interpret_to_expr(
+      "Manipulate[Subscript[m, 1] x, {Subscript[m, 1], 0, 5}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    match &spec.controls[0] {
+      ManipulateControl::Continuous { name, label, .. } => {
+        assert_eq!(name, "m$1");
+        assert_eq!(label, "m₁");
+      }
+      other => panic!("expected continuous control, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn spec_continuous_ignores_trailing_options() {
+    // Options such as `ImageSize -> Tiny` in a control spec are not bounds.
+    let expr = interpret_to_expr(
+      "Manipulate[a x, {{a, 0, \"phase lag\"}, 0, 2 Pi, ImageSize -> Tiny}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    match &spec.controls[0] {
+      ManipulateControl::Continuous {
+        name,
+        label,
+        min,
+        max,
+        step,
+        ..
+      } => {
+        assert_eq!(name, "a");
+        assert_eq!(label, "phase lag");
+        assert_eq!(*min, 0.0);
+        assert!((*max - 2.0 * std::f64::consts::PI).abs() < 1e-12);
+        // The trailing option must not be misread as a step.
+        assert!(step.is_none());
+      }
+      other => panic!("expected continuous control, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn spec_nested_animate_body_flattens() {
+    // A Manipulate whose body is an `Animate[…]` renders as one combined
+    // widget: the inner body becomes the body, the animation variable
+    // becomes the leading control, and `AnimationRunning -> False` builds
+    // the widget paused.
+    let expr = interpret_to_expr(
+      "Manipulate[Animate[Plot[Sin[a x + p], {x, 0, 6}], {p, 0, Infinity}, \
+       AnimationRunning -> False], {a, 1, 5}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    assert!(spec.animated);
+    assert!(!spec.animation_running);
+    assert!(spec.body_code.starts_with("Plot["));
+    match &spec.controls[0] {
+      ManipulateControl::Continuous { name, min, max, .. } => {
+        assert_eq!(name, "p");
+        // The infinite animation range becomes a finite 2π looping window.
+        assert_eq!(*min, 0.0);
+        assert!((*max - 2.0 * std::f64::consts::PI).abs() < 1e-12);
+      }
+      other => panic!("expected continuous control, got {other:?}"),
+    }
+    match &spec.controls[1] {
+      ManipulateControl::Continuous { name, .. } => assert_eq!(name, "a"),
+      other => panic!("expected continuous control, got {other:?}"),
+    }
+    // Paused-at-build still serializes as animated for the Playground.
+    let json = manipulate_spec_to_json(&spec);
+    assert!(json.contains(r#""animated":true"#));
+    assert!(json.contains(r#""animationRunning":false"#));
+  }
+
+  #[test]
+  fn spec_oscilloscope_demonstration_manipulate() {
+    // End-to-end regression for the "Oscilloscope with Two Signal Inputs"
+    // Wolfram Demonstration: nested Animate body, Style/Delimiter
+    // annotation rows, Subscript control variables, popup menus with
+    // rule-form choices, ImageSize options, and an infinite animation
+    // range — all in one expression.
+    let expr = interpret_to_expr(
+      "Manipulate[\
+       Animate[Plot[{Subscript[r, 1] Subscript[signal, 1][Subscript[\
+       β, 1] ω+ϕ+Subscript[α, 1]],Subscript[r, 2] Subscript[signal, 2][\
+       Subscript[β, 2] ω+ϕ+Subscript[α, 2]]},{ω,0,10},ExclusionsStyle->\
+       Automatic,PlotRange->{{0,10},{3,-3}}],{ϕ,0,Infinity},\
+       AnimationRunning->False],\
+       Style[\"signal 1\",Bold,Medium],\
+       {{Subscript[signal, 1], SquareWave,\"\"},{Sin->\"sine\",\
+       SquareWave->\"square wave\",SawtoothWave->\"sawtooth wave\",\
+       TriangleWave->\"triangle wave\"},ControlType->PopupMenu},\
+       {{Subscript[α, 1],0,\"phase lag\"},0,2π, ImageSize-> Tiny},\
+       {{Subscript[r, 1],1,\"amplitude\"},0,3,ImageSize-> Tiny},\
+       {{Subscript[β, 1],1,\"frequency\"},0,5,ImageSize-> Tiny},\
+       Delimiter,\
+       Style[\"signal 2\",Bold,Medium],\
+       {{Subscript[signal, 2], Sin,\"\"},{Sin->\"sine\",\
+       SquareWave->\"square wave\",SawtoothWave->\"sawtooth wave\",\
+       TriangleWave->\"triangle wave\"},ControlType->PopupMenu},\
+       {{Subscript[α, 2],0,\"phase lag\"},0,2π,ImageSize-> Tiny},\
+       {{Subscript[r, 2],1,\"amplitude\"},0,3,ImageSize-> Tiny},\
+       {{Subscript[β, 2],1,\"frequency\"},0,5,ImageSize-> Tiny}\
+       ]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    assert!(spec.animated);
+    assert!(!spec.animation_running);
+    // Rows: animation slider, then per-signal heading + 4 controls,
+    // separated by a divider.
+    let kinds: Vec<&str> = spec
+      .controls
+      .iter()
+      .map(|c| match c {
+        ManipulateControl::Heading { .. } => "heading",
+        ManipulateControl::Divider => "divider",
+        ManipulateControl::Continuous { .. } => "continuous",
+        ManipulateControl::Discrete { .. } => "discrete",
+        _ => "other",
+      })
+      .collect();
+    assert_eq!(
+      kinds,
+      vec![
+        "continuous", // ϕ (animation)
+        "heading",    // signal 1
+        "discrete",
+        "continuous",
+        "continuous",
+        "continuous",
+        "divider",
+        "heading", // signal 2
+        "discrete",
+        "continuous",
+        "continuous",
+        "continuous",
+      ]
+    );
+    // The body with the initial bindings must evaluate to a Graphics.
+    let bindings = manipulate_initial_bindings(&spec);
+    let code = manipulate_block_code(&spec.body_code, &bindings);
+    assert_eq!(interpret(&format!("Head[{}]", code)).unwrap(), "Graphics");
   }
 
   #[test]

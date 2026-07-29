@@ -430,6 +430,8 @@ function renderManipulate(item) {
   function buildBindings() {
     const bindings = {}
     for (const ctrl of item.controls) {
+      // Annotation rows (headings / delimiters) bind no variable.
+      if (ctrl.kind === "heading" || ctrl.kind === "delimiter") continue
       const v = current[ctrl.name]
       if (ctrl.kind === "slider2d") {
         bindings[ctrl.name] = `{${v.x}, ${v.y}}`
@@ -595,6 +597,33 @@ function renderManipulate(item) {
   }
 
   for (const ctrl of item.controls) {
+    // Annotation rows between controls: a heading (a string or `Style[…]`
+    // Manipulate argument, e.g. "signal 1") or a `Delimiter` separator.
+    // They bind no variable and span the full row.
+    if (ctrl.kind === "heading") {
+      const heading = document.createElement("div")
+      heading.className = "manipulate-heading"
+      const runs = ctrl.labelRuns
+      if (Array.isArray(runs) && runs.length > 0) {
+        for (const run of runs) {
+          const part = document.createElement("span")
+          part.textContent = run.text
+          if (run.italic) part.style.fontStyle = "italic"
+          heading.appendChild(part)
+        }
+      } else {
+        heading.textContent = ctrl.label || ""
+      }
+      controlsEl.appendChild(heading)
+      continue
+    }
+    if (ctrl.kind === "delimiter") {
+      const hr = document.createElement("hr")
+      hr.className = "manipulate-delimiter"
+      controlsEl.appendChild(hr)
+      continue
+    }
+
     const row = document.createElement("label")
     row.className = "manipulate-control-row"
 
@@ -662,7 +691,9 @@ function renderManipulate(item) {
       // choice, else the value itself).
       const labels = ctrl.valueLabels ?? ctrl.values
       const values = ctrl.values
-      if (values.length <= SETTER_BAR_MAX_CHOICES) {
+      // `ControlType -> PopupMenu` always renders a dropdown, matching
+      // Wolfram; a small anonymous set defaults to a SetterBar.
+      if (values.length <= SETTER_BAR_MAX_CHOICES && !ctrl.popup) {
         // A small enumerated set renders as a segmented SetterBar: a row of
         // adjacent toggle buttons with the active choice highlighted, matching
         // Wolfram's SetterBar.
@@ -886,8 +917,9 @@ function renderManipulate(item) {
 
     bar.appendChild(btn)
     controlsEl.appendChild(bar)
-    // Start playing immediately (Wolfram's default AnimationRunning -> True).
-    play()
+    // Start playing immediately (Wolfram's default AnimationRunning -> True)
+    // unless the widget was built paused (`AnimationRunning -> False`).
+    if (item.animationRunning !== false) play()
   }
 
   box.appendChild(controlsEl)

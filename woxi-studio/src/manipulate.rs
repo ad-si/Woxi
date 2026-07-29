@@ -43,6 +43,9 @@ pub enum ControlState {
     /// for plain choices; the rule's right side for rule-form choices.
     value_labels: Vec<String>,
     current_index: usize,
+    /// `ControlType -> PopupMenu`: always render a dropdown, even when the
+    /// choice count is small enough for a SetterBar.
+    popup: bool,
   },
   /// A 2D slider binding its variable to a `{x, y}` pair.
   Slider2D {
@@ -65,6 +68,14 @@ pub enum ControlState {
     low: f64,
     high: f64,
   },
+  /// A static heading row between controls (a string or `Style[…]`
+  /// Manipulate argument). Binds no variable.
+  Heading {
+    label: String,
+    label_runs: Vec<LabelRun>,
+  },
+  /// A `Delimiter` argument: a horizontal separator row. Binds no variable.
+  Divider,
 }
 
 impl ControlState {
@@ -74,7 +85,13 @@ impl ControlState {
       ControlState::Discrete { name, .. } => name,
       ControlState::Slider2D { name, .. } => name,
       ControlState::IntervalSlider { name, .. } => name,
+      ControlState::Heading { .. } | ControlState::Divider => "",
     }
+  }
+
+  /// Whether this row binds a variable (annotation rows don't).
+  pub fn binds_variable(&self) -> bool {
+    !matches!(self, ControlState::Heading { .. } | ControlState::Divider)
   }
 
   /// InputForm fragment for the *current* value, for use inside a
@@ -95,6 +112,10 @@ impl ControlState {
       }
       ControlState::IntervalSlider { low, high, .. } => {
         format!("{{{}, {}}}", format_f64(*low), format_f64(*high))
+      }
+      // Annotation rows bind no variable; never substituted.
+      ControlState::Heading { .. } | ControlState::Divider => {
+        "Null".to_string()
       }
     }
   }
@@ -192,8 +213,9 @@ impl ManipulateState {
       text_output: None,
       error: None,
       animated: spec.animated,
-      // Auto-play immediately (Wolfram's default AnimationRunning -> True).
-      playing: spec.animated,
+      // Auto-play immediately (Wolfram's default AnimationRunning -> True)
+      // unless the spec was built paused (`AnimationRunning -> False`).
+      playing: spec.animated && spec.animation_running,
       appearance_none: spec.appearance_none,
       control_enabled,
       control_is_enabled,
@@ -211,6 +233,7 @@ impl ManipulateState {
     let mut b: Vec<(String, String)> = self
       .controls
       .iter()
+      .filter(|c| c.binds_variable())
       .map(|c| (c.name().to_string(), c.current_code()))
       .collect();
     b.extend(self.state.iter().cloned());
@@ -418,6 +441,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         values,
         value_labels,
         initial_index,
+        popup,
       } => ControlState::Discrete {
         name: name.clone(),
         label: label.clone(),
@@ -425,6 +449,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         values: values.clone(),
         value_labels: value_labels.clone(),
         current_index: *initial_index,
+        popup: *popup,
       },
       ManipulateControl::Slider2D {
         name,
@@ -468,6 +493,13 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
           high: *high_initial,
         }
       }
+      ManipulateControl::Heading { label, label_runs } => {
+        ControlState::Heading {
+          label: label.clone(),
+          label_runs: label_runs.clone(),
+        }
+      }
+      ManipulateControl::Divider => ControlState::Divider,
     })
     .collect()
 }

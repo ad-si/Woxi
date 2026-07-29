@@ -12181,6 +12181,15 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::FunctionCall { name, .. } if name == "Dynamic" => {
         out_args.push(spec.clone());
       }
+      // `Delimiter`, a bare string, and `Style[…]` are static annotation
+      // rows between controls (Wolfram tags them
+      // Manipulate`Dump`ThisIsNotAControl), not malformed variable specs —
+      // they pass through with no message, matching wolframscript.
+      Expr::Identifier(s) if s == "Delimiter" => out_args.push(spec.clone()),
+      Expr::String(_) => out_args.push(spec.clone()),
+      Expr::FunctionCall { name, .. } if name == "Style" => {
+        out_args.push(spec.clone());
+      }
       _ => {
         // Non-list variable specification: emit Manipulate::vsform
         // message but still return the expression unchanged, matching
@@ -12315,6 +12324,9 @@ pub enum ManipulateControl {
     initial_index: usize,
     label: String,
     label_runs: Vec<LabelRun>,
+    /// `ControlType -> PopupMenu`: always render a dropdown, even when the
+    /// choice count is small enough for a SetterBar.
+    popup: bool,
   },
   /// A 2D control (`ControlType -> Slider2D`, or a 2D range spec
   /// `{u, {xmin, ymin}, {xmax, ymax}}`). Binds its variable to a 2-vector
@@ -12341,16 +12353,29 @@ pub enum ManipulateControl {
     high_initial: f64,
     label: String,
   },
+  /// A static heading row between controls: a bare string or `Style[…]`
+  /// Manipulate argument (Wolfram's `ThisIsNotAControl` annotations, e.g.
+  /// the "signal 1" / "signal 2" captions of the oscilloscope
+  /// demonstration). Binds no variable.
+  Heading {
+    label: String,
+    label_runs: Vec<LabelRun>,
+  },
+  /// A `Delimiter` argument: a horizontal separator row between control
+  /// groups. Binds no variable.
+  Divider,
 }
 
 impl ManipulateControl {
-  /// The bound variable name for this control.
+  /// The bound variable name for this control. Annotation rows
+  /// (`Heading` / `Divider`) bind no variable and return `""`.
   pub fn name(&self) -> &str {
     match self {
       ManipulateControl::Continuous { name, .. }
       | ManipulateControl::Discrete { name, .. }
       | ManipulateControl::Slider2D { name, .. }
       | ManipulateControl::IntervalSlider { name, .. } => name,
+      ManipulateControl::Heading { .. } | ManipulateControl::Divider => "",
     }
   }
 }
@@ -12393,6 +12418,10 @@ pub struct ManipulateSpec {
   /// until the user drags a slider. Plain `Manipulate`/`Control` widgets leave
   /// this `false`.
   pub animated: bool,
+  /// Whether an animated widget starts playing. Wolfram's default is
+  /// `AnimationRunning -> True`; `AnimationRunning -> False` builds the
+  /// widget paused until the user presses play.
+  pub animation_running: bool,
   /// `Appearance -> None`: the widget shows no visible control rows (the
   /// animation just runs), matching Wolfram's control-free appearance.
   pub appearance_none: bool,
@@ -12430,18 +12459,63 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   if (name != "Manipulate" && name != "Animate") || args.len() < 2 {
     return None;
   }
-  let animated = name == "Animate";
+  let mut animated = name == "Animate";
+  let mut animation_running = true;
 
-  let body_code = crate::syntax::expr_to_input_form(&args[0]);
-  let mut controls = Vec::with_capacity(args.len() - 1);
+  // A Manipulate whose body is itself an `Animate[…]` (the Demonstrations
+  // "oscilloscope" pattern) nests an auto-playing animation inside the outer
+  // control panel. A single widget can render both: flatten the inner
+  // Animate into this spec — its body becomes the combined body and its
+  // animation variable becomes the leading (animated) control, followed by
+  // the outer controls.
+  let inner = if name == "Manipulate" {
+    match &args[0] {
+      Expr::FunctionCall { name: n, .. } if n == "Animate" => {
+        extract_manipulate_spec(&args[0])
+      }
+      _ => None,
+    }
+  } else {
+    None
+  };
+  let (
+    body_code,
+    mut controls,
+    mut state,
+    mut displays,
+    mut initialization,
+    mut control_enabled,
+  ) = match inner {
+    Some(inner) => {
+      animated = true;
+      animation_running = inner.animation_running;
+      (
+        inner.body_code,
+        inner.controls,
+        inner.state,
+        inner.displays,
+        inner.initialization,
+        inner.control_enabled,
+      )
+    }
+    None => (
+      crate::syntax::expr_to_input_form(&args[0]),
+      Vec::with_capacity(args.len() - 1),
+      Vec::new(),
+      Vec::new(),
+      None,
+      Vec::new(),
+    ),
+  };
   // `Locator` bindings are baked into the body (never rewritten by a
   // display); `ControlType -> None` bindings become live mutable state.
   let mut fixed: Vec<(String, String)> = Vec::new();
-  let mut state: Vec<(String, String)> = Vec::new();
-  let mut displays: Vec<String> = Vec::new();
-  let mut initialization: Option<String> = None;
-  let mut control_enabled: Vec<(String, String)> = Vec::new();
   let mut appearance_none = false;
+  // Compound (non-symbol) control variables such as `Subscript[signal, 1]`
+  // cannot be bound by name; each is renamed to a synthesized plain symbol,
+  // and every occurrence in the body (and related code fragments) is
+  // rewritten below via `(original InputForm, synthesized name)` pairs.
+  let mut renames: Vec<(String, String)> = Vec::new();
   for spec in &args[1..] {
     // Options such as `Initialization :> …` or `TrackedSymbols :> …`
     // are not variable specs; extract what we understand and ignore
@@ -12466,7 +12540,39 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       {
         appearance_none = true;
       }
+      // `AnimationRunning -> False` builds the widget paused.
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "AnimationRunning")
+        && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "False")
+      {
+        animation_running = false;
+      }
       continue;
+    }
+    // `Delimiter` and string / `Style[…]` arguments are static annotation
+    // rows between controls (Wolfram's `ThisIsNotAControl`), keeping their
+    // position among the control rows.
+    match spec {
+      Expr::Identifier(s) if s == "Delimiter" => {
+        controls.push(ManipulateControl::Divider);
+        continue;
+      }
+      Expr::String(_) => {
+        let label_runs = manipulate_label_runs(spec, false);
+        controls.push(ManipulateControl::Heading {
+          label: flatten_label_runs(&label_runs),
+          label_runs,
+        });
+        continue;
+      }
+      Expr::FunctionCall { name, .. } if name == "Style" => {
+        let label_runs = manipulate_label_runs(spec, false);
+        controls.push(ManipulateControl::Heading {
+          label: flatten_label_runs(&label_runs),
+          label_runs,
+        });
+        continue;
+      }
+      _ => {}
     }
     // Only list-shaped arguments are control specs. Any other trailing
     // argument (e.g. a `Dynamic[Panel[…]]` of checkboxes) is an extra
@@ -12475,23 +12581,70 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       displays.push(crate::syntax::expr_to_input_form(spec));
       continue;
     }
-    match parse_manipulate_control(spec)? {
-      ParsedControl::Visible(c, enabled) => {
+    let (spec, rename) = rewrite_compound_control_var(spec);
+    match parse_manipulate_control(&spec)? {
+      ParsedControl::Visible(mut c, enabled) => {
+        if let Some((orig, orig_form, synth)) = &rename {
+          patch_default_label(&mut c, orig, synth);
+          renames.push((orig_form.clone(), synth.clone()));
+        }
         if let Some(cond) = enabled {
           control_enabled.push((c.name().to_string(), cond));
         }
         controls.push(c);
       }
-      ParsedControl::Fixed { name, value } => fixed.push((name, value)),
-      ParsedControl::State { name, value } => state.push((name, value)),
+      ParsedControl::Fixed { name, value } => {
+        if let Some((_, orig_form, synth)) = &rename {
+          renames.push((orig_form.clone(), synth.clone()));
+        }
+        fixed.push((name, value));
+      }
+      ParsedControl::State { name, value } => {
+        if let Some((_, orig_form, synth)) = &rename {
+          renames.push((orig_form.clone(), synth.clone()));
+        }
+        state.push((name, value));
+      }
     }
   }
 
   // A Manipulate with no controls or state at all (e.g. `Manipulate[x^2,
   // badspec]`, where `badspec` is neither a spec nor an option) isn't
   // renderable as an interactive widget — fall back to the plain path.
-  if controls.is_empty() && fixed.is_empty() && state.is_empty() {
+  // Annotation rows alone don't make a widget either.
+  if !controls.iter().any(|c| !c.name().is_empty())
+    && fixed.is_empty()
+    && state.is_empty()
+  {
     return None;
+  }
+
+  // Rewrite every occurrence of a renamed compound variable in the code
+  // fragments that reference it. All fragments were printed by
+  // `expr_to_input_form`, so the original variable appears verbatim
+  // (including as a call head: `Subscript[signal, 1][x]`). Longest
+  // original first so no rename can match inside a longer one.
+  let mut body_code = body_code;
+  if !renames.is_empty() {
+    renames.sort_by_key(|(orig, _)| std::cmp::Reverse(orig.len()));
+    let rewrite = |code: &mut String| {
+      for (orig, synth) in &renames {
+        *code = code.replace(orig.as_str(), synth.as_str());
+      }
+    };
+    rewrite(&mut body_code);
+    for d in &mut displays {
+      rewrite(d);
+    }
+    if let Some(init) = &mut initialization {
+      rewrite(init);
+    }
+    for (_, cond) in &mut control_enabled {
+      rewrite(cond);
+    }
+    for (_, value) in fixed.iter_mut().chain(state.iter_mut()) {
+      rewrite(value);
+    }
   }
 
   // Bake fixed (Locator) bindings into the body so they remain in scope on
@@ -12511,8 +12664,124 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     initialization,
     control_enabled,
     animated,
+    animation_running,
     appearance_none,
   })
+}
+
+/// Synthesize a plain symbol name for a compound (non-Identifier) control
+/// variable. `Subscript[signal, 1]` → `signal$1`; any other compound head
+/// sanitizes its whole InputForm, mapping non-symbol characters to `$`.
+/// Returns `None` for heads that already are plain symbols (or head lists).
+fn synthesize_var_name(expr: &Expr) -> Option<String> {
+  if !matches!(expr, Expr::FunctionCall { .. }) {
+    return None;
+  }
+  let sanitize = |s: &str| -> String {
+    s.chars()
+      .map(|c| {
+        if c.is_alphanumeric() || c == '_' {
+          c
+        } else {
+          '$'
+        }
+      })
+      .collect::<String>()
+      .split('$')
+      .filter(|p| !p.is_empty())
+      .collect::<Vec<_>>()
+      .join("$")
+  };
+  let mut name = match expr {
+    Expr::FunctionCall { name, args } if name == "Subscript" => args
+      .iter()
+      .map(|a| sanitize(&crate::syntax::expr_to_input_form(a)))
+      .collect::<Vec<_>>()
+      .join("$"),
+    other => sanitize(&crate::syntax::expr_to_input_form(other)),
+  };
+  if name.is_empty() || name.starts_with(|c: char| c.is_ascii_digit()) {
+    name.insert(0, '$');
+  }
+  Some(name)
+}
+
+/// If the control spec's variable is a compound expression (e.g.
+/// `{{Subscript[signal, 1], SquareWave, ""}, …}`), return the spec with the
+/// variable replaced by a synthesized plain symbol, together with
+/// `(original expr, original InputForm, synthesized name)` so the caller can
+/// rewrite the body and patch the default label. Specs with plain symbol
+/// variables come back unchanged.
+fn rewrite_compound_control_var(
+  spec: &Expr,
+) -> (Expr, Option<(Expr, String, String)>) {
+  let Expr::List(items) = spec else {
+    return (spec.clone(), None);
+  };
+  let Some(head) = items.first() else {
+    return (spec.clone(), None);
+  };
+  // The variable is either the head itself or the first element of a
+  // `{var, init, lbl}` head list.
+  let var = match head {
+    Expr::List(head_items) => match head_items.first() {
+      Some(v) => v,
+      None => return (spec.clone(), None),
+    },
+    other => other,
+  };
+  let Some(synth) = synthesize_var_name(var) else {
+    return (spec.clone(), None);
+  };
+  let orig_form = crate::syntax::expr_to_input_form(var);
+  let replacement = Expr::Identifier(synth.clone());
+  let new_head = match head {
+    Expr::List(head_items) => {
+      let mut new_items: Vec<Expr> = head_items.iter().cloned().collect();
+      new_items[0] = replacement;
+      Expr::List(new_items.into())
+    }
+    _ => replacement,
+  };
+  let mut new_spec: Vec<Expr> = items.iter().cloned().collect();
+  new_spec[0] = new_head;
+  (
+    Expr::List(new_spec.into()),
+    Some((var.clone(), orig_form, synth)),
+  )
+}
+
+/// After renaming a compound control variable, a control that fell back to
+/// the default label (the bare synthesized name) gets a pretty label
+/// rendered from the original expression instead — `Subscript[signal, 1]`
+/// shows as `signal₁`, not `signal$1`.
+fn patch_default_label(
+  control: &mut ManipulateControl,
+  original: &Expr,
+  synth: &str,
+) {
+  let pretty_runs = manipulate_label_runs(original, false);
+  let pretty = flatten_label_runs(&pretty_runs);
+  match control {
+    ManipulateControl::Continuous {
+      label, label_runs, ..
+    }
+    | ManipulateControl::Discrete {
+      label, label_runs, ..
+    } => {
+      if label == synth {
+        *label = pretty;
+        *label_runs = pretty_runs;
+      }
+    }
+    ManipulateControl::Slider2D { label, .. }
+    | ManipulateControl::IntervalSlider { label, .. } => {
+      if label == synth {
+        *label = pretty;
+      }
+    }
+    ManipulateControl::Heading { .. } | ManipulateControl::Divider => {}
+  }
 }
 
 /// Attempt to extract a `ManipulateSpec` from a held `ListAnimate[{e1, …, en}]`
@@ -12559,6 +12828,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     initialization: None,
     control_enabled: Vec::new(),
     animated: true,
+    animation_running: true,
     appearance_none: false,
   })
 }
@@ -12630,6 +12900,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     initialization: None,
     control_enabled: Vec::new(),
     animated: true,
+    animation_running: true,
     appearance_none: false,
   })
 }
@@ -12699,6 +12970,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     initialization: None,
     control_enabled: Vec::new(),
     animated: false,
+    animation_running: true,
     appearance_none: false,
   })
 }
@@ -12744,6 +13016,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     initialization: None,
     control_enabled: Vec::new(),
     animated: false,
+    animation_running: true,
     appearance_none: false,
   })
 }
@@ -12789,6 +13062,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     initialization: None,
     control_enabled,
     animated: false,
+    animation_running: true,
     appearance_none: false,
   })
 }
@@ -13187,11 +13461,13 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
     ));
   }
 
-  // Discrete form: `{u, {u1, u2, …}}` or `{{u, uinit, …}, {u1, u2, …}}`.
+  // Discrete form: `{u, {u1, u2, …}}` or `{{u, uinit, …}, {u1, u2, …}}`,
+  // possibly with trailing options (`{{u, uinit, ""}, {u1, …},
+  // ControlType -> PopupMenu}`) — hence matched on the option-free `bounds`.
   // The value list may also be given as an expression that evaluates to a
   // list (e.g. `{g, PolyhedronData[All]}`), so evaluate a non-literal.
-  if items.len() == 2 {
-    let value_items: Option<Vec<Expr>> = match &items[1] {
+  if bounds.len() == 1 {
+    let value_items: Option<Vec<Expr>> = match bounds[0] {
       Expr::List(vs) => Some(vs.iter().cloned().collect()),
       other => match crate::evaluator::evaluate_expr_to_expr(other) {
         Ok(Expr::List(ref vs)) => Some(vs.iter().cloned().collect()),
@@ -13235,6 +13511,7 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
           initial_index,
           label,
           label_runs,
+          popup: control_type.as_deref() == Some("PopupMenu"),
         },
         enabled,
       ));
@@ -13242,14 +13519,31 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
   }
 
   // Continuous form: {u, umin, umax} or {u, umin, umax, du}
-  // (or with labelled head: {{u, uinit, ulbl}, umin, umax, …})
-  if items.len() < 3 {
+  // (or with labelled head: {{u, uinit, ulbl}, umin, umax, …}),
+  // possibly with trailing options (`ImageSize -> Tiny`, …) — hence
+  // matched on the option-free `bounds`.
+  if bounds.len() < 2 {
     return None;
   }
-  let min = crate::functions::math_ast::try_eval_to_f64(&items[1])?;
-  let max = crate::functions::math_ast::try_eval_to_f64(&items[2])?;
-  let step = items
-    .get(3)
+  let mut min =
+    crate::functions::math_ast::try_eval_to_f64_with_infinity(bounds[0])?;
+  let mut max =
+    crate::functions::math_ast::try_eval_to_f64_with_infinity(bounds[1])?;
+  // An infinite bound (`Animate[…, {ϕ, 0, Infinity}]` runs forever in
+  // Wolfram) cannot drive a finite slider; substitute a 2π looping window
+  // so the default sine-based demonstrations wrap seamlessly.
+  match (min.is_finite(), max.is_finite()) {
+    (true, false) => max = min + 2.0 * std::f64::consts::PI,
+    (false, true) => min = max - 2.0 * std::f64::consts::PI,
+    (false, false) => {
+      min = 0.0;
+      max = 2.0 * std::f64::consts::PI;
+    }
+    (true, true) => {}
+  }
+  let step = bounds
+    .get(2)
+    .copied()
     .and_then(crate::functions::math_ast::try_eval_to_f64);
   let initial = match explicit_initial.as_ref() {
     Some(init) => {
@@ -13307,48 +13601,50 @@ pub fn manipulate_initial_bindings(
   spec
     .controls
     .iter()
-    .map(|c| match c {
+    .filter_map(|c| match c {
+      // Annotation rows bind no variable.
+      ManipulateControl::Heading { .. } | ManipulateControl::Divider => None,
       ManipulateControl::Continuous { name, initial, .. } => {
-        (name.clone(), format_f64_input(*initial))
+        Some((name.clone(), format_f64_input(*initial)))
       }
       ManipulateControl::Discrete {
         name,
         values,
         initial_index,
         ..
-      } => (
+      } => Some((
         name.clone(),
         values
           .get(*initial_index)
           .cloned()
           .unwrap_or_else(|| "Null".to_string()),
-      ),
+      )),
       ManipulateControl::Slider2D {
         name,
         x_initial,
         y_initial,
         ..
-      } => (
+      } => Some((
         name.clone(),
         format!(
           "{{{}, {}}}",
           format_f64_input(*x_initial),
           format_f64_input(*y_initial)
         ),
-      ),
+      )),
       ManipulateControl::IntervalSlider {
         name,
         low_initial,
         high_initial,
         ..
-      } => (
+      } => Some((
         name.clone(),
         format!(
           "{{{}, {}}}",
           format_f64_input(*low_initial),
           format_f64_input(*high_initial)
         ),
-      ),
+      )),
     })
     // Mutable `ControlType -> None` state variables travel in the binding
     // set alongside the visible controls so displays can read/write them.
@@ -13732,6 +14028,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         initial_index,
         label,
         label_runs,
+        popup,
       } => {
         let value_parts: Vec<String> = values
           .iter()
@@ -13741,14 +14038,16 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           .iter()
           .map(|v| format!(r#""{}""#, json_escape_manipulate(v)))
           .collect();
+        let popup_json = if *popup { r#","popup":true"# } else { "" };
         ctrl_parts.push(format!(
-          r#"{{"kind":"discrete","name":"{}","label":"{}","labelRuns":{},"values":[{}],"valueLabels":[{}],"initialIndex":{}}}"#,
+          r#"{{"kind":"discrete","name":"{}","label":"{}","labelRuns":{},"values":[{}],"valueLabels":[{}],"initialIndex":{}{}}}"#,
           json_escape_manipulate(name),
           json_escape_manipulate(label),
           label_runs_to_json(label_runs),
           value_parts.join(","),
           label_parts.join(","),
           initial_index,
+          popup_json,
         ));
       }
       ManipulateControl::Slider2D {
@@ -13797,6 +14096,16 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           step_json,
         ));
       }
+      ManipulateControl::Heading { label, label_runs } => {
+        ctrl_parts.push(format!(
+          r#"{{"kind":"heading","label":"{}","labelRuns":{}}}"#,
+          json_escape_manipulate(label),
+          label_runs_to_json(label_runs),
+        ));
+      }
+      ManipulateControl::Divider => {
+        ctrl_parts.push(r#"{"kind":"delimiter"}"#.to_string());
+      }
     }
   }
 
@@ -13833,7 +14142,12 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
     .collect();
 
   let animated_json = if spec.animated {
-    r#","animated":true"#
+    if spec.animation_running {
+      r#","animated":true"#
+    } else {
+      // Animated but built paused (`AnimationRunning -> False`).
+      r#","animated":true,"animationRunning":false"#
+    }
   } else {
     ""
   };

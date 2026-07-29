@@ -473,6 +473,23 @@ pre.output-box {
   color: var(--text);
 }
 
+/* A static heading row between controls (a string or Style[…] Manipulate
+   argument, e.g. "signal 1"). Spans the whole control grid. */
+.manipulate-heading {
+  grid-column: 1 / -1;
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* A Delimiter argument: a horizontal separator between control groups. */
+.manipulate-delimiter {
+  grid-column: 1 / -1;
+  width: 100%;
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 0.15rem 0;
+}
+
 .manipulate-control-row input[type="range"] {
   width: 100%;
 }

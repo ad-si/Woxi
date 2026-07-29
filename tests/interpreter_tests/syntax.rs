@@ -12,6 +12,35 @@ mod errors {
   }
 }
 
+mod dollar_in_symbol_names {
+  use super::*;
+
+  #[test]
+  fn dollar_sign_inside_symbol() {
+    // Wolfram allows `$` anywhere in a symbol name, not just at the start:
+    // `a$b` is one symbol (the form Module's renamed locals and Manipulate's
+    // synthesized control variables take).
+    assert_eq!(interpret("a$b = 7; a$b * 2").unwrap(), "14");
+  }
+
+  #[test]
+  fn dollar_sign_with_trailing_digits() {
+    assert_eq!(interpret("signal$1 = 5; signal$1 + 1").unwrap(), "6");
+  }
+
+  #[test]
+  fn dollar_symbol_used_as_function() {
+    assert_eq!(interpret("f$1[x_] := x^2; f$1[3]").unwrap(), "9");
+  }
+
+  #[test]
+  fn dollar_symbol_stays_symbolic() {
+    // An undefined `a$b` is a single symbol, not `a * $b`.
+    assert_eq!(interpret("Head[a$b]").unwrap(), "Symbol");
+    assert_eq!(interpret("a$b").unwrap(), "a$b");
+  }
+}
+
 mod char_escapes {
   use super::*;
 

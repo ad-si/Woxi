@@ -6366,7 +6366,10 @@ pub(crate) fn parse_plot_range(
       let b = try_eval_to_f64(
         &evaluate_expr_to_expr(&items[1]).unwrap_or_else(|_| items[1].clone()),
       )?;
-      Some((a, b))
+      // Wolfram normalizes a reversed range: `PlotRange -> {3, -3}` plots
+      // exactly like `{-3, 3}` (verified against a FrontEnd-saved raster
+      // of the oscilloscope Demonstration, which uses the reversed form).
+      Some(if a <= b { (a, b) } else { (b, a) })
     } else {
       None
     }
