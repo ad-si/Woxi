@@ -2001,10 +2001,10 @@ mod radical_coefficient_merge {
       "InputForm[(2*Pi)^(-1/3)]"
     );
     // A free symbol is not a constant: wolframscript splits those radicals
-    // instead, so the merge leaves them alone.
+    // instead of merging the coefficient in.
     assert_eq!(
       interpret("InputForm[Sqrt[2*x]/2]").unwrap(),
-      "InputForm[Sqrt[2*x]/2]"
+      "InputForm[Sqrt[x]/Sqrt[2]]"
     );
     assert_eq!(
       interpret("InputForm[2/Sqrt[3]]").unwrap(),
@@ -2026,6 +2026,52 @@ mod radical_coefficient_merge {
       interpret("InputForm[1/Sqrt[3]]").unwrap(),
       "InputForm[1/Sqrt[3]]"
     );
+  }
+
+  // wolframscript pulls a positive numeric factor out of a product radicand
+  // as its own radical, and only when the rest is NOT numeric.
+  #[test]
+  fn positive_numeric_factor_splits_off_the_radical() {
+    for (input, expected) in [
+      ("Sqrt[2*x]", "Sqrt[2]*Sqrt[x]"),
+      ("Sqrt[8*x]", "2*Sqrt[2]*Sqrt[x]"),
+      ("Sqrt[12*x]", "2*Sqrt[3]*Sqrt[x]"),
+      ("Sqrt[4*x]", "2*Sqrt[x]"),
+      ("Sqrt[2*x*y]", "Sqrt[2]*Sqrt[x*y]"),
+      ("Sqrt[x/2]", "Sqrt[x]/Sqrt[2]"),
+      ("Sqrt[2*x/3]", "Sqrt[2/3]*Sqrt[x]"),
+      // Named constants stay under the numeric radical.
+      ("Sqrt[2*Pi*x]", "Sqrt[2*Pi]*Sqrt[x]"),
+      ("Sqrt[Pi*x]", "Sqrt[Pi]*Sqrt[x]"),
+      ("Sqrt[GoldenRatio*x]", "Sqrt[GoldenRatio]*Sqrt[x]"),
+      // The sign and the imaginary unit stay with the symbolic part.
+      ("Sqrt[-2*x]", "Sqrt[2]*Sqrt[-x]"),
+      ("Sqrt[-x/3]", "Sqrt[-x]/Sqrt[3]"),
+      ("Sqrt[-2*x/3]", "Sqrt[2/3]*Sqrt[-x]"),
+      ("Sqrt[2*I*x]", "Sqrt[2]*Sqrt[I*x]"),
+      // A factor that already carries a fractional exponent collapses on its
+      // own rather than joining the other radical.
+      ("Sqrt[2*Sqrt[3]*x]", "Sqrt[2]*3^(1/4)*Sqrt[x]"),
+      ("Sqrt[2*Sqrt[3]]", "Sqrt[2]*3^(1/4)"),
+      // Machine reals evaluate instead of staying under a radical.
+      ("Sqrt[2.*x]", "1.4142135623730951*Sqrt[x]"),
+      // Nothing to split: the whole radicand is numeric, or none of it is.
+      ("Sqrt[2*Pi]", "Sqrt[2*Pi]"),
+      ("Sqrt[-x]", "Sqrt[-x]"),
+      ("Sqrt[2*(1 + Sqrt[2])]", "Sqrt[2*(1 + Sqrt[2])]"),
+      // A numeric factor only splits off when it is a positive real.
+      ("Sqrt[(1 - Sqrt[2])*x]", "Sqrt[(1 - Sqrt[2])*x]"),
+      ("Sqrt[(2 + I)*x]", "Sqrt[(2 + I)*x]"),
+      ("Sqrt[(1 + Sqrt[2])*x]", "Sqrt[1 + Sqrt[2]]*Sqrt[x]"),
+      ("Sqrt[Log[2]*x]", "Sqrt[x]*Sqrt[Log[2]]"),
+    ] {
+      assert_eq!(
+        interpret(&format!("InputForm[{}]", input)).unwrap(),
+        format!("InputForm[{}]", expected),
+        "for {}",
+        input
+      );
+    }
   }
 
   // Numerator/Denominator split a fractional power of a rational into its

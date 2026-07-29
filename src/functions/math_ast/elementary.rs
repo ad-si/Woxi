@@ -1128,18 +1128,31 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(make_sqrt(args[0].clone()))
     }
-    // Sqrt of a product: Sqrt[n * expr^2 * ...] → simplify factors
+    // Sqrt of a product: Sqrt[n * expr^2 * ...] → simplify factors.
+    // Products reach here in either shape — `Times[…]` and the binary-operator
+    // tree — and `collect_multiplicative_factors` flattens both, so the guard
+    // has to admit both (it used to require the `Times[…]` head, which left
+    // `Sqrt[-x/3]` unsimplified).
     Expr::BinaryOp {
       op: BinaryOperator::Times,
       ..
     }
     | Expr::FunctionCall { name: _, args: _ }
-      if matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Times") =>
+      if matches!(
+        &args[0],
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          ..
+        }
+      ) || matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Times") =>
     {
       let factors =
         crate::functions::polynomial_ast::collect_multiplicative_factors(
           &args[0],
         );
+      if let Some(split) = split_numeric_radicand(&factors) {
+        return split;
+      }
       // Separate into: integer part, squared symbolic factors, remainder
       let mut int_product: i128 = 1;
       // The denominator of a rational factor, whose square part comes out of
@@ -1305,6 +1318,164 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(make_sqrt(args[0].clone()))
     }
   }
+}
+
+/// Whether every leaf of `e` is a number or a named numeric constant, so that
+/// `N` can reduce the whole expression to a value.
+///
+/// Deliberately local and more permissive than `NumericQ`, which does not yet
+/// treat a special function of numeric arguments as numeric.
+fn has_only_numeric_leaves(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(_, _)
+    | Expr::Constant(_) => true,
+    Expr::Identifier(name) => {
+      name == "I" || crate::functions::math_ast::is_pos_real_const(name)
+    }
+    Expr::FunctionCall { args, .. } => args.iter().all(has_only_numeric_leaves),
+    Expr::BinaryOp { left, right, .. } => {
+      has_only_numeric_leaves(left) && has_only_numeric_leaves(right)
+    }
+    Expr::UnaryOp { operand, .. } => has_only_numeric_leaves(operand),
+    _ => false,
+  }
+}
+
+/// The real value of a fully numeric factor, when it reduces to one.
+///
+/// Splitting a radicand is only valid over a positive real factor, and the
+/// sign of something like `1 - Sqrt[2]` — or of a special-function value —
+/// can only be settled numerically, which is what wolframscript does before
+/// it splits.
+fn numeric_real_value(e: &Expr) -> Option<f64> {
+  if !has_only_numeric_leaves(e) {
+    return None;
+  }
+  let n =
+    crate::evaluator::evaluate_function_call_ast("N", std::slice::from_ref(e))
+      .ok()?;
+  match n {
+    Expr::Real(r) if r.is_finite() => Some(r),
+    Expr::Integer(i) => Some(i as f64),
+    _ => None,
+  }
+}
+
+/// A radicand factor that wolframscript keeps under its own radical when it
+/// splits a product: anything that reduces to a positive real — a positive
+/// rational, a named constant, a machine real, a sum of radicals, a numeric
+/// special-function value — and products/powers of those.
+fn is_pos_numeric_factor(e: &Expr) -> bool {
+  matches!(e, Expr::Real(r) if *r > 0.0)
+    || crate::functions::math_ast::is_pos_numeric(e)
+    || numeric_real_value(e).is_some_and(|v| v > 0.0)
+}
+
+/// The magnitude of a negative numeric factor, if `f` is one.
+///
+/// wolframscript leaves the sign with the symbolic part of a split radicand —
+/// `Sqrt[-2 x]` is `Sqrt[2]*Sqrt[-x]`, not `Sqrt[-2]*Sqrt[x]` — so the caller
+/// moves the magnitude to the numeric side and keeps a `-1` on the other.
+fn negative_numeric_magnitude(f: &Expr) -> Option<Expr> {
+  match f {
+    Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-n)),
+    Expr::Real(r) if *r < 0.0 => Some(Expr::Real(-r)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(n), Expr::Integer(d)) if *n < 0 && *d > 0 => {
+          Some(make_rational(-n, *d))
+        }
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Whether a positive numeric factor already carries a fractional exponent,
+/// so that taking its square root halves that exponent (`Sqrt[Sqrt[3]]` is
+/// `3^(1/4)`) instead of leaving a radical behind.
+fn has_fractional_exponent(e: &Expr) -> bool {
+  let exp = match e {
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      return true;
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      &args[1]
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      right,
+      ..
+    } => right.as_ref(),
+    _ => return false,
+  };
+  matches!(exp, Expr::FunctionCall { name, .. } if name == "Rational")
+}
+
+/// `Sqrt[num * sym]` → `Sqrt[num] * Sqrt[sym]`, splitting a product radicand
+/// into the groups wolframscript keeps under separate radicals:
+///
+/// - `Sqrt[2 x]` → `Sqrt[2] Sqrt[x]`, `Sqrt[12 x]` → `2 Sqrt[3] Sqrt[x]`
+/// - `Sqrt[2 Pi x]` → `Sqrt[2 Pi] Sqrt[x]` (named constants stay numeric)
+/// - `Sqrt[-2 x]` → `Sqrt[2] Sqrt[-x]`, `Sqrt[2 I x]` → `Sqrt[2] Sqrt[I x]`
+/// - `Sqrt[x/2]` → `Sqrt[x]/Sqrt[2]`
+/// - `Sqrt[2 Sqrt[3] x]` → `Sqrt[2] 3^(1/4) Sqrt[x]`
+///
+/// Returns `None` when everything lands in one group, so a purely numeric
+/// radicand (`Sqrt[2 Pi]`) or a purely symbolic one is left to the
+/// square-factor extraction that follows.
+fn split_numeric_radicand(
+  factors: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  // Rationals, named constants and machine reals — the group that stays
+  // together under one radical.
+  let mut plain: Vec<Expr> = Vec::new();
+  // Numeric factors that already carry a fractional exponent; each one
+  // collapses on its own rather than joining a radical.
+  let mut radicals: Vec<Expr> = Vec::new();
+  // Everything else, including any sign and the imaginary unit.
+  let mut rest: Vec<Expr> = Vec::new();
+  for f in factors {
+    if is_pos_numeric_factor(f) {
+      if has_fractional_exponent(f) {
+        radicals.push(f.clone());
+      } else {
+        plain.push(f.clone());
+      }
+    } else if let Some(mag) = negative_numeric_magnitude(f) {
+      if !matches!(mag, Expr::Integer(1)) {
+        plain.push(mag);
+      }
+      rest.push(Expr::Integer(-1));
+    } else {
+      rest.push(f.clone());
+    }
+  }
+  let groups = usize::from(!plain.is_empty())
+    + radicals.len()
+    + usize::from(!rest.is_empty());
+  if groups < 2 {
+    return None;
+  }
+  Some((|| {
+    let mut parts: Vec<Expr> = Vec::new();
+    for group in [plain, rest] {
+      if !group.is_empty() {
+        let product = crate::functions::polynomial_ast::build_product(group);
+        parts.push(sqrt_ast(&[product])?);
+      }
+    }
+    for r in radicals {
+      parts.push(sqrt_ast(&[r])?);
+    }
+    times_ast(&parts)
+  })())
 }
 
 /// Extract the integer coefficient from a Plus term.

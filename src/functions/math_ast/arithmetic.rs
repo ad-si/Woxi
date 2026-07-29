@@ -6135,7 +6135,7 @@ fn combine_reciprocal_trig(
 
 /// Combine like bases in a list of symbolic factors: x^a * x^b → x^(a+b)
 /// The standard Wolfram symbols that denote a positive real constant.
-fn is_pos_real_const(name: &str) -> bool {
+pub fn is_pos_real_const(name: &str) -> bool {
   matches!(
     name,
     "Pi"
