@@ -8295,6 +8295,133 @@ mod companion_matrix {
       "-2 - 3*x - x^2 - x^3"
     );
   }
+
+  // CompanionMatrix[poly, var] reads the coefficients off an explicit
+  // polynomial, dividing through by the leading one so it is monic. A degree-n
+  // polynomial gives an n x n matrix.
+  #[test]
+  fn explicit_polynomial() {
+    assert_eq!(
+      interpret("CompanionMatrix[5 + 2*x + 3*x^2 + x^3, x]").unwrap(),
+      "{{0, 0, -5}, {1, 0, -2}, {0, 1, -3}}"
+    );
+    assert_eq!(
+      interpret("CompanionMatrix[x^2 - 1, x]").unwrap(),
+      "{{0, 1}, {1, 0}}"
+    );
+    // Non-monic input is monicized.
+    assert_eq!(
+      interpret("CompanionMatrix[2*x^2 + 3*x + 1, x]").unwrap(),
+      "{{0, -1/2}, {1, -3/2}}"
+    );
+    assert_eq!(
+      interpret("CompanionMatrix[3*x^3 + 6, x]").unwrap(),
+      "{{0, 0, -2}, {1, 0, 0}, {0, 1, 0}}"
+    );
+    // Coefficients may involve other symbols.
+    assert_eq!(
+      interpret("CompanionMatrix[x^2 + y*x + 1, x]").unwrap(),
+      "{{0, -1}, {1, -y}}"
+    );
+    // Degree 1 gives the 1 x 1 matrix.
+    assert_eq!(interpret("CompanionMatrix[x, x]").unwrap(), "{{0}}");
+    // A two-element list stays a coefficient vector, so the {poly, var} shape
+    // is read as the coefficients it literally is.
+    assert_eq!(
+      interpret("CompanionMatrix[{x^2 + y, x}]").unwrap(),
+      "{{0, -x^2 - y}, {1, -x}}"
+    );
+  }
+
+  // The placement argument says where the negated coefficients go. Right is
+  // the default; Bottom is its transpose, Left is Right turned through half a
+  // turn, and Top is the transpose of Left.
+  #[test]
+  fn coefficient_placement() {
+    assert_eq!(
+      interpret("CompanionMatrix[{2, 4, 6}, Right]").unwrap(),
+      "{{0, 0, -2}, {1, 0, -4}, {0, 1, -6}}"
+    );
+    assert_eq!(
+      interpret("CompanionMatrix[{2, 4, 6}]").unwrap(),
+      "{{0, 0, -2}, {1, 0, -4}, {0, 1, -6}}"
+    );
+    assert_eq!(
+      interpret("CompanionMatrix[{2, 4, 6}, Bottom]").unwrap(),
+      "{{0, 1, 0}, {0, 0, 1}, {-2, -4, -6}}"
+    );
+    assert_eq!(
+      interpret("CompanionMatrix[{2, 4, 6}, Left]").unwrap(),
+      "{{-6, 1, 0}, {-4, 0, 1}, {-2, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("CompanionMatrix[{2, 4, 6}, Top]").unwrap(),
+      "{{-6, -4, -2}, {1, 0, 0}, {0, 1, 0}}"
+    );
+    // A 1 x 1 matrix looks the same whichever way it is oriented.
+    assert_eq!(interpret("CompanionMatrix[{5}, Top]").unwrap(), "{{-5}}");
+    assert_eq!(interpret("CompanionMatrix[{5}, Left]").unwrap(), "{{-5}}");
+    // The polynomial form takes a placement as its third argument.
+    assert_eq!(
+      interpret("CompanionMatrix[x^3 + 2*x^2 + 3*x + 4, x, Left]").unwrap(),
+      "{{-2, 1, 0}, {-3, 0, 1}, {-4, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("CompanionMatrix[x^4 - 1, x, Bottom]").unwrap(),
+      "{{0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}, {1, 0, 0, 0}}"
+    );
+  }
+
+  // An empty coefficient vector gives a single empty row.
+  #[test]
+  fn empty_coefficient_vector() {
+    assert_eq!(interpret("CompanionMatrix[{}]").unwrap(), "{{}}");
+    assert_eq!(interpret("CompanionMatrix[{}, Left]").unwrap(), "{{}}");
+  }
+
+  #[test]
+  fn invalid_arguments_emit_messages() {
+    use woxi::interpret_with_stdout;
+    // A placement that is not one of the four sides.
+    let r =
+      interpret_with_stdout("CompanionMatrix[{5, 2, 3, 1}, foo]").unwrap();
+    assert_eq!(r.result, "CompanionMatrix[{5, 2, 3, 1}, foo]");
+    assert!(
+      r.warnings.iter().any(|w| w
+        == "CompanionMatrix::plspecc: Specification foo for placement of \
+            coefficients must be Top, Bottom, Left or Right."),
+      "expected plspecc message, got {:?}",
+      r.warnings
+    );
+    // With a coefficient vector the second argument is a placement, never a
+    // variable.
+    let r = interpret_with_stdout("CompanionMatrix[{5, 2, 3, 1}, x]").unwrap();
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("CompanionMatrix::plspecc: Specification x")),
+      "expected plspecc message, got {:?}",
+      r.warnings
+    );
+    // Neither a constant nor a non-polynomial has a companion matrix.
+    let r = interpret_with_stdout("CompanionMatrix[5, x]").unwrap();
+    assert_eq!(r.result, "CompanionMatrix[5, x]");
+    assert!(
+      r.warnings.iter().any(|w| w
+        == "CompanionMatrix::clorpoly: Argument 5 is neither a non-empty list \
+            of coefficients nor an explicit polynomial in a given variable."),
+      "expected clorpoly message, got {:?}",
+      r.warnings
+    );
+    let r = interpret_with_stdout("CompanionMatrix[Sin[x], x]").unwrap();
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("CompanionMatrix::clorpoly: Argument Sin[x]")),
+      "expected clorpoly message, got {:?}",
+      r.warnings
+    );
+  }
 }
 
 mod roll_pitch_yaw_matrix_tests {

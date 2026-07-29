@@ -421,7 +421,7 @@ pub fn dispatch_linear_algebra_functions(
         crate::functions::linear_algebra_ast::vandermonde_matrix_ast(args),
       );
     }
-    "CompanionMatrix" if args.len() == 1 => {
+    "CompanionMatrix" if (1..=3).contains(&args.len()) => {
       return Some(crate::functions::linear_algebra_ast::companion_matrix_ast(
         args,
       ));

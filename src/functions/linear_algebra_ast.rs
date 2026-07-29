@@ -1856,36 +1856,161 @@ pub fn permutation_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(matrix.into()))
 }
 
-/// CompanionMatrix[{c0, c1, ..., c_{n-1}}] - the n x n companion matrix of the
-/// monic polynomial x^n + c_{n-1} x^{n-1} + ... + c_1 x + c_0: 1's on the
-/// subdiagonal and the negated coefficients (-c_i) down the last column. (Only
-/// the coefficient-list form is supported; the explicit-polynomial form errors
-/// in wolframscript, so it stays unevaluated here too.)
-pub fn companion_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Ok(unevaluated("CompanionMatrix", args));
-  if args.len() != 1 {
-    return unevaluated();
+/// Where a companion matrix keeps its negated coefficients.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CoefficientPlacement {
+  /// First column, coefficients reversed; ones on the superdiagonal.
+  Left,
+  /// Last column (the default); ones on the subdiagonal.
+  Right,
+  /// First row, coefficients reversed; ones on the subdiagonal.
+  Top,
+  /// Last row; ones on the superdiagonal.
+  Bottom,
+}
+
+impl CoefficientPlacement {
+  fn from_expr(e: &Expr) -> Option<Self> {
+    match e {
+      Expr::Identifier(name) => match name.as_str() {
+        "Left" => Some(CoefficientPlacement::Left),
+        "Right" => Some(CoefficientPlacement::Right),
+        "Top" => Some(CoefficientPlacement::Top),
+        "Bottom" => Some(CoefficientPlacement::Bottom),
+        _ => None,
+      },
+      _ => None,
+    }
   }
-  let coeffs: Vec<Expr> = match &args[0] {
-    Expr::List(c) if !c.is_empty() => c.iter().cloned().collect(),
-    _ => return unevaluated(),
+}
+
+/// CompanionMatrix[cvec] / CompanionMatrix[cvec, dir] /
+/// CompanionMatrix[poly, var] / CompanionMatrix[poly, var, dir]
+///
+/// The n x n companion matrix of the monic polynomial
+/// `x^n + c_{n-1} x^{n-1} + … + c_1 x + c_0`, whose coefficients come either
+/// from the vector `{c0, …, c_{n-1}}` or from an explicit polynomial in `var`,
+/// which is divided through by its leading coefficient first (so
+/// `CompanionMatrix[2 x^2 + 3 x + 1, x]` is `{{0, -1/2}, {1, -3/2}}`).
+///
+/// `dir` says where the negated coefficients sit, the ones filling the
+/// diagonal beside them. `Right` — the default — runs `-c` down the last
+/// column with ones on the subdiagonal; `Bottom` is its transpose, `-c` along
+/// the last row with ones on the superdiagonal; `Left` is `Right` turned
+/// through half a turn, putting the reversed coefficients in the first column;
+/// and `Top` is the transpose of `Left`.
+pub fn companion_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let call = || Ok(unevaluated("CompanionMatrix", args));
+  let render =
+    |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
+  // A list first argument is a coefficient vector, so the only other argument
+  // it takes is the placement; anything else is an explicit polynomial whose
+  // variable follows it.
+  let (variable, placement_arg) = match (&args[0], args.len()) {
+    (Expr::List(_), 1) => (None, None),
+    (Expr::List(_), 2) => (None, Some(&args[1])),
+    (Expr::List(_), _) => return call(),
+    (_, 2) => (Some(&args[1]), None),
+    (_, 3) => (Some(&args[1]), Some(&args[2])),
+    _ => return call(),
   };
+  let placement = match placement_arg {
+    None => CoefficientPlacement::Right,
+    Some(e) => match CoefficientPlacement::from_expr(e) {
+      Some(p) => p,
+      None => {
+        crate::emit_message(&format!(
+          "CompanionMatrix::plspecc: Specification {} for placement of \
+           coefficients must be Top, Bottom, Left or Right.",
+          render(e)
+        ));
+        return call();
+      }
+    },
+  };
+
+  let coeffs: Vec<Expr> = match variable {
+    None => match &args[0] {
+      Expr::List(c) => c.to_vec(),
+      _ => return call(),
+    },
+    Some(var) => {
+      let clorpoly = || {
+        crate::emit_message(&format!(
+          "CompanionMatrix::clorpoly: Argument {} is neither a non-empty list \
+           of coefficients nor an explicit polynomial in a given variable.",
+          render(&args[0])
+        ));
+      };
+      let list = crate::functions::polynomial_ast::coefficient_list_ast(&[
+        args[0].clone(),
+        var.clone(),
+      ])?;
+      // A non-polynomial leaves CoefficientList unevaluated, and a constant
+      // gives a single coefficient — neither has a companion matrix.
+      let Expr::List(c) = &list else {
+        clorpoly();
+        return call();
+      };
+      if c.len() < 2 {
+        clorpoly();
+        return call();
+      }
+      // Divide through by the leading coefficient to make the polynomial
+      // monic, then drop it: a degree-n polynomial has an n x n matrix.
+      let lead = c.last().expect("checked non-empty");
+      let mut monic = Vec::with_capacity(c.len() - 1);
+      for coeff in &c[..c.len() - 1] {
+        monic.push(evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "Divide".to_string(),
+          args: vec![coeff.clone(), lead.clone()].into(),
+        })?);
+      }
+      monic
+    }
+  };
+
+  // An empty coefficient vector gives the single empty row wolframscript
+  // reports for `CompanionMatrix[{}]`, not an empty matrix.
   let n = coeffs.len();
-  let mut matrix = Vec::with_capacity(n);
+  if n == 0 {
+    return Ok(Expr::List(vec![Expr::List(vec![].into())].into()));
+  }
+  // Build the Right form, then derive the others from it.
+  let mut matrix: Vec<Vec<Expr>> = Vec::with_capacity(n);
   for (i, c) in coeffs.iter().enumerate() {
     let mut row = vec![Expr::Integer(0); n];
     if i >= 1 {
       row[i - 1] = Expr::Integer(1); // subdiagonal
     }
-    // Last column entry is -c_i.
-    row[n - 1] =
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), c.clone()].into(),
-      })?;
-    matrix.push(Expr::List(row.into()));
+    row[n - 1] = evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Integer(-1), c.clone()].into(),
+    })?;
+    matrix.push(row);
   }
-  Ok(Expr::List(matrix.into()))
+  if matches!(
+    placement,
+    CoefficientPlacement::Left | CoefficientPlacement::Top
+  ) {
+    // Half a turn: reverse the rows and each row.
+    matrix.reverse();
+    for row in &mut matrix {
+      row.reverse();
+    }
+  }
+  if matches!(
+    placement,
+    CoefficientPlacement::Top | CoefficientPlacement::Bottom
+  ) {
+    matrix = transpose_matrix(&matrix);
+  }
+  Ok(Expr::List(
+    matrix
+      .into_iter()
+      .map(|row| Expr::List(row.into()))
+      .collect(),
+  ))
 }
 
 /// VandermondeMatrix[{x1, ..., xn}] - the n x n Vandermonde matrix with entry

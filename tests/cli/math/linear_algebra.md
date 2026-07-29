@@ -26,6 +26,7 @@ normalised to `##` in this file.
 - [`BoxMatrix`](linear_algebra/BoxMatrix.md)
 - [`CauchyMatrix`](linear_algebra/CauchyMatrix.md)
 - [`CellularAutomaton`](linear_algebra/CellularAutomaton.md)
+- [`CompanionMatrix`](linear_algebra/CompanionMatrix.md)
 - [`SubstitutionSystem`](linear_algebra/SubstitutionSystem.md)
 - [`ConjugateTranspose`](linear_algebra/ConjugateTranspose.md)
 - [`Coordinates`](linear_algebra/Coordinates.md)

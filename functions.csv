@@ -6129,7 +6129,7 @@ UpperTriangularMatrix,Structured upper-triangular matrix wrapper as returned by 
 UseEmbeddedLibrary,,,,12.3,
 ValenceErrorHandling,,,,12.0,
 VandermondeMatrix,Vandermonde matrix with entry (i j) equal to the i-th point raised to power j-1,✅,pure,13.2,
-CompanionMatrix,Companion matrix of a monic polynomial given by its coefficient list,✅,pure,8.0,
+CompanionMatrix,Companion matrix of a monic polynomial given by its coefficient vector or as an explicit polynomial in a variable — oriented by an optional Left Right Top or Bottom placement,✅,pure,8.0,
 VarianceGammaPointProcess,,🚫,,12.2,
 VariogramFunction,,,,13.0,
 VariogramModel,,,,13.0,
