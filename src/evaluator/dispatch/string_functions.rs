@@ -470,50 +470,8 @@ pub fn dispatch_string_functions(
         return Some(Ok(Expr::List(items.into())));
       }
     }
-    "StringReplaceList" if args.len() == 2 => {
-      // A list of strings gives one result list per string.
-      if let Expr::List(items) = &args[0] {
-        let per_string: Result<Vec<Expr>, InterpreterError> = items
-          .iter()
-          .map(|item| {
-            match dispatch_string_functions(
-              name,
-              &[item.clone(), args[1].clone()],
-            ) {
-              Some(r) => r,
-              None => Ok(unevaluated(name, &[item.clone(), args[1].clone()])),
-            }
-          })
-          .collect();
-        return Some(per_string.map(|v| Expr::List(v.into())));
-      }
-      // StringReplaceList["string", "pattern" -> "replacement"]
-      // Returns list of strings, each with one occurrence replaced
-      if let Expr::String(s) = &args[0]
-        && let Expr::Rule {
-          pattern,
-          replacement,
-        } = &args[1]
-        && let (Expr::String(pat), Expr::String(rep)) =
-          (pattern.as_ref(), replacement.as_ref())
-      {
-        let mut results = Vec::new();
-        let pat_len = pat.len();
-        if pat_len > 0 {
-          let s_bytes = s.as_bytes();
-          let pat_bytes = pat.as_bytes();
-          for i in 0..=s.len().saturating_sub(pat_len) {
-            if &s_bytes[i..i + pat_len] == pat_bytes {
-              let mut result = String::new();
-              result.push_str(&s[..i]);
-              result.push_str(rep);
-              result.push_str(&s[i + pat_len..]);
-              results.push(Expr::String(result));
-            }
-          }
-        }
-        return Some(Ok(Expr::List(results.into())));
-      }
+    "StringReplaceList" if args.len() == 2 || args.len() == 3 => {
+      return Some(crate::functions::string_ast::string_replace_list_ast(args));
     }
     // WordCount["string"] — count words in a string
     "WordCount" if args.len() == 1 => {

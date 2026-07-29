@@ -1350,7 +1350,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "StringRepeat" => Some((2, 3)),
     "StringReplace" => Some((1, 4)),
     "StringReplacePart" => Some((3, 3)),
-    "StringReplaceList" => Some((2, 2)),
+    "StringReplaceList" => Some((2, 3)),
     "StringReverse" => Some((1, 1)),
     "StringRiffle" => Some((1, usize::MAX)),
     "StringRotateLeft" => Some((1, 2)),

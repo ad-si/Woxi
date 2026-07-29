@@ -1895,21 +1895,126 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Ok(segments)
   }
 
-  let segments = scan_replace(&s, &rules, max_replacements)?;
-  // An all-string result (the common case) coalesces into a single String;
-  // a result containing any non-string segment is returned as a
-  // StringExpression, matching wolframscript.
-  if segments.iter().any(|e| !matches!(e, Expr::String(_))) {
-    Ok(Expr::FunctionCall {
-      name: "StringExpression".to_string(),
-      args: segments.into(),
-    })
-  } else {
-    match segments.into_iter().next() {
-      Some(single) => Ok(single),
-      None => Ok(Expr::String(String::new())),
+  Ok(join_replacement_segments(scan_replace(
+    &s,
+    &rules,
+    max_replacements,
+  )?))
+}
+
+/// StringReplaceList[s, rules] / StringReplaceList[s, rules, n]
+///
+/// One result per *individual* match: the whole subject with just that single
+/// match replaced. The matches are enumerated exactly the way `Overlaps -> All`
+/// reports them — every span at every start position from left to right, with
+/// the rules tried in their written order within one start position — so a
+/// variable-length pattern contributes one result per length it can take:
+/// `StringReplaceList["abcd", __ -> "X"]` is
+/// `{X, Xd, Xcd, Xbcd, aX, aXd, aXcd, abX, abXd, abcX}`. `n` keeps only the
+/// first `n` results.
+pub fn string_replace_list_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let call = || unevaluated("StringReplaceList", args);
+
+  // The optional count limit. `Infinity` means unlimited; an option rule (or a
+  // list of them) in the third slot is not a count. Anything else is refused.
+  let mut max_results = usize::MAX;
+  match args.get(2) {
+    None => {}
+    Some(Expr::Integer(n)) if *n >= 0 => max_results = *n as usize,
+    Some(Expr::Identifier(id)) if id == "Infinity" => {}
+    Some(Expr::Rule { .. } | Expr::RuleDelayed { .. } | Expr::List(_)) => {}
+    Some(_) => {
+      crate::emit_message(&format!(
+        "StringReplaceList::innf: Non-negative integer or Infinity expected \
+         at position 3 in {}.",
+        crate::syntax::format_expr(&call(), crate::syntax::ExprForm::Output)
+      ));
+      return Ok(call());
     }
   }
+
+  // A list of strings gives one result list per string.
+  if let Expr::List(items) = &args[0] {
+    let mut per_string = Vec::with_capacity(items.len());
+    for item in items {
+      let mut inner = args.to_vec();
+      inner[0] = item.clone();
+      per_string.push(string_replace_list_ast(&inner)?);
+    }
+    return Ok(Expr::List(per_string.into()));
+  }
+  let s = expr_to_str(&args[0])?;
+
+  // An empty rule list leaves the subject alone.
+  if matches!(&args[1], Expr::List(items) if items.is_empty()) {
+    return Ok(args[0].clone());
+  }
+  // Every rule has to be a replacement rule. wolframscript names the *last*
+  // offending element in the message and leaves the call unevaluated.
+  let is_rule =
+    |e: &Expr| matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. });
+  let offender = match &args[1] {
+    Expr::List(items) => items.iter().rev().find(|i| !is_rule(i)),
+    other if !is_rule(other) => Some(other),
+    _ => None,
+  };
+  if let Some(offender) = offender {
+    crate::emit_message(&format!(
+      "StringReplaceList::srep: {} is not a valid string replacement rule.",
+      crate::syntax::format_expr(offender, crate::syntax::ExprForm::Output)
+    ));
+    return Ok(call());
+  }
+  let Some(rules) = extract_cases_rules(&args[1]) else {
+    return Ok(call());
+  };
+
+  let ignore_case = has_ignore_case_option(args);
+  let mut results: Vec<Expr> = Vec::with_capacity(max_results.min(16));
+  for m in all_rule_matches(&s, &rules, ignore_case, max_results)? {
+    let mut substituted = substitute_captures(m.rhs, &m.caps);
+    if m.expand_dollar {
+      substituted = expand_dollar_in_expr(&substituted, &m.caps);
+    }
+    let replacement = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+    // The result is the subject with only this match replaced. Empty flanks
+    // are dropped so a non-string replacement gives StringExpression[5, "bc"]
+    // rather than StringExpression["", 5, "bc"].
+    let (bs, be) = m.span;
+    let segments: Vec<Expr> = [
+      Expr::String(s[..bs].to_string()),
+      replacement,
+      Expr::String(s[be..].to_string()),
+    ]
+    .into_iter()
+    .filter(|seg| !matches!(seg, Expr::String(t) if t.is_empty()))
+    .collect();
+    results.push(join_replacement_segments(segments));
+  }
+  Ok(Expr::List(results.into()))
+}
+
+/// Coalesce the ordered segments a replacement produced into its result. An
+/// all-string result (the common case) joins into a single String; a result
+/// containing any non-string segment stays a `StringExpression`, matching
+/// wolframscript's `StringReplace["abc", "b" -> 5]` =
+/// `StringExpression["a", 5, "c"]`.
+fn join_replacement_segments(segments: Vec<Expr>) -> Expr {
+  if segments.iter().any(|e| !matches!(e, Expr::String(_))) {
+    return Expr::FunctionCall {
+      name: "StringExpression".to_string(),
+      args: segments.into(),
+    };
+  }
+  let mut joined = String::new();
+  for seg in &segments {
+    if let Expr::String(s) = seg {
+      joined.push_str(s);
+    }
+  }
+  Expr::String(joined)
 }
 
 /// ToUpperCase[s] - converts string to uppercase
@@ -3058,6 +3163,70 @@ fn all_overlap_spans(
   Ok(spans)
 }
 
+/// One match of one rule, as `Overlaps -> All` enumerates them.
+struct RuleMatch<'a> {
+  /// Byte range of the matched substring within the subject.
+  span: (usize, usize),
+  /// Captures of the match, for substituting the rule's right-hand side.
+  caps: regex::Captures<'a>,
+  /// The rule's right-hand side.
+  rhs: &'a Expr,
+  /// Whether `$0`/`$1`/… in the right-hand side expand (`RegularExpression`).
+  expand_dollar: bool,
+}
+
+/// Every match of every rule in `rules`, in the order `Overlaps -> All`
+/// reports them: grouped by start position from left to right, with the rules
+/// tried in their written order within one start position. At most `limit`
+/// matches are returned.
+///
+/// `rules` holds the `(pattern regex, back-reference constraints, right-hand
+/// side, expand `$n`)` tuples that `extract_cases_rules` produces.
+fn all_rule_matches<'a>(
+  s: &'a str,
+  rules: &'a [(String, Vec<(String, String)>, Expr, bool)],
+  ignore_case: bool,
+  limit: usize,
+) -> Result<Vec<RuleMatch<'a>>, InterpreterError> {
+  // Per rule: the both-ends-anchored probe and the spans it matches.
+  let mut per_rule = Vec::with_capacity(rules.len());
+  for (pat, constraints, rhs, expand_dollar) in rules {
+    let pat = if ignore_case {
+      format!("(?i){}", pat)
+    } else {
+      pat.clone()
+    };
+    per_rule.push((
+      anchored_regex(&pat)?,
+      all_overlap_spans(&pat, constraints, s)?,
+      rhs,
+      *expand_dollar,
+    ));
+  }
+  let mut out: Vec<RuleMatch<'a>> = Vec::new();
+  for start in s.char_indices().map(|(i, _)| i).chain([s.len()]) {
+    for (anchored, spans, rhs, expand_dollar) in &per_rule {
+      for &(bs, be) in spans.iter().filter(|(bs, _)| *bs == start) {
+        if out.len() >= limit {
+          return Ok(out);
+        }
+        // The span came from this very probe, so it always matches again; the
+        // second pass is only to recover the capture groups.
+        let Some(caps) = anchored.captures(&s[bs..be]) else {
+          continue;
+        };
+        out.push(RuleMatch {
+          span: (bs, be),
+          caps,
+          rhs,
+          expand_dollar: *expand_dollar,
+        });
+      }
+    }
+  }
+  Ok(out)
+}
+
 /// True if `re` (anchored with `^…$` by the caller) matches all of `s` while
 /// satisfying the back-reference `constraints`.
 fn full_match_with_constraints(
@@ -3543,37 +3712,15 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
 
     if mode == Overlaps::All {
-      // Every match of every rule at every start position. Spans are collected
-      // per rule and then merged by start position, so the rules stay in their
-      // written order within one position.
-      let mut per_rule: Vec<(regex::Regex, Vec<(usize, usize)>, &Expr, bool)> =
-        Vec::with_capacity(rules.len());
-      for (pat, constraints, rhs, expand_dollar) in &rules {
-        let pat = with_ci(pat);
-        per_rule.push((
-          anchored_regex(&pat)?,
-          all_overlap_spans(&pat, constraints, &s)?,
-          rhs,
-          *expand_dollar,
-        ));
-      }
+      // Every match of every rule at every start position; each one emits its
+      // rule's (capture-substituted) right-hand side.
       let mut result: Vec<Expr> = Vec::new();
-      for start in s.char_indices().map(|(i, _)| i).chain([s.len()]) {
-        for (anchored, spans, rhs, expand_dollar) in &per_rule {
-          for (bs, be) in spans.iter().filter(|(bs, _)| *bs == start) {
-            if result.len() >= max_count {
-              return Ok(Expr::List(result.into()));
-            }
-            let Some(caps) = anchored.captures(&s[*bs..*be]) else {
-              continue;
-            };
-            let mut substituted = substitute_captures(rhs, &caps);
-            if *expand_dollar {
-              substituted = expand_dollar_in_expr(&substituted, &caps);
-            }
-            result.push(crate::evaluator::evaluate_expr_to_expr(&substituted)?);
-          }
+      for m in all_rule_matches(&s, &rules, ignore_case, max_count)? {
+        let mut substituted = substitute_captures(m.rhs, &m.caps);
+        if m.expand_dollar {
+          substituted = expand_dollar_in_expr(&substituted, &m.caps);
         }
+        result.push(crate::evaluator::evaluate_expr_to_expr(&substituted)?);
       }
       return Ok(Expr::List(result.into()));
     }

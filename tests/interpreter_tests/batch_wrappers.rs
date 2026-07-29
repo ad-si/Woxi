@@ -4608,6 +4608,163 @@ mod batch_unevaluated_wrappers_2 {
       "{Xa, aX}"
     );
   }
+  // A pattern rule contributes one result per span it can match, enumerated the
+  // way `Overlaps -> All` reports them: every length at every start position,
+  // longest first for a greedy pattern.
+  #[test]
+  fn string_replace_list_pattern_rule() {
+    assert_eq!(
+      interpret("StringReplaceList[\"abcd\", __ -> \"X\"]").unwrap(),
+      "{X, Xd, Xcd, Xbcd, aX, aXd, aXcd, abX, abXd, abcX}"
+    );
+    assert_eq!(
+      interpret("StringReplaceList[\"abc\", Shortest[__] -> \"X\"]").unwrap(),
+      "{Xbc, Xc, X, aXc, aX, abX}"
+    );
+    // `___` also matches the empty string at every boundary, so it inserts the
+    // replacement as well as replacing every substring.
+    assert_eq!(
+      interpret("StringReplaceList[\"ab\", ___ -> \"X\"]").unwrap(),
+      "{X, Xb, Xab, aX, aXb, abX}"
+    );
+    assert_eq!(
+      interpret(
+        "StringReplaceList[\"abcabc\", \"a\" ~~ ___ ~~ \"c\" -> \"X\"]"
+      )
+      .unwrap(),
+      "{X, Xabc, abcX}"
+    );
+    assert_eq!(
+      interpret("StringReplaceList[\"a1b2\", DigitCharacter -> \"#\"]")
+        .unwrap(),
+      "{a#b2, a1b#}"
+    );
+    // Captures flow into the right-hand side of a delayed rule.
+    assert_eq!(
+      interpret("StringReplaceList[\"abcd\", x_ ~~ y_ :> x <> \"-\" <> y]")
+        .unwrap(),
+      "{a-bcd, ab-cd, abc-d}"
+    );
+  }
+  // A list of rules is tried in written order within each start position.
+  #[test]
+  fn string_replace_list_rule_list() {
+    assert_eq!(
+      interpret(
+        "StringReplaceList[\"abcabc\", {\"a\" -> \"1\", \"c\" -> \"2\"}]"
+      )
+      .unwrap(),
+      "{1bcabc, ab2abc, abc1bc, abcab2}"
+    );
+    assert_eq!(
+      interpret(
+        "StringReplaceList[\"abc\", {\"ab\" -> \"X\", \"a\" -> \"Y\"}]"
+      )
+      .unwrap(),
+      "{Xc, Ybc}"
+    );
+    assert_eq!(
+      interpret(
+        "StringReplaceList[\"abc\", {\"a\" -> \"Y\", \"ab\" -> \"X\"}]"
+      )
+      .unwrap(),
+      "{Ybc, Xc}"
+    );
+    // An empty rule list leaves the subject alone.
+    assert_eq!(interpret("StringReplaceList[\"ab\", {}]").unwrap(), "ab");
+  }
+  // The third argument caps the number of results; Infinity means unlimited.
+  #[test]
+  fn string_replace_list_count_limit() {
+    assert_eq!(
+      interpret("StringReplaceList[\"abcd\", __ -> \"X\", 3]").unwrap(),
+      "{X, Xd, Xcd}"
+    );
+    assert_eq!(
+      interpret("StringReplaceList[\"abc\", \"a\" -> \"X\", 0]").unwrap(),
+      "{}"
+    );
+    assert_eq!(
+      interpret("StringReplaceList[\"abc\", \"a\" -> \"X\", Infinity]")
+        .unwrap(),
+      "{Xbc}"
+    );
+    // The limit applies per string when the subject is a list.
+    assert_eq!(
+      interpret("StringReplaceList[{\"abc\", \"ab\"}, __ -> \"X\", 2]")
+        .unwrap(),
+      "{{X, Xc}, {X, Xb}}"
+    );
+  }
+  // IgnoreCase -> True makes the rule patterns match case-insensitively.
+  #[test]
+  fn string_replace_list_ignore_case() {
+    assert_eq!(
+      interpret(
+        "StringReplaceList[\"AbAb\", \"a\" -> \"X\", IgnoreCase -> True]"
+      )
+      .unwrap(),
+      "{XbAb, AbXb}"
+    );
+  }
+  // A non-string replacement keeps the result as a StringExpression, with the
+  // empty flanks dropped.
+  #[test]
+  fn string_replace_list_non_string_replacement() {
+    assert_eq!(
+      interpret("StringReplaceList[\"abc\", \"b\" -> 5]").unwrap(),
+      "{StringExpression[a, 5, c]}"
+    );
+    assert_eq!(
+      interpret("StringReplaceList[\"abc\", \"a\" -> 5]").unwrap(),
+      "{StringExpression[5, bc]}"
+    );
+    assert_eq!(
+      interpret("StringReplaceList[\"abc\", \"c\" -> 5]").unwrap(),
+      "{StringExpression[ab, 5]}"
+    );
+    assert_eq!(
+      interpret("StringReplaceList[\"abc\", \"b\" :> StringLength[\"b\"]]")
+        .unwrap(),
+      "{StringExpression[a, 1, c]}"
+    );
+  }
+  // A second argument that is not a replacement rule is refused, naming the
+  // last offending element; a bad count is refused with innf.
+  #[test]
+  fn string_replace_list_invalid_arguments() {
+    let r =
+      interpret_with_stdout("StringReplaceList[\"abc\", {1, 2}]").unwrap();
+    assert_eq!(r.result, "StringReplaceList[abc, {1, 2}]");
+    assert!(
+      r.warnings.iter().any(|w| w
+        == "StringReplaceList::srep: 2 is not a valid string replacement rule."),
+      "expected srep message, got {:?}",
+      r.warnings
+    );
+    let r = interpret_with_stdout(
+      "StringReplaceList[\"abc\", {\"b\", \"z\", \"a\" -> \"X\"}]",
+    )
+    .unwrap();
+    assert!(
+      r.warnings.iter().any(|w| w
+        == "StringReplaceList::srep: z is not a valid string replacement rule."),
+      "expected srep naming the last offender, got {:?}",
+      r.warnings
+    );
+    let r =
+      interpret_with_stdout("StringReplaceList[\"abc\", \"a\" -> \"X\", -1]")
+        .unwrap();
+    assert_eq!(r.result, "StringReplaceList[abc, a -> X, -1]");
+    assert!(
+      r.warnings.iter().any(|w| w.contains(
+        "StringReplaceList::innf: Non-negative integer or Infinity expected \
+         at position 3"
+      )),
+      "expected innf message, got {:?}",
+      r.warnings
+    );
+  }
   #[test]
   fn chessboard_distance_basic() {
     assert_eq!(

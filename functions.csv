@@ -2486,7 +2486,7 @@ AngerJ,Anger function AngerJ[nu z] which equals BesselJ for integer orders,✅,p
 LineGraph,Line graph: one vertex per edge with adjacency for shared endpoints,✅,pure,8.0,2525
 LocalizeVariables,,🚫,,6.0,2525
 MaxFilter,Maximum filter over a sliding window,✅,none,7.0,2525
-StringReplaceList,List of all single replacements in a string,✅,pure,5.1,2525
+StringReplaceList,List of all single replacements in a string — one result per individual match of any rule (threading over a list of strings; supports pattern rules a count limit and the IgnoreCase option),✅,pure,5.1,2525
 VarianceEstimatorFunction,,🚫,,7.0,2525
 DeviceOpen,,🚫,,10.0,2528
 InverseWeierstrassP,Inverse Weierstrass elliptic function,✅,pure,3.0,2528
