@@ -2,10 +2,10 @@
 //! data and Audio objects, plus the Audio paths of LowpassFilter and
 //! MeanFilter.
 
-use super::{AudioData, make_audio, parse_audio, unevaluated};
+use super::data::{AudioData, make_audio, parse_audio};
 use crate::InterpreterError;
 use crate::functions::math_ast::try_eval_to_f64;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 /// Numeric input for the data filters: a 1D list (one row) or a 2D
 /// rectangular list of lists. The bool is true for 2D input.

@@ -2,10 +2,10 @@
 //! AudioIntervals, and the statistics functions (Mean, Median, Variance,
 //! Quantile) applied to Audio objects.
 
+use super::data::{AudioData, parse_audio, quantity};
 use super::spectral::power_spectrum;
-use super::{AudioData, parse_audio, quantity, unevaluated};
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 /// One channel's worth of a measurement, as an expression.
 /// Frequency-valued properties are Quantity["Hertz"], time-valued ones
