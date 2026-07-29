@@ -1456,34 +1456,6 @@ fn apply_property(
   }
 }
 
-#[cfg(test)]
-mod tests {
-  use super::*;
-
-  fn date(y: i64, m: i64, d: i64) -> [f64; 6] {
-    [y as f64, m as f64, d as f64, 0.0, 0.0, 0.0]
-  }
-
-  fn render(e: &Expr) -> String {
-    crate::syntax::expr_to_string(e)
-  }
-
-  #[test]
-  fn day_step_advances_one_day() {
-    let dates = generate_dates(date(2013, 4, 1), 1.0, "Day", 3);
-    assert_eq!(dates.len(), 3);
-    // third date is 2013-04-03
-    assert_eq!(render(&dates[2]), "{2013, 4, 3, 0, 0, 0.}");
-  }
-
-  #[test]
-  fn month_step_rolls_over_year() {
-    let dates = generate_dates(date(2013, 11, 15), 1.0, "Month", 3);
-    // November + 2 months → January of the next year
-    assert_eq!(render(&dates[2]), "{2014, 1, 15, 0, 0, 0.}");
-  }
-}
-
 /// EventSeriesQ[expr] — True only for an `EventSeries` object. A `TimeSeries`
 /// (including the one `EventSeriesAccumulate` returns) is not one.
 pub fn event_series_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -1551,4 +1523,32 @@ pub fn event_series_accumulate_ast(
     name: "TimeSeries".to_string(),
     args: vec![Expr::List(counted.into())].into(),
   })
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn date(y: i64, m: i64, d: i64) -> [f64; 6] {
+    [y as f64, m as f64, d as f64, 0.0, 0.0, 0.0]
+  }
+
+  fn render(e: &Expr) -> String {
+    crate::syntax::expr_to_string(e)
+  }
+
+  #[test]
+  fn day_step_advances_one_day() {
+    let dates = generate_dates(date(2013, 4, 1), 1.0, "Day", 3);
+    assert_eq!(dates.len(), 3);
+    // third date is 2013-04-03
+    assert_eq!(render(&dates[2]), "{2013, 4, 3, 0, 0, 0.}");
+  }
+
+  #[test]
+  fn month_step_rolls_over_year() {
+    let dates = generate_dates(date(2013, 11, 15), 1.0, "Month", 3);
+    // November + 2 months → January of the next year
+    assert_eq!(render(&dates[2]), "{2014, 1, 15, 0, 0, 0.}");
+  }
 }
