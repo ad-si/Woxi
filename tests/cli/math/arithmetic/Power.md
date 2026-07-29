@@ -184,3 +184,18 @@ Group explicitly to negate the base:
 $ wo '(-2) ^ 2'
 4
 ```
+
+An integer raised to a negative power is the exact reciprocal, however large
+the denominator gets:
+
+```scrut
+$ wo 'Head[10^-400]'
+Rational
+```
+
+It stays exactly positive even below the range of a machine number:
+
+```scrut
+$ wo '10^-400 > 0'
+True
+```

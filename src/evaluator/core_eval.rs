@@ -33,14 +33,40 @@ thread_local! {
 /// False. Returns `None` if either side isn't an exact integer, in
 /// which case the f64 path takes over.
 fn exact_integer_ord(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
-  fn as_bigint(e: &Expr) -> Option<num_bigint::BigInt> {
+  // Each side as an exact fraction with a positive denominator. Rationals are
+  // included so a value too small for an f64 still compares correctly: without
+  // this `10^-400 > 0` went through the f64 path, underflowed to 0.0 and
+  // answered False.
+  fn as_fraction(e: &Expr) -> Option<(num_bigint::BigInt, num_bigint::BigInt)> {
+    use num_bigint::BigInt;
     match e {
-      Expr::Integer(n) => Some(num_bigint::BigInt::from(*n)),
-      Expr::BigInteger(n) => Some(n.clone()),
+      Expr::Integer(n) => Some((BigInt::from(*n), BigInt::from(1))),
+      Expr::BigInteger(n) => Some((n.clone(), BigInt::from(1))),
+      Expr::FunctionCall { name, args } if name == "Rational" => {
+        let [n, d] = args.as_slice() else { return None };
+        let (num, num_den) = as_fraction(n)?;
+        let (den, den_den) = as_fraction(d)?;
+        // Only a plain integer numerator and denominator make a Rational.
+        if num_den != BigInt::from(1) || den_den != BigInt::from(1) {
+          return None;
+        }
+        if num_traits::Zero::is_zero(&den) {
+          return None;
+        }
+        // Keep the denominator positive so cross-multiplication preserves
+        // the ordering.
+        if den < BigInt::from(0) {
+          Some((-num, -den))
+        } else {
+          Some((num, den))
+        }
+      }
       _ => None,
     }
   }
-  Some(as_bigint(a)?.cmp(&as_bigint(b)?))
+  let (an, ad) = as_fraction(a)?;
+  let (bn, bd) = as_fraction(b)?;
+  Some((an * bd).cmp(&(bn * ad)))
 }
 
 fn needs_reevaluation(expr: &Expr, self_name: &str) -> bool {

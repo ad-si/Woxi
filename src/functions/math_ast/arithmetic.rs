@@ -11457,6 +11457,31 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(bigint_to_expr(result));
   }
 
+  // An integer raised to a negative power is the exact reciprocal. Without
+  // this the call fell through to the f64 path, which held exactness only
+  // while the denominator fitted in an i128: `10^-50` came back as the
+  // machine real `1.*^-50`, and `10^-400` underflowed all the way to the
+  // integer `0`, making `10^-400 == 0` answer True.
+  {
+    let big_base = match base {
+      Expr::Integer(b) => Some(BigInt::from(*b)),
+      Expr::BigInteger(b) => Some(b.clone()),
+      _ => None,
+    };
+    if let (Some(b), Expr::Integer(e)) = (big_base, exp)
+      && *e < 0
+      && !num_traits::Zero::is_zero(&b)
+    {
+      let den = num_traits::pow::pow(b, e.unsigned_abs() as usize);
+      return Ok(
+        crate::functions::math_ast::number_theory::make_rational_expr(
+          BigInt::from(1),
+          den,
+        ),
+      );
+    }
+  }
+
   // x^(1/2) → delegate to sqrt_ast for symbolic simplification
   // This must come before the numeric evaluation to preserve exact results.
   if is_half(exp) {

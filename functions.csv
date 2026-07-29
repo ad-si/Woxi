@@ -2,7 +2,7 @@ name,description,implementation_status,effect_level,version,rank
 List,Represents a list of elements,✅,pure,1.0,1
 Rule,Represents a transformation rule lhs -> rhs,✅,pure,1.0,2
 Times,Multiply numbers — symbolic factors are ordered canonically by head then arguments,✅,pure,1.0,3
-Power,Raises a number to a power (infinite bases raise their direction; infinite exponents follow the modulus of the base; a negative base with a rational exponent keeps the sign in the radicand unless the positive part is exact),✅,pure,1.0,4
+Power,Raises a number to a power (infinite bases raise their direction; infinite exponents follow the modulus of the base; a negative base with a rational exponent keeps the sign in the radicand unless the positive part is exact); an integer to a negative power is the exact reciprocal,✅,pure,1.0,4
 Set,Assigns a value to a symbol,✅,stateful,1.0,5
 Plus,Adds numbers together,✅,pure,1.0,6
 Blank,Pattern object matching any expression,✅,pure,1.0,7

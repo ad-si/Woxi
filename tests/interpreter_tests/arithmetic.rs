@@ -10699,3 +10699,44 @@ mod equal_needs_comparable_operands {
     assert_eq!(interpret("3 > 2 > 1").unwrap(), "True");
   }
 }
+
+mod integer_to_a_negative_power_stays_exact {
+  use super::*;
+
+  #[test]
+  fn the_reciprocal_is_a_rational_however_large() {
+    clear_state();
+    // Woxi was exact only while the denominator fitted in an i128: 10^-50
+    // came back as the machine real 1.*^-50, and 10^-400 underflowed to the
+    // integer 0.
+    assert_eq!(interpret("Head[10^-10]").unwrap(), "Rational");
+    assert_eq!(interpret("Head[10^-50]").unwrap(), "Rational");
+    assert_eq!(interpret("Head[10^-400]").unwrap(), "Rational");
+    assert_eq!(interpret("Head[2^-400]").unwrap(), "Rational");
+    assert_eq!(interpret("2^-10").unwrap(), "1/1024");
+    assert_eq!(interpret("(-2)^-10").unwrap(), "1/1024");
+    assert_eq!(interpret("3^-30").unwrap(), "1/205891132094649");
+    // The exponent path and the division path agree.
+    assert_eq!(interpret("10^-50 == 1/10^50").unwrap(), "True");
+  }
+
+  #[test]
+  fn a_value_below_the_double_range_is_still_positive() {
+    clear_state();
+    // Comparing through an f64 underflowed to 0.0, so a positive number
+    // compared equal to zero.
+    assert_eq!(interpret("10^-400 == 0").unwrap(), "False");
+    assert_eq!(interpret("10^-400 > 0").unwrap(), "True");
+    assert_eq!(interpret("Rational[1, 10^400] == 0").unwrap(), "False");
+  }
+
+  #[test]
+  fn ordinary_rational_comparisons_are_unaffected() {
+    clear_state();
+    assert_eq!(interpret("1/3 < 1/2").unwrap(), "True");
+    assert_eq!(interpret("1/3 > 1/4").unwrap(), "True");
+    assert_eq!(interpret("2/4 == 1/2").unwrap(), "True");
+    assert_eq!(interpret("1/2 == 0.5").unwrap(), "True");
+    assert_eq!(interpret("1/2 > 1").unwrap(), "False");
+  }
+}
