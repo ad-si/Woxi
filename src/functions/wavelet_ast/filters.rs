@@ -6,8 +6,10 @@
 //! biorthogonal families the primal lowpass is the synthesis filter and the
 //! dual lowpass the analysis filter; for orthogonal families they coincide.
 
+use super::data::{WaveletSpec, parse_discrete_wavelet};
+use crate::InterpreterError;
 use crate::functions::math_ast::gcd_i128;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, expr_to_string, unevaluated};
 
 /// One filter as ascending (index, coefficient) pairs.
 pub type Filter = Vec<(i64, f64)>;
@@ -367,12 +369,12 @@ fn poly_mul(a: &[C64], b: &[C64]) -> Vec<C64> {
 // Family constructors
 // ---------------------------------------------------------------------------
 
-pub fn haar_filters() -> WaveletFilters {
+fn haar_filters() -> WaveletFilters {
   let exact = vec![(0, rational(1, 2)), (1, rational(1, 2))];
   WaveletFilters::orthogonal(vec![(0, 0.5), (1, 0.5)], Some(exact))
 }
 
-pub fn daubechies_filters(n: usize) -> WaveletFilters {
+fn daubechies_filters(n: usize) -> WaveletFilters {
   if n == 1 {
     return haar_filters();
   }
@@ -399,7 +401,7 @@ fn table_filter(rec_lo: &[f64]) -> Filter {
     .collect()
 }
 
-pub fn symlet_filters(n: usize) -> Option<WaveletFilters> {
+fn symlet_filters(n: usize) -> Option<WaveletFilters> {
   if n == 1 {
     return Some(haar_filters());
   }
@@ -407,7 +409,7 @@ pub fn symlet_filters(n: usize) -> Option<WaveletFilters> {
   Some(WaveletFilters::orthogonal(table_filter(table), None))
 }
 
-pub fn coiflet_filters(n: usize) -> Option<WaveletFilters> {
+fn coiflet_filters(n: usize) -> Option<WaveletFilters> {
   let table = super::tables::COIFLET_REC_LO.get(n - 1)?;
   Some(WaveletFilters::orthogonal(table_filter(table), None))
 }
@@ -416,7 +418,7 @@ pub fn coiflet_filters(n: usize) -> Option<WaveletFilters> {
 /// B-spline binomial filter of order n; the dual lowpass is the shortest
 /// CDF complement with m factors of cos(w/2). Both are exact dyadic
 /// rationals. Requires n + m even.
-pub fn biorthogonal_spline_filters(n: u32, m: u32) -> WaveletFilters {
+fn biorthogonal_spline_filters(n: u32, m: u32) -> WaveletFilters {
   let eps = (n % 2) as i64;
   // Primal: u^eps cos^n(w/2)
   let primal_poly =
@@ -453,7 +455,7 @@ pub fn biorthogonal_spline_filters(n: u32, m: u32) -> WaveletFilters {
   }
 }
 
-pub fn reverse_biorthogonal_spline_filters(n: u32, m: u32) -> WaveletFilters {
+fn reverse_biorthogonal_spline_filters(n: u32, m: u32) -> WaveletFilters {
   let f = biorthogonal_spline_filters(n, m);
   WaveletFilters {
     primal_lo: f.dual_lo,
@@ -466,7 +468,7 @@ pub fn reverse_biorthogonal_spline_filters(n: u32, m: u32) -> WaveletFilters {
 /// CDF 9/7 (lossy JPEG2000): spectral factorization of the order-4
 /// half-band polynomial into its real linear factor (primal, 7 taps) and
 /// the remaining quadratic (dual, 9 taps). Computed at full f64 precision.
-pub fn cdf_97_filters() -> WaveletFilters {
+fn cdf_97_filters() -> WaveletFilters {
   // P(y) = 1 + 4 y + 10 y^2 + 20 y^3; real root by Newton iteration.
   let p = |y: f64| 1.0 + 4.0 * y + 10.0 * y * y + 20.0 * y * y * y;
   let dp = |y: f64| 4.0 + 20.0 * y + 60.0 * y * y;
@@ -544,12 +546,12 @@ pub fn cdf_97_filters() -> WaveletFilters {
 
 /// CDF 5/3 (lossless JPEG2000, LeGall): identical to the biorthogonal
 /// spline pair of order (2, 2) — exact dyadic rationals.
-pub fn cdf_53_filters() -> WaveletFilters {
+fn cdf_53_filters() -> WaveletFilters {
   biorthogonal_spline_filters(2, 2)
 }
 
 /// Shannon lowpass: h_k = Sinc(k/2)/2 truncated to |k| <= lim.
-pub fn shannon_filters(lim: f64) -> WaveletFilters {
+fn shannon_filters(lim: f64) -> WaveletFilters {
   let l = lim.floor() as i64;
   let mut lo: Filter = Vec::new();
   let mut exact: ExactFilter = Vec::new();
@@ -595,7 +597,7 @@ pub fn meyer_nu(n: u32, x: f64) -> f64 {
 
 /// Meyer lowpass filter: inverse Fourier coefficients of
 /// m0(w) = PhiHat(2 w) on [-pi, pi], truncated to |k| <= lim.
-pub fn meyer_filters(n: u32, lim: f64) -> WaveletFilters {
+fn meyer_filters(n: u32, lim: f64) -> WaveletFilters {
   let l = lim.floor() as i64;
   let pi = std::f64::consts::PI;
   // PhiHat(2 w): 1 for |w| <= pi/3, cos(pi/2 nu(3 |w|/pi - 1)) in the
@@ -631,7 +633,7 @@ pub fn meyer_filters(n: u32, lim: f64) -> WaveletFilters {
 /// Battle-Lemarie lowpass of order n (orthonormalized B-spline of degree n):
 /// m0(w) = u^eps cos^{n+1}(w/2) sqrt(S(w)/S(2w)) with
 /// S(w) = Sum_k |sinc((w + 2 pi k)/2)|^{2(n+1)}, truncated to |k| <= lim.
-pub fn battle_lemarie_filters(n: u32, lim: f64) -> WaveletFilters {
+fn battle_lemarie_filters(n: u32, lim: f64) -> WaveletFilters {
   let l = lim.floor() as i64;
   let pi = std::f64::consts::PI;
   let p = 2 * (n + 1) as i32;
@@ -664,4 +666,170 @@ pub fn battle_lemarie_filters(n: u32, lim: f64) -> WaveletFilters {
     })
     .collect();
   WaveletFilters::orthogonal(lo, None)
+}
+
+/// Filters for a validated discrete wavelet spec.
+pub(crate) fn wavelet_filters(spec: &WaveletSpec) -> Option<WaveletFilters> {
+  match spec {
+    WaveletSpec::Haar => Some(haar_filters()),
+    WaveletSpec::Daubechies(n) => Some(daubechies_filters(*n)),
+    WaveletSpec::Symlet(n) => symlet_filters(*n),
+    WaveletSpec::Coiflet(n) => coiflet_filters(*n),
+    WaveletSpec::BattleLemarie(n, lim) => {
+      Some(battle_lemarie_filters(*n, *lim))
+    }
+    WaveletSpec::BiorthogonalSpline(n, m) => {
+      Some(biorthogonal_spline_filters(*n, *m))
+    }
+    WaveletSpec::ReverseBiorthogonalSpline(n, m) => {
+      Some(reverse_biorthogonal_spline_filters(*n, *m))
+    }
+    WaveletSpec::Cdf(lossy) => Some(if *lossy {
+      cdf_97_filters()
+    } else {
+      cdf_53_filters()
+    }),
+    WaveletSpec::Meyer(n, lim) => Some(meyer_filters(*n, *lim)),
+    WaveletSpec::Shannon(lim) => Some(shannon_filters(*lim)),
+  }
+}
+
+/// WaveletFilterCoefficients[wave], [wave, filtspec] — filter coefficients
+/// as {{n, c_n}, …} pairs. Exact values are returned for the families with
+/// closed-form filters; other families give machine-precision values.
+pub(crate) fn wavelet_filter_coefficients_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  // Strip options (WorkingPrecision) from the tail.
+  let mut positional: Vec<&Expr> = Vec::new();
+  let mut exact_requested = false;
+  for a in args {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = a
+    {
+      if let Expr::Identifier(opt) = pattern.as_ref()
+        && opt == "WorkingPrecision"
+        && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "Infinity")
+      {
+        exact_requested = true;
+      }
+      continue;
+    }
+    positional.push(a);
+  }
+  if positional.is_empty() || positional.len() > 2 {
+    crate::emit_message(
+      "WaveletFilterCoefficients::argt: WaveletFilterCoefficients called with an invalid number of arguments.",
+    );
+    return Ok(unevaluated("WaveletFilterCoefficients", args));
+  }
+  let Some(spec) = parse_discrete_wavelet(positional[0]) else {
+    crate::emit_message(&format!(
+      "WaveletFilterCoefficients::invw: {} is not a valid wavelet.",
+      expr_to_string(positional[0])
+    ));
+    return Ok(unevaluated("WaveletFilterCoefficients", args));
+  };
+  let default_spec = Expr::String("PrimalLowpass".to_string());
+  let filt_spec = positional.get(1).copied().unwrap_or(&default_spec);
+
+  // A list of filter specifications maps to a list of results.
+  if let Expr::List(specs) = filt_spec {
+    let mut out = Vec::new();
+    for s in specs.iter() {
+      out.push(single_filter_result(&spec, s, exact_requested, args)?);
+    }
+    return Ok(Expr::List(out.into()));
+  }
+  single_filter_result(&spec, filt_spec, exact_requested, args)
+}
+
+fn single_filter_result(
+  spec: &WaveletSpec,
+  filt_spec: &Expr,
+  exact_requested: bool,
+  orig_args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let Expr::String(kind) = filt_spec else {
+    crate::emit_message(&format!(
+      "WaveletFilterCoefficients::invspec: {} is not a valid filter specification.",
+      expr_to_string(filt_spec)
+    ));
+    return Ok(unevaluated("WaveletFilterCoefficients", orig_args));
+  };
+  if kind == "LiftingFilter" {
+    return Ok(super::transforms::lifting_filter_data(spec));
+  }
+  let filters = match wavelet_filters(spec) {
+    Some(f) => f,
+    None => return Ok(unevaluated("WaveletFilterCoefficients", orig_args)),
+  };
+  // For the biorthogonal spline families Wolfram labels the longer
+  // (complementary) filter "Primal" and the shorter B-spline filter "Dual" —
+  // the opposite of the internal naming — and reports the highpass filters
+  // with flipped sign. Remap the requested spec accordingly.
+  let is_bior = matches!(
+    spec,
+    WaveletSpec::BiorthogonalSpline(_, _)
+      | WaveletSpec::ReverseBiorthogonalSpline(_, _)
+  );
+  let eff_kind: &str = if is_bior {
+    match kind.as_str() {
+      "PrimalLowpass" => "DualLowpass",
+      "DualLowpass" => "PrimalLowpass",
+      "PrimalHighpass" => "DualHighpass",
+      "DualHighpass" => "PrimalHighpass",
+      other => other,
+    }
+  } else {
+    kind.as_str()
+  };
+  let bior_highpass_flip =
+    is_bior && matches!(kind.as_str(), "PrimalHighpass" | "DualHighpass");
+  let (mut numeric, mut exact): (Filter, Option<ExactFilter>) = match eff_kind {
+    "PrimalLowpass" => {
+      (filters.primal_lo.clone(), filters.primal_lo_exact.clone())
+    }
+    "DualLowpass" => (filters.dual_lo.clone(), filters.dual_lo_exact.clone()),
+    "PrimalHighpass" => (
+      highpass_from(&filters.dual_lo),
+      filters.dual_lo_exact.as_ref().map(highpass_from_exact),
+    ),
+    "DualHighpass" => (
+      highpass_from(&filters.primal_lo),
+      filters.primal_lo_exact.as_ref().map(highpass_from_exact),
+    ),
+    _ => {
+      crate::emit_message(&format!(
+        "WaveletFilterCoefficients::invspec: \"{}\" is not a valid filter specification.",
+        kind
+      ));
+      return Ok(unevaluated("WaveletFilterCoefficients", orig_args));
+    }
+  };
+  if bior_highpass_flip {
+    numeric = negate_filter(&numeric);
+    exact = exact.as_ref().map(negate_filter_exact);
+  }
+
+  // Machine-precision values are the default (matching Wolfram); exact
+  // closed-form coefficients are only produced on WorkingPrecision -> Infinity.
+  let use_exact = exact.is_some() && exact_requested;
+  let pairs: Vec<Expr> = if use_exact {
+    exact
+      .unwrap()
+      .into_iter()
+      .map(|(i, c)| Expr::List(vec![Expr::Integer(i as i128), c].into()))
+      .collect()
+  } else {
+    numeric
+      .into_iter()
+      .map(|(i, c)| {
+        Expr::List(vec![Expr::Integer(i as i128), Expr::Real(c)].into())
+      })
+      .collect()
+  };
+  Ok(Expr::List(pairs.into()))
 }

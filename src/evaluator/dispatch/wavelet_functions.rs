@@ -7,8 +7,8 @@
 
 use crate::InterpreterError;
 use crate::functions::wavelet_ast as wa;
-use crate::functions::wavelet_ast::transforms::TransformKind;
 use crate::syntax::Expr;
+use wa::transforms::TransformKind;
 
 pub(super) fn dispatch_wavelet_functions(
   name: &str,
@@ -16,7 +16,7 @@ pub(super) fn dispatch_wavelet_functions(
 ) -> Option<Result<Expr, InterpreterError>> {
   match name {
     "WaveletFilterCoefficients" => {
-      Some(wa::wavelet_filter_coefficients_ast(args))
+      Some(wa::filters::wavelet_filter_coefficients_ast(args))
     }
     "DiscreteWaveletTransform" => {
       Some(wa::data::wavelet_transform_ast(TransformKind::Dwt, args))
