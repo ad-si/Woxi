@@ -4,6 +4,7 @@ Summary statistics and running-reduction functions.
 
 - [`Accumulate`](statistics/Accumulate.md)
 - [`Differences`](statistics/Differences.md)
+- [`FindPeaks`](statistics/FindPeaks.md)
 - [`Mean`](statistics/Mean.md)
 - [`Median`](statistics/Median.md)
 - [`Product`](statistics/Product.md)

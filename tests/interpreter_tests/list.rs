@@ -1452,6 +1452,161 @@ mod find_peaks {
     );
   }
 
+  // A plateau that runs into a list boundary is reported at that boundary
+  // index rather than at the plateau's centre, and only counts at all when it
+  // is at most two elements long.
+  #[test]
+  fn boundary_plateaus_report_the_boundary_index() {
+    assert_eq!(interpret("FindPeaks[{3, 3, 1}]").unwrap(), "{{1, 3}}");
+    assert_eq!(interpret("FindPeaks[{1, 3, 3}]").unwrap(), "{{3, 3}}");
+    assert_eq!(interpret("FindPeaks[{5, 5, 1, 1}]").unwrap(), "{{1, 5}}");
+    assert_eq!(interpret("FindPeaks[{2, 2, 9, 9}]").unwrap(), "{{4, 9}}");
+    assert_eq!(
+      interpret("FindPeaks[{6, 6, 1, 1, 6, 6}]").unwrap(),
+      "{{1, 6}, {6, 6}}"
+    );
+    // Three or more wide at a boundary is not a peak.
+    assert_eq!(interpret("FindPeaks[{3, 3, 3, 1}]").unwrap(), "{}");
+    assert_eq!(interpret("FindPeaks[{1, 3, 3, 3}]").unwrap(), "{}");
+    assert_eq!(interpret("FindPeaks[{9, 9, 9, 2, 2}]").unwrap(), "{}");
+    assert_eq!(
+      interpret("FindPeaks[{6, 6, 6, 1, 1, 6}]").unwrap(),
+      "{{6, 6}}"
+    );
+    // An interior plateau still reports its centre, however wide.
+    assert_eq!(
+      interpret("FindPeaks[{1, 1, 5, 5, 1, 1}]").unwrap(),
+      "{{7/2, 5}}"
+    );
+    assert_eq!(
+      interpret("FindPeaks[{0, 0, 3, 3, 0, 0, 3, 3, 3, 0}]").unwrap(),
+      "{{7/2, 3}, {8, 3}}"
+    );
+  }
+
+  // The third argument keeps only peaks whose sharpness reaches it:
+  // (leftDrop + rightDrop)/width for an interior run, and 2*drop/width^2 for
+  // one at a boundary.
+  #[test]
+  fn sharpness_filters_peaks() {
+    let v = "{1, 3, 5, 6, 6, 4, 3, 2, 4, 7, 3, 2, 4, 2, 2, 1}";
+    // The plateau at 9/2 has sharpness ((6-5) + (6-4))/2 = 3/2.
+    assert_eq!(
+      interpret(&format!("FindPeaks[{}, 0, 1]", v)).unwrap(),
+      "{{9/2, 6}, {10, 7}, {13, 4}}"
+    );
+    assert_eq!(
+      interpret(&format!("FindPeaks[{}, 0, 2]", v)).unwrap(),
+      "{{10, 7}, {13, 4}}"
+    );
+    // The peak at 13 has sharpness (4-2) + (4-2) = 4.
+    assert_eq!(
+      interpret(&format!("FindPeaks[{}, 0, 4.5]", v)).unwrap(),
+      "{{10, 7}}"
+    );
+    // The peak at 10 has sharpness (7-4) + (7-3) = 7.
+    assert_eq!(interpret(&format!("FindPeaks[{}, 0, 8]", v)).unwrap(), "{}");
+    // A wider interior plateau divides by its width.
+    assert_eq!(
+      interpret("FindPeaks[{0, 5, 5, 5, 0}, 0, 10/3]").unwrap(),
+      "{{3, 5}}"
+    );
+    assert_eq!(
+      interpret("FindPeaks[{0, 5, 5, 5, 0}, 0, 3.34]").unwrap(),
+      "{}"
+    );
+    // Asymmetric drops add up.
+    assert_eq!(
+      interpret("FindPeaks[{0, 5, 5, 3}, 0, 3.5]").unwrap(),
+      "{{5/2, 5}}"
+    );
+    assert_eq!(interpret("FindPeaks[{0, 5, 5, 3}, 0, 3.6]").unwrap(), "{}");
+    // A boundary peak counts its single drop twice, then divides by the
+    // squared width: 2*1 for {3,2,1} and (3-1)/2 for {3,3,1}.
+    assert_eq!(interpret("FindPeaks[{3, 2, 1}, 0, 2]").unwrap(), "{{1, 3}}");
+    assert_eq!(interpret("FindPeaks[{3, 2, 1}, 0, 2.1]").unwrap(), "{}");
+    assert_eq!(interpret("FindPeaks[{3, 3, 1}, 0, 1]").unwrap(), "{{1, 3}}");
+    assert_eq!(interpret("FindPeaks[{3, 3, 1}, 0, 1.1]").unwrap(), "{}");
+    assert_eq!(
+      interpret("FindPeaks[{5, 5, 1, 1}, 0, 2]").unwrap(),
+      "{{1, 5}}"
+    );
+    assert_eq!(interpret("FindPeaks[{5, 5, 1, 1}, 0, 2.1]").unwrap(), "{}");
+  }
+
+  // The fourth argument keeps only peaks whose value reaches it.
+  #[test]
+  fn threshold_filters_peaks() {
+    let v = "{1, 3, 5, 6, 6, 4, 3, 2, 4, 7, 3, 2, 4, 2, 2, 1}";
+    assert_eq!(
+      interpret(&format!("FindPeaks[{}, 0, 0, 4]", v)).unwrap(),
+      "{{9/2, 6}, {10, 7}, {13, 4}}"
+    );
+    assert_eq!(
+      interpret(&format!("FindPeaks[{}, 0, 0, 4.1]", v)).unwrap(),
+      "{{9/2, 6}, {10, 7}}"
+    );
+    assert_eq!(
+      interpret(&format!("FindPeaks[{}, 0, 0, 6]", v)).unwrap(),
+      "{{9/2, 6}, {10, 7}}"
+    );
+    assert_eq!(
+      interpret(&format!("FindPeaks[{}, 0, 0, 7.1]", v)).unwrap(),
+      "{}"
+    );
+    // A negative threshold is allowed.
+    assert_eq!(
+      interpret("FindPeaks[{-3, -1, -5}, 0, 0, -2]").unwrap(),
+      "{{2, -1}}"
+    );
+    // Sharpness and threshold combine, and either may name its scale.
+    assert_eq!(
+      interpret(&format!("FindPeaks[{}, 0, 2, 5]", v)).unwrap(),
+      "{{10, 7}}"
+    );
+    assert_eq!(
+      interpret(&format!("FindPeaks[{}, 0, {{2, 0}}, {{5, 0}}]", v)).unwrap(),
+      "{{10, 7}}"
+    );
+  }
+
+  // Each optional parameter is validated with the message wolframscript emits.
+  #[test]
+  fn invalid_parameters_emit_messages() {
+    use woxi::interpret_with_stdout;
+    let r = interpret_with_stdout("FindPeaks[{1, 2, 3, 2, 1}, -1]").unwrap();
+    assert_eq!(r.result, "FindPeaks[{1, 2, 3, 2, 1}, -1]");
+    assert!(
+      r.warnings.iter().any(|w| w
+        == "FindPeaks::scale: The scale -1 at position 2 should be a \
+            non-negative real number."),
+      "expected scale message, got {:?}",
+      r.warnings
+    );
+    let r =
+      interpret_with_stdout("FindPeaks[{1, 2, 3, 2, 1}, 0, {2}]").unwrap();
+    assert_eq!(r.result, "FindPeaks[{1, 2, 3, 2, 1}, 0, {2}]");
+    assert!(
+      r.warnings.iter().any(|w| w
+        == "FindPeaks::shrpn: The sharpness parameter {2} at position 3 \
+            should be a non-negative real number or a list of a non-negative \
+            real number and a scale."),
+      "expected shrpn message, got {:?}",
+      r.warnings
+    );
+    let r =
+      interpret_with_stdout("FindPeaks[{1, 2, 3, 2, 1}, 0, 0, foo]").unwrap();
+    assert_eq!(r.result, "FindPeaks[{1, 2, 3, 2, 1}, 0, 0, foo]");
+    assert!(
+      r.warnings.iter().any(|w| w
+        == "FindPeaks::thrsh: The threshold parameter foo at position 4 \
+            should be a real number or a list of a real number and a \
+            non-negative scale."),
+      "expected thrsh message, got {:?}",
+      r.warnings
+    );
+  }
+
   #[test]
   fn degenerate_and_real_inputs() {
     // No interior boundary → no peaks.

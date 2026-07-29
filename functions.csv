@@ -1498,7 +1498,7 @@ ImageRotate,Rotates an image by a given angle,✅,pure,7.0,1511
 LucasL,Returns the nth Lucas number,✅,pure,6.0,1512
 SelectFirst,Select first element matching a criterion (on an association tests the values and returns the first matching value),✅,pure,10.0,1514
 ArrayRules,Extract non-default elements as position rules,✅,pure,5.0,1517
-FindPeaks,Find peaks in data,✅,pure,10.0,1517
+FindPeaks,Gives the positions and values of the local maxima of a list — supports a minimum sharpness and a minimum peak value at the unsmoothed scale (a non-zero smoothing scale is not implemented),✅,pure,10.0,1517
 NotebookClose,Close a notebook,✅,pure,3.0,1517
 TotalLayer,Neural network total layer,✅,pure,11.0,1518
 ParameterMixtureDistribution,Mixture distribution with parameterized components,✅,pure,8.0,1519

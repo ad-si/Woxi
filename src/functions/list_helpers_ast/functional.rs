@@ -207,20 +207,116 @@ fn same_q_default(a: &Expr, b: &Expr) -> bool {
 /// AST-based Accumulate: cumulative sums.
 /// Threads through any non-atomic head, preserving it (e.g. Accumulate[g[1,2,3]]
 /// returns g[1, 3, 6]).
-/// FindPeaks[list] — the local maxima of a numeric list.
-///
-/// Each maximal run of equal values that strictly exceeds its real neighbors
-/// (with the list boundaries acting as -Infinity) and does not span the whole
-/// list is a peak. It is reported as `{position, value}`, where `position` is
-/// the mean of the run's 1-based indices (so a flat plateau yields a
-/// half-integer center, matching wolframscript: FindPeaks[{1,3,3,1}] ->
-/// {{5/2, 3}}). A list with no interior boundary (e.g. `{5}` or `{3,3,3}`)
-/// has no peaks.
-pub fn find_peaks_ast(list: &Expr) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "FindPeaks".to_string(),
-    args: vec![list.clone()].into(),
+/// A non-negative real value, or `None` for anything else. Used for the
+/// scale/sharpness/threshold parameters of `FindPeaks`.
+fn non_negative_real(e: &Expr) -> Option<f64> {
+  crate::functions::math_ast::try_eval_to_f64(e).filter(|v| *v >= 0.0)
+}
+
+/// A `FindPeaks` parameter given either bare or as `{value, scale}`. The scale
+/// must be non-negative; `default_scale` applies when none is given.
+fn peak_parameter(
+  e: &Expr,
+  default_scale: f64,
+  value_must_be_non_negative: bool,
+) -> Option<(f64, f64)> {
+  let value = |e: &Expr| {
+    if value_must_be_non_negative {
+      non_negative_real(e)
+    } else {
+      crate::functions::math_ast::try_eval_to_f64(e)
+    }
   };
+  match e {
+    Expr::List(items) => match items.as_slice() {
+      [v, scale] => Some((value(v)?, non_negative_real(scale)?)),
+      _ => None,
+    },
+    other => Some((value(other)?, default_scale)),
+  }
+}
+
+/// FindPeaks[list] / FindPeaks[list, s] / FindPeaks[list, s, sharpness] /
+/// FindPeaks[list, s, sharpness, threshold] — the local maxima of a numeric
+/// list.
+///
+/// A peak is a maximal run of equal values that strictly exceeds its real
+/// neighbours, reported as `{position, value}`. Which runs count, and where
+/// they are reported, depends on whether the run touches a list boundary
+/// (all wolframscript-verified):
+///
+/// * A run strictly inside the list is reported at the mean of its 1-based
+///   indices, so a flat plateau yields a half-integer centre:
+///   `FindPeaks[{1,3,3,1}]` is `{{5/2, 3}}`.
+/// * A run touching exactly one boundary is reported at that boundary index —
+///   `FindPeaks[{3,3,1}]` is `{{1, 3}}`, not `{{3/2, 3}}` — and only counts at
+///   all when it is at most two elements long: `FindPeaks[{3,3,3,1}]` is `{}`.
+/// * A run spanning the whole list is never a peak (`{5}`, `{3,3,3}`).
+///
+/// The sharpness cut-off keeps only peaks whose sharpness reaches it. For a run
+/// of length `L` strictly inside the list that is `dl` above its left
+/// neighbour and `dr` above its right one, the sharpness is `(dl + dr)/L`; for
+/// a boundary run, whose only real neighbour it clears by `d`, it is `2d/L^2`
+/// (so `2d` for a single element and `d/2` for two). The threshold keeps only
+/// peaks whose value reaches it. Either may be given as `{value, scale}` to
+/// name the smoothing scale it is measured at.
+///
+/// Only the unsmoothed scale is supported. A non-zero scale asks for the peaks
+/// that survive Gaussian blurring up to it, which wolframscript resolves with a
+/// scale-space tracking pass that no single blur reproduces —
+/// `FindPeaks[list, 2.2]` keeps fewer peaks than
+/// `FindPeaks[GaussianFilter[list, 2.2]]` finds — so such a call is left
+/// unevaluated rather than answered wrongly.
+pub fn find_peaks_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let list = &args[0];
+  let call = || Expr::FunctionCall {
+    name: "FindPeaks".to_string(),
+    args: args.to_vec().into(),
+  };
+  let refuse = |tag: &str, what: &str, value: &Expr, position: usize| {
+    crate::emit_message(&format!(
+      "FindPeaks::{}: The {} {} at position {} should be {}.",
+      tag,
+      what,
+      crate::syntax::format_expr(value, crate::syntax::ExprForm::Output),
+      position,
+      match tag {
+        "scale" => "a non-negative real number",
+        "shrpn" =>
+          "a non-negative real number or a list of a non-negative real number \
+           and a scale",
+        _ =>
+          "a real number or a list of a real number and a non-negative scale",
+      }
+    ));
+    Ok(call())
+  };
+
+  // The smoothing scale, and the sharpness / threshold cut-offs together with
+  // the scale each is measured at. A bare sharpness inherits the smoothing
+  // scale; a bare threshold is measured on the original values.
+  let sigma = match args.get(1) {
+    None => 0.0,
+    Some(e) => match non_negative_real(e) {
+      Some(v) => v,
+      None => return refuse("scale", "scale", e, 2),
+    },
+  };
+  let sharpness = match args.get(2) {
+    None => (0.0, sigma),
+    Some(e) => match peak_parameter(e, sigma, true) {
+      Some(p) => p,
+      None => return refuse("shrpn", "sharpness parameter", e, 3),
+    },
+  };
+  let threshold = match args.get(3) {
+    None => (f64::NEG_INFINITY, 0.0),
+    Some(e) => match peak_parameter(e, 0.0, false) {
+      Some(p) => p,
+      None => return refuse("thrsh", "threshold parameter", e, 4),
+    },
+  };
+
   // Anything that is not a consistent list of real values emits FindPeaks::arg
   // and stays unevaluated, matching wolframscript.
   let bail = || {
@@ -228,7 +324,7 @@ pub fn find_peaks_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       "FindPeaks::arg: The argument {} at position 1 is not a consistent list of real values.",
       crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
     ));
-    Ok(unevaluated())
+    Ok(call())
   };
   let items: &[Expr] = match list {
     Expr::List(items) => items.as_slice(),
@@ -242,6 +338,10 @@ pub fn find_peaks_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       None => return bail(),
     }
   }
+  // Any non-zero scale needs the scale-space pass this does not implement.
+  if sigma != 0.0 || sharpness.1 != 0.0 || threshold.1 != 0.0 {
+    return Ok(call());
+  }
 
   let n = vals.len();
   let mut peaks: Vec<Expr> = Vec::new();
@@ -253,18 +353,42 @@ pub fn find_peaks_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       j += 1;
     }
     let v = vals[i];
-    let left_ok = i == 0 || vals[i - 1] < v;
-    let right_ok = j + 1 == n || vals[j + 1] < v;
-    let spans_whole_list = i == 0 && j + 1 == n;
-    if left_ok && right_ok && !spans_whole_list {
-      // Center = mean of the 1-based positions (i+1 .. j+1).
-      let pos_sum = (i + 1 + j + 1) as i128;
-      let pos = if pos_sum % 2 == 0 {
-        Expr::Integer(pos_sum / 2)
+    let at_left = i == 0;
+    let at_right = j + 1 == n;
+    let left_ok = at_left || vals[i - 1] < v;
+    let right_ok = at_right || vals[j + 1] < v;
+    let len = (j - i + 1) as f64;
+    // `Some((twice the reported position, sharpness))` for a run that can be a
+    // peak at all. A run touching one boundary is reported at that boundary
+    // index and only counts when it is at most two long; one touching both
+    // spans the whole list and is never a peak.
+    let candidate = match (at_left, at_right) {
+      (true, true) => None,
+      (true, false) if j <= 1 => {
+        Some((2, 2.0 * (v - vals[j + 1]) / (len * len)))
+      }
+      (false, true) if i + 2 >= n => {
+        Some((2 * n, 2.0 * (v - vals[i - 1]) / (len * len)))
+      }
+      (true, false) | (false, true) => None,
+      (false, false) => {
+        Some((i + 1 + j + 1, ((v - vals[i - 1]) + (v - vals[j + 1])) / len))
+      }
+    };
+    if let Some((twice_pos, sharp)) = candidate
+      && left_ok
+      && right_ok
+      && sharp >= sharpness.0
+      && v >= threshold.0
+    {
+      // `twice_pos` is twice the reported position, so a plateau centred
+      // between two indices keeps its exact half-integer position.
+      let pos = if twice_pos % 2 == 0 {
+        Expr::Integer((twice_pos / 2) as i128)
       } else {
         crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
           name: "Divide".to_string(),
-          args: vec![Expr::Integer(pos_sum), Expr::Integer(2)].into(),
+          args: vec![Expr::Integer(twice_pos as i128), Expr::Integer(2)].into(),
         })?
       };
       peaks.push(Expr::List(vec![pos, items[i].clone()].into()));

@@ -3568,8 +3568,8 @@ pub fn dispatch_list_operations(
     "AnglePath3D" if args.len() == 1 => {
       return Some(list_helpers_ast::angle_path_3d_ast(args));
     }
-    "FindPeaks" if args.len() == 1 => {
-      return Some(list_helpers_ast::find_peaks_ast(&args[0]));
+    "FindPeaks" if (1..=4).contains(&args.len()) => {
+      return Some(list_helpers_ast::find_peaks_ast(args));
     }
     // A concrete non-list argument (a number, string, association, boolean,
     // or any NumericQ atom such as Pi or Sin[2]) can never be differenced:
