@@ -11693,3 +11693,449 @@ pub fn schur_decomposition_ast(
   };
   Ok(Expr::List(vec![to_expr(q), to_expr(t)].into()))
 }
+
+/// How the entries of a `SymmetrizedArray` transform under the permutations of
+/// the tensor slots the symmetry names.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SymmetryKind {
+  /// Every permutation of the slots leaves the entry unchanged.
+  Symmetric,
+  /// An odd permutation of the slots negates the entry.
+  Antisymmetric,
+  /// An odd permutation of the slots conjugates the entry.
+  Hermitian,
+  /// Every entry is zero.
+  ZeroSymmetric,
+}
+
+impl SymmetryKind {
+  fn head(self) -> &'static str {
+    match self {
+      SymmetryKind::Symmetric => "Symmetric",
+      SymmetryKind::Antisymmetric => "Antisymmetric",
+      SymmetryKind::Hermitian => "Hermitian",
+      SymmetryKind::ZeroSymmetric => "ZeroSymmetric",
+    }
+  }
+
+  fn from_head(head: &str) -> Option<Self> {
+    match head {
+      "Symmetric" => Some(SymmetryKind::Symmetric),
+      "Antisymmetric" => Some(SymmetryKind::Antisymmetric),
+      "Hermitian" => Some(SymmetryKind::Hermitian),
+      "ZeroSymmetric" => Some(SymmetryKind::ZeroSymmetric),
+      _ => None,
+    }
+  }
+}
+
+/// Why a symmetry specification was refused, and which message wolframscript
+/// emits for it.
+enum SymmetryError {
+  /// `Symmetrize::symm` — not a symmetry at all, or a repeated slot.
+  Invalid,
+  /// `Symmetrize::symmrank` — the slot lies beyond the tensor's rank.
+  BeyondRank(usize),
+}
+
+/// Parse a symmetry specification for a rank-`rank` tensor into its kind and
+/// its 1-based slots. `None` is the `Symmetrize` default: full `Symmetric`
+/// symmetry over every slot. The slots come back sorted, matching
+/// wolframscript's canonicalisation of `Symmetric[{2, 1}]` to
+/// `Symmetric[{1, 2}]`.
+fn parse_symmetry(
+  spec: Option<&Expr>,
+  rank: usize,
+) -> Result<(SymmetryKind, Vec<usize>), SymmetryError> {
+  let Some(spec) = spec else {
+    return Ok((SymmetryKind::Symmetric, (1..=rank).collect()));
+  };
+  let Expr::FunctionCall { name, args } = spec else {
+    return Err(SymmetryError::Invalid);
+  };
+  let Some(kind) = SymmetryKind::from_head(name) else {
+    return Err(SymmetryError::Invalid);
+  };
+  let [Expr::List(items)] = &args[..] else {
+    return Err(SymmetryError::Invalid);
+  };
+  let mut slots = Vec::with_capacity(items.len());
+  for item in items.iter() {
+    let Expr::Integer(i) = item else {
+      return Err(SymmetryError::Invalid);
+    };
+    let i = *i;
+    if i < 1 {
+      return Err(SymmetryError::Invalid);
+    }
+    let slot = i as usize;
+    if slot > rank {
+      return Err(SymmetryError::BeyondRank(slot));
+    }
+    if slots.contains(&slot) {
+      return Err(SymmetryError::Invalid);
+    }
+    slots.push(slot);
+  }
+  if slots.is_empty() {
+    return Err(SymmetryError::Invalid);
+  }
+  slots.sort_unstable();
+  Ok((kind, slots))
+}
+
+/// The symmetry tag a `SymmetrizedArray` stores. A group over fewer than two
+/// slots is trivial and `ZeroSymmetric` has no entries left to relate, so both
+/// print as an empty list rather than as a symmetry head.
+fn symmetry_tag(kind: SymmetryKind, slots: &[usize]) -> Expr {
+  if slots.len() < 2 || kind == SymmetryKind::ZeroSymmetric {
+    return Expr::List(vec![].into());
+  }
+  Expr::FunctionCall {
+    name: kind.head().to_string(),
+    args: vec![Expr::List(
+      slots.iter().map(|&s| Expr::Integer(s as i128)).collect(),
+    )]
+    .into(),
+  }
+}
+
+/// Every permutation of `0..n` in lexicographic order, paired with whether it
+/// is odd.
+fn permutations_with_parity(n: usize) -> Vec<(Vec<usize>, bool)> {
+  let mut out = Vec::new();
+  let mut perm: Vec<usize> = (0..n).collect();
+  loop {
+    // The parity of a permutation is the parity of its number of inversions.
+    let inversions = (0..n)
+      .flat_map(|i| ((i + 1)..n).map(move |j| (i, j)))
+      .filter(|&(i, j)| perm[i] > perm[j])
+      .count();
+    out.push((perm.clone(), inversions % 2 == 1));
+    // Next permutation in lexicographic order.
+    let Some(i) = (0..n.saturating_sub(1))
+      .rev()
+      .find(|&i| perm[i] < perm[i + 1])
+    else {
+      return out;
+    };
+    let j = ((i + 1)..n).rev().find(|&j| perm[j] > perm[i]).unwrap();
+    perm.swap(i, j);
+    perm[i + 1..].reverse();
+  }
+}
+
+/// The row-major linear index of `pos` (0-based components) in `dims`.
+fn pos_to_linear(pos: &[usize], dims: &[usize]) -> usize {
+  pos.iter().zip(dims).fold(0, |acc, (&p, &d)| acc * d + p)
+}
+
+/// The 0-based position `dims` assigns to row-major linear index `lin`.
+fn linear_to_pos(mut lin: usize, dims: &[usize]) -> Vec<usize> {
+  let mut pos = vec![0; dims.len()];
+  for k in (0..dims.len()).rev() {
+    pos[k] = lin % dims[k];
+    lin /= dims[k];
+  }
+  pos
+}
+
+/// Wrap `dims`, the canonical `rules` and the symmetry `tag` in the
+/// `SymmetrizedArray[StructuredArray`StructuredData[…]]` form wolframscript
+/// prints.
+fn symmetrized_array(dims: &[usize], rules: Vec<Expr>, tag: Expr) -> Expr {
+  let structured_data = Expr::FunctionCall {
+    name: "StructuredArray`StructuredData".to_string(),
+    args: vec![
+      Expr::List(dims.iter().map(|&d| Expr::Integer(d as i128)).collect()),
+      Expr::List(vec![Expr::List(rules.into()), tag].into()),
+    ]
+    .into(),
+  };
+  Expr::FunctionCall {
+    name: "SymmetrizedArray".to_string(),
+    args: vec![structured_data].into(),
+  }
+}
+
+/// Symmetrize[t] / Symmetrize[t, sym] — project the array `t` onto a symmetry,
+/// as a `SymmetrizedArray`. Without `sym` the whole tensor is symmetrized.
+///
+/// Only the canonical positions are stored: those whose components at the
+/// symmetry slots are non-decreasing, or *strictly* increasing under
+/// `Antisymmetric`, where a repeated index forces the entry to zero. Each one
+/// holds the group average `(1/|G|) Σ_σ ε(σ) t[σ·p]`, where an odd `σ` negates
+/// the term under `Antisymmetric` and conjugates it under `Hermitian`. Entries
+/// that come out zero are dropped, and `ZeroSymmetric` stores nothing at all.
+pub fn symmetrize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let call = || unevaluated("Symmetrize", args);
+  let render =
+    |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
+  let Some(dims) = tensor_dims(&args[0]) else {
+    return Ok(call());
+  };
+  // A scalar has no slots to permute.
+  if dims.is_empty() {
+    return Ok(args[0].clone());
+  }
+  let rank = dims.len();
+  let (kind, slots) = match parse_symmetry(args.get(1), rank) {
+    Ok(parsed) => parsed,
+    Err(SymmetryError::Invalid) => {
+      crate::emit_message(&format!(
+        "Symmetrize::symm: Invalid symmetry specification {}.",
+        render(args.get(1).unwrap_or(&args[0]))
+      ));
+      return Ok(call());
+    }
+    Err(SymmetryError::BeyondRank(slot)) => {
+      crate::emit_message(&format!(
+        "Symmetrize::symmrank: Symmetry specification moves index {} beyond \
+         tensor rank {}.",
+        slot, rank
+      ));
+      return Ok(call());
+    }
+  };
+  // Permuting two slots only makes sense when they are the same length.
+  if slots.iter().any(|&s| dims[s - 1] != dims[slots[0] - 1]) {
+    crate::emit_message(&format!(
+      "Symmetrize::symmcomp: Symmetry specification {} is incompatible with \
+       expression {}.",
+      render(&Expr::FunctionCall {
+        name: kind.head().to_string(),
+        args: vec![Expr::List(
+          slots.iter().map(|&s| Expr::Integer(s as i128)).collect()
+        )]
+        .into(),
+      }),
+      render(&Expr::List(
+        dims.iter().map(|&d| Expr::Integer(d as i128)).collect()
+      ))
+    ));
+    return Ok(call());
+  }
+
+  let tag = symmetry_tag(kind, &slots);
+  if kind == SymmetryKind::ZeroSymmetric {
+    return Ok(symmetrized_array(&dims, Vec::new(), tag));
+  }
+  let flat = flatten_tensor(&args[0]);
+  let perms = permutations_with_parity(slots.len());
+  let mut rules: Vec<Expr> = Vec::new();
+  for lin in 0..flat.len() {
+    let pos = linear_to_pos(lin, &dims);
+    let at_slots: Vec<usize> = slots.iter().map(|&s| pos[s - 1]).collect();
+    let canonical = at_slots.windows(2).all(|w| match kind {
+      SymmetryKind::Antisymmetric => w[0] < w[1],
+      _ => w[0] <= w[1],
+    });
+    if !canonical {
+      continue;
+    }
+    // The average runs over the *distinct* terms the group produces, not over
+    // the group itself: a position whose orbit is smaller than the group (a
+    // repeated index) contributes each orbit element once, which is why
+    // wolframscript reports (a[1,1,2] + a[1,2,1] + a[2,1,1])/3 rather than the
+    // same sum doubled over 6. Under `Hermitian` a term is only a duplicate of
+    // another when its conjugation matches too.
+    let mut seen: Vec<(Vec<usize>, bool)> = Vec::with_capacity(perms.len());
+    let mut terms: Vec<Expr> = Vec::with_capacity(perms.len());
+    for (perm, odd) in &perms {
+      let mut permuted = pos.clone();
+      for (k, &from) in perm.iter().enumerate() {
+        permuted[slots[k] - 1] = at_slots[from];
+      }
+      let flips = *odd && kind != SymmetryKind::Symmetric;
+      if seen.contains(&(permuted.clone(), flips)) {
+        continue;
+      }
+      seen.push((permuted.clone(), flips));
+      let mut term = flat[pos_to_linear(&permuted, &dims)].clone();
+      if flips {
+        term = match kind {
+          SymmetryKind::Antisymmetric => Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), term].into(),
+          },
+          SymmetryKind::Hermitian => Expr::FunctionCall {
+            name: "Conjugate".to_string(),
+            args: vec![term].into(),
+          },
+          _ => term,
+        };
+      }
+      terms.push(term);
+    }
+    let count = terms.len() as i128;
+    let sum = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    };
+    let average = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(1), Expr::Integer(count)].into(),
+        },
+        sum,
+      ]
+      .into(),
+    };
+    let value = evaluate_expr_to_expr(&average)?;
+    if matches!(&value, Expr::Integer(0)) {
+      continue;
+    }
+    rules.push(Expr::FunctionCall {
+      name: "Rule".to_string(),
+      args: vec![
+        Expr::List(
+          pos
+            .iter()
+            .map(|&p| Expr::Integer((p + 1) as i128))
+            .collect(),
+        ),
+        value,
+      ]
+      .into(),
+    });
+  }
+  Ok(symmetrized_array(&dims, rules, tag))
+}
+
+/// The dimensions, canonical entries and symmetry of a `SymmetrizedArray`.
+/// The symmetry is `None` when the stored tag is empty — a trivial one-slot
+/// group, or `ZeroSymmetric`. Returns `None` for anything that is not a
+/// `SymmetrizedArray`.
+type SymmetrizedParts = (
+  Vec<usize>,
+  Vec<(Vec<usize>, Expr)>,
+  Option<(SymmetryKind, Vec<usize>)>,
+);
+fn parse_symmetrized_array(e: &Expr) -> Option<SymmetrizedParts> {
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  if name != "SymmetrizedArray" || args.len() != 1 {
+    return None;
+  }
+  let Expr::FunctionCall {
+    name: inner,
+    args: data,
+  } = &args[0]
+  else {
+    return None;
+  };
+  if inner != "StructuredArray`StructuredData" || data.len() != 2 {
+    return None;
+  }
+  let (Expr::List(dim_items), Expr::List(payload)) = (&data[0], &data[1])
+  else {
+    return None;
+  };
+  let mut dims = Vec::with_capacity(dim_items.len());
+  for d in dim_items.iter() {
+    let Expr::Integer(d) = d else { return None };
+    dims.push(*d as usize);
+  }
+  let [Expr::List(rule_items), tag] = &payload[..] else {
+    return None;
+  };
+  let mut entries = Vec::with_capacity(rule_items.len());
+  for rule in rule_items.iter() {
+    let (pos, value) = match rule {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref()),
+      Expr::FunctionCall { name, args }
+        if name == "Rule" && args.len() == 2 =>
+      {
+        (&args[0], &args[1])
+      }
+      _ => return None,
+    };
+    let Expr::List(components) = pos else {
+      return None;
+    };
+    let mut p = Vec::with_capacity(components.len());
+    for c in components.iter() {
+      let Expr::Integer(c) = c else { return None };
+      p.push(*c as usize - 1);
+    }
+    entries.push((p, value.clone()));
+  }
+  let symmetry = parse_symmetry(Some(tag), dims.len()).ok();
+  Some((dims, entries, symmetry))
+}
+
+/// Every non-zero position of a `SymmetrizedArray` and its value, in
+/// lexicographic position order: each stored canonical entry spread over the
+/// orbit of its position, negated or conjugated wherever the permutation that
+/// reaches the position is odd.
+fn symmetrized_array_entries(
+  parts: &SymmetrizedParts,
+) -> Result<Vec<(Vec<usize>, Expr)>, InterpreterError> {
+  let (_, entries, symmetry) = parts;
+  let mut dense: std::collections::BTreeMap<Vec<usize>, Expr> =
+    std::collections::BTreeMap::new();
+  let Some((kind, slots)) = symmetry else {
+    // A trivial symmetry relates nothing: the stored entries are the whole
+    // array.
+    for (pos, value) in entries {
+      dense.insert(pos.clone(), value.clone());
+    }
+    return Ok(dense.into_iter().collect());
+  };
+  for (pos, value) in entries {
+    let at_slots: Vec<usize> = slots.iter().map(|&s| pos[s - 1]).collect();
+    for (perm, odd) in permutations_with_parity(slots.len()) {
+      let mut permuted = pos.clone();
+      for (k, &from) in perm.iter().enumerate() {
+        permuted[slots[k] - 1] = at_slots[from];
+      }
+      let mut entry = value.clone();
+      if odd {
+        entry = match kind {
+          SymmetryKind::Antisymmetric => {
+            evaluate_expr_to_expr(&Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-1), entry].into(),
+            })?
+          }
+          SymmetryKind::Hermitian => {
+            evaluate_expr_to_expr(&Expr::FunctionCall {
+              name: "Conjugate".to_string(),
+              args: vec![entry].into(),
+            })?
+          }
+          _ => entry,
+        };
+      }
+      dense.insert(permuted, entry);
+    }
+  }
+  Ok(dense.into_iter().collect())
+}
+
+/// The dense array a `SymmetrizedArray` stands for, with every position its
+/// symmetry leaves unconstrained filled in with 0. `Normal`, `Dimensions` and
+/// `ArrayRules` all go through this so they share the generic list
+/// implementations instead of each re-deriving the symmetry.
+pub fn symmetrized_array_to_dense(
+  e: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  let parts = parse_symmetrized_array(e)?;
+  let entries = match symmetrized_array_entries(&parts) {
+    Ok(entries) => entries,
+    Err(err) => return Some(Err(err)),
+  };
+  let (dims, _, _) = &parts;
+  let total: usize = dims.iter().product();
+  let mut flat = vec![Expr::Integer(0); total];
+  for (pos, value) in entries {
+    flat[pos_to_linear(&pos, dims)] = value;
+  }
+  Some(Ok(build_from_flat(&flat, dims)))
+}

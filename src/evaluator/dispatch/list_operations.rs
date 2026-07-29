@@ -2398,6 +2398,20 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::delete_elements_ast(args));
     }
     "Dimensions" | "TensorDimensions" if args.len() == 1 || args.len() == 2 => {
+      // A SymmetrizedArray reports on the dense array it stands for, whose
+      // positions the symmetry only stores one representative of.
+      if let Some(dense) =
+        crate::functions::linear_algebra_ast::symmetrized_array_to_dense(
+          &args[0],
+        )
+      {
+        let mut densified = args.to_vec();
+        densified[0] = match dense {
+          Ok(d) => d,
+          Err(err) => return Some(Err(err)),
+        };
+        return Some(list_helpers_ast::dimensions_ast(&densified));
+      }
       // A structured-matrix wrapper (CauchyMatrix[…], BlockDiagonalMatrix[…],
       // …) reports the dimensions of the matrix it represents, not of the
       // wrapper expression.
@@ -2996,6 +3010,15 @@ pub fn dispatch_list_operations(
           crate::functions::linear_algebra_ast::fitted_model_normal(fm_args),
         );
       }
+      // A SymmetrizedArray reports on the dense array it stands for, whose
+      // positions the symmetry only stores one representative of.
+      if let Some(dense) =
+        crate::functions::linear_algebra_ast::symmetrized_array_to_dense(
+          &args[0],
+        )
+      {
+        return Some(dense);
+      }
       // Normal[LowerTriangularMatrix[…]] (and the other structured-matrix
       // wrappers produced by LUDecomposition) expands to the dense list.
       if let Some(dense) =
@@ -3351,6 +3374,20 @@ pub fn dispatch_list_operations(
       ));
     }
     "ArrayRules" if args.len() == 1 || args.len() == 2 => {
+      // A SymmetrizedArray reports on the dense array it stands for, whose
+      // positions the symmetry only stores one representative of.
+      if let Some(dense) =
+        crate::functions::linear_algebra_ast::symmetrized_array_to_dense(
+          &args[0],
+        )
+      {
+        let mut densified = args.to_vec();
+        densified[0] = match dense {
+          Ok(d) => d,
+          Err(err) => return Some(Err(err)),
+        };
+        return Some(array_rules_ast(&densified));
+      }
       // Structured matrices report the rules of the matrix they represent.
       if let Some(dense) =
         crate::functions::linear_algebra_ast::structured_matrix_to_dense(

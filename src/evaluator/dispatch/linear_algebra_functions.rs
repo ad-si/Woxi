@@ -3293,89 +3293,10 @@ pub fn dispatch_linear_algebra_functions(
         return Some(evaluate_expr_to_expr(&result));
       }
     }
-    // Symmetrize[matrix] — symmetrize a square matrix. wolframscript returns
-    // a SymmetrizedArray whose StructuredData stores only the upper-triangle
-    // entries (positions {i, j} with i ≤ j) of (M + M^T)/2, marked with a
-    // `Symmetric[{1, 2}]` tag.
-    "Symmetrize" if args.len() == 1 => {
-      if let Expr::List(rows) = &args[0] {
-        let n = rows.len();
-        let mut matrix: Vec<Vec<Expr>> = Vec::new();
-        let mut all_ok = true;
-        for row in rows {
-          if let Expr::List(cols) = row {
-            if cols.len() != n {
-              all_ok = false;
-              break;
-            }
-            matrix.push(cols.to_vec());
-          } else {
-            all_ok = false;
-            break;
-          }
-        }
-        if all_ok && n > 0 {
-          let mut rules: Vec<Expr> = Vec::new();
-          for i in 0..n {
-            for j in i..n {
-              let entry = if i == j {
-                matrix[i][j].clone()
-              } else {
-                let sum = Expr::FunctionCall {
-                  name: "Plus".to_string(),
-                  args: vec![matrix[i][j].clone(), matrix[j][i].clone()].into(),
-                };
-                let half = Expr::FunctionCall {
-                  name: "Times".to_string(),
-                  args: vec![
-                    Expr::FunctionCall {
-                      name: "Rational".to_string(),
-                      args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-                    },
-                    sum,
-                  ]
-                  .into(),
-                };
-                match evaluate_expr_to_expr(&half) {
-                  Ok(val) => val,
-                  Err(_) => half,
-                }
-              };
-              let pos = Expr::List(
-                vec![
-                  Expr::Integer((i + 1) as i128),
-                  Expr::Integer((j + 1) as i128),
-                ]
-                .into(),
-              );
-              rules.push(Expr::FunctionCall {
-                name: "Rule".to_string(),
-                args: vec![pos, entry].into(),
-              });
-            }
-          }
-          let dims = Expr::List(
-            vec![Expr::Integer(n as i128), Expr::Integer(n as i128)].into(),
-          );
-          let symmetric_tag = Expr::FunctionCall {
-            name: "Symmetric".to_string(),
-            args: vec![Expr::List(
-              vec![Expr::Integer(1), Expr::Integer(2)].into(),
-            )]
-            .into(),
-          };
-          let inner_list =
-            Expr::List(vec![Expr::List(rules.into()), symmetric_tag].into());
-          let structured_data = Expr::FunctionCall {
-            name: "StructuredArray`StructuredData".to_string(),
-            args: vec![dims, inner_list].into(),
-          };
-          return Some(Ok(Expr::FunctionCall {
-            name: "SymmetrizedArray".to_string(),
-            args: vec![structured_data].into(),
-          }));
-        }
-      }
+    // Symmetrize[t] / Symmetrize[t, sym] — project an array onto a tensor
+    // symmetry, as a SymmetrizedArray.
+    "Symmetrize" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::linear_algebra_ast::symmetrize_ast(args));
     }
     _ => {}
   }

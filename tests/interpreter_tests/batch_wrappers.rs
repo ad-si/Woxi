@@ -7216,6 +7216,196 @@ mod batch_unevaluated_wrappers_2 {
       "SymmetrizedArray[StructuredArray`StructuredData[{2, 2}, {{{1, 1} -> 1, {1, 2} -> 3, {2, 2} -> 3}, Symmetric[{1, 2}]}]]"
     );
   }
+  // Antisymmetric stores only the strictly-increasing positions, since a
+  // repeated index forces the entry to zero, and drops the entries that come
+  // out zero anyway.
+  #[test]
+  fn symmetrize_antisymmetric() {
+    assert_eq!(
+      interpret("Symmetrize[{{1, 2}, {3, 4}}, Antisymmetric[{1, 2}]]").unwrap(),
+      "SymmetrizedArray[StructuredArray`StructuredData[{2, 2}, \
+       {{{1, 2} -> -1/2}, Antisymmetric[{1, 2}]}]]"
+    );
+    assert_eq!(
+      interpret("Symmetrize[{{a, b}, {c, d}}, Antisymmetric[{1, 2}]]").unwrap(),
+      "SymmetrizedArray[StructuredArray`StructuredData[{2, 2}, \
+       {{{1, 2} -> (b - c)/2}, Antisymmetric[{1, 2}]}]]"
+    );
+    // A symmetric input has no antisymmetric part left.
+    assert_eq!(
+      interpret("Symmetrize[{{1, 2}, {2, 1}}, Antisymmetric[{1, 2}]]").unwrap(),
+      "SymmetrizedArray[StructuredArray`StructuredData[{2, 2}, \
+       {{}, Antisymmetric[{1, 2}]}]]"
+    );
+  }
+  // Hermitian conjugates the entry reached by an odd permutation, so the
+  // diagonal keeps its real part.
+  #[test]
+  fn symmetrize_hermitian() {
+    assert_eq!(
+      interpret("Symmetrize[{{1, 2 + I}, {4 - I, 3}}, Hermitian[{1, 2}]]")
+        .unwrap(),
+      "SymmetrizedArray[StructuredArray`StructuredData[{2, 2}, \
+       {{{1, 1} -> 1, {1, 2} -> 3 + I, {2, 2} -> 3}, Hermitian[{1, 2}]}]]"
+    );
+  }
+  // ZeroSymmetric keeps nothing, and prints an empty symmetry tag.
+  #[test]
+  fn symmetrize_zero_symmetric() {
+    assert_eq!(
+      interpret("Symmetrize[{{a, b}, {c, d}}, ZeroSymmetric[{1, 2}]]").unwrap(),
+      "SymmetrizedArray[StructuredArray`StructuredData[{2, 2}, {{}, {}}]]"
+    );
+  }
+  // A symmetry over a single slot is the trivial group: every position is
+  // canonical and the tag is empty. A rank-1 array defaults to that.
+  #[test]
+  fn symmetrize_trivial_symmetry() {
+    assert_eq!(
+      interpret("Symmetrize[{1, 2, 3}]").unwrap(),
+      "SymmetrizedArray[StructuredArray`StructuredData[{3}, \
+       {{{1} -> 1, {2} -> 2, {3} -> 3}, {}}]]"
+    );
+    assert_eq!(
+      interpret("Symmetrize[{{a, b}, {c, d}}, Symmetric[{1}]]").unwrap(),
+      "SymmetrizedArray[StructuredArray`StructuredData[{2, 2}, \
+       {{{1, 1} -> a, {1, 2} -> b, {2, 1} -> c, {2, 2} -> d}, {}}]]"
+    );
+    // A scalar has no slots to permute.
+    assert_eq!(interpret("Symmetrize[5]").unwrap(), "5");
+  }
+  // The default symmetry covers every slot, so a rank-3 array averages over
+  // all six permutations — but each *distinct* term counts once, which is why
+  // the repeated-index entries are divided by 3 rather than by 6.
+  #[test]
+  fn symmetrize_higher_rank() {
+    assert_eq!(
+      interpret("Symmetrize[Array[a, {2, 2, 2}]]").unwrap(),
+      "SymmetrizedArray[StructuredArray`StructuredData[{2, 2, 2}, \
+       {{{1, 1, 1} -> a[1, 1, 1], \
+       {1, 1, 2} -> (a[1, 1, 2] + a[1, 2, 1] + a[2, 1, 1])/3, \
+       {1, 2, 2} -> (a[1, 2, 2] + a[2, 1, 2] + a[2, 2, 1])/3, \
+       {2, 2, 2} -> a[2, 2, 2]}, Symmetric[{1, 2, 3}]}]]"
+    );
+    // The signs of a rank-3 antisymmetrization.
+    assert_eq!(
+      interpret("Symmetrize[Array[a, {3, 3, 3}], Antisymmetric[{1, 2, 3}]]")
+        .unwrap(),
+      "SymmetrizedArray[StructuredArray`StructuredData[{3, 3, 3}, \
+       {{{1, 2, 3} -> (a[1, 2, 3] - a[1, 3, 2] - a[2, 1, 3] + a[2, 3, 1] \
+       + a[3, 1, 2] - a[3, 2, 1])/6}, Antisymmetric[{1, 2, 3}]}]]"
+    );
+    // The symmetrized slots need not be adjacent, and the untouched slot may
+    // have a different length.
+    assert_eq!(
+      interpret("Symmetrize[Array[a, {2, 3, 2}], Symmetric[{1, 3}]]").unwrap(),
+      "SymmetrizedArray[StructuredArray`StructuredData[{2, 3, 2}, \
+       {{{1, 1, 1} -> a[1, 1, 1], \
+       {1, 1, 2} -> (a[1, 1, 2] + a[2, 1, 1])/2, \
+       {1, 2, 1} -> a[1, 2, 1], \
+       {1, 2, 2} -> (a[1, 2, 2] + a[2, 2, 1])/2, \
+       {1, 3, 1} -> a[1, 3, 1], \
+       {1, 3, 2} -> (a[1, 3, 2] + a[2, 3, 1])/2, \
+       {2, 1, 2} -> a[2, 1, 2], \
+       {2, 2, 2} -> a[2, 2, 2], \
+       {2, 3, 2} -> a[2, 3, 2]}, Symmetric[{1, 3}]}]]"
+    );
+  }
+  // Normal expands the stored canonical entries over their orbits, negating or
+  // conjugating where the permutation that reaches the position is odd, and
+  // fills the rest with 0. Dimensions and ArrayRules read the same dense form.
+  #[test]
+  fn symmetrized_array_normal_dimensions_array_rules() {
+    assert_eq!(
+      interpret("Normal[Symmetrize[{{a, b}, {c, d}}]]").unwrap(),
+      "{{a, (b + c)/2}, {(b + c)/2, d}}"
+    );
+    assert_eq!(
+      interpret("Normal[Symmetrize[{{1, 2}, {3, 4}}, Antisymmetric[{1, 2}]]]")
+        .unwrap(),
+      "{{0, -1/2}, {1/2, 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "Normal[Symmetrize[{{1, 2 + I}, {4 - I, 3}}, Hermitian[{1, 2}]]]"
+      )
+      .unwrap(),
+      "{{1, 3 + I}, {3 - I, 3}}"
+    );
+    assert_eq!(
+      interpret("Normal[Symmetrize[{{a, b}, {c, d}}, ZeroSymmetric[{1, 2}]]]")
+        .unwrap(),
+      "{{0, 0}, {0, 0}}"
+    );
+    assert_eq!(
+      interpret("Dimensions[Symmetrize[Array[a, {2, 2, 2}]]]").unwrap(),
+      "{2, 2, 2}"
+    );
+    assert_eq!(
+      interpret(
+        "ArrayRules[Symmetrize[{{1, 2}, {3, 4}}, Antisymmetric[{1, 2}]]]"
+      )
+      .unwrap(),
+      "{{1, 2} -> -1/2, {2, 1} -> 1/2, {_, _} -> 0}"
+    );
+    assert_eq!(
+      interpret(
+        "ArrayRules[Symmetrize[{{a, b}, {c, d}}, ZeroSymmetric[{1, 2}]]]"
+      )
+      .unwrap(),
+      "{{_, _} -> 0}"
+    );
+  }
+  // A symmetry that cannot apply to the array is refused with the message
+  // wolframscript emits, leaving the call unevaluated.
+  #[test]
+  fn symmetrize_invalid_symmetry() {
+    let r = interpret_with_stdout(
+      "Symmetrize[{{1, 2, 3}, {4, 5, 6}}, Symmetric[{1, 2}]]",
+    )
+    .unwrap();
+    assert_eq!(
+      r.result,
+      "Symmetrize[{{1, 2, 3}, {4, 5, 6}}, Symmetric[{1, 2}]]"
+    );
+    assert!(
+      r.warnings.iter().any(|w| w
+        == "Symmetrize::symmcomp: Symmetry specification Symmetric[{1, 2}] \
+            is incompatible with expression {2, 3}."),
+      "expected symmcomp message, got {:?}",
+      r.warnings
+    );
+    let r = interpret_with_stdout(
+      "Symmetrize[{{a, b}, {c, d}}, Symmetric[{1, 2, 3}]]",
+    )
+    .unwrap();
+    assert!(
+      r.warnings.iter().any(|w| w
+        == "Symmetrize::symmrank: Symmetry specification moves index 3 \
+            beyond tensor rank 2."),
+      "expected symmrank message, got {:?}",
+      r.warnings
+    );
+    let r = interpret_with_stdout("Symmetrize[{{a, b}, {c, d}}, foo]").unwrap();
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w == "Symmetrize::symm: Invalid symmetry specification foo."),
+      "expected symm message, got {:?}",
+      r.warnings
+    );
+    // A repeated slot is not a permutation group.
+    let r =
+      interpret_with_stdout("Symmetrize[{{a, b}, {c, d}}, Symmetric[{1, 1}]]")
+        .unwrap();
+    assert!(
+      r.warnings.iter().any(|w| w
+        == "Symmetrize::symm: Invalid symmetry specification \
+            Symmetric[{1, 1}]."),
+      "expected symm message, got {:?}",
+      r.warnings
+    );
+  }
 
   // DisjointQ
   #[test]

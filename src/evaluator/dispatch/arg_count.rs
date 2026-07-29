@@ -1466,7 +1466,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "SymmetricReduction" => Some((2, 3)),
     "PowerSymmetricPolynomial" => Some((1, 2)),
     "AugmentedSymmetricPolynomial" => Some((2, 2)),
-    "Symmetrize" => Some((1, 1)),
+    "Symmetrize" => Some((1, 2)),
     "SyntaxQ" => Some((1, 1)),
     "Table" => Some((2, usize::MAX)),
     // Take[expr] / Drop[expr] take and drop nothing: they return expr.

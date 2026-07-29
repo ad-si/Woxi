@@ -2064,7 +2064,7 @@ CatenateLayer,Neural network concatenation layer,🚫,,11.0,2084
 CurveClosed,Check if curve is closed,🚫,,8.0,2084
 FactorialPower,Falling factorial n*(n-1)*...*(n-k+1) (Listable),✅,pure,7.0,2085
 SuperMinus,Typesetting notation for superscript minus,✅,none,6.0,2087
-Symmetric,Symmetric tensor symmetry,🚫,,9.0,2087
+Symmetric,Represents the symmetry of a tensor that is symmetric in the specified slots,✅,pure,9.0,2087
 AbortProtect,Evaluates its argument and returns the result (abort protection during the body),✅,pure,2.0,2089
 ConnectedGraphQ,Test whether a graph is connected (strongly connected for directed graphs),✅,pure,8.0,2089
 PowerSpectralDensity,Power spectral density of signal,🚫,,9.0,2091
@@ -2089,7 +2089,7 @@ TextJustification,Text justification option,🚫,,3.0,2108
 MaxStepFraction,ODE solver step size option,🚫,,4.0,2112
 NotebookEvaluate,Evaluate notebook programmatically,🚫,,8.0,2112
 SymmetricReduction,Reduce a polynomial into symmetric part and remainder over elementary symmetric polynomials,✅,none,6.0,2112
-SymmetrizedArray,Array with symmetry constraints,🚫,,9.0,2112
+SymmetrizedArray,Array stored by its canonical entries under a tensor symmetry — expanded by Normal and queried by Dimensions and ArrayRules,✅,pure,9.0,2112
 ActionMenu,Dropdown action menu (stays symbolic in script mode),✅,unevaluated,6.0,2116
 BitShiftLeft,Shifts integer bits to the left,✅,pure,6.0,2116
 ButtonNotebook,Notebook containing buttons,🚫,,3.0,2116
@@ -2415,7 +2415,7 @@ MoleculePlot3D,,🚫,,12.0,2449
 PreserveImageOptions,,🚫,,6.0,2449
 ReverseSort,Sorts a list in reverse order (on an association sorts pairs descending by value),✅,pure,11.1,2449
 TimeSeriesResample,Resamples a time series at an even step or on a given weekday,✅,pure,10.0,2449
-Antisymmetric,represents the symmetry of a tensor that is antisymmetric in the specified slots,✅,none,9.0,2452
+Antisymmetric,Represents the symmetry of a tensor that is antisymmetric in the specified slots,✅,pure,9.0,2452
 EventSeries,Represents a series of events paired with time stamps,✅,pure,10.0,2452
 UnderscriptBox,a low-level typesetting box representing an expression with an underscript,✅,none,3.0,2452
 Definition,Display the definition of a symbol,✅,pure,1.0,2462
@@ -2638,7 +2638,7 @@ LinkCreate,,🚫,,3.0,2675
 LocationTest,perform a one- or two-sample t-test for location,✅,none,8.0,2675
 FindPermutation,Find permutation mapping one list to another,✅,1,8.0,2679
 HitMissTransform,,🚫,,7.0,2679
-Symmetrize,Symmetrize a matrix,✅,1,9.0,2679
+Symmetrize,Projects an array onto a tensor symmetry as a SymmetrizedArray — Symmetric Antisymmetric Hermitian or ZeroSymmetric over any set of slots (defaulting to full symmetry),✅,pure,9.0,2679
 ViewMatrix,,🚫,,6.0,2679
 DiscreteAsymptotic,compute leading asymptotic term of a discrete sequence,✅,none,12.1,2688
 FullGraphics,Converts graphics primitives to explicit coordinates,✅,pure,2.0,2688
@@ -4532,7 +4532,7 @@ ExternalIdentifier,Symbolic wrapper for an identifier in an external system (sta
 FeatureNearest,,🚫,,11.1,4707
 FunctionSign,,,,12.2,4707
 GeodesicOpening,,🚫,,9.0,4707
-Hermitian,,,,12.2,4707
+Hermitian,Represents the symmetry of a tensor that is Hermitian in the specified slots — an odd permutation conjugates the entry,✅,pure,12.2,4707
 ImageFileApply,,🚫,,9.0,4707
 InitialEvaluationHistory,,,,11.0,4707
 KEdgeConnectedComponents,,,,10.0,4707
@@ -4714,7 +4714,7 @@ UnionPlus,,,,3.0,4881
 VideoQ,,🚫,,12.1,4881
 WebElementObject,,🚫,,12.0,4881
 WindingPolygon,,,,12.0,4881
-ZeroSymmetric,,,,9.0,4881
+ZeroSymmetric,Represents the symmetry of a tensor whose entries all vanish under the specified slots,✅,pure,9.0,4881
 AlternatingFactorial,Alternating sum of factorials,✅,none,10.0,4947
 AudioLabel,,🚫,,11.0,4947
 AudioOutputDevice,,🚫,,11.2,4947
