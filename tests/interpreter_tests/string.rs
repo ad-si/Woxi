@@ -2616,6 +2616,81 @@ mod string_patterns {
     );
   }
 
+  // `Overlaps -> All` reports *every* match at every start position, not just
+  // the preferred one, so a variable-length pattern contributes one match per
+  // length it can take at each start.
+  #[test]
+  fn string_cases_overlaps_all() {
+    assert_eq!(
+      interpret("StringCases[\"abcd\", __, Overlaps -> All]").unwrap(),
+      "{abcd, abc, ab, a, bcd, bc, b, cd, c, d}"
+    );
+    // A greedy pattern reports its longest match first at each start
+    // position; Shortest[…] reverses that order.
+    assert_eq!(
+      interpret("StringCases[\"abcd\", Shortest[__], Overlaps -> All]")
+        .unwrap(),
+      "{a, ab, abc, abcd, b, bc, bcd, c, cd, d}"
+    );
+    // `___` also matches the empty string at every boundary, including the one
+    // past the last character.
+    assert_eq!(
+      interpret("StringCases[\"abc\", ___, Overlaps -> All]").unwrap(),
+      "{abc, ab, a, , bc, b, , c, , }"
+    );
+    // Alternatives are reported in their written order.
+    assert_eq!(
+      interpret(
+        "StringCases[\"abc\", \"a\" | \"ab\" | \"abc\", Overlaps -> All]"
+      )
+      .unwrap(),
+      "{a, ab, abc}"
+    );
+    assert_eq!(
+      interpret(
+        "StringCases[\"abc\", \"abc\" | \"ab\" | \"a\", Overlaps -> All]"
+      )
+      .unwrap(),
+      "{abc, ab, a}"
+    );
+    // A fixed-length pattern has one length per start, so All matches True.
+    assert_eq!(
+      interpret("StringCases[\"ababab\", \"ab\" | \"ba\", Overlaps -> All]")
+        .unwrap(),
+      "{ab, ba, ab, ba, ab}"
+    );
+    // Back-references still have to agree.
+    assert_eq!(
+      interpret("StringCases[\"xaax\", x_ ~~ x_, Overlaps -> All]").unwrap(),
+      "{aa}"
+    );
+    // StartOfString / EndOfString keep pinning the span to the string edges.
+    assert_eq!(
+      interpret("StringCases[\"abcd\", __ ~~ EndOfString, Overlaps -> All]")
+        .unwrap(),
+      "{abcd, bcd, cd, d}"
+    );
+    // The count limit truncates the reported matches, and IgnoreCase applies.
+    assert_eq!(
+      interpret("StringCases[\"abcd\", __, 3, Overlaps -> All]").unwrap(),
+      "{abcd, abc, ab}"
+    );
+    assert_eq!(
+      interpret(
+        "StringCases[\"ABab\", \"a\" ~~ __, Overlaps -> All, \
+         IgnoreCase -> True]"
+      )
+      .unwrap(),
+      "{ABab, ABa, AB, ab}"
+    );
+    // Rules are applied to every reported match.
+    assert_eq!(
+      interpret("StringCases[\"abcd\", x_ ~~ y_ :> x <> y, Overlaps -> All]")
+        .unwrap(),
+      "{ab, bc, cd}"
+    );
+  }
+
   #[test]
   fn string_cases_single_digit_character() {
     assert_eq!(
@@ -8183,6 +8258,27 @@ mod string_count_patterns {
       "{2, 3}"
     );
   }
+
+  // For a variable-length pattern the two settings differ: Overlaps -> True
+  // counts one match per start position, Overlaps -> All counts every length
+  // the pattern can take at each start position.
+  #[test]
+  fn count_overlaps_all_counts_every_length() {
+    assert_eq!(interpret(r#"StringCount["abcd", __]"#).unwrap(), "1");
+    assert_eq!(
+      interpret(r#"StringCount["abcd", __, Overlaps -> True]"#).unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret(r#"StringCount["abcd", __, Overlaps -> All]"#).unwrap(),
+      "10"
+    );
+    assert_eq!(
+      interpret(r#"StringCount["abab", "ab" | "ba" | "aba", Overlaps -> All]"#)
+        .unwrap(),
+      "4"
+    );
+  }
 }
 
 mod string_starts_ends_patterns {
@@ -8653,6 +8749,46 @@ mod string_position_alternatives {
       interpret(r#"StringPosition["abababab", "aba", Overlaps -> False]"#)
         .unwrap(),
       "{{1, 3}, {5, 7}}"
+    );
+  }
+
+  // `Overlaps -> All` reports every span the pattern can match, grouped by
+  // start position; the default reports only the preferred span per position.
+  #[test]
+  fn string_position_overlaps_all() {
+    assert_eq!(
+      interpret(r#"StringPosition["abcd", __]"#).unwrap(),
+      "{{1, 4}, {2, 4}, {3, 4}, {4, 4}}"
+    );
+    assert_eq!(
+      interpret(r#"StringPosition["abcd", __, Overlaps -> All]"#).unwrap(),
+      "{{1, 4}, {1, 3}, {1, 2}, {1, 1}, {2, 4}, {2, 3}, {2, 2}, {3, 4}, \
+       {3, 3}, {4, 4}}"
+    );
+    assert_eq!(
+      interpret(r#"StringPosition["abcd", Shortest[__], Overlaps -> All]"#)
+        .unwrap(),
+      "{{1, 1}, {1, 2}, {1, 3}, {1, 4}, {2, 2}, {2, 3}, {2, 4}, {3, 3}, \
+       {3, 4}, {4, 4}}"
+    );
+    // `___` adds the empty span {i, i - 1} at every boundary.
+    assert_eq!(
+      interpret(r#"StringPosition["abc", ___, Overlaps -> All]"#).unwrap(),
+      "{{1, 3}, {1, 2}, {1, 1}, {1, 0}, {2, 3}, {2, 2}, {2, 1}, {3, 3}, \
+       {3, 2}, {4, 3}}"
+    );
+    // A leading StartOfString still pins every span to the string start.
+    assert_eq!(
+      interpret(
+        r#"StringPosition["abcd", StartOfString ~~ __, Overlaps -> All]"#
+      )
+      .unwrap(),
+      "{{1, 4}, {1, 3}, {1, 2}, {1, 1}}"
+    );
+    // The count limit truncates the reported spans.
+    assert_eq!(
+      interpret(r#"StringPosition["abcd", __, 2, Overlaps -> All]"#).unwrap(),
+      "{{1, 4}, {1, 3}}"
     );
   }
 

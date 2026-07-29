@@ -4689,6 +4689,32 @@ mod batch_unevaluated_wrappers_2 {
       "3"
     );
   }
+  // With a variable-length sequence pattern the three settings differ: the
+  // default collapses the whole greedy run into one match, Overlaps -> True
+  // counts one match per start position and Overlaps -> All counts every length
+  // the pattern can take at each start position.
+  #[test]
+  fn sequence_count_overlaps_variable_length_pattern() {
+    assert_eq!(interpret("SequenceCount[{1, 2, 3, 4}, {__}]").unwrap(), "1");
+    assert_eq!(
+      interpret("SequenceCount[{1, 2, 3, 4}, {__}, Overlaps -> False]")
+        .unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("SequenceCount[{1, 2, 3, 4}, {__}, Overlaps -> True]").unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret("SequenceCount[{1, 2, 3, 4}, {__}, Overlaps -> All]").unwrap(),
+      "10"
+    );
+    assert_eq!(
+      interpret("SequenceCount[{1, 2, 3, 4}, {_, __}, Overlaps -> All]")
+        .unwrap(),
+      "6"
+    );
+  }
   // SequenceCount has no max-count argument (unlike SequenceCases): a bare
   // non-option third argument is rejected with nonopt and stays unevaluated,
   // matching wolframscript.
@@ -4792,6 +4818,33 @@ mod batch_unevaluated_wrappers_2 {
   fn sequence_position_overlaps_true_explicit() {
     assert_eq!(
       interpret("SequencePosition[{1, 1, 1}, {1, 1}, Overlaps -> True]")
+        .unwrap(),
+      "{{1, 2}, {2, 3}}"
+    );
+  }
+  // `Overlaps -> All` reports every span the pattern can match at each start
+  // position, longest first; the default reports only the longest one.
+  #[test]
+  fn sequence_position_overlaps_all() {
+    assert_eq!(
+      interpret("SequencePosition[{1, 2, 3, 4}, {__}]").unwrap(),
+      "{{1, 4}, {2, 4}, {3, 4}, {4, 4}}"
+    );
+    assert_eq!(
+      interpret("SequencePosition[{1, 2, 3, 4}, {__}, Overlaps -> All]")
+        .unwrap(),
+      "{{1, 4}, {1, 3}, {1, 2}, {1, 1}, {2, 4}, {2, 3}, {2, 2}, {3, 4}, \
+       {3, 3}, {4, 4}}"
+    );
+    // The count limit truncates the reported spans.
+    assert_eq!(
+      interpret("SequencePosition[{1, 2, 3}, {__}, 2, Overlaps -> All]")
+        .unwrap(),
+      "{{1, 3}, {1, 2}}"
+    );
+    // A fixed-length pattern has one length per start, so All matches True.
+    assert_eq!(
+      interpret("SequencePosition[{1, 1, 1}, {1, 1}, Overlaps -> All]")
         .unwrap(),
       "{{1, 2}, {2, 3}}"
     );
@@ -5126,6 +5179,41 @@ mod batch_unevaluated_wrappers_2 {
       interpret("SequenceCases[{1, 2, 1, 2, 1}, {1, 2}, Overlaps -> True]")
         .unwrap(),
       "{{1, 2}, {1, 2}}"
+    );
+  }
+  // `Overlaps -> All` reports every subsequence the pattern can match at each
+  // start position, longest first; Overlaps -> True reports only the longest.
+  #[test]
+  fn sequence_cases_overlaps_all() {
+    assert_eq!(
+      interpret("SequenceCases[{1, 2, 3, 4}, {__}]").unwrap(),
+      "{{1, 2, 3, 4}}"
+    );
+    assert_eq!(
+      interpret("SequenceCases[{1, 2, 3, 4}, {__}, Overlaps -> True]").unwrap(),
+      "{{1, 2, 3, 4}, {2, 3, 4}, {3, 4}, {4}}"
+    );
+    assert_eq!(
+      interpret("SequenceCases[{1, 2, 3}, {__}, Overlaps -> All]").unwrap(),
+      "{{1, 2, 3}, {1, 2}, {1}, {2, 3}, {2}, {3}}"
+    );
+    assert_eq!(
+      interpret("SequenceCases[{1, 2, 3, 4}, {_, __}, Overlaps -> All]")
+        .unwrap(),
+      "{{1, 2, 3, 4}, {1, 2, 3}, {1, 2}, {2, 3, 4}, {2, 3}, {3, 4}}"
+    );
+    // A rule is applied to every reported subsequence.
+    assert_eq!(
+      interpret(
+        "SequenceCases[{1, 2, 3}, {a__} :> Total[{a}], Overlaps -> All]"
+      )
+      .unwrap(),
+      "{6, 3, 1, 5, 2, 3}"
+    );
+    // The count limit truncates the reported matches.
+    assert_eq!(
+      interpret("SequenceCases[{1, 2, 3}, {__}, 3, Overlaps -> All]").unwrap(),
+      "{{1, 2, 3}, {1, 2}, {1}}"
     );
   }
   // A count limit keeps only the first n matches.

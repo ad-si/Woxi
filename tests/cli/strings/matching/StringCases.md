@@ -35,6 +35,34 @@ StringCases::strse: A string or list of strings is expected at position 1 in Str
 StringCases[foo, a]
 ```
 
+The `Overlaps` option controls how much of the string a match may share with
+its neighbours. The default keeps matches disjoint, `Overlaps -> True` reports
+the preferred match at every start position, and `Overlaps -> All` reports
+*every* match at every start position:
+
+```scrut
+$ wo 'StringCases["abcd", __]'
+{abcd}
+```
+
+```scrut
+$ wo 'StringCases["abcd", __, Overlaps -> True]'
+{abcd, bcd, cd, d}
+```
+
+```scrut
+$ wo 'StringCases["abcd", __, Overlaps -> All]'
+{abcd, abc, ab, a, bcd, bc, b, cd, c, d}
+```
+
+A greedy pattern reports its longest match first at each start position, so
+`Shortest` flips the order within each group:
+
+```scrut
+$ wo 'StringCases["abcd", Shortest[__], Overlaps -> All]'
+{a, ab, abc, abcd, b, bc, bcd, c, cd, d}
+```
+
 A `DatePattern` matches the date fields it names, each read whole:
 
 ```scrut

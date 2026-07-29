@@ -1,6 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::list_helpers_ast;
+use crate::functions::string_ast::{Overlaps, parse_overlaps_option};
 use crate::syntax::{BinaryOperator, UnaryOperator, bool_expr, unevaluated};
 
 /// Parse the `m` argument of NestWhile[f, x, test, m, ...]. Returns `All` for
@@ -5842,20 +5843,12 @@ pub fn dispatch_list_operations(
       // `Overlaps -> True | False | All` option. Unlike SequenceCases,
       // SequencePosition reports overlapping matches by default.
       let mut max_count: usize = usize::MAX;
-      let mut overlaps = true;
+      let mode = parse_overlaps_option(&args[2..], Overlaps::Yes);
+      let overlaps = mode.overlapping();
       for a in &args[2..] {
         match a {
           Expr::Integer(n) if *n >= 0 => max_count = *n as usize,
           Expr::Identifier(id) if id == "Infinity" => max_count = usize::MAX,
-          Expr::Rule {
-            pattern,
-            replacement,
-          } if matches!(pattern.as_ref(),
-            Expr::Identifier(n) if n == "Overlaps") =>
-          {
-            overlaps = !matches!(replacement.as_ref(),
-              Expr::Identifier(v) if v == "False");
-          }
           _ => {}
         }
       }
@@ -5922,12 +5915,20 @@ pub fn dispatch_list_operations(
               .is_some()
               {
                 results.push(pos(i, len));
-                i += if overlaps { 1 } else { len };
                 matched = true;
+                // `Overlaps -> All` keeps looking for shorter matches at this
+                // same start position instead of moving on.
+                if mode == Overlaps::All {
+                  if results.len() >= max_count {
+                    break;
+                  }
+                  continue;
+                }
+                i += if overlaps { 1 } else { len };
                 break;
               }
             }
-            if !matched {
+            if !matched || mode == Overlaps::All {
               i += 1;
             }
           }
@@ -5969,20 +5970,12 @@ pub fn dispatch_list_operations(
       // Trailing arguments: an optional count limit (Integer/Infinity) and an
       // `Overlaps -> True | False | All` option (default: non-overlapping).
       let mut max_count: usize = usize::MAX;
-      let mut overlaps = false;
+      let mode = parse_overlaps_option(&args[2..], Overlaps::No);
+      let overlaps = mode.overlapping();
       for a in &args[2..] {
         match a {
           Expr::Integer(n) if *n >= 0 => max_count = *n as usize,
           Expr::Identifier(id) if id == "Infinity" => max_count = usize::MAX,
-          Expr::Rule {
-            pattern,
-            replacement,
-          } if matches!(pattern.as_ref(),
-            Expr::Identifier(n) if n == "Overlaps") =>
-          {
-            overlaps = matches!(replacement.as_ref(),
-              Expr::Identifier(v) if v == "True" || v == "All");
-          }
           _ => {}
         }
       }
@@ -6068,14 +6061,22 @@ pub fn dispatch_list_operations(
                 } else {
                   results.push(subseq);
                 }
+                matched = true;
+                // `Overlaps -> All` keeps looking for shorter matches at this
+                // same start position instead of moving on.
+                if mode == Overlaps::All {
+                  if results.len() >= max_count {
+                    break;
+                  }
+                  continue;
+                }
                 // Overlapping matches advance one element past the start; the
                 // default skips the whole matched subsequence.
                 i += if overlaps { 1 } else { len };
-                matched = true;
                 break;
               }
             }
-            if !matched {
+            if !matched || mode == Overlaps::All {
               i += 1;
             }
           }
@@ -6321,10 +6322,28 @@ pub fn dispatch_list_operations(
         };
 
         // Optional `Overlaps -> True | All` option (default: non-overlapping).
-        let overlaps = args.get(2).is_some_and(|opt| matches!(opt,
-          Expr::Rule { pattern, replacement }
-            if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Overlaps")
-              && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "True" || v == "All")));
+        let mode = parse_overlaps_option(&args[2..], Overlaps::No);
+        let overlaps = mode.overlapping();
+
+        // Overlapping counts of a variable-length pattern need the general
+        // start-position scan below rather than either of the shortcuts: the
+        // greedy-run count collapses a whole run into one match, and the
+        // fixed-length window assumes one length per start position.
+        if overlaps && sub.iter().any(is_seq_pattern) {
+          let mut count = 0i128;
+          for i in 0..list.len() {
+            for len in (1..=list.len() - i).rev() {
+              let subseq = Expr::List(list[i..i + len].to_vec().into());
+              if match_pattern(&subseq, &args[1]).is_some() {
+                count += 1;
+                if mode == Overlaps::Yes {
+                  break;
+                }
+              }
+            }
+          }
+          return Some(Ok(Expr::Integer(count)));
+        }
 
         // Special case: the pattern is exactly one BlankSequence (`{__h}`) —
         // count maximal greedy runs of consecutive matching elements.

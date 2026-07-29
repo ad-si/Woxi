@@ -1260,7 +1260,7 @@ HurwitzLerchPhi,Hurwitz-Lerch transcendent sum of z^k over (k+a)^s,✅,pure,7.0,
 WienerProcess,Wiener process with Normal time slices,✅,unevaluated,9.0,1268
 FindShortestTour,,🚫,,6.0,1269
 DirectedInfinity,Represents a directed infinity whose direction propagates through sums products and powers,✅,pure,1.0,1270
-StringCount,Counts occurrences of a pattern in a string,✅,pure,5.1,1271
+StringCount,Counts occurrences of a pattern in a string (threading over a list of strings; supports the Overlaps and IgnoreCase options),✅,pure,5.1,1271
 ImageApply,Applies a function to each pixel of an image,✅,pure,7.0,1272
 BernoulliDistribution,Represents a Bernoulli distribution,✅,pure,6.0,1274
 PodStates,,🚫,,8.0,1274
@@ -1635,7 +1635,7 @@ InterpretationBox,Low-level box that displays one expression but interprets as a
 IncludePods,Include pods in computation,,unevaluated,8.0,1653
 MathieuGroupM11,Mathieu group M11 (order 7920) as a formal permutation group,✅,pure,8.0,1656
 RulePlot,Placeholder visualization of a substitution or cellular-automaton rule,✅,pure,11.0,1656
-Overlaps,Overlap specification,,unevaluated,5.1,1658
+Overlaps,Option symbol specifying how the string and sequence matching functions treat overlapping matches — False keeps them disjoint True reports the preferred match per start position and All reports every match per start position,✅,pure,5.1,1658
 Trig,Trigonometric functions option,,unevaluated,2.0,1658
 ItoProcess,Ito stochastic process,,unevaluated,9.0,1659
 NetModel,Neural net model,,unevaluated,11.1,1660

@@ -2101,22 +2101,12 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `Overlaps -> True | False | All` option. StringPosition reports
   // overlapping matches by default.
   let mut max_results: Option<usize> = None;
-  let mut overlaps = true;
+  let overlaps = parse_overlaps_option(&args[2..], Overlaps::Yes);
   for a in &args[2..] {
-    match a {
-      Expr::Rule {
-        pattern,
-        replacement,
-      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Overlaps") =>
-      {
-        overlaps = !matches!(replacement.as_ref(),
-          Expr::Identifier(v) if v == "False");
-      }
-      other => {
-        if let Ok(n) = expr_to_int(other) {
-          max_results = Some(n as usize);
-        }
-      }
+    if !matches!(a, Expr::Rule { .. })
+      && let Ok(n) = expr_to_int(a)
+    {
+      max_results = Some(n as usize);
     }
   }
   // IgnoreCase -> True makes the pattern match regardless of case: the regex
@@ -2180,6 +2170,35 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       pat.clone()
     };
+    if overlaps == Overlaps::All {
+      // Every match at every start position, already in report order.
+      let byte_to_char: std::collections::HashMap<usize, usize> = s
+        .char_indices()
+        .map(|(i, _)| i)
+        .chain(std::iter::once(s.len()))
+        .enumerate()
+        .map(|(ci, bi)| (bi, ci))
+        .collect();
+      let spans = all_overlap_spans(&pat, &pat_constraints, &s)?;
+      let mut positions = Vec::new();
+      for (bs, be) in spans {
+        if let Some(max) = max_results
+          && positions.len() >= max
+        {
+          break;
+        }
+        let start = byte_to_char[&bs];
+        let end = byte_to_char[&be];
+        positions.push(Expr::List(
+          vec![
+            Expr::Integer((start + 1) as i128),
+            Expr::Integer(end as i128),
+          ]
+          .into(),
+        ));
+      }
+      return Ok(Expr::List(positions.into()));
+    }
     if let Ok(re) = compile_regex(&pat) {
       for start_char in 0..s_chars.len() {
         // Get byte offset for this character position
@@ -2249,7 +2268,7 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // `Overlaps -> False` keeps matches greedily left-to-right, skipping any
   // that begin before the end of the previously kept match.
-  if !overlaps {
+  if !overlaps.overlapping() {
     let mut filtered: Vec<(usize, usize)> = Vec::new();
     let mut next_start = 0usize;
     for (start, len) in raw_matches {
@@ -2819,6 +2838,24 @@ fn caps_satisfy_constraints(
   })
 }
 
+/// The regex source for a string-pattern expression (with the `(?i)`
+/// case-insensitivity flag applied when requested) plus its back-reference
+/// constraints. Returns `None` when `expr` is not a recognised string pattern.
+fn string_pattern_regex_source(
+  expr: &Expr,
+  ignore_case: bool,
+) -> Option<(String, Vec<(String, String)>)> {
+  let (regex_str, constraints) = string_pattern_to_regex_with_state(expr)?;
+  Some((
+    if ignore_case {
+      format!("(?i){}", regex_str)
+    } else {
+      regex_str
+    },
+    constraints,
+  ))
+}
+
 /// Compile a string-pattern expression to a regex plus its back-reference
 /// constraints, applying the `(?i)` case-insensitivity flag when requested.
 /// Returns `None` when `expr` is not a recognised string pattern.
@@ -2826,12 +2863,8 @@ fn compile_string_pattern(
   expr: &Expr,
   ignore_case: bool,
 ) -> Option<Result<(regex::Regex, Vec<(String, String)>), InterpreterError>> {
-  let (regex_str, constraints) = string_pattern_to_regex_with_state(expr)?;
-  let regex_str = if ignore_case {
-    format!("(?i){}", regex_str)
-  } else {
-    regex_str
-  };
+  let (regex_str, constraints) =
+    string_pattern_regex_source(expr, ignore_case)?;
   Some(
     compile_regex(&regex_str)
       .map(|re| (re, constraints))
@@ -2876,6 +2909,153 @@ fn find_constraint_spans(
     }
   }
   spans
+}
+
+/// The three settings of the `Overlaps` option shared by the string and
+/// sequence matching functions.
+///
+/// * `No` (`Overlaps -> False`) — keep matches greedily left to right, each
+///   one starting after the previous match ends.
+/// * `Yes` (`Overlaps -> True`) — report the preferred match at every start
+///   position, so matches may overlap.
+/// * `All` (`Overlaps -> All`) — report *every* match at every start position,
+///   not just the preferred one.
+///
+/// The default differs per function: `StringPosition`/`SequencePosition` report
+/// overlapping matches by default, `StringCases`/`StringCount`/`SequenceCases`/
+/// `SequenceCount` do not.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Overlaps {
+  No,
+  Yes,
+  All,
+}
+
+impl Overlaps {
+  /// True when matches may start before the previous one ends.
+  pub(crate) fn overlapping(self) -> bool {
+    self != Overlaps::No
+  }
+}
+
+/// Read the `Overlaps -> …` option out of the trailing arguments (which may
+/// also hold a count limit or other options), falling back to `default`.
+/// Unrecognised settings are ignored, as wolframscript ignores them too.
+pub(crate) fn parse_overlaps_option(
+  args: &[Expr],
+  default: Overlaps,
+) -> Overlaps {
+  let mut mode = default;
+  let mut visit = |arg: &Expr| {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = arg
+      && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Overlaps")
+      && let Expr::Identifier(v) = replacement.as_ref()
+    {
+      match v.as_str() {
+        "False" => mode = Overlaps::No,
+        "True" => mode = Overlaps::Yes,
+        "All" => mode = Overlaps::All,
+        _ => {}
+      }
+    }
+  };
+  for arg in args {
+    match arg {
+      Expr::List(items) => items.iter().for_each(&mut visit),
+      other => visit(other),
+    }
+  }
+  mode
+}
+
+/// `pat` wrapped so that it only matches a slice in its entirety — the probe
+/// `all_overlap_spans` uses to discover every match length at a start position.
+fn anchored_regex(pat: &str) -> Result<regex::Regex, InterpreterError> {
+  compile_regex(&format!("\\A(?:{})\\z", pat)).map_err(|e| {
+    InterpreterError::EvaluationError(format!("Invalid string pattern: {}", e))
+  })
+}
+
+/// Every span the pattern `pat` can match in `s`, in the order wolframscript's
+/// `Overlaps -> All` reports them: grouped by start position from left to
+/// right, and within one start position ordered by the pattern's own
+/// preference.
+///
+/// `Overlaps -> All` asks for all matches rather than the one preferred match
+/// per start position, so the single span the regex engine returns is not
+/// enough — every candidate end position has to be probed with the pattern
+/// anchored at both ends. The engine's preferred span then fixes the order
+/// within a start position: longest first when the preferred span is the
+/// longest candidate (greedy quantifiers, `Alternatives` written long to
+/// short), shortest first otherwise (`Shortest[…]`, alternatives written short
+/// to long).
+///
+/// Returned spans are byte ranges and may be empty, because `___` matches the
+/// empty string at every character boundary including the one past the last
+/// character. Zero-width assertions other than a leading `StartOfString` or a
+/// trailing `EndOfString` (notably `WordBoundary`) are evaluated against the
+/// probed slice rather than the whole string.
+fn all_overlap_spans(
+  pat: &str,
+  constraints: &[(String, String)],
+  s: &str,
+) -> Result<Vec<(usize, usize)>, InterpreterError> {
+  let re = compile_regex(pat).map_err(|e| {
+    InterpreterError::EvaluationError(format!("Invalid string pattern: {}", e))
+  })?;
+  let anchored = anchored_regex(pat)?;
+  // `\A` / `\z` in the pattern itself would match at the edges of every probed
+  // slice, so honour them by pinning the start / end position instead.
+  let mut body = pat;
+  while let Some(rest) = body.strip_prefix("(?") {
+    // Skip leading bare flag groups like `(?s)` / `(?i)`; a `(?:`/`(?s:` group
+    // is part of the pattern proper and must stay.
+    match rest.find(')') {
+      Some(end) if !rest[..end].contains(':') => body = &rest[end + 1..],
+      _ => break,
+    }
+  }
+  let pinned_start = body.starts_with("\\A");
+  let pinned_end = body.ends_with("\\z");
+
+  let mut bounds: Vec<usize> = s.char_indices().map(|(i, _)| i).collect();
+  bounds.push(s.len());
+
+  let mut spans: Vec<(usize, usize)> = Vec::new();
+  for (bi, &start) in bounds.iter().enumerate() {
+    if pinned_start && start != 0 {
+      break;
+    }
+    // Candidate lengths, ascending.
+    let mut lens: Vec<usize> = Vec::new();
+    for &end in &bounds[bi..] {
+      if pinned_end && end != s.len() {
+        continue;
+      }
+      if full_match_with_constraints(&anchored, constraints, &s[start..end]) {
+        lens.push(end - start);
+      }
+    }
+    if lens.is_empty() {
+      continue;
+    }
+    let preferred = re
+      .captures_at(s, start)
+      .filter(|caps| caps_satisfy_constraints(caps, constraints))
+      .and_then(|caps| caps.get(0))
+      .filter(|m| m.start() == start)
+      .map(|m| m.end() - start);
+    // The preferred length comes first; when it is the longest candidate the
+    // pattern is greedy, so the rest follow descending.
+    if preferred != Some(lens[0]) {
+      lens.reverse();
+    }
+    spans.extend(lens.into_iter().map(|len| (start, start + len)));
+  }
+  Ok(spans)
 }
 
 /// True if `re` (anchored with `^…$` by the caller) matches all of `s` while
@@ -3327,19 +3507,12 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Parse the optional trailing arguments: a max-count (Integer/Infinity)
   // and/or an `Overlaps -> True | All` option (default: non-overlapping).
   let mut max_count: usize = usize::MAX;
-  let mut overlaps = false;
+  let mode = parse_overlaps_option(&args[2..], Overlaps::No);
+  let overlaps = mode.overlapping();
   for a in &args[2..] {
     match a {
       Expr::Integer(n) if *n >= 0 => max_count = *n as usize,
       Expr::Identifier(id) if id == "Infinity" => max_count = usize::MAX,
-      Expr::Rule {
-        pattern,
-        replacement,
-      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Overlaps") =>
-      {
-        overlaps = matches!(replacement.as_ref(),
-          Expr::Identifier(v) if v == "True" || v == "All");
-      }
       _ => {}
     }
   }
@@ -3367,6 +3540,42 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ))
       })?;
       compiled.push((re, constraints.clone(), rhs.clone(), *expand_dollar));
+    }
+
+    if mode == Overlaps::All {
+      // Every match of every rule at every start position. Spans are collected
+      // per rule and then merged by start position, so the rules stay in their
+      // written order within one position.
+      let mut per_rule: Vec<(regex::Regex, Vec<(usize, usize)>, &Expr, bool)> =
+        Vec::with_capacity(rules.len());
+      for (pat, constraints, rhs, expand_dollar) in &rules {
+        let pat = with_ci(pat);
+        per_rule.push((
+          anchored_regex(&pat)?,
+          all_overlap_spans(&pat, constraints, &s)?,
+          rhs,
+          *expand_dollar,
+        ));
+      }
+      let mut result: Vec<Expr> = Vec::new();
+      for start in s.char_indices().map(|(i, _)| i).chain([s.len()]) {
+        for (anchored, spans, rhs, expand_dollar) in &per_rule {
+          for (bs, be) in spans.iter().filter(|(bs, _)| *bs == start) {
+            if result.len() >= max_count {
+              return Ok(Expr::List(result.into()));
+            }
+            let Some(caps) = anchored.captures(&s[*bs..*be]) else {
+              continue;
+            };
+            let mut substituted = substitute_captures(rhs, &caps);
+            if *expand_dollar {
+              substituted = expand_dollar_in_expr(&substituted, &caps);
+            }
+            result.push(crate::evaluator::evaluate_expr_to_expr(&substituted)?);
+          }
+        }
+      }
+      return Ok(Expr::List(result.into()));
     }
 
     let mut result: Vec<Expr> = Vec::new();
@@ -3474,7 +3683,14 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         e
       ))
     })?;
-    let matches: Vec<Expr> = if overlaps {
+    let matches: Vec<Expr> = if mode == Overlaps::All {
+      // Every match at every start position, not just the preferred one.
+      all_overlap_spans(&with_ci(&regex_str), &constraints, &s)?
+        .into_iter()
+        .take(max_count)
+        .map(|(bs, be)| Expr::String(s[bs..be].to_string()))
+        .collect()
+    } else if overlaps {
       // Overlapping: emit a match for every char start position where the
       // (anchored) pattern matches, satisfying any back-reference constraints.
       let mut out: Vec<Expr> = Vec::new();
@@ -8306,7 +8522,8 @@ pub fn string_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let s = expr_to_str(&args[0])?;
   let ignore_case = has_ignore_case_option(args);
-  let overlaps = has_overlaps_option(args);
+  let mode = parse_overlaps_option(&args[2..], Overlaps::No);
+  let overlaps = mode.overlapping();
 
   // The empty pattern matches at every character boundary:
   // StringCount["ab", ""] = 3, StringCount["", ""] = 1
@@ -8329,9 +8546,20 @@ pub fn string_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Try regex-based pattern first (handles RegularExpression, string patterns,
   // lists-of-patterns as alternatives, etc.)
-  if let Some(compiled) = compile_string_pattern(&args[1], ignore_case) {
-    let (re, constraints) = compiled?;
-    let count = find_constraint_spans(&re, &constraints, &s, overlaps).len();
+  if let Some((pat, constraints)) =
+    string_pattern_regex_source(&args[1], ignore_case)
+  {
+    let count = if mode == Overlaps::All {
+      all_overlap_spans(&pat, &constraints, &s)?.len()
+    } else {
+      let re = compile_regex(&pat).map_err(|e| {
+        InterpreterError::EvaluationError(format!(
+          "Invalid string pattern: {}",
+          e
+        ))
+      })?;
+      find_constraint_spans(&re, &constraints, &s, overlaps).len()
+    };
     return Ok(Expr::Integer(count as i128));
   }
 
@@ -8355,27 +8583,6 @@ pub fn string_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     hay.matches(&needle).count()
   };
   Ok(Expr::Integer(count as i128))
-}
-
-/// Whether `Overlaps -> True` or `Overlaps -> All` appears in the option
-/// arguments. For a fixed-length string pattern both request that overlapping
-/// matches be counted (one per start position).
-fn has_overlaps_option(args: &[Expr]) -> bool {
-  for arg in args.iter().skip(2) {
-    if let Expr::Rule {
-      pattern,
-      replacement,
-    } = arg
-      && crate::syntax::expr_to_string(pattern) == "Overlaps"
-      && matches!(
-        crate::syntax::expr_to_string(replacement).as_str(),
-        "True" | "All"
-      )
-    {
-      return true;
-    }
-  }
-  false
 }
 
 /// Count overlapping occurrences of `needle` in `hay` — one per start position
