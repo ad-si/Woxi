@@ -7898,15 +7898,7 @@ pub(crate) fn parse_program_to_expr(
   {
     let mut exprs: Vec<Expr> = Vec::new();
     for node in program.into_inner() {
-      if matches!(
-        node.as_rule(),
-        Rule::Expression
-          | Rule::TopLevelSpan
-          | Rule::FunctionDefinition
-          | Rule::TagSetDelayed
-          | Rule::TagSet
-          | Rule::TagUnset
-      ) {
+      if crate::is_statement_rule(node.as_rule()) {
         exprs.push(pair_to_expr(node));
       }
     }
@@ -7997,15 +7989,7 @@ fn parse_and_evaluate_program(src: &str) -> Result<Expr, InterpreterError> {
     // (`f[x_] := …`) parses as `FunctionDefinition`, and skipping that node
     // silently threw the definition away.
     for node in program.into_inner() {
-      if matches!(
-        node.as_rule(),
-        Rule::Expression
-          | Rule::TopLevelSpan
-          | Rule::FunctionDefinition
-          | Rule::TagSetDelayed
-          | Rule::TagSet
-          | Rule::TagUnset
-      ) {
+      if crate::is_statement_rule(node.as_rule()) {
         let expr = pair_to_expr(node);
         last = Some(crate::evaluator::evaluate_expr_to_expr(&expr)?);
       }

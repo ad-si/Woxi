@@ -1637,6 +1637,8 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   let mut stmts: Vec<ProgramStmt> = Vec::new();
   // Also collect the Expr ASTs separately (with indices) for Label lookup
   let mut expr_asts: Vec<syntax::Expr> = Vec::new();
+  // Keep in step with `is_statement_rule`; this arm needs the pest pair
+  // rather than an `Expr`, so it cannot use the predicate directly.
   for node in program.into_inner() {
     match node.as_rule() {
       Rule::Expression | Rule::TopLevelSpan => {
@@ -4321,6 +4323,26 @@ fn split_args(s: &str) -> Vec<String> {
 /// Unlike `interpret` this does not format the result as a string, so
 /// held function calls like `Manipulate[…]` are preserved as
 /// `Expr::FunctionCall` values.
+/// The grammar's `Statement` rule alternatives, as they appear among a
+/// `Program`'s children.
+///
+/// Every place that walks a parsed program has to agree on this set. Two bugs
+/// came from copies of it drifting apart: a definition whose left side carries
+/// a pattern parses as `FunctionDefinition`, and loops that only looked for
+/// `Expression` silently threw it away. `interpret`'s own classifier (which
+/// needs the pest pair, not an `Expr`) matches these same rules explicitly.
+pub(crate) fn is_statement_rule(rule: Rule) -> bool {
+  matches!(
+    rule,
+    Rule::Expression
+      | Rule::TopLevelSpan
+      | Rule::FunctionDefinition
+      | Rule::TagSetDelayed
+      | Rule::TagSet
+      | Rule::TagUnset
+  )
+}
+
 pub fn interpret_to_expr(
   input: &str,
 ) -> Result<syntax::Expr, InterpreterError> {
@@ -4349,15 +4371,7 @@ pub fn interpret_to_expr(
   // whose left side carries a pattern (`f[x_] := …`) on the floor.
   let mut last: Option<syntax::Expr> = None;
   for node in program.into_inner() {
-    if matches!(
-      node.as_rule(),
-      Rule::Expression
-        | Rule::TopLevelSpan
-        | Rule::FunctionDefinition
-        | Rule::TagSetDelayed
-        | Rule::TagSet
-        | Rule::TagUnset
-    ) {
+    if is_statement_rule(node.as_rule()) {
       let expr = syntax::pair_to_expr(node);
       last = Some(evaluator::evaluate_expr_to_expr(&expr)?);
     }

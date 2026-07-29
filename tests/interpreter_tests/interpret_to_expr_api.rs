@@ -30,3 +30,37 @@ fn a_single_expression_still_works() {
   assert_eq!(run("1 + 1"), "2");
   assert_eq!(run("{1, 2, 3}"), "{1, 2, 3}");
 }
+
+/// The entry points must not drift apart again. `interpret` (the String API),
+/// `interpret_to_expr` (the Expr API behind the playground and Manipulate) and
+/// `ToExpression` (the in-language one) all walk a parsed program, and each
+/// used to carry its own copy of "which nodes are statements". Two bugs came
+/// from those copies disagreeing.
+#[test]
+fn the_program_entry_points_agree() {
+  for src in [
+    "a = 1; {a}",
+    "b = 2; b + 1",
+    "f[x_] := x * 2; f[3]",
+    "g[x__] := {x}; g[1, 2]",
+    "h[x_, y_: 2] := {x, y}; h[1]",
+    "1 + 1",
+    "{1, 2, 3}",
+    "c = 1; c = c + 1; c * 10",
+  ] {
+    let via_expr = run(src);
+    let via_string = woxi::interpret(src).unwrap();
+    assert_eq!(
+      via_expr, via_string,
+      "interpret vs interpret_to_expr: {src}"
+    );
+
+    // ToExpression takes the same program as a string literal.
+    let quoted = format!("ToExpression[\"{}\"]", src.replace('"', "\\\""));
+    let via_to_expression = woxi::interpret(&quoted).unwrap();
+    assert_eq!(
+      via_expr, via_to_expression,
+      "interpret_to_expr vs ToExpression: {src}"
+    );
+  }
+}
