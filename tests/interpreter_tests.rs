@@ -1964,6 +1964,7 @@ mod interpreter_tests {
   mod graph_theory;
   mod graphics;
   mod image;
+  mod interpret_to_expr_api;
   mod interval;
   mod io;
   mod large_number_and_memoization;

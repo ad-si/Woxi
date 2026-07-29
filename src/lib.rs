@@ -4343,13 +4343,26 @@ pub fn interpret_to_expr(
     )));
   }
 
+  // Evaluate every statement and return the last value, as `interpret` does.
+  // Returning at the first `Expression` made `"a = 1; {a}"` come back as `1`,
+  // and skipping the other `Statement` alternatives dropped a definition
+  // whose left side carries a pattern (`f[x_] := …`) on the floor.
+  let mut last: Option<syntax::Expr> = None;
   for node in program.into_inner() {
-    if matches!(node.as_rule(), Rule::Expression | Rule::TopLevelSpan) {
+    if matches!(
+      node.as_rule(),
+      Rule::Expression
+        | Rule::TopLevelSpan
+        | Rule::FunctionDefinition
+        | Rule::TagSetDelayed
+        | Rule::TagSet
+        | Rule::TagUnset
+    ) {
       let expr = syntax::pair_to_expr(node);
-      return evaluator::evaluate_expr_to_expr(&expr);
+      last = Some(evaluator::evaluate_expr_to_expr(&expr)?);
     }
   }
-  Err(InterpreterError::EmptyInput)
+  last.ok_or(InterpreterError::EmptyInput)
 }
 
 /// New interpret function that returns both stdout and the result
