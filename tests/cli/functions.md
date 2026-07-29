@@ -24,6 +24,7 @@ icon: lucide/square-function
 - [`DistributionParameterQ`](functions/DistributionParameterQ.md)
 - [`DivideBy`](functions/DivideBy.md)
 - [`Do`](functions/Do.md)
+- [`Enclose`](functions/Enclose.md)
 - [`Evaluate`](functions/Evaluate.md)
 - [`ExponentialDistribution`](functions/ExponentialDistribution.md)
 - [`ExtremeValueDistribution`](functions/ExtremeValueDistribution.md)

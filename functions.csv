@@ -3490,7 +3490,7 @@ StringToByteArray,Convert string to byte array,✅,pure,11.2,3578
 WebSearch,,🚫,,11.1,3578
 CircularRealMatrixDistribution,,,,10.3,3593
 ColorsNear,,🚫,,12.0,3593
-Enclose,,,,12.2,3593
+Enclose,Evaluates an expression and returns a failure object if a Confirm inside it fails,✅,pure,12.2,3593
 FileSystemMap,,,,11.0,3593
 GeodesicDilation,,🚫,,7.0,3593
 ImageGraphics,,🚫,,11.1,3593
@@ -4119,7 +4119,7 @@ BooleanMaxterms,Conjunction of maxterms from True/False rows or indices (ascendi
 CalendarData,,🚫,,9.0,4262
 CauchyWindow,Cauchy window 1/(1+(2 alpha x)^2) on [-1/2 1/2] (default alpha 3; exact rationals),✅,pure,9.0,4262
 ClearCookies,,🚫,,11.0,4262
-ConfirmMatch,,,,12.2,4262
+ConfirmMatch,Confirms that an expression matches a pattern otherwise throwing to the enclosing Enclose,✅,pure,12.2,4262
 ConnesWindow,Connes window (1 - 4 x^2)^2 on [-1/2 1/2],✅,pure,9.0,4262
 ContinuousWaveletData,Continuous wavelet coefficient object with octave/voice access,✅,pure,8.0,4262
 ErlangC,Erlang waiting probability for c servers and traffic a (1 for a >= c; 0 for a = 0; exact rationals),✅,pure,9.0,4262
@@ -4434,7 +4434,7 @@ AsymptoticProbability,,,,12.2,4612
 AudioPan,,🚫,,11.0,4612
 Authentication,,🚫,,11.0,4612
 ChannelSubscribers,,🚫,,11.0,4612
-ConfirmBy,,,,12.2,4612
+ConfirmBy,Confirms that a function returns True on an expression otherwise throwing to the enclosing Enclose,✅,pure,12.2,4612
 ConformAudio,,,,11.0,4612
 CoplanarPoints,Tests whether a set of numeric points are coplanar,✅,pure,12.2,4612
 DatabaseReference,,🚫,,12.0,4612
@@ -4524,7 +4524,7 @@ Casoratian,,,,7.0,4707
 CloudRenderingMethod,,🚫,,12.0,4707
 ClusterDissimilarityFunction,,,,10.4,4707
 ColorCoverage,,🚫,,10.0,4707
-Confirm,,🚫,,12.2,4707
+Confirm,Confirms that an expression is not a failure otherwise throwing to the enclosing Enclose,✅,pure,12.2,4707
 DescriptorStateSpace,,,,9.0,4707
 DimensionReducerFunction,,🚫,,10.1,4707
 EmbeddedService,,🚫,,10.0,4707
@@ -5005,7 +5005,7 @@ CaptureRunning,,🚫,,11.2,5390
 CaseOrdering,,,,10.3,5390
 ChannelBrokerAction,,🚫,,11.2,5390
 CombinatorB,,,,12.2,5390
-ConfirmAssert,,,,12.2,5390
+ConfirmAssert,Confirms that a test evaluates to True otherwise throwing to the enclosing Enclose,✅,pure,12.2,5390
 ConservativeConvectionPDETerm,,,,12.2,5390
 ContinuousTimeModelQ,,,,8.0,5390
 CupCap,,,,3.0,5390
@@ -5477,7 +5477,7 @@ CompleteIntegral,,,,13.0,
 ComplexInfinity,Complex infinity constant,✅,pure,1.0,
 ComputeUncertainty,,,,12.0,
 ConcaveHullMesh,,,,13.0,
-ConfirmQuiet,,,,12.2,
+ConfirmQuiet,Evaluates an expression inside an Enclose with messages suppressed,✅,contextual,12.2,
 ConformDates,,,,14.1,
 ConformationMethod,,,,13.0,
 ConicOptimization,,,,12.0,

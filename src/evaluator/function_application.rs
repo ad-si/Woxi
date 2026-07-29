@@ -1194,6 +1194,27 @@ pub fn apply_curried_call(
         }),
       }
     }
+    // Failure[tag, assoc]["property"] — the tag, the message with its
+    // parameters filled in, the standard property list, or any key of the
+    // association. An unknown property gives Missing["NotAvailable", prop].
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if name == "Failure"
+      && args.len() == 1
+      && matches!(&args[0], Expr::String(_)) =>
+    {
+      let Expr::String(prop) = &args[0] else {
+        unreachable!()
+      };
+      match crate::functions::confirm_ast::failure_property(func_args, prop) {
+        Some(result) => Ok(result),
+        None => Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        }),
+      }
+    }
     // Molecule[…]["property"] — property access on a molecule object
     // (e.g. "AtomCount", "MolecularFormula"). Unsupported properties and
     // invalid molecules keep the curried form unevaluated.

@@ -2929,3 +2929,236 @@ mod switch_pattern_evaluation {
     assert_eq!(out.stdout.matches("subj").count(), 1, "got {out:?}");
   }
 }
+
+mod enclose_and_confirm {
+  use super::*;
+
+  #[test]
+  fn enclose_returns_the_value_when_nothing_fails() {
+    clear_state();
+    assert_eq!(interpret("Enclose[2 + 2]").unwrap(), "4");
+    assert_eq!(interpret("Enclose[Confirm[5] + 2]").unwrap(), "7");
+    assert_eq!(
+      interpret("Enclose[ConfirmBy[3, NumberQ] + 2]").unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret("Enclose[ConfirmMatch[3, _Integer] + 2]").unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret(r#"Enclose[ConfirmAssert[1 < 2]; "ok"]"#).unwrap(),
+      "ok"
+    );
+    assert_eq!(
+      interpret("Enclose[{Confirm[1], Confirm[2]}]").unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn confirm_only_rejects_failure_values() {
+    clear_state();
+    // 0, Null and False are ordinary values, not failures.
+    assert_eq!(interpret("Enclose[Confirm[0]]").unwrap(), "0");
+    // `interpret` renders Null as "\0" (as the loop tests above do); the CLI
+    // prints `Null`, matching wolframscript.
+    assert_eq!(interpret("Enclose[Confirm[Null]]").unwrap(), "\0");
+    assert_eq!(interpret("Enclose[Confirm[False]]").unwrap(), "False");
+    // Enclose on its own does not turn a failure into a Failure object;
+    // only a Confirm does.
+    assert_eq!(interpret("Enclose[$Failed]").unwrap(), "$Failed");
+    assert_eq!(
+      interpret("Enclose[Confirm[$Failed]][\"ConfirmationType\"]").unwrap(),
+      "Confirm"
+    );
+    assert_eq!(
+      interpret(r#"Enclose[Confirm[Missing["x"]]]["ConfirmationType"]"#)
+        .unwrap(),
+      "Confirm"
+    );
+  }
+
+  #[test]
+  fn a_failed_confirmation_produces_a_failure_object() {
+    clear_state();
+    assert_eq!(
+      interpret("Head[Enclose[Confirm[$Failed]]]").unwrap(),
+      "Failure"
+    );
+    assert_eq!(
+      interpret(r#"Enclose[Confirm[$Failed]]["Tag"]"#).unwrap(),
+      "ConfirmationFailed"
+    );
+    assert_eq!(
+      interpret(r#"Enclose[ConfirmBy["a", NumberQ]]["ConfirmationType"]"#)
+        .unwrap(),
+      "ConfirmBy"
+    );
+    assert_eq!(
+      interpret(r#"Enclose[ConfirmBy["a", NumberQ]]["Function"]"#).unwrap(),
+      "NumberQ"
+    );
+    assert_eq!(
+      interpret(r#"Enclose[ConfirmMatch["a", _Integer]]["Pattern"]"#).unwrap(),
+      "_Integer"
+    );
+    assert_eq!(
+      interpret("Enclose[ConfirmAssert[1 > 2]][\"ConfirmationType\"]").unwrap(),
+      "ConfirmAssert"
+    );
+    // ConfirmAssert keeps the test unevaluated so the failure can show it.
+    assert_eq!(
+      interpret("Enclose[ConfirmAssert[1 > 2]][\"HeldTest\"]").unwrap(),
+      "Hold[1 > 2]"
+    );
+    // A predicate that does not return True at all still fails.
+    assert_eq!(
+      interpret(r#"Enclose[ConfirmBy[3, EvenQ]]["Tag"]"#).unwrap(),
+      "ConfirmationFailed"
+    );
+  }
+
+  #[test]
+  fn the_confirmation_unwinds_to_the_nearest_enclose() {
+    clear_state();
+    // The inner Enclose catches, so the outer one sees an ordinary value.
+    assert_eq!(
+      interpret("Enclose[Enclose[Confirm[$Failed]]][\"Tag\"]").unwrap(),
+      "ConfirmationFailed"
+    );
+    // Everything after the failing confirmation is skipped.
+    assert_eq!(
+      interpret(r#"Enclose[ConfirmAssert[1 > 2]; "ok"]["Tag"]"#).unwrap(),
+      "ConfirmationFailed"
+    );
+  }
+
+  #[test]
+  fn a_second_argument_reads_a_property_or_handles_the_failure() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"Enclose[Confirm[$Failed], "Tag"]"#).unwrap(),
+      "ConfirmationFailed"
+    );
+    // As above, `interpret` renders Null as "\0".
+    assert_eq!(
+      interpret(r#"Enclose[Confirm[$Failed], "Information"]"#).unwrap(),
+      "\0"
+    );
+    // A non-string handler is applied to the failure object.
+    assert_eq!(
+      interpret("Enclose[Confirm[$Failed], Head]").unwrap(),
+      "Failure"
+    );
+    // The handler is only reached when something actually fails.
+    assert_eq!(interpret("Enclose[5, Head]").unwrap(), "5");
+  }
+
+  #[test]
+  fn confirm_takes_an_information_argument() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"Enclose[Confirm[$Failed, "my info"]]["Information"]"#)
+        .unwrap(),
+      "my info"
+    );
+    assert_eq!(
+      interpret(r#"Enclose[Confirm[$Failed, "my info"]]["MessageTemplate"]"#)
+        .unwrap(),
+      "my info"
+    );
+  }
+
+  #[test]
+  fn confirm_quiet_suppresses_messages_without_failing() {
+    clear_state();
+    assert_eq!(
+      interpret("Enclose[ConfirmQuiet[Log[0]]]").unwrap(),
+      "-Infinity"
+    );
+    assert_eq!(interpret("Enclose[ConfirmQuiet[1 + 1]]").unwrap(), "2");
+  }
+
+  #[test]
+  fn a_confirmation_outside_an_enclose_reports_confirmnotag() {
+    clear_state();
+    // Even a *successful* confirmation fails when there is no Enclose to
+    // throw to, and the failure records the call as it was written.
+    assert_eq!(interpret(r#"Confirm[5]["Tag"]"#).unwrap(), "confirmnotag");
+    assert_eq!(
+      interpret(r#"Confirm[1 + 1]["HeldInput"]"#).unwrap(),
+      "Hold[Confirm[1 + 1]]"
+    );
+    assert_eq!(
+      interpret(r#"ConfirmBy[3, NumberQ]["Tag"]"#).unwrap(),
+      "confirmnotag"
+    );
+    assert_eq!(
+      interpret(r#"ConfirmQuiet[1 + 1]["Tag"]"#).unwrap(),
+      "confirmnotag"
+    );
+  }
+}
+
+mod failure_properties {
+  use super::*;
+
+  const F: &str = r#"Failure["mytag", <|"MessageTemplate" -> "value `` bad", "MessageParameters" -> {7}|>]"#;
+
+  #[test]
+  fn standard_properties() {
+    clear_state();
+    assert_eq!(interpret(&format!(r#"{F}["Tag"]"#)).unwrap(), "mytag");
+    assert_eq!(
+      interpret(&format!(r#"{F}["MessageTemplate"]"#)).unwrap(),
+      "value `` bad"
+    );
+    assert_eq!(
+      interpret(&format!(r#"{F}["MessageParameters"]"#)).unwrap(),
+      "{7}"
+    );
+  }
+
+  #[test]
+  fn message_fills_the_template_slots() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"Failure["t", <|"MessageTemplate" -> "m"|>]["Message"]"#)
+        .unwrap(),
+      "m"
+    );
+  }
+
+  #[test]
+  fn properties_lists_the_standard_names_plus_the_association_keys() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"Failure["t", <|"MessageTemplate" -> "m"|>]["Properties"]"#)
+        .unwrap(),
+      "{HeldMessageTemplate, Message, MessageName, MessageTemplate, \
+       StyledMessage, Tag}"
+    );
+    assert_eq!(
+      interpret(&format!(r#"{F}["Properties"]"#)).unwrap(),
+      "{HeldMessageTemplate, Message, MessageName, MessageParameters, \
+       MessageTemplate, StyledMessage, Tag}"
+    );
+    assert_eq!(
+      interpret(r#"Enclose[Confirm[$Failed]]["Properties"]"#).unwrap(),
+      "{ConfirmationType, Expression, HeldMessageTemplate, Information, \
+       Message, MessageName, MessageParameters, MessageTemplate, \
+       StyledMessage, Tag}"
+    );
+  }
+
+  #[test]
+  fn an_unknown_property_is_missing() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"Failure["t", <|"MessageTemplate" -> "m"|>]["nope"]"#)
+        .unwrap(),
+      "Missing[NotAvailable, nope]"
+    );
+  }
+}

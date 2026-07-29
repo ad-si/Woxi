@@ -1822,6 +1822,143 @@ pub fn evaluate_expr_to_expr_inner(
             Err(e) => return Err(e),
           }
         }
+        // Enclose[expr] / Enclose[expr, handler] — evaluate `expr` with a
+        // confirmation scope open, and turn any confirmation failure thrown
+        // inside it into a result. `Enclose` is HoldFirst, so the body is
+        // still unevaluated here.
+        if name == "Enclose" && !args.is_empty() && args.len() <= 2 {
+          use crate::functions::confirm_ast;
+          let outcome =
+            confirm_ast::with_enclose_scope(|| evaluate_expr_to_expr(&args[0]));
+          let failure = match outcome {
+            Ok(value) => return Ok(value),
+            Err(InterpreterError::ThrowValue(value, tag))
+              if confirm_ast::is_confirmation_throw(&tag) =>
+            {
+              *value
+            }
+            Err(e) => return Err(e),
+          };
+          if args.len() == 1 {
+            return Ok(failure);
+          }
+          let handler = evaluate_expr_to_expr(&args[1])?;
+          // A string second argument reads a property off the failure; any
+          // other handler is applied to it.
+          if let Expr::String(property) = &handler {
+            if let Expr::FunctionCall {
+              name: fname,
+              args: fargs,
+            } = &failure
+              && fname == "Failure"
+              && let Some(value) =
+                confirm_ast::failure_property(fargs, property)
+            {
+              return Ok(value);
+            }
+            return Ok(failure);
+          }
+          let application = if let Expr::Identifier(hname) = &handler {
+            Expr::FunctionCall {
+              name: hname.clone(),
+              args: vec![failure].into(),
+            }
+          } else {
+            Expr::CurriedCall {
+              func: Box::new(handler),
+              args: vec![failure],
+            }
+          };
+          return evaluate_expr_to_expr(&application);
+        }
+
+        // The Confirm* family. All of them are HoldAll, so the original call
+        // is still available for the `::confirmnotag` report.
+        if matches!(
+          name.as_str(),
+          "Confirm"
+            | "ConfirmBy"
+            | "ConfirmMatch"
+            | "ConfirmAssert"
+            | "ConfirmQuiet"
+        ) && !args.is_empty()
+          && args.len() <= 3
+        {
+          use crate::functions::confirm_ast;
+          if !confirm_ast::inside_enclose() {
+            let held = Expr::FunctionCall {
+              name: name.to_string(),
+              args: args.to_vec().into(),
+            };
+            return Ok(confirm_ast::no_enclose_failure(name, held));
+          }
+          // `ConfirmQuiet` only suppresses messages; it never fails.
+          if name == "ConfirmQuiet" {
+            crate::push_quiet();
+            let result = evaluate_expr_to_expr(&args[0]);
+            crate::pop_quiet();
+            return result;
+          }
+          let information = if args.len() >= 2 && name == "Confirm" {
+            evaluate_expr_to_expr(&args[1])?
+          } else if args.len() >= 3 {
+            evaluate_expr_to_expr(&args[2])?
+          } else {
+            Expr::Identifier("Null".to_string())
+          };
+          let value = evaluate_expr_to_expr(&args[0])?;
+          let failure = match name.as_str() {
+            "Confirm" => confirm_ast::is_failure_value(&value)
+              .then(|| confirm_ast::confirm_failure(&value, information)),
+            "ConfirmBy" => {
+              let f = evaluate_expr_to_expr(&args[1])?;
+              let applied = if let Expr::Identifier(fname) = &f {
+                Expr::FunctionCall {
+                  name: fname.clone(),
+                  args: vec![value.clone()].into(),
+                }
+              } else {
+                Expr::CurriedCall {
+                  func: Box::new(f.clone()),
+                  args: vec![value.clone()],
+                }
+              };
+              let verdict = evaluate_expr_to_expr(&applied)?;
+              (!matches!(&verdict, Expr::Identifier(s) if s == "True")).then(
+                || confirm_ast::confirm_by_failure(&value, &f, information),
+              )
+            }
+            "ConfirmMatch" => {
+              let pattern = args[1].clone();
+              let matched =
+                crate::functions::list_helpers_ast::matches_pattern_ast(
+                  &value, &pattern,
+                );
+              (!matched).then(|| {
+                confirm_ast::confirm_match_failure(
+                  &value,
+                  &pattern,
+                  information,
+                )
+              })
+            }
+            // ConfirmAssert reports the *held* test alongside its value.
+            _ => (!matches!(&value, Expr::Identifier(s) if s == "True")).then(
+              || {
+                confirm_ast::confirm_assert_failure(
+                  &args[0],
+                  &value,
+                  information,
+                )
+              },
+            ),
+          };
+          return match failure {
+            Some(f) => Err(confirm_ast::throw_failure(f)),
+            None => Ok(value),
+          };
+        }
+
         // Special handling for Abort[] - abort computation
         if name == "Abort" && args.is_empty() {
           return Err(InterpreterError::Abort);

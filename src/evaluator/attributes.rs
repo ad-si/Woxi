@@ -359,6 +359,9 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     "Switch" | "First" | "Last" => vec!["HoldRest", "Protected"],
     // HoldFirst + Protected
     "Catch" | "Pattern" | "SetAttributes" => vec!["HoldFirst", "Protected"],
+    "Enclose" => vec!["HoldFirst", "Protected", "ReadProtected"],
+    "Confirm" | "ConfirmBy" | "ConfirmMatch" | "ConfirmAssert"
+    | "ConfirmQuiet" => vec!["HoldAll", "Protected", "ReadProtected"],
     "Attributes" => vec!["HoldAll", "Listable", "Protected"],
     "ToExpression" => vec!["Listable", "Protected"],
     // Flat + OneIdentity + Protected

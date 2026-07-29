@@ -9,6 +9,7 @@ pub mod calculus_ast;
 pub mod caputo_d;
 pub mod cellular_automaton_ast;
 pub mod chart;
+pub mod confirm_ast;
 pub mod control_flow_ast;
 pub mod convex_hull;
 pub mod convolve_ast;
