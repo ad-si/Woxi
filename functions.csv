@@ -18,7 +18,18 @@ Sqrt,Returns the square root of a number,✅,pure,1.0,18
 Function,Represents a pure function,✅,pure,1.0,19
 ReplaceAll,Applies replacement rules to an expression,✅,pure,1.0,20
 Plot,Plots a function over a range,✅,effectful,1.0,21
-Sin,Returns the sine,✅,pure,1.0,22
+Cos,Returns the cosine of a number,✅,pure,1.0,
+Sin,Returns the sine of a number,✅,pure,1.0,
+Tan,Returns the tangent of a number,✅,pure,1.0,
+Csc,Returns the cosecant of a number,✅,pure,1.0,
+Cot,Returns the cotangent of a number,✅,pure,1.0,
+Sec,Returns the secant of a number,✅,pure,1.0,
+ArcCos,Returns the arc cosine of a number,✅,pure,1.0,
+ArcSin,Returns the arc sine of a number,✅,pure,1.0,
+ArcTan,Returns the arc tangent of a number,✅,pure,1.0,
+ArcCot,Returns the arc cotangent of a number,✅,pure,1.0,
+ArcCsc,Returns the arc cosecant of a number,✅,pure,1.0,
+ArcSec,Returns the arc secant of a number,✅,pure,1.0,
 None,Symbol representing no value or absence of an option,✅,pure,1.0,23
 RGBColor,Specifies a color by RGB values,✅,pure,1.0,24
 Derivative,Represents the derivative of a function,✅,pure,1.0,26
@@ -26,7 +37,6 @@ True,Boolean constant representing logical truth,✅,pure,1.0,27
 Map,Applies a function to each element of a list or to each argument of any other head,✅,pure,1.0,28
 Automatic,Symbol used as a default setting for automatically determined options,✅,pure,1.0,29
 Subscript,Represents a subscripted expression for display,✅,pure,1.0,30
-Cos,Returns the cosine of a number,✅,pure,1.0,31
 Table,Generates a list by evaluating an expression,✅,pure,1.0,32
 Directive,Combines graphics directives,✅,pure,6.0,33
 If,Checks if a condition is true and returns one of two values,✅,pure,1.0,34
@@ -145,7 +155,6 @@ Select,Picks elements of a list that satisfy a criterion,✅,pure,1.0,149
 Degree,Represents the number of radians in one degree,✅,pure,1.0,150
 Total,Sums the elements of a list,✅,pure,5.0,151
 ColorFunction,Option specifying the color function for visualization,✅,none,2.0,152
-ArcTan,Returns the arc tangent of a number,✅,pure,1.0,153
 Expand,Expands products and positive integer powers of sums,✅,pure,1.0,154
 ContourPlot,Creates a contour plot of a function,✅,pure,1.0,155
 RandomInteger,Generate random integers,✅,contextual,6.0,156
@@ -163,7 +172,6 @@ Grid,Displays data in a grid layout; ToString renders the matrix as an aligned t
 Cases,Returns elements matching a pattern,✅,pure,1.0,168
 ListLinePlot,Plots data as a line graph,✅,pure,6.0,169
 Graphics3D,Creates a 3D graphics object,✅,pure,1.0,170
-Tan,Returns the tangent of a number,✅,pure,1.0,171
 NumericQ,Tests if expression has a numeric value,✅,pure,3.0,172
 FrameStyle,Option specifying the style of the frame around a plot,✅,none,2.0,173
 Column,Displays elements in a vertical column,✅,pure,6.0,174
@@ -242,8 +250,6 @@ NormalDistribution,Represents a normal (Gaussian) probability distribution,✅,p
 AirportData,,🚫,,10.0,246
 GridLinesStyle,Option for specifying the style of grid lines in graphics,✅,none,6.0,247
 In,Returns a previous input expression,✅,pure,1.0,248
-ArcCos,Returns the arc cosine of a number,✅,pure,1.0,249
-ArcSin,Returns the arc sine of a number,✅,pure,1.0,250
 Det,Computes the determinant of a matrix,✅,pure,1.0,251
 NSolve,Solves equations numerically (a x^n + c uses the same root finder as NRoots so conjugate pairs agree bit for bit),✅,pure,2.0,252
 Cross,Computes the generalized cross product of n-1 vectors of length n,✅,pure,3.0,253
@@ -252,7 +258,6 @@ TableForm,Formats data as a table,✅,pure,1.0,255
 Circle,Represents a circle graphics primitive,✅,pure,2.0,256
 AbsoluteTiming,Returns the time taken to evaluate an expression,✅,contextual,5.0,257
 Blend,Blend colors together using linear interpolation,✅,none,6.0,258
-Cosh,Returns the hyperbolic cosine,✅,pure,1.0,259
 Tooltip,Tooltip display wrapper (stays symbolic in script mode),✅,unevaluated,6.0,260
 Spacings,Spacing specification for grids and layouts,✅,none,6.0,261
 Assumptions,Specify assumptions for symbolic computation,✅,none,3.0,262
@@ -271,7 +276,6 @@ Pochhammer,Returns the Pochhammer symbol (rising factorial),✅,pure,1.0,274
 Eigenvalues,Computes the eigenvalues of a matrix; the two-arg form takes the k largest-magnitude eigenvalues,✅,pure,1.0,275
 Timing,Returns the CPU time taken to evaluate an expression,✅,contextual,1.0,276
 RowBox,Represents a horizontal row of boxes for typesetting,✅,pure,3.0,277
-Sinh,Returns the hyperbolic sine,✅,pure,1.0,278
 Round,Returns the nearest integer to a number,✅,pure,1.0,279
 Button,Interactive button element (stays symbolic in script mode),✅,unevaluated,6.0,280
 Gray,Named color evaluating to GrayLevel[0.5],✅,pure,5.1,281
@@ -290,7 +294,6 @@ Conjugate,Returns the complex conjugate,✅,pure,1.0,293
 Full,Full-size image specification,✅,none,6.0,294
 IdentityMatrix,Creates an identity matrix of given size,✅,pure,1.0,295
 IntegerDigits,Returns list of digits of an integer,✅,pure,2.0,296
-ArcTanh,Returns the inverse hyperbolic tangent,✅,pure,1.0,297
 StringExpression,Represents a string pattern formed by concatenating string pattern objects,✅,pure,5.1,298
 Repeated,Pattern that matches one or more repetitions,✅,pure,1.0,299
 ChemicalData,,🚫,,6.0,300
@@ -309,7 +312,6 @@ Darker,Makes a color darker,✅,pure,6.0,312
 Sign,Returns the sign of a number,✅,pure,1.0,313
 Purple,Named color evaluating to RGBColor[0.5 0 0.5],✅,pure,5.1,314
 Rotate,Rotates a graphics object,✅,pure,6.0,315
-ArcCot,Returns the arc cotangent,✅,pure,1.0,316
 TraditionalForm,Displays expressions in traditional mathematical notation,✅,pure,3.0,317
 Drop,Returns the list without its first n elements (the one-argument form drops nothing and returns the expression),✅,pure,1.0,318
 IntegerQ,Tests if the expression evaluates to an integer,✅,pure,1.0,319
@@ -317,18 +319,18 @@ Information,Displays information about a symbol,✅,pure,1.0,320
 ToExpression,Converts a string to an evaluated expression,✅,pure,1.0,321
 Identity,Returns its argument unchanged,✅,pure,1.0,322
 TestID,Option symbol for specifying a test identifier in testing functions,✅,pure,10.0,323
-ArcCosh,Returns the inverse hyperbolic cosine,✅,pure,1.0,324
 Cell,Represents a cell in a notebook with content and style information,✅,pure,3.0,325
 Hold,Holds its arguments unevaluated,✅,pure,1.0,326
-ArcCoth,Returns the inverse hyperbolic cotangent,✅,pure,1.0,327
 Chop,Replaces approximate real numbers close to zero by exact 0,✅,pure,1.0,328
-BesselJ,Bessel function of the first kind,✅,pure,1.0,329
+BesselJ,Bessel function of the first kind J_n(z),✅,pure,1.0,
+BesselY,Bessel function of the second kind Y_n(z),✅,pure,1.0,
+BesselI,Modified Bessel function of the first kind I_n(z),✅,pure,1.0,
+BesselK,Modified Bessel function of the second kind K_n(z),✅,pure,1.0,
 MapIndexed,Applies a function to each element along with its index; on an association the index is {Key[key]},✅,pure,2.0,330
 RiemannR,Riemann prime counting function R(x) approximating PrimePi,✅,pure,7.0,331
 Item,Wrapper for specifying individual item options in Grid and similar constructs,✅,pure,6.0,332
 SetAttributes,Sets attributes for a symbol,✅,stateful,1.0,333
 SparseArray,"Creates a sparse array representation that stays sparse under arithmetic and answers grid queries like ""NonzeroValues"" or ""Density""",✅,pure,5.0,334
-ArcSech,Returns the inverse hyperbolic secant,✅,pure,1.0,335
 NumberForm,Displays a number with specified formatting; ToString renders x to n significant figures or with {n;f} to exactly f decimal places (the single-argument form uses the 6-significant-figure default; reals with exponent >= 6 or <= -6 switch to 2D scientific notation) and supports DigitBlock/NumberSeparator digit grouping and NumberPadding field padding,✅,pure,1.0,336
 FrameTicks,Option specifying tick marks on the frame of a plot,✅,none,2.0,337
 RandomChoice,Random selection with replacement,✅,contextual,6.0,338
@@ -341,9 +343,18 @@ FaceForm,Specifies face styling for filled graphics,✅,pure,1.0,344
 Prepend,Adds an element to the beginning of a list,✅,pure,1.0,345
 ArrayPlot,Plots a matrix as a grid of colored cells,✅,pure,5.1,346
 Histogram,Creates a histogram from data,✅,pure,7.0,347
-ArcCsch,Returns the inverse hyperbolic cosecant,✅,pure,1.0,348
-ArcSinh,Returns the inverse hyperbolic sine,✅,pure,1.0,349
-Tanh,Returns the hyperbolic tangent,✅,pure,1.0,350
+Cosh,Returns the hyperbolic cosine,✅,pure,1.0,
+Sinh,Returns the hyperbolic sine,✅,pure,1.0,
+Tanh,Returns the hyperbolic tangent,✅,pure,1.0,
+Csch,Returns the hyperbolic cosecant,✅,pure,1.0,
+Coth,Returns the hyperbolic cotangent,✅,pure,1.0,
+Sech,Returns the hyperbolic secant,✅,pure,1.0,
+ArcCosh,Returns the inverse hyperbolic cosine,✅,pure,1.0,
+ArcSinh,Returns the inverse hyperbolic sine,✅,pure,1.0,
+ArcTanh,Returns the inverse hyperbolic tangent,✅,pure,1.0,
+ArcCsch,Returns the inverse hyperbolic cosecant,✅,pure,1.0,
+ArcCoth,Returns the inverse hyperbolic cotangent,✅,pure,1.0,
+ArcSech,Returns the inverse hyperbolic secant,✅,pure,1.0,
 SeedRandom,Seeds the random number generator,✅,stateful,1.0,351
 ContourPlot3D,Placeholder 3D contour plot returning a Graphics3D shell,✅,pure,6.0,352
 Catch,Catches a value thrown by Throw; the form is matched as a pattern and the 3-arg form applies f to the value and tag,✅,pure,1.0,353
@@ -351,7 +362,6 @@ InputForm,Converts expression to input form,✅,pure,1.0,354
 Sow,Sows an expression for collection by Reap,✅,stateful,5.0,355
 Switch,Evaluates an expression and matches it against each pattern in turn — patterns after the match are never evaluated,✅,pure,1.0,356
 Export,Exports data to a file,✅,effectful,4.0,357
-Cot,Returns the cotangent,✅,pure,1.0,358
 PlotRangePadding,Option for specifying padding around plot ranges,✅,pure,6.0,359
 ViewPoint,Option for 3D viewing position,✅,pure,1.0,360
 Plain,Font style symbol for plain (non-bold non-italic) text,✅,pure,6.0,361
@@ -363,11 +373,8 @@ EntityProperty,Represents a property of an entity class,✅,pure,10.0,366
 Tuples,Generates all tuples of elements from a list,✅,pure,5.1,367
 Small,Small size specification,✅,none,6.0,368
 Coefficient,Extracts the coefficient of a term in a polynomial,✅,pure,1.0,369
-ArcCsc,Returns the arc cosecant,✅,pure,1.0,370
 NestList,Returns the list of intermediate results from Nest,✅,pure,1.0,371
-ArcSec,Returns the arc secant,✅,pure,1.0,372
 DeleteDuplicates,Removes duplicate elements from a list (or pairs with duplicate values from an association),✅,pure,7.0,373
-Csc,Returns the cosecant,✅,pure,1.0,374
 DisplayFunction,Option controlling display output,✅,pure,1.0,375
 Product,Computes the product of an expression over one or more ranges,✅,pure,1.0,376
 FontWeight,Option for specifying font weight (Bold etc),✅,pure,3.0,377
@@ -381,7 +388,6 @@ HoldPattern,Keeps a pattern from evaluating while staying transparent to matchin
 Top,Symbol for top alignment,✅,pure,1.0,385
 HypergeometricPFQ,Generalized hypergeometric function pFq,✅,pure,3.0,386
 MortalityData,,🚫,,10.3,387
-Sec,Returns the secant,✅,pure,1.0,388
 Positive,Tests if a number is positive,✅,pure,1.0,389
 Framed,Display wrapper that draws a frame around its argument,✅,pure,6.0,390
 Placed,Inert positional wrapper for label and legend placement (used with ChartLabels etc.),✅,pure,7.0,391
@@ -531,13 +537,22 @@ RecurrenceTable,Generate a table of values from a recurrence relation; range spe
 FindFit,Finds a least-squares fit of a model to data,✅,pure,5.0,535
 Decrement,Decrements a variable by 1 and returns the old value,✅,stateful,1.0,536
 Rationalize,Converts a real number to a nearby rational,✅,pure,1.0,537
-Sech,Returns the hyperbolic secant,✅,pure,1.0,538
 Rasterize,Converts expression to raster image,✅,pure,6.0,539
 FrameTicksStyle,Option for specifying the style of frame ticks,✅,pure,6.0,540
 Complex,Head type for complex numbers,✅,pure,1.0,541
 Delete,Deletes an element at a given position,✅,pure,2.0,542
-JacobiDN,Jacobi elliptic function dn,✅,pure,1.0,543
-JacobiSN,Jacobi elliptic function sn,✅,pure,1.0,544
+JacobiDN,Jacobi elliptic function dn,✅,pure,1.0,
+JacobiSN,Jacobi elliptic function sn,✅,pure,1.0,
+JacobiCN,Jacobi elliptic function cn,✅,pure,1.0,
+JacobiSC,Jacobi elliptic function sc (sn/cn),✅,pure,1.0,
+JacobiDC,Jacobi elliptic function dc (dn/cn),✅,pure,1.0,
+JacobiCD,Jacobi elliptic function cd (cn/dn),✅,pure,1.0,
+JacobiSD,Jacobi elliptic function sd (sn/dn),✅,pure,1.0,
+JacobiCS,Jacobi elliptic function cs (cn/sn),✅,pure,1.0,
+JacobiDS,Jacobi elliptic function ds (dn/sn),✅,pure,1.0,
+JacobiNS,Jacobi elliptic function ns (1/sn),✅,pure,1.0,
+JacobiND,Jacobi elliptic function nd (1/dn),✅,pure,1.0,
+JacobiNC,Jacobi elliptic function nc (1/cn),✅,pure,1.0,
 Ordering,Returns the positions that would sort a list optionally by an ordering function,✅,pure,4.1,545
 ElementData,Returns properties of chemical elements,✅,pure,6.0,546
 Dividers,Option for dividing lines in Grid,✅,none,6.0,547
@@ -586,10 +601,8 @@ BeginPackage,Begins a package context (no-op in Woxi),✅,effectful,1.0,588
 Throw,Throws a value to be caught by Catch,✅,pure,1.0,589
 Eigensystem,Eigenvalues and eigenvectors of a matrix; the two-arg form takes the k largest-magnitude pairs,✅,pure,1.0,590
 KroneckerDelta,Returns 1 if all arguments are equal and 0 otherwise,✅,pure,4.0,591
-Coth,Returns the hyperbolic cotangent,✅,pure,1.0,592
 StatusArea,Display status text on mouseover,✅,none,6.0,593
 Pane,Fixed-size display pane,✅,none,6.0,594
-JacobiCN,Jacobi elliptic function cn,✅,pure,1.0,595
 PlotLabels,Option for labeling plot curves,✅,none,10.4,597
 Scale,Scales a graphics object,✅,pure,6.0,597
 Log10,Returns the base-10 logarithm of a number,✅,pure,7.0,598
@@ -605,7 +618,6 @@ Break,Exits a loop,✅,pure,1.0,610
 Dataset,Wraps data with type information and answers successive-level queries,✅,pure,10.0,610
 FoldList,Returns the list of intermediate results from Fold,✅,pure,2.0,611
 ReleaseHold,Removes Hold wrappers from an expression,✅,pure,2.0,612
-BesselK,Modified Bessel function of the second kind,✅,pure,1.0,613
 ScriptSizeMultipliers,Option for subscript and superscript sizing,✅,none,3.0,614
 Split,Splits list at boundaries where consecutive elements differ,✅,pure,3.0,615
 GCD,Returns the greatest common divisor of integers and rationals (and Gaussian integers),✅,pure,1.0,616
@@ -656,7 +668,6 @@ Prolog,Option specifying graphics primitives drawn before the main plot,✅,none
 ChartLabels,Option for labeling elements in charts,✅,none,7.0,661
 RightComposition,Compose functions left-to-right,✅,pure,10.0,662
 TextCell,A text cell in a notebook,✅,none,6.0,663
-BesselI,Modified Bessel function of the first kind,✅,pure,1.0,664
 Median,Returns the median value of a list or an association's values,✅,pure,5.0,666
 Keys,Returns the keys of an association (optionally wrapping each with a head),✅,pure,10.0,667
 AccuracyGoal,Option for accuracy goals,✅,pure,1.0,668
@@ -693,7 +704,6 @@ VertexColors,Option for specifying vertex colors in graphics,✅,none,6.0,699
 ExpandAll,Expands all products and powers in an expression,✅,pure,1.0,700
 Default,Default value for optional arguments — an optional slot whose function has no Default does not match at all,✅,pure,1.0,701
 Beta,Euler beta function and incomplete beta Beta[z a b]; exact (BigInt) for integer half-integer and rational args via rising factorials and Gamma half-integer forms; numeric for inexact args,✅,pure,1.0,702
-Csch,Returns the hyperbolic cosecant,✅,pure,1.0,703
 HeavisideTheta,Heaviside step function,✅,pure,6.0,705
 MaxSteps,Option specifying the maximum number of steps,✅,none,2.0,705
 Alphabet,Returns the list of lowercase English letters,✅,pure,10.1,706
@@ -741,7 +751,6 @@ VertexSize,Option for vertex size in graphs,✅,none,8.0,748
 ExpToTrig,Convert exponentials to trigonometric and hyperbolic functions,✅,pure,3.0,749
 Enabled,Option for whether a control is enabled,✅,none,6.0,750
 Defer,Holds an expression unevaluated; a notebook displays it without the wrapper,✅,pure,6.0,751
-BesselY,Bessel function of the second kind Y_n(z),✅,pure,1.0,752
 LogLogPlot,Plots with logarithmic x and y axes,✅,pure,6.0,754
 StringForm,Format a string with placeholder substitution,✅,pure,1.0,754
 FrameMargins,Option specifying margins within a frame,✅,none,6.0,755
@@ -809,7 +818,6 @@ RevolutionAxis,Option for axis of revolution,✅,none,7.0,815
 Above,Placement symbol representing above position,✅,pure,1.0,816
 DifferentialD,Differential d notation symbol,✅,none,3.0,819
 Image3D,Three-dimensional image — recognised by ImageQ; full pipeline not implemented,🚧,io,9.0,819
-JacobiSC,Jacobi elliptic function sc (sn/cn),✅,pure,1.0,819
 FractionalPart,Returns the fractional part of a number,✅,pure,3.0,820
 CloudDeploy,Requires external services or GUI infrastructure,🚫,io,10.0,821
 HighlightGraph,Requires external services or GUI infrastructure,🚫,io,8.0,822
@@ -905,10 +913,8 @@ LogLinearPlot,Plots with logarithmic x-axis,✅,pure,6.0,912
 NumberLinePlot,Plots values or intervals on a number line,✅,pure,10.0,913
 RuntimeAttributes,,🚫,,8.0,914
 Notebook,Requires external services or GUI infrastructure,🚫,io,3.0,915
-JacobiDC,Jacobi elliptic function dc (dn/cn),✅,pure,1.0,916
 WordCloud,Creates a word cloud from a list of words,✅,pure,10.1,917
 CellPrint,Requires external services or GUI infrastructure,🚫,io,3.0,918
-JacobiCD,Jacobi elliptic function cd (cn/dn),✅,pure,1.0,919
 NestWhileList,Returns intermediate results from NestWhile,✅,pure,4.0,920
 MaxCellMeasure,,🚫,,10.0,921
 RuntimeOptions,,🚫,,8.0,922
@@ -1834,7 +1840,18 @@ CopyToClipboard,Copy to clipboard,,unevaluated,8.0,1861
 ColorReplace,Replace colors in image,,unevaluated,9.0,1864
 Format,Display wrapper that formats an expression in a given form,✅,pure,1.0,1864
 GraphPlot3D,3D graph plot,,unevaluated,6.0,1864
-InverseJacobiCN,Inverse Jacobi elliptic function cn,✅,pure,1.0,1865
+InverseJacobiCN,Inverse Jacobi elliptic function cn,✅,pure,1.0,
+InverseJacobiSN,Inverse Jacobi elliptic function sn,✅,pure,1.0,
+InverseJacobiCD,Inverse Jacobi elliptic function cd,✅,pure,1.0,
+InverseJacobiCS,Inverse Jacobi elliptic function cs,✅,pure,1.0,
+InverseJacobiSC,Inverse Jacobi elliptic function sc,✅,pure,1.0,
+InverseJacobiDN,Inverse Jacobi elliptic function dn,✅,pure,1.0,
+InverseJacobiDS,Inverse Jacobi elliptic function ds,✅,pure,1.0,
+InverseJacobiNC,Inverse Jacobi elliptic function nc,✅,pure,1.0,
+InverseJacobiND,Inverse Jacobi elliptic function nd,✅,pure,1.0,
+InverseJacobiNS,Inverse Jacobi elliptic function ns,✅,pure,1.0,
+InverseJacobiSD,Inverse Jacobi elliptic function sd,✅,pure,1.0,
+InverseJacobiDC,Inverse Jacobi elliptic function dc,✅,pure,1.0,
 ButtonFunction,Button function option,,unevaluated,3.0,1866
 SystemOptions,System options,,unevaluated,6.0,1867
 FrobeniusSolve,Returns non-negative integer solutions to a Frobenius equation,✅,pure,6.0,1869
@@ -1871,7 +1888,6 @@ PolarGridLines,Polar grid lines option,,unevaluated,7.0,1901
 RootApproximant,Finds an algebraic number approximating a numeric value,✅,pure,6.0,1901
 Databin,Databin cloud storage,,unevaluated,10.0,1905
 Interpretation,Interpretation display wrapper (stays symbolic),✅,unevaluated,6.0,1905
-InverseJacobiSN,Inverse Jacobi elliptic function sn,✅,pure,1.0,1905
 SymmetricGroup,Symbolic symmetric group S_n of degree n; stays unevaluated and is consumed by GroupOrder/GroupGenerators,✅,unevaluated,8.0,1905
 InverseErf,Inverse error function,✅,pure,3.0,1906
 SmoothDensityHistogram,Smooth density histogram,,unevaluated,8.0,1907
@@ -3173,7 +3189,6 @@ CoxianDistribution,Coxian phase-type distribution,✅,pure,9.0,3257
 EstimatedBackground,,,,10.0,3257
 GatedRecurrentLayer,,🚫,,11.1,3257
 InverseFourierSequenceTransform,,,,7.0,3257
-JacobiSD,Jacobi elliptic function sd (sn/dn),✅,pure,1.0,3257
 LabelingSize,,,,11.3,3257
 MexicanHatWavelet,Mexican hat (Ricker) continuous wavelet with scale sigma,✅,pure,8.0,3257
 NullRecords,,,,2.0,3257
@@ -3260,7 +3275,6 @@ FindPostmanTour,Find a shortest closed walk traversing every edge (Chinese postm
 GoldenAngle,The golden angle constant Pi(3 - Sqrt[5]),✅,pure,10.2,3344
 GroupStabilizer,Pointwise stabilizer subgroup with canonical generators (named groups; forced PermutationGroup cases),✅,pure,8.0,3344
 InputStream,Input stream object,✅,effectful,2.0,3344
-JacobiCS,Jacobi elliptic function cs (cn/sn),✅,pure,1.0,3344
 NHoldRest,Attribute preventing N from numericizing all but the first argument,✅,pure,3.0,3344
 PageFooters,,🚫,,4.0,3344
 ProbitModelFit,,,,7.0,3344
@@ -3335,7 +3349,6 @@ StratonovichProcess,,🚫,,9.0,3413
 UnitVectorLayer,,🚫,,11.1,3413
 WindowToolbars,,🚫,,3.0,3413
 AndersonDarlingTest,,,,8.0,3427
-JacobiDS,Jacobi elliptic function ds (dn/sn),✅,pure,1.0,3427
 KnapsackSolve,,,,11.0,3427
 LQRegulatorGains,,,,8.0,3427
 MeanAbsoluteLossLayer,,🚫,,11.0,3427
@@ -3370,7 +3383,6 @@ FileSize,"Returns the size of a file as Quantity[bytes;""Bytes""] with a Real ma
 GaussianUnitaryMatrixDistribution,,,,10.3,3462
 HolidayCalendar,,,,9.0,3462
 HotellingTSquareDistribution,Hotelling T-squared distribution,✅,pure,8.0,3462
-JacobiNS,Jacobi elliptic function ns (1/sn),✅,pure,1.0,3462
 KaiserWindow,Kaiser–Bessel window function; KaiserWindow[x] or KaiserWindow[x alpha] (default alpha 3),✅,pure,9.0,3462
 ListVectorDensityPlot,,🚫,,7.0,3462
 MersennePrimeExponent,Gives the nth Mersenne prime exponent,✅,pure,10.4,3462
@@ -3426,7 +3438,6 @@ CramerVonMisesTest,,,,8.0,3522
 Decompose,Decomposes a polynomial into a composition of simpler polynomials,✅,pure,1.0,3522
 HyperexponentialDistribution,Mixture of exponential distributions,✅,pure,9.0,3522
 InteractiveTradingChart,,🚫,,8.0,3522
-JacobiND,Jacobi elliptic function nd (1/dn),✅,pure,1.0,3522
 KeySortBy,Sorts an association by applying a function to its keys; supports the operator form KeySortBy[f][assoc],✅,pure,10.0,3522
 PermissionsGroup,,🚫,,10.0,3522
 PopupView,Popup view control (stays symbolic in script mode),✅,unevaluated,6.0,3522
@@ -3552,7 +3563,6 @@ GeoScaleBar,,🚫,,10.0,3656
 HTTPResponse,Symbolic HTTP response object produced by URLRead; stays unevaluated,✅,unevaluated,10.0,3656
 HilbertFilter,,,,9.0,3656
 HoytDistribution,Hoyt fading amplitude distribution,✅,pure,8.0,3656
-JacobiNC,Jacobi elliptic function nc (1/cn),✅,pure,1.0,3656
 LCHColor,,,,10.0,3656
 LocationEquivalenceTest,,,,8.0,3656
 NearestFunction,,,,6.0,3656
@@ -3880,7 +3890,6 @@ GraphDensity,Edge count relative to the complete graph (2m/n(n-1)),✅,pure,9.0,
 GroupStabilizerChain,,,,8.0,4006
 HistogramPointDensity,,🚫,,12.2,4006
 InverseBetaRegularized,Inverse of the regularized incomplete beta function I_z(a b),✅,pure,3.0,4006
-InverseJacobiCD,Inverse Jacobi elliptic function cd,✅,pure,1.0,4006
 ListZTransform,Finite Z transform of a list: Sum of a_k z^(-k-n) with optional starting index n,✅,pure,9.0,4006
 MandelbrotSetIterationCount,Number of z->z^2+c iterates with abs z <= 2 up to MaxIterations (cap+1 for exact cardioid/bulb points; Listable),✅,pure,10.0,4006
 MardiaSkewnessTest,,,,8.0,4006
@@ -3964,7 +3973,6 @@ FetalGrowthData,,🚫,,10.1,4081
 FindEdgeCover,,,,8.0,4081
 HTTPRequestData,,🚫,,10.0,4081
 ImprovementImportance,,,,9.0,4081
-InverseJacobiCS,Inverse Jacobi elliptic function cs,✅,pure,1.0,4081
 InverseWishartMatrixDistribution,,,,10.3,4081
 LocalObjects,,,,10.4,4081
 NetTake,,🚫,,11.3,4081
@@ -3989,7 +3997,6 @@ GroupElementPosition,Position of a permutation in the group element list,✅,pur
 HTTPRedirect,,🚫,,10.0,4104
 HeunG,,,,12.1,4104
 ImageMarker,,🚫,,10.4,4104
-InverseJacobiSC,Inverse Jacobi elliptic function sc,✅,pure,1.0,4104
 InverseTransformedRegion,,,,10.0,4104
 JaccardDissimilarity,Jaccard dissimilarity between binary vectors,✅,pure,6.0,4104
 LogBarnesG,Logarithm of the Barnes G-function (exact for integers),✅,pure,7.0,4104
@@ -4013,8 +4020,6 @@ FindEdgeCut,,,,9.0,4138
 FractionBoxOptions,,🚫,,4.0,4138
 FrontEndEventActions,,🚫,,6.0,4138
 HannPoissonWindow,,,,9.0,4138
-InverseJacobiDN,Inverse Jacobi elliptic function dn,✅,pure,1.0,4138
-InverseJacobiDS,Inverse Jacobi elliptic function ds,✅,pure,1.0,4138
 JordanModelDecomposition,,,,8.0,4138
 KendallTauTest,,,,9.0,4138
 KeypointStrength,,,,10.0,4138
@@ -4046,10 +4051,6 @@ GroupElementQ,Tests if a permutation is an element of a group,✅,pure,8.0,4173
 GrowCutComponents,,,,10.0,4173
 HistogramTransformInterpolation,,🚫,,9.0,4173
 InhomogeneousPoissonProcess,,🚫,,10.1,4173
-InverseJacobiNC,Inverse Jacobi elliptic function nc,✅,pure,1.0,4173
-InverseJacobiND,Inverse Jacobi elliptic function nd,✅,pure,1.0,4173
-InverseJacobiNS,Inverse Jacobi elliptic function ns,✅,pure,1.0,4173
-InverseJacobiSD,Inverse Jacobi elliptic function sd,✅,pure,1.0,4173
 KroneckerModelDecomposition,,,,9.0,4173
 KuwaharaFilter,,,,8.0,4173
 MeshCellMarker,,🚫,,10.0,4173
@@ -4077,7 +4078,6 @@ GeoHemisphereBoundary,,🚫,,10.1,4204
 GeoStylingImageFunction,,🚫,,10.0,4204
 HarmonicMeanFilter,,,,7.0,4204
 InnerPolygon,,,,12.0,4204
-InverseJacobiDC,Inverse Jacobi elliptic function dc,✅,pure,1.0,4204
 LeftTeeArrow,,,,3.0,4204
 ListFitPlot,,,,14.0,4204
 ListFitPlot3D,,,,14.0,4204
