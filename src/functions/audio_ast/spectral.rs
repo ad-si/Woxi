@@ -3,13 +3,13 @@
 
 use base64::Engine;
 
-use super::{parse_audio, unevaluated};
+use super::data::parse_audio;
 use crate::InterpreterError;
 use crate::functions::math_ast::numerical::{
   fft_pow2_in_place, fourier_result_to_expr,
 };
 use crate::functions::math_ast::try_eval_to_f64;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 /// FFT of a real frame zero-padded to the next power of two. Returns the
 /// complex bins with Fourier's default 1/√n normalization (n = padded

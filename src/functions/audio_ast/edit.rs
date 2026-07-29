@@ -1,12 +1,11 @@
 //! Audio editing: AudioAmplify, AudioTrim, AudioJoin, AudioPitchShift.
 
-use super::{
+use super::data::{
   AudioData, make_audio, parse_audio, resample_to_len, time_to_seconds,
-  unevaluated,
 };
 use crate::InterpreterError;
 use crate::functions::math_ast::try_eval_to_f64;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 
 /// AudioAmplify[audio, s] — multiply every sample by the amplification
 /// factor s.
