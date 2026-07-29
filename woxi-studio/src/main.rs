@@ -305,6 +305,15 @@ enum Message {
   ManipulateSlider2DChanged(usize, usize, u8, f64),
   /// (cell_idx, ctrl_idx, endpoint 0=low/1=high, value)
   ManipulateIntervalChanged(usize, usize, u8, f64),
+  /// One coordinate of a Locator point moved.
+  /// (cell_idx, ctrl_idx, point_idx, axis 0=x/1=y, value)
+  ManipulateLocatorChanged(usize, usize, usize, u8, f64),
+  /// Add a point to a `LocatorAutoCreate` locator (at the range centre).
+  /// (cell_idx, ctrl_idx)
+  ManipulateLocatorAdded(usize, usize),
+  /// Remove a point from a `LocatorAutoCreate` locator.
+  /// (cell_idx, ctrl_idx, point_idx)
+  ManipulateLocatorRemoved(usize, usize, usize),
   /// A checkbox in a Manipulate display element was toggled.
   /// (cell_idx, write-back assignment, e.g. `data[[3, 5]] = 1`)
   ManipulateDisplayToggled(usize, String),
@@ -1655,6 +1664,68 @@ impl WoxiStudio {
           } else {
             *high = value.max(*low);
           }
+          if state.request_reeval() {
+            return manipulate_reeval_task(cell_idx);
+          }
+        }
+        Task::none()
+      }
+
+      Message::ManipulateLocatorChanged(
+        cell_idx,
+        ctrl_idx,
+        point_idx,
+        axis,
+        value,
+      ) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+          && let Some(control) = state.controls.get_mut(ctrl_idx)
+          && let manipulate::ControlState::Locator { points, .. } = control
+          && let Some(point) = points.get_mut(point_idx)
+        {
+          if axis == 0 {
+            point.0 = value;
+          } else {
+            point.1 = value;
+          }
+          if state.request_reeval() {
+            return manipulate_reeval_task(cell_idx);
+          }
+        }
+        Task::none()
+      }
+
+      Message::ManipulateLocatorAdded(cell_idx, ctrl_idx) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+          && let Some(control) = state.controls.get_mut(ctrl_idx)
+          && let manipulate::ControlState::Locator {
+            points,
+            x_min,
+            x_max,
+            y_min,
+            y_max,
+            ..
+          } = control
+        {
+          // New points appear at the range centre, ready to drag.
+          points.push(((*x_min + *x_max) / 2.0, (*y_min + *y_max) / 2.0));
+          if state.request_reeval() {
+            return manipulate_reeval_task(cell_idx);
+          }
+        }
+        Task::none()
+      }
+
+      Message::ManipulateLocatorRemoved(cell_idx, ctrl_idx, point_idx) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+          && let Some(control) = state.controls.get_mut(ctrl_idx)
+          && let manipulate::ControlState::Locator { points, .. } = control
+          && point_idx < points.len()
+        {
+          points.remove(point_idx);
           if state.request_reeval() {
             return manipulate_reeval_task(cell_idx);
           }
@@ -3506,9 +3577,8 @@ fn manipulate_label_char_count(ctrl: &manipulate::ControlState) -> usize {
     manipulate::ControlState::Continuous { label, name, .. }
     | manipulate::ControlState::Discrete { label, name, .. }
     | manipulate::ControlState::Slider2D { label, name, .. }
-    | manipulate::ControlState::IntervalSlider { label, name, .. } => {
-      (label, name)
-    }
+    | manipulate::ControlState::IntervalSlider { label, name, .. }
+    | manipulate::ControlState::Locator { label, name, .. } => (label, name),
     // Heading/divider rows span the full row instead of sitting in the
     // label column, so they don't widen it.
     manipulate::ControlState::Heading { .. }
@@ -3636,6 +3706,7 @@ fn render_manipulate_widget<'a>(
         label,
         label_runs,
         value_labels,
+        value_label_svgs,
         current_index,
         popup,
         ..
@@ -3662,9 +3733,18 @@ fn render_manipulate_widget<'a>(
             for (i, choice_label) in value_labels.iter().enumerate() {
               let is_selected = i == *current_index;
               let choice = choice_label.clone();
-              let mut btn = button(text(choice_label.clone()).size(12))
-                .padding([3, 10])
-                .style(move |theme: &Theme, status| {
+              // A choice whose rule label is a graphic (`"+" -> myIcon[2]`)
+              // shows the rendered icon; text choices show their label.
+              let btn_content: Element<Message> =
+                match value_label_svgs.get(i).and_then(|s| s.as_ref()) {
+                  Some(icon) => svg::Svg::new(icon.clone())
+                    .width(iced::Length::Fixed(24.0))
+                    .height(iced::Length::Fixed(14.0))
+                    .into(),
+                  None => text(choice_label.clone()).size(12).into(),
+                };
+              let mut btn = button(btn_content).padding([3, 10]).style(
+                move |theme: &Theme, status| {
                   setter_button_style(
                     theme,
                     status,
@@ -3673,7 +3753,8 @@ fn render_manipulate_widget<'a>(
                     count,
                     enabled,
                   )
-                });
+                },
+              );
               if enabled {
                 btn = btn.on_press(Message::ManipulateDiscreteChanged(
                   cell_idx, ctrl_idx, choice,
@@ -3808,6 +3889,94 @@ fn render_manipulate_widget<'a>(
         ]
         .align_y(Center)
         .spacing(8);
+        controls_col = controls_col.push(control_row);
+      }
+      manipulate::ControlState::Locator {
+        name,
+        label,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        points,
+        auto_create,
+      } => {
+        // A list of draggable 2D points (e.g. polygon vertices): one X/Y
+        // slider pair per point, plus add/remove buttons when the spec
+        // allows `LocatorAutoCreate`.
+        let x_span = (*x_max - *x_min).abs();
+        let y_span = (*y_max - *y_min).abs();
+        let x_step = if x_span > 0.0 { x_span / 100.0 } else { 1.0 };
+        let y_step = if y_span > 0.0 { y_span / 100.0 } else { 1.0 };
+        let label_widget =
+          manipulate_label_widget(&[], label, name, label_col_width, enabled);
+        let mut points_col = Column::new().spacing(4);
+        for (point_idx, (x, y)) in points.iter().enumerate() {
+          let mut x_slider = slider(*x_min..=*x_max, *x, move |v| {
+            if enabled {
+              Message::ManipulateLocatorChanged(
+                cell_idx, ctrl_idx, point_idx, 0, v,
+              )
+            } else {
+              Message::Noop
+            }
+          })
+          .step(x_step)
+          .width(Fill);
+          let mut y_slider = slider(*y_min..=*y_max, *y, move |v| {
+            if enabled {
+              Message::ManipulateLocatorChanged(
+                cell_idx, ctrl_idx, point_idx, 1, v,
+              )
+            } else {
+              Message::Noop
+            }
+          })
+          .step(y_step)
+          .width(Fill);
+          if !enabled {
+            x_slider = x_slider.style(disabled_slider_style);
+            y_slider = y_slider.style(disabled_slider_style);
+          }
+          let value_widget = text(format!(
+            "{{{}, {}}}",
+            format_manipulate_number(*x),
+            format_manipulate_number(*y)
+          ))
+          .size(11)
+          .font(Font::MONOSPACE)
+          .width(iced::Length::Fixed(96.0));
+          let mut point_row = row![
+            text(format!("{}", point_idx + 1))
+              .size(11)
+              .font(Font::MONOSPACE),
+            column![x_slider, y_slider].spacing(2),
+            value_widget
+          ]
+          .align_y(Center)
+          .spacing(8);
+          if *auto_create {
+            let mut remove_btn = button(text("−").size(11)).padding([1, 6]);
+            if enabled {
+              remove_btn =
+                remove_btn.on_press(Message::ManipulateLocatorRemoved(
+                  cell_idx, ctrl_idx, point_idx,
+                ));
+            }
+            point_row = point_row.push(remove_btn);
+          }
+          points_col = points_col.push(point_row);
+        }
+        if *auto_create {
+          let mut add_btn = button(text("+ point").size(11)).padding([1, 6]);
+          if enabled {
+            add_btn = add_btn
+              .on_press(Message::ManipulateLocatorAdded(cell_idx, ctrl_idx));
+          }
+          points_col = points_col.push(row![add_btn]);
+        }
+        let control_row =
+          row![label_widget, points_col].align_y(Center).spacing(8);
         controls_col = controls_col.push(control_row);
       }
       manipulate::ControlState::Heading { label, label_runs } => {
@@ -6031,6 +6200,86 @@ mod tests {
       0.0,
       "animation must loop back to the start"
     );
+  }
+
+  #[test]
+  fn locator_manipulate_builds_a_draggable_widget() {
+    // The "Center of Mass of a Polygon" Demonstration pattern: a Locator
+    // bound to a point list drives the polygon, with icon-labelled
+    // SetterBar choices. The widget must expose the points as a live
+    // Locator control, render the graphic, and re-render after a point
+    // moves or is added/removed (the LocatorAutoCreate interactions).
+    woxi::interpret(
+      "myIcon[n_] := Graphics[Line[{#, -#}] & /@ \
+       ({Cos[#], Sin[#]} & /@ (n Range[0, 3] Pi/4)), \
+       ImageSize -> {24, 12}];",
+    )
+    .unwrap();
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Graphics[{Polygon[pts]}, PlotRange -> {{0, 10}, {0, 10}}], \
+       {{pts, 1.0 {{2, 2}, {8, 2}, {8, 8}}}, {0, 0}, {10, 10}, Locator, \
+       LocatorAutoCreate -> True}, \
+       {crosshairs, {\"none\", \"+\" -> myIcon[2]}, ControlType -> SetterBar}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert!(
+      state.graphics_handle.is_some(),
+      "initial frame should render the polygon: {:?}",
+      state.error
+    );
+    match &state.controls[0] {
+      manipulate::ControlState::Locator {
+        points,
+        auto_create,
+        ..
+      } => {
+        assert_eq!(points, &[(2.0, 2.0), (8.0, 2.0), (8.0, 8.0)]);
+        assert!(auto_create);
+      }
+      other => panic!("expected a locator control, got {other:?}"),
+    }
+    assert_eq!(
+      state.controls[0].current_code(),
+      "{{2., 2.}, {8., 2.}, {8., 8.}}",
+      "locator points bind as machine reals"
+    );
+    // The icon-labelled SetterBar choice carries its rendered SVG.
+    match &state.controls[1] {
+      manipulate::ControlState::Discrete {
+        value_labels,
+        value_label_svgs,
+        ..
+      } => {
+        assert_eq!(value_labels, &["none".to_string(), "+".to_string()]);
+        assert!(value_label_svgs[0].is_none());
+        assert!(value_label_svgs[1].is_some());
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+    // Drag a vertex, then add and remove a point — each re-render keeps
+    // producing a graphic.
+    if let manipulate::ControlState::Locator { points, .. } =
+      &mut state.controls[0]
+    {
+      points[0] = (3.5, 2.5);
+      points.push((5.0, 5.0));
+    }
+    state.reevaluate();
+    assert!(state.graphics_handle.is_some(), "re-render after drag/add");
+    if let manipulate::ControlState::Locator { points, .. } =
+      &mut state.controls[0]
+    {
+      points.remove(3);
+      points.remove(2);
+      points.remove(1);
+      points.remove(0);
+    }
+    state.reevaluate();
+    // With every point removed the binding is the empty list; the body
+    // must still evaluate (the Demonstration shows its "add some points"
+    // message) rather than error out.
+    assert!(state.error.is_none(), "empty point list must not error");
   }
 
   #[test]

@@ -42,6 +42,9 @@ pub enum ControlState {
     /// The label shown for each choice, parallel to `values`. Equals `values`
     /// for plain choices; the rule's right side for rule-form choices.
     value_labels: Vec<String>,
+    /// A rendered SVG icon per choice for rule labels that are graphics
+    /// (`"+" -> myIcon[2]`), parallel to `values`. `None` = text label.
+    value_label_svgs: Vec<Option<svg::Handle>>,
     current_index: usize,
     /// `ControlType -> PopupMenu`: always render a dropdown, even when the
     /// choice count is small enough for a SetterBar.
@@ -68,6 +71,19 @@ pub enum ControlState {
     low: f64,
     high: f64,
   },
+  /// A `Locator` control binding its variable to a list of 2D points
+  /// (e.g. draggable polygon vertices). Rendered as one X/Y slider pair
+  /// per point; `auto_create` additionally offers add/remove buttons.
+  Locator {
+    name: String,
+    label: String,
+    x_min: f64,
+    x_max: f64,
+    y_min: f64,
+    y_max: f64,
+    points: Vec<(f64, f64)>,
+    auto_create: bool,
+  },
   /// A static heading row between controls (a string or `Style[…]`
   /// Manipulate argument). Binds no variable.
   Heading {
@@ -85,6 +101,7 @@ impl ControlState {
       ControlState::Discrete { name, .. } => name,
       ControlState::Slider2D { name, .. } => name,
       ControlState::IntervalSlider { name, .. } => name,
+      ControlState::Locator { name, .. } => name,
       ControlState::Heading { .. } | ControlState::Divider => "",
     }
   }
@@ -112,6 +129,11 @@ impl ControlState {
       }
       ControlState::IntervalSlider { low, high, .. } => {
         format!("{{{}, {}}}", format_f64(*low), format_f64(*high))
+      }
+      // Locator positions are machine reals (dragging produces fractional
+      // coordinates); delegate so integral values keep their trailing dot.
+      ControlState::Locator { points, .. } => {
+        woxi::functions::graphics::format_point_list_input(points)
       }
       // Annotation rows bind no variable; never substituted.
       ControlState::Heading { .. } | ControlState::Divider => {
@@ -440,6 +462,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         label_runs,
         values,
         value_labels,
+        value_label_svgs,
         initial_index,
         popup,
       } => ControlState::Discrete {
@@ -448,6 +471,13 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         label_runs: label_runs.clone(),
         values: values.clone(),
         value_labels: value_labels.clone(),
+        value_label_svgs: value_label_svgs
+          .iter()
+          .map(|s| {
+            s.as_ref()
+              .map(|svg| svg::Handle::from_memory(svg.as_bytes().to_vec()))
+          })
+          .collect(),
         current_index: *initial_index,
         popup: *popup,
       },
@@ -493,6 +523,25 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
           high: *high_initial,
         }
       }
+      ManipulateControl::Locator {
+        name,
+        points,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        auto_create,
+        label,
+      } => ControlState::Locator {
+        name: name.clone(),
+        label: label.clone(),
+        x_min: *x_min,
+        x_max: *x_max,
+        y_min: *y_min,
+        y_max: *y_max,
+        points: points.clone(),
+        auto_create: *auto_create,
+      },
       ManipulateControl::Heading { label, label_runs } => {
         ControlState::Heading {
           label: label.clone(),

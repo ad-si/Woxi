@@ -92,7 +92,11 @@ widget with sliders and pick lists.  Option values such as
 `Initialization :> …` are preserved and prepended to every
 re-evaluation.  Discrete pick lists may be given as an expression that
 evaluates to a list (e.g. `{g, PolyhedronData[All]}`).  A `Locator`
-control binds its variable to a (frozen) initial value.  A
+control binds its variable to a draggable point (or list of points),
+rendered as one X/Y slider pair per point; `LocatorAutoCreate -> True`
+additionally offers adding and removing points.  Discrete choices whose
+rule label is a graphic (`"+" -> myIcon[2]`) show the rendered icon in
+the SetterBar.  A
 `ControlType -> None` variable has no slider but stays live, mutable
 state: extra display arguments such as a trailing
 `Dynamic[Panel[Grid[… Checkbox …]]]` are rendered as interactive

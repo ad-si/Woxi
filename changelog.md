@@ -22,6 +22,26 @@
         an `Infinity` animation bound gets a finite looping window.
 - Woxi Studio re-instantiates stored `Manipulate` widgets when opening a
     notebook (instead of showing the saved `DynamicModuleBox[…]` text dump).
+- Manipulate improvements (driven by the "Center of Mass of a Polygon"
+    Wolfram Demonstration):
+    - `Locator` controls are interactive: a single point binds as a 2D
+        slider, a point list becomes a per-point X/Y control (with
+        add/remove when `LocatorAutoCreate -> True`, and a multi-handle
+        drag pad in the Playground), instead of freezing the variable at
+        its initial value.
+    - Discrete choices whose rule label is a graphic (`"+" -> myIcon[2]`)
+        render the icon in the SetterBar instead of dumping the label's
+        InputForm.
+    - A bare control-type shorthand in the range position
+        (`{{p, init}, Locator}`) is no longer misread as a `Dynamic[…]`
+        range.
+- InputForm keeps required parentheses around loose operands of `@@`, `/@`,
+    `@@@`, and `.` (`Plus @@ (x*y)/2`, `a . (b - c)`); previously the
+    printed form re-parsed to a different expression, silently corrupting
+    re-evaluated Manipulate bodies.
+- `PlotLabel` works on plain `Graphics[…]` (rendered as a centered title),
+    and labels may be arbitrary expressions such as
+    `Row[{"center of mass: ", CM}]` on all plot types.
 
 # 2026-07-16 - 0.2.0
 

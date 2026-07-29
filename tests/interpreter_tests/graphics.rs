@@ -11567,13 +11567,14 @@ mod manipulate {
     Range[h], Range[w]]]]]]";
 
   #[test]
-  fn spec_locator_control_is_hidden_and_bound() {
-    // A `Locator` control renders no slider; its initial point list is
-    // baked into the body as a fixed binding. `q1`/`q2` stay as sliders,
-    // and the trailing `Deployed -> True` option is ignored.
+  fn spec_locator_control_is_interactive() {
+    // A `Locator` control with a point list binds its variable as a live
+    // multi-point control (one draggable point per entry) with the range
+    // taken from the `{-1, -1}, {1, 1}` corner bounds. `q1`/`q2` stay as
+    // sliders, and the trailing `Deployed -> True` option is ignored.
     let expr = interpret_to_expr(LOCATOR_EXAMPLE).unwrap();
     let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
-    assert_eq!(spec.controls.len(), 2, "only q1/q2 are visible controls");
+    assert_eq!(spec.controls.len(), 3, "q1, q2, and the locator");
     assert!(matches!(
       &spec.controls[0],
       ManipulateControl::Continuous { name, initial, .. }
@@ -11584,10 +11585,195 @@ mod manipulate {
       ManipulateControl::Continuous { name, initial, .. }
         if name == "q2" && *initial == 1.0
     ));
+    match &spec.controls[2] {
+      ManipulateControl::Locator {
+        name,
+        points,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        auto_create,
+        ..
+      } => {
+        assert_eq!(name, "p");
+        assert_eq!(points, &[(-1.0, 0.0), (1.0, 0.0)]);
+        assert_eq!((*x_min, *x_max, *y_min, *y_max), (-1.0, 1.0, -1.0, 1.0));
+        assert!(!auto_create, "no LocatorAutoCreate in this spec");
+      }
+      other => panic!("expected a Locator control, got {other:?}"),
+    }
+    // The point list travels as a live binding, not a baked-in Block.
     assert!(
-      spec.body_code.contains("Block[{p = {{-1, 0}, {1, 0}}}"),
-      "locator initial should be baked in: {}",
+      !spec.body_code.contains("Block["),
+      "locator must not be baked in: {}",
       spec.body_code
+    );
+    // Locator positions bind as machine reals (dragging produces
+    // fractional coordinates).
+    let bindings = manipulate_initial_bindings(&spec);
+    assert!(
+      bindings
+        .iter()
+        .any(|(n, v)| n == "p" && v == "{{-1., 0.}, {1., 0.}}"),
+      "locator points must be in the binding set: {bindings:?}"
+    );
+  }
+
+  #[test]
+  fn spec_locator_single_point_is_a_2d_slider() {
+    // A Locator bound to a single `{x, y}` point renders as a 2D slider
+    // (like `LocatorPane`), with the range from the corner bounds.
+    let expr = interpret_to_expr(
+      "Manipulate[Graphics[Point[p]], \
+       {{p, {0.5, 0.5}}, {0, 0}, {2, 2}, Locator}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    assert_eq!(spec.controls.len(), 1);
+    assert!(matches!(
+      &spec.controls[0],
+      ManipulateControl::Slider2D {
+        name,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        x_initial,
+        y_initial,
+        ..
+      } if name == "p"
+        && (*x_min, *x_max, *y_min, *y_max) == (0.0, 2.0, 0.0, 2.0)
+        && (*x_initial, *y_initial) == (0.5, 0.5)
+    ));
+  }
+
+  #[test]
+  fn spec_locator_non_numeric_initial_stays_fixed() {
+    // A Locator whose initial value doesn't resolve to points keeps the
+    // previous behavior: a fixed binding baked into the body.
+    let expr = interpret_to_expr(
+      "Manipulate[Graphics[Point[p]], {x, 0, 1}, {{p, q}, Locator}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    assert_eq!(spec.controls.len(), 1, "only the x slider is visible");
+    assert!(
+      spec.body_code.contains("Block[{p = q}"),
+      "non-numeric locator initial should be baked in: {}",
+      spec.body_code
+    );
+  }
+
+  // The Manipulate of the "Center of Mass of a Polygon" Wolfram
+  // Demonstration (02584428): a multi-point auto-create Locator driving a
+  // polygon, and a SetterBar whose rule labels are Graphics icons.
+  const CENTER_OF_MASS_EXAMPLE: &str = "Manipulate[\
+    Module[{area, moments, CM}, \
+    If[Length[pts] == 0, CM = \"none -- add some points!\", \
+    area = Plus @@ (ListCorrelate[{1, 1}, First /@ pts, 1]*\
+    ListCorrelate[{-1, 1}, Last /@ pts, 1])/2; \
+    moments = (1/6) {\
+    Plus @@ ((#1^2 + #1 #2 + #2^2 & @@ ({RotateLeft[#], #} &@(First /@ pts)))\
+    ListCorrelate[{-1, 1}, Last /@ pts, 1]), \
+    Plus @@ ((#1^2 + #1 #2 + #2^2 & @@ ({RotateLeft[#], #} &@(Last /@ pts)))\
+    ListCorrelate[{-1, 1}, First /@ pts, 1])}; \
+    CM = If[area == 0.0, Mean[pts], Abs[moments/area]];]; \
+    Graphics[{EdgeForm[Black], RGBColor[0.77, 0.44, 0.77], Polygon[pts], \
+    Black, If[Head[CM] === String, {}, {PointSize[0.02], Point[CM]}]}, \
+    PlotRange -> {{0, 10}, {0, 10}}, Frame -> True, \
+    PlotLabel -> Row[{\"center of mass: \", CM}]]], \
+    {{pts, 1.0 {{2, 2}, {8, 2}, {8, 8}}}, {0, 0}, {10, 10}, Locator, \
+    LocatorAutoCreate -> True}, \
+    {crosshairs, {\"none\", \"+\" -> myIcon[2], \"*\" -> myIcon[1]}, \
+    ControlType -> SetterBar, Appearance -> \"Horizontal\"}, \
+    \"The result is not valid for self-intersecting polygons!\", \
+    SaveDefinitions -> True, AutorunSequencing -> {1}]";
+
+  #[test]
+  fn spec_center_of_mass_demonstration() {
+    // The icon helper from the notebook's initialization cell.
+    interpret(
+      "myIcon[n_] := Graphics[Line[{#, -#}] & /@ \
+       ({Cos[#], Sin[#]} & /@ (n Range[0, 3] Pi/4)), \
+       ImageSize -> {24, 12}];",
+    )
+    .unwrap();
+    let expr = interpret_to_expr(CENTER_OF_MASS_EXAMPLE).unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    // Locator (auto-create), SetterBar, and the annotation heading.
+    assert_eq!(spec.controls.len(), 3);
+    match &spec.controls[0] {
+      ManipulateControl::Locator {
+        name,
+        points,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        auto_create,
+        ..
+      } => {
+        assert_eq!(name, "pts");
+        assert_eq!(points, &[(2.0, 2.0), (8.0, 2.0), (8.0, 8.0)]);
+        assert_eq!((*x_min, *x_max, *y_min, *y_max), (0.0, 10.0, 0.0, 10.0));
+        assert!(auto_create, "LocatorAutoCreate -> True");
+      }
+      other => panic!("expected a Locator control, got {other:?}"),
+    }
+    match &spec.controls[1] {
+      ManipulateControl::Discrete {
+        name,
+        values,
+        value_labels,
+        value_label_svgs,
+        ..
+      } => {
+        assert_eq!(name, "crosshairs");
+        assert_eq!(
+          values,
+          &[
+            "\"none\"".to_string(),
+            "\"+\"".to_string(),
+            "\"*\"".to_string()
+          ]
+        );
+        // Icon labels fall back to the value text and carry rendered SVG.
+        assert_eq!(
+          value_labels,
+          &["none".to_string(), "+".to_string(), "*".to_string()]
+        );
+        assert!(value_label_svgs[0].is_none(), "plain text choice");
+        assert!(
+          value_label_svgs[1]
+            .as_deref()
+            .is_some_and(|s| s.contains("<svg")),
+          "the + icon renders to SVG"
+        );
+        assert!(
+          value_label_svgs[2]
+            .as_deref()
+            .is_some_and(|s| s.contains("<svg")),
+          "the * icon renders to SVG"
+        );
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+    assert!(matches!(
+      &spec.controls[2],
+      ManipulateControl::Heading { label, .. }
+        if label == "The result is not valid for self-intersecting polygons!"
+    ));
+
+    // The initial frame must render the polygon with the correct center
+    // of mass — the centroid {6., 4.} of the initial triangle.
+    let bindings = manipulate_initial_bindings(&spec);
+    let code = manipulate_block_code(&spec.body_code, &bindings);
+    let result = woxi::interpret_with_stdout(&code).unwrap();
+    let svg = result.graphics.expect("polygon graphic should render");
+    assert!(
+      svg.contains("center of mass: {6., 4.}"),
+      "plot label must show the centroid"
     );
   }
 
