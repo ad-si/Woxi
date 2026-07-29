@@ -223,7 +223,7 @@ Which,Evaluates conditions and returns the value for the first true one,✅,pure
 Replace,Applies transformation rules to an expression,✅,pure,1.0,227
 Mean,Calculates the arithmetic mean (average) of a list,✅,pure,5.0,228
 Head,Returns the head of an expression,✅,pure,1.0,229
-AppendTo,Appends an element to a list stored in a variable,✅,stateful,1.0,230
+AppendTo,Appends an element to a list stored in a variable; a target without a value reports ::rvalue,✅,stateful,1.0,230
 Take,Returns the first n elements of a list (the one-argument form takes nothing and returns the expression),✅,pure,1.0,231
 Options,Returns or sets the options associated with a symbol,✅,pure,1.0,232
 Array,Generates a list by applying a function to successive indices,✅,pure,1.0,233
@@ -1041,7 +1041,7 @@ SumConvergence,Tests convergence of infinite sums (rational geometric alternatin
 TextAlignment,,🚫,,3.0,1051
 InterpolatingPolynomial,Polynomial that interpolates given data points,✅,pure,2.0,1052
 LeafCount,Returns the number of leaves in an expression,✅,pure,1.0,1054
-PrependTo,Prepends an element to a list stored in a variable,✅,stateful,1.0,1054
+PrependTo,Prepends an element to a list stored in a variable; a target without a value reports ::rvalue,✅,stateful,1.0,1054
 AdjacencyMatrix,Builds adjacency matrix from a graph,✅,none,8.0,1055
 BinormalDistribution,Bivariate normal distribution; supports PDF Mean Variance StandardDeviation and Covariance,✅,pure,3.0,1056
 EdgeLabels,,🚫,,8.0,1057

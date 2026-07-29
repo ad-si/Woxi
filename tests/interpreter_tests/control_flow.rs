@@ -3331,3 +3331,83 @@ mod success_and_exception_objects {
     );
   }
 }
+
+mod in_place_modification_of_a_valueless_target {
+  use super::*;
+
+  #[test]
+  fn append_to_a_symbol_without_a_value_reports_rvalue() {
+    clear_state();
+    // This used to abort with an internal "requires a variable with a list
+    // value" error instead of reporting and standing down.
+    assert_eq!(interpret("AppendTo[q, 3]").unwrap(), "AppendTo[q, 3]");
+    assert_eq!(interpret("PrependTo[q, 0]").unwrap(), "PrependTo[q, 0]");
+  }
+
+  #[test]
+  fn append_to_something_that_cannot_hold_a_value() {
+    clear_state();
+    assert_eq!(
+      interpret("AppendTo[{1, 2}, 3]").unwrap(),
+      "AppendTo[{1, 2}, 3]"
+    );
+    assert_eq!(
+      interpret("PrependTo[{1, 2}, 0]").unwrap(),
+      "PrependTo[{1, 2}, 0]"
+    );
+    assert_eq!(
+      interpret("AppendTo[f[1, 2], 3]").unwrap(),
+      "AppendTo[f[1, 2], 3]"
+    );
+    assert_eq!(interpret("AppendTo[5, 3]").unwrap(), "AppendTo[5, 3]");
+    assert_eq!(
+      interpret(r#"AppendTo["ab", 3]"#).unwrap(),
+      "AppendTo[ab, 3]"
+    );
+  }
+
+  #[test]
+  fn the_arithmetic_modifiers_report_it_too() {
+    clear_state();
+    assert_eq!(interpret("AddTo[5, 1]").unwrap(), "5 += 1");
+    assert_eq!(interpret("SubtractFrom[5, 1]").unwrap(), "5 -= 1");
+    assert_eq!(interpret("TimesBy[5, 2]").unwrap(), "5 *= 2");
+    assert_eq!(interpret("DivideBy[5, 2]").unwrap(), "5 /= 2");
+    assert_eq!(interpret("Increment[5]").unwrap(), "5++");
+    assert_eq!(interpret("Decrement[5]").unwrap(), "5--");
+  }
+
+  #[test]
+  fn a_target_that_does_have_a_value_still_works() {
+    clear_state();
+    assert_eq!(
+      interpret("r = {1, 2}; AppendTo[r, 3]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(interpret("r").unwrap(), "{1, 2, 3}");
+    clear_state();
+    assert_eq!(
+      interpret("s = {2, 3}; PrependTo[s, 1]").unwrap(),
+      "{1, 2, 3}"
+    );
+    clear_state();
+    assert_eq!(interpret("n = 5; AddTo[n, 1]").unwrap(), "6");
+    clear_state();
+    // A Part target works when the location holds something extendable.
+    assert_eq!(
+      interpret("k = {{1}, {2}}; AppendTo[k[[1]], 9]").unwrap(),
+      "{1, 9}"
+    );
+  }
+
+  #[test]
+  fn a_part_target_holding_an_atom_reports_normal() {
+    clear_state();
+    // This too used to abort with an internal "requires a list-valued
+    // target" error. The report names the Part expression as written.
+    assert_eq!(
+      interpret("m = {1, 2}; AppendTo[m[[1]], 9]").unwrap(),
+      "AppendTo[m[[1]], 9]"
+    );
+  }
+}

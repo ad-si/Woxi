@@ -2,6 +2,19 @@
 use super::*;
 use crate::syntax::{BinaryOperator, ComparisonOp, bool_expr, unevaluated};
 
+/// Report that an in-place modification has nothing to modify:
+/// `<Fn>::rvalue: <target> is not a variable with a value, so its value
+/// cannot be changed.` The target renders in OutputForm, so a string shows
+/// without its quotes, as wolframscript does.
+fn emit_rvalue(fname: &str, target: &Expr) {
+  crate::emit_message(&format!(
+    "{}::rvalue: {} is not a variable with a value, so its value cannot be \
+     changed.",
+    fname,
+    crate::syntax::expr_to_output(target)
+  ));
+}
+
 thread_local! {
   /// Symbols currently being looked up — prevents infinite recursion when
   /// a stored OwnValue references the same symbol (e.g. `s = {a, s}`).
@@ -1360,6 +1373,13 @@ pub fn evaluate_expr_to_expr_inner(
             "DivideBy" => BinaryOperator::Divide,
             _ => unreachable!(),
           };
+          if !matches!(&args[0], Expr::Identifier(_) | Expr::Part { .. }) {
+            emit_rvalue(name, &args[0]);
+            return Ok(Expr::FunctionCall {
+              name: name.clone(),
+              args: args.clone(),
+            });
+          }
           if let Expr::Identifier(var_name) = &args[0] {
             let current = ENV.with(|e| e.borrow().get(var_name).cloned());
             let current_val = match current {
@@ -1443,14 +1463,31 @@ pub fn evaluate_expr_to_expr_inner(
               }
             }
             _ => {
-              return Err(InterpreterError::EvaluationError(format!(
-                "{} requires a list-valued target",
-                name
-              )));
+              // The Part location holds an atom, which cannot be extended.
+              // wolframscript reports it against the original Part
+              // expression rather than against the value it found.
+              crate::emit_message(&format!(
+                "{}::normal: Nonatomic expression expected at position 1 in \
+                 {}.",
+                name,
+                crate::syntax::expr_to_output(&unevaluated(name, args))
+              ));
+              return Ok(unevaluated(name, args));
             }
           };
           crate::evaluator::assignment::set_ast(&args[0], &new_val)?;
           return Ok(new_val);
+        }
+        // A target that is neither a symbol nor a Part cannot hold a value.
+        if (name == "AppendTo" || name == "PrependTo")
+          && args.len() == 2
+          && !matches!(&args[0], Expr::Identifier(_) | Expr::Part { .. })
+        {
+          emit_rvalue(name, &args[0]);
+          return Ok(Expr::FunctionCall {
+            name: name.clone(),
+            args: args.clone(),
+          });
         }
         // Special handling for AppendTo, PrependTo - x = Append[x, elem]
         if (name == "AppendTo" || name == "PrependTo")
@@ -1518,10 +1555,13 @@ pub fn evaluate_expr_to_expr_inner(
               match crate::evaluator::listable::get_system_variable(var_name) {
                 Some(default) => default,
                 None => {
-                  return Err(InterpreterError::EvaluationError(format!(
-                    "{} requires a variable with a list value",
-                    name
-                  )));
+                  // wolframscript reports that the target has no value and
+                  // leaves the call alone; it is not an error.
+                  emit_rvalue(name, &args[0]);
+                  return Ok(Expr::FunctionCall {
+                    name: name.clone(),
+                    args: args.clone(),
+                  });
                 }
               }
             }
