@@ -1996,6 +1996,25 @@ mod plot3d {
     }
 
     #[test]
+    fn plot_plot_label_expression() {
+      // A non-string label (`Row[…]`) titles the plot with its OutputForm
+      // text (the Demonstrations "center of mass: {6., 4.}" pattern).
+      let svg = export_svg(
+        r#"Plot[x, {x, 0, 1}, PlotLabel -> Row[{"cm: ", {6., 4.}}]]"#,
+      );
+      assert!(svg.contains("cm: {6., 4.}"), "Row label must render: {svg}");
+    }
+
+    #[test]
+    fn graphics_plot_label() {
+      // PlotLabel also works on plain Graphics, as a centered title.
+      let svg = export_svg(
+        r#"Graphics[{Disk[]}, PlotLabel -> "A Disk", Frame -> True]"#,
+      );
+      assert!(svg.contains(">A Disk</text>"), "label must render: {svg}");
+    }
+
+    #[test]
     fn plot_axes_label() {
       insta::assert_snapshot!(export_svg(
         r#"Plot[x^2, {x, -2, 2}, AxesLabel -> {"x", "y"}]"#

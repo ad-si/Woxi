@@ -4518,6 +4518,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut plot_range_x: Option<(f64, f64)> = None;
   let mut plot_range_y: Option<(f64, f64)> = None;
   let mut background: Option<Color> = None;
+  let mut plot_label: Option<String> = None;
   let mut axes = (false, false);
   let mut frame = false;
   let mut grid_x = GridSpec::None;
@@ -4556,6 +4557,22 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if let Some((xr, yr)) = parse_plot_range(replacement) {
             plot_range_x = xr;
             plot_range_y = yr;
+          }
+        }
+        "PlotLabel" => {
+          // Any expression can label the plot (`Row[…]`, a string, a
+          // symbol); its OutputForm text becomes the centered title.
+          match replacement.as_ref() {
+            Expr::Identifier(s) if s == "None" => {}
+            other => {
+              let text = crate::syntax::format_expr(
+                other,
+                crate::syntax::ExprForm::Output,
+              );
+              if !text.is_empty() {
+                plot_label = Some(text);
+              }
+            }
           }
         }
         "Background" => {
@@ -4696,11 +4713,13 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Compute margins for axis/frame tick labels.
+  // Compute margins for axis/frame tick labels. A PlotLabel reserves an
+  // extra strip above the drawing area for its centered title text.
   let margin_left: f64 = if frame || axes.1 { 50.0 } else { 0.0 };
   let margin_bottom: f64 = if frame || axes.0 { 25.0 } else { 0.0 };
   let margin_right: f64 = if frame { 10.0 } else { 0.0 };
-  let margin_top: f64 = if frame { 10.0 } else { 0.0 };
+  let label_strip: f64 = if plot_label.is_some() { 26.0 } else { 0.0 };
+  let margin_top: f64 = if frame { 10.0 } else { 0.0 } + label_strip;
   let total_width = svg_w + margin_left + margin_right;
   let total_height = svg_h + margin_bottom + margin_top;
 
@@ -4742,6 +4761,16 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg.push_str(&format!(
       "<rect width=\"{total_width:.0}\" height=\"{total_height:.0}\" fill=\"{}\"/>\n",
       bg.to_svg_rgb(),
+    ));
+  }
+
+  // PlotLabel: centered above the drawing area, in the reserved strip.
+  if let Some(label) = &plot_label {
+    let cx = margin_left + svg_w / 2.0;
+    svg.push_str(&format!(
+      "<text x=\"{cx:.1}\" y=\"17\" text-anchor=\"middle\" \
+       font-family=\"sans-serif\" font-size=\"16\" fill=\"#333333\">{}</text>\n",
+      crate::functions::svg_escape(label)
     ));
   }
 
