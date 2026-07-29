@@ -243,8 +243,12 @@ PostfixFunction = {
 // pest's tokenization (silent literals in `("++")*` would not).
 IncrementOp = { "++" }
 DecrementOp = { "--" }
-Increment = { (PartExtract | Identifier) ~ IncrementOp ~ IncrementOp* }
-Decrement = { (PartExtract | Identifier) ~ DecrementOp ~ DecrementOp* }
+// The operand may also be a literal: wolframscript parses `5++` as
+// `Increment[5]` and reports `::rvalue` at evaluation time, and reads
+// `1++2` as `Increment[1] 2` rather than as `1 + (+2)`. The `++` literal
+// is atomic, so a spaced `1 + +2` is still addition.
+Increment = { (PartExtract | Identifier | NumericValue) ~ IncrementOp ~ IncrementOp* }
+Decrement = { (PartExtract | Identifier | NumericValue) ~ DecrementOp ~ DecrementOp* }
 
 // PreIncrement/PreDecrement: ++x or --x (prefix operators)
 // Also supports Part extraction: ++x[[i]] or --x[[i]]
@@ -279,10 +283,10 @@ UnsetSuffix = { "=" ~ "." ~ !ASCII_DIGIT }
 
 // Compound assignment: x += y, x -= y, x *= y, x /= y
 ApplyToOp = { (PartExtract | Identifier) ~ "//=" ~ Expression }
-AddTo = { (PartExtract | Identifier) ~ "+=" ~ Expression }
-SubtractFrom = { (PartExtract | Identifier) ~ "-=" ~ Expression }
-TimesBy = { (PartExtract | Identifier) ~ "*=" ~ Expression }
-DivideBy = { (PartExtract | Identifier) ~ "/=" ~ Expression }
+AddTo = { (PartExtract | Identifier | NumericValue) ~ "+=" ~ Expression }
+SubtractFrom = { (PartExtract | Identifier | NumericValue) ~ "-=" ~ Expression }
+TimesBy = { (PartExtract | Identifier | NumericValue) ~ "*=" ~ Expression }
+DivideBy = { (PartExtract | Identifier | NumericValue) ~ "/=" ~ Expression }
 
 // ImplicitTimes handles implicit multiplication (e.g., "x y z" or "2 x")
 // Each factor can have a Part suffix ([[...]]) and/or power suffix so that
@@ -493,7 +497,12 @@ Term = _{
 // PrefixApplySimple handles f@x within implicit multiplication so Sqrt@5 binds before n Sqrt@5
 PrefixApplySimple = { (FunctionCall | Identifier) ~ "@" ~ SimpleTerm }
 SimpleTerm = _{
-    UnsignedNumericValue
+  // Increment/Decrement come first so a postfix `++` binds to its operand
+  // before the operand is taken on its own: `2 a++` is `2 (a++)`, and
+  // `1++2` is `Increment[1] 2`.
+    Increment
+  | Decrement
+  | UnsignedNumericValue
   | PrefixApplySimple
   | FunctionCall
   | DerivativeIdentifier

@@ -3411,3 +3411,71 @@ mod in_place_modification_of_a_valueless_target {
     );
   }
 }
+
+mod postfix_increment_parsing {
+  use super::*;
+
+  #[test]
+  fn a_postfix_increment_participates_in_implicit_multiplication() {
+    clear_state();
+    // `2 a++` used to be a parse error, which kills the whole input.
+    assert_eq!(interpret("a = 5; 2 a++").unwrap(), "10");
+    clear_state();
+    // `a++ 2` used to silently evaluate to 2, dropping the increment.
+    assert_eq!(interpret("a = 5; a++ 2").unwrap(), "10");
+    clear_state();
+    assert_eq!(interpret("a = 5; 2 a--").unwrap(), "10");
+    clear_state();
+    assert_eq!(interpret("a = 5; a++*2").unwrap(), "10");
+  }
+
+  #[test]
+  fn a_literal_operand_parses_and_reports_at_evaluation() {
+    clear_state();
+    // wolframscript parses these and complains only when evaluating.
+    assert_eq!(interpret("5++").unwrap(), "5++");
+    assert_eq!(interpret("5--").unwrap(), "5--");
+    assert_eq!(interpret("2.5++").unwrap(), "2.5++");
+    assert_eq!(interpret("5 += 1").unwrap(), "5 += 1");
+    assert_eq!(interpret("5 -= 1").unwrap(), "5 -= 1");
+    assert_eq!(interpret("5 *= 2").unwrap(), "5 *= 2");
+    assert_eq!(interpret("5 /= 2").unwrap(), "5 /= 2");
+  }
+
+  #[test]
+  fn an_adjacent_double_sign_is_the_operator_not_addition() {
+    clear_state();
+    // `1++2` is Increment[1] times 2, not 1 + (+2).
+    assert_eq!(interpret("1++2").unwrap(), "2*1++");
+    assert_eq!(interpret("1--2").unwrap(), "2*1--");
+    // Separating the signs keeps it arithmetic — the `++` literal is atomic.
+    assert_eq!(interpret("1 + +2").unwrap(), "3");
+    assert_eq!(interpret("1 - -2").unwrap(), "3");
+  }
+
+  #[test]
+  fn ordinary_arithmetic_and_juxtaposition_are_unaffected() {
+    clear_state();
+    assert_eq!(interpret("3 - 1").unwrap(), "2");
+    assert_eq!(interpret("2 + 3").unwrap(), "5");
+    assert_eq!(interpret("-5 + 2").unwrap(), "-3");
+    assert_eq!(interpret("2 x").unwrap(), "2*x");
+    assert_eq!(interpret("{1, -2}").unwrap(), "{1, -2}");
+    clear_state();
+    assert_eq!(interpret("n = 4; n - 1").unwrap(), "3");
+    clear_state();
+    assert_eq!(interpret("x = 2; y = 3; x y").unwrap(), "6");
+  }
+
+  #[test]
+  fn increment_still_updates_and_returns_the_old_value() {
+    clear_state();
+    assert_eq!(interpret("a = 5; {a++, a}").unwrap(), "{5, 6}");
+    clear_state();
+    assert_eq!(interpret("a = 5; b = a++; {a, b}").unwrap(), "{6, 5}");
+    clear_state();
+    assert_eq!(interpret("a = 5; a++ + 1").unwrap(), "6");
+    clear_state();
+    assert_eq!(interpret("m = {1, 2}; m[[1]]++; m").unwrap(), "{2, 2}");
+  }
+}
