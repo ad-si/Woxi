@@ -18,18 +18,18 @@ Sqrt,Returns the square root of a number,✅,pure,1.0,18
 Function,Represents a pure function,✅,pure,1.0,19
 ReplaceAll,Applies replacement rules to an expression,✅,pure,1.0,20
 Plot,Plots a function over a range,✅,effectful,1.0,21
-Cos,Returns the cosine of a number,✅,pure,1.0,
-Sin,Returns the sine of a number,✅,pure,1.0,
-Tan,Returns the tangent of a number,✅,pure,1.0,
-Csc,Returns the cosecant of a number,✅,pure,1.0,
-Cot,Returns the cotangent of a number,✅,pure,1.0,
-Sec,Returns the secant of a number,✅,pure,1.0,
-ArcCos,Returns the arc cosine of a number,✅,pure,1.0,
-ArcSin,Returns the arc sine of a number,✅,pure,1.0,
-ArcTan,Returns the arc tangent of a number,✅,pure,1.0,
-ArcCot,Returns the arc cotangent of a number,✅,pure,1.0,
-ArcCsc,Returns the arc cosecant of a number,✅,pure,1.0,
-ArcSec,Returns the arc secant of a number,✅,pure,1.0,
+Cos,Returns the cosine of a number,✅,pure,1.0,31
+Sin,Returns the sine of a number,✅,pure,1.0,22
+Tan,Returns the tangent of a number,✅,pure,1.0,171
+Csc,Returns the cosecant of a number,✅,pure,1.0,374
+Cot,Returns the cotangent of a number,✅,pure,1.0,358
+Sec,Returns the secant of a number,✅,pure,1.0,388
+ArcCos,Returns the arc cosine of a number,✅,pure,1.0,249
+ArcSin,Returns the arc sine of a number,✅,pure,1.0,250
+ArcTan,Returns the arc tangent of a number,✅,pure,1.0,153
+ArcCsc,Returns the arc cosecant of a number,✅,pure,1.0,370
+ArcCot,Returns the arc cotangent of a number,✅,pure,1.0,316
+ArcSec,Returns the arc secant of a number,✅,pure,1.0,372
 None,Symbol representing no value or absence of an option,✅,pure,1.0,23
 RGBColor,Specifies a color by RGB values,✅,pure,1.0,24
 Derivative,Represents the derivative of a function,✅,pure,1.0,26
@@ -322,10 +322,10 @@ TestID,Option symbol for specifying a test identifier in testing functions,✅,p
 Cell,Represents a cell in a notebook with content and style information,✅,pure,3.0,325
 Hold,Holds its arguments unevaluated,✅,pure,1.0,326
 Chop,Replaces approximate real numbers close to zero by exact 0,✅,pure,1.0,328
-BesselJ,Bessel function of the first kind J_n(z),✅,pure,1.0,
-BesselY,Bessel function of the second kind Y_n(z),✅,pure,1.0,
-BesselI,Modified Bessel function of the first kind I_n(z),✅,pure,1.0,
-BesselK,Modified Bessel function of the second kind K_n(z),✅,pure,1.0,
+BesselJ,Bessel function of the first kind J_n(z),✅,pure,1.0,329
+BesselY,Bessel function of the second kind Y_n(z),✅,pure,1.0,752
+BesselI,Modified Bessel function of the first kind I_n(z),✅,pure,1.0,664
+BesselK,Modified Bessel function of the second kind K_n(z),✅,pure,1.0,613
 MapIndexed,Applies a function to each element along with its index; on an association the index is {Key[key]},✅,pure,2.0,330
 RiemannR,Riemann prime counting function R(x) approximating PrimePi,✅,pure,7.0,331
 Item,Wrapper for specifying individual item options in Grid and similar constructs,✅,pure,6.0,332
@@ -343,18 +343,18 @@ FaceForm,Specifies face styling for filled graphics,✅,pure,1.0,344
 Prepend,Adds an element to the beginning of a list,✅,pure,1.0,345
 ArrayPlot,Plots a matrix as a grid of colored cells,✅,pure,5.1,346
 Histogram,Creates a histogram from data,✅,pure,7.0,347
-Cosh,Returns the hyperbolic cosine,✅,pure,1.0,
-Sinh,Returns the hyperbolic sine,✅,pure,1.0,
-Tanh,Returns the hyperbolic tangent,✅,pure,1.0,
-Csch,Returns the hyperbolic cosecant,✅,pure,1.0,
-Coth,Returns the hyperbolic cotangent,✅,pure,1.0,
-Sech,Returns the hyperbolic secant,✅,pure,1.0,
-ArcCosh,Returns the inverse hyperbolic cosine,✅,pure,1.0,
-ArcSinh,Returns the inverse hyperbolic sine,✅,pure,1.0,
-ArcTanh,Returns the inverse hyperbolic tangent,✅,pure,1.0,
-ArcCsch,Returns the inverse hyperbolic cosecant,✅,pure,1.0,
-ArcCoth,Returns the inverse hyperbolic cotangent,✅,pure,1.0,
-ArcSech,Returns the inverse hyperbolic secant,✅,pure,1.0,
+Cosh,Returns the hyperbolic cosine,✅,pure,1.0,259
+Sinh,Returns the hyperbolic sine,✅,pure,1.0,278
+Tanh,Returns the hyperbolic tangent,✅,pure,1.0,350
+Csch,Returns the hyperbolic cosecant,✅,pure,1.0,703
+Coth,Returns the hyperbolic cotangent,✅,pure,1.0,592
+Sech,Returns the hyperbolic secant,✅,pure,1.0,538
+ArcCosh,Returns the inverse hyperbolic cosine,✅,pure,1.0,324
+ArcSinh,Returns the inverse hyperbolic sine,✅,pure,1.0,349
+ArcTanh,Returns the inverse hyperbolic tangent,✅,pure,1.0,297
+ArcCsch,Returns the inverse hyperbolic cosecant,✅,pure,1.0,348
+ArcCoth,Returns the inverse hyperbolic cotangent,✅,pure,1.0,327
+ArcSech,Returns the inverse hyperbolic secant,✅,pure,1.0,335
 SeedRandom,Seeds the random number generator,✅,stateful,1.0,351
 ContourPlot3D,Placeholder 3D contour plot returning a Graphics3D shell,✅,pure,6.0,352
 Catch,Catches a value thrown by Throw; the form is matched as a pattern and the 3-arg form applies f to the value and tag,✅,pure,1.0,353
@@ -541,18 +541,18 @@ Rasterize,Converts expression to raster image,✅,pure,6.0,539
 FrameTicksStyle,Option for specifying the style of frame ticks,✅,pure,6.0,540
 Complex,Head type for complex numbers,✅,pure,1.0,541
 Delete,Deletes an element at a given position,✅,pure,2.0,542
-JacobiDN,Jacobi elliptic function dn,✅,pure,1.0,
-JacobiSN,Jacobi elliptic function sn,✅,pure,1.0,
-JacobiCN,Jacobi elliptic function cn,✅,pure,1.0,
-JacobiSC,Jacobi elliptic function sc (sn/cn),✅,pure,1.0,
-JacobiDC,Jacobi elliptic function dc (dn/cn),✅,pure,1.0,
-JacobiCD,Jacobi elliptic function cd (cn/dn),✅,pure,1.0,
-JacobiSD,Jacobi elliptic function sd (sn/dn),✅,pure,1.0,
-JacobiCS,Jacobi elliptic function cs (cn/sn),✅,pure,1.0,
-JacobiDS,Jacobi elliptic function ds (dn/sn),✅,pure,1.0,
-JacobiNS,Jacobi elliptic function ns (1/sn),✅,pure,1.0,
-JacobiND,Jacobi elliptic function nd (1/dn),✅,pure,1.0,
-JacobiNC,Jacobi elliptic function nc (1/cn),✅,pure,1.0,
+JacobiDN,Jacobi elliptic function dn,✅,pure,1.0,543
+JacobiSN,Jacobi elliptic function sn,✅,pure,1.0,544
+JacobiCN,Jacobi elliptic function cn,✅,pure,1.0,595
+JacobiSC,Jacobi elliptic function sc (sn/cn),✅,pure,1.0,819
+JacobiDC,Jacobi elliptic function dc (dn/cn),✅,pure,1.0,916
+JacobiCD,Jacobi elliptic function cd (cn/dn),✅,pure,1.0,919
+JacobiSD,Jacobi elliptic function sd (sn/dn),✅,pure,1.0,3257
+JacobiCS,Jacobi elliptic function cs (cn/sn),✅,pure,1.0,3344
+JacobiDS,Jacobi elliptic function ds (dn/sn),✅,pure,1.0,3427
+JacobiNS,Jacobi elliptic function ns (1/sn),✅,pure,1.0,3462
+JacobiND,Jacobi elliptic function nd (1/dn),✅,pure,1.0,3522
+JacobiNC,Jacobi elliptic function nc (1/cn),✅,pure,1.0,3656
 Ordering,Returns the positions that would sort a list optionally by an ordering function,✅,pure,4.1,545
 ElementData,Returns properties of chemical elements,✅,pure,6.0,546
 Dividers,Option for dividing lines in Grid,✅,none,6.0,547
@@ -1840,18 +1840,18 @@ CopyToClipboard,Copy to clipboard,,unevaluated,8.0,1861
 ColorReplace,Replace colors in image,,unevaluated,9.0,1864
 Format,Display wrapper that formats an expression in a given form,✅,pure,1.0,1864
 GraphPlot3D,3D graph plot,,unevaluated,6.0,1864
-InverseJacobiCN,Inverse Jacobi elliptic function cn,✅,pure,1.0,
-InverseJacobiSN,Inverse Jacobi elliptic function sn,✅,pure,1.0,
-InverseJacobiCD,Inverse Jacobi elliptic function cd,✅,pure,1.0,
-InverseJacobiCS,Inverse Jacobi elliptic function cs,✅,pure,1.0,
-InverseJacobiSC,Inverse Jacobi elliptic function sc,✅,pure,1.0,
-InverseJacobiDN,Inverse Jacobi elliptic function dn,✅,pure,1.0,
-InverseJacobiDS,Inverse Jacobi elliptic function ds,✅,pure,1.0,
-InverseJacobiNC,Inverse Jacobi elliptic function nc,✅,pure,1.0,
-InverseJacobiND,Inverse Jacobi elliptic function nd,✅,pure,1.0,
-InverseJacobiNS,Inverse Jacobi elliptic function ns,✅,pure,1.0,
-InverseJacobiSD,Inverse Jacobi elliptic function sd,✅,pure,1.0,
-InverseJacobiDC,Inverse Jacobi elliptic function dc,✅,pure,1.0,
+InverseJacobiCN,Inverse Jacobi elliptic function cn,✅,pure,1.0,1865
+InverseJacobiSN,Inverse Jacobi elliptic function sn,✅,pure,1.0,1905
+InverseJacobiCD,Inverse Jacobi elliptic function cd,✅,pure,1.0,4006
+InverseJacobiCS,Inverse Jacobi elliptic function cs,✅,pure,1.0,4081
+InverseJacobiSC,Inverse Jacobi elliptic function sc,✅,pure,1.0,4104
+InverseJacobiDN,Inverse Jacobi elliptic function dn,✅,pure,1.0,4138
+InverseJacobiDS,Inverse Jacobi elliptic function ds,✅,pure,1.0,4138
+InverseJacobiNC,Inverse Jacobi elliptic function nc,✅,pure,1.0,4173
+InverseJacobiND,Inverse Jacobi elliptic function nd,✅,pure,1.0,4173
+InverseJacobiNS,Inverse Jacobi elliptic function ns,✅,pure,1.0,4173
+InverseJacobiSD,Inverse Jacobi elliptic function sd,✅,pure,1.0,4173
+InverseJacobiDC,Inverse Jacobi elliptic function dc,✅,pure,1.0,4204
 ButtonFunction,Button function option,,unevaluated,3.0,1866
 SystemOptions,System options,,unevaluated,6.0,1867
 FrobeniusSolve,Returns non-negative integer solutions to a Frobenius equation,✅,pure,6.0,1869
