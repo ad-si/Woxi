@@ -1329,7 +1329,7 @@ fn instant_date_object(date: &Expr) -> Option<Expr> {
 /// surfaced as an `Instant`-granularity `DateObject`. A non-date (numeric) stamp
 /// is left unchanged.
 pub fn time_series_normal(ts: &Expr) -> Option<Expr> {
-  let pairs = time_series_pairs(ts)?;
+  let pairs = series_pairs_of(ts)?;
   Some(Expr::List(
     pairs
       .into_iter()
@@ -1482,4 +1482,73 @@ mod tests {
     // November + 2 months → January of the next year
     assert_eq!(render(&dates[2]), "{2014, 1, 15, 0, 0, 0.}");
   }
+}
+
+/// EventSeriesQ[expr] — True only for an `EventSeries` object. A `TimeSeries`
+/// (including the one `EventSeriesAccumulate` returns) is not one.
+pub fn event_series_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let is_event_series = matches!(&args[0], Expr::FunctionCall { name, args: a }
+    if name == "EventSeries" && a.len() == 1)
+    && series_pairs_of(&args[0]).is_some();
+  Ok(Expr::Identifier(
+    if is_event_series { "True" } else { "False" }.to_string(),
+  ))
+}
+
+/// EventSeriesLookup[series, t] — the events nearest to `t`, as `{time, value}`
+/// pairs. Every event at the minimal distance is returned, so a `t` exactly
+/// between two of them gives both.
+pub fn event_series_lookup_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unchanged = || Ok(unevaluated("EventSeriesLookup", args));
+  let (Some(pairs), Some(target)) =
+    (series_pairs_of(&args[0]), to_time(&args[1]))
+  else {
+    return unchanged();
+  };
+  let mut best: Option<f64> = None;
+  let mut distances = Vec::with_capacity(pairs.len());
+  for (stamp, _) in &pairs {
+    let Some(t) = to_time(stamp) else {
+      return unchanged();
+    };
+    let d = (t - target).abs();
+    distances.push(d);
+    if best.is_none_or(|b| d < b) {
+      best = Some(d);
+    }
+  }
+  let Some(best) = best else {
+    return unchanged();
+  };
+  let events: Vec<Expr> = pairs
+    .into_iter()
+    .zip(distances)
+    .filter(|(_, d)| *d == best)
+    .map(|((stamp, value), _)| Expr::List(vec![stamp, value].into()))
+    .collect();
+  Ok(Expr::List(events.into()))
+}
+
+/// EventSeriesAccumulate[series] — the running count of events, as a
+/// `TimeSeries` stamped at the event times. The values themselves play no
+/// part: what accumulates is how many events have occurred.
+pub fn event_series_accumulate_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let Some(pairs) = series_pairs_of(&args[0]) else {
+    return Ok(unevaluated("EventSeriesAccumulate", args));
+  };
+  let counted: Vec<Expr> = pairs
+    .into_iter()
+    .enumerate()
+    .map(|(i, (stamp, _))| {
+      Expr::List(vec![stamp, Expr::Integer(i as i128 + 1)].into())
+    })
+    .collect();
+  Ok(Expr::FunctionCall {
+    name: "TimeSeries".to_string(),
+    args: vec![Expr::List(counted.into())].into(),
+  })
 }

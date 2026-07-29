@@ -123,3 +123,54 @@ A plain list still windows by count:
 $ wo 'MovingMap[Total, {1, 2, 3, 4}, 1]'
 {3, 5, 7}
 ```
+
+## `EventSeries`
+
+An `EventSeries` records events at particular times rather than a sampled
+signal. `EventSeriesQ` recognizes one, and `Normal` unwraps it back to
+`{time, value}` pairs:
+
+```scrut
+$ wo 'EventSeriesQ[EventSeries[{{1, a}, {2, b}}]]'
+True
+```
+
+```scrut
+$ wo 'EventSeriesQ[TimeSeries[{{1, 1}, {2, 2}}]]'
+False
+```
+
+```scrut
+$ wo 'Normal[EventSeries[{{1, a}, {2, b}}]]'
+{{1, a}, {2, b}}
+```
+
+`EventSeriesLookup[series, t]` gives the events nearest to `t`. A time between
+two events picks the closer one, and a time outside the range picks the
+nearest end:
+
+```scrut
+$ wo 'EventSeriesLookup[EventSeries[{{1, a}, {2, b}, {5, c}}], 3]'
+{{2, b}}
+```
+
+```scrut
+$ wo 'EventSeriesLookup[EventSeries[{{1, a}, {2, b}, {5, c}}], 10]'
+{{5, c}}
+```
+
+A time exactly between two events is equidistant from both, so both come back:
+
+```scrut
+$ wo 'EventSeriesLookup[EventSeries[{{1, a}, {2, b}, {5, c}}], 7/2]'
+{{2, b}, {5, c}}
+```
+
+`EventSeriesAccumulate` gives the running *count* of events as a `TimeSeries`.
+The values themselves play no part — what accumulates is how many events have
+occurred:
+
+```scrut
+$ wo 'Normal[EventSeriesAccumulate[EventSeries[{{1, 5}, {2, 7}, {5, 9}}]]]'
+{{1, 1}, {2, 2}, {5, 3}}
+```

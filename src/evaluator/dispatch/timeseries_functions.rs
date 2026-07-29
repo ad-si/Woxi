@@ -39,9 +39,10 @@ pub(super) fn dispatch_timeseries_functions(
     {
       Some(Ok(timeseries_ast::time_series_values_output(&args[0])?))
     }
+    // `Normal` unwraps an EventSeries as well as a TimeSeries.
     "Normal"
       if args.len() == 1
-        && timeseries_ast::time_series_pairs(&args[0]).is_some() =>
+        && timeseries_ast::series_pairs_of(&args[0]).is_some() =>
     {
       Some(Ok(timeseries_ast::time_series_normal(&args[0])?))
     }
@@ -76,6 +77,15 @@ pub(super) fn dispatch_timeseries_functions(
     "TimeSeriesThread" => Some(timeseries_ast::time_series_thread_ast(args)),
     "TimeSeriesInsert" => Some(timeseries_ast::time_series_insert_ast(args)),
     "RegularlySampledQ" => Some(timeseries_ast::regularly_sampled_q_ast(args)),
+    "EventSeriesQ" if args.len() == 1 => {
+      Some(timeseries_ast::event_series_q_ast(args))
+    }
+    "EventSeriesLookup" if args.len() == 2 => {
+      Some(timeseries_ast::event_series_lookup_ast(args))
+    }
+    "EventSeriesAccumulate" if args.len() == 1 => {
+      Some(timeseries_ast::event_series_accumulate_ast(args))
+    }
     // MovingAverage over a series averages the values and keeps the later
     // time stamp of each window, the way wolframscript reports it.
     "MovingAverage"

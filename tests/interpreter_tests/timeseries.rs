@@ -1255,3 +1255,125 @@ mod moving_map_series {
     }
   }
 }
+
+mod event_series_queries {
+  use super::*;
+
+  const ES: &str = "EventSeries[{{1, a}, {2, b}, {5, c}}]";
+
+  #[test]
+  fn event_series_q_accepts_only_an_event_series() {
+    assert_eq!(interpret(&format!("EventSeriesQ[{ES}]")).unwrap(), "True");
+    assert_eq!(
+      interpret("EventSeriesQ[EventSeries[{{1, a}}]]").unwrap(),
+      "True"
+    );
+    // A TimeSeries is a different object, and so is anything else.
+    assert_eq!(
+      interpret("EventSeriesQ[TimeSeries[{{1, 1}, {2, 2}}]]").unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("EventSeriesQ[5]").unwrap(), "False");
+    assert_eq!(interpret("EventSeriesQ[{1, 2, 3}]").unwrap(), "False");
+    // EventSeriesAccumulate hands back a TimeSeries, so this is False too.
+    assert_eq!(
+      interpret("EventSeriesQ[EventSeriesAccumulate[EventSeries[{{1, 5}}]]]")
+        .unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn lookup_gives_the_nearest_events() {
+    assert_eq!(
+      interpret(&format!("EventSeriesLookup[{ES}, 1]")).unwrap(),
+      "{{1, a}}"
+    );
+    assert_eq!(
+      interpret(&format!("EventSeriesLookup[{ES}, 2]")).unwrap(),
+      "{{2, b}}"
+    );
+    // 3 is closer to the event at 2 than to the one at 5.
+    assert_eq!(
+      interpret(&format!("EventSeriesLookup[{ES}, 3]")).unwrap(),
+      "{{2, b}}"
+    );
+    // A time outside the range picks the nearest end.
+    assert_eq!(
+      interpret(&format!("EventSeriesLookup[{ES}, 0]")).unwrap(),
+      "{{1, a}}"
+    );
+    assert_eq!(
+      interpret(&format!("EventSeriesLookup[{ES}, 10]")).unwrap(),
+      "{{5, c}}"
+    );
+    // It reads a TimeSeries too, not just an EventSeries.
+    assert_eq!(
+      interpret("EventSeriesLookup[TimeSeries[{{1, 1}, {2, 2}}], 1]").unwrap(),
+      "{{1, 1}}"
+    );
+  }
+
+  #[test]
+  fn a_tie_returns_every_equidistant_event() {
+    // 7/2 sits exactly 3/2 from both the event at 2 and the one at 5.
+    assert_eq!(
+      interpret(&format!("EventSeriesLookup[{ES}, 7/2]")).unwrap(),
+      "{{2, b}, {5, c}}"
+    );
+    assert_eq!(
+      interpret(&format!("EventSeriesLookup[{ES}, 3.5]")).unwrap(),
+      "{{2, b}, {5, c}}"
+    );
+  }
+
+  #[test]
+  fn accumulate_counts_events_and_ignores_their_values() {
+    // What accumulates is how many events have happened, not the values —
+    // 5, 7, 9 still gives 1, 2, 3.
+    assert_eq!(
+      interpret(
+        "Normal[EventSeriesAccumulate[EventSeries[{{1, 5}, {2, 7}, {5, 9}}]]]"
+      )
+      .unwrap(),
+      "{{1, 1}, {2, 2}, {5, 3}}"
+    );
+    // Symbolic and vector-valued events count the same way.
+    assert_eq!(
+      interpret(&format!("Normal[EventSeriesAccumulate[{ES}]]")).unwrap(),
+      "{{1, 1}, {2, 2}, {5, 3}}"
+    );
+    assert_eq!(
+      interpret(
+        "Normal[EventSeriesAccumulate[\
+         EventSeries[{{1, {1, 2}}, {2, {3, 4}}}]]]"
+      )
+      .unwrap(),
+      "{{1, 1}, {2, 2}}"
+    );
+    assert_eq!(
+      interpret("Normal[EventSeriesAccumulate[EventSeries[{{1, 5}}]]]")
+        .unwrap(),
+      "{{1, 1}}"
+    );
+    // The result is a TimeSeries, not an EventSeries.
+    assert_eq!(
+      interpret("Head[EventSeriesAccumulate[EventSeries[{{1, 5}, {2, 7}}]]]")
+        .unwrap(),
+      "TimeSeries"
+    );
+    // A non-series argument is left alone.
+    assert_eq!(
+      interpret("EventSeriesAccumulate[5]").unwrap(),
+      "EventSeriesAccumulate[5]"
+    );
+  }
+
+  #[test]
+  fn normal_unwraps_an_event_series() {
+    assert_eq!(
+      interpret("Normal[EventSeries[{{1, a}, {2, b}}]]").unwrap(),
+      "{{1, a}, {2, b}}"
+    );
+  }
+}
