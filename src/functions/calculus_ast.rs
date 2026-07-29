@@ -11507,8 +11507,11 @@ fn net_poly_order(expr: &Expr, var: &str) -> Option<f64> {
   }
 }
 
-/// The leading asymptotic behaviour of `expr` at `var -> +Infinity`, as the
-/// pair `(order, coeff)` meaning `expr ~ coeff * var^order`.
+/// The leading asymptotic behaviour of `expr` as the pair `(order, coeff)`
+/// meaning `expr ~ coeff * var^order` — at `var -> +Infinity` when `at_zero`
+/// is false, and at `var -> 0` when it is true. The only difference is which
+/// end of a sum wins: the largest exponent dominates at infinity, the
+/// smallest one at zero.
 ///
 /// Only expressions built from finite numeric constants, `var`, `+`, `-`, `*`,
 /// `/`, `Sqrt`, and powers with constant real exponents qualify — everything
@@ -11519,8 +11522,18 @@ fn net_poly_order(expr: &Expr, var: &str) -> Option<f64> {
 ///
 /// The literal zero has order `-Infinity`, which makes it absorb correctly in
 /// sums and still classify as a zero limit.
-fn leading_power_behavior(expr: &Expr, var: &str) -> Option<(f64, Expr)> {
+fn leading_power_behavior(
+  expr: &Expr,
+  var: &str,
+  at_zero: bool,
+) -> Option<(f64, Expr)> {
   const ORDER_EPS: f64 = 1e-9;
+  // The order a vanishing term is given so that it never wins its sum.
+  let neutral = if at_zero {
+    f64::INFINITY
+  } else {
+    f64::NEG_INFINITY
+  };
 
   // Combine two factors: orders add, coefficients multiply.
   let combine = |a: (f64, Expr), b: (f64, Expr)| -> Option<(f64, Expr)> {
@@ -11540,7 +11553,7 @@ fn leading_power_behavior(expr: &Expr, var: &str) -> Option<(f64, Expr)> {
   if is_constant_wrt(expr, var) {
     match crate::functions::math_ast::try_eval_to_f64(expr) {
       Some(value) if !value.is_finite() => return None,
-      Some(0.0) => return Some((f64::NEG_INFINITY, Expr::Integer(0))),
+      Some(0.0) => return Some((neutral, Expr::Integer(0))),
       _ => return Some((0.0, expr.clone())),
     }
   }
@@ -11551,7 +11564,7 @@ fn leading_power_behavior(expr: &Expr, var: &str) -> Option<(f64, Expr)> {
       op: UnaryOperator::Minus,
       operand,
     } => {
-      let (order, coeff) = leading_power_behavior(operand, var)?;
+      let (order, coeff) = leading_power_behavior(operand, var, at_zero)?;
       combine((order, coeff), (0.0, Expr::Integer(-1)))
     }
     Expr::BinaryOp {
@@ -11559,18 +11572,18 @@ fn leading_power_behavior(expr: &Expr, var: &str) -> Option<(f64, Expr)> {
       left,
       right,
     } => combine(
-      leading_power_behavior(left, var)?,
-      leading_power_behavior(right, var)?,
+      leading_power_behavior(left, var, at_zero)?,
+      leading_power_behavior(right, var, at_zero)?,
     ),
     Expr::BinaryOp {
       op: BinaryOperator::Divide,
       left,
       right,
     } => {
-      let (no, nc) = leading_power_behavior(left, var)?;
-      let (do_, dc) = leading_power_behavior(right, var)?;
-      // A vanishing denominator is not a power-sum limit at infinity.
-      if do_ == f64::NEG_INFINITY {
+      let (no, nc) = leading_power_behavior(left, var, at_zero)?;
+      let (do_, dc) = leading_power_behavior(right, var, at_zero)?;
+      // A vanishing denominator is not a power-sum limit.
+      if do_ == neutral {
         return None;
       }
       let coeff = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
@@ -11584,24 +11597,30 @@ fn leading_power_behavior(expr: &Expr, var: &str) -> Option<(f64, Expr)> {
     Expr::FunctionCall { name, args } if name == "Times" => {
       let mut acc = (0.0, Expr::Integer(1));
       for a in args.iter() {
-        acc = combine(acc, leading_power_behavior(a, var)?)?;
+        acc = combine(acc, leading_power_behavior(a, var, at_zero)?)?;
       }
       Some(acc)
     }
     Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
-      leading_power_of(&args[0], 0.5, &Expr::Integer(1), var)
+      leading_power_of(&args[0], 0.5, &Expr::Integer(1), var, at_zero)
     }
     // Sums: the highest-order terms decide, and their coefficients add.
-    Expr::FunctionCall { name, args } if name == "Plus" => {
-      leading_of_sum(args.iter().cloned().collect::<Vec<_>>(), var, ORDER_EPS)
-    }
+    Expr::FunctionCall { name, args } if name == "Plus" => leading_of_sum(
+      args.iter().cloned().collect::<Vec<_>>(),
+      var,
+      at_zero,
+      ORDER_EPS,
+    ),
     Expr::BinaryOp {
       op: BinaryOperator::Plus,
       left,
       right,
-    } => {
-      leading_of_sum(vec![(**left).clone(), (**right).clone()], var, ORDER_EPS)
-    }
+    } => leading_of_sum(
+      vec![(**left).clone(), (**right).clone()],
+      var,
+      at_zero,
+      ORDER_EPS,
+    ),
     Expr::BinaryOp {
       op: BinaryOperator::Minus,
       left,
@@ -11615,6 +11634,7 @@ fn leading_power_behavior(expr: &Expr, var: &str) -> Option<(f64, Expr)> {
         },
       ],
       var,
+      at_zero,
       ORDER_EPS,
     ),
     _ => {
@@ -11626,7 +11646,7 @@ fn leading_power_behavior(expr: &Expr, var: &str) -> Option<(f64, Expr)> {
       if !p.is_finite() {
         return None;
       }
-      leading_power_of(&base, p, &exponent, var)
+      leading_power_of(&base, p, &exponent, var, at_zero)
     }
   }
 }
@@ -11639,9 +11659,10 @@ fn leading_power_of(
   p: f64,
   exponent: &Expr,
   var: &str,
+  at_zero: bool,
 ) -> Option<(f64, Expr)> {
-  let (order, coeff) = leading_power_behavior(base, var)?;
-  if order == f64::NEG_INFINITY {
+  let (order, coeff) = leading_power_behavior(base, var, at_zero)?;
+  if order.is_infinite() {
     return None;
   }
   // A non-integer power needs a non-negative leading coefficient to stay real,
@@ -11664,18 +11685,24 @@ fn leading_power_of(
 fn leading_of_sum(
   terms: Vec<Expr>,
   var: &str,
+  at_zero: bool,
   order_eps: f64,
 ) -> Option<(f64, Expr)> {
   let behaviors: Vec<(f64, Expr)> = terms
     .iter()
-    .map(|t| leading_power_behavior(t, var))
+    .map(|t| leading_power_behavior(t, var, at_zero))
     .collect::<Option<Vec<_>>>()?;
+  let neutral = if at_zero {
+    f64::INFINITY
+  } else {
+    f64::NEG_INFINITY
+  };
   let top = behaviors
     .iter()
     .map(|(o, _)| *o)
-    .fold(f64::NEG_INFINITY, f64::max);
-  if top == f64::NEG_INFINITY {
-    return Some((f64::NEG_INFINITY, Expr::Integer(0)));
+    .fold(neutral, if at_zero { f64::min } else { f64::max });
+  if top == neutral {
+    return Some((neutral, Expr::Integer(0)));
   }
   let leading: Vec<Expr> = behaviors
     .into_iter()
@@ -11970,7 +11997,7 @@ fn limit_at_infinity(
   // is still 3e-4 away there, and `x/(x + x^(2/3))` is 5e-3 away. Deciding
   // those from the leading exponent instead is both exact and immediate.
   if is_infinity(point)
-    && let Some((order, coeff)) = leading_power_behavior(expr, var_name)
+    && let Some((order, coeff)) = leading_power_behavior(expr, var_name, false)
   {
     const ORDER_EPS: f64 = 1e-9;
     if order > ORDER_EPS {
@@ -13784,6 +13811,22 @@ fn contains_unknown_function_of_var(expr: &Expr, var: &str) -> bool {
 }
 
 pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let result = limit_strategies(args)?;
+  // Several strategies recurse on a *rewritten* expression — a L'Hôpital
+  // derivative ratio, an asymptotic expansion of HarmonicNumber or Gamma, a
+  // reciprocal-trig rewrite — and hand back whatever the recursion returned.
+  // When none of them resolves, the echo has to be the caller's own input:
+  // `Limit[(x + Sqrt[x])/(x - Sqrt[x]), x -> 0]` must not come back as
+  // `Limit[(1 + 1/(2 Sqrt[x]))/(1 - 1/(2 Sqrt[x])), x -> 0]`.
+  if matches!(&result, Expr::FunctionCall { name, .. } if name == "Limit")
+    && args.len() >= 2
+  {
+    return Ok(unevaluated("Limit", args));
+  }
+  Ok(result)
+}
+
+fn limit_strategies(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
       "Limit expects 2 or 3 arguments".into(),
@@ -14060,6 +14103,51 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Err(_) => {
         // Substitution failed (e.g., division by zero)
       }
+    }
+  }
+
+  // Exact lowest-order analysis at the origin, the mirror image of the
+  // leading-order analysis used at infinity: as `x -> 0` the *smallest*
+  // exponent in a sum dominates. This settles quotients of power sums with
+  // fractional exponents, which L'Hôpital below only turns into another
+  // fractional-power quotient of the same shape and never resolves
+  // (`(x + Sqrt[x])/(x - Sqrt[x]) -> -1`).
+  //
+  // The ratio of the two lowest-order terms is `(c1/c2) x^(p-q)`, which tends
+  // to `c1/c2` when the orders match and to 0 when the numerator's is larger.
+  // A negative net order `-k` diverges, and the two sides only agree when
+  // `x^-k` keeps its sign across the origin — that is, when `k` is an even
+  // integer. An odd integer flips the sign and a fractional power is not even
+  // real to the left, so both give Indeterminate, matching wolframscript
+  // (`1/x^2 -> Infinity` but `1/x`, `1/x^3`, and `1/Sqrt[x]` -> Indeterminate).
+  if is_literal_zero(&point)
+    && direction == LimitDirection::TwoSided
+    && let Some((order, coeff)) =
+      leading_power_behavior(&args[0], &var_name, true)
+    && order.is_finite()
+  {
+    const ORDER_EPS: f64 = 1e-9;
+    if order > ORDER_EPS {
+      return Ok(Expr::Integer(0));
+    }
+    if order.abs() <= ORDER_EPS {
+      return Ok(coeff);
+    }
+    let k = -order;
+    let even_integer =
+      (k - k.round()).abs() <= ORDER_EPS && (k.round() as i64) % 2 == 0;
+    if !even_integer {
+      return Ok(Expr::Identifier("Indeterminate".to_string()));
+    }
+    if let Some(c) = crate::functions::math_ast::try_eval_to_f64(&coeff) {
+      return Ok(if c > 0.0 {
+        Expr::Identifier("Infinity".to_string())
+      } else {
+        Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand: Box::new(Expr::Identifier("Infinity".to_string())),
+        }
+      });
     }
   }
 

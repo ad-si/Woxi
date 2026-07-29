@@ -15701,3 +15701,121 @@ mod limits_of_power_sums_at_infinity {
     assert_eq!(interpret("Limit[x/Exp[x], x -> Infinity]").unwrap(), "0");
   }
 }
+
+mod limits_of_power_sums_at_zero {
+  use super::*;
+
+  #[test]
+  fn lowest_order_terms_decide_the_ratio() {
+    // As x -> 0 the smallest exponent dominates, so these are the ratio of
+    // the two lowest-order coefficients. L'Hopital cannot settle them: each
+    // step just produces another fractional-power quotient of the same shape.
+    assert_eq!(
+      interpret("Limit[(x + Sqrt[x])/(x - Sqrt[x]), x -> 0]").unwrap(),
+      "-1"
+    );
+    assert_eq!(
+      interpret("Limit[(Sqrt[x] + x)/(Sqrt[x] - x), x -> 0]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Limit[Sqrt[x]/(Sqrt[x] + x), x -> 0]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Limit[(x + x^(1/3))/(x - x^(1/3)), x -> 0]").unwrap(),
+      "-1"
+    );
+    assert_eq!(
+      interpret("Limit[(2 Sqrt[x] + x)/(3 Sqrt[x] - x), x -> 0]").unwrap(),
+      "2/3"
+    );
+    assert_eq!(
+      interpret("Limit[(x^2 + Sqrt[x])/(x + Sqrt[x]), x -> 0]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Limit[(x + x^2)/(x - x^3), x -> 0]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn a_higher_order_numerator_vanishes() {
+    assert_eq!(interpret("Limit[x/Sqrt[x], x -> 0]").unwrap(), "0");
+    assert_eq!(
+      interpret("Limit[(x^(3/2) + x)/(x^(1/2) + x), x -> 0]").unwrap(),
+      "0"
+    );
+    assert_eq!(interpret("Limit[x^2/x, x -> 0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn divergence_needs_the_two_sides_to_agree() {
+    // 1/x^k only keeps its sign across the origin when k is an even integer.
+    assert_eq!(interpret("Limit[1/x^2, x -> 0]").unwrap(), "Infinity");
+    assert_eq!(interpret("Limit[1/x^4, x -> 0]").unwrap(), "Infinity");
+    assert_eq!(interpret("Limit[5/x^6, x -> 0]").unwrap(), "Infinity");
+    assert_eq!(interpret("Limit[-3/x^4, x -> 0]").unwrap(), "-Infinity");
+    assert_eq!(interpret("Limit[(x + 1)/x^2, x -> 0]").unwrap(), "Infinity");
+    assert_eq!(
+      interpret("Limit[(x - 2)/x^2, x -> 0]").unwrap(),
+      "-Infinity"
+    );
+    // An odd integer power flips sign, and a fractional one is not real to
+    // the left of 0; both leave the two-sided limit undefined.
+    assert_eq!(interpret("Limit[1/x, x -> 0]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Limit[1/x^3, x -> 0]").unwrap(), "Indeterminate");
+    assert_eq!(
+      interpret("Limit[1/Sqrt[x], x -> 0]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("Limit[1/x^(2/3), x -> 0]").unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  #[test]
+  fn a_direction_reinstates_the_one_sided_answer() {
+    // The two-sided Indeterminate above is not allowed to swallow the
+    // one-sided limits.
+    assert_eq!(
+      interpret(r#"Limit[1/x, x -> 0, Direction -> "FromAbove"]"#).unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret(r#"Limit[1/x, x -> 0, Direction -> "FromBelow"]"#).unwrap(),
+      "-Infinity"
+    );
+  }
+
+  #[test]
+  fn transcendental_limits_keep_their_own_paths() {
+    assert_eq!(interpret("Limit[Sin[x]/x, x -> 0]").unwrap(), "1");
+    assert_eq!(interpret("Limit[Tan[x]/x, x -> 0]").unwrap(), "1");
+    assert_eq!(interpret("Limit[(1 - Cos[x])/x^2, x -> 0]").unwrap(), "1/2");
+    assert_eq!(
+      interpret("Limit[(Sin[x] - x)/x^3, x -> 0]").unwrap(),
+      "-1/6"
+    );
+    assert_eq!(interpret("Limit[x Log[x], x -> 0]").unwrap(), "0");
+  }
+}
+
+mod unevaluated_limit_echoes_the_original {
+  use super::*;
+
+  #[test]
+  fn an_unresolved_limit_does_not_leak_a_rewritten_expression() {
+    // Several strategies recurse on a rewritten form (a L'Hopital derivative
+    // ratio, an asymptotic expansion). When none resolves, the echo has to be
+    // the caller's own input, not the internal rewrite.
+    let out = interpret("Limit[f[x]/g[x], x -> 0]").unwrap();
+    assert_eq!(out, "Limit[f[x]/g[x], x -> 0]");
+    // Whatever a Gamma quotient at infinity does internally, an unresolved
+    // result still echoes what was asked.
+    let out = interpret("Limit[h[x], x -> Infinity]").unwrap();
+    assert_eq!(out, "Limit[h[x], x -> Infinity]");
+  }
+}
