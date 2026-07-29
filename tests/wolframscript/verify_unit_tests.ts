@@ -1468,6 +1468,48 @@ function main() {
     // reference. (Located Sunrise/SunPosition are covered by APPROX_MATCH.)
     "Sunrise[DateObject[{2024, 6, 21}]]",
     "SunPosition[DateObject[{2024, 6, 21, 12, 0, 0}]]",
+    // Constrained FindMinimum/FindMaximum/NArgMin/NArgMax: same story as the
+    // NMinimize/NMaximize entries above. Woxi returns the exact optimum where
+    // Wolfram's interior-point method stops short of it (1.000000013282579 for
+    // `FindMinimum[{x^2, x >= 1}, x]`, 0.7071076183816036 for the unit-circle
+    // maximum). Woxi is the more accurate answer; bit-equality is impossible.
+    "FindMinimum[{x^2, x >= 1}, {x, 0}]",
+    "FindMinimum[{x^2, x >= 1}, x]",
+    "FindMaximum[{x + y, x^2 + y^2 <= 1}, {{x, 0.5}, {y, 0.5}}]",
+    "FindMinimum[{x^2 + y^2, x + y == 1 && x >= 0.7}, {{x, 0}, {y, 0}}]",
+    "NArgMax[{x + y, x^2 + y^2 <= 1}, {x, y}]",
+    "NArgMin[{x^2, x >= 1}, x]",
+    // An NDSolve result that is printed rather than sampled: Wolfram's
+    // InterpolatingFunction shows its internal solver state verbatim — the
+    // {5, 7, 1, {25}, {4}, 0, ...} header, the adaptive step grid, and a
+    // Developer`PackedArrayForm coefficient block. Woxi carries a plain {x, y}
+    // sample table on a fixed grid. The solutions agree; only the internal
+    // representation differs (the tests that sample the result do conform).
+    "NDSolve[{y'[x] == y[x], y[0] == 1}, y[x], {x, 0, 1}]",
+    "NDSolve[{y'[x] == y[x], y[0] == 1}, y, {x, 0, 1}]",
+    // The antiderivative of Log[Sin[x]] is known, but the definite value
+    // Wolfram prints — (-1/12*I)*(6 + (-6 + Pi)*Pi - (12*I)*Log[2] -
+    // 6*PolyLog[2, E^(2*I)]) — is a Simplify-collected complex form Woxi will
+    // not land on, so implementing the antiderivative would only trade
+    // "unevaluated" for "different form". Woxi keeps it unevaluated.
+    "Integrate[Log[Sin[x]], {x, 0, 1}]",
+    // AsymptoticLess: the multivariate `{x, y} -> {Infinity, Infinity}` form
+    // needs multivariate limits, and `AsymptoticLess[x^a, x^2, x -> Infinity]`
+    // needs assumption-aware limits to produce Wolfram's
+    // ConditionalExpression[True, a < 2]. Both are deliberately unevaluated —
+    // see the `undecided_forms_stay_unevaluated` test.
+    "AsymptoticLess[x + y, x^2 + y^2, {x, y} -> {Infinity, Infinity}]",
+    "AsymptoticLess[x^a, x^2, x -> Infinity]",
+    // 3D ConvexHullMesh: computing the hull is easy, but Wolfram delegates to
+    // qhull and prints its facet bookkeeping verbatim — facet creation order,
+    // in-face vertex rotation and coplanar-triangle merging would all have to
+    // be replicated. Woxi keeps the 3D form unevaluated.
+    "ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0},{0,0,1},{1,1,1}}]",
+    // PascalBinomial[6.0, -2]: Wolfram returns 0``15.954589770191005 — an
+    // arbitrary-precision zero whose accuracy is $MachinePrecision — where
+    // Woxi returns a machine 0. Reproducing it needs precision/accuracy
+    // tracking through the Gamma-ratio path from a machine-real input.
+    "PascalBinomial[6.0, -2]",
   ]);
 
   // Filter out multiline expressions (they break the generated scripts).
