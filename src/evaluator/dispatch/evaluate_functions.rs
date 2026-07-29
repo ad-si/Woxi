@@ -1450,6 +1450,20 @@ fn evaluate_function_call_ast_inner(
     "MoleculePlot" => {
       return crate::functions::molecule_render::molecule_plot_ast(args);
     }
+    "Exception" if args.len() <= 2 => {
+      return crate::functions::confirm_ast::exception_ast(args);
+    }
+    "ExceptionQ" if args.len() == 1 || args.len() == 2 => {
+      return crate::functions::confirm_ast::exception_q_ast(args);
+    }
+    "ExceptionTypes" if args.len() <= 1 => {
+      return crate::functions::confirm_ast::exception_types_ast(args);
+    }
+    "ExceptionTypeRegisteredQ" if args.len() == 1 || args.len() == 2 => {
+      return crate::functions::confirm_ast::exception_type_registered_q_ast(
+        args,
+      );
+    }
     "MoleculeQ" => {
       return crate::functions::molecule_ast::molecule_q_ast(args);
     }
@@ -10516,6 +10530,7 @@ fn evaluate_function_call_ast_inner(
       | "TildeTilde"
       | "NotebookClose"
       | "Failure"
+      | "Success"
       | "Annuity"
       | "AnnuityDue"
       | "Cashflow"

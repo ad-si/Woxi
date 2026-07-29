@@ -6,7 +6,7 @@
 //! tag, so an unrelated user `Catch` cannot intercept it.
 
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, unevaluated};
 use std::cell::Cell;
 
 thread_local! {
@@ -260,4 +260,186 @@ fn fill_template(template: &str, parameters: &[Expr]) -> String {
   }
   out.push_str(rest);
   out
+}
+
+// ---------------------------------------------------------------------------
+// Success, Exception
+// ---------------------------------------------------------------------------
+
+/// `Success[tag, assoc]["prop"]` — a plain lookup in the association. Unlike
+/// `Failure`, `Success` has no computed properties at all: `"Tag"` and
+/// `"Message"` are absent keys unless the association happens to hold them,
+/// and a missing key reports `KeyAbsent` rather than `NotAvailable`.
+pub fn success_property(args: &[Expr], property: &str) -> Option<Expr> {
+  let [_tag, Expr::Association(pairs)] = args else {
+    return None;
+  };
+  // "Properties" lists the association's own keys, in the order written.
+  if property == "Properties" {
+    return Some(Expr::List(
+      pairs
+        .iter()
+        .filter_map(|(k, _)| match k {
+          Expr::String(s) => Some(string(s)),
+          _ => None,
+        })
+        .collect::<Vec<_>>()
+        .into(),
+    ));
+  }
+  Some(
+    pairs
+      .iter()
+      .find(|(k, _)| matches!(k, Expr::String(s) if s == property))
+      .map(|(_, v)| v.clone())
+      .unwrap_or_else(|| {
+        call("Missing", vec![string("KeyAbsent"), string(property)])
+      }),
+  )
+}
+
+/// `Exception[tags, assoc]["prop"]` — like `Success` a lookup, but an absent
+/// key reports `NotAvailable`, as `Failure` does.
+pub fn exception_property(args: &[Expr], property: &str) -> Option<Expr> {
+  let [_tags, Expr::Association(pairs)] = args else {
+    return None;
+  };
+  Some(
+    pairs
+      .iter()
+      .find(|(k, _)| matches!(k, Expr::String(s) if s == property))
+      .map(|(_, v)| v.clone())
+      .unwrap_or_else(|| {
+        call("Missing", vec![string("NotAvailable"), string(property)])
+      }),
+  )
+}
+
+/// A usable exception tag: a string or a symbol. Anything else has to go
+/// through the untagged-exception path.
+fn is_exception_tag(e: &Expr) -> bool {
+  matches!(e, Expr::String(_) | Expr::Identifier(_))
+}
+
+/// True for an already-canonical `Exception[{tags…}, <|…|>]`.
+pub fn is_canonical_exception(e: &Expr) -> bool {
+  matches!(e, Expr::FunctionCall { name, args }
+    if name == "Exception"
+      && args.len() == 2
+      && matches!(&args[0], Expr::List(_))
+      && matches!(&args[1], Expr::Association(_)))
+}
+
+fn exception_object(tags: Vec<Expr>, payload: Option<Expr>) -> Expr {
+  let mut pairs: Vec<(Expr, Expr)> = Vec::new();
+  if let Some(p) = payload {
+    pairs.push((string("ExceptionPayload"), p));
+  }
+  pairs.push((string("ExceptionValidated"), symbol("True")));
+  pairs.push((string("ExceptionSystemVersion"), string("1")));
+  Expr::FunctionCall {
+    name: "Exception".to_string(),
+    args: vec![Expr::List(tags.into()), Expr::Association(pairs)].into(),
+  }
+}
+
+/// The exception wolframscript builds when the specification is not a tag:
+/// a fully-formed `ErrorHandlingException` describing the refusal.
+fn untagged_exception(spec: &Expr) -> Expr {
+  crate::emit_message(&format!(
+    "Exception::untagged: The construction of the untagged exception from \
+     general expression {} is not supported. Please provide some exception \
+     tag.",
+    crate::syntax::expr_to_output(spec)
+  ));
+  let pairs: Vec<(Expr, Expr)> = vec![
+    (string("ErrorType"), string("UnttaggedExceptionPayload")),
+    (string("ExceptionFailureTag"), string("ErrorHandlingError")),
+    (string("FailingFunction"), symbol("Exception")),
+    (string("FailingPayload"), spec.clone()),
+    // A delayed entry: the association convention is to store the value as
+    // a RuleDelayed keyed by itself, which is what renders as `:>`.
+    (
+      string("MessageTemplate"),
+      Expr::RuleDelayed {
+        pattern: Box::new(string("MessageTemplate")),
+        replacement: Box::new(call(
+          "MessageName",
+          vec![symbol("Exception"), string("untagged")],
+        )),
+      },
+    ),
+    (
+      string("MessageParameters"),
+      Expr::List(vec![spec.clone()].into()),
+    ),
+    (string("ExceptionValidated"), symbol("True")),
+    (string("ExceptionSystemVersion"), string("1")),
+  ];
+  Expr::FunctionCall {
+    name: "Exception".to_string(),
+    args: vec![
+      Expr::List(vec![string("ErrorHandlingException")].into()),
+      Expr::Association(pairs),
+    ]
+    .into(),
+  }
+}
+
+/// `Exception[spec]` / `Exception[spec, payload]` — canonicalize to
+/// `Exception[{tags…}, <|…|>]`. Re-wrapping an exception is a no-op.
+pub fn exception_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // wolframscript echoes a bare `Exception[]` without complaining.
+  if args.is_empty() {
+    return Ok(unevaluated("Exception", args));
+  }
+  if args.len() == 1 && is_canonical_exception(&args[0]) {
+    return Ok(args[0].clone());
+  }
+  let spec = &args[0];
+  let tags: Option<Vec<Expr>> = match spec {
+    Expr::List(items) if items.iter().all(is_exception_tag) => {
+      Some(items.to_vec())
+    }
+    e if is_exception_tag(e) => Some(vec![e.clone()]),
+    _ => None,
+  };
+  let Some(tags) = tags else {
+    return Ok(untagged_exception(spec));
+  };
+  Ok(exception_object(tags, args.get(1).cloned()))
+}
+
+/// `ExceptionQ[expr]` — True for a canonical exception. `ExceptionQ[expr, t]`
+/// additionally requires `t` to be one of its tags.
+pub fn exception_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let mut ok = is_canonical_exception(&args[0]);
+  if ok && args.len() == 2 {
+    let Expr::FunctionCall { args: eargs, .. } = &args[0] else {
+      unreachable!("checked by is_canonical_exception")
+    };
+    let Expr::List(tags) = &eargs[0] else {
+      unreachable!("checked by is_canonical_exception")
+    };
+    ok = tags.iter().any(|t| {
+      crate::syntax::expr_to_string(t)
+        == crate::syntax::expr_to_string(&args[1])
+    });
+  }
+  Ok(Expr::Identifier(
+    if ok { "True" } else { "False" }.to_string(),
+  ))
+}
+
+/// `ExceptionTypes[]` — the registry of exception types, which starts empty
+/// and has no registration interface yet, so it is always empty.
+pub fn exception_types_ast(_args: &[Expr]) -> Result<Expr, InterpreterError> {
+  Ok(Expr::List(Vec::new().into()))
+}
+
+/// `ExceptionTypeRegisteredQ[sym]` — nothing is registered, so always False.
+pub fn exception_type_registered_q_ast(
+  _args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  Ok(Expr::Identifier("False".to_string()))
 }

@@ -1194,6 +1194,32 @@ pub fn apply_curried_call(
         }),
       }
     }
+    // Success[tag, assoc]["prop"] / Exception[tags, assoc]["prop"] — plain
+    // association lookups. They differ from Failure (and from each other) in
+    // what an absent key reports.
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if (name == "Success" || name == "Exception")
+      && args.len() == 1
+      && matches!(&args[0], Expr::String(_)) =>
+    {
+      let Expr::String(prop) = &args[0] else {
+        unreachable!()
+      };
+      let looked_up = if name == "Success" {
+        crate::functions::confirm_ast::success_property(func_args, prop)
+      } else {
+        crate::functions::confirm_ast::exception_property(func_args, prop)
+      };
+      match looked_up {
+        Some(result) => Ok(result),
+        None => Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        }),
+      }
+    }
     // Failure[tag, assoc]["property"] — the tag, the message with its
     // parameters filled in, the standard property list, or any key of the
     // association. An unknown property gives Missing["NotAvailable", prop].

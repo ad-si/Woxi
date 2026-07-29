@@ -4467,7 +4467,7 @@ SpheroidalJoiningFactor,,🚫,,6.0,4612
 StackInhibit,,,,2.0,4612
 StringRotateLeft,Rotates characters in a string to the left,✅,pure,9.0,4612
 SubresultantPolynomialRemainders,Subresultant polynomial remainder sequence of two polynomials,✅,pure,9.0,4612
-Success,,,,11.3,4612
+Success,Represents a success of a type indicated by a tag with details in an association,✅,pure,11.3,4612
 TextContents,,🚫,,12.0,4612
 TildeEqual,,,,3.0,4612
 VectorLessEqual,Componentwise less-than-or-equal comparison of vectors,✅,pure,12.0,4612
@@ -6229,10 +6229,10 @@ NextValue,Retrieves successive values from an incremental object one at a time,,
 EntityAugmentColumns,Adds columns to tabular data computed from entity properties of an entity column,,pure,15.0,
 TabularSummary,Generates statistical summaries and histograms for columns of tabular data,,pure,15.0,
 CatchExceptions,Catches and transforms exceptions thrown by an expression using handlers,,pure,15.0,
-Exception,Constructs an exception object encapsulating a tag and optional payload,,pure,15.0,
-ExceptionQ,Tests whether an expression is a valid Exception object of a given type,,pure,15.0,
-ExceptionTypeRegisteredQ,Tests whether a symbol is registered as an exception type,,pure,15.0,
-ExceptionTypes,Returns the list of registered exception types optionally filtered by hierarchy,,pure,15.0,
+Exception,Constructs an exception object encapsulating a tag and optional payload,✅,pure,15.0,
+ExceptionQ,Tests whether an expression is a valid Exception object of a given type,✅,pure,15.0,
+ExceptionTypeRegisteredQ,Tests whether a symbol is registered as an exception type,✅,pure,15.0,
+ExceptionTypes,Returns the list of registered exception types optionally filtered by hierarchy,✅,pure,15.0,
 RegisterExceptionType,Registers a custom symbolic exception type optionally with parent types,,stateful,15.0,
 ThrowException,Creates and throws an Exception object to be caught by CatchExceptions,,pure,15.0,
 EventSeriesAccumulate,Gives the running count of events in an event series as a time series,✅,pure,15.0,

@@ -3162,3 +3162,172 @@ mod failure_properties {
     );
   }
 }
+
+mod success_and_exception_objects {
+  use super::*;
+
+  const S: &str = r#"Success["t", <|"a" -> 1, "b" -> 2|>]"#;
+
+  #[test]
+  fn success_property_is_a_plain_association_lookup() {
+    clear_state();
+    assert_eq!(interpret(&format!(r#"{S}["a"]"#)).unwrap(), "1");
+    // Unlike Failure, "Tag" and "Message" are not computed properties — they
+    // are simply keys the association does not have.
+    assert_eq!(
+      interpret(&format!(r#"{S}["Tag"]"#)).unwrap(),
+      "Missing[KeyAbsent, Tag]"
+    );
+    assert_eq!(
+      interpret(&format!(r#"{S}["nope"]"#)).unwrap(),
+      "Missing[KeyAbsent, nope]"
+    );
+    assert_eq!(
+      interpret(r#"Success["t", <||>]["x"]"#).unwrap(),
+      "Missing[KeyAbsent, x]"
+    );
+  }
+
+  #[test]
+  fn success_properties_are_the_keys_in_the_order_written() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!(r#"{S}["Properties"]"#)).unwrap(),
+      "{a, b}"
+    );
+    // Not sorted, and not augmented with standard names as Failure's are.
+    assert_eq!(
+      interpret(r#"Success["t", <|"b" -> 2, "a" -> 1|>]["Properties"]"#)
+        .unwrap(),
+      "{b, a}"
+    );
+    assert_eq!(
+      interpret(r#"Success["t", <||>]["Properties"]"#).unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn success_is_inert_and_is_not_a_failure() {
+    clear_state();
+    assert_eq!(interpret(&format!("Head[{S}]")).unwrap(), "Success");
+    assert_eq!(interpret(&format!("FailureQ[{S}]")).unwrap(), "False");
+    // One argument, or a non-association second one, stays as written.
+    assert_eq!(interpret(r#"Success["t"]"#).unwrap(), "Success[t]");
+    assert_eq!(interpret(r#"Success["t", 5]"#).unwrap(), "Success[t, 5]");
+  }
+
+  #[test]
+  fn exception_canonicalizes_its_tag_to_a_list() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"Exception["tag"]"#).unwrap(),
+      "Exception[{tag}, <|ExceptionValidated -> True, \
+       ExceptionSystemVersion -> 1|>]"
+    );
+    // A payload goes in front of the standard keys.
+    assert_eq!(
+      interpret(r#"Exception["tag", 42]"#).unwrap(),
+      "Exception[{tag}, <|ExceptionPayload -> 42, ExceptionValidated -> True, \
+       ExceptionSystemVersion -> 1|>]"
+    );
+    // Symbols are tags too, and a list of tags is kept.
+    assert_eq!(
+      interpret("Exception[foo]").unwrap(),
+      "Exception[{foo}, <|ExceptionValidated -> True, \
+       ExceptionSystemVersion -> 1|>]"
+    );
+    assert_eq!(
+      interpret(r#"Exception[{"a", "b"}]"#).unwrap(),
+      "Exception[{a, b}, <|ExceptionValidated -> True, \
+       ExceptionSystemVersion -> 1|>]"
+    );
+    // Re-wrapping an exception is a no-op, and a bare call is left alone.
+    assert_eq!(
+      interpret(r#"Exception[Exception["tag"]]"#).unwrap(),
+      interpret(r#"Exception["tag"]"#).unwrap()
+    );
+    assert_eq!(interpret("Exception[]").unwrap(), "Exception[]");
+  }
+
+  #[test]
+  fn a_non_tag_specification_builds_the_untagged_exception() {
+    clear_state();
+    // 5 is not a tag, so wolframscript reports Exception::untagged and hands
+    // back a fully-formed ErrorHandlingException describing the refusal.
+    assert_eq!(
+      interpret("Exception[5]").unwrap(),
+      "Exception[{ErrorHandlingException}, \
+       <|ErrorType -> UnttaggedExceptionPayload, \
+       ExceptionFailureTag -> ErrorHandlingError, \
+       FailingFunction -> Exception, FailingPayload -> 5, \
+       MessageTemplate :> MessageName[Exception, untagged], \
+       MessageParameters -> {5}, ExceptionValidated -> True, \
+       ExceptionSystemVersion -> 1|>]"
+    );
+    // A list is only a tag list when every element is a tag.
+    assert_eq!(
+      interpret("ExceptionQ[Exception[{5}], \"ErrorHandlingException\"]")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn exception_q_checks_the_object_and_optionally_a_tag() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"ExceptionQ[Exception["tag"]]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"ExceptionQ[Exception["tag"], "tag"]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"ExceptionQ[Exception["tag"], "other"]"#).unwrap(),
+      "False"
+    );
+    // Any of the tags will do.
+    assert_eq!(
+      interpret(r#"ExceptionQ[Exception[{"a", "b"}], "b"]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"ExceptionQ[Exception[{"a", "b"}], "c"]"#).unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("ExceptionQ[5]").unwrap(), "False");
+    assert_eq!(interpret(r#"ExceptionQ["tag"]"#).unwrap(), "False");
+  }
+
+  #[test]
+  fn exception_property_lookup_reports_not_available() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"Exception["tag", 42]["ExceptionPayload"]"#).unwrap(),
+      "42"
+    );
+    assert_eq!(
+      interpret(r#"Exception["tag"]["ExceptionValidated"]"#).unwrap(),
+      "True"
+    );
+    // NotAvailable here, where Success reports KeyAbsent.
+    assert_eq!(
+      interpret(r#"Exception["tag"]["nope"]"#).unwrap(),
+      "Missing[NotAvailable, nope]"
+    );
+  }
+
+  #[test]
+  fn the_exception_type_registry_is_empty() {
+    clear_state();
+    assert_eq!(interpret("ExceptionTypes[]").unwrap(), "{}");
+    assert_eq!(interpret("ExceptionTypes[foo]").unwrap(), "{}");
+    assert_eq!(interpret("ExceptionTypeRegisteredQ[foo]").unwrap(), "False");
+    assert_eq!(
+      interpret(r#"ExceptionTypeRegisteredQ["foo"]"#).unwrap(),
+      "False"
+    );
+  }
+}

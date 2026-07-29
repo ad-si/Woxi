@@ -94,3 +94,66 @@ the confirmation itself would have succeeded:
 $ wo 'Confirm[1 + 1]["HeldInput"]'
 Hold[Confirm[1 + 1]]
 ```
+
+## `Success` and `Exception`
+
+`Failure`, `Success`, and `Exception` all pair a tag with an association, but
+they answer `obj["prop"]` differently — worth knowing, because the difference
+is easy to trip over.
+
+`Success[tag, assoc]["prop"]` is a plain lookup in the association. There are
+no computed properties: `"Tag"` is simply a key it does not have, and a
+missing key reports `KeyAbsent`:
+
+```scrut
+$ wo 'Success["t", <|"a" -> 1|>]["a"]'
+1
+```
+
+```scrut
+$ wo 'Success["t", <|"a" -> 1|>]["Tag"]'
+Missing[KeyAbsent, Tag]
+```
+
+Its `"Properties"` are the association's own keys, in the order written —
+unlike `Failure`, which merges in the standard property names and sorts:
+
+```scrut
+$ wo 'Success["t", <|"b" -> 2, "a" -> 1|>]["Properties"]'
+{b, a}
+```
+
+`Exception[spec]` canonicalizes the tag to a list and records the standard
+bookkeeping keys; a second argument becomes the payload:
+
+```scrut
+$ wo 'Exception["tag", 42]'
+Exception[{tag}, <|ExceptionPayload -> 42, ExceptionValidated -> True, ExceptionSystemVersion -> 1|>]
+```
+
+`ExceptionQ` recognizes one, and with a second argument checks that it carries
+that tag:
+
+```scrut
+$ wo 'ExceptionQ[Exception[{"a", "b"}], "b"]'
+True
+```
+
+```scrut
+$ wo 'ExceptionQ[Exception[{"a", "b"}], "c"]'
+False
+```
+
+An absent key on an `Exception` reports `NotAvailable`, as on a `Failure`:
+
+```scrut
+$ wo 'Exception["tag"]["nope"]'
+Missing[NotAvailable, nope]
+```
+
+The exception-type registry starts empty and has no registration interface:
+
+```scrut
+$ wo 'ExceptionTypes[]'
+{}
+```
