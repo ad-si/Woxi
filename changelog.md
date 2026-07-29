@@ -1,5 +1,28 @@
 # Changelog
 
+# Unreleased
+
+- Symbol names may contain `$` anywhere (`a$b`, `signal$1`), matching Wolfram.
+- `PlotRange` bounds given in reversed order (e.g. `{3, -3}`) normalize to
+    the same plot as the sorted form, matching Wolfram.
+- Manipulate improvements (driven by the "Oscilloscope with Two Signal
+    Inputs" Wolfram Demonstration):
+    - `Style[…]`, bare-string, and `Delimiter` arguments are treated as
+        static annotation rows between controls (no more spurious
+        `Manipulate::vsform` messages) and render as headings/separators
+        in Woxi Studio and the Playground.
+    - Compound control variables such as `Subscript[signal, 1]` work: they
+        are bound through synthesized symbols and keep a typeset label
+        (`signal₁`).
+    - Control specs may carry trailing options (`ControlType -> PopupMenu`,
+        `ImageSize -> Tiny`, …); `ControlType -> PopupMenu` always renders
+        a dropdown.
+    - A `Manipulate` whose body is an `Animate[…]` renders as one combined
+        widget, `AnimationRunning -> False` builds the widget paused, and
+        an `Infinity` animation bound gets a finite looping window.
+- Woxi Studio re-instantiates stored `Manipulate` widgets when opening a
+    notebook (instead of showing the saved `DynamicModuleBox[…]` text dump).
+
 # 2026-07-16 - 0.2.0
 
 Between 0.1.0 and 0.2.0 Woxi grew from a minimal interpreter into a broad

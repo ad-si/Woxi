@@ -549,7 +549,20 @@ impl WoxiStudio {
                 }
                 j += 1;
               }
+              // A stored FrontEnd widget dump (`DynamicModuleBox[…]`, the
+              // saved form of a live Manipulate) is meaningless as text —
+              // drop it and instantiate the interactive widget from the
+              // input instead, so the notebook opens with its Manipulate
+              // live (as Mathematica would show it).
+              let is_widget_dump =
+                output.as_deref().is_some_and(is_dynamic_box_dump);
+              let manipulate_state = if is_widget_dump {
+                instantiate_stored_manipulate(&cell.content)
+              } else {
+                None
+              };
               let output_content = match &output {
+                Some(_) if is_widget_dump => text_editor::Content::new(),
                 Some(s) => {
                   let d = s
                     .replace("-Graphics-", "")
@@ -571,7 +584,7 @@ impl WoxiStudio {
               editors.push(CellEditor {
                 content: text_editor::Content::with_text(&cell.content),
                 style: cell.style,
-                output,
+                output: if is_widget_dump { None } else { output },
                 stdout,
                 graphics_svg: None,
                 graphics_handle: None,
@@ -586,7 +599,7 @@ impl WoxiStudio {
                 redo_stack: Vec::new(),
                 output_stale: false,
                 is_collapsed: false,
-                manipulate_state: None,
+                manipulate_state,
                 hyperlinks: Vec::new(),
                 output_content,
                 stdout_content,
@@ -762,10 +775,11 @@ impl WoxiStudio {
           Ok((path, contents)) => match notebook::parse_notebook(&contents) {
             Ok(nb) => {
               self.stop_playback();
-              self.cell_editors = Self::editors_from_notebook(&nb);
-              self.notebook = nb;
               self.status = format!("Opened: {}", path.display());
               save_last_file_path(&path);
+              // Install the notebook's environment (directory, file name,
+              // theme) before building the editors: loading may instantiate
+              // stored Manipulate widgets, which evaluate their bodies.
               if let Some(dir) = path.parent() {
                 woxi::set_notebook_directory(Some(
                   dir.to_string_lossy().into_owned(),
@@ -775,6 +789,9 @@ impl WoxiStudio {
                 "$InputFileName",
                 &format!("\"{}\"", path.to_string_lossy()),
               );
+              woxi::set_dark_mode(!matches!(self.theme, Theme::Light));
+              self.cell_editors = Self::editors_from_notebook(&nb);
+              self.notebook = nb;
               self.file_path = Some(path);
               self.is_dirty = false;
               self.show_toc = self
@@ -3492,6 +3509,10 @@ fn manipulate_label_char_count(ctrl: &manipulate::ControlState) -> usize {
     | manipulate::ControlState::IntervalSlider { label, name, .. } => {
       (label, name)
     }
+    // Heading/divider rows span the full row instead of sitting in the
+    // label column, so they don't widen it.
+    manipulate::ControlState::Heading { .. }
+    | manipulate::ControlState::Divider => return 0,
   };
   let text = if label.is_empty() { name } else { label };
   text.chars().count()
@@ -3616,6 +3637,7 @@ fn render_manipulate_widget<'a>(
         label_runs,
         value_labels,
         current_index,
+        popup,
         ..
       } => {
         let label_widget = manipulate_label_widget(
@@ -3628,49 +3650,51 @@ fn render_manipulate_widget<'a>(
         let count = value_labels.len();
         // A small enumerated set renders as a segmented SetterBar (a row of
         // adjacent toggle buttons with the active choice highlighted), matching
-        // Wolfram's SetterBar; a larger set falls back to a dropdown so the
-        // row can't grow unbounded. The button labels are the display labels
+        // Wolfram's SetterBar; a larger set — or an explicit
+        // `ControlType -> PopupMenu` — renders a dropdown so the row can't
+        // grow unbounded. The button labels are the display labels
         // (rule right-hand sides); pressing one sends its label, which the
         // update handler maps back to an index. A disabled control drops its
         // press handlers so it can't be changed.
-        let control: Element<Message> = if count <= SETTER_BAR_MAX_CHOICES {
-          let mut bar = Row::new().spacing(0).align_y(Center);
-          for (i, choice_label) in value_labels.iter().enumerate() {
-            let is_selected = i == *current_index;
-            let choice = choice_label.clone();
-            let mut btn = button(text(choice_label.clone()).size(12))
-              .padding([3, 10])
-              .style(move |theme: &Theme, status| {
-                setter_button_style(
-                  theme,
-                  status,
-                  is_selected,
-                  i,
-                  count,
-                  enabled,
-                )
-              });
-            if enabled {
-              btn = btn.on_press(Message::ManipulateDiscreteChanged(
-                cell_idx, ctrl_idx, choice,
-              ));
+        let control: Element<Message> =
+          if count <= SETTER_BAR_MAX_CHOICES && !*popup {
+            let mut bar = Row::new().spacing(0).align_y(Center);
+            for (i, choice_label) in value_labels.iter().enumerate() {
+              let is_selected = i == *current_index;
+              let choice = choice_label.clone();
+              let mut btn = button(text(choice_label.clone()).size(12))
+                .padding([3, 10])
+                .style(move |theme: &Theme, status| {
+                  setter_button_style(
+                    theme,
+                    status,
+                    is_selected,
+                    i,
+                    count,
+                    enabled,
+                  )
+                });
+              if enabled {
+                btn = btn.on_press(Message::ManipulateDiscreteChanged(
+                  cell_idx, ctrl_idx, choice,
+                ));
+              }
+              bar = bar.push(btn);
             }
-            bar = bar.push(btn);
-          }
-          bar.into()
-        } else {
-          let selected = value_labels.get(*current_index).cloned();
-          let on_select = move |choice: String| {
-            if enabled {
-              Message::ManipulateDiscreteChanged(cell_idx, ctrl_idx, choice)
-            } else {
-              Message::Noop
-            }
+            bar.into()
+          } else {
+            let selected = value_labels.get(*current_index).cloned();
+            let on_select = move |choice: String| {
+              if enabled {
+                Message::ManipulateDiscreteChanged(cell_idx, ctrl_idx, choice)
+              } else {
+                Message::Noop
+              }
+            };
+            pick_list(value_labels.clone(), selected, on_select)
+              .width(iced::Length::Shrink)
+              .into()
           };
-          pick_list(value_labels.clone(), selected, on_select)
-            .width(iced::Length::Shrink)
-            .into()
-        };
         let control_row =
           row![label_widget, control].align_y(Center).spacing(8);
         controls_col = controls_col.push(control_row);
@@ -3785,6 +3809,34 @@ fn render_manipulate_widget<'a>(
         .align_y(Center)
         .spacing(8);
         controls_col = controls_col.push(control_row);
+      }
+      manipulate::ControlState::Heading { label, label_runs } => {
+        // A static heading row (a string or `Style[…]` Manipulate argument,
+        // e.g. "signal 1"). Rendered bold across the full row.
+        let spans: Vec<iced::widget::text::Span<Message>> = label_runs
+          .iter()
+          .map(|run| {
+            let mut font = Font::MONOSPACE;
+            font.weight = iced::font::Weight::Bold;
+            if run.italic {
+              font.style = iced::font::Style::Italic;
+            }
+            iced::widget::span(run.text.clone()).font(font)
+          })
+          .collect();
+        let heading: Element<Message> = if spans.is_empty() {
+          let mut font = Font::MONOSPACE;
+          font.weight = iced::font::Weight::Bold;
+          text(label.clone()).size(12).font(font).into()
+        } else {
+          rich_text(spans).size(12).into()
+        };
+        controls_col = controls_col.push(heading);
+      }
+      manipulate::ControlState::Divider => {
+        // A `Delimiter` argument: a horizontal separator between control
+        // groups.
+        controls_col = controls_col.push(rule::horizontal(1));
       }
     }
   }
@@ -4188,6 +4240,32 @@ fn play_audio(
 /// Evaluate all statements in a cell and collect their results.
 /// When a cell contains multiple newline-separated expressions,
 /// each expression's output is included (matching Mathematica behavior).
+/// Whether a stored Output cell holds a FrontEnd dynamic-widget dump — the
+/// `DynamicModuleBox[…]` box form Mathematica saves for a live Manipulate.
+/// Such text is meaningless outside the Wolfram FrontEnd.
+fn is_dynamic_box_dump(output: &str) -> bool {
+  let t = output.trim_start();
+  t.starts_with("DynamicModuleBox[")
+    || t.starts_with("TagBox[DynamicModuleBox[")
+    || t.starts_with("DynamicBox[")
+}
+
+/// Rebuild the interactive widget for a loaded Input cell whose stored
+/// output was a dynamic-widget dump. Only a cell that is exactly one held
+/// interactive expression (`Manipulate[…]`, `Animate[…]`, …) is
+/// instantiated on load; anything else (definitions, side effects) waits
+/// for an explicit evaluation.
+fn instantiate_stored_manipulate(
+  code: &str,
+) -> Option<manipulate::ManipulateState> {
+  let statements = woxi::split_into_statements(code);
+  if statements.len() != 1 {
+    return None;
+  }
+  let expr = woxi::interpret_to_expr(&statements[0]).ok()?;
+  manipulate::ManipulateState::from_expr(&expr)
+}
+
 fn evaluate_cell_statements(
   editor: &mut CellEditor,
   code: &str,
@@ -5991,6 +6069,148 @@ mod tests {
     let state = manipulate::ManipulateState::from_expr(&expr).unwrap();
     assert!(!state.appearance_none);
     assert!(!state.animated && !state.playing);
+  }
+
+  #[test]
+  fn animation_running_false_builds_widget_paused() {
+    // `AnimationRunning -> False` keeps the play/pause toggle but starts
+    // the widget paused until the user presses play.
+    let expr = woxi::interpret_to_expr(
+      "Animate[x, {x, 0, 1}, AnimationRunning -> False]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert!(state.animated);
+    assert!(!state.playing);
+  }
+
+  #[test]
+  fn dynamic_box_dump_is_recognized() {
+    // The saved box form of a live Manipulate (what Mathematica writes
+    // into the Output cell) must be recognized so Studio hides the dump
+    // and re-instantiates the widget instead.
+    assert!(is_dynamic_box_dump(
+      "DynamicModuleBox[{$CellContext`x$$ = 1}, …]"
+    ));
+    assert!(is_dynamic_box_dump("TagBox[DynamicModuleBox[{…}, …], …]"));
+    assert!(is_dynamic_box_dump("DynamicBox[…]"));
+    // Ordinary outputs are untouched.
+    assert!(!is_dynamic_box_dump("42"));
+    assert!(!is_dynamic_box_dump("{1, 2, 3}"));
+    assert!(!is_dynamic_box_dump("GraphicsBox[…]"));
+  }
+
+  #[test]
+  fn stored_manipulate_is_instantiated_on_load() {
+    let state =
+      instantiate_stored_manipulate("Manipulate[x^2, {x, 0, 10}]").unwrap();
+    assert_eq!(state.controls.len(), 1);
+    // A cell with side effects (multiple statements) is never auto-run.
+    assert!(
+      instantiate_stored_manipulate("y = 1;\nManipulate[x y, {x, 0, 10}]")
+        .is_none()
+    );
+    // A non-Manipulate cell yields no widget.
+    assert!(instantiate_stored_manipulate("1 + 1").is_none());
+  }
+
+  #[test]
+  fn oscilloscope_manipulate_builds_full_widget() {
+    // End-to-end regression for the "Oscilloscope with Two Signal Inputs"
+    // Demonstration: the loaded Input cell must build a live widget with
+    // the animation slider, per-signal headings, popup menus, a divider,
+    // and a rendered plot.
+    let code = "Manipulate[\n\
+      Animate[Plot[{Subscript[r, 1] Subscript[signal, 1][Subscript[β, 1] \
+      ω+ϕ+Subscript[α, 1]],Subscript[r, 2] Subscript[signal, 2][Subscript[\
+      β, 2] ω+ϕ+Subscript[α, 2]]},{ω,0,10},ExclusionsStyle->Automatic,\
+      PlotRange->{{0,10},{3,-3}}],{ϕ,0,Infinity},AnimationRunning->False],\n\
+      Style[\"signal 1\",Bold,Medium],\n\
+      {{Subscript[signal, 1], SquareWave,\"\"},{Sin->\"sine\",SquareWave->\
+      \"square wave\",SawtoothWave->\"sawtooth wave\",TriangleWave->\
+      \"triangle wave\"},ControlType->PopupMenu},\n\
+      {{Subscript[α, 1],0,\"phase lag\"},0,2π, ImageSize-> Tiny},\n\
+      {{Subscript[r, 1],1,\"amplitude\"},0,3,ImageSize-> Tiny},\n\
+      {{Subscript[β, 1],1,\"frequency\"},0,5,ImageSize-> Tiny},\n\
+      Delimiter,\n\
+      Style[\"signal 2\",Bold,Medium],\n\
+      {{Subscript[signal, 2], Sin,\"\"},{Sin->\"sine\",SquareWave->\
+      \"square wave\",SawtoothWave->\"sawtooth wave\",TriangleWave->\
+      \"triangle wave\"},ControlType->PopupMenu},\n\
+      {{Subscript[α, 2],0,\"phase lag\"},0,2π,ImageSize-> Tiny},\n\
+      {{Subscript[r, 2],1,\"amplitude\"},0,3,ImageSize-> Tiny},\n\
+      {{Subscript[β, 2],1,\"frequency\"},0,5,ImageSize-> Tiny}\n\
+      ]";
+    let state = instantiate_stored_manipulate(code)
+      .expect("oscilloscope Manipulate must build a widget");
+    assert!(
+      state.animated,
+      "nested Animate body must animate the widget"
+    );
+    assert!(!state.playing, "AnimationRunning -> False starts paused");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "initial rendering must produce the plot"
+    );
+    // Row layout: animation slider, then heading + popup + 3 sliders per
+    // signal, separated by a divider.
+    let kinds: Vec<&str> = state
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { .. } => "continuous",
+        manipulate::ControlState::Discrete { .. } => "discrete",
+        manipulate::ControlState::Heading { .. } => "heading",
+        manipulate::ControlState::Divider => "divider",
+        _ => "other",
+      })
+      .collect();
+    assert_eq!(
+      kinds,
+      vec![
+        "continuous",
+        "heading",
+        "discrete",
+        "continuous",
+        "continuous",
+        "continuous",
+        "divider",
+        "heading",
+        "discrete",
+        "continuous",
+        "continuous",
+        "continuous",
+      ]
+    );
+    // The popup menus keep their dropdown form and rule-form labels.
+    match &state.controls[2] {
+      manipulate::ControlState::Discrete {
+        value_labels,
+        current_index,
+        popup,
+        ..
+      } => {
+        assert!(popup);
+        assert_eq!(value_labels[*current_index], "square wave");
+      }
+      other => panic!("expected popup menu, got {other:?}"),
+    }
+    // Changing a signal re-renders without error (regression: symbol-valued
+    // popup bindings must substitute as function heads).
+    let mut state = state;
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[2]
+    {
+      *current_index = 3; // triangle wave
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
   }
 
   #[test]
