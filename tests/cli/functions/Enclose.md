@@ -92,6 +92,8 @@ the confirmation itself would have succeeded:
 
 ```scrut
 $ wo 'Confirm[1 + 1]["HeldInput"]'
+
+Confirm::confirmnotag: Confirm has no tag or surrounding Enclose.
 Hold[Confirm[1 + 1]]
 ```
 
