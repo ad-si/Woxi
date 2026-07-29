@@ -1233,6 +1233,28 @@ thread_local! {
     static INTERPRET_DEPTH: std::cell::RefCell<usize> = const { std::cell::RefCell::new(0) };
 }
 
+/// Whether `s` is one balanced `{…}` group rather than several in a row.
+///
+/// Starting with `{` and ending with `}` is not enough: `{1, 2} {3, 4}` also
+/// does, and it is an implicit multiplication (`{3, 8}`), not a list literal.
+/// Callers use this to keep the list fast path from echoing such input back.
+fn is_single_brace_group(s: &str) -> bool {
+  let mut depth = 0usize;
+  for (i, c) in s.char_indices() {
+    match c {
+      '{' => depth += 1,
+      '}' => {
+        depth -= 1;
+        if depth == 0 && i + c.len_utf8() != s.len() {
+          return false;
+        }
+      }
+      _ => {}
+    }
+  }
+  depth == 0
+}
+
 pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   // Normalize CRLF to LF so line continuation and newline handling work
   // consistently regardless of line ending style.
@@ -1330,7 +1352,10 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
 
   // Fast path for simple list literals like {a, b, c}
   // This handles many cases where we're just passing data around
-  if trimmed.starts_with('{') && trimmed.ends_with('}') {
+  if trimmed.starts_with('{')
+    && trimmed.ends_with('}')
+    && is_single_brace_group(trimmed)
+  {
     // Check if it's a simple list (no operators that need evaluation)
     if !trimmed.contains("->")
       && !trimmed.contains(":>")

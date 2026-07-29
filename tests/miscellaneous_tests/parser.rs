@@ -181,4 +181,42 @@ mod tests {
       );
     }
   }
+
+  #[test]
+  fn test_parse_deeply_nested_bracket_groups() {
+    // Regression: a term that is just a bracket group was parsed twice (three
+    // times for parentheses) because `ImplicitTimes`, `ParenExtended` and
+    // `AssociationExtended` all consumed it before failing. The waste doubled
+    // per nesting level, so these legitimate expressions used to exhaust the
+    // parser call limit.
+    for depth in 1..=25 {
+      for (open, close) in [("{", "}"), ("(", ")"), ("<|a -> ", "|>")] {
+        let input = format!("{}1{}", open.repeat(depth), close.repeat(depth));
+        assert!(parse(&input).is_ok(), "should parse: {:?}", input);
+      }
+    }
+  }
+
+  #[test]
+  fn test_deeply_nested_lists_evaluate() {
+    assert_eq!(
+      woxi::interpret("{f[{1, {{{{{{1}}}}}}}]}").unwrap(),
+      "{f[{1, {{{{{{1}}}}}}}]}"
+    );
+    assert_eq!(woxi::interpret("((((((((((1))))))))))").unwrap(), "1");
+    assert_eq!(
+      woxi::interpret("ToString[{{{{{{{{1}}}}}}}}, InputForm]").unwrap(),
+      "{{{{{{{{1}}}}}}}}"
+    );
+  }
+
+  #[test]
+  fn test_bracket_group_still_starts_implicit_times() {
+    // The `SoloBracketGroup` guard must not reject a genuine juxtaposition.
+    assert_eq!(woxi::interpret("{1, 2} {3, 4}").unwrap(), "{3, 8}");
+    assert_eq!(woxi::interpret("(1 + 2) (3 + 4)").unwrap(), "21");
+    assert_eq!(woxi::interpret("{1, 2}^2 {3, 4}").unwrap(), "{3, 16}");
+    assert_eq!(woxi::interpret("{1, 2}[[1]] {3, 4}").unwrap(), "{3, 4}");
+    assert_eq!(woxi::interpret("(3)! {1, 2}").unwrap(), "{6, 12}");
+  }
 }

@@ -153,9 +153,14 @@ ListExtended = {
 //   (expr)[args]     — function call on parenthesized expression (e.g. (D[#, x] &)[x^3])
 //   (expr)'          — Derivative[1][expr] (e.g. (#^4&)'' is Derivative[2][#^4&])
 //   (expr)'[args]    — Derivative[n][expr] applied to args
+// Every suffix here starts with `'` or `[`, so a linear scan over the balanced
+// group tells us up front whether the rule can succeed. Without that guard a
+// plain `(expr)` is parsed once here only to be discarded, doubling the cost at
+// every nesting level (see `SoloBracketGroup`).
 ParenCallSuffix = { BracketArgs+ }
 ParenExtended = {
-    "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")"
+    &("(" ~ NestedContent ~ ")" ~ (DerivativePrime | PartOpen | "["))
+    ~ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")"
     ~ (DerivativePrime ~ ParenCallSuffix? | PartIndexSuffix | ParenCallSuffix)
 }
 // RuleAnonymousFunction handles ReplacementRule& - for expressions like {#, First@#2} -> "Q" &
@@ -312,7 +317,28 @@ ImplicitTimesFactor = _{ SimpleTerm ~ PartIndexSuffix? ~ ImplicitPowerSuffix? ~ 
 // NegativeImplicitFirst allows -N as the first factor in implicit multiplication
 // so that "-90 Degree" parses as Times[-90, Degree] instead of failing.
 NegativeImplicitFirst = { "-" ~ UnsignedNumericValue }
-ImplicitTimes = { (NegativeImplicitFirst | ImplicitTimesFactor) ~ ImplicitTimesFactor+ }
+// `ImplicitTimes` is tried before the plain list/association/parenthesis rules,
+// so a term that is just a bracket group gets that group parsed once here (as a
+// candidate first factor), thrown away when no second factor follows, and then
+// parsed again by `ListExtended` / `Association` / the parenthesis alternative.
+// Nesting multiplies that waste at every level, so `{{{{{{{1}}}}}}}` or
+// `((((((1))))))` used to exhaust the parser call limit. `SoloBracketGroup` is a
+// zero-width, linear scan that rejects the attempt up front when the group is
+// followed by something that can never begin a juxtaposed second factor.
+BracketGroupScan = _{
+    "<|" ~ NestedContent ~ "|>"
+  | "{" ~ NestedContent ~ "}"
+  | "(" ~ NestedContent ~ ")"
+}
+// Deliberately conservative: characters that could also start a factor suffix
+// (`[`, `^`, `!`, `.`, `'`, `?`, `:`) are absent, so `{1, 2}^2 x` still takes
+// the (slower) ImplicitTimes path rather than being mis-rejected.
+GroupTerminator = _{
+    EOI | "," | "]" | "}" | ")" | "|>" | ";" | "&"
+  | "+" | "-" | "*" | "/" | "<" | ">" | "=" | "@" | "~" | "|"
+}
+SoloBracketGroup = _{ BracketGroupScan ~ GroupTerminator }
+ImplicitTimes = { !SoloBracketGroup ~ (NegativeImplicitFirst | ImplicitTimesFactor) ~ ImplicitTimesFactor+ }
 
 // TildeInfix: a ~f~ b means f[a, b] — infix function application syntax
 // The function between tildes must be an identifier or function call (BaseFunctionCall)
@@ -722,8 +748,13 @@ Association     = { "<|" ~ ( AssociationElement ~ ("," ~ AssociationElement)* )?
 // AssociationExtended handles bracket access on association literals:
 //   <|...|>["key"]      — key lookup (CurriedCall)
 //   <|...|>[["key"]]    — Part extraction
+// Guarded like `ParenExtended`: both suffixes start with `[`, so the balanced
+// scan avoids parsing a plain `<|...|>` twice.
 AssociationCallSuffix = { BracketArgs+ }
-AssociationExtended = { Association ~ (PartIndexSuffix | AssociationCallSuffix) }
+AssociationExtended = {
+    &("<|" ~ NestedContent ~ "|>" ~ (PartOpen | "["))
+    ~ Association ~ (PartIndexSuffix | AssociationCallSuffix)
+}
 
 // Function calls (supports chained calls like f[x][y])
 // Simplified: Just use Expression for most args - patterns and compound expressions via Expression's Term
