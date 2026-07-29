@@ -85,6 +85,142 @@ mod polyhedron_data_tests {
     );
   }
 
+  // Exact vertex coordinates (unit edge length) in Wolfram's canonical
+  // orientation: z is the polar symmetry axis where there is one.
+  #[test]
+  fn polyhedron_data_vertex_coordinates_icosahedron() {
+    assert_eq!(
+      interpret(r#"PolyhedronData["Icosahedron", "VertexCoordinates"]"#)
+        .unwrap(),
+      "{{0, 0, -Sqrt[5/8 + Sqrt[5]/8]}, {0, 0, Sqrt[5/8 + Sqrt[5]/8]}, \
+       {-Sqrt[1/2 + 1/(2*Sqrt[5])], 0, -Sqrt[1/8 + 1/(8*Sqrt[5])]}, \
+       {Sqrt[1/2 + 1/(2*Sqrt[5])], 0, Sqrt[1/8 + 1/(8*Sqrt[5])]}, \
+       {Sqrt[1/4 + 1/(2*Sqrt[5])], -1/2, -Sqrt[1/8 + 1/(8*Sqrt[5])]}, \
+       {Sqrt[1/4 + 1/(2*Sqrt[5])], 1/2, -Sqrt[1/8 + 1/(8*Sqrt[5])]}, \
+       {-Sqrt[1/4 + 1/(2*Sqrt[5])], -1/2, Sqrt[1/8 + 1/(8*Sqrt[5])]}, \
+       {-Sqrt[1/4 + 1/(2*Sqrt[5])], 1/2, Sqrt[1/8 + 1/(8*Sqrt[5])]}, \
+       {-Sqrt[1/8 - 1/(8*Sqrt[5])], (-1 - Sqrt[5])/4, -Sqrt[1/8 + 1/(8*Sqrt[5])]}, \
+       {-Sqrt[1/8 - 1/(8*Sqrt[5])], (1 + Sqrt[5])/4, -Sqrt[1/8 + 1/(8*Sqrt[5])]}, \
+       {Sqrt[1/8 - 1/(8*Sqrt[5])], (-1 - Sqrt[5])/4, Sqrt[1/8 + 1/(8*Sqrt[5])]}, \
+       {Sqrt[1/8 - 1/(8*Sqrt[5])], (1 + Sqrt[5])/4, Sqrt[1/8 + 1/(8*Sqrt[5])]}}"
+    );
+  }
+
+  #[test]
+  fn polyhedron_data_vertex_coordinates_cube_and_octahedron() {
+    assert_eq!(
+      interpret(r#"PolyhedronData["Cube", "VertexCoordinates"]"#).unwrap(),
+      "{{-1/2, -1/2, -1/2}, {-1/2, -1/2, 1/2}, {-1/2, 1/2, -1/2}, \
+       {-1/2, 1/2, 1/2}, {1/2, -1/2, -1/2}, {1/2, -1/2, 1/2}, \
+       {1/2, 1/2, -1/2}, {1/2, 1/2, 1/2}}"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["Octahedron", "VertexCoordinates"]"#)
+        .unwrap(),
+      "{{-(1/Sqrt[2]), 0, 0}, {1/Sqrt[2], 0, 0}, {0, -(1/Sqrt[2]), 0}, \
+       {0, 1/Sqrt[2], 0}, {0, 0, -(1/Sqrt[2])}, {0, 0, 1/Sqrt[2]}}"
+    );
+  }
+
+  // The stored coordinates must describe a unit-edge solid: every solid's
+  // shortest vertex-to-vertex distance is exactly 1, and the number of
+  // pairs at that distance is the edge count.
+  #[test]
+  fn polyhedron_data_vertex_coordinates_have_unit_edges() {
+    for name in [
+      "Tetrahedron",
+      "Cube",
+      "Octahedron",
+      "Dodecahedron",
+      "Icosahedron",
+    ] {
+      let result = interpret(&format!(
+        r#"With[{{v = N[PolyhedronData["{name}", "VertexCoordinates"]]}},
+             {{Length[v],
+               Round[1000000 * Min @@ Flatten[Table[
+                 Norm[v[[i]] - v[[j]]],
+                 {{i, Length[v] - 1}}, {{j, i + 1, Length[v]}}]]]}}]"#
+      ))
+      .unwrap();
+      let expected_counts = match name {
+        "Tetrahedron" => "{4, 1000000}",
+        "Cube" => "{8, 1000000}",
+        "Octahedron" => "{6, 1000000}",
+        "Dodecahedron" => "{20, 1000000}",
+        "Icosahedron" => "{12, 1000000}",
+        _ => unreachable!(),
+      };
+      assert_eq!(result, expected_counts, "solid: {name}");
+    }
+  }
+
+  // Edge lists as 1-based vertex index pairs in canonical order.
+  #[test]
+  fn polyhedron_data_edge_indices() {
+    assert_eq!(
+      interpret(r#"PolyhedronData["Tetrahedron", "EdgeIndices"]"#).unwrap(),
+      "{{1, 2}, {1, 3}, {1, 4}, {2, 3}, {2, 4}, {3, 4}}"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["Cube", "EdgeIndices"]"#).unwrap(),
+      "{{1, 2}, {1, 3}, {1, 5}, {2, 4}, {2, 6}, {3, 4}, {3, 7}, {4, 8}, \
+       {5, 6}, {5, 7}, {6, 8}, {7, 8}}"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["Icosahedron", "EdgeIndices"]"#).unwrap(),
+      "{{1, 3}, {1, 5}, {1, 6}, {1, 9}, {1, 10}, {2, 4}, {2, 7}, {2, 8}, \
+       {2, 11}, {2, 12}, {3, 7}, {3, 8}, {3, 9}, {3, 10}, {4, 5}, {4, 6}, \
+       {4, 11}, {4, 12}, {5, 6}, {5, 9}, {5, 11}, {6, 10}, {6, 12}, {7, 8}, \
+       {7, 9}, {7, 11}, {8, 10}, {8, 12}, {9, 11}, {10, 12}}"
+    );
+  }
+
+  // Every solid's edge list has exactly EdgeCount entries.
+  #[test]
+  fn polyhedron_data_edge_indices_match_edge_count() {
+    for name in [
+      "Tetrahedron",
+      "Cube",
+      "Octahedron",
+      "Dodecahedron",
+      "Icosahedron",
+    ] {
+      let result = interpret(&format!(
+        r#"Length[PolyhedronData["{name}", "EdgeIndices"]] ==
+           PolyhedronData["{name}", "EdgeCount"]"#
+      ))
+      .unwrap();
+      assert_eq!(result, "True", "solid: {name}");
+    }
+  }
+
+  // The insphere is a Sphere at the origin with the exact inradius.
+  #[test]
+  fn polyhedron_data_insphere() {
+    assert_eq!(
+      interpret(r#"PolyhedronData["Cube", "Insphere"]"#).unwrap(),
+      "Sphere[{0, 0, 0}, 1/2]"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["Icosahedron", "Insphere"]"#).unwrap(),
+      "Sphere[{0, 0, 0}, (3*Sqrt[3] + Sqrt[15])/12]"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["Dodecahedron", "Insphere"]"#).unwrap(),
+      "Sphere[{0, 0, 0}, Sqrt[250 + 110*Sqrt[5]]/20]"
+    );
+  }
+
+  // The new data properties appear in the sorted "Properties" list.
+  #[test]
+  fn polyhedron_data_properties_include_data_properties() {
+    assert_eq!(
+      interpret(r#"PolyhedronData["Properties"]"#).unwrap(),
+      "{Circumradius, EdgeCount, EdgeIndices, FaceCount, Inradius, \
+       Insphere, SurfaceArea, VertexCoordinates, VertexCount, Volume}"
+    );
+  }
+
   // "Hexahedron" is an alternative name for the cube.
   #[test]
   fn polyhedron_data_hexahedron_alias() {

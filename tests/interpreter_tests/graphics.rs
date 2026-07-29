@@ -1591,6 +1591,66 @@ mod plot3d {
         assert!(interpret("SphericalPlot3D[1, 5, 6]").is_err());
       }
     }
+
+    // The rendered plot remembers its symbolic
+    // Graphics3D[GraphicsComplex[…]] form for Part extraction, the way
+    // Wolfram Demonstrations reuse a plot's mesh in other graphics.
+    mod structure {
+      use super::*;
+
+      #[test]
+      fn part_one_is_a_graphics_complex() {
+        assert_eq!(
+          interpret("Head[SphericalPlot3D[1, {t, 0, Pi}, {p, 0, 2 Pi}][[1]]]")
+            .unwrap(),
+          "GraphicsComplex"
+        );
+      }
+
+      // PlotPoints -> 2 samples a 2x2 grid: after dropping the collapsed
+      // pole edge a single facet triangle remains.
+      #[test]
+      fn plot_points_controls_grid_resolution() {
+        assert_eq!(
+          interpret(
+            "Length[SphericalPlot3D[1, {t, 0, Pi/3}, {p, 0, Pi/3}, \
+             PlotPoints -> 2][[1, 1]]]"
+          )
+          .unwrap(),
+          "3"
+        );
+      }
+
+      // RegionFunction receives x, y, z (then theta, phi, r); the mesh is
+      // clipped to where it is True, so a z > 0 region keeps no point
+      // meaningfully below the equator.
+      #[test]
+      fn region_function_clips_the_mesh() {
+        assert_eq!(
+          interpret(
+            "Min[SphericalPlot3D[1, {t, 0, Pi}, {p, 0, 2 Pi}, \
+             RegionFunction -> ({#1, #2, #3} . {0, 0, 1} > 0 &)][[1, 1]][[All, 3]]] \
+             > -1/1000"
+          )
+          .unwrap(),
+          "True"
+        );
+      }
+
+      // BoundaryStyle adds the mesh's boundary edges as styled lines in
+      // the GraphicsComplex content.
+      #[test]
+      fn boundary_style_adds_boundary_lines() {
+        assert_eq!(
+          interpret(
+            "Cases[SphericalPlot3D[1, {t, 0, Pi/2}, {p, 0, Pi}, \
+             BoundaryStyle -> Black][[1, 2]], _Line, Infinity] =!= {}"
+          )
+          .unwrap(),
+          "True"
+        );
+      }
+    }
   }
 
   mod list_point_plot3d {
@@ -1802,19 +1862,152 @@ mod plot3d {
         "Graphics3D[Polygon[{{0,0,0}, {0,1,1}, {1,0,0}}]]"
       ));
     }
+
+    // Part indexes the symbolic form of a rendered Graphics3D, as in
+    // Wolfram where Graphics3D[…][[1]] returns the content.
+    #[test]
+    fn graphics3d_part_returns_content() {
+      assert_eq!(
+        interpret(
+          "Graphics3D[GraphicsComplex[{{0,0,0},{1,0,0},{0,1,0}}, \
+           Polygon[{{1,2,3}}]]][[1]]"
+        )
+        .unwrap(),
+        "GraphicsComplex[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}, \
+         Polygon[{{1, 2, 3}}]]"
+      );
+    }
+
+    // GraphicsComplex primitives resolve their 1-based vertex indices,
+    // for both single- and multi-polygon/line forms.
+    #[test]
+    fn graphics3d_graphics_complex_renders() {
+      let svg = export_svg(
+        "Graphics3D[GraphicsComplex[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}, \
+         {Polygon[{{1,2,3},{1,2,4}}], Line[{{1,4},{2,4}}]}]]",
+      );
+      assert!(
+        svg.contains("<polygon") && svg.contains("<line"),
+        "expected polygons and lines from the GraphicsComplex, got: {}",
+        &svg[..300.min(svg.len())]
+      );
+    }
+
+    // Translate/Rotate/Scale wrap primitives with affine transforms. A
+    // unit polygon rotated by Pi around z and translated must still
+    // produce polygons (the transform used to be silently dropped).
+    #[test]
+    fn graphics3d_transforms_render() {
+      let svg = export_svg(
+        "Graphics3D[{Translate[Rotate[Scale[\
+           Polygon[{{0,0,0},{1,0,0},{0,1,0}}], {2,2,2}, {0,0,0}], \
+           Pi/3, {0,0,1}], {0,0,1}], \
+         Translate[Polygon[{{0,0,0},{1,0,0},{0,1,0}}], {{0,0,0},{0,0,2}}]}]",
+      );
+      let polygons = svg.matches("<polygon").count();
+      assert!(
+        polygons >= 3,
+        "expected the transformed polygon plus two translated copies, \
+         got {polygons} polygons"
+      );
+    }
+
+    // A numeric PlotRange pins the frame: with PlotRange -> 10 a unit
+    // sphere occupies a small part of the drawing, so its projected
+    // extent must be far smaller than with the fitted default.
+    #[test]
+    fn graphics3d_plot_range_fixes_the_frame() {
+      let fitted = export_svg("Graphics3D[Sphere[], Boxed -> False]");
+      let ranged =
+        export_svg("Graphics3D[Sphere[], Boxed -> False, PlotRange -> 10]");
+      let width = |svg: &str| -> f64 {
+        let mut min = f64::INFINITY;
+        let mut max = f64::NEG_INFINITY;
+        for cap in svg.split("<polygon points=\"").skip(1) {
+          let coords = cap.split('"').next().unwrap_or("");
+          for pair in coords.split_whitespace() {
+            if let Some(x) = pair.split(',').next()
+              && let Ok(x) = x.parse::<f64>()
+            {
+              min = min.min(x);
+              max = max.max(x);
+            }
+          }
+        }
+        max - min
+      };
+      assert!(
+        width(&ranged) < width(&fitted) / 2.0,
+        "PlotRange -> 10 must shrink the sphere's projected size \
+         (fitted {} vs ranged {})",
+        width(&fitted),
+        width(&ranged)
+      );
+    }
+
+    // ViewPoint moves the camera: looking straight down the z axis a
+    // point at +x projects to a different screen spot than the default
+    // oblique view, so the two renderings must differ.
+    #[test]
+    fn graphics3d_view_point_moves_the_camera() {
+      let default_view =
+        export_svg("Graphics3D[Polygon[{{0,0,0},{1,0,0},{0,1,0}}]]");
+      let top_view = export_svg(
+        "Graphics3D[Polygon[{{0,0,0},{1,0,0},{0,1,0}}], \
+         ViewPoint -> {0, 0, 10}]",
+      );
+      assert_ne!(default_view, top_view);
+    }
+
+    // Regression: the "Icosahedron Ball" Demonstration body — a
+    // SphericalPlot3D mesh reused via [[1]], transformed with
+    // Translate/Rotate copies, and combined with PolyhedronData's
+    // wireframe and insphere — must evaluate to a rendered graphic.
+    #[test]
+    fn icosahedron_ball_demonstration_body() {
+      assert_eq!(
+        interpret(
+          "Block[{conv = 2, dis = -3, icos = 1, sep = 0}, \
+           v = PolyhedronData[\"Icosahedron\", \"VertexCoordinates\"]; \
+           h1a = SphericalPlot3D[Norm[v[[2]]], \
+             {theta, 0, VectorAngle[v[[2]], v[[4]]]}, {phi, 0, (2 Pi)/5}, \
+             RegionFunction -> ({#1, #2, #3} . v[[4]] \\[Cross] v[[12]] > 0 &), \
+             MaxRecursion -> 0, PlotPoints -> conv, Mesh -> None, \
+             BoundaryStyle -> Black][[1]]; \
+           h1 = Translate[h1a, dis Mean[v[[{2, 4, 12}]]]]; \
+           h2 = Rotate[h1, -(1/5) (2 Pi), v[[4]]]; \
+           h3 = Translate[(Rotate[{h1, h2}, (2 Pi #1)/5, {0, 0, 1}] &) /@ \
+             Range[5], {0, 0, sep}]; \
+           h4 = {RGBColor[0.3, 1, 0.8], Rotate[h3, Pi, {0, 1, 0}]}; \
+           Graphics3D[{{RGBColor[0.9, 1, 0.5], \
+               PolyhedronData[\"Icosahedron\", \"Insphere\"]}, \
+             {Scale[GraphicsComplex[\
+               PolyhedronData[\"Icosahedron\", \"VertexCoordinates\"], \
+               Line[PolyhedronData[\"Icosahedron\", \"EdgeIndices\"]]], \
+               icos {1, 1, 1}, {0, 0, 0}]}, \
+             {RGBColor[0.7, 1, 1], h3}, h4}, \
+             Boxed -> False, SphericalRegion -> True, ViewAngle -> 0.09, \
+             ViewPoint -> {3.2, -10, 5.2}, PlotRange -> 1.7, \
+             ImageSize -> 380]]"
+        )
+        .unwrap(),
+        "-Graphics3D-"
+      );
+    }
   }
 
   mod parametric_plot3d_curve {
     use super::*;
 
-    /// 1-iterator form should sample the curve and render it as a polyline.
+    /// 1-iterator form should sample the curve and render it as line
+    /// segments (depth-sorted so surfaces can occlude them).
     #[test]
     fn curve_renders_polyline() {
       let svg =
         export_svg("ParametricPlot3D[{Cos[t], Sin[t], 0}, {t, 0, 2 Pi}]");
       assert!(
-        svg.contains("<polyline"),
-        "expected a <polyline> for the sampled curve, got: {}",
+        svg.contains("<polyline") || svg.contains("<line"),
+        "expected line segments for the sampled curve, got: {}",
         &svg[..200.min(svg.len())]
       );
     }
@@ -1847,8 +2040,8 @@ mod plot3d {
            PlotStyle -> Directive[{Thick, Red}]]]",
       );
       assert!(
-        svg.contains("<polyline"),
-        "expected polyline from the parametric ring inside Show"
+        svg.contains("<polyline") || svg.contains("<line"),
+        "expected line segments from the parametric ring inside Show"
       );
       assert!(
         svg.contains("rgb(255,0,0)"),

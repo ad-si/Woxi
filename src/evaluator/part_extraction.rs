@@ -356,6 +356,17 @@ pub fn extract_part_ast(
     });
   }
 
+  // A rendered graphic that remembers its symbolic form (e.g. a plot's
+  // `Graphics3D[GraphicsComplex[…], opts]`) indexes that form, matching
+  // Wolfram where `SphericalPlot3D[…][[1]]` yields the GraphicsComplex.
+  if let Expr::Graphics {
+    structure: Some(symbolic),
+    ..
+  } = expr
+  {
+    return extract_part_ast(symbolic, index);
+  }
+
   // A tree is an atom: Part cannot reach inside it, so the call stays
   // unevaluated and the caller reports Part::partd.
   if matches!(expr, Expr::FunctionCall { name, .. } if name == "Tree") {

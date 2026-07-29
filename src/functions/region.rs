@@ -279,6 +279,7 @@ pub fn region_to_graphics(args: &[Expr]) -> Option<Expr> {
       is_3d: *is_3d,
       source: source.clone(),
       head: Some("Region".to_string()),
+      structure: None,
     })
   } else {
     None

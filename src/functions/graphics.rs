@@ -2136,6 +2136,7 @@ pub fn polar_curve_to_graphics(name: &str, args: &[Expr]) -> Option<Expr> {
       is_3d: *is_3d,
       source: source.clone(),
       head: Some(name.to_string()),
+      structure: None,
     })
   } else {
     None

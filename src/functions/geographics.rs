@@ -1563,6 +1563,7 @@ pub fn geo_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       is_3d: *is_3d,
       source: source.clone(),
       head: Some("GeoGraphics".to_string()),
+      structure: None,
     })
   } else {
     Ok(result)
@@ -1590,6 +1591,7 @@ pub fn geographics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       is_3d: *is_3d,
       source: source.clone(),
       head: Some("GeoGraphics".to_string()),
+      structure: None,
     })
   } else {
     Ok(result)

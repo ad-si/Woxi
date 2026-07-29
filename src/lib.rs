@@ -819,6 +819,7 @@ pub fn graphics_result(svg: String) -> syntax::Expr {
     is_3d: false,
     source: None,
     head: None,
+    structure: None,
   }
 }
 
@@ -831,6 +832,7 @@ fn graphics_result_with_head(svg: String, head: &str) -> syntax::Expr {
     is_3d: false,
     source: None,
     head: Some(head.to_string()),
+    structure: None,
   }
 }
 
@@ -847,6 +849,7 @@ pub fn graphics_result_with_source(
     is_3d: false,
     source: Some(Box::new(source)),
     head: None,
+    structure: None,
   }
 }
 
@@ -858,6 +861,24 @@ pub fn graphics3d_result(svg: String) -> syntax::Expr {
     is_3d: true,
     source: None,
     head: None,
+    structure: None,
+  }
+}
+
+/// Like `graphics3d_result` but remembers the symbolic expression the
+/// rendering came from, so `Part` can index into it (Wolfram's
+/// `Graphics3D[…][[1]]` returns the graphic's content).
+pub fn graphics3d_result_with_structure(
+  svg: String,
+  structure: syntax::Expr,
+) -> syntax::Expr {
+  capture_graphics(&svg);
+  syntax::Expr::Graphics {
+    svg,
+    is_3d: true,
+    source: None,
+    head: None,
+    structure: Some(Box::new(structure)),
   }
 }
 
@@ -2945,6 +2966,7 @@ fn render_graphics_fc_if_needed(expr: syntax::Expr) -> syntax::Expr {
           is_3d: false,
           source: None,
           head: None,
+          structure: None,
         }
       } else {
         expr

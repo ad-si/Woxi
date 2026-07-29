@@ -15,76 +15,11 @@ struct PolyhedronInfo {
   surface_area: &'static str,
   circumradius: &'static str,
   inradius: &'static str,
-  /// Vertex coordinates for unit edge length (used for rendering).
-  vertices: fn() -> Vec<[f64; 3]>,
-}
-
-const PHI: f64 = 1.618_033_988_749_895; // golden ratio (1 + Sqrt[5])/2
-
-fn tetrahedron_vertices() -> Vec<[f64; 3]> {
-  // Edge length of {±1, ±1, ±1} alternated corners is 2 Sqrt[2].
-  let s = 1.0 / (2.0 * std::f64::consts::SQRT_2);
-  vec![[s, s, s], [s, -s, -s], [-s, s, -s], [-s, -s, s]]
-}
-
-fn cube_vertices() -> Vec<[f64; 3]> {
-  let mut v = Vec::with_capacity(8);
-  for &x in &[-0.5, 0.5] {
-    for &y in &[-0.5, 0.5] {
-      for &z in &[-0.5, 0.5] {
-        v.push([x, y, z]);
-      }
-    }
-  }
-  v
-}
-
-fn octahedron_vertices() -> Vec<[f64; 3]> {
-  let s = 1.0 / std::f64::consts::SQRT_2;
-  vec![
-    [s, 0.0, 0.0],
-    [-s, 0.0, 0.0],
-    [0.0, s, 0.0],
-    [0.0, -s, 0.0],
-    [0.0, 0.0, s],
-    [0.0, 0.0, -s],
-  ]
-}
-
-fn dodecahedron_vertices() -> Vec<[f64; 3]> {
-  // The classic (±1, ±1, ±1) / (0, ±1/φ, ±φ) / … coordinates have edge
-  // length 2/φ; scale by φ/2 for a unit edge.
-  let s = PHI / 2.0;
-  let a = 1.0 / PHI;
-  let mut v = Vec::with_capacity(20);
-  for &x in &[-1.0, 1.0] {
-    for &y in &[-1.0, 1.0] {
-      for &z in &[-1.0, 1.0] {
-        v.push([s * x, s * y, s * z]);
-      }
-    }
-  }
-  for &p in &[-1.0f64, 1.0] {
-    for &q in &[-1.0f64, 1.0] {
-      v.push([0.0, s * p * a, s * q * PHI]);
-      v.push([s * p * a, s * q * PHI, 0.0]);
-      v.push([s * p * PHI, 0.0, s * q * a]);
-    }
-  }
-  v
-}
-
-fn icosahedron_vertices() -> Vec<[f64; 3]> {
-  // Cyclic permutations of (0, ±1, ±φ) have edge length 2; halve for unit.
-  let mut v = Vec::with_capacity(12);
-  for &p in &[-0.5f64, 0.5] {
-    for &q in &[-0.5f64, 0.5] {
-      v.push([0.0, p, q * PHI]);
-      v.push([p, q * PHI, 0.0]);
-      v.push([q * PHI, 0.0, p]);
-    }
-  }
-  v
+  /// Exact vertex coordinates for unit edge length, as WL source, in
+  /// Wolfram's canonical orientation and vertex order (the z axis is the
+  /// polar symmetry axis where there is one). Used both for the
+  /// "VertexCoordinates" property and (numerically) for rendering.
+  vertices_src: &'static str,
 }
 
 static POLYHEDRA: &[PolyhedronInfo] = &[
@@ -97,7 +32,12 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     surface_area: "Sqrt[3]",
     circumradius: "Sqrt[3/8]",
     inradius: "1/(2*Sqrt[6])",
-    vertices: tetrahedron_vertices,
+    // Base triangle in the z = -Inradius plane, apex on the +z axis.
+    vertices_src: "{\
+      {-1/(2*Sqrt[3]), -1/2, -1/(2*Sqrt[6])}, \
+      {-1/(2*Sqrt[3]), 1/2, -1/(2*Sqrt[6])}, \
+      {1/Sqrt[3], 0, -1/(2*Sqrt[6])}, \
+      {0, 0, Sqrt[3/8]}}",
   },
   PolyhedronInfo {
     name: "Cube",
@@ -108,7 +48,11 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     surface_area: "6",
     circumradius: "Sqrt[3]/2",
     inradius: "1/2",
-    vertices: cube_vertices,
+    vertices_src: "{\
+      {-1/2, -1/2, -1/2}, {-1/2, -1/2, 1/2}, \
+      {-1/2, 1/2, -1/2}, {-1/2, 1/2, 1/2}, \
+      {1/2, -1/2, -1/2}, {1/2, -1/2, 1/2}, \
+      {1/2, 1/2, -1/2}, {1/2, 1/2, 1/2}}",
   },
   PolyhedronInfo {
     name: "Octahedron",
@@ -119,7 +63,10 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     surface_area: "2*Sqrt[3]",
     circumradius: "1/Sqrt[2]",
     inradius: "1/Sqrt[6]",
-    vertices: octahedron_vertices,
+    vertices_src: "{\
+      {-1/Sqrt[2], 0, 0}, {1/Sqrt[2], 0, 0}, \
+      {0, -1/Sqrt[2], 0}, {0, 1/Sqrt[2], 0}, \
+      {0, 0, -1/Sqrt[2]}, {0, 0, 1/Sqrt[2]}}",
   },
   PolyhedronInfo {
     name: "Dodecahedron",
@@ -130,7 +77,29 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     surface_area: "3*Sqrt[5*(5 + 2*Sqrt[5])]",
     circumradius: "(Sqrt[15] + Sqrt[3])/4",
     inradius: "Sqrt[250 + 110*Sqrt[5]]/20",
-    vertices: dodecahedron_vertices,
+    // Two wide vertex rings around the equator (antipodal pairs first),
+    // then the two rings of the top and bottom faces; z is the C5 axis.
+    vertices_src: "{\
+      {-Sqrt[1 + 2/Sqrt[5]], 0, -Sqrt[1/8 - Sqrt[5]/40]}, \
+      {Sqrt[1 + 2/Sqrt[5]], 0, Sqrt[1/8 - Sqrt[5]/40]}, \
+      {-Sqrt[1/8 + Sqrt[5]/40], -(3 + Sqrt[5])/4, -Sqrt[1/8 - Sqrt[5]/40]}, \
+      {-Sqrt[1/8 + Sqrt[5]/40], (3 + Sqrt[5])/4, -Sqrt[1/8 - Sqrt[5]/40]}, \
+      {Sqrt[5/8 + 11*Sqrt[5]/40], -(1 + Sqrt[5])/4, -Sqrt[1/8 - Sqrt[5]/40]}, \
+      {Sqrt[5/8 + 11*Sqrt[5]/40], (1 + Sqrt[5])/4, -Sqrt[1/8 - Sqrt[5]/40]}, \
+      {-Sqrt[5/8 + 11*Sqrt[5]/40], -(1 + Sqrt[5])/4, Sqrt[1/8 - Sqrt[5]/40]}, \
+      {-Sqrt[5/8 + 11*Sqrt[5]/40], (1 + Sqrt[5])/4, Sqrt[1/8 - Sqrt[5]/40]}, \
+      {Sqrt[1/8 + Sqrt[5]/40], -(3 + Sqrt[5])/4, Sqrt[1/8 - Sqrt[5]/40]}, \
+      {Sqrt[1/8 + Sqrt[5]/40], (3 + Sqrt[5])/4, Sqrt[1/8 - Sqrt[5]/40]}, \
+      {-Sqrt[1/2 + Sqrt[5]/10], 0, -Sqrt[5/8 + 11*Sqrt[5]/40]}, \
+      {Sqrt[1/2 + Sqrt[5]/10], 0, Sqrt[5/8 + 11*Sqrt[5]/40]}, \
+      {-Sqrt[1/4 + Sqrt[5]/10], -1/2, Sqrt[5/8 + 11*Sqrt[5]/40]}, \
+      {-Sqrt[1/4 + Sqrt[5]/10], 1/2, Sqrt[5/8 + 11*Sqrt[5]/40]}, \
+      {Sqrt[1/4 + Sqrt[5]/10], -1/2, -Sqrt[5/8 + 11*Sqrt[5]/40]}, \
+      {Sqrt[1/4 + Sqrt[5]/10], 1/2, -Sqrt[5/8 + 11*Sqrt[5]/40]}, \
+      {-Sqrt[1/8 - Sqrt[5]/40], -(1 + Sqrt[5])/4, -Sqrt[5/8 + 11*Sqrt[5]/40]}, \
+      {-Sqrt[1/8 - Sqrt[5]/40], (1 + Sqrt[5])/4, -Sqrt[5/8 + 11*Sqrt[5]/40]}, \
+      {Sqrt[1/8 - Sqrt[5]/40], -(1 + Sqrt[5])/4, Sqrt[5/8 + 11*Sqrt[5]/40]}, \
+      {Sqrt[1/8 - Sqrt[5]/40], (1 + Sqrt[5])/4, Sqrt[5/8 + 11*Sqrt[5]/40]}}",
   },
   PolyhedronInfo {
     name: "Icosahedron",
@@ -141,7 +110,21 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     surface_area: "5*Sqrt[3]",
     circumradius: "Sqrt[10 + 2*Sqrt[5]]/4",
     inradius: "(3*Sqrt[3] + Sqrt[15])/12",
-    vertices: icosahedron_vertices,
+    // The two poles, then the two staggered vertex rings (antipodal
+    // pairs adjacent); z is the C5 axis through the poles.
+    vertices_src: "{\
+      {0, 0, -Sqrt[5/8 + Sqrt[5]/8]}, \
+      {0, 0, Sqrt[5/8 + Sqrt[5]/8]}, \
+      {-Sqrt[1/2 + Sqrt[5]/10], 0, -Sqrt[1/8 + Sqrt[5]/40]}, \
+      {Sqrt[1/2 + Sqrt[5]/10], 0, Sqrt[1/8 + Sqrt[5]/40]}, \
+      {Sqrt[1/4 + Sqrt[5]/10], -1/2, -Sqrt[1/8 + Sqrt[5]/40]}, \
+      {Sqrt[1/4 + Sqrt[5]/10], 1/2, -Sqrt[1/8 + Sqrt[5]/40]}, \
+      {-Sqrt[1/4 + Sqrt[5]/10], -1/2, Sqrt[1/8 + Sqrt[5]/40]}, \
+      {-Sqrt[1/4 + Sqrt[5]/10], 1/2, Sqrt[1/8 + Sqrt[5]/40]}, \
+      {-Sqrt[1/8 - Sqrt[5]/40], -(1 + Sqrt[5])/4, -Sqrt[1/8 + Sqrt[5]/40]}, \
+      {-Sqrt[1/8 - Sqrt[5]/40], (1 + Sqrt[5])/4, -Sqrt[1/8 + Sqrt[5]/40]}, \
+      {Sqrt[1/8 - Sqrt[5]/40], -(1 + Sqrt[5])/4, Sqrt[1/8 + Sqrt[5]/40]}, \
+      {Sqrt[1/8 - Sqrt[5]/40], (1 + Sqrt[5])/4, Sqrt[1/8 + Sqrt[5]/40]}}",
   },
 ];
 
@@ -159,6 +142,85 @@ pub fn unit_volume_src(name: &str) -> Option<&'static str> {
 /// The exact unit-edge surface area of a Platonic solid, as WL source.
 pub fn unit_surface_area_src(name: &str) -> Option<&'static str> {
   find_polyhedron(name).map(|p| p.surface_area)
+}
+
+/// Evaluate a polyhedron's exact vertex list to numeric `[x, y, z]` rows
+/// (for rendering and for deriving the edge list).
+fn numeric_vertices(
+  info: &PolyhedronInfo,
+) -> Result<Vec<[f64; 3]>, InterpreterError> {
+  let evaluated = eval_wl(&format!("N[{}]", info.vertices_src))?;
+  let Expr::List(rows) = &evaluated else {
+    return Err(InterpreterError::EvaluationError(format!(
+      "PolyhedronData: vertex data for {} did not evaluate to a list",
+      info.name
+    )));
+  };
+  let mut vertices = Vec::with_capacity(rows.len());
+  for row in rows.iter() {
+    let Expr::List(coords) = row else {
+      return Err(InterpreterError::EvaluationError(format!(
+        "PolyhedronData: vertex row for {} is not a coordinate triple",
+        info.name
+      )));
+    };
+    let mut point = [0.0; 3];
+    for (slot, coord) in point.iter_mut().zip(coords.iter()) {
+      *slot = match coord {
+        Expr::Real(r) => *r,
+        Expr::Integer(i) => *i as f64,
+        _ => {
+          return Err(InterpreterError::EvaluationError(format!(
+            "PolyhedronData: vertex coordinate for {} is not numeric",
+            info.name
+          )));
+        }
+      };
+    }
+    vertices.push(point);
+  }
+  Ok(vertices)
+}
+
+/// The edges of a polyhedron as 1-based vertex index pairs, in canonical
+/// (lexicographic) order: every vertex pair at minimal (= edge) distance.
+fn edge_indices(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
+  let vertices = numeric_vertices(info)?;
+  let dist = |a: [f64; 3], b: [f64; 3]| -> f64 {
+    let d = [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+  };
+  let mut min_dist = f64::INFINITY;
+  for i in 0..vertices.len() {
+    for j in i + 1..vertices.len() {
+      min_dist = min_dist.min(dist(vertices[i], vertices[j]));
+    }
+  }
+  let mut pairs = Vec::new();
+  for i in 0..vertices.len() {
+    for j in i + 1..vertices.len() {
+      if dist(vertices[i], vertices[j]) < min_dist * (1.0 + 1e-9) {
+        pairs.push(Expr::List(
+          vec![Expr::Integer(i as i128 + 1), Expr::Integer(j as i128 + 1)]
+            .into(),
+        ));
+      }
+    }
+  }
+  Ok(Expr::List(pairs.into()))
+}
+
+/// `Sphere[{0, 0, 0}, r]` with the polyhedron's exact inradius: the sphere
+/// inscribed in the (origin-centered) solid.
+fn insphere(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
+  let center = Expr::List(
+    vec![Expr::Integer(0), Expr::Integer(0), Expr::Integer(0)].into(),
+  );
+  let radius = eval_wl(info.inradius)?;
+  Ok(Expr::FunctionCall {
+    name: "Sphere".to_string(),
+    args: vec![center, radius].into(),
+  })
 }
 
 /// Compute the faces of a convex polyhedron from its vertices: every plane
@@ -257,7 +319,7 @@ fn convex_faces(vertices: &[[f64; 3]]) -> Vec<Vec<usize>> {
 fn polyhedron_graphics(
   info: &PolyhedronInfo,
 ) -> Result<Expr, InterpreterError> {
-  let vertices = (info.vertices)();
+  let vertices = numeric_vertices(info)?;
   let faces = convex_faces(&vertices);
   let polygons: Vec<Expr> = faces
     .iter()
@@ -298,9 +360,12 @@ fn eval_wl(src: &str) -> Result<Expr, InterpreterError> {
 static PROPERTIES: &[&str] = &[
   "Circumradius",
   "EdgeCount",
+  "EdgeIndices",
   "FaceCount",
   "Inradius",
+  "Insphere",
   "SurfaceArea",
+  "VertexCoordinates",
   "VertexCount",
   "Volume",
 ];
@@ -370,6 +435,9 @@ pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "SurfaceArea" => eval_wl(info.surface_area),
         "Circumradius" => eval_wl(info.circumradius),
         "Inradius" => eval_wl(info.inradius),
+        "VertexCoordinates" => eval_wl(info.vertices_src),
+        "EdgeIndices" => edge_indices(info),
+        "Insphere" => insphere(info),
         _ => unevaluated(),
       }
     }
