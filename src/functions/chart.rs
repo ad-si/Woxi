@@ -66,10 +66,44 @@ fn extract_grouped_values(
 #[derive(Clone)]
 pub(crate) struct StyledLabel {
   pub text: String,
+  /// Pre-typeset SVG markup, for a label whose expression carries
+  /// structure the plain text cannot hold (`Subscript[p, 0]` → a shifted
+  /// tspan). `None` for a plain string, which the renderer typesets from
+  /// its own inline box markers instead.
+  pub markup: Option<String>,
   pub bold: bool,
   pub italic: bool,
   pub color: Option<Color>,
   pub font_size: Option<f64>,
+}
+
+impl StyledLabel {
+  /// The label as SVG `<text>` content.
+  pub(crate) fn svg(&self) -> String {
+    self.markup.clone().unwrap_or_else(|| {
+      crate::functions::graphics::box_string_to_svg(&self.text)
+    })
+  }
+}
+
+/// The visible text of SVG markup: tags dropped, entities decoded. Used so a
+/// pre-typeset label still measures by what the reader sees.
+fn svg_markup_visible_text(markup: &str) -> String {
+  let mut out = String::with_capacity(markup.len());
+  let mut in_tag = false;
+  for c in markup.chars() {
+    match c {
+      '<' => in_tag = true,
+      '>' => in_tag = false,
+      c if !in_tag => out.push(c),
+      _ => {}
+    }
+  }
+  out
+    .replace("&lt;", "<")
+    .replace("&gt;", ">")
+    .replace("&quot;", "\"")
+    .replace("&amp;", "&")
 }
 
 /// Parse a plain string or `Style["text", Bold, Italic, color, size]` into a `StyledLabel`.
@@ -77,6 +111,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
   match expr {
     Expr::String(s) => Some(StyledLabel {
       text: s.clone(),
+      markup: None,
       bold: false,
       italic: false,
       color: None,
@@ -84,6 +119,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
     }),
     Expr::Identifier(s) => Some(StyledLabel {
       text: s.clone(),
+      markup: None,
       bold: false,
       italic: false,
       color: None,
@@ -92,13 +128,15 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
     Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
     {
-      let text = match &args[0] {
-        Expr::String(s) => s.clone(),
-        Expr::Identifier(s) => s.clone(),
-        // Any other content (`Row[…]`, a number, …) labels with its
-        // OutputForm text, matching wolframscript.
+      let (text, markup) = match &args[0] {
+        Expr::String(s) => (s.clone(), None),
+        Expr::Identifier(s) => (s.clone(), None),
+        // Any other content (`Row[…]`, a number, …) is typeset the way the
+        // rest of the graphic is, so `Subscript[p, 0]` shows as `p₀` and a
+        // machine real keeps 6 significant figures.
         other => {
-          crate::syntax::format_expr(other, crate::syntax::ExprForm::Output)
+          let markup = crate::functions::graphics::expr_to_svg_markup(other);
+          (svg_markup_visible_text(&markup), Some(markup))
         }
       };
       let mut bold = false;
@@ -120,6 +158,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       }
       Some(StyledLabel {
         text,
+        markup,
         bold,
         italic,
         color,
@@ -129,13 +168,14 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
     // Any other expression (`Row[{"a: ", val}]`, a number, …) labels the
     // plot with its OutputForm text, matching wolframscript.
     other => {
-      let text =
-        crate::syntax::format_expr(other, crate::syntax::ExprForm::Output);
+      let markup = crate::functions::graphics::expr_to_svg_markup(other);
+      let text = svg_markup_visible_text(&markup);
       if text.is_empty() {
         None
       } else {
         Some(StyledLabel {
           text,
+          markup: Some(markup),
           bold: false,
           italic: false,
           color: None,
@@ -2285,7 +2325,7 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
          fill=\"{fill}\"{style_attrs}>{}</text>\n",
-      crate::functions::graphics::box_string_to_svg(&sl.text)
+      sl.svg()
     ));
   }
 

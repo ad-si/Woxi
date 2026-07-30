@@ -293,6 +293,14 @@ fn is_cell_open_false(s: &str) -> bool {
   s == "CellOpen->False"
 }
 
+/// Convert a bare box-expression source (`SubscriptBox[p, 0]`, as carried by
+/// an inline `\!\(\*…\)` segment inside a string) into the evaluable
+/// expression it typesets (`Subscript[p, 0]`). Returns None when `s` is not
+/// one of the recognised typeset box heads.
+pub fn box_source_to_expression(s: &str) -> Option<String> {
+  extract_typeset_box(s.trim())
+}
+
 /// Extract cell content from BoxData[...] or a quoted string.
 fn extract_cell_content(s: &str) -> String {
   let s = s.trim();
@@ -716,7 +724,17 @@ fn extract_rowbox_content(s: &str) -> String {
   for part in parts {
     let part = part.trim();
     if part.starts_with('"') && part.ends_with('"') && part.len() >= 2 {
-      result.push_str(&unescape_code_string(&part[1..part.len() - 1]));
+      let inner = &part[1..part.len() - 1];
+      // A box element whose own text is quoted (`"\"…\""`) is a *string
+      // literal* in the cell, not an operator token. Its named characters
+      // are content, so `\[GreaterEqual]` stays `≥` rather than collapsing
+      // to the ASCII operator `>=` the way a bare `"\[GreaterEqual]"`
+      // element between two operands does.
+      if inner.starts_with("\\\"") {
+        result.push_str(&unescape_string(inner));
+      } else {
+        result.push_str(&unescape_code_string(inner));
+      }
     } else if part.starts_with("RowBox[") {
       result.push_str(&extract_rowbox_content(
         &part[7..part.len().saturating_sub(1)],
@@ -2786,6 +2804,21 @@ Cell["Chapter 2", "Chapter"]
     assert_eq!(extract_cell_content(s), "a!=b");
     let s = r#"BoxData[RowBox[{"a", "\[LessEqual]", "b"}]]"#;
     assert_eq!(extract_cell_content(s), "a<=b");
+    let s = r#"BoxData[RowBox[{"a", "\[GreaterEqual]", "b"}]]"#;
+    assert_eq!(extract_cell_content(s), "a>=b");
+  }
+
+  /// A named character inside a *string literal* is content, so it stays
+  /// Unicode; only a bare operator token between operands collapses to its
+  /// ASCII form. Regression: a Demonstrations label
+  /// `"\!\(\*SubscriptBox[\(H\), \(0\)]\): p \[GreaterEqual] …"` came back
+  /// with `>=` in the middle of the sentence.
+  #[test]
+  fn test_named_character_inside_string_literal_stays_unicode() {
+    let s =
+      r#"BoxData[RowBox[{"f", "[", "\"\<p \[GreaterEqual] q\>\"", "]"}]]"#;
+    assert_eq!(extract_cell_content(s), "f[\"p ≥ q\"]");
+    // The same character as an operator token still becomes `>=`.
     let s = r#"BoxData[RowBox[{"a", "\[GreaterEqual]", "b"}]]"#;
     assert_eq!(extract_cell_content(s), "a>=b");
   }

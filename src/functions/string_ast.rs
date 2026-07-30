@@ -7810,6 +7810,106 @@ pub const BOX_OPEN: char = '\u{f7c9}'; // \(
 pub const BOX_SEP: char = '\u{f7c8}'; // \*
 pub const BOX_CLOSE: char = '\u{f7c0}'; // \)
 
+/// One piece of a string that mixes literal text with inline box segments.
+/// `is_box` marks a piece whose `text` is a bare box-expression source such
+/// as `SubscriptBox[p, 0]`; a literal piece keeps the original characters.
+pub struct InlineBoxSegment {
+  pub text: String,
+  pub is_box: bool,
+}
+
+/// Split a string on the inline linear-syntax box segments a notebook
+/// FrontEnd typesets: `\!\(\*SubscriptBox[\(p\), \(0\)]\)`, stored as the
+/// private-use markers `BOX_START BOX_OPEN BOX_SEP … BOX_CLOSE`. A control
+/// label like `"value to test against \!\(\*SubscriptBox[\(p\), \(0\)]\)"`
+/// splits into the prose and the box expression, so each can be rendered on
+/// its own terms.
+///
+/// A box segment's text has every marker removed and the box-element quotes
+/// unwrapped (`SubscriptBox["p", "0"]` → `SubscriptBox[p, 0]`), which is
+/// both what OutputForm displays inside `DisplayForm[…]` and what the
+/// notebook box-to-InputForm converter accepts.
+///
+/// `\!\(…\)` *without* the `\*` marker is full 2D linear syntax (`\!\(a +
+/// b\)`) rather than a box expression; parsing that needs a linear-syntax
+/// parser, so it stays a literal segment.
+pub fn split_inline_boxes(s: &str) -> Vec<InlineBoxSegment> {
+  let chars: Vec<char> = s.chars().collect();
+  let mut segments: Vec<InlineBoxSegment> = Vec::new();
+  let mut literal = String::new();
+  let mut i = 0;
+  while i < chars.len() {
+    // A box segment is `BOX_START BOX_OPEN BOX_SEP … BOX_CLOSE`, where the
+    // closing marker is the one that balances the opening one.
+    if chars[i] == BOX_START
+      && chars.get(i + 1) == Some(&BOX_OPEN)
+      && chars.get(i + 2) == Some(&BOX_SEP)
+      && let Some(end) = matching_box_close(&chars, i + 1)
+    {
+      if !literal.is_empty() {
+        segments.push(InlineBoxSegment {
+          text: std::mem::take(&mut literal),
+          is_box: false,
+        });
+      }
+      segments.push(InlineBoxSegment {
+        text: strip_box_markup(&chars[i + 3..end]),
+        is_box: true,
+      });
+      i = end + 1;
+      continue;
+    }
+    literal.push(chars[i]);
+    i += 1;
+  }
+  if !literal.is_empty() {
+    segments.push(InlineBoxSegment {
+      text: literal,
+      is_box: false,
+    });
+  }
+  segments
+}
+
+/// Index of the `BOX_CLOSE` that balances the `BOX_OPEN` at `open`, or None
+/// when the segment is unterminated.
+fn matching_box_close(chars: &[char], open: usize) -> Option<usize> {
+  let mut depth = 0usize;
+  for (offset, c) in chars[open..].iter().enumerate() {
+    match *c {
+      BOX_OPEN => depth += 1,
+      BOX_CLOSE => {
+        depth -= 1;
+        if depth == 0 {
+          return Some(open + offset);
+        }
+      }
+      _ => {}
+    }
+  }
+  None
+}
+
+/// Drop the grouping markers inside a box segment and unwrap the quotes
+/// around its elements, keeping `\"` and `\\` escapes as literal characters.
+fn strip_box_markup(chars: &[char]) -> String {
+  let mut out = String::with_capacity(chars.len());
+  let mut i = 0;
+  while i < chars.len() {
+    match chars[i] {
+      BOX_OPEN | BOX_CLOSE | BOX_SEP | BOX_START | '"' => {}
+      '\\' if matches!(chars.get(i + 1), Some('"' | '\\')) => {
+        out.push(chars[i + 1]);
+        i += 2;
+        continue;
+      }
+      c => out.push(c),
+    }
+    i += 1;
+  }
+  out
+}
+
 /// Convert a Wolfram expression to its StandardForm box representation.
 /// Returns a string using private-use Unicode box markers internally.
 /// In InputForm these render as `\!\(\*RowBox[{"..."}]\)`;

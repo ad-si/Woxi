@@ -6795,6 +6795,121 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 1}, \"…\"]"], "Output"]
   }
 
   #[test]
+  fn power_of_a_test_manipulate_typesets_its_labels() {
+    // End-to-end regression for the "Power of a Test about a Binomial
+    // Parameter" Demonstration: the labels are strings carrying inline
+    // linear-syntax boxes (`\!\(\*SubscriptBox[\(p\), \(0\)]\)`), and the
+    // hypothesis setter labels each choice with a two-line `Column`.
+    let code = "Manipulate[\
+      GraphicsRow[{\
+        Plot[Switch[test, 1, \
+            Sum[PDF[BinomialDistribution[n, p], k], {k, 0, b}], 2, \
+            Sum[PDF[BinomialDistribution[n, p], k], {k, b, n}]], \
+          {p, If[test == 1, 0, p0], If[test == 1, p0, 1]}, \
+          AxesOrigin -> {0, 0}, ImageSize -> {275, 300}, \
+          PlotLabel -> Text[Row[{\"\\[Alpha]\", \" = K(\", \
+            Subscript[p, 0], \") = \", \
+            Sum[PDF[BinomialDistribution[n, p0], k], {k, 0, b}]}]]], \
+        Graphics[{Thick, Line[{{0, 0}, {n, 0}}], \
+          {Thick, Red, Line[{{b, -1}, {b, 1}}]}}, \
+          AspectRatio -> 1/2, Axes -> {True, False}, \
+          PlotRange -> {{0, n}, {-2, 1}}]}], \
+      {{test, 1, \"test type\"}, \
+       {1 -> Column[{\"\\!\\(\\*SubscriptBox[\\(H\\), \\(a\\)]\\): \
+p < \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\", \
+          \"\\!\\(\\*SubscriptBox[\\(H\\), \\(0\\)]\\): \
+p \\[GreaterEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}], \
+        2 -> Column[{\"\\!\\(\\*SubscriptBox[\\(H\\), \\(a\\)]\\): \
+p > \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\", \
+          \"\\!\\(\\*SubscriptBox[\\(H\\), \\(0\\)]\\): \
+p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
+       ImageSize -> Tiny}, \
+      {{n, 10, \"number of trials n\"}, 5, 25, 1, \
+       Appearance -> \"Labeled\"}, \
+      {{p0, .5, \"value to test against \
+\\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}, .01, .99, \
+       Appearance -> \"Labeled\"}, \
+      {{b, 4, \"critical region boundary\"}, 0, n, 1, \
+       Appearance -> \"Labeled\"}, \
+      TrackedSymbols -> Manipulate]";
+    let state = instantiate_stored_manipulate(code)
+      .expect("the binomial-power Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must produce the two-panel graphic"
+    );
+
+    // The `\!\(\*SubscriptBox[…]\)` in the slider label typesets, and the
+    // upper bound of `b` follows the initial `n`.
+    let labels: Vec<&str> = state
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { label, .. }
+        | manipulate::ControlState::Discrete { label, .. } => label.as_str(),
+        other => panic!("unexpected control {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      labels,
+      vec![
+        "test type",
+        "number of trials n",
+        "value to test against p₀",
+        "critical region boundary",
+      ]
+    );
+    match &state.controls[3] {
+      manipulate::ControlState::Continuous {
+        current, min, max, ..
+      } => assert_eq!((*current, *min, *max), (4.0, 0.0, 10.0)),
+      other => panic!("expected a continuous slider, got {other:?}"),
+    }
+
+    // Each hypothesis choice is a two-line text label — not an icon, and
+    // not the InputForm of its own `Column[…]`. `\[GreaterEqual]` inside
+    // the string stays `≥`, and `Subscript[H, a]` folds to `Hₐ`.
+    match &state.controls[0] {
+      manipulate::ControlState::Discrete {
+        values,
+        value_labels,
+        value_label_svgs,
+        ..
+      } => {
+        assert_eq!(values, &vec!["1".to_string(), "2".to_string()]);
+        assert_eq!(
+          value_labels,
+          &vec![
+            "Hₐ: p < p₀\nH₀: p ≥ p₀".to_string(),
+            "Hₐ: p > p₀\nH₀: p ≤ p₀".to_string(),
+          ]
+        );
+        assert!(
+          value_label_svgs.iter().all(Option::is_none),
+          "a text column is not a graphical icon"
+        );
+      }
+      other => panic!("expected the hypothesis setter, got {other:?}"),
+    }
+
+    // Switching to the upper-tail test re-renders without error.
+    let mut state = state;
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[0]
+    {
+      *current_index = 1;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
   fn sliding_the_roots_of_cubics_manipulate_builds_widget() {
     // End-to-end regression for the "Sliding the Roots of Cubics"
     // Demonstration: three `Appearance -> "Labeled"` sliders drive an

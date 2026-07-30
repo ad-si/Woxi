@@ -2235,6 +2235,30 @@ mod plot3d {
     }
 
     #[test]
+    fn plot_label_expression_is_typeset() {
+      // A PlotLabel is drawn, not printed: `Subscript[p, 0]` becomes a
+      // shifted tspan and a machine real keeps the 6 significant figures
+      // the notebook front end shows — the "Power of a Test about a
+      // Binomial Parameter" Demonstration titles its plot this way.
+      let svg = export_svg(
+        r#"Plot[x, {x, 0, 1},
+             PlotLabel -> Text[Row[{"\[Alpha]", " = K(", Subscript[p, 0],
+               ") = ", 0.376953125}]]]"#,
+      );
+      assert!(
+        !svg.contains("Subscript["),
+        "the 1D Subscript form leaked into the SVG: {svg}"
+      );
+      assert!(
+        svg.contains(
+          "α = K(p<tspan baseline-shift=\"sub\" font-size=\"70%\">0</tspan>) \
+           = 0.376953"
+        ),
+        "PlotLabel not typeset: {svg}"
+      );
+    }
+
+    #[test]
     fn graphics_plot_label() {
       // PlotLabel also works on plain Graphics, as a centered title.
       let svg = export_svg(
@@ -12960,6 +12984,79 @@ mod manipulate {
     assert!(json.contains(r#""maxCode":"P""#), "json: {json}");
     assert!(json.contains(r#""animationVar":"t""#), "json: {json}");
     assert!(json.contains(r#""animationRunning":false"#), "json: {json}");
+  }
+
+  // A label written in the notebook FrontEnd carries its typesetting as
+  // inline linear syntax inside the string. The control must show the
+  // typeset form, not the private-use box markers.
+  #[test]
+  fn control_label_typesets_inline_box_syntax() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[p0, {{p0, .5, \
+       \"value to test against \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}, \
+       .01, .99}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Continuous { label, .. } => {
+        assert_eq!(label, "value to test against p₀");
+      }
+      other => panic!("expected a continuous control, got {other:?}"),
+    }
+  }
+
+  // `Subscript` folds into Unicode subscripts for the letters Unicode
+  // defines them for, so a hypothesis label reads `Hₐ` rather than `Ha`.
+  #[test]
+  fn control_label_folds_unicode_subscript_letters() {
+    let expr =
+      woxi::interpret_to_expr("Manipulate[x, {{x, 1, Subscript[H, a]}, 0, 1}]")
+        .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Continuous { label, .. } => assert_eq!(label, "Hₐ"),
+      other => panic!("expected a continuous control, got {other:?}"),
+    }
+    // A letter with no subscript glyph (`b`) keeps its plain form.
+    let expr =
+      woxi::interpret_to_expr("Manipulate[x, {{x, 1, Subscript[H, b]}, 0, 1}]")
+        .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Continuous { label, .. } => assert_eq!(label, "Hb"),
+      other => panic!("expected a continuous control, got {other:?}"),
+    }
+  }
+
+  // A choice labelled with a text `Column[…]` is a multi-line *text* label.
+  // Regression: evaluating it produced the typeset echo of its own source,
+  // which the widget then showed as an icon.
+  #[test]
+  fn discrete_choice_column_label_is_multiline_text() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[t, {{t, 1, \"test type\"}, \
+       {1 -> Column[{\"upper\", \"lower\"}], 2 -> Column[{\"left\", \
+       \"right\"}]}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Discrete {
+        values,
+        value_labels,
+        value_label_svgs,
+        ..
+      } => {
+        assert_eq!(values, &vec!["1".to_string(), "2".to_string()]);
+        assert_eq!(
+          value_labels,
+          &vec!["upper\nlower".to_string(), "left\nright".to_string()]
+        );
+        assert!(value_label_svgs.iter().all(Option::is_none));
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
   }
 
   #[test]

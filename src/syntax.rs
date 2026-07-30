@@ -6911,8 +6911,14 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
     Expr::BigFloat(digits, prec) => format_bigfloat(digits, *prec),
     Expr::String(s) => {
       if is_output {
-        // Strings containing Wolfram box-syntax Unicode markers render as
-        // DisplayForm[<box expression>] in OutputForm (matching wolframscript).
+        // A string that opens with a box segment renders as
+        // DisplayForm[<box expression>] in OutputForm (matching
+        // wolframscript), with any trailing prose kept.
+        //
+        // A box segment further into the string is deliberately left alone:
+        // the SVG label renderer (`box_string_to_svg`) typesets those
+        // markers into sub/superscript tspans, and it reads the label text
+        // that this function produces.
         if s.starts_with(crate::functions::string_ast::BOX_START) {
           return box_string_to_display_form(s);
         }
@@ -14151,42 +14157,18 @@ pub fn format_message_with_expr(
 /// `DisplayForm[<box>]` representation used in OutputForm.
 /// The box expression is shown with quoted atoms unquoted.
 fn box_string_to_display_form(s: &str) -> String {
-  use crate::functions::string_ast::{BOX_CLOSE, BOX_OPEN, BOX_SEP, BOX_START};
-  // Strip the Unicode markers: BOX_START BOX_OPEN BOX_SEP <content> BOX_CLOSE
-  let inner = s
-    .trim_start_matches(BOX_START)
-    .trim_start_matches(BOX_OPEN)
-    .trim_start_matches(BOX_SEP)
-    .trim_end_matches(BOX_CLOSE);
-  // The inner text is the InputForm rendering of a box AST: every box
-  // element string is wrapped in `"…"` with embedded `"` and `\`
-  // escaped as `\"` / `\\`. The OutputForm display strips the outer
-  // wrapping quotes (so `"G"` shows as `G`) but converts escaped
-  // sequences back to their literal form (so `"\"Standard\""` shows
-  // as `"Standard"`).
-  let chars: Vec<char> = inner.chars().collect();
-  let mut result = String::with_capacity(inner.len());
-  let mut i = 0;
-  while i < chars.len() {
-    match chars[i] {
-      '"' => {
-        // Outer quote delimiter — skip it.
+  // A box segment displays as `DisplayForm[<box expression>]`; the prose
+  // around it (`"value to test against \!\(\*SubscriptBox[…]\)"`) stays put.
+  crate::functions::string_ast::split_inline_boxes(s)
+    .into_iter()
+    .map(|seg| {
+      if seg.is_box {
+        format!("DisplayForm[{}]", seg.text)
+      } else {
+        seg.text
       }
-      '\\' if i + 1 < chars.len() => {
-        // Unescape `\"` and `\\` back to their literal characters.
-        let next = chars[i + 1];
-        if next == '"' || next == '\\' {
-          result.push(next);
-          i += 2;
-          continue;
-        }
-        result.push('\\');
-      }
-      c => result.push(c),
-    }
-    i += 1;
-  }
-  format!("DisplayForm[{}]", result)
+    })
+    .collect()
 }
 
 /// Top-level output: like expr_to_output but with special handling for

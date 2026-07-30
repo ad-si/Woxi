@@ -7285,6 +7285,33 @@ mod display_form {
     );
   }
 
+  // A string opening with an inline `\!\(\*…\)` box segment displays as
+  // `DisplayForm[<box>]` in OutputForm. Regression: everything after the
+  // segment used to be swallowed into the DisplayForm.
+  #[test]
+  fn inline_box_segment_keeps_the_prose_after_it() {
+    let r = woxi::interpret_with_stdout(
+      r#"Print["\!\(\*SubscriptBox[\(p\), \(0\)]\) b"]"#,
+    )
+    .unwrap();
+    assert_eq!(r.stdout.trim_end(), "DisplayForm[SubscriptBox[p, 0]] b");
+    // The string itself is untouched — the markers are still four
+    // characters of content.
+    assert_eq!(
+      interpret(r#"StringLength["\!\(\*SubscriptBox[\(p\), \(0\)]\) b"]"#)
+        .unwrap(),
+      "28"
+    );
+    // InputForm keeps the raw escapes.
+    assert_eq!(
+      interpret(
+        r#"ToString["\!\(\*SubscriptBox[\(p\), \(0\)]\) b", InputForm]"#
+      )
+      .unwrap(),
+      r#""\!\(\*SubscriptBox[\(p\), \(0\)]\) b""#
+    );
+  }
+
   #[test]
   fn display_form_row_box() {
     assert_eq!(

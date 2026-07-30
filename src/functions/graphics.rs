@@ -4837,16 +4837,16 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         "PlotLabel" => {
           // Any expression can label the plot (`Row[…]`, a string, a
-          // symbol); its OutputForm text becomes the centered title.
+          // symbol). It is typeset like the rest of the graphic, so machine
+          // reals show 6 significant figures and `Subscript`/`Superscript`
+          // (and a string's inline linear-syntax boxes) become shifted
+          // tspans — the label is drawn, not printed.
           match replacement.as_ref() {
             Expr::Identifier(s) if s == "None" => {}
             other => {
-              let text = crate::syntax::format_expr(
-                other,
-                crate::syntax::ExprForm::Output,
-              );
-              if !text.is_empty() {
-                plot_label = Some(text);
+              let markup = expr_to_svg_markup(other);
+              if !markup.is_empty() {
+                plot_label = Some(markup);
               }
             }
           }
@@ -5040,16 +5040,13 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // PlotLabel: centered above the drawing area, in the reserved strip. The
-  // label may embed Wolfram linear-syntax boxes (`"AU\!\(\*SuperscriptBox[…"`)
-  // — `box_string_to_svg` renders those as sub/superscript tspans and is a
-  // plain SVG-escape for ordinary text.
+  // PlotLabel: centered above the drawing area, in the reserved strip. It
+  // arrives already typeset as SVG markup (sub/superscript tspans included).
   if let Some(label) = &plot_label {
     let cx = margin_left + svg_w / 2.0;
     svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"17\" text-anchor=\"middle\" \
-       font-family=\"sans-serif\" font-size=\"16\" fill=\"#333333\">{}</text>\n",
-      box_string_to_svg(label)
+       font-family=\"sans-serif\" font-size=\"16\" fill=\"#333333\">{label}</text>\n",
     ));
   }
 
@@ -6395,7 +6392,10 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
 
   match expr {
     // ── Atoms ──
-    Expr::String(s) => svg_escape(s),
+    // A string may embed Wolfram linear-syntax boxes
+    // (`"area = 0.68 \!\(\*SuperscriptBox[\(AU\), \(2\)]\)"`); those typeset
+    // into sub/superscript tspans. For ordinary text this is a plain escape.
+    Expr::String(s) => box_string_to_svg(s),
     Expr::Identifier(s) => svg_escape(s),
     Expr::BigFloat(digits, prec) => {
       // Graphical output shows `prec` significant digits with ×10^exp for large/small numbers
@@ -6798,6 +6798,24 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           if args.len() == 1 =>
         {
           expr_to_svg_markup(&args[0])
+        }
+
+        // Subscript[base, i, …] / Superscript[base, e, …] typeset as
+        // shifted tspans — a Demonstrations plot label reads
+        // `Row[{α, " = ", K, "(", Subscript[p, 0], ")"}]`, which must show
+        // `p₀`, not the 1D `Subscript[p, 0]` that OutputForm keeps.
+        "Subscript" | "Superscript" if args.len() >= 2 => {
+          let shift = if name == "Subscript" { "sub" } else { "super" };
+          let scripts: String = args[1..]
+            .iter()
+            .map(expr_to_svg_markup)
+            .collect::<Vec<_>>()
+            .join(",");
+          format!(
+            "{}<tspan baseline-shift=\"{shift}\" font-size=\"70%\">{}</tspan>",
+            expr_to_svg_markup(&args[0]),
+            scripts
+          )
         }
 
         // Row[{a, b, …}] concatenates its parts; Row[{…}, sep] joins
@@ -14308,12 +14326,75 @@ fn manipulate_label_runs(expr: &Expr, italic: bool) -> Vec<LabelRun> {
           .collect(),
         _ => output_run(italic),
       },
+      // Column[{a, b, …}] — the same, but one part per line. Demonstrations
+      // label a hypothesis-test setter with a two-line column.
+      "Column" => match args.first() {
+        Some(Expr::List(parts)) => parts
+          .iter()
+          .enumerate()
+          .flat_map(|(i, p)| {
+            let mut runs = Vec::new();
+            if i > 0 {
+              runs.push(LabelRun {
+                text: "\n".to_string(),
+                italic,
+              });
+            }
+            runs.extend(manipulate_label_runs(p, italic));
+            runs
+          })
+          .collect(),
+        _ => output_run(italic),
+      },
       "Subscript" => script_runs(args, italic, false),
       "Superscript" => script_runs(args, italic, true),
       _ => output_run(italic),
     },
+    // A label written in the notebook FrontEnd carries its typeset bits as
+    // inline linear syntax inside the string: `"value to test against
+    // \!\(\*SubscriptBox[\(p\), \(0\)]\)"`. Render each box segment as the
+    // expression it typesets so the widget shows `value to test against p₀`
+    // rather than the private-use box markers.
+    Expr::String(s) => {
+      inline_box_label_runs(s, italic).unwrap_or_else(|| output_run(italic))
+    }
     _ => output_run(italic),
   }
+}
+
+/// Label runs for a string with inline `\!\(\*…\)` box segments: the prose
+/// stays literal and each box segment is converted to the expression it
+/// typesets and rendered by the same label machinery (so `SubscriptBox[p, 0]`
+/// folds into the Unicode `p₀`). Returns None when the string has no box
+/// segment, leaving plain strings on the normal path.
+fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
+  let segments = crate::functions::string_ast::split_inline_boxes(s);
+  if !segments.iter().any(|seg| seg.is_box) {
+    return None;
+  }
+  let mut runs = Vec::new();
+  for seg in segments {
+    if !seg.is_box {
+      runs.push(LabelRun {
+        text: seg.text,
+        italic,
+      });
+      continue;
+    }
+    let rendered = crate::notebook::box_source_to_expression(&seg.text)
+      .and_then(|code| crate::interpret_to_expr(&code).ok())
+      .map(|expr| manipulate_label_runs(&expr, italic));
+    match rendered {
+      // An unrecognised box head keeps its source text rather than
+      // vanishing from the label.
+      None => runs.push(LabelRun {
+        text: seg.text,
+        italic,
+      }),
+      Some(box_runs) => runs.extend(box_runs),
+    }
+  }
+  Some(runs)
 }
 
 /// Build the runs for a `Subscript`/`Superscript`: the base rendered in the
@@ -14405,8 +14486,34 @@ fn unicode_script_char(c: char, superscript: bool) -> Option<char> {
       '-' => '\u{207B}',
       '(' => '\u{207D}',
       ')' => '\u{207E}',
-      'n' => '\u{207F}',
+      '=' => '\u{207C}',
+      // Unicode's modifier-letter superscripts. `q` is the one Latin
+      // letter with no superscript form.
+      'a' => '\u{1D43}',
+      'b' => '\u{1D47}',
+      'c' => '\u{1D9C}',
+      'd' => '\u{1D48}',
+      'e' => '\u{1D49}',
+      'f' => '\u{1DA0}',
+      'g' => '\u{1D4D}',
+      'h' => '\u{02B0}',
       'i' => '\u{2071}',
+      'j' => '\u{02B2}',
+      'k' => '\u{1D4F}',
+      'l' => '\u{02E1}',
+      'm' => '\u{1D50}',
+      'n' => '\u{207F}',
+      'o' => '\u{1D52}',
+      'p' => '\u{1D56}',
+      'r' => '\u{02B3}',
+      's' => '\u{02E2}',
+      't' => '\u{1D57}',
+      'u' => '\u{1D58}',
+      'v' => '\u{1D5B}',
+      'w' => '\u{02B7}',
+      'x' => '\u{02E3}',
+      'y' => '\u{02B8}',
+      'z' => '\u{1DBB}',
       _ => return None,
     }
   } else {
@@ -14425,6 +14532,26 @@ fn unicode_script_char(c: char, superscript: bool) -> Option<char> {
       '-' => '\u{208B}',
       '(' => '\u{208D}',
       ')' => '\u{208E}',
+      '=' => '\u{208C}',
+      // Unicode only defines subscripts for these Latin letters; the rest
+      // (b, c, d, …) fall back to the plain character.
+      'a' => '\u{2090}',
+      'e' => '\u{2091}',
+      'h' => '\u{2095}',
+      'i' => '\u{1D62}',
+      'j' => '\u{2C7C}',
+      'k' => '\u{2096}',
+      'l' => '\u{2097}',
+      'm' => '\u{2098}',
+      'n' => '\u{2099}',
+      'o' => '\u{2092}',
+      'p' => '\u{209A}',
+      'r' => '\u{1D63}',
+      's' => '\u{209B}',
+      't' => '\u{209C}',
+      'u' => '\u{1D64}',
+      'v' => '\u{1D65}',
+      'x' => '\u{2093}',
       _ => return None,
     }
   };
@@ -14456,8 +14583,9 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
         _ => return None,
       };
       let init = head_items.get(1).cloned();
+      // A string label still goes through the label renderer: it may carry
+      // inline `\!\(\*SubscriptBox[…]\)` typesetting.
       let lbl = match head_items.get(2) {
-        Some(Expr::String(s)) => plain_run(s.clone()),
         Some(other) => manipulate_label_runs(other, false),
         None => plain_run(n.clone()),
       };
@@ -14973,6 +15101,30 @@ fn discrete_choice_label(expr: &Expr) -> String {
   }
 }
 
+/// Heads that arrange or annotate *text*, so a label built from them is
+/// rendered by `manipulate_label_runs` rather than as a graphical icon.
+fn is_text_layout_head(name: &str) -> bool {
+  matches!(
+    name,
+    "Row"
+      | "Column"
+      | "Grid"
+      | "TableForm"
+      | "TextGrid"
+      | "Style"
+      | "Text"
+      | "Framed"
+      | "Labeled"
+      | "Tooltip"
+      | "DisplayForm"
+      | "TraditionalForm"
+      | "StandardForm"
+      | "Subscript"
+      | "Superscript"
+      | "Subsuperscript"
+  )
+}
+
 /// Rendered SVG for a discrete-choice label that is a graphic (e.g.
 /// `"+" -> myIcon[2]` in a Demonstrations crosshair picker). A held
 /// `Graphics[…]` call or a call producing one is evaluated; anything
@@ -14996,6 +15148,12 @@ fn discrete_choice_label_svg(label: &Expr) -> Option<String> {
     // function like `myIcon[2]` — to SVG. A call producing an `Image`
     // (e.g. `Show[ColorData[name, "Image"], ImageSize -> 100]`) recurses
     // into the raster arm above.
+    //
+    // Text layout heads never become icons: `Column[{"…", "…"}]` has no
+    // graphical meaning, and evaluating it only yields the typeset echo of
+    // its own source — which would put the label's InputForm on the button.
+    // `manipulate_label_runs` renders these structurally instead.
+    Expr::FunctionCall { name, .. } if is_text_layout_head(name) => None,
     Expr::FunctionCall { .. } => {
       let code = crate::syntax::expr_to_input_form(label);
       match crate::interpret_with_stdout(&code) {
