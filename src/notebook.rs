@@ -569,27 +569,33 @@ fn render_text_element(s: &str) -> String {
     }
   }
 
-  // Inline `Cell[...]` elements: math cells (`Cell[BoxData[…],
-  // "InlineMath"]` and friends) carry real content — render their boxes as
-  // text so prose like "the equation of a parabola is y^2 = 2p x" keeps its
-  // formulas. All other inline cells are the attached "more info" opener
-  // buttons in Demonstrations templates — they carry no textual content,
-  // so drop them.
+  // Inline `Cell[...]` elements inside a TextData run come in two kinds.
+  // Styled inline content — `Cell[BoxData[FormBox[…]], "InlineMath"]` and
+  // friends — carries real prose (math embedded in a sentence) and must be
+  // rendered, otherwise the surrounding text is left with holes. Unstyled
+  // inline cells are the attached "more info" opener buttons in
+  // Demonstrations templates (PaneSelectorBox/TemplateBox chrome) — they
+  // carry no textual content, so drop them.
   if let Some(rest) = s.strip_prefix("Cell[")
     && let Ok((inner, _)) = find_matching_bracket(rest)
   {
-    let args = split_top_level_commas(inner);
-    let is_inline_math = args.iter().skip(1).any(|a| {
-      let t = a.trim().trim_matches('"');
-      matches!(t, "InlineMath" | "InlineFormula" | "InlineCell")
+    let parts = split_top_level_commas(inner);
+    let style = parts.iter().skip(1).find_map(|p| {
+      let t = p.trim();
+      let is_option = t.contains("->") || t.contains(":>");
+      (!is_option && t.starts_with('"') && t.ends_with('"') && t.len() >= 2)
+        .then(|| &t[1..t.len() - 1])
     });
-    if is_inline_math && let Some(first) = args.first() {
-      return extract_cell_content(first.trim());
-    }
-    return String::new();
-  }
-  if s.starts_with("Cell[") {
-    return String::new();
+    return match style {
+      Some(
+        "InlineMath" | "InlineFormula" | "InlineCell" | "InlineCode"
+        | "InlineInput" | "InlineOutput",
+      ) => parts
+        .first()
+        .map(|c| extract_cell_content(c.trim()))
+        .unwrap_or_default(),
+      _ => String::new(),
+    };
   }
 
   // Nested RowBox / typeset boxes.
@@ -1693,6 +1699,63 @@ Cell["A subitem", "Subitem"]
 
     let reparsed = parse_notebook(&serialized).unwrap();
     assert_eq!(reparsed.cells.len(), 4);
+  }
+
+  #[test]
+  fn test_textdata_inline_math_cell_renders_content() {
+    // Inline `Cell[…, "InlineMath"]` elements inside a TextData run carry
+    // real prose (math embedded in a sentence) and must be rendered, not
+    // dropped like the Demonstrations "more info" chrome buttons.
+    let nb = r#"Notebook[{
+Cell[TextData[{
+ "To find ",
+ Cell[BoxData[
+  FormBox[
+   RowBox[{"P", "(",
+    RowBox[{"X", "\[LessEqual]", "x"}], ")"}], TraditionalForm]],
+  "InlineMath",ExpressionUUID->"c04c6311-9407-4855-8351-984bf610bb65"],
+ " with mean ",
+ Cell[BoxData[
+  FormBox["\[Mu]", TraditionalForm]], "InlineMath",ExpressionUUID->
+  "2769c287-5751-4749-947c-fcdd1da9d653"],
+ "."
+}], "Text"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(cell.style, CellStyle::Text);
+        assert_eq!(cell.content, "To find P(X<=x) with mean \u{03bc}.");
+      }
+      _ => panic!("Expected single cell"),
+    }
+  }
+
+  #[test]
+  fn test_textdata_chrome_button_cell_still_dropped() {
+    // Unstyled inline cells (the Demonstrations "more info" opener
+    // buttons) carry no textual content and stay dropped.
+    let nb = r#"Notebook[{
+Cell[TextData[{
+ "Caption",
+ Cell[BoxData[
+  PaneSelectorBox[{True->
+   TemplateBox[{"CaptionCells"},
+    "MoreInfoOpenerButtonTemplate"]}, Dynamic[
+    CurrentValue[
+     EvaluationNotebook[], {TaggingRules, "ResourceCreateNotebook"}]],
+   ImageSize->Automatic]],ExpressionUUID->
+  "4c32c08b-d967-45c6-8920-0c21a5734cd7"]
+}], "Section"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(cell.style, CellStyle::Section);
+        assert_eq!(cell.content, "Caption");
+      }
+      _ => panic!("Expected single cell"),
+    }
   }
 
   #[test]

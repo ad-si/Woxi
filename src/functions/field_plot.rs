@@ -990,6 +990,8 @@ fn contour_plot_equations(
           color: (0x40, 0x40, 0x40),
           is_scatter: false,
           filling: crate::syntax::SeriesFilling::None,
+          fill_color: None,
+          fill_opacity: None,
         });
       }
     }
