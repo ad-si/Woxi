@@ -6862,6 +6862,50 @@ Cell[BoxData[
   }
 
   #[test]
+  fn quicksort_manipulate_builds_all_four_controls() {
+    // End-to-end regression for the "Quicksort versus Selection Sort"
+    // Demonstration. Its fourth control is a custom one — `{{li, init, ""},
+    // Button[…] &}` — which used to be unrecognised, and an unrecognised
+    // control makes the whole widget fail to build.
+    let code = "Manipulate[\
+      Row[{t, v, k, Length[li]}], \
+      {{t, \"quicksort\", \"sorting method\"}, \
+        {\"quicksort\", \"selection sort\"}}, \
+      {{v, \"bars\", \"view\"}, {\"bars\", \"squares\"}}, \
+      {{k, 0, \"step\"}, 0, If[t === \"quicksort\", 12, 50], 1, \
+        Appearance -> \"Labeled\"}, \
+      {{li, {3, 1, 2}, \"\"}, \
+        Button[\"Generate new list\", k = 0; li = {5, 4, 6}] &}, \
+      SaveDefinitions -> True]";
+    let state = instantiate_stored_manipulate(code)
+      .expect("the quicksort Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+
+    let kinds: Vec<&str> = state
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { .. } => "continuous",
+        manipulate::ControlState::Discrete { .. } => "discrete",
+        manipulate::ControlState::Button { .. } => "button",
+        other => panic!("unexpected control {other:?}"),
+      })
+      .collect();
+    assert_eq!(kinds, vec!["discrete", "discrete", "continuous", "button"]);
+    match &state.controls[3] {
+      manipulate::ControlState::Button { label, action, .. } => {
+        assert_eq!(label, "Generate new list");
+        assert_eq!(action, "k = 0; li = {5, 4, 6}");
+      }
+      other => panic!("expected the reset button, got {other:?}"),
+    }
+  }
+
+  #[test]
   fn sphericon_nets_manipulate_draws_every_face() {
     // End-to-end regression for the "Nets for Polyhedral Approximations of
     // the Sphericon" Demonstration. Its controls sit in a `Row` of

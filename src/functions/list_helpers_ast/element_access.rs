@@ -803,16 +803,26 @@ fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
         let real_start = if start < 0 { len + start + 1 } else { start };
         let real_end = if end < 0 { len + end + 1 } else { end };
         // An adjacent reversed range (end == start - step) is an empty
-        // take; anything further reversed or out of range is an error
+        // take; anything further reversed or out of range is an error.
+        // An empty span may sit one past either end — `Take[list, {n + 1,
+        // -1}]` on a list of n elements is `{}`, which is how a quicksort
+        // partition asks for "everything after the last pivot".
         let adjacent_empty = step != 0 && real_end == real_start - step;
         let in_range = real_start >= 1
           && real_end >= 1
           && real_start <= len
           && real_end <= len;
+        let empty_in_range = real_start >= 1
+          && real_start <= len + 1
+          && real_end >= 0
+          && real_end <= len;
         let proper = step != 0
           && ((step > 0 && real_end >= real_start)
             || (step < 0 && real_end <= real_start));
-        if in_range && step != 0 && (proper || adjacent_empty) {
+        if step != 0
+          && ((in_range && proper)
+            || (adjacent_empty && (in_range || empty_in_range)))
+        {
           let mut result = Vec::new();
           let mut i = real_start;
           while (step > 0 && i <= real_end) || (step < 0 && i >= real_end) {
@@ -978,8 +988,10 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     if spec.len() == 2
       && let (Some(m), Some(n_end)) = (endpoint(&spec[0]), endpoint(&spec[1]))
     {
-      let real_start = if m > 0 { m } else { len + m + 1 };
-      let real_end = if n_end > 0 { n_end } else { len + n_end + 1 };
+      // Only a *negative* endpoint counts from the end; `0` stays `0`, so
+      // `Drop[list, {1, 0}]` is the empty range that drops nothing.
+      let real_start = if m < 0 { len + m + 1 } else { m };
+      let real_end = if n_end < 0 { len + n_end + 1 } else { n_end };
       // The adjacent reversed range drops nothing; anything further
       // reversed or out of range is an error
       if real_end == real_start - 1 {

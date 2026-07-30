@@ -13236,6 +13236,14 @@ enum ParsedControl {
   /// passed live in the binding set so an interactive display element (a
   /// `Checkbox`, `Setter`, …) can write back into it.
   State { name: String, value: String },
+  /// A custom control — `{{u, uinit, ulbl}, func}`, where `func` builds the
+  /// widget. Both parts are needed: the widget row *and* a mutable binding
+  /// for `u`, since the widget's action writes back into it.
+  StateWithControl {
+    name: String,
+    value: String,
+    control: ManipulateControl,
+  },
 }
 
 /// Attempt to extract a `ManipulateSpec` from a held `Manipulate[…]` or
@@ -13545,6 +13553,17 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
           }
         }
         state.push((name, value));
+      }
+      ParsedControl::StateWithControl {
+        name,
+        value,
+        control,
+      } => {
+        if let Some((_, orig_form, synth)) = &rename {
+          renames.push((orig_form.clone(), synth.clone()));
+        }
+        state.push((name, value));
+        controls.push(control);
       }
     }
   }
@@ -14253,7 +14272,9 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     } => (control, enabled, animate),
     // A hidden control (`ControlType -> None` / Locator) has no widget and
     // nothing to display on its own — fall back to the plain output path.
-    ParsedControl::Fixed { .. } | ParsedControl::State { .. } => return None,
+    ParsedControl::Fixed { .. }
+    | ParsedControl::State { .. }
+    | ParsedControl::StateWithControl { .. } => return None,
   };
   // Display the bound variable so the control's effect is visible.
   let body_code = control.name().to_string();
@@ -15071,6 +15092,59 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
         animate: None,
       });
     }
+  }
+
+  // Custom-control form: `{{u, uinit, ulbl}, func}`, where `func` builds
+  // the widget rather than describing a range. Wolfram applies it to the
+  // variable's `Dynamic`; the Demonstrations idiom is a `Button` that
+  // resets the variable, so apply the function and take the widget it
+  // returns. The variable itself becomes live state so the action can
+  // write into it.
+  // The spec list arrives with a bare `&` function wrapped in `Dynamic`.
+  let custom_builder = match bounds.first() {
+    Some(Expr::Function { .. }) => bounds.first().copied(),
+    Some(Expr::FunctionCall { name: n, args: a })
+      if n == "Dynamic"
+        && a.len() == 1
+        && matches!(&a[0], Expr::Function { .. }) =>
+    {
+      Some(&a[0])
+    }
+    _ => None,
+  };
+  if bounds.len() == 1
+    && let Some(Expr::Function { body }) = custom_builder
+    // Substitute the slot rather than applying the function: `Button` holds
+    // its action, and evaluating here would *run* the reset instead of
+    // storing it.
+    && let built = crate::syntax::substitute_slots(
+      body,
+      &[Expr::FunctionCall {
+        name: "Dynamic".to_string(),
+        args: vec![Expr::Identifier(name.clone())].into(),
+      }],
+    )
+    && let Expr::FunctionCall {
+      name: built_name,
+      args: built_args,
+    } = &built
+    && built_name == "Button"
+    && built_args.len() >= 2
+  {
+    let button_runs = manipulate_label_runs(&built_args[0], false);
+    let value = explicit_initial
+      .as_ref()
+      .map(crate::syntax::expr_to_input_form)
+      .unwrap_or_else(|| "Null".to_string());
+    return Some(ParsedControl::StateWithControl {
+      name,
+      value,
+      control: ManipulateControl::Button {
+        label: flatten_label_runs(&button_runs),
+        label_runs: button_runs,
+        action: crate::syntax::expr_to_input_form(&built_args[1]),
+      },
+    });
   }
 
   // Colour form: `{{u, uinit, ulbl}, colour}` — a single colour where the

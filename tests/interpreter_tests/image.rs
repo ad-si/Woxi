@@ -7023,6 +7023,40 @@ mod color_data_gradients {
     );
   }
 
+  // `ColorData["HTML", name]` is the CSS colour of that name — the scheme a
+  // Demonstrations palette reaches for. Regression: it stayed unevaluated
+  // and reported the head as unimplemented.
+  #[test]
+  fn color_data_html_named_colors() {
+    clear_state();
+    assert_eq!(
+      interpret("ColorData[\"HTML\", \"SlateBlue\"]").unwrap(),
+      "RGBColor[0.4156862745098039, 0.3529411764705882, 0.803921568627451]"
+    );
+    assert_eq!(
+      interpret("ColorData[\"HTML\", \"Tomato\"]").unwrap(),
+      "RGBColor[1., 0.38823529411764707, 0.2784313725490196]"
+    );
+    // An exactly-zero channel stays exact, as in wolframscript.
+    assert_eq!(
+      interpret("ColorData[\"HTML\", \"Aqua\"]").unwrap(),
+      "RGBColor[0, 1., 1.]"
+    );
+    assert_eq!(
+      interpret("ColorData[\"HTML\", \"Black\"]").unwrap(),
+      "RGBColor[0, 0, 0]"
+    );
+    // The lookup ignores case, and an unknown name stays unevaluated.
+    assert_eq!(
+      interpret("ColorData[\"HTML\", \"slateblue\"]").unwrap(),
+      "RGBColor[0.4156862745098039, 0.3529411764705882, 0.803921568627451]"
+    );
+    assert_eq!(
+      interpret("ColorData[\"HTML\", \"NotAColor\"]").unwrap(),
+      "ColorData[HTML, NotAColor]"
+    );
+  }
+
   #[test]
   fn blend_named_scheme_interpolates_control_points() {
     clear_state();

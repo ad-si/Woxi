@@ -52,3 +52,15 @@ ColorDataFunction
 $ wo 'Blend["TemperatureMap", 0]'
 RGBColor[0.178927, 0.305394, 0.933501]
 ```
+
+The `"HTML"` scheme is the CSS colour names:
+
+```scrut
+$ wo 'ColorData["HTML", "SlateBlue"]'
+RGBColor[0.4156862745098039, 0.3529411764705882, 0.803921568627451]
+```
+
+```scrut
+$ wo 'ColorData["HTML", "Aqua"]'
+RGBColor[0, 1., 1.]
+```

@@ -51,3 +51,25 @@ $ wo 'Take[{1, 2, 3, 4, 5}, 2;;4]'
 $ wo 'Take[{1, 2, 3, 4, 5}, 1;;-1;;2]'
 {1, 3, 5}
 ```
+
+An empty span may sit one past either end, which is how a partition asks
+for "everything after the last element":
+
+```scrut
+$ wo 'Take[{1, 2, 3}, {4, -1}]'
+{}
+```
+
+```scrut
+$ wo 'Take[{1, 2, 3}, {1, 0}]'
+{}
+```
+
+Anything further out is still an error:
+
+```scrut
+$ wo 'Take[{1, 2, 3}, {5, -1}]'
+
+Take::take: Cannot take positions 5 through -1 in {1, 2, 3}.
+Take[{1, 2, 3}, {5, -1}]
+```

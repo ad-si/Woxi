@@ -4766,6 +4766,51 @@ mod take_multi_dim {
 mod take_drop_span {
   use super::*;
 
+  // An empty span may sit one past either end: `Take[list, {n + 1, -1}]`
+  // on a list of n elements is `{}`, which is how a quicksort partition
+  // asks for "everything after the last pivot". Regression: those raised
+  // `Take::take` and stalled the "Quicksort versus Selection Sort"
+  // Demonstration.
+  #[test]
+  fn take_empty_span_at_the_ends() {
+    assert_eq!(interpret("Take[{1, 2, 3}, {4, -1}]").unwrap(), "{}");
+    assert_eq!(interpret("Take[{1, 2, 3}, {1, 0}]").unwrap(), "{}");
+    assert_eq!(interpret("Take[{1, 2, 3}, {4, 3}]").unwrap(), "{}");
+    assert_eq!(interpret("Take[{1, 2, 3}, {2, 1}]").unwrap(), "{}");
+    assert_eq!(interpret("Take[{1, 2, 3}, {1, -4}]").unwrap(), "{}");
+    // A span further out, or reversed by more than one, is still an error.
+    assert_eq!(
+      interpret("Take[{1, 2, 3}, {5, -1}]").unwrap(),
+      "Take[{1, 2, 3}, {5, -1}]"
+    );
+    assert_eq!(
+      interpret("Take[{1, 2, 3}, {4, 0}]").unwrap(),
+      "Take[{1, 2, 3}, {4, 0}]"
+    );
+    assert_eq!(
+      interpret("Take[{1, 2, 3}, {-1, -3}]").unwrap(),
+      "Take[{1, 2, 3}, {-1, -3}]"
+    );
+    // Ordinary spans are unchanged.
+    assert_eq!(interpret("Take[{1, 2, 3}, {2, -1}]").unwrap(), "{2, 3}");
+    assert_eq!(interpret("Take[{1, 2, 3}, {2, -2}]").unwrap(), "{2}");
+  }
+
+  // `Drop` mirrors it: an empty span drops nothing. Only a *negative*
+  // endpoint counts from the end, so `{1, 0}` is the empty range.
+  #[test]
+  fn drop_empty_span_at_the_ends() {
+    assert_eq!(interpret("Drop[{1, 2, 3}, {1, 0}]").unwrap(), "{1, 2, 3}");
+    assert_eq!(interpret("Drop[{1, 2, 3}, {4, -1}]").unwrap(), "{1, 2, 3}");
+    assert_eq!(interpret("Drop[{1, 2, 3}, {2, 1}]").unwrap(), "{1, 2, 3}");
+    assert_eq!(
+      interpret("Drop[{1, 2, 3}, {5, -1}]").unwrap(),
+      "Drop[{1, 2, 3}, {5, -1}]"
+    );
+    assert_eq!(interpret("Drop[{1, 2, 3}, {2, -2}]").unwrap(), "{1, 3}");
+    assert_eq!(interpret("Drop[{1, 2, 3}, {-3, -1}]").unwrap(), "{}");
+  }
+
   #[test]
   fn take_span() {
     assert_eq!(

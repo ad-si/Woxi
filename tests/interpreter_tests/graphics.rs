@@ -13110,6 +13110,39 @@ mod manipulate {
     assert!(json.contains(r#""animationRunning":false"#), "json: {json}");
   }
 
+  // `{{u, uinit, ulbl}, func}` is a custom control: `func` builds the
+  // widget instead of describing a range. The Demonstrations idiom is a
+  // `Button` that resets the variable, so the row is the button and the
+  // variable becomes live state the action can write into. Regression: the
+  // form was unrecognised, so the whole widget failed to build.
+  #[test]
+  fn custom_control_function_builds_a_button() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[li, {{n, 1, \"n\"}, 1, 5}, \
+       {{li, {1, 2, 3}, \"\"}, Button[\"New\", n = 0; li = {4, 5, 6}] &}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    match &spec.controls[..] {
+      [
+        ManipulateControl::Continuous { name, .. },
+        ManipulateControl::Button { label, action, .. },
+      ] => {
+        assert_eq!(name, "n");
+        assert_eq!(label, "New");
+        // The action is stored, not run — `Button` holds it.
+        assert_eq!(action, "n = 0; li = {4, 5, 6}");
+      }
+      other => panic!("expected a slider and a button, got {other:?}"),
+    }
+    // The variable is live state so the action can write back into it.
+    let json = manipulate_spec_to_json(&spec);
+    assert!(
+      json.contains(r#""li""#),
+      "the button's variable must be bound: {json}"
+    );
+  }
+
   // `{{u, colour, label}, colour}` is a colour control — wolframscript
   // renders a `ColorSlider`. Woxi has no colour widget yet, so the variable
   // is bound to its initial colour; the point of the test is that the rest
