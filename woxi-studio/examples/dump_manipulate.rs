@@ -4,7 +4,10 @@
 //! resulting widget structure. This makes "does this notebook's
 //! Manipulate work in the Studio?" checkable without launching the GUI.
 //!
-//! Usage: cargo run --example dump_manipulate -- path/to/notebook.nb
+//! Usage: cargo run --example dump_manipulate -- path/to/notebook.nb [svg-out-dir]
+//!
+//! When `svg-out-dir` is given, each widget's rendered SVG is written to
+//! `<svg-out-dir>/widget-<n>.svg` so the visual output can be inspected.
 
 use std::path::PathBuf;
 
@@ -21,6 +24,7 @@ fn main() {
     .nth(1)
     .expect("notebook path required")
     .into();
+  let svg_out_dir: Option<PathBuf> = std::env::args().nth(2).map(Into::into);
   let src = std::fs::read_to_string(&path).expect("read file");
   let nb = parse_notebook(&src).expect("parse notebook");
 
@@ -82,6 +86,34 @@ fn main() {
         state.text_output,
         state.error
       );
+      if let Some(dir) = &svg_out_dir
+        && state.graphics_handle.is_some()
+      {
+        // Re-render through the same bindings the widget uses so the SVG
+        // bytes can be captured (the iced handle doesn't expose them).
+        let mut bindings: Vec<(String, String)> = state
+          .controls
+          .iter()
+          .filter(|c| c.binds_variable())
+          .map(|c| (c.name().to_string(), c.current_code()))
+          .collect();
+        bindings.extend(state.state.iter().cloned());
+        let code = match state.initialization.as_deref() {
+          Some(init) => format!("{init}; {}", state.body),
+          None => state.body.clone(),
+        };
+        let render = woxi::with_scoped_globals(&bindings, || {
+          woxi::interpret_with_stdout(&code)
+        });
+        if let Ok(res) = render
+          && let Some(svg) = res.graphics
+        {
+          std::fs::create_dir_all(dir).expect("create svg out dir");
+          let out = dir.join(format!("widget-{widget_count}.svg"));
+          std::fs::write(&out, svg).expect("write svg");
+          println!("wrote {}", out.display());
+        }
+      }
       println!();
     }
   }

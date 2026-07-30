@@ -553,6 +553,16 @@ enum Primitive {
     full: bool,
     style: StyleState,
   },
+  /// A fixed-pixel-size marker (e.g. a `Locator`'s appearance graphic)
+  /// centered on a data-space point. The pre-rendered SVG is embedded at
+  /// `w`×`h` screen pixels regardless of the plot's coordinate scale.
+  MarkerPrim {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    svg: String,
+  },
 }
 
 impl Primitive {
@@ -572,7 +582,7 @@ impl Primitive {
       | Primitive::TextPrim { style, .. }
       | Primitive::BezierCurvePrim { style, .. }
       | Primitive::HalfPlanePrim { style, .. } => Some(style),
-      Primitive::RasterPrim { .. } => None,
+      Primitive::RasterPrim { .. } | Primitive::MarkerPrim { .. } => None,
     }
   }
 }
@@ -1455,6 +1465,35 @@ fn collect_primitives(
           }
         }
 
+        // `Dynamic[expr]` displays as the current value of `expr`: release
+        // the hold and render the result. Evaluation also runs any
+        // assignments the Dynamic performs (the Demonstrations pattern
+        // computes shared values inside a graphic's Dynamic), which later
+        // display items read. Any graphics the evaluation captures are
+        // embedded here, not standalone outputs — drop them from the
+        // capture buffer.
+        "Dynamic" if !args.is_empty() => {
+          let captured = crate::captured_graphics_count();
+          if let Ok(inner) = crate::evaluator::evaluate_expr_to_expr(&args[0])
+          {
+            crate::truncate_captured_graphics(captured);
+            collect_primitives(&inner, style, prims, errors);
+          } else {
+            crate::truncate_captured_graphics(captured);
+          }
+        }
+        // `Tooltip[g, label]` draws `g`; the hover label has no static SVG
+        // form. Only the first argument is rendered — the label must not
+        // leak into the graphic.
+        "Tooltip" if !args.is_empty() => {
+          collect_primitives(&args[0], style, prims, errors);
+        }
+        // `Locator[pt]` / `Locator[Dynamic[pt, …], appearance]`: a marker
+        // drawn at the point's current position. A custom appearance
+        // graphic keeps its own ImageSize in screen pixels.
+        "Locator" if !args.is_empty() => {
+          parse_locator(args, prims);
+        }
         _ => {
           // Try as directive first
           if !apply_directive(expr, style) {
@@ -2329,6 +2368,108 @@ fn parse_raster(args: &[Expr], prims: &mut Vec<Primitive>) {
   });
 }
 
+/// `Locator[pt]` / `Locator[Dynamic[pt, …], appearance]`: a marker drawn at
+/// the point's current position. The position may be held inside `Dynamic`
+/// (whose second argument, the write-back callback, only matters to
+/// interactive front-ends). A custom appearance graphic is embedded at its
+/// own ImageSize in screen pixels, centered on the position — Wolfram
+/// treats the appearance as a screen-space icon, not data-space geometry.
+fn parse_locator(args: &[Expr], prims: &mut Vec<Primitive>) {
+  let pos_expr = match &args[0] {
+    Expr::FunctionCall { name, args: dargs }
+      if name == "Dynamic" && !dargs.is_empty() =>
+    {
+      &dargs[0]
+    }
+    other => other,
+  };
+  let captured = crate::captured_graphics_count();
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(pos_expr)
+    .unwrap_or_else(|_| pos_expr.clone());
+  let points: Vec<(f64, f64)> = if let Some(p) = expr_to_point(&evaluated) {
+    vec![p]
+  } else {
+    expr_to_point_list(&evaluated).unwrap_or_default()
+  };
+  if points.is_empty() {
+    crate::truncate_captured_graphics(captured);
+    return;
+  }
+
+  // The appearance graphic, pre-rendered at its own ImageSize. `Automatic`
+  // (or no appearance) uses the default crosshair marker; `None` hides the
+  // marker entirely.
+  let appearance = args.get(1).filter(|a| {
+    !matches!(a, Expr::Identifier(s) if s == "Automatic")
+  });
+  if appearance
+    .is_some_and(|a| matches!(a, Expr::Identifier(s) if s == "None"))
+  {
+    crate::truncate_captured_graphics(captured);
+    return;
+  }
+  let marker: Option<(String, f64, f64)> = appearance.and_then(|a| {
+    // Render the appearance to a graphic. A held `Graphics[…]` call is
+    // rendered directly (Graphics evaluates lazily at display time);
+    // anything else is evaluated first.
+    let rendered = match a {
+      Expr::Graphics { .. } => Some(a.clone()),
+      Expr::FunctionCall { name, args: gargs } if name == "Graphics" => {
+        graphics_ast(gargs).ok()
+      }
+      other => match crate::evaluator::evaluate_expr_to_expr(other) {
+        Ok(ev) => match &ev {
+          Expr::Graphics { .. } => Some(ev.clone()),
+          Expr::FunctionCall { name, args: gargs }
+            if name == "Graphics" =>
+          {
+            graphics_ast(&gargs.iter().cloned().collect::<Vec<_>>()).ok()
+          }
+          _ => None,
+        },
+        Err(_) => None,
+      },
+    };
+    if let Some(Expr::Graphics { svg, .. }) = &rendered {
+      let (w, h) = parse_svg_wh(svg);
+      if w > 0.0 && h > 0.0 {
+        return Some((svg.clone(), w, h));
+      }
+    }
+    None
+  });
+  // Sub-evaluations may have rendered graphics (the appearance itself, or
+  // anything a Dynamic position computed); those are embedded here, not
+  // standalone outputs.
+  crate::truncate_captured_graphics(captured);
+
+  for (x, y) in points {
+    let (svg, w, h) = match &marker {
+      Some((svg, w, h)) => (svg.clone(), *w, *h),
+      None => {
+        let (svg, size) = default_locator_marker_svg();
+        (svg, size, size)
+      }
+    };
+    prims.push(Primitive::MarkerPrim { x, y, w, h, svg });
+  }
+}
+
+/// Wolfram's default Locator appearance: a small circled crosshair.
+fn default_locator_marker_svg() -> (String, f64) {
+  let size = 16.0;
+  let c = size / 2.0;
+  let svg = format!(
+    "<svg width=\"{size}\" height=\"{size}\" viewBox=\"0 0 {size} {size}\" xmlns=\"http://www.w3.org/2000/svg\">\
+     <circle cx=\"{c}\" cy=\"{c}\" r=\"{r:.1}\" fill=\"rgba(180,180,180,0.35)\" stroke=\"#606060\" stroke-width=\"1\"/>\
+     <line x1=\"{c}\" y1=\"1\" x2=\"{c}\" y2=\"{size}\" stroke=\"#606060\" stroke-width=\"1\"/>\
+     <line x1=\"1\" y1=\"{c}\" x2=\"{size}\" y2=\"{c}\" stroke=\"#606060\" stroke-width=\"1\"/>\
+     </svg>",
+    r = c - 1.0,
+  );
+  (svg, size)
+}
+
 // ── Bounding box computation ─────────────────────────────────────────────
 
 fn primitive_bbox(prim: &Primitive) -> BBox {
@@ -2354,6 +2495,11 @@ fn primitive_bbox(prim: &Primitive) -> BBox {
     | Primitive::Disk { cx, cy, rx, ry, .. } => {
       bb.include_point(cx - rx, cy - ry);
       bb.include_point(cx + rx, cy + ry);
+    }
+    // A marker is a screen-space icon: only its anchor point occupies data
+    // space.
+    Primitive::MarkerPrim { x, y, .. } => {
+      bb.include_point(*x, *y);
     }
     Primitive::DiskSector {
       cx,
@@ -2612,6 +2758,18 @@ fn rotate_primitive(
       full: *full,
       style: style.clone(),
     },
+    // A marker is a screen-space icon anchored on a data point: transforms
+    // move the anchor and leave the icon itself untouched.
+    Primitive::MarkerPrim { x, y, w, h, svg } => {
+      let (x, y) = rp(*x, *y);
+      Primitive::MarkerPrim {
+        x,
+        y,
+        w: *w,
+        h: *h,
+        svg: svg.clone(),
+      }
+    }
   }
 }
 
@@ -2743,6 +2901,13 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       w: *w,
       full: *full,
       style: style.clone(),
+    },
+    Primitive::MarkerPrim { x, y, w, h, svg } => Primitive::MarkerPrim {
+      x: x + dx,
+      y: y + dy,
+      w: *w,
+      h: *h,
+      svg: svg.clone(),
     },
   }
 }
@@ -2932,6 +3097,16 @@ fn scale_primitive(
       full: *full,
       style: style.clone(),
     },
+    Primitive::MarkerPrim { x, y, w, h, svg } => {
+      let (nx, ny) = sp(*x, *y);
+      Primitive::MarkerPrim {
+        x: nx,
+        y: ny,
+        w: *w,
+        h: *h,
+        svg: svg.clone(),
+      }
+    }
   }
 }
 
@@ -4306,6 +4481,19 @@ fn render_primitive(
         }
       }
     }
+    // A screen-space icon (e.g. a Locator's appearance) centered on its
+    // data-space anchor: embed the pre-rendered SVG at its pixel size.
+    Primitive::MarkerPrim { x, y, w, h, svg } => {
+      let scx = coord_x(*x, bb, svg_w);
+      let scy = coord_y(*y, bb, svg_h);
+      out.push_str(&format!(
+        "<svg x=\"{:.2}\" y=\"{:.2}\" width=\"{w:.2}\" height=\"{h:.2}\" viewBox=\"0 0 {w:.2} {h:.2}\">\n",
+        scx - w / 2.0,
+        scy - h / 2.0,
+      ));
+      out.push_str(strip_svg_wrapper(svg));
+      out.push_str("</svg>\n");
+    }
   }
 }
 
@@ -4496,6 +4684,9 @@ fn primitives_to_box_elements(primitives: &[Primitive]) -> Vec<String> {
       }
       Primitive::HalfPlanePrim { .. } => {
         // Unbounded fills have no fixed-coordinate box form; skip
+      }
+      Primitive::MarkerPrim { .. } => {
+        // Screen-space marker icons have no box form; skip
       }
     }
   }
@@ -11041,6 +11232,34 @@ fn render_tabular_svg_grid(
   Some(svg)
 }
 
+/// Resolve a `Column`/`Row` display item for rendering: release a held
+/// `Dynamic[…]` (a static rendering shows its current value; front-ends
+/// re-evaluate the whole display on interaction) and unwrap a top-level
+/// `Text[…]` wrapper, which displays as its content. Any graphics that the
+/// `Dynamic` evaluation captures are embedded in the surrounding layout, not
+/// standalone outputs, so they are dropped from the capture buffer.
+fn resolve_display_item(expr: &Expr) -> Expr {
+  let mut current = expr.clone();
+  if let Expr::FunctionCall { name, args } = &current
+    && name == "Dynamic"
+    && !args.is_empty()
+  {
+    let captured = crate::captured_graphics_count();
+    let evaluated = crate::evaluator::evaluate_expr_to_expr(&args[0]);
+    crate::truncate_captured_graphics(captured);
+    if let Ok(inner) = evaluated {
+      current = inner;
+    }
+  }
+  if let Expr::FunctionCall { name, args } = &current
+    && name == "Text"
+    && args.len() == 1
+  {
+    current = args[0].clone();
+  }
+  current
+}
+
 /// Render `Column[{expr1, expr2, ...}]` as an SVG with items stacked vertically.
 /// Optionally accepts an alignment argument (Left, Center, Right); defaults to Left.
 pub fn column_to_svg(args: &[Expr]) -> Option<String> {
@@ -11058,15 +11277,26 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
     return None;
   }
 
-  // Parse optional alignment from second arg (default: Left)
-  let alignment = if args.len() >= 2 {
-    match &args[1] {
-      Expr::Identifier(s) if s == "Center" => "middle",
-      Expr::Identifier(s) if s == "Right" => "end",
-      _ => "start", // Left or anything else
+  // Parse optional alignment from the second arg — either positional
+  // (`Column[list, Center]`) or the option form (`Column[list,
+  // Alignment -> Center]`). Default: Left.
+  let alignment_spec = args.get(1).map(|a| match a {
+    Expr::Rule {
+      pattern,
+      replacement,
     }
-  } else {
-    "start"
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Alignment") => {
+      replacement.as_ref()
+    }
+    other => other,
+  });
+  let alignment = match alignment_spec {
+    Some(Expr::Identifier(s)) if s == "Center" => "middle",
+    Some(Expr::Identifier(s)) if s == "Right" => "end",
+    _ => "start", // Left or anything else
   };
 
   // Parse optional spacing from third arg in ems (default: 0)
@@ -11100,16 +11330,19 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
 
   let cells: Vec<Cell> = items
     .iter()
-    .map(|item| match item {
-      Expr::Graphics { svg, .. } => {
-        let (w, h) = parse_svg_wh(svg);
-        Cell::Svg {
-          svg: svg.clone(),
-          width: w,
-          height: h,
+    .map(|item| {
+      let resolved = resolve_display_item(item);
+      match &resolved {
+        Expr::Graphics { svg, .. } => {
+          let (w, h) = parse_svg_wh(svg);
+          Cell::Svg {
+            svg: svg.clone(),
+            width: w,
+            height: h,
+          }
         }
+        _ => Cell::Text(resolved),
       }
-      _ => Cell::Text(item.clone()),
     })
     .collect();
 
@@ -11331,16 +11564,19 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
 
   let cells: Vec<Cell> = items
     .iter()
-    .map(|item| match item {
-      Expr::Graphics { svg, .. } => {
-        let (w, h) = parse_svg_wh(svg);
-        Cell::Svg {
-          svg: svg.clone(),
-          width: w,
-          height: h,
+    .map(|item| {
+      let resolved = resolve_display_item(item);
+      match &resolved {
+        Expr::Graphics { svg, .. } => {
+          let (w, h) = parse_svg_wh(svg);
+          Cell::Svg {
+            svg: svg.clone(),
+            width: w,
+            height: h,
+          }
         }
+        _ => make_text_cell(&resolved),
       }
-      _ => make_text_cell(item),
     })
     .collect();
 

@@ -2207,6 +2207,33 @@ pub fn apply_replace_all_ast(
     rules
   };
 
+  // A rendered graphic is opaque to pattern replacement except for its
+  // remembered symbolic `structure`: Wolfram's `plot /. Tooltip[x_, ___] :> x`
+  // rewrites the graphic's content in place. The rendering (SVG) is kept;
+  // only the structure is transformed so later structural access (`[[1]]`)
+  // sees the replaced form. Without this, the graphic would be serialized to
+  // its `-Graphics-` placeholder and fail to re-parse.
+  if let Expr::Graphics {
+    svg,
+    is_3d,
+    source,
+    head,
+    structure,
+  } = expr
+  {
+    let new_structure = match structure {
+      Some(s) => Some(Box::new(apply_replace_all_ast(s, rules)?)),
+      None => None,
+    };
+    return Ok(Expr::Graphics {
+      svg: svg.clone(),
+      is_3d: *is_3d,
+      source: source.clone(),
+      head: head.clone(),
+      structure: new_structure,
+    });
+  }
+
   // Try AST-based structural pattern matching first for single rules
   match rules {
     Expr::Rule {

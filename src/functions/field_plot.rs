@@ -629,9 +629,20 @@ fn marching_squares_segments(
 fn chain_segments(
   segments: &[((f64, f64), (f64, f64))],
 ) -> Vec<Vec<(f64, f64)>> {
+  chain_segments_scaled(segments, 16.0)
+}
+
+/// Like `chain_segments`, but with an explicit endpoint-matching resolution:
+/// two endpoints snap together when equal at `1 / key_scale` granularity.
+/// Screen-pixel callers use 16.0; data-coordinate callers must scale by the
+/// plot range so the tolerance stays proportionally as fine.
+fn chain_segments_scaled(
+  segments: &[((f64, f64), (f64, f64))],
+  key_scale: f64,
+) -> Vec<Vec<(f64, f64)>> {
   use std::collections::HashMap;
   let key = |p: (f64, f64)| -> (i64, i64) {
-    ((p.0 * 16.0).round() as i64, (p.1 * 16.0).round() as i64)
+    ((p.0 * key_scale).round() as i64, (p.1 * key_scale).round() as i64)
   };
   // Zero-length segments occur when the contour passes exactly through a
   // grid node; neighboring cells provide the connecting geometry, so they
@@ -781,7 +792,35 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// ContourPlot[f, {x, xmin, xmax}, {y, ymin, ymax}]
 /// Uses marching squares to draw contour lines.
 pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let body = &args[0];
+  // `ContourPlot[lhs == rhs, …]` draws the single implicit curve
+  // `lhs - rhs = 0` (no band shading), matching Wolfram's equation form.
+  let equation_body;
+  let (body, is_equation) = match &args[0] {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operators.len() == 1
+      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+    {
+      equation_body = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(operands[0].clone()),
+        right: Box::new(operands[1].clone()),
+      };
+      (&equation_body, true)
+    }
+    Expr::FunctionCall { name, args: eargs }
+      if name == "Equal" && eargs.len() == 2 =>
+    {
+      equation_body = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(eargs[0].clone()),
+        right: Box::new(eargs[1].clone()),
+      };
+      (&equation_body, true)
+    }
+    other => (other, false),
+  };
   let (xvar, x_min, x_max) = parse_iterator(&args[1], "ContourPlot")?;
   let (yvar, y_min, y_max) = parse_iterator(&args[2], "ContourPlot")?;
   let opts = parse_density_contour_options(args, 3);
@@ -813,7 +852,48 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let levels = resolve_contour_levels(&opts.contours, v_min, v_max);
+  let levels = if is_equation {
+    vec![0.0]
+  } else {
+    resolve_contour_levels(&opts.contours, v_min, v_max)
+  };
+
+  // Data-space contour polylines for the symbolic `structure`, so
+  // `ContourPlot[…][[1]]` yields primitives (with the ContourStyle
+  // directives) that can be re-embedded in an outer `Graphics[…]` the way
+  // Wolfram's GraphicsComplex form allows.
+  let mut structure_items: Vec<Expr> = contour_style_directives(args, 3);
+  {
+    let step_x = (x_max - x_min) / FIELD_GRID as f64;
+    let step_y = (y_max - y_min) / FIELD_GRID as f64;
+    // Endpoint snapping must stay proportional to the range (the pixel
+    // callers use 16.0 on a ~400px canvas).
+    let span = (x_max - x_min).abs().max((y_max - y_min).abs());
+    let key_scale = if span > 0.0 { 4096.0 / span } else { 16.0 };
+    for &level in &levels {
+      // `plot_y0 = y_max` with a negated cell height turns the screen-space
+      // (top-down) y mapping into the plain data-space one.
+      let segments = marching_squares_segments(
+        &grid, level, x_min, y_max, step_x, -step_y,
+      );
+      for chain in chain_segments_scaled(&segments, key_scale) {
+        let points: Vec<Expr> = chain
+          .iter()
+          .map(|(x, y)| {
+            Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into())
+          })
+          .collect();
+        structure_items.push(Expr::FunctionCall {
+          name: "Line".to_string(),
+          args: vec![Expr::List(points.into())].into(),
+        });
+      }
+    }
+  }
+  let structure = Expr::FunctionCall {
+    name: "Graphics".to_string(),
+    args: vec![Expr::List(structure_items.into())].into(),
+  };
 
   // Use plotters for axes
   let area = generate_axes_only(
@@ -832,7 +912,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let cell_w = area.plot_w / FIELD_GRID as f64;
   let cell_h = area.plot_h / FIELD_GRID as f64;
 
-  if opts.contour_shading {
+  if opts.contour_shading && !is_equation {
     render_contour_bands(
       &mut svg,
       &grid,
@@ -865,7 +945,31 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
 
   svg.push_str("</svg>");
-  Ok(crate::graphics_result(svg))
+  Ok(crate::graphics_result_with_structure(svg, structure))
+}
+
+/// The `ContourStyle -> …` option items of a ContourPlot call (a single
+/// directive or a directive list), for embedding into the plot's symbolic
+/// `structure`. Empty when the option is absent.
+fn contour_style_directives(args: &[Expr], opts_from: usize) -> Vec<Expr> {
+  for arg in args.iter().skip(opts_from) {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } = arg
+      && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ContourStyle")
+    {
+      return match replacement.as_ref() {
+        Expr::List(items) => items.iter().cloned().collect(),
+        other => vec![other.clone()],
+      };
+    }
+  }
+  Vec::new()
 }
 
 /// RegionPlot[cond, {x, xmin, xmax}, {y, ymin, ymax}]
