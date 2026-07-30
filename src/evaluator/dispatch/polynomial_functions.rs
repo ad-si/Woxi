@@ -3,10 +3,32 @@ use super::*;
 use crate::functions::math_ast::rat_reduce;
 use crate::syntax::{BinaryOperator, ComparisonOp, bool_expr, unevaluated};
 
+/// The optimization family takes an optional domain as its third argument.
+/// `Reals` is the default, so it is dropped here — which also lets the
+/// two-argument fast paths (the closed-form disk and linear cases) match, since
+/// they only fire on a two-argument call. `Integers` is left in place for the
+/// solver, which turns it into `Element[var, Integers]` constraints.
+fn strip_default_domain<'a>(
+  name: &str,
+  args: &'a [Expr],
+) -> std::borrow::Cow<'a, [Expr]> {
+  if args.len() == 3
+    && matches!(
+      name,
+      "Minimize" | "Maximize" | "MinValue" | "MaxValue" | "ArgMin" | "ArgMax"
+    )
+    && matches!(&args[2], Expr::Identifier(d) if d == "Reals")
+  {
+    return std::borrow::Cow::Owned(args[..2].to_vec());
+  }
+  std::borrow::Cow::Borrowed(args)
+}
+
 pub fn dispatch_polynomial_functions(
   name: &str,
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
+  let args = &*strip_default_domain(name, args);
   match name {
     "HornerForm" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::horner_form_ast(args));

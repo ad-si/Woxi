@@ -25,3 +25,26 @@ including for a periodic objective whose critical points form a family.
 $ wo 'Maximize[{Sin[x], 0 < x < 2*Pi}, x]'
 {1, {x -> Pi/2}}
 ```
+
+A third argument names the domain. `Reals` is the default, so it changes
+nothing:
+
+```scrut
+$ wo 'Maximize[-x^2 + 4 x, x, Reals]'
+{4, {x -> 2}}
+```
+
+Over `Integers`, a real optimum that is already an integer carries over — it is
+feasible there, and nothing integral can beat it:
+
+```scrut
+$ wo 'Minimize[x^2 - 4 x, x, Integers]'
+{-4, {x -> 2}}
+```
+
+```scrut
+$ wo 'Maximize[x^2, x, Integers]'
+
+Maximize::natt: The maximum is not attained at any point satisfying the given constraints.
+{Infinity, {x -> -Infinity}}
+```

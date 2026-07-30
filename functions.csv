@@ -529,7 +529,7 @@ FromDigits,Constructs integer from list of digits,✅,pure,3.0,526
 MeshStyle,Option specifying the style of mesh lines,✅,none,2.0,527
 FactorInteger,Returns prime factorization as {prime exponent} pairs (two-arg form does partial factorization into at most k factors or Gaussian-integer factorization via GaussianIntegers->True),✅,pure,1.0,528
 PolyLog,Polylogarithm function,✅,pure,1.0,529
-Maximize,Global symbolic maximization of a function over variables with optional constraints,✅,pure,5.0,530
+Maximize,Global symbolic maximization of a function over variables with optional constraints and an optional Reals or Integers domain,✅,pure,5.0,530
 TicksStyle,Option for specifying the style of plot ticks,✅,pure,6.0,531
 GatherBy,Groups elements by applying a function,✅,pure,7.0,532
 Permutations,Returns all permutations of a list,✅,pure,1.0,533
@@ -585,7 +585,7 @@ Around,Represent a value with uncertainty,✅,pure,12.0,573
 SaveDefinitions,Option to save definitions with output,✅,none,6.0,574
 Insert,Inserts an element at a specified position in a list,✅,pure,1.0,575
 Specularity,Graphics directive for specular highlighting,✅,none,6.0,576
-Minimize,Global symbolic minimization of a function over variables with optional constraints,✅,pure,5.0,577
+Minimize,Global symbolic minimization of a function over variables with optional constraints and an optional Reals or Integers domain,✅,pure,5.0,577
 Begin,Begins a private context (no-op in Woxi),✅,effectful,1.0,578
 RepeatedTiming,Time expression evaluation with repeated sampling,✅,effectful,10.1,579
 GraphData,,🚫,,6.0,580
@@ -1294,7 +1294,7 @@ RegionBoundary,,🚫,,10.0,1301
 FormFunction,,🚫,,10.0,1303
 GeneratedCell,,🚫,,3.0,1303
 StreamStyle,,🚫,,7.0,1304
-MaxValue,Global symbolic maximum value of a function over variables with optional constraints,✅,pure,7.0,1305
+MaxValue,Global symbolic maximum value of a function over variables with optional constraints and an optional Reals or Integers domain,✅,pure,7.0,1305
 KeyValueMap,Maps a function over key-value pairs; supports the operator form KeyValueMap[f][assoc],✅,pure,10.1,1306
 KelvinKei,Kelvin kei function (imaginary part of e^(-Pi I/2) BesselK on a rotated argument),✅,pure,6.0,1307
 TabView,Tabbed view control (stays symbolic in script mode),✅,unevaluated,6.0,1308
@@ -1667,7 +1667,7 @@ LogLikelihood,Log-likelihood of numeric observations under a distribution,✅,pu
 RectangleChart,Rectangle chart,,unevaluated,7.0,1687
 SpanFromAbove,Span from above,,unevaluated,6.0,1687
 Cubics,Option for solving cubic equations using radical formulas,✅,pure,1.0,1688
-MinValue,Global symbolic minimum value of a function over variables with optional constraints,✅,pure,7.0,1690
+MinValue,Global symbolic minimum value of a function over variables with optional constraints and an optional Reals or Integers domain,✅,pure,7.0,1690
 Exit,Terminates the kernel session with optional exit code,✅,effectful,1.0,1692
 SubPlus,Subscript plus notation,✅,none,6.0,1692
 Extension,Extension option,,unevaluated,3.0,1693
@@ -1697,7 +1697,7 @@ TogglerBar,Toggler bar control (stays symbolic in script mode),✅,unevaluated,6
 GeoElevationData,,🚫,,10.0,1717
 WeierstrassPPrime,Derivative of the Weierstrass elliptic function,✅,pure,1.0,1718
 FeatureExtractor,Feature extractor,,unevaluated,11.0,1719
-ArgMax,Exact argument that maximizes an expression (optionally subject to constraints),✅,None,7.0,1721
+ArgMax,Exact argument that maximizes an expression (optionally subject to constraints and over a Reals or Integers domain),✅,pure,7.0,1721
 VertexNormals,Vertex normal vectors,,unevaluated,6.0,1721
 CorrelationFunction,Sample autocorrelation of data at a given lag,✅,pure,9.0,1723
 RandomImage,Generates a random image with given pixel range and dimensions,✅,contextual,8.0,1723
@@ -2117,7 +2117,7 @@ SectorChart,Creates a sector chart from data,✅,pure,7.0,2138
 InexactNumberQ,Tests if an expression is an inexact real number,✅,pure,4.0,2141
 RootSum,Sum of form[r] over the roots r of a polynomial; numeric-coefficient polynomial f with polynomial form gives an exact power-sum value via Newton identities; other shapes stay symbolic,✅,pure,3.0,2141
 ServiceExecute,Execute external service,🚫,,10.0,2141
-ArgMin,Exact argument that minimizes an expression (optionally subject to constraints),✅,None,7.0,2144
+ArgMin,Exact argument that minimizes an expression (optionally subject to constraints and over a Reals or Integers domain),✅,pure,7.0,2144
 LetterQ,Tests if a string consists entirely of letters,✅,pure,2.0,2144
 Underscript,Underscript notation wrapper (stays symbolic),✅,unevaluated,6.0,2144
 EntityProperties,Lists properties available for an entity type,✅,pure,10.0,2147

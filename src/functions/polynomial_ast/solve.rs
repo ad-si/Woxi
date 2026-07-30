@@ -5597,7 +5597,106 @@ fn contains_unevaluated_d(expr: &Expr) -> bool {
 /// Returns {min_val, {x -> x_min, ...}} with exact results when possible.
 ///
 /// Maximize[f, vars] is the dual (negates objective and result).
+/// True when the optimizer of a `{value, {var -> a, …}}` result satisfies every
+/// constraint. The real optimum of a strictly bounded problem sits *on* the
+/// excluded boundary — `Maximize[{x, x < 3}, x]` reports `{3, {x -> 3}}`, which
+/// wolframscript warns about — and such a point is not a solution over the
+/// integers, so it must not be handed on as one.
+fn optimizer_is_feasible(result: &Expr, constraints: &[Expr]) -> bool {
+  let Expr::List(pair) = result else {
+    return false;
+  };
+  let Some(Expr::List(rules)) = pair.get(1) else {
+    return false;
+  };
+  constraints.iter().all(|constraint| {
+    let mut substituted = constraint.clone();
+    for rule in rules.iter() {
+      let (Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      }) = rule
+      else {
+        return false;
+      };
+      if let Expr::Identifier(var) = pattern.as_ref() {
+        substituted =
+          crate::syntax::substitute_variable(&substituted, var, replacement);
+      }
+    }
+    matches!(
+      crate::evaluator::evaluate_expr_to_expr(&substituted),
+      Ok(Expr::Identifier(ref s)) if s == "True"
+    )
+  })
+}
+
+/// True when every optimizer in a `{value, {var -> a, …}}` result is an integer,
+/// or the extremum is infinite. Together with feasibility this makes the result
+/// optimal over the integers as well: a *feasible* real optimum that happens to
+/// be integral is feasible there and nothing integral can beat it, and an
+/// unbounded real problem is unbounded over the integers too.
+fn optimizer_is_integral(result: &Expr) -> bool {
+  let Expr::List(pair) = result else {
+    return false;
+  };
+  if pair.len() != 2 {
+    return false;
+  }
+  let infinite = |e: &Expr| {
+    matches!(e, Expr::Identifier(s) if s == "Infinity")
+      || crate::functions::math_ast::is_neg_infinity(e)
+  };
+  if infinite(&pair[0]) {
+    return true;
+  }
+  let Expr::List(rules) = &pair[1] else {
+    return false;
+  };
+  rules.iter().all(|rule| {
+    let value = match rule {
+      Expr::Rule { replacement, .. }
+      | Expr::RuleDelayed { replacement, .. } => replacement.as_ref(),
+      _ => return false,
+    };
+    matches!(value, Expr::Integer(_) | Expr::BigInteger(_)) || infinite(value)
+  })
+}
+
 pub fn minimize_ast(
+  args: &[Expr],
+  maximize: bool,
+) -> Result<Expr, InterpreterError> {
+  let func_name = if maximize { "Maximize" } else { "Minimize" };
+  // An `Integers` domain becomes `Element[var, Integers]` constraints below,
+  // which the solver only handles for a bounded problem. When that comes back
+  // with nothing, solve over the reals instead and keep the answer only if every
+  // optimizer is already an integer — a fractional one says nothing about the
+  // integer optimum, so the call is left alone rather than rounded and guessed.
+  if args.len() == 3
+    && matches!(&args[2], Expr::Identifier(d) if d == "Integers")
+  {
+    let constrained = minimize_ast_inner(args, maximize)?;
+    if matches!(&constrained, Expr::List(pair) if pair.len() == 2) {
+      return Ok(constrained);
+    }
+    let over_reals = minimize_ast_inner(&args[..2], maximize)?;
+    let (_, constraints) = minimize_parse_objective(&args[0]);
+    if optimizer_is_integral(&over_reals)
+      && optimizer_is_feasible(&over_reals, &constraints)
+    {
+      return Ok(over_reals);
+    }
+    return Ok(unevaluated(func_name, args));
+  }
+  minimize_ast_inner(args, maximize)
+}
+
+fn minimize_ast_inner(
   args: &[Expr],
   maximize: bool,
 ) -> Result<Expr, InterpreterError> {

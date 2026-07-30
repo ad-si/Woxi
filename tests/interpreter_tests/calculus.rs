@@ -6600,6 +6600,85 @@ mod minimize {
       "{12., {n[1] -> 10, n[2] -> 2, n[3] -> 0, n[4] -> 0, n[5] -> 0, n[6] -> 0, n[7] -> 0, n[8] -> 0}}"
     );
   }
+
+  // Reals is the optimization family's default domain, so naming it explicitly
+  // must change nothing. It used to send the call down a slower path that could
+  // not solve the problem at all, leaving it unevaluated.
+  #[test]
+  fn explicit_reals_domain_matches_the_default() {
+    assert_eq!(
+      interpret("MaxValue[{x + y, x^2 + y^2 <= 1}, {x, y}, Reals]").unwrap(),
+      "Sqrt[2]"
+    );
+    assert_eq!(
+      interpret("MinValue[{x + y, x^2 + y^2 <= 1}, {x, y}, Reals]").unwrap(),
+      "-Sqrt[2]"
+    );
+    assert_eq!(
+      interpret("Maximize[-x^2 + 4 x, x, Reals]").unwrap(),
+      "{4, {x -> 2}}"
+    );
+    assert_eq!(
+      interpret("Minimize[{x^2 + y^2, x + y == 1}, {x, y}, Reals]").unwrap(),
+      "{1/2, {x -> 1/2, y -> 1/2}}"
+    );
+  }
+
+  // An Integers domain whose real optimum is already an integer is optimal over
+  // the integers too, so the answer carries over. Every one of these was
+  // unevaluated before.
+  #[test]
+  fn integers_domain_when_the_real_optimum_is_integral() {
+    assert_eq!(
+      interpret("Minimize[x^2, x, Integers]").unwrap(),
+      "{0, {x -> 0}}"
+    );
+    assert_eq!(
+      interpret("Minimize[x^2 - 4 x, x, Integers]").unwrap(),
+      "{-4, {x -> 2}}"
+    );
+    assert_eq!(interpret("MinValue[x^2 + 1, x, Integers]").unwrap(), "1");
+    assert_eq!(
+      interpret("MaxValue[x (10 - x), x, Integers]").unwrap(),
+      "25"
+    );
+    assert_eq!(
+      interpret("ArgMax[{x (10 - x), 0 <= x <= 10}, x, Integers]").unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret("ArgMin[{x^2, x >= 1}, x, Integers]").unwrap(),
+      "1"
+    );
+    // An unbounded real problem is unbounded over the integers as well.
+    assert_eq!(
+      interpret("Maximize[x^2, x, Integers]").unwrap(),
+      "{Infinity, {x -> -Infinity}}"
+    );
+    // The bounded-constraint path still handles what it always did.
+    assert_eq!(
+      interpret("Maximize[{x y, x + y == 10}, {x, y}, Integers]").unwrap(),
+      "{25, {x -> 5, y -> 5}}"
+    );
+  }
+
+  // A real optimum sitting on an excluded boundary is not a solution over the
+  // integers — Maximize[{x, x < 3}, x] reports the boundary point {3, {x -> 3}},
+  // which x < 3 rules out — so the call is left alone rather than answered with
+  // it. wolframscript searches inward and gets {2, {x -> 2}}; that needs real
+  // integer optimization.
+  #[test]
+  fn integers_domain_refuses_an_infeasible_boundary_optimum() {
+    assert_eq!(
+      interpret("Maximize[{x, x < 3}, x, Integers]").unwrap(),
+      "Maximize[{x, x < 3}, x, Integers]"
+    );
+    // Without the domain the boundary point is what wolframscript reports too.
+    assert_eq!(
+      interpret("Maximize[{x, x < 3}, x]").unwrap(),
+      "{3, {x -> 3}}"
+    );
+  }
 }
 
 mod integrate_rational {
