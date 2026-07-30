@@ -520,6 +520,9 @@ pub fn dispatch_image_functions(
     "Thumbnail" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::image_ast::thumbnail_ast(args));
     }
+    "ImageEffect" if args.len() == 2 => {
+      return Some(crate::functions::image_ast::image_effect_ast(args));
+    }
     "ImageAdjust" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::image_ast::image_adjust_ast(args));
     }

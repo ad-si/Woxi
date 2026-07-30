@@ -511,6 +511,7 @@ impl WoxiStudio {
     // dump and re-instantiates from the input, so the earlier cells must
     // run first for the widget's body to evaluate.
     let mut pending_init: Vec<String> = Vec::new();
+    let mut state_cleared = false;
 
     for entry in &notebook.cells {
       match entry {
@@ -580,6 +581,13 @@ impl WoxiStudio {
               let is_widget_dump =
                 output.as_deref().is_some_and(is_dynamic_box_dump);
               let manipulate_state = if is_widget_dump {
+                // Leftover state from a previously opened notebook must not
+                // leak into the widget; start the first instantiation from
+                // a clean slate.
+                if !state_cleared {
+                  woxi::clear_state();
+                  state_cleared = true;
+                }
                 // Run the earlier Input cells (helper definitions) before
                 // the widget's body first evaluates.
                 evaluate_pending_initialization(&mut pending_init);
