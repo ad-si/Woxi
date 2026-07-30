@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::unevaluated;
 use std::cell::RefCell;
 use std::collections::HashMap;
 

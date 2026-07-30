@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{bool_expr, unevaluated};
 
 /// Colors of a Wolfram `ColorData` indexed scheme (`ColorData[n, "ColorList"]`).
 ///

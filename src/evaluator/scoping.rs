@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, ComparisonOp, bool_expr};
 
 /// AST-based Module implementation to avoid interpret() recursion
 pub fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

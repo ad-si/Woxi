@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator};
 use std::cell::Cell;
 
 thread_local! {

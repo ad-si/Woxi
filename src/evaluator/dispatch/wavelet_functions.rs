@@ -5,9 +5,9 @@
 //! and the wavelet plot functions. Also intercepts `Normal` applied to a
 //! DiscreteWaveletData or ContinuousWaveletData object.
 
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::wavelet_ast as wa;
-use crate::syntax::Expr;
 use wa::transforms::TransformKind;
 
 pub(super) fn dispatch_wavelet_functions(

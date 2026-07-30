@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::unevaluated;
 
 pub fn dispatch_association_functions(
   name: &str,

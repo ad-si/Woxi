@@ -1,7 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::rat_reduce;
-use crate::syntax::{BinaryOperator, ComparisonOp, bool_expr, unevaluated};
 
 /// The optimization family takes an optional domain as its third argument.
 /// `Reals` is the default, so it is dropped here — which also lets the

@@ -1,5 +1,5 @@
+#[allow(unused_imports)]
 use super::*;
-use crate::syntax::unevaluated;
 
 /// Returns the valid argument count range (min, max) for a known built-in function.
 /// Returns None if the function is not in the table.

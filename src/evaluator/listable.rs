@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::bool_expr;
 
 /// Dispatch function call to built-in implementations (AST version).
 /// This is the AST equivalent of the string-based function dispatch.

@@ -4,9 +4,9 @@
 //! runs before `list_operations` so the statistics heads can pull the value
 //! path out of a `TimeSeries` before the generic list handlers see it.
 
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::timeseries_ast;
-use crate::syntax::Expr;
 
 pub(super) fn dispatch_timeseries_functions(
   name: &str,

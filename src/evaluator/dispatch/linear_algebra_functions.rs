@@ -1,7 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::{make_sqrt, rat_reduce};
-use crate::syntax::{BinaryOperator, UnaryOperator, bool_expr, unevaluated};
 
 /// `BoxMatrix[r, w]` / `DiamondMatrix[r, w]`: the structuring element of
 /// radius `r` centred in a grid `w` wide along each dimension, zero
