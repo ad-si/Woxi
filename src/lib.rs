@@ -4773,9 +4773,13 @@ fn store_function_definition(
       Rule::PatternSimple => {
         // Extract parameter name and blank type from pattern
         // "x_" -> (name="x", blank_type=1), "u__" -> (name="u", blank_type=2), "v___" -> (name="v", blank_type=3)
-        let s = item.as_str();
-        let name = s.trim_end_matches('_');
-        let blank_count = s.len() - name.len();
+        // The rule's span can carry trailing whitespace — pest skips it
+        // inside the rule, before the closing lookahead — so `f[x_ ] := x`
+        // would otherwise store the parameter as `"x_ "` with no blank,
+        // leaving `x` unbound in the body.
+        let s = item.as_str().trim();
+        let blank_count = s.chars().rev().take_while(|&c| c == '_').count();
+        let name = s[..s.len() - blank_count].trim_end();
         params.push(name.to_owned());
         conditions.push(None);
         defaults.push(None);

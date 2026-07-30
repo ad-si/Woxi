@@ -67,6 +67,18 @@ test-shebang: install-cli
 	test "$$(./tests/woxi/hello_world.wls)" = 'Hello World!'
 
 
+# Woxi Studio is not a default workspace member (its iced → wgpu/winit
+# dependency tree is 100+ extra crates), so `make test` never compiles its
+# tests. Run them explicitly here — without this target they silently rot.
+.PHONY: test-studio
+test-studio:
+	cargo nextest run \
+		-p woxi-studio \
+		--show-progress=none \
+		--status-level=fail \
+		--failure-output=final
+
+
 # Build the woxi Python package (woxi-py) into a local virtualenv with
 # maturin and run its pytest suite.
 .PHONY: test-python
@@ -108,7 +120,7 @@ test: test-unit
 
 
 .PHONY: test-all
-test-all: test-unit test-slow test-cli test-shebang
+test-all: test-unit test-slow test-cli test-shebang test-studio
 
 
 .PHONY: test-conformance

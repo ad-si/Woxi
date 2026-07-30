@@ -744,6 +744,92 @@ fn normalize_whitespace(s: &str) -> String {
   s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// Positional arguments of `head[...]`, with trailing display options
+/// (`MultilineFunction -> None`, …) dropped.
+fn positional_box_args(head: &str, s: &str) -> Option<Vec<String>> {
+  let rest = s.trim().strip_prefix(head)?.strip_prefix('[')?;
+  let (inner, _) = find_matching_bracket(rest).ok()?;
+  let mut args: Vec<String> = split_top_level_commas(inner)
+    .into_iter()
+    .map(|p| p.trim().to_string())
+    .collect();
+  args.retain(|a| !is_option_arg(a));
+  Some(args)
+}
+
+/// The evaluable head of a typeset "big operator" glyph — `∑` → `Sum`,
+/// `∏` → `Product`. The base argument of the box is either the named
+/// character (`"\[Sum]"`, as written in a `.nb` file) or the Unicode
+/// character itself.
+fn big_operator_head(base: &str) -> Option<&'static str> {
+  let base = base.trim();
+  let base = base
+    .strip_prefix('"')
+    .and_then(|b| b.strip_suffix('"'))
+    .unwrap_or(base)
+    .trim();
+  match base {
+    r"\[Sum]" | "∑" => Some("Sum"),
+    r"\[Product]" | "∏" => Some("Product"),
+    _ => None,
+  }
+}
+
+/// Split an iterator underscript (`n=1`) at its top-level `=`, ignoring
+/// the two-character operators that merely end in `=` (`==`, `<=`, …).
+fn split_iterator_assignment(s: &str) -> Option<(&str, &str)> {
+  let mut depth = 0i32;
+  for (i, c) in s.char_indices() {
+    match c {
+      '[' | '{' | '(' => depth += 1,
+      ']' | '}' | ')' => depth -= 1,
+      '=' if depth == 0 => {
+        let prev = s[..i].chars().next_back();
+        let next = s[i + 1..].chars().next();
+        if matches!(prev, Some('=' | '<' | '>' | '!' | ':' | '/' | '+' | '-'))
+          || next == Some('=')
+        {
+          continue;
+        }
+        return Some((&s[..i], &s[i + 1..]));
+      }
+      _ => {}
+    }
+  }
+  None
+}
+
+/// Recognise a typeset big-operator box (`UnderoverscriptBox["\[Sum]",
+/// under, over]`, or the `UnderscriptBox` form with no upper limit) and
+/// return its evaluable head together with the iterator specification.
+///
+/// These boxes stand *before* their body in the enclosing row, so the
+/// caller supplies the body: `∑_(n=1)^m f` → `Sum[f, {n, 1, m}]`. The
+/// iterator forms mirror what the FrontEnd's own parser produces —
+/// `∑_i^m f` → `Sum[f, {i, m}]` and `∑_(n=1) f` → `Sum[f, n = 1]`.
+fn big_operator_call(s: &str) -> Option<(&'static str, String)> {
+  let args = positional_box_args("UnderoverscriptBox", s)
+    .filter(|a| a.len() == 3)
+    .or_else(|| {
+      positional_box_args("UnderscriptBox", s).filter(|a| a.len() == 2)
+    })?;
+  let head = big_operator_head(&args[0])?;
+  let under = extract_cell_content(&args[1]);
+  let iterator = match args.get(2) {
+    Some(over) => {
+      let over = extract_cell_content(over);
+      match split_iterator_assignment(&under) {
+        Some((var, lower)) => {
+          format!("{{{}, {}, {}}}", var.trim(), lower.trim(), over.trim())
+        }
+        None => format!("{{{}, {}}}", under.trim(), over.trim()),
+      }
+    }
+    None => under.trim().to_string(),
+  };
+  Some((head, iterator))
+}
+
 /// Extract text from a RowBox expression by concatenating string
 /// elements.
 fn extract_rowbox_content(s: &str) -> String {
@@ -753,8 +839,18 @@ fn extract_rowbox_content(s: &str) -> String {
 
   let parts = split_top_level_commas(s);
   let mut result = String::new();
-  for part in parts {
+  for (i, part) in parts.iter().enumerate() {
     let part = part.trim();
+    // A big-operator box (`∑`, `∏`) is written before its body, and the
+    // FrontEnd groups the operator with exactly its operand in a row of
+    // their own — so everything after it here is the body.
+    if i + 1 < parts.len()
+      && let Some((head, iterator)) = big_operator_call(part)
+    {
+      let body = extract_rowbox_content(&parts[i + 1..].join(","));
+      result.push_str(&format!("{head}[{body}, {iterator}]"));
+      break;
+    }
     if part.starts_with('"') && part.ends_with('"') && part.len() >= 2 {
       let inner = &part[1..part.len() - 1];
       // A box element whose own text is quoted (`"\"…\""`) is a *string
@@ -893,19 +989,6 @@ fn render_boxes_text(s: &str) -> String {
       .collect::<String>();
   }
 
-  fn box_args(head: &str, s: &str) -> Option<Vec<String>> {
-    let rest = s.strip_prefix(head)?.strip_prefix('[')?;
-    let (inner, _) = find_matching_bracket(rest).ok()?;
-    let mut args: Vec<String> = split_top_level_commas(inner)
-      .into_iter()
-      .map(|p| p.trim().to_string())
-      .collect();
-    // Drop trailing display options (`MultilineFunction -> None`, …) so
-    // the arity matches below see the box's real positional arguments.
-    args.retain(|a| !is_option_arg(a));
-    Some(args)
-  }
-
   // Superscripts of digits (and a leading minus) read best as Unicode
   // superscript characters: `V²`, `∇²`, `10⁻³`.
   fn superscript_unicode(s: &str) -> Option<String> {
@@ -939,25 +1022,25 @@ fn render_boxes_text(s: &str) -> String {
     "PaneBox",
     "ItemBox",
   ] {
-    if let Some(args) = box_args(head, s)
+    if let Some(args) = positional_box_args(head, s)
       && let Some(first) = args.first()
     {
       // These wrappers only style/annotate their first argument.
       return render_boxes_text(first);
     }
   }
-  if let Some(args) = box_args("InterpretationBox", s)
+  if let Some(args) = positional_box_args("InterpretationBox", s)
     && !args.is_empty()
   {
     // The displayed form is the first argument (the second is the value).
     return render_boxes_text(&args[0]);
   }
-  if let Some(args) = box_args("RowBox", s)
+  if let Some(args) = positional_box_args("RowBox", s)
     && let Some(first) = args.first()
   {
     return render_boxes_text(first);
   }
-  if let Some(args) = box_args("FractionBox", s)
+  if let Some(args) = positional_box_args("FractionBox", s)
     && args.len() == 2
   {
     return format!(
@@ -966,7 +1049,7 @@ fn render_boxes_text(s: &str) -> String {
       render_boxes_text(&args[1])
     );
   }
-  if let Some(args) = box_args("SubscriptBox", s)
+  if let Some(args) = positional_box_args("SubscriptBox", s)
     && args.len() == 2
   {
     let base = render_boxes_text(&args[0]);
@@ -978,7 +1061,7 @@ fn render_boxes_text(s: &str) -> String {
     }
     return format!("{base}_{sub}");
   }
-  if let Some(args) = box_args("SuperscriptBox", s)
+  if let Some(args) = positional_box_args("SuperscriptBox", s)
     && args.len() == 2
   {
     // Prime-mark superscripts are the typeset derivative (`θ'`), not an
@@ -993,7 +1076,7 @@ fn render_boxes_text(s: &str) -> String {
       _ => format!("{base}^{exp}"),
     };
   }
-  if let Some(args) = box_args("SubsuperscriptBox", s)
+  if let Some(args) = positional_box_args("SubsuperscriptBox", s)
     && args.len() == 3
   {
     let base = render_boxes_text(&args[0]);
@@ -1004,12 +1087,43 @@ fn render_boxes_text(s: &str) -> String {
       _ => format!("{base}_{sub}^{exp}"),
     };
   }
-  if let Some(args) = box_args("SqrtBox", s)
+  if let Some(args) = positional_box_args("SqrtBox", s)
     && args.len() == 1
   {
     return format!("√{}", render_boxes_text(&args[0]));
   }
-  if let Some(args) = box_args("GridBox", s)
+  // Limits under and over a base — in prose this is nearly always a big
+  // operator: `∑_(n=1)^m`. Multi-token limits get parentheses so the
+  // sum's range stays legible, and a big operator keeps a space to its
+  // body, which follows it in the enclosing row.
+  if let Some(args) = positional_box_args("UnderoverscriptBox", s)
+    .filter(|a| a.len() == 3)
+    .or_else(|| {
+      positional_box_args("UnderscriptBox", s).filter(|a| a.len() == 2)
+    })
+  {
+    fn group(limit: &str) -> String {
+      if limit.chars().all(|c| c.is_alphanumeric() || c == '.') {
+        limit.to_string()
+      } else {
+        format!("({limit})")
+      }
+    }
+    let mut out = format!(
+      "{}_{}",
+      render_boxes_text(&args[0]),
+      group(&render_boxes_text(&args[1]))
+    );
+    if let Some(over) = args.get(2) {
+      out.push('^');
+      out.push_str(&group(&render_boxes_text(over)));
+    }
+    if big_operator_head(&args[0]).is_some() {
+      out.push(' ');
+    }
+    return out;
+  }
+  if let Some(args) = positional_box_args("GridBox", s)
     && let Some(rows_text) = args.first()
   {
     // Rows on separate lines, columns separated by two spaces.
@@ -3525,6 +3639,60 @@ Cell[TextData[{
       CellEntry::Single(cell) => {
         assert_eq!(cell.style, CellStyle::Section);
         assert_eq!(cell.content, "Caption");
+      }
+      _ => panic!("Expected single cell"),
+    }
+  }
+
+  /// A typeset big operator stands *before* its body in the enclosing
+  /// row, so the whole rest of that row is the summand — the same way
+  /// the FrontEnd's own parser reads these boxes.
+  #[test]
+  fn test_big_operator_boxes_become_sum_and_product() {
+    let s = r#"BoxData[RowBox[{
+  UnderoverscriptBox["\[Sum]", RowBox[{"n", "=", "1"}], "m"],
+  FractionBox[RowBox[{"Sin", "[", "t", "]"}], SuperscriptBox["n", "2"]]}]]"#;
+    assert_eq!(
+      extract_cell_content(s),
+      "Sum[(Sin[t])/((n)^(2)), {n, 1, m}]"
+    );
+    // `∏` is the same shape, and the operator may be preceded by factors
+    // that are *not* part of the body (the FrontEnd groups the operator
+    // and its operand in a row of their own).
+    let s = r#"BoxData[RowBox[{"0.4", RowBox[{
+  UnderoverscriptBox["\[Product]", RowBox[{"k", "=", "2"}], "n"], "k"}]}]]"#;
+    assert_eq!(extract_cell_content(s), "0.4Product[k, {k, 2, n}]");
+    // Without a lower-limit assignment the two limits are the iterator
+    // itself (`∑_i^m f` → `Sum[f, {i, m}]`), and an `UnderscriptBox` has
+    // no upper limit at all (`∑_(n=1) f` → `Sum[f, n = 1]`).
+    let s = r#"BoxData[RowBox[{UnderoverscriptBox["\[Sum]", "i", "m"], "f"}]]"#;
+    assert_eq!(extract_cell_content(s), "Sum[f, {i, m}]");
+    let s = r#"BoxData[RowBox[{UnderscriptBox["\[Sum]", RowBox[{"n", "=", "1"}]], "f"}]]"#;
+    assert_eq!(extract_cell_content(s), "Sum[f, n=1]");
+    // A non-operator base keeps its box (nothing to evaluate here).
+    let s = r#"BoxData[RowBox[{UnderoverscriptBox["x", "a", "b"], "f"}]]"#;
+    assert!(!extract_cell_content(s).starts_with("Sum["));
+  }
+
+  /// In prose the same box is display text, not code: `∑_(n=1)^m …`.
+  #[test]
+  fn test_big_operator_boxes_render_as_display_text() {
+    let nb = r#"Notebook[{
+Cell[TextData[{
+ "Sums like ",
+ Cell[BoxData[
+  FormBox[
+   RowBox[{
+    UnderoverscriptBox["\[Sum]", RowBox[{"n", "=", "1"}], "m"],
+    FractionBox[RowBox[{"sin", "[", "t", "]"}], SuperscriptBox["n", "2"]]}],
+   TraditionalForm]], "InlineMath"],
+ " are curves."
+}], "Text"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(cell.content, "Sums like ∑_(n=1)^m sin[t]/n² are curves.");
       }
       _ => panic!("Expected single cell"),
     }

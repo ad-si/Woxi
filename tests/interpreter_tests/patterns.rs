@@ -4294,3 +4294,48 @@ mod longest_shortest_and_orderless_sequences {
     );
   }
 }
+
+/// Whitespace around the parameters of a definition is insignificant.
+/// Regression: a blank followed by a space (`f[x_ ]`, as hand-typeset
+/// notebooks write it) stored the parameter as `"x_ "` with no blank, so
+/// the definition fired but left `x` unbound in the body.
+mod whitespace_around_definition_parameters {
+  use super::*;
+
+  #[test]
+  fn a_space_after_a_blank_still_binds_the_parameter() {
+    assert_eq!(interpret("wsa[x_ ] := {x}; wsa[1]").unwrap(), "{1}");
+    assert_eq!(
+      interpret("wsb[x_ , y_] := {x, y}; wsb[1, 2]").unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(
+      interpret("wsc[ x_ , y_ ] := {x, y}; wsc[1, 2]").unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn a_space_after_a_sequence_blank_still_binds_the_parameter() {
+    assert_eq!(
+      interpret("wsd[x_, y__ ] := {x, {y}}; wsd[1, 2, 3]").unwrap(),
+      "{1, {2, 3}}"
+    );
+    assert_eq!(
+      interpret("wse[x_, y___ ] := {x, {y}}; wse[1, 2, 3]").unwrap(),
+      "{1, {2, 3}}"
+    );
+    // The null sequence still matches when nothing is passed for it.
+    assert_eq!(
+      interpret("wsf[x_, y___ ] := {x, {y}}; wsf[1]").unwrap(),
+      "{1, {}}"
+    );
+  }
+
+  #[test]
+  fn the_blank_type_survives_the_space() {
+    // `x__ ` must stay a BlankSequence: one argument is not enough.
+    assert_eq!(interpret("wsg[x__ ] := {x}; wsg[]").unwrap(), "wsg[]");
+    assert_eq!(interpret("wsg[x__ ] := {x}; wsg[1, 2]").unwrap(), "{1, 2}");
+  }
+}

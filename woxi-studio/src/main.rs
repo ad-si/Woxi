@@ -6841,7 +6841,7 @@ Cell[BoxData[
       "the bracketed subscript must parse as Part: {code}"
     );
 
-    let widget = instantiate_stored_manipulate(&code)
+    let widget = instantiate_stored_manipulate(&code, "")
       .expect("the Manipulate must build a widget");
     assert!(
       widget.error.is_none(),
@@ -6891,7 +6891,7 @@ Cell[BoxData[
       {{b1, .1, \"damping factor 1\"}, 0, 10, .001, \
         ImageSize -> Tiny, Appearance -> \"Labeled\"}, \
       SaveDefinitions -> True]";
-    let state = instantiate_stored_manipulate(code)
+    let state = instantiate_stored_manipulate(code, "")
       .expect("the Lorentz Manipulate must build a widget");
     assert!(
       state.error.is_none(),
@@ -6955,7 +6955,7 @@ Cell[BoxData[
       {{pt2, {-0.083, 1.}}, {-1, -1}, {1, 1}, Locator}, \
       {{pt3, {0.98875, 0.25}}, {-1, -1}, {1, 1}, Locator}, \
       SaveDefinitions -> True]";
-    let state = instantiate_stored_manipulate(code)
+    let state = instantiate_stored_manipulate(code, "")
       .expect("the orthocenter Manipulate must build a widget");
     assert!(
       state.error.is_none(),
@@ -6988,7 +6988,7 @@ Cell[BoxData[
       {{li, {3, 1, 2}, \"\"}, \
         Button[\"Generate new list\", k = 0; li = {5, 4, 6}] &}, \
       SaveDefinitions -> True]";
-    let state = instantiate_stored_manipulate(code)
+    let state = instantiate_stored_manipulate(code, "")
       .expect("the quicksort Manipulate must build a widget");
     assert!(
       state.error.is_none(),
@@ -7039,7 +7039,7 @@ Cell[BoxData[
         Spacer[20], \
         Control@{{col, Red, \"color\"}, Red}}], \
       SaveDefinitions -> True]";
-    let state = instantiate_stored_manipulate(code)
+    let state = instantiate_stored_manipulate(code, "")
       .expect("the sphericon Manipulate must build a widget");
     assert!(
       state.error.is_none(),
@@ -7094,7 +7094,7 @@ Cell[BoxData[
     )
     .expect("the compiled helper must define");
 
-    let mut state = instantiate_stored_manipulate(code)
+    let mut state = instantiate_stored_manipulate(code, "")
       .expect("the Mandelbrot Manipulate must build a widget");
     assert!(
       state.error.is_none(),
@@ -7176,7 +7176,7 @@ Cell[BoxData["ImageDimensions[tex]"], "Input"]
         PlotLabel :> Which[t == 1100, \"Boats meet\", True, \"\"], \
         ImageSize -> 500]], \
       {{t, 0, \"time\"}, 0, 3300, 25}, AutorunSequencing -> {{1, 30}}]";
-    let mut state = instantiate_stored_manipulate(code)
+    let mut state = instantiate_stored_manipulate(code, "")
       .expect("the boats Manipulate must build a widget");
     assert!(
       state.error.is_none(),
@@ -7254,7 +7254,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       {{b, 4, \"critical region boundary\"}, 0, n, 1, \
        Appearance -> \"Labeled\"}, \
       TrackedSymbols -> Manipulate]";
-    let state = instantiate_stored_manipulate(code)
+    let state = instantiate_stored_manipulate(code, "")
       .expect("the binomial-power Manipulate must build a widget");
     assert!(
       state.error.is_none(),
@@ -7353,7 +7353,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       Initialization :> (nice[d_] := \
         If[Abs[d - Round[d]] < .001, Round[d], d]), \
       SaveDefinitions -> True]";
-    let mut state = instantiate_stored_manipulate(code)
+    let mut state = instantiate_stored_manipulate(code, "")
       .expect("the cubic-roots Manipulate must build a widget");
     assert!(
       state.error.is_none(),
@@ -7913,5 +7913,204 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
     let mut editor = blank_editor();
     evaluate_cell_statements(&mut editor, "10.^10", true, 1.0, &fontdb);
     assert!(editor.output_dark);
+  }
+
+  /// The full widget of the "Trigonometric Sums as Parametric Curves"
+  /// Demonstration: a setter bar over the four examples, six labeled
+  /// sliders (two of them labeled with a typeset subscript) and a
+  /// True/False setter, all drawn from definitions that sum to a
+  /// symbolic upper limit.
+  #[test]
+  fn trigonometric_sums_manipulate_builds_all_controls() {
+    for def in [
+      "x[t_,m_,1]:=Sum[(Sin[(n)^(2) t])/((n)^(2)), {n, 1, m}]",
+      "y[t_,m_,1]:=Sum[(Cos[(n)^(2) t])/((n)^(2)), {n, 1, m}]",
+      "x[t_,m_,2]:=Sum[((-1))^(n)(Sin[((-1))^(n) (n)^(2) t])/((n)^(2)), {n, 1, m}]",
+      "y[t_,m_,2]:=Sum[((-1))^(n)(Cos[((-1))^(n) (n)^(2) t])/((n)^(2)), {n, 1, m}]",
+      "x[t_,m_,3]:=0.4Sum[(Sin[((-1))^(n) n t])/(n), {n, 1, m}]",
+      "y[t_,m_,3]:=0.4Sum[(Cos[((-1))^(n) n t])/(n), {n, 1, m}]",
+      "x[t_,m_,4]:=0.4Sum[(Sin[ n t])/(n), {n, 1, m}]",
+      "y[t_,m_,4]:=0.4Sum[(Cos[ n t])/(n), {n, 1, m}]",
+      "p[  m_,example_, k_, optionen___ ] := ParametricPlot[ Evaluate[ {x[t, m,example], y[t, m,example]} ],{t, 0,2 Pi}, PlotPoints -> k , AspectRatio -> Automatic, Axes -> False, ImageSize -> {400, 400}, optionen ]",
+    ] {
+      woxi::interpret(def).unwrap();
+    }
+    let code = "Manipulate[p[  m,ex, k, PlotRange -> {{xmin, xmax}, {ymin, ymax}} , Frame -> frame ],\n\
+{{ex,1,\"example\"},{1,2,3,4}},\n\
+{{m,51,\"sum index\"},1,100,1, Appearance -> \"Labeled\",ImageSize->Tiny},\n\
+{{k,100,\"sample points\"},15,150,1, Appearance -> \"Labeled\",ImageSize->Tiny},\n\
+{{xmin,-1.3,\"\\!\\(\\*SubscriptBox[\\(x\\), \\(min\\)]\\)\"},-1.3,1,.01,Appearance -> \"Labeled\",ImageSize->Tiny},\n\
+{{xmax,1.3,\"\\!\\(\\*SubscriptBox[\\(x\\), \\(max\\)]\\)\"},0,1.3,.01,Appearance -> \"Labeled\",ImageSize->Tiny},\n\
+{{ymin,-1.3,\"\\!\\(\\*SubscriptBox[\\(y\\), \\(min\\)]\\)\"},-1.3,1,.01,Appearance -> \"Labeled\",ImageSize->Tiny},\n\
+{{ymax,1.7,\"\\!\\(\\*SubscriptBox[\\(y\\), \\(max\\)]\\)\"},-0.6,2.1,.01,Appearance -> \"Labeled\",ImageSize->Tiny},\n\
+{{frame, False, \"frame\"}, {True, False}},\n\
+TrackedSymbols->Manipulate,\n ControlPlacement -> Left,SaveDefinitions->True,AutorunSequencing->{1,4,5,6,7}]";
+    let state = instantiate_stored_manipulate(code, "")
+      .expect("the Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must produce the parametric curve"
+    );
+    let labels: Vec<&str> = state
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { label, .. } => label.as_str(),
+        manipulate::ControlState::Discrete { label, .. } => label.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      labels,
+      [
+        "example",
+        "sum index",
+        "sample points",
+        "xₘᵢₙ",
+        "xₘₐₓ",
+        "yₘᵢₙ",
+        "yₘₐₓ",
+        "frame",
+      ]
+    );
+    match (&state.controls[0], &state.controls[1]) {
+      (
+        manipulate::ControlState::Discrete {
+          values,
+          current_index,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          min, max, current, ..
+        },
+      ) => {
+        assert_eq!(values, &["1", "2", "3", "4"]);
+        assert_eq!(*current_index, 0);
+        assert_eq!((*min, *max, *current), (1.0, 100.0, 51.0));
+      }
+      other => panic!("unexpected leading controls: {other:?}"),
+    }
+  }
+
+  /// End-to-end regression for the "Trigonometric Sums as Parametric
+  /// Curves" Demonstration. Its initialization cells write the partial
+  /// sums as typeset `∑` boxes, which have to come back as
+  /// `Sum[…, {n, 1, m}]`, and its plotting helper is declared with a
+  /// space before the closing bracket (`p[ m_, k_, opts___ ]`).
+  #[test]
+  fn trigonometric_sums_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData[{
+ RowBox[{
+  RowBox[{
+   RowBox[{"x", "[", RowBox[{"t_", ",", "m_"}], "]"}], ":=",
+   RowBox[{
+    UnderoverscriptBox["\[Sum]", RowBox[{"n", "=", "1"}], "m"],
+    FractionBox[
+     RowBox[{"Sin", "[", RowBox[{SuperscriptBox["n", "2"], " ", "t"}], "]"}],
+     SuperscriptBox["n", "2"]]}]}], ";"}], "\[IndentingNewLine]",
+ RowBox[{
+  RowBox[{
+   RowBox[{"y", "[", RowBox[{"t_", ",", "m_"}], "]"}], ":=",
+   RowBox[{
+    UnderoverscriptBox["\[Sum]", RowBox[{"n", "=", "1"}], "m"],
+    FractionBox[
+     RowBox[{"Cos", "[", RowBox[{SuperscriptBox["n", "2"], " ", "t"}], "]"}],
+     SuperscriptBox["n", "2"]]}]}], ";"}]}], "Input"],
+Cell[BoxData[
+ RowBox[{
+  RowBox[{
+   RowBox[{"p", "[", "  ",
+    RowBox[{"m_", ",", " ", "k_", ",", " ", "optionen___"}], " ", "]"}], " ",
+   ":=",
+   RowBox[{"ParametricPlot", "[",
+    RowBox[{
+     RowBox[{"Evaluate", "[",
+      RowBox[{"{",
+       RowBox[{
+        RowBox[{"x", "[", RowBox[{"t", ",", " ", "m"}], "]"}], ",",
+        RowBox[{"y", "[", RowBox[{"t", ",", " ", "m"}], "]"}]}], "}"}], "]"}],
+     ",", RowBox[{"{", RowBox[{"t", ",", "0", ",", RowBox[{"2", "\[Pi]"}]}], "}"}],
+     ",", RowBox[{"PlotPoints", "\[Rule]", "k"}],
+     ",", RowBox[{"AspectRatio", "\[Rule]", "Automatic"}],
+     ",", RowBox[{"Axes", "\[Rule]", "False"}], ",", "optionen"}], "]"}]}],
+  ";"}]], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"p", "[",
+    RowBox[{"m", ",", "k", ",",
+     RowBox[{"Frame", "\[Rule]", "frame"}]}], "]"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{", RowBox[{"m", ",", "5", ",", "\"\<sum index\>\""}], "}"}],
+     ",", "1", ",", "100", ",", "1"}], "}"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{", RowBox[{"k", ",", "40", ",", "\"\<sample points\>\""}], "}"}],
+     ",", "15", ",", "150", ",", "1"}], "}"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{", RowBox[{"frame", ",", "False", ",", "\"\<frame\>\""}], "}"}],
+     ",", RowBox[{"{", RowBox[{"True", ",", "False"}], "}"}]}], "}"}], ",",
+   RowBox[{"SaveDefinitions", "\[Rule]", "True"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`m$$ = 5}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+
+    // The typeset sums come back as evaluable `Sum[…]` calls.
+    let definitions = editors[0].content.text();
+    assert!(
+      definitions.contains("Sum[(Sin[(n)^(2) t])/((n)^(2)), {n, 1, m}]"),
+      "the ∑ box must become a Sum: {definitions}"
+    );
+
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the parametric curve must render, which needs both the ∑ definitions \
+       and the `p[ m_, … ]` helper (declared with a trailing space) to bind"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: m,
+          label: m_label,
+          current: m_now,
+          ..
+        },
+        manipulate::ControlState::Continuous { name: k, .. },
+        manipulate::ControlState::Discrete {
+          name: frame,
+          values,
+          ..
+        },
+      ] => {
+        assert_eq!(
+          (m.as_str(), m_label.as_str(), *m_now),
+          ("m", "sum index", 5.0)
+        );
+        assert_eq!(k, "k");
+        assert_eq!(frame, "frame");
+        assert_eq!(values, &["True".to_string(), "False".to_string()]);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
   }
 }
