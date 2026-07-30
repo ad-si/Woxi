@@ -2,6 +2,12 @@
 //!
 //! Expand, Factor, Simplify, Coefficient, Exponent, PolynomialQ.
 
+use crate::InterpreterError;
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, expr_to_string,
+  unevaluated,
+};
+
 mod apart;
 mod cancel;
 mod coefficient;

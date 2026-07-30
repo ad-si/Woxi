@@ -1,8 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, unevaluated};
-
 use crate::functions::calculus_ast::simplify;
 use crate::functions::math_ast::times_ast;
 use crate::functions::polynomial_ast::expand::is_sum;

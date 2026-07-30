@@ -1,6 +1,5 @@
-use super::{mk_call, mk_int, mk_power, mk_ratio, mk_times};
-use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr};
+#[allow(unused_imports)]
+use super::*;
 
 /// FunctionExpand[expr] — expand special mathematical functions into simpler forms.
 pub fn function_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

@@ -1,7 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, unevaluated};
 
 /// Cyclotomic[n, x] - The n-th cyclotomic polynomial evaluated at x
 pub fn cyclotomic_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

@@ -1,11 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
 use crate::functions::calculus_ast::simplify;
 use crate::functions::math_ast::{gcd_i128, lcm_i128, rat_reduce};
-use crate::syntax::{
-  BinaryOperator, Expr, UnaryOperator, bool_expr, expr_to_string, unevaluated,
-};
 
 // ─── Factor ─────────────────────────────────────────────────────────
 

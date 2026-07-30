@@ -1,8 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, unevaluated};
-
 use crate::functions::polynomial_ast::coefficient::coefficient_ast;
 use crate::functions::polynomial_ast::exponent::max_power_int;
 use crate::functions::polynomial_ast::simplify::collect_variables;

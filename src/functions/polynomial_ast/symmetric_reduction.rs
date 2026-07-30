@@ -9,8 +9,8 @@
 //! `s_k`. Uses the classical reduction by elementary symmetric polynomials in
 //! lexicographic monomial order.
 
-use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
+#[allow(unused_imports)]
+use super::*;
 
 fn eval(e: Expr) -> Result<Expr, InterpreterError> {
   crate::evaluator::evaluate_expr_to_expr(&e)

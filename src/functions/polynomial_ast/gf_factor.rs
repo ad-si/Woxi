@@ -9,8 +9,6 @@
 
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, bool_expr, unevaluated};
 
 /// Keep the c-sweep in Berlekamp splitting bounded.
 const MAX_MODULUS: i128 = 65_536;

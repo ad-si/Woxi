@@ -1,9 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
 use crate::evaluator::pattern_matching::expr_equal;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, bool_expr};
-
 use crate::functions::calculus_ast::is_constant_wrt;
 
 // ─── PolynomialQ ────────────────────────────────────────────────────
