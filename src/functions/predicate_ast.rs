@@ -571,9 +571,16 @@ pub fn is_numeric_q(expr: &Expr) -> bool {
       // I and named mathematical constants are numeric
       // Infinity is NOT numeric in Wolfram Language
       // (NumericQ[Infinity] returns False)
+      // Arithmetic leaves a mathematical constant as either `Constant("Pi")`
+      // or `Identifier("Pi")` depending on which side of a product it
+      // started on, so both spellings must answer the same way here.
+      // Infinity is NOT numeric in Wolfram Language.
       if matches!(
         name.as_str(),
         "I"
+          | "Pi"
+          | "E"
+          | "Degree"
           | "GoldenRatio"
           | "EulerGamma"
           | "Catalan"

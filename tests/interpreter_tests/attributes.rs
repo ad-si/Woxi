@@ -1113,6 +1113,24 @@ mod cases {
       r#"False"#,
     );
   }
+  // A mathematical constant is numeric whichever way it reached the
+  // product. Regression: `Pi 2` leaves `Pi` as a plain symbol (while `2 Pi`
+  // keeps the constant node), so `NumericQ[Pi 2]` answered False — which in
+  // turn stopped `Re[2 E^(Pi I/25)]` from reducing.
+  #[test]
+  fn numeric_q_constants_in_a_product() {
+    assert_case(r#"NumericQ[Pi 2]"#, r#"True"#);
+    assert_case(r#"NumericQ[2 Pi]"#, r#"True"#);
+    assert_case(r#"NumericQ[E 2]"#, r#"True"#);
+    assert_case(r#"NumericQ[Degree 2]"#, r#"True"#);
+    assert_case(r#"NumericQ[Pi I]"#, r#"True"#);
+    assert_case(r#"NumericQ[E^(Pi I/25)]"#, r#"True"#);
+    // A symbol with no numeric value is still not numeric, and Infinity
+    // is not numeric in the Wolfram Language.
+    assert_case(r#"NumericQ[Pi x]"#, r#"False"#);
+    assert_case(r#"NumericQ[Infinity]"#, r#"False"#);
+  }
+
   #[test]
   fn greater_1() {
     assert_case(

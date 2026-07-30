@@ -293,6 +293,31 @@ fn is_cell_open_false(s: &str) -> bool {
   s == "CellOpen->False"
 }
 
+/// The part specification inside a `⟦…⟧` group, or None when `s` is an
+/// ordinary subscript. The double-bracket characters are what
+/// `\[LeftDoubleBracket]` / `\[RightDoubleBracket]` unescape to.
+fn part_spec_inside_double_brackets(s: &str) -> Option<&str> {
+  s.trim()
+    .strip_prefix('\u{27E6}')?
+    .strip_suffix('\u{27E7}')
+    .map(str::trim)
+}
+
+/// `base[[spec]]` when `base` is a single token, `Part[base, spec]` when it
+/// is anything else — the function form needs no parentheses to keep its
+/// precedence.
+fn format_part_access(base: &str, spec: &str) -> String {
+  let simple = !base.is_empty()
+    && base
+      .chars()
+      .all(|c| c.is_alphanumeric() || matches!(c, '$' | '`' | '#' | '_'));
+  if simple {
+    format!("{base}[[{spec}]]")
+  } else {
+    format!("Part[{base}, {spec}]")
+  }
+}
+
 /// Convert a bare box-expression source (`SubscriptBox[p, 0]`, as carried by
 /// an inline `\!\(\*…\)` segment inside a string) into the evaluable
 /// expression it typesets (`Subscript[p, 0]`). Returns None when `s` is not
@@ -524,9 +549,16 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       "SuperscriptBox" if args.len() == 2 => {
         format!("({})^({})", conv(&args[0]), conv(&args[1]))
       }
-      // `SubscriptBox[a, b]` → `Subscript[a, b]` (Wolfram's evaluable form).
+      // `SubscriptBox[a, b]` → `Subscript[a, b]` (Wolfram's evaluable form),
+      // except when the subscript is a `\[LeftDoubleBracket]…\]` group: the
+      // FrontEnd also accepts `Part` typeset as a bracketed subscript, and
+      // `SubscriptBox["c", RowBox[{"⟦", "1", "⟧"}]]` means `c[[1]]`.
       "SubscriptBox" if args.len() == 2 => {
-        format!("Subscript[{}, {}]", conv(&args[0]), conv(&args[1]))
+        let sub = conv(&args[1]);
+        match part_spec_inside_double_brackets(&sub) {
+          Some(spec) => format_part_access(&conv(&args[0]), spec),
+          None => format!("Subscript[{}, {}]", conv(&args[0]), sub),
+        }
       }
       // `SubsuperscriptBox[a, b, c]` → `Subscript[a, b]^c`.
       "SubsuperscriptBox" if args.len() == 3 => {
@@ -937,11 +969,14 @@ fn render_boxes_text(s: &str) -> String {
   if let Some(args) = box_args("SubscriptBox", s)
     && args.len() == 2
   {
-    return format!(
-      "{}_{}",
-      render_boxes_text(&args[0]),
-      render_boxes_text(&args[1])
-    );
+    let base = render_boxes_text(&args[0]);
+    let sub = render_boxes_text(&args[1]);
+    // A `⟦…⟧` subscript is a `Part` access, which reads as `c⟦1⟧` — no
+    // underscore between the base and its brackets.
+    if part_spec_inside_double_brackets(&sub).is_some() {
+      return format!("{base}{sub}");
+    }
+    return format!("{base}_{sub}");
   }
   if let Some(args) = box_args("SuperscriptBox", s)
     && args.len() == 2
@@ -2806,6 +2841,23 @@ Cell["Chapter 2", "Chapter"]
     assert_eq!(extract_cell_content(s), "a<=b");
     let s = r#"BoxData[RowBox[{"a", "\[GreaterEqual]", "b"}]]"#;
     assert_eq!(extract_cell_content(s), "a>=b");
+  }
+
+  /// The FrontEnd also typesets `Part` as a bracketed subscript, which is
+  /// how a Demonstrations cell stores `c[[1]]`. Regression: it came back as
+  /// `Subscript[c, ⟦1⟧]`, which does not parse.
+  #[test]
+  fn test_subscript_box_with_double_brackets_is_part() {
+    let s = r#"BoxData[SubscriptBox["c", RowBox[{"\[LeftDoubleBracket]", "1", "\[RightDoubleBracket]"}]]]"#;
+    assert_eq!(extract_cell_content(s), "c[[1]]");
+    // Several indices, and a non-token base that needs the function form.
+    let s = r#"BoxData[SubscriptBox["c", RowBox[{"\[LeftDoubleBracket]", RowBox[{"1", ",", "2"}], "\[RightDoubleBracket]"}]]]"#;
+    assert_eq!(extract_cell_content(s), "c[[1,2]]");
+    let s = r#"BoxData[SubscriptBox[RowBox[{"a", "+", "b"}], RowBox[{"\[LeftDoubleBracket]", "1", "\[RightDoubleBracket]"}]]]"#;
+    assert_eq!(extract_cell_content(s), "Part[a+b, 1]");
+    // An ordinary subscript is still `Subscript`.
+    let s = r#"BoxData[SubscriptBox["c", "1"]]"#;
+    assert_eq!(extract_cell_content(s), "Subscript[c, 1]");
   }
 
   /// A named character inside a *string literal* is content, so it stays

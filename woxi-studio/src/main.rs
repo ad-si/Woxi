@@ -6795,6 +6795,73 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 1}, \"…\"]"], "Output"]
   }
 
   #[test]
+  fn two_circular_windows_notebook_opens_with_its_widget() {
+    // End-to-end regression for the "Two Circular Windows" Demonstration.
+    // Its cell stores `c[[1]]` as a bracketed subscript box, and the body
+    // builds every polygon vertex from `Re`/`Im` of a complex exponential
+    // whose exponent is written `k Pi I/25`.
+    let nb_src = r##"Notebook[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"Graphics", "[",
+    RowBox[{
+     RowBox[{"Polygon", "[",
+      RowBox[{
+       RowBox[{
+        RowBox[{"{",
+         RowBox[{
+          RowBox[{"Re", "[", "#", "]"}], ",",
+          RowBox[{"Im", "[", "#", "]"}]}], "}"}], "&"}], "/@",
+       RowBox[{"Table", "[",
+        RowBox[{
+         RowBox[{
+          SubscriptBox["c",
+           RowBox[{
+           "\[LeftDoubleBracket]", "1", "\[RightDoubleBracket]"}]], "+",
+          RowBox[{
+           SuperscriptBox["\[ExponentialE]",
+            RowBox[{"k", " ", "\[Pi]", " ",
+             RowBox[{"\[ImaginaryI]", "/", "25"}]}]], "/", "10"}]}], ",",
+         RowBox[{"{", RowBox[{"k", ",", "50"}], "}"}]}], "]"}]}], "]"}], ",",
+     RowBox[{"PlotRange", "\[Rule]", "1"}]}], "]"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{", RowBox[{"c", ",", RowBox[{"{", RowBox[{"0", ",", "0"}], "}"}]}], "}"}], ",",
+     RowBox[{"{", RowBox[{RowBox[{"-", "3"}], ",", RowBox[{"-", "2"}]}], "}"}], ",",
+     RowBox[{"{", RowBox[{"4", ",", "2"}], "}"}], ",", "Locator"}], "}"}]}], "]"}]], "Input"]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+
+    // The bracketed subscript is a `Part` access, so the cell is valid code.
+    let code = editors[0].content.text();
+    assert!(
+      code.contains("c[[1]]"),
+      "the bracketed subscript must parse as Part: {code}"
+    );
+
+    let widget = instantiate_stored_manipulate(&code)
+      .expect("the Manipulate must build a widget");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the polygon must render, which needs Re/Im of E^(k Pi I/25) to reduce"
+    );
+    match &widget.controls[..] {
+      [manipulate::ControlState::Slider2D { name, x, y, .. }] => {
+        assert_eq!(name, "c");
+        assert_eq!((*x, *y), (0.0, 0.0));
+      }
+      other => panic!("expected one locator control, got {other:?}"),
+    }
+  }
+
+  #[test]
   fn power_of_a_test_manipulate_typesets_its_labels() {
     // End-to-end regression for the "Power of a Test about a Binomial
     // Parameter" Demonstration: the labels are strings carrying inline

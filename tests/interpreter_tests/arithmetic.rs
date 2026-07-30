@@ -4497,6 +4497,23 @@ mod expand_threading {
     assert_eq!(interpret("Re[a]").unwrap(), "Re[a]");
   }
 
+  // A complex exponential resolves to Cos/Sin however the exponent was
+  // written. Regression: `Pi I/25` leaves `Pi` as a plain symbol, which
+  // made the argument fail `NumericQ` and left `Re` unevaluated — the
+  // "Two Circular Windows" Demonstration builds its polygons this way.
+  #[test]
+  fn re_im_of_a_complex_exponential() {
+    assert_eq!(interpret("Re[E^(Pi I/25)]").unwrap(), "Cos[Pi/25]");
+    assert_eq!(interpret("Im[E^(Pi I/25)]").unwrap(), "Sin[Pi/25]");
+    assert_eq!(interpret("Re[2 E^(Pi I/25)]").unwrap(), "2*Cos[Pi/25]");
+    assert_eq!(interpret("Im[2 E^(Pi I/25)]").unwrap(), "2*Sin[Pi/25]");
+    // The other spellings of the same exponent agree.
+    assert_eq!(interpret("Re[2 E^(I Pi/25)]").unwrap(), "2*Cos[Pi/25]");
+    assert_eq!(interpret("Re[2*E^(I/25*Pi)]").unwrap(), "2*Cos[Pi/25]");
+    // A symbolic exponent stays unevaluated.
+    assert_eq!(interpret("Re[E^(I x)]").unwrap(), "Re[E^(I*x)]");
+  }
+
   // Conjugate folds numeric quotients with radical denominators; symbolic
   // quotients stay wrapped as a whole, matching wolframscript.
   #[test]
