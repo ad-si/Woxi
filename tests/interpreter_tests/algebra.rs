@@ -7603,6 +7603,113 @@ mod find_root {
       result
     );
   }
+
+  // A badly scaled function sends the first plain Newton step far past the
+  // root; damping walks it back instead of running out of iterations somewhere
+  // meaningless. Before this, FindRoot returned 268.87944117144235 for the
+  // first of these — not a root at all — with no warning.
+  #[test]
+  fn badly_scaled_exponential_converges() {
+    assert_eq!(
+      interpret("FindRoot[Exp[x] - 1000, {x, 1}]").unwrap(),
+      "{x -> 6.907755278982137}"
+    );
+    assert_eq!(
+      interpret("FindRoot[Exp[x] - 10^6, {x, 1}]").unwrap(),
+      "{x -> 13.815510557964274}"
+    );
+    assert_eq!(
+      interpret("FindRoot[Sinh[x] - 100, {x, 0}]").unwrap(),
+      "{x -> 5.298342365610589}"
+    );
+  }
+
+  // MaxIterations caps the Newton steps, reports FindRoot::cvmit and hands back
+  // the point reached. The values are the plain Newton iterates from x0 = 1.
+  #[test]
+  fn max_iterations_caps_the_iteration() {
+    use woxi::interpret_with_stdout;
+    assert_eq!(
+      interpret("FindRoot[x^2 - 2, {x, 1}, MaxIterations -> 1]").unwrap(),
+      "{x -> 1.5}"
+    );
+    assert_eq!(
+      interpret("FindRoot[x^2 - 2, {x, 1}, MaxIterations -> 2]").unwrap(),
+      "{x -> 1.4166666666666667}"
+    );
+    assert_eq!(
+      interpret("FindRoot[x^2 - 2, {x, 1}, MaxIterations -> 3]").unwrap(),
+      "{x -> 1.4142156862745099}"
+    );
+    assert_eq!(
+      interpret("FindRoot[Cos[x] == x, {x, 1}, MaxIterations -> 2]").unwrap(),
+      "{x -> 0.7391128909113617}"
+    );
+    let r =
+      interpret_with_stdout("FindRoot[x^2 - 2, {x, 1}, MaxIterations -> 2]")
+        .unwrap();
+    assert!(
+      r.warnings.iter().any(|w| w
+        == "FindRoot::cvmit: Failed to converge to the requested accuracy or \
+            precision within 2 iterations."),
+      "expected cvmit message, got {:?}",
+      r.warnings
+    );
+    // A budget large enough to converge says nothing.
+    let r =
+      interpret_with_stdout("FindRoot[x^2 - 2, {x, 1}, MaxIterations -> 50]")
+        .unwrap();
+    assert_eq!(r.result, "{x -> 1.4142135623730951}");
+    assert!(
+      r.warnings.is_empty(),
+      "expected no messages, got {:?}",
+      r.warnings
+    );
+    // Infinity and Automatic are both accepted.
+    assert_eq!(
+      interpret("FindRoot[x^2 - 2, {x, 1}, MaxIterations -> Infinity]")
+        .unwrap(),
+      "{x -> 1.4142135623730951}"
+    );
+    assert_eq!(
+      interpret("FindRoot[x^2 - 2, {x, 1}, MaxIterations -> Automatic]")
+        .unwrap(),
+      "{x -> 1.4142135623730951}"
+    );
+  }
+
+  #[test]
+  fn max_iterations_rejects_non_positive() {
+    use woxi::interpret_with_stdout;
+    let r =
+      interpret_with_stdout("FindRoot[x^2 - 2, {x, 1}, MaxIterations -> 0]")
+        .unwrap();
+    assert_eq!(r.result, "FindRoot[x^2 - 2, {x, 1}, MaxIterations -> 0]");
+    assert!(
+      r.warnings.iter().any(|w| w
+        == "FindRoot::ioppfa: The value of the option MaxIterations -> 0 \
+            should be a positive integer, Infinity or Automatic."),
+      "expected ioppfa message, got {:?}",
+      r.warnings
+    );
+  }
+
+  // A vanishing derivative reports the singular Jacobian and hands back the
+  // point it stalled at, rather than aborting the whole evaluation as it used
+  // to ("FindRoot: derivative is zero, cannot converge").
+  #[test]
+  fn singular_derivative_reports_jsing() {
+    use woxi::interpret_with_stdout;
+    let r = interpret_with_stdout("FindRoot[x^2 + 1, {x, 1}]").unwrap();
+    assert_eq!(r.result, "{x -> 0.}");
+    assert!(
+      r.warnings.iter().any(|w| w
+        == "FindRoot::jsing: Encountered a singular Jacobian at the point \
+            {x} = {0.}. Try perturbing the initial point(s)."),
+      "expected jsing message, got {:?}",
+      r.warnings
+    );
+  }
 }
 
 mod replace {

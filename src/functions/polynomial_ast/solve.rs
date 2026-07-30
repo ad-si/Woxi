@@ -4547,6 +4547,12 @@ fn solve_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
 
 // ─── FindRoot ────────────────────────────────────────────────────────
 
+/// wolframscript's `MaxIterations` default for `FindRoot`.
+const FIND_ROOT_DEFAULT_MAX_ITERATIONS: usize = 100;
+
+/// How many times one Newton step may be halved before it is accepted anyway.
+const FIND_ROOT_MAX_BACKTRACKS: usize = 60;
+
 /// FindRoot[expr, {var, x0}] — numerically find a root using Newton's method.
 ///
 /// `expr` can be an expression (finds where it equals 0) or an equation `lhs == rhs`.
@@ -4571,19 +4577,44 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return find_root_multivariate(&args[0], specs);
   }
 
-  // Parse options from additional arguments (Method, etc.) — currently ignored
+  // Parse the options we honour: Method -> "Secant" picks the secant iteration,
+  // and MaxIterations caps the number of steps. The rest are accepted and
+  // ignored (see the note on AccuracyGoal/PrecisionGoal below).
   let mut use_secant = false;
+  let mut max_iter: usize = FIND_ROOT_DEFAULT_MAX_ITERATIONS;
   for opt in &args[2..] {
-    if let Expr::Rule {
+    let Expr::Rule {
       pattern,
       replacement,
     } = opt
-      && let Expr::Identifier(s) = pattern.as_ref()
-      && s == "Method"
-      && let Expr::String(m) = replacement.as_ref()
-      && m == "Secant"
-    {
-      use_secant = true;
+    else {
+      continue;
+    };
+    let Expr::Identifier(name) = pattern.as_ref() else {
+      continue;
+    };
+    match name.as_str() {
+      "Method" => {
+        if let Expr::String(m) = replacement.as_ref()
+          && m == "Secant"
+        {
+          use_secant = true;
+        }
+      }
+      "MaxIterations" => match replacement.as_ref() {
+        Expr::Integer(n) if *n >= 1 => max_iter = *n as usize,
+        Expr::Identifier(id) if id == "Automatic" => {}
+        Expr::Identifier(id) if id == "Infinity" => max_iter = usize::MAX,
+        other => {
+          crate::emit_message(&format!(
+            "FindRoot::ioppfa: The value of the option MaxIterations -> {} \
+             should be a positive integer, Infinity or Automatic.",
+            crate::syntax::format_expr(other, crate::syntax::ExprForm::Output)
+          ));
+          return Ok(unevaluated("FindRoot", args));
+        }
+      },
+      _ => {}
     }
   }
 
@@ -4706,14 +4737,20 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .map(simplify)
       .filter(|d| !contains_unevaluated_d(d));
 
-  // Newton's method
-  let max_iter = 100;
+  // Newton's method, damped: a step that makes |f| worse is halved until it
+  // does not, which is what lets a badly scaled function like `Exp[x] - 1000`
+  // walk back from the huge first step plain Newton takes. Stops when |f| is
+  // negligible or the iterate stops moving; running out of iterations first
+  // reports FindRoot::cvmit and hands back the point reached, as
+  // wolframscript does.
   let tol = 1e-15;
   let mut x = x0;
+  let mut converged = false;
 
   for _ in 0..max_iter {
     let fx = find_root_eval_at(&func, &var, x)?;
     if fx.abs() < tol {
+      converged = true;
       break;
     }
     // Compute derivative: symbolic if available, else numerical
@@ -4728,20 +4765,56 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let fm2 = find_root_eval_at(&func, &var, x - 2.0 * h)?;
       (-fp2 + 8.0 * fp1 - 8.0 * fm1 + fm2) / (12.0 * h)
     };
-    if fpx.abs() < 1e-30 {
-      // Derivative too small — try secant method step
+    let fpx = if fpx.abs() < 1e-30 {
+      // Derivative too small — fall back to a finite-difference slope.
       let h = 1e-8;
       let fx_plus = find_root_eval_at(&func, &var, x + h)?;
-      let fpx_approx = (fx_plus - fx) / h;
-      if fpx_approx.abs() < 1e-30 {
-        return Err(InterpreterError::EvaluationError(
-          "FindRoot: derivative is zero, cannot converge".into(),
-        ));
-      }
-      x -= fx / fpx_approx;
+      (fx_plus - fx) / h
     } else {
-      x -= fx / fpx;
+      fpx
+    };
+    if fpx.abs() < 1e-30 {
+      // Nothing to divide by: wolframscript reports the singular Jacobian and
+      // hands back the point it stalled at rather than failing outright.
+      crate::emit_message(&format!(
+        "FindRoot::jsing: Encountered a singular Jacobian at the point \
+         {{{}}} = {{{}}}. Try perturbing the initial point(s).",
+        var,
+        crate::syntax::format_expr(
+          &Expr::Real(x),
+          crate::syntax::ExprForm::Output
+        )
+      ));
+      converged = true;
+      break;
     }
+    let step = fx / fpx;
+    // Backtrack while the step overshoots into a worse residual.
+    let mut trial = x - step;
+    let mut shrink = 1.0;
+    for _ in 0..FIND_ROOT_MAX_BACKTRACKS {
+      let ft = find_root_eval_at(&func, &var, trial)?;
+      if ft.is_finite() && ft.abs() <= fx.abs() {
+        break;
+      }
+      shrink *= 0.5;
+      trial = x - step * shrink;
+    }
+    // A step this small means the iteration has settled, even for a function
+    // whose residual cannot reach `tol` because of its scale. Note it and keep
+    // going: the last iterations only jitter the final digit, and stopping here
+    // instead would move the answer off the one wolframscript reports.
+    if (trial - x).abs() <= f64::EPSILON * x.abs().max(1.0) {
+      converged = true;
+    }
+    x = trial;
+  }
+  if !converged {
+    crate::emit_message(&format!(
+      "FindRoot::cvmit: Failed to converge to the requested accuracy or \
+       precision within {} iterations.",
+      max_iter
+    ));
   }
 
   // Format the result
