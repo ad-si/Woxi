@@ -681,6 +681,16 @@ pub fn dispatch_evaluation_control(
         }
       }
     }
+    // RawArray[type, list] — the legacy spelling of NumericArray, with the
+    // arguments the other way round. `RawArray["UnsignedInteger8", data] ===
+    // NumericArray[data, "UnsignedInteger8"]`, and a Demonstrations texture
+    // stored as `Image[CompressedData[…]]` decompresses to this form.
+    "RawArray" if args.len() == 2 => {
+      return dispatch_evaluation_control(
+        "NumericArray",
+        &[args[1].clone(), args[0].clone()],
+      );
+    }
     // NumericArray[list] / NumericArray[list, type] — typed numeric array.
     // Without an explicit type, auto-detect the smallest type that fits all
     // elements (currently only `UnsignedInteger8` for non-negative integers

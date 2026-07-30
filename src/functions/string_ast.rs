@@ -11731,7 +11731,11 @@ fn decompress_to_expr(s: &str) -> Result<Expr, InterpreterError> {
   let bytes = inflate_compressed(s)?;
 
   if let Some(expr) = crate::functions::wl_serialize::deserialize(&bytes) {
-    return Ok(expr);
+    // The payload is an ordinary expression and evaluates like one — a
+    // Demonstrations texture arrives as `Image[CompressedData[…]]` whose
+    // payload is `RawArray[type, data]`, and `Image` needs the
+    // `NumericArray` that evaluates to, not the legacy head.
+    return Ok(crate::evaluator::evaluate_expr_to_expr(&expr).unwrap_or(expr));
   }
 
   let text = String::from_utf8(bytes).map_err(|e| {

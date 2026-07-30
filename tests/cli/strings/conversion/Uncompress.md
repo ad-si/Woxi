@@ -7,3 +7,10 @@ expression back to its original form.
 $ wo 'Uncompress[Compress["hello"]]'
 hello
 ```
+
+The decompressed expression evaluates like any other:
+
+```scrut
+$ wo 'Uncompress[Compress[1 + 1]]'
+2
+```

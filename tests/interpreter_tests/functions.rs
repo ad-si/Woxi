@@ -1525,6 +1525,79 @@ mod first_last_extended {
   // payload list — matching wolframscript exactly. The mathics-side
   // expectation (`<Integer64, 2×2>`) reflects mathics's own default type
   // inference (Integer64) and short-form display, not wolframscript output.
+  // `RawArray` is the legacy spelling of `NumericArray` with the arguments
+  // the other way round. A Demonstrations texture stored as
+  // `Image[CompressedData[…]]` decompresses to this head, so without it the
+  // notebook died with `Image::imgarray`.
+  #[test]
+  fn raw_array_is_numeric_array_with_swapped_arguments() {
+    assert_eq!(
+      interpret(
+        r#"RawArray["UnsignedInteger8", {{1, 2}, {3, 4}}] ===
+           NumericArray[{{1, 2}, {3, 4}}, "UnsignedInteger8"]"#
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"RawArray["UnsignedInteger8", {{1, 2}, {3, 4}}]"#).unwrap(),
+      "NumericArray[<2,2>, UnsignedInteger8]"
+    );
+    assert_eq!(
+      interpret(r#"Head[RawArray["Real64", {1.5, 2.5}]]"#).unwrap(),
+      "NumericArray"
+    );
+    assert_eq!(
+      interpret(r#"Normal[RawArray["UnsignedInteger8", {{1, 2}, {3, 4}}]]"#)
+        .unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+  }
+
+  // A NumericArray reports on the array it holds, not on the two-element
+  // `NumericArray[data, type]` wrapper.
+  #[test]
+  fn numeric_array_dimensions_and_depth_see_the_payload() {
+    assert_eq!(
+      interpret(r#"Dimensions[NumericArray[{{1, 2}, {3, 4}}]]"#).unwrap(),
+      "{2, 2}"
+    );
+    assert_eq!(
+      interpret(r#"ArrayDepth[NumericArray[{{1, 2}, {3, 4}}]]"#).unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(r#"Dimensions[RawArray["UnsignedInteger8", {{{1, 2, 3}}}]]"#)
+        .unwrap(),
+      "{1, 1, 3}"
+    );
+  }
+
+  // `Uncompress` / `CompressedData` return the expression the payload holds,
+  // and it evaluates like any other. Regression: the decompressed
+  // `RawArray[…]` was handed to `Image` unevaluated.
+  #[test]
+  fn compressed_payload_evaluates() {
+    assert_eq!(interpret("Uncompress[Compress[1 + 1]]").unwrap(), "2");
+    assert_eq!(
+      interpret(
+        r#"Head[Uncompress[Compress[
+             RawArray["UnsignedInteger8", {{1, 2}, {3, 4}}]]]]"#
+      )
+      .unwrap(),
+      "NumericArray"
+    );
+    assert_eq!(
+      interpret(
+        r#"ImageDimensions[Image[Uncompress[Compress[
+             RawArray["UnsignedInteger8",
+               {{{255, 0, 0}, {0, 255, 0}}, {{0, 0, 255}, {255, 255, 0}}}]]]]]"#
+      )
+      .unwrap(),
+      "{2, 2}"
+    );
+  }
+
   #[test]
   fn numeric_array_2d_display() {
     assert_eq!(

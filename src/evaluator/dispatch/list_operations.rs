@@ -1694,6 +1694,22 @@ fn evaluate_if_unheld(
   evaluate_expr_to_expr(&result)
 }
 
+/// The list a `NumericArray[data, type]` holds, for the operations that
+/// report on the array rather than on the wrapper — `Dimensions`,
+/// `ArrayDepth`, `Normal`. Returns None for anything else.
+fn numeric_array_payload(expr: &Expr) -> Option<&Expr> {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "NumericArray"
+        && (args.len() == 1 || args.len() == 2)
+        && matches!(&args[0], Expr::List(_)) =>
+    {
+      Some(&args[0])
+    }
+    _ => None,
+  }
+}
+
 pub fn dispatch_list_operations(
   name: &str,
   args: &[Expr],
@@ -2389,6 +2405,13 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::delete_elements_ast(args));
     }
     "Dimensions" | "TensorDimensions" if args.len() == 1 || args.len() == 2 => {
+      // A NumericArray reports on the array it holds, not on the two-element
+      // `NumericArray[data, type]` wrapper.
+      if let Some(payload) = numeric_array_payload(&args[0]) {
+        let mut unwrapped = args.to_vec();
+        unwrapped[0] = payload.clone();
+        return Some(list_helpers_ast::dimensions_ast(&unwrapped));
+      }
       // A SymmetrizedArray reports on the dense array it stands for, whose
       // positions the symmetry only stores one representative of.
       if let Some(dense) =
@@ -4902,7 +4925,8 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::maximal_by_ast(&args[0], &args[1], n));
     }
     "ArrayDepth" if args.len() == 1 => {
-      return Some(list_helpers_ast::array_depth_ast(&args[0]));
+      let target = numeric_array_payload(&args[0]).unwrap_or(&args[0]);
+      return Some(list_helpers_ast::array_depth_ast(target));
     }
     "ArrayComponents" if !args.is_empty() && args.len() <= 3 => {
       return Some(list_helpers_ast::array_components_ast(args));

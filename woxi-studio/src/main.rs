@@ -6862,6 +6862,44 @@ Cell[BoxData[
   }
 
   #[test]
+  fn gravestone_notebook_loads_its_compressed_texture() {
+    // End-to-end regression for the "Gravestone from Transformation of
+    // Bilinski Dodecahedron 2" Demonstration. Its texture cell is a
+    // `GraphicsBox[TagBox[RasterBox[CompressedData[…]]]]`, which the parser
+    // turns back into `Image[CompressedData[…]]`; the payload decompresses
+    // to a `RawArray`, and without that head the cell died with
+    // `Image::imgarray` and the texture was never defined.
+    let nb_src = r##"Notebook[{
+Cell[BoxData[
+ RowBox[{"tex", "=",
+  RowBox[{"Image", "[",
+   RowBox[{"CompressedData", "[", "\"1:eJxeJzzK81NLcpMdiwqSqyMrq6uNjI11VEw0FEwqNVRqDbQUYDwa0E8EBciAuKBJWCytToKSqF5xZnpeakpnnklqempRRZKsQDh2xrG\"", "]"}], "]"}]}]], "Input"],
+Cell[BoxData["ImageDimensions[tex]"], "Input"]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let code = editors[0].content.text();
+    assert!(
+      code.starts_with("tex=Image[CompressedData["),
+      "unexpected cell: {code}"
+    );
+    // The whole notebook evaluates without the texture cell erroring, and
+    // the image is the 2x2 RGB one the payload holds.
+    let mut out = String::new();
+    for e in &editors {
+      let r = woxi::interpret_with_stdout(&e.content.text())
+        .expect("cell must evaluate");
+      assert!(
+        r.warnings.is_empty(),
+        "cell emitted messages: {:?}",
+        r.warnings
+      );
+      out = r.result;
+    }
+    assert_eq!(out, "{2, 2}");
+  }
+
+  #[test]
   fn word_problem_about_boats_manipulate_tracks_its_slider() {
     // End-to-end regression for the "A Word Problem about Boats"
     // Demonstration: the label and the point style are `:>` options whose
