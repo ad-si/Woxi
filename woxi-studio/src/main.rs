@@ -1630,14 +1630,10 @@ impl WoxiStudio {
       Message::ManipulateSlider2DChanged(cell_idx, ctrl_idx, axis, value) => {
         if let Some(editor) = self.cell_editors.get_mut(cell_idx)
           && let Some(state) = editor.manipulate_state.as_mut()
-          && let Some(control) = state.controls.get_mut(ctrl_idx)
-          && let manipulate::ControlState::Slider2D { x, y, .. } = control
         {
-          if axis == 0 {
-            *x = value;
-          } else {
-            *y = value;
-          }
+          // Routes through the control's write-back callback (if any), so
+          // e.g. Locator-promoted controls round/validate the candidate.
+          state.slider2d_change(ctrl_idx, axis, value);
           if state.request_reeval() {
             return manipulate_reeval_task(cell_idx);
           }
@@ -3789,6 +3785,7 @@ fn render_manipulate_widget<'a>(
         y_max,
         x,
         y,
+        ..
       } => {
         // Rendered as two linked sliders (X and Y) driving the 2-vector.
         let x_span = (*x_max - *x_min).abs();
@@ -4125,6 +4122,29 @@ fn render_display_node<'a>(
         // Non-interactive checkbox: rendered but not clickable.
         None => cb.into(),
       }
+    }
+    DisplayNode::Toggler {
+      label,
+      mutation,
+      selected,
+    } => {
+      // One choice of a TogglerBar: a toggle button whose press adds or
+      // removes its value from the bound list variable.
+      let selected = *selected;
+      let mutation = mutation.clone();
+      button(render_display_node(cell_idx, label))
+        .padding([2, 6])
+        .style(move |theme: &iced::Theme, status| {
+          let mut style = if selected {
+            button::primary(theme, status)
+          } else {
+            button::secondary(theme, status)
+          };
+          style.border.radius = 4.0.into();
+          style
+        })
+        .on_press(Message::ManipulateDisplayToggled(cell_idx, mutation))
+        .into()
     }
     DisplayNode::Static {
       svg: svg_src,
@@ -6460,6 +6480,117 @@ mod tests {
     state.reevaluate();
     assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
     assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
+  fn in_body_locator_and_togglerbar_build_interactive_widget() {
+    // The "Triangle Calculator" Demonstration pattern: every variable is
+    // `ControlType -> None`, the points are driven by `Locator[Dynamic[…]]`
+    // markers inside the body's Graphics, and a `TogglerBar[Dynamic[…]]`
+    // in the output column switches display layers. The widget must expose
+    // the points as controls (with the Dynamic's write-back callback) and
+    // the TogglerBar as an interactive display row.
+    let code = "Manipulate[\
+      Column[{\
+        Graphics[{Dynamic[{Line[{ptA, ptB}]}], \
+          Locator[Dynamic[ptA, (If[valuesOK[{#, ptB}], ptA = #] &)[\
+            Clip[Round[#], {-8, 8}]] &], \
+            Graphics[{Disk[{0, 0}, 1]}, ImageSize -> 20]], \
+          Locator[Dynamic[ptB, (If[valuesOK[{ptA, #}], ptB = #] &)[\
+            Clip[Round[#], {-8, 8}]] &]]}, \
+          PlotRange -> {{-9, 9}, {-9, 9}}], \
+        TogglerBar[Dynamic[switches], {1 -> \"one\", 2 -> \"two\"}]}], \
+      {{ptA, {7, -1}}, {-9, -9}, {9, 9}, ControlType -> None}, \
+      {{ptB, {-5, -5}}, {-9, -9}, {9, 9}, ControlType -> None}, \
+      {{switches, {1, 2}}, ControlType -> None}, \
+      Initialization :> (valuesOK[pts_] := pts[[1]] =!= pts[[2]])]";
+    let mut state = instantiate_stored_manipulate(code)
+      .expect("in-body locator Manipulate must build a widget");
+    assert!(state.error.is_none(), "body must render: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+
+    // The two locator-driven points are visible 2D-slider controls with
+    // their write-back callbacks; `switches` stays hidden mutable state.
+    let sliders: Vec<&manipulate::ControlState> = state
+      .controls
+      .iter()
+      .filter(|c| matches!(c, manipulate::ControlState::Slider2D { .. }))
+      .collect();
+    assert_eq!(sliders.len(), 2, "ptA and ptB must be promoted");
+    assert_eq!(state.state.len(), 1);
+    assert_eq!(state.state[0].0, "switches");
+
+    // The TogglerBar is an interactive display row with both choices
+    // selected initially.
+    let togglers = collect_togglers(&state.display_trees);
+    assert_eq!(togglers.len(), 2);
+    assert!(togglers.iter().all(|(_, selected)| *selected));
+
+    // A slider move routes through the callback: the candidate is rounded
+    // to the lattice…
+    state.slider2d_change(0, 0, 3.4);
+    match &state.controls[0] {
+      manipulate::ControlState::Slider2D { x, y, .. } => {
+        assert_eq!((*x, *y), (3.0, -1.0));
+      }
+      other => panic!("expected Slider2D, got {other:?}"),
+    }
+    // …and a move that lands both points on the same spot is rejected by
+    // the notebook's valuesOK check (ptB stays put).
+    state.slider2d_change(1, 0, 3.0);
+    state.slider2d_change(1, 1, -1.0);
+    match &state.controls[1] {
+      manipulate::ControlState::Slider2D { x, y, .. } => {
+        assert_eq!((*x, *y), (3.0, -5.0), "degenerate move must be rejected");
+      }
+      other => panic!("expected Slider2D, got {other:?}"),
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+
+    // Clicking a toggler removes its value from the list; the rebuilt
+    // display shows it unselected.
+    let mutation = collect_togglers(&state.display_trees)[0].0.clone();
+    state.apply_display_mutation(&mutation);
+    assert_eq!(state.state[0].1, "{2}");
+    let togglers = collect_togglers(&state.display_trees);
+    assert_eq!(
+      togglers.iter().map(|(_, s)| *s).collect::<Vec<_>>(),
+      vec![false, true]
+    );
+  }
+
+  /// Collect `(mutation, selected)` of every Toggler in a display tree.
+  fn collect_togglers(
+    trees: &[woxi::functions::graphics::DisplayNode],
+  ) -> Vec<(String, bool)> {
+    use woxi::functions::graphics::DisplayNode;
+    fn walk(node: &DisplayNode, out: &mut Vec<(String, bool)>) {
+      match node {
+        DisplayNode::Toggler {
+          mutation, selected, ..
+        } => out.push((mutation.clone(), *selected)),
+        DisplayNode::Panel(child) => walk(child, out),
+        DisplayNode::Grid(rows) => {
+          for row in rows {
+            for cell in row {
+              walk(cell, out);
+            }
+          }
+        }
+        DisplayNode::Column(children) | DisplayNode::Row(children) => {
+          for c in children {
+            walk(c, out);
+          }
+        }
+        DisplayNode::Checkbox { .. } | DisplayNode::Static { .. } => {}
+      }
+    }
+    let mut out = Vec::new();
+    for t in trees {
+      walk(t, &mut out);
+    }
+    out
   }
 
   #[test]

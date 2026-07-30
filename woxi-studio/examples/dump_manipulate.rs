@@ -76,6 +76,19 @@ fn main() {
           println!("  {n} = {snippet}");
         }
       }
+      if !state.displays.is_empty() {
+        println!("displays:");
+        for d in &state.displays {
+          let snippet: String = d.chars().take(120).collect();
+          println!("  {snippet}");
+        }
+        println!("display trees:");
+        for t in &state.display_trees {
+          let dbg = format!("{t:?}");
+          let snippet: String = dbg.chars().take(300).collect();
+          println!("  {snippet}");
+        }
+      }
       println!("body:");
       for line in state.body.lines() {
         println!("  {line}");

@@ -11257,7 +11257,31 @@ fn resolve_display_item(expr: &Expr) -> Expr {
   {
     current = args[0].clone();
   }
+  // `InputForm[expr]` displays as the InputForm text of `expr`.
+  if let Expr::FunctionCall { name, args } = &current
+    && name == "InputForm"
+    && args.len() == 1
+  {
+    current = Expr::Raw(crate::syntax::expr_to_input_form(&args[0]));
+  }
   current
+}
+
+/// Render a resolved `Column`/`Row` item that is itself a layout construct
+/// (`Row[…]` / `Column[…]`) to a nested SVG, so mixed text/graphics rows
+/// compose instead of printing as raw InputForm text. `None` for other
+/// expressions (rendered as a plain text line by the caller).
+fn nested_layout_svg(expr: &Expr) -> Option<String> {
+  if let Expr::FunctionCall { name, args } = expr {
+    let args: Vec<Expr> = args.iter().cloned().collect();
+    if name == "Row" {
+      return row_to_svg(&args);
+    }
+    if name == "Column" {
+      return column_to_svg(&args);
+    }
+  }
+  None
 }
 
 /// Render `Column[{expr1, expr2, ...}]` as an SVG with items stacked vertically.
@@ -11341,7 +11365,17 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
             height: h,
           }
         }
-        _ => Cell::Text(resolved),
+        _ => match nested_layout_svg(&resolved) {
+          Some(svg) => {
+            let (w, h) = parse_svg_wh(&svg);
+            Cell::Svg {
+              svg,
+              width: w,
+              height: h,
+            }
+          }
+          None => Cell::Text(resolved),
+        },
       }
     })
     .collect();
@@ -11575,7 +11609,17 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
             height: h,
           }
         }
-        _ => make_text_cell(&resolved),
+        _ => match nested_layout_svg(&resolved) {
+          Some(svg) => {
+            let (w, h) = parse_svg_wh(&svg);
+            Cell::Svg {
+              svg,
+              width: w,
+              height: h,
+            }
+          }
+          None => make_text_cell(&resolved),
+        },
       }
     })
     .collect();
@@ -12639,6 +12683,12 @@ pub enum ManipulateControl {
     x_initial: f64,
     y_initial: f64,
     label: String,
+    /// InputForm of a write-back function (the second argument of a
+    /// `Locator[Dynamic[var, cb], …]` this control was promoted from).
+    /// Candidate values pass through it — `(cb)[{x, y}]` — before the
+    /// variable is read back, so e.g. `Clip[Round[#], …]` validation runs
+    /// exactly as Wolfram would.
+    write_callback: Option<String>,
   },
   /// An interval control (`ControlType -> IntervalSlider`). Binds its
   /// variable to a 2-vector `{low, high}` describing the selected range.
@@ -12812,15 +12862,28 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         inner.control_enabled,
       )
     }
-    None => (
-      crate::syntax::expr_to_input_form(&args[0]),
-      Vec::with_capacity(args.len() - 1),
-      Vec::new(),
-      Vec::new(),
-      None,
-      Vec::new(),
-    ),
+    None => {
+      // `TogglerBar[Dynamic[var], …]` inside the body moves into the
+      // display list (replaced by `Nothing` in the body): a front-end
+      // renders displays as live widgets, whereas inside the rendered
+      // output it would only be a static picture.
+      let mut body_displays = Vec::new();
+      let body_expr = extract_body_togglerbars(&args[0], &mut body_displays);
+      (
+        crate::syntax::expr_to_input_form(&body_expr),
+        Vec::with_capacity(args.len() - 1),
+        Vec::new(),
+        body_displays,
+        None,
+        Vec::new(),
+      )
+    }
   };
+  // `Locator[Dynamic[var, cb], …]` markers inside the body drive their
+  // variable interactively: a hidden `ControlType -> None` spec for such a
+  // variable is promoted to a visible Locator-style control below (with
+  // `cb` as its write-back callback).
+  let body_locators = collect_body_locator_callbacks(&args[0]);
   // `Locator` bindings are baked into the body (never rewritten by a
   // display); `ControlType -> None` bindings become live mutable state.
   let mut fixed: Vec<(String, String)> = Vec::new();
@@ -12917,6 +12980,38 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         if let Some((_, orig_form, synth)) = &rename {
           renames.push((orig_form.clone(), synth.clone()));
         }
+        // A hidden variable driven by an in-body `Locator[Dynamic[…]]`
+        // becomes a visible Locator-style control: re-parse its spec with
+        // the `ControlType -> None` option swapped for a `Locator` marker,
+        // and carry the Dynamic's write-back callback so candidate values
+        // are validated the way Wolfram would.
+        if let Some((_, callback)) =
+          body_locators.iter().find(|(n, _)| *n == name)
+          && let Expr::List(items) = &spec
+        {
+          let promoted: Vec<Expr> = items
+            .iter()
+            .filter(|it| !is_control_type_rule(it))
+            .cloned()
+            .chain(std::iter::once(Expr::Identifier(
+              "Locator".to_string(),
+            )))
+            .collect();
+          if let Some(ParsedControl::Visible(mut c, enabled2)) =
+            parse_manipulate_control(&Expr::List(promoted.into()))
+          {
+            if let ManipulateControl::Slider2D { write_callback, .. } =
+              &mut c
+            {
+              *write_callback = callback.clone();
+            }
+            if let Some(cond) = enabled2 {
+              control_enabled.push((c.name().to_string(), cond));
+            }
+            controls.push(c);
+            continue;
+          }
+        }
         state.push((name, value));
       }
     }
@@ -12981,6 +13076,129 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animation_running,
     appearance_none,
   })
+}
+
+/// Whether a control-spec item is a `ControlType -> …` option rule.
+fn is_control_type_rule(item: &Expr) -> bool {
+  matches!(
+    item,
+    Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlType")
+  )
+}
+
+/// The variables driven by `Locator[Dynamic[var, cb], …]` markers inside a
+/// Manipulate body, each with the InputForm of its write-back callback (the
+/// Dynamic's second argument), in first-seen order.
+fn collect_body_locator_callbacks(
+  expr: &Expr,
+) -> Vec<(String, Option<String>)> {
+  fn walk(expr: &Expr, found: &mut Vec<(String, Option<String>)>) {
+    match expr {
+      Expr::FunctionCall { name, args } => {
+        if name == "Locator"
+          && let Some(Expr::FunctionCall {
+            name: dname,
+            args: dargs,
+          }) = args.first()
+          && dname == "Dynamic"
+          && let Some(Expr::Identifier(var)) = dargs.first()
+          && !found.iter().any(|(n, _)| n == var)
+        {
+          let callback =
+            dargs.get(1).map(crate::syntax::expr_to_input_form);
+          found.push((var.clone(), callback));
+        }
+        for a in args {
+          walk(a, found);
+        }
+      }
+      Expr::List(items) => {
+        for it in items {
+          walk(it, found);
+        }
+      }
+      Expr::CompoundExpr(items) => {
+        for it in items {
+          walk(it, found);
+        }
+      }
+      _ => {}
+    }
+  }
+  let mut found = Vec::new();
+  walk(expr, &mut found);
+  found
+}
+
+/// Replace every `TogglerBar[Dynamic[var], …]` in a Manipulate body with
+/// `Nothing`, pushing each one's InputForm onto `displays` so the front-end
+/// renders it as a live widget instead of a static picture.
+fn extract_body_togglerbars(
+  expr: &Expr,
+  displays: &mut Vec<String>,
+) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "TogglerBar"
+        && matches!(
+          args.first(),
+          Some(Expr::FunctionCall { name: dname, args: dargs })
+            if dname == "Dynamic"
+              && matches!(dargs.first(), Some(Expr::Identifier(_)))
+        ) =>
+    {
+      displays.push(crate::syntax::expr_to_input_form(expr));
+      Expr::Identifier("Nothing".to_string())
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|a| extract_body_togglerbars(a, displays))
+        .collect::<Vec<_>>()
+        .into(),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|it| extract_body_togglerbars(it, displays))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    Expr::CompoundExpr(items) => Expr::CompoundExpr(
+      items
+        .iter()
+        .map(|it| extract_body_togglerbars(it, displays))
+        .collect(),
+    ),
+    other => other.clone(),
+  }
+}
+
+/// Apply a control's write-back callback to a candidate value: evaluates
+/// `(cb)[value]` under the current bindings (the callback usually assigns
+/// the control variable itself, possibly transformed or rejected), then
+/// reads the variable back. Returns its new InputForm value, or `None` when
+/// evaluation fails.
+pub fn apply_manipulate_callback(
+  bindings: &[(String, String)],
+  callback: &str,
+  value: &str,
+  var: &str,
+) -> Option<String> {
+  let body = format!("({callback})[{value}]; {var}");
+  let code = manipulate_block_code(&body, bindings);
+  crate::interpret_to_expr(&code)
+    .ok()
+    .map(|e| crate::syntax::expr_to_input_form(&e))
+}
+
+/// Parse an InputForm `{x, y}` point (as stored in a Manipulate binding)
+/// back into coordinates.
+pub fn parse_manipulate_point(code: &str) -> Option<(f64, f64)> {
+  let expr = crate::interpret_to_expr(code).ok()?;
+  list2_f64(&expr)
 }
 
 /// Synthesize a plain symbol name for a compound (non-Identifier) control
@@ -13276,6 +13494,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     x_initial,
     y_initial,
     label: var,
+    write_callback: None,
   };
   Some(ManipulateSpec {
     body_code,
@@ -13322,6 +13541,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     x_initial: (x_min + x_max) / 2.0,
     y_initial: (y_min + y_max) / 2.0,
     label: "pos".to_string(),
+    write_callback: None,
   };
   Some(ManipulateSpec {
     body_code,
@@ -13762,6 +13982,7 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
           x_initial: x,
           y_initial: y,
           label,
+          write_callback: None,
         },
         enabled,
       ));
@@ -13846,6 +14067,7 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
         x_initial,
         y_initial,
         label,
+        write_callback: None,
       },
       enabled,
     ));
@@ -14561,6 +14783,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         x_initial,
         y_initial,
         label,
+        ..
       } => {
         ctrl_parts.push(format!(
           r#"{{"kind":"slider2d","name":"{}","label":"{}","xMin":{},"xMax":{},"yMin":{},"yMax":{},"xInit":{},"yInit":{}}}"#,
@@ -14718,6 +14941,15 @@ pub enum DisplayNode {
     on: String,
     off: String,
   },
+  /// One choice of a `TogglerBar[Dynamic[var], …]`: a toggle button that
+  /// adds `value` to (or removes it from) the list variable. `mutation` is
+  /// the ready-to-evaluate write-back assignment; `selected` is whether the
+  /// value is currently a member of the list.
+  Toggler {
+    label: Box<DisplayNode>,
+    mutation: String,
+    selected: bool,
+  },
   /// Any unrecognized leaf, rendered to SVG (graphics) or text.
   Static { svg: Option<String>, text: String },
 }
@@ -14849,6 +15081,14 @@ fn display_expr_to_node(
         DisplayNode::Row(list_children(&args[0], bindings, probes, ons))
       }
       "Checkbox" => checkbox_node(args, probes, ons),
+      // `TogglerBar[Dynamic[var], {v1 -> label1, …}]`: a row of toggle
+      // buttons; clicking one adds/removes its value from the list `var`.
+      "TogglerBar" if args.len() >= 2 => {
+        match togglerbar_node(args, bindings, probes, ons) {
+          Some(node) => node,
+          None => static_leaf_node(expr, bindings),
+        }
+      }
       _ => static_leaf_node(expr, bindings),
     },
     // A bare list of display elements stacks vertically, like `Column`.
@@ -14927,6 +15167,77 @@ fn checkbox_node(
   }
 }
 
+/// Build a `TogglerBar[Dynamic[var], choices]` display: a Row of Toggler
+/// buttons. Each choice is `value -> label` (or a plain value, labelled by
+/// itself); clicking a button toggles the value's membership in the list
+/// `var`. Returns `None` when the arguments don't have that shape (the
+/// caller falls back to a static rendering).
+fn togglerbar_node(
+  args: &[Expr],
+  bindings: &[(String, String)],
+  probes: &mut Vec<String>,
+  ons: &mut Vec<String>,
+) -> Option<DisplayNode> {
+  let var = match args.first() {
+    Some(Expr::FunctionCall { name, args: dargs })
+      if name == "Dynamic" && !dargs.is_empty() =>
+    {
+      match &dargs[0] {
+        Expr::Identifier(v) => v.clone(),
+        _ => return None,
+      }
+    }
+    _ => return None,
+  };
+  // The choice list may be held (e.g. `Thread[Range[1, 4] -> {…}]`).
+  let choices_expr = match &args[1] {
+    l @ Expr::List(_) => l.clone(),
+    other => crate::evaluator::evaluate_expr_to_expr(other).ok()?,
+  };
+  let Expr::List(choices) = &choices_expr else {
+    return None;
+  };
+  // The current selection, for the per-choice `selected` state.
+  let current = crate::evaluator::evaluate_expr_to_expr(&Expr::Identifier(
+    var.clone(),
+  ))
+  .ok();
+  let mut buttons = Vec::with_capacity(choices.len());
+  for choice in choices {
+    let (value, label) = match choice {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref()),
+      other => (other, other),
+    };
+    let value_code = crate::syntax::expr_to_input_form(value);
+    let selected = match &current {
+      Some(Expr::List(items)) => items
+        .iter()
+        .any(|it| crate::syntax::expr_to_input_form(it) == value_code),
+      Some(single) => {
+        crate::syntax::expr_to_input_form(single) == value_code
+      }
+      None => false,
+    };
+    let mutation = format!(
+      "{var} = If[MemberQ[{var}, {value_code}], DeleteCases[{var}, \
+       {value_code}], Append[{var}, {value_code}]]"
+    );
+    buttons.push(DisplayNode::Toggler {
+      label: Box::new(display_expr_to_node(label, bindings, probes, ons)),
+      mutation,
+      selected,
+    });
+  }
+  Some(DisplayNode::Row(buttons))
+}
+
 /// Fill in each checkbox's `checked` flag from the batched probe results, in
 /// the same pre-order the probes were collected.
 fn assign_checkbox_state(
@@ -14947,6 +15258,9 @@ fn assign_checkbox_state(
       for c in children {
         assign_checkbox_state(c, flags, idx);
       }
+    }
+    DisplayNode::Toggler { label, .. } => {
+      assign_checkbox_state(label, flags, idx)
     }
     DisplayNode::Checkbox { checked, .. } => {
       if let Some(f) = flags.get(*idx) {
@@ -15037,6 +15351,16 @@ fn display_node_to_json(node: &DisplayNode) -> String {
         json_escape_manipulate(off),
       ),
     },
+    DisplayNode::Toggler {
+      label,
+      mutation,
+      selected,
+    } => format!(
+      r#"{{"kind":"toggler","label":{},"mutation":"{}","selected":{}}}"#,
+      display_node_to_json(label),
+      json_escape_manipulate(mutation),
+      selected,
+    ),
     DisplayNode::Static { svg, text } => match svg {
       Some(svg) => format!(
         r#"{{"kind":"static","svg":"{}"}}"#,
