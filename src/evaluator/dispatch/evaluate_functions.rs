@@ -12359,8 +12359,22 @@ fn morphological_op(
     return Some(Ok(Expr::List(result_expr)));
   }
 
-  let radius =
-    crate::functions::math_ast::try_eval_to_f64(radius_expr)? as usize;
+  // Structuring-element form on an image: apply the kernel-based morphology
+  // to every channel (e.g. `Erosion[img, DiskMatrix[4]]`).
+  let kernel_matrix = match radius_expr {
+    Expr::List(kitems)
+      if !kitems.is_empty()
+        && kitems.iter().all(|r| matches!(r, Expr::List(_))) =>
+    {
+      Some(expr_matrix_to_f64(kitems)?)
+    }
+    _ => None,
+  };
+
+  let radius = match &kernel_matrix {
+    Some(_) => 0,
+    None => crate::functions::math_ast::try_eval_to_f64(radius_expr)? as usize,
+  };
 
   if let Expr::Image {
     color_space: _,
@@ -12379,7 +12393,10 @@ fn morphological_op(
       let mut channel: Vec<Vec<f64>> = (0..h)
         .map(|y| (0..w).map(|x| data[(y * w + x) * ch + c_idx]).collect())
         .collect();
-      channel = apply_morphological_2d(name, &channel, radius);
+      channel = match &kernel_matrix {
+        Some(kernel) => apply_morphological_kernel_2d(name, &channel, kernel),
+        None => apply_morphological_2d(name, &channel, radius),
+      };
       for y in 0..h {
         for x in 0..w {
           new_data[(y * w + x) * ch + c_idx] = channel[y][x];
@@ -12394,6 +12411,11 @@ fn morphological_op(
       data: std::sync::Arc::new(new_data),
       image_type: *image_type,
     }));
+  }
+  if kernel_matrix.is_some() {
+    // A kernel matrix with a non-image, non-matrix first argument (the
+    // matrix + matrix combination was already handled above).
+    return None;
   }
 
   match data_expr {

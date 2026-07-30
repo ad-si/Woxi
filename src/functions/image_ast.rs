@@ -1262,6 +1262,118 @@ pub fn sharpen_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }))
 }
 
+/// ImageEffect[image, "effect"] / ImageEffect[image, {"effect", params…}] —
+/// apply an image effect. The noise effects draw from the shared
+/// interpreter RNG, so `SeedRandom` makes them reproducible:
+///
+/// - `"SaltPepperNoise"` (density `d`, default 0.05): each pixel is
+///   replaced, with probability `d`, by pure black or pure white (equal
+///   odds). An alpha channel is left untouched.
+/// - `"GaussianNoise"` (standard deviation `σ`, default 0.1): adds
+///   zero-mean Gaussian noise to every color channel, clipped to [0, 1].
+///
+/// Other effects are not implemented and return the call unevaluated.
+pub fn image_effect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use rand::Rng;
+
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(format!(
+      "ImageEffect expects 2 arguments, got {}",
+      args.len()
+    )));
+  }
+  let Expr::Image {
+    color_space,
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = &args[0]
+  else {
+    crate::emit_message(&format!(
+      "ImageEffect::imginv: Expecting an image or graphics instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated("ImageEffect", args));
+  };
+
+  // The effect spec is either a bare name or `{name, params…}`.
+  let (effect, params): (String, &[Expr]) = match &args[1] {
+    Expr::String(name) => (name.clone(), &[]),
+    Expr::List(items) if !items.is_empty() => match &items[0] {
+      Expr::String(name) => (name.clone(), &items[1..]),
+      _ => return Ok(unevaluated("ImageEffect", args)),
+    },
+    _ => return Ok(unevaluated("ImageEffect", args)),
+  };
+  let numeric_param = |idx: usize, default: f64| -> Option<f64> {
+    match params.get(idx) {
+      Some(expr) => crate::functions::math_ast::try_eval_to_f64(expr),
+      None => Some(default),
+    }
+  };
+
+  // Noise touches the color channels only; a trailing alpha channel (2 for
+  // grayscale + alpha, 4 for RGBA) keeps its original values.
+  let ch = *channels as usize;
+  let color_channels = match ch {
+    2 => 1,
+    4 => 3,
+    n => n,
+  };
+
+  let new_data: Vec<f64> = match effect.as_str() {
+    "SaltPepperNoise" => {
+      let Some(density) = numeric_param(0, 0.05) else {
+        return Ok(unevaluated("ImageEffect", args));
+      };
+      let mut out = data.as_ref().clone();
+      crate::with_rng(|rng| {
+        for pixel in out.chunks_mut(ch) {
+          if rng.gen_range(0.0..1.0) < density {
+            let value = if rng.gen_range(0.0..1.0) < 0.5 {
+              0.0
+            } else {
+              1.0
+            };
+            for channel in pixel.iter_mut().take(color_channels) {
+              *channel = value;
+            }
+          }
+        }
+      });
+      out
+    }
+    "GaussianNoise" => {
+      let Some(sigma) = numeric_param(0, 0.1) else {
+        return Ok(unevaluated("ImageEffect", args));
+      };
+      let mut out = data.as_ref().clone();
+      crate::with_rng(|rng| {
+        let normal = rand_distr::Normal::new(0.0f64, sigma.abs())
+          .unwrap_or(rand_distr::Normal::new(0.0f64, 0.0).unwrap());
+        for pixel in out.chunks_mut(ch) {
+          for channel in pixel.iter_mut().take(color_channels) {
+            *channel = (*channel + rng.sample(normal)).clamp(0.0, 1.0);
+          }
+        }
+      });
+      out
+    }
+    _ => return Ok(unevaluated("ImageEffect", args)),
+  };
+
+  Ok(requantize_filtered(Expr::Image {
+    color_space: *color_space,
+    width: *width,
+    height: *height,
+    channels: *channels,
+    data: Arc::new(new_data),
+    image_type: *image_type,
+  }))
+}
+
 /// Resolve the radius specification shared by `Blur`, `Sharpen` and
 /// `EdgeDetect` into the pair `(rows, columns)` of per-axis radii.
 /// `None` means the call was reported and should be left unevaluated:
@@ -3047,6 +3159,21 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "ColorConvert: second argument must be a color space string".into(),
       ));
     }
+  };
+  // Wolfram accepts color-space names case-insensitively — older notebooks
+  // commonly write "GrayScale" — so normalize to the canonical spelling.
+  let target_space = if target_space.eq_ignore_ascii_case("grayscale") {
+    "Grayscale"
+  } else if target_space.eq_ignore_ascii_case("rgb") {
+    "RGB"
+  } else if target_space.eq_ignore_ascii_case("cmyk") {
+    "CMYK"
+  } else if target_space.eq_ignore_ascii_case("hsb") {
+    "HSB"
+  } else if target_space.eq_ignore_ascii_case("hue") {
+    "Hue"
+  } else {
+    target_space
   };
 
   // Color directives: RGBColor[r, g, b(, a)] / GrayLevel[v(, a)].

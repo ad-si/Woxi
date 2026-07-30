@@ -1916,7 +1916,7 @@ IsomorphicGraphQ,Test whether two graphs are isomorphic,✅,pure,8.0,1930
 Resampling,Signal processing option for resampling methods,🚫,,8.0,1930
 DumpSave,Serialization of definitions to a binary file,🚫,,3.0,1932
 RecordLists,Data import option for structuring records as lists,🚫,,2.0,1932
-ImageEffect,Image processing effects and transformations,🚫,,7.0,1935
+ImageEffect,Applies an effect to an image (noise effects: SaltPepperNoise and GaussianNoise),✅,contextual,7.0,1935
 VertexDelete,Delete one or more vertices from a graph along with their incident edges,✅,pure,8.0,1935
 FileNameSplit,Splits a file name into a list of path components,✅,pure,7.0,1938
 SmallCircle,Symbolic small-circle operator with Unicode display,✅,pure,3.0,1938

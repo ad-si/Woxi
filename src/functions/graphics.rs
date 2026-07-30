@@ -9595,15 +9595,34 @@ struct ParsedSvg {
 
 /// Parse a numeric attribute value like `width="360"` or `height="225px"` from
 /// the root `<svg ...>` tag. Trailing unit suffixes (px, pt) are stripped.
+/// Find an attribute's value in `header`, accepting either quote style
+/// (image SVG wrappers use single quotes). Returns the raw value text.
+fn find_svg_attr<'a>(header: &'a str, attr: &str) -> Option<&'a str> {
+  for quote in ['"', '\''] {
+    let needle = format!("{attr}={quote}");
+    if let Some(start) = header.find(&needle) {
+      let start = start + needle.len();
+      let rel_end = header[start..].find(quote)?;
+      return Some(&header[start..start + rel_end]);
+    }
+  }
+  None
+}
+
+/// The first `<svg ...` opening tag's header (attributes text). Skips any
+/// leading `<?xml ...?>` declaration, whose `?>` would otherwise be taken
+/// for the end of the root tag.
+fn svg_root_header(svg: &str) -> Option<&str> {
+  let tag_start = svg.find("<svg")?;
+  let rel_end = svg[tag_start..].find('>')?;
+  Some(&svg[tag_start..tag_start + rel_end])
+}
+
 fn parse_svg_numeric_attr(svg: &str, attr: &str) -> Option<f64> {
   // Only consider the first `<svg ...>` opening tag to avoid matching
   // attributes on nested cells.
-  let tag_end = svg.find('>')?;
-  let header = &svg[..tag_end];
-  let needle = format!("{attr}=\"");
-  let start = header.find(&needle)? + needle.len();
-  let rel_end = header[start..].find('"')?;
-  let raw = header[start..start + rel_end].trim();
+  let header = svg_root_header(svg)?;
+  let raw = find_svg_attr(header, attr)?.trim();
   let numeric_end = raw
     .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-'))
     .unwrap_or(raw.len());
@@ -9612,11 +9631,18 @@ fn parse_svg_numeric_attr(svg: &str, attr: &str) -> Option<f64> {
 
 /// Parse width, height, and viewBox from an SVG string
 fn parse_svg_dimensions(svg: &str) -> Option<ParsedSvg> {
-  // Extract viewBox attribute
-  let vb_start = svg.find("viewBox=\"")?;
-  let vb_value_start = vb_start + "viewBox=\"".len();
-  let vb_end = svg[vb_value_start..].find('"')? + vb_value_start;
-  let view_box = svg[vb_value_start..vb_end].to_string();
+  // Extract the viewBox attribute; an SVG without one (e.g. the base64-PNG
+  // wrapper produced for `Image[…]`) synthesizes it from width/height so
+  // raster images can take part in GraphicsRow/Column/Grid layouts.
+  let header = svg_root_header(svg)?;
+  let view_box = match find_svg_attr(header, "viewBox") {
+    Some(vb) => vb.to_string(),
+    None => {
+      let w = parse_svg_numeric_attr(svg, "width")?;
+      let h = parse_svg_numeric_attr(svg, "height")?;
+      format!("0 0 {w} {h}")
+    }
+  };
 
   // Parse viewBox to get dimensions: "x y w h"
   let parts: Vec<f64> = view_box
@@ -9628,8 +9654,10 @@ fn parse_svg_dimensions(svg: &str) -> Option<ParsedSvg> {
   }
   let (vb_w, vb_h) = (parts[2], parts[3]);
 
-  // Extract inner content (everything between first > and last </svg>)
-  let inner_start = svg.find('>')? + 1;
+  // Extract inner content (everything between the root tag's > and the
+  // last </svg>)
+  let root_start = svg.find("<svg")?;
+  let inner_start = root_start + svg[root_start..].find('>')? + 1;
   // Skip past the newline after the opening tag if present
   let inner_start = if svg[inner_start..].starts_with('\n') {
     inner_start + 1

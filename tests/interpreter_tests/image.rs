@@ -1301,6 +1301,202 @@ mod image_processing {
     );
   }
 
+  // Morphology on an Image with a structuring-element matrix (the second
+  // argument is a 0/1 kernel like CrossMatrix[1] rather than a scalar
+  // radius), as used by Wolfram Demonstrations:
+  // `operation[image, SEL[(size - 1)/2]]`.
+  #[test]
+  fn erosion_image_with_structuring_element() {
+    clear_state();
+    // A cross eroded by a cross leaves only the center pixel.
+    assert_eq!(
+      interpret(
+        "ImageData[Erosion[Image[{{0., 0., 0., 0., 0.}, {0., 0., 1., 0., 0.}, \
+         {0., 1., 1., 1., 0.}, {0., 0., 1., 0., 0.}, {0., 0., 0., 0., 0.}}], \
+         CrossMatrix[1]]]"
+      )
+      .unwrap(),
+      "{{0., 0., 0., 0., 0.}, {0., 0., 0., 0., 0.}, {0., 0., 1., 0., 0.}, \
+       {0., 0., 0., 0., 0.}, {0., 0., 0., 0., 0.}}"
+    );
+  }
+
+  #[test]
+  fn dilation_image_with_structuring_element() {
+    clear_state();
+    // A single pixel dilated by a cross grows into a cross.
+    assert_eq!(
+      interpret(
+        "ImageData[Dilation[Image[{{0., 0., 0.}, {0., 1., 0.}, \
+         {0., 0., 0.}}], CrossMatrix[1]]]"
+      )
+      .unwrap(),
+      "{{0., 1., 0.}, {1., 1., 1.}, {0., 1., 0.}}"
+    );
+  }
+
+  #[test]
+  fn opening_image_with_structuring_element() {
+    clear_state();
+    // A lone pixel is removed by opening (eroded away, nothing to re-dilate).
+    assert_eq!(
+      interpret(
+        "ImageData[Opening[Image[{{0., 0., 0.}, {0., 1., 0.}, \
+         {0., 0., 0.}}], BoxMatrix[1]]]"
+      )
+      .unwrap(),
+      "{{0., 0., 0.}, {0., 0., 0.}, {0., 0., 0.}}"
+    );
+  }
+
+  #[test]
+  fn closing_image_with_structuring_element() {
+    clear_state();
+    // A lone hole is filled by closing (dilated over, then eroded back).
+    assert_eq!(
+      interpret(
+        "ImageData[Closing[Image[{{1., 1., 1.}, {1., 0., 1.}, \
+         {1., 1., 1.}}], BoxMatrix[1]]]"
+      )
+      .unwrap(),
+      "{{1., 1., 1.}, {1., 1., 1.}, {1., 1., 1.}}"
+    );
+  }
+
+  // The structuring-element form preserves the image's dimensions and
+  // channel count on multi-channel (RGB) images too.
+  #[test]
+  fn dilation_rgb_image_with_structuring_element() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Dilation[Image[{{{1., 0., 0.}, {0., 1., 0.}}, \
+         {{0., 0., 1.}, {1., 1., 1.}}}], DiskMatrix[1]]]"
+      )
+      .unwrap(),
+      "{2, 2}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageChannels[Dilation[Image[{{{1., 0., 0.}, {0., 1., 0.}}, \
+         {{0., 0., 1.}, {1., 1., 1.}}}], DiskMatrix[1]]]"
+      )
+      .unwrap(),
+      "3"
+    );
+  }
+
+  // ImageEffect noise effects are random, so the tests check structural
+  // properties (shape, value range, determinism under SeedRandom) rather
+  // than exact pixel values.
+  #[test]
+  fn image_effect_salt_pepper_preserves_shape() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageEffect[Image[Table[0.5, {4}, {5}]], \
+         {\"SaltPepperNoise\", 0.3}]]"
+      )
+      .unwrap(),
+      "{5, 4}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageChannels[ImageEffect[Image[Table[{0.2, 0.4, 0.6}, {3}, {3}]], \
+         \"SaltPepperNoise\"]]"
+      )
+      .unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn image_effect_salt_pepper_values() {
+    clear_state();
+    // Every pixel is either the original value or pure black/white.
+    assert_eq!(
+      interpret(
+        "SubsetQ[{0., 0.5, 1.}, Union[Flatten[ImageData[ImageEffect[ \
+         Image[Table[0.5, {6}, {6}]], {\"SaltPepperNoise\", 0.5}]]]]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    // Density 0 leaves the image untouched; density 1 replaces every pixel.
+    assert_eq!(
+      interpret(
+        "ImageData[ImageEffect[Image[Table[0.5, {2}, {2}]], \
+         {\"SaltPepperNoise\", 0}]]"
+      )
+      .unwrap(),
+      "{{0.5, 0.5}, {0.5, 0.5}}"
+    );
+    assert_eq!(
+      interpret(
+        "SubsetQ[{0., 1.}, Union[Flatten[ImageData[ImageEffect[ \
+         Image[Table[0.5, {6}, {6}]], {\"SaltPepperNoise\", 1}]]]]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn image_effect_salt_pepper_deterministic_under_seed() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "SeedRandom[42]; \
+         a = ImageData[ImageEffect[Image[Table[0.5, {4}, {4}]], \
+           {\"SaltPepperNoise\", 0.4}]]; \
+         SeedRandom[42]; \
+         b = ImageData[ImageEffect[Image[Table[0.5, {4}, {4}]], \
+           {\"SaltPepperNoise\", 0.4}]]; \
+         a === b"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn image_effect_gaussian_noise_values_in_range() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Max[ImageData[ImageEffect[Image[Table[0.5, {5}, {5}]], \
+         {\"GaussianNoise\", 0.5}]]] <= 1"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "Min[ImageData[ImageEffect[Image[Table[0.5, {5}, {5}]], \
+         {\"GaussianNoise\", 0.5}]]] >= 0"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageEffect[Image[Table[0.5, {5}, {5}]], \
+         \"GaussianNoise\"]]"
+      )
+      .unwrap(),
+      "{5, 5}"
+    );
+  }
+
+  #[test]
+  fn image_effect_unknown_effect_unevaluated() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageEffect[Image[{{0.5}}], \"NoSuchEffect\"]").unwrap(),
+      "ImageEffect[-Image-, NoSuchEffect]"
+    );
+  }
+
   // MedianFilter on an Image applies the 2D median filter per channel.
   #[test]
   fn median_filter_image_grayscale() {

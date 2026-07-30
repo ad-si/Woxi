@@ -405,6 +405,20 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       return Some(extract_cell_content(first_part.trim()));
     }
   }
+  // The FrontEnd typesets an inline `Image[…]` literal as
+  //   GraphicsBox[TagBox[RasterBox[data, rect, range, opts…],
+  //     BoxForm`ImageTag["Byte", ColorSpace -> "RGB", Interleaving -> True],
+  //     Selectable -> False], BaseStyle -> "ImageGraphics", …]
+  // (e.g. the embedded source image of a Wolfram Demonstration's
+  // initialization cell). Rebuild the evaluable `Image[…]` constructor from
+  // the box expression so such cells stay runnable.
+  if s.starts_with("GraphicsBox[")
+    && let Some(args) = split_args("GraphicsBox", s)
+    && let Some(first) = args.first()
+    && let Some(image) = extract_image_from_boxes(first)
+  {
+    return Some(image);
+  }
   for head in [
     "FractionBox",
     "SuperscriptBox",
@@ -499,6 +513,95 @@ fn extract_typeset_box(s: &str) -> Option<String> {
     });
   }
   None
+}
+
+/// Rebuild an evaluable `Image[data, "type", opts…]` from the typeset
+/// raster boxes inside a `GraphicsBox` (see `extract_typeset_box`).
+/// `s` is the GraphicsBox's first argument, expected to be
+/// `TagBox[RasterBox[…], BoxForm`ImageTag[type, opts…], …]`.
+/// Returns `None` when `s` is not an image raster (an ordinary graphic).
+fn extract_image_from_boxes(s: &str) -> Option<String> {
+  let rest = s.trim().strip_prefix("TagBox[")?;
+  let (inner, _) = find_matching_bracket(rest).ok()?;
+  let targs = split_top_level_commas(inner);
+  let raster = targs.first()?.trim();
+  let image_tag = targs
+    .iter()
+    .map(|t| t.trim())
+    .find(|t| t.starts_with("BoxForm`ImageTag["))?;
+
+  // RasterBox[data, {{x0, y0}, {x1, y1}}, range, opts…]
+  let rest = raster.strip_prefix("RasterBox[")?;
+  let (inner, _) = find_matching_bracket(rest).ok()?;
+  let rargs = split_top_level_commas(inner);
+  let data_raw = rargs.first()?.trim();
+  // The data is either `CompressedData["…"]` (a base64 payload that the
+  // FrontEnd wraps across many lines — strip that layout whitespace) or a
+  // literal nested list.
+  let data = if let Some(rest) = data_raw.strip_prefix("CompressedData[") {
+    let (inner, _) = find_matching_bracket(rest).ok()?;
+    let trimmed = inner.trim();
+    let unquoted = trimmed
+      .strip_prefix('"')
+      .and_then(|t| t.strip_suffix('"'))
+      .unwrap_or(trimmed);
+    let payload: String =
+      unquoted.chars().filter(|c| !c.is_whitespace()).collect();
+    format!("CompressedData[\"{payload}\"]")
+  } else {
+    data_raw.to_string()
+  };
+
+  // `Raster` rows run bottom-to-top while `Image` rows run top-to-bottom.
+  // Image typesetting compensates by flipping the bounding rectangle's y
+  // axis (`{{0, h}, {w, 0}}`), which means the stored rows are already in
+  // Image order. A raster with a normal-orientation rectangle stores its
+  // rows bottom-up, so those need an explicit `Reverse` to become Image
+  // rows.
+  let rows_bottom_up = rargs
+    .get(1)
+    .and_then(|rect| {
+      let rect = rect.trim();
+      let inner = rect.strip_prefix('{')?.strip_suffix('}')?;
+      let corners = split_top_level_commas(inner);
+      let corner_y = |c: &str| -> Option<f64> {
+        let inner = c.trim().strip_prefix('{')?.strip_suffix('}')?;
+        let parts = split_top_level_commas(inner);
+        parts.get(1)?.trim().parse::<f64>().ok()
+      };
+      let y0 = corner_y(corners.first()?)?;
+      let y1 = corner_y(corners.get(1)?)?;
+      Some(y0 < y1)
+    })
+    .unwrap_or(false);
+  let data = if rows_bottom_up {
+    format!("Reverse[{data}]")
+  } else {
+    data
+  };
+
+  // BoxForm`ImageTag["Byte", ColorSpace -> "RGB", Interleaving -> True]
+  let rest = image_tag.strip_prefix("BoxForm`ImageTag[")?;
+  let (inner, _) = find_matching_bracket(rest).ok()?;
+  let iargs = split_top_level_commas(inner);
+  let ty = extract_string_content(iargs.first()?.trim());
+  let mut result = format!("Image[{data}, \"{ty}\"");
+  for opt in &iargs[1..] {
+    let opt = opt.trim();
+    // Only pass through rule-shaped options (ColorSpace, Interleaving, …).
+    if opt.contains("->") || opt.contains(":>") {
+      result.push_str(", ");
+      result.push_str(&normalize_whitespace(opt));
+    }
+  }
+  result.push(']');
+  Some(result)
+}
+
+/// Collapse all whitespace runs (including newlines from the FrontEnd's
+/// line wrapping) into single spaces.
+fn normalize_whitespace(s: &str) -> String {
+  s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Extract text from a RowBox expression by concatenating string
@@ -1974,6 +2077,85 @@ Cell["Chapter 2", "Chapter"]
          RowBox[{"r", ",", "1", ",", "1"}], "]"}],
         "35"}]}]]"#;
     assert_eq!(extract_cell_content(s), "ImageSize->Part[r,1,1]35");
+  }
+
+  #[test]
+  fn test_extract_image_raster_literal() {
+    // An inline `Image[…]` literal is typeset as GraphicsBox[TagBox[
+    // RasterBox[…], BoxForm`ImageTag[…]]]. The flipped bounding rectangle
+    // ({{0, h}, {w, 0}}) means the raster rows are already in Image order.
+    let s = r#"GraphicsBox[
+       TagBox[RasterBox[{{{1, 2, 3}, {4, 5, 6}}}, {{0, 1}, {2, 0}}, {0, 255},
+         ColorFunction->RGBColor],
+        BoxForm`ImageTag["Byte", ColorSpace -> "RGB", Interleaving -> True],
+        Selectable->False],
+       BaseStyle->"ImageGraphics",
+       ImageSize->Automatic,
+       ImageSizeRaw->{2, 1},
+       PlotRange->{{0, 2}, {0, 1}}]"#;
+    assert_eq!(
+      extract_cell_content(s),
+      "Image[{{{1, 2, 3}, {4, 5, 6}}}, \"Byte\", ColorSpace -> \"RGB\", \
+       Interleaving -> True]"
+    );
+  }
+
+  #[test]
+  fn test_extract_image_raster_compressed_data() {
+    // CompressedData payloads are wrapped across lines by the FrontEnd; the
+    // layout whitespace must be stripped so the base64 payload survives.
+    let s = "GraphicsBox[\n       TagBox[RasterBox[CompressedData[\"\n1:eJxTTMoP\nSmNiYGAA\nAAtLAe0=\n         \"], {{0, 2}, {2, 0}}, {0, 255}],\n        BoxForm`ImageTag[\"Byte\", ColorSpace -> \"GrayLevel\"],\n        Selectable->False],\n       BaseStyle->\"ImageGraphics\"]";
+    assert_eq!(
+      extract_cell_content(s),
+      "Image[CompressedData[\"1:eJxTTMoPSmNiYGAAAAtLAe0=\"], \"Byte\", \
+       ColorSpace -> \"GrayLevel\"]"
+    );
+  }
+
+  #[test]
+  fn test_extract_image_raster_bottom_up_rows() {
+    // A normal-orientation bounding rectangle ({{0, 0}, {w, h}}) stores the
+    // raster rows bottom-up, so they must be reversed into Image order.
+    let s = r#"GraphicsBox[
+       TagBox[RasterBox[{{0, 1}, {2, 3}}, {{0, 0}, {2, 2}}, {0, 255}],
+        BoxForm`ImageTag["Byte", ColorSpace -> "GrayLevel"],
+        Selectable->False],
+       BaseStyle->"ImageGraphics"]"#;
+    assert_eq!(
+      extract_cell_content(s),
+      "Image[Reverse[{{0, 1}, {2, 3}}], \"Byte\", ColorSpace -> \"GrayLevel\"]"
+    );
+  }
+
+  #[test]
+  fn test_extract_image_raster_inside_assignment() {
+    // The Demonstrations init cell embeds the image literal inside an
+    // assignment: `image = ColorConvert[Image[…], "GrayScale"];`.
+    let s = r#"BoxData[
+ RowBox[{" ",
+  RowBox[{
+   RowBox[{"image", "=",
+    RowBox[{"ColorConvert", "[",
+     RowBox[{
+      GraphicsBox[
+       TagBox[RasterBox[{{{1, 2, 3}}}, {{0, 1}, {1, 0}}, {0, 255}],
+        BoxForm`ImageTag["Byte", ColorSpace -> "RGB", Interleaving -> True],
+        Selectable->False],
+       BaseStyle->"ImageGraphics"], ",", "\"\<GrayScale\>\""}], "]"}]}],
+   ";"}]}]]"#;
+    assert_eq!(
+      extract_cell_content(s),
+      " image=ColorConvert[Image[{{{1, 2, 3}}}, \"Byte\", \
+       ColorSpace -> \"RGB\", Interleaving -> True],\"GrayScale\"];"
+    );
+  }
+
+  #[test]
+  fn test_extract_plain_graphicsbox_not_treated_as_image() {
+    // A GraphicsBox without the RasterBox/ImageTag pair is not an image
+    // literal and must not be rewritten.
+    let s = "GraphicsBox[DiskBox[{0, 0}]]";
+    assert_eq!(extract_cell_content(s), "GraphicsBox[DiskBox[{0, 0}]]");
   }
 
   #[test]

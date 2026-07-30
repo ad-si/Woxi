@@ -16,6 +16,7 @@
 //! | `f` | normal expression: `<i32 nargs><head expr><arg expr>*nargs`         |
 //! | `n` | integer raw array: `<i32 type><i32 rank><i32 dims><packed ints>`    |
 //! | `e` | real packed array: `<i32 rank><i32 dims><packed f64>`               |
+//! | `b` | byte raw array: `<i32 rank><i32 dims><raw u8>`                      |
 
 use crate::syntax::Expr;
 
@@ -103,6 +104,7 @@ fn read_expr(data: &[u8], pos: &mut usize) -> Option<Expr> {
     }
     b'n' => read_integer_array(data, pos),
     b'e' => read_real_array(data, pos),
+    b'b' => read_byte_array(data, pos),
     _ => None,
   }
 }
@@ -197,6 +199,25 @@ fn read_integer_array(data: &[u8], pos: &mut usize) -> Option<Expr> {
   Some(nest(&dims, &mut values.into_iter()))
 }
 
+/// `b` token — packed unsigned byte array: `<i32 rank><i32 dims><raw u8>`.
+/// This is how the FrontEnd stores raster pixel data in the
+/// `CompressedData[...]` of an inline `Image[…]` literal.
+fn read_byte_array(data: &[u8], pos: &mut usize) -> Option<Expr> {
+  let rank = read_i32(data, pos)?;
+  let dims = read_dims(data, pos, rank)?;
+  let count: usize = dims.iter().product();
+  let end = pos.checked_add(count)?;
+  if end > data.len() {
+    return None;
+  }
+  let vals: Vec<Expr> = data[*pos..end]
+    .iter()
+    .map(|&byte| Expr::Integer(byte as i128))
+    .collect();
+  *pos = end;
+  Some(nest(&dims, &mut vals.into_iter()))
+}
+
 /// `e` token — packed real (f64) array.
 fn read_real_array(data: &[u8], pos: &mut usize) -> Option<Expr> {
   let rank = read_i32(data, pos)?;
@@ -233,6 +254,14 @@ mod tests {
   fn reads_big_integer_token() {
     // I token: length-prefixed ASCII decimal
     assert_eq!(render(b"!boRI\x02\x00\x00\x0010"), "10");
+  }
+
+  #[test]
+  fn reads_byte_array_token() {
+    // b token: rank 2, dims {2, 3}, then raw bytes — the layout the
+    // FrontEnd uses for raster pixel data in inline Image literals.
+    let data = b"!boRb\x02\x00\x00\x00\x02\x00\x00\x00\x03\x00\x00\x00\x00\x7f\xff\x01\x02\x03";
+    assert_eq!(render(data), "{{0, 127, 255}, {1, 2, 3}}");
   }
 
   #[test]

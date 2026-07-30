@@ -500,12 +500,29 @@ impl WoxiStudio {
   /// preceding Input/Code cell rather than shown separately.
   fn editors_from_notebook(notebook: &Notebook) -> Vec<CellEditor> {
     let mut editors = Vec::new();
+    // Input/Code sources seen so far, in notebook order. A stored
+    // interactive widget (`DynamicModuleBox` dump) is re-instantiated at
+    // load, and its body may depend on definitions made by earlier cells
+    // (e.g. a Demonstration's initialization section defining the source
+    // image that the Manipulate operates on — the FrontEnd covers this
+    // with `SaveDefinitions -> True`, which embeds the definitions in the
+    // dump). Before instantiating, every preceding input cell is
+    // evaluated once, in order, so those definitions exist.
+    let mut prior_inputs: Vec<String> = Vec::new();
+    let mut inputs_evaluated = 0usize;
+    let mut state_cleared = false;
 
     for entry in &notebook.cells {
       match entry {
         CellEntry::Single(cell) => {
           if matches!(cell.style, CellStyle::Output | CellStyle::Print) {
             continue;
+          }
+          if matches!(cell.style, CellStyle::Input | CellStyle::Code) {
+            let trimmed = cell.content.trim();
+            if !trimmed.is_empty() {
+              prior_inputs.push(trimmed.to_string());
+            }
           }
           editors.push(CellEditor {
             content: text_editor::Content::with_text(&cell.content),
@@ -566,6 +583,17 @@ impl WoxiStudio {
               let is_widget_dump =
                 output.as_deref().is_some_and(is_dynamic_box_dump);
               let manipulate_state = if is_widget_dump {
+                // Leftover state from a previously opened notebook must not
+                // leak into the widget; start the first instantiation from
+                // a clean slate.
+                if !state_cleared {
+                  woxi::clear_state();
+                  state_cleared = true;
+                }
+                for code in &prior_inputs[inputs_evaluated..] {
+                  let _ = woxi::interpret_with_stdout(code);
+                }
+                inputs_evaluated = prior_inputs.len();
                 instantiate_stored_manipulate(&cell.content)
               } else {
                 None
@@ -613,6 +641,10 @@ impl WoxiStudio {
                 output_content,
                 stdout_content,
               });
+              let trimmed = cell.content.trim();
+              if !trimmed.is_empty() {
+                prior_inputs.push(trimmed.to_string());
+              }
               i = j;
             } else if matches!(cell.style, CellStyle::Output | CellStyle::Print)
             {
@@ -6361,6 +6393,40 @@ mod tests {
     );
     // A non-Manipulate cell yields no widget.
     assert!(instantiate_stored_manipulate("1 + 1").is_none());
+  }
+
+  #[test]
+  fn stored_manipulate_sees_preceding_init_cells() {
+    // A Demonstration's Manipulate depends on definitions from earlier
+    // initialization cells (`SaveDefinitions -> True` in the FrontEnd).
+    // Loading the notebook must evaluate those cells before instantiating
+    // the widget, so its body doesn't reference undefined symbols.
+    let mut nb = Notebook::new();
+    nb.push_cell(Cell::new(
+      CellStyle::Input,
+      "initValueForManipulateLoadTest = 7;",
+    ));
+    nb.push_group(vec![
+      Cell::new(
+        CellStyle::Input,
+        "Manipulate[initValueForManipulateLoadTest + x, {x, 0, 10}]",
+      ),
+      Cell::new(
+        CellStyle::Output,
+        "DynamicModuleBox[{$CellContext`x$$ = 0}, …]",
+      ),
+    ]);
+
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must be instantiated");
+    assert_eq!(
+      widget.text_output.as_deref(),
+      Some("7"),
+      "the init cell's definition must be in scope at x = 0"
+    );
   }
 
   #[test]
