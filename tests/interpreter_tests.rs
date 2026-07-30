@@ -583,6 +583,22 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_arrow_named_characters_decode() {
+    // The vertical/double arrow family must decode to Unicode (the
+    // Demonstrations notebooks use \[DoubleDownArrow] as a "maps to"
+    // glyph between a transform's name and its rendered graphic).
+    clear_state();
+    assert_eq!(interpret("\"\\[UpDownArrow]\"").unwrap(), "\u{2195}");
+    assert_eq!(interpret("\"\\[DoubleUpArrow]\"").unwrap(), "\u{21D1}");
+    assert_eq!(interpret("\"\\[DoubleDownArrow]\"").unwrap(), "\u{21D3}");
+    assert_eq!(interpret("\"\\[DoubleUpDownArrow]\"").unwrap(), "\u{21D5}");
+    assert_eq!(
+      interpret("ToCharacterCode[\"\\[DoubleDownArrow]\"]").unwrap(),
+      "{8659}"
+    );
+  }
+
+  #[test]
   fn test_expression_then_comment() {
     // Expression followed by comment should evaluate the expression
     clear_state();

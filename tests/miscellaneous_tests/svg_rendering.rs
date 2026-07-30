@@ -2848,4 +2848,56 @@ mod tests {
       assert_eq!(w, 1.0, "width is that of the wrapped content");
     }
   }
+
+  // ── Display-only wrappers in text markup ──
+  //
+  // Tooltip shows its first argument (the tip only appears on hover in the
+  // Wolfram FrontEnd), and a curried call renders as head[args] with display
+  // wrappers in the head resolved — so a Demonstrations-style column title
+  // like HoldForm[TranslationTransform][Tooltip[{"px", "py"}, "Translation"]]
+  // typesets as TranslationTransform[{px, py}].
+  mod display_wrapper_markup {
+    use super::*;
+
+    fn tooltip(content: Expr, tip: &str) -> Expr {
+      Expr::FunctionCall {
+        name: "Tooltip".to_string(),
+        args: vec![content, Expr::String(tip.to_string())].into(),
+      }
+    }
+
+    #[test]
+    fn tooltip_renders_first_argument_only() {
+      let expr = tooltip(Expr::Identifier("x".to_string()), "hidden tip");
+      assert_eq!(expr_to_svg_markup(&expr), "x");
+      assert_eq!(estimate_display_width(&expr), 1.0);
+    }
+
+    #[test]
+    fn curried_holdform_head_renders_as_application() {
+      // HoldForm[TranslationTransform][Tooltip[{"px", "py"}, "Translation"]]
+      let expr = Expr::CurriedCall {
+        func: Box::new(Expr::FunctionCall {
+          name: "HoldForm".to_string(),
+          args: vec![Expr::Identifier("TranslationTransform".to_string())]
+            .into(),
+        }),
+        args: vec![tooltip(
+          Expr::List(
+            vec![
+              Expr::String("px".to_string()),
+              Expr::String("py".to_string()),
+            ]
+            .into(),
+          ),
+          "Translation",
+        )],
+      };
+      assert_eq!(expr_to_svg_markup(&expr), "TranslationTransform[{px, py}]");
+      assert_eq!(
+        estimate_display_width(&expr),
+        "TranslationTransform[{px, py}]".len() as f64
+      );
+    }
+  }
 }

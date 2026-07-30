@@ -3738,11 +3738,11 @@ fn render_manipulate_widget<'a>(
         name,
         label,
         label_runs,
+        values,
         value_labels,
         value_label_svgs,
         current_index,
         popup,
-        ..
       } => {
         let label_widget = manipulate_label_widget(
           label_runs,
@@ -3751,6 +3751,38 @@ fn render_manipulate_widget<'a>(
           label_col_width,
           enabled,
         );
+        // A boolean domain — `{v, {True, False}}` in either order — renders
+        // as a checkbox, matching the Wolfram FrontEnd (which shows a
+        // checkbox rather than a two-button setter for True/False).
+        let bool_values: &[String] = values;
+        let is_bool_domain = !*popup
+          && bool_values.len() == 2
+          && bool_values.iter().any(|v| v == "True")
+          && bool_values.iter().any(|v| v == "False");
+        if is_bool_domain {
+          let checked =
+            bool_values.get(*current_index).is_some_and(|v| v == "True");
+          // Toggling selects the other entry; the update handler maps the
+          // sent display label back to its index.
+          let other_label = value_labels
+            .iter()
+            .zip(bool_values.iter())
+            .find(|(_, v)| (*v == "True") != checked)
+            .map(|(l, _)| l.clone());
+          let mut cb = checkbox(checked);
+          if enabled && let Some(target) = other_label {
+            cb = cb.on_toggle(move |_| {
+              Message::ManipulateDiscreteChanged(
+                cell_idx,
+                ctrl_idx,
+                target.clone(),
+              )
+            });
+          }
+          let control_row = row![label_widget, cb].align_y(Center).spacing(8);
+          controls_col = controls_col.push(control_row);
+          continue;
+        }
         let count = value_labels.len();
         // A small enumerated set renders as a segmented SetterBar (a row of
         // adjacent toggle buttons with the active choice highlighted), matching

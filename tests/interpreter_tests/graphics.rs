@@ -6256,6 +6256,50 @@ ParametricPlot[f[t], {t, 0, 1}]]",
   }
 }
 
+mod pane_wrapper_display {
+  use super::*;
+
+  // In visual hosts (playground, studio — anything driven by
+  // interpret_with_stdout), the transparent Pane wrapper displays its
+  // content, so a Demonstrations-style Manipulate body like
+  // `Pane[Column[{title, arrow, Graphics[…]}, Center], ImageSize -> 500]`
+  // renders the column with its embedded graphic instead of a textual echo.
+  #[test]
+  fn pane_of_column_with_graphics_renders_in_visual_mode() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Pane[Column[{Style[HoldForm[TranslationTransform][\
+         Tooltip[{\"px\", \"py\"}, \"Translation\"]], 15, Bold], \
+         Style[\"\\[DoubleDownArrow]\", 25], \
+         Graphics[{Opacity[0.5], Blue, Rectangle[]}, Frame -> True]}, \
+         Center], ImageSize -> 500]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.expect("pane content should render");
+    // The typeset column shows the resolved title (HoldForm/Tooltip display
+    // their content), the ⇓ arrow, and embeds the graphic as a nested SVG.
+    assert!(
+      svg.contains("TranslationTransform[{px, py}]"),
+      "expected resolved title text in: {}",
+      &svg[..300.min(svg.len())]
+    );
+    assert!(svg.contains('\u{21D3}'), "expected ⇓ arrow row");
+    assert!(svg.contains("<svg x="), "expected embedded graphic");
+  }
+
+  // The CLI (plain `interpret`, matching wolframscript) keeps the
+  // symbolic echo — the unwrap is a visual-host affordance only.
+  #[test]
+  fn pane_stays_symbolic_in_cli_mode() {
+    clear_state();
+    assert_eq!(
+      interpret("Pane[Column[{1, 2}], ImageSize -> 500]").unwrap(),
+      "Pane[Column[{1, 2}], ImageSize -> 500]"
+    );
+  }
+}
+
 mod graphics_list {
   use super::*;
 
@@ -11284,6 +11328,33 @@ mod manipulate {
         assert_eq!(*initial, 0.0);
       }
       _ => panic!("expected continuous control for b"),
+    }
+  }
+
+  #[test]
+  fn spec_tooltip_label_shows_its_content() {
+    // A Tooltip label — `{{v, True, Tooltip["source", "Show source
+    // object"]}, {True, False}}`, as in the Wolfram Demonstrations
+    // "Understanding 2D Translation" notebook — displays its first
+    // argument (the tip only appears on hover in the FrontEnd).
+    let expr = interpret_to_expr(
+      "Manipulate[If[rsource, 1, 0], {{rsource, True, Tooltip[\"source\", \"Show source object\"]}, {True, False}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    assert_eq!(spec.controls.len(), 1);
+    match &spec.controls[0] {
+      ManipulateControl::Discrete {
+        label,
+        values,
+        initial_index,
+        ..
+      } => {
+        assert_eq!(label, "source");
+        assert_eq!(values, &["True".to_string(), "False".to_string()]);
+        assert_eq!(*initial_index, 0);
+      }
+      _ => panic!("expected discrete control for rsource"),
     }
   }
 

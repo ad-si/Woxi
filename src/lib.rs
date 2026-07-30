@@ -1982,7 +1982,13 @@ fn format_top_level_result(result_expr: syntax::Expr) -> String {
   let result_expr = render_tabular_if_needed(result_expr);
   // In visual mode, render TableForm[list], MatrixForm[list], and Column[list] as SVGs
   let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
+    // Strip the transparent Pane wrapper first so the passes below see
+    // the wrapped content (e.g. Pane[Column[{…, Graphics[…]}]] renders the
+    // column with its embedded graphic). CLI mode keeps the symbolic
+    // Pane[…] echo to match wolframscript.
+    let result_expr = unwrap_pane_if_needed(result_expr);
     let result_expr = render_dynamic_if_needed(result_expr);
+    let result_expr = render_graphics_fc_if_needed(result_expr);
     let result_expr = render_color_if_needed(result_expr);
     let result_expr = render_tableform_if_needed(result_expr);
     let result_expr = render_matrixform_if_needed(result_expr);
@@ -2710,6 +2716,23 @@ pub(crate) fn render_traditionalform_list_if_needed(
   }
 }
 
+/// Strip the transparent size wrapper `Pane[content, opts…]` so the visual
+/// render passes see the content itself. Wolfram's FrontEnd displays the
+/// wrapped content (Pane merely constrains its size), so for SVG typesetting
+/// the content is the right thing to render — otherwise e.g.
+/// `Pane[Column[{…, Graphics[…]}]]` (the shape of many Manipulate bodies)
+/// would stay a textual echo with the graphic never rendered.
+fn unwrap_pane_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  match expr {
+    syntax::Expr::FunctionCall { ref name, ref args }
+      if name == "Pane" && !args.is_empty() =>
+    {
+      unwrap_pane_if_needed(args[0].clone())
+    }
+    other => other,
+  }
+}
+
 /// Pre-render display wrappers (TableForm, MatrixForm, Grid, Framed, Row,
 /// nested Column, Dataset, …) inside an arbitrary expression so they appear
 /// as real `Expr::Graphics` sub-SVGs when embedded into a parent layout
@@ -2719,6 +2742,7 @@ fn render_inline_display_wrapper(expr: syntax::Expr) -> syntax::Expr {
   // The top-level pipeline transformations don't recurse into nested
   // wrapper arguments, so we apply the relevant ones here for a single
   // sub-expression.
+  let expr = unwrap_pane_if_needed(expr);
   let expr = render_dynamic_if_needed(expr);
   let expr = render_grid_if_needed(expr);
   let expr = render_dataset_if_needed(expr);
