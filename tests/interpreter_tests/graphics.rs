@@ -15596,6 +15596,93 @@ mod color_data_indexed {
     assert_eq!(interpret("Head[ColorData[2, 1]]").unwrap(), "RGBColor");
   }
 
+  // `Dynamic[…]` inside a Graphics primitive list displays as its current
+  // value; assignments made inside the Dynamic run (the Demonstrations
+  // pattern computes shared values there).
+  #[test]
+  fn dynamic_inside_graphics_renders_its_content() {
+    clear_state();
+    let svg = export_svg(
+      "Graphics[{Dynamic[{p = {1, 1}; Disk[p, 1], Line[{{0, 0}, p}]}]}]",
+    );
+    assert!(svg.contains("<ellipse"), "Disk from Dynamic content: {svg}");
+    assert!(
+      svg.contains("<polyline"),
+      "Line from Dynamic content: {svg}"
+    );
+  }
+
+  // `Tooltip[g, label]` inside Graphics draws only `g`; the label must not
+  // leak into the rendering as stray primitives or text.
+  #[test]
+  fn tooltip_inside_graphics_renders_only_content() {
+    clear_state();
+    let svg =
+      export_svg("Graphics[{Tooltip[Disk[{0, 0}, 1], Disk[{5, 5}, 1]]}]");
+    assert_eq!(svg.matches("<ellipse").count(), 1, "{svg}");
+  }
+
+  // A `Locator` is a screen-space marker icon centered on its point: the
+  // default appearance is the crosshair, a custom appearance graphic keeps
+  // its own ImageSize in pixels.
+  #[test]
+  fn locator_renders_as_marker_icon() {
+    clear_state();
+    let svg = export_svg("Graphics[{Locator[{1, 2}]}]");
+    assert!(
+      svg.contains("width=\"16.00\" height=\"16.00\""),
+      "default crosshair marker: {svg}"
+    );
+    let svg = export_svg(
+      "Graphics[{Locator[Dynamic[{1, 2}], \
+       Graphics[{Yellow, Disk[{0, 0}, 1]}, ImageSize -> 20]]}]",
+    );
+    assert!(
+      svg.contains("width=\"20.00\" height=\"20.00\""),
+      "appearance keeps its ImageSize: {svg}"
+    );
+    assert!(svg.contains("255,255,0"), "appearance fill: {svg}");
+  }
+
+  // `ContourPlot[lhs == rhs, …]` draws the implicit curve `lhs - rhs = 0`,
+  // and `plot[[1]]` yields the contour primitives (with the ContourStyle
+  // directives) for re-embedding in an outer Graphics — including after
+  // rewriting the plot with `/.` (the Demonstrations Tooltip-stripping
+  // idiom).
+  #[test]
+  fn equation_contour_plot_part_yields_primitives() {
+    clear_state();
+    assert_eq!(
+      interpret("Head[ContourPlot[x == y, {x, -3, 3}, {y, -3, 3}][[1]]]")
+        .unwrap(),
+      "List"
+    );
+    assert_eq!(
+      interpret(
+        "With[{prims = (ContourPlot[x == y, {x, -3, 3}, {y, -3, 3}, \
+         ContourStyle -> {Pink}] /. Tooltip[q_, ___] :> q)[[1]]}, \
+         {prims[[1]], Head[prims[[2]]]}]"
+      )
+      .unwrap(),
+      "{RGBColor[1, 0.5, 0.5], Line}"
+    );
+    // The extracted primitives embed into an outer Graphics.
+    let svg = export_svg(
+      "Graphics[{ContourPlot[x == y, {x, -3, 3}, {y, -3, 3}, \
+       ContourStyle -> {Pink}][[1]]}]",
+    );
+    assert!(svg.contains("<polyline"), "{svg}");
+    // A plot body held in a variable resolves during sampling.
+    assert_eq!(
+      interpret(
+        "lineA = -5 - 3*x + 2*y; \
+         Head[ContourPlot[lineA == 0, {x, -9, 9}, {y, -9, 9}][[1]]]"
+      )
+      .unwrap(),
+      "List"
+    );
+  }
+
   mod dynamic_content {
     use super::*;
 

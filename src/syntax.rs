@@ -6785,6 +6785,17 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
   }
 }
 
+/// Whether a `Part` base must be parenthesized so `base[[i]]` re-parses to
+/// the same tree. `[[…]]` binds tighter than every infix operator, so any
+/// base that prints with a top-level operator (`a /. b`, `a + b`, `x &`, …)
+/// or as a negative literal needs parens: `(a /. b :> c)[[1]]` must not
+/// print as `a /. b :> c[[1]]`.
+fn part_base_needs_parens(base: &Expr) -> bool {
+  printed_infix_precedence(base).is_some()
+    || matches!(base, Expr::Integer(n) if *n < 0)
+    || matches!(base, Expr::Real(f) if *f < 0.0)
+}
+
 /// Render an application shorthand (`f /@ list`, `f @@ list`, `f @@@ list`)
 /// in InputForm, parenthesizing either operand when it would otherwise bind
 /// differently on re-parse. `prec` is the shorthand's own parse precedence
@@ -9996,7 +10007,12 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         base = inner_expr.as_ref();
       }
       indices.reverse();
-      format!("{}[[{}]]", format_expr(base, form), indices.join(","))
+      let base_str = format_expr(base, form);
+      if part_base_needs_parens(base) {
+        format!("({})[[{}]]", base_str, indices.join(","))
+      } else {
+        format!("{}[[{}]]", base_str, indices.join(","))
+      }
     }
     Expr::Function { body } => {
       // Wolfram shows anonymous functions with trailing space: "f & " (not "f &")
@@ -11745,7 +11761,12 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
         base = inner_expr.as_ref();
       }
       indices.reverse();
-      format!("{}[[{}]]", expr_to_input_form(base), indices.join(","))
+      let base_str = expr_to_input_form(base);
+      if part_base_needs_parens(base) {
+        format!("({})[[{}]]", base_str, indices.join(","))
+      } else {
+        format!("{}[[{}]]", base_str, indices.join(","))
+      }
     }
     // For all other cases (infix operators, simple literals), delegate to expr_to_output
     _ => expr_to_output(expr),

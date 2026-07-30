@@ -867,6 +867,23 @@ pub fn graphics3d_result(svg: String) -> syntax::Expr {
 
 /// Like `graphics3d_result` but remembers the symbolic expression the
 /// rendering came from, so `Part` can index into it (Wolfram's
+/// Like `graphics_result` but also remembers the symbolic expression the
+/// rendering came from, so structural operations can look inside it (Wolfram's
+/// `ContourPlot[…][[1]]` returns the graphic's content).
+pub fn graphics_result_with_structure(
+  svg: String,
+  structure: syntax::Expr,
+) -> syntax::Expr {
+  capture_graphics(&svg);
+  syntax::Expr::Graphics {
+    svg,
+    is_3d: false,
+    source: None,
+    head: None,
+    structure: Some(Box::new(structure)),
+  }
+}
+
 /// `Graphics3D[…][[1]]` returns the graphic's content).
 pub fn graphics3d_result_with_structure(
   svg: String,
@@ -885,6 +902,25 @@ pub fn graphics3d_result_with_structure(
 /// Gets the last captured graphics content (backward compatible)
 pub fn get_captured_graphics() -> Option<String> {
   CAPTURED_GRAPHICS.with(|buffer| buffer.borrow().last().cloned())
+}
+
+/// Number of entries currently in the captured-graphics buffer. Paired with
+/// `truncate_captured_graphics` so a renderer that evaluates sub-expressions
+/// (e.g. the content of a `Dynamic[…]` inside `Graphics[…]`) can drop any
+/// graphics those evaluations captured — they are embedded in the outer
+/// rendering, not standalone outputs.
+pub fn captured_graphics_count() -> usize {
+  CAPTURED_GRAPHICS.with(|buffer| buffer.borrow().len())
+}
+
+/// Truncates the captured-graphics buffer back to `len` entries.
+pub fn truncate_captured_graphics(len: usize) {
+  CAPTURED_GRAPHICS.with(|buffer| {
+    let mut buf = buffer.borrow_mut();
+    if buf.len() > len {
+      buf.truncate(len);
+    }
+  });
 }
 
 /// Removes the most recent captured-graphics entry equal to `svg`.
