@@ -1262,28 +1262,21 @@ pub fn sharpen_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }))
 }
 
-/// Resolve the radius specification shared by `Blur` and `Sharpen` into
-/// the pair of per-axis kernels it names. `None` means the call was
-/// reported and should be left unevaluated: `<head>::imginv` for a first
-/// argument that is not an image, `<head>::bdrad` for a radius that is
-/// neither a non-negative number nor a pair of them.
-///
-/// Neither head reaches further than half way across the image: along an
-/// axis of `n` pixels the radius is capped at `Ceiling[n/2]`, standard
-/// deviation included, so `Blur[image, 5]` on a two-pixel-wide image is
-/// `Blur[image, 1]`. `GaussianFilter` applies no such cap.
-fn blur_radius_axes(
-  head: &str,
-  args: &[Expr],
-) -> Option<(GaussianAxis, GaussianAxis)> {
-  let Expr::Image { width, height, .. } = &args[0] else {
+/// Resolve the radius specification shared by `Blur`, `Sharpen` and
+/// `EdgeDetect` into the pair `(rows, columns)` of per-axis radii.
+/// `None` means the call was reported and should be left unevaluated:
+/// `<head>::imginv` for a first argument that is not an image,
+/// `<head>::bdrad` for a radius that is neither a non-negative number
+/// nor a pair of them.
+fn blur_radius_pair(head: &str, args: &[Expr]) -> Option<(f64, f64)> {
+  if !matches!(&args[0], Expr::Image { .. }) {
     crate::emit_message(&format!(
       "{}::imginv: Expecting an image or graphics instead of {}.",
       head,
       crate::syntax::expr_to_string(&args[0])
     ));
     return None;
-  };
+  }
 
   // A radius is usable only if it is a plain non-negative number.
   let non_negative = |expr: &Expr| {
@@ -1299,28 +1292,42 @@ fn blur_radius_axes(
     ));
   };
 
-  let (rows, columns) = match args.get(1) {
-    None => (2.0, 2.0),
+  match args.get(1) {
+    None => Some((2.0, 2.0)),
     // `{r_rows, r_columns}` — the first radius applies across rows, i.e.
     // vertically, matching wolframscript's row-then-column convention.
     Some(Expr::List(items)) if items.len() == 2 => {
       match (non_negative(&items[0]), non_negative(&items[1])) {
-        (Some(rows), Some(columns)) => (rows, columns),
+        (Some(rows), Some(columns)) => Some((rows, columns)),
         _ => {
           bdrad(&args[1]);
-          return None;
+          None
         }
       }
     }
     Some(spec) => match non_negative(spec) {
-      Some(radius) => (radius, radius),
+      Some(radius) => Some((radius, radius)),
       None => {
         bdrad(spec);
-        return None;
+        None
       }
     },
-  };
+  }
+}
 
+/// The kernels `Blur` and `Sharpen` filter with. Neither reaches further
+/// than half way across the image: along an axis of `n` pixels the radius
+/// is capped at `Ceiling[n/2]`, standard deviation included, so
+/// `Blur[image, 5]` on a two-pixel-wide image is `Blur[image, 1]`.
+/// `GaussianFilter`, `GradientFilter` and `EdgeDetect` apply no such cap.
+fn blur_radius_axes(
+  head: &str,
+  args: &[Expr],
+) -> Option<(GaussianAxis, GaussianAxis)> {
+  let (rows, columns) = blur_radius_pair(head, args)?;
+  let Expr::Image { width, height, .. } = &args[0] else {
+    return None;
+  };
   let cap = |extent: u32| ((extent as f64) / 2.0).ceil().max(1.0);
   Some((
     gaussian_axis_from_radius(rows.min(cap(*height))),
@@ -2358,9 +2365,16 @@ pub fn image_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 // ─── Advanced functions (Phase 3) ──────────────────────────────────────────
 
-/// EdgeDetect[img], EdgeDetect[img, r], EdgeDetect[img, r, t]
-/// Gaussian smoothing + Sobel edge detection + binarization.
-/// r = Gaussian blur radius (default 2), t = threshold (default: automatic via Otsu).
+/// EdgeDetect[image] / EdgeDetect[image, r] / EdgeDetect[image, r, t] —
+/// mark the edge pixels of an image as a `"Bit"` image. This is the
+/// Canny pipeline on top of `GradientFilter`'s derivative-of-Gaussian
+/// gradient (shared through `plane_gradient`, so there is one gradient
+/// in the codebase): thin the gradient magnitude to single-pixel ridges
+/// by suppressing every pixel that a neighbour along the gradient
+/// direction beats, then keep what clears the threshold. The default
+/// threshold is `FindThreshold[GradientFilter[image, r]]`, the same
+/// 256-bin cluster-variance split wolframscript uses; an explicit `t`
+/// is compared against the gradient magnitude directly.
 pub fn edge_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
@@ -2368,243 +2382,146 @@ pub fn edge_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // r is the Gaussian kernel radius; σ = r/√2 (Wolfram: variance = r²/2)
-  let r = if args.len() >= 2 {
-    expr_to_f64(&args[1])?
-  } else {
-    2.0
+  // The range is `GradientFilter`'s radius, specified exactly as `Blur`'s
+  // is: one number, or `{r_rows, r_columns}` for a different range along
+  // each axis. Unlike `Blur` it is not capped at half the image.
+  let Some((rows, columns)) = blur_radius_pair("EdgeDetect", args) else {
+    return Ok(unevaluated("EdgeDetect", args));
   };
-  let gauss_radius = r.round().max(0.0) as usize;
-  let sigma = r / std::f64::consts::SQRT_2;
-
-  let user_threshold = if args.len() == 3 {
-    Some(expr_to_f64(&args[2])?)
-  } else {
-    None
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    ..
+  } = &args[0]
+  else {
+    unreachable!("blur_radius_pair checked for an image")
+  };
+  let user_threshold = match args.get(2) {
+    None => None,
+    Some(spec) => match crate::functions::math_ast::try_eval_to_f64(spec) {
+      Some(value) => Some(value),
+      None => {
+        crate::emit_message(&format!(
+          "EdgeDetect::bdthr: Invalid threshold specification {}.",
+          crate::syntax::format_expr(spec, crate::syntax::ExprForm::Output)
+        ));
+        return Ok(unevaluated("EdgeDetect", args));
+      }
+    },
   };
 
-  match &args[0] {
-    Expr::Image {
-      width,
-      height,
-      channels,
-      data,
-      ..
-    } => {
-      let w = *width as usize;
-      let h = *height as usize;
-      let ch = *channels as usize;
+  let w = *width as usize;
+  let h = *height as usize;
+  let ch = *channels as usize;
 
-      // Convert to grayscale luminance
-      let mut gray = vec![0.0_f64; w * h];
-      for y in 0..h {
-        for x in 0..w {
-          gray[y * w + x] = if ch == 1 {
-            data[y * w + x]
-          } else {
-            let base = (y * w + x) * ch;
-            0.299 * data[base] + 0.587 * data[base + 1] + 0.114 * data[base + 2]
-          };
-        }
-      }
-
-      // Gaussian pre-smoothing (separable, clamped borders)
-      if sigma > 0.0 && gauss_radius > 0 {
-        let kernel = gaussian_kernel_1d(sigma, gauss_radius);
-        gray = separable_convolve(&gray, w, h, &kernel, gauss_radius);
-      }
-
-      // Sobel gradient computation with clamped border access
-      let gx_kernel: [[f64; 3]; 3] =
-        [[-1.0, 0.0, 1.0], [-2.0, 0.0, 2.0], [-1.0, 0.0, 1.0]];
-      let gy_kernel: [[f64; 3]; 3] =
-        [[-1.0, -2.0, -1.0], [0.0, 0.0, 0.0], [1.0, 2.0, 1.0]];
-
-      let mut magnitudes = vec![0.0_f64; w * h];
-      let mut directions = vec![0.0_f64; w * h];
-
-      let clamp_y = |y: i32| y.clamp(0, h as i32 - 1) as usize;
-      let clamp_x = |x: i32| x.clamp(0, w as i32 - 1) as usize;
-
-      for y in 0..h {
-        for x in 0..w {
-          let mut gx = 0.0;
-          let mut gy = 0.0;
-          for ky in 0..3_i32 {
-            for kx in 0..3_i32 {
-              let sy = clamp_y(y as i32 + ky - 1);
-              let sx = clamp_x(x as i32 + kx - 1);
-              let pixel = gray[sy * w + sx];
-              gx += pixel * gx_kernel[ky as usize][kx as usize];
-              gy += pixel * gy_kernel[ky as usize][kx as usize];
-            }
-          }
-          magnitudes[y * w + x] = (gx * gx + gy * gy).sqrt();
-          directions[y * w + x] = gy.atan2(gx);
-        }
-      }
-
-      // Non-maximum suppression: thin edges to 1 pixel width
-      let mut nms = vec![0.0_f64; w * h];
-      for y in 0..h {
-        for x in 0..w {
-          let mag = magnitudes[y * w + x];
-          if mag == 0.0 {
-            continue;
-          }
-          let angle = directions[y * w + x];
-          // Quantize gradient direction to one of 4 axes (0°, 45°, 90°, 135°)
-          // and compare magnitude to neighbors along that direction
-          let (dy, dx) = quantize_gradient_direction(angle);
-          let n1y = clamp_y(y as i32 + dy);
-          let n1x = clamp_x(x as i32 + dx);
-          let n2y = clamp_y(y as i32 - dy);
-          let n2x = clamp_x(x as i32 - dx);
-          let m1 = magnitudes[n1y * w + n1x];
-          let m2 = magnitudes[n2y * w + n2x];
-          if mag >= m1 && mag >= m2 {
-            nms[y * w + x] = mag;
-          }
-        }
-      }
-
-      // Binarize: determine threshold and apply
-      let max_mag = nms.iter().cloned().fold(0.0_f64, f64::max);
-
-      // If the maximum gradient is negligible, the image is effectively uniform
-      let result = if max_mag < 1e-10 {
-        vec![0.0_f64; w * h]
+  // Edges are found on the luminance of the image.
+  let gray: Vec<f64> = (0..w * h)
+    .map(|i| {
+      if ch == 1 {
+        data[i]
       } else {
-        let threshold = if let Some(t) = user_threshold {
-          t * max_mag
-        } else {
-          otsu_threshold(&nms)
-        };
-        nms
-          .iter()
-          .map(|&m| if m >= threshold { 1.0 } else { 0.0 })
-          .collect()
-      };
+        let base = i * ch;
+        0.299 * data[base] + 0.587 * data[base + 1] + 0.114 * data[base + 2]
+      }
+    })
+    .collect();
 
-      Ok(Expr::Image {
-        color_space: None,
-        width: *width,
-        height: *height,
-        channels: 1,
-        data: Arc::new(result),
-        image_type: ImageType::Bit,
-      })
-    }
-    _ => {
-      crate::emit_message(&format!(
-        "EdgeDetect::imginv: Expecting an image or graphics instead of {}.",
-        crate::syntax::expr_to_string(&args[0])
-      ));
-      Ok(unevaluated("EdgeDetect", args))
-    }
-  }
-}
+  let (dx, dy) = plane_gradient(
+    &gray,
+    w,
+    h,
+    gaussian_axis_from_radius(rows),
+    gaussian_axis_from_radius(columns),
+  );
+  let magnitudes: Vec<f64> = (0..w * h).map(|i| dx[i].hypot(dy[i])).collect();
 
-/// Build a 1D Gaussian kernel with the given sigma, truncated at ±radius.
-fn gaussian_kernel_1d(sigma: f64, radius: usize) -> Vec<f64> {
-  let mut kernel = Vec::with_capacity(2 * radius + 1);
-  let mut sum = 0.0;
-  for i in 0..=(2 * radius) {
-    let x = i as f64 - radius as f64;
-    let val = (-x * x / (2.0 * sigma * sigma)).exp();
-    kernel.push(val);
-    sum += val;
-  }
-  for v in &mut kernel {
-    *v /= sum;
-  }
-  kernel
-}
+  let threshold =
+    user_threshold.unwrap_or_else(|| cluster_variance_threshold(&magnitudes));
 
-/// Apply a separable convolution (horizontal then vertical) with clamped borders.
-fn separable_convolve(
-  data: &[f64],
-  w: usize,
-  h: usize,
-  kernel: &[f64],
-  radius: usize,
-) -> Vec<f64> {
-  // Horizontal pass
-  let mut tmp = vec![0.0_f64; w * h];
+  // Non-maximum suppression thins each ridge to one pixel: keep a pixel
+  // only if neither neighbour along the quantized gradient direction is
+  // stronger.
+  let clamp_y = |y: i32| y.clamp(0, h as i32 - 1) as usize;
+  let clamp_x = |x: i32| x.clamp(0, w as i32 - 1) as usize;
+  let mut result = vec![0.0_f64; w * h];
   for y in 0..h {
     for x in 0..w {
-      let mut acc = 0.0;
-      for k in 0..kernel.len() {
-        let sx =
-          (x as i32 + k as i32 - radius as i32).clamp(0, w as i32 - 1) as usize;
-        acc += data[y * w + sx] * kernel[k];
+      let index = y * w + x;
+      let magnitude = magnitudes[index];
+      if magnitude <= 0.0 || magnitude < threshold {
+        continue;
       }
-      tmp[y * w + x] = acc;
+      let (step_y, step_x) =
+        quantize_gradient_direction(dy[index].atan2(dx[index]));
+      let ahead =
+        magnitudes[clamp_y(y as i32 + step_y) * w + clamp_x(x as i32 + step_x)];
+      let behind =
+        magnitudes[clamp_y(y as i32 - step_y) * w + clamp_x(x as i32 - step_x)];
+      if magnitude >= ahead && magnitude >= behind {
+        result[index] = 1.0;
+      }
     }
   }
-  // Vertical pass
-  let mut out = vec![0.0_f64; w * h];
-  for y in 0..h {
-    for x in 0..w {
-      let mut acc = 0.0;
-      for k in 0..kernel.len() {
-        let sy =
-          (y as i32 + k as i32 - radius as i32).clamp(0, h as i32 - 1) as usize;
-        acc += tmp[sy * w + x] * kernel[k];
-      }
-      out[y * w + x] = acc;
-    }
-  }
-  out
+
+  Ok(Expr::Image {
+    color_space: None,
+    width: *width,
+    height: *height,
+    channels: 1,
+    data: Arc::new(result),
+    image_type: ImageType::Bit,
+  })
 }
 
-/// Compute an automatic threshold using Otsu's method.
-/// Finds the threshold that minimizes within-class variance of the values.
-fn otsu_threshold(data: &[f64]) -> f64 {
-  let n_bins = 256;
-  let max_val = data.iter().cloned().fold(0.0_f64, f64::max);
-  if max_val <= 0.0 {
-    return 0.0;
+/// The threshold `FindThreshold` picks: bin the values into 256 bins
+/// spanning `[min, max]`, choose the split that maximises the variance
+/// between the two clusters, and report the low edge of the last bin
+/// below the split. Reproduces wolframscript's value exactly, so
+/// `EdgeDetect` keeps the same edges it does.
+fn cluster_variance_threshold(values: &[f64]) -> f64 {
+  const BINS: usize = 256;
+  let (min, max) = values
+    .iter()
+    .fold((f64::MAX, f64::MIN), |(lo, hi), &v| (lo.min(v), hi.max(v)));
+  if max <= min {
+    return min.max(0.0);
+  }
+  let width = (max - min) / BINS as f64;
+
+  let mut histogram = [0.0_f64; BINS];
+  for &value in values {
+    let bin = (((value - min) / width) as usize).min(BINS - 1);
+    histogram[bin] += 1.0;
   }
 
-  // Build histogram
-  let mut hist = vec![0u64; n_bins];
-  for &v in data {
-    let bin = ((v / max_val) * (n_bins - 1) as f64).round() as usize;
-    hist[bin.min(n_bins - 1)] += 1;
-  }
-
-  let total = data.len() as f64;
-  let mut sum_total = 0.0;
-  for (i, &count) in hist.iter().enumerate() {
-    sum_total += i as f64 * count as f64;
-  }
-
-  let mut best_thresh = 0.0_f64;
-  let mut best_var = -1.0_f64;
-  let mut w0 = 0.0_f64;
-  let mut sum0 = 0.0_f64;
-
-  for (i, &count) in hist.iter().enumerate() {
-    w0 += count as f64;
-    if w0 == 0.0 {
+  let total: f64 = values.len() as f64;
+  let moment: f64 = histogram
+    .iter()
+    .enumerate()
+    .map(|(bin, count)| bin as f64 * count)
+    .sum();
+  let (mut below, mut moment_below) = (0.0_f64, 0.0_f64);
+  let (mut best_variance, mut best_bin) = (-1.0_f64, 0_usize);
+  for (bin, &count) in histogram.iter().enumerate() {
+    below += count;
+    if below == 0.0 {
       continue;
     }
-    let w1 = total - w0;
-    if w1 == 0.0 {
+    let above = total - below;
+    if above == 0.0 {
       break;
     }
-    sum0 += i as f64 * count as f64;
-    let mean0 = sum0 / w0;
-    let mean1 = (sum_total - sum0) / w1;
-    let between_var = w0 * w1 * (mean0 - mean1) * (mean0 - mean1);
-    if between_var > best_var {
-      best_var = between_var;
-      best_thresh = (i as f64 + 0.5) / (n_bins - 1) as f64;
+    moment_below += bin as f64 * count;
+    let difference = moment_below / below - (moment - moment_below) / above;
+    let variance = below * above * difference * difference;
+    if variance > best_variance {
+      best_variance = variance;
+      best_bin = bin;
     }
   }
-
-  best_thresh * max_val
+  min + best_bin as f64 * width
 }
 
 /// Quantize gradient direction to one of 4 axes and return (dy, dx) neighbor offset.
@@ -3848,61 +3765,13 @@ pub fn gradient_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if w == 0 || h == 0 {
       return Ok(args[0].clone());
     }
-    let smooth = gradient_filter_smooth_kernel(radius, sigma);
-    let derivative = gradient_filter_derivative_kernel(&smooth);
     let mut out: Vec<f64> = vec![0.0; data.len()];
     for c_idx in 0..ch {
-      // Step 1: smooth along x (rows) into row-smoothed buffer.
-      let mut row_smooth: Vec<f64> = vec![0.0; w * h];
-      for y in 0..h {
-        let row: Vec<f64> =
-          (0..w).map(|x| data[(y * w + x) * ch + c_idx]).collect();
-        let filtered =
-          crate::functions::math_ast::convolve_edge_padded(&row, &smooth);
-        for x in 0..w {
-          row_smooth[y * w + x] = filtered[x];
-        }
-      }
-      // Step 2: derivative along y (columns) of the row-smoothed buffer
-      // gives dy.
-      let mut dy: Vec<f64> = vec![0.0; w * h];
-      for x in 0..w {
-        let col: Vec<f64> = (0..h).map(|y| row_smooth[y * w + x]).collect();
-        let filtered =
-          crate::functions::math_ast::convolve_edge_padded(&col, &derivative);
-        for y in 0..h {
-          dy[y * w + x] = filtered[y];
-        }
-      }
-      // Step 3: smooth along y (columns) into column-smoothed buffer.
-      let mut col_smooth: Vec<f64> = vec![0.0; w * h];
-      for x in 0..w {
-        let col: Vec<f64> =
-          (0..h).map(|y| data[(y * w + x) * ch + c_idx]).collect();
-        let filtered =
-          crate::functions::math_ast::convolve_edge_padded(&col, &smooth);
-        for y in 0..h {
-          col_smooth[y * w + x] = filtered[y];
-        }
-      }
-      // Step 4: derivative along x (rows) of the column-smoothed buffer
-      // gives dx.
-      let mut dx: Vec<f64> = vec![0.0; w * h];
-      for y in 0..h {
-        let row: Vec<f64> = (0..w).map(|x| col_smooth[y * w + x]).collect();
-        let filtered =
-          crate::functions::math_ast::convolve_edge_padded(&row, &derivative);
-        for x in 0..w {
-          dx[y * w + x] = filtered[x];
-        }
-      }
-      // Step 5: magnitude.
-      for y in 0..h {
-        for x in 0..w {
-          let dxv = dx[y * w + x];
-          let dyv = dy[y * w + x];
-          out[(y * w + x) * ch + c_idx] = (dxv * dxv + dyv * dyv).sqrt();
-        }
+      let plane: Vec<f64> = (0..w * h).map(|i| data[i * ch + c_idx]).collect();
+      let axis = GaussianAxis { radius, sigma };
+      let (dx, dy) = plane_gradient(&plane, w, h, axis, axis);
+      for i in 0..w * h {
+        out[i * ch + c_idx] = dx[i].hypot(dy[i]);
       }
     }
     return Ok(Expr::Image {
@@ -3918,24 +3787,49 @@ pub fn gradient_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(unevaluated())
 }
 
-/// 1D discrete-Gaussian smooth kernel for the gradient filter — same
-/// shape as the kernel used by `GaussianFilter`.
-fn gradient_filter_smooth_kernel(radius: usize, sigma: f64) -> Vec<f64> {
-  let t = sigma * sigma;
-  let len = 2 * radius + 1;
-  let exp_neg_t = (-t).exp();
-  let mut kernel: Vec<f64> = Vec::with_capacity(len);
-  for k_signed in -(radius as i64)..=(radius as i64) {
-    let k_abs = k_signed.unsigned_abs() as f64;
-    kernel.push(exp_neg_t * crate::functions::math_ast::bessel_i(k_abs, t));
-  }
-  let sum: f64 = kernel.iter().sum();
-  if sum > 0.0 {
-    for v in kernel.iter_mut() {
-      *v /= sum;
+/// The two partial derivatives of one image plane, smoothed by the
+/// discrete Gaussian of half-width `radius` and standard deviation
+/// `sigma`: `dx = D ⊛_x (T ⊛_y plane)` and `dy = D ⊛_y (T ⊛_x plane)`,
+/// where `T` is `gaussian_filter_kernel` and `D` its derivative. Shared
+/// by `GradientFilter`, whose result is the magnitude, and by
+/// `EdgeDetect`, which also needs the direction.
+fn plane_gradient(
+  plane: &[f64],
+  w: usize,
+  h: usize,
+  vertical: GaussianAxis,
+  horizontal: GaussianAxis,
+) -> (Vec<f64>, Vec<f64>) {
+  let smooth_rows = gaussian_filter_kernel(horizontal.radius, horizontal.sigma);
+  let smooth_columns = gaussian_filter_kernel(vertical.radius, vertical.sigma);
+  let derivative_rows = gradient_filter_derivative_kernel(&smooth_rows);
+  let derivative_columns = gradient_filter_derivative_kernel(&smooth_columns);
+  let along_rows = |source: &[f64], kernel: &[f64]| {
+    let mut out = vec![0.0; w * h];
+    for y in 0..h {
+      let row: Vec<f64> = (0..w).map(|x| source[y * w + x]).collect();
+      let filtered =
+        crate::functions::math_ast::convolve_edge_padded(&row, kernel);
+      out[y * w..y * w + w].copy_from_slice(&filtered);
     }
-  }
-  kernel
+    out
+  };
+  let along_columns = |source: &[f64], kernel: &[f64]| {
+    let mut out = vec![0.0; w * h];
+    for x in 0..w {
+      let column: Vec<f64> = (0..h).map(|y| source[y * w + x]).collect();
+      let filtered =
+        crate::functions::math_ast::convolve_edge_padded(&column, kernel);
+      for y in 0..h {
+        out[y * w + x] = filtered[y];
+      }
+    }
+    out
+  };
+  (
+    along_rows(&along_columns(plane, &smooth_columns), &derivative_rows),
+    along_columns(&along_rows(plane, &smooth_rows), &derivative_columns),
+  )
 }
 
 /// 1D Gaussian derivative kernel `D[k] = -k·T[k] / Σ_j j²·T[j]`. The

@@ -3220,6 +3220,145 @@ mod image_processing {
 mod image_advanced {
   use super::*;
 
+  // EdgeDetect thins GradientFilter's derivative-of-Gaussian gradient to
+  // single-pixel ridges, so a bright pixel is bracketed by the two
+  // positions where the gradient peaks -- immediately either side of it,
+  // not one step further out.
+  #[test]
+  fn edge_detect_marks_the_gradient_ridge() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[EdgeDetect[Image[{{0., 0., 0., 1., 0., 0., 0.}}]]]")
+        .unwrap(),
+      "{{0, 0, 1, 0, 1, 0, 0}}"
+    );
+    // A bar has an edge on each side, two pixels wide apiece.
+    assert_eq!(
+      interpret(
+        "ImageData[EdgeDetect[Image[{{0., 0., 0., 1., 1., 1., 0., 0., 0.}}]]]"
+      )
+      .unwrap(),
+      "{{0, 0, 1, 1, 0, 1, 1, 0, 0}}"
+    );
+    // A single step is straddled by the pair around it.
+    assert_eq!(
+      interpret(
+        "ImageData[EdgeDetect[Image[{{0., 0., 0., 0., 1., 1., 1., 1.}}]]]"
+      )
+      .unwrap(),
+      "{{0, 0, 0, 1, 1, 0, 0, 0}}"
+    );
+    // A constant slope has one ridge, in the middle.
+    assert_eq!(
+      interpret("ImageData[EdgeDetect[Image[{{0., 0.25, 0.5, 0.75, 1.}}]]]")
+        .unwrap(),
+      "{{0, 0, 1, 0, 0}}"
+    );
+    // A filled square in 2D.
+    assert_eq!(
+      interpret(
+        "ImageData[EdgeDetect[Image[{{0., 0., 0., 0., 0.}, \
+         {0., 1., 1., 1., 0.}, {0., 1., 1., 1., 0.}, {0., 1., 1., 1., 0.}, \
+         {0., 0., 0., 0., 0.}}]]]"
+      )
+      .unwrap(),
+      "{{0, 0, 1, 0, 0}, {0, 1, 1, 1, 0}, {1, 1, 0, 1, 1}, \
+       {0, 1, 1, 1, 0}, {0, 0, 1, 0, 0}}"
+    );
+    // A byte image detects the same edges as its real counterpart.
+    assert_eq!(
+      interpret(
+        "ImageData[EdgeDetect[Image[{{0, 0, 0, 255, 0, 0, 0}}, \"Byte\"]]]"
+      )
+      .unwrap(),
+      "{{0, 0, 1, 0, 1, 0, 0}}"
+    );
+  }
+
+  // A wider range smooths further before differentiating, moving the
+  // ridge outwards; a range of zero differentiates nothing.
+  #[test]
+  fn edge_detect_range_sets_the_gradient_scale() {
+    clear_state();
+    let impulse =
+      "Image[{{0., 0., 0., 0., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0.}}]";
+    assert_eq!(
+      interpret(&format!("ImageData[EdgeDetect[{}, 4]]", impulse)).unwrap(),
+      "{{0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret(&format!("ImageData[EdgeDetect[{}, 0]]", impulse)).unwrap(),
+      "{{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}}"
+    );
+    // The range may be a pair, and then each axis is differentiated on
+    // its own scale: {0, r} finds only the edges across the columns.
+    let dot = "Image[{{0., 0., 0.}, {0., 1., 0.}, {0., 0., 0.}}]";
+    assert_eq!(
+      interpret(&format!("ImageData[EdgeDetect[{}, {{0, 2}}]]", dot)).unwrap(),
+      "{{0, 0, 0}, {1, 0, 1}, {0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret(&format!("ImageData[EdgeDetect[{}, {{2, 0}}]]", dot)).unwrap(),
+      "{{0, 1, 0}, {0, 0, 0}, {0, 1, 0}}"
+    );
+  }
+
+  // Without a threshold the split between edge and background is the
+  // cluster-variance threshold of the gradient magnitudes, which keeps
+  // the strong edge of a bar pair and drops the weak one. An explicit
+  // threshold is compared against the magnitude directly.
+  #[test]
+  fn edge_detect_threshold_selects_by_gradient_strength() {
+    clear_state();
+    let bars = "Image[{{0., 0., 0., 0.3, 0.3, 0.3, 0., 0., 0., \
+                1., 1., 1., 0., 0., 0.}}]";
+    assert_eq!(
+      interpret(&format!("ImageData[EdgeDetect[{}]]", bars)).unwrap(),
+      "{{0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0}}"
+    );
+    assert_eq!(
+      interpret(&format!("ImageData[EdgeDetect[{}, 2, 0.1]]", bars)).unwrap(),
+      "{{0, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 0}}"
+    );
+  }
+
+  // A range that is not a non-negative number, or a threshold that is
+  // not a number at all, is reported rather than used.
+  #[test]
+  fn edge_detect_reports_bad_specifications() {
+    use woxi::interpret_with_stdout;
+    clear_state();
+    let image = "Image[{{0., 0., 0.}, {0., 1., 0.}, {0., 0., 0.}}]";
+    for spec in ["x", "-1", "{1, 2, 3}"] {
+      let r =
+        interpret_with_stdout(&format!("EdgeDetect[{}, {}]", image, spec))
+          .unwrap();
+      assert_eq!(r.result, format!("EdgeDetect[-Image-, {}]", spec));
+      let expected = format!(
+        "EdgeDetect::bdrad: The specified radius {} should be either a \
+         non-negative number or a list of 2 non-negative numbers.",
+        spec
+      );
+      assert!(
+        r.warnings.contains(&expected),
+        "expected {:?} for {}, got {:?}",
+        expected,
+        spec,
+        r.warnings
+      );
+    }
+    let r =
+      interpret_with_stdout(&format!("EdgeDetect[{}, 2, x]", image)).unwrap();
+    assert_eq!(r.result, "EdgeDetect[-Image-, 2, x]");
+    assert!(
+      r.warnings.contains(
+        &"EdgeDetect::bdthr: Invalid threshold specification x.".to_string()
+      ),
+      "got {:?}",
+      r.warnings
+    );
+  }
+
   #[test]
   fn edge_detect_produces_grayscale() {
     clear_state();
