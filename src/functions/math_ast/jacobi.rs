@@ -1,7 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 /// Compute Jacobi elliptic functions sn(u, m), cn(u, m), dn(u, m) numerically
 /// using the descending Landen (AGM) transformation.

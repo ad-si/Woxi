@@ -2,6 +2,12 @@
 //!
 //! These functions work directly with `Expr` AST nodes.
 
+use crate::InterpreterError;
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, binop, bool_expr,
+  expr_to_output, expr_to_string, unevaluated,
+};
+
 mod airy;
 mod arithmetic;
 mod bessel;

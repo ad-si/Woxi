@@ -1,7 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{Expr, unevaluated};
 
 // Format a `Power::infy` warning in wolframscript's 2D layout, e.g.
 // `0^-3` renders as:

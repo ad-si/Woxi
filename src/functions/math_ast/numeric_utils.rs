@@ -1,7 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 use num_bigint::BigInt;
 use num_traits::{Signed, Zero};
 

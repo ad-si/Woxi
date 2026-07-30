@@ -1,7 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, unevaluated};
 
 /// Check if an expression contains any float-valued components (Real or BigFloat).
 fn contains_float(expr: &Expr) -> bool {

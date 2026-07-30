@@ -5,8 +5,6 @@
 
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{Expr, UnaryOperator, expr_to_output, unevaluated};
 
 /// One coordinate value: an exact rational (p/q, q > 0) or a machine real.
 /// Grids over exact bounds with exact steps stay exact (`Into[2]` of a unit

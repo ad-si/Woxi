@@ -1,10 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{
-  BinaryOperator, Expr, UnaryOperator, expr_to_string, substitute_variable,
-  unevaluated,
-};
+use crate::syntax::substitute_variable;
 
 pub fn n_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {

@@ -1,7 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 /// ExpIntegralEi[x] - Exponential integral Ei(x)
 pub fn exp_integral_ei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

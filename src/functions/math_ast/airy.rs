@@ -1,7 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 /// AiryAi[x] - Airy function of the first kind
 pub fn airy_ai_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

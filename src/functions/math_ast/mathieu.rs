@@ -14,8 +14,9 @@
 //! a smooth (a, q)-dependent factor. Users who need exact wolframscript
 //! agreement should compare ratios `MathieuSPrime(a, q, z) /
 //! MathieuSPrime(a, q, 0)` (these match to numerical precision).
-use crate::InterpreterError;
-use crate::syntax::{Expr, unevaluated};
+
+#[allow(unused_imports)]
+use super::*;
 
 fn try_real_f64(e: &Expr) -> Option<f64> {
   match e {

@@ -1,11 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
-use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, binop, bool_expr,
-  expr_to_string, unevaluated,
-};
 
 fn plus(a: Expr, b: Expr) -> Expr {
   binop(BinaryOperator::Plus, a, b)
@@ -17341,15 +17336,15 @@ pub fn censored_distribution_value(
 
   match head {
     "CDF" => {
-      use crate::syntax::ComparisonOp::{GreaterEqual, Less};
-      if decides(x, Less, &lo) == Some(true) {
+      use ComparisonOp as C;
+      if decides(x, C::Less, &lo) == Some(true) {
         return Ok(Some(Expr::Integer(0)));
       }
-      if decides(x, GreaterEqual, &hi) == Some(true) {
+      if decides(x, C::GreaterEqual, &hi) == Some(true) {
         return Ok(Some(Expr::Integer(1)));
       }
       // Inside the range the base CDF is unchanged.
-      match decides(x, Less, &hi) {
+      match decides(x, C::Less, &hi) {
         Some(true) => Ok(Some(cdf_ast(&[base, x.clone()])?)),
         _ => Ok(None),
       }

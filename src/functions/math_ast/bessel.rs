@@ -1,7 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, unevaluated};
 
 /// True if `z_expr` is `<zero_name>[order, k, ...]` whose first argument equals
 /// `n_expr` AND both `order` and `k` are concrete positive integers — the only

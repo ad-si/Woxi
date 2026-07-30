@@ -7,11 +7,10 @@
 
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{Expr, binop, unevaluated};
-
-/// True if `e` contains an inexact (machine) number anywhere.
+use crate::evaluator::evaluate_expr_to_expr as eval_expr;
+use crate::evaluator::pattern_matching::expr_equal;
 use crate::functions::math_ast::contains_inexact_real as is_inexact;
+use crate::functions::math_ast::make_sqrt;
 
 /// R_C(x, y) — degenerate Carlson integral.
 fn carlson_rc(x: f64, y: f64) -> f64 {
@@ -283,11 +282,6 @@ fn carlson_rg(x: f64, y: f64, z: f64) -> f64 {
 // argument patterns (equal arguments, a vanishing argument, …). These fire only
 // for exact input; inexact arguments go through the numeric kernels above.
 // ---------------------------------------------------------------------------
-
-use crate::evaluator::evaluate_expr_to_expr as eval_expr;
-use crate::evaluator::pattern_matching::expr_equal;
-use crate::functions::math_ast::make_sqrt;
-use crate::syntax::BinaryOperator;
 
 fn is_zero(e: &Expr) -> bool {
   matches!(e, Expr::Integer(0))

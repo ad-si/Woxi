@@ -1,7 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 /// True if `t` carries the imaginary unit `I` as a direct factor (possibly
 /// nested inside Times/negation): `I`, `b I`, `-2 b I`, etc.

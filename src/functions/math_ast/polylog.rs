@@ -1,7 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, unevaluated};
 
 /// PolyLog[s, z] - Polylogarithm function Li_s(z)
 pub fn polylog_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
