@@ -353,9 +353,13 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "UpArrow" => Some("\u{2191}"),
     "DownArrow" => Some("\u{2193}"),
     "LeftRightArrow" => Some("\u{2194}"),
+    "UpDownArrow" => Some("\u{2195}"),
     "DoubleLeftArrow" => Some("\u{21D0}"),
     "DoubleRightArrow" => Some("\u{21D2}"),
+    "DoubleUpArrow" => Some("\u{21D1}"),
+    "DoubleDownArrow" => Some("\u{21D3}"),
     "DoubleLeftRightArrow" => Some("\u{21D4}"),
+    "DoubleUpDownArrow" => Some("\u{21D5}"),
     "Rule" => Some("\u{F522}"),
     "RuleDelayed" => Some("\u{F51F}"),
     "DirectedEdge" => Some("\u{F3D5}"),
@@ -6836,6 +6840,17 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
   }
 }
 
+/// Whether a `Part` base must be parenthesized so `base[[i]]` re-parses to
+/// the same tree. `[[…]]` binds tighter than every infix operator, so any
+/// base that prints with a top-level operator (`a /. b`, `a + b`, `x &`, …)
+/// or as a negative literal needs parens: `(a /. b :> c)[[1]]` must not
+/// print as `a /. b :> c[[1]]`.
+fn part_base_needs_parens(base: &Expr) -> bool {
+  printed_infix_precedence(base).is_some()
+    || matches!(base, Expr::Integer(n) if *n < 0)
+    || matches!(base, Expr::Real(f) if *f < 0.0)
+}
+
 /// Render an application shorthand (`f /@ list`, `f @@ list`, `f @@@ list`)
 /// in InputForm, parenthesizing either operand when it would otherwise bind
 /// differently on re-parse. `prec` is the shorthand's own parse precedence
@@ -10047,7 +10062,12 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         base = inner_expr.as_ref();
       }
       indices.reverse();
-      format!("{}[[{}]]", format_expr(base, form), indices.join(","))
+      let base_str = format_expr(base, form);
+      if part_base_needs_parens(base) {
+        format!("({})[[{}]]", base_str, indices.join(","))
+      } else {
+        format!("{}[[{}]]", base_str, indices.join(","))
+      }
     }
     Expr::Function { body } => {
       // Wolfram shows anonymous functions with trailing space: "f & " (not "f &")
@@ -11796,7 +11816,12 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
         base = inner_expr.as_ref();
       }
       indices.reverse();
-      format!("{}[[{}]]", expr_to_input_form(base), indices.join(","))
+      let base_str = expr_to_input_form(base);
+      if part_base_needs_parens(base) {
+        format!("({})[[{}]]", base_str, indices.join(","))
+      } else {
+        format!("{}[[{}]]", base_str, indices.join(","))
+      }
     }
     // For all other cases (infix operators, simple literals), delegate to expr_to_output
     _ => expr_to_output(expr),
@@ -12836,33 +12861,82 @@ fn substitute_variable_impl(
         }
       }
     }
+    // When renaming (Module locals), a pattern variable or pattern head
+    // matching the local is renamed along with the body, keeping inner
+    // definitions like `r[s_] := s^2` consistent after `s` becomes `s$n`
+    // (Wolfram renames Pattern names the same way). Plain substitution
+    // leaves pattern names alone — they shadow the substituted variable.
+    Expr::Pattern {
+      name,
+      head,
+      blank_type,
+    } if rename_heads
+      && (name == var_name || head.as_deref() == Some(var_name)) =>
+    {
+      match value {
+        Expr::Identifier(new_name) => Expr::Pattern {
+          name: if name == var_name {
+            new_name.clone()
+          } else {
+            name.clone()
+          },
+          head: head.as_ref().map(|h| {
+            if h == var_name {
+              new_name.clone()
+            } else {
+              h.clone()
+            }
+          }),
+          blank_type: *blank_type,
+        },
+        _ => expr.clone(),
+      }
+    }
     Expr::PatternOptional {
       name,
       head,
       default,
-    } => Expr::PatternOptional {
-      name: name.clone(),
-      head: head.clone(),
-      default: default.as_ref().map(|d| {
-        Box::new(substitute_variable_impl(d, var_name, value, rename_heads))
-      }),
-    },
+    } => {
+      let (name, head) = rename_pattern_parts(
+        name,
+        head.as_deref(),
+        var_name,
+        value,
+        rename_heads,
+      );
+      Expr::PatternOptional {
+        name,
+        head,
+        default: default.as_ref().map(|d| {
+          Box::new(substitute_variable_impl(d, var_name, value, rename_heads))
+        }),
+      }
+    }
     Expr::PatternTest {
       name,
       head,
       blank_type,
       test,
-    } => Expr::PatternTest {
-      name: name.clone(),
-      head: head.clone(),
-      blank_type: *blank_type,
-      test: Box::new(substitute_variable_impl(
-        test,
+    } => {
+      let (name, head) = rename_pattern_parts(
+        name,
+        head.as_deref(),
         var_name,
         value,
         rename_heads,
-      )),
-    },
+      );
+      Expr::PatternTest {
+        name,
+        head,
+        blank_type: *blank_type,
+        test: Box::new(substitute_variable_impl(
+          test,
+          var_name,
+          value,
+          rename_heads,
+        )),
+      }
+    }
     Expr::CurriedCall { func, args } => Expr::CurriedCall {
       func: Box::new(substitute_variable_impl(
         func,
@@ -12878,6 +12952,34 @@ fn substitute_variable_impl(
     // Atoms that don't contain the variable
     _ => expr.clone(),
   }
+}
+
+/// Shared by the `PatternOptional`/`PatternTest` substitution arms: in
+/// rename mode a pattern name (or head) matching the renamed local follows
+/// the rename, like `Expr::Pattern`; otherwise both are kept as-is.
+fn rename_pattern_parts(
+  name: &str,
+  head: Option<&str>,
+  var_name: &str,
+  value: &Expr,
+  rename_heads: bool,
+) -> (String, Option<String>) {
+  if rename_heads && let Expr::Identifier(new_name) = value {
+    let renamed_name = if name == var_name {
+      new_name.clone()
+    } else {
+      name.to_string()
+    };
+    let renamed_head = head.map(|h| {
+      if h == var_name {
+        new_name.clone()
+      } else {
+        h.to_string()
+      }
+    });
+    return (renamed_name, renamed_head);
+  }
+  (name.to_string(), head.map(str::to_string))
 }
 
 /// Perform simultaneous substitution of multiple variables.

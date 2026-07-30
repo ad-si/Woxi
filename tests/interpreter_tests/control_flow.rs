@@ -106,6 +106,47 @@ mod while_loop {
   }
 }
 
+mod module_pattern_renaming {
+  use super::*;
+
+  #[test]
+  fn pattern_variable_follows_local_rename() {
+    clear_state();
+    // Regression: Module renames a local throughout the body — including
+    // pattern names in inner definitions, matching Wolfram. Previously
+    // only the definition's RHS was renamed, so `r[s_] := s^2` became
+    // `r$n[s_] := s$n^2` and the pattern no longer bound (the
+    // Doyle-spirals Demonstration's `doyle` helper hit this).
+    assert_eq!(
+      interpret("Module[{s, r}, r[s_] := s^2; r[3]]").unwrap(),
+      "9"
+    );
+  }
+
+  #[test]
+  fn pattern_variable_shadows_initialized_local() {
+    clear_state();
+    // The pattern binding wins over the local's value inside the
+    // definition body, exactly as in Wolfram after consistent renaming.
+    assert_eq!(
+      interpret("Module[{p, r}, p = 4; r[p_] := p + 1; r[10]]").unwrap(),
+      "11"
+    );
+  }
+
+  #[test]
+  fn multiple_pattern_variables() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Module[{s, t, r}, r[s_, t_] := s + 2 t; {r[1, 2], r[10, 20]}]"
+      )
+      .unwrap(),
+      "{5, 50}"
+    );
+  }
+}
+
 mod block_scoping {
   use super::*;
 

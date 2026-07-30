@@ -60,6 +60,10 @@ pub enum ControlState {
     y_max: f64,
     x: f64,
     y: f64,
+    /// Write-back function (from `Locator[Dynamic[var, cb], …]` promotion):
+    /// candidate values pass through `(cb)[{x, y}]` — which typically
+    /// rounds, clips, or rejects them — before the variable is read back.
+    write_callback: Option<String>,
   },
   /// An interval slider binding its variable to a `{low, high}` pair.
   IntervalSlider {
@@ -425,6 +429,56 @@ impl ManipulateState {
     self.reevaluate();
   }
 
+  /// Apply a 2D-slider change to axis 0 (x) or 1 (y). A control promoted
+  /// from an in-body `Locator[Dynamic[var, cb], …]` routes the candidate
+  /// point through `cb` first — evaluated against the *previous* bindings —
+  /// and takes whatever value the callback actually stored (rounded,
+  /// clamped, or unchanged when the callback rejects the move), exactly as
+  /// Wolfram would.
+  pub fn slider2d_change(&mut self, ctrl_idx: usize, axis: u8, value: f64) {
+    let (candidate, callback, name) = {
+      let Some(ControlState::Slider2D {
+        name,
+        x,
+        y,
+        write_callback,
+        ..
+      }) = self.controls.get(ctrl_idx)
+      else {
+        return;
+      };
+      let candidate = if axis == 0 { (value, *y) } else { (*x, value) };
+      (candidate, write_callback.clone(), name.clone())
+    };
+    let accepted = match callback {
+      Some(cb) => {
+        // Bindings still hold the previous point, so the callback's
+        // validation (e.g. a degenerate-triangle check) sees the old state.
+        let bindings = self.bindings();
+        let value_code = format!(
+          "{{{}, {}}}",
+          format_f64(candidate.0),
+          format_f64(candidate.1)
+        );
+        woxi::functions::graphics::apply_manipulate_callback(
+          &bindings,
+          &cb,
+          &value_code,
+          &name,
+        )
+        .and_then(|v| woxi::functions::graphics::parse_manipulate_point(&v))
+        .unwrap_or(candidate)
+      }
+      None => candidate,
+    };
+    if let Some(ControlState::Slider2D { x, y, .. }) =
+      self.controls.get_mut(ctrl_idx)
+    {
+      *x = accepted.0;
+      *y = accepted.1;
+    }
+  }
+
   /// Register a control change and report whether the caller must arm a
   /// throttle timer. Re-evaluating the body on *every* slider mouse-move tick
   /// blocks the UI thread and makes the graphic stutter/flicker while
@@ -705,6 +759,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         y_max,
         x_initial,
         y_initial,
+        write_callback,
       } => ControlState::Slider2D {
         name: name.clone(),
         label: label.clone(),
@@ -714,6 +769,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         y_max: *y_max,
         x: *x_initial,
         y: *y_initial,
+        write_callback: write_callback.clone(),
       },
       ManipulateControl::IntervalSlider {
         name,

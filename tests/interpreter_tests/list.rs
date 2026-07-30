@@ -8791,6 +8791,32 @@ mod part_span {
     );
   }
 
+  // A Part base that prints with a top-level operator keeps its parens so
+  // the printed form re-parses to the same tree: `(a /. b :> c)[[1]]` must
+  // not print as `a /. b :> c[[1]]` (which re-parses as Part of `c`).
+  #[test]
+  fn part_base_operator_expression_keeps_parens() {
+    assert_eq!(
+      interpret("ToString[Hold[(a /. b :> c)[[1]]], InputForm]").unwrap(),
+      "Hold[(a /. b :> c)[[1]]]"
+    );
+    assert_eq!(
+      interpret("ToString[Hold[(a + b)[[1]]], InputForm]").unwrap(),
+      "Hold[(a + b)[[1]]]"
+    );
+    assert_eq!(
+      interpret("ToString[Hold[(f /@ l)[[1]]], InputForm]").unwrap(),
+      "Hold[(f /@ l)[[1]]]"
+    );
+    // The evaluation itself picks the replaced expression's part.
+    assert_eq!(interpret("({9, 8} /. 8 -> 5)[[1]]").unwrap(), "9");
+    // Self-delimiting bases stay unparenthesized.
+    assert_eq!(
+      interpret("ToString[Hold[f[x][[1]]], InputForm]").unwrap(),
+      "Hold[f[x][[1]]]"
+    );
+  }
+
   // The unevaluated echo shows the Span in head form — wolframscript 15
   // prints {a, b, c, d, e}[[Span[5, 2]]] and never uses the ;; operator
   // in output (verified directly; the previous ;; expectation encoded a

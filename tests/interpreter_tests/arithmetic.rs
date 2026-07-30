@@ -1417,6 +1417,31 @@ mod power_with_negative_exponent {
   }
 }
 
+mod machine_complex_power_zero_imaginary {
+  use super::*;
+
+  #[test]
+  fn e_to_complex_with_zero_imaginary() {
+    // Regression: a structurally complex exponent whose imaginary part
+    // works out to `0.` still numericizes. Previously `E^(0.5 + 0.*I)`
+    // stayed symbolic, so `s*Exp[I*t]` at `t = 0.` never evaluated.
+    assert_eq!(interpret("E^(0.5 + 0.*I)").unwrap(), "1.6487212707001282");
+  }
+
+  #[test]
+  fn real_base_complex_exponent_with_zero_imaginary() {
+    assert_eq!(interpret("2.^(0.5 + 0.*I)").unwrap(), "1.414213562373095");
+  }
+
+  #[test]
+  fn exact_complex_exponents_stay_symbolic() {
+    // Exact symbolic forms keep their shape — only inexact operands
+    // numericize.
+    assert_eq!(interpret("Exp[I]").unwrap(), "E^I");
+    assert_eq!(interpret("Exp[I*Pi/3]").unwrap(), "E^(I/3*Pi)");
+  }
+}
+
 mod power_of_i {
   use super::*;
 

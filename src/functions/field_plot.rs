@@ -629,9 +629,23 @@ fn marching_squares_segments(
 fn chain_segments(
   segments: &[((f64, f64), (f64, f64))],
 ) -> Vec<Vec<(f64, f64)>> {
+  chain_segments_scaled(segments, 16.0)
+}
+
+/// Like `chain_segments`, but with an explicit endpoint-matching resolution:
+/// two endpoints snap together when equal at `1 / key_scale` granularity.
+/// Screen-pixel callers use 16.0; data-coordinate callers must scale by the
+/// plot range so the tolerance stays proportionally as fine.
+fn chain_segments_scaled(
+  segments: &[((f64, f64), (f64, f64))],
+  key_scale: f64,
+) -> Vec<Vec<(f64, f64)>> {
   use std::collections::HashMap;
   let key = |p: (f64, f64)| -> (i64, i64) {
-    ((p.0 * 16.0).round() as i64, (p.1 * 16.0).round() as i64)
+    (
+      (p.0 * key_scale).round() as i64,
+      (p.1 * key_scale).round() as i64,
+    )
   };
   // Zero-length segments occur when the contour passes exactly through a
   // grid node; neighboring cells provide the connecting geometry, so they
@@ -855,6 +869,40 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let levels = resolve_contour_levels(&opts.contours, v_min, v_max);
 
+  // Data-space contour polylines for the symbolic `structure`, so
+  // `ContourPlot[…][[1]]` yields primitives (with the ContourStyle
+  // directives) that can be re-embedded in an outer `Graphics[…]` the way
+  // Wolfram's GraphicsComplex form allows.
+  let mut structure_items: Vec<Expr> = contour_style_directives(args, 3);
+  {
+    let step_x = (x_max - x_min) / FIELD_GRID as f64;
+    let step_y = (y_max - y_min) / FIELD_GRID as f64;
+    // Endpoint snapping must stay proportional to the range (the pixel
+    // callers use 16.0 on a ~400px canvas).
+    let span = (x_max - x_min).abs().max((y_max - y_min).abs());
+    let key_scale = if span > 0.0 { 4096.0 / span } else { 16.0 };
+    for &level in &levels {
+      // `plot_y0 = y_max` with a negated cell height turns the screen-space
+      // (top-down) y mapping into the plain data-space one.
+      let segments =
+        marching_squares_segments(&grid, level, x_min, y_max, step_x, -step_y);
+      for chain in chain_segments_scaled(&segments, key_scale) {
+        let points: Vec<Expr> = chain
+          .iter()
+          .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into()))
+          .collect();
+        structure_items.push(Expr::FunctionCall {
+          name: "Line".to_string(),
+          args: vec![Expr::List(points.into())].into(),
+        });
+      }
+    }
+  }
+  let structure = Expr::FunctionCall {
+    name: "Graphics".to_string(),
+    args: vec![Expr::List(structure_items.into())].into(),
+  };
+
   // Use plotters for axes
   let area = generate_axes_only(
     (x_min, x_max),
@@ -905,7 +953,31 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
 
   svg.push_str("</svg>");
-  Ok(crate::graphics_result(svg))
+  Ok(crate::graphics_result_with_structure(svg, structure))
+}
+
+/// The `ContourStyle -> …` option items of a ContourPlot call (a single
+/// directive or a directive list), for embedding into the plot's symbolic
+/// `structure`. Empty when the option is absent.
+fn contour_style_directives(args: &[Expr], opts_from: usize) -> Vec<Expr> {
+  for arg in args.iter().skip(opts_from) {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } = arg
+      && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ContourStyle")
+    {
+      return match replacement.as_ref() {
+        Expr::List(items) => items.iter().cloned().collect(),
+        other => vec![other.clone()],
+      };
+    }
+  }
+  Vec::new()
 }
 
 /// The equation form of ContourPlot: draw each body's zero contour as an
@@ -1006,13 +1078,40 @@ fn contour_plot_equations(
   );
 
   svg.push_str("</svg>");
+  // Alongside the plot source (for `Show`), remember the symbolic form of
+  // the curves — the ContourStyle directives plus one `Line[…]` per chain —
+  // so `ContourPlot[…][[1]]` yields primitives that can be re-embedded in
+  // an outer `Graphics[…]` (the Demonstrations Tooltip-stripping idiom).
+  let mut structure_items: Vec<Expr> = contour_style_directives(args, 3);
+  for s in &series {
+    let points: Vec<Expr> = s
+      .points
+      .iter()
+      .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into()))
+      .collect();
+    structure_items.push(Expr::FunctionCall {
+      name: "Line".to_string(),
+      args: vec![Expr::List(points.into())].into(),
+    });
+  }
+  let structure = Expr::FunctionCall {
+    name: "Graphics".to_string(),
+    args: vec![Expr::List(structure_items.into())].into(),
+  };
   let source = crate::syntax::PlotSource {
     series,
     x_range: (x_min, x_max),
     y_range: (y_min, y_max),
     image_size: (opts.svg_width, opts.svg_height),
   };
-  Ok(crate::graphics_result_with_source(svg, source))
+  let mut result = crate::graphics_result_with_source(svg, source);
+  if let Expr::Graphics {
+    structure: slot, ..
+  } = &mut result
+  {
+    *slot = Some(Box::new(structure));
+  }
+  Ok(result)
 }
 
 /// RegionPlot[cond, {x, xmin, xmax}, {y, ymin, ymax}]
