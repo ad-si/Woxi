@@ -11013,12 +11013,16 @@ pub fn character_counts_ngram_ast(
     return Ok(Expr::List(results?.into()));
   }
   let s = expr_to_str(&args[0])?;
-  let n = expr_to_int(&args[1])?;
+  // The n-gram length has to be a positive whole number; note that this
+  // message names no call.
+  let Some(n) = expr_to_int(&args[1]).ok().filter(|n| *n >= 1) else {
+    crate::emit_message(
+      "CharacterCounts::arg2: Positive integer expected in position 2.",
+    );
+    return Ok(unevaluated("CharacterCounts", args));
+  };
   if n == 1 {
     return character_counts_ast(&args[0..1]);
-  }
-  if n < 1 {
-    return Ok(Expr::Association(Vec::new()));
   }
   let chars: Vec<char> = s.chars().collect();
   Ok(ngram_counts(char_ngrams(&chars, n as usize)))
@@ -11077,12 +11081,16 @@ pub fn letter_counts_ngram_ast(
     return Ok(Expr::List(results?.into()));
   }
   let s = expr_to_str(&args[0])?;
-  let n = expr_to_int(&args[1])?;
+  // The n-gram length has to be a positive whole number; note that this
+  // message names no call.
+  let Some(n) = expr_to_int(&args[1]).ok().filter(|n| *n >= 1) else {
+    crate::emit_message(
+      "LetterCounts::arg2: Positive integer expected in position 2.",
+    );
+    return Ok(unevaluated("LetterCounts", args));
+  };
   if n == 1 {
     return letter_counts_ast(&args[0..1]);
-  }
-  if n < 1 {
-    return Ok(Expr::Association(Vec::new()));
   }
   let n = n as usize;
   let mut grams: Vec<String> = Vec::new();

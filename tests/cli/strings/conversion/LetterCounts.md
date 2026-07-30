@@ -20,3 +20,12 @@ A list of strings threads, giving one association per string.
 $ wo 'LetterCounts[{"hello", "world", "!"}]'
 {<|l -> 2, o -> 1, e -> 1, h -> 1|>, <|d -> 1, l -> 1, r -> 1, o -> 1, w -> 1|>, <||>}
 ```
+
+The n-gram length has to be a positive whole number:
+
+```scrut
+$ wo 'LetterCounts["abcde", 0]'
+
+LetterCounts::arg2: Positive integer expected in position 2.
+LetterCounts[abcde, 0]
+```

@@ -865,14 +865,25 @@ pub fn dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // Parse the optional max-level argument. `None` means unlimited.
+  // Parse the optional level count. `None` means unlimited, which is what
+  // Infinity asks for explicitly. Anything else is reported.
   let max_level: Option<usize> = if args.len() == 2 {
     match &args[1] {
       Expr::Integer(n) if *n >= 0 => Some(*n as usize),
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "Dimensions: second argument must be a non-negative integer".into(),
+      Expr::Identifier(name) | Expr::Constant(name) if name == "Infinity" => {
+        None
+      }
+      other => {
+        crate::emit_message(&format!(
+          "Dimensions::innf: Non-negative integer or Infinity expected at \
+           position 2 in {}.",
+          crate::syntax::format_expr(
+            &unevaluated("Dimensions", args),
+            crate::syntax::ExprForm::Output
+          )
         ));
+        let _ = other;
+        return Ok(unevaluated("Dimensions", args));
       }
     }
   } else {

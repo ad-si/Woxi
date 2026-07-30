@@ -6083,6 +6083,150 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // Dimensions accepts Infinity for its level count, which it used to
+  // reject with a hard error along with everything else invalid.
+  #[test]
+  fn dimensions_level_count_accepts_infinity_and_reports_the_rest() {
+    use woxi::interpret_with_stdout;
+    assert_eq!(
+      interpret("Dimensions[{{1, 2}, {3, 4}}, Infinity]").unwrap(),
+      "{2, 2}"
+    );
+    assert_eq!(interpret("Dimensions[{{1, 2}, {3, 4}}, 1]").unwrap(), "{2}");
+    assert_eq!(interpret("Dimensions[{{1, 2}, {3, 4}}, 0]").unwrap(), "{}");
+    for spec in ["-1", "1.5", "x"] {
+      let call = format!("Dimensions[{{1, 2, 3, 4, 5}}, {}]", spec);
+      let r = interpret_with_stdout(&call).unwrap();
+      assert_eq!(r.result, call);
+      let expected = format!(
+        "Dimensions::innf: Non-negative integer or Infinity expected at \
+         position 2 in {}.",
+        call
+      );
+      assert!(
+        r.warnings.contains(&expected),
+        "expected {:?}, got {:?}",
+        expected,
+        r.warnings
+      );
+    }
+  }
+
+  // IntegerReverse needs a base above 1. Note that wolframscript says
+  // "at position 2 of", where its other messages say "in".
+  #[test]
+  fn integer_reverse_reports_a_base_below_two() {
+    use woxi::interpret_with_stdout;
+    for base in ["-1", "0", "1"] {
+      let call = format!("IntegerReverse[123, {}]", base);
+      let r = interpret_with_stdout(&call).unwrap();
+      assert_eq!(r.result, call);
+      let expected = format!(
+        "IntegerReverse::ibmr: Positive integer greater than 1 or mixed \
+         radix specification expected at position 2 of {}.",
+        call
+      );
+      assert!(
+        r.warnings.contains(&expected),
+        "expected {:?}, got {:?}",
+        expected,
+        r.warnings
+      );
+    }
+    assert_eq!(interpret("IntegerReverse[123, 2]").unwrap(), "111");
+    assert_eq!(interpret("IntegerReverse[123]").unwrap(), "321");
+  }
+
+  // A single value is shared by every key rather than being an error.
+  #[test]
+  fn association_thread_shares_one_value_across_the_keys() {
+    use woxi::interpret_with_stdout;
+    assert_eq!(
+      interpret("AssociationThread[{1, 2}, 3]").unwrap(),
+      "<|1 -> 3, 2 -> 3|>"
+    );
+    assert_eq!(
+      interpret("AssociationThread[{1, 2}, \"x\"]").unwrap(),
+      "<|1 -> x, 2 -> x|>"
+    );
+    assert_eq!(interpret("AssociationThread[{}, 1]").unwrap(), "<||>");
+    assert_eq!(
+      interpret("AssociationThread[{1, 2}, {3, 4}]").unwrap(),
+      "<|1 -> 3, 2 -> 4|>"
+    );
+    // Two lists of different lengths still cannot be threaded.
+    let r = interpret_with_stdout("AssociationThread[{1, 2}, {3}]").unwrap();
+    assert_eq!(r.result, "AssociationThread[{1, 2}, {3}]");
+    assert!(
+      r.warnings.contains(
+        &"AssociationThread::idim: {1, 2} and {3} must have the same length."
+          .to_string()
+      ),
+      "got {:?}",
+      r.warnings
+    );
+  }
+
+  // Merge and KeyUnion name the offending element rather than aborting.
+  #[test]
+  fn merge_and_key_union_report_a_non_association() {
+    use woxi::interpret_with_stdout;
+    let r = interpret_with_stdout("Merge[{<|\"a\" -> 1|>, 7}, Total]").unwrap();
+    assert_eq!(r.result, "Merge[{<|a -> 1|>, 7}, Total]");
+    assert!(
+      r.warnings.contains(
+        &"Merge::list1: The argument 7 is not a valid list of Associations \
+          or rules or lists of rules."
+          .to_string()
+      ),
+      "got {:?}",
+      r.warnings
+    );
+    let r = interpret_with_stdout("KeyUnion[{<|\"a\" -> 1|>, 7}]").unwrap();
+    assert_eq!(r.result, "KeyUnion[{<|a -> 1|>, 7}]");
+    assert!(
+      r.warnings.contains(
+        &"KeyUnion::invas: The argument 7 is not a valid Association or rule."
+          .to_string()
+      ),
+      "got {:?}",
+      r.warnings
+    );
+    // The valid forms are untouched.
+    assert_eq!(
+      interpret("Merge[{<|\"a\" -> 1|>, <|\"a\" -> 2|>}, Total]").unwrap(),
+      "<|a -> 3|>"
+    );
+  }
+
+  // An n-gram length has to be a positive whole number. Zero used to give
+  // an empty association and a fraction used to abort. This message names
+  // no call.
+  #[test]
+  fn counts_report_a_bad_ngram_length() {
+    use woxi::interpret_with_stdout;
+    for head in ["LetterCounts", "CharacterCounts"] {
+      for spec in ["0", "-1", "1.5", "x"] {
+        let call = format!("{}[\"abcde\", {}]", head, spec);
+        let r = interpret_with_stdout(&call).unwrap();
+        assert_eq!(r.result, format!("{}[abcde, {}]", head, spec));
+        let expected =
+          format!("{}::arg2: Positive integer expected in position 2.", head);
+        assert!(
+          r.warnings.contains(&expected),
+          "expected {:?} for {}, got {:?}",
+          expected,
+          call,
+          r.warnings
+        );
+      }
+      assert_eq!(
+        interpret(&format!("{}[\"abcde\", 2]", head)).unwrap(),
+        "<|ab -> 1, bc -> 1, cd -> 1, de -> 1|>"
+      );
+    }
+  }
+
   // A part specification that is not a position at all is a different
   // complaint from one that is merely out of range, and neither aborts.
   #[test]

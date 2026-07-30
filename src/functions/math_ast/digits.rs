@@ -2696,9 +2696,16 @@ pub fn integer_reverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match expr_to_i128(&args[1]) {
       Some(b) if b >= 2 => b,
       Some(_) => {
-        return Err(InterpreterError::EvaluationError(
-          "IntegerReverse: base must be at least 2".into(),
+        // wolframscript says "at position 2 of", not "in".
+        crate::emit_message(&format!(
+          "IntegerReverse::ibmr: Positive integer greater than 1 or mixed \
+           radix specification expected at position 2 of {}.",
+          crate::syntax::format_expr(
+            &unevaluated("IntegerReverse", args),
+            crate::syntax::ExprForm::Output
+          )
         ));
+        return uneval();
       }
       None => return uneval(),
     }

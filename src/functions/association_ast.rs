@@ -580,25 +580,24 @@ pub fn association_thread_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let keys = match keys_expr {
     Expr::List(items) => items.clone(),
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "AssociationThread: keys must be a list".into(),
-      ));
-    }
+    // A key specification that is not a list is left for someone else to
+    // make sense of rather than aborting the evaluation.
+    _ => return Ok(unevaluated("AssociationThread", args)),
   };
+  // A single value is shared by every key, so
+  // `AssociationThread[{1, 2}, 3]` is `<|1 -> 3, 2 -> 3|>`.
   let values = match values_expr {
     Expr::List(items) => items.clone(),
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "AssociationThread: values must be a list".into(),
-      ));
-    }
+    scalar => vec![scalar.clone(); keys.len()].into(),
   };
 
   if keys.len() != values.len() {
-    return Err(InterpreterError::EvaluationError(
-      "AssociationThread: lists must have the same length".into(),
+    crate::emit_message(&format!(
+      "AssociationThread::idim: {} and {} must have the same length.",
+      crate::syntax::format_expr(keys_expr, crate::syntax::ExprForm::Output),
+      crate::syntax::format_expr(values_expr, crate::syntax::ExprForm::Output)
     ));
+    return Ok(unevaluated("AssociationThread", args));
   }
 
   let items: Vec<(Expr, Expr)> = keys.into_iter().zip(values).collect();
@@ -675,10 +674,13 @@ pub fn merge_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           push_pair(&mut key_values, k, v);
         }
       }
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "Merge: all elements must be associations".into(),
+      other => {
+        crate::emit_message(&format!(
+          "Merge::list1: The argument {} is not a valid list of \
+           Associations or rules or lists of rules.",
+          crate::syntax::format_expr(other, crate::syntax::ExprForm::Output)
         ));
+        return Ok(unevaluated("Merge", args));
       }
     }
   }
@@ -941,10 +943,13 @@ pub fn key_union_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Association(items) => {
         all_assocs.push(items.clone());
       }
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "KeyUnion: each element must be an association".into(),
+      other => {
+        crate::emit_message(&format!(
+          "KeyUnion::invas: The argument {} is not a valid Association or \
+           rule.",
+          crate::syntax::format_expr(other, crate::syntax::ExprForm::Output)
         ));
+        return Ok(unevaluated("KeyUnion", args));
       }
     }
   }

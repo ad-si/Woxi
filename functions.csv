@@ -285,7 +285,7 @@ Quiet,Evaluate expression suppressing messages,✅,contextual,6.0,284
 Joined,Option for joining points in list plots,✅,none,6.0,285
 FreeQ,Tests if expression is free of a specified form,✅,pure,1.0,286
 Medium,Medium size specification,✅,none,6.0,287
-Dimensions,Returns the dimensions of a nested list,✅,pure,1.0,288
+Dimensions,Dimensions of a nested list optionally capped at n levels or Infinity,✅,pure,1.0,288
 Rest,Returns the list without its first element,✅,pure,1.0,289
 NonCommutativeMultiply,Non-commutative multiplication operator,✅,pure,1.0,290
 Axis,Filling reference for plots,✅,none,3.0,291
@@ -863,7 +863,7 @@ Indexed,Indexed element of a symbolic vector,✅,none,10.0,861
 Close,Closes an open stream and returns its name,✅,effectful,1.0,863
 Trace,Returns a minimal evaluation trace as a two-element list,✅,pure,2.0,863
 StreamPoints,Option for number of stream lines in StreamPlot,✅,none,7.0,864
-AssociationThread,Creates an association from lists of keys and values,✅,pure,10.0,865
+AssociationThread,Association from a list of keys and a matching list of values or one shared value,✅,pure,10.0,865
 RealDigits,Returns the digits of a real number,✅,pure,2.0,866
 EulerGamma,Euler-Mascheroni constant,✅,pure,1.0,868
 Implies,Logical implication,✅,pure,1.0,868
