@@ -12220,6 +12220,27 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::FunctionCall { name, .. } if name == "Style" => {
         out_args.push(spec.clone());
       }
+      // Control objects and layout wrappers are valid Manipulate arguments
+      // (`Row[{"label", Control[{…}]}]`, `Button["shoot", action]`, …) —
+      // wolframscript shows them in the control area with no message.
+      Expr::FunctionCall { name, .. }
+        if matches!(
+          name.as_str(),
+          "Control"
+            | "Button"
+            | "Row"
+            | "Column"
+            | "Grid"
+            | "Item"
+            | "Text"
+            | "Pane"
+            | "Panel"
+            | "Labeled"
+            | "Spacer"
+        ) =>
+      {
+        out_args.push(spec.clone());
+      }
       _ => {
         // Non-list variable specification: emit Manipulate::vsform
         // message but still return the expression unchanged, matching
@@ -12441,11 +12462,20 @@ pub enum ManipulateControl {
   /// A `Delimiter` argument: a horizontal separator row between control
   /// groups. Binds no variable.
   Divider,
+  /// A `Button[label, action]` argument (e.g. the "randomize parameters"
+  /// button of the trebuchet demonstration). Pressing it runs `action`
+  /// against the live bindings and writes the mutated variables back into
+  /// the controls. Binds no variable itself.
+  Button {
+    label: String,
+    /// The held action as InputForm code.
+    action: String,
+  },
 }
 
 impl ManipulateControl {
   /// The bound variable name for this control. Annotation rows
-  /// (`Heading` / `Divider`) bind no variable and return `""`.
+  /// (`Heading` / `Divider` / `Button`) bind no variable and return `""`.
   pub fn name(&self) -> &str {
     match self {
       ManipulateControl::Continuous { name, .. }
@@ -12453,7 +12483,9 @@ impl ManipulateControl {
       | ManipulateControl::Slider2D { name, .. }
       | ManipulateControl::IntervalSlider { name, .. }
       | ManipulateControl::Locator { name, .. } => name,
-      ManipulateControl::Heading { .. } | ManipulateControl::Divider => "",
+      ManipulateControl::Heading { .. }
+      | ManipulateControl::Divider
+      | ManipulateControl::Button { .. } => "",
     }
   }
 }
@@ -12503,6 +12535,12 @@ pub struct ManipulateSpec {
   /// `Appearance -> None`: the widget shows no visible control rows (the
   /// animation just runs), matching Wolfram's control-free appearance.
   pub appearance_none: bool,
+  /// Continuous controls whose upper bound is an expression in other
+  /// Manipulate variables (`Control[{{time, 0}, 0, tMax, …}]` with `tMax`
+  /// a `ControlType -> None` state variable), as `(control name, max
+  /// expression code)`. The frontend re-evaluates the bound against the
+  /// live bindings after every body evaluation and updates the slider.
+  pub dynamic_bounds: Vec<(String, String)>,
 }
 
 /// Result of parsing a single list-shaped Manipulate argument.
@@ -12594,97 +12632,206 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // and every occurrence in the body (and related code fragments) is
   // rewritten below via `(original InputForm, synthesized name)` pairs.
   let mut renames: Vec<(String, String)> = Vec::new();
+  let mut dynamic_bounds: Vec<(String, String)> = Vec::new();
+
+  // Flatten layout wrappers: `Row[{"label", Control[{…}]}]` contributes
+  // its strings/styles as heading rows and each `Control[spec]` as an
+  // ordinary control spec, keeping display order.
+  let mut expanded: Vec<Expr> = Vec::with_capacity(args.len() - 1);
   for spec in &args[1..] {
-    // Options such as `Initialization :> …` or `TrackedSymbols :> …`
-    // are not variable specs; extract what we understand and ignore
-    // the rest rather than failing the whole extraction.
-    if let Expr::Rule {
-      pattern,
-      replacement,
-    }
-    | Expr::RuleDelayed {
-      pattern,
-      replacement,
-    } = spec
-    {
-      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Initialization")
+    let unwrap_control = |e: &Expr, out: &mut Vec<Expr>| match e {
+      Expr::FunctionCall { name, args: cargs }
+        if name == "Control" && cargs.len() == 1 =>
       {
-        initialization = Some(crate::syntax::expr_to_input_form(replacement));
+        out.push(cargs[0].clone());
       }
-      // `Appearance -> None` hides the control rows; the animation just
-      // runs (an animated widget keeps its play/pause toggle).
-      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Appearance")
-        && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "None")
-      {
-        appearance_none = true;
-      }
-      // `AnimationRunning -> False` builds the widget paused.
-      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "AnimationRunning")
-        && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "False")
-      {
-        animation_running = false;
-      }
-      continue;
-    }
-    // `Delimiter` and string / `Style[…]` arguments are static annotation
-    // rows between controls (Wolfram's `ThisIsNotAControl`), keeping their
-    // position among the control rows.
+      other => out.push(other.clone()),
+    };
     match spec {
-      Expr::Identifier(s) if s == "Delimiter" => {
-        controls.push(ManipulateControl::Divider);
-        continue;
-      }
-      Expr::String(_) => {
-        let label_runs = manipulate_label_runs(spec, false);
-        controls.push(ManipulateControl::Heading {
-          label: flatten_label_runs(&label_runs),
-          label_runs,
-        });
-        continue;
-      }
-      Expr::FunctionCall { name, .. } if name == "Style" => {
-        let label_runs = manipulate_label_runs(spec, false);
-        controls.push(ManipulateControl::Heading {
-          label: flatten_label_runs(&label_runs),
-          label_runs,
-        });
-        continue;
-      }
-      _ => {}
-    }
-    // Only list-shaped arguments are control specs. Any other trailing
-    // argument (e.g. a `Dynamic[Panel[…]]` of checkboxes) is an extra
-    // display element: capture it so the frontend can render it live.
-    if !matches!(spec, Expr::List(_)) {
-      displays.push(crate::syntax::expr_to_input_form(spec));
-      continue;
-    }
-    let (spec, rename) = rewrite_compound_control_var(spec);
-    match parse_manipulate_control(&spec)? {
-      ParsedControl::Visible(mut c, enabled) => {
-        if let Some((orig, orig_form, synth)) = &rename {
-          patch_default_label(&mut c, orig, synth);
-          renames.push((orig_form.clone(), synth.clone()));
+      Expr::FunctionCall {
+        name,
+        args: row_args,
+      } if name == "Row"
+        && !row_args.is_empty()
+        && matches!(&row_args[0], Expr::List(_)) =>
+      {
+        if let Expr::List(items) = &row_args[0] {
+          for item in items.iter() {
+            unwrap_control(item, &mut expanded);
+          }
         }
-        if let Some(cond) = enabled {
-          control_enabled.push((c.name().to_string(), cond));
-        }
-        controls.push(c);
       }
-      ParsedControl::Fixed { name, value } => {
-        if let Some((_, orig_form, synth)) = &rename {
-          renames.push((orig_form.clone(), synth.clone()));
-        }
-        fixed.push((name, value));
-      }
-      ParsedControl::State { name, value } => {
-        if let Some((_, orig_form, synth)) = &rename {
-          renames.push((orig_form.clone(), synth.clone()));
-        }
-        state.push((name, value));
-      }
+      other => unwrap_control(other, &mut expanded),
     }
   }
+
+  // Pre-collect `ControlType -> None` state variables so that control
+  // bounds referencing them (`Control[{{time, 0}, 0, tMax, …}]` with
+  // `{{tMax, 1}, ControlType -> None}` listed later) evaluate.
+  let mut pre_state: Vec<(String, String)> = Vec::new();
+  for spec in &expanded {
+    if matches!(spec, Expr::List(_))
+      && let Some(ParsedControl::State { name, value }) =
+        parse_manipulate_control(spec)
+    {
+      pre_state.push((name, value));
+    }
+  }
+  let pre_state_names: Vec<String> =
+    pre_state.iter().map(|(n, _)| n.clone()).collect();
+
+  // A `Trigger` control (the Demonstrations "shoot / reset" pattern)
+  // makes the widget animatable, starting paused.
+  for spec in &expanded {
+    if let Expr::List(items) = spec
+      && items.iter().any(|it| {
+        matches!(it, Expr::Identifier(s) if s == "Trigger")
+          || matches!(
+            it,
+            Expr::Rule { pattern, replacement }
+            | Expr::RuleDelayed { pattern, replacement }
+              if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlType")
+                && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Trigger")
+          )
+      })
+    {
+      animated = true;
+      animation_running = false;
+    }
+  }
+
+  let loop_result = crate::with_scoped_globals(&pre_state, || {
+    for spec in &expanded {
+      // Options such as `Initialization :> …` or `TrackedSymbols :> …`
+      // are not variable specs; extract what we understand and ignore
+      // the rest rather than failing the whole extraction.
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } = spec
+      {
+        if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Initialization")
+        {
+          initialization = Some(crate::syntax::expr_to_input_form(replacement));
+        }
+        // `Appearance -> None` hides the control rows; the animation just
+        // runs (an animated widget keeps its play/pause toggle).
+        if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Appearance")
+          && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "None")
+        {
+          appearance_none = true;
+        }
+        // `AnimationRunning -> False` builds the widget paused.
+        if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "AnimationRunning")
+          && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "False")
+        {
+          animation_running = false;
+        }
+        continue;
+      }
+      // `Delimiter` and string / `Style[…]` arguments are static annotation
+      // rows between controls (Wolfram's `ThisIsNotAControl`), keeping their
+      // position among the control rows.
+      match spec {
+        Expr::Identifier(s) if s == "Delimiter" => {
+          controls.push(ManipulateControl::Divider);
+          continue;
+        }
+        Expr::String(_) => {
+          let label_runs = manipulate_label_runs(spec, false);
+          controls.push(ManipulateControl::Heading {
+            label: flatten_label_runs(&label_runs),
+            label_runs,
+          });
+          continue;
+        }
+        Expr::FunctionCall { name, .. } if name == "Style" => {
+          let label_runs = manipulate_label_runs(spec, false);
+          controls.push(ManipulateControl::Heading {
+            label: flatten_label_runs(&label_runs),
+            label_runs,
+          });
+          continue;
+        }
+        // `Button[label, action]`: pressing it runs the held action against
+        // the live bindings (e.g. "randomize parameters").
+        Expr::FunctionCall { name, args: bargs }
+          if name == "Button" && bargs.len() >= 2 =>
+        {
+          let label_runs = manipulate_label_runs(&bargs[0], false);
+          controls.push(ManipulateControl::Button {
+            label: flatten_label_runs(&label_runs),
+            action: crate::syntax::expr_to_input_form(&bargs[1]),
+          });
+          continue;
+        }
+        _ => {}
+      }
+      // Only list-shaped arguments are control specs. Any other trailing
+      // argument (e.g. a `Dynamic[Panel[…]]` of checkboxes) is an extra
+      // display element: capture it so the frontend can render it live.
+      if !matches!(spec, Expr::List(_)) {
+        displays.push(crate::syntax::expr_to_input_form(spec));
+        continue;
+      }
+      // A continuous bound referencing a state variable (`0, tMax, .2` with
+      // `tMax` mutable) stays live: remember its code so the frontend can
+      // track it as the state changes.
+      let dynamic_max: Option<String> = match spec {
+        Expr::List(items) if !items.is_empty() => {
+          let bound_items: Vec<&Expr> = items[1..]
+            .iter()
+            .filter(|it| {
+              !matches!(it, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+            })
+            .collect();
+          bound_items
+            .get(1)
+            .filter(|e| expr_references_any(e, &pre_state_names))
+            .map(|e| crate::syntax::expr_to_input_form(e))
+        }
+        _ => None,
+      };
+      let (spec, rename) = rewrite_compound_control_var(spec);
+      match parse_manipulate_control(&spec)? {
+        ParsedControl::Visible(mut c, enabled) => {
+          if let Some((orig, orig_form, synth)) = &rename {
+            patch_default_label(&mut c, orig, synth);
+            renames.push((orig_form.clone(), synth.clone()));
+          }
+          if let Some(cond) = enabled {
+            control_enabled.push((c.name().to_string(), cond));
+          }
+          if let (Some(max_code), ManipulateControl::Continuous { name, .. }) =
+            (&dynamic_max, &c)
+          {
+            dynamic_bounds.push((name.clone(), max_code.clone()));
+          }
+          controls.push(c);
+        }
+        ParsedControl::Fixed { name, value } => {
+          if let Some((_, orig_form, synth)) = &rename {
+            renames.push((orig_form.clone(), synth.clone()));
+          }
+          fixed.push((name, value));
+        }
+        ParsedControl::State { name, value } => {
+          if let Some((_, orig_form, synth)) = &rename {
+            renames.push((orig_form.clone(), synth.clone()));
+          }
+          // Already collected by the pre-pass scan, but keep this authoritative
+          // ordering-preserving push (the pre-pass list is only for scoping).
+          state.push((name, value));
+        }
+      }
+    }
+    Some(())
+  });
+  loop_result?;
 
   // A Manipulate with no controls or state at all (e.g. `Manipulate[x^2,
   // badspec]`, where `badspec` is neither a spec nor an option) isn't
@@ -12744,7 +12891,35 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animated,
     animation_running,
     appearance_none,
+    dynamic_bounds,
   })
+}
+
+/// Does `expr` reference (as a bare symbol) any of the given names?
+/// Used to spot control bounds that must track mutable state variables.
+fn expr_references_any(expr: &Expr, names: &[String]) -> bool {
+  if names.is_empty() {
+    return false;
+  }
+  match expr {
+    Expr::Identifier(s) => names.iter().any(|n| n == s),
+    Expr::List(items) => items.iter().any(|e| expr_references_any(e, names)),
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(|e| expr_references_any(e, names))
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      expr_references_any(left, names) || expr_references_any(right, names)
+    }
+    Expr::UnaryOp { operand, .. } => expr_references_any(operand, names),
+    Expr::Comparison { operands, .. } => {
+      operands.iter().any(|e| expr_references_any(e, names))
+    }
+    Expr::CurriedCall { func, args } => {
+      expr_references_any(func, names)
+        || args.iter().any(|e| expr_references_any(e, names))
+    }
+    _ => false,
+  }
 }
 
 /// Synthesize a plain symbol name for a compound (non-Identifier) control
@@ -12859,7 +13034,9 @@ fn patch_default_label(
         *label = pretty;
       }
     }
-    ManipulateControl::Heading { .. } | ManipulateControl::Divider => {}
+    ManipulateControl::Heading { .. }
+    | ManipulateControl::Divider
+    | ManipulateControl::Button { .. } => {}
   }
 }
 
@@ -12909,6 +13086,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animated: true,
     animation_running: true,
     appearance_none: false,
+    dynamic_bounds: Vec::new(),
   })
 }
 
@@ -12981,6 +13159,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animated: true,
     animation_running: true,
     appearance_none: false,
+    dynamic_bounds: Vec::new(),
   })
 }
 
@@ -13051,6 +13230,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animated: false,
     animation_running: true,
     appearance_none: false,
+    dynamic_bounds: Vec::new(),
   })
 }
 
@@ -13097,6 +13277,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animated: false,
     animation_running: true,
     appearance_none: false,
+    dynamic_bounds: Vec::new(),
   })
 }
 
@@ -13143,6 +13324,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animated: false,
     animation_running: true,
     appearance_none: false,
+    dynamic_bounds: Vec::new(),
   })
 }
 
@@ -13725,10 +13907,21 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
   if bounds.len() < 2 {
     return None;
   }
-  let mut min =
-    crate::functions::math_ast::try_eval_to_f64_with_infinity(bounds[0])?;
-  let mut max =
-    crate::functions::math_ast::try_eval_to_f64_with_infinity(bounds[1])?;
+  // A bound may reference another Manipulate variable (`0, tMax, .2` with
+  // `{{tMax, 1}, ControlType -> None}`); the structural conversion can't
+  // see it, so fall back to a full evaluation (the caller scopes the
+  // state variables as globals).
+  let eval_bound = |e: &Expr| -> Option<f64> {
+    crate::functions::math_ast::try_eval_to_f64_with_infinity(e).or_else(|| {
+      crate::evaluator::evaluate_expr_to_expr(e)
+        .ok()
+        .and_then(|ev| {
+          crate::functions::math_ast::try_eval_to_f64_with_infinity(&ev)
+        })
+    })
+  };
+  let mut min = eval_bound(bounds[0])?;
+  let mut max = eval_bound(bounds[1])?;
   // An infinite bound (`Animate[…, {ϕ, 0, Infinity}]` runs forever in
   // Wolfram) cannot drive a finite slider; substitute a 2π looping window
   // so the default sine-based demonstrations wrap seamlessly.
@@ -13824,7 +14017,9 @@ pub fn manipulate_initial_bindings(
     .iter()
     .filter_map(|c| match c {
       // Annotation rows bind no variable.
-      ManipulateControl::Heading { .. } | ManipulateControl::Divider => None,
+      ManipulateControl::Heading { .. }
+      | ManipulateControl::Divider
+      | ManipulateControl::Button { .. } => None,
       ManipulateControl::Continuous { name, initial, .. } => {
         Some((name.clone(), format_f64_input(*initial)))
       }
@@ -14397,6 +14592,13 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
       }
       ManipulateControl::Divider => {
         ctrl_parts.push(r#"{"kind":"delimiter"}"#.to_string());
+      }
+      ManipulateControl::Button { label, action } => {
+        ctrl_parts.push(format!(
+          r#"{{"kind":"button","label":"{}","action":"{}"}}"#,
+          json_escape_manipulate(label),
+          json_escape_manipulate(action),
+        ));
       }
     }
   }

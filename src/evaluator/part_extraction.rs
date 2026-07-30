@@ -367,6 +367,54 @@ pub fn extract_part_ast(
     return extract_part_ast(symbolic, index);
   }
 
+  // A rendered 2D plot that kept its sampled curves (`PlotSource`)
+  // reconstitutes them as primitives, so `ParametricPlot[…][[1]]` yields
+  // something a surrounding `Graphics[{…}]` can draw — matching Wolfram
+  // where part 1 of a plot is its primitives.
+  if let Expr::Graphics {
+    structure: None,
+    source: Some(source),
+    is_3d: false,
+    ..
+  } = expr
+  {
+    let series: Vec<Expr> = source
+      .series
+      .iter()
+      .map(|s| {
+        let points = Expr::List(
+          s.points
+            .iter()
+            .filter(|(x, y)| x.is_finite() && y.is_finite())
+            .map(|(x, y)| {
+              Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into())
+            })
+            .collect(),
+        );
+        let (r, g, b) = s.color;
+        let color = Expr::FunctionCall {
+          name: "RGBColor".to_string(),
+          args: vec![
+            Expr::Real(r as f64 / 255.0),
+            Expr::Real(g as f64 / 255.0),
+            Expr::Real(b as f64 / 255.0),
+          ]
+          .into(),
+        };
+        let draw = Expr::FunctionCall {
+          name: if s.is_scatter { "Point" } else { "Line" }.to_string(),
+          args: vec![points].into(),
+        };
+        Expr::List(vec![color, draw].into())
+      })
+      .collect();
+    let graphics = Expr::FunctionCall {
+      name: "Graphics".to_string(),
+      args: vec![Expr::List(series.into())].into(),
+    };
+    return extract_part_ast(&graphics, index);
+  }
+
   // A tree is an atom: Part cannot reach inside it, so the call stays
   // unevaluated and the caller reports Part::partd.
   if matches!(expr, Expr::FunctionCall { name, .. } if name == "Tree") {

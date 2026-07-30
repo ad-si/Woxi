@@ -7232,6 +7232,111 @@ mod ndsolve {
     let val: f64 = result.parse().expect("should be a number");
     assert!((val - (-1.0)).abs() < 0.01, "Expected -1.0, got {}", val);
   }
+
+  #[test]
+  fn coupled_first_order_system() {
+    // x' = y, y' = -x with x(0)=1, y(0)=0 → x = cos t.
+    let result = interpret(
+      "s = NDSolve[{x'[t] == y[t], y'[t] == -x[t], x[0] == 1, y[0] == 0}, \
+       {x, y}, {t, 0, 4}]; (x /. s[[1]])[N[Pi]]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!((val - (-1.0)).abs() < 0.01, "Expected -1.0, got {}", val);
+  }
+
+  #[test]
+  fn implicit_second_order_system() {
+    // Equations coupled in the highest derivatives (a mass-matrix
+    // system, like the trebuchet demonstration's Lagrangian equations):
+    // u'' + v'' == -(u+v), u'' - v'' == -(u-v) decouples to u'' = -u,
+    // v'' = -v, so with u(0)=1, u'(0)=0 the solution is u(t) = cos t.
+    let result = interpret(
+      "s = NDSolve[{u''[t] + v''[t] == -(u[t] + v[t]), \
+       u''[t] - v''[t] == -(u[t] - v[t]), \
+       u[0] == 1, u'[0] == 0, v[0] == 0, v'[0] == 0}, {u, v}, {t, 0, 3}]; \
+       (u /. s[[1]])[1.0]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    let expected = 1.0_f64.cos();
+    assert!(
+      (val - expected).abs() < 0.01,
+      "Expected {}, got {}",
+      expected,
+      val
+    );
+  }
+
+  #[test]
+  fn interior_initial_point_integrates_both_directions() {
+    // The initial condition sits inside the domain: y' = y, y(1) = 1 on
+    // {t, 0, 2} → y(t) = E^(t-1) on both sides of t = 1.
+    let result = interpret(
+      "s = NDSolve[{w'[t] == w[t], w[1] == 1}, w, {t, 0, 2}]; \
+       f = w /. s[[1]]; {f[0.0], f[2.0]}",
+    )
+    .unwrap();
+    let expected_lo = (-1.0_f64).exp();
+    let expected_hi = std::f64::consts::E;
+    let vals: Vec<f64> = result
+      .trim_matches(['{', '}'])
+      .split(',')
+      .map(|p| p.trim().parse().expect("should be numbers"))
+      .collect();
+    assert!(
+      (vals[0] - expected_lo).abs() < 0.01
+        && (vals[1] - expected_hi).abs() < 0.01,
+      "Expected {{{expected_lo}, {expected_hi}}}, got {result}"
+    );
+  }
+
+  #[test]
+  fn event_locator_stops_integration() {
+    // Method -> {"EventLocator", …} stops at the event crossing and runs
+    // the (held) EventAction: y' = -y from y(0)=1 crosses 0.5 at ln 2.
+    let result = interpret(
+      "s = NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0, 10}, \
+       Method -> {\"EventLocator\", \"Event\" -> y[t] - 0.5, \
+       \"EventAction\" :> Throw[stopT = t, \"StopIntegration\"]}]; \
+       {stopT, (y /. s[[1]])[stopT]}",
+    )
+    .unwrap();
+    let vals: Vec<f64> = result
+      .trim_matches(['{', '}'])
+      .split(',')
+      .map(|p| p.trim().parse().expect("should be numbers"))
+      .collect();
+    assert!(
+      (vals[0] - std::f64::consts::LN_2).abs() < 0.001,
+      "Expected event at ln 2 ≈ 0.6931, got {}",
+      vals[0]
+    );
+    assert!(
+      (vals[1] - 0.5).abs() < 0.001,
+      "Expected y at event ≈ 0.5, got {}",
+      vals[1]
+    );
+  }
+
+  #[test]
+  fn symbolic_initial_condition_value() {
+    // An exact symbolic IC value (like the trebuchet's
+    // `θ[0] == -ArcCos[(143 - L4)/L1]`) must numericise.
+    let result = interpret(
+      "s = NDSolve[{y'[t] == 0, y[0] == -ArcCos[31/40]}, y, {t, 0, 1}]; \
+       (y /. s[[1]])[1.0]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    let expected = -(31.0_f64 / 40.0).acos();
+    assert!(
+      (val - expected).abs() < 0.001,
+      "Expected {}, got {}",
+      expected,
+      val
+    );
+  }
 }
 
 mod sinh_cosh {

@@ -92,6 +92,10 @@ pub enum ControlState {
   },
   /// A `Delimiter` argument: a horizontal separator row. Binds no variable.
   Divider,
+  /// A `Button[label, action]` argument. Pressing it runs the held action
+  /// against the live bindings and writes mutated variables back into the
+  /// controls. Binds no variable itself.
+  Button { label: String, action: String },
 }
 
 impl ControlState {
@@ -102,13 +106,20 @@ impl ControlState {
       ControlState::Slider2D { name, .. } => name,
       ControlState::IntervalSlider { name, .. } => name,
       ControlState::Locator { name, .. } => name,
-      ControlState::Heading { .. } | ControlState::Divider => "",
+      ControlState::Heading { .. }
+      | ControlState::Divider
+      | ControlState::Button { .. } => "",
     }
   }
 
   /// Whether this row binds a variable (annotation rows don't).
   pub fn binds_variable(&self) -> bool {
-    !matches!(self, ControlState::Heading { .. } | ControlState::Divider)
+    !matches!(
+      self,
+      ControlState::Heading { .. }
+        | ControlState::Divider
+        | ControlState::Button { .. }
+    )
   }
 
   /// InputForm fragment for the *current* value, for use inside a
@@ -135,10 +146,10 @@ impl ControlState {
       ControlState::Locator { points, .. } => {
         woxi::functions::graphics::format_point_list_input(points)
       }
-      // Annotation rows bind no variable; never substituted.
-      ControlState::Heading { .. } | ControlState::Divider => {
-        "Null".to_string()
-      }
+      // Annotation rows and buttons bind no variable; never substituted.
+      ControlState::Heading { .. }
+      | ControlState::Divider
+      | ControlState::Button { .. } => "Null".to_string(),
     }
   }
 }
@@ -157,6 +168,12 @@ pub struct ManipulateState {
   /// InputForm)`. Passed live in the binding set so interactive displays can
   /// rewrite them.
   pub state: Vec<(String, String)>,
+  /// Continuous controls whose slider maximum is an expression in other
+  /// Manipulate variables (`Control[{{time, 0}, 0, tMax, …}]`), as
+  /// `(control name, max code)`. Re-resolved against the live bindings
+  /// after every body evaluation, so e.g. a body that moves `tMax` via
+  /// `Throw[tMax = t, "StopIntegration"]` widens the time slider.
+  dynamic_bounds: Vec<(String, String)>,
   /// Extra display expressions (InputForm), e.g. a `Dynamic[Panel[Grid[…]]]`
   /// of checkboxes, rebuilt into `display_trees` on every re-evaluation.
   pub displays: Vec<String>,
@@ -229,6 +246,7 @@ impl ManipulateState {
       initialization: spec.initialization,
       controls,
       state: spec.state,
+      dynamic_bounds: spec.dynamic_bounds,
       displays: spec.displays,
       display_trees: Vec::new(),
       graphics_handle: None,
@@ -271,6 +289,46 @@ impl ManipulateState {
       match self.state.iter_mut().find(|(n, _)| *n == name) {
         Some(slot) => slot.1 = value,
         None => self.state.push((name, value)),
+      }
+    }
+    self.reevaluate();
+  }
+
+  /// Run a `Button[…]` action (e.g. "randomize parameters") against the
+  /// live bindings, write the mutated variables back into the controls
+  /// and state, and re-render.
+  pub fn apply_button_action(&mut self, action: &str) {
+    let mutations = woxi::split_into_statements(action);
+    if mutations.is_empty() {
+      return;
+    }
+    let updated = apply_manipulate_mutations(&self.bindings(), &mutations);
+    for (name, value) in updated {
+      if let Some(ctrl) = self.controls.iter_mut().find(|c| c.name() == name) {
+        match ctrl {
+          ControlState::Continuous {
+            current, min, max, ..
+          } => {
+            if let Ok(v) = value.parse::<f64>() {
+              *current = v.clamp(*min, *max);
+            }
+          }
+          ControlState::Discrete {
+            values,
+            current_index,
+            ..
+          } => {
+            if let Some(i) = values.iter().position(|v| *v == value) {
+              *current_index = i;
+            }
+          }
+          _ => {}
+        }
+      } else {
+        match self.state.iter_mut().find(|(n, _)| *n == name) {
+          Some(slot) => slot.1 = value,
+          None => self.state.push((name, value)),
+        }
       }
     }
     self.reevaluate();
@@ -352,8 +410,16 @@ impl ManipulateState {
     // (empty local bindings → no matrix re-embed).
     let displays = self.displays.clone();
     let control_enabled = self.control_enabled.clone();
-    let (render, display_trees, enabled) =
+    let state_names: Vec<String> =
+      self.state.iter().map(|(n, _)| n.clone()).collect();
+    let dynamic_bounds = self.dynamic_bounds.clone();
+    let (render, display_trees, enabled, new_state, new_bounds) =
       woxi::with_scoped_globals(&bindings, || {
+        // Evaluate the body first: it may mutate state variables (the
+        // trebuchet's `Throw[tMax = t, "StopIntegration"]` event action
+        // rewrites `tMax`), and the displays / enabled-conditions /
+        // dynamic bounds must see those updates.
+        let render = woxi::interpret_with_stdout(&code);
         let trees: Vec<_> = displays
           .iter()
           .map(|d| build_manipulate_display(d, &[]))
@@ -367,10 +433,51 @@ impl ManipulateState {
             None => true,
           })
           .collect();
-        (woxi::interpret_with_stdout(&code), trees, enabled)
+        // Read back the (possibly mutated) state variables …
+        let new_state: Vec<Option<String>> = state_names
+          .iter()
+          .map(|n| {
+            woxi::interpret_to_expr(n)
+              .ok()
+              .map(|e| woxi::syntax::expr_to_input_form(&e))
+          })
+          .collect();
+        // … and resolve each dynamic slider bound against them.
+        let new_bounds: Vec<Option<f64>> = dynamic_bounds
+          .iter()
+          .map(|(_, code)| {
+            woxi::interpret_to_expr(&format!("N[{code}]"))
+              .ok()
+              .and_then(|e| match e {
+                woxi::syntax::Expr::Real(v) => Some(v),
+                woxi::syntax::Expr::Integer(n) => Some(n as f64),
+                _ => None,
+              })
+          })
+          .collect();
+        (render, trees, enabled, new_state, new_bounds)
       });
     self.display_trees = display_trees;
     self.control_is_enabled = enabled;
+    for (slot, updated) in self.state.iter_mut().zip(new_state) {
+      if let Some(value) = updated {
+        slot.1 = value;
+      }
+    }
+    for ((name, _), updated) in self.dynamic_bounds.iter().zip(new_bounds) {
+      let Some(new_max) = updated else { continue };
+      if !new_max.is_finite() {
+        continue;
+      }
+      if let Some(ControlState::Continuous { max, current, .. }) =
+        self.controls.iter_mut().find(|c| c.name() == name)
+      {
+        *max = new_max;
+        if *current > new_max {
+          *current = new_max;
+        }
+      }
+    }
 
     // Double-buffer the render: build the new SVG handle in a local and only
     // swap the cached field once the replacement is ready, rather than nulling
@@ -549,6 +656,10 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         }
       }
       ManipulateControl::Divider => ControlState::Divider,
+      ManipulateControl::Button { label, action } => ControlState::Button {
+        label: label.clone(),
+        action: action.clone(),
+      },
     })
     .collect()
 }

@@ -10904,6 +10904,70 @@ mod manipulate {
     assert!(!manipulate_spec_to_json(&spec).contains("appearanceNone"));
   }
 
+  #[test]
+  fn spec_row_wrapped_control_with_trigger_and_dynamic_bound() {
+    // The trebuchet Demonstration pattern: a labelled Trigger control
+    // wrapped in `Row[{Style[…], Control[{…}]}]` whose max bound is a
+    // `ControlType -> None` state variable, plus a `Button[…]` action.
+    let expr = interpret_to_expr(
+      "Manipulate[time + tMax, \
+       Row[{Style[\"shoot / reset\", Bold], \
+       Control[{{time, 0, \"\"}, 0, tMax, .2, Trigger}]}], \
+       Button[\"randomize\", time = 0], \
+       {{tMax, 1}, ControlType -> None}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    // Row flattens: heading, then the time slider.
+    match &spec.controls[0] {
+      ManipulateControl::Heading { label, .. } => {
+        assert_eq!(label, "shoot / reset");
+      }
+      other => panic!("expected heading first, got {other:?}"),
+    }
+    match &spec.controls[1] {
+      ManipulateControl::Continuous { name, min, max, .. } => {
+        assert_eq!(name, "time");
+        assert_eq!(*min, 0.0);
+        // `tMax` resolves against the pre-collected state (initially 1).
+        assert_eq!(*max, 1.0);
+      }
+      other => panic!("expected time slider, got {other:?}"),
+    }
+    match &spec.controls[2] {
+      ManipulateControl::Button { label, action } => {
+        assert_eq!(label, "randomize");
+        assert_eq!(action, "time = 0");
+      }
+      other => panic!("expected button, got {other:?}"),
+    }
+    assert_eq!(spec.state, vec![("tMax".to_string(), "1".to_string())]);
+    // The bound stays live so the frontend can track tMax as it moves.
+    assert_eq!(
+      spec.dynamic_bounds,
+      vec![("time".to_string(), "tMax".to_string())]
+    );
+    // A Trigger control animates, starting paused.
+    assert!(spec.animated);
+    assert!(!spec.animation_running);
+  }
+
+  #[test]
+  fn row_control_and_button_args_are_not_vsform() {
+    // wolframscript shows control objects and layout wrappers in the
+    // control area without a Manipulate::vsform message.
+    let result = woxi::interpret_with_stdout(
+      "Manipulate[x, Row[{\"lbl\", Control[{x, 0, 1}]}], Button[\"b\", x = 0]]",
+    )
+    .unwrap();
+    assert!(
+      !result.warnings.iter().any(|w| w.contains("vsform")),
+      "no vsform expected, got {:?}",
+      result.warnings
+    );
+    assert!(result.result.starts_with("Manipulate["));
+  }
+
   /// End-to-end regression for the animated `I^t` ParametricPlot widget:
   /// `Animate[ParametricPlot[…//ReIm//Evaluate, …, Epilog -> …],
   /// {{tt, 19.9}, 0.01, 4 5, 0.1}, Appearance -> None]` must extract a
@@ -14952,5 +15016,39 @@ mod color_data_indexed {
     clear_state();
     assert_eq!(interpret("Head[ColorData[1, 1]]").unwrap(), "RGBColor");
     assert_eq!(interpret("Head[ColorData[2, 1]]").unwrap(), "RGBColor");
+  }
+}
+
+mod plot_part_extraction {
+  use super::*;
+
+  #[test]
+  fn parametric_plot_part_one_yields_primitives() {
+    // `ParametricPlot[…][[1]]` returns the plot's primitives so they can
+    // be embedded in a surrounding `Graphics[{…}]` (the trebuchet
+    // demonstration overlays its traces this way).
+    clear_state();
+    assert_eq!(
+      interpret(
+        "p = ParametricPlot[{Sin[t], Cos[t]}, {t, 0, 3}][[1]]; \
+         {Head[p], Head[p[[1, 2]]]}"
+      )
+      .unwrap(),
+      "{List, Line}"
+    );
+  }
+
+  #[test]
+  fn graphics_with_embedded_plot_part_renders() {
+    clear_state();
+    let svg = export_svg(
+      "Graphics[{ParametricPlot[{Sin[t], Cos[t]}, {t, 0, 3}][[1]], \
+       Disk[{0, 0}, 0.1]}]",
+    );
+    assert!(
+      svg.contains("<polyline") || svg.contains("<path"),
+      "curve primitives should render: {}",
+      &svg[..200.min(svg.len())]
+    );
   }
 }

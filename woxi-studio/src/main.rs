@@ -328,6 +328,8 @@ enum Message {
   ManipulateAnimationTick(std::time::Instant),
   /// Toggle play/pause of an animated (Animate/ListAnimate) widget.
   ManipulateTogglePlay(usize),
+  /// A `Button[…]` control inside a Manipulate was pressed; run its action.
+  ManipulateButtonPressed(usize, usize),
   /// Swallow an interaction with a disabled control (its `Enabled` condition
   /// is currently `False`) without changing any state.
   Noop,
@@ -1778,6 +1780,18 @@ impl WoxiStudio {
           && let Some(state) = editor.manipulate_state.as_mut()
         {
           state.playing = !state.playing;
+        }
+        Task::none()
+      }
+
+      Message::ManipulateButtonPressed(cell_idx, ctrl_idx) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+          && let Some(manipulate::ControlState::Button { action, .. }) =
+            state.controls.get(ctrl_idx)
+        {
+          let action = action.clone();
+          state.apply_button_action(&action);
         }
         Task::none()
       }
@@ -3582,7 +3596,8 @@ fn manipulate_label_char_count(ctrl: &manipulate::ControlState) -> usize {
     // Heading/divider rows span the full row instead of sitting in the
     // label column, so they don't widen it.
     manipulate::ControlState::Heading { .. }
-    | manipulate::ControlState::Divider => return 0,
+    | manipulate::ControlState::Divider
+    | manipulate::ControlState::Button { .. } => return 0,
   };
   let text = if label.is_empty() { name } else { label };
   text.chars().count()
@@ -4006,6 +4021,14 @@ fn render_manipulate_widget<'a>(
         // A `Delimiter` argument: a horizontal separator between control
         // groups.
         controls_col = controls_col.push(rule::horizontal(1));
+      }
+      manipulate::ControlState::Button { label, .. } => {
+        // A `Button[label, action]` argument: pressing it runs the action
+        // against the live bindings (e.g. "randomize parameters").
+        let btn = button(text(label.clone()).size(11))
+          .padding([3, 10])
+          .on_press(Message::ManipulateButtonPressed(cell_idx, ctrl_idx));
+        controls_col = controls_col.push(row![btn].align_y(Center));
       }
     }
   }

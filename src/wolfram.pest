@@ -1,4 +1,11 @@
-WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+// Unicode spacing characters (en quad U+2000 through hair space
+// U+200A, no-break space U+00A0, four-per-em U+2005, medium math
+// space U+205F) appear in FrontEnd-typeset code (\[ThinSpace],
+// \[VeryThinSpace], ...) and are whitespace in Wolfram input.
+WHITESPACE = _{
+  " " | "\t" | "\r" | "\n" | "\u{00A0}" | '\u{2000}'..'\u{200A}' |
+  "\u{205F}"
+}
 COMMENT = _{ "(*" ~ (COMMENT | (!"(*" ~ !"*)" ~ ANY))* ~ "*)" }
 
 // Span expression: a;;b or a;;b;;c (with optional operands: ;;b, a;;, ;;;;c)
