@@ -117,8 +117,114 @@ pub fn rectn_if_not_real_rectangular(
 /// Total[list] - Sum of all elements in a list
 /// Total[list, n] - Sum across levels 1 through n
 /// Total[list, {n}] - Sum at exactly level n
+/// Split `Total`'s trailing options off its positional arguments. The level
+/// spec is an integer, `Infinity`, or a list of level components — never a rule
+/// — so a rule, or a list of rules, is an option. Without this any option at all
+/// was read as a level spec and left the whole call unevaluated.
+fn split_total_options(args: &[Expr]) -> (Vec<Expr>, Vec<Expr>) {
+  let is_rule = |e: &Expr| {
+    matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+      || matches!(e, Expr::FunctionCall { name, args }
+        if (name == "Rule" || name == "RuleDelayed") && args.len() == 2)
+  };
+  let mut positional = Vec::with_capacity(args.len());
+  let mut options = Vec::new();
+  for (i, arg) in args.iter().enumerate() {
+    let option = i >= 1
+      && match arg {
+        Expr::List(items) => !items.is_empty() && items.iter().all(&is_rule),
+        other => is_rule(other),
+      };
+    if option {
+      match arg {
+        Expr::List(items) => options.extend(items.iter().cloned()),
+        other => options.push(other.clone()),
+      }
+    } else {
+      positional.push(arg.clone());
+    }
+  }
+  (positional, options)
+}
+
+/// Which heads `Total` may descend through.
+#[derive(Clone, Copy, PartialEq)]
+enum AllowedHeads {
+  /// The default: only `List` (and `Association`).
+  ListsOnly,
+  /// Any non-atomic head, so `Total[f[1, 2, 3], AllowedHeads -> All]` is 6.
+  Any,
+  /// A setting wolframscript refuses, such as a list of heads.
+  Unsupported,
+}
+
+/// Read the `AllowedHeads` setting. `All` — or a bare head symbol, which
+/// wolframscript also accepts — allows any head; `Automatic` and `None` are the
+/// default. A list of heads is refused, as wolframscript refuses it.
+fn allowed_heads_option(options: &[Expr]) -> AllowedHeads {
+  for opt in options {
+    let (pattern, replacement) = match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref()),
+      Expr::FunctionCall { name, args }
+        if (name == "Rule" || name == "RuleDelayed") && args.len() == 2 =>
+      {
+        (&args[0], &args[1])
+      }
+      _ => continue,
+    };
+    if !matches!(pattern, Expr::Identifier(n) if n == "AllowedHeads") {
+      continue;
+    }
+    return match replacement {
+      Expr::Identifier(s) if s == "All" => AllowedHeads::Any,
+      Expr::Identifier(s) if s == "Automatic" || s == "None" => {
+        AllowedHeads::ListsOnly
+      }
+      // A single head symbol is accepted; anything else (a list of them,
+      // a number, …) is not.
+      Expr::Identifier(_) => AllowedHeads::Any,
+      _ => AllowedHeads::Unsupported,
+    };
+  }
+  AllowedHeads::ListsOnly
+}
+
 pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let uneval = || unevaluated("Total", args);
+  let uneval = || {
+    TOTAL_WRITTEN_CALL
+      .with(|slot| slot.borrow().clone())
+      .unwrap_or_else(|| unevaluated("Total", args))
+  };
+  // Options are not level specs. AllowedHeads changes which heads are
+  // descended through; the rest do not change the answer here.
+  {
+    let (positional, options) = split_total_options(args);
+    if !options.is_empty() {
+      let heads = allowed_heads_option(&options);
+      if heads == AllowedHeads::Unsupported {
+        return Ok(uneval());
+      }
+      let written = unevaluated("Total", args);
+      return TOTAL_WRITTEN_CALL.with(|call| {
+        let previous_call = call.replace(Some(written));
+        let result = TOTAL_ANY_HEAD.with(|flag| {
+          let previous_flag = flag.replace(heads == AllowedHeads::Any);
+          let result = total_ast(&positional);
+          flag.replace(previous_flag);
+          result
+        });
+        call.replace(previous_call);
+        result
+      });
+    }
+  }
   // A wrong argument count leaves the call unevaluated (with a message),
   // matching wolframscript, rather than raising an evaluation error.
   if args.is_empty() {
@@ -154,7 +260,8 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A flat list {1, 2, 3} has depth 1; {{1, 2}, {3, 4}} has depth 2.
   fn list_total_depth(e: &Expr) -> usize {
     match e {
-      Expr::List(items) => {
+      _ if total_parts(e).is_some() => {
+        let (_, items) = total_parts(e).expect("just checked");
         1 + items.iter().map(list_total_depth).max().unwrap_or(0)
       }
       Expr::Association(pairs) => {
@@ -189,7 +296,7 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Some(n) = resolve_level(&items[0]) {
           TotalLevelSpec::Exact(n)
         } else {
-          return Ok(unevaluated("Total", args));
+          return Ok(uneval());
         }
       }
       // Total[list, {n1, n2}] - sum across levels n1 through n2
@@ -199,7 +306,7 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         {
           TotalLevelSpec::Range(n1, n2)
         } else {
-          return Ok(unevaluated("Total", args));
+          return Ok(uneval());
         }
       }
       // Total[list, Infinity]
@@ -211,7 +318,7 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Some(n) = resolve_level(&args[1]) {
           TotalLevelSpec::Through(n)
         } else {
-          return Ok(unevaluated("Total", args));
+          return Ok(uneval());
         }
       }
     }
@@ -230,7 +337,7 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Total::tllen: Lists of unequal length in {} cannot be added.",
         format_expr(&args[0], ExprForm::Output)
       ));
-      Ok(unevaluated("Total", args))
+      Ok(uneval())
     }
     other => other,
   };
@@ -254,7 +361,9 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   match &args[0] {
-    Expr::List(_) => tllen(total_with_level(&args[0], &level_spec)),
+    _ if total_parts(&args[0]).is_some() => {
+      tllen(total_with_level(&args[0], &level_spec))
+    }
     Expr::Association(pairs) => {
       let values: Vec<Expr> = pairs.iter().map(|(_, v)| v.clone()).collect();
       tllen(total_with_level(&Expr::List(values.into()), &level_spec))
@@ -272,12 +381,52 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if matches!(other, Expr::String(_)) {
           crate::emit_message(&format!(
             "Total::normal: Nonatomic expression expected at position 1 in {}.",
-            format_expr(&unevaluated("Total", args), ExprForm::Output)
+            format_expr(&uneval(), ExprForm::Output)
           ));
         }
-        Ok(unevaluated("Total", args))
+        Ok(uneval())
       }
     }
+  }
+}
+
+thread_local! {
+  /// Whether the `Total` call being evaluated descends through any head.
+  static TOTAL_ANY_HEAD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+  /// The call as it was written, kept while the options are stripped off so an
+  /// unevaluated result and any message still show them — wolframscript echoes
+  /// `Total[f[1, 2], AllowedHeads -> None]`, not `Total[f[1, 2]]`.
+  static TOTAL_WRITTEN_CALL: std::cell::RefCell<Option<Expr>> =
+    const { std::cell::RefCell::new(None) };
+}
+
+/// The elements `Total` may descend into, and the head to rebuild the level
+/// with. `None` means the expression is a leaf. Under `AllowedHeads -> All` any
+/// non-atomic head qualifies, but `Rational` and `Complex` stay atoms — summing
+/// `{1/2, 1/3}` must give 5/6, not walk into the rationals.
+fn total_parts(expr: &Expr) -> Option<(Option<&str>, &[Expr])> {
+  match expr {
+    Expr::List(items) => Some((None, items)),
+    Expr::FunctionCall { name, args }
+      if TOTAL_ANY_HEAD.with(|f| f.get())
+        && !crate::functions::list_helpers_ast::sorting::is_atomic_arg(
+          expr,
+        ) =>
+    {
+      Some((Some(name.as_str()), args))
+    }
+    _ => None,
+  }
+}
+
+/// Rebuild a traversed level with the head it came from.
+fn total_rebuild(head: Option<&str>, items: Vec<Expr>) -> Expr {
+  match head {
+    None => Expr::List(items.into()),
+    Some(name) => Expr::FunctionCall {
+      name: name.to_string(),
+      args: items.into(),
+    },
   }
 }
 
@@ -355,15 +504,15 @@ fn total_range_levels(
     // From the top level down to n2: same as summing levels 1..=n2.
     return total_through_level(expr, n2);
   }
-  match expr {
-    Expr::List(items) => {
+  match total_parts(expr) {
+    Some((head, items)) => {
       let processed: Vec<Expr> = items
         .iter()
         .map(|item| total_range_levels(item, n1 - 1, n2 - 1))
         .collect::<Result<Vec<_>, _>>()?;
-      Ok(Expr::List(processed.into()))
+      Ok(total_rebuild(head, processed))
     }
-    _ => Ok(expr.clone()),
+    None => Ok(expr.clone()),
   }
 }
 
@@ -376,8 +525,8 @@ fn total_through_level(
   if n == 0 {
     return Ok(expr.clone());
   }
-  match expr {
-    Expr::List(items) => {
+  match total_parts(expr) {
+    Some((_, items)) => {
       // First, recursively process sublists for levels 2..n
       if n > 1 {
         let processed: Vec<Expr> = items
@@ -389,7 +538,7 @@ fn total_through_level(
         total_sum_level1(items)
       }
     }
-    _ => Ok(expr.clone()),
+    None => Ok(expr.clone()),
   }
 }
 
@@ -404,21 +553,23 @@ fn total_at_exact_level(
     Ok(expr.clone())
   } else if n == 1 {
     // Sum at this level
-    match expr {
-      Expr::List(items) => total_sum_level1(items),
-      _ => Ok(expr.clone()),
+    match total_parts(expr) {
+      Some((_, items)) => total_sum_level1(items),
+      None => Ok(expr.clone()),
     }
   } else {
-    // Recurse into sublists, summing at deeper level
-    match expr {
-      Expr::List(items) => {
+    // Recurse into sublists, summing at the deeper level. The head is put back
+    // so an exact level keeps the structure above it — with AllowedHeads -> All,
+    // Total[f[1, g[2, 3]], {2}] is f[1, 5], not {1, 5}.
+    match total_parts(expr) {
+      Some((head, items)) => {
         let processed: Vec<Expr> = items
           .iter()
           .map(|item| total_at_exact_level(item, n - 1))
           .collect::<Result<Vec<_>, _>>()?;
-        Ok(Expr::List(processed.into()))
+        Ok(total_rebuild(head, processed))
       }
-      _ => Ok(expr.clone()),
+      None => Ok(expr.clone()),
     }
   }
 }

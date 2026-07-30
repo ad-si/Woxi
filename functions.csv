@@ -153,7 +153,7 @@ Do,Evaluates an expression repeatedly,✅,pure,1.0,147
 ToString,Converts an expression to a string,✅,pure,1.0,148
 Select,Picks elements of a list that satisfy a criterion,✅,pure,1.0,149
 Degree,Represents the number of radians in one degree,✅,pure,1.0,150
-Total,Sums the elements of a list,✅,pure,5.0,151
+Total,Sums the elements of a list down to a level spec — AllowedHeads -> All descends through any non-atomic head not just List,✅,pure,5.0,151
 ColorFunction,Option specifying the color function for visualization,✅,none,2.0,152
 Expand,Expands products and positive integer powers of sums,✅,pure,1.0,154
 ContourPlot,Creates a contour plot of a function,✅,pure,1.0,155
@@ -3122,7 +3122,7 @@ Printout3D,,🚫,,11.0,3176
 UnixTime,Returns the current Unix timestamp (seconds since 1970-01-01),✅,effectful,10.1,3176
 WaveletMatrixPlot,Pyramid matrix plot of 2D wavelet coefficients,✅,graphics,8.0,3176
 WishartMatrixDistribution,Matrix distribution of scatter matrices with given covariance and degrees of freedom,✅,none,10.3,3176
-AllowedHeads,,,,12.0,3191
+AllowedHeads,Option saying which heads a structural operation may descend through — All allows any non-atomic head,✅,pure,12.0,3191
 BilateralFilter,,🚫,,8.0,3191
 DirectedGraphQ,Test whether a graph is a directed graph,✅,pure,8.0,3191
 DocumentGenerator,,🚫,,10.0,3191

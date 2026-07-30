@@ -1718,6 +1718,110 @@ mod total {
       "Total[{1, 2, 3}, 2, 3]"
     );
   }
+
+  // A trailing option is not a level spec. Any option at all used to be read as
+  // one and left the whole call unevaluated.
+  #[test]
+  fn options_are_not_level_specs() {
+    assert_eq!(
+      interpret("Total[{1, 2, 3}, Method -> Automatic]").unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret("Total[{{1, 2}, {3, 4}}, 2, Method -> Automatic]").unwrap(),
+      "10"
+    );
+    // The level spec still parses alongside an option, exact levels included.
+    assert_eq!(
+      interpret("Total[{{1, 2}, {3, 4}}, {2}, Method -> Automatic]").unwrap(),
+      "{3, 7}"
+    );
+    // Options may be gathered into a list.
+    assert_eq!(
+      interpret("Total[{1, 2, 3}, {Method -> Automatic}]").unwrap(),
+      "6"
+    );
+  }
+
+  // AllowedHeads -> All descends through any head, not just List.
+  #[test]
+  fn allowed_heads_all_descends_through_any_head() {
+    // Without it, a non-List head is left alone.
+    assert_eq!(interpret("Total[f[1, 2, 3]]").unwrap(), "Total[f[1, 2, 3]]");
+    assert_eq!(
+      interpret("Total[f[1, 2, 3], AllowedHeads -> All]").unwrap(),
+      "6"
+    );
+    // Reached at a deeper level too.
+    assert_eq!(
+      interpret("Total[{1, f[2, 3]}, 2, AllowedHeads -> All]").unwrap(),
+      "6"
+    );
+    assert_eq!(interpret("Total[{1, f[2, 3]}, 2]").unwrap(), "1 + f[2, 3]");
+    assert_eq!(
+      interpret("Total[f[1, g[2, 3]], Infinity, AllowedHeads -> All]").unwrap(),
+      "6"
+    );
+    // Only as deep as the level asks: at level 1 the inner g survives.
+    assert_eq!(
+      interpret("Total[f[1, g[2, 3]], AllowedHeads -> All]").unwrap(),
+      "1 + g[2, 3]"
+    );
+    // An exact level keeps the head above it — f[1, 5], not {1, 5}.
+    assert_eq!(
+      interpret("Total[f[1, g[2, 3]], {2}, AllowedHeads -> All]").unwrap(),
+      "f[1, 5]"
+    );
+    // Plain lists are unaffected.
+    assert_eq!(
+      interpret("Total[{{1, 2}, {3, 4}}, AllowedHeads -> All]").unwrap(),
+      "{4, 6}"
+    );
+    assert_eq!(
+      interpret("Total[{a, b}, AllowedHeads -> All]").unwrap(),
+      "a + b"
+    );
+  }
+
+  // Rational and Complex stay atoms however permissive the heads are, so their
+  // parts are never summed.
+  #[test]
+  fn allowed_heads_all_keeps_atoms_atomic() {
+    assert_eq!(
+      interpret("Total[{1/2, 1/3}, AllowedHeads -> All]").unwrap(),
+      "5/6"
+    );
+    assert_eq!(
+      interpret("Total[{1 + 2 I, 3}, AllowedHeads -> All]").unwrap(),
+      "4 + 2*I"
+    );
+  }
+
+  // Automatic and None are the default; a list of heads is refused, and an
+  // unevaluated result keeps the options it was written with.
+  #[test]
+  fn allowed_heads_other_settings() {
+    assert_eq!(
+      interpret("Total[f[1, 2], AllowedHeads -> Automatic]").unwrap(),
+      "Total[f[1, 2], AllowedHeads -> Automatic]"
+    );
+    assert_eq!(
+      interpret("Total[f[1, 2], AllowedHeads -> None]").unwrap(),
+      "Total[f[1, 2], AllowedHeads -> None]"
+    );
+    assert_eq!(
+      interpret("Total[{1, 2, 3}, AllowedHeads -> {f}]").unwrap(),
+      "Total[{1, 2, 3}, AllowedHeads -> {f}]"
+    );
+    assert_eq!(
+      interpret("Total[x, Method -> Automatic]").unwrap(),
+      "Total[x, Method -> Automatic]"
+    );
+    assert_eq!(
+      interpret("Total[f[1, 2], 2, Method -> Automatic]").unwrap(),
+      "Total[f[1, 2], 2, Method -> Automatic]"
+    );
+  }
 }
 
 mod normalize {
