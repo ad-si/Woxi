@@ -360,6 +360,8 @@ function renderManipulate(item) {
       current[ctrl.name] = { x: ctrl.xInit, y: ctrl.yInit }
     } else if (ctrl.kind === "interval") {
       current[ctrl.name] = { low: ctrl.lowInit, high: ctrl.highInit }
+    } else if (ctrl.kind === "locator") {
+      current[ctrl.name] = { points: ctrl.points.map((p) => [p[0], p[1]]) }
     }
   }
   // Mutable state variables (ControlType -> None) carry an InputForm value
@@ -437,6 +439,12 @@ function renderManipulate(item) {
         bindings[ctrl.name] = `{${v.x}, ${v.y}}`
       } else if (ctrl.kind === "interval") {
         bindings[ctrl.name] = `{${v.low}, ${v.high}}`
+      } else if (ctrl.kind === "locator") {
+        // Locator positions are machine reals: integral coordinates keep a
+        // trailing dot so they substitute as Real, not Integer.
+        const real = (n) => (Number.isInteger(n) ? `${n}.` : String(n))
+        bindings[ctrl.name] =
+          `{${v.points.map(([x, y]) => `{${real(x)}, ${real(y)}}`).join(", ")}}`
       } else {
         bindings[ctrl.name] = String(v)
       }
@@ -704,7 +712,15 @@ function renderManipulate(item) {
           const btn = document.createElement("button")
           btn.type = "button"
           btn.className = "setter-btn"
-          btn.textContent = labels[idx] ?? val
+          // A choice whose rule label is a graphic (`"+" -> myIcon[2]`)
+          // shows the rendered SVG icon; text choices show their label.
+          const iconSvg = ctrl.valueLabelSvgs?.[idx]
+          if (iconSvg) {
+            btn.innerHTML = iconSvg
+            btn.classList.add("setter-btn-icon")
+          } else {
+            btn.textContent = labels[idx] ?? val
+          }
           if (idx === ctrl.initialIndex) btn.classList.add("active")
           btn.addEventListener("click", () => {
             current[ctrl.name] = val
@@ -803,6 +819,117 @@ function renderManipulate(item) {
       })
       pad.addEventListener("pointerup", () => {
         dragging = false
+      })
+
+      row.appendChild(pad)
+      row.appendChild(display)
+      widget.enabledControls.push({
+        condition: ctrl.enabledWhen || "",
+        apply: (on) => {
+          pad.style.pointerEvents = on ? "" : "none"
+          row.classList.toggle("disabled", !on)
+        },
+      })
+    } else if (ctrl.kind === "locator") {
+      // A list of draggable points on a 2D pad (e.g. polygon vertices).
+      // Dragging moves the nearest handle. With `LocatorAutoCreate`,
+      // clicking empty pad space adds a point there and double-clicking a
+      // handle removes it, mirroring Wolfram's locators.
+      const pad = document.createElement("div")
+      pad.className = "manipulate-pad manipulate-locator-pad"
+      const display = document.createElement("span")
+      display.className = "manipulate-value"
+
+      const xSpan = ctrl.xMax - ctrl.xMin
+      const ySpan = ctrl.yMax - ctrl.yMin
+      let handles = []
+
+      function refreshDisplay() {
+        const pts = current[ctrl.name].points
+        display.textContent =
+          pts.map(([x, y]) => `{${fmt(x)}, ${fmt(y)}}`).join(" ")
+      }
+      function rebuildHandles() {
+        for (const h of handles) h.remove()
+        handles = []
+        current[ctrl.name].points.forEach((pt, idx) => {
+          const handle = document.createElement("div")
+          handle.className = "manipulate-pad-handle"
+          const fx = xSpan !== 0 ? (pt[0] - ctrl.xMin) / xSpan : 0.5
+          const fy = ySpan !== 0 ? (pt[1] - ctrl.yMin) / ySpan : 0.5
+          handle.style.left = `${fx * 100}%`
+          handle.style.bottom = `${fy * 100}%`
+          if (ctrl.autoCreate) {
+            handle.addEventListener("dblclick", () => {
+              current[ctrl.name].points.splice(idx, 1)
+              rebuildHandles()
+              refreshDisplay()
+              requestUpdate()
+            })
+          }
+          pad.appendChild(handle)
+          handles.push(handle)
+        })
+      }
+      rebuildHandles()
+      refreshDisplay()
+
+      function padCoords(ev) {
+        const rect = pad.getBoundingClientRect()
+        let fx = rect.width !== 0 ? (ev.clientX - rect.left) / rect.width : 0
+        let fy =
+          rect.height !== 0 ? 1 - (ev.clientY - rect.top) / rect.height : 0
+        fx = Math.max(0, Math.min(1, fx))
+        fy = Math.max(0, Math.min(1, fy))
+        return [ctrl.xMin + fx * xSpan, ctrl.yMin + fy * ySpan]
+      }
+      let dragIndex = -1
+      pad.addEventListener("pointerdown", (ev) => {
+        const [x, y] = padCoords(ev)
+        const pts = current[ctrl.name].points
+        // Pick the handle nearest the pointer (within 8% of the pad).
+        let best = -1
+        let bestD = Infinity
+        pts.forEach(([px, py], i) => {
+          const d = Math.hypot(
+            xSpan !== 0 ? (px - x) / xSpan : 0,
+            ySpan !== 0 ? (py - y) / ySpan : 0,
+          )
+          if (d < bestD) {
+            bestD = d
+            best = i
+          }
+        })
+        if (best >= 0 && bestD <= 0.08) {
+          dragIndex = best
+        } else if (ctrl.autoCreate) {
+          pts.push([x, y])
+          dragIndex = pts.length - 1
+          rebuildHandles()
+          refreshDisplay()
+          requestUpdate()
+        } else {
+          dragIndex = best
+        }
+        if (dragIndex >= 0) pad.setPointerCapture(ev.pointerId)
+        ev.preventDefault()
+      })
+      pad.addEventListener("pointermove", (ev) => {
+        if (dragIndex < 0) return
+        const [x, y] = padCoords(ev)
+        current[ctrl.name].points[dragIndex] = [x, y]
+        const handle = handles[dragIndex]
+        if (handle) {
+          const fx = xSpan !== 0 ? (x - ctrl.xMin) / xSpan : 0.5
+          const fy = ySpan !== 0 ? (y - ctrl.yMin) / ySpan : 0.5
+          handle.style.left = `${fx * 100}%`
+          handle.style.bottom = `${fy * 100}%`
+        }
+        refreshDisplay()
+        requestUpdate()
+      })
+      pad.addEventListener("pointerup", () => {
+        dragIndex = -1
       })
 
       row.appendChild(pad)

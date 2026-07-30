@@ -625,6 +625,21 @@ pre.output-box {
   pointer-events: none;
 }
 
+/* Multi-point locator pad (ControlType -> Locator): the handles receive
+   pointer events themselves so a double-click can remove a point. */
+.manipulate-locator-pad .manipulate-pad-handle {
+  pointer-events: auto;
+  cursor: grab;
+}
+
+/* SetterBar buttons whose label is a rendered Graphics icon */
+.manipulate-setterbar .setter-btn-icon svg {
+  display: block;
+  width: 24px;
+  height: 14px;
+  pointer-events: none;
+}
+
 /* Interval slider (ControlType -> IntervalSlider) */
 .manipulate-interval {
   display: flex;

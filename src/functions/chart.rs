@@ -95,7 +95,11 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       let text = match &args[0] {
         Expr::String(s) => s.clone(),
         Expr::Identifier(s) => s.clone(),
-        _ => return None,
+        // Any other content (`Row[…]`, a number, …) labels with its
+        // OutputForm text, matching wolframscript.
+        other => {
+          crate::syntax::format_expr(other, crate::syntax::ExprForm::Output)
+        }
       };
       let mut bold = false;
       let mut italic = false;
@@ -122,7 +126,23 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         font_size,
       })
     }
-    _ => None,
+    // Any other expression (`Row[{"a: ", val}]`, a number, …) labels the
+    // plot with its OutputForm text, matching wolframscript.
+    other => {
+      let text =
+        crate::syntax::format_expr(other, crate::syntax::ExprForm::Output);
+      if text.is_empty() {
+        None
+      } else {
+        Some(StyledLabel {
+          text,
+          bold: false,
+          italic: false,
+          color: None,
+          font_size: None,
+        })
+      }
+    }
   }
 }
 

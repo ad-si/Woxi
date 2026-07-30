@@ -4518,6 +4518,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut plot_range_x: Option<(f64, f64)> = None;
   let mut plot_range_y: Option<(f64, f64)> = None;
   let mut background: Option<Color> = None;
+  let mut plot_label: Option<String> = None;
   let mut axes = (false, false);
   let mut frame = false;
   let mut grid_x = GridSpec::None;
@@ -4556,6 +4557,22 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if let Some((xr, yr)) = parse_plot_range(replacement) {
             plot_range_x = xr;
             plot_range_y = yr;
+          }
+        }
+        "PlotLabel" => {
+          // Any expression can label the plot (`Row[…]`, a string, a
+          // symbol); its OutputForm text becomes the centered title.
+          match replacement.as_ref() {
+            Expr::Identifier(s) if s == "None" => {}
+            other => {
+              let text = crate::syntax::format_expr(
+                other,
+                crate::syntax::ExprForm::Output,
+              );
+              if !text.is_empty() {
+                plot_label = Some(text);
+              }
+            }
           }
         }
         "Background" => {
@@ -4696,11 +4713,13 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Compute margins for axis/frame tick labels.
+  // Compute margins for axis/frame tick labels. A PlotLabel reserves an
+  // extra strip above the drawing area for its centered title text.
   let margin_left: f64 = if frame || axes.1 { 50.0 } else { 0.0 };
   let margin_bottom: f64 = if frame || axes.0 { 25.0 } else { 0.0 };
   let margin_right: f64 = if frame { 10.0 } else { 0.0 };
-  let margin_top: f64 = if frame { 10.0 } else { 0.0 };
+  let label_strip: f64 = if plot_label.is_some() { 26.0 } else { 0.0 };
+  let margin_top: f64 = if frame { 10.0 } else { 0.0 } + label_strip;
   let total_width = svg_w + margin_left + margin_right;
   let total_height = svg_h + margin_bottom + margin_top;
 
@@ -4742,6 +4761,16 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg.push_str(&format!(
       "<rect width=\"{total_width:.0}\" height=\"{total_height:.0}\" fill=\"{}\"/>\n",
       bg.to_svg_rgb(),
+    ));
+  }
+
+  // PlotLabel: centered above the drawing area, in the reserved strip.
+  if let Some(label) = &plot_label {
+    let cx = margin_left + svg_w / 2.0;
+    svg.push_str(&format!(
+      "<text x=\"{cx:.1}\" y=\"17\" text-anchor=\"middle\" \
+       font-family=\"sans-serif\" font-size=\"16\" fill=\"#333333\">{}</text>\n",
+      crate::functions::svg_escape(label)
     ));
   }
 
@@ -12236,6 +12265,33 @@ fn process_manipulate_var_spec(items: &[Expr]) -> Expr {
       // A trailing control option such as `ControlType -> None` is not a
       // range, so it must not be wrapped in Dynamic[…].
       Expr::Rule { .. } | Expr::RuleDelayed { .. } => false,
+      // A bare control-type shorthand in the range position (`{{p, init},
+      // Locator}`, `{u, Slider}` …) selects the control; it is not a range.
+      Expr::Identifier(s)
+        if matches!(
+          s.as_str(),
+          "Locator"
+            | "Slider"
+            | "Slider2D"
+            | "VerticalSlider"
+            | "Manipulator"
+            | "InputField"
+            | "PopupMenu"
+            | "SetterBar"
+            | "RadioButtonBar"
+            | "TogglerBar"
+            | "Checkbox"
+            | "ColorSlider"
+            | "ColorSetter"
+            | "IntervalSlider"
+            | "Animator"
+            | "Trigger"
+            | "None"
+            | "Automatic"
+        ) =>
+      {
+        false
+      }
       _ => true,
     }
     && needs_dynamic
@@ -12319,8 +12375,14 @@ pub enum ManipulateControl {
     values: Vec<String>,
     /// The display label for each choice, parallel to `values`. For a plain
     /// choice this equals the value's InputForm; for a rule-form choice it is
-    /// the (unquoted) right side of the rule.
+    /// the (unquoted) right side of the rule. A rule label that is itself a
+    /// graphic falls back to the value's display text here (the rendered
+    /// icon travels in `value_label_svgs`).
     value_labels: Vec<String>,
+    /// Rendered SVG for each choice whose rule label is a `Graphics[…]`
+    /// icon (e.g. the crosshair pickers of the Demonstrations site),
+    /// parallel to `values`. `None` for plain text labels.
+    value_label_svgs: Vec<Option<String>>,
     initial_index: usize,
     label: String,
     label_runs: Vec<LabelRun>,
@@ -12353,6 +12415,20 @@ pub enum ManipulateControl {
     high_initial: f64,
     label: String,
   },
+  /// A `Locator` control bound to a *list* of draggable 2D points (e.g.
+  /// the vertices of a polygon). Rendered as one X/Y slider pair per
+  /// point; `auto_create` (`LocatorAutoCreate -> True`) additionally
+  /// offers adding and removing points.
+  Locator {
+    name: String,
+    points: Vec<(f64, f64)>,
+    x_min: f64,
+    x_max: f64,
+    y_min: f64,
+    y_max: f64,
+    auto_create: bool,
+    label: String,
+  },
   /// A static heading row between controls: a bare string or `Style[…]`
   /// Manipulate argument (Wolfram's `ThisIsNotAControl` annotations, e.g.
   /// the "signal 1" / "signal 2" captions of the oscilloscope
@@ -12374,7 +12450,8 @@ impl ManipulateControl {
       ManipulateControl::Continuous { name, .. }
       | ManipulateControl::Discrete { name, .. }
       | ManipulateControl::Slider2D { name, .. }
-      | ManipulateControl::IntervalSlider { name, .. } => name,
+      | ManipulateControl::IntervalSlider { name, .. }
+      | ManipulateControl::Locator { name, .. } => name,
       ManipulateControl::Heading { .. } | ManipulateControl::Divider => "",
     }
   }
@@ -12775,7 +12852,8 @@ fn patch_default_label(
       }
     }
     ManipulateControl::Slider2D { label, .. }
-    | ManipulateControl::IntervalSlider { label, .. } => {
+    | ManipulateControl::IntervalSlider { label, .. }
+    | ManipulateControl::Locator { label, .. } => {
       if label == synth {
         *label = pretty;
       }
@@ -13092,6 +13170,46 @@ fn list2_f64(e: &Expr) -> Option<(f64, f64)> {
   }
 }
 
+/// Interpret an expression as a non-empty list of 2D numeric points
+/// `{{x1, y1}, {x2, y2}, …}`. Returns `None` when any element isn't a
+/// numeric 2-vector.
+fn point_list_f64(e: &Expr) -> Option<Vec<(f64, f64)>> {
+  match e {
+    Expr::List(items) if !items.is_empty() => {
+      items.iter().map(list2_f64).collect()
+    }
+    _ => None,
+  }
+}
+
+/// Coordinate range for a Locator control: the explicit
+/// `{xmin, ymin}, {xmax, ymax}` corner bounds when the spec gives both,
+/// otherwise the bounding box of the initial points padded by half its
+/// span per axis (at least 1), so every point stays draggable.
+fn locator_range(
+  corner_bounds: &[(f64, f64)],
+  points: &[(f64, f64)],
+) -> (f64, f64, f64, f64) {
+  if corner_bounds.len() >= 2 {
+    let (x0, y0) = corner_bounds[0];
+    let (x1, y1) = corner_bounds[1];
+    return (x0.min(x1), x0.max(x1), y0.min(y1), y0.max(y1));
+  }
+  let mut x_min = f64::INFINITY;
+  let mut x_max = f64::NEG_INFINITY;
+  let mut y_min = f64::INFINITY;
+  let mut y_max = f64::NEG_INFINITY;
+  for (x, y) in points {
+    x_min = x_min.min(*x);
+    x_max = x_max.max(*x);
+    y_min = y_min.min(*y);
+    y_max = y_max.max(*y);
+  }
+  let x_pad = ((x_max - x_min) / 2.0).max(1.0);
+  let y_pad = ((y_max - y_min) / 2.0).max(1.0);
+  (x_min - x_pad, x_max + x_pad, y_min - y_pad, y_max + y_pad)
+}
+
 /// Render a control-label expression into styled runs for the interactive
 /// widget. Wolfram labels are frequently wrapped in presentation heads
 /// (`Style[…, Italic]`, `Text[…]`) or use `Subscript`, none of which should
@@ -13332,13 +13450,19 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
     _ => None,
   });
 
-  // Hidden controls: a `Locator` marker (`{{p, init}, pmin, pmax, Locator}`)
-  // or `ControlType -> None` (`{{v, init}, ControlType -> None}`). Neither
-  // renders a UI element in the static widget; both bind their variable to
-  // the (evaluated) initial value so the body can reference it.
-  let is_locator = items
-    .iter()
-    .any(|it| matches!(it, Expr::Identifier(s) if s == "Locator"));
+  // `Locator` controls (`{{p, init}, pmin, pmax, Locator}`, as a bare
+  // marker or `ControlType -> Locator`) and hidden `ControlType -> None`
+  // variables (`{{v, init}, ControlType -> None}`).
+  let is_locator = items.iter().any(|it| {
+    matches!(it, Expr::Identifier(s) if s == "Locator")
+      || matches!(
+        it,
+        Expr::Rule { pattern, replacement }
+        | Expr::RuleDelayed { pattern, replacement }
+          if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlType")
+            && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Locator")
+      )
+  });
   let is_hidden = items.iter().any(|it| {
     matches!(
       it,
@@ -13353,15 +13477,76 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
       .clone()
       .or_else(|| items.get(1).cloned())
       .unwrap_or(Expr::Identifier("Null".to_string()));
-    let value = manipulate_value_to_input_form(&value_expr);
-    // A Locator's initial point list is baked into the body (it is never
-    // rewritten by a display); a `ControlType -> None` variable stays a
-    // live, mutable binding so an interactive display can rewrite it.
-    return Some(if is_locator {
-      ParsedControl::Fixed { name, value }
-    } else {
-      ParsedControl::State { name, value }
+    if is_hidden {
+      // A `ControlType -> None` variable stays a live, mutable binding so
+      // an interactive display can rewrite it.
+      let value = manipulate_value_to_input_form(&value_expr);
+      return Some(ParsedControl::State { name, value });
+    }
+    // A Locator drives its variable interactively: a single `{x, y}` point
+    // becomes a 2D slider (like `LocatorPane`), a list of points becomes a
+    // multi-point Locator control (one X/Y pair per point, with add/remove
+    // when `LocatorAutoCreate -> True`). The coordinate range comes from
+    // the `{xmin, ymin}, {xmax, ymax}` bounds when given, else from the
+    // points' bounding box. A non-numeric initial value keeps the previous
+    // behavior: a fixed binding baked into the body.
+    let evaluated = crate::evaluator::evaluate_expr_to_expr(&value_expr)
+      .unwrap_or_else(|_| value_expr.clone());
+    let corner_bounds: Vec<(f64, f64)> = items[1..]
+      .iter()
+      .filter(|it| {
+        !matches!(it, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+          && !matches!(it, Expr::Identifier(s) if s == "Locator")
+      })
+      .filter_map(list2_f64)
+      .collect();
+    let auto_create = items.iter().any(|it| {
+      matches!(
+        it,
+        Expr::Rule { pattern, replacement }
+        | Expr::RuleDelayed { pattern, replacement }
+          if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "LocatorAutoCreate")
+            && matches!(
+              replacement.as_ref(),
+              Expr::Identifier(s) if s == "True" || s == "Automatic" || s == "All"
+            )
+      )
     });
+    if let Some((x, y)) = list2_f64(&evaluated) {
+      let (x_min, x_max, y_min, y_max) =
+        locator_range(&corner_bounds, &[(x, y)]);
+      return Some(ParsedControl::Visible(
+        ManipulateControl::Slider2D {
+          name,
+          x_min,
+          x_max,
+          y_min,
+          y_max,
+          x_initial: x,
+          y_initial: y,
+          label,
+        },
+        enabled,
+      ));
+    }
+    if let Some(points) = point_list_f64(&evaluated) {
+      let (x_min, x_max, y_min, y_max) = locator_range(&corner_bounds, &points);
+      return Some(ParsedControl::Visible(
+        ManipulateControl::Locator {
+          name,
+          points,
+          x_min,
+          x_max,
+          y_min,
+          y_max,
+          auto_create,
+          label,
+        },
+        enabled,
+      ));
+    }
+    let value = manipulate_value_to_input_form(&value_expr);
+    return Some(ParsedControl::Fixed { name, value });
   }
 
   // A `ControlType -> Slider2D` / `ControlType -> IntervalSlider` option
@@ -13480,19 +13665,32 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
       // case the left side is the value bound to the variable and the right
       // side is only the display label. Split the two so the binding sees the
       // real value, not the whole rule.
-      let (values, value_labels): (Vec<String>, Vec<String>) = value_items
-        .iter()
-        .map(|item| match discrete_choice_rule(item) {
-          Some((value, label)) => (
-            crate::syntax::expr_to_input_form(value),
-            discrete_choice_label(label),
-          ),
-          None => (
-            crate::syntax::expr_to_input_form(item),
-            discrete_choice_label(item),
-          ),
-        })
-        .unzip();
+      let mut values = Vec::with_capacity(value_items.len());
+      let mut value_labels = Vec::with_capacity(value_items.len());
+      let mut value_label_svgs = Vec::with_capacity(value_items.len());
+      for item in value_items.iter() {
+        match discrete_choice_rule(item) {
+          Some((value, label)) => {
+            values.push(crate::syntax::expr_to_input_form(value));
+            // A rule label that is itself a graphic (the crosshair icons
+            // of the Demonstrations site) renders as an SVG icon; its text
+            // column falls back to the bound value so a non-graphical
+            // frontend still shows something short and meaningful.
+            let svg = discrete_choice_label_svg(label);
+            value_labels.push(if svg.is_some() {
+              discrete_choice_label(value)
+            } else {
+              discrete_choice_label(label)
+            });
+            value_label_svgs.push(svg);
+          }
+          None => {
+            values.push(crate::syntax::expr_to_input_form(item));
+            value_labels.push(discrete_choice_label(item));
+            value_label_svgs.push(None);
+          }
+        }
+      }
       if values.is_empty() {
         return None;
       }
@@ -13508,6 +13706,7 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
           name,
           values,
           value_labels,
+          value_label_svgs,
           initial_index,
           label,
           label_runs,
@@ -13592,6 +13791,27 @@ fn discrete_choice_label(expr: &Expr) -> String {
   }
 }
 
+/// Rendered SVG for a discrete-choice label that is a graphic (e.g.
+/// `"+" -> myIcon[2]` in a Demonstrations crosshair picker). A held
+/// `Graphics[…]` call or a call producing one is evaluated; anything
+/// text-like yields `None`.
+fn discrete_choice_label_svg(label: &Expr) -> Option<String> {
+  match label {
+    Expr::Graphics { svg, .. } => Some(svg.clone()),
+    // Evaluating through the interpreter (not `evaluate_expr_to_expr`)
+    // is what renders a held `Graphics[…]` call — or a user-defined icon
+    // function like `myIcon[2]` — to SVG.
+    Expr::FunctionCall { .. } => {
+      let code = crate::syntax::expr_to_input_form(label);
+      match crate::interpret_with_stdout(&code) {
+        Ok(result) => result.graphics,
+        Err(_) => None,
+      }
+    }
+    _ => None,
+  }
+}
+
 /// Pick a reasonable current value for each control. For continuous
 /// controls this is the `initial`; for discrete controls it is the value
 /// at `initial_index`. Returns `(variable_name, input_form_value)` pairs.
@@ -13645,6 +13865,9 @@ pub fn manipulate_initial_bindings(
           format_f64_input(*high_initial)
         ),
       )),
+      ManipulateControl::Locator { name, points, .. } => {
+        Some((name.clone(), format_point_list_input(points)))
+      }
     })
     // Mutable `ControlType -> None` state variables travel in the binding
     // set alongside the visible controls so displays can read/write them.
@@ -13658,6 +13881,30 @@ pub fn manipulate_initial_bindings(
 fn format_f64_input(v: f64) -> String {
   if v.is_finite() && v.fract() == 0.0 && v.abs() < 1e15 {
     format!("{}", v as i64)
+  } else {
+    format!("{}", v)
+  }
+}
+
+/// Format a list of 2D points as Wolfram input code, e.g.
+/// `{{2., 2.}, {8., 2.}, {8., 8.}}`. The binding value for a `Locator`
+/// control. Locator positions are machine reals (dragging produces
+/// fractional coordinates), so integral values keep a trailing dot.
+pub fn format_point_list_input(points: &[(f64, f64)]) -> String {
+  let parts: Vec<String> = points
+    .iter()
+    .map(|(x, y)| {
+      format!("{{{}, {}}}", format_f64_real(*x), format_f64_real(*y))
+    })
+    .collect();
+  format!("{{{}}}", parts.join(", "))
+}
+
+/// Format an f64 as a Wolfram machine-real literal: integral values keep a
+/// trailing dot (`2.`) so they substitute as Real, not Integer.
+fn format_f64_real(v: f64) -> String {
+  if v.is_finite() && v.fract() == 0.0 && v.abs() < 1e15 {
+    format!("{}.", v as i64)
   } else {
     format!("{}", v)
   }
@@ -14025,6 +14272,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         name,
         values,
         value_labels,
+        value_label_svgs,
         initial_index,
         label,
         label_runs,
@@ -14039,8 +14287,24 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           .map(|v| format!(r#""{}""#, json_escape_manipulate(v)))
           .collect();
         let popup_json = if *popup { r#","popup":true"# } else { "" };
+        // Icon labels (rule right sides that are graphics) ride along as
+        // rendered SVG, parallel to `values`; omitted when all-text.
+        let svg_json = if value_label_svgs.iter().any(Option::is_some) {
+          let svg_parts: Vec<String> = value_label_svgs
+            .iter()
+            .map(|s| match s {
+              Some(svg) => {
+                format!(r#""{}""#, json_escape_manipulate(svg))
+              }
+              None => "null".to_string(),
+            })
+            .collect();
+          format!(r#","valueLabelSvgs":[{}]"#, svg_parts.join(","))
+        } else {
+          String::new()
+        };
         ctrl_parts.push(format!(
-          r#"{{"kind":"discrete","name":"{}","label":"{}","labelRuns":{},"values":[{}],"valueLabels":[{}],"initialIndex":{}{}}}"#,
+          r#"{{"kind":"discrete","name":"{}","label":"{}","labelRuns":{},"values":[{}],"valueLabels":[{}],"initialIndex":{}{}{}}}"#,
           json_escape_manipulate(name),
           json_escape_manipulate(label),
           label_runs_to_json(label_runs),
@@ -14048,6 +14312,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           label_parts.join(","),
           initial_index,
           popup_json,
+          svg_json,
         ));
       }
       ManipulateControl::Slider2D {
@@ -14094,6 +14359,32 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           low_initial,
           high_initial,
           step_json,
+        ));
+      }
+      ManipulateControl::Locator {
+        name,
+        points,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        auto_create,
+        label,
+      } => {
+        let point_parts: Vec<String> = points
+          .iter()
+          .map(|(x, y)| format!("[{},{}]", x, y))
+          .collect();
+        ctrl_parts.push(format!(
+          r#"{{"kind":"locator","name":"{}","label":"{}","xMin":{},"xMax":{},"yMin":{},"yMax":{},"points":[{}],"autoCreate":{}}}"#,
+          json_escape_manipulate(name),
+          json_escape_manipulate(label),
+          x_min,
+          x_max,
+          y_min,
+          y_max,
+          point_parts.join(","),
+          auto_create,
         ));
       }
       ManipulateControl::Heading { label, label_runs } => {
