@@ -11183,6 +11183,162 @@ mod manipulate {
     );
   }
 
+  /// The Wolfram Demonstrations layout pattern: controls grouped inside
+  /// `Row[{Control[…], Spacer[…], Button[…], …}]` arguments flatten into
+  /// individual control rows — SetterBars, a reset Button, and a Trigger
+  /// (the Gray-Scott reaction-diffusion notebook's control panel).
+  #[test]
+  fn spec_row_grouped_controls_flatten() {
+    let expr = interpret_to_expr(
+      "Manipulate[x, \
+       Row[{Control[{{ss, 1, \"field size\"}, {1 -> \"20\", 2 -> \"30\"}, SetterBar, Enabled -> (time === 0)}], Spacer[20], \
+            Control[{{pp, 1, \"pattern\"}, {1 -> \"spot I\", 2 -> \"spot II\"}, SetterBar}]}], \
+       Row[{Button[Style[\"reset\", 11], time = 0; x = 1, ImageSize -> Medium], Spacer[20], \
+            Control[{{time, 0, \"run/stop simulation\"}, 0, Infinity, 1, ControlType -> Trigger, AnimationRunning -> False}]}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    assert_eq!(spec.controls.len(), 4);
+    match &spec.controls[0] {
+      ManipulateControl::Discrete {
+        name,
+        values,
+        value_labels,
+        label,
+        ..
+      } => {
+        assert_eq!(name, "ss");
+        assert_eq!(label, "field size");
+        assert_eq!(values, &["1".to_string(), "2".to_string()]);
+        assert_eq!(value_labels, &["20".to_string(), "30".to_string()]);
+      }
+      other => panic!("expected discrete control for ss, got {other:?}"),
+    }
+    assert!(matches!(
+      &spec.controls[1],
+      ManipulateControl::Discrete { name, .. } if name == "pp"
+    ));
+    match &spec.controls[2] {
+      ManipulateControl::Button { label, action, .. } => {
+        assert_eq!(label, "reset");
+        assert_eq!(action, "time = 0; x = 1");
+      }
+      other => panic!("expected button control, got {other:?}"),
+    }
+    match &spec.controls[3] {
+      ManipulateControl::Trigger {
+        name,
+        min,
+        max,
+        step,
+        initial,
+        running,
+        label,
+        ..
+      } => {
+        assert_eq!(name, "time");
+        assert_eq!(label, "run/stop simulation");
+        assert_eq!(*min, 0.0);
+        assert!(max.is_infinite(), "Infinity end must stay infinite");
+        assert_eq!(*step, 1.0);
+        assert_eq!(*initial, 0.0);
+        assert!(!running, "AnimationRunning -> False starts paused");
+      }
+      other => panic!("expected trigger control, got {other:?}"),
+    }
+    // The Trigger makes the widget animated but paused.
+    assert!(spec.animated);
+    assert!(!spec.animation_running);
+    // The Enabled condition of the first SetterBar is captured.
+    assert!(
+      spec
+        .control_enabled
+        .iter()
+        .any(|(n, cond)| n == "ss" && cond.contains("time === 0")),
+      "missing Enabled condition: {:?}",
+      spec.control_enabled
+    );
+  }
+
+  /// A body wrapped in `Dynamic[…]` evaluates as its first argument — the
+  /// wrapper only adds FrontEnd tracking hints.
+  #[test]
+  fn spec_dynamic_body_unwraps() {
+    let expr = interpret_to_expr(
+      "Manipulate[Dynamic[x^2, time, TrackedSymbols :> {x}], {x, 0, 5}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    assert_eq!(spec.body_code, "x^2");
+  }
+
+  /// Regression: a bare control-type marker in the spec (`{u, {…}, SetterBar}`)
+  /// previously landed among the bounds and made the whole extraction fail.
+  #[test]
+  fn spec_bare_setter_bar_marker() {
+    let expr =
+      interpret_to_expr("Manipulate[u, {u, {1, 2, 3}, SetterBar}]").unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Discrete { name, values, .. } => {
+        assert_eq!(name, "u");
+        assert_eq!(
+          values,
+          &["1".to_string(), "2".to_string(), "3".to_string()]
+        );
+      }
+      other => panic!("expected discrete control, got {other:?}"),
+    }
+    // A bare PopupMenu marker still selects the dropdown rendering.
+    let expr =
+      interpret_to_expr("Manipulate[u, {u, {1, 2}, PopupMenu}]").unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    assert!(matches!(
+      &spec.controls[0],
+      ManipulateControl::Discrete { popup: true, .. }
+    ));
+  }
+
+  /// `Row[…]`-grouped controls are valid Manipulate arguments and must not
+  /// emit `Manipulate::vsform`.
+  #[test]
+  fn row_grouped_controls_are_not_vsform() {
+    let res = woxi::interpret_with_stdout(
+      "Manipulate[x, Row[{Control[{x, 0, 1}], Spacer[20]}]]",
+    )
+    .unwrap();
+    assert!(
+      !res.warnings.iter().any(|w| w.contains("vsform")),
+      "unexpected vsform message: {:?}",
+      res.warnings
+    );
+  }
+
+  /// A button's action runs against the live bindings: writes to bound
+  /// control variables come back in the returned list, while writes to
+  /// unbound globals persist as side effects.
+  #[test]
+  fn button_action_writes_back_bindings() {
+    use woxi::functions::graphics::apply_manipulate_button_action;
+    let _ = woxi::interpret("grayScottButtonGlobal = 7");
+    let bindings = vec![
+      ("time".to_string(), "5".to_string()),
+      ("ii".to_string(), "2".to_string()),
+    ];
+    let updated = apply_manipulate_button_action(
+      &bindings,
+      "time = 0; grayScottButtonGlobal = 42",
+    );
+    assert_eq!(
+      updated,
+      vec![
+        ("time".to_string(), "0".to_string()),
+        ("ii".to_string(), "2".to_string()),
+      ]
+    );
+    assert_eq!(woxi::interpret("grayScottButtonGlobal").unwrap(), "42");
+  }
+
   #[test]
   fn spec_discrete_values() {
     let expr =
