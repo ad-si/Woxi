@@ -71,13 +71,8 @@ pub fn format_highlight(
     WolframHighlight::Normal => {
       return highlighter::Format::default();
     }
-    WolframHighlight::Comment => {
-      if is_dark {
-        Color::from_rgb(0.42, 0.45, 0.49)
-      } else {
-        Color::from_rgb(0.42, 0.45, 0.49)
-      }
-    }
+    // The comment grey reads well on both themes.
+    WolframHighlight::Comment => Color::from_rgb(0.42, 0.45, 0.49),
     WolframHighlight::String => {
       if is_dark {
         Color::from_rgb(0.60, 0.76, 0.47)

@@ -1578,6 +1578,80 @@ pub fn thread_ast_positions(
   positions: Option<&[usize]>,
 ) -> Result<Expr, InterpreterError> {
   match expr {
+    // The threaded expression's head can itself be List:
+    // Thread[{{a, b}, {c, d}}] -> {{a, c}, {b, d}} (a transpose), with
+    // non-list elements repeated: Thread[{{a, b}, x}] -> {{a, x}, {b, x}}.
+    Expr::List(elements) => {
+      let mut list_indices: Vec<usize> = Vec::new();
+      let mut list_len: Option<usize> = None;
+
+      for (i, el) in elements.iter().enumerate() {
+        if let Some(pos) = positions
+          && !pos.contains(&(i + 1))
+        {
+          continue;
+        }
+        let matching_len: Option<usize> = match thread_head {
+          None => match el {
+            Expr::List(items) => Some(items.len()),
+            _ => None,
+          },
+          Some(head) => match el {
+            Expr::FunctionCall {
+              name: el_name,
+              args: el_args,
+            } if el_name == head => Some(el_args.len()),
+            Expr::List(items) if head == "List" => Some(items.len()),
+            _ => None,
+          },
+        };
+        if let Some(n) = matching_len {
+          if let Some(len) = list_len {
+            if n != len {
+              return Err(InterpreterError::EvaluationError(
+                "Thread: all lists must have the same length".into(),
+              ));
+            }
+          } else {
+            list_len = Some(n);
+          }
+          list_indices.push(i);
+        }
+      }
+
+      let Some(len) = list_len else {
+        return Ok(expr.clone());
+      };
+
+      let mut results = Vec::with_capacity(len);
+      for j in 0..len {
+        let new_elements: Vec<Expr> = elements
+          .iter()
+          .enumerate()
+          .map(|(i, el)| {
+            if list_indices.contains(&i) {
+              match el {
+                Expr::List(items) => items[j].clone(),
+                Expr::FunctionCall { args: el_args, .. } => el_args[j].clone(),
+                _ => el.clone(),
+              }
+            } else {
+              el.clone()
+            }
+          })
+          .collect();
+        results.push(Expr::List(new_elements.into()));
+      }
+
+      // Wrap the result in the thread head (List by default).
+      match thread_head {
+        None => Ok(Expr::List(results.into())),
+        Some("List") => Ok(Expr::List(results.into())),
+        Some(head) => {
+          crate::evaluator::evaluate_function_call_ast(head, &results)
+        }
+      }
+    }
     Expr::FunctionCall { name, args } => {
       // Find which args contain the target head (List by default, or specified head)
       let mut list_indices: Vec<usize> = Vec::new();

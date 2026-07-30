@@ -1455,6 +1455,20 @@ fn collect_primitives(
           }
         }
 
+        // `Dynamic[expr]` inside graphics displays the current value of
+        // its held expression (the front end re-evaluates it as its
+        // dependencies change; Woxi's hosts re-render wholesale, so the
+        // current value is the correct snapshot). Dynamic is HoldFirst —
+        // the content arrives unevaluated, so release the hold before
+        // collecting, otherwise computed primitives (e.g. the
+        // `Dynamic[colorSlice[#+a] & /@ clrCases]` highlight overlay in
+        // the Demonstrations color-wheel notebook) silently vanish.
+        "Dynamic" if !args.is_empty() => {
+          if let Ok(inner) = evaluate_expr_to_expr(&args[0]) {
+            collect_primitives(&inner, style, prims, errors);
+          }
+        }
+
         _ => {
           // Try as directive first
           if !apply_directive(expr, style) {
@@ -4351,7 +4365,9 @@ fn parse_background(expr: &Expr) -> Option<Color> {
 fn parse_axes(expr: &Expr) -> Option<(bool, bool)> {
   fn parse_bool(expr: &Expr) -> Option<bool> {
     match expr {
-      Expr::Identifier(s) if s == "True" => Some(true),
+      // `Automatic` shows the axis (positioned automatically), e.g. the
+      // common `Axes -> {Automatic, False}` form.
+      Expr::Identifier(s) if s == "True" || s == "Automatic" => Some(true),
       Expr::Identifier(s) if s == "False" => Some(false),
       _ => None,
     }
@@ -4765,13 +4781,16 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // PlotLabel: centered above the drawing area, in the reserved strip.
+  // PlotLabel: centered above the drawing area, in the reserved strip. The
+  // label may embed Wolfram linear-syntax boxes (`"AU\!\(\*SuperscriptBox[…"`)
+  // — `box_string_to_svg` renders those as sub/superscript tspans and is a
+  // plain SVG-escape for ordinary text.
   if let Some(label) = &plot_label {
     let cx = margin_left + svg_w / 2.0;
     svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"17\" text-anchor=\"middle\" \
        font-family=\"sans-serif\" font-size=\"16\" fill=\"#333333\">{}</text>\n",
-      crate::functions::svg_escape(label)
+      box_string_to_svg(label)
     ));
   }
 
@@ -6511,6 +6530,27 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // HoldForm[expr] → render content
         "HoldForm" if args.len() == 1 => expr_to_svg_markup(&args[0]),
 
+        // Presentation wrappers display their content only.
+        "Text" | "TraditionalForm" | "DisplayForm" | "StandardForm"
+          if args.len() == 1 =>
+        {
+          expr_to_svg_markup(&args[0])
+        }
+
+        // Row[{a, b, …}] concatenates its parts; Row[{…}, sep] joins
+        // them with the separator.
+        "Row" if !args.is_empty() => match &args[0] {
+          Expr::List(parts) => {
+            let sep = args.get(1).map(expr_to_svg_markup).unwrap_or_default();
+            parts
+              .iter()
+              .map(expr_to_svg_markup)
+              .collect::<Vec<_>>()
+              .join(&sep)
+          }
+          other => expr_to_svg_markup(other),
+        },
+
         // General FunctionCall: name[arg1, arg2, ...]
         _ => {
           let parts: Vec<String> =
@@ -7623,6 +7663,10 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut rendered_graphics: Vec<Expr> = Vec::new();
   // Plot source data for re-rendering via plotters
   let mut plot_sources: Vec<crate::syntax::PlotSource> = Vec::new();
+  // Whether the first graphic argument was a plot (carried a PlotSource).
+  // Wolfram takes the merged result's options from the first graphic, so
+  // plot defaults (axes, 1/GoldenRatio aspect) apply only in that case.
+  let mut first_graphic_is_plot: Option<bool> = None;
 
   // `Show[{g1, g2, …}, opts…]` — flatten a leading List argument into
   // multiple graphics args (Wolfram convention; not Listable but accepts
@@ -7665,25 +7709,36 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  for arg in args {
+  // Walk the args with an explicit work list: an argument that evaluates
+  // to a *list* of graphics (e.g. `Show[{g, {h1, h2}}]`, or a variable
+  // holding a collected list of Graphics) is spliced in place so its
+  // elements merge like ordinary arguments instead of being dropped.
+  let mut pending: Vec<Expr> = args.to_vec();
+  let mut idx = 0;
+  while idx < pending.len() {
+    let arg = pending[idx].clone();
     // If the arg is not already a Graphics/Graphics3D expression,
     // try evaluating it (e.g. it could be a variable or function call)
-    let evaled;
-    let expr_ref = match arg {
+    let expr_owned = match &arg {
       Expr::FunctionCall { name, .. }
         if name == "Graphics" || name == "Graphics3D" =>
       {
-        arg
+        arg.clone()
       }
-      Expr::Rule { .. } => arg,
-      _ => {
-        evaled = evaluate_expr_to_expr(arg).unwrap_or_else(|_| arg.clone());
-        &evaled
-      }
+      Expr::Rule { .. } => arg.clone(),
+      _ => evaluate_expr_to_expr(&arg).unwrap_or_else(|_| arg.clone()),
     };
+    if let Expr::List(items) = &expr_owned {
+      let items: Vec<Expr> = items.iter().cloned().collect();
+      pending.splice(idx..idx + 1, items);
+      continue;
+    }
+    idx += 1;
+    let expr_ref = &expr_owned;
 
     match expr_ref {
       Expr::FunctionCall { name, args: gargs } if name == "Graphics" => {
+        first_graphic_is_plot.get_or_insert(false);
         if !gargs.is_empty() {
           merged_primitives.push(gargs[0].clone());
         }
@@ -7695,6 +7750,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if name == "MeshRegion" && gargs.len() == 2 =>
       {
         // Convert MeshRegion to Graphics primitives for Show merging
+        first_graphic_is_plot.get_or_insert(false);
         if let Some(graphics_prims) =
           mesh_region_to_graphics_prims(&gargs[0], &gargs[1])
         {
@@ -7702,6 +7758,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
       Expr::FunctionCall { name, args: gargs } if name == "Graphics3D" => {
+        first_graphic_is_plot.get_or_insert(false);
         is_3d = true;
         if !gargs.is_empty() {
           merged_primitives.push(gargs[0].clone());
@@ -7715,6 +7772,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         source,
         ..
       } => {
+        first_graphic_is_plot.get_or_insert(source.is_some());
         is_3d = *g_is_3d;
         if let Some(src) = source {
           plot_sources.push(src.as_ref().clone());
@@ -7775,6 +7833,56 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for ps in &plot_sources {
       let mut series_prims: Vec<Expr> = Vec::new();
       for sd in &ps.series {
+        // Filled region (Filling -> …) as a Polygon underneath the curve,
+        // wrapped in its own list so the fill color/opacity directives
+        // don't leak onto the line drawn after it. FillingStyle appearance
+        // travels on the series (fill_color/fill_opacity); the defaults
+        // match the standalone plot render (series color at 0.2 opacity).
+        if !sd.is_scatter
+          && let Some(ref_y) =
+            sd.filling.reference_y(ps.y_range.0, ps.y_range.1)
+        {
+          let (fr, fg, fb) = sd.fill_color.unwrap_or(sd.color);
+          let mut fill_prims: Vec<Expr> = vec![
+            Expr::FunctionCall {
+              name: "Opacity".to_string(),
+              args: vec![Expr::Real(sd.fill_opacity.unwrap_or(0.2))].into(),
+            },
+            Expr::FunctionCall {
+              name: "RGBColor".to_string(),
+              args: vec![
+                Expr::Real(fr as f64 / 255.0),
+                Expr::Real(fg as f64 / 255.0),
+                Expr::Real(fb as f64 / 255.0),
+              ]
+              .into(),
+            },
+          ];
+          for seg in &crate::functions::plot::split_into_segments(&sd.points) {
+            if seg.len() < 2 {
+              continue;
+            }
+            let mut coords: Vec<Expr> = seg
+              .iter()
+              .map(|&(x, y)| {
+                Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())
+              })
+              .collect();
+            let (x_last, _) = seg[seg.len() - 1];
+            let (x_first, _) = seg[0];
+            coords.push(Expr::List(
+              vec![Expr::Real(x_last), Expr::Real(ref_y)].into(),
+            ));
+            coords.push(Expr::List(
+              vec![Expr::Real(x_first), Expr::Real(ref_y)].into(),
+            ));
+            fill_prims.push(Expr::FunctionCall {
+              name: "Polygon".to_string(),
+              args: vec![Expr::List(coords.into())].into(),
+            });
+          }
+          series_prims.push(Expr::List(fill_prims.into()));
+        }
         // Color directive
         series_prims.push(Expr::FunctionCall {
           name: "RGBColor".to_string(),
@@ -7835,20 +7943,34 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // range would crop any other Graphics primitives that extend beyond it
       // (e.g. a control polygon), whereas Wolfram shows the union of all
       // primitives. Leaving PlotRange unset yields that union.
+    }
 
-      // Enable axes
-      let axes_rule = Expr::Rule {
-        pattern: Box::new(Expr::Identifier("Axes".to_string())),
-        replacement: Box::new(bool_expr(true)),
-      };
-      merge_option(&mut merged_options, &axes_rule);
-
-      // AspectRatio -> Full for plot-style rendering
-      let ar_rule = Expr::Rule {
-        pattern: Box::new(Expr::Identifier("AspectRatio".to_string())),
-        replacement: Box::new(Expr::Identifier("Full".to_string())),
-      };
-      merge_option(&mut merged_options, &ar_rule);
+    // Defaults inherited from the plots when the *first* graphic was a plot
+    // (Wolfram takes the result's options from the first graphic): axes on,
+    // and the plot AspectRatio of 1/GoldenRatio. Explicit options passed to
+    // Show (already collected in `merged_options`) win — without the
+    // AspectRatio default a wide PlotRange collapses the render to a
+    // sliver, since the graphics renderer otherwise derives the height
+    // from the data aspect. When a raw Graphics comes first, its uniform
+    // scaling stays in charge (circles must render round).
+    let has_option = |opts: &[Expr], name: &str| {
+      opts.iter().any(|o| {
+        matches!(o, Expr::Rule { pattern, .. } if option_name(pattern) == Some(name))
+      })
+    };
+    if first_graphic_is_plot == Some(true) {
+      if !has_option(&merged_options, "Axes") {
+        merged_options.push(Expr::Rule {
+          pattern: Box::new(Expr::Identifier("Axes".to_string())),
+          replacement: Box::new(bool_expr(true)),
+        });
+      }
+      if !has_option(&merged_options, "AspectRatio") {
+        merged_options.push(Expr::Rule {
+          pattern: Box::new(Expr::Identifier("AspectRatio".to_string())),
+          replacement: Box::new(Expr::Real(1.0 / 1.618_033_988_749_895)),
+        });
+      }
     }
   }
 
@@ -11086,8 +11208,9 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
     return None;
   }
 
-  // Parse optional alignment from second arg (default: Left)
-  let alignment = if args.len() >= 2 {
+  // Parse optional alignment: positional (`Column[{…}, Center]`) or the
+  // option form (`Column[{…}, Alignment -> Center]`). Default: Left.
+  let mut alignment = if args.len() >= 2 {
     match &args[1] {
       Expr::Identifier(s) if s == "Center" => "middle",
       Expr::Identifier(s) if s == "Right" => "end",
@@ -11096,6 +11219,21 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
   } else {
     "start"
   };
+  for arg in &args[1..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = arg
+      && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Alignment")
+      && let Expr::Identifier(spec) = replacement.as_ref()
+    {
+      alignment = match spec.as_str() {
+        "Center" => "middle",
+        "Right" => "end",
+        _ => "start",
+      };
+    }
+  }
 
   // Parse optional spacing from third arg in ems (default: 0)
   let spacing_ems: f64 = if args.len() >= 3 {
@@ -12239,16 +12377,6 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::FunctionCall { name, .. } if name == "Dynamic" => {
         out_args.push(spec.clone());
       }
-      // A layout expression holding `Control[…]` calls (e.g.
-      // `Row[{"label", Control[{{p, 4}, Range[1, 25]}], Spacer[10], …}]`,
-      // the Demonstrations custom-control-row idiom) is a valid control
-      // specification, not a malformed variable spec. The inner Control
-      // var-spec lists are processed like standalone `Control[…]`
-      // arguments (bounds evaluated); the surrounding layout passes
-      // through untouched.
-      Expr::FunctionCall { .. } if contains_control_call(spec) => {
-        out_args.push(process_control_container(spec));
-      }
       // `Delimiter`, a bare string, and `Style[…]` are static annotation
       // rows between controls (Wolfram tags them
       // Manipulate`Dump`ThisIsNotAControl), not malformed variable specs —
@@ -12256,6 +12384,18 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Identifier(s) if s == "Delimiter" => out_args.push(spec.clone()),
       Expr::String(_) => out_args.push(spec.clone()),
       Expr::FunctionCall { name, .. } if name == "Style" => {
+        out_args.push(spec.clone());
+      }
+      // Control objects and layout containers grouping them — `Control[…]`,
+      // `Button[…]`, `Row[{Control[…], Spacer[…], …}]` and friends — are
+      // valid Manipulate arguments (the Demonstrations layout pattern), not
+      // malformed variable specs. They pass through with no message.
+      Expr::FunctionCall { name, .. }
+        if matches!(
+          name.as_str(),
+          "Row" | "Column" | "Grid" | "Control" | "Button" | "Spacer"
+        ) =>
+      {
         out_args.push(spec.clone());
       }
       _ => {
@@ -12370,52 +12510,6 @@ pub fn control_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
-/// True when a Manipulate argument contains a `Control[…]` call — i.e. it
-/// is a custom control layout (`Row[{…, Control[…], …}]`,
-/// `Dynamic[Control[…]]`, a `Column`/`Grid` of controls, …) rather than a
-/// bare variable-spec list or a display expression.
-fn contains_control_call(e: &Expr) -> bool {
-  match e {
-    Expr::FunctionCall { name, args } => {
-      name == "Control" || args.iter().any(contains_control_call)
-    }
-    Expr::List(items) => items.iter().any(contains_control_call),
-    Expr::BinaryOp { left, right, .. } => {
-      contains_control_call(left) || contains_control_call(right)
-    }
-    Expr::UnaryOp { operand, .. } => contains_control_call(operand),
-    _ => false,
-  }
-}
-
-/// Process every `Control[{…}]` inside a control-container Manipulate
-/// argument through `process_manipulate_var_spec` (evaluating spec bounds
-/// like a standalone `Control`), leaving the surrounding layout intact.
-fn process_control_container(e: &Expr) -> Expr {
-  match e {
-    Expr::FunctionCall { name, args } if name == "Control" => {
-      let mut new_args: Vec<Expr> = args.iter().cloned().collect();
-      if let Some(Expr::List(items)) = args.first()
-        && !items.is_empty()
-      {
-        new_args[0] = process_manipulate_var_spec(items);
-      }
-      Expr::FunctionCall {
-        name: name.clone(),
-        args: new_args.into(),
-      }
-    }
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args.iter().map(process_control_container).collect(),
-    },
-    Expr::List(items) => {
-      Expr::List(items.iter().map(process_control_container).collect())
-    }
-    other => other.clone(),
-  }
-}
-
 // ─────────────────────────────────────────────────────────────────
 // Interactive Manipulate support (for Woxi Playground / Woxi Studio)
 // ─────────────────────────────────────────────────────────────────
@@ -12514,6 +12608,31 @@ pub enum ManipulateControl {
     auto_create: bool,
     label: String,
   },
+  /// A `ControlType -> Trigger` control: a play/pause button pair that
+  /// sweeps its variable from `min` towards `max` in `step` increments
+  /// while running (the Demonstrations "run/stop simulation" control).
+  /// `max` may be `f64::INFINITY` (`{time, 0, Infinity, 1, …}`), in which
+  /// case the sweep never wraps.
+  Trigger {
+    name: String,
+    min: f64,
+    max: f64,
+    step: f64,
+    initial: f64,
+    /// `AnimationRunning -> True`: start sweeping immediately. Wolfram's
+    /// Trigger sits paused until pressed by default.
+    running: bool,
+    label: String,
+    label_runs: Vec<LabelRun>,
+  },
+  /// A `Button[label, action]` control row. Pressing it evaluates `action`
+  /// (InputForm) against the live bindings — typically resetting state
+  /// variables (`time = 0; {U, V} = {Uinit, Vinit}`). Binds no variable.
+  Button {
+    label: String,
+    label_runs: Vec<LabelRun>,
+    action: String,
+  },
   /// A static heading row between controls: a bare string or `Style[…]`
   /// Manipulate argument (Wolfram's `ThisIsNotAControl` annotations, e.g.
   /// the "signal 1" / "signal 2" captions of the oscilloscope
@@ -12536,8 +12655,11 @@ impl ManipulateControl {
       | ManipulateControl::Discrete { name, .. }
       | ManipulateControl::Slider2D { name, .. }
       | ManipulateControl::IntervalSlider { name, .. }
+      | ManipulateControl::Trigger { name, .. }
       | ManipulateControl::Locator { name, .. } => name,
-      ManipulateControl::Heading { .. } | ManipulateControl::Divider => "",
+      ManipulateControl::Button { .. }
+      | ManipulateControl::Heading { .. }
+      | ManipulateControl::Divider => "",
     }
   }
 }
@@ -12574,6 +12696,19 @@ pub struct ManipulateSpec {
   /// while `YinYang` is `True`). Controls with no `Enabled` option (or the
   /// trivial `Enabled -> True`) do not appear here and stay always enabled.
   pub control_enabled: Vec<(String, String)>,
+  /// Continuous-control bounds that reference other control variables, as
+  /// `(control name, min code, max code)`. A Demonstration like Kepler's
+  /// Second Law bounds its time slider by the orbital-period variable
+  /// (`{{t, 0, …}, 0, P, .01}`), so the numeric `min`/`max` stored on the
+  /// control are only the values at build time — the frontend re-evaluates
+  /// these code fragments against the live bindings after every change and
+  /// updates the slider range to follow. A `None` side is static.
+  pub dynamic_bounds: Vec<(String, Option<String>, Option<String>)>,
+  /// The variable animated by a `ControlType -> Trigger`/`Animator` control
+  /// spec. Wolfram renders those as play buttons that sweep the variable
+  /// over its range; the widget's animation targets this variable instead
+  /// of defaulting to the first continuous control.
+  pub animation_var: Option<String>,
   /// Whether this spec should auto-play, i.e. it came from `Animate[…]` or
   /// `ListAnimate[…]`. An animated widget advances its first continuous
   /// control on a timer (with a play/pause toggle) instead of sitting still
@@ -12591,11 +12726,21 @@ pub struct ManipulateSpec {
 
 /// Result of parsing a single list-shaped Manipulate argument.
 enum ParsedControl {
-  /// A control that renders a UI element (slider or pick list). The second
-  /// field is an optional `Enabled` condition (InputForm code) that gates the
-  /// widget: when it evaluates to `False` against the live bindings the
-  /// control is shown greyed-out and non-interactive.
-  Visible(ManipulateControl, Option<String>),
+  /// A control that renders a UI element (slider or pick list). `enabled` is
+  /// an optional `Enabled` condition (InputForm code) that gates the widget:
+  /// when it evaluates to `False` against the live bindings the control is
+  /// shown greyed-out and non-interactive. `min_code`/`max_code` carry a
+  /// continuous bound that references other control variables (re-resolved
+  /// live by the frontend); `animate` is set for a `ControlType ->
+  /// Trigger`/`Animator` spec, with the flag telling whether the animation
+  /// starts running (`Animator`) or paused (`Trigger`).
+  Visible {
+    control: ManipulateControl,
+    enabled: Option<String>,
+    min_code: Option<String>,
+    max_code: Option<String>,
+    animate: Option<bool>,
+  },
   /// A `Locator` control with no widget. It contributes a fixed `name =
   /// value` binding that is baked directly into the body so the variable is
   /// in scope while the visible controls drive the plot.
@@ -12647,6 +12792,8 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     mut displays,
     mut initialization,
     mut control_enabled,
+    mut dynamic_bounds,
+    mut animation_var,
   ) = match inner {
     Some(inner) => {
       animated = true;
@@ -12658,15 +12805,19 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         inner.displays,
         inner.initialization,
         inner.control_enabled,
+        inner.dynamic_bounds,
+        inner.animation_var,
       )
     }
     None => (
-      crate::syntax::expr_to_input_form(&args[0]),
+      crate::syntax::expr_to_input_form(unwrap_dynamic_body(&args[0])),
       Vec::with_capacity(args.len() - 1),
       Vec::new(),
       Vec::new(),
       None,
       Vec::new(),
+      Vec::new(),
+      None,
     ),
   };
   // `Locator` bindings are baked into the body (never rewritten by a
@@ -12678,7 +12829,55 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // and every occurrence in the body (and related code fragments) is
   // rewritten below via `(original InputForm, synthesized name)` pairs.
   let mut renames: Vec<(String, String)> = Vec::new();
+  // Controls grouped in a `Row[…]`/`Column[…]`/`Grid[…]` argument (the
+  // Demonstrations layout pattern `Row[{Control[…], Spacer[20], Button[…]}]`)
+  // flatten into their items so each inner control becomes its own row, and
+  // a `Control[spec, opts…]` wrapper unwraps to its ordinary variable
+  // specification so it parses through the standard path.
+  let mut arg_items: Vec<Expr> =
+    Vec::with_capacity(args.len().saturating_sub(1));
   for spec in &args[1..] {
+    match control_group_items(spec) {
+      Some(items) => arg_items.extend(items),
+      None => arg_items.push(spec.clone()),
+    }
+  }
+  let arg_items: Vec<Expr> = arg_items
+    .into_iter()
+    .map(|spec| {
+      // `Dynamic[Control[…]]` (the Demonstrations idiom
+      // `Dynamic@Control@{…}`) is the Control it wraps — the Dynamic
+      // only adds FrontEnd update hints, so it unwraps first.
+      let spec = match &spec {
+        Expr::FunctionCall { name, args }
+          if name == "Dynamic"
+            && matches!(
+              args.first(),
+              Some(Expr::FunctionCall { name: inner, .. }) if inner == "Control"
+            ) =>
+        {
+          args[0].clone()
+        }
+        _ => spec,
+      };
+      match &spec {
+        Expr::FunctionCall { name, args }
+          if name == "Control" && !args.is_empty() =>
+        {
+          args[0].clone()
+        }
+        _ => spec,
+      }
+    })
+    .collect();
+  // A control's bounds may reference *other* control variables — Kepler's
+  // Second Law bounds its time sliders by the orbital period (`{{t, 0, …},
+  // 0, P, .01}` with `{{P, 20, …}, .1, 50, .01}` further down). Collect
+  // every control's initial value first and install them as scoped globals
+  // while the specs are parsed, so those bounds resolve to their build-time
+  // numbers regardless of declaration order.
+  let initial_bindings = manipulate_initial_value_bindings(&arg_items);
+  for spec in &arg_items {
     // Options such as `Initialization :> …` or `TrackedSymbols :> …`
     // are not variable specs; extract what we understand and ignore
     // the rest rather than failing the whole extraction.
@@ -12734,51 +12933,86 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         });
         continue;
       }
-      _ => {}
-    }
-    // Only list-shaped arguments are plain control specs. A non-list
-    // argument holding `Control[…]` calls is a custom control layout
-    // (`Row[{"label", Control[…], Spacer[10], …}]`): its controls are
-    // extracted in order, with loose strings / `Style[…]` becoming
-    // heading rows and pure spacing dropped. Any other trailing argument
-    // (e.g. a `Dynamic[Panel[…]]` of checkboxes) is an extra display
-    // element: capture it so the frontend can render it live.
-    if !matches!(spec, Expr::List(_)) {
-      if contains_control_call(spec) {
-        let mut items = Vec::new();
-        collect_container_items(spec, &mut items);
-        for item in items {
-          match item {
-            ContainerItem::Spec(s) => push_parsed_spec(
-              &s,
-              &mut controls,
-              &mut control_enabled,
-              &mut fixed,
-              &mut state,
-              &mut renames,
-            )?,
-            ContainerItem::Heading(h) => {
-              let label_runs = manipulate_label_runs(&h, false);
-              controls.push(ManipulateControl::Heading {
-                label: flatten_label_runs(&label_runs),
-                label_runs,
-              });
-            }
-          }
-        }
+      // `Button[label, action, opts…]`: a pressable control row whose
+      // action code runs against the live bindings (e.g. a reset button).
+      Expr::FunctionCall { name, args }
+        if name == "Button" && args.len() >= 2 =>
+      {
+        let label_runs = manipulate_label_runs(&args[0], false);
+        controls.push(ManipulateControl::Button {
+          label: flatten_label_runs(&label_runs),
+          label_runs,
+          action: crate::syntax::expr_to_input_form(&args[1]),
+        });
         continue;
       }
+      // `Spacer[…]` is pure layout between grouped controls — skip it.
+      Expr::FunctionCall { name, .. } if name == "Spacer" => continue,
+      _ => {}
+    }
+    // Only list-shaped arguments are control specs (layout containers of
+    // controls were already flattened into `arg_items` above). Any other
+    // trailing argument (e.g. a `Dynamic[Panel[…]]` of checkboxes) is an
+    // extra display element: capture it so the frontend can render it
+    // live.
+    if !matches!(spec, Expr::List(_)) {
       displays.push(crate::syntax::expr_to_input_form(spec));
       continue;
     }
-    push_parsed_spec(
-      spec,
-      &mut controls,
-      &mut control_enabled,
-      &mut fixed,
-      &mut state,
-      &mut renames,
-    )?;
+    let (spec, rename) = rewrite_compound_control_var(spec);
+    let parsed = crate::with_scoped_globals(&initial_bindings, || {
+      parse_manipulate_control(&spec)
+    })?;
+    match parsed {
+      ParsedControl::Visible {
+        control: mut c,
+        enabled,
+        min_code,
+        max_code,
+        animate,
+      } => {
+        if let Some((orig, orig_form, synth)) = &rename {
+          patch_default_label(&mut c, orig, synth);
+          renames.push((orig_form.clone(), synth.clone()));
+        }
+        // A `Trigger`/`Animator` control spec animates its variable: the
+        // widget auto-plays (paused for a Trigger, running for an Animator)
+        // and the animation targets this variable.
+        if let Some(running) = animate {
+          animated = true;
+          animation_running = running;
+          animation_var = Some(c.name().to_string());
+        }
+        // A second spec for an already-bound variable (Kepler pairs a time
+        // slider with a `Trigger` on the same `t`) must not bind twice —
+        // the first spec keeps the widget row, later duplicates only
+        // contribute their animation/enabled semantics above.
+        if !c.name().is_empty()
+          && controls.iter().any(|prev| prev.name() == c.name())
+        {
+          continue;
+        }
+        if let Some(cond) = enabled {
+          control_enabled.push((c.name().to_string(), cond));
+        }
+        if min_code.is_some() || max_code.is_some() {
+          dynamic_bounds.push((c.name().to_string(), min_code, max_code));
+        }
+        controls.push(c);
+      }
+      ParsedControl::Fixed { name, value } => {
+        if let Some((_, orig_form, synth)) = &rename {
+          renames.push((orig_form.clone(), synth.clone()));
+        }
+        fixed.push((name, value));
+      }
+      ParsedControl::State { name, value } => {
+        if let Some((_, orig_form, synth)) = &rename {
+          renames.push((orig_form.clone(), synth.clone()));
+        }
+        state.push((name, value));
+      }
+    }
   }
 
   // A Manipulate with no controls or state at all (e.g. `Manipulate[x^2,
@@ -12815,6 +13049,14 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     for (_, cond) in &mut control_enabled {
       rewrite(cond);
     }
+    for (_, min_code, max_code) in &mut dynamic_bounds {
+      if let Some(code) = min_code {
+        rewrite(code);
+      }
+      if let Some(code) = max_code {
+        rewrite(code);
+      }
+    }
     for (_, value) in fixed.iter_mut().chain(state.iter_mut()) {
       rewrite(value);
     }
@@ -12836,89 +13078,128 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     displays,
     initialization,
     control_enabled,
+    dynamic_bounds,
+    animation_var,
     animated,
     animation_running,
     appearance_none,
   })
 }
 
-/// One element of a custom control layout: a `Control[…]` variable spec to
-/// parse, or a loose label rendered as a heading row.
-enum ContainerItem {
-  Spec(Expr),
-  Heading(Expr),
-}
-
-/// Walk a control-container Manipulate argument (`Row[{…}]`, nested
-/// layouts, `Dynamic[Control[…]]`, …) collecting its `Control[…]` variable
-/// specs and loose string / `Style[…]` labels in display order. `Spacer[…]`
-/// is pure layout and is dropped.
-fn collect_container_items(e: &Expr, out: &mut Vec<ContainerItem>) {
-  match e {
-    Expr::FunctionCall { name, args } if name == "Control" => {
-      if let Some(s) = args.first() {
-        out.push(ContainerItem::Spec(s.clone()));
-      }
+/// A Manipulate body wrapped in `Dynamic[…]` displays the Dynamic's first
+/// argument — the wrapper only adds FrontEnd tracking hints (a second
+/// update-function argument, `TrackedSymbols :> …`) — so evaluation uses
+/// that inner expression.
+fn unwrap_dynamic_body(body: &Expr) -> &Expr {
+  match body {
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic" && !args.is_empty() =>
+    {
+      &args[0]
     }
-    Expr::FunctionCall { name, .. } if name == "Spacer" => {}
-    Expr::String(_) => out.push(ContainerItem::Heading(e.clone())),
-    Expr::FunctionCall { name, .. } if name == "Style" => {
-      out.push(ContainerItem::Heading(e.clone()));
-    }
-    Expr::FunctionCall { args, .. } => {
-      for a in args.iter() {
-        collect_container_items(a, out);
-      }
-    }
-    Expr::List(items) => {
-      for a in items.iter() {
-        collect_container_items(a, out);
-      }
-    }
-    _ => {}
+    other => other,
   }
 }
 
-/// Parse one list-shaped variable spec and record the result: a visible
-/// control (with its `Enabled` gate), a fixed Locator binding, or a mutable
-/// `ControlType -> None` state variable. Compound control variables are
-/// renamed to synthesized symbols, recorded in `renames` for the caller's
-/// body rewrite. `None` when the spec doesn't parse — the caller gives up
-/// on the whole extraction, falling back to the plain output path.
-fn push_parsed_spec(
-  spec: &Expr,
-  controls: &mut Vec<ManipulateControl>,
-  control_enabled: &mut Vec<(String, String)>,
-  fixed: &mut Vec<(String, String)>,
-  state: &mut Vec<(String, String)>,
-  renames: &mut Vec<(String, String)>,
-) -> Option<()> {
-  let (spec, rename) = rewrite_compound_control_var(spec);
-  match parse_manipulate_control(&spec)? {
-    ParsedControl::Visible(mut c, enabled) => {
-      if let Some((orig, orig_form, synth)) = &rename {
-        patch_default_label(&mut c, orig, synth);
-        renames.push((orig_form.clone(), synth.clone()));
+/// The flattened control items of a `Row[…]`/`Column[…]`/`Grid[…]`
+/// Manipulate argument that lays several controls out in one row (the
+/// Wolfram Demonstrations pattern `Row[{Control[…], Spacer[20],
+/// Button[…]}]`). Returns `None` when the argument contains no
+/// `Control[…]`/`Button[…]` anywhere, so plain `Row[…]` display
+/// expressions keep flowing to the display path.
+fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
+  fn contains_control(e: &Expr) -> bool {
+    match e {
+      Expr::FunctionCall { name, args } => {
+        name == "Control"
+          || name == "Button"
+          || args.iter().any(contains_control)
       }
-      if let Some(cond) = enabled {
-        control_enabled.push((c.name().to_string(), cond));
-      }
-      controls.push(c);
-    }
-    ParsedControl::Fixed { name, value } => {
-      if let Some((_, orig_form, synth)) = &rename {
-        renames.push((orig_form.clone(), synth.clone()));
-      }
-      fixed.push((name, value));
-    }
-    ParsedControl::State { name, value } => {
-      if let Some((_, orig_form, synth)) = &rename {
-        renames.push((orig_form.clone(), synth.clone()));
-      }
-      state.push((name, value));
+      Expr::List(items) => items.iter().any(contains_control),
+      _ => false,
     }
   }
-  Some(())
+  let Expr::FunctionCall { name, args } = spec else {
+    return None;
+  };
+  if !matches!(name.as_str(), "Row" | "Column" | "Grid") || args.is_empty() {
+    return None;
+  }
+  if !contains_control(spec) {
+    return None;
+  }
+  let Expr::List(items) = &args[0] else {
+    return None;
+  };
+  let mut out = Vec::new();
+  for item in items.iter() {
+    match item {
+      // A Grid's first level is its list of layout rows; their elements
+      // are the actual items.
+      Expr::List(row) if name == "Grid" => out.extend(row.iter().cloned()),
+      // Nested layout containers flatten recursively.
+      other => match control_group_items(other) {
+        Some(nested) => out.extend(nested),
+        None => out.push(other.clone()),
+      },
+    }
+  }
+  Some(out)
+}
+
+/// Collect `(name, initial value as InputForm)` for every control spec that
+/// declares one: an explicit `{{u, uinit, …}, …}` head, or a plain-symbol
+/// `{u, umin, …}` head whose lower bound is statically numeric (the default
+/// initial value). Installed as scoped globals while the specs are parsed so
+/// a bound referencing another control variable resolves to its build-time
+/// value regardless of declaration order.
+fn manipulate_initial_value_bindings(specs: &[Expr]) -> Vec<(String, String)> {
+  specs
+    .iter()
+    .filter_map(|spec| {
+      let Expr::List(items) = spec else { return None };
+      match items.first()? {
+        Expr::List(head) => {
+          let Expr::Identifier(name) = head.first()? else {
+            return None;
+          };
+          let init = head.get(1)?;
+          Some((name.clone(), crate::syntax::expr_to_input_form(init)))
+        }
+        Expr::Identifier(name) => {
+          let min = items.get(1)?;
+          crate::functions::math_ast::try_eval_to_f64(min)?;
+          Some((name.clone(), crate::syntax::expr_to_input_form(min)))
+        }
+        _ => None,
+      }
+    })
+    .collect()
+}
+
+/// Evaluate a Manipulate bound expression to a number. A literal (`2 Pi`)
+/// resolves statically; a bound referencing another control variable (`P`)
+/// resolves through the evaluator against the initial-value globals the
+/// caller installed. The flag reports whether the environment was needed —
+/// such bounds are dynamic and must be re-resolved against live bindings.
+fn eval_manipulate_bound(expr: &Expr) -> Option<(f64, bool)> {
+  if let Some(v) =
+    crate::functions::math_ast::try_eval_to_f64_with_infinity(expr)
+  {
+    return Some((v, false));
+  }
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(expr).ok()?;
+  crate::functions::math_ast::try_eval_to_f64_with_infinity(&evaluated)
+    .map(|v| (v, true))
+}
+
+/// Re-resolve a dynamic bound's code fragment against the interpreter's
+/// current globals (the caller installs the live bindings via
+/// `with_scoped_globals`). Returns `None` when the code doesn't evaluate to
+/// a finite number, in which case the control keeps its previous bound.
+pub fn manipulate_eval_bound_code(code: &str) -> Option<f64> {
+  let expr = crate::interpret_to_expr(code).ok()?;
+  crate::functions::math_ast::try_eval_to_f64(&expr).filter(|v| v.is_finite())
 }
 
 /// Synthesize a plain symbol name for a compound (non-Identifier) control
@@ -13020,6 +13301,9 @@ fn patch_default_label(
     }
     | ManipulateControl::Discrete {
       label, label_runs, ..
+    }
+    | ManipulateControl::Trigger {
+      label, label_runs, ..
     } => {
       if label == synth {
         *label = pretty;
@@ -13033,7 +13317,9 @@ fn patch_default_label(
         *label = pretty;
       }
     }
-    ManipulateControl::Heading { .. } | ManipulateControl::Divider => {}
+    ManipulateControl::Button { .. }
+    | ManipulateControl::Heading { .. }
+    | ManipulateControl::Divider => {}
   }
 }
 
@@ -13080,6 +13366,8 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     displays: Vec::new(),
     initialization: None,
     control_enabled: Vec::new(),
+    dynamic_bounds: Vec::new(),
+    animation_var: None,
     animated: true,
     animation_running: true,
     appearance_none: false,
@@ -13152,6 +13440,8 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     displays: Vec::new(),
     initialization: None,
     control_enabled: Vec::new(),
+    dynamic_bounds: Vec::new(),
+    animation_var: None,
     animated: true,
     animation_running: true,
     appearance_none: false,
@@ -13222,6 +13512,8 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     displays: Vec::new(),
     initialization: None,
     control_enabled: Vec::new(),
+    dynamic_bounds: Vec::new(),
+    animation_var: None,
     animated: false,
     animation_running: true,
     appearance_none: false,
@@ -13268,6 +13560,8 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     displays: Vec::new(),
     initialization: None,
     control_enabled: Vec::new(),
+    dynamic_bounds: Vec::new(),
+    animation_var: None,
     animated: false,
     animation_running: true,
     appearance_none: false,
@@ -13295,8 +13589,13 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
   if !matches!(&args[0], Expr::List(items) if !items.is_empty()) {
     return None;
   }
-  let (control, enabled) = match parse_manipulate_control(&args[0])? {
-    ParsedControl::Visible(c, enabled) => (c, enabled),
+  let (control, enabled, animate) = match parse_manipulate_control(&args[0])? {
+    ParsedControl::Visible {
+      control,
+      enabled,
+      animate,
+      ..
+    } => (control, enabled, animate),
     // A hidden control (`ControlType -> None` / Locator) has no widget and
     // nothing to display on its own — fall back to the plain output path.
     ParsedControl::Fixed { .. } | ParsedControl::State { .. } => return None,
@@ -13307,6 +13606,9 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     Some(cond) => vec![(control.name().to_string(), cond)],
     None => Vec::new(),
   };
+  // A standalone `Control[{…, ControlType -> Trigger/Animator}]` animates
+  // its own variable.
+  let animation_var = animate.map(|_| control.name().to_string());
   Some(ManipulateSpec {
     body_code,
     controls: vec![control],
@@ -13314,8 +13616,10 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     displays: Vec::new(),
     initialization: None,
     control_enabled,
-    animated: false,
-    animation_running: true,
+    dynamic_bounds: Vec::new(),
+    animation_var,
+    animated: animate.is_some(),
+    animation_running: animate.unwrap_or(true),
     appearance_none: false,
   })
 }
@@ -13690,8 +13994,8 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
     if let Some((x, y)) = list2_f64(&evaluated) {
       let (x_min, x_max, y_min, y_max) =
         locator_range(&corner_bounds, &[(x, y)]);
-      return Some(ParsedControl::Visible(
-        ManipulateControl::Slider2D {
+      return Some(ParsedControl::Visible {
+        control: ManipulateControl::Slider2D {
           name,
           x_min,
           x_max,
@@ -13702,12 +14006,15 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
           label,
         },
         enabled,
-      ));
+        min_code: None,
+        max_code: None,
+        animate: None,
+      });
     }
     if let Some(points) = point_list_f64(&evaluated) {
       let (x_min, x_max, y_min, y_max) = locator_range(&corner_bounds, &points);
-      return Some(ParsedControl::Visible(
-        ManipulateControl::Locator {
+      return Some(ParsedControl::Visible {
+        control: ManipulateControl::Locator {
           name,
           points,
           x_min,
@@ -13718,35 +14025,130 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
           label,
         },
         enabled,
-      ));
+        min_code: None,
+        max_code: None,
+        animate: None,
+      });
     }
     let value = manipulate_value_to_input_form(&value_expr);
     return Some(ParsedControl::Fixed { name, value });
   }
 
   // A `ControlType -> Slider2D` / `ControlType -> IntervalSlider` option
-  // selects a compound control. The bounds are the non-option items after
-  // the head.
-  let control_type = items.iter().find_map(|it| match it {
-    Expr::Rule {
-      pattern,
-      replacement,
-    }
-    | Expr::RuleDelayed {
-      pattern,
-      replacement,
-    } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlType") => {
-      match replacement.as_ref() {
-        Expr::Identifier(s) => Some(s.clone()),
-        _ => None,
+  // selects a compound control. The control type may also appear as a bare
+  // identifier in the spec (`{u, {1, 2, 3}, SetterBar}`). The bounds are
+  // the non-option, non-control-type items after the head.
+  let is_control_type_name = |s: &str| {
+    matches!(
+      s,
+      "Locator"
+        | "Slider"
+        | "Slider2D"
+        | "VerticalSlider"
+        | "Manipulator"
+        | "InputField"
+        | "PopupMenu"
+        | "SetterBar"
+        | "RadioButtonBar"
+        | "TogglerBar"
+        | "Checkbox"
+        | "ColorSlider"
+        | "ColorSetter"
+        | "IntervalSlider"
+        | "Animator"
+        | "Trigger"
+        | "Automatic"
+    )
+  };
+  let control_type = items
+    .iter()
+    .find_map(|it| match it {
+      Expr::Rule {
+        pattern,
+        replacement,
       }
-    }
-    _ => None,
-  });
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlType") => {
+        match replacement.as_ref() {
+          Expr::Identifier(s) => Some(s.clone()),
+          _ => None,
+        }
+      }
+      _ => None,
+    })
+    .or_else(|| {
+      items[1..].iter().find_map(|it| match it {
+        Expr::Identifier(s) if is_control_type_name(s) => Some(s.clone()),
+        _ => None,
+      })
+    });
   let bounds: Vec<&Expr> = items[1..]
     .iter()
-    .filter(|it| !matches!(it, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+    .filter(|it| {
+      !matches!(it, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+        && !matches!(it, Expr::Identifier(s) if is_control_type_name(s))
+    })
     .collect();
+
+  // A `ControlType -> Trigger` (or bare `Trigger` marker) with an
+  // *infinite* sweep end (`{time, 0, Infinity, 1, …}` — the Demonstrations
+  // "run/stop simulation" control) cannot drive a finite slider; it becomes
+  // a dedicated play/pause control that never wraps. A finite Trigger falls
+  // through to the continuous path below (Kepler pairs one with a plain
+  // slider on the same variable).
+  if control_type.as_deref() == Some("Trigger") {
+    let max = bounds
+      .get(1)
+      .and_then(|e| {
+        crate::functions::math_ast::try_eval_to_f64_with_infinity(e)
+      })
+      .unwrap_or(f64::INFINITY);
+    if !max.is_finite() {
+      let min = bounds
+        .first()
+        .and_then(|e| {
+          crate::functions::math_ast::try_eval_to_f64_with_infinity(e)
+        })
+        .unwrap_or(0.0);
+      let step = bounds
+        .get(2)
+        .and_then(|e| crate::functions::math_ast::try_eval_to_f64(e))
+        .unwrap_or(1.0);
+      let initial = explicit_initial
+        .as_ref()
+        .and_then(crate::functions::math_ast::try_eval_to_f64)
+        .unwrap_or(min);
+      // Wolfram's Trigger sits paused until pressed; only an explicit
+      // `AnimationRunning -> True` starts it sweeping immediately.
+      let running = items.iter().any(|it| {
+        matches!(
+          it,
+          Expr::Rule { pattern, replacement }
+          | Expr::RuleDelayed { pattern, replacement }
+            if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "AnimationRunning")
+              && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True")
+        )
+      });
+      return Some(ParsedControl::Visible {
+        control: ManipulateControl::Trigger {
+          name,
+          min,
+          max,
+          step,
+          initial,
+          running,
+          label,
+          label_runs,
+        },
+        enabled,
+        min_code: None,
+        max_code: None,
+        animate: Some(running),
+      });
+    }
+  }
 
   // 2D control: either an explicit `ControlType -> Slider2D`, or a range
   // given as two corner points `{u, {xmin, ymin}, {xmax, ymax}}`.
@@ -13760,12 +14162,11 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
       (x0, x1, y0, y1)
     } else {
       // Scalar bounds `{u, min, max}` apply to both axes.
-      let mn = bounds
-        .first()
-        .and_then(|e| crate::functions::math_ast::try_eval_to_f64(e))?;
+      let mn = bounds.first().and_then(|e| eval_manipulate_bound(e))?.0;
       let mx = bounds
         .get(1)
-        .and_then(|e| crate::functions::math_ast::try_eval_to_f64(e))
+        .and_then(|e| eval_manipulate_bound(e))
+        .map(|(v, _)| v)
         .unwrap_or(mn + 1.0);
       (mn, mx, mn, mx)
     };
@@ -13774,8 +14175,8 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
         Some((a, b)) => (a, b),
         None => (x_min, y_min),
       };
-    return Some(ParsedControl::Visible(
-      ManipulateControl::Slider2D {
+    return Some(ParsedControl::Visible {
+      control: ManipulateControl::Slider2D {
         name,
         x_min,
         x_max,
@@ -13786,29 +14187,32 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
         label,
       },
       enabled,
-    ));
+      min_code: None,
+      max_code: None,
+      animate: None,
+    });
   }
 
   // Interval control: `{u, min, max, ControlType -> IntervalSlider}` binds
   // `u` to a `{low, high}` pair.
   if control_type.as_deref() == Some("IntervalSlider") {
-    let min = bounds
-      .first()
-      .and_then(|e| crate::functions::math_ast::try_eval_to_f64(e))?;
+    let min = bounds.first().and_then(|e| eval_manipulate_bound(e))?.0;
     let max = bounds
       .get(1)
-      .and_then(|e| crate::functions::math_ast::try_eval_to_f64(e))
+      .and_then(|e| eval_manipulate_bound(e))
+      .map(|(v, _)| v)
       .unwrap_or(min + 1.0);
     let step = bounds
       .get(2)
-      .and_then(|e| crate::functions::math_ast::try_eval_to_f64(e));
+      .and_then(|e| eval_manipulate_bound(e))
+      .map(|(v, _)| v);
     let (low_initial, high_initial) =
       match explicit_initial.as_ref().and_then(list2_f64) {
         Some((a, b)) => (a, b),
         None => (min, max),
       };
-    return Some(ParsedControl::Visible(
-      ManipulateControl::IntervalSlider {
+    return Some(ParsedControl::Visible {
+      control: ManipulateControl::IntervalSlider {
         name,
         min,
         max,
@@ -13818,7 +14222,10 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
         label,
       },
       enabled,
-    ));
+      min_code: None,
+      max_code: None,
+      animate: None,
+    });
   }
 
   // Discrete form: `{u, {u1, u2, …}}` or `{{u, uinit, …}, {u1, u2, …}}`,
@@ -13876,8 +14283,8 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
         }
         None => 0,
       };
-      return Some(ParsedControl::Visible(
-        ManipulateControl::Discrete {
+      return Some(ParsedControl::Visible {
+        control: ManipulateControl::Discrete {
           name,
           values,
           value_labels,
@@ -13888,7 +14295,10 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
           popup: control_type.as_deref() == Some("PopupMenu"),
         },
         enabled,
-      ));
+        min_code: None,
+        max_code: None,
+        animate: None,
+      });
     }
   }
 
@@ -13899,10 +14309,18 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
   if bounds.len() < 2 {
     return None;
   }
-  let mut min =
-    crate::functions::math_ast::try_eval_to_f64_with_infinity(bounds[0])?;
-  let mut max =
-    crate::functions::math_ast::try_eval_to_f64_with_infinity(bounds[1])?;
+  let (mut min, min_dynamic) = eval_manipulate_bound(bounds[0])?;
+  let (mut max, max_dynamic) = eval_manipulate_bound(bounds[1])?;
+  // A bound that only resolved through the environment references another
+  // control variable (Kepler's `{{t, 0, …}, 0, P, .01}`); keep its code so
+  // the frontend can re-resolve it against the live bindings and let the
+  // slider range follow the other control.
+  let min_code = min_dynamic
+    .then(|| crate::syntax::expr_to_input_form(bounds[0]))
+    .filter(|_| min.is_finite());
+  let max_code = max_dynamic
+    .then(|| crate::syntax::expr_to_input_form(bounds[1]))
+    .filter(|_| max.is_finite());
   // An infinite bound (`Animate[…, {ϕ, 0, Infinity}]` runs forever in
   // Wolfram) cannot drive a finite slider; substitute a 2π looping window
   // so the default sine-based demonstrations wrap seamlessly.
@@ -13917,17 +14335,24 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
   }
   let step = bounds
     .get(2)
-    .copied()
-    .and_then(crate::functions::math_ast::try_eval_to_f64);
+    .and_then(|e| eval_manipulate_bound(e))
+    .map(|(v, _)| v);
   let initial = match explicit_initial.as_ref() {
-    Some(init) => {
-      crate::functions::math_ast::try_eval_to_f64(init).unwrap_or(min)
-    }
+    Some(init) => eval_manipulate_bound(init).map(|(v, _)| v).unwrap_or(min),
     None => min,
   };
 
-  Some(ParsedControl::Visible(
-    ManipulateControl::Continuous {
+  // A `Trigger`/`Animator` control is a play button sweeping its variable
+  // over the range: the widget animates that variable (a Trigger starts
+  // paused, an Animator running).
+  let animate = match control_type.as_deref() {
+    Some("Trigger") => Some(false),
+    Some("Animator") => Some(true),
+    _ => None,
+  };
+
+  Some(ParsedControl::Visible {
+    control: ManipulateControl::Continuous {
       name,
       min,
       max,
@@ -13937,7 +14362,10 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
       label_runs,
     },
     enabled,
-  ))
+    min_code,
+    max_code,
+    animate,
+  })
 }
 
 /// If `item` is a rule `lhs -> rhs` (in either `Expr::Rule` or
@@ -14027,9 +14455,12 @@ pub fn manipulate_initial_bindings(
     .controls
     .iter()
     .filter_map(|c| match c {
-      // Annotation rows bind no variable.
-      ManipulateControl::Heading { .. } | ManipulateControl::Divider => None,
-      ManipulateControl::Continuous { name, initial, .. } => {
+      // Annotation and button rows bind no variable.
+      ManipulateControl::Heading { .. }
+      | ManipulateControl::Divider
+      | ManipulateControl::Button { .. } => None,
+      ManipulateControl::Continuous { name, initial, .. }
+      | ManipulateControl::Trigger { name, initial, .. } => {
         Some((name.clone(), format_f64_input(*initial)))
       }
       ManipulateControl::Discrete {
@@ -14336,6 +14767,33 @@ pub fn apply_manipulate_mutations(
   }
 }
 
+/// Run a Manipulate `Button[…]` action against the current bindings and
+/// return the updated InputForm value of every bound variable. The action's
+/// writes to unbound globals (e.g. `{U, V} = {Uinit, Vinit}`) persist as
+/// ordinary global side effects; writes to the bound control variables are
+/// captured through the returned list so the caller can move its widgets
+/// (e.g. `time = 0` rewinds a Trigger control).
+pub fn apply_manipulate_button_action(
+  bindings: &[(String, String)],
+  action: &str,
+) -> Vec<(String, String)> {
+  if bindings.is_empty() {
+    let _ = crate::interpret_with_stdout(action);
+    return Vec::new();
+  }
+  let names: Vec<&str> = bindings.iter().map(|(n, _)| n.as_str()).collect();
+  let body = format!("{action}; {{{}}}", names.join(", "));
+  let code = manipulate_block_code(&body, bindings);
+  match crate::interpret_to_expr(&code) {
+    Ok(Expr::List(ref vals)) if vals.len() == names.len() => names
+      .into_iter()
+      .map(str::to_string)
+      .zip(vals.iter().map(crate::syntax::expr_to_input_form))
+      .collect(),
+    _ => Vec::new(),
+  }
+}
+
 /// The distinct target variables of a set of write-back assignments, in first-
 /// seen order. Used to read back the mutated state values after applying the
 /// assignments to the (globally-installed) bindings.
@@ -14592,6 +15050,47 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           auto_create,
         ));
       }
+      ManipulateControl::Trigger {
+        name,
+        min,
+        max,
+        step,
+        initial,
+        running,
+        label,
+        label_runs,
+      } => {
+        // An infinite sweep end (`{time, 0, Infinity, 1}`) serializes as
+        // `null` — JSON has no Infinity literal.
+        let max_json = if max.is_finite() {
+          format!("{}", max)
+        } else {
+          "null".to_string()
+        };
+        ctrl_parts.push(format!(
+          r#"{{"kind":"trigger","name":"{}","label":"{}","labelRuns":{},"min":{},"max":{},"step":{},"initial":{},"running":{}}}"#,
+          json_escape_manipulate(name),
+          json_escape_manipulate(label),
+          label_runs_to_json(label_runs),
+          min,
+          max_json,
+          step,
+          initial,
+          running,
+        ));
+      }
+      ManipulateControl::Button {
+        label,
+        label_runs,
+        action,
+      } => {
+        ctrl_parts.push(format!(
+          r#"{{"kind":"button","label":"{}","labelRuns":{},"action":"{}"}}"#,
+          json_escape_manipulate(label),
+          label_runs_to_json(label_runs),
+          json_escape_manipulate(action),
+        ));
+      }
       ManipulateControl::Heading { label, label_runs } => {
         ctrl_parts.push(format!(
           r#"{{"kind":"heading","label":"{}","labelRuns":{}}}"#,
@@ -14614,6 +15113,29 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
     {
       let field =
         format!(r#","enabledWhen":"{}""#, json_escape_manipulate(cond));
+      part.truncate(part.len() - 1);
+      part.push_str(&field);
+      part.push('}');
+    }
+    // Dynamic bounds (a slider range following another control's variable)
+    // ride along as code fragments for the frontend to re-resolve.
+    if let Some((_, min_code, max_code)) =
+      spec.dynamic_bounds.iter().find(|(n, _, _)| n == c.name())
+      && part.ends_with('}')
+    {
+      let mut field = String::new();
+      if let Some(code) = min_code {
+        field.push_str(&format!(
+          r#","minCode":"{}""#,
+          json_escape_manipulate(code)
+        ));
+      }
+      if let Some(code) = max_code {
+        field.push_str(&format!(
+          r#","maxCode":"{}""#,
+          json_escape_manipulate(code)
+        ));
+      }
       part.truncate(part.len() - 1);
       part.push_str(&field);
       part.push('}');
@@ -14652,15 +15174,22 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
   } else {
     ""
   };
+  let animation_var_json = match &spec.animation_var {
+    Some(var) => {
+      format!(r#","animationVar":"{}""#, json_escape_manipulate(var))
+    }
+    None => String::new(),
+  };
 
   format!(
-    r#""body":"{}","controls":[{}],"state":{{{}}},"displays":[{}]{}{}"#,
+    r#""body":"{}","controls":[{}],"state":{{{}}},"displays":[{}]{}{}{}"#,
     json_escape_manipulate(&spec.body_code),
     ctrl_parts.join(","),
     state_parts.join(","),
     display_parts.join(","),
     animated_json,
     appearance_json,
+    animation_var_json,
   )
 }
 

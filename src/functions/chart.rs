@@ -829,8 +829,8 @@ fn scheme_name(val: &Expr) -> Option<String> {
 
 /// Evaluate a gradient (linear `Blend` of its evenly spaced control
 /// points) at parameter `t`, clamped to [0, 1] like `ColorData[name]`.
-/// The single canonical gradient interpolation — chart styling and
-/// `ColorData[name, t]` both go through here.
+/// The single canonical gradient interpolation — chart styling,
+/// `ColorData[name, t]`, and `sample_named_gradient` all go through here.
 pub(crate) fn gradient_color_at(
   controls: &[(f64, f64, f64)],
   t: f64,
@@ -850,6 +850,22 @@ pub(crate) fn gradient_color_at(
     g0 + frac * (g1 - g0),
     b0 + frac * (b1 - b0),
   )
+}
+
+/// Sample a named `ColorData` gradient scheme at parameter `t` (clamped to
+/// [0, 1]) via a linear `Blend` of its control points — the same
+/// interpolation wolframscript applies for `ColorData[name][t]` /
+/// `Blend[name, t]`. Returns `None` for schemes without stored control
+/// points.
+pub(crate) fn sample_named_gradient(
+  name: &str,
+  t: f64,
+) -> Option<(f64, f64, f64)> {
+  let controls = named_color_scheme(name)?;
+  if controls.is_empty() {
+    return None;
+  }
+  Some(gradient_color_at(controls, t))
 }
 
 /// Sample a gradient (linear `Blend` of its control points) at `n` evenly

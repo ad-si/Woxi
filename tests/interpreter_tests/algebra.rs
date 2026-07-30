@@ -4692,6 +4692,33 @@ mod solve {
     );
   }
 
+  /// Equations between equal-length lists thread componentwise:
+  /// `{xx, yy} == {a, b}` contributes `xx == a` and `yy == b`.
+  /// (Regression: the vector equation was silently dropped, so
+  /// parametric-intersection systems like the parabolic-mirror
+  /// Demonstration solved only the scalar equations.)
+  #[test]
+  fn solve_threads_list_equations() {
+    assert_eq!(
+      interpret("Solve[{xx, yy} == {1, 2}, {xx, yy}]").unwrap(),
+      "{{xx -> 1, yy -> 2}}"
+    );
+    assert_eq!(
+      interpret(
+        "Solve[{yy^2 == 20 xx, {xx, yy} == t*{0.6, 0.8} + {5, 0}}, \
+         {t, xx, yy}]"
+      )
+      .unwrap(),
+      "{{t -> -6.249999999999999, xx -> 1.2499999999999998, yy -> -5.}, \
+       {t -> 24.999999999999996, xx -> 19.999999999999996, yy -> 20.}}"
+    );
+    // Threading composes with And-of-equations flattening.
+    assert_eq!(
+      interpret("Solve[{x, y} == {1, 2} && x + z == 3, {x, y, z}]").unwrap(),
+      "{{x -> 1, y -> 2, z -> 2}}"
+    );
+  }
+
   #[test]
   fn solve_pure_cubic_symbolic() {
     assert_eq!(
