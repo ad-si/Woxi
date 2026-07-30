@@ -1268,6 +1268,9 @@ fn evaluate_function_call_ast_inner(
       | "Quartiles"
       | "InterquartileRange"
       | "TrimmedMean"
+      | "WinsorizedMean"
+      | "TrimmedVariance"
+      | "WinsorizedVariance"
       | "CentralMoment"
   ) && let Some(Expr::Association(pairs)) = args.first()
   {

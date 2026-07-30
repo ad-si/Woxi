@@ -1580,8 +1580,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     // registered here.
     "While" => Some((1, 2)),
     "WignerD" => Some((2, 4)),
-    "WinsorizedMean" => Some((2, 2)),
-    "WinsorizedVariance" => Some((2, 2)),
+    "WinsorizedMean" => Some((1, 2)),
+    "WinsorizedVariance" => Some((1, 2)),
     "With" => Some((2, 2)),
     "WordCount" => Some((1, 1)),
     "WordCounts" => Some((1, 2)),

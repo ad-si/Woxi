@@ -6083,6 +6083,189 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // All four heads take the fraction as an optional argument defaulting
+  // to 0.05, so a one-argument call trims nothing on a short list and one
+  // value off each end of a hundred.
+  #[test]
+  fn trimmed_and_winsorized_default_to_a_twentieth() {
+    for head in [
+      "TrimmedMean",
+      "WinsorizedMean",
+      "TrimmedVariance",
+      "WinsorizedVariance",
+    ] {
+      let short = format!("{}[{{1, 2, 3, 4, 5, 6, 7, 8, 9, 1000}}]", head);
+      let expected = if head.ends_with("Variance") {
+        "594055/6"
+      } else {
+        "209/2"
+      };
+      assert_eq!(interpret(&short).unwrap(), expected, "for {}", head);
+    }
+    // Floor[0.05 * 100] = 5, so the outlier and four more go from each end.
+    assert_eq!(
+      interpret("TrimmedMean[Append[Range[99], 10000]]").unwrap(),
+      "101/2"
+    );
+    assert_eq!(
+      interpret("WinsorizedMean[Append[Range[99], 10000]]").unwrap(),
+      "101/2"
+    );
+  }
+
+  // Trimming drops the extremes; winsorizing replaces them with the
+  // nearest value that survives, so the two differ as soon as the counts
+  // taken off the ends are not symmetric.
+  #[test]
+  fn winsorizing_replaces_where_trimming_drops() {
+    let data = "{1, 2, 3, 4, 5, 6, 7, 8, 9, 1000}";
+    // Floor[0.1 * 10] = 1 off the bottom, Floor[0.3 * 10] = 3 off the top.
+    assert_eq!(
+      interpret(&format!("TrimmedMean[{}, {{0.1, 0.3}}]", data)).unwrap(),
+      "9/2"
+    );
+    assert_eq!(
+      interpret(&format!("WinsorizedMean[{}, {{0.1, 0.3}}]", data)).unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret(&format!("TrimmedVariance[{}, {{0.1, 0.3}}]", data)).unwrap(),
+      "7/2"
+    );
+    assert_eq!(
+      interpret(&format!("WinsorizedVariance[{}, {{0.1, 0.3}}]", data))
+        .unwrap(),
+      "40/9"
+    );
+    // The pair may leave one end untouched.
+    assert_eq!(
+      interpret(&format!("TrimmedMean[{}, {{0, 0.2}}]", data)).unwrap(),
+      "9/2"
+    );
+    assert_eq!(
+      interpret(&format!("WinsorizedMean[{}, {{0, 0.2}}]", data)).unwrap(),
+      "26/5"
+    );
+  }
+
+  // An association is reduced over its values and a matrix column by
+  // column, for every one of the four heads.
+  #[test]
+  fn trimmed_and_winsorized_accept_associations_and_matrices() {
+    let assoc = "<|\"x\" -> 1, \"y\" -> 2, \"z\" -> 1000|>";
+    assert_eq!(
+      interpret(&format!("TrimmedMean[{}, 1/3]", assoc)).unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(&format!("WinsorizedMean[{}, 1/3]", assoc)).unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(&format!("WinsorizedVariance[{}, 1/3]", assoc)).unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret(&format!("WinsorizedVariance[{}]", assoc)).unwrap(),
+      "997003/3"
+    );
+    let matrix = "{{1, 2}, {3, 4}, {5, 100}}";
+    assert_eq!(
+      interpret(&format!("TrimmedMean[{}, 1/3]", matrix)).unwrap(),
+      "{3, 4}"
+    );
+    assert_eq!(
+      interpret(&format!("WinsorizedMean[{}, 1/3]", matrix)).unwrap(),
+      "{3, 4}"
+    );
+    assert_eq!(
+      interpret(&format!("WinsorizedVariance[{}, 1/3]", matrix)).unwrap(),
+      "{0, 0}"
+    );
+  }
+
+  // A variance needs two values, so trimming down to one reports rather
+  // than falling through to Variance's own complaint about the length.
+  #[test]
+  fn trimmed_variance_reports_insufficient_data() {
+    use woxi::interpret_with_stdout;
+    let insufficient = "TrimmedVariance::insffnt: There is insufficient data \
+                        to proceed with the computation."
+      .to_string();
+    for call in [
+      "TrimmedVariance[{1, 2, 3}, 1/3]",
+      "TrimmedVariance[{1, 2, 3, 4, 5}, 0.4]",
+      "TrimmedVariance[{1}, 0]",
+      "TrimmedVariance[{{1, 2}, {3, 4}, {5, 100}}, 1/3]",
+    ] {
+      let r = interpret_with_stdout(call).unwrap();
+      assert!(
+        r.warnings.contains(&insufficient),
+        "expected insffnt for {}, got {:?}",
+        call,
+        r.warnings
+      );
+    }
+    // Two values are enough.
+    assert_eq!(
+      interpret("TrimmedVariance[{1, 2, 3, 4}, 0.25]").unwrap(),
+      "1/2"
+    );
+    // Winsorizing keeps the count, so it always has enough.
+    assert_eq!(
+      interpret("WinsorizedVariance[{1, 2, 3}, 1/3]").unwrap(),
+      "0"
+    );
+  }
+
+  // A fraction that is not a number at all is reported like an
+  // out-of-range one, by every head.
+  #[test]
+  fn trimmed_and_winsorized_report_a_symbolic_fraction() {
+    use woxi::interpret_with_stdout;
+    for head in [
+      "TrimmedMean",
+      "WinsorizedMean",
+      "TrimmedVariance",
+      "WinsorizedVariance",
+    ] {
+      let r =
+        interpret_with_stdout(&format!("{}[{{1, 2, 3, 4}}, x]", head)).unwrap();
+      assert_eq!(r.result, format!("{}[{{1, 2, 3, 4}}, x]", head));
+      let expected = format!(
+        "{}::arg2: The second argument x is expected to be a non-negative \
+         number less than 0.5 or a list of two non-negative numbers that \
+         sum to less than 1.",
+        head
+      );
+      assert!(
+        r.warnings.contains(&expected),
+        "expected {:?}, got {:?}",
+        expected,
+        r.warnings
+      );
+    }
+  }
+
+  // The count taken off each end is Floor[f n], and a fraction that is a
+  // machine real just below an integer multiple still counts as that
+  // multiple.
+  #[test]
+  fn trimmed_count_rounds_before_flooring() {
+    assert_eq!(
+      interpret("TrimmedMean[Range[10], {0, 0.3}]").unwrap(),
+      interpret("TrimmedMean[Range[10], {0, 3/10}]").unwrap()
+    );
+    assert_eq!(interpret("TrimmedMean[Range[10], {0, 0.3}]").unwrap(), "4");
+    assert_eq!(
+      interpret("TrimmedMean[Range[3], {0, 0.3333333333333333}]").unwrap(),
+      "3/2"
+    );
+    assert_eq!(interpret("TrimmedMean[Range[7], {0, 1/7}]").unwrap(), "7/2");
+    // Floor[0.35 * 10] is 3, not 4.
+    assert_eq!(interpret("TrimmedMean[Range[10], {0, 0.35}]").unwrap(), "4");
+  }
+
   // EqualTo operator form
   #[test]
   fn equal_to_true() {

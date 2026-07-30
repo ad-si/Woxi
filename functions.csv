@@ -2653,7 +2653,7 @@ AbelianGroup,Represents an abelian group specified by invariant factors,✅,pure
 DelimitedSequence,Represents a delimited sequence of expressions,✅,pure,10.0,2693
 NotebookImport,,🚫,,10.1,2693
 TargetUnits,option for target units,✅,Symbolic,9.0,2693
-TrimmedMean,Mean after trimming extreme values,✅,none,6.0,2693
+TrimmedMean,Mean after dropping the lowest and highest Floor[f n] values (default f 0.05),✅,pure,6.0,2693
 CellOpen,,🚫,,3.0,2698
 EmbeddingLayer,,🚫,,11.0,2698
 GeoZoomLevel,,🚫,,10.0,2698
@@ -3931,7 +3931,7 @@ URLDecode,Decode a percent-encoded URL string,✅,pure,10.0,4027
 VertexCapacity,,,,9.0,4027
 WeaklyConnectedGraphQ,Test whether a directed graph is weakly connected (underlying undirected graph is connected),✅,pure,9.0,4027
 WindowStatusArea,,🚫,,6.0,4027
-WinsorizedMean,Mean after winsorizing extreme values,✅,none,11.1,4027
+WinsorizedMean,Mean after replacing the lowest and highest Floor[f n] values with the nearest retained value,✅,pure,11.1,4027
 AnglePath3D,3D angle path from successive {roll pitch yaw} rotations with unit or {dist angles} steps (exact radicals for exact angles),✅,pure,11.1,4052
 AudioPitchShift,Shift audio pitch by a ratio or semitone quantity preserving duration,✅,pure,11.0,4052
 BaseEncode,Base64-encode a ByteArray to a string,✅,pure,11.3,4052
@@ -3955,7 +3955,7 @@ SurfaceData,,🚫,,10.0,4052
 Synonyms,,🚫,,12.0,4052
 TagBoxOptions,,🚫,,6.0,4052
 TideData,,🚫,,11.2,4052
-WinsorizedVariance,Variance after winsorizing extreme values,✅,none,11.1,4052
+WinsorizedVariance,Variance after replacing the lowest and highest Floor[f n] values with the nearest retained value,✅,pure,11.1,4052
 AlgebraicIntegerQ,Tests whether a number is an algebraic integer,✅,pure,6.0,4081
 AsymptoticSum,,,,12.0,4081
 AudioChannels,Number of channels an audio object carries,✅,pure,11.0,4081
@@ -3981,7 +3981,7 @@ ParagraphIndent,,,,3.0,4081
 PartitionGranularity,,,,11.0,4081
 SolarEclipse,"Time of greatest eclipse and ""Type"" of the next solar eclipse after a date",✅,contextual,10.0,4081
 SystemsModelDimensions,,🚫,,8.0,4081
-TrimmedVariance,Variance after trimming extreme values,✅,none,11.1,4081
+TrimmedVariance,Variance after dropping the lowest and highest Floor[f n] values,✅,pure,11.1,4081
 URLDownloadSubmit,,🚫,,11.2,4081
 UpperRightArrow,,,,3.0,4081
 AskDisplay,,🚫,,10.4,4104

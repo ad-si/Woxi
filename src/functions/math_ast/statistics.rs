@@ -10137,3 +10137,180 @@ fn edit_distance_chars(a: &str, b: &str) -> usize {
   }
   prev[b.len()]
 }
+
+/// Which extreme values `trimmed_statistic_ast` removes and what it does
+/// with them.
+#[derive(Clone, Copy, PartialEq)]
+pub enum Extremes {
+  /// Drop them, as `TrimmedMean` and `TrimmedVariance` do.
+  Trim,
+  /// Replace them with the nearest value that survives, as
+  /// `WinsorizedMean` and `WinsorizedVariance` do.
+  Winsorize,
+}
+
+/// `TrimmedMean`, `TrimmedVariance`, `WinsorizedMean` and
+/// `WinsorizedVariance` are one computation: sort the data, take
+/// `Floor[f n]` values off each end — dropping them or replacing them
+/// with the nearest survivor — and average or take the variance of what
+/// is left. The fraction defaults to `0.05`, may be given as a single
+/// number below `1/2` or as a pair summing to below `1`, and anything
+/// else is reported as `<head>::arg2`. A matrix is reduced column by
+/// column. The variance heads need two values to work with and report
+/// `<head>::insffnt` when trimming leaves fewer.
+pub fn trimmed_statistic_ast(
+  head: &str,
+  args: &[Expr],
+  extremes: Extremes,
+  variance: bool,
+) -> Result<Expr, InterpreterError> {
+  // A SparseArray argument is handled via its dense form.
+  if let Some(dense) =
+    crate::functions::list_helpers_ast::densify_sparse_array(&args[0])
+  {
+    let mut dense_args = args.to_vec();
+    dense_args[0] = dense;
+    return trimmed_statistic_ast(head, &dense_args, extremes, variance);
+  }
+  let uneval = || Ok(unevaluated(head, args));
+  let Expr::List(elems) = &args[0] else {
+    return uneval();
+  };
+  if elems.is_empty() {
+    return uneval();
+  }
+
+  // Resolve the fraction into the number of values taken off each end.
+  let count = |fraction: f64, n: usize| (fraction * n as f64).floor() as usize;
+  let arg2 = || {
+    crate::emit_message(&format!(
+      "{}::arg2: The second argument {} is expected to be a non-negative \
+       number less than 0.5 or a list of two non-negative numbers that sum \
+       to less than 1.",
+      head,
+      expr_to_string(&args[1])
+    ));
+  };
+  let n = elems.len();
+  let (low, high) = match args.get(1) {
+    None => (count(0.05, n), count(0.05, n)),
+    Some(Expr::List(fractions)) if fractions.len() == 2 => {
+      let (Some(first), Some(second)) = (
+        super::try_eval_to_f64(&fractions[0]),
+        super::try_eval_to_f64(&fractions[1]),
+      ) else {
+        arg2();
+        return uneval();
+      };
+      if first < 0.0 || second < 0.0 || first + second >= 1.0 {
+        arg2();
+        return uneval();
+      }
+      (count(first, n), count(second, n))
+    }
+    Some(spec) => {
+      let Some(fraction) = super::try_eval_to_f64(spec) else {
+        arg2();
+        return uneval();
+      };
+      if !(0.0..0.5).contains(&fraction) {
+        arg2();
+        return uneval();
+      }
+      (count(fraction, n), count(fraction, n))
+    }
+  };
+  if low + high >= n {
+    return uneval();
+  }
+
+  // A matrix is reduced one column at a time, so that a column too short
+  // to have a variance reports rather than falling back on threading.
+  if let Some(columns) = numeric_columns(elems) {
+    let mut results = Vec::with_capacity(columns.len());
+    for column in columns {
+      let column_args = [Expr::List(column.into()), args_fraction(args)];
+      let reduced = trimmed_statistic_ast(
+        head,
+        &column_args[..if args.len() > 1 { 2 } else { 1 }],
+        extremes,
+        variance,
+      )?;
+      if matches!(&reduced, Expr::FunctionCall { name, .. } if name == head) {
+        return uneval();
+      }
+      results.push(reduced);
+    }
+    return Ok(Expr::List(results.into()));
+  }
+
+  let mut sorted: Vec<Expr> = elems.to_vec();
+  sorted.sort_by(|a, b| {
+    let (a, b) = (
+      super::try_eval_to_f64(a).unwrap_or(0.0),
+      super::try_eval_to_f64(b).unwrap_or(0.0),
+    );
+    a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal)
+  });
+  let sample: Vec<Expr> = match extremes {
+    Extremes::Trim => sorted[low..n - high].to_vec(),
+    Extremes::Winsorize => {
+      let (lowest, highest) =
+        (sorted[low].clone(), sorted[n - high - 1].clone());
+      let mut winsorized = sorted;
+      for value in winsorized.iter_mut().take(low) {
+        *value = lowest.clone();
+      }
+      for value in winsorized.iter_mut().skip(n - high) {
+        *value = highest.clone();
+      }
+      winsorized
+    }
+  };
+
+  if variance {
+    if sample.len() < 2 {
+      crate::emit_message(&format!(
+        "{}::insffnt: There is insufficient data to proceed with the \
+         computation.",
+        head
+      ));
+      return uneval();
+    }
+    return variance_ast(&[Expr::List(sample.into())]);
+  }
+  let total = unevaluated("Plus", &sample);
+  let mean = binop(
+    BinaryOperator::Divide,
+    total,
+    Expr::Integer(sample.len() as i128),
+  );
+  crate::evaluator::evaluate_expr_to_expr(&mean)
+}
+
+/// The rows of `elems` as columns, if every element is a list and they all
+/// have the same non-zero length. `None` for a flat list of values.
+fn numeric_columns(elems: &[Expr]) -> Option<Vec<Vec<Expr>>> {
+  let mut rows = Vec::with_capacity(elems.len());
+  for element in elems {
+    let Expr::List(row) = element else {
+      return None;
+    };
+    rows.push(row);
+  }
+  let width = rows.first()?.len();
+  if width == 0 || rows.iter().any(|row| row.len() != width) {
+    return None;
+  }
+  Some(
+    (0..width)
+      .map(|column| rows.iter().map(|row| row[column].clone()).collect())
+      .collect(),
+  )
+}
+
+/// The fraction argument of a `Trimmed*`/`Winsorized*` call, or a
+/// placeholder when the call has none.
+fn args_fraction(args: &[Expr]) -> Expr {
+  args.get(1).cloned().unwrap_or(Expr::Integer(0))
+}

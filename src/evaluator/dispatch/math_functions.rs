@@ -993,234 +993,22 @@ pub fn dispatch_math_functions(
     "Standardize" if !args.is_empty() && args.len() <= 3 => {
       return Some(standardize_ast(args));
     }
-    "TrimmedMean" if (1..=2).contains(&args.len()) => {
-      // TrimmedMean[list]              ≡ TrimmedMean[list, 0.05]
-      // TrimmedMean[list, f]           — drop floor(f*n) smallest and largest
-      // TrimmedMean[list, {f1, f2}]    — drop floor(f1*n) smallest, floor(f2*n) largest
-      // A SparseArray data argument is handled via its dense form.
-      if let Some(dense) =
-        crate::functions::list_helpers_ast::densify_sparse_array(&args[0])
-      {
-        let mut new_args = args.to_vec();
-        new_args[0] = dense;
-        return Some(crate::evaluator::evaluate_function_call_ast(
-          "TrimmedMean",
-          &new_args,
-        ));
-      }
-      if let Expr::List(elems) = &args[0] {
-        let n = elems.len();
-        // The trimming fraction must be a non-negative number < 0.5, or a list
-        // of two non-negative numbers summing to < 1; otherwise emit arg2 and
-        // stay unevaluated (rather than silently mis-trimming).
-        let arg2_error = || {
-          crate::emit_message(&format!(
-            "TrimmedMean::arg2: The second argument {} is expected to be a non-negative number less than 0.5 or a list of two non-negative numbers that sum to less than 1.",
-            crate::syntax::expr_to_string(&args[1])
-          ));
-          Some(Ok(unevaluated("TrimmedMean", args)))
-        };
-        let (trim_lo, trim_hi) = match args.get(1) {
-          None => {
-            let t = (n as f64 * 0.05).floor() as usize;
-            (t, t)
-          }
-          Some(Expr::List(fs)) if fs.len() == 2 => {
-            let f1 = expr_to_f64(&fs[0])?;
-            let f2 = expr_to_f64(&fs[1])?;
-            if f1 < 0.0 || f2 < 0.0 || f1 + f2 >= 1.0 {
-              return arg2_error();
-            }
-            (
-              (n as f64 * f1).floor() as usize,
-              (n as f64 * f2).floor() as usize,
-            )
-          }
-          Some(other) => {
-            let f = expr_to_f64(other)?;
-            if !(0.0..0.5).contains(&f) {
-              return arg2_error();
-            }
-            let t = (n as f64 * f).floor() as usize;
-            (t, t)
-          }
-        };
-        if trim_lo + trim_hi < n {
-          let mut sorted: Vec<Expr> = elems.to_vec();
-          sorted.sort_by(|a, b| {
-            let fa = expr_to_f64(a).unwrap_or(0.0);
-            let fb = expr_to_f64(b).unwrap_or(0.0);
-            fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
-          });
-          let trimmed = &sorted[trim_lo..n - trim_hi];
-          let sum_expr = unevaluated("Plus", trimmed);
-          let result = binop(
-            BinaryOperator::Divide,
-            sum_expr,
-            Expr::Integer(trimmed.len() as i128),
-          );
-          return Some(evaluate_expr_to_expr(&result));
-        }
-      }
-    }
-    "WinsorizedMean" if args.len() == 2 => {
-      // WinsorizedMean[list, f]         — replace the lowest/highest floor(f*n)
-      //                                   values with the boundary value, mean.
-      // WinsorizedMean[list, {f1, f2}]  — winsorize floor(f1*n) at the bottom,
-      //                                   floor(f2*n) at the top.
-      if let Expr::List(elems) = &args[0] {
-        let n = elems.len();
-        // The winsorizing fraction must be a non-negative number < 0.5, or a
-        // list of two non-negative numbers summing to < 1; otherwise emit arg2
-        // and stay unevaluated (rather than silently mis-winsorizing).
-        let arg2_error = || {
-          crate::emit_message(&format!(
-            "WinsorizedMean::arg2: The second argument {} is expected to be a non-negative number less than 0.5 or a list of two non-negative numbers that sum to less than 1.",
-            crate::syntax::expr_to_string(&args[1])
-          ));
-          Some(Ok(unevaluated("WinsorizedMean", args)))
-        };
-        let (trim_lo, trim_hi) = match &args[1] {
-          Expr::List(fs) if fs.len() == 2 => {
-            match (expr_to_f64(&fs[0]), expr_to_f64(&fs[1])) {
-              (Some(f1), Some(f2)) => {
-                if f1 < 0.0 || f2 < 0.0 || f1 + f2 >= 1.0 {
-                  return arg2_error();
-                }
-                (
-                  (n as f64 * f1).floor() as usize,
-                  (n as f64 * f2).floor() as usize,
-                )
-              }
-              _ => return None,
-            }
-          }
-          other => {
-            let f = expr_to_f64(other)?;
-            if !(0.0..0.5).contains(&f) {
-              return arg2_error();
-            }
-            let t = (n as f64 * f).floor() as usize;
-            (t, t)
-          }
-        };
-        if trim_lo + trim_hi < n {
-          let mut sorted: Vec<Expr> = elems.to_vec();
-          sorted.sort_by(|a, b| {
-            let fa = expr_to_f64(a).unwrap_or(0.0);
-            let fb = expr_to_f64(b).unwrap_or(0.0);
-            fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
-          });
-          // Replace the bottom trim_lo with sorted[trim_lo] and the top
-          // trim_hi with sorted[n-trim_hi-1].
-          let low = sorted[trim_lo].clone();
-          let high = sorted[n - trim_hi - 1].clone();
-          let mut winsorized = sorted.clone();
-          for item in winsorized.iter_mut().take(trim_lo) {
-            *item = low.clone();
-          }
-          for item in winsorized.iter_mut().skip(n - trim_hi) {
-            *item = high.clone();
-          }
-          let sum_expr = Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: winsorized.into(),
-          };
-          let result =
-            binop(BinaryOperator::Divide, sum_expr, Expr::Integer(n as i128));
-          return Some(evaluate_expr_to_expr(&result));
-        }
-      }
-    }
-    "TrimmedVariance" if (1..=2).contains(&args.len()) => {
-      // TrimmedVariance[list]            ≡ TrimmedVariance[list, 0.05]
-      // TrimmedVariance[list, f]         — drop floor(f*n) from each end
-      // TrimmedVariance[list, {f1, f2}]  — drop floor(f1*n) smallest,
-      //                                    floor(f2*n) largest
-      if let Expr::List(elems) = &args[0] {
-        let n = elems.len();
-        let arg2_error = || {
-          crate::emit_message(&format!(
-            "TrimmedVariance::arg2: The second argument {} is expected to be a non-negative number less than 0.5 or a list of two non-negative numbers that sum to less than 1.",
-            crate::syntax::expr_to_string(&args[1])
-          ));
-          Some(Ok(unevaluated("TrimmedVariance", args)))
-        };
-        let (trim_lo, trim_hi) = match args.get(1) {
-          None => {
-            let t = (n as f64 * 0.05).floor() as usize;
-            (t, t)
-          }
-          Some(Expr::List(fs)) if fs.len() == 2 => {
-            let f1 = expr_to_f64(&fs[0])?;
-            let f2 = expr_to_f64(&fs[1])?;
-            if f1 < 0.0 || f2 < 0.0 || f1 + f2 >= 1.0 {
-              return arg2_error();
-            }
-            (
-              (n as f64 * f1).floor() as usize,
-              (n as f64 * f2).floor() as usize,
-            )
-          }
-          Some(other) => {
-            let f = expr_to_f64(other)?;
-            if !(0.0..0.5).contains(&f) {
-              return arg2_error();
-            }
-            let t = (n as f64 * f).floor() as usize;
-            (t, t)
-          }
-        };
-        if trim_lo + trim_hi < n {
-          let mut sorted: Vec<Expr> = elems.to_vec();
-          sorted.sort_by(|a, b| {
-            let fa = expr_to_f64(a).unwrap_or(0.0);
-            let fb = expr_to_f64(b).unwrap_or(0.0);
-            fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
-          });
-          let trimmed: Vec<Expr> = sorted[trim_lo..n - trim_hi].to_vec();
-          return Some(crate::functions::math_ast::variance_ast(&[
-            Expr::List(trimmed.into()),
-          ]));
-        }
-      }
-    }
-    "WinsorizedVariance" if args.len() == 2 => {
-      // WinsorizedVariance[list, frac] — variance of winsorized data
-      if let Expr::List(elems) = &args[0]
-        && let Some(frac) = expr_to_f64(&args[1])
-      {
-        // A fraction outside [0, 0.5) is rejected with arg2.
-        if !(0.0..0.5).contains(&frac) {
-          crate::emit_message(&format!(
-            "WinsorizedVariance::arg2: The second argument {} is expected to be a non-negative number less than 0.5 or a list of two non-negative numbers that sum to less than 1.",
-            crate::syntax::expr_to_string(&args[1])
-          ));
-          return Some(Ok(unevaluated("WinsorizedVariance", args)));
-        }
-        let n = elems.len();
-        let trim = (n as f64 * frac).floor() as usize;
-        if 2 * trim < n {
-          let mut sorted: Vec<Expr> = elems.to_vec();
-          sorted.sort_by(|a, b| {
-            let fa = expr_to_f64(a).unwrap_or(0.0);
-            let fb = expr_to_f64(b).unwrap_or(0.0);
-            fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
-          });
-          let low = sorted[trim].clone();
-          let high = sorted[n - trim - 1].clone();
-          let mut winsorized = sorted;
-          for item in winsorized.iter_mut().take(trim) {
-            *item = low.clone();
-          }
-          for item in winsorized.iter_mut().skip(n - trim) {
-            *item = high.clone();
-          }
-          return Some(crate::functions::math_ast::variance_ast(&[
-            Expr::List(winsorized.into()),
-          ]));
-        }
-      }
+    "TrimmedMean" | "WinsorizedMean" | "TrimmedVariance"
+    | "WinsorizedVariance"
+      if (1..=2).contains(&args.len()) =>
+    {
+      use crate::functions::math_ast::Extremes;
+      let extremes = if name.starts_with("Trimmed") {
+        Extremes::Trim
+      } else {
+        Extremes::Winsorize
+      };
+      return Some(crate::functions::math_ast::trimmed_statistic_ast(
+        name,
+        args,
+        extremes,
+        name.ends_with("Variance"),
+      ));
     }
     "MeanDeviation" if args.len() == 1 => {
       return Some(crate::functions::math_ast::mean_deviation_ast(args));
@@ -8099,8 +7887,6 @@ fn image_min_max_filter(
     image_type: *image_type,
   })
 }
-
-use crate::functions::math_ast::expr_to_f64;
 
 /// Standardize[data] — subtract mean and divide by standard deviation
 /// Standardize[data, f1, f2] — use f1 for location and f2 for scale
