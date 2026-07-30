@@ -8336,6 +8336,143 @@ mod solve_with_domain {
   }
 }
 
+// Modulus -> n solves over the integers modulo n. Without it Solve answered
+// over the rationals and reported those roots as if they were residues:
+// Solve[x^2 == 2, x, Modulus -> 7] gave {{x -> -Sqrt[2]}, {x -> Sqrt[2]}}.
+mod solve_modulus {
+  use super::*;
+
+  #[test]
+  fn quadratic_residues() {
+    assert_eq!(
+      interpret("Solve[x^2 == 2, x, Modulus -> 7]").unwrap(),
+      "{{x -> 3}, {x -> 4}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^2 + 1 == 0, x, Modulus -> 5]").unwrap(),
+      "{{x -> 2}, {x -> 3}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^3 == 1, x, Modulus -> 7]").unwrap(),
+      "{{x -> 1}, {x -> 2}, {x -> 4}}"
+    );
+  }
+
+  #[test]
+  fn no_residue_gives_no_solutions() {
+    // 3 is not a quadratic residue mod 7.
+    assert_eq!(interpret("Solve[x^2 == 3, x, Modulus -> 7]").unwrap(), "{}");
+    // Nor is 2 a square mod 4.
+    assert_eq!(interpret("Solve[x^2 == 2, x, Modulus -> 4]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn composite_modulus_and_reduction() {
+    // 2 x == 4 mod 6 has two residues, not the single rational root 2.
+    assert_eq!(
+      interpret("Solve[2 x == 4, x, Modulus -> 6]").unwrap(),
+      "{{x -> 2}, {x -> 5}}"
+    );
+    // A modular inverse rather than a fraction.
+    assert_eq!(
+      interpret("Solve[2 x == 1, x, Modulus -> 5]").unwrap(),
+      "{{x -> 3}}"
+    );
+    // The right-hand side is reduced too.
+    assert_eq!(
+      interpret("Solve[x == 3, x, Modulus -> 2]").unwrap(),
+      "{{x -> 1}}"
+    );
+  }
+
+  #[test]
+  fn modulus_zero_is_the_default() {
+    assert_eq!(
+      interpret("Solve[x^2 == 2, x, Modulus -> 0]").unwrap(),
+      "{{x -> -Sqrt[2]}, {x -> Sqrt[2]}}"
+    );
+  }
+
+  // Reduce still ignores Modulus for a multivariate *nonlinear* system, so
+  // rather than pass its rational answer off as a modular one, the call is
+  // refused.
+  #[test]
+  fn multivariate_nonlinear_stays_unevaluated() {
+    assert_eq!(
+      interpret("Solve[{x^2 == 2, y == x}, {x, y}, Modulus -> 7]").unwrap(),
+      "Solve[{x^2 == 2, y == x}, {x, y}, Modulus -> 7]"
+    );
+  }
+}
+
+// MaxRoots keeps only the leading solutions.
+mod solve_max_roots {
+  use super::*;
+
+  #[test]
+  fn truncates_to_the_requested_count() {
+    assert_eq!(
+      interpret("Solve[x^3 == 1, x, MaxRoots -> 1]").unwrap(),
+      "{{x -> 1}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^3 == 1, x, MaxRoots -> 2]").unwrap(),
+      "{{x -> 1}, {x -> -(-1)^(1/3)}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^4 == 1, x, MaxRoots -> 3]").unwrap(),
+      "{{x -> -1}, {x -> -I}, {x -> I}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^5 - x - 1 == 0, x, MaxRoots -> 1]").unwrap(),
+      "{{x -> Root[-1 - #1 + #1^5 & , 1, 0]}}"
+    );
+  }
+
+  #[test]
+  fn a_larger_budget_than_there_are_roots() {
+    assert_eq!(
+      interpret("Solve[x^2 == 1, x, MaxRoots -> 5]").unwrap(),
+      "{{x -> -1}, {x -> 1}}"
+    );
+  }
+
+  #[test]
+  fn infinity_and_automatic_keep_everything() {
+    assert_eq!(
+      interpret("Solve[x^2 == 2, x, MaxRoots -> Infinity]").unwrap(),
+      "{{x -> -Sqrt[2]}, {x -> Sqrt[2]}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^2 == 2, x, MaxRoots -> Automatic]").unwrap(),
+      "{{x -> -Sqrt[2]}, {x -> Sqrt[2]}}"
+    );
+  }
+
+  #[test]
+  fn non_positive_count_is_refused() {
+    use woxi::interpret_with_stdout;
+    let r = interpret_with_stdout("Solve[x^3 == 1, x, MaxRoots -> 0]").unwrap();
+    assert_eq!(r.result, "Solve[x^3 == 1, x, MaxRoots -> 0]");
+    assert!(
+      r.warnings.iter().any(|w| w
+        == "Solve::maxrts: The value 0 of the MaxRoots option is not a \
+            positive integer, Infinity or Automatic."),
+      "expected maxrts message, got {:?}",
+      r.warnings
+    );
+    let r =
+      interpret_with_stdout("Solve[x^2 == 2, x, MaxRoots -> 1.5]").unwrap();
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("Solve::maxrts: The value 1.5")),
+      "expected maxrts message, got {:?}",
+      r.warnings
+    );
+  }
+}
+
 // Solving a periodic (trig) equation over a bounded interval specializes the
 // general ConditionalExpression family to the concrete solutions in range.
 mod solve_periodic_bounded {

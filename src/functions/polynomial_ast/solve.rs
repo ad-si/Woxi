@@ -1314,7 +1314,217 @@ fn report_inverse_function_use() {
   ));
 }
 
+/// Solve[eqns, vars] and its option forms.
+///
+/// `Modulus -> n` solves over the integers modulo `n`, which the modular
+/// `Reduce` already knows how to do — this delegates to it and turns the
+/// `x == a || x == b` it reports back into Solve's list of rules. `MaxRoots`
+/// caps how many solutions come back. Both are peeled off here so the solver
+/// proper never sees them.
+///
+/// The rules inside one multivariate modular solution come out in the order the
+/// variables were given; wolframscript orders them by its own elimination path,
+/// which reverses them for a linear system but not otherwise.
 pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Only a trailing rule can be an option — `Solve[eqns, vars, Reals]` passes a
+  // domain in the same slot.
+  let mut modulus: Option<i128> = None;
+  let mut max_roots: Option<usize> = None;
+  let mut positional: Vec<Expr> = Vec::with_capacity(args.len());
+  for arg in args {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = arg
+    else {
+      positional.push(arg.clone());
+      continue;
+    };
+    let Expr::Identifier(name) = pattern.as_ref() else {
+      positional.push(arg.clone());
+      continue;
+    };
+    match name.as_str() {
+      "Modulus" => match replacement.as_ref() {
+        Expr::Integer(n) if *n > 1 => modulus = Some(*n),
+        // Modulus -> 0 is the default: no modular arithmetic.
+        Expr::Integer(0) => {}
+        _ => positional.push(arg.clone()),
+      },
+      "MaxRoots" => match replacement.as_ref() {
+        Expr::Integer(n) if *n >= 1 => max_roots = Some(*n as usize),
+        Expr::Identifier(id) if id == "Infinity" || id == "Automatic" => {}
+        other => {
+          crate::emit_message(&format!(
+            "Solve::maxrts: The value {} of the MaxRoots option is not a \
+             positive integer, Infinity or Automatic.",
+            crate::syntax::format_expr(other, crate::syntax::ExprForm::Output)
+          ));
+          return Ok(unevaluated("Solve", args));
+        }
+      },
+      _ => positional.push(arg.clone()),
+    }
+  }
+
+  let solutions = match modulus {
+    Some(n) => solve_modular(&positional, n, args)?,
+    None => solve_core(&positional)?,
+  };
+  // MaxRoots keeps the leading solutions of a solution list; anything else
+  // (an unevaluated call, a conditional form) passes through untouched.
+  match (max_roots, &solutions) {
+    (Some(n), Expr::List(items)) if items.len() > n => {
+      Ok(Expr::List(items.iter().take(n).cloned().collect()))
+    }
+    _ => Ok(solutions),
+  }
+}
+
+/// Solve[eqns, vars, Modulus -> n] — delegate to the modular `Reduce` and turn
+/// its conjunction/disjunction of equalities into Solve's list of rules.
+fn solve_modular(
+  positional: &[Expr],
+  n: i128,
+  original: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if positional.len() < 2 {
+    return Ok(unevaluated("Solve", original));
+  }
+  // The variables, in the order they were given, so each solution lists its
+  // rules in that order.
+  let vars: Vec<String> = match &positional[1] {
+    Expr::List(items) => items
+      .iter()
+      .filter_map(|v| match v {
+        Expr::Identifier(name) => Some(name.clone()),
+        _ => None,
+      })
+      .collect(),
+    Expr::Identifier(name) => vec![name.clone()],
+    _ => return Ok(unevaluated("Solve", original)),
+  };
+  if vars.is_empty() {
+    return Ok(unevaluated("Solve", original));
+  }
+  let reduced = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Reduce".to_string(),
+    args: vec![
+      positional[0].clone(),
+      positional[1].clone(),
+      Expr::Rule {
+        pattern: Box::new(Expr::Identifier("Modulus".to_string())),
+        replacement: Box::new(Expr::Integer(n)),
+      },
+    ]
+    .into(),
+  })?;
+  // `False` means no solutions; `True` means every value works, which Reduce
+  // does not report for a modular system, so anything else unrecognised leaves
+  // the call alone rather than guessing.
+  match &reduced {
+    Expr::Identifier(s) if s == "False" => {
+      return Ok(Expr::List(vec![].into()));
+    }
+    _ => {}
+  }
+  let Some(branches) = modular_solution_branches(&reduced, &vars) else {
+    return Ok(unevaluated("Solve", original));
+  };
+  // Every value of a modular solution has to be a residue. `Reduce` still
+  // ignores `Modulus` for a multivariate *nonlinear* system and answers over the
+  // rationals, so refuse rather than dress that up as a modular solution.
+  if branches.iter().any(|assignment| {
+    assignment.iter().any(
+      |(_, value)| !matches!(value, Expr::Integer(k) if (0..n).contains(k)),
+    )
+  }) {
+    return Ok(unevaluated("Solve", original));
+  }
+  Ok(Expr::List(
+    branches
+      .into_iter()
+      .map(|assignment| {
+        Expr::List(
+          vars
+            .iter()
+            .filter_map(|v| {
+              assignment.iter().find(|(name, _)| name == v).map(
+                |(name, value)| Expr::Rule {
+                  pattern: Box::new(Expr::Identifier(name.clone())),
+                  replacement: Box::new(value.clone()),
+                },
+              )
+            })
+            .collect(),
+        )
+      })
+      .collect(),
+  ))
+}
+
+/// Split a modular `Reduce` result into one `(variable, value)` assignment list
+/// per solution. `Or` separates solutions and `And` gathers the variables of
+/// one; a bare `var == value` is a single one-variable solution. Returns `None`
+/// for any other shape.
+fn modular_solution_branches(
+  reduced: &Expr,
+  vars: &[String],
+) -> Option<Vec<Vec<(String, Expr)>>> {
+  // Flatten a nested Or/And of the given head into its leaves.
+  fn parts(e: &Expr, head: &str) -> Vec<Expr> {
+    match e {
+      Expr::FunctionCall { name, args } if name == head => {
+        args.iter().flat_map(|a| parts(a, head)).collect()
+      }
+      Expr::BinaryOp { op, left, right } if format!("{:?}", op) == head => {
+        let mut out = parts(left, head);
+        out.extend(parts(right, head));
+        out
+      }
+      other => vec![other.clone()],
+    }
+  }
+  let equality = |e: &Expr| -> Option<(String, Expr)> {
+    let (lhs, rhs) = match e {
+      Expr::Comparison {
+        operands,
+        operators,
+      } if operands.len() == 2
+        && operators.len() == 1
+        && operators[0] == ComparisonOp::Equal =>
+      {
+        (&operands[0], &operands[1])
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Equal" && args.len() == 2 =>
+      {
+        (&args[0], &args[1])
+      }
+      _ => return None,
+    };
+    match lhs {
+      Expr::Identifier(name) if vars.contains(name) => {
+        Some((name.clone(), rhs.clone()))
+      }
+      _ => None,
+    }
+  };
+  let mut branches = Vec::new();
+  for branch in parts(reduced, "Or") {
+    let mut assignment = Vec::new();
+    for conjunct in parts(&branch, "And") {
+      assignment.push(equality(&conjunct)?);
+    }
+    if assignment.is_empty() {
+      return None;
+    }
+    branches.push(assignment);
+  }
+  Some(branches)
+}
+
+fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let _constrained = SuppressIfun::new(
     args.first().is_some_and(has_inequality)
       || matches!(args.get(2), Some(Expr::Identifier(d)) if d == "Reals"),

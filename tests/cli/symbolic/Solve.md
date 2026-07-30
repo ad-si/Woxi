@@ -82,3 +82,44 @@ A list of constraints is the same system as the conjunction of them:
 $ wo 'Solve[{Sin[x] == 0, 0 < x < 7}, x]'
 {{x -> Pi}, {x -> 2*Pi}}
 ```
+
+`Modulus -> n` solves over the integers modulo `n`, so the answers are residues
+rather than radicals:
+
+```scrut
+$ wo 'Solve[x^2 == 2, x, Modulus -> 7]'
+{{x -> 3}, {x -> 4}}
+```
+
+```scrut
+$ wo 'Solve[x^3 == 1, x, Modulus -> 7]'
+{{x -> 1}, {x -> 2}, {x -> 4}}
+```
+
+There may be none, and the modulus need not be prime:
+
+```scrut
+$ wo 'Solve[x^2 == 3, x, Modulus -> 7]'
+{}
+```
+
+```scrut
+$ wo 'Solve[2 x == 4, x, Modulus -> 6]'
+{{x -> 2}, {x -> 5}}
+```
+
+`MaxRoots -> n` keeps only the first `n` solutions:
+
+```scrut
+$ wo 'Solve[x^4 == 1, x, MaxRoots -> 3]'
+{{x -> -1}, {x -> -I}, {x -> I}}
+```
+
+It has to be a positive integer, `Infinity` or `Automatic`:
+
+```scrut
+$ wo 'Solve[x^3 == 1, x, MaxRoots -> 0]'
+
+Solve::maxrts: The value 0 of the MaxRoots option is not a positive integer, Infinity or Automatic.
+Solve[x^3 == 1, x, MaxRoots -> 0]
+```
