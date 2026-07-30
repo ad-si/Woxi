@@ -730,6 +730,180 @@ mod cases {
       r#"6"#,
     );
   }
+  // The built-in option lists of the core symbolic and numeric functions, each
+  // transcribed from wolframscript. Options carrying a `$…` global stay delayed.
+  #[test]
+  fn builtin_options_of_computation_heads() {
+    assert_case(r#"Options[D]"#, r#"{NonConstants -> {}}"#);
+    assert_case(r#"Options[Root]"#, r#"{ExactRootIsolation -> False}"#);
+    assert_case(
+      r#"Options[Total]"#,
+      r#"{AllowedHeads -> Automatic, Method -> Automatic}"#,
+    );
+    assert_case(
+      r#"Options[StringSplit]"#,
+      r#"{IgnoreCase -> False, MetaCharacters -> None}"#,
+    );
+    assert_case(
+      r#"Options[StringCases]"#,
+      r#"{IgnoreCase -> False, MetaCharacters -> None, Overlaps -> False}"#,
+    );
+    assert_case(
+      r#"Options[Refine]"#,
+      r#"{Assumptions :> $Assumptions, TimeConstraint -> 30}"#,
+    );
+    assert_case(
+      r#"Options[Nearest]"#,
+      r#"{DistanceFunction -> Automatic, Method -> Automatic, WorkingPrecision -> Automatic}"#,
+    );
+    assert_case(
+      r#"Options[Interpolation]"#,
+      r#"{InterpolationOrder -> 3, Method -> Automatic, PeriodicInterpolation -> False}"#,
+    );
+    assert_case(
+      r#"Options[Factor]"#,
+      r#"{Extension -> None, GaussianIntegers -> False, Modulus -> 0, Trig -> False}"#,
+    );
+    assert_case(
+      r#"Options[Series]"#,
+      r#"{Analytic -> True, Assumptions :> $Assumptions, SeriesTermGoal -> Automatic}"#,
+    );
+    assert_case(
+      r#"Options[Limit]"#,
+      r#"{Analytic -> False, Assumptions :> $Assumptions, Direction -> Reals, GenerateConditions -> Automatic, Method -> Automatic, PerformanceGoal :> $PerformanceGoal}"#,
+    );
+    assert_case(
+      r#"Options[Sum]"#,
+      r#"{Assumptions :> $Assumptions, GenerateConditions -> False, GeneratedParameters -> None, Method -> Automatic, Regularization -> None, VerifyConvergence -> True}"#,
+    );
+    assert_case(
+      r#"Options[Solve]"#,
+      r#"{Assumptions :> $Assumptions, Cubics -> Automatic, GeneratedParameters -> C, InverseFunctions -> Automatic, MaxExtraConditions -> 0, MaxRoots -> Infinity, Method -> Automatic, Modulus -> 0, Quartics -> Automatic, VerifySolutions -> Automatic, WorkingPrecision -> Infinity}"#,
+    );
+    assert_case(
+      r#"Options[FindRoot]"#,
+      r#"{AccuracyGoal -> Automatic, Compiled -> Automatic, DampingFactor -> 1, Evaluated -> True, EvaluationMonitor -> None, Jacobian -> Automatic, MaxIterations -> 100, Method -> Automatic, PrecisionGoal -> Automatic, StepMonitor -> None, WorkingPrecision -> MachinePrecision}"#,
+    );
+    // Simplify and FullSimplify differ only in their time budget.
+    assert_case(
+      r#"Options[Simplify]"#,
+      r#"{Assumptions :> $Assumptions, ComplexityFunction -> Automatic, ExcludedForms -> {}, TimeConstraint -> 300, TransformationFunctions -> Automatic, Trig -> True}"#,
+    );
+    assert_case(
+      r#"Options[FullSimplify]"#,
+      r#"{Assumptions :> $Assumptions, ComplexityFunction -> Automatic, ExcludedForms -> {}, TimeConstraint -> Infinity, TransformationFunctions -> Automatic, Trig -> True}"#,
+    );
+    // A symbol with no options still reports none.
+    assert_case(r#"Options[Sin]"#, r#"{}"#);
+  }
+
+  // SetOptions[f, name -> value] replaces that entry in Options[f], keeping the
+  // original order, and returns the updated list.
+  #[test]
+  fn set_options_updates_and_returns_the_list() {
+    assert_case(
+      r#"SetOptions[Total, Method -> "X"]"#,
+      r#"{AllowedHeads -> Automatic, Method -> X}"#,
+    );
+    // The change sticks.
+    assert_case(
+      r#"SetOptions[Total, Method -> "X"]; Options[Total]"#,
+      r#"{AllowedHeads -> Automatic, Method -> X}"#,
+    );
+    // And OptionValue reads it back.
+    assert_case(
+      r#"SetOptions[Total, Method -> 7]; OptionValue[Total, Method]"#,
+      r#"7"#,
+    );
+    // Several options at once, in any order.
+    assert_case(
+      r#"SetOptions[Total, Method -> 1, AllowedHeads -> 2]"#,
+      r#"{AllowedHeads -> 2, Method -> 1}"#,
+    );
+    // Options may be gathered into a list.
+    assert_case(
+      r#"SetOptions[Total, {Method -> "Y"}]"#,
+      r#"{AllowedHeads -> Automatic, Method -> Y}"#,
+    );
+    // A string names the same option as the symbol, and is stored as one.
+    assert_case(
+      r#"SetOptions[StringSplit, "IgnoreCase" -> True]"#,
+      r#"{IgnoreCase -> True, MetaCharacters -> None}"#,
+    );
+    // A delayed rule stays delayed.
+    assert_case(
+      r#"SetOptions[Total, Method :> qq]"#,
+      r#"{AllowedHeads -> Automatic, Method :> qq}"#,
+    );
+    // Untouched entries keep their delayed defaults.
+    assert_case(
+      r#"SetOptions[Simplify, TimeConstraint -> 5, ComplexityFunction -> f]"#,
+      r#"{Assumptions :> $Assumptions, ComplexityFunction -> f, ExcludedForms -> {}, TimeConstraint -> 5, TransformationFunctions -> Automatic, Trig -> True}"#,
+    );
+    // With no options to set, the current list comes back unchanged.
+    assert_case(
+      r#"SetOptions[Total]"#,
+      r#"{AllowedHeads -> Automatic, Method -> Automatic}"#,
+    );
+  }
+
+  // A name that is not already an option of f refuses the whole call, so
+  // nothing is changed even when other names in the same call are valid.
+  #[test]
+  fn set_options_rejects_unknown_names_atomically() {
+    use woxi::interpret_with_stdout;
+    let r = interpret_with_stdout(
+      r#"SetOptions[Total, Method -> 5]; SetOptions[Total, Bogus -> 1, Method -> 9]"#,
+    )
+    .unwrap();
+    assert_eq!(r.result, "SetOptions[Total, Bogus -> 1, Method -> 9]");
+    assert!(
+      r.warnings.iter().any(
+        |w| w == "SetOptions::optnf: Bogus is not a known option for Total."
+      ),
+      "expected optnf message, got {:?}",
+      r.warnings
+    );
+    // Method kept the value the earlier call gave it.
+    assert_case(
+      r#"SetOptions[Total, Method -> 5]; SetOptions[Total, Bogus -> 1, Method -> 9]; Options[Total]"#,
+      r#"{AllowedHeads -> Automatic, Method -> 5}"#,
+    );
+    // A symbol with no options at all has no known names either.
+    let r = interpret_with_stdout(r#"SetOptions[foo, a -> 1]"#).unwrap();
+    assert_eq!(r.result, "SetOptions[foo, a -> 1]");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w == "SetOptions::optnf: a is not a known option for foo."),
+      "expected optnf message, got {:?}",
+      r.warnings
+    );
+  }
+
+  #[test]
+  fn set_options_rejects_bad_arguments() {
+    use woxi::interpret_with_stdout;
+    let r = interpret_with_stdout(r#"SetOptions[5, Method -> 1]"#).unwrap();
+    assert_eq!(r.result, "SetOptions[5, Method -> 1]");
+    assert!(
+      r.warnings.iter().any(
+        |w| w == "SetOptions::sstm: Argument 5 is not a symbol or a stream."
+      ),
+      "expected sstm message, got {:?}",
+      r.warnings
+    );
+    let r = interpret_with_stdout(r#"SetOptions[Total, Method]"#).unwrap();
+    assert_eq!(r.result, "SetOptions[Total, Method]");
+    assert!(
+      r.warnings.iter().any(
+        |w| w == "SetOptions::rep: Method is not a valid replacement rule."
+      ),
+      "expected rep message, got {:?}",
+      r.warnings
+    );
+  }
+
   // OptionValue[f, name] reads the option out of Options[f] — the built-in
   // defaults as well as a user-set list.
   #[test]

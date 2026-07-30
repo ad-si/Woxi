@@ -1983,6 +1983,152 @@ pub fn builtin_default_options(func_name: &str) -> Vec<Expr> {
       make_rule("GeneratedParameters", id("None")),
       make_rule("PrincipalValue", id("False")),
     ],
+    // The remaining option lists of the core symbolic and numeric functions,
+    // each transcribed from wolframscript. Options carrying a `$…` global are
+    // delayed there, so they are delayed here too.
+    "D" => vec![make_rule("NonConstants", list(vec![]))],
+    "Root" => vec![make_rule("ExactRootIsolation", id("False"))],
+    "Total" => vec![
+      make_rule("AllowedHeads", id("Automatic")),
+      make_rule("Method", id("Automatic")),
+    ],
+    "StringSplit" | "StringReplace" => vec![
+      make_rule("IgnoreCase", id("False")),
+      make_rule("MetaCharacters", id("None")),
+    ],
+    "StringCases" => vec![
+      make_rule("IgnoreCase", id("False")),
+      make_rule("MetaCharacters", id("None")),
+      make_rule("Overlaps", id("False")),
+    ],
+    "Refine" => vec![
+      make_rule_delayed("Assumptions", id("$Assumptions")),
+      make_rule("TimeConstraint", Expr::Integer(30)),
+    ],
+    "Series" => vec![
+      make_rule("Analytic", id("True")),
+      make_rule_delayed("Assumptions", id("$Assumptions")),
+      make_rule("SeriesTermGoal", id("Automatic")),
+    ],
+    "Nearest" => vec![
+      make_rule("DistanceFunction", id("Automatic")),
+      make_rule("Method", id("Automatic")),
+      make_rule("WorkingPrecision", id("Automatic")),
+    ],
+    "Fit" => vec![
+      make_rule("FitRegularization", id("None")),
+      make_rule("NormFunction", id("Automatic")),
+      make_rule("WorkingPrecision", id("Automatic")),
+    ],
+    "Interpolation" => vec![
+      make_rule("InterpolationOrder", Expr::Integer(3)),
+      make_rule("Method", id("Automatic")),
+      make_rule("PeriodicInterpolation", id("False")),
+    ],
+    "RSolve" => vec![
+      make_rule_delayed("Assumptions", id("$Assumptions")),
+      make_rule("GeneratedParameters", id("C")),
+      make_rule("Method", id("Automatic")),
+    ],
+    "Factor" => vec![
+      make_rule("Extension", id("None")),
+      make_rule("GaussianIntegers", id("False")),
+      make_rule("Modulus", Expr::Integer(0)),
+      make_rule("Trig", id("False")),
+    ],
+    "NSolve" => vec![
+      make_rule("MaxRoots", id("Automatic")),
+      make_rule("Method", id("Automatic")),
+      make_rule("RandomSeeding", Expr::Integer(1234)),
+      make_rule("VerifySolutions", id("Automatic")),
+      make_rule("WorkingPrecision", id("Automatic")),
+    ],
+    "DSolve" => vec![
+      make_rule_delayed("Assumptions", id("$Assumptions")),
+      make_rule("DiscreteVariables", list(vec![])),
+      make_rule("GeneratedParameters", id("C")),
+      make_rule("IncludeSingularSolutions", id("False")),
+      make_rule("Method", id("Automatic")),
+    ],
+    // Simplify and FullSimplify differ only in their time budget.
+    "Simplify" | "FullSimplify" => vec![
+      make_rule_delayed("Assumptions", id("$Assumptions")),
+      make_rule("ComplexityFunction", id("Automatic")),
+      make_rule("ExcludedForms", list(vec![])),
+      make_rule(
+        "TimeConstraint",
+        if func_name == "Simplify" {
+          Expr::Integer(300)
+        } else {
+          id("Infinity")
+        },
+      ),
+      make_rule("TransformationFunctions", id("Automatic")),
+      make_rule("Trig", id("True")),
+    ],
+    "Limit" => vec![
+      make_rule("Analytic", id("False")),
+      make_rule_delayed("Assumptions", id("$Assumptions")),
+      make_rule("Direction", id("Reals")),
+      make_rule("GenerateConditions", id("Automatic")),
+      make_rule("Method", id("Automatic")),
+      make_rule_delayed("PerformanceGoal", id("$PerformanceGoal")),
+    ],
+    "Sum" | "Product" => vec![
+      make_rule_delayed("Assumptions", id("$Assumptions")),
+      make_rule("GenerateConditions", id("False")),
+      make_rule("GeneratedParameters", id("None")),
+      make_rule("Method", id("Automatic")),
+      make_rule("Regularization", id("None")),
+      make_rule("VerifyConvergence", id("True")),
+    ],
+    "Reduce" => vec![
+      make_rule("Backsubstitution", id("False")),
+      make_rule("Cubics", id("False")),
+      make_rule("GeneratedParameters", id("C")),
+      make_rule("Method", id("Automatic")),
+      make_rule("Modulus", Expr::Integer(0)),
+      make_rule("Quartics", id("False")),
+      make_rule("WorkingPrecision", id("Infinity")),
+    ],
+    "NIntegrate" => vec![
+      make_rule("AccuracyGoal", id("Infinity")),
+      make_rule("Compiled", id("Automatic")),
+      make_rule("EvaluationMonitor", id("None")),
+      make_rule("Exclusions", id("None")),
+      make_rule("MaxPoints", id("Automatic")),
+      make_rule("MaxRecursion", id("Automatic")),
+      make_rule("Method", id("Automatic")),
+      make_rule("MinRecursion", Expr::Integer(0)),
+      make_rule("PrecisionGoal", id("Automatic")),
+      make_rule("WorkingPrecision", id("MachinePrecision")),
+    ],
+    "FindRoot" => vec![
+      make_rule("AccuracyGoal", id("Automatic")),
+      make_rule("Compiled", id("Automatic")),
+      make_rule("DampingFactor", Expr::Integer(1)),
+      make_rule("Evaluated", id("True")),
+      make_rule("EvaluationMonitor", id("None")),
+      make_rule("Jacobian", id("Automatic")),
+      make_rule("MaxIterations", Expr::Integer(100)),
+      make_rule("Method", id("Automatic")),
+      make_rule("PrecisionGoal", id("Automatic")),
+      make_rule("StepMonitor", id("None")),
+      make_rule("WorkingPrecision", id("MachinePrecision")),
+    ],
+    "Solve" => vec![
+      make_rule_delayed("Assumptions", id("$Assumptions")),
+      make_rule("Cubics", id("Automatic")),
+      make_rule("GeneratedParameters", id("C")),
+      make_rule("InverseFunctions", id("Automatic")),
+      make_rule("MaxExtraConditions", Expr::Integer(0)),
+      make_rule("MaxRoots", id("Infinity")),
+      make_rule("Method", id("Automatic")),
+      make_rule("Modulus", Expr::Integer(0)),
+      make_rule("Quartics", id("Automatic")),
+      make_rule("VerifySolutions", id("Automatic")),
+      make_rule("WorkingPrecision", id("Infinity")),
+    ],
     _ => vec![],
   }
 }

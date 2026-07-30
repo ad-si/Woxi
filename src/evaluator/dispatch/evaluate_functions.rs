@@ -1727,13 +1727,118 @@ fn evaluate_function_call_ast_inner(
   // SetOptions[f] (no rules) returns the current options of `f`, matching
   // wolframscript. The variant with option rules is not implemented yet —
   // fall through to the unevaluated form for that case.
+  // SetOptions[f] gives f's current option list; SetOptions[f, name -> value, …]
+  // replaces those entries in it, stores the result as f's options and returns
+  // the updated list. Every name has to be one f already has: a single unknown
+  // one refuses the whole call and leaves the stored options untouched, as
+  // wolframscript does.
   if name == "SetOptions" {
     if args.len() == 1 {
       return crate::evaluator::evaluate_expr_to_expr(&unevaluated(
         "Options", args,
       ));
     }
-    return Ok(unevaluated("SetOptions", args));
+    let render =
+      |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
+    let Expr::Identifier(head) = &args[0] else {
+      crate::emit_message(&format!(
+        "SetOptions::sstm: Argument {} is not a symbol or a stream.",
+        render(&args[0])
+      ));
+      return Ok(unevaluated("SetOptions", args));
+    };
+    // The options may be given one by one or gathered into lists. Each is kept
+    // as (name, replacement, delayed) so the stored rule always names the
+    // option with a symbol, even when the caller used a string.
+    let mut updates: Vec<(String, Expr, bool)> = Vec::new();
+    for arg in &args[1..] {
+      let items: Vec<&Expr> = match arg {
+        Expr::List(items) => items.iter().collect(),
+        other => vec![other],
+      };
+      for item in items {
+        let (pattern, replacement, delayed) = match item {
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => (pattern.as_ref(), replacement.as_ref(), false),
+          Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } => (pattern.as_ref(), replacement.as_ref(), true),
+          _ => {
+            crate::emit_message(&format!(
+              "SetOptions::rep: {} is not a valid replacement rule.",
+              render(item)
+            ));
+            return Ok(unevaluated("SetOptions", args));
+          }
+        };
+        let key = match pattern {
+          Expr::Identifier(n) => n.clone(),
+          Expr::String(s) => s.clone(),
+          other => {
+            crate::emit_message(&format!(
+              "SetOptions::rep: {} is not a valid replacement rule.",
+              render(other)
+            ));
+            return Ok(unevaluated("SetOptions", args));
+          }
+        };
+        updates.push((key, replacement.clone(), delayed));
+      }
+    }
+
+    let mut current: Vec<Expr> = crate::FUNC_OPTIONS
+      .with(|m| m.borrow().get(head).cloned())
+      .unwrap_or_else(|| {
+        crate::evaluator::dispatch::predicate_functions::builtin_default_options(
+          head,
+        )
+      });
+    let names_option = |rule: &Expr, key: &str| match rule {
+      Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+        match pattern.as_ref() {
+          Expr::Identifier(n) => n == key,
+          Expr::String(s) => s == key,
+          _ => false,
+        }
+      }
+      _ => false,
+    };
+    // Reject before changing anything, so a bad name leaves no partial update.
+    for (key, _, _) in &updates {
+      if !current.iter().any(|rule| names_option(rule, key)) {
+        crate::emit_message(&format!(
+          "SetOptions::optnf: {} is not a known option for {}.",
+          key, head
+        ));
+        return Ok(unevaluated("SetOptions", args));
+      }
+    }
+    for (key, replacement, delayed) in updates {
+      let pattern = Box::new(Expr::Identifier(key.clone()));
+      let replacement = Box::new(replacement);
+      let rule = if delayed {
+        Expr::RuleDelayed {
+          pattern,
+          replacement,
+        }
+      } else {
+        Expr::Rule {
+          pattern,
+          replacement,
+        }
+      };
+      for slot in current.iter_mut() {
+        if names_option(slot, &key) {
+          *slot = rule.clone();
+        }
+      }
+    }
+    crate::FUNC_OPTIONS
+      .with(|m| m.borrow_mut().insert(head.clone(), current.clone()));
+    return Ok(Expr::List(current.into()));
   }
 
   // Circle[] defaults to Circle[{0, 0}]

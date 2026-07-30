@@ -32,7 +32,7 @@ mod math_functions;
 mod music_functions;
 mod plotting;
 mod polynomial_functions;
-mod predicate_functions;
+pub mod predicate_functions;
 mod quantity_functions;
 mod string_functions;
 mod structural;

@@ -233,7 +233,7 @@ Mean,Calculates the arithmetic mean (average) of a list,✅,pure,5.0,228
 Head,Returns the head of an expression,✅,pure,1.0,229
 AppendTo,Appends an element to a list stored in a variable; a target without a value reports ::rvalue,✅,stateful,1.0,230
 Take,Returns the first n elements of a list (the one-argument form takes nothing and returns the expression),✅,pure,1.0,231
-Options,Returns or sets the options associated with a symbol,✅,pure,1.0,232
+Options,Returns the options associated with a symbol — the built-in defaults of the core symbolic and numeric functions or a list set with Options[f] = … or SetOptions,✅,pure,1.0,232
 Array,Generates a list by applying a function to successive indices,✅,pure,1.0,233
 Orange,Named color evaluating to RGBColor[1 0.5 0],✅,pure,5.1,234
 RightArrow,Typesetting arrow symbol,🚫,none,3.0,235
@@ -445,7 +445,7 @@ CurrentValue,Returns current values of frontend settings,✅,effectful,6.0,442
 Thin,Graphics directive equivalent to Thickness[Tiny],✅,pure,6.0,443
 RandomSample,Random selection without replacement,✅,contextual,6.0,444
 VectorPlot,Creates a vector field plot,✅,pure,7.0,445
-SetOptions,Sets options for functions (no-op in Woxi),✅,effectful,1.0,446
+SetOptions,Replaces named entries in a symbol's option list and returns the updated list — an unknown name refuses the whole call,✅,stateful,1.0,446
 ReplacePart,Replaces the parts at one or more positions given as rules or as a separate position argument,✅,pure,2.0,447
 Translate,Translates a graphics object,✅,pure,6.0,448
 BarChart,Creates a bar chart from data,✅,pure,7.0,449
