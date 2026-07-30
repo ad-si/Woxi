@@ -521,10 +521,14 @@ impl WoxiStudio {
     for entry in &notebook.cells {
       match entry {
         CellEntry::Single(cell) => {
-          if matches!(cell.style, CellStyle::Output | CellStyle::Print) {
-            if let Some(editor) = stored_output_editor(cell) {
-              editors.push(editor);
-            }
+          // A standalone stored Output/Print renders as a graphic when it
+          // decodes to something displayable (snapshot rasters, checkbox
+          // grids); anything else keeps an ordinary editor below, so the
+          // cell still survives a load/save round-trip either way.
+          if matches!(cell.style, CellStyle::Output | CellStyle::Print)
+            && let Some(editor) = stored_output_editor(cell)
+          {
+            editors.push(editor);
             continue;
           }
           if matches!(cell.style, CellStyle::Input | CellStyle::Code) {
@@ -598,9 +602,14 @@ impl WoxiStudio {
                   state_cleared = true;
                 }
                 // Run the earlier Input cells (helper definitions) before
-                // the widget's body first evaluates.
+                // the widget's body first evaluates; the dump's saved
+                // Initialization (SaveDefinitions -> True) then runs on
+                // top of them inside instantiate_stored_manipulate.
                 evaluate_pending_initialization(&mut pending_init);
-                instantiate_stored_manipulate(&cell.content)
+                instantiate_stored_manipulate(
+                  &cell.content,
+                  output.as_deref().unwrap_or(""),
+                )
               } else {
                 pending_init.push(cell.content.clone());
                 None
@@ -651,15 +660,17 @@ impl WoxiStudio {
               });
               i = j;
             } else if matches!(cell.style, CellStyle::Output | CellStyle::Print)
+              && let Some(editor) = stored_output_editor(cell)
             {
-              // A standalone stored output (no preceding Input) is shown
-              // when it decodes to something displayable — e.g. the
-              // Demonstrations "Snapshots" rasters — and skipped otherwise.
-              if let Some(editor) = stored_output_editor(cell) {
-                editors.push(editor);
-              }
+              // A standalone stored output (no preceding Input) renders as
+              // a graphic when it decodes to something displayable — e.g.
+              // the Demonstrations "Snapshots" rasters.
+              editors.push(editor);
               i += 1;
             } else {
+              // Any other cell — including a standalone Output/Print that
+              // doesn't decode to a displayable graphic — keeps its own
+              // editor so it survives a load/save round-trip.
               editors.push(CellEditor {
                 content: text_editor::Content::with_text(&cell.content),
                 style: cell.style,
@@ -4699,10 +4710,21 @@ fn evaluate_pending_initialization(pending: &mut Vec<String>) {
 /// for an explicit evaluation.
 fn instantiate_stored_manipulate(
   code: &str,
+  stored_output: &str,
 ) -> Option<manipulate::ManipulateState> {
   let statements = woxi::split_into_statements(code);
   if statements.len() != 1 {
     return None;
+  }
+  // `Manipulate[…, SaveDefinitions -> True]` embeds the definitions its
+  // body depends on in the stored output's Initialization. Run them once
+  // (Wolfram's SynchronousInitialization) before instantiating, so the
+  // widget works right when the notebook opens — before any of the
+  // notebook's definition cells have been evaluated.
+  if let Some(init) =
+    woxi::notebook::extract_saved_initialization(stored_output)
+  {
+    let _ = woxi::interpret(&init);
   }
   let expr = woxi::interpret_to_expr(&statements[0]).ok()?;
   manipulate::ManipulateState::from_expr(&expr)
@@ -6688,15 +6710,57 @@ mod tests {
   #[test]
   fn stored_manipulate_is_instantiated_on_load() {
     let state =
-      instantiate_stored_manipulate("Manipulate[x^2, {x, 0, 10}]").unwrap();
+      instantiate_stored_manipulate("Manipulate[x^2, {x, 0, 10}]", "").unwrap();
     assert_eq!(state.controls.len(), 1);
     // A cell with side effects (multiple statements) is never auto-run.
     assert!(
-      instantiate_stored_manipulate("y = 1;\nManipulate[x y, {x, 0, 10}]")
+      instantiate_stored_manipulate("y = 1;\nManipulate[x y, {x, 0, 10}]", "")
         .is_none()
     );
     // A non-Manipulate cell yields no widget.
-    assert!(instantiate_stored_manipulate("1 + 1").is_none());
+    assert!(instantiate_stored_manipulate("1 + 1", "").is_none());
+  }
+
+  #[test]
+  fn standalone_output_cells_get_editors() {
+    // Output cells that do not follow an Input (e.g. the saved snapshot
+    // images of a Demonstration notebook) must become editors; skipping
+    // them would silently drop them from the file on the next save.
+    let nb = woxi::notebook::parse_notebook(
+      r#"Notebook[{
+Cell[CellGroupData[{
+Cell["Snapshots", "Section"],
+Cell[BoxData["snapshot content"], "Output"]
+}, Open]],
+Cell[BoxData["standalone output"], "Output"]
+}]"#,
+    )
+    .unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    assert_eq!(editors.len(), 3);
+    assert_eq!(editors[1].style, CellStyle::Output);
+    assert_eq!(editors[1].content.text().trim(), "snapshot content");
+    assert_eq!(editors[2].style, CellStyle::Output);
+    assert_eq!(editors[2].content.text().trim(), "standalone output");
+  }
+
+  #[test]
+  fn stored_manipulate_runs_saved_initialization() {
+    // `SaveDefinitions -> True` embeds the definitions the body needs in
+    // the stored output's Initialization. Instantiating on load must run
+    // them so the widget works before any other cell is evaluated.
+    let dump = "DynamicModuleBox[{$CellContext`x$$ = 0}, \
+      DynamicBox[…],\n\
+      Deinitialization:>None,\n\
+      Initialization:>({$CellContext`savedInitOffset = 41}; \
+      Typeset`initDone$$ = True),\n\
+      SynchronousInitialization->True]";
+    let state = instantiate_stored_manipulate(
+      "Manipulate[x + savedInitOffset, {x, 0, 10}]",
+      dump,
+    )
+    .unwrap();
+    assert_eq!(state.text_output.as_deref(), Some("41"));
   }
 
   /// A stored Manipulate whose body calls helpers from earlier Input
@@ -6757,7 +6821,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 1}, \"…\"]"], "Output"]
       {{Subscript[r, 2],1,\"amplitude\"},0,3,ImageSize-> Tiny},\n\
       {{Subscript[β, 2],1,\"frequency\"},0,5,ImageSize-> Tiny}\n\
       ]";
-    let state = instantiate_stored_manipulate(code)
+    let state = instantiate_stored_manipulate(code, "")
       .expect("oscilloscope Manipulate must build a widget");
     assert!(
       state.animated,
@@ -6851,7 +6915,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 1}, \"…\"]"], "Output"]
       {{ptB, {-5, -5}}, {-9, -9}, {9, 9}, ControlType -> None}, \
       {{switches, {1, 2}}, ControlType -> None}, \
       Initialization :> (valuesOK[pts_] := pts[[1]] =!= pts[[2]])]";
-    let mut state = instantiate_stored_manipulate(code)
+    let mut state = instantiate_stored_manipulate(code, "")
       .expect("in-body locator Manipulate must build a widget");
     assert!(state.error.is_none(), "body must render: {:?}", state.error);
     assert!(state.graphics_handle.is_some());
@@ -6961,7 +7025,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 1}, \"…\"]"], "Output"]
       Initialization:>(\
       Uinit={Partition[Range[16],4]/16.,Partition[Range[36],6]/36.};\
       U=Uinit;)]";
-    let mut state = instantiate_stored_manipulate(code)
+    let mut state = instantiate_stored_manipulate(code, "")
       .expect("Gray-Scott Manipulate must build a widget");
     let kinds: Vec<&str> = state
       .controls

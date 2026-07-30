@@ -1011,6 +1011,68 @@ fn unescape_string_inner(s: &str, code: bool) -> String {
   result
 }
 
+/// Extract the `Initialization :> ( … )` code from a saved FrontEnd
+/// dynamic-widget dump (the `DynamicModuleBox[…]` text stored in the Output
+/// cell of an evaluated `Manipulate[…]`).
+///
+/// `Manipulate[…, SaveDefinitions -> True]` embeds every definition its body
+/// depends on in this Initialization, so running the returned code makes a
+/// freshly opened notebook's widget work before any other cell has been
+/// evaluated. The saved code is rewritten into plain session-level input:
+/// `$CellContext`` prefixes are dropped and the FrontEnd's line-continuation
+/// markers (a `\` at end of line in box text) are removed.
+pub fn extract_saved_initialization(box_dump: &str) -> Option<String> {
+  let mut search_from = 0;
+  while let Some(rel) = box_dump[search_from..].find("Initialization") {
+    let after_kw = search_from + rel + "Initialization".len();
+    let rest = box_dump[after_kw..].trim_start();
+    if let Some(rest) = rest.strip_prefix(":>") {
+      let rest = rest.trim_start();
+      if let Some(body) = rest.strip_prefix('(')
+        && let Some(inner) = matching_paren_prefix(body)
+      {
+        let cleaned = inner.replace("\\\n", "").replace("$CellContext`", "");
+        let cleaned = cleaned.trim();
+        if !cleaned.is_empty() && cleaned != "None" {
+          return Some(cleaned.to_string());
+        }
+      }
+    }
+    search_from = after_kw;
+  }
+  None
+}
+
+/// The prefix of `s` up to (excluding) the `)` matching an already-consumed
+/// `(`. Skips over string literals, where parentheses are just text.
+fn matching_paren_prefix(s: &str) -> Option<&str> {
+  let mut depth = 1i32;
+  let mut in_string = false;
+  let mut prev_backslash = false;
+
+  for (i, c) in s.char_indices() {
+    if in_string {
+      if c == '"' && !prev_backslash {
+        in_string = false;
+      }
+      prev_backslash = c == '\\' && !prev_backslash;
+      continue;
+    }
+    match c {
+      '"' => in_string = true,
+      '(' => depth += 1,
+      ')' => {
+        depth -= 1;
+        if depth == 0 {
+          return Some(&s[..i]);
+        }
+      }
+      _ => {}
+    }
+  }
+  None
+}
+
 /// Find the matching `}` for content that starts right after `{`.
 /// Returns (content_inside_braces, remainder_after_brace).
 fn find_matching_brace(s: &str) -> Result<(&str, &str), String> {
@@ -2518,7 +2580,9 @@ Cell["Chapter 2", "Chapter"]
         .starts_with("DynamicModuleBox[")
     );
 
-    // Snapshot outputs and keyword items parse with their styles.
+    // Snapshot outputs and keyword items parse with their styles. The
+    // `PaneBox[GraphicsBox[TagBox[RasterBox[…]]]]` box dump stays raw —
+    // `stored_output_image_svg` decodes it for display.
     assert!(
       cells.iter().any(
         |c| c.style == CellStyle::Output && c.content.contains("RasterBox")
@@ -2967,6 +3031,88 @@ Cell[BoxData["2"], "Output", ExpressionUUID -> "bbb"]
       text_cell.content
     );
   }
+
+  #[test]
+  fn test_graphicsbox_raster_input_cell() {
+    // An image pasted into an Input cell is stored as
+    // `GraphicsBox[TagBox[RasterBox[data, rect, range, opts], …], opts]`
+    // (e.g. `slika = <photo>;` in Demonstration notebooks). It must come
+    // back as an evaluable `Image[…]` literal.
+    let nb = r#"Notebook[{
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"slika", "=",
+   GraphicsBox[
+    TagBox[RasterBox[CompressedData["
+1:eJxTTMoPSmNiYGAo5gASQYnljkVFiZXBAkBOaF5xZnpeaopnXklqemqRRRJIGQ
+yf4GL4DwC5VA4w
+      "], {{0, 2}, {2, 0}}, {0, 255},
+      ColorFunction->RGBColor],
+     BoxForm`ImageTag["Byte", ColorSpace -> "RGB", Interleaving -> True],
+     Selectable->False],
+    BaseStyle->"ImageGraphics",
+    ImageSizeRaw->{2, 2},
+    PlotRange->{{0, 2}, {0, 2}}]}], ";"}]], "Input"]
+}]"#;
+
+    let parsed = parse_notebook(nb).unwrap();
+    let flat = parsed.flat_cells();
+    assert_eq!(flat.len(), 1);
+    let cell = flat[0].1;
+    assert_eq!(cell.style, CellStyle::Input);
+    assert!(
+      cell.content.starts_with("slika=Image[CompressedData["),
+      "got: {}",
+      &cell.content[..cell.content.len().min(80)]
+    );
+    assert!(
+      cell
+        .content
+        .contains("\"Byte\", ColorSpace -> \"RGB\", Interleaving -> True]"),
+      "got: {}",
+      cell.content
+    );
+    assert!(
+      !cell.content.contains("GraphicsBox")
+        && !cell.content.contains("TagBox")
+        && !cell.content.contains("RasterBox"),
+      "box heads must be converted, got: {}",
+      cell.content
+    );
+    assert!(cell.content.trim_end().ends_with(';'));
+  }
+
+  #[test]
+  fn test_extract_saved_initialization() {
+    // The Output dump of `Manipulate[…, SaveDefinitions -> True]`:
+    // Deinitialization (whose name contains "initialization") must be
+    // skipped, `$CellContext`` prefixes dropped, and the FrontEnd's
+    // line-continuation `\` markers removed.
+    let dump = "DynamicModuleBox[{$CellContext`k$$ = 0}, \
+      DynamicBox[…],\n\
+      Deinitialization:>None,\n\
+      DynamicModuleValues:>{},\n\
+      Initialization:>({$CellContext`a = 1, $CellContext`b = \\\n\
+      {2, 3}}; Typeset`initDone$$ = True),\n\
+      SynchronousInitialization->True]";
+    let init = extract_saved_initialization(dump).unwrap();
+    assert_eq!(init, "{a = 1, b = {2, 3}}; Typeset`initDone$$ = True");
+  }
+
+  #[test]
+  fn test_extract_saved_initialization_absent() {
+    assert_eq!(
+      extract_saved_initialization("DynamicModuleBox[{}, DynamicBox[…]]"),
+      None
+    );
+    assert_eq!(
+      extract_saved_initialization(
+        "DynamicModuleBox[{}, Deinitialization:>None]"
+      ),
+      None
+    );
+  }
+
   #[test]
   fn test_inline_math_cells_render_in_text() {
     // `Cell[BoxData[…], "InlineMath"]` runs inside TextData carry the

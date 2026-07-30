@@ -282,10 +282,34 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  // `Image[NumericArray[data, type]]` — unwrap to the nested list and
-  // pick up the dtype if not already given.
+  // `Image[NumericArray[data, type]]` / `Image[RawArray[type, data]]` —
+  // unwrap to the nested list and pick up the dtype if not already given.
+  // RawArray (the legacy spelling embedded in `CompressedData` payloads,
+  // e.g. from `Image[CompressedData["…"]]` in saved notebooks) puts the
+  // type string first and the data second.
   let unwrapped: Expr;
   let raw_arg = match &args[0] {
+    Expr::FunctionCall {
+      name: ra_name,
+      args: ra_args,
+    } if ra_name == "RawArray" && ra_args.len() >= 2 => {
+      if requested_type.is_none() {
+        let s = match &ra_args[0] {
+          Expr::String(s) | Expr::Identifier(s) => Some(s.as_str()),
+          _ => None,
+        };
+        requested_type = match s {
+          Some("Bit") => Some(ImageType::Bit),
+          Some("Byte") | Some("UnsignedInteger8") => Some(ImageType::Byte),
+          Some("Bit16") | Some("UnsignedInteger16") => Some(ImageType::Bit16),
+          Some("Real32") => Some(ImageType::Real32),
+          Some("Real64") => Some(ImageType::Real64),
+          _ => None,
+        };
+      }
+      unwrapped = ra_args[1].clone();
+      &unwrapped
+    }
     Expr::FunctionCall {
       name: na_name,
       args: na_args,

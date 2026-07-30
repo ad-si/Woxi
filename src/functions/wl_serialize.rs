@@ -17,6 +17,10 @@
 //! | `n` | integer raw array: `<i32 type><i32 rank><i32 dims><packed ints>`    |
 //! | `e` | real packed array: `<i32 rank><i32 dims><packed f64>`               |
 //! | `b` | byte raw array: `<i32 rank><i32 dims><raw u8>`                      |
+//!
+//! The `b` token carries raster pixel payloads — the `RawArray` data inside
+//! `RasterBox[CompressedData["…"]]` and inline `Image[…]` literals; its
+//! elements are unsigned, unlike the sign-extended `n` token.
 
 use crate::syntax::Expr;
 
@@ -200,8 +204,9 @@ fn read_integer_array(data: &[u8], pos: &mut usize) -> Option<Expr> {
 }
 
 /// `b` token — packed unsigned byte array: `<i32 rank><i32 dims><raw u8>`.
-/// This is how the FrontEnd stores raster pixel data in the
-/// `CompressedData[...]` of an inline `Image[…]` literal.
+/// This is how the FrontEnd stores raster pixel data — the `RawArray`
+/// payload inside `RasterBox[CompressedData["…"]]` and inline `Image[…]`
+/// literals. Bytes come back as 0–255, not sign-extended like `n`.
 fn read_byte_array(data: &[u8], pos: &mut usize) -> Option<Expr> {
   let rank = read_i32(data, pos)?;
   let dims = read_dims(data, pos, rank)?;
@@ -273,5 +278,17 @@ mod tests {
   #[test]
   fn rejects_non_magic() {
     assert!(deserialize(b"nope").is_none());
+  }
+
+  #[test]
+  fn reads_raw_byte_array() {
+    // RawArray["UnsignedInteger8", {{200, 10}, {0, 255}}]: f-normal with a
+    // `b` token payload (rank 2, dims 2x2, unsigned bytes). High-bit bytes
+    // must NOT be sign-extended.
+    let data = b"!boRf\x02\x00\x00\x00s\x08\x00\x00\x00RawArrayS\x10\x00\x00\x00UnsignedInteger8b\x02\x00\x00\x00\x02\x00\x00\x00\x02\x00\x00\x00\xc8\x0a\x00\xff";
+    assert_eq!(
+      render(data),
+      "RawArray[\"UnsignedInteger8\", {{200, 10}, {0, 255}}]"
+    );
   }
 }

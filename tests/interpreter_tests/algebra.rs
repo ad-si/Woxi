@@ -4370,6 +4370,40 @@ mod solve {
     assert_eq!(interpret("Solve[3*x + 9 == 0, x]").unwrap(), "{{x -> -3}}");
   }
 
+  // A vector equation threads element-wise over equal-length lists, so a
+  // line–line intersection written as `r1 + t e1 == r2 + u e2` is solved
+  // as the two scalar equations. Regression test for the
+  // `intersection2lines` helper in Demonstration notebooks.
+  #[test]
+  fn vector_equation_threads_over_lists() {
+    assert_eq!(
+      interpret("Solve[{1 + 2 t, 3 - t} == {4 + u, 5 u}, {t, u}]").unwrap(),
+      "{{t -> 18/11, u -> 3/11}}"
+    );
+    assert_eq!(
+      interpret(
+        "First[({0, 0} + t {1, 1}) /. \
+         Solve[{0, 0} + t {1, 1} == {0, 2} + u {1, -1}, {t, u}]]"
+      )
+      .unwrap(),
+      "{1, 1}"
+    );
+  }
+
+  // Threading also applies to list equations inside an equation list, and
+  // to the one-argument form's variable auto-detection.
+  #[test]
+  fn vector_equation_inside_equation_list() {
+    assert_eq!(
+      interpret("Solve[{{x, y} == {2, 4}, x + y == 6}, {x, y}]").unwrap(),
+      "{{x -> 2, y -> 4}}"
+    );
+    assert_eq!(
+      interpret("Solve[{x, y} == {1, 2}]").unwrap(),
+      "{{x -> 1, y -> 2}}"
+    );
+  }
+
   // Generalized variables: an applied function `y[x]` is a valid unknown and
   // is solved for as a whole, matching wolframscript.
   #[test]
@@ -6983,6 +7017,25 @@ mod nsolve {
     assert_eq!(
       interpret("NSolve[x^2 + x - 1 == 0, x]").unwrap(),
       "{{x -> -1.618033988749895}, {x -> 0.6180339887498948}}"
+    );
+  }
+
+  // A multi-variable polynomial system lists the eliminated variable's roots
+  // descending (the larger intersection first), unlike the ascending
+  // single-variable order. Ground truth: the kernel-saved definitions of the
+  // Freese-dissection Demonstration notebook, whose `p8 = sol[[2]]` is the
+  // smaller root {-0.16669911088252198, -0.8090169943749475}.
+  #[test]
+  fn system_solutions_larger_root_first() {
+    assert_eq!(
+      interpret(
+        "NSolve[y == -0.8090169943749475 && \
+         (x - 0.7694208842938133)^2 + (y - (-0.25))^2 == \
+         1.090330521158122^2, {x, y}]"
+      )
+      .unwrap(),
+      "{{x -> 1.7055408794701485, y -> -0.8090169943749475}, \
+       {x -> -0.16669911088252198, y -> -0.8090169943749475}}"
     );
   }
 

@@ -2295,9 +2295,24 @@ pub(crate) fn bspline_basis(i: usize, k: usize, t: f64, knots: &[f64]) -> f64 {
 }
 
 fn parse_raster(args: &[Expr], prims: &mut Vec<Primitive>) {
-  // Raster[data] or Raster[data, {{xmin, ymin}, {xmax, ymax}}]
-  // data is a 2D array of grayscale values (0-1) or {r,g,b}/{r,g,b,a} lists
-  let data_expr = &args[0];
+  // Raster[data], Raster[data, {{xmin, ymin}, {xmax, ymax}}], or
+  // Raster[data, rect, {vmin, vmax}] — data is a 2D array of grayscale
+  // values or {r,g,b}/{r,g,b,a} lists, scaled from the {vmin, vmax} range
+  // (default {0, 1}). RasterBox cells carry their pixel data as
+  // `RawArray["UnsignedInteger8", …]` (from `CompressedData`); unwrap it.
+  let data_expr = match &args[0] {
+    Expr::FunctionCall { name, args: inner }
+      if name == "RawArray" && inner.len() >= 2 =>
+    {
+      &inner[1]
+    }
+    Expr::FunctionCall { name, args: inner }
+      if name == "NumericArray" && !inner.is_empty() =>
+    {
+      &inner[0]
+    }
+    other => other,
+  };
   let rows = match data_expr {
     Expr::List(rows) => rows,
     _ => return,
@@ -2305,6 +2320,21 @@ fn parse_raster(args: &[Expr], prims: &mut Vec<Primitive>) {
   if rows.is_empty() {
     return;
   }
+
+  // Raster[data, rect, {vmin, vmax}]: pixel values are scaled from this
+  // range instead of the default 0–1 (e.g. byte data uses {0, 255}).
+  let (v_min, v_max) = if args.len() >= 3
+    && let Expr::List(range) = &args[2]
+    && range.len() == 2
+    && let Some(lo) = expr_to_f64(&range[0])
+    && let Some(hi) = expr_to_f64(&range[1])
+    && hi != lo
+  {
+    (lo, hi)
+  } else {
+    (0.0, 1.0)
+  };
+  let scale = |v: f64| ((v - v_min) / (v_max - v_min)).clamp(0.0, 1.0);
 
   let mut grid: Vec<Vec<Color>> = Vec::with_capacity(rows.len());
   for row in rows {
@@ -2318,18 +2348,18 @@ fn parse_raster(args: &[Expr], prims: &mut Vec<Primitive>) {
         && (components.len() == 3 || components.len() == 4)
       {
         // RGB or RGBA list
-        let r = expr_to_f64(&components[0]).unwrap_or(0.0).clamp(0.0, 1.0);
-        let g = expr_to_f64(&components[1]).unwrap_or(0.0).clamp(0.0, 1.0);
-        let b = expr_to_f64(&components[2]).unwrap_or(0.0).clamp(0.0, 1.0);
+        let r = scale(expr_to_f64(&components[0]).unwrap_or(0.0));
+        let g = scale(expr_to_f64(&components[1]).unwrap_or(0.0));
+        let b = scale(expr_to_f64(&components[2]).unwrap_or(0.0));
         let a = if components.len() == 4 {
-          expr_to_f64(&components[3]).unwrap_or(1.0).clamp(0.0, 1.0)
+          scale(expr_to_f64(&components[3]).unwrap_or(1.0))
         } else {
           1.0
         };
         row_colors.push(Color::new(r, g, b).with_alpha(a));
       } else if let Some(v) = expr_to_f64(cell) {
         // Grayscale value: single number maps to gray (0=black, 1=white)
-        let v = v.clamp(0.0, 1.0);
+        let v = scale(v);
         row_colors.push(Color::new(v, v, v));
       } else {
         row_colors.push(Color::new(0.0, 0.0, 0.0));
@@ -2359,12 +2389,25 @@ fn parse_raster(args: &[Expr], prims: &mut Vec<Primitive>) {
     (0.0, 0.0, ncols as f64, nrows as f64)
   };
 
+  // A reversed range mirrors the image: {{0, h}, {w, 0}} (the RasterBox
+  // convention for top-down pixel rows) flips vertically. Row 0 renders at
+  // the bottom, so flipping rows/columns here and normalizing the rect
+  // reproduces the mirrored orientation.
+  if y_min > y_max {
+    grid.reverse();
+  }
+  if x_min > x_max {
+    for row in &mut grid {
+      row.reverse();
+    }
+  }
+
   prims.push(Primitive::RasterPrim {
     data: grid,
-    x_min,
-    y_min,
-    x_max,
-    y_max,
+    x_min: x_min.min(x_max),
+    y_min: y_min.min(y_max),
+    x_max: x_min.max(x_max),
+    y_max: y_min.max(y_max),
   });
 }
 
@@ -4449,6 +4492,48 @@ fn render_primitive(
       let ncols = data.iter().map(|r| r.len()).max().unwrap_or(0);
       if ncols == 0 {
         return;
+      }
+
+      // Large rasters (photos) are embedded as one PNG <image> instead of
+      // one <rect> per pixel: a 400x520 image would otherwise emit 208k
+      // rects, which SVG renderers cannot handle interactively. Small
+      // rasters keep the exact rect fills (crisp pixel edges at any zoom).
+      if nrows * ncols > 4096 {
+        use base64::Engine;
+        let mut img = image::RgbaImage::new(ncols as u32, nrows as u32);
+        for (ri, row) in data.iter().enumerate() {
+          for ci in 0..ncols {
+            let color =
+              row.get(ci).copied().unwrap_or(Color::new(0.0, 0.0, 0.0));
+            let px = image::Rgba([
+              (color.r * 255.0).round().clamp(0.0, 255.0) as u8,
+              (color.g * 255.0).round().clamp(0.0, 255.0) as u8,
+              (color.b * 255.0).round().clamp(0.0, 255.0) as u8,
+              (color.a * 255.0).round().clamp(0.0, 255.0) as u8,
+            ]);
+            // Row 0 in Wolfram is at the bottom; PNG row 0 is at the top.
+            img.put_pixel(ci as u32, (nrows - 1 - ri) as u32, px);
+          }
+        }
+        let mut png = Vec::new();
+        if image::DynamicImage::ImageRgba8(img)
+          .write_to(
+            &mut std::io::Cursor::new(&mut png),
+            image::ImageFormat::Png,
+          )
+          .is_ok()
+        {
+          let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
+          let sx = coord_x(*x_min, bb, svg_w);
+          let sy = coord_y(*y_max, bb, svg_h);
+          let sw = (x_max - x_min) / bb.width() * svg_w;
+          let sh = (y_max - y_min) / bb.height() * svg_h;
+          out.push_str(&format!(
+            "<image x=\"{sx:.2}\" y=\"{sy:.2}\" width=\"{sw:.2}\" height=\"{sh:.2}\" preserveAspectRatio=\"none\" href=\"data:image/png;base64,{b64}\"/>\n"
+          ));
+          return;
+        }
+        // PNG encoding failed: fall through to the per-pixel rects.
       }
 
       let cell_w = (x_max - x_min) / ncols as f64;
