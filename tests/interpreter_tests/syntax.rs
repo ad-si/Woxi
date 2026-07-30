@@ -477,6 +477,17 @@ mod operator_shorthand_parens {
     assert_eq!(interpret("Hold[f @@ a^2]").unwrap(), "Hold[f @@ a^2]");
   }
 
+  #[test]
+  fn held_subtraction_keeps_additive_operand_parens() {
+    // Subtraction is left-associative, so a parenthesized additive right
+    // operand must keep its parens: `a - b + c` is a different value.
+    assert_eq!(interpret("Hold[a - (b + c)]").unwrap(), "Hold[a - (b + c)]");
+    assert_eq!(interpret("Hold[a - (b - c)]").unwrap(), "Hold[a - (b - c)]");
+    // Left-nested chains stay flat.
+    assert_eq!(interpret("Hold[a - b + c]").unwrap(), "Hold[a - b + c]");
+    assert_eq!(interpret("Hold[a - b - c]").unwrap(), "Hold[a - b - c]");
+  }
+
   // The InputForm of a held expression must re-parse to the very same
   // expression (checked via FullForm equality).
   #[test]
@@ -488,6 +499,13 @@ mod operator_shorthand_parens {
       "x /. p:{_?NumericQ, _?NumericQ} :> c + RotationMatrix[Pi/4] . (p - c)",
       "(f & ) @@ (a + b)",
       "f /@ a + b",
+      // Subtraction is left-associative: a held additive right operand
+      // must keep its parentheses (regression: the Gray-Scott notebook's
+      // `(# - (2*(#/10) + 2))/2 &` pad width printed as `#1 - 2*#1/10 + 2`,
+      // silently changing 7 into 9).
+      "a - (b + c)",
+      "a - (b - c)",
+      "(#1 - (2*#1/10 + 2))/2 & ",
     ] {
       let full = interpret(&format!("FullForm[Hold[{src}]]")).unwrap();
       let printed =
