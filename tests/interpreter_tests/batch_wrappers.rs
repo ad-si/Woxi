@@ -6083,6 +6083,111 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // `All` as a level specification means every level, {0, Infinity}.
+  // None of these heads understood it: most echoed the call back, but
+  // Apply and MemberQ quietly answered as though only level 1 had been
+  // asked for.
+  #[test]
+  fn all_is_a_level_specification_meaning_every_level() {
+    let data = "{{1, 2}, {3, {4, 5}}}";
+    for (call, expected) in [
+      (
+        format!("Map[f, {}, All]", data),
+        "f[{f[{f[1], f[2]}], f[{f[3], f[{f[4], f[5]}]}]}]".to_string(),
+      ),
+      (
+        format!("Apply[f, {}, All]", data),
+        "f[f[1, 2], f[3, f[4, 5]]]".to_string(),
+      ),
+      (
+        format!("Cases[{}, _Integer, All]", data),
+        "{1, 2, 3, 4, 5}".to_string(),
+      ),
+      (format!("Count[{}, _Integer, All]", data), "5".to_string()),
+      (
+        format!("Position[{}, _Integer, All]", data),
+        "{{1, 1}, {1, 2}, {2, 1}, {2, 2, 1}, {2, 2, 2}}".to_string(),
+      ),
+      (
+        format!("Level[{}, All]", data),
+        "{1, 2, {1, 2}, 3, 4, 5, {4, 5}, {3, {4, 5}}, {{1, 2}, {3, {4, 5}}}}"
+          .to_string(),
+      ),
+      (format!("Total[{}, All]", data), "15".to_string()),
+      (format!("FreeQ[{}, 4, All]", data), "False".to_string()),
+      (format!("MemberQ[{}, 4, All]", data), "True".to_string()),
+      (
+        format!("DeleteCases[{}, 4, All]", data),
+        "{{1, 2}, {3, {5}}}".to_string(),
+      ),
+    ] {
+      assert_eq!(interpret(&call).unwrap(), expected, "for {}", call);
+      // Every one of them is exactly the {0, Infinity} answer.
+      let spelled = call.replace("All]", "{0, Infinity}]");
+      assert_eq!(interpret(&spelled).unwrap(), expected, "for {}", spelled);
+    }
+    // Scan returns Null either way; it is the traversal that matters.
+    assert_eq!(
+      interpret(&format!("Scan[f, {}, All]", data)).unwrap(),
+      interpret(&format!("Scan[f, {}, {{0, Infinity}}]", data)).unwrap()
+    );
+    // Flatten rejects All rather than reading it as a level, and MapAt
+    // reads it as a position specification, so neither is rewritten.
+    assert_eq!(
+      interpret(&format!("MapAt[f, {}, All]", data)).unwrap(),
+      "{f[{1, 2}], f[{3, {4, 5}}]}"
+    );
+  }
+
+  // A negative level names the parts of a given depth, counted from the
+  // leaves and measured per part -- not from the root of the whole
+  // expression. MapIndexed returned its argument untouched for a negative
+  // level and did not understand Infinity at all.
+  #[test]
+  fn map_indexed_levels_count_depth_from_the_leaves() {
+    let data = "{{1, 2}, {3, {4, 5}}}";
+    let everything = "{f[{f[1, {1, 1}], f[2, {1, 2}]}, {1}], \
+                      f[{f[3, {2, 1}], f[{f[4, {2, 2, 1}], \
+                      f[5, {2, 2, 2}]}, {2, 2}]}, {2}]}";
+    // -1 is {1, -1}: every part at level 1 or below.
+    for spec in ["-1", "{1, -1}", "Infinity"] {
+      assert_eq!(
+        interpret(&format!("MapIndexed[f, {}, {}]", data, spec)).unwrap(),
+        everything,
+        "for level {}",
+        spec
+      );
+    }
+    // {-1} on its own is only the atoms.
+    assert_eq!(
+      interpret(&format!("MapIndexed[f, {}, {{-1}}]", data)).unwrap(),
+      "{{f[1, {1, 1}], f[2, {1, 2}]}, {f[3, {2, 1}], \
+       {f[4, {2, 2, 1}], f[5, {2, 2, 2}]}}}"
+    );
+    // -2 is the parts whose own depth is at least 2, so {1, 2} and
+    // {4, 5} are mapped and so is {3, {4, 5}} -- but not the atoms.
+    assert_eq!(
+      interpret(&format!("MapIndexed[f, {}, -2]", data)).unwrap(),
+      "{f[{1, 2}, {1}], f[{3, f[{4, 5}, {2, 2}]}, {2}]}"
+    );
+    // {-2, -1} is depth 2 down to depth 1, which excludes the depth-3
+    // {3, {4, 5}} even though its sibling {1, 2} is included.
+    assert_eq!(
+      interpret(&format!("MapIndexed[f, {}, {{-2, -1}}]", data)).unwrap(),
+      "{f[{f[1, {1, 1}], f[2, {1, 2}]}, {1}], {f[3, {2, 1}], \
+       f[{f[4, {2, 2, 1}], f[5, {2, 2, 2}]}, {2, 2}]}}"
+    );
+    // The positive specs are unchanged.
+    assert_eq!(
+      interpret(&format!("MapIndexed[f, {}, 1]", data)).unwrap(),
+      "{f[{1, 2}, {1}], f[{3, {4, 5}}, {2}]}"
+    );
+    assert_eq!(
+      interpret(&format!("MapIndexed[f, {}, {{2}}]", data)).unwrap(),
+      "{{f[1, {1, 1}], f[2, {1, 2}]}, {f[3, {2, 1}], f[{4, 5}, {2, 2}]}}"
+    );
+  }
+
   // Dimensions accepts Infinity for its level count, which it used to
   // reject with a hard error along with everything else invalid.
   #[test]

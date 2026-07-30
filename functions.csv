@@ -326,7 +326,7 @@ BesselJ,Bessel function of the first kind J_n(z),✅,pure,1.0,329
 BesselY,Bessel function of the second kind Y_n(z),✅,pure,1.0,752
 BesselI,Modified Bessel function of the first kind I_n(z),✅,pure,1.0,664
 BesselK,Modified Bessel function of the second kind K_n(z),✅,pure,1.0,613
-MapIndexed,Applies a function to each element along with its index; on an association the index is {Key[key]},✅,pure,2.0,330
+MapIndexed,Applies a function to each element along with its index over a level specification; on an association the index is {Key[key]},✅,pure,2.0,330
 RiemannR,Riemann prime counting function R(x) approximating PrimePi,✅,pure,7.0,331
 Item,Wrapper for specifying individual item options in Grid and similar constructs,✅,pure,6.0,332
 SetAttributes,Sets attributes for a symbol,✅,stateful,1.0,333
@@ -944,7 +944,7 @@ PoissonDistribution,Represents a Poisson distribution,✅,pure,6.0,945
 SpanFromLeft,,🚫,,6.0,946
 Exists,Represents the existential quantifier,✅,1,5.0,948
 NotebookRead,Requires external services or GUI infrastructure,🚫,io,3.0,948
-Level,Extracts subexpressions at specified levels,✅,pure,1.0,950
+Level,Extracts subexpressions at a level specification where a negative level names parts of that depth,✅,pure,1.0,950
 StringDrop,Removes a substring from a string; only span specifications are accepted,✅,pure,2.0,950
 MeshCoordinates,Coordinates of a mesh region,✅,pure,10.0,951
 MousePosition,Requires external services or GUI infrastructure,🚫,io,6.0,952

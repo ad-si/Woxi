@@ -31,3 +31,11 @@ $ wo 'Level[SparseArray[{1, 2}], {1}]'
 $ wo 'Head[First[Level[SparseArray[{1, 2}], {0}]]]'
 SparseArray
 ```
+
+`All` is a level specification meaning every level, the same as
+`{0, Infinity}`:
+
+```scrut
+$ wo 'Level[{{1, 2}, {3, {4, 5}}}, All]'
+{1, 2, {1, 2}, 3, 4, 5, {4, 5}, {3, {4, 5}}, {{1, 2}, {3, {4, 5}}}}
+```

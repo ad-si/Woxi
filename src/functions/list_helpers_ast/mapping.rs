@@ -1067,38 +1067,93 @@ pub fn map_indexed_with_level_ast(
   if is_heads_true_option(level_spec) {
     return map_indexed_at_depth_heads(func, expr, 0, 1, 1, &[]);
   }
-  // `{-1}` selects every atomic leaf — handle it directly so we don't
-  // need a depth-from-leaves walk in the general routine.
-  if is_neg_one_levelspec(level_spec) {
-    return map_indexed_atoms(func, expr, &[], false);
-  }
-  // Parse level spec: {n} = exactly level n
-  let (min_level, max_level) = match level_spec {
-    Expr::Integer(n) => (1i64, *n as i64),
-    Expr::List(items) if items.len() == 1 => {
-      if let Some(n) = expr_to_i128(&items[0]) {
-        (n as i64, n as i64)
-      } else {
-        return Ok(Expr::FunctionCall {
-          name: "MapIndexed".to_string(),
-          args: vec![func.clone(), expr.clone(), level_spec.clone()].into(),
-        });
+  // A bound is either a level counted from the root or, when negative, a
+  // depth counted from the leaves. Infinity is only ever an upper bound.
+  let bound = |e: &Expr| -> Option<i64> {
+    match e {
+      Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity" => {
+        Some(i64::MAX)
       }
+      Expr::FunctionCall { name, args }
+        if name == "DirectedInfinity"
+          && args.len() == 1
+          && matches!(&args[0], Expr::Integer(n) if *n == 1) =>
+      {
+        Some(i64::MAX)
+      }
+      other => expr_to_i128(other).map(|n| n as i64),
+    }
+  };
+  let uneval = || {
+    Ok(Expr::FunctionCall {
+      name: "MapIndexed".to_string(),
+      args: vec![func.clone(), expr.clone(), level_spec.clone()].into(),
+    })
+  };
+  // Parse level spec: n = {1, n}, {n} = exactly level n, {min, max}.
+  let (min_level, max_level) = match level_spec {
+    Expr::List(items) if items.len() == 1 => {
+      let Some(n) = bound(&items[0]) else {
+        return uneval();
+      };
+      (n, n)
     }
     Expr::List(items) if items.len() == 2 => {
-      let min = expr_to_i128(&items[0]).unwrap_or(0) as i64;
-      let max = expr_to_i128(&items[1]).unwrap_or(0) as i64;
+      let (Some(min), Some(max)) = (bound(&items[0]), bound(&items[1])) else {
+        return uneval();
+      };
       (min, max)
     }
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "MapIndexed".to_string(),
-        args: vec![func.clone(), expr.clone(), level_spec.clone()].into(),
-      });
+    Expr::List(_) => return uneval(),
+    other => {
+      let Some(n) = bound(other) else {
+        return uneval();
+      };
+      (1, n)
     }
   };
 
   map_indexed_at_depth(func, expr, 0, min_level, max_level, &[])
+}
+
+/// The depth of an expression in the sense of `Depth`: 1 for an atom, and
+/// one more than its deepest part otherwise. A negative level `-k` names
+/// the parts whose own depth is `k`, so this is what those bounds are
+/// compared against.
+fn expression_depth(expr: &Expr) -> i64 {
+  match expr {
+    Expr::List(items) => {
+      1 + items.iter().map(expression_depth).max().unwrap_or(0)
+    }
+    Expr::FunctionCall { args, .. } => {
+      1 + args.iter().map(expression_depth).max().unwrap_or(0)
+    }
+    _ => 1,
+  }
+}
+
+/// Whether a part sitting `level` steps below the root, with its own
+/// depth `depth`, falls inside the level specification. A non-negative
+/// bound constrains the level from the root; a negative bound `-k`
+/// constrains the part's own depth, `-k` as a lower bound meaning
+/// `depth <= k` and as an upper bound `depth >= k`.
+fn level_in_range(
+  level: i64,
+  depth: i64,
+  min_level: i64,
+  max_level: i64,
+) -> bool {
+  let above_min = if min_level < 0 {
+    depth <= -min_level
+  } else {
+    level >= min_level
+  };
+  let below_max = if max_level < 0 {
+    depth >= -max_level
+  } else {
+    level <= max_level
+  };
+  above_min && below_max
 }
 
 /// Detect the special `{-1}` levelspec (atomic leaves). Negative levels in
@@ -1287,7 +1342,12 @@ fn map_indexed_at_depth(
       unreachable!()
     };
     // Apply at this level if within range
-    if current_depth >= min_level && current_depth <= max_level {
+    if level_in_range(
+      current_depth,
+      expression_depth(expr),
+      min_level,
+      max_level,
+    ) {
       let index =
         Expr::List(position.iter().map(|&i| Expr::Integer(i)).collect());
       apply_func_to_two_args(func, &result, &index)
@@ -1296,7 +1356,7 @@ fn map_indexed_at_depth(
     }
   } else {
     // Atom — apply if at the right level
-    if current_depth >= min_level && current_depth <= max_level {
+    if level_in_range(current_depth, 1, min_level, max_level) {
       let index =
         Expr::List(position.iter().map(|&i| Expr::Integer(i)).collect());
       apply_func_to_two_args(func, expr, &index)

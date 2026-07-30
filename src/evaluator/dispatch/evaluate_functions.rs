@@ -1250,6 +1250,28 @@ fn evaluate_function_call_ast_inner(
     return result;
   }
 
+  // `All` as a level specification means every level, `{0, Infinity}`.
+  // Rewriting it once here saves each head parsing it, and each head
+  // below already understands `{0, Infinity}`. Only heads whose argument
+  // at that position really is a level belong in this list: `Flatten`
+  // rejects `All` outright, and `MapAt` reads it as a position.
+  let level_position = match name {
+    "Map" | "Apply" | "Scan" | "MapIndexed" | "Cases" | "Count"
+    | "Position" | "Replace" | "FreeQ" | "MemberQ" | "DeleteCases" => Some(2),
+    "Level" | "Total" => Some(1),
+    _ => None,
+  };
+  if let Some(position) = level_position
+    && args.len() == position + 1
+    && matches!(&args[position], Expr::Identifier(s) | Expr::Constant(s) if s == "All")
+  {
+    let mut rewritten = args.to_vec();
+    rewritten[position] = Expr::List(
+      vec![Expr::Integer(0), Expr::Identifier("Infinity".to_string())].into(),
+    );
+    return evaluate_function_call_ast(name, &rewritten);
+  }
+
   // Several statistics functions operate on an association's values: replace
   // an association first argument with its list of values, like wolframscript.
   // (Mean/Total/Max/Min already handle associations in their own routines.)
