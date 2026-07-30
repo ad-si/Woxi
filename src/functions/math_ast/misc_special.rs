@@ -1,9 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{
-  BinaryOperator, Expr, UnaryOperator, binop, expr_to_string, unevaluated,
-};
 use num_bigint::BigInt;
 
 /// QPochhammer[a, q, n] — q-Pochhammer symbol.

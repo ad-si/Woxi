@@ -1,7 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, unevaluated};
 
 /// Emit the `<Name>::array` message and return the call unevaluated for an
 /// invalid dimension specification (a negative integer, a non-integer, or a

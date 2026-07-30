@@ -1,10 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, ExprForm, UnaryOperator, binop,
-  bool_expr, expr_to_output, expr_to_string, format_expr, unevaluated,
-};
+use crate::syntax::{ExprForm, format_expr};
 
 /// If the first argument is a numeric scalar, emit
 /// `<F>::rectt: Rectangular array expected at position 1 in <call>.`,

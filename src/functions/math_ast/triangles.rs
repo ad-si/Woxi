@@ -8,8 +8,8 @@
 //! `Cos[a - Pi/6] Csc[a]` forms) and are left unevaluated. Symbolic side
 //! lengths pass through fine.
 
-use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, expr_to_output, unevaluated};
+#[allow(unused_imports)]
+use super::*;
 
 fn fc(name: &str, args: Vec<Expr>) -> Expr {
   Expr::FunctionCall {

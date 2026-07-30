@@ -1,9 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{
-  BinaryOperator, Expr, ExprForm, UnaryOperator, expr_to_string, unevaluated,
-};
+use crate::syntax::ExprForm;
 use num_bigint::BigInt;
 use num_bigint::Sign;
 

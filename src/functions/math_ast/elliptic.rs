@@ -1,7 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 /// True if `e` contains an inexact (machine) number. Elliptic functions
 /// numericize only when an argument is inexact; exact (integer/rational)

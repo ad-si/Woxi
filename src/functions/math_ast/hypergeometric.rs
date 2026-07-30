@@ -1,7 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, binop, expr_to_string, unevaluated};
 
 /// Collect the factors of a product into `out`, descending through nested
 /// `Times` (both spellings) so that factors from separately evaluated parts
