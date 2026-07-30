@@ -266,7 +266,7 @@ Ticks,Option for tick marks on plot axes,✅,pure,1.0,264
 MapThread,Applies a function to corresponding elements of multiple lists,✅,pure,2.0,265
 Smaller,Font size directive for making text smaller,✅,none,6.0,266
 Symbol,Creates a symbol from a string,✅,pure,1.0,267
-OptionValue,Retrieves the value of a named option within a function using OptionsPattern,✅,pure,6.0,268
+OptionValue,Retrieves the value of a named option — from the enclosing OptionsPattern or from a head's Options list with an explicit rule list taking precedence — for one name or a list of them,✅,pure,6.0,268
 LabelStyle,Option for specifying the style of labels in graphics,✅,none,6.0,269
 Boxed,Option for boxed axes in 3D plots,✅,pure,1.0,270
 Inset,Places an inset in graphics,✅,pure,6.0,271

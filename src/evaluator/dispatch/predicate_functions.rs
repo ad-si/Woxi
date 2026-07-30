@@ -1523,94 +1523,122 @@ pub fn dispatch_predicate_functions(
         }
       }
     }
-    // OptionValue[f, name] - look up option value from Options[f]
-    // OptionValue[f, opts, name] - look up from explicit opts list, falling back to Options[f]
-    "OptionValue" if args.len() == 2 || args.len() == 3 => {
-      let func_arg = match evaluate_expr_to_expr(&args[0]) {
-        Ok(v) => v,
-        Err(e) => return Some(Err(e)),
-      };
-      let func_name = match &func_arg {
-        Expr::Identifier(name) => Some(name.clone()),
-        _ => None,
-      };
-      // Collect extra opts if 3-arg form
-      let extra_opts: Vec<Expr> = if args.len() == 3 {
-        let ev = match evaluate_expr_to_expr(&args[1]) {
-          Ok(v) => v,
+    // OptionValue[f, name] / OptionValue[f, opts, name] — the value of an
+    // option for the head `f`, taken from an explicit rule list first and then
+    // from `Options[f]` (a user-set list, else the built-in defaults). A list
+    // of rules may stand in for `f` when there is no head to fall back on, the
+    // name may be a symbol or a string, and a list of names gives a list of
+    // values. A fourth argument wraps each value in that head.
+    //
+    // Not implemented: the `::rep` message for an element of `opts` that is not
+    // a replacement rule. Such elements are ignored, which gives the value
+    // wolframscript gives; only the message is missing.
+    "OptionValue" if (2..=4).contains(&args.len()) => {
+      let mut evaluated = Vec::with_capacity(args.len());
+      for a in args {
+        match evaluate_expr_to_expr(a) {
+          Ok(v) => evaluated.push(v),
           Err(e) => return Some(Err(e)),
-        };
-        if let Expr::List(items) = &ev {
-          items.to_vec()
-        } else {
-          vec![ev]
         }
+      }
+      // A fourth argument is the head each value is wrapped in.
+      let wrapper = if evaluated.len() == 4 {
+        evaluated.pop()
       } else {
-        Vec::new()
-      };
-      // The name argument
-      let name_idx = args.len() - 1;
-      let name_arg = match evaluate_expr_to_expr(&args[name_idx]) {
-        Ok(v) => v,
-        Err(e) => return Some(Err(e)),
-      };
-      // Resolve lookup key as string
-      let (lookup_key, _is_string) = match &name_arg {
-        Expr::Identifier(n) => (n.clone(), false),
-        Expr::String(s) => (s.clone(), true),
-        _ => {
-          return Some(Ok(unevaluated("OptionValue", args)));
-        }
-      };
-      // Helper: match rule key against lookup_key
-      let matches_key = |pattern: &Expr| -> bool {
-        match pattern {
-          Expr::Identifier(n) => *n == lookup_key,
-          Expr::String(s) => *s == lookup_key,
-          _ => false,
-        }
-      };
-      let find_value = |rules: &[Expr]| -> Option<Expr> {
-        for rule in rules {
-          match rule {
-            Expr::Rule {
-              pattern,
-              replacement,
-            }
-            | Expr::RuleDelayed {
-              pattern,
-              replacement,
-            } if matches_key(pattern.as_ref()) => {
-              return Some((**replacement).clone());
-            }
-            _ => {}
-          }
-        }
         None
       };
-      // Search order: extra_opts first, then Options[f]
-      if let Some(v) = find_value(&extra_opts) {
-        return Some(Ok(v));
-      }
-      if let Some(fname) = &func_name {
-        let stored =
-          crate::FUNC_OPTIONS.with(|m| m.borrow().get(fname).cloned());
-        if let Some(rules) = stored
-          && let Some(v) = find_value(&rules)
-        {
-          return Some(Ok(v));
+      let name_arg = evaluated.pop().expect("at least two arguments");
+      // What is left is the head and/or an explicit rule list. A list (or a
+      // bare rule) in the first slot is itself the rule list.
+      let mut head: Option<String> = None;
+      let mut explicit: Vec<Expr> = Vec::new();
+      let collect = |e: &Expr, explicit: &mut Vec<Expr>| match e {
+        Expr::List(items) => explicit.extend(items.iter().cloned()),
+        other => explicit.push(other.clone()),
+      };
+      for (i, e) in evaluated.iter().enumerate() {
+        match e {
+          Expr::Identifier(n) if i == 0 => head = Some(n.clone()),
+          other => collect(other, &mut explicit),
         }
       }
-      // Not found: emit optnf warning, return name as-is
-      let fname_display = match &func_name {
-        Some(n) => n.clone(),
-        None => crate::syntax::expr_to_string(&func_arg),
+
+      // The option defaults of the head, if there is one.
+      let defaults: Vec<Expr> = match &head {
+        Some(name) => crate::FUNC_OPTIONS
+          .with(|m| m.borrow().get(name).cloned())
+          .unwrap_or_else(|| builtin_default_options(name)),
+        None => Vec::new(),
       };
-      crate::emit_message(&format!(
-        "OptionValue::optnf: Option name {} not found in defaults for {}.",
-        lookup_key, fname_display
-      ));
-      return Some(Ok(name_arg));
+      let value_of = |rules: &[Expr], key: &str| -> Option<Expr> {
+        rules.iter().find_map(|rule| match rule {
+          Expr::Rule {
+            pattern,
+            replacement,
+          }
+          | Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } => match pattern.as_ref() {
+            Expr::Identifier(n) if n == key => Some((**replacement).clone()),
+            Expr::String(s) if s == key => Some((**replacement).clone()),
+            _ => None,
+          },
+          _ => None,
+        })
+      };
+      // wolframscript names the whole first argument in the message, and stays
+      // quiet when it is an empty list.
+      let target = crate::syntax::format_expr(
+        evaluated.first().unwrap_or(&name_arg),
+        crate::syntax::ExprForm::Output,
+      );
+      let quiet = matches!(evaluated.first(), Some(Expr::List(items)) if items.is_empty());
+      let resolve = |name: &Expr| -> Result<Expr, InterpreterError> {
+        let key = match name {
+          Expr::Identifier(n) => n.clone(),
+          Expr::String(s) => s.clone(),
+          // A name that is neither a symbol nor a string resolves to itself.
+          other => return Ok(other.clone()),
+        };
+        match value_of(&explicit, &key).or_else(|| value_of(&defaults, &key)) {
+          // A `:>` default holds its right-hand side, so evaluate what we find.
+          Some(v) => {
+            let v = evaluate_expr_to_expr(&v)?;
+            Ok(match &wrapper {
+              Some(h) => Expr::FunctionCall {
+                name: crate::syntax::expr_to_string(h),
+                args: vec![v].into(),
+              },
+              None => v,
+            })
+          }
+          None => {
+            if !quiet {
+              crate::emit_message(&format!(
+                "OptionValue::optnf: Option name {} not found in defaults for {}.",
+                key, target
+              ));
+            }
+            // A missing option gives back the name it was asked for, never
+            // wrapped.
+            Ok(name.clone())
+          }
+        }
+      };
+      return Some(match &name_arg {
+        Expr::List(names) => {
+          let mut out = Vec::with_capacity(names.len());
+          for name in names.iter() {
+            match resolve(name) {
+              Ok(v) => out.push(v),
+              Err(e) => return Some(Err(e)),
+            }
+          }
+          Ok(Expr::List(out.into()))
+        }
+        single => resolve(single),
+      });
     }
     // Construct - creates function call f[a][b] etc.
     "Construct" if !args.is_empty() => {

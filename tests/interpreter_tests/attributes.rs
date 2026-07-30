@@ -730,6 +730,76 @@ mod cases {
       r#"6"#,
     );
   }
+  // OptionValue[f, name] reads the option out of Options[f] — the built-in
+  // defaults as well as a user-set list.
+  #[test]
+  fn option_value_reads_builtin_defaults() {
+    assert_case(r#"OptionValue[Plot, Axes]"#, r#"True"#);
+    assert_case(r#"OptionValue[Plot, Frame]"#, r#"False"#);
+    assert_case(r#"OptionValue[Plot, PlotRange]"#, r#"{Full, Automatic}"#);
+    assert_case(r#"OptionValue[Integrate, Assumptions]"#, r#"True"#);
+    assert_case(r#"OptionValue[Position, Heads]"#, r#"True"#);
+    assert_case(r#"OptionValue[Replace, Heads]"#, r#"False"#);
+    assert_case(r#"OptionValue[ExpandAll, Modulus]"#, r#"0"#);
+    // A string names the same option as the symbol does.
+    assert_case(r#"OptionValue[Plot, "Axes"]"#, r#"True"#);
+  }
+
+  // A list of names gives a list of values, mixing symbols and strings.
+  #[test]
+  fn option_value_list_of_names() {
+    assert_case(r#"OptionValue[Plot, {Axes, Frame}]"#, r#"{True, False}"#);
+    assert_case(r#"OptionValue[Plot, {Axes, "Frame"}]"#, r#"{True, False}"#);
+    assert_case(
+      r#"OptionValue[Integrate, {Assumptions, GenerateConditions}]"#,
+      r#"{True, Automatic}"#,
+    );
+    assert_case(r#"OptionValue[Plot, {}]"#, r#"{}"#);
+  }
+
+  // An explicit rule list overrides the defaults name by name, and an empty one
+  // falls back to them entirely.
+  #[test]
+  fn option_value_explicit_rules_override_defaults() {
+    assert_case(r#"OptionValue[Plot, {Frame -> True}, Frame]"#, r#"True"#);
+    assert_case(r#"OptionValue[Plot, {}, Axes]"#, r#"True"#);
+    assert_case(
+      r#"OptionValue[Plot, {Axes -> 7}, {Axes, Frame}]"#,
+      r#"{7, False}"#,
+    );
+    // A bare rule stands in for a one-element list.
+    assert_case(r#"OptionValue[Plot, Frame -> True, Frame]"#, r#"True"#);
+    assert_case(r#"OptionValue[Plot, Frame :> True, Frame]"#, r#"True"#);
+  }
+
+  // A rule list in place of the head is itself the option list.
+  #[test]
+  fn option_value_rules_without_a_head() {
+    assert_case(r#"OptionValue[{Frame -> True}, Frame]"#, r#"True"#);
+    assert_case(
+      r#"OptionValue[{Frame -> True, Axes -> False}, {Frame, Axes}]"#,
+      r#"{True, False}"#,
+    );
+  }
+
+  // A fourth argument wraps each value in that head; a missing option is
+  // returned bare.
+  #[test]
+  fn option_value_wrapper_head() {
+    assert_case(
+      r#"OptionValue[Plot, {}, Axes, Automatic]"#,
+      r#"Automatic[True]"#,
+    );
+    assert_case(
+      r#"OptionValue[Plot, {Frame -> True}, Frame, Hold]"#,
+      r#"Hold[True]"#,
+    );
+    assert_case(
+      r#"OptionValue[Plot, {}, {Axes, Frame}, Hold]"#,
+      r#"{Hold[True], Hold[False]}"#,
+    );
+  }
+
   #[test]
   fn set_options() {
     assert_case(
