@@ -10001,3 +10001,70 @@ mod postfix_spreads_a_sequence {
     );
   }
 }
+
+// `\[Sqrt]x` and `\[CubeRoot]x` are prefix operators. They bind to the next
+// factor only, but `^`, `!` and `[[…]]` bind tighter than the radical, so
+// those suffixes are part of the operand. The "Sum of the Squares of the
+// Distances from the Vertices to the Orthocenter" Demonstration writes its
+// Heron's-formula area with one, and the cell would not parse at all.
+mod radical_prefix_operators {
+  use super::*;
+
+  #[test]
+  fn sqrt_prefix_binds_to_the_next_factor() {
+    assert_eq!(interpret(r"\[Sqrt]4").unwrap(), "2");
+    assert_eq!(interpret(r"\[Sqrt](2 + 2)").unwrap(), "2");
+    assert_eq!(interpret(r"\[Sqrt]x + 1").unwrap(), "1 + Sqrt[x]");
+    assert_eq!(interpret(r"\[Sqrt]x y").unwrap(), "Sqrt[x]*y");
+    assert_eq!(interpret(r"a \[Sqrt]b").unwrap(), "a*Sqrt[b]");
+    assert_eq!(interpret(r"\[Sqrt]2 3").unwrap(), "3*Sqrt[2]");
+    assert_eq!(interpret(r"\[Sqrt]\[Sqrt]x").unwrap(), "x^(1/4)");
+  }
+
+  #[test]
+  fn power_factorial_and_part_bind_tighter() {
+    assert_eq!(interpret(r"\[Sqrt]x^2").unwrap(), "Sqrt[x^2]");
+    assert_eq!(interpret(r"\[Sqrt]x!").unwrap(), "Sqrt[x!]");
+    assert_eq!(interpret(r"x = {4, 9}; \[Sqrt]x[[1]]").unwrap(), "2");
+    assert_eq!(interpret(r"\[Sqrt]f[4]").unwrap(), "Sqrt[f[4]]");
+  }
+
+  // `\[CubeRoot]x` is `Surd[x, 3]`, the real-valued cube root — so it is
+  // negative for a negative argument, unlike `x^(1/3)`.
+  #[test]
+  fn cube_root_prefix_is_surd() {
+    assert_eq!(interpret(r"\[CubeRoot]8").unwrap(), "2");
+    assert_eq!(interpret(r"\[CubeRoot](-8)").unwrap(), "-2");
+    assert_eq!(interpret(r"Head[\[CubeRoot]y]").unwrap(), "Surd");
+  }
+
+  // The literal Unicode characters parse the same as the `\[Name]` escapes.
+  #[test]
+  fn unicode_radical_characters() {
+    assert_eq!(interpret("√4").unwrap(), "2");
+    assert_eq!(interpret("√x y").unwrap(), "Sqrt[x]*y");
+    assert_eq!(interpret("∛8").unwrap(), "2");
+  }
+}
+
+// An applied anonymous function may carry `/.` / `//.`, which replace in the
+// *result* of the application. Regression: `f & [x] /. rules` did not parse.
+mod replace_after_applied_anonymous_function {
+  use super::*;
+
+  #[test]
+  fn replace_all_applies_to_the_result() {
+    assert_eq!(interpret("(# + 1) &[2] /. 3 -> 9").unwrap(), "9");
+    assert_eq!(interpret("(# + 1) &[2] /. x_ -> 0").unwrap(), "0");
+    assert_eq!(interpret("(# + 1) &[2] //. 3 -> 9").unwrap(), "9");
+    // Without a replacement the application is unchanged.
+    assert_eq!(interpret("(# + 1) &[2]").unwrap(), "3");
+    // And the parenthesised spelling still agrees.
+    assert_eq!(interpret("((# + 1) &)[2] /. 3 -> 9").unwrap(), "9");
+  }
+
+  #[test]
+  fn a_radical_body_replaces_the_same_way() {
+    assert_eq!(interpret(r"\[Sqrt](#) &[4] /. 2 -> 7").unwrap(), "7");
+  }
+}

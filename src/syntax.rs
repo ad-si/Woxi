@@ -2968,6 +2968,56 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       result
     }
     Rule::ParenExtended => parse_paren_extended(pair),
+    // `\[Sqrt]x` / `\[CubeRoot]x`: prefix radicals. `^`, `!` and `[[…]]`
+    // bind tighter than the radical, so they are part of the operand.
+    Rule::RadicalPrefix => {
+      let inners: Vec<_> = pair.into_inner().collect();
+      let op = inners[0].as_str();
+      let mut operand = pair_to_expr(inners[1].clone());
+      for suffix in &inners[2..] {
+        match suffix.as_rule() {
+          Rule::PartIndexSuffix => {
+            for idx_pair in suffix.clone().into_inner() {
+              operand = Expr::Part {
+                expr: Box::new(operand),
+                index: Box::new(pair_to_expr(idx_pair)),
+              };
+            }
+          }
+          Rule::ImplicitPowerSuffix => {
+            operand = Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(operand),
+              right: Box::new(implicit_power_exponent(suffix.clone())),
+            };
+          }
+          Rule::FactorialSuffix => {
+            let name = if suffix.as_str().starts_with("!!") {
+              "Factorial2"
+            } else {
+              "Factorial"
+            };
+            operand = Expr::FunctionCall {
+              name: name.to_string(),
+              args: vec![operand].into(),
+            };
+          }
+          _ => {}
+        }
+      }
+      // `\[CubeRoot]x` is `Surd[x, 3]`, the real-valued cube root — not
+      // `x^(1/3)`, which is complex for a negative x.
+      if op == "\\[CubeRoot]" || op == "\u{221B}" {
+        return Expr::FunctionCall {
+          name: "Surd".to_string(),
+          args: vec![operand, Expr::Integer(3)].into(),
+        };
+      }
+      Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![operand].into(),
+      }
+    }
     Rule::Increment => {
       // x++ -> Increment[x]; chained `x++++` -> Increment[Increment[x]].
       // Grammar emits one base pair followed by N `IncrementOp` pairs
@@ -4434,7 +4484,14 @@ fn parse_expression_inner(
 
       // Parse continuation as operator-term pairs
       post_terms.push(starting_term);
-      let mut pending_anon_chains: Vec<Vec<Vec<Expr>>> = Vec::new();
+      // Each `&` chain may be followed by `/.` / `//.` suffixes, which
+      // apply to the *result* of the application: `f & [x] /. rules`.
+      #[allow(clippy::type_complexity)]
+      let mut pending_anon_chains: Vec<(
+        Vec<Vec<Expr>>,
+        Vec<(Expr, bool)>,
+      )> = Vec::new();
+      let mut leading_replaces: Vec<(Expr, bool)> = Vec::new();
       let mut iter = post_pairs.into_iter();
       while let Some(op_pair) = iter.next() {
         if op_pair.as_rule() == Rule::Operator {
@@ -4488,15 +4545,43 @@ fn parse_expression_inner(
             .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
             .map(|bracket| bracket.into_inner().map(pair_to_expr).collect())
             .collect();
-          pending_anon_chains.push(bracket_args);
+          pending_anon_chains.push((bracket_args, Vec::new()));
+        } else if matches!(
+          op_pair.as_rule(),
+          Rule::ReplaceAllSuffix | Rule::ReplaceRepeatedSuffix
+        ) {
+          // `f & [x] /. rules` replaces in the *result* of the
+          // application. Before any further `&`, that result is the term
+          // chain built so far; after one, it is that chain's own result.
+          let repeated = op_pair.as_rule() == Rule::ReplaceRepeatedSuffix;
+          let rules = pair_to_expr(op_pair.into_inner().next().unwrap());
+          match pending_anon_chains.last_mut() {
+            Some((_, replaces)) => replaces.push((rules, repeated)),
+            None => leading_replaces.push((rules, repeated)),
+          }
         }
       }
 
       // Build expression tree with precedence
       result = build_binary_tree(post_terms, post_ops);
 
+      // A `/.` between the first `&` application and any further one.
+      for (rules, repeated) in leading_replaces {
+        result = if repeated {
+          Expr::ReplaceRepeated {
+            expr: Box::new(result),
+            rules: Box::new(rules),
+          }
+        } else {
+          Expr::ReplaceAll {
+            expr: Box::new(result),
+            rules: Box::new(rules),
+          }
+        };
+      }
+
       // Apply any additional `& [...]` chains that followed the first one.
-      for bracket_args in pending_anon_chains {
+      for (bracket_args, replaces) in pending_anon_chains {
         result = Expr::Function {
           body: Box::new(result),
         };
@@ -4504,6 +4589,19 @@ fn parse_expression_inner(
           result = Expr::CurriedCall {
             func: Box::new(result),
             args,
+          };
+        }
+        for (rules, repeated) in replaces {
+          result = if repeated {
+            Expr::ReplaceRepeated {
+              expr: Box::new(result),
+              rules: Box::new(rules),
+            }
+          } else {
+            Expr::ReplaceAll {
+              expr: Box::new(result),
+              rules: Box::new(rules),
+            }
           };
         }
       }

@@ -11,3 +11,11 @@ $ wo '{a, b} /. a -> x'
 $ wo '{x^2, y^2} /. x -> 2'
 {4, y^2}
 ```
+
+An applied anonymous function may carry a replacement, which applies to the
+*result* of the application:
+
+```scrut
+$ wo '(# + 1) &[2] /. 3 -> 9'
+9
+```

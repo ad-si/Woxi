@@ -6862,6 +6862,55 @@ Cell[BoxData[
   }
 
   #[test]
+  fn orthocenter_manipulate_uses_a_radical_helper() {
+    // End-to-end regression for "The Sum of the Squares of the Distances
+    // from the Vertices to the Orthocenter". Its initialization writes
+    // Heron's formula with the `\[Sqrt]` prefix operator and pipes the
+    // result of an applied anonymous function through `/.`; neither parsed,
+    // so the whole cell was a syntax error and no widget appeared.
+    woxi::interpret(
+      "AreaOfTriangle[p_, q_, r_] := \
+       (\\[Sqrt](#(# - EuclideanDistance[p, q])(# - EuclideanDistance[q, r])\
+       (# - EuclideanDistance[p, r])) &[\
+        (1)/(2) (EuclideanDistance[p, q] + EuclideanDistance[q, r] + \
+          EuclideanDistance[p, r])] \
+        /. Complex[a_, b_] /; Max[Abs@a, Abs@b] < (10)^(-4) -> 0)",
+    )
+    .expect("the Heron helper must define");
+    assert_eq!(
+      woxi::interpret(
+        "AreaOfTriangle[{-0.745, -0.64}, {-0.083, 1.}, {0.98875, 0.25}]"
+      )
+      .unwrap(),
+      "1.1270849999999994"
+    );
+
+    let code = "Manipulate[\
+      Graphics[{Line[{pt1, pt2, pt3, pt1}], \
+        Text[AreaOfTriangle[pt1, pt2, pt3], {0, 0}]}, \
+        PlotRange -> 1.2], \
+      {{pt1, {-0.745, -0.64}}, {-1, -1}, {1, 1}, Locator}, \
+      {{pt2, {-0.083, 1.}}, {-1, -1}, {1, 1}, Locator}, \
+      {{pt3, {0.98875, 0.25}}, {-1, -1}, {1, 1}, Locator}, \
+      SaveDefinitions -> True]";
+    let state = instantiate_stored_manipulate(code)
+      .expect("the orthocenter Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some(), "the triangle must render");
+    assert_eq!(state.controls.len(), 3);
+    assert!(
+      state
+        .controls
+        .iter()
+        .all(|c| matches!(c, manipulate::ControlState::Slider2D { .. }))
+    );
+  }
+
+  #[test]
   fn quicksort_manipulate_builds_all_four_controls() {
     // End-to-end regression for the "Quicksort versus Selection Sort"
     // Demonstration. Its fourth control is a custom one — `{{li, init, ""},

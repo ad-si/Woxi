@@ -105,7 +105,7 @@ PatternName = @{ (ASCII_ALPHA | LETTER) ~ (ASCII_ALPHANUMERIC | LETTER)* }
 // Matches \[Name] syntax or direct Unicode chars for common symbols
 // Excludes operator named chars (\[Element], \[NotElement], \[ReverseElement], \[DirectedEdge], \[UndirectedEdge])
 // which must be parsed as infix operators, not as identifiers in implicit multiplication.
-NamedCharBase = _{ !("\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]" | "\\[Conditioned]" | "\\[Function]" | "\\[Transpose]" | "\\[ConjugateTranspose]" | "\\[Cross]" | "\\[TensorProduct]" | "\\[CircleTimes]" | "\\[CirclePlus]" | "\\[CenterDot]" | "\\[CircleMinus]" | "\\[Star]" | "\\[Diamond]" | "\\[Backslash]" | "\\[CircleDot]" | "\\[SmallCircle]" | "\\[Wedge]" | "\\[Vee]" | "\\[Cap]" | "\\[Cup]" | "\\[DoubleRightTee]" | "\\[RightTee]" | "\\[DoubleLeftTee]" | "\\[LeftTee]" | "\\[And]" | "\\[Or]" | "\\[Not]" | "\\[Xor]" | "\\[Nand]" | "\\[Nor]" | "\\[Implies]" | "\\[Equivalent]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{2147}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" | "\u{F74D}" | "\u{F74E}" | "\u{F74F}" }
+NamedCharBase = _{ !("\\[Sqrt]" | "\\[CubeRoot]" | "\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]" | "\\[Conditioned]" | "\\[Function]" | "\\[Transpose]" | "\\[ConjugateTranspose]" | "\\[Cross]" | "\\[TensorProduct]" | "\\[CircleTimes]" | "\\[CirclePlus]" | "\\[CenterDot]" | "\\[CircleMinus]" | "\\[Star]" | "\\[Diamond]" | "\\[Backslash]" | "\\[CircleDot]" | "\\[SmallCircle]" | "\\[Wedge]" | "\\[Vee]" | "\\[Cap]" | "\\[Cup]" | "\\[DoubleRightTee]" | "\\[RightTee]" | "\\[DoubleLeftTee]" | "\\[LeftTee]" | "\\[And]" | "\\[Or]" | "\\[Not]" | "\\[Xor]" | "\\[Nand]" | "\\[Nor]" | "\\[Implies]" | "\\[Equivalent]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{2147}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" | "\u{F74D}" | "\u{F74E}" | "\u{F74F}" }
 // Adjacent `\[Name]` segments (or named char + identifier chars)
 // concatenate into a single identifier — `\[CapitalGamma]\[Beta]` → `Γβ`,
 // `\[Angle]XYZ` → `∠XYZ`, `i\[Ellipsis]j` (when `i` then `\[Ellipsis]j`
@@ -409,7 +409,7 @@ Expression = {
     (LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingPlus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?) ~ (UnsetSuffix | (Operator | TildeInfix) ~ (LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingPlus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?))*
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)*
     ~ ("//" ~ PostfixFunction)*               // Postfix application (lowest precedence): x // f
-    ~ (AnonymousFunctionSuffix ~ ((Operator | TildeInfix) ~ (LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingPlus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?))*  ~ ("//" ~ PostfixFunction)*)*  // Function: expr & (lowest precedence), then optional continuation — repeated for chains like `f & [x] & [y]`
+    ~ (AnonymousFunctionSuffix ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)* ~ ((Operator | TildeInfix) ~ (LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingPlus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?))*  ~ ("//" ~ PostfixFunction)*)*  // Function: expr & (lowest precedence), then optional continuation — repeated for chains like `f & [x] & [y]`
 }
 
 // Legacy rules kept for backward compatibility in evaluation code
@@ -500,6 +500,7 @@ Term = _{
   | FunctionCallExtended
   | SlotCall
   | ImplicitTimes
+  | RadicalPrefix
   | Unset
   | ApplyToOp
   | AddTo
@@ -535,6 +536,11 @@ Term = _{
 // SimpleTerm is used for implicit multiplication - doesn't include ImplicitTimes to avoid recursion
 // Uses UnsignedNumericValue to prevent "n-1" from being parsed as implicit multiplication n*(-1)
 // PrefixApplySimple handles f@x within implicit multiplication so Sqrt@5 binds before n Sqrt@5
+// `\[Sqrt]x` / `\[CubeRoot]x` are prefix operators binding to the next
+// factor, with `^`, `!` and `[[…]]` binding tighter than the radical:
+// `\[Sqrt]x y` is `Sqrt[x] y` but `\[Sqrt]x^2` is `Sqrt[x^2]`.
+RadicalOp = { "\\[Sqrt]" | "\u{221A}" | "\\[CubeRoot]" | "\u{221B}" }
+RadicalPrefix = { RadicalOp ~ SimpleTerm ~ PartIndexSuffix? ~ ImplicitPowerSuffix? ~ FactorialSuffix? }
 PrefixApplySimple = { (FunctionCall | Identifier) ~ "@" ~ SimpleTerm }
 SimpleTerm = _{
   // Increment/Decrement come first so a postfix `++` binds to its operand
@@ -542,6 +548,7 @@ SimpleTerm = _{
   // `1++2` is `Increment[1] 2`.
     Increment
   | Decrement
+  | RadicalPrefix
   | UnsignedNumericValue
   | PrefixApplySimple
   | FunctionCall
@@ -598,7 +605,7 @@ ExpressionNoImplicit = {
     (LeadingNot ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?) ~ (UnsetSuffix | (Operator | TildeInfix) ~ (LeadingNot ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?))*
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)*
     ~ ("//" ~ PostfixFunction)*
-    ~ (AnonymousFunctionSuffix ~ ((Operator | TildeInfix) ~ (LeadingNot ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?))*  ~ ("//" ~ PostfixFunction)*)?
+    ~ (AnonymousFunctionSuffix ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)* ~ ((Operator | TildeInfix) ~ (LeadingNot ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?))*  ~ ("//" ~ PostfixFunction)*)?
 }
 
 // Pattern: x_ or x_Head or x_?test or x_ /; condition or x_:default or x_Head:default
