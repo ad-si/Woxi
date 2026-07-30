@@ -7294,6 +7294,214 @@ mod linear_programming {
       "LinearProgramming[{1, 1}, {{1, 1}}, {{-5, -1}}]"
     );
   }
+
+  // A fourth argument replaces the default x >= 0 bounds: a scalar lower bound
+  // for every variable, or a vector of them.
+  #[test]
+  fn scalar_and_vector_lower_bounds() {
+    // Restating the default changes nothing.
+    assert_eq!(
+      interpret("LinearProgramming[{1, 1}, {{1, 2}, {3, 1}}, {3, 4}, {0, 0}]")
+        .unwrap(),
+      "{1, 1}"
+    );
+    assert_eq!(
+      interpret("LinearProgramming[{1, 1}, {{1, 2}, {3, 1}}, {3, 4}, 0]")
+        .unwrap(),
+      "{1, 1}"
+    );
+    // Raising the floor to 1 leaves the same optimum feasible.
+    assert_eq!(
+      interpret("LinearProgramming[{1, 1}, {{1, 2}, {3, 1}}, {3, 4}, {1, 1}]")
+        .unwrap(),
+      "{1, 1}"
+    );
+    // Lowering it does not pull the optimum below the constraints.
+    assert_eq!(
+      interpret("LinearProgramming[{1, 1}, {{1, 2}, {3, 1}}, {3, 4}, -5]")
+        .unwrap(),
+      "{1, 1}"
+    );
+    // A scalar -Infinity makes every variable free below.
+    assert_eq!(
+      interpret(
+        "LinearProgramming[{1, 1}, {{1, 2}, {3, 1}}, {3, 4}, -Infinity]"
+      )
+      .unwrap(),
+      "{1, 1}"
+    );
+    // Exact rationals survive the substitution.
+    assert_eq!(
+      interpret(
+        "LinearProgramming[{3, 2}, {{1, 1}, {1, -1}}, {{4, 1}, {1, 1}}, \
+         {{0, Infinity}, {0, Infinity}}]"
+      )
+      .unwrap(),
+      "{5/2, 3/2}"
+    );
+  }
+
+  // A matrix of {lower, upper} pairs bounds each variable on both sides, and an
+  // entry may be Infinity or -Infinity.
+  #[test]
+  fn lower_and_upper_bound_pairs() {
+    assert_eq!(
+      interpret(
+        "LinearProgramming[{1, -1}, {{1, 1}}, {{2, 0}}, {{-5, 5}, {-5, 5}}]"
+      )
+      .unwrap(),
+      "{-3, 5}"
+    );
+    assert_eq!(
+      interpret(
+        "LinearProgramming[{-1, -1}, {{1, 1}}, {{2, -1}}, {{0, 1}, {0, 1}}]"
+      )
+      .unwrap(),
+      "{1, 1}"
+    );
+    assert_eq!(
+      interpret(
+        "LinearProgramming[{1, 1}, {{1, 2}, {3, 1}}, {3, 4}, {{2, 3}, {2, 3}}]"
+      )
+      .unwrap(),
+      "{2, 2}"
+    );
+    // An upper bound can bind on its own while the variable is free below.
+    assert_eq!(
+      interpret(
+        "LinearProgramming[{-1, 0}, {{1, 0}}, {{1, -1}}, \
+         {{-Infinity, Infinity}, {0, 0}}]"
+      )
+      .unwrap(),
+      "{1, 0}"
+    );
+    assert_eq!(
+      interpret(
+        "LinearProgramming[{-1, -2, -3}, {{1, 1, 1}}, {{6, -1}}, \
+         {{0, 2}, {0, 2}, {0, 2}}]"
+      )
+      .unwrap(),
+      "{2, 2, 2}"
+    );
+  }
+
+  // Bounds that leave nothing feasible report lpsnf like any other infeasible
+  // problem.
+  #[test]
+  fn contradictory_bounds_are_infeasible() {
+    use woxi::interpret_with_stdout;
+    let r = interpret_with_stdout(
+      "LinearProgramming[{1, 1}, {{1, 2}, {3, 1}}, {3, 4}, {{5, 0}, {5, 0}}]",
+    )
+    .unwrap();
+    assert_eq!(
+      r.result,
+      "LinearProgramming[{1, 1}, {{1, 2}, {3, 1}}, {3, 4}, {{5, 0}, {5, 0}}]"
+    );
+    assert!(
+      r.warnings.iter().any(|w| w
+        == "LinearProgramming::lpsnf: No solution can be found that satisfies \
+            the constraints."),
+      "expected lpsnf message, got {:?}",
+      r.warnings
+    );
+    // Requiring x + y >= 2 with both variables at most 0 cannot be met.
+    let r = interpret_with_stdout(
+      "LinearProgramming[{1, 1}, {{1, 1}}, {{2, 1}}, \
+       {{-Infinity, 0}, {-Infinity, 0}}]",
+    )
+    .unwrap();
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("LinearProgramming::lpsnf")),
+      "expected lpsnf message, got {:?}",
+      r.warnings
+    );
+  }
+
+  // Each way of malforming the bounds has its own message.
+  #[test]
+  fn invalid_bounds_emit_messages() {
+    use woxi::interpret_with_stdout;
+    let check = |code: &str, expected: &str| {
+      let r = interpret_with_stdout(code).unwrap();
+      assert!(
+        r.warnings.iter().any(|w| w.contains(expected)),
+        "expected {:?} for {}, got {:?}",
+        expected,
+        code,
+        r.warnings
+      );
+    };
+    // Neither a scalar, a vector, nor a matrix with two columns.
+    check(
+      "LinearProgramming[{1, 1}, {{1, 2}, {3, 1}}, {3, 4}, {{0, 5}, 2}]",
+      "LinearProgramming::lprank012: {{0, 5}, 2} must be a scalar, a vector \
+       or a matrix with 2 columns.",
+    );
+    check(
+      "LinearProgramming[{1, 1}, {{1, 2}, {3, 1}}, {3, 4}, \
+       {{0, 5, 1}, {0, 5, 1}}]",
+      "LinearProgramming::lprank012:",
+    );
+    // The right shape but the wrong number of variables.
+    check(
+      "LinearProgramming[{1, 1}, {{1, 2}, {3, 1}}, {3, 4}, {0}]",
+      "LinearProgramming::lpdim: Invalid input: the dimensions of the input \
+       vectors or matrices must match.",
+    );
+    check(
+      "LinearProgramming[{1, 1}, {{1, 2}, {3, 1}}, {3, 4}, \
+       {{0, 5}, {0, 5}, {0, 5}}]",
+      "LinearProgramming::lpdim:",
+    );
+    // An entry that is not a real number or an infinity.
+    check(
+      "LinearProgramming[{1, 1}, {{1, 2}, {3, 1}}, {3, 4}, {x, 0}]",
+      "LinearProgramming::lpbd: The input that specifies lower/upper bounds \
+       contains elements that are not real numbers, Infinity or -Infinity.",
+    );
+    check(
+      "LinearProgramming[{1, 1}, {{1, 2}, {3, 1}}, {3, 4}, {{x, 5}, {0, 5}}]",
+      "LinearProgramming::lpbd:",
+    );
+    // A scalar Infinity sets both bounds at Infinity.
+    check(
+      "LinearProgramming[{1, 1}, {{1, 2}, {3, 1}}, {3, 4}, Infinity]",
+      "LinearProgramming::lpsbnn: Found lower bound and upper bound both set \
+       at Infinity.",
+    );
+  }
+
+  // Mismatched objective, matrix and right-hand-side sizes now report lpdim
+  // instead of quietly staying unevaluated.
+  #[test]
+  fn mismatched_dimensions_emit_lpdim() {
+    use woxi::interpret_with_stdout;
+    let r =
+      interpret_with_stdout("LinearProgramming[{1, 1}, {{1, 2}, {3, 1}}, {3}]")
+        .unwrap();
+    assert_eq!(r.result, "LinearProgramming[{1, 1}, {{1, 2}, {3, 1}}, {3}]");
+    assert!(
+      r.warnings.iter().any(|w| w
+        == "LinearProgramming::lpdim: Invalid input: the dimensions of the \
+            input vectors or matrices must match."),
+      "expected lpdim message, got {:?}",
+      r.warnings
+    );
+    let r = interpret_with_stdout(
+      "LinearProgramming[{1, 1}, {{1, 2, 3}, {3, 1, 2}}, {3, 4}]",
+    )
+    .unwrap();
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("LinearProgramming::lpdim")),
+      "expected lpdim message, got {:?}",
+      r.warnings
+    );
+  }
 }
 
 mod find_root {

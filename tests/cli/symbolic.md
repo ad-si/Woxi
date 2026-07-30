@@ -133,6 +133,7 @@ x + 2*x^2 + x^3
 - [`GeneratingFunction`](symbolic/GeneratingFunction.md)
 - [`InterpolatingPolynomial`](symbolic/InterpolatingPolynomial.md)
 - [`InverseFourierTransform`](symbolic/InverseFourierTransform.md)
+- [`LinearProgramming`](symbolic/LinearProgramming.md)
 - [`MaxLimit`](symbolic/MaxLimit.md)
 - [`Maximize`](symbolic/Maximize.md)
 - [`MinLimit`](symbolic/MinLimit.md)

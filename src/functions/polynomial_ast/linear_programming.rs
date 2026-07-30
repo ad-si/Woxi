@@ -1,9 +1,18 @@
-//! LinearProgramming[c, m, b] — exact linear program solver.
+//! LinearProgramming[c, m, b] / LinearProgramming[c, m, b, l] — exact linear
+//! program solver.
 //!
 //! Minimizes `c · x` subject to the constraints encoded by `m` and `b` and
 //! (by default) `x >= 0`. Each constraint row `m[[i]] · x` is compared to
 //! `b[[i]]`; when `b[[i]]` is a bare number the relation is `>=`, and when it
 //! is a pair `{value, sign}` the sign selects `>=` (1), `==` (0) or `<=` (-1).
+//!
+//! `l` replaces the default `x >= 0` bounds: a scalar lower bound for every
+//! variable, a vector of lower bounds, or a matrix of `{lower, upper}` pairs
+//! whose entries may be `Infinity` or `-Infinity`. A finite lower bound is
+//! removed by substituting `x = lower + y` with `y >= 0`, a variable with no
+//! lower bound is split into the difference of two non-negative ones, and a
+//! finite upper bound becomes one more `<=` constraint — so the simplex below
+//! only ever sees non-negative variables.
 //!
 //! The solver is an exact two-phase simplex over `BigInt` rationals. It uses
 //! Dantzig's entering rule — which reproduces the vertex wolframscript reports
@@ -167,22 +176,141 @@ enum Rel {
   Le,
 }
 
+/// One variable's bound, which may be infinite in either direction.
+#[derive(Clone)]
+enum Bound {
+  Finite(Rat),
+  PosInf,
+  NegInf,
+}
+
+/// Why a bound specification was refused, and which message wolframscript
+/// emits for it.
+enum BoundError {
+  /// `::lprank012` — not a scalar, a vector, or a matrix with two columns.
+  Rank,
+  /// `::lpdim` — the right shape but the wrong number of variables.
+  Dim,
+  /// `::lpbd` — an entry that is neither a real number nor +/-Infinity.
+  Value,
+  /// `::lpsbnn` — a variable whose lower and upper bound are both Infinity.
+  BothInfinite,
+}
+
+/// A single lower/upper bound entry. Infinities are recognised through the
+/// printed form, which is where the several internal shapes of `-Infinity`
+/// (`DirectedInfinity`, a negated symbol, `Times[-1, Infinity]`) are already
+/// normalised to one token.
+fn parse_bound(e: &Expr) -> Option<Bound> {
+  if let Some(r) = expr_to_rat(e) {
+    return Some(Bound::Finite(r));
+  }
+  match crate::syntax::format_expr(e, crate::syntax::ExprForm::Output).as_str()
+  {
+    "Infinity" => Some(Bound::PosInf),
+    "-Infinity" => Some(Bound::NegInf),
+    _ => None,
+  }
+}
+
+/// Read the `l` argument of `LinearProgramming` into one `(lower, upper)` pair
+/// per variable. Shape is checked before length, and length before the entries,
+/// matching the order wolframscript reports the three problems in.
+fn parse_bounds(l: &Expr, n: usize) -> Result<Vec<(Bound, Bound)>, BoundError> {
+  let entries: Vec<(Bound, Bound)> = match l {
+    Expr::List(items) => {
+      let rows = items
+        .iter()
+        .filter(|it| matches!(it, Expr::List(_)))
+        .count();
+      if rows == items.len() && !items.is_empty() {
+        // A matrix: every row must hold exactly a lower and an upper bound.
+        if items
+          .iter()
+          .any(|it| !matches!(it, Expr::List(p) if p.len() == 2))
+        {
+          return Err(BoundError::Rank);
+        }
+        if items.len() != n {
+          return Err(BoundError::Dim);
+        }
+        let mut out = Vec::with_capacity(n);
+        for it in items.iter() {
+          let Expr::List(pair) = it else { unreachable!() };
+          let (Some(lo), Some(hi)) =
+            (parse_bound(&pair[0]), parse_bound(&pair[1]))
+          else {
+            return Err(BoundError::Value);
+          };
+          out.push((lo, hi));
+        }
+        out
+      } else if rows == 0 {
+        // A vector of lower bounds, with no upper bounds.
+        if items.len() != n {
+          return Err(BoundError::Dim);
+        }
+        let mut out = Vec::with_capacity(n);
+        for it in items.iter() {
+          match parse_bound(it) {
+            Some(lo) => out.push((lo, Bound::PosInf)),
+            None => return Err(BoundError::Value),
+          }
+        }
+        out
+      } else {
+        return Err(BoundError::Rank);
+      }
+    }
+    // A scalar lower bound shared by every variable.
+    scalar => match parse_bound(scalar) {
+      Some(lo) => vec![(lo, Bound::PosInf); n],
+      None => return Err(BoundError::Value),
+    },
+  };
+  if entries
+    .iter()
+    .any(|(lo, hi)| matches!((lo, hi), (Bound::PosInf, Bound::PosInf)))
+  {
+    return Err(BoundError::BothInfinite);
+  }
+  Ok(entries)
+}
+
+/// How an original variable is expressed in the non-negative variables the
+/// simplex works with.
+enum VarMap {
+  /// `x = offset + y[col]`, with `y[col] >= 0`.
+  Shifted { col: usize, offset: Rat },
+  /// `x = y[pos] - y[neg]`, both non-negative — a variable with no lower bound.
+  Free { pos: usize, neg: usize },
+}
+
 pub fn linear_programming_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  // Accept the 3-argument form LinearProgramming[c, m, b]. The 4-argument
-  // bounds form is left unevaluated for now.
-  if args.len() != 3 {
-    return Ok(unevaluated("LinearProgramming", args));
+  let call = || Ok(unevaluated("LinearProgramming", args));
+  let lpdim = || {
+    crate::emit_message(
+      "LinearProgramming::lpdim: Invalid input: the dimensions of the input \
+       vectors or matrices must match.",
+    );
+  };
+  if args.len() != 3 && args.len() != 4 {
+    return call();
   }
   let (Expr::List(c_items), Expr::List(m_rows), Expr::List(b_items)) =
     (&args[0], &args[1], &args[2])
   else {
-    return Ok(unevaluated("LinearProgramming", args));
+    return call();
   };
 
   let n = c_items.len();
   let k = m_rows.len();
-  if n == 0 || k == 0 || b_items.len() != k {
-    return Ok(unevaluated("LinearProgramming", args));
+  if n == 0 || k == 0 {
+    return call();
+  }
+  if b_items.len() != k {
+    lpdim();
+    return call();
   }
 
   // Objective coefficients.
@@ -190,7 +318,7 @@ pub fn linear_programming_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for ci in c_items.iter() {
     match expr_to_rat(ci) {
       Some(r) => c.push(r),
-      None => return Ok(unevaluated("LinearProgramming", args)),
+      None => return call(),
     }
   }
 
@@ -198,16 +326,17 @@ pub fn linear_programming_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut a: Vec<Vec<Rat>> = Vec::with_capacity(k);
   for row in m_rows.iter() {
     let Expr::List(row_items) = row else {
-      return Ok(unevaluated("LinearProgramming", args));
+      return call();
     };
     if row_items.len() != n {
-      return Ok(unevaluated("LinearProgramming", args));
+      lpdim();
+      return call();
     }
     let mut r = Vec::with_capacity(n);
     for e in row_items.iter() {
       match expr_to_rat(e) {
         Some(v) => r.push(v),
-        None => return Ok(unevaluated("LinearProgramming", args)),
+        None => return call(),
       }
     }
     a.push(r);
@@ -223,7 +352,7 @@ pub fn linear_programming_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let (Some(val), Some(sign)) =
           (expr_to_rat(&pair[0]), expr_to_rat(&pair[1]))
         else {
-          return Ok(unevaluated("LinearProgramming", args));
+          return call();
         };
         rel.push(if sign.is_zero() {
           Rel::Eq
@@ -239,14 +368,144 @@ pub fn linear_programming_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           b.push(v);
           rel.push(Rel::Ge);
         }
-        None => return Ok(unevaluated("LinearProgramming", args)),
+        None => return call(),
       },
     }
   }
 
-  match solve_simplex(&c, &a, &b, &rel, n) {
-    LpResult::Optimal(x) => {
-      Ok(Expr::List(x.iter().map(|r| r.to_expr()).collect()))
+  // Variable bounds. Without `l` every variable is simply non-negative, which
+  // the substitution below reproduces as a zero shift.
+  let bounds =
+    match args.get(3) {
+      None => vec![(Bound::Finite(Rat::zero()), Bound::PosInf); n],
+      Some(l) => match parse_bounds(l, n) {
+        Ok(bounds) => bounds,
+        Err(err) => {
+          let message = match err {
+          BoundError::Rank => format!(
+            "LinearProgramming::lprank012: {} must be a scalar, a vector or a \
+             matrix with 2 columns.",
+            crate::syntax::format_expr(l, crate::syntax::ExprForm::Output)
+          ),
+          BoundError::Dim => "LinearProgramming::lpdim: Invalid input: the \
+                              dimensions of the input vectors or matrices must \
+                              match."
+            .to_string(),
+          BoundError::Value =>
+            "LinearProgramming::lpbd: The input that specifies lower/upper \
+             bounds contains elements that are not real numbers, Infinity or \
+             -Infinity."
+              .to_string(),
+          BoundError::BothInfinite =>
+            "LinearProgramming::lpsbnn: Found lower bound and upper bound both \
+             set at Infinity."
+              .to_string(),
+        };
+          crate::emit_message(&message);
+          return call();
+        }
+      },
+    };
+
+  // A lower bound of +Infinity, or an upper bound of -Infinity, excludes every
+  // real value; there is nothing for the simplex to find.
+  let unsatisfiable = bounds
+    .iter()
+    .any(|(lo, hi)| matches!(lo, Bound::PosInf) || matches!(hi, Bound::NegInf));
+
+  // Substitute the bounds away: shift each finite lower bound to zero, split
+  // each variable without one into a difference of two non-negative variables,
+  // and turn each finite upper bound into one more `<=` row.
+  let mut maps: Vec<VarMap> = Vec::with_capacity(n);
+  let mut width = 0usize;
+  for (lo, _) in &bounds {
+    match lo {
+      Bound::Finite(offset) => {
+        maps.push(VarMap::Shifted {
+          col: width,
+          offset: offset.clone(),
+        });
+        width += 1;
+      }
+      // A +Infinity lower bound is already known to be unsatisfiable; treat it
+      // as free here so the tableau still has consistent dimensions.
+      Bound::NegInf | Bound::PosInf => {
+        maps.push(VarMap::Free {
+          pos: width,
+          neg: width + 1,
+        });
+        width += 2;
+      }
+    }
+  }
+  let mut c2 = vec![Rat::zero(); width];
+  for (j, map) in maps.iter().enumerate() {
+    match map {
+      VarMap::Shifted { col, .. } => c2[*col] = c[j].clone(),
+      VarMap::Free { pos, neg } => {
+        c2[*pos] = c[j].clone();
+        c2[*neg] = c[j].neg();
+      }
+    }
+  }
+  let mut a2: Vec<Vec<Rat>> = Vec::with_capacity(k + n);
+  let mut b2: Vec<Rat> = Vec::with_capacity(k + n);
+  let mut rel2: Vec<Rel> = Vec::with_capacity(k + n);
+  for i in 0..k {
+    let mut row = vec![Rat::zero(); width];
+    let mut rhs = b[i].clone();
+    for (j, map) in maps.iter().enumerate() {
+      match map {
+        VarMap::Shifted { col, offset } => {
+          row[*col] = a[i][j].clone();
+          rhs = rhs.sub(&a[i][j].mul(offset));
+        }
+        VarMap::Free { pos, neg } => {
+          row[*pos] = a[i][j].clone();
+          row[*neg] = a[i][j].neg();
+        }
+      }
+    }
+    a2.push(row);
+    b2.push(rhs);
+    rel2.push(rel[i]);
+  }
+  for (j, map) in maps.iter().enumerate() {
+    let Bound::Finite(hi) = &bounds[j].1 else {
+      continue;
+    };
+    let mut row = vec![Rat::zero(); width];
+    let rhs = match map {
+      VarMap::Shifted { col, offset } => {
+        row[*col] = Rat::one();
+        hi.sub(offset)
+      }
+      VarMap::Free { pos, neg } => {
+        row[*pos] = Rat::one();
+        row[*neg] = Rat::one().neg();
+        hi.clone()
+      }
+    };
+    a2.push(row);
+    b2.push(rhs);
+    rel2.push(Rel::Le);
+  }
+
+  let outcome = if unsatisfiable {
+    LpResult::Infeasible
+  } else {
+    solve_simplex(&c2, &a2, &b2, &rel2, width)
+  };
+  match outcome {
+    LpResult::Optimal(y) => {
+      let values: Vec<Expr> = maps
+        .iter()
+        .map(|map| match map {
+          VarMap::Shifted { col, offset } => offset.add(&y[*col]).to_expr(),
+          VarMap::Free { pos, neg } => y[*pos].sub(&y[*neg]).to_expr(),
+        })
+        .collect();
+      Ok(Expr::List(values.into()))
     }
     LpResult::Unbounded => {
       crate::emit_message(
@@ -261,7 +520,7 @@ pub fn linear_programming_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::emit_message(
         "LinearProgramming::lpsnf: No solution can be found that satisfies the constraints.",
       );
-      Ok(unevaluated("LinearProgramming", args))
+      call()
     }
   }
 }

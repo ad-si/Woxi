@@ -325,7 +325,7 @@ pub fn dispatch_polynomial_functions(
         name == "Maximize",
       ));
     }
-    "LinearProgramming" if args.len() == 3 => {
+    "LinearProgramming" if args.len() == 3 || args.len() == 4 => {
       return Some(crate::functions::polynomial_ast::linear_programming_ast(
         args,
       ));
