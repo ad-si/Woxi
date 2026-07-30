@@ -3856,6 +3856,28 @@ fn gradient_filter_derivative_kernel(smooth: &[f64]) -> Vec<f64> {
 }
 
 pub fn median_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // A list argument reads its range like the other neighborhood filters:
+  // the magnitude, and a whole number or nothing. An image keeps taking
+  // any non-negative radius it is handed.
+  if matches!(&args[0], Expr::List(_)) {
+    let Some(radius) = neighborhood_radius(
+      "MedianFilter",
+      &args[1],
+      NeighborhoodRange::Whole,
+      true,
+    ) else {
+      return Ok(unevaluated("MedianFilter", args));
+    };
+    let mut whole = args.to_vec();
+    whole[1] = Expr::Integer(radius as i128);
+    return median_filter_body(&whole);
+  }
+  median_filter_body(args)
+}
+
+/// The body of `median_filter_ast`, reached with a range already
+/// resolved for list data.
+fn median_filter_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let r = crate::functions::math_ast::try_eval_to_f64(&args[1])
     .filter(|v| *v >= 0.0)
     .map(|v| v as usize);
@@ -4049,7 +4071,7 @@ pub fn mean_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       image_type: *image_type,
     }));
   }
-  aggregating_filter_ast(args, "Mean", "MeanFilter")
+  aggregating_filter_ast(args, "Mean", "MeanFilter", NeighborhoodRange::Whole)
 }
 
 /// The same image with every sample stored at its own precision, so a
@@ -4218,11 +4240,88 @@ pub fn image_difference_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// StandardDeviationFilter[data, r] — like MeanFilter but each window is
 /// summarised by its (sample) StandardDeviation. Results are exact when the
-/// input is exact.
+/// input is exact. A window of a single element has no sample standard
+/// deviation, so a zero range — or data with only one element — reports
+/// `StandardDeviationFilter::shlen` rather than letting `StandardDeviation`
+/// complain about a length under its own name.
 pub fn standard_deviation_filter_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  aggregating_filter_ast(args, "StandardDeviation", "StandardDeviationFilter")
+  if let Expr::List(elems) = &args[0]
+    && let Some(radius) = neighborhood_radius(
+      "StandardDeviationFilter",
+      &args[1],
+      NeighborhoodRange::Whole,
+      false,
+    )
+    && (radius == 0 || elems.len() < 2)
+  {
+    crate::emit_message(
+      "StandardDeviationFilter::shlen: Cannot compute the standard \
+       deviation of one element.",
+    );
+    return Ok(unevaluated("StandardDeviationFilter", args));
+  }
+  aggregating_filter_ast(
+    args,
+    "StandardDeviation",
+    "StandardDeviationFilter",
+    NeighborhoodRange::Whole,
+  )
+}
+
+/// `aggregating_filter_ast` for callers outside this module.
+pub fn aggregating_filter_public(
+  args: &[Expr],
+  agg: &str,
+  filter_name: &str,
+  range: NeighborhoodRange,
+) -> Result<Expr, InterpreterError> {
+  aggregating_filter_ast(args, agg, filter_name, range)
+}
+
+/// How a neighborhood filter reads its range argument. All of them take
+/// the magnitude, so a negative range filters the same neighborhood as
+/// its positive counterpart, but they differ on fractions: `MinFilter`,
+/// `MaxFilter` and `CommonestFilter` round any real up, while
+/// `MeanFilter`, `MedianFilter` and `StandardDeviationFilter` insist on a
+/// whole number and report anything else.
+#[derive(Clone, Copy, PartialEq)]
+pub enum NeighborhoodRange {
+  /// `Abs[r]`, and `<head>::bdrad` if that is not an integer.
+  Whole,
+  /// `Ceiling[Abs[r]]` for any real.
+  RoundedUp,
+}
+
+/// The radius named by a filter's range argument. `None` for a range
+/// that names none; pass `report` to emit `<head>::bdrad` for it, which
+/// the caller defers until it knows the first argument was data at all.
+pub fn neighborhood_radius(
+  head: &str,
+  spec: &Expr,
+  range: NeighborhoodRange,
+  report: bool,
+) -> Option<usize> {
+  let reject = || {
+    if report {
+      crate::emit_message(&format!(
+        "{head}::bdrad: {} is not a valid neighborhood range specification.",
+        crate::syntax::expr_to_string(spec)
+      ));
+    }
+    None
+  };
+  let Some(magnitude) =
+    crate::functions::math_ast::try_eval_to_f64(spec).map(f64::abs)
+  else {
+    return reject();
+  };
+  match range {
+    NeighborhoodRange::Whole if magnitude.fract() != 0.0 => reject(),
+    NeighborhoodRange::Whole => Some(magnitude as usize),
+    NeighborhoodRange::RoundedUp => Some(magnitude.ceil() as usize),
+  }
 }
 
 /// Shared engine for windowed aggregating filters (MeanFilter,
@@ -4232,13 +4331,9 @@ fn aggregating_filter_ast(
   args: &[Expr],
   agg: &str,
   filter_name: &str,
+  range: NeighborhoodRange,
 ) -> Result<Expr, InterpreterError> {
-  // Parse the radius. Must be an integer (negative is taken as abs).
-  let rval = crate::functions::math_ast::try_eval_to_f64(&args[1]);
-  let r: Option<usize> = match rval {
-    Some(v) if v.fract() == 0.0 => Some(v.abs() as usize),
-    _ => None,
-  };
+  let r = neighborhood_radius(filter_name, &args[1], range, false);
 
   if let (Expr::List(elems), Some(r)) = (&args[0], r) {
     // 2D path: every element is a List of the same (non-zero) length.
@@ -4306,12 +4401,9 @@ fn aggregating_filter_ast(
     return Ok(Expr::List(result.into()));
   }
 
-  // Non-integer radius: emit the bdrad message.
+  // A range that named no radius has already been reported.
   if r.is_none() && matches!(&args[0], Expr::List(_)) {
-    crate::emit_message(&format!(
-      "{filter_name}::bdrad: {} is not a valid neighborhood range specification.",
-      crate::syntax::expr_to_string(&args[1])
-    ));
+    neighborhood_radius(filter_name, &args[1], range, true);
   } else if !matches!(&args[0], Expr::Image { .. } | Expr::List(_)) {
     crate::emit_message(&format!(
       "{filter_name}::arg1: The first argument {} should be a rectangular array, image or video.",

@@ -2009,7 +2009,7 @@ Circumsphere,Circumsphere of a simplex (computational geometry),✅,pure,10.0,20
 AnyTrue,Checks if any element in a list is true,✅,pure,10.0,2031
 Convergents,List of convergents of a continued fraction representation,✅,none,6.0,2031
 ImageMeasurements,Named measurement of an image — statistics per channel information measures over distinct pixels and the structural properties,✅,pure,9.0,2031
-MedianFilter,Apply median filter to data (signal processing),✅,,7.0,2031
+MedianFilter,Replace each element by the median of its radius-r neighborhood (1D/2D lists and images),✅,pure,7.0,2031
 VertexOutDegree,Number of outgoing edges per vertex of a graph or edge list,✅,none,8.0,2031
 BernsteinBasis,Bernstein basis polynomial,✅,pure,7.0,2034
 LegendMargins,Margins around plot legends,🚫,,9.0,2034
@@ -2485,7 +2485,7 @@ StableDistribution,Stable distribution with PDF/CDF for Cauchy and Normal specia
 AngerJ,Anger function AngerJ[nu z] which equals BesselJ for integer orders,✅,pure,7.0,2525
 LineGraph,Line graph: one vertex per edge with adjacency for shared endpoints,✅,pure,8.0,2525
 LocalizeVariables,,🚫,,6.0,2525
-MaxFilter,Maximum filter over a sliding window,✅,none,7.0,2525
+MaxFilter,Replace each element by the maximum of its radius-r neighborhood (1D/2D lists and images),✅,pure,7.0,2525
 StringReplaceList,List of all single replacements in a string — one result per individual match of any rule (threading over a list of strings; supports pattern rules a count limit and the IgnoreCase option),✅,pure,5.1,2525
 VarianceEstimatorFunction,,🚫,,7.0,2525
 DeviceOpen,,🚫,,10.0,2528
@@ -3098,7 +3098,7 @@ LanguageCategory,,🚫,,4.0,3153
 LibraryFunction,,,,8.0,3153
 MandelbrotSetMemberQ,Tests whether a complex number is in the Mandelbrot set (exact cardioid/bulb tests plus escape iteration with MaxIterations option),✅,pure,10.0,3153
 MeshConnectivityGraph,,🚫,,12.1,3153
-MinFilter,Minimum filter over a sliding window,✅,none,7.0,3153
+MinFilter,Replace each element by the minimum of its radius-r neighborhood (1D/2D lists and images),✅,pure,7.0,3153
 Prefix,Prefix output form symbol,✅,pure,1.0,3153
 ContinuousMarkovProcess,,🚫,,9.0,3162
 DeconvolutionLayer,,🚫,,11.0,3162

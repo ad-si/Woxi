@@ -2407,20 +2407,19 @@ pub fn commonest_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(unevaluated(args));
     }
   };
-  let r = match &args[1] {
-    Expr::Integer(r) => *r,
-    _ => {
-      crate::emit_message(&format!(
-        "CommonestFilter::bdrad: {} is not a valid neighborhood range specification.",
-        crate::syntax::expr_to_string(&args[1])
-      ));
-      return Ok(unevaluated(args));
-    }
+  // The range rounds up and ignores its sign, as it does for MinFilter
+  // and MaxFilter, so 1.5 is a radius of 2 and -1 a radius of 1.
+  let Some(r) = crate::functions::image_ast::neighborhood_radius(
+    "CommonestFilter",
+    &args[1],
+    crate::functions::image_ast::NeighborhoodRange::RoundedUp,
+    true,
+  ) else {
+    return Ok(unevaluated(args));
   };
-  if r <= 0 {
+  if r == 0 {
     return Ok(args[0].clone());
   }
-  let r = r as usize;
 
   // Commonest in `window` with the tie rules; elements compare by
   // their printed form

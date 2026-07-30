@@ -6083,6 +6083,138 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // MinFilter and MaxFilter are the windowed Min and Max of a 2D array,
+  // not of its rows: they used to reduce each row to a single value.
+  #[test]
+  fn min_and_max_filter_slide_a_two_dimensional_window() {
+    let square = "{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}";
+    assert_eq!(
+      interpret(&format!("MinFilter[{}, 1]", square)).unwrap(),
+      "{{1, 1, 2}, {1, 1, 2}, {4, 4, 5}}"
+    );
+    assert_eq!(
+      interpret(&format!("MaxFilter[{}, 1]", square)).unwrap(),
+      "{{5, 6, 6}, {8, 9, 9}, {8, 9, 9}}"
+    );
+    assert_eq!(interpret("MinFilter[{}, 1]").unwrap(), "{}");
+  }
+
+  // A negative range filters the same neighborhood as its magnitude. It
+  // used to overflow a usize and abort the whole evaluation.
+  #[test]
+  fn filter_range_ignores_its_sign() {
+    let data = "{1, 2, 3, 4, 100}";
+    for head in [
+      "MeanFilter",
+      "MedianFilter",
+      "MinFilter",
+      "MaxFilter",
+      "StandardDeviationFilter",
+    ] {
+      for magnitude in ["1", "2"] {
+        assert_eq!(
+          interpret(&format!("{}[{}, -{}]", head, data, magnitude)).unwrap(),
+          interpret(&format!("{}[{}, {}]", head, data, magnitude)).unwrap(),
+          "{} at range -{}",
+          head,
+          magnitude
+        );
+      }
+    }
+    assert_eq!(
+      interpret("MinFilter[{1, 2, 3, 4, 100}, -1.5]").unwrap(),
+      "{1, 1, 1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("CommonestFilter[{1, 1, 2, 2, 2, 3}, -1]").unwrap(),
+      "{1, 1, 2, 2, 2, 3}"
+    );
+  }
+
+  // MinFilter, MaxFilter and CommonestFilter round a fractional range up;
+  // the averaging filters insist on a whole number and report otherwise.
+  #[test]
+  fn filter_range_rounds_up_only_for_the_order_statistics() {
+    let data = "{1, 2, 3, 4, 100}";
+    for (range, radius) in [("0.4", "1"), ("1.5", "2"), ("2.5", "3")] {
+      for head in ["MinFilter", "MaxFilter"] {
+        assert_eq!(
+          interpret(&format!("{}[{}, {}]", head, data, range)).unwrap(),
+          interpret(&format!("{}[{}, {}]", head, data, radius)).unwrap(),
+          "{} at range {}",
+          head,
+          range
+        );
+      }
+    }
+    assert_eq!(
+      interpret("CommonestFilter[{1, 1, 2, 2, 2, 3}, 1.5]").unwrap(),
+      "{1, 1, 2, 2, 2, 2}"
+    );
+  }
+
+  // Every one of them reports a range that names no neighborhood at all.
+  #[test]
+  fn filter_reports_an_unusable_range() {
+    use woxi::interpret_with_stdout;
+    let data = "{1, 2, 3, 4, 100}";
+    let mut cases: Vec<(&str, &str)> = vec![
+      ("MeanFilter", "1.5"),
+      ("MedianFilter", "1.5"),
+      ("StandardDeviationFilter", "1.5"),
+    ];
+    for head in [
+      "MeanFilter",
+      "MedianFilter",
+      "MinFilter",
+      "MaxFilter",
+      "StandardDeviationFilter",
+      "CommonestFilter",
+    ] {
+      cases.push((head, "x"));
+    }
+    for (head, range) in cases {
+      let call = format!("{}[{}, {}]", head, data, range);
+      let r = interpret_with_stdout(&call).unwrap();
+      assert_eq!(r.result, call, "for {}", call);
+      let expected = format!(
+        "{}::bdrad: {} is not a valid neighborhood range specification.",
+        head, range
+      );
+      assert!(
+        r.warnings.contains(&expected),
+        "expected {:?} for {}, got {:?}",
+        expected,
+        call,
+        r.warnings
+      );
+    }
+  }
+
+  // A window of one element has no sample standard deviation, and the
+  // report names StandardDeviationFilter rather than StandardDeviation.
+  #[test]
+  fn standard_deviation_filter_reports_a_single_element_window() {
+    use woxi::interpret_with_stdout;
+    let expected = "StandardDeviationFilter::shlen: Cannot compute the \
+                    standard deviation of one element."
+      .to_string();
+    for call in [
+      "StandardDeviationFilter[{1, 2, 3, 4, 100}, 0]",
+      "StandardDeviationFilter[{1}, 1]",
+      "StandardDeviationFilter[{1, 2}, 0]",
+    ] {
+      let r = interpret_with_stdout(call).unwrap();
+      assert_eq!(r.result, call);
+      assert!(
+        r.warnings.contains(&expected),
+        "expected shlen for {}, got {:?}",
+        call,
+        r.warnings
+      );
+    }
+  }
+
   // All four heads take the fraction as an optional argument defaulting
   // to 0.05, so a one-argument call trims nothing on a short list and one
   // value off each end of a hundred.

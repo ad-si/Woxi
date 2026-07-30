@@ -4266,63 +4266,29 @@ pub fn dispatch_math_functions(
       if let Some(out) = image_min_max_filter(&args[0], &args[1], false) {
         return Some(Ok(out));
       }
-      // MaxFilter[list, r] — replace each element with the max in a window of radius r
-      if let (Expr::List(elems), Some(r)) = (&args[0], expr_to_i128(&args[1])) {
-        let r = r as usize;
-        let n = elems.len();
-        let mut result = Vec::with_capacity(n);
-        for i in 0..n {
-          let lo = i.saturating_sub(r);
-          let hi = if i + r < n { i + r } else { n - 1 };
-          let window: Vec<Expr> = elems[lo..=hi].to_vec();
-          let max_val = evaluate_expr_to_expr(&Expr::FunctionCall {
-            name: "Max".to_string(),
-            args: window.into(),
-          })
-          .unwrap_or(elems[i].clone());
-          result.push(max_val);
-        }
-        return Some(Ok(Expr::List(result.into())));
-      }
-      // First arg isn't a list/image — emit wolframscript's arg1 warning
-      // and return unevaluated (matches MinFilter/MedianFilter/GaussianFilter).
-      if !matches!(&args[0], Expr::Image { .. } | Expr::List(_)) {
-        crate::emit_message(&format!(
-          "MaxFilter::arg1: The first argument {} should be a rectangular array, image or video.",
-          crate::syntax::expr_to_string(&args[0])
-        ));
-        return Some(Ok(unevaluated("MaxFilter", args)));
-      }
+      // MaxFilter[list, r] is the windowed Max of the list, sharing the
+      // sliding-window engine and range parsing with the other
+      // neighborhood filters. The range rounds up, so 1.5 is a radius of 2.
+      return Some(crate::functions::image_ast::aggregating_filter_public(
+        args,
+        "Max",
+        "MaxFilter",
+        crate::functions::image_ast::NeighborhoodRange::RoundedUp,
+      ));
     }
     "MinFilter" if args.len() == 2 => {
       if let Some(out) = image_min_max_filter(&args[0], &args[1], true) {
         return Some(Ok(out));
       }
-      if let (Expr::List(elems), Some(r)) = (&args[0], expr_to_i128(&args[1])) {
-        let r = r as usize;
-        let n = elems.len();
-        let mut result = Vec::with_capacity(n);
-        for i in 0..n {
-          let lo = i.saturating_sub(r);
-          let hi = if i + r < n { i + r } else { n - 1 };
-          let window: Vec<Expr> = elems[lo..=hi].to_vec();
-          let min_val = evaluate_expr_to_expr(&Expr::FunctionCall {
-            name: "Min".to_string(),
-            args: window.into(),
-          })
-          .unwrap_or(elems[i].clone());
-          result.push(min_val);
-        }
-        return Some(Ok(Expr::List(result.into())));
-      }
-      // First arg isn't a list/image — emit wolframscript's arg1 warning.
-      if !matches!(&args[0], Expr::Image { .. } | Expr::List(_)) {
-        crate::emit_message(&format!(
-          "MinFilter::arg1: The first argument {} should be a rectangular array, image or video.",
-          crate::syntax::expr_to_string(&args[0])
-        ));
-        return Some(Ok(unevaluated("MinFilter", args)));
-      }
+      // MinFilter[list, r] is the windowed Min of the list, sharing the
+      // sliding-window engine and range parsing with the other
+      // neighborhood filters. The range rounds up, so 1.5 is a radius of 2.
+      return Some(crate::functions::image_ast::aggregating_filter_public(
+        args,
+        "Min",
+        "MinFilter",
+        crate::functions::image_ast::NeighborhoodRange::RoundedUp,
+      ));
     }
     "Upsample" if args.len() == 2 => {
       // Upsample[list, n] — insert n-1 zeros between each element
