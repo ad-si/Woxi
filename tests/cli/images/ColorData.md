@@ -39,3 +39,16 @@ $ wo 'List @@ ColorData[2, 10]'
 $ wo 'Length[ColorData[3, "ColorList"]]'
 10
 ```
+
+`ColorData["scheme"]` gives a named gradient's color function; applying it
+(or calling `Blend` with the scheme name) interpolates the gradient:
+
+```scrut
+$ wo 'Head[ColorData["TemperatureMap"]]'
+ColorDataFunction
+```
+
+```scrut
+$ wo 'Blend["TemperatureMap", 0]'
+RGBColor[0.178927, 0.305394, 0.933501]
+```
