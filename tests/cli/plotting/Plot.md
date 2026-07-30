@@ -43,3 +43,18 @@ Graphics
 $ wo 'Positive[Length[First@Last[Reap[Plot[Sin[x], {x, 0, 2 Pi}, EvaluationMonitor :> Sow[x]]]]]]'
 True
 ```
+
+A tick outside `[10^-5, 10^6)` is labelled in scientific notation:
+
+```scrut
+$ wo 'StringContainsQ[ExportString[Plot[x, {x, 0, 6*10^15}], "SVG"], "6×10¹⁵"]'
+True
+```
+
+Inside that range the labels stay plain, with enough decimals to tell
+neighbouring ticks apart:
+
+```scrut
+$ wo 'StringContainsQ[ExportString[Plot[x, {x, 0, 0.001}], "SVG"], "0.0002"]'
+True
+```

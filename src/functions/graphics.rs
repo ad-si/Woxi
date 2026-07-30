@@ -14556,7 +14556,7 @@ fn flatten_label_runs(runs: &[LabelRun]) -> String {
 /// Map the characters of `s` to their Unicode sub-/superscript form when a
 /// mapping exists, leaving other characters unchanged. Used to render
 /// `Subscript`/`Superscript` control labels inline.
-fn to_unicode_script(s: &str, superscript: bool) -> String {
+pub(crate) fn to_unicode_script(s: &str, superscript: bool) -> String {
   s.chars()
     .map(|c| unicode_script_char(c, superscript).unwrap_or(c))
     .collect()

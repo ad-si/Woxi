@@ -6862,6 +6862,68 @@ Cell[BoxData[
   }
 
   #[test]
+  fn lorentz_oscillator_manipulate_labels_its_frequency_axis() {
+    // End-to-end regression for the "Lorentz Oscillator Model for Optical
+    // Constants" Demonstration: ten sliders separated by blank annotation
+    // rows, plotting a complex refractive index over a frequency axis that
+    // runs to 6*10^15. Those tick labels used to be spelled out in full.
+    woxi::interpret(
+      "n2[x_, n_, c1_, a1_, b1_] := \
+       ((1 + n*10^27*(1.60217662*10^-19)^2 / \
+        (8.85418782*10^-12*9.10938356*10^-31) * \
+        (c1/(a1*a1*10^30 - x*x - I*b1*x*10^15)))^(1/2))",
+    )
+    .expect("the Lorentz helper must define");
+    assert_eq!(
+      woxi::interpret("Round[Re[n2[10^15, 1, 0.5, 1, 0.1]], 1/10^9]").unwrap(),
+      "1455353331/500000000"
+    );
+
+    let code = "Manipulate[\
+      Plot[Re[n2[x, n, c1, a1, b1]], {x, 0.01, 6*10^15}, \
+        PlotLabel -> \"refractive index vs. frequency\"], \
+      {{n, 1, \"number of electrons\"}, 1, 100, 1, \
+        ImageSize -> Tiny, Appearance -> \"Labeled\"}, \"\", \
+      {{c1, 0.5, \"oscillator strength 1\"}, 0, 1, .001, \
+        ImageSize -> Tiny, Appearance -> \"Labeled\"}, \
+      {{a1, 1, \"resonant frequency 1\"}, 0, 10, .01, \
+        ImageSize -> Tiny, Appearance -> \"Labeled\"}, \
+      {{b1, .1, \"damping factor 1\"}, 0, 10, .001, \
+        ImageSize -> Tiny, Appearance -> \"Labeled\"}, \
+      SaveDefinitions -> True]";
+    let state = instantiate_stored_manipulate(code)
+      .expect("the Lorentz Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some(), "the curve must render");
+
+    // The `""` argument is a blank annotation row between the control
+    // groups, not a control.
+    let kinds: Vec<&str> = state
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { .. } => "continuous",
+        manipulate::ControlState::Heading { .. } => "heading",
+        other => panic!("unexpected control {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      kinds,
+      vec![
+        "continuous",
+        "heading",
+        "continuous",
+        "continuous",
+        "continuous"
+      ]
+    );
+  }
+
+  #[test]
   fn orthocenter_manipulate_uses_a_radical_helper() {
     // End-to-end regression for "The Sum of the Squares of the Distances
     // from the Vertices to the Orthocenter". Its initialization writes

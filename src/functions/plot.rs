@@ -763,11 +763,38 @@ fn inject_log_axis_labels(
 
 /// Format a tick value, dropping the trailing ".0" for integers.
 pub(crate) fn format_tick(v: f64) -> String {
+  // Outside `[10^-5, 10^6)` the Wolfram Language labels a tick in
+  // scientific notation — a frequency axis running to 6*10^15 is labelled
+  // `2x10^15` with real superscript digits, not `2000000000000000`. The
+  // exponent uses the Unicode superscripts so it survives as plain text.
+  // A value that is an integer within float noise prints as that integer —
+  // a tick that lands on `-1.11*10^-16` is the axis zero, not a tiny
+  // scientific value.
   if (v - v.round()).abs() < 1e-9 {
-    format!("{}", v.round() as i64)
-  } else {
-    format!("{v:.1}")
+    let rounded = v.round() as i64;
+    if rounded.abs() < 1_000_000 {
+      return format!("{rounded}");
+    }
   }
+  let magnitude = v.abs();
+  if magnitude >= 1e6 || (magnitude > 0.0 && magnitude < 1e-5) {
+    let exp = magnitude.log10().floor() as i32;
+    let mantissa = v / 10f64.powi(exp);
+    let mantissa = if (mantissa - mantissa.round()).abs() < 1e-9 {
+      format!("{}", mantissa.round() as i64)
+    } else {
+      let s = format!("{mantissa:.3}");
+      s.trim_end_matches('0').trim_end_matches('.').to_string()
+    };
+    return format!(
+      "{mantissa}\u{d7}10{}",
+      crate::functions::graphics::to_unicode_script(&exp.to_string(), true)
+    );
+  }
+  // Enough decimals to tell neighbouring ticks apart — a 0.0002 step used
+  // to render every label as `0.0`.
+  let s = format!("{v:.6}");
+  s.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
 /// Inject SVG `<line>` elements extending labeled (major) ticks a few pixels

@@ -1,5 +1,6 @@
 ---
 source: tests/interpreter_tests/graphics.rs
+assertion_line: 3625
 expression: "export_svg(\"AudioPlot[Audio[{0, 0.5, 1, 0.5, 0, -0.5, -1, -0.5, 0}]]\")"
 ---
 <svg width="360" height="225" viewBox="0 0 3600 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
@@ -107,7 +108,7 @@ expression: "export_svg(\"AudioPlot[Audio[{0, 0.5, 1, 0.5, 0, -0.5, -1, -0.5, 0}
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1413,1750 1413,1790 "/>
 <text x="1553" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
-0.0
+0.00005
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1553,1750 1553,1790 "/>
 <text x="1693" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
@@ -127,7 +128,7 @@ expression: "export_svg(\"AudioPlot[Audio[{0, 0.5, 1, 0.5, 0, -0.5, -1, -0.5, 0}
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="2114,1750 2114,1790 "/>
 <text x="2254" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
-0.0
+0.0001
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="2254,1750 2254,1790 "/>
 <text x="2395" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
@@ -147,7 +148,7 @@ expression: "export_svg(\"AudioPlot[Audio[{0, 0.5, 1, 0.5, 0, -0.5, -1, -0.5, 0}
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="2816,1750 2816,1790 "/>
 <text x="2956" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
-0.0
+0.00015
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="2956,1750 2956,1790 "/>
 <text x="3096" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">

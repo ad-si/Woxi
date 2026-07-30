@@ -2391,6 +2391,70 @@ mod plot3d {
       assert!(svg.contains(">A Disk</text>"), "label must render: {svg}");
     }
 
+    // Outside `[10^-5, 10^6)` a tick is labelled in scientific notation, as
+    // in the Wolfram Language. Regression: a frequency axis running to
+    // 6*10^15 — the "Lorentz Oscillator Model" Demonstration's — spelled
+    // every label out as `2000000000000000`.
+    #[test]
+    fn large_and_small_ticks_use_scientific_notation() {
+      let ticks = |code: &str| -> Vec<String> {
+        let svg = export_svg(code);
+        let mut out = Vec::new();
+        for chunk in svg.split("<text").skip(1) {
+          let Some(start) = chunk.find('>') else {
+            continue;
+          };
+          let Some(end) = chunk.find("</text>") else {
+            continue;
+          };
+          let text = chunk[start + 1..end].trim().to_string();
+          if !text.is_empty() && !out.contains(&text) {
+            out.push(text);
+          }
+        }
+        out
+      };
+      assert_eq!(
+        ticks("Plot[x, {x, 0, 6*10^15}]"),
+        vec!["0", "2×10¹⁵", "4×10¹⁵", "6×10¹⁵"]
+      );
+      assert_eq!(
+        ticks("Plot[x, {x, 0, 10^7}]"),
+        vec!["0", "5×10⁶", "1×10⁷", "2×10⁶", "4×10⁶", "6×10⁶", "8×10⁶"]
+      );
+      // Inside the range the labels stay plain, and `10^6` itself is the
+      // first value that goes scientific.
+      assert_eq!(
+        ticks("Plot[x, {x, 0, 10^6}]"),
+        vec![
+          "0", "500000", "1×10⁶", "200000", "400000", "600000", "800000"
+        ]
+      );
+      assert_eq!(
+        ticks("Plot[x, {x, 0, 100}]"),
+        vec!["0", "50", "100", "20", "40", "60", "80"]
+      );
+    }
+
+    // A tick that is an integer within float noise is that integer, not a
+    // tiny scientific value: `DiscretePlot` lands one on `-1.11*10^-16`.
+    #[test]
+    fn float_noise_ticks_read_as_zero() {
+      let svg = export_svg("Plot[x, {x, -1, 1}]");
+      assert!(!svg.contains("×10⁻"), "noise leaked as scientific: {svg}");
+      assert!(svg.contains(">\n0\n</text>") || svg.contains(">0<"));
+    }
+
+    // Enough decimals to tell neighbouring ticks apart. Regression: a
+    // 0.0002 step rendered every label as `0.0`.
+    #[test]
+    fn small_step_ticks_keep_their_decimals() {
+      let svg = export_svg("Plot[x, {x, 0, 0.001}]");
+      for label in ["0.0002", "0.0004", "0.0006", "0.0008"] {
+        assert!(svg.contains(label), "missing tick {label}: {svg}");
+      }
+    }
+
     #[test]
     fn plot_axes_label() {
       insta::assert_snapshot!(export_svg(
