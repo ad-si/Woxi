@@ -2,11 +2,9 @@
 //!
 //! These functions work directly with `Expr` AST nodes, avoiding string round-trips.
 
-use crate::InterpreterError;
-use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, unevaluated,
-};
-
+#[allow(unused_imports)]
+use super::*;
+use crate::syntax::pair_to_expr;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -8363,7 +8361,6 @@ pub(crate) fn parse_program_to_expr(
   src: &str,
 ) -> Result<Expr, InterpreterError> {
   use crate::Rule;
-  use crate::syntax::pair_to_expr;
   let normalized = if src.contains('\r') {
     src.replace("\r\n", "\n").replace('\r', "\n")
   } else {
@@ -8448,7 +8445,6 @@ fn to_expression_syntax_error(src: &str) -> Option<String> {
 /// a single expression.
 fn parse_and_evaluate_program(src: &str) -> Result<Expr, InterpreterError> {
   use crate::Rule;
-  use crate::syntax::pair_to_expr;
   let normalized = if src.contains('\r') {
     src.replace("\r\n", "\n").replace('\r', "\n")
   } else {

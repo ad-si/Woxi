@@ -17,8 +17,8 @@ use super::transforms::{
   CoefArray, Padding, TransformKind, basis_index, default_refinement,
   forward_transform, inverse_transform, node_dims,
 };
-use crate::InterpreterError;
-use crate::syntax::{Expr, expr_to_string, unevaluated};
+#[allow(unused_imports)]
+use super::*;
 
 /// A validated discrete wavelet family (one that has filter coefficients
 /// and works with the discrete transforms).

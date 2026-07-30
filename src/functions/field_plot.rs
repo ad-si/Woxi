@@ -1,18 +1,17 @@
-use plotters::prelude::*;
+use plotters::prelude::{Color, *};
 
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::graphics::{Color as GfxColor, parse_color};
-use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::math_ast::{
-  build_complex_float_expr, try_extract_complex_f64,
+  build_complex_float_expr, try_eval_to_f64, try_extract_complex_f64,
 };
 use crate::functions::plot::{
   DEFAULT_WIDTH, RESOLUTION_SCALE, evaluate_at_xy, generate_axes_only,
   parse_image_size, parse_iterator, plot_theme, rewrite_svg_header,
   substitute_var, svg_header,
 };
-use crate::syntax::Expr;
 
 const FIELD_GRID: usize = 100;
 const VECTOR_GRID: usize = 15;

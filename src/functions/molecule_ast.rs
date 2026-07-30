@@ -10,11 +10,11 @@
 //! and then as SMILES structure specifications. Hydrogen atoms are added
 //! explicitly to fill the normal valences, as wolframscript does.
 
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::element_data::{
   abbreviation_for_atomic_number, is_element_abbreviation,
 };
-use crate::syntax::{Expr, unevaluated};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum BondKind {

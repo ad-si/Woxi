@@ -9,8 +9,9 @@
 //! the last note is lengthened to the bar line (three pitches become
 //! quarter/quarter/half, two become quarter/dotted-half, and so on).
 
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::music_ast::{music_pitch_midi, resolve_pitch_name};
-use crate::syntax::Expr;
 
 /// Ticks per quarter note (the SMF division), as used by Wolfram.
 const TICKS_PER_BEAT: i64 = 480;

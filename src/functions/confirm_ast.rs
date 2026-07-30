@@ -5,8 +5,8 @@
 //! The throw rides on the ordinary `Throw`/`Catch` machinery under a reserved
 //! tag, so an unrelated user `Catch` cannot intercept it.
 
-use crate::InterpreterError;
-use crate::syntax::{Expr, unevaluated};
+#[allow(unused_imports)]
+use super::*;
 use std::cell::Cell;
 
 thread_local! {

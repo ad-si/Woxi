@@ -1,5 +1,5 @@
-use crate::InterpreterError;
-use crate::syntax::{Expr, unevaluated};
+#[allow(unused_imports)]
+use super::*;
 
 /// TuringMachine[rule, init, steps]
 ///

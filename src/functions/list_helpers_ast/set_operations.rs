@@ -2,7 +2,6 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::unevaluated;
 
 /// AST-based Tally: count occurrences of each element.
 /// Tally[{a, b, a, c, b, a}] -> {{a, 3}, {b, 2}, {c, 1}}

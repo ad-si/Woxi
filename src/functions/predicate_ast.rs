@@ -2,11 +2,9 @@
 //!
 //! These functions work directly with `Expr` AST nodes.
 
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::math_ast::rat_reduce;
-use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, unevaluated,
-};
 
 /// NumberQ[expr] - Tests if the expression is a number
 pub fn number_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

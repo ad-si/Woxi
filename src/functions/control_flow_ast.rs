@@ -2,10 +2,10 @@
 //!
 //! Switch, Piecewise, Quiet.
 
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::evaluator::{apply_function_to_arg, evaluate_expr_to_expr};
 use crate::functions::expr_form::{ExprForm, decompose_expr};
-use crate::syntax::{Expr, expr_to_string, unevaluated};
 
 /// Switch[expr, pat1, val1, pat2, val2, ..., default?]
 /// Evaluates expr, then finds first matching pattern and returns corresponding value.

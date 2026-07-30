@@ -1,10 +1,10 @@
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::element_data::{
   ElementLayout, element_phase, elements_layout, resolve_atomic_number,
 };
 use crate::functions::plot::{DEFAULT_HEIGHT, DEFAULT_WIDTH, parse_image_size};
-use crate::syntax::Expr;
 
 /// Side length of a single element cell, in SVG grid units. The whole plot
 /// is rendered in these units and scaled to the requested pixel size via the

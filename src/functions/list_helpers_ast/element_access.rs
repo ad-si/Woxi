@@ -2,7 +2,6 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 /// Decompose a BinaryOp or UnaryOp expression into canonical Wolfram
 /// (head_name, args) form so that First/Rest/Part/etc. can operate on them.

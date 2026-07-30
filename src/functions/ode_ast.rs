@@ -3,11 +3,9 @@
 //! DSolve solves ordinary differential equations symbolically.
 //! NDSolve solves initial-value problems numerically using RK4.
 
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::math_ast::{make_sqrt, rat_reduce};
-use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
-};
 
 // ─── DSolve ────────────────────────────────────────────────────────────
 

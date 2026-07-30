@@ -1,4 +1,5 @@
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
@@ -6,7 +7,6 @@ use crate::functions::plot::{
   adjust_y_range_for_filling_opts, apply_common_plot_option, build_plot_source,
   evaluate_at_point, generate_svg_with_filling, parse_iterator, substitute_var,
 };
-use crate::syntax::Expr;
 
 /// Parse the trailing option rules of a ParametricPlot/PolarPlot call.
 /// Matching Wolfram Language, the first occurrence of a repeated option
