@@ -12329,6 +12329,168 @@ mod manipulate {
     let result = woxi::interpret_with_stdout(&code).unwrap();
     assert_eq!(result.result.trim(), "0");
   }
+
+  #[test]
+  fn spec_bounds_can_reference_other_control_variables() {
+    // Kepler's Second Law bounds its time sliders by the orbital period P —
+    // a control declared *after* the sliders that use it. The bounds must
+    // resolve to P's initial value regardless of declaration order, and stay
+    // dynamic so the frontend can follow P as it moves.
+    let expr = interpret_to_expr(
+      "Manipulate[{t, dt, P}, {{t, 0, \"time\"}, 0, P, .01}, \
+       {{P, 20, \"period\"}, .1, 50, .01}, {{dt, 5, \"span\"}, .1, P, .01}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let bounds: Vec<(&str, f64, f64)> = spec
+      .controls
+      .iter()
+      .map(|c| match c {
+        ManipulateControl::Continuous { name, min, max, .. } => {
+          (name.as_str(), *min, *max)
+        }
+        other => panic!("expected continuous control, got {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      bounds,
+      vec![("t", 0.0, 20.0), ("P", 0.1, 50.0), ("dt", 0.1, 20.0)]
+    );
+    assert_eq!(
+      spec.dynamic_bounds,
+      vec![
+        ("t".to_string(), None, Some("P".to_string())),
+        ("dt".to_string(), None, Some("P".to_string())),
+      ]
+    );
+  }
+
+  #[test]
+  fn spec_trigger_animates_an_already_bound_variable() {
+    // A `ControlType -> Trigger` spec for a variable that already has a
+    // slider (Kepler's "animate time since perihelion") must not bind the
+    // variable twice — it only makes the widget animate that variable,
+    // starting paused.
+    let expr = interpret_to_expr(
+      "Manipulate[t, {{t, 0, \"time\"}, 0, 10, .01}, \
+       {{t, 0, \"animate\"}, 0, 10, .01, ControlType -> Trigger}, \
+       AutorunSequencing -> {1, 2}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    assert_eq!(spec.controls.len(), 1, "the Trigger adds no second row");
+    assert!(spec.animated);
+    assert!(!spec.animation_running, "a Trigger starts paused");
+    assert_eq!(spec.animation_var.as_deref(), Some("t"));
+  }
+
+  #[test]
+  fn spec_standalone_trigger_keeps_its_slider() {
+    // A Trigger that is its variable's only control still binds it (and
+    // shows a slider row the user can also drag directly).
+    let expr =
+      interpret_to_expr("Manipulate[u^2, {u, 0, 1, ControlType -> Trigger}]")
+        .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    assert_eq!(spec.controls.len(), 1);
+    match &spec.controls[0] {
+      ManipulateControl::Continuous { name, min, max, .. } => {
+        assert_eq!(name, "u");
+        assert_eq!((*min, *max), (0.0, 1.0));
+      }
+      other => panic!("expected continuous control, got {other:?}"),
+    }
+    assert!(spec.animated && !spec.animation_running);
+    assert_eq!(spec.animation_var.as_deref(), Some("u"));
+  }
+
+  #[test]
+  fn spec_json_carries_dynamic_bounds_and_animation_var() {
+    let expr = interpret_to_expr(
+      "Manipulate[t, {{t, 0, \"time\"}, 0, P, .01}, \
+       {{P, 20, \"period\"}, .1, 50, .01}, \
+       {{t, 0, \"animate\"}, 0, P, .01, ControlType -> Trigger}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    let json = manipulate_spec_to_json(&spec);
+    assert!(json.contains(r#""maxCode":"P""#), "json: {json}");
+    assert!(json.contains(r#""animationVar":"t""#), "json: {json}");
+    assert!(json.contains(r#""animationRunning":false"#), "json: {json}");
+  }
+
+  #[test]
+  fn spec_keplers_second_law_demonstration() {
+    // The full Manipulate cell of the "Kepler's Second Law" Demonstration
+    // notebook: four labelled sliders (two bounded by the period P), a
+    // Trigger on t, and a body that renders an SVG under the initial
+    // bindings.
+    let expr = interpret_to_expr(
+      "Manipulate[\n\
+       Module[{a=1,b,c,planet,dist,M,M2,area,area2,ea,eanom,eanom2,p},\n\
+       If[t>P,t=P];\n\
+       If[dt>P,dt=P];\n\
+       b=Sqrt[-a^2 (e^2-1)];\n\
+       c=e a;\n\
+       M=2 Pi t/P;\n\
+       M2=2 Pi (t+dt)/P;\n\
+       area=a b M/2;\n\
+       area2=a b M2/2;\n\
+       eanom=Mod[ea/.FindRoot[M==ea-e Sin[ea],{ea,M}],2 Pi];\n\
+       eanom2=Mod[ea/.FindRoot[M2==ea-e Sin[ea],{ea,M2}],2 Pi];\n\
+       If[eanom2<eanom,eanom2=2 Pi+eanom2];\n\
+       p=b^2/a;\n\
+       planet={a Cos[eanom]-c,b Sin[eanom]};\n\
+       Graphics[{RGBColor[.3,.3,.7],Thickness[.005],Polygon[Join[{{0,0},\
+       Sequence@@Table[{a Cos[angle]-c,b Sin[angle]},{angle,eanom,eanom2,.001}],\
+       {0,0}}]],RGBColor[.05,0.6,1],Thickness[.009],Circle[{-c,0},{a,b},{0,2 Pi}]},\
+       PlotRange->{{-1.1-c,1.1-c},{-1.1,1.1}},\
+       Epilog->{RGBColor[1,0.7,0],Disk[{0,0},.05],RGBColor[.77,.29,.55],\
+       PointSize[.02],Point[planet]},ImageSize->{350,350},AspectRatio->1,\
+       Axes->False,PlotLabel->Row[{\"area = \"<>ToString[NumberForm[area2-area,{4,2}]]<>\
+       \" \\!\\(\\*SuperscriptBox[\\(AU\\), \\(2\\)]\\)\"}]]],\n\
+       {{t,0,\"time since perihelion (years)\"},0,P,.01,Appearance->\"Labeled\",ImageSize->Tiny},\
+       {{e,.5,\"eccentricity\"},0,.9,.01,Appearance->\"Labeled\",ImageSize->Tiny},\n\
+       {{P,20,\"orbital period (years)\"},.1,50,.01,Appearance->\"Labeled\",ImageSize->Tiny},\n\
+       {{dt,5,\"time span (years)\"},.1,P,.01,Appearance->\"Labeled\",ImageSize->Tiny},\n\
+       {{t,0,\"animate time since perihelion\"},0,P,.01,ControlType->Trigger},\
+       AutorunSequencing->{1,2,3},ControlPlacement->Left]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let names: Vec<(&str, &str)> = spec
+      .controls
+      .iter()
+      .map(|c| match c {
+        ManipulateControl::Continuous { name, label, .. } => {
+          (name.as_str(), label.as_str())
+        }
+        other => panic!("expected continuous control, got {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      names,
+      vec![
+        ("t", "time since perihelion (years)"),
+        ("e", "eccentricity"),
+        ("P", "orbital period (years)"),
+        ("dt", "time span (years)"),
+      ]
+    );
+    assert!(spec.animated && !spec.animation_running);
+    assert_eq!(spec.animation_var.as_deref(), Some("t"));
+
+    // The initial bindings render the orbit graphic with its AU² label.
+    let bindings = manipulate_initial_bindings(&spec);
+    let code = manipulate_block_code(&spec.body_code, &bindings);
+    let result = woxi::interpret_with_stdout(&code).unwrap();
+    let svg = result.graphics.expect("body renders a graphic");
+    assert!(
+      svg.contains("area = 0.68 AU<tspan baseline-shift=\"super\""),
+      "PlotLabel must render the superscript box: {}",
+      &svg[..svg.len().min(400)]
+    );
+  }
 }
 
 // ----- Callout tests -----

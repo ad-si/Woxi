@@ -4765,13 +4765,16 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // PlotLabel: centered above the drawing area, in the reserved strip.
+  // PlotLabel: centered above the drawing area, in the reserved strip. The
+  // label may embed Wolfram linear-syntax boxes (`"AU\!\(\*SuperscriptBox[…"`)
+  // — `box_string_to_svg` renders those as sub/superscript tspans and is a
+  // plain SVG-escape for ordinary text.
   if let Some(label) = &plot_label {
     let cx = margin_left + svg_w / 2.0;
     svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"17\" text-anchor=\"middle\" \
        font-family=\"sans-serif\" font-size=\"16\" fill=\"#333333\">{}</text>\n",
-      crate::functions::svg_escape(label)
+      box_string_to_svg(label)
     ));
   }
 
@@ -12490,6 +12493,19 @@ pub struct ManipulateSpec {
   /// while `YinYang` is `True`). Controls with no `Enabled` option (or the
   /// trivial `Enabled -> True`) do not appear here and stay always enabled.
   pub control_enabled: Vec<(String, String)>,
+  /// Continuous-control bounds that reference other control variables, as
+  /// `(control name, min code, max code)`. A Demonstration like Kepler's
+  /// Second Law bounds its time slider by the orbital-period variable
+  /// (`{{t, 0, …}, 0, P, .01}`), so the numeric `min`/`max` stored on the
+  /// control are only the values at build time — the frontend re-evaluates
+  /// these code fragments against the live bindings after every change and
+  /// updates the slider range to follow. A `None` side is static.
+  pub dynamic_bounds: Vec<(String, Option<String>, Option<String>)>,
+  /// The variable animated by a `ControlType -> Trigger`/`Animator` control
+  /// spec. Wolfram renders those as play buttons that sweep the variable
+  /// over its range; the widget's animation targets this variable instead
+  /// of defaulting to the first continuous control.
+  pub animation_var: Option<String>,
   /// Whether this spec should auto-play, i.e. it came from `Animate[…]` or
   /// `ListAnimate[…]`. An animated widget advances its first continuous
   /// control on a timer (with a play/pause toggle) instead of sitting still
@@ -12507,11 +12523,21 @@ pub struct ManipulateSpec {
 
 /// Result of parsing a single list-shaped Manipulate argument.
 enum ParsedControl {
-  /// A control that renders a UI element (slider or pick list). The second
-  /// field is an optional `Enabled` condition (InputForm code) that gates the
-  /// widget: when it evaluates to `False` against the live bindings the
-  /// control is shown greyed-out and non-interactive.
-  Visible(ManipulateControl, Option<String>),
+  /// A control that renders a UI element (slider or pick list). `enabled` is
+  /// an optional `Enabled` condition (InputForm code) that gates the widget:
+  /// when it evaluates to `False` against the live bindings the control is
+  /// shown greyed-out and non-interactive. `min_code`/`max_code` carry a
+  /// continuous bound that references other control variables (re-resolved
+  /// live by the frontend); `animate` is set for a `ControlType ->
+  /// Trigger`/`Animator` spec, with the flag telling whether the animation
+  /// starts running (`Animator`) or paused (`Trigger`).
+  Visible {
+    control: ManipulateControl,
+    enabled: Option<String>,
+    min_code: Option<String>,
+    max_code: Option<String>,
+    animate: Option<bool>,
+  },
   /// A `Locator` control with no widget. It contributes a fixed `name =
   /// value` binding that is baked directly into the body so the variable is
   /// in scope while the visible controls drive the plot.
@@ -12563,6 +12589,8 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     mut displays,
     mut initialization,
     mut control_enabled,
+    mut dynamic_bounds,
+    mut animation_var,
   ) = match inner {
     Some(inner) => {
       animated = true;
@@ -12574,6 +12602,8 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         inner.displays,
         inner.initialization,
         inner.control_enabled,
+        inner.dynamic_bounds,
+        inner.animation_var,
       )
     }
     None => (
@@ -12583,6 +12613,8 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       Vec::new(),
       None,
       Vec::new(),
+      Vec::new(),
+      None,
     ),
   };
   // `Locator` bindings are baked into the body (never rewritten by a
@@ -12594,6 +12626,13 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // and every occurrence in the body (and related code fragments) is
   // rewritten below via `(original InputForm, synthesized name)` pairs.
   let mut renames: Vec<(String, String)> = Vec::new();
+  // A control's bounds may reference *other* control variables — Kepler's
+  // Second Law bounds its time sliders by the orbital period (`{{t, 0, …},
+  // 0, P, .01}` with `{{P, 20, …}, .1, 50, .01}` further down). Collect
+  // every control's initial value first and install them as scoped globals
+  // while the specs are parsed, so those bounds resolve to their build-time
+  // numbers regardless of declaration order.
+  let initial_bindings = manipulate_initial_value_bindings(&args[1..]);
   for spec in &args[1..] {
     // Options such as `Initialization :> …` or `TrackedSymbols :> …`
     // are not variable specs; extract what we understand and ignore
@@ -12660,14 +12699,43 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       continue;
     }
     let (spec, rename) = rewrite_compound_control_var(spec);
-    match parse_manipulate_control(&spec)? {
-      ParsedControl::Visible(mut c, enabled) => {
+    let parsed = crate::with_scoped_globals(&initial_bindings, || {
+      parse_manipulate_control(&spec)
+    })?;
+    match parsed {
+      ParsedControl::Visible {
+        control: mut c,
+        enabled,
+        min_code,
+        max_code,
+        animate,
+      } => {
         if let Some((orig, orig_form, synth)) = &rename {
           patch_default_label(&mut c, orig, synth);
           renames.push((orig_form.clone(), synth.clone()));
         }
+        // A `Trigger`/`Animator` control spec animates its variable: the
+        // widget auto-plays (paused for a Trigger, running for an Animator)
+        // and the animation targets this variable.
+        if let Some(running) = animate {
+          animated = true;
+          animation_running = running;
+          animation_var = Some(c.name().to_string());
+        }
+        // A second spec for an already-bound variable (Kepler pairs a time
+        // slider with a `Trigger` on the same `t`) must not bind twice —
+        // the first spec keeps the widget row, later duplicates only
+        // contribute their animation/enabled semantics above.
+        if !c.name().is_empty()
+          && controls.iter().any(|prev| prev.name() == c.name())
+        {
+          continue;
+        }
         if let Some(cond) = enabled {
           control_enabled.push((c.name().to_string(), cond));
+        }
+        if min_code.is_some() || max_code.is_some() {
+          dynamic_bounds.push((c.name().to_string(), min_code, max_code));
         }
         controls.push(c);
       }
@@ -12720,6 +12788,14 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     for (_, cond) in &mut control_enabled {
       rewrite(cond);
     }
+    for (_, min_code, max_code) in &mut dynamic_bounds {
+      if let Some(code) = min_code {
+        rewrite(code);
+      }
+      if let Some(code) = max_code {
+        rewrite(code);
+      }
+    }
     for (_, value) in fixed.iter_mut().chain(state.iter_mut()) {
       rewrite(value);
     }
@@ -12741,10 +12817,67 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     displays,
     initialization,
     control_enabled,
+    dynamic_bounds,
+    animation_var,
     animated,
     animation_running,
     appearance_none,
   })
+}
+
+/// Collect `(name, initial value as InputForm)` for every control spec that
+/// declares one: an explicit `{{u, uinit, …}, …}` head, or a plain-symbol
+/// `{u, umin, …}` head whose lower bound is statically numeric (the default
+/// initial value). Installed as scoped globals while the specs are parsed so
+/// a bound referencing another control variable resolves to its build-time
+/// value regardless of declaration order.
+fn manipulate_initial_value_bindings(specs: &[Expr]) -> Vec<(String, String)> {
+  specs
+    .iter()
+    .filter_map(|spec| {
+      let Expr::List(items) = spec else { return None };
+      match items.first()? {
+        Expr::List(head) => {
+          let Expr::Identifier(name) = head.first()? else {
+            return None;
+          };
+          let init = head.get(1)?;
+          Some((name.clone(), crate::syntax::expr_to_input_form(init)))
+        }
+        Expr::Identifier(name) => {
+          let min = items.get(1)?;
+          crate::functions::math_ast::try_eval_to_f64(min)?;
+          Some((name.clone(), crate::syntax::expr_to_input_form(min)))
+        }
+        _ => None,
+      }
+    })
+    .collect()
+}
+
+/// Evaluate a Manipulate bound expression to a number. A literal (`2 Pi`)
+/// resolves statically; a bound referencing another control variable (`P`)
+/// resolves through the evaluator against the initial-value globals the
+/// caller installed. The flag reports whether the environment was needed —
+/// such bounds are dynamic and must be re-resolved against live bindings.
+fn eval_manipulate_bound(expr: &Expr) -> Option<(f64, bool)> {
+  if let Some(v) =
+    crate::functions::math_ast::try_eval_to_f64_with_infinity(expr)
+  {
+    return Some((v, false));
+  }
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(expr).ok()?;
+  crate::functions::math_ast::try_eval_to_f64_with_infinity(&evaluated)
+    .map(|v| (v, true))
+}
+
+/// Re-resolve a dynamic bound's code fragment against the interpreter's
+/// current globals (the caller installs the live bindings via
+/// `with_scoped_globals`). Returns `None` when the code doesn't evaluate to
+/// a finite number, in which case the control keeps its previous bound.
+pub fn manipulate_eval_bound_code(code: &str) -> Option<f64> {
+  let expr = crate::interpret_to_expr(code).ok()?;
+  crate::functions::math_ast::try_eval_to_f64(&expr).filter(|v| v.is_finite())
 }
 
 /// Synthesize a plain symbol name for a compound (non-Identifier) control
@@ -12906,6 +13039,8 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     displays: Vec::new(),
     initialization: None,
     control_enabled: Vec::new(),
+    dynamic_bounds: Vec::new(),
+    animation_var: None,
     animated: true,
     animation_running: true,
     appearance_none: false,
@@ -12978,6 +13113,8 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     displays: Vec::new(),
     initialization: None,
     control_enabled: Vec::new(),
+    dynamic_bounds: Vec::new(),
+    animation_var: None,
     animated: true,
     animation_running: true,
     appearance_none: false,
@@ -13048,6 +13185,8 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     displays: Vec::new(),
     initialization: None,
     control_enabled: Vec::new(),
+    dynamic_bounds: Vec::new(),
+    animation_var: None,
     animated: false,
     animation_running: true,
     appearance_none: false,
@@ -13094,6 +13233,8 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     displays: Vec::new(),
     initialization: None,
     control_enabled: Vec::new(),
+    dynamic_bounds: Vec::new(),
+    animation_var: None,
     animated: false,
     animation_running: true,
     appearance_none: false,
@@ -13121,8 +13262,13 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
   if !matches!(&args[0], Expr::List(items) if !items.is_empty()) {
     return None;
   }
-  let (control, enabled) = match parse_manipulate_control(&args[0])? {
-    ParsedControl::Visible(c, enabled) => (c, enabled),
+  let (control, enabled, animate) = match parse_manipulate_control(&args[0])? {
+    ParsedControl::Visible {
+      control,
+      enabled,
+      animate,
+      ..
+    } => (control, enabled, animate),
     // A hidden control (`ControlType -> None` / Locator) has no widget and
     // nothing to display on its own — fall back to the plain output path.
     ParsedControl::Fixed { .. } | ParsedControl::State { .. } => return None,
@@ -13133,6 +13279,9 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     Some(cond) => vec![(control.name().to_string(), cond)],
     None => Vec::new(),
   };
+  // A standalone `Control[{…, ControlType -> Trigger/Animator}]` animates
+  // its own variable.
+  let animation_var = animate.map(|_| control.name().to_string());
   Some(ManipulateSpec {
     body_code,
     controls: vec![control],
@@ -13140,8 +13289,10 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     displays: Vec::new(),
     initialization: None,
     control_enabled,
-    animated: false,
-    animation_running: true,
+    dynamic_bounds: Vec::new(),
+    animation_var,
+    animated: animate.is_some(),
+    animation_running: animate.unwrap_or(true),
     appearance_none: false,
   })
 }
@@ -13516,8 +13667,8 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
     if let Some((x, y)) = list2_f64(&evaluated) {
       let (x_min, x_max, y_min, y_max) =
         locator_range(&corner_bounds, &[(x, y)]);
-      return Some(ParsedControl::Visible(
-        ManipulateControl::Slider2D {
+      return Some(ParsedControl::Visible {
+        control: ManipulateControl::Slider2D {
           name,
           x_min,
           x_max,
@@ -13528,12 +13679,15 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
           label,
         },
         enabled,
-      ));
+        min_code: None,
+        max_code: None,
+        animate: None,
+      });
     }
     if let Some(points) = point_list_f64(&evaluated) {
       let (x_min, x_max, y_min, y_max) = locator_range(&corner_bounds, &points);
-      return Some(ParsedControl::Visible(
-        ManipulateControl::Locator {
+      return Some(ParsedControl::Visible {
+        control: ManipulateControl::Locator {
           name,
           points,
           x_min,
@@ -13544,7 +13698,10 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
           label,
         },
         enabled,
-      ));
+        min_code: None,
+        max_code: None,
+        animate: None,
+      });
     }
     let value = manipulate_value_to_input_form(&value_expr);
     return Some(ParsedControl::Fixed { name, value });
@@ -13586,12 +13743,11 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
       (x0, x1, y0, y1)
     } else {
       // Scalar bounds `{u, min, max}` apply to both axes.
-      let mn = bounds
-        .first()
-        .and_then(|e| crate::functions::math_ast::try_eval_to_f64(e))?;
+      let mn = bounds.first().and_then(|e| eval_manipulate_bound(e))?.0;
       let mx = bounds
         .get(1)
-        .and_then(|e| crate::functions::math_ast::try_eval_to_f64(e))
+        .and_then(|e| eval_manipulate_bound(e))
+        .map(|(v, _)| v)
         .unwrap_or(mn + 1.0);
       (mn, mx, mn, mx)
     };
@@ -13600,8 +13756,8 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
         Some((a, b)) => (a, b),
         None => (x_min, y_min),
       };
-    return Some(ParsedControl::Visible(
-      ManipulateControl::Slider2D {
+    return Some(ParsedControl::Visible {
+      control: ManipulateControl::Slider2D {
         name,
         x_min,
         x_max,
@@ -13612,29 +13768,32 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
         label,
       },
       enabled,
-    ));
+      min_code: None,
+      max_code: None,
+      animate: None,
+    });
   }
 
   // Interval control: `{u, min, max, ControlType -> IntervalSlider}` binds
   // `u` to a `{low, high}` pair.
   if control_type.as_deref() == Some("IntervalSlider") {
-    let min = bounds
-      .first()
-      .and_then(|e| crate::functions::math_ast::try_eval_to_f64(e))?;
+    let min = bounds.first().and_then(|e| eval_manipulate_bound(e))?.0;
     let max = bounds
       .get(1)
-      .and_then(|e| crate::functions::math_ast::try_eval_to_f64(e))
+      .and_then(|e| eval_manipulate_bound(e))
+      .map(|(v, _)| v)
       .unwrap_or(min + 1.0);
     let step = bounds
       .get(2)
-      .and_then(|e| crate::functions::math_ast::try_eval_to_f64(e));
+      .and_then(|e| eval_manipulate_bound(e))
+      .map(|(v, _)| v);
     let (low_initial, high_initial) =
       match explicit_initial.as_ref().and_then(list2_f64) {
         Some((a, b)) => (a, b),
         None => (min, max),
       };
-    return Some(ParsedControl::Visible(
-      ManipulateControl::IntervalSlider {
+    return Some(ParsedControl::Visible {
+      control: ManipulateControl::IntervalSlider {
         name,
         min,
         max,
@@ -13644,7 +13803,10 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
         label,
       },
       enabled,
-    ));
+      min_code: None,
+      max_code: None,
+      animate: None,
+    });
   }
 
   // Discrete form: `{u, {u1, u2, …}}` or `{{u, uinit, …}, {u1, u2, …}}`,
@@ -13702,8 +13864,8 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
         }
         None => 0,
       };
-      return Some(ParsedControl::Visible(
-        ManipulateControl::Discrete {
+      return Some(ParsedControl::Visible {
+        control: ManipulateControl::Discrete {
           name,
           values,
           value_labels,
@@ -13714,7 +13876,10 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
           popup: control_type.as_deref() == Some("PopupMenu"),
         },
         enabled,
-      ));
+        min_code: None,
+        max_code: None,
+        animate: None,
+      });
     }
   }
 
@@ -13725,10 +13890,18 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
   if bounds.len() < 2 {
     return None;
   }
-  let mut min =
-    crate::functions::math_ast::try_eval_to_f64_with_infinity(bounds[0])?;
-  let mut max =
-    crate::functions::math_ast::try_eval_to_f64_with_infinity(bounds[1])?;
+  let (mut min, min_dynamic) = eval_manipulate_bound(bounds[0])?;
+  let (mut max, max_dynamic) = eval_manipulate_bound(bounds[1])?;
+  // A bound that only resolved through the environment references another
+  // control variable (Kepler's `{{t, 0, …}, 0, P, .01}`); keep its code so
+  // the frontend can re-resolve it against the live bindings and let the
+  // slider range follow the other control.
+  let min_code = min_dynamic
+    .then(|| crate::syntax::expr_to_input_form(bounds[0]))
+    .filter(|_| min.is_finite());
+  let max_code = max_dynamic
+    .then(|| crate::syntax::expr_to_input_form(bounds[1]))
+    .filter(|_| max.is_finite());
   // An infinite bound (`Animate[…, {ϕ, 0, Infinity}]` runs forever in
   // Wolfram) cannot drive a finite slider; substitute a 2π looping window
   // so the default sine-based demonstrations wrap seamlessly.
@@ -13743,17 +13916,24 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
   }
   let step = bounds
     .get(2)
-    .copied()
-    .and_then(crate::functions::math_ast::try_eval_to_f64);
+    .and_then(|e| eval_manipulate_bound(e))
+    .map(|(v, _)| v);
   let initial = match explicit_initial.as_ref() {
-    Some(init) => {
-      crate::functions::math_ast::try_eval_to_f64(init).unwrap_or(min)
-    }
+    Some(init) => eval_manipulate_bound(init).map(|(v, _)| v).unwrap_or(min),
     None => min,
   };
 
-  Some(ParsedControl::Visible(
-    ManipulateControl::Continuous {
+  // A `Trigger`/`Animator` control is a play button sweeping its variable
+  // over the range: the widget animates that variable (a Trigger starts
+  // paused, an Animator running).
+  let animate = match control_type.as_deref() {
+    Some("Trigger") => Some(false),
+    Some("Animator") => Some(true),
+    _ => None,
+  };
+
+  Some(ParsedControl::Visible {
+    control: ManipulateControl::Continuous {
       name,
       min,
       max,
@@ -13763,7 +13943,10 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
       label_runs,
     },
     enabled,
-  ))
+    min_code,
+    max_code,
+    animate,
+  })
 }
 
 /// If `item` is a rule `lhs -> rhs` (in either `Expr::Rule` or
@@ -14414,6 +14597,29 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
       part.push_str(&field);
       part.push('}');
     }
+    // Dynamic bounds (a slider range following another control's variable)
+    // ride along as code fragments for the frontend to re-resolve.
+    if let Some((_, min_code, max_code)) =
+      spec.dynamic_bounds.iter().find(|(n, _, _)| n == c.name())
+      && part.ends_with('}')
+    {
+      let mut field = String::new();
+      if let Some(code) = min_code {
+        field.push_str(&format!(
+          r#","minCode":"{}""#,
+          json_escape_manipulate(code)
+        ));
+      }
+      if let Some(code) = max_code {
+        field.push_str(&format!(
+          r#","maxCode":"{}""#,
+          json_escape_manipulate(code)
+        ));
+      }
+      part.truncate(part.len() - 1);
+      part.push_str(&field);
+      part.push('}');
+    }
   }
 
   let state_parts: Vec<String> = spec
@@ -14448,15 +14654,22 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
   } else {
     ""
   };
+  let animation_var_json = match &spec.animation_var {
+    Some(var) => {
+      format!(r#","animationVar":"{}""#, json_escape_manipulate(var))
+    }
+    None => String::new(),
+  };
 
   format!(
-    r#""body":"{}","controls":[{}],"state":{{{}}},"displays":[{}]{}{}"#,
+    r#""body":"{}","controls":[{}],"state":{{{}}},"displays":[{}]{}{}{}"#,
     json_escape_manipulate(&spec.body_code),
     ctrl_parts.join(","),
     state_parts.join(","),
     display_parts.join(","),
     animated_json,
     appearance_json,
+    animation_var_json,
   )
 }
 

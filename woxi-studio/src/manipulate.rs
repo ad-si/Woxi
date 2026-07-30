@@ -175,6 +175,15 @@ pub struct ManipulateState {
   /// `Appearance -> None`: hide the control rows (the animation just runs);
   /// the play/pause toggle stays visible for animated widgets.
   pub appearance_none: bool,
+  /// The variable a `ControlType -> Trigger`/`Animator` spec animates.
+  /// `advance_animation` targets this control instead of defaulting to the
+  /// first continuous one.
+  animation_var: Option<String>,
+  /// Continuous-control bounds that reference other control variables, as
+  /// `(control name, min code, max code)`. Re-resolved against the live
+  /// bindings on every re-evaluation so a slider range can follow another
+  /// control (Kepler's time sliders are bounded by the orbital period `P`).
+  dynamic_bounds: Vec<(String, Option<String>, Option<String>)>,
   /// Per-control `Enabled` condition (InputForm code), parallel to `controls`.
   /// `None` means the control has no condition and is always enabled.
   control_enabled: Vec<Option<String>>,
@@ -239,6 +248,8 @@ impl ManipulateState {
       // unless the spec was built paused (`AnimationRunning -> False`).
       playing: spec.animated && spec.animation_running,
       appearance_none: spec.appearance_none,
+      animation_var: spec.animation_var,
+      dynamic_bounds: spec.dynamic_bounds,
       control_enabled,
       control_is_enabled,
       reeval_pending: 0,
@@ -307,20 +318,25 @@ impl ManipulateState {
     }
   }
 
-  /// Advance the animated (first continuous) control by one step, wrapping
-  /// back to the start once it passes the end, then re-render. Called from
-  /// the app's animation-tick subscription while `playing` is set.
+  /// Advance the animated control by one step, wrapping back to the start
+  /// once it passes the end, then re-render. Called from the app's
+  /// animation-tick subscription while `playing` is set. The target is the
+  /// `ControlType -> Trigger`/`Animator` variable when the spec named one,
+  /// else the first continuous control.
   pub fn advance_animation(&mut self) {
+    let target = self.animation_var.clone();
     let Some(ControlState::Continuous {
       min,
       max,
       step,
       current,
       ..
-    }) = self
-      .controls
-      .iter_mut()
-      .find(|c| matches!(c, ControlState::Continuous { .. }))
+    }) = self.controls.iter_mut().find(|c| match &target {
+      Some(name) => {
+        matches!(c, ControlState::Continuous { name: n, .. } if n == name)
+      }
+      None => matches!(c, ControlState::Continuous { .. }),
+    })
     else {
       return;
     };
@@ -352,7 +368,8 @@ impl ManipulateState {
     // (empty local bindings → no matrix re-embed).
     let displays = self.displays.clone();
     let control_enabled = self.control_enabled.clone();
-    let (render, display_trees, enabled) =
+    let dynamic_bounds = self.dynamic_bounds.clone();
+    let (render, display_trees, enabled, resolved_bounds) =
       woxi::with_scoped_globals(&bindings, || {
         let trees: Vec<_> = displays
           .iter()
@@ -367,10 +384,23 @@ impl ManipulateState {
             None => true,
           })
           .collect();
-        (woxi::interpret_with_stdout(&code), trees, enabled)
+        // Re-resolve bounds that follow another control's variable (e.g. a
+        // time slider capped by the orbital period) against these bindings.
+        let resolved: Vec<(String, Option<f64>, Option<f64>)> = dynamic_bounds
+          .iter()
+          .map(|(name, min_code, max_code)| {
+            let eval = |c: &Option<String>| {
+              c.as_deref()
+                .and_then(woxi::functions::graphics::manipulate_eval_bound_code)
+            };
+            (name.clone(), eval(min_code), eval(max_code))
+          })
+          .collect();
+        (woxi::interpret_with_stdout(&code), trees, enabled, resolved)
       });
     self.display_trees = display_trees;
     self.control_is_enabled = enabled;
+    self.apply_dynamic_bounds(&resolved_bounds);
 
     // Double-buffer the render: build the new SVG handle in a local and only
     // swap the cached field once the replacement is ready, rather than nulling
@@ -424,6 +454,35 @@ impl ManipulateState {
         self.text_output = None;
         self.error = Some(format!("{e}"));
       }
+    }
+  }
+
+  /// Move each named continuous control to its freshly resolved bounds and
+  /// clamp its value inside them, so a slider range follows the control it
+  /// references (dragging Kepler's period `P` widens the time sliders).
+  fn apply_dynamic_bounds(
+    &mut self,
+    resolved: &[(String, Option<f64>, Option<f64>)],
+  ) {
+    for (name, new_min, new_max) in resolved {
+      let Some(ControlState::Continuous {
+        min, max, current, ..
+      }) = self.controls.iter_mut().find(
+        |c| matches!(c, ControlState::Continuous { name: n, .. } if n == name),
+      )
+      else {
+        continue;
+      };
+      if let Some(v) = new_min {
+        *min = *v;
+      }
+      if let Some(v) = new_max {
+        *max = *v;
+      }
+      if *max < *min {
+        std::mem::swap(min, max);
+      }
+      *current = current.clamp(*min, *max);
     }
   }
 }
