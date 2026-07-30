@@ -616,8 +616,7 @@ fn spec_range(n: &Expr) -> Option<(i128, i128)> {
     Expr::Integer(v) if *v >= 0 => Some((1, *v)),
     Expr::Integer(v) => Some((*v, -1)),
     Expr::List(spec) => {
-      let nums: Option<Vec<i128>> =
-        spec.iter().map(super::utilities::expr_to_i128).collect();
+      let nums: Option<Vec<i128>> = spec.iter().map(expr_to_i128).collect();
       match nums.as_deref() {
         Some([i]) => Some((*i, *i)),
         Some([i, j]) | Some([i, j, _]) => Some((*i, *j)),

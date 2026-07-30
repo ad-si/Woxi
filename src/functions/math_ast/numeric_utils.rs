@@ -676,6 +676,7 @@ pub fn expr_to_i128(e: &Expr) -> Option<i128> {
   match e {
     Expr::Integer(n) => Some(*n),
     Expr::BigInteger(n) => n.to_i128(),
+    Expr::Real(f) if f.fract() == 0.0 => Some(*f as i128),
     _ => None,
   }
 }

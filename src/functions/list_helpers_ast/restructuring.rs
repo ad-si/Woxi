@@ -85,15 +85,12 @@ pub fn partition_ast(
   // {k, k} (Partition[list, n, d, k] == Partition[list, n, d, {k, k}]).
   let (k_l, k_r) = match align {
     Some(Expr::List(elems)) if elems.len() == 2 => {
-      match (
-        super::utilities::expr_to_i128(&elems[0]),
-        super::utilities::expr_to_i128(&elems[1]),
-      ) {
+      match (expr_to_i128(&elems[0]), expr_to_i128(&elems[1])) {
         (Some(kl), Some(kr)) => (kl, kr),
         _ => (1, -1), // default: no overhang
       }
     }
-    Some(other) => match super::utilities::expr_to_i128(other) {
+    Some(other) => match expr_to_i128(other) {
       Some(k) => (k, k),
       None => (1, -1),
     },

@@ -4,6 +4,7 @@
 //! round-trips and re-parsing that the original `list_helpers.rs` functions use.
 
 use crate::InterpreterError;
+use crate::functions::math_ast::expr_to_i128;
 use crate::syntax::Expr;
 
 mod aggregation;

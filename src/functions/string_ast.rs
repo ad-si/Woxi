@@ -3,6 +3,7 @@
 //! These functions work directly with `Expr` AST nodes, avoiding string round-trips.
 
 use crate::InterpreterError;
+use crate::functions::math_ast::expr_to_i128;
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, unevaluated,
 };
@@ -151,7 +152,7 @@ fn is_ambiguous_int_list(spec: &Expr) -> bool {
   matches!(spec, Expr::List(elems)
   if elems.len() >= 4
     && elems.iter().all(|e| {
-      crate::functions::list_helpers_ast::expr_to_i128(e).is_some()
+      expr_to_i128(e).is_some()
     }))
 }
 
@@ -387,8 +388,7 @@ fn string_take_drop(
     // `{}` is an empty sequence specification: take nothing / drop nothing.
     Expr::List(elems) if elems.is_empty() => Ok(empty_or_all(true)),
     Expr::List(elems) if elems.len() == 1 => {
-      let Some(i) = crate::functions::list_helpers_ast::expr_to_i128(&elems[0])
-      else {
+      let Some(i) = expr_to_i128(&elems[0]) else {
         return Ok(unevaluated());
       };
       let real = if i > 0 { i } else { len + i + 1 };
@@ -400,10 +400,7 @@ fn string_take_drop(
       }
     }
     Expr::List(elems) if elems.len() == 2 || elems.len() == 3 => {
-      let nums: Option<Vec<i128>> = elems
-        .iter()
-        .map(crate::functions::list_helpers_ast::expr_to_i128)
-        .collect();
+      let nums: Option<Vec<i128>> = elems.iter().map(expr_to_i128).collect();
       let Some(nums) = nums else {
         return Ok(unevaluated());
       };
@@ -440,7 +437,7 @@ fn string_take_drop(
       name: up_name,
       args: up_args,
     } if up_name == "UpTo" && up_args.len() == 1 => {
-      match crate::functions::list_helpers_ast::expr_to_i128(&up_args[0]) {
+      match expr_to_i128(&up_args[0]) {
         Some(k) if k >= 0 => {
           let count = k.min(len);
           if count == 0 {
@@ -457,9 +454,7 @@ fn string_take_drop(
     // refuses.
     Expr::List(elems)
       if elems.len() >= 4
-        && elems.iter().all(|e| {
-          crate::functions::list_helpers_ast::expr_to_i128(e).is_some()
-        }) =>
+        && elems.iter().all(|e| expr_to_i128(e).is_some()) =>
     {
       if is_take {
         return list_of_specs(fname, &args[0], elems, true);
@@ -468,8 +463,7 @@ fn string_take_drop(
       Ok(unevaluated())
     }
     other => {
-      let Some(count) = crate::functions::list_helpers_ast::expr_to_i128(other)
-      else {
+      let Some(count) = expr_to_i128(other) else {
         return Ok(unevaluated());
       };
       if count.unsigned_abs() > len.unsigned_abs() {
@@ -3541,12 +3535,12 @@ fn string_pattern_to_regex_inner(
         let quantifier = match &args[1] {
           Expr::Integer(n) => format!("{{1,{}}}", n),
           Expr::List(items) if items.len() == 1 => {
-            let n = crate::functions::math_ast::expr_to_i128(&items[0])?;
+            let n = expr_to_i128(&items[0])?;
             format!("{{{}}}", n)
           }
           Expr::List(items) if items.len() == 2 => {
-            let min = crate::functions::math_ast::expr_to_i128(&items[0])?;
-            let max = crate::functions::math_ast::expr_to_i128(&items[1])?;
+            let min = expr_to_i128(&items[0])?;
+            let max = expr_to_i128(&items[1])?;
             format!("{{{},{}}}", min, max)
           }
           _ => return None,

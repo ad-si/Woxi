@@ -2,7 +2,7 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
-use crate::functions::math_ast::{gcd_i128, rat_reduce};
+use crate::functions::math_ast::{expr_to_i128, gcd_i128, rat_reduce};
 use crate::syntax::{BinaryOperator, UnaryOperator, unevaluated};
 
 /// AnglePath[{θ1, θ2, ...}] - path with unit steps and cumulative turning angles.

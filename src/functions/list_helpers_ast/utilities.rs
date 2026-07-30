@@ -177,24 +177,11 @@ pub fn get_expr_head_str(expr: &Expr) -> &str {
   }
 }
 
-/// Helper to extract i128 from Expr
-pub(crate) fn expr_to_i128(expr: &Expr) -> Option<i128> {
-  match expr {
-    Expr::Integer(n) => Some(*n),
-    Expr::BigInteger(n) => {
-      use num_traits::ToPrimitive;
-      n.to_i128()
-    }
-    Expr::Real(f) if f.fract() == 0.0 => Some(*f as i128),
-    _ => None,
-  }
-}
-
 /// Like `expr_to_i128`, but also floors fractional Reals and Rationals so
 /// iterator bounds like `Do[..., {i, 1, 7/2}]` or `Do[..., {i, 1, 3.5}]`
 /// behave the same as wolframscript (which iterates up to `Floor[bound]`).
 pub(crate) fn expr_to_i128_floor(expr: &Expr) -> Option<i128> {
-  if let Some(n) = expr_to_i128(expr) {
+  if let Some(n) = crate::functions::math_ast::expr_to_i128(expr) {
     return Some(n);
   }
   let f = crate::functions::math_ast::try_eval_to_f64_with_infinity(expr)?;
