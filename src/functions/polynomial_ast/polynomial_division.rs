@@ -1,7 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, expr_to_string, unevaluated};
 
 /// Split `[p, q, x]` or `[p, q, x, Modulus -> n]` into the three positional
 /// arguments and an optional modulus.

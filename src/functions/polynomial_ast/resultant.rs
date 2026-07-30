@@ -1,8 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
 use crate::functions::math_ast::expr_to_i128;
-use crate::syntax::{BinaryOperator, Expr, unevaluated};
 
 /// Resultant[poly1, poly2, var] - Computes the resultant of two polynomials
 /// with respect to the given variable.

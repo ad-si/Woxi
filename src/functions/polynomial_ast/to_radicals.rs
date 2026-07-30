@@ -1,7 +1,6 @@
-use super::{mk_call, mk_int, mk_power, mk_ratio, mk_times};
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::math_ast::gcd_i128;
-use crate::syntax::{BinaryOperator, Expr};
 
 /// ToRadicals[expr] — convert Root objects to explicit radical expressions.
 pub fn to_radicals_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

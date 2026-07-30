@@ -1,8 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
 use crate::functions::math_ast::{gcd_i128, is_sqrt, make_sqrt, rat_reduce};
-use crate::syntax::{BinaryOperator, Expr, expr_to_string};
 
 // ─── Cancel ─────────────────────────────────────────────────────────
 
@@ -267,7 +265,6 @@ fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {
       {
         use super::coefficient::collect_additive_terms;
         use super::expand::{build_product, collect_multiplicative_factors};
-        use crate::syntax::expr_to_string;
 
         let terms = collect_additive_terms(&num);
         if terms.len() >= 2 {

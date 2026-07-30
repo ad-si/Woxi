@@ -1,10 +1,9 @@
-use crate::InterpreterError;
-use crate::functions::math_ast::gcd_i128;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
-
 use super::coefficient::collect_additive_terms;
 use super::coefficient::term_var_power_and_coeff;
 use super::expand::expand_and_combine;
+#[allow(unused_imports)]
+use super::*;
+use crate::functions::math_ast::gcd_i128;
 
 /// Decompose[poly, x] - decompose a polynomial into a composition of simpler polynomials.
 /// Returns a list {g1, g2, ..., gn} such that poly(x) = g1(g2(...gn(x)...)).

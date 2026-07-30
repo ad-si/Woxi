@@ -1,11 +1,6 @@
 use super::together::negate_expr;
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, expr_to_string,
-  unevaluated,
-};
 
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
 use crate::functions::math_ast::{gcd_i128, make_sqrt};

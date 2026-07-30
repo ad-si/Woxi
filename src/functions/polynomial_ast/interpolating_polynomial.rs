@@ -1,6 +1,6 @@
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
-use crate::syntax::{BinaryOperator, Expr, unevaluated};
 
 /// InterpolatingPolynomial[data, x] — find the polynomial that interpolates the data.
 ///

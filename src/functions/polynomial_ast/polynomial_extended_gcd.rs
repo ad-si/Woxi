@@ -1,7 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{Expr, expr_to_string, unevaluated};
 
 /// PolynomialExtendedGCD[p, q, x] - extended GCD of two polynomials.
 ///

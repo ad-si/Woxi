@@ -1,8 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, bool_expr, expr_to_string,
-};
 
 // ─── helpers ────────────────────────────────────────────────────────
 

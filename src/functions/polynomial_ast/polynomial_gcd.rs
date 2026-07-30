@@ -1,7 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
 
 /// PolynomialGCD[p1, p2, ...] - greatest common divisor of polynomials
 pub fn polynomial_gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

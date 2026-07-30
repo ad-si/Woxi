@@ -1,8 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
-
 use crate::functions::calculus_ast::simplify;
 
 // ─── Expand ─────────────────────────────────────────────────────────

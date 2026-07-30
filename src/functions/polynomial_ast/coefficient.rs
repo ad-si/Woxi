@@ -1,10 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
 use crate::evaluator::pattern_matching::expr_equal;
-use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
-};
 
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
 

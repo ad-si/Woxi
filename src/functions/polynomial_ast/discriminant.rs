@@ -1,7 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{Expr, unevaluated};
 
 /// True when `e` is a numeric literal equal to zero (integer or real).
 fn is_zero_const(e: &Expr) -> bool {

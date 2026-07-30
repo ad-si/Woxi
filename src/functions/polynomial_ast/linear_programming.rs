@@ -19,9 +19,9 @@
 //! when a problem has multiple optima — and falls back to Bland's rule after a
 //! generous iteration budget so it can never cycle on degenerate problems.
 
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::math_ast::rat_reduce_bigint;
-use crate::syntax::{Expr, unevaluated};
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
 

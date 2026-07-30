@@ -1,8 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
-
 use crate::functions::calculus_ast::is_constant_wrt;
 use crate::functions::math_ast::rat_reduce;
 

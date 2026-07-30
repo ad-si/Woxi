@@ -1,11 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
 use crate::functions::calculus_ast::simplify;
 use crate::functions::math_ast::{gcd_i128, rat_reduce, rat_reduce_bigint};
-use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, expr_to_string,
-};
 
 // ─── Refine ─────────────────────────────────────────────────────────
 
@@ -5001,7 +4997,7 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
       ))
       .is_some();
     let factored = if neg_power_sum {
-      Err(crate::InterpreterError::EvaluationError(String::new()))
+      Err(InterpreterError::EvaluationError(String::new()))
     } else if is_sum && polynomial_like(&best) {
       super::factor::factor_square_free_ast(&[best.clone()])
     } else {
