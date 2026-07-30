@@ -320,27 +320,6 @@ fn extract_cell_content(s: &str) -> String {
     return extract_textdata(inner);
   }
 
-  // Stored graphics dumps (the "Snapshots" cells of Demonstrations
-  // notebooks hold `PaneBox[GraphicsBox[TagBox[RasterBox[CompressedData[…`
-  // — around 100 kB of box text each). Their textual reading is the same
-  // placeholder Mathematica's OutputForm uses; front-ends re-render the
-  // graphic from the Input cell instead. `DynamicModuleBox` dumps are
-  // deliberately *not* collapsed here — Woxi Studio detects them by
-  // prefix to re-instantiate the live Manipulate widget.
-  if let Some(inner) = s.strip_prefix("PaneBox[") {
-    let inner = inner.strip_suffix(']').unwrap_or(inner);
-    let parts = split_top_level_commas(inner);
-    if let Some(first) = parts.first() {
-      return extract_cell_content(first.trim());
-    }
-  }
-  if s.starts_with("GraphicsBox[") {
-    return "-Graphics-".to_string();
-  }
-  if s.starts_with("Graphics3DBox[") {
-    return "-Graphics3D-".to_string();
-  }
-
   // Handle 2-D typeset display boxes. These are emitted by the Wolfram
   // FrontEnd to render assignments like `r = (matrix)` or expressions
   // containing fractions / exponents in pretty-printed form; converting
@@ -692,27 +671,42 @@ fn render_text_element(s: &str) -> String {
     }
   }
 
-  // Inline `Cell[...]` elements are either typeset math
-  // (`Cell[BoxData[FormBox[…]], "InlineMath"]`) or the attached "more
-  // info" opener buttons of Demonstrations templates. Render the math to
-  // plain text; opener buttons (whose boxes have no textual reading —
-  // `PaneSelectorBox`, `DynamicBox`, …) are dropped.
+  // Inline `Cell[...]` elements inside a TextData run come in two kinds.
+  // Styled inline content — `Cell[BoxData[FormBox[…]], "InlineMath"]` and
+  // friends — carries real prose (math embedded in a sentence) and must be
+  // rendered, otherwise the surrounding text is left with holes: formula
+  // styles render as display text (`D_U`, `V²`, equation grids), code
+  // styles as evaluable InputForm. Unstyled inline cells are the attached
+  // "more info" opener buttons in Demonstrations templates
+  // (PaneSelectorBox/TemplateBox chrome) — they carry no textual content,
+  // so drop them.
   if let Some(rest) = s.strip_prefix("Cell[")
     && let Ok((inner, _)) = find_matching_bracket(rest)
   {
-    let args = split_top_level_commas(inner);
-    if let Some(first) = args.first() {
-      let first = first.trim();
-      if let Some(box_rest) = first.strip_prefix("BoxData[")
-        && let Ok((box_inner, _)) = find_matching_bracket(box_rest)
-      {
-        return render_math_text(box_inner.trim()).unwrap_or_default();
+    let parts = split_top_level_commas(inner);
+    let style = parts.iter().skip(1).find_map(|p| {
+      // A part may start with a `\`-newline line continuation left over
+      // from the .nb file's physical line wrapping — strip it before
+      // matching the style string.
+      let t = p.trim();
+      let t = t.strip_prefix('\\').map(str::trim_start).unwrap_or(t);
+      let is_option = t.contains("->") || t.contains(":>");
+      (!is_option && t.starts_with('"') && t.ends_with('"') && t.len() >= 2)
+        .then(|| t[1..t.len() - 1].to_string())
+    });
+    return match style.as_deref() {
+      Some("InlineMath" | "InlineFormula") => parts
+        .first()
+        .map(|c| render_boxes_text(c.trim()))
+        .unwrap_or_default(),
+      Some("InlineCell" | "InlineCode" | "InlineInput" | "InlineOutput") => {
+        parts
+          .first()
+          .map(|c| extract_cell_content(c.trim()))
+          .unwrap_or_default()
       }
-      if first.starts_with('"') {
-        return extract_string_content(first);
-      }
-    }
-    return String::new();
+      _ => String::new(),
+    };
   }
 
   // Nested RowBox / typeset boxes.
@@ -726,74 +720,26 @@ fn render_text_element(s: &str) -> String {
   s.to_string()
 }
 
-/// Map a run of digits/signs to its Unicode subscript form, if every
-/// character has one.
-fn to_subscript_chars(s: &str) -> Option<String> {
-  if s.is_empty() {
-    return None;
-  }
-  s.chars()
-    .map(|c| match c {
-      '0'..='9' => char::from_u32(0x2080 + (c as u32 - '0' as u32)),
-      '+' => Some('\u{208A}'),
-      '-' => Some('\u{208B}'),
-      '=' => Some('\u{208C}'),
-      '(' => Some('\u{208D}'),
-      ')' => Some('\u{208E}'),
-      _ => None,
-    })
-    .collect()
-}
-
-/// Map a run of digits/signs to its Unicode superscript form, if every
-/// character has one.
-fn to_superscript_chars(s: &str) -> Option<String> {
-  if s.is_empty() {
-    return None;
-  }
-  s.chars()
-    .map(|c| match c {
-      '0' => Some('\u{2070}'),
-      '1' => Some('\u{00B9}'),
-      '2' => Some('\u{00B2}'),
-      '3' => Some('\u{00B3}'),
-      '4'..='9' => char::from_u32(0x2070 + (c as u32 - '0' as u32)),
-      '+' => Some('\u{207A}'),
-      '-' => Some('\u{207B}'),
-      '=' => Some('\u{207C}'),
-      '(' => Some('\u{207D}'),
-      ')' => Some('\u{207E}'),
-      _ => None,
-    })
-    .collect()
-}
-
-/// Render a typeset box expression from an inline Text-cell
-/// `Cell[BoxData[…]]` to plain display text, e.g.
-/// `FormBox[RowBox[{"\[Theta]", "(", "t", ")"}], TraditionalForm]` → `θ(t)`
-/// and `SubscriptBox["m", "1"]` → `m₁`. Unlike `extract_typeset_box`, the
-/// goal is readable prose, not evaluable InputForm. Returns `None` when
-/// the boxes have no textual reading (`PaneSelectorBox`, `DynamicBox`, … —
-/// the Demonstrations "more info" opener buttons), so callers can drop
-/// the element.
-fn render_math_text(s: &str) -> Option<String> {
+/// Render a box expression as *display* text for a prose (Text) cell —
+/// the inline-formula counterpart of `extract_typeset_box`, preferring
+/// readable notation over evaluable InputForm: `SubscriptBox["D", "U"]` →
+/// `D_U`, `SuperscriptBox["V", "2"]` → `V²`, `FractionBox[a, b]` → `a/b`,
+/// and `GridBox` rows on separate lines. Named characters resolve to
+/// Unicode (`\[Del]` → `∇`), never to ASCII operator rewrites.
+fn render_boxes_text(s: &str) -> String {
   let s = s.trim();
-  if s.is_empty() {
-    return Some(String::new());
-  }
 
-  // String literal: prose with named characters resolved to Unicode.
+  // Plain string literal.
   if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
-    return Some(extract_string_content(s));
+    return unescape_string(&s[1..s.len() - 1]);
   }
 
-  // `{…}` element runs (the argument of `RowBox`, and bare lists).
+  // A bare `{…}` list of inline items.
   if s.starts_with('{') && s.ends_with('}') {
-    let mut out = String::new();
-    for part in split_top_level_commas(&s[1..s.len() - 1]) {
-      out.push_str(&render_math_text(part)?);
-    }
-    return Some(out);
+    return split_top_level_commas(&s[1..s.len() - 1])
+      .iter()
+      .map(|p| render_boxes_text(p.trim()))
+      .collect::<String>();
   }
 
   fn box_args(head: &str, s: &str) -> Option<Vec<String>> {
@@ -803,99 +749,140 @@ fn render_math_text(s: &str) -> Option<String> {
       .into_iter()
       .map(|p| p.trim().to_string())
       .collect();
+    // Drop trailing display options (`MultilineFunction -> None`, …) so
+    // the arity matches below see the box's real positional arguments.
     args.retain(|a| !is_option_arg(a));
     Some(args)
   }
 
+  // Superscripts of digits (and a leading minus) read best as Unicode
+  // superscript characters: `V²`, `∇²`, `10⁻³`.
+  fn superscript_unicode(s: &str) -> Option<String> {
+    s.chars()
+      .map(|c| match c {
+        '0' => Some('⁰'),
+        '1' => Some('¹'),
+        '2' => Some('²'),
+        '3' => Some('³'),
+        '4' => Some('⁴'),
+        '5' => Some('⁵'),
+        '6' => Some('⁶'),
+        '7' => Some('⁷'),
+        '8' => Some('⁸'),
+        '9' => Some('⁹'),
+        '-' => Some('⁻'),
+        '+' => Some('⁺'),
+        _ => None,
+      })
+      .collect()
+  }
+
   for head in [
-    "RowBox",
+    "BoxData",
     "FormBox",
     "StyleBox",
     "TagBox",
-    "InterpretationBox",
     "AdjustmentBox",
     "FrameBox",
+    "ButtonBox",
+    "PaneBox",
     "ItemBox",
-    "FractionBox",
-    "SqrtBox",
-    "SubscriptBox",
-    "SuperscriptBox",
-    "SubsuperscriptBox",
-    "OverscriptBox",
-    "UnderscriptBox",
   ] {
-    if !s.starts_with(head) {
-      continue;
+    if let Some(args) = box_args(head, s)
+      && let Some(first) = args.first()
+    {
+      // These wrappers only style/annotate their first argument.
+      return render_boxes_text(first);
     }
-    let args = box_args(head, s)?;
-    return match head {
-      "RowBox" if args.len() == 1 => render_math_text(&args[0]),
-      // Wrappers whose first argument is the displayed content. For
-      // `InterpretationBox` the *display* (first argument) is wanted here,
-      // unlike in code cells where the evaluable second argument is.
-      "FormBox" | "StyleBox" | "TagBox" | "InterpretationBox"
-      | "AdjustmentBox" | "FrameBox" | "ItemBox" | "OverscriptBox"
-      | "UnderscriptBox"
-        if !args.is_empty() =>
-      {
-        render_math_text(&args[0])
-      }
-      "FractionBox" if args.len() == 2 => Some(format!(
-        "{}/{}",
-        render_math_text(&args[0])?,
-        render_math_text(&args[1])?
-      )),
-      "SqrtBox" if args.len() == 1 => {
-        let inner = render_math_text(&args[0])?;
-        if inner.chars().all(char::is_alphanumeric) {
-          Some(format!("\u{221A}{inner}"))
-        } else {
-          Some(format!("\u{221A}({inner})"))
-        }
-      }
-      "SubscriptBox" if args.len() == 2 => {
-        let base = render_math_text(&args[0])?;
-        let sub = render_math_text(&args[1])?;
-        Some(match to_subscript_chars(&sub) {
-          Some(uni) => format!("{base}{uni}"),
-          None => format!("{base}_{sub}"),
-        })
-      }
-      "SuperscriptBox" if args.len() == 2 => {
-        if let Some(n) = prime_marks(&args[1]) {
-          return Some(format!(
-            "{}{}",
-            render_math_text(&args[0])?,
-            "'".repeat(n)
-          ));
-        }
-        let base = render_math_text(&args[0])?;
-        let sup = render_math_text(&args[1])?;
-        Some(match to_superscript_chars(&sup) {
-          Some(uni) => format!("{base}{uni}"),
-          None => format!("{base}^{sup}"),
-        })
-      }
-      "SubsuperscriptBox" if args.len() == 3 => {
-        let base = render_math_text(&args[0])?;
-        let sub = render_math_text(&args[1])?;
-        let sup = render_math_text(&args[2])?;
-        let sub = to_subscript_chars(&sub).unwrap_or(format!("_{sub}"));
-        let sup = to_superscript_chars(&sup).unwrap_or(format!("^{sup}"));
-        Some(format!("{base}{sub}{sup}"))
-      }
-      _ => None,
+  }
+  if let Some(args) = box_args("InterpretationBox", s)
+    && !args.is_empty()
+  {
+    // The displayed form is the first argument (the second is the value).
+    return render_boxes_text(&args[0]);
+  }
+  if let Some(args) = box_args("RowBox", s)
+    && let Some(first) = args.first()
+  {
+    return render_boxes_text(first);
+  }
+  if let Some(args) = box_args("FractionBox", s)
+    && args.len() == 2
+  {
+    return format!(
+      "{}/{}",
+      render_boxes_text(&args[0]),
+      render_boxes_text(&args[1])
+    );
+  }
+  if let Some(args) = box_args("SubscriptBox", s)
+    && args.len() == 2
+  {
+    return format!(
+      "{}_{}",
+      render_boxes_text(&args[0]),
+      render_boxes_text(&args[1])
+    );
+  }
+  if let Some(args) = box_args("SuperscriptBox", s)
+    && args.len() == 2
+  {
+    // Prime-mark superscripts are the typeset derivative (`θ'`), not an
+    // exponent.
+    if let Some(n) = prime_marks(&args[1]) {
+      return format!("{}{}", render_boxes_text(&args[0]), "'".repeat(n));
+    }
+    let base = render_boxes_text(&args[0]);
+    let exp = render_boxes_text(&args[1]);
+    return match superscript_unicode(&exp) {
+      Some(sup) if !sup.is_empty() => format!("{base}{sup}"),
+      _ => format!("{base}^{exp}"),
     };
   }
-
-  // Any other bracketed head (`PaneSelectorBox[…]`, `DynamicBox[…]`,
-  // `GraphicsBox[…]`, …) has no textual reading.
-  if s.contains('[') {
-    return None;
+  if let Some(args) = box_args("SubsuperscriptBox", s)
+    && args.len() == 3
+  {
+    let base = render_boxes_text(&args[0]);
+    let sub = render_boxes_text(&args[1]);
+    let exp = render_boxes_text(&args[2]);
+    return match superscript_unicode(&exp) {
+      Some(sup) if !sup.is_empty() => format!("{base}_{sub}{sup}"),
+      _ => format!("{base}_{sub}^{exp}"),
+    };
+  }
+  if let Some(args) = box_args("SqrtBox", s)
+    && args.len() == 1
+  {
+    return format!("√{}", render_boxes_text(&args[0]));
+  }
+  if let Some(args) = box_args("GridBox", s)
+    && let Some(rows_text) = args.first()
+  {
+    // Rows on separate lines, columns separated by two spaces.
+    let rows_inner = rows_text
+      .strip_prefix('{')
+      .and_then(|r| r.strip_suffix('}'))
+      .unwrap_or(rows_text);
+    return split_top_level_commas(rows_inner)
+      .iter()
+      .map(|row| {
+        let row = row.trim();
+        let row_inner = row
+          .strip_prefix('{')
+          .and_then(|r| r.strip_suffix('}'))
+          .unwrap_or(row);
+        split_top_level_commas(row_inner)
+          .iter()
+          .map(|cell| render_boxes_text(cell.trim()))
+          .collect::<Vec<_>>()
+          .join("  ")
+      })
+      .collect::<Vec<_>>()
+      .join("\n");
   }
 
-  // A bare token: symbol, number, or operator.
-  Some(s.to_string())
+  // Anything else falls back to the evaluable-InputForm extractor.
+  extract_cell_content(s)
 }
 
 /// Map Wolfram named operator characters to their InputForm ASCII
@@ -1014,6 +1001,13 @@ fn unescape_string_inner(s: &str, code: bool) -> String {
           }
           if code && let Some(op) = named_char_to_code_op(&name) {
             result.push_str(op);
+            continue;
+          }
+          // Prose display: `\[Cross]` canonically maps to a private-use
+          // codepoint (U+F3C4) with no glyph in normal fonts; the visible
+          // multiplication sign is what a text cell means (`40 × 40`).
+          if !code && name == "Cross" {
+            result.push('\u{00D7}');
             continue;
           }
           match crate::syntax::named_char_to_unicode(&name) {
@@ -2006,6 +2000,65 @@ Cell["A subitem", "Subitem"]
   }
 
   #[test]
+  fn test_textdata_inline_math_cell_renders_content() {
+    // Inline `Cell[…, "InlineMath"]` elements inside a TextData run carry
+    // real prose (math embedded in a sentence) and must be rendered, not
+    // dropped like the Demonstrations "more info" chrome buttons.
+    let nb = r#"Notebook[{
+Cell[TextData[{
+ "To find ",
+ Cell[BoxData[
+  FormBox[
+   RowBox[{"P", "(",
+    RowBox[{"X", "\[LessEqual]", "x"}], ")"}], TraditionalForm]],
+  "InlineMath",ExpressionUUID->"c04c6311-9407-4855-8351-984bf610bb65"],
+ " with mean ",
+ Cell[BoxData[
+  FormBox["\[Mu]", TraditionalForm]], "InlineMath",ExpressionUUID->
+  "2769c287-5751-4749-947c-fcdd1da9d653"],
+ "."
+}], "Text"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(cell.style, CellStyle::Text);
+        // Display text keeps the typeset relation sign (`≤`, not the
+        // InputForm `<=`) — this is prose, not code.
+        assert_eq!(cell.content, "To find P(X\u{2264}x) with mean \u{03bc}.");
+      }
+      _ => panic!("Expected single cell"),
+    }
+  }
+
+  #[test]
+  fn test_textdata_chrome_button_cell_still_dropped() {
+    // Unstyled inline cells (the Demonstrations "more info" opener
+    // buttons) carry no textual content and stay dropped.
+    let nb = r#"Notebook[{
+Cell[TextData[{
+ "Caption",
+ Cell[BoxData[
+  PaneSelectorBox[{True->
+   TemplateBox[{"CaptionCells"},
+    "MoreInfoOpenerButtonTemplate"]}, Dynamic[
+    CurrentValue[
+     EvaluationNotebook[], {TaggingRules, "ResourceCreateNotebook"}]],
+   ImageSize->Automatic]],ExpressionUUID->
+  "4c32c08b-d967-45c6-8920-0c21a5734cd7"]
+}], "Section"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(cell.style, CellStyle::Section);
+        assert_eq!(cell.content, "Caption");
+      }
+      _ => panic!("Expected single cell"),
+    }
+  }
+
+  #[test]
   fn test_export_markdown_items() {
     let mut nb = Notebook::new();
     nb.push_cell(Cell::new(CellStyle::Item, "First"));
@@ -2205,6 +2258,69 @@ Cell["Chapter 2", "Chapter"]
   }
 
   #[test]
+  fn test_parse_real_demonstration_nb() {
+    // Reduced Wolfram Demonstrations "definition notebook" (the
+    // ColorRelationships template): deeply nested cell groups, Section
+    // headers carrying inline MoreInfo opener cells, an Input +
+    // DynamicModuleBox-dump Output pair, a RasterBox snapshot Output,
+    // and Item keyword cells.
+    let contents = std::fs::read_to_string(concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/tests/notebooks/demonstration.nb"
+    ))
+    .unwrap();
+    let nb = parse_notebook(&contents).unwrap();
+    let flat = nb.flat_cells();
+    let cells: Vec<&Cell> = flat.iter().map(|(_, c)| *c).collect();
+
+    assert_eq!(cells[0].style, CellStyle::Title);
+    assert_eq!(cells[0].content, "Color Relationships");
+
+    // Section headers render just their label — the trailing inline
+    // `Cell[BoxData[PaneSelectorBox[…]]]` opener button carries no text.
+    assert_eq!(cells[1].style, CellStyle::Section);
+    assert_eq!(cells[1].content, "Initialization Code");
+
+    // The initialization Input cell reconstructs evaluable InputForm.
+    assert_eq!(cells[2].style, CellStyle::Input);
+    assert_eq!(
+      cells[2].content,
+      "swatch[clr_]:=Graphics[{clr,Rectangle[]}]"
+    );
+
+    assert_eq!(cells[3].style, CellStyle::Section);
+    assert_eq!(cells[3].content, "Manipulate");
+
+    // The Manipulate input keeps ASCII `->` (from `\[Rule]`) and its
+    // stored output is recognizable as a FrontEnd widget dump (TagBox/
+    // StyleBox wrappers unwrap to the DynamicModuleBox).
+    assert_eq!(cells[4].style, CellStyle::Input);
+    assert!(cells[4].content.starts_with("Manipulate["));
+    assert!(cells[4].content.contains("SaveDefinitions->True"));
+    assert_eq!(cells[5].style, CellStyle::Output);
+    assert!(
+      cells[5]
+        .content
+        .trim_start()
+        .starts_with("DynamicModuleBox[")
+    );
+
+    // Snapshot outputs and keyword items parse with their styles.
+    assert!(
+      cells.iter().any(
+        |c| c.style == CellStyle::Output && c.content.contains("RasterBox")
+      ),
+      "expected a RasterBox snapshot output"
+    );
+    let items: Vec<&str> = cells
+      .iter()
+      .filter(|c| c.style == CellStyle::Item)
+      .map(|c| c.content.as_str())
+      .collect();
+    assert_eq!(items, vec!["hue", "color wheel"]);
+  }
+
+  #[test]
   fn test_unescape_wolfram_string_delimiters() {
     // \< and \> are Wolfram string delimiters in box expressions
     assert_eq!(unescape_string(r#"\<"Hello"\>"#), r#""Hello""#);
@@ -2338,6 +2454,23 @@ Cell["Chapter 2", "Chapter"]
   }
 
   #[test]
+  fn test_extract_textdata_inline_math_cell() {
+    // Inline `Cell[BoxData[…], "InlineMath"]` elements hold real formulas
+    // (unlike the "more info" opener buttons) and must render as text.
+    let s = r#"TextData[{
+ "Given a point F (the focus) and a line ",
+ Cell[BoxData[
+  FormBox["d", TraditionalForm]], "InlineMath",ExpressionUUID->
+  "23d75367-0ed4-44ff-ba06-4d9bdc71d1e9"],
+ " (the directrix)."
+}]"#;
+    assert_eq!(
+      extract_cell_content(s),
+      "Given a point F (the focus) and a line d (the directrix)."
+    );
+  }
+
+  #[test]
   fn test_extract_cell_content_prime_derivative() {
     // `SuperscriptBox[f, "\[Prime]"]` is the FrontEnd's typeset form of a
     // derivative; the trailing `MultilineFunction -> None` display option
@@ -2396,24 +2529,6 @@ Cell["Chapter 2", "Chapter"]
   }
 
   #[test]
-  fn test_extract_cell_content_raster_snapshot_placeholder() {
-    // Stored Demonstrations snapshots (`PaneBox[GraphicsBox[TagBox[
-    // RasterBox[CompressedData[…]]]]]`, ~100 kB each) read as the
-    // OutputForm placeholder instead of raw box text.
-    let s = r#"BoxData[PaneBox[
-  GraphicsBox[
-   TagBox[RasterBox[CompressedData["1:eJzs3Xl4"], {{0, 263}, {380, 0}}, {0, 255},
-     ColorFunction->RGBColor], BoxForm`ImageTag["Byte"]],
-   ImageSizeRaw->{380, 263}],
-  ImageSizeCache->{384., {131.5, 136.5}}]]"#;
-    assert_eq!(extract_cell_content(s), "-Graphics-");
-    // A DynamicModuleBox dump must stay verbatim so front-ends can
-    // detect it by prefix and rebuild the live widget.
-    let s = r#"BoxData[DynamicModuleBox[{x$$ = 1}, "body"]]"#;
-    assert!(extract_cell_content(s).starts_with("DynamicModuleBox["));
-  }
-
-  #[test]
   fn test_extract_textdata_inline_math() {
     // Inline `Cell[BoxData[FormBox[…]], "InlineMath"]` runs carry real
     // content (the leading math of a prose sentence) and must render.
@@ -2431,7 +2546,7 @@ Cell["Chapter 2", "Chapter"]
 
   #[test]
   fn test_extract_textdata_inline_math_subscripts() {
-    // `SubscriptBox["m", "1"]` renders with a Unicode subscript in prose.
+    // `SubscriptBox["m", "1"]` renders as display text in prose.
     let s = r#"TextData[{
  Cell[BoxData[
   FormBox[
@@ -2441,16 +2556,35 @@ Cell["Chapter 2", "Chapter"]
   "dfd0ccb6-6747-48f8-9a58-eb78bd009bbc"],
  " are the weights"
 }]"#;
+    assert_eq!(extract_cell_content(s), "m_1,m_2 are the weights");
+  }
+
+  #[test]
+  fn test_extract_textdata_inline_math_formula() {
+    // A boxed formula inside prose converts to display text (Unicode
+    // superscripts, not InputForm parentheses) — this is a sentence.
+    let s = r#"TextData[{
+ "One form of the equation of a parabola is ",
+ Cell[BoxData[
+  FormBox[
+   RowBox[{
+    SuperscriptBox["y", "2"], "=",
+    RowBox[{"2", "p", " ", "x"}]}], TraditionalForm]], "InlineMath",
+  ExpressionUUID->"9efcaa42-0dc4-43ec-a2b4-2e1f21a58f50"],
+ "."
+}]"#;
     assert_eq!(
       extract_cell_content(s),
-      "m\u{2081},m\u{2082} are the weights"
+      "One form of the equation of a parabola is y\u{00b2}=2p x."
     );
   }
 
   #[test]
   fn test_extract_textdata_display_formula() {
-    // A whole Text cell holding one display formula
-    // (`TextData[Cell[BoxData[FormBox[…]]]]`) must not come back empty.
+    // A whole Text cell holding one display formula (the trebuchet
+    // notebook's Lagrangian) must not come back empty; derivative prime
+    // marks and their `MultilineFunction -> None` display option render
+    // as `θ'`.
     let s = r#"TextData[Cell[BoxData[
  FormBox[
   RowBox[{"\[ScriptCapitalL]", "=",
@@ -2463,7 +2597,7 @@ Cell["Chapter 2", "Chapter"]
      RowBox[{
       SuperscriptBox["\[Theta]", "\[Prime]",
        MultilineFunction->None], "(", "t", ")"}], "2"]}]}],
-  TraditionalForm]],ExpressionUUID->"x"]]"#;
+  TraditionalForm]], "InlineMath",ExpressionUUID->"x"]]"#;
     assert_eq!(extract_cell_content(s), "\u{2112}=1/2 θ'(t)\u{00B2}");
   }
 
@@ -2565,5 +2699,103 @@ Cell[BoxData["2"], "Output", ExpressionUUID -> "bbb"]
       "Text cell should not contain backslashes, got: {:?}",
       text_cell.content
     );
+  }
+  #[test]
+  fn test_inline_math_cells_render_in_text() {
+    // `Cell[BoxData[…], "InlineMath"]` runs inside TextData carry the
+    // prose's symbols (the Wolfram Demonstrations template); they must
+    // render as display text, not vanish.
+    let nb = r#"Notebook[{
+Cell[TextData[{
+ "Here ",
+ Cell[BoxData[
+  FormBox[
+   SubscriptBox["D", "U"], TraditionalForm]], "InlineMath",ExpressionUUID->
+  "332957a9-d341-4570-bd7c-95b02f59c357"],
+ " and ",
+ Cell[BoxData[
+  FormBox[
+   SuperscriptBox["V", "2"], TraditionalForm]], "InlineMath",ExpressionUUID->
+  "f34a7ed8-3e3c-46ff-b104-0705ae5e03bb"],
+ " appear."
+}], "Text"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(cell.style, CellStyle::Text);
+        assert_eq!(cell.content, "Here D_U and V\u{00b2} appear.");
+      }
+      _ => panic!("Expected single cell"),
+    }
+  }
+
+  #[test]
+  fn test_inline_math_grid_of_equations() {
+    // A TextData whose sole element is an inline-math cell holding a
+    // GridBox renders each row on its own line.
+    let nb = r#"Notebook[{
+Cell[TextData[Cell[BoxData[
+ FormBox[
+  RowBox[{"{", GridBox[{
+     {
+      RowBox[{"U", " ", "\[RightArrow]", " ", "P"}]},
+     {
+      RowBox[{"V", " ", "\[RightArrow]", " ", "Q"}]}
+    }]}],
+  TraditionalForm]], \
+"InlineMath",ExpressionUUID->"97d25ac6-5009-432e-bb32-5ac8fe1a68f7"]], "Text"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(cell.content, "{U \u{2192} P\nV \u{2192} Q");
+      }
+      _ => panic!("Expected single cell"),
+    }
+  }
+
+  #[test]
+  fn test_inline_cross_renders_as_multiplication_sign() {
+    // `\[Cross]` canonically maps to a glyphless private-use codepoint;
+    // prose shows the multiplication sign (`40 × 40`).
+    let nb = r#"Notebook[{
+Cell[TextData[{
+ "a field size of ",
+ Cell[BoxData[
+  FormBox[
+   RowBox[{"40", "\[Cross]", "40"}], TraditionalForm]], "InlineMath",
+  ExpressionUUID->"6e1aba5b-f538-4ff2-b2b5-68f7aa88e1fd"]
+}], "Text"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(cell.content, "a field size of 40\u{00d7}40");
+      }
+      _ => panic!("Expected single cell"),
+    }
+  }
+
+  #[test]
+  fn test_non_inline_math_cells_stay_dropped() {
+    // Inline cells that are NOT inline formulas (the Demonstrations
+    // "more info" opener buttons) still carry no textual content.
+    let nb = r#"Notebook[{
+Cell[TextData[{
+ "Caption",
+ Cell[BoxData[
+  PaneSelectorBox[{True->"x"}, Dynamic[y]]],ExpressionUUID->
+  "7d8221a0-ff0d-462f-ac85-47023eae4458"]
+}], "Section"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(cell.style, CellStyle::Section);
+        assert_eq!(cell.content, "Caption");
+      }
+      _ => panic!("Expected single cell"),
+    }
   }
 }

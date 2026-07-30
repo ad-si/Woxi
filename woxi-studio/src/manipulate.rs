@@ -84,6 +84,27 @@ pub enum ControlState {
     points: Vec<(f64, f64)>,
     auto_create: bool,
   },
+  /// A `ControlType -> Trigger` control: a play/pause pair sweeping its
+  /// variable from `min` towards `max` in `step` increments while the
+  /// widget is playing. `max` may be infinite (`{time, 0, Infinity, 1}`),
+  /// in which case the sweep never wraps.
+  Trigger {
+    name: String,
+    label: String,
+    label_runs: Vec<LabelRun>,
+    min: f64,
+    max: f64,
+    step: f64,
+    current: f64,
+  },
+  /// A `Button[label, action]` row. Pressing it runs `action` (InputForm)
+  /// against the live bindings — e.g. `time = 0; {U, V} = {Uinit, Vinit}`
+  /// resets a simulation. Binds no variable.
+  Button {
+    label: String,
+    label_runs: Vec<LabelRun>,
+    action: String,
+  },
   /// A static heading row between controls (a string or `Style[…]`
   /// Manipulate argument). Binds no variable.
   Heading {
@@ -92,10 +113,6 @@ pub enum ControlState {
   },
   /// A `Delimiter` argument: a horizontal separator row. Binds no variable.
   Divider,
-  /// A `Button[label, action]` argument. Pressing it runs the held action
-  /// against the live bindings and writes mutated variables back into the
-  /// controls. Binds no variable itself.
-  Button { label: String, action: String },
 }
 
 impl ControlState {
@@ -105,20 +122,21 @@ impl ControlState {
       ControlState::Discrete { name, .. } => name,
       ControlState::Slider2D { name, .. } => name,
       ControlState::IntervalSlider { name, .. } => name,
+      ControlState::Trigger { name, .. } => name,
       ControlState::Locator { name, .. } => name,
-      ControlState::Heading { .. }
-      | ControlState::Divider
-      | ControlState::Button { .. } => "",
+      ControlState::Button { .. }
+      | ControlState::Heading { .. }
+      | ControlState::Divider => "",
     }
   }
 
-  /// Whether this row binds a variable (annotation rows don't).
+  /// Whether this row binds a variable (annotation/button rows don't).
   pub fn binds_variable(&self) -> bool {
     !matches!(
       self,
-      ControlState::Heading { .. }
+      ControlState::Button { .. }
+        | ControlState::Heading { .. }
         | ControlState::Divider
-        | ControlState::Button { .. }
     )
   }
 
@@ -126,7 +144,8 @@ impl ControlState {
   /// `Block[{name = <value>}, …]` binding.
   pub fn current_code(&self) -> String {
     match self {
-      ControlState::Continuous { current, .. } => format_f64(*current),
+      ControlState::Continuous { current, .. }
+      | ControlState::Trigger { current, .. } => format_f64(*current),
       ControlState::Discrete {
         values,
         current_index,
@@ -146,10 +165,76 @@ impl ControlState {
       ControlState::Locator { points, .. } => {
         woxi::functions::graphics::format_point_list_input(points)
       }
-      // Annotation rows and buttons bind no variable; never substituted.
-      ControlState::Heading { .. }
-      | ControlState::Divider
-      | ControlState::Button { .. } => "Null".to_string(),
+      // Annotation and button rows bind no variable; never substituted.
+      ControlState::Button { .. }
+      | ControlState::Heading { .. }
+      | ControlState::Divider => "Null".to_string(),
+    }
+  }
+
+  /// Update this control's current value from an InputForm fragment — the
+  /// read-back of a button action's write to the bound variable (e.g.
+  /// `time = 0` rewinds the trigger it drives).
+  fn set_current_from_code(&mut self, code: &str) {
+    use woxi::syntax::Expr;
+    fn as_f64(e: &Expr) -> Option<f64> {
+      match e {
+        Expr::Integer(n) => Some(*n as f64),
+        Expr::Real(r) => Some(*r),
+        _ => None,
+      }
+    }
+    fn as_pair(e: &Expr) -> Option<(f64, f64)> {
+      match e {
+        Expr::List(items) if items.len() == 2 => {
+          Some((as_f64(&items[0])?, as_f64(&items[1])?))
+        }
+        _ => None,
+      }
+    }
+    let Ok(expr) = woxi::interpret_to_expr(code) else {
+      return;
+    };
+    match self {
+      ControlState::Continuous { current, .. }
+      | ControlState::Trigger { current, .. } => {
+        if let Some(v) = as_f64(&expr) {
+          *current = v;
+        }
+      }
+      ControlState::Discrete {
+        values,
+        current_index,
+        ..
+      } => {
+        let form = woxi::syntax::expr_to_input_form(&expr);
+        if let Some(i) = values.iter().position(|v| *v == form) {
+          *current_index = i;
+        }
+      }
+      ControlState::Slider2D { x, y, .. } => {
+        if let Some((a, b)) = as_pair(&expr) {
+          *x = a;
+          *y = b;
+        }
+      }
+      ControlState::IntervalSlider { low, high, .. } => {
+        if let Some((a, b)) = as_pair(&expr) {
+          *low = a;
+          *high = b;
+        }
+      }
+      ControlState::Locator { points, .. } => {
+        if let Expr::List(items) = &expr
+          && let Some(new_points) =
+            items.iter().map(as_pair).collect::<Option<Vec<_>>>()
+        {
+          *points = new_points;
+        }
+      }
+      ControlState::Button { .. }
+      | ControlState::Heading { .. }
+      | ControlState::Divider => {}
     }
   }
 }
@@ -159,21 +244,17 @@ impl ControlState {
 #[derive(Debug, Clone)]
 pub struct ManipulateState {
   pub body: String,
-  /// Initialization code from `Initialization :> …`. Prepended to every
-  /// re-evaluation so that helper definitions introduced here remain in
-  /// scope regardless of the slider state.
+  /// Initialization code from `Initialization :> …`. Run once (in
+  /// [`from_expr`]) before the first render; its definitions persist in
+  /// the interpreter's global environment across re-evaluations.
+  ///
+  /// [`from_expr`]: Self::from_expr
   pub initialization: Option<String>,
   pub controls: Vec<ControlState>,
   /// Mutable `ControlType -> None` state variables, `(name, current value as
   /// InputForm)`. Passed live in the binding set so interactive displays can
   /// rewrite them.
   pub state: Vec<(String, String)>,
-  /// Continuous controls whose slider maximum is an expression in other
-  /// Manipulate variables (`Control[{{time, 0}, 0, tMax, …}]`), as
-  /// `(control name, max code)`. Re-resolved against the live bindings
-  /// after every body evaluation, so e.g. a body that moves `tMax` via
-  /// `Throw[tMax = t, "StopIntegration"]` widens the time slider.
-  dynamic_bounds: Vec<(String, String)>,
   /// Extra display expressions (InputForm), e.g. a `Dynamic[Panel[Grid[…]]]`
   /// of checkboxes, rebuilt into `display_trees` on every re-evaluation.
   pub displays: Vec<String>,
@@ -192,6 +273,15 @@ pub struct ManipulateState {
   /// `Appearance -> None`: hide the control rows (the animation just runs);
   /// the play/pause toggle stays visible for animated widgets.
   pub appearance_none: bool,
+  /// The variable a `ControlType -> Trigger`/`Animator` spec animates.
+  /// `advance_animation` targets this control instead of defaulting to the
+  /// first continuous one.
+  animation_var: Option<String>,
+  /// Continuous-control bounds that reference other control variables, as
+  /// `(control name, min code, max code)`. Re-resolved against the live
+  /// bindings on every re-evaluation so a slider range can follow another
+  /// control (Kepler's time sliders are bounded by the orbital period `P`).
+  dynamic_bounds: Vec<(String, Option<String>, Option<String>)>,
   /// Per-control `Enabled` condition (InputForm code), parallel to `controls`.
   /// `None` means the control has no condition and is always enabled.
   control_enabled: Vec<Option<String>>,
@@ -246,7 +336,6 @@ impl ManipulateState {
       initialization: spec.initialization,
       controls,
       state: spec.state,
-      dynamic_bounds: spec.dynamic_bounds,
       displays: spec.displays,
       display_trees: Vec::new(),
       graphics_handle: None,
@@ -257,14 +346,56 @@ impl ManipulateState {
       // unless the spec was built paused (`AnimationRunning -> False`).
       playing: spec.animated && spec.animation_running,
       appearance_none: spec.appearance_none,
+      animation_var: spec.animation_var,
+      dynamic_bounds: spec.dynamic_bounds,
       control_enabled,
       control_is_enabled,
       reeval_pending: 0,
       reeval_applied: 0,
       reeval_scheduled: false,
     };
+    // Run the `Initialization :> …` code ONCE, before the first render.
+    // Re-running it on every re-evaluation would reset any state the body
+    // mutates (e.g. the U/V concentration fields of a simulation stepping
+    // itself forward), freezing the simulation at its first step. Helper
+    // definitions persist in the interpreter's global environment, so a
+    // single run keeps them in scope for every later re-evaluation.
+    if let Some(init) = state.initialization.as_deref() {
+      let _ = woxi::interpret_with_stdout(init);
+    }
     state.reevaluate();
     Some(state)
+  }
+
+  /// Whether any control row is a `Trigger` (which carries its own
+  /// play/pause toggle, replacing the widget-level one).
+  pub fn has_trigger(&self) -> bool {
+    self
+      .controls
+      .iter()
+      .any(|c| matches!(c, ControlState::Trigger { .. }))
+  }
+
+  /// Run a `Button[…]` control's action: global side effects persist, and
+  /// writes to bound control variables (e.g. `time = 0`) move the
+  /// corresponding widgets. Re-renders afterwards.
+  pub fn apply_button_action(&mut self, action: &str) {
+    let updated = woxi::functions::graphics::apply_manipulate_button_action(
+      &self.bindings(),
+      action,
+    );
+    for (name, value) in updated {
+      if let Some(slot) = self.state.iter_mut().find(|(n, _)| *n == name) {
+        slot.1 = value;
+        continue;
+      }
+      for ctrl in &mut self.controls {
+        if ctrl.name() == name {
+          ctrl.set_current_from_code(&value);
+        }
+      }
+    }
+    self.reevaluate();
   }
 
   /// The full binding set (visible controls + mutable state) used to
@@ -289,46 +420,6 @@ impl ManipulateState {
       match self.state.iter_mut().find(|(n, _)| *n == name) {
         Some(slot) => slot.1 = value,
         None => self.state.push((name, value)),
-      }
-    }
-    self.reevaluate();
-  }
-
-  /// Run a `Button[…]` action (e.g. "randomize parameters") against the
-  /// live bindings, write the mutated variables back into the controls
-  /// and state, and re-render.
-  pub fn apply_button_action(&mut self, action: &str) {
-    let mutations = woxi::split_into_statements(action);
-    if mutations.is_empty() {
-      return;
-    }
-    let updated = apply_manipulate_mutations(&self.bindings(), &mutations);
-    for (name, value) in updated {
-      if let Some(ctrl) = self.controls.iter_mut().find(|c| c.name() == name) {
-        match ctrl {
-          ControlState::Continuous {
-            current, min, max, ..
-          } => {
-            if let Ok(v) = value.parse::<f64>() {
-              *current = v.clamp(*min, *max);
-            }
-          }
-          ControlState::Discrete {
-            values,
-            current_index,
-            ..
-          } => {
-            if let Some(i) = values.iter().position(|v| *v == value) {
-              *current_index = i;
-            }
-          }
-          _ => {}
-        }
-      } else {
-        match self.state.iter_mut().find(|(n, _)| *n == name) {
-          Some(slot) => slot.1 = value,
-          None => self.state.push((name, value)),
-        }
       }
     }
     self.reevaluate();
@@ -365,44 +456,67 @@ impl ManipulateState {
     }
   }
 
-  /// Advance the animated (first continuous) control by one step, wrapping
-  /// back to the start once it passes the end, then re-render. Called from
-  /// the app's animation-tick subscription while `playing` is set.
+  /// Advance the animated control by one step, wrapping back to the start
+  /// once it passes the end, then re-render. Called from the app's
+  /// animation-tick subscription while `playing` is set. The target is the
+  /// `ControlType -> Trigger`/`Animator` variable when the spec named one
+  /// (a slider row for a finite sweep, a dedicated `Trigger` row for an
+  /// infinite one — which never wraps), else the first continuous control.
   pub fn advance_animation(&mut self) {
-    let Some(ControlState::Continuous {
-      min,
-      max,
-      step,
-      current,
-      ..
-    }) = self
-      .controls
-      .iter_mut()
-      .find(|c| matches!(c, ControlState::Continuous { .. }))
-    else {
-      return;
-    };
-    let mut v = *current + *step;
-    // Loop back to the start once we step past the end (small epsilon so
-    // floating-point drift doesn't skip the final frame).
-    if v > *max + *step * 1e-6 {
-      v = *min;
+    let target = self.animation_var.clone();
+    let ctrl = self.controls.iter_mut().find(|c| match &target {
+      Some(name) => matches!(
+        c,
+        ControlState::Continuous { name: n, .. }
+        | ControlState::Trigger { name: n, .. } if n == name
+      ),
+      None => matches!(
+        c,
+        ControlState::Continuous { .. } | ControlState::Trigger { .. }
+      ),
+    });
+    match ctrl {
+      Some(ControlState::Continuous {
+        min,
+        max,
+        step,
+        current,
+        ..
+      })
+      | Some(ControlState::Trigger {
+        min,
+        max,
+        step,
+        current,
+        ..
+      }) => {
+        let mut v = *current + *step;
+        // Loop back to the start once we step past the end (small epsilon
+        // so floating-point drift doesn't skip the final frame). An
+        // infinite end (`{time, 0, Infinity, 1}`) never wraps.
+        if max.is_finite() && v > *max + *step * 1e-6 {
+          v = *min;
+        }
+        *current = v;
+      }
+      _ => return,
     }
-    *current = v;
     self.reevaluate();
   }
 
   /// Re-run the body with the current control bindings and update the
   /// cached SVG / text output. Called on every slider change.
+  ///
+  /// The `Initialization :> …` code deliberately does NOT re-run here: it
+  /// ran once in [`from_expr`], and its helper definitions persist in the
+  /// interpreter's global environment. Re-running it per frame would reset
+  /// any state the body itself mutates (a simulation stepping its fields
+  /// forward would stay frozen on its first step).
+  ///
+  /// [`from_expr`]: Self::from_expr
   pub fn reevaluate(&mut self) {
     let bindings = self.bindings();
-    // Prepend `Initialization :> …` code so helper definitions made there
-    // (e.g. `d[t_] := …`) are in scope while the body evaluates. The init
-    // is a CompoundExpression — join with `;` so both run in one call.
-    let code = match self.initialization.as_deref() {
-      Some(init) => format!("{init}; {}", self.body),
-      None => self.body.clone(),
-    };
+    let code = self.body.clone();
 
     // Install the bindings as globals once so a large `data` matrix is parsed
     // a single time, then evaluate the body, rebuild the display elements, and
@@ -410,16 +524,9 @@ impl ManipulateState {
     // (empty local bindings → no matrix re-embed).
     let displays = self.displays.clone();
     let control_enabled = self.control_enabled.clone();
-    let state_names: Vec<String> =
-      self.state.iter().map(|(n, _)| n.clone()).collect();
     let dynamic_bounds = self.dynamic_bounds.clone();
-    let (render, display_trees, enabled, new_state, new_bounds) =
+    let (render, display_trees, enabled, resolved_bounds) =
       woxi::with_scoped_globals(&bindings, || {
-        // Evaluate the body first: it may mutate state variables (the
-        // trebuchet's `Throw[tMax = t, "StopIntegration"]` event action
-        // rewrites `tMax`), and the displays / enabled-conditions /
-        // dynamic bounds must see those updates.
-        let render = woxi::interpret_with_stdout(&code);
         let trees: Vec<_> = displays
           .iter()
           .map(|d| build_manipulate_display(d, &[]))
@@ -433,51 +540,23 @@ impl ManipulateState {
             None => true,
           })
           .collect();
-        // Read back the (possibly mutated) state variables …
-        let new_state: Vec<Option<String>> = state_names
+        // Re-resolve bounds that follow another control's variable (e.g. a
+        // time slider capped by the orbital period) against these bindings.
+        let resolved: Vec<(String, Option<f64>, Option<f64>)> = dynamic_bounds
           .iter()
-          .map(|n| {
-            woxi::interpret_to_expr(n)
-              .ok()
-              .map(|e| woxi::syntax::expr_to_input_form(&e))
+          .map(|(name, min_code, max_code)| {
+            let eval = |c: &Option<String>| {
+              c.as_deref()
+                .and_then(woxi::functions::graphics::manipulate_eval_bound_code)
+            };
+            (name.clone(), eval(min_code), eval(max_code))
           })
           .collect();
-        // … and resolve each dynamic slider bound against them.
-        let new_bounds: Vec<Option<f64>> = dynamic_bounds
-          .iter()
-          .map(|(_, code)| {
-            woxi::interpret_to_expr(&format!("N[{code}]"))
-              .ok()
-              .and_then(|e| match e {
-                woxi::syntax::Expr::Real(v) => Some(v),
-                woxi::syntax::Expr::Integer(n) => Some(n as f64),
-                _ => None,
-              })
-          })
-          .collect();
-        (render, trees, enabled, new_state, new_bounds)
+        (woxi::interpret_with_stdout(&code), trees, enabled, resolved)
       });
     self.display_trees = display_trees;
     self.control_is_enabled = enabled;
-    for (slot, updated) in self.state.iter_mut().zip(new_state) {
-      if let Some(value) = updated {
-        slot.1 = value;
-      }
-    }
-    for ((name, _), updated) in self.dynamic_bounds.iter().zip(new_bounds) {
-      let Some(new_max) = updated else { continue };
-      if !new_max.is_finite() {
-        continue;
-      }
-      if let Some(ControlState::Continuous { max, current, .. }) =
-        self.controls.iter_mut().find(|c| c.name() == name)
-      {
-        *max = new_max;
-        if *current > new_max {
-          *current = new_max;
-        }
-      }
-    }
+    self.apply_dynamic_bounds(&resolved_bounds);
 
     // Double-buffer the render: build the new SVG handle in a local and only
     // swap the cached field once the replacement is ready, rather than nulling
@@ -531,6 +610,35 @@ impl ManipulateState {
         self.text_output = None;
         self.error = Some(format!("{e}"));
       }
+    }
+  }
+
+  /// Move each named continuous control to its freshly resolved bounds and
+  /// clamp its value inside them, so a slider range follows the control it
+  /// references (dragging Kepler's period `P` widens the time sliders).
+  fn apply_dynamic_bounds(
+    &mut self,
+    resolved: &[(String, Option<f64>, Option<f64>)],
+  ) {
+    for (name, new_min, new_max) in resolved {
+      let Some(ControlState::Continuous {
+        min, max, current, ..
+      }) = self.controls.iter_mut().find(
+        |c| matches!(c, ControlState::Continuous { name: n, .. } if n == name),
+      )
+      else {
+        continue;
+      };
+      if let Some(v) = new_min {
+        *min = *v;
+      }
+      if let Some(v) = new_max {
+        *max = *v;
+      }
+      if *max < *min {
+        std::mem::swap(min, max);
+      }
+      *current = current.clamp(*min, *max);
     }
   }
 }
@@ -649,6 +757,33 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         points: points.clone(),
         auto_create: *auto_create,
       },
+      ManipulateControl::Trigger {
+        name,
+        min,
+        max,
+        step,
+        initial,
+        label,
+        label_runs,
+        ..
+      } => ControlState::Trigger {
+        name: name.clone(),
+        label: label.clone(),
+        label_runs: label_runs.clone(),
+        min: *min,
+        max: *max,
+        step: *step,
+        current: *initial,
+      },
+      ManipulateControl::Button {
+        label,
+        label_runs,
+        action,
+      } => ControlState::Button {
+        label: label.clone(),
+        label_runs: label_runs.clone(),
+        action: action.clone(),
+      },
       ManipulateControl::Heading { label, label_runs } => {
         ControlState::Heading {
           label: label.clone(),
@@ -656,10 +791,6 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         }
       }
       ManipulateControl::Divider => ControlState::Divider,
-      ManipulateControl::Button { label, action } => ControlState::Button {
-        label: label.clone(),
-        action: action.clone(),
-      },
     })
     .collect()
 }

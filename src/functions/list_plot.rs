@@ -818,6 +818,10 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         "Filling" => {
           apply_filling_option(replacement, opts);
         }
+        "FillingStyle" => {
+          opts.filling_style =
+            crate::functions::plot::parse_filling_style(replacement);
+        }
         "Background" => {
           opts.background =
             crate::functions::plot::parse_background_option(replacement);
@@ -1263,6 +1267,7 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (opts.svg_width, opts.svg_height),
     !joined,
     opts.filling,
+    opts.filling_style,
   );
   Ok(crate::graphics_result_with_source(svg, source))
 }
@@ -1341,6 +1346,7 @@ pub fn complex_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (opts.svg_width, opts.svg_height),
     !joined,
     opts.filling,
+    opts.filling_style,
   );
   Ok(crate::graphics_result_with_source(svg, source))
 }
