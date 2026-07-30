@@ -1878,6 +1878,71 @@ Cell["Chapter 2", "Chapter"]
   }
 
   #[test]
+  fn test_parse_real_demonstration_nb() {
+    // A trimmed Wolfram Demonstrations template notebook (the shape of
+    // downloaded Demonstration .nb files): section headers carrying inline
+    // more-info opener cells, a Manipulate input with its stored
+    // DynamicModuleBox widget dump, and snapshot raster outputs.
+    let contents = std::fs::read_to_string(concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/tests/notebooks/demonstration.nb"
+    ))
+    .unwrap();
+    let nb = parse_notebook(&contents).unwrap();
+    let flat = nb.flat_cells();
+    let styles: Vec<CellStyle> = flat.iter().map(|(_, c)| c.style).collect();
+    assert_eq!(
+      styles,
+      vec![
+        CellStyle::Title,
+        CellStyle::Section, // "Caption" header (inline opener cell dropped)
+        CellStyle::Text,
+        CellStyle::Text, // CodeText falls back to Text
+        CellStyle::Input,
+        CellStyle::Output, // DynamicModuleBox widget dump
+        CellStyle::Section,
+        CellStyle::Output, // snapshot raster
+      ]
+    );
+
+    // The section header keeps only its label; the attached more-info
+    // opener cell contributes no text.
+    assert_eq!(flat[1].1.content, "Caption");
+
+    // Styled CodeText prose flattens its StyleBox runs into plain text.
+    assert_eq!(
+      flat[3].1.content,
+      "If you provide initialization code, include a SaveDefinitions->True \
+       option in the Manipulate."
+    );
+
+    // The Manipulate input reconstructs to evaluable InputForm: named
+    // operator characters become ASCII and \[DoubleDownArrow] becomes ⇓.
+    let input = &flat[4].1.content;
+    assert!(input.starts_with("Manipulate["), "got: {input}");
+    assert!(
+      input.contains("PlotRange->{{-2,2}, {-2,2}}"),
+      "got: {input}"
+    );
+    assert!(input.contains("Style[ \"\u{21D3}\", 25]"), "got: {input}");
+    assert!(
+      input.contains(
+        "{{rsource, True, Tooltip[\"source\",\"Show source object\"]}, \
+         {True, False}}"
+      ),
+      "got: {input}"
+    );
+
+    // The stored widget dump unwraps TagBox/StyleBox down to the
+    // DynamicModuleBox (which the Studio replaces with a live widget).
+    assert!(
+      flat[5].1.content.starts_with("DynamicModuleBox["),
+      "got: {}",
+      &flat[5].1.content[..60.min(flat[5].1.content.len())]
+    );
+  }
+
+  #[test]
   fn test_unescape_wolfram_string_delimiters() {
     // \< and \> are Wolfram string delimiters in box expressions
     assert_eq!(unescape_string(r#"\<"Hello"\>"#), r#""Hello""#);

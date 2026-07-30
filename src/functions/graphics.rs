@@ -6511,6 +6511,10 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // HoldForm[expr] → render content
         "HoldForm" if args.len() == 1 => expr_to_svg_markup(&args[0]),
 
+        // Tooltip[content, tip] → render content (the tip only shows on
+        // hover in the Wolfram FrontEnd, which static SVG can't do)
+        "Tooltip" if !args.is_empty() => expr_to_svg_markup(&args[0]),
+
         // General FunctionCall: name[arg1, arg2, ...]
         _ => {
           let parts: Vec<String> =
@@ -6527,6 +6531,13 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
     // ── Expr::Image → placeholder text (actual embedding happens in grid) ──
     Expr::Image { width, height, .. } => {
       format!("-Image ({}×{})-", width, height)
+    }
+
+    // ── Curried call f[a][b] → head markup + bracketed args, so display
+    // wrappers in the head resolve (e.g. HoldForm[f][x] shows as f[x]) ──
+    Expr::CurriedCall { func, args } => {
+      let parts: Vec<String> = args.iter().map(expr_to_svg_markup).collect();
+      format!("{}[{}]", expr_to_svg_markup(func), parts.join(", "))
     }
 
     // ── Everything else → fallback to expr_to_output ──
@@ -6739,6 +6750,8 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
       "Style" if !args.is_empty() => estimate_display_width(&args[0]),
       // HoldForm[expr] → width of content
       "HoldForm" if args.len() == 1 => estimate_display_width(&args[0]),
+      // Tooltip[content, tip] → width of content (tip is hover-only)
+      "Tooltip" if !args.is_empty() => estimate_display_width(&args[0]),
       // Number-display wrappers estimate the width of their *rendered* form
       // (mantissa × 10^exp, base digits, padded number) rather than the raw
       // `Head[...]` text, so table columns aren't wildly over-sized.
@@ -6809,6 +6822,18 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
     // Expr::Image → width in character units, capped at standard display size.
     // Mathematica's default image display width is ~180pt (= 240 CSS px at 96 DPI).
     Expr::Image { width, .. } => (*width as f64).min(240.0) / 8.4,
+
+    // Curried call f[a][b] → head width + brackets + args, mirroring the
+    // markup branch (so HoldForm[f][x] is sized as f[x]).
+    Expr::CurriedCall { func, args } => {
+      let args_width: f64 = args.iter().map(estimate_display_width).sum();
+      let seps = if args.len() > 1 {
+        (args.len() - 1) as f64 * 2.0
+      } else {
+        0.0
+      };
+      estimate_display_width(func) + 2.0 + args_width + seps
+    }
 
     // Fallback
     _ => expr_to_output(expr).len() as f64,
@@ -13249,8 +13274,12 @@ fn manipulate_label_runs(expr: &Expr, italic: bool) -> Vec<LabelRun> {
           .unwrap_or_default()
       }
       // Presentation wrappers whose content may nest styling/subscripts —
-      // recurse rather than defer to OutputForm.
-      "Text" | "DisplayForm" | "TraditionalForm" => args
+      // recurse rather than defer to OutputForm. `Tooltip[label, tip]`
+      // displays its label (the tip only appears on hover in the Wolfram
+      // FrontEnd), so a control spec like
+      // `{{v, True, Tooltip["source", "Show source"]}, {True, False}}`
+      // labels the control "source".
+      "Text" | "DisplayForm" | "TraditionalForm" | "Tooltip" => args
         .first()
         .map(|a| manipulate_label_runs(a, italic))
         .unwrap_or_default(),
