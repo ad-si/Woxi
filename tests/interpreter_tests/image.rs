@@ -1430,6 +1430,161 @@ mod image_processing {
     assert_eq!(interpret("Mean[{1, 2, 3}]").unwrap(), "2");
   }
 
+  // The angle may name the edge the current top should end up at. These four are
+  // the right-angle rotations already performed: Top is no rotation, Left is
+  // Pi/2, Bottom is Pi, Right is -Pi/2. They used to abort with a hard error.
+  #[test]
+  fn image_rotate_accepts_edge_names() {
+    clear_state();
+    let img = "Image[{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}}]";
+    assert_eq!(
+      interpret(&format!("ImageData[ImageRotate[{}, Top]]", img)).unwrap(),
+      interpret(&format!("ImageData[{}]", img)).unwrap()
+    );
+    assert_eq!(
+      interpret(&format!("ImageData[ImageRotate[{}, Left]]", img)).unwrap(),
+      interpret(&format!("ImageData[ImageRotate[{}, Pi/2]]", img)).unwrap()
+    );
+    assert_eq!(
+      interpret(&format!("ImageData[ImageRotate[{}, Bottom]]", img)).unwrap(),
+      interpret(&format!("ImageData[ImageRotate[{}, Pi]]", img)).unwrap()
+    );
+    assert_eq!(
+      interpret(&format!("ImageData[ImageRotate[{}, Right]]", img)).unwrap(),
+      interpret(&format!("ImageData[ImageRotate[{}, -Pi/2]]", img)).unwrap()
+    );
+    // A quarter turn transposes the dimensions.
+    assert_eq!(
+      interpret(&format!("ImageDimensions[ImageRotate[{}, Left]]", img))
+        .unwrap(),
+      "{2, 3}"
+    );
+    assert_eq!(
+      interpret(&format!("ImageDimensions[ImageRotate[{}, Top]]", img))
+        .unwrap(),
+      "{3, 2}"
+    );
+  }
+
+  // Any other angle is reported and the call left alone.
+  #[test]
+  fn image_rotate_bad_angle_reports_imgang() {
+    use woxi::interpret_with_stdout;
+    clear_state();
+    for call in [
+      "ImageRotate[Image[{{0.}}], x]",
+      "ImageRotate[Image[{{0.}}], \"x\"]",
+    ] {
+      let r = interpret_with_stdout(call).unwrap();
+      assert_eq!(r.result, "ImageRotate[-Image-, x]", "for {}", call);
+      assert!(
+        r.warnings.iter().any(|w| w
+          == "ImageRotate::imgang: Angle x should be a real number; one of \
+              Top, Bottom, Left or Right; or a rule from one to another."),
+        "expected imgang for {}, got {:?}",
+        call,
+        r.warnings
+      );
+    }
+  }
+
+  // A size that is present but not positive is reported; a fractional one is
+  // rounded, never below a single pixel. Both used to raise a hard error.
+  #[test]
+  fn image_resize_size_specification() {
+    use woxi::interpret_with_stdout;
+    clear_state();
+    for (call, shown, size) in [
+      (
+        "ImageResize[Image[{{0.}}], 0]",
+        "ImageResize[-Image-, 0]",
+        "0",
+      ),
+      (
+        "ImageResize[Image[{{0.}}], -1]",
+        "ImageResize[-Image-, -1]",
+        "-1",
+      ),
+      (
+        "ImageResize[Image[{{0.}}], {0, 1}]",
+        "ImageResize[-Image-, {0, 1}]",
+        "{0, 1}",
+      ),
+      (
+        "ImageResize[Image[{{0.}}], {2, -1}]",
+        "ImageResize[-Image-, {2, -1}]",
+        "{2, -1}",
+      ),
+      (
+        "ImageResize[Image[{{0.}}], {2, x}]",
+        "ImageResize[-Image-, {2, x}]",
+        "{2, x}",
+      ),
+    ] {
+      let r = interpret_with_stdout(call).unwrap();
+      assert_eq!(r.result, shown, "for {}", call);
+      let expected = format!(
+        "ImageResize::imgrssz: The size {} is not a valid image size \
+         specification.",
+        size
+      );
+      assert!(
+        r.warnings.contains(&expected),
+        "expected {:?} for {}, got {:?}",
+        expected,
+        call,
+        r.warnings
+      );
+    }
+    // A bare size that is not a number at all may still become one, so the call
+    // is left alone without a message.
+    let r = interpret_with_stdout("ImageResize[Image[{{0.}}], x]").unwrap();
+    assert_eq!(r.result, "ImageResize[-Image-, x]");
+    assert!(
+      r.warnings.is_empty(),
+      "expected no message, got {:?}",
+      r.warnings
+    );
+    // Fractional sizes round, with a floor of one pixel.
+    let img = "Image[{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}}]";
+    assert_eq!(
+      interpret(&format!("ImageDimensions[ImageResize[{}, 0.5]]", img))
+        .unwrap(),
+      "{1, 1}"
+    );
+    assert_eq!(
+      interpret(&format!("ImageDimensions[ImageResize[{}, 1.6]]", img))
+        .unwrap(),
+      "{2, 1}"
+    );
+    assert_eq!(
+      interpret(&format!("ImageDimensions[ImageResize[{}, 2.4]]", img))
+        .unwrap(),
+      "{2, 1}"
+    );
+    // The ordinary specifications are untouched.
+    assert_eq!(
+      interpret("ImageDimensions[ImageResize[Image[{{0., 1.}, {1., 0.}}], 4]]")
+        .unwrap(),
+      "{4, 4}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageResize[Image[{{0., 1.}, {1., 0.}}], {4, 6}]]"
+      )
+      .unwrap(),
+      "{4, 6}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageResize[Image[{{0., 1.}, {1., 0.}}], \
+         {Automatic, 4}]]"
+      )
+      .unwrap(),
+      "{4, 4}"
+    );
+  }
+
   // Default ImageRotate[image] is a Pi/2 counter-clockwise rotation.
   // For a 2x2 image, pixel data is reorganised but precision is
   // preserved (no Byte quantization round-trip).

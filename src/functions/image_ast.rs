@@ -1696,8 +1696,33 @@ pub fn image_rotate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let pi = std::f64::consts::PI;
+  // The angle may be given as a number or as the edge the current top should end
+  // up at. Those four names are the right-angle rotations woxi already performs,
+  // so they map straight onto angles.
   let angle = if args.len() >= 2 {
-    expr_to_f64(&args[1])?
+    match &args[1] {
+      Expr::Identifier(name) | Expr::Constant(name) if name == "Top" => 0.0,
+      Expr::Identifier(name) | Expr::Constant(name) if name == "Left" => {
+        pi / 2.0
+      }
+      Expr::Identifier(name) | Expr::Constant(name) if name == "Bottom" => pi,
+      Expr::Identifier(name) | Expr::Constant(name) if name == "Right" => {
+        -pi / 2.0
+      }
+      other => match expr_to_f64(other) {
+        Ok(value) => value,
+        // Anything else is reported and the call left alone; it used to raise a
+        // hard error, which takes the whole evaluation down.
+        Err(_) => {
+          crate::emit_message(&format!(
+            "ImageRotate::imgang: Angle {} should be a real number; one of \
+             Top, Bottom, Left or Right; or a rule from one to another.",
+            crate::syntax::format_expr(other, crate::syntax::ExprForm::Output)
+          ));
+          return Ok(unevaluated("ImageRotate", args));
+        }
+      },
+    }
   } else {
     pi / 2.0
   };
@@ -1804,6 +1829,45 @@ pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Validate the size specification against the form as written, so the message
+  // names what the caller passed. A size that is present but not positive is
+  // reported; a bare specification that is not a number at all is left alone
+  // silently, both matching wolframscript. Automatic and All stand for "derive
+  // this side", so they pass.
+  {
+    let placeholder = |e: &Expr| matches!(e, Expr::Identifier(s) | Expr::Constant(s) if s == "Automatic" || s == "All");
+    let imgrssz = || {
+      crate::emit_message(&format!(
+        "ImageResize::imgrssz: The size {} is not a valid image size \
+         specification.",
+        crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output)
+      ));
+      Ok(unevaluated("ImageResize", args))
+    };
+    match &args[1] {
+      Expr::List(dims) if !dims.is_empty() && dims.len() <= 2 => {
+        for dim in dims.iter() {
+          if placeholder(dim) {
+            continue;
+          }
+          match expr_to_f64(dim) {
+            Ok(v) if v > 0.0 => {}
+            // A list is reported either way — an element that is not a number
+            // is as invalid as one that is not positive.
+            _ => return imgrssz(),
+          }
+        }
+      }
+      other if placeholder(other) => {}
+      other => match expr_to_f64(other) {
+        Ok(v) if v > 0.0 => {}
+        Ok(_) => return imgrssz(),
+        // A bare non-numeric size may still become one later.
+        Err(_) => return Ok(unevaluated("ImageResize", args)),
+      },
+    }
+  }
+
   let Expr::Image {
     color_space: _,
     width,
@@ -1862,17 +1926,15 @@ pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (w, h)
     }
     other => {
-      let w = expr_to_f64(other)? as u32;
+      // A fractional size rounds, and never below a single pixel:
+      // ImageResize[img, 0.5] is a 1x1 image, not an error.
+      let w = (expr_to_f64(other)?.round().max(1.0)) as u32;
       let h = ((w as f64) * (src_h as f64) / (src_w as f64)).round() as u32;
       (w, h.max(1))
     }
   };
 
-  if new_w == 0 || new_h == 0 {
-    return Err(InterpreterError::EvaluationError(
-      "ImageResize: target dimensions must be positive".into(),
-    ));
-  }
+  let (new_w, new_h) = (new_w.max(1), new_h.max(1));
 
   // Bilinear interpolation on the f64 buffer (per channel).
   let mut new_data = vec![0.0_f64; (new_w as usize) * (new_h as usize) * ch];
