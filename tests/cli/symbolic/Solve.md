@@ -123,3 +123,23 @@ $ wo 'Solve[x^3 == 1, x, MaxRoots -> 0]'
 Solve::maxrts: The value 0 of the MaxRoots option is not a positive integer, Infinity or Automatic.
 Solve[x^3 == 1, x, MaxRoots -> 0]
 ```
+
+Machine-precision coefficients are solved numerically instead of in
+radicals or as `Root` objects:
+
+```scrut
+$ wo 'Solve[x^3 == 8., x]'
+{{x -> -1. - 1.7320508075688772*I}, {x -> -1. + 1.7320508075688772*I}, {x -> 2.}}
+```
+
+```scrut
+$ wo 'Round[x /. Solve[x^3 + 1.5 x^2 - 3.2 x + 4.7 == 0, x], 1/10^6]'
+{-19079/6250, 2426/3125 - (120997*I)/125000, 2426/3125 + (120997*I)/125000}
+```
+
+Every root is reported with its multiplicity:
+
+```scrut
+$ wo 'Solve[x^3 - 4 x^2 == 0, x]'
+{{x -> 0}, {x -> 0}, {x -> 4}}
+```

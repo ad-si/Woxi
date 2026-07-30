@@ -1925,7 +1925,7 @@ pub fn is_atomic_number(expr: &Expr) -> bool {
 }
 
 /// Check whether the expression contains any actual Real/BigFloat node.
-fn contains_real_literal(expr: &Expr) -> bool {
+pub fn contains_real_literal(expr: &Expr) -> bool {
   match expr {
     Expr::Real(_) | Expr::BigFloat(_, _) => true,
     Expr::BinaryOp { left, right, .. } => {

@@ -6795,6 +6795,74 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 1}, \"…\"]"], "Output"]
   }
 
   #[test]
+  fn sliding_the_roots_of_cubics_manipulate_builds_widget() {
+    // End-to-end regression for the "Sliding the Roots of Cubics"
+    // Demonstration: three `Appearance -> "Labeled"` sliders drive an
+    // `NSolve` over a symbolic cubic, and the roots are plotted in the
+    // complex plane with the polynomial itself as the plot label.
+    let code = "Manipulate[\
+      With[{func = x^3 + nice[a] x^2 + nice[b] x + nice[c]}, \
+       Module[{rts}, \
+        rts = NSolve[func == 0, x]; \
+        ListPlot[{Re[x], Im[x]} /. rts, PlotStyle -> PointSize[0.03], \
+         PlotRange -> {{-6, 6}, {-6, 6}}, ImageSize -> {400, 400}, \
+         AspectRatio -> 1, PlotLabel -> func]]], \
+      {{a, 0, Row[{\"coefficient of \", Superscript[\"x\", 2]}]}, -4, 4, .1, \
+       Appearance -> \"Labeled\"}, \
+      {{b, 0, \"coefficient of x\"}, -10, 10, .1, \
+       Appearance -> \"Labeled\"}, \
+      {{c, -1, \"constant term\"}, -15, 15, .1, \
+       Appearance -> \"Labeled\"}, \
+      Initialization :> (nice[d_] := \
+        If[Abs[d - Round[d]] < .001, Round[d], d]), \
+      SaveDefinitions -> True]";
+    let mut state = instantiate_stored_manipulate(code)
+      .expect("the cubic-roots Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must produce the root plot"
+    );
+
+    // Three labeled continuous sliders, in notebook order, with the
+    // typeset `Row[…]`/`Superscript[…]` label flattened to text.
+    let labels: Vec<&str> = state
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { label, .. } => label.as_str(),
+        other => panic!("expected a continuous slider, got {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      labels,
+      vec!["coefficient of x²", "coefficient of x", "constant term"]
+    );
+    match &state.controls[2] {
+      manipulate::ControlState::Continuous {
+        current, min, max, ..
+      } => {
+        assert_eq!((*current, *min, *max), (-1.0, -15.0, 15.0));
+      }
+      other => panic!("expected a continuous slider, got {other:?}"),
+    }
+
+    // Moving a slider re-solves the cubic without error.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[1]
+    {
+      *current = 2.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
   fn oscilloscope_manipulate_builds_full_widget() {
     // End-to-end regression for the "Oscilloscope with Two Signal Inputs"
     // Demonstration: the loaded Input cell must build a live widget with

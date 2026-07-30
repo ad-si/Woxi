@@ -2520,8 +2520,20 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let reduced_eq = build_eq_from_coeffs(&coeffs[zero_count..], var);
       let reduced_solutions = solve_ast(&[reduced_eq, args[1].clone()])?;
       if let Expr::List(ref reduced_sols) = reduced_solutions {
-        let x_zero = make_rule(Expr::Integer(0));
-        let mut all_solutions = vec![x_zero];
+        // `x = 0` is a root of multiplicity `zero_count`, and Solve reports
+        // every root with its multiplicity: `x^3 - 4 x^2 == 0` has the
+        // solutions {0, 0, 4}. An inexact coefficient anywhere makes the
+        // whole solution set inexact, so the zero is `0.` there.
+        let zero = if coeffs
+          .iter()
+          .any(crate::functions::predicate_ast::contains_real_literal)
+        {
+          Expr::Real(0.0)
+        } else {
+          Expr::Integer(0)
+        };
+        let mut all_solutions: Vec<Expr> =
+          (0..zero_count).map(|_| make_rule(zero.clone())).collect();
         all_solutions.extend(reduced_sols.iter().cloned());
         sort_solutions(&mut all_solutions);
         return Ok(Expr::List(all_solutions.into()));
@@ -2908,9 +2920,14 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => {
       // Pure power equation: a*x^n + c = 0 (all middle coefficients zero)
-      // Solve as x = (-c/a)^(1/n) * root_of_unity for each nth root of unity
-      let is_pure_power =
-        (1..degree as usize).all(|i| matches!(&coeffs[i], Expr::Integer(0)));
+      // Solve as x = (-c/a)^(1/n) * root_of_unity for each nth root of unity.
+      // Only for exact coefficients: `x^3 == 8.` is answered numerically by
+      // wolframscript, not with the radical `-2 (-1)^(1/3)` forms.
+      let is_pure_power = (1..degree as usize)
+        .all(|i| matches!(&coeffs[i], Expr::Integer(0)))
+        && !coeffs
+          .iter()
+          .any(crate::functions::predicate_ast::contains_real_literal);
 
       if is_pure_power {
         let c_coeff = &coeffs[0];
@@ -3122,6 +3139,17 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
       }
+      // Machine-precision coefficients: wolframscript never answers those
+      // with `Root[…]` objects, it solves them numerically. So a cubic like
+      // `x^3 + 1.5 x^2 - 3.2 x + 4.7 == 0` comes back as three approximate
+      // roots instead of staying unevaluated.
+      if coeffs
+        .iter()
+        .any(crate::functions::predicate_ast::contains_real_literal)
+        && let Some(numeric) = numeric_polynomial_solutions(&coeffs, var)
+      {
+        return Ok(numeric);
+      }
       // Last resort for irreducible polynomials of degree ≥ 3 with
       // integer/rational coefficients: emit the wolframscript-style
       // list of Root expressions (`Root[poly &, k, 0]` for k = 1..deg).
@@ -3156,6 +3184,47 @@ fn max_degree_of_var(eq: &Expr, var: &str) -> Option<i128> {
   let expanded =
     crate::evaluator::evaluate_expr_to_expr(&lhs_minus_rhs).ok()?;
   crate::functions::polynomial_ast::max_power_int(&expanded, var)
+}
+
+/// Solve a polynomial whose coefficients are machine numbers by finding its
+/// roots numerically, returning `{{var -> r1}, …}` ordered by ascending real
+/// part and then ascending imaginary part — the order wolframscript reports.
+/// Returns None when some coefficient is not a machine number or the leading
+/// one vanishes.
+fn numeric_polynomial_solutions(coeffs: &[Expr], var: &str) -> Option<Expr> {
+  let mut numeric = Vec::with_capacity(coeffs.len());
+  for c in coeffs {
+    numeric.push(crate::functions::math_ast::try_eval_to_f64(c)?);
+  }
+  let degree = numeric.len().checked_sub(1)?;
+  if degree < 1 || numeric[degree].abs() < 1e-300 {
+    return None;
+  }
+  let mut roots = durand_kerner_roots(&numeric);
+  roots.sort_by(|a, b| {
+    a.0
+      .partial_cmp(&b.0)
+      .unwrap_or(std::cmp::Ordering::Equal)
+      .then(a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+  });
+  let solutions: Vec<Expr> = roots
+    .into_iter()
+    .map(|(re, im)| {
+      let value = if im == 0.0 {
+        Expr::Real(re)
+      } else {
+        crate::functions::math_ast::build_complex_float_expr_keep_real(re, im)
+      };
+      Expr::List(
+        vec![Expr::Rule {
+          pattern: Box::new(Expr::Identifier(var.to_string())),
+          replacement: Box::new(value),
+        }]
+        .into(),
+      )
+    })
+    .collect();
+  Some(Expr::List(solutions.into()))
 }
 
 /// Build `{{var -> Root[poly &, 1, 0]}, …, {var -> Root[poly &, deg, 0]}}`

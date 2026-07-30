@@ -5016,6 +5016,89 @@ mod solve {
       "{{x -> -1}, {x -> -I}, {x -> I}, {x -> 1}}"
     );
   }
+
+  // A root of x is reported once per multiplicity. Regression: factoring
+  // out x^k contributed a single `x -> 0` no matter how many powers were
+  // pulled out, so `x^3 - 4 x^2 == 0` came back with two solutions.
+  #[test]
+  fn repeated_zero_root_keeps_its_multiplicity() {
+    assert_eq!(
+      interpret("Solve[x^3 - 4 x^2 == 0, x]").unwrap(),
+      "{{x -> 0}, {x -> 0}, {x -> 4}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^4 - 2 x^3 == 0, x]").unwrap(),
+      "{{x -> 0}, {x -> 0}, {x -> 0}, {x -> 2}}"
+    );
+    // An inexact coefficient anywhere makes the whole solution set inexact,
+    // so the repeated root is reported as `0.`.
+    assert_eq!(
+      interpret("Solve[x^3 - 4. x^2 == 0, x]").unwrap(),
+      "{{x -> 0.}, {x -> 0.}, {x -> 4.}}"
+    );
+  }
+
+  // With machine-precision coefficients wolframscript answers numerically
+  // instead of returning `Root[…]` objects or radical forms. Regression:
+  // these cubics used to come back unevaluated.
+  #[test]
+  fn machine_precision_polynomial_solves_numerically() {
+    // Every root satisfies the equation, and there are three of them.
+    assert_eq!(
+      interpret(
+        "sol = Solve[x^3 + 1.5 x^2 - 3.2 x + 4.7 == 0, x]; Length[sol]"
+      )
+      .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(
+        "sol = Solve[x^3 + 1.5 x^2 - 3.2 x + 4.7 == 0, x]; \
+         Chop[(x^3 + 1.5 x^2 - 3.2 x + 4.7) /. sol, 10^-9]"
+      )
+      .unwrap(),
+      "{0, 0, 0}"
+    );
+    // One real root and a conjugate pair, ordered by ascending real part
+    // and then ascending imaginary part.
+    assert_eq!(
+      interpret(
+        "Round[x /. Solve[x^3 + 1.5 x^2 - 3.2 x + 4.7 == 0, x], 1/10^6]"
+      )
+      .unwrap(),
+      "{-19079/6250, 2426/3125 - (120997*I)/125000, \
+       2426/3125 + (120997*I)/125000}"
+    );
+    // A degree-5 polynomial has no radical form at all, so this is the
+    // only route to an answer.
+    assert_eq!(
+      interpret("Round[x /. Solve[x^5 + 1.5 x - 1. == 0, x], 1/10^6]").unwrap(),
+      "{-912087/1000000 - (402027*I)/500000, \
+       -912087/1000000 + (402027*I)/500000, \
+       151741/250000 - (215059*I)/250000, \
+       151741/250000 + (215059*I)/250000, 305123/500000}"
+    );
+  }
+
+  // A pure power with an inexact coefficient is numeric too: `x^3 == 8.`
+  // must not keep the exact `-2 (-1)^(1/3)` radical forms.
+  #[test]
+  fn machine_precision_pure_power_solves_numerically() {
+    assert_eq!(
+      interpret("Solve[x^3 == 8., x]").unwrap(),
+      "{{x -> -1. - 1.7320508075688772*I}, \
+       {x -> -1. + 1.7320508075688772*I}, {x -> 2.}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^4 == 16., x]").unwrap(),
+      "{{x -> -2.}, {x -> 0. - 2.*I}, {x -> 0. + 2.*I}, {x -> 2.}}"
+    );
+    // The exact equation keeps its radical solutions.
+    assert_eq!(
+      interpret("Solve[x^3 == 8, x]").unwrap(),
+      "{{x -> 2}, {x -> -2*(-1)^(1/3)}, {x -> 2*(-1)^(2/3)}}"
+    );
+  }
 }
 
 mod rsolve {
@@ -7052,6 +7135,27 @@ mod nsolve {
     assert_eq!(
       interpret("NSolve[x^3 - 3*x^2 + 2*x == 0, x]").unwrap(),
       "{{x -> 0.}, {x -> 1.}, {x -> 2.}}"
+    );
+  }
+
+  // The "Sliding the Roots of Cubics" Demonstration feeds slider values
+  // straight into the coefficients, so the cubic usually has machine reals.
+  // Regression: such a cubic used to leave NSolve unevaluated, and a
+  // repeated root at the origin was reported only once.
+  #[test]
+  fn cubic_with_machine_real_coefficients() {
+    assert_eq!(
+      interpret(
+        "Round[{Re[x], Im[x]} /. \
+         NSolve[x^3 + 1.5 x^2 - 3.2 x + 4.7 == 0, x], 1/10^6]"
+      )
+      .unwrap(),
+      "{{-19079/6250, 0}, {2426/3125, -120997/125000}, \
+       {2426/3125, 120997/125000}}"
+    );
+    assert_eq!(
+      interpret("NSolve[x^3 - 4. x^2 == 0, x]").unwrap(),
+      "{{x -> 0.}, {x -> 0.}, {x -> 4.}}"
     );
   }
 
