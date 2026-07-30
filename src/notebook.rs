@@ -1895,6 +1895,69 @@ Cell["Chapter 2", "Chapter"]
   }
 
   #[test]
+  fn test_parse_real_demonstration_nb() {
+    // Reduced Wolfram Demonstrations "definition notebook" (the
+    // ColorRelationships template): deeply nested cell groups, Section
+    // headers carrying inline MoreInfo opener cells, an Input +
+    // DynamicModuleBox-dump Output pair, a RasterBox snapshot Output,
+    // and Item keyword cells.
+    let contents = std::fs::read_to_string(concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/tests/notebooks/demonstration.nb"
+    ))
+    .unwrap();
+    let nb = parse_notebook(&contents).unwrap();
+    let flat = nb.flat_cells();
+    let cells: Vec<&Cell> = flat.iter().map(|(_, c)| *c).collect();
+
+    assert_eq!(cells[0].style, CellStyle::Title);
+    assert_eq!(cells[0].content, "Color Relationships");
+
+    // Section headers render just their label — the trailing inline
+    // `Cell[BoxData[PaneSelectorBox[…]]]` opener button carries no text.
+    assert_eq!(cells[1].style, CellStyle::Section);
+    assert_eq!(cells[1].content, "Initialization Code");
+
+    // The initialization Input cell reconstructs evaluable InputForm.
+    assert_eq!(cells[2].style, CellStyle::Input);
+    assert_eq!(
+      cells[2].content,
+      "swatch[clr_]:=Graphics[{clr,Rectangle[]}]"
+    );
+
+    assert_eq!(cells[3].style, CellStyle::Section);
+    assert_eq!(cells[3].content, "Manipulate");
+
+    // The Manipulate input keeps ASCII `->` (from `\[Rule]`) and its
+    // stored output is recognizable as a FrontEnd widget dump (TagBox/
+    // StyleBox wrappers unwrap to the DynamicModuleBox).
+    assert_eq!(cells[4].style, CellStyle::Input);
+    assert!(cells[4].content.starts_with("Manipulate["));
+    assert!(cells[4].content.contains("SaveDefinitions->True"));
+    assert_eq!(cells[5].style, CellStyle::Output);
+    assert!(
+      cells[5]
+        .content
+        .trim_start()
+        .starts_with("DynamicModuleBox[")
+    );
+
+    // Snapshot outputs and keyword items parse with their styles.
+    assert!(
+      cells.iter().any(
+        |c| c.style == CellStyle::Output && c.content.contains("RasterBox")
+      ),
+      "expected a RasterBox snapshot output"
+    );
+    let items: Vec<&str> = cells
+      .iter()
+      .filter(|c| c.style == CellStyle::Item)
+      .map(|c| c.content.as_str())
+      .collect();
+    assert_eq!(items, vec!["hue", "color wheel"]);
+  }
+
+  #[test]
   fn test_unescape_wolfram_string_delimiters() {
     // \< and \> are Wolfram string delimiters in box expressions
     assert_eq!(unescape_string(r#"\<"Hello"\>"#), r#""Hello""#);
