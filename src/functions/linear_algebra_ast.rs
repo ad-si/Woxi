@@ -2648,8 +2648,93 @@ fn extract_fit_data(
   Ok((xs, ys))
 }
 
+/// The minimum-norm least-squares solution of `A x = b`, via a one-sided Jacobi
+/// SVD of the design matrix.
+///
+/// This is the answer wolframscript gives when the design matrix does not have
+/// full column rank — fewer data points than basis functions, repeated abscissae,
+/// a basis with a linear dependency. `Fit[{{1, 1}}, {1, x}, x]` is
+/// `0.5 + 0.5 x`: of the infinitely many lines through the single point, the one
+/// whose coefficient vector is shortest.
+///
+/// One-sided Jacobi orthogonalizes the columns of `A` by plane rotations; the
+/// resulting column norms are the singular values and the accumulated rotations
+/// are `V`. Padding with zero rows to make `A` tall leaves the problem alone,
+/// since the added rows contribute nothing to the residual.
+fn solve_least_squares_min_norm(a: &[Vec<f64>], b: &[f64]) -> Vec<f64> {
+  let m = a[0].len();
+  let rows = a.len().max(m);
+  // Columns of A, zero-padded to `rows`, alongside b.
+  let mut u: Vec<Vec<f64>> = (0..m)
+    .map(|j| (0..rows).map(|i| a.get(i).map_or(0.0, |r| r[j])).collect())
+    .collect();
+  let rhs: Vec<f64> = (0..rows)
+    .map(|i| b.get(i).copied().unwrap_or(0.0))
+    .collect();
+  let mut v: Vec<Vec<f64>> = (0..m)
+    .map(|j| (0..m).map(|i| if i == j { 1.0 } else { 0.0 }).collect())
+    .collect();
+
+  let dot =
+    |x: &[f64], y: &[f64]| -> f64 { x.iter().zip(y).map(|(p, q)| p * q).sum() };
+  // Sweep until no pair of columns needs rotating. The pair count is m(m-1)/2
+  // and each sweep reduces the off-diagonal norm quadratically, so a handful of
+  // sweeps suffices; the cap only bounds a pathological case.
+  for _ in 0..60 {
+    let mut rotated = false;
+    for p in 0..m {
+      for q in (p + 1)..m {
+        let alpha = dot(&u[p], &u[p]);
+        let beta = dot(&u[q], &u[q]);
+        let gamma = dot(&u[p], &u[q]);
+        if gamma.abs() <= 1e-15 * (alpha * beta).sqrt().max(f64::MIN_POSITIVE) {
+          continue;
+        }
+        rotated = true;
+        // The rotation that zeroes the (p, q) entry of the Gram matrix.
+        let zeta = (beta - alpha) / (2.0 * gamma);
+        let t = zeta.signum() / (zeta.abs() + (1.0 + zeta * zeta).sqrt());
+        let c = 1.0 / (1.0 + t * t).sqrt();
+        let s = c * t;
+        for i in 0..rows {
+          let (up, uq) = (u[p][i], u[q][i]);
+          u[p][i] = c * up - s * uq;
+          u[q][i] = s * up + c * uq;
+        }
+        for i in 0..m {
+          let (vp, vq) = (v[p][i], v[q][i]);
+          v[p][i] = c * vp - s * vq;
+          v[q][i] = s * vp + c * vq;
+        }
+      }
+    }
+    if !rotated {
+      break;
+    }
+  }
+
+  // x = sum over the non-degenerate singular values of (u_i . b / sigma_i) v_i.
+  let sigmas: Vec<f64> = u.iter().map(|col| dot(col, col).sqrt()).collect();
+  let largest = sigmas.iter().cloned().fold(0.0f64, f64::max);
+  let cutoff = largest * (rows.max(m) as f64) * f64::EPSILON;
+  let mut x = vec![0.0f64; m];
+  for j in 0..m {
+    if sigmas[j] <= cutoff {
+      continue;
+    }
+    let coefficient = dot(&u[j], &rhs) / (sigmas[j] * sigmas[j]);
+    for i in 0..m {
+      x[i] += coefficient * v[j][i];
+    }
+  }
+  x
+}
+
 /// Solve least-squares problem min ||Ax - b||_2 using Householder QR decomposition.
 /// A is n×m (n rows, m cols) with n >= m.  Returns the m-element solution vector.
+/// A design matrix without full column rank has no unique solution, so those
+/// fall through to [`solve_least_squares_min_norm`] rather than failing — that
+/// used to abort the whole evaluation with a hard error.
 fn solve_least_squares_qr(
   a: &[Vec<f64>],
   b: &[f64],
@@ -2666,6 +2751,10 @@ fn solve_least_squares_qr(
       "Fit: dimension mismatch in least squares".into(),
     ));
   }
+  // Fewer equations than unknowns is underdetermined by construction.
+  if n < m {
+    return Ok(solve_least_squares_min_norm(a, b));
+  }
 
   // Copy A and b (we'll transform them in place)
   let mut r: Vec<Vec<f64>> = a.to_vec();
@@ -2681,9 +2770,9 @@ fn solve_least_squares_qr(
     let norm = sigma.sqrt();
 
     if norm < 1e-15 {
-      return Err(InterpreterError::EvaluationError(
-        "Fit: design matrix is rank-deficient".into(),
-      ));
+      // Column j is dependent on the earlier ones: no unique least-squares
+      // solution, so take the minimum-norm one.
+      return Ok(solve_least_squares_min_norm(a, b));
     }
 
     // Choose sign to maximize |v[j]| (avoid cancellation)

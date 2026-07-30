@@ -2130,6 +2130,79 @@ mod fit {
   fn two_data_points_linear() {
     assert_eq!(interpret("Fit[{1, 2}, {1, x}, x]").unwrap(), "0. + 1.*x");
   }
+
+  // A design matrix without full column rank has no unique least-squares
+  // solution, so Fit returns the minimum-norm one. These used to abort the whole
+  // evaluation with "Fit: design matrix is rank-deficient".
+  #[test]
+  fn rank_deficient_design_gives_the_minimum_norm_fit() {
+    // Fewer data points than basis functions: of the infinitely many lines
+    // through (1, 1), the one with the shortest coefficient vector.
+    assert_eq!(
+      interpret("Fit[{{1, 1}}, {1, x}, x]").unwrap(),
+      "0.5 + 0.5*x"
+    );
+    // Repeated abscissae: the fit passes through the mean at x = 1, and the
+    // coefficients split evenly.
+    assert_eq!(
+      interpret("Fit[{{1, 1}, {1, 2}}, {1, x}, x]").unwrap(),
+      "0.75 + 0.75*x"
+    );
+    assert_eq!(
+      interpret("Fit[{{1, 1}, {1, 2}, {1, 3}}, {1, x}, x]").unwrap(),
+      "1. + 1.*x"
+    );
+    // A single basis function and a single point stays exact.
+    assert_eq!(interpret("Fit[{{1, 1}}, {x}, x]").unwrap(), "1.*x");
+  }
+
+  // The minimum-norm solution still interpolates the data exactly when the
+  // system is consistent, so the residuals are zero to rounding.
+  #[test]
+  fn rank_deficient_fit_still_interpolates() {
+    // Three points, four basis functions: an exact interpolant.
+    let fit = interpret(
+      "f = Fit[{{1, 1}, {2, 2}, {3, 3}}, {1, x, x^2, x^3}, x]; \
+       Max[Abs[Table[(f /. x -> t) - t, {t, {1, 2, 3}}]]] < 10^-10",
+    )
+    .unwrap();
+    assert_eq!(fit, "True");
+    // Two points, three basis functions.
+    let fit = interpret(
+      "g = Fit[{{1, 1}, {2, 2}}, {1, x, x^2}, x]; \
+       Max[Abs[Table[(g /. x -> t) - t, {t, {1, 2}}]]] < 10^-10",
+    )
+    .unwrap();
+    assert_eq!(fit, "True");
+  }
+
+  // LinearModelFit shares the same solver, so it no longer aborts either.
+  #[test]
+  fn linear_model_fit_rank_deficient() {
+    let result = interpret("Normal[LinearModelFit[{{1, 1}}, x, x]]").unwrap();
+    assert!(
+      result.contains("0.5"),
+      "expected the minimum-norm fit, got: {}",
+      result
+    );
+  }
+
+  // Full-rank fits are untouched by the fallback.
+  #[test]
+  fn full_rank_fits_unchanged() {
+    assert_eq!(
+      interpret("Fit[{{1, 1}, {2, 2}, {3, 3}}, {1, x}, x]").unwrap(),
+      "0. + 1.*x"
+    );
+    assert_eq!(
+      interpret("Fit[{{0, 1}, {1, 3}, {2, 5}}, {1, x}, x]").unwrap(),
+      "1. + 2.*x"
+    );
+    assert_eq!(
+      interpret("Fit[{{1, 1}, {2, 4}, {3, 9}}, {1, x, x^2}, x]").unwrap(),
+      "0. + 0.*x + 1.*x^2"
+    );
+  }
 }
 
 mod linear_solve {

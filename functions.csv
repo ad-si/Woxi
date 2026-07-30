@@ -645,7 +645,7 @@ RotateLeft,Rotates list elements to the left,✅,pure,1.0,637
 PadRight,Pads a list on the right to a given length or nested shape with a cyclically tiled padding array,✅,pure,4.0,638
 FourierTransform,computes the symbolic Fourier transform of an expression,✅,pure,4.0,639
 PowerExpand,Expands powers and logarithms assuming positive reals,✅,pure,2.0,640
-Fit,Performs a least-squares fit of data to a linear combination of basis functions,✅,pure,1.0,641
+Fit,Performs a least-squares fit of data to a linear combination of basis functions — a design matrix without full column rank gives the minimum-norm solution,✅,pure,1.0,641
 Input,Reads user input (inert in Woxi),✅,effectful,1.0,642
 UnitConvert,Converts a quantity to a different unit; with one argument converts to SI base units,✅,pure,9.0,643
 BoundaryStyle,Option for boundary styling in plots,✅,none,6.0,644
@@ -766,7 +766,7 @@ Refine,Simplifies expressions and resolves conditions using assumptions (a chain
 Expression,Type specifier for reading expressions,✅,pure,1.0,765
 ColorConvert,Convert colors or images between color spaces (RGB Grayscale CMYK HSB),✅,pure,7.0,766
 ReadList,Read a list of items from a file or stream,✅,effectful,1.0,767
-LinearModelFit,Fits a linear model to data and returns a FittedModel object,✅,pure,7.0,768
+LinearModelFit,Fits a linear model to data and returns a FittedModel object — shares the least-squares solver with Fit including its minimum-norm fallback,✅,pure,7.0,768
 ExclusionsStyle,Option for styling exclusion lines in plots,✅,none,6.0,769
 ConjugateTranspose,Returns the conjugate transpose of a matrix,✅,pure,5.1,770
 NullSpace,Returns the null space of a matrix,✅,pure,1.0,771
