@@ -1455,6 +1455,20 @@ fn collect_primitives(
           }
         }
 
+        // `Dynamic[expr]` inside graphics displays the current value of
+        // its held expression (the front end re-evaluates it as its
+        // dependencies change; Woxi's hosts re-render wholesale, so the
+        // current value is the correct snapshot). Dynamic is HoldFirst —
+        // the content arrives unevaluated, so release the hold before
+        // collecting, otherwise computed primitives (e.g. the
+        // `Dynamic[colorSlice[#+a] & /@ clrCases]` highlight overlay in
+        // the Demonstrations color-wheel notebook) silently vanish.
+        "Dynamic" if !args.is_empty() => {
+          if let Ok(inner) = evaluate_expr_to_expr(&args[0]) {
+            collect_primitives(&inner, style, prims, errors);
+          }
+        }
+
         _ => {
           // Try as directive first
           if !apply_directive(expr, style) {
@@ -11058,8 +11072,9 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
     return None;
   }
 
-  // Parse optional alignment from second arg (default: Left)
-  let alignment = if args.len() >= 2 {
+  // Parse optional alignment: positional (`Column[{…}, Center]`) or the
+  // option form (`Column[{…}, Alignment -> Center]`). Default: Left.
+  let mut alignment = if args.len() >= 2 {
     match &args[1] {
       Expr::Identifier(s) if s == "Center" => "middle",
       Expr::Identifier(s) if s == "Right" => "end",
@@ -11068,6 +11083,21 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
   } else {
     "start"
   };
+  for arg in &args[1..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = arg
+      && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Alignment")
+      && let Expr::Identifier(spec) = replacement.as_ref()
+    {
+      alignment = match spec.as_str() {
+        "Center" => "middle",
+        "Right" => "end",
+        _ => "start",
+      };
+    }
+  }
 
   // Parse optional spacing from third arg in ems (default: 0)
   let spacing_ems: f64 = if args.len() >= 3 {

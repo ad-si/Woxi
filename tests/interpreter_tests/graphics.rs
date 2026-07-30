@@ -14953,4 +14953,36 @@ mod color_data_indexed {
     assert_eq!(interpret("Head[ColorData[1, 1]]").unwrap(), "RGBColor");
     assert_eq!(interpret("Head[ColorData[2, 1]]").unwrap(), "RGBColor");
   }
+
+  mod dynamic_content {
+    use super::*;
+
+    #[test]
+    fn dynamic_literal_primitives_render() {
+      clear_state();
+      let svg = export_svg(
+        "Graphics[{Dynamic[{Hue[0.5, 1, 1], \
+         Polygon[{{0, 0}, {1, 0}, {1, 1}}]}], Circle[{0, 0}, 1]}]",
+      );
+      assert!(svg.contains("<polygon"), "polygon missing: {svg}");
+      assert!(svg.contains("rgb(0,255,255)"), "hue fill missing: {svg}");
+    }
+
+    #[test]
+    fn dynamic_computed_primitives_render() {
+      clear_state();
+      // Dynamic is HoldFirst: a computed content expression (here a Map
+      // over a helper function, as in the Demonstrations color-wheel
+      // notebook's highlight overlay) must be evaluated before its
+      // primitives are collected.
+      let _ = interpret(
+        "slice[s_] := {Hue[s, 1, 1], Polygon[{{0, 0}, {1, 0}, {1, 1}}]}",
+      );
+      let svg = export_svg(
+        "Graphics[{Dynamic[slice[#] & /@ {0.5}], Circle[{0, 0}, 1]}]",
+      );
+      assert!(svg.contains("<polygon"), "polygon missing: {svg}");
+      assert!(svg.contains("rgb(0,255,255)"), "hue fill missing: {svg}");
+    }
+  }
 }
