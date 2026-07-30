@@ -1800,11 +1800,23 @@ fn parse_polygon(
   style: &StyleState,
   prims: &mut Vec<Primitive>,
 ) {
+  // Polygon[{p1, p2, …}] — one polygon — or Polygon[{poly1, poly2, …}],
+  // a list of them, which is what mapping a face-index table over a vertex
+  // list produces.
   if let Some(pts) = expr_to_point_list(&args[0]) {
     prims.push(Primitive::PolygonPrim {
       points: pts,
       style: style.clone(),
     });
+  } else if let Expr::List(items) = &args[0] {
+    for item in items {
+      if let Some(pts) = expr_to_point_list(item) {
+        prims.push(Primitive::PolygonPrim {
+          points: pts,
+          style: style.clone(),
+        });
+      }
+    }
   }
 }
 
@@ -1976,6 +1988,19 @@ fn parse_regular_polygon(
 }
 
 fn parse_arrow(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
+  // Arrow[{seg1, seg2, …}] — a list of paths — draws one arrow per path.
+  if expr_to_point_list(&args[0]).is_none()
+    && let Expr::List(items) = &args[0]
+  {
+    for item in items {
+      if expr_to_point_list(item).is_some() {
+        let mut sub: Vec<Expr> = vec![item.clone()];
+        sub.extend(args[1..].iter().cloned());
+        parse_arrow(&sub, style, prims);
+      }
+    }
+    return;
+  }
   // Arrow[{{x1,y1},{x2,y2},...}] or Arrow[{{x1,y1},...}, {s1, s2}]
   if let Some(pts) = expr_to_point_list(&args[0])
     && pts.len() >= 2
@@ -15046,6 +15071,22 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
         animate: None,
       });
     }
+  }
+
+  // Colour form: `{{u, uinit, ulbl}, colour}` — a single colour where the
+  // bounds go. wolframscript renders a `ColorSlider`; Woxi has no colour
+  // widget yet, so the variable is bound to its initial colour and the
+  // other controls stay live. Without this the whole Manipulate failed to
+  // build, taking every control with it.
+  if bounds.len() == 1
+    && crate::functions::graphics::parse_color(bounds[0]).is_some()
+  {
+    let value = explicit_initial
+      .as_ref()
+      .filter(|init| parse_color(init).is_some())
+      .map(crate::syntax::expr_to_input_form)
+      .unwrap_or_else(|| crate::syntax::expr_to_input_form(bounds[0]));
+    return Some(ParsedControl::Fixed { name, value });
   }
 
   // Continuous form: {u, umin, umax} or {u, umin, umax, du}

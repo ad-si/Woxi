@@ -2350,6 +2350,38 @@ mod plot3d {
       );
     }
 
+    // `Polygon`/`Arrow` accept a *list of* paths, one primitive each — the
+    // shape that mapping a face-index table over a vertex list produces.
+    // Regression: only the flat single-path form drew anything, so the
+    // "Nets for Polyhedral Approximations of the Sphericon" net came out
+    // empty.
+    #[test]
+    fn polygon_and_arrow_accept_a_list_of_paths() {
+      let two = export_svg(
+        r#"Graphics[{Red, Polygon[{{{0, 0}, {1, 0}, {0, 1}},
+             {{1, 1}, {2, 1}, {1, 2}}}]}]"#,
+      );
+      assert_eq!(
+        two.matches("<polygon").count(),
+        2,
+        "both faces must draw: {two}"
+      );
+      assert_eq!(two.matches("rgb(255,0,0)").count(), 2);
+      // The single-path form is unchanged.
+      let one =
+        export_svg(r#"Graphics[{Red, Polygon[{{0, 0}, {1, 0}, {0, 1}}]}]"#);
+      assert_eq!(one.matches("<polygon").count(), 1);
+      // Arrow the same: one arrow per path.
+      let arrows = export_svg(
+        r#"Graphics[{Red, Arrow[{{{0, 0}, {1, 0}}, {{0, 1}, {1, 1}}}]}]"#,
+      );
+      assert_eq!(
+        arrows.matches("<polygon").count(),
+        2,
+        "each arrow needs its head: {arrows}"
+      );
+    }
+
     #[test]
     fn graphics_plot_label() {
       // PlotLabel also works on plain Graphics, as a centered title.
@@ -13076,6 +13108,32 @@ mod manipulate {
     assert!(json.contains(r#""maxCode":"P""#), "json: {json}");
     assert!(json.contains(r#""animationVar":"t""#), "json: {json}");
     assert!(json.contains(r#""animationRunning":false"#), "json: {json}");
+  }
+
+  // `{{u, colour, label}, colour}` is a colour control — wolframscript
+  // renders a `ColorSlider`. Woxi has no colour widget yet, so the variable
+  // is bound to its initial colour; the point of the test is that the rest
+  // of the Manipulate still builds. Regression: the unrecognised spec made
+  // `extract_manipulate_spec` give up, taking every other control with it.
+  #[test]
+  fn colour_control_binds_without_killing_the_widget() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{col, Disk[]}, {{n, 3, \"division\"}, 2, 20, 1}, \
+       Control@{{col, Red, \"color\"}, Red}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    // The visible controls survive…
+    match &spec.controls[..] {
+      [ManipulateControl::Continuous { name, .. }] => assert_eq!(name, "n"),
+      other => panic!("expected just the division slider, got {other:?}"),
+    }
+    // …and the colour is in scope for the body at its initial value.
+    let json = manipulate_spec_to_json(&spec);
+    assert!(
+      json.contains("Block[{col = Red}"),
+      "the colour binding is missing: {json}"
+    );
   }
 
   // A label written in the notebook FrontEnd carries its typesetting as

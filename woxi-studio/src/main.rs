@@ -6862,6 +6862,52 @@ Cell[BoxData[
   }
 
   #[test]
+  fn sphericon_nets_manipulate_draws_every_face() {
+    // End-to-end regression for the "Nets for Polyhedral Approximations of
+    // the Sphericon" Demonstration. Its controls sit in a `Row` of
+    // `Control@…` entries, one of which is a colour picker, and the net is
+    // a single `Polygon` holding a *list* of triangles.
+    woxi::interpret(
+      "pir2D[n_] := With[{fi = 2 ArcSin[Sin[Pi/(2 n)]/Sqrt[2]]}, \
+       {Table[{1, i + 1, i + 2}, {i, 1, n}], \
+        Join[{{0, 0}}, Table[Sqrt[2] {Cos[(j - 1) fi + (Pi - n fi)/2], \
+          Sin[(j - 1) fi + (Pi - n fi)/2]}, {j, 1, n + 2}]]}]",
+    )
+    .expect("the net helper must define");
+
+    let code = "Manipulate[\
+      Graphics[{EdgeForm[Black], col, \
+        Polygon[Map[pir2D[n][[2, #]] &, pir2D[n][[1]]]]}, \
+        ImageSize -> 380], \
+      {{n, 3, \"division\"}, 2, 20, 1, Appearance -> \"Labeled\"}, \
+      Row[{Control@{{nt, 1, \"\"}, {1 -> \"net\", 2 -> \"surface\"}}, \
+        Spacer[20], \
+        Control@{{col, Red, \"color\"}, Red}}], \
+      SaveDefinitions -> True]";
+    let state = instantiate_stored_manipulate(code)
+      .expect("the sphericon Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some(), "the net must render");
+
+    // The division slider and the net/surface setter both survive the
+    // colour control they share a `Row` with.
+    let names: Vec<&str> = state
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { name, .. }
+        | manipulate::ControlState::Discrete { name, .. } => name.as_str(),
+        other => panic!("unexpected control {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, vec!["n", "nt"]);
+  }
+
+  #[test]
   fn mandelbrot_set_print_manipulate_renders_its_surface() {
     // End-to-end regression for the "Mandelbrot Set Print" Demonstration:
     // the body iterates a `Compile`d function whose step count is declared
