@@ -500,12 +500,23 @@ impl WoxiStudio {
   /// preceding Input/Code cell rather than shown separately.
   fn editors_from_notebook(notebook: &Notebook) -> Vec<CellEditor> {
     let mut editors = Vec::new();
+    // Input cells seen so far that have not been evaluated yet. A stored
+    // interactive widget (Manipulate saved with `SaveDefinitions -> True`)
+    // depends on helper functions defined in earlier Input cells — the
+    // Demonstrations "Initialization Code" section. Mathematica embeds
+    // those definitions in the saved DynamicModuleBox dump; Woxi drops the
+    // dump and re-instantiates from the input, so the earlier cells must
+    // run first for the widget's body to evaluate.
+    let mut pending_init: Vec<String> = Vec::new();
 
     for entry in &notebook.cells {
       match entry {
         CellEntry::Single(cell) => {
           if matches!(cell.style, CellStyle::Output | CellStyle::Print) {
             continue;
+          }
+          if matches!(cell.style, CellStyle::Input | CellStyle::Code) {
+            pending_init.push(cell.content.clone());
           }
           editors.push(CellEditor {
             content: text_editor::Content::with_text(&cell.content),
@@ -566,8 +577,12 @@ impl WoxiStudio {
               let is_widget_dump =
                 output.as_deref().is_some_and(is_dynamic_box_dump);
               let manipulate_state = if is_widget_dump {
+                // Run the earlier Input cells (helper definitions) before
+                // the widget's body first evaluates.
+                evaluate_pending_initialization(&mut pending_init);
                 instantiate_stored_manipulate(&cell.content)
               } else {
+                pending_init.push(cell.content.clone());
                 None
               };
               let output_content = match &output {
@@ -4451,6 +4466,20 @@ fn is_dynamic_box_dump(output: &str) -> bool {
     || t.starts_with("DynamicBox[")
 }
 
+/// Evaluate (and drain) the Input-cell code accumulated ahead of a stored
+/// interactive widget, so helper definitions from the notebook's
+/// initialization cells (e.g. the Wolfram Demonstrations "Initialization
+/// Code" section) are in scope when the widget's body evaluates. Results
+/// and errors are discarded — the cells keep their stored outputs until
+/// the user explicitly evaluates them.
+fn evaluate_pending_initialization(pending: &mut Vec<String>) {
+  for code in pending.drain(..) {
+    for stmt in woxi::split_into_statements(&code) {
+      let _ = woxi::interpret_with_stdout(&stmt);
+    }
+  }
+}
+
 /// Rebuild the interactive widget for a loaded Input cell whose stored
 /// output was a dynamic-widget dump. Only a cell that is exactly one held
 /// interactive expression (`Manipulate[…]`, `Animate[…]`, …) is
@@ -5675,8 +5704,10 @@ fn encode_svg_as_pdf(svg_str: &str) -> Result<Vec<u8>, ()> {
   fontdb.set_serif_family("Atkinson Hyperlegible Next");
   fontdb.load_system_fonts();
 
-  let mut opt = svg2pdf::usvg::Options::default();
-  opt.fontdb = std::sync::Arc::new(fontdb);
+  let opt = svg2pdf::usvg::Options {
+    fontdb: std::sync::Arc::new(fontdb),
+    ..Default::default()
+  };
 
   let tree = svg2pdf::usvg::Tree::from_str(svg_str, &opt).map_err(|_| ())?;
   svg2pdf::to_pdf(
@@ -5996,8 +6027,10 @@ async fn export_pdf(
   fontdb.set_fantasy_family("Atkinson Hyperlegible Next");
   fontdb.load_system_fonts();
 
-  let mut opt = svg2pdf::usvg::Options::default();
-  opt.fontdb = StdArc::new(fontdb);
+  let opt = svg2pdf::usvg::Options {
+    fontdb: StdArc::new(fontdb),
+    ..Default::default()
+  };
 
   let tree = svg2pdf::usvg::Tree::from_str(&svg_doc, &opt)
     .map_err(|_| FileError::IoError(std::io::ErrorKind::InvalidData))?;
@@ -6231,6 +6264,65 @@ mod tests {
       current(&state),
       0.0,
       "animation must loop back to the start"
+    );
+  }
+
+  #[test]
+  fn kepler_trigger_and_period_bounded_sliders() {
+    // The "Kepler's Second Law" Demonstration pattern: time sliders bounded
+    // by the orbital-period control P, plus a Trigger animating t. The
+    // widget starts paused, the P-referencing ranges follow P as it moves,
+    // and the animation tick targets the Trigger's variable.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{t, dt}, \
+       {{t, 0, \"time\"}, 0, P, .01}, \
+       {{P, 20, \"period\"}, .1, 50, .01}, \
+       {{dt, 5, \"span\"}, .1, P, .01}, \
+       {{t, 0, \"animate\"}, 0, P, .01, ControlType -> Trigger}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert!(state.animated, "the Trigger makes the widget animatable");
+    assert!(!state.playing, "a Trigger widget starts paused");
+    assert_eq!(state.controls.len(), 3, "the Trigger adds no second t row");
+
+    let bounds =
+      |s: &manipulate::ManipulateState, i: usize| match &s.controls[i] {
+        manipulate::ControlState::Continuous { min, max, .. } => (*min, *max),
+        other => panic!("expected continuous control, got {other:?}"),
+      };
+    let current =
+      |s: &manipulate::ManipulateState, i: usize| match &s.controls[i] {
+        manipulate::ControlState::Continuous { current, .. } => *current,
+        other => panic!("expected continuous control, got {other:?}"),
+      };
+    // Bounds resolved against P's initial value 20.
+    assert_eq!(bounds(&state, 0), (0.0, 20.0));
+    assert_eq!(bounds(&state, 2), (0.1, 20.0));
+
+    // Dragging P to 40 widens both dependent ranges on the next render.
+    match &mut state.controls[1] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 40.0,
+      other => panic!("expected continuous control, got {other:?}"),
+    }
+    state.reevaluate();
+    assert_eq!(bounds(&state, 0), (0.0, 40.0));
+    assert_eq!(bounds(&state, 2), (0.1, 40.0));
+
+    // Shrinking P to 1 clamps dt (currently 5) into the new range.
+    match &mut state.controls[1] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 1.0,
+      other => panic!("expected continuous control, got {other:?}"),
+    }
+    state.reevaluate();
+    assert_eq!(bounds(&state, 2), (0.1, 1.0));
+    assert_eq!(current(&state, 2), 1.0, "dt must clamp to the new max");
+
+    // The animation targets the Trigger's variable t.
+    state.advance_animation();
+    assert!(
+      (current(&state, 0) - 0.01).abs() < 1e-12,
+      "the tick must advance t by its step"
     );
   }
 

@@ -1,0 +1,247 @@
+(* Content-type: application/vnd.wolfram.mathematica *)
+
+(*** Wolfram Notebook File ***)
+(* http://www.wolfram.com/nb *)
+
+(* CreatedBy='Mathematica 14.1' *)
+
+(* Trimmed Wolfram Demonstrations template notebook, mirroring the
+   structures of a real Demonstration (section headers carrying inline
+   more-info opener cells, a Manipulate input with its stored
+   DynamicModuleBox widget dump, snapshot raster outputs, and styled
+   CodeText prose). *)
+
+(* Beginning of Notebook Content *)
+Notebook[{
+
+Cell[CellGroupData[{
+Cell["Understanding 2D Translation", "Title",
+ TaggingRules->{},
+ CellTags->{"Name", "Title"},
+ CellID->700863240,ExpressionUUID->"c675bea6-b06e-45bb-a7ed-9c9895976ae5"],
+
+Cell[CellGroupData[{
+
+Cell[TextData[{
+ "Caption",
+ Cell[BoxData[
+  PaneSelectorBox[{True->
+   TemplateBox[{"CaptionCells",
+     Cell[
+      BoxData[
+       FrameBox[
+        Cell[
+         TextData[{
+          "The caption provides all the information needed to understand the \
+Demonstration.",
+           StyleBox["\n", FontSize -> 4]}], "MoreInfoText"], Background ->
+        GrayLevel[0.95], FrameMargins -> 20, FrameStyle -> GrayLevel[0.9],
+        RoundingRadius -> 5, ImageSize -> {
+          Scaled[0.65], Automatic}]], "MoreInfoText", Deletable -> True,
+      CellTags -> {"SectionMoreInfoCaptionCells"},
+      CellMargins -> {{66, 66}, {15, 15}}]},
+    "MoreInfoOpenerButtonTemplate"]}, Dynamic[
+    CurrentValue[
+     EvaluationNotebook[], {TaggingRules, "ResourceCreateNotebook"}]],
+   ImageSize->Automatic]],ExpressionUUID->
+  "d6d9a9ed-9d34-4b3f-aa01-b37231f8f078"]
+}], "Section",
+ Editable->False,
+ Deletable->False,
+ TaggingRules->{"TemplateGroupName" -> "CaptionCells"},
+ CellTags->{"Caption", "CaptionCells", "TemplateCellGroup"},
+ CellID->138150581,ExpressionUUID->"6a80cc7b-f056-4c6f-9ee2-c2e8eb5d3357"],
+
+Cell["\<\
+This Demonstration allows you to translate 2D objects. The red square \
+represents the translated version of the blue square.\
+\>", "Text",
+ TaggingRules->{},
+ CellID->609343720,ExpressionUUID->"b7295125-1efc-4289-baec-1f0b5b3d62fc"]
+}, Closed]],
+
+Cell[TextData[{
+ "If you provide initialization code, include a ",
+ StyleBox["SaveDefinitions->True", "MRbig"],
+ " option in the ",
+ StyleBox["Manipulate", "MRbig"],
+ "."
+}], "CodeText",
+ Editable->False,
+ TaggingRules->{},
+ CellTags->{"DefaultContent", "samplecell", "TabNext"},
+ CellID->687519280,ExpressionUUID->"76249fd7-28b7-481e-9f4c-169d3d7fea5f"],
+
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[", "\[IndentingNewLine]",
+  RowBox[{
+   RowBox[{"Pane", "[", "\[IndentingNewLine]",
+    RowBox[{
+     RowBox[{"Column", "[", "\[IndentingNewLine]",
+      RowBox[{
+       RowBox[{"{", "\[IndentingNewLine]",
+        RowBox[{
+         RowBox[{"Style", "[", " ",
+          RowBox[{
+           RowBox[{
+            RowBox[{"HoldForm", "[", "TranslationTransform", "]"}], "[",
+            RowBox[{"Tooltip", "[",
+             RowBox[{
+              RowBox[{"{",
+               RowBox[{"\"\<px\>\"", ",", "\"\<py\>\""}], "}"}], ",", " ",
+              "\"\<Translation\>\""}], "]"}], "]"}], ",", " ", "15", ",",
+           "Bold"}], "]"}], ",", "\[IndentingNewLine]",
+         RowBox[{"Style", "[", " ",
+          RowBox[{"\"\<\[DoubleDownArrow]\>\"", ",", " ", "25"}], "]"}], ",",
+         "\[IndentingNewLine]",
+         RowBox[{"Graphics", "[", "\[IndentingNewLine]",
+          RowBox[{
+           RowBox[{"{", "\[IndentingNewLine]",
+            RowBox[{
+             RowBox[{"If", "[", " ",
+              RowBox[{"rsource", ",", " ",
+               RowBox[{"{",
+                RowBox[{
+                 RowBox[{"Opacity", "[", "0.5", "]"}], ",", " ", "Blue", ",",
+
+                 RowBox[{"Tooltip", "[",
+                  RowBox[{
+                   RowBox[{"Rectangle", "[", "]"}], ",", " ",
+                   "\"\<Source object.\>\""}], "]"}]}], "}"}], ",",
+               RowBox[{"{", "}"}]}], "]"}], ",", "\[IndentingNewLine]",
+             RowBox[{"{",
+              RowBox[{
+               RowBox[{"Opacity", "[", "0.5", "]"}], ",", " ", "Red", ",",
+               " ",
+               RowBox[{"Tooltip", "[",
+                RowBox[{
+                 RowBox[{"GeometricTransformation", "[",
+                  RowBox[{
+                   RowBox[{"Rectangle", "[", "]"}], ",",
+                   RowBox[{"TranslationTransform", "[",
+                    RowBox[{"{",
+                    RowBox[{"px", ",", "py"}], "}"}], "]"}]}], "]"}], ",",
+                 " ", "\"\<Transformed object.\>\""}], "]"}]}], "}"}]}],
+            "\[IndentingNewLine]", "}"}], ",", " ",
+           RowBox[{"Frame", "\[Rule]", "True"}], ",", " ",
+           RowBox[{"PlotRange", "\[Rule]",
+            RowBox[{"{",
+             RowBox[{
+              RowBox[{"{",
+               RowBox[{
+                RowBox[{"-", "2"}], ",", "2"}], "}"}], ",", " ",
+              RowBox[{"{",
+               RowBox[{
+                RowBox[{"-", "2"}], ",", "2"}], "}"}]}], "}"}]}], ",", " ",
+           RowBox[{"FrameTicks", "\[Rule]",
+            RowBox[{"{",
+             RowBox[{
+              RowBox[{"Range", "[",
+               RowBox[{
+                RowBox[{"-", "2"}], ",", "2"}], "]"}], ",", " ",
+              RowBox[{"Range", "[",
+               RowBox[{
+                RowBox[{"-", "2"}], ",", "2"}], "]"}]}], "}"}]}], ",",
+           RowBox[{"ImageSize", "\[Rule]",
+            RowBox[{"{",
+             RowBox[{"500", ",", "400"}], "}"}]}]}], "]"}]}],
+        "\[IndentingNewLine]", "}"}], ",", " ", "Center"}],
+      "\[IndentingNewLine]", "]"}], ",", " ", "\[IndentingNewLine]",
+     RowBox[{"ImageSize", "\[Rule]", "500"}]}], "\[IndentingNewLine]", "]"}],
+   ",", "\[IndentingNewLine]",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{",
+      RowBox[{"px", ",",
+       RowBox[{"1", "/", "2"}]}], "}"}], ",", " ",
+     RowBox[{"-", "1"}], ",", "1"}], "}"}], ",", "\[IndentingNewLine]",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{",
+      RowBox[{"py", ",",
+       RowBox[{"1", "/", "2"}]}], "}"}], ",",
+     RowBox[{"-", "1"}], ",", "1"}], "}"}], ",", "\[IndentingNewLine]",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{",
+      RowBox[{"rsource", ",", " ", "True", ",", " ",
+       RowBox[{"Tooltip", "[",
+        RowBox[{"\"\<source\>\"", ",", "\"\<Show source object\>\""}],
+        "]"}]}], "}"}], ",", " ",
+     RowBox[{"{",
+      RowBox[{"True", ",", " ", "False"}], "}"}]}], "}"}]}],
+  "\[IndentingNewLine]", "]"}]], "Input",
+ TaggingRules->{},
+ CellID->1496021318,ExpressionUUID->"9a51b998-fbc4-49bd-9ccc-ee4c9e45ba0b"],
+
+Cell[BoxData[
+ TagBox[
+  StyleBox[
+   DynamicModuleBox[{$CellContext`px$$ = Rational[1, 2], $CellContext`py$$ =
+    Rational[1, 2], $CellContext`rsource$$ = True, Typeset`show$$ = True,
+    Typeset`name$$ = "\"untitled\"", Typeset`specs$$ = {{{
+       Hold[$CellContext`px$$],
+       Rational[1, 2]}, -1, 1}, {{
+       Hold[$CellContext`py$$],
+       Rational[1, 2]}, -1, 1}, {{
+       Hold[$CellContext`rsource$$], True,
+       Tooltip["source", "Show source object"]}, {True, False}}}},
+    DynamicBox[Manipulate`ManipulateBoxes[
+     1, StandardForm,
+      "Variables" :> {$CellContext`px$$ = Rational[1, 2], $CellContext`py$$ =
+        Rational[1, 2], $CellContext`rsource$$ = True}, "Body" :> Pane[
+        Column[{
+          Style[
+           HoldForm[TranslationTransform][
+            Tooltip[{"px", "py"}, "Translation"]], 15, Bold],
+          Style["\[DoubleDownArrow]", 25],
+          Graphics[{}, Frame -> True]}, Center], ImageSize -> 500],
+      "Options" :> {}, "DefaultOptions" :> {ControllerLinking -> True}],
+     SingleEvaluation->True],
+    Deinitialization:>None,
+    DynamicModuleValues:>{},
+    UntrackedVariables:>{Typeset`size$$}], "Manipulate",
+   Deployed->True,
+   StripOnInput->False],
+  Manipulate`InterpretManipulate[1]]], "Output",
+ TaggingRules->{},
+ CellID->224465365,ExpressionUUID->"be077a99-d6cb-4d12-b0c2-8e068ec7b934"]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell["Snapshots", "Section",
+ Editable->False,
+ Deletable->False,
+ TaggingRules->{"TemplateGroupName" -> "Snapshots"},
+ CellTags->{"Snapshots", "TemplateCellGroup"},
+ CellID->307771896,ExpressionUUID->"e8f9c877-52aa-4a8e-89a1-05837a10dcdb"],
+
+Cell[BoxData[
+ PaneBox[
+  GraphicsBox[
+   TagBox[RasterBox[CompressedData["
+1:eJzsvQd4HNW5Bjzq3ZIsy5Ysq7j3XsCmGDDFYAiQUAOEkPQeIAlJIAkQEkjv
+    "], {{0, 116}, {170, 0}}, {0, 255},
+    ColorFunction->RGBColor],
+   BoxForm`ImageTag["Byte", ColorSpace -> "RGB", Interleaving -> True],
+   Selectable->False],
+   DefaultBaseStyle->"ImageGraphics",
+   ImageSizeRaw->{170, 116},
+   PlotRange->{{0, 170}, {0, 116}}],
+  Alignment->Center,
+  ImageSize->{200, 140}]], "Output",
+ TaggingRules->{},
+ CellTags->{"SnapshotCell", "Snapshots"},
+ CellID->265621371,ExpressionUUID->"c30f1d18-42ab-4c93-9f57-c31eb1f8d217"]
+}, Open  ]]
+}, Open  ]]
+},
+WindowSize->{1440, 900},
+WindowMargins->{{0, Automatic}, {Automatic, 0}},
+FrontEndVersion->"14.1 for Mac OS X ARM (64-bit) (July 16, 2024)",
+StyleDefinitions->"Default.nb",
+ExpressionUUID->"3a2b1c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d"
+]
+(* End of Notebook Content *)

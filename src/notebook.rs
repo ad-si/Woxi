@@ -569,10 +569,33 @@ fn render_text_element(s: &str) -> String {
     }
   }
 
-  // Inline `Cell[...]` elements are the attached "more info" opener buttons in
-  // Demonstrations templates — they carry no textual content, so drop them.
-  if s.starts_with("Cell[") {
-    return String::new();
+  // Inline `Cell[...]` elements inside a TextData run come in two kinds.
+  // Styled inline content — `Cell[BoxData[FormBox[…]], "InlineMath"]` and
+  // friends — carries real prose (math embedded in a sentence) and must be
+  // rendered, otherwise the surrounding text is left with holes. Unstyled
+  // inline cells are the attached "more info" opener buttons in
+  // Demonstrations templates (PaneSelectorBox/TemplateBox chrome) — they
+  // carry no textual content, so drop them.
+  if let Some(rest) = s.strip_prefix("Cell[")
+    && let Ok((inner, _)) = find_matching_bracket(rest)
+  {
+    let parts = split_top_level_commas(inner);
+    let style = parts.iter().skip(1).find_map(|p| {
+      let t = p.trim();
+      let is_option = t.contains("->") || t.contains(":>");
+      (!is_option && t.starts_with('"') && t.ends_with('"') && t.len() >= 2)
+        .then(|| &t[1..t.len() - 1])
+    });
+    return match style {
+      Some(
+        "InlineMath" | "InlineFormula" | "InlineCode" | "InlineInput"
+        | "InlineOutput",
+      ) => parts
+        .first()
+        .map(|c| extract_cell_content(c.trim()))
+        .unwrap_or_default(),
+      _ => String::new(),
+    };
   }
 
   // Nested RowBox / typeset boxes.
@@ -1679,6 +1702,63 @@ Cell["A subitem", "Subitem"]
   }
 
   #[test]
+  fn test_textdata_inline_math_cell_renders_content() {
+    // Inline `Cell[…, "InlineMath"]` elements inside a TextData run carry
+    // real prose (math embedded in a sentence) and must be rendered, not
+    // dropped like the Demonstrations "more info" chrome buttons.
+    let nb = r#"Notebook[{
+Cell[TextData[{
+ "To find ",
+ Cell[BoxData[
+  FormBox[
+   RowBox[{"P", "(",
+    RowBox[{"X", "\[LessEqual]", "x"}], ")"}], TraditionalForm]],
+  "InlineMath",ExpressionUUID->"c04c6311-9407-4855-8351-984bf610bb65"],
+ " with mean ",
+ Cell[BoxData[
+  FormBox["\[Mu]", TraditionalForm]], "InlineMath",ExpressionUUID->
+  "2769c287-5751-4749-947c-fcdd1da9d653"],
+ "."
+}], "Text"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(cell.style, CellStyle::Text);
+        assert_eq!(cell.content, "To find P(X<=x) with mean \u{03bc}.");
+      }
+      _ => panic!("Expected single cell"),
+    }
+  }
+
+  #[test]
+  fn test_textdata_chrome_button_cell_still_dropped() {
+    // Unstyled inline cells (the Demonstrations "more info" opener
+    // buttons) carry no textual content and stay dropped.
+    let nb = r#"Notebook[{
+Cell[TextData[{
+ "Caption",
+ Cell[BoxData[
+  PaneSelectorBox[{True->
+   TemplateBox[{"CaptionCells"},
+    "MoreInfoOpenerButtonTemplate"]}, Dynamic[
+    CurrentValue[
+     EvaluationNotebook[], {TaggingRules, "ResourceCreateNotebook"}]],
+   ImageSize->Automatic]],ExpressionUUID->
+  "4c32c08b-d967-45c6-8920-0c21a5734cd7"]
+}], "Section"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(cell.style, CellStyle::Section);
+        assert_eq!(cell.content, "Caption");
+      }
+      _ => panic!("Expected single cell"),
+    }
+  }
+
+  #[test]
   fn test_export_markdown_items() {
     let mut nb = Notebook::new();
     nb.push_cell(Cell::new(CellStyle::Item, "First"));
@@ -1878,14 +1958,14 @@ Cell["Chapter 2", "Chapter"]
   }
 
   #[test]
-  fn test_parse_real_demonstration_nb() {
+  fn test_parse_real_understanding_2d_translation_nb() {
     // A trimmed Wolfram Demonstrations template notebook (the shape of
     // downloaded Demonstration .nb files): section headers carrying inline
     // more-info opener cells, a Manipulate input with its stored
     // DynamicModuleBox widget dump, and snapshot raster outputs.
     let contents = std::fs::read_to_string(concat!(
       env!("CARGO_MANIFEST_DIR"),
-      "/tests/notebooks/demonstration.nb"
+      "/tests/notebooks/understanding_2d_translation.nb"
     ))
     .unwrap();
     let nb = parse_notebook(&contents).unwrap();
@@ -1940,6 +2020,69 @@ Cell["Chapter 2", "Chapter"]
       "got: {}",
       &flat[5].1.content[..60.min(flat[5].1.content.len())]
     );
+  }
+
+  #[test]
+  fn test_parse_real_demonstration_nb() {
+    // Reduced Wolfram Demonstrations "definition notebook" (the
+    // ColorRelationships template): deeply nested cell groups, Section
+    // headers carrying inline MoreInfo opener cells, an Input +
+    // DynamicModuleBox-dump Output pair, a RasterBox snapshot Output,
+    // and Item keyword cells.
+    let contents = std::fs::read_to_string(concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/tests/notebooks/demonstration.nb"
+    ))
+    .unwrap();
+    let nb = parse_notebook(&contents).unwrap();
+    let flat = nb.flat_cells();
+    let cells: Vec<&Cell> = flat.iter().map(|(_, c)| *c).collect();
+
+    assert_eq!(cells[0].style, CellStyle::Title);
+    assert_eq!(cells[0].content, "Color Relationships");
+
+    // Section headers render just their label — the trailing inline
+    // `Cell[BoxData[PaneSelectorBox[…]]]` opener button carries no text.
+    assert_eq!(cells[1].style, CellStyle::Section);
+    assert_eq!(cells[1].content, "Initialization Code");
+
+    // The initialization Input cell reconstructs evaluable InputForm.
+    assert_eq!(cells[2].style, CellStyle::Input);
+    assert_eq!(
+      cells[2].content,
+      "swatch[clr_]:=Graphics[{clr,Rectangle[]}]"
+    );
+
+    assert_eq!(cells[3].style, CellStyle::Section);
+    assert_eq!(cells[3].content, "Manipulate");
+
+    // The Manipulate input keeps ASCII `->` (from `\[Rule]`) and its
+    // stored output is recognizable as a FrontEnd widget dump (TagBox/
+    // StyleBox wrappers unwrap to the DynamicModuleBox).
+    assert_eq!(cells[4].style, CellStyle::Input);
+    assert!(cells[4].content.starts_with("Manipulate["));
+    assert!(cells[4].content.contains("SaveDefinitions->True"));
+    assert_eq!(cells[5].style, CellStyle::Output);
+    assert!(
+      cells[5]
+        .content
+        .trim_start()
+        .starts_with("DynamicModuleBox[")
+    );
+
+    // Snapshot outputs and keyword items parse with their styles.
+    assert!(
+      cells.iter().any(
+        |c| c.style == CellStyle::Output && c.content.contains("RasterBox")
+      ),
+      "expected a RasterBox snapshot output"
+    );
+    let items: Vec<&str> = cells
+      .iter()
+      .filter(|c| c.style == CellStyle::Item)
+      .map(|c| c.content.as_str())
+      .collect();
+    assert_eq!(items, vec!["hue", "color wheel"]);
   }
 
   #[test]

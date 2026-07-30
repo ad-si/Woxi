@@ -9098,6 +9098,55 @@ mod join_non_list {
   }
 
   #[test]
+  fn thread_list_head_transposes() {
+    // Thread over an expression whose head is List transposes:
+    // Thread[{{a, b}, {c, d}}] -> {{a, c}, {b, d}}. The Demonstrations
+    // color-wheel notebook relies on Thread[List[{colors}, {polygons}]]
+    // pairing each color directive with its primitive.
+    assert_eq!(
+      interpret("Thread[{{1, 2}, {3, 4}}]").unwrap(),
+      "{{1, 3}, {2, 4}}"
+    );
+    assert_eq!(
+      interpret("Thread[List[{a, b}, {c, d}]]").unwrap(),
+      "{{a, c}, {b, d}}"
+    );
+  }
+
+  #[test]
+  fn thread_list_head_repeats_non_list() {
+    // Non-list elements are repeated across the threaded results.
+    assert_eq!(
+      interpret("Thread[{{1, 2}, x}]").unwrap(),
+      "{{1, x}, {2, x}}"
+    );
+  }
+
+  #[test]
+  fn thread_list_head_without_sublists_unchanged() {
+    assert_eq!(interpret("Thread[{a, b}]").unwrap(), "{a, b}");
+  }
+
+  #[test]
+  fn thread_list_head_unequal_lengths_returns_unchanged() {
+    // Wolfram emits Thread::tdlen and returns the expression unchanged.
+    assert_eq!(
+      interpret("Thread[{{1, 2}, {3, 4, 5}}]").unwrap(),
+      "{{1, 2}, {3, 4, 5}}"
+    );
+  }
+
+  #[test]
+  fn thread_list_head_with_explicit_thread_head() {
+    // Thread[{f[1, 2], f[3, 4]}, f] -> f[{1, 3}, {2, 4}]: elements with
+    // the given head thread, and the result is wrapped in that head.
+    assert_eq!(
+      interpret("Thread[{f[1, 2], f[3, 4]}, f]").unwrap(),
+      "f[{1, 3}, {2, 4}]"
+    );
+  }
+
+  #[test]
   fn thread_comparison_geq() {
     // Thread[{a, b, c} >= 0] should produce {a >= 0, b >= 0, c >= 0}
     assert_eq!(

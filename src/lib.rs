@@ -1987,6 +1987,7 @@ fn format_top_level_result(result_expr: syntax::Expr) -> String {
     // column with its embedded graphic). CLI mode keeps the symbolic
     // Pane[…] echo to match wolframscript.
     let result_expr = unwrap_pane_if_needed(result_expr);
+    let result_expr = render_dynamic_if_needed(result_expr);
     let result_expr = render_graphics_fc_if_needed(result_expr);
     let result_expr = render_color_if_needed(result_expr);
     let result_expr = render_tableform_if_needed(result_expr);
@@ -2742,6 +2743,7 @@ fn render_inline_display_wrapper(expr: syntax::Expr) -> syntax::Expr {
   // wrapper arguments, so we apply the relevant ones here for a single
   // sub-expression.
   let expr = unwrap_pane_if_needed(expr);
+  let expr = render_dynamic_if_needed(expr);
   let expr = render_grid_if_needed(expr);
   let expr = render_dataset_if_needed(expr);
   let expr = render_tabular_if_needed(expr);
@@ -2757,6 +2759,32 @@ fn render_inline_display_wrapper(expr: syntax::Expr) -> syntax::Expr {
   // PolyhedronData) are rendered to embedded SVG so a `Column[{plot, …}]`
   // shows the actual graphic instead of a `-Graphics-` text placeholder.
   render_graphics_fc_if_needed(expr)
+}
+
+/// In visual (notebook) display mode, `Dynamic[expr, …]` displays the
+/// current value of `expr` — the front end re-evaluates it as its
+/// dependencies change, and Woxi's visual hosts (Playground, Studio)
+/// re-evaluate the whole cell on any control change, so the current value
+/// is the correct rendering. Script/CLI mode keeps the symbolic
+/// `Dynamic[…]` echo to match wolframscript.
+fn render_dynamic_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  if !is_visual_mode() {
+    return expr;
+  }
+  match &expr {
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Dynamic" && !args.is_empty() =>
+    {
+      // Dynamic is HoldFirst: its content arrives unevaluated. Release
+      // the hold; on error keep the symbolic form rather than failing
+      // the whole rendering pipeline.
+      match evaluator::evaluate_expr_to_expr(&args[0]) {
+        Ok(inner) => inner,
+        Err(_) => expr,
+      }
+    }
+    _ => expr,
+  }
 }
 
 /// If `expr` is `Column[{…}]`, render it as an SVG column and return `-Graphics-`.
