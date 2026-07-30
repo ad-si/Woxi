@@ -2106,7 +2106,7 @@ QueueingProcess,Queueing theory process,🚫,,9.0,2129
 RegionProduct,Cartesian product of regions — named as a box cylinder prism or parallelotope where one exists,✅,pure,10.0,2129
 TrackingFunction,Tracking callback option,🚫,,10.0,2129
 MathieuCharacteristicB,Mathieu characteristic value,🚫,,3.0,2131
-PowerRange,Generate a list of values by successive multiplication,✅,1,10.0,2131
+PowerRange,List of values from xmin by successive multiplication while their magnitude stays within xmax,✅,pure,10.0,2131
 ParentDirectory,Parent directory path,✅,none,2.0,2132
 MatrixFunction,Apply a scalar function to a square matrix via its eigenvalues,✅,pure,9.0,2134
 QuantityUnit,Returns the unit of a quantity,✅,pure,9.0,2134
@@ -2517,7 +2517,7 @@ FourierSinTransform,Fourier sine transform of a function,✅,pure,4.0,2553
 Paste,Paste from clipboard (UI function),🚫,UI,8.0,2553
 RenameFile,renames a file,✅,FileSystem,2.0,2553
 FileNameDrop,Drop path components from a file name,✅,none,7.0,2554
-ArrayResample,Resample an array to a different size,✅,none,10.0,2557
+ArrayResample,Resample every axis of an array to a given number of points by linear interpolation,✅,pure,10.0,2557
 RowLines,option for grid formatting row lines,✅,Symbolic,3.0,2557
 Underflow,Symbol representing arithmetic underflow,✅,pure,1.0,2557
 InterpretationFunction,,🚫,,12.2,2561

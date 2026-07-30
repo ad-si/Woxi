@@ -6083,6 +6083,177 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // A range that repeated multiplication can never stay inside is
+  // reported. PowerRange used to multiply until the arithmetic
+  // overflowed and the whole evaluation aborted.
+  #[test]
+  fn power_range_reports_bounds_it_cannot_span() {
+    use woxi::interpret_with_stdout;
+    for call in ["PowerRange[-1, 5]", "PowerRange[5, -1]", "PowerRange[0, 5]"] {
+      let r = interpret_with_stdout(call).unwrap();
+      assert_eq!(r.result, call);
+      let expected = format!(
+        "PowerRange::range: Range specification in {} does not have \
+         appropriate bounds.",
+        call
+      );
+      assert!(
+        r.warnings.contains(&expected),
+        "expected {:?}, got {:?}",
+        expected,
+        r.warnings
+      );
+    }
+    // Same-signed bounds running the wrong way are simply empty.
+    assert_eq!(interpret("PowerRange[-5, -1]").unwrap(), "{}");
+    assert_eq!(interpret("PowerRange[5, 1]").unwrap(), "{}");
+  }
+
+  // A factor of 0 collapses and a factor of 1 never advances.
+  #[test]
+  fn power_range_reports_an_unusable_factor() {
+    use woxi::interpret_with_stdout;
+    for (factor, reported) in [("0", "0"), ("1", "1")] {
+      let call = format!("PowerRange[1, 5, {}]", factor);
+      let r = interpret_with_stdout(&call).unwrap();
+      assert_eq!(r.result, call);
+      let expected =
+        format!("PowerRange::factor: Factor cannot be {}.", reported);
+      assert!(
+        r.warnings.contains(&expected),
+        "expected {:?}, got {:?}",
+        expected,
+        r.warnings
+      );
+    }
+  }
+
+  // Terms are kept while their magnitude stays inside the bound, which
+  // stops a negative factor one term earlier than a positive one would.
+  #[test]
+  fn power_range_bounds_by_magnitude() {
+    assert_eq!(interpret("PowerRange[1, 10]").unwrap(), "{1, 10}");
+    assert_eq!(interpret("PowerRange[1, 10, 2]").unwrap(), "{1, 2, 4, 8}");
+    assert_eq!(interpret("PowerRange[1, 5, -2]").unwrap(), "{1, -2, 4}");
+    assert_eq!(interpret("PowerRange[1/2, 5]").unwrap(), "{1/2, 5}");
+    // A factor below one shrinks towards the bound instead of growing.
+    assert_eq!(interpret("PowerRange[5, 1, 1/10]").unwrap(), "{5}");
+    assert_eq!(
+      interpret("PowerRange[100, 1, 1/10]").unwrap(),
+      "{100, 10, 1}"
+    );
+    assert_eq!(interpret("PowerRange[1, 10, 1/2]").unwrap(), "{}");
+  }
+
+  // ArrayResample resamples every axis, not just the outermost: a 2x2
+  // array taken to 3 is a 3x3 with interpolated columns too.
+  #[test]
+  fn array_resample_covers_every_axis() {
+    assert_eq!(
+      interpret("ArrayResample[{1, 2, 3, 4, 5}, 3]").unwrap(),
+      "{1, 3, 5}"
+    );
+    assert_eq!(
+      interpret("ArrayResample[{{1, 2}, {3, 4}}, 3]").unwrap(),
+      "{{1, 3/2, 2}, {2, 5/2, 3}, {3, 7/2, 4}}"
+    );
+    // A list gives each axis its own count, and must match the rank.
+    assert_eq!(
+      interpret("ArrayResample[{{1, 2}, {3, 4}}, {3, 3}]").unwrap(),
+      "{{1, 3/2, 2}, {2, 5/2, 3}, {3, 7/2, 4}}"
+    );
+    assert_eq!(
+      interpret("ArrayResample[{1, 2, 3, 4, 5}, {2}]").unwrap(),
+      "{1, 5}"
+    );
+  }
+
+  // A count that is not a positive integer names no array. A negative one
+  // used to be cast to a usize and abort on the allocation.
+  #[test]
+  fn array_resample_reports_an_invalid_count() {
+    use woxi::interpret_with_stdout;
+    for (call, spec) in [
+      ("ArrayResample[{1, 2, 3, 4, 5}, -1]", "-1"),
+      ("ArrayResample[{1, 2, 3, 4, 5}, 0]", "0"),
+      ("ArrayResample[{1, 2, 3, 4, 5}, 1.5]", "1.5"),
+      ("ArrayResample[{{1, 2}, {3, 4}}, {1, 0}]", "{1, 0}"),
+    ] {
+      let r = interpret_with_stdout(call).unwrap();
+      assert_eq!(r.result, call);
+      let expected = format!(
+        "ArrayResample::nodim: Invalid dimension specification {}.",
+        spec
+      );
+      assert!(
+        r.warnings.contains(&expected),
+        "expected {:?} for {}, got {:?}",
+        expected,
+        call,
+        r.warnings
+      );
+    }
+  }
+
+  // An image needs positive dimensions; a zero one reached the encoder
+  // and aborted.
+  #[test]
+  fn image_constructors_report_unusable_dimensions() {
+    use woxi::interpret_with_stdout;
+    for (head, call, spec) in [
+      ("ConstantImage", "ConstantImage[0.5, -1]", "-1"),
+      ("ConstantImage", "ConstantImage[0.5, 0]", "0"),
+      ("ConstantImage", "ConstantImage[0.5, {2, 0}]", "{2, 0}"),
+      ("RandomImage", "RandomImage[1, -1]", "-1"),
+      ("RandomImage", "RandomImage[1, {2, 0}]", "{2, 0}"),
+    ] {
+      let r = interpret_with_stdout(call).unwrap();
+      assert_eq!(r.result, call);
+      let expected = format!(
+        "{}::bddim: The specified dimensions {} should be a positive \
+         integer or a list of positive integers for every spatial \
+         dimension.",
+        head, spec
+      );
+      assert!(
+        r.warnings.contains(&expected),
+        "expected {:?} for {}, got {:?}",
+        expected,
+        call,
+        r.warnings
+      );
+    }
+    assert_eq!(
+      interpret("ImageDimensions[ConstantImage[0.5, {2, 3}]]").unwrap(),
+      "{2, 3}"
+    );
+  }
+
+  // A date specification needs at least a year. An empty list has none,
+  // and reading its first component used to abort.
+  #[test]
+  fn date_arithmetic_reports_an_empty_specification() {
+    use woxi::interpret_with_stdout;
+    for head in ["DatePlus", "DayPlus"] {
+      let call = format!("{}[{{}}, 1]", head);
+      let r = interpret_with_stdout(&call).unwrap();
+      assert_eq!(r.result, call);
+      let expected = format!(
+        "{}::date: Expression {{}} cannot be interpreted as a date \
+         specification.",
+        head
+      );
+      assert!(
+        r.warnings.contains(&expected),
+        "expected {:?}, got {:?}",
+        expected,
+        r.warnings
+      );
+    }
+    // A year on its own is still a date.
+    assert_eq!(interpret("DatePlus[{2020}, 1]").unwrap(), "{2020, 1, 2}");
+  }
+
   // MinFilter and MaxFilter are the windowed Min and Max of a 2D array,
   // not of its rows: they used to reduce each row to a single value.
   #[test]

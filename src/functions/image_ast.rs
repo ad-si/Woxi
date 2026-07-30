@@ -3515,22 +3515,11 @@ pub fn random_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let (w, h) = if args.len() == 2 {
-    match &args[1] {
-      Expr::List(dims) if dims.len() == 2 => {
-        let w = expr_to_f64(&dims[0])? as u32;
-        let h = expr_to_f64(&dims[1])? as u32;
-        (w, h)
-      }
-      Expr::Integer(n) => {
-        let s = *n as u32;
-        (s, s)
-      }
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "RandomImage: second argument must be {width, height}".into(),
-        ));
-      }
-    }
+    let Some(dimensions) = positive_image_dimensions("RandomImage", &args[1])
+    else {
+      return Ok(unevaluated("RandomImage", args));
+    };
+    dimensions
   } else {
     (150u32, 150u32)
   };
@@ -7799,6 +7788,35 @@ pub fn export_animated_gif(
   Ok(())
 }
 
+/// The pixel dimensions named by a `ConstantImage`/`RandomImage` size
+/// argument: one positive integer for a square, or `{width, height}`.
+/// `None` after reporting `<head>::bddim`, which is what a dimension that
+/// is not a positive integer earns — a zero one used to reach the PNG
+/// encoder and abort.
+fn positive_image_dimensions(head: &str, spec: &Expr) -> Option<(u32, u32)> {
+  let positive = |e: &Expr| match e {
+    Expr::Integer(n) if *n >= 1 => u32::try_from(*n).ok(),
+    _ => None,
+  };
+  let dimensions = match spec {
+    Expr::List(dims) if dims.len() == 2 => {
+      match (positive(&dims[0]), positive(&dims[1])) {
+        (Some(w), Some(h)) => Some((w, h)),
+        _ => None,
+      }
+    }
+    other => positive(other).map(|s| (s, s)),
+  };
+  if dimensions.is_none() {
+    crate::emit_message(&format!(
+      "{head}::bddim: The specified dimensions {} should be a positive \
+       integer or a list of positive integers for every spatial dimension.",
+      crate::syntax::format_expr(spec, crate::syntax::ExprForm::Output)
+    ));
+  }
+  dimensions
+}
+
 /// ConstantImage[val, {w, h}] - Create a constant image
 /// val can be a number (grayscale) or a color (Red, RGBColor[r,g,b], etc.)
 pub fn constant_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -7809,22 +7827,11 @@ pub fn constant_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let (w, h) = if args.len() == 2 {
-    match &args[1] {
-      Expr::List(dims) if dims.len() == 2 => {
-        let w = expr_to_f64(&dims[0])? as u32;
-        let h = expr_to_f64(&dims[1])? as u32;
-        (w, h)
-      }
-      Expr::Integer(n) => {
-        let s = *n as u32;
-        (s, s)
-      }
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "ConstantImage: second argument must be {width, height}".into(),
-        ));
-      }
-    }
+    let Some(dimensions) = positive_image_dimensions("ConstantImage", &args[1])
+    else {
+      return Ok(unevaluated("ConstantImage", args));
+    };
+    dimensions
   } else {
     (150u32, 150u32)
   };

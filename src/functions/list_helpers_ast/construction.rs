@@ -843,60 +843,60 @@ pub fn power_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (10, 1)
     };
 
-    if fac_n == 0 {
-      return Err(InterpreterError::EvaluationError(
-        "PowerRange: factor cannot be zero".into(),
+    // Repeatedly multiplying can only stay between the bounds if both have
+    // the same sign and neither is zero.
+    if (min_n == 0) || (max_n == 0) || ((min_n > 0) != (max_n > 0)) {
+      crate::emit_message(&format!(
+        "PowerRange::range: Range specification in {} does not have \
+         appropriate bounds.",
+        crate::syntax::format_expr(
+          &unevaluated("PowerRange", args),
+          crate::syntax::ExprForm::Output
+        )
       ));
+      return Ok(unevaluated("PowerRange", args));
+    }
+    // A factor of 0 collapses and a factor of 1 never advances.
+    if fac_n == 0 || (fac_n == fac_d) {
+      crate::emit_message(&format!(
+        "PowerRange::factor: Factor cannot be {}.",
+        if fac_n == 0 { 0 } else { 1 }
+      ));
+      return Ok(unevaluated("PowerRange", args));
     }
 
+    // Terms are compared by magnitude, and the direction of travel comes
+    // from the factor: a factor bigger than 1 grows towards the bound and
+    // a smaller one shrinks towards it. Comparing magnitudes is what stops
+    // a negative factor one term early -- `PowerRange[1, 5, -2]` is
+    // `{1, -2, 4}`, not `{1, -2, 4, -8}` -- and what makes a range whose
+    // bounds run against the factor come back empty.
+    let magnitude = |n: i128, d: i128| (n.unsigned_abs(), d.unsigned_abs());
+    let (max_mag_n, max_mag_d) = magnitude(max_n, max_d);
+    let (fac_mag_n, fac_mag_d) = magnitude(fac_n, fac_d);
+    let growing = fac_mag_n > fac_mag_d;
     let mut results = Vec::new();
-    let mut cur_n = min_n;
-    let mut cur_d = min_d;
-
-    // Compare min vs max to determine direction
-    // min_val = min_n / min_d, max_val = max_n / max_d
-    let min_cmp_max = (min_n * max_d).cmp(&(max_n * min_d));
-    // Adjust for negative denominators
-    let min_cmp_max = if (min_d > 0) != (max_d > 0) {
-      min_cmp_max.reverse()
-    } else {
-      min_cmp_max
-    };
-    let growing = matches!(
-      min_cmp_max,
-      std::cmp::Ordering::Less | std::cmp::Ordering::Equal
-    );
-
+    let (mut cur_n, mut cur_d) = (min_n, min_d);
     loop {
-      // Compare cur vs max
-      let cmp_val = cur_n * max_d;
-      let cmp_ref = max_n * cur_d;
-      let same_sign = (cur_d > 0) == (max_d > 0);
-
-      let past_max = if growing {
-        if same_sign {
-          cmp_val > cmp_ref
-        } else {
-          cmp_val < cmp_ref
-        }
-      } else if same_sign {
-        cmp_val < cmp_ref
-      } else {
-        cmp_val > cmp_ref
+      let (cur_mag_n, cur_mag_d) = magnitude(cur_n, cur_d);
+      let (Some(left), Some(right)) = (
+        cur_mag_n.checked_mul(max_mag_d),
+        max_mag_n.checked_mul(cur_mag_d),
+      ) else {
+        break;
       };
-
-      if past_max {
+      if if growing { left > right } else { left < right } {
         break;
       }
-
       results.push(crate::functions::math_ast::make_rational(cur_n, cur_d));
 
-      // cur *= factor: (cur_n/cur_d) * (fac_n/fac_d) = (cur_n*fac_n) / (cur_d*fac_d)
-      cur_n *= fac_n;
-      cur_d *= fac_d;
-
-      // Simplify
-      (cur_n, cur_d) = rat_reduce(cur_n, cur_d);
+      // cur *= factor, stopping rather than wrapping if it no longer fits.
+      let (Some(next_n), Some(next_d)) =
+        (cur_n.checked_mul(fac_n), cur_d.checked_mul(fac_d))
+      else {
+        break;
+      };
+      (cur_n, cur_d) = rat_reduce(next_n, next_d);
 
       if results.len() > 1_000_000 {
         return Err(InterpreterError::EvaluationError(

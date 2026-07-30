@@ -5160,7 +5160,42 @@ pub fn dispatch_math_functions(
         }
       }
     }
-    // ArrayResample[list, n] — resample a 1D array to n elements using linear interpolation
+    "ArrayResample" if args.len() == 2 => {
+      // ArrayResample[array, n] resamples *every* axis to n points, and
+      // ArrayResample[array, {n1, n2, …}] gives each axis its own count.
+      // A count that is not a positive integer names no array.
+      let nodim = || {
+        crate::emit_message(&format!(
+          "ArrayResample::nodim: Invalid dimension specification {}.",
+          crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output)
+        ));
+        Some(Ok(unevaluated("ArrayResample", args)))
+      };
+      let positive = |e: &Expr| match e {
+        Expr::Integer(n) if *n >= 1 => usize::try_from(*n).ok(),
+        _ => None,
+      };
+      let Expr::List(_) = &args[0] else {
+        return Some(Ok(unevaluated("ArrayResample", args)));
+      };
+      let rank = array_rank(&args[0]);
+      let dims: Vec<usize> = match &args[1] {
+        Expr::List(counts) => {
+          let resolved: Option<Vec<usize>> =
+            counts.iter().map(&positive).collect();
+          match resolved {
+            Some(dims) if dims.len() == rank => dims,
+            Some(_) => return Some(Ok(unevaluated("ArrayResample", args))),
+            None => return nodim(),
+          }
+        }
+        other => match positive(other) {
+          Some(n) => vec![n; rank],
+          None => return nodim(),
+        },
+      };
+      return Some(Ok(resample_array(&args[0], &dims)));
+    }
     "ArrayResample" if args.len() == 2 => {
       if let (Expr::List(elems), Some(n)) = (&args[0], expr_to_i128(&args[1])) {
         let n = n as usize;
@@ -7909,4 +7944,81 @@ fn standardize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     result.push(standardized);
   }
   Ok(Expr::List(result.into()))
+}
+
+/// The nesting depth of a rectangular array: 1 for a flat list, 2 for a
+/// list of lists, and so on.
+fn array_rank(expr: &Expr) -> usize {
+  match expr {
+    Expr::List(items) => 1 + items.first().map_or(0, array_rank),
+    _ => 0,
+  }
+}
+
+/// Resample `elems` to `n` points by linear interpolation between the
+/// endpoints, keeping exact arithmetic. The elements may themselves be
+/// lists: Plus and Times thread, so interpolating whole rows works.
+fn resample_axis(elems: &[Expr], n: usize) -> Vec<Expr> {
+  let m = elems.len();
+  if n == 0 || m == 0 {
+    return Vec::new();
+  }
+  if n == 1 || m == 1 {
+    return vec![elems[0].clone(); n];
+  }
+  let mut result = Vec::with_capacity(n);
+  for i in 0..n {
+    // Output index i maps to input coordinate i (m-1) / (n-1).
+    let numerator = i as i128 * (m as i128 - 1);
+    let denominator = n as i128 - 1;
+    let index = (numerator / denominator) as usize;
+    let remainder = numerator % denominator;
+    if remainder == 0 {
+      result.push(elems[index].clone());
+      continue;
+    }
+    let fraction = Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(remainder), Expr::Integer(denominator)].into(),
+    };
+    let difference = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        elems[index + 1].clone(),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), elems[index].clone()].into(),
+        },
+      ]
+      .into(),
+    };
+    let interpolated = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        elems[index].clone(),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![fraction, difference].into(),
+        },
+      ]
+      .into(),
+    };
+    result.push(evaluate_expr_to_expr(&interpolated).unwrap_or(interpolated));
+  }
+  result
+}
+
+/// Resample every axis of a nested array, outermost first.
+fn resample_array(expr: &Expr, dims: &[usize]) -> Expr {
+  let (Some(&count), Expr::List(elems)) = (dims.first(), expr) else {
+    return expr.clone();
+  };
+  let outer = resample_axis(elems, count);
+  Expr::List(
+    outer
+      .iter()
+      .map(|child| resample_array(child, &dims[1..]))
+      .collect::<Vec<_>>()
+      .into(),
+  )
 }

@@ -1588,6 +1588,16 @@ pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
+  // A date needs at least a year; an empty specification has none, and
+  // indexing it used to abort the whole evaluation.
+  if components.is_empty() {
+    crate::emit_message(&format!(
+      "DatePlus::date: Expression {} cannot be interpreted as a date \
+       specification.",
+      crate::syntax::format_expr(&date_arg, crate::syntax::ExprForm::Output)
+    ));
+    return Ok(unevaluated("DatePlus", args));
+  }
 
   let year = components[0] as i64;
   let month = if components.len() > 1 {
@@ -3169,6 +3179,16 @@ pub fn day_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(unevaluated("DayPlus", args));
     }
   };
+  // A date needs at least a year; an empty specification has none, and
+  // indexing it used to abort the whole evaluation.
+  if components.is_empty() {
+    crate::emit_message(&format!(
+      "DayPlus::date: Expression {} cannot be interpreted as a date \
+       specification.",
+      crate::syntax::format_expr(&date_arg, crate::syntax::ExprForm::Output)
+    ));
+    return Ok(unevaluated("DayPlus", args));
+  }
 
   let year = components[0] as i64;
   let month = if components.len() > 1 {
