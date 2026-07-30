@@ -17,13 +17,11 @@ fn parse_options(opts: &[Expr]) -> (PlotOptions, PlotRangeOverrides) {
   let mut seen: std::collections::HashSet<String> =
     std::collections::HashSet::new();
   for opt in opts {
-    if let Expr::Rule {
-      pattern,
-      replacement,
-    } = opt
-      && let Expr::Identifier(name) = pattern.as_ref()
+    if let Some((name, replacement)) =
+      crate::functions::graphics::option_name_value(opt)
     {
-      if !seen.insert(name.clone()) {
+      let replacement = &*replacement;
+      if !seen.insert(name.to_string()) {
         continue;
       }
       apply_common_plot_option(
@@ -39,7 +37,7 @@ fn parse_options(opts: &[Expr]) -> (PlotOptions, PlotRangeOverrides) {
       // frames here).
       if name == "PlotRange"
         && overrides.x.is_none()
-        && let Expr::List(items) = replacement.as_ref()
+        && let Expr::List(items) = replacement
         && items.len() == 2
         && !matches!(&items[0], Expr::List(_))
         && !matches!(&items[1], Expr::List(_))

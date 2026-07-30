@@ -756,13 +756,11 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
   let mut out = ParsedOptions::default();
   let opts = &mut out.opts;
   for opt in &args[1..] {
-    if let Expr::Rule {
-      pattern,
-      replacement,
-    } = opt
-      && let Expr::Identifier(name) = pattern.as_ref()
+    if let Some((name, replacement)) =
+      crate::functions::graphics::option_name_value(opt)
     {
-      match name.as_str() {
+      let replacement = &*replacement;
+      match name {
         "ImageSize" => {
           if let Some((w, h, fw)) =
             parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
@@ -773,8 +771,7 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           }
         }
         "Joined" => {
-          if matches!(replacement.as_ref(), Expr::Identifier(v) if v == "True")
-          {
+          if matches!(replacement, Expr::Identifier(v) if v == "True") {
             out.joined = true;
           }
         }
@@ -784,7 +781,7 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           out.plot_range_y = ry;
         }
         "DataRange" => {
-          out.data_range = match replacement.as_ref() {
+          out.data_range = match replacement {
             Expr::Identifier(v) if v == "All" => Some(DataRangeSpec::All),
             Expr::List(pair) if pair.len() == 2 => {
               match (try_eval_to_f64(&pair[0]), try_eval_to_f64(&pair[1])) {
@@ -796,7 +793,7 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           };
         }
         "PlotLayout" => {
-          if let Expr::String(layout) = replacement.as_ref() {
+          if let Expr::String(layout) = replacement {
             match layout.as_str() {
               "Row" => out.layout = PanelLayout::Row,
               "Column" => out.layout = PanelLayout::Column,
@@ -807,8 +804,8 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         "AspectRatio" => {
           // Ratio (height/width) of the plotting area; the total image height
           // is derived once margins are known (see generate_svg_with_options).
-          let val =
-            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone());
           if let Some(r) = try_eval_to_f64(&val)
             && r > 0.0
           {
@@ -832,7 +829,7 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         // Labels that only appear on hover (Tooltip) or are switched off
         // (None) are not drawn on a static SVG.
         "LabelingFunction" => {
-          if matches!(replacement.as_ref(),
+          if matches!(replacement,
             Expr::Identifier(v) if v == "None" || v == "Tooltip")
           {
             out.hide_point_labels = true;
@@ -844,16 +841,16 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           opts.plot_legends = labels;
         }
         "PlotLabel" => {
-          let val =
-            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone());
           if let Some(sl) = crate::functions::chart::parse_styled_label(&val) {
             opts.plot_label = Some(sl);
           }
         }
         // AxesLabel is always the 2-element `{x, y}` (bottom, left) form.
         "AxesLabel" => {
-          let val =
-            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone());
           if let Expr::List(items) = &val
             && items.len() >= 2
           {
@@ -878,7 +875,7 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           }
         }
         "Frame" => {
-          if matches!(replacement.as_ref(),
+          if matches!(replacement,
             Expr::Identifier(v) if v == "True" || v == "All")
           {
             opts.frame = true;
@@ -886,7 +883,7 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         }
         // "Fences" (capped error bars) is the default; "Bars" renders with
         // the same bar geometry. None hides the uncertainty intervals.
-        "IntervalMarkers" => match replacement.as_ref() {
+        "IntervalMarkers" => match replacement {
           Expr::String(s) if s == "Bands" => {
             opts.interval_markers = IntervalMarkers::Bands;
           }
@@ -895,7 +892,7 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           }
           _ => {}
         },
-        "Mesh" => match replacement.as_ref() {
+        "Mesh" => match replacement {
           Expr::Identifier(v) if v == "All" => opts.mesh = Mesh::All,
           Expr::Identifier(v) if v == "Full" => opts.mesh = Mesh::Full,
           _ => {}
@@ -909,13 +906,13 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           }
         }
         "PlotTheme" => {
-          if let Expr::String(theme) = replacement.as_ref() {
+          if let Expr::String(theme) = replacement {
             apply_plot_theme(opts, theme);
           }
         }
         "GridLines" => {
-          let val =
-            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone());
           let (sx, sy) = crate::functions::plot::parse_grid_lines_spec(&val);
           crate::functions::plot::apply_grid_side(
             sx,
@@ -1251,6 +1248,13 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
   let joined = parsed.joined;
+  let mut parsed = parsed;
+  if draw_series.len() == 1 {
+    parsed.opts.plot_style =
+      crate::functions::plot::collapse_style_for_single_series(
+        &parsed.opts.plot_style,
+      );
+  }
   let opts = &parsed.opts;
 
   let svg = if joined {
@@ -1330,6 +1334,13 @@ pub fn complex_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
   let joined = parsed.joined;
+  let mut parsed = parsed;
+  if all_series.len() == 1 {
+    parsed.opts.plot_style =
+      crate::functions::plot::collapse_style_for_single_series(
+        &parsed.opts.plot_style,
+      );
+  }
   let opts = &parsed.opts;
 
   let svg = if joined {

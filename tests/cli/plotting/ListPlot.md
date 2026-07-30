@@ -40,3 +40,18 @@ with error bars spanning the uncertainty:
 $ wo 'Head[ListPlot[{Around[2.2, 1.2], Around[3.3, 1.1], Around[5.9, 0.6]}]]'
 Graphics
 ```
+
+With a single series a `PlotStyle` list is one combined style rather than a
+per-series cycle, so a directive list colours that one series:
+
+```scrut
+$ wo 'StringContainsQ[ExportString[ListPlot[{{1, 1}, {2, 2}}, PlotStyle -> {PointSize[0.04], Red}], "SVG"], "#FF0000"]'
+True
+```
+
+With several series the list still cycles, one style per series:
+
+```scrut
+$ wo 'svg = ExportString[ListPlot[{{{1, 1}, {2, 2}}, {{1, 2}, {2, 3}}}, PlotStyle -> {Red, Green}], "SVG"]; {StringContainsQ[svg, "#FF0000"], StringContainsQ[svg, "#00FF00"]}'
+{True, True}
+```

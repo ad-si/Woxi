@@ -3408,7 +3408,13 @@ fn render_axes(
 
 /// Render a rectangular frame around the plot area with tick marks and labels
 /// on the bottom and left edges, and minor ticks on the top and right edges.
-fn render_frame(svg: &mut String, bb: &BBox, svg_w: f64, svg_h: f64) {
+fn render_frame(
+  svg: &mut String,
+  bb: &BBox,
+  svg_w: f64,
+  svg_h: f64,
+  ticks: bool,
+) {
   let t = theme();
   let frame_stroke = t.framed_border;
   let tick_label_fill = t.tick_label_fill;
@@ -3417,6 +3423,9 @@ fn render_frame(svg: &mut String, bb: &BBox, svg_w: f64, svg_h: f64) {
   svg.push_str(&format!(
     "<rect x=\"0\" y=\"0\" width=\"{svg_w:.2}\" height=\"{svg_h:.2}\" fill=\"none\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n"
   ));
+  if !ticks {
+    return;
+  }
 
   let x_ticks = generate_ticks(bb.x_min, bb.x_max, 6);
   let y_ticks = generate_ticks(bb.y_min, bb.y_max, 6);
@@ -4797,6 +4806,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut plot_label: Option<String> = None;
   let mut axes = (false, false);
   let mut frame = false;
+  // `FrameTicks -> False | None` keeps the border but drops the tick
+  // marks and their labels, so the frame becomes a plain box.
+  let mut frame_ticks = true;
   let mut grid_x = GridSpec::None;
   let mut grid_y = GridSpec::None;
   let mut grid_style: Option<StyleState> = None;
@@ -4807,16 +4819,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for raw_opt in &args[1..] {
     let opt =
       evaluate_expr_to_expr(raw_opt).unwrap_or_else(|_| raw_opt.clone());
-    if let Expr::Rule {
-      pattern,
-      replacement,
-    } = &opt
-      && let Expr::Identifier(name) = pattern.as_ref()
-    {
-      match name.as_str() {
+    if let Some((name, replacement)) = option_name_value(&opt) {
+      let replacement = &*replacement;
+      match name {
         "ImageSize" => {
           // Check if {w, h} form was used (explicit height)
-          if let Expr::List(items) = replacement.as_ref()
+          if let Expr::List(items) = replacement
             && items.len() == 2
           {
             explicit_height = true;
@@ -4841,7 +4849,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // reals show 6 significant figures and `Subscript`/`Superscript`
           // (and a string's inline linear-syntax boxes) become shifted
           // tspans — the label is drawn, not printed.
-          match replacement.as_ref() {
+          match replacement {
             Expr::Identifier(s) if s == "None" => {}
             other => {
               let markup = expr_to_svg_markup(other);
@@ -4860,18 +4868,23 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         "Frame" => {
-          if let Expr::Identifier(s) = replacement.as_ref() {
+          if let Expr::Identifier(s) = replacement {
             if s == "True" {
               frame = true;
             }
-          } else if let Expr::FunctionCall { name: fn_name, .. } =
-            replacement.as_ref()
+          } else if let Expr::FunctionCall { name: fn_name, .. } = replacement
             && fn_name == "True"
           {
             frame = true;
           }
         }
-        "GridLines" => match replacement.as_ref() {
+        "FrameTicks" => {
+          if matches!(replacement, Expr::Identifier(s) if s == "False" || s == "None")
+          {
+            frame_ticks = false;
+          }
+        }
+        "GridLines" => match replacement {
           Expr::Identifier(s)
             if s == "Automatic" || s == "True" || s == "All" =>
           {
@@ -4893,12 +4906,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         },
         "GridLinesStyle" => {
           let mut st = StyleState::default();
-          apply_directive(replacement.as_ref(), &mut st);
+          apply_directive(replacement, &mut st);
           grid_style = Some(st);
         }
         "AspectRatio" => {
           // AspectRatio -> Full: skip uniform scaling (used by plots)
-          if let Expr::Identifier(s) = replacement.as_ref() {
+          if let Expr::Identifier(s) = replacement {
             if s == "Full" {
               aspect_ratio_full = true;
             }
@@ -4991,8 +5004,22 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Compute margins for axis/frame tick labels. A PlotLabel reserves an
   // extra strip above the drawing area for its centered title text.
-  let margin_left: f64 = if frame || axes.1 { 50.0 } else { 0.0 };
-  let margin_bottom: f64 = if frame || axes.0 { 25.0 } else { 0.0 };
+  // Without tick labels the frame needs no gutter, just room for its stroke.
+  let frame_gutter = frame && frame_ticks;
+  let margin_left: f64 = if frame_gutter || axes.1 {
+    50.0
+  } else if frame {
+    10.0
+  } else {
+    0.0
+  };
+  let margin_bottom: f64 = if frame_gutter || axes.0 {
+    25.0
+  } else if frame {
+    10.0
+  } else {
+    0.0
+  };
   let margin_right: f64 = if frame { 10.0 } else { 0.0 };
   let label_strip: f64 = if plot_label.is_some() { 26.0 } else { 0.0 };
   let margin_top: f64 = if frame { 10.0 } else { 0.0 } + label_strip;
@@ -5114,7 +5141,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   if frame {
-    render_frame(&mut svg, &bb, svg_w, svg_h);
+    render_frame(&mut svg, &bb, svg_w, svg_h, frame_ticks);
   }
 
   if has_margin {
@@ -7795,6 +7822,43 @@ pub fn box_has_fraction(expr: &Expr) -> bool {
   }
 }
 
+/// The `(name, value)` of an option, written either way round.
+///
+/// `name :> value` means the same as `name -> value` for an option: the
+/// right-hand side is evaluated where the option is *used*, and rendering a
+/// graphic uses it once. Demonstrations reach for the delayed form so a
+/// label or style tracks the controls, e.g. `PlotLabel :> Which[t == 1100,
+/// "…", True, ""]`. Every option reader goes through here so both spellings
+/// stay supported together.
+pub(crate) fn option_name_value(
+  opt: &Expr,
+) -> Option<(&str, std::borrow::Cow<'_, Expr>)> {
+  let (pattern, replacement, delayed) = match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => (pattern.as_ref(), replacement.as_ref(), false),
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => (pattern.as_ref(), replacement.as_ref(), true),
+    _ => return None,
+  };
+  let name = match pattern {
+    Expr::Identifier(name) | Expr::Constant(name) => name.as_str(),
+    _ => return None,
+  };
+  if delayed {
+    // `:>` holds its right-hand side until the option is used — which is
+    // now, so evaluate it against the current bindings.
+    let value = evaluate_expr_to_expr(replacement)
+      .unwrap_or_else(|_| replacement.clone());
+    Some((name, std::borrow::Cow::Owned(value)))
+  } else {
+    Some((name, std::borrow::Cow::Borrowed(replacement)))
+  }
+}
+
 /// Extract the option name from a Rule pattern (e.g. Identifier("ImageSize") -> "ImageSize")
 fn option_name(expr: &Expr) -> Option<&str> {
   if let Expr::Identifier(name) = expr {
@@ -7806,27 +7870,15 @@ fn option_name(expr: &Expr) -> Option<&str> {
 
 /// Merge an option into a list, replacing any existing option with the same name.
 fn merge_option(opts: &mut Vec<Expr>, opt: &Expr) {
-  if let Expr::Rule {
-    pattern,
-    replacement,
-  } = opt
-    && let Some(opt_name) = option_name(pattern)
-  {
+  if let Some((opt_name, replacement)) = option_name_value(opt) {
     // For PlotRange, compute the union (min of mins, max of maxes)
     // so that all merged graphics remain visible.
     if opt_name == "PlotRange"
-      && let Some(pos) = opts.iter().position(|existing| {
-        if let Expr::Rule { pattern: ep, .. } = existing {
-          option_name(ep) == Some("PlotRange")
-        } else {
-          false
-        }
-      })
-      && let Expr::Rule {
-        replacement: ref existing_repl,
-        ..
-      } = opts[pos]
-      && let Some(merged) = merge_plot_ranges(existing_repl, replacement)
+      && let Some(pos) = opts
+        .iter()
+        .position(|e| matches!(option_name_value(e), Some(("PlotRange", _))))
+      && let Some((_, existing_repl)) = option_name_value(&opts[pos])
+      && let Some(merged) = merge_plot_ranges(&existing_repl, &replacement)
     {
       opts[pos] = Expr::Rule {
         pattern: Box::new(Expr::Identifier("PlotRange".to_string())),
@@ -7836,11 +7888,7 @@ fn merge_option(opts: &mut Vec<Expr>, opt: &Expr) {
     }
 
     opts.retain(|existing| {
-      if let Expr::Rule { pattern: ep, .. } = existing {
-        option_name(ep) != Some(opt_name)
-      } else {
-        true
-      }
+      option_name_value(existing).map(|(n, _)| n) != Some(opt_name)
     });
   }
   opts.push(opt.clone());
@@ -8027,7 +8075,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         arg.clone()
       }
-      Expr::Rule { .. } => arg.clone(),
+      Expr::Rule { .. } | Expr::RuleDelayed { .. } => arg.clone(),
       _ => evaluate_expr_to_expr(&arg).unwrap_or_else(|_| arg.clone()),
     };
     if let Expr::List(items) = &expr_owned {
@@ -8083,7 +8131,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           rendered_graphics.push(expr_ref.clone());
         }
       }
-      Expr::Rule { .. } => {
+      Expr::Rule { .. } | Expr::RuleDelayed { .. } => {
         merge_option(&mut merged_options, expr_ref);
       }
       _ => {}

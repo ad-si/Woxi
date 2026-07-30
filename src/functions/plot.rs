@@ -2931,6 +2931,35 @@ pub(crate) fn build_plot_source(
   }
 }
 
+/// With a single series a `PlotStyle` list is one combined style, not a
+/// per-series cycle: `ListPlot[pts, PlotStyle -> {PointSize[.02], Red}]`
+/// draws one red series, not a `PointSize` series and a `Red` series. Later
+/// directives win, so a nested `{PointSize[.02], {PointSize[.04], Red}}`
+/// (the shape a `Which` inside `PlotStyle` produces) ends up red.
+pub(crate) fn collapse_style_for_single_series(
+  styles: &[SeriesStyle],
+) -> Vec<SeriesStyle> {
+  if styles.len() < 2 {
+    return styles.to_vec();
+  }
+  let mut merged = SeriesStyle::default();
+  for style in styles {
+    if style.color.is_some() {
+      merged.color = style.color;
+    }
+    if style.thickness.is_some() {
+      merged.thickness = style.thickness;
+    }
+    if style.dashing.is_some() {
+      merged.dashing.clone_from(&style.dashing);
+    }
+    if style.shadow.is_some() {
+      merged.shadow.clone_from(&style.shadow);
+    }
+  }
+  vec![merged]
+}
+
 /// Get the (r, g, b) color for a series, using custom plot_style if available.
 fn series_color(plot_style: &[SeriesStyle], idx: usize) -> (u8, u8, u8) {
   if plot_style.is_empty() {
@@ -6954,13 +6983,11 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       continue;
     }
-    if let Expr::Rule {
-      pattern,
-      replacement,
-    } = opt
-      && let Expr::Identifier(name) = pattern.as_ref()
+    if let Some((name, replacement)) =
+      crate::functions::graphics::option_name_value(opt)
     {
-      if !seen.insert(name.clone()) {
+      let replacement = &*replacement;
+      if !seen.insert(name.to_string()) {
         continue;
       }
       if apply_common_plot_option(
@@ -7257,13 +7284,11 @@ fn log_scale_plot_ast(
   let mut legends_automatic = false;
   let mut legends_expressions = false;
   for opt in &args[2..] {
-    if let Expr::Rule {
-      pattern,
-      replacement,
-    } = opt
-      && let Expr::Identifier(name) = pattern.as_ref()
+    if let Some((name, replacement)) =
+      crate::functions::graphics::option_name_value(opt)
     {
-      match name.as_str() {
+      let replacement = &*replacement;
+      match name {
         "ImageSize" => {
           if let Some((w, h, fw)) =
             parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
@@ -7274,15 +7299,15 @@ fn log_scale_plot_ast(
           }
         }
         "PlotLabel" => {
-          let val =
-            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone());
           if let Some(sl) = crate::functions::chart::parse_styled_label(&val) {
             plot_opts.plot_label = Some(sl);
           }
         }
         "AxesLabel" => {
-          let val =
-            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone());
           if let Expr::List(items) = &val
             && items.len() >= 2
           {
@@ -7297,13 +7322,13 @@ fn log_scale_plot_ast(
           plot_opts.plot_style = parse_plot_style(replacement);
         }
         "PlotTheme" => {
-          if let Expr::String(theme) = replacement.as_ref() {
+          if let Expr::String(theme) = replacement {
             apply_plot_theme(&mut plot_opts, theme);
           }
         }
         "GridLines" => {
-          let val =
-            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone());
           let (sx, sy) = parse_grid_lines_spec(&val);
           apply_grid_side(
             sx,
@@ -7323,8 +7348,8 @@ fn log_scale_plot_ast(
           }
         }
         "PlotPoints" => {
-          let val =
-            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone());
           if let Expr::Integer(n) = &val
             && *n > 0
           {

@@ -963,13 +963,11 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     labeling_function: None,
   };
   for opt in &args[1..] {
-    if let Expr::Rule {
-      pattern,
-      replacement,
-    } = opt
-      && let Expr::Identifier(name) = pattern.as_ref()
+    if let Some((name, replacement)) =
+      crate::functions::graphics::option_name_value(opt)
     {
-      match name.as_str() {
+      let replacement = &*replacement;
+      match name {
         "ImageSize" => {
           if let Some((w, h, fw)) =
             parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
@@ -986,7 +984,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
           // the raw expr first to avoid evaluating `Placed[]` as an unknown
           // function, and pull a rotation out of the styling function so
           // vertical labels (`Rotate[#, Pi/2]`) render rotated.
-          let raw = replacement.as_ref();
+          let raw = replacement;
           if let Some(Expr::FunctionCall { args, .. }) = find_placed_spec(raw) {
             let pos_name = match args.get(1) {
               Some(Expr::Identifier(s)) => s.as_str(),
@@ -1018,7 +1016,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
             }
           } else {
             let val = evaluate_expr_to_expr(replacement)
-              .unwrap_or(*replacement.clone());
+              .unwrap_or_else(|_| replacement.clone());
             if let Expr::List(items) = &val {
               for item in items {
                 if let Some(cl) = expr_to_chart_label(item) {
@@ -1029,15 +1027,15 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
           }
         }
         "PlotLabel" => {
-          let val =
-            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone());
           if let Some(sl) = parse_styled_label(&val) {
             opts.plot_label = Some(sl);
           }
         }
         "AxesLabel" | "FrameLabel" => {
-          let val =
-            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone());
           if let Expr::List(items) = &val
             && items.len() >= 2
           {
@@ -1047,8 +1045,8 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
           }
         }
         "ChartLegends" => {
-          let val =
-            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone());
           match &val {
             // `ChartLegends -> Automatic` — let the caller fill in legend
             // labels from the input shape (e.g. Association keys). Fall
@@ -1077,17 +1075,17 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
         }
         "BarOrigin" => {
           // Left/Right give horizontal bars; Bottom/Top stay vertical.
-          if let Expr::Identifier(side) = replacement.as_ref() {
+          if let Expr::Identifier(side) = replacement {
             opts.bar_origin_left = matches!(side.as_str(), "Left" | "Right");
           }
         }
         "LabelingFunction" => {
           // Stored unevaluated (it's a pure function applied per value).
-          opts.labeling_function = Some(replacement.as_ref().clone());
+          opts.labeling_function = Some(replacement.clone());
         }
         "ChartStyle" => {
-          let val =
-            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone());
           match &val {
             Expr::List(items) => {
               for item in items {

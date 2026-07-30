@@ -6862,6 +6862,69 @@ Cell[BoxData[
   }
 
   #[test]
+  fn word_problem_about_boats_manipulate_tracks_its_slider() {
+    // End-to-end regression for the "A Word Problem about Boats"
+    // Demonstration: the label and the point style are `:>` options whose
+    // right-hand side is a `Which` over the slider, and the frame is drawn
+    // without ticks.
+    let code = "Manipulate[\
+      With[{boat1 = {0, 1}, boat2 = {1800, 3}}, \
+       Show[\
+        Graphics[{Dashed, Gray, \
+          Line[{{0, 1}, {Min[1800 11/7, Part[boat1 + {7/11 t, 0}, 1]], 1}}], \
+          Line[{{1800, 3}, {Max[0, Part[boat2 - {t, 0}, 1]], 3}}]}], \
+        ListPlot[{Tooltip[boat1 + If[t <= 1800 11/7, {7/11 t, 0}, \
+            {3600 - 7/11 t, .2}], \"Boat A\"], \
+          Tooltip[boat2 - If[t <= 1800, {t, 0}, {3600 - t, .2}], \
+            \"Boat B\"]}, \
+          PlotStyle :> {PointSize[.02], \
+            Which[t == 1100, {PointSize[.04], Red}, True, Blue]}], \
+        FrameTicks -> False, Axes -> False, Frame -> True, \
+        PlotRange -> {{-19, 1820}, {0, 4}}, AspectRatio -> 1/2, \
+        PlotLabel :> Which[t == 1100, \"Boats meet\", True, \"\"], \
+        ImageSize -> 500]], \
+      {{t, 0, \"time\"}, 0, 3300, 25}, AutorunSequencing -> {{1, 30}}]";
+    let mut state = instantiate_stored_manipulate(code)
+      .expect("the boats Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must produce the graphic"
+    );
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name,
+          label,
+          current,
+          min,
+          max,
+          step,
+          ..
+        },
+      ] => {
+        assert_eq!((name.as_str(), label.as_str()), ("t", "time"));
+        assert_eq!((*current, *min, *max, *step), (0.0, 0.0, 3300.0, 25.0));
+      }
+      other => panic!("expected one time slider, got {other:?}"),
+    }
+
+    // Moving the slider to the meeting time re-renders without error.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[0]
+    {
+      *current = 1100.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
   fn power_of_a_test_manipulate_typesets_its_labels() {
     // End-to-end regression for the "Power of a Test about a Binomial
     // Parameter" Demonstration: the labels are strings carrying inline

@@ -15,3 +15,18 @@ Graphics
 - **`ImageSize`**, **`PlotRange`**, **`AspectRatio`**, **`Axes`**,
   **`Frame`**, **`FrameLabel`**, **`Background`**, **`PlotLabel`**,
   **`Epilog`**, **`Prolog`** — as for `Plot`.
+- **`FrameTicks`** — `False` or `None` keeps the border but drops the tick
+  marks and their labels.
+
+An option may be written with `:>`, which holds its right-hand side until
+the option is used:
+
+```scrut
+$ wo 't = 1100; StringContainsQ[ExportString[Graphics[{Disk[]}, PlotLabel :> Which[t == 1100, "met", True, ""]], "SVG"], ">met<"]'
+True
+```
+
+```scrut
+$ wo 'StringContainsQ[ExportString[Graphics[{Line[{{0, 0}, {1, 1}}]}, Frame -> True, FrameTicks -> False], "SVG"], "<text"]'
+False
+```

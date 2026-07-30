@@ -2234,6 +2234,98 @@ mod plot3d {
       assert!(svg.contains("cm: {6., 4.}"), "Row label must render: {svg}");
     }
 
+    // An option may be written with `:>`, which holds its right-hand side
+    // until the option is used. Demonstrations reach for it so a label or
+    // style tracks the controls — "A Word Problem about Boats" writes
+    // `PlotLabel :> Which[t == 1100, "…", True, ""]`. Regression: every
+    // option reader matched `Rule` only, so the delayed form was dropped.
+    #[test]
+    fn delayed_rule_options_are_honoured() {
+      // …on Graphics, on Show, and on the function/list plotters.
+      assert!(
+        export_svg(r#"Graphics[{Disk[]}, PlotLabel :> "hi"]"#).contains(">hi<")
+      );
+      assert!(
+        export_svg(
+          r#"Show[Graphics[{Line[{{0, 0}, {1, 1}}]}], PlotLabel :> "hi"]"#
+        )
+        .contains(">hi<")
+      );
+      assert!(
+        export_svg(r#"Plot[x, {x, 0, 1}, PlotLabel :> "hi"]"#).contains(">hi<")
+      );
+      assert!(
+        export_svg(r#"BarChart[{1, 2}, PlotLabel :> "hi"]"#).contains(">hi<")
+      );
+      assert!(
+        export_svg(r#"ListPlot[{{1, 1}, {2, 2}}, PlotStyle :> Red]"#)
+          .contains("#FF0000")
+      );
+      assert!(
+        export_svg(
+          r#"ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, PlotStyle :> Red]"#
+        )
+        .contains("#FF0000")
+      );
+      // The right-hand side is evaluated where the option is used, not
+      // shown verbatim.
+      let svg = export_svg(
+        r#"t = 1100; Show[Graphics[{Disk[]}],
+             PlotLabel :> Which[t == 1100, "met", True, ""]]"#,
+      );
+      assert!(svg.contains(">met<"), "delayed label not evaluated: {svg}");
+      assert!(!svg.contains("Which["), "raw Which leaked into the SVG");
+    }
+
+    // `FrameTicks -> False` keeps the border but drops the tick marks and
+    // their labels, and with them the gutter the labels needed.
+    #[test]
+    fn frame_ticks_false_draws_a_plain_box() {
+      let plain = export_svg(
+        r#"Graphics[{Line[{{0, 0}, {1, 1}}]}, Frame -> True,
+          FrameTicks -> False]"#,
+      );
+      let ticked =
+        export_svg(r#"Graphics[{Line[{{0, 0}, {1, 1}}]}, Frame -> True]"#);
+      assert!(
+        !plain.contains("<text"),
+        "FrameTicks -> False must draw no tick labels: {plain}"
+      );
+      assert!(ticked.contains("<text"), "the default draws tick labels");
+      // The border itself stays.
+      assert!(plain.contains("fill=\"none\""), "the frame must remain");
+      // No label gutter is reserved, so the image is smaller.
+      assert!(plain.contains("width=\"380\""), "unexpected size: {plain}");
+      assert!(
+        ticked.contains("width=\"420\""),
+        "unexpected size: {ticked}"
+      );
+    }
+
+    // With a single series a `PlotStyle` list is one combined style rather
+    // than a per-series cycle, so `{PointSize[…], Red}` gives one red
+    // series. With several series the list still cycles.
+    #[test]
+    fn plot_style_list_combines_for_a_single_series() {
+      assert!(
+        export_svg(
+          r#"ListPlot[{{1, 1}, {2, 2}}, PlotStyle -> {PointSize[0.04], Red}]"#
+        )
+        .contains("#FF0000")
+      );
+      // Later directives win, matching wolframscript.
+      assert!(
+        export_svg(r#"ListPlot[{{1, 1}, {2, 2}}, PlotStyle -> {Red, Green}]"#)
+          .contains("#00FF00")
+      );
+      // Two series keep one style each.
+      let two = export_svg(
+        r#"ListPlot[{{{1, 1}, {2, 2}}, {{1, 2}, {2, 3}}},
+             PlotStyle -> {Red, Green}]"#,
+      );
+      assert!(two.contains("#FF0000") && two.contains("#00FF00"));
+    }
+
     #[test]
     fn plot_label_expression_is_typeset() {
       // A PlotLabel is drawn, not printed: `Subscript[p, 0]` becomes a
