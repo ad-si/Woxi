@@ -576,6 +576,22 @@ function renderManipulate(item) {
         }
         return input
       }
+      case "toggler": {
+        // One choice of a TogglerBar[Dynamic[var], …]: clicking adds or
+        // removes its value from the bound list variable.
+        const btn = document.createElement("button")
+        btn.type = "button"
+        btn.className = node.selected
+          ? "manipulate-display-toggler selected"
+          : "manipulate-display-toggler"
+        if (node.label) btn.appendChild(renderDisplayTree(node.label))
+        if (node.mutation) {
+          btn.addEventListener("click", () => {
+            requestUpdate([node.mutation])
+          })
+        }
+        return btn
+      }
       case "static": {
         const div = document.createElement("div")
         if (node.svg) {

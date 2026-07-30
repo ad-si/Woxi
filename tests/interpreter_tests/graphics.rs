@@ -14964,7 +14964,10 @@ mod color_data_indexed {
       "Graphics[{Dynamic[{p = {1, 1}; Disk[p, 1], Line[{{0, 0}, p}]}]}]",
     );
     assert!(svg.contains("<ellipse"), "Disk from Dynamic content: {svg}");
-    assert!(svg.contains("<polyline"), "Line from Dynamic content: {svg}");
+    assert!(
+      svg.contains("<polyline"),
+      "Line from Dynamic content: {svg}"
+    );
   }
 
   // `Tooltip[g, label]` inside Graphics draws only `g`; the label must not

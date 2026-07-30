@@ -317,9 +317,7 @@ impl ManipulateState {
           &value_code,
           &name,
         )
-        .and_then(|v| {
-          woxi::functions::graphics::parse_manipulate_point(&v)
-        })
+        .and_then(|v| woxi::functions::graphics::parse_manipulate_point(&v))
         .unwrap_or(candidate)
       }
       None => candidate,

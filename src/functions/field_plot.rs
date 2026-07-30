@@ -642,7 +642,10 @@ fn chain_segments_scaled(
 ) -> Vec<Vec<(f64, f64)>> {
   use std::collections::HashMap;
   let key = |p: (f64, f64)| -> (i64, i64) {
-    ((p.0 * key_scale).round() as i64, (p.1 * key_scale).round() as i64)
+    (
+      (p.0 * key_scale).round() as i64,
+      (p.1 * key_scale).round() as i64,
+    )
   };
   // Zero-length segments occur when the contour passes exactly through a
   // grid node; neighboring cells provide the connecting geometry, so they
@@ -873,15 +876,12 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for &level in &levels {
       // `plot_y0 = y_max` with a negated cell height turns the screen-space
       // (top-down) y mapping into the plain data-space one.
-      let segments = marching_squares_segments(
-        &grid, level, x_min, y_max, step_x, -step_y,
-      );
+      let segments =
+        marching_squares_segments(&grid, level, x_min, y_max, step_x, -step_y);
       for chain in chain_segments_scaled(&segments, key_scale) {
         let points: Vec<Expr> = chain
           .iter()
-          .map(|(x, y)| {
-            Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into())
-          })
+          .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into()))
           .collect();
         structure_items.push(Expr::FunctionCall {
           name: "Line".to_string(),

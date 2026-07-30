@@ -1474,8 +1474,7 @@ fn collect_primitives(
         // capture buffer.
         "Dynamic" if !args.is_empty() => {
           let captured = crate::captured_graphics_count();
-          if let Ok(inner) = crate::evaluator::evaluate_expr_to_expr(&args[0])
-          {
+          if let Ok(inner) = crate::evaluator::evaluate_expr_to_expr(&args[0]) {
             crate::truncate_captured_graphics(captured);
             collect_primitives(&inner, style, prims, errors);
           } else {
@@ -2399,11 +2398,10 @@ fn parse_locator(args: &[Expr], prims: &mut Vec<Primitive>) {
   // The appearance graphic, pre-rendered at its own ImageSize. `Automatic`
   // (or no appearance) uses the default crosshair marker; `None` hides the
   // marker entirely.
-  let appearance = args.get(1).filter(|a| {
-    !matches!(a, Expr::Identifier(s) if s == "Automatic")
-  });
-  if appearance
-    .is_some_and(|a| matches!(a, Expr::Identifier(s) if s == "None"))
+  let appearance = args
+    .get(1)
+    .filter(|a| !matches!(a, Expr::Identifier(s) if s == "Automatic"));
+  if appearance.is_some_and(|a| matches!(a, Expr::Identifier(s) if s == "None"))
   {
     crate::truncate_captured_graphics(captured);
     return;
@@ -2420,9 +2418,7 @@ fn parse_locator(args: &[Expr], prims: &mut Vec<Primitive>) {
       other => match crate::evaluator::evaluate_expr_to_expr(other) {
         Ok(ev) => match &ev {
           Expr::Graphics { .. } => Some(ev.clone()),
-          Expr::FunctionCall { name, args: gargs }
-            if name == "Graphics" =>
-          {
+          Expr::FunctionCall { name, args: gargs } if name == "Graphics" => {
             graphics_ast(&gargs.iter().cloned().collect::<Vec<_>>()).ok()
           }
           _ => None,
@@ -12993,16 +12989,12 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
             .iter()
             .filter(|it| !is_control_type_rule(it))
             .cloned()
-            .chain(std::iter::once(Expr::Identifier(
-              "Locator".to_string(),
-            )))
+            .chain(std::iter::once(Expr::Identifier("Locator".to_string())))
             .collect();
           if let Some(ParsedControl::Visible(mut c, enabled2)) =
             parse_manipulate_control(&Expr::List(promoted.into()))
           {
-            if let ManipulateControl::Slider2D { write_callback, .. } =
-              &mut c
-            {
+            if let ManipulateControl::Slider2D { write_callback, .. } = &mut c {
               *write_callback = callback.clone();
             }
             if let Some(cond) = enabled2 {
@@ -13105,8 +13097,7 @@ fn collect_body_locator_callbacks(
           && let Some(Expr::Identifier(var)) = dargs.first()
           && !found.iter().any(|(n, _)| n == var)
         {
-          let callback =
-            dargs.get(1).map(crate::syntax::expr_to_input_form);
+          let callback = dargs.get(1).map(crate::syntax::expr_to_input_form);
           found.push((var.clone(), callback));
         }
         for a in args {
@@ -13134,10 +13125,7 @@ fn collect_body_locator_callbacks(
 /// Replace every `TogglerBar[Dynamic[var], …]` in a Manipulate body with
 /// `Nothing`, pushing each one's InputForm onto `displays` so the front-end
 /// renders it as a live widget instead of a static picture.
-fn extract_body_togglerbars(
-  expr: &Expr,
-  displays: &mut Vec<String>,
-) -> Expr {
+fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
   match expr {
     Expr::FunctionCall { name, args }
       if name == "TogglerBar"
@@ -15198,10 +15186,9 @@ fn togglerbar_node(
     return None;
   };
   // The current selection, for the per-choice `selected` state.
-  let current = crate::evaluator::evaluate_expr_to_expr(&Expr::Identifier(
-    var.clone(),
-  ))
-  .ok();
+  let current =
+    crate::evaluator::evaluate_expr_to_expr(&Expr::Identifier(var.clone()))
+      .ok();
   let mut buttons = Vec::with_capacity(choices.len());
   for choice in choices {
     let (value, label) = match choice {
@@ -15220,9 +15207,7 @@ fn togglerbar_node(
       Some(Expr::List(items)) => items
         .iter()
         .any(|it| crate::syntax::expr_to_input_form(it) == value_code),
-      Some(single) => {
-        crate::syntax::expr_to_input_form(single) == value_code
-      }
+      Some(single) => crate::syntax::expr_to_input_form(single) == value_code,
       None => false,
     };
     let mutation = format!(

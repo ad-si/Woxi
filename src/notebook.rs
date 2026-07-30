@@ -569,9 +569,24 @@ fn render_text_element(s: &str) -> String {
     }
   }
 
-  // Inline `Cell[...]` elements are the attached "more info" opener buttons in
-  // Demonstrations templates — they carry no textual content, so drop them.
-  if s.starts_with("Cell[") {
+  // Inline `Cell[...]` elements: an inline math cell (`Cell[BoxData[
+  // FormBox[…, TraditionalForm]], "InlineMath"]`) contributes its typeset
+  // content as text. The attached "more info" opener buttons in
+  // Demonstrations templates (PaneSelectorBox around a TemplateBox) carry
+  // no textual content and are dropped.
+  if let Some(rest) = s.strip_prefix("Cell[")
+    && let Ok((inner, _)) = find_matching_bracket(rest)
+  {
+    if let Some(first) = split_top_level_commas(inner).first() {
+      let first = first.trim();
+      if let Some(box_rest) = first.strip_prefix("BoxData[")
+        && !box_rest.contains("MoreInfoOpenerButtonTemplate")
+        && !box_rest.contains("PaneSelectorBox")
+        && let Ok((content, _)) = find_matching_bracket(box_rest)
+      {
+        return extract_cell_content(content.trim());
+      }
+    }
     return String::new();
   }
 
@@ -1407,6 +1422,175 @@ impl Notebook {
   }
 }
 
+// ── Stored-output rendering ─────────────────────────────────────────────
+//
+// Notebooks saved by Mathematica can carry pre-rendered results that Woxi
+// cannot regenerate: `RasterBox[CompressedData["…"]]` snapshot images and
+// `CheckboxBox[…]` grids (the Demonstrations submission templates). These
+// helpers decode such stored Output cells into something displayable.
+
+/// Decode the `RasterBox[CompressedData["…"]]` image embedded in a stored
+/// Output cell into an SVG that embeds the pixels as a PNG data URI.
+/// Returns `None` when the content holds no decodable raster.
+///
+/// The compressed payload is Mathematica's binary serialization of
+/// `RawArray["UnsignedInteger8", pixels]`: `!boR` magic, an `f`unction
+/// header naming `RawArray`, a `S`tring type tag, and a `b`yte-array tag
+/// with rank, dimensions (`{height, width, channels}` or
+/// `{height, width}`), and the raw samples.
+pub fn stored_output_image_svg(content: &str) -> Option<String> {
+  let start = content.find("RasterBox[CompressedData[\"")?;
+  let rest = &content[start + "RasterBox[CompressedData[\"".len()..];
+  let end = rest.find('"')?;
+  let b64: String = rest[..end]
+    .chars()
+    .filter(|c| !c.is_whitespace() && *c != '\\')
+    .collect();
+  let b64 = b64.strip_prefix("1:")?;
+
+  use base64::Engine;
+  let compressed =
+    base64::engine::general_purpose::STANDARD.decode(b64).ok()?;
+  let mut raw = Vec::new();
+  std::io::Read::read_to_end(
+    &mut flate2::read::ZlibDecoder::new(&compressed[..]),
+    &mut raw,
+  )
+  .ok()?;
+
+  let (height, width, channels, pixels) = parse_raw_array_u8(&raw)?;
+
+  // Encode as PNG (top row first, matching Image/Rasterize order).
+  let mut png = Vec::new();
+  let color = match channels {
+    1 => image::ExtendedColorType::L8,
+    3 => image::ExtendedColorType::Rgb8,
+    4 => image::ExtendedColorType::Rgba8,
+    _ => return None,
+  };
+  use image::ImageEncoder;
+  image::codecs::png::PngEncoder::new(&mut png)
+    .write_image(pixels, width, height, color)
+    .ok()?;
+  let png_b64 = base64::engine::general_purpose::STANDARD.encode(&png);
+
+  // Display at the notebook's typical pane width; the viewBox keeps the
+  // native resolution so zooming stays sharp.
+  let max_display = 450.0_f64;
+  let scale = (max_display / width as f64).min(1.0);
+  let dw = (width as f64 * scale).round() as u32;
+  let dh = (height as f64 * scale).round() as u32;
+  Some(format!(
+    "<svg width=\"{dw}\" height=\"{dh}\" viewBox=\"0 0 {width} {height}\" \
+     xmlns=\"http://www.w3.org/2000/svg\" \
+     xmlns:xlink=\"http://www.w3.org/1999/xlink\">\
+     <image width=\"{width}\" height=\"{height}\" \
+     xlink:href=\"data:image/png;base64,{png_b64}\"/></svg>"
+  ))
+}
+
+/// Parse Mathematica's serialized `RawArray["UnsignedInteger8", …]`:
+/// returns `(height, width, channels, samples)`. Rank-2 arrays are
+/// grayscale (`channels = 1`).
+fn parse_raw_array_u8(raw: &[u8]) -> Option<(u32, u32, u8, &[u8])> {
+  let mut pos = 0usize;
+  let take = |pos: &mut usize, n: usize| -> Option<&[u8]> {
+    let s = raw.get(*pos..*pos + n)?;
+    *pos += n;
+    Some(s)
+  };
+  let read_u32 = |pos: &mut usize| -> Option<u32> {
+    take(pos, 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+  };
+
+  if take(&mut pos, 4)? != b"!boR" {
+    return None;
+  }
+  // f <argc> s <len> "RawArray"
+  if take(&mut pos, 1)? != b"f" {
+    return None;
+  }
+  let _argc = read_u32(&mut pos)?;
+  if take(&mut pos, 1)? != b"s" {
+    return None;
+  }
+  let name_len = read_u32(&mut pos)? as usize;
+  if take(&mut pos, name_len)? != b"RawArray" {
+    return None;
+  }
+  // S <len> "UnsignedInteger8"
+  if take(&mut pos, 1)? != b"S" {
+    return None;
+  }
+  let ty_len = read_u32(&mut pos)? as usize;
+  if take(&mut pos, ty_len)? != b"UnsignedInteger8" {
+    return None;
+  }
+  // b <rank> <dim…> <samples>
+  if take(&mut pos, 1)? != b"b" {
+    return None;
+  }
+  let rank = read_u32(&mut pos)? as usize;
+  if !(2..=3).contains(&rank) {
+    return None;
+  }
+  let mut dims = [0u32; 3];
+  for d in dims.iter_mut().take(rank) {
+    *d = read_u32(&mut pos)?;
+  }
+  let (height, width, channels) = if rank == 2 {
+    (dims[0], dims[1], 1u8)
+  } else {
+    (dims[0], dims[1], u8::try_from(dims[2]).ok()?)
+  };
+  let expected = height as usize * width as usize * channels as usize;
+  let pixels = raw.get(pos..pos + expected)?;
+  Some((height, width, channels, pixels))
+}
+
+/// Render a stored `CheckboxBox[…]` output (the Demonstrations category /
+/// compatibility pickers) as plain text: one `[x] label` / `[ ] label`
+/// entry per checkbox, in source order. Returns `None` when the content
+/// holds no CheckboxBox.
+pub fn stored_output_checkbox_text(content: &str) -> Option<String> {
+  let mut lines = Vec::new();
+  let mut rest = content;
+  while let Some(idx) = rest.find("CheckboxBox[") {
+    rest = &rest[idx + "CheckboxBox[".len()..];
+    let (inner, tail) = find_matching_bracket(rest).ok()?;
+    let args = split_top_level_commas(inner);
+    let checked = args.first().map(|a| a.trim()) == Some("True");
+    // The label is the "on" value when it is a string (`{False, "Math"}`);
+    // a plain `{False, True}` checkbox has no label.
+    let label = args
+      .get(1)
+      .map(|a| a.trim())
+      .and_then(|vals| {
+        let vals = vals.strip_prefix('{')?.strip_suffix('}')?;
+        let parts = split_top_level_commas(vals);
+        let on = parts.get(1)?.trim();
+        if on.starts_with('"') && on.ends_with('"') && on.len() >= 2 {
+          Some(extract_string_content(on))
+        } else {
+          None
+        }
+      })
+      .unwrap_or_default();
+    let mark = if checked { "[x]" } else { "[ ]" };
+    if label.is_empty() {
+      lines.push(mark.to_string());
+    } else {
+      lines.push(format!("{mark} {label}"));
+    }
+    rest = tail;
+  }
+  if lines.is_empty() {
+    None
+  } else {
+    Some(lines.join("\n"))
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -1990,6 +2174,92 @@ Cell["Chapter 2", "Chapter"]
     "MoreInfoOpenerButtonTemplate"]}, Dynamic[x]]]]
 }]"#;
     assert_eq!(extract_cell_content(s), "Manipulate");
+  }
+
+  #[test]
+  fn test_extract_textdata_inline_math() {
+    // Inline math cells (`Cell[BoxData[FormBox[…, TraditionalForm]],
+    // "InlineMath"]`) contribute their typeset content to the prose —
+    // dropping them loses words ("The triangle ABC" became "The triangle").
+    let s = r#"TextData[{
+ "The triangle ",
+ Cell[BoxData[
+  FormBox["ABC", TraditionalForm]], "InlineMath",ExpressionUUID->
+  "4b134b90-4d52-4df9-bcc7-264d63b666b9"],
+ " is limited to the range ",
+ Cell[BoxData[
+  FormBox[
+   RowBox[{"[",
+    RowBox[{
+     RowBox[{"-", "9"}], ",", "9"}], "]"}], TraditionalForm]], "InlineMath",
+  ExpressionUUID->"4a1e2e70-0973-4b3c-994b-25f0dad1ea7d"],
+ ". Drag the point ",
+ Cell[BoxData[
+  FormBox[
+   StyleBox["A",
+    FontSlant->"Plain"], TraditionalForm]], "InlineMath",ExpressionUUID->
+  "d0cf31da-6a61-4979-98a7-c37abad7eb18"],
+ "."
+}]"#;
+    assert_eq!(
+      extract_cell_content(s),
+      "The triangle ABC is limited to the range [-9,9]. Drag the point A."
+    );
+  }
+
+  #[test]
+  fn test_stored_output_raster_snapshot_decodes_to_svg() {
+    // Build the exact serialization Mathematica writes for a stored
+    // Rasterize result: `RawArray["UnsignedInteger8", pixels]` with a
+    // rank-3 {height, width, 3} byte array, zlib-compressed and
+    // base64-encoded behind a "1:" prefix.
+    let (h, w) = (2u32, 3u32);
+    let mut raw: Vec<u8> = Vec::new();
+    raw.extend_from_slice(b"!boR");
+    raw.push(b'f');
+    raw.extend_from_slice(&2u32.to_le_bytes());
+    raw.push(b's');
+    raw.extend_from_slice(&8u32.to_le_bytes());
+    raw.extend_from_slice(b"RawArray");
+    raw.push(b'S');
+    raw.extend_from_slice(&16u32.to_le_bytes());
+    raw.extend_from_slice(b"UnsignedInteger8");
+    raw.push(b'b');
+    raw.extend_from_slice(&3u32.to_le_bytes());
+    raw.extend_from_slice(&h.to_le_bytes());
+    raw.extend_from_slice(&w.to_le_bytes());
+    raw.extend_from_slice(&3u32.to_le_bytes());
+    raw.extend_from_slice(&[128u8; 2 * 3 * 3]);
+
+    use base64::Engine;
+    use std::io::Write;
+    let mut enc = flate2::write::ZlibEncoder::new(
+      Vec::new(),
+      flate2::Compression::default(),
+    );
+    enc.write_all(&raw).unwrap();
+    let b64 =
+      base64::engine::general_purpose::STANDARD.encode(enc.finish().unwrap());
+    let content = format!(
+      "PaneBox[\n  GraphicsBox[\n   TagBox[RasterBox[CompressedData[\"\n\
+       1:{b64}\n    \"], {{{{0, 0}}, {{1, 1}}}}]]]]"
+    );
+
+    let svg = stored_output_image_svg(&content).expect("decodes");
+    assert!(svg.contains("viewBox=\"0 0 3 2\""), "{svg}");
+    assert!(svg.contains("data:image/png;base64,"), "{svg}");
+    // Non-raster outputs decode to nothing.
+    assert!(stored_output_image_svg("{1, 2, 3}").is_none());
+  }
+
+  #[test]
+  fn test_stored_output_checkbox_grid_renders_as_text() {
+    let content = r#"{{{{CheckboxBox[False, {False, "Mathematics"}]}, {CheckboxBox[True, {False, "Life Sciences"}]}}, {{CheckboxBox[False, {False, True}]}}}}"#;
+    assert_eq!(
+      stored_output_checkbox_text(content).unwrap(),
+      "[ ] Mathematics\n[x] Life Sciences\n[ ]"
+    );
+    assert!(stored_output_checkbox_text("{1, 2}").is_none());
   }
 
   #[test]

@@ -148,6 +148,31 @@ mod column_visual_mode {
   }
 
   #[test]
+  fn column_alignment_option_rule_svg() {
+    // The option form `Alignment -> Center` aligns like the positional
+    // `Center` argument.
+    clear_state();
+    let result =
+      interpret_with_stdout("Column[{1, 2, 3}, Alignment -> Center]").unwrap();
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("text-anchor=\"middle\""));
+  }
+
+  #[test]
+  fn column_dynamic_item_shows_current_value() {
+    // A held `Dynamic[expr]` item displays as the current value of `expr`,
+    // and a `Text[…]` wrapper displays as its content.
+    clear_state();
+    let result =
+      interpret_with_stdout("Column[{Dynamic[Text[1 + 1]], 3}]").unwrap();
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">2</text>"), "{svg}");
+    assert!(!svg.contains("Dynamic"), "{svg}");
+  }
+
+  #[test]
   fn column_right_alignment_svg() {
     clear_state();
     let result = interpret_with_stdout("Column[{1, 2, 3}, Right]").unwrap();

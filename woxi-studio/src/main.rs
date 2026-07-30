@@ -143,6 +143,11 @@ struct CellEditor {
   graphics_handle: Option<svg::Handle>,
   /// Pre-rasterized image of the SVG (avoids resvg parse on scroll).
   graphics_image: Option<(iced::widget::image::Handle, u32, u32)>,
+  /// A display-only stored rendering from the .nb file (e.g. a
+  /// Demonstrations snapshot decoded from `RasterBox[CompressedData[…]]`).
+  /// The cell shows only the graphic; its box text stays in `content` so
+  /// saving round-trips it.
+  stored_graphic: bool,
   /// Typeset SVG renderings of the result outputs — the same SVGs the
   /// Playground shows — one per result statement that produced one. This is how
   /// number/superscript/fraction formatting is reused instead of being
@@ -505,6 +510,9 @@ impl WoxiStudio {
       match entry {
         CellEntry::Single(cell) => {
           if matches!(cell.style, CellStyle::Output | CellStyle::Print) {
+            if let Some(editor) = stored_output_editor(cell) {
+              editors.push(editor);
+            }
             continue;
           }
           editors.push(CellEditor {
@@ -527,6 +535,7 @@ impl WoxiStudio {
             is_collapsed: cell.collapsed,
             manipulate_state: None,
             hyperlinks: Vec::new(),
+            stored_graphic: false,
             output_content: text_editor::Content::new(),
             stdout_content: text_editor::Content::new(),
           });
@@ -610,13 +619,19 @@ impl WoxiStudio {
                 is_collapsed: false,
                 manipulate_state,
                 hyperlinks: Vec::new(),
+                stored_graphic: false,
                 output_content,
                 stdout_content,
               });
               i = j;
             } else if matches!(cell.style, CellStyle::Output | CellStyle::Print)
             {
-              // Skip standalone output/print in groups
+              // A standalone stored output (no preceding Input) is shown
+              // when it decodes to something displayable — e.g. the
+              // Demonstrations "Snapshots" rasters — and skipped otherwise.
+              if let Some(editor) = stored_output_editor(cell) {
+                editors.push(editor);
+              }
               i += 1;
             } else {
               editors.push(CellEditor {
@@ -639,6 +654,7 @@ impl WoxiStudio {
                 is_collapsed: false,
                 manipulate_state: None,
                 hyperlinks: Vec::new(),
+                stored_graphic: false,
                 output_content: text_editor::Content::new(),
                 stdout_content: text_editor::Content::new(),
               });
@@ -800,6 +816,17 @@ impl WoxiStudio {
               );
               woxi::set_dark_mode(!matches!(self.theme, Theme::Light));
               self.cell_editors = Self::editors_from_notebook(&nb);
+              // Stored graphics (snapshots decoded from the .nb) rasterize
+              // at load; the scale-change handler re-rasterizes them like
+              // any evaluated graphic.
+              for editor in &mut self.cell_editors {
+                if editor.stored_graphic
+                  && let Some(ref svg) = editor.graphics_svg
+                {
+                  editor.graphics_image =
+                    rasterize_svg(svg, self.scale_factor, &self.fontdb);
+                }
+              }
               self.notebook = nb;
               self.file_path = Some(path);
               self.is_dirty = false;
@@ -1841,6 +1868,7 @@ impl WoxiStudio {
             is_collapsed: false,
             manipulate_state: None,
             hyperlinks: Vec::new(),
+            stored_graphic: false,
             output_content: text_editor::Content::new(),
             stdout_content: text_editor::Content::new(),
           },
@@ -1880,6 +1908,7 @@ impl WoxiStudio {
             is_collapsed: false,
             manipulate_state: None,
             hyperlinks: Vec::new(),
+            stored_graphic: false,
             output_content: text_editor::Content::new(),
             stdout_content: text_editor::Content::new(),
           },
@@ -2778,7 +2807,10 @@ impl WoxiStudio {
           .replace("-Image-", "");
         !d.trim().is_empty()
       });
-    let is_grouped = is_input && has_output && !in_preview;
+    // Display-only stored graphics (Demonstrations snapshots) show their
+    // output section without an editor row.
+    let is_grouped =
+      (is_input && has_output || editor.stored_graphic) && !in_preview;
     let cursor_pos = editor.content.cursor().position;
     let cursor_line = cursor_pos.line;
     let cursor_column = cursor_pos.column;
@@ -2954,7 +2986,9 @@ impl WoxiStudio {
     // ── Content column: editor + outputs ──
 
     let mut content_col = Column::new().spacing(0).width(Fill);
-    content_col = content_col.push(cell_editor);
+    if !editor.stored_graphic {
+      content_col = content_col.push(cell_editor);
+    }
 
     let stale = editor.output_stale;
     let stale_opacity = if stale { 0.35 } else { 1.0 };
@@ -4280,6 +4314,77 @@ fn format_manipulate_number(v: f64) -> String {
   } else {
     trimmed.to_string()
   }
+}
+
+/// Build a display-only editor for a stored Output cell the interpreter
+/// cannot regenerate: a Demonstrations snapshot (`RasterBox[
+/// CompressedData["…"]]`) shows as a graphic, a `CheckboxBox[…]` grid as
+/// read-only text lines. The original box text stays in `content` so
+/// saving round-trips it. `None` for outputs with no displayable form.
+fn stored_output_editor(cell: &Cell) -> Option<CellEditor> {
+  let svg =
+    woxi::notebook::stored_output_image_svg(&cell.content).or_else(|| {
+      woxi::notebook::stored_output_checkbox_text(&cell.content)
+        .map(|text| plain_text_svg(&text))
+    })?;
+  // The svg handle is a fallback for when rasterization fails; the normal
+  // path shows the pre-rasterized image.
+  let handle = svg::Handle::from_memory(svg.clone().into_bytes());
+  Some(CellEditor {
+    content: text_editor::Content::with_text(&cell.content),
+    style: cell.style,
+    output: None,
+    stdout: None,
+    graphics_svg: Some(svg),
+    graphics_handle: Some(handle),
+    graphics_image: None,
+    output_svgs: Vec::new(),
+    output_images: Vec::new(),
+    output_dark: false,
+    output_all_svg: false,
+    sound: None,
+    warnings: Vec::new(),
+    undo_stack: Vec::new(),
+    redo_stack: Vec::new(),
+    output_stale: false,
+    is_collapsed: cell.collapsed,
+    manipulate_state: None,
+    hyperlinks: Vec::new(),
+    stored_graphic: true,
+    output_content: text_editor::Content::new(),
+    stdout_content: text_editor::Content::new(),
+  })
+}
+
+/// A minimal SVG rendering of plain text lines (used for stored outputs
+/// like checkbox grids), on a white card so it reads the same in both
+/// themes.
+fn plain_text_svg(text: &str) -> String {
+  let lines: Vec<&str> = text.lines().collect();
+  let char_w = 8.4_f64;
+  let line_h = 20.0_f64;
+  let width = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0) as f64
+    * char_w
+    + 16.0;
+  let height = lines.len() as f64 * line_h + 12.0;
+  let mut svg = format!(
+    "<svg width=\"{width:.0}\" height=\"{height:.0}\" viewBox=\"0 0 \
+     {width:.0} {height:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n\
+     <rect width=\"{width:.0}\" height=\"{height:.0}\" fill=\"white\"/>\n"
+  );
+  for (i, line) in lines.iter().enumerate() {
+    let escaped = line
+      .replace('&', "&amp;")
+      .replace('<', "&lt;")
+      .replace('>', "&gt;");
+    let y = 6.0 + i as f64 * line_h + 14.0;
+    svg.push_str(&format!(
+      "<text x=\"8\" y=\"{y:.0}\" font-family=\"monospace\" \
+       font-size=\"14\" fill=\"#333\">{escaped}</text>\n"
+    ));
+  }
+  svg.push_str("</svg>");
+  svg
 }
 
 fn rasterize_svg(
@@ -6754,6 +6859,7 @@ mod tests {
       is_collapsed: false,
       manipulate_state: None,
       hyperlinks: Vec::new(),
+      stored_graphic: false,
       output_content: text_editor::Content::new(),
       stdout_content: text_editor::Content::new(),
     }

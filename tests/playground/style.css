@@ -722,6 +722,26 @@ pre.output-box {
   cursor: default;
 }
 
+/* One choice of a TogglerBar[Dynamic[var], …]: a toggle button whose
+   pressed state mirrors the value's membership in the list variable. */
+.manipulate-display-toggler {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-color, #bbb);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+
+.manipulate-display-toggler.selected {
+  background: var(--accent-color, #4a90d9);
+  border-color: var(--accent-color, #4a90d9);
+  color: #fff;
+}
+
 .status {
   position: fixed;
   top: 1rem;
