@@ -117,8 +117,8 @@ fn parse_density_contour_options(
     {
       match name.as_str() {
         "ColorFunction" => {
-          if let Expr::String(s) = replacement.as_ref() {
-            color_function = Some(s.clone());
+          if let Some(s) = color_function_scheme_name(replacement.as_ref()) {
+            color_function = Some(s);
           }
         }
         "Contours" => match replacement.as_ref() {
@@ -794,36 +794,48 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// ContourPlot[f, {x, xmin, xmax}, {y, ymin, ymax}]
 /// Uses marching squares to draw contour lines.
-pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  // `ContourPlot[lhs == rhs, …]` draws the single implicit curve
-  // `lhs - rhs = 0` (no band shading), matching Wolfram's equation form.
-  let equation_body;
-  let (body, is_equation) = match &args[0] {
+/// Rewrite an equation `lhs == rhs` into `lhs - rhs`, whose zero contour
+/// is the equation's implicit curve. Returns `None` for non-equations.
+fn equation_zero_body(e: &Expr) -> Option<Expr> {
+  let (lhs, rhs) = match e {
     Expr::Comparison {
       operands,
       operators,
-    } if operators.len() == 1
+    } if operands.len() == 2
+      && operators.len() == 1
       && operators[0] == crate::syntax::ComparisonOp::Equal =>
     {
-      equation_body = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Minus,
-        left: Box::new(operands[0].clone()),
-        right: Box::new(operands[1].clone()),
-      };
-      (&equation_body, true)
+      (&operands[0], &operands[1])
     }
-    Expr::FunctionCall { name, args: eargs }
-      if name == "Equal" && eargs.len() == 2 =>
-    {
-      equation_body = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Minus,
-        left: Box::new(eargs[0].clone()),
-        right: Box::new(eargs[1].clone()),
-      };
-      (&equation_body, true)
+    Expr::FunctionCall { name, args } if name == "Equal" && args.len() == 2 => {
+      (&args[0], &args[1])
     }
-    other => (other, false),
+    _ => return None,
   };
+  Some(Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Minus,
+    left: Box::new(lhs.clone()),
+    right: Box::new(rhs.clone()),
+  })
+}
+
+pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let body = &args[0];
+  // `ContourPlot[lhs == rhs, …]` (or a list of equations) plots each
+  // equation's implicit curve — the zero contour of `lhs - rhs` — with no
+  // band shading, matching Wolfram.
+  let eq_bodies: Option<Vec<Expr>> = match body {
+    Expr::List(items)
+      if !items.is_empty()
+        && items.iter().all(|i| equation_zero_body(i).is_some()) =>
+    {
+      Some(items.iter().filter_map(equation_zero_body).collect())
+    }
+    _ => equation_zero_body(body).map(|b| vec![b]),
+  };
+  if let Some(bodies) = eq_bodies {
+    return contour_plot_equations(&bodies, args);
+  }
   let (xvar, x_min, x_max) = parse_iterator(&args[1], "ContourPlot")?;
   let (yvar, y_min, y_max) = parse_iterator(&args[2], "ContourPlot")?;
   let opts = parse_density_contour_options(args, 3);
@@ -855,11 +867,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let levels = if is_equation {
-    vec![0.0]
-  } else {
-    resolve_contour_levels(&opts.contours, v_min, v_max)
-  };
+  let levels = resolve_contour_levels(&opts.contours, v_min, v_max);
 
   // Data-space contour polylines for the symbolic `structure`, so
   // `ContourPlot[…][[1]]` yields primitives (with the ContourStyle
@@ -912,7 +920,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let cell_w = area.plot_w / FIELD_GRID as f64;
   let cell_h = area.plot_h / FIELD_GRID as f64;
 
-  if opts.contour_shading && !is_equation {
+  if opts.contour_shading {
     render_contour_bands(
       &mut svg,
       &grid,
@@ -970,6 +978,140 @@ fn contour_style_directives(args: &[Expr], opts_from: usize) -> Vec<Expr> {
     }
   }
   Vec::new()
+}
+
+/// The equation form of ContourPlot: draw each body's zero contour as an
+/// implicit curve. No bands are shaded — Wolfram renders equation contours
+/// as bare curves on an unshaded background.
+fn contour_plot_equations(
+  bodies: &[Expr],
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let (xvar, x_min, x_max) = parse_iterator(&args[1], "ContourPlot")?;
+  let (yvar, y_min, y_max) = parse_iterator(&args[2], "ContourPlot")?;
+  let opts = parse_density_contour_options(args, 3);
+
+  let n = FIELD_GRID + 1;
+  let area = generate_axes_only(
+    (x_min, x_max),
+    (y_min, y_max),
+    opts.svg_width,
+    opts.svg_height,
+    opts.full_width,
+  )?;
+
+  let mut svg = area.svg;
+  if let Some(pos) = svg.rfind("</svg>") {
+    svg.truncate(pos);
+  }
+
+  let cell_w = area.plot_w / FIELD_GRID as f64;
+  let cell_h = area.plot_h / FIELD_GRID as f64;
+
+  // Alongside the standalone SVG, collect every contour chain in *data*
+  // coordinates as a line series, so `Show[{ContourPlot[…], Graphics[…]}]`
+  // can merge the curve with other primitives. The chains are traced in a
+  // scaled 0‥1000 space — `chain_segments` keys points on a 1/16 grid,
+  // which would glue distinct points together in small data ranges.
+  let mut series: Vec<crate::syntax::PlotSeriesData> = Vec::new();
+
+  for body in bodies {
+    let mut grid = vec![vec![f64::NAN; n]; n];
+    let mut any_finite = false;
+    for (i, row) in grid.iter_mut().enumerate() {
+      let x = x_min + i as f64 / FIELD_GRID as f64 * (x_max - x_min);
+      for (j, cell) in row.iter_mut().enumerate() {
+        let y = y_min + j as f64 / FIELD_GRID as f64 * (y_max - y_min);
+        if let Some(v) = evaluate_at_xy(body, &xvar, &yvar, x, y)
+          && v.is_finite()
+        {
+          *cell = v;
+          any_finite = true;
+        }
+      }
+    }
+    if !any_finite {
+      continue;
+    }
+    render_contour_lines(
+      &mut svg,
+      &grid,
+      &[0.0],
+      area.plot_x0,
+      area.plot_y0,
+      cell_w,
+      cell_h,
+      area.render_width,
+    );
+    let scaled_cell = 1000.0 / FIELD_GRID as f64;
+    let segments =
+      marching_squares_segments(&grid, 0.0, 0.0, 0.0, scaled_cell, scaled_cell);
+    for chain in chain_segments(&segments) {
+      let points: Vec<(f64, f64)> = chain
+        .iter()
+        .map(|&(u, v)| {
+          (
+            x_min + u / 1000.0 * (x_max - x_min),
+            y_min + v / 1000.0 * (y_max - y_min),
+          )
+        })
+        .collect();
+      if points.len() >= 2 {
+        series.push(crate::syntax::PlotSeriesData {
+          points,
+          color: (0x40, 0x40, 0x40),
+          is_scatter: false,
+          filling: crate::syntax::SeriesFilling::None,
+          fill_color: None,
+          fill_opacity: None,
+        });
+      }
+    }
+  }
+
+  push_frame(
+    &mut svg,
+    area.plot_x0,
+    area.plot_y0,
+    area.plot_w,
+    area.plot_h,
+  );
+
+  svg.push_str("</svg>");
+  // Alongside the plot source (for `Show`), remember the symbolic form of
+  // the curves — the ContourStyle directives plus one `Line[…]` per chain —
+  // so `ContourPlot[…][[1]]` yields primitives that can be re-embedded in
+  // an outer `Graphics[…]` (the Demonstrations Tooltip-stripping idiom).
+  let mut structure_items: Vec<Expr> = contour_style_directives(args, 3);
+  for s in &series {
+    let points: Vec<Expr> = s
+      .points
+      .iter()
+      .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into()))
+      .collect();
+    structure_items.push(Expr::FunctionCall {
+      name: "Line".to_string(),
+      args: vec![Expr::List(points.into())].into(),
+    });
+  }
+  let structure = Expr::FunctionCall {
+    name: "Graphics".to_string(),
+    args: vec![Expr::List(structure_items.into())].into(),
+  };
+  let source = crate::syntax::PlotSource {
+    series,
+    x_range: (x_min, x_max),
+    y_range: (y_min, y_max),
+    image_size: (opts.svg_width, opts.svg_height),
+  };
+  let mut result = crate::graphics_result_with_source(svg, source);
+  if let Expr::Graphics {
+    structure: slot, ..
+  } = &mut result
+  {
+    *slot = Some(Box::new(structure));
+  }
+  Ok(result)
 }
 
 /// RegionPlot[cond, {x, xmin, xmax}, {y, ymin, ymax}]
@@ -1728,9 +1870,41 @@ enum ArrayCell {
   Color(GfxColor),
 }
 
+/// The gradient scheme name of a `ColorFunction` option value: a bare
+/// string (`"TemperatureMap"`), a `ColorData["TemperatureMap"]` call, or
+/// the structured `ColorDataFunction["TemperatureMap", …]` form the call
+/// evaluates to.
+fn color_function_scheme_name(val: &Expr) -> Option<String> {
+  match val {
+    Expr::String(s) => Some(s.clone()),
+    Expr::FunctionCall { name, args }
+      if (name == "ColorData" || name == "ColorDataFunction")
+        && !args.is_empty() =>
+    {
+      match &args[0] {
+        Expr::String(s) => Some(s.clone()),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
 /// Apply a named color function (gradient) to a normalized value t in [0,1].
+/// Schemes with stored `ColorData` control points (see
+/// `chart::sample_named_gradient`) interpolate those — matching
+/// wolframscript exactly; the rest fall back to analytic approximations.
 fn apply_named_color_function(name: &str, t: f64) -> (u8, u8, u8) {
   let t = t.clamp(0.0, 1.0);
+  if let Some((r, g, b)) =
+    crate::functions::chart::sample_named_gradient(name, t)
+  {
+    return (
+      (r * 255.0).round() as u8,
+      (g * 255.0).round() as u8,
+      (b * 255.0).round() as u8,
+    );
+  }
   match name {
     "Rainbow" => {
       // Hue-based rainbow: red -> yellow -> green -> cyan -> blue -> violet
@@ -1864,8 +2038,8 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => {}
         },
         "ColorFunction" => {
-          if let Expr::String(s) = replacement.as_ref() {
-            color_function = Some(s.clone());
+          if let Some(s) = color_function_scheme_name(replacement.as_ref()) {
+            color_function = Some(s);
           }
         }
         _ => {}

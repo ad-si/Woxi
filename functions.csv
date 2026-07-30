@@ -140,7 +140,7 @@ Mod,Returns the remainder on division (m - n Floor[m/n]; Gaussian integers use m
 Arg,Returns the argument (phase angle) of a complex number,✅,pure,1.0,135
 Or,Checks if at least one condition is true,✅,pure,1.0,136
 BaseStyle,Option specifying the base style for elements in a graphic or other output,✅,none,6.0,137
-Dynamic,Dynamic display wrapper; rendered output shows its current value,✅,unevaluated,6.0,138
+Dynamic,Dynamic display wrapper (shows the current value in visual mode; stays symbolic in script mode),✅,unevaluated,6.0,138
 Not,Logical negation of an expression — written with the ! operator and bracketed inside anything that binds tighter than it,✅,pure,1.0,139
 Last,Returns the last element of a list or the given default which is only evaluated when used,✅,pure,1.0,140
 AdministrativeDivisionData,,🚫,,10.0,141
@@ -225,7 +225,7 @@ While,Evaluates an expression repeatedly while a condition is true,✅,pure,1.0,
 FrameLabel,Axis labels for framed charts (alias for AxesLabel),✅,pure,2.0,221
 FindRoot,Numerically finds a root of an equation using a damped Newton iteration — honours MaxIterations and reports non-convergence or a singular derivative (WorkingPrecision and the accuracy goals are accepted but ignored),✅,pure,1.0,222
 Image,Constructs an image from pixel data,✅,pure,7.0,223
-ColorData,Named color data: the categories; the colors of indexed schemes 1 (generated) 2 3 and 97; the named gradients are not yet colors of their own,🚧,pure,6.0,224
+ColorData,"Named color data: the categories; the colors of indexed schemes 1 (generated) 2 3 and 97; named gradients give a ColorDataFunction sampling the scheme (e.g. ColorData[""TemperatureMap""][0.5])",✅,pure,6.0,224
 Binomial,Returns the binomial coefficient,✅,pure,1.0,225
 Which,Evaluates conditions and returns the value for the first true one,✅,pure,1.0,226
 Replace,Applies transformation rules to an expression,✅,pure,1.0,227
@@ -257,7 +257,7 @@ PDF,Probability density function,✅,pure,6.0,254
 TableForm,Formats data as a table,✅,pure,1.0,255
 Circle,Represents a circle graphics primitive,✅,pure,2.0,256
 AbsoluteTiming,Returns the time taken to evaluate an expression,✅,contextual,5.0,257
-Blend,Blend colors together using linear interpolation,✅,none,6.0,258
+Blend,Blend colors together using linear interpolation; also samples named ColorData gradient schemes,✅,none,6.0,258
 Tooltip,Tooltip display wrapper (stays symbolic in script mode),✅,unevaluated,6.0,260
 Spacings,Spacing specification for grids and layouts,✅,none,6.0,261
 Assumptions,Specify assumptions for symbolic computation,✅,none,3.0,262
@@ -1137,7 +1137,7 @@ NotebookSelection,,🚫,,3.0,1141
 CellTags,,🚫,,3.0,1142
 FractionBox,Low-level box construct for fraction display,✅,pure,3.0,1143
 Magnification,,🚫,,3.0,1145
-Refresh,,🚫,,6.0,1145
+Refresh,Returns its first argument evaluated; the update-interval options only matter in a Dynamic FrontEnd context,✅,pure,6.0,1145
 KelvinBer,Kelvin ber function (real part of BesselJ on a rotated argument),✅,pure,6.0,1146
 NetTrain,,🚫,,11.0,1147
 SinIntegral,Sine integral Si(z),✅,pure,2.0,1148
@@ -4099,7 +4099,7 @@ AcousticAbsorbingValue,,🚫,,12.2,4225
 AdjacentMeshCells,,,,12.1,4225
 AudioStream,,🚫,,11.2,4225
 BlomqvistBetaTest,,,,9.0,4225
-ColorDataFunction,,,,6.0,4225
+ColorDataFunction,Structured form returned by ColorData for a named gradient; applying it to a number samples the gradient,✅,pure,6.0,4225
 DiscreteRiccatiSolve,,,,8.0,4225
 EquirippleFilterKernel,,,,9.0,4225
 FormControl,,🚫,,11.0,4225

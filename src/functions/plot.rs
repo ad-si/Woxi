@@ -1011,6 +1011,107 @@ impl Filling {
   }
 }
 
+/// Parsed `FillingStyle -> …` value: an optional fill color override
+/// (`None` = use the series color) and an optional opacity (`None` = the
+/// default 0.2 translucency).
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) struct FillStyle {
+  pub color: Option<(u8, u8, u8)>,
+  pub opacity: Option<f64>,
+}
+
+/// Parse a `FillingStyle` option value. Supported forms: a color,
+/// `Opacity[a]`, `Opacity[a, color]`, `Directive[…]`, and a directive list
+/// `{Opacity[a], color}`. Returns `None` for `Automatic`/`None`/unrecognized
+/// values (keeping the default fill appearance).
+pub(crate) fn parse_filling_style(replacement: &Expr) -> Option<FillStyle> {
+  fn walk(e: &Expr, fs: &mut FillStyle) {
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == "Opacity" && !args.is_empty() =>
+      {
+        if let Some(a) = try_eval_to_f64(&args[0]) {
+          fs.opacity = Some(a.clamp(0.0, 1.0));
+        }
+        if args.len() >= 2
+          && let Some(c) = parse_color(&args[1])
+        {
+          fs.color = Some(color_to_rgb8(c));
+        }
+      }
+      Expr::FunctionCall { name, args } if name == "Directive" => {
+        for a in args {
+          walk(a, fs);
+        }
+      }
+      Expr::List(items) => {
+        for item in items {
+          walk(item, fs);
+        }
+      }
+      Expr::Identifier(s) if s == "Automatic" || s == "None" => {}
+      other => {
+        if let Some(c) = parse_color(other) {
+          fs.color = Some(color_to_rgb8(c));
+          // An alpha channel on the color (`RGBColor[r, g, b, a]`) doubles
+          // as the fill opacity when no explicit Opacity[…] is given.
+          if c.a < 1.0 && fs.opacity.is_none() {
+            fs.opacity = Some(c.a);
+          }
+        }
+      }
+    }
+  }
+  let val = evaluate_expr_to_expr(replacement).unwrap_or(replacement.clone());
+  let mut fs = FillStyle {
+    color: None,
+    opacity: None,
+  };
+  walk(&val, &mut fs);
+  if fs.color.is_none() && fs.opacity.is_none() {
+    None
+  } else {
+    Some(fs)
+  }
+}
+
+/// Convert a parsed `Color` (float channels) to 8-bit RGB.
+fn color_to_rgb8(c: WoxiColor) -> (u8, u8, u8) {
+  (
+    (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+    (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+    (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+  )
+}
+
+/// Resolve the fill paint for a series: the `FillingStyle` color override
+/// (else the series color) at the `FillingStyle` opacity (else 0.2).
+fn fill_paint(
+  filling_style: Option<FillStyle>,
+  series_rgb: (u8, u8, u8),
+) -> plotters::style::RGBAColor {
+  let fs = filling_style.unwrap_or(FillStyle {
+    color: None,
+    opacity: None,
+  });
+  let (r, g, b) = fs.color.unwrap_or(series_rgb);
+  RGBColor(r, g, b).mix(fs.opacity.unwrap_or(0.2))
+}
+
+/// [`fill_paint`] for a stored `PlotSeriesData` (the `Show` merge path,
+/// where the `FillingStyle` appearance travels on the series itself).
+fn series_fill_paint(
+  sd: &crate::syntax::PlotSeriesData,
+) -> plotters::style::RGBAColor {
+  fill_paint(
+    Some(FillStyle {
+      color: sd.fill_color,
+      opacity: sd.fill_opacity,
+    }),
+    sd.color,
+  )
+}
+
 impl crate::syntax::SeriesFilling {
   /// Reference y-value for the fill, given the current y-range.
   pub fn reference_y(self, y_min: f64, y_max: f64) -> Option<f64> {
@@ -1317,6 +1418,10 @@ pub(crate) struct PlotOptions {
   /// index → target). When non-empty this replaces the global `filling`:
   /// series without a rule are not filled.
   pub filling_rules: Vec<(usize, FillTarget)>,
+  /// `FillingStyle -> …`: color/opacity for the filled regions (applies to
+  /// every filled series). `None` keeps the default appearance (series
+  /// color at 0.2 opacity).
+  pub filling_style: Option<FillStyle>,
   pub mesh: Mesh,
   pub plot_label: Option<StyledLabel>,
   pub axes_label: Option<(String, String)>,
@@ -1394,6 +1499,7 @@ impl Default for PlotOptions {
       full_width: false,
       filling: Filling::None,
       filling_rules: Vec::new(),
+      filling_style: None,
       mesh: Mesh::None,
       plot_label: None,
       axes_label: None,
@@ -2125,6 +2231,7 @@ fn generate_svg_with_options(
                 })?;
             }
           } else {
+            let paint = fill_paint(opts.filling_style, (r, g, b));
             match series_fill_target(opts, series_idx) {
               FillTarget::Level(level) => {
                 if let Some(ref_y) = level.reference_y(y_min, y_max) {
@@ -2136,7 +2243,7 @@ fn generate_svg_with_options(
                       .draw_series(AreaSeries::new(
                         segment.iter().copied(),
                         ref_y,
-                        RGBColor(r, g, b).mix(0.2),
+                        paint,
                       ))
                       .map_err(|e| {
                         InterpreterError::EvaluationError(format!("Plot: {e}"))
@@ -2152,10 +2259,7 @@ fn generate_svg_with_options(
                   && let Some(polygon) = fill_between_polygon(points, target)
                 {
                   chart
-                    .draw_series(std::iter::once(Polygon::new(
-                      polygon,
-                      RGBColor(r, g, b).mix(0.2),
-                    )))
+                    .draw_series(std::iter::once(Polygon::new(polygon, paint)))
                     .map_err(|e| {
                       InterpreterError::EvaluationError(format!("Plot: {e}"))
                     })?;
@@ -2796,8 +2900,13 @@ pub(crate) fn build_plot_source(
   image_size: (u32, u32),
   is_scatter: bool,
   filling: Filling,
+  filling_style: Option<FillStyle>,
 ) -> crate::syntax::PlotSource {
   let series_filling = filling.to_series_filling();
+  let (fill_color, fill_opacity) = match filling_style {
+    Some(fs) => (fs.color, fs.opacity),
+    None => (None, None),
+  };
   let series = all_points
     .iter()
     .enumerate()
@@ -2808,6 +2917,8 @@ pub(crate) fn build_plot_source(
         color,
         is_scatter,
         filling: series_filling,
+        fill_color,
+        fill_opacity,
       }
     })
     .collect();
@@ -2986,8 +3097,8 @@ pub(crate) fn generate_scatter_svg_with_options(
       // level for Axis/Bottom/Top/value, or — for `Filling -> {i -> {j}}` —
       // the other series, linearly interpolated at this point's x so
       // irregularly spaced datasets fill correctly.
-      let stem_style =
-        RGBColor(r, g, b).mix(0.2).stroke_width(RESOLUTION_SCALE);
+      let stem_style = fill_paint(opts.filling_style, (r, g, b))
+        .stroke_width(RESOLUTION_SCALE);
       let stem_targets: Vec<((f64, f64), f64)> =
         match series_fill_target(opts, series_idx) {
           FillTarget::Level(level) => level
@@ -3221,7 +3332,7 @@ pub(crate) fn render_merged_plot_source(
 
         // Stem lines from each point to the fill reference level
         if let Some(ref_y) = sd.filling.reference_y(y_min, y_max) {
-          let stem_style = color.mix(0.2).stroke_width(RESOLUTION_SCALE);
+          let stem_style = series_fill_paint(sd).stroke_width(RESOLUTION_SCALE);
           for &(x, y) in &finite_pts {
             chart
               .draw_series(std::iter::once(PathElement::new(
@@ -3257,7 +3368,7 @@ pub(crate) fn render_merged_plot_source(
               .draw_series(AreaSeries::new(
                 segment.iter().copied(),
                 ref_y,
-                color.mix(0.2),
+                series_fill_paint(sd),
               ))
               .map_err(|e| {
                 InterpreterError::EvaluationError(format!("Plot: {e}"))
@@ -5274,6 +5385,8 @@ pub(crate) fn histogram_plot_source(
       color,
       is_scatter: false,
       filling: crate::syntax::SeriesFilling::Axis,
+      fill_color: None,
+      fill_opacity: None,
     });
   }
 
@@ -6640,6 +6753,9 @@ pub(crate) fn apply_common_plot_option(
     "Filling" => {
       apply_filling_option(replacement, plot_opts);
     }
+    "FillingStyle" => {
+      plot_opts.filling_style = parse_filling_style(replacement);
+    }
     "Background" => {
       plot_opts.background = parse_background_option(replacement);
     }
@@ -7096,6 +7212,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (plot_opts.svg_width, plot_opts.svg_height),
     false,
     plot_opts.filling,
+    plot_opts.filling_style,
   );
 
   // Return -Graphics- as the text representation
@@ -7216,6 +7333,9 @@ fn log_scale_plot_ast(
         }
         "Filling" => {
           apply_filling_option(replacement, &mut plot_opts);
+        }
+        "FillingStyle" => {
+          plot_opts.filling_style = parse_filling_style(replacement);
         }
         "Background" => {
           plot_opts.background = parse_background_option(replacement);
