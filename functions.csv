@@ -608,7 +608,7 @@ Scale,Scales a graphics object,✅,pure,6.0,597
 Log10,Returns the base-10 logarithm of a number,✅,pure,7.0,598
 EndPackage,Ends a package context (no-op in Woxi),✅,effectful,1.0,599
 PolyhedronData,Properties of named polyhedra (Platonic solids),🚧,pure,6.0,601
-Nearest,Find the nearest elements in a list to a given value (numbers/vectors by Euclidean distance; strings by edit distance); empty or non-list data reports ::near1,✅,pure,6.0,602
+Nearest,Find the nearest elements in a list to a given value (numbers/vectors by Euclidean distance; strings by edit distance) — DistanceFunction supplies another metric; empty or non-list data reports ::near1,✅,pure,6.0,602
 RegionPlot3D,plots the 3D region where a condition is true,✅,pure,6.0,603
 IntervalMemberQ,Tests if a point or sub-interval is contained in an interval,✅,pure,3.0,605
 Inactive,Wrapper to prevent evaluation,✅,none,10.0,606
@@ -1163,7 +1163,7 @@ PolynomialQ,Tests whether an expression is a polynomial,✅,pure,1.0,1167
 AppellF1,Appell hypergeometric function F1(a b1 b2; c; x y),✅,pure,4.0,1168
 Glow,Graphics directive for glow effect,✅,1,6.0,1169
 Cone,3D cone graphics primitive,✅,none,7.0,1170
-DistanceFunction,,🚫,,6.0,1171
+DistanceFunction,Option naming the metric a nearest-neighbour or clustering function measures with,✅,pure,6.0,1171
 IgnoreCase,,🚫,,2.0,1172
 GaussianFilter,Gaussian filter for images and arrays,✅,,7.0,1173
 FixedPointList,Returns the list of results from applying a function repeatedly until fixed point,✅,pure,2.0,1174

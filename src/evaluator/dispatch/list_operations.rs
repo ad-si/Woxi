@@ -5548,7 +5548,7 @@ pub fn dispatch_list_operations(
         &args[0], &args[1], &args[2],
       ));
     }
-    "Nearest" if (2..=3).contains(&args.len()) => {
+    "Nearest" if (2..=5).contains(&args.len()) => {
       return Some(nearest_ast(args));
     }
     // ArrayPad[array, n] — pad with 0
@@ -8404,9 +8404,21 @@ fn array_flatten_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
   ))
 }
 
+thread_local! {
+  /// The `DistanceFunction` in force for the `Nearest` call being evaluated.
+  static NEAREST_DISTANCE_FUNCTION: std::cell::RefCell<Option<Expr>> =
+    const { std::cell::RefCell::new(None) };
+}
+
 /// Distance between two expressions. Falls back to absolute scalar difference
 /// and, for equal-length numeric lists, the Euclidean norm.
 fn nearest_distance(a: &Expr, b: &Expr) -> Option<f64> {
+  // A DistanceFunction replaces the built-in metric entirely.
+  if let Some(f) = NEAREST_DISTANCE_FUNCTION.with(|slot| slot.borrow().clone())
+  {
+    let value = list_helpers_ast::apply_func_to_two_args(&f, a, b).ok()?;
+    return expr_to_f64(&crate::evaluator::evaluate_expr_to_expr(&value).ok()?);
+  }
   // Colors compare via Euclidean distance on their RGB triple.
   // `GrayLevel[g]` is treated as `RGBColor[g, g, g]`. Mixed
   // RGBColor↔GrayLevel comparisons work because both lift to a
@@ -8465,10 +8477,89 @@ fn color_to_rgb(e: &Expr) -> Option<[f64; 3]> {
   None
 }
 
+/// Split `Nearest`'s trailing options off its positional arguments. Only the
+/// slots past the data and the target can hold one: the data itself may be a
+/// `points -> labels` rule, and the count spec is an integer, `All`, or a
+/// two-element list — never a rule.
+fn split_nearest_options(args: &[Expr]) -> (Vec<Expr>, Vec<Expr>) {
+  let is_rule = |e: &Expr| {
+    matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+      || matches!(e, Expr::FunctionCall { name, args }
+        if (name == "Rule" || name == "RuleDelayed") && args.len() == 2)
+  };
+  let mut positional = Vec::with_capacity(args.len());
+  let mut options = Vec::new();
+  for (i, arg) in args.iter().enumerate() {
+    let option = i >= 2
+      && match arg {
+        Expr::List(items) => !items.is_empty() && items.iter().all(&is_rule),
+        other => is_rule(other),
+      };
+    if option {
+      match arg {
+        Expr::List(items) => options.extend(items.iter().cloned()),
+        other => options.push(other.clone()),
+      }
+    } else {
+      positional.push(arg.clone());
+    }
+  }
+  (positional, options)
+}
+
+/// The `DistanceFunction` setting of a `Nearest` call, if it names one.
+fn distance_function_option(options: &[Expr]) -> Option<Expr> {
+  options.iter().find_map(|opt| {
+    let (pattern, replacement) = match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref()),
+      Expr::FunctionCall { name, args }
+        if (name == "Rule" || name == "RuleDelayed") && args.len() == 2 =>
+      {
+        (&args[0], &args[1])
+      }
+      _ => return None,
+    };
+    if !matches!(pattern, Expr::Identifier(n) if n == "DistanceFunction") {
+      return None;
+    }
+    match replacement {
+      Expr::Identifier(s) if s == "Automatic" => None,
+      other => Some(other.clone()),
+    }
+  })
+}
+
 /// Nearest[list, x] - find elements of list nearest to x
 /// Nearest[list, x, n] - find n nearest elements
 /// Nearest[points -> values, x] - return the labels whose points are closest
+///
+/// `DistanceFunction -> f` measures with `f[element, target]` instead of the
+/// built-in metric, which is what lets a named metric (`ManhattanDistance`),
+/// a pure function, or `EditDistance` on strings choose the neighbour. The
+/// remaining options are accepted and ignored.
 fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let (positional, options) = split_nearest_options(args);
+  let distance_function = distance_function_option(&options);
+  if !options.is_empty() {
+    if positional.len() < 2 {
+      return Ok(unevaluated("Nearest", args));
+    }
+    // Re-enter without the options, carrying the metric through a thread-local
+    // so every recursive path (per-target threading, the label views) uses it.
+    return NEAREST_DISTANCE_FUNCTION.with(|slot| {
+      let previous = slot.replace(distance_function);
+      let result = nearest_ast(&positional);
+      slot.replace(previous);
+      result
+    });
+  }
   // Data that is not a list of points — including an empty list, which is
   // unusable rather than "nothing is near" — is reported and stood down on.
   // Woxi used to answer `{}` for the empty case and stay silent for the rest.

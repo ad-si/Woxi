@@ -11372,6 +11372,112 @@ mod nearest {
       "{{1, 3}, {7}}"
     );
   }
+
+  // DistanceFunction -> f measures with f[element, target] instead of the
+  // built-in metric. Any option at all used to leave the call unevaluated.
+  #[test]
+  fn distance_function_chooses_the_metric() {
+    // A pure function, agreeing with the default metric on scalars.
+    assert_eq!(
+      interpret(
+        "Nearest[{1, 2, 3, 10}, 4, DistanceFunction -> (Abs[#1 - #2] &)]"
+      )
+      .unwrap(),
+      "{3}"
+    );
+    // A named metric on vectors. Under Manhattan and Euclidean alike {0, 0} is
+    // the nearer of the two.
+    assert_eq!(
+      interpret(
+        "Nearest[{{0, 0}, {3, 4}}, {0, 1}, DistanceFunction -> ManhattanDistance]"
+      )
+      .unwrap(),
+      "{{0, 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "Nearest[{{0, 0}, {3, 4}}, {0, 1}, \
+         DistanceFunction -> ChessboardDistance]"
+      )
+      .unwrap(),
+      "{{0, 0}}"
+    );
+    // A metric that reverses the answer: squared distance still ranks the same,
+    // so use one that does not — the negated distance picks the *farthest*.
+    assert_eq!(
+      interpret(
+        "Nearest[{1, 2, 3, 10}, 4, DistanceFunction -> (-Abs[#1 - #2] &)]"
+      )
+      .unwrap(),
+      "{10}"
+    );
+    // EditDistance over strings.
+    assert_eq!(
+      interpret(
+        "Nearest[{\"cat\", \"cot\", \"dog\"}, \"cit\", \
+         DistanceFunction -> EditDistance]"
+      )
+      .unwrap(),
+      "{cat, cot}"
+    );
+  }
+
+  // The metric applies through every other form: a count, All, a radius, the
+  // label and multi-target forms.
+  #[test]
+  fn distance_function_applies_to_every_form() {
+    let metric = "DistanceFunction -> (Abs[#1 - #2] &)";
+    assert_eq!(
+      interpret(&format!("Nearest[{{1, 2, 3, 10}}, 4, 2, {}]", metric))
+        .unwrap(),
+      "{3, 2}"
+    );
+    assert_eq!(
+      interpret(&format!("Nearest[{{1, 2, 3, 10}}, 4, All, {}]", metric))
+        .unwrap(),
+      "{3, 2, 1, 10}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "Nearest[{{1, 2, 3, 10}}, 4, {{2, 2}}, {}]",
+        metric
+      ))
+      .unwrap(),
+      "{3, 2}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "Nearest[{{1, 2, 3, 10}} -> {{a, b, c, d}}, 4, {}]",
+        metric
+      ))
+      .unwrap(),
+      "{c}"
+    );
+    assert_eq!(
+      interpret(&format!("Nearest[{{1, 2, 3, 10}}, {{4, 9}}, {}]", metric))
+        .unwrap(),
+      "{{3}, {10}}"
+    );
+  }
+
+  // Any other option is accepted and changes nothing.
+  #[test]
+  fn other_options_are_accepted() {
+    assert_eq!(
+      interpret("Nearest[{1, 2, 3, 10}, 4, Method -> Automatic]").unwrap(),
+      "{3}"
+    );
+    assert_eq!(
+      interpret("Nearest[{1, 2, 3, 10}, 4, DistanceFunction -> Automatic]")
+        .unwrap(),
+      "{3}"
+    );
+    // Gathered into a list, and alongside a count.
+    assert_eq!(
+      interpret("Nearest[{1, 2, 3, 10}, 4, 2, {Method -> Automatic}]").unwrap(),
+      "{3, 2}"
+    );
+  }
 }
 
 mod nearest_to {
