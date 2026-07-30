@@ -2,6 +2,7 @@
 use super::*;
 use crate::syntax::unevaluated;
 use std::cell::RefCell;
+use std::collections::HashMap;
 
 // Stream registry for open streams (InputStream/OutputStream)
 #[derive(Clone, Debug)]
