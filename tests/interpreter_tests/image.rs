@@ -2207,6 +2207,160 @@ mod image_processing {
     assert!((v - 0.5).abs() < 1e-6, "expected ~0.5, got {}", v);
   }
 
+  // Sharpen is the unsharp mask `image + 2 (image - Blur[image, r])`, so
+  // its impulse response is `3` at the centre minus twice the Blur
+  // kernel. The taps agree with wolframscript within the Real32 pixels
+  // they are stored in.
+  #[test]
+  fn sharpen_is_twice_the_unsharp_mask() {
+    clear_state();
+    let impulse =
+      "Image[{{0., 0., 0., 0., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0.}}]";
+    assert_eq!(
+      interpret(&format!("ImageData[Sharpen[{}, 1]]", impulse)).unwrap(),
+      "{{0., 0., 0., 0., 0., 0., -0.1987609714269638, 1.39752197265625, \
+       -0.1987609714269638, 0., 0., 0., 0., 0., 0.}}"
+    );
+    // Radius 2 is the default.
+    let radius_two = "{{0., 0., 0., 0., 0., -0.10176447033882141, \
+                       -0.42367663979530334, 2.050882339477539, \
+                       -0.42367663979530334, -0.10176447033882141, \
+                       0., 0., 0., 0., 0.}}";
+    assert_eq!(
+      interpret(&format!("ImageData[Sharpen[{}, 2]]", impulse)).unwrap(),
+      radius_two
+    );
+    assert_eq!(
+      interpret(&format!("ImageData[Sharpen[{}]]", impulse)).unwrap(),
+      radius_two
+    );
+    // A fractional radius sharpens less than the integer above it.
+    assert_eq!(
+      interpret(&format!("ImageData[Sharpen[{}, 0.5]]", impulse)).unwrap(),
+      "{{0., 0., 0., 0., 0., 0., -0.058796513825654984, \
+       1.1175930500030518, -0.058796513825654984, 0., 0., 0., 0., 0., 0.}}"
+    );
+  }
+
+  // Sharpen shares Blur's radius specification: a per-axis pair, the
+  // Ceiling[n/2] cap, and the same report for anything else.
+  #[test]
+  fn sharpen_shares_the_blur_radius_specification() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[Sharpen[Image[{{0., 0., 0.}, {0., 1., 0.}, \
+         {0., 0., 0.}}], {0, 1}]]"
+      )
+      .unwrap(),
+      "{{0., 0., 0.}, {-0.1987609714269638, 1.39752197265625, \
+       -0.1987609714269638}, {0., 0., 0.}}"
+    );
+    // A two-pixel-wide image saturates at radius 1.
+    for radius in ["1", "5", "10"] {
+      assert_eq!(
+        interpret(&format!(
+          "ImageData[Sharpen[Image[{{{{1., 0.}}}}], {}]]",
+          radius
+        ))
+        .unwrap(),
+        "{{1.198760986328125, -0.1987609714269638}}",
+        "for radius {}",
+        radius
+      );
+    }
+    assert_eq!(
+      interpret("ImageData[Sharpen[Image[{{1., 0., 0., 0., 0., 0.}}], 10]]")
+        .unwrap(),
+      "{{1.7058721780776978, -0.705872118473053, -0.2735980451107025, \
+       -0.06958596408367157, 0., 0.}}"
+    );
+  }
+
+  #[test]
+  fn sharpen_reports_a_bad_radius() {
+    use woxi::interpret_with_stdout;
+    clear_state();
+    for spec in ["x", "-1", "{1, -2}", "{1, 2, 3}"] {
+      let call = format!("Sharpen[Image[{{{{0.1, 0.2}}}}], {}]", spec);
+      let r = interpret_with_stdout(&call).unwrap();
+      assert_eq!(
+        r.result,
+        format!("Sharpen[-Image-, {}]", spec),
+        "for {}",
+        spec
+      );
+      let expected = format!(
+        "Sharpen::bdrad: The specified radius {} should be either a \
+         non-negative number or a list of 2 non-negative numbers.",
+        spec
+      );
+      assert!(
+        r.warnings.contains(&expected),
+        "expected {:?} for {}, got {:?}",
+        expected,
+        spec,
+        r.warnings
+      );
+    }
+  }
+
+  // An integer image cannot hold a filtered value between its levels, so
+  // Blur and Sharpen round back onto its grid and clip to it -- 255 here,
+  // not the 356 the unsharp mask asks for. GaussianFilter instead hands
+  // back real pixels and leaves the values alone.
+  #[test]
+  fn blur_and_sharpen_requantize_integer_images() {
+    clear_state();
+    let byte = "Image[{{100, 120, 140, 160, 180}}, \"Byte\"]";
+    assert_eq!(
+      interpret(&format!("ImageData[Blur[{}, 1]]", byte)).unwrap(),
+      "{{0.4, 0.47058823529411764, 0.5490196078431373, \
+       0.6274509803921569, 0.6980392156862745}}"
+    );
+    assert_eq!(
+      interpret(&format!("ImageData[Sharpen[{}, 1]]", byte)).unwrap(),
+      "{{0.3764705882352941, 0.47058823529411764, 0.5490196078431373, \
+       0.6274509803921569, 0.7215686274509804}}"
+    );
+    assert_eq!(
+      interpret("ImageData[Sharpen[Image[{{0, 0, 255, 0, 0}}, \"Byte\"], 1]]")
+        .unwrap(),
+      "{{0., 0., 1., 0., 0.}}"
+    );
+    assert_eq!(
+      interpret(&format!("ImageData[GaussianFilter[{}, 1]]", byte)).unwrap(),
+      "{{0.39995139837265015, 0.47058823704719543, 0.5490196347236633, \
+       0.6274510025978088, 0.6980878114700317}}"
+    );
+    // Blur and Sharpen keep Byte and Bit16; a Bit image cannot hold a
+    // blur at all and becomes Real32. GaussianFilter is always real.
+    for (image_type, blurred, filtered) in [
+      ("Bit", "Real32", "Real32"),
+      ("Byte", "Byte", "Real32"),
+      ("Bit16", "Bit16", "Real32"),
+      ("Real32", "Real32", "Real32"),
+      ("Real64", "Real64", "Real64"),
+    ] {
+      let image = format!("Image[{{{{0, 1, 0, 1, 0}}}}, \"{}\"]", image_type);
+      for head in ["Blur", "Sharpen"] {
+        assert_eq!(
+          interpret(&format!("ImageType[{}[{}, 1]]", head, image)).unwrap(),
+          blurred,
+          "{} of a {} image",
+          head,
+          image_type
+        );
+      }
+      assert_eq!(
+        interpret(&format!("ImageType[GaussianFilter[{}, 1]]", image)).unwrap(),
+        filtered,
+        "GaussianFilter of a {} image",
+        image_type
+      );
+    }
+  }
+
   // MinFilter / MaxFilter on Images apply a min/max kernel per channel,
   // with the (2r+1)×(2r+1) window clipped at image boundaries.
   #[test]

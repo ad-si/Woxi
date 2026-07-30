@@ -1197,23 +1197,93 @@ pub fn binarize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// (default 2). This is exactly `GaussianFilter[image, r]` with the
 /// standard deviation left at its default `r/2`, so the kernel and the
 /// convolution are shared with `GaussianFilter` rather than duplicated.
-/// `Blur` differs only in its radius specification: a pair
-/// `{r_rows, r_columns}` blurs each axis by a different radius, and a
-/// radius that is not a non-negative number is reported instead of used.
+/// `Blur` differs in its radius specification, which may be a pair
+/// `{r_rows, r_columns}`, in capping that radius at half the image (see
+/// `blur_radius_axes`), and in keeping an integer image integral.
 pub fn blur_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
       "Blur expects 1 or 2 arguments".into(),
     ));
   }
+  let Some((vertical, horizontal)) = blur_radius_axes("Blur", args) else {
+    return Ok(unevaluated("Blur", args));
+  };
+  Ok(requantize_filtered(
+    gaussian_filter_image(&args[0], vertical, horizontal)
+      .unwrap_or_else(|| args[0].clone()),
+  ))
+}
 
-  if !matches!(&args[0], Expr::Image { .. }) {
+/// Sharpen[image] / Sharpen[image, r] — sharpen an image over pixel
+/// radius `r` (default 2). This is the unsharp mask
+/// `image + 2 (image - Blur[image, r])`, so it shares `Blur`'s kernel,
+/// radius specification and half-the-image cap; only the combination
+/// afterwards is its own.
+pub fn sharpen_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Sharpen expects 1 or 2 arguments".into(),
+    ));
+  }
+  let Some((vertical, horizontal)) = blur_radius_axes("Sharpen", args) else {
+    return Ok(unevaluated("Sharpen", args));
+  };
+  let Some(blurred) = gaussian_filter_image(&args[0], vertical, horizontal)
+  else {
+    return Ok(args[0].clone());
+  };
+  let (
+    Expr::Image {
+      color_space,
+      width,
+      height,
+      channels,
+      data,
+      image_type,
+    },
+    Expr::Image { data: blurred, .. },
+  ) = (&args[0], &blurred)
+  else {
+    unreachable!("blur_radius_axes checked for an image")
+  };
+  let sharpened = data
+    .iter()
+    .zip(blurred.iter())
+    .map(|(original, blurred)| 3.0 * original - 2.0 * blurred)
+    .collect();
+  Ok(requantize_filtered(Expr::Image {
+    color_space: *color_space,
+    width: *width,
+    height: *height,
+    channels: *channels,
+    data: Arc::new(sharpened),
+    image_type: *image_type,
+  }))
+}
+
+/// Resolve the radius specification shared by `Blur` and `Sharpen` into
+/// the pair of per-axis kernels it names. `None` means the call was
+/// reported and should be left unevaluated: `<head>::imginv` for a first
+/// argument that is not an image, `<head>::bdrad` for a radius that is
+/// neither a non-negative number nor a pair of them.
+///
+/// Neither head reaches further than half way across the image: along an
+/// axis of `n` pixels the radius is capped at `Ceiling[n/2]`, standard
+/// deviation included, so `Blur[image, 5]` on a two-pixel-wide image is
+/// `Blur[image, 1]`. `GaussianFilter` applies no such cap.
+fn blur_radius_axes(
+  head: &str,
+  args: &[Expr],
+) -> Option<(GaussianAxis, GaussianAxis)> {
+  let Expr::Image { width, height, .. } = &args[0] else {
     crate::emit_message(&format!(
-      "Blur::imginv: Expecting an image or graphics instead of {}.",
+      "{}::imginv: Expecting an image or graphics instead of {}.",
+      head,
       crate::syntax::expr_to_string(&args[0])
     ));
-    return Ok(unevaluated("Blur", args));
-  }
+    return None;
+  };
 
   // A radius is usable only if it is a plain non-negative number.
   let non_negative = |expr: &Expr| {
@@ -1222,8 +1292,9 @@ pub fn blur_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let bdrad = |spec: &Expr| {
     crate::emit_message(&format!(
-      "Blur::bdrad: The specified radius {} should be either a \
+      "{}::bdrad: The specified radius {} should be either a \
        non-negative number or a list of 2 non-negative numbers.",
+      head,
       crate::syntax::format_expr(spec, crate::syntax::ExprForm::Output)
     ));
   };
@@ -1237,7 +1308,7 @@ pub fn blur_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         (Some(rows), Some(columns)) => (rows, columns),
         _ => {
           bdrad(&args[1]);
-          return Ok(unevaluated("Blur", args));
+          return None;
         }
       }
     }
@@ -1245,26 +1316,16 @@ pub fn blur_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Some(radius) => (radius, radius),
       None => {
         bdrad(spec);
-        return Ok(unevaluated("Blur", args));
+        return None;
       }
     },
   };
 
-  // Unlike `GaussianFilter`, `Blur` never reaches further than half way
-  // across the image: along an axis of `n` pixels the radius is capped at
-  // `Ceiling[n/2]`, and the standard deviation follows the capped radius.
-  // So `Blur[image, 5]` on a two-pixel-wide image is `Blur[image, 1]`.
-  let Expr::Image { width, height, .. } = &args[0] else {
-    unreachable!("checked above")
-  };
   let cap = |extent: u32| ((extent as f64) / 2.0).ceil().max(1.0);
-  let vertical = gaussian_axis_from_radius(rows.min(cap(*height)));
-  let horizontal = gaussian_axis_from_radius(columns.min(cap(*width)));
-
-  Ok(
-    gaussian_filter_image(&args[0], vertical, horizontal)
-      .unwrap_or_else(|| args[0].clone()),
-  )
+  Some((
+    gaussian_axis_from_radius(rows.min(cap(*height))),
+    gaussian_axis_from_radius(columns.min(cap(*width))),
+  ))
 }
 
 /// Thumbnail[image] / Thumbnail[image, n] — return a smaller version
@@ -1294,119 +1355,6 @@ pub fn thumbnail_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(vec![Expr::Integer(size_arg as i128)].into()),
   ])
 }
-
-/// Sharpen[img] / Sharpen[img, r] — unsharp mask on the f64 buffer.
-/// The image is blurred with a separable Gaussian kernel of radius r
-/// (default 2), then combined as `sharpened = 2*original - blurred`.
-/// Result preserves dimensions, channels, and image type. Radius 0 is
-/// the identity. Output values aren't clamped, matching wolframscript.
-pub fn sharpen_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 2 {
-    return Err(InterpreterError::EvaluationError(
-      "Sharpen expects 1 or 2 arguments".into(),
-    ));
-  }
-  let Expr::Image {
-    color_space: _,
-    width,
-    height,
-    channels,
-    data,
-    image_type,
-  } = &args[0]
-  else {
-    crate::emit_message(&format!(
-      "Sharpen::imginv: Expecting an image or graphics instead of {}.",
-      crate::syntax::expr_to_string(&args[0])
-    ));
-    return Ok(unevaluated("Sharpen", args));
-  };
-
-  let radius = if args.len() == 2 {
-    expr_to_f64(&args[1])?
-  } else {
-    2.0
-  };
-  let r = radius.round().max(0.0) as usize;
-  if r == 0 {
-    return Ok(args[0].clone());
-  }
-  let sigma = (radius / 2.0).max(1e-9);
-
-  // Build a 1D Gaussian kernel of radius r, normalised to sum 1.
-  let mut kernel: Vec<f64> = (0..=2 * r)
-    .map(|i| {
-      let x = i as f64 - r as f64;
-      (-(x * x) / (2.0 * sigma * sigma)).exp()
-    })
-    .collect();
-  let ksum: f64 = kernel.iter().sum();
-  for k in &mut kernel {
-    *k /= ksum;
-  }
-
-  let w = *width as usize;
-  let h = *height as usize;
-  let ch = *channels as usize;
-  let idx = |y: usize, x: usize, c: usize| -> usize { (y * w + x) * ch + c };
-
-  // Horizontal pass: row-wise blur with boundary renormalisation.
-  let mut tmp = vec![0.0; data.len()];
-  for c_idx in 0..ch {
-    for y in 0..h {
-      for x in 0..w {
-        let mut sum = 0.0;
-        let mut wsum = 0.0;
-        for ki in 0..kernel.len() {
-          let kx = x as isize + ki as isize - r as isize;
-          if kx < 0 || kx >= w as isize {
-            continue;
-          }
-          sum += kernel[ki] * data[idx(y, kx as usize, c_idx)];
-          wsum += kernel[ki];
-        }
-        tmp[idx(y, x, c_idx)] = if wsum > 0.0 { sum / wsum } else { 0.0 };
-      }
-    }
-  }
-
-  // Vertical pass.
-  let mut blurred = vec![0.0; data.len()];
-  for c_idx in 0..ch {
-    for x in 0..w {
-      for y in 0..h {
-        let mut sum = 0.0;
-        let mut wsum = 0.0;
-        for ki in 0..kernel.len() {
-          let ky = y as isize + ki as isize - r as isize;
-          if ky < 0 || ky >= h as isize {
-            continue;
-          }
-          sum += kernel[ki] * tmp[idx(ky as usize, x, c_idx)];
-          wsum += kernel[ki];
-        }
-        blurred[idx(y, x, c_idx)] = if wsum > 0.0 { sum / wsum } else { 0.0 };
-      }
-    }
-  }
-
-  // Unsharp mask: sharpened = 2*original - blurred.
-  let new_data: Vec<f64> = data
-    .iter()
-    .zip(blurred.iter())
-    .map(|(&orig, &blur)| 2.0 * orig - blur)
-    .collect();
-
-  Ok(Expr::Image {
-    color_space: None,
-    width: *width,
-    height: *height,
-    channels: *channels,
-    data: Arc::new(new_data),
-    image_type: *image_type,
-  })
-}
-
 /// ImageAdjust[img] or ImageAdjust[img, contrast]
 /// Auto-rescale to [0,1]; optional contrast adjustment
 pub fn image_adjust_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -4639,8 +4587,15 @@ pub fn gaussian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(result.into_iter().map(Expr::Real).collect()));
   }
 
-  // Image input: the same radius applies along both axes.
-  if let Some(filtered) = gaussian_filter_image(&args[0], axis, axis) {
+  // Image input: the same radius applies along both axes. Unlike `Blur`,
+  // the result is never quantized back onto an integer image's grid;
+  // wolframscript hands back `"Real32"` pixels for every integer type.
+  if let Some(mut filtered) = gaussian_filter_image(&args[0], axis, axis) {
+    if let Expr::Image { image_type, .. } = &mut filtered
+      && *image_type != crate::syntax::ImageType::Real64
+    {
+      *image_type = crate::syntax::ImageType::Real32;
+    }
     return Ok(filtered);
   }
 
@@ -4649,6 +4604,39 @@ pub fn gaussian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::syntax::expr_to_string(&args[0])
   ));
   Ok(unevaluated("GaussianFilter", args))
+}
+
+/// Round a filtered image back onto the grid its type can store, as
+/// `Blur` and `Sharpen` do. A `"Byte"` image holds whole values in
+/// `0..255` and a `"Bit16"` image whole values in `0..65535`, so a filter
+/// result is rounded and clipped to that range. A `"Bit"` image cannot
+/// represent a blur at all, so it is promoted to `"Real32"` instead of
+/// being flattened back to two levels. Real images are left alone.
+fn requantize_filtered(mut image: Expr) -> Expr {
+  let Expr::Image {
+    data, image_type, ..
+  } = &mut image
+  else {
+    return image;
+  };
+  let levels = match image_type {
+    crate::syntax::ImageType::Byte => 255.0,
+    crate::syntax::ImageType::Bit16 => 65535.0,
+    crate::syntax::ImageType::Bit => {
+      *image_type = crate::syntax::ImageType::Real32;
+      return image;
+    }
+    crate::syntax::ImageType::Real32 | crate::syntax::ImageType::Real64 => {
+      return image;
+    }
+  };
+  *data = Arc::new(
+    data
+      .iter()
+      .map(|value| (value * levels).round().clamp(0.0, levels) / levels)
+      .collect(),
+  );
+  image
 }
 
 /// The half-width and standard deviation of a separable Gaussian filter
