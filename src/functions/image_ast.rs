@@ -1193,7 +1193,13 @@ pub fn binarize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// Blur[img] or Blur[img, r] - Gaussian blur
+/// Blur[image] / Blur[image, r] — blur an image over pixel radius `r`
+/// (default 2). This is exactly `GaussianFilter[image, r]` with the
+/// standard deviation left at its default `r/2`, so the kernel and the
+/// convolution are shared with `GaussianFilter` rather than duplicated.
+/// `Blur` differs only in its radius specification: a pair
+/// `{r_rows, r_columns}` blurs each axis by a different radius, and a
+/// radius that is not a non-negative number is reported instead of used.
 pub fn blur_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -1201,106 +1207,64 @@ pub fn blur_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let Expr::Image {
-    color_space: _,
-    width,
-    height,
-    channels,
-    data,
-    image_type,
-  } = &args[0]
-  else {
+  if !matches!(&args[0], Expr::Image { .. }) {
     crate::emit_message(&format!(
       "Blur::imginv: Expecting an image or graphics instead of {}.",
       crate::syntax::expr_to_string(&args[0])
     ));
     return Ok(unevaluated("Blur", args));
+  }
+
+  // A radius is usable only if it is a plain non-negative number.
+  let non_negative = |expr: &Expr| {
+    crate::functions::math_ast::try_eval_to_f64(expr)
+      .filter(|value| *value >= 0.0)
+  };
+  let bdrad = |spec: &Expr| {
+    crate::emit_message(&format!(
+      "Blur::bdrad: The specified radius {} should be either a \
+       non-negative number or a list of 2 non-negative numbers.",
+      crate::syntax::format_expr(spec, crate::syntax::ExprForm::Output)
+    ));
   };
 
-  let radius = if args.len() == 2 {
-    expr_to_f64(&args[1])?
-  } else {
-    2.0
+  let (rows, columns) = match args.get(1) {
+    None => (2.0, 2.0),
+    // `{r_rows, r_columns}` — the first radius applies across rows, i.e.
+    // vertically, matching wolframscript's row-then-column convention.
+    Some(Expr::List(items)) if items.len() == 2 => {
+      match (non_negative(&items[0]), non_negative(&items[1])) {
+        (Some(rows), Some(columns)) => (rows, columns),
+        _ => {
+          bdrad(&args[1]);
+          return Ok(unevaluated("Blur", args));
+        }
+      }
+    }
+    Some(spec) => match non_negative(spec) {
+      Some(radius) => (radius, radius),
+      None => {
+        bdrad(spec);
+        return Ok(unevaluated("Blur", args));
+      }
+    },
   };
-  let r = radius.round() as usize;
-  if r == 0 {
-    return Ok(args[0].clone());
-  }
 
-  let sigma = (radius / 2.0).max(1e-9);
-  // Truncated Gaussian kernel of width 2r+1, normalized to sum 1 once
-  // (without boundary truncation). Boundary handling uses renormalization
-  // at the edges.
-  let mut kernel: Vec<f64> = (0..=2 * r)
-    .map(|i| {
-      let x = i as f64 - r as f64;
-      (-(x * x) / (2.0 * sigma * sigma)).exp()
-    })
-    .collect();
-  let ksum: f64 = kernel.iter().sum();
-  for k in &mut kernel {
-    *k /= ksum;
-  }
+  // Unlike `GaussianFilter`, `Blur` never reaches further than half way
+  // across the image: along an axis of `n` pixels the radius is capped at
+  // `Ceiling[n/2]`, and the standard deviation follows the capped radius.
+  // So `Blur[image, 5]` on a two-pixel-wide image is `Blur[image, 1]`.
+  let Expr::Image { width, height, .. } = &args[0] else {
+    unreachable!("checked above")
+  };
+  let cap = |extent: u32| ((extent as f64) / 2.0).ceil().max(1.0);
+  let vertical = gaussian_axis_from_radius(rows.min(cap(*height)));
+  let horizontal = gaussian_axis_from_radius(columns.min(cap(*width)));
 
-  let w = *width as usize;
-  let h = *height as usize;
-  let ch = *channels as usize;
-
-  // Separable 1D Gaussian convolution: blur horizontally, then
-  // vertically. Boundary handling renormalises the kernel against the
-  // weights that fall inside the image.
-  let idx = |y: usize, x: usize, c: usize| -> usize { (y * w + x) * ch + c };
-
-  // Horizontal pass (rows).
-  let mut tmp = vec![0.0; data.len()];
-  for c_idx in 0..ch {
-    for y in 0..h {
-      for x in 0..w {
-        let mut sum = 0.0;
-        let mut wsum = 0.0;
-        for ki in 0..kernel.len() {
-          let kx = x as isize + ki as isize - r as isize;
-          if kx < 0 || kx >= w as isize {
-            continue;
-          }
-          let v = data[idx(y, kx as usize, c_idx)];
-          sum += kernel[ki] * v;
-          wsum += kernel[ki];
-        }
-        tmp[idx(y, x, c_idx)] = if wsum > 0.0 { sum / wsum } else { 0.0 };
-      }
-    }
-  }
-
-  // Vertical pass (columns).
-  let mut new_data = vec![0.0; data.len()];
-  for c_idx in 0..ch {
-    for x in 0..w {
-      for y in 0..h {
-        let mut sum = 0.0;
-        let mut wsum = 0.0;
-        for ki in 0..kernel.len() {
-          let ky = y as isize + ki as isize - r as isize;
-          if ky < 0 || ky >= h as isize {
-            continue;
-          }
-          let v = tmp[idx(ky as usize, x, c_idx)];
-          sum += kernel[ki] * v;
-          wsum += kernel[ki];
-        }
-        new_data[idx(y, x, c_idx)] = if wsum > 0.0 { sum / wsum } else { 0.0 };
-      }
-    }
-  }
-
-  Ok(Expr::Image {
-    color_space: None,
-    width: *width,
-    height: *height,
-    channels: *channels,
-    data: Arc::new(new_data),
-    image_type: *image_type,
-  })
+  Ok(
+    gaussian_filter_image(&args[0], vertical, horizontal)
+      .unwrap_or_else(|| args[0].clone()),
+  )
 }
 
 /// Thumbnail[image] / Thumbnail[image, n] — return a smaller version
@@ -4618,33 +4582,46 @@ pub fn gaussian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(unevaluated("GaussianFilter", args));
   }
-  // Parse `r` (integer radius) and optional `sigma` from the second
-  // argument. Supported shapes: `r` (integer) → sigma = r/2;
-  // `{r, sigma}` (two-element list) → explicit sigma.
-  let (radius, sigma) = match &args[1] {
-    Expr::Integer(n) if *n >= 1 => (*n as usize, (*n as f64) / 2.0),
-    Expr::Real(f) if *f >= 1.0 => (f.floor() as usize, *f / 2.0),
+  // Parse the radius specification from the second argument. A plain
+  // number `r` gives a kernel of half-width `Ceiling[r]` and standard
+  // deviation `r/2`; the pair `{r, sigma}` sets the deviation
+  // explicitly. Any other list shape is left for a caller to make sense
+  // of, so it echoes rather than reporting a radius that may be valid.
+  let axis = match &args[1] {
     Expr::List(items) if items.len() == 2 => {
-      let r_int = match &items[0] {
-        Expr::Integer(n) if *n >= 1 => *n as usize,
-        Expr::Real(f) if *f >= 1.0 => f.floor() as usize,
-        _ => {
-          return Ok(unevaluated("GaussianFilter", args));
-        }
+      let (Some(radius), Some(sigma)) =
+        (expr_to_f64_opt(&items[0]), expr_to_f64_opt(&items[1]))
+      else {
+        return Ok(unevaluated("GaussianFilter", args));
       };
-      let sigma = match &items[1] {
-        Expr::Integer(n) if *n > 0 => *n as f64,
-        Expr::Real(f) if *f > 0.0 => *f,
-        _ => {
-          return Ok(unevaluated("GaussianFilter", args));
-        }
-      };
-      (r_int, sigma)
+      if sigma <= 0.0 {
+        return Ok(unevaluated("GaussianFilter", args));
+      }
+      GaussianAxis {
+        radius: if radius <= 0.0 {
+          0
+        } else {
+          radius.ceil() as usize
+        },
+        sigma,
+      }
     }
-    _ => {
+    Expr::List(_) => {
       return Ok(unevaluated("GaussianFilter", args));
     }
+    other => match expr_to_f64_opt(other) {
+      Some(radius) => gaussian_axis_from_radius(radius),
+      None => {
+        crate::emit_message(&format!(
+          "GaussianFilter::bdrad: The radius specification {} must be a \
+           non-complex number or a nonempty list of non-complex numbers.",
+          crate::syntax::format_expr(other, crate::syntax::ExprForm::Output)
+        ));
+        return Ok(unevaluated("GaussianFilter", args));
+      }
+    },
   };
+  let (radius, sigma) = (axis.radius, axis.sigma);
 
   let kernel = gaussian_filter_kernel(radius, sigma);
 
@@ -4662,51 +4639,9 @@ pub fn gaussian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(result.into_iter().map(Expr::Real).collect()));
   }
 
-  // Image input: separable 2D (row-then-column 1D convolution).
-  if let Expr::Image {
-    color_space: _,
-    width,
-    height,
-    channels,
-    data,
-    image_type,
-  } = &args[0]
-  {
-    let w = *width as usize;
-    let h = *height as usize;
-    let ch = *channels as usize;
-    if w == 0 || h == 0 {
-      return Ok(args[0].clone());
-    }
-    let mut out: Vec<f64> = vec![0.0; data.len()];
-    for c_idx in 0..ch {
-      let mut row_filtered: Vec<f64> = vec![0.0; w * h];
-      for y in 0..h {
-        let row: Vec<f64> =
-          (0..w).map(|x| data[(y * w + x) * ch + c_idx]).collect();
-        let filtered =
-          crate::functions::math_ast::convolve_edge_padded(&row, &kernel);
-        for x in 0..w {
-          row_filtered[y * w + x] = filtered[x];
-        }
-      }
-      for x in 0..w {
-        let col: Vec<f64> = (0..h).map(|y| row_filtered[y * w + x]).collect();
-        let filtered =
-          crate::functions::math_ast::convolve_edge_padded(&col, &kernel);
-        for y in 0..h {
-          out[(y * w + x) * ch + c_idx] = filtered[y];
-        }
-      }
-    }
-    return Ok(Expr::Image {
-      color_space: None,
-      width: *width,
-      height: *height,
-      channels: *channels,
-      data: Arc::new(out),
-      image_type: *image_type,
-    });
+  // Image input: the same radius applies along both axes.
+  if let Some(filtered) = gaussian_filter_image(&args[0], axis, axis) {
+    return Ok(filtered);
   }
 
   crate::emit_message(&format!(
@@ -4714,6 +4649,91 @@ pub fn gaussian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::syntax::expr_to_string(&args[0])
   ));
   Ok(unevaluated("GaussianFilter", args))
+}
+
+/// The half-width and standard deviation of a separable Gaussian filter
+/// along one axis.
+#[derive(Clone, Copy)]
+struct GaussianAxis {
+  radius: usize,
+  sigma: f64,
+}
+
+/// Turn a `Blur`/`GaussianFilter` pixel radius into the kernel it names:
+/// half-width `Ceiling[r]` and standard deviation `r/2`, as
+/// wolframscript does. A radius of zero or less filters with nothing,
+/// leaving the image untouched.
+fn gaussian_axis_from_radius(radius: f64) -> GaussianAxis {
+  if radius <= 0.0 {
+    return GaussianAxis {
+      radius: 0,
+      sigma: 0.0,
+    };
+  }
+  GaussianAxis {
+    radius: radius.ceil() as usize,
+    sigma: radius / 2.0,
+  }
+}
+
+/// Apply a separable discrete-Gaussian filter to an image: `horizontal`
+/// convolves each row, `vertical` each resulting column. Both passes
+/// pad by repeating the edge pixel, matching wolframscript's default
+/// `Padding -> "Fixed"`. Returns `None` for a non-image argument.
+fn gaussian_filter_image(
+  image: &Expr,
+  vertical: GaussianAxis,
+  horizontal: GaussianAxis,
+) -> Option<Expr> {
+  let Expr::Image {
+    color_space: _,
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = image
+  else {
+    return None;
+  };
+  let w = *width as usize;
+  let h = *height as usize;
+  let ch = *channels as usize;
+  if w == 0 || h == 0 {
+    return Some(image.clone());
+  }
+  let row_kernel = gaussian_filter_kernel(horizontal.radius, horizontal.sigma);
+  let column_kernel = gaussian_filter_kernel(vertical.radius, vertical.sigma);
+
+  let mut out: Vec<f64> = vec![0.0; data.len()];
+  for c_idx in 0..ch {
+    let mut row_filtered: Vec<f64> = vec![0.0; w * h];
+    for y in 0..h {
+      let row: Vec<f64> =
+        (0..w).map(|x| data[(y * w + x) * ch + c_idx]).collect();
+      let filtered =
+        crate::functions::math_ast::convolve_edge_padded(&row, &row_kernel);
+      for x in 0..w {
+        row_filtered[y * w + x] = filtered[x];
+      }
+    }
+    for x in 0..w {
+      let col: Vec<f64> = (0..h).map(|y| row_filtered[y * w + x]).collect();
+      let filtered =
+        crate::functions::math_ast::convolve_edge_padded(&col, &column_kernel);
+      for y in 0..h {
+        out[(y * w + x) * ch + c_idx] = filtered[y];
+      }
+    }
+  }
+  Some(Expr::Image {
+    color_space: None,
+    width: *width,
+    height: *height,
+    channels: *channels,
+    data: Arc::new(out),
+    image_type: *image_type,
+  })
 }
 
 /// Build the 1D Gaussian-filter kernel of half-width `radius` and

@@ -2755,6 +2755,157 @@ mod image_processing {
     );
   }
 
+  // `Blur[image, r]` is `GaussianFilter[image, r]`: the same
+  // Bessel-based discrete Gaussian kernel of half-width Ceiling[r] and
+  // standard deviation r/2. Reading the kernel off an impulse pins it.
+  // The taps below agree with wolframscript to within the resolution of
+  // the Real32 pixels they are stored in; wolframscript accumulates in
+  // Real32 too and its last digit can sit one unit either side.
+  #[test]
+  fn blur_uses_the_gaussian_filter_kernel() {
+    clear_state();
+    let impulse =
+      "Image[{{0., 0., 0., 0., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0.}}]";
+    assert_eq!(
+      interpret(&format!("ImageData[Blur[{}, 2]]", impulse)).unwrap(),
+      "{{0., 0., 0., 0., 0., 0.050882235169410706, 0.21183831989765167, \
+       0.47455888986587524, 0.21183831989765167, 0.050882235169410706, \
+       0., 0., 0., 0., 0.}}"
+    );
+    // A fractional radius keeps its own standard deviation and widens the
+    // support to Ceiling[r] taps -- five here, not the three of r = 1.
+    assert_eq!(
+      interpret(&format!("ImageData[Blur[{}, 1.5]]", impulse)).unwrap(),
+      "{{0., 0., 0., 0., 0., 0.023243052884936333, 0.1674487441778183, \
+       0.6186164021492004, 0.1674487441778183, 0.023243052884936333, \
+       0., 0., 0., 0., 0.}}"
+    );
+    // A radius below one still filters.
+    assert_eq!(
+      interpret(&format!("ImageData[GaussianFilter[{}, 0.5]]", impulse))
+        .unwrap(),
+      "{{0., 0., 0., 0., 0., 0., 0.029398256912827492, 0.9412034749984741, \
+       0.029398256912827492, 0., 0., 0., 0., 0., 0.}}"
+    );
+  }
+
+  // A radius pair blurs each axis separately, rows first: {0, 1} leaves
+  // the columns alone and {1, 0} leaves the rows alone.
+  #[test]
+  fn blur_accepts_a_radius_per_axis() {
+    clear_state();
+    let dot = "Image[{{0., 0., 0., 0., 0.}, {0., 0., 0., 0., 0.}, \
+               {0., 0., 1., 0., 0.}, {0., 0., 0., 0., 0.}, \
+               {0., 0., 0., 0., 0.}}]";
+    assert_eq!(
+      interpret(&format!("ImageData[Blur[{}, {{0, 1}}]]", dot)).unwrap(),
+      "{{0., 0., 0., 0., 0.}, {0., 0., 0., 0., 0.}, \
+       {0., 0.0993804857134819, 0.801239013671875, 0.0993804857134819, 0.}, \
+       {0., 0., 0., 0., 0.}, {0., 0., 0., 0., 0.}}"
+    );
+    assert_eq!(
+      interpret(&format!("ImageData[Blur[{}, {{1, 0}}]]", dot)).unwrap(),
+      "{{0., 0., 0., 0., 0.}, {0., 0., 0.0993804857134819, 0., 0.}, \
+       {0., 0., 0.801239013671875, 0., 0.}, \
+       {0., 0., 0.0993804857134819, 0., 0.}, {0., 0., 0., 0., 0.}}"
+    );
+  }
+
+  // Blur reaches at most half way across the image: along an axis of n
+  // pixels the radius is capped at Ceiling[n/2], standard deviation
+  // included. GaussianFilter has no such cap.
+  #[test]
+  fn blur_caps_the_radius_at_half_the_image() {
+    clear_state();
+    let six = "Image[{{1., 0., 0., 0., 0., 0.}}]";
+    let capped = "{{0.6470639109611511, 0.3529360592365265, \
+                   0.13679902255535126, 0.034792982041835785, 0., 0.}}";
+    // Ceiling[6/2] = 3, so every radius from 3 up gives the r = 3 blur.
+    for radius in ["3", "4", "10"] {
+      assert_eq!(
+        interpret(&format!("ImageData[Blur[{}, {}]]", six, radius)).unwrap(),
+        capped,
+        "for radius {}",
+        radius
+      );
+    }
+    assert_eq!(
+      interpret(&format!("ImageData[GaussianFilter[{}, 4]]", six)).unwrap(),
+      "{{0.6062763333320618, 0.39372366666793823, 0.21017961204051971, \
+       0.08939896523952484, 0.02663557603955269, 0.}}"
+    );
+    // The cap is per axis, so a two-pixel-wide image blurs by at most 1
+    // and the default radius 2 already saturates it.
+    let gradient = "Image[{{0.1, 0.2}, {0.3, 0.4}}]";
+    let saturated = "{{0.12981414794921875, 0.20993804931640625}, \
+                      {0.29006195068359375, 0.37018585205078125}}";
+    assert_eq!(
+      interpret(&format!("ImageData[Blur[{}]]", gradient)).unwrap(),
+      saturated
+    );
+    assert_eq!(
+      interpret(&format!("ImageData[Blur[{}, 2.5]]", gradient)).unwrap(),
+      saturated
+    );
+    // An exact rational radius is a number like any other.
+    assert_eq!(
+      interpret(&format!("ImageData[Blur[{}, 1/2]]", gradient)).unwrap(),
+      "{{0.10881947726011276, 0.20293982326984406}, \
+       {0.29706016182899475, 0.39118051528930664}}"
+    );
+  }
+
+  // A radius that is not a non-negative number, or a list that is not a
+  // pair of them, is reported rather than used.
+  #[test]
+  fn blur_reports_a_bad_radius() {
+    use woxi::interpret_with_stdout;
+    clear_state();
+    for spec in ["x", "-1", "I", "{1, -2}", "{1, 2, 3}", "\"1\""] {
+      let call =
+        format!("Blur[Image[{{{{0.1, 0.2}}, {{0.3, 0.4}}}}], {}]", spec);
+      let r = interpret_with_stdout(&call).unwrap();
+      assert_eq!(
+        r.result,
+        format!("Blur[-Image-, {}]", spec.trim_matches('"')),
+        "for {}",
+        spec
+      );
+      let expected = format!(
+        "Blur::bdrad: The specified radius {} should be either a \
+         non-negative number or a list of 2 non-negative numbers.",
+        spec.trim_matches('"')
+      );
+      assert!(
+        r.warnings.contains(&expected),
+        "expected {:?} for {}, got {:?}",
+        expected,
+        spec,
+        r.warnings
+      );
+    }
+    // GaussianFilter reports its own wording, and treats a negative
+    // radius as no filtering at all rather than as an error.
+    let r = interpret_with_stdout(
+      "GaussianFilter[Image[{{0.1, 0.2}, {0.3, 0.4}}], x]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "GaussianFilter[-Image-, x]");
+    assert!(
+      r.warnings.contains(
+        &"GaussianFilter::bdrad: The radius specification x must be a \
+          non-complex number or a nonempty list of non-complex numbers."
+          .to_string()
+      ),
+      "got {:?}",
+      r.warnings
+    );
+    assert_eq!(
+      interpret("ImageData[GaussianFilter[Image[{{0.1, 0.2}}], -1]]").unwrap(),
+      "{{0.10000000149011612, 0.20000000298023224}}"
+    );
+  }
+
   #[test]
   fn sharpen_preserves_dimensions() {
     clear_state();
