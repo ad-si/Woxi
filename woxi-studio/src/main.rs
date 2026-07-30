@@ -6455,6 +6455,37 @@ mod tests {
     assert!(instantiate_stored_manipulate("1 + 1").is_none());
   }
 
+  /// A stored Manipulate whose body calls helpers from earlier Input
+  /// cells (the Demonstrations "Initialization Code" section) must open
+  /// live: `editors_from_notebook` replays the preceding inputs before
+  /// instantiating the widget.
+  #[test]
+  fn stored_manipulate_replays_initialization_cells_on_load() {
+    let nb_src = r#"Notebook[{
+Cell[BoxData["initPlot[z_] := Plot[Sin[z x], {x, 0, 5}]"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[initPlot[a], {a, 1, 3}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 1}, \"…\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "initPlot from the initialization cell must be in scope, \
+       so the first render produces the plot"
+    );
+  }
+
   #[test]
   fn oscilloscope_manipulate_builds_full_widget() {
     // End-to-end regression for the "Oscilloscope with Two Signal Inputs"

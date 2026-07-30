@@ -5734,6 +5734,54 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
 
+    /// `ContourPlot[lhs == rhs, …]` draws the equation's implicit curve
+    /// (the zero contour of `lhs - rhs`) instead of an empty plot.
+    #[test]
+    fn contour_plot_equation_draws_curve() {
+      let svg =
+        export_svg("ContourPlot[x^2 + y^2 == 4, {x, -2, 2}, {y, -2, 2}]");
+      assert!(
+        svg.contains("<polyline"),
+        "expected the implicit circle as contour polylines, got: {}",
+        &svg[..svg.len().min(200)]
+      );
+    }
+
+    /// A pre-rendered equation ContourPlot must merge with other graphics
+    /// inside Show — the curve is carried along as plot-source line series.
+    #[test]
+    fn show_merges_equation_contour_plot_with_graphics() {
+      let svg = export_svg(
+        "Show[{ContourPlot[y^2 == 20 x, {x, -20, 20}, {y, -20, 20}], \
+         Graphics[Point[{5, 0}]]}, PlotRange -> All]",
+      );
+      assert!(
+        svg.contains("<polyline"),
+        "expected the parabola curve inside Show"
+      );
+      assert!(
+        svg.contains("<circle"),
+        "expected the merged Point inside Show"
+      );
+    }
+
+    /// Show must splice a *list* of Graphics (e.g. a collected list of
+    /// per-ray line graphics) instead of silently dropping it.
+    #[test]
+    fn show_flattens_nested_graphics_lists() {
+      let svg = export_svg(
+        "Show[{Graphics[Point[{5, 0}]], \
+         {Graphics[Line[{{0, 0}, {10, 10}}]], \
+          Graphics[Line[{{0, 0}, {10, -10}}]]}}, PlotRange -> All]",
+      );
+      let lines = svg.matches("<polyline").count();
+      assert_eq!(
+        lines, 2,
+        "expected both nested-list Lines to merge, got {lines}"
+      );
+      assert!(svg.contains("<circle"), "expected the Point to survive");
+    }
+
     #[test]
     fn region_plot_basic() {
       insta::assert_snapshot!(export_svg(

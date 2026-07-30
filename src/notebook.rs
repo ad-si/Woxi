@@ -588,8 +588,8 @@ fn render_text_element(s: &str) -> String {
     });
     return match style {
       Some(
-        "InlineMath" | "InlineFormula" | "InlineCode" | "InlineInput"
-        | "InlineOutput",
+        "InlineMath" | "InlineFormula" | "InlineCell" | "InlineCode"
+        | "InlineInput" | "InlineOutput",
       ) => parts
         .first()
         .map(|c| extract_cell_content(c.trim()))
@@ -2150,6 +2150,42 @@ Cell["Chapter 2", "Chapter"]
       extract_cell_content(s),
       "If you provide initialization code, include a SaveDefinitions->True \
        option in the Manipulate."
+    );
+  }
+
+  #[test]
+  fn test_extract_textdata_inline_math_cell() {
+    // Inline `Cell[BoxData[…], "InlineMath"]` elements hold real formulas
+    // (unlike the "more info" opener buttons) and must render as text.
+    let s = r#"TextData[{
+ "Given a point F (the focus) and a line ",
+ Cell[BoxData[
+  FormBox["d", TraditionalForm]], "InlineMath",ExpressionUUID->
+  "23d75367-0ed4-44ff-ba06-4d9bdc71d1e9"],
+ " (the directrix)."
+}]"#;
+    assert_eq!(
+      extract_cell_content(s),
+      "Given a point F (the focus) and a line d (the directrix)."
+    );
+  }
+
+  #[test]
+  fn test_extract_textdata_inline_math_formula() {
+    // A boxed formula inside prose converts to InputForm-style text.
+    let s = r#"TextData[{
+ "One form of the equation of a parabola is ",
+ Cell[BoxData[
+  FormBox[
+   RowBox[{
+    SuperscriptBox["y", "2"], "=",
+    RowBox[{"2", "p", " ", "x"}]}], TraditionalForm]], "InlineMath",
+  ExpressionUUID->"9efcaa42-0dc4-43ec-a2b4-2e1f21a58f50"],
+ "."
+}]"#;
+    assert_eq!(
+      extract_cell_content(s),
+      "One form of the equation of a parabola is (y)^(2)=2p x."
     );
   }
 

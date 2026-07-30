@@ -2214,6 +2214,31 @@ f[x_] := x^2"#,
       r#"f[x]"#,
     );
   }
+  /// AppendTo/PrependTo on an indexed (DownValue) target `f[1]`, both
+  /// global and Module-local, including the chained-assignment seed
+  /// `f[1] = f[2] = {}` used by the parabolic-mirror Demonstration.
+  #[test]
+  fn append_to_indexed_downvalue() {
+    assert_case(
+      r#"f[1] = {}; AppendTo[f[1], 5]; AppendTo[f[1], 7]; f[1]"#,
+      r#"{5, 7}"#,
+    );
+    assert_case(
+      r#"g1[1] = g1[2] = {}; AppendTo[g1[2], 1]; {g1[1], g1[2]}"#,
+      r#"{{}, {1}}"#,
+    );
+    assert_case(
+      r#"Module[{h}, h[1] = {}; AppendTo[h[1], 3]; h[1]]"#,
+      r#"{3}"#,
+    );
+    assert_case(r#"k[1] = {2, 3}; PrependTo[k[1], 1]; k[1]"#, r#"{1, 2, 3}"#);
+  }
+  /// An indexed target with no stored value still reports rvalue and
+  /// leaves the call unevaluated.
+  #[test]
+  fn append_to_indexed_without_value_stays_unevaluated() {
+    assert_case(r#"AppendTo[noval[1], 5]"#, r#"AppendTo[noval[1], 5]"#);
+  }
   #[test]
   fn symbol_literal_27() {
     assert_case(

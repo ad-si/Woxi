@@ -1504,6 +1504,61 @@ pub fn evaluate_expr_to_expr_inner(
           crate::evaluator::assignment::set_ast(&args[0], &new_val)?;
           return Ok(new_val);
         }
+        // AppendTo/PrependTo on an indexed (DownValue) target:
+        // AppendTo[f[1], v] after `f[1] = {…}`. Evaluate the stored value,
+        // extend it, and write it back through the same indexed-assignment
+        // path `f[1] = …` takes. A target with no stored value evaluates
+        // to itself — that is the rvalue error case.
+        if (name == "AppendTo" || name == "PrependTo")
+          && args.len() == 2
+          && matches!(&args[0], Expr::FunctionCall { .. })
+        {
+          let is_append = name == "AppendTo";
+          let mut current = evaluate_expr_to_expr(&args[0])?;
+          let has_value = crate::syntax::expr_to_string(&current)
+            != crate::syntax::expr_to_string(&args[0]);
+          if has_value {
+            let elem = evaluate_expr_to_expr(&args[1])?;
+            let new_val = match &mut current {
+              Expr::List(items) => {
+                let mut items = std::mem::take(items);
+                if is_append {
+                  items.push(elem);
+                } else {
+                  items.insert(0, elem);
+                }
+                Expr::List(items)
+              }
+              Expr::FunctionCall {
+                name: head,
+                args: fa,
+              } => {
+                let head = std::mem::take(head);
+                let mut fa = std::mem::take(fa);
+                if is_append {
+                  fa.push(elem);
+                } else {
+                  fa.insert(0, elem);
+                }
+                Expr::FunctionCall {
+                  name: head,
+                  args: fa,
+                }
+              }
+              _ => {
+                crate::emit_message(&format!(
+                  "{}::normal: Nonatomic expression expected at position 1 \
+                   in {}.",
+                  name,
+                  crate::syntax::expr_to_output(&unevaluated(name, args))
+                ));
+                return Ok(unevaluated(name, args));
+              }
+            };
+            crate::evaluator::assignment::set_ast(&args[0], &new_val)?;
+            return Ok(new_val);
+          }
+        }
         // A target that is neither a symbol nor a Part cannot hold a value.
         if (name == "AppendTo" || name == "PrependTo")
           && args.len() == 2

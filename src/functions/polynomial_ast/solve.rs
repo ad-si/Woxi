@@ -1698,6 +1698,67 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => args,
   };
 
+  // Pre-pass: thread equations whose two sides are equal-length lists into
+  // their component equations ({xx, yy} == {a, b} → xx == a, yy == b,
+  // recursively), matching Wolfram. Vector equations like
+  // `{xx, yy} == t*v + pos` (parametric-intersection systems) otherwise
+  // carry no solvable content for the scalar equation paths below.
+  fn thread_list_equations(eq: &Expr, out: &mut Vec<Expr>) -> bool {
+    let sides: Option<(&Expr, &Expr)> = match eq {
+      Expr::Comparison {
+        operands,
+        operators,
+      } if operands.len() == 2
+        && operators.len() == 1
+        && operators[0] == ComparisonOp::Equal =>
+      {
+        Some((&operands[0], &operands[1]))
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Equal" && args.len() == 2 =>
+      {
+        Some((&args[0], &args[1]))
+      }
+      _ => None,
+    };
+    if let Some((Expr::List(l), Expr::List(r))) = sides
+      && l.len() == r.len()
+    {
+      for (li, ri) in l.iter().zip(r.iter()) {
+        thread_list_equations(
+          &Expr::Comparison {
+            operands: vec![li.clone(), ri.clone()],
+            operators: vec![ComparisonOp::Equal],
+          },
+          out,
+        );
+      }
+      return true;
+    }
+    out.push(eq.clone());
+    false
+  }
+  let threaded_args_owned: Vec<Expr>;
+  let args = {
+    let eqns: Vec<Expr> = match &args[0] {
+      Expr::List(items) => items.to_vec(),
+      other => vec![other.clone()],
+    };
+    let mut threaded = Vec::new();
+    let mut any_threaded = false;
+    for eq in &eqns {
+      any_threaded |= thread_list_equations(eq, &mut threaded);
+    }
+    if any_threaded {
+      let mut new_args = args.to_vec();
+      new_args[0] = Expr::List(threaded.into());
+      threaded_args_owned = new_args;
+      threaded_args_owned.as_slice()
+    } else {
+      args
+    }
+  };
+
   // Pre-pass: normalize a bare-symbol variable to a single-element list when
   // the first argument is a list of equations. Solve[{x == 1, x == 2}, x]
   // behaves like Solve[{x == 1, x == 2}, {x}], which the system path handles;
