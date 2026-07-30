@@ -1,0 +1,109 @@
+use std::collections::{HashMap, HashSet};
+use std::sync::LazyLock;
+
+// functions.csv format: name,description,implementation_status,effect_level,version,rank
+static FUNCTIONS_CSV: &str = include_str!("../../functions.csv");
+
+/// Set of known Wolfram Language function names (from functions.csv)
+/// that are NOT yet implemented in Woxi.
+static KNOWN_WOLFRAM_FUNCTIONS: LazyLock<HashSet<&'static str>> =
+  LazyLock::new(|| {
+    FUNCTIONS_CSV
+      .lines()
+      .skip(1)
+      .filter_map(|line| {
+        let fields: Vec<&str> = line.splitn(4, ',').collect();
+        let name = fields.first()?.trim();
+        let status = fields.get(2).unwrap_or(&"").trim();
+        if !status.starts_with("✅") && !name.is_empty() && name != "-----" {
+          Some(name)
+        } else {
+          None
+        }
+      })
+      .collect()
+  });
+
+/// Check if a function name is a known Wolfram Language function
+/// that hasn't been implemented yet.
+pub fn is_known_wolfram_function(name: &str) -> bool {
+  KNOWN_WOLFRAM_FUNCTIONS.contains(name)
+}
+
+/// Information about a built-in Wolfram Language function.
+pub struct BuiltinFunctionInfo {
+  pub description: &'static str,
+}
+
+/// Registry of all function info from functions.csv.
+static BUILTIN_FUNCTION_INFO: LazyLock<
+  HashMap<&'static str, BuiltinFunctionInfo>,
+> = LazyLock::new(|| {
+  FUNCTIONS_CSV
+    .lines()
+    .skip(1)
+    .filter_map(|line| {
+      let fields: Vec<&str> = line.splitn(5, ',').collect();
+      let name = fields.first()?.trim();
+      let description = fields.get(1).unwrap_or(&"").trim();
+      let effect_level = fields.get(3).unwrap_or(&"").trim();
+      if name.is_empty() || name == "-----" {
+        return None;
+      }
+      if description.is_empty() && effect_level.is_empty() {
+        return None;
+      }
+      Some((name, BuiltinFunctionInfo { description }))
+    })
+    .collect()
+});
+
+/// Look up built-in function info by name.
+pub fn get_builtin_function_info(
+  name: &str,
+) -> Option<&'static BuiltinFunctionInfo> {
+  BUILTIN_FUNCTION_INFO.get(name)
+}
+
+/// Get all built-in function names from functions.csv.
+pub fn get_builtin_function_names() -> Vec<&'static str> {
+  let mut names: Vec<&str> = BUILTIN_FUNCTION_INFO.keys().copied().collect();
+  names.sort();
+  names
+}
+
+/// Get every Wolfram Language function name that appears in
+/// `functions.csv` — whether or not Woxi has implemented it.
+pub fn known_wolfram_function_names() -> Vec<&'static str> {
+  let mut names: Vec<&str> = KNOWN_WOLFRAM_FUNCTIONS.iter().copied().collect();
+  names.sort();
+  names
+}
+
+/// `tests/SUMMARY.md` is the mdbook table of contents that lists every
+/// documented built-in. Embedding it lets `Information[…]` resolve a symbol
+/// name to its public documentation URL without runtime file I/O (works in
+/// WASM too).
+static SUMMARY_MD: &str = include_str!("../../tests/SUMMARY.md");
+
+/// Map of built-in symbol name → public documentation URL on
+/// <https://woxi.ad-si.com>. Built once from `SUMMARY.md` entries of the
+/// form `` [`Sin`](math/elementary/Sin.md) ``.
+static DOC_URL_MAP: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
+  let re = regex::Regex::new(r"\[`([A-Za-z][A-Za-z0-9]*)`\]\(([^)]+)\.md\)")
+    .expect("valid SUMMARY.md regex");
+  let mut map = HashMap::new();
+  for cap in re.captures_iter(SUMMARY_MD) {
+    let name = cap.get(1).unwrap().as_str().to_string();
+    let path = cap.get(2).unwrap().as_str();
+    map
+      .entry(name)
+      .or_insert_with(|| format!("https://woxi.ad-si.com/docs/{}", path));
+  }
+  map
+});
+
+/// Look up the public documentation URL for a built-in symbol, if one exists.
+pub fn get_doc_url(name: &str) -> Option<&'static str> {
+  DOC_URL_MAP.get(name).map(|s| s.as_str())
+}
