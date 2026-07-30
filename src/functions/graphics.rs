@@ -7706,6 +7706,34 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args
   };
 
+  // `Show[image, opts…]` — a raster Image argument passes through: Show
+  // of an image just displays it (sizing options like `ImageSize -> 100`
+  // don't alter the pixel data), e.g. the `Show[ColorData[name, "Image"],
+  // ImageSize -> 100]` gradient swatches of the Demonstrations site.
+  if let Some((first, rest)) = args.split_first()
+    && rest
+      .iter()
+      .all(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+  {
+    let evaled_first;
+    let first_ref = match first {
+      Expr::FunctionCall { name, .. }
+        if name == "Graphics" || name == "Graphics3D" =>
+      {
+        first
+      }
+      Expr::Image { .. } => first,
+      _ => {
+        evaled_first =
+          evaluate_expr_to_expr(first).unwrap_or_else(|_| first.clone());
+        &evaled_first
+      }
+    };
+    if matches!(first_ref, Expr::Image { .. }) {
+      return Ok(first_ref.clone());
+    }
+  }
+
   // Walk the args with an explicit work list: an argument that evaluates
   // to a *list* of graphics (e.g. `Show[{g, {h1, h2}}]`, or a variable
   // holding a collected list of Graphics) is spliced in place so its
@@ -12869,13 +12897,30 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   }
   let arg_items: Vec<Expr> = arg_items
     .into_iter()
-    .map(|spec| match &spec {
-      Expr::FunctionCall { name, args }
-        if name == "Control" && !args.is_empty() =>
-      {
-        args[0].clone()
+    .map(|spec| {
+      // `Dynamic[Control[…]]` (the Demonstrations idiom
+      // `Dynamic@Control@{…}`) is the Control it wraps — the Dynamic
+      // only adds FrontEnd update hints, so it unwraps first.
+      let spec = match &spec {
+        Expr::FunctionCall { name, args }
+          if name == "Dynamic"
+            && matches!(
+              args.first(),
+              Some(Expr::FunctionCall { name: inner, .. }) if inner == "Control"
+            ) =>
+        {
+          args[0].clone()
+        }
+        _ => spec,
+      };
+      match &spec {
+        Expr::FunctionCall { name, args }
+          if name == "Control" && !args.is_empty() =>
+        {
+          args[0].clone()
+        }
+        _ => spec,
       }
-      _ => spec,
     })
     .collect();
   // A control's bounds may reference *other* control variables — Kepler's
@@ -12958,9 +13003,11 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       Expr::FunctionCall { name, .. } if name == "Spacer" => continue,
       _ => {}
     }
-    // Only list-shaped arguments are control specs. Any other trailing
-    // argument (e.g. a `Dynamic[Panel[…]]` of checkboxes) is an extra
-    // display element: capture it so the frontend can render it live.
+    // Only list-shaped arguments are control specs (layout containers of
+    // controls were already flattened into `arg_items` above). Any other
+    // trailing argument (e.g. a `Dynamic[Panel[…]]` of checkboxes) is an
+    // extra display element: capture it so the frontend can render it
+    // live.
     if !matches!(spec, Expr::List(_)) {
       displays.push(crate::syntax::expr_to_input_form(spec));
       continue;
@@ -14396,11 +14443,20 @@ fn discrete_choice_rule(item: &Expr) -> Option<(&Expr, &Expr)> {
 }
 
 /// Render a discrete-choice label. A string label is shown without its
-/// surrounding quotes; anything else falls back to its InputForm.
+/// surrounding quotes; presentation wrappers (`Style["P", Italic]`,
+/// `Row[{…}]`) render as their display text via the label-run renderer;
+/// anything that renders empty falls back to its InputForm.
 fn discrete_choice_label(expr: &Expr) -> String {
   match expr {
     Expr::String(s) => s.clone(),
-    other => crate::syntax::expr_to_input_form(other),
+    other => {
+      let flat = flatten_label_runs(&manipulate_label_runs(other, false));
+      if flat.is_empty() {
+        crate::syntax::expr_to_input_form(other)
+      } else {
+        flat
+      }
+    }
   }
 }
 
@@ -14411,13 +14467,34 @@ fn discrete_choice_label(expr: &Expr) -> String {
 fn discrete_choice_label_svg(label: &Expr) -> Option<String> {
   match label {
     Expr::Graphics { svg, .. } => Some(svg.clone()),
+    // A raster image label (e.g. the `ColorData[…, "Image"]` swatches of a
+    // gradient picker) wraps its pixels as an SVG document.
+    Expr::Image {
+      width,
+      height,
+      channels,
+      data,
+      ..
+    } => Some(crate::functions::image_ast::image_to_svg_document(
+      *width, *height, *channels, data,
+    )),
     // Evaluating through the interpreter (not `evaluate_expr_to_expr`)
     // is what renders a held `Graphics[…]` call — or a user-defined icon
-    // function like `myIcon[2]` — to SVG.
+    // function like `myIcon[2]` — to SVG. A call producing an `Image`
+    // (e.g. `Show[ColorData[name, "Image"], ImageSize -> 100]`) recurses
+    // into the raster arm above.
     Expr::FunctionCall { .. } => {
       let code = crate::syntax::expr_to_input_form(label);
       match crate::interpret_with_stdout(&code) {
-        Ok(result) => result.graphics,
+        Ok(result) => {
+          if result.graphics.is_some() {
+            return result.graphics;
+          }
+          match crate::interpret_to_expr(&code) {
+            Ok(img @ Expr::Image { .. }) => discrete_choice_label_svg(&img),
+            _ => None,
+          }
+        }
         Err(_) => None,
       }
     }
