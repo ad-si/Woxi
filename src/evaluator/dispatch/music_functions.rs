@@ -7,7 +7,6 @@
 
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::unevaluated;
 
 pub(super) fn dispatch_music_functions(
   name: &str,

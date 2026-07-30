@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, bool_expr, unevaluated};
 
 /// MapAll[f, expr] - apply f to every subexpression in expr (bottom-up)
 pub fn map_all_ast(f: &Expr, expr: &Expr) -> Result<Expr, InterpreterError> {
@@ -275,7 +274,6 @@ fn differentiate_function_body(body: &Expr, orders: &[i128]) -> Option<Expr> {
 
 /// Split an expression by its head. E.g., split_by_head(a + b, "Plus") = [a, b]
 fn split_by_head(expr: &Expr, head: &str) -> Vec<Expr> {
-  use crate::syntax::BinaryOperator;
   // Operators like `|` (Alternatives) or `+` (Plus) are stored as (possibly
   // nested) BinaryOp nodes rather than FunctionCall nodes. Map the operator to
   // its head name so Distribute can split e.g. `a | b | c` into {a, b, c}.
@@ -346,7 +344,6 @@ pub fn apply_apply_ast(
     // FunctionCall nodes — notably Alternatives (`a | b | c`). Flatten
     // same-operator chains so `List @@ (a | b | c)` → {a, b, c}, matching WS.
     Expr::BinaryOp { op, left, right } => {
-      use crate::syntax::BinaryOperator;
       fn flatten(op: &BinaryOperator, e: &Expr, out: &mut Vec<Expr>) {
         if let Expr::BinaryOp {
           op: inner,

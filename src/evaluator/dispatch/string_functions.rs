@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{bool_expr, unevaluated};
 
 pub fn dispatch_string_functions(
   name: &str,

@@ -6,9 +6,9 @@
 //! TotalVariationFilter), and the Audio paths of shared functions
 //! (Mean/Median/Variance/Quantile, MeanFilter, LowpassFilter).
 
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::audio_ast as audio;
-use crate::syntax::Expr;
 
 pub(super) fn dispatch_audio_functions(
   name: &str,

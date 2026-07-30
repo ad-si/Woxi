@@ -3,9 +3,6 @@ use super::*;
 use crate::functions::math_ast::{
   expr_to_rational, gcd_i128, gcd_u64, make_rational, make_sqrt, rat_reduce,
 };
-use crate::syntax::{
-  BinaryOperator, ComparisonOp, UnaryOperator, binop, unevaluated,
-};
 
 /// Columnwise quartile-family statistic for a matrix argument.
 ///

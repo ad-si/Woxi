@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, UnaryOperator};
 
 fn expr_to_i64(expr: &Expr) -> Option<i64> {
   match expr {

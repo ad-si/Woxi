@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{ComparisonOp, bool_expr};
 
 pub fn dispatch_boolean_functions(
   name: &str,

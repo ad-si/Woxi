@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{ComparisonOp, bool_expr, unevaluated};
 
 /// True if `expr` contains any Real or BigFloat node — used to decide
 /// between exact and inexact number predicates.

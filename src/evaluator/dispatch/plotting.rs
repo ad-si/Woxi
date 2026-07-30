@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, unevaluated};
 
 /// Wrap a plot function call in Quiet mode so that messages emitted during
 /// function sampling (e.g. Power::indet for 0^0) are suppressed and discarded.

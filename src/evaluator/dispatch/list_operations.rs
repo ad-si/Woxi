@@ -2,7 +2,6 @@
 use super::*;
 use crate::functions::list_helpers_ast;
 use crate::functions::string_ast::{Overlaps, parse_overlaps_option};
-use crate::syntax::{BinaryOperator, UnaryOperator, bool_expr, unevaluated};
 
 /// Parse the `m` argument of NestWhile[f, x, test, m, ...]. Returns `All` for
 /// the symbol `All`, `Last(n)` for a positive integer, and `None` otherwise.

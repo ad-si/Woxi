@@ -1,8 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-
 use crate::functions::math_ast::rat_reduce;
-use crate::syntax::bool_expr;
 
 /// Transform a Dataset type expression for DeleteMissing:
 /// Replace the fixed-length count in Vector[elem_type, N] with TypeSystem`AnyLength.

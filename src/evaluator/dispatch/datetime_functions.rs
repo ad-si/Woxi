@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, UnaryOperator, bool_expr, unevaluated};
 
 /// How many date components a granularity keeps: `"Month"` names a year and a
 /// month, `"Hour"` everything down to the hour, and so on. `None` for a

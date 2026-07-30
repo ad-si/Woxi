@@ -3,10 +3,6 @@ use super::*;
 use crate::functions::math_ast::{
   expr_to_rational, is_sqrt, make_sqrt, rat_reduce,
 };
-use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, binop, bool_expr,
-  unevaluated,
-};
 
 pub fn dispatch_complex_and_special(
   name: &str,

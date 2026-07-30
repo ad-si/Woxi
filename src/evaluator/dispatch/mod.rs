@@ -1,17 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
 
-// Re-export crate types/functions for submodules (used by submodules via `use super::*`)
-#[allow(unused_imports)]
-pub(crate) use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
-  unevaluated,
-};
-#[allow(unused_imports)]
-pub(crate) use crate::{
-  ENV, InterpreterError, PART_DEPTH, StoredValue, interpret,
-};
-
 pub mod arg_count;
 mod association_functions;
 mod audio_functions;

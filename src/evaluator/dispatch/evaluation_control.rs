@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, bool_expr, unevaluated};
 
 pub fn dispatch_evaluation_control(
   name: &str,

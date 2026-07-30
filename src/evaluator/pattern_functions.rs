@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::unevaluated;
 
 /// Pattern[name, Blank[]] → name_ or Pattern[name, Blank[h]] → name_h
 #[inline(never)]

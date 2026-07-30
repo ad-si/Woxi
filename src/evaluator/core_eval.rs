@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, ComparisonOp, bool_expr, unevaluated};
 
 /// Report that an in-place modification has nothing to modify:
 /// `<Fn>::rvalue: <target> is not a variable with a value, so its value
