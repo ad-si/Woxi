@@ -1910,6 +1910,13 @@ fn evaluate_function_call_ast_inner(
     return Ok(result);
   }
 
+  // Refresh[expr, opts…] — the FrontEnd refresh wrapper displays (and
+  // returns) its first argument; the update-interval options only matter
+  // inside a Dynamic FrontEnd context.
+  if name == "Refresh" && !args.is_empty() {
+    return Ok(args[0].clone());
+  }
+
   // DiffusionPDETerm[{u, x}, c] → 0 (PDE term evaluates to zero outside solver context)
   if name == "DiffusionPDETerm"
     && args.len() == 2
@@ -11638,6 +11645,19 @@ fn nd_eigenvalues_diffusion_line(args: &[Expr]) -> Option<Expr> {
 
 /// Evaluate Blend[{c1, c2, ...}] or Blend[{c1, c2, ...}, t].
 fn evaluate_blend(args: &[Expr]) -> Option<Expr> {
+  // Named-scheme form: Blend["TemperatureMap", t] interpolates the stored
+  // control points of the named ColorData gradient at t.
+  if let Expr::String(scheme) = &args[0]
+    && args.len() == 2
+    && let Some(t) = crate::functions::math_ast::try_eval_to_f64(&args[1])
+    && let Some((r, g, b)) =
+      crate::functions::chart::sample_named_gradient(scheme, t)
+  {
+    return Some(Expr::FunctionCall {
+      name: "RGBColor".to_string(),
+      args: vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)].into(),
+    });
+  }
   let colors = match &args[0] {
     Expr::List(items) if items.len() >= 2 => items,
     _ => return None,

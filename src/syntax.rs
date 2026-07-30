@@ -257,6 +257,7 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "Product" => Some("\u{220F}"),
     "Integral" => Some("\u{222B}"),
     "PartialD" => Some("\u{2202}"),
+    "Del" => Some("\u{2207}"),
     "DifferentialD" => Some("\u{2146}"),
     "CapitalDifferentialD" => Some("\u{2145}"),
     "Sqrt" => Some("\u{221A}"),
@@ -9634,6 +9635,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             right.as_ref(),
             Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2
           )))
+        // Minus with an additive right operand: subtraction is left-
+        // associative, so a held `a - (b + c)` / `a - (b - c)` must keep
+        // its parentheses — printing `a - b + c` changes the value.
+        || (matches!(op, BinaryOperator::Minus) && is_additive(right))
         // Times * Times (right-nested) where the inner left factor is a
         // bare Integer: this is the literal chain produced for
         // `Derivative[n][# ^ k &]` (e.g. `3*(2*#1)`). Times normally

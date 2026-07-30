@@ -678,6 +678,30 @@ mod pattern_matching {
   mod multiple_rules {
     use super::*;
 
+    /// A rule list must descend into symbolic comparisons: `y == x` stays
+    /// unevaluated, and every operand is an ordinary subexpression.
+    /// (Regression: multi-rule ReplaceAll returned Comparison nodes
+    /// unchanged, so `curveExp /. {x -> xx, y -> yy}` never substituted.)
+    #[test]
+    fn list_of_rules_replaces_inside_equation() {
+      assert_eq!(interpret("y == x /. {x -> 2, y -> 3}").unwrap(), "False");
+      assert_eq!(
+        interpret("(y^2 == 20 x) /. {x -> xx, y -> yy}").unwrap(),
+        "yy^2 == 20*xx"
+      );
+      assert_eq!(
+        interpret("f[x] == g[y] /. {x -> 1, y -> 2}").unwrap(),
+        "f[1] == g[2]"
+      );
+      assert_eq!(interpret("a < b /. {a -> 1, b -> 2}").unwrap(), "True");
+    }
+
+    /// A rule list must descend into a symbolic Part extraction.
+    #[test]
+    fn list_of_rules_replaces_inside_part() {
+      assert_eq!(interpret("m[[1]] /. {m -> {5, 6}}").unwrap(), "5");
+    }
+
     #[test]
     fn list_of_rules_applied_in_order() {
       // First matching rule wins

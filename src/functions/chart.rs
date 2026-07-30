@@ -427,7 +427,9 @@ const CHERRY_TONES_GRADIENT: [(f64, f64, f64); 8] = [
 ];
 
 /// Resolve a named ChartStyle color scheme to its gradient control points.
-fn named_color_scheme(name: &str) -> Option<&'static [(f64, f64, f64)]> {
+pub(crate) fn named_color_scheme(
+  name: &str,
+) -> Option<&'static [(f64, f64, f64)]> {
   let scheme: &'static [(f64, f64, f64)] = match name {
     "Pastel" => &PASTEL_GRADIENT,
     "Rainbow" => &RAINBOW_GRADIENT,
@@ -461,6 +463,33 @@ fn scheme_name(val: &Expr) -> Option<String> {
     }
     _ => None,
   }
+}
+
+/// Sample a named `ColorData` gradient scheme at parameter `t` (clamped to
+/// [0, 1]) via a linear `Blend` of its control points — the same
+/// interpolation wolframscript applies for `ColorData[name][t]` /
+/// `Blend[name, t]`. Returns `None` for schemes without stored control
+/// points.
+pub(crate) fn sample_named_gradient(
+  name: &str,
+  t: f64,
+) -> Option<(f64, f64, f64)> {
+  let controls = named_color_scheme(name)?;
+  let m = controls.len();
+  if m == 0 {
+    return None;
+  }
+  let t = t.clamp(0.0, 1.0);
+  let p = t * (m - 1) as f64;
+  let idx = (p.floor() as usize).min(m - 1);
+  let frac = p - idx as f64;
+  let (r0, g0, b0) = controls[idx];
+  let (r1, g1, b1) = controls[(idx + 1).min(m - 1)];
+  Some((
+    r0 + frac * (r1 - r0),
+    g0 + frac * (g1 - g0),
+    b0 + frac * (b1 - b0),
+  ))
 }
 
 /// Sample a gradient (linear `Blend` of its control points) at `n` evenly

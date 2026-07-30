@@ -6534,6 +6534,27 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // hover in the Wolfram FrontEnd, which static SVG can't do)
         "Tooltip" if !args.is_empty() => expr_to_svg_markup(&args[0]),
 
+        // Presentation wrappers display their content only.
+        "Text" | "TraditionalForm" | "DisplayForm" | "StandardForm"
+          if args.len() == 1 =>
+        {
+          expr_to_svg_markup(&args[0])
+        }
+
+        // Row[{a, b, …}] concatenates its parts; Row[{…}, sep] joins
+        // them with the separator.
+        "Row" if !args.is_empty() => match &args[0] {
+          Expr::List(parts) => {
+            let sep = args.get(1).map(expr_to_svg_markup).unwrap_or_default();
+            parts
+              .iter()
+              .map(expr_to_svg_markup)
+              .collect::<Vec<_>>()
+              .join(&sep)
+          }
+          other => expr_to_svg_markup(other),
+        },
+
         // General FunctionCall: name[arg1, arg2, ...]
         _ => {
           let parts: Vec<String> =
@@ -7685,22 +7706,32 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args
   };
 
-  for arg in args {
+  // Walk the args with an explicit work list: an argument that evaluates
+  // to a *list* of graphics (e.g. `Show[{g, {h1, h2}}]`, or a variable
+  // holding a collected list of Graphics) is spliced in place so its
+  // elements merge like ordinary arguments instead of being dropped.
+  let mut pending: Vec<Expr> = args.to_vec();
+  let mut idx = 0;
+  while idx < pending.len() {
+    let arg = pending[idx].clone();
     // If the arg is not already a Graphics/Graphics3D expression,
     // try evaluating it (e.g. it could be a variable or function call)
-    let evaled;
-    let expr_ref = match arg {
+    let expr_owned = match &arg {
       Expr::FunctionCall { name, .. }
         if name == "Graphics" || name == "Graphics3D" =>
       {
-        arg
+        arg.clone()
       }
-      Expr::Rule { .. } => arg,
-      _ => {
-        evaled = evaluate_expr_to_expr(arg).unwrap_or_else(|_| arg.clone());
-        &evaled
-      }
+      Expr::Rule { .. } => arg.clone(),
+      _ => evaluate_expr_to_expr(&arg).unwrap_or_else(|_| arg.clone()),
     };
+    if let Expr::List(items) = &expr_owned {
+      let items: Vec<Expr> = items.iter().cloned().collect();
+      pending.splice(idx..idx + 1, items);
+      continue;
+    }
+    idx += 1;
+    let expr_ref = &expr_owned;
 
     match expr_ref {
       Expr::FunctionCall { name, args: gargs } if name == "Graphics" => {
@@ -12352,6 +12383,18 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::FunctionCall { name, .. } if name == "Style" => {
         out_args.push(spec.clone());
       }
+      // Control objects and layout containers grouping them — `Control[…]`,
+      // `Button[…]`, `Row[{Control[…], Spacer[…], …}]` and friends — are
+      // valid Manipulate arguments (the Demonstrations layout pattern), not
+      // malformed variable specs. They pass through with no message.
+      Expr::FunctionCall { name, .. }
+        if matches!(
+          name.as_str(),
+          "Row" | "Column" | "Grid" | "Control" | "Button" | "Spacer"
+        ) =>
+      {
+        out_args.push(spec.clone());
+      }
       _ => {
         // Non-list variable specification: emit Manipulate::vsform
         // message but still return the expression unchanged, matching
@@ -12562,6 +12605,31 @@ pub enum ManipulateControl {
     auto_create: bool,
     label: String,
   },
+  /// A `ControlType -> Trigger` control: a play/pause button pair that
+  /// sweeps its variable from `min` towards `max` in `step` increments
+  /// while running (the Demonstrations "run/stop simulation" control).
+  /// `max` may be `f64::INFINITY` (`{time, 0, Infinity, 1, …}`), in which
+  /// case the sweep never wraps.
+  Trigger {
+    name: String,
+    min: f64,
+    max: f64,
+    step: f64,
+    initial: f64,
+    /// `AnimationRunning -> True`: start sweeping immediately. Wolfram's
+    /// Trigger sits paused until pressed by default.
+    running: bool,
+    label: String,
+    label_runs: Vec<LabelRun>,
+  },
+  /// A `Button[label, action]` control row. Pressing it evaluates `action`
+  /// (InputForm) against the live bindings — typically resetting state
+  /// variables (`time = 0; {U, V} = {Uinit, Vinit}`). Binds no variable.
+  Button {
+    label: String,
+    label_runs: Vec<LabelRun>,
+    action: String,
+  },
   /// A static heading row between controls: a bare string or `Style[…]`
   /// Manipulate argument (Wolfram's `ThisIsNotAControl` annotations, e.g.
   /// the "signal 1" / "signal 2" captions of the oscilloscope
@@ -12584,8 +12652,11 @@ impl ManipulateControl {
       | ManipulateControl::Discrete { name, .. }
       | ManipulateControl::Slider2D { name, .. }
       | ManipulateControl::IntervalSlider { name, .. }
+      | ManipulateControl::Trigger { name, .. }
       | ManipulateControl::Locator { name, .. } => name,
-      ManipulateControl::Heading { .. } | ManipulateControl::Divider => "",
+      ManipulateControl::Button { .. }
+      | ManipulateControl::Heading { .. }
+      | ManipulateControl::Divider => "",
     }
   }
 }
@@ -12736,7 +12807,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       )
     }
     None => (
-      crate::syntax::expr_to_input_form(&args[0]),
+      crate::syntax::expr_to_input_form(unwrap_dynamic_body(&args[0])),
       Vec::with_capacity(args.len() - 1),
       Vec::new(),
       Vec::new(),
@@ -12755,14 +12826,38 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // and every occurrence in the body (and related code fragments) is
   // rewritten below via `(original InputForm, synthesized name)` pairs.
   let mut renames: Vec<(String, String)> = Vec::new();
+  // Controls grouped in a `Row[…]`/`Column[…]`/`Grid[…]` argument (the
+  // Demonstrations layout pattern `Row[{Control[…], Spacer[20], Button[…]}]`)
+  // flatten into their items so each inner control becomes its own row, and
+  // a `Control[spec, opts…]` wrapper unwraps to its ordinary variable
+  // specification so it parses through the standard path.
+  let mut arg_items: Vec<Expr> =
+    Vec::with_capacity(args.len().saturating_sub(1));
+  for spec in &args[1..] {
+    match control_group_items(spec) {
+      Some(items) => arg_items.extend(items),
+      None => arg_items.push(spec.clone()),
+    }
+  }
+  let arg_items: Vec<Expr> = arg_items
+    .into_iter()
+    .map(|spec| match &spec {
+      Expr::FunctionCall { name, args }
+        if name == "Control" && !args.is_empty() =>
+      {
+        args[0].clone()
+      }
+      _ => spec,
+    })
+    .collect();
   // A control's bounds may reference *other* control variables — Kepler's
   // Second Law bounds its time sliders by the orbital period (`{{t, 0, …},
   // 0, P, .01}` with `{{P, 20, …}, .1, 50, .01}` further down). Collect
   // every control's initial value first and install them as scoped globals
   // while the specs are parsed, so those bounds resolve to their build-time
   // numbers regardless of declaration order.
-  let initial_bindings = manipulate_initial_value_bindings(&args[1..]);
-  for spec in &args[1..] {
+  let initial_bindings = manipulate_initial_value_bindings(&arg_items);
+  for spec in &arg_items {
     // Options such as `Initialization :> …` or `TrackedSymbols :> …`
     // are not variable specs; extract what we understand and ignore
     // the rest rather than failing the whole extraction.
@@ -12818,6 +12913,21 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         });
         continue;
       }
+      // `Button[label, action, opts…]`: a pressable control row whose
+      // action code runs against the live bindings (e.g. a reset button).
+      Expr::FunctionCall { name, args }
+        if name == "Button" && args.len() >= 2 =>
+      {
+        let label_runs = manipulate_label_runs(&args[0], false);
+        controls.push(ManipulateControl::Button {
+          label: flatten_label_runs(&label_runs),
+          label_runs,
+          action: crate::syntax::expr_to_input_form(&args[1]),
+        });
+        continue;
+      }
+      // `Spacer[…]` is pure layout between grouped controls — skip it.
+      Expr::FunctionCall { name, .. } if name == "Spacer" => continue,
       _ => {}
     }
     // Only list-shaped arguments are control specs. Any other trailing
@@ -12952,6 +13062,67 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animation_running,
     appearance_none,
   })
+}
+
+/// A Manipulate body wrapped in `Dynamic[…]` displays the Dynamic's first
+/// argument — the wrapper only adds FrontEnd tracking hints (a second
+/// update-function argument, `TrackedSymbols :> …`) — so evaluation uses
+/// that inner expression.
+fn unwrap_dynamic_body(body: &Expr) -> &Expr {
+  match body {
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic" && !args.is_empty() =>
+    {
+      &args[0]
+    }
+    other => other,
+  }
+}
+
+/// The flattened control items of a `Row[…]`/`Column[…]`/`Grid[…]`
+/// Manipulate argument that lays several controls out in one row (the
+/// Wolfram Demonstrations pattern `Row[{Control[…], Spacer[20],
+/// Button[…]}]`). Returns `None` when the argument contains no
+/// `Control[…]`/`Button[…]` anywhere, so plain `Row[…]` display
+/// expressions keep flowing to the display path.
+fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
+  fn contains_control(e: &Expr) -> bool {
+    match e {
+      Expr::FunctionCall { name, args } => {
+        name == "Control"
+          || name == "Button"
+          || args.iter().any(contains_control)
+      }
+      Expr::List(items) => items.iter().any(contains_control),
+      _ => false,
+    }
+  }
+  let Expr::FunctionCall { name, args } = spec else {
+    return None;
+  };
+  if !matches!(name.as_str(), "Row" | "Column" | "Grid") || args.is_empty() {
+    return None;
+  }
+  if !contains_control(spec) {
+    return None;
+  }
+  let Expr::List(items) = &args[0] else {
+    return None;
+  };
+  let mut out = Vec::new();
+  for item in items.iter() {
+    match item {
+      // A Grid's first level is its list of layout rows; their elements
+      // are the actual items.
+      Expr::List(row) if name == "Grid" => out.extend(row.iter().cloned()),
+      // Nested layout containers flatten recursively.
+      other => match control_group_items(other) {
+        Some(nested) => out.extend(nested),
+        None => out.push(other.clone()),
+      },
+    }
+  }
+  Some(out)
 }
 
 /// Collect `(name, initial value as InputForm)` for every control spec that
@@ -13108,6 +13279,9 @@ fn patch_default_label(
     }
     | ManipulateControl::Discrete {
       label, label_runs, ..
+    }
+    | ManipulateControl::Trigger {
+      label, label_runs, ..
     } => {
       if label == synth {
         *label = pretty;
@@ -13121,7 +13295,9 @@ fn patch_default_label(
         *label = pretty;
       }
     }
-    ManipulateControl::Heading { .. } | ManipulateControl::Divider => {}
+    ManipulateControl::Button { .. }
+    | ManipulateControl::Heading { .. }
+    | ManipulateControl::Divider => {}
   }
 }
 
@@ -13841,28 +14017,120 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
   }
 
   // A `ControlType -> Slider2D` / `ControlType -> IntervalSlider` option
-  // selects a compound control. The bounds are the non-option items after
-  // the head.
-  let control_type = items.iter().find_map(|it| match it {
-    Expr::Rule {
-      pattern,
-      replacement,
-    }
-    | Expr::RuleDelayed {
-      pattern,
-      replacement,
-    } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlType") => {
-      match replacement.as_ref() {
-        Expr::Identifier(s) => Some(s.clone()),
-        _ => None,
+  // selects a compound control. The control type may also appear as a bare
+  // identifier in the spec (`{u, {1, 2, 3}, SetterBar}`). The bounds are
+  // the non-option, non-control-type items after the head.
+  let is_control_type_name = |s: &str| {
+    matches!(
+      s,
+      "Locator"
+        | "Slider"
+        | "Slider2D"
+        | "VerticalSlider"
+        | "Manipulator"
+        | "InputField"
+        | "PopupMenu"
+        | "SetterBar"
+        | "RadioButtonBar"
+        | "TogglerBar"
+        | "Checkbox"
+        | "ColorSlider"
+        | "ColorSetter"
+        | "IntervalSlider"
+        | "Animator"
+        | "Trigger"
+        | "Automatic"
+    )
+  };
+  let control_type = items
+    .iter()
+    .find_map(|it| match it {
+      Expr::Rule {
+        pattern,
+        replacement,
       }
-    }
-    _ => None,
-  });
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlType") => {
+        match replacement.as_ref() {
+          Expr::Identifier(s) => Some(s.clone()),
+          _ => None,
+        }
+      }
+      _ => None,
+    })
+    .or_else(|| {
+      items[1..].iter().find_map(|it| match it {
+        Expr::Identifier(s) if is_control_type_name(s) => Some(s.clone()),
+        _ => None,
+      })
+    });
   let bounds: Vec<&Expr> = items[1..]
     .iter()
-    .filter(|it| !matches!(it, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+    .filter(|it| {
+      !matches!(it, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+        && !matches!(it, Expr::Identifier(s) if is_control_type_name(s))
+    })
     .collect();
+
+  // A `ControlType -> Trigger` (or bare `Trigger` marker) with an
+  // *infinite* sweep end (`{time, 0, Infinity, 1, …}` — the Demonstrations
+  // "run/stop simulation" control) cannot drive a finite slider; it becomes
+  // a dedicated play/pause control that never wraps. A finite Trigger falls
+  // through to the continuous path below (Kepler pairs one with a plain
+  // slider on the same variable).
+  if control_type.as_deref() == Some("Trigger") {
+    let max = bounds
+      .get(1)
+      .and_then(|e| {
+        crate::functions::math_ast::try_eval_to_f64_with_infinity(e)
+      })
+      .unwrap_or(f64::INFINITY);
+    if !max.is_finite() {
+      let min = bounds
+        .first()
+        .and_then(|e| {
+          crate::functions::math_ast::try_eval_to_f64_with_infinity(e)
+        })
+        .unwrap_or(0.0);
+      let step = bounds
+        .get(2)
+        .and_then(|e| crate::functions::math_ast::try_eval_to_f64(e))
+        .unwrap_or(1.0);
+      let initial = explicit_initial
+        .as_ref()
+        .and_then(crate::functions::math_ast::try_eval_to_f64)
+        .unwrap_or(min);
+      // Wolfram's Trigger sits paused until pressed; only an explicit
+      // `AnimationRunning -> True` starts it sweeping immediately.
+      let running = items.iter().any(|it| {
+        matches!(
+          it,
+          Expr::Rule { pattern, replacement }
+          | Expr::RuleDelayed { pattern, replacement }
+            if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "AnimationRunning")
+              && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True")
+        )
+      });
+      return Some(ParsedControl::Visible {
+        control: ManipulateControl::Trigger {
+          name,
+          min,
+          max,
+          step,
+          initial,
+          running,
+          label,
+          label_runs,
+        },
+        enabled,
+        min_code: None,
+        max_code: None,
+        animate: Some(running),
+      });
+    }
+  }
 
   // 2D control: either an explicit `ControlType -> Slider2D`, or a range
   // given as two corner points `{u, {xmin, ymin}, {xmax, ymax}}`.
@@ -14139,9 +14407,12 @@ pub fn manipulate_initial_bindings(
     .controls
     .iter()
     .filter_map(|c| match c {
-      // Annotation rows bind no variable.
-      ManipulateControl::Heading { .. } | ManipulateControl::Divider => None,
-      ManipulateControl::Continuous { name, initial, .. } => {
+      // Annotation and button rows bind no variable.
+      ManipulateControl::Heading { .. }
+      | ManipulateControl::Divider
+      | ManipulateControl::Button { .. } => None,
+      ManipulateControl::Continuous { name, initial, .. }
+      | ManipulateControl::Trigger { name, initial, .. } => {
         Some((name.clone(), format_f64_input(*initial)))
       }
       ManipulateControl::Discrete {
@@ -14448,6 +14719,33 @@ pub fn apply_manipulate_mutations(
   }
 }
 
+/// Run a Manipulate `Button[…]` action against the current bindings and
+/// return the updated InputForm value of every bound variable. The action's
+/// writes to unbound globals (e.g. `{U, V} = {Uinit, Vinit}`) persist as
+/// ordinary global side effects; writes to the bound control variables are
+/// captured through the returned list so the caller can move its widgets
+/// (e.g. `time = 0` rewinds a Trigger control).
+pub fn apply_manipulate_button_action(
+  bindings: &[(String, String)],
+  action: &str,
+) -> Vec<(String, String)> {
+  if bindings.is_empty() {
+    let _ = crate::interpret_with_stdout(action);
+    return Vec::new();
+  }
+  let names: Vec<&str> = bindings.iter().map(|(n, _)| n.as_str()).collect();
+  let body = format!("{action}; {{{}}}", names.join(", "));
+  let code = manipulate_block_code(&body, bindings);
+  match crate::interpret_to_expr(&code) {
+    Ok(Expr::List(ref vals)) if vals.len() == names.len() => names
+      .into_iter()
+      .map(str::to_string)
+      .zip(vals.iter().map(crate::syntax::expr_to_input_form))
+      .collect(),
+    _ => Vec::new(),
+  }
+}
+
 /// The distinct target variables of a set of write-back assignments, in first-
 /// seen order. Used to read back the mutated state values after applying the
 /// assignments to the (globally-installed) bindings.
@@ -14702,6 +15000,47 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           y_max,
           point_parts.join(","),
           auto_create,
+        ));
+      }
+      ManipulateControl::Trigger {
+        name,
+        min,
+        max,
+        step,
+        initial,
+        running,
+        label,
+        label_runs,
+      } => {
+        // An infinite sweep end (`{time, 0, Infinity, 1}`) serializes as
+        // `null` — JSON has no Infinity literal.
+        let max_json = if max.is_finite() {
+          format!("{}", max)
+        } else {
+          "null".to_string()
+        };
+        ctrl_parts.push(format!(
+          r#"{{"kind":"trigger","name":"{}","label":"{}","labelRuns":{},"min":{},"max":{},"step":{},"initial":{},"running":{}}}"#,
+          json_escape_manipulate(name),
+          json_escape_manipulate(label),
+          label_runs_to_json(label_runs),
+          min,
+          max_json,
+          step,
+          initial,
+          running,
+        ));
+      }
+      ManipulateControl::Button {
+        label,
+        label_runs,
+        action,
+      } => {
+        ctrl_parts.push(format!(
+          r#"{{"kind":"button","label":"{}","labelRuns":{},"action":"{}"}}"#,
+          json_escape_manipulate(label),
+          label_runs_to_json(label_runs),
+          json_escape_manipulate(action),
         ));
       }
       ManipulateControl::Heading { label, label_runs } => {
