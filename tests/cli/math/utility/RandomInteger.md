@@ -28,3 +28,10 @@ Randomly gives 50 numbers between 1 and 6.
 $ wo 'AllTrue[RandomInteger[{1, 6}, 50], 1 <= # <= 6 &]'
 True
 ```
+
+`RandomInteger[n]` draws from 0 through `n`, so a negative `n` draws downwards:
+
+```scrut
+$ wo 'AllTrue[Table[RandomInteger[-5], {100}], -5 <= # <= 0 &]'
+True
+```

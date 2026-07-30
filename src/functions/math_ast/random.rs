@@ -38,15 +38,11 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match args.len() {
     0 => Ok(Expr::Integer(crate::with_rng(|rng| rng.gen_range(0..=1)))),
     1 => match &args[0] {
+      // `RandomInteger[n]` draws from 0 through n — which for a negative n is
+      // the range n through 0, not an error.
       Expr::Integer(max) => {
-        if *max < 0 {
-          Err(InterpreterError::EvaluationError(
-            "RandomInteger: max must be non-negative".into(),
-          ))
-        } else {
-          let max = *max;
-          Ok(Expr::Integer(crate::with_rng(|rng| rng.gen_range(0..=max))))
-        }
+        let (lo, hi) = if *max < 0 { (*max, 0) } else { (0, *max) };
+        Ok(Expr::Integer(crate::with_rng(|rng| rng.gen_range(lo..=hi))))
       }
       Expr::List(items) if items.len() == 2 => {
         if let (Expr::Integer(min), Expr::Integer(max)) = (&items[0], &items[1])
@@ -1047,11 +1043,15 @@ pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     };
     if n > items.len() {
-      return Err(InterpreterError::EvaluationError(format!(
-        "RandomSample: cannot sample {} elements from list of length {}",
+      crate::emit_message(&format!(
+        "RandomSample::smplen: RandomSample cannot generate a sample of \
+         length {}, which is greater than the length of the sample set {}. If \
+         you want a choice of possibly repeated elements from the set, use \
+         RandomChoice.",
         n,
-        items.len()
-      )));
+        crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+      ));
+      return Ok(unevaluated("RandomSample", args));
     }
     if let Some(ws) = weights.as_ref() {
       // Pick the n items with the largest Efraimidis–Spirakis keys.

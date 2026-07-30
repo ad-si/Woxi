@@ -157,7 +157,7 @@ Total,Sums the elements of a list down to a level spec — AllowedHeads -> All d
 ColorFunction,Option specifying the color function for visualization,✅,none,2.0,152
 Expand,Expands products and positive integer powers of sums,✅,pure,1.0,154
 ContourPlot,Creates a contour plot of a function,✅,pure,1.0,155
-RandomInteger,Generate random integers,✅,contextual,6.0,156
+RandomInteger,Generate random integers — RandomInteger[n] draws from 0 through n so a negative n draws downwards,✅,contextual,6.0,156
 NDSolve,Solves ordinary differential equations numerically,✅,contextual,2.0,157
 Integers,Domain symbol representing the set of integers,✅,pure,4.0,158
 Large,Named size symbol used as option value for ImageSize and Style,✅,pure,6.0,159
@@ -443,7 +443,7 @@ DensityPlot,Creates a density plot of a function,✅,pure,1.0,440
 EllipticK,Complete elliptic integral of the first kind,✅,pure,1.0,441
 CurrentValue,Returns current values of frontend settings,✅,effectful,6.0,442
 Thin,Graphics directive equivalent to Thickness[Tiny],✅,pure,6.0,443
-RandomSample,Random selection without replacement,✅,contextual,6.0,444
+RandomSample,Random selection without replacement — a sample longer than the set reports ::smplen,✅,contextual,6.0,444
 VectorPlot,Creates a vector field plot,✅,pure,7.0,445
 SetOptions,Replaces named entries in a symbol's option list and returns the updated list — an unknown name refuses the whole call,✅,stateful,1.0,446
 ReplacePart,Replaces the parts at one or more positions given as rules or as a separate position argument,✅,pure,2.0,447
@@ -525,7 +525,7 @@ MatrixRank,Returns the rank of a matrix,✅,pure,5.0,523
 Rescale,Rescales values to a specified range,✅,pure,5.1,523
 MatrixQ,Tests if an expression is a matrix,✅,pure,1.0,524
 StringSplit,Splits a string on literal/pattern delimiters or on rules that keep the replaced delimiters between the pieces,✅,pure,5.1,525
-FromDigits,Constructs integer from list of digits,✅,pure,3.0,526
+FromDigits,Constructs a number from a list of digits or a digit string by evaluating them as a polynomial in the base — any base works including 0 1 rational real and symbolic,✅,pure,3.0,526
 MeshStyle,Option specifying the style of mesh lines,✅,none,2.0,527
 FactorInteger,Returns prime factorization as {prime exponent} pairs (two-arg form does partial factorization into at most k factors or Gaussian-integer factorization via GaussianIntegers->True),✅,pure,1.0,528
 PolyLog,Polylogarithm function,✅,pure,1.0,529
@@ -1828,7 +1828,7 @@ FirstCase,First element matching a pattern,✅,pure,10.0,1849
 EndOfFile,Symbol returned by Read at end of file,✅,pure,1.0,1852
 MathieuC,Mathieu C function,,unevaluated,3.0,1852
 WeierstrassSigma,Weierstrass sigma function,,unevaluated,3.0,1852
-StringReplacePart,Replace part of string,✅,pure,3.0,1853
+StringReplacePart,Replace a span of a string — a bare index means the span from the start and an unavailable span reports ::repart,✅,pure,3.0,1853
 KeyMap,Maps a function over the keys of an association; supports the operator form KeyMap[f][assoc],✅,pure,10.0,1855
 MetaInformation,Meta information option,,unevaluated,9.0,1855
 NotebookSave,Save notebook,,unevaluated,3.0,1857

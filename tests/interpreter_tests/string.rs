@@ -12754,6 +12754,64 @@ mod string_subject_conformance {
     }
   }
 
+  // A bare index stands for the span {1, n}, and a span the string does not
+  // have is reported rather than raising a hard error.
+  #[test]
+  fn string_replace_part_index_and_out_of_range() {
+    use woxi::interpret_with_stdout;
+    assert_eq!(
+      interpret("StringReplacePart[\"abc\", \"x\", 2]").unwrap(),
+      "xc"
+    );
+    assert_eq!(
+      interpret("StringReplacePart[\"abcdef\", \"x\", {2, 4}]").unwrap(),
+      "axef"
+    );
+    assert_eq!(
+      interpret(
+        "StringReplacePart[\"abcdef\", {\"x\", \"y\"}, {{1, 2}, {4, 5}}]"
+      )
+      .unwrap(),
+      "xcyf"
+    );
+    for (call, shown, span) in [
+      (
+        "StringReplacePart[\"abc\", \"x\", 10]",
+        "StringReplacePart[abc, x, 10]",
+        "1 through 10",
+      ),
+      (
+        "StringReplacePart[\"abc\", \"x\", {1, 10}]",
+        "StringReplacePart[abc, x, {1, 10}]",
+        "1 through 10",
+      ),
+      (
+        "StringReplacePart[\"abc\", \"x\", {5, 6}]",
+        "StringReplacePart[abc, x, {5, 6}]",
+        "5 through 6",
+      ),
+      (
+        "StringReplacePart[\"abc\", {\"x\"}, {{1, 10}}]",
+        "StringReplacePart[abc, {x}, {{1, 10}}]",
+        "1 through 10",
+      ),
+    ] {
+      let r = interpret_with_stdout(call).unwrap();
+      assert_eq!(r.result, shown, "for {}", call);
+      let expected = format!(
+        "StringReplacePart::repart: Cannot replace positions {} in \"abc\".",
+        span
+      );
+      assert!(
+        r.warnings.contains(&expected),
+        "expected {:?} for {}, got {:?}",
+        expected,
+        call,
+        r.warnings
+      );
+    }
+  }
+
   #[test]
   fn single_string_functions_report_string() {
     for (call, shown) in [

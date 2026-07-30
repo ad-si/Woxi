@@ -2383,19 +2383,14 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // The base may be an integer with |b| >= 2 (fast numeric path; negative
-  // bases compute the "negabinary"/"negadecimal" representation) or a
-  // symbolic expression (e.g. `FromDigits[{1,2,3}, x]` => `3 + 2*x + x^2`).
+  // The digit list is just a polynomial in the base, so *any* base works: an
+  // integer takes the fast numeric path (a negative one giving the
+  // "negabinary"/"negadecimal" representation, 1 the digit sum, 0 the last
+  // digit alone), and anything else — a rational, a real, a symbol — goes
+  // through the symbolic path, where `FromDigits[{1,2,3}, x]` is
+  // `3 + 2*x + x^2`. There is nothing to reject.
   let numeric_base: Option<i128> = if args.len() == 2 {
-    match expr_to_i128(&args[1]) {
-      Some(b) if b.abs() >= 2 => Some(b),
-      Some(_) => {
-        return Err(InterpreterError::EvaluationError(
-          "FromDigits: base must be an integer with |base| >= 2".into(),
-        ));
-      }
-      None => None,
-    }
+    expr_to_i128(&args[1])
   } else {
     Some(10)
   };

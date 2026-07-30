@@ -1829,6 +1829,32 @@ mod from_digits {
   fn mixed_radix_empty() {
     assert_eq!(interpret("FromDigits[{}, MixedRadix[{10}]]").unwrap(), "0");
   }
+
+  // The digit list is a polynomial in the base, so every base works. Bases 0
+  // and 1 used to be refused with a hard error even though a rational, a real
+  // and a symbol were all accepted.
+  #[test]
+  fn any_base_is_a_polynomial_in_the_base() {
+    // Base 1 sums the digits; base 0 leaves the last one.
+    assert_eq!(interpret("FromDigits[{1, 2}, 1]").unwrap(), "3");
+    assert_eq!(interpret("FromDigits[{1, 2, 3}, 1]").unwrap(), "6");
+    assert_eq!(interpret("FromDigits[{1, 2}, 0]").unwrap(), "2");
+    // The string form takes the same route.
+    assert_eq!(interpret("FromDigits[\"12\", 1]").unwrap(), "3");
+    // The bases that already worked still do: negative, rational, real,
+    // symbolic.
+    assert_eq!(interpret("FromDigits[{1, 2}, -2]").unwrap(), "0");
+    assert_eq!(interpret("FromDigits[{1, 2}, -10]").unwrap(), "-8");
+    assert_eq!(interpret("FromDigits[{1, 2}, 1/2]").unwrap(), "5/2");
+    assert_eq!(interpret("FromDigits[{1, 2}, 2.5]").unwrap(), "4.5");
+    assert_eq!(interpret("FromDigits[{1, 2}, b]").unwrap(), "2 + b");
+    assert_eq!(
+      interpret("FromDigits[{1, 2, 3}, x]").unwrap(),
+      "3 + 2*x + x^2"
+    );
+    // And a digit may exceed the base.
+    assert_eq!(interpret("FromDigits[{15, 15}, 16]").unwrap(), "255");
+  }
 }
 
 mod integer_string {

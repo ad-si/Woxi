@@ -4122,6 +4122,39 @@ mod random_sample {
       "5"
     );
   }
+
+  // Asking for more elements than the set holds is reported and the call left
+  // alone; it used to raise a hard error, which aborts the whole evaluation.
+  #[test]
+  fn sample_longer_than_the_set_reports_smplen() {
+    use woxi::interpret_with_stdout;
+    let r = interpret_with_stdout("RandomSample[{1, 2}, 5]").unwrap();
+    assert_eq!(r.result, "RandomSample[{1, 2}, 5]");
+    assert!(
+      r.warnings.iter().any(|w| w
+        == "RandomSample::smplen: RandomSample cannot generate a sample of \
+            length 5, which is greater than the length of the sample set \
+            {1, 2}. If you want a choice of possibly repeated elements from \
+            the set, use RandomChoice."),
+      "expected smplen message, got {:?}",
+      r.warnings
+    );
+    let r = interpret_with_stdout("RandomSample[{}, 1]").unwrap();
+    assert_eq!(r.result, "RandomSample[{}, 1]");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("RandomSample::smplen")),
+      "expected smplen message, got {:?}",
+      r.warnings
+    );
+    // Sampling the whole set, or none of it, is fine.
+    assert_eq!(
+      interpret("Sort[RandomSample[{1, 2, 3}, 3]]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(interpret("RandomSample[{1, 2, 3}, 0]").unwrap(), "{}");
+  }
 }
 
 mod part_extraction {
@@ -6165,6 +6198,23 @@ mod random_integer {
       interpret("AllTrue[RandomInteger[{5, 2}, 100], 2 <= # <= 5 &]").unwrap(),
       "True"
     );
+  }
+
+  // RandomInteger[n] draws from 0 through n, which for a negative n is the
+  // range n through 0 — not an error, as it used to be.
+  #[test]
+  fn negative_max_draws_downwards() {
+    assert_eq!(
+      interpret("AllTrue[Table[RandomInteger[-5], {100}], -5 <= # <= 0 &]")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AllTrue[Table[RandomInteger[-1], {50}], -1 <= # <= 0 &]")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("RandomInteger[0]").unwrap(), "0");
   }
 }
 

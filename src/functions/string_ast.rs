@@ -9747,40 +9747,68 @@ pub fn string_replace_part_ast(
   let chars: Vec<char> = s.chars().collect();
   let len = chars.len() as i128;
 
-  // Helper to resolve a position index (1-based, negative from end)
-  let resolve_index = |n: i128| -> Result<usize, InterpreterError> {
+  // Resolve a position index (1-based, negative from the end). `None` when it
+  // falls outside the string.
+  let resolve_index = |n: i128| -> Option<usize> {
     let idx = if n > 0 { n - 1 } else { len + n };
     if idx < 0 || idx >= len {
-      return Err(InterpreterError::EvaluationError(format!(
-        "StringReplacePart: index {} out of range for string of length {}",
-        n, len
-      )));
+      return None;
     }
-    Ok(idx as usize)
+    Some(idx as usize)
   };
 
-  // Parse a range {m, n} into (start, end) 0-based inclusive
-  let parse_range =
-    |elems: &[Expr]| -> Result<(usize, usize), InterpreterError> {
-      if elems.len() != 2 {
-        return Err(InterpreterError::EvaluationError(
-          "StringReplacePart: range must be a list of two integers".into(),
-        ));
+  // A span the string does not have is reported and the call left alone; it
+  // used to raise a hard error, which took the whole evaluation down.
+  let repart = |m: i128, n: i128| {
+    crate::emit_message(&format!(
+      "StringReplacePart::repart: Cannot replace positions {} through {} in \
+       \"{}\".",
+      m, n, s
+    ));
+  };
+
+  // Parse a range {m, n} into (start, end) 0-based inclusive. `None` means the
+  // span is unusable and the message has already been emitted.
+  let parse_range = |elems: &[Expr]| -> Option<(usize, usize)> {
+    if elems.len() != 2 {
+      return None;
+    }
+    let m = expr_to_int(&elems[0]).ok()?;
+    let n = expr_to_int(&elems[1]).ok()?;
+    match (resolve_index(m), resolve_index(n)) {
+      (Some(start), Some(end)) => Some((start, end)),
+      _ => {
+        repart(m, n);
+        None
       }
-      let m = expr_to_int(&elems[0])?;
-      let n = expr_to_int(&elems[1])?;
-      let start = resolve_index(m)?;
-      let end = resolve_index(n)?;
-      Ok((start, end))
-    };
+    }
+  };
 
   // Determine ranges and replacements
   match &args[2] {
+    // A bare index `n` stands for the span `{1, n}`, so
+    // StringReplacePart["abc", "x", 2] is "xc".
+    other if !matches!(other, Expr::List(_)) && expr_to_int(other).is_ok() => {
+      let n = expr_to_int(other)?;
+      let span = Expr::List(vec![Expr::Integer(1), Expr::Integer(n)].into());
+      let mut rewritten = args.to_vec();
+      rewritten[2] = span;
+      let value = string_replace_part_ast(&rewritten)?;
+      // The rewritten call reports against its own span; hand back the call as
+      // written when it declined.
+      if matches!(&value, Expr::FunctionCall { name, .. } if name == "StringReplacePart")
+      {
+        return Ok(unevaluated("StringReplacePart", args));
+      }
+      Ok(value)
+    }
     // Single range: {m, n}
     Expr::List(elems)
       if elems.len() == 2 && !matches!(&elems[0], Expr::List(_)) =>
     {
-      let (start, end) = parse_range(elems)?;
+      let Some((start, end)) = parse_range(elems) else {
+        return Ok(unevaluated("StringReplacePart", args));
+      };
       let replacement = expr_to_str(&args[1])?;
       let mut result = String::new();
       result.extend(&chars[..start]);
@@ -9795,7 +9823,10 @@ pub fn string_replace_part_ast(
       let mut range_vec: Vec<(usize, usize)> = Vec::new();
       for range in ranges {
         if let Expr::List(elems) = range {
-          range_vec.push(parse_range(elems)?);
+          let Some(span) = parse_range(elems) else {
+            return Ok(unevaluated("StringReplacePart", args));
+          };
+          range_vec.push(span);
         } else {
           return Err(InterpreterError::EvaluationError(
             "StringReplacePart: expected list of ranges".into(),
