@@ -500,12 +500,23 @@ impl WoxiStudio {
   /// preceding Input/Code cell rather than shown separately.
   fn editors_from_notebook(notebook: &Notebook) -> Vec<CellEditor> {
     let mut editors = Vec::new();
+    // Input cells seen so far that have not been evaluated yet. A stored
+    // interactive widget (Manipulate saved with `SaveDefinitions -> True`)
+    // depends on helper functions defined in earlier Input cells — the
+    // Demonstrations "Initialization Code" section. Mathematica embeds
+    // those definitions in the saved DynamicModuleBox dump; Woxi drops the
+    // dump and re-instantiates from the input, so the earlier cells must
+    // run first for the widget's body to evaluate.
+    let mut pending_init: Vec<String> = Vec::new();
 
     for entry in &notebook.cells {
       match entry {
         CellEntry::Single(cell) => {
           if matches!(cell.style, CellStyle::Output | CellStyle::Print) {
             continue;
+          }
+          if matches!(cell.style, CellStyle::Input | CellStyle::Code) {
+            pending_init.push(cell.content.clone());
           }
           editors.push(CellEditor {
             content: text_editor::Content::with_text(&cell.content),
@@ -566,8 +577,12 @@ impl WoxiStudio {
               let is_widget_dump =
                 output.as_deref().is_some_and(is_dynamic_box_dump);
               let manipulate_state = if is_widget_dump {
+                // Run the earlier Input cells (helper definitions) before
+                // the widget's body first evaluates.
+                evaluate_pending_initialization(&mut pending_init);
                 instantiate_stored_manipulate(&cell.content)
               } else {
+                pending_init.push(cell.content.clone());
                 None
               };
               let output_content = match &output {
@@ -4417,6 +4432,20 @@ fn is_dynamic_box_dump(output: &str) -> bool {
   t.starts_with("DynamicModuleBox[")
     || t.starts_with("TagBox[DynamicModuleBox[")
     || t.starts_with("DynamicBox[")
+}
+
+/// Evaluate (and drain) the Input-cell code accumulated ahead of a stored
+/// interactive widget, so helper definitions from the notebook's
+/// initialization cells (e.g. the Wolfram Demonstrations "Initialization
+/// Code" section) are in scope when the widget's body evaluates. Results
+/// and errors are discarded — the cells keep their stored outputs until
+/// the user explicitly evaluates them.
+fn evaluate_pending_initialization(pending: &mut Vec<String>) {
+  for code in pending.drain(..) {
+    for stmt in woxi::split_into_statements(&code) {
+      let _ = woxi::interpret_with_stdout(&stmt);
+    }
+  }
 }
 
 /// Rebuild the interactive widget for a loaded Input cell whose stored
