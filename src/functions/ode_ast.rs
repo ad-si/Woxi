@@ -571,7 +571,9 @@ fn ndsolve_system(
   let Some(x_max) = nval_to_f64(&domain_items[2]) else {
     return Ok(None);
   };
-  if !(x_max > x_min) {
+  // NaN bounds must bail out too, so compare via partial_cmp rather
+  // than a negated float comparison.
+  if x_max.partial_cmp(&x_min) != Some(std::cmp::Ordering::Greater) {
     return Ok(None);
   }
 
@@ -1569,12 +1571,10 @@ fn parse_numeric_initial_condition(
     // Derivative[n, y, x0] == val or Derivative[n][y][x0] == val
     if let Some((order, val_expr)) =
       extract_derivative_order_and_point(lhs, y_name)
-    {
-      if let (Some(x_val), Some(rhs_val)) =
+      && let (Some(x_val), Some(rhs_val)) =
         (nval_to_f64(&val_expr), nval_to_f64(&operands[1]))
-      {
-        return Ok(Some((order, x_val, rhs_val)));
-      }
+    {
+      return Ok(Some((order, x_val, rhs_val)));
     }
   }
   Ok(None)

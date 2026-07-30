@@ -383,10 +383,8 @@ fn prime_marks(s: &str) -> Option<usize> {
   while !rest.is_empty() {
     if let Some(r) = rest.strip_prefix("\\[Prime]") {
       rest = r;
-    } else if let Some(r) = rest.strip_prefix('\u{2032}') {
-      rest = r;
     } else {
-      return None;
+      rest = rest.strip_prefix('\u{2032}')?;
     }
     count += 1;
   }
@@ -3031,9 +3029,9 @@ Cell["Chapter 2", "Chapter"]
   }
 
   #[test]
-  fn test_extract_textdata_inline_math() {
-    // Inline `Cell[BoxData[FormBox[…]], "InlineMath"]` runs carry real
-    // content (the leading math of a prose sentence) and must render.
+  fn test_extract_textdata_leading_inline_math() {
+    // An inline math cell at the *start* of a prose run (the sentence's
+    // subject, from the trebuchet notebook) must render too.
     let s = r#"TextData[{
  Cell[BoxData[
   FormBox[
