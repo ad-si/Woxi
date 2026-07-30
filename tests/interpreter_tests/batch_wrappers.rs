@@ -6083,6 +6083,101 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // A permutation list has to be a rearrangement of 1..n. A zero, a
+  // repeat or a value past the end used to index off the end of the
+  // working vector and abort the whole evaluation.
+  #[test]
+  fn permutation_heads_report_a_list_that_is_no_permutation() {
+    use woxi::interpret_with_stdout;
+    for head in [
+      "PermutationOrder",
+      "PermutationList",
+      "InversePermutation",
+      "PermutationCycles",
+      "PermutationSupport",
+    ] {
+      for spec in ["{0}", "{1, 1}", "{2}", "{-1}", "{1, 3}"] {
+        let call = format!("{}[{}]", head, spec);
+        let r = interpret_with_stdout(&call).unwrap();
+        assert_eq!(r.result, call, "for {}", call);
+        let expected =
+          format!("{}::permlist: Invalid permutation list {}.", head, spec);
+        assert!(
+          r.warnings.contains(&expected),
+          "expected {:?} for {}, got {:?}",
+          expected,
+          call,
+          r.warnings
+        );
+      }
+    }
+    // PermutationMatrix declines the same lists without reporting.
+    for spec in ["{0}", "{1, 1}", "{2}", "{1, 3}"] {
+      let call = format!("PermutationMatrix[{}]", spec);
+      let r = interpret_with_stdout(&call).unwrap();
+      assert_eq!(r.result, call);
+      assert!(r.warnings.is_empty(), "for {}, got {:?}", call, r.warnings);
+    }
+  }
+
+  // The genuine permutations still work, and an empty list is the
+  // identity everywhere.
+  #[test]
+  fn permutation_heads_accept_real_permutations() {
+    assert_eq!(interpret("PermutationOrder[{2, 1}]").unwrap(), "2");
+    assert_eq!(interpret("PermutationList[{2, 1}]").unwrap(), "{2, 1}");
+    assert_eq!(interpret("InversePermutation[{2, 1}]").unwrap(), "{2, 1}");
+    assert_eq!(
+      interpret("PermutationCycles[{2, 1}]").unwrap(),
+      "Cycles[{{1, 2}}]"
+    );
+    assert_eq!(interpret("PermutationSupport[{2, 1}]").unwrap(), "{1, 2}");
+    assert_eq!(
+      interpret("PermutationMatrix[{2, 1}]").unwrap(),
+      "{{0, 1}, {1, 0}}"
+    );
+    assert_eq!(interpret("PermutationOrder[{}]").unwrap(), "1");
+    assert_eq!(interpret("PermutationSupport[{}]").unwrap(), "{}");
+    assert_eq!(interpret("InversePermutation[{}]").unwrap(), "{}");
+    // A three-cycle has order 3.
+    assert_eq!(interpret("PermutationOrder[{2, 3, 1}]").unwrap(), "3");
+  }
+
+  // FindPermutation pairs repeated elements off one at a time, so a list
+  // of equal elements is the identity rather than a permutation with
+  // holes in it -- the holes used to abort.
+  #[test]
+  fn find_permutation_matches_duplicates_one_to_one() {
+    assert_eq!(
+      interpret("FindPermutation[{{0, 0}, {0, 0}}]").unwrap(),
+      "Cycles[{}]"
+    );
+    assert_eq!(interpret("FindPermutation[{1, 1}]").unwrap(), "Cycles[{}]");
+    assert_eq!(
+      interpret("FindPermutation[{2, 1}]").unwrap(),
+      "Cycles[{{1, 2}}]"
+    );
+    assert_eq!(
+      interpret("FindPermutation[{1, 2, 3}, {3, 1, 2}]").unwrap(),
+      "Cycles[{{1, 2, 3}}]"
+    );
+    assert_eq!(
+      interpret("FindPermutation[{5, 3, 1}]").unwrap(),
+      "Cycles[{{1, 3}}]"
+    );
+  }
+
+  // A matrix with an empty row has no minors, where the default order
+  // used to be computed as 0 - 1 and wrap round.
+  #[test]
+  fn minors_of_an_empty_row_is_empty() {
+    assert_eq!(interpret("Minors[{{}}]").unwrap(), "{}");
+    assert_eq!(
+      interpret("Minors[{{1, 2}, {3, 4}}]").unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+  }
+
   // A range that repeated multiplication can never stay inside is
   // reported. PowerRange used to multiply until the arithmetic
   // overflowed and the whole evaluation aborted.

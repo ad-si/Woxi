@@ -1961,27 +1961,19 @@ pub fn dispatch_list_operations(
       return Some(flatten_at_unified(args));
     }
     "InversePermutation" if args.len() == 1 => {
-      if let Expr::List(perm) = &args[0] {
-        let n = perm.len();
-        let mut inv = vec![Expr::Integer(0); n];
-        let mut valid = true;
-        for (i, p) in perm.iter().enumerate() {
-          if let Expr::Integer(val) = p {
-            let idx = *val as usize;
-            if idx >= 1 && idx <= n {
-              inv[idx - 1] = Expr::Integer((i + 1) as i128);
-            } else {
-              valid = false;
-              break;
-            }
-          } else {
-            valid = false;
-            break;
+      if matches!(&args[0], Expr::List(_)) {
+        // A repeated image would leave a hole in the inverse, so the list
+        // has to be a genuine permutation.
+        if let Some(indices) =
+          permutation_list_indices("InversePermutation", &args[0], true)
+        {
+          let mut inverse = vec![Expr::Integer(0); indices.len()];
+          for (i, &image) in indices.iter().enumerate() {
+            inverse[image] = Expr::Integer((i + 1) as i128);
           }
+          return Some(Ok(Expr::List(inverse.into())));
         }
-        if valid {
-          return Some(Ok(Expr::List(inv.into())));
-        }
+        return Some(Ok(unevaluated("InversePermutation", args)));
       }
       // InversePermutation[Cycles[{cycle1, cycle2, ...}]] — reverse each
       // cycle, rotate so its smallest element is first, drop fixed points,
@@ -6956,10 +6948,20 @@ pub fn dispatch_list_operations(
         let n = a.len();
         let a_strs: Vec<String> = a.iter().map(expr_to_string).collect();
         let b_strs: Vec<String> = b.iter().map(expr_to_string).collect();
+        // Each element of the target is matched to a position not already
+        // spoken for, so repeated elements pair up one to one instead of
+        // all claiming the first match and leaving holes in the
+        // permutation.
         let mut perm = vec![0usize; n];
+        let mut used = vec![false; n];
         let mut valid = true;
         for (i, bs) in b_strs.iter().enumerate() {
-          if let Some(pos) = a_strs.iter().position(|x| x == bs) {
+          if let Some(pos) = a_strs
+            .iter()
+            .enumerate()
+            .position(|(j, x)| !used[j] && x == bs)
+          {
+            used[pos] = true;
             perm[pos] = i + 1;
           } else {
             valid = false;
@@ -7050,38 +7052,31 @@ pub fn dispatch_list_operations(
         }
         return Some(Ok(Expr::Integer(order)));
       }
-      if let Expr::List(perm) = &args[0] {
-        // Permutation as list form
-        let n = perm.len();
-        let mut indices = Vec::with_capacity(n);
-        let mut valid = true;
-        for p in perm {
-          if let Expr::Integer(v) = p {
-            indices.push(*v as usize);
-          } else {
-            valid = false;
-            break;
+      if matches!(&args[0], Expr::List(_)) {
+        // Permutation as list form: the order is the lcm of the cycle
+        // lengths.
+        let Some(indices) =
+          permutation_list_indices("PermutationOrder", &args[0], true)
+        else {
+          return Some(Ok(unevaluated("PermutationOrder", args)));
+        };
+        let n = indices.len();
+        let mut visited = vec![false; n];
+        let mut order: i128 = 1;
+        for start in 0..n {
+          if visited[start] {
+            continue;
           }
-        }
-        if valid {
-          // Find cycle lengths, order = LCM of cycle lengths
-          let mut visited = vec![false; n];
-          let mut order: i128 = 1;
-          for start in 0..n {
-            if visited[start] {
-              continue;
-            }
-            let mut cycle_len: i128 = 0;
-            let mut curr = start;
-            while !visited[curr] {
-              visited[curr] = true;
-              cycle_len += 1;
-              curr = indices[curr] - 1;
-            }
-            order = lcm_i128(order, cycle_len);
+          let mut cycle_len: i128 = 0;
+          let mut curr = start;
+          while !visited[curr] {
+            visited[curr] = true;
+            cycle_len += 1;
+            curr = indices[curr];
           }
-          return Some(Ok(Expr::Integer(order)));
+          order = lcm_i128(order, cycle_len);
         }
+        return Some(Ok(Expr::Integer(order)));
       }
     }
     // PermutationPower[perm, n] — apply permutation n times
@@ -7410,15 +7405,18 @@ pub fn dispatch_list_operations(
             .into(),
         )));
       }
-      if let Expr::List(perm) = &args[0] {
-        let mut support = Vec::new();
-        for (i, p) in perm.iter().enumerate() {
-          if let Expr::Integer(v) = p
-            && *v as usize != i + 1
-          {
-            support.push(Expr::Integer((i + 1) as i128));
-          }
-        }
+      if matches!(&args[0], Expr::List(_)) {
+        let Some(indices) =
+          permutation_list_indices("PermutationSupport", &args[0], true)
+        else {
+          return Some(Ok(unevaluated("PermutationSupport", args)));
+        };
+        let support: Vec<Expr> = indices
+          .iter()
+          .enumerate()
+          .filter(|&(i, &image)| image != i)
+          .map(|(i, _)| Expr::Integer((i + 1) as i128))
+          .collect();
         return Some(Ok(Expr::List(support.into())));
       }
     }
@@ -9895,4 +9893,44 @@ fn build_inner_sparse(
     .map(|(idx, v)| (idx.clone(), make_call(v.clone())))
     .collect();
   build_sparse_array_csr(&sa.dims, &new_default, &new_entries)
+}
+
+/// The zero-based images of a permutation list, or `None` for an argument
+/// that names no permutation. A permutation list has to be a
+/// rearrangement of `1..n`; a repeat, a zero or a value past the end used
+/// to index straight off the end of the working vector. When every
+/// element is an integer but the list is not a permutation, wolframscript
+/// reports `<head>::permlist`, which `report` asks for; a list holding
+/// anything else stays quiet.
+pub fn permutation_list_indices(
+  head: &str,
+  expr: &Expr,
+  report: bool,
+) -> Option<Vec<usize>> {
+  let Expr::List(items) = expr else {
+    return None;
+  };
+  let mut values: Vec<i128> = Vec::with_capacity(items.len());
+  for item in items.iter() {
+    let Expr::Integer(value) = item else {
+      return None;
+    };
+    values.push(*value);
+  }
+  let mut sorted = values.clone();
+  sorted.sort_unstable();
+  if sorted
+    .iter()
+    .enumerate()
+    .any(|(i, &value)| value != i as i128 + 1)
+  {
+    if report {
+      crate::emit_message(&format!(
+        "{head}::permlist: Invalid permutation list {}.",
+        crate::syntax::format_expr(expr, crate::syntax::ExprForm::Output)
+      ));
+    }
+    return None;
+  }
+  Some(values.iter().map(|&value| (value - 1) as usize).collect())
 }

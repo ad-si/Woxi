@@ -22,3 +22,13 @@ Involutions are their own inverse:
 $ wo 'InversePermutation[Cycles[{{1, 2}, {3, 4}}]]'
 Cycles[{{1, 2}, {3, 4}}]
 ```
+
+An entry appearing twice would leave a hole in the inverse, so it is reported
+instead:
+
+```scrut
+$ wo 'InversePermutation[{1, 1}]'
+
+InversePermutation::permlist: Invalid permutation list {1, 1}.
+InversePermutation[{1, 1}]
+```

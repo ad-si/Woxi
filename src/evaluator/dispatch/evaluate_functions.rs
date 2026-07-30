@@ -2355,6 +2355,18 @@ fn evaluate_function_call_ast_inner(
 
   // PermutationCycles[{p1, p2, ...}] — convert permutation list to cycle notation
   if name == "PermutationCycles" && args.len() == 1 {
+    // A list has to be a genuine permutation of 1..n; a repeat used to be
+    // read as the identity.
+    if matches!(&args[0], Expr::List(_))
+      && crate::evaluator::dispatch::list_operations::permutation_list_indices(
+        "PermutationCycles",
+        &args[0],
+        true,
+      )
+      .is_none()
+    {
+      return Ok(unevaluated(name, args));
+    }
     if let Expr::List(perm) = &args[0] {
       let n = perm.len();
       // Extract integer values

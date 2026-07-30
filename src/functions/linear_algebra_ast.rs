@@ -1836,21 +1836,23 @@ pub fn permutation_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => return unevaluated(),
   };
-  // Every entry must be an integer in 1..=n forming a permutation.
+  // Every entry must be an integer in 1..=n and no two the same, or the
+  // matrix would have a repeated column. wolframscript reports nothing
+  // for a list that is not a permutation, it just declines.
   let n = perm_list.len();
-  let mut perm = Vec::with_capacity(n);
-  for e in &perm_list {
-    match e {
-      Expr::Integer(k) if *k >= 1 && (*k as usize) <= n => {
-        perm.push(*k as usize)
-      }
-      _ => return unevaluated(),
-    }
-  }
+  let Some(perm) =
+    crate::evaluator::dispatch::list_operations::permutation_list_indices(
+      "PermutationMatrix",
+      &Expr::List(perm_list.clone().into()),
+      false,
+    )
+  else {
+    return unevaluated();
+  };
   let mut matrix = Vec::with_capacity(n);
   for &p in &perm {
     let mut row = vec![Expr::Integer(0); n];
-    row[p - 1] = Expr::Integer(1);
+    row[p] = Expr::Integer(1);
     matrix.push(Expr::List(row.into()));
   }
   Ok(Expr::List(matrix.into()))
@@ -5713,8 +5715,13 @@ pub fn minors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   } else {
-    // Default: n-1 for n×n matrix (standard minors)
-    nrows.min(ncols) - 1
+    // Default: n-1 for n×n matrix (standard minors). A matrix with an
+    // empty row has no minors at all, and subtracting from zero used to
+    // wrap round.
+    match nrows.min(ncols).checked_sub(1) {
+      Some(k) => k,
+      None => return Ok(Expr::List(Vec::new().into())),
+    }
   };
 
   if k > nrows || k > ncols {

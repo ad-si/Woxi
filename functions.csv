@@ -1629,7 +1629,7 @@ DominantColors,Finds dominant colors in an image using k-means clustering,✅,pu
 Multicolumn,Multi-column layout,,unevaluated,10.0,1648
 Record,Record data structure,,unevaluated,2.0,1648
 FlattenAt,Flatten at specific positions,✅,computation,2.0,1649
-InversePermutation,Inverse of a permutation,✅,computation,8.0,1650
+InversePermutation,Inverse of a permutation list or Cycles object,✅,pure,8.0,1650
 WhittakerM,Whittaker M function E^(-z/2) z^(m+1/2) Hypergeometric1F1[m-k+1/2 2m+1 z],✅,pure,6.0,1651
 InterpretationBox,Low-level box that displays one expression but interprets as another,✅,pure,3.0,1652
 IncludePods,Include pods in computation,,unevaluated,8.0,1653
@@ -2197,7 +2197,7 @@ ToNumberField,Algebraic number theory,🚫,None,6.0,2219
 HarmonicMean,Returns the harmonic mean of a list or an association's values,✅,pure,6.0,2223
 Masking,Image processing masking option,🚫,None,8.0,2223
 OverscriptBox,Low-level box construct for overscript display,✅,pure,3.0,2223
-PermutationList,Permutation list from cycle notation or a permutation list,✅,none,8.0,2223
+PermutationList,Permutation list from cycle notation or a permutation list,✅,pure,8.0,2223
 EmbeddedHTML,Web embedding,🚫,None,10.0,2225
 MittagLefflerE,Mittag-Leffler function E_alpha(z) or E_{alpha beta}(z) summed via Sum[z^k/Gamma[alpha k + beta]],✅,pure,9.0,2225
 NProduct,Numerical product of a sequence,✅,none,1.0,2229
@@ -2636,7 +2636,7 @@ ConicHullRegion,Represents a conic hull region,✅,pure,10.0,2675
 KnightTourGraph,graph of knight moves on a chessboard,✅,Computation,8.0,2675
 LinkCreate,,🚫,,3.0,2675
 LocationTest,perform a one- or two-sample t-test for location,✅,none,8.0,2675
-FindPermutation,Find permutation mapping one list to another,✅,1,8.0,2679
+FindPermutation,Permutation mapping one list to another (to its sorted form when given one list),✅,pure,8.0,2679
 HitMissTransform,,🚫,,7.0,2679
 Symmetrize,Projects an array onto a tensor symmetry as a SymmetrizedArray — Symmetric Antisymmetric Hermitian or ZeroSymmetric over any set of slots (defaulting to full symmetry),✅,pure,9.0,2679
 ViewMatrix,,🚫,,6.0,2679
@@ -2933,7 +2933,7 @@ TraceOriginal,,,,2.0,2978
 DirichletCharacter,j-th Dirichlet character modulo k at n (Wolfram indexing),✅,pure,7.0,2986
 FindMinimumCostFlow,Minimum cost of a maximum flow over a cost matrix,✅,pure,9.0,2986
 Forward,,,,6.0,2986
-PermutationOrder,Order of a permutation,✅,1,8.0,2986
+PermutationOrder,Order of a permutation - the lcm of its cycle lengths,✅,pure,8.0,2986
 RiceDistribution,Rice distribution (Bessel PDF and MarcumQ CDF and factored moments),✅,pure,8.0,2986
 SymletWavelet,Least-asymmetric orthogonal Symlet wavelet family of order n,✅,pure,8.0,2986
 TargetDevice,,🚫,,11.0,2986
@@ -3845,7 +3845,7 @@ ImageFormattingWidth,,🚫,,10.0,3947
 JuliaSetIterationCount,,,,10.0,3947
 MinColorDistance,,,,10.0,3947
 PerfectNumber,Gives the nth perfect number,✅,pure,10.4,3947
-PermutationSupport,Elements moved by a permutation,✅,1,8.0,3947
+PermutationSupport,Elements moved by a permutation,✅,pure,8.0,3947
 RepairMesh,,,,11.0,3947
 RootOfUnityQ,Tests whether a number is exactly a root of unity,✅,pure,6.0,3947
 SystemsModelOrder,,🚫,,8.0,3947
