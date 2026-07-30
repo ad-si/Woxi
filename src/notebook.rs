@@ -124,6 +124,11 @@ impl fmt::Display for CellStyle {
 
 /// Parse a `.nb` file's contents into a `Notebook`.
 pub fn parse_notebook(input: &str) -> Result<Notebook, String> {
+  // The FrontEnd hard-wraps long lines when it writes a `.nb`, marking
+  // each break with a trailing backslash. Undo that first: the break can
+  // fall anywhere, including in the middle of a run of closing brackets
+  // (`}]}]}\⏎]}]`), which leaves the box structure unparseable.
+  let input = &strip_line_continuations(input);
   // Real .nb files have comment headers/footers around Notebook[{...}].
   // Find the start of the Notebook expression.
   let nb_start = input
@@ -137,6 +142,41 @@ pub fn parse_notebook(input: &str) -> Result<Notebook, String> {
 
   let cells = parse_cell_list(cell_list)?;
   Ok(Notebook { cells })
+}
+
+/// Remove the FrontEnd's physical line-wrap continuations: a backslash
+/// immediately before a newline, plus the newline itself. Wolfram drops
+/// them both between tokens and inside string literals (`"ab\⏎cd"` is
+/// `"abcd"`), so the text they join is what the cell really contains.
+///
+/// A backslash that is itself escaped (`\\` at the end of a line) is a
+/// literal backslash, not a continuation — only an odd-length run counts.
+fn strip_line_continuations(input: &str) -> String {
+  if !input.contains('\\') {
+    return input.to_string();
+  }
+  let mut out = String::with_capacity(input.len());
+  let mut backslashes = 0usize;
+  let mut chars = input.chars().peekable();
+  while let Some(c) = chars.next() {
+    // `\r\n` counts as one newline.
+    let is_newline = c == '\n' || (c == '\r' && chars.peek() == Some(&'\n'));
+    if is_newline && backslashes % 2 == 1 {
+      out.pop(); // the continuation backslash
+      if c == '\r' {
+        chars.next();
+      }
+      backslashes = 0;
+      continue;
+    }
+    if c == '\\' {
+      backslashes += 1;
+    } else {
+      backslashes = 0;
+    }
+    out.push(c);
+  }
+  out
 }
 
 /// Parse a comma-separated list of Cell[...] or
@@ -3696,5 +3736,29 @@ Cell[TextData[{
       }
       _ => panic!("Expected single cell"),
     }
+  }
+
+  /// The FrontEnd hard-wraps long lines with a trailing backslash, and
+  /// the break can land anywhere — including inside a run of closing
+  /// brackets, which used to leave the tail of the box expression in the
+  /// cell as raw text.
+  #[test]
+  fn test_line_wrap_continuations_are_rejoined() {
+    let nb = "Notebook[{\n\
+Cell[BoxData[\n\
+ RowBox[{\"f\", \"[\", RowBox[{\"a\", \",\", \"b\"}\\\n], \"]\"}]], \"Input\"]\n\
+}]";
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => assert_eq!(cell.content, "f[a,b]"),
+      _ => panic!("Expected single cell"),
+    }
+    // Inside a string literal the continuation is dropped too, joining
+    // the two halves — but an *escaped* backslash at the end of a line
+    // is a literal backslash, not a continuation.
+    assert_eq!(strip_line_continuations("ab\\\ncd"), "abcd");
+    assert_eq!(strip_line_continuations("ab\\\\\ncd"), "ab\\\\\ncd");
+    assert_eq!(strip_line_continuations("ab\\\r\ncd"), "abcd");
+    assert_eq!(strip_line_continuations("plain\ntext"), "plain\ntext");
   }
 }

@@ -568,6 +568,69 @@ mod graphics {
       insta::assert_snapshot!(export_svg("Graphics[{EdgeForm[Red], Disk[]}]"));
     }
 
+    /// What an `EdgeForm` leaves unsaid comes from Wolfram's defaults: a
+    /// width alone strokes black, a colour alone strokes at width 1, and
+    /// an `EdgeForm` that names neither draws no edge at all — which is
+    /// what makes `EdgeForm[If[outline, Thin, None]]` a working toggle.
+    #[test]
+    fn edge_form_defaults() {
+      let stroke = |directive: &str| {
+        let svg = export_svg(&format!(
+          "Graphics[{{{directive}, Orange, Polygon[{{{{0,0}},{{2,0}},{{1,1}}}}]}}]"
+        ));
+        let poly = svg
+          .lines()
+          .find(|l| l.starts_with("<polygon"))
+          .expect("a polygon")
+          .to_string();
+        match poly.find(" stroke=") {
+          Some(i) => poly[i..].trim_end_matches("/>").trim().to_string(),
+          None => String::new(),
+        }
+      };
+      // `Thin` is `Thickness[Tiny]` (0.2 wide), `Thick` is
+      // `Thickness[Large]` (2 wide); both stroke black.
+      assert_eq!(
+        stroke("EdgeForm[Thin]"),
+        "stroke=\"rgb(0,0,0)\" stroke-width=\"0.20\""
+      );
+      assert_eq!(
+        stroke("EdgeForm[Thick]"),
+        "stroke=\"rgb(0,0,0)\" stroke-width=\"2.00\""
+      );
+      assert_eq!(
+        stroke("EdgeForm[AbsoluteThickness[0.2]]"),
+        "stroke=\"rgb(0,0,0)\" stroke-width=\"0.20\""
+      );
+      assert_eq!(
+        stroke("EdgeForm[Red]"),
+        "stroke=\"rgb(255,0,0)\" stroke-width=\"1.00\""
+      );
+      assert_eq!(
+        stroke("EdgeForm[{Red, Thick}]"),
+        "stroke=\"rgb(255,0,0)\" stroke-width=\"2.00\""
+      );
+      assert_eq!(stroke("EdgeForm[None]"), "");
+      assert_eq!(stroke("EdgeForm[]"), "");
+    }
+
+    /// The same widths apply to a line: `Thin` is 0.2, `Thick` is 2.
+    #[test]
+    fn symbolic_line_thickness() {
+      let width = |directive: &str| {
+        let svg = export_svg(&format!(
+          "Graphics[{{{directive}, Line[{{{{0,0}},{{1,1}}}}]}}]"
+        ));
+        let i = svg.find("stroke-width=\"").expect("a stroke width")
+          + "stroke-width=\"".len();
+        svg[i..].split('"').next().unwrap().to_string()
+      };
+      assert_eq!(width("Thick"), "2.00");
+      assert_eq!(width("Thickness[Large]"), "2.00");
+      assert_eq!(width("Thickness[Medium]"), "1.00");
+      assert_eq!(width("AbsoluteThickness[1]"), "1.00");
+    }
+
     #[test]
     fn multiple_colors() {
       insta::assert_snapshot!(export_svg(

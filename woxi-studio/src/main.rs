@@ -8113,4 +8113,97 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`m$$ = 5}, \"…\"]"], "Output"]
       other => panic!("unexpected controls: {other:?}"),
     }
   }
+  /// End-to-end regression for the "Some Irreptiles of Order Greater
+  /// than 20" Demonstration. Its data table leaves gaps (`{d1, d2, ,
+  /// d4}` — an omitted element is `Null`), the FrontEnd hard-wrapped the
+  /// long box expressions mid-bracket, the labels carry `\[Hyphen]`, and
+  /// the tiles are drawn with `EdgeForm[If[outline, Thin, None]]`.
+  #[test]
+  fn irreptiles_notebook_opens_with_its_widget() {
+    let nb_src = "Notebook[{\n".to_string()
+      + r##"Cell[BoxData[
+ RowBox[{RowBox[{"data", "=",
+   RowBox[{"{", RowBox[{"7", ",", ",", "9"}], "}"}]}], ";"}]], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"Graphics", "[",
+    RowBox[{
+     RowBox[{"{",
+      RowBox[{
+       RowBox[{"EdgeForm", "[",
+        RowBox[{"If", "[",
+         RowBox[{"outline", ",", "Thin", ",", "None"}], "]"}], "]"}], ",",
+       "Orange", ",",
+       RowBox[{"Polygon", "[",
+        RowBox[{"{",
+         RowBox[{
+          RowBox[{"{", RowBox[{"0", ",", "0"}], "}"}], ",",
+          RowBox[{"{",
+           RowBox[{
+            RowBox[{"data", "[",
+             RowBox[{"[", "1", "]"}], "]"}], ",", "0"}\
+], "}"}], ",",
+          RowBox[{"{", RowBox[{"1", ",", "1"}], "}"}]}], "}"}], "]"}], ",",
+       RowBox[{"Text", "[",
+        RowBox[{"\"\<irrep\[Hyphen]21\>\"", ",",
+         RowBox[{"{", RowBox[{"1", ",", "1"}], "}"}]}], "]"}]}], "}"}], ",",
+     RowBox[{"ImageSize", "\[Rule]", "200"}]}], "]"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{", RowBox[{"outline", ",", "True", ",", "\"\<outline\>\""}],
+      "}"}], ",",
+     RowBox[{"{", RowBox[{"True", ",", "False"}], "}"}]}], "}"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`outline$$ = True}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(&nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+
+    // The gap in the data table is `Null`, so the list still has three
+    // elements and `data[[1]]` is the 7.
+    let data_cell = editors[0].content.text();
+    assert_eq!(data_cell.trim(), "data={7,,9};");
+    assert_eq!(woxi::interpret("Length[{7,,9}]").unwrap(), "3");
+    // The wrapped box rejoined, so the Part access survived the line
+    // break, and the label's named character resolved.
+    let manipulate_cell = editors[1].content.text();
+    assert!(
+      manipulate_cell.contains("data[[1]]"),
+      "the wrapped Part box must rejoin: {manipulate_cell}"
+    );
+    assert!(
+      manipulate_cell.contains("irrep\u{2010}21"),
+      "\\[Hyphen] must resolve to its character: {manipulate_cell}"
+    );
+
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the tile must render, which needs `data` from the preceding cell"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          name,
+          label,
+          values,
+          ..
+        },
+      ] => {
+        assert_eq!((name.as_str(), label.as_str()), ("outline", "outline"));
+        assert_eq!(values, &["True".to_string(), "False".to_string()]);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
 }

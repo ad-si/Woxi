@@ -977,17 +977,10 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
         true
       }
       "Thickness" if args.len() == 1 => {
-        // Handle named sizes: Thickness[Large] → same as Thick, etc.
-        if let Expr::Identifier(s) = &args[0] {
-          match s.as_str() {
-            "Large" => style.thickness = -2.0, // AbsoluteThickness[2]
-            "Tiny" => style.thickness = -0.5,  // AbsoluteThickness[0.5]
-            _ => {
-              if let Some(t) = expr_to_f64(&args[0]) {
-                style.thickness = t;
-              }
-            }
-          }
+        // Named sizes (`Thickness[Large]`, what `Thick` evaluates to) are
+        // absolute widths; anything else is a fraction of the plot width.
+        if let Some(t) = symbolic_thickness_arg(&args[0]) {
+          style.thickness = t;
         } else if let Some(t) = expr_to_f64(&args[0]) {
           style.thickness = t;
         }
@@ -996,7 +989,9 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
       "AbsoluteThickness" if args.len() == 1 => {
         // AbsoluteThickness gives pixel-level thickness
         // We'll store it as a negative number to distinguish from relative
-        if let Some(t) = expr_to_f64(&args[0]) {
+        if let Some(t) = symbolic_thickness_arg(&args[0]) {
+          style.thickness = t;
+        } else if let Some(t) = expr_to_f64(&args[0]) {
           style.thickness = -t; // negative = absolute pixels
         }
         true
@@ -1056,11 +1051,20 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
             if let Some(c) = parse_color(a) {
               ef.color = Some(c);
             } else if let Expr::FunctionCall { name: n2, args: a2 } = a {
+              // `EdgeForm[Thin]` arrives as `EdgeForm[Thickness[Tiny]]`.
               if n2 == "Thickness" && a2.len() == 1 {
-                ef.thickness = expr_to_f64(&a2[0]);
+                ef.thickness = symbolic_thickness_arg(&a2[0])
+                  .or_else(|| expr_to_f64(&a2[0]));
               } else if n2 == "AbsoluteThickness" && a2.len() == 1 {
-                ef.thickness = expr_to_f64(&a2[0]).map(|t| -t);
+                ef.thickness = symbolic_thickness_arg(&a2[0])
+                  .or_else(|| expr_to_f64(&a2[0]).map(|t| -t));
               }
+            } else if let Expr::Identifier(sym) = a
+              && let Some(t) = symbolic_thickness(sym)
+            {
+              // `EdgeForm[None]` names neither colour nor width, so it
+              // draws no edge at all.
+              ef.thickness = Some(t);
             }
           }
           style.edge_form = Some(ef);
@@ -1108,14 +1112,9 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
       // Darker/Lighter/RGBColor/Hue already handled by parse_color above
       _ => false,
     },
-    // Thick is equivalent to AbsoluteThickness[2]
-    Expr::Identifier(s) if s == "Thick" => {
-      style.thickness = -2.0; // negative = absolute pixels
-      true
-    }
-    // Thin is equivalent to AbsoluteThickness[0.5]
-    Expr::Identifier(s) if s == "Thin" => {
-      style.thickness = -0.5;
+    // `Thin` / `Thick` name absolute widths (negative = absolute pixels).
+    Expr::Identifier(s) if symbolic_thickness(s).is_some() => {
+      style.thickness = symbolic_thickness(s).unwrap();
       true
     }
     // Dashed is equivalent to Dashing[{Small, Small}]
@@ -3271,6 +3270,51 @@ fn coord_y(y: f64, bb: &BBox, svg_h: f64) -> f64 {
   (bb.y_max - y) / bb.height() * svg_h
 }
 
+/// The width named by a thickness symbol, in the negative encoding this
+/// module uses for `AbsoluteThickness`. `Thin` evaluates to
+/// `Thickness[Tiny]` and `Thick` to `Thickness[Large]`, and Wolfram
+/// strokes those 0.2 and 2 wide respectively.
+fn symbolic_thickness(name: &str) -> Option<f64> {
+  match name {
+    "Tiny" | "Thin" => Some(-0.2),
+    "Small" => Some(-0.5),
+    "Medium" => Some(-1.0),
+    "Large" | "Thick" => Some(-2.0),
+    _ => None,
+  }
+}
+
+/// `symbolic_thickness` for a directive argument (`Thickness[Large]`).
+fn symbolic_thickness_arg(arg: &Expr) -> Option<f64> {
+  match arg {
+    Expr::Identifier(s) => symbolic_thickness(s),
+    _ => None,
+  }
+}
+
+/// The stroke an `EdgeForm` puts around a filled primitive: its colour
+/// and width in SVG units, or `None` when no edge is drawn.
+///
+/// Wolfram draws no edge for `EdgeForm[]` / `EdgeForm[None]`; an
+/// `EdgeForm` naming only a thickness draws it in black, and one naming
+/// only a colour draws it at the default width of 1.
+fn edge_stroke(
+  edge_form: &Option<EdgeForm>,
+  bb: &BBox,
+  svg_w: f64,
+) -> Option<(Color, f64)> {
+  let ef = edge_form.as_ref()?;
+  if ef.color.is_none() && ef.thickness.is_none() {
+    return None;
+  }
+  Some((
+    ef.color.unwrap_or(Color::new(0.0, 0.0, 0.0)),
+    ef.thickness
+      .map(|t| thickness_px(t, bb, svg_w))
+      .unwrap_or(1.0),
+  ))
+}
+
 fn thickness_px(t: f64, bb: &BBox, svg_w: f64) -> f64 {
   if t < 0.0 {
     // Absolute thickness (stored as negative)
@@ -4013,16 +4057,11 @@ fn render_primitive(
       let sry = *ry / bb.height() * svg_h;
       let color = style.effective_color();
       // Edge form for stroke
-      let (stroke_color, stroke_width) = if let Some(ref ef) = style.edge_form {
-        let sc = ef.color.unwrap_or(color);
-        let sw = ef
-          .thickness
-          .map(|t| thickness_px(t, bb, svg_w).max(0.5))
-          .unwrap_or(0.5);
-        (Some(sc), sw)
-      } else {
-        (None, 0.0)
-      };
+      let (stroke_color, stroke_width) =
+        match edge_stroke(&style.edge_form, bb, svg_w) {
+          Some((sc, sw)) => (Some(sc), sw),
+          None => (None, 0.0),
+        };
       let stroke_attr = if let Some(sc) = stroke_color {
         let so = if sc.a < 1.0 {
           format!(" stroke-opacity=\"{}\"", sc.a)
@@ -4086,23 +4125,19 @@ fn render_primitive(
         String::new()
       };
       // Edge form for stroke
-      let stroke_attr = if let Some(ref ef) = style.edge_form {
-        let sc = ef.color.unwrap_or(color);
-        let sw = ef
-          .thickness
-          .map(|t| thickness_px(t, bb, svg_w).max(0.5))
-          .unwrap_or(0.5);
-        let so = if sc.a < 1.0 {
-          format!(" stroke-opacity=\"{}\"", sc.a)
-        } else {
-          String::new()
-        };
-        format!(
-          " stroke=\"{}\" stroke-width=\"{sw:.2}\"{so}",
-          sc.to_svg_rgb()
-        )
-      } else {
-        String::new()
+      let stroke_attr = match edge_stroke(&style.edge_form, bb, svg_w) {
+        Some((sc, sw)) => {
+          let so = if sc.a < 1.0 {
+            format!(" stroke-opacity=\"{}\"", sc.a)
+          } else {
+            String::new()
+          };
+          format!(
+            " stroke=\"{}\" stroke-width=\"{sw:.2}\"{so}",
+            sc.to_svg_rgb()
+          )
+        }
+        None => String::new(),
       };
       // Path: move to center, line to arc start, arc to arc end, close
       out.push_str(&format!(
@@ -4125,16 +4160,11 @@ fn render_primitive(
       let sh = (*y_max - *y_min) / bb.height() * svg_h;
       let color = style.effective_color();
       // Edge form
-      let (stroke_color, stroke_width) = if let Some(ref ef) = style.edge_form {
-        let sc = ef.color.unwrap_or(color);
-        let st = ef
-          .thickness
-          .map(|t| thickness_px(t, bb, svg_w).max(0.5))
-          .unwrap_or(0.5);
-        (Some(sc), st)
-      } else {
-        (None, 0.0)
-      };
+      let (stroke_color, stroke_width) =
+        match edge_stroke(&style.edge_form, bb, svg_w) {
+          Some((sc, sw)) => (Some(sc), sw),
+          None => (None, 0.0),
+        };
       let stroke_attr = if let Some(sc) = stroke_color {
         let so = if sc.a < 1.0 {
           format!(" stroke-opacity=\"{}\"", sc.a)
@@ -4169,16 +4199,11 @@ fn render_primitive(
         })
         .collect();
       // Edge form
-      let (stroke_color, stroke_width) = if let Some(ref ef) = style.edge_form {
-        let sc = ef.color.unwrap_or(color);
-        let st = ef
-          .thickness
-          .map(|t| thickness_px(t, bb, svg_w).max(0.5))
-          .unwrap_or(0.5);
-        (Some(sc), st)
-      } else {
-        (None, 0.0)
-      };
+      let (stroke_color, stroke_width) =
+        match edge_stroke(&style.edge_form, bb, svg_w) {
+          Some((sc, sw)) => (Some(sc), sw),
+          None => (None, 0.0),
+        };
       let stroke_attr = if let Some(sc) = stroke_color {
         let so = if sc.a < 1.0 {
           format!(" stroke-opacity=\"{}\"", sc.a)

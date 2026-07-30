@@ -360,6 +360,10 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "DoubleDownArrow" => Some("\u{21D3}"),
     "DoubleLeftRightArrow" => Some("\u{21D4}"),
     "DoubleUpDownArrow" => Some("\u{21D5}"),
+    "LeftTeeArrow" => Some("\u{21A4}"),
+    "RightTeeArrow" => Some("\u{21A6}"),
+    "UpTeeArrow" => Some("\u{21A5}"),
+    "DownTeeArrow" => Some("\u{21A7}"),
     "Rule" => Some("\u{F522}"),
     "RuleDelayed" => Some("\u{F51F}"),
     "DirectedEdge" => Some("\u{F3D5}"),
@@ -379,10 +383,24 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "Angle" => Some("\u{2220}"),
     "FilledSquare" => Some("\u{25A0}"),
     "EmptySquare" => Some("\u{25A1}"),
+    "FilledSmallSquare" => Some("\u{25FC}"),
+    "EmptySmallSquare" => Some("\u{25FB}"),
+    "FilledVerySmallSquare" => Some("\u{25AA}"),
+    "EmptyVerySmallSquare" => Some("\u{25AB}"),
     "FilledCircle" => Some("\u{25CF}"),
     "EmptyCircle" => Some("\u{25CB}"),
+    "FilledSmallCircle" => Some("\u{F750}"),
+    "EmptySmallCircle" => Some("\u{25E6}"),
     "FilledDiamond" => Some("\u{25C6}"),
     "EmptyDiamond" => Some("\u{25C7}"),
+    "FilledUpTriangle" => Some("\u{25B2}"),
+    "EmptyUpTriangle" => Some("\u{25B3}"),
+    "FilledDownTriangle" => Some("\u{25BC}"),
+    "EmptyDownTriangle" => Some("\u{25BD}"),
+    "FilledLeftTriangle" => Some("\u{25C0}"),
+    "FilledRightTriangle" => Some("\u{25B6}"),
+    "Placeholder" => Some("\u{F528}"),
+    "SelectionPlaceholder" => Some("\u{F527}"),
     // Braces/brackets
     "LeftAngleBracket" => Some("\u{27E8}"),
     "RightAngleBracket" => Some("\u{27E9}"),
@@ -404,8 +422,13 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "CloseCurlyQuote" => Some("\u{2019}"),
     "OpenCurlyDoubleQuote" => Some("\u{201C}"),
     "CloseCurlyDoubleQuote" => Some("\u{201D}"),
+    "Hyphen" => Some("\u{2010}"),
     "Dash" => Some("\u{2013}"),
     "LongDash" => Some("\u{2014}"),
+    "LeftGuillemet" => Some("\u{00AB}"),
+    "RightGuillemet" => Some("\u{00BB}"),
+    "Prime" => Some("\u{2032}"),
+    "DoublePrime" => Some("\u{2033}"),
     "Bullet" => Some("\u{2022}"),
     "Dagger" => Some("\u{2020}"),
     "DoubleDagger" => Some("\u{2021}"),
@@ -2202,6 +2225,10 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
     Rule::NamedCharIdentifier => {
       let s = pair.as_str();
       named_char_to_expr(s)
+    }
+    // An omitted element or argument (`{a,,b}`, `f[a,]`) is `Null`.
+    Rule::OmittedArg | Rule::OmittedTrailingArg => {
+      Expr::Identifier("Null".to_string())
     }
     Rule::Identifier => {
       // Strip the default `Global`` context prefix so `Global`x` collapses

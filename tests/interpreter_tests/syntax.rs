@@ -10068,3 +10068,51 @@ mod replace_after_applied_anonymous_function {
     assert_eq!(interpret(r"\[Sqrt](#) &[4] /. 2 -> 7").unwrap(), "7");
   }
 }
+
+/// A comma with nothing beside it stands for an omitted expression,
+/// which Wolfram reads as `Null` — hand-written Demonstration code does
+/// this to leave gaps in a table (`data = {d1, d2, , d4}`).
+mod omitted_arguments {
+  use super::*;
+
+  #[test]
+  fn an_omitted_list_element_is_null() {
+    let full =
+      |s: &str| interpret(&format!("ToString[FullForm[{s}]]")).unwrap();
+    assert_eq!(full("{a,,b}"), "List[a, Null, b]");
+    assert_eq!(full("{,a}"), "List[Null, a]");
+    assert_eq!(full("{a,}"), "List[a, Null]");
+    assert_eq!(full("{,}"), "List[Null, Null]");
+    assert_eq!(full("{a,b,,,}"), "List[a, b, Null, Null, Null]");
+    assert_eq!(interpret("Length[{a,b,,,}]").unwrap(), "5");
+  }
+
+  #[test]
+  fn an_omitted_argument_is_null() {
+    let full =
+      |s: &str| interpret(&format!("ToString[FullForm[{s}]]")).unwrap();
+    assert_eq!(full("f[a,,b]"), "f[a, Null, b]");
+    assert_eq!(full("f[,]"), "f[Null, Null]");
+    assert_eq!(full("f[a,]"), "f[a, Null]");
+  }
+
+  #[test]
+  fn a_missing_comma_is_still_no_element() {
+    // Omission takes a comma to be visible: an empty list stays empty,
+    // and a one-element list keeps its single element.
+    let full =
+      |s: &str| interpret(&format!("ToString[FullForm[{s}]]")).unwrap();
+    assert_eq!(full("{}"), "List[]");
+    assert_eq!(full("f[]"), "f[]");
+    assert_eq!(full("{a}"), "List[a]");
+    assert_eq!(interpret("Length[{}]").unwrap(), "0");
+  }
+
+  #[test]
+  fn omitted_elements_nest() {
+    let full =
+      |s: &str| interpret(&format!("ToString[FullForm[{s}]]")).unwrap();
+    assert_eq!(full("{{1,2},{3,,4}}"), "List[List[1, 2], List[3, Null, 4]]");
+    assert_eq!(interpret("Head[Part[{a,,b}, 2]]").unwrap(), "Symbol");
+  }
+}
