@@ -2540,16 +2540,31 @@ pub fn string_repeat_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let s = expr_to_str(&args[0])?;
-  let n = expr_to_int(&args[1])?;
-  if n < 0 {
-    return Err(InterpreterError::EvaluationError(
-      "Second argument of StringRepeat must be non-negative".into(),
-    ));
-  }
-  let repeated = s.repeat(n as usize);
+  // Both counts have to be whole and not negative; zero is allowed and
+  // gives the empty string, despite what the message calls for.
+  let count = |position: usize| -> Option<usize> {
+    let value = expr_to_int(&args[position - 1]).ok().filter(|n| *n >= 0);
+    if value.is_none() {
+      crate::emit_message(&format!(
+        "StringRepeat::intp: Positive integer expected at position {} in {}.",
+        position,
+        crate::syntax::format_expr(
+          &unevaluated("StringRepeat", args),
+          crate::syntax::ExprForm::Output
+        )
+      ));
+    }
+    value.map(|n| n as usize)
+  };
+  let Some(n) = count(2) else {
+    return Ok(unevaluated("StringRepeat", args));
+  };
+  let repeated = s.repeat(n);
   if args.len() == 3 {
-    // Third argument is max length
-    let max_len = expr_to_int(&args[2])? as usize;
+    // Third argument is the length to truncate to.
+    let Some(max_len) = count(3) else {
+      return Ok(unevaluated("StringRepeat", args));
+    };
     let truncated: String = repeated.chars().take(max_len).collect();
     Ok(Expr::String(truncated))
   } else {
@@ -10735,11 +10750,26 @@ pub fn string_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     unevaluated("StringPart", args)
   };
 
+  // A specification that is not a position at all -- a symbol, a real --
+  // is a different complaint from one that is simply out of range.
+  let pkspec1_unevaluated = || {
+    crate::emit_message(&format!(
+      "StringPart::pkspec1: The expression {} cannot be used as a part \
+       specification.",
+      crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output)
+    ));
+    unevaluated("StringPart", args)
+  };
+
   match &args[1] {
     Expr::List(indices) => {
+      // Inside a list, anything unusable is reported as the whole list
+      // not existing rather than as a bad specification.
       let mut result = Vec::new();
       for idx_expr in indices {
-        let n = expr_to_int(idx_expr)?;
+        let Ok(n) = expr_to_int(idx_expr) else {
+          return Ok(partw_unevaluated());
+        };
         let Some(idx) = resolve_index(n, len) else {
           return Ok(partw_unevaluated());
         };
@@ -10748,7 +10778,9 @@ pub fn string_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Expr::List(result.into()))
     }
     _ => {
-      let n = expr_to_int(&args[1])?;
+      let Ok(n) = expr_to_int(&args[1]) else {
+        return Ok(pkspec1_unevaluated());
+      };
       let Some(idx) = resolve_index(n, len) else {
         return Ok(partw_unevaluated());
       };
@@ -11153,7 +11185,19 @@ pub fn string_rotate_left_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let s = expr_to_str(&args[0])?;
   let n = if args.len() == 2 {
-    expr_to_int(&args[1])?
+    match expr_to_int(&args[1]) {
+      Ok(n) => n,
+      Err(_) => {
+        crate::emit_message(&format!(
+          "StringRotateLeft::int: Integer expected at position 2 in {}.",
+          crate::syntax::format_expr(
+            &unevaluated("StringRotateLeft", args),
+            crate::syntax::ExprForm::Output
+          )
+        ));
+        return Ok(unevaluated("StringRotateLeft", args));
+      }
+    }
   } else {
     1
   };
@@ -11182,7 +11226,19 @@ pub fn string_rotate_right_ast(
   }
   let s = expr_to_str(&args[0])?;
   let n = if args.len() == 2 {
-    expr_to_int(&args[1])?
+    match expr_to_int(&args[1]) {
+      Ok(n) => n,
+      Err(_) => {
+        crate::emit_message(&format!(
+          "StringRotateRight::int: Integer expected at position 2 in {}.",
+          crate::syntax::format_expr(
+            &unevaluated("StringRotateRight", args),
+            crate::syntax::ExprForm::Output
+          )
+        ));
+        return Ok(unevaluated("StringRotateRight", args));
+      }
+    }
   } else {
     1
   };

@@ -6083,6 +6083,132 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // A part specification that is not a position at all is a different
+  // complaint from one that is merely out of range, and neither aborts.
+  #[test]
+  fn string_part_separates_bad_specs_from_missing_parts() {
+    use woxi::interpret_with_stdout;
+    for (spec, message) in [
+      (
+        "x",
+        "StringPart::pkspec1: The expression x cannot be used as a part \
+         specification.",
+      ),
+      (
+        "1.5",
+        "StringPart::pkspec1: The expression 1.5 cannot be used as a part \
+         specification.",
+      ),
+      ("0", "StringPart::partw: Part 0 of abcde does not exist."),
+      ("10", "StringPart::partw: Part 10 of abcde does not exist."),
+      (
+        "{1, 10}",
+        "StringPart::partw: Part {1, 10} of abcde does not exist.",
+      ),
+      (
+        "{1, x}",
+        "StringPart::partw: Part {1, x} of abcde does not exist.",
+      ),
+      (
+        "{{1, 2}}",
+        "StringPart::partw: Part {{1, 2}} of abcde does not exist.",
+      ),
+    ] {
+      let call = format!("StringPart[\"abcde\", {}]", spec);
+      let r = interpret_with_stdout(&call).unwrap();
+      assert_eq!(r.result, format!("StringPart[abcde, {}]", spec));
+      assert!(
+        r.warnings.contains(&message.to_string()),
+        "expected {:?} for {}, got {:?}",
+        message,
+        call,
+        r.warnings
+      );
+    }
+    // The positions that do exist still work, counting from either end.
+    assert_eq!(interpret("StringPart[\"abcde\", 2]").unwrap(), "b");
+    assert_eq!(interpret("StringPart[\"abcde\", -1]").unwrap(), "e");
+    assert_eq!(
+      interpret("StringPart[\"abcde\", {1, 2}]").unwrap(),
+      "{a, b}"
+    );
+    assert_eq!(interpret("StringPart[\"abcde\", {}]").unwrap(), "{}");
+  }
+
+  // A rotation count has to be an integer, and is reported rather than
+  // aborting the evaluation.
+  #[test]
+  fn string_rotate_reports_a_non_integer_count() {
+    use woxi::interpret_with_stdout;
+    for head in ["StringRotateLeft", "StringRotateRight"] {
+      for spec in ["{0}", "1.5", "x"] {
+        let call = format!("{}[\"abcde\", {}]", head, spec);
+        let r = interpret_with_stdout(&call).unwrap();
+        assert_eq!(r.result, format!("{}[abcde, {}]", head, spec));
+        let expected = format!(
+          "{}::int: Integer expected at position 2 in {}[abcde, {}].",
+          head, head, spec
+        );
+        assert!(
+          r.warnings.contains(&expected),
+          "expected {:?}, got {:?}",
+          expected,
+          r.warnings
+        );
+      }
+    }
+    assert_eq!(
+      interpret("StringRotateLeft[\"abcde\", 2]").unwrap(),
+      "cdeab"
+    );
+    assert_eq!(
+      interpret("StringRotateLeft[\"abcde\", -1]").unwrap(),
+      "eabcd"
+    );
+    assert_eq!(interpret("StringRotateLeft[\"abcde\"]").unwrap(), "bcdea");
+    assert_eq!(
+      interpret("StringRotateRight[\"abcde\", 2]").unwrap(),
+      "deabc"
+    );
+  }
+
+  // Both of StringRepeat's counts must be whole and not negative. A
+  // negative one aborted at position 2 and was cast to a huge usize at
+  // position 3, quietly ignoring the truncation.
+  #[test]
+  fn string_repeat_reports_a_negative_count() {
+    use woxi::interpret_with_stdout;
+    for (spec, position) in
+      [("-1", 2), ("1.5", 2), ("x", 2), ("2, -1", 3), ("2, x", 3)]
+    {
+      let call = format!("StringRepeat[\"abcde\", {}]", spec);
+      let r = interpret_with_stdout(&call).unwrap();
+      assert_eq!(r.result, format!("StringRepeat[abcde, {}]", spec));
+      let expected = format!(
+        "StringRepeat::intp: Positive integer expected at position {} in \
+         StringRepeat[abcde, {}].",
+        position, spec
+      );
+      assert!(
+        r.warnings.contains(&expected),
+        "expected {:?}, got {:?}",
+        expected,
+        r.warnings
+      );
+    }
+    // Zero is allowed at either position and gives the empty string.
+    assert_eq!(interpret("StringRepeat[\"abcde\", 0]").unwrap(), "");
+    assert_eq!(interpret("StringRepeat[\"abcde\", 2, 0]").unwrap(), "");
+    assert_eq!(
+      interpret("StringRepeat[\"abcde\", 2]").unwrap(),
+      "abcdeabcde"
+    );
+    assert_eq!(
+      interpret("StringRepeat[\"abcde\", 3, 7]").unwrap(),
+      "abcdeab"
+    );
+  }
+
   // A permutation list has to be a rearrangement of 1..n. A zero, a
   // repeat or a value past the end used to index off the end of the
   // working vector and abort the whole evaluation.

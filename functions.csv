@@ -2474,7 +2474,7 @@ Glaisher,Glaisher-Kinkelin constant,✅,none,4.0,2509
 ListCurvePathPlot,,🚫,,7.0,2509
 Bookmarks,Option for bookmarked settings in Manipulate,✅,pure,7.0,2512
 SliceDensityPlot3D,,🚫,,10.2,2512
-StringRepeat,Repeats a string a specified number of times,✅,pure,10.1,2512
+StringRepeat,Repeats a string a number of times optionally truncated to a given length,✅,pure,10.1,2512
 BracketingBar,,🚫,,3.0,2514
 StartProcess,,🚫,,10.0,2514
 DivisorSum,Applies a function to each divisor and sums the results,✅,pure,7.0,2519
