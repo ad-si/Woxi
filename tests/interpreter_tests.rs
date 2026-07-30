@@ -1676,7 +1676,11 @@ mod interpreter_tests {
       ("Editable[x]", "Editable[x]"),
       ("Selectable[x]", "Selectable[x]"),
       ("DynamicWrapper[a, b]", "DynamicWrapper[a, b]"),
-      ("Dynamic[x]", "Dynamic[x]"),
+      // Dynamic displays the current value of its content in visual mode
+      // (interpret_with_stdout), like a notebook front end — for an
+      // undefined symbol that value is the symbol itself. The script-mode
+      // echo `Dynamic[x]` is covered by dynamic_stays_symbolic_in_text_mode.
+      ("Dynamic[x]", "x"),
       ("Setter[a, b]", "Setter[a, b]"),
       ("Slider[0.5]", "Slider[0.5]"),
       ("Toggler[a, b]", "Toggler[a, b]"),

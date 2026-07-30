@@ -500,16 +500,14 @@ impl WoxiStudio {
   /// preceding Input/Code cell rather than shown separately.
   fn editors_from_notebook(notebook: &Notebook) -> Vec<CellEditor> {
     let mut editors = Vec::new();
-    // Input/Code sources seen so far, in notebook order. A stored
-    // interactive widget (`DynamicModuleBox` dump) is re-instantiated at
-    // load, and its body may depend on definitions made by earlier cells
-    // (e.g. a Demonstration's initialization section defining the source
-    // image that the Manipulate operates on — the FrontEnd covers this
-    // with `SaveDefinitions -> True`, which embeds the definitions in the
-    // dump). Before instantiating, every preceding input cell is
-    // evaluated once, in order, so those definitions exist.
-    let mut prior_inputs: Vec<String> = Vec::new();
-    let mut inputs_evaluated = 0usize;
+    // Input cells seen so far that have not been evaluated yet. A stored
+    // interactive widget (Manipulate saved with `SaveDefinitions -> True`)
+    // depends on helper functions defined in earlier Input cells — the
+    // Demonstrations "Initialization Code" section. Mathematica embeds
+    // those definitions in the saved DynamicModuleBox dump; Woxi drops the
+    // dump and re-instantiates from the input, so the earlier cells must
+    // run first for the widget's body to evaluate.
+    let mut pending_init: Vec<String> = Vec::new();
     let mut state_cleared = false;
 
     for entry in &notebook.cells {
@@ -519,10 +517,7 @@ impl WoxiStudio {
             continue;
           }
           if matches!(cell.style, CellStyle::Input | CellStyle::Code) {
-            let trimmed = cell.content.trim();
-            if !trimmed.is_empty() {
-              prior_inputs.push(trimmed.to_string());
-            }
+            pending_init.push(cell.content.clone());
           }
           editors.push(CellEditor {
             content: text_editor::Content::with_text(&cell.content),
@@ -590,12 +585,12 @@ impl WoxiStudio {
                   woxi::clear_state();
                   state_cleared = true;
                 }
-                for code in &prior_inputs[inputs_evaluated..] {
-                  let _ = woxi::interpret_with_stdout(code);
-                }
-                inputs_evaluated = prior_inputs.len();
+                // Run the earlier Input cells (helper definitions) before
+                // the widget's body first evaluates.
+                evaluate_pending_initialization(&mut pending_init);
                 instantiate_stored_manipulate(&cell.content)
               } else {
+                pending_init.push(cell.content.clone());
                 None
               };
               let output_content = match &output {
@@ -641,10 +636,6 @@ impl WoxiStudio {
                 output_content,
                 stdout_content,
               });
-              let trimmed = cell.content.trim();
-              if !trimmed.is_empty() {
-                prior_inputs.push(trimmed.to_string());
-              }
               i = j;
             } else if matches!(cell.style, CellStyle::Output | CellStyle::Print)
             {
@@ -4451,6 +4442,20 @@ fn is_dynamic_box_dump(output: &str) -> bool {
     || t.starts_with("DynamicBox[")
 }
 
+/// Evaluate (and drain) the Input-cell code accumulated ahead of a stored
+/// interactive widget, so helper definitions from the notebook's
+/// initialization cells (e.g. the Wolfram Demonstrations "Initialization
+/// Code" section) are in scope when the widget's body evaluates. Results
+/// and errors are discarded — the cells keep their stored outputs until
+/// the user explicitly evaluates them.
+fn evaluate_pending_initialization(pending: &mut Vec<String>) {
+  for code in pending.drain(..) {
+    for stmt in woxi::split_into_statements(&code) {
+      let _ = woxi::interpret_with_stdout(&stmt);
+    }
+  }
+}
+
 /// Rebuild the interactive widget for a loaded Input cell whose stored
 /// output was a dynamic-widget dump. Only a cell that is exactly one held
 /// interactive expression (`Manipulate[…]`, `Animate[…]`, …) is
@@ -5675,8 +5680,10 @@ fn encode_svg_as_pdf(svg_str: &str) -> Result<Vec<u8>, ()> {
   fontdb.set_serif_family("Atkinson Hyperlegible Next");
   fontdb.load_system_fonts();
 
-  let mut opt = svg2pdf::usvg::Options::default();
-  opt.fontdb = std::sync::Arc::new(fontdb);
+  let opt = svg2pdf::usvg::Options {
+    fontdb: std::sync::Arc::new(fontdb),
+    ..Default::default()
+  };
 
   let tree = svg2pdf::usvg::Tree::from_str(svg_str, &opt).map_err(|_| ())?;
   svg2pdf::to_pdf(
@@ -5996,8 +6003,10 @@ async fn export_pdf(
   fontdb.set_fantasy_family("Atkinson Hyperlegible Next");
   fontdb.load_system_fonts();
 
-  let mut opt = svg2pdf::usvg::Options::default();
-  opt.fontdb = StdArc::new(fontdb);
+  let opt = svg2pdf::usvg::Options {
+    fontdb: StdArc::new(fontdb),
+    ..Default::default()
+  };
 
   let tree = svg2pdf::usvg::Tree::from_str(&svg_doc, &opt)
     .map_err(|_| FileError::IoError(std::io::ErrorKind::InvalidData))?;
@@ -6235,6 +6244,65 @@ mod tests {
   }
 
   #[test]
+  fn kepler_trigger_and_period_bounded_sliders() {
+    // The "Kepler's Second Law" Demonstration pattern: time sliders bounded
+    // by the orbital-period control P, plus a Trigger animating t. The
+    // widget starts paused, the P-referencing ranges follow P as it moves,
+    // and the animation tick targets the Trigger's variable.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{t, dt}, \
+       {{t, 0, \"time\"}, 0, P, .01}, \
+       {{P, 20, \"period\"}, .1, 50, .01}, \
+       {{dt, 5, \"span\"}, .1, P, .01}, \
+       {{t, 0, \"animate\"}, 0, P, .01, ControlType -> Trigger}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert!(state.animated, "the Trigger makes the widget animatable");
+    assert!(!state.playing, "a Trigger widget starts paused");
+    assert_eq!(state.controls.len(), 3, "the Trigger adds no second t row");
+
+    let bounds =
+      |s: &manipulate::ManipulateState, i: usize| match &s.controls[i] {
+        manipulate::ControlState::Continuous { min, max, .. } => (*min, *max),
+        other => panic!("expected continuous control, got {other:?}"),
+      };
+    let current =
+      |s: &manipulate::ManipulateState, i: usize| match &s.controls[i] {
+        manipulate::ControlState::Continuous { current, .. } => *current,
+        other => panic!("expected continuous control, got {other:?}"),
+      };
+    // Bounds resolved against P's initial value 20.
+    assert_eq!(bounds(&state, 0), (0.0, 20.0));
+    assert_eq!(bounds(&state, 2), (0.1, 20.0));
+
+    // Dragging P to 40 widens both dependent ranges on the next render.
+    match &mut state.controls[1] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 40.0,
+      other => panic!("expected continuous control, got {other:?}"),
+    }
+    state.reevaluate();
+    assert_eq!(bounds(&state, 0), (0.0, 40.0));
+    assert_eq!(bounds(&state, 2), (0.1, 40.0));
+
+    // Shrinking P to 1 clamps dt (currently 5) into the new range.
+    match &mut state.controls[1] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 1.0,
+      other => panic!("expected continuous control, got {other:?}"),
+    }
+    state.reevaluate();
+    assert_eq!(bounds(&state, 2), (0.1, 1.0));
+    assert_eq!(current(&state, 2), 1.0, "dt must clamp to the new max");
+
+    // The animation targets the Trigger's variable t.
+    state.advance_animation();
+    assert!(
+      (current(&state, 0) - 0.01).abs() < 1e-12,
+      "the tick must advance t by its step"
+    );
+  }
+
+  #[test]
   fn locator_manipulate_builds_a_draggable_widget() {
     // The "Center of Mass of a Polygon" Demonstration pattern: a Locator
     // bound to a point list drives the polygon, with icon-labelled
@@ -6395,37 +6463,34 @@ mod tests {
     assert!(instantiate_stored_manipulate("1 + 1").is_none());
   }
 
+  /// A stored Manipulate whose body calls helpers from earlier Input
+  /// cells (the Demonstrations "Initialization Code" section) must open
+  /// live: `editors_from_notebook` replays the preceding inputs before
+  /// instantiating the widget.
   #[test]
-  fn stored_manipulate_sees_preceding_init_cells() {
-    // A Demonstration's Manipulate depends on definitions from earlier
-    // initialization cells (`SaveDefinitions -> True` in the FrontEnd).
-    // Loading the notebook must evaluate those cells before instantiating
-    // the widget, so its body doesn't reference undefined symbols.
-    let mut nb = Notebook::new();
-    nb.push_cell(Cell::new(
-      CellStyle::Input,
-      "initValueForManipulateLoadTest = 7;",
-    ));
-    nb.push_group(vec![
-      Cell::new(
-        CellStyle::Input,
-        "Manipulate[initValueForManipulateLoadTest + x, {x, 0, 10}]",
-      ),
-      Cell::new(
-        CellStyle::Output,
-        "DynamicModuleBox[{$CellContext`x$$ = 0}, …]",
-      ),
-    ]);
-
+  fn stored_manipulate_replays_initialization_cells_on_load() {
+    let nb_src = r#"Notebook[{
+Cell[BoxData["initPlot[z_] := Plot[Sin[z x], {x, 0, 5}]"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[initPlot[a], {a, 1, 3}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 1}, \"…\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
     let editors = WoxiStudio::editors_from_notebook(&nb);
     let widget = editors
       .iter()
       .find_map(|e| e.manipulate_state.as_ref())
-      .expect("the stored Manipulate must be instantiated");
-    assert_eq!(
-      widget.text_output.as_deref(),
-      Some("7"),
-      "the init cell's definition must be in scope at x = 0"
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "initPlot from the initialization cell must be in scope, \
+       so the first render produces the plot"
     );
   }
 

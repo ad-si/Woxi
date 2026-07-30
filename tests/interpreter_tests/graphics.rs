@@ -5734,6 +5734,54 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
 
+    /// `ContourPlot[lhs == rhs, …]` draws the equation's implicit curve
+    /// (the zero contour of `lhs - rhs`) instead of an empty plot.
+    #[test]
+    fn contour_plot_equation_draws_curve() {
+      let svg =
+        export_svg("ContourPlot[x^2 + y^2 == 4, {x, -2, 2}, {y, -2, 2}]");
+      assert!(
+        svg.contains("<polyline"),
+        "expected the implicit circle as contour polylines, got: {}",
+        &svg[..svg.len().min(200)]
+      );
+    }
+
+    /// A pre-rendered equation ContourPlot must merge with other graphics
+    /// inside Show — the curve is carried along as plot-source line series.
+    #[test]
+    fn show_merges_equation_contour_plot_with_graphics() {
+      let svg = export_svg(
+        "Show[{ContourPlot[y^2 == 20 x, {x, -20, 20}, {y, -20, 20}], \
+         Graphics[Point[{5, 0}]]}, PlotRange -> All]",
+      );
+      assert!(
+        svg.contains("<polyline"),
+        "expected the parabola curve inside Show"
+      );
+      assert!(
+        svg.contains("<circle"),
+        "expected the merged Point inside Show"
+      );
+    }
+
+    /// Show must splice a *list* of Graphics (e.g. a collected list of
+    /// per-ray line graphics) instead of silently dropping it.
+    #[test]
+    fn show_flattens_nested_graphics_lists() {
+      let svg = export_svg(
+        "Show[{Graphics[Point[{5, 0}]], \
+         {Graphics[Line[{{0, 0}, {10, 10}}]], \
+          Graphics[Line[{{0, 0}, {10, -10}}]]}}, PlotRange -> All]",
+      );
+      let lines = svg.matches("<polyline").count();
+      assert_eq!(
+        lines, 2,
+        "expected both nested-list Lines to merge, got {lines}"
+      );
+      assert!(svg.contains("<circle"), "expected the Point to survive");
+    }
+
     #[test]
     fn region_plot_basic() {
       insta::assert_snapshot!(export_svg(
@@ -6838,6 +6886,123 @@ mod show {
   fn show_no_graphics_returns_unevaluated() {
     clear_state();
     assert_eq!(interpret("Show[1, 2, 3]").unwrap(), "Show[1, 2, 3]");
+  }
+
+  #[test]
+  fn show_plot_with_graphics_keeps_plot_aspect() {
+    // Merging a Plot with raw Graphics primitives inherits the plot's
+    // 1/GoldenRatio aspect (Wolfram takes the options from the first
+    // graphic). Regression: the render used to collapse to a sliver whose
+    // height came from the wide PlotRange's data aspect.
+    clear_state();
+    let svg = export_svg(
+      "Show[{Plot[Sin[x], {x, 0, 6}], Graphics[{Text[\"hi\", {1, 1}]}]}, \
+       PlotRange -> {{-7, 24}, {-0.15, 0.75}}, ImageSize -> 480]",
+    );
+    let dim = |attr: &str| -> f64 {
+      let start = svg.find(&format!("{attr}=\"")).unwrap() + attr.len() + 2;
+      svg[start..svg[start..].find('"').unwrap() + start]
+        .parse()
+        .unwrap()
+    };
+    let (w, h) = (dim("width"), dim("height"));
+    assert!(
+      (250.0..=450.0).contains(&h) && w >= 480.0,
+      "expected ~480 x ~300 (1/GoldenRatio of the plotting area), got {w} x {h}"
+    );
+  }
+
+  #[test]
+  fn show_plot_with_graphics_keeps_filling() {
+    // The plot-source series merged into a Graphics render keep their
+    // Filling regions (as polygons) and FillingStyle appearance.
+    clear_state();
+    let svg = export_svg(
+      "Show[Plot[Sin[x], {x, 0, 6}, Filling -> Axis, \
+       FillingStyle -> {Opacity[0.8], RGBColor[0.33, 0.36, 0.78]}], \
+       Graphics[{Text[\"hi\", {1, 1}]}]]",
+    );
+    assert!(
+      svg.contains("fill=\"rgb(84,92,199)\" fill-opacity=\"0.8\""),
+      "expected a filled polygon with the FillingStyle color/opacity"
+    );
+  }
+
+  #[test]
+  fn show_respects_explicit_axes_option() {
+    // `Axes -> {Automatic, False}` passed to Show must survive the merge
+    // (the mixed path used to overwrite it with Axes -> True) and hide the
+    // y-axis while keeping the x-axis. With the y-axis hidden the render
+    // reserves no left tick-label margin, so the total width equals the
+    // ImageSize exactly; the x-axis still adds its bottom margin.
+    clear_state();
+    let svg = export_svg(
+      "Show[{Plot[Sin[x], {x, 0, 6}], Graphics[{Point[{1, 1}]}]}, \
+       Axes -> {Automatic, False}, ImageSize -> 400]",
+    );
+    assert!(
+      svg.starts_with("<svg width=\"400\""),
+      "expected no left axis margin (y-axis hidden), got: {}",
+      &svg[..60.min(svg.len())]
+    );
+  }
+}
+
+mod filling_style {
+  use super::*;
+
+  #[test]
+  fn plot_filling_style_opacity_and_color() {
+    // FillingStyle -> {Opacity[a], color} overrides the default fill
+    // appearance (series color at 0.2 opacity).
+    clear_state();
+    let svg = export_svg(
+      "Plot[Sin[x], {x, 0, 6}, Filling -> Axis, \
+       FillingStyle -> {Opacity[0.8], RGBColor[0.33, 0.36, 0.78]}]",
+    );
+    assert!(
+      svg.contains("opacity=\"0.8\" fill=\"#545CC7\""),
+      "expected fill polygon with FillingStyle color at opacity 0.8"
+    );
+  }
+
+  #[test]
+  fn plot_filling_style_color_only() {
+    // A bare color keeps the default 0.2 opacity but recolors the fill.
+    clear_state();
+    let svg = export_svg(
+      "Plot[Sin[x], {x, 0, 6}, Filling -> Axis, FillingStyle -> Red]",
+    );
+    assert!(
+      svg.contains("opacity=\"0.2\" fill=\"#FF0000\""),
+      "expected red fill polygon at the default 0.2 opacity"
+    );
+  }
+
+  #[test]
+  fn plot_filling_style_opacity_only() {
+    // A bare Opacity keeps the series color but changes the translucency.
+    clear_state();
+    let svg = export_svg(
+      "Plot[Sin[x], {x, 0, 6}, Filling -> Axis, FillingStyle -> Opacity[0.5]]",
+    );
+    assert!(
+      svg.contains("opacity=\"0.5\" fill=\"#5E81B5\""),
+      "expected series-colored fill polygon at opacity 0.5"
+    );
+  }
+
+  #[test]
+  fn list_line_plot_filling_style() {
+    clear_state();
+    let svg = export_svg(
+      "ListLinePlot[{1, 4, 2, 5, 3}, Filling -> Axis, \
+       FillingStyle -> Directive[Opacity[0.6], RGBColor[0.12, 0.61, 0.78]]]",
+    );
+    assert!(
+      svg.contains("opacity=\"0.6\" fill=\"#1F9CC7\""),
+      "expected fill polygon with the Directive color at opacity 0.6"
+    );
   }
 }
 
@@ -12329,6 +12494,168 @@ mod manipulate {
     let result = woxi::interpret_with_stdout(&code).unwrap();
     assert_eq!(result.result.trim(), "0");
   }
+
+  #[test]
+  fn spec_bounds_can_reference_other_control_variables() {
+    // Kepler's Second Law bounds its time sliders by the orbital period P —
+    // a control declared *after* the sliders that use it. The bounds must
+    // resolve to P's initial value regardless of declaration order, and stay
+    // dynamic so the frontend can follow P as it moves.
+    let expr = interpret_to_expr(
+      "Manipulate[{t, dt, P}, {{t, 0, \"time\"}, 0, P, .01}, \
+       {{P, 20, \"period\"}, .1, 50, .01}, {{dt, 5, \"span\"}, .1, P, .01}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let bounds: Vec<(&str, f64, f64)> = spec
+      .controls
+      .iter()
+      .map(|c| match c {
+        ManipulateControl::Continuous { name, min, max, .. } => {
+          (name.as_str(), *min, *max)
+        }
+        other => panic!("expected continuous control, got {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      bounds,
+      vec![("t", 0.0, 20.0), ("P", 0.1, 50.0), ("dt", 0.1, 20.0)]
+    );
+    assert_eq!(
+      spec.dynamic_bounds,
+      vec![
+        ("t".to_string(), None, Some("P".to_string())),
+        ("dt".to_string(), None, Some("P".to_string())),
+      ]
+    );
+  }
+
+  #[test]
+  fn spec_trigger_animates_an_already_bound_variable() {
+    // A `ControlType -> Trigger` spec for a variable that already has a
+    // slider (Kepler's "animate time since perihelion") must not bind the
+    // variable twice — it only makes the widget animate that variable,
+    // starting paused.
+    let expr = interpret_to_expr(
+      "Manipulate[t, {{t, 0, \"time\"}, 0, 10, .01}, \
+       {{t, 0, \"animate\"}, 0, 10, .01, ControlType -> Trigger}, \
+       AutorunSequencing -> {1, 2}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    assert_eq!(spec.controls.len(), 1, "the Trigger adds no second row");
+    assert!(spec.animated);
+    assert!(!spec.animation_running, "a Trigger starts paused");
+    assert_eq!(spec.animation_var.as_deref(), Some("t"));
+  }
+
+  #[test]
+  fn spec_standalone_trigger_keeps_its_slider() {
+    // A Trigger that is its variable's only control still binds it (and
+    // shows a slider row the user can also drag directly).
+    let expr =
+      interpret_to_expr("Manipulate[u^2, {u, 0, 1, ControlType -> Trigger}]")
+        .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    assert_eq!(spec.controls.len(), 1);
+    match &spec.controls[0] {
+      ManipulateControl::Continuous { name, min, max, .. } => {
+        assert_eq!(name, "u");
+        assert_eq!((*min, *max), (0.0, 1.0));
+      }
+      other => panic!("expected continuous control, got {other:?}"),
+    }
+    assert!(spec.animated && !spec.animation_running);
+    assert_eq!(spec.animation_var.as_deref(), Some("u"));
+  }
+
+  #[test]
+  fn spec_json_carries_dynamic_bounds_and_animation_var() {
+    let expr = interpret_to_expr(
+      "Manipulate[t, {{t, 0, \"time\"}, 0, P, .01}, \
+       {{P, 20, \"period\"}, .1, 50, .01}, \
+       {{t, 0, \"animate\"}, 0, P, .01, ControlType -> Trigger}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    let json = manipulate_spec_to_json(&spec);
+    assert!(json.contains(r#""maxCode":"P""#), "json: {json}");
+    assert!(json.contains(r#""animationVar":"t""#), "json: {json}");
+    assert!(json.contains(r#""animationRunning":false"#), "json: {json}");
+  }
+
+  #[test]
+  fn spec_keplers_second_law_demonstration() {
+    // The full Manipulate cell of the "Kepler's Second Law" Demonstration
+    // notebook: four labelled sliders (two bounded by the period P), a
+    // Trigger on t, and a body that renders an SVG under the initial
+    // bindings.
+    let expr = interpret_to_expr(
+      "Manipulate[\n\
+       Module[{a=1,b,c,planet,dist,M,M2,area,area2,ea,eanom,eanom2,p},\n\
+       If[t>P,t=P];\n\
+       If[dt>P,dt=P];\n\
+       b=Sqrt[-a^2 (e^2-1)];\n\
+       c=e a;\n\
+       M=2 Pi t/P;\n\
+       M2=2 Pi (t+dt)/P;\n\
+       area=a b M/2;\n\
+       area2=a b M2/2;\n\
+       eanom=Mod[ea/.FindRoot[M==ea-e Sin[ea],{ea,M}],2 Pi];\n\
+       eanom2=Mod[ea/.FindRoot[M2==ea-e Sin[ea],{ea,M2}],2 Pi];\n\
+       If[eanom2<eanom,eanom2=2 Pi+eanom2];\n\
+       p=b^2/a;\n\
+       planet={a Cos[eanom]-c,b Sin[eanom]};\n\
+       Graphics[{RGBColor[.3,.3,.7],Thickness[.005],Polygon[Join[{{0,0},\
+       Sequence@@Table[{a Cos[angle]-c,b Sin[angle]},{angle,eanom,eanom2,.001}],\
+       {0,0}}]],RGBColor[.05,0.6,1],Thickness[.009],Circle[{-c,0},{a,b},{0,2 Pi}]},\
+       PlotRange->{{-1.1-c,1.1-c},{-1.1,1.1}},\
+       Epilog->{RGBColor[1,0.7,0],Disk[{0,0},.05],RGBColor[.77,.29,.55],\
+       PointSize[.02],Point[planet]},ImageSize->{350,350},AspectRatio->1,\
+       Axes->False,PlotLabel->Row[{\"area = \"<>ToString[NumberForm[area2-area,{4,2}]]<>\
+       \" \\!\\(\\*SuperscriptBox[\\(AU\\), \\(2\\)]\\)\"}]]],\n\
+       {{t,0,\"time since perihelion (years)\"},0,P,.01,Appearance->\"Labeled\",ImageSize->Tiny},\
+       {{e,.5,\"eccentricity\"},0,.9,.01,Appearance->\"Labeled\",ImageSize->Tiny},\n\
+       {{P,20,\"orbital period (years)\"},.1,50,.01,Appearance->\"Labeled\",ImageSize->Tiny},\n\
+       {{dt,5,\"time span (years)\"},.1,P,.01,Appearance->\"Labeled\",ImageSize->Tiny},\n\
+       {{t,0,\"animate time since perihelion\"},0,P,.01,ControlType->Trigger},\
+       AutorunSequencing->{1,2,3},ControlPlacement->Left]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let names: Vec<(&str, &str)> = spec
+      .controls
+      .iter()
+      .map(|c| match c {
+        ManipulateControl::Continuous { name, label, .. } => {
+          (name.as_str(), label.as_str())
+        }
+        other => panic!("expected continuous control, got {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      names,
+      vec![
+        ("t", "time since perihelion (years)"),
+        ("e", "eccentricity"),
+        ("P", "orbital period (years)"),
+        ("dt", "time span (years)"),
+      ]
+    );
+    assert!(spec.animated && !spec.animation_running);
+    assert_eq!(spec.animation_var.as_deref(), Some("t"));
+
+    // The initial bindings render the orbit graphic with its AU² label.
+    let bindings = manipulate_initial_bindings(&spec);
+    let code = manipulate_block_code(&spec.body_code, &bindings);
+    let result = woxi::interpret_with_stdout(&code).unwrap();
+    let svg = result.graphics.expect("body renders a graphic");
+    assert!(
+      svg.contains("area = 0.68 AU<tspan baseline-shift=\"super\""),
+      "PlotLabel must render the superscript box: {}",
+      &svg[..svg.len().min(400)]
+    );
+  }
 }
 
 // ----- Callout tests -----
@@ -14952,5 +15279,37 @@ mod color_data_indexed {
     clear_state();
     assert_eq!(interpret("Head[ColorData[1, 1]]").unwrap(), "RGBColor");
     assert_eq!(interpret("Head[ColorData[2, 1]]").unwrap(), "RGBColor");
+  }
+
+  mod dynamic_content {
+    use super::*;
+
+    #[test]
+    fn dynamic_literal_primitives_render() {
+      clear_state();
+      let svg = export_svg(
+        "Graphics[{Dynamic[{Hue[0.5, 1, 1], \
+         Polygon[{{0, 0}, {1, 0}, {1, 1}}]}], Circle[{0, 0}, 1]}]",
+      );
+      assert!(svg.contains("<polygon"), "polygon missing: {svg}");
+      assert!(svg.contains("rgb(0,255,255)"), "hue fill missing: {svg}");
+    }
+
+    #[test]
+    fn dynamic_computed_primitives_render() {
+      clear_state();
+      // Dynamic is HoldFirst: a computed content expression (here a Map
+      // over a helper function, as in the Demonstrations color-wheel
+      // notebook's highlight overlay) must be evaluated before its
+      // primitives are collected.
+      let _ = interpret(
+        "slice[s_] := {Hue[s, 1, 1], Polygon[{{0, 0}, {1, 0}, {1, 1}}]}",
+      );
+      let svg = export_svg(
+        "Graphics[{Dynamic[slice[#] & /@ {0.5}], Circle[{0, 0}, 1]}]",
+      );
+      assert!(svg.contains("<polygon"), "polygon missing: {svg}");
+      assert!(svg.contains("rgb(0,255,255)"), "hue fill missing: {svg}");
+    }
   }
 }
