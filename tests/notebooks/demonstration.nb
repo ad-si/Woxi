@@ -1,0 +1,145 @@
+(* Content-type: application/vnd.wolfram.mathematica *)
+
+(*** Wolfram Notebook File ***)
+(* http://www.wolfram.com/nb *)
+
+(* Beginning of Notebook Content *)
+Notebook[{
+
+Cell[CellGroupData[{
+Cell["Color Relationships", "Title",
+ TaggingRules->{},
+ CellTags->{"Name", "Title"},
+ CellID->700863240,ExpressionUUID->"b0d3674c-39dc-442d-9bee-57d641d9d2e8"],
+
+Cell[CellGroupData[{
+
+Cell[TextData[{
+ "Initialization Code",
+ Cell[BoxData[
+  PaneSelectorBox[{True->
+   TemplateBox[{"InitializationCode"},
+    "MoreInfoOpenerButtonTemplate"]}, Dynamic[
+    CurrentValue[
+     EvaluationNotebook[], {TaggingRules, "Hover"}, False]]]]]
+}], "Section",
+ CellTags->{"Initialization Code", "InitializationCode", "TemplateCellGroup"},
+ CellID->352434337,ExpressionUUID->"29506df2-8461-449d-b5cd-42e156604772"],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"swatch", "[", "clr_", "]"}], ":=",
+  RowBox[{"Graphics", "[",
+   RowBox[{"{",
+    RowBox[{"clr", ",",
+     RowBox[{"Rectangle", "[", "]"}]}], "}"}], "]"}]}]], "Input",
+ CellID->1932241304,ExpressionUUID->"a698b810-4e70-4907-92cf-b81a09ea9711"]
+}, Closed]],
+
+Cell[CellGroupData[{
+
+Cell[TextData[{
+ "Manipulate",
+ Cell[BoxData[
+  PaneSelectorBox[{True->
+   TemplateBox[{"ManipulateGroup"},
+    "MoreInfoOpenerButtonTemplate"]}, Dynamic[
+    CurrentValue[
+     EvaluationNotebook[], {TaggingRules, "Hover"}, False]]]]]
+}], "Section",
+ CellTags->{"Manipulate", "ManipulateGroup", "TemplateCellGroup"},
+ CellID->737824434,ExpressionUUID->"07a26aaa-49dd-42d6-a7ae-9a25c9de3823"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"swatch", "[",
+    RowBox[{"Hue", "[",
+     RowBox[{"a", "/", "36"}], "]"}], "]"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{",
+      RowBox[{"a", ",", "1", ",", "\"angle\""}], "}"}], ",", "1", ",",
+     "36", ",", "1"}], "}"}], ",",
+   RowBox[{"SaveDefinitions", "\[Rule]", "True"}]}], "]"}]], "Input",
+ CellID->842528087,ExpressionUUID->"15dbcf6b-4980-4f52-92e4-79391878e73b"],
+
+Cell[BoxData[
+ TagBox[
+  StyleBox[
+   DynamicModuleBox[{$CellContext`a$$ = 1, Typeset`show$$ = True},
+    "\"widget dump placeholder\""],
+   ShowSpecialCharacters->False],
+  "Manipulate",
+  Deployed->True]], "Output",
+ CellID->432552542,ExpressionUUID->"6a44866e-0043-46ff-990a-1a80793168e5"]
+}, Open]]
+}, Closed]],
+
+Cell[CellGroupData[{
+
+Cell[TextData[{
+ "Snapshots",
+ Cell[BoxData[
+  PaneSelectorBox[{True->
+   TemplateBox[{"Snapshots"},
+    "MoreInfoOpenerButtonTemplate"]}, Dynamic[
+    CurrentValue[
+     EvaluationNotebook[], {TaggingRules, "Hover"}, False]]]]]
+}], "Section",
+ CellTags->{"SnapshotGroup", "Snapshots", "TemplateCellGroup"},
+ CellID->158391975,ExpressionUUID->"87565683-3a86-4d63-8dc2-6423c491d5bb"],
+
+Cell[BoxData[
+ PaneBox[
+  GraphicsBox[TagBox[
+    RasterBox[CompressedData["
+1:eJzs3QlcVOe9//GTpkm6pPtNmtvbpm3a2yy9vUvTf/f2pkuatGlvt7RJb9s0
+     "], {{0, 116}, {175, 0}}, {0, 255}, ColorFunction->RGBColor],
+    BoxForm`ImageTag["Byte", ColorSpace -> "RGB", Interleaving -> True],
+    Selectable->False],
+   DefaultBaseStyle->"ImageGraphics"],
+  BaselinePosition->Baseline,
+  ImageSize->{175, 116}]], "Output",
+ CellTags->"Snapshot",
+ CellID->27615341,ExpressionUUID->"b3200392-31a2-4d70-b34a-15963f57f4d7"]
+}, Closed]],
+
+Cell[CellGroupData[{
+
+Cell["Source & Additional Information", "Section",
+ CellID->27038220,ExpressionUUID->"e2971563-8f97-475f-93c3-64eec3b7ec84"],
+
+Cell[CellGroupData[{
+
+Cell[TextData[{
+ "Keywords",
+ Cell[BoxData[
+  PaneSelectorBox[{True->
+   TemplateBox[{"Keywords"},
+    "MoreInfoOpenerButtonTemplate"]}, Dynamic[
+    CurrentValue[
+     EvaluationNotebook[], {TaggingRules, "Hover"}, False]]]]]
+}], "Subsection",
+ CellID->146574570,ExpressionUUID->"e2b98692-2764-42b0-b93d-8022ee39d635"],
+
+Cell["hue", "Item",
+ TaggingRules->{},
+ CellID->586845895,ExpressionUUID->"07b32e6c-e18b-43cd-83b6-3059aa4e6f80"],
+
+Cell["color wheel", "Item",
+ TaggingRules->{},
+ CellID->588807008,ExpressionUUID->"32d6ba05-4a94-4dd4-b355-e4bfc25dd1a2"]
+}, Open]]
+}, Closed]]
+}, Open]]
+},
+WindowSize->{808, 911},
+WindowMargins->{{Automatic, 188}, {Automatic, 0}},
+FrontEndVersion->"14.1 for Mac OS X ARM (64-bit) (July 16, 2024)",
+StyleDefinitions->"Default.nb",
+ExpressionUUID->"3865fea5-4d10-45db-93bd-01e37d20e504"
+]
+(* End of Notebook Content *)

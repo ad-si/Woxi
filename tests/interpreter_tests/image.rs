@@ -6804,3 +6804,57 @@ mod image_filter_and_color_space {
     }
   }
 }
+
+mod color_data_gradients {
+  use super::*;
+
+  #[test]
+  fn color_data_named_gradient_is_a_color_function() {
+    clear_state();
+    // The structured form wolframscript echoes for a named gradient.
+    assert_eq!(
+      interpret("Head[ColorData[\"TemperatureMap\"]]").unwrap(),
+      "ColorDataFunction"
+    );
+    // Applying it samples the gradient's stored control points.
+    assert_eq!(
+      interpret("ColorData[\"TemperatureMap\"][0.5]").unwrap(),
+      "RGBColor[0.984192, 0.987731, 0.911643]"
+    );
+    assert_eq!(
+      interpret("ColorData[\"Rainbow\"][0]").unwrap(),
+      "RGBColor[0.471412, 0.108766, 0.527016]"
+    );
+  }
+
+  #[test]
+  fn blend_named_scheme_interpolates_control_points() {
+    clear_state();
+    // The endpoints are the first/last stored control points.
+    assert_eq!(
+      interpret("Blend[\"TemperatureMap\", 0]").unwrap(),
+      "RGBColor[0.178927, 0.305394, 0.933501]"
+    );
+    assert_eq!(
+      interpret("Blend[\"TemperatureMap\", 1]").unwrap(),
+      "RGBColor[0.817319, 0.134127, 0.164218]"
+    );
+    // Out-of-range parameters clamp to the ends.
+    assert_eq!(
+      interpret("Blend[\"TemperatureMap\", 2]").unwrap(),
+      "RGBColor[0.817319, 0.134127, 0.164218]"
+    );
+  }
+
+  #[test]
+  fn refresh_returns_its_first_argument() {
+    clear_state();
+    // Refresh only matters in a Dynamic FrontEnd context; its value is the
+    // (evaluated) first argument.
+    assert_eq!(interpret("Refresh[3, None]").unwrap(), "3");
+    assert_eq!(
+      interpret("time = 7; Refresh[time, UpdateInterval -> 1]").unwrap(),
+      "7"
+    );
+  }
+}

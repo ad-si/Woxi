@@ -1632,6 +1632,15 @@ pub fn apply_curried_call(
     Expr::FunctionCall {
       name,
       args: func_args,
+    } if name == "ColorDataFunction" && func_args.len() == 4 => {
+      // ColorDataFunction[scheme, "Gradients", range, blend][t] — apply the
+      // stored blend function (the structured form ColorData["scheme"]
+      // evaluates to) at t.
+      apply_curried_call(&func_args[3], args)
+    }
+    Expr::FunctionCall {
+      name,
+      args: func_args,
     } if name == "BezierFunction" && func_args.len() == 1 => {
       // BezierFunction[{{p1}, {p2}, ...}][t] — evaluate Bezier curve at t
       evaluate_bezier_function(func_args, args)
