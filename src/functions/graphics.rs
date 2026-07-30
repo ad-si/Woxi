@@ -12963,6 +12963,7 @@ fn process_manipulate_var_spec(items: &[Expr]) -> Expr {
             | "InputField"
             | "PopupMenu"
             | "SetterBar"
+            | "RadioButton"
             | "RadioButtonBar"
             | "TogglerBar"
             | "Checkbox"
@@ -14865,6 +14866,7 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
         | "InputField"
         | "PopupMenu"
         | "SetterBar"
+        | "RadioButton"
         | "RadioButtonBar"
         | "TogglerBar"
         | "Checkbox"
@@ -15050,13 +15052,33 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
   // ControlType -> PopupMenu}`) — hence matched on the option-free `bounds`.
   // The value list may also be given as an expression that evaluates to a
   // list (e.g. `{g, PolyhedronData[All]}`), so evaluate a non-literal.
-  if bounds.len() == 1 {
-    let value_items: Option<Vec<Expr>> = match bounds[0] {
-      Expr::List(vs) => Some(vs.iter().cloned().collect()),
-      other => match crate::evaluator::evaluate_expr_to_expr(other) {
-        Ok(Expr::List(ref vs)) => Some(vs.iter().cloned().collect()),
-        _ => None,
-      },
+  // A control type that offers one widget per value (`RadioButton`,
+  // `SetterBar`, …) turns a numeric range into that list of values:
+  // `{{n, 1, "frequency"}, 1, 2, 1, RadioButton}` offers 1 and 2, which is
+  // what Wolfram draws a radio button for — not a slider.
+  let picks_one_value_per_choice = matches!(
+    control_type.as_deref(),
+    Some(
+      "RadioButton"
+        | "RadioButtonBar"
+        | "SetterBar"
+        | "TogglerBar"
+        | "PopupMenu"
+    )
+  );
+  {
+    let value_items: Option<Vec<Expr>> = if bounds.len() == 1 {
+      match bounds[0] {
+        Expr::List(vs) => Some(vs.iter().cloned().collect()),
+        other => match crate::evaluator::evaluate_expr_to_expr(other) {
+          Ok(Expr::List(ref vs)) => Some(vs.iter().cloned().collect()),
+          _ => None,
+        },
+      }
+    } else if picks_one_value_per_choice && (2..=3).contains(&bounds.len()) {
+      enumerate_range(&bounds)
+    } else {
+      None
     };
     if let Some(value_items) = value_items {
       // A choice may be given as a rule `value -> "label"` (e.g. a SetterBar
@@ -15252,6 +15274,38 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
     max_code,
     animate,
   })
+}
+
+/// The values a `{min, max}` / `{min, max, step}` control range covers,
+/// for the control types that offer one widget per value. `step` defaults
+/// to 1, as it does for an integer range in Wolfram. Returns `None` when
+/// the bounds are not numeric or the range does not terminate.
+fn enumerate_range(bounds: &[&Expr]) -> Option<Vec<Expr>> {
+  let value = |e: &Expr| expr_to_f64(e);
+  let min = value(bounds.first()?)?;
+  let max = value(bounds.get(1)?)?;
+  let step = match bounds.get(2) {
+    Some(e) => value(e)?,
+    None => 1.0,
+  };
+  if step <= 0.0 || !(max - min).is_finite() {
+    return None;
+  }
+  let integral = |v: f64| (v - v.round()).abs() < 1e-9;
+  let exact = integral(min) && integral(step);
+  let mut values = Vec::new();
+  let mut v = min;
+  // The half-step slack keeps a range whose end is only reachable up to
+  // floating-point error (`0, 1, 0.1`) from losing its last value.
+  while v <= max + step / 2.0 {
+    values.push(if exact {
+      Expr::Integer(v.round() as i128)
+    } else {
+      Expr::Real(v)
+    });
+    v += step;
+  }
+  (!values.is_empty()).then_some(values)
 }
 
 /// If `item` is a rule `lhs -> rhs` (in either `Expr::Rule` or

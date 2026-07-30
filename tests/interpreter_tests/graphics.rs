@@ -1926,6 +1926,38 @@ mod plot3d {
       ));
     }
 
+    /// A face with more than three corners is fan-triangulated to render,
+    /// but the cuts that splitting introduces are internal: only the
+    /// polygon's own edges are stroked, so a quad does not show a
+    /// diagonal across it.
+    #[test]
+    fn graphics3d_quad_face_has_no_diagonal_seam() {
+      let svg = export_svg(
+        "Graphics3D[Polygon[{{0,0,0}, {1,0,0}, {1,1,0}, {0,1,0}}], \
+         Boxed -> False]",
+      );
+      // Two triangles, each stroked in its own fill colour …
+      let filled: Vec<&str> =
+        svg.lines().filter(|l| l.starts_with("<polygon")).collect();
+      assert_eq!(filled.len(), 2, "{svg}");
+      for tri in &filled {
+        let fill = tri.split("fill=\"").nth(1).unwrap().split('"').next();
+        let stroke = tri.split("stroke=\"").nth(1).unwrap().split('"').next();
+        assert_eq!(fill, stroke, "internal seam must be invisible: {tri}");
+      }
+      // … plus one stroked line per edge of the quad, and no fifth line
+      // along the diagonal.
+      let outline: Vec<&str> =
+        svg.lines().filter(|l| l.starts_with("<line")).collect();
+      assert_eq!(outline.len(), 4, "{svg}");
+      // A triangle keeps the single stroked-polygon form.
+      let svg = export_svg(
+        "Graphics3D[Polygon[{{0,0,0}, {1,0,0}, {0,1,0}}], Boxed -> False]",
+      );
+      assert!(svg.contains("stroke=\"#00000018\""), "{svg}");
+      assert_eq!(svg.lines().filter(|l| l.starts_with("<line")).count(), 0);
+    }
+
     // Part indexes the symbolic form of a rendered Graphics3D, as in
     // Wolfram where Graphics3D[…][[1]] returns the content.
     #[test]
@@ -11961,6 +11993,44 @@ mod manipulate {
     ));
   }
 
+  /// A control type that draws one widget per value turns a numeric range
+  /// into that list of values: `{{n, 1, "frequency"}, 1, 2, 1, RadioButton}`
+  /// offers 1 and 2, which is what Wolfram draws radio buttons for — not a
+  /// slider over the range.
+  #[test]
+  fn spec_choice_control_enumerates_a_numeric_range() {
+    let discrete_values = |code: &str| {
+      let expr = interpret_to_expr(code).unwrap();
+      let spec =
+        extract_manipulate_spec(&expr).expect("well-formed manipulate");
+      match &spec.controls[0] {
+        ManipulateControl::Discrete { values, .. } => values.clone(),
+        other => panic!("expected discrete control, got {other:?}"),
+      }
+    };
+    assert_eq!(
+      discrete_values(
+        "Manipulate[n, {{n, 1, \"frequency\"}, 1, 2, 1, RadioButton}]"
+      ),
+      ["1", "2"]
+    );
+    assert_eq!(
+      discrete_values("Manipulate[n, {n, 1, 4, SetterBar}]"),
+      ["1", "2", "3", "4"]
+    );
+    assert_eq!(
+      discrete_values("Manipulate[n, {n, 0, 1, 0.5, PopupMenu}]"),
+      ["0.", "0.5", "1."]
+    );
+    // The same range without such a control type is still a slider.
+    let expr = interpret_to_expr("Manipulate[n, {n, 1, 2, 1}]").unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    assert!(matches!(
+      &spec.controls[0],
+      ManipulateControl::Continuous { .. }
+    ));
+  }
+
   /// `Row[…]`-grouped controls are valid Manipulate arguments and must not
   /// emit `Manipulate::vsform`.
   #[test]
@@ -12814,7 +12884,8 @@ mod manipulate {
     match &spec.controls[0] {
       ManipulateControl::Discrete { name, values, .. } => {
         assert_eq!(name, "g");
-        assert_eq!(values.len(), 5, "five Platonic solids");
+        // The five Platonic solids plus the rhombic dodecahedron.
+        assert_eq!(values.len(), 6, "every known solid");
         assert!(values.contains(&"\"Cube\"".to_string()));
       }
       _ => panic!("expected discrete control for g"),

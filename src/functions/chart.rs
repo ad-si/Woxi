@@ -1553,6 +1553,7 @@ pub fn bar_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           z: (v0.z + v1.z + v2.z) / 3.0,
         };
         all_triangles.push(Triangle {
+          boundary: [true; 3],
           projected: [
             project(v0, &camera),
             project(v1, &camera),
@@ -1685,6 +1686,7 @@ pub fn pie_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             z: (v0.z + v1.z + v2.z) / 3.0,
           };
           all.push(Triangle {
+            boundary: [true; 3],
             projected: [
               project(v0, &camera),
               project(v1, &camera),

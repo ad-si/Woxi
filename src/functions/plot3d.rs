@@ -41,6 +41,11 @@ pub(crate) struct Triangle {
   pub depth: f64,
   pub color: (u8, u8, u8),
   pub opacity: f64,
+  /// Whether edge *i* (from vertex `i` to vertex `i + 1`) is an outline of
+  /// the primitive rather than an internal cut of its triangulation. Only
+  /// outline edges are stroked, so a face with more than three corners
+  /// does not show the diagonals it was split along.
+  pub boundary: [bool; 3],
 }
 
 struct MeshLine {
@@ -470,6 +475,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           };
 
           all_triangles.push(Triangle {
+            boundary: [true; 3],
             projected: [p0, p1, p2],
             depth: depth(center, &camera),
             color,
@@ -518,6 +524,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           };
 
           all_triangles.push(Triangle {
+            boundary: [true; 3],
             projected: [p0, p1, p2],
             depth: depth(center, &camera),
             color,
@@ -2983,7 +2990,20 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let prim_color = prim_style.color.unwrap_or(base_color);
     let prim_opacity = prim_style.opacity;
 
-    for (v0, v1, v2) in tris {
+    // A polygon with more than three corners was fan-triangulated above:
+    // every triangle keeps the polygon edge it sits on, but the cuts back
+    // to the fan's first corner are internal and must not be stroked.
+    let fan_corners = match prim {
+      Primitive3D::Polygon3D { points, .. } => points.len(),
+      _ => 0,
+    };
+    let tri_count = tris.len();
+    for (i, (v0, v1, v2)) in tris.into_iter().enumerate() {
+      let boundary = if fan_corners > 3 {
+        [i == 0, true, i + 1 == tri_count]
+      } else {
+        [true; 3]
+      };
       let normal = triangle_normal(v0, v1, v2);
       let color = apply_lighting(prim_color, normal);
       let p0 = project(v0, &camera);
@@ -2995,6 +3015,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         z: (v0.z + v1.z + v2.z) / 3.0,
       };
       all_triangles.push(Triangle {
+        boundary,
         projected: [p0, p1, p2],
         depth: depth(center, &camera),
         color,
@@ -3487,10 +3508,33 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         String::new()
       };
-      svg.push_str(&format!(
-        "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"rgb({},{},{})\" stroke=\"#00000018\" stroke-width=\"0.5\"{}/>\n",
-        x0, y0, x1, y1, x2, y2, r, g, b, opacity_attr
-      ));
+      // The hairline stroke closes the anti-aliasing seam between
+      // neighbouring triangles. Where the seam is an internal cut of a
+      // fan-triangulated polygon it is stroked in the triangle's own
+      // colour instead, so the face reads as one flat surface.
+      if tri.boundary == [true; 3] {
+        svg.push_str(&format!(
+          "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"rgb({},{},{})\" stroke=\"#00000018\" stroke-width=\"0.5\"{}/>\n",
+          x0, y0, x1, y1, x2, y2, r, g, b, opacity_attr
+        ));
+      } else {
+        svg.push_str(&format!(
+          "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"rgb({r},{g},{b})\" stroke-width=\"0.5\"{}/>\n",
+          x0, y0, x1, y1, x2, y2, opacity_attr
+        ));
+        let corners = [(x0, y0), (x1, y1), (x2, y2)];
+        for (e, on_outline) in tri.boundary.iter().enumerate() {
+          if !on_outline {
+            continue;
+          }
+          let (ax, ay) = corners[e];
+          let (bx, by) = corners[(e + 1) % 3];
+          svg.push_str(&format!(
+            "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"#00000018\" stroke-width=\"0.5\"{}/>\n",
+            opacity_attr
+          ));
+        }
+      }
     }
     // Emit remaining edge segments (closest to viewer)
     while ei < sorted_edges.len() {
@@ -3844,6 +3888,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
 
         all_triangles.push(Triangle {
+          boundary: [true; 3],
           projected: [p0, p1, p2],
           depth: depth(center, &camera),
           color,
@@ -3887,6 +3932,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
 
         all_triangles.push(Triangle {
+          boundary: [true; 3],
           projected: [p0, p1, p2],
           depth: depth(center, &camera),
           color,
@@ -4187,6 +4233,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
 
         all_triangles.push(Triangle {
+          boundary: [true; 3],
           projected: [proj0, proj1, proj2],
           depth: depth(center, &camera),
           color,
@@ -4216,6 +4263,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
 
         all_triangles.push(Triangle {
+          boundary: [true; 3],
           projected: [proj0, proj1, proj2],
           depth: depth(center, &camera),
           color,
@@ -4562,6 +4610,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               z: (v0.z + v1.z + v2.z) / 3.0,
             };
             all_triangles.push(Triangle {
+              boundary: [true; 3],
               projected: [p0, p1, p2],
               depth: depth(center, &camera),
               color,
@@ -4582,6 +4631,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               z: (v0.z + v2.z + v3.z) / 3.0,
             };
             all_triangles.push(Triangle {
+              boundary: [true; 3],
               projected: [p0, p2, p3],
               depth: depth(center, &camera),
               color,
@@ -5902,6 +5952,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
 
     all_triangles.push(Triangle {
+      boundary: [true; 3],
       projected: [pa, pb, pc],
       depth: depth(center, &camera),
       color,
@@ -6078,6 +6129,7 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           z: (v0.z + v1.z + v2.z) / 3.0,
         };
         all_triangles.push(Triangle {
+          boundary: [true; 3],
           projected: [p0, p1, p2],
           color,
           depth: depth(center, &camera),
@@ -6123,6 +6175,7 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           z: (v0.z + v1.z + v2.z) / 3.0,
         };
         all_triangles.push(Triangle {
+          boundary: [true; 3],
           projected: [p0, p1, p2],
           color,
           depth: depth(center, &camera),
@@ -6567,6 +6620,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             z: (v0.z + v1.z + v2.z) / 3.0,
           };
           all_triangles.push(Triangle {
+            boundary: [true; 3],
             projected: [
               project(v0, &camera),
               project(v1, &camera),
@@ -6593,6 +6647,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             z: (v0.z + v1.z + v2.z) / 3.0,
           };
           all_triangles.push(Triangle {
+            boundary: [true; 3],
             projected: [
               project(v0, &camera),
               project(v1, &camera),

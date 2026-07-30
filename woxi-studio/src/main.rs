@@ -8206,4 +8206,85 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`outline$$ = True}, \"…\"]"], "Out
       other => panic!("unexpected controls: {other:?}"),
     }
   }
+
+  /// End-to-end regression for the "An Expanding Structure Based on the
+  /// Diamond Lattice" Demonstration: a `Graphics3D` scene assembled from
+  /// `PolyhedronData` face lists, with a `RadioButton` control over a
+  /// numeric range.
+  #[test]
+  fn diamond_lattice_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"Graphics3D", "[",
+    RowBox[{
+     RowBox[{"{",
+      RowBox[{
+       RowBox[{"RGBColor", "[",
+        RowBox[{"1", ",", "0.5", ",", "0.5"}], "]"}], ",",
+       RowBox[{"Scale", "[",
+        RowBox[{
+         RowBox[{"GraphicsComplex", "[",
+          RowBox[{
+           RowBox[{"PolyhedronData", "[",
+            RowBox[{"\"\<Octahedron\>\"", ",", "\"\<VertexCoordinates\>\""}],
+            "]"}], ",",
+           RowBox[{"Polygon", "[",
+            RowBox[{"PolyhedronData", "[",
+             RowBox[{"\"\<Octahedron\>\"", ",", "\"\<FaceIndices\>\""}],
+             "]"}], "]"}]}], "]"}], ",",
+         RowBox[{"exp", " ",
+          RowBox[{"{", RowBox[{"1", ",", "1", ",", "1"}], "}"}]}], ",",
+         RowBox[{"{", RowBox[{"0", ",", "0", ",", "0"}], "}"}]}], "]"}]}],
+      "}"}], ",",
+     RowBox[{"Boxed", "\[Rule]", "False"}]}], "]"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{", RowBox[{"n", ",", "1", ",", "\"\<frequency\>\""}], "}"}],
+     ",", "1", ",", "2", ",", "1", ",", "RadioButton"}], "}"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{", RowBox[{"exp", ",", "1.8", ",", "\"\<expand\>\""}], "}"}],
+     ",", "1", ",", "2.6"}], "}"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 1}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the octahedron must render, which needs PolyhedronData's face list"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          name,
+          label,
+          values,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: exp, current, ..
+        },
+      ] => {
+        // `RadioButton` over `1, 2, 1` is a choice between 1 and 2, not a
+        // slider over the range.
+        assert_eq!((name.as_str(), label.as_str()), ("n", "frequency"));
+        assert_eq!(values, &["1".to_string(), "2".to_string()]);
+        assert_eq!((exp.as_str(), *current), ("exp", 1.8));
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
 }
