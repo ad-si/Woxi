@@ -4365,7 +4365,9 @@ fn parse_background(expr: &Expr) -> Option<Color> {
 fn parse_axes(expr: &Expr) -> Option<(bool, bool)> {
   fn parse_bool(expr: &Expr) -> Option<bool> {
     match expr {
-      Expr::Identifier(s) if s == "True" => Some(true),
+      // `Automatic` shows the axis (positioned automatically), e.g. the
+      // common `Axes -> {Automatic, False}` form.
+      Expr::Identifier(s) if s == "True" || s == "Automatic" => Some(true),
       Expr::Identifier(s) if s == "False" => Some(false),
       _ => None,
     }
@@ -7640,6 +7642,10 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut rendered_graphics: Vec<Expr> = Vec::new();
   // Plot source data for re-rendering via plotters
   let mut plot_sources: Vec<crate::syntax::PlotSource> = Vec::new();
+  // Whether the first graphic argument was a plot (carried a PlotSource).
+  // Wolfram takes the merged result's options from the first graphic, so
+  // plot defaults (axes, 1/GoldenRatio aspect) apply only in that case.
+  let mut first_graphic_is_plot: Option<bool> = None;
 
   // `Show[{g1, g2, …}, opts…]` — flatten a leading List argument into
   // multiple graphics args (Wolfram convention; not Listable but accepts
@@ -7673,6 +7679,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     match expr_ref {
       Expr::FunctionCall { name, args: gargs } if name == "Graphics" => {
+        first_graphic_is_plot.get_or_insert(false);
         if !gargs.is_empty() {
           merged_primitives.push(gargs[0].clone());
         }
@@ -7684,6 +7691,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if name == "MeshRegion" && gargs.len() == 2 =>
       {
         // Convert MeshRegion to Graphics primitives for Show merging
+        first_graphic_is_plot.get_or_insert(false);
         if let Some(graphics_prims) =
           mesh_region_to_graphics_prims(&gargs[0], &gargs[1])
         {
@@ -7691,6 +7699,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
       Expr::FunctionCall { name, args: gargs } if name == "Graphics3D" => {
+        first_graphic_is_plot.get_or_insert(false);
         is_3d = true;
         if !gargs.is_empty() {
           merged_primitives.push(gargs[0].clone());
@@ -7704,6 +7713,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         source,
         ..
       } => {
+        first_graphic_is_plot.get_or_insert(source.is_some());
         is_3d = *g_is_3d;
         if let Some(src) = source {
           plot_sources.push(src.as_ref().clone());
@@ -7764,6 +7774,56 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for ps in &plot_sources {
       let mut series_prims: Vec<Expr> = Vec::new();
       for sd in &ps.series {
+        // Filled region (Filling -> …) as a Polygon underneath the curve,
+        // wrapped in its own list so the fill color/opacity directives
+        // don't leak onto the line drawn after it. FillingStyle appearance
+        // travels on the series (fill_color/fill_opacity); the defaults
+        // match the standalone plot render (series color at 0.2 opacity).
+        if !sd.is_scatter
+          && let Some(ref_y) =
+            sd.filling.reference_y(ps.y_range.0, ps.y_range.1)
+        {
+          let (fr, fg, fb) = sd.fill_color.unwrap_or(sd.color);
+          let mut fill_prims: Vec<Expr> = vec![
+            Expr::FunctionCall {
+              name: "Opacity".to_string(),
+              args: vec![Expr::Real(sd.fill_opacity.unwrap_or(0.2))].into(),
+            },
+            Expr::FunctionCall {
+              name: "RGBColor".to_string(),
+              args: vec![
+                Expr::Real(fr as f64 / 255.0),
+                Expr::Real(fg as f64 / 255.0),
+                Expr::Real(fb as f64 / 255.0),
+              ]
+              .into(),
+            },
+          ];
+          for seg in &crate::functions::plot::split_into_segments(&sd.points) {
+            if seg.len() < 2 {
+              continue;
+            }
+            let mut coords: Vec<Expr> = seg
+              .iter()
+              .map(|&(x, y)| {
+                Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())
+              })
+              .collect();
+            let (x_last, _) = seg[seg.len() - 1];
+            let (x_first, _) = seg[0];
+            coords.push(Expr::List(
+              vec![Expr::Real(x_last), Expr::Real(ref_y)].into(),
+            ));
+            coords.push(Expr::List(
+              vec![Expr::Real(x_first), Expr::Real(ref_y)].into(),
+            ));
+            fill_prims.push(Expr::FunctionCall {
+              name: "Polygon".to_string(),
+              args: vec![Expr::List(coords.into())].into(),
+            });
+          }
+          series_prims.push(Expr::List(fill_prims.into()));
+        }
         // Color directive
         series_prims.push(Expr::FunctionCall {
           name: "RGBColor".to_string(),
@@ -7824,20 +7884,34 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // range would crop any other Graphics primitives that extend beyond it
       // (e.g. a control polygon), whereas Wolfram shows the union of all
       // primitives. Leaving PlotRange unset yields that union.
+    }
 
-      // Enable axes
-      let axes_rule = Expr::Rule {
-        pattern: Box::new(Expr::Identifier("Axes".to_string())),
-        replacement: Box::new(bool_expr(true)),
-      };
-      merge_option(&mut merged_options, &axes_rule);
-
-      // AspectRatio -> Full for plot-style rendering
-      let ar_rule = Expr::Rule {
-        pattern: Box::new(Expr::Identifier("AspectRatio".to_string())),
-        replacement: Box::new(Expr::Identifier("Full".to_string())),
-      };
-      merge_option(&mut merged_options, &ar_rule);
+    // Defaults inherited from the plots when the *first* graphic was a plot
+    // (Wolfram takes the result's options from the first graphic): axes on,
+    // and the plot AspectRatio of 1/GoldenRatio. Explicit options passed to
+    // Show (already collected in `merged_options`) win — without the
+    // AspectRatio default a wide PlotRange collapses the render to a
+    // sliver, since the graphics renderer otherwise derives the height
+    // from the data aspect. When a raw Graphics comes first, its uniform
+    // scaling stays in charge (circles must render round).
+    let has_option = |opts: &[Expr], name: &str| {
+      opts.iter().any(|o| {
+        matches!(o, Expr::Rule { pattern, .. } if option_name(pattern) == Some(name))
+      })
+    };
+    if first_graphic_is_plot == Some(true) {
+      if !has_option(&merged_options, "Axes") {
+        merged_options.push(Expr::Rule {
+          pattern: Box::new(Expr::Identifier("Axes".to_string())),
+          replacement: Box::new(bool_expr(true)),
+        });
+      }
+      if !has_option(&merged_options, "AspectRatio") {
+        merged_options.push(Expr::Rule {
+          pattern: Box::new(Expr::Identifier("AspectRatio".to_string())),
+          replacement: Box::new(Expr::Real(1.0 / 1.618_033_988_749_895)),
+        });
+      }
     }
   }
 

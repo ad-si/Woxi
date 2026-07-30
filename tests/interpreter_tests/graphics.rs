@@ -6839,6 +6839,123 @@ mod show {
     clear_state();
     assert_eq!(interpret("Show[1, 2, 3]").unwrap(), "Show[1, 2, 3]");
   }
+
+  #[test]
+  fn show_plot_with_graphics_keeps_plot_aspect() {
+    // Merging a Plot with raw Graphics primitives inherits the plot's
+    // 1/GoldenRatio aspect (Wolfram takes the options from the first
+    // graphic). Regression: the render used to collapse to a sliver whose
+    // height came from the wide PlotRange's data aspect.
+    clear_state();
+    let svg = export_svg(
+      "Show[{Plot[Sin[x], {x, 0, 6}], Graphics[{Text[\"hi\", {1, 1}]}]}, \
+       PlotRange -> {{-7, 24}, {-0.15, 0.75}}, ImageSize -> 480]",
+    );
+    let dim = |attr: &str| -> f64 {
+      let start = svg.find(&format!("{attr}=\"")).unwrap() + attr.len() + 2;
+      svg[start..svg[start..].find('"').unwrap() + start]
+        .parse()
+        .unwrap()
+    };
+    let (w, h) = (dim("width"), dim("height"));
+    assert!(
+      (250.0..=450.0).contains(&h) && w >= 480.0,
+      "expected ~480 x ~300 (1/GoldenRatio of the plotting area), got {w} x {h}"
+    );
+  }
+
+  #[test]
+  fn show_plot_with_graphics_keeps_filling() {
+    // The plot-source series merged into a Graphics render keep their
+    // Filling regions (as polygons) and FillingStyle appearance.
+    clear_state();
+    let svg = export_svg(
+      "Show[Plot[Sin[x], {x, 0, 6}, Filling -> Axis, \
+       FillingStyle -> {Opacity[0.8], RGBColor[0.33, 0.36, 0.78]}], \
+       Graphics[{Text[\"hi\", {1, 1}]}]]",
+    );
+    assert!(
+      svg.contains("fill=\"rgb(84,92,199)\" fill-opacity=\"0.8\""),
+      "expected a filled polygon with the FillingStyle color/opacity"
+    );
+  }
+
+  #[test]
+  fn show_respects_explicit_axes_option() {
+    // `Axes -> {Automatic, False}` passed to Show must survive the merge
+    // (the mixed path used to overwrite it with Axes -> True) and hide the
+    // y-axis while keeping the x-axis. With the y-axis hidden the render
+    // reserves no left tick-label margin, so the total width equals the
+    // ImageSize exactly; the x-axis still adds its bottom margin.
+    clear_state();
+    let svg = export_svg(
+      "Show[{Plot[Sin[x], {x, 0, 6}], Graphics[{Point[{1, 1}]}]}, \
+       Axes -> {Automatic, False}, ImageSize -> 400]",
+    );
+    assert!(
+      svg.starts_with("<svg width=\"400\""),
+      "expected no left axis margin (y-axis hidden), got: {}",
+      &svg[..60.min(svg.len())]
+    );
+  }
+}
+
+mod filling_style {
+  use super::*;
+
+  #[test]
+  fn plot_filling_style_opacity_and_color() {
+    // FillingStyle -> {Opacity[a], color} overrides the default fill
+    // appearance (series color at 0.2 opacity).
+    clear_state();
+    let svg = export_svg(
+      "Plot[Sin[x], {x, 0, 6}, Filling -> Axis, \
+       FillingStyle -> {Opacity[0.8], RGBColor[0.33, 0.36, 0.78]}]",
+    );
+    assert!(
+      svg.contains("opacity=\"0.8\" fill=\"#545CC7\""),
+      "expected fill polygon with FillingStyle color at opacity 0.8"
+    );
+  }
+
+  #[test]
+  fn plot_filling_style_color_only() {
+    // A bare color keeps the default 0.2 opacity but recolors the fill.
+    clear_state();
+    let svg = export_svg(
+      "Plot[Sin[x], {x, 0, 6}, Filling -> Axis, FillingStyle -> Red]",
+    );
+    assert!(
+      svg.contains("opacity=\"0.2\" fill=\"#FF0000\""),
+      "expected red fill polygon at the default 0.2 opacity"
+    );
+  }
+
+  #[test]
+  fn plot_filling_style_opacity_only() {
+    // A bare Opacity keeps the series color but changes the translucency.
+    clear_state();
+    let svg = export_svg(
+      "Plot[Sin[x], {x, 0, 6}, Filling -> Axis, FillingStyle -> Opacity[0.5]]",
+    );
+    assert!(
+      svg.contains("opacity=\"0.5\" fill=\"#5E81B5\""),
+      "expected series-colored fill polygon at opacity 0.5"
+    );
+  }
+
+  #[test]
+  fn list_line_plot_filling_style() {
+    clear_state();
+    let svg = export_svg(
+      "ListLinePlot[{1, 4, 2, 5, 3}, Filling -> Axis, \
+       FillingStyle -> Directive[Opacity[0.6], RGBColor[0.12, 0.61, 0.78]]]",
+    );
+    assert!(
+      svg.contains("opacity=\"0.6\" fill=\"#1F9CC7\""),
+      "expected fill polygon with the Directive color at opacity 0.6"
+    );
+  }
 }
 
 mod list_plot_3d {

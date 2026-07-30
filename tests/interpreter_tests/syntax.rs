@@ -445,6 +445,23 @@ mod implicit_times_with_strings {
       r#"Hold["a" + "b"]"#
     );
   }
+
+  // A held `<>` renders as `StringJoin[a, b]` with the operands unquoted in
+  // OutputForm but quoted in genuine InputForm — Woxi Studio re-evaluates
+  // Manipulate bodies from their InputForm, and an unquoted operand
+  // (`StringJoin[z = , ToString[z]]`) doesn't re-parse (regression from the
+  // "Area of a Normal Distribution" Demonstration).
+  #[test]
+  fn held_string_join_input_form_quoted() {
+    assert_eq!(
+      interpret(r#"Hold["z = " <> ToString[z]]"#).unwrap(),
+      "Hold[StringJoin[z = , ToString[z]]]"
+    );
+    assert_eq!(
+      interpret(r#"ToString[Hold["z = " <> ToString[z]], InputForm]"#).unwrap(),
+      r#"Hold[StringJoin["z = ", ToString[z]]]"#
+    );
+  }
 }
 
 mod operator_shorthand_parens {
