@@ -780,8 +780,48 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// ContourPlot[f, {x, xmin, xmax}, {y, ymin, ymax}]
 /// Uses marching squares to draw contour lines.
+/// Rewrite an equation `lhs == rhs` into `lhs - rhs`, whose zero contour
+/// is the equation's implicit curve. Returns `None` for non-equations.
+fn equation_zero_body(e: &Expr) -> Option<Expr> {
+  let (lhs, rhs) = match e {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2
+      && operators.len() == 1
+      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+    {
+      (&operands[0], &operands[1])
+    }
+    Expr::FunctionCall { name, args } if name == "Equal" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    _ => return None,
+  };
+  Some(Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Minus,
+    left: Box::new(lhs.clone()),
+    right: Box::new(rhs.clone()),
+  })
+}
+
 pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let body = &args[0];
+  // `ContourPlot[lhs == rhs, …]` (or a list of equations) plots each
+  // equation's implicit curve — the zero contour of `lhs - rhs` — with no
+  // band shading, matching Wolfram.
+  let eq_bodies: Option<Vec<Expr>> = match body {
+    Expr::List(items)
+      if !items.is_empty()
+        && items.iter().all(|i| equation_zero_body(i).is_some()) =>
+    {
+      Some(items.iter().filter_map(equation_zero_body).collect())
+    }
+    _ => equation_zero_body(body).map(|b| vec![b]),
+  };
+  if let Some(bodies) = eq_bodies {
+    return contour_plot_equations(&bodies, args);
+  }
   let (xvar, x_min, x_max) = parse_iterator(&args[1], "ContourPlot")?;
   let (yvar, y_min, y_max) = parse_iterator(&args[2], "ContourPlot")?;
   let opts = parse_density_contour_options(args, 3);
@@ -866,6 +906,111 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result(svg))
+}
+
+/// The equation form of ContourPlot: draw each body's zero contour as an
+/// implicit curve. No bands are shaded — Wolfram renders equation contours
+/// as bare curves on an unshaded background.
+fn contour_plot_equations(
+  bodies: &[Expr],
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let (xvar, x_min, x_max) = parse_iterator(&args[1], "ContourPlot")?;
+  let (yvar, y_min, y_max) = parse_iterator(&args[2], "ContourPlot")?;
+  let opts = parse_density_contour_options(args, 3);
+
+  let n = FIELD_GRID + 1;
+  let area = generate_axes_only(
+    (x_min, x_max),
+    (y_min, y_max),
+    opts.svg_width,
+    opts.svg_height,
+    opts.full_width,
+  )?;
+
+  let mut svg = area.svg;
+  if let Some(pos) = svg.rfind("</svg>") {
+    svg.truncate(pos);
+  }
+
+  let cell_w = area.plot_w / FIELD_GRID as f64;
+  let cell_h = area.plot_h / FIELD_GRID as f64;
+
+  // Alongside the standalone SVG, collect every contour chain in *data*
+  // coordinates as a line series, so `Show[{ContourPlot[…], Graphics[…]}]`
+  // can merge the curve with other primitives. The chains are traced in a
+  // scaled 0‥1000 space — `chain_segments` keys points on a 1/16 grid,
+  // which would glue distinct points together in small data ranges.
+  let mut series: Vec<crate::syntax::PlotSeriesData> = Vec::new();
+
+  for body in bodies {
+    let mut grid = vec![vec![f64::NAN; n]; n];
+    let mut any_finite = false;
+    for (i, row) in grid.iter_mut().enumerate() {
+      let x = x_min + i as f64 / FIELD_GRID as f64 * (x_max - x_min);
+      for (j, cell) in row.iter_mut().enumerate() {
+        let y = y_min + j as f64 / FIELD_GRID as f64 * (y_max - y_min);
+        if let Some(v) = evaluate_at_xy(body, &xvar, &yvar, x, y)
+          && v.is_finite()
+        {
+          *cell = v;
+          any_finite = true;
+        }
+      }
+    }
+    if !any_finite {
+      continue;
+    }
+    render_contour_lines(
+      &mut svg,
+      &grid,
+      &[0.0],
+      area.plot_x0,
+      area.plot_y0,
+      cell_w,
+      cell_h,
+      area.render_width,
+    );
+    let scaled_cell = 1000.0 / FIELD_GRID as f64;
+    let segments =
+      marching_squares_segments(&grid, 0.0, 0.0, 0.0, scaled_cell, scaled_cell);
+    for chain in chain_segments(&segments) {
+      let points: Vec<(f64, f64)> = chain
+        .iter()
+        .map(|&(u, v)| {
+          (
+            x_min + u / 1000.0 * (x_max - x_min),
+            y_min + v / 1000.0 * (y_max - y_min),
+          )
+        })
+        .collect();
+      if points.len() >= 2 {
+        series.push(crate::syntax::PlotSeriesData {
+          points,
+          color: (0x40, 0x40, 0x40),
+          is_scatter: false,
+          filling: crate::syntax::SeriesFilling::None,
+        });
+      }
+    }
+  }
+
+  push_frame(
+    &mut svg,
+    area.plot_x0,
+    area.plot_y0,
+    area.plot_w,
+    area.plot_h,
+  );
+
+  svg.push_str("</svg>");
+  let source = crate::syntax::PlotSource {
+    series,
+    x_range: (x_min, x_max),
+    y_range: (y_min, y_max),
+    image_size: (opts.svg_width, opts.svg_height),
+  };
+  Ok(crate::graphics_result_with_source(svg, source))
 }
 
 /// RegionPlot[cond, {x, xmin, xmax}, {y, ymin, ymax}]

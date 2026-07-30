@@ -6511,6 +6511,27 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // HoldForm[expr] → render content
         "HoldForm" if args.len() == 1 => expr_to_svg_markup(&args[0]),
 
+        // Presentation wrappers display their content only.
+        "Text" | "TraditionalForm" | "DisplayForm" | "StandardForm"
+          if args.len() == 1 =>
+        {
+          expr_to_svg_markup(&args[0])
+        }
+
+        // Row[{a, b, …}] concatenates its parts; Row[{…}, sep] joins
+        // them with the separator.
+        "Row" if !args.is_empty() => match &args[0] {
+          Expr::List(parts) => {
+            let sep = args.get(1).map(expr_to_svg_markup).unwrap_or_default();
+            parts
+              .iter()
+              .map(expr_to_svg_markup)
+              .collect::<Vec<_>>()
+              .join(&sep)
+          }
+          other => expr_to_svg_markup(other),
+        },
+
         // General FunctionCall: name[arg1, arg2, ...]
         _ => {
           let parts: Vec<String> =
@@ -7637,22 +7658,32 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args
   };
 
-  for arg in args {
+  // Walk the args with an explicit work list: an argument that evaluates
+  // to a *list* of graphics (e.g. `Show[{g, {h1, h2}}]`, or a variable
+  // holding a collected list of Graphics) is spliced in place so its
+  // elements merge like ordinary arguments instead of being dropped.
+  let mut pending: Vec<Expr> = args.to_vec();
+  let mut idx = 0;
+  while idx < pending.len() {
+    let arg = pending[idx].clone();
     // If the arg is not already a Graphics/Graphics3D expression,
     // try evaluating it (e.g. it could be a variable or function call)
-    let evaled;
-    let expr_ref = match arg {
+    let expr_owned = match &arg {
       Expr::FunctionCall { name, .. }
         if name == "Graphics" || name == "Graphics3D" =>
       {
-        arg
+        arg.clone()
       }
-      Expr::Rule { .. } => arg,
-      _ => {
-        evaled = evaluate_expr_to_expr(arg).unwrap_or_else(|_| arg.clone());
-        &evaled
-      }
+      Expr::Rule { .. } => arg.clone(),
+      _ => evaluate_expr_to_expr(&arg).unwrap_or_else(|_| arg.clone()),
     };
+    if let Expr::List(items) = &expr_owned {
+      let items: Vec<Expr> = items.iter().cloned().collect();
+      pending.splice(idx..idx + 1, items);
+      continue;
+    }
+    idx += 1;
+    let expr_ref = &expr_owned;
 
     match expr_ref {
       Expr::FunctionCall { name, args: gargs } if name == "Graphics" => {

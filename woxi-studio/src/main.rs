@@ -500,12 +500,20 @@ impl WoxiStudio {
   /// preceding Input/Code cell rather than shown separately.
   fn editors_from_notebook(notebook: &Notebook) -> Vec<CellEditor> {
     let mut editors = Vec::new();
+    // Input/Code cell sources seen so far, in document order. A stored
+    // Manipulate further down may call helpers defined in them (the
+    // Demonstrations "Initialization Code" section) — they are replayed
+    // before the widget is instantiated so the notebook opens live.
+    let mut prior_inputs: Vec<String> = Vec::new();
 
     for entry in &notebook.cells {
       match entry {
         CellEntry::Single(cell) => {
           if matches!(cell.style, CellStyle::Output | CellStyle::Print) {
             continue;
+          }
+          if matches!(cell.style, CellStyle::Input | CellStyle::Code) {
+            prior_inputs.push(cell.content.clone());
           }
           editors.push(CellEditor {
             content: text_editor::Content::with_text(&cell.content),
@@ -566,6 +574,15 @@ impl WoxiStudio {
               let is_widget_dump =
                 output.as_deref().is_some_and(is_dynamic_box_dump);
               let manipulate_state = if is_widget_dump {
+                // Replay the preceding Input/Code cells first: the widget
+                // body typically calls helpers from the notebook's
+                // "Initialization Code" section (what `SaveDefinitions ->
+                // True` captures in Mathematica), and without them the
+                // first render would fail.
+                woxi::clear_state();
+                for code in &prior_inputs {
+                  let _ = woxi::interpret_with_stdout(code);
+                }
                 instantiate_stored_manipulate(&cell.content)
               } else {
                 None
@@ -613,6 +630,7 @@ impl WoxiStudio {
                 output_content,
                 stdout_content,
               });
+              prior_inputs.push(cell.content.clone());
               i = j;
             } else if matches!(cell.style, CellStyle::Output | CellStyle::Print)
             {
@@ -6361,6 +6379,37 @@ mod tests {
     );
     // A non-Manipulate cell yields no widget.
     assert!(instantiate_stored_manipulate("1 + 1").is_none());
+  }
+
+  /// A stored Manipulate whose body calls helpers from earlier Input
+  /// cells (the Demonstrations "Initialization Code" section) must open
+  /// live: `editors_from_notebook` replays the preceding inputs before
+  /// instantiating the widget.
+  #[test]
+  fn stored_manipulate_replays_initialization_cells_on_load() {
+    let nb_src = r#"Notebook[{
+Cell[BoxData["initPlot[z_] := Plot[Sin[z x], {x, 0, 5}]"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[initPlot[a], {a, 1, 3}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 1}, \"…\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "initPlot from the initialization cell must be in scope, \
+       so the first render produces the plot"
+    );
   }
 
   #[test]

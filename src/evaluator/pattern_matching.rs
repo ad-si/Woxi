@@ -4681,6 +4681,39 @@ fn apply_replace_all_multi_ast_impl(
         .collect();
       Ok(Expr::Association(new_pairs?))
     }
+    // Symbolic comparisons (`y == x`, `a < b < c`) stay unevaluated, so
+    // `y == x /. {x -> 2, y -> 3}` must descend into every operand.
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      let new_operands: Result<Vec<Expr>, _> = operands
+        .iter()
+        .map(|o| apply_replace_all_multi_ast_impl(o, rules, held))
+        .collect();
+      Ok(Expr::Comparison {
+        operands: new_operands?,
+        operators: operators.clone(),
+      })
+    }
+    // A symbolic part extraction (`m[[1]]` with `m` undefined) keeps its
+    // expression and index as ordinary subexpressions.
+    Expr::Part { expr: part, index } => {
+      let new_expr = apply_replace_all_multi_ast_impl(part, rules, held)?;
+      let new_index = apply_replace_all_multi_ast_impl(index, rules, held)?;
+      Ok(Expr::Part {
+        expr: Box::new(new_expr),
+        index: Box::new(new_index),
+      })
+    }
+    // `(a; b) /. rules` descends into every statement.
+    Expr::CompoundExpr(stmts) => {
+      let new_stmts: Result<Vec<Expr>, _> = stmts
+        .iter()
+        .map(|s| apply_replace_all_multi_ast_impl(s, rules, held))
+        .collect();
+      Ok(Expr::CompoundExpr(new_stmts?))
+    }
     // Atoms and other nodes without children — return unchanged
     _ => Ok(expr.clone()),
   }
