@@ -5783,6 +5783,30 @@ mod boolean_minterms {
   }
 }
 
+mod cross_operator_precedence {
+  use super::*;
+
+  // \[Cross] binds tighter than Dot (Wolfram precedence 500 vs 490), so
+  // a.b\[Cross]c is a.(b\[Cross]c) — the form Demonstrations rely on for
+  // plane tests like {x,y,z}.v1\[Cross]v2 > 0.
+  #[test]
+  fn cross_binds_tighter_than_dot() {
+    assert_eq!(
+      interpret("Hold[a . b \\[Cross] c]").unwrap(),
+      "Hold[a . Cross[b, c]]"
+    );
+    assert_eq!(
+      interpret("{1, 0, 0} . {0, 1, 0} \\[Cross] {0, 0, 1}").unwrap(),
+      "1"
+    );
+    // Left of the dot: (a\[Cross]b).c likewise groups the cross first.
+    assert_eq!(
+      interpret("{0, 1, 0} \\[Cross] {0, 0, 1} . {1, 0, 0}").unwrap(),
+      "1"
+    );
+  }
+}
+
 mod cross_dot_shape_messages {
   use super::*;
 

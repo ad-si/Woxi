@@ -1512,6 +1512,7 @@ impl Default for StyleState3D {
   }
 }
 
+#[derive(Clone)]
 enum Primitive3D {
   Sphere {
     center: Point3D,
@@ -1647,6 +1648,277 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
 }
 
 /// Collect 3D primitives from an expression.
+/// An affine 3D transform (`p ↦ m·p + t`) built from `Translate`, `Rotate`,
+/// or `Scale` wrappers and applied to already-collected primitives.
+struct Affine3 {
+  m: [[f64; 3]; 3],
+  t: [f64; 3],
+}
+
+impl Affine3 {
+  fn apply(&self, p: Point3D) -> Point3D {
+    Point3D {
+      x: self.m[0][0] * p.x
+        + self.m[0][1] * p.y
+        + self.m[0][2] * p.z
+        + self.t[0],
+      y: self.m[1][0] * p.x
+        + self.m[1][1] * p.y
+        + self.m[1][2] * p.z
+        + self.t[1],
+      z: self.m[2][0] * p.x
+        + self.m[2][1] * p.y
+        + self.m[2][2] * p.z
+        + self.t[2],
+    }
+  }
+
+  /// Uniform length-scale factor of the linear part (cube root of |det|),
+  /// used to scale the radii of Sphere/Cylinder/Cone primitives.
+  fn length_scale(&self) -> f64 {
+    let m = &self.m;
+    let det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+      - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+      + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+    det.abs().cbrt()
+  }
+
+  fn translation(v: [f64; 3]) -> Self {
+    Affine3 {
+      m: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+      t: v,
+    }
+  }
+
+  /// Rotation by `angle` around the axis direction `w` through `anchor`
+  /// (Rodrigues' formula).
+  fn rotation(angle: f64, w: [f64; 3], anchor: [f64; 3]) -> Option<Self> {
+    let len = (w[0] * w[0] + w[1] * w[1] + w[2] * w[2]).sqrt();
+    if !len.is_finite() || len < 1e-12 {
+      return None;
+    }
+    let (ux, uy, uz) = (w[0] / len, w[1] / len, w[2] / len);
+    let (s, c) = angle.sin_cos();
+    let ic = 1.0 - c;
+    let m = [
+      [
+        c + ux * ux * ic,
+        ux * uy * ic - uz * s,
+        ux * uz * ic + uy * s,
+      ],
+      [
+        uy * ux * ic + uz * s,
+        c + uy * uy * ic,
+        uy * uz * ic - ux * s,
+      ],
+      [
+        uz * ux * ic - uy * s,
+        uz * uy * ic + ux * s,
+        c + uz * uz * ic,
+      ],
+    ];
+    // Conjugate with the anchor so the axis passes through it:
+    // p ↦ m·(p - anchor) + anchor.
+    let t = [
+      anchor[0]
+        - (m[0][0] * anchor[0] + m[0][1] * anchor[1] + m[0][2] * anchor[2]),
+      anchor[1]
+        - (m[1][0] * anchor[0] + m[1][1] * anchor[1] + m[1][2] * anchor[2]),
+      anchor[2]
+        - (m[2][0] * anchor[0] + m[2][1] * anchor[1] + m[2][2] * anchor[2]),
+    ];
+    Some(Affine3 { m, t })
+  }
+
+  fn scaling(factors: [f64; 3], center: [f64; 3]) -> Self {
+    Affine3 {
+      m: [
+        [factors[0], 0.0, 0.0],
+        [0.0, factors[1], 0.0],
+        [0.0, 0.0, factors[2]],
+      ],
+      t: [
+        center[0] * (1.0 - factors[0]),
+        center[1] * (1.0 - factors[1]),
+        center[2] * (1.0 - factors[2]),
+      ],
+    }
+  }
+}
+
+/// Numeric `{x, y, z}` from an expression, evaluating each component.
+fn eval_vec3(expr: &Expr) -> Option<[f64; 3]> {
+  let Expr::List(items) = &evaluate_expr_to_expr(expr).ok()? else {
+    return None;
+  };
+  if items.len() != 3 {
+    return None;
+  }
+  let mut v = [0.0; 3];
+  for (slot, item) in v.iter_mut().zip(items.iter()) {
+    *slot = try_eval_to_f64(item)?;
+  }
+  Some(v)
+}
+
+/// Build the transform list for a `Translate`/`Rotate`/`Scale` wrapper from
+/// its arguments (past the wrapped graphics). `Translate` with a list of
+/// offset vectors produces one transform per copy; the others produce one.
+fn parse_3d_transforms(name: &str, args: &[Expr]) -> Option<Vec<Affine3>> {
+  match name {
+    "Translate" if args.len() == 1 => {
+      // Either a single {dx, dy, dz} or a list of offset vectors.
+      if let Some(v) = eval_vec3(&args[0]) {
+        return Some(vec![Affine3::translation(v)]);
+      }
+      if let Ok(Expr::List(ref rows)) = evaluate_expr_to_expr(&args[0]) {
+        let offsets: Option<Vec<[f64; 3]>> =
+          rows.iter().map(eval_vec3).collect();
+        return offsets
+          .map(|os| os.into_iter().map(Affine3::translation).collect());
+      }
+      None
+    }
+    "Rotate" if !args.is_empty() => {
+      let angle = try_eval_to_f64(&evaluate_expr_to_expr(&args[0]).ok()?)?;
+      match args.len() {
+        // Rotate[g, θ, w]: axis direction w through the origin.
+        // Rotate[g, θ, {p1, p2}]: axis through the points p1 and p2.
+        2 => {
+          if let Some(w) = eval_vec3(&args[1]) {
+            return Affine3::rotation(angle, w, [0.0; 3]).map(|a| vec![a]);
+          }
+          if let Ok(Expr::List(ref pts)) = evaluate_expr_to_expr(&args[1])
+            && pts.len() == 2
+            && let (Some(p1), Some(p2)) =
+              (eval_vec3(&pts[0]), eval_vec3(&pts[1]))
+          {
+            let w = [p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]];
+            return Affine3::rotation(angle, w, p1).map(|a| vec![a]);
+          }
+          None
+        }
+        _ => None,
+      }
+    }
+    "Scale" if !args.is_empty() => {
+      let factors = if let Some(f) = eval_vec3(&args[0]) {
+        f
+      } else {
+        let s = try_eval_to_f64(&evaluate_expr_to_expr(&args[0]).ok()?)?;
+        [s, s, s]
+      };
+      let center = args.get(1).and_then(eval_vec3).unwrap_or([0.0; 3]);
+      Some(vec![Affine3::scaling(factors, center)])
+    }
+    _ => None,
+  }
+}
+
+/// Apply an affine transform to a collected primitive in place.
+fn transform_primitive3d(prim: &mut Primitive3D, xf: &Affine3) {
+  let scale = xf.length_scale();
+  match prim {
+    Primitive3D::Sphere { center, radius, .. } => {
+      *center = xf.apply(*center);
+      *radius *= scale;
+    }
+    Primitive3D::Cuboid { p_min, p_max, .. } => {
+      // Transform both corners and re-normalize; the box stays
+      // axis-aligned, so rotations are only approximated.
+      let a = xf.apply(*p_min);
+      let b = xf.apply(*p_max);
+      *p_min = Point3D {
+        x: a.x.min(b.x),
+        y: a.y.min(b.y),
+        z: a.z.min(b.z),
+      };
+      *p_max = Point3D {
+        x: a.x.max(b.x),
+        y: a.y.max(b.y),
+        z: a.z.max(b.z),
+      };
+    }
+    Primitive3D::Polygon3D { points, .. }
+    | Primitive3D::Point3DPrim { points, .. }
+    | Primitive3D::Arrow3D { points, .. } => {
+      for p in points {
+        *p = xf.apply(*p);
+      }
+    }
+    Primitive3D::Line3D { segments, .. } => {
+      for seg in segments {
+        for p in seg {
+          *p = xf.apply(*p);
+        }
+      }
+    }
+    Primitive3D::Cylinder { p1, p2, radius, .. }
+    | Primitive3D::Cone { p1, p2, radius, .. } => {
+      *p1 = xf.apply(*p1);
+      *p2 = xf.apply(*p2);
+      *radius *= scale;
+    }
+    Primitive3D::Surface3D { tris, .. } => {
+      for (a, b, c) in tris {
+        *a = xf.apply(*a);
+        *b = xf.apply(*b);
+        *c = xf.apply(*c);
+      }
+    }
+  }
+}
+
+/// Replace the 1-based vertex indices inside a `GraphicsComplex` primitive
+/// (`Polygon`/`Line`/`Point`/`Arrow` arguments) with the coordinates they
+/// refer to, leaving everything else untouched.
+fn resolve_complex_indices(expr: &Expr, points: &[Expr]) -> Expr {
+  fn substitute(expr: &Expr, points: &[Expr]) -> Expr {
+    match expr {
+      Expr::Integer(i) if *i >= 1 && (*i as usize) <= points.len() => {
+        points[*i as usize - 1].clone()
+      }
+      Expr::List(items) => Expr::List(
+        items
+          .iter()
+          .map(|e| substitute(e, points))
+          .collect::<Vec<_>>()
+          .into(),
+      ),
+      other => other.clone(),
+    }
+  }
+  match expr {
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Polygon" | "Line" | "Point" | "Arrow")
+        && !args.is_empty() =>
+    {
+      let mut new_args = args.to_vec();
+      new_args[0] = substitute(&args[0], points);
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      }
+    }
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|e| resolve_complex_indices(e, points))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|e| resolve_complex_indices(e, points))
+        .collect::<Vec<_>>()
+        .into(),
+    },
+    other => other.clone(),
+  }
+}
+
 fn collect_3d_primitives(
   expr: &Expr,
   style: &mut StyleState3D,
@@ -1732,6 +2004,17 @@ fn collect_3d_primitives(
               points: pts,
               style: style.clone(),
             });
+          } else if let Expr::List(poly_exprs) = &args[0] {
+            // Polygon[{{p1, p2, …}, {q1, q2, …}, …}]: a collection of
+            // polygons in one primitive.
+            for poly in poly_exprs.iter() {
+              if let Some(pts) = parse_point3d_list(poly) {
+                prims.push(Primitive3D::Polygon3D {
+                  points: pts,
+                  style: style.clone(),
+                });
+              }
+            }
           }
         }
         "Line" if !args.is_empty() => {
@@ -1740,6 +2023,19 @@ fn collect_3d_primitives(
               segments: vec![pts],
               style: style.clone(),
             });
+          } else if let Expr::List(seg_exprs) = &args[0] {
+            // Line[{{p1, p2, …}, {q1, q2, …}, …}]: a collection of
+            // polylines in one primitive.
+            let segments: Option<Vec<Vec<Point3D>>> =
+              seg_exprs.iter().map(parse_point3d_list).collect();
+            if let Some(segments) = segments
+              && !segments.is_empty()
+            {
+              prims.push(Primitive3D::Line3D {
+                segments,
+                style: style.clone(),
+              });
+            }
           }
         }
         "Point" if !args.is_empty() => {
@@ -1945,6 +2241,39 @@ fn collect_3d_primitives(
         }
         "Raster3D" if !args.is_empty() => {
           collect_raster3d(&args[0], style, prims);
+        }
+        // GraphicsComplex[points, prims]: primitives reference the shared
+        // coordinate list by 1-based index.
+        "GraphicsComplex" if args.len() >= 2 => {
+          if let Ok(Expr::List(ref points)) = evaluate_expr_to_expr(&args[0]) {
+            let resolved = resolve_complex_indices(&args[1], points);
+            let saved = style.clone();
+            collect_3d_primitives(&resolved, style, prims);
+            *style = saved;
+          }
+        }
+        // Geometric transforms: collect the wrapped graphics, then map the
+        // primitives through the affine transform (per copy for the
+        // multi-offset Translate form).
+        "Translate" | "Rotate" | "Scale" if args.len() >= 2 => {
+          let mut sub = Vec::new();
+          let saved = style.clone();
+          collect_3d_primitives(&args[0], style, &mut sub);
+          *style = saved;
+          match parse_3d_transforms(name, &args[1..]) {
+            Some(transforms) => {
+              for xf in &transforms {
+                for prim in &sub {
+                  let mut copy = prim.clone();
+                  transform_primitive3d(&mut copy, xf);
+                  prims.push(copy);
+                }
+              }
+            }
+            // Unrecognized transform spec: keep the primitives untransformed
+            // rather than dropping them.
+            None => prims.extend(sub),
+          }
         }
         _ => {
           // Try as directive first
@@ -2447,6 +2776,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut full_width = false;
   let mut show_box = true;
   let mut background: Option<(u8, u8, u8)> = None;
+  let mut camera = Camera::default();
+  // `PlotRange -> r` (a single number): the displayed region is the fixed
+  // cube [-r, r]³, so the framing stays put while contents move (as in a
+  // Manipulate re-render).
+  let mut plot_range: Option<f64> = None;
   for opt in &args[1..] {
     let opt_eval = evaluate_expr_to_expr(opt).unwrap_or(opt.clone());
     if let Expr::Rule {
@@ -2480,6 +2814,23 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             background = Some((r, g, b));
           }
         }
+        "ViewPoint" => {
+          if let Some(vp) = eval_vec3(replacement) {
+            camera = Camera {
+              azimuth: vp[1].atan2(vp[0]),
+              elevation: vp[2].atan2(vp[0].hypot(vp[1])),
+            };
+          }
+        }
+        "PlotRange" => {
+          if let Some(r) = try_eval_to_f64(
+            &evaluate_expr_to_expr(replacement)
+              .unwrap_or_else(|_| replacement.as_ref().clone()),
+          ) && r > 0.0
+          {
+            plot_range = Some(r);
+          }
+        }
         _ => {}
       }
     }
@@ -2490,16 +2841,27 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut style3d = StyleState3D::default();
   collect_3d_primitives(&content, &mut style3d, &mut prims);
 
+  // The symbolic form carried on the rendered result so that Part can
+  // index it (`Graphics3D[…][[1]]` → the content).
+  let structure = Expr::FunctionCall {
+    name: "Graphics3D".to_string(),
+    args: std::iter::once(content.clone())
+      .chain(args[1..].iter().cloned())
+      .collect::<Vec<_>>()
+      .into(),
+  };
+
   if prims.is_empty() {
     // Even with no primitives, return the marker
     let empty_svg = format!(
       "<svg width=\"{svg_width}\" height=\"{svg_height}\" xmlns=\"http://www.w3.org/2000/svg\"></svg>"
     );
-    return Ok(crate::graphics3d_result(empty_svg));
+    return Ok(crate::graphics3d_result_with_structure(
+      empty_svg, structure,
+    ));
   }
 
   // Tessellate all primitives into triangles
-  let camera = Camera::default();
   let mut all_triangles: Vec<Triangle> = Vec::new();
   let base_color = (0x5E_u8, 0x81_u8, 0xB5_u8); // Default blue
 
@@ -2757,6 +3119,17 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   z3_min -= pad_z;
   z3_max += pad_z;
 
+  // An explicit PlotRange pins the displayed region to [-r, r]³ regardless
+  // of the content's extent, keeping the framing stable across re-renders.
+  if let Some(r) = plot_range {
+    x3_min = -r;
+    x3_max = r;
+    y3_min = -r;
+    y3_max = r;
+    z3_min = -r;
+    z3_max = r;
+  }
+
   // Build box corners
   let box_corners = [
     Point3D {
@@ -2844,8 +3217,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Include box corners in projected bounding box
-  if show_box {
+  // Include box corners in the projected bounding box — always when the
+  // box is drawn, and also for a fixed PlotRange so the zoom level does
+  // not follow the contents.
+  if show_box || plot_range.is_some() {
     for &corner in &box_corners {
       let (px, py) = project(corner, &camera);
       px_min = px_min.min(px);
@@ -2880,9 +3255,26 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (cx + (px - p_cx) * scale, cy - (py - p_cy) * scale)
   };
 
-  // Build depth-sorted box-edge segments for interleaving with triangles
+  let (_, axis_rgb, _, _, _) = crate::functions::plot::plot_theme();
+  let axis_color = format!("rgb({},{},{})", axis_rgb.0, axis_rgb.1, axis_rgb.2);
+  let default_prim_color = crate::functions::graphics::theme().text_primary;
+
+  // A depth-sorted line segment interleaved with the surface triangles
+  // (painter's algorithm) so lines behind a surface are hidden by it.
+  struct SceneEdge {
+    endpoints: [Point3D; 2],
+    depth: f64,
+    color: String,
+    width: f64,
+    opacity: f64,
+  }
+
+  // Build depth-sorted segments: the bounding-box edges plus all Line
+  // primitives. Each is subdivided so per-segment depth sorting produces
+  // correct occlusion against the surface.
   const EDGE_SUBDIVISIONS: usize = 20;
-  let sorted_edges = if show_box {
+  let mut sorted_edges: Vec<SceneEdge> = Vec::new();
+  if show_box {
     let edge_pairs: [(usize, usize); 12] = [
       (0, 1),
       (0, 2),
@@ -2897,7 +3289,6 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (2, 6),
       (3, 7),
     ];
-    let mut segments: Vec<BoxEdge> = Vec::with_capacity(12 * EDGE_SUBDIVISIONS);
     for &(i, j) in &edge_pairs {
       let a = box_corners[i];
       let b = box_corners[j];
@@ -2910,24 +3301,64 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           y: a.y + (b.y - a.y) * t,
           z: a.z + (b.z - a.z) * t,
         };
-        segments.push(BoxEdge {
+        sorted_edges.push(SceneEdge {
           endpoints: [lerp(t0), lerp(t1)],
           depth: depth(lerp(tm), &camera),
+          color: axis_color.clone(),
+          width: 0.5,
+          opacity: 0.4,
         });
       }
     }
-    segments.sort_by(|a, b| {
-      b.depth
-        .partial_cmp(&a.depth)
-        .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    segments
-  } else {
-    Vec::new()
-  };
-
-  let (_, axis_rgb, _, _, _) = crate::functions::plot::plot_theme();
-  let axis_color = format!("rgb({},{},{})", axis_rgb.0, axis_rgb.1, axis_rgb.2);
+  }
+  {
+    // Lines sit exactly on the surfaces they outline, so nudge them
+    // toward the viewer by a fraction of the scene size: a face's own
+    // outline stays visible while lines behind other faces are hidden.
+    let diag = ((x3_max - x3_min).powi(2)
+      + (y3_max - y3_min).powi(2)
+      + (z3_max - z3_min).powi(2))
+    .sqrt();
+    let bias = diag * 1e-3;
+    const LINE_SUBDIVISIONS: usize = 8;
+    for prim in &prims {
+      let Primitive3D::Line3D { segments, style } = prim else {
+        continue;
+      };
+      let color = match style.color {
+        Some((r, g, b)) => format!("rgb({r},{g},{b})"),
+        None => default_prim_color.to_string(),
+      };
+      let width = style.thickness.unwrap_or(1.5);
+      for seg in segments {
+        for pair in seg.windows(2) {
+          let (a, b) = (pair[0], pair[1]);
+          for s in 0..LINE_SUBDIVISIONS {
+            let t0 = s as f64 / LINE_SUBDIVISIONS as f64;
+            let t1 = (s + 1) as f64 / LINE_SUBDIVISIONS as f64;
+            let tm = (t0 + t1) * 0.5;
+            let lerp = |t: f64| Point3D {
+              x: a.x + (b.x - a.x) * t,
+              y: a.y + (b.y - a.y) * t,
+              z: a.z + (b.z - a.z) * t,
+            };
+            sorted_edges.push(SceneEdge {
+              endpoints: [lerp(t0), lerp(t1)],
+              depth: depth(lerp(tm), &camera) - bias,
+              color: color.clone(),
+              width,
+              opacity: style.opacity,
+            });
+          }
+        }
+      }
+    }
+  }
+  sorted_edges.sort_by(|a, b| {
+    b.depth
+      .partial_cmp(&a.depth)
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
 
   let mut svg = String::with_capacity(all_triangles.len() * 120 + 1000);
   if full_width {
@@ -2952,23 +3383,30 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Render triangles interleaved with box edges (painter's algorithm)
   {
+    let emit_edge = |svg: &mut String, edge: &SceneEdge| {
+      let (ex0, ey0) = to_svg(
+        project(edge.endpoints[0], &camera).0,
+        project(edge.endpoints[0], &camera).1,
+      );
+      let (ex1, ey1) = to_svg(
+        project(edge.endpoints[1], &camera).0,
+        project(edge.endpoints[1], &camera).1,
+      );
+      let opacity_attr = if edge.opacity < 1.0 {
+        format!(" opacity=\"{}\"", edge.opacity)
+      } else {
+        String::new()
+      };
+      svg.push_str(&format!(
+        "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"{:.1}\" stroke-linecap=\"round\"{}/>\n",
+        ex0, ey0, ex1, ey1, edge.color, edge.width, opacity_attr
+      ));
+    };
     let mut ei = 0;
     for tri in &all_triangles {
-      // Emit any box edges further from camera than this triangle
+      // Emit any edge segments further from the camera than this triangle
       while ei < sorted_edges.len() && sorted_edges[ei].depth >= tri.depth {
-        let edge = &sorted_edges[ei];
-        let (ex0, ey0) = to_svg(
-          project(edge.endpoints[0], &camera).0,
-          project(edge.endpoints[0], &camera).1,
-        );
-        let (ex1, ey1) = to_svg(
-          project(edge.endpoints[1], &camera).0,
-          project(edge.endpoints[1], &camera).1,
-        );
-        svg.push_str(&format!(
-          "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n",
-          ex0, ey0, ex1, ey1, axis_color
-        ));
+        emit_edge(&mut svg, &sorted_edges[ei]);
         ei += 1;
       }
       // Emit triangle
@@ -2986,56 +3424,17 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         x0, y0, x1, y1, x2, y2, r, g, b, opacity_attr
       ));
     }
-    // Emit remaining box edges (closest to viewer)
+    // Emit remaining edge segments (closest to viewer)
     while ei < sorted_edges.len() {
-      let edge = &sorted_edges[ei];
-      let (ex0, ey0) = to_svg(
-        project(edge.endpoints[0], &camera).0,
-        project(edge.endpoints[0], &camera).1,
-      );
-      let (ex1, ey1) = to_svg(
-        project(edge.endpoints[1], &camera).0,
-        project(edge.endpoints[1], &camera).1,
-      );
-      svg.push_str(&format!(
-        "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n",
-        ex0, ey0, ex1, ey1, axis_color
-      ));
+      emit_edge(&mut svg, &sorted_edges[ei]);
       ei += 1;
     }
   }
 
-  // Render lines and points
-  let default_prim_color = crate::functions::graphics::theme().text_primary;
+  // Render points and arrows on top (lines are depth-sorted with the
+  // triangles above so surfaces occlude them correctly)
   for prim in &prims {
     match prim {
-      Primitive3D::Line3D { segments, style } => {
-        let stroke_color = if let Some((r, g, b)) = style.color {
-          format!("rgb({r},{g},{b})")
-        } else {
-          default_prim_color.to_string()
-        };
-        let opacity_attr = if style.opacity < 1.0 {
-          format!(" opacity=\"{}\"", style.opacity)
-        } else {
-          String::new()
-        };
-        let stroke_width = style.thickness.unwrap_or(1.5);
-        for seg in segments {
-          let pts: Vec<String> = seg
-            .iter()
-            .map(|p| {
-              let (sx, sy) =
-                to_svg(project(*p, &camera).0, project(*p, &camera).1);
-              format!("{:.1},{:.1}", sx, sy)
-            })
-            .collect();
-          svg.push_str(&format!(
-            "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{:.1}\"{}/>\n",
-            pts.join(" "), stroke_color, stroke_width, opacity_attr
-          ));
-        }
-      }
       Primitive3D::Point3DPrim { points, style } => {
         let fill_color = if let Some((r, g, b)) = style.color {
           format!("rgb({r},{g},{b})")
@@ -3112,7 +3511,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   svg.push_str("</svg>");
-  Ok(crate::graphics3d_result(svg))
+  Ok(crate::graphics3d_result_with_structure(svg, structure))
 }
 
 /// Implementation of ListPlot3D[data, opts...].
@@ -4981,6 +5380,11 @@ const SPHERICAL_GRID: usize = 50;
 
 /// SphericalPlot3D[r, {theta, t0, t1}, {phi, p0, p1}]
 /// Plots r(theta, phi) in spherical coordinates.
+///
+/// The rendered result carries its symbolic form —
+/// `Graphics3D[GraphicsComplex[points, {Polygon[…], …}], opts]` — so that
+/// `plot[[1]]` yields the surface mesh for reuse inside other graphics
+/// (as Wolfram Demonstrations do).
 pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 3 {
     return Err(InterpreterError::EvaluationError(
@@ -5003,6 +5407,17 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut full_width = false;
   let mut _mesh_mode = MeshMode::Default;
   let mut show_axes = true;
+  // `PlotPoints -> n`: number of samples per direction (n - 1 grid cells),
+  // as in Wolfram. Low values matter: Demonstrations use PlotPoints -> 2
+  // with MaxRecursion -> 0 to get intentionally flat facets.
+  let mut plot_points: Option<usize> = None;
+  // `RegionFunction -> f`: keep only surface parts where
+  // f[x, y, z, theta, phi, r] is True; cells crossing the boundary are
+  // clipped to it.
+  let mut region_fn: Option<Expr> = None;
+  // `BoundaryStyle -> style`: draw the boundary edges of the (possibly
+  // region-clipped) surface with this color.
+  let mut boundary_color: Option<(u8, u8, u8)> = None;
 
   for opt in &args[3..] {
     if let Expr::Rule {
@@ -5033,38 +5448,327 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             show_axes = false;
           }
         }
+        Expr::Identifier(name) if name == "PlotPoints" => {
+          let n = match evaluate_expr_to_expr(replacement) {
+            Ok(Expr::Integer(n)) => Some(n),
+            Ok(Expr::List(ref items)) => match items.first() {
+              Some(Expr::Integer(n)) => Some(*n),
+              _ => None,
+            },
+            _ => None,
+          };
+          if let Some(n) = n
+            && n >= 2
+          {
+            plot_points = Some(n as usize);
+          }
+        }
+        Expr::Identifier(name) if name == "RegionFunction" => {
+          region_fn = Some(
+            evaluate_expr_to_expr(replacement)
+              .unwrap_or_else(|_| replacement.as_ref().clone()),
+          );
+        }
+        Expr::Identifier(name) if name == "BoundaryStyle" => {
+          if !matches!(replacement.as_ref(), Expr::Identifier(n) if n == "None")
+            && let Some(color) =
+              crate::functions::graphics::parse_color(replacement)
+          {
+            boundary_color = Some((
+              (color.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+              (color.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+              (color.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+            ));
+          }
+        }
         _ => {}
       }
     }
   }
 
-  let n_theta = SPHERICAL_GRID;
-  let n_phi = SPHERICAL_GRID;
+  let n_theta = plot_points.map(|p| p - 1).unwrap_or(SPHERICAL_GRID);
+  let n_phi = plot_points.map(|p| p - 1).unwrap_or(SPHERICAL_GRID);
   let theta_range = theta_max - theta_min;
   let phi_range = phi_max - phi_min;
+
+  // Evaluate the surface point at arbitrary (theta, phi) parameters.
+  let surface_at = |theta: f64, phi: f64| -> Option<(Point3D, f64)> {
+    let r = evaluate_at_t_theta(body, &theta_var, theta, &phi_var, phi)?;
+    if !r.is_finite() {
+      return None;
+    }
+    let p = Point3D {
+      x: r * theta.sin() * phi.cos(),
+      y: r * theta.sin() * phi.sin(),
+      z: r * theta.cos(),
+    };
+    (p.x.is_finite() && p.y.is_finite() && p.z.is_finite()).then_some((p, r))
+  };
+
+  // Whether the surface point at (theta, phi) exists and satisfies the
+  // region function (which receives x, y, z, theta, phi, r as in Wolfram).
+  let inside_at = |theta: f64, phi: f64| -> bool {
+    let Some((p, r)) = surface_at(theta, phi) else {
+      return false;
+    };
+    let Some(region) = &region_fn else {
+      return true;
+    };
+    let call = Expr::CurriedCall {
+      func: Box::new(region.clone()),
+      args: vec![
+        Expr::Real(p.x),
+        Expr::Real(p.y),
+        Expr::Real(p.z),
+        Expr::Real(theta),
+        Expr::Real(phi),
+        Expr::Real(r),
+      ],
+    };
+    matches!(
+      evaluate_expr_to_expr(&call),
+      Ok(Expr::Identifier(ref s)) if s == "True"
+    )
+  };
 
   // Sample the function on a theta x phi grid
   let mut grid_pts: Vec<Vec<Option<Point3D>>> =
     vec![vec![None; n_phi + 1]; n_theta + 1];
+  let mut grid_inside: Vec<Vec<bool>> =
+    vec![vec![false; n_phi + 1]; n_theta + 1];
+
+  let param_at = |i: usize, j: usize| -> (f64, f64) {
+    (
+      theta_min + (i as f64 / n_theta as f64) * theta_range,
+      phi_min + (j as f64 / n_phi as f64) * phi_range,
+    )
+  };
 
   for i in 0..=n_theta {
-    let theta = theta_min + (i as f64 / n_theta as f64) * theta_range;
     for j in 0..=n_phi {
-      let phi = phi_min + (j as f64 / n_phi as f64) * phi_range;
-      if let Some(r) =
-        evaluate_at_t_theta(body, &theta_var, theta, &phi_var, phi)
-        && r.is_finite()
-      {
-        let x = r * theta.sin() * phi.cos();
-        let y = r * theta.sin() * phi.sin();
-        let z = r * theta.cos();
-        if x.is_finite() && y.is_finite() && z.is_finite() {
-          grid_pts[i][j] = Some(Point3D { x, y, z });
+      let (theta, phi) = param_at(i, j);
+      if let Some((p, _)) = surface_at(theta, phi) {
+        grid_pts[i][j] = Some(p);
+        grid_inside[i][j] = if region_fn.is_some() {
+          inside_at(theta, phi)
+        } else {
+          true
+        };
+      }
+    }
+  }
+
+  // Clip a triangle (given in parameter space with per-vertex inside
+  // flags) against the region boundary, bisecting crossing edges so cut
+  // points land on the boundary. Returns the surviving polygon.
+  let clip_triangle = |verts: [((f64, f64), bool); 3]| -> Vec<(f64, f64)> {
+    if verts.iter().all(|(_, inside)| *inside) {
+      return verts.iter().map(|(p, _)| *p).collect();
+    }
+    if verts.iter().all(|(_, inside)| !inside) {
+      return Vec::new();
+    }
+    let bisect = |a: (f64, f64), b: (f64, f64)| -> (f64, f64) {
+      // `a` inside, `b` outside; converge onto the boundary.
+      let (mut lo, mut hi) = (a, b);
+      for _ in 0..24 {
+        let mid = ((lo.0 + hi.0) / 2.0, (lo.1 + hi.1) / 2.0);
+        if inside_at(mid.0, mid.1) {
+          lo = mid;
+        } else {
+          hi = mid;
+        }
+      }
+      ((lo.0 + hi.0) / 2.0, (lo.1 + hi.1) / 2.0)
+    };
+    let mut out = Vec::new();
+    for k in 0..3 {
+      let (a, a_in) = verts[k];
+      let (b, b_in) = verts[(k + 1) % 3];
+      if a_in {
+        out.push(a);
+      }
+      if a_in != b_in {
+        out.push(if a_in { bisect(a, b) } else { bisect(b, a) });
+      }
+    }
+    out
+  };
+
+  // Build the world-space triangles, clipping cells that cross the
+  // region boundary.
+  let mut world_tris: Vec<[Point3D; 3]> = Vec::new();
+  for i in 0..n_theta {
+    for j in 0..n_phi {
+      // The cell's two triangles in grid corners:
+      // (i,j), (i+1,j), (i,j+1) and (i+1,j+1), (i,j+1), (i+1,j).
+      for corner_set in [
+        [(i, j), (i + 1, j), (i, j + 1)],
+        [(i + 1, j + 1), (i, j + 1), (i + 1, j)],
+      ] {
+        if corner_set
+          .iter()
+          .any(|&(ci, cj)| grid_pts[ci][cj].is_none())
+        {
+          continue;
+        }
+        let verts =
+          corner_set.map(|(ci, cj)| (param_at(ci, cj), grid_inside[ci][cj]));
+        let polygon = if region_fn.is_some() {
+          clip_triangle(verts)
+        } else {
+          verts.iter().map(|(p, _)| *p).collect()
+        };
+        if polygon.len() < 3 {
+          continue;
+        }
+        // Fan-triangulate the clipped polygon back into world space.
+        let points: Vec<Point3D> = polygon
+          .iter()
+          .filter_map(|&(th, ph)| surface_at(th, ph).map(|(p, _)| p))
+          .collect();
+        if points.len() < 3 {
+          continue;
+        }
+        for k in 1..points.len() - 1 {
+          let (a, b, c) = (points[0], points[k], points[k + 1]);
+          // Skip degenerate slivers (e.g. the collapsed pole edge).
+          let n = triangle_normal(a, b, c);
+          let ab =
+            ((b.x - a.x).powi(2) + (b.y - a.y).powi(2) + (b.z - a.z).powi(2))
+              .sqrt();
+          let ac =
+            ((c.x - a.x).powi(2) + (c.y - a.y).powi(2) + (c.z - a.z).powi(2))
+              .sqrt();
+          let area2 = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+          if area2 < 1e-12 * (ab * ac).max(1e-300) {
+            continue;
+          }
+          world_tris.push([a, b, c]);
         }
       }
     }
   }
 
+  if world_tris.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "SphericalPlot3D: no renderable triangles".into(),
+    ));
+  }
+
+  // ── Symbolic structure: GraphicsComplex[points, {Polygon[…], …}] ──
+  // Deduplicate shared vertices into an indexed coordinate list.
+  let mut point_index: std::collections::HashMap<(i64, i64, i64), usize> =
+    std::collections::HashMap::new();
+  let mut points: Vec<Point3D> = Vec::new();
+  let mut index_of = |p: Point3D| -> usize {
+    let key = (
+      (p.x * 1e9).round() as i64,
+      (p.y * 1e9).round() as i64,
+      (p.z * 1e9).round() as i64,
+    );
+    *point_index.entry(key).or_insert_with(|| {
+      points.push(p);
+      points.len() - 1
+    })
+  };
+  let mut tri_indices: Vec<[usize; 3]> = Vec::new();
+  for tri in &world_tris {
+    tri_indices.push([index_of(tri[0]), index_of(tri[1]), index_of(tri[2])]);
+  }
+
+  // Boundary edges (used by BoundaryStyle): edges belonging to exactly
+  // one triangle of the mesh.
+  let mut edge_count: std::collections::HashMap<(usize, usize), usize> =
+    std::collections::HashMap::new();
+  for tri in &tri_indices {
+    for k in 0..3 {
+      let (a, b) = (tri[k], tri[(k + 1) % 3]);
+      if a != b {
+        *edge_count.entry((a.min(b), a.max(b))).or_insert(0) += 1;
+      }
+    }
+  }
+  let mut boundary_edges: Vec<(usize, usize)> = edge_count
+    .iter()
+    .filter(|&(_, &count)| count == 1)
+    .map(|(&edge, _)| edge)
+    .collect();
+  boundary_edges.sort_unstable();
+
+  let point_exprs: Vec<Expr> = points
+    .iter()
+    .map(|p| {
+      Expr::List(vec![Expr::Real(p.x), Expr::Real(p.y), Expr::Real(p.z)].into())
+    })
+    .collect();
+  let polygon_expr = Expr::FunctionCall {
+    name: "Polygon".to_string(),
+    args: vec![Expr::List(
+      tri_indices
+        .iter()
+        .map(|tri| {
+          Expr::List(
+            tri
+              .iter()
+              .map(|&idx| Expr::Integer(idx as i128 + 1))
+              .collect::<Vec<_>>()
+              .into(),
+          )
+        })
+        .collect::<Vec<_>>()
+        .into(),
+    )]
+    .into(),
+  };
+  let mut gc_content = vec![polygon_expr];
+  if let Some((r, g, b)) = boundary_color
+    && !boundary_edges.is_empty()
+  {
+    let line_expr = Expr::FunctionCall {
+      name: "Line".to_string(),
+      args: vec![Expr::List(
+        boundary_edges
+          .iter()
+          .map(|&(a, b)| {
+            Expr::List(
+              vec![Expr::Integer(a as i128 + 1), Expr::Integer(b as i128 + 1)]
+                .into(),
+            )
+          })
+          .collect::<Vec<_>>()
+          .into(),
+      )]
+      .into(),
+    };
+    let color_expr = Expr::FunctionCall {
+      name: "RGBColor".to_string(),
+      args: vec![
+        Expr::Real(r as f64 / 255.0),
+        Expr::Real(g as f64 / 255.0),
+        Expr::Real(b as f64 / 255.0),
+      ]
+      .into(),
+    };
+    gc_content.push(Expr::List(vec![color_expr, line_expr].into()));
+  }
+  let graphics_complex = Expr::FunctionCall {
+    name: "GraphicsComplex".to_string(),
+    args: vec![
+      Expr::List(point_exprs.into()),
+      Expr::List(gc_content.into()),
+    ]
+    .into(),
+  };
+  let structure = Expr::FunctionCall {
+    name: "Graphics3D".to_string(),
+    args: std::iter::once(graphics_complex)
+      .chain(args[3..].iter().cloned())
+      .collect::<Vec<_>>()
+      .into(),
+  };
+
+  // ── Standalone rendering (the plot's own SVG) ──
   // Find coordinate ranges
   let mut x_min = f64::INFINITY;
   let mut x_max = f64::NEG_INFINITY;
@@ -5073,8 +5777,8 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut z_min = f64::INFINITY;
   let mut z_max = f64::NEG_INFINITY;
 
-  for row in &grid_pts {
-    for p in row.iter().flatten() {
+  for tri in &world_tris {
+    for p in tri {
       x_min = x_min.min(p.x);
       x_max = x_max.max(p.x);
       y_min = y_min.min(p.y);
@@ -5106,82 +5810,35 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // Build triangles from grid
-  for i in 0..n_theta {
-    for j in 0..n_phi {
-      let p00 = grid_pts[i][j];
-      let p10 = grid_pts[i + 1][j];
-      let p01 = grid_pts[i][j + 1];
-      let p11 = grid_pts[i + 1][j + 1];
+  for tri in &world_tris {
+    let [a, b, c] = *tri;
+    let na = normalize(a);
+    let nb = normalize(b);
+    let nc = normalize(c);
 
-      // Triangle 1: (i,j), (i+1,j), (i,j+1)
-      if let (Some(a), Some(b), Some(c)) = (p00, p10, p01) {
-        let na = normalize(a);
-        let nb = normalize(b);
-        let nc = normalize(c);
+    let avg_z = ((a.z - z_min) / z_range_v
+      + (b.z - z_min) / z_range_v
+      + (c.z - z_min) / z_range_v)
+      / 3.0;
+    let base_color = height_color(avg_z);
+    let normal = triangle_normal(na, nb, nc);
+    let color = apply_lighting(base_color, normal);
 
-        let avg_z = ((a.z - z_min) / z_range_v
-          + (b.z - z_min) / z_range_v
-          + (c.z - z_min) / z_range_v)
-          / 3.0;
-        let base_color = height_color(avg_z);
-        let normal = triangle_normal(na, nb, nc);
-        let color = apply_lighting(base_color, normal);
+    let pa = project(na, &camera);
+    let pb = project(nb, &camera);
+    let pc = project(nc, &camera);
+    let center = Point3D {
+      x: (na.x + nb.x + nc.x) / 3.0,
+      y: (na.y + nb.y + nc.y) / 3.0,
+      z: (na.z + nb.z + nc.z) / 3.0,
+    };
 
-        let pa = project(na, &camera);
-        let pb = project(nb, &camera);
-        let pc = project(nc, &camera);
-        let center = Point3D {
-          x: (na.x + nb.x + nc.x) / 3.0,
-          y: (na.y + nb.y + nc.y) / 3.0,
-          z: (na.z + nb.z + nc.z) / 3.0,
-        };
-
-        all_triangles.push(Triangle {
-          projected: [pa, pb, pc],
-          depth: depth(center, &camera),
-          color,
-          opacity: 1.0,
-        });
-      }
-
-      // Triangle 2: (i+1,j+1), (i,j+1), (i+1,j)
-      if let (Some(a), Some(b), Some(c)) = (p11, p01, p10) {
-        let na = normalize(a);
-        let nb = normalize(b);
-        let nc = normalize(c);
-
-        let avg_z = ((a.z - z_min) / z_range_v
-          + (b.z - z_min) / z_range_v
-          + (c.z - z_min) / z_range_v)
-          / 3.0;
-        let base_color = height_color(avg_z);
-        let normal = triangle_normal(na, nb, nc);
-        let color = apply_lighting(base_color, normal);
-
-        let pa = project(na, &camera);
-        let pb = project(nb, &camera);
-        let pc = project(nc, &camera);
-        let center = Point3D {
-          x: (na.x + nb.x + nc.x) / 3.0,
-          y: (na.y + nb.y + nc.y) / 3.0,
-          z: (na.z + nb.z + nc.z) / 3.0,
-        };
-
-        all_triangles.push(Triangle {
-          projected: [pa, pb, pc],
-          depth: depth(center, &camera),
-          color,
-          opacity: 1.0,
-        });
-      }
-    }
-  }
-
-  if all_triangles.is_empty() {
-    return Err(InterpreterError::EvaluationError(
-      "SphericalPlot3D: no renderable triangles".into(),
-    ));
+    all_triangles.push(Triangle {
+      projected: [pa, pb, pc],
+      depth: depth(center, &camera),
+      color,
+      opacity: 1.0,
+    });
   }
 
   all_triangles.sort_by(|a, b| {
@@ -5210,7 +5867,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     show_axes,
   )?;
 
-  Ok(crate::graphics3d_result(svg))
+  Ok(crate::graphics3d_result_with_structure(svg, structure))
 }
 
 /// DiscretePlot3D[f, {x, xmin, xmax}, {y, ymin, ymax}]

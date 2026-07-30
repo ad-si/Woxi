@@ -137,6 +137,12 @@ pub enum Expr {
     is_3d: bool,
     source: Option<Box<PlotSource>>,
     head: Option<String>,
+    /// The symbolic expression this rendering was produced from (e.g.
+    /// `Graphics3D[GraphicsComplex[…], opts]`), so structural operations
+    /// like `Part` can look inside a rendered graphic the way Wolfram's
+    /// `Graphics3D[…][[1]]` does. `None` for renderings with no useful
+    /// symbolic form.
+    structure: Option<Box<Expr>>,
   },
 }
 
@@ -758,12 +764,14 @@ impl Clone for Expr {
         is_3d,
         source,
         head,
+        structure,
       } => {
         return Self::Graphics {
           svg: svg.clone(),
           is_3d: *is_3d,
           source: source.clone(),
           head: head.clone(),
+          structure: structure.clone(),
         };
       }
       _ => {} // fall through to iterative clone
@@ -846,11 +854,13 @@ impl Clone for Expr {
             is_3d,
             source,
             head,
+            structure,
           } => results.push(Self::Graphics {
             svg: svg.clone(),
             is_3d: *is_3d,
             source: source.clone(),
             head: head.clone(),
+            structure: structure.clone(),
           }),
 
           // Vec<Expr> children
@@ -4796,10 +4806,12 @@ fn operator_precedence(op: &str) -> u8 {
     "<->" => 21, // TwoWayRule (same level as comparisons, tighter than Rule)
     "\\[Distributed]" | "\u{F3D2}" => 21, // Distributed (same level as comparisons)
     "\\[Conditioned]" | "\u{F3D3}" => 12, // Conditioned (looser than ||, like ;)
-    "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" => 36, // Cross (same level as Dot)
-    "\\[TensorProduct]" | "\u{F3DA}" => 36, // TensorProduct (same level as Dot)
-    "\\[Cap]" | "\u{2322}" => 36,         // Cap (⌢, infix → Cap[a, b])
-    "\\[Cup]" | "\u{2323}" => 36,         // Cup (⌣, infix → Cup[a, b])
+    // Cross and TensorProduct bind tighter than Dot in Wolfram
+    // (Precedence 500 and 495 vs Dot's 490): a.b\[Cross]c is a.(b\[Cross]c).
+    "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" => 42, // Cross (above TensorProduct)
+    "\\[TensorProduct]" | "\u{F3DA}" => 41, // TensorProduct (just above Dot)
+    "\\[Cap]" | "\u{2322}" => 36,           // Cap (⌢, infix → Cap[a, b])
+    "\\[Cup]" | "\u{2323}" => 36,           // Cup (⌣, infix → Cup[a, b])
     "\\[RightTee]" | "\u{22A2}" => 15, // RightTee (⊢, right-assoc, between -> and ==)
     "\\[DoubleRightTee]" | "\u{22A8}" => 15, // DoubleRightTee (⊨, right-assoc, same level)
     "\\[LeftTee]" | "\u{22A3}" => 15, // LeftTee (⊣, left-assoc, same level)
@@ -4827,19 +4839,19 @@ fn operator_precedence(op: &str) -> u8 {
     "\\[Diamond]" | "\u{22C4}" => 38,    // above Wedge, below Backslash
     "\\[Backslash]" | "\u{2216}" => 39,  // above Diamond, below Dot
     "." => 40,                           // Dot (higher than the ring ops)
-    "\\[CircleDot]" | "\u{2299}" => 41,  // above Dot, below SmallCircle
-    "\\[SmallCircle]" | "\u{2218}" => 42, // above CircleDot, below Apply
-    "@@@" | "@@" => 43,                  // Apply/MapApply
-    "/@" => 44,                          // Map (higher than Apply)
-    "NEGATE" => 45, // Unary minus (PreMinus): between Times/Dot and Power
-    "^" | "^_NEG" => 48, // Power (`^_NEG` is `a^-b` with negated right operand)
-    s if s.starts_with('~') && s.ends_with('~') && s.len() > 2 => 51, // Tilde infix: a ~f~ b (higher than ^, lower than @)
-    "@" => 54, // Prefix application
+    "\\[CircleDot]" | "\u{2299}" => 43,  // above Cross, below SmallCircle
+    "\\[SmallCircle]" | "\u{2218}" => 44, // above CircleDot, below Apply
+    "@@@" | "@@" => 45,                  // Apply/MapApply
+    "/@" => 46,                          // Map (higher than Apply)
+    "NEGATE" => 47, // Unary minus (PreMinus): between Times/Dot and Power
+    "^" | "^_NEG" => 50, // Power (`^_NEG` is `a^-b` with negated right operand)
+    s if s.starts_with('~') && s.ends_with('~') && s.len() > 2 => 53, // Tilde infix: a ~f~ b (higher than ^, lower than @)
+    "@" => 56, // Prefix application
     // Composition/RightComposition bind tighter than prefix application (so
     // `f @* g @ x` parses as `(f @* g) @ x`) and Map (`Length@*f /@ list`
     // parses as `(Length@*f) /@ list`), but looser than MessageName.
-    "@*" | "/*" => 55,
-    "::" => 57, // MessageName (highest — a::b binds tighter than everything)
+    "@*" | "/*" => 57,
+    "::" => 59, // MessageName (highest — a::b binds tighter than everything)
     _ => 0,
   }
 }
