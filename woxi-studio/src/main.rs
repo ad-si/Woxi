@@ -143,6 +143,11 @@ struct CellEditor {
   graphics_handle: Option<svg::Handle>,
   /// Pre-rasterized image of the SVG (avoids resvg parse on scroll).
   graphics_image: Option<(iced::widget::image::Handle, u32, u32)>,
+  /// A display-only stored rendering from the .nb file (e.g. a
+  /// Demonstrations snapshot decoded from `RasterBox[CompressedData[…]]`).
+  /// The cell shows only the graphic; its box text stays in `content` so
+  /// saving round-trips it.
+  stored_graphic: bool,
   /// Typeset SVG renderings of the result outputs — the same SVGs the
   /// Playground shows — one per result statement that produced one. This is how
   /// number/superscript/fraction formatting is reused instead of being
@@ -511,13 +516,21 @@ impl WoxiStudio {
     // dump and re-instantiates from the input, so the earlier cells must
     // run first for the widget's body to evaluate.
     let mut pending_init: Vec<String> = Vec::new();
+    let mut state_cleared = false;
 
     for entry in &notebook.cells {
       match entry {
         CellEntry::Single(cell) => {
-          // Standalone Output/Print cells (e.g. the saved snapshot images
-          // of a Demonstration notebook) become ordinary cells: dropping
-          // them would silently lose them on the next save.
+          // A standalone stored Output/Print renders as a graphic when it
+          // decodes to something displayable (snapshot rasters, checkbox
+          // grids); anything else keeps an ordinary editor below, so the
+          // cell still survives a load/save round-trip either way.
+          if matches!(cell.style, CellStyle::Output | CellStyle::Print)
+            && let Some(editor) = stored_output_editor(cell)
+          {
+            editors.push(editor);
+            continue;
+          }
           if matches!(cell.style, CellStyle::Input | CellStyle::Code) {
             pending_init.push(cell.content.clone());
           }
@@ -541,6 +554,7 @@ impl WoxiStudio {
             is_collapsed: cell.collapsed,
             manipulate_state: None,
             hyperlinks: Vec::new(),
+            stored_graphic: false,
             output_content: text_editor::Content::new(),
             stdout_content: text_editor::Content::new(),
           });
@@ -580,6 +594,13 @@ impl WoxiStudio {
               let is_widget_dump =
                 output.as_deref().is_some_and(is_dynamic_box_dump);
               let manipulate_state = if is_widget_dump {
+                // Leftover state from a previously opened notebook must not
+                // leak into the widget; start the first instantiation from
+                // a clean slate.
+                if !state_cleared {
+                  woxi::clear_state();
+                  state_cleared = true;
+                }
                 // Run the earlier Input cells (helper definitions) before
                 // the widget's body first evaluates; the dump's saved
                 // Initialization (SaveDefinitions -> True) then runs on
@@ -633,14 +654,23 @@ impl WoxiStudio {
                 is_collapsed: false,
                 manipulate_state,
                 hyperlinks: Vec::new(),
+                stored_graphic: false,
                 output_content,
                 stdout_content,
               });
               i = j;
+            } else if matches!(cell.style, CellStyle::Output | CellStyle::Print)
+              && let Some(editor) = stored_output_editor(cell)
+            {
+              // A standalone stored output (no preceding Input) renders as
+              // a graphic when it decodes to something displayable — e.g.
+              // the Demonstrations "Snapshots" rasters.
+              editors.push(editor);
+              i += 1;
             } else {
               // Any other cell — including a standalone Output/Print that
-              // does not follow an Input (e.g. saved snapshot images) —
-              // keeps its own editor so it survives a load/save round-trip.
+              // doesn't decode to a displayable graphic — keeps its own
+              // editor so it survives a load/save round-trip.
               editors.push(CellEditor {
                 content: text_editor::Content::with_text(&cell.content),
                 style: cell.style,
@@ -661,6 +691,7 @@ impl WoxiStudio {
                 is_collapsed: false,
                 manipulate_state: None,
                 hyperlinks: Vec::new(),
+                stored_graphic: false,
                 output_content: text_editor::Content::new(),
                 stdout_content: text_editor::Content::new(),
               });
@@ -822,6 +853,17 @@ impl WoxiStudio {
               );
               woxi::set_dark_mode(!matches!(self.theme, Theme::Light));
               self.cell_editors = Self::editors_from_notebook(&nb);
+              // Stored graphics (snapshots decoded from the .nb) rasterize
+              // at load; the scale-change handler re-rasterizes them like
+              // any evaluated graphic.
+              for editor in &mut self.cell_editors {
+                if editor.stored_graphic
+                  && let Some(ref svg) = editor.graphics_svg
+                {
+                  editor.graphics_image =
+                    rasterize_svg(svg, self.scale_factor, &self.fontdb);
+                }
+              }
               self.notebook = nb;
               self.file_path = Some(path);
               self.is_dirty = false;
@@ -1652,14 +1694,10 @@ impl WoxiStudio {
       Message::ManipulateSlider2DChanged(cell_idx, ctrl_idx, axis, value) => {
         if let Some(editor) = self.cell_editors.get_mut(cell_idx)
           && let Some(state) = editor.manipulate_state.as_mut()
-          && let Some(control) = state.controls.get_mut(ctrl_idx)
-          && let manipulate::ControlState::Slider2D { x, y, .. } = control
         {
-          if axis == 0 {
-            *x = value;
-          } else {
-            *y = value;
-          }
+          // Routes through the control's write-back callback (if any), so
+          // e.g. Locator-promoted controls round/validate the candidate.
+          state.slider2d_change(ctrl_idx, axis, value);
           if state.request_reeval() {
             return manipulate_reeval_task(cell_idx);
           }
@@ -1879,6 +1917,7 @@ impl WoxiStudio {
             is_collapsed: false,
             manipulate_state: None,
             hyperlinks: Vec::new(),
+            stored_graphic: false,
             output_content: text_editor::Content::new(),
             stdout_content: text_editor::Content::new(),
           },
@@ -1918,6 +1957,7 @@ impl WoxiStudio {
             is_collapsed: false,
             manipulate_state: None,
             hyperlinks: Vec::new(),
+            stored_graphic: false,
             output_content: text_editor::Content::new(),
             stdout_content: text_editor::Content::new(),
           },
@@ -2816,7 +2856,10 @@ impl WoxiStudio {
           .replace("-Image-", "");
         !d.trim().is_empty()
       });
-    let is_grouped = is_input && has_output && !in_preview;
+    // Display-only stored graphics (Demonstrations snapshots) show their
+    // output section without an editor row.
+    let is_grouped =
+      (is_input && has_output || editor.stored_graphic) && !in_preview;
     let cursor_pos = editor.content.cursor().position;
     let cursor_line = cursor_pos.line;
     let cursor_column = cursor_pos.column;
@@ -2992,7 +3035,9 @@ impl WoxiStudio {
     // ── Content column: editor + outputs ──
 
     let mut content_col = Column::new().spacing(0).width(Fill);
-    content_col = content_col.push(cell_editor);
+    if !editor.stored_graphic {
+      content_col = content_col.push(cell_editor);
+    }
 
     let stale = editor.output_stale;
     let stale_opacity = if stale { 0.35 } else { 1.0 };
@@ -3742,11 +3787,11 @@ fn render_manipulate_widget<'a>(
         name,
         label,
         label_runs,
+        values,
         value_labels,
         value_label_svgs,
         current_index,
         popup,
-        ..
       } => {
         let label_widget = manipulate_label_widget(
           label_runs,
@@ -3755,6 +3800,38 @@ fn render_manipulate_widget<'a>(
           label_col_width,
           enabled,
         );
+        // A boolean domain — `{v, {True, False}}` in either order — renders
+        // as a checkbox, matching the Wolfram FrontEnd (which shows a
+        // checkbox rather than a two-button setter for True/False).
+        let bool_values: &[String] = values;
+        let is_bool_domain = !*popup
+          && bool_values.len() == 2
+          && bool_values.iter().any(|v| v == "True")
+          && bool_values.iter().any(|v| v == "False");
+        if is_bool_domain {
+          let checked =
+            bool_values.get(*current_index).is_some_and(|v| v == "True");
+          // Toggling selects the other entry; the update handler maps the
+          // sent display label back to its index.
+          let other_label = value_labels
+            .iter()
+            .zip(bool_values.iter())
+            .find(|(_, v)| (*v == "True") != checked)
+            .map(|(l, _)| l.clone());
+          let mut cb = checkbox(checked);
+          if enabled && let Some(target) = other_label {
+            cb = cb.on_toggle(move |_| {
+              Message::ManipulateDiscreteChanged(
+                cell_idx,
+                ctrl_idx,
+                target.clone(),
+              )
+            });
+          }
+          let control_row = row![label_widget, cb].align_y(Center).spacing(8);
+          controls_col = controls_col.push(control_row);
+          continue;
+        }
         let count = value_labels.len();
         // A small enumerated set renders as a segmented SetterBar (a row of
         // adjacent toggle buttons with the active choice highlighted), matching
@@ -3826,6 +3903,7 @@ fn render_manipulate_widget<'a>(
         y_max,
         x,
         y,
+        ..
       } => {
         // Rendered as two linked sliders (X and Y) driving the 2-vector.
         let x_span = (*x_max - *x_min).abs();
@@ -4224,6 +4302,29 @@ fn render_display_node<'a>(
         None => cb.into(),
       }
     }
+    DisplayNode::Toggler {
+      label,
+      mutation,
+      selected,
+    } => {
+      // One choice of a TogglerBar: a toggle button whose press adds or
+      // removes its value from the bound list variable.
+      let selected = *selected;
+      let mutation = mutation.clone();
+      button(render_display_node(cell_idx, label))
+        .padding([2, 6])
+        .style(move |theme: &iced::Theme, status| {
+          let mut style = if selected {
+            button::primary(theme, status)
+          } else {
+            button::secondary(theme, status)
+          };
+          style.border.radius = 4.0.into();
+          style
+        })
+        .on_press(Message::ManipulateDisplayToggled(cell_idx, mutation))
+        .into()
+    }
     DisplayNode::Static {
       svg: svg_src,
       text: txt,
@@ -4358,6 +4459,77 @@ fn format_manipulate_number(v: f64) -> String {
   } else {
     trimmed.to_string()
   }
+}
+
+/// Build a display-only editor for a stored Output cell the interpreter
+/// cannot regenerate: a Demonstrations snapshot (`RasterBox[
+/// CompressedData["…"]]`) shows as a graphic, a `CheckboxBox[…]` grid as
+/// read-only text lines. The original box text stays in `content` so
+/// saving round-trips it. `None` for outputs with no displayable form.
+fn stored_output_editor(cell: &Cell) -> Option<CellEditor> {
+  let svg =
+    woxi::notebook::stored_output_image_svg(&cell.content).or_else(|| {
+      woxi::notebook::stored_output_checkbox_text(&cell.content)
+        .map(|text| plain_text_svg(&text))
+    })?;
+  // The svg handle is a fallback for when rasterization fails; the normal
+  // path shows the pre-rasterized image.
+  let handle = svg::Handle::from_memory(svg.clone().into_bytes());
+  Some(CellEditor {
+    content: text_editor::Content::with_text(&cell.content),
+    style: cell.style,
+    output: None,
+    stdout: None,
+    graphics_svg: Some(svg),
+    graphics_handle: Some(handle),
+    graphics_image: None,
+    output_svgs: Vec::new(),
+    output_images: Vec::new(),
+    output_dark: false,
+    output_all_svg: false,
+    sound: None,
+    warnings: Vec::new(),
+    undo_stack: Vec::new(),
+    redo_stack: Vec::new(),
+    output_stale: false,
+    is_collapsed: cell.collapsed,
+    manipulate_state: None,
+    hyperlinks: Vec::new(),
+    stored_graphic: true,
+    output_content: text_editor::Content::new(),
+    stdout_content: text_editor::Content::new(),
+  })
+}
+
+/// A minimal SVG rendering of plain text lines (used for stored outputs
+/// like checkbox grids), on a white card so it reads the same in both
+/// themes.
+fn plain_text_svg(text: &str) -> String {
+  let lines: Vec<&str> = text.lines().collect();
+  let char_w = 8.4_f64;
+  let line_h = 20.0_f64;
+  let width = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0) as f64
+    * char_w
+    + 16.0;
+  let height = lines.len() as f64 * line_h + 12.0;
+  let mut svg = format!(
+    "<svg width=\"{width:.0}\" height=\"{height:.0}\" viewBox=\"0 0 \
+     {width:.0} {height:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n\
+     <rect width=\"{width:.0}\" height=\"{height:.0}\" fill=\"white\"/>\n"
+  );
+  for (i, line) in lines.iter().enumerate() {
+    let escaped = line
+      .replace('&', "&amp;")
+      .replace('<', "&lt;")
+      .replace('>', "&gt;");
+    let y = 6.0 + i as f64 * line_h + 14.0;
+    svg.push_str(&format!(
+      "<text x=\"8\" y=\"{y:.0}\" font-family=\"monospace\" \
+       font-size=\"14\" fill=\"#333\">{escaped}</text>\n"
+    ));
+  }
+  svg.push_str("</svg>");
+  svg
 }
 
 fn rasterize_svg(
@@ -6722,6 +6894,117 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 1}, \"…\"]"], "Output"]
   }
 
   #[test]
+  fn in_body_locator_and_togglerbar_build_interactive_widget() {
+    // The "Triangle Calculator" Demonstration pattern: every variable is
+    // `ControlType -> None`, the points are driven by `Locator[Dynamic[…]]`
+    // markers inside the body's Graphics, and a `TogglerBar[Dynamic[…]]`
+    // in the output column switches display layers. The widget must expose
+    // the points as controls (with the Dynamic's write-back callback) and
+    // the TogglerBar as an interactive display row.
+    let code = "Manipulate[\
+      Column[{\
+        Graphics[{Dynamic[{Line[{ptA, ptB}]}], \
+          Locator[Dynamic[ptA, (If[valuesOK[{#, ptB}], ptA = #] &)[\
+            Clip[Round[#], {-8, 8}]] &], \
+            Graphics[{Disk[{0, 0}, 1]}, ImageSize -> 20]], \
+          Locator[Dynamic[ptB, (If[valuesOK[{ptA, #}], ptB = #] &)[\
+            Clip[Round[#], {-8, 8}]] &]]}, \
+          PlotRange -> {{-9, 9}, {-9, 9}}], \
+        TogglerBar[Dynamic[switches], {1 -> \"one\", 2 -> \"two\"}]}], \
+      {{ptA, {7, -1}}, {-9, -9}, {9, 9}, ControlType -> None}, \
+      {{ptB, {-5, -5}}, {-9, -9}, {9, 9}, ControlType -> None}, \
+      {{switches, {1, 2}}, ControlType -> None}, \
+      Initialization :> (valuesOK[pts_] := pts[[1]] =!= pts[[2]])]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("in-body locator Manipulate must build a widget");
+    assert!(state.error.is_none(), "body must render: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+
+    // The two locator-driven points are visible 2D-slider controls with
+    // their write-back callbacks; `switches` stays hidden mutable state.
+    let sliders: Vec<&manipulate::ControlState> = state
+      .controls
+      .iter()
+      .filter(|c| matches!(c, manipulate::ControlState::Slider2D { .. }))
+      .collect();
+    assert_eq!(sliders.len(), 2, "ptA and ptB must be promoted");
+    assert_eq!(state.state.len(), 1);
+    assert_eq!(state.state[0].0, "switches");
+
+    // The TogglerBar is an interactive display row with both choices
+    // selected initially.
+    let togglers = collect_togglers(&state.display_trees);
+    assert_eq!(togglers.len(), 2);
+    assert!(togglers.iter().all(|(_, selected)| *selected));
+
+    // A slider move routes through the callback: the candidate is rounded
+    // to the lattice…
+    state.slider2d_change(0, 0, 3.4);
+    match &state.controls[0] {
+      manipulate::ControlState::Slider2D { x, y, .. } => {
+        assert_eq!((*x, *y), (3.0, -1.0));
+      }
+      other => panic!("expected Slider2D, got {other:?}"),
+    }
+    // …and a move that lands both points on the same spot is rejected by
+    // the notebook's valuesOK check (ptB stays put).
+    state.slider2d_change(1, 0, 3.0);
+    state.slider2d_change(1, 1, -1.0);
+    match &state.controls[1] {
+      manipulate::ControlState::Slider2D { x, y, .. } => {
+        assert_eq!((*x, *y), (3.0, -5.0), "degenerate move must be rejected");
+      }
+      other => panic!("expected Slider2D, got {other:?}"),
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+
+    // Clicking a toggler removes its value from the list; the rebuilt
+    // display shows it unselected.
+    let mutation = collect_togglers(&state.display_trees)[0].0.clone();
+    state.apply_display_mutation(&mutation);
+    assert_eq!(state.state[0].1, "{2}");
+    let togglers = collect_togglers(&state.display_trees);
+    assert_eq!(
+      togglers.iter().map(|(_, s)| *s).collect::<Vec<_>>(),
+      vec![false, true]
+    );
+  }
+
+  /// Collect `(mutation, selected)` of every Toggler in a display tree.
+  fn collect_togglers(
+    trees: &[woxi::functions::graphics::DisplayNode],
+  ) -> Vec<(String, bool)> {
+    use woxi::functions::graphics::DisplayNode;
+    fn walk(node: &DisplayNode, out: &mut Vec<(String, bool)>) {
+      match node {
+        DisplayNode::Toggler {
+          mutation, selected, ..
+        } => out.push((mutation.clone(), *selected)),
+        DisplayNode::Panel(child) => walk(child, out),
+        DisplayNode::Grid(rows) => {
+          for row in rows {
+            for cell in row {
+              walk(cell, out);
+            }
+          }
+        }
+        DisplayNode::Column(children) | DisplayNode::Row(children) => {
+          for c in children {
+            walk(c, out);
+          }
+        }
+        DisplayNode::Checkbox { .. } | DisplayNode::Static { .. } => {}
+      }
+    }
+    let mut out = Vec::new();
+    for t in trees {
+      walk(t, &mut out);
+    }
+    out
+  }
+
+  #[test]
   fn gray_scott_manipulate_steps_and_resets() {
     // End-to-end regression for the "Gray-Scott Reaction-Diffusion"
     // Demonstration: Row-grouped SetterBars, a reset Button, a Trigger
@@ -6963,6 +7246,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 1}, \"…\"]"], "Output"]
       is_collapsed: false,
       manipulate_state: None,
       hyperlinks: Vec::new(),
+      stored_graphic: false,
       output_content: text_editor::Content::new(),
       stdout_content: text_editor::Content::new(),
     }

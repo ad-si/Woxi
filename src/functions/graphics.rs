@@ -553,6 +553,16 @@ enum Primitive {
     full: bool,
     style: StyleState,
   },
+  /// A fixed-pixel-size marker (e.g. a `Locator`'s appearance graphic)
+  /// centered on a data-space point. The pre-rendered SVG is embedded at
+  /// `w`×`h` screen pixels regardless of the plot's coordinate scale.
+  MarkerPrim {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    svg: String,
+  },
 }
 
 impl Primitive {
@@ -572,7 +582,7 @@ impl Primitive {
       | Primitive::TextPrim { style, .. }
       | Primitive::BezierCurvePrim { style, .. }
       | Primitive::HalfPlanePrim { style, .. } => Some(style),
-      Primitive::RasterPrim { .. } => None,
+      Primitive::RasterPrim { .. } | Primitive::MarkerPrim { .. } => None,
     }
   }
 }
@@ -1455,20 +1465,35 @@ fn collect_primitives(
           }
         }
 
-        // `Dynamic[expr]` inside graphics displays the current value of
-        // its held expression (the front end re-evaluates it as its
-        // dependencies change; Woxi's hosts re-render wholesale, so the
-        // current value is the correct snapshot). Dynamic is HoldFirst —
-        // the content arrives unevaluated, so release the hold before
-        // collecting, otherwise computed primitives (e.g. the
-        // `Dynamic[colorSlice[#+a] & /@ clrCases]` highlight overlay in
-        // the Demonstrations color-wheel notebook) silently vanish.
+        // `Dynamic[expr]` displays as the current value of `expr`: release
+        // the hold and render the result (Dynamic is HoldFirst, so the
+        // content arrives unevaluated). Evaluation also runs any
+        // assignments the Dynamic performs (the Demonstrations pattern
+        // computes shared values inside a graphic's Dynamic), which later
+        // display items read. Any graphics the evaluation captures are
+        // embedded here, not standalone outputs — drop them from the
+        // capture buffer.
         "Dynamic" if !args.is_empty() => {
-          if let Ok(inner) = evaluate_expr_to_expr(&args[0]) {
+          let captured = crate::captured_graphics_count();
+          if let Ok(inner) = crate::evaluator::evaluate_expr_to_expr(&args[0]) {
+            crate::truncate_captured_graphics(captured);
             collect_primitives(&inner, style, prims, errors);
+          } else {
+            crate::truncate_captured_graphics(captured);
           }
         }
-
+        // `Tooltip[g, label]` draws `g`; the hover label has no static SVG
+        // form. Only the first argument is rendered — the label must not
+        // leak into the graphic.
+        "Tooltip" if !args.is_empty() => {
+          collect_primitives(&args[0], style, prims, errors);
+        }
+        // `Locator[pt]` / `Locator[Dynamic[pt, …], appearance]`: a marker
+        // drawn at the point's current position. A custom appearance
+        // graphic keeps its own ImageSize in screen pixels.
+        "Locator" if !args.is_empty() => {
+          parse_locator(args, prims);
+        }
         _ => {
           // Try as directive first
           if !apply_directive(expr, style) {
@@ -2386,6 +2411,105 @@ fn parse_raster(args: &[Expr], prims: &mut Vec<Primitive>) {
   });
 }
 
+/// `Locator[pt]` / `Locator[Dynamic[pt, …], appearance]`: a marker drawn at
+/// the point's current position. The position may be held inside `Dynamic`
+/// (whose second argument, the write-back callback, only matters to
+/// interactive front-ends). A custom appearance graphic is embedded at its
+/// own ImageSize in screen pixels, centered on the position — Wolfram
+/// treats the appearance as a screen-space icon, not data-space geometry.
+fn parse_locator(args: &[Expr], prims: &mut Vec<Primitive>) {
+  let pos_expr = match &args[0] {
+    Expr::FunctionCall { name, args: dargs }
+      if name == "Dynamic" && !dargs.is_empty() =>
+    {
+      &dargs[0]
+    }
+    other => other,
+  };
+  let captured = crate::captured_graphics_count();
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(pos_expr)
+    .unwrap_or_else(|_| pos_expr.clone());
+  let points: Vec<(f64, f64)> = if let Some(p) = expr_to_point(&evaluated) {
+    vec![p]
+  } else {
+    expr_to_point_list(&evaluated).unwrap_or_default()
+  };
+  if points.is_empty() {
+    crate::truncate_captured_graphics(captured);
+    return;
+  }
+
+  // The appearance graphic, pre-rendered at its own ImageSize. `Automatic`
+  // (or no appearance) uses the default crosshair marker; `None` hides the
+  // marker entirely.
+  let appearance = args
+    .get(1)
+    .filter(|a| !matches!(a, Expr::Identifier(s) if s == "Automatic"));
+  if appearance.is_some_and(|a| matches!(a, Expr::Identifier(s) if s == "None"))
+  {
+    crate::truncate_captured_graphics(captured);
+    return;
+  }
+  let marker: Option<(String, f64, f64)> = appearance.and_then(|a| {
+    // Render the appearance to a graphic. A held `Graphics[…]` call is
+    // rendered directly (Graphics evaluates lazily at display time);
+    // anything else is evaluated first.
+    let rendered = match a {
+      Expr::Graphics { .. } => Some(a.clone()),
+      Expr::FunctionCall { name, args: gargs } if name == "Graphics" => {
+        graphics_ast(gargs).ok()
+      }
+      other => match crate::evaluator::evaluate_expr_to_expr(other) {
+        Ok(ev) => match &ev {
+          Expr::Graphics { .. } => Some(ev.clone()),
+          Expr::FunctionCall { name, args: gargs } if name == "Graphics" => {
+            graphics_ast(&gargs.iter().cloned().collect::<Vec<_>>()).ok()
+          }
+          _ => None,
+        },
+        Err(_) => None,
+      },
+    };
+    if let Some(Expr::Graphics { svg, .. }) = &rendered {
+      let (w, h) = parse_svg_wh(svg);
+      if w > 0.0 && h > 0.0 {
+        return Some((svg.clone(), w, h));
+      }
+    }
+    None
+  });
+  // Sub-evaluations may have rendered graphics (the appearance itself, or
+  // anything a Dynamic position computed); those are embedded here, not
+  // standalone outputs.
+  crate::truncate_captured_graphics(captured);
+
+  for (x, y) in points {
+    let (svg, w, h) = match &marker {
+      Some((svg, w, h)) => (svg.clone(), *w, *h),
+      None => {
+        let (svg, size) = default_locator_marker_svg();
+        (svg, size, size)
+      }
+    };
+    prims.push(Primitive::MarkerPrim { x, y, w, h, svg });
+  }
+}
+
+/// Wolfram's default Locator appearance: a small circled crosshair.
+fn default_locator_marker_svg() -> (String, f64) {
+  let size = 16.0;
+  let c = size / 2.0;
+  let svg = format!(
+    "<svg width=\"{size}\" height=\"{size}\" viewBox=\"0 0 {size} {size}\" xmlns=\"http://www.w3.org/2000/svg\">\
+     <circle cx=\"{c}\" cy=\"{c}\" r=\"{r:.1}\" fill=\"rgba(180,180,180,0.35)\" stroke=\"#606060\" stroke-width=\"1\"/>\
+     <line x1=\"{c}\" y1=\"1\" x2=\"{c}\" y2=\"{size}\" stroke=\"#606060\" stroke-width=\"1\"/>\
+     <line x1=\"1\" y1=\"{c}\" x2=\"{size}\" y2=\"{c}\" stroke=\"#606060\" stroke-width=\"1\"/>\
+     </svg>",
+    r = c - 1.0,
+  );
+  (svg, size)
+}
+
 // ── Bounding box computation ─────────────────────────────────────────────
 
 fn primitive_bbox(prim: &Primitive) -> BBox {
@@ -2411,6 +2535,11 @@ fn primitive_bbox(prim: &Primitive) -> BBox {
     | Primitive::Disk { cx, cy, rx, ry, .. } => {
       bb.include_point(cx - rx, cy - ry);
       bb.include_point(cx + rx, cy + ry);
+    }
+    // A marker is a screen-space icon: only its anchor point occupies data
+    // space.
+    Primitive::MarkerPrim { x, y, .. } => {
+      bb.include_point(*x, *y);
     }
     Primitive::DiskSector {
       cx,
@@ -2669,6 +2798,18 @@ fn rotate_primitive(
       full: *full,
       style: style.clone(),
     },
+    // A marker is a screen-space icon anchored on a data point: transforms
+    // move the anchor and leave the icon itself untouched.
+    Primitive::MarkerPrim { x, y, w, h, svg } => {
+      let (x, y) = rp(*x, *y);
+      Primitive::MarkerPrim {
+        x,
+        y,
+        w: *w,
+        h: *h,
+        svg: svg.clone(),
+      }
+    }
   }
 }
 
@@ -2800,6 +2941,13 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       w: *w,
       full: *full,
       style: style.clone(),
+    },
+    Primitive::MarkerPrim { x, y, w, h, svg } => Primitive::MarkerPrim {
+      x: x + dx,
+      y: y + dy,
+      w: *w,
+      h: *h,
+      svg: svg.clone(),
     },
   }
 }
@@ -2989,6 +3137,16 @@ fn scale_primitive(
       full: *full,
       style: style.clone(),
     },
+    Primitive::MarkerPrim { x, y, w, h, svg } => {
+      let (nx, ny) = sp(*x, *y);
+      Primitive::MarkerPrim {
+        x: nx,
+        y: ny,
+        w: *w,
+        h: *h,
+        svg: svg.clone(),
+      }
+    }
   }
 }
 
@@ -4405,6 +4563,19 @@ fn render_primitive(
         }
       }
     }
+    // A screen-space icon (e.g. a Locator's appearance) centered on its
+    // data-space anchor: embed the pre-rendered SVG at its pixel size.
+    Primitive::MarkerPrim { x, y, w, h, svg } => {
+      let scx = coord_x(*x, bb, svg_w);
+      let scy = coord_y(*y, bb, svg_h);
+      out.push_str(&format!(
+        "<svg x=\"{:.2}\" y=\"{:.2}\" width=\"{w:.2}\" height=\"{h:.2}\" viewBox=\"0 0 {w:.2} {h:.2}\">\n",
+        scx - w / 2.0,
+        scy - h / 2.0,
+      ));
+      out.push_str(strip_svg_wrapper(svg));
+      out.push_str("</svg>\n");
+    }
   }
 }
 
@@ -4597,6 +4768,9 @@ fn primitives_to_box_elements(primitives: &[Primitive]) -> Vec<String> {
       }
       Primitive::HalfPlanePrim { .. } => {
         // Unbounded fills have no fixed-coordinate box form; skip
+      }
+      Primitive::MarkerPrim { .. } => {
+        // Screen-space marker icons have no box form; skip
       }
     }
   }
@@ -6615,6 +6789,10 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // HoldForm[expr] → render content
         "HoldForm" if args.len() == 1 => expr_to_svg_markup(&args[0]),
 
+        // Tooltip[content, tip] → render content (the tip only shows on
+        // hover in the Wolfram FrontEnd, which static SVG can't do)
+        "Tooltip" if !args.is_empty() => expr_to_svg_markup(&args[0]),
+
         // Presentation wrappers display their content only.
         "Text" | "TraditionalForm" | "DisplayForm" | "StandardForm"
           if args.len() == 1 =>
@@ -6652,6 +6830,13 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
     // ── Expr::Image → placeholder text (actual embedding happens in grid) ──
     Expr::Image { width, height, .. } => {
       format!("-Image ({}×{})-", width, height)
+    }
+
+    // ── Curried call f[a][b] → head markup + bracketed args, so display
+    // wrappers in the head resolve (e.g. HoldForm[f][x] shows as f[x]) ──
+    Expr::CurriedCall { func, args } => {
+      let parts: Vec<String> = args.iter().map(expr_to_svg_markup).collect();
+      format!("{}[{}]", expr_to_svg_markup(func), parts.join(", "))
     }
 
     // ── Everything else → fallback to expr_to_output ──
@@ -6864,6 +7049,8 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
       "Style" if !args.is_empty() => estimate_display_width(&args[0]),
       // HoldForm[expr] → width of content
       "HoldForm" if args.len() == 1 => estimate_display_width(&args[0]),
+      // Tooltip[content, tip] → width of content (tip is hover-only)
+      "Tooltip" if !args.is_empty() => estimate_display_width(&args[0]),
       // Number-display wrappers estimate the width of their *rendered* form
       // (mantissa × 10^exp, base digits, padded number) rather than the raw
       // `Head[...]` text, so table columns aren't wildly over-sized.
@@ -6934,6 +7121,18 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
     // Expr::Image → width in character units, capped at standard display size.
     // Mathematica's default image display width is ~180pt (= 240 CSS px at 96 DPI).
     Expr::Image { width, .. } => (*width as f64).min(240.0) / 8.4,
+
+    // Curried call f[a][b] → head width + brackets + args, mirroring the
+    // markup branch (so HoldForm[f][x] is sized as f[x]).
+    Expr::CurriedCall { func, args } => {
+      let args_width: f64 = args.iter().map(estimate_display_width).sum();
+      let seps = if args.len() > 1 {
+        (args.len() - 1) as f64 * 2.0
+      } else {
+        0.0
+      };
+      estimate_display_width(func) + 2.0 + args_width + seps
+    }
 
     // Fallback
     _ => expr_to_output(expr).len() as f64,
@@ -7765,6 +7964,34 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     args
   };
+
+  // `Show[image, opts…]` — a raster Image argument passes through: Show
+  // of an image just displays it (sizing options like `ImageSize -> 100`
+  // don't alter the pixel data), e.g. the `Show[ColorData[name, "Image"],
+  // ImageSize -> 100]` gradient swatches of the Demonstrations site.
+  if let Some((first, rest)) = args.split_first()
+    && rest
+      .iter()
+      .all(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+  {
+    let evaled_first;
+    let first_ref = match first {
+      Expr::FunctionCall { name, .. }
+        if name == "Graphics" || name == "Graphics3D" =>
+      {
+        first
+      }
+      Expr::Image { .. } => first,
+      _ => {
+        evaled_first =
+          evaluate_expr_to_expr(first).unwrap_or_else(|_| first.clone());
+        &evaled_first
+      }
+    };
+    if matches!(first_ref, Expr::Image { .. }) {
+      return Ok(first_ref.clone());
+    }
+  }
 
   // Walk the args with an explicit work list: an argument that evaluates
   // to a *list* of graphics (e.g. `Show[{g, {h1, h2}}]`, or a variable
@@ -9802,15 +10029,34 @@ struct ParsedSvg {
 
 /// Parse a numeric attribute value like `width="360"` or `height="225px"` from
 /// the root `<svg ...>` tag. Trailing unit suffixes (px, pt) are stripped.
+/// Find an attribute's value in `header`, accepting either quote style
+/// (image SVG wrappers use single quotes). Returns the raw value text.
+fn find_svg_attr<'a>(header: &'a str, attr: &str) -> Option<&'a str> {
+  for quote in ['"', '\''] {
+    let needle = format!("{attr}={quote}");
+    if let Some(start) = header.find(&needle) {
+      let start = start + needle.len();
+      let rel_end = header[start..].find(quote)?;
+      return Some(&header[start..start + rel_end]);
+    }
+  }
+  None
+}
+
+/// The first `<svg ...` opening tag's header (attributes text). Skips any
+/// leading `<?xml ...?>` declaration, whose `?>` would otherwise be taken
+/// for the end of the root tag.
+fn svg_root_header(svg: &str) -> Option<&str> {
+  let tag_start = svg.find("<svg")?;
+  let rel_end = svg[tag_start..].find('>')?;
+  Some(&svg[tag_start..tag_start + rel_end])
+}
+
 fn parse_svg_numeric_attr(svg: &str, attr: &str) -> Option<f64> {
   // Only consider the first `<svg ...>` opening tag to avoid matching
   // attributes on nested cells.
-  let tag_end = svg.find('>')?;
-  let header = &svg[..tag_end];
-  let needle = format!("{attr}=\"");
-  let start = header.find(&needle)? + needle.len();
-  let rel_end = header[start..].find('"')?;
-  let raw = header[start..start + rel_end].trim();
+  let header = svg_root_header(svg)?;
+  let raw = find_svg_attr(header, attr)?.trim();
   let numeric_end = raw
     .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-'))
     .unwrap_or(raw.len());
@@ -9819,11 +10065,18 @@ fn parse_svg_numeric_attr(svg: &str, attr: &str) -> Option<f64> {
 
 /// Parse width, height, and viewBox from an SVG string
 fn parse_svg_dimensions(svg: &str) -> Option<ParsedSvg> {
-  // Extract viewBox attribute
-  let vb_start = svg.find("viewBox=\"")?;
-  let vb_value_start = vb_start + "viewBox=\"".len();
-  let vb_end = svg[vb_value_start..].find('"')? + vb_value_start;
-  let view_box = svg[vb_value_start..vb_end].to_string();
+  // Extract the viewBox attribute; an SVG without one (e.g. the base64-PNG
+  // wrapper produced for `Image[…]`) synthesizes it from width/height so
+  // raster images can take part in GraphicsRow/Column/Grid layouts.
+  let header = svg_root_header(svg)?;
+  let view_box = match find_svg_attr(header, "viewBox") {
+    Some(vb) => vb.to_string(),
+    None => {
+      let w = parse_svg_numeric_attr(svg, "width")?;
+      let h = parse_svg_numeric_attr(svg, "height")?;
+      format!("0 0 {w} {h}")
+    }
+  };
 
   // Parse viewBox to get dimensions: "x y w h"
   let parts: Vec<f64> = view_box
@@ -9835,8 +10088,10 @@ fn parse_svg_dimensions(svg: &str) -> Option<ParsedSvg> {
   }
   let (vb_w, vb_h) = (parts[2], parts[3]);
 
-  // Extract inner content (everything between first > and last </svg>)
-  let inner_start = svg.find('>')? + 1;
+  // Extract inner content (everything between the root tag's > and the
+  // last </svg>)
+  let root_start = svg.find("<svg")?;
+  let inner_start = root_start + svg[root_start..].find('>')? + 1;
   // Skip past the newline after the opening tag if present
   let inner_start = if svg[inner_start..].starts_with('\n') {
     inner_start + 1
@@ -11248,6 +11503,58 @@ fn render_tabular_svg_grid(
   Some(svg)
 }
 
+/// Resolve a `Column`/`Row` display item for rendering: release a held
+/// `Dynamic[…]` (a static rendering shows its current value; front-ends
+/// re-evaluate the whole display on interaction) and unwrap a top-level
+/// `Text[…]` wrapper, which displays as its content. Any graphics that the
+/// `Dynamic` evaluation captures are embedded in the surrounding layout, not
+/// standalone outputs, so they are dropped from the capture buffer.
+fn resolve_display_item(expr: &Expr) -> Expr {
+  let mut current = expr.clone();
+  if let Expr::FunctionCall { name, args } = &current
+    && name == "Dynamic"
+    && !args.is_empty()
+  {
+    let captured = crate::captured_graphics_count();
+    let evaluated = crate::evaluator::evaluate_expr_to_expr(&args[0]);
+    crate::truncate_captured_graphics(captured);
+    if let Ok(inner) = evaluated {
+      current = inner;
+    }
+  }
+  if let Expr::FunctionCall { name, args } = &current
+    && name == "Text"
+    && args.len() == 1
+  {
+    current = args[0].clone();
+  }
+  // `InputForm[expr]` displays as the InputForm text of `expr`.
+  if let Expr::FunctionCall { name, args } = &current
+    && name == "InputForm"
+    && args.len() == 1
+  {
+    current = Expr::Raw(crate::syntax::expr_to_input_form(&args[0]));
+  }
+  current
+}
+
+/// Render a resolved `Column`/`Row` item that is itself a layout construct
+/// (`Row[…]` / `Column[…]`) to a nested SVG, so mixed text/graphics rows
+/// compose instead of printing as raw InputForm text. `None` for other
+/// expressions (rendered as a plain text line by the caller).
+fn nested_layout_svg(expr: &Expr) -> Option<String> {
+  if let Expr::FunctionCall { name, args } = expr {
+    let args: Vec<Expr> = args.iter().cloned().collect();
+    if name == "Row" {
+      return row_to_svg(&args);
+    }
+    if name == "Column" {
+      return column_to_svg(&args);
+    }
+  }
+  None
+}
+
 /// Render `Column[{expr1, expr2, ...}]` as an SVG with items stacked vertically.
 /// Optionally accepts an alignment argument (Left, Center, Right); defaults to Left.
 pub fn column_to_svg(args: &[Expr]) -> Option<String> {
@@ -11323,16 +11630,29 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
 
   let cells: Vec<Cell> = items
     .iter()
-    .map(|item| match item {
-      Expr::Graphics { svg, .. } => {
-        let (w, h) = parse_svg_wh(svg);
-        Cell::Svg {
-          svg: svg.clone(),
-          width: w,
-          height: h,
+    .map(|item| {
+      let resolved = resolve_display_item(item);
+      match &resolved {
+        Expr::Graphics { svg, .. } => {
+          let (w, h) = parse_svg_wh(svg);
+          Cell::Svg {
+            svg: svg.clone(),
+            width: w,
+            height: h,
+          }
         }
+        _ => match nested_layout_svg(&resolved) {
+          Some(svg) => {
+            let (w, h) = parse_svg_wh(&svg);
+            Cell::Svg {
+              svg,
+              width: w,
+              height: h,
+            }
+          }
+          None => Cell::Text(resolved),
+        },
       }
-      _ => Cell::Text(item.clone()),
     })
     .collect();
 
@@ -11554,16 +11874,29 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
 
   let cells: Vec<Cell> = items
     .iter()
-    .map(|item| match item {
-      Expr::Graphics { svg, .. } => {
-        let (w, h) = parse_svg_wh(svg);
-        Cell::Svg {
-          svg: svg.clone(),
-          width: w,
-          height: h,
+    .map(|item| {
+      let resolved = resolve_display_item(item);
+      match &resolved {
+        Expr::Graphics { svg, .. } => {
+          let (w, h) = parse_svg_wh(svg);
+          Cell::Svg {
+            svg: svg.clone(),
+            width: w,
+            height: h,
+          }
         }
+        _ => match nested_layout_svg(&resolved) {
+          Some(svg) => {
+            let (w, h) = parse_svg_wh(&svg);
+            Cell::Svg {
+              svg,
+              width: w,
+              height: h,
+            }
+          }
+          None => make_text_cell(&resolved),
+        },
       }
-      _ => make_text_cell(item),
     })
     .collect();
 
@@ -12638,6 +12971,12 @@ pub enum ManipulateControl {
     x_initial: f64,
     y_initial: f64,
     label: String,
+    /// InputForm of a write-back function (the second argument of a
+    /// `Locator[Dynamic[var, cb], …]` this control was promoted from).
+    /// Candidate values pass through it — `(cb)[{x, y}]` — before the
+    /// variable is read back, so e.g. `Clip[Round[#], …]` validation runs
+    /// exactly as Wolfram would.
+    write_callback: Option<String>,
   },
   /// An interval control (`ControlType -> IntervalSlider`). Binds its
   /// variable to a 2-vector `{low, high}` describing the selected range.
@@ -12866,17 +13205,33 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         inner.animation_var,
       )
     }
-    None => (
-      crate::syntax::expr_to_input_form(unwrap_dynamic_body(&args[0])),
-      Vec::with_capacity(args.len() - 1),
-      Vec::new(),
-      Vec::new(),
-      None,
-      Vec::new(),
-      Vec::new(),
-      None,
-    ),
+    None => {
+      // `TogglerBar[Dynamic[var], …]` inside the body moves into the
+      // display list (replaced by `Nothing` in the body): a front-end
+      // renders displays as live widgets, whereas inside the rendered
+      // output it would only be a static picture.
+      let mut body_displays = Vec::new();
+      let body_expr = extract_body_togglerbars(
+        unwrap_dynamic_body(&args[0]),
+        &mut body_displays,
+      );
+      (
+        crate::syntax::expr_to_input_form(&body_expr),
+        Vec::with_capacity(args.len() - 1),
+        Vec::new(),
+        body_displays,
+        None,
+        Vec::new(),
+        Vec::new(),
+        None,
+      )
+    }
   };
+  // `Locator[Dynamic[var, cb], …]` markers inside the body drive their
+  // variable interactively: a hidden `ControlType -> None` spec for such a
+  // variable is promoted to a visible Locator-style control below (with
+  // `cb` as its write-back callback).
+  let body_locators = collect_body_locator_callbacks(&args[0]);
   // `Locator` bindings are baked into the body (never rewritten by a
   // display); `ControlType -> None` bindings become live mutable state.
   let mut fixed: Vec<(String, String)> = Vec::new();
@@ -12901,13 +13256,30 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   }
   let arg_items: Vec<Expr> = arg_items
     .into_iter()
-    .map(|spec| match &spec {
-      Expr::FunctionCall { name, args }
-        if name == "Control" && !args.is_empty() =>
-      {
-        args[0].clone()
+    .map(|spec| {
+      // `Dynamic[Control[…]]` (the Demonstrations idiom
+      // `Dynamic@Control@{…}`) is the Control it wraps — the Dynamic
+      // only adds FrontEnd update hints, so it unwraps first.
+      let spec = match &spec {
+        Expr::FunctionCall { name, args }
+          if name == "Dynamic"
+            && matches!(
+              args.first(),
+              Some(Expr::FunctionCall { name: inner, .. }) if inner == "Control"
+            ) =>
+        {
+          args[0].clone()
+        }
+        _ => spec,
+      };
+      match &spec {
+        Expr::FunctionCall { name, args }
+          if name == "Control" && !args.is_empty() =>
+        {
+          args[0].clone()
+        }
+        _ => spec,
       }
-      _ => spec,
     })
     .collect();
   // A control's bounds may reference *other* control variables — Kepler's
@@ -12990,9 +13362,11 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       Expr::FunctionCall { name, .. } if name == "Spacer" => continue,
       _ => {}
     }
-    // Only list-shaped arguments are control specs. Any other trailing
-    // argument (e.g. a `Dynamic[Panel[…]]` of checkboxes) is an extra
-    // display element: capture it so the frontend can render it live.
+    // Only list-shaped arguments are control specs (layout containers of
+    // controls were already flattened into `arg_items` above). Any other
+    // trailing argument (e.g. a `Dynamic[Panel[…]]` of checkboxes) is an
+    // extra display element: capture it so the frontend can render it
+    // live.
     if !matches!(spec, Expr::List(_)) {
       displays.push(crate::syntax::expr_to_input_form(spec));
       continue;
@@ -13047,6 +13421,37 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       ParsedControl::State { name, value } => {
         if let Some((_, orig_form, synth)) = &rename {
           renames.push((orig_form.clone(), synth.clone()));
+        }
+        // A hidden variable driven by an in-body `Locator[Dynamic[…]]`
+        // becomes a visible Locator-style control: re-parse its spec with
+        // the `ControlType -> None` option swapped for a `Locator` marker,
+        // and carry the Dynamic's write-back callback so candidate values
+        // are validated the way Wolfram would.
+        if let Some((_, callback)) =
+          body_locators.iter().find(|(n, _)| *n == name)
+          && let Expr::List(items) = &spec
+        {
+          let promoted: Vec<Expr> = items
+            .iter()
+            .filter(|it| !is_control_type_rule(it))
+            .cloned()
+            .chain(std::iter::once(Expr::Identifier("Locator".to_string())))
+            .collect();
+          if let Some(ParsedControl::Visible {
+            control: mut c,
+            enabled: enabled2,
+            ..
+          }) = parse_manipulate_control(&Expr::List(promoted.into()))
+          {
+            if let ManipulateControl::Slider2D { write_callback, .. } = &mut c {
+              write_callback.clone_from(callback);
+            }
+            if let Some(cond) = enabled2 {
+              control_enabled.push((c.name().to_string(), cond));
+            }
+            controls.push(c);
+            continue;
+          }
         }
         state.push((name, value));
       }
@@ -13122,6 +13527,125 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animation_running,
     appearance_none,
   })
+}
+
+/// Whether a control-spec item is a `ControlType -> …` option rule.
+fn is_control_type_rule(item: &Expr) -> bool {
+  matches!(
+    item,
+    Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlType")
+  )
+}
+
+/// The variables driven by `Locator[Dynamic[var, cb], …]` markers inside a
+/// Manipulate body, each with the InputForm of its write-back callback (the
+/// Dynamic's second argument), in first-seen order.
+fn collect_body_locator_callbacks(
+  expr: &Expr,
+) -> Vec<(String, Option<String>)> {
+  fn walk(expr: &Expr, found: &mut Vec<(String, Option<String>)>) {
+    match expr {
+      Expr::FunctionCall { name, args } => {
+        if name == "Locator"
+          && let Some(Expr::FunctionCall {
+            name: dname,
+            args: dargs,
+          }) = args.first()
+          && dname == "Dynamic"
+          && let Some(Expr::Identifier(var)) = dargs.first()
+          && !found.iter().any(|(n, _)| n == var)
+        {
+          let callback = dargs.get(1).map(crate::syntax::expr_to_input_form);
+          found.push((var.clone(), callback));
+        }
+        for a in args {
+          walk(a, found);
+        }
+      }
+      Expr::List(items) => {
+        for it in items {
+          walk(it, found);
+        }
+      }
+      Expr::CompoundExpr(items) => {
+        for it in items {
+          walk(it, found);
+        }
+      }
+      _ => {}
+    }
+  }
+  let mut found = Vec::new();
+  walk(expr, &mut found);
+  found
+}
+
+/// Replace every `TogglerBar[Dynamic[var], …]` in a Manipulate body with
+/// `Nothing`, pushing each one's InputForm onto `displays` so the front-end
+/// renders it as a live widget instead of a static picture.
+fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "TogglerBar"
+        && matches!(
+          args.first(),
+          Some(Expr::FunctionCall { name: dname, args: dargs })
+            if dname == "Dynamic"
+              && matches!(dargs.first(), Some(Expr::Identifier(_)))
+        ) =>
+    {
+      displays.push(crate::syntax::expr_to_input_form(expr));
+      Expr::Identifier("Nothing".to_string())
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|a| extract_body_togglerbars(a, displays))
+        .collect::<Vec<_>>()
+        .into(),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|it| extract_body_togglerbars(it, displays))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    Expr::CompoundExpr(items) => Expr::CompoundExpr(
+      items
+        .iter()
+        .map(|it| extract_body_togglerbars(it, displays))
+        .collect(),
+    ),
+    other => other.clone(),
+  }
+}
+
+/// Apply a control's write-back callback to a candidate value: evaluates
+/// `(cb)[value]` under the current bindings (the callback usually assigns
+/// the control variable itself, possibly transformed or rejected), then
+/// reads the variable back. Returns its new InputForm value, or `None` when
+/// evaluation fails.
+pub fn apply_manipulate_callback(
+  bindings: &[(String, String)],
+  callback: &str,
+  value: &str,
+  var: &str,
+) -> Option<String> {
+  let body = format!("({callback})[{value}]; {var}");
+  let code = manipulate_block_code(&body, bindings);
+  crate::interpret_to_expr(&code)
+    .ok()
+    .map(|e| crate::syntax::expr_to_input_form(&e))
+}
+
+/// Parse an InputForm `{x, y}` point (as stored in a Manipulate binding)
+/// back into coordinates.
+pub fn parse_manipulate_point(code: &str) -> Option<(f64, f64)> {
+  let expr = crate::interpret_to_expr(code).ok()?;
+  list2_f64(&expr)
 }
 
 /// A Manipulate body wrapped in `Dynamic[…]` displays the Dynamic's first
@@ -13542,6 +14066,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     x_initial,
     y_initial,
     label: var,
+    write_callback: None,
   };
   Some(ManipulateSpec {
     body_code,
@@ -13590,6 +14115,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     x_initial: (x_min + x_max) / 2.0,
     y_initial: (y_min + y_max) / 2.0,
     label: "pos".to_string(),
+    write_callback: None,
   };
   Some(ManipulateSpec {
     body_code,
@@ -13765,8 +14291,12 @@ fn manipulate_label_runs(expr: &Expr, italic: bool) -> Vec<LabelRun> {
           .unwrap_or_default()
       }
       // Presentation wrappers whose content may nest styling/subscripts —
-      // recurse rather than defer to OutputForm.
-      "Text" | "DisplayForm" | "TraditionalForm" => args
+      // recurse rather than defer to OutputForm. `Tooltip[label, tip]`
+      // displays its label (the tip only appears on hover in the Wolfram
+      // FrontEnd), so a control spec like
+      // `{{v, True, Tooltip["source", "Show source"]}, {True, False}}`
+      // labels the control "source".
+      "Text" | "DisplayForm" | "TraditionalForm" | "Tooltip" => args
         .first()
         .map(|a| manipulate_label_runs(a, italic))
         .unwrap_or_default(),
@@ -14042,6 +14572,7 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
           x_initial: x,
           y_initial: y,
           label,
+          write_callback: None,
         },
         enabled,
         min_code: None,
@@ -14223,6 +14754,7 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
         x_initial,
         y_initial,
         label,
+        write_callback: None,
       },
       enabled,
       min_code: None,
@@ -14424,11 +14956,20 @@ fn discrete_choice_rule(item: &Expr) -> Option<(&Expr, &Expr)> {
 }
 
 /// Render a discrete-choice label. A string label is shown without its
-/// surrounding quotes; anything else falls back to its InputForm.
+/// surrounding quotes; presentation wrappers (`Style["P", Italic]`,
+/// `Row[{…}]`) render as their display text via the label-run renderer;
+/// anything that renders empty falls back to its InputForm.
 fn discrete_choice_label(expr: &Expr) -> String {
   match expr {
     Expr::String(s) => s.clone(),
-    other => crate::syntax::expr_to_input_form(other),
+    other => {
+      let flat = flatten_label_runs(&manipulate_label_runs(other, false));
+      if flat.is_empty() {
+        crate::syntax::expr_to_input_form(other)
+      } else {
+        flat
+      }
+    }
   }
 }
 
@@ -14439,13 +14980,34 @@ fn discrete_choice_label(expr: &Expr) -> String {
 fn discrete_choice_label_svg(label: &Expr) -> Option<String> {
   match label {
     Expr::Graphics { svg, .. } => Some(svg.clone()),
+    // A raster image label (e.g. the `ColorData[…, "Image"]` swatches of a
+    // gradient picker) wraps its pixels as an SVG document.
+    Expr::Image {
+      width,
+      height,
+      channels,
+      data,
+      ..
+    } => Some(crate::functions::image_ast::image_to_svg_document(
+      *width, *height, *channels, data,
+    )),
     // Evaluating through the interpreter (not `evaluate_expr_to_expr`)
     // is what renders a held `Graphics[…]` call — or a user-defined icon
-    // function like `myIcon[2]` — to SVG.
+    // function like `myIcon[2]` — to SVG. A call producing an `Image`
+    // (e.g. `Show[ColorData[name, "Image"], ImageSize -> 100]`) recurses
+    // into the raster arm above.
     Expr::FunctionCall { .. } => {
       let code = crate::syntax::expr_to_input_form(label);
       match crate::interpret_with_stdout(&code) {
-        Ok(result) => result.graphics,
+        Ok(result) => {
+          if result.graphics.is_some() {
+            return result.graphics;
+          }
+          match crate::interpret_to_expr(&code) {
+            Ok(img @ Expr::Image { .. }) => discrete_choice_label_svg(&img),
+            _ => None,
+          }
+        }
         Err(_) => None,
       }
     }
@@ -14995,6 +15557,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         x_initial,
         y_initial,
         label,
+        ..
       } => {
         ctrl_parts.push(format!(
           r#"{{"kind":"slider2d","name":"{}","label":"{}","xMin":{},"xMax":{},"yMin":{},"yMax":{},"xInit":{},"yInit":{}}}"#,
@@ -15223,6 +15786,15 @@ pub enum DisplayNode {
     on: String,
     off: String,
   },
+  /// One choice of a `TogglerBar[Dynamic[var], …]`: a toggle button that
+  /// adds `value` to (or removes it from) the list variable. `mutation` is
+  /// the ready-to-evaluate write-back assignment; `selected` is whether the
+  /// value is currently a member of the list.
+  Toggler {
+    label: Box<DisplayNode>,
+    mutation: String,
+    selected: bool,
+  },
   /// Any unrecognized leaf, rendered to SVG (graphics) or text.
   Static { svg: Option<String>, text: String },
 }
@@ -15354,6 +15926,14 @@ fn display_expr_to_node(
         DisplayNode::Row(list_children(&args[0], bindings, probes, ons))
       }
       "Checkbox" => checkbox_node(args, probes, ons),
+      // `TogglerBar[Dynamic[var], {v1 -> label1, …}]`: a row of toggle
+      // buttons; clicking one adds/removes its value from the list `var`.
+      "TogglerBar" if args.len() >= 2 => {
+        match togglerbar_node(args, bindings, probes, ons) {
+          Some(node) => node,
+          None => static_leaf_node(expr, bindings),
+        }
+      }
       _ => static_leaf_node(expr, bindings),
     },
     // A bare list of display elements stacks vertically, like `Column`.
@@ -15432,6 +16012,74 @@ fn checkbox_node(
   }
 }
 
+/// Build a `TogglerBar[Dynamic[var], choices]` display: a Row of Toggler
+/// buttons. Each choice is `value -> label` (or a plain value, labelled by
+/// itself); clicking a button toggles the value's membership in the list
+/// `var`. Returns `None` when the arguments don't have that shape (the
+/// caller falls back to a static rendering).
+fn togglerbar_node(
+  args: &[Expr],
+  bindings: &[(String, String)],
+  probes: &mut Vec<String>,
+  ons: &mut Vec<String>,
+) -> Option<DisplayNode> {
+  let var = match args.first() {
+    Some(Expr::FunctionCall { name, args: dargs })
+      if name == "Dynamic" && !dargs.is_empty() =>
+    {
+      match &dargs[0] {
+        Expr::Identifier(v) => v.clone(),
+        _ => return None,
+      }
+    }
+    _ => return None,
+  };
+  // The choice list may be held (e.g. `Thread[Range[1, 4] -> {…}]`).
+  let choices_expr = match &args[1] {
+    l @ Expr::List(_) => l.clone(),
+    other => crate::evaluator::evaluate_expr_to_expr(other).ok()?,
+  };
+  let Expr::List(choices) = &choices_expr else {
+    return None;
+  };
+  // The current selection, for the per-choice `selected` state.
+  let current =
+    crate::evaluator::evaluate_expr_to_expr(&Expr::Identifier(var.clone()))
+      .ok();
+  let mut buttons = Vec::with_capacity(choices.len());
+  for choice in choices {
+    let (value, label) = match choice {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref()),
+      other => (other, other),
+    };
+    let value_code = crate::syntax::expr_to_input_form(value);
+    let selected = match &current {
+      Some(Expr::List(items)) => items
+        .iter()
+        .any(|it| crate::syntax::expr_to_input_form(it) == value_code),
+      Some(single) => crate::syntax::expr_to_input_form(single) == value_code,
+      None => false,
+    };
+    let mutation = format!(
+      "{var} = If[MemberQ[{var}, {value_code}], DeleteCases[{var}, \
+       {value_code}], Append[{var}, {value_code}]]"
+    );
+    buttons.push(DisplayNode::Toggler {
+      label: Box::new(display_expr_to_node(label, bindings, probes, ons)),
+      mutation,
+      selected,
+    });
+  }
+  Some(DisplayNode::Row(buttons))
+}
+
 /// Fill in each checkbox's `checked` flag from the batched probe results, in
 /// the same pre-order the probes were collected.
 fn assign_checkbox_state(
@@ -15452,6 +16100,9 @@ fn assign_checkbox_state(
       for c in children {
         assign_checkbox_state(c, flags, idx);
       }
+    }
+    DisplayNode::Toggler { label, .. } => {
+      assign_checkbox_state(label, flags, idx)
     }
     DisplayNode::Checkbox { checked, .. } => {
       if let Some(f) = flags.get(*idx) {
@@ -15542,6 +16193,16 @@ fn display_node_to_json(node: &DisplayNode) -> String {
         json_escape_manipulate(off),
       ),
     },
+    DisplayNode::Toggler {
+      label,
+      mutation,
+      selected,
+    } => format!(
+      r#"{{"kind":"toggler","label":{},"mutation":"{}","selected":{}}}"#,
+      display_node_to_json(label),
+      json_escape_manipulate(mutation),
+      selected,
+    ),
     DisplayNode::Static { svg, text } => match svg {
       Some(svg) => format!(
         r#"{{"kind":"static","svg":"{}"}}"#,

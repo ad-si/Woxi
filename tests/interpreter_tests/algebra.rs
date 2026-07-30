@@ -7636,6 +7636,23 @@ mod find_root {
   }
 
   #[test]
+  fn multivariate_through_downvalues() {
+    // Regression: the equations of a multivariate FindRoot expand through
+    // user-defined downvalues before the Jacobian is built. Previously
+    // `r[s, t]` stayed opaque, the symbolic derivative could not be
+    // evaluated numerically, and the call emitted FindRoot::nlnum and
+    // returned unevaluated (the Doyle-spirals Demonstration hit this).
+    assert_eq!(
+      interpret(
+        "r[s_, t_] := s^2 - t - 2; \
+         FindRoot[{r[s, t] == 0, s - t == 1}, {{s, 1.5}, {t, 0}}]"
+      )
+      .unwrap(),
+      "{s -> 1.618033988749895, t -> 0.6180339887498949}"
+    );
+  }
+
+  #[test]
   fn trivial() {
     assert_eq!(interpret("FindRoot[x, {x, 5}]").unwrap(), "{x -> 0.}");
   }

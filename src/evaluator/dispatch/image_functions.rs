@@ -58,6 +58,38 @@ const SCHEME_3: [(f64, f64, f64); 10] = [
   (231.0 / 255.0, 7.0 / 255.0, 33.0 / 255.0),
 ];
 
+/// A horizontal gradient strip rendered as an Image — what
+/// `ColorData[name, "Image"]` returns, shown as the swatch in gradient
+/// pickers (e.g. a Manipulate color-scheme dropdown).
+fn gradient_strip_image(controls: &[(f64, f64, f64)]) -> Expr {
+  const W: u32 = 300;
+  const H: u32 = 30;
+  let mut data = Vec::with_capacity((W * H * 3) as usize);
+  let row: Vec<(f64, f64, f64)> = (0..W)
+    .map(|x| {
+      crate::functions::chart::gradient_color_at(
+        controls,
+        x as f64 / (W - 1) as f64,
+      )
+    })
+    .collect();
+  for _ in 0..H {
+    for &(r, g, b) in &row {
+      data.push(r);
+      data.push(g);
+      data.push(b);
+    }
+  }
+  Expr::Image {
+    width: W,
+    height: H,
+    channels: 3,
+    data: std::sync::Arc::new(data),
+    image_type: crate::syntax::ImageType::Real32,
+    color_space: None,
+  }
+}
+
 /// The k-th color of an indexed scheme. Scheme 1 is generated rather than
 /// tabulated: its hues start at 0.67 and advance by √5 - 2 turns, and every
 /// component is mapped into 0.24 … 0.6 — so it never repeats and accepts any
@@ -520,6 +552,9 @@ pub fn dispatch_image_functions(
     "Thumbnail" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::image_ast::thumbnail_ast(args));
     }
+    "ImageEffect" if args.len() == 2 => {
+      return Some(crate::functions::image_ast::image_effect_ast(args));
+    }
     "ImageAdjust" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::image_ast::image_adjust_ast(args));
     }
@@ -674,6 +709,28 @@ pub fn dispatch_image_functions(
     // ColorData[n, "ColorList"]: the ordered list of colors in indexed
     // scheme n (e.g. `ColorData[97, "ColorList"]` — the default plot palette).
     "ColorData" if args.len() == 2 => {
+      // ColorData[name, t]: sample the named gradient at parameter t
+      // (clamped to [0, 1]), and ColorData[name, "Image"]: a horizontal
+      // gradient strip image (the swatch Wolfram shows in gradient
+      // pickers).
+      if let Expr::String(scheme) = &args[0]
+        && let Some(controls) =
+          crate::functions::chart::named_color_scheme(scheme)
+      {
+        if matches!(&args[1], Expr::String(p) if p == "Image") {
+          return Some(Ok(gradient_strip_image(controls)));
+        }
+        if !matches!(&args[1], Expr::String(_))
+          && let Some(t) = crate::functions::math_ast::try_eval_to_f64(&args[1])
+        {
+          let (r, g, b) =
+            crate::functions::chart::gradient_color_at(controls, t);
+          return Some(Ok(Expr::FunctionCall {
+            name: "RGBColor".to_string(),
+            args: vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)].into(),
+          }));
+        }
+      }
       // ColorData[n, k]: the k-th color of indexed scheme n.
       if let (Expr::Integer(n), Expr::Integer(k)) = (&args[0], &args[1])
         && let Some((r, g, b)) = indexed_scheme_color(*n, *k)

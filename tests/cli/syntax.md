@@ -123,6 +123,23 @@ FullForm[a[[1,2,3]]]
 ```
 
 
+## Part of an operator expression (`(a /. b)[[i]]`)
+
+`[[…]]` binds tighter than every infix operator, so a parenthesized
+operator expression keeps its parentheses when echoed — dropping them
+would change what re-parsing produces.
+
+```scrut
+$ wo '({9, 8} /. 8 -> 5)[[1]]'
+9
+```
+
+```scrut
+$ wo 'ToString[Hold[(a /. b :> c)[[1]]], InputForm]'
+Hold[(a /. b :> c)[[1]]]
+```
+
+
 ## Increment (`++`) and Decrement (`--`)
 
 `x++` increments `x` by 1 and returns the old value.

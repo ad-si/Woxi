@@ -16,11 +16,11 @@
 //! | `f` | normal expression: `<i32 nargs><head expr><arg expr>*nargs`         |
 //! | `n` | integer raw array: `<i32 type><i32 rank><i32 dims><packed ints>`    |
 //! | `e` | real packed array: `<i32 rank><i32 dims><packed f64>`               |
-//! | `b` | byte raw array: `<i32 rank><i32 dims><packed unsigned ints>`        |
+//! | `b` | byte raw array: `<i32 rank><i32 dims><raw u8>`                      |
 //!
-//! The `b` token carries the payload of a `RawArray` (e.g. the pixel data
-//! of a raster image inside `RasterBox[CompressedData["…"]]`); its elements
-//! are unsigned, unlike the sign-extended `n` token.
+//! The `b` token carries raster pixel payloads — the `RawArray` data inside
+//! `RasterBox[CompressedData["…"]]` and inline `Image[…]` literals; its
+//! elements are unsigned, unlike the sign-extended `n` token.
 
 use crate::syntax::Expr;
 
@@ -203,36 +203,24 @@ fn read_integer_array(data: &[u8], pos: &mut usize) -> Option<Expr> {
   Some(nest(&dims, &mut values.into_iter()))
 }
 
-/// `b` token — raw byte array (the payload of a `RawArray`). Like the `n`
-/// token the element width is inferred from the trailing payload, but the
-/// values are unsigned: `RawArray["UnsignedInteger8", …]` pixel data must
-/// come back as 0–255, not sign-extended to −128…127.
+/// `b` token — packed unsigned byte array: `<i32 rank><i32 dims><raw u8>`.
+/// This is how the FrontEnd stores raster pixel data — the `RawArray`
+/// payload inside `RasterBox[CompressedData["…"]]` and inline `Image[…]`
+/// literals. Bytes come back as 0–255, not sign-extended like `n`.
 fn read_byte_array(data: &[u8], pos: &mut usize) -> Option<Expr> {
   let rank = read_i32(data, pos)?;
   let dims = read_dims(data, pos, rank)?;
   let count: usize = dims.iter().product();
-  let values = if count == 0 {
-    Vec::new()
-  } else {
-    let rest = data.len().checked_sub(*pos)?;
-    if rest % count != 0 {
-      return None;
-    }
-    let width = rest / count;
-    if !matches!(width, 1 | 2 | 4 | 8) {
-      return None;
-    }
-    let mut vals = Vec::with_capacity(count);
-    for _ in 0..count {
-      let mut buf = [0u8; 8];
-      buf[..width].copy_from_slice(&data[*pos..*pos + width]);
-      let raw = u64::from_le_bytes(buf);
-      vals.push(Expr::Integer(raw as i128));
-      *pos += width;
-    }
-    vals
-  };
-  Some(nest(&dims, &mut values.into_iter()))
+  let end = pos.checked_add(count)?;
+  if end > data.len() {
+    return None;
+  }
+  let vals: Vec<Expr> = data[*pos..end]
+    .iter()
+    .map(|&byte| Expr::Integer(byte as i128))
+    .collect();
+  *pos = end;
+  Some(nest(&dims, &mut vals.into_iter()))
 }
 
 /// `e` token — packed real (f64) array.
@@ -271,6 +259,14 @@ mod tests {
   fn reads_big_integer_token() {
     // I token: length-prefixed ASCII decimal
     assert_eq!(render(b"!boRI\x02\x00\x00\x0010"), "10");
+  }
+
+  #[test]
+  fn reads_byte_array_token() {
+    // b token: rank 2, dims {2, 3}, then raw bytes — the layout the
+    // FrontEnd uses for raster pixel data in inline Image literals.
+    let data = b"!boRb\x02\x00\x00\x00\x02\x00\x00\x00\x03\x00\x00\x00\x00\x7f\xff\x01\x02\x03";
+    assert_eq!(render(data), "{{0, 127, 255}, {1, 2, 3}}");
   }
 
   #[test]

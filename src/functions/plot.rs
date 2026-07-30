@@ -185,6 +185,16 @@ pub(crate) fn evaluate_at_xy(
   let sub1 = substitute_var(body, xvar, &Expr::Real(xval));
   let sub2 = substitute_var(&sub1, yvar, &Expr::Real(yval));
   let result = evaluate_expr_to_expr(&sub2).ok()?;
+  if let Some(v) = try_eval_to_f64(&result) {
+    return Some(v);
+  }
+  // The body may reference a variable (e.g. `lineA` holding `-5 - 3 x + 2 y`)
+  // that only resolved to an x/y expression during evaluation — after the
+  // substitution above already ran. Substitute into the evaluated form and
+  // evaluate once more.
+  let sub1 = substitute_var(&result, xvar, &Expr::Real(xval));
+  let sub2 = substitute_var(&sub1, yvar, &Expr::Real(yval));
+  let result = evaluate_expr_to_expr(&sub2).ok()?;
   try_eval_to_f64(&result)
 }
 

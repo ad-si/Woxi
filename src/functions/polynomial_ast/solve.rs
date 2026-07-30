@@ -5676,29 +5676,40 @@ fn find_root_multivariate(
   }
   let n = vars.len();
 
-  // Equations as f_i = lhs - rhs (or bare expression).
+  // Equations as f_i = lhs - rhs (or bare expression). Each side is
+  // evaluated symbolically first so user-defined functions expand through
+  // their downvalues (`r[s, t, 0, 1]` becomes its explicit formula) —
+  // FindRoot holds its arguments, so this is the first chance to do so.
+  // An expression that fails to evaluate stays as written and is handled
+  // numerically per iteration point instead.
   let eqns: Vec<Expr> = match eqns_arg {
     Expr::List(es) => es.iter().map(build_find_root_func).collect(),
     other => vec![build_find_root_func(other)],
   };
+  let eqns: Vec<Expr> = eqns
+    .iter()
+    .map(|f| {
+      crate::evaluator::evaluate_expr_to_expr(f).unwrap_or_else(|_| f.clone())
+    })
+    .collect();
   if eqns.len() != n {
     return Err(InterpreterError::EvaluationError(
       "FindRoot: number of equations must match number of variables".into(),
     ));
   }
 
-  // Jacobian J[i][j] = d f_i / d x_j (symbolic).
-  let mut jac: Vec<Vec<Expr>> = Vec::with_capacity(n);
+  // Jacobian J[i][j] = d f_i / d x_j (symbolic where possible). An entry
+  // that cannot be differentiated symbolically (e.g. the equation still
+  // contains an opaque function call) is left `None` and approximated by a
+  // central finite difference at each iteration point.
+  let mut jac: Vec<Vec<Option<Expr>>> = Vec::with_capacity(n);
   for f in &eqns {
     let mut row = Vec::with_capacity(n);
     for v in &vars {
       let d = crate::functions::calculus_ast::differentiate_expr(f, v)
         .map(simplify)
-        .map_err(|_| {
-          InterpreterError::EvaluationError(
-            "FindRoot: cannot differentiate equation".into(),
-          )
-        })?;
+        .ok()
+        .filter(|d| !contains_unevaluated_d(d));
       row.push(d);
     }
     jac.push(row);
@@ -5718,7 +5729,25 @@ fn find_root_multivariate(
     let mut jm = vec![vec![0.0; n]; n];
     for (i, row) in jac.iter().enumerate() {
       for (j, dij) in row.iter().enumerate() {
-        jm[i][j] = find_root_eval_multivar(dij, &vars, &x)?;
+        let entry = match dij {
+          Some(d) => find_root_eval_multivar(d, &vars, &x).ok(),
+          None => None,
+        };
+        jm[i][j] = match entry {
+          Some(v) => v,
+          // Central finite difference for entries without a usable
+          // symbolic derivative.
+          None => {
+            let h = 1e-7 * x[j].abs().max(1.0);
+            let mut xp = x.clone();
+            xp[j] += h;
+            let mut xm = x.clone();
+            xm[j] -= h;
+            let fp = find_root_eval_multivar(&eqns[i], &vars, &xp)?;
+            let fm = find_root_eval_multivar(&eqns[i], &vars, &xm)?;
+            (fp - fm) / (2.0 * h)
+          }
+        };
       }
     }
     let neg_f: Vec<f64> = fv.iter().map(|v| -v).collect();

@@ -1912,6 +1912,42 @@ mod plot3d {
       );
     }
 
+    // A scene with many spheres scales each sphere's tessellation with
+    // its relative size, so a Demonstrations-style packing of hundreds of
+    // spheres renders to a tractable SVG instead of hundreds of thousands
+    // of triangles.
+    #[test]
+    fn graphics3d_many_spheres_tessellate_adaptively() {
+      let one = export_svg("Graphics3D[Sphere[{0, 0, 0}, 0.1]]");
+      let many =
+        export_svg("Graphics3D[Table[Sphere[{i, j, 0}, 0.1], {i, 8}, {j, 8}]]");
+      let tris = |svg: &str| svg.matches("<polygon").count();
+      // 64 tiny spheres must use far fewer triangles each than a lone
+      // full-detail sphere (768 triangles).
+      assert!(
+        tris(&many) < 64 * tris(&one) / 4,
+        "expected adaptive tessellation: 1 sphere = {} triangles, \
+         64 spheres = {} triangles",
+        tris(&one),
+        tris(&many)
+      );
+    }
+
+    // Symbolic viewpoints select axis-aligned cameras: ViewPoint -> Above
+    // looks straight down, giving a different projection than the default
+    // oblique camera.
+    #[test]
+    fn graphics3d_view_point_above() {
+      let above =
+        export_svg("Graphics3D[Cuboid[], ViewPoint -> Above, Boxed -> False]");
+      let default = export_svg("Graphics3D[Cuboid[], Boxed -> False]");
+      assert!(above.contains("<polygon"), "top view must render");
+      assert_ne!(
+        above, default,
+        "ViewPoint -> Above must change the projection"
+      );
+    }
+
     // A numeric PlotRange pins the frame: with PlotRange -> 10 a unit
     // sphere occupies a small part of the drawing, so its projected
     // extent must be far smaller than with the fitted default.
@@ -6253,6 +6289,50 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "Graphics3D[{{Red, Sphere[{0,0,0}]}, Sphere[{2,0,0}]}]"
       ));
     }
+  }
+}
+
+mod pane_wrapper_display {
+  use super::*;
+
+  // In visual hosts (playground, studio — anything driven by
+  // interpret_with_stdout), the transparent Pane wrapper displays its
+  // content, so a Demonstrations-style Manipulate body like
+  // `Pane[Column[{title, arrow, Graphics[…]}, Center], ImageSize -> 500]`
+  // renders the column with its embedded graphic instead of a textual echo.
+  #[test]
+  fn pane_of_column_with_graphics_renders_in_visual_mode() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Pane[Column[{Style[HoldForm[TranslationTransform][\
+         Tooltip[{\"px\", \"py\"}, \"Translation\"]], 15, Bold], \
+         Style[\"\\[DoubleDownArrow]\", 25], \
+         Graphics[{Opacity[0.5], Blue, Rectangle[]}, Frame -> True]}, \
+         Center], ImageSize -> 500]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.expect("pane content should render");
+    // The typeset column shows the resolved title (HoldForm/Tooltip display
+    // their content), the ⇓ arrow, and embeds the graphic as a nested SVG.
+    assert!(
+      svg.contains("TranslationTransform[{px, py}]"),
+      "expected resolved title text in: {}",
+      &svg[..300.min(svg.len())]
+    );
+    assert!(svg.contains('\u{21D3}'), "expected ⇓ arrow row");
+    assert!(svg.contains("<svg x="), "expected embedded graphic");
+  }
+
+  // The CLI (plain `interpret`, matching wolframscript) keeps the
+  // symbolic echo — the unwrap is a visual-host affordance only.
+  #[test]
+  fn pane_stays_symbolic_in_cli_mode() {
+    clear_state();
+    assert_eq!(
+      interpret("Pane[Column[{1, 2}], ImageSize -> 500]").unwrap(),
+      "Pane[Column[{1, 2}], ImageSize -> 500]"
+    );
   }
 }
 
@@ -10922,6 +11002,30 @@ mod manipulate {
     );
   }
 
+  #[test]
+  fn row_wrapped_controls_are_not_vsform() {
+    // A layout expression holding Control[…] calls (the Demonstrations
+    // custom-control-row idiom) is a valid control specification, not a
+    // malformed variable spec — including `Dynamic[Control[…]]` wrappers
+    // and loose label strings inside the Row. It echoes back unchanged.
+    let res = woxi::interpret_with_stdout(
+      "Manipulate[x + y, Row[{\"lbl\", Spacer[10], \
+       Control@{{x, 4, \"X\"}, Range[1, 5]}, \
+       Dynamic[Control@{{y, 1}, 0, 10}]}]]",
+    )
+    .unwrap();
+    assert!(
+      !res.warnings.iter().any(|w| w.contains("vsform")),
+      "unexpected vsform message: {:?}",
+      res.warnings
+    );
+    assert_eq!(
+      res.result,
+      "Manipulate[x + y, lblSpacer[10]Control[{{x, 4, X}, \
+       Range[1, 5]}]Dynamic[Control[{{y, 1}, 0, 10}]]]"
+    );
+  }
+
   // ── Spec extraction / Block substitution (used by Playground / Studio) ──
 
   use woxi::functions::graphics::{
@@ -11114,6 +11218,34 @@ mod manipulate {
     assert!(!manipulate_spec_to_json(&spec).contains("animated"));
     assert!(!spec.appearance_none);
     assert!(!manipulate_spec_to_json(&spec).contains("appearanceNone"));
+  }
+
+  /// Controls wrapped in a `Row[…]` layout (with loose labels, `Spacer`
+  /// padding, and `Dynamic[Control[…]]` wrappers — the Doyle-spirals
+  /// Demonstration idiom) extract in display order: the loose string
+  /// becomes a heading row and each Control contributes its variable.
+  #[test]
+  fn spec_row_wrapped_controls() {
+    let expr = interpret_to_expr(
+      "Manipulate[{p, q}, Row[{\"spiral\", Spacer[13], \
+       Dynamic@Control@{{p, 4, \"P\"}, Range[1, 25]}, \
+       Control@{{q, 30}, Range[3, 30]}}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("row-wrapped controls");
+    let names: Vec<&str> = spec.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, vec!["", "p", "q"]); // heading row binds no variable
+    match &spec.controls[1] {
+      ManipulateControl::Discrete {
+        values,
+        initial_index,
+        ..
+      } => {
+        assert_eq!(values.len(), 25);
+        assert_eq!(*initial_index, 3); // initial value 4
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
   }
 
   /// End-to-end regression for the animated `I^t` ParametricPlot widget:
@@ -11331,6 +11463,33 @@ mod manipulate {
         assert_eq!(*initial, 0.0);
       }
       _ => panic!("expected continuous control for b"),
+    }
+  }
+
+  #[test]
+  fn spec_tooltip_label_shows_its_content() {
+    // A Tooltip label — `{{v, True, Tooltip["source", "Show source
+    // object"]}, {True, False}}`, as in the Wolfram Demonstrations
+    // "Understanding 2D Translation" notebook — displays its first
+    // argument (the tip only appears on hover in the FrontEnd).
+    let expr = interpret_to_expr(
+      "Manipulate[If[rsource, 1, 0], {{rsource, True, Tooltip[\"source\", \"Show source object\"]}, {True, False}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    assert_eq!(spec.controls.len(), 1);
+    match &spec.controls[0] {
+      ManipulateControl::Discrete {
+        label,
+        values,
+        initial_index,
+        ..
+      } => {
+        assert_eq!(label, "source");
+        assert_eq!(values, &["True".to_string(), "False".to_string()]);
+        assert_eq!(*initial_index, 0);
+      }
+      _ => panic!("expected discrete control for rsource"),
     }
   }
 
@@ -15484,6 +15643,93 @@ mod color_data_indexed {
     assert_eq!(interpret("Head[ColorData[2, 1]]").unwrap(), "RGBColor");
   }
 
+  // `Dynamic[…]` inside a Graphics primitive list displays as its current
+  // value; assignments made inside the Dynamic run (the Demonstrations
+  // pattern computes shared values there).
+  #[test]
+  fn dynamic_inside_graphics_renders_its_content() {
+    clear_state();
+    let svg = export_svg(
+      "Graphics[{Dynamic[{p = {1, 1}; Disk[p, 1], Line[{{0, 0}, p}]}]}]",
+    );
+    assert!(svg.contains("<ellipse"), "Disk from Dynamic content: {svg}");
+    assert!(
+      svg.contains("<polyline"),
+      "Line from Dynamic content: {svg}"
+    );
+  }
+
+  // `Tooltip[g, label]` inside Graphics draws only `g`; the label must not
+  // leak into the rendering as stray primitives or text.
+  #[test]
+  fn tooltip_inside_graphics_renders_only_content() {
+    clear_state();
+    let svg =
+      export_svg("Graphics[{Tooltip[Disk[{0, 0}, 1], Disk[{5, 5}, 1]]}]");
+    assert_eq!(svg.matches("<ellipse").count(), 1, "{svg}");
+  }
+
+  // A `Locator` is a screen-space marker icon centered on its point: the
+  // default appearance is the crosshair, a custom appearance graphic keeps
+  // its own ImageSize in pixels.
+  #[test]
+  fn locator_renders_as_marker_icon() {
+    clear_state();
+    let svg = export_svg("Graphics[{Locator[{1, 2}]}]");
+    assert!(
+      svg.contains("width=\"16.00\" height=\"16.00\""),
+      "default crosshair marker: {svg}"
+    );
+    let svg = export_svg(
+      "Graphics[{Locator[Dynamic[{1, 2}], \
+       Graphics[{Yellow, Disk[{0, 0}, 1]}, ImageSize -> 20]]}]",
+    );
+    assert!(
+      svg.contains("width=\"20.00\" height=\"20.00\""),
+      "appearance keeps its ImageSize: {svg}"
+    );
+    assert!(svg.contains("255,255,0"), "appearance fill: {svg}");
+  }
+
+  // `ContourPlot[lhs == rhs, …]` draws the implicit curve `lhs - rhs = 0`,
+  // and `plot[[1]]` yields the contour primitives (with the ContourStyle
+  // directives) for re-embedding in an outer Graphics — including after
+  // rewriting the plot with `/.` (the Demonstrations Tooltip-stripping
+  // idiom).
+  #[test]
+  fn equation_contour_plot_part_yields_primitives() {
+    clear_state();
+    assert_eq!(
+      interpret("Head[ContourPlot[x == y, {x, -3, 3}, {y, -3, 3}][[1]]]")
+        .unwrap(),
+      "List"
+    );
+    assert_eq!(
+      interpret(
+        "With[{prims = (ContourPlot[x == y, {x, -3, 3}, {y, -3, 3}, \
+         ContourStyle -> {Pink}] /. Tooltip[q_, ___] :> q)[[1]]}, \
+         {prims[[1]], Head[prims[[2]]]}]"
+      )
+      .unwrap(),
+      "{RGBColor[1, 0.5, 0.5], Line}"
+    );
+    // The extracted primitives embed into an outer Graphics.
+    let svg = export_svg(
+      "Graphics[{ContourPlot[x == y, {x, -3, 3}, {y, -3, 3}, \
+       ContourStyle -> {Pink}][[1]]}]",
+    );
+    assert!(svg.contains("<polyline"), "{svg}");
+    // A plot body held in a variable resolves during sampling.
+    assert_eq!(
+      interpret(
+        "lineA = -5 - 3*x + 2*y; \
+         Head[ContourPlot[lineA == 0, {x, -9, 9}, {y, -9, 9}][[1]]]"
+      )
+      .unwrap(),
+      "List"
+    );
+  }
+
   mod dynamic_content {
     use super::*;
 
@@ -15514,5 +15760,75 @@ mod color_data_indexed {
       assert!(svg.contains("<polygon"), "polygon missing: {svg}");
       assert!(svg.contains("rgb(0,255,255)"), "hue fill missing: {svg}");
     }
+  }
+}
+
+mod color_data_gradients {
+  use super::*;
+
+  #[test]
+  fn samples_named_gradient() {
+    clear_state();
+    // The Rainbow control points are sampled from wolframscript, so the
+    // midpoint (an exact control point) matches ColorData exactly.
+    assert_eq!(
+      interpret("ColorData[\"Rainbow\", 0.5]").unwrap(),
+      "RGBColor[0.513417, 0.72992, 0.440682]"
+    );
+  }
+
+  #[test]
+  fn parameter_is_clamped() {
+    clear_state();
+    // Outside [0, 1] the gradient clamps to its endpoints, like Wolfram.
+    assert_eq!(
+      interpret("ColorData[\"Rainbow\", 2]").unwrap(),
+      "RGBColor[0.857359, 0.131106, 0.132128]"
+    );
+    assert_eq!(
+      interpret("ColorData[\"Rainbow\", -1]").unwrap(),
+      "RGBColor[0.471412, 0.108766, 0.527016]"
+    );
+  }
+
+  #[test]
+  fn every_listed_gradient_samples() {
+    clear_state();
+    // Every name in ColorData["Gradients"] must yield an RGBColor — a
+    // gradient picker (e.g. the Doyle-spirals Demonstration dropdown)
+    // offers all of them.
+    assert_eq!(
+      interpret(
+        "AllTrue[ColorData[\"Gradients\"], \
+         Head[ColorData[#, 0.5]] === RGBColor &]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn gradient_image_property() {
+    clear_state();
+    // ColorData[name, "Image"] is a raster swatch of the gradient.
+    assert_eq!(
+      interpret("Head[ColorData[\"Rainbow\", \"Image\"]]").unwrap(),
+      "Image"
+    );
+  }
+
+  #[test]
+  fn show_passes_an_image_through() {
+    clear_state();
+    // Show[image, ImageSize -> …] displays the image: the raster passes
+    // through unchanged (the Demonstrations gradient-swatch idiom).
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Show[ColorData[\"Rainbow\", \"Image\"], \
+         ImageSize -> 100]]"
+      )
+      .unwrap(),
+      "{300, 30}"
+    );
   }
 }

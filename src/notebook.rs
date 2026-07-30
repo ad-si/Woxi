@@ -405,6 +405,20 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       return Some(extract_cell_content(first_part.trim()));
     }
   }
+  // The FrontEnd typesets an inline `Image[…]` literal as
+  //   GraphicsBox[TagBox[RasterBox[data, rect, range, opts…],
+  //     BoxForm`ImageTag["Byte", ColorSpace -> "RGB", Interleaving -> True],
+  //     Selectable -> False], BaseStyle -> "ImageGraphics", …]
+  // (e.g. the embedded source image of a Wolfram Demonstration's
+  // initialization cell). Rebuild the evaluable `Image[…]` constructor from
+  // the box expression so such cells stay runnable.
+  if s.starts_with("GraphicsBox[")
+    && let Some(args) = split_args("GraphicsBox", s)
+    && let Some(first) = args.first()
+    && let Some(image) = extract_image_from_boxes(first)
+  {
+    return Some(image);
+  }
   for head in [
     "FractionBox",
     "SuperscriptBox",
@@ -419,9 +433,6 @@ fn extract_typeset_box(s: &str) -> Option<String> {
     "FormBox",
     "AdjustmentBox",
     "FrameBox",
-    "GraphicsBox",
-    "PaneBox",
-    "RasterBox",
   ] {
     if !s.starts_with(head) {
       continue;
@@ -471,25 +482,6 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       // and the underlying expression that should be used for evaluation.
       // We want the second argument.
       "InterpretationBox" if args.len() >= 2 => conv(&args[1]),
-      // `GraphicsBox[content, opts…]` is the typeset form of `Graphics[…]`
-      // (e.g. an image pasted into an Input cell as
-      // `GraphicsBox[TagBox[RasterBox[…], …], …]`). Convert the content back
-      // to its evaluable head and keep the options verbatim, mirroring the
-      // FrontEnd's box→expression step.
-      "GraphicsBox" if !args.is_empty() => {
-        let mut parts = vec![conv(&args[0])];
-        parts.extend(args[1..].iter().cloned());
-        format!("Graphics[{}]", parts.join(", "))
-      }
-      // `PaneBox[content, opts…]` wraps a displayed expression (saved
-      // Demonstration snapshots store `PaneBox[GraphicsBox[…]]`); the
-      // evaluable value is the content.
-      "PaneBox" if !args.is_empty() => conv(&args[0]),
-      // `RasterBox[data, rect, range, opts…]` → `Raster[…]`: the same
-      // arguments under the evaluable head. Every argument (the
-      // `CompressedData["…"]` payload, the rectangle, the value range, and
-      // any options) is already evaluable text, so keep them verbatim.
-      "RasterBox" => format!("Raster[{}]", args.join(", ")),
       // `GridBox[{{r11, r12, …}, {r21, …}, …}, opts…]` → the raw rows as a
       // list literal. The rows themselves may contain box expressions, so
       // recurse into each cell.
@@ -521,6 +513,95 @@ fn extract_typeset_box(s: &str) -> Option<String> {
     });
   }
   None
+}
+
+/// Rebuild an evaluable `Image[data, "type", opts…]` from the typeset
+/// raster boxes inside a `GraphicsBox` (see `extract_typeset_box`).
+/// `s` is the GraphicsBox's first argument, expected to be
+/// `TagBox[RasterBox[…], BoxForm`ImageTag[type, opts…], …]`.
+/// Returns `None` when `s` is not an image raster (an ordinary graphic).
+fn extract_image_from_boxes(s: &str) -> Option<String> {
+  let rest = s.trim().strip_prefix("TagBox[")?;
+  let (inner, _) = find_matching_bracket(rest).ok()?;
+  let targs = split_top_level_commas(inner);
+  let raster = targs.first()?.trim();
+  let image_tag = targs
+    .iter()
+    .map(|t| t.trim())
+    .find(|t| t.starts_with("BoxForm`ImageTag["))?;
+
+  // RasterBox[data, {{x0, y0}, {x1, y1}}, range, opts…]
+  let rest = raster.strip_prefix("RasterBox[")?;
+  let (inner, _) = find_matching_bracket(rest).ok()?;
+  let rargs = split_top_level_commas(inner);
+  let data_raw = rargs.first()?.trim();
+  // The data is either `CompressedData["…"]` (a base64 payload that the
+  // FrontEnd wraps across many lines — strip that layout whitespace) or a
+  // literal nested list.
+  let data = if let Some(rest) = data_raw.strip_prefix("CompressedData[") {
+    let (inner, _) = find_matching_bracket(rest).ok()?;
+    let trimmed = inner.trim();
+    let unquoted = trimmed
+      .strip_prefix('"')
+      .and_then(|t| t.strip_suffix('"'))
+      .unwrap_or(trimmed);
+    let payload: String =
+      unquoted.chars().filter(|c| !c.is_whitespace()).collect();
+    format!("CompressedData[\"{payload}\"]")
+  } else {
+    data_raw.to_string()
+  };
+
+  // `Raster` rows run bottom-to-top while `Image` rows run top-to-bottom.
+  // Image typesetting compensates by flipping the bounding rectangle's y
+  // axis (`{{0, h}, {w, 0}}`), which means the stored rows are already in
+  // Image order. A raster with a normal-orientation rectangle stores its
+  // rows bottom-up, so those need an explicit `Reverse` to become Image
+  // rows.
+  let rows_bottom_up = rargs
+    .get(1)
+    .and_then(|rect| {
+      let rect = rect.trim();
+      let inner = rect.strip_prefix('{')?.strip_suffix('}')?;
+      let corners = split_top_level_commas(inner);
+      let corner_y = |c: &str| -> Option<f64> {
+        let inner = c.trim().strip_prefix('{')?.strip_suffix('}')?;
+        let parts = split_top_level_commas(inner);
+        parts.get(1)?.trim().parse::<f64>().ok()
+      };
+      let y0 = corner_y(corners.first()?)?;
+      let y1 = corner_y(corners.get(1)?)?;
+      Some(y0 < y1)
+    })
+    .unwrap_or(false);
+  let data = if rows_bottom_up {
+    format!("Reverse[{data}]")
+  } else {
+    data
+  };
+
+  // BoxForm`ImageTag["Byte", ColorSpace -> "RGB", Interleaving -> True]
+  let rest = image_tag.strip_prefix("BoxForm`ImageTag[")?;
+  let (inner, _) = find_matching_bracket(rest).ok()?;
+  let iargs = split_top_level_commas(inner);
+  let ty = extract_string_content(iargs.first()?.trim());
+  let mut result = format!("Image[{data}, \"{ty}\"");
+  for opt in &iargs[1..] {
+    let opt = opt.trim();
+    // Only pass through rule-shaped options (ColorSpace, Interleaving, …).
+    if opt.contains("->") || opt.contains(":>") {
+      result.push_str(", ");
+      result.push_str(&normalize_whitespace(opt));
+    }
+  }
+  result.push(']');
+  Some(result)
+}
+
+/// Collapse all whitespace runs (including newlines from the FrontEnd's
+/// line wrapping) into single spaces.
+fn normalize_whitespace(s: &str) -> String {
+  s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Extract text from a RowBox expression by concatenating string
@@ -1688,6 +1769,175 @@ impl Notebook {
   }
 }
 
+// ── Stored-output rendering ─────────────────────────────────────────────
+//
+// Notebooks saved by Mathematica can carry pre-rendered results that Woxi
+// cannot regenerate: `RasterBox[CompressedData["…"]]` snapshot images and
+// `CheckboxBox[…]` grids (the Demonstrations submission templates). These
+// helpers decode such stored Output cells into something displayable.
+
+/// Decode the `RasterBox[CompressedData["…"]]` image embedded in a stored
+/// Output cell into an SVG that embeds the pixels as a PNG data URI.
+/// Returns `None` when the content holds no decodable raster.
+///
+/// The compressed payload is Mathematica's binary serialization of
+/// `RawArray["UnsignedInteger8", pixels]`: `!boR` magic, an `f`unction
+/// header naming `RawArray`, a `S`tring type tag, and a `b`yte-array tag
+/// with rank, dimensions (`{height, width, channels}` or
+/// `{height, width}`), and the raw samples.
+pub fn stored_output_image_svg(content: &str) -> Option<String> {
+  let start = content.find("RasterBox[CompressedData[\"")?;
+  let rest = &content[start + "RasterBox[CompressedData[\"".len()..];
+  let end = rest.find('"')?;
+  let b64: String = rest[..end]
+    .chars()
+    .filter(|c| !c.is_whitespace() && *c != '\\')
+    .collect();
+  let b64 = b64.strip_prefix("1:")?;
+
+  use base64::Engine;
+  let compressed =
+    base64::engine::general_purpose::STANDARD.decode(b64).ok()?;
+  let mut raw = Vec::new();
+  std::io::Read::read_to_end(
+    &mut flate2::read::ZlibDecoder::new(&compressed[..]),
+    &mut raw,
+  )
+  .ok()?;
+
+  let (height, width, channels, pixels) = parse_raw_array_u8(&raw)?;
+
+  // Encode as PNG (top row first, matching Image/Rasterize order).
+  let mut png = Vec::new();
+  let color = match channels {
+    1 => image::ExtendedColorType::L8,
+    3 => image::ExtendedColorType::Rgb8,
+    4 => image::ExtendedColorType::Rgba8,
+    _ => return None,
+  };
+  use image::ImageEncoder;
+  image::codecs::png::PngEncoder::new(&mut png)
+    .write_image(pixels, width, height, color)
+    .ok()?;
+  let png_b64 = base64::engine::general_purpose::STANDARD.encode(&png);
+
+  // Display at the notebook's typical pane width; the viewBox keeps the
+  // native resolution so zooming stays sharp.
+  let max_display = 450.0_f64;
+  let scale = (max_display / width as f64).min(1.0);
+  let dw = (width as f64 * scale).round() as u32;
+  let dh = (height as f64 * scale).round() as u32;
+  Some(format!(
+    "<svg width=\"{dw}\" height=\"{dh}\" viewBox=\"0 0 {width} {height}\" \
+     xmlns=\"http://www.w3.org/2000/svg\" \
+     xmlns:xlink=\"http://www.w3.org/1999/xlink\">\
+     <image width=\"{width}\" height=\"{height}\" \
+     xlink:href=\"data:image/png;base64,{png_b64}\"/></svg>"
+  ))
+}
+
+/// Parse Mathematica's serialized `RawArray["UnsignedInteger8", …]`:
+/// returns `(height, width, channels, samples)`. Rank-2 arrays are
+/// grayscale (`channels = 1`).
+fn parse_raw_array_u8(raw: &[u8]) -> Option<(u32, u32, u8, &[u8])> {
+  let mut pos = 0usize;
+  let take = |pos: &mut usize, n: usize| -> Option<&[u8]> {
+    let s = raw.get(*pos..*pos + n)?;
+    *pos += n;
+    Some(s)
+  };
+  let read_u32 = |pos: &mut usize| -> Option<u32> {
+    take(pos, 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+  };
+
+  if take(&mut pos, 4)? != b"!boR" {
+    return None;
+  }
+  // f <argc> s <len> "RawArray"
+  if take(&mut pos, 1)? != b"f" {
+    return None;
+  }
+  let _argc = read_u32(&mut pos)?;
+  if take(&mut pos, 1)? != b"s" {
+    return None;
+  }
+  let name_len = read_u32(&mut pos)? as usize;
+  if take(&mut pos, name_len)? != b"RawArray" {
+    return None;
+  }
+  // S <len> "UnsignedInteger8"
+  if take(&mut pos, 1)? != b"S" {
+    return None;
+  }
+  let ty_len = read_u32(&mut pos)? as usize;
+  if take(&mut pos, ty_len)? != b"UnsignedInteger8" {
+    return None;
+  }
+  // b <rank> <dim…> <samples>
+  if take(&mut pos, 1)? != b"b" {
+    return None;
+  }
+  let rank = read_u32(&mut pos)? as usize;
+  if !(2..=3).contains(&rank) {
+    return None;
+  }
+  let mut dims = [0u32; 3];
+  for d in dims.iter_mut().take(rank) {
+    *d = read_u32(&mut pos)?;
+  }
+  let (height, width, channels) = if rank == 2 {
+    (dims[0], dims[1], 1u8)
+  } else {
+    (dims[0], dims[1], u8::try_from(dims[2]).ok()?)
+  };
+  let expected = height as usize * width as usize * channels as usize;
+  let pixels = raw.get(pos..pos + expected)?;
+  Some((height, width, channels, pixels))
+}
+
+/// Render a stored `CheckboxBox[…]` output (the Demonstrations category /
+/// compatibility pickers) as plain text: one `[x] label` / `[ ] label`
+/// entry per checkbox, in source order. Returns `None` when the content
+/// holds no CheckboxBox.
+pub fn stored_output_checkbox_text(content: &str) -> Option<String> {
+  let mut lines = Vec::new();
+  let mut rest = content;
+  while let Some(idx) = rest.find("CheckboxBox[") {
+    rest = &rest[idx + "CheckboxBox[".len()..];
+    let (inner, tail) = find_matching_bracket(rest).ok()?;
+    let args = split_top_level_commas(inner);
+    let checked = args.first().map(|a| a.trim()) == Some("True");
+    // The label is the "on" value when it is a string (`{False, "Math"}`);
+    // a plain `{False, True}` checkbox has no label.
+    let label = args
+      .get(1)
+      .map(|a| a.trim())
+      .and_then(|vals| {
+        let vals = vals.strip_prefix('{')?.strip_suffix('}')?;
+        let parts = split_top_level_commas(vals);
+        let on = parts.get(1)?.trim();
+        if on.starts_with('"') && on.ends_with('"') && on.len() >= 2 {
+          Some(extract_string_content(on))
+        } else {
+          None
+        }
+      })
+      .unwrap_or_default();
+    let mark = if checked { "[x]" } else { "[ ]" };
+    if label.is_empty() {
+      lines.push(mark.to_string());
+    } else {
+      lines.push(format!("{mark} {label}"));
+    }
+    rest = tail;
+  }
+  if lines.is_empty() {
+    None
+  } else {
+    Some(lines.join("\n"))
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -2218,6 +2468,71 @@ Cell["Chapter 2", "Chapter"]
   }
 
   #[test]
+  fn test_parse_real_understanding_2d_translation_nb() {
+    // A trimmed Wolfram Demonstrations template notebook (the shape of
+    // downloaded Demonstration .nb files): section headers carrying inline
+    // more-info opener cells, a Manipulate input with its stored
+    // DynamicModuleBox widget dump, and snapshot raster outputs.
+    let contents = std::fs::read_to_string(concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/tests/notebooks/understanding_2d_translation.nb"
+    ))
+    .unwrap();
+    let nb = parse_notebook(&contents).unwrap();
+    let flat = nb.flat_cells();
+    let styles: Vec<CellStyle> = flat.iter().map(|(_, c)| c.style).collect();
+    assert_eq!(
+      styles,
+      vec![
+        CellStyle::Title,
+        CellStyle::Section, // "Caption" header (inline opener cell dropped)
+        CellStyle::Text,
+        CellStyle::Text, // CodeText falls back to Text
+        CellStyle::Input,
+        CellStyle::Output, // DynamicModuleBox widget dump
+        CellStyle::Section,
+        CellStyle::Output, // snapshot raster
+      ]
+    );
+
+    // The section header keeps only its label; the attached more-info
+    // opener cell contributes no text.
+    assert_eq!(flat[1].1.content, "Caption");
+
+    // Styled CodeText prose flattens its StyleBox runs into plain text.
+    assert_eq!(
+      flat[3].1.content,
+      "If you provide initialization code, include a SaveDefinitions->True \
+       option in the Manipulate."
+    );
+
+    // The Manipulate input reconstructs to evaluable InputForm: named
+    // operator characters become ASCII and \[DoubleDownArrow] becomes ⇓.
+    let input = &flat[4].1.content;
+    assert!(input.starts_with("Manipulate["), "got: {input}");
+    assert!(
+      input.contains("PlotRange->{{-2,2}, {-2,2}}"),
+      "got: {input}"
+    );
+    assert!(input.contains("Style[ \"\u{21D3}\", 25]"), "got: {input}");
+    assert!(
+      input.contains(
+        "{{rsource, True, Tooltip[\"source\",\"Show source object\"]}, \
+         {True, False}}"
+      ),
+      "got: {input}"
+    );
+
+    // The stored widget dump unwraps TagBox/StyleBox down to the
+    // DynamicModuleBox (which the Studio replaces with a live widget).
+    assert!(
+      flat[5].1.content.starts_with("DynamicModuleBox["),
+      "got: {}",
+      &flat[5].1.content[..60.min(flat[5].1.content.len())]
+    );
+  }
+
+  #[test]
   fn test_parse_real_demonstration_nb() {
     // Reduced Wolfram Demonstrations "definition notebook" (the
     // ColorRelationships template): deeply nested cell groups, Section
@@ -2265,13 +2580,14 @@ Cell["Chapter 2", "Chapter"]
         .starts_with("DynamicModuleBox[")
     );
 
-    // Snapshot outputs parse with their styles, converted from their
-    // `PaneBox[GraphicsBox[TagBox[RasterBox[…]]]]` box form to evaluable
-    // `Graphics[Raster[…]]` InputForm.
+    // Snapshot outputs and keyword items parse with their styles. The
+    // `PaneBox[GraphicsBox[TagBox[RasterBox[…]]]]` box dump stays raw —
+    // `stored_output_image_svg` decodes it for display.
     assert!(
-      cells.iter().any(|c| c.style == CellStyle::Output
-        && c.content.contains("Raster[CompressedData[")),
-      "expected a converted Raster snapshot output"
+      cells.iter().any(
+        |c| c.style == CellStyle::Output && c.content.contains("RasterBox")
+      ),
+      "expected a RasterBox snapshot output"
     );
     let items: Vec<&str> = cells
       .iter()
@@ -2381,6 +2697,85 @@ Cell["Chapter 2", "Chapter"]
   }
 
   #[test]
+  fn test_extract_image_raster_literal() {
+    // An inline `Image[…]` literal is typeset as GraphicsBox[TagBox[
+    // RasterBox[…], BoxForm`ImageTag[…]]]. The flipped bounding rectangle
+    // ({{0, h}, {w, 0}}) means the raster rows are already in Image order.
+    let s = r#"GraphicsBox[
+       TagBox[RasterBox[{{{1, 2, 3}, {4, 5, 6}}}, {{0, 1}, {2, 0}}, {0, 255},
+         ColorFunction->RGBColor],
+        BoxForm`ImageTag["Byte", ColorSpace -> "RGB", Interleaving -> True],
+        Selectable->False],
+       BaseStyle->"ImageGraphics",
+       ImageSize->Automatic,
+       ImageSizeRaw->{2, 1},
+       PlotRange->{{0, 2}, {0, 1}}]"#;
+    assert_eq!(
+      extract_cell_content(s),
+      "Image[{{{1, 2, 3}, {4, 5, 6}}}, \"Byte\", ColorSpace -> \"RGB\", \
+       Interleaving -> True]"
+    );
+  }
+
+  #[test]
+  fn test_extract_image_raster_compressed_data() {
+    // CompressedData payloads are wrapped across lines by the FrontEnd; the
+    // layout whitespace must be stripped so the base64 payload survives.
+    let s = "GraphicsBox[\n       TagBox[RasterBox[CompressedData[\"\n1:eJxTTMoP\nSmNiYGAA\nAAtLAe0=\n         \"], {{0, 2}, {2, 0}}, {0, 255}],\n        BoxForm`ImageTag[\"Byte\", ColorSpace -> \"GrayLevel\"],\n        Selectable->False],\n       BaseStyle->\"ImageGraphics\"]";
+    assert_eq!(
+      extract_cell_content(s),
+      "Image[CompressedData[\"1:eJxTTMoPSmNiYGAAAAtLAe0=\"], \"Byte\", \
+       ColorSpace -> \"GrayLevel\"]"
+    );
+  }
+
+  #[test]
+  fn test_extract_image_raster_bottom_up_rows() {
+    // A normal-orientation bounding rectangle ({{0, 0}, {w, h}}) stores the
+    // raster rows bottom-up, so they must be reversed into Image order.
+    let s = r#"GraphicsBox[
+       TagBox[RasterBox[{{0, 1}, {2, 3}}, {{0, 0}, {2, 2}}, {0, 255}],
+        BoxForm`ImageTag["Byte", ColorSpace -> "GrayLevel"],
+        Selectable->False],
+       BaseStyle->"ImageGraphics"]"#;
+    assert_eq!(
+      extract_cell_content(s),
+      "Image[Reverse[{{0, 1}, {2, 3}}], \"Byte\", ColorSpace -> \"GrayLevel\"]"
+    );
+  }
+
+  #[test]
+  fn test_extract_image_raster_inside_assignment() {
+    // The Demonstrations init cell embeds the image literal inside an
+    // assignment: `image = ColorConvert[Image[…], "GrayScale"];`.
+    let s = r#"BoxData[
+ RowBox[{" ",
+  RowBox[{
+   RowBox[{"image", "=",
+    RowBox[{"ColorConvert", "[",
+     RowBox[{
+      GraphicsBox[
+       TagBox[RasterBox[{{{1, 2, 3}}}, {{0, 1}, {1, 0}}, {0, 255}],
+        BoxForm`ImageTag["Byte", ColorSpace -> "RGB", Interleaving -> True],
+        Selectable->False],
+       BaseStyle->"ImageGraphics"], ",", "\"\<GrayScale\>\""}], "]"}]}],
+   ";"}]}]]"#;
+    assert_eq!(
+      extract_cell_content(s),
+      " image=ColorConvert[Image[{{{1, 2, 3}}}, \"Byte\", \
+       ColorSpace -> \"RGB\", Interleaving -> True],\"GrayScale\"];"
+    );
+  }
+
+  #[test]
+  fn test_extract_plain_graphicsbox_not_treated_as_image() {
+    // A GraphicsBox without the RasterBox/ImageTag pair is not an image
+    // literal and must not be rewritten.
+    let s = "GraphicsBox[DiskBox[{0, 0}]]";
+    assert_eq!(extract_cell_content(s), "GraphicsBox[DiskBox[{0, 0}]]");
+  }
+
+  #[test]
   fn test_extract_textdata_section_label() {
     // Section/heading cells in Wolfram Demonstrations wrap the label in
     // `TextData[{"Label", Cell[BoxData[...]]}]`, where the trailing inline
@@ -2394,6 +2789,92 @@ Cell["Chapter 2", "Chapter"]
     "MoreInfoOpenerButtonTemplate"]}, Dynamic[x]]]]
 }]"#;
     assert_eq!(extract_cell_content(s), "Manipulate");
+  }
+
+  #[test]
+  fn test_extract_textdata_inline_math() {
+    // Inline math cells (`Cell[BoxData[FormBox[…, TraditionalForm]],
+    // "InlineMath"]`) contribute their typeset content to the prose —
+    // dropping them loses words ("The triangle ABC" became "The triangle").
+    let s = r#"TextData[{
+ "The triangle ",
+ Cell[BoxData[
+  FormBox["ABC", TraditionalForm]], "InlineMath",ExpressionUUID->
+  "4b134b90-4d52-4df9-bcc7-264d63b666b9"],
+ " is limited to the range ",
+ Cell[BoxData[
+  FormBox[
+   RowBox[{"[",
+    RowBox[{
+     RowBox[{"-", "9"}], ",", "9"}], "]"}], TraditionalForm]], "InlineMath",
+  ExpressionUUID->"4a1e2e70-0973-4b3c-994b-25f0dad1ea7d"],
+ ". Drag the point ",
+ Cell[BoxData[
+  FormBox[
+   StyleBox["A",
+    FontSlant->"Plain"], TraditionalForm]], "InlineMath",ExpressionUUID->
+  "d0cf31da-6a61-4979-98a7-c37abad7eb18"],
+ "."
+}]"#;
+    assert_eq!(
+      extract_cell_content(s),
+      "The triangle ABC is limited to the range [-9,9]. Drag the point A."
+    );
+  }
+
+  #[test]
+  fn test_stored_output_raster_snapshot_decodes_to_svg() {
+    // Build the exact serialization Mathematica writes for a stored
+    // Rasterize result: `RawArray["UnsignedInteger8", pixels]` with a
+    // rank-3 {height, width, 3} byte array, zlib-compressed and
+    // base64-encoded behind a "1:" prefix.
+    let (h, w) = (2u32, 3u32);
+    let mut raw: Vec<u8> = Vec::new();
+    raw.extend_from_slice(b"!boR");
+    raw.push(b'f');
+    raw.extend_from_slice(&2u32.to_le_bytes());
+    raw.push(b's');
+    raw.extend_from_slice(&8u32.to_le_bytes());
+    raw.extend_from_slice(b"RawArray");
+    raw.push(b'S');
+    raw.extend_from_slice(&16u32.to_le_bytes());
+    raw.extend_from_slice(b"UnsignedInteger8");
+    raw.push(b'b');
+    raw.extend_from_slice(&3u32.to_le_bytes());
+    raw.extend_from_slice(&h.to_le_bytes());
+    raw.extend_from_slice(&w.to_le_bytes());
+    raw.extend_from_slice(&3u32.to_le_bytes());
+    raw.extend_from_slice(&[128u8; 2 * 3 * 3]);
+
+    use base64::Engine;
+    use std::io::Write;
+    let mut enc = flate2::write::ZlibEncoder::new(
+      Vec::new(),
+      flate2::Compression::default(),
+    );
+    enc.write_all(&raw).unwrap();
+    let b64 =
+      base64::engine::general_purpose::STANDARD.encode(enc.finish().unwrap());
+    let content = format!(
+      "PaneBox[\n  GraphicsBox[\n   TagBox[RasterBox[CompressedData[\"\n\
+       1:{b64}\n    \"], {{{{0, 0}}, {{1, 1}}}}]]]]"
+    );
+
+    let svg = stored_output_image_svg(&content).expect("decodes");
+    assert!(svg.contains("viewBox=\"0 0 3 2\""), "{svg}");
+    assert!(svg.contains("data:image/png;base64,"), "{svg}");
+    // Non-raster outputs decode to nothing.
+    assert!(stored_output_image_svg("{1, 2, 3}").is_none());
+  }
+
+  #[test]
+  fn test_stored_output_checkbox_grid_renders_as_text() {
+    let content = r#"{{{{CheckboxBox[False, {False, "Mathematics"}]}, {CheckboxBox[True, {False, "Life Sciences"}]}}, {{CheckboxBox[False, {False, True}]}}}}"#;
+    assert_eq!(
+      stored_output_checkbox_text(content).unwrap(),
+      "[ ] Mathematics\n[x] Life Sciences\n[ ]"
+    );
+    assert!(stored_output_checkbox_text("{1, 2}").is_none());
   }
 
   #[test]
@@ -2556,7 +3037,7 @@ Cell[BoxData["2"], "Output", ExpressionUUID -> "bbb"]
     // An image pasted into an Input cell is stored as
     // `GraphicsBox[TagBox[RasterBox[data, rect, range, opts], …], opts]`
     // (e.g. `slika = <photo>;` in Demonstration notebooks). It must come
-    // back as evaluable `Graphics[Raster[…]]` InputForm.
+    // back as an evaluable `Image[…]` literal.
     let nb = r#"Notebook[{
 Cell[BoxData[
  RowBox[{
@@ -2580,14 +3061,16 @@ yf4GL4DwC5VA4w
     let cell = flat[0].1;
     assert_eq!(cell.style, CellStyle::Input);
     assert!(
-      cell.content.starts_with("slika=Graphics["),
+      cell.content.starts_with("slika=Image[CompressedData["),
       "got: {}",
       &cell.content[..cell.content.len().min(80)]
     );
     assert!(
-      cell.content.contains("Raster[CompressedData["),
+      cell
+        .content
+        .contains("\"Byte\", ColorSpace -> \"RGB\", Interleaving -> True]"),
       "got: {}",
-      &cell.content[..cell.content.len().min(200)]
+      cell.content
     );
     assert!(
       !cell.content.contains("GraphicsBox")
