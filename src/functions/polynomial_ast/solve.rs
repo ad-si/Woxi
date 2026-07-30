@@ -132,26 +132,31 @@ fn filter_real_nsolve_solutions(expr: Expr) -> Expr {
 /// wolframscript lists NSolve roots ordered by ascending real part, breaking
 /// ties by ascending imaginary part (the symbolic Solve order they inherit is
 /// not numerically sorted). Only reorder when every solution is a single
-/// numeric `var -> value` rule, so multi-variable systems and any
-/// non-numericised solutions are left untouched.
+/// numeric `var -> value` rule; non-numericised solutions are left untouched.
+///
+/// Multi-variable systems come out of wolframscript's numerical
+/// polynomial-system path (Gröbner elimination plus eigenvalue root-finding),
+/// which lists the eliminated variable's roots *descending* — e.g.
+/// `NSolve[y == c && (x - a)^2 + (y - b)^2 == r^2, {x, y}]` puts the larger
+/// intersection point first. (Ground truth: the kernel-saved definitions in
+/// Demonstration notebooks, where `sol[[2]]` selects the smaller root.) Sort
+/// those descending by the first variable's value.
 fn sort_nsolve_solutions(expr: Expr) -> Expr {
   let Expr::List(ref items) = expr else {
     return expr;
+  };
+  let value_of = |replacement: &Expr| -> Option<(f64, f64)> {
+    if let Some(v) = crate::functions::math_ast::try_eval_to_f64(replacement) {
+      return Some((v, 0.0));
+    }
+    crate::functions::math_ast::try_extract_complex_float(replacement)
   };
   let key = |item: &Expr| -> Option<(f64, f64)> {
     if let Expr::List(rules) = item
       && rules.len() == 1
       && let Expr::Rule { replacement, .. } = &rules[0]
     {
-      if let Some(v) = crate::functions::math_ast::try_eval_to_f64(replacement)
-      {
-        return Some((v, 0.0));
-      }
-      if let Some((re, im)) =
-        crate::functions::math_ast::try_extract_complex_float(replacement)
-      {
-        return Some((re, im));
-      }
+      return value_of(replacement);
     }
     None
   };
@@ -163,6 +168,28 @@ fn sort_nsolve_solutions(expr: Expr) -> Expr {
       ar.partial_cmp(&br)
         .unwrap_or(std::cmp::Ordering::Equal)
         .then(ai.partial_cmp(&bi).unwrap_or(std::cmp::Ordering::Equal))
+    });
+    return Expr::List(items_vec.into());
+  }
+  // Multi-variable system: every solution is a list of two or more numeric
+  // rules → descending by the first rule's value.
+  let multi_key = |item: &Expr| -> Option<(f64, f64)> {
+    if let Expr::List(rules) = item
+      && rules.len() >= 2
+      && let Expr::Rule { replacement, .. } = &rules[0]
+    {
+      return value_of(replacement);
+    }
+    None
+  };
+  if !items_vec.is_empty() && items_vec.iter().all(|it| multi_key(it).is_some())
+  {
+    items_vec.sort_by(|a, b| {
+      let (ar, ai) = multi_key(a).unwrap();
+      let (br, bi) = multi_key(b).unwrap();
+      br.partial_cmp(&ar)
+        .unwrap_or(std::cmp::Ordering::Equal)
+        .then(bi.partial_cmp(&ai).unwrap_or(std::cmp::Ordering::Equal))
     });
   }
   Expr::List(items_vec.into())
@@ -1524,11 +1551,93 @@ fn modular_solution_branches(
   Some(branches)
 }
 
+/// Thread an equality whose operands are all equal-length lists into the
+/// element-wise scalar equations (Wolfram's automatic listability of
+/// `Equal` inside Solve): `{a, b} == {c, d}` → `[a == c, b == d]`.
+/// Returns `None` when the expression is not such a list-valued equality.
+fn thread_list_equation(eq: &Expr) -> Option<Vec<Expr>> {
+  let operands: Vec<&Expr> = match eq {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if !operands.is_empty()
+      && operators.iter().all(|o| matches!(o, ComparisonOp::Equal)) =>
+    {
+      operands.iter().collect()
+    }
+    Expr::FunctionCall { name, args } if name == "Equal" && args.len() >= 2 => {
+      args.iter().collect()
+    }
+    _ => return None,
+  };
+  let mut rows: Vec<Vec<Expr>> = Vec::with_capacity(operands.len());
+  let mut len: Option<usize> = None;
+  for op in &operands {
+    let Expr::List(items) = op else { return None };
+    let row = items.to_vec();
+    match len {
+      None => len = Some(row.len()),
+      Some(l) if l == row.len() => {}
+      _ => return None,
+    }
+    rows.push(row);
+  }
+  let n = len?;
+  if n == 0 {
+    return None;
+  }
+  Some(
+    (0..n)
+      .map(|i| Expr::Comparison {
+        operands: rows.iter().map(|r| r[i].clone()).collect(),
+        operators: vec![ComparisonOp::Equal; rows.len() - 1],
+      })
+      .collect(),
+  )
+}
+
 fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let _constrained = SuppressIfun::new(
     args.first().is_some_and(has_inequality)
       || matches!(args.get(2), Some(Expr::Identifier(d)) if d == "Reals"),
   );
+
+  // Pre-pass: thread equalities over equal-length lists, as Wolfram does
+  // before solving. A vector equation like `r1 + t e1 == r2 + u e2` (both
+  // sides 2-element lists) stands for the element-wise scalar equations, so
+  // `Solve[{a1, b1} == {a2, b2}, {t, u}]` solves `a1 == a2 && b1 == b2`.
+  // Runs before the one-argument form so `Solve[{x, y} == {1, 2}]` sees two
+  // equations when auto-detecting its variables.
+  let threaded_args_owned: Vec<Expr>;
+  let args = {
+    let threaded_first = match &args[0] {
+      Expr::List(items) => {
+        let mut changed = false;
+        let mut out: Vec<Expr> = Vec::new();
+        for e in items.iter() {
+          match thread_list_equation(e) {
+            Some(eqs) => {
+              changed = true;
+              out.extend(eqs);
+            }
+            None => out.push(e.clone()),
+          }
+        }
+        changed.then(|| Expr::List(out.into()))
+      }
+      other => thread_list_equation(other).map(|eqs| Expr::List(eqs.into())),
+    };
+    match threaded_first {
+      Some(first) => {
+        let mut new_args = args.to_vec();
+        new_args[0] = first;
+        threaded_args_owned = new_args;
+        threaded_args_owned.as_slice()
+      }
+      None => args,
+    }
+  };
+
   // One-argument form Solve[eqns]: auto-detect the variables and delegate to
   // the two-argument form. Only the unambiguous cases are handled — a single
   // variable, or a determined/overdetermined system (variables <= equations).

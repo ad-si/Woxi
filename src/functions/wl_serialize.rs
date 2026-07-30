@@ -16,6 +16,11 @@
 //! | `f` | normal expression: `<i32 nargs><head expr><arg expr>*nargs`         |
 //! | `n` | integer raw array: `<i32 type><i32 rank><i32 dims><packed ints>`    |
 //! | `e` | real packed array: `<i32 rank><i32 dims><packed f64>`               |
+//! | `b` | byte raw array: `<i32 rank><i32 dims><packed unsigned ints>`        |
+//!
+//! The `b` token carries the payload of a `RawArray` (e.g. the pixel data
+//! of a raster image inside `RasterBox[CompressedData["…"]]`); its elements
+//! are unsigned, unlike the sign-extended `n` token.
 
 use crate::syntax::Expr;
 
@@ -103,6 +108,7 @@ fn read_expr(data: &[u8], pos: &mut usize) -> Option<Expr> {
     }
     b'n' => read_integer_array(data, pos),
     b'e' => read_real_array(data, pos),
+    b'b' => read_byte_array(data, pos),
     _ => None,
   }
 }
@@ -197,6 +203,38 @@ fn read_integer_array(data: &[u8], pos: &mut usize) -> Option<Expr> {
   Some(nest(&dims, &mut values.into_iter()))
 }
 
+/// `b` token — raw byte array (the payload of a `RawArray`). Like the `n`
+/// token the element width is inferred from the trailing payload, but the
+/// values are unsigned: `RawArray["UnsignedInteger8", …]` pixel data must
+/// come back as 0–255, not sign-extended to −128…127.
+fn read_byte_array(data: &[u8], pos: &mut usize) -> Option<Expr> {
+  let rank = read_i32(data, pos)?;
+  let dims = read_dims(data, pos, rank)?;
+  let count: usize = dims.iter().product();
+  let values = if count == 0 {
+    Vec::new()
+  } else {
+    let rest = data.len().checked_sub(*pos)?;
+    if rest % count != 0 {
+      return None;
+    }
+    let width = rest / count;
+    if !matches!(width, 1 | 2 | 4 | 8) {
+      return None;
+    }
+    let mut vals = Vec::with_capacity(count);
+    for _ in 0..count {
+      let mut buf = [0u8; 8];
+      buf[..width].copy_from_slice(&data[*pos..*pos + width]);
+      let raw = u64::from_le_bytes(buf);
+      vals.push(Expr::Integer(raw as i128));
+      *pos += width;
+    }
+    vals
+  };
+  Some(nest(&dims, &mut values.into_iter()))
+}
+
 /// `e` token — packed real (f64) array.
 fn read_real_array(data: &[u8], pos: &mut usize) -> Option<Expr> {
   let rank = read_i32(data, pos)?;
@@ -244,5 +282,17 @@ mod tests {
   #[test]
   fn rejects_non_magic() {
     assert!(deserialize(b"nope").is_none());
+  }
+
+  #[test]
+  fn reads_raw_byte_array() {
+    // RawArray["UnsignedInteger8", {{200, 10}, {0, 255}}]: f-normal with a
+    // `b` token payload (rank 2, dims 2x2, unsigned bytes). High-bit bytes
+    // must NOT be sign-extended.
+    let data = b"!boRf\x02\x00\x00\x00s\x08\x00\x00\x00RawArrayS\x10\x00\x00\x00UnsignedInteger8b\x02\x00\x00\x00\x02\x00\x00\x00\x02\x00\x00\x00\xc8\x0a\x00\xff";
+    assert_eq!(
+      render(data),
+      "RawArray[\"UnsignedInteger8\", {{200, 10}, {0, 255}}]"
+    );
   }
 }

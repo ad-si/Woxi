@@ -26,6 +26,25 @@ mod image_core {
     assert_eq!(result, "True");
   }
 
+  // `Image[CompressedData["…"], "Byte", …]` — the form Manipulate's
+  // SaveDefinitions embeds in saved notebooks. The payload decompresses to
+  // `RawArray["UnsignedInteger8", …]` (a `b` token in the binary
+  // serialization), which the constructor must unwrap like NumericArray.
+  // This blob is Compress[RawArray["UnsignedInteger8",
+  // {{0, 128, 255}, {255, 128, 0}}]].
+  #[test]
+  fn image_from_compressed_rawarray() {
+    clear_state();
+    let result = interpret(
+      "ImageDimensions[Image[CompressedData[\"\
+       1:eJxTTMoPSmNiYGAo5gASQYnljkVFiZXBAkBOaF5xZnpeaopnXklqemqRRRJIGQ\
+       gzAzFDw///DQwA2FgPXg==\"], \"Byte\", ColorSpace -> \"RGB\", \
+       Interleaving -> True]]",
+    )
+    .unwrap();
+    assert_eq!(result, "{3, 2}");
+  }
+
   #[test]
   fn image_q_false() {
     clear_state();

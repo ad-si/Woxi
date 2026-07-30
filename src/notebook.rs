@@ -419,6 +419,9 @@ fn extract_typeset_box(s: &str) -> Option<String> {
     "FormBox",
     "AdjustmentBox",
     "FrameBox",
+    "GraphicsBox",
+    "PaneBox",
+    "RasterBox",
   ] {
     if !s.starts_with(head) {
       continue;
@@ -468,6 +471,25 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       // and the underlying expression that should be used for evaluation.
       // We want the second argument.
       "InterpretationBox" if args.len() >= 2 => conv(&args[1]),
+      // `GraphicsBox[content, opts…]` is the typeset form of `Graphics[…]`
+      // (e.g. an image pasted into an Input cell as
+      // `GraphicsBox[TagBox[RasterBox[…], …], …]`). Convert the content back
+      // to its evaluable head and keep the options verbatim, mirroring the
+      // FrontEnd's box→expression step.
+      "GraphicsBox" if !args.is_empty() => {
+        let mut parts = vec![conv(&args[0])];
+        parts.extend(args[1..].iter().cloned());
+        format!("Graphics[{}]", parts.join(", "))
+      }
+      // `PaneBox[content, opts…]` wraps a displayed expression (saved
+      // Demonstration snapshots store `PaneBox[GraphicsBox[…]]`); the
+      // evaluable value is the content.
+      "PaneBox" if !args.is_empty() => conv(&args[0]),
+      // `RasterBox[data, rect, range, opts…]` → `Raster[…]`: the same
+      // arguments under the evaluable head. Every argument (the
+      // `CompressedData["…"]` payload, the rectangle, the value range, and
+      // any options) is already evaluable text, so keep them verbatim.
+      "RasterBox" => format!("Raster[{}]", args.join(", ")),
       // `GridBox[{{r11, r12, …}, {r21, …}, …}, opts…]` → the raw rows as a
       // list literal. The rows themselves may contain box expressions, so
       // recurse into each cell.
@@ -709,6 +731,68 @@ fn unescape_string_inner(s: &str, code: bool) -> String {
     }
   }
   result
+}
+
+/// Extract the `Initialization :> ( … )` code from a saved FrontEnd
+/// dynamic-widget dump (the `DynamicModuleBox[…]` text stored in the Output
+/// cell of an evaluated `Manipulate[…]`).
+///
+/// `Manipulate[…, SaveDefinitions -> True]` embeds every definition its body
+/// depends on in this Initialization, so running the returned code makes a
+/// freshly opened notebook's widget work before any other cell has been
+/// evaluated. The saved code is rewritten into plain session-level input:
+/// `$CellContext`` prefixes are dropped and the FrontEnd's line-continuation
+/// markers (a `\` at end of line in box text) are removed.
+pub fn extract_saved_initialization(box_dump: &str) -> Option<String> {
+  let mut search_from = 0;
+  while let Some(rel) = box_dump[search_from..].find("Initialization") {
+    let after_kw = search_from + rel + "Initialization".len();
+    let rest = box_dump[after_kw..].trim_start();
+    if let Some(rest) = rest.strip_prefix(":>") {
+      let rest = rest.trim_start();
+      if let Some(body) = rest.strip_prefix('(')
+        && let Some(inner) = matching_paren_prefix(body)
+      {
+        let cleaned = inner.replace("\\\n", "").replace("$CellContext`", "");
+        let cleaned = cleaned.trim();
+        if !cleaned.is_empty() && cleaned != "None" {
+          return Some(cleaned.to_string());
+        }
+      }
+    }
+    search_from = after_kw;
+  }
+  None
+}
+
+/// The prefix of `s` up to (excluding) the `)` matching an already-consumed
+/// `(`. Skips over string literals, where parentheses are just text.
+fn matching_paren_prefix(s: &str) -> Option<&str> {
+  let mut depth = 1i32;
+  let mut in_string = false;
+  let mut prev_backslash = false;
+
+  for (i, c) in s.char_indices() {
+    if in_string {
+      if c == '"' && !prev_backslash {
+        in_string = false;
+      }
+      prev_backslash = c == '\\' && !prev_backslash;
+      continue;
+    }
+    match c {
+      '"' => in_string = true,
+      '(' => depth += 1,
+      ')' => {
+        depth -= 1;
+        if depth == 0 {
+          return Some(&s[..i]);
+        }
+      }
+      _ => {}
+    }
+  }
+  None
 }
 
 /// Find the matching `}` for content that starts right after `{`.
@@ -2107,6 +2191,85 @@ Cell[BoxData["2"], "Output", ExpressionUUID -> "bbb"]
       !text_cell.content.contains('\\'),
       "Text cell should not contain backslashes, got: {:?}",
       text_cell.content
+    );
+  }
+
+  #[test]
+  fn test_graphicsbox_raster_input_cell() {
+    // An image pasted into an Input cell is stored as
+    // `GraphicsBox[TagBox[RasterBox[data, rect, range, opts], …], opts]`
+    // (e.g. `slika = <photo>;` in Demonstration notebooks). It must come
+    // back as evaluable `Graphics[Raster[…]]` InputForm.
+    let nb = r#"Notebook[{
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"slika", "=",
+   GraphicsBox[
+    TagBox[RasterBox[CompressedData["
+1:eJxTTMoPSmNiYGAo5gASQYnljkVFiZXBAkBOaF5xZnpeaopnXklqemqRRRJIGQ
+yf4GL4DwC5VA4w
+      "], {{0, 2}, {2, 0}}, {0, 255},
+      ColorFunction->RGBColor],
+     BoxForm`ImageTag["Byte", ColorSpace -> "RGB", Interleaving -> True],
+     Selectable->False],
+    BaseStyle->"ImageGraphics",
+    ImageSizeRaw->{2, 2},
+    PlotRange->{{0, 2}, {0, 2}}]}], ";"}]], "Input"]
+}]"#;
+
+    let parsed = parse_notebook(nb).unwrap();
+    let flat = parsed.flat_cells();
+    assert_eq!(flat.len(), 1);
+    let cell = flat[0].1;
+    assert_eq!(cell.style, CellStyle::Input);
+    assert!(
+      cell.content.starts_with("slika=Graphics["),
+      "got: {}",
+      &cell.content[..cell.content.len().min(80)]
+    );
+    assert!(
+      cell.content.contains("Raster[CompressedData["),
+      "got: {}",
+      &cell.content[..cell.content.len().min(200)]
+    );
+    assert!(
+      !cell.content.contains("GraphicsBox")
+        && !cell.content.contains("TagBox")
+        && !cell.content.contains("RasterBox"),
+      "box heads must be converted, got: {}",
+      cell.content
+    );
+    assert!(cell.content.trim_end().ends_with(';'));
+  }
+
+  #[test]
+  fn test_extract_saved_initialization() {
+    // The Output dump of `Manipulate[…, SaveDefinitions -> True]`:
+    // Deinitialization (whose name contains "initialization") must be
+    // skipped, `$CellContext`` prefixes dropped, and the FrontEnd's
+    // line-continuation `\` markers removed.
+    let dump = "DynamicModuleBox[{$CellContext`k$$ = 0}, \
+      DynamicBox[…],\n\
+      Deinitialization:>None,\n\
+      DynamicModuleValues:>{},\n\
+      Initialization:>({$CellContext`a = 1, $CellContext`b = \\\n\
+      {2, 3}}; Typeset`initDone$$ = True),\n\
+      SynchronousInitialization->True]";
+    let init = extract_saved_initialization(dump).unwrap();
+    assert_eq!(init, "{a = 1, b = {2, 3}}; Typeset`initDone$$ = True");
+  }
+
+  #[test]
+  fn test_extract_saved_initialization_absent() {
+    assert_eq!(
+      extract_saved_initialization("DynamicModuleBox[{}, DynamicBox[…]]"),
+      None
+    );
+    assert_eq!(
+      extract_saved_initialization(
+        "DynamicModuleBox[{}, Deinitialization:>None]"
+      ),
+      None
     );
   }
 }

@@ -8545,6 +8545,53 @@ mod raster {
       "Raster[{{0, 1}, {1, 0}}]"
     );
   }
+
+  // Raster[data, rect, {vmin, vmax}] scales pixel values from the given
+  // range: byte data with {0, 255} must render 128 as mid-gray, not clamp
+  // everything above 1 to white.
+  #[test]
+  fn raster_with_value_range() {
+    let svg =
+      export_svg("Graphics[Raster[{{0, 128, 255}}, Automatic, {0, 255}]]");
+    assert!(svg.contains("fill=\"rgb(0,0,0)\""), "{svg}");
+    assert!(svg.contains("fill=\"rgb(128,128,128)\""), "{svg}");
+    assert!(svg.contains("fill=\"rgb(255,255,255)\""), "{svg}");
+  }
+
+  // A reversed coordinate range mirrors the image: {{0, h}, {w, 0}} (the
+  // RasterBox convention, first row at the top) flips vertically.
+  #[test]
+  fn raster_flipped_rect() {
+    insta::assert_snapshot!(export_svg(
+      "Graphics[Raster[{{0, 1}, {1, 0}}, {{0, 2}, {2, 0}}]]"
+    ));
+  }
+
+  // RasterBox pixel data decodes from `CompressedData` into
+  // `RawArray["UnsignedInteger8", …]`; Raster must unwrap it and scale the
+  // byte values. The payload is Compress[RawArray["UnsignedInteger8",
+  // {{200, 10}, {0, 255}}]] (a `b` token in the binary serialization).
+  #[test]
+  fn raster_from_compressed_rawarray() {
+    let svg = export_svg(
+      "Graphics[Raster[CompressedData[\"\
+       1:eJxTTMoPSmNiYGAo5gASQYnljkVFiZXBAkBOaF5xZnpeaopnXklqemqRRRJIGQ\
+       yf4GL4DwC5VA4w\"], {{0, 2}, {2, 0}}, {0, 255}]]",
+    );
+    assert!(svg.contains("fill=\"rgb(200,200,200)\""), "{svg}");
+    assert!(svg.contains("fill=\"rgb(10,10,10)\""), "{svg}");
+    assert!(svg.contains("fill=\"rgb(255,255,255)\""), "{svg}");
+  }
+
+  // Large rasters (photos) embed as a single PNG <image> element instead
+  // of one <rect> per pixel, which SVG renderers cannot handle.
+  #[test]
+  fn large_raster_embeds_png() {
+    let svg =
+      export_svg("Graphics[Raster[Table[Mod[i + j, 2], {i, 80}, {j, 80}]]]");
+    assert!(svg.contains("data:image/png;base64,"), "{svg}");
+    assert!(!svg.contains("<rect"), "{svg}");
+  }
 }
 
 mod blend {
