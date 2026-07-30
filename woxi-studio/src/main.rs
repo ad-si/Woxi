@@ -328,6 +328,9 @@ enum Message {
   ManipulateAnimationTick(std::time::Instant),
   /// Toggle play/pause of an animated (Animate/ListAnimate) widget.
   ManipulateTogglePlay(usize),
+  /// A `Button[…]` control row was pressed; run its action code.
+  /// (cell_idx, ctrl_idx)
+  ManipulateButtonPressed(usize, usize),
   /// Swallow an interaction with a disabled control (its `Enabled` condition
   /// is currently `False`) without changing any state.
   Noop,
@@ -1793,6 +1796,18 @@ impl WoxiStudio {
           && let Some(state) = editor.manipulate_state.as_mut()
         {
           state.playing = !state.playing;
+        }
+        Task::none()
+      }
+
+      Message::ManipulateButtonPressed(cell_idx, ctrl_idx) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+          && let Some(manipulate::ControlState::Button { action, .. }) =
+            state.controls.get(ctrl_idx)
+        {
+          let action = action.clone();
+          state.apply_button_action(&action);
         }
         Task::none()
       }
@@ -3593,10 +3608,13 @@ fn manipulate_label_char_count(ctrl: &manipulate::ControlState) -> usize {
     | manipulate::ControlState::Discrete { label, name, .. }
     | manipulate::ControlState::Slider2D { label, name, .. }
     | manipulate::ControlState::IntervalSlider { label, name, .. }
+    | manipulate::ControlState::Trigger { label, name, .. }
     | manipulate::ControlState::Locator { label, name, .. } => (label, name),
     // Heading/divider rows span the full row instead of sitting in the
-    // label column, so they don't widen it.
-    manipulate::ControlState::Heading { .. }
+    // label column, so they don't widen it; a button carries its label
+    // inside the button itself.
+    manipulate::ControlState::Button { .. }
+    | manipulate::ControlState::Heading { .. }
     | manipulate::ControlState::Divider => return 0,
   };
   let text = if label.is_empty() { name } else { label };
@@ -3994,6 +4012,66 @@ fn render_manipulate_widget<'a>(
           row![label_widget, points_col].align_y(Center).spacing(8);
         controls_col = controls_col.push(control_row);
       }
+      manipulate::ControlState::Trigger {
+        name,
+        label,
+        label_runs,
+        current,
+        ..
+      } => {
+        // A Trigger control: its own play/pause toggle plus a live readout
+        // of the swept variable (Wolfram's TriggerButton/PauseButton pair).
+        let label_widget = manipulate_label_widget(
+          label_runs,
+          label,
+          name,
+          label_col_width,
+          enabled,
+        );
+        let symbol = if state.playing { "❚❚" } else { "▶" };
+        let play_btn =
+          button(text(symbol).size(11))
+            .padding([3, 10])
+            .on_press(if enabled {
+              Message::ManipulateTogglePlay(cell_idx)
+            } else {
+              Message::Noop
+            });
+        let value_widget = text(format_manipulate_number(*current))
+          .size(11)
+          .font(Font::MONOSPACE)
+          .width(iced::Length::Fixed(64.0));
+        let control_row = row![label_widget, play_btn, value_widget]
+          .align_y(Center)
+          .spacing(8);
+        controls_col = controls_col.push(control_row);
+      }
+      manipulate::ControlState::Button {
+        label, label_runs, ..
+      } => {
+        // A pressable action row (`Button["reset", …]`).
+        let spans: Vec<iced::widget::text::Span<Message>> = label_runs
+          .iter()
+          .map(|run| {
+            let mut font = Font::MONOSPACE;
+            if run.italic {
+              font.style = iced::font::Style::Italic;
+            }
+            iced::widget::span(run.text.clone()).font(font)
+          })
+          .collect();
+        let btn_label: Element<Message> = if spans.is_empty() {
+          text(label.clone()).size(11).font(Font::MONOSPACE).into()
+        } else {
+          rich_text(spans).size(11).into()
+        };
+        let btn = button(btn_label).padding([3, 10]).on_press(if enabled {
+          Message::ManipulateButtonPressed(cell_idx, ctrl_idx)
+        } else {
+          Message::Noop
+        });
+        controls_col = controls_col.push(row![btn].align_y(Center));
+      }
       manipulate::ControlState::Heading { label, label_runs } => {
         // A static heading row (a string or `Style[…]` Manipulate argument,
         // e.g. "signal 1"). Rendered bold across the full row.
@@ -4028,8 +4106,9 @@ fn render_manipulate_widget<'a>(
   // An animated widget (Animate / ListAnimate / Animator) gets a play/pause
   // toggle that starts in the playing state (Wolfram's default
   // AnimationRunning -> True). It stays visible under Appearance -> None so
-  // the animation can still be paused.
-  if state.animated {
+  // the animation can still be paused. A Trigger control renders its own
+  // toggle in its row, so the widget-level one would be redundant.
+  if state.animated && !(show_controls && state.has_trigger()) {
     let symbol = if state.playing { "❚❚" } else { "▶" };
     let play_btn = button(text(symbol).size(11))
       .padding([3, 10])
@@ -6582,6 +6661,87 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 1}, \"…\"]"], "Output"]
     }
     state.reevaluate();
     assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
+  fn gray_scott_manipulate_steps_and_resets() {
+    // End-to-end regression for the "Gray-Scott Reaction-Diffusion"
+    // Demonstration: Row-grouped SetterBars, a reset Button, a Trigger
+    // sweeping `time`, a Dynamic body that mutates the simulation state,
+    // and a run-ONCE Initialization (re-running it per frame would freeze
+    // the simulation on its first step).
+    let code = "Manipulate[\n\
+      (Dynamic[U[[ss]]=U[[ss]]+0.125;\n\
+      ArrayPlot[U[[ss]],PlotLabel->Row[{\"time steps \",time}],\
+      ColorFunction->ColorData[\"TemperatureMap\"],ImageSize->100],\
+      time,TrackedSymbols:>{time,ss}]),\n\
+      Row[{Control[{{ss,1,\"field size\"},{1->\"4\",2->\"6\"},SetterBar,\
+      Enabled->(time===0)}],Spacer[20]}],\n\
+      Row[{Button[Style[\"reset\",11],Refresh[time,None];time=0;U=Uinit;,\
+      ImageSize->Medium],Spacer[20],\
+      Control[{{time,0,\"run/stop simulation\"},0,Infinity,1,\
+      ControlType->Trigger,AnimationRunning->False}]}],\n\
+      Initialization:>(\
+      Uinit={Partition[Range[16],4]/16.,Partition[Range[36],6]/36.};\
+      U=Uinit;)]";
+    let mut state = instantiate_stored_manipulate(code)
+      .expect("Gray-Scott Manipulate must build a widget");
+    let kinds: Vec<&str> = state
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Discrete { .. } => "discrete",
+        manipulate::ControlState::Button { .. } => "button",
+        manipulate::ControlState::Trigger { .. } => "trigger",
+        _ => "other",
+      })
+      .collect();
+    assert_eq!(kinds, vec!["discrete", "button", "trigger"]);
+    assert!(state.has_trigger());
+    assert!(state.animated, "a Trigger control animates the widget");
+    assert!(!state.playing, "AnimationRunning -> False starts paused");
+    assert!(state.error.is_none(), "body error: {:?}", state.error);
+    assert!(state.graphics_handle.is_some(), "must render the ArrayPlot");
+    // Initialization ran once; the initial render stepped the field once:
+    // 1/16 + 0.125 = 0.1875.
+    assert_eq!(woxi::interpret("U[[1, 1, 1]]").unwrap(), "0.1875");
+    // With time = 0 the SetterBar is enabled.
+    assert!(state.control_is_enabled[0]);
+
+    // One animation tick: the trigger advances to 1 and the body steps
+    // the simulation again (NOT back to the first step — Initialization
+    // must not re-run).
+    state.advance_animation();
+    match &state.controls[2] {
+      manipulate::ControlState::Trigger { current, .. } => {
+        assert_eq!(*current, 1.0);
+      }
+      other => panic!("expected trigger, got {other:?}"),
+    }
+    assert_eq!(woxi::interpret("U[[1, 1, 1]]").unwrap(), "0.3125");
+    // Once running (time != 0), the Enabled condition greys the SetterBar.
+    assert!(!state.control_is_enabled[0]);
+
+    // Pressing the reset button rewinds the trigger and restores the
+    // fields; the re-render steps once from the restored state.
+    let action = match &state.controls[1] {
+      manipulate::ControlState::Button { action, .. } => action.clone(),
+      other => panic!("expected button, got {other:?}"),
+    };
+    state.apply_button_action(&action);
+    match &state.controls[2] {
+      manipulate::ControlState::Trigger { current, .. } => {
+        assert_eq!(*current, 0.0, "reset must rewind the trigger");
+      }
+      other => panic!("expected trigger, got {other:?}"),
+    }
+    assert_eq!(woxi::interpret("U[[1, 1, 1]]").unwrap(), "0.1875");
+    assert!(
+      state.control_is_enabled[0],
+      "reset re-enables the SetterBar"
+    );
+    assert!(state.error.is_none());
     assert!(state.graphics_handle.is_some());
   }
 

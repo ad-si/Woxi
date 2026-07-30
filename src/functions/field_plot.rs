@@ -117,8 +117,8 @@ fn parse_density_contour_options(
     {
       match name.as_str() {
         "ColorFunction" => {
-          if let Expr::String(s) = replacement.as_ref() {
-            color_function = Some(s.clone());
+          if let Some(s) = color_function_scheme_name(replacement.as_ref()) {
+            color_function = Some(s);
           }
         }
         "Contours" => match replacement.as_ref() {
@@ -1771,9 +1771,41 @@ enum ArrayCell {
   Color(GfxColor),
 }
 
+/// The gradient scheme name of a `ColorFunction` option value: a bare
+/// string (`"TemperatureMap"`), a `ColorData["TemperatureMap"]` call, or
+/// the structured `ColorDataFunction["TemperatureMap", …]` form the call
+/// evaluates to.
+fn color_function_scheme_name(val: &Expr) -> Option<String> {
+  match val {
+    Expr::String(s) => Some(s.clone()),
+    Expr::FunctionCall { name, args }
+      if (name == "ColorData" || name == "ColorDataFunction")
+        && !args.is_empty() =>
+    {
+      match &args[0] {
+        Expr::String(s) => Some(s.clone()),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
 /// Apply a named color function (gradient) to a normalized value t in [0,1].
+/// Schemes with stored `ColorData` control points (see
+/// `chart::sample_named_gradient`) interpolate those — matching
+/// wolframscript exactly; the rest fall back to analytic approximations.
 fn apply_named_color_function(name: &str, t: f64) -> (u8, u8, u8) {
   let t = t.clamp(0.0, 1.0);
+  if let Some((r, g, b)) =
+    crate::functions::chart::sample_named_gradient(name, t)
+  {
+    return (
+      (r * 255.0).round() as u8,
+      (g * 255.0).round() as u8,
+      (b * 255.0).round() as u8,
+    );
+  }
   match name {
     "Rainbow" => {
       // Hue-based rainbow: red -> yellow -> green -> cyan -> blue -> violet
@@ -1907,8 +1939,8 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => {}
         },
         "ColorFunction" => {
-          if let Expr::String(s) = replacement.as_ref() {
-            color_function = Some(s.clone());
+          if let Some(s) = color_function_scheme_name(replacement.as_ref()) {
+            color_function = Some(s);
           }
         }
         _ => {}
