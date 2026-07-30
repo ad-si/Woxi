@@ -231,4 +231,47 @@ mod column_visual_mode {
     assert!(svg.contains(">bbb</text>"));
     assert!(svg.contains(">ccccc</text>"));
   }
+
+  #[test]
+  fn column_alignment_option_rule() {
+    clear_state();
+    // The option form `Alignment -> Center` must center like the
+    // positional `Column[{…}, Center]` form.
+    let result =
+      interpret_with_stdout("Column[{1, 2, 3}, Alignment -> Center]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("text-anchor=\"middle\""));
+  }
+
+  #[test]
+  fn column_dynamic_item_shows_value() {
+    clear_state();
+    // In visual mode `Dynamic[expr]` displays the current value of `expr`
+    // (the front end re-evaluates it as dependencies change). A Column
+    // item must therefore render the value, not the literal `Dynamic[…]`
+    // text — the Demonstrations color-wheel notebook stacks
+    // `Dynamic[Row[…]]` above its wheel graphic.
+    let result = interpret_with_stdout("Column[{Dynamic[1 + 1], 3}]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">2</text>"), "expected value 2, got: {svg}");
+    assert!(svg.contains(">3</text>"));
+    assert!(!svg.contains("Dynamic"));
+  }
+
+  #[test]
+  fn dynamic_top_level_shows_value_in_visual_mode() {
+    clear_state();
+    let result = interpret_with_stdout("Dynamic[1 + 1]").unwrap();
+    assert_eq!(result.result, "2");
+  }
+
+  #[test]
+  fn dynamic_stays_symbolic_in_text_mode() {
+    clear_state();
+    // Script/CLI mode matches wolframscript: no front end, so Dynamic
+    // echoes verbatim.
+    assert_eq!(interpret("Dynamic[1 + 1]").unwrap(), "Dynamic[1 + 1]");
+  }
 }

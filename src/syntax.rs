@@ -175,6 +175,10 @@ pub struct PlotSeriesData {
   pub color: (u8, u8, u8),
   pub is_scatter: bool,
   pub filling: SeriesFilling,
+  /// Fill color override from `FillingStyle` (`None` = use `color`).
+  pub fill_color: Option<(u8, u8, u8)>,
+  /// Fill opacity override from `FillingStyle` (`None` = the 0.2 default).
+  pub fill_opacity: Option<f64>,
 }
 
 /// Convert a Wolfram named character name (e.g. "Pi", "Alpha", "Sum") to its
@@ -9080,7 +9084,16 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       let mut parts: Vec<Expr> = Vec::new();
       collect_string_join(left, &mut parts);
       collect_string_join(right, &mut parts);
-      let rendered: Vec<String> = parts.iter().map(&fmt).collect();
+      // Inside a genuine InputForm render (`expr_to_input_form`, which
+      // routes some nodes through the OutputForm path) the operands must
+      // keep their quotes — `StringJoin["z = ", ToString[z]]` — or the
+      // result doesn't re-parse. Display forms keep the unquoted operands
+      // (`StringJoin[z = , ToString[z]]`, matching wolframscript).
+      let rendered: Vec<String> = if in_true_input_form() {
+        parts.iter().map(expr_to_input_form).collect()
+      } else {
+        parts.iter().map(&fmt).collect()
+      };
       format!("StringJoin[{}]", rendered.join(", "))
     }
     // All other BinaryOps in OutputForm fall through to InputForm

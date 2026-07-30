@@ -140,7 +140,7 @@ Mod,Returns the remainder on division (m - n Floor[m/n]; Gaussian integers use m
 Arg,Returns the argument (phase angle) of a complex number,✅,pure,1.0,135
 Or,Checks if at least one condition is true,✅,pure,1.0,136
 BaseStyle,Option specifying the base style for elements in a graphic or other output,✅,none,6.0,137
-Dynamic,Dynamic display wrapper (stays symbolic in script mode),✅,unevaluated,6.0,138
+Dynamic,Dynamic display wrapper (shows the current value in visual mode; stays symbolic in script mode),✅,unevaluated,6.0,138
 Not,Logical negation of an expression — written with the ! operator and bracketed inside anything that binds tighter than it,✅,pure,1.0,139
 Last,Returns the last element of a list or the given default which is only evaluated when used,✅,pure,1.0,140
 AdministrativeDivisionData,,🚫,,10.0,141
