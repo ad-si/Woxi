@@ -158,7 +158,7 @@ ColorFunction,Option specifying the color function for visualization,✅,none,2.
 Expand,Expands products and positive integer powers of sums,✅,pure,1.0,154
 ContourPlot,Creates a contour plot of a function,✅,pure,1.0,155
 RandomInteger,Generate random integers — RandomInteger[n] draws from 0 through n so a negative n draws downwards,✅,contextual,6.0,156
-NDSolve,Solves ordinary differential equations numerically,✅,contextual,2.0,157
+NDSolve,Solves ordinary differential equations numerically (including coupled systems and EventLocator events),✅,contextual,2.0,157
 Integers,Domain symbol representing the set of integers,✅,pure,4.0,158
 Large,Named size symbol used as option value for ImageSize and Style,✅,pure,6.0,159
 Limit,Computes the limit of an expression,✅,pure,1.0,160

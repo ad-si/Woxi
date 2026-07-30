@@ -237,10 +237,41 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// NDSolve[{eqn, ic1, ...}, y[x], {x, xmin, xmax}]
 /// Also NDSolve[{eqn, ic1, ...}, y, {x, xmin, xmax}]
 pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 3 {
+  // Split trailing option rules (`Method -> …`, `MaxSteps -> …`, …) from
+  // the three positional arguments.
+  let n_pos = args
+    .iter()
+    .take_while(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+    .count();
+  if n_pos != 3 {
     return Ok(unevaluated("NDSolve", args));
   }
+  let opts = &args[n_pos..];
+  let event = parse_event_locator_option(opts);
 
+  // A list of dependent functions (`{θ, ϕ, ψ}`), an event-driven solve, or
+  // any spec the scalar path can't handle goes through the system solver.
+  let scalar_capable =
+    matches!(&args[1], Expr::FunctionCall { .. } | Expr::Identifier(_))
+      && event.is_none();
+  if scalar_capable {
+    let result = ndsolve_scalar(&args[..3])?;
+    // The scalar path returns the input unevaluated for shapes it doesn't
+    // support (e.g. initial conditions at an interior point of the
+    // domain); give the system solver a chance before giving up.
+    if !matches!(&result, Expr::FunctionCall { name, .. } if name == "NDSolve")
+    {
+      return Ok(result);
+    }
+  }
+  match ndsolve_system(&args[..3], event.as_ref()) {
+    Ok(Some(result)) => Ok(result),
+    Ok(None) => Ok(unevaluated("NDSolve", args)),
+    Err(e) => Err(e),
+  }
+}
+
+fn ndsolve_scalar(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let eqns_arg = &args[0];
   let dep_arg = &args[1];
   let domain_arg = &args[2];
@@ -423,6 +454,928 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(vec![Expr::List(vec![rule].into())].into()))
 }
 
+// ─── NDSolve for systems of ODEs ───────────────────────────────────────
+//
+// Handles what the scalar path above cannot: several coupled dependent
+// functions (`NDSolve[eqns, {θ, ϕ, ψ}, {t, t0, t1}]`), equations that are
+// implicit in the highest derivatives (each equation may mix θ'', ϕ'',
+// ψ''), initial conditions given at an interior point of the domain
+// (integrating both directions), and the `Method -> {"EventLocator", …}`
+// option that stops integration when an event function crosses zero.
+//
+// Each step evaluates the residuals numerically: with the state fixed,
+// every residual is affine in the vector of highest derivatives, so one
+// evaluation at h = 0 and one per unit vector recovers the linear system
+// M·h = -c, which Gaussian elimination solves. Residuals are compiled to
+// a small numeric closure tree (`NExpr`) for speed, with a fall-back to
+// full symbolic evaluation for operations the compiler doesn't know.
+
+/// The event specification of `Method -> {"EventLocator", "Event" -> g,
+/// "EventAction" :> action}`: the (still symbolic) event function and the
+/// held action.
+struct EventSpec {
+  event: Expr,
+  action: Option<Expr>,
+}
+
+/// Extract an `EventLocator` event from NDSolve's option rules. Returns
+/// `None` when no such method is given (any other `Method` is ignored —
+/// the integrator itself stays the same).
+fn parse_event_locator_option(opts: &[Expr]) -> Option<EventSpec> {
+  for opt in opts {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = opt
+    else {
+      continue;
+    };
+    if !matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Method") {
+      continue;
+    }
+    let Expr::List(items) = replacement.as_ref() else {
+      continue;
+    };
+    let is_event_locator = items
+      .first()
+      .is_some_and(|i| matches!(i, Expr::String(s) if s == "EventLocator"));
+    if !is_event_locator {
+      continue;
+    }
+    let mut event = None;
+    let mut action = None;
+    for item in &items[1..] {
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } = item
+      {
+        match pattern.as_ref() {
+          Expr::String(s) if s == "Event" => {
+            event = Some(replacement.as_ref().clone());
+          }
+          Expr::String(s) if s == "EventAction" => {
+            action = Some(replacement.as_ref().clone());
+          }
+          _ => {}
+        }
+      }
+    }
+    if let Some(event) = event {
+      return Some(EventSpec { event, action });
+    }
+  }
+  None
+}
+
+/// One dependent function of the system.
+struct SysFunc {
+  name: String,
+  /// Order of its highest derivative in the equations.
+  order: usize,
+  /// Whether the result rule should use the bare-symbol form
+  /// (`θ -> InterpolatingFunction[…]`); `false` means the `θ[t]` form.
+  function_form: bool,
+  /// Initial values `[f(x0), f'(x0), …]`, filled during IC parsing.
+  ics: Vec<Option<f64>>,
+}
+
+/// Solve a (possibly coupled) system. Returns `Ok(None)` when the input
+/// doesn't have a shape this solver understands, so the caller can leave
+/// the expression unevaluated.
+fn ndsolve_system(
+  args: &[Expr],
+  event: Option<&EventSpec>,
+) -> Result<Option<Expr>, InterpreterError> {
+  // Domain {x, xmin, xmax}.
+  let Expr::List(domain_items) = &args[2] else {
+    return Ok(None);
+  };
+  if domain_items.len() != 3 {
+    return Ok(None);
+  }
+  let Expr::Identifier(x_name) = &domain_items[0] else {
+    return Ok(None);
+  };
+  let Some(x_min) = nval_to_f64(&domain_items[1]) else {
+    return Ok(None);
+  };
+  let Some(x_max) = nval_to_f64(&domain_items[2]) else {
+    return Ok(None);
+  };
+  // NaN bounds must bail out too, so compare via partial_cmp rather
+  // than a negated float comparison.
+  if x_max.partial_cmp(&x_min) != Some(std::cmp::Ordering::Greater) {
+    return Ok(None);
+  }
+
+  // Dependent functions: `{θ, ϕ, ψ}`, a single symbol, or `f[x]` forms.
+  let dep_items: Vec<&Expr> = match &args[1] {
+    Expr::List(items) => items.iter().collect(),
+    other => vec![other],
+  };
+  let mut funcs: Vec<SysFunc> = Vec::with_capacity(dep_items.len());
+  for item in dep_items {
+    match item {
+      Expr::Identifier(name) => funcs.push(SysFunc {
+        name: name.clone(),
+        order: 0,
+        function_form: true,
+        ics: Vec::new(),
+      }),
+      Expr::FunctionCall { name, args: fargs }
+        if fargs.len() == 1
+          && matches!(&fargs[0], Expr::Identifier(a) if a == x_name) =>
+      {
+        funcs.push(SysFunc {
+          name: name.clone(),
+          order: 0,
+          function_form: false,
+          ics: Vec::new(),
+        })
+      }
+      _ => return Ok(None),
+    }
+  }
+  if funcs.is_empty() {
+    return Ok(None);
+  }
+
+  // Split equations into ODEs and initial conditions.
+  let eq_items: Vec<Expr> = match &args[0] {
+    Expr::List(items) => items.to_vec(),
+    other => vec![other.clone()],
+  };
+  let mut odes: Vec<Expr> = Vec::new();
+  let mut x0: Option<f64> = None;
+  // (func index, derivative order, value)
+  let mut ics: Vec<(usize, usize, f64)> = Vec::new();
+  for eq in &eq_items {
+    let mut is_ic = false;
+    for (fi, f) in funcs.iter().enumerate() {
+      if is_initial_condition(eq, &f.name, x_name) {
+        let Some((order, x_val, y_val)) =
+          parse_numeric_initial_condition(eq, &f.name)?
+        else {
+          return Ok(None);
+        };
+        match x0 {
+          None => x0 = Some(x_val),
+          // All ICs must be given at the same point.
+          Some(prev) if (prev - x_val).abs() > 1e-12 => return Ok(None),
+          Some(_) => {}
+        }
+        ics.push((fi, order, y_val));
+        is_ic = true;
+        break;
+      }
+    }
+    if !is_ic {
+      odes.push(eq.clone());
+    }
+  }
+  if odes.len() != funcs.len() {
+    return Ok(None);
+  }
+  let Some(x0) = x0 else { return Ok(None) };
+  if x0 < x_min - 1e-12 || x0 > x_max + 1e-12 {
+    return Ok(None);
+  }
+
+  // Determine each function's order from the equations.
+  for ode in &odes {
+    for f in funcs.iter_mut() {
+      let order = max_derivative_order(ode, &f.name);
+      f.order = f.order.max(order);
+    }
+  }
+  if funcs.iter().any(|f| f.order == 0) {
+    return Ok(None);
+  }
+
+  // Validate and store the initial conditions.
+  for f in funcs.iter_mut() {
+    f.ics = vec![None; f.order];
+  }
+  for (fi, order, val) in ics {
+    if order >= funcs[fi].order || funcs[fi].ics[order].is_some() {
+      return Ok(None);
+    }
+    funcs[fi].ics[order] = Some(val);
+  }
+  if funcs.iter().any(|f| f.ics.iter().any(|ic| ic.is_none())) {
+    return Ok(None);
+  }
+
+  // Variable vector layout: [x, state…, h…] where `state` holds
+  // (f, f', …, f^(order-1)) for each function in turn and `h` holds the
+  // highest derivative of each function.
+  let mut var_names: Vec<String> = vec![x_name.clone()];
+  let mut state_offset: Vec<usize> = Vec::with_capacity(funcs.len());
+  for f in &funcs {
+    state_offset.push(var_names.len() - 1);
+    for k in 0..f.order {
+      var_names.push(placeholder_name(&f.name, k));
+    }
+  }
+  let n_state = var_names.len() - 1;
+  for f in &funcs {
+    var_names.push(placeholder_name(&f.name, f.order));
+  }
+
+  // Rewrite the equations over placeholder variables and wrap them into
+  // numeric residual functions.
+  let mut residuals: Vec<NumFn> = Vec::with_capacity(odes.len());
+  for ode in &odes {
+    let normalized = normalize_equation(ode).ok();
+    let Some(normalized) = normalized else {
+      return Ok(None);
+    };
+    let rewritten = substitute_function_values(&normalized, &funcs, x_name);
+    residuals.push(NumFn::new(rewritten, &var_names));
+  }
+  let event_fn = match event {
+    Some(spec) => {
+      let rewritten = substitute_function_values(&spec.event, &funcs, x_name);
+      Some(NumFn::new(rewritten, &var_names))
+    }
+    None => None,
+  };
+
+  // Initial state.
+  let mut init_state: Vec<f64> = vec![0.0; n_state];
+  for (fi, f) in funcs.iter().enumerate() {
+    for (k, ic) in f.ics.iter().enumerate() {
+      init_state[state_offset[fi] + k] = ic.unwrap_or(0.0);
+    }
+  }
+
+  let n_steps = 1000usize;
+  let h = (x_max - x_min) / n_steps as f64;
+
+  // Integrate forward from x0 to x_max, then (if x0 is interior)
+  // backward from x0 to x_min; events are only located on the forward
+  // leg, matching the direction NDSolve integrates first.
+  let forward = integrate_leg(
+    &residuals,
+    &funcs,
+    &state_offset,
+    init_state.clone(),
+    x0,
+    x_max,
+    h,
+    event_fn.as_ref(),
+    event.and_then(|e| e.action.as_ref()),
+    x_name,
+  )?;
+  let Some(forward) = forward else {
+    return Ok(None);
+  };
+  let backward = if x0 - x_min > 1e-12 {
+    let leg = integrate_leg(
+      &residuals,
+      &funcs,
+      &state_offset,
+      init_state,
+      x0,
+      x_min,
+      -h,
+      None,
+      None,
+      x_name,
+    )?;
+    let Some(leg) = leg else {
+      return Ok(None);
+    };
+    leg
+  } else {
+    Vec::new()
+  };
+
+  // Combined, ascending in x. The backward leg is (x0, x0-h, …); reverse
+  // it and drop its first point (x0, present in the forward leg too).
+  let mut points: Vec<(f64, Vec<f64>)> = backward;
+  points.reverse();
+  points.pop();
+  points.extend(forward);
+  if points.len() < 2 {
+    return Ok(None);
+  }
+  let x_lo = points.first().unwrap().0;
+  let x_hi = points.last().unwrap().0;
+
+  // Build one InterpolatingFunction rule per dependent function.
+  let mut rules: Vec<Expr> = Vec::with_capacity(funcs.len());
+  for (fi, f) in funcs.iter().enumerate() {
+    let domain = Expr::List(
+      vec![Expr::List(vec![Expr::Real(x_lo), Expr::Real(x_hi)].into())].into(),
+    );
+    let data = Expr::List(
+      points
+        .iter()
+        .map(|(x, s)| {
+          Expr::List(
+            vec![Expr::Real(*x), Expr::Real(s[state_offset[fi]])].into(),
+          )
+        })
+        .collect(),
+    );
+    let interp = Expr::FunctionCall {
+      name: "InterpolatingFunction".to_string(),
+      args: vec![domain, data].into(),
+    };
+    rules.push(if f.function_form {
+      Expr::Rule {
+        pattern: Box::new(Expr::Identifier(f.name.clone())),
+        replacement: Box::new(interp),
+      }
+    } else {
+      Expr::Rule {
+        pattern: Box::new(Expr::FunctionCall {
+          name: f.name.clone(),
+          args: vec![Expr::Identifier(x_name.clone())].into(),
+        }),
+        replacement: Box::new(Expr::CurriedCall {
+          func: Box::new(interp),
+          args: vec![Expr::Identifier(x_name.clone())],
+        }),
+      }
+    });
+  }
+  Ok(Some(Expr::List(vec![Expr::List(rules.into())].into())))
+}
+
+/// Integrate one leg with RK4. Returns the points in integration order
+/// (starting at `x_from`), or `None` if a derivative evaluation failed.
+/// When an event function is given, integration stops at the located
+/// event point after running the (held) event action; an action that
+/// throws the `"StopIntegration"` tag simply stops the leg.
+#[allow(clippy::too_many_arguments)]
+fn integrate_leg(
+  residuals: &[NumFn],
+  funcs: &[SysFunc],
+  state_offset: &[usize],
+  init_state: Vec<f64>,
+  x_from: f64,
+  x_to: f64,
+  h: f64,
+  event_fn: Option<&NumFn>,
+  event_action: Option<&Expr>,
+  x_name: &str,
+) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
+  let n_steps = ((x_to - x_from) / h).round() as usize;
+  let mut points: Vec<(f64, Vec<f64>)> = Vec::with_capacity(n_steps + 1);
+  let mut state = init_state;
+  let mut x = x_from;
+  points.push((x, state.clone()));
+
+  let eval_event = |x: f64, state: &[f64]| -> Option<f64> {
+    event_fn.and_then(|f| f.eval_state(x, state, funcs.len()).ok())
+  };
+  let mut prev_event = eval_event(x, &state);
+
+  for _ in 0..n_steps {
+    let Some(new_state) =
+      rk4_system_step(residuals, funcs, state_offset, &state, x, h)?
+    else {
+      return Ok(None);
+    };
+    let new_x = x + h;
+
+    if let Some(prev_g) = prev_event
+      && let Some(new_g) = eval_event(new_x, &new_state)
+    {
+      if prev_g.signum() != new_g.signum() && prev_g.is_finite() {
+        // Event crossing inside this step: locate it by linear
+        // interpolation of the event function, then take a partial RK4
+        // step to land on it.
+        let frac = if (prev_g - new_g).abs() > f64::EPSILON {
+          (prev_g / (prev_g - new_g)).clamp(0.0, 1.0)
+        } else {
+          1.0
+        };
+        let h_star = h * frac;
+        let (x_ev, state_ev) = if h_star.abs() > f64::EPSILON {
+          match rk4_system_step(
+            residuals,
+            funcs,
+            state_offset,
+            &state,
+            x,
+            h_star,
+          )? {
+            Some(s) => (x + h_star, s),
+            None => (new_x, new_state.clone()),
+          }
+        } else {
+          (x, state.clone())
+        };
+        points.push((x_ev, state_ev));
+        if let Some(action) = event_action {
+          let action = crate::syntax::substitute_variable(
+            action,
+            x_name,
+            &Expr::Real(x_ev),
+          );
+          match crate::evaluator::evaluate_expr_to_expr(&action) {
+            Ok(_) => {}
+            Err(InterpreterError::ThrowValue(_, tag))
+              if matches!(
+                tag.as_deref(),
+                Some(Expr::String(s)) if s == "StopIntegration"
+              ) => {}
+            Err(e) => return Err(e),
+          }
+        }
+        return Ok(Some(points));
+      }
+      prev_event = Some(new_g);
+    } else {
+      prev_event = eval_event(new_x, &new_state);
+    }
+
+    state = new_state;
+    x = new_x;
+    points.push((x, state.clone()));
+  }
+  Ok(Some(points))
+}
+
+/// One RK4 step of the first-order system equivalent. Returns `None`
+/// when a residual can't be evaluated numerically or the linear system
+/// for the highest derivatives is singular.
+fn rk4_system_step(
+  residuals: &[NumFn],
+  funcs: &[SysFunc],
+  state_offset: &[usize],
+  state: &[f64],
+  x: f64,
+  h: f64,
+) -> Result<Option<Vec<f64>>, InterpreterError> {
+  let deriv = |s: &[f64],
+               xv: f64|
+   -> Result<Option<Vec<f64>>, InterpreterError> {
+    let Some(high) = solve_highest_derivatives(residuals, funcs.len(), xv, s)?
+    else {
+      return Ok(None);
+    };
+    let mut d = vec![0.0; s.len()];
+    for (fi, f) in funcs.iter().enumerate() {
+      let off = state_offset[fi];
+      for k in 0..f.order - 1 {
+        d[off + k] = s[off + k + 1];
+      }
+      d[off + f.order - 1] = high[fi];
+    }
+    Ok(Some(d))
+  };
+
+  let add_scaled = |s: &[f64], d: &[f64], c: f64| -> Vec<f64> {
+    s.iter().zip(d).map(|(a, b)| a + b * c).collect()
+  };
+
+  let Some(k1) = deriv(state, x)? else {
+    return Ok(None);
+  };
+  let Some(k2) = deriv(&add_scaled(state, &k1, h / 2.0), x + h / 2.0)? else {
+    return Ok(None);
+  };
+  let Some(k3) = deriv(&add_scaled(state, &k2, h / 2.0), x + h / 2.0)? else {
+    return Ok(None);
+  };
+  let Some(k4) = deriv(&add_scaled(state, &k3, h), x + h)? else {
+    return Ok(None);
+  };
+
+  Ok(Some(
+    state
+      .iter()
+      .enumerate()
+      .map(|(i, s)| s + h / 6.0 * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i]))
+      .collect(),
+  ))
+}
+
+/// Solve for the highest derivatives at one point. The residuals are
+/// affine in the highest-derivative vector `hvec`: `r(hvec) = M·hvec + c`,
+/// so `c = r(0)` and the columns of `M` follow from unit vectors; the
+/// result solves `M·hvec = -c`.
+fn solve_highest_derivatives(
+  residuals: &[NumFn],
+  n_funcs: usize,
+  x: f64,
+  state: &[f64],
+) -> Result<Option<Vec<f64>>, InterpreterError> {
+  let n = n_funcs;
+  let mut vars = Vec::with_capacity(1 + state.len() + n);
+  vars.push(x);
+  vars.extend_from_slice(state);
+  vars.extend(std::iter::repeat_n(0.0, n));
+
+  let mut c = vec![0.0; n];
+  for (i, r) in residuals.iter().enumerate() {
+    let Ok(v) = r.eval(&vars) else {
+      return Ok(None);
+    };
+    if !v.is_finite() {
+      return Ok(None);
+    }
+    c[i] = v;
+  }
+  let mut m = vec![vec![0.0; n]; n];
+  for j in 0..n {
+    vars[1 + state.len() + j] = 1.0;
+    for (i, r) in residuals.iter().enumerate() {
+      let Ok(v) = r.eval(&vars) else {
+        return Ok(None);
+      };
+      if !v.is_finite() {
+        return Ok(None);
+      }
+      m[i][j] = v - c[i];
+    }
+    vars[1 + state.len() + j] = 0.0;
+  }
+
+  // Gaussian elimination with partial pivoting on M·hvec = -c.
+  let mut rhs: Vec<f64> = c.iter().map(|v| -v).collect();
+  for col in 0..n {
+    let (pivot_row, pivot_abs) = (col..n)
+      .map(|r| (r, m[r][col].abs()))
+      .max_by(|a, b| a.1.total_cmp(&b.1))
+      .unwrap();
+    if pivot_abs < 1e-14 {
+      return Ok(None);
+    }
+    m.swap(col, pivot_row);
+    rhs.swap(col, pivot_row);
+    for row in col + 1..n {
+      let factor = m[row][col] / m[col][col];
+      for k in col..n {
+        m[row][k] -= factor * m[col][k];
+      }
+      rhs[row] -= factor * rhs[col];
+    }
+  }
+  let mut sol = vec![0.0; n];
+  for row in (0..n).rev() {
+    let mut acc = rhs[row];
+    for k in row + 1..n {
+      acc -= m[row][k] * sol[k];
+    }
+    sol[row] = acc / m[row][row];
+  }
+  Ok(Some(sol))
+}
+
+/// The synthesized variable name standing for the k-th derivative of `f`
+/// in a rewritten residual.
+fn placeholder_name(fname: &str, k: usize) -> String {
+  format!("__ndsolve${fname}${k}")
+}
+
+/// Highest derivative order of `fname` appearing anywhere in `expr`
+/// (`fname[x]` counts as order 0 only if a derivative also appears —
+/// order is the max over `Derivative[k][fname][…]` occurrences).
+fn max_derivative_order(expr: &Expr, fname: &str) -> usize {
+  let mut max = 0;
+  if let Some((order, _)) = extract_derivative_order_and_point(expr, fname) {
+    max = max.max(order);
+  }
+  for child in expr_children(expr) {
+    max = max.max(max_derivative_order(child, fname));
+  }
+  max
+}
+
+/// Replace every `f[x]` and `Derivative[k][f][x]` occurrence with its
+/// placeholder identifier, for every function of the system.
+fn substitute_function_values(
+  expr: &Expr,
+  funcs: &[SysFunc],
+  x_name: &str,
+) -> Expr {
+  // Match this node against `f[x]` / `Derivative[k][f][x]`.
+  for f in funcs {
+    if let Expr::FunctionCall { name, args } = expr
+      && name == &f.name
+      && args.len() == 1
+      && matches!(&args[0], Expr::Identifier(a) if a == x_name)
+    {
+      return Expr::Identifier(placeholder_name(&f.name, 0));
+    }
+    if let Some((order, point)) =
+      extract_derivative_order_and_point(expr, &f.name)
+      && matches!(&point, Expr::Identifier(a) if a == x_name)
+    {
+      return Expr::Identifier(placeholder_name(&f.name, order));
+    }
+  }
+  map_children(expr, &|child| {
+    substitute_function_values(child, funcs, x_name)
+  })
+}
+
+/// Immutable children of an expression node, for the traversals above.
+fn expr_children(expr: &Expr) -> Vec<&Expr> {
+  match expr {
+    Expr::List(items) => items.iter().collect(),
+    Expr::FunctionCall { args, .. } => args.iter().collect(),
+    Expr::BinaryOp { left, right, .. } => vec![left, right],
+    Expr::UnaryOp { operand, .. } => vec![operand],
+    Expr::Comparison { operands, .. } => operands.iter().collect(),
+    Expr::CurriedCall { func, args } => {
+      let mut v: Vec<&Expr> = vec![func];
+      v.extend(args.iter());
+      v
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => vec![pattern, replacement],
+    _ => Vec::new(),
+  }
+}
+
+/// Rebuild an expression with `f` applied to each direct child. Nodes
+/// whose children aren't covered by `expr_children` are returned as-is.
+fn map_children(expr: &Expr, f: &dyn Fn(&Expr) -> Expr) -> Expr {
+  match expr {
+    Expr::List(items) => Expr::List(items.iter().map(f).collect()),
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(f).collect(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(f(left)),
+      right: Box::new(f(right)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(f(operand)),
+    },
+    Expr::Comparison {
+      operands,
+      operators,
+    } => Expr::Comparison {
+      operands: operands.iter().map(f).collect(),
+      operators: operators.clone(),
+    },
+    Expr::CurriedCall { func, args } => Expr::CurriedCall {
+      func: Box::new(f(func)),
+      args: args.iter().map(f).collect(),
+    },
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: Box::new(f(pattern)),
+      replacement: Box::new(f(replacement)),
+    },
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Expr::RuleDelayed {
+      pattern: Box::new(f(pattern)),
+      replacement: Box::new(f(replacement)),
+    },
+    other => other.clone(),
+  }
+}
+
+// ─── Compiled numeric expressions ─────────────────────────────────────
+
+/// A residual/event function over the numeric variable vector, compiled
+/// to a closure tree when possible and falling back to per-call symbolic
+/// substitution otherwise.
+enum NumFn {
+  Compiled(NExpr),
+  Symbolic { expr: Expr, names: Vec<String> },
+}
+
+impl NumFn {
+  fn new(expr: Expr, var_names: &[String]) -> Self {
+    match compile_numeric(&expr, var_names) {
+      Some(compiled) => NumFn::Compiled(compiled),
+      None => NumFn::Symbolic {
+        expr,
+        names: var_names.to_vec(),
+      },
+    }
+  }
+
+  fn eval(&self, vars: &[f64]) -> Result<f64, InterpreterError> {
+    match self {
+      NumFn::Compiled(nexpr) => Ok(nexpr.eval(vars)),
+      NumFn::Symbolic { expr, names } => {
+        let mut substituted = expr.clone();
+        for (name, value) in names.iter().zip(vars) {
+          substituted = crate::syntax::substitute_variable(
+            &substituted,
+            name,
+            &Expr::Real(*value),
+          );
+        }
+        let result = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+        expr_to_f64(&result)
+      }
+    }
+  }
+
+  /// Evaluate with the highest-derivative slots zeroed (they may
+  /// legitimately appear in an event function; zero is the best guess
+  /// short of re-solving, and events rarely reference them).
+  fn eval_state(
+    &self,
+    x: f64,
+    state: &[f64],
+    n_funcs: usize,
+  ) -> Result<f64, InterpreterError> {
+    let mut vars = Vec::with_capacity(1 + state.len() + n_funcs);
+    vars.push(x);
+    vars.extend_from_slice(state);
+    vars.extend(std::iter::repeat_n(0.0, n_funcs));
+    self.eval(&vars)
+  }
+}
+
+/// A numeric expression tree over a variable vector — the compiled form
+/// of a residual, evaluated tens of thousands of times per solve.
+enum NExpr {
+  Const(f64),
+  Var(usize),
+  Add(Vec<NExpr>),
+  Mul(Vec<NExpr>),
+  Pow(Box<NExpr>, Box<NExpr>),
+  Neg(Box<NExpr>),
+  Fn1(fn(f64) -> f64, Box<NExpr>),
+  Fn2(fn(f64, f64) -> f64, Box<NExpr>, Box<NExpr>),
+}
+
+impl NExpr {
+  fn eval(&self, vars: &[f64]) -> f64 {
+    match self {
+      NExpr::Const(v) => *v,
+      NExpr::Var(i) => vars[*i],
+      NExpr::Add(items) => items.iter().map(|e| e.eval(vars)).sum(),
+      NExpr::Mul(items) => items.iter().map(|e| e.eval(vars)).product(),
+      NExpr::Pow(base, exp) => {
+        let b = base.eval(vars);
+        let e = exp.eval(vars);
+        // Integer exponents use powi to keep negative bases exact.
+        if e.fract() == 0.0 && e.abs() < i32::MAX as f64 {
+          b.powi(e as i32)
+        } else {
+          b.powf(e)
+        }
+      }
+      NExpr::Neg(e) => -e.eval(vars),
+      NExpr::Fn1(f, a) => f(a.eval(vars)),
+      NExpr::Fn2(f, a, b) => f(a.eval(vars), b.eval(vars)),
+    }
+  }
+}
+
+/// Compile an expression over the given variable names to an `NExpr`.
+/// Returns `None` for any construct outside the supported numeric subset
+/// (the caller then falls back to symbolic evaluation).
+fn compile_numeric(expr: &Expr, var_names: &[String]) -> Option<NExpr> {
+  let comp = |e: &Expr| compile_numeric(e, var_names);
+  match expr {
+    Expr::Integer(n) => Some(NExpr::Const(*n as f64)),
+    Expr::Real(v) => Some(NExpr::Const(*v)),
+    Expr::Identifier(name) => {
+      if let Some(idx) = var_names.iter().position(|n| n == name) {
+        return Some(NExpr::Var(idx));
+      }
+      match name.as_str() {
+        "Pi" => Some(NExpr::Const(std::f64::consts::PI)),
+        "E" => Some(NExpr::Const(std::f64::consts::E)),
+        "Degree" => Some(NExpr::Const(std::f64::consts::PI / 180.0)),
+        "GoldenRatio" => Some(NExpr::Const((1.0 + 5.0_f64.sqrt()) / 2.0)),
+        _ => None,
+      }
+    }
+    Expr::BinaryOp { op, left, right } => {
+      let l = comp(left)?;
+      let r = comp(right)?;
+      Some(match op {
+        BinaryOperator::Plus => NExpr::Add(vec![l, r]),
+        BinaryOperator::Minus => NExpr::Add(vec![l, NExpr::Neg(Box::new(r))]),
+        BinaryOperator::Times => NExpr::Mul(vec![l, r]),
+        BinaryOperator::Divide => NExpr::Mul(vec![
+          l,
+          NExpr::Pow(Box::new(r), Box::new(NExpr::Const(-1.0))),
+        ]),
+        BinaryOperator::Power => NExpr::Pow(Box::new(l), Box::new(r)),
+        _ => return None,
+      })
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => Some(NExpr::Neg(Box::new(comp(operand)?))),
+    Expr::FunctionCall { name, args } => {
+      let unary: Option<fn(f64) -> f64> = match name.as_str() {
+        "Sin" => Some(f64::sin),
+        "Cos" => Some(f64::cos),
+        "Tan" => Some(f64::tan),
+        "Sec" => Some(|v: f64| 1.0 / v.cos()),
+        "Csc" => Some(|v: f64| 1.0 / v.sin()),
+        "Cot" => Some(|v: f64| 1.0 / v.tan()),
+        "Sinh" => Some(f64::sinh),
+        "Cosh" => Some(f64::cosh),
+        "Tanh" => Some(f64::tanh),
+        "ArcSin" => Some(f64::asin),
+        "ArcCos" => Some(f64::acos),
+        "ArcTan" if args.len() == 1 => Some(f64::atan),
+        "Exp" => Some(f64::exp),
+        "Log" if args.len() == 1 => Some(f64::ln),
+        "Sqrt" => Some(f64::sqrt),
+        "Abs" => Some(f64::abs),
+        "Sign" => Some(f64::signum),
+        "Floor" if args.len() == 1 => Some(f64::floor),
+        "Ceiling" if args.len() == 1 => Some(f64::ceil),
+        _ => None,
+      };
+      if let Some(f) = unary
+        && args.len() == 1
+      {
+        return Some(NExpr::Fn1(f, Box::new(comp(&args[0])?)));
+      }
+      match name.as_str() {
+        "Plus" => Some(NExpr::Add(
+          args.iter().map(comp).collect::<Option<Vec<_>>>()?,
+        )),
+        "Times" => Some(NExpr::Mul(
+          args.iter().map(comp).collect::<Option<Vec<_>>>()?,
+        )),
+        "Subtract" if args.len() == 2 => Some(NExpr::Add(vec![
+          comp(&args[0])?,
+          NExpr::Neg(Box::new(comp(&args[1])?)),
+        ])),
+        "Divide" if args.len() == 2 => Some(NExpr::Mul(vec![
+          comp(&args[0])?,
+          NExpr::Pow(Box::new(comp(&args[1])?), Box::new(NExpr::Const(-1.0))),
+        ])),
+        "Power" if args.len() == 2 => Some(NExpr::Pow(
+          Box::new(comp(&args[0])?),
+          Box::new(comp(&args[1])?),
+        )),
+        "Rational" if args.len() == 2 => match (&args[0], &args[1]) {
+          (Expr::Integer(a), Expr::Integer(b)) if *b != 0 => {
+            Some(NExpr::Const(*a as f64 / *b as f64))
+          }
+          _ => None,
+        },
+        // Wolfram's `ArcTan[x, y]` is the angle of the point (x, y).
+        "ArcTan" if args.len() == 2 => Some(NExpr::Fn2(
+          |x, y| y.atan2(x),
+          Box::new(comp(&args[0])?),
+          Box::new(comp(&args[1])?),
+        )),
+        "Log" if args.len() == 2 => Some(NExpr::Fn2(
+          |b, v| v.ln() / b.ln(),
+          Box::new(comp(&args[0])?),
+          Box::new(comp(&args[1])?),
+        )),
+        "Mod" if args.len() == 2 => Some(NExpr::Fn2(
+          f64::rem_euclid,
+          Box::new(comp(&args[0])?),
+          Box::new(comp(&args[1])?),
+        )),
+        "Max" if !args.is_empty() => {
+          let compiled = args.iter().map(comp).collect::<Option<Vec<_>>>()?;
+          compiled
+            .into_iter()
+            .reduce(|acc, e| NExpr::Fn2(f64::max, Box::new(acc), Box::new(e)))
+        }
+        "Min" if !args.is_empty() => {
+          let compiled = args.iter().map(comp).collect::<Option<Vec<_>>>()?;
+          compiled
+            .into_iter()
+            .reduce(|acc, e| NExpr::Fn2(f64::min, Box::new(acc), Box::new(e)))
+        }
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
 // ─── ODE Term Structures ───────────────────────────────────────────────
 
 /// Represents a term in the ODE: coefficient * y^(order)[x]
@@ -578,6 +1531,14 @@ fn extract_derivative_order_and_point(
   None
 }
 
+/// Evaluate an initial-condition side (or domain bound) numerically.
+/// Exact symbolic values (`-ArcCos[31/40]`, `Pi/6`, …) numericise via the
+/// `N` fallback of `interp_value_to_f64` — NDSolve is a numeric solver,
+/// so this loses nothing.
+fn nval_to_f64(expr: &Expr) -> Option<f64> {
+  interp_value_to_f64(expr).ok()
+}
+
 /// Parse a numeric initial condition: y[x0] == y0 or y'[x0] == y0
 /// Returns (derivative_order, x_val, y_val)
 fn parse_numeric_initial_condition(
@@ -600,11 +1561,8 @@ fn parse_numeric_initial_condition(
       && args.len() == 1
     {
       // Try to evaluate both sides numerically
-      let x_eval = crate::evaluator::evaluate_expr_to_expr(&args[0]).ok();
-      let rhs_eval = crate::evaluator::evaluate_expr_to_expr(&operands[1]).ok();
-      if let (Some(x_e), Some(rhs_e)) = (x_eval, rhs_eval)
-        && let (Ok(x_val), Ok(rhs_val)) =
-          (expr_to_f64(&x_e), expr_to_f64(&rhs_e))
+      if let (Some(x_val), Some(rhs_val)) =
+        (nval_to_f64(&args[0]), nval_to_f64(&operands[1]))
       {
         return Ok(Some((0, x_val, rhs_val)));
       }
@@ -613,15 +1571,10 @@ fn parse_numeric_initial_condition(
     // Derivative[n, y, x0] == val or Derivative[n][y][x0] == val
     if let Some((order, val_expr)) =
       extract_derivative_order_and_point(lhs, y_name)
+      && let (Some(x_val), Some(rhs_val)) =
+        (nval_to_f64(&val_expr), nval_to_f64(&operands[1]))
     {
-      let x_eval = crate::evaluator::evaluate_expr_to_expr(&val_expr).ok();
-      let rhs_eval = crate::evaluator::evaluate_expr_to_expr(&operands[1]).ok();
-      if let (Some(x_e), Some(rhs_e)) = (x_eval, rhs_eval)
-        && let (Ok(x_val), Ok(rhs_val)) =
-          (expr_to_f64(&x_e), expr_to_f64(&rhs_e))
-      {
-        return Ok(Some((order, x_val, rhs_val)));
-      }
+      return Ok(Some((order, x_val, rhs_val)));
     }
   }
   Ok(None)

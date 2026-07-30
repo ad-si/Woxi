@@ -339,6 +339,58 @@ fn extract_cell_content(s: &str) -> String {
   extract_string_content(s)
 }
 
+/// Is this argument a top-level option rule (`name -> value` or
+/// `name :> value`)? Typeset box heads carry display options after their
+/// positional arguments (e.g. `SuperscriptBox[a, b, MultilineFunction ->
+/// None]`); they must not leak into the reconstructed InputForm text.
+fn is_option_arg(s: &str) -> bool {
+  let mut depth = 0i32;
+  let mut in_string = false;
+  let mut prev_backslash = false;
+  let bytes = s.as_bytes();
+
+  for (i, c) in s.char_indices() {
+    if in_string {
+      if c == '"' && !prev_backslash {
+        in_string = false;
+      }
+      prev_backslash = c == '\\' && !prev_backslash;
+      continue;
+    }
+    match c {
+      '"' => in_string = true,
+      '{' | '[' | '(' => depth += 1,
+      '}' | ']' | ')' => depth -= 1,
+      '-' | ':' if depth == 0 && bytes.get(i + 1) == Some(&b'>') => {
+        return true;
+      }
+      _ => {}
+    }
+  }
+  false
+}
+
+/// Number of prime marks if `s` is a superscript string consisting solely
+/// of `\[Prime]` named characters (or `′`), the FrontEnd's typeset form of
+/// `Derivative`: `SuperscriptBox["\[Theta]", "\[Prime]\[Prime]"]` is
+/// `θ''`. Returns `None` for any other superscript.
+fn prime_marks(s: &str) -> Option<usize> {
+  let mut rest = s.trim().trim_matches('"');
+  if rest.is_empty() {
+    return None;
+  }
+  let mut count = 0;
+  while !rest.is_empty() {
+    if let Some(r) = rest.strip_prefix("\\[Prime]") {
+      rest = r;
+    } else {
+      rest = rest.strip_prefix('\u{2032}')?;
+    }
+    count += 1;
+  }
+  Some(count)
+}
+
 /// Recognise the typeset box heads that the FrontEnd uses to pretty-print
 /// expressions (`FractionBox`, `SuperscriptBox`, `SqrtBox`, `TagBox`,
 /// `GridBox`, …) and convert them back into evaluable InputForm text.
@@ -433,17 +485,32 @@ fn extract_typeset_box(s: &str) -> Option<String> {
     "FormBox",
     "AdjustmentBox",
     "FrameBox",
+    "CheckboxBox",
   ] {
     if !s.starts_with(head) {
       continue;
     }
-    let args = split_args(head, s)?;
+    let mut args = split_args(head, s)?;
+    // Drop trailing display options (`MultilineFunction -> None`, …) so the
+    // positional-argument matches below see the box's real arity.
+    args.retain(|a| !is_option_arg(a));
     let conv = |a: &str| extract_cell_content(a);
     return Some(match head {
       // `FractionBox[a, b]` → `(a)/(b)`. The parentheses preserve operator
       // precedence around composite numerators / denominators.
       "FractionBox" if args.len() == 2 => {
         format!("({})/({})", conv(&args[0]), conv(&args[1]))
+      }
+      // `SuperscriptBox[f, "\[Prime]"]` is the typeset form of the
+      // derivative `f'` — emit prime characters, not exponentiation.
+      "SuperscriptBox"
+        if args.len() == 2 && prime_marks(&args[1]).is_some() =>
+      {
+        format!(
+          "{}{}",
+          conv(&args[0]),
+          "'".repeat(prime_marks(&args[1]).unwrap())
+        )
       }
       // `SuperscriptBox[a, b]` → `(a)^(b)`.
       "SuperscriptBox" if args.len() == 2 => {
@@ -482,6 +549,39 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       // and the underlying expression that should be used for evaluation.
       // We want the second argument.
       "InterpretationBox" if args.len() >= 2 => conv(&args[1]),
+      // `CheckboxBox[value, {off, on}]` (Demonstrations metadata cells) —
+      // render a checkbox glyph, labelled with the `on` alternative when
+      // it is a string (`CheckboxBox[False, {False, "Mathematics"}]` →
+      // `☐ Mathematics`).
+      "CheckboxBox" if !args.is_empty() => {
+        let value = args[0].trim();
+        let mut checked = value == "True";
+        let mut label = None;
+        if let Some(alts) = args.get(1) {
+          let alts = alts.trim();
+          if let Some(inner) =
+            alts.strip_prefix('{').and_then(|a| a.strip_suffix('}'))
+          {
+            let alt_parts = split_top_level_commas(inner);
+            let off = alt_parts.first().map(|p| p.trim());
+            if let Some(on) = alt_parts.get(1).map(|p| p.trim()) {
+              // With degenerate alternatives ({False, False}) fall back to
+              // the truthiness of the value itself.
+              if off != Some(on) {
+                checked = value == on;
+              }
+              if on.starts_with('"') && on.ends_with('"') && on.len() >= 2 {
+                label = Some(extract_string_content(on));
+              }
+            }
+          }
+        }
+        let mark = if checked { "\u{2611}" } else { "\u{2610}" };
+        match label {
+          Some(l) => format!("{mark} {l}"),
+          None => mark.to_string(),
+        }
+      }
       // `GridBox[{{r11, r12, …}, {r21, …}, …}, opts…]` → the raw rows as a
       // list literal. The rows themselves may contain box expressions, so
       // recurse into each cell.
@@ -746,12 +846,14 @@ fn render_boxes_text(s: &str) -> String {
   fn box_args(head: &str, s: &str) -> Option<Vec<String>> {
     let rest = s.strip_prefix(head)?.strip_prefix('[')?;
     let (inner, _) = find_matching_bracket(rest).ok()?;
-    Some(
-      split_top_level_commas(inner)
-        .into_iter()
-        .map(|p| p.trim().to_string())
-        .collect(),
-    )
+    let mut args: Vec<String> = split_top_level_commas(inner)
+      .into_iter()
+      .map(|p| p.trim().to_string())
+      .collect();
+    // Drop trailing display options (`MultilineFunction -> None`, …) so
+    // the arity matches below see the box's real positional arguments.
+    args.retain(|a| !is_option_arg(a));
+    Some(args)
   }
 
   // Superscripts of digits (and a leading minus) read best as Unicode
@@ -826,6 +928,11 @@ fn render_boxes_text(s: &str) -> String {
   if let Some(args) = box_args("SuperscriptBox", s)
     && args.len() == 2
   {
+    // Prime-mark superscripts are the typeset derivative (`θ'`), not an
+    // exponent.
+    if let Some(n) = prime_marks(&args[1]) {
+      return format!("{}{}", render_boxes_text(&args[0]), "'".repeat(n));
+    }
     let base = render_boxes_text(&args[0]);
     let exp = render_boxes_text(&args[1]);
     return match superscript_unicode(&exp) {
@@ -905,6 +1012,10 @@ fn named_char_to_code_op(name: &str) -> Option<&'static str> {
     //   RowBox[{"prob2", "\[Equal]", RowBox[{"3", "prob4"}]}]
     // parse as a predicate, not an assignment.
     "Equal" => Some("=="),
+    // `\[Prime]` is the typeset derivative mark (`f\[Prime]` = `f'`).
+    // The Unicode prime (U+2032) is not a valid InputForm operator, so
+    // map it to the ASCII apostrophe to keep the cell evaluable.
+    "Prime" => Some("'"),
     "NotEqual" => Some("!="),
     "LessEqual" => Some("<="),
     "GreaterEqual" => Some(">="),
@@ -913,6 +1024,17 @@ fn named_char_to_code_op(name: &str) -> Option<&'static str> {
     "Cross" => Some("\\[Cross]"),
     "NoBreak" | "InvisibleSpace" | "InvisibleComma" | "ImplicitPlus"
     | "AutoSpace" | "ZeroWidthSpace" | "NonBreakingSpace" => Some(""),
+    // Typographic spacing characters separate tokens in typeset code
+    // (e.g. `"/.", "\[VeryThinSpace]", "sol"`). Emit a plain ASCII space
+    // so the reconstructed code carries no invisible Unicode.
+    "ThinSpace"
+    | "VeryThinSpace"
+    | "MediumSpace"
+    | "ThickSpace"
+    | "NegativeThinSpace"
+    | "NegativeVeryThinSpace"
+    | "NegativeMediumSpace"
+    | "NegativeThickSpace" => Some(" "),
     // `\[InvisibleTimes]` represents implicit multiplication (e.g. `2 x`
     // is encoded as `2 \[InvisibleTimes] x` in box form). Map it to an
     // explicit `*` so the resulting InputForm parses as multiplication
@@ -2913,6 +3035,95 @@ Cell["Chapter 2", "Chapter"]
   }
 
   #[test]
+  fn test_extract_cell_content_prime_derivative() {
+    // `SuperscriptBox[f, "\[Prime]"]` is the FrontEnd's typeset form of a
+    // derivative; the trailing `MultilineFunction -> None` display option
+    // must be ignored. From the trebuchet Demonstration notebook.
+    let s = r#"BoxData[RowBox[{
+      SuperscriptBox["\[Theta]", "\[Prime]\[Prime]",
+       MultilineFunction->None], "[", "t", "]"}]]"#;
+    assert_eq!(extract_cell_content(s), "θ''[t]");
+    let s = r#"BoxData[RowBox[{
+      SuperscriptBox["\[Phi]", "\[Prime]",
+       MultilineFunction->None], "[", "0", "]"}]]"#;
+    assert_eq!(extract_cell_content(s), "ϕ'[0]");
+  }
+
+  #[test]
+  fn test_extract_cell_content_superscript_with_option() {
+    // A plain power whose box carries a display option must still convert.
+    let s = r#"BoxData[SuperscriptBox["x", "2", MultilineFunction->None]]"#;
+    assert_eq!(extract_cell_content(s), "(x)^(2)");
+  }
+
+  #[test]
+  fn test_extract_cell_content_squared_derivative() {
+    // Nested: (φ'[t])^2 — a derivative RowBox inside a power box.
+    let s = r#"BoxData[SuperscriptBox[
+      RowBox[{
+       SuperscriptBox["\[Phi]", "\[Prime]",
+        MultilineFunction->None], "[", "t", "]"}], "2"]]"#;
+    assert_eq!(extract_cell_content(s), "(ϕ'[t])^(2)");
+  }
+
+  #[test]
+  fn test_extract_cell_content_checkbox() {
+    // Demonstrations metadata cells hold checkbox grids; render glyphs.
+    assert_eq!(
+      extract_cell_content(
+        r#"BoxData[CheckboxBox[False, {False, "Mathematics"}]]"#
+      ),
+      "\u{2610} Mathematics"
+    );
+    assert_eq!(
+      extract_cell_content(
+        r#"BoxData[CheckboxBox["Physics", {False, "Physics"}]]"#
+      ),
+      "\u{2611} Physics"
+    );
+    assert_eq!(
+      extract_cell_content(r#"BoxData[CheckboxBox[True, {False, True}]]"#),
+      "\u{2611}"
+    );
+    // Degenerate alternatives: fall back to the value's truthiness.
+    assert_eq!(
+      extract_cell_content(r#"BoxData[CheckboxBox[False, {False, False}]]"#),
+      "\u{2610}"
+    );
+  }
+
+  #[test]
+  fn test_extract_textdata_leading_inline_math() {
+    // An inline math cell at the *start* of a prose run (the sentence's
+    // subject, from the trebuchet notebook) must render too.
+    let s = r#"TextData[{
+ Cell[BoxData[
+  FormBox[
+   RowBox[{
+    RowBox[{"\[Theta]", "(", "t", ")"}], ",",
+    RowBox[{"\[Phi]", "(", "t", ")"}]}], TraditionalForm]], "InlineMath",
+  ExpressionUUID->"430c8958-3ee9-4d09-9a56-2cb3400dbb47"],
+ " are the angles"
+}]"#;
+    assert_eq!(extract_cell_content(s), "θ(t),ϕ(t) are the angles");
+  }
+
+  #[test]
+  fn test_extract_textdata_inline_math_subscripts() {
+    // `SubscriptBox["m", "1"]` renders as display text in prose.
+    let s = r#"TextData[{
+ Cell[BoxData[
+  FormBox[
+   RowBox[{
+    SubscriptBox["m", "1"], ",",
+    SubscriptBox["m", "2"]}], TraditionalForm]], "InlineMath",ExpressionUUID->
+  "dfd0ccb6-6747-48f8-9a58-eb78bd009bbc"],
+ " are the weights"
+}]"#;
+    assert_eq!(extract_cell_content(s), "m_1,m_2 are the weights");
+  }
+
+  #[test]
   fn test_extract_textdata_inline_math_formula() {
     // A boxed formula inside prose converts to display text (Unicode
     // superscripts, not InputForm parentheses) — this is a sentence.
@@ -2930,6 +3141,28 @@ Cell["Chapter 2", "Chapter"]
       extract_cell_content(s),
       "One form of the equation of a parabola is y\u{00b2}=2p x."
     );
+  }
+
+  #[test]
+  fn test_extract_textdata_display_formula() {
+    // A whole Text cell holding one display formula (the trebuchet
+    // notebook's Lagrangian) must not come back empty; derivative prime
+    // marks and their `MultilineFunction -> None` display option render
+    // as `θ'`.
+    let s = r#"TextData[Cell[BoxData[
+ FormBox[
+  RowBox[{"\[ScriptCapitalL]", "=",
+   RowBox[{
+    StyleBox[
+     FractionBox["1", "2"],
+     FontFamily->"Times New Roman",
+     FontSize->12], " ",
+    SuperscriptBox[
+     RowBox[{
+      SuperscriptBox["\[Theta]", "\[Prime]",
+       MultilineFunction->None], "(", "t", ")"}], "2"]}]}],
+  TraditionalForm]], "InlineMath",ExpressionUUID->"x"]]"#;
+    assert_eq!(extract_cell_content(s), "\u{2112}=1/2 θ'(t)\u{00B2}");
   }
 
   #[test]

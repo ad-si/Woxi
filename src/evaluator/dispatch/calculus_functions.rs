@@ -739,10 +739,10 @@ pub fn dispatch_calculus_functions(
     "Interpolation" | "ListInterpolation" if !args.is_empty() => {
       return Some(crate::functions::ode_ast::interpolation_ast(args, name));
     }
-    "NDSolve" if args.len() == 3 => {
+    "NDSolve" if args.len() >= 3 => {
       return Some(crate::functions::ode_ast::ndsolve_ast(args));
     }
-    "NDSolveValue" if args.len() == 3 => {
+    "NDSolveValue" if args.len() >= 3 => {
       let result = crate::functions::ode_ast::ndsolve_ast(args);
       return Some(match result {
         Ok(result_expr) => extract_value_from_solve_result(&result_expr)

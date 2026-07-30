@@ -11220,6 +11220,22 @@ mod manipulate {
     assert!(!manipulate_spec_to_json(&spec).contains("appearanceNone"));
   }
 
+  #[test]
+  fn row_control_and_button_args_are_not_vsform() {
+    // wolframscript shows control objects and layout wrappers in the
+    // control area without a Manipulate::vsform message.
+    let result = woxi::interpret_with_stdout(
+      "Manipulate[x, Row[{\"lbl\", Control[{x, 0, 1}]}], Button[\"b\", x = 0]]",
+    )
+    .unwrap();
+    assert!(
+      !result.warnings.iter().any(|w| w.contains("vsform")),
+      "no vsform expected, got {:?}",
+      result.warnings
+    );
+    assert!(result.result.starts_with("Manipulate["));
+  }
+
   /// Controls wrapped in a `Row[…]` layout (with loose labels, `Spacer`
   /// padding, and `Dynamic[Control[…]]` wrappers — the Doyle-spirals
   /// Demonstration idiom) extract in display order: the loose string
@@ -15760,6 +15776,40 @@ mod color_data_indexed {
       assert!(svg.contains("<polygon"), "polygon missing: {svg}");
       assert!(svg.contains("rgb(0,255,255)"), "hue fill missing: {svg}");
     }
+  }
+}
+
+mod plot_part_extraction {
+  use super::*;
+
+  #[test]
+  fn parametric_plot_part_one_yields_primitives() {
+    // `ParametricPlot[…][[1]]` returns the plot's primitives so they can
+    // be embedded in a surrounding `Graphics[{…}]` (the trebuchet
+    // demonstration overlays its traces this way).
+    clear_state();
+    assert_eq!(
+      interpret(
+        "p = ParametricPlot[{Sin[t], Cos[t]}, {t, 0, 3}][[1]]; \
+         {Head[p], Head[p[[1, 2]]]}"
+      )
+      .unwrap(),
+      "{List, Line}"
+    );
+  }
+
+  #[test]
+  fn graphics_with_embedded_plot_part_renders() {
+    clear_state();
+    let svg = export_svg(
+      "Graphics[{ParametricPlot[{Sin[t], Cos[t]}, {t, 0, 3}][[1]], \
+       Disk[{0, 0}, 0.1]}]",
+    );
+    assert!(
+      svg.contains("<polyline") || svg.contains("<path"),
+      "curve primitives should render: {}",
+      &svg[..200.min(svg.len())]
+    );
   }
 }
 
