@@ -11584,7 +11584,10 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       if let (Some((a, b)), Some((c, d))) = (
         try_extract_complex_float(base),
         try_extract_complex_float(exp),
-      ) && (b != 0.0 || d != 0.0)
+      ) && (b != 0.0
+        || d != 0.0
+        || contains_imaginary_unit(base)
+        || contains_imaginary_unit(exp))
         && (contains_real(base) || contains_real(exp))
       {
         // log(z) = ln|z| + i*arg(z)
@@ -11859,6 +11862,25 @@ pub fn try_around_unary(
 }
 
 use crate::functions::math_ast::contains_inexact_real as contains_real;
+
+/// Structurally complex: the expression mentions the imaginary unit, even
+/// when its numeric imaginary part works out to `0.` (as in `0.5 + 0.*I`).
+/// Such operands must still numericize in the complex power path of
+/// `power_two` — the zero imaginary part alone is no reason to leave
+/// `E^(0.5 + 0.*I)` symbolic.
+fn contains_imaginary_unit(e: &Expr) -> bool {
+  match e {
+    Expr::Identifier(name) => name == "I",
+    Expr::BinaryOp { left, right, .. } => {
+      contains_imaginary_unit(left) || contains_imaginary_unit(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_imaginary_unit(operand),
+    Expr::FunctionCall { args, .. } | Expr::List(args) => {
+      args.iter().any(contains_imaginary_unit)
+    }
+    _ => false,
+  }
+}
 
 /// Try to extract rational coefficient k = numer/denom from an expression
 /// of the form `k * I * Pi`.

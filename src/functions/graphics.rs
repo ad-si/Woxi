@@ -7637,6 +7637,34 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args
   };
 
+  // `Show[image, opts…]` — a raster Image argument passes through: Show
+  // of an image just displays it (sizing options like `ImageSize -> 100`
+  // don't alter the pixel data), e.g. the `Show[ColorData[name, "Image"],
+  // ImageSize -> 100]` gradient swatches of the Demonstrations site.
+  if let Some((first, rest)) = args.split_first()
+    && rest
+      .iter()
+      .all(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+  {
+    let evaled_first;
+    let first_ref = match first {
+      Expr::FunctionCall { name, .. }
+        if name == "Graphics" || name == "Graphics3D" =>
+      {
+        first
+      }
+      Expr::Image { .. } => first,
+      _ => {
+        evaled_first =
+          evaluate_expr_to_expr(first).unwrap_or_else(|_| first.clone());
+        &evaled_first
+      }
+    };
+    if matches!(first_ref, Expr::Image { .. }) {
+      return Ok(first_ref.clone());
+    }
+  }
+
   for arg in args {
     // If the arg is not already a Graphics/Graphics3D expression,
     // try evaluating it (e.g. it could be a variable or function call)
@@ -12211,6 +12239,16 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::FunctionCall { name, .. } if name == "Dynamic" => {
         out_args.push(spec.clone());
       }
+      // A layout expression holding `Control[…]` calls (e.g.
+      // `Row[{"label", Control[{{p, 4}, Range[1, 25]}], Spacer[10], …}]`,
+      // the Demonstrations custom-control-row idiom) is a valid control
+      // specification, not a malformed variable spec. The inner Control
+      // var-spec lists are processed like standalone `Control[…]`
+      // arguments (bounds evaluated); the surrounding layout passes
+      // through untouched.
+      Expr::FunctionCall { .. } if contains_control_call(spec) => {
+        out_args.push(process_control_container(spec));
+      }
       // `Delimiter`, a bare string, and `Style[…]` are static annotation
       // rows between controls (Wolfram tags them
       // Manipulate`Dump`ThisIsNotAControl), not malformed variable specs —
@@ -12330,6 +12368,52 @@ pub fn control_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "Control".to_string(),
     args: out_args.into(),
   })
+}
+
+/// True when a Manipulate argument contains a `Control[…]` call — i.e. it
+/// is a custom control layout (`Row[{…, Control[…], …}]`,
+/// `Dynamic[Control[…]]`, a `Column`/`Grid` of controls, …) rather than a
+/// bare variable-spec list or a display expression.
+fn contains_control_call(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } => {
+      name == "Control" || args.iter().any(contains_control_call)
+    }
+    Expr::List(items) => items.iter().any(contains_control_call),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_control_call(left) || contains_control_call(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_control_call(operand),
+    _ => false,
+  }
+}
+
+/// Process every `Control[{…}]` inside a control-container Manipulate
+/// argument through `process_manipulate_var_spec` (evaluating spec bounds
+/// like a standalone `Control`), leaving the surrounding layout intact.
+fn process_control_container(e: &Expr) -> Expr {
+  match e {
+    Expr::FunctionCall { name, args } if name == "Control" => {
+      let mut new_args: Vec<Expr> = args.iter().cloned().collect();
+      if let Some(Expr::List(items)) = args.first()
+        && !items.is_empty()
+      {
+        new_args[0] = process_manipulate_var_spec(items);
+      }
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      }
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(process_control_container).collect(),
+    },
+    Expr::List(items) => {
+      Expr::List(items.iter().map(process_control_container).collect())
+    }
+    other => other.clone(),
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -12652,38 +12736,49 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       }
       _ => {}
     }
-    // Only list-shaped arguments are control specs. Any other trailing
-    // argument (e.g. a `Dynamic[Panel[…]]` of checkboxes) is an extra
-    // display element: capture it so the frontend can render it live.
+    // Only list-shaped arguments are plain control specs. A non-list
+    // argument holding `Control[…]` calls is a custom control layout
+    // (`Row[{"label", Control[…], Spacer[10], …}]`): its controls are
+    // extracted in order, with loose strings / `Style[…]` becoming
+    // heading rows and pure spacing dropped. Any other trailing argument
+    // (e.g. a `Dynamic[Panel[…]]` of checkboxes) is an extra display
+    // element: capture it so the frontend can render it live.
     if !matches!(spec, Expr::List(_)) {
+      if contains_control_call(spec) {
+        let mut items = Vec::new();
+        collect_container_items(spec, &mut items);
+        for item in items {
+          match item {
+            ContainerItem::Spec(s) => push_parsed_spec(
+              &s,
+              &mut controls,
+              &mut control_enabled,
+              &mut fixed,
+              &mut state,
+              &mut renames,
+            )?,
+            ContainerItem::Heading(h) => {
+              let label_runs = manipulate_label_runs(&h, false);
+              controls.push(ManipulateControl::Heading {
+                label: flatten_label_runs(&label_runs),
+                label_runs,
+              });
+            }
+          }
+        }
+        continue;
+      }
       displays.push(crate::syntax::expr_to_input_form(spec));
       continue;
     }
-    let (spec, rename) = rewrite_compound_control_var(spec);
-    match parse_manipulate_control(&spec)? {
-      ParsedControl::Visible(mut c, enabled) => {
-        if let Some((orig, orig_form, synth)) = &rename {
-          patch_default_label(&mut c, orig, synth);
-          renames.push((orig_form.clone(), synth.clone()));
-        }
-        if let Some(cond) = enabled {
-          control_enabled.push((c.name().to_string(), cond));
-        }
-        controls.push(c);
-      }
-      ParsedControl::Fixed { name, value } => {
-        if let Some((_, orig_form, synth)) = &rename {
-          renames.push((orig_form.clone(), synth.clone()));
-        }
-        fixed.push((name, value));
-      }
-      ParsedControl::State { name, value } => {
-        if let Some((_, orig_form, synth)) = &rename {
-          renames.push((orig_form.clone(), synth.clone()));
-        }
-        state.push((name, value));
-      }
-    }
+    push_parsed_spec(
+      spec,
+      &mut controls,
+      &mut control_enabled,
+      &mut fixed,
+      &mut state,
+      &mut renames,
+    )?;
   }
 
   // A Manipulate with no controls or state at all (e.g. `Manipulate[x^2,
@@ -12745,6 +12840,85 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animation_running,
     appearance_none,
   })
+}
+
+/// One element of a custom control layout: a `Control[…]` variable spec to
+/// parse, or a loose label rendered as a heading row.
+enum ContainerItem {
+  Spec(Expr),
+  Heading(Expr),
+}
+
+/// Walk a control-container Manipulate argument (`Row[{…}]`, nested
+/// layouts, `Dynamic[Control[…]]`, …) collecting its `Control[…]` variable
+/// specs and loose string / `Style[…]` labels in display order. `Spacer[…]`
+/// is pure layout and is dropped.
+fn collect_container_items(e: &Expr, out: &mut Vec<ContainerItem>) {
+  match e {
+    Expr::FunctionCall { name, args } if name == "Control" => {
+      if let Some(s) = args.first() {
+        out.push(ContainerItem::Spec(s.clone()));
+      }
+    }
+    Expr::FunctionCall { name, .. } if name == "Spacer" => {}
+    Expr::String(_) => out.push(ContainerItem::Heading(e.clone())),
+    Expr::FunctionCall { name, .. } if name == "Style" => {
+      out.push(ContainerItem::Heading(e.clone()));
+    }
+    Expr::FunctionCall { args, .. } => {
+      for a in args.iter() {
+        collect_container_items(a, out);
+      }
+    }
+    Expr::List(items) => {
+      for a in items.iter() {
+        collect_container_items(a, out);
+      }
+    }
+    _ => {}
+  }
+}
+
+/// Parse one list-shaped variable spec and record the result: a visible
+/// control (with its `Enabled` gate), a fixed Locator binding, or a mutable
+/// `ControlType -> None` state variable. Compound control variables are
+/// renamed to synthesized symbols, recorded in `renames` for the caller's
+/// body rewrite. `None` when the spec doesn't parse — the caller gives up
+/// on the whole extraction, falling back to the plain output path.
+fn push_parsed_spec(
+  spec: &Expr,
+  controls: &mut Vec<ManipulateControl>,
+  control_enabled: &mut Vec<(String, String)>,
+  fixed: &mut Vec<(String, String)>,
+  state: &mut Vec<(String, String)>,
+  renames: &mut Vec<(String, String)>,
+) -> Option<()> {
+  let (spec, rename) = rewrite_compound_control_var(spec);
+  match parse_manipulate_control(&spec)? {
+    ParsedControl::Visible(mut c, enabled) => {
+      if let Some((orig, orig_form, synth)) = &rename {
+        patch_default_label(&mut c, orig, synth);
+        renames.push((orig_form.clone(), synth.clone()));
+      }
+      if let Some(cond) = enabled {
+        control_enabled.push((c.name().to_string(), cond));
+      }
+      controls.push(c);
+    }
+    ParsedControl::Fixed { name, value } => {
+      if let Some((_, orig_form, synth)) = &rename {
+        renames.push((orig_form.clone(), synth.clone()));
+      }
+      fixed.push((name, value));
+    }
+    ParsedControl::State { name, value } => {
+      if let Some((_, orig_form, synth)) = &rename {
+        renames.push((orig_form.clone(), synth.clone()));
+      }
+      state.push((name, value));
+    }
+  }
+  Some(())
 }
 
 /// Synthesize a plain symbol name for a compound (non-Identifier) control
@@ -13784,11 +13958,20 @@ fn discrete_choice_rule(item: &Expr) -> Option<(&Expr, &Expr)> {
 }
 
 /// Render a discrete-choice label. A string label is shown without its
-/// surrounding quotes; anything else falls back to its InputForm.
+/// surrounding quotes; presentation wrappers (`Style["P", Italic]`,
+/// `Row[{…}]`) render as their display text via the label-run renderer;
+/// anything that renders empty falls back to its InputForm.
 fn discrete_choice_label(expr: &Expr) -> String {
   match expr {
     Expr::String(s) => s.clone(),
-    other => crate::syntax::expr_to_input_form(other),
+    other => {
+      let flat = flatten_label_runs(&manipulate_label_runs(other, false));
+      if flat.is_empty() {
+        crate::syntax::expr_to_input_form(other)
+      } else {
+        flat
+      }
+    }
   }
 }
 
@@ -13799,13 +13982,34 @@ fn discrete_choice_label(expr: &Expr) -> String {
 fn discrete_choice_label_svg(label: &Expr) -> Option<String> {
   match label {
     Expr::Graphics { svg, .. } => Some(svg.clone()),
+    // A raster image label (e.g. the `ColorData[…, "Image"]` swatches of a
+    // gradient picker) wraps its pixels as an SVG document.
+    Expr::Image {
+      width,
+      height,
+      channels,
+      data,
+      ..
+    } => Some(crate::functions::image_ast::image_to_svg_document(
+      *width, *height, *channels, data,
+    )),
     // Evaluating through the interpreter (not `evaluate_expr_to_expr`)
     // is what renders a held `Graphics[…]` call — or a user-defined icon
-    // function like `myIcon[2]` — to SVG.
+    // function like `myIcon[2]` — to SVG. A call producing an `Image`
+    // (e.g. `Show[ColorData[name, "Image"], ImageSize -> 100]`) recurses
+    // into the raster arm above.
     Expr::FunctionCall { .. } => {
       let code = crate::syntax::expr_to_input_form(label);
       match crate::interpret_with_stdout(&code) {
-        Ok(result) => result.graphics,
+        Ok(result) => {
+          if result.graphics.is_some() {
+            return result.graphics;
+          }
+          match crate::interpret_to_expr(&code) {
+            Ok(img @ Expr::Image { .. }) => discrete_choice_label_svg(&img),
+            _ => None,
+          }
+        }
         Err(_) => None,
       }
     }

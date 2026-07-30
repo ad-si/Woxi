@@ -426,8 +426,333 @@ const CHERRY_TONES_GRADIENT: [(f64, f64, f64); 8] = [
   (1., 1., 1.),
 ];
 
-/// Resolve a named ChartStyle color scheme to its gradient control points.
-fn named_color_scheme(name: &str) -> Option<&'static [(f64, f64, f64)]> {
+// Control points for the remaining named gradients of
+// `ColorData["Gradients"]`. Unlike the sampled tables above, these are
+// hand-tuned linear approximations of the Wolfram gradients (endpoints and
+// hue progression match; mid-band values can drift by a few percent).
+// Refine any of them by sampling `ColorData[name]` with wolframscript and
+// replacing the control points, as was done for the verified tables.
+
+const ALPINE_COLORS_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.208, 0.325, 0.212),
+  (0.402, 0.51, 0.345),
+  (0.639, 0.665, 0.512),
+  (0.84, 0.85, 0.8),
+  (1., 1., 1.),
+];
+
+const ARMY_COLORS_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.44, 0.48, 0.35),
+  (0.56, 0.6, 0.42),
+  (0.67, 0.69, 0.52),
+  (0.78, 0.78, 0.64),
+  (0.87, 0.86, 0.78),
+];
+
+const ATLANTIC_COLORS_GRADIENT: [(f64, f64, f64); 5] = [
+  (0., 0.11, 0.19),
+  (0.05, 0.27, 0.38),
+  (0.18, 0.45, 0.53),
+  (0.45, 0.65, 0.68),
+  (0.75, 0.85, 0.85),
+];
+
+const AURORA_COLORS_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.09, 0.11, 0.23),
+  (0.14, 0.29, 0.4),
+  (0.16, 0.51, 0.42),
+  (0.35, 0.72, 0.34),
+  (0.83, 0.9, 0.31),
+];
+
+const BEACH_COLORS_GRADIENT: [(f64, f64, f64); 5] = [
+  (0., 0.44, 0.7),
+  (0.42, 0.68, 0.84),
+  (0.78, 0.86, 0.9),
+  (0.94, 0.87, 0.68),
+  (0.98, 0.78, 0.44),
+];
+
+const BLUE_GREEN_YELLOW_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.09, 0.11, 0.36),
+  (0.09, 0.35, 0.48),
+  (0.16, 0.56, 0.5),
+  (0.44, 0.76, 0.41),
+  (0.85, 0.94, 0.3),
+];
+
+const BRASS_TONES_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.2, 0.14, 0.03),
+  (0.53, 0.4, 0.14),
+  (0.82, 0.67, 0.3),
+  (0.95, 0.85, 0.55),
+  (0.98, 0.95, 0.84),
+];
+
+const BRIGHT_BANDS_GRADIENT: [(f64, f64, f64); 6] = [
+  (0.4, 0.2, 0.8),
+  (0.2, 0.5, 0.9),
+  (0.2, 0.8, 0.4),
+  (0.9, 0.9, 0.2),
+  (0.9, 0.5, 0.2),
+  (0.9, 0.2, 0.2),
+];
+
+const BROWN_CYAN_TONES_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.36, 0.23, 0.13),
+  (0.63, 0.5, 0.38),
+  (0.87, 0.85, 0.81),
+  (0.55, 0.78, 0.79),
+  (0.2, 0.57, 0.62),
+];
+
+const CANDY_COLORS_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.87, 0.62, 0.68),
+  (0.92, 0.74, 0.8),
+  (0.86, 0.77, 0.89),
+  (0.7, 0.68, 0.87),
+  (0.51, 0.56, 0.82),
+];
+
+const CMYK_COLORS_GRADIENT: [(f64, f64, f64); 4] = [
+  (0., 0.72, 0.92),
+  (0.9, 0.2, 0.62),
+  (1., 0.95, 0.1),
+  (0.1, 0.1, 0.1),
+];
+
+const COFFEE_TONES_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.32, 0.2, 0.13),
+  (0.53, 0.38, 0.25),
+  (0.7, 0.55, 0.41),
+  (0.85, 0.73, 0.6),
+  (0.96, 0.91, 0.84),
+];
+
+const DARK_BANDS_GRADIENT: [(f64, f64, f64); 6] = [
+  (0.43, 0.48, 0.7),
+  (0.35, 0.6, 0.44),
+  (0.6, 0.66, 0.34),
+  (0.78, 0.63, 0.3),
+  (0.78, 0.42, 0.28),
+  (0.72, 0.3, 0.44),
+];
+
+const DARK_TERRAIN_GRADIENT: [(f64, f64, f64); 6] = [
+  (0.13, 0.15, 0.23),
+  (0.26, 0.38, 0.4),
+  (0.45, 0.56, 0.4),
+  (0.7, 0.65, 0.5),
+  (0.9, 0.88, 0.85),
+  (1., 1., 1.),
+];
+
+const DEEP_SEA_COLORS_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.04, 0.03, 0.11),
+  (0.08, 0.15, 0.36),
+  (0.14, 0.32, 0.6),
+  (0.3, 0.56, 0.8),
+  (0.66, 0.85, 0.94),
+];
+
+const FALL_COLORS_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.22, 0.23, 0.11),
+  (0.46, 0.37, 0.16),
+  (0.7, 0.45, 0.16),
+  (0.88, 0.59, 0.22),
+  (0.96, 0.79, 0.42),
+];
+
+const FUCHSIA_TONES_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.11, 0.08, 0.11),
+  (0.4, 0.2, 0.38),
+  (0.68, 0.35, 0.63),
+  (0.86, 0.6, 0.81),
+  (0.97, 0.88, 0.95),
+];
+
+const GRAY_TONES_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.09, 0.09, 0.09),
+  (0.3, 0.3, 0.3),
+  (0.53, 0.53, 0.53),
+  (0.76, 0.76, 0.76),
+  (0.94, 0.94, 0.94),
+];
+
+const GRAY_YELLOW_TONES_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.2, 0.21, 0.24),
+  (0.45, 0.44, 0.42),
+  (0.69, 0.64, 0.51),
+  (0.88, 0.8, 0.55),
+  (0.98, 0.93, 0.72),
+];
+
+const GREEN_BROWN_TERRAIN_GRADIENT: [(f64, f64, f64); 6] = [
+  (0., 0.27, 0.09),
+  (0.31, 0.49, 0.22),
+  (0.6, 0.56, 0.33),
+  (0.79, 0.68, 0.51),
+  (0.92, 0.85, 0.76),
+  (1., 1., 1.),
+];
+
+const GREEN_PINK_TONES_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.09, 0.35, 0.14),
+  (0.42, 0.7, 0.4),
+  (0.83, 0.9, 0.78),
+  (0.94, 0.72, 0.78),
+  (0.83, 0.35, 0.53),
+];
+
+const ISLAND_COLORS_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.05, 0.32, 0.58),
+  (0.34, 0.6, 0.74),
+  (0.86, 0.88, 0.71),
+  (0.71, 0.68, 0.32),
+  (0.51, 0.52, 0.19),
+];
+
+const LAKE_COLORS_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.16, 0.15, 0.36),
+  (0.24, 0.36, 0.6),
+  (0.33, 0.57, 0.74),
+  (0.48, 0.77, 0.81),
+  (0.7, 0.92, 0.87),
+];
+
+const LIGHT_TEMPERATURE_MAP_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.47, 0.6, 0.92),
+  (0.7, 0.79, 0.96),
+  (0.91, 0.91, 0.92),
+  (0.96, 0.72, 0.6),
+  (0.89, 0.44, 0.36),
+];
+
+const LIGHT_TERRAIN_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.55, 0.64, 0.68),
+  (0.7, 0.74, 0.66),
+  (0.83, 0.8, 0.66),
+  (0.92, 0.88, 0.77),
+  (0.98, 0.97, 0.94),
+];
+
+const MINT_COLORS_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.48, 0.76, 0.55),
+  (0.6, 0.83, 0.65),
+  (0.72, 0.89, 0.75),
+  (0.84, 0.94, 0.85),
+  (0.95, 0.99, 0.95),
+];
+
+const NEON_COLORS_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.28, 0.75, 0.3),
+  (0.72, 0.86, 0.16),
+  (0.98, 0.79, 0.2),
+  (0.98, 0.5, 0.44),
+  (0.86, 0.35, 0.76),
+];
+
+const PEARL_COLORS_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.86, 0.77, 0.81),
+  (0.93, 0.87, 0.86),
+  (0.97, 0.95, 0.91),
+  (0.88, 0.9, 0.94),
+  (0.75, 0.79, 0.88),
+];
+
+const PIGEON_TONES_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.16, 0.16, 0.2),
+  (0.38, 0.38, 0.44),
+  (0.59, 0.59, 0.65),
+  (0.78, 0.78, 0.82),
+  (0.94, 0.94, 0.95),
+];
+
+const PLUM_COLORS_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.1, 0.03, 0.11),
+  (0.36, 0.13, 0.36),
+  (0.63, 0.29, 0.5),
+  (0.85, 0.52, 0.5),
+  (0.98, 0.81, 0.62),
+];
+
+const RED_BLUE_TONES_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.76, 0.2, 0.19),
+  (0.93, 0.57, 0.44),
+  (0.97, 0.88, 0.77),
+  (0.62, 0.74, 0.85),
+  (0.29, 0.44, 0.71),
+];
+
+const RED_GREEN_SPLIT_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.64, 0.08, 0.08),
+  (0.89, 0.5, 0.44),
+  (0.97, 0.95, 0.94),
+  (0.53, 0.79, 0.44),
+  (0.13, 0.54, 0.13),
+];
+
+const ROSE_COLORS_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.22, 0.09, 0.13),
+  (0.51, 0.19, 0.28),
+  (0.76, 0.35, 0.44),
+  (0.91, 0.58, 0.62),
+  (0.98, 0.83, 0.83),
+];
+
+const RUST_TONES_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.28, 0.11, 0.05),
+  (0.51, 0.22, 0.09),
+  (0.72, 0.35, 0.13),
+  (0.89, 0.51, 0.19),
+  (0.98, 0.7, 0.31),
+];
+
+const SANDY_TERRAIN_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.63, 0.42, 0.24),
+  (0.77, 0.55, 0.33),
+  (0.88, 0.68, 0.44),
+  (0.95, 0.81, 0.58),
+  (0.99, 0.92, 0.75),
+];
+
+const SIENNA_TONES_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.34, 0.18, 0.11),
+  (0.54, 0.31, 0.18),
+  (0.72, 0.45, 0.27),
+  (0.86, 0.62, 0.42),
+  (0.96, 0.82, 0.64),
+];
+
+const SOUTHWEST_COLORS_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.6, 0.32, 0.19),
+  (0.83, 0.5, 0.25),
+  (0.94, 0.72, 0.38),
+  (0.48, 0.62, 0.56),
+  (0.19, 0.41, 0.46),
+];
+
+const VALENTINE_TONES_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.53, 0.09, 0.22),
+  (0.72, 0.25, 0.38),
+  (0.86, 0.44, 0.54),
+  (0.94, 0.65, 0.71),
+  (0.99, 0.86, 0.88),
+];
+
+const WATERMELON_COLORS_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.12, 0.31, 0.14),
+  (0.4, 0.62, 0.35),
+  (0.83, 0.89, 0.71),
+  (0.93, 0.63, 0.57),
+  (0.82, 0.27, 0.3),
+];
+
+/// Resolve a named ChartStyle / `ColorData` color scheme to its gradient
+/// control points. Covers every name in `ColorData["Gradients"]`.
+pub(crate) fn named_color_scheme(
+  name: &str,
+) -> Option<&'static [(f64, f64, f64)]> {
   let scheme: &'static [(f64, f64, f64)] = match name {
     "Pastel" => &PASTEL_GRADIENT,
     "Rainbow" => &RAINBOW_GRADIENT,
@@ -441,6 +766,45 @@ fn named_color_scheme(name: &str) -> Option<&'static [(f64, f64, f64)]> {
     "SunsetColors" => &SUNSET_COLORS_GRADIENT,
     "FruitPunchColors" => &FRUIT_PUNCH_COLORS_GRADIENT,
     "CherryTones" => &CHERRY_TONES_GRADIENT,
+    "AlpineColors" => &ALPINE_COLORS_GRADIENT,
+    "ArmyColors" => &ARMY_COLORS_GRADIENT,
+    "AtlanticColors" => &ATLANTIC_COLORS_GRADIENT,
+    "AuroraColors" => &AURORA_COLORS_GRADIENT,
+    "BeachColors" => &BEACH_COLORS_GRADIENT,
+    "BlueGreenYellow" => &BLUE_GREEN_YELLOW_GRADIENT,
+    "BrassTones" => &BRASS_TONES_GRADIENT,
+    "BrightBands" => &BRIGHT_BANDS_GRADIENT,
+    "BrownCyanTones" => &BROWN_CYAN_TONES_GRADIENT,
+    "CandyColors" => &CANDY_COLORS_GRADIENT,
+    "CMYKColors" => &CMYK_COLORS_GRADIENT,
+    "CoffeeTones" => &COFFEE_TONES_GRADIENT,
+    "DarkBands" => &DARK_BANDS_GRADIENT,
+    "DarkTerrain" => &DARK_TERRAIN_GRADIENT,
+    "DeepSeaColors" => &DEEP_SEA_COLORS_GRADIENT,
+    "FallColors" => &FALL_COLORS_GRADIENT,
+    "FuchsiaTones" => &FUCHSIA_TONES_GRADIENT,
+    "GrayTones" => &GRAY_TONES_GRADIENT,
+    "GrayYellowTones" => &GRAY_YELLOW_TONES_GRADIENT,
+    "GreenBrownTerrain" => &GREEN_BROWN_TERRAIN_GRADIENT,
+    "GreenPinkTones" => &GREEN_PINK_TONES_GRADIENT,
+    "IslandColors" => &ISLAND_COLORS_GRADIENT,
+    "LakeColors" => &LAKE_COLORS_GRADIENT,
+    "LightTemperatureMap" => &LIGHT_TEMPERATURE_MAP_GRADIENT,
+    "LightTerrain" => &LIGHT_TERRAIN_GRADIENT,
+    "MintColors" => &MINT_COLORS_GRADIENT,
+    "NeonColors" => &NEON_COLORS_GRADIENT,
+    "PearlColors" => &PEARL_COLORS_GRADIENT,
+    "PigeonTones" => &PIGEON_TONES_GRADIENT,
+    "PlumColors" => &PLUM_COLORS_GRADIENT,
+    "RedBlueTones" => &RED_BLUE_TONES_GRADIENT,
+    "RedGreenSplit" => &RED_GREEN_SPLIT_GRADIENT,
+    "RoseColors" => &ROSE_COLORS_GRADIENT,
+    "RustTones" => &RUST_TONES_GRADIENT,
+    "SandyTerrain" => &SANDY_TERRAIN_GRADIENT,
+    "SiennaTones" => &SIENNA_TONES_GRADIENT,
+    "SouthwestColors" => &SOUTHWEST_COLORS_GRADIENT,
+    "ValentineTones" => &VALENTINE_TONES_GRADIENT,
+    "WatermelonColors" => &WATERMELON_COLORS_GRADIENT,
     _ => return None,
   };
   Some(scheme)
@@ -463,6 +827,31 @@ fn scheme_name(val: &Expr) -> Option<String> {
   }
 }
 
+/// Evaluate a gradient (linear `Blend` of its evenly spaced control
+/// points) at parameter `t`, clamped to [0, 1] like `ColorData[name]`.
+/// The single canonical gradient interpolation — chart styling and
+/// `ColorData[name, t]` both go through here.
+pub(crate) fn gradient_color_at(
+  controls: &[(f64, f64, f64)],
+  t: f64,
+) -> (f64, f64, f64) {
+  if controls.is_empty() {
+    return (0.0, 0.0, 0.0);
+  }
+  let m = controls.len();
+  let t = if t.is_nan() { 0.0 } else { t.clamp(0.0, 1.0) };
+  let p = t * (m - 1) as f64;
+  let idx = (p.floor() as usize).min(m - 1);
+  let frac = p - idx as f64;
+  let (r0, g0, b0) = controls[idx];
+  let (r1, g1, b1) = controls[(idx + 1).min(m - 1)];
+  (
+    r0 + frac * (r1 - r0),
+    g0 + frac * (g1 - g0),
+    b0 + frac * (b1 - b0),
+  )
+}
+
 /// Sample a gradient (linear `Blend` of its control points) at `n` evenly
 /// spaced parameters, returning one color per chart element. Matches
 /// wolframscript's `ChartStyle -> scheme` sampling (`t = i/(n-1)`).
@@ -470,7 +859,6 @@ fn sample_gradient(controls: &[(f64, f64, f64)], n: usize) -> Vec<Color> {
   if controls.is_empty() || n == 0 {
     return Vec::new();
   }
-  let m = controls.len();
   (0..n)
     .map(|i| {
       let t = if n == 1 {
@@ -478,16 +866,8 @@ fn sample_gradient(controls: &[(f64, f64, f64)], n: usize) -> Vec<Color> {
       } else {
         i as f64 / (n - 1) as f64
       };
-      let p = t * (m - 1) as f64;
-      let idx = (p.floor() as usize).min(m - 1);
-      let frac = p - idx as f64;
-      let (r0, g0, b0) = controls[idx];
-      let (r1, g1, b1) = controls[(idx + 1).min(m - 1)];
-      Color::new(
-        r0 + frac * (r1 - r0),
-        g0 + frac * (g1 - g0),
-        b0 + frac * (b1 - b0),
-      )
+      let (r, g, b) = gradient_color_at(controls, t);
+      Color::new(r, g, b)
     })
     .collect()
 }
@@ -2976,7 +3356,10 @@ mod tests {
         rgb_u8(&Color::new(last.0, last.1, last.2))
       );
     }
-    assert!(named_color_scheme("BrightBands").is_none());
+    // Previously unimplemented gradients (like BrightBands) now resolve
+    // too; only genuinely unknown names stay unresolved.
+    assert!(named_color_scheme("BrightBands").is_some());
+    assert!(named_color_scheme("NoSuchGradient").is_none());
   }
 
   #[test]

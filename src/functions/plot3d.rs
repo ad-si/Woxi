@@ -2291,12 +2291,38 @@ fn collect_3d_primitives(
 }
 
 /// Tessellate a sphere into triangles.
+/// Pick a sphere's tessellation detail `(n_lat, n_lon)`. Small scenes
+/// always get full detail; in a scene with many spheres (e.g. a
+/// Demonstrations circle packing with thousands of them) each sphere's
+/// detail scales with its size relative to the scene so the SVG stays a
+/// tractable size — a sphere spanning a few pixels doesn't need 768
+/// triangles.
+fn sphere_detail(
+  radius: f64,
+  scene_extent: f64,
+  sphere_count: usize,
+) -> (usize, usize) {
+  if sphere_count <= 32 || scene_extent <= 0.0 {
+    return (16, 24);
+  }
+  let rel = radius / scene_extent;
+  if rel > 0.08 {
+    (12, 18)
+  } else if rel > 0.04 {
+    (8, 12)
+  } else if rel > 0.02 {
+    (6, 9)
+  } else {
+    (4, 6)
+  }
+}
+
 fn tessellate_sphere(
   center: &Point3D,
   radius: f64,
+  detail: (usize, usize),
 ) -> Vec<(Point3D, Point3D, Point3D)> {
-  let n_lat = 16;
-  let n_lon = 24;
+  let (n_lat, n_lon) = detail;
   let mut tris = Vec::new();
   let pi = std::f64::consts::PI;
 
@@ -2815,7 +2841,21 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         "ViewPoint" => {
-          if let Some(vp) = eval_vec3(replacement) {
+          // Symbolic viewpoints stand for axis-aligned directions
+          // (Wolfram's `Above` is `{0, 0, ∞}`, etc.).
+          let symbolic: Option<[f64; 3]> = match replacement.as_ref() {
+            Expr::Identifier(s) => match s.as_str() {
+              "Above" => Some([0.0, 0.0, 2.0]),
+              "Below" => Some([0.0, 0.0, -2.0]),
+              "Front" => Some([0.0, -2.0, 0.0]),
+              "Back" => Some([0.0, 2.0, 0.0]),
+              "Left" => Some([-2.0, 0.0, 0.0]),
+              "Right" => Some([2.0, 0.0, 0.0]),
+              _ => None,
+            },
+            _ => None,
+          };
+          if let Some(vp) = symbolic.or_else(|| eval_vec3(replacement)) {
             camera = Camera {
               azimuth: vp[1].atan2(vp[0]),
               elevation: vp[2].atan2(vp[0].hypot(vp[1])),
@@ -2865,6 +2905,27 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut all_triangles: Vec<Triangle> = Vec::new();
   let base_color = (0x5E_u8, 0x81_u8, 0xB5_u8); // Default blue
 
+  // Sphere-scene statistics for adaptive tessellation (see
+  // `sphere_detail`): how many spheres there are and how large the
+  // sphere-covered region is.
+  let mut sphere_count = 0usize;
+  let mut sph_min = [f64::INFINITY; 3];
+  let mut sph_max = [f64::NEG_INFINITY; 3];
+  for prim in &prims {
+    if let Primitive3D::Sphere { center, radius, .. } = prim {
+      sphere_count += 1;
+      for (i, c) in [center.x, center.y, center.z].into_iter().enumerate() {
+        sph_min[i] = sph_min[i].min(c - radius);
+        sph_max[i] = sph_max[i].max(c + radius);
+      }
+    }
+  }
+  let sphere_extent = if sphere_count > 0 {
+    (0..3).fold(0.0f64, |m, i| m.max(sph_max[i] - sph_min[i]))
+  } else {
+    0.0
+  };
+
   for prim in &prims {
     let (tris, prim_style): (Vec<(Point3D, Point3D, Point3D)>, &StyleState3D) =
       match prim {
@@ -2872,7 +2933,14 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           center,
           radius,
           style,
-        } => (tessellate_sphere(center, *radius), style),
+        } => (
+          tessellate_sphere(
+            center,
+            *radius,
+            sphere_detail(*radius, sphere_extent, sphere_count),
+          ),
+          style,
+        ),
         Primitive3D::Cuboid {
           p_min,
           p_max,

@@ -1912,6 +1912,42 @@ mod plot3d {
       );
     }
 
+    // A scene with many spheres scales each sphere's tessellation with
+    // its relative size, so a Demonstrations-style packing of hundreds of
+    // spheres renders to a tractable SVG instead of hundreds of thousands
+    // of triangles.
+    #[test]
+    fn graphics3d_many_spheres_tessellate_adaptively() {
+      let one = export_svg("Graphics3D[Sphere[{0, 0, 0}, 0.1]]");
+      let many =
+        export_svg("Graphics3D[Table[Sphere[{i, j, 0}, 0.1], {i, 8}, {j, 8}]]");
+      let tris = |svg: &str| svg.matches("<polygon").count();
+      // 64 tiny spheres must use far fewer triangles each than a lone
+      // full-detail sphere (768 triangles).
+      assert!(
+        tris(&many) < 64 * tris(&one) / 4,
+        "expected adaptive tessellation: 1 sphere = {} triangles, \
+         64 spheres = {} triangles",
+        tris(&one),
+        tris(&many)
+      );
+    }
+
+    // Symbolic viewpoints select axis-aligned cameras: ViewPoint -> Above
+    // looks straight down, giving a different projection than the default
+    // oblique camera.
+    #[test]
+    fn graphics3d_view_point_above() {
+      let above =
+        export_svg("Graphics3D[Cuboid[], ViewPoint -> Above, Boxed -> False]");
+      let default = export_svg("Graphics3D[Cuboid[], Boxed -> False]");
+      assert!(above.contains("<polygon"), "top view must render");
+      assert_ne!(
+        above, default,
+        "ViewPoint -> Above must change the projection"
+      );
+    }
+
     // A numeric PlotRange pins the frame: with PlotRange -> 10 a unit
     // sphere occupies a small part of the drawing, so its projected
     // extent must be far smaller than with the fitted default.
@@ -10710,6 +10746,24 @@ mod manipulate {
     );
   }
 
+  #[test]
+  fn row_wrapped_controls_are_not_vsform() {
+    // A layout expression holding Control[…] calls (the Demonstrations
+    // custom-control-row idiom) is a valid control specification, not a
+    // malformed variable spec. The inner Control specs get their bounds
+    // evaluated (Range[1, 5] expands), like a standalone Control.
+    assert_eq!(
+      interpret(
+        "Manipulate[x + y, Row[{\"lbl\", Spacer[10], \
+         Control@{{x, 4, \"X\"}, Range[1, 5]}, \
+         Dynamic[Control@{{y, 1}, 0, 10}]}]]"
+      )
+      .unwrap(),
+      "Manipulate[x + y, lblSpacer[10]Control[{{x, 4, X}, \
+       {1, 2, 3, 4, 5}}]Dynamic[Control[{{y, 1}, 0, 10}]]]"
+    );
+  }
+
   // ── Spec extraction / Block substitution (used by Playground / Studio) ──
 
   use woxi::functions::graphics::{
@@ -10902,6 +10956,34 @@ mod manipulate {
     assert!(!manipulate_spec_to_json(&spec).contains("animated"));
     assert!(!spec.appearance_none);
     assert!(!manipulate_spec_to_json(&spec).contains("appearanceNone"));
+  }
+
+  /// Controls wrapped in a `Row[…]` layout (with loose labels, `Spacer`
+  /// padding, and `Dynamic[Control[…]]` wrappers — the Doyle-spirals
+  /// Demonstration idiom) extract in display order: the loose string
+  /// becomes a heading row and each Control contributes its variable.
+  #[test]
+  fn spec_row_wrapped_controls() {
+    let expr = interpret_to_expr(
+      "Manipulate[{p, q}, Row[{\"spiral\", Spacer[13], \
+       Dynamic@Control@{{p, 4, \"P\"}, Range[1, 25]}, \
+       Control@{{q, 30}, Range[3, 30]}}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("row-wrapped controls");
+    let names: Vec<&str> = spec.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, vec!["", "p", "q"]); // heading row binds no variable
+    match &spec.controls[1] {
+      ManipulateControl::Discrete {
+        values,
+        initial_index,
+        ..
+      } => {
+        assert_eq!(values.len(), 25);
+        assert_eq!(*initial_index, 3); // initial value 4
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
   }
 
   /// End-to-end regression for the animated `I^t` ParametricPlot widget:
@@ -14952,5 +15034,75 @@ mod color_data_indexed {
     clear_state();
     assert_eq!(interpret("Head[ColorData[1, 1]]").unwrap(), "RGBColor");
     assert_eq!(interpret("Head[ColorData[2, 1]]").unwrap(), "RGBColor");
+  }
+}
+
+mod color_data_gradients {
+  use super::*;
+
+  #[test]
+  fn samples_named_gradient() {
+    clear_state();
+    // The Rainbow control points are sampled from wolframscript, so the
+    // midpoint (an exact control point) matches ColorData exactly.
+    assert_eq!(
+      interpret("ColorData[\"Rainbow\", 0.5]").unwrap(),
+      "RGBColor[0.513417, 0.72992, 0.440682]"
+    );
+  }
+
+  #[test]
+  fn parameter_is_clamped() {
+    clear_state();
+    // Outside [0, 1] the gradient clamps to its endpoints, like Wolfram.
+    assert_eq!(
+      interpret("ColorData[\"Rainbow\", 2]").unwrap(),
+      "RGBColor[0.857359, 0.131106, 0.132128]"
+    );
+    assert_eq!(
+      interpret("ColorData[\"Rainbow\", -1]").unwrap(),
+      "RGBColor[0.471412, 0.108766, 0.527016]"
+    );
+  }
+
+  #[test]
+  fn every_listed_gradient_samples() {
+    clear_state();
+    // Every name in ColorData["Gradients"] must yield an RGBColor — a
+    // gradient picker (e.g. the Doyle-spirals Demonstration dropdown)
+    // offers all of them.
+    assert_eq!(
+      interpret(
+        "AllTrue[ColorData[\"Gradients\"], \
+         Head[ColorData[#, 0.5]] === RGBColor &]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn gradient_image_property() {
+    clear_state();
+    // ColorData[name, "Image"] is a raster swatch of the gradient.
+    assert_eq!(
+      interpret("Head[ColorData[\"Rainbow\", \"Image\"]]").unwrap(),
+      "Image"
+    );
+  }
+
+  #[test]
+  fn show_passes_an_image_through() {
+    clear_state();
+    // Show[image, ImageSize -> …] displays the image: the raster passes
+    // through unchanged (the Demonstrations gradient-swatch idiom).
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Show[ColorData[\"Rainbow\", \"Image\"], \
+         ImageSize -> 100]]"
+      )
+      .unwrap(),
+      "{300, 30}"
+    );
   }
 }
