@@ -81,7 +81,7 @@ Transpose,Transposes a matrix (list of lists),✅,pure,1.0,73
 Module,Scopes local variables with unique names,✅,pure,2.0,74
 Show,Combines multiple graphics objects into a single display,✅,pure,1.0,75
 Entity,Symbolic representation of a real-world entity,✅,pure,10.0,76
-Sum,Computes a sum over a range,✅,pure,1.0,77
+Sum,Computes a sum over one or more ranges — accepts trailing options and gives a divergent sum a value under Regularization -> Dirichlet or Abel,✅,pure,1.0,77
 HoldComplete,Holds arguments completely unevaluated,✅,pure,3.0,78
 Word,Symbol representing a word in string patterns,✅,none,2.0,79
 First,Returns the first element of a list or the given default which is only evaluated when used,✅,pure,1.0,80
@@ -376,7 +376,7 @@ Coefficient,Extracts the coefficient of a term in a polynomial,✅,pure,1.0,369
 NestList,Returns the list of intermediate results from Nest,✅,pure,1.0,371
 DeleteDuplicates,Removes duplicate elements from a list (or pairs with duplicate values from an association),✅,pure,7.0,373
 DisplayFunction,Option controlling display output,✅,pure,1.0,375
-Product,Computes the product of an expression over one or more ranges,✅,pure,1.0,376
+Product,Computes the product of an expression over one or more ranges — accepts trailing options,✅,pure,1.0,376
 FontWeight,Option for specifying font weight (Bold etc),✅,pure,3.0,377
 Right,Symbol for right alignment,✅,pure,1.0,378
 Most,Returns the list without its last element,✅,pure,5.0,379

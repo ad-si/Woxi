@@ -18,3 +18,10 @@ Multiple iterators nest, with the rightmost innermost.
 $ wo 'Product[i, {i, 1, 4}, {j, 1, 2}]'
 576
 ```
+
+A trailing option is not an iterator, so it leaves the product alone:
+
+```scrut
+$ wo 'Product[n, {n, 1, 5}, Method -> Automatic]'
+120
+```

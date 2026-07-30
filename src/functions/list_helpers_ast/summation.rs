@@ -923,6 +923,17 @@ fn body_is_one_plus_one_over_var_squared(body: &Expr, var_name: &str) -> bool {
 }
 
 pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Trailing options are not iterators; none of Product's change the answer
+  // here, so they are accepted and dropped.
+  {
+    let (positional, options) = split_iteration_options(args);
+    if !options.is_empty() {
+      if positional.len() < 2 {
+        return Ok(unevaluated("Product", args));
+      }
+      return product_ast(&positional);
+    }
+  }
   if args.len() == 1 {
     // Product[{a, b, c}] -> a * b * c
     let items = match &args[0] {
@@ -1856,10 +1867,254 @@ fn linear_slope_in(expr: &Expr, var: &str) -> Option<f64> {
   }
 }
 
+/// Split off the trailing options of a `Sum`/`Product` call. Every argument
+/// after the summand is either an iterator, which is always a list whose first
+/// element is the iteration variable, or an option, which is a rule or a list of
+/// them. Without this the iterator machinery took an option for an iterator and
+/// mangled the whole result — `Sum[n, {n, 1, 10}, Method -> Automatic]` came out
+/// as a ten-term sum of `Sum[k, Method -> Automatic]`.
+fn split_iteration_options(args: &[Expr]) -> (Vec<Expr>, Vec<Expr>) {
+  let is_rule = |e: &Expr| {
+    matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+      || matches!(e, Expr::FunctionCall { name, args }
+        if (name == "Rule" || name == "RuleDelayed") && args.len() == 2)
+  };
+  let is_option = |e: &Expr| match e {
+    // A list of rules is an option list; an iterator's first element is the
+    // iteration variable, never a rule.
+    Expr::List(items) => !items.is_empty() && items.iter().all(&is_rule),
+    other => is_rule(other),
+  };
+  let mut positional = Vec::with_capacity(args.len());
+  let mut options = Vec::new();
+  for arg in args {
+    if is_option(arg) {
+      match arg {
+        Expr::List(items) => options.extend(items.iter().cloned()),
+        other => options.push(other.clone()),
+      }
+    } else {
+      positional.push(arg.clone());
+    }
+  }
+  (positional, options)
+}
+
+/// The `Regularization` setting of a `Sum` call, if it names one.
+fn regularization_option(options: &[Expr]) -> Option<String> {
+  options.iter().find_map(|opt| {
+    let (pattern, replacement) = match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref()),
+      _ => return None,
+    };
+    if !matches!(pattern, Expr::Identifier(n) if n == "Regularization") {
+      return None;
+    }
+    match replacement {
+      Expr::String(s) => Some(s.clone()),
+      Expr::Identifier(s) if s == "None" => None,
+      _ => None,
+    }
+  })
+}
+
+/// The regularized value of a divergent `Sum[body, {var, from, Infinity}]`.
+///
+/// Both schemes are linear and are defined on a polynomial summand, so the
+/// summand is decomposed into `Σ c_k var^k` and each power replaced by the value
+/// its scheme assigns it:
+///
+/// * `"Dirichlet"` sums `Σ_{n>=1} n^k` as the Dirichlet series it continues,
+///   giving `Zeta[-k]`.
+/// * `"Abel"` applies to an alternating summand `(-1)^var p[var]`, whose Abel
+///   sum is `-eta(-k) = -(1 - 2^(k+1)) Zeta[-k]` per power.
+///
+/// A starting index other than 1 is corrected for by adding back the terms
+/// below it or subtracting the ones above. Anything outside these families —
+/// `1/n`, `2^n` — returns `None` and is left unevaluated, as wolframscript
+/// leaves it.
+fn regularized_infinite_sum(
+  body: &Expr,
+  var: &str,
+  from: i128,
+  scheme: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  // Abel needs the alternating factor peeled off first; what is left has to be
+  // the polynomial part.
+  let (polynomial, alternating) = match scheme {
+    "Dirichlet" => (body.clone(), false),
+    "Abel" => match strip_alternating_factor(body, var) {
+      Some(rest) => (rest, true),
+      None => return Ok(None),
+    },
+    _ => return Ok(None),
+  };
+  let coefficients =
+    crate::functions::polynomial_ast::coefficient_list_ast(&[
+      polynomial,
+      Expr::Identifier(var.to_string()),
+    ])?;
+  let Expr::List(ref coefficients) = coefficients else {
+    return Ok(None);
+  };
+  // Every coefficient has to be free of the summation variable. Substituting a
+  // value for it and seeing whether anything changed is exact, where a substring
+  // search on the printed form would trip over a name like `Sin` containing `n`.
+  let mentions_var = |e: &Expr| {
+    let probe = crate::syntax::substitute_variable(e, var, &Expr::Integer(0));
+    crate::syntax::expr_to_string(&probe) != crate::syntax::expr_to_string(e)
+  };
+  if coefficients.iter().any(mentions_var) {
+    return Ok(None);
+  }
+  let mut terms: Vec<Expr> = Vec::with_capacity(coefficients.len());
+  for (k, coefficient) in coefficients.iter().enumerate() {
+    let zeta = Expr::FunctionCall {
+      name: "Zeta".to_string(),
+      args: vec![Expr::Integer(-(k as i128))].into(),
+    };
+    // Zeta[1] is a pole, so a 1/n-like term has no regularized value here.
+    let value = if alternating {
+      // -(1 - 2^(k+1)) Zeta[-k]
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Expr::Integer(-1),
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![Expr::Integer(1), Expr::Integer(-(1i128 << (k + 1)))]
+              .into(),
+          },
+          zeta,
+        ]
+        .into(),
+      }
+    } else {
+      zeta
+    };
+    terms.push(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![coefficient.clone(), value].into(),
+    });
+  }
+  let canonical =
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    })?;
+  // A pole (`Zeta[1]`, from a `1/n` term) leaves `ComplexInfinity` or an
+  // unevaluated `Zeta` behind instead of a value; either means the summand is
+  // outside the scheme's reach.
+  let rendered = crate::syntax::expr_to_string(&canonical);
+  if rendered.contains("ComplexInfinity")
+    || rendered.contains("Indeterminate")
+    || rendered.contains("Zeta")
+  {
+    return Ok(None);
+  }
+  // The schemes above sum from 1; shift to the requested starting index.
+  let mut result = canonical;
+  if from < 1 {
+    for n in from..1 {
+      let term = crate::evaluator::evaluate_expr_to_expr(
+        &crate::syntax::substitute_variable(body, var, &Expr::Integer(n)),
+      )?;
+      result = crate::functions::math_ast::plus_ast(&[result, term])?;
+    }
+  } else {
+    for n in 1..from {
+      let term = crate::evaluator::evaluate_expr_to_expr(
+        &crate::syntax::substitute_variable(body, var, &Expr::Integer(n)),
+      )?;
+      let negated =
+        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), term].into(),
+        })?;
+      result = crate::functions::math_ast::plus_ast(&[result, negated])?;
+    }
+  }
+  Ok(Some(result))
+}
+
+/// Peel a `(-1)^var` factor off an alternating summand, returning what is left.
+fn strip_alternating_factor(body: &Expr, var: &str) -> Option<Expr> {
+  let is_alternating = |e: &Expr| -> bool {
+    let (base, exponent) = match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => (left.as_ref(), right.as_ref()),
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        (&args[0], &args[1])
+      }
+      _ => return false,
+    };
+    matches!(base, Expr::Integer(-1))
+      && matches!(exponent, Expr::Identifier(v) if v == var)
+  };
+  let factors =
+    crate::functions::polynomial_ast::collect_multiplicative_factors(body);
+  let mut rest: Vec<Expr> = Vec::with_capacity(factors.len());
+  let mut found = false;
+  for factor in factors {
+    if !found && is_alternating(&factor) {
+      found = true;
+      continue;
+    }
+    rest.push(factor);
+  }
+  if !found {
+    return None;
+  }
+  Some(match rest.len() {
+    0 => Expr::Integer(1),
+    1 => rest.into_iter().next().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: rest.into(),
+    },
+  })
+}
+
 pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     // Sum requires at least 2 arguments
     return Ok(unevaluated("Sum", args));
+  }
+  // Options are not iterators. Regularization assigns a value to a divergent
+  // sum; the rest do not change the answer here and are simply accepted.
+  let (positional, options) = split_iteration_options(args);
+  if !options.is_empty() {
+    if positional.len() < 2 {
+      return Ok(unevaluated("Sum", args));
+    }
+    if let Some(scheme) = regularization_option(&options)
+      && let Expr::List(spec) = &positional[1]
+      && spec.len() == 3
+      && let Expr::Identifier(var) = &spec[0]
+      && matches!(&spec[2], Expr::Identifier(s) if s == "Infinity")
+      && let Some(from) = expr_to_i128(&spec[1])
+      && let Some(value) =
+        regularized_infinite_sum(&positional[0], var, from, &scheme)?
+    {
+      return Ok(value);
+    }
+    if regularization_option(&options).is_some() {
+      // A summand outside the schemes' reach: wolframscript keeps the call.
+      return Ok(unevaluated("Sum", args));
+    }
+    return sum_ast(&positional);
   }
 
   // Indefinite sum: Sum[f[i], i] → ∑_{k=0}^{i-1} f[k] (the antidifference F

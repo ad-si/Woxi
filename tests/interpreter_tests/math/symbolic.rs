@@ -786,6 +786,149 @@ mod sum {
   fn sum_complex_bounds_real_range() {
     assert_eq!(interpret("Sum[k, {k, I, I + 1.5}]").unwrap(), "1 + 2*I");
   }
+
+  // A trailing option is not an iterator. It used to be taken for one, which
+  // mangled the whole result: Sum[n, {n, 1, 10}, Method -> Automatic] came out
+  // as Sum[1, Method -> Automatic] + … + Sum[10, Method -> Automatic].
+  #[test]
+  fn options_do_not_become_iterators() {
+    assert_eq!(
+      interpret("Sum[n, {n, 1, 10}, Method -> Automatic]").unwrap(),
+      "55"
+    );
+    assert_eq!(
+      interpret("Sum[n, {n, 1, 10}, Assumptions -> True]").unwrap(),
+      "55"
+    );
+    assert_eq!(
+      interpret("Sum[n^2, {n, 1, 4}, VerifyConvergence -> True]").unwrap(),
+      "30"
+    );
+    // Options may be gathered into a list.
+    assert_eq!(
+      interpret("Sum[n, {n, 1, 10}, {Method -> Automatic}]").unwrap(),
+      "55"
+    );
+    // The real iterators are still recognised alongside an option.
+    assert_eq!(
+      interpret("Sum[n m, {n, 1, 2}, {m, 1, 3}, Method -> Automatic]").unwrap(),
+      "18"
+    );
+    // And a convergent infinite sum is unaffected.
+    assert_eq!(
+      interpret("Sum[1/n^2, {n, 1, Infinity}, Method -> Automatic]").unwrap(),
+      "Pi^2/6"
+    );
+    assert_eq!(
+      interpret("Sum[n, {n, 1, 5}, Regularization -> None]").unwrap(),
+      "15"
+    );
+  }
+
+  // Regularization assigns a value to a divergent sum. Both schemes are linear
+  // on a polynomial summand: Dirichlet sends n^k to Zeta[-k], Abel sends the
+  // alternating (-1)^n n^k to -eta(-k).
+  #[test]
+  fn dirichlet_regularization() {
+    assert_eq!(
+      interpret("Sum[n, {n, 1, Infinity}, Regularization -> \"Dirichlet\"]")
+        .unwrap(),
+      "-1/12"
+    );
+    assert_eq!(
+      interpret("Sum[1, {n, 1, Infinity}, Regularization -> \"Dirichlet\"]")
+        .unwrap(),
+      "-1/2"
+    );
+    assert_eq!(
+      interpret("Sum[n^2, {n, 1, Infinity}, Regularization -> \"Dirichlet\"]")
+        .unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Sum[n^3, {n, 1, Infinity}, Regularization -> \"Dirichlet\"]")
+        .unwrap(),
+      "1/120"
+    );
+    // Linear in the summand.
+    assert_eq!(
+      interpret("Sum[3 n, {n, 1, Infinity}, Regularization -> \"Dirichlet\"]")
+        .unwrap(),
+      "-1/4"
+    );
+    assert_eq!(
+      interpret(
+        "Sum[n + n^2, {n, 1, Infinity}, Regularization -> \"Dirichlet\"]"
+      )
+      .unwrap(),
+      "-1/12"
+    );
+    // A starting index other than 1 drops or adds the terms in between.
+    assert_eq!(
+      interpret("Sum[n, {n, 2, Infinity}, Regularization -> \"Dirichlet\"]")
+        .unwrap(),
+      "-13/12"
+    );
+    assert_eq!(
+      interpret("Sum[n^2, {n, 0, Infinity}, Regularization -> \"Dirichlet\"]")
+        .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn abel_regularization() {
+    assert_eq!(
+      interpret("Sum[(-1)^n, {n, 1, Infinity}, Regularization -> \"Abel\"]")
+        .unwrap(),
+      "-1/2"
+    );
+    assert_eq!(
+      interpret("Sum[(-1)^n n, {n, 1, Infinity}, Regularization -> \"Abel\"]")
+        .unwrap(),
+      "-1/4"
+    );
+    assert_eq!(
+      interpret(
+        "Sum[(-1)^n n^2, {n, 1, Infinity}, Regularization -> \"Abel\"]"
+      )
+      .unwrap(),
+      "0"
+    );
+    // Starting at 0 adds the n = 0 term.
+    assert_eq!(
+      interpret("Sum[(-1)^n, {n, 0, Infinity}, Regularization -> \"Abel\"]")
+        .unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("Sum[(-1)^n n, {n, 0, Infinity}, Regularization -> \"Abel\"]")
+        .unwrap(),
+      "-1/4"
+    );
+  }
+
+  // A summand outside the schemes' reach keeps the call, as wolframscript does:
+  // 1/n lands on the pole of Zeta at 1, 2^n is not a polynomial, and Borel is
+  // not implemented.
+  #[test]
+  fn regularization_outside_the_schemes_stays_unevaluated() {
+    assert_eq!(
+      interpret("Sum[1/n, {n, 1, Infinity}, Regularization -> \"Dirichlet\"]")
+        .unwrap(),
+      "Sum[n^(-1), {n, 1, Infinity}, Regularization -> Dirichlet]"
+    );
+    assert_eq!(
+      interpret("Sum[2^n, {n, 1, Infinity}, Regularization -> \"Abel\"]")
+        .unwrap(),
+      "Sum[2^n, {n, 1, Infinity}, Regularization -> Abel]"
+    );
+    assert_eq!(
+      interpret("Sum[n, {n, 1, Infinity}, Regularization -> \"Borel\"]")
+        .unwrap(),
+      "Sum[n, {n, 1, Infinity}, Regularization -> Borel]"
+    );
+  }
 }
 
 mod coefficient_list {

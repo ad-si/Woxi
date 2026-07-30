@@ -1970,6 +1970,31 @@ mod product_extended {
       "Product[n^2, {n, 1, Infinity}]"
     );
   }
+
+  // A trailing option is not an iterator. It used to be taken for one, turning
+  // Product[n, {n, 1, 4}, Assumptions -> True] into a product of four
+  // Product[k, Assumptions -> True] factors.
+  #[test]
+  fn options_do_not_become_iterators() {
+    assert_eq!(
+      interpret("Product[n, {n, 1, 4}, Assumptions -> True]").unwrap(),
+      "24"
+    );
+    assert_eq!(
+      interpret("Product[n, {n, 1, 5}, Method -> Automatic]").unwrap(),
+      "120"
+    );
+    assert_eq!(
+      interpret("Product[n, {n, 1, 4}, {Method -> Automatic}]").unwrap(),
+      "24"
+    );
+    // The real iterators still nest alongside an option.
+    assert_eq!(
+      interpret("Product[i, {i, 1, 4}, {j, 1, 2}, Method -> Automatic]")
+        .unwrap(),
+      "576"
+    );
+  }
 }
 
 mod real_sign {
