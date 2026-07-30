@@ -17772,7 +17772,11 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let g = |t: f64| eval_at(a + t.tan()).map(|v| v / (t.cos() * t.cos()));
       adaptive_simpson(&g, eps, half_pi - eps, tolerance, max_recursion)
     } else {
-      adaptive_simpson(&eval_at, a, b, tolerance, max_recursion)
+      // Tanh-sinh first: it is the only one of the two that copes with an
+      // endpoint singularity. It converges slowly on a strongly oscillatory
+      // integrand, so fall back to the adaptive rule when it does not settle.
+      tanh_sinh(&eval_at, a, b, tolerance)
+        .or_else(|| adaptive_simpson(&eval_at, a, b, tolerance, max_recursion))
     }
   };
 
@@ -17816,6 +17820,119 @@ fn expr_to_bound(expr: &Expr) -> Option<f64> {
 }
 
 /// Adaptive Simpson's quadrature
+/// Tanh-sinh (double-exponential) quadrature over a finite interval.
+///
+/// Its nodes crowd exponentially towards the endpoints and its weights vanish
+/// there, so an integrand that blows up at an endpoint — `1/Sqrt[x]` on
+/// `{0, 1}`, `Sqrt[Tan[x]]` on `{0, Pi/2}` — integrates to near machine
+/// precision without the endpoint itself ever being sampled. Adaptive Simpson
+/// cannot manage that: it needs a value *at* the endpoint, and substituting one
+/// from just inside makes that sample arbitrarily large, which is what used to
+/// turn `Sqrt[Tan[x]]` on `{0, Pi/2}` into 121 instead of 2.22.
+///
+/// Nodes are placed by their distance from the endpoint rather than by their
+/// absolute position, since `1 - tanh(s)` cancels to nothing in double
+/// precision once `s` is more than about 19.
+///
+/// Returns `None` when successive levels never agree to `tol`, which is the
+/// caller's cue to fall back to the adaptive rule — tanh-sinh converges slowly
+/// for a strongly oscillatory integrand.
+fn tanh_sinh(
+  f: &dyn Fn(f64) -> Option<f64>,
+  a: f64,
+  b: f64,
+  tol: f64,
+) -> Option<f64> {
+  if !a.is_finite() || !b.is_finite() || a == b {
+    return None;
+  }
+  let radius = 0.5 * (b - a);
+  let half_pi = std::f64::consts::FRAC_PI_2;
+  // Beyond this the node's distance from the endpoint underflows to zero, so
+  // there is nothing left to sample.
+  // A hard backstop; the node loop normally stops earlier, once a term no
+  // longer moves the sum. A strong singularity such as `x^(-0.99)` needs the
+  // far nodes, whose contribution decays only like `distance^0.01`.
+  const T_MAX: f64 = 6.5;
+  const MAX_LEVELS: u32 = 11;
+  let evaluations = std::cell::Cell::new(0u32);
+  const MAX_EVALUATIONS: u32 = 20_000;
+
+  // `w * f(x)` for the node at abscissa parameter `t`, on the `b` side when
+  // `toward_b` and on the `a` side otherwise. A node whose distance or weight
+  // has underflowed, or where the integrand is not finite, contributes nothing.
+  let term = |t: f64, toward_b: bool| -> f64 {
+    let s = half_pi * t.sinh();
+    if !s.is_finite() {
+      return 0.0;
+    }
+    let decay = (-2.0 * s).exp();
+    // `1 - tanh(s)`, and `1 / cosh(s)^2`, both without cancellation.
+    let distance = 2.0 * decay / (1.0 + decay);
+    let weight =
+      half_pi * t.cosh() * 4.0 * decay / ((1.0 + decay) * (1.0 + decay));
+    if distance == 0.0 || !distance.is_finite() || !weight.is_finite() {
+      return 0.0;
+    }
+    let x = if toward_b {
+      b - radius * distance
+    } else {
+      a + radius * distance
+    };
+    evaluations.set(evaluations.get() + 1);
+    match f(x) {
+      Some(v) if v.is_finite() => weight * v,
+      _ => 0.0,
+    }
+  };
+
+  // Level 0 samples the integer multiples of h = 1; each further level halves h
+  // and adds the odd multiples, so every earlier node stays in the sum. The
+  // running total is compensated: a few hundred weighted terms otherwise cost
+  // the last bit of a smooth integrand's answer.
+  let mut h = 1.0f64;
+  let mut sum = term(0.0, true);
+  let mut compensation = 0.0f64;
+  let add = |sum: &mut f64, compensation: &mut f64, value: f64| {
+    let t = *sum + value;
+    *compensation += if sum.abs() >= value.abs() {
+      (*sum - t) + value
+    } else {
+      (value - t) + *sum
+    };
+    *sum = t;
+  };
+  let mut previous: Option<f64> = None;
+  for level in 0..=MAX_LEVELS {
+    let step = if level == 0 { 1.0 } else { 2.0 };
+    let mut k = 1.0;
+    while k * h <= T_MAX {
+      let added = term(k * h, true) + term(k * h, false);
+      add(&mut sum, &mut compensation, added);
+      k += step;
+      // Once the outermost nodes stop moving the sum there is no tail left.
+      if added.abs() <= f64::EPSILON * sum.abs() && k * h > 3.0 {
+        break;
+      }
+    }
+    let estimate = radius * h * (sum + compensation);
+    if !estimate.is_finite() {
+      return None;
+    }
+    if let Some(prev) = previous
+      && (estimate - prev).abs() <= tol * estimate.abs().max(1.0)
+    {
+      return Some(estimate);
+    }
+    if evaluations.get() > MAX_EVALUATIONS {
+      return None;
+    }
+    previous = Some(estimate);
+    h *= 0.5;
+  }
+  None
+}
+
 fn adaptive_simpson(
   f: &dyn Fn(f64) -> Option<f64>,
   a: f64,

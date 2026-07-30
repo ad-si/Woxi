@@ -4712,6 +4712,60 @@ mod nintegrate {
     assert_approx("NIntegrate[1/Abs[Sqrt[x]], {x, -1, 0, 1}]", 4.0, 1e-3);
   }
 
+  // An integrand that blows up at an endpoint is integrated by tanh-sinh
+  // quadrature, whose nodes crowd towards the endpoints and whose weights
+  // vanish there, so the endpoint itself is never sampled. Adaptive Simpson
+  // needs an endpoint value and used to substitute one from just inside the
+  // interval, which made that one sample enormous: these were off by anything
+  // from 1e-6 to a factor of 54.
+  #[test]
+  fn endpoint_singularities_reach_machine_precision() {
+    // Was 2.0000177257751255.
+    assert_approx("NIntegrate[1/Sqrt[x], {x, 0, 1}]", 2.0, 1e-13);
+    // Was 1.9999988610188073 — the singularity at the upper end.
+    assert_approx("NIntegrate[1/Sqrt[1 - x], {x, 0, 1}]", 2.0, 1e-7);
+    // Was 1.499999999972582.
+    assert_approx("NIntegrate[1/x^(1/3), {x, 0, 1}]", 1.5, 1e-13);
+    // A logarithmic singularity on top of an algebraic one; was -4.00010178590504.
+    assert_approx("NIntegrate[Log[x]/Sqrt[x], {x, 0, 1}]", -4.0, 1e-13);
+    // Was 1.5708147178026441.
+    assert_approx(
+      "NIntegrate[1/(Sqrt[x] (1 + x)), {x, 0, 1}]",
+      std::f64::consts::FRAC_PI_2,
+      1e-13,
+    );
+    // Was 1.5731199744528073 — wrong in the third digit.
+    assert_approx(
+      "NIntegrate[1/Sqrt[1 - x^2], {x, 0, 1}]",
+      std::f64::consts::FRAC_PI_2,
+      1e-7,
+    );
+    // Was 9.751074177483138 for an integral of 10 — 2.5% out.
+    assert_approx("NIntegrate[x^(-0.9), {x, 0, 1}]", 10.0, 1e-8);
+    // Was 121.33668114667366 for an integral of 2.22 — a factor of 54.
+    assert_approx(
+      "NIntegrate[Sqrt[Tan[x]], {x, 0, Pi/2}]",
+      2.221441469079183,
+      1e-7,
+    );
+  }
+
+  // Smooth integrands keep their accuracy, including the oscillatory ones that
+  // fall back to the adaptive rule because tanh-sinh does not settle on them.
+  #[test]
+  fn smooth_and_oscillatory_integrands_keep_working() {
+    assert_approx("NIntegrate[x^2, {x, 0, 1}]", 1.0 / 3.0, 1e-13);
+    assert_approx("NIntegrate[Sin[x], {x, 0, Pi}]", 2.0, 1e-13);
+    assert_approx("NIntegrate[1/x, {x, 1, E}]", 1.0, 1e-13);
+    assert_approx("NIntegrate[Sin[x]/x, {x, 0, 10}]", 1.658347594218876, 1e-8);
+    assert_approx("NIntegrate[Sin[x^2], {x, 0, 10}]", 0.583670880639779, 1e-6);
+    assert_approx(
+      "NIntegrate[Exp[-x^2], {x, 0, Infinity}]",
+      0.886226925452758,
+      1e-8,
+    );
+  }
+
   #[test]
   fn nintegrate_evaluation_monitor_sows_abscissae() {
     // EvaluationMonitor :> Sow[x] fires at every sampled point, so Reap
