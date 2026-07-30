@@ -592,6 +592,89 @@ mod compile {
     assert_eq!(interpret("sqr = Compile[{x}, x x]; sqr[2]").unwrap(), "4.");
   }
 
+  // A declared `_Integer` argument binds an integer. Regression: every
+  // argument was coerced to a Real, so a compiled `Nest` count arrived as
+  // `6.` and the iteration failed with `Nest::intnm` — which is how the
+  // "Mandelbrot Set Print" Demonstration's surface came out empty.
+  #[test]
+  fn compile_respects_declared_integer_arguments() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"Compile[{{n, _Integer, 0}}, n + 1][3]"#).unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret(r#"Head[Compile[{{n, _Integer, 0}}, n + 1][3]]"#).unwrap(),
+      "Integer"
+    );
+    assert_eq!(
+      interpret(r#"Compile[{{n, _Integer, 0}}, Nest[# + 1 &, 0, n]][4]"#)
+        .unwrap(),
+      "4"
+    );
+    // An undeclared argument still defaults to `_Real`.
+    assert_eq!(
+      interpret(r#"Compile[{{x, _Real, 0}}, x + 1][3]"#).unwrap(),
+      "4."
+    );
+  }
+
+  // A compiled function whose signature includes a real works in machine
+  // reals throughout, so exact numbers that came from literals in the body
+  // come back inexact. An all-integer signature keeps its exact result.
+  #[test]
+  fn compile_result_type_follows_the_signature() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"Compile[{{x, _Real, 0}}, {x, 1}][2.5]"#).unwrap(),
+      "{2.5, 1.}"
+    );
+    assert_eq!(
+      interpret(r#"Compile[{{n, _Integer, 0}}, {n, 1}][3]"#).unwrap(),
+      "{3, 1}"
+    );
+    assert_eq!(
+      interpret(r#"Compile[{{x, _Real, 0}}, Clip[x, {-4, 4}]][-5.]"#).unwrap(),
+      "-4."
+    );
+    assert_eq!(
+      interpret(
+        r#"Compile[{{n, _Integer, 0}, {x, _Real, 0}}, {n, x}][3, 2.5]"#
+      )
+      .unwrap(),
+      "{3., 2.5}"
+    );
+  }
+
+  // A rank-n `_Real` argument arrives numeric throughout, so an exact
+  // sample grid is converted before the body sees it.
+  #[test]
+  fn compile_coerces_nested_real_arguments() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"Compile[{{g, _Real, 2}}, g][{{1, 1/2}, {3, 4}}]"#).unwrap(),
+      "{{1., 0.5}, {3., 4.}}"
+    );
+  }
+
+  // `CompiledFunction` holds its arguments, so merely looking at one does
+  // not evaluate the stored body against its symbolic parameters.
+  #[test]
+  fn compiled_function_holds_its_body() {
+    clear_state();
+    let r = woxi::interpret_with_stdout(
+      r#"cf = Compile[{{g, _Real, 1}, {s, _Integer, 0}},
+           Nest[# + g &, g, s]]; Head[cf]"#,
+    )
+    .unwrap();
+    assert_eq!(r.result, "CompiledFunction");
+    assert!(
+      r.warnings.is_empty(),
+      "unexpected messages: {:?}",
+      r.warnings
+    );
+  }
+
   #[test]
   fn compile_head() {
     clear_state();

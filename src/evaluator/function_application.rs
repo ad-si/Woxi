@@ -121,6 +121,54 @@ pub fn distribute_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Largest slot index `n` referenced by `#n`/`##n` in `expr`. Returns 0 when
 /// the body uses no slots. SlotSequence `##` (== `##1`) counts as slot 1.
+/// The name of one `Compile` argument spec and whether its declared element
+/// type is `_Real`. A bare name (`x`) defaults to `_Real`, matching the
+/// Wolfram Language; `{s, _Integer, 0}` binds an integer instead, which a
+/// `Nest` count or a `Range` bound needs.
+fn compile_arg_spec(spec: &Expr) -> Option<(String, bool)> {
+  match spec {
+    Expr::Identifier(name) => Some((name.clone(), true)),
+    Expr::List(items) if !items.is_empty() => {
+      let Expr::Identifier(name) = &items[0] else {
+        return None;
+      };
+      let real = match items.get(1) {
+        Some(Expr::Pattern { head, .. }) => head.as_deref() != Some("Integer"),
+        // No declared type — the default is `_Real`.
+        _ => true,
+      };
+      Some((name.clone(), real))
+    }
+    _ => None,
+  }
+}
+
+/// Convert exact numbers to machine reals, descending into lists so a
+/// rank-n `_Real` argument arrives numeric throughout — the sample grid a
+/// compiled Mandelbrot iteration is handed is full of exact rationals.
+fn coerce_to_real(expr: &Expr) -> Expr {
+  match expr {
+    Expr::Integer(n) => Expr::Real(*n as f64),
+    Expr::BigInteger(n) => {
+      use std::str::FromStr;
+      Expr::Real(f64::from_str(&n.to_string()).unwrap_or(f64::NAN))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        Expr::Real(*n as f64 / *d as f64)
+      } else {
+        expr.clone()
+      }
+    }
+    Expr::List(items) => {
+      Expr::List(items.iter().map(coerce_to_real).collect::<Vec<_>>().into())
+    }
+    other => other.clone(),
+  }
+}
+
 fn max_slot_index(expr: &Expr) -> usize {
   fn walk(e: &Expr, max: &mut usize) {
     match e {
@@ -1679,56 +1727,46 @@ pub fn apply_curried_call(
       name,
       args: func_args,
     } if name == "CompiledFunction" && func_args.len() == 2 => {
-      // CompiledFunction[{x, y, ...}, body][args...] — substitute and evaluate numerically
-      let params: Vec<String> = match &func_args[0] {
-        Expr::List(items) => items
-          .iter()
-          .filter_map(|item| {
-            if let Expr::Identifier(n) = item {
-              Some(n.clone())
-            } else {
-              None
-            }
-          })
-          .collect(),
-        Expr::Identifier(n) => vec![n.clone()],
-        _ => vec![],
+      // CompiledFunction[specs, body][args…] — bind each argument at its
+      // declared type and evaluate the body.
+      let specs: Vec<&Expr> = match &func_args[0] {
+        Expr::List(items) => items.iter().collect(),
+        other => vec![other],
       };
       let body = &func_args[1];
-      // Convert all arguments to Real (compiled functions work numerically).
-      // Rationals also coerce to Real so `cf[1/2]` matches `cf[0.5]`.
-      let num_args: Vec<Expr> = args
+      let bound: Vec<(String, Expr)> = specs
         .iter()
-        .map(|a| match a {
-          Expr::Integer(n) => Expr::Real(*n as f64),
-          Expr::BigInteger(n) => {
-            use std::str::FromStr;
-            Expr::Real(f64::from_str(&n.to_string()).unwrap_or(f64::NAN))
-          }
-          Expr::FunctionCall { name, args: ra }
-            if name == "Rational" && ra.len() == 2 =>
-          {
-            if let (Expr::Integer(n), Expr::Integer(d)) = (&ra[0], &ra[1]) {
-              Expr::Real(*n as f64 / *d as f64)
+        .zip(args.iter())
+        .filter_map(|(spec, arg)| {
+          let (name, real) = compile_arg_spec(spec)?;
+          Some((
+            name,
+            if real {
+              coerce_to_real(arg)
             } else {
-              a.clone()
-            }
-          }
-          other => other.clone(),
+              arg.clone()
+            },
+          ))
         })
         .collect();
-      let bindings: Vec<(&str, &Expr)> = params
-        .iter()
-        .zip(num_args.iter())
-        .map(|(p, a)| (p.as_str(), a))
-        .collect();
+      let bindings: Vec<(&str, &Expr)> =
+        bound.iter().map(|(p, a)| (p.as_str(), a)).collect();
       let substituted = crate::syntax::substitute_variables(body, &bindings);
       let result = evaluate_expr_to_expr(&substituted)?;
-      // Ensure the result is numerical
-      match &result {
-        Expr::Integer(n) => Ok(Expr::Real(*n as f64)),
-        _ => Ok(result),
-      }
+      // A compiled function whose arguments include a real works in machine
+      // reals throughout, so exact numbers that leaked in from literals come
+      // back inexact: `Compile[{{x, _Real, 0}}, Clip[x, {-4, 4}]][-5.]` is
+      // `-4.`, not the exact bound. An all-integer signature keeps its exact
+      // result.
+      let any_real = specs
+        .iter()
+        .zip(args.iter())
+        .any(|(spec, _)| matches!(compile_arg_spec(spec), Some((_, true))));
+      Ok(if any_real {
+        coerce_to_real(&result)
+      } else {
+        result
+      })
     }
     Expr::FunctionCall {
       name,

@@ -64,11 +64,14 @@ pub fn dispatch_structural(
           return Some(Ok(unevaluated("Compile", args)));
         }
       };
-      let var_exprs: Vec<Expr> =
-        vars.iter().map(|v| Expr::Identifier(v.clone())).collect();
+      let _ = &vars;
+      // Keep the argument specs verbatim so the declared element types
+      // survive: `{s, _Integer, 0}` must bind an integer, not the Real every
+      // argument used to be coerced to. A bare-name spec list (`{x, y}`) is
+      // already its own name list, so the untyped form is unchanged.
       return Some(Ok(Expr::FunctionCall {
         name: "CompiledFunction".to_string(),
-        args: vec![Expr::List(var_exprs.into()), args[1].clone()].into(),
+        args: vec![args[0].clone(), args[1].clone()].into(),
       }));
     }
     "Rational" if args.len() == 2 => {

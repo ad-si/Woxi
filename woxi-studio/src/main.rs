@@ -6862,6 +6862,59 @@ Cell[BoxData[
   }
 
   #[test]
+  fn mandelbrot_set_print_manipulate_renders_its_surface() {
+    // End-to-end regression for the "Mandelbrot Set Print" Demonstration:
+    // the body iterates a `Compile`d function whose step count is declared
+    // `_Integer`, and feeds it an exact rational sample grid declared
+    // `_Real`. With every argument coerced to a Real the `Nest` count
+    // arrived as `6.` and the whole body failed with "ListPlot3D: first
+    // argument must be a list of data".
+    let code = "Manipulate[\
+      ListPlot3D[\
+        Partition[Norm /@ Transpose@mandelbrotnest[\
+          Transpose@Flatten[\
+            Table[{x, y} + xy, {y, -sca, sca, N[sca/aa]}, \
+              {x, -sca, sca, N[sca/aa]}], 1], st], 2 aa + 1], \
+        Boxed -> False, Axes -> False, Mesh -> None, \
+        PlotRange -> {Automatic, Automatic, {0, 2}}], \
+      {{sca, 5/4, \"size of view\"}, .01, 3/2}, \
+      {{aa, 3, \"resolution\"}, 1, 25, 1}, \
+      {{st, 6, \"steps\"}, 0, 15, 1}, \
+      {{xy, {-2/3, 0}, \"center\"}, {-3/2, -1}, {1/2, 1}, \
+        ControlPlacement -> Left}, \
+      SaveDefinitions -> True]";
+    // The initialization cell the Demonstration keeps above the Manipulate.
+    woxi::interpret(
+      "mandelbrotnest = Compile[{{g, _Real, 2}, {s, _Integer, 0}}, \
+       Module[{a3, a4}, \
+        Nest[(a3 = #[[1]]^2; a4 = #[[2]]^2; \
+          Clip[{a3 - a4 + g[[1]], 2. *#[[1]]*#[[2]] + g[[2]]}, {-4, 4}]) &, \
+          g, s]]]",
+    )
+    .expect("the compiled helper must define");
+
+    let mut state = instantiate_stored_manipulate(code)
+      .expect("the Mandelbrot Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some(), "the surface must render");
+    assert_eq!(state.controls.len(), 4);
+
+    // Raising the step count re-renders without error.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[2]
+    {
+      *current = 10.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
   fn gravestone_notebook_loads_its_compressed_texture() {
     // End-to-end regression for the "Gravestone from Transformation of
     // Bilinski Dodecahedron 2" Demonstration. Its texture cell is a

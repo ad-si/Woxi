@@ -214,7 +214,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     // HoldAll + Protected
     "Hold" | "HoldForm" | "HoldPattern" | "Table" | "Do" | "While" | "For"
     | "Module" | "Block" | "With" | "Assuming" | "Trace" | "TraceScan"
-    | "Defer" | "Compile" | "Which"
+    | "Defer" | "Compile" | "CompiledFunction" | "Which"
     | "Clear" | "ClearAll" | "Condition" | "Off" | "On"
     | "TimeConstrained" | "MemoryConstrained" | "TagUnset" | "NProduct"
     | "Definition" | "FullDefinition" | "Quiet" | "Assert"
