@@ -2619,6 +2619,55 @@ mod plot3d {
       assert!(!svg.contains("</tspan>"), "{svg}");
     }
 
+    /// A named style brings its size and colour from the stylesheet:
+    /// `Style[…, "Section"]` is large and orange, `"Label"` small and
+    /// black. Measured against wolframscript's own rendering.
+    #[test]
+    fn named_styles_carry_their_size_and_colour() {
+      let attrs = |style: &str| {
+        let svg = export_svg(&format!(
+          "Graphics[{{Text[Style[\"hi\", {style}], {{0, 0}}]}}]"
+        ));
+        svg
+          .lines()
+          .find(|l| l.starts_with("<text"))
+          .unwrap_or_else(|| panic!("no text in {svg}"))
+          .to_string()
+      };
+      let section = attrs("\"Section\"");
+      assert!(section.contains("font-size=\"28\""), "{section}");
+      assert!(section.contains("fill=\"rgb(202,81,25)\""), "{section}");
+      let label = attrs("\"Label\"");
+      assert!(label.contains("font-size=\"9\""), "{label}");
+      assert!(label.contains("fill=\"rgb(0,0,0)\""), "{label}");
+      // An unknown style name changes nothing.
+      let plain = attrs("\"NoSuchStyle\"");
+      assert!(plain.contains("font-size=\"14\""), "{plain}");
+    }
+
+    /// A stored box expression typesets rather than printing itself: the
+    /// balanced-ternary digit `UnderscriptBox["1", "_"]` is an underlined
+    /// 1, not the text `UnderscriptBox[1, _]`.
+    #[test]
+    fn underscript_box_typesets_as_an_underline() {
+      // A PlotLabel typesets its content, as a grid cell does.
+      let svg = export_svg(
+        "Graphics[{Disk[]}, PlotLabel -> Row[{1, UnderscriptBox[\"1\", \"_\"], \
+         1}]]",
+      );
+      assert!(!svg.contains("UnderscriptBox"), "{svg}");
+      assert!(svg.contains("text-decoration=\"underline\""), "{svg}");
+      let svg =
+        export_svg("Grid[{{Row[{1, UnderscriptBox[\"1\", \"_\"], 1}]}}]");
+      assert!(
+        svg.contains("1<tspan text-decoration=\"underline\">1</tspan>1"),
+        "{svg}"
+      );
+      // Any other underscript stays a subscript.
+      let svg = export_svg("Grid[{{UnderscriptBox[\"x\", \"2\"]}}]");
+      assert!(svg.contains("baseline-shift=\"sub\""), "{svg}");
+    }
+
     #[test]
     fn graphics_plot_label() {
       // PlotLabel also works on plain Graphics, as a centered title.

@@ -1142,6 +1142,24 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
 /// `FontFamily -> "Consolas"`, `FontWeight -> "Medium"`,
 /// `FontSlant -> "Italic"`. Returns `true` if the directive was
 /// recognised so callers can avoid double-applying via other paths.
+/// The font size and colour a named style carries in Wolfram's default
+/// stylesheet — `Style[expr, "Section"]` is large and orange, `"Label"`
+/// small and black. Measured from wolframscript's own rendering.
+pub(crate) fn named_style_appearance(
+  name: &str,
+) -> Option<(f64, Option<(u8, u8, u8)>)> {
+  Some(match name {
+    "Title" => (44.0, Some((204, 12, 2))),
+    "Subtitle" => (24.0, Some((89, 89, 89))),
+    "Section" => (28.0, Some((202, 81, 25))),
+    "Subsection" => (20.0, Some((199, 108, 41))),
+    "Subsubsection" => (19.0, Some((203, 72, 20))),
+    "Text" => (15.0, None),
+    "Label" => (9.0, None),
+    _ => return None,
+  })
+}
+
 fn apply_text_style_directive(d: &Expr, style: &mut StyleState) -> bool {
   match d {
     Expr::Identifier(s) if s == "Bold" => {
@@ -1165,6 +1183,19 @@ fn apply_text_style_directive(d: &Expr, style: &mut StyleState) -> bool {
       style.font_size = *f;
       true
     }
+    // A named style ("Section", "Label", …) brings its own size and
+    // colour from the stylesheet.
+    Expr::String(name) => match named_style_appearance(name) {
+      Some((size, color)) => {
+        style.font_size = size;
+        if let Some((r, g, b)) = color {
+          style.color =
+            Color::new(r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0);
+        }
+        true
+      }
+      None => false,
+    },
     Expr::Rule {
       pattern,
       replacement,
@@ -6711,6 +6742,15 @@ fn style_directives_to_svg_attrs(directives: &[Expr]) -> String {
           attrs.push_str(&format!(" font-size=\"{size:.0}\""));
         }
       }
+      // A named style brings its size and colour from the stylesheet.
+      Expr::String(name) => {
+        if let Some((size, color)) = named_style_appearance(name) {
+          attrs.push_str(&format!(" font-size=\"{size:.0}\""));
+          if let Some((r, g, b)) = color {
+            attrs.push_str(&format!(" fill=\"rgb({r},{g},{b})\""));
+          }
+        }
+      }
       Expr::Rule {
         pattern,
         replacement,
@@ -7194,6 +7234,11 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           }
         }
 
+        // A box expression typesets rather than printing itself: a
+        // stored `UnderscriptBox["1", "_"]` is the digit `1̲`, not the
+        // text `UnderscriptBox[1, _]`.
+        n if is_typeset_box_head(n) => boxes_to_svg(expr),
+
         // Style[content, directives...] → the content, wrapped in a
         // tspan carrying the colour, slant, weight and size the
         // directives ask for (a label reads `Style["P", Blue, Italic]`).
@@ -7640,6 +7685,23 @@ fn estimate_unit_abbrev_width(unit: &Expr) -> f64 {
 /// text markup.  This mirrors `expr_to_svg_markup()` but operates on the
 /// intermediate box representation (RowBox, SuperscriptBox, FractionBox, …)
 /// rather than raw Expr trees.
+/// Whether `name` is a box head that [`boxes_to_svg`] typesets — the
+/// forms a stored notebook expression carries its 2-D layout in.
+fn is_typeset_box_head(name: &str) -> bool {
+  matches!(
+    name,
+    "SubscriptBox"
+      | "SuperscriptBox"
+      | "SubsuperscriptBox"
+      | "UnderscriptBox"
+      | "OverscriptBox"
+      | "UnderoverscriptBox"
+      | "FractionBox"
+      | "SqrtBox"
+      | "RadicalBox"
+  )
+}
+
 pub fn boxes_to_svg(expr: &Expr) -> String {
   match expr {
     // Atoms: in box form, atoms are always Expr::String
@@ -7740,9 +7802,17 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
         )
       }
 
-      // UnderscriptBox[base, under] → base with underscript
+      // UnderscriptBox[base, under] → base with underscript. An
+      // underscript that is just a rule (`"_"`) sits *under* the base
+      // rather than beside it — the balanced-ternary digit `1̲` — so it
+      // reads as an underline.
       "UnderscriptBox" if args.len() >= 2 => {
         let base_svg = boxes_to_svg(&args[0]);
+        if matches!(&args[1], Expr::String(u) if u == "_" || u == "\u{23df}") {
+          return format!(
+            "<tspan text-decoration=\"underline\">{base_svg}</tspan>"
+          );
+        }
         let under_svg = boxes_to_svg(&args[1]);
         format!(
           "{}<tspan baseline-shift=\"sub\" font-size=\"70%\">{}</tspan>",

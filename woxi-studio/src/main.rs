@@ -8828,4 +8828,80 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`con$$ = 1}, \"…\"]"], "Output"]
       other => panic!("unexpected controls: {other:?}"),
     }
   }
+
+  /// End-to-end regression for the "Balanced Ternary Notation"
+  /// Demonstration: a balance beam whose label is a `Section`-styled Row
+  /// of balanced-ternary digits, the negative ones written as an
+  /// underscored 1.
+  #[test]
+  fn balanced_ternary_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"btDigits", "[", "n_", "]"}], ":=",
+  RowBox[{"Row", "[",
+   RowBox[{
+    RowBox[{"IntegerDigits", "[",
+     RowBox[{"n", ",", "3"}], "]"}], "/.",
+    RowBox[{"{",
+     RowBox[{"2", "\[Rule]",
+      RowBox[{"UnderscriptBox", "[", RowBox[{"\"\<1\>\"", ",", "\"\<_\>\""}],
+       "]"}]}], "}"}]}], "]"}]}]], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"Graphics", "[",
+    RowBox[{
+     RowBox[{"{",
+      RowBox[{"Circle", "[",
+       RowBox[{RowBox[{"{", RowBox[{"0", ",", "0"}], "}"}], ",", "1"}], "]"}],
+      "}"}], ",",
+     RowBox[{"ImageSize", "\[Rule]",
+      RowBox[{"{", RowBox[{"200", ",", "120"}], "}"}]}], ",",
+     RowBox[{"PlotLabel", "\[Rule]",
+      RowBox[{"Style", "[",
+       RowBox[{
+        RowBox[{"Row", "[",
+         RowBox[{"{",
+          RowBox[{"n", ",", "\"\< = \>\"", ",",
+           RowBox[{"btDigits", "[", "n", "]"}]}], "}"}], "]"}], ",",
+        "\"\<Section\>\""}], "]"}]}]}], "]"}], ",",
+   RowBox[{"{",
+    RowBox[{RowBox[{"{", RowBox[{"n", ",", "61", ",", "\"\<weight\>\""}], "}"}],
+     ",", "1", ",", "121", ",", "1"}], "}"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 61}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the graphic and its typeset label must draw"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name,
+          label,
+          current,
+          max,
+          ..
+        },
+      ] => {
+        assert_eq!((name.as_str(), label.as_str()), ("n", "weight"));
+        assert_eq!((*current, *max), (61.0, 121.0));
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
 }
