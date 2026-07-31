@@ -2089,6 +2089,46 @@ mod module_lexical_scoping {
   }
 }
 
+/// `DynamicModule` scopes its locals the way `Module` does. Wolfram keeps
+/// the wrapper around the result, because the front end owns the local
+/// state between redraws; Woxi hands back the body's value, so a Grid or
+/// a Graphics inside one displays as itself.
+mod dynamic_module_scoping {
+  use super::*;
+
+  #[test]
+  fn dynamic_module_returns_its_body() {
+    clear_state();
+    assert_eq!(interpret("DynamicModule[{x = 2}, x^2]").unwrap(), "4");
+    assert_eq!(interpret("DynamicModule[{a}, a = 3; a + 1]").unwrap(), "4");
+  }
+
+  #[test]
+  fn dynamic_module_locals_do_not_leak() {
+    clear_state();
+    // Regression: the locals were evaluated as ordinary arguments, so the
+    // body's assignments wrote straight into the global symbol.
+    assert_eq!(
+      interpret("a = 99; DynamicModule[{a}, a = 3]; a").unwrap(),
+      "99"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("x = 1; DynamicModule[{x = 5}, x] + x").unwrap(),
+      "6"
+    );
+  }
+
+  #[test]
+  fn dynamic_module_is_lexical_like_module() {
+    clear_state();
+    assert_eq!(
+      interpret("f[] := x; DynamicModule[{x = 3}, f[]]").unwrap(),
+      "x"
+    );
+  }
+}
+
 mod module_downvalues {
   use super::*;
 

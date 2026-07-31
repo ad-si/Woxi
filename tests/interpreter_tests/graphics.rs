@@ -8115,6 +8115,26 @@ mod graphics_grid {
     );
   }
 
+  /// A cell that is itself a block layout is laid out and placed as a
+  /// picture — the text pass can only set one line per cell.
+  #[test]
+  fn grid_cell_that_is_a_layout_is_laid_out() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{Style[Column[{Grid[{{\"x\", \"y\"}}], \
+                            Grid[{{\"z\", \"w\"}}]}], 16]}, \
+             {Graphics[{Circle[]}, ImageSize -> 60]}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    // Each nested cell reads as its own text, not as `Grid[{{…}}]`.
+    for cell in ["x", "y", "z", "w"] {
+      assert!(svg.contains(&format!(">{cell}</text>")), "{svg}");
+    }
+    assert!(!svg.contains("Grid["), "no expression text: {svg}");
+    assert!(!svg.contains("Column["), "no expression text: {svg}");
+  }
+
   /// A grid that mixes text with graphics draws the pictures too, each at
   /// its own size — the shape a Demonstration uses for a caption above a
   /// pair of plots.

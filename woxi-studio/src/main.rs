@@ -8541,4 +8541,97 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`day$$ = 1}, \"…\"]"], "Output"]
       other => panic!("unexpected controls: {other:?}"),
     }
   }
+
+  /// End-to-end regression for "Inscribed Angles That Intercept the Same
+  /// Arc": a `DynamicModule` whose body computes into locals and ends in a
+  /// `Grid` of a readout layout above the drawing, driven by `Locator`
+  /// controls.
+  #[test]
+  fn inscribed_angles_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"DynamicModule", "[",
+    RowBox[{
+     RowBox[{"{", "an", "}"}], ",",
+     RowBox[{
+      RowBox[{"an", "=",
+       RowBox[{"Norm", "[", RowBox[{"pa", "-", "ac"}], "]"}]}], ";",
+      RowBox[{"Grid", "[",
+       RowBox[{"{",
+        RowBox[{
+         RowBox[{"{",
+          RowBox[{"Column", "[",
+           RowBox[{"{",
+            RowBox[{
+             RowBox[{"Grid", "[",
+              RowBox[{"{",
+               RowBox[{"{", RowBox[{"\"\<d\>\"", ",", "an"}], "}"}], "}"}],
+              "]"}]}], "}"}], "]"}], "}"}], ",",
+         RowBox[{"{",
+          RowBox[{"Graphics", "[",
+           RowBox[{
+            RowBox[{"{",
+             RowBox[{
+              RowBox[{"Circle", "[", "]"}], ",",
+              RowBox[{"Line", "[",
+               RowBox[{"{", RowBox[{"pa", ",", "ac"}], "}"}], "]"}]}], "}"}],
+            ",",
+            RowBox[{"ImageSize", "\[Rule]", "200"}]}], "]"}], "}"}]}], "}"}],
+       "]"}]}]}], "]"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{",
+      RowBox[{"pa", ",",
+       RowBox[{"{", RowBox[{RowBox[{"-", "0.6"}], ",", "0.8"}], "}"}]}], "}"}],
+     ",", RowBox[{"{", RowBox[{RowBox[{"-", "1"}], ",", RowBox[{"-", "1"}]}], "}"}],
+     ",", RowBox[{"{", RowBox[{"1", ",", "1"}], "}"}], ",", "Locator", ",",
+     RowBox[{"Appearance", "\[Rule]", "None"}]}], "}"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{",
+      RowBox[{"ac", ",",
+       RowBox[{"{", RowBox[{"0.82", ",", RowBox[{"-", "0.57"}]}], "}"}]}], "}"}],
+     ",", RowBox[{"{", RowBox[{RowBox[{"-", "1"}], ",", RowBox[{"-", "1"}]}], "}"}],
+     ",", RowBox[{"{", RowBox[{"1", ",", "1"}], "}"}], ",", "Locator", ",",
+     RowBox[{"Appearance", "\[Rule]", "None"}]}], "}"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`pa$$ = {-0.6, 0.8}}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the DynamicModule must display its Grid, not its own expression text"
+    );
+    // Both locators become draggable 2-D controls at their initial points.
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Slider2D {
+          name: pa,
+          x: pax,
+          y: pay,
+          ..
+        },
+        manipulate::ControlState::Slider2D {
+          name: ac, x: acx, ..
+        },
+      ] => {
+        assert_eq!((pa.as_str(), *pax, *pay), ("pa", -0.6, 0.8));
+        assert_eq!((ac.as_str(), *acx), ("ac", 0.82));
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
 }

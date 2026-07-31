@@ -9024,6 +9024,16 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     Expr::FunctionCall { name, .. } if is_graphics_producing_head(name) => {
       crate::evaluator::expr_to_svg(cell)
     }
+    // A cell may itself be a block layout, which the text pass cannot
+    // set: lay it out on its own and place the result as a picture.
+    Expr::FunctionCall { name, args } => {
+      let args: Vec<Expr> = args.iter().cloned().collect();
+      match name.as_str() {
+        "Grid" if !args.is_empty() => grid_svg_with_gaps(&args, &[]).ok()?,
+        "Column" if !args.is_empty() => column_to_svg(&args)?,
+        _ => return None,
+      }
+    }
     _ => return None,
   };
   if svg.is_empty() {
@@ -12160,11 +12170,18 @@ fn resolve_display_item(expr: &Expr) -> Expr {
 fn nested_layout_svg(expr: &Expr) -> Option<String> {
   if let Expr::FunctionCall { name, args } = expr {
     let args: Vec<Expr> = args.iter().cloned().collect();
-    if name == "Row" {
-      return row_to_svg(&args);
+    if args.is_empty() {
+      return None;
     }
-    if name == "Column" {
-      return column_to_svg(&args);
+    match name.as_str() {
+      "Row" => return row_to_svg(&args),
+      "Column" => return column_to_svg(&args),
+      // A `Grid` nested in a layout is laid out too, rather than printed
+      // as its own expression text.
+      "Grid" => return grid_svg_with_gaps(&args, &[]).ok(),
+      // A styled layout keeps its layout.
+      "Style" => return nested_layout_svg(&args[0]),
+      _ => {}
     }
   }
   None
