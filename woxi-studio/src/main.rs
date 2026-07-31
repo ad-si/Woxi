@@ -8634,4 +8634,95 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`pa$$ = {-0.6, 0.8}}, \"…\"]"], "O
       other => panic!("unexpected controls: {other:?}"),
     }
   }
+
+  /// End-to-end regression for "A Procedure to Compute the Digit Sequence
+  /// of a Square Root": a `Grid` whose caption typesets a radical and a
+  /// binary `BaseForm`, over a pair of `ArrayPlot`s.
+  #[test]
+  fn digit_sequence_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"digitPlot", "[", RowBox[{"num_", ",", "steps_"}], "]"}], ":=",
+  RowBox[{"Grid", "[",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{",
+      RowBox[{"Text", "@",
+       RowBox[{"Style", "[",
+        RowBox[{RowBox[{"Sqrt", "[", "num", "]"}], ",", "18", ",", "Bold"}],
+        "]"}]}], "}"}], ",",
+     RowBox[{"{",
+      RowBox[{"Text", "@",
+       RowBox[{"BaseForm", "[",
+        RowBox[{
+         RowBox[{"N", "[",
+          RowBox[{RowBox[{"Sqrt", "[", "num", "]"}], ",", "20"}], "]"}], ",",
+         "2"}], "]"}]}], "}"}], ",",
+     RowBox[{"{",
+      RowBox[{"ArrayPlot", "[",
+       RowBox[{
+        RowBox[{"Table", "[",
+         RowBox[{
+          RowBox[{"Mod", "[", RowBox[{RowBox[{"i", " ", "j"}], ",", "2"}], "]"}],
+          ",", RowBox[{"{", RowBox[{"i", ",", "steps"}], "}"}], ",",
+          RowBox[{"{", RowBox[{"j", ",", "steps"}], "}"}]}], "]"}], ",",
+        RowBox[{"ImageSize", "\[Rule]",
+         RowBox[{"{", RowBox[{"120", ",", "120"}], "}"}]}]}], "]"}], "}"}]}],
+    "}"}], "]"}]}]], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"digitPlot", "[", RowBox[{"num", ",", "steps"}], "]"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{",
+      RowBox[{"num", ",", "2", ",", "\"\<square root of:\>\""}], "}"}], ",",
+     RowBox[{"{", RowBox[{"2", ",", "3", ",", "5"}], "}"}]}], "}"}], ",",
+   RowBox[{"{",
+    RowBox[{RowBox[{"{", RowBox[{"steps", ",", "20"}], "}"}], ",", "10", ",",
+     "40", ",", "1"}], "}"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`num$$ = 2}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the caption and both plots must draw"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          name,
+          label,
+          values,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: steps,
+          current,
+          ..
+        },
+      ] => {
+        assert_eq!((name.as_str(), label.as_str()), ("num", "square root of:"));
+        assert_eq!(
+          values,
+          &["2".to_string(), "3".to_string(), "5".to_string()]
+        );
+        assert_eq!((steps.as_str(), *current), ("steps", 20.0));
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
 }

@@ -8115,6 +8115,40 @@ mod graphics_grid {
     );
   }
 
+  /// A cell typesets its content: a unit-fraction power is a radical (the
+  /// title of a Demonstration reads √2, not 2^(1/2)), and a `BaseForm`
+  /// real shows its digits in that base with the base subscripted.
+  #[test]
+  fn grid_cell_typesets_radicals_and_base_form() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{Style[Sqrt[2], 18, Bold]}, {BaseForm[N[Sqrt[2], 20], 2]}, \
+             {2^(1/3)}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    // √ with its vinculum over the radicand, and a cube root's index.
+    assert!(
+      svg.contains("√<tspan text-decoration=\"overline\">2</tspan>"),
+      "{svg}"
+    );
+    assert!(
+      svg.contains(">3</tspan>√<tspan text-decoration=\"overline\">2</tspan>"),
+      "the cube root keeps its index: {svg}"
+    );
+    // The binary expansion, with the base as a subscript.
+    assert!(
+      svg.contains(
+        "1.01101010000010011110011001100111111100111011110011001001000010001"
+      ),
+      "{svg}"
+    );
+    assert!(
+      svg.contains("<tspan baseline-shift=\"sub\" font-size=\"70%\">2</tspan>"),
+      "{svg}"
+    );
+  }
+
   /// A cell that is itself a block layout is laid out and placed as a
   /// picture — the text pass can only set one line per cell.
   #[test]

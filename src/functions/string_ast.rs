@@ -4465,6 +4465,226 @@ fn integer_to_base_string(n: i128, base: i128) -> String {
   String::from_utf8(out).unwrap()
 }
 
+/// The digit string `BaseForm[x, b]` displays — for an integer, a real,
+/// or an arbitrary-precision real (which shows as many base-`b` digits as
+/// its own precision justifies).
+pub(crate) fn base_form_digits(value: &Expr, base: i128) -> Option<String> {
+  match value {
+    Expr::Integer(n) => Some(integer_to_base_string(*n, base)),
+    // A machine real displays six significant decimal digits, so it shows
+    // the base-`b` equivalent of those.
+    Expr::Real(x) => real_to_base_string(*x, base, 6.0),
+    // An arbitrary-precision real keeps all of its digits: converting
+    // through an f64 would cut it back to 53 bits.
+    Expr::BigFloat(digits, precision) => {
+      decimal_string_to_base_string(digits, base, *precision)
+    }
+    _ => None,
+  }
+}
+
+/// Render the decimal digit string of an arbitrary-precision real in base
+/// `b`, exactly, to as many base-`b` digits as `decimal_digits` of
+/// precision justify. The conversion runs on big integers so none of the
+/// stored digits are lost on the way.
+fn decimal_string_to_base_string(
+  decimal: &str,
+  base: i128,
+  decimal_digits: f64,
+) -> Option<String> {
+  use num_bigint::BigInt;
+  use num_traits::{Signed, Zero};
+
+  const DIGITS: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
+  if !(2..=36).contains(&base) {
+    return None;
+  }
+  let decimal = decimal.trim();
+  let (neg, decimal) = match decimal.strip_prefix('-') {
+    Some(rest) => (true, rest),
+    None => (false, decimal),
+  };
+  let (int_str, frac_str) = match decimal.split_once('.') {
+    Some((i, f)) => (i, f),
+    None => (decimal, ""),
+  };
+  if !int_str
+    .chars()
+    .chain(frac_str.chars())
+    .all(|c| c.is_ascii_digit())
+  {
+    return None;
+  }
+  let numerator: BigInt = format!("{int_str}{frac_str}").parse().ok()?;
+  let denominator = BigInt::from(10u32).pow(frac_str.len() as u32);
+  let big_base = BigInt::from(base);
+
+  let significant = (decimal_digits * 10f64.ln() / (base as f64).ln())
+    .round()
+    .max(1.0) as i64;
+
+  let mut int_part = &numerator / &denominator;
+  let mut remainder = &numerator % &denominator;
+  let mut int_digits: Vec<u8> = Vec::new();
+  while int_part.is_positive() {
+    let d = (&int_part % &big_base).to_string().parse::<usize>().ok()?;
+    int_digits.push(DIGITS[d]);
+    int_part /= &big_base;
+  }
+  int_digits.reverse();
+
+  let mut frac_digits: Vec<u8> = Vec::new();
+  let mut seen_significant = !int_digits.is_empty();
+  let mut used = int_digits.len() as i64;
+  while (used < significant || !seen_significant) && !remainder.is_zero() {
+    remainder *= &big_base;
+    let d = (&remainder / &denominator)
+      .to_string()
+      .parse::<usize>()
+      .ok()?;
+    remainder %= &denominator;
+    if d > 0 {
+      seen_significant = true;
+    }
+    if seen_significant {
+      used += 1;
+    }
+    frac_digits.push(DIGITS[d.min(base as usize - 1)]);
+  }
+  while frac_digits.last() == Some(&b'0') {
+    frac_digits.pop();
+  }
+
+  let int_out = if int_digits.is_empty() {
+    "0".to_string()
+  } else {
+    String::from_utf8(int_digits).ok()?
+  };
+  let frac_out = String::from_utf8(frac_digits).ok()?;
+  let sign = if neg { "-" } else { "" };
+  Some(if frac_out.is_empty() {
+    format!("{sign}{int_out}.")
+  } else {
+    format!("{sign}{int_out}.{frac_out}")
+  })
+}
+
+/// Render a real `x` in base `b`, to as many base-`b` digits as the
+/// number's precision justifies: a machine real shows the base-`b`
+/// equivalent of its 6 displayed significant decimal digits, an
+/// arbitrary-precision one the equivalent of its own precision. Trailing
+/// zeros are dropped, so a value that terminates in that base prints
+/// short (`3.5` in base 2 is `11.1`).
+pub(crate) fn real_to_base_string(
+  x: f64,
+  base: i128,
+  decimal_digits: f64,
+) -> Option<String> {
+  if !x.is_finite() || !(2..=36).contains(&base) {
+    return None;
+  }
+  const DIGITS: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
+  let b = base as f64;
+  let significant = (decimal_digits * 10f64.ln() / b.ln()).round().max(1.0);
+  let neg = x < 0.0;
+  let mut value = x.abs();
+
+  // Integer part first, most significant digit last.
+  let mut int_digits: Vec<u8> = Vec::new();
+  let mut int_part = value.trunc();
+  value -= int_part;
+  while int_part >= 1.0 {
+    let d = (int_part % b) as usize;
+    int_digits.push(DIGITS[d]);
+    int_part = (int_part / b).trunc();
+  }
+  int_digits.reverse();
+
+  // Fraction digits, up to the precision budget left after the integer
+  // part (a leading run of zeros costs nothing — precision counts from
+  // the first significant digit).
+  let mut frac_digits: Vec<u8> = Vec::new();
+  let mut seen_significant = !int_digits.is_empty();
+  let mut used = int_digits.len() as f64;
+  let mut carry_from = None;
+  while used < significant || !seen_significant {
+    if value == 0.0 {
+      break;
+    }
+    value *= b;
+    let d = value.trunc() as usize;
+    value -= value.trunc();
+    if d > 0 {
+      seen_significant = true;
+    }
+    if seen_significant {
+      used += 1.0;
+    }
+    frac_digits.push(DIGITS[d.min(base as usize - 1)]);
+    if used >= significant {
+      // Round the last digit from what remains — a tie rounds *down*,
+      // which is what Wolfram shows for a value whose tail is exactly
+      // half a unit in the last place (`BaseForm[1.5, 3]` is
+      // `1.111111111111`, not `…112`).
+      if value > 0.5 {
+        carry_from = Some(frac_digits.len());
+      }
+      break;
+    }
+  }
+
+  // Propagate the rounding carry through the fraction, then the integer.
+  if carry_from.is_some() {
+    let mut i = frac_digits.len();
+    let mut carry = true;
+    while carry && i > 0 {
+      i -= 1;
+      let d = DIGITS
+        .iter()
+        .position(|&c| c == frac_digits[i])
+        .unwrap_or(0);
+      if d + 1 < base as usize {
+        frac_digits[i] = DIGITS[d + 1];
+        carry = false;
+      } else {
+        frac_digits[i] = DIGITS[0];
+      }
+    }
+    if carry {
+      let mut j = int_digits.len();
+      while carry && j > 0 {
+        j -= 1;
+        let d = DIGITS.iter().position(|&c| c == int_digits[j]).unwrap_or(0);
+        if d + 1 < base as usize {
+          int_digits[j] = DIGITS[d + 1];
+          carry = false;
+        } else {
+          int_digits[j] = DIGITS[0];
+        }
+      }
+      if carry {
+        int_digits.insert(0, DIGITS[1]);
+      }
+    }
+  }
+
+  while frac_digits.last() == Some(&b'0') {
+    frac_digits.pop();
+  }
+  let int_str = if int_digits.is_empty() {
+    "0".to_string()
+  } else {
+    String::from_utf8(int_digits).ok()?
+  };
+  let frac_str = String::from_utf8(frac_digits).ok()?;
+  let sign = if neg { "-" } else { "" };
+  Some(if frac_str.is_empty() {
+    format!("{sign}{int_str}.")
+  } else {
+    format!("{sign}{int_str}.{frac_str}")
+  })
+}
+
 /// Render `TableForm[matrix]` (or a 1D vector) as the aligned text grid that
 /// Wolfram produces under `ToString`. Columns are left-aligned and padded to the
 /// widest cell in the column, joined by three spaces; rows are separated by a
@@ -4715,11 +4935,10 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && name == "BaseForm"
     && !is_input_form
     && inner_args.len() == 2
-    && let (Expr::Integer(n), Expr::Integer(b)) =
-      (&inner_args[0], &inner_args[1])
+    && let Expr::Integer(b) = &inner_args[1]
     && (2..=36).contains(b)
+    && let Some(digits) = base_form_digits(&inner_args[0], *b)
   {
-    let digits = integer_to_base_string(*n, *b);
     let rendered = if *b == 10 {
       digits
     } else {

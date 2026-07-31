@@ -6679,33 +6679,14 @@ fn format_precision_arg(arg: Option<&Expr>, default: i64) -> i64 {
   }
 }
 
-/// Render the digits of `x` in the (integer) base `base`. Only integer values
-/// are supported (the only case `BaseForm` cells need in tables); returns
-/// `None` otherwise.
+/// The digits `BaseForm[x, base]` displays, via the one renderer that
+/// knows every value kind (integers, machine reals, and
+/// arbitrary-precision reals shown to their own precision).
 fn base_form_digits(x: &Expr, base: &Expr) -> Option<String> {
-  let (Expr::Integer(v), Expr::Integer(b)) = (x, base) else {
+  let Expr::Integer(b) = base else {
     return None;
   };
-  if *b < 2 || *b > 36 {
-    return None;
-  }
-  const DIGITS: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
-  if *v == 0 {
-    return Some("0".to_string());
-  }
-  let neg = *v < 0;
-  let mut value = v.unsigned_abs();
-  let radix = *b as u128;
-  let mut out: Vec<u8> = Vec::new();
-  while value > 0 {
-    out.push(DIGITS[(value % radix) as usize]);
-    value /= radix;
-  }
-  if neg {
-    out.push(b'-');
-  }
-  out.reverse();
-  String::from_utf8(out).ok()
+  crate::functions::string_ast::base_form_digits(x, *b)
 }
 
 /// Convert an `Expr` into SVG text markup (inner content of a `<text>` element).
@@ -6768,8 +6749,41 @@ fn style_directives_to_svg_attrs(directives: &[Expr]) -> String {
   attrs
 }
 
+/// The root index `n` when `exp` is the unit fraction `1/n` — the shape a
+/// radical is written from (`Sqrt[x]` is `x^(1/2)` after evaluation).
+fn unit_fraction_root_index(exp: &Expr) -> Option<i128> {
+  let (num, den) = match exp {
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(n), Expr::Integer(d)) => (*n, *d),
+        _ => return None,
+      }
+    }
+    _ => return None,
+  };
+  (num == 1 && (2..=9).contains(&den)).then_some(den)
+}
+
 pub fn expr_to_svg_markup(expr: &Expr) -> String {
   use crate::syntax::expr_to_output;
+
+  // A unit-fraction power is a radical, not a superscript: `Sqrt[2]`
+  // (which is `2^(1/2)`) typesets as √2 under its vinculum, and a cube
+  // root carries its index in the hook.
+  if let Some((base, exp)) = as_power(expr)
+    && let Some(index) = unit_fraction_root_index(exp)
+  {
+    let content = expr_to_svg_markup(base);
+    return if index == 2 {
+      format!("\u{221A}<tspan text-decoration=\"overline\">{content}</tspan>")
+    } else {
+      format!(
+        "<tspan baseline-shift=\"super\" font-size=\"70%\">{index}</tspan>\u{221A}<tspan text-decoration=\"overline\">{content}</tspan>"
+      )
+    };
+  }
 
   // Power → superscript (handles both BinaryOp and FunctionCall forms)
   if let Some((base, exp)) = as_power(expr) {
