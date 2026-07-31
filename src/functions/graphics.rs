@@ -15248,6 +15248,24 @@ pub(crate) fn to_unicode_script(s: &str, superscript: bool) -> String {
     .collect()
 }
 
+/// Like [`to_unicode_script`], but only for the digits and signs
+/// (U+2080–U+208E and U+2070–U+207E). Letters keep their full size: the
+/// Latin sub-/superscript letters live in blocks most text fonts omit, so
+/// mapping them draws a row of missing-glyph boxes where the plain letters
+/// would have read fine. Used where the text is handed to a font renderer
+/// rather than typeset, e.g. a plot label.
+pub(crate) fn to_unicode_script_digits(s: &str, superscript: bool) -> String {
+  s.chars()
+    .map(|c| {
+      if c.is_alphabetic() {
+        c
+      } else {
+        unicode_script_char(c, superscript).unwrap_or(c)
+      }
+    })
+    .collect()
+}
+
 /// Unicode sub-/superscript for a single character, if one exists.
 fn unicode_script_char(c: char, superscript: bool) -> Option<char> {
   let mapped = if superscript {

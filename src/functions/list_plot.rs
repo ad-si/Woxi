@@ -883,11 +883,11 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           _ => {}
         },
         "Frame" => {
-          if matches!(replacement,
-            Expr::Identifier(v) if v == "True" || v == "All")
-          {
-            opts.frame = true;
-          }
+          opts.frame = crate::functions::plot::parse_frame_option(replacement)
+        }
+        "ImagePadding" => {
+          opts.image_padding =
+            crate::functions::plot::parse_image_padding(replacement)
         }
         // "Fences" (capped error bars) is the default; "Bars" renders with
         // the same bar geometry. None hides the uncertainty intervals.
@@ -1421,7 +1421,20 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let svg =
     generate_svg_with_filling(&draw_series, x_range, y_range, &parsed.opts)?;
-  Ok(crate::graphics_result(svg))
+  // Carry the series so `Show` can merge this plot with others instead of
+  // treating it as an opaque rendering.
+  let source = build_plot_source(
+    &draw_series,
+    &parsed.opts.plot_style,
+    x_range,
+    y_range,
+    (parsed.opts.svg_width, parsed.opts.svg_height),
+    false,
+    parsed.opts.filling,
+    parsed.opts.filling_style,
+    crate::functions::plot::explicit_options(args),
+  );
+  Ok(crate::graphics_result_with_source(svg, source))
 }
 
 /// StackedListPlot[{list1, list2, ...}]: plot several datasets with their

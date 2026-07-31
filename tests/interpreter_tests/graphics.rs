@@ -3232,6 +3232,80 @@ mod plot3d {
         r#"Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotStyle -> {Directive[Red, Thick], Directive[Blue, Dashed]}, PlotLegends -> "Expressions"]"#
       ));
     }
+
+    /// A `PlotStyle` list is cycled over the curves, except with a single
+    /// curve, where the whole list is that curve's directive set:
+    /// `PlotStyle -> {Thick, Green}` draws one thick green curve.
+    #[test]
+    fn plot_style_list_on_one_plot_curve_is_one_directive_set() {
+      let svg =
+        export_svg(r#"Plot[1 - x/10, {x, 0, 6}, PlotStyle -> {Thick, Green}]"#);
+      assert!(svg.contains("#00FF00"), "curve must be green: {svg}");
+      assert!(
+        !svg.contains("#5E81B5"),
+        "the default palette colour must not win: {svg}"
+      );
+    }
+
+    #[test]
+    fn plot_style_list_still_cycles_over_several_plot_curves() {
+      // Curve 1 takes `Thick` (keeping the default colour), curve 2 `Green`.
+      let svg = export_svg(
+        r#"Plot[{Sin[x], Cos[x]}, {x, 0, 6}, PlotStyle -> {Thick, Green}]"#,
+      );
+      assert!(svg.contains("#5E81B5"), "curve 1 keeps the default: {svg}");
+      assert!(svg.contains("#00FF00"), "curve 2 is green: {svg}");
+    }
+
+    #[test]
+    fn plot_frame_draws_the_boxed_frame() {
+      // The frame is a closed four-sided polyline around the plot area,
+      // which the plain axes of `Frame -> False` never draw.
+      let frame = "750,1749 3499,1749 3499,100 750,100 750,1749";
+      assert!(
+        export_svg("Plot[Sin[x], {x, 0, 6}, Frame -> True]").contains(frame),
+        "Frame -> True must draw the frame"
+      );
+      assert!(
+        !export_svg("Plot[Sin[x], {x, 0, 6}, Frame -> False]").contains(frame)
+      );
+      assert!(!export_svg("Plot[Sin[x], {x, 0, 6}]").contains(frame));
+    }
+
+    /// `ImagePadding` states the space around the plotting area outright, so
+    /// the frame fills what it leaves instead of shrinking to fit the
+    /// automatic label margins — which is what keeps a plot readable at a
+    /// small `ImageSize`.
+    #[test]
+    fn image_padding_sizes_the_plotting_area() {
+      let padded = export_svg(
+        r#"ListPlot[Table[{t, t}, {t, 0, 10}], Joined -> True, Frame -> True, FrameLabel -> {{"n", ""}, {"t", "title"}}, ImagePadding -> {{45, 10}, {45, 20}}, ImageSize -> {280, 148}]"#,
+      );
+      // The frame polyline starts at the top-left corner of the plot area:
+      // left padding 45 px and top padding 20 px, at 10x render scale.
+      assert!(
+        padded.contains("450,1029 2699,1029 2699,200 450,200"),
+        "the frame must fill the padded area: {padded}"
+      );
+    }
+
+    /// A plot label is plain text, so a `Subscript` renders through the
+    /// Unicode subscript digits. Letters stay full size: their subscript
+    /// forms are missing from most text fonts and would draw as boxes.
+    #[test]
+    fn frame_label_renders_subscripts() {
+      let svg = export_svg(
+        r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {{Row[{Subscript["P", "inj"], "(t)"}], ""}, {Row[{Subscript["log", 10], "n"}], ""}}]"#,
+      );
+      assert!(
+        svg.contains(">Pinj(t)</text>"),
+        "the subscript letters must still read: {svg}"
+      );
+      assert!(
+        svg.contains(">log\u{2081}\u{2080}n</text>"),
+        "subscript digits must render as such: {svg}"
+      );
+    }
   }
 
   mod list_plot {
@@ -7616,6 +7690,46 @@ mod show {
   fn show_no_graphics_returns_unevaluated() {
     clear_state();
     assert_eq!(interpret("Show[1, 2, 3]").unwrap(), "Show[1, 2, 3]");
+  }
+
+  /// Two plots merged by `Show` render through the ordinary plot renderer,
+  /// so the first plot's frame and labels survive and each curve keeps the
+  /// colour its own `PlotStyle` gave it.
+  #[test]
+  fn show_of_two_plots_keeps_frame_labels_and_curve_colours() {
+    clear_state();
+    let svg = export_svg(
+      r#"Show[
+        Plot[Sin[x], {x, 0, 6}, PlotStyle -> Red, Frame -> True,
+          FrameLabel -> {{"Y", ""}, {"X", "TITLE"}}],
+        Plot[Cos[x], {x, 0, 6}, PlotStyle -> {Thick, Green}]]"#,
+    );
+    for text in ["X", "Y", "TITLE"] {
+      assert!(
+        svg.contains(&format!(">{text}</text>")),
+        "frame label {text} must survive the merge: {svg}"
+      );
+    }
+    assert!(svg.contains("#FF0000"), "curve 1 stays red: {svg}");
+    assert!(svg.contains("#00FF00"), "curve 2 stays green: {svg}");
+  }
+
+  /// A scatter plot merged onto a line plot keeps its points.
+  #[test]
+  fn show_of_a_line_and_a_scatter_plot_draws_both() {
+    clear_state();
+    let svg = export_svg(
+      r#"Show[
+        ListLinePlot[{{0, 0}, {10, 10}}, PlotStyle -> Red],
+        ListPlot[{{2, 8}, {8, 2}}, PlotStyle -> Blue]]"#,
+    );
+    assert!(svg.contains("#FF0000"), "the line survives: {svg}");
+    // Points overlaid on lines are drawn as epilog primitives, which spell
+    // their colour `rgb(...)`.
+    assert!(
+      svg.contains("rgb(0,0,255)"),
+      "the scatter points survive: {svg}"
+    );
   }
 
   /// Wolfram's `Show` keeps the options of the graphics it is given, so a

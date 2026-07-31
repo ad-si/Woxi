@@ -10116,3 +10116,45 @@ mod omitted_arguments {
     assert_eq!(interpret("Head[Part[{a,,b}, 2]]").unwrap(), "Symbol");
   }
 }
+
+/// `⟦…⟧` (and its `〚…〛` spelling) group like `[[…]]`, so the commas and
+/// semicolons inside a part specification belong to it, not to the
+/// surrounding argument list.
+mod unicode_part_brackets {
+  use super::*;
+
+  #[test]
+  fn part_commas_do_not_split_a_compound_argument() {
+    // The `,` of `⟦1,2⟧` used to end the lookahead that decides whether an
+    // argument is a CompoundExpression, so the `;` after it was never seen.
+    let code = "a = {{0, 0}, {0, 0}}; If[True, a⟦1, 2⟧++; x = 1]; a⟦1, 2⟧";
+    assert_eq!(interpret(code).unwrap(), "1");
+    assert_eq!(
+      interpret(&code.replace('\u{27E6}', "[[").replace('\u{27E7}', "]]"))
+        .unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn part_commas_do_not_split_a_rule_or_span_argument() {
+    assert_eq!(
+      interpret("a = {{1, 2}, {3, 4}}; f[a〚1, 2〛 -> 9]").unwrap(),
+      "f[2 -> 9]"
+    );
+    assert_eq!(
+      interpret("a = {{1, 2}, {3, 4}}; b = {5, 6, 7}; b[[a⟦1, 1⟧ ;; 3]]")
+        .unwrap(),
+      "{5, 6, 7}"
+    );
+  }
+
+  #[test]
+  fn nested_part_brackets_stay_balanced() {
+    assert_eq!(
+      interpret("a = {{1, 2}, {3, 4}}; If[True, a⟦a⟦1, 1⟧, 2⟧; y = 7]; y")
+        .unwrap(),
+      "7"
+    );
+  }
+}

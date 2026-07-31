@@ -255,6 +255,25 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
     {
       expr_to_label(&args[0])
     }
+    // A plot label is drawn as plain text, so `Subscript`/`Superscript`
+    // render through the Unicode script characters — the closest a text
+    // label gets to Wolfram's typeset form.
+    Expr::FunctionCall { name, args }
+      if (name == "Subscript" || name == "Superscript") && args.len() >= 2 =>
+    {
+      let base = expr_to_label(&args[0])?;
+      let scripts: String = args[1..]
+        .iter()
+        .filter_map(expr_to_label)
+        .map(|s| {
+          crate::functions::graphics::to_unicode_script_digits(
+            &s,
+            name == "Superscript",
+          )
+        })
+        .collect();
+      Some(format!("{base}{scripts}"))
+    }
     // `Row[{…}]` joins its parts, with an optional separator.
     Expr::FunctionCall { name, args } if name == "Row" && !args.is_empty() => {
       let Expr::List(items) = &args[0] else {

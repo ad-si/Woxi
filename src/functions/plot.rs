@@ -1125,20 +1125,6 @@ fn fill_paint(
   RGBColor(r, g, b).mix(fs.opacity.unwrap_or(0.2))
 }
 
-/// [`fill_paint`] for a stored `PlotSeriesData` (the `Show` merge path,
-/// where the `FillingStyle` appearance travels on the series itself).
-fn series_fill_paint(
-  sd: &crate::syntax::PlotSeriesData,
-) -> plotters::style::RGBAColor {
-  fill_paint(
-    Some(FillStyle {
-      color: sd.fill_color,
-      opacity: sd.fill_opacity,
-    }),
-    sd.color,
-  )
-}
-
 impl crate::syntax::SeriesFilling {
   /// Reference y-value for the fill, given the current y-range.
   pub fn reference_y(self, y_min: f64, y_max: f64) -> Option<f64> {
@@ -1515,6 +1501,13 @@ pub(crate) struct PlotOptions {
   /// `Background -> color`: fill for the whole image, replacing the
   /// theme background. `None` keeps the theme default.
   pub background: Option<RGBColor>,
+  /// `ImagePadding -> {{left, right}, {bottom, top}}`: the space, in display
+  /// pixels, between the plotting area and the edges of the image. When set
+  /// it replaces the automatic margins, so the frame fills whatever the
+  /// padding leaves — which is how a plot given a short `ImageSize` keeps a
+  /// usable frame instead of losing it to fixed label margins. `None` keeps
+  /// the automatic margins.
+  pub image_padding: Option<[f64; 4]>,
   /// `AspectRatio -> r`: ratio (height/width) of the plotting *area* (the
   /// data frame, excluding label/tick margins). When set, the total image
   /// height is derived so the frame has this ratio, matching Wolfram. `None`
@@ -1560,6 +1553,7 @@ impl Default for PlotOptions {
       interval_markers: IntervalMarkers::default(),
       data_points: Vec::new(),
       background: None,
+      image_padding: None,
       aspect_ratio: None,
     }
   }
@@ -1910,6 +1904,36 @@ fn generate_svg_with_options(
     10 * s as u32
   } else {
     5 * s as u32
+  };
+
+  // `ImagePadding` states the space around the plotting area outright, so it
+  // replaces the automatic margins: the left/bottom padding becomes the tick
+  // label areas (the axis labels are drawn inside them) and the right/top
+  // padding the corresponding margins.
+  let (
+    top_margin,
+    x_label_area,
+    y_label_area,
+    margin_left,
+    margin_right,
+    margin_bottom,
+  ) = match opts.image_padding {
+    Some([left, right, bottom, top]) => (
+      (top * sf).round() as i32,
+      (bottom * sf).round() as u32,
+      (left * sf).round() as u32,
+      0u32,
+      (right * sf).round() as u32,
+      0u32,
+    ),
+    None => (
+      top_margin,
+      x_label_area,
+      y_label_area,
+      margin_left,
+      margin_right,
+      margin_bottom,
+    ),
   };
 
   // AspectRatio sizes the plotting *area* (the data frame), not the whole
@@ -3109,20 +3133,30 @@ pub(crate) fn generate_scatter_svg_with_options(
   let render_width = svg_width * RESOLUTION_SCALE;
   let mut render_height = svg_height * RESOLUTION_SCALE;
 
+  // The scatter layout uses fixed margins — `margin(10*s)` on every side plus
+  // the left/bottom label areas — unless `ImagePadding` states them outright.
+  let sf = RESOLUTION_SCALE as f64;
+  let [pad_left, pad_right, pad_bottom, pad_top] =
+    opts.image_padding.map_or([10.0, 10.0, 10.0, 10.0], |p| p);
+  let (margin_top, margin_right, y_label_area, x_label_area) =
+    match opts.image_padding {
+      Some(_) => (pad_top * sf, pad_right * sf, pad_left * sf, pad_bottom * sf),
+      None => (10.0 * sf, 10.0 * sf, 65.0 * sf, 40.0 * sf),
+    };
+  let (margin_left, margin_bottom) = match opts.image_padding {
+    Some(_) => (0.0, 0.0),
+    None => (10.0 * sf, 10.0 * sf),
+  };
+
   // AspectRatio sizes the plotting area (the data frame), not the whole image.
-  // The scatter layout uses fixed margins: `margin(10*s)` on every side plus
-  // the left/bottom label areas. Derive the total height so the frame has the
-  // requested height/width ratio.
+  // Derive the total height so the frame has the requested height/width ratio.
   if let Some(ar) = opts.aspect_ratio {
-    let s = RESOLUTION_SCALE as f64;
-    let margin = 10.0 * s;
-    let y_label_area = 65.0 * s;
-    let x_label_area = 40.0 * s;
-    let plot_w = render_width as f64 - 2.0 * margin - y_label_area;
+    let plot_w =
+      render_width as f64 - margin_left - margin_right - y_label_area;
     if plot_w > 0.0 {
       let plot_h = plot_w * ar;
-      let target_render_h = plot_h + 2.0 * margin + x_label_area;
-      svg_height = ((target_render_h / s).round() as u32).max(1);
+      let target_render_h = plot_h + margin_top + margin_bottom + x_label_area;
+      svg_height = ((target_render_h / sf).round() as u32).max(1);
       render_height = svg_height * RESOLUTION_SCALE;
     }
   }
@@ -3141,9 +3175,12 @@ pub(crate) fn generate_scatter_svg_with_options(
     let tick = MINOR_TICK_LEN * s;
 
     let mut chart = ChartBuilder::on(&root)
-      .margin(10 * s)
-      .x_label_area_size(40 * RESOLUTION_SCALE)
-      .y_label_area_size(65 * RESOLUTION_SCALE)
+      .margin_top(margin_top.round() as u32)
+      .margin_right(margin_right.round() as u32)
+      .margin_bottom(margin_bottom.round() as u32)
+      .margin_left(margin_left.round() as u32)
+      .x_label_area_size(x_label_area.round() as u32)
+      .y_label_area_size(y_label_area.round() as u32)
       .build_cartesian_2d(x_min..x_max, y_min..y_max)
       .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
 
@@ -3305,13 +3342,11 @@ pub(crate) fn generate_scatter_svg_with_options(
   );
 
   // Extend labeled (major) ticks beyond the minor ticks drawn by plotters.
+  let plot_x0 = margin_left + y_label_area;
+  let plot_y0 = margin_top;
+  let plot_w = render_width as f64 - margin_left - margin_right - y_label_area;
+  let plot_h = render_height as f64 - margin_top - margin_bottom - x_label_area;
   {
-    let sf = RESOLUTION_SCALE as f64;
-    let margin = 10.0 * sf;
-    let plot_x0 = margin + 65.0 * sf;
-    let plot_y0 = margin;
-    let plot_w = render_width as f64 - 2.0 * margin - 65.0 * sf;
-    let plot_h = render_height as f64 - 2.0 * margin - 40.0 * sf;
     let x_major = nice_step(x_max - x_min, 5);
     let y_major = nice_step(y_max - y_min, 5);
     inject_major_tick_extensions(
@@ -3331,18 +3366,13 @@ pub(crate) fn generate_scatter_svg_with_options(
 
   // Callout/Labeled series labels (same plot area as the tick pass above).
   {
-    let sf = RESOLUTION_SCALE as f64;
-    let margin = 10.0 * sf;
-    let plot_x0 = margin + 65.0 * sf;
-    let plot_w = render_width as f64 - 2.0 * margin - 65.0 * sf;
-    let plot_h = render_height as f64 - 2.0 * margin - 40.0 * sf;
     inject_callout_labels(
       &mut buf,
       opts,
       all_series,
       (x_min, x_max),
       (y_min, y_max),
-      (plot_x0, margin, plot_w, plot_h),
+      (plot_x0, plot_y0, plot_w, plot_h),
     );
     inject_point_labels(
       &mut buf,
@@ -3350,7 +3380,7 @@ pub(crate) fn generate_scatter_svg_with_options(
       all_series,
       (x_min, x_max),
       (y_min, y_max),
-      (plot_x0, margin, plot_w, plot_h),
+      (plot_x0, plot_y0, plot_w, plot_h),
     );
   }
 
@@ -3359,13 +3389,7 @@ pub(crate) fn generate_scatter_svg_with_options(
   // in the same place the automatic ones would sit.
   if opts.ticks_x.is_some() || opts.ticks_y.is_some() {
     let s = RESOLUTION_SCALE as f64;
-    let margin = 10.0 * s;
-    let y_label_area = 65.0 * s;
-    let x_label_area = 40.0 * s;
-    let plot_x0 = margin + y_label_area;
-    let plot_w = render_width as f64 - 2.0 * margin - y_label_area;
-    let plot_h = render_height as f64 - 2.0 * margin - x_label_area;
-    let axis_y = margin + plot_h;
+    let axis_y = plot_y0 + plot_h;
     if let Some(pos) = buf.rfind("</svg>") {
       let mut ticks_svg = String::new();
       let tick_len = 5.0 * s;
@@ -3392,7 +3416,8 @@ pub(crate) fn generate_scatter_svg_with_options(
           if *value < y_min || *value > y_max || y_max <= y_min {
             continue;
           }
-          let py = margin + plot_h - (value - y_min) / (y_max - y_min) * plot_h;
+          let py =
+            plot_y0 + plot_h - (value - y_min) / (y_max - y_min) * plot_h;
           ticks_svg.push_str(&format!(
             "<line x1=\"{plot_x0:.1}\" y1=\"{py:.1}\" x2=\"{:.1}\" y2=\"{py:.1}\" stroke=\"{label_fill}\" stroke-width=\"{s:.1}\"/>\n",
             plot_x0 + tick_len
@@ -3411,207 +3436,161 @@ pub(crate) fn generate_scatter_svg_with_options(
   Ok(buf)
 }
 
-/// Render a merged `PlotSource` (from `Show`) via plotters.
-/// Handles both line and scatter series in one chart.
+/// Render a merged `PlotSource` (from `Show`).
+///
+/// `Show` keeps the options of the graphics it was given, so the merged
+/// graphic goes back through the ordinary plot renderers rather than a
+/// second implementation that would drift from them: line series render as
+/// a line plot, scatter series as points (as the plot itself, when every
+/// series is one, otherwise drawn over the lines as epilog primitives).
 pub(crate) fn render_merged_plot_source(
   source: &crate::syntax::PlotSource,
 ) -> Result<String, InterpreterError> {
-  let (x_min, x_max) = source.x_range;
-  let (y_min, y_max) = source.y_range;
-  let (svg_width, svg_height) = source.image_size;
-
-  let render_width = svg_width * RESOLUTION_SCALE;
-  let render_height = svg_height * RESOLUTION_SCALE;
-
-  let (bg_color, dark_gray, light_gray, label_fill, _title_fill) = plot_theme();
-
-  let mut buf = String::new();
-  {
-    let root = SVGBackend::with_string(&mut buf, (render_width, render_height))
-      .into_drawing_area();
-    root
-      .fill(&bg_color)
-      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
-
-    let s = RESOLUTION_SCALE as i32;
-    let tick = MINOR_TICK_LEN * s;
-
-    let mut chart = ChartBuilder::on(&root)
-      .margin(10 * s)
-      .x_label_area_size(40 * RESOLUTION_SCALE)
-      .y_label_area_size(65 * RESOLUTION_SCALE)
-      .build_cartesian_2d(x_min..x_max, y_min..y_max)
-      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
-
-    let x_major = nice_step(x_max - x_min, 5);
-    let y_major = nice_step(y_max - y_min, 5);
-    let x_minor_step = x_major / 5.0;
-    let y_minor_step = y_major / 5.0;
-    let x_tick_count = ((x_max - x_min) / x_minor_step).round() as usize + 1;
-    let y_tick_count = ((y_max - y_min) / y_minor_step).round() as usize + 1;
-
-    chart
-      .configure_mesh()
-      .disable_mesh()
-      .x_labels(x_tick_count)
-      .y_labels(y_tick_count)
-      .x_label_formatter(&move |v: &f64| {
-        if is_major_tick(*v, x_major) {
-          format_tick(*v)
-        } else {
-          String::new()
-        }
-      })
-      .y_label_formatter(&move |v: &f64| {
-        if is_major_tick(*v, y_major) {
-          format_tick(*v)
-        } else {
-          String::new()
-        }
-      })
-      .axis_style(dark_gray.stroke_width(RESOLUTION_SCALE))
-      .label_style(
-        ("sans-serif", RESOLUTION_SCALE as f64 * 18.0)
-          .into_font()
-          .color(&dark_gray),
-      )
-      .set_tick_mark_size(LabelAreaPosition::Left, tick)
-      .set_tick_mark_size(LabelAreaPosition::Bottom, tick)
-      .draw()
-      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
-
-    // Origin lines
-    let origin_line = light_gray.stroke_width(RESOLUTION_SCALE);
-    if y_min < 0.0 && y_max > 0.0 {
-      chart
-        .draw_series(std::iter::once(PathElement::new(
-          vec![(x_min, 0.0), (x_max, 0.0)],
-          origin_line,
-        )))
-        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+  let mut opts = PlotOptions {
+    svg_width: source.image_size.0,
+    svg_height: source.image_size.1,
+    ..PlotOptions::default()
+  };
+  let mut overrides = PlotRangeOverrides::default();
+  for opt in &source.options {
+    if let Some((name, value)) =
+      crate::functions::graphics::option_name_value(opt)
+    {
+      apply_common_plot_option(name, &value, &mut opts, &mut overrides);
     }
-    if x_min < 0.0 && x_max > 0.0 {
-      chart
-        .draw_series(std::iter::once(PathElement::new(
-          vec![(0.0, y_min), (0.0, y_max)],
-          origin_line,
-        )))
-        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
-    }
-
-    // Draw each series
-    let marker_size = 3 * RESOLUTION_SCALE;
-    for sd in &source.series {
-      let color = RGBColor(sd.color.0, sd.color.1, sd.color.2);
-
-      if sd.is_scatter {
-        // Scatter points
-        let finite_pts: Vec<(f64, f64)> = sd
-          .points
-          .iter()
-          .copied()
-          .filter(|(x, y)| x.is_finite() && y.is_finite())
-          .collect();
-
-        // Stem lines from each point to the fill reference level
-        if let Some(ref_y) = sd.filling.reference_y(y_min, y_max) {
-          let stem_style = series_fill_paint(sd).stroke_width(RESOLUTION_SCALE);
-          for &(x, y) in &finite_pts {
-            chart
-              .draw_series(std::iter::once(PathElement::new(
-                vec![(x, y), (x, ref_y)],
-                stem_style,
-              )))
-              .map_err(|e| {
-                InterpreterError::EvaluationError(format!("Plot: {e}"))
-              })?;
-          }
-        }
-
-        chart
-          .draw_series(
-            finite_pts
-              .iter()
-              .map(|&(x, y)| Circle::new((x, y), marker_size, color.filled())),
-          )
-          .map_err(|e| {
-            InterpreterError::EvaluationError(format!("Plot: {e}"))
-          })?;
-      } else {
-        // Line series (split into finite segments)
-        let segments = split_into_segments(&sd.points);
-
-        // Draw filled area before the line so the line renders on top
-        if let Some(ref_y) = sd.filling.reference_y(y_min, y_max) {
-          for segment in &segments {
-            if segment.len() < 2 {
-              continue;
-            }
-            chart
-              .draw_series(AreaSeries::new(
-                segment.iter().copied(),
-                ref_y,
-                series_fill_paint(sd),
-              ))
-              .map_err(|e| {
-                InterpreterError::EvaluationError(format!("Plot: {e}"))
-              })?;
-          }
-        }
-
-        for segment in &segments {
-          chart
-            .draw_series(LineSeries::new(
-              segment.iter().copied(),
-              color.stroke_width(15),
-            ))
-            .map_err(|e| {
-              InterpreterError::EvaluationError(format!("Plot: {e}"))
-            })?;
-        }
-      }
-    }
-
-    root
-      .present()
-      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
   }
+  if let Some(ar) = overrides.aspect_ratio {
+    opts.aspect_ratio = Some(ar);
+  }
+  let x_range = overrides.x.unwrap_or(source.x_range);
+  let y_range = overrides.y.unwrap_or(source.y_range);
 
-  rewrite_svg_header(
-    &mut buf,
-    svg_width,
-    svg_height,
-    render_width,
-    render_height,
-    false,
+  let all_scatter =
+    !source.series.is_empty() && source.series.iter().all(|s| s.is_scatter);
+  // The series that make up the chart itself; scatter series overlaid on
+  // lines are drawn as epilog primitives instead.
+  let drawn: Vec<&crate::syntax::PlotSeriesData> = source
+    .series
+    .iter()
+    .filter(|s| s.is_scatter == all_scatter)
+    .collect();
+
+  // Each series carries the colour its own plot resolved, so `PlotStyle`
+  // is rebuilt from the series rather than re-read from the options.
+  opts.plot_style = drawn
+    .iter()
+    .map(|s| SeriesStyle {
+      color: Some(WoxiColor::new(
+        s.color.0 as f64 / 255.0,
+        s.color.1 as f64 / 255.0,
+        s.color.2 as f64 / 255.0,
+      )),
+      ..SeriesStyle::default()
+    })
+    .collect();
+  opts.filling_rules = drawn
+    .iter()
+    .enumerate()
+    .filter_map(|(i, s)| {
+      series_filling_to_filling(s.filling).map(|f| (i, FillTarget::Level(f)))
+    })
+    .collect();
+  if opts.filling_style.is_none()
+    && let Some(s) = drawn
+      .iter()
+      .find(|s| s.fill_color.is_some() || s.fill_opacity.is_some())
+  {
+    opts.filling_style = Some(FillStyle {
+      color: s.fill_color,
+      opacity: s.fill_opacity,
+    });
+  }
+  opts.epilog.extend(
+    source
+      .series
+      .iter()
+      .filter(|s| s.is_scatter != all_scatter)
+      .flat_map(|s| scatter_overlay_primitives(s, y_range)),
   );
 
-  // Extend labeled (major) ticks beyond the minor ticks drawn by plotters.
-  {
-    let sf = RESOLUTION_SCALE as f64;
-    let margin = 10.0 * sf;
-    let plot_x0 = margin + 65.0 * sf;
-    let plot_y0 = margin;
-    let plot_w = render_width as f64 - 2.0 * margin - 65.0 * sf;
-    let plot_h = render_height as f64 - 2.0 * margin - 40.0 * sf;
-    let x_major = nice_step(x_max - x_min, 5);
-    let y_major = nice_step(y_max - y_min, 5);
-    inject_major_tick_extensions(
-      &mut buf,
-      plot_x0,
-      plot_y0,
-      plot_w,
-      plot_h,
-      Some((x_min, x_max, x_major)),
-      Some((y_min, y_max, y_major)),
-      MINOR_TICK_LEN as f64 * sf,
-      MAJOR_TICK_LEN as f64 * sf,
-      sf,
-      label_fill,
-    );
+  let points: Vec<Vec<(f64, f64)>> =
+    drawn.iter().map(|s| s.points.clone()).collect();
+  if all_scatter {
+    generate_scatter_svg_with_options(&points, x_range, y_range, &opts)
+  } else {
+    generate_svg_with_options(&points, x_range, y_range, &opts)
   }
+}
 
-  Ok(buf)
+/// The `Filling` a merged series was drawn with, or `None` when it is unfilled.
+fn series_filling_to_filling(
+  filling: crate::syntax::SeriesFilling,
+) -> Option<Filling> {
+  match filling {
+    crate::syntax::SeriesFilling::None => None,
+    crate::syntax::SeriesFilling::Axis => Some(Filling::Axis),
+    crate::syntax::SeriesFilling::Bottom => Some(Filling::Bottom),
+    crate::syntax::SeriesFilling::Top => Some(Filling::Top),
+    crate::syntax::SeriesFilling::Value(v) => Some(Filling::Value(v)),
+  }
+}
+
+/// A scatter series shown on top of line series: its points (and the stems
+/// of a filled scatter) as graphics primitives in data coordinates.
+fn scatter_overlay_primitives(
+  series: &crate::syntax::PlotSeriesData,
+  y_range: (f64, f64),
+) -> Vec<Expr> {
+  let point =
+    |(x, y): (f64, f64)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+  let finite: Vec<(f64, f64)> = series
+    .points
+    .iter()
+    .copied()
+    .filter(|(x, y)| x.is_finite() && y.is_finite())
+    .collect();
+  if finite.is_empty() {
+    return Vec::new();
+  }
+  let color = Expr::FunctionCall {
+    name: "RGBColor".to_string(),
+    args: vec![
+      Expr::Real(series.color.0 as f64 / 255.0),
+      Expr::Real(series.color.1 as f64 / 255.0),
+      Expr::Real(series.color.2 as f64 / 255.0),
+    ]
+    .into(),
+  };
+  let mut prims = vec![color];
+  // Stems of a filled scatter series, drawn to the same reference level the
+  // standalone scatter plot would use.
+  if let Some(ref_y) = series_filling_to_filling(series.filling)
+    .and_then(|f| f.reference_y(y_range.0, y_range.1))
+  {
+    prims.push(Expr::FunctionCall {
+      name: "AbsoluteThickness".to_string(),
+      args: vec![Expr::Real(1.0)].into(),
+    });
+    for &(x, y) in &finite {
+      prims.push(Expr::FunctionCall {
+        name: "Line".to_string(),
+        args: vec![Expr::List(vec![point((x, y)), point((x, ref_y))].into())]
+          .into(),
+      });
+    }
+  }
+  prims.push(Expr::FunctionCall {
+    name: "AbsolutePointSize".to_string(),
+    args: vec![Expr::Real(6.0)].into(),
+  });
+  prims.push(Expr::FunctionCall {
+    name: "Point".to_string(),
+    args: vec![Expr::List(
+      finite.into_iter().map(point).collect::<Vec<_>>().into(),
+    )]
+    .into(),
+  });
+  prims
 }
 
 /// Generate SVG for a bar chart using plotters.
@@ -6753,6 +6732,41 @@ pub(crate) fn parse_explicit_ticks(value: &Expr) -> Option<Vec<(f64, String)>> {
 
 /// Apply a `FrameLabel` value to a plot's options. Bottom and left reuse
 /// the axes-label render path; top and right get their own frame edges.
+/// Parse an `ImagePadding` value into `[left, right, bottom, top]` display
+/// pixels. Accepted forms mirror Wolfram: a single number (all four sides),
+/// `{{left, right}, {bottom, top}}`, `None`/`0` (no padding) and
+/// `Automatic`/`All` (which keep the automatic margins, i.e. `None` here).
+pub(crate) fn parse_image_padding(value: &Expr) -> Option<[f64; 4]> {
+  fn side(e: &Expr) -> Option<f64> {
+    match e {
+      Expr::Identifier(v) if v == "None" => Some(0.0),
+      _ => crate::functions::graphics::expr_to_f64(e),
+    }
+  }
+  match value {
+    Expr::Identifier(v) if v == "Automatic" || v == "All" => None,
+    Expr::Identifier(v) if v == "None" => Some([0.0; 4]),
+    Expr::List(pairs) if pairs.len() == 2 => {
+      let (Expr::List(lr), Expr::List(bt)) = (&pairs[0], &pairs[1]) else {
+        // `{h, v}` is not a Wolfram form, so a two-element list of numbers
+        // is only meaningful as the nested one.
+        return None;
+      };
+      if lr.len() != 2 || bt.len() != 2 {
+        return None;
+      }
+      Some([side(&lr[0])?, side(&lr[1])?, side(&bt[0])?, side(&bt[1])?])
+    }
+    _ => side(value).map(|p| [p; 4]),
+  }
+}
+
+/// `Frame -> True | All` draws the boxed frame; anything else (`False`,
+/// `Automatic`, a per-edge list) leaves the plain axes.
+pub(crate) fn parse_frame_option(value: &Expr) -> bool {
+  matches!(value, Expr::Identifier(v) if v == "True" || v == "All")
+}
+
 pub(crate) fn apply_frame_label_option(value: &Expr, opts: &mut PlotOptions) {
   let fl = parse_frame_label(value);
   opts.axes_label = Some((fl.bottom, fl.left));
@@ -6981,6 +6995,10 @@ pub(crate) fn apply_common_plot_option(
     }
     "Background" => {
       plot_opts.background = parse_background_option(replacement);
+    }
+    "Frame" => plot_opts.frame = parse_frame_option(replacement),
+    "ImagePadding" => {
+      plot_opts.image_padding = parse_image_padding(replacement);
     }
     "FrameLabel" => apply_frame_label_option(replacement, plot_opts),
     "Ticks" => match replacement {
@@ -7371,6 +7389,14 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     all_points.push(points);
   }
 
+  // A `PlotStyle` list applied to a single curve is one combined directive
+  // set, not a per-curve cycle: `Plot[f, …, PlotStyle -> {Thick, Green}]`
+  // draws one thick green curve, not a `Thick` curve and a `Green` one.
+  if all_points.len() == 1 {
+    plot_opts.plot_style =
+      collapse_style_for_single_series(&plot_opts.plot_style);
+  }
+
   // Compute Y range using robust outlier exclusion on uniform samples
   let (y_data_min, y_data_max) =
     robust_y_range(&bodies, &var_name, x_min, x_max);
@@ -7664,6 +7690,11 @@ fn log_scale_plot_ast(
       }
     }
     all_points.push(points);
+  }
+
+  if all_points.len() == 1 {
+    plot_opts.plot_style =
+      collapse_style_for_single_series(&plot_opts.plot_style);
   }
 
   // Compute ranges

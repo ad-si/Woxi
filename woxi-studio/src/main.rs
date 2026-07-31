@@ -9103,4 +9103,109 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`m$$ = 26}, \"…\"]"], "Output"]
       other => panic!("unexpected controls: {other:?}"),
     }
   }
+
+  /// End-to-end regression for the "Stochastic Model of Microbial Injury and
+  /// Mortality" Demonstration. Its `Manipulate` mutates a table in place
+  /// through `\[LeftDoubleBracket]…\[RightDoubleBracket]` part
+  /// specifications inside a compound `If` body, and draws a `Show` of two
+  /// framed plots — the notebook stores no output cell, so the widget is
+  /// built from the input the way evaluating the cell does.
+  #[test]
+  fn microbial_injury_notebook_builds_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"Module", "[",
+    RowBox[{
+     RowBox[{"{",
+      RowBox[{"tns", ",", "p1", ",", "p2"}], "}"}], ",",
+     RowBox[{
+      RowBox[{"tns", "=",
+       RowBox[{"Table", "[",
+        RowBox[{
+         RowBox[{"{", RowBox[{"i", ",", "n0"}], "}"}], ",",
+         RowBox[{"{", RowBox[{"i", ",", "1", ",", "5"}], "}"}]}], "]"}]}], ";",
+      RowBox[{"Do", "[",
+       RowBox[{
+        RowBox[{"If", "[",
+         RowBox[{"True", ",",
+          RowBox[{
+           RowBox[{
+            RowBox[{"tns", "\[LeftDoubleBracket]",
+             RowBox[{"i", ",", "2"}], "\[RightDoubleBracket]"}], "--"}], ";",
+           RowBox[{"q", "=", "i"}]}]}], "]"}], ",",
+        RowBox[{"{", RowBox[{"i", ",", "2", ",", "5"}], "}"}]}], "]"}], ";",
+      RowBox[{"p1", "=",
+       RowBox[{"Plot", "[",
+        RowBox[{
+         RowBox[{"Exp", "[",
+          RowBox[{"-", RowBox[{"t", "/", "10"}]}], "]"}], ",",
+         RowBox[{"{", RowBox[{"t", ",", "0", ",", "20"}], "}"}], ",",
+         RowBox[{"PlotStyle", "\[Rule]",
+          RowBox[{"{", RowBox[{"Thick", ",", "Green"}], "}"}]}], ",",
+         RowBox[{"Frame", "\[Rule]", "True"}], ",",
+         RowBox[{"FrameLabel", "\[Rule]",
+          RowBox[{"{",
+           RowBox[{
+            RowBox[{"{",
+             RowBox[{
+              RowBox[{"Subscript", "[",
+               RowBox[{"\"\<P\>\"", ",", "\"\<inj\>\""}], "]"}], ",",
+              "\"\<\>\""}], "}"}], ",",
+            RowBox[{"{", RowBox[{"\"\<t\>\"", ",", "\"\<curve\>\""}], "}"}]}],
+           "}"}]}], ",",
+         RowBox[{"ImagePadding", "\[Rule]",
+          RowBox[{"{",
+           RowBox[{
+            RowBox[{"{", RowBox[{"45", ",", "10"}], "}"}], ",",
+            RowBox[{"{", RowBox[{"45", ",", "20"}], "}"}]}], "}"}]}], ",",
+         RowBox[{"ImageSize", "\[Rule]",
+          RowBox[{"{", RowBox[{"280", ",", "148"}], "}"}]}]}], "]"}]}], ";",
+      RowBox[{"p2", "=",
+       RowBox[{"ListPlot", "[",
+        RowBox[{"tns", ",",
+         RowBox[{"Joined", "\[Rule]", "True"}], ",",
+         RowBox[{"PlotStyle", "\[Rule]", "Red"}]}], "]"}]}], ";",
+      RowBox[{"Show", "[", RowBox[{"p1", ",", "p2"}], "]"}]}]}], "]"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{",
+      RowBox[{"n0", ",", "100", ",", "\"\<initial count\>\""}], "}"}], ",",
+     "10", ",", "200", ",", "10"}], "}"}]}], "]"}]], "Input"]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let code = editors
+      .iter()
+      .map(|e| e.content.text())
+      .find(|t| t.starts_with("Manipulate["))
+      .expect("the Manipulate cell must load");
+    let widget = instantiate_stored_manipulate(&code, "")
+      .expect("the Manipulate must instantiate");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the merged plot must draw"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name,
+          label,
+          current,
+          step,
+          ..
+        },
+      ] => {
+        assert_eq!((name.as_str(), label.as_str()), ("n0", "initial count"));
+        assert_eq!((*current, *step), (100.0, 10.0));
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
 }
