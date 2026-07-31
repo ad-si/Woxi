@@ -2871,6 +2871,59 @@ mod plot3d {
       }
     }
 
+    /// The Wolfram Language writes an `AxesLabel` at the *end* of its axis:
+    /// the x label just past the right edge and level with the axis, the y
+    /// label above the top of the vertical axis, upright. A `FrameLabel` is
+    /// the one that sits centred outside the plot area.
+    #[test]
+    fn axes_label_sits_at_the_end_of_its_axis() {
+      let svg = export_svg(r#"Plot[x, {x, 0, 1}, AxesLabel -> {"XL", "YL"}]"#);
+      let text = |label: &str| -> (f64, f64, String) {
+        let tag = svg
+          .split("<text ")
+          .find(|t| {
+            t.split_once('>')
+              .is_some_and(|(_, rest)| rest.starts_with(label))
+          })
+          .unwrap_or_else(|| panic!("{label} missing: {svg}"));
+        let attr = |name: &str| -> f64 {
+          tag
+            .split(&format!("{name}=\""))
+            .nth(1)
+            .and_then(|v| v.split('"').next())
+            .and_then(|v| v.parse().ok())
+            .unwrap()
+        };
+        (
+          attr("x"),
+          attr("y"),
+          tag.split_once('>').unwrap().0.to_string(),
+        )
+      };
+      let (x_lx, _, x_attrs) = text("XL");
+      let (_, y_ly, y_attrs) = text("YL");
+      // Past the right edge of the 360 px (3600 unit) canvas' plot area.
+      assert!(x_lx > 3000.0, "x label must sit past the axis: {x_lx}");
+      assert!(x_attrs.contains("text-anchor=\"start\""));
+      // Above the plot area, and upright — a FrameLabel is the rotated one.
+      assert!(y_ly < 250.0, "y label must sit above the axis: {y_ly}");
+      assert!(!y_attrs.contains("rotate("), "an AxesLabel is upright");
+    }
+
+    /// A `FrameLabel` keeps the centred placement, so the two options stay
+    /// distinguishable (they used to share one field).
+    #[test]
+    fn frame_label_stays_centred_outside_the_plot() {
+      let svg = export_svg(
+        r#"ListLinePlot[{1, 4, 9}, Frame -> True, FrameLabel -> {"XF", "YF"}]"#,
+      );
+      assert!(svg.contains(">XF</text>"), "x frame label missing: {svg}");
+      assert!(
+        svg.contains("rotate(-90"),
+        "the y frame label is rotated in the left gutter: {svg}"
+      );
+    }
+
     #[test]
     fn plot_axes_label() {
       insta::assert_snapshot!(export_svg(
@@ -5335,6 +5388,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// An `AxesLabel` goes at the far end of its axis, upright — the
+    /// Wolfram Language reserves the rotated left gutter for a `FrameLabel`.
     #[test]
     fn histogram_axes_label() {
       let svg = export_svg(
@@ -5343,8 +5398,23 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.contains(">time</text>"), "x-axis label missing");
       assert!(svg.contains(">count</text>"), "y-axis label missing");
       assert!(
+        !svg.contains("rotate(-90"),
+        "an AxesLabel is not rotated: {svg}"
+      );
+    }
+
+    /// A `FrameLabel` keeps the centred placement: below the axis and
+    /// rotated in the left gutter.
+    #[test]
+    fn histogram_frame_label_is_placed_differently() {
+      let svg = export_svg(
+        r#"Histogram[{1, 2, 2, 3, 3, 3}, FrameLabel -> {"time", "count"}]"#,
+      );
+      assert!(svg.contains(">time</text>"), "x frame label missing");
+      assert!(svg.contains(">count</text>"), "y frame label missing");
+      assert!(
         svg.contains("rotate(-90"),
-        "y-axis label should be rotated vertically"
+        "a FrameLabel is rotated in the left gutter: {svg}"
       );
     }
 
@@ -6224,6 +6294,32 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       insta::assert_snapshot!(export_svg(
         r#"BarChart[{1, 2, 3}, PlotLabel -> "My Title"]"#
       ));
+    }
+
+    /// `BarOrigin -> Left` transposes the chart, and the Wolfram Language
+    /// transposes the `AxesLabel` pair with it: the first entry labels the
+    /// vertical axis, the second the horizontal one.
+    #[test]
+    fn horizontal_bar_chart_transposes_its_axes_labels() {
+      let svg = export_svg(
+        r#"BarChart[{1, 2, 3}, BarOrigin -> Left, AxesLabel -> {"XX", "YY"}]"#,
+      );
+      let y_of = |label: &str| -> f64 {
+        svg
+          .split("<text ")
+          .find(|t| {
+            t.split_once('>')
+              .is_some_and(|(_, rest)| rest.starts_with(label))
+          })
+          .and_then(|t| t.split("y=\"").nth(1))
+          .and_then(|v| v.split('"').next())
+          .and_then(|v| v.parse().ok())
+          .unwrap_or_else(|| panic!("{label} missing: {svg}"))
+      };
+      assert!(
+        y_of("XX") < y_of("YY"),
+        "XX labels the vertical axis (top), YY the horizontal one (bottom)"
+      );
     }
 
     #[test]

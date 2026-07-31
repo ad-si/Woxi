@@ -9370,4 +9370,151 @@ $CellContext`sampler$$ = \"up\"}, \"\[Ellipsis]\"]"], "Output"]
       other => panic!("unexpected controls: {other:?}"),
     }
   }
+
+  /// End-to-end regression for "The Price of a Call Option on Electrical
+  /// Power": four `Initialization Code` cells define the option formula in
+  /// Unicode notation (`\[ExponentialE]`, `\[Sigma]`, `\[ScriptCapitalN]`),
+  /// and the `Manipulate` plots it with an `AxesLabel` and a dashed `Epilog`.
+  #[test]
+  fn call_option_notebook_builds_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["d1[S_,K_,\[Sigma]_,\[Alpha]_,f_,T_,t_]:=With[{s=\[ExponentialE]^(f[#1])&},(\[ExponentialE]^(-\[Alpha] (T-t)) Log[S/s[t]]+(\[Sigma]^2 (1-\[ExponentialE]^(-2 \[Alpha] (T-t))))/(4 \[Alpha])+Log[s[T]/K])/Sqrt[(\[Sigma]^2 (1-\[ExponentialE]^(-2 \[Alpha] (T-t))))/(4 \[Alpha])]]"], "Input"],
+Cell[BoxData["d2[S_,K_,\[Sigma]_,\[Alpha]_,f_,T_,t_]:=With[{s=\[ExponentialE]^(f[#1])&},(\[ExponentialE]^(-\[Alpha] (T-t)) Log[S/s[t]]+Log[s[T]/K])/Sqrt[(\[Sigma]^2 (1-\[ExponentialE]^(-2 \[Alpha] (T-t))))/(4 \[Alpha])]]"], "Input"],
+Cell[BoxData["\[ScriptCapitalN][z_]:=(1+Erf[z/Sqrt[2]])/2"], "Input"],
+Cell[BoxData["callValue[S_,K_,\[Sigma]_,\[Alpha]_,f_,T_,t_,r_]:=With[{s=\[ExponentialE]^(f[#1])&},\[ExponentialE]^(-r (T-t)) (s[T] (S/s[t])^(\[ExponentialE]^(-\[Alpha] (T-t))) Exp[\[Sigma]^2/(4 \[Alpha]) (1-Exp[-2 \[Alpha] (T-t)])] \[ScriptCapitalN][d1[S,K,\[Sigma],\[Alpha],f,T,t]]-K \[ScriptCapitalN][d2[S,K,\[Sigma],\[Alpha],f,T,t]])]"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[", "\[IndentingNewLine]", 
+  RowBox[{
+   RowBox[{"Module", "[", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"f", "=", 
+       RowBox[{
+        RowBox[{"a", "+", 
+         RowBox[{"b", " ", 
+          RowBox[{"Cos", "[", 
+           RowBox[{"#", " ", "730", 
+            RowBox[{"Pi", "/", "7"}]}], " ", "]"}]}]}], "&"}]}], "}"}], ",", 
+     "\[IndentingNewLine]", 
+     RowBox[{"Plot", "[", 
+      RowBox[{
+       RowBox[{"callValue", "[", 
+        RowBox[{
+        "s", ",", "1", ",", "\[Sigma]", ",", "\[Alpha]", ",", "f", ",", "1", 
+         ",", "t", ",", "r"}], "]"}], ",", 
+       RowBox[{"{", 
+        RowBox[{"s", ",", "0.5", ",", "1.5"}], "}"}], ",", 
+       RowBox[{"PlotRange", "\[Rule]", 
+        RowBox[{"{", 
+         RowBox[{
+          RowBox[{"{", 
+           RowBox[{"0.5", ",", "1.5"}], "}"}], ",", 
+          RowBox[{"{", 
+           RowBox[{"0", ",", "v"}], "}"}]}], "}"}]}], ",", 
+       RowBox[{"AxesLabel", "\[Rule]", 
+        RowBox[{"{", 
+         RowBox[{
+         "\"\<electrical power spot price\>\"", ",", "\"\<call value\>\""}], 
+         "}"}]}], ",", 
+       RowBox[{"Epilog", "\[Rule]", 
+        RowBox[{"{", 
+         RowBox[{
+          RowBox[{"Dashing", "[", 
+           RowBox[{"{", "0.01", "}"}], "]"}], ",", 
+          RowBox[{"Line", "[", 
+           RowBox[{"{", 
+            RowBox[{
+             RowBox[{"{", 
+              RowBox[{"1", ",", "0"}], "}"}], ",", 
+             RowBox[{"{", 
+              RowBox[{"1", ",", "v"}], "}"}]}], "}"}], "]"}]}], "}"}]}], ",", 
+       
+       RowBox[{"ImageSize", "\[Rule]", 
+        RowBox[{"{", 
+         RowBox[{"500", ",", "300"}], "}"}]}]}], "]"}]}], "]"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"\[Sigma]", ",", "0.7", ",", "\"\<volatility\>\""}], "}"}], ",",
+      "0.01", ",", "1", ",", ".01", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"\[Alpha]", ",", "1", ",", "\"\<rate of mean reversion\>\""}], 
+      "}"}], ",", "0.01", ",", "2", ",", ".01", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"t", ",", ".5", ",", "\"\<time\>\""}], "}"}], ",", "0", ",", 
+     RowBox[{"364", "/", "365"}], ",", ".01", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"r", ",", "0", ",", "\"\<interest rate\>\""}], "}"}], ",", "0", 
+     ",", "0.2", ",", ".01", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"a", ",", "0.3", ",", "\"\<constant seasonal component\>\""}], 
+      "}"}], ",", "0", ",", "1", ",", ".01", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"b", ",", "0.5", ",", "\"\<periodic seasonal component\>\""}], 
+      "}"}], ",", "0", ",", "1", ",", ".01", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"v", ",", "2", ",", "\"\<vertical range\>\""}], "}"}], ",", 
+     "0.3", ",", "3", ",", ".01", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"AutorunSequencing", "\[Rule]", 
+    RowBox[{"{", 
+     RowBox[{"1", ",", "3", ",", "5", ",", "7"}], "}"}]}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"SaveDefinitions", "\[Rule]", "True"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`\[Sigma]$$ = 0.7}, \"\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the option formula must evaluate: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the curve must draw");
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { name, .. } => name.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      names,
+      ["\u{3c3}", "\u{3b1}", "t", "r", "a", "b", "v"],
+      "one slider per parameter, Greek names included"
+    );
+  }
 }

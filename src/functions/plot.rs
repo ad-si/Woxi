@@ -768,6 +768,59 @@ fn inject_log_axis_labels(
 }
 
 /// Format a tick value, dropping the trailing ".0" for integers.
+/// The SVG for an `AxesLabel`, placed the way the Wolfram Language does: the
+/// x label just past the right end of the x axis and level with it, the y
+/// label above the top of the y axis. (A `FrameLabel`, by contrast, is
+/// centred outside the plot area — see the callers.)
+///
+/// `area` is the plotting rectangle `(x0, y0, w, h)` in render units and
+/// `range` the data range `(x_min, x_max, y_min, y_max)` it maps, so the
+/// labels sit on the axis lines themselves when those fall inside the plot.
+pub(crate) fn axes_label_svg(
+  axes_label: Option<&(String, String)>,
+  (x0, y0, w, h): (f64, f64, f64, f64),
+  (x_min, x_max, y_min, y_max): (f64, f64, f64, f64),
+  (show_x_axis, show_y_axis): (bool, bool),
+  font_size: f64,
+  label_fill: &str,
+) -> String {
+  let Some((x_label, y_label)) = axes_label else {
+    return String::new();
+  };
+  let mut svg = String::new();
+  // The axis lines: where y = 0 and x = 0 fall, clamped into the plot area
+  // (an all-positive range draws its axes along the bottom and left edges).
+  let axis_y = if y_max > y_min {
+    y0 + h - ((0.0 - y_min) / (y_max - y_min)).clamp(0.0, 1.0) * h
+  } else {
+    y0 + h
+  };
+  let axis_x = if x_max > x_min {
+    x0 + ((0.0 - x_min) / (x_max - x_min)).clamp(0.0, 1.0) * w
+  } else {
+    x0
+  };
+  if show_x_axis && !x_label.is_empty() {
+    svg.push_str(&format!(
+      "<text x=\"{:.1}\" y=\"{axis_y:.1}\" text-anchor=\"start\" \
+       dominant-baseline=\"central\" font-family=\"sans-serif\" \
+       font-size=\"{font_size:.0}\" fill=\"{label_fill}\">{}</text>\n",
+      x0 + w + font_size * 0.6,
+      crate::functions::graphics::box_string_to_svg(x_label)
+    ));
+  }
+  if show_y_axis && !y_label.is_empty() {
+    svg.push_str(&format!(
+      "<text x=\"{axis_x:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
+       font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+       fill=\"{label_fill}\">{}</text>\n",
+      y0 - font_size * 0.6,
+      crate::functions::graphics::box_string_to_svg(y_label)
+    ));
+  }
+  svg
+}
+
 /// Label a tick that belongs to a sequence of `step`-spaced ticks.
 ///
 /// The Wolfram Language gives every label in a tick set the same number of
@@ -1640,6 +1693,11 @@ pub(crate) struct PlotOptions {
   pub grid_y_lines: Vec<GridLine>,
   /// Use frame (left+bottom border) instead of axes
   pub frame: bool,
+  /// Labels on the bottom and left frame edges (`FrameLabel`). These sit
+  /// centred outside the plot area, unlike an [`Self::axes_label`], which
+  /// Wolfram writes at the far end of its axis.
+  pub frame_label_bottom: Option<String>,
+  pub frame_label_left: Option<String>,
   /// Label on the top frame edge (FrameLabel 4-element form: top of {bottom,top})
   pub frame_label_top: Option<String>,
   /// Label on the right frame edge (FrameLabel 4-element form: right of {left,right})
@@ -1716,6 +1774,8 @@ impl Default for PlotOptions {
       frame: false,
       ticks_x: None,
       ticks_y: None,
+      frame_label_bottom: None,
+      frame_label_left: None,
       frame_label_top: None,
       frame_label_right: None,
       date_axis: false,
@@ -2029,10 +2089,27 @@ fn generate_svg_with_options(
     .plot_label
     .as_ref()
     .is_some_and(|sl| !sl.text.is_empty());
-  let has_x_axis_label =
-    opts.axes_label.as_ref().is_some_and(|(x, _)| !x.is_empty());
-  let has_y_axis_label =
-    opts.axes_label.as_ref().is_some_and(|(_, y)| !y.is_empty());
+  // A `FrameLabel` sits centred outside the bottom/left edge; an `AxesLabel`
+  // sits at the far end of its axis, so it needs room to the right and above
+  // instead.
+  let has_x_axis_label = opts
+    .frame_label_bottom
+    .as_ref()
+    .is_some_and(|t| !t.is_empty());
+  let has_y_axis_label = opts
+    .frame_label_left
+    .as_ref()
+    .is_some_and(|t| !t.is_empty());
+  let axes_label_x = opts
+    .axes_label
+    .as_ref()
+    .map(|(x, _)| x.as_str())
+    .filter(|x| !x.is_empty() && show_x_axis);
+  let axes_label_y = opts
+    .axes_label
+    .as_ref()
+    .map(|(_, y)| y.as_str())
+    .filter(|y| !y.is_empty() && show_y_axis);
   let has_top_label =
     opts.frame_label_top.as_ref().is_some_and(|t| !t.is_empty());
   let has_right_label = opts
@@ -2040,10 +2117,12 @@ fn generate_svg_with_options(
     .as_ref()
     .is_some_and(|t| !t.is_empty());
 
-  // Reserve top room for a PlotLabel and/or a top FrameLabel (they stack).
+  // Reserve top room for a PlotLabel, a top FrameLabel and/or the y AxesLabel
+  // (they stack).
   let top_margin = 10 * s
     + if has_plot_label { 25 * s } else { 0 }
-    + if has_top_label { 25 * s } else { 0 };
+    + if has_top_label { 25 * s } else { 0 }
+    + if axes_label_y.is_some() { 20 * s } else { 0 };
 
   // Label areas and margins computed per-axis.
   // Setting a label area to 0 suppresses that axis line in plotters.
@@ -2073,6 +2152,16 @@ fn generate_svg_with_options(
   };
   let margin_right: u32 = if has_right_label {
     40 * s as u32
+  } else if let Some(label) = axes_label_x {
+    // Enough room for the x AxesLabel, which runs to the right of the axis
+    // at `sf * 14` — ~0.62 em per character covers the proportional font.
+    (10.0 * sf
+      + 8.0 * sf
+      + crate::functions::graphics::box_string_visible_len(label) as f64
+        * 0.62
+        * sf
+        * 14.0)
+      .round() as u32
   } else {
     10 * s as u32
   };
@@ -2762,6 +2851,8 @@ fn generate_svg_with_options(
   if has_plot_label
     || has_x_axis_label
     || has_y_axis_label
+    || axes_label_x.is_some()
+    || axes_label_y.is_some()
     || has_top_label
     || has_right_label
     || opts.ticks_x.is_some()
@@ -2826,38 +2917,50 @@ fn generate_svg_with_options(
         }
       }
 
-      // AxesLabel
-      if let Some((x_label, y_label)) = &opts.axes_label {
-        if !x_label.is_empty() {
-          let cx = plot_x0 + plot_w / 2.0;
-          // Sit clearly below the x tick labels (which occupy ~one tick-font
-          // height below the axis) rather than crowding the frame.
-          let base_y = axis_y + sf * 13.0 + font_size * 1.4;
-          labels_svg.push_str(&format!(
-            "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
+      // Bottom/left FrameLabel: centred outside the plot area.
+      if let Some(x_label) = &opts.frame_label_bottom
+        && !x_label.is_empty()
+      {
+        let cx = plot_x0 + plot_w / 2.0;
+        // Sit clearly below the x tick labels (which occupy ~one tick-font
+        // height below the axis) rather than crowding the frame.
+        let base_y = axis_y + sf * 13.0 + font_size * 1.4;
+        labels_svg.push_str(&format!(
+          "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
              font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
              fill=\"{label_fill}\">{}</text>\n",
-            crate::functions::graphics::box_string_to_svg(x_label)
-          ));
-        }
-        if !y_label.is_empty() {
-          let cy = margin_top + plot_h / 2.0;
-          // Place the rotated label just left of the y tick-label column
-          // (which right-aligns near the axis) instead of at the far gutter
-          // edge — adapting to the actual tick width.
-          let tick_w =
-            max_y_tick_label_chars(y_min, y_max) as f64 * sf * 13.0 * 0.6;
-          let tick_left = plot_x0 - 8.0 * sf - tick_w;
-          let lx = (tick_left - font_size * 0.5 - sf * 5.0)
-            .max(margin_left_f + font_size * 0.5);
-          labels_svg.push_str(&format!(
-            "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
+          crate::functions::graphics::box_string_to_svg(x_label)
+        ));
+      }
+      if let Some(y_label) = &opts.frame_label_left
+        && !y_label.is_empty()
+      {
+        let cy = margin_top + plot_h / 2.0;
+        // Place the rotated label just left of the y tick-label column
+        // (which right-aligns near the axis) instead of at the far gutter
+        // edge — adapting to the actual tick width.
+        let tick_w =
+          max_y_tick_label_chars(y_min, y_max) as f64 * sf * 13.0 * 0.6;
+        let tick_left = plot_x0 - 8.0 * sf - tick_w;
+        let lx = (tick_left - font_size * 0.5 - sf * 5.0)
+          .max(margin_left_f + font_size * 0.5);
+        labels_svg.push_str(&format!(
+          "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
              font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
              fill=\"{label_fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
-            crate::functions::graphics::box_string_to_svg(y_label)
-          ));
-        }
+          crate::functions::graphics::box_string_to_svg(y_label)
+        ));
       }
+
+      // AxesLabel: at the far end of each axis, the way Wolfram writes it.
+      labels_svg.push_str(&axes_label_svg(
+        opts.axes_label.as_ref(),
+        (plot_x0, margin_top, plot_w, plot_h),
+        (x_min, x_max, y_min, y_max),
+        opts.axes,
+        font_size,
+        label_fill,
+      ));
 
       // Top FrameLabel (sits just above the plot's top edge)
       if let Some(top_label) = &opts.frame_label_top
@@ -2887,16 +2990,15 @@ fn generate_svg_with_options(
         ));
       }
 
-      // PlotLabel — shifted above the top FrameLabel when both are present.
+      // PlotLabel — shifted above the top FrameLabel and/or the y AxesLabel
+      // when they share the top margin.
       if let Some(sl) = &opts.plot_label
         && !sl.text.is_empty()
       {
         let cx = plot_x0 + plot_w / 2.0;
-        let ty = if has_top_label {
-          margin_top - title_font_size * 0.5 - font_size * 1.2
-        } else {
-          margin_top - title_font_size * 0.5
-        };
+        let stacked = if has_top_label { 1.0 } else { 0.0 }
+          + if axes_label_y.is_some() { 1.0 } else { 0.0 };
+        let ty = margin_top - title_font_size * 0.5 - stacked * font_size * 1.2;
         let fs = sl.font_size.map(|f| f * sf).unwrap_or(title_font_size);
         let fill = sl
           .color
@@ -3811,6 +3913,7 @@ pub(crate) fn generate_bar_svg(
   chart_label_position: LabelPosition,
   plot_label: Option<&StyledLabel>,
   axes_label: Option<(&str, &str)>,
+  frame_label: Option<(&str, &str)>,
   chart_style: &[WoxiColor],
   chart_legends: &[String],
   plot_range_x: Option<(f64, f64)>,
@@ -3852,12 +3955,17 @@ pub(crate) fn generate_bar_svg(
 
   // Extra space for labels
   let has_chart_labels = !chart_labels.is_empty();
-  let has_x_axis_label =
-    axes_label.as_ref().is_some_and(|(x, _)| !x.is_empty());
+  // An `AxesLabel` sits at the far end of its axis, so it takes room to the
+  // right (x) and above (y), not below and to the left.
+  let axes_label_x = axes_label.map(|(x, _)| x).filter(|x| !x.is_empty());
+  let axes_label_y = axes_label.map(|(_, y)| y).filter(|y| !y.is_empty());
+  let frame_label_x = frame_label.map(|(x, _)| x).filter(|x| !x.is_empty());
+  let frame_label_y = frame_label.map(|(_, y)| y).filter(|y| !y.is_empty());
   let has_plot_label = plot_label.is_some_and(|sl| !sl.text.is_empty());
 
   let has_value_labels = bar_labels.iter().any(|s| !s.is_empty());
-  let top_margin = if has_plot_label { 35 * s } else { 10 * s };
+  let top_margin = if has_plot_label { 35 * s } else { 10 * s }
+    + if axes_label_y.is_some() { 20 * s } else { 0 };
   let has_rotated_labels = chart_labels.iter().any(|l| l.rotation.abs() > 0.01);
   // Only content drawn below the axis consumes bottom margin. Chart labels do
   // so only when positioned Below; Center/Above labels sit on the bars and
@@ -3876,7 +3984,7 @@ pub(crate) fn generate_bar_svg(
   if has_value_labels {
     bottom_extra += 30.0 * sf;
   }
-  if has_x_axis_label {
+  if frame_label_x.is_some() {
     bottom_extra += 24.0 * sf;
   }
   let x_label_area = 12 * RESOLUTION_SCALE + bottom_extra as u32;
@@ -3886,6 +3994,15 @@ pub(crate) fn generate_bar_svg(
     plot_theme();
 
   // Reserve extra right margin for chart legends
+  let axes_label_margin_right = axes_label_x.map_or(0.0, |label| {
+    // The label is drawn at `font_size`; ~0.62 em per character covers the
+    // proportional font with a little slack.
+    8.0 * sf
+      + crate::functions::graphics::box_string_visible_len(label) as f64
+        * 0.62
+        * sf
+        * 18.0
+  }) as u32;
   let legend_margin_right = if chart_legends.is_empty() {
     10 * s as u32
   } else {
@@ -3894,6 +4011,7 @@ pub(crate) fn generate_bar_svg(
     // swatch width + gap + estimated text width + padding
     (sf * 12.0 + sf * 6.0 + max_label_len as f64 * sf * 10.0 + sf * 16.0) as u32
   };
+  let legend_margin_right = legend_margin_right + axes_label_margin_right;
 
   let mut buf = String::new();
   {
@@ -4158,41 +4276,58 @@ pub(crate) fn generate_bar_svg(
       }
     }
 
-    // AxesLabel: x-axis label centered below chart labels, y-axis label rotated
-    if let Some((x_label, y_label)) = &axes_label {
-      if !x_label.is_empty() {
-        let cx = plot_x0 + plot_w / 2.0;
-        let base_y = axis_y
-          + if has_chart_labels {
-            font_size * 1.5 + font_size * 1.3
-          } else {
-            font_size * 1.5
-          };
-        labels_svg.push_str(&format!(
-          "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
-           font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-           fill=\"{label_fill}\">{}</text>\n",
-          crate::functions::graphics::box_string_to_svg(x_label)
-        ));
-      }
-      if !y_label.is_empty() {
-        let cy = plot_y0 + plot_h / 2.0;
-        let lx = margin_left + font_size * 0.8;
-        labels_svg.push_str(&format!(
-          "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
-           font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-           fill=\"{label_fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
-          crate::functions::graphics::box_string_to_svg(y_label)
-        ));
-      }
+    // FrameLabel: centred outside the bottom/left edge.
+    if let Some(x_label) = frame_label_x {
+      let cx = plot_x0 + plot_w / 2.0;
+      let base_y = axis_y
+        + if has_chart_labels {
+          font_size * 1.5 + font_size * 1.3
+        } else {
+          font_size * 1.5
+        };
+      labels_svg.push_str(&format!(
+        "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
+         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+         fill=\"{label_fill}\">{}</text>\n",
+        crate::functions::graphics::box_string_to_svg(x_label)
+      ));
     }
+    if let Some(y_label) = frame_label_y {
+      let cy = plot_y0 + plot_h / 2.0;
+      let lx = margin_left + font_size * 0.8;
+      labels_svg.push_str(&format!(
+        "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
+         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+         fill=\"{label_fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
+        crate::functions::graphics::box_string_to_svg(y_label)
+      ));
+    }
+
+    // AxesLabel: at the far end of each axis, as in a `Plot`.
+    labels_svg.push_str(&axes_label_svg(
+      axes_label
+        .map(|(x, y)| (x.to_string(), y.to_string()))
+        .as_ref(),
+      (plot_x0, plot_y0, plot_w, plot_h),
+      (0.0, groups.len() as f64, y_min, y_max),
+      (true, true),
+      font_size,
+      label_fill,
+    ));
 
     // PlotLabel: centered above the chart
     if let Some(sl) = plot_label
       && !sl.text.is_empty()
     {
       let cx = plot_x0 + plot_w / 2.0;
-      let ty = margin_top - title_font_size * 0.5;
+      // The y AxesLabel shares the top margin, so the title sits above it.
+      let ty = margin_top
+        - title_font_size * 0.5
+        - if axes_label_y.is_some() {
+          font_size * 1.2
+        } else {
+          0.0
+        };
       let fs = sl.font_size.map(|f| f * sf).unwrap_or(title_font_size);
       let fill = sl
         .color
@@ -4321,14 +4456,15 @@ pub(crate) fn generate_horizontal_bar_svg(
     None => ("", ""),
   };
 
-  // Margins.
-  let top_margin = if has_plot_label { 38.0 * sf } else { 16.0 * sf };
-  let bottom_area = 44.0 * sf
-    + if !x_axis_label.is_empty() {
-      26.0 * sf
-    } else {
+  // Margins. An `AxesLabel` sits at the far end of its axis, so it takes
+  // room above (the category axis) and to the right (the value axis).
+  let top_margin = if has_plot_label { 38.0 * sf } else { 16.0 * sf }
+    + if x_axis_label.is_empty() {
       0.0
+    } else {
+      20.0 * sf
     };
+  let bottom_area = 44.0 * sf;
 
   // Left area: widest category label (capped) plus a rotated y-axis label.
   let max_cat_len = chart_labels
@@ -4341,12 +4477,7 @@ pub(crate) fn generate_horizontal_bar_svg(
   } else {
     14.0 * sf
   };
-  let y_axis_label_area = if y_axis_label.is_empty() {
-    0.0
-  } else {
-    26.0 * sf
-  };
-  let left_area = cat_label_area + y_axis_label_area;
+  let left_area = cat_label_area;
 
   // Right area: value labels (drawn past each bar) plus any legend block.
   let max_vlabel_len = bar_labels
@@ -4369,7 +4500,16 @@ pub(crate) fn generate_horizontal_bar_svg(
       .unwrap_or(0);
     sf * 12.0 + sf * 6.0 + maxlen as f64 * sf * 10.0 + sf * 16.0
   };
-  let right_margin = 14.0 * sf + value_label_area + legend_area;
+  let axes_label_area = if y_axis_label.is_empty() {
+    0.0
+  } else {
+    8.0 * sf
+      + crate::functions::graphics::box_string_visible_len(y_axis_label) as f64
+        * 0.62
+        * font_size
+  };
+  let right_margin =
+    14.0 * sf + value_label_area + legend_area + axes_label_area;
 
   let plot_x0 = left_area;
   let plot_y0 = top_margin;
@@ -4519,26 +4659,17 @@ pub(crate) fn generate_horizontal_bar_svg(
     }
   }
 
-  // Axis labels.
-  if !x_axis_label.is_empty() {
-    let cx = plot_x0 + plot_w / 2.0;
-    let ty = axis_bottom + bottom_area - 6.0 * sf;
-    svg.push_str(&format!(
-      "<text x=\"{cx:.2}\" y=\"{ty:.2}\" text-anchor=\"middle\" \
-       font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{label_fill}\">{}</text>\n",
-      crate::functions::graphics::box_string_to_svg(x_axis_label)
-    ));
-  }
-  if !y_axis_label.is_empty() {
-    let cy = plot_y0 + plot_h / 2.0;
-    let lx = 14.0 * sf;
-    svg.push_str(&format!(
-      "<text x=\"{lx:.2}\" y=\"{cy:.2}\" text-anchor=\"middle\" \
-       font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{label_fill}\" \
-       transform=\"rotate(-90,{lx:.2},{cy:.2})\">{}</text>\n",
-      crate::functions::graphics::box_string_to_svg(y_axis_label)
-    ));
-  }
+  // AxesLabel: at the far end of each axis, as everywhere else. `BarOrigin ->
+  // Left` transposes the chart, so the *first* entry labels the vertical axis
+  // and the second the horizontal one — the swap wolframscript makes too.
+  svg.push_str(&axes_label_svg(
+    Some(&(y_axis_label.to_string(), x_axis_label.to_string())),
+    (plot_x0, plot_y0, plot_w, plot_h),
+    (x_min, x_max, 0.0, n as f64),
+    (true, true),
+    font_size,
+    label_fill,
+  ));
 
   // Plot label, centered above the plot.
   if let Some(sl) = plot_label
@@ -5824,12 +5955,33 @@ pub(crate) fn generate_histogram_svg(
     .plot_label
     .as_ref()
     .is_some_and(|sl| !sl.text.is_empty());
-  let has_x_axis_label =
-    opts.axes_label.as_ref().is_some_and(|(x, _)| !x.is_empty());
-  let top_margin = if has_plot_label { 35 * s } else { 10 * s };
-  let bottom_extra = if has_x_axis_label { 24.0 * sf } else { 0.0 };
+  // A `FrameLabel` takes room below/left; an `AxesLabel` sits at the far end
+  // of its axis, so it takes room above and to the right instead.
+  let has_x_frame_label = opts
+    .frame_label
+    .as_ref()
+    .is_some_and(|(x, _)| !x.is_empty());
+  let axes_label_x = opts
+    .axes_label
+    .as_ref()
+    .map(|(x, _)| x.as_str())
+    .filter(|x| !x.is_empty());
+  let has_y_axes_label =
+    opts.axes_label.as_ref().is_some_and(|(_, y)| !y.is_empty());
+  let top_margin = if has_plot_label { 35 * s } else { 10 * s }
+    + if has_y_axes_label { 20 * s } else { 0 };
+  let bottom_extra = if has_x_frame_label { 24.0 * sf } else { 0.0 };
   let x_label_area = 40 * RESOLUTION_SCALE + bottom_extra as u32;
   let y_label_area = 65 * RESOLUTION_SCALE;
+  let axes_label_margin_right = axes_label_x.map_or(0.0, |label| {
+    // The label is drawn at `font_size`; ~0.62 em per character covers the
+    // proportional font with a little slack.
+    8.0 * sf
+      + crate::functions::graphics::box_string_visible_len(label) as f64
+        * 0.62
+        * sf
+        * 18.0
+  }) as u32;
 
   let (bg_color, dark_gray, _light_gray, label_fill, title_default_fill) =
     plot_theme();
@@ -5846,7 +5998,7 @@ pub(crate) fn generate_histogram_svg(
 
     let mut chart = ChartBuilder::on(&root)
       .margin_top(top_margin as u32)
-      .margin_right(10 * s as u32)
+      .margin_right(10 * s as u32 + axes_label_margin_right)
       .margin_bottom(10 * s as u32)
       .margin_left(10 * s as u32)
       .x_label_area_size(x_label_area)
@@ -5977,8 +6129,11 @@ pub(crate) fn generate_histogram_svg(
   let margin_left = 10.0 * sf;
   let plot_x0 = margin_left + y_label_area as f64;
   let plot_y0 = top_margin as f64;
-  let plot_w =
-    render_width as f64 - margin_left - 10.0 * sf - y_label_area as f64;
+  let plot_w = render_width as f64
+    - margin_left
+    - 10.0 * sf
+    - axes_label_margin_right as f64
+    - y_label_area as f64;
   let plot_h =
     render_height as f64 - top_margin as f64 - 10.0 * sf - x_label_area as f64;
 
@@ -6008,8 +6163,8 @@ pub(crate) fn generate_histogram_svg(
     let mut labels_svg = String::new();
     let axis_y = plot_y0 + plot_h;
 
-    if let Some((x_label, y_label)) = &opts.axes_label {
-      // x-axis label centered below the tick labels
+    // FrameLabel: centred outside the bottom/left edge.
+    if let Some((x_label, y_label)) = &opts.frame_label {
       if !x_label.is_empty() {
         let cx = plot_x0 + plot_w / 2.0;
         let base_y = axis_y + font_size * 2.8;
@@ -6020,7 +6175,6 @@ pub(crate) fn generate_histogram_svg(
           crate::functions::graphics::box_string_to_svg(x_label)
         ));
       }
-      // y-axis label rotated on the left
       if !y_label.is_empty() {
         let cy = plot_y0 + plot_h / 2.0;
         let lx = margin_left + font_size * 0.8;
@@ -6033,12 +6187,28 @@ pub(crate) fn generate_histogram_svg(
       }
     }
 
+    // AxesLabel: at the far end of each axis.
+    labels_svg.push_str(&axes_label_svg(
+      opts.axes_label.as_ref(),
+      (plot_x0, plot_y0, plot_w, plot_h),
+      (x_lo, x_hi, y_min, y_max),
+      (true, true),
+      font_size,
+      label_fill,
+    ));
+
     // PlotLabel: centered above the chart
     if let Some(sl) = &opts.plot_label
       && !sl.text.is_empty()
     {
       let cx = plot_x0 + plot_w / 2.0;
-      let ty = top_margin as f64 - title_font_size * 0.5;
+      let ty = top_margin as f64
+        - title_font_size * 0.5
+        - if has_y_axes_label {
+          font_size * 1.2
+        } else {
+          0.0
+        };
       let fs = sl.font_size.map(|f| f * sf).unwrap_or(title_font_size);
       let fill = sl
         .color
@@ -7030,7 +7200,12 @@ pub(crate) fn parse_frame_option(value: &Expr) -> bool {
 
 pub(crate) fn apply_frame_label_option(value: &Expr, opts: &mut PlotOptions) {
   let fl = parse_frame_label(value);
-  opts.axes_label = Some((fl.bottom, fl.left));
+  if !fl.bottom.is_empty() {
+    opts.frame_label_bottom = Some(fl.bottom);
+  }
+  if !fl.left.is_empty() {
+    opts.frame_label_left = Some(fl.left);
+  }
   if !fl.top.is_empty() {
     opts.frame_label_top = Some(fl.top);
   }
