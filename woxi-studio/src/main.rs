@@ -8287,4 +8287,91 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 1}, \"…\"]"], "Output"]
       other => panic!("unexpected controls: {other:?}"),
     }
   }
+
+  /// End-to-end regression for the "Constant Price Elasticity of Demand"
+  /// Demonstration: a `Grid` of two `Show[Plot[…], Graphics[…]]` panels,
+  /// each drawn with the plot's own `PlotRange`, `PlotLabel` and
+  /// `AxesLabel`.
+  #[test]
+  fn price_elasticity_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"Grid", "[",
+    RowBox[{"{",
+     RowBox[{"{",
+      RowBox[{"Show", "[",
+       RowBox[{
+        RowBox[{"Plot", "[",
+         RowBox[{
+          RowBox[{"A", " ",
+           SuperscriptBox["x", RowBox[{"1", "/", "\[Epsilon]"}]]}], ",",
+          RowBox[{"{", RowBox[{"x", ",", "0", ",", "10"}], "}"}], ",",
+          RowBox[{"PlotRange", "\[Rule]",
+           RowBox[{"{",
+            RowBox[{
+             RowBox[{"{", RowBox[{"0", ",", "10"}], "}"}], ",",
+             RowBox[{"{", RowBox[{"0", ",", "10"}], "}"}]}], "}"}]}], ",",
+          RowBox[{"AxesLabel", "\[Rule]",
+           RowBox[{"{",
+            RowBox[{
+             RowBox[{"Style", "[",
+              RowBox[{"\"\<Q\>\"", ",", "Blue", ",", "Italic"}], "]"}], ",",
+             RowBox[{"Style", "[",
+              RowBox[{"\"\<P\>\"", ",", "Blue", ",", "Italic"}], "]"}]}],
+            "}"}]}], ",",
+          RowBox[{"PlotLabel", "\[Rule]", "\"\<Demand\>\""}]}], "]"}], ",",
+        RowBox[{"Graphics", "[",
+         RowBox[{"{",
+          RowBox[{"PointSize", "[", "0.03", "]"}], ",",
+          RowBox[{"Point", "[",
+           RowBox[{"{", RowBox[{"2.5", ",", "price"}], "}"}], "]"}], "}"}],
+         "]"}]}], "]"}], "}"}], "}"}], "]"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{", RowBox[{"A", ",", "5", ",", "\"\<A\>\""}], "}"}], ",",
+     "0.2", ",", "20"}], "}"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{", RowBox[{"price", ",", "2", ",", "\"\<p\>\""}], "}"}], ",",
+     "0.5", ",", "10"}], "}"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`A$$ = 5}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the Grid of plots must render as a picture, not as `-Graphics-` text"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: a,
+          current: a_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: p,
+          current: p_now,
+          ..
+        },
+      ] => {
+        assert_eq!((a.as_str(), *a_now), ("A", 5.0));
+        assert_eq!((p.as_str(), *p_now), ("price", 2.0));
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
 }

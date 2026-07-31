@@ -154,6 +154,10 @@ pub struct PlotSource {
   pub x_range: (f64, f64),
   pub y_range: (f64, f64),
   pub image_size: (u32, u32),
+  /// The option rules the plot was called with, verbatim. `Show` merges
+  /// them into the combined graphic the way Wolfram does — the result
+  /// keeps the options of the graphics it was given.
+  pub options: Vec<Expr>,
 }
 
 /// Filling specification for a plot series (used by `Show` when merging

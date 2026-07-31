@@ -219,7 +219,8 @@ mod row_visual_mode {
     assert_eq!(result.result, "-Graphics-");
     let svg = result.graphics.unwrap();
     assert!(svg.contains("fill=\"rgb(128,128,128)\""));
-    assert!(svg.contains(">hey</text>"));
+    // The styled run is a tspan carrying the colour inside the text.
+    assert!(svg.contains(">hey<"));
   }
 
   #[test]
@@ -242,7 +243,7 @@ mod row_visual_mode {
     // The disk graphic is embedded, the styled text is gray.
     assert!(svg.contains("<svg x="));
     assert!(svg.contains("fill=\"rgb(128,128,128)\""));
-    assert!(svg.contains(">Hey there</text>"));
+    assert!(svg.contains(">Hey there<"));
   }
 
   #[test]

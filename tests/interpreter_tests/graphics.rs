@@ -2477,6 +2477,49 @@ mod plot3d {
       );
     }
 
+    /// Wolfram writes an `AxesLabel` at the end of its axis — the x label
+    /// past the right edge, the y label above the top — and a `Style`
+    /// around it carries its colour and slant into the label.
+    #[test]
+    fn graphics_axes_label_sits_at_the_axis_ends() {
+      let svg = export_svg(
+        r#"Graphics[{Line[{{0, 0}, {6, 1}}]}, Axes -> True,
+          AxesLabel -> {Style["Q", Blue, Italic], Style["P", Blue]},
+          ImageSize -> 300]"#,
+      );
+      let label = |text: &str| {
+        svg
+          .lines()
+          .find(|l| l.contains(&format!(">{text}</tspan>")))
+          .unwrap_or_else(|| panic!("no {text} label in {svg}"))
+          .to_string()
+      };
+      let q = label("Q");
+      let p = label("P");
+      // Both are blue; only the x label is italic.
+      assert!(q.contains("fill=\"rgb(0,0,255)\""), "{q}");
+      assert!(q.contains("font-style=\"italic\""), "{q}");
+      assert!(p.contains("fill=\"rgb(0,0,255)\""), "{p}");
+      assert!(!p.contains("font-style=\"italic\""), "{p}");
+      // The x label starts past the right edge of the drawing area; the y
+      // label sits above its top.
+      let attr = |line: &str, name: &str| {
+        line
+          .split(&format!("{name}=\""))
+          .nth(1)
+          .and_then(|r| r.split('"').next())
+          .and_then(|v| v.parse::<f64>().ok())
+          .unwrap_or_else(|| panic!("no {name} in {line}"))
+      };
+      assert!(attr(&q, "x") > 300.0, "x label not at the axis end: {q}");
+      assert!(attr(&p, "y") < 0.0, "y label not above the axis: {p}");
+      // `AxesLabel -> None` draws neither.
+      let svg = export_svg(
+        "Graphics[{Line[{{0, 0}, {1, 1}}]}, Axes -> True, AxesLabel -> None]",
+      );
+      assert!(!svg.contains("</tspan>"), "{svg}");
+    }
+
     #[test]
     fn graphics_plot_label() {
       // PlotLabel also works on plain Graphics, as a centered title.
@@ -7275,6 +7318,52 @@ mod show {
     assert_eq!(interpret("Show[1, 2, 3]").unwrap(), "Show[1, 2, 3]");
   }
 
+  /// Wolfram's `Show` keeps the options of the graphics it is given, so a
+  /// plot merged with raw primitives is still drawn with its own
+  /// `PlotRange`, `PlotLabel` and `AxesLabel`. Regression: those were
+  /// dropped, so a curve with a pole (`5/x`) rescaled the axis to its
+  /// data and flattened everything else against it.
+  #[test]
+  fn show_keeps_the_plots_own_options() {
+    clear_state();
+    let svg = export_svg(
+      r#"Show[
+        Plot[5/x, {x, 0, 10}, PlotRange -> {{0, 10}, {0, 10}},
+          PlotLabel -> "Demand", AxesLabel -> {"Q", "P"}],
+        Graphics[{Point[{2, 2}]}]]"#,
+    );
+    // The explicit PlotRange clips the pole: the y axis stops at 10.
+    assert!(svg.contains(">10</text>"), "{svg}");
+    assert!(!svg.contains(">1000</text>"), "PlotRange ignored: {svg}");
+    assert!(svg.contains(">Demand</text>"), "{svg}");
+    assert!(
+      svg.contains(">Q</text>") && svg.contains(">P</text>"),
+      "{svg}"
+    );
+    // An option given to Show itself still wins over the plot's.
+    let svg = export_svg(
+      r#"Show[Plot[Sin[x], {x, 0, 6}, PlotLabel -> "inner"],
+        Graphics[{Point[{2, 0}]}], PlotLabel -> "outer"]"#,
+    );
+    assert!(svg.contains(">outer</text>") && !svg.contains(">inner</text>"));
+  }
+
+  /// `Show[g]` is `g`: with nothing to merge and no options of its own it
+  /// hands back the rendering unchanged, rather than rebuilding one from
+  /// the plot's series and losing how it was drawn.
+  #[test]
+  fn show_of_one_graphic_is_that_graphic() {
+    clear_state();
+    let plotted = export_svg(
+      r#"Plot[Sin[x], {x, 0, 6}, PlotLabel -> "T", AxesLabel -> {"Q", "P"}]"#,
+    );
+    let shown = export_svg(
+      r#"Show[Plot[Sin[x], {x, 0, 6}, PlotLabel -> "T",
+        AxesLabel -> {"Q", "P"}]]"#,
+    );
+    assert_eq!(plotted, shown);
+  }
+
   #[test]
   fn show_plot_with_graphics_keeps_plot_aspect() {
     // Merging a Plot with raw Graphics primitives inherits the plot's
@@ -7925,6 +8014,31 @@ mod graphics_grid {
       svg.contains("data:image/png;base64,"),
       "Image should be base64-encoded PNG"
     );
+  }
+
+  /// A grid whose cells are all graphics lays the pictures out, rather
+  /// than printing `-Graphics-` per cell — the shape a Demonstration uses
+  /// to stack two plots.
+  #[test]
+  fn grid_of_graphics_lays_out_the_pictures() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{Graphics[{Disk[]}, ImageSize -> 100]}, \
+             {Graphics[{Red, Rectangle[]}, ImageSize -> 100]}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(!svg.contains("-Graphics-"), "cells must be drawn: {svg}");
+    // One nested <svg> per cell, one above the other.
+    assert_eq!(svg.matches("<svg x=").count(), 2, "{svg}");
+    assert!(svg.contains("rgb(255,0,0)"), "the red cell must render");
+    // A mixed grid still lays its cells out as text.
+    let result = interpret_with_stdout(
+      "Grid[{{\"label\", Graphics[{Disk[]}, ImageSize -> 50]}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">label</text>"), "{svg}");
   }
 
   #[test]

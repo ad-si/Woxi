@@ -1272,6 +1272,7 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     !joined,
     opts.filling,
     opts.filling_style,
+    crate::functions::plot::explicit_options(args),
   );
   Ok(crate::graphics_result_with_source(svg, source))
 }
@@ -1358,6 +1359,7 @@ pub fn complex_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     !joined,
     opts.filling,
     opts.filling_style,
+    crate::functions::plot::explicit_options(args),
   );
   Ok(crate::graphics_result_with_source(svg, source))
 }

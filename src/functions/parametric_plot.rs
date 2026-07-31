@@ -278,6 +278,7 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     false,
     plot_opts.filling,
     plot_opts.filling_style,
+    crate::functions::plot::explicit_options(args),
   );
   Ok(crate::graphics_result_with_source(svg, source))
 }
@@ -341,6 +342,7 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     false,
     plot_opts.filling,
     plot_opts.filling_style,
+    crate::functions::plot::explicit_options(args),
   );
   Ok(crate::graphics_result_with_source(svg, source))
 }

@@ -3400,6 +3400,7 @@ fn render_axes(
   bb: &BBox,
   svg_w: f64,
   svg_h: f64,
+  axes_label: &Option<(String, String)>,
 ) {
   let t = theme();
   let axis_stroke = t.axis_stroke;
@@ -3470,6 +3471,25 @@ fn render_axes(
         "<text x=\"{:.2}\" y=\"{y:.2}\" fill=\"{tick_label_fill}\" font-size=\"14\" font-family=\"monospace\" text-anchor=\"end\" dominant-baseline=\"middle\">{}</text>\n",
         axis_x_px - 6.0,
         svg_escape(&label),
+      ));
+    }
+  }
+
+  // Wolfram writes an AxesLabel at the *end* of its axis: the x label just
+  // past the right edge, level with the axis, and the y label above the
+  // top of the vertical axis.
+  if let Some((x_label, y_label)) = axes_label {
+    if axes.0 && !x_label.is_empty() {
+      svg.push_str(&format!(
+        "<text x=\"{:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"14\" font-family=\"sans-serif\" text-anchor=\"start\" dominant-baseline=\"middle\">{x_label}</text>\n",
+        svg_w + 8.0,
+        axis_y_px,
+      ));
+    }
+    if axes.1 && !y_label.is_empty() {
+      svg.push_str(&format!(
+        "<text x=\"{:.2}\" y=\"-8.00\" fill=\"{tick_label_fill}\" font-size=\"14\" font-family=\"sans-serif\" text-anchor=\"middle\">{y_label}</text>\n",
+        axis_x_px,
       ));
     }
   }
@@ -4854,6 +4874,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut plot_range_y: Option<(f64, f64)> = None;
   let mut background: Option<Color> = None;
   let mut plot_label: Option<String> = None;
+  // `AxesLabel -> {xlabel, ylabel}`, already typeset as SVG markup.
+  let mut axes_label: Option<(String, String)> = None;
   let mut axes = (false, false);
   let mut frame = false;
   // `FrameTicks -> False | None` keeps the border but drops the tick
@@ -4917,6 +4939,20 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             axes = parsed_axes;
           }
         }
+        // `AxesLabel -> {x, y}` (or a single label for the x axis).
+        "AxesLabel" => match replacement {
+          Expr::List(items) if items.len() == 2 => {
+            let label = |e: &Expr| match e {
+              Expr::Identifier(s) if s == "None" => String::new(),
+              other => expr_to_svg_markup(other),
+            };
+            axes_label = Some((label(&items[0]), label(&items[1])));
+          }
+          Expr::Identifier(s) if s == "None" => axes_label = None,
+          other => {
+            axes_label = Some((expr_to_svg_markup(other), String::new()));
+          }
+        },
         "Frame" => {
           if let Expr::Identifier(s) = replacement {
             if s == "True" {
@@ -5070,9 +5106,22 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     0.0
   };
-  let margin_right: f64 = if frame { 10.0 } else { 0.0 };
+  // An AxesLabel sits at the end of its axis (Wolfram's placement), so
+  // the x label needs room to the right and the y label room above.
+  let has_x_axis_label =
+    axes_label.as_ref().is_some_and(|(x, _)| !x.is_empty());
+  let has_y_axis_label =
+    axes_label.as_ref().is_some_and(|(_, y)| !y.is_empty());
+  let margin_right: f64 =
+    if frame { 10.0 } else { 0.0 } + if has_x_axis_label { 24.0 } else { 0.0 };
   let label_strip: f64 = if plot_label.is_some() { 26.0 } else { 0.0 };
-  let margin_top: f64 = if frame { 10.0 } else { 0.0 } + label_strip;
+  let margin_top: f64 = if frame { 10.0 } else { 0.0 }
+    + label_strip
+    + if has_y_axis_label && label_strip == 0.0 {
+      20.0
+    } else {
+      0.0
+    };
   let total_width = svg_w + margin_left + margin_right;
   let total_height = svg_h + margin_bottom + margin_top;
 
@@ -5174,7 +5223,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
   }
 
-  render_axes(&mut svg, axes, &bb, svg_w, svg_h);
+  render_axes(&mut svg, axes, &bb, svg_w, svg_h, &axes_label);
 
   // Render primitives. A primitive with a drop shadow is wrapped in a
   // <g> that applies the shadow filter, so each primitive casts its own
@@ -6448,6 +6497,63 @@ fn base_form_digits(x: &Expr, base: &Expr) -> Option<String> {
 /// Convert an `Expr` into SVG text markup (inner content of a `<text>` element).
 /// Recursively handles all expression types so that Power expressions
 /// anywhere in the tree are rendered with `<tspan>` superscripts.
+/// The SVG text attributes a `Style[…]` directive list asks for — colour,
+/// slant, weight and size — for the `tspan` the styled content goes into.
+/// Directives with no textual meaning (or none we render) are skipped.
+fn style_directives_to_svg_attrs(directives: &[Expr]) -> String {
+  let mut attrs = String::new();
+  for d in directives {
+    match d {
+      Expr::Identifier(s) if s == "Italic" => {
+        attrs.push_str(" font-style=\"italic\"");
+      }
+      Expr::Identifier(s) if s == "Bold" => {
+        attrs.push_str(" font-weight=\"bold\"");
+      }
+      // A bare number is the font size (`Style[expr, 12]`).
+      Expr::Integer(_) | Expr::Real(_) => {
+        if let Some(size) = expr_to_f64(d) {
+          attrs.push_str(&format!(" font-size=\"{size:.0}\""));
+        }
+      }
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => match option_name(pattern) {
+        Some("FontSize") => {
+          if let Some(size) = expr_to_f64(replacement) {
+            attrs.push_str(&format!(" font-size=\"{size:.0}\""));
+          }
+        }
+        Some("FontColor") => {
+          if let Some(c) = parse_color(replacement) {
+            attrs.push_str(&format!(" fill=\"{}\"", c.to_svg_rgb()));
+          }
+        }
+        Some("FontSlant") => {
+          if matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Italic")
+          {
+            attrs.push_str(" font-style=\"italic\"");
+          }
+        }
+        Some("FontWeight") => {
+          if matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Bold")
+          {
+            attrs.push_str(" font-weight=\"bold\"");
+          }
+        }
+        _ => {}
+      },
+      other => {
+        if let Some(c) = parse_color(other) {
+          attrs.push_str(&format!(" fill=\"{}\"", c.to_svg_rgb()));
+        }
+      }
+    }
+  }
+  attrs
+}
+
 pub fn expr_to_svg_markup(expr: &Expr) -> String {
   use crate::syntax::expr_to_output;
 
@@ -6860,8 +6966,18 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           }
         }
 
-        // Style[content, directives...] → render content only
-        "Style" if !args.is_empty() => expr_to_svg_markup(&args[0]),
+        // Style[content, directives...] → the content, wrapped in a
+        // tspan carrying the colour, slant, weight and size the
+        // directives ask for (a label reads `Style["P", Blue, Italic]`).
+        "Style" if !args.is_empty() => {
+          let content = expr_to_svg_markup(&args[0]);
+          let attrs = style_directives_to_svg_attrs(&args[1..]);
+          if attrs.is_empty() {
+            content
+          } else {
+            format!("<tspan{attrs}>{content}</tspan>")
+          }
+        }
 
         // HoldForm[expr] → render content
         "HoldForm" if args.len() == 1 => expr_to_svg_markup(&args[0]),
@@ -8067,6 +8183,15 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Wolfram takes the merged result's options from the first graphic, so
   // plot defaults (axes, 1/GoldenRatio aspect) apply only in that case.
   let mut first_graphic_is_plot: Option<bool> = None;
+  // Options carried over from the graphics being shown (see the
+  // `Expr::Graphics` arm below).
+  let mut inherited_options: Vec<Expr> = Vec::new();
+  // The single graphic of a `Show[g]`, and whether `Show` was given any
+  // options of its own — with neither a second graphic nor an option to
+  // apply, `Show[g]` is `g`.
+  let mut only_graphic: Option<Expr> = None;
+  let mut graphic_count = 0usize;
+  let mut has_own_options = false;
 
   // `Show[{g1, g2, …}, opts…]` — flatten a leading List argument into
   // multiple graphics args (Wolfram convention; not Listable but accepts
@@ -8138,6 +8263,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     match expr_ref {
       Expr::FunctionCall { name, args: gargs } if name == "Graphics" => {
+        graphic_count += 1;
         first_graphic_is_plot.get_or_insert(false);
         if !gargs.is_empty() {
           merged_primitives.push(gargs[0].clone());
@@ -8158,6 +8284,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
       Expr::FunctionCall { name, args: gargs } if name == "Graphics3D" => {
+        graphic_count += 1;
         first_graphic_is_plot.get_or_insert(false);
         is_3d = true;
         if !gargs.is_empty() {
@@ -8172,9 +8299,26 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         source,
         ..
       } => {
+        graphic_count += 1;
+        if graphic_count == 1 {
+          only_graphic = Some(expr_ref.clone());
+        }
         first_graphic_is_plot.get_or_insert(source.is_some());
         is_3d = *g_is_3d;
         if let Some(src) = source {
+          // Wolfram keeps the options of the graphics it is given, the
+          // first one winning; an option given to `Show` itself still
+          // overrides them (applied after the walk).
+          for opt in &src.options {
+            let name = option_name_value(opt).map(|(n, _)| n);
+            if name.is_some()
+              && !inherited_options.iter().any(|existing| {
+                option_name_value(existing).map(|(n, _)| n) == name
+              })
+            {
+              inherited_options.push(opt.clone());
+            }
+          }
           plot_sources.push(src.as_ref().clone());
         } else {
           // No source data — collect as opaque pre-rendered graphic
@@ -8182,9 +8326,32 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
       Expr::Rule { .. } | Expr::RuleDelayed { .. } => {
+        has_own_options = true;
         merge_option(&mut merged_options, expr_ref);
       }
       _ => {}
+    }
+  }
+
+  // `Show[g]` is `g`: hand back the rendering it already has instead of
+  // rebuilding one from the series, which would lose everything the
+  // graphic was drawn with.
+  if graphic_count == 1
+    && !has_own_options
+    && let Some(graphic) = &only_graphic
+  {
+    return Ok(graphic.clone());
+  }
+
+  // Options of the shown graphics fill in whatever `Show` was not told
+  // explicitly.
+  for opt in inherited_options {
+    let name = option_name_value(&opt).map(|(n, _)| n);
+    if !merged_options
+      .iter()
+      .any(|existing| option_name_value(existing).map(|(n, _)| n) == name)
+    {
+      merged_options.push(opt);
     }
   }
 
@@ -8220,6 +8387,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       x_range: (x_min, x_max),
       y_range: (y_min, y_max),
       image_size,
+      options: merged_options.clone(),
     };
 
     let svg = crate::functions::plot::render_merged_plot_source(&merged)?;
@@ -8444,8 +8612,58 @@ fn grid_ast_internal(
   group_gaps: &[usize],
   parens: bool,
 ) -> Result<Expr, InterpreterError> {
+  // A grid whose cells are all graphics is a layout of pictures, not of
+  // text: lay the renderings out side by side at their own sizes, the
+  // way `GraphicsGrid` does, instead of printing `-Graphics-` per cell.
+  if !parens
+    && let Some(rows) = grid_of_graphics_svgs(args)
+    && let Some(combined) = combine_graphics_svgs(&rows)
+  {
+    crate::clear_captured_graphics();
+    return Ok(crate::graphics_result(combined));
+  }
   let svg = grid_svg_internal(args, group_gaps, parens)?;
   Ok(crate::graphics_result(svg))
+}
+
+/// The rendered SVG of every cell, when `Grid`'s first argument is a
+/// matrix in which *every* cell is a rendered graphic. `None` as soon as
+/// one cell is anything else, so mixed text/graphics grids keep the
+/// ordinary text layout.
+fn grid_of_graphics_svgs(args: &[Expr]) -> Option<Vec<Vec<String>>> {
+  let Expr::List(rows) = args.first()? else {
+    return None;
+  };
+  let mut out: Vec<Vec<String>> = Vec::with_capacity(rows.len());
+  for row in rows.iter() {
+    let cells = match row {
+      Expr::List(cells) => cells.iter().cloned().collect::<Vec<_>>(),
+      single => vec![single.clone()],
+    };
+    let mut row_svgs = Vec::with_capacity(cells.len());
+    for cell in &cells {
+      let svg = match cell {
+        Expr::Graphics { svg, .. } => svg.clone(),
+        // A cell may still be the unevaluated call that produces the
+        // picture (`Grid` holds its argument), so evaluate the heads
+        // that are known to render.
+        Expr::FunctionCall { name, .. } if is_graphics_producing_head(name) => {
+          let evaluated = evaluate_expr_to_expr(cell).ok()?;
+          crate::evaluator::expr_to_svg(&evaluated)
+        }
+        _ => return None,
+      };
+      if svg.is_empty() {
+        return None;
+      }
+      row_svgs.push(svg);
+    }
+    if row_svgs.is_empty() {
+      return None;
+    }
+    out.push(row_svgs);
+  }
+  (!out.is_empty()).then_some(out)
 }
 
 /// Default style inherited from an outer Style[Grid[...], directives...].

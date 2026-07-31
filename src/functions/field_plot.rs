@@ -1103,6 +1103,7 @@ fn contour_plot_equations(
     x_range: (x_min, x_max),
     y_range: (y_min, y_max),
     image_size: (opts.svg_width, opts.svg_height),
+    options: crate::functions::plot::explicit_options(args),
   };
   let mut result = crate::graphics_result_with_source(svg, source);
   if let Expr::Graphics {

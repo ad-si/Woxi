@@ -2928,6 +2928,7 @@ pub(crate) fn build_plot_source(
   is_scatter: bool,
   filling: Filling,
   filling_style: Option<FillStyle>,
+  options: Vec<Expr>,
 ) -> crate::syntax::PlotSource {
   let series_filling = filling.to_series_filling();
   let (fill_color, fill_opacity) = match filling_style {
@@ -2955,7 +2956,18 @@ pub(crate) fn build_plot_source(
     x_range,
     y_range,
     image_size,
+    options,
   }
+}
+
+/// The option rules a graphics function was called with, verbatim, so
+/// `Show` can carry them into a merged graphic.
+pub(crate) fn explicit_options(args: &[Expr]) -> Vec<Expr> {
+  args
+    .iter()
+    .filter(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+    .cloned()
+    .collect()
 }
 
 /// With a single series a `PlotStyle` list is one combined style, not a
@@ -5452,6 +5464,7 @@ pub(crate) fn histogram_plot_source(
     x_range: (bin_edges[0], bin_edges[num_bins]),
     y_range: (0.0, y_hi),
     image_size,
+    options: Vec::new(),
   })
 }
 
@@ -7267,6 +7280,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     false,
     plot_opts.filling,
     plot_opts.filling_style,
+    crate::functions::plot::explicit_options(args),
   );
 
   // Return -Graphics- as the text representation
