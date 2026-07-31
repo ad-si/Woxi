@@ -9517,4 +9517,63 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`\[Sigma]$$ = 0.7}, \"\[Ellipsis]\"]
       "one slider per parameter, Greek names included"
     );
   }
+
+  /// End-to-end regression for "Merging Schools of Fish": the swarms are
+  /// built by assigning to a *list* of downvalue patterns
+  /// (`{vectorField1[t_], vectorField2[t_]} = Table[…]`), then mapped through
+  /// `@@@`, `Transpose` and matrix dot products into 120 translucent
+  /// polygons. The notebook's 700-point fish outline is replaced here by a
+  /// triangle; everything else is its own code.
+  #[test]
+  fn merging_schools_of_fish_notebook_builds_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["fish[mp_, size_] := Polygon[(mp + 6 size (# - {0.5, 0.5})) & /@ {{0.7, 0.5}, {0.3, 0.55}, {0.3, 0.45}}]"], "Input"],
+Cell[BoxData["{vectorField1[t_], vectorField2[t_]} = \nTable[\nModule[{φ = Sum[RandomReal[{-1, 1}] Sin[j t +2Pi RandomReal[]], {j, 6}]},\n              {{{Cos[φ], Sin[φ]}, {-Sin[φ], Cos[φ]}},\n              Table[ 2  Sum[RandomReal[{-1, 1}] Sin[j t ], {j, 6}], {2}]}\n            ],{2}];"], "Input"],
+Cell[BoxData["{internalRotationField1[t_], internalRotationField2[t_]} = \nModule[{φ},\nTable[φ = Sum[RandomReal[{-1, 1}] Sin[j t +2Pi RandomReal[]], {j, 6}];\n            {{Cos[φ], Sin[φ]}, {-Sin[φ], Cos[φ]}}, {#}]]& /@ {60, 60};"], "Input"],
+Cell[BoxData["{fishSwarm1Initial, fishSwarm2Initial} = \n               {RandomReal[{-1, 1}, {60, 2}], RandomReal[{-1, 1}, {60, 2}]} ;"], "Input"],
+Cell[BoxData["r0=0.1;"], "Input"],
+Cell[BoxData["swarm1Colors = Hue/@RandomReal[{-0.05, 0.05}, {60}];\nswarm2Colors = Hue/@RandomReal[0.7 + {-0.05, 0.05}, {60}];"], "Input"],
+Cell[BoxData["swarm1Sizes = r0 RandomReal[1 + {-0.2, 0.2}, {60}];\nswarm2Sizes = r0 RandomReal[1 + {-0.2, 0.2}, {60}];"], "Input"],
+Cell[BoxData["fishSwarm1[t_] :=\nModule[{ℛ, 𝒯,ℛis},\n             {ℛ, 𝒯}=vectorField1[t];\n             ℛis = internalRotationField1[t];\n             {Opacity[0.4+ 0.6 ArcTan[2t]/(Pi/2)],#}& /@\n             Transpose[{swarm1Colors, fish[#2, #1]& @@@\n              Transpose[{(1 + 4 Exp[-t])swarm1Sizes, (ℛ.#+ 0 𝒯)& /@\n            (#1.#2&@@@ Transpose[{ℛis, fishSwarm1Initial}])}]}]\n           \n         ]"], "Input"],
+Cell[BoxData["fishSwarm2[t_] :=\nModule[{ℛ, 𝒯,ℛis},\n             {ℛ, 𝒯}=vectorField2[t];\n             ℛis = internalRotationField2[t];\n             {Opacity[0.4+ 0.6 ArcTan[2t]/(Pi/2)],#}& /@\n             Transpose[{swarm2Colors, fish[#2, #1]& @@@\n              Transpose[{(1 + 4 Exp[-t])swarm2Sizes, (ℛ.#+ 𝒯)& /@\n            (#1.#2&@@@ Transpose[{ℛis, fishSwarm2Initial}])}]}]\n   ]"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nGraphics[\nSeedRandom[1];\nRandomSample[ Join[fishSwarm1[t], fishSwarm2[t]]], PlotRange -> 4,ImageSize->{450,450}],\n{{t,0,\"time\"}, 0, 2},\nSaveDefinitions -> True]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`t$$ = 0}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the swarm definitions must evaluate: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the swarms must draw");
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name,
+          label,
+          current,
+          min,
+          max,
+          ..
+        },
+      ] => {
+        assert_eq!((name.as_str(), label.as_str()), ("t", "time"));
+        assert_eq!((*current, *min, *max), (0.0, 0.0, 2.0));
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+    // Both swarms reach the canvas: 60 fish each, drawn as polygons.
+    let svg = woxi::interpret_with_stdout(&format!("t = 0;\n{}", widget.body))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic");
+    assert_eq!(svg.matches("<polygon").count(), 120, "{svg}");
+  }
 }
