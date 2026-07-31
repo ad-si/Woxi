@@ -1457,6 +1457,10 @@ pub(crate) struct PlotOptions {
   pub axes: (bool, bool),
   /// Ticks option: true = show tick marks and labels (default), false = hide
   pub ticks: bool,
+  /// `Ticks -> {xspec, yspec}` with explicit positions: each entry is a
+  /// position and the text drawn at it. `None` = the automatic ticks.
+  pub ticks_x: Option<Vec<(f64, String)>>,
+  pub ticks_y: Option<Vec<(f64, String)>>,
   /// Number of sample points for Plot[] (default: NUM_SAMPLES)
   pub plot_points: usize,
   /// Legend labels for each series (empty = no legend)
@@ -1541,6 +1545,8 @@ impl Default for PlotOptions {
       grid_x_lines: Vec::new(),
       grid_y_lines: Vec::new(),
       frame: false,
+      ticks_x: None,
+      ticks_y: None,
       frame_label_top: None,
       frame_label_right: None,
       date_axis: false,
@@ -1965,6 +1971,9 @@ fn generate_svg_with_options(
         let date_axis = opts.date_axis;
         let log_x = opts.log_x;
         let log_y = opts.log_y;
+        // An axis given explicit ticks draws them itself, below.
+        let has_explicit_x_ticks = opts.ticks_x.is_some();
+        let has_explicit_y_ticks = opts.ticks_y.is_some();
         if show_ticks && (show_x_axis || show_y_axis) {
           let xmaj = if date_axis {
             nice_date_step(x_max - x_min)
@@ -1976,7 +1985,8 @@ fn generate_svg_with_options(
           y_major = ymaj;
           let x_minor = if date_axis { xmaj } else { xmaj / 5.0 };
           let y_minor = ymaj / 5.0;
-          x_labels_count = if !show_x_axis || date_axis {
+          x_labels_count = if !show_x_axis || date_axis || has_explicit_x_ticks
+          {
             0
           } else if log_x {
             // Let LogCoord decide tick placement; ~10 labels for log axes
@@ -1984,7 +1994,7 @@ fn generate_svg_with_options(
           } else {
             ((x_max - x_min) / x_minor).round() as usize + 1
           };
-          y_labels_count = if !show_y_axis {
+          y_labels_count = if !show_y_axis || has_explicit_y_ticks {
             0
           } else if log_y {
             10
@@ -2552,6 +2562,8 @@ fn generate_svg_with_options(
     || has_y_axis_label
     || has_top_label
     || has_right_label
+    || opts.ticks_x.is_some()
+    || opts.ticks_y.is_some()
   {
     let margin_left_f = margin_left as f64;
     let margin_right_f = margin_right as f64;
@@ -2570,6 +2582,47 @@ fn generate_svg_with_options(
 
     if let Some(insert_pos) = buf.rfind("</svg>") {
       let mut labels_svg = String::new();
+
+      // Explicit `Ticks`: mark and label exactly the positions asked for.
+      let tick_len = sf * 5.0;
+      let tick_font = sf * 13.0;
+      if let Some(ticks) = &opts.ticks_x {
+        for (pos, label) in ticks {
+          if *pos < x_min || *pos > x_max || x_max <= x_min {
+            continue;
+          }
+          let px = plot_x0 + (pos - x_min) / (x_max - x_min) * plot_w;
+          labels_svg.push_str(&format!(
+            "<line x1=\"{px:.1}\" y1=\"{axis_y:.1}\" x2=\"{px:.1}\" y2=\"{:.1}\" stroke=\"{label_fill}\" stroke-width=\"{:.1}\"/>\n",
+            axis_y - tick_len,
+            { sf },
+          ));
+          labels_svg.push_str(&format!(
+            "<text x=\"{px:.1}\" y=\"{:.1}\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"{tick_font:.0}\" fill=\"{label_fill}\">{}</text>\n",
+            axis_y + tick_font,
+            crate::functions::graphics::svg_escape(label),
+          ));
+        }
+      }
+      if let Some(ticks) = &opts.ticks_y {
+        for (pos, label) in ticks {
+          if *pos < y_min || *pos > y_max || y_max <= y_min {
+            continue;
+          }
+          let py =
+            margin_top + plot_h - (pos - y_min) / (y_max - y_min) * plot_h;
+          labels_svg.push_str(&format!(
+            "<line x1=\"{plot_x0:.1}\" y1=\"{py:.1}\" x2=\"{:.1}\" y2=\"{py:.1}\" stroke=\"{label_fill}\" stroke-width=\"{:.1}\"/>\n",
+            plot_x0 + tick_len,
+            { sf },
+          ));
+          labels_svg.push_str(&format!(
+            "<text x=\"{:.1}\" y=\"{py:.1}\" text-anchor=\"end\" dominant-baseline=\"central\" font-family=\"sans-serif\" font-size=\"{tick_font:.0}\" fill=\"{label_fill}\">{}</text>\n",
+            plot_x0 - tick_len,
+            crate::functions::graphics::svg_escape(label),
+          ));
+        }
+      }
 
       // AxesLabel
       if let Some((x_label, y_label)) = &opts.axes_label {
@@ -3098,8 +3151,17 @@ pub(crate) fn generate_scatter_svg_with_options(
     let y_major = nice_step(y_max - y_min, 5);
     let x_minor_step = x_major / 5.0;
     let y_minor_step = y_major / 5.0;
-    let x_tick_count = ((x_max - x_min) / x_minor_step).round() as usize + 1;
-    let y_tick_count = ((y_max - y_min) / y_minor_step).round() as usize + 1;
+    // An axis given explicit `Ticks` draws them itself, after the chart.
+    let x_tick_count = if opts.ticks_x.is_some() {
+      0
+    } else {
+      ((x_max - x_min) / x_minor_step).round() as usize + 1
+    };
+    let y_tick_count = if opts.ticks_y.is_some() {
+      0
+    } else {
+      ((y_max - y_min) / y_minor_step).round() as usize + 1
+    };
 
     chart
       .configure_mesh()
@@ -3293,6 +3355,59 @@ pub(crate) fn generate_scatter_svg_with_options(
   }
 
   inject_legend(&mut buf, opts);
+  // Explicit `Ticks`: mark and label exactly the positions asked for,
+  // in the same place the automatic ones would sit.
+  if opts.ticks_x.is_some() || opts.ticks_y.is_some() {
+    let s = RESOLUTION_SCALE as f64;
+    let margin = 10.0 * s;
+    let y_label_area = 65.0 * s;
+    let x_label_area = 40.0 * s;
+    let plot_x0 = margin + y_label_area;
+    let plot_w = render_width as f64 - 2.0 * margin - y_label_area;
+    let plot_h = render_height as f64 - 2.0 * margin - x_label_area;
+    let axis_y = margin + plot_h;
+    if let Some(pos) = buf.rfind("</svg>") {
+      let mut ticks_svg = String::new();
+      let tick_len = 5.0 * s;
+      let tick_font = 13.0 * s;
+      if let Some(ticks) = &opts.ticks_x {
+        for (value, label) in ticks {
+          if *value < x_min || *value > x_max || x_max <= x_min {
+            continue;
+          }
+          let px = plot_x0 + (value - x_min) / (x_max - x_min) * plot_w;
+          ticks_svg.push_str(&format!(
+            "<line x1=\"{px:.1}\" y1=\"{axis_y:.1}\" x2=\"{px:.1}\" y2=\"{:.1}\" stroke=\"{label_fill}\" stroke-width=\"{s:.1}\"/>\n",
+            axis_y - tick_len
+          ));
+          ticks_svg.push_str(&format!(
+            "<text x=\"{px:.1}\" y=\"{:.1}\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"{tick_font:.0}\" fill=\"{label_fill}\">{}</text>\n",
+            axis_y + tick_font,
+            crate::functions::graphics::svg_escape(label)
+          ));
+        }
+      }
+      if let Some(ticks) = &opts.ticks_y {
+        for (value, label) in ticks {
+          if *value < y_min || *value > y_max || y_max <= y_min {
+            continue;
+          }
+          let py = margin + plot_h - (value - y_min) / (y_max - y_min) * plot_h;
+          ticks_svg.push_str(&format!(
+            "<line x1=\"{plot_x0:.1}\" y1=\"{py:.1}\" x2=\"{:.1}\" y2=\"{py:.1}\" stroke=\"{label_fill}\" stroke-width=\"{s:.1}\"/>\n",
+            plot_x0 + tick_len
+          ));
+          ticks_svg.push_str(&format!(
+            "<text x=\"{:.1}\" y=\"{py:.1}\" text-anchor=\"end\" dominant-baseline=\"central\" font-family=\"sans-serif\" font-size=\"{tick_font:.0}\" fill=\"{label_fill}\">{}</text>\n",
+            plot_x0 - tick_len,
+            crate::functions::graphics::svg_escape(label)
+          ));
+        }
+      }
+      buf.insert_str(pos, &ticks_svg);
+    }
+  }
+
   Ok(buf)
 }
 
@@ -6610,6 +6725,32 @@ fn frame_label_entry(e: &Expr) -> String {
   crate::functions::chart::expr_to_label(e).unwrap_or_default()
 }
 
+/// One side of `Ticks -> {xspec, yspec}`: an explicit list of positions,
+/// each optionally carrying the text to draw at it (`{pos, label}`).
+/// `None` for `Automatic`/`None`/anything that is not a list.
+pub(crate) fn parse_explicit_ticks(value: &Expr) -> Option<Vec<(f64, String)>> {
+  let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  let Expr::List(entries) = &val else {
+    return None;
+  };
+  let ticks: Vec<(f64, String)> = entries
+    .iter()
+    .filter_map(|entry| match entry {
+      Expr::List(pair) if pair.len() >= 2 => {
+        let pos = try_eval_to_f64(&pair[0])?;
+        let label = crate::functions::chart::expr_to_label(&pair[1])
+          .unwrap_or_else(|| format_tick(pos));
+        Some((pos, label))
+      }
+      other => {
+        let pos = try_eval_to_f64(other)?;
+        Some((pos, format_tick(pos)))
+      }
+    })
+    .collect();
+  (!ticks.is_empty()).then_some(ticks)
+}
+
 /// Apply a `FrameLabel` value to a plot's options. Bottom and left reuse
 /// the axes-label render path; top and right get their own frame edges.
 pub(crate) fn apply_frame_label_option(value: &Expr, opts: &mut PlotOptions) {
@@ -6846,6 +6987,12 @@ pub(crate) fn apply_common_plot_option(
       Expr::Identifier(s) if s == "None" => plot_opts.ticks = false,
       Expr::Identifier(s) if s == "Automatic" || s == "All" => {
         plot_opts.ticks = true
+      }
+      // `Ticks -> {xspec, yspec}`: each side is None, Automatic, or an
+      // explicit list of positions (each optionally `{pos, label}`).
+      Expr::List(items) if items.len() == 2 => {
+        plot_opts.ticks_x = parse_explicit_ticks(&items[0]);
+        plot_opts.ticks_y = parse_explicit_ticks(&items[1]);
       }
       _ => {}
     },

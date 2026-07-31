@@ -9012,4 +9012,95 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`d$$ = 30.}, \"…\"]"], "Output"]
       other => panic!("unexpected controls: {other:?}"),
     }
   }
+
+  /// End-to-end regression for the "Goldbach Conjecture" Demonstration: a
+  /// `Column` of the decompositions over a `ListPlot` whose axes are
+  /// labelled with explicit ticks.
+  #[test]
+  fn goldbach_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"Column", "[",
+    RowBox[{
+     RowBox[{"{",
+      RowBox[{
+       RowBox[{"Text", "@",
+        RowBox[{"Style", "[", RowBox[{"\"\<counts\>\"", ",", "Bold"}], "]"}]}],
+       ",",
+       RowBox[{"ListPlot", "[",
+        RowBox[{
+         RowBox[{"Table", "[",
+          RowBox[{
+           RowBox[{"Length", "[",
+            RowBox[{"Select", "[",
+             RowBox[{
+              RowBox[{"Range", "[", RowBox[{"2", ",", "k"}], "]"}], ",",
+              RowBox[{
+               RowBox[{
+                RowBox[{"PrimeQ", "[", "#", "]"}], "&&",
+                RowBox[{"PrimeQ", "[", RowBox[{"k", "-", "#"}], "]"}]}], "&"}]}],
+             "]"}], "]"}], ",",
+           RowBox[{"{", RowBox[{"k", ",", "4", ",", "m", ",", "2"}], "}"}]}],
+          "]"}], ",",
+         RowBox[{"PlotStyle", "\[Rule]",
+          RowBox[{"{",
+           RowBox[{
+            RowBox[{"PointSize", "[", "0.04", "]"}], ",",
+            RowBox[{"RGBColor", "[",
+             RowBox[{"1", ",", "0.47", ",", "0"}], "]"}]}], "}"}]}], ",",
+         RowBox[{"PlotRange", "\[Rule]", "All"}], ",",
+         RowBox[{"Ticks", "\[Rule]",
+          RowBox[{"{",
+           RowBox[{
+            RowBox[{"Transpose", "[",
+             RowBox[{"{",
+              RowBox[{
+               RowBox[{"Range", "[", "12", "]"}], ",",
+               RowBox[{"2", "+",
+                RowBox[{"2", " ", RowBox[{"Range", "[", "12", "]"}]}]}]}], "}"}],
+             "]"}], ",", RowBox[{"Range", "[", "6", "]"}]}], "}"}]}], ",",
+         RowBox[{"ImageSize", "\[Rule]",
+          RowBox[{"{", RowBox[{"370", ",", "280"}], "}"}]}]}], "]"}]}], "}"}],
+     ",", RowBox[{"Alignment", "\[Rule]", "Center"}]}], "]"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{", RowBox[{"m", ",", "26", ",", "\"\<maximum total\>\""}], "}"}],
+     ",", "4", ",", "60", ",", "2"}], "}"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`m$$ = 26}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the heading and the plot beneath it must both draw"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name,
+          label,
+          current,
+          step,
+          ..
+        },
+      ] => {
+        assert_eq!((name.as_str(), label.as_str()), ("m", "maximum total"));
+        assert_eq!((*current, *step), (26.0, 2.0));
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
 }

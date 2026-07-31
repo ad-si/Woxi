@@ -12487,8 +12487,14 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
           "end" => total_width - cw,
           _ => 0.0,
         };
+        // The child keeps its own coordinate space: a plot draws at a
+        // multiple of its display size, so the nested `<svg>` needs the
+        // child's viewBox or none of it lands inside the cell.
+        let view_box = parse_svg_dimensions(child)
+          .map(|p| p.view_box)
+          .unwrap_or_else(|| format!("0 0 {cw} {ch}"));
         svg.push_str(&format!(
-          "<svg x=\"{x_off:.1}\" y=\"{y_cursor:.1}\" width=\"{cw:.1}\" height=\"{ch:.1}\">\n"
+          "<svg x=\"{x_off:.1}\" y=\"{y_cursor:.1}\" width=\"{cw:.1}\" height=\"{ch:.1}\" viewBox=\"{view_box}\" preserveAspectRatio=\"xMidYMid meet\">\n"
         ));
         svg.push_str(strip_svg_wrapper(child));
         svg.push_str("</svg>\n");

@@ -867,6 +867,21 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         "FrameLabel" => {
           crate::functions::plot::apply_frame_label_option(replacement, opts)
         }
+        // `Ticks -> {xspec, yspec}` marks exactly the positions named,
+        // each optionally with its own `{pos, label}` text.
+        "Ticks" => match replacement {
+          Expr::Identifier(v) if v == "None" => opts.ticks = false,
+          Expr::Identifier(v) if v == "Automatic" || v == "All" => {
+            opts.ticks = true
+          }
+          Expr::List(items) if items.len() == 2 => {
+            opts.ticks_x =
+              crate::functions::plot::parse_explicit_ticks(&items[0]);
+            opts.ticks_y =
+              crate::functions::plot::parse_explicit_ticks(&items[1]);
+          }
+          _ => {}
+        },
         "Frame" => {
           if matches!(replacement,
             Expr::Identifier(v) if v == "True" || v == "All")

@@ -2576,6 +2576,45 @@ mod plot3d {
       assert!(ticks("Automatic").len() > 4);
     }
 
+    /// `Ticks -> {xspec, yspec}` marks exactly the positions given, and a
+    /// `{pos, label}` pair carries its own text — how a Demonstration
+    /// labels a bin index with the number it stands for.
+    #[test]
+    fn plot_ticks_can_be_given_explicitly() {
+      let labels = |code: &str| {
+        let svg = export_svg(code);
+        let mut out: Vec<String> = svg
+          .lines()
+          .filter(|l| l.starts_with("<text"))
+          .filter_map(|l| {
+            let after = l.split_once('>')?.1;
+            Some(after.split_once("</text>")?.0.to_string())
+          })
+          .filter(|t| !t.is_empty())
+          .collect();
+        out.sort();
+        out.dedup();
+        out
+      };
+      // Positions 1..5 labelled with the even numbers they stand for.
+      let ticks = labels(
+        "ListPlot[{1, 1, 2, 2, 3}, PlotRange -> All, \
+         Ticks -> {Transpose[{Range[5], 2 + 2 Range[5]}], Range[3]}]",
+      );
+      for expected in ["4", "6", "8", "10", "12"] {
+        assert!(ticks.contains(&expected.to_string()), "{ticks:?}");
+      }
+      // The y axis carries exactly 1, 2, 3 — no automatic halves.
+      assert!(!ticks.contains(&"1.5".to_string()), "{ticks:?}");
+      assert!(!ticks.contains(&"2.5".to_string()), "{ticks:?}");
+      // A continuous plot takes the same spec.
+      let ticks = labels(
+        "Plot[x, {x, 0, 4}, Ticks -> {{{1, \"one\"}, {3, \"three\"}}, {2}}]",
+      );
+      assert!(ticks.contains(&"one".to_string()), "{ticks:?}");
+      assert!(ticks.contains(&"three".to_string()), "{ticks:?}");
+    }
+
     /// `Plot` reads `FrameLabel`, in both the `{bottom, left}` and the
     /// nested four-edge form, and a caption may be styled.
     #[test]
@@ -8309,6 +8348,30 @@ mod graphics_grid {
       svg.contains("<tspan baseline-shift=\"sub\" font-size=\"70%\">2</tspan>"),
       "{svg}"
     );
+  }
+
+  /// A `Column` cell that holds a picture keeps the picture's own
+  /// coordinate space. Regression: the nested `<svg>` carried no viewBox,
+  /// so a plot — drawn at a multiple of its display size — landed
+  /// entirely outside its cell and the row came out blank.
+  #[test]
+  fn column_cell_keeps_the_pictures_view_box() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Column[{Text@Style[\"heading\", Bold], \
+        ListPlot[{1, 1, 2, 2, 3}, PlotStyle -> {PointSize[0.04], Red}, \
+          ImageSize -> {370, 280}]}, Alignment -> Center]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    let nested = svg
+      .lines()
+      .find(|l| l.starts_with("<svg x="))
+      .unwrap_or_else(|| panic!("no nested picture in {svg}"));
+    assert!(nested.contains("viewBox="), "{nested}");
+    assert!(svg.contains(">heading</tspan>") || svg.contains(">heading<"));
+    // The points are inside the cell, not off-canvas.
+    assert!(svg.contains("<circle"), "the plot must draw: {svg}");
   }
 
   /// A cell that is itself a block layout is laid out and placed as a
