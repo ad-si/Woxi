@@ -3906,6 +3906,13 @@ fn contains_framed_or_highlighted(expr: &Expr) -> bool {
 pub(crate) fn expr_to_svg(expr: &Expr) -> String {
   match expr {
     Expr::Graphics { svg: svg_data, .. } => svg_data.clone(),
+    // `Pane[content, opts…]` only constrains its content's size; the
+    // FrontEnd displays the content, so exporting one exports what it
+    // wraps. (The notebook display pipeline already unwraps it — without
+    // this, `Export[…, Pane[graphic]]` wrote the expression as text.)
+    Expr::FunctionCall { name, args } if name == "Pane" && !args.is_empty() => {
+      expr_to_svg(&args[0])
+    }
     // A list of graphics renders as `{g1, g2, …}` with the plots drawn
     // inline (matching how wolframscript displays such a list), instead
     // of falling through to the text renderer which would dump

@@ -8036,6 +8036,31 @@ mod matrix_form {
 mod show {
   use super::*;
 
+  /// `Pane[content, opts…]` only constrains its content's size, so
+  /// exporting one exports what it wraps. Regression: the export path wrote
+  /// the expression as text while the notebook display pipeline unwrapped
+  /// it, so a Demonstration whose body is `Pane[Show[…]]` came out as
+  /// source ("Nets for Regular Spherical Models").
+  #[test]
+  fn pane_exports_the_graphic_it_wraps() {
+    clear_state();
+    let bare = export_svg("Graphics[{Circle[{0, 0}, 1]}]");
+    for wrapped in [
+      "Pane[Graphics[{Circle[{0, 0}, 1]}]]",
+      "Pane[Graphics[{Circle[{0, 0}, 1]}], Alignment -> Center]",
+    ] {
+      assert_eq!(export_svg(wrapped), bare, "{wrapped}");
+    }
+    // Including a `Show[…]` result, which is where it first showed up.
+    let shown =
+      export_svg("Pane[Show[Graphics[{Circle[{0, 0}, 1]}], ImageSize -> 150]]");
+    assert!(
+      shown.contains("<ellipse") || shown.contains("<circle"),
+      "{shown}"
+    );
+    assert!(!shown.contains("GraphicsBox"), "{shown}");
+  }
+
   /// A rendered graphic is a sequence over its symbolic form, so `First`
   /// reaches its primitives the way `Part` already did — that is how a
   /// Demonstration reuses a plotted curve as a drawable shape
