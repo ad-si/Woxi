@@ -170,6 +170,14 @@ pub fn first_ast(
   if let Some(dense) = dense_1d_sparse(list) {
     return first_ast(&dense, default);
   }
+  // A rendered graphic is a sequence over its symbolic form, so
+  // `First[Plot[…]]` is the plot's primitives — the way a Demonstration
+  // reuses a curve as a drawable shape.
+  if let Some(symbolic) =
+    crate::evaluator::part_extraction::graphics_symbolic_form(list)
+  {
+    return first_ast(&symbolic, default);
+  }
   if let Some(res) = atomic_arg_result("First", list, default) {
     return res;
   }
@@ -292,6 +300,11 @@ pub fn last_ast(
 ) -> Result<Expr, InterpreterError> {
   if let Some(dense) = dense_1d_sparse(list) {
     return last_ast(&dense, default);
+  }
+  if let Some(symbolic) =
+    crate::evaluator::part_extraction::graphics_symbolic_form(list)
+  {
+    return last_ast(&symbolic, default);
   }
   if let Some(res) = atomic_arg_result("Last", list, default) {
     return res;

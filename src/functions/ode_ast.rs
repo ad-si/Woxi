@@ -551,6 +551,98 @@ struct SysFunc {
 /// Solve a (possibly coupled) system. Returns `Ok(None)` when the input
 /// doesn't have a shape this solver understands, so the caller can leave
 /// the expression unevaluated.
+/// The dependent function's name in an `NDSolve` second argument entry:
+/// `f` or `f[x]`.
+fn dep_name(item: &Expr) -> Option<String> {
+  match item {
+    Expr::Identifier(name) => Some(name.clone()),
+    Expr::FunctionCall { name, .. } => Some(name.clone()),
+    _ => None,
+  }
+}
+
+/// The function a solution rule is for: `f -> …` or `f[x] -> …`.
+fn rule_target_name(rule: &Expr) -> Option<&str> {
+  let Expr::Rule { pattern, .. } = rule else {
+    return None;
+  };
+  match pattern.as_ref() {
+    Expr::Identifier(name) => Some(name.as_str()),
+    Expr::FunctionCall { name, .. } => Some(name.as_str()),
+    _ => None,
+  }
+}
+
+/// Find an algebraic constraint among `odes` that determines one of `funcs`
+/// explicitly: an equation with no derivative of any unknown, in which
+/// exactly one unknown appears and appears nowhere differentiated elsewhere.
+/// Returns its index, that function's index, and the expression it solves to.
+fn find_algebraic_constraint(
+  odes: &[Expr],
+  funcs: &[SysFunc],
+) -> Option<(usize, usize, Expr)> {
+  for (ei, eq) in odes.iter().enumerate() {
+    if funcs.iter().any(|f| max_derivative_order(eq, &f.name) > 0) {
+      continue;
+    }
+    // The unknown this constraint defines is one it mentions that no
+    // equation ever differentiates — the others in it are dynamic
+    // variables the solution is written in terms of.
+    let Some(fi) = funcs.iter().enumerate().position(|(_, f)| {
+      expr_mentions_function(eq, &f.name)
+        && odes.iter().all(|o| max_derivative_order(o, &f.name) == 0)
+    }) else {
+      continue;
+    };
+    let Some(solved) = solve_for_function(eq, &funcs[fi].name) else {
+      continue;
+    };
+    return Some((ei, fi, solved));
+  }
+  None
+}
+
+/// Whether `expr` contains `fname[…]` anywhere.
+fn expr_mentions_function(expr: &Expr, fname: &str) -> bool {
+  if matches!(expr, Expr::FunctionCall { name, .. } if name == fname) {
+    return true;
+  }
+  expr_children(expr)
+    .into_iter()
+    .any(|c| expr_mentions_function(c, fname))
+}
+
+/// Solve an algebraic equation for `fname[x]`, returning the right-hand side
+/// of the single solution. `None` when it does not solve uniquely.
+fn solve_for_function(eq: &Expr, fname: &str) -> Option<Expr> {
+  let unknown = find_function_call(eq, fname)?;
+  let solved = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Solve".to_string(),
+    args: vec![eq.clone(), unknown].into(),
+  })
+  .ok()?;
+  let Expr::List(ref sols) = solved else {
+    return None;
+  };
+  let [Expr::List(rules)] = &sols[..] else {
+    return None;
+  };
+  let [Expr::Rule { replacement, .. }] = &rules[..] else {
+    return None;
+  };
+  Some(replacement.as_ref().clone())
+}
+
+/// The first `fname[…]` call inside `expr`.
+fn find_function_call(expr: &Expr, fname: &str) -> Option<Expr> {
+  if matches!(expr, Expr::FunctionCall { name, .. } if name == fname) {
+    return Some(expr.clone());
+  }
+  expr_children(expr)
+    .into_iter()
+    .find_map(|c| find_function_call(c, fname))
+}
+
 fn ndsolve_system(
   args: &[Expr],
   event: Option<&EventSpec>,
@@ -616,11 +708,12 @@ fn ndsolve_system(
   };
   let mut odes: Vec<Expr> = Vec::new();
   let mut x0: Option<f64> = None;
-  // (func index, derivative order, value)
-  let mut ics: Vec<(usize, usize, f64)> = Vec::new();
+  // (function name, derivative order, value) — by name, not index: an
+  // eliminated constraint variable shifts the positions in `funcs`.
+  let mut ics: Vec<(String, usize, f64)> = Vec::new();
   for eq in &eq_items {
     let mut is_ic = false;
-    for (fi, f) in funcs.iter().enumerate() {
+    for f in funcs.iter() {
       if is_initial_condition(eq, &f.name, x_name) {
         let Some((order, x_val, y_val)) =
           parse_numeric_initial_condition(eq, &f.name)?
@@ -633,7 +726,7 @@ fn ndsolve_system(
           Some(prev) if (prev - x_val).abs() > 1e-12 => return Ok(None),
           Some(_) => {}
         }
-        ics.push((fi, order, y_val));
+        ics.push((f.name.clone(), order, y_val));
         is_ic = true;
         break;
       }
@@ -642,6 +735,39 @@ fn ndsolve_system(
       odes.push(eq.clone());
     }
   }
+  // An algebraic constraint — an equation with no derivative in it — that
+  // determines one unknown explicitly is eliminated: the constraint is
+  // solved for that unknown, the solution substituted into the remaining
+  // equations, and the unknown dropped from the system. This is how a
+  // Lagrangian model states a rigid link (`l[t] + d - y[t] == L`), and it
+  // turns an index-1 DAE the integrator cannot take into the ODE system it
+  // can. The eliminated function is rebuilt from the solution afterwards.
+  let mut eliminated: Vec<(SysFunc, Expr)> = Vec::new();
+  loop {
+    let Some((eq_idx, fi, solved)) = find_algebraic_constraint(&odes, &funcs)
+    else {
+      break;
+    };
+    let f = funcs.remove(fi);
+    odes.remove(eq_idx);
+    let target = Expr::FunctionCall {
+      name: f.name.clone(),
+      args: vec![Expr::Identifier(x_name.clone())].into(),
+    };
+    for ode in odes.iter_mut() {
+      *ode = crate::functions::polynomial_ast::solve::substitute_expr(
+        ode, &target, &solved,
+      );
+    }
+    // A later constraint may refer to an already-eliminated function.
+    for (_, prev) in eliminated.iter_mut() {
+      *prev = crate::functions::polynomial_ast::solve::substitute_expr(
+        prev, &target, &solved,
+      );
+    }
+    eliminated.push((f, solved));
+  }
+
   if odes.len() != funcs.len() {
     return Ok(None);
   }
@@ -665,11 +791,16 @@ fn ndsolve_system(
   for f in funcs.iter_mut() {
     f.ics = vec![None; f.order];
   }
-  for (fi, order, val) in ics {
-    if order >= funcs[fi].order || funcs[fi].ics[order].is_some() {
+  for (name, order, val) in ics {
+    // An initial condition for a function the constraint eliminated is
+    // redundant — its value follows from the others — so it is dropped.
+    let Some(f) = funcs.iter_mut().find(|f| f.name == name) else {
+      continue;
+    };
+    if order >= f.order || f.ics[order].is_some() {
       return Ok(None);
     }
-    funcs[fi].ics[order] = Some(val);
+    f.ics[order] = Some(val);
   }
   if funcs.iter().any(|f| f.ics.iter().any(|ic| ic.is_none())) {
     return Ok(None);
@@ -773,7 +904,7 @@ fn ndsolve_system(
   let x_hi = points.last().unwrap().0;
 
   // Build one InterpolatingFunction rule per dependent function.
-  let mut rules: Vec<Expr> = Vec::with_capacity(funcs.len());
+  let mut rules: Vec<Expr> = Vec::with_capacity(funcs.len() + eliminated.len());
   for (fi, f) in funcs.iter().enumerate() {
     let domain = Expr::List(
       vec![Expr::List(vec![Expr::Real(x_lo), Expr::Real(x_hi)].into())].into(),
@@ -810,7 +941,72 @@ fn ndsolve_system(
       }
     });
   }
-  Ok(Some(Expr::List(vec![Expr::List(rules.into())].into())))
+
+  // An eliminated function is sampled from its constraint solution at the
+  // same grid, so it comes back as an InterpolatingFunction like the rest.
+  for (f, solved) in &eliminated {
+    let rewritten = substitute_function_values(solved, &funcs, x_name);
+    let value_fn = NumFn::new(rewritten, &var_names);
+    let mut vars = vec![0.0; var_names.len()];
+    let data = Expr::List(
+      points
+        .iter()
+        .map(|(x, state)| {
+          vars[0] = *x;
+          vars[1..=n_state].copy_from_slice(&state[..n_state]);
+          Expr::List(
+            vec![
+              Expr::Real(*x),
+              Expr::Real(value_fn.eval(&vars).unwrap_or(f64::NAN)),
+            ]
+            .into(),
+          )
+        })
+        .collect(),
+    );
+    let domain = Expr::List(
+      vec![Expr::List(vec![Expr::Real(x_lo), Expr::Real(x_hi)].into())].into(),
+    );
+    let interp = Expr::FunctionCall {
+      name: "InterpolatingFunction".to_string(),
+      args: vec![domain, data].into(),
+    };
+    rules.push(if f.function_form {
+      Expr::Rule {
+        pattern: Box::new(Expr::Identifier(f.name.clone())),
+        replacement: Box::new(interp),
+      }
+    } else {
+      Expr::Rule {
+        pattern: Box::new(Expr::FunctionCall {
+          name: f.name.clone(),
+          args: vec![Expr::Identifier(x_name.clone())].into(),
+        }),
+        replacement: Box::new(Expr::CurriedCall {
+          func: Box::new(interp),
+          args: vec![Expr::Identifier(x_name.clone())],
+        }),
+      }
+    });
+  }
+  // Return the rules in the order the functions were asked for: an
+  // eliminated one was appended last, but `NDSolveValue` hands back a list
+  // of values positionally.
+  let requested: Vec<String> = match &args[1] {
+    Expr::List(items) => items.iter().filter_map(dep_name).collect(),
+    other => dep_name(other).into_iter().collect(),
+  };
+  let mut ordered: Vec<Expr> = Vec::with_capacity(rules.len());
+  for name in &requested {
+    if let Some(pos) = rules
+      .iter()
+      .position(|r| rule_target_name(r) == Some(name.as_str()))
+    {
+      ordered.push(rules.remove(pos));
+    }
+  }
+  ordered.append(&mut rules);
+  Ok(Some(Expr::List(vec![Expr::List(ordered.into())].into())))
 }
 
 /// Integrate one leg with RK4. Returns the points in integration order

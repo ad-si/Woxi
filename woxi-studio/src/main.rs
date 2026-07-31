@@ -10433,4 +10433,68 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`NumTrials$$ = 10}, \"\\[Ellipsis]\"
       "the y label's subscript must typeset: {svg}"
     );
   }
+
+  /// End-to-end regression for "Dynamics of a Spring-Pendulum System". Four
+  /// of its parameters are held by `{{x, v}, None}` controls, its motion
+  /// comes from an `NDSolveValue` whose equations include an algebraic
+  /// constraint tying the string lengths together, and its spring is a
+  /// plotted sine curve reused as a shape through `First[Plot[…]]`.
+  /// (The notebook's energy gauge and its two extra panels are trimmed
+  /// here; the mechanics are its own.)
+  #[test]
+  fn spring_pendulum_notebook_solves_and_draws() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["coil[pt1:{x1_,y1_},pt2:{x2_,y2_},n_,a_,th_]:=Module[{s,al},s=EuclideanDistance[pt1,pt2];al=ArcTan@@(pt1-pt2);Translate[Rotate[Scale[First[Plot[a Sin[n t],{t,-Pi,Pi},PlotPoints->30,Axes->False]],{s/2/Pi,1}],al,{0,0}],pt1+-s/2{Cos[al],Sin[al]}]]"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nModule[{g=9.81,sol,thsol,ysol,lsol},\nsol=NDSolveValue[{k s0+g m Cos[th[t]]+(-d+L) m (th'[t])^2+y[t] (-k+m (th'[t])^2)==m y''[t],\ng Sin[th[t]]+2. y'[t] th'[t]+l[t] th''[t]==0,\nl[t]+d-y[t]==L,\nth[0]==th0,th'[0]==0,y[0]==y0,y'[0]==0},{th,y,l},{t,0,tMax}];\n{thsol,ysol,lsol}=sol;\nGraphics[{AbsoluteThickness[2],\nLine[{lsol[time]{Sin[thsol[time]],-Cos[thsol[time]]},{0,0},{-1,0},{-1,ysol[time]}}],\nGray,Disk[lsol[time]{Sin[thsol[time]],-Cos[thsol[time]]},.1 m^(1/3)],\nBlue,coil[{-1.,-2},{-1,ysol[time]},12,.05,.35]},\nPlotRange->{{-1.5,1.5},{-2.05,.05}},ImageSize->300]],\n{{tMax,20},None},{{L,3.25,\"total string length\"},None},{{d,1,\"pivot spacing\"},None},\n{{s0,-1.125,\"spring stop\"},None},\n{{m,1,\"mass\"},.25,2.5,.001,Appearance->\"Labeled\"},\n{{th0,1.,\"initial angle\"},-1.25,1.25,.001,Appearance->\"Labeled\"},\n{{y0,-1.,\"spring start\"},-1.125,-.75,.001,Appearance->\"Labeled\"},\n{{k,150,\"spring constant\"},100,200,.1,Appearance->\"Labeled\"},\n{{time,0,\"time\"},0,tMax,.05,Appearance->\"Labeled\"},\nSaveDefinitions->True]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`m$$ = 1}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the constrained system must solve: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the pendulum must draw");
+    // The four `None`-domain parameters are bound but get no widget row.
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { name, .. } => name.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, ["m", "th0", "y0", "k", "time"]);
+    let hidden: Vec<&str> =
+      widget.state.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(hidden, ["tMax", "L", "d", "s0"]);
+
+    let render = |time: &str| {
+      let bindings: String = widget
+        .state
+        .iter()
+        .map(|(n, v)| format!("{n} = {v};\n"))
+        .collect();
+      woxi::interpret_with_stdout(&format!(
+        "{bindings}m = 1; th0 = 1.; y0 = -1.; k = 150; time = {time};\n{}",
+        widget.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+    let at0 = render("0");
+    // The string, the bob and the coil spring are all drawn.
+    assert!(at0.contains("<polyline") || at0.contains("<path"), "{at0}");
+    assert!(at0.contains("<ellipse") || at0.contains("<circle"), "{at0}");
+    // The system evolves: the picture at a later time differs.
+    assert_ne!(at0, render("3"), "the time control must move the pendulum");
+  }
 }

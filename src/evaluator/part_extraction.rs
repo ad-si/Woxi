@@ -355,15 +355,33 @@ pub fn extract_part_ast(
     });
   }
 
-  // A rendered graphic that remembers its symbolic form (e.g. a plot's
-  // `Graphics3D[GraphicsComplex[…], opts]`) indexes that form, matching
-  // Wolfram where `SphericalPlot3D[…][[1]]` yields the GraphicsComplex.
+  if let Some(symbolic) = graphics_symbolic_form(expr) {
+    return extract_part_ast(&symbolic, index);
+  }
+
+  // A tree is an atom: Part cannot reach inside it, so the call stays
+  // unevaluated and the caller reports Part::partd.
+  if matches!(expr, Expr::FunctionCall { name, .. } if name == "Tree") {
+    return Ok(Expr::Part {
+      expr: Box::new(expr.clone()),
+      index: Box::new(index.clone()),
+    });
+  }
+  extract_part_ast_rest(expr, index)
+}
+
+/// The symbolic `Graphics[…]` form of a rendered graphic, so the sequence
+/// functions (`Part`, `First`, `Last`) can reach its primitives the way
+/// Wolfram's do — `First[Plot[…]]` is the plot's line, not an error.
+pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
+  // A graphic that remembers its symbolic form (e.g. a plot's
+  // `Graphics3D[GraphicsComplex[…], opts]`) uses it directly.
   if let Expr::Graphics {
     structure: Some(symbolic),
     ..
   } = expr
   {
-    return extract_part_ast(symbolic, index);
+    return Some(symbolic.as_ref().clone());
   }
 
   // A rendered 2D plot that kept its sampled curves (`PlotSource`)
@@ -407,22 +425,20 @@ pub fn extract_part_ast(
         Expr::List(vec![color, draw].into())
       })
       .collect();
-    let graphics = Expr::FunctionCall {
+    return Some(Expr::FunctionCall {
       name: "Graphics".to_string(),
       args: vec![Expr::List(series.into())].into(),
-    };
-    return extract_part_ast(&graphics, index);
-  }
-
-  // A tree is an atom: Part cannot reach inside it, so the call stays
-  // unevaluated and the caller reports Part::partd.
-  if matches!(expr, Expr::FunctionCall { name, .. } if name == "Tree") {
-    return Ok(Expr::Part {
-      expr: Box::new(expr.clone()),
-      index: Box::new(index.clone()),
     });
   }
+  None
+}
 
+/// The rest of `extract_part_ast`, after the graphics and Tree atoms have
+/// been handled.
+fn extract_part_ast_rest(
+  expr: &Expr,
+  index: &Expr,
+) -> Result<Expr, InterpreterError> {
   // A SparseArray indexed with Part is densified, then the part is taken from
   // the dense nested list. This covers every rank and index form (a single
   // integer, a multi-index chain like [[1, 2, 3]], spans, All, ...); without it

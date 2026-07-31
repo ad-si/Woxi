@@ -6132,7 +6132,7 @@ fn minimize_parse_vars_full(
 }
 
 /// Recursively replace every occurrence of `from` with `to` in `expr`.
-fn substitute_expr(expr: &Expr, from: &Expr, to: &Expr) -> Expr {
+pub(crate) fn substitute_expr(expr: &Expr, from: &Expr, to: &Expr) -> Expr {
   if expr_to_string(expr) == expr_to_string(from) {
     return to.clone();
   }

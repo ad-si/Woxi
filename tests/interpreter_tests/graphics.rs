@@ -8036,6 +8036,36 @@ mod matrix_form {
 mod show {
   use super::*;
 
+  /// A rendered graphic is a sequence over its symbolic form, so `First`
+  /// reaches its primitives the way `Part` already did — that is how a
+  /// Demonstration reuses a plotted curve as a drawable shape
+  /// (`Translate[Rotate[Scale[First[Plot[…]]], …], …]` draws a spring).
+  #[test]
+  fn first_of_a_graphic_is_its_primitives() {
+    clear_state();
+    assert_eq!(
+      interpret("Head[First[Plot[Sin[t], {t, 0, 3}]]]").unwrap(),
+      "List"
+    );
+    assert_eq!(
+      interpret("Head[Last[Plot[Sin[t], {t, 0, 3}]]]").unwrap(),
+      "List"
+    );
+    // Same as indexing it, which already worked.
+    assert_eq!(
+      interpret(
+        "First[Plot[Sin[t], {t, 0, 3}]] === Plot[Sin[t], {t, 0, 3}][[1]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    // The primitives are drawable: a transformed curve still renders.
+    let svg = export_svg(
+      "Graphics[{Blue, Translate[Scale[First[Plot[Sin[t], {t, 0, 3}]], {2, 1}], {1, 0}]}]",
+    );
+    assert!(svg.contains("<path") || svg.contains("<polyline"), "{svg}");
+  }
+
   #[test]
   fn show_two_graphics() {
     clear_state();
@@ -12981,6 +13011,32 @@ mod manipulate {
       ),
       "missing styled runs for m in: {json}"
     );
+  }
+
+  /// `{{x, 1}, None}` states the control's domain as `None`: the variable
+  /// is bound but no widget is drawn, the positional spelling of
+  /// `ControlType -> None`. Regression: the spec was rejected, and with it
+  /// the whole widget ("Dynamics of a Spring-Pendulum System" holds four of
+  /// its parameters this way).
+  #[test]
+  fn spec_positional_none_domain_is_a_hidden_control() {
+    let expr = interpret_to_expr(
+      "Manipulate[{a, b}, {{a, 7}, None}, {{b, 2, \"vis\"}, 0, 5}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed");
+    // Only the visible control gets a widget row...
+    let names: Vec<&str> = spec
+      .controls
+      .iter()
+      .map(|c| match c {
+        ManipulateControl::Continuous { name, .. } => name.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, ["b"]);
+    // ...while the hidden one is still bound, at its initial value.
+    assert_eq!(spec.state, vec![("a".to_string(), "7".to_string())]);
   }
 
   /// Controls laid out in a `TabView` — each tab a `label -> content` rule

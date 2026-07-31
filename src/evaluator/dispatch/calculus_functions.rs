@@ -4147,24 +4147,32 @@ fn inverse_fourier_inner(expr: &Expr, w: &str, t: &Expr) -> Option<Expr> {
 
 /// Extract the value from a DSolve-like result: {{y[x] -> value}} -> value
 fn extract_value_from_solve_result(expr: &Expr) -> Option<Expr> {
-  if let Expr::List(outer) = expr
-    && !outer.is_empty()
-    && let Expr::List(inner) = &outer[0]
-    && inner.len() == 1
-  {
-    match &inner[0] {
-      Expr::Rule { replacement, .. } => {
-        return Some(replacement.as_ref().clone());
-      }
+  fn replacement_of(rule: &Expr) -> Option<Expr> {
+    match rule {
+      Expr::Rule { replacement, .. } => Some(replacement.as_ref().clone()),
       Expr::FunctionCall { name, args }
         if name == "Rule" && args.len() == 2 =>
       {
-        return Some(args[1].clone());
+        Some(args[1].clone())
       }
-      _ => {}
+      _ => None,
     }
   }
-  None
+  let Expr::List(outer) = expr else { return None };
+  let Some(Expr::List(inner)) = outer.first() else {
+    return None;
+  };
+  match &inner[..] {
+    [] => None,
+    [single] => replacement_of(single),
+    // A system's solution is one rule per function; the value is the list of
+    // their right-hand sides, in the order the functions were asked for.
+    many => many
+      .iter()
+      .map(replacement_of)
+      .collect::<Option<Vec<_>>>()
+      .map(|values| Expr::List(values.into())),
+  }
 }
 
 // ── FunctionDomain implementation ────────────────────────────────────

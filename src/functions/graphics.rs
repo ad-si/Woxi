@@ -15606,15 +15606,20 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
             && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Locator")
       )
   });
-  let is_hidden = items.iter().any(|it| {
-    matches!(
-      it,
-      Expr::Rule { pattern, replacement }
-      | Expr::RuleDelayed { pattern, replacement }
-        if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlType")
-          && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "None")
-    )
-  });
+  // `{{x, 1}, None}` states the control's domain as `None`, which is the
+  // positional spelling of `ControlType -> None`: the variable is bound but
+  // no widget is drawn (verified against wolframscript, which shows no
+  // slider for it).
+  let is_hidden = matches!(items.get(1), Some(Expr::Identifier(s)) if s == "None")
+    || items.iter().any(|it| {
+      matches!(
+        it,
+        Expr::Rule { pattern, replacement }
+        | Expr::RuleDelayed { pattern, replacement }
+          if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlType")
+            && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "None")
+      )
+    });
   if is_locator || is_hidden {
     let value_expr = explicit_initial
       .clone()
