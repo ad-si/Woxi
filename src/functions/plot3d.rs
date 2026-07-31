@@ -1504,6 +1504,9 @@ fn parse_point3d_list(expr: &Expr) -> Option<Vec<Point3D>> {
 #[derive(Clone)]
 struct StyleState3D {
   color: Option<(u8, u8, u8)>,
+  /// `FaceForm[front, back]`: the colour of faces turned away from the
+  /// viewer. None means both sides use `color`.
+  back_color: Option<(u8, u8, u8)>,
   opacity: f64,
   /// Stroke width in pixels for Line3D primitives. None means default 1.5.
   thickness: Option<f64>,
@@ -1513,6 +1516,7 @@ impl Default for StyleState3D {
   fn default() -> Self {
     Self {
       color: None, // None means use default blue
+      back_color: None,
       opacity: 1.0,
       thickness: None,
     }
@@ -1533,6 +1537,9 @@ enum Primitive3D {
   },
   Polygon3D {
     points: Vec<Point3D>,
+    /// Boundaries cut out of the face (`Polygon[outer -> holes]`). Empty
+    /// for an ordinary polygon.
+    holes: Vec<Vec<Point3D>>,
     style: StyleState3D,
   },
   Line3D {
@@ -1577,9 +1584,34 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
     let g = (color.g.clamp(0.0, 1.0) * 255.0).round() as u8;
     let b = (color.b.clamp(0.0, 1.0) * 255.0).round() as u8;
     style.color = Some((r, g, b));
+    style.back_color = None;
     if color.a < 1.0 {
       style.opacity = color.a;
     }
+    return true;
+  }
+
+  // FaceForm[front] colours both sides; FaceForm[front, back] gives the
+  // side turned away from the viewer its own colour.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "FaceForm"
+    && !args.is_empty()
+  {
+    let mut front = StyleState3D::default();
+    if !apply_3d_directive(&args[0], &mut front) {
+      return true;
+    }
+    style.color = front.color;
+    style.opacity = front.opacity;
+    style.back_color = match args.get(1) {
+      Some(back) => {
+        let mut b = StyleState3D::default();
+        apply_3d_directive(back, &mut b)
+          .then_some(b.color)
+          .flatten()
+      }
+      None => None,
+    };
     return true;
   }
 
@@ -1852,8 +1884,12 @@ fn transform_primitive3d(prim: &mut Primitive3D, xf: &Affine3) {
         z: a.z.max(b.z),
       };
     }
-    Primitive3D::Polygon3D { points, .. }
-    | Primitive3D::Point3DPrim { points, .. }
+    Primitive3D::Polygon3D { points, holes, .. } => {
+      for p in points.iter_mut().chain(holes.iter_mut().flatten()) {
+        *p = xf.apply(*p);
+      }
+    }
+    Primitive3D::Point3DPrim { points, .. }
     | Primitive3D::Arrow3D { points, .. } => {
       for p in points {
         *p = xf.apply(*p);
@@ -2015,6 +2051,20 @@ fn collect_3d_primitives(
           if let Some(pts) = parse_point3d_list(&args[0]) {
             prims.push(Primitive3D::Polygon3D {
               points: pts,
+              holes: Vec::new(),
+              style: style.clone(),
+            });
+          } else if let Some((outer, holes)) =
+            crate::functions::polygon_holes::split_holes(
+              &args[0],
+              &parse_point3d_list,
+            )
+          {
+            // Polygon[outer -> holes]: a face with the hole boundaries
+            // cut out of it.
+            prims.push(Primitive3D::Polygon3D {
+              points: outer,
+              holes,
               style: style.clone(),
             });
           } else if let Expr::List(poly_exprs) = &args[0] {
@@ -2024,6 +2074,18 @@ fn collect_3d_primitives(
               if let Some(pts) = parse_point3d_list(poly) {
                 prims.push(Primitive3D::Polygon3D {
                   points: pts,
+                  holes: Vec::new(),
+                  style: style.clone(),
+                });
+              } else if let Some((outer, holes)) =
+                crate::functions::polygon_holes::split_holes(
+                  poly,
+                  &parse_point3d_list,
+                )
+              {
+                prims.push(Primitive3D::Polygon3D {
+                  points: outer,
+                  holes,
                   style: style.clone(),
                 });
               }
@@ -2571,6 +2633,113 @@ fn collect_raster3d(
   }
 }
 
+/// Tessellate a planar polygon with holes (`Polygon[outer -> holes]`).
+///
+/// The face is flattened onto its own plane, triangulated there, and the
+/// triangles are lifted back to 3D. The second result marks, per triangle,
+/// which of its three edges lie on the outer boundary or on a hole
+/// boundary — the rest are internal cuts that must not be stroked.
+fn tessellate_polygon_with_holes(
+  outer: &[Point3D],
+  holes: &[Vec<Point3D>],
+) -> (Vec<(Point3D, Point3D, Point3D)>, Vec<[bool; 3]>) {
+  use crate::functions::polygon_holes::triangulate_with_holes;
+
+  if outer.len() < 3 {
+    return (Vec::new(), Vec::new());
+  }
+  // Newell's method: a plane normal that is robust for non-planar input.
+  let mut n = Point3D {
+    x: 0.0,
+    y: 0.0,
+    z: 0.0,
+  };
+  for i in 0..outer.len() {
+    let a = outer[i];
+    let b = outer[(i + 1) % outer.len()];
+    n.x += (a.y - b.y) * (a.z + b.z);
+    n.y += (a.z - b.z) * (a.x + b.x);
+    n.z += (a.x - b.x) * (a.y + b.y);
+  }
+  let len = (n.x * n.x + n.y * n.y + n.z * n.z).sqrt();
+  if !len.is_finite() || len == 0.0 {
+    return (Vec::new(), Vec::new());
+  }
+  let n = Point3D {
+    x: n.x / len,
+    y: n.y / len,
+    z: n.z / len,
+  };
+  // Any vector not parallel to the normal yields an in-plane basis.
+  let helper = if n.x.abs() < 0.9 {
+    Point3D {
+      x: 1.0,
+      y: 0.0,
+      z: 0.0,
+    }
+  } else {
+    Point3D {
+      x: 0.0,
+      y: 1.0,
+      z: 0.0,
+    }
+  };
+  let cross = |a: Point3D, b: Point3D| Point3D {
+    x: a.y * b.z - a.z * b.y,
+    y: a.z * b.x - a.x * b.z,
+    z: a.x * b.y - a.y * b.x,
+  };
+  let u = cross(n, helper);
+  let ulen = (u.x * u.x + u.y * u.y + u.z * u.z).sqrt();
+  let u = Point3D {
+    x: u.x / ulen,
+    y: u.y / ulen,
+    z: u.z / ulen,
+  };
+  let v = cross(n, u);
+  let origin = outer[0];
+  let flatten = |p: &Point3D| {
+    let d = Point3D {
+      x: p.x - origin.x,
+      y: p.y - origin.y,
+      z: p.z - origin.z,
+    };
+    (
+      d.x * u.x + d.y * u.y + d.z * u.z,
+      d.x * v.x + d.y * v.y + d.z * v.z,
+    )
+  };
+
+  let mut verts3: Vec<Point3D> = outer.to_vec();
+  let outer_idx: Vec<usize> = (0..outer.len()).collect();
+  let mut hole_idx: Vec<Vec<usize>> = Vec::with_capacity(holes.len());
+  for hole in holes {
+    let start = verts3.len();
+    verts3.extend(hole.iter().copied());
+    hole_idx.push((start..verts3.len()).collect());
+  }
+  let verts2: Vec<(f64, f64)> = verts3.iter().map(flatten).collect();
+
+  let result = triangulate_with_holes(&verts2, &outer_idx, &hole_idx);
+  let tris = result
+    .triangles
+    .iter()
+    .map(|t| (verts3[t[0]], verts3[t[1]], verts3[t[2]]))
+    .collect();
+  let flags = result
+    .triangles
+    .iter()
+    .map(|t| {
+      [
+        result.is_boundary(t[0], t[1]),
+        result.is_boundary(t[1], t[2]),
+        result.is_boundary(t[2], t[0]),
+      ]
+    })
+    .collect();
+  (tris, flags)
+}
+
 /// Tessellate a cuboid into 12 triangles (2 per face).
 pub(crate) fn tessellate_cuboid(
   p_min: &Point3D,
@@ -2940,6 +3109,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   for prim in &prims {
+    // Per-triangle edge flags for a polygon with holes; the ordinary
+    // hole-free cases derive theirs from the fan below.
+    let mut holed_boundaries: Vec<[bool; 3]> = Vec::new();
     let (tris, prim_style): (Vec<(Point3D, Point3D, Point3D)>, &StyleState3D) =
       match prim {
         Primitive3D::Sphere {
@@ -2971,7 +3143,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           radius,
           style,
         } => (tessellate_cone(p1, p2, *radius), style),
-        Primitive3D::Polygon3D { points, style } => {
+        Primitive3D::Polygon3D {
+          points,
+          holes,
+          style,
+        } if holes.is_empty() => {
           // Simple fan triangulation
           let t = if points.len() >= 3 {
             (1..points.len() - 1)
@@ -2982,36 +3158,65 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           };
           (t, style)
         }
+        Primitive3D::Polygon3D {
+          points,
+          holes,
+          style,
+        } => {
+          let (t, flags) = tessellate_polygon_with_holes(points, holes);
+          holed_boundaries = flags;
+          (t, style)
+        }
         Primitive3D::Surface3D { tris, style } => (tris.clone(), style),
         // Line and Point are handled separately below
         _ => (
           vec![],
           &StyleState3D {
             color: None,
+            back_color: None,
             opacity: 1.0,
             thickness: None,
           },
         ),
       };
     let prim_color = prim_style.color.unwrap_or(base_color);
+    let prim_back_color = prim_style.back_color;
     let prim_opacity = prim_style.opacity;
+    // Direction from the scene towards the viewer; a face whose normal
+    // points along it shows its front side.
+    let view_dir = {
+      let (sa, ca) = camera.azimuth.sin_cos();
+      let (se, ce) = camera.elevation.sin_cos();
+      [ce * ca, ce * sa, se]
+    };
 
     // A polygon with more than three corners was fan-triangulated above:
     // every triangle keeps the polygon edge it sits on, but the cuts back
     // to the fan's first corner are internal and must not be stroked.
     let fan_corners = match prim {
-      Primitive3D::Polygon3D { points, .. } => points.len(),
+      Primitive3D::Polygon3D { points, holes, .. } if holes.is_empty() => {
+        points.len()
+      }
       _ => 0,
     };
     let tri_count = tris.len();
     for (i, (v0, v1, v2)) in tris.into_iter().enumerate() {
-      let boundary = if fan_corners > 3 {
+      let boundary = if let Some(flags) = holed_boundaries.get(i) {
+        *flags
+      } else if fan_corners > 3 {
         [i == 0, true, i + 1 == tri_count]
       } else {
         [true; 3]
       };
       let normal = triangle_normal(v0, v1, v2);
-      let color = apply_lighting(prim_color, normal);
+      let facing = normal[0] * view_dir[0]
+        + normal[1] * view_dir[1]
+        + normal[2] * view_dir[2];
+      let side_color = match prim_back_color {
+        Some(back) if facing < 0.0 => back,
+        _ => prim_color,
+      };
+      let color = apply_lighting(side_color, normal);
       let p0 = project(v0, &camera);
       let p1 = project(v1, &camera);
       let p2 = project(v2, &camera);

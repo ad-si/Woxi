@@ -9023,6 +9023,19 @@ mod join_non_list {
     );
   }
 
+  /// A rule is an ordinary expression as far as Join is concerned, so
+  /// joining one returns it unchanged. Demonstrations wrap a polygon's
+  /// hole specification this way: `Polygon[Join[outer -> hole]]`.
+  #[test]
+  fn join_single_rule_is_the_rule() {
+    assert_eq!(interpret("Join[a -> b]").unwrap(), "a -> b");
+    assert_eq!(
+      interpret("Join[{{0, 0}, {1, 0}} -> {{2, 2}}]").unwrap(),
+      "{{0, 0}, {1, 0}} -> {{2, 2}}"
+    );
+    assert_eq!(interpret("Join[a :> b]").unwrap(), "a :> b");
+  }
+
   #[test]
   fn join_mismatched_heads_stays_unevaluated() {
     // Different heads (Plus vs Times) can't be joined — wolframscript emits

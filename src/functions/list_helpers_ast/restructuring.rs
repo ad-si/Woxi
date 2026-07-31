@@ -1978,6 +1978,37 @@ pub fn join_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
     return join_ast(&lists[..lists.len() - 1]);
   }
 
+  // `Rule`/`RuleDelayed` are ordinary (nonatomic) expressions as far as Join
+  // is concerned — `Join[a -> b]` gives `a -> b` and `Join[a -> b, c -> d]`
+  // gives `Rule[a, b, c, d]`. Normalize them to the generic function-call
+  // shape so the common head logic below applies unchanged.
+  if lists
+    .iter()
+    .any(|e| matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+  {
+    let normalized: Vec<Expr> = lists
+      .iter()
+      .map(|e| match e {
+        Expr::Rule {
+          pattern,
+          replacement,
+        } => Expr::FunctionCall {
+          name: "Rule".to_string(),
+          args: vec![(**pattern).clone(), (**replacement).clone()].into(),
+        },
+        Expr::RuleDelayed {
+          pattern,
+          replacement,
+        } => Expr::FunctionCall {
+          name: "RuleDelayed".to_string(),
+          args: vec![(**pattern).clone(), (**replacement).clone()].into(),
+        },
+        other => other.clone(),
+      })
+      .collect();
+    return join_ast(&normalized);
+  }
+
   // Check if all arguments are associations
   if lists.iter().all(|l| matches!(l, Expr::Association(_))) {
     let mut result: Vec<(Expr, Expr)> = Vec::new();
