@@ -10,9 +10,15 @@ CompoundExpression,Evaluates expressions sequentially and returns the last resul
 Pattern,Names a pattern object for use in transformation rules,✅,pure,1.0,9
 Alternatives,Pattern object representing any of several alternatives,✅,pure,2.0,10
 Equal,Checks if two values are equal; operands of different kinds (a Boolean or Null against anything else) stay unevaluated,✅,pure,1.0,11
+Unequal,Checks if two values are not equal; operands of different kinds (a Boolean or Null against anything else) stay unevaluated,✅,pure,1.0,200
 Part,Extracts parts of expressions: positional/Span/list indices and string/Key lookup on associations,✅,pure,1.0,12
 SetDelayed,Defines a delayed assignment that evaluates the RHS each time,✅,stateful,1.0,15
 Pi,Represents the ratio of circumference to diameter,✅,pure,1.0,16
+E,Represents the base of the natural logarithm,✅,pure,1.0,42
+Degree,Represents the number of radians in one degree,✅,pure,1.0,150
+GoldenRatio,The golden ratio constant; approximately 1.6180340,✅,pure,1.0,469
+EulerGamma,The Euler-Mascheroni constant; approximately 0.5772157,✅,pure,1.0,868
+Catalan,The Catalan constant; approximately 0.9159655,✅,pure,1.0,1836
 Slot,Represents the nth argument (#n) or named association key (#name) in a pure function,✅,pure,1.0,17
 Sqrt,Returns the square root of a number,✅,pure,1.0,18
 Function,Represents a pure function,✅,pure,1.0,19
@@ -31,9 +37,11 @@ ArcCsc,Returns the arc cosecant of a number,✅,pure,1.0,370
 ArcCot,Returns the arc cotangent of a number,✅,pure,1.0,316
 ArcSec,Returns the arc secant of a number,✅,pure,1.0,372
 None,Symbol representing no value or absence of an option,✅,pure,1.0,23
+All,Symbol used as an option value meaning all elements or the entire range,✅,pure,1.0,40
 RGBColor,Specifies a color by RGB values,✅,pure,1.0,24
 Derivative,Represents the derivative of a function,✅,pure,1.0,26
 True,Boolean constant representing logical truth,✅,pure,1.0,27
+False,Boolean constant representing logical falsehood,✅,pure,1.0,38
 Map,Applies a function to each element of a list or to each argument of any other head,✅,pure,1.0,28
 Automatic,Symbol used as a default setting for automatically determined options,✅,pure,1.0,29
 Subscript,Represents a subscripted expression for display,✅,pure,1.0,30
@@ -43,25 +51,25 @@ If,Checks if a condition is true and returns one of two values,✅,pure,1.0,34
 RuleDelayed,Represents a delayed transformation rule lhs :> rhs where rhs is held unevaluated,✅,pure,1.0,35
 D,Computes the derivative of an expression,✅,pure,1.0,36
 Opacity,Specifies opacity for graphics,✅,pure,6.0,37
-False,Boolean constant representing logical falsehood,✅,pure,1.0,38
 PlotRange,Option specifying the range of values to include in a plot,✅,pure,1.0,39
-All,Symbol used as an option value meaning all elements or the entire range,✅,pure,1.0,40
 Less,Checks if one value is less than another,✅,pure,1.0,41
-E,Represents the base of the natural logarithm,✅,pure,1.0,42
+LessEqual,Checks if one value is less than or equal to another,✅,pure,1.0,57
+Greater,Checks if one value is greater than another,✅,pure,1.0,48
+GreaterEqual,Checks if one value is greater than or equal to another,✅,pure,1.0,110
 FinancialData,,🚫,,6.0,43
 Length,Returns the number of elements in a list,✅,pure,1.0,44
 PlotStyle,Option specifying the style of lines and points in a plot,✅,pure,1.0,45
 GrayLevel,Specifies a gray color level,✅,pure,1.0,46
 Quantity,Represents a physical quantity with a unit (a compound unit prints as a quotient when it has negative exponents); ToString spells the unit out and TextString abbreviates it,✅,pure,9.0,47
-Greater,Checks if one value is greater than another,✅,pure,1.0,48
 N,Gives the numerical value of an expression,✅,pure,1.0,49
 And,Checks if all conditions are true,✅,pure,1.0,50
+Or,Checks if at least one condition is true,✅,pure,1.0,136
+Not,Logical negation of an expression — written with the ! operator and bracketed inside anything that binds tighter than it,✅,pure,1.0,139
 Dot,Computes the dot product or matrix multiplication,✅,pure,1.0,51
 Exp,Returns the exponential function e^x,✅,pure,1.0,52
 MatrixForm,Displays a matrix or list in a two-dimensional grid format,✅,pure,1.0,53
 Integrate,Computes the definite or indefinite integral of an expression; a logarithmic antiderivative keeps the power its terms share out front,✅,pure,1.0,54
 Print,Outputs a string to the console,✅,effectful,1.0,55
-LessEqual,Checks if one value is less than or equal to another,✅,pure,1.0,57
 Log,Returns the natural logarithm of a number,✅,pure,1.0,58
 Line,Represents a line graphics primitive,✅,pure,1.0,59
 Apply,Applies a function to the elements of an expression by replacing its head (a compound head like g[x] counts as the head),✅,pure,1.0,60
@@ -112,7 +120,6 @@ Polygon,Represents a polygon graphics primitive,✅,pure,1.0,106
 SameQ,Tests if expressions are identical,✅,pure,1.0,107
 Background,Option specifying the background color or style,✅,none,2.0,108
 Span,Extract a span of elements using ;; notation in Part,✅,pure,6.0,109
-GreaterEqual,Checks if one value is greater than or equal to another,✅,pure,1.0,110
 MessageName,Accesses a message associated with a symbol (sym::tag),✅,pure,1.0,111
 Thick,Graphics directive equivalent to AbsoluteThickness[2],✅,none,6.0,112
 Black,Named color evaluating to GrayLevel[0],✅,pure,5.1,113
@@ -138,10 +145,8 @@ RandomReal,Generates a pseudorandom real number,✅,contextual,6.0,132
 ClearAll,Clears all values and definitions for symbols,✅,stateful,1.0,133
 Mod,Returns the remainder on division (m - n Floor[m/n]; Gaussian integers use m - n Round[m/n]; an infinite divisor takes nothing away),✅,pure,1.0,134
 Arg,Returns the argument (phase angle) of a complex number,✅,pure,1.0,135
-Or,Checks if at least one condition is true,✅,pure,1.0,136
 BaseStyle,Option specifying the base style for elements in a graphic or other output,✅,none,6.0,137
 Dynamic,Dynamic display wrapper (shows the current value in visual mode; stays symbolic in script mode),✅,unevaluated,6.0,138
-Not,Logical negation of an expression — written with the ! operator and bracketed inside anything that binds tighter than it,✅,pure,1.0,139
 Last,Returns the last element of a list or the given default which is only evaluated when used,✅,pure,1.0,140
 AdministrativeDivisionData,,🚫,,10.0,141
 Increment,Increments a variable by 1 and returns the old value,✅,stateful,1.0,142
@@ -152,7 +157,6 @@ For,Executes a loop with initialization and increment,✅,pure,1.0,146
 Do,Evaluates an expression repeatedly,✅,pure,1.0,147
 ToString,Converts an expression to a string,✅,pure,1.0,148
 Select,Picks elements of a list that satisfy a criterion,✅,pure,1.0,149
-Degree,Represents the number of radians in one degree,✅,pure,1.0,150
 Total,Sums the elements of a list down to a level spec — AllowedHeads -> All descends through any non-atomic head not just List,✅,pure,5.0,151
 ColorFunction,Option specifying the color function for visualization,✅,none,2.0,152
 Expand,Expands products and positive integer powers of sums,✅,pure,1.0,154
@@ -201,7 +205,6 @@ Return,Returns a value from a definition body Do or Scan — anywhere else it st
 Appearance,Option symbol for specifying visual appearance,✅,pure,6.0,197
 Needs,Loads a package (no-op in Woxi),✅,effectful,1.0,198
 Center,Symbol for centering alignment,✅,pure,1.0,199
-Unequal,Checks if two values are not equal; operands of different kinds (a Boolean or Null against anything else) stay unevaluated,✅,pure,1.0,200
 UndirectedEdge,Undirected graph edge,✅,pure,8.0,201
 Filling,Option for filling areas under curves in plots,✅,pure,6.0,202
 MatchQ,Tests if an expression matches a pattern,✅,pure,1.0,203
@@ -389,6 +392,9 @@ Top,Symbol for top alignment,✅,pure,1.0,385
 HypergeometricPFQ,Generalized hypergeometric function pFq,✅,pure,3.0,386
 MortalityData,,🚫,,10.3,387
 Positive,Tests if a number is positive,✅,pure,1.0,389
+NonPositive,Tests if a number is non-positive,✅,pure,3.0,2097
+Negative,Tests if a number is negative,✅,pure,1.0,825
+NonNegative,Tests if a number is non-negative,✅,pure,1.0,1036
 Framed,Display wrapper that draws a frame around its argument,✅,pure,6.0,390
 Placed,Inert positional wrapper for label and legend placement (used with ChartLabels etc.),✅,pure,7.0,391
 AbsolutePointSize,Graphics primitive for setting point size in absolute units,✅,none,2.0,392
@@ -468,7 +474,6 @@ CenterDot,Symbolic centered dot operator,✅,pure,3.0,465
 Dotted,Dotted line style directive,✅,none,6.0,466
 StringMatchQ,Tests if string matches a pattern with wildcards; supports the one-argument operator form,✅,pure,1.0,467
 VectorQ,Tests if an expression is a vector; two-arg form VectorQ[expr;test] also requires every element to satisfy test,✅,pure,1.0,468
-GoldenRatio,The golden ratio constant,✅,pure,1.0,469
 Differences,Returns successive differences between elements (supports order and step arguments),✅,pure,6.0,470
 Spacer,Creates empty space of a specified size for layout,✅,pure,6.0,471
 CellularAutomaton,Generates a 1D or 2D cellular automaton evolution over chosen steps and cells,✅,pure,4.2,472
@@ -510,6 +515,7 @@ Cyan,Named color evaluating to RGBColor[0 1 1],✅,pure,5.1,507
 DateListPlot,Plots data with date-valued x-axis,✅,pure,6.0,508
 Baseline,Option for specifying baseline alignment,✅,pure,3.0,509
 EvenQ,Checks if a number is even,✅,pure,1.0,510
+OddQ,Checks if a number is odd,✅,pure,1.0,635
 Lighting,Option for 3D lighting,✅,pure,1.0,511
 Denominator,Returns the denominator of a rational expression,✅,pure,1.0,512
 CoefficientList,Returns the list of coefficients of a polynomial,✅,pure,1.0,513
@@ -639,7 +645,6 @@ ImageScaled,Coordinates scaled to image dimensions,✅,none,6.0,631
 DirichletCondition,Dirichlet boundary condition for PDEs,✅,none,10.0,632
 LightGray,Named light color evaluating to GrayLevel[0.85],✅,pure,6.0,633
 ChartStyle,Style specification for chart elements,✅,pure,7.0,634
-OddQ,Checks if a number is odd,✅,pure,1.0,635
 SelectionMove,Move the selection in a notebook,✅,none,3.0,636
 RotateLeft,Rotates list elements to the left,✅,pure,1.0,637
 PadRight,Pads a list on the right to a given length or nested shape with a cyclically tiled padding array,✅,pure,4.0,638
@@ -823,7 +828,6 @@ CloudDeploy,Requires external services or GUI infrastructure,🚫,io,10.0,821
 HighlightGraph,Requires external services or GUI infrastructure,🚫,io,8.0,822
 EventHandler,Handle interactive events,✅,none,6.0,823
 Heads,Option for including heads in operations,✅,none,2.0,824
-Negative,Tests if a number is negative,✅,pure,1.0,825
 AutorunSequencing,Option controlling autorun sequence of manipulate,✅,none,6.0,826
 ToLowerCase,Converts a string to lowercase,✅,pure,2.0,827
 ListLogPlot,Plots data with logarithmic y-axis,✅,pure,6.0,828
@@ -865,7 +869,6 @@ Trace,Returns a minimal evaluation trace as a two-element list,✅,pure,2.0,863
 StreamPoints,Option for number of stream lines in StreamPlot,✅,none,7.0,864
 AssociationThread,Association from a list of keys and a matching list of values or one shared value,✅,pure,10.0,865
 RealDigits,Returns the digits of a real number,✅,pure,2.0,866
-EulerGamma,Euler-Mascheroni constant,✅,pure,1.0,868
 Implies,Logical implication,✅,pure,1.0,868
 DigitCharacter,Represents a digit character in string patterns,✅,pure,5.1,870
 FixedPoint,Applies a function repeatedly until the result no longer changes,✅,pure,1.0,870
@@ -1029,7 +1032,6 @@ TimesBy,Multiplies a variable by a value,✅,stateful,1.0,1032
 Merge,Merges associations using a combining function,✅,pure,10.0,1033
 Colorize,Colorize a label matrix or image,✅,,8.0,1035
 NumberPadding,Option for the NumberForm family giving the pad strings as {left; right} or a single string for the integer field only,✅,pure,2.0,1035
-NonNegative,Tests if a number is non-negative,✅,pure,1.0,1036
 ImageMultiply,Multiplies pixel values of two images pointwise,✅,pure,7.0,1038
 TimeSeries,Represents a time series of values paired with time stamps,✅,pure,10.0,1038
 VectorPoints,,🚫,,7.0,1039
@@ -1259,6 +1261,10 @@ MapAll,Apply a function to every subexpression,✅,pure,1.0,1265
 HurwitzLerchPhi,Hurwitz-Lerch transcendent sum of z^k over (k+a)^s,✅,pure,7.0,1267
 WienerProcess,Wiener process with Normal time slices,✅,unevaluated,9.0,1268
 FindShortestTour,,🚫,,6.0,1269
+Null,Null expression producing no output,✅,pure,1.0,
+Indeterminate,Represents a numerical result of unknown magnitude — absorbs arithmetic and compares to nothing,✅,pure,1.0,
+Infinity,Positive infinity constant,✅,pure,1.0,
+ComplexInfinity,Complex infinity constant,✅,pure,1.0,
 DirectedInfinity,Represents a directed infinity whose direction propagates through sums products and powers,✅,pure,1.0,1270
 StringCount,Counts occurrences of a pattern in a string (threading over a list of strings; supports the Overlaps and IgnoreCase options),✅,pure,5.1,1271
 ImageApply,Applies a function to each pixel of an image,✅,pure,7.0,1272
@@ -1809,7 +1815,6 @@ DuplicateFreeQ,Test if list has no duplicates,✅,pure,10.0,1833
 OutputForm,Converts expression to output form,✅,pure,1.0,1833
 RandomPermutation,Random permutation of n points returned as a Cycles object,✅,contextual,8.0,1833
 TooltipDelay,Tooltip delay option,,unevaluated,7.0,1833
-Catalan,Catalan constant approximately 0.9159655,✅,pure,1.0,1836
 FactorialMoment,Computes the r-th factorial moment of data or a distribution (mean of falling factorials),✅,pure,8.0,1836
 WatershedComponents,Watershed components,,unevaluated,8.0,1836
 LightPurple,Named light color evaluating to RGBColor[0.94 0.88 0.94],✅,pure,6.0,1838
@@ -2072,7 +2077,6 @@ Thursday,Day of the week symbol,✅,unevaluated,9.0,2091
 GeoEntities,Geographic entities lookup,🚫,,10.0,2094
 HeavisidePi,Rectangular pulse function: 1 for |x| < 1/2,✅,1,7.0,2094
 MomentGeneratingFunction,Moment-generating function E[e^(tX)] of a probability distribution,✅,pure,8.0,2094
-NonPositive,Tests if a number is non-positive,✅,pure,3.0,2097
 StringPartition,Partition a string into substrings of a given length,✅,pure,10.1,2097
 TimeUsed,Total CPU time (user+system) used by the current process in seconds,✅,nondeterministic,1.0,2097
 HTTPRequest,Symbolic HTTP request object,✅,pure,11.0,2100
@@ -4342,6 +4346,7 @@ RiemannXi,,,,10.0,4479
 SetFileDate,,,,2.0,4479
 ShenCastanMatrix,,,,9.0,4479
 Skeleton,Represents omitted elements in output display as <<n>>,✅,none,1.0,4479
+StringSkeleton,Represents omitted characters in string output as <<n>>,✅,none,1.0,
 SolidAngle,Solid angle at a point spanned by vectors to given points,✅,pure,12.0,4479
 SolidData,,🚫,,10.0,4479
 StackComplete,,,,2.0,4479
@@ -5475,7 +5480,6 @@ CompilerInformation,,🚫,,14.1,
 CompilerRuntimeErrorAction,,🚫,,14.1,
 ComplementedEntityClass,,🚫,,12.1,
 CompleteIntegral,,,,13.0,
-ComplexInfinity,Complex infinity constant,✅,pure,1.0,
 ComputeUncertainty,,,,12.0,
 ConcaveHullMesh,,,,13.0,
 ConfirmQuiet,Evaluates an expression inside an Enclose with messages suppressed,✅,contextual,12.2,
@@ -5694,13 +5698,11 @@ IncludeRelatedTables,,,,12.0,
 IncludeSingularSolutions,,,,13.1,
 IncludedContexts,,,,12.3,
 IndependentUnitDimension,,,,11.3,
-Indeterminate,Represents a numerical result of unknown magnitude — absorbs arithmetic and compares to nothing,✅,pure,1.0,
 InertEvaluate,,,,13.1,
 InertExpression,,,,13.1,
 InfiniteFuture,,,,12.1,
 InfiniteLineThrough,,,,13.1,
 InfinitePast,,,,12.1,
-Infinity,Positive infinity constant,✅,pure,1.0,
 InitializationObject,,🚫,,12.3,
 InnerPolyhedron,,,,12.0,
 InputOutputResponse,,🚫,,14.0,
@@ -5817,7 +5819,6 @@ NonPositiveReals,,,,12.0,
 NonThreadable,,,,14.1,
 NoneMatch,,,,14.1,
 NotebookCellData,,🚫,,14.1,
-Null,Null expression producing no output,✅,pure,1.0,
 NullRawPointerQ,,,,13.3,
 NumberDigit,Digit at a given place of a number (rationals/constants exact; ulp-limited machine reals give Indeterminate; base form),✅,pure,12.3,
 NumericArrayType,,,,12.0,
@@ -6001,7 +6002,6 @@ StreamPlot3D,,🚫,,12.3,
 StrictInequalities,,,,12.2,
 StringApply,,,,14.1,
 StringFormatQ,,,,12.2,
-StringSkeleton,Represents omitted characters in string output as <<n>>,✅,none,1.0,
 StringTakeDrop,Returns the taken and dropped parts of a string as a list,✅,pure,12.3,
 StripCellGrouping,,🚫,,14.0,
 Struckthrough,,,,13.1,
@@ -6286,7 +6286,7 @@ ThemeColor,Represents a named color of the current notebook theme,✅,pure,14.3,
 FindShortestCurve,Shortest curve (minimizing geodesic) between two points on a region (Circle arcs; straight segments in convex solids; paths along Line chains),✅,pure,14.3,
 ShortestCurveDistance,Geodesic distance between two points on a region (Circle/Sphere great-circle distance; Euclidean distance in convex solids; length along Line chains),✅,pure,14.3,
 MidDate,Gives the date at the midpoint of a date interval or list of dates,✅,pure,14.2,
-LinearProgramming,Finds a vector minimizing a linear objective subject to linear constraints solved with an exact simplex — takes per-variable lower bounds or lower/upper pairs that may be infinite,✅,pure,1.0,
+LinearProgramming,Finds a vector minimizing a linear objective subject to linear constraints solved with an exact simplex — takes per-variable lower bounds or lower/upper pairs that may be infinite,✅,pure,2.0,
 CardinalBSplineBasis,Centered cardinal B-spline basis function of a given degree,✅,pure,9.0,
 PropertyValue,Value a property carries for a vertex or an edge of a graph,✅,pure,8.0,
 PropertyList,Annotations a graph offers,✅,pure,8.0,
