@@ -97,9 +97,15 @@ struct DensityContourOptions {
   color_function: Option<String>,
   contours: ContourSpec,
   contour_shading: bool,
+  /// `Mesh -> n`: how many mesh lines each mesh function contributes.
+  mesh: Option<usize>,
+  /// `MeshFunctions -> {f1, …}`: the functions whose level curves the
+  /// mesh lines are. Empty means the coordinates themselves.
+  mesh_functions: Vec<Expr>,
 }
 
-/// Parse ImageSize, ColorFunction, Contours, and ContourShading options.
+/// Parse ImageSize, ColorFunction, Contours, ContourShading, Mesh and
+/// MeshFunctions options.
 fn parse_density_contour_options(
   args: &[Expr],
   start: usize,
@@ -108,6 +114,8 @@ fn parse_density_contour_options(
   let mut color_function = None;
   let mut contours = ContourSpec::Automatic;
   let mut contour_shading = true;
+  let mut mesh: Option<usize> = None;
+  let mut mesh_functions: Vec<Expr> = Vec::new();
   for opt in &args[start..] {
     if let Expr::Rule {
       pattern,
@@ -115,13 +123,20 @@ fn parse_density_contour_options(
     } = opt
       && let Expr::Identifier(name) = pattern.as_ref()
     {
+      // An option's value may still be the symbol it was written with
+      // (`Contours -> con` inside a Manipulate), so resolve it first.
+      let resolved = match replacement.as_ref() {
+        v @ (Expr::Integer(_) | Expr::Real(_) | Expr::List(_)) => v.clone(),
+        other => evaluate_expr_to_expr(other).unwrap_or_else(|_| other.clone()),
+      };
+      let replacement = &resolved;
       match name.as_str() {
         "ColorFunction" => {
-          if let Some(s) = color_function_scheme_name(replacement.as_ref()) {
+          if let Some(s) = color_function_scheme_name(replacement) {
             color_function = Some(s);
           }
         }
-        "Contours" => match replacement.as_ref() {
+        "Contours" => match replacement {
           Expr::Integer(n) if *n > 0 => {
             contours = ContourSpec::Count(*n as usize);
           }
@@ -140,10 +155,30 @@ fn parse_density_contour_options(
           }
           _ => {}
         },
+        // `ContourShading -> None` is the documented way to ask for
+        // contour lines with nothing filled in between; `False` is the
+        // older spelling.
         "ContourShading" => {
-          if matches!(replacement.as_ref(), Expr::Identifier(v) if v == "False")
+          if matches!(replacement, Expr::Identifier(v) if v == "False" || v == "None")
           {
             contour_shading = false;
+          }
+        }
+        // `Mesh -> n` draws n mesh lines per mesh function; `Mesh -> None`
+        // (the default) draws none.
+        "Mesh" => match replacement {
+          Expr::Integer(n) if *n >= 0 => mesh = Some(*n as usize),
+          Expr::Identifier(v) if v == "None" || v == "False" => mesh = None,
+          Expr::Identifier(v) if v == "All" || v == "Automatic" => {
+            mesh = Some(10)
+          }
+          _ => {}
+        },
+        // `MeshFunctions -> {f1, f2, …}`: the mesh lines are level curves
+        // of each function, the way the contours are of the plotted one.
+        "MeshFunctions" => {
+          if let Expr::List(items) = replacement {
+            mesh_functions = items.iter().cloned().collect();
           }
         }
         _ => {}
@@ -157,6 +192,8 @@ fn parse_density_contour_options(
     color_function,
     contours,
     contour_shading,
+    mesh,
+    mesh_functions,
   }
 }
 
@@ -701,6 +738,74 @@ fn chain_segments_scaled(
 
 /// Draw contour lines for the given levels as thin dark polylines.
 #[allow(clippy::too_many_arguments)]
+/// One mesh function's samples over the plot grid, with the levels its
+/// mesh lines are drawn at.
+struct MeshGrid {
+  grid: Vec<Vec<f64>>,
+  levels: Vec<f64>,
+}
+
+/// Sample a mesh function over the plot's grid and pick `count` evenly
+/// spaced levels across the values it takes — `MeshFunctions -> {10 #1 &}`
+/// with `Mesh -> 11` gives eleven lines of constant x.
+#[allow(clippy::too_many_arguments)]
+fn sample_mesh_grid(
+  f: &Expr,
+  xvar: &str,
+  yvar: &str,
+  x_min: f64,
+  x_max: f64,
+  y_min: f64,
+  y_max: f64,
+  count: usize,
+) -> Option<MeshGrid> {
+  let n = FIELD_GRID + 1;
+  let mut grid = vec![vec![f64::NAN; n]; n];
+  let (mut v_min, mut v_max) = (f64::INFINITY, f64::NEG_INFINITY);
+  for i in 0..n {
+    let x = x_min + i as f64 / FIELD_GRID as f64 * (x_max - x_min);
+    for j in 0..n {
+      let y = y_min + j as f64 / FIELD_GRID as f64 * (y_max - y_min);
+      // A mesh function is usually a pure function of the two
+      // coordinates (`10 #1 &`); a plain expression in x and y works too.
+      let v = mesh_function_value(f, xvar, yvar, x, y)?;
+      if v.is_finite() {
+        grid[i][j] = v;
+        v_min = v_min.min(v);
+        v_max = v_max.max(v);
+      }
+    }
+  }
+  if !v_min.is_finite() || !v_max.is_finite() || v_max <= v_min {
+    return None;
+  }
+  // `Mesh -> n` draws n lines *between* the edges of the value range.
+  let step = (v_max - v_min) / (count as f64 + 1.0);
+  let levels = (1..=count).map(|k| v_min + k as f64 * step).collect();
+  Some(MeshGrid { grid, levels })
+}
+
+/// Evaluate a mesh function at one grid point, whether it is written as a
+/// pure function of the coordinates or as an expression in them.
+fn mesh_function_value(
+  f: &Expr,
+  xvar: &str,
+  yvar: &str,
+  x: f64,
+  y: f64,
+) -> Option<f64> {
+  match f {
+    Expr::Function { .. } => {
+      let applied = Expr::CurriedCall {
+        func: Box::new(f.clone()),
+        args: vec![Expr::Real(x), Expr::Real(y)],
+      };
+      try_eval_to_f64(&evaluate_expr_to_expr(&applied).ok()?)
+    }
+    other => evaluate_at_xy(other, xvar, yvar, x, y),
+  }
+}
+
 fn render_contour_lines(
   svg: &mut String,
   grid: &[Vec<f64>],
@@ -711,7 +816,34 @@ fn render_contour_lines(
   cell_h: f64,
   render_width: u32,
 ) {
-  let stroke_w = render_width as f64 / 1000.0 * 2.5;
+  render_contour_lines_styled(
+    svg,
+    grid,
+    levels,
+    plot_x0,
+    plot_y0,
+    cell_w,
+    cell_h,
+    render_width,
+    "#404040",
+    2.5,
+  );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_contour_lines_styled(
+  svg: &mut String,
+  grid: &[Vec<f64>],
+  levels: &[f64],
+  plot_x0: f64,
+  plot_y0: f64,
+  cell_w: f64,
+  cell_h: f64,
+  render_width: u32,
+  stroke: &str,
+  weight: f64,
+) {
+  let stroke_w = render_width as f64 / 1000.0 * weight;
   for &level in levels {
     let segments =
       marching_squares_segments(grid, level, plot_x0, plot_y0, cell_w, cell_h);
@@ -721,7 +853,7 @@ fn render_contour_lines(
         .map(|(x, y)| format!("{x:.1},{y:.1}"))
         .collect();
       svg.push_str(&format!(
-        "<polyline points=\"{}\" fill=\"none\" stroke=\"#404040\" stroke-width=\"{stroke_w:.1}\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n",
+        "<polyline points=\"{}\" fill=\"none\" stroke=\"{stroke}\" stroke-width=\"{stroke_w:.1}\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n",
         points.join(" ")
       ));
     }
@@ -869,11 +1001,79 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let levels = resolve_contour_levels(&opts.contours, v_min, v_max);
 
+  // Sample each mesh function over the same grid and pick its levels.
+  let mesh_grids: Vec<MeshGrid> = match opts.mesh {
+    Some(count) if count > 0 => {
+      let functions: Vec<Expr> = if opts.mesh_functions.is_empty() {
+        // The default mesh functions are the coordinates themselves.
+        vec![
+          Expr::Identifier(xvar.clone()),
+          Expr::Identifier(yvar.clone()),
+        ]
+      } else {
+        opts.mesh_functions.clone()
+      };
+      functions
+        .iter()
+        .filter_map(|f| {
+          sample_mesh_grid(f, &xvar, &yvar, x_min, x_max, y_min, y_max, count)
+        })
+        .collect()
+    }
+    _ => Vec::new(),
+  };
+
   // Data-space contour polylines for the symbolic `structure`, so
   // `ContourPlot[…][[1]]` yields primitives (with the ContourStyle
   // directives) that can be re-embedded in an outer `Graphics[…]` the way
   // Wolfram's GraphicsComplex form allows.
-  let mut structure_items: Vec<Expr> = contour_style_directives(args, 3);
+  let mut structure_items: Vec<Expr> = Vec::new();
+  // Mesh lines first, in their own list so their grey does not leak onto
+  // the contours drawn after them.
+  {
+    let span = (x_max - x_min).abs().max((y_max - y_min).abs());
+    let key_scale = if span > 0.0 { 4096.0 / span } else { 16.0 };
+    let step_x = (x_max - x_min) / FIELD_GRID as f64;
+    let step_y = (y_max - y_min) / FIELD_GRID as f64;
+    let mut mesh_items: Vec<Expr> = vec![
+      Expr::FunctionCall {
+        name: "GrayLevel".to_string(),
+        args: vec![Expr::Real(0.69)].into(),
+      },
+      Expr::FunctionCall {
+        name: "AbsoluteThickness".to_string(),
+        args: vec![Expr::Real(0.4)].into(),
+      },
+    ];
+    for mesh_grid in &mesh_grids {
+      for &level in &mesh_grid.levels {
+        let segments = marching_squares_segments(
+          &mesh_grid.grid,
+          level,
+          x_min,
+          y_max,
+          step_x,
+          -step_y,
+        );
+        for chain in chain_segments_scaled(&segments, key_scale) {
+          let points: Vec<Expr> = chain
+            .iter()
+            .map(|(x, y)| {
+              Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into())
+            })
+            .collect();
+          mesh_items.push(Expr::FunctionCall {
+            name: "Line".to_string(),
+            args: vec![Expr::List(points.into())].into(),
+          });
+        }
+      }
+    }
+    if mesh_items.len() > 2 {
+      structure_items.push(Expr::List(mesh_items.into()));
+    }
+  }
+  structure_items.extend(contour_style_directives(args, 3));
   {
     let step_x = (x_max - x_min) / FIELD_GRID as f64;
     let step_y = (y_max - y_min) / FIELD_GRID as f64;
@@ -898,9 +1098,14 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
+  // The symbolic form keeps the call's options too, so `Show` merging
+  // these contour lines with other primitives still draws them on the
+  // axes and range the plot asked for.
+  let mut structure_args = vec![Expr::List(structure_items.into())];
+  structure_args.extend(crate::functions::plot::explicit_options(args));
   let structure = Expr::FunctionCall {
     name: "Graphics".to_string(),
-    args: vec![Expr::List(structure_items.into())].into(),
+    args: structure_args.into(),
   };
 
   // Use plotters for axes
@@ -932,6 +1137,23 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       cell_w,
       cell_h,
       opts.color_function.as_deref(),
+    );
+  }
+  // Mesh lines sit under the contours: they are the level curves of the
+  // mesh functions (the coordinates themselves by default), so the same
+  // marching squares draw them.
+  for mesh_grid in &mesh_grids {
+    render_contour_lines_styled(
+      &mut svg,
+      &mesh_grid.grid,
+      &mesh_grid.levels,
+      area.plot_x0,
+      area.plot_y0,
+      cell_w,
+      cell_h,
+      area.render_width,
+      "#b0b0b0",
+      0.4,
     );
   }
   render_contour_lines(

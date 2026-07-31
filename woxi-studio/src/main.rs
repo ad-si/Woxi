@@ -8725,4 +8725,107 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`num$$ = 2}, \"…\"]"], "Output"]
       other => panic!("unexpected controls: {other:?}"),
     }
   }
+
+  /// End-to-end regression for "A Solution of Euler's Type for an Exact
+  /// Differential Equation": a `Show` of a meshed `ContourPlot` under the
+  /// gradient arrows, driven by a locator the reader may add points to.
+  #[test]
+  fn exact_differential_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"Show", "[",
+    RowBox[{
+     RowBox[{"ContourPlot", "[",
+      RowBox[{
+       RowBox[{
+        SuperscriptBox["x", "2"], "+",
+        RowBox[{"0.9", " ", SuperscriptBox["y", "2"]}]}], ",",
+       RowBox[{"{", RowBox[{"x", ",", RowBox[{"-", "1"}], ",", "1"}], "}"}],
+       ",", RowBox[{"{", RowBox[{"y", ",", RowBox[{"-", "1"}], ",", "1"}], "}"}],
+       ",", RowBox[{"Axes", "\[Rule]", "True"}], ",",
+       RowBox[{"ContourShading", "\[Rule]", "None"}], ",",
+       RowBox[{"Contours", "\[Rule]", "con"}], ",",
+       RowBox[{"Mesh", "\[Rule]", "step"}], ",",
+       RowBox[{"MeshFunctions", "\[Rule]",
+        RowBox[{"{",
+         RowBox[{
+          RowBox[{RowBox[{"10", " ", "#1"}], "&"}], ",",
+          RowBox[{RowBox[{"10", " ", "#2"}], "&"}]}], "}"}]}]}], "]"}], ",",
+     RowBox[{"Graphics", "[",
+      RowBox[{"{",
+       RowBox[{"Arrow", "[",
+        RowBox[{"{",
+         RowBox[{
+          RowBox[{"Last", "[", "pts", "]"}], ",",
+          RowBox[{
+           RowBox[{"Last", "[", "pts", "]"}], "+",
+           RowBox[{"{", RowBox[{"0.3", ",", "0.2"}], "}"}]}]}], "}"}], "]"}],
+       "}"}], "]"}], ",",
+     RowBox[{"PlotRange", "\[Rule]", "1"}]}], "]"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{",
+      RowBox[{"pts", ",",
+       RowBox[{"{", RowBox[{"{", RowBox[{"0", ",", "0"}], "}"}], "}"}]}], "}"}],
+     ",", RowBox[{"{", RowBox[{RowBox[{"-", "1"}], ",", RowBox[{"-", "1"}]}], "}"}],
+     ",", RowBox[{"{", RowBox[{"1", ",", "1"}], "}"}], ",", "Locator", ",",
+     RowBox[{"LocatorAutoCreate", "\[Rule]",
+      RowBox[{"{", RowBox[{"1", ",", "\[Infinity]"}], "}"}]}]}], "}"}], ",",
+   RowBox[{"{",
+    RowBox[{RowBox[{"{", RowBox[{"con", ",", "1", ",", "\"\<contours\>\""}], "}"}],
+     ",", "0", ",", "30", ",", "1"}], "}"}], ",",
+   RowBox[{"{",
+    RowBox[{RowBox[{"{", RowBox[{"step", ",", "11", ",", "\"\<step\>\""}], "}"}],
+     ",", "1", ",", "11", ",", "2"}], "}"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`con$$ = 1}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the contours, the mesh and the arrow must all draw"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Locator {
+          name,
+          points,
+          auto_create,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: con,
+          current: con_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: step,
+          current: step_now,
+          ..
+        },
+      ] => {
+        assert_eq!(
+          (name.as_str(), points.as_slice()),
+          ("pts", &[(0.0, 0.0)][..])
+        );
+        assert!(auto_create, "LocatorAutoCreate -> {{1, ∞}} allows adding");
+        assert_eq!((con.as_str(), *con_now), ("con", 1.0));
+        assert_eq!((step.as_str(), *step_now), ("step", 11.0));
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
 }

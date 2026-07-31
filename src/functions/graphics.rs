@@ -8540,6 +8540,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Graphics {
         is_3d: g_is_3d,
         source,
+        structure,
         ..
       } => {
         graphic_count += 1;
@@ -8548,7 +8549,24 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         first_graphic_is_plot.get_or_insert(source.is_some());
         is_3d = *g_is_3d;
-        if let Some(src) = source {
+        // A rendering that kept its symbolic form (a ContourPlot's
+        // contour lines, say) merges as those primitives, so it can be
+        // drawn together with whatever else `Show` was given instead of
+        // being dropped for not being a plot.
+        if source.is_none()
+          && let Some(structure) = structure
+          && let Expr::FunctionCall {
+            name: sname,
+            args: sargs,
+          } = structure.as_ref()
+          && (sname == "Graphics" || sname == "Graphics3D")
+          && !sargs.is_empty()
+        {
+          merged_primitives.push(sargs[0].clone());
+          for opt in sargs.iter().skip(1) {
+            merge_option(&mut merged_options, opt);
+          }
+        } else if let Some(src) = source {
           // Wolfram keeps the options of the graphics it is given, the
           // first one winning; an option given to `Show` itself still
           // overrides them (applied after the walk).
@@ -15331,10 +15349,16 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
         Expr::Rule { pattern, replacement }
         | Expr::RuleDelayed { pattern, replacement }
           if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "LocatorAutoCreate")
-            && matches!(
-              replacement.as_ref(),
-              Expr::Identifier(s) if s == "True" || s == "Automatic" || s == "All"
-            )
+            && match replacement.as_ref() {
+              Expr::Identifier(s) => {
+                s == "True" || s == "Automatic" || s == "All"
+              }
+              // `LocatorAutoCreate -> {min, max}` bounds how many points
+              // the user may add; any such range still means "adding is
+              // allowed".
+              Expr::List(bounds) => !bounds.is_empty(),
+              _ => false,
+            }
       )
     });
     if let Some((x, y)) = list2_f64(&evaluated) {

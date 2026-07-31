@@ -6466,6 +6466,71 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(n <= 4, "expected a single contour level, got {n} polylines");
     }
 
+    /// `ContourShading -> None` is the documented spelling and does the
+    /// same as `False`, and an option whose value is still a symbol
+    /// resolves before it is read (a Manipulate passes `Contours -> con`).
+    #[test]
+    fn contour_shading_none_and_symbolic_options() {
+      let none = export_svg(
+        "ContourPlot[x + y, {x, 0, 1}, {y, 0, 1}, ContourShading -> None]",
+      );
+      assert!(!none.contains("<path"), "no band fills expected: {none}");
+      let count = |svg: &str| svg.matches("<polyline points=\"").count();
+      clear_state();
+      let symbolic = export_svg(
+        "con = 1; ContourPlot[x^2 + 0.9 y^2 - 2 x + y, {x, -1, 1}, \
+         {y, -1, 1}, ContourShading -> None, Contours -> con]",
+      );
+      let literal = export_svg(
+        "ContourPlot[x^2 + 0.9 y^2 - 2 x + y, {x, -1, 1}, {y, -1, 1}, \
+         ContourShading -> None, Contours -> 1]",
+      );
+      assert_eq!(count(&symbolic), count(&literal), "{symbolic}");
+      assert!(count(&literal) >= 1, "one contour must be drawn");
+    }
+
+    /// `Mesh -> n` draws n lines per mesh function; with
+    /// `MeshFunctions -> {10 #1 &, 10 #2 &}` those are lines of constant
+    /// x and y — the grid a Demonstration lays under its contours.
+    #[test]
+    fn contour_plot_mesh_draws_grid_lines() {
+      let plain = export_svg(
+        "ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}, \
+         ContourShading -> None, Contours -> 1]",
+      );
+      let meshed = export_svg(
+        "ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}, \
+         ContourShading -> None, Contours -> 1, Mesh -> 11, \
+         MeshFunctions -> {10 #1 &, 10 #2 &}]",
+      );
+      let count = |svg: &str| svg.matches("<polyline points=\"").count();
+      // 11 lines for each of the two mesh functions, on top of the contour.
+      assert_eq!(count(&meshed), count(&plain) + 22, "{meshed}");
+      // Mesh lines are drawn in grey, under the darker contour.
+      assert!(meshed.contains("stroke=\"#b0b0b0\""), "{meshed}");
+      // Without MeshFunctions the coordinates themselves are used.
+      let default_mesh = export_svg(
+        "ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}, \
+         ContourShading -> None, Contours -> 1, Mesh -> 4]",
+      );
+      assert_eq!(count(&default_mesh), count(&plain) + 8, "{default_mesh}");
+    }
+
+    /// A rendering that kept its symbolic form merges into a `Show` as
+    /// those primitives, instead of being dropped for not being a plot.
+    #[test]
+    fn show_merges_contour_plot_with_graphics() {
+      let svg = export_svg(
+        "Show[ContourPlot[x^2 + 0.9 y^2 - 2 x + y, {x, -1, 1}, {y, -1, 1}, \
+           Axes -> True, ContourShading -> None, Contours -> 1], \
+         Graphics[{Arrow[{{0, 0}, {0.3, 0.2}}]}], PlotRange -> 1]",
+      );
+      assert!(svg.contains("<polyline"), "the contour must survive: {svg}");
+      assert!(svg.contains("<polygon"), "the arrow head must draw: {svg}");
+      // The plot's own options come along, so the axes are drawn.
+      assert!(svg.contains(">1</text>"), "axis ticks expected: {svg}");
+    }
+
     /// ContourShading -> False suppresses the band fills.
     #[test]
     fn contour_shading_false_has_no_bands() {
@@ -12293,6 +12358,31 @@ mod manipulate {
       &spec.controls[0],
       ManipulateControl::Discrete { popup: true, .. }
     ));
+  }
+
+  /// `LocatorAutoCreate -> {min, max}` bounds how many points the user may
+  /// add; like `True`, it means the locator accepts new ones.
+  #[test]
+  fn spec_locator_auto_create_accepts_a_range() {
+    let auto_create = |spec: &str| {
+      let expr =
+        interpret_to_expr(&format!("Manipulate[pts, {spec}]")).unwrap();
+      let spec =
+        extract_manipulate_spec(&expr).expect("well-formed manipulate");
+      match &spec.controls[0] {
+        ManipulateControl::Locator { auto_create, .. } => *auto_create,
+        other => panic!("expected a locator control, got {other:?}"),
+      }
+    };
+    assert!(auto_create(
+      "{{pts, {{0, 0}}}, {-1, -1}, {1, 1}, Locator, \
+       LocatorAutoCreate -> {1, Infinity}}"
+    ));
+    assert!(auto_create(
+      "{{pts, {{0, 0}}}, {-1, -1}, {1, 1}, Locator, \
+       LocatorAutoCreate -> True}"
+    ));
+    assert!(!auto_create("{{pts, {{0, 0}}}, {-1, -1}, {1, 1}, Locator}"));
   }
 
   /// A control type that draws one widget per value turns a numeric range
