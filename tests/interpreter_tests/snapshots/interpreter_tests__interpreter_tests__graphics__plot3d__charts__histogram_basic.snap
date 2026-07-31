@@ -71,7 +71,7 @@ expression: "export_svg(\"Histogram[{1, 2, 2, 3, 3, 3}]\")"
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,250 749,250 "/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,1750 3499,1750 "/>
 <text x="750" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-1
+1.0
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,1750 750,1790 "/>
 <text x="887" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
@@ -111,7 +111,7 @@ expression: "export_svg(\"Histogram[{1, 2, 2, 3, 3, 3}]\")"
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1987,1750 1987,1790 "/>
 <text x="2124" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-2
+2.0
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="2124,1750 2124,1790 "/>
 <text x="2261" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
@@ -163,4 +163,5 @@ expression: "export_svg(\"Histogram[{1, 2, 2, 3, 3, 3}]\")"
 <line x1="710.0" y1="1250.0" x2="680.0" y2="1250.0" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="750.0" x2="680.0" y2="750.0" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="250.0" x2="680.0" y2="250.0" stroke="#666" stroke-width="10"/>
+<text x="3500.0" y="1830.0" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">3.0</text>
 </svg>

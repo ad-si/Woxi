@@ -21,6 +21,25 @@ fn export_svg(expr: &str) -> String {
   svg
 }
 
+/// The y-axis tick labels of a rendered plot, top to bottom. Plotters draws
+/// an empty `<text>` for every minor tick, so only the labelled ones are kept.
+fn y_tick_labels(svg: &str) -> Vec<String> {
+  let mut labels: Vec<(i64, String)> = svg
+    .split("<text ")
+    .skip(1)
+    .filter_map(|tag| tag.split_once('>'))
+    .filter(|(open, _)| open.contains("text-anchor=\"end\""))
+    .filter_map(|(open, rest)| {
+      let y = open.split("y=\"").nth(1)?.split('"').next()?;
+      let text = rest.split('<').next()?.trim().to_string();
+      Some((y.parse::<f64>().ok()? as i64, text))
+    })
+    .filter(|(_, text)| !text.is_empty())
+    .collect();
+  labels.sort_by_key(|(y, _)| *y);
+  labels.into_iter().map(|(_, text)| text).collect()
+}
+
 /// Remove the embedded-font `<defs><style>…</style></defs>` block the exporter
 /// injects right after the opening `<svg>` tag, leaving the rest untouched.
 fn strip_font_style(svg: &str) -> String {
@@ -2770,42 +2789,65 @@ mod plot3d {
     // every label out as `2000000000000000`.
     #[test]
     fn large_and_small_ticks_use_scientific_notation() {
+      // The x tick labels, left to right. (`x_tick_labels` would need the
+      // same y-sort the y helper does; here x ordering is what reads.)
       let ticks = |code: &str| -> Vec<String> {
         let svg = export_svg(code);
-        let mut out = Vec::new();
-        for chunk in svg.split("<text").skip(1) {
-          let Some(start) = chunk.find('>') else {
-            continue;
-          };
-          let Some(end) = chunk.find("</text>") else {
-            continue;
-          };
-          let text = chunk[start + 1..end].trim().to_string();
-          if !text.is_empty() && !out.contains(&text) {
-            out.push(text);
-          }
-        }
-        out
+        let mut out: Vec<(i64, String)> = svg
+          .split("<text ")
+          .skip(1)
+          .filter_map(|tag| tag.split_once('>'))
+          .filter(|(open, _)| open.contains("text-anchor=\"middle\""))
+          .filter_map(|(open, rest)| {
+            let x = open.split("x=\"").nth(1)?.split('"').next()?;
+            let text = rest.split('<').next()?.trim().to_string();
+            Some((x.parse::<f64>().ok()? as i64, text))
+          })
+          .filter(|(_, text)| !text.is_empty())
+          .collect();
+        out.sort_by_key(|(x, _)| *x);
+        out.into_iter().map(|(_, text)| text).collect()
       };
+      // Each of these matches wolframscript's `AbsoluteOptions[…, Ticks]`.
       assert_eq!(
         ticks("Plot[x, {x, 0, 6*10^15}]"),
-        vec!["0", "2×10¹⁵", "4×10¹⁵", "6×10¹⁵"]
+        [
+          "0",
+          "1\u{d7}10\u{b9}\u{2075}",
+          "2\u{d7}10\u{b9}\u{2075}",
+          "3\u{d7}10\u{b9}\u{2075}",
+          "4\u{d7}10\u{b9}\u{2075}",
+          "5\u{d7}10\u{b9}\u{2075}",
+          "6\u{d7}10\u{b9}\u{2075}"
+        ]
       );
       assert_eq!(
         ticks("Plot[x, {x, 0, 10^7}]"),
-        vec!["0", "5×10⁶", "1×10⁷", "2×10⁶", "4×10⁶", "6×10⁶", "8×10⁶"]
+        [
+          "0",
+          "2\u{d7}10\u{2076}",
+          "4\u{d7}10\u{2076}",
+          "6\u{d7}10\u{2076}",
+          "8\u{d7}10\u{2076}",
+          "1\u{d7}10\u{2077}"
+        ]
       );
       // Inside the range the labels stay plain, and `10^6` itself is the
       // first value that goes scientific.
       assert_eq!(
         ticks("Plot[x, {x, 0, 10^6}]"),
-        vec![
-          "0", "500000", "1×10⁶", "200000", "400000", "600000", "800000"
+        [
+          "0",
+          "200000",
+          "400000",
+          "600000",
+          "800000",
+          "1\u{d7}10\u{2076}"
         ]
       );
       assert_eq!(
         ticks("Plot[x, {x, 0, 100}]"),
-        vec!["0", "50", "100", "20", "40", "60", "80"]
+        ["0", "20", "40", "60", "80", "100"]
       );
     }
 
@@ -2815,7 +2857,8 @@ mod plot3d {
     fn float_noise_ticks_read_as_zero() {
       let svg = export_svg("Plot[x, {x, -1, 1}]");
       assert!(!svg.contains("×10⁻"), "noise leaked as scientific: {svg}");
-      assert!(svg.contains(">\n0\n</text>") || svg.contains(">0<"));
+      // The origin reads as the step's `0.0`, not as float noise.
+      assert!(svg.contains(">\n0.0\n</text>") || svg.contains(">0.0<"));
     }
 
     // Enough decimals to tell neighbouring ticks apart. Regression: a
@@ -3272,21 +3315,109 @@ mod plot3d {
       assert!(!export_svg("Plot[Sin[x], {x, 0, 6}]").contains(frame));
     }
 
-    /// `ImagePadding` states the space around the plotting area outright, so
-    /// the frame fills what it leaves instead of shrinking to fit the
-    /// automatic label margins — which is what keeps a plot readable at a
-    /// small `ImageSize`.
+    /// `ImagePadding` is a *minimum* per side: the plotting area is as large
+    /// as the padding leaves while keeping its `AspectRatio`, and the leftover
+    /// space is split evenly between the two sides of each axis. Verified
+    /// against wolframscript, which puts this frame at 90..224.5 x 19.5..102.5.
     #[test]
     fn image_padding_sizes_the_plotting_area() {
       let padded = export_svg(
         r#"ListPlot[Table[{t, t}, {t, 0, 10}], Joined -> True, Frame -> True, FrameLabel -> {{"n", ""}, {"t", "title"}}, ImagePadding -> {{45, 10}, {45, 20}}, ImageSize -> {280, 148}]"#,
       );
-      // The frame polyline starts at the top-left corner of the plot area:
-      // left padding 45 px and top padding 20 px, at 10x render scale.
+      // 45 px of top-to-bottom padding fixes the area's height at 83 px, so
+      // 1/GoldenRatio makes it 134 px wide and the 146 px of horizontal slack
+      // splits evenly: 45 + 45 on the left, 10 + 45 on the right. At 10x.
       assert!(
-        padded.contains("450,1029 2699,1029 2699,200 450,200"),
-        "the frame must fill the padded area: {padded}"
+        padded.contains("904,1029 2245,1029 2245,200 904,200"),
+        "the padded frame must keep its aspect ratio: {padded}"
       );
+    }
+
+    /// Every label of a tick set carries the decimals its step needs, so a
+    /// 0.5-spaced axis reads `-1.0, -0.5, 0.0, 0.5, 1.0` — the origin
+    /// included — while an integer-spaced one stays bare. Verified against
+    /// wolframscript's `AbsoluteOptions[…, Ticks]`.
+    #[test]
+    fn tick_labels_share_the_decimals_of_their_step() {
+      assert_eq!(
+        y_tick_labels(&export_svg(
+          "ListPlot[Table[Sin[x], {x, 0, 6, 0.2}], PlotRange -> {{0, 50}, {-1, 1}}]"
+        )),
+        ["1.0", "0.5", "0.0", "-0.5", "-1.0"]
+      );
+      assert_eq!(
+        y_tick_labels(&export_svg(
+          "ListPlot[{{0, 0}}, PlotRange -> {{0, 1}, {0, 10}}]"
+        )),
+        ["10", "8", "6", "4", "2", "0"]
+      );
+      // A 0.05 step gives two decimals, the trailing zeros included.
+      assert_eq!(
+        y_tick_labels(&export_svg(
+          "ListPlot[{{0, 0}}, PlotRange -> {{0, 1}, {0, 0.3}}]"
+        )),
+        ["0.30", "0.25", "0.20", "0.15", "0.10", "0.05", "0.00"]
+      );
+    }
+
+    /// The Wolfram Language divides an axis into about six intervals, and
+    /// counts 2.5 among its "nice" step multipliers. Verified against
+    /// `Charting`ScaledTicks` over a spread of axis spans.
+    #[test]
+    fn tick_steps_match_the_wolfram_language() {
+      let step_of = |range: &str, expected: &[&str]| {
+        let labels = y_tick_labels(&export_svg(&format!(
+          "ListPlot[{{{{0, 0}}}}, PlotRange -> {{{{0, 1}}, {range}}}]"
+        )));
+        assert_eq!(labels, expected, "for {range}");
+      };
+      step_of(
+        "{0, 15}",
+        &["15.0", "12.5", "10.0", "7.5", "5.0", "2.5", "0.0"],
+      );
+      step_of("{0, 6}", &["6", "5", "4", "3", "2", "1", "0"]);
+      step_of("{0, 12}", &["12", "10", "8", "6", "4", "2", "0"]);
+      step_of("{0, 100}", &["100", "80", "60", "40", "20", "0"]);
+      step_of("{-3, 3}", &["3", "2", "1", "0", "-1", "-2", "-3"]);
+    }
+
+    /// Plotters drops the last of its key points on a range with a negative
+    /// minimum, leaving the topmost major tick drawn but unlabelled.
+    #[test]
+    fn the_topmost_major_tick_is_labelled() {
+      assert!(
+        y_tick_labels(&export_svg(
+          "ListPlot[{{0, 0}}, PlotRange -> {{0, 1}, {-2, 3}}]"
+        ))
+        .contains(&"3".to_string()),
+        "the tick at the top of the range must be labelled"
+      );
+    }
+
+    /// The padding is also what keeps tick labels from being clipped at a
+    /// small `ImageSize`: they are drawn in the space it leaves.
+    #[test]
+    fn image_padding_leaves_room_for_the_tick_labels() {
+      let svg = export_svg(
+        r#"ListPlot[Table[Sin[x], {x, 0, 6, 0.2}], ImageSize -> {400, 200}, ImagePadding -> 20]"#,
+      );
+      // A label that did not fit would be laid out at a negative x, which the
+      // renderer emits verbatim.
+      assert!(
+        !svg.contains("x=\"-"),
+        "a tick label was pushed off the image"
+      );
+      let labels: Vec<&str> = svg
+        .split("text-anchor=\"end\"")
+        .skip(1)
+        .filter_map(|s| s.split_once('>'))
+        .filter_map(|(_, rest)| rest.split_once('<'))
+        .map(|(text, _)| text.trim())
+        .filter(|text| !text.is_empty())
+        .collect();
+      for label in ["-1.0", "-0.5", "0.0", "0.5", "1.0"] {
+        assert!(labels.contains(&label), "missing tick {label}: {labels:?}");
+      }
     }
 
     /// A plot label is plain text, so a `Subscript` renders through the
@@ -3478,10 +3609,12 @@ mod plot3d {
     #[test]
     fn list_plot_data_range_span_maps_x() {
       let svg = export_svg("ListLinePlot[{1, 4, 9}, DataRange -> {0, 1}]");
-      assert!(
-        svg.contains(">\n0.5\n<"),
-        "x ticks should cover the 0..1 span, got: {svg}"
-      );
+      for tick in ["0.0", "0.4", "1.0"] {
+        assert!(
+          svg.contains(&format!(">\n{tick}\n<")),
+          "x ticks should cover the 0..1 span, missing {tick}: {svg}"
+        );
+      }
     }
 
     // DataRange also remaps the x-values of a matrix of y-value datasets.
@@ -5298,10 +5431,20 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       let empty = "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>";
       assert_ne!(svg, empty, "PDF histogram must render");
       // A raw-count histogram of the same data would label the y-axis with
-      // integer counts up to 4; the PDF version stays below 1.
+      // integer counts up to 4; the PDF version stays below 1. Only the y
+      // labels (`text-anchor="end"`) say anything about the heights — the x
+      // axis runs over the bin edges, 4 among them.
+      let y_labels: Vec<&str> = svg
+        .split("text-anchor=\"end\"")
+        .skip(1)
+        .filter_map(|s| s.split_once('>'))
+        .filter_map(|(_, rest)| rest.split_once('<'))
+        .map(|(text, _)| text.trim())
+        .filter(|text| !text.is_empty())
+        .collect();
       assert!(
-        !svg.contains(">4<"),
-        "PDF heights should not reach the raw count of 4"
+        !y_labels.contains(&"4"),
+        "PDF heights should not reach the raw count of 4: {y_labels:?}"
       );
     }
 

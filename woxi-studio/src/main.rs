@@ -9208,4 +9208,166 @@ Cell[BoxData[
       other => panic!("unexpected controls: {other:?}"),
     }
   }
+
+  /// End-to-end regression for the "Sampling a Digital Signal"
+  /// Demonstration: a `Grid` of two `ListPlot`s with `Filling -> Axis` and
+  /// `ImagePadding`, driven by an `Initialization` block. The notebook stores
+  /// no output cell, so the widget is built from the input the way evaluating
+  /// the cell does.
+  #[test]
+  fn sampling_a_digital_signal_notebook_builds_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[", "\[IndentingNewLine]", 
+  RowBox[{
+   RowBox[{
+    RowBox[{"If", "[", 
+     RowBox[{
+      RowBox[{"k", ">", 
+       RowBox[{"50", " ", "L"}]}], ",", 
+      RowBox[{"k", "=", 
+       RowBox[{"50", " ", "L"}]}]}], "]"}], ";", "\[IndentingNewLine]", 
+    RowBox[{"Grid", "[", "\[IndentingNewLine]", 
+     RowBox[{"{", "\[IndentingNewLine]", 
+      RowBox[{
+       RowBox[{"{", 
+        RowBox[{"ListPlot", "[", 
+         RowBox[{"tmp", ",", 
+          RowBox[{"Filling", " ", "\[Rule]", " ", "Axis"}], ",", 
+          RowBox[{"PlotMarkers", "\[Rule]", "Automatic"}], ",", 
+          RowBox[{"ImagePadding", " ", "\[Rule]", " ", "20"}], ",", 
+          RowBox[{"ImageSize", " ", "\[Rule]", " ", 
+           RowBox[{"{", 
+            RowBox[{"400", ",", "200"}], "}"}]}]}], "]"}], "}"}], ",", 
+       RowBox[{"{", 
+        RowBox[{"ListPlot", "[", 
+         RowBox[{
+          RowBox[{"If", "[", 
+           RowBox[{
+            RowBox[{"sampler", " ", "\[Equal]", " ", "\"\<up\>\""}], ",", 
+            RowBox[{"f", "[", "L", "]"}], ",", 
+            RowBox[{"f1", "[", "L", "]"}]}], "]"}], ",", 
+          RowBox[{"Filling", " ", "\[Rule]", " ", "Axis"}], ",", 
+          RowBox[{"PlotRange", " ", "\[Rule]", " ", 
+           RowBox[{"{", 
+            RowBox[{
+             RowBox[{"{", 
+              RowBox[{"0", ",", "k"}], "}"}], ",", 
+             RowBox[{"{", 
+              RowBox[{
+               RowBox[{"-", "1"}], ",", "1"}], "}"}]}], "}"}]}], ",", 
+          RowBox[{"PlotMarkers", "\[Rule]", "Automatic"}], ",", 
+          RowBox[{"ImagePadding", " ", "\[Rule]", " ", "20"}], ",", 
+          RowBox[{"ImageSize", " ", "\[Rule]", " ", 
+           RowBox[{"{", 
+            RowBox[{"400", ",", "200"}], "}"}]}]}], "]"}], "}"}]}], 
+      "\[IndentingNewLine]", "}"}], "\[IndentingNewLine]", "]"}]}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"L", ",", "2", ",", "\"\<sampling by integer factor L\>\""}], 
+      "}"}], ",", "2", ",", "10", ",", "1", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"k", ",", "50", ",", "\"\<bottom plot range\>\""}], "}"}], ",", 
+     "1", ",", 
+     RowBox[{"50", " ", "L"}], ",", "1", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"sampler", ",", "\"\<up\>\""}], "}"}], ",", 
+     RowBox[{"{", 
+      RowBox[{"\"\<up\>\"", ",", "\"\<down\>\""}], "}"}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"TrackedSymbols", "\[Rule]", 
+    RowBox[{"{", 
+     RowBox[{"L", ",", "k", ",", "sampler"}], "}"}]}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"Initialization", " ", "\[RuleDelayed]", " ", 
+    RowBox[{"{", "\[IndentingNewLine]", 
+     RowBox[{
+      RowBox[{"tmp", " ", "=", " ", 
+       RowBox[{
+        RowBox[{"Table", "[", 
+         RowBox[{
+          RowBox[{"Sin", "[", "x", "]"}], ",", 
+          RowBox[{"{", 
+           RowBox[{"x", ",", "0", ",", " ", 
+            RowBox[{"720", " ", "Degree"}], ",", " ", 
+            RowBox[{"15", " ", "Degree"}]}], "}"}]}], "]"}], "//", "N"}]}], 
+      ";", "\[IndentingNewLine]", 
+      RowBox[{
+       RowBox[{"f", "[", "L1_", "]"}], ":=", 
+       RowBox[{"Flatten", "[", 
+        RowBox[{"Riffle", "[", 
+         RowBox[{"tmp", ",", 
+          RowBox[{"{", 
+           RowBox[{"ConstantArray", "[", 
+            RowBox[{"0", ",", 
+             RowBox[{"L1", "-", "1"}]}], "]"}], "}"}]}], "]"}], "]"}]}], ";", 
+      "\[IndentingNewLine]", 
+      RowBox[{
+       RowBox[{"f1", "[", "L2_", "]"}], " ", ":=", " ", 
+       RowBox[{"tmp", "[", 
+        RowBox[{"[", 
+         RowBox[{"1", ";;", " ", ";;", "L2"}], "]"}], "]"}]}], ";"}], 
+     "\[IndentingNewLine]", "}"}]}]}], "\[IndentingNewLine]", "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`L$$ = 2, $CellContext`k$$ = 50, \
+$CellContext`sampler$$ = \"up\"}, \"\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "both stacked plots must draw"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: l,
+          label: l_label,
+          current: l_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: k,
+          current: k_now,
+          max: k_max,
+          ..
+        },
+        manipulate::ControlState::Discrete {
+          name: sampler,
+          values,
+          ..
+        },
+      ] => {
+        assert_eq!(
+          (l.as_str(), l_label.as_str(), *l_now),
+          ("L", "sampling by integer factor L", 2.0)
+        );
+        // `50 L` sizes the second slider from the first control's value.
+        assert_eq!((k.as_str(), *k_now, *k_max), ("k", 50.0, 100.0));
+        assert_eq!(sampler.as_str(), "sampler");
+        assert_eq!(values.len(), 2);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
 }

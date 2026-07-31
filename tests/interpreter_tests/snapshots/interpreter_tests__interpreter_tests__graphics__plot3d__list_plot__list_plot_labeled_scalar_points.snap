@@ -67,7 +67,7 @@ expression: "export_svg(r#\"ListPlot[{Labeled[2, \"a\"], 3, Labeled[5, \"b\"]}]\
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,263 749,263 "/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,1750 3499,1750 "/>
 <text x="851" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-1
+1.0
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="851,1750 851,1790 "/>
 <text x="979" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
@@ -107,7 +107,7 @@ expression: "export_svg(r#\"ListPlot[{Labeled[2, \"a\"], 3, Labeled[5, \"b\"]}]\
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1997,1750 1997,1790 "/>
 <text x="2124" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-2
+2.0
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="2124,1750 2124,1790 "/>
 <text x="2251" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
@@ -158,6 +158,8 @@ expression: "export_svg(r#\"ListPlot[{Labeled[2, \"a\"], 3, Labeled[5, \"b\"]}]\
 <line x1="710.0" y1="1179.6" x2="680.0" y2="1179.6" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="670.4" x2="680.0" y2="670.4" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="161.1" x2="680.0" y2="161.1" stroke="#666" stroke-width="10"/>
+<text x="3398.1" y="1830.0" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">3.0</text>
+<text x="670.0" y="161.1" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">5</text>
 <text x="891.9" y="1608.9" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="160" fill="#333" text-anchor="start">a</text>
 <text x="3358.1" y="160.0" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="160" fill="#333" text-anchor="end">b</text>
 </svg>

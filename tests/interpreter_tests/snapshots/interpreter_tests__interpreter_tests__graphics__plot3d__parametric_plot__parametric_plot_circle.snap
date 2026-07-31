@@ -6,7 +6,7 @@ expression: "export_svg(\"ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}]\")"
 <rect x="0" y="0" width="3600" height="3600" opacity="1" fill="#FFFFFF" stroke="none"/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="749,100 749,3099 "/>
 <text x="670" y="2988" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
--1
+-1.0
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,2988 749,2988 "/>
 <text x="670" y="2850" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
@@ -46,7 +46,7 @@ expression: "export_svg(\"ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}]\")"
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1739 749,1739 "/>
 <text x="670" y="1600" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
-0
+0.0
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1600 749,1600 "/>
 <text x="670" y="1461" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
@@ -87,7 +87,7 @@ expression: "export_svg(\"ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}]\")"
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,350 749,350 "/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,3100 3499,3100 "/>
 <text x="851" y="3180" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
--1
+-1.0
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="851,3100 851,3140 "/>
 <text x="979" y="3180" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
@@ -127,7 +127,7 @@ expression: "export_svg(\"ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}]\")"
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1997,3100 1997,3140 "/>
 <text x="2124" y="3180" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
-0
+0.0
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="2124,3100 2124,3140 "/>
 <text x="2251" y="3180" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
@@ -179,4 +179,6 @@ expression: "export_svg(\"ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}]\")"
 <line x1="710.0" y1="1600.0" x2="680.0" y2="1600.0" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="905.6" x2="680.0" y2="905.6" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="211.1" x2="680.0" y2="211.1" stroke="#666" stroke-width="10"/>
+<text x="3398.1" y="3180.0" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">1.0</text>
+<text x="670.0" y="211.1" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">1.0</text>
 </svg>

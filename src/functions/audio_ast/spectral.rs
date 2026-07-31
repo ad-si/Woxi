@@ -247,24 +247,6 @@ pub fn stfd_property(head: &Expr, prop: &Expr) -> Option<Expr> {
 // Raster plots (Spectrogram, Cepstrogram)
 // ---------------------------------------------------------------------------
 
-/// Choose a "nice" tick step so that the range yields roughly `target`
-/// ticks.
-fn nice_step(range: f64, target: f64) -> f64 {
-  let raw = range / target;
-  let mag = 10f64.powf(raw.log10().floor());
-  let norm = raw / mag;
-  let step = if norm <= 1.5 {
-    1.0
-  } else if norm <= 3.5 {
-    2.0
-  } else if norm <= 7.5 {
-    5.0
-  } else {
-    10.0
-  };
-  step * mag
-}
-
 /// Format an axis tick label compactly.
 fn tick_label(v: f64) -> String {
   if v == 0.0 {
@@ -336,7 +318,10 @@ fn raster_svg(
   let font = "font-family=\"sans-serif\" font-size=\"10\"";
   // X ticks
   if x_max > 0.0 {
-    let step = nice_step(x_max, 5.0);
+    let step = crate::functions::plot::nice_step(
+      x_max,
+      crate::functions::plot::AXIS_TICK_TARGET,
+    );
     let mut t = 0.0;
     while t <= x_max * 1.0001 {
       let x = left + t / x_max * pw;
@@ -353,7 +338,10 @@ fn raster_svg(
   }
   // Y ticks
   if y_max > 0.0 {
-    let step = nice_step(y_max, 5.0);
+    let step = crate::functions::plot::nice_step(
+      y_max,
+      crate::functions::plot::AXIS_TICK_TARGET,
+    );
     let mut t = 0.0;
     while t <= y_max * 1.0001 {
       let y = top + ph - t / y_max * ph;

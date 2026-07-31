@@ -75,7 +75,7 @@ expression: "export_svg(r#\"ListPlot[Labeled[{1, 4, 9}, \"squares\"]]\"#)"
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,162 749,162 "/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,1750 3499,1750 "/>
 <text x="851" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-1
+1.0
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="851,1750 851,1790 "/>
 <text x="979" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
@@ -115,7 +115,7 @@ expression: "export_svg(r#\"ListPlot[Labeled[{1, 4, 9}, \"squares\"]]\"#)"
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1997,1750 1997,1790 "/>
 <text x="2124" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-2
+2.0
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="2124,1750 2124,1790 "/>
 <text x="2251" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
@@ -166,6 +166,7 @@ expression: "export_svg(r#\"ListPlot[Labeled[{1, 4, 9}, \"squares\"]]\"#)"
 <line x1="710.0" y1="1116.0" x2="680.0" y2="1116.0" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="734.0" x2="680.0" y2="734.0" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="352.1" x2="680.0" y2="352.1" stroke="#666" stroke-width="10"/>
+<text x="3398.1" y="1830.0" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">3.0</text>
 <line x1="2125.0" y1="1116.0" x2="2175.0" y2="996.0" stroke="rgb(94,129,181)" stroke-width="10" />
 <text x="2175.0" y="996.0" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="160" fill="rgb(94,129,181)" dominant-baseline="auto">squares</text>
 </svg>

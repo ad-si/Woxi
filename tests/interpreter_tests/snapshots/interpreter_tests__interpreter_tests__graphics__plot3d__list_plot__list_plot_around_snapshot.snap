@@ -95,7 +95,7 @@ expression: "export_svg(\"ListPlot[{Around[2, 1], Around[3, 0.5], Around[5, 0.25
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,180 749,180 "/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,1750 3499,1750 "/>
 <text x="851" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-1
+1.0
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="851,1750 851,1790 "/>
 <text x="979" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
@@ -135,7 +135,7 @@ expression: "export_svg(\"ListPlot[{Around[2, 1], Around[3, 0.5], Around[5, 0.25
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1997,1750 1997,1790 "/>
 <text x="2124" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-2
+2.0
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="2124,1750 2124,1790 "/>
 <text x="2251" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
@@ -196,4 +196,5 @@ expression: "export_svg(\"ListPlot[{Around[2, 1], Around[3, 0.5], Around[5, 0.25
 <line x1="710.0" y1="969.9" x2="680.0" y2="969.9" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="610.5" x2="680.0" y2="610.5" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="251.0" x2="680.0" y2="251.0" stroke="#666" stroke-width="10"/>
+<text x="3398.1" y="1830.0" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">3.0</text>
 </svg>

@@ -6,7 +6,7 @@ expression: "export_svg(r#\"Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLabel -> \"
 <rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="749,350 749,1509 "/>
 <text x="670" y="1467" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
--1
+-1.0
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1467 749,1467 "/>
 <text x="670" y="1413" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
@@ -46,7 +46,7 @@ expression: "export_svg(r#\"Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLabel -> \"
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,984 749,984 "/>
 <text x="670" y="930" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
-0
+0.0
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,930 749,930 "/>
 <text x="670" y="876" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
@@ -150,6 +150,7 @@ expression: "export_svg(r#\"Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLabel -> \"
 <line x1="710.0" y1="930.0" x2="680.0" y2="930.0" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="661.5" x2="680.0" y2="661.5" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="393.0" x2="680.0" y2="393.0" stroke="#666" stroke-width="10"/>
+<text x="670.0" y="393.0" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">1.0</text>
 <text x="2125.0" y="1836.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">x</text>
 <text x="238.0" y="930.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666" transform="rotate(-90,238.0,930.0)">f(x)</text>
 <text x="2125.0" y="265.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="170" fill="#333">Trig Functions</text>

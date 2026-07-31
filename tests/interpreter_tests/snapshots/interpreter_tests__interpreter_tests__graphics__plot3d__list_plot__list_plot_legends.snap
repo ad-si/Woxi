@@ -6,7 +6,7 @@ expression: "export_svg(r#\"ListPlot[{{1, 2, 3}, {3, 2, 1}}, PlotLegends -> {\"S
 <rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="749,100 749,1749 "/>
 <text x="670" y="1688" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-1
+1.0
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1688 749,1688 "/>
 <text x="670" y="1612" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
@@ -46,7 +46,7 @@ expression: "export_svg(r#\"ListPlot[{{1, 2, 3}, {3, 2, 1}}, PlotLegends -> {\"S
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1001 749,1001 "/>
 <text x="670" y="925" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-2
+2.0
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,925 749,925 "/>
 <text x="670" y="849" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
@@ -87,7 +87,7 @@ expression: "export_svg(r#\"ListPlot[{{1, 2, 3}, {3, 2, 1}}, PlotLegends -> {\"S
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,238 749,238 "/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,1750 3499,1750 "/>
 <text x="851" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-1
+1.0
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="851,1750 851,1790 "/>
 <text x="979" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
@@ -127,7 +127,7 @@ expression: "export_svg(r#\"ListPlot[{{1, 2, 3}, {3, 2, 1}}, PlotLegends -> {\"S
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1997,1750 1997,1790 "/>
 <text x="2124" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-2
+2.0
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="2124,1750 2124,1790 "/>
 <text x="2251" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
@@ -182,6 +182,8 @@ expression: "export_svg(r#\"ListPlot[{{1, 2, 3}, {3, 2, 1}}, PlotLegends -> {\"S
 <line x1="710.0" y1="925.0" x2="680.0" y2="925.0" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="543.1" x2="680.0" y2="543.1" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="161.1" x2="680.0" y2="161.1" stroke="#666" stroke-width="10"/>
+<text x="3398.1" y="1830.0" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">3.0</text>
+<text x="670.0" y="161.1" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">3.0</text>
 <line x1="3650.0" y1="1013.0" x2="3850.0" y2="1013.0" stroke="rgb(94,129,181)" stroke-width="15"/>
 <text x="3910.0" y="1062.0" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">Series A</text>
 <line x1="3650.0" y1="1237.0" x2="3850.0" y2="1237.0" stroke="rgb(224,147,44)" stroke-width="15"/>

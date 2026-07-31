@@ -158,4 +158,6 @@ expression: "export_svg(\"StackedListPlot[{1, 2, 3, 4}]\")"
 <line x1="710.0" y1="916.4" x2="680.0" y2="916.4" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="531.3" x2="680.0" y2="531.3" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="146.2" x2="680.0" y2="146.2" stroke="#666" stroke-width="10"/>
+<text x="3398.1" y="1830.0" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">4</text>
+<text x="670.0" y="146.2" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">4</text>
 </svg>

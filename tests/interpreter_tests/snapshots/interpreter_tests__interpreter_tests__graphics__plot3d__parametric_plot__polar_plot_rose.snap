@@ -42,7 +42,7 @@ expression: "export_svg(\"PolarPlot[Cos[3 t], {t, 0, 2 Pi}]\")"
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,2012 749,2012 "/>
 <text x="670" y="1830" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
-0
+0.0
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1830 749,1830 "/>
 <text x="670" y="1648" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
@@ -103,7 +103,7 @@ expression: "export_svg(\"PolarPlot[Cos[3 t], {t, 0, 2 Pi}]\")"
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1605,3560 1605,3600 "/>
 <text x="1768" y="3640" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
-0
+0.0
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1768,3560 1768,3600 "/>
 <text x="1931" y="3640" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
@@ -152,4 +152,5 @@ expression: "export_svg(\"PolarPlot[Cos[3 t], {t, 0, 2 Pi}]\")"
 <line x1="710.0" y1="2740.1" x2="680.0" y2="2740.1" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="1830.0" x2="680.0" y2="1830.0" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="919.9" x2="680.0" y2="919.9" stroke="#666" stroke-width="10"/>
+<text x="3398.1" y="3640.0" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">1.0</text>
 </svg>
