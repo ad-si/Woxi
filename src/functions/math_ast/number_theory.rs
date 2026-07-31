@@ -1369,11 +1369,12 @@ pub fn bell_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let zero = BigInt::from(0);
     let one = BigInt::from(1);
     let mut row = vec![zero.clone(); n + 1];
-    row[0] = one.clone();
+    row[0] = one.clone(); // S(0,0) = 1
     let mut next = vec![zero.clone(); n + 1];
     for i in 1..=n {
-      next[0] = zero.clone();
+      next[0] = zero.clone(); // S(i,0) = 0
       for j in 1..=i {
+        // S(i,j) = S(i-1,j-1) + j*S(i-1,j) (Stirling S2)
         next[j] = &row[j - 1] + BigInt::from(j as i128) * &row[j];
       }
       (row, next) = (next, row);
@@ -1584,16 +1585,15 @@ pub fn stirling_s1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(0));
   }
 
-  // s(n,k) = s(n-1,k-1) - (n-1)*s(n-1,k) (signed Stirling S1)
-  // Use DP table with BigInt to avoid overflow
   let zero = BigInt::from(0);
   let one = BigInt::from(1);
   let mut row = vec![zero.clone(); k + 1];
-  row[0] = one.clone();
+  row[0] = one.clone(); // s(0,0) = 1
   let mut next = vec![zero.clone(); k + 1];
   for i in 1..=n {
-    next[0] = zero.clone();
+    next[0] = zero.clone(); // s(i,0) = 0
     for j in 1..=k.min(i) {
+      // s(i,j) = s(i-1,j-1) - (i-1)*s(i-1,j) (signed Stirling S1)
       next[j] = &row[j - 1] - BigInt::from(i - 1) * &row[j];
     }
     (row, next) = (next, row);
@@ -1627,16 +1627,16 @@ pub fn stirling_s2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(0));
   }
 
-  // S(n,k) = k*S(n-1,k) + S(n-1,k-1)
   let zero = BigInt::from(0);
   let one = BigInt::from(1);
   let mut row = vec![zero.clone(); k + 1];
-  row[0] = one.clone();
+  row[0] = one.clone(); // S(0,0) = 1.
   let mut next = vec![zero.clone(); k + 1];
   for i in 1..=n {
-    next[0] = zero.clone();
+    next[0] = zero.clone(); // S(i,0) = 0
     for j in 1..=k.min(i) {
-      next[j] = BigInt::from(j) * &row[j] + &row[j - 1];
+      // S(i,j) = S(i-1,j-1) + j*S(i-1,j) (Stirling S2)
+      next[j] = &row[j - 1] + BigInt::from(j) * &row[j];
     }
     (row, next) = (next, row);
   }

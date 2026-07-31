@@ -6122,8 +6122,6 @@ fn egf_expr_to_nonneg_int(expr: &Expr) -> Option<usize> {
 /// For k >= 1, factors out x: x * (S(k,1) + S(k,2)*x + ... + S(k,k)*x^(k-1))
 /// to match Wolfram's canonical form (e.g. E^x*x*(1+x) instead of E^x*(x+x^2)).
 fn egf_stirling_polynomial(k: usize, x: &Expr) -> Expr {
-  let stirling = egf_stirling_numbers(k);
-
   // k=0: S(0,0)=1, polynomial is just 1
   if k == 0 {
     return Expr::Integer(1);
@@ -6131,6 +6129,7 @@ fn egf_stirling_polynomial(k: usize, x: &Expr) -> Expr {
 
   // For k >= 1, S(k,0) = 0, so all terms have j >= 1.
   // Factor out x: build inner = S(k,1) + S(k,2)*x + ... + S(k,k)*x^(k-1)
+  let stirling = egf_stirling_numbers(k);
   let mut inner_terms: Vec<Expr> = Vec::new();
   for j in 1..=k {
     let s = stirling[j];
@@ -6197,23 +6196,18 @@ fn egf_stirling_polynomial(k: usize, x: &Expr) -> Expr {
 
 /// Compute Stirling numbers of the second kind S(k, j) for j = 0..k.
 fn egf_stirling_numbers(k: usize) -> Vec<u64> {
-  if k == 0 {
-    return vec![1];
-  }
-  let mut prev = vec![1u64];
+  let mut row = vec![0u64; k + 1];
+  row[0] = 1; // S(0,0) = 1
+  let mut next = vec![0u64; k + 1];
   for i in 1..=k {
-    let mut cur = vec![0u64; i + 1];
-    for j in 0..=i {
-      if j < prev.len() {
-        cur[j] += (j as u64) * prev[j];
-      }
-      if j > 0 && j - 1 < prev.len() {
-        cur[j] += prev[j - 1];
-      }
+    next[0] = 0; // S(i,0) = 0
+    for j in 1..=i {
+      // S(i,j) = S(i-1,j-1) + j*S(i-1,j) (Stirling S2)
+      next[j] = row[j - 1] + (j as u64) * row[j];
     }
-    prev = cur;
+    (row, next) = (next, row);
   }
-  prev
+  row
 }
 
 // ── FourierSinTransform / FourierCosTransform ───────────────────────
