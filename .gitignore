@@ -4,7 +4,12 @@
 /.direnv
 /.env
 /.jupyterlite.doit.db
-/examples
+# The Demonstrations notebooks stay untracked (they are not ours to ship),
+# but the readme listing which of them Woxi Studio supports is.
+/examples/*
+!/examples/WolframDemonstrationsProject/
+/examples/WolframDemonstrationsProject/*
+!/examples/WolframDemonstrationsProject/readme.md
 /mathics
 /node_modules
 /target
