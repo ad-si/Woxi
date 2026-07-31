@@ -56,6 +56,77 @@ fn evaluate_vector(
 }
 
 /// Parse ImageSize from options
+/// The `PlotLabel` of a field plot, rendered as SVG markup. Field plots draw
+/// their own axes, so the label is injected above the plot area rather than
+/// going through the line renderer's label pass.
+fn parse_field_plot_label(
+  args: &[Expr],
+  start: usize,
+) -> Option<(String, Option<f64>)> {
+  args[start..].iter().find_map(|opt| {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = opt
+    else {
+      return None;
+    };
+    if !matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotLabel") {
+      return None;
+    }
+    let value = evaluate_expr_to_expr(replacement)
+      .unwrap_or_else(|_| replacement.as_ref().clone());
+    // A size on the outermost `Style` is the label's font size, which the
+    // caller applies at render resolution; leaving it inside the markup
+    // would emit it in unscaled units and draw the label ten times too
+    // small.
+    let (inner, size) = peel_label_font_size(&value);
+    Some((crate::functions::graphics::expr_to_svg_markup(inner), size))
+  })
+}
+
+/// Split `Style[expr, …, n, …]` into its content and the font size `n`.
+fn peel_label_font_size(value: &Expr) -> (&Expr, Option<f64>) {
+  let Expr::FunctionCall { name, args } = value else {
+    return (value, None);
+  };
+  if !crate::functions::graphics::is_style_wrapper(name) || args.is_empty() {
+    return (value, None);
+  }
+  let size = args[1..].iter().find_map(|d| match d {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    _ => None,
+  });
+  match size {
+    Some(_) => (&args[0], size),
+    None => (value, None),
+  }
+}
+
+/// Draw a field plot's `PlotLabel`, centred above its plot area.
+fn inject_field_plot_label(
+  svg: &mut String,
+  area: &crate::functions::plot::PlotArea,
+  (label, size): &(String, Option<f64>),
+) {
+  if label.trim().is_empty() {
+    return;
+  }
+  let sf = f64::from(crate::functions::plot::RESOLUTION_SCALE);
+  let font = size.unwrap_or(14.0) * sf;
+  let cx = area.plot_x0 + area.plot_w / 2.0;
+  let y = (area.plot_y0 - sf * 8.0).max(font);
+  svg.push_str(&format!(
+    "<text x=\"{cx:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" \
+     font-family=\"sans-serif\" font-size=\"{font:.0}\" fill=\"#333\">{label}</text>\n",
+  ));
+}
+
 fn parse_field_options(args: &[Expr], start: usize) -> (u32, u32, bool) {
   let mut svg_width = DEFAULT_WIDTH;
   let mut svg_height = DEFAULT_WIDTH; // Square default for field plots
@@ -862,9 +933,16 @@ fn render_contour_lines_styled(
 
 /// DensityPlot[f, {x, xmin, xmax}, {y, ymin, ymax}]
 pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let body = &args[0];
   let (xvar, x_min, x_max) = parse_iterator(&args[1], "DensityPlot")?;
   let (yvar, y_min, y_max) = parse_iterator(&args[2], "DensityPlot")?;
+  // `p = a x^2 + b x; RegionPlot[y > p, …]` — the head holds its arguments,
+  // so a body that names its function indirectly has to be evaluated once
+  // before the plot variables can be substituted into it.
+  let resolved = crate::functions::plot::resolve_indirect_plot_body(
+    &args[0],
+    &[xvar.as_str(), yvar.as_str()],
+  );
+  let body = resolved.as_ref().unwrap_or(&args[0]);
   let opts = parse_density_contour_options(args, 3);
 
   // Sample grid
@@ -952,7 +1030,22 @@ fn equation_zero_body(e: &Expr) -> Option<Expr> {
 }
 
 pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let body = &args[0];
+  // A body that names its function indirectly (`f = x^2 + y^2;
+  // ContourPlot[f, …]`) is evaluated once first — see
+  // `resolve_indirect_plot_body`.
+  let resolved = match (
+    parse_iterator(&args[1], "ContourPlot"),
+    parse_iterator(&args[2], "ContourPlot"),
+  ) {
+    (Ok((xvar, ..)), Ok((yvar, ..))) => {
+      crate::functions::plot::resolve_indirect_plot_body(
+        &args[0],
+        &[xvar.as_str(), yvar.as_str()],
+      )
+    }
+    _ => None,
+  };
+  let body = resolved.as_ref().unwrap_or(&args[0]);
   // `ContourPlot[lhs == rhs, …]` (or a list of equations) plots each
   // equation's implicit curve — the zero contour of `lhs - rhs` — with no
   // band shading, matching Wolfram.
@@ -1339,23 +1432,44 @@ fn contour_plot_equations(
 
 /// RegionPlot[cond, {x, xmin, xmax}, {y, ymin, ymax}]
 pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let body = &args[0];
   let (xvar, x_min, x_max) = parse_iterator(&args[1], "RegionPlot")?;
   let (yvar, y_min, y_max) = parse_iterator(&args[2], "RegionPlot")?;
+  // `p = a x^2 + b x; RegionPlot[y > p, …]` — the head holds its arguments,
+  // so a body that names its function indirectly has to be evaluated once
+  // before the plot variables can be substituted into it.
+  let resolved = crate::functions::plot::resolve_indirect_plot_body(
+    &args[0],
+    &[xvar.as_str(), yvar.as_str()],
+  );
+  let body = resolved.as_ref().unwrap_or(&args[0]);
   let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
+  let plot_label = parse_field_plot_label(args, 3);
 
-  // Use plotters for axes
-  let area = generate_axes_only(
+  // Use plotters for axes, reserving room above the frame for a PlotLabel.
+  let margins = plot_label.as_ref().map(|(_, size)| {
+    crate::functions::plot::MarginOverrides {
+      top_margin: ((size.unwrap_or(14.0) * 2.0).round() as u32)
+        * crate::functions::plot::RESOLUTION_SCALE,
+      x_label_area: 40 * crate::functions::plot::RESOLUTION_SCALE,
+      y_label_area: 65 * crate::functions::plot::RESOLUTION_SCALE,
+    }
+  });
+  let area = crate::functions::plot::generate_axes_only_opts(
     (x_min, x_max),
     (y_min, y_max),
     svg_width,
     svg_height,
     full_width,
+    None,
+    margins.as_ref(),
   )?;
 
-  let mut svg = area.svg;
+  let mut svg = area.svg.clone();
   if let Some(pos) = svg.rfind("</svg>") {
     svg.truncate(pos);
+  }
+  if let Some(label) = &plot_label {
+    inject_field_plot_label(&mut svg, &area, label);
   }
 
   let cell_w = area.plot_w / FIELD_GRID as f64;
@@ -1383,9 +1497,16 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// VectorPlot[{vx, vy}, {x, xmin, xmax}, {y, ymin, ymax}]
 pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let body = &args[0];
   let (xvar, x_min, x_max) = parse_iterator(&args[1], "VectorPlot")?;
   let (yvar, y_min, y_max) = parse_iterator(&args[2], "VectorPlot")?;
+  // `p = a x^2 + b x; RegionPlot[y > p, …]` — the head holds its arguments,
+  // so a body that names its function indirectly has to be evaluated once
+  // before the plot variables can be substituted into it.
+  let resolved = crate::functions::plot::resolve_indirect_plot_body(
+    &args[0],
+    &[xvar.as_str(), yvar.as_str()],
+  );
+  let body = resolved.as_ref().unwrap_or(&args[0]);
   let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
 
   let x_step = (x_max - x_min) / VECTOR_GRID as f64;
@@ -1493,9 +1614,16 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// StreamPlot[{vx, vy}, {x, xmin, xmax}, {y, ymin, ymax}]
 /// Uses RK4 integration from seed points.
 pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let body = &args[0];
   let (xvar, x_min, x_max) = parse_iterator(&args[1], "StreamPlot")?;
   let (yvar, y_min, y_max) = parse_iterator(&args[2], "StreamPlot")?;
+  // `p = a x^2 + b x; RegionPlot[y > p, …]` — the head holds its arguments,
+  // so a body that names its function indirectly has to be evaluated once
+  // before the plot variables can be substituted into it.
+  let resolved = crate::functions::plot::resolve_indirect_plot_body(
+    &args[0],
+    &[xvar.as_str(), yvar.as_str()],
+  );
+  let body = resolved.as_ref().unwrap_or(&args[0]);
   let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
 
   // Use plotters for axes
@@ -1598,9 +1726,16 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn stream_density_plot_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let body = &args[0];
   let (xvar, x_min, x_max) = parse_iterator(&args[1], "StreamDensityPlot")?;
   let (yvar, y_min, y_max) = parse_iterator(&args[2], "StreamDensityPlot")?;
+  // `p = a x^2 + b x; RegionPlot[y > p, …]` — the head holds its arguments,
+  // so a body that names its function indirectly has to be evaluated once
+  // before the plot variables can be substituted into it.
+  let resolved = crate::functions::plot::resolve_indirect_plot_body(
+    &args[0],
+    &[xvar.as_str(), yvar.as_str()],
+  );
+  let body = resolved.as_ref().unwrap_or(&args[0]);
   let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
 
   let grid_n = 60;

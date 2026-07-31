@@ -6842,6 +6842,36 @@ fn unit_fraction_root_index(exp: &Expr) -> Option<i128> {
   (num == 1 && (2..=9).contains(&den)).then_some(den)
 }
 
+/// The markup for `-term` when a `Plus` term carries a negative *coefficient*
+/// other than -1 (`Times[-5, x]`), so the sum reads `-5 - 5 x` rather than
+/// `-5 + -5 x`. The -1 case is handled by the caller, which drops the
+/// coefficient entirely.
+fn negated_markup_term(arg: &Expr) -> Option<String> {
+  let flip_first = |first: &Expr| match first {
+    Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-n)),
+    Expr::Real(f) if *f < 0.0 => Some(Expr::Real(-f)),
+    _ => None,
+  };
+  let (first, rest): (&Expr, &[Expr]) = match arg {
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
+      (&args[0], &args[1..])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => (left.as_ref(), std::slice::from_ref(right.as_ref())),
+    Expr::Real(f) if *f < 0.0 => {
+      return Some(expr_to_svg_markup(&Expr::Real(-f)));
+    }
+    _ => return None,
+  };
+  let positive = flip_first(first)?;
+  let mut factors = vec![positive];
+  factors.extend(rest.iter().cloned());
+  Some(expr_to_svg_markup(&unevaluated("Times", &factors)))
+}
+
 pub fn expr_to_svg_markup(expr: &Expr) -> String {
   use crate::syntax::expr_to_output;
 
@@ -7073,6 +7103,9 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
             {
               result.push_str(" - ");
               result.push_str(&expr_to_svg_markup(&Expr::Integer(-n)));
+            } else if let Some(positive) = negated_markup_term(arg) {
+              result.push_str(" - ");
+              result.push_str(&positive);
             } else {
               result.push_str(" + ");
               result.push_str(&expr_to_svg_markup(arg));

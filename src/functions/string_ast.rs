@@ -8249,6 +8249,35 @@ pub fn expr_to_boxes(expr: &Expr) -> String {
   }
 }
 
+/// The boxes for `-term` when `term` is negative, so a `Plus` can join it
+/// with a `-` instead of `+ -`. `None` when the term is not negative.
+fn negated_term_boxes(arg: &Expr) -> Option<String> {
+  match arg {
+    Expr::Integer(n) if *n < 0 => Some(format!("\"{}\"", -n)),
+    Expr::Real(f) if *f < 0.0 => {
+      Some(format!("\"{}\"", crate::syntax::format_real(-f)))
+    }
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
+      let positive_first = match &args[0] {
+        Expr::Integer(-1) => None,
+        Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-n)),
+        Expr::Real(f) if *f < 0.0 => Some(Expr::Real(-f)),
+        _ => return None,
+      };
+      let rest: Vec<Expr> = positive_first
+        .into_iter()
+        .chain(args[1..].iter().cloned())
+        .collect();
+      Some(if rest.len() == 1 {
+        expr_to_boxes(&rest[0])
+      } else {
+        box_function_call("Times", &rest)
+      })
+    }
+    _ => None,
+  }
+}
+
 fn box_function_call(name: &str, args: &[Expr]) -> String {
   match name {
     // Rational → FractionBox
@@ -8288,34 +8317,19 @@ fn box_function_call(name: &str, args: &[Expr]) -> String {
       let mut parts = Vec::new();
       parts.push(expr_to_boxes(&args[0]));
       for arg in args.iter().skip(1) {
-        // Check for negative terms (Times[-1, ...])
-        let is_neg = matches!(arg,
-          Expr::FunctionCall { name: n, args: a }
-            if n == "Times" && !a.is_empty() && matches!(&a[0], Expr::Integer(-1))
-        ) || matches!(arg, Expr::Integer(n) if *n < 0);
-
-        if is_neg {
-          parts.push("\"-\"".to_string());
-          match arg {
-            Expr::FunctionCall { name: n, args: a }
-              if n == "Times"
-                && a.len() >= 2
-                && matches!(&a[0], Expr::Integer(-1)) =>
-            {
-              if a.len() == 2 {
-                parts.push(expr_to_boxes(&a[1]));
-              } else {
-                parts.push(box_function_call("Times", &a[1..]));
-              }
-            }
-            Expr::Integer(n) if *n < 0 => {
-              parts.push(format!("\"{}\"", -n));
-            }
-            _ => parts.push(expr_to_boxes(arg)),
+        // A term with a negative leading coefficient joins with `-` and
+        // loses the sign, so `Plus[-5, Times[-5, x]]` reads `-5 - 5 x`
+        // rather than `-5 + -5 x`. A coefficient of exactly -1 disappears
+        // entirely (`-x`, not `-1 x`).
+        match negated_term_boxes(arg) {
+          Some(positive) => {
+            parts.push("\"-\"".to_string());
+            parts.push(positive);
           }
-        } else {
-          parts.push("\"+\"".to_string());
-          parts.push(expr_to_boxes(arg));
+          None => {
+            parts.push("\"+\"".to_string());
+            parts.push(expr_to_boxes(arg));
+          }
         }
       }
       format!("RowBox[{{{}}}]", parts.join(", "))

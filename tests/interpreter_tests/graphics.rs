@@ -6750,6 +6750,77 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
 
+    /// A `Plus` term with a negative coefficient joins with `-` and drops the
+    /// sign, so a polynomial label reads `-5 - 5 x - 5 x^2`, not
+    /// `-5 + -5 x + -5 x^2`. Wolfram's boxes join the same way.
+    #[test]
+    fn negative_coefficients_join_with_a_minus() {
+      let label = |expr: &str| -> String {
+        let svg = export_svg(&format!(
+          "RegionPlot[y > x, {{x, -2, 2}}, {{y, -2, 2}}, PlotLabel -> {expr}]"
+        ));
+        svg
+          .split("fill=\"#333\">")
+          .nth(1)
+          .and_then(|t| t.split("</text>").next())
+          .unwrap_or_default()
+          .to_string()
+      };
+      assert_eq!(label("-5 x - 5"), "-5 - 5 x");
+      assert_eq!(label("a - 2.5 b"), "a - 2.5 b");
+      assert_eq!(label("a - b"), "a - b");
+      // A positive term still joins with `+`.
+      assert_eq!(label("a + 3 b"), "a + 3 b");
+    }
+
+    /// The plotting heads hold their arguments, so a body that names part of
+    /// itself indirectly (`p = …; RegionPlot[y > p, …]`) arrives unevaluated
+    /// and substituting the plot variables into it finds nothing to replace.
+    /// Regression: the region came out empty.
+    #[test]
+    fn field_plot_body_named_indirectly_is_resolved() {
+      let direct =
+        export_svg("RegionPlot[y > x^2 - 1, {x, -2, 2}, {y, -2, 2}]");
+      let indirect =
+        export_svg("p = x^2 - 1; RegionPlot[y > p, {x, -2, 2}, {y, -2, 2}]");
+      assert!(direct.contains("<rect"), "the direct form shades: {direct}");
+      assert_eq!(indirect, direct, "the indirect form must shade the same");
+      // The same for the other two-variable field plots.
+      assert_eq!(
+        export_svg("q = x + y; ContourPlot[q, {x, -2, 2}, {y, -2, 2}]"),
+        export_svg("ContourPlot[x + y, {x, -2, 2}, {y, -2, 2}]")
+      );
+      assert_eq!(
+        export_svg("r = x y; DensityPlot[r, {x, -2, 2}, {y, -2, 2}]"),
+        export_svg("DensityPlot[x y, {x, -2, 2}, {y, -2, 2}]")
+      );
+      // A body that already mentions both variables is untouched, and one
+      // that never gains them stays unplottable rather than erroring.
+      assert!(
+        export_svg("RegionPlot[z > 0, {x, -1, 1}, {y, -1, 1}]")
+          .starts_with("<svg")
+      );
+    }
+
+    /// Field plots draw their own axes, so `PlotLabel` needs its own pass —
+    /// it used to be ignored entirely. A size on the outermost `Style` is the
+    /// label's font size and must be applied at render resolution.
+    #[test]
+    fn field_plot_draws_its_plot_label() {
+      let svg = export_svg(
+        r#"RegionPlot[y > x, {x, -2, 2}, {y, -2, 2}, PlotLabel -> "HELLO"]"#,
+      );
+      assert!(svg.contains(">HELLO"), "{svg}");
+      // Styled and structured labels render their content, not their source.
+      let styled = export_svg(
+        r#"RegionPlot[y > x, {x, -2, 2}, {y, -2, 2}, PlotLabel -> Style[Row[{"a", " > ", "b"}], 20]]"#,
+      );
+      assert!(styled.contains("a &gt; b"), "{styled}");
+      // The `Style` size lands on the text element at 10x render scale, not
+      // as a bare `font-size="20"` that would draw ten times too small.
+      assert!(styled.contains("font-size=\"200\""), "{styled}");
+    }
+
     #[test]
     fn vector_plot_basic() {
       insta::assert_snapshot!(export_svg(

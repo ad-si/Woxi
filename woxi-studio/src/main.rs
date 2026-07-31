@@ -10018,4 +10018,135 @@ Cell[BoxData[
       .collect();
     assert_eq!(names, ["g", "time", "k", "\u{1d49f}", "f", "u"]);
   }
+
+  /// End-to-end regression for "Plot a Quadratic Inequality": the region is
+  /// named indirectly through a `DynamicModule` local (`p = a x^2 + b x +
+  /// c`), which `RegionPlot` — holding its arguments — could not resolve, so
+  /// nothing was shaded.
+  #[test]
+  fn quadratic_inequality_notebook_shades_its_region() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[", 
+  RowBox[{
+   RowBox[{"DynamicModule", "[", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"p", "=", 
+       RowBox[{
+        RowBox[{"a", " ", 
+         RowBox[{"x", "^", "2"}]}], "+", 
+        RowBox[{"b", " ", "x"}], "+", "c"}]}], "}"}], ",", 
+     "\[IndentingNewLine]", 
+     RowBox[{"RegionPlot", "[", 
+      RowBox[{
+       RowBox[{"If", "[", 
+        RowBox[{
+         RowBox[{"ineq", "\[Equal]", "\"\<>\>\""}], ",", 
+         RowBox[{"y", ">", "p"}], ",", 
+         RowBox[{"y", "<", "p"}]}], "]"}], ",", 
+       RowBox[{"{", 
+        RowBox[{"x", ",", 
+         RowBox[{"-", "10"}], ",", "10"}], "}"}], ",", 
+       RowBox[{"{", 
+        RowBox[{"y", ",", 
+         RowBox[{"-", "10"}], ",", "10"}], "}"}], ",", 
+       RowBox[{"PlotLabel", "\[Rule]", 
+        RowBox[{"Style", "[", 
+         RowBox[{
+          RowBox[{"Row", "[", 
+           RowBox[{"{", 
+            RowBox[{
+             RowBox[{"Style", "[", 
+              RowBox[{"\"\<y\>\"", ",", "Italic"}], "]"}], ",", 
+             RowBox[{"If", "[", 
+              RowBox[{
+               RowBox[{"ineq", "\[Equal]", "\"\<>\>\""}], ",", "\"\< > \>\"", 
+               ",", "\"\< < \>\""}], "]"}], ",", 
+             RowBox[{"TraditionalForm", "[", "p", "]"}], ",", "\"\<\\n\>\""}],
+             "}"}], "]"}], ",", "14"}], "]"}]}], ",", " ", 
+       RowBox[{"ImageSize", "\[Rule]", 
+        RowBox[{"{", 
+         RowBox[{"480", ",", " ", "360"}], "}"}]}], ",", 
+       RowBox[{"ImageMargins", "\[Rule]", 
+        RowBox[{"{", 
+         RowBox[{
+          RowBox[{"{", 
+           RowBox[{"10", ",", "10"}], "}"}], ",", 
+          RowBox[{"{", 
+           RowBox[{"0", ",", "0"}], "}"}]}], "}"}]}]}], "]"}]}], "]"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"a", ",", 
+       RowBox[{"-", "5"}], ",", "\"\<quadratic coefficient\>\""}], "}"}], ",", 
+     RowBox[{"-", "5"}], ",", "5", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"b", ",", 
+       RowBox[{"-", "5"}], ",", "\"\<linear coefficient\>\""}], "}"}], ",", 
+     RowBox[{"-", "5"}], ",", "5", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"c", ",", 
+       RowBox[{"-", "5"}], ",", "\"\<constant term\>\""}], "}"}], ",", 
+     RowBox[{"-", "5"}], ",", "5", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"ineq", ",", "\"\<>\>\"", ",", "\"\<choose inequality\>\""}], 
+      "}"}], ",", 
+     RowBox[{"{", 
+      RowBox[{"\"\<>\>\"", ",", "\"\<<\>\""}], "}"}]}], "}"}]}], 
+  "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = -5}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the region must evaluate: {:?}",
+      widget.error
+    );
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { name, .. } => name.as_str(),
+        manipulate::ControlState::Discrete { name, .. } => name.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, ["a", "b", "c", "ineq"]);
+
+    let render = |ineq: &str| {
+      woxi::interpret_with_stdout(&format!(
+        "a = -5; b = -5; c = -5; ineq = \"{ineq}\";\n{}",
+        widget.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+    let above = render(">");
+    // The region is shaded, not an empty frame.
+    assert!(above.matches("<rect").count() > 100, "region not shaded");
+    // Flipping the inequality shades the complement.
+    assert_ne!(above, render("<"), "the inequality control must matter");
+  }
 }

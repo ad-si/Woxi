@@ -6107,6 +6107,26 @@ mod cases {
     );
   }
 
+  /// A `Plus` term with a negative coefficient boxes as `- <positive>`, the
+  /// way wolframscript does (`RowBox[{a, -, RowBox[{2.5, " ", b}]}]`), not as
+  /// `+ -2.5 b`.
+  #[test]
+  fn boxes_join_negative_coefficients_with_a_minus() {
+    assert_case(
+      "ToString[TraditionalForm[a - 2.5 b]]",
+      r#"DisplayForm[FormBox[RowBox[{a, -, RowBox[{2.5, , b}]}], TraditionalForm]]"#,
+    );
+    assert_case(
+      "ToString[TraditionalForm[x - y]]",
+      "DisplayForm[FormBox[RowBox[{x, -, y}], TraditionalForm]]",
+    );
+    // A positive term still joins with `+`.
+    assert_case(
+      "ToString[TraditionalForm[x + 3 y]]",
+      r#"DisplayForm[FormBox[RowBox[{x, +, RowBox[{3, , y}]}], TraditionalForm]]"#,
+    );
+  }
+
   // A balanced `(...)` group inside box-notation is taken as a
   // single unit by the surrounding operator. wolframscript:
   // `\(x \/ (y + z)\)` → `FractionBox["x", RowBox[{"(", RowBox[{"y",

@@ -7551,7 +7551,7 @@ fn compactify_plot_range(
 /// Returns true if `expr` textually references the identifier `var`. Used by
 /// the plotting heads to decide whether a held body (which may be a bare
 /// assigned symbol) still needs to be evaluated to surface the plot variable.
-fn expr_mentions_var(expr: &Expr, var: &str) -> bool {
+pub(crate) fn expr_mentions_var(expr: &Expr, var: &str) -> bool {
   // Substituting the variable with a sentinel changes the tree iff the
   // variable actually occurs; comparing structurally avoids hand-writing a
   // walker over every Expr variant.
@@ -7589,14 +7589,47 @@ fn peel_plot_wrappers(mut e: &Expr) -> &Expr {
 /// (e.g. `f = Sin[x]`) expand to their definitions without the plot variable
 /// being replaced by any global value it might carry.
 fn eval_body_var_symbolic(body: &Expr, var: &str) -> Expr {
-  let saved = crate::ENV.with(|e| e.borrow_mut().remove(var));
+  eval_body_vars_symbolic(body, &[var])
+}
+
+/// As [`eval_body_var_symbolic`], for a body in several plot variables.
+pub(crate) fn eval_body_vars_symbolic(body: &Expr, vars: &[&str]) -> Expr {
+  let saved: Vec<(&str, Option<crate::StoredValue>)> = vars
+    .iter()
+    .map(|v| (*v, crate::ENV.with(|e| e.borrow_mut().remove(*v))))
+    .collect();
   let result = evaluate_expr_to_expr(body).unwrap_or_else(|_| body.clone());
-  if let Some(v) = saved {
-    crate::ENV.with(|e| {
-      e.borrow_mut().insert(var.to_string(), v);
-    });
+  for (var, value) in saved {
+    if let Some(v) = value {
+      crate::ENV.with(|e| {
+        e.borrow_mut().insert(var.to_string(), v);
+      });
+    }
   }
   result
+}
+
+/// Resolve a plot body that names part of itself indirectly — `p = a x^2 +
+/// b x; RegionPlot[y > p, …]`. The plotting heads hold their arguments, so
+/// `p` arrives unevaluated and substituting the plot variables into it finds
+/// nothing to replace; the body has to be evaluated once, with those
+/// variables cleared, before it can be sampled.
+///
+/// Returns `None` — leaving the body untouched, so ordinary plots are
+/// unaffected — unless evaluating it brings in a plot variable that was not
+/// there before.
+pub(crate) fn resolve_indirect_plot_body(
+  body: &Expr,
+  vars: &[&str],
+) -> Option<Expr> {
+  let mentioned =
+    |e: &Expr| vars.iter().filter(|v| expr_mentions_var(e, v)).count();
+  let before = mentioned(body);
+  if before == vars.len() {
+    return None;
+  }
+  let evaluated = eval_body_vars_symbolic(body, vars);
+  (mentioned(&evaluated) > before).then_some(evaluated)
 }
 
 /// Implementation of Plot[f, {x, xmin, xmax}]
