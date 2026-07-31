@@ -1379,6 +1379,7 @@ fn contour_plot_equations(
           filling: crate::syntax::SeriesFilling::None,
           fill_color: None,
           fill_opacity: None,
+          marker: None,
         });
       }
     }

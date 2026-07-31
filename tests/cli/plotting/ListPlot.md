@@ -55,3 +55,24 @@ With several series the list still cycles, one style per series:
 $ wo 'svg = ExportString[ListPlot[{{{1, 1}, {2, 2}}, {{1, 2}, {2, 3}}}, PlotStyle -> {Red, Green}], "SVG"]; {StringContainsQ[svg, "#FF0000"], StringContainsQ[svg, "#00FF00"]}'
 {True, True}
 ```
+
+`PlotMarkers` draws a glyph at every data point instead of the round dot.
+`Style` around the marker gives it a colour and a font size, and a list of
+markers is cycled over the datasets:
+
+```scrut
+$ wo 'StringCount[ExportString[ListPlot[{{1, 1}, {2, 2}, {3, 3}}, PlotMarkers -> Style["A", Red, 18]], "SVG"], ">\nA\n<"]'
+3
+```
+
+```scrut
+$ wo 'svg = ExportString[ListPlot[{{{1, 1}, {2, 2}}, {{1, 2}, {2, 3}}}, PlotMarkers -> {"A", "B"}], "SVG"]; {StringCount[svg, ">\nA\n<"], StringCount[svg, ">\nB\n<"]}'
+{2, 2}
+```
+
+`Epilog` primitives are drawn over the points, in data coordinates:
+
+```scrut
+$ wo 'StringContainsQ[ExportString[ListPlot[{{0, 0.}, {1, 1.}}, Epilog -> {Green, Line[{{0, 0.5}, {1, 0.5}}]}], "SVG"], "rgb(0,255,0)"]'
+True
+```

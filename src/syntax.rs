@@ -172,6 +172,18 @@ pub enum SeriesFilling {
   Value(f64),
 }
 
+/// The glyph a series' points are drawn with (`PlotMarkers`). Lives here
+/// so `Show` can carry it across a merge, like [`SeriesFilling`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlotMarker {
+  /// The character(s) drawn at every data point.
+  pub glyph: String,
+  /// Font size in printer's points, as `Style[marker, size]` gives it.
+  pub size: f64,
+  /// Colour from `Style[marker, colour]`; `None` = the series colour.
+  pub color: Option<(u8, u8, u8)>,
+}
+
 /// A single data series within a plot.
 #[derive(Debug, Clone)]
 pub struct PlotSeriesData {
@@ -183,6 +195,8 @@ pub struct PlotSeriesData {
   pub fill_color: Option<(u8, u8, u8)>,
   /// Fill opacity override from `FillingStyle` (`None` = the 0.2 default).
   pub fill_opacity: Option<f64>,
+  /// `PlotMarkers` glyph for this series (`None` = plain round points).
+  pub marker: Option<PlotMarker>,
 }
 
 /// Convert a Wolfram named character name (e.g. "Pi", "Alpha", "Sum") to its

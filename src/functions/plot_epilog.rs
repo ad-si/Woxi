@@ -343,17 +343,28 @@ fn render_item(
       }
       "Text" if args.len() >= 2 => {
         if let Some((x, y)) = point2(&args[1]) {
-          let label = crate::functions::chart::expr_to_label(&args[0])
+          // `Style[…]` around the content sets the text's own size and
+          // colour; without one the epilog's directives still apply.
+          let styled = crate::functions::chart::parse_styled_label(&args[0]);
+          let label = styled
+            .as_ref()
+            .map(|s| s.text.clone())
+            .or_else(|| crate::functions::chart::expr_to_label(&args[0]))
             .unwrap_or_else(|| crate::syntax::expr_to_output(&args[0]));
-          let font_size = 13.0 * area.scale;
+          let font_size =
+            styled.as_ref().and_then(|s| s.font_size).unwrap_or(13.0)
+              * area.scale;
+          let fill = match styled.as_ref().and_then(|s| s.color) {
+            Some(c) => format!("fill=\"{}\"", c.to_svg_rgb()),
+            None => style.fill_attrs(),
+          };
           out.push_str(&format!(
             "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
              dominant-baseline=\"middle\" font-family=\"sans-serif\" \
-             font-size=\"{:.0}\" {}>{}</text>\n",
+             font-size=\"{:.0}\" {fill}>{}</text>\n",
             area.px(x),
             area.py(y),
             font_size,
-            style.fill_attrs(),
             svg_escape_text(&label),
           ));
         }

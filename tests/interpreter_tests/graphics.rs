@@ -17600,3 +17600,185 @@ mod color_data_gradients {
     );
   }
 }
+
+/// `PlotMarkers` replaces the round dot of a list plot with a glyph, and an
+/// `Epilog` draws over the points — both of which the Demonstrations use to
+/// mark measured data and the band it must stay inside.
+mod list_plot_markers_and_epilog {
+  use super::*;
+
+  /// The `<text>` glyphs a rendered plot draws, with their fill colour.
+  fn marker_glyphs(svg: &str) -> Vec<(String, String)> {
+    svg
+      .split("<text ")
+      .skip(1)
+      .filter_map(|tag| {
+        let (attrs, rest) = tag.split_once('>')?;
+        let text = rest.split('<').next()?.trim().to_string();
+        if text.is_empty() {
+          return None;
+        }
+        let fill = attrs
+          .split("fill=\"")
+          .nth(1)
+          .and_then(|f| f.split('"').next())
+          .unwrap_or_default()
+          .to_string();
+        Some((text, fill))
+      })
+      .collect()
+  }
+
+  #[test]
+  fn a_styled_marker_draws_its_glyph_in_its_own_colour() {
+    clear_state();
+    let svg = export_svg(
+      "ListPlot[{{0, 1.}, {1, 2.}}, PlotMarkers -> Style[\"A\", Red, 18]]",
+    );
+    let markers: Vec<_> = marker_glyphs(&svg)
+      .into_iter()
+      .filter(|(t, _)| t == "A")
+      .collect();
+    assert_eq!(markers.len(), 2, "one glyph per data point: {svg}");
+    assert!(
+      markers.iter().all(|(_, fill)| fill == "#FF0000"),
+      "the Style colour wins over the series colour: {svg}"
+    );
+    // The glyph replaces the dot rather than joining it.
+    assert_eq!(svg.matches("<circle").count(), 0, "{svg}");
+  }
+
+  #[test]
+  fn a_marker_list_is_cycled_over_the_series() {
+    clear_state();
+    let svg = export_svg(
+      "ListPlot[{{{0, 1.}, {1, 2.}}, {{0, 3.}, {1, 4.}}}, \
+       PlotMarkers -> {Style[\"A\", Red, 18], Style[\"B\", Blue, 18]}]",
+    );
+    let markers = marker_glyphs(&svg);
+    assert_eq!(markers.iter().filter(|(t, _)| t == "A").count(), 2, "{svg}");
+    assert_eq!(markers.iter().filter(|(t, _)| t == "B").count(), 2, "{svg}");
+    assert!(
+      markers
+        .iter()
+        .any(|(t, fill)| t == "B" && fill == "#0000FF"),
+      "the second series takes the second marker: {svg}"
+    );
+  }
+
+  #[test]
+  fn a_marker_pair_sets_the_glyph_size() {
+    clear_state();
+    let big =
+      export_svg("ListPlot[{{0, 1.}, {1, 2.}}, PlotMarkers -> {\"A\", 30}]");
+    let small =
+      export_svg("ListPlot[{{0, 1.}, {1, 2.}}, PlotMarkers -> {\"A\", 10}]");
+    let size = |svg: &str| {
+      svg
+        .split("<text ")
+        .skip(1)
+        .find(|tag| {
+          tag
+            .split_once('>')
+            .is_some_and(|(_, rest)| rest.trim_start().starts_with('A'))
+        })
+        .and_then(|tag| tag.split("font-size=\"").nth(1))
+        .and_then(|s| s.split('"').next())
+        .and_then(|s| s.parse::<f64>().ok())
+        .expect("a sized glyph")
+    };
+    assert!(
+      size(&big) > size(&small) * 2.5,
+      "{} vs {}",
+      size(&big),
+      size(&small)
+    );
+  }
+
+  #[test]
+  fn a_joined_plot_keeps_its_markers_on_the_line() {
+    clear_state();
+    let svg = export_svg(
+      "ListPlot[{{0, 1.}, {1, 2.}}, Joined -> True, \
+       PlotMarkers -> Style[\"A\", Red, 18]]",
+    );
+    assert_eq!(
+      marker_glyphs(&svg).iter().filter(|(t, _)| t == "A").count(),
+      2,
+      "{svg}"
+    );
+    assert!(svg.contains("<polyline"), "the line is still drawn: {svg}");
+  }
+
+  #[test]
+  fn show_keeps_the_markers_of_the_plots_it_merges() {
+    clear_state();
+    // A marked scatter plot over a curve: the glyphs survive the merge.
+    let svg = export_svg(
+      "Show[ListPlot[{{0, 0.}, {0.5, 0.5}, {1, 1.}}, Joined -> True], \
+       ListPlot[{{0.25, 0.25}, {0.75, 0.75}}, \
+       PlotMarkers -> Style[\"A\", Red, 18]]]",
+    );
+    assert_eq!(
+      marker_glyphs(&svg).iter().filter(|(t, _)| t == "A").count(),
+      2,
+      "{svg}"
+    );
+    // Two marked scatter plots (no curve) keep them too.
+    let svg = export_svg(
+      "Show[ListPlot[{{0, 0.}, {1, 1.}}, PlotMarkers -> Style[\"A\", Red, 18]], \
+       ListPlot[{{0, 1.}, {1, 0.}}, PlotMarkers -> Style[\"B\", Blue, 18]]]",
+    );
+    let markers = marker_glyphs(&svg);
+    assert_eq!(markers.iter().filter(|(t, _)| t == "A").count(), 2, "{svg}");
+    assert_eq!(markers.iter().filter(|(t, _)| t == "B").count(), 2, "{svg}");
+  }
+
+  #[test]
+  fn a_scatter_plot_draws_its_epilog() {
+    clear_state();
+    // The green band of the Demonstrations' consistency test: a scatter
+    // plot used to drop its Epilog, which only `Show` rendered.
+    let svg = export_svg(
+      "ListPlot[{{0.2, 0.}, {0.8, 0.2}}, Frame -> True, \
+       PlotRange -> {{0, 1}, {-0.3, 0.3}}, \
+       Epilog -> {Green, Thickness[0.0125], Line[{{0, 0.1}, {1, 0.1}}], \
+       Line[{{0, -0.1}, {1, -0.1}}]}]",
+    );
+    assert_eq!(
+      svg.matches("stroke=\"rgb(0,255,0)\"").count(),
+      2,
+      "both band edges: {svg}"
+    );
+  }
+
+  #[test]
+  fn a_joined_plot_draws_its_epilog() {
+    clear_state();
+    let svg = export_svg(
+      "ListPlot[{{0, 0.}, {1, 1.}}, Joined -> True, \
+       Epilog -> {Black, Line[{{0, 1}, {1, 0}}]}]",
+    );
+    assert!(svg.contains("stroke=\"rgb(0,0,0)\""), "{svg}");
+  }
+
+  #[test]
+  fn an_epilog_text_takes_its_style() {
+    clear_state();
+    let svg = export_svg(
+      "ListPlot[{{0, 0.}, {1, 1.}}, \
+       Epilog -> {Text[Style[\"hi\", Red, 20], {0.5, 0.5}]}]",
+    );
+    let text = svg
+      .split("<text ")
+      .skip(1)
+      .find(|tag| {
+        tag
+          .split_once('>')
+          .is_some_and(|(_, rest)| rest.trim_start().starts_with("hi"))
+      })
+      .expect("the epilog text");
+    assert!(text.contains("fill=\"rgb(255,0,0)\""), "{text}");
+    assert!(text.contains("font-size=\"200\""), "{text}");
+  }
+}
