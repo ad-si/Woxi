@@ -8461,4 +8461,84 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 3}, \"…\"]"], "Output"]
       other => panic!("unexpected controls: {other:?}"),
     }
   }
+
+  /// End-to-end regression for "The Mayan Calendar" Demonstration: a
+  /// wheel of `Disk` sectors whose teeth carry `Inset` pictures, with the
+  /// day name written as a `Row` separated by a `Spacer`.
+  #[test]
+  fn mayan_calendar_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"Graphics", "[",
+    RowBox[{
+     RowBox[{"{",
+      RowBox[{
+       RowBox[{"Disk", "[",
+        RowBox[{
+         RowBox[{"{", RowBox[{"0", ",", "0"}], "}"}], ",", "1", ",",
+         RowBox[{"{", RowBox[{"0", ",", "\[Pi]"}], "}"}]}], "]"}], ",",
+       RowBox[{"Inset", "[",
+        RowBox[{
+         RowBox[{"Graphics", "[",
+          RowBox[{"{",
+           RowBox[{"Black", ",", RowBox[{"Disk", "[", "]"}]}], "}"}], "]"}],
+         ",", RowBox[{"{", RowBox[{"0.5", ",", "0"}], "}"}], ",", "Automatic",
+         ",", RowBox[{"{", RowBox[{"0.3", ",", "0.15"}], "}"}], ",",
+         RowBox[{"{",
+          RowBox[{"Automatic", ",", RowBox[{"{", RowBox[{"1", ",", "0"}], "}"}]}],
+          "}"}]}], "]"}], ",",
+       RowBox[{"Text", "[",
+        RowBox[{
+         RowBox[{"Style", "[",
+          RowBox[{
+           RowBox[{"Row", "[",
+            RowBox[{
+             RowBox[{"{",
+              RowBox[{RowBox[{"Mod", "[", RowBox[{"day", ",", "13", ",", "1"}], "]"}],
+               ",", "\"\<Imix\>\""}], "}"}], ",",
+             RowBox[{"Spacer", "[", "1", "]"}]}], "]"}], ",", "16", ",", "Red"}],
+          "]"}], ",", RowBox[{"{", RowBox[{"0", ",", "0"}], "}"}]}], "]"}]}],
+      "}"}], ",",
+     RowBox[{"ImageSize", "\[Rule]", RowBox[{"{", RowBox[{"300", ",", "200"}], "}"}]}],
+     ",", RowBox[{"Background", "\[Rule]", "LightBlue"}]}], "]"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{", RowBox[{"day", ",", "1", ",", "\"\<day\>\""}], "}"}], ",",
+     "1", ",", "260", ",", "1"}], "}"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`day$$ = 1}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    // The cell reads back as evaluable code, spacer and all.
+    let code = editors[0].content.text();
+    assert!(code.contains("Spacer[1]"), "{code}");
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the wheel must render, with the inset picture on its tooth"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name, label, max, ..
+        },
+      ] => {
+        assert_eq!((name.as_str(), label.as_str()), ("day", "day"));
+        assert_eq!(*max, 260.0);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
 }

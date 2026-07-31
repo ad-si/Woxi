@@ -1347,10 +1347,16 @@ fn collect_primitives(
           }
         }
         "Inset" if !args.is_empty() => {
-          // Inset[text, pos] is similar to Text
-          parse_text(args, style, prims);
+          // `Inset[graphic, pos, …]` draws a picture inside this one; any
+          // other object (a string, a number) is placed like `Text`.
+          match inset_primitives(args, errors) {
+            Some(inner) => prims.extend(inner),
+            None => parse_text(args, style, prims),
+          }
         }
-        "Raster" if !args.is_empty() => {
+        // `RasterBox` is the box form of `Raster` — the shape a stored
+        // Demonstration image arrives in.
+        "Raster" | "RasterBox" if !args.is_empty() => {
           parse_raster(args, prims);
         }
         "GraphicsComplex" if args.len() >= 2 => {
@@ -2053,6 +2059,12 @@ fn graphics_text_content(expr: &Expr) -> String {
       let parts: Vec<String> =
         items.iter().map(graphics_text_content).collect();
       match args.get(1) {
+        // `Spacer[n]` separates with a gap rather than printing itself.
+        Some(Expr::FunctionCall { name, args: sargs }) if name == "Spacer" => {
+          let ems = sargs.first().and_then(expr_to_f64).unwrap_or(1.0);
+          let gap = " ".repeat((ems.max(0.0).round() as usize).max(1));
+          parts.join(&gap)
+        }
         Some(sep) => parts.join(&graphics_text_content(sep)),
         None => parts.concat(),
       }
@@ -2064,6 +2076,128 @@ fn graphics_text_content(expr: &Expr) -> String {
       _ => crate::syntax::expr_to_string(expr),
     },
   }
+}
+
+/// The primitives an `Inset[obj, pos, opos, size, dirs]` contributes when
+/// `obj` is itself a picture: the object's own primitives, scaled into the
+/// inset's box, turned to face `dirs`, and moved to `pos`. Returns `None`
+/// for anything else, which `Inset` then places as text.
+///
+/// `pos` defaults to the origin, `opos` (the point *of the object* that
+/// lands on `pos`) to its centre, and `size` to the object's own extent.
+fn inset_primitives(
+  args: &[Expr],
+  errors: &mut Vec<String>,
+) -> Option<Vec<Primitive>> {
+  // The object: `Graphics[…]` (or its box form), a rendered graphic that
+  // kept its symbolic content, or a bare `Raster`/`Image`.
+  let content: Expr = match &args[0] {
+    Expr::FunctionCall { name, args: gargs }
+      if (name == "Graphics" || name == "GraphicsBox") && !gargs.is_empty() =>
+    {
+      gargs[0].clone()
+    }
+    Expr::Graphics {
+      structure: Some(inner),
+      is_3d: false,
+      ..
+    } => match inner.as_ref() {
+      Expr::FunctionCall { name, args: gargs }
+        if (name == "Graphics" || name == "GraphicsBox")
+          && !gargs.is_empty() =>
+      {
+        gargs[0].clone()
+      }
+      other => other.clone(),
+    },
+    obj @ (Expr::Image { .. } | Expr::FunctionCall { .. }) => {
+      // `Raster[…]`/`RasterBox[…]`/`Image[…]` draw as themselves.
+      match obj {
+        Expr::Image { .. } => obj.clone(),
+        Expr::FunctionCall { name, .. }
+          if name == "Raster" || name == "RasterBox" || name == "Image" =>
+        {
+          obj.clone()
+        }
+        _ => return None,
+      }
+    }
+    _ => return None,
+  };
+
+  let mut inner_style = StyleState::default();
+  let mut inner: Vec<Primitive> = Vec::new();
+  collect_primitives(&content, &mut inner_style, &mut inner, errors);
+  if inner.is_empty() {
+    return None;
+  }
+
+  let mut bb = BBox::empty();
+  for p in &inner {
+    bb.merge(&primitive_bbox(p));
+  }
+  if bb.is_empty() {
+    return None;
+  }
+  let (cx, cy) = ((bb.x_min + bb.x_max) / 2.0, (bb.y_min + bb.y_max) / 2.0);
+  let (w, h) = (bb.x_max - bb.x_min, bb.y_max - bb.y_min);
+
+  // `size` may be `{w, h}`, a single number (both sides), or Automatic.
+  let (target_w, target_h) = match args.get(3) {
+    Some(spec) => match expr_to_point(spec) {
+      Some(wh) => (Some(wh.0), Some(wh.1)),
+      None => match expr_to_f64(spec) {
+        Some(v) => (Some(v), Some(v)),
+        None => (None, None),
+      },
+    },
+    None => (None, None),
+  };
+  let sx = match target_w {
+    Some(tw) if w > 0.0 => tw / w,
+    _ => 1.0,
+  };
+  let sy = match target_h {
+    Some(th) if h > 0.0 => th / h,
+    _ => 1.0,
+  };
+
+  // `dirs` is `{Automatic, {dx, dy}}` (or a bare direction vector): the
+  // object turns so its x axis points that way.
+  let angle = args
+    .get(4)
+    .and_then(|spec| match spec {
+      Expr::List(items) if items.len() == 2 => {
+        expr_to_point(&items[1]).or_else(|| expr_to_point(spec))
+      }
+      other => expr_to_point(other),
+    })
+    .map(|(dx, dy)| dy.atan2(dx))
+    .filter(|a| a.is_finite() && *a != 0.0);
+
+  let pos = args.get(1).and_then(expr_to_point).unwrap_or((0.0, 0.0));
+  // `opos` names the point of the object that lands on `pos`, in the
+  // object's own coordinates (Automatic = its centre).
+  let (ox, oy) = args
+    .get(2)
+    .and_then(expr_to_point)
+    .map(|(x, y)| (x, y))
+    .unwrap_or((cx, cy));
+
+  let placed = inner
+    .iter()
+    .map(|p| {
+      let p = scale_primitive(p, cx, cy, sx, sy);
+      let p = match angle {
+        Some(a) => rotate_primitive(&p, cx, cy, a),
+        None => p,
+      };
+      // After scaling about the centre, the alignment point moved with it.
+      let (ax, ay) = (cx + (ox - cx) * sx, cy + (oy - cy) * sy);
+      translate_primitive(&p, pos.0 - ax, pos.1 - ay)
+    })
+    .collect();
+  Some(placed)
 }
 
 fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
@@ -7095,7 +7229,22 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // them with the separator.
         "Row" if !args.is_empty() => match &args[0] {
           Expr::List(parts) => {
-            let sep = args.get(1).map(expr_to_svg_markup).unwrap_or_default();
+            let sep = args
+              .get(1)
+              .map(|s| match s {
+                // `Spacer[n]` separates with a gap n ems wide, rather
+                // than printing itself.
+                Expr::FunctionCall { name, args: sargs }
+                  if name == "Spacer" =>
+                {
+                  let ems = sargs.first().and_then(expr_to_f64).unwrap_or(1.0);
+                  format!(
+                    "<tspan style=\"letter-spacing:{ems:.2}em\"> </tspan>"
+                  )
+                }
+                other => expr_to_svg_markup(other),
+              })
+              .unwrap_or_default();
             parts
               .iter()
               .map(expr_to_svg_markup)

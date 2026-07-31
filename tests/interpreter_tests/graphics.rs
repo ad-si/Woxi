@@ -684,6 +684,77 @@ mod graphics {
       ));
     }
 
+    /// `Inset[graphic, pos, opos, size]` draws the picture inside this
+    /// one — scaled into its box and moved to `pos` — instead of writing
+    /// the object's text form. `{Automatic, dir}` turns it to face `dir`.
+    #[test]
+    fn inset_of_a_graphic_draws_the_picture() {
+      let svg = export_svg(
+        "Graphics[{Inset[Graphics[{Red, Disk[]}], {1, 1}, Automatic, {1, 1}], \
+          Inset[Graphics[{Blue, Rectangle[]}], {-1, -1}, Automatic, \
+            {0.5, 0.5}]}, PlotRange -> {{-3, 3}, {-3, 3}}]",
+      );
+      assert!(!svg.contains("-Graphics-"), "the inset must draw: {svg}");
+      // The disk is an ellipse of the requested size, centred on {1, 1};
+      // the square is a smaller rectangle at {-1, -1}.
+      let ellipse = svg
+        .lines()
+        .find(|l| l.starts_with("<ellipse"))
+        .unwrap_or_else(|| panic!("no inset disk in {svg}"));
+      assert!(ellipse.contains("rgb(255,0,0)"), "{ellipse}");
+      let attr = |line: &str, name: &str| {
+        line
+          .split(&format!("{name}=\""))
+          .nth(1)
+          .and_then(|r| r.split('"').next())
+          .and_then(|v| v.parse::<f64>().ok())
+          .unwrap_or_else(|| panic!("no {name} in {line}"))
+      };
+      // Half a unit across in a 6-unit-wide plot drawn 360px wide → 30px.
+      assert!((attr(ellipse, "rx") - 30.0).abs() < 1.0, "{ellipse}");
+      assert!(svg.contains("rgb(0,0,255)"), "the second inset: {svg}");
+
+      // A direction vector rotates the inset: pointing along -y turns the
+      // wide box upright.
+      let wide = "Graphics[{Rectangle[{-1, -0.2}, {1, 0.2}]}]";
+      let upright = export_svg(&format!(
+        "Graphics[{{Inset[{wide}, {{0, 0}}, Automatic, {{2, 0.4}}, \
+          {{Automatic, {{0, -1}}}}]}}, PlotRange -> {{{{-2, 2}}, {{-2, 2}}}}]"
+      ));
+      let flat = export_svg(&format!(
+        "Graphics[{{Inset[{wide}, {{0, 0}}, Automatic, {{2, 0.4}}]}}, \
+          PlotRange -> {{{{-2, 2}}, {{-2, 2}}}}]"
+      ));
+      assert_ne!(upright, flat, "the direction vector must rotate the inset");
+    }
+
+    /// `RasterBox` is the box form of `Raster` — how a stored
+    /// Demonstration image arrives — and draws the same pixels.
+    #[test]
+    fn raster_box_draws_like_raster() {
+      let data = "{{0, 128}, {255, 64}}";
+      let raster = export_svg(&format!(
+        "Graphics[{{Raster[{data}, {{{{0, 0}}, {{2, 2}}}}, {{0, 255}}]}}]"
+      ));
+      let raster_box = export_svg(&format!(
+        "Graphics[{{RasterBox[{data}, {{{{0, 0}}, {{2, 2}}}}, {{0, 255}}]}}]"
+      ));
+      // Four cells, one <rect> each.
+      assert_eq!(raster.matches("<rect").count(), 4, "{raster}");
+      assert_eq!(raster, raster_box);
+    }
+
+    /// A `Spacer[n]` separator in a `Row` is a gap, not its own text.
+    #[test]
+    fn row_spacer_separator_is_a_gap() {
+      let svg = export_svg(
+        "Graphics[{Text[Style[Row[{1, \"Imix\"}, Spacer[1]], 16, Red], \
+          {0, 0}]}]",
+      );
+      assert!(svg.contains(">1 Imix</text>"), "{svg}");
+      assert!(!svg.contains("Spacer"), "{svg}");
+    }
+
     #[test]
     fn inset_row_of_styled_number_form_resolves_to_text() {
       // Regression: an Inset whose content is a Row of Styled text with a
