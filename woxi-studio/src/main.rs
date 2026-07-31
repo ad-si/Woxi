@@ -9697,4 +9697,325 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`totalOvers$$ = 50}, \"\\[Ellipsis]\
       "the run rate must compute: {svg}"
     );
   }
+
+  /// "Miscible Displacement of Oil in Heterogenous Porous Media" writes its
+  /// transport equation with the typeset partial-derivative operator
+  /// (`SubscriptBox["\\[PartialD]", …]`), which the notebook reader turns
+  /// into `D[…]`. Before that the cell did not parse at all, so none of its
+  /// controls were found.
+  ///
+  /// The body itself still needs a finite-element PDE solver — `NDSolve`
+  /// handles ODEs only and `NeumannValue` is unimplemented — so this checks
+  /// the cell loads and its controls are built, not that it draws.
+  #[test]
+  fn miscible_displacement_notebook_reads_its_partial_derivatives() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[", 
+  RowBox[{
+   RowBox[{"Module", "[", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{
+       RowBox[{"L", "=", "1"}], ",", 
+       RowBox[{"c0", "=", "0"}], ",", 
+       RowBox[{"s0", "=", "0"}], ",", 
+       RowBox[{"cin", "=", "1"}], ",", "sol", ",", "Ints", ",", "ptime", ",", 
+       "pspace"}], "}"}], ",", "\[IndentingNewLine]", "\[IndentingNewLine]", 
+     RowBox[{
+      RowBox[{"sol", "=", 
+       RowBox[{"NDSolve", "[", 
+        RowBox[{
+         RowBox[{"{", "\[IndentingNewLine]", 
+          RowBox[{
+           RowBox[{
+            RowBox[{
+             RowBox[{"\[ScriptCapitalD]", 
+              RowBox[{
+               SubscriptBox["\[PartialD]", 
+                RowBox[{"x", ",", "x"}]], 
+               RowBox[{"c", "[", 
+                RowBox[{"x", ",", "t"}], "]"}]}]}], "-", 
+             RowBox[{"u", 
+              RowBox[{
+               SubscriptBox["\[PartialD]", "x"], 
+               RowBox[{"c", "[", 
+                RowBox[{"x", ",", "t"}], "]"}]}]}], "-", 
+             RowBox[{
+              RowBox[{"(", 
+               RowBox[{"1", "-", "f"}], ")"}], 
+              RowBox[{
+               SubscriptBox["\[PartialD]", "t"], 
+               RowBox[{"c", "[", 
+                RowBox[{"x", ",", "t"}], "]"}]}]}], "-", 
+             RowBox[{"f", 
+              RowBox[{
+               SubscriptBox["\[PartialD]", "t"], 
+               RowBox[{"s", "[", 
+                RowBox[{"x", ",", "t"}], "]"}]}]}]}], "\[Equal]", 
+            "\[IndentingNewLine]", 
+            RowBox[{
+             RowBox[{"DirichletCondition", "[", 
+              RowBox[{
+               RowBox[{
+                RowBox[{"c", "[", 
+                 RowBox[{"x", ",", "t"}], "]"}], "\[Equal]", 
+                RowBox[{
+                 RowBox[{"(", 
+                  RowBox[{"1", "-", 
+                   RowBox[{"Exp", "[", 
+                    RowBox[{
+                    RowBox[{"-", "1000"}], "t"}], "]"}]}], ")"}], "cin"}]}], 
+               ",", 
+               RowBox[{"x", "\[Equal]", "0"}]}], "]"}], "+", 
+             RowBox[{"NeumannValue", "[", 
+              RowBox[{"0", ",", 
+               RowBox[{"x", "\[Equal]", "L"}]}], "]"}]}]}], ",", 
+           "\[IndentingNewLine]", 
+           RowBox[{
+            RowBox[{"c", "[", 
+             RowBox[{"x", ",", "0"}], "]"}], "\[Equal]", "c0"}], ",", 
+           "\[IndentingNewLine]", "\[IndentingNewLine]", 
+           RowBox[{
+            RowBox[{"f", 
+             RowBox[{
+              SubscriptBox["\[PartialD]", "t"], 
+              RowBox[{"s", "[", 
+               RowBox[{"x", ",", "t"}], "]"}]}]}], "\[Equal]", 
+            RowBox[{"k", 
+             RowBox[{"(", 
+              RowBox[{
+               RowBox[{"c", "[", 
+                RowBox[{"x", ",", "t"}], "]"}], "-", 
+               RowBox[{"s", "[", 
+                RowBox[{"x", ",", "t"}], "]"}]}], ")"}]}]}], ",", 
+           "\[IndentingNewLine]", 
+           RowBox[{
+            RowBox[{"s", "[", 
+             RowBox[{"x", ",", "0"}], "]"}], "\[Equal]", "s0"}]}], 
+          "\[IndentingNewLine]", "}"}], ",", "\[IndentingNewLine]", 
+         RowBox[{"{", 
+          RowBox[{"c", ",", "s"}], "}"}], ",", 
+         RowBox[{"{", 
+          RowBox[{"x", ",", "0", ",", "L"}], "}"}], ",", 
+         RowBox[{"{", 
+          RowBox[{"t", ",", "0", ",", "21"}], "}"}], ",", 
+         RowBox[{"Method", "\[Rule]", 
+          RowBox[{"{", 
+           RowBox[{"\"\<MethodOfLines\>\"", ",", 
+            RowBox[{
+            "\"\<SpatialDiscretization\>\"", "\[Rule]", 
+             "\"\<FiniteElement\>\""}]}], "}"}]}]}], "]"}]}], ";", 
+      "\[IndentingNewLine]", "\[IndentingNewLine]", 
+      RowBox[{"Ints", "=", 
+       RowBox[{"Last", "[", 
+        RowBox[{
+         RowBox[{"(", 
+          RowBox[{"1", "/", "L"}], ")"}], 
+         RowBox[{"Quiet", "@", 
+          RowBox[{"NIntegrate", "[", 
+           RowBox[{
+            RowBox[{
+             RowBox[{"s", "[", 
+              RowBox[{"x", ",", "time"}], "]"}], "/.", "sol"}], ",", 
+            RowBox[{"{", 
+             RowBox[{"x", ",", 
+              SuperscriptBox["10", 
+               RowBox[{"-", "3"}]], ",", "L"}], "}"}]}], "]"}]}]}], "]"}]}], 
+      ";", "\[IndentingNewLine]", " ", "\[IndentingNewLine]", 
+      RowBox[{"ptime", "=", 
+       RowBox[{"Plot", "[", 
+        RowBox[{
+         RowBox[{
+          RowBox[{"c", "[", 
+           RowBox[{"L", ",", "t"}], "]"}], "/.", "sol"}], ",", 
+         RowBox[{"{", 
+          RowBox[{"t", ",", "0", ",", "time"}], "}"}], ",", 
+         RowBox[{"PlotStyle", "\[Rule]", 
+          RowBox[{"{", 
+           RowBox[{"Black", ",", "Thick"}], "}"}]}], ",", 
+         RowBox[{"PlotRange", "\[Rule]", 
+          RowBox[{"{", 
+           RowBox[{
+            RowBox[{"{", 
+             RowBox[{"0", ",", "time"}], "}"}], ",", 
+            RowBox[{"{", 
+             RowBox[{
+              RowBox[{"-", "0.001"}], ",", "1.001"}], "}"}]}], "}"}]}], ",", 
+         RowBox[{"Frame", "\[Rule]", "True"}], ",", 
+         RowBox[{"LabelStyle", "\[Rule]", 
+          RowBox[{"{", 
+           RowBox[{"17", ",", "Black"}], "}"}]}], ",", 
+         RowBox[{"FrameLabel", "\[Rule]", 
+          RowBox[{"{", 
+           RowBox[{
+           "\"\<time\>\"", ",", "\"\<fraction of solvent in effluent\>\""}], 
+           "}"}]}], ",", 
+         RowBox[{"ImageSize", "\[Rule]", 
+          RowBox[{"1.1", 
+           RowBox[{"{", 
+            RowBox[{"550", ",", "350"}], "}"}]}]}]}], "]"}]}], ";", 
+      "\[IndentingNewLine]", "\[IndentingNewLine]", 
+      RowBox[{"pspace", "=", 
+       RowBox[{"Plot", "[", "\[IndentingNewLine]", 
+        RowBox[{
+         RowBox[{
+          RowBox[{"1", "-", 
+           RowBox[{"s", "[", 
+            RowBox[{"x", ",", "time"}], "]"}]}], "/.", "sol"}], ",", 
+         RowBox[{"{", 
+          RowBox[{"x", ",", "0", ",", "L"}], "}"}], ",", 
+         RowBox[{"PlotStyle", "\[Rule]", "Black"}], ",", 
+         RowBox[{"PlotRange", "\[Rule]", 
+          RowBox[{"{", 
+           RowBox[{
+            RowBox[{"{", 
+             RowBox[{"0", ",", " ", "1"}], "}"}], ",", 
+            RowBox[{"{", 
+             RowBox[{
+              RowBox[{"-", ".1"}], ",", "1.001"}], "}"}]}], "}"}]}], ",", 
+         RowBox[{"Frame", "\[Rule]", "True"}], ",", 
+         RowBox[{"LabelStyle", "\[Rule]", 
+          RowBox[{"{", 
+           RowBox[{"17", ",", "Black"}], "}"}]}], ",", 
+         RowBox[{"ImageSize", "\[Rule]", 
+          RowBox[{"1.1", 
+           RowBox[{"{", 
+            RowBox[{"550", ",", "350"}], "}"}]}]}], ",", 
+         RowBox[{"FrameLabel", "\[Rule]", 
+          RowBox[{"{", 
+           RowBox[{
+            RowBox[{"Row", "[", 
+             RowBox[{"{", 
+              RowBox[{"\"\<distance = \>\"", ",", " ", 
+               RowBox[{"Style", "[", 
+                RowBox[{"\"\<x\>\"", ",", "Italic"}], "]"}], ",", "\"\</\>\"",
+                ",", 
+               RowBox[{"Style", "[", 
+                RowBox[{"\"\<L\>\"", ",", "Italic"}], "]"}]}], "}"}], "]"}], 
+            ",", "\"\<fraction of oil in dead space\>\""}], "}"}]}], ",", 
+         RowBox[{"Filling", "\[Rule]", "Bottom"}], ",", "\[IndentingNewLine]", 
+         RowBox[{"Epilog", "\[Rule]", 
+          RowBox[{"Style", "[", 
+           RowBox[{
+            RowBox[{"Text", "[", 
+             RowBox[{
+              RowBox[{"Row", "[", 
+               RowBox[{"{", 
+                RowBox[{
+                "\"\<fraction of total oil in dead space = \>\"", " ", ",", 
+                 RowBox[{"Chop", "[", 
+                  RowBox[{
+                   RowBox[{"NumberForm", " ", "[", 
+                    RowBox[{
+                    RowBox[{"1", "-", "Ints"}], ",", "3"}], "]"}], ",", 
+                   SuperscriptBox["10", 
+                    RowBox[{"-", "3"}]]}], "]"}]}], "}"}], "]"}], ",", 
+              RowBox[{"{", " ", 
+               RowBox[{"0.5", ",", 
+                RowBox[{"-", "0.05"}]}], "}"}]}], "]"}], ",", "Black", ",", 
+            "17"}], "]"}]}]}], "]"}]}], ";", "\[IndentingNewLine]", 
+      "\[IndentingNewLine]", 
+      RowBox[{"Which", "[", 
+       RowBox[{
+        RowBox[{"g", "\[Equal]", "1"}], ",", "ptime", ",", 
+        RowBox[{"g", "==", "2"}], ",", "pspace"}], "]"}]}]}], "]"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"Grid", "[", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{
+       RowBox[{"{", 
+        RowBox[{"Control", "@", 
+         RowBox[{"{", 
+          RowBox[{
+           RowBox[{"{", " ", 
+            RowBox[{"g", ",", "1", ",", "\"\<\>\""}], "}"}], ",", 
+           RowBox[{"{", 
+            RowBox[{
+             RowBox[{"1", "\[Rule]", "\"\<time plot\>\""}], ",", 
+             RowBox[{"2", "\[Rule]", "\"\<space plot\>\""}]}], 
+            "\[IndentingNewLine]", "}"}], ",", "PopupMenu"}], "}"}]}], "}"}], 
+       ",", "\[IndentingNewLine]", 
+       RowBox[{"{", 
+        RowBox[{
+         RowBox[{"Control", "@", 
+          RowBox[{"{", 
+           RowBox[{
+            RowBox[{"{", 
+             RowBox[{"time", ",", "6.0", ",", "\"\<time\>\""}], "}"}], ",", 
+            "0.1", ",", "20", ",", "0.1", ",", 
+            RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}], ",", 
+            RowBox[{"ImageSize", "\[Rule]", "Tiny"}]}], "}"}]}], ",", 
+         "\[IndentingNewLine]", 
+         RowBox[{"Control", "@", 
+          RowBox[{"{", 
+           RowBox[{
+            RowBox[{"{", 
+             RowBox[{"k", ",", "0.05", ",", "\"\<rate constant\>\""}], "}"}], 
+            ",", "0.005", ",", "5.0", ",", "0.001", ",", 
+            RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}], ",", 
+            RowBox[{"ImageSize", "\[Rule]", "Tiny"}]}], "}"}]}]}], "}"}], ",",
+        "\[IndentingNewLine]", 
+       RowBox[{"{", 
+        RowBox[{
+         RowBox[{"Control", "@", 
+          RowBox[{"{", 
+           RowBox[{
+            RowBox[{"{", 
+             RowBox[{
+             "\[ScriptCapitalD]", ",", "0.05", ",", "\"\<diffusivity\>\""}], 
+             "}"}], ",", "0.0005", ",", "0.1", ",", "0.0001", ",", 
+            RowBox[{"ImageSize", "\[Rule]", "Tiny"}], ",", 
+            RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}]}], 
+         ",", "\[IndentingNewLine]", 
+         RowBox[{"Control", "@", 
+          RowBox[{"{", 
+           RowBox[{
+            RowBox[{"{", 
+             RowBox[{"f", ",", "0.25", ",", "\"\<dead space fraction\>\""}], 
+             "}"}], ",", "0.01", ",", "0.50", ",", "0.01", ",", 
+            RowBox[{"ImageSize", "\[Rule]", "Tiny"}], ",", 
+            RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}]}], 
+         ",", 
+         RowBox[{"Control", "@", 
+          RowBox[{"{", 
+           RowBox[{
+            RowBox[{"{", 
+             RowBox[{"u", ",", "0.5", ",", "\"\<interstitial velocity\>\""}], 
+             "}"}], ",", "0.01", ",", "1.0", ",", "0.01", ",", 
+            RowBox[{"ImageSize", "\[Rule]", "Tiny"}], ",", 
+            RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}]}]}],
+         "}"}]}], "}"}], ",", 
+     RowBox[{"Alignment", "\[Rule]", "Left"}]}], "]"}], ",", 
+   RowBox[{"ControlPlacement", "\[Rule]", "Top"}]}], "]"}]], "Input"]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let cell = editors
+      .iter()
+      .map(|e| e.content.text())
+      .find(|t| t.starts_with("Manipulate["))
+      .expect("the Manipulate cell must load");
+    // The operator reads as a derivative of the expression that follows it,
+    // parenthesised so its coefficient stays a product.
+    assert!(
+      cell.contains("\u{1d49f}(D[c[x,t], x,x])-u(D[c[x,t], x])"),
+      "partial derivatives must read as D[…]: {cell}"
+    );
+    assert!(!cell.contains('\u{2202}'), "no bare operator left: {cell}");
+
+    let widget = instantiate_stored_manipulate(&cell, "")
+      .expect("the Manipulate must instantiate");
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { name, .. } => name.as_str(),
+        manipulate::ControlState::Discrete { name, .. } => name.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, ["g", "time", "k", "\u{1d49f}", "f", "u"]);
+  }
 }

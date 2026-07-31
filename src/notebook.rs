@@ -870,6 +870,17 @@ fn big_operator_call(s: &str) -> Option<(&'static str, String)> {
   Some((head, iterator))
 }
 
+/// The variables of a `SubscriptBox["\\[PartialD]", vars]` — the typeset
+/// partial-derivative operator. The FrontEnd reads
+/// `SubscriptBox["\\[PartialD]", x] f[x]` as `D[f[x], x]` and
+/// `SubscriptBox["\\[PartialD]", RowBox[{"x", ",", "x"}]] f[x]` as
+/// `D[f[x], x, x]`, so the operand is whatever follows in the row.
+fn partial_derivative_vars(s: &str) -> Option<String> {
+  let args = positional_box_args("SubscriptBox", s).filter(|a| a.len() == 2)?;
+  let base = extract_cell_content(&args[0]);
+  (base.trim() == "\u{2202}").then(|| extract_cell_content(&args[1]))
+}
+
 /// Extract text from a RowBox expression by concatenating string
 /// elements.
 fn extract_rowbox_content(s: &str) -> String {
@@ -889,6 +900,18 @@ fn extract_rowbox_content(s: &str) -> String {
     {
       let body = extract_rowbox_content(&parts[i + 1..].join(","));
       result.push_str(&format!("{head}[{body}, {iterator}]"));
+      break;
+    }
+    // The partial-derivative operator takes the rest of the row as its
+    // operand, the same way a big operator does.
+    if i + 1 < parts.len()
+      && let Some(vars) = partial_derivative_vars(part)
+    {
+      let body = extract_rowbox_content(&parts[i + 1..].join(","));
+      // Parenthesised: the operator is usually juxtaposed with a
+      // coefficient (`u ∂ₓc`), and `uD[…]` would read as a call to a
+      // symbol named `uD` rather than a product.
+      result.push_str(&format!("(D[{body}, {vars}])"));
       break;
     }
     if part.starts_with('"') && part.ends_with('"') && part.len() >= 2 {
@@ -3012,6 +3035,28 @@ Cell["Chapter 2", "Chapter"]
     // An ordinary subscript is still `Subscript`.
     let s = r#"BoxData[SubscriptBox["c", "1"]]"#;
     assert_eq!(extract_cell_content(s), "Subscript[c, 1]");
+  }
+
+  /// `SubscriptBox["\\[PartialD]", vars]` is the typeset partial-derivative
+  /// operator, which takes the expression *after* it as its operand. The
+  /// FrontEnd reads it as `D[body, vars]`, as
+  /// `ToExpression[…, StandardForm, Hold]` confirms; a bare
+  /// `Subscript[\u{2202}, x]` does not parse in either engine.
+  #[test]
+  fn test_partial_derivative_box_is_a_derivative() {
+    let s = r#"BoxData[RowBox[{SubscriptBox["\[PartialD]", "x"], RowBox[{"f", "[", "x", "]"}]}]]"#;
+    assert_eq!(extract_cell_content(s), "(D[f[x], x])");
+    // Several variables: a repeated one is a higher-order derivative.
+    let s = r#"BoxData[RowBox[{SubscriptBox["\[PartialD]", RowBox[{"x", ",", "x"}]], RowBox[{"c", "[", RowBox[{"x", ",", "t"}], "]"}]}]]"#;
+    assert_eq!(extract_cell_content(s), "(D[c[x,t], x,x])");
+    // The operator is usually juxtaposed with a coefficient, so the call is
+    // parenthesised — `u D[…]` must stay a product, not become a symbol
+    // named `uD`.
+    let s = r#"BoxData[RowBox[{"u", RowBox[{SubscriptBox["\[PartialD]", "x"], RowBox[{"c", "[", RowBox[{"x", ",", "t"}], "]"}]}]}]]"#;
+    assert_eq!(extract_cell_content(s), "u(D[c[x,t], x])");
+    // An ordinary subscript is untouched.
+    let s = r#"BoxData[RowBox[{SubscriptBox["a", "x"], "b"}]]"#;
+    assert_eq!(extract_cell_content(s), "Subscript[a, x]b");
   }
 
   /// A named character inside a *string literal* is content, so it stays
