@@ -10149,4 +10149,181 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = -5}, \"\\[Ellipsis]\"]"], "Ou
     // Flipping the inequality shades the complement.
     assert_ne!(above, render("<"), "the inequality control must matter");
   }
+
+  /// End-to-end regression for the "Dedekind Cut" Demonstration: circles at
+  /// every distinct rational `p/q < 1` for `p, q` up to a bound, coloured by
+  /// which side of the cut they fall on, over a disk at the cut radius.
+  ///
+  /// It already worked; this pins it. The rational set, the cut radius and
+  /// the rendered geometry all match wolframscript (checked at four control
+  /// settings, agreeing within 0.5% of the frame width).
+  #[test]
+  fn dedekind_cut_notebook_draws_its_circles() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[", 
+  RowBox[{
+   RowBox[{"With", "[", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"dat", "=", 
+       RowBox[{"Union", "[", 
+        RowBox[{"Select", "[", 
+         RowBox[{
+          RowBox[{"Flatten", "[", 
+           RowBox[{"Outer", "[", 
+            RowBox[{
+             RowBox[{
+              RowBox[{"Rational", "[", 
+               RowBox[{"#1", ",", "#2"}], "]"}], "&"}], ",", 
+             RowBox[{"Range", "[", "ra", "]"}], ",", 
+             RowBox[{"Range", "[", "ra", "]"}]}], "]"}], "]"}], ",", 
+          RowBox[{
+           RowBox[{"#", "<", "1"}], "&"}]}], "]"}], "]"}]}], "}"}], ",", 
+     RowBox[{"With", "[", 
+      RowBox[{
+       RowBox[{"{", 
+        RowBox[{"cut", "=", 
+         RowBox[{"If", "[", 
+          RowBox[{"racu", ",", 
+           RowBox[{"dat", "[", 
+            RowBox[{"[", 
+             RowBox[{"1", "+", 
+              RowBox[{"Round", "[", 
+               RowBox[{"acut", 
+                RowBox[{"(", 
+                 RowBox[{
+                  RowBox[{"Length", "[", "dat", "]"}], "-", "1"}], ")"}]}], 
+               "]"}]}], "]"}], "]"}], ",", 
+           RowBox[{
+            RowBox[{"(", 
+             RowBox[{
+              RowBox[{"2", "^", 
+               RowBox[{"(", 
+                RowBox[{"1", "/", "2"}], ")"}]}], "/", "2"}], ")"}], 
+            "acut"}]}], "]"}]}], "}"}], ",", 
+       RowBox[{"Graphics", "[", 
+        RowBox[{
+         RowBox[{"{", 
+          RowBox[{
+           RowBox[{"If", "[", 
+            RowBox[{"fli", ",", "White", ",", 
+             RowBox[{"RGBColor", "[", 
+              RowBox[{"1", ",", ".71", ",", "0"}], "]"}]}], "]"}], ",", 
+           RowBox[{"Disk", "[", 
+            RowBox[{
+             RowBox[{"{", 
+              RowBox[{"0", ",", "0"}], "}"}], ",", "cut"}], "]"}], ",", 
+           RowBox[{
+            RowBox[{
+             RowBox[{"{", 
+              RowBox[{
+               RowBox[{"If", "[", 
+                RowBox[{
+                 RowBox[{"#", ">", "cut"}], ",", 
+                 RowBox[{"RGBColor", "[", 
+                  RowBox[{".67", ",", ".75", ",", ".15"}], "]"}], ",", 
+                 RowBox[{"If", "[", 
+                  RowBox[{
+                   RowBox[{"cut", "\[Equal]", "#"}], ",", "Red", ",", 
+                   RowBox[{"RGBColor", "[", 
+                    RowBox[{".12", ",", ".61", ",", ".78"}], "]"}]}], "]"}]}],
+                 "]"}], ",", 
+               RowBox[{"Circle", "[", 
+                RowBox[{
+                 RowBox[{"{", 
+                  RowBox[{"0", ",", "0"}], "}"}], ",", "#"}], "]"}]}], "}"}], 
+             "&"}], "/@", "dat"}]}], "}"}], ",", 
+         RowBox[{"PlotRange", "\[Rule]", "1"}], ",", 
+         RowBox[{"Background", "\[Rule]", 
+          RowBox[{"If", "[", 
+           RowBox[{"fli", ",", 
+            RowBox[{"RGBColor", "[", 
+             RowBox[{"1", ",", ".71", ",", "0"}], "]"}], ",", "White"}], 
+           "]"}]}], ",", 
+         RowBox[{"ImageSize", "\[Rule]", 
+          RowBox[{"{", 
+           RowBox[{"350", ",", "350"}], "}"}]}]}], "]"}]}], "]"}]}], "]"}], 
+   ",", "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"acut", ",", ".5", ",", "\"\<cut\>\""}], "}"}], ",", "0", ",", 
+     "1", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}], ",", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"racu", ",", "False", ",", "\"\<kind of cut\>\""}], "}"}], ",", 
+     
+     RowBox[{"{", 
+      RowBox[{
+       RowBox[{"False", "\[Rule]", "\"\<irrational\>\""}], ",", 
+       RowBox[{"True", "\[Rule]", "\"\<rational\>\""}]}], "}"}]}], "}"}], ",",
+    "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"fli", ",", "False", ",", "\"\<mark radii\>\""}], "}"}], ",", 
+     RowBox[{"{", 
+      RowBox[{
+       RowBox[{"False", "\[Rule]", "\"\<smaller than cut\>\""}], ",", 
+       RowBox[{"True", "\[Rule]", "\"\<larger than cut\>\""}]}], "}"}]}], 
+    "}"}], ",", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{
+      "ra", ",", "6", ",", "\"\<range of numerator and denominator\>\""}], 
+      "}"}], ",", "2", ",", "16"}], "}"}], ",", 
+   RowBox[{"Alignment", "\[Rule]", "Center"}], ",", 
+   RowBox[{"AutorunSequencing", "\[Rule]", 
+    RowBox[{"{", 
+     RowBox[{"2", ",", "3", ",", "4"}], "}"}]}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`acut$$ = 0.5}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the cut must evaluate: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the circles must draw");
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { name, .. } => name.as_str(),
+        manipulate::ControlState::Discrete { name, .. } => name.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, ["acut", "racu", "fli", "ra"]);
+
+    let render = |racu: &str, fli: &str, ra: u32| {
+      woxi::interpret_with_stdout(&format!(
+        "acut = 0.5; racu = {racu}; fli = {fli}; ra = {ra};\n{}",
+        widget.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+    // Eleven rationals below 1 with numerator and denominator up to 6, each
+    // a circle, plus the disk at the cut.
+    let plain = render("False", "False", 6);
+    assert_eq!(plain.matches("<ellipse").count(), 12, "{plain}");
+    // A rational cut lands on one of them, which turns red.
+    assert!(!plain.contains("rgb(255,0,0)"), "{plain}");
+    assert!(render("True", "False", 6).contains("rgb(255,0,0)"));
+    // `mark radii` swaps the background and the disk.
+    assert!(render("False", "True", 6).contains("fill=\"rgb(255,181,0)\""));
+  }
 }
