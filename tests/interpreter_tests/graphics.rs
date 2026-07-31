@@ -2477,6 +2477,34 @@ mod plot3d {
       );
     }
 
+    /// `Ticks -> {xspec, yspec}` marks exactly the positions it names —
+    /// `Ticks -> None` draws no marks at all.
+    #[test]
+    fn graphics_ticks_can_be_given_explicitly() {
+      let ticks = |spec: &str| {
+        let svg = export_svg(&format!(
+          "Graphics[{{Line[{{{{0, 0}}, {{1, 1}}}}]}}, Axes -> True, \
+           PlotRange -> {{{{0, 1}}, {{0, 1}}}}, Ticks -> {spec}]"
+        ));
+        svg
+          .lines()
+          .filter(|l| l.starts_with("<text"))
+          .filter_map(|l| {
+            let after_tag = l.split_once('>')?.1;
+            Some(after_tag.split_once("</text>")?.0.to_string())
+          })
+          .collect::<Vec<_>>()
+      };
+      // Only 1 on each axis (the origin's 0 is suppressed where the two
+      // axes cross, as it is for automatic ticks).
+      assert_eq!(ticks("{{0, 1}, {1}}"), ["1", "1"]);
+      assert!(ticks("None").is_empty());
+      // A `{pos, label}` pair carries its own text.
+      assert_eq!(ticks(r#"{{{0.5, "half"}}, {}}"#), ["half"]);
+      // Automatic still fills the axis with the usual marks.
+      assert!(ticks("Automatic").len() > 4);
+    }
+
     /// Wolfram writes an `AxesLabel` at the end of its axis — the x label
     /// past the right edge, the y label above the top — and a `Style`
     /// around it carries its colour and slant into the label.
@@ -8014,6 +8042,41 @@ mod graphics_grid {
       svg.contains("data:image/png;base64,"),
       "Image should be base64-encoded PNG"
     );
+  }
+
+  /// A grid that mixes text with graphics draws the pictures too, each at
+  /// its own size — the shape a Demonstration uses for a caption above a
+  /// pair of plots.
+  #[test]
+  fn grid_embeds_a_graphic_beside_text() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{\"area = 1\"}, \
+             {Graphics[{Red, Disk[]}, ImageSize -> 80], \
+              Graphics[{Blue, Disk[]}, ImageSize -> 60]}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">area = 1</text>"), "{svg}");
+    // Both pictures are embedded, each keeping its own ImageSize.
+    assert_eq!(svg.matches("<svg x=").count(), 2, "{svg}");
+    assert!(svg.contains("width=\"80.0\""), "{svg}");
+    assert!(svg.contains("width=\"60.0\""), "{svg}");
+    assert!(svg.contains("rgb(255,0,0)") && svg.contains("rgb(0,0,255)"));
+  }
+
+  /// A number in a grid cell keeps the digits its `NumberForm` asks for.
+  /// Regression: the padding was dropped, so `NumberForm[0.875, {7, 9}]`
+  /// came out as `0.875` instead of `0.875000000`.
+  #[test]
+  fn grid_cell_keeps_its_number_form() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{Text@Row[{\"area = \", NumberForm[0.875, {7, 9}]}]}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">area = 0.875000000</text>"), "{svg}");
   }
 
   /// A grid whose cells are all graphics lays the pictures out, rather

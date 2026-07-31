@@ -8374,4 +8374,91 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`A$$ = 5}, \"…\"]"], "Output"]
       other => panic!("unexpected controls: {other:?}"),
     }
   }
+
+  /// End-to-end regression for the "A Converging Geometric Series"
+  /// Demonstration: a `Grid` with a `NumberForm` caption above a row of
+  /// two pictures, the first assembled from rectangles `Sow`n in a loop.
+  #[test]
+  fn geometric_series_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"Grid", "[",
+    RowBox[{"{",
+     RowBox[{
+      RowBox[{"{",
+       RowBox[{"Text", "@",
+        RowBox[{"Row", "[",
+         RowBox[{"{",
+          RowBox[{"\"\<area = \>\"", ",",
+           RowBox[{"NumberForm", "[",
+            RowBox[{
+             RowBox[{"N", "[",
+              RowBox[{"Sum", "[",
+               RowBox[{
+                SuperscriptBox[
+                 RowBox[{"(", RowBox[{"1", "/", "2"}], ")"}], "t"], ",",
+                RowBox[{"{", RowBox[{"t", ",", "1", ",", "n"}], "}"}]}],
+               "]"}], "]"}], ",",
+             RowBox[{"{", RowBox[{"7", ",", "9"}], "}"}]}], "]"}]}], "}"}],
+         "]"}]}], "}"}], ",",
+      RowBox[{"{",
+       RowBox[{"Graphics", "[",
+        RowBox[{
+         RowBox[{"{",
+          RowBox[{
+           RowBox[{"EdgeForm", "[", "Black", "]"}], ",",
+           RowBox[{"Hue", "[", "0.3", "]"}], ",",
+           RowBox[{"Rectangle", "[",
+            RowBox[{
+             RowBox[{"{", RowBox[{"0", ",", "0"}], "}"}], ",",
+             RowBox[{"{", RowBox[{"0.5", ",", "1"}], "}"}]}], "]"}]}], "}"}],
+         ",", RowBox[{"Axes", "\[Rule]", "True"}], ",",
+         RowBox[{"Ticks", "\[Rule]",
+          RowBox[{"{",
+           RowBox[{
+            RowBox[{"{", RowBox[{"0", ",", "1"}], "}"}], ",",
+            RowBox[{"{", "1", "}"}]}], "}"}]}], ",",
+         RowBox[{"ImageSize", "\[Rule]", "200"}]}], "]"}], "}"}]}], "}"}],
+    "]"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{", RowBox[{"n", ",", "3", ",", "\"\<n\>\""}], "}"}], ",", "1",
+     ",", "25", ",", "1"}], "}"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 3}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the Grid must render as a picture: its caption and its rectangle"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name,
+          current,
+          min,
+          max,
+          ..
+        },
+      ] => {
+        assert_eq!((name.as_str(), *current), ("n", 3.0));
+        assert_eq!((*min, *max), (1.0, 25.0));
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
 }

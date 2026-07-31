@@ -3394,6 +3394,57 @@ fn generate_ticks(min: f64, max: f64, target_count: usize) -> Vec<f64> {
   ticks
 }
 
+/// `Ticks` for one axis: automatic positions, none at all, or an explicit
+/// list of positions (each optionally carrying its own label).
+#[derive(Clone)]
+enum TickSpec {
+  None,
+  Automatic,
+  Explicit(Vec<(f64, Option<String>)>),
+}
+
+/// Parse one side of `Ticks -> {xspec, yspec}`.
+fn parse_tick_spec(expr: &Expr) -> TickSpec {
+  match expr {
+    Expr::Identifier(s) if s == "None" || s == "False" => TickSpec::None,
+    Expr::Identifier(s) if s == "Automatic" || s == "All" => {
+      TickSpec::Automatic
+    }
+    Expr::List(entries) => TickSpec::Explicit(
+      entries
+        .iter()
+        .filter_map(|entry| match entry {
+          // `{pos, label}` gives the mark its own text.
+          Expr::List(pair) if pair.len() >= 2 => {
+            Some((expr_to_f64(&pair[0])?, Some(expr_to_svg_markup(&pair[1]))))
+          }
+          other => Some((expr_to_f64(other)?, None)),
+        })
+        .collect(),
+    ),
+    _ => match expr_to_f64(expr) {
+      Some(p) => TickSpec::Explicit(vec![(p, None)]),
+      Option::None => TickSpec::None,
+    },
+  }
+}
+
+/// The tick positions (and any explicit labels) an axis draws.
+fn axis_ticks(
+  spec: &TickSpec,
+  min: f64,
+  max: f64,
+) -> Vec<(f64, Option<String>)> {
+  match spec {
+    TickSpec::None => Vec::new(),
+    TickSpec::Automatic => generate_ticks(min, max, 6)
+      .into_iter()
+      .map(|t| (t, None))
+      .collect(),
+    TickSpec::Explicit(entries) => entries.clone(),
+  }
+}
+
 fn render_axes(
   svg: &mut String,
   axes: (bool, bool),
@@ -3401,6 +3452,7 @@ fn render_axes(
   svg_w: f64,
   svg_h: f64,
   axes_label: &Option<(String, String)>,
+  ticks: (&TickSpec, &TickSpec),
 ) {
   let t = theme();
   let axis_stroke = t.axis_stroke;
@@ -3427,7 +3479,7 @@ fn render_axes(
     svg.push_str(&format!(
       "<line x1=\"0.00\" y1=\"{axis_y_px:.2}\" x2=\"{svg_w:.2}\" y2=\"{axis_y_px:.2}\" stroke=\"{axis_stroke}\" stroke-width=\"1\"/>\n"
     ));
-    for t in generate_ticks(bb.x_min, bb.x_max, 6) {
+    for (t, tick_label) in axis_ticks(ticks.0, bb.x_min, bb.x_max) {
       let x = coord_x(t, bb, svg_w);
       if !x.is_finite() {
         continue;
@@ -3437,14 +3489,14 @@ fn render_axes(
         axis_y_px - 4.0,
         axis_y_px + 4.0
       ));
-      let label = format_tick_value(t);
+      let label =
+        tick_label.unwrap_or_else(|| svg_escape(&format_tick_value(t)));
       if axes.1 && label == "0" {
         continue;
       }
       svg.push_str(&format!(
-        "<text x=\"{x:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"14\" font-family=\"monospace\" text-anchor=\"middle\" dominant-baseline=\"hanging\">{}</text>\n",
+        "<text x=\"{x:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"14\" font-family=\"monospace\" text-anchor=\"middle\" dominant-baseline=\"hanging\">{label}</text>\n",
         axis_y_px + 6.0,
-        svg_escape(&label),
       ));
     }
   }
@@ -3453,7 +3505,7 @@ fn render_axes(
     svg.push_str(&format!(
       "<line x1=\"{axis_x_px:.2}\" y1=\"0.00\" x2=\"{axis_x_px:.2}\" y2=\"{svg_h:.2}\" stroke=\"{axis_stroke}\" stroke-width=\"1\"/>\n"
     ));
-    for t in generate_ticks(bb.y_min, bb.y_max, 6) {
+    for (t, tick_label) in axis_ticks(ticks.1, bb.y_min, bb.y_max) {
       let y = coord_y(t, bb, svg_h);
       if !y.is_finite() {
         continue;
@@ -3463,14 +3515,14 @@ fn render_axes(
         axis_x_px - 4.0,
         axis_x_px + 4.0
       ));
-      let label = format_tick_value(t);
+      let label =
+        tick_label.unwrap_or_else(|| svg_escape(&format_tick_value(t)));
       if axes.0 && label == "0" {
         continue;
       }
       svg.push_str(&format!(
-        "<text x=\"{:.2}\" y=\"{y:.2}\" fill=\"{tick_label_fill}\" font-size=\"14\" font-family=\"monospace\" text-anchor=\"end\" dominant-baseline=\"middle\">{}</text>\n",
+        "<text x=\"{:.2}\" y=\"{y:.2}\" fill=\"{tick_label_fill}\" font-size=\"14\" font-family=\"monospace\" text-anchor=\"end\" dominant-baseline=\"middle\">{label}</text>\n",
         axis_x_px - 6.0,
-        svg_escape(&label),
       ));
     }
   }
@@ -4876,6 +4928,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut plot_label: Option<String> = None;
   // `AxesLabel -> {xlabel, ylabel}`, already typeset as SVG markup.
   let mut axes_label: Option<(String, String)> = None;
+  // `Ticks -> {xspec, yspec}`: which tick marks each axis carries.
+  let mut ticks_x = TickSpec::Automatic;
+  let mut ticks_y = TickSpec::Automatic;
   let mut axes = (false, false);
   let mut frame = false;
   // `FrameTicks -> False | None` keeps the border but drops the tick
@@ -4939,6 +4994,23 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             axes = parsed_axes;
           }
         }
+        // `Ticks -> {xspec, yspec}`: `None` draws none, a list gives the
+        // positions to mark (each optionally `{pos, label}`).
+        "Ticks" => match replacement {
+          Expr::Identifier(s) if s == "None" || s == "False" => {
+            ticks_x = TickSpec::None;
+            ticks_y = TickSpec::None;
+          }
+          Expr::Identifier(s) if s == "Automatic" || s == "All" => {
+            ticks_x = TickSpec::Automatic;
+            ticks_y = TickSpec::Automatic;
+          }
+          Expr::List(items) if items.len() == 2 => {
+            ticks_x = parse_tick_spec(&items[0]);
+            ticks_y = parse_tick_spec(&items[1]);
+          }
+          _ => {}
+        },
         // `AxesLabel -> {x, y}` (or a single label for the x axis).
         "AxesLabel" => match replacement {
           Expr::List(items) if items.len() == 2 => {
@@ -5223,7 +5295,15 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
   }
 
-  render_axes(&mut svg, axes, &bb, svg_w, svg_h, &axes_label);
+  render_axes(
+    &mut svg,
+    axes,
+    &bb,
+    svg_w,
+    svg_h,
+    &axes_label,
+    (&ticks_x, &ticks_y),
+  );
 
   // Render primitives. A primitive with a drop shadow is wrapped in a
   // <g> that applies the shadow filter, so each primitive casts its own
@@ -6958,11 +7038,11 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // ToString leaves intact), fall back to rendering the inner value so a
         // grid of numbers still appears rather than raw wrapper text.
         "NumberForm" | "PaddedForm" | "AccountingForm" if !args.is_empty() => {
-          let s = crate::functions::string_ast::to_string_default_form(expr);
-          if s.trim_start().starts_with(name.as_str()) {
-            expr_to_svg_markup(&args[0])
-          } else {
-            svg_escape(s.replace('\n', " ").trim())
+          match crate::functions::string_ast::number_form_family_to_string(
+            name, args,
+          ) {
+            Some(s) => svg_escape(s.replace('\n', " ").trim()),
+            None => expr_to_svg_markup(&args[0]),
           }
         }
 
@@ -7311,11 +7391,11 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
         shown.chars().count() as f64 + base_len as f64 * 0.7
       }
       "NumberForm" | "PaddedForm" | "AccountingForm" if !args.is_empty() => {
-        let s = crate::functions::string_ast::to_string_default_form(expr);
-        if s.trim_start().starts_with(name.as_str()) {
-          estimate_display_width(&args[0])
-        } else {
-          s.replace('\n', " ").trim().chars().count() as f64
+        match crate::functions::string_ast::number_form_family_to_string(
+          name, args,
+        ) {
+          Some(s) => s.replace('\n', " ").trim().chars().count() as f64,
+          None => estimate_display_width(&args[0]),
         }
       }
       _ => {
@@ -8777,6 +8857,33 @@ pub fn parse_grid_style(directives: &[Expr]) -> GridStyle {
 }
 
 /// Check if a cell is or contains an Expr::Image (unwrapping Style).
+/// The rendered SVG of a grid cell that is a graphic, and its natural
+/// size. `Grid` lays such a cell out as a picture instead of printing the
+/// expression's text form.
+fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
+  let svg = match cell {
+    Expr::Graphics { svg, .. } => svg.clone(),
+    // A styled graphic is still a graphic.
+    Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() =>
+    {
+      return grid_cell_graphic(&args[0]);
+    }
+    // A cell may be the unevaluated call that draws the picture: only the
+    // rendering path turns `Graphics[…]` into a rendered graphic, so ask
+    // for its SVG directly.
+    Expr::FunctionCall { name, .. } if is_graphics_producing_head(name) => {
+      crate::evaluator::expr_to_svg(cell)
+    }
+    _ => return None,
+  };
+  if svg.is_empty() {
+    return None;
+  }
+  let parsed = parse_svg_dimensions(&svg)?;
+  Some((svg, parsed.nat_w, parsed.nat_h))
+}
+
 fn unwrap_to_image(cell: &Expr) -> Option<&Expr> {
   match cell {
     Expr::Image { .. } => Some(cell),
@@ -9267,7 +9374,10 @@ fn grid_svg_styled_internal(
   let mut col_widths: Vec<f64> = vec![0.0; num_cols];
   for row in &rows {
     for (j, cell) in row.iter().enumerate() {
-      let w = estimate_display_width(cell) * char_width + pad_x;
+      let w = match grid_cell_graphic(cell) {
+        Some((_, nat_w, _)) => nat_w + pad_x,
+        None => estimate_display_width(cell) * char_width + pad_x,
+      };
       if w > col_widths[j] {
         col_widths[j] = w;
       }
@@ -9314,6 +9424,12 @@ fn grid_svg_styled_internal(
       } else {
         base_row_height
       };
+      // A graphic cell keeps its own height.
+      for cell in row.iter() {
+        if let Some((_, _, nat_h)) = grid_cell_graphic(cell) {
+          max_h = max_h.max(nat_h + pad_y);
+        }
+      }
       // Check for Image cells — scale to fit column width, compute height
       for (j, cell) in row.iter().enumerate() {
         if let Some(img) = unwrap_to_image(cell)
@@ -9585,6 +9701,22 @@ fn grid_svg_styled_internal(
       // Shift text down slightly to compensate for ascenders being taller
       // than descenders, which makes mathematical centering look top-heavy.
       let cy = (visual_tops[i] + visual_bottoms[i]) / 2.0 - 1.0;
+
+      // A graphic cell is drawn as a nested <svg> at its own size,
+      // centred in the cell.
+      if let Some((cell_svg, nat_w, nat_h)) = grid_cell_graphic(cell)
+        && let Some(parsed) = parse_svg_dimensions(&cell_svg)
+      {
+        let gx = x_offset + (col_w - nat_w) / 2.0;
+        let vis_h = visual_bottoms[i] - visual_tops[i];
+        let gy = visual_tops[i] + (vis_h - nat_h) / 2.0;
+        svg.push_str(&format!(
+          "<svg x=\"{gx:.1}\" y=\"{gy:.1}\" width=\"{nat_w:.1}\" height=\"{nat_h:.1}\" viewBox=\"{}\" preserveAspectRatio=\"xMidYMid meet\">\n{}</svg>\n",
+          parsed.view_box, parsed.inner_content
+        ));
+        x_offset += col_w;
+        continue;
+      }
 
       // Check if the cell (possibly inside Style) is an Image
       if let Some(img) = unwrap_to_image(cell) {
