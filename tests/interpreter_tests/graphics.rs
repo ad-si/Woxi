@@ -8938,6 +8938,86 @@ mod plot_grid {
 mod grid_frame_and_background {
   use super::*;
 
+  /// `StyleForm` is the older spelling of `Style`; the front end renders
+  /// them identically, so a cell written with the long option names shows
+  /// its content styled rather than its own source text.
+  #[test]
+  fn style_form_renders_like_style() {
+    let svg = export_svg(
+      r#"Grid[{{StyleForm["B", FontWeight -> Bold, FontSize -> 16, FontColor -> GrayLevel[1]]}}]"#,
+    );
+    assert!(
+      !svg.contains("StyleForm"),
+      "the wrapper must not print: {svg}"
+    );
+    assert!(svg.contains(">B</text>"), "{svg}");
+    assert!(svg.contains("font-weight=\"bold\""), "{svg}");
+    assert!(svg.contains("font-size=\"16\""), "{svg}");
+    assert!(svg.contains("fill=\"rgb(255,255,255)\""), "{svg}");
+    // The column is sized from the rendered text, not from the wrapper's
+    // source: a one-character cell stays narrow.
+    let width: u32 = svg
+      .split("width=\"")
+      .nth(1)
+      .and_then(|t| t.split('"').next())
+      .and_then(|v| v.parse().ok())
+      .unwrap();
+    assert!(width < 60, "column sized from the source text: {width}");
+  }
+
+  /// `SpanFromLeft` means "the cell to my left continues here": it draws
+  /// nothing, its neighbour is laid out across the merged columns, and the
+  /// divider between them is interrupted. Regression: the symbol's name was
+  /// printed as the cell's text.
+  #[test]
+  fn span_from_left_merges_into_the_cell_on_its_left() {
+    let svg =
+      export_svg(r#"Grid[{{"a", SpanFromLeft}, {"b", "c"}}, Frame -> All]"#);
+    assert!(
+      !svg.contains("SpanFromLeft"),
+      "the symbol must not print: {svg}"
+    );
+    // "a" is centred across both columns, so it sits at the grid's midpoint
+    // rather than in the middle of the first column (where "b" is).
+    let x_of = |label: &str| -> f64 {
+      svg
+        .split("<text ")
+        .find(|t| t.split_once('>').is_some_and(|(_, r)| r.starts_with(label)))
+        .and_then(|t| t.split("x=\"").nth(1))
+        .and_then(|v| v.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap_or_else(|| panic!("{label} missing: {svg}"))
+    };
+    assert!(
+      x_of("a") > x_of("b"),
+      "the spanning cell centres across both columns: {svg}"
+    );
+    // The divider between the columns stops at the spanned row: it is drawn
+    // as a segment starting below the first row, not the full height.
+    assert!(
+      !svg.contains("y1=\"0\" x2=\"") || svg.matches("<line").count() > 4,
+      "{svg}"
+    );
+  }
+
+  /// A ragged row still sits on the grid's background for its full width,
+  /// and columns sharing a colour are painted as one rectangle so their
+  /// shared edges do not antialias into visible seams.
+  #[test]
+  fn background_covers_every_column_of_a_ragged_row() {
+    let svg = export_svg(r#"Grid[{{"a", "b"}, {"c"}}, Background -> Black]"#);
+    let rects: Vec<&str> = svg.matches("<rect").collect();
+    assert_eq!(rects.len(), 2, "one rectangle per row: {svg}");
+    // Both rows are painted the same width — the short row included.
+    let widths: Vec<&str> = svg
+      .split("width=\"")
+      .skip(2)
+      .filter_map(|t| t.split('"').next())
+      .take(2)
+      .collect();
+    assert_eq!(widths[0], widths[1], "{svg}");
+  }
+
   #[test]
   fn grid_frame_with_color_expression() {
     // Frame -> Darker[Gray, .6] should enable the frame and use the color
@@ -12782,6 +12862,34 @@ mod manipulate {
       ),
       "missing styled runs for m in: {json}"
     );
+  }
+
+  /// Controls laid out in a `TabView` — each tab a `label -> content` rule
+  /// — are found in every tab, not just the ones outside it. Woxi's control
+  /// panel is one flat list, so the tabs themselves are not reproduced.
+  /// Regression: the "Duckworth-Lewis Method" Demonstration puts 19 of its
+  /// 20 controls inside a TabView and only the twentieth was picked up.
+  #[test]
+  fn spec_tab_view_grouped_controls_flatten() {
+    let expr = interpret_to_expr(
+      "Manipulate[x, \
+       Column[{TabView[{Style[\"One\", Bold] -> \
+           Grid[{{Control[{{a, 1, \"A\"}, 0, 10, 1}], SpanFromLeft}, \
+                 {Control[{{b, 2, \"B\"}, 0, 10, 1}], Control[{{c, 3, \"C\"}, 0, 10, 1}]}}], \
+         Style[\"Two\", Bold] -> Column[{Control[{{d, 4, \"D\"}, 0, 10, 1}]}]}], \
+        Control[{{e, 5, \"E\"}, 0, 10, 1}]}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let names: Vec<&str> = spec
+      .controls
+      .iter()
+      .map(|c| match c {
+        ManipulateControl::Continuous { name, .. } => name.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, ["a", "b", "c", "d", "e"]);
   }
 
   /// The Wolfram Demonstrations layout pattern: controls grouped inside

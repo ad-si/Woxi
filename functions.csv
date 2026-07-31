@@ -941,7 +941,7 @@ EdgeWeight,,🚫,,8.0,942
 LegendreQ,Legendre function of the second kind Q_n(x),✅,pure,1.0,943
 Unique,Generate a unique symbol,✅,effectful,1.0,944
 PoissonDistribution,Represents a Poisson distribution,✅,pure,6.0,945
-SpanFromLeft,,🚫,,6.0,946
+SpanFromLeft,Grid element that merges into the cell on its left,✅,none,6.0,946
 Exists,Represents the existential quantifier,✅,1,5.0,948
 NotebookRead,Requires external services or GUI infrastructure,🚫,io,3.0,948
 Level,Extracts subexpressions at a level specification where a negative level names parts of that depth,✅,pure,1.0,950

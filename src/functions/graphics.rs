@@ -2075,7 +2075,7 @@ fn graphics_text_content(expr: &Expr) -> String {
   match expr {
     Expr::String(s) => s.clone(),
     Expr::FunctionCall { name, args }
-      if name == "Style" && !args.is_empty() =>
+      if is_style_wrapper(name) && !args.is_empty() =>
     {
       graphics_text_content(&args[0])
     }
@@ -2239,7 +2239,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // to the primitive, then render the inner content.
   let content = match &args[0] {
     Expr::FunctionCall { name, args: sargs }
-      if name == "Style" && !sargs.is_empty() =>
+      if is_style_wrapper(name) && !sargs.is_empty() =>
     {
       for d in &sargs[1..] {
         apply_directive(d, &mut local_style);
@@ -7581,7 +7581,9 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
           + estimate_unit_abbrev_width(&args[1])
       }
       // Style[content, ...] → width of content
-      "Style" if !args.is_empty() => estimate_display_width(&args[0]),
+      "Style" | "StyleForm" if !args.is_empty() => {
+        estimate_display_width(&args[0])
+      }
       // HoldForm[expr] → width of content
       "HoldForm" if args.len() == 1 => estimate_display_width(&args[0]),
       // Tooltip[content, tip] → width of content (tip is hover-only)
@@ -9042,13 +9044,36 @@ pub struct GridStyle {
   pub(crate) color: Option<Color>,
 }
 
+/// `SpanFromLeft` in a `Grid` cell means "the cell to my left continues into
+/// this column": it draws nothing itself, and its neighbour is laid out
+/// across the merged span.
+fn is_span_from_left(cell: &Expr) -> bool {
+  matches!(cell, Expr::Identifier(s) if s == "SpanFromLeft")
+}
+
+/// How many columns the cell at `j` covers — itself plus every
+/// `SpanFromLeft` that follows it.
+fn span_width(row: &[Expr], j: usize) -> usize {
+  1 + row[j + 1..]
+    .iter()
+    .take_while(|c| is_span_from_left(c))
+    .count()
+}
+
+/// `StyleForm` is the Wolfram Language's older spelling of `Style`; the
+/// front end renders the two identically (both stay unevaluated and are
+/// interpreted at display time), so every display path treats them alike.
+pub(crate) fn is_style_wrapper(name: &str) -> bool {
+  name == "Style" || name == "StyleForm"
+}
+
 /// Extract style info from a Style[content, directives...] cell.
 /// Returns (content, font_size, font_weight, font_style, color).
 fn extract_cell_style(
   cell: &Expr,
 ) -> (&Expr, Option<f64>, &str, &str, Option<Color>) {
   if let Expr::FunctionCall { name, args } = cell
-    && name == "Style"
+    && is_style_wrapper(name)
     && !args.is_empty()
   {
     let content = &args[0];
@@ -9062,18 +9087,42 @@ fn extract_cell_style(
         Expr::Identifier(s) if s == "Italic" => fst = "italic",
         Expr::Integer(n) => fs = Some(*n as f64),
         Expr::Real(f) => fs = Some(*f),
+        // The long option spellings, which `StyleForm` cells are written
+        // with: `FontWeight -> Bold`, `FontSlant -> Italic`,
+        // `FontColor -> GrayLevel[1]`, …
         Expr::Rule {
           pattern,
           replacement,
         } => {
-          if let Expr::Identifier(k) = pattern.as_ref()
-            && k == "FontSize"
-          {
-            match replacement.as_ref() {
+          let Expr::Identifier(k) = pattern.as_ref() else {
+            continue;
+          };
+          match k.as_str() {
+            "FontSize" => match replacement.as_ref() {
               Expr::Integer(n) => fs = Some(*n as f64),
               Expr::Real(f) => fs = Some(*f),
               _ => {}
+            },
+            "FontWeight" => {
+              if matches!(replacement.as_ref(),
+                Expr::Identifier(v) | Expr::String(v) if v == "Bold")
+              {
+                fw = "bold";
+              }
             }
+            "FontSlant" => {
+              if matches!(replacement.as_ref(),
+                Expr::Identifier(v) | Expr::String(v) if v == "Italic")
+              {
+                fst = "italic";
+              }
+            }
+            "FontColor" => {
+              if let Some(c) = parse_color(replacement) {
+                color = Some(c);
+              }
+            }
+            _ => {}
           }
         }
         _ => {
@@ -9152,7 +9201,7 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     Expr::Graphics { svg, .. } => svg.clone(),
     // A styled graphic is still a graphic.
     Expr::FunctionCall { name, args }
-      if name == "Style" && !args.is_empty() =>
+      if is_style_wrapper(name) && !args.is_empty() =>
     {
       return grid_cell_graphic(&args[0]);
     }
@@ -9185,7 +9234,7 @@ fn unwrap_to_image(cell: &Expr) -> Option<&Expr> {
   match cell {
     Expr::Image { .. } => Some(cell),
     Expr::FunctionCall { name, args }
-      if name == "Style" && !args.is_empty() =>
+      if is_style_wrapper(name) && !args.is_empty() =>
     {
       unwrap_to_image(&args[0])
     }
@@ -9669,15 +9718,32 @@ fn grid_svg_styled_internal(
   let frac_row_height = font_size + pad_y + 10.0; // taller for stacked fractions
 
   let mut col_widths: Vec<f64> = vec![0.0; num_cols];
+  // Cells that span several columns are held back: their columns are sized
+  // by the ordinary cells first, and only what a span still needs is added
+  // afterwards, so one wide heading does not stretch a single column.
+  let mut spans: Vec<(usize, usize, f64)> = Vec::new();
   for row in &rows {
     for (j, cell) in row.iter().enumerate() {
+      if is_span_from_left(cell) {
+        continue;
+      }
       let w = match grid_cell_graphic(cell) {
         Some((_, nat_w, _)) => nat_w + pad_x,
         None => estimate_display_width(cell) * char_width + pad_x,
       };
-      if w > col_widths[j] {
+      let cols = span_width(row, j);
+      if cols > 1 {
+        spans.push((j, cols, w));
+      } else if w > col_widths[j] {
         col_widths[j] = w;
       }
+    }
+  }
+  for (j, cols, w) in spans {
+    let end = (j + cols).min(num_cols);
+    let have: f64 = col_widths[j..end].iter().sum();
+    if w > have && end > j {
+      col_widths[end - 1] += w - have;
     }
   }
 
@@ -9942,13 +10008,17 @@ fn grid_svg_styled_internal(
   }
 
   // Draw cell backgrounds
-  for (i, row) in rows.iter().enumerate() {
+  for i in 0..num_rows {
     let bg_y = visual_tops[i];
     let bg_h = visual_bottoms[i] - visual_tops[i];
-    let mut x_offset: f64 = paren_margin;
-    for (j, _cell) in row.iter().enumerate() {
-      let col_w = col_widths[j];
-      let bg = row_backgrounds
+    // Every column, not just the cells this row happens to have: a ragged
+    // row still sits on the grid's background for its full width, the way
+    // the Wolfram Language paints it. Columns that share a colour are
+    // painted as one rectangle — abutting rectangles antialias against the
+    // page along their shared edge, which shows as a seam on a dark
+    // background.
+    let colour_at = |j: usize| {
+      row_backgrounds
         .get(i % row_backgrounds.len().max(1))
         .and_then(|c| c.as_ref())
         .or_else(|| {
@@ -9956,14 +10026,29 @@ fn grid_svg_styled_internal(
             .get(j % col_backgrounds.len().max(1))
             .and_then(|c| c.as_ref())
         })
-        .or(background_color.as_ref());
+        .or(background_color.as_ref())
+    };
+    let mut x_offset: f64 = paren_margin;
+    let mut j = 0;
+    while j < num_cols {
+      let bg = colour_at(j);
+      let mut run_w = col_widths[j];
+      let mut k = j + 1;
+      while k < num_cols
+        && colour_at(k).map(|c| c.to_svg_rgb()) == bg.map(|c| c.to_svg_rgb())
+      {
+        run_w += col_widths[k];
+        k += 1;
+      }
       if let Some(color) = bg {
         svg.push_str(&format!(
-          "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"{}\"{}/>\n",
-          x_offset, bg_y, col_w, bg_h, color.to_svg_rgb(), color.opacity_attr()
+          "<rect x=\"{x_offset:.1}\" y=\"{bg_y:.1}\" width=\"{run_w:.1}\" height=\"{bg_h:.1}\" fill=\"{}\"{}/>\n",
+          color.to_svg_rgb(),
+          color.opacity_attr()
         ));
       }
-      x_offset += col_w;
+      x_offset += run_w;
+      j = k;
     }
   }
 
@@ -9971,7 +10056,16 @@ fn grid_svg_styled_internal(
   for (i, row) in rows.iter().enumerate() {
     let mut x_offset: f64 = paren_margin;
     for (j, cell) in row.iter().enumerate() {
-      let col_w = col_widths[j];
+      // A `SpanFromLeft` placeholder draws nothing; the cell it continues
+      // was already laid out across this column.
+      if is_span_from_left(cell) {
+        x_offset += col_widths[j];
+        continue;
+      }
+      let col_w: f64 = {
+        let end = (j + span_width(row, j)).min(num_cols);
+        col_widths[j..end].iter().sum()
+      };
       let col_align = col_alignments.get(j).copied().unwrap_or(alignment_h);
       // Decimal columns anchor each cell so its decimal point lands at a shared
       // `dot_x`; the whole number is start-anchored at `dot_x - int_width`.
@@ -10189,9 +10283,32 @@ fn grid_svg_styled_internal(
         (false, String::new())
       };
       if should_draw {
-        svg.push_str(&format!(
-          "<line x1=\"{x_offset:.1}\" y1=\"0\" x2=\"{x_offset:.1}\" y2=\"{total_height:.1}\" stroke=\"{stroke}\" stroke-width=\"1\"/>\n"
-        ));
+        // A divider is interrupted wherever it would cut through a cell
+        // that spans across it (`SpanFromLeft`), so it is drawn per row and
+        // contiguous runs are merged back into one line.
+        let mut run_start: Option<f64> = None;
+        for i in 0..num_rows {
+          let spanned = !is_border
+            && rows
+              .get(i)
+              .and_then(|row| row.get(j))
+              .is_some_and(is_span_from_left);
+          if spanned {
+            if let Some(y0) = run_start.take() {
+              svg.push_str(&format!(
+                "<line x1=\"{x_offset:.1}\" y1=\"{y0:.1}\" x2=\"{x_offset:.1}\" y2=\"{:.1}\" stroke=\"{stroke}\" stroke-width=\"1\"/>\n",
+                visual_tops[i]
+              ));
+            }
+          } else if run_start.is_none() {
+            run_start = Some(if i == 0 { 0.0 } else { visual_tops[i] });
+          }
+        }
+        if let Some(y0) = run_start {
+          svg.push_str(&format!(
+            "<line x1=\"{x_offset:.1}\" y1=\"{y0:.1}\" x2=\"{x_offset:.1}\" y2=\"{total_height:.1}\" stroke=\"{stroke}\" stroke-width=\"1\"/>\n"
+          ));
+        }
       }
       if j < num_cols {
         x_offset += col_widths[j];
@@ -12318,7 +12435,7 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       // as its own expression text.
       "Grid" => return grid_svg_with_gaps(&args, &[]).ok(),
       // A styled layout keeps its layout.
-      "Style" => return nested_layout_svg(&args[0]),
+      "Style" | "StyleForm" => return nested_layout_svg(&args[0]),
       _ => {}
     }
   }
@@ -12623,7 +12740,7 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
     let mut st = StyleState::default();
     let mut color: Option<Color> = None;
     if let Expr::FunctionCall { name, args: sargs } = item
-      && name == "Style"
+      && is_style_wrapper(name)
       && !sargs.is_empty()
     {
       for d in &sargs[1..] {
@@ -13549,7 +13666,7 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // they pass through with no message, matching wolframscript.
       Expr::Identifier(s) if s == "Delimiter" => out_args.push(spec.clone()),
       Expr::String(_) => out_args.push(spec.clone()),
-      Expr::FunctionCall { name, .. } if name == "Style" => {
+      Expr::FunctionCall { name, .. } if is_style_wrapper(name) => {
         out_args.push(spec.clone());
       }
       // Control objects and layout containers grouping them — `Control[…]`,
@@ -14122,7 +14239,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         });
         continue;
       }
-      Expr::FunctionCall { name, .. } if name == "Style" => {
+      Expr::FunctionCall { name, .. } if is_style_wrapper(name) => {
         let label_runs = manipulate_label_runs(spec, false);
         controls.push(ManipulateControl::Heading {
           label: flatten_label_runs(&label_runs),
@@ -14474,13 +14591,23 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
           || args.iter().any(contains_control)
       }
       Expr::List(items) => items.iter().any(contains_control),
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => contains_control(pattern) || contains_control(replacement),
       _ => false,
     }
   }
   let Expr::FunctionCall { name, args } = spec else {
     return None;
   };
-  if !matches!(name.as_str(), "Row" | "Column" | "Grid") || args.is_empty() {
+  if !matches!(name.as_str(), "Row" | "Column" | "Grid" | "TabView")
+    || args.is_empty()
+  {
     return None;
   }
   if !contains_control(spec) {
@@ -14491,6 +14618,16 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
   };
   let mut out = Vec::new();
   for item in items.iter() {
+    // A `TabView` lists its tabs as `label -> content`; only the content
+    // holds controls. (Woxi's control panel is one flat list, so the tabs
+    // themselves are not reproduced — every tab's controls are shown.)
+    let item = match (name.as_str(), item) {
+      (
+        "TabView",
+        Expr::Rule { replacement, .. } | Expr::RuleDelayed { replacement, .. },
+      ) => replacement.as_ref(),
+      _ => item,
+    };
     match item {
       // A Grid's first level is its list of layout rows; their elements
       // are the actual items.
@@ -15081,7 +15218,7 @@ fn manipulate_label_runs(expr: &Expr, italic: bool) -> Vec<LabelRun> {
     Expr::FunctionCall { name, args } => match name.as_str() {
       // Style[expr, dir…] — render `expr`, turning italic on if any directive
       // asks for it (bare `Italic` or `FontSlant -> "Italic"`).
-      "Style" => {
+      "Style" | "StyleForm" => {
         let styled = italic || args.iter().skip(1).any(is_italic_directive);
         args
           .first()

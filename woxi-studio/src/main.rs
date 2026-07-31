@@ -9630,4 +9630,71 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k2$$ = 0}, \"\\[Ellipsis]\"]"], "Ou
     assert!(flat.contains("<polygon"), "{flat}");
     assert_ne!(flat, folded, "the sliders must fold the net");
   }
+
+  /// End-to-end regression for "Deciding Rain-Affected Cricket Matches: The
+  /// Duckworth-Lewis Method". Its controls live inside a `TabView`, and its
+  /// scoreboard is a `Grid` of `StyleForm` cells with `SpanFromLeft` spans
+  /// on a dark background. (The notebook's 18 KB of resource tables are
+  /// trimmed here; the structure is its own.)
+  #[test]
+  fn duckworth_lewis_notebook_builds_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["runRate[s_, o_] := If[o == 0, 0., N[Round[s/o, 0.01]]];"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nGrid[{\n{StyleForm[\"This is a \"<>ToString[totalOvers]<>\" over match\",FontWeight->Bold,FontSize->16,FontColor->GrayLevel[1]],SpanFromLeft},\n{StyleForm[\"Team 1: \",FontWeight->Bold,FontSize->16,FontColor->GrayLevel[1]],StyleForm[ToString[team1Score]<>\" for \"<>ToString[team1Wickets],FontWeight->Bold,FontSize->16,FontColor->GrayLevel[1]]},\n{StyleForm[\"RR: \",FontWeight->Bold,FontSize->16,FontColor->GrayLevel[1]],StyleForm[ToString[runRate[team1Score,team1Overs]],FontWeight->Bold,FontSize->16,FontColor->GrayLevel[1]]}\n},Background->Black,Alignment->Left],\nColumn[{TabView[{\nStyle[\"The Match\",Bold]->Grid[{{Control[{{totalOvers,50,\"Overs per innings:\"},0,50,1,Appearance->\"Labeled\"}],SpanFromLeft},{Control[{{team1Score,0,\"Team 1:\"},0,400,1,Appearance->\"Labeled\"}],Control[{{team1Wickets,0,\"for\"},0,10,1,Appearance->\"Labeled\"}]}}],\nStyle[\"The Interruption\",Bold]->Column[{Control[{{team1Overs,25,\"Overs:\"},0,50,1,Appearance->\"Labeled\"}]}]}],\nControl[{{display,1,\"Display\"},{1->\"Scoreboard\",2->\"Resources\"}}]}],\nSaveDefinitions->True]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`totalOvers$$ = 50}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the scoreboard must evaluate: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the scoreboard must draw");
+    // Every tab's controls are found, not just the one outside the TabView.
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { name, .. } => name.as_str(),
+        manipulate::ControlState::Discrete { name, .. } => name.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      names,
+      [
+        "totalOvers",
+        "team1Score",
+        "team1Wickets",
+        "team1Overs",
+        "display"
+      ]
+    );
+
+    let svg = woxi::interpret_with_stdout(&format!(
+      "totalOvers = 50; team1Score = 120; team1Wickets = 3; \
+       team1Overs = 25; display = 1;\n{}",
+      widget.body
+    ))
+    .expect("the body must render")
+    .graphics
+    .expect("the body must produce a graphic");
+    // The StyleForm cells render their content, not their own source, and
+    // the SpanFromLeft placeholder draws nothing.
+    assert!(!svg.contains("StyleForm"), "{svg}");
+    assert!(!svg.contains("SpanFromLeft"), "{svg}");
+    assert!(svg.contains("This is a 50 over match"), "{svg}");
+    assert!(svg.contains(">120 for 3</text>"), "{svg}");
+    assert!(
+      svg.contains(">4.8</text>"),
+      "the run rate must compute: {svg}"
+    );
+  }
 }
