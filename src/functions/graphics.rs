@@ -2209,11 +2209,7 @@ fn inset_primitives(
   let pos = args.get(1).and_then(expr_to_point).unwrap_or((0.0, 0.0));
   // `opos` names the point of the object that lands on `pos`, in the
   // object's own coordinates (Automatic = its centre).
-  let (ox, oy) = args
-    .get(2)
-    .and_then(expr_to_point)
-    .map(|(x, y)| (x, y))
-    .unwrap_or((cx, cy));
+  let (ox, oy) = args.get(2).and_then(expr_to_point).unwrap_or((cx, cy));
 
   let placed = inner
     .iter()
@@ -15298,8 +15294,22 @@ fn manipulate_label_runs(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       },
       "Subscript" => script_runs(args, italic, false),
       "Superscript" => script_runs(args, italic, true),
+      // `Power[b, e]`, which is what a label's typeset `SuperscriptBox`
+      // reads as: a Demonstration writes its gravity slider's unit as
+      // `m/\!\(\*SuperscriptBox[\(s\), \(2\)]\)`, and it must show as
+      // `m/s²`, not `m/s^2`.
+      "Power" if args.len() == 2 => script_runs(args, italic, true),
       _ => output_run(italic),
     },
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => script_runs(
+      &[left.as_ref().clone(), right.as_ref().clone()],
+      italic,
+      true,
+    ),
     // A label written in the notebook FrontEnd carries its typeset bits as
     // inline linear syntax inside the string: `"value to test against
     // \!\(\*SubscriptBox[\(p\), \(0\)]\)"`. Render each box segment as the
