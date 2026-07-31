@@ -2898,6 +2898,54 @@ mod plot3d {
       }
     }
 
+    /// A `FrameLabel` keeps its own placement in a scatter plot too — the
+    /// line and scatter renderers share one label pass, so the two option
+    /// families stay distinguishable in both.
+    #[test]
+    fn scatter_plot_frame_label_is_placed_like_a_line_plots() {
+      let scatter = export_svg(
+        r#"ListPlot[{{0, 0.1}, {1, 0.5}}, Frame -> True, FrameLabel -> {"XF", "YF"}]"#,
+      );
+      assert!(scatter.contains(">XF</text>"), "{scatter}");
+      assert!(
+        scatter.contains("rotate(-90"),
+        "the y frame label is rotated in the left gutter: {scatter}"
+      );
+    }
+
+    /// A scatter plot draws its own axes, and used to draw no labels at all:
+    /// `PlotLabel` and `AxesLabel` were silently dropped by the unjoined
+    /// `ListPlot` path while the line path honoured both.
+    #[test]
+    fn scatter_plot_draws_its_labels() {
+      let svg = export_svg(
+        r#"ListPlot[{{0, 0.1}, {1, 0.5}}, PlotLabel -> Style["TITLE", Purple, Bold], AxesLabel -> {"XX", "YY"}]"#,
+      );
+      for text in ["TITLE", "XX", "YY"] {
+        assert!(svg.contains(&format!(">{text}</text>")), "{text}: {svg}");
+      }
+      assert!(svg.contains("font-weight=\"bold\""), "{svg}");
+      assert!(svg.contains("rgb(128,0,128)"), "{svg}");
+      // Placed the same way as in a line plot: the y label upright above the
+      // axis, the x label past its right end.
+      let y_of = |label: &str| -> f64 {
+        svg
+          .split("<text ")
+          .find(|t| {
+            t.split_once('>').is_some_and(|(_, r)| r.starts_with(label))
+          })
+          .and_then(|t| t.split("y=\"").nth(1))
+          .and_then(|v| v.split('"').next())
+          .and_then(|v| v.parse().ok())
+          .unwrap()
+      };
+      assert!(
+        y_of("TITLE") < y_of("YY"),
+        "the title stacks above the y label"
+      );
+      assert!(!svg.contains("rotate("), "an AxesLabel is upright");
+    }
+
     /// The Wolfram Language writes an `AxesLabel` at the *end* of its axis:
     /// the x label just past the right edge and level with the axis, the y
     /// label above the top of the vertical axis, upright. A `FrameLabel` is

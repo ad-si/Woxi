@@ -10326,4 +10326,111 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`acut$$ = 0.5}, \"\\[Ellipsis]\"]"],
     // `mark radii` swaps the background and the disk.
     assert!(render("False", "True", 6).contains("fill=\"rgb(255,181,0)\""));
   }
+
+  /// End-to-end regression for "Binomial Probability Distribution": a
+  /// stem plot of the binomial PDF, titled and with both axes labelled.
+  /// The unjoined `ListPlot` path drew no labels at all.
+  #[test]
+  fn binomial_distribution_notebook_labels_its_plot() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[", "\[IndentingNewLine]", 
+  RowBox[{
+   RowBox[{"ListPlot", "[", 
+    RowBox[{
+     RowBox[{"Table", "[", 
+      RowBox[{
+       RowBox[{"{", 
+        RowBox[{"k", ",", 
+         RowBox[{"PDF", "[", 
+          RowBox[{
+           RowBox[{"BinomialDistribution", "[", 
+            RowBox[{"NumTrials", ",", "ProbSuccess"}], "]"}], ",", "k"}], 
+          "]"}]}], "}"}], ",", 
+       RowBox[{"{", 
+        RowBox[{"k", ",", "0", ",", "NumTrials"}], "}"}]}], "]"}], ",", 
+     RowBox[{"AxesOrigin", "\[Rule]", 
+      RowBox[{"{", 
+       RowBox[{"0", ",", "0"}], "}"}]}], ",", 
+     RowBox[{"Filling", "\[Rule]", "Axis"}], ",", 
+     RowBox[{"AxesLabel", "\[Rule]", 
+      RowBox[{"{", 
+       RowBox[{"x", ",", "\"\<\!\(\*SubscriptBox[\(f\), \(X\)]\)(x)\>\""}], 
+       "}"}]}], ",", 
+     RowBox[{"PlotRange", "\[Rule]", 
+      RowBox[{"{", 
+       RowBox[{"0", ",", "1"}], "}"}]}], ",", 
+     RowBox[{"ImageSize", "\[Rule]", 
+      RowBox[{"{", 
+       RowBox[{"500", ",", "300"}], "}"}]}], ",", " ", 
+     RowBox[{"PlotStyle", "\[Rule]", 
+      RowBox[{"{", 
+       RowBox[{"Blue", ",", 
+        RowBox[{"PointSize", "[", "Medium", "]"}]}], "}"}]}], ",", " ", 
+     RowBox[{"PlotLabel", "\[Rule]", 
+      RowBox[{"Style", "[", 
+       RowBox[{
+       "\"\<probability associated with each value of the random \
+variable\>\"", ",", "Purple", ",", "Bold", ",", "12"}], "]"}]}]}], "]"}], ",", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"NumTrials", ",", "10", ",", "\"\<number of trials\>\""}], 
+      "}"}], ",", "1", ",", " ", "50", ",", "1", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}], ",", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{
+      "ProbSuccess", ",", ".25", ",", "\"\<probability of success\>\""}], 
+      "}"}], ",", "0.01", ",", "1", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}]}], 
+  "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`NumTrials$$ = 10}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the distribution must evaluate: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the stems must draw");
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { name, .. } => name.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, ["NumTrials", "ProbSuccess"]);
+
+    let svg = woxi::interpret_with_stdout(&format!(
+      "NumTrials = 10; ProbSuccess = 0.25;\n{}",
+      widget.body
+    ))
+    .expect("the body must render")
+    .graphics
+    .expect("the body must produce a graphic");
+    // One point per k in 0..NumTrials.
+    assert_eq!(svg.matches("<circle").count(), 11, "{svg}");
+    // The title and both axis labels are drawn; the y label keeps the
+    // subscript its inline box spells out.
+    assert!(
+      svg.contains("probability associated with each value"),
+      "{svg}"
+    );
+    assert!(svg.contains(">x</text>"), "{svg}");
+    assert!(
+      svg.contains("baseline-shift=\"sub\""),
+      "the y label's subscript must typeset: {svg}"
+    );
+  }
 }

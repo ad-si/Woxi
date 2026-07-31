@@ -2065,6 +2065,139 @@ fn grid_line_props(
 }
 
 /// Core SVG generation for 2D line plots with full option support.
+/// Draw a plot's labels — `FrameLabel` on all four edges, `AxesLabel` at the
+/// ends of the axes, and the `PlotLabel` above them — into `labels_svg`.
+///
+/// Shared by the line and scatter renderers: both draw their own axes and
+/// then inject text, and the placement rules are the same for either.
+/// `area` is the plotting rectangle `(x0, y0, w, h)` and `range` the data
+/// range `(x_min, x_max, y_min, y_max)` it maps, both in render units.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn plot_labels_svg(
+  opts: &PlotOptions,
+  (plot_x0, margin_top, plot_w, plot_h): (f64, f64, f64, f64),
+  (x_min, x_max, y_min, y_max): (f64, f64, f64, f64),
+  margin_left_f: f64,
+  sf: f64,
+  label_fill: &str,
+  title_default_fill: &str,
+) -> String {
+  let axis_y = margin_top + plot_h;
+  let font_size = sf * 14.0;
+  let title_font_size = sf * 17.0;
+  let has_top_label =
+    opts.frame_label_top.as_ref().is_some_and(|t| !t.is_empty());
+  let axes_label_y = opts
+    .axes_label
+    .as_ref()
+    .map(|(_, y)| y.as_str())
+    .filter(|y| !y.is_empty() && opts.axes.1);
+  let mut labels_svg = String::new();
+  // Bottom/left FrameLabel: centred outside the plot area.
+  if let Some(x_label) = &opts.frame_label_bottom
+    && !x_label.is_empty()
+  {
+    let cx = plot_x0 + plot_w / 2.0;
+    // Sit clearly below the x tick labels (which occupy ~one tick-font
+    // height below the axis) rather than crowding the frame.
+    let base_y = axis_y + sf * 13.0 + font_size * 1.4;
+    labels_svg.push_str(&format!(
+      "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
+         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+         fill=\"{label_fill}\">{}</text>\n",
+      crate::functions::graphics::box_string_to_svg(x_label)
+    ));
+  }
+  if let Some(y_label) = &opts.frame_label_left
+    && !y_label.is_empty()
+  {
+    let cy = margin_top + plot_h / 2.0;
+    // Place the rotated label just left of the y tick-label column
+    // (which right-aligns near the axis) instead of at the far gutter
+    // edge — adapting to the actual tick width.
+    let tick_w = max_y_tick_label_chars(y_min, y_max) as f64 * sf * 13.0 * 0.6;
+    let tick_left = plot_x0 - 8.0 * sf - tick_w;
+    let lx = (tick_left - font_size * 0.5 - sf * 5.0)
+      .max(margin_left_f + font_size * 0.5);
+    labels_svg.push_str(&format!(
+      "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
+         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+         fill=\"{label_fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
+      crate::functions::graphics::box_string_to_svg(y_label)
+    ));
+  }
+
+  // AxesLabel: at the far end of each axis, the way Wolfram writes it.
+  labels_svg.push_str(&axes_label_svg(
+    opts.axes_label.as_ref(),
+    (plot_x0, margin_top, plot_w, plot_h),
+    (x_min, x_max, y_min, y_max),
+    opts.axes,
+    font_size,
+    label_fill,
+  ));
+
+  // Top FrameLabel (sits just above the plot's top edge)
+  if let Some(top_label) = &opts.frame_label_top
+    && !top_label.is_empty()
+  {
+    let cx = plot_x0 + plot_w / 2.0;
+    let ty = margin_top - font_size * 0.6;
+    labels_svg.push_str(&format!(
+      "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
+         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+         fill=\"{label_fill}\">{}</text>\n",
+      crate::functions::graphics::box_string_to_svg(top_label)
+    ));
+  }
+
+  // Right FrameLabel (rotated +90 on the right frame edge)
+  if let Some(right_label) = &opts.frame_label_right
+    && !right_label.is_empty()
+  {
+    let cy = margin_top + plot_h / 2.0;
+    let rx = plot_x0 + plot_w + font_size * 1.4;
+    labels_svg.push_str(&format!(
+      "<text x=\"{rx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
+         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+         fill=\"{label_fill}\" transform=\"rotate(90,{rx:.1},{cy:.1})\">{}</text>\n",
+      crate::functions::graphics::box_string_to_svg(right_label)
+    ));
+  }
+
+  // PlotLabel — shifted above the top FrameLabel and/or the y AxesLabel
+  // when they share the top margin.
+  if let Some(sl) = &opts.plot_label
+    && !sl.text.is_empty()
+  {
+    let cx = plot_x0 + plot_w / 2.0;
+    let stacked = if has_top_label { 1.0 } else { 0.0 }
+      + if axes_label_y.is_some() { 1.0 } else { 0.0 };
+    let ty = margin_top - title_font_size * 0.5 - stacked * font_size * 1.2;
+    let fs = sl.font_size.map(|f| f * sf).unwrap_or(title_font_size);
+    let fill = sl
+      .color
+      .as_ref()
+      .map(|c| c.to_svg_rgb())
+      .unwrap_or_else(|| title_default_fill.to_string());
+    let mut style_attrs = String::new();
+    if sl.bold {
+      style_attrs.push_str(" font-weight=\"bold\"");
+    }
+    if sl.italic {
+      style_attrs.push_str(" font-style=\"italic\"");
+    }
+    labels_svg.push_str(&format!(
+      "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
+         font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
+         fill=\"{fill}\"{style_attrs}>{}</text>\n",
+      sl.svg()
+    ));
+  }
+
+  labels_svg
+}
+
 fn generate_svg_with_options(
   all_points: &[Vec<(f64, f64)>],
   x_range: (f64, f64),
@@ -2870,8 +3003,6 @@ fn generate_svg_with_options(
     let plot_h =
       render_height as f64 - margin_top - margin_bottom_f - x_label_area as f64;
     let axis_y = margin_top + plot_h;
-    let font_size = sf * 14.0;
-    let title_font_size = sf * 17.0;
 
     if let Some(insert_pos) = buf.rfind("</svg>") {
       let mut labels_svg = String::new();
@@ -2917,108 +3048,15 @@ fn generate_svg_with_options(
         }
       }
 
-      // Bottom/left FrameLabel: centred outside the plot area.
-      if let Some(x_label) = &opts.frame_label_bottom
-        && !x_label.is_empty()
-      {
-        let cx = plot_x0 + plot_w / 2.0;
-        // Sit clearly below the x tick labels (which occupy ~one tick-font
-        // height below the axis) rather than crowding the frame.
-        let base_y = axis_y + sf * 13.0 + font_size * 1.4;
-        labels_svg.push_str(&format!(
-          "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
-             font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-             fill=\"{label_fill}\">{}</text>\n",
-          crate::functions::graphics::box_string_to_svg(x_label)
-        ));
-      }
-      if let Some(y_label) = &opts.frame_label_left
-        && !y_label.is_empty()
-      {
-        let cy = margin_top + plot_h / 2.0;
-        // Place the rotated label just left of the y tick-label column
-        // (which right-aligns near the axis) instead of at the far gutter
-        // edge — adapting to the actual tick width.
-        let tick_w =
-          max_y_tick_label_chars(y_min, y_max) as f64 * sf * 13.0 * 0.6;
-        let tick_left = plot_x0 - 8.0 * sf - tick_w;
-        let lx = (tick_left - font_size * 0.5 - sf * 5.0)
-          .max(margin_left_f + font_size * 0.5);
-        labels_svg.push_str(&format!(
-          "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
-             font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-             fill=\"{label_fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
-          crate::functions::graphics::box_string_to_svg(y_label)
-        ));
-      }
-
-      // AxesLabel: at the far end of each axis, the way Wolfram writes it.
-      labels_svg.push_str(&axes_label_svg(
-        opts.axes_label.as_ref(),
+      labels_svg.push_str(&plot_labels_svg(
+        opts,
         (plot_x0, margin_top, plot_w, plot_h),
         (x_min, x_max, y_min, y_max),
-        opts.axes,
-        font_size,
+        margin_left_f,
+        sf,
         label_fill,
+        title_default_fill,
       ));
-
-      // Top FrameLabel (sits just above the plot's top edge)
-      if let Some(top_label) = &opts.frame_label_top
-        && !top_label.is_empty()
-      {
-        let cx = plot_x0 + plot_w / 2.0;
-        let ty = margin_top - font_size * 0.6;
-        labels_svg.push_str(&format!(
-          "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
-             font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-             fill=\"{label_fill}\">{}</text>\n",
-          crate::functions::graphics::box_string_to_svg(top_label)
-        ));
-      }
-
-      // Right FrameLabel (rotated +90 on the right frame edge)
-      if let Some(right_label) = &opts.frame_label_right
-        && !right_label.is_empty()
-      {
-        let cy = margin_top + plot_h / 2.0;
-        let rx = plot_x0 + plot_w + font_size * 1.4;
-        labels_svg.push_str(&format!(
-          "<text x=\"{rx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
-             font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-             fill=\"{label_fill}\" transform=\"rotate(90,{rx:.1},{cy:.1})\">{}</text>\n",
-          crate::functions::graphics::box_string_to_svg(right_label)
-        ));
-      }
-
-      // PlotLabel — shifted above the top FrameLabel and/or the y AxesLabel
-      // when they share the top margin.
-      if let Some(sl) = &opts.plot_label
-        && !sl.text.is_empty()
-      {
-        let cx = plot_x0 + plot_w / 2.0;
-        let stacked = if has_top_label { 1.0 } else { 0.0 }
-          + if axes_label_y.is_some() { 1.0 } else { 0.0 };
-        let ty = margin_top - title_font_size * 0.5 - stacked * font_size * 1.2;
-        let fs = sl.font_size.map(|f| f * sf).unwrap_or(title_font_size);
-        let fill = sl
-          .color
-          .as_ref()
-          .map(|c| c.to_svg_rgb())
-          .unwrap_or_else(|| title_default_fill.to_string());
-        let mut style_attrs = String::new();
-        if sl.bold {
-          style_attrs.push_str(" font-weight=\"bold\"");
-        }
-        if sl.italic {
-          style_attrs.push_str(" font-style=\"italic\"");
-        }
-        labels_svg.push_str(&format!(
-          "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
-             font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
-             fill=\"{fill}\"{style_attrs}>{}</text>\n",
-          sl.svg()
-        ));
-      }
 
       buf.insert_str(insert_pos, &labels_svg);
     }
@@ -3416,8 +3454,34 @@ pub(crate) fn generate_scatter_svg_with_options(
   // The scatter layout uses fixed margins — `margin(10*s)` on every side plus
   // the left/bottom label areas — unless `ImagePadding` states them outright.
   let sf = RESOLUTION_SCALE as f64;
-  let (margin_top, margin_right, margin_left, margin_bottom) =
-    (10.0 * sf, 10.0 * sf, 10.0 * sf, 10.0 * sf);
+  // A `PlotLabel` and a y `AxesLabel` stack above the plot area, and an x
+  // `AxesLabel` runs past the right end of its axis — each needs its room
+  // reserved, as in the line renderer.
+  let has_plot_label = opts
+    .plot_label
+    .as_ref()
+    .is_some_and(|sl| !sl.text.is_empty());
+  let axes_label_x = opts
+    .axes_label
+    .as_ref()
+    .map(|(x, _)| x.as_str())
+    .filter(|x| !x.is_empty() && opts.axes.0);
+  let has_y_axes_label = opts
+    .axes_label
+    .as_ref()
+    .is_some_and(|(_, y)| !y.is_empty() && opts.axes.1);
+  let margin_top = 10.0 * sf
+    + if has_plot_label { 25.0 * sf } else { 0.0 }
+    + if has_y_axes_label { 20.0 * sf } else { 0.0 };
+  let margin_right = 10.0 * sf
+    + axes_label_x.map_or(0.0, |label| {
+      8.0 * sf
+        + crate::functions::graphics::box_string_visible_len(label) as f64
+          * 0.62
+          * sf
+          * 14.0
+    });
+  let (margin_left, margin_bottom) = (10.0 * sf, 10.0 * sf);
   let (y_label_area, x_label_area) = (65.0 * sf, 40.0 * sf);
 
   // AspectRatio sizes the plotting area (the data frame), not the whole image.
@@ -3471,7 +3535,8 @@ pub(crate) fn generate_scatter_svg_with_options(
     ),
   };
 
-  let (bg_color, dark_gray, light_gray, label_fill, _title_fill) = plot_theme();
+  let (bg_color, dark_gray, light_gray, label_fill, title_default_fill) =
+    plot_theme();
 
   let mut buf = String::new();
   {
@@ -3695,6 +3760,24 @@ pub(crate) fn generate_scatter_svg_with_options(
   }
 
   inject_legend(&mut buf, opts);
+
+  // FrameLabel / AxesLabel / PlotLabel, placed exactly as the line renderer
+  // places them.
+  if let Some(pos) = buf.rfind("</svg>") {
+    let labels = plot_labels_svg(
+      opts,
+      (plot_x0, plot_y0, plot_w, plot_h),
+      (x_min, x_max, y_min, y_max),
+      margin_left,
+      sf,
+      label_fill,
+      title_default_fill,
+    );
+    if !labels.is_empty() {
+      buf.insert_str(pos, &labels);
+    }
+  }
+
   // Explicit `Ticks`: mark and label exactly the positions asked for,
   // in the same place the automatic ones would sit.
   if opts.ticks_x.is_some() || opts.ticks_y.is_some() {
