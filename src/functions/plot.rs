@@ -6610,6 +6610,19 @@ fn frame_label_entry(e: &Expr) -> String {
   crate::functions::chart::expr_to_label(e).unwrap_or_default()
 }
 
+/// Apply a `FrameLabel` value to a plot's options. Bottom and left reuse
+/// the axes-label render path; top and right get their own frame edges.
+pub(crate) fn apply_frame_label_option(value: &Expr, opts: &mut PlotOptions) {
+  let fl = parse_frame_label(value);
+  opts.axes_label = Some((fl.bottom, fl.left));
+  if !fl.top.is_empty() {
+    opts.frame_label_top = Some(fl.top);
+  }
+  if !fl.right.is_empty() {
+    opts.frame_label_right = Some(fl.right);
+  }
+}
+
 /// Parse a `FrameLabel` option value, supporting both forms:
 ///   `{bottom, left}` and `{{left, right}, {bottom, top}}`.
 /// A bare label applies to the bottom edge.
@@ -6828,6 +6841,7 @@ pub(crate) fn apply_common_plot_option(
     "Background" => {
       plot_opts.background = parse_background_option(replacement);
     }
+    "FrameLabel" => apply_frame_label_option(replacement, plot_opts),
     "Ticks" => match replacement {
       Expr::Identifier(s) if s == "None" => plot_opts.ticks = false,
       Expr::Identifier(s) if s == "Automatic" || s == "All" => {

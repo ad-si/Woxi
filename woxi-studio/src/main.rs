@@ -8904,4 +8904,112 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 61}, \"…\"]"], "Output"]
       other => panic!("unexpected controls: {other:?}"),
     }
   }
+
+  /// End-to-end regression for the "Force to Overcome Vacuum Pull"
+  /// Demonstration: a `Column` of a diagram over two `Show[Plot[…],
+  /// Graphics[…]]` panels, each captioned with a styled `FrameLabel`.
+  #[test]
+  fn vacuum_pull_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"Column", "[",
+    RowBox[{"{",
+     RowBox[{
+      RowBox[{"Graphics", "[",
+       RowBox[{
+        RowBox[{"{", RowBox[{"Circle", "[",
+          RowBox[{RowBox[{"{", RowBox[{"0", ",", "0"}], "}"}], ",", "d"}],
+          "]"}], "}"}], ",",
+        RowBox[{"ImageSize", "\[Rule]",
+         RowBox[{"{", RowBox[{"200", ",", "120"}], "}"}]}]}], "]"}], ",",
+      RowBox[{"Show", "[",
+       RowBox[{
+        RowBox[{"Plot", "[",
+         RowBox[{
+          RowBox[{"f", "[", RowBox[{"x", ",", "p"}], "]"}], ",",
+          RowBox[{"{", RowBox[{"x", ",", "0.", ",", "60."}], "}"}], ",",
+          RowBox[{"Frame", "\[Rule]", "True"}], ",",
+          RowBox[{"GridLines", "\[Rule]", "Automatic"}], ",",
+          RowBox[{"FrameLabel", "\[Rule]",
+           RowBox[{"{",
+            RowBox[{
+             RowBox[{"{",
+              RowBox[{
+               RowBox[{"Style", "[",
+                RowBox[{"\"\<force (kN)\>\"", ",", "12"}], "]"}], ",",
+               "None"}], "}"}], ",",
+             RowBox[{"{",
+              RowBox[{
+               RowBox[{"Style", "[",
+                RowBox[{"\"\<diameter (cm)\>\"", ",", "12"}], "]"}], ",",
+               "None"}], "}"}]}], "}"}]}], ",",
+          RowBox[{"ImageSize", "\[Rule]",
+           RowBox[{"{", RowBox[{"330", ",", "160"}], "}"}]}]}], "]"}], ",",
+        RowBox[{"Graphics", "[",
+         RowBox[{"{",
+          RowBox[{
+           RowBox[{"PointSize", "[", "0.04", "]"}], ",",
+           RowBox[{"Point", "[",
+            RowBox[{"{",
+             RowBox[{"d", ",", RowBox[{"f", "[", RowBox[{"d", ",", "p"}], "]"}]}],
+             "}"}], "]"}]}], "}"}], "]"}]}], "]"}]}], "}"}], "]"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{", RowBox[{"d", ",", "30.", ",", "\"\<diameter\>\""}], "}"}],
+     ",", "1.", ",", "60."}], "}"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{", RowBox[{"p", ",", "20.", ",", "\"\<pressure\>\""}], "}"}],
+     ",", "0.", ",", "100."}], "}"}], ",",
+   RowBox[{"Initialization", "\[RuleDelayed]",
+    RowBox[{"(",
+     RowBox[{
+      RowBox[{"f", "[",
+       RowBox[{"dd_", ",", "pp_"}], "]"}], ":=",
+      RowBox[{
+       RowBox[{"(", RowBox[{"100.", "-", "pp"}], ")"}], "*",
+       RowBox[{"Pi", "/", "8."}], "*",
+       SuperscriptBox[
+        RowBox[{"(", RowBox[{"dd", "/", "100."}], ")"}], "2"]}]}], ")"}]}]}],
+  "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`d$$ = 30.}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the column of diagram and captioned plot must draw"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: d,
+          current: d_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: p,
+          current: p_now,
+          ..
+        },
+      ] => {
+        assert_eq!((d.as_str(), *d_now), ("d", 30.0));
+        assert_eq!((p.as_str(), *p_now), ("p", 20.0));
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
 }

@@ -865,14 +865,7 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         // `{{left, right}, {bottom, top}}` form. Bottom/left reuse the
         // axes-label render path; top/right get their own frame edges.
         "FrameLabel" => {
-          let fl = crate::functions::plot::parse_frame_label(replacement);
-          opts.axes_label = Some((fl.bottom, fl.left));
-          if !fl.top.is_empty() {
-            opts.frame_label_top = Some(fl.top);
-          }
-          if !fl.right.is_empty() {
-            opts.frame_label_right = Some(fl.right);
-          }
+          crate::functions::plot::apply_frame_label_option(replacement, opts)
         }
         "Frame" => {
           if matches!(replacement,

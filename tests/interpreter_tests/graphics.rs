@@ -2576,6 +2576,54 @@ mod plot3d {
       assert!(ticks("Automatic").len() > 4);
     }
 
+    /// `Plot` reads `FrameLabel`, in both the `{bottom, left}` and the
+    /// nested four-edge form, and a caption may be styled.
+    #[test]
+    fn plot_frame_label_captions_the_edges() {
+      let captions = |code: &str| {
+        let svg = export_svg(code);
+        svg
+          .lines()
+          .filter_map(|l| {
+            let after = l.split_once('>')?.1;
+            let text = after.split_once("</text>")?.0;
+            (!text.is_empty()
+              && text.parse::<f64>().is_err()
+              && !text.starts_with('<'))
+            .then(|| text.to_string())
+          })
+          .collect::<Vec<_>>()
+      };
+      let mut plain = captions(
+        "Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {\"fb\", \"fl\"}]",
+      );
+      plain.sort();
+      assert_eq!(plain, ["fb", "fl"]);
+      // The nested form, with the captions styled.
+      let mut styled = captions(
+        "Plot[x, {x, 0, 1}, Frame -> True, \
+         FrameLabel -> {{Style[\"force (kN)\", 12], None}, \
+                        {Style[\"diameter (cm)\", 12], None}}]",
+      );
+      styled.sort();
+      assert_eq!(styled, ["diameter (cm)", "force (kN)"]);
+    }
+
+    /// A `Graphics` frame carries the same captions, so a plot merged into
+    /// a `Show` with other primitives keeps them.
+    #[test]
+    fn graphics_frame_label_survives_a_show_merge() {
+      let svg = export_svg(
+        "Show[Plot[x, {x, 0, 1}, Frame -> True, \
+           FrameLabel -> {{Style[\"force (kN)\", 12], None}, \
+                          {Style[\"diameter (cm)\", 12], None}}], \
+         Graphics[{PointSize[0.04], Point[{0.5, 0.5}]}]]",
+      );
+      assert!(svg.contains(">force (kN)</text>"), "{svg}");
+      assert!(svg.contains(">diameter (cm)</text>"), "{svg}");
+      assert!(svg.contains("<circle"), "the merged point must draw: {svg}");
+    }
+
     /// Wolfram writes an `AxesLabel` at the end of its axis — the x label
     /// past the right edge, the y label above the top — and a `Style`
     /// around it carries its colour and slant into the label.

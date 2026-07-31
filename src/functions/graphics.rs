@@ -5093,6 +5093,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut plot_label: Option<String> = None;
   // `AxesLabel -> {xlabel, ylabel}`, already typeset as SVG markup.
   let mut axes_label: Option<(String, String)> = None;
+  // `FrameLabel -> {bottom, left}` (or the nested four-edge form), as SVG
+  // markup: the captions that sit outside the frame.
+  let mut frame_label: Option<(String, String)> = None;
   // `Ticks -> {xspec, yspec}`: which tick marks each axis carries.
   let mut ticks_x = TickSpec::Automatic;
   let mut ticks_y = TickSpec::Automatic;
@@ -5190,6 +5193,14 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             axes_label = Some((expr_to_svg_markup(other), String::new()));
           }
         },
+        // `FrameLabel -> {bottom, left}` / `{{left, right}, {bottom, top}}`
+        // captions the frame edges.
+        "FrameLabel" => {
+          let fl = crate::functions::plot::parse_frame_label(replacement);
+          if !fl.bottom.is_empty() || !fl.left.is_empty() {
+            frame_label = Some((svg_escape(&fl.bottom), svg_escape(&fl.left)));
+          }
+        }
         "Frame" => {
           if let Expr::Identifier(s) = replacement {
             if s == "True" {
@@ -5329,20 +5340,24 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // extra strip above the drawing area for its centered title text.
   // Without tick labels the frame needs no gutter, just room for its stroke.
   let frame_gutter = frame && frame_ticks;
+  let has_bottom_caption =
+    frame_label.as_ref().is_some_and(|(b, _)| !b.is_empty());
+  let has_left_caption =
+    frame_label.as_ref().is_some_and(|(_, l)| !l.is_empty());
   let margin_left: f64 = if frame_gutter || axes.1 {
     50.0
   } else if frame {
     10.0
   } else {
     0.0
-  };
+  } + if has_left_caption { 20.0 } else { 0.0 };
   let margin_bottom: f64 = if frame_gutter || axes.0 {
     25.0
   } else if frame {
     10.0
   } else {
     0.0
-  };
+  } + if has_bottom_caption { 20.0 } else { 0.0 };
   // An AxesLabel sits at the end of its axis (Wolfram's placement), so
   // the x label needs room to the right and the y label room above.
   let has_x_axis_label =
@@ -5486,6 +5501,27 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if frame {
     render_frame(&mut svg, &bb, svg_w, svg_h, frame_ticks);
+  }
+
+  // Frame captions: the bottom one centred under the axis labels, the
+  // left one rotated along the edge.
+  if let Some((bottom, left)) = &frame_label {
+    if !bottom.is_empty() {
+      svg.push_str(&format!(
+        "<text x=\"{:.1}\" y=\"{:.1}\" fill=\"{}\" font-size=\"12\" font-family=\"sans-serif\" text-anchor=\"middle\">{bottom}</text>\n",
+        svg_w / 2.0,
+        svg_h + margin_bottom - 6.0,
+        theme().tick_label_fill,
+      ));
+    }
+    if !left.is_empty() {
+      let lx = -(margin_left - 12.0);
+      let ly = svg_h / 2.0;
+      svg.push_str(&format!(
+        "<text x=\"{lx:.1}\" y=\"{ly:.1}\" fill=\"{}\" font-size=\"12\" font-family=\"sans-serif\" text-anchor=\"middle\" transform=\"rotate(-90,{lx:.1},{ly:.1})\">{left}</text>\n",
+        theme().tick_label_fill,
+      ));
+    }
   }
 
   if has_margin {

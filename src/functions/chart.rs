@@ -248,6 +248,22 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
     Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => {
       Some(crate::syntax::expr_to_string(e))
     }
+    // A styled label reads as its content — a Demonstration writes its
+    // frame labels as `Style["force (kN)", 12]`.
+    Expr::FunctionCall { name, args }
+      if (name == "Style" || name == "Text") && !args.is_empty() =>
+    {
+      expr_to_label(&args[0])
+    }
+    // `Row[{…}]` joins its parts, with an optional separator.
+    Expr::FunctionCall { name, args } if name == "Row" && !args.is_empty() => {
+      let Expr::List(items) = &args[0] else {
+        return None;
+      };
+      let parts: Vec<String> = items.iter().filter_map(expr_to_label).collect();
+      let sep = args.get(1).and_then(expr_to_label).unwrap_or_default();
+      Some(parts.join(&sep))
+    }
     _ => None,
   }
 }
