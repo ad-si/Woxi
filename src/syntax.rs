@@ -1824,6 +1824,34 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
   }
 }
 
+/// Multiply a decimal literal by `10^exponent` by moving its decimal point,
+/// keeping every digit the literal was written with. Used for the `*^` form
+/// of a precision-tagged real, where rounding through `f64` would throw away
+/// the extra digits the precision tag exists to carry.
+fn shift_decimal_point(literal: &str, exponent: i32) -> String {
+  if exponent == 0 {
+    return literal.to_string();
+  }
+  let (sign, digits) = match literal.strip_prefix('-') {
+    Some(rest) => ("-", rest),
+    None => ("", literal),
+  };
+  let (int_part, frac_part) = digits.split_once('.').unwrap_or((digits, ""));
+  let mut all: String = int_part.to_string();
+  all.push_str(frac_part);
+  // Where the point sits in `all` after the shift.
+  let point = int_part.len() as i32 + exponent;
+  let body = if point <= 0 {
+    format!("0.{}{all}", "0".repeat((-point) as usize))
+  } else if (point as usize) >= all.len() {
+    format!("{all}{}.", "0".repeat(point as usize - all.len()))
+  } else {
+    let (head, tail) = all.split_at(point as usize);
+    format!("{head}.{tail}")
+  };
+  format!("{sign}{body}")
+}
+
 fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
   match pair.as_rule() {
     Rule::Integer | Rule::UnsignedInteger => {
@@ -1973,6 +2001,15 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
     }
     Rule::PrecisionReal | Rule::UnsignedPrecisionReal => {
       let s = pair.as_str();
+      // A `*^` exponent may follow the precision tag (`1.5`*^-16`). It scales
+      // the value; the tag itself keeps its meaning, so an *accuracy* tag is
+      // applied to the scaled value (hence `1.5``20*^3` has precision
+      // 20 + log10(1500), not 20 + log10(1.5)).
+      let (s, exponent) = match s.split_once("*^") {
+        Some((mantissa, exp)) => (mantissa, exp.parse::<i32>().unwrap_or(0)),
+        None => (s, 0),
+      };
+      let scale = |v: f64| v * 10f64.powi(exponent);
       // Detect double-backtick (accuracy) form. Single-backtick is precision.
       let double = s.contains("``");
       let backtick_pos = s.find('`').unwrap();
@@ -1982,20 +2019,22 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       } else {
         &s[backtick_pos + 1..]
       };
+      // The scaled literal, as the digit string the BigFloat path stores.
+      let scaled_str = shift_decimal_point(value_str, exponent);
       // Integer-form `n`p` (no decimal point, with precision p) drops the
       // precision tag entirely and stays as an Integer (matches Wolfram:
       // `0`2 // Head` → Integer). The bare-backtick form `n`` still
       // promotes to Real to match Wolfram (`0` // Head` → Real).
       let int_form =
         !value_str.contains('.') && !prec_str.is_empty() && !double;
-      if int_form {
+      if int_form && exponent == 0 {
         let n: i128 = value_str.parse().unwrap_or(0);
         Expr::Integer(n)
       } else if prec_str.is_empty() {
         // Bare backtick = machine precision, just parse as Real
-        Expr::Real(value_str.parse().unwrap_or(0.0))
+        Expr::Real(scale(value_str.parse().unwrap_or(0.0)))
       } else {
-        let value_f64: f64 = value_str.parse().unwrap_or(0.0);
+        let value_f64: f64 = scale(value_str.parse().unwrap_or(0.0));
         if value_f64 == 0.0 {
           // For accuracy form `0.``α`, preserve the accuracy as a BigFloat
           // with value "0" and the parsed accuracy. The display path
@@ -2018,7 +2057,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
             raw_prec
           };
           let prec = prec.max(1.0);
-          Expr::BigFloat(value_str.to_string(), prec)
+          Expr::BigFloat(scaled_str, prec)
         }
       }
     }

@@ -10158,3 +10158,45 @@ mod unicode_part_brackets {
     );
   }
 }
+
+/// A precision-tagged real may carry a `*^` exponent after its tag —
+/// `1.5`*^-16` is how the Wolfram Language writes a tiny machine real in
+/// InputForm, and a Demonstration's coordinate list is full of them. Each
+/// expectation below matches wolframscript.
+mod precision_mark_with_exponent {
+  use super::*;
+
+  #[test]
+  fn machine_precision_mark_takes_an_exponent() {
+    assert_eq!(interpret("1.5`*^-16").unwrap(), "1.5*^-16");
+    assert_eq!(
+      interpret("-1.1102230246251565`*^-16").unwrap(),
+      "-1.1102230246251565*^-16"
+    );
+    // The exponent scales the value, so ordinary arithmetic sees it.
+    assert_eq!(interpret("1.5`*^3 + 1").unwrap(), "1501.");
+  }
+
+  #[test]
+  fn precision_and_accuracy_tags_take_an_exponent() {
+    // The precision tag itself is unchanged by the exponent...
+    assert_eq!(interpret("1.5`20*^3").unwrap(), "1500.`20.");
+    // ...while an accuracy tag applies to the scaled value, so the implied
+    // precision grows with it: 20 + Log10[1500].
+    assert_eq!(interpret("1.5``20*^3").unwrap(), "1500.`23.17609125905568");
+  }
+
+  #[test]
+  fn a_coordinate_list_of_tiny_reals_parses() {
+    // The shape that made the "Non Placet Net of a Dodecahedron"
+    // Demonstration fail to load: a long list ending in a replacement rule.
+    assert_eq!(
+      interpret(
+        "k = {{1.`, 0.`}, {-1.1102230246251565`*^-16, \
+         2.220446049250313`*^-16}} /. {x_, y_} -> {x, y, 0}; Length[k]"
+      )
+      .unwrap(),
+      "3"
+    );
+  }
+}

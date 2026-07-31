@@ -1805,6 +1805,12 @@ fn parse_3d_transforms(name: &str, args: &[Expr]) -> Option<Vec<Affine3>> {
           }
           None
         }
+        // Rotate[g, θ, w, p]: axis direction w through the point p.
+        3 => {
+          let w = eval_vec3(&args[1])?;
+          let p = eval_vec3(&args[2])?;
+          Affine3::rotation(angle, w, p).map(|a| vec![a])
+        }
         _ => None,
       }
     }

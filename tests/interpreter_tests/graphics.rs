@@ -2097,6 +2097,33 @@ mod plot3d {
       );
     }
 
+    /// `Rotate[g, theta, w, p]` turns `g` about the axis `w` through the
+    /// point `p` — the four-argument 3D form. Regression: only the
+    /// three-argument form was recognised, so a net whose flaps fold about
+    /// their shared edges (the "Non Placet Net of a Dodecahedron"
+    /// Demonstration) never moved.
+    #[test]
+    fn graphics3d_rotate_about_an_axis_through_a_point() {
+      let square = "Polygon[{{0,0,0},{1,0,0},{1,1,0},{0,1,0}}]";
+      // A flap folded about the edge it shares with a fixed square. The
+      // shared edge stays put, so the pair stays joined; rotating about the
+      // origin instead — which is what the dropped fourth argument used to
+      // collapse it to — tears them apart.
+      let scene = |rot: &str| {
+        export_svg(&format!("Graphics3D[{{{square}, {rot}}}, Boxed -> False]"))
+      };
+      let hinged =
+        scene(&format!("Rotate[{square}, 1., {{0,1,0}}, {{1,0,0}}]"));
+      let about_origin = scene(&format!("Rotate[{square}, 1., {{0,1,0}}]"));
+      assert!(hinged.matches("<polygon").count() >= 2, "{hinged}");
+      assert_ne!(hinged, about_origin, "the rotation centre must be honoured");
+      // A zero angle is the identity, centre or no centre.
+      assert_eq!(
+        scene(&format!("Rotate[{square}, 0., {{0,1,0}}, {{1,0,0}}]")),
+        scene(square)
+      );
+    }
+
     // A scene with many spheres scales each sphere's tessellation with
     // its relative size, so a Demonstrations-style packing of hundreds of
     // spheres renders to a tractable SVG instead of hundreds of thousands

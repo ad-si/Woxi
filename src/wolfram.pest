@@ -80,16 +80,21 @@ UnsignedReal = @{
 // Double-backtick `n``a` is the accuracy form: n with accuracy a digits.
 // In Wolfram, `n``a` ≡ `n`(a + log10(|n|))` for n ≠ 0; for n == 0 it
 // produces a Real(0.) with the accuracy spec preserved on display.
+// A precision-tagged literal may still carry a `*^` exponent after the tag:
+// `1.5`*^-16` is how the Wolfram Language writes a tiny machine real in
+// InputForm, and Demonstrations' coordinate lists are full of them.
 UnsignedPrecisionReal = @{
     (ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* | "." ~ ASCII_DIGIT+ | ASCII_DIGIT+)
     ~ ("``" | "`")
     ~ (ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT*)? | "." ~ ASCII_DIGIT+)?
+    ~ ("*^" ~ ExponentSign? ~ ASCII_DIGIT+)?
 }
 PrecisionReal = @{
     ("-")?
     ~ (ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* | "." ~ ASCII_DIGIT+ | ASCII_DIGIT+)
     ~ ("``" | "`")
     ~ (ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT*)? | "." ~ ASCII_DIGIT+)?
+    ~ ("*^" ~ ExponentSign? ~ ASCII_DIGIT+)?
 }
 UnsignedConstant = { ("Pi" | "Degree" | "E") ~ !(ASCII_ALPHANUMERIC | "_") }
 // Base-prefix literal: base^^digits (e.g. 16^^FF, 2^^1010, 2^^1.01, 16^^FF.A)
