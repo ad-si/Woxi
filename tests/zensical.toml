@@ -911,7 +911,6 @@ nav = [
       { "BlankSequence" = "list_operations/BlankSequence.md" },
       { "CenterArray" = "list_operations/CenterArray.md" },
       { "ClusteringComponents" = "list_operations/ClusteringComponents.md" },
-      { "CountBy" = "list_operations/CountBy.md" },
       { "Diagonal" = "list_operations/Diagonal.md" },
       { "FoldWhileList" = "list_operations/FoldWhileList.md" },
       { "Groupings" = "list_operations/Groupings.md" },

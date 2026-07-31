@@ -145,7 +145,6 @@ syntactic forms (`UpSet`, `Span`), and special functions that stay symbolic for 
 
 ## Lists (4)
 
-- `CountBy` — Groups and counts elements by a function
 - `List` — Represents a list of elements
 - `Nearest` — Find the nearest elements in a list to a given value
 - `SymmetricDifference` — Returns elements that appear in an odd number of the given lists
