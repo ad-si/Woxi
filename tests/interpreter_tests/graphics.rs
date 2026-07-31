@@ -17600,3 +17600,255 @@ mod color_data_gradients {
     );
   }
 }
+
+mod tube_and_cap_form {
+  use super::*;
+
+  /// `Tube[curve, r]` is a surface of revolution about a polyline, not an
+  /// inert symbol. Regression: it used to collect no primitives at all, so
+  /// a Demonstration built out of tubes rendered an empty box ("Filling
+  /// Cone, Hemisphere and Cylinder").
+  #[test]
+  fn tube_renders_a_surface() {
+    clear_state();
+    let svg = export_svg(
+      "Graphics3D[{Tube[{{0, 0, 0}, {0, 0, 1}}, 1]}, Boxed -> False]",
+    );
+    assert!(svg.contains("<polygon"), "the tube must draw: {svg:.400}");
+  }
+
+  /// The radius may be given per vertex, which is how a partly filled cone
+  /// is drawn: a frustum tapering from the rim down to the surface.
+  #[test]
+  fn tube_radius_may_vary_along_the_curve() {
+    clear_state();
+    let straight =
+      export_svg("Graphics3D[{Tube[{{0, 0, 0}, {0, 0, 1}}, {1, 1}]}]");
+    let tapered =
+      export_svg("Graphics3D[{Tube[{{0, 0, 0}, {0, 0, 1}}, {1, 0.2}]}]");
+    assert_ne!(straight, tapered, "the second radius must narrow the tube");
+  }
+
+  /// A bent tube keeps one closed surface through the corner.
+  #[test]
+  fn tube_follows_a_bent_polyline() {
+    clear_state();
+    let svg =
+      export_svg("Graphics3D[{Tube[{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}}, 0.2]}]");
+    assert!(svg.contains("<polygon"), "the bent tube must draw");
+  }
+
+  /// `CapForm[None]` leaves the ends open; the default closes them, so the
+  /// two differ. Both still draw the tube itself.
+  #[test]
+  fn cap_form_none_opens_the_ends() {
+    clear_state();
+    let capped = export_svg("Graphics3D[{Tube[{{0, 0, 0}, {0, 0, 1}}, 1]}]");
+    let open = export_svg(
+      "Graphics3D[{CapForm[None], Tube[{{0, 0, 0}, {0, 0, 1}}, 1]}]",
+    );
+    assert!(open.contains("<polygon"), "the open tube must still draw");
+    assert_ne!(capped, open, "CapForm[None] must drop the end disks");
+    // Naming a cap form puts them back.
+    assert_eq!(
+      export_svg(
+        "Graphics3D[{CapForm[\"Butt\"], Tube[{{0, 0, 0}, {0, 0, 1}}, 1]}]"
+      ),
+      capped
+    );
+  }
+}
+
+mod revolution_plot3d_part_extraction {
+  use super::*;
+
+  /// `First[RevolutionPlot3D[…]]` is the surface itself — a
+  /// `GraphicsComplex` in world coordinates — so it can be placed inside
+  /// another `Graphics3D`. Regression: the plot kept no symbolic form, so
+  /// `First` reported `First::normal` on an atom.
+  #[test]
+  fn first_yields_a_graphics_complex() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Head[First[RevolutionPlot3D[{Cos[t], 1 + Sin[t]}, \
+         {t, -Pi/2, 0}, Mesh -> None]]]"
+      )
+      .unwrap(),
+      "GraphicsComplex"
+    );
+  }
+
+  /// `PlotStyle` travels with the surface, so a caller that lifts it out of
+  /// the plot keeps the translucency it asked for.
+  #[test]
+  fn plot_style_travels_with_the_surface() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "First[RevolutionPlot3D[{Cos[t], 1 + Sin[t]}, {t, -Pi/2, 0}, \
+         Mesh -> None, PlotStyle -> Opacity[0.2]]][[2, 1]]"
+      )
+      .unwrap(),
+      "Opacity[0.2]"
+    );
+  }
+
+  /// The lifted surface draws where the plot put it.
+  #[test]
+  fn the_lifted_surface_redraws() {
+    clear_state();
+    let svg = export_svg(
+      "Graphics3D[{First[RevolutionPlot3D[{Cos[t], 1 + Sin[t]}, \
+       {t, -Pi/2, 0}, Mesh -> None]]}]",
+    );
+    assert!(svg.contains("<polygon"), "the surface must draw");
+  }
+}
+
+mod arrowheads_render {
+  use super::*;
+
+  /// `Arrowheads[{-s, s}]` spreads its heads from tail to tip, giving the
+  /// usual double-headed arrow: two triangles rather than one.
+  #[test]
+  fn two_sizes_give_a_head_at_each_end() {
+    clear_state();
+    let plain = export_svg("Graphics[{Arrow[{{0, 0}, {1, 0}}]}]");
+    let double = export_svg(
+      "Graphics[{Arrowheads[{-Medium, Medium}], Arrow[{{0, 0}, {1, 0}}]}]",
+    );
+    assert_eq!(plain.matches("<polygon").count(), 1);
+    assert_eq!(double.matches("<polygon").count(), 2);
+  }
+
+  /// `Arrowheads[None]` removes them.
+  #[test]
+  fn none_removes_the_heads() {
+    clear_state();
+    let svg =
+      export_svg("Graphics[{Arrowheads[None], Arrow[{{0, 0}, {1, 0}}]}]");
+    assert!(
+      !svg.contains("<polygon"),
+      "no head should be drawn: {svg:.400}"
+    );
+    assert!(svg.contains("<polyline"), "the shaft must still draw");
+  }
+
+  /// A head may carry its own graphic, drawn at its position along the
+  /// arrow instead of a triangle — the `AnnotatedArrow` idiom that labels
+  /// a dimension line at its midpoint.
+  #[test]
+  fn a_head_graphic_is_drawn_at_its_position() {
+    clear_state();
+    let svg = export_svg(
+      "Graphics[{Arrowheads[{{0.1, 0.5, Graphics[Inset[\"r\"]]}}], \
+       Arrow[{{0, 0}, {10, 0}}]}]",
+    );
+    assert!(svg.contains(">r<"), "the label must draw: {svg:.600}");
+    // It sits at the midpoint of the arrow, not at either end.
+    let x: f64 = svg
+      .split(">r<")
+      .next()
+      .and_then(|head| head.rsplit("<text x=\"").next())
+      .and_then(|tail| tail.split('"').next())
+      .and_then(|n| n.parse().ok())
+      .expect("the label must carry an x coordinate");
+    let width: f64 = svg
+      .split("width=\"")
+      .nth(1)
+      .and_then(|t| t.split('"').next())
+      .and_then(|n| n.parse().ok())
+      .expect("the SVG must carry a width");
+    assert!(
+      (x - width / 2.0).abs() < width * 0.15,
+      "the label belongs at the midpoint, got {x} of {width}"
+    );
+  }
+}
+
+mod text_offset {
+  use super::*;
+
+  /// `Text[expr, pos, offset]` names which point of the label's own box
+  /// sits at `pos`, so the label moves the other way. Regression: the
+  /// offset was dropped and every label came out centred on its point.
+  #[test]
+  fn offset_moves_the_label_off_its_point() {
+    clear_state();
+    let y_of = |offset: &str| -> f64 {
+      let svg = export_svg(&format!(
+        "Graphics[{{Text[\"r\", {{0, 0}}, {offset}], \
+         Circle[{{0, 0}}, 1]}}]"
+      ));
+      svg
+        .split(">r<")
+        .next()
+        .and_then(|head| head.rsplit(" y=\"").next())
+        .and_then(|tail| tail.split('"').next())
+        .and_then(|n| n.parse().ok())
+        .expect("the label must carry a y coordinate")
+    };
+    let centred = y_of("{0, 0}");
+    // Offset {0, -1} puts the point at the label's bottom, so the label is
+    // above it — a smaller y in SVG, which counts downwards.
+    assert!(y_of("{0, -1}") < centred);
+    assert!(y_of("{0, 1}") > centred);
+    // The alignment symbols mean the same thing.
+    assert_eq!(y_of("{Center, Bottom}"), y_of("{0, -1}"));
+    assert_eq!(y_of("{Center, Top}"), y_of("{0, 1}"));
+  }
+}
+
+mod display_wrapper_export {
+  use super::*;
+
+  /// `Labeled[graphic, label, pos]` stacks the two, so exporting one
+  /// composes them rather than writing the call out as source.
+  #[test]
+  fn labeled_stacks_its_label_with_the_graphic() {
+    clear_state();
+    let svg = export_svg(
+      "Labeled[Graphics[{Disk[]}, ImageSize -> {200, 200}], \"cap\", Top]",
+    );
+    assert!(
+      svg.contains("<ellipse") || svg.contains("<circle"),
+      "{svg:.400}"
+    );
+    assert!(svg.contains(">cap<"), "the label must draw");
+    assert!(!svg.contains("Labeled["), "the source must not be echoed");
+  }
+
+  /// A `Grid` (or `Column`) holding a picture is composed cell by cell —
+  /// pictures drawn, everything else typeset.
+  #[test]
+  fn grid_of_mixed_cells_draws_its_pictures() {
+    clear_state();
+    let svg = export_svg(
+      "Grid[{{Graphics[{Disk[]}, ImageSize -> {80, 80}]}, {Text[\"hi\"]}}]",
+    );
+    assert!(
+      svg.contains("<ellipse") || svg.contains("<circle"),
+      "{svg:.400}"
+    );
+    assert!(svg.contains(">hi<"), "the text cell must typeset");
+  }
+
+  /// Text-only layouts keep the text renderer, which already aligns them.
+  #[test]
+  fn text_only_grid_is_unaffected() {
+    clear_state();
+    let svg = export_svg("Grid[{{\"a\", \"b\"}, {\"c\", \"d\"}}]");
+    assert!(svg.contains("a"), "{svg:.400}");
+  }
+
+  /// Outside a `Graphics`, `Text[expr]` shows `expr` — including a string
+  /// without the quotation marks its own OutputForm carries.
+  #[test]
+  fn text_drops_the_quotes_of_a_string() {
+    clear_state();
+    let svg = export_svg("Grid[{{Graphics[{Disk[]}]}, {Text[\"hi\"]}}]");
+    assert!(!svg.contains("&quot;hi&quot;"), "{svg:.600}");
+    assert!(svg.contains(">hi<"));
+  }
+}

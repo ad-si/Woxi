@@ -1507,6 +1507,9 @@ struct StyleState3D {
   opacity: f64,
   /// Stroke width in pixels for Line3D primitives. None means default 1.5.
   thickness: Option<f64>,
+  /// Whether an open surface's ends are closed off, as `CapForm` sets it.
+  /// `CapForm[None]` leaves a `Tube` hollow; every other form caps it.
+  capped: bool,
 }
 
 impl Default for StyleState3D {
@@ -1515,6 +1518,7 @@ impl Default for StyleState3D {
       color: None, // None means use default blue
       opacity: 1.0,
       thickness: None,
+      capped: true,
     }
   }
 }
@@ -1614,6 +1618,12 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
         for a in args {
           apply_3d_directive(a, style);
         }
+        return true;
+      }
+      // CapForm[None] leaves an open surface's ends open; every named form
+      // ("Butt", "Square", "Round") closes them, as does the default.
+      "CapForm" if args.len() == 1 => {
+        style.capped = !matches!(&args[0], Expr::Identifier(s) if s == "None");
         return true;
       }
       "Thickness" if args.len() == 1 => {
@@ -2216,6 +2226,76 @@ fn collect_3d_primitives(
             style: style.clone(),
           });
         }
+        // Tube[curve], Tube[curve, r] and Tube[curve, {r1, …, rn}] — a
+        // surface of revolution about a polyline, one radius per vertex.
+        // `curve` is a point list, a `Line[…]`, or a list of either.
+        "Tube" if !args.is_empty() => {
+          let curve = match &args[0] {
+            Expr::FunctionCall { name, args: inner }
+              if name == "Line" && !inner.is_empty() =>
+            {
+              inner[0].clone()
+            }
+            other => other.clone(),
+          };
+          let curve = evaluate_expr_to_expr(&curve).unwrap_or(curve);
+          let curves: Vec<Vec<Point3D>> = match parse_point3d_list(&curve) {
+            Some(pts) => vec![pts],
+            None => match &curve {
+              Expr::List(items) => {
+                items.iter().filter_map(parse_point3d_list).collect()
+              }
+              _ => vec![],
+            },
+          };
+          for pts in curves {
+            let radii: Vec<f64> = match args.get(1) {
+              Some(spec) => {
+                let spec = evaluate_expr_to_expr(spec).unwrap_or(spec.clone());
+                match &spec {
+                  Expr::List(items) if items.len() == pts.len() => items
+                    .iter()
+                    .map(|e| {
+                      try_eval_to_f64(
+                        &evaluate_expr_to_expr(e).unwrap_or(e.clone()),
+                      )
+                      .unwrap_or(0.0)
+                    })
+                    .collect(),
+                  _ => {
+                    let r = try_eval_to_f64(&spec).unwrap_or(0.0);
+                    vec![r; pts.len()]
+                  }
+                }
+              }
+              // Wolfram sizes an unspecified tube radius from the scene
+              // rather than fixing it; a hundredth of the curve's own
+              // extent is the same kind of thin, and is all the notebooks
+              // that omit it need (they nearly always give one).
+              None => {
+                let extent = pts
+                  .iter()
+                  .flat_map(|a| {
+                    pts.iter().map(move |b| {
+                      ((a.x - b.x).powi(2)
+                        + (a.y - b.y).powi(2)
+                        + (a.z - b.z).powi(2))
+                      .sqrt()
+                    })
+                  })
+                  .fold(0.0f64, f64::max);
+                vec![extent / 100.0; pts.len()]
+              }
+            };
+            let tris = tessellate_tube(&pts, &radii, style.capped);
+            if !tris.is_empty() {
+              prims.push(Primitive3D::Surface3D {
+                tris,
+                style: style.clone(),
+              });
+            }
+          }
+        }
         "Torus" | "FilledTorus" => {
           let center = if !args.is_empty() {
             parse_point3d(&args[0]).unwrap_or(Point3D {
@@ -2736,6 +2816,138 @@ fn tessellate_cylinder(
   tris
 }
 
+/// Tessellate a tube of the given per-point radii around a polyline.
+///
+/// Each vertex gets a ring of `TUBE_SIDES` points lying in the plane normal
+/// to the curve there (the bisector of the two adjacent segments at an
+/// interior vertex), so consecutive segments share a ring and the surface
+/// stays closed through a bend.  The rings are kept aligned by transporting
+/// one reference normal along the curve rather than recomputing it per
+/// segment, which would twist the tube.  With `capped`, flat disks close
+/// both ends — Wolfram's default; `CapForm[None]` drops them.
+fn tessellate_tube(
+  points: &[Point3D],
+  radii: &[f64],
+  capped: bool,
+) -> Vec<(Point3D, Point3D, Point3D)> {
+  const TUBE_SIDES: usize = 24;
+  if points.len() < 2 {
+    return vec![];
+  }
+  let sub = |a: &Point3D, b: &Point3D| (a.x - b.x, a.y - b.y, a.z - b.z);
+  let norm = |v: (f64, f64, f64)| (v.0 * v.0 + v.1 * v.1 + v.2 * v.2).sqrt();
+  let unit = |v: (f64, f64, f64)| {
+    let l = norm(v);
+    if l < 1e-15 {
+      None
+    } else {
+      Some((v.0 / l, v.1 / l, v.2 / l))
+    }
+  };
+  let cross = |a: (f64, f64, f64), b: (f64, f64, f64)| {
+    (
+      a.1 * b.2 - a.2 * b.1,
+      a.2 * b.0 - a.0 * b.2,
+      a.0 * b.1 - a.1 * b.0,
+    )
+  };
+
+  // Segment directions, skipping repeated points.
+  let mut dirs: Vec<(f64, f64, f64)> = Vec::new();
+  let mut keep: Vec<usize> = vec![0];
+  for i in 1..points.len() {
+    if let Some(d) = unit(sub(&points[i], &points[keep[keep.len() - 1]])) {
+      dirs.push(d);
+      keep.push(i);
+    }
+  }
+  if dirs.is_empty() {
+    return vec![];
+  }
+
+  // Vertex tangents: the segment direction at the ends, the normalized sum
+  // of the two adjacent directions in between.
+  let tangents: Vec<(f64, f64, f64)> = (0..keep.len())
+    .map(|i| {
+      if i == 0 {
+        dirs[0]
+      } else if i == keep.len() - 1 {
+        dirs[dirs.len() - 1]
+      } else {
+        let (a, b) = (dirs[i - 1], dirs[i]);
+        unit((a.0 + b.0, a.1 + b.1, a.2 + b.2)).unwrap_or(b)
+      }
+    })
+    .collect();
+
+  // Seed a normal perpendicular to the first tangent, then transport it.
+  let t0 = tangents[0];
+  let seed = if t0.2.abs() < 0.9 {
+    (0.0, 0.0, 1.0)
+  } else {
+    (1.0, 0.0, 0.0)
+  };
+  let mut normal = unit(cross(t0, seed)).unwrap_or((1.0, 0.0, 0.0));
+
+  let mut rings: Vec<Vec<Point3D>> = Vec::with_capacity(keep.len());
+  for (i, &idx) in keep.iter().enumerate() {
+    let t = tangents[i];
+    // Re-project the carried normal into this vertex's normal plane.
+    let dot = normal.0 * t.0 + normal.1 * t.1 + normal.2 * t.2;
+    let projected = (
+      normal.0 - dot * t.0,
+      normal.1 - dot * t.1,
+      normal.2 - dot * t.2,
+    );
+    normal = unit(projected).unwrap_or(normal);
+    let binormal = cross(t, normal);
+    let r = radii.get(idx).copied().unwrap_or(0.0);
+    // A bend shortens the ring's projection onto the segments; widening it
+    // by 1/cos(half-angle) keeps the tube's radius constant along the curve.
+    let widen = if i == 0 || i == keep.len() - 1 {
+      1.0
+    } else {
+      let d = dirs[i - 1].0 * t.0 + dirs[i - 1].1 * t.1 + dirs[i - 1].2 * t.2;
+      if d.abs() < 1e-6 { 1.0 } else { 1.0 / d }
+    };
+    rings.push(
+      (0..TUBE_SIDES)
+        .map(|k| {
+          let a = 2.0 * std::f64::consts::PI * k as f64 / TUBE_SIDES as f64;
+          let (c, s) = (a.cos() * r * widen, a.sin() * r * widen);
+          Point3D {
+            x: points[idx].x + c * normal.0 + s * binormal.0,
+            y: points[idx].y + c * normal.1 + s * binormal.1,
+            z: points[idx].z + c * normal.2 + s * binormal.2,
+          }
+        })
+        .collect(),
+    );
+  }
+
+  let mut tris = Vec::new();
+  for i in 0..rings.len() - 1 {
+    for k in 0..TUBE_SIDES {
+      let k2 = (k + 1) % TUBE_SIDES;
+      let (a, b) = (rings[i][k], rings[i][k2]);
+      let (c, d) = (rings[i + 1][k2], rings[i + 1][k]);
+      tris.push((a, b, c));
+      tris.push((a, c, d));
+    }
+  }
+  if capped {
+    for (ring, centre) in [
+      (&rings[0], points[keep[0]]),
+      (&rings[rings.len() - 1], points[keep[keep.len() - 1]]),
+    ] {
+      for k in 0..TUBE_SIDES {
+        tris.push((centre, ring[k], ring[(k + 1) % TUBE_SIDES]));
+      }
+    }
+  }
+  tris
+}
+
 /// Tessellate a cone.
 fn tessellate_cone(
   base: &Point3D,
@@ -2990,6 +3202,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             color: None,
             opacity: 1.0,
             thickness: None,
+            capped: true,
           },
         ),
       };
@@ -4046,6 +4259,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut _mesh_mode = MeshMode::Default;
   let mut show_axes = true;
   let mut z_clip: Option<(f64, f64)> = None;
+  let mut plot_style: Option<Expr> = None;
 
   for opt in &args[opt_start..] {
     if let Expr::Rule {
@@ -4054,6 +4268,9 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } = opt
     {
       match pattern.as_ref() {
+        Expr::Identifier(name) if name == "PlotStyle" => {
+          plot_style = Some(replacement.as_ref().clone());
+        }
         Expr::Identifier(name) if name == "ImageSize" => {
           if let Some((w, h, fw)) =
             parse_image_size(replacement, DEFAULT_SIZE, DEFAULT_SIZE)
@@ -4176,6 +4393,67 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .into(),
     ));
   }
+
+  // ── Symbolic structure: GraphicsComplex[points, {style…, Polygon[quads]}] ──
+  // `First[RevolutionPlot3D[…]]` is the surface itself, in world
+  // coordinates, so it can be re-drawn inside another `Graphics3D` (the
+  // way the notebooks that build solids out of plot slices do).  The
+  // rendering below works in normalized coordinates and is unaffected.
+  let structure = {
+    let mut index_of: Vec<Vec<Option<usize>>> =
+      vec![vec![None; n_theta + 1]; n_t + 1];
+    let mut point_exprs: Vec<Expr> = Vec::new();
+    for (i, row) in grid.iter().enumerate() {
+      for (j, cell) in row.iter().enumerate() {
+        if let Some(p) = cell {
+          index_of[i][j] = Some(point_exprs.len());
+          point_exprs.push(Expr::List(
+            vec![Expr::Real(p.x), Expr::Real(p.y), Expr::Real(p.z)].into(),
+          ));
+        }
+      }
+    }
+    let mut quads: Vec<Expr> = Vec::new();
+    for i in 0..n_t {
+      for j in 0..n_theta {
+        if let (Some(a), Some(b), Some(c), Some(d)) = (
+          index_of[i][j],
+          index_of[i + 1][j],
+          index_of[i + 1][j + 1],
+          index_of[i][j + 1],
+        ) {
+          quads.push(Expr::List(
+            [a, b, c, d]
+              .iter()
+              .map(|&k| Expr::Integer(k as i128 + 1))
+              .collect::<Vec<_>>()
+              .into(),
+          ));
+        }
+      }
+    }
+    let mut content: Vec<Expr> = Vec::new();
+    // `PlotStyle -> Opacity[…]` belongs to the surface, so a caller that
+    // lifts it out of the plot keeps the translucency it asked for.
+    match &plot_style {
+      Some(Expr::List(items)) => content.extend(items.iter().cloned()),
+      Some(other) => content.push(other.clone()),
+      None => {}
+    }
+    content.push(Expr::FunctionCall {
+      name: "Polygon".to_string(),
+      args: vec![Expr::List(quads.into())].into(),
+    });
+    Expr::FunctionCall {
+      name: "Graphics3D".to_string(),
+      args: vec![Expr::FunctionCall {
+        name: "GraphicsComplex".to_string(),
+        args: vec![Expr::List(point_exprs.into()), Expr::List(content.into())]
+          .into(),
+      }]
+      .into(),
+    }
+  };
 
   let (z_lo, z_hi) = z_clip.unwrap_or((global_z_min, global_z_max));
   let z_range = if (z_hi - z_lo).abs() < 1e-15 {
@@ -4313,7 +4591,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     show_axes,
   )?;
 
-  Ok(crate::graphics3d_result(svg))
+  Ok(crate::graphics3d_result_with_structure(svg, structure))
 }
 
 fn parse_iterator_generic(

@@ -10550,4 +10550,101 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`fam$$ = 1}, \"\\[Ellipsis]\"]"], "O
     assert_ne!(net, render(3, 2), "the family control must matter");
     assert_ne!(net, render(1, 1), "the view control must matter");
   }
+
+  /// End-to-end regression for "Filling Cone, Hemisphere and Cylinder:
+  /// Easy as 1:2:3": three vessels filling in the ratio 1:2:3, drawn out
+  /// of `Tube` walls and a `RevolutionPlot3D` bowl lifted out of its plot,
+  /// with a `SetterBar` switching between five views.
+  ///
+  /// Four things the notebook needs were missing: `Tube` collected no
+  /// primitives at all, `CapForm` was not a directive, `First` could not
+  /// reach inside a `RevolutionPlot3D`, and the water level came from
+  /// `NSolve[eqn && 0 <= f <= 1]` — a one-argument call whose cubic roots
+  /// were not filtered by the bound.
+  #[test]
+  fn filling_cone_hemisphere_cylinder_notebook_draws_every_view() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["myCone[h_] := {CapForm[\"Butt\"], Cone[{{0,0,h},{0,0,0}},h], Opacity[.2], CapForm[None], Tube[{{0,0,1},{0,0,h}},{1,h}], Black, CapForm[None], Tube[{{0,0,.99},{0,0,1}},{1,1}]}"], "Input"],
+Cell[BoxData["myCylinder[h_] := {CapForm[\"Butt\"], Tube[{{0,0,0},{0,0,h}},{1,1}], Opacity[.2], CapForm[None], Tube[{{0,0,1},{0,0,h}},{1,1}], Black, CapForm[None], Tube[{{0,0,h-0.01},{0,0,h+0.01}},{1,1}], Black, CapForm[None], Tube[{{0,0,.99},{0,0,1}},{1,1}]}"], "Input"],
+Cell[BoxData["myHemisphere[h_] := Module[{tf = -ArcSin[1-h]}, {If[h>0, First@RevolutionPlot3D[{Cos[th],1+Sin[th]},{th,-Pi/2,tf},Mesh->None,PerformanceGoal->\"Quality\"], Sequence[]], If[h<1, First@RevolutionPlot3D[{Cos[th],1+Sin[th]},{th,tf,0},Mesh->None,PerformanceGoal->\"Quality\",PlotStyle->Opacity[.2]], Sequence[]], Black, CapForm[None], Tube[{{0,0,.99},{0,0,1}},{1,1}]}]"], "Input"],
+Cell[BoxData["heights[V_] := Module[{f}, (If[Length[#]>1 && Last[#]==0, Most[#], #]&) /@ {Flatten[{Table[1,{Quotient[V,1]}], (Mod[V,1])^(1/3)}], Flatten[{Table[1,{Quotient[V,2]}], Evaluate@NSolve[Mod[V,2]==f^2 (3-f) && 0<=f<=1, f][[1,1,2]]}], Flatten[{Table[1,{Quotient[V,3]}], Mod[V,3]/3}]}]"], "Input"],
+Cell[BoxData["AnnotatedArrow[p_,q_,label_]:={Arrowheads[{{-Medium,0},{.1,.5,Graphics[Inset[Style[label,Medium,Italic],{Center,Top},{Center,Bottom}]]},{Medium,1}}],Arrow[{p,q}]}"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[Switch[ChooseControlMode,\n1, tmax = 4;\nGraphics3D[MapIndexed[Switch[#2[[1]],\n1, Translate[myCone[#1], {-2, 0, #2[[2]] - 1}],\n2, Translate[myHemisphere[#1], {0, 0, #2[[2]] - 1}],\n3, Translate[myCylinder[#1], {2, 0, #2[[2]] - 1}]] &, heights[t], {2}],\nFaceGrids -> {{{0, 1, 0}, {{-3, -2, 0, 2, 3}, Range[0, 4, 1]}}, {{0, 0, -1}, {{-3, 3}, {-1, 1}}}},\nImageSize -> {450, 450},\nPlotRange -> {{-3, 3}, {-1, 1}, {0, 4}}, ViewPoint -> {-1.46, -2.96, 0.72},\nViewVertical -> {-0.03, -0.19, 0.98}, Boxed -> False,\nMethod -> {\"ShrinkWrap\" -> True}],\n\n2, Plot[{3 r, r^2 (3 - r), r^3}, {r, 0, 1}, PlotRange -> {0, 3},\nAspectRatio -> 1, GridLines -> {Range[0, 1, .2], Range[3]},\nImageSize -> {450, 395},\nPlotLegends -> Placed[{\nRow[{\"cylinder: 3\", Style[\"f\", Italic]}],\nRow[{\"hemisphere: \", Superscript[Style[\"f\", Italic], 2], \"(3-\", Style[\"f\", Italic], \")\"}],\nRow[{\"cone: \", Superscript[Style[\"f\", Italic], \"3\"]}]}, Below],\nAxesLabel -> (Style[#, \"Subsubtitle\"] & /@ {\nRow[{Style[\"f\", Italic], \" ≡ \", Style[\"h\", Italic], \"/\", Style[\"r\", Italic]}],\nRow[{Style[\"V\", Italic], \"/\", Subscript[Style[\"V\", Italic], \"full cone\"]}]}),\nPlotLabel -> Style[\"water volumes in three containers versus height\", \"Subsubtitle\"]],\n\n3 | 4, emb = 4 - ChooseControlMode; tmax = 2 - emb; t = Min[t, tmax];\nGraphics3D[{LightBlue, Opacity[0.6], myCylinder[heights[t][[2 - emb, 1]]],\nGray, Opacity[.9],\nRotate[Switch[emb, 0, myCone, 1, myHemisphere][1], Pi, {0, 1, 0}, {0, 0, .5}],\nLightBlue, Opacity[0.4],\nTranslate[Switch[emb, 0, myHemisphere, 1, myCone][heights[t][[2 - emb, 1]]], {2, 0, 0}]},\nViewPoint -> {-0.89, -3.22, 0.52}, ViewVertical -> {-0.04, -0.24, 0.97},\nImageSize -> {450, 450}],\n\n5, tmax = 0.8; t = Max[t, 0.2]; t = Min[t, tmax]; h = t;\nLabeled[Pane[\nGrid[{\n{Module[{r = 1, x, y}, y = -(r - h); x = Abs[y];\nGraphics[{Line[{{-1, 0}, {-1, -1}, {1, -1}, {1, 0}}],\nLine[{{-1, -1}, {0, 0}, {1, -1}}], Line[{{-1, y}, {1, y}}],\nAnnotatedArrow[{0, 0}, {1, 0}, \"r\"],\nAnnotatedArrow[{0, y}, {x, y}, \"r-h\"],\nAnnotatedArrow[{0, y}, {0, 0}, \"r-h\"],\nAnnotatedArrow[{0, -1}, {0, y}, \"h\"],\nLightBlue, Polygon[{{x, y}, {1, y}, {1, -1}}],\nPolygon[{{-x, y}, {-1, y}, {-1, -1}}], Thick, Blue,\nLine[{{-1, y}, {-x, y}}], Line[{{1, y}, {x, y}}]},\nBaseStyle -> {Medium, Italic},\nPlotRange -> 1.01 {{-1, 1}, {-1, 0.1}}, ImageSize -> {450, 160}]]},\n{Text@Row[{Subscript[Style[\"A\", Italic], \"slice\"], \" = Pi \",\nSuperscript[Style[\"x\", Italic], 2], \" = Pi (\",\nSuperscript[Style[\"r\", Italic], 2], \" - \",\nSuperscript[Row[{\"(\", Style[\"r\", Italic], \"-\", Style[\"h\", Italic], \")\"}], 2], \")\",\n\"= Pi \", Superscript[Style[\"r\", Italic], 2], \"-Pi \",\nSuperscript[Style[\"r\", Italic], 2], \" - \",\nSuperscript[Row[{\"Pi (\", Style[\"r\", Italic], \"-\", Style[\"h\", Italic], \")\"}], 2]}]},\n{},\n{Module[{r = 1, x, y}, y = -(r - h); x = Sqrt[r^2 - y^2];\nGraphics[{Circle[{0, 0}, 1, {Pi, 2 Pi}], LightBlue,\nDisk[{0, 0}, 1, {ArcTan[-x, y], ArcTan[x, y]}], White,\nPolygon[{{0, 0}, {x, y}, {-x, y}}], Black,\nLine[{{0, 0}, {x, y}}], Text[\"r\", {x, y}/2, {0, -1.5}],\nText[\"x\", {0.45 x, y}, {0, -1.2}],\nAnnotatedArrow[{0, 0}, {1, 0}, \"r\"],\nAnnotatedArrow[{0, y}, {0, 0}, \"r-h\"],\nAnnotatedArrow[{0, -1}, {0, y}, \"h\"], Thick, Blue,\nLine[{{-x, y}, {x, y}}]}, BaseStyle -> {Medium, Italic},\nPlotRange -> 1.01 {{-1, 1}, {-1, 0.1}}, ImageSize -> {450, 160}]]},\n{Text@Row[{Subscript[Style[\"A\", Italic], \"slice\"], \" = \",\nSubscript[Style[\"A\", Italic], \"big circle\"], \" - \",\nSubscript[Style[\"A\", Italic], \"small circle\"], \" = Pi \",\nSuperscript[Style[\"r\", Italic], 2], \" - \",\nSuperscript[Row[{\"Pi (\", Style[\"r\", Italic], \"-\", Style[\"h\", Italic], \")\"}], 2]}]}},\nItemSize -> Full], Center, ImageSize -> {450, 401}],\nText@Style[\"cone submerged in a cylinder versus a hemisphere\\n\\n\", \"Subsubtitle\"], Top]\n],\n{{ChooseControlMode, 1, \"view: \"}, {1 -> \"fill all\", 2 -> Row[{Style[\"V\", Italic], \" versus \", Style[\"h\", Italic], \" graph\"}], 3 -> \"submerged hemisphere\", 4 -> \"submerged cone\", 5 -> \"geometric explanation\"}, SetterBar},\nControl@{{t, 0.1, Style[\"t\", Italic]}, 0.1, tmax, 0.01, Appearance -> \"Labeled\", Enabled -> If[ChooseControlMode != 2, True, False]},\n{emb, 0, 1, ControlType -> None},\n{h, 0, 1, ControlType -> None},\n{{tmax, 4}, {1, 4}, ControlType -> None},\nSaveDefinitions -> True, Alignment -> Center, ControlPlacement -> Top]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`ChooseControlMode$$ = 1}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the vessels must build: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the vessels must draw");
+
+    // The view picker and the fill slider get a row each; the three
+    // `ControlType -> None` parameters are bound without one.
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Discrete { name, .. }
+        | manipulate::ControlState::Continuous { name, .. } => name.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, ["ChooseControlMode", "t"]);
+    let hidden: Vec<&str> =
+      widget.state.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(hidden, ["emb", "h", "tmax"]);
+
+    let render = |mode: u32, t: &str| {
+      let bindings: String = widget
+        .state
+        .iter()
+        .map(|(n, v)| format!("{n} = {v};\n"))
+        .collect();
+      woxi::interpret_with_stdout(&format!(
+        "{bindings}ChooseControlMode = {mode}; t = {t};\n{}",
+        widget.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+
+    // View 1 fills all three vessels: the walls are tubes and the bowl is
+    // a lifted revolution surface, so the picture is polygons throughout.
+    let filled = render(1, "0.5");
+    assert!(filled.contains("<polygon"), "the vessels must draw");
+    assert_ne!(filled, render(1, "2.0"), "the fill level must matter");
+
+    // View 2 is the volume-versus-height plot, and each of the remaining
+    // views draws something of its own.
+    let plot = render(2, "0.5");
+    assert!(
+      plot.contains("<polyline") || plot.contains("<path"),
+      "the volume curves must draw"
+    );
+    let views: Vec<String> = (1..=5).map(|m| render(m, "0.5")).collect();
+    for (i, a) in views.iter().enumerate() {
+      for b in &views[i + 1..] {
+        assert_ne!(a, b, "each view must draw something of its own");
+      }
+    }
+
+    // The geometric explanation is a `Labeled[Pane[Grid[…]]]` of two
+    // diagrams and their two formulas, composed rather than written out.
+    let explanation = &views[4];
+    assert!(!explanation.contains("GraphicsBox"), "{explanation:.400}");
+    assert!(
+      explanation.contains("cone submerged in a cylinder"),
+      "the caption must typeset"
+    );
+  }
 }

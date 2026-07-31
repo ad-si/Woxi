@@ -3883,11 +3883,87 @@ fn is_inline_graphic(expr: &Expr) -> bool {
   match expr {
     Expr::Graphics { .. } | Expr::Image { .. } => true,
     Expr::FunctionCall { name, args }
-      if name == "Legended" && !args.is_empty() =>
+      if (name == "Legended" || name == "Pane") && !args.is_empty() =>
     {
       is_inline_graphic(&args[0])
     }
     _ => false,
+  }
+}
+
+/// The layout wrappers whose *cells* `expr_to_svg` composes: each one
+/// arranges its parts in a grid, so a picture anywhere inside has to be
+/// drawn rather than written out as source.
+const LAYOUT_HEADS: &[&str] = &["Grid", "Column", "Row", "Labeled"];
+
+/// True if `expr` is a picture, or a layout that has one somewhere inside.
+/// Only then does composing it beat the typeset-text fallback: a `Grid` of
+/// plain strings already lays out correctly as text.
+fn lays_out_a_graphic(expr: &Expr) -> bool {
+  if is_inline_graphic(expr) {
+    return true;
+  }
+  // A held `Graphics[…]` / `Graphics3D[…]` call is a picture too —
+  // `expr_to_svg` renders one — and that is the form the args of a
+  // display wrapper like `Labeled` arrive in.
+  if matches!(expr, Expr::FunctionCall { name, args }
+    if (name == "Graphics" || name == "Graphics3D") && !args.is_empty())
+  {
+    return true;
+  }
+  match expr {
+    Expr::List(items) => items.iter().any(lays_out_a_graphic),
+    // `Pane` is transparent here: its own arm exports what it wraps.
+    Expr::FunctionCall { name, args }
+      if LAYOUT_HEADS.contains(&name.as_str()) || name == "Pane" =>
+    {
+      args.iter().any(lays_out_a_graphic)
+    }
+    _ => false,
+  }
+}
+
+/// A string shown through `Text` loses the quotation marks its own
+/// OutputForm carries — that is what `Text` asks for. Only a string that
+/// would be typeset on its own is affected (directly, or as the content of
+/// a `Style`); the parts of a `Row` already render as text.
+fn unquoted_display_string(expr: &Expr) -> Expr {
+  match expr {
+    Expr::String(s) => Expr::Identifier(s.clone()),
+    Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() =>
+    {
+      let mut args = args.to_vec();
+      args[0] = unquoted_display_string(&args[0]);
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: args.into(),
+      }
+    }
+    other => other.clone(),
+  }
+}
+
+/// The rows of cells a layout wrapper contributes to a combined grid.
+/// `Grid` keeps its own row structure, `Column` stacks, `Row` spreads;
+/// rows with no cells (a `{}` spacer row in a `Grid`) are dropped, since
+/// the grid engine has nothing to place for them.
+fn layout_rows(name: &str, args: &[Expr]) -> Vec<Vec<Expr>> {
+  let items: &[Expr] = match args.first() {
+    Some(Expr::List(items)) => items,
+    _ => return vec![],
+  };
+  match name {
+    "Grid" => items
+      .iter()
+      .map(|row| match row {
+        Expr::List(cells) => cells.to_vec(),
+        other => vec![other.clone()],
+      })
+      .filter(|cells| !cells.is_empty())
+      .collect(),
+    "Column" => items.iter().map(|c| vec![c.clone()]).collect(),
+    _ => vec![items.to_vec()],
   }
 }
 
@@ -3903,6 +3979,16 @@ fn contains_framed_or_highlighted(expr: &Expr) -> bool {
   }
 }
 
+/// The composed SVG of `Labeled[graphic, label, pos…]` — the label set
+/// beside the picture. `None` when the content is not a picture, so a
+/// label on plain text is left to the text renderer. (`Grid`, `Column`
+/// and `Row` reach the visual pipeline through passes of their own.)
+pub(crate) fn labeled_display_svg(expr: &Expr) -> Option<String> {
+  let is_labeled = matches!(expr, Expr::FunctionCall { name, args }
+    if name == "Labeled" && args.len() >= 2 && lays_out_a_graphic(&args[0]));
+  is_labeled.then(|| expr_to_svg(expr))
+}
+
 pub(crate) fn expr_to_svg(expr: &Expr) -> String {
   match expr {
     Expr::Graphics { svg: svg_data, .. } => svg_data.clone(),
@@ -3912,6 +3998,58 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // this, `Export[…, Pane[graphic]]` wrote the expression as text.)
     Expr::FunctionCall { name, args } if name == "Pane" && !args.is_empty() => {
       expr_to_svg(&args[0])
+    }
+    // Outside a `Graphics`, `Text[expr]` only asks for `expr` to be shown
+    // in text rather than mathematical form — it contributes no box of its
+    // own, so export what it holds. (In a `Grid` cell this is the
+    // difference between the typeset row and the string `Text[Row[…]]`.)
+    Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
+      expr_to_svg(&unquoted_display_string(&args[0]))
+    }
+    // `Labeled[content, label]` (and `…, pos]`) puts the label beside the
+    // content — below it by default. With a picture as the content the
+    // FrontEnd stacks the two, so exporting one has to compose them
+    // instead of writing the whole call out as text.
+    Expr::FunctionCall { name, args }
+      if name == "Labeled"
+        && args.len() >= 2
+        && lays_out_a_graphic(&args[0]) =>
+    {
+      let content = expr_to_svg(&args[0]);
+      // A label is shown as text, so a string one loses its quotes.
+      let label = expr_to_svg(&unquoted_display_string(&args[1]));
+      let position = match args.get(2) {
+        Some(Expr::Identifier(p)) => p.as_str(),
+        _ => "Bottom",
+      };
+      let rows = match position {
+        "Top" => vec![vec![label], vec![content]],
+        "Left" => vec![vec![label, content]],
+        "Right" => vec![vec![content, label]],
+        _ => vec![vec![content], vec![label]],
+      };
+      crate::functions::graphics::combine_graphics_svgs(&rows)
+        .unwrap_or_else(|| expr_text_svg(expr))
+    }
+    // `Grid`/`Column`/`Row` holding a picture are composed cell by cell —
+    // pictures drawn, everything else typeset — rather than dumped as
+    // source. Layouts of plain text keep the text renderer, which already
+    // aligns them.
+    Expr::FunctionCall { name, args }
+      if LAYOUT_HEADS.contains(&name.as_str())
+        && !args.is_empty()
+        && lays_out_a_graphic(expr) =>
+    {
+      let rows: Vec<Vec<String>> = layout_rows(name, args)
+        .iter()
+        .map(|cells| cells.iter().map(expr_to_svg).collect())
+        .collect();
+      if rows.is_empty() {
+        expr_text_svg(expr)
+      } else {
+        crate::functions::graphics::combine_graphics_svgs(&rows)
+          .unwrap_or_else(|| expr_text_svg(expr))
+      }
     }
     // A list of graphics renders as `{g1, g2, …}` with the plots drawn
     // inline (matching how wolframscript displays such a list), instead

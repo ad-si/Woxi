@@ -143,3 +143,16 @@ Every root is reported with its multiplicity:
 $ wo 'Solve[x^3 - 4 x^2 == 0, x]'
 {{x -> 0}, {x -> 0}, {x -> 4}}
 ```
+
+An inequality alongside the equation keeps only the roots inside it —
+including roots with no radical form, which are decided on their value:
+
+```scrut
+$ wo 'Solve[x^4 == 16 && x > 0, x]'
+{{x -> 2}}
+```
+
+```scrut
+$ wo 'Solve[1 == f^2 (3 - f) && 0 <= f <= 1, f]'
+{{f -> Root[1 - 3*#1^2 + #1^3 & , 2, 0]}}
+```

@@ -16701,3 +16701,62 @@ mod fuzz_diff_round_2026_07_26 {
     );
   }
 }
+
+mod constrained_solve_roots {
+  use super::*;
+
+  /// `NSolve[eqns]` with the variable left out solves for whatever the
+  /// equations contain, as `Solve[eqns]` does. The "Filling Cone,
+  /// Hemisphere and Cylinder" Demonstration inverts its hemisphere volume
+  /// this way.
+  #[test]
+  fn nsolve_infers_its_variable() {
+    clear_state();
+    assert_eq!(
+      interpret("NSolve[x^2 == 2]").unwrap(),
+      "{{x -> -1.4142135623730951}, {x -> 1.4142135623730951}}"
+    );
+  }
+
+  /// An inequality alongside the equation narrows the answer even when the
+  /// roots have no radical form: the bound is decided on the root's value.
+  /// Regression: a cubic whose roots came back as `Root[…]` objects kept
+  /// all three, so the notebook read the wrong one out of position 1.
+  #[test]
+  fn an_exact_root_is_filtered_by_its_bounds() {
+    clear_state();
+    assert_eq!(
+      interpret("NSolve[1 == f^2 (3 - f) && 0 <= f <= 1, f]").unwrap(),
+      "{{f -> 0.6527036446661393}}"
+    );
+    assert_eq!(
+      interpret("Solve[1 == f^2 (3 - f) && 0 <= f <= 1, f]").unwrap(),
+      "{{f -> Root[1 - 3*#1^2 + #1^3 & , 2, 0]}}"
+    );
+  }
+
+  /// Nothing orders a complex number, so an ordering bound rules one out.
+  #[test]
+  fn an_ordering_bound_rules_out_complex_roots() {
+    clear_state();
+    assert_eq!(
+      interpret("Solve[x^4 == 16 && x > 0, x]").unwrap(),
+      "{{x -> 2}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^3 == 8 && x > 0, x]").unwrap(),
+      "{{x -> 2}}"
+    );
+  }
+
+  /// A `!=` constraint is not an ordering: it still admits any value that
+  /// differs, and the real roots either side of the bound stay.
+  #[test]
+  fn inequality_constraints_are_not_ordering_bounds() {
+    clear_state();
+    assert_eq!(
+      interpret("NSolve[x^2 - 1 == 0 && x != 1, x]").unwrap(),
+      "{{x -> -1.}}"
+    );
+  }
+}
