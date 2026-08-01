@@ -5,7 +5,8 @@
 //! Both use the existing `grid_svg_with_gaps` infrastructure so theming and
 //! layout stay consistent with `Grid[]` / `TableForm[]` output.
 
-use crate::syntax::{Expr, bool_expr};
+#[allow(unused_imports)]
+use super::*;
 
 /// Build a `Style[content, Bold]` Expr.
 fn bold_style(text: &str) -> Expr {

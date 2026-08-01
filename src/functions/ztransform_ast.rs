@@ -12,12 +12,10 @@
 //! (1 - 3*z)^2), and symbolic bases keep (a - z)^(k+1) with an overall
 //! minus sign for even k.
 
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::calculus_ast::is_constant_wrt;
 use crate::functions::math_ast::{gcd_i128, rat_reduce};
-use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
-};
 
 pub fn z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = |args: &[Expr]| unevaluated("ZTransform", args);

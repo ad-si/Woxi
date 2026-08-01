@@ -16,9 +16,9 @@
 //! incorrect.* A spec entry given as a plain value (not a rule) denotes a
 //! correct answer with a score of `1`.
 
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::evaluator::pattern_matching::expr_equal;
-use crate::syntax::{Expr, bool_expr, unevaluated};
 
 /// Turn a numeric-or-boolean grade expression into a `(score, correct)` pair.
 /// Returns `None` when the expression is not a recognized grade value.

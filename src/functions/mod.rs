@@ -1,3 +1,9 @@
+use crate::InterpreterError;
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, binop, bool_expr,
+  expr_to_output, expr_to_string, unevaluated,
+};
+
 // Functions are organized by categories
 pub mod assessment_ast;
 pub mod assessment_render;
@@ -56,6 +62,7 @@ pub mod periodic_table_plot;
 pub mod plot;
 pub mod plot3d;
 pub mod plot_epilog;
+pub mod polygon_holes;
 pub mod polyhedron_data;
 pub mod polynomial_ast;
 pub mod predicate_ast;

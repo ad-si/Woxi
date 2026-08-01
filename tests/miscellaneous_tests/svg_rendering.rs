@@ -2592,6 +2592,66 @@ mod tests {
     }
 
     #[test]
+    fn graphics3d_axes_carry_ticks_and_labels() {
+      // `Show[Graphics3D[…], Axes -> True, AxesLabel -> {…}]`: a
+      // Demonstration frames a 3D scene this way, and the axes, their tick
+      // labels and the axis labels all have to be drawn.
+      let svg = svg_of(
+        "Graphics3D[{Line[{{0, 0, 0}, {1, 10, 5}}]}, Axes -> True, \
+         AxesLabel -> {\"across\", \"t (s)\", \"up\"}]",
+      );
+      for label in ["across", "t (s)", "up"] {
+        assert!(svg.contains(label), "expected the {label} label: {svg}");
+      }
+      // Without `Axes -> True` there is only the wireframe box.
+      let plain = svg_of("Graphics3D[{Line[{{0, 0, 0}, {1, 10, 5}}]}]");
+      assert!(!plain.contains("<text"), "expected no axes: {plain}");
+    }
+
+    #[test]
+    fn graphics3d_axes_label_typesets_inline_boxes() {
+      // An axis label written in the FrontEnd carries its typesetting as
+      // linear syntax inside the string; it must draw as the superscript
+      // it stands for, not as the box source.
+      let svg = svg_of(
+        "Graphics3D[{Line[{{0, 0, 0}, {1, 1, 1}}]}, Axes -> True, \
+         AxesLabel -> {\"m/\\!\\(\\*SuperscriptBox[\\(s\\), \\(2\\)]\\)\", \
+         None, None}]",
+      );
+      assert!(
+        svg.contains("m/s<tspan baseline-shift=\"super\""),
+        "expected a typeset exponent: {svg}"
+      );
+      assert!(
+        !svg.contains("SuperscriptBox"),
+        "the box source must not be drawn: {svg}"
+      );
+    }
+
+    #[test]
+    fn graphics3d_plot_range_frames_each_axis() {
+      // `PlotRange -> {{x0, x1}, {y0, y1}, {z0, z1}}` pins the displayed
+      // region, so the ticks span the range asked for rather than the
+      // extent of the contents.
+      let svg = svg_of(
+        "Graphics3D[{Line[{{0, 0, 0}, {1, 1, 1}}]}, Axes -> True, \
+         PlotRange -> {{-7, 7}, {0, 25}, {-20, 20}}]",
+      );
+      for tick in [">-5<", ">20<", ">-20<"] {
+        assert!(svg.contains(tick), "expected a {tick} tick: {svg}");
+      }
+      // The contents alone would never reach those values.
+      let fitted = svg_of(
+        "Graphics3D[{Line[{{0, 0, 0}, {1, 1, 1}}]}, \
+         Axes -> True]",
+      );
+      assert!(
+        !fitted.contains(">20<"),
+        "expected a fitted frame: {fitted}"
+      );
+    }
+
+    #[test]
     fn raster3d_renders_voxels() {
       let svg =
         svg_of("Graphics3D[Raster3D[{{{0, 1}, {1, 0}}, {{1, 0}, {0, 1}}}]]");

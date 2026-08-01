@@ -8,8 +8,8 @@
 //! the (odd) sine. Anything else passes through unchanged, as
 //! wolframscript does for already-factored or non-trig input.
 
-use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
+#[allow(unused_imports)]
+use super::*;
 
 pub fn trig_factor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {

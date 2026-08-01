@@ -7,10 +7,8 @@
 //! - bare x^n (symbolic): Abs[x] < 1; bare 1/n^p (symbolic): Re[p] > 1
 //! - 1/n! decay: True
 
-use crate::InterpreterError;
-use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, unevaluated,
-};
+#[allow(unused_imports)]
+use super::*;
 
 pub fn sum_convergence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = |args: &[Expr]| unevaluated("SumConvergence", args);

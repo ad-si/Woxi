@@ -207,6 +207,23 @@ pub fn polygon_box(points: &[(f64, f64)]) -> String {
   }
 }
 
+/// PolygonBox[{{x1,y1}, ...} -> {{{u1,v1}, ...}, ...}] — a polygon with
+/// holes, the box form of `Polygon[outer -> holes]`.
+pub fn polygon_with_holes_box(
+  points: &[(f64, f64)],
+  holes: &[Vec<(f64, f64)>],
+) -> String {
+  let ring = |pts: &[(f64, f64)]| {
+    let items: Vec<String> = pts
+      .iter()
+      .map(|(x, y)| format!("{{{}, {}}}", fmt_real(*x), fmt_real(*y)))
+      .collect();
+    format!("{{{}}}", items.join(", "))
+  };
+  let holes: Vec<String> = holes.iter().map(|h| ring(h)).collect();
+  format!("PolygonBox[{} -> {{{}}}]", ring(points), holes.join(", "))
+}
+
 /// ArrowBox[{{x1,y1}, ...}] or ArrowBox[{{x1,y1}, ...}, {s1, s2}]
 pub fn arrow_box(points: &[(f64, f64)], setback: (f64, f64)) -> String {
   let pts: Vec<String> = points

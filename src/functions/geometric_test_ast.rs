@@ -11,8 +11,8 @@
 //! expression is left unevaluated (matching how the interpreter treats
 //! unsupported cases elsewhere).
 
-use crate::InterpreterError;
-use crate::syntax::{Expr, bool_expr};
+#[allow(unused_imports)]
+use super::*;
 
 /// Absolute tolerance for orientation / sign tests (exact-zero comparisons on
 /// well-conditioned inputs).

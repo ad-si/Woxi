@@ -2,8 +2,8 @@
 //!
 //! These functions work directly with `Expr` AST nodes.
 
-use crate::InterpreterError;
-use crate::syntax::{Expr, bool_expr, unevaluated};
+#[allow(unused_imports)]
+use super::*;
 
 /// Whether an expression is a valid association entry: a single rule, a
 /// list of rules, or an association. Used by AssociationMap to decide when

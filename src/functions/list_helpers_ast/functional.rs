@@ -2,7 +2,6 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, UnaryOperator, unevaluated};
 
 /// AST-based Fold/FoldList: fold a function over a list.
 /// Fold[f, x, {a, b, c}] -> f[f[f[x, a], b], c]

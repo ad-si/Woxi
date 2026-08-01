@@ -1,4 +1,5 @@
-use crate::syntax::Expr;
+#[allow(unused_imports)]
+use super::*;
 
 /// Parse CSV input (RFC 4180) into a vector of rows, each row a vector of field strings.
 pub fn parse_csv(input: &str) -> Vec<Vec<String>> {
@@ -458,7 +459,7 @@ pub fn csv_import_data_spec(
   rows: &[Vec<String>],
   row_spec: &Expr,
   col_spec: Option<&Expr>,
-) -> Result<Expr, crate::InterpreterError> {
+) -> Result<Expr, InterpreterError> {
   let noelem = || {
     crate::emit_message(
       "Import::noelem: The Import element is not present when importing as CSV.",
@@ -498,11 +499,9 @@ pub fn csv_import_data_spec(
 
 /// Read and parse a CSV file from disk.
 #[cfg(not(target_arch = "wasm32"))]
-fn read_csv_file(
-  path: &str,
-) -> Result<Vec<Vec<String>>, crate::InterpreterError> {
+fn read_csv_file(path: &str) -> Result<Vec<Vec<String>>, InterpreterError> {
   let content = std::fs::read_to_string(path).map_err(|e| {
-    crate::InterpreterError::EvaluationError(format!(
+    InterpreterError::EvaluationError(format!(
       "Import: cannot open \"{}\": {}",
       path, e
     ))
@@ -515,7 +514,7 @@ fn read_csv_file(
 pub fn csv_import_file(
   path: &str,
   element: Option<&str>,
-) -> Result<Expr, crate::InterpreterError> {
+) -> Result<Expr, InterpreterError> {
   let rows = read_csv_file(path)?;
   Ok(csv_import_element(&rows, element))
 }
@@ -527,7 +526,7 @@ pub fn csv_import_file_data_spec(
   path: &str,
   row_spec: &Expr,
   col_spec: Option<&Expr>,
-) -> Result<Expr, crate::InterpreterError> {
+) -> Result<Expr, InterpreterError> {
   let rows = read_csv_file(path)?;
   csv_import_data_spec(&rows, row_spec, col_spec)
 }
@@ -537,26 +536,26 @@ pub fn csv_import_file_data_spec(
 pub fn csv_import_from_url(
   url: &str,
   element: Option<&str>,
-) -> Result<Expr, crate::InterpreterError> {
+) -> Result<Expr, InterpreterError> {
   let output = std::process::Command::new("curl")
     .args(["-fsSL", "--max-time", "15", url])
     .output()
     .map_err(|e| {
-      crate::InterpreterError::EvaluationError(format!(
+      InterpreterError::EvaluationError(format!(
         "Import: failed to run curl: {}",
         e
       ))
     })?;
   if !output.status.success() {
     let stderr = String::from_utf8_lossy(&output.stderr);
-    return Err(crate::InterpreterError::EvaluationError(format!(
+    return Err(InterpreterError::EvaluationError(format!(
       "Import: failed to download \"{}\": {}",
       url,
       stderr.trim()
     )));
   }
   let content = String::from_utf8(output.stdout).map_err(|e| {
-    crate::InterpreterError::EvaluationError(format!(
+    InterpreterError::EvaluationError(format!(
       "Import: downloaded CSV is not valid UTF-8: {}",
       e
     ))

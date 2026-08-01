@@ -1,11 +1,9 @@
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{DEFAULT_HEIGHT, DEFAULT_WIDTH, parse_image_size};
-use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, expr_to_string,
-  unevaluated,
-};
+use crate::syntax::expr_to_output;
 
 /// Dash length for the "Small" named size in Dashing directives.
 /// This is the default dash segment length used by Dashed, Dotted, etc.
@@ -517,6 +515,9 @@ enum Primitive {
   },
   PolygonPrim {
     points: Vec<(f64, f64)>,
+    /// Boundaries cut out of the polygon (`Polygon[outer -> holes]`).
+    /// Empty for an ordinary polygon.
+    holes: Vec<Vec<(f64, f64)>>,
     style: StyleState,
   },
   ArrowPrim {
@@ -1842,6 +1843,17 @@ fn parse_polygon(
   if let Some(pts) = expr_to_point_list(&args[0]) {
     prims.push(Primitive::PolygonPrim {
       points: pts,
+      holes: Vec::new(),
+      style: style.clone(),
+    });
+  } else if let Some((outer, holes)) =
+    crate::functions::polygon_holes::split_holes(&args[0], &expr_to_point_list)
+  {
+    // Polygon[outer -> holes] — a polygon with the hole boundaries cut
+    // out of it.
+    prims.push(Primitive::PolygonPrim {
+      points: outer,
+      holes,
       style: style.clone(),
     });
   } else if let Expr::List(items) = &args[0] {
@@ -1849,6 +1861,15 @@ fn parse_polygon(
       if let Some(pts) = expr_to_point_list(item) {
         prims.push(Primitive::PolygonPrim {
           points: pts,
+          holes: Vec::new(),
+          style: style.clone(),
+        });
+      } else if let Some((outer, holes)) =
+        crate::functions::polygon_holes::split_holes(item, &expr_to_point_list)
+      {
+        prims.push(Primitive::PolygonPrim {
+          points: outer,
+          holes,
           style: style.clone(),
         });
       }
@@ -1892,6 +1913,7 @@ fn parse_parallelogram(
   ];
   prims.push(Primitive::PolygonPrim {
     points,
+    holes: Vec::new(),
     style: style.clone(),
   });
 }
@@ -2019,6 +2041,7 @@ fn parse_regular_polygon(
     .collect();
   prims.push(Primitive::PolygonPrim {
     points: pts,
+    holes: Vec::new(),
     style: style.clone(),
   });
 }
@@ -2321,6 +2344,7 @@ fn parse_polar_curve(
   if filled {
     prims.push(Primitive::PolygonPrim {
       points,
+      holes: Vec::new(),
       style: style.clone(),
     });
   } else {
@@ -2853,8 +2877,16 @@ fn rotate_primitive(
         .collect(),
       style: style.clone(),
     },
-    Primitive::PolygonPrim { points, style } => Primitive::PolygonPrim {
+    Primitive::PolygonPrim {
+      points,
+      holes,
+      style,
+    } => Primitive::PolygonPrim {
       points: points.iter().map(|&(x, y)| rp(x, y)).collect(),
+      holes: holes
+        .iter()
+        .map(|h| h.iter().map(|&(x, y)| rp(x, y)).collect())
+        .collect(),
       style: style.clone(),
     },
     Primitive::ArrowPrim {
@@ -2890,6 +2922,7 @@ fn rotate_primitive(
       .iter()
       .map(|&(x, y)| rp(x, y))
       .collect(),
+      holes: Vec::new(),
       style: style.clone(),
     },
     Primitive::Disk {
@@ -3018,8 +3051,16 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
         .collect(),
       style: style.clone(),
     },
-    Primitive::PolygonPrim { points, style } => Primitive::PolygonPrim {
+    Primitive::PolygonPrim {
+      points,
+      holes,
+      style,
+    } => Primitive::PolygonPrim {
       points: points.iter().map(|&(x, y)| tp(x, y)).collect(),
+      holes: holes
+        .iter()
+        .map(|h| h.iter().map(|&(x, y)| tp(x, y)).collect())
+        .collect(),
       style: style.clone(),
     },
     Primitive::ArrowPrim {
@@ -3191,8 +3232,16 @@ fn scale_primitive(
         .collect(),
       style: style.clone(),
     },
-    Primitive::PolygonPrim { points, style } => Primitive::PolygonPrim {
+    Primitive::PolygonPrim {
+      points,
+      holes,
+      style,
+    } => Primitive::PolygonPrim {
       points: points.iter().map(|&(x, y)| sp(x, y)).collect(),
+      holes: holes
+        .iter()
+        .map(|h| h.iter().map(|&(x, y)| sp(x, y)).collect())
+        .collect(),
       style: style.clone(),
     },
     Primitive::ArrowPrim {
@@ -4423,7 +4472,11 @@ fn render_primitive(
         stroke_attr,
       ));
     }
-    Primitive::PolygonPrim { points, style } => {
+    Primitive::PolygonPrim {
+      points,
+      holes,
+      style,
+    } => {
       let color = style.effective_color();
       let pts: Vec<String> = points
         .iter()
@@ -4455,13 +4508,43 @@ fn render_primitive(
       } else {
         String::new()
       };
-      out.push_str(&format!(
-        "<polygon points=\"{}\" fill=\"{}\"{}{}/>\n",
-        pts.join(" "),
-        color.to_svg_rgb(),
-        fill_opacity,
-        stroke_attr,
-      ));
+      if holes.is_empty() {
+        out.push_str(&format!(
+          "<polygon points=\"{}\" fill=\"{}\"{}{}/>\n",
+          pts.join(" "),
+          color.to_svg_rgb(),
+          fill_opacity,
+          stroke_attr,
+        ));
+      } else {
+        // A polygon with holes becomes one path per boundary, filled with
+        // the even-odd rule so the hole subpaths are cut out.
+        let subpath = |ring: &[(f64, f64)]| {
+          let mut d = String::new();
+          for (i, &(x, y)) in ring.iter().enumerate() {
+            d.push_str(&format!(
+              "{}{:.2},{:.2}",
+              if i == 0 { "M" } else { "L" },
+              coord_x(x, bb, svg_w),
+              coord_y(y, bb, svg_h)
+            ));
+            d.push(' ');
+          }
+          d.push_str("Z ");
+          d
+        };
+        let mut d = subpath(points);
+        for hole in holes {
+          d.push_str(&subpath(hole));
+        }
+        out.push_str(&format!(
+          "<path d=\"{}\" fill=\"{}\" fill-rule=\"evenodd\"{}{}/>\n",
+          d.trim_end(),
+          color.to_svg_rgb(),
+          fill_opacity,
+          stroke_attr,
+        ));
+      }
     }
     Primitive::HalfPlanePrim {
       p,
@@ -5035,9 +5118,17 @@ fn primitives_to_box_elements(primitives: &[Primitive]) -> Vec<String> {
         elements.extend(tracker.emit_style_changes(style));
         elements.push(gbox::rectangle_box(*x_min, *y_min, *x_max, *y_max));
       }
-      Primitive::PolygonPrim { points, style } => {
+      Primitive::PolygonPrim {
+        points,
+        holes,
+        style,
+      } => {
         elements.extend(tracker.emit_style_changes(style));
-        elements.push(gbox::polygon_box(points));
+        elements.push(if holes.is_empty() {
+          gbox::polygon_box(points)
+        } else {
+          gbox::polygon_with_holes_box(points, holes)
+        });
       }
       Primitive::ArrowPrim {
         points,
@@ -6869,8 +6960,6 @@ fn negated_markup_term(arg: &Expr) -> Option<String> {
 }
 
 pub fn expr_to_svg_markup(expr: &Expr) -> String {
-  use crate::syntax::expr_to_output;
-
   // A unit-fraction power is a radical, not a superscript: `Sqrt[2]`
   // (which is `2^(1/2)`) typesets as √2 under its vinculum, and a cube
   // root carries its index in the hook.
@@ -7412,8 +7501,6 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
 /// accounting for superscript sizing (exponents rendered at ~70% width).
 /// Recursively mirrors `expr_to_svg_markup` structure.
 pub fn estimate_display_width(expr: &Expr) -> f64 {
-  use crate::syntax::expr_to_output;
-
   if let Some((base, exp)) = as_power(expr) {
     let parens = if is_additive_expr(base) { 2.0 } else { 0.0 };
     return estimate_display_width(base)
@@ -15294,8 +15381,22 @@ fn manipulate_label_runs(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       },
       "Subscript" => script_runs(args, italic, false),
       "Superscript" => script_runs(args, italic, true),
+      // `Power[b, e]`, which is what a label's typeset `SuperscriptBox`
+      // reads as: a Demonstration writes its gravity slider's unit as
+      // `m/\!\(\*SuperscriptBox[\(s\), \(2\)]\)`, and it must show as
+      // `m/s²`, not `m/s^2`.
+      "Power" if args.len() == 2 => script_runs(args, italic, true),
       _ => output_run(italic),
     },
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => script_runs(
+      &[left.as_ref().clone(), right.as_ref().clone()],
+      italic,
+      true,
+    ),
     // A label written in the notebook FrontEnd carries its typeset bits as
     // inline linear syntax inside the string: `"value to test against
     // \!\(\*SubscriptBox[\(p\), \(0\)]\)"`. Render each box segment as the

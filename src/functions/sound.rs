@@ -13,10 +13,11 @@
 
 use base64::Engine;
 
+#[allow(unused_imports)]
+use super::*;
 use crate::AudioOutput;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::evaluate_at_point;
-use crate::syntax::Expr;
 
 /// Sample rate used for synthesized `Play` audio (Hz). Matches the default
 /// `SampleRate` wolframscript uses for `Play` (8000 samples per second).

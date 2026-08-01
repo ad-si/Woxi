@@ -42,8 +42,8 @@
 //! Supported compression codecs: uncompressed, zlib (`ZL`), and LZ4 (`L4`).
 //! LZMA (`XZ`) and ZSTD (`ZS`) records produce a descriptive error.
 
-use crate::InterpreterError;
-use crate::syntax::{Expr, bool_expr};
+#[allow(unused_imports)]
+use super::*;
 
 /// Flag bit marking a 4-byte length prefix ("byte count") in streamed data.
 const K_BYTE_COUNT_MASK: u32 = 0x4000_0000;

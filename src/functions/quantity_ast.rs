@@ -1,6 +1,6 @@
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::math_ast::{is_sqrt, make_sqrt, rat_reduce};
-use crate::syntax::{BinaryOperator, Expr, binop, bool_expr, unevaluated};
 use std::collections::BTreeMap;
 
 // ─── Unit dimension system ──────────────────────────────────────────────────

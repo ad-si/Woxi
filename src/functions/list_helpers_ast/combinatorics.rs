@@ -2,7 +2,6 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::unevaluated;
 
 /// Unified Permutations: `Permutations[list]` (full-length only),
 /// `Permutations[list, n]` (lengths 0..n), `Permutations[list, {n}]`,

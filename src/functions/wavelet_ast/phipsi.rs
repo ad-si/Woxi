@@ -14,8 +14,8 @@
 use super::continuous::{ContinuousWaveletSpec, parse_continuous_wavelet};
 use super::data::{WaveletSpec, parse_discrete_wavelet};
 use super::filters::{meyer_nu, wavelet_filters};
-use crate::InterpreterError;
-use crate::syntax::{Expr, expr_to_string, unevaluated};
+#[allow(unused_imports)]
+use super::*;
 
 fn num(e: &Expr) -> Option<f64> {
   crate::functions::math_ast::expr_to_num(e)

@@ -1,4 +1,5 @@
-use crate::syntax::Expr;
+#[allow(unused_imports)]
+use super::*;
 
 /// Strip a single trailing newline (either `"\n"` or `"\r\n"`) so that
 /// `Import["file.txt"]` produces the same `StringLength` as wolframscript.

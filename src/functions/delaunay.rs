@@ -2,9 +2,9 @@
 //! set, as the `MeshRegion[coords, {Polygon[{…}]}]` object the region
 //! machinery reads.
 
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::math_ast::try_eval_to_f64;
-use crate::syntax::{Expr, unevaluated};
 
 /// The circumcircle test: whether `d` lies strictly inside the circle through
 /// `a`, `b`, `c` (given counter-clockwise).

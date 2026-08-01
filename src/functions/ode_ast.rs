@@ -3,11 +3,9 @@
 //! DSolve solves ordinary differential equations symbolically.
 //! NDSolve solves initial-value problems numerically using RK4.
 
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::math_ast::{make_sqrt, rat_reduce};
-use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
-};
 
 // ─── DSolve ────────────────────────────────────────────────────────────
 
@@ -249,21 +247,12 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let opts = &args[n_pos..];
   let event = parse_event_locator_option(opts);
 
-  // A list of dependent functions (`{θ, ϕ, ψ}`), an event-driven solve, or
-  // any spec the scalar path can't handle goes through the system solver.
-  let scalar_capable =
-    matches!(&args[1], Expr::FunctionCall { .. } | Expr::Identifier(_))
-      && event.is_none();
-  if scalar_capable {
-    let result = ndsolve_scalar(&args[..3])?;
-    // The scalar path returns the input unevaluated for shapes it doesn't
-    // support (e.g. initial conditions at an interior point of the
-    // domain); give the system solver a chance before giving up.
-    if !matches!(&result, Expr::FunctionCall { name, .. } if name == "NDSolve")
-    {
-      return Ok(result);
-    }
-  }
+  // Every shape — one equation or a coupled system, linear or not — goes
+  // through the same integrator. A single scalar equation used to take a
+  // separate path built on DSolve's *linear* term classifier, which
+  // refused anything nonlinear in the dependent variable (the pendulum's
+  // `Sin[θ[t]]`) even though nothing about integrating it numerically
+  // needs the equation to be linear.
   match ndsolve_system(&args[..3], event.as_ref()) {
     Ok(Some(result)) => Ok(result),
     Ok(None) => Ok(unevaluated("NDSolve", args)),
@@ -271,197 +260,15 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-fn ndsolve_scalar(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let eqns_arg = &args[0];
-  let dep_arg = &args[1];
-  let domain_arg = &args[2];
-
-  // Extract domain {x, xmin, xmax}
-  let (x_name, x_min, x_max) = match domain_arg {
-    Expr::List(items) if items.len() == 3 => {
-      let xn = match &items[0] {
-        Expr::Identifier(name) => name.clone(),
-        _ => {
-          return Ok(unevaluated("NDSolve", args));
-        }
-      };
-      let xmin =
-        expr_to_f64(&crate::evaluator::evaluate_expr_to_expr(&items[1])?)?;
-      let xmax =
-        expr_to_f64(&crate::evaluator::evaluate_expr_to_expr(&items[2])?)?;
-      (xn, xmin, xmax)
-    }
-    _ => {
-      return Ok(unevaluated("NDSolve", args));
-    }
-  };
-
-  // Extract dependent variable name
-  let (y_name, function_form) = match dep_arg {
-    Expr::FunctionCall { name, args: fargs } if fargs.len() == 1 => {
-      if let Expr::Identifier(xn) = &fargs[0] {
-        if xn == &x_name {
-          (name.clone(), false)
-        } else {
-          return Ok(unevaluated("NDSolve", args));
-        }
-      } else {
-        return Ok(unevaluated("NDSolve", args));
-      }
-    }
-    Expr::Identifier(name) => (name.clone(), true),
-    _ => {
-      return Ok(unevaluated("NDSolve", args));
-    }
-  };
-
-  // Extract equations and initial conditions from list
-  let items = match eqns_arg {
-    Expr::List(items) => items.clone(),
-    _ => vec![eqns_arg.clone()].into(),
-  };
-
-  // Separate ODE from initial conditions
-  let mut ode_expr = None;
-  let mut initial_conditions: Vec<(usize, f64, f64)> = Vec::new(); // (deriv_order, x_val, y_val)
-
-  for item in &items {
-    if let Some((order, x_val, y_val)) =
-      parse_numeric_initial_condition(item, &y_name)?
-    {
-      initial_conditions.push((order, x_val, y_val));
-    } else {
-      if ode_expr.is_some() {
-        return Ok(unevaluated("NDSolve", args));
-      }
-      ode_expr = Some(item.clone());
-    }
-  }
-
-  let ode = match ode_expr {
-    Some(e) => e,
-    None => {
-      return Ok(unevaluated("NDSolve", args));
-    }
-  };
-
-  // Parse the ODE and determine order
-  let ode_normalized = normalize_equation(&ode)?;
-  let terms = collect_ode_terms(&ode_normalized, &y_name, &x_name)?;
-  let max_order = terms.iter().map(|t| t.order).max().unwrap_or(0) as usize;
-
-  if max_order == 0 || initial_conditions.len() != max_order {
-    return Ok(unevaluated("NDSolve", args));
-  }
-
-  // Build the RHS function: solve for highest derivative
-  // Sum of terms = 0, so y^(n) = -(sum of other terms) / coeff_of_y^(n)
-  let rhs_expr =
-    build_rhs_for_highest_derivative(&terms, max_order, &y_name, &x_name)?;
-
-  // Sort ICs by order
-  let mut ics_by_order: Vec<Option<(f64, f64)>> = vec![None; max_order];
-  for (order, xv, yv) in &initial_conditions {
-    if *order < max_order {
-      ics_by_order[*order] = Some((*xv, *yv));
-    }
-  }
-
-  // Verify all ICs present and at same x
-  let x0 = match ics_by_order[0] {
-    Some((xv, _)) => xv,
-    None => {
-      return Ok(unevaluated("NDSolve", args));
-    }
-  };
-
-  let mut y0: Vec<f64> = Vec::new();
-  for ic in &ics_by_order {
-    match ic {
-      Some((_, yv)) => y0.push(*yv),
-      None => {
-        return Ok(unevaluated("NDSolve", args));
-      }
-    }
-  }
-
-  // Perform RK4 integration
-  let n_steps = 1000;
-  let h = (x_max - x_min) / n_steps as f64;
-  let mut data_points: Vec<(f64, f64)> = Vec::with_capacity(n_steps + 1);
-
-  // state = [y, y', y'', ...] (values of y and its derivatives)
-  let mut state = y0;
-  let mut x = x_min;
-
-  // We need to handle the case where x0 != x_min
-  // For simplicity, we require x0 == x_min (or very close)
-  if (x0 - x_min).abs() > 1e-10 {
-    return Ok(unevaluated("NDSolve", args));
-  }
-
-  data_points.push((x, state[0]));
-
-  for _ in 0..n_steps {
-    let new_state =
-      rk4_step(&rhs_expr, &state, x, h, max_order, &y_name, &x_name)?;
-    state = new_state;
-    x += h;
-    data_points.push((x, state[0]));
-  }
-
-  // Build InterpolatingFunction
-  let domain = Expr::List(
-    vec![Expr::List(
-      vec![Expr::Real(x_min), Expr::Real(x_max)].into(),
-    )]
-    .into(),
-  );
-
-  // Store data as a list of {x, y} pairs
-  let data_expr = Expr::List(
-    data_points
-      .iter()
-      .map(|(xv, yv)| Expr::List(vec![Expr::Real(*xv), Expr::Real(*yv)].into()))
-      .collect(),
-  );
-
-  let interp_func = Expr::FunctionCall {
-    name: "InterpolatingFunction".to_string(),
-    args: vec![domain, data_expr].into(),
-  };
-
-  // Build result: {{y -> InterpolatingFunction[...]}} for the `y` form, or
-  // {{y[x] -> InterpolatingFunction[...][x]}} for the `y[x]` form.
-  let rule = if function_form {
-    Expr::Rule {
-      pattern: Box::new(Expr::Identifier(y_name)),
-      replacement: Box::new(interp_func),
-    }
-  } else {
-    Expr::Rule {
-      pattern: Box::new(Expr::FunctionCall {
-        name: y_name,
-        args: vec![Expr::Identifier(x_name.clone())].into(),
-      }),
-      replacement: Box::new(Expr::CurriedCall {
-        func: Box::new(interp_func),
-        args: vec![Expr::Identifier(x_name)],
-      }),
-    }
-  };
-
-  Ok(Expr::List(vec![Expr::List(vec![rule].into())].into()))
-}
-
-// ─── NDSolve for systems of ODEs ───────────────────────────────────────
+// ─── The NDSolve integrator ────────────────────────────────────────────
 //
-// Handles what the scalar path above cannot: several coupled dependent
-// functions (`NDSolve[eqns, {θ, ϕ, ψ}, {t, t0, t1}]`), equations that are
-// implicit in the highest derivatives (each equation may mix θ'', ϕ'',
-// ψ''), initial conditions given at an interior point of the domain
-// (integrating both directions), and the `Method -> {"EventLocator", …}`
-// option that stops integration when an event function crosses zero.
+// Handles every shape NDSolve takes: one equation or several coupled
+// dependent functions (`NDSolve[eqns, {θ, ϕ, ψ}, {t, t0, t1}]`), any
+// order, linear or not, equations that are implicit in the highest
+// derivatives (each equation may mix θ'', ϕ'', ψ''), initial conditions
+// given at an interior point of the domain (integrating both
+// directions), and the `Method -> {"EventLocator", …}` option that stops
+// integration when an event function crosses zero.
 //
 // Each step evaluates the residuals numerically: with the state fixed,
 // every residual is affine in the vector of highest derivatives, so one
@@ -642,6 +449,13 @@ fn find_function_call(expr: &Expr, fname: &str) -> Option<Expr> {
     .into_iter()
     .find_map(|c| find_function_call(c, fname))
 }
+
+/// The interpolation order NDSolve's InterpolatingFunctions carry, matching
+/// the Wolfram Language's default. Reading the solution back between grid
+/// points then has the accuracy of the integration itself; a linear
+/// interpolation would throw most of it away — visibly so through `θ'`,
+/// which differentiates the interpolating piece.
+const NDSOLVE_INTERPOLATION_ORDER: i128 = 3;
 
 fn ndsolve_system(
   args: &[Expr],
@@ -921,7 +735,8 @@ fn ndsolve_system(
     );
     let interp = Expr::FunctionCall {
       name: "InterpolatingFunction".to_string(),
-      args: vec![domain, data].into(),
+      args: vec![domain, data, Expr::Integer(NDSOLVE_INTERPOLATION_ORDER)]
+        .into(),
     };
     rules.push(if f.function_form {
       Expr::Rule {
@@ -969,7 +784,8 @@ fn ndsolve_system(
     );
     let interp = Expr::FunctionCall {
       name: "InterpolatingFunction".to_string(),
-      args: vec![domain, data].into(),
+      args: vec![domain, data, Expr::Integer(NDSOLVE_INTERPOLATION_ORDER)]
+        .into(),
     };
     rules.push(if f.function_form {
       Expr::Rule {
@@ -1028,6 +844,22 @@ fn integrate_leg(
   x_name: &str,
 ) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
   let n_steps = ((x_to - x_from) / h).round() as usize;
+  // Each grid point is computed from the leg's ends rather than by adding
+  // `h` to the previous one, and the last one *is* `x_to`: accumulating
+  // the step leaves the domain a few ulps short of where it was asked to
+  // end (`{{0., 4.999999999999916}}` instead of `{{0., 5.}}`).
+  let step = if n_steps > 0 {
+    (x_to - x_from) / n_steps as f64
+  } else {
+    h
+  };
+  let grid = |i: usize| {
+    if i >= n_steps {
+      x_to
+    } else {
+      x_from + i as f64 * step
+    }
+  };
   let mut points: Vec<(f64, Vec<f64>)> = Vec::with_capacity(n_steps + 1);
   let mut state = init_state;
   let mut x = x_from;
@@ -1038,13 +870,14 @@ fn integrate_leg(
   };
   let mut prev_event = eval_event(x, &state);
 
-  for _ in 0..n_steps {
+  for i in 0..n_steps {
+    let new_x = grid(i + 1);
+    let h = new_x - x;
     let Some(new_state) =
       rk4_system_step(residuals, funcs, state_offset, &state, x, h)?
     else {
       return Ok(None);
     };
-    let new_x = x + h;
 
     if let Some(prev_g) = prev_event
       && let Some(new_g) = eval_event(new_x, &new_state)
@@ -3134,171 +2967,6 @@ fn exprs_match(a: &Expr, b: &Expr) -> bool {
 }
 
 // ─── NDSolve RK4 Helpers ──────────────────────────────────────────────
-
-/// Build the RHS expression for the highest derivative:
-/// y^(n) = -(sum of lower-order terms + forcing) / leading_coeff
-fn build_rhs_for_highest_derivative(
-  terms: &[OdeTerm],
-  max_order: usize,
-  _y_name: &str,
-  _x_name: &str,
-) -> Result<Expr, InterpreterError> {
-  let mut leading_coeff = None;
-  let mut other_terms: Vec<OdeTerm> = Vec::new();
-
-  for term in terms {
-    if term.order == max_order as i32 {
-      leading_coeff = Some(term.coefficient.clone());
-    } else {
-      other_terms.push(term.clone());
-    }
-  }
-
-  let leading = match leading_coeff {
-    Some(c) => c,
-    None => {
-      return Err(InterpreterError::EvaluationError(
-        "NDSolve: no highest-order term found".into(),
-      ));
-    }
-  };
-
-  // Store coefficients for each order and forcing
-  // We'll evaluate numerically during RK4 steps
-  // Store as metadata in a special expression
-  // Instead of building a symbolic expression, we'll store the term data
-  // For NDSolve we need a representation we can evaluate numerically
-  // Use a FunctionCall to wrap the data
-
-  // Actually, let's build the symbolic RHS and evaluate it numerically in RK4
-  // rhs = -(other terms evaluated with y and derivatives substituted) / leading
-
-  // Build: -(a_{n-1}*y^(n-1) + ... + a_0*y + forcing) / a_n
-  let mut numerator_terms: Vec<Expr> = Vec::new();
-  for term in terms {
-    if term.order == max_order as i32 {
-      continue;
-    }
-    let coeff = term.coefficient.clone();
-    if term.order >= 0 {
-      // This will have y^(order) replaced by state variables during RK4
-      let var_name = if term.order == 0 {
-        "__y_0".to_string()
-      } else {
-        format!("__y_{}", term.order)
-      };
-      numerator_terms.push(Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(coeff),
-        right: Box::new(Expr::Identifier(var_name)),
-      });
-    } else {
-      numerator_terms.push(coeff);
-    }
-  }
-
-  if numerator_terms.is_empty() {
-    return Ok(Expr::Integer(0));
-  }
-
-  let mut sum = numerator_terms.remove(0);
-  for t in numerator_terms {
-    sum = Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(sum),
-      right: Box::new(t),
-    };
-  }
-
-  // RHS = -sum / leading
-  Ok(Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(negate_expr(&sum)),
-    right: Box::new(leading),
-  })
-}
-
-/// Perform one step of RK4 for an ODE system
-fn rk4_step(
-  rhs_expr: &Expr,
-  state: &[f64],
-  x: f64,
-  h: f64,
-  max_order: usize,
-  _y_name: &str,
-  x_name: &str,
-) -> Result<Vec<f64>, InterpreterError> {
-  let n = max_order;
-
-  // Evaluate the derivative of the system at a given state
-  let eval_system = |s: &[f64],
-                     xv: f64|
-   -> Result<Vec<f64>, InterpreterError> {
-    let mut derivs = vec![0.0; n];
-    // d/dx y_0 = y_1, d/dx y_1 = y_2, ..., d/dx y_{n-2} = y_{n-1}
-    derivs[..(n - 1)].copy_from_slice(&s[1..((n - 1) + 1)]);
-    // d/dx y_{n-1} = rhs_expr evaluated with substitutions
-    let mut expr = rhs_expr.clone();
-    // Substitute x
-    expr = crate::syntax::substitute_variable(&expr, x_name, &Expr::Real(xv));
-    // Substitute __y_i
-    for i in 0..n {
-      let var_name = format!("__y_{}", i);
-      expr =
-        crate::syntax::substitute_variable(&expr, &var_name, &Expr::Real(s[i]));
-    }
-    let result =
-      crate::evaluator::evaluate_expr_to_expr(&expr).map_err(|e| {
-        InterpreterError::EvaluationError(format!(
-          "NDSolve RK4: evaluation failed for expr '{}': {}",
-          crate::syntax::expr_to_string(&expr),
-          e
-        ))
-      })?;
-    derivs[n - 1] = expr_to_f64(&result).map_err(|e| {
-      InterpreterError::EvaluationError(format!(
-        "NDSolve RK4: cannot convert result '{}' to f64: {}",
-        crate::syntax::expr_to_string(&result),
-        e
-      ))
-    })?;
-    Ok(derivs)
-  };
-
-  // k1
-  let k1 = eval_system(state, x)?;
-
-  // k2
-  let s2: Vec<f64> = state
-    .iter()
-    .zip(k1.iter())
-    .map(|(s, k)| s + h / 2.0 * k)
-    .collect();
-  let k2 = eval_system(&s2, x + h / 2.0)?;
-
-  // k3
-  let s3: Vec<f64> = state
-    .iter()
-    .zip(k2.iter())
-    .map(|(s, k)| s + h / 2.0 * k)
-    .collect();
-  let k3 = eval_system(&s3, x + h / 2.0)?;
-
-  // k4
-  let s4: Vec<f64> = state
-    .iter()
-    .zip(k3.iter())
-    .map(|(s, k)| s + h * k)
-    .collect();
-  let k4 = eval_system(&s4, x + h)?;
-
-  // Update state
-  let new_state: Vec<f64> = (0..n)
-    .map(|i| state[i] + h / 6.0 * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i]))
-    .collect();
-
-  Ok(new_state)
-}
 
 /// Convert Expr to f64
 fn expr_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {

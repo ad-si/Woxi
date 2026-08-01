@@ -58,7 +58,6 @@ functions. The material has been split into topical sub-pages:
 - [`TensorRank`](list_operations/TensorRank.md)
 - [`FoldWhile`](list_operations/FoldWhile.md)
 - [`FoldWhileList`](list_operations/FoldWhileList.md)
-- [`CountBy`](list_operations/CountBy.md)
 - [`Heads`](list_operations/Heads.md)
 - [`List`](list_operations/List.md)
 - [`Nearest`](list_operations/Nearest.md)
