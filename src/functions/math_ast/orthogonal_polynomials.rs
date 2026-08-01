@@ -252,21 +252,15 @@ fn jacobi_p_integer_ab(
   if n == 1 {
     let a_e = Expr::Integer(a);
     let b_e = Expr::Integer(b);
-    let two_plus_ab = crate::functions::math_ast::plus_ast(&[
-      Expr::Integer(2),
-      a_e.clone(),
-      b_e.clone(),
-    ])?;
-    let coeff_x =
-      crate::functions::math_ast::times_ast(&[two_plus_ab, x.clone()])?;
-    let neg_b =
-      crate::functions::math_ast::times_ast(&[Expr::Integer(-1), b_e])?;
-    let numer = crate::functions::math_ast::plus_ast(&[a_e, neg_b, coeff_x])?;
+    let two_plus_ab = plus_ast(&[Expr::Integer(2), a_e.clone(), b_e.clone()])?;
+    let coeff_x = times_ast(&[two_plus_ab, x.clone()])?;
+    let neg_b = times_ast(&[Expr::Integer(-1), b_e])?;
+    let numer = plus_ast(&[a_e, neg_b, coeff_x])?;
     let half = Expr::FunctionCall {
       name: "Rational".to_string(),
       args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
     };
-    return crate::functions::math_ast::times_ast(&[half, numer]);
+    return times_ast(&[half, numer]);
   }
 
   let ni = n as i128;
@@ -360,20 +354,19 @@ pub fn jacobi_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n_is_nonneg_integer = matches!(&args[0], Expr::Integer(n) if *n >= 0);
   let any_inexact = args.iter().any(|a| {
     matches!(a, Expr::Real(_) | Expr::BigFloat(_, _))
-      || crate::functions::math_ast::try_extract_complex_float(a)
-        .is_some_and(|(_, im)| im != 0.0)
+      || try_extract_complex_float(a).is_some_and(|(_, im)| im != 0.0)
   });
   if !n_is_nonneg_integer
     && any_inexact
     && let (Some(n_c), Some(a_c), Some(b_c), Some(z_c)) = (
-      crate::functions::math_ast::try_extract_complex_float(&args[0]),
-      crate::functions::math_ast::try_extract_complex_float(&args[1]),
-      crate::functions::math_ast::try_extract_complex_float(&args[2]),
-      crate::functions::math_ast::try_extract_complex_float(&args[3]),
+      try_extract_complex_float(&args[0]),
+      try_extract_complex_float(&args[1]),
+      try_extract_complex_float(&args[2]),
+      try_extract_complex_float(&args[3]),
     )
   {
     let (re, im) = jacobi_p_complex(n_c, a_c, b_c, z_c);
-    return Ok(crate::functions::math_ast::build_complex_float_expr(re, im));
+    return Ok(build_complex_float_expr(re, im));
   }
 
   let n = match &args[0] {
@@ -400,8 +393,7 @@ pub fn jacobi_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // (JacobiP[3, 1/2, 1/2, 1/3] = -245/432, not the float -0.5671…).
   let is_inexact = |e: &Expr| {
     matches!(e, Expr::Real(_) | Expr::BigFloat(_, _))
-      || crate::functions::math_ast::try_extract_complex_float(e)
-        .is_some_and(|(_, im)| im != 0.0)
+      || try_extract_complex_float(e).is_some_and(|(_, im)| im != 0.0)
   };
   let args_inexact =
     is_inexact(&args[1]) || is_inexact(&args[2]) || is_inexact(&args[3]);
@@ -425,19 +417,15 @@ pub fn jacobi_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let a = args[1].clone();
     let b = args[2].clone();
     let x = args[3].clone();
-    let two_plus_ab = crate::functions::math_ast::plus_ast(&[
-      Expr::Integer(2),
-      a.clone(),
-      b.clone(),
-    ])?;
-    let coeff_x = crate::functions::math_ast::times_ast(&[two_plus_ab, x])?;
-    let neg_b = crate::functions::math_ast::times_ast(&[Expr::Integer(-1), b])?;
-    let numer = crate::functions::math_ast::plus_ast(&[a, neg_b, coeff_x])?;
+    let two_plus_ab = plus_ast(&[Expr::Integer(2), a.clone(), b.clone()])?;
+    let coeff_x = times_ast(&[two_plus_ab, x])?;
+    let neg_b = times_ast(&[Expr::Integer(-1), b])?;
+    let numer = plus_ast(&[a, neg_b, coeff_x])?;
     let half = Expr::FunctionCall {
       name: "Rational".to_string(),
       args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
     };
-    return crate::functions::math_ast::times_ast(&[half, numer]);
+    return times_ast(&[half, numer]);
   }
 
   // n >= 2 with rational (non-integer) a, b and a non-numeric x: build the
@@ -574,12 +562,7 @@ pub fn legendre_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           || matches!(&args[1], Expr::Real(_));
         if any_real {
           let z = (1.0 - xf) / 2.0;
-          let value = crate::functions::math_ast::hypergeometric2f1(
-            -nu,
-            nu + 1.0,
-            1.0,
-            z,
-          );
+          let value = hypergeometric2f1(-nu, nu + 1.0, 1.0, z);
           return Ok(Expr::Real(value));
         }
       }
@@ -647,18 +630,17 @@ fn associated_legendre_p_ast(
     // real arithmetic (negative base, non-integer exponent).
     let any_inexact = [n_expr, m_expr, x_expr].iter().any(|a| {
       matches!(a, Expr::Real(_) | Expr::BigFloat(_, _))
-        || crate::functions::math_ast::try_extract_complex_float(a)
-          .is_some_and(|(_, im)| im != 0.0)
+        || try_extract_complex_float(a).is_some_and(|(_, im)| im != 0.0)
     });
     if any_inexact
       && let (Some(nc), Some(mc), Some(zc)) = (
-        crate::functions::math_ast::try_extract_complex_float(n_expr),
-        crate::functions::math_ast::try_extract_complex_float(m_expr),
-        crate::functions::math_ast::try_extract_complex_float(x_expr),
+        try_extract_complex_float(n_expr),
+        try_extract_complex_float(m_expr),
+        try_extract_complex_float(x_expr),
       )
     {
       let (re, im) = legendre_p_associated_complex(nc, mc, zc);
-      return Ok(crate::functions::math_ast::build_complex_float_expr(re, im));
+      return Ok(build_complex_float_expr(re, im));
     }
     return Ok(Expr::FunctionCall {
       name: "LegendreP".to_string(),
@@ -1654,48 +1636,33 @@ pub fn legendre_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // of ν / z is inexact and |z| > 1 (so the 2F1 series converges).
       let any_inexact = args.iter().any(|a| {
         matches!(a, Expr::Real(_) | Expr::BigFloat(_, _))
-          || crate::functions::math_ast::try_extract_complex_float(a)
-            .is_some_and(|(_, im)| im != 0.0)
+          || try_extract_complex_float(a).is_some_and(|(_, im)| im != 0.0)
       });
       if any_inexact
         && let (Some(nc), Some(zc)) = (
-          crate::functions::math_ast::try_extract_complex_float(&args[0]),
-          crate::functions::math_ast::try_extract_complex_float(&args[1]),
+          try_extract_complex_float(&args[0]),
+          try_extract_complex_float(&args[1]),
         )
         && (zc.0 * zc.0 + zc.1 * zc.1) > 1.0
       {
         let (re, im) = legendre_q_complex(nc, zc);
-        return Ok(crate::functions::math_ast::build_complex_float_expr(
-          re, im,
-        ));
+        return Ok(build_complex_float_expr(re, im));
       }
       // Real z with |z| < 1 and non-integer ν: type-2 LegendreQ on the cut.
       //   Q_ν(z) = (π / (2 sin(νπ))) · [P_ν(z) cos(νπ) − P_ν(−z)]
       // with P_ν(z) = 2F1(-ν, ν+1; 1; (1-z)/2). The formula is singular at
       // integer ν, but the integer-ν path is already handled above.
       if any_inexact
-        && let (Some(nu), Some(xf)) = (
-          crate::functions::math_ast::try_eval_to_f64(&args[0]),
-          crate::functions::math_ast::try_eval_to_f64(&args[1]),
-        )
+        && let (Some(nu), Some(xf)) =
+          (try_eval_to_f64(&args[0]), try_eval_to_f64(&args[1]))
         && xf.abs() < 1.0
       {
         let pi = std::f64::consts::PI;
         let sin_nu_pi = (nu * pi).sin();
         if sin_nu_pi.abs() > 1e-12 {
           let cos_nu_pi = (nu * pi).cos();
-          let p_z = crate::functions::math_ast::hypergeometric2f1(
-            -nu,
-            nu + 1.0,
-            1.0,
-            (1.0 - xf) / 2.0,
-          );
-          let p_negz = crate::functions::math_ast::hypergeometric2f1(
-            -nu,
-            nu + 1.0,
-            1.0,
-            (1.0 + xf) / 2.0,
-          );
+          let p_z = hypergeometric2f1(-nu, nu + 1.0, 1.0, (1.0 - xf) / 2.0);
+          let p_negz = hypergeometric2f1(-nu, nu + 1.0, 1.0, (1.0 + xf) / 2.0);
           let q = pi / (2.0 * sin_nu_pi) * (p_z * cos_nu_pi - p_negz);
           return Ok(Expr::Real(q));
         }
@@ -1828,7 +1795,6 @@ fn legendre_q_symbolic_ast(
 /// `Q_ν(z) = Q_real(z) − (i π/2) · P_ν(z)` where
 /// `Q_real(z) = √π/2 · Γ(ν+1) / (2^ν · Γ(ν+3/2) · z^(ν+1)) · 2F1(…)`.
 fn legendre_q_complex(n: (f64, f64), z: (f64, f64)) -> (f64, f64) {
-  use crate::functions::math_ast::zeta_functions::gamma_complex;
   let cmul = |(ar, ai): (f64, f64), (br, bi): (f64, f64)| {
     (ar * br - ai * bi, ar * bi + ai * br)
   };
@@ -1864,13 +1830,12 @@ fn legendre_q_complex(n: (f64, f64), z: (f64, f64)) -> (f64, f64) {
   let prefactor = cmul(sqrt_pi_half, prefactor);
 
   let inv_z_sq = cdiv((1.0, 0.0), cmul(z, z));
-  let f =
-    crate::functions::math_ast::hypergeometric::hypergeometric_2f1_complex(
-      ((n.0 + 1.0) / 2.0, n.1 / 2.0),
-      ((n.0 + 2.0) / 2.0, n.1 / 2.0),
-      n_plus_three_half,
-      inv_z_sq,
-    );
+  let f = hypergeometric_2f1_complex(
+    ((n.0 + 1.0) / 2.0, n.1 / 2.0),
+    ((n.0 + 2.0) / 2.0, n.1 / 2.0),
+    n_plus_three_half,
+    inv_z_sq,
+  );
   let q_real = cmul(prefactor, f);
 
   // Subtract (iπ/2) · P_ν(z). Reuse the existing Legendre P numeric path
@@ -1898,22 +1863,21 @@ fn legendre_q_associated_ast(
   };
   let any_inexact = [n_expr, m_expr, z_expr].iter().any(|a| {
     matches!(a, Expr::Real(_) | Expr::BigFloat(_, _))
-      || crate::functions::math_ast::try_extract_complex_float(a)
-        .is_some_and(|(_, im)| im != 0.0)
+      || try_extract_complex_float(a).is_some_and(|(_, im)| im != 0.0)
   });
   if !any_inexact {
     return Ok(unevaluated());
   }
   let (n, m, z) = match (
-    crate::functions::math_ast::try_extract_complex_float(n_expr),
-    crate::functions::math_ast::try_extract_complex_float(m_expr),
-    crate::functions::math_ast::try_extract_complex_float(z_expr),
+    try_extract_complex_float(n_expr),
+    try_extract_complex_float(m_expr),
+    try_extract_complex_float(z_expr),
   ) {
     (Some(n), Some(m), Some(z)) => (n, m, z),
     _ => return Ok(unevaluated()),
   };
   let (re, im) = legendre_q_associated_complex(n, m, z);
-  Ok(crate::functions::math_ast::build_complex_float_expr(re, im))
+  Ok(build_complex_float_expr(re, im))
 }
 
 /// Compute LegendreP[ν, μ, z] (Ferrers form) for complex/inexact args
@@ -1924,7 +1888,6 @@ fn legendre_p_associated_value_complex(
   m: (f64, f64),
   z: (f64, f64),
 ) -> (f64, f64) {
-  use crate::functions::math_ast::zeta_functions::gamma_complex;
   let cmul = |(ar, ai): (f64, f64), (br, bi): (f64, f64)| {
     (ar * br - ai * bi, ar * bi + ai * br)
   };
@@ -1952,13 +1915,12 @@ fn legendre_p_associated_value_complex(
   let neg_n = (-n.0, -n.1);
   let n_plus_one = (n.0 + 1.0, n.1);
   let half_one_minus_z = (0.5 - 0.5 * z.0, -0.5 * z.1);
-  let f =
-    crate::functions::math_ast::hypergeometric::hypergeometric_2f1_complex(
-      neg_n,
-      n_plus_one,
-      one_minus_m,
-      half_one_minus_z,
-    );
+  let f = hypergeometric_2f1_complex(
+    neg_n,
+    n_plus_one,
+    one_minus_m,
+    half_one_minus_z,
+  );
   cmul(cmul(g_inv, pow_term), f)
 }
 
@@ -1973,7 +1935,6 @@ fn legendre_q_associated_complex(
   m: (f64, f64),
   z: (f64, f64),
 ) -> (f64, f64) {
-  use crate::functions::math_ast::zeta_functions::gamma_complex;
   let cmul = |(ar, ai): (f64, f64), (br, bi): (f64, f64)| {
     (ar * br - ai * bi, ar * bi + ai * br)
   };
@@ -2011,12 +1972,7 @@ fn legendre_p_value_complex(n: (f64, f64), z: (f64, f64)) -> (f64, f64) {
   let neg_n = (-n.0, -n.1);
   let n_plus_one = (n.0 + 1.0, n.1);
   let half_one_minus_z = (0.5 - 0.5 * z.0, -0.5 * z.1);
-  crate::functions::math_ast::hypergeometric::hypergeometric_2f1_complex(
-    neg_n,
-    n_plus_one,
-    (1.0, 0.0),
-    half_one_minus_z,
-  )
+  hypergeometric_2f1_complex(neg_n, n_plus_one, (1.0, 0.0), half_one_minus_z)
 }
 
 /// Evaluate Q_n(x) numerically using recurrence
@@ -2688,19 +2644,18 @@ pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n_is_nonneg_integer = matches!(&args[0], Expr::Integer(n) if *n >= 0);
   let any_inexact = args.iter().any(|a| {
     matches!(a, Expr::Real(_) | Expr::BigFloat(_, _))
-      || crate::functions::math_ast::try_extract_complex_float(a)
-        .is_some_and(|(_, im)| im != 0.0)
+      || try_extract_complex_float(a).is_some_and(|(_, im)| im != 0.0)
   });
   if !n_is_nonneg_integer
     && any_inexact
     && let (Some(n_c), Some(lam_c), Some(z_c)) = (
-      crate::functions::math_ast::try_extract_complex_float(&args[0]),
-      crate::functions::math_ast::try_extract_complex_float(&args[1]),
-      crate::functions::math_ast::try_extract_complex_float(&args[2]),
+      try_extract_complex_float(&args[0]),
+      try_extract_complex_float(&args[1]),
+      try_extract_complex_float(&args[2]),
     )
   {
     let (re, im) = gegenbauer_c_complex(n_c, lam_c, z_c);
-    return Ok(crate::functions::math_ast::build_complex_float_expr(re, im));
+    return Ok(build_complex_float_expr(re, im));
   }
 
   let n = match &args[0] {
@@ -2940,7 +2895,6 @@ fn legendre_p_associated_complex(
   m: (f64, f64),
   z: (f64, f64),
 ) -> (f64, f64) {
-  use crate::functions::math_ast::zeta_functions::gamma_complex;
   let cmul = |(ar, ai): (f64, f64), (br, bi): (f64, f64)| {
     (ar * br - ai * bi, ar * bi + ai * br)
   };
@@ -2977,13 +2931,12 @@ fn legendre_p_associated_complex(
   let neg_n = (-n.0, -n.1);
   let n_plus_one = (n.0 + 1.0, n.1);
   let half_one_minus_z = (0.5 - 0.5 * z.0, -0.5 * z.1);
-  let f =
-    crate::functions::math_ast::hypergeometric::hypergeometric_2f1_complex(
-      neg_n,
-      n_plus_one,
-      one_minus_m,
-      half_one_minus_z,
-    );
+  let f = hypergeometric_2f1_complex(
+    neg_n,
+    n_plus_one,
+    one_minus_m,
+    half_one_minus_z,
+  );
   cmul(cmul(g_inv, pow_term), f)
 }
 
@@ -2995,7 +2948,6 @@ fn jacobi_p_complex(
   b: (f64, f64),
   z: (f64, f64),
 ) -> (f64, f64) {
-  use crate::functions::math_ast::zeta_functions::gamma_complex;
   let cmul = |(ar, ai): (f64, f64), (br, bi): (f64, f64)| {
     (ar * br - ai * bi, ar * bi + ai * br)
   };
@@ -3014,13 +2966,12 @@ fn jacobi_p_complex(
   let neg_n = (-n.0, -n.1);
   let n_plus_ab_plus_1 = (n.0 + a.0 + b.0 + 1.0, n.1 + a.1 + b.1);
   let half_one_minus_z = (0.5 - 0.5 * z.0, -0.5 * z.1);
-  let f =
-    crate::functions::math_ast::hypergeometric::hypergeometric_2f1_complex(
-      neg_n,
-      n_plus_ab_plus_1,
-      a_plus_one,
-      half_one_minus_z,
-    );
+  let f = hypergeometric_2f1_complex(
+    neg_n,
+    n_plus_ab_plus_1,
+    a_plus_one,
+    half_one_minus_z,
+  );
   cmul(prefactor, f)
 }
 
@@ -3032,7 +2983,6 @@ fn gegenbauer_c_complex(
   lam: (f64, f64),
   z: (f64, f64),
 ) -> (f64, f64) {
-  use crate::functions::math_ast::zeta_functions::gamma_complex;
   let cmul = |(ar, ai): (f64, f64), (br, bi): (f64, f64)| {
     (ar * br - ai * bi, ar * bi + ai * br)
   };
@@ -3052,13 +3002,12 @@ fn gegenbauer_c_complex(
   let n_plus_two_lam = (n.0 + two_lam.0, n.1 + two_lam.1);
   let lam_plus_half = (lam.0 + 0.5, lam.1);
   let half_one_minus_z = (0.5 - 0.5 * z.0, -0.5 * z.1);
-  let f =
-    crate::functions::math_ast::hypergeometric::hypergeometric_2f1_complex(
-      neg_n,
-      n_plus_two_lam,
-      lam_plus_half,
-      half_one_minus_z,
-    );
+  let f = hypergeometric_2f1_complex(
+    neg_n,
+    n_plus_two_lam,
+    lam_plus_half,
+    half_one_minus_z,
+  );
   cmul(prefactor, f)
 }
 
@@ -3441,8 +3390,7 @@ fn generalized_laguerre_l_ast(
   // below (LaguerreL[3, 1/2, 1/3] = 1189/1296, not the float 0.9174…).
   let is_inexact = |e: &Expr| {
     matches!(e, Expr::Real(_) | Expr::BigFloat(_, _))
-      || crate::functions::math_ast::try_extract_complex_float(e)
-        .is_some_and(|(_, im)| im != 0.0)
+      || try_extract_complex_float(e).is_some_and(|(_, im)| im != 0.0)
   };
   if (is_inexact(a_expr) || is_inexact(x_expr))
     && let (Some(af), Some(xf)) =

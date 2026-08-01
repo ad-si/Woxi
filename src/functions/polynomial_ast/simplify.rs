@@ -1,7 +1,9 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::calculus_ast::simplify;
-use crate::functions::math_ast::{gcd_i128, rat_reduce, rat_reduce_bigint};
+use crate::functions::math_ast::{
+  bigint_to_expr, make_rational, plus_ast, try_eval_to_f64,
+};
 
 // ─── Refine ─────────────────────────────────────────────────────────
 
@@ -2913,7 +2915,7 @@ fn variable_numeric_bounds(
   var_name: &str,
   info: &AssumptionInfo,
 ) -> Option<(f64, bool, f64, bool)> {
-  let value = |e: &Expr| crate::functions::math_ast::try_eval_to_f64(e);
+  let value = |e: &Expr| try_eval_to_f64(e);
   let mut lo: Option<(f64, bool)> = None;
   let mut hi: Option<(f64, bool)> = None;
   let mut tighten_lo = |v: f64, strict: bool| {
@@ -5307,7 +5309,7 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
                 Expr::FunctionCall {
                   name: "Times".to_string(),
                   args: vec![
-                    crate::functions::math_ast::make_rational(-1, g_den),
+                    make_rational(-1, g_den),
                     inner,
                     Expr::BinaryOp {
                       op: BinaryOperator::Power,
@@ -6649,8 +6651,8 @@ fn try_partial_factor_components(expr: &Expr) -> Option<Expr> {
     }
   }
 
-  let result = crate::functions::math_ast::plus_ast(&result_parts)
-    .unwrap_or_else(|_| build_sum(result_parts));
+  let result =
+    plus_ast(&result_parts).unwrap_or_else(|_| build_sum(result_parts));
   if leaf_count(&result) < original_complexity {
     Some(result)
   } else {
@@ -6806,8 +6808,8 @@ fn pull_common_factor(expr: &Expr) -> Expr {
     stripped.push(new_term);
   }
 
-  let stripped_sum = crate::functions::math_ast::plus_ast(&stripped)
-    .unwrap_or_else(|_| build_sum(stripped));
+  let stripped_sum =
+    plus_ast(&stripped).unwrap_or_else(|_| build_sum(stripped));
   let common_expr = if common.len() == 1 {
     common.into_iter().next().unwrap().1
   } else {
@@ -6878,10 +6880,7 @@ fn simplify_collected_coefficients(
     new_terms.push(new_term);
   }
 
-  Some(
-    crate::functions::math_ast::plus_ast(&new_terms)
-      .unwrap_or_else(|_| build_sum(new_terms)),
-  )
+  Some(plus_ast(&new_terms).unwrap_or_else(|_| build_sum(new_terms)))
 }
 
 /// If `expr` is `factor * Plus[...]` (or `Times[..., Plus[...]]`),
@@ -7282,16 +7281,14 @@ fn extract_var_bound(expr: &Expr) -> Option<(String, &'static str, f64)> {
     && operands.len() == 2
     && operators.len() == 1
   {
-    if let (Expr::Identifier(name), Some(v)) = (
-      &operands[0],
-      crate::functions::math_ast::try_eval_to_f64(&operands[1]),
-    ) {
+    if let (Expr::Identifier(name), Some(v)) =
+      (&operands[0], try_eval_to_f64(&operands[1]))
+    {
       return Some((name.clone(), to_op(&operators[0]), v));
     }
-    if let (Some(v), Expr::Identifier(name)) = (
-      crate::functions::math_ast::try_eval_to_f64(&operands[0]),
-      &operands[1],
-    ) {
+    if let (Some(v), Expr::Identifier(name)) =
+      (try_eval_to_f64(&operands[0]), &operands[1])
+    {
       // Flip: `c < a` ≡ `a > c`.
       let flipped = match operators[0] {
         ComparisonOp::Less => ">",
@@ -7318,16 +7315,14 @@ fn extract_var_bound(expr: &Expr) -> Option<(String, &'static str, f64)> {
       "Unequal" => "!=",
       _ => return None,
     };
-    if let (Expr::Identifier(n), Some(v)) = (
-      &args[0],
-      crate::functions::math_ast::try_eval_to_f64(&args[1]),
-    ) {
+    if let (Expr::Identifier(n), Some(v)) =
+      (&args[0], try_eval_to_f64(&args[1]))
+    {
       return Some((n.clone(), op, v));
     }
-    if let (Some(v), Expr::Identifier(n)) = (
-      crate::functions::math_ast::try_eval_to_f64(&args[0]),
-      &args[1],
-    ) {
+    if let (Some(v), Expr::Identifier(n)) =
+      (try_eval_to_f64(&args[0]), &args[1])
+    {
       let flipped = match op {
         "<" => ">",
         "<=" => ">=",
@@ -7426,10 +7421,7 @@ pub fn apply_trig_identities(expr: &Expr) -> Expr {
           // result is the Cosh coefficient (so Sinh^2 - Cosh^2 → -1).
           if is_coshsinh
             && matches!(
-              crate::functions::math_ast::plus_ast(&[
-                coeff_i.clone(),
-                coeff_j.clone()
-              ]),
+              plus_ast(&[coeff_i.clone(), coeff_j.clone()]),
               Ok(Expr::Integer(0))
             )
           {
@@ -7453,7 +7445,7 @@ pub fn apply_trig_identities(expr: &Expr) -> Expr {
   }
 
   // Re-combine to simplify (e.g. 1 + 1 → 2)
-  if let Ok(result) = crate::functions::math_ast::plus_ast(&result_terms) {
+  if let Ok(result) = plus_ast(&result_terms) {
     result
   } else {
     build_sum(result_terms)
@@ -8777,7 +8769,7 @@ fn simplify_quotient_select(
         Expr::FunctionCall {
           name: "Times".to_string(),
           args: vec![
-            crate::functions::math_ast::make_rational(-1, den_mono_coeff),
+            make_rational(-1, den_mono_coeff),
             num_expr,
             Expr::BinaryOp {
               op: BinaryOperator::Power,
@@ -10006,15 +9998,11 @@ fn try_merge_logs(expr: &Expr) -> Option<Expr> {
     }
     let (num, den) = rat_reduce_bigint(&num, &den);
     let q = if den.is_one() {
-      crate::functions::math_ast::bigint_to_expr(num)
+      bigint_to_expr(num)
     } else {
       Expr::FunctionCall {
         name: "Rational".to_string(),
-        args: vec![
-          crate::functions::math_ast::bigint_to_expr(num),
-          crate::functions::math_ast::bigint_to_expr(den),
-        ]
-        .into(),
+        args: vec![bigint_to_expr(num), bigint_to_expr(den)].into(),
       }
     };
     Expr::FunctionCall {
@@ -10418,9 +10406,7 @@ fn factor_common_power_base(terms: &[Expr]) -> Option<Expr> {
             new_factors.push(Expr::BinaryOp {
               op: BinaryOperator::Power,
               left: Box::new(candidate.base.clone()),
-              right: Box::new(crate::functions::math_ast::make_rational(
-                sn, sd,
-              )),
+              right: Box::new(make_rational(sn, sd)),
             });
           }
         } else {
@@ -10449,9 +10435,7 @@ fn factor_common_power_base(terms: &[Expr]) -> Option<Expr> {
       Expr::BinaryOp {
         op: BinaryOperator::Power,
         left: Box::new(candidate.base.clone()),
-        right: Box::new(crate::functions::math_ast::make_rational(
-          min_n, min_d,
-        )),
+        right: Box::new(make_rational(min_n, min_d)),
       }
     };
     let inner_sum = build_sum(new_terms);

@@ -135,12 +135,12 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
         && let Some(n) = expr_to_i128(&args[0])
       {
         if name == "AiryAiZero"
-          && let Some(r) = crate::functions::math_ast::airy_ai_zero_n_eval(n)
+          && let Some(r) = airy_ai_zero_n_eval(n)
         {
           return Ok(r);
         }
         if name == "AiryBiZero"
-          && let Some(r) = crate::functions::math_ast::airy_bi_zero_n_eval(n)
+          && let Some(r) = airy_bi_zero_n_eval(n)
         {
           return Ok(r);
         }
@@ -2830,10 +2830,8 @@ pub fn unitize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::List(results?.into()));
     }
 
-    let x_val =
-      crate::functions::math_ast::numeric_utils::try_eval_to_f64(&args[0]);
-    let tol_val =
-      crate::functions::math_ast::numeric_utils::try_eval_to_f64(&args[1]);
+    let x_val = try_eval_to_f64(&args[0]);
+    let tol_val = try_eval_to_f64(&args[1]);
     if let (Some(x), Some(tol)) = (x_val, tol_val) {
       if x.abs() < tol {
         return Ok(Expr::Integer(0));
@@ -2863,8 +2861,7 @@ pub fn unitize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Sqrt[2], 2*Pi, 3/4, Log[2], ...). Zero numeric results are
       // already handled because Pi - Pi etc. simplify symbolically
       // before reaching Unitize.
-      if let Some(v) =
-        crate::functions::math_ast::numeric_utils::try_eval_to_f64(&args[0])
+      if let Some(v) = try_eval_to_f64(&args[0])
         && v.is_finite()
         && v != 0.0
       {
@@ -3734,10 +3731,7 @@ pub fn linear_recurrence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn warping_distance_value(a: &Expr, b: &Expr) -> Option<f64> {
   let to_vec = |e: &Expr| -> Option<Vec<f64>> {
     match e {
-      Expr::List(items) => items
-        .iter()
-        .map(crate::functions::math_ast::try_eval_to_f64)
-        .collect(),
+      Expr::List(items) => items.iter().map(try_eval_to_f64).collect(),
       _ => None,
     }
   };
@@ -3769,10 +3763,7 @@ fn warping_correspondence_path(
 ) -> Option<(Vec<i128>, Vec<i128>)> {
   let to_vec = |e: &Expr| -> Option<Vec<f64>> {
     match e {
-      Expr::List(items) => items
-        .iter()
-        .map(crate::functions::math_ast::try_eval_to_f64)
-        .collect(),
+      Expr::List(items) => items.iter().map(try_eval_to_f64).collect(),
       _ => None,
     }
   };
@@ -3846,7 +3837,7 @@ pub fn warping_correspondence_ast(
     None => {
       let is_numeric_vec = |e: &Expr| {
         matches!(e, Expr::List(items) if !items.is_empty()
-          && items.iter().all(|x| crate::functions::math_ast::try_eval_to_f64(x).is_some()))
+          && items.iter().all(|x| try_eval_to_f64(x).is_some()))
       };
       if let Some(bad) = args.iter().find(|a| !is_numeric_vec(a)) {
         crate::emit_message(&format!(
@@ -3869,7 +3860,7 @@ pub fn warping_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // wolframscript WarpingDistance::invarg message.
     let is_numeric_vec = |e: &Expr| {
       matches!(e, Expr::List(items) if !items.is_empty()
-        && items.iter().all(|x| crate::functions::math_ast::try_eval_to_f64(x).is_some()))
+        && items.iter().all(|x| try_eval_to_f64(x).is_some()))
     };
     if let Some(bad) = args.iter().find(|a| !is_numeric_vec(a)) {
       crate::emit_message(&format!(

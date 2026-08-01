@@ -157,8 +157,8 @@ pub fn pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let has_real =
         matches!(&args[0], Expr::Real(_)) || matches!(&args[1], Expr::Real(_));
       if has_real {
-        let gamma_a = super::gamma_fn(a_f);
-        let gamma_a_n = super::gamma_fn(a_f + n_f);
+        let gamma_a = gamma_fn(a_f);
+        let gamma_a_n = gamma_fn(a_f + n_f);
         if gamma_a.is_finite()
           && gamma_a_n.is_finite()
           && gamma_a.abs() > 1e-300
@@ -432,16 +432,12 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Only triggers when the argument has a non-zero imaginary part AND
       // some component is a Real (not exact rationals/integers — those are
       // handled symbolically above).
-      if let Some((re, im)) =
-        crate::functions::math_ast::try_extract_complex_float(&args[0])
+      if let Some((re, im)) = try_extract_complex_float(&args[0])
         && im != 0.0
         && contains_inexact_real(&args[0])
       {
-        let (gr, gi) =
-          crate::functions::math_ast::zeta_functions::gamma_complex(re, im);
-        return Ok(crate::functions::math_ast::build_complex_float_expr(
-          gr, gi,
-        ));
+        let (gr, gi) = gamma_complex(re, im);
+        return Ok(build_complex_float_expr(gr, gi));
       }
       Ok(unevaluated("Gamma", args))
     }
@@ -1308,14 +1304,12 @@ pub fn log_gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // forward-shift + Stirling series. Wolfram's LogGamma is the analytic
   // continuation, which can differ from Log[Gamma[z]] by a 2πi multiple
   // for z to the left of the imaginary axis.
-  if let Some((re, im)) =
-    crate::functions::math_ast::try_extract_complex_float(z)
+  if let Some((re, im)) = try_extract_complex_float(z)
     && im != 0.0
     && contains_inexact_real(z)
   {
-    let (lr, li) =
-      crate::functions::math_ast::zeta_functions::log_gamma_complex(re, im);
-    return Ok(crate::functions::math_ast::build_complex_float_expr(lr, li));
+    let (lr, li) = log_gamma_complex(re, im);
+    return Ok(build_complex_float_expr(lr, li));
   }
 
   // Return unevaluated for symbolic case
@@ -1850,7 +1844,7 @@ pub fn marcum_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => None,
         }
       }
-      _ => crate::functions::math_ast::numeric_utils::try_eval_to_f64(e),
+      _ => try_eval_to_f64(e),
     }
   };
   let has_real = args.iter().any(|e| matches!(e, Expr::Real(_)));
@@ -2035,10 +2029,7 @@ pub fn owen_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Numeric evaluation requires an inexact argument.
   if has_real
-    && let (Some(hv), Some(av)) = (
-      crate::functions::math_ast::numeric_utils::try_eval_to_f64(h),
-      crate::functions::math_ast::numeric_utils::try_eval_to_f64(a),
-    )
+    && let (Some(hv), Some(av)) = (try_eval_to_f64(h), try_eval_to_f64(a))
   {
     return Ok(Expr::Real(owen_t_numeric(hv, av)));
   }

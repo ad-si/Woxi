@@ -3597,9 +3597,7 @@ pub fn number_digit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut cc = astro_float::Consts::new()
         .map_err(|e| InterpreterError::EvaluationError(format!("N: {e}")))?;
       let rm = astro_float::RoundingMode::ToEven;
-      match crate::functions::math_ast::numerical::expr_to_bigfloat(
-        other, bits, rm, &mut cc,
-      ) {
+      match expr_to_bigfloat(other, bits, rm, &mut cc) {
         Ok(bf) => {
           let Some(radix) = radix else {
             return Ok(unevaluated());

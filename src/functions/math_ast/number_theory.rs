@@ -158,8 +158,7 @@ fn gaussian_lcm(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
 /// Extract a Gaussian integer (re, im) from an expression, or None if it is not
 /// an exact complex number with integer real and imaginary parts.
 fn expr_to_gaussian_int(expr: &Expr) -> Option<(i128, i128)> {
-  let ((rn, rd), (in_, id)) =
-    crate::functions::math_ast::try_extract_complex_exact(expr)?;
+  let ((rn, rd), (in_, id)) = try_extract_complex_exact(expr)?;
   if rd == 1 && id == 1 {
     Some((rn, in_))
   } else {
@@ -503,20 +502,19 @@ pub fn factorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Real(exact.to_f64().unwrap_or(f64::INFINITY)));
     }
     // Factorial[x] = Gamma[x+1] for real numbers
-    let result = super::gamma_fn(*f + 1.0);
+    let result = gamma_fn(*f + 1.0);
     if result.is_infinite() {
       Ok(Expr::Identifier("ComplexInfinity".to_string()))
     } else {
       Ok(Expr::Real(result))
     }
-  } else if let Some((re, im)) = super::try_extract_complex_float(&args[0])
+  } else if let Some((re, im)) = try_extract_complex_float(&args[0])
     && im != 0.0
     && contains_inexact_real(&args[0])
   {
     // Complex floating-point argument: Factorial[z] = Gamma[z+1].
-    let (gr, gi) =
-      crate::functions::math_ast::zeta_functions::gamma_complex(re + 1.0, im);
-    Ok(super::build_complex_float_expr(gr, gi))
+    let (gr, gi) = gamma_complex(re + 1.0, im);
+    Ok(build_complex_float_expr(gr, gi))
   } else {
     // For rationals and other symbolic expressions, delegate to Gamma[n+1]
     // Build the expression Gamma[n + 1] and evaluate via gamma_ast
@@ -540,7 +538,7 @@ pub fn factorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(unevaluated("Factorial", args));
       }
     };
-    super::gamma_ast(&[n_plus_1])
+    gamma_ast(&[n_plus_1])
   }
 }
 
@@ -588,7 +586,7 @@ pub fn factorial2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // integer and coincides with wolframscript on non-integer reals.
     let shift = (1.0 - (std::f64::consts::PI * x).cos()) / 4.0;
     let pow2 = 2.0f64.powf(x / 2.0 + shift);
-    let gamma = super::gamma_fn(x / 2.0 + 1.0);
+    let gamma = gamma_fn(x / 2.0 + 1.0);
     let pi_pow = std::f64::consts::PI.powf(shift);
     let result = pow2 * gamma / pi_pow;
     if result.is_nan() || result.is_infinite() {
@@ -927,7 +925,7 @@ pub fn divisor_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     let val = crate::evaluator::apply_function_to_arg(func, &Expr::Integer(d))?;
-    sum = super::plus_ast(&[sum, val])?;
+    sum = plus_ast(&[sum, val])?;
   }
   Ok(sum)
 }
@@ -1357,7 +1355,7 @@ pub fn bell_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (row, next) = (next, row);
     }
 
-    Ok(crate::functions::math_ast::bigint_to_expr(row[n].clone()))
+    Ok(bigint_to_expr(row[n].clone()))
   } else {
     // Bell polynomial B_n(x) = sum_{k=0}^{n} S(n,k) * x^k
     // where S(n,k) is the Stirling number of the second kind
@@ -1388,7 +1386,7 @@ pub fn bell_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         continue;
       }
       let is_one = s == one;
-      let coeff = crate::functions::math_ast::bigint_to_expr(s);
+      let coeff = bigint_to_expr(s);
       let term = if k == 0 {
         coeff
       } else if k == 1 {
@@ -1521,8 +1519,8 @@ pub fn catalan_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Real(exact.to_f64().unwrap_or(f64::INFINITY)));
     }
     let z = *f;
-    let val = 4.0_f64.powf(z) * super::gamma_fn(z + 0.5)
-      / (std::f64::consts::PI.sqrt() * super::gamma_fn(z + 2.0));
+    let val = 4.0_f64.powf(z) * gamma_fn(z + 0.5)
+      / (std::f64::consts::PI.sqrt() * gamma_fn(z + 2.0));
     return Ok(Expr::Real(val));
   }
 
@@ -1542,7 +1540,7 @@ pub fn catalan_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // CatalanNumber[n] = Binomial[2n, n] / (n + 1), in BigInt so large results
   // (e.g. CatalanNumber[100], 57 digits) don't overflow i128.
   let result = binomial_coeff_big(2 * n, n) / BigInt::from(n + 1);
-  Ok(crate::functions::math_ast::bigint_to_expr(result))
+  Ok(bigint_to_expr(result))
 }
 
 /// StirlingS1[n, k] - Stirling number of the first kind (signed)
@@ -2550,8 +2548,7 @@ fn extract_gaussian_integer(expr: &Expr) -> Option<(i128, i128)> {
   if let Expr::Integer(n) = expr {
     return Some((*n, 0));
   }
-  let ((rn, rd), (in_, id)) =
-    crate::functions::math_ast::try_extract_complex_exact(expr)?;
+  let ((rn, rd), (in_, id)) = try_extract_complex_exact(expr)?;
   if rd == 1 && id == 1 {
     Some((rn, in_))
   } else {
@@ -4469,9 +4466,7 @@ pub fn binomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
   match (expr_to_i128(&args[0]), expr_to_i128(&args[1])) {
-    (Some(n), Some(k)) => Ok(crate::functions::math_ast::bigint_to_expr(
-      binomial_coeff_big(n, k),
-    )),
+    (Some(n), Some(k)) => Ok(bigint_to_expr(binomial_coeff_big(n, k))),
     (None, Some(k)) if k >= 0 => {
       // Generalized binomial for non-integer n with non-negative integer k:
       // Binomial[n, k] = n*(n-1)*...*(n-k+1) / k!
@@ -4483,29 +4478,28 @@ pub fn binomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Compute falling factorial: n * (n-1) * ... * (n-k+1)
       let mut numer_factors: Vec<Expr> = Vec::with_capacity(k);
       for i in 0..k {
-        let factor =
-          super::plus_ast(&[args[0].clone(), Expr::Integer(-(i as i128))])?;
+        let factor = plus_ast(&[args[0].clone(), Expr::Integer(-(i as i128))])?;
         numer_factors.push(factor);
       }
-      let numer = super::times_ast(&numer_factors)?;
+      let numer = times_ast(&numer_factors)?;
       let mut denom_val: i128 = 1;
       for i in 1..=(k as i128) {
         denom_val *= i;
       }
       let denom = Expr::Integer(denom_val);
-      super::divide_ast(&[numer, denom])
+      divide_ast(&[numer, denom])
     }
     _ => {
       // Try Real evaluation using Gamma function
       let n_f64 = match &args[0] {
         Expr::Real(f) => Some(*f),
         Expr::Integer(n) => Some(*n as f64),
-        _ => crate::functions::math_ast::try_eval_to_f64(&args[0]),
+        _ => try_eval_to_f64(&args[0]),
       };
       let k_f64 = match &args[1] {
         Expr::Real(f) => Some(*f),
         Expr::Integer(n) => Some(*n as f64),
-        _ => crate::functions::math_ast::try_eval_to_f64(&args[1]),
+        _ => try_eval_to_f64(&args[1]),
       };
       if let (Some(n), Some(k)) = (n_f64, k_f64) {
         // A negative integer n (as a machine real) with a non-negative integer
@@ -4731,10 +4725,10 @@ pub fn multinomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       total += n;
       result *= binomial_coeff_big(total, n);
     }
-    return Ok(crate::functions::math_ast::bigint_to_expr(result));
+    return Ok(bigint_to_expr(result));
   }
 
-  use crate::functions::math_ast::expr_to_rational;
+  use expr_to_rational;
   let symbolic_indices: Vec<usize> = (0..args.len())
     .filter(|&i| expr_to_rational(&args[i]).is_none())
     .collect();
@@ -5128,7 +5122,7 @@ pub fn prime_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => {
       // Try to evaluate symbolic constants (Pi, E, etc.) to f64
-      if let Some(f) = crate::functions::math_ast::try_eval_to_f64(&args[0]) {
+      if let Some(f) = try_eval_to_f64(&args[0]) {
         if f < 2.0 {
           return Ok(Expr::Integer(0));
         }
@@ -9033,7 +9027,7 @@ fn six_j_symbol_symbolic(
       let forced = if v_2j.rem_euclid(2) == 0 {
         Expr::Integer(v_j)
       } else {
-        crate::functions::math_ast::make_rational(v_2j, 2)
+        make_rational(v_2j, 2)
       };
       new_items[k] = forced.clone();
       new_args[group] = Expr::List(new_items.into());
@@ -9185,7 +9179,7 @@ pub fn clebsch_gordan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let forced_m_expr = if two_m[idx].rem_euclid(2) == 0 {
       Expr::Integer(two_m[idx] / 2)
     } else {
-      crate::functions::math_ast::make_rational(two_m[idx], 2)
+      make_rational(two_m[idx], 2)
     };
     // Build the concrete-m args and recurse so all the existing
     // selection-rule machinery runs.
@@ -9313,7 +9307,7 @@ impl PipeThroughRational for Expr {
       if n.rem_euclid(denom) == 0 {
         return Expr::Integer(n / denom);
       }
-      return crate::functions::math_ast::make_rational(n, denom);
+      return make_rational(n, denom);
     }
     self
   }
@@ -9402,9 +9396,7 @@ pub fn fibonorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         a = b;
         b = next;
       }
-      Ok(crate::functions::math_ast::numeric_utils::bigint_to_expr(
-        product,
-      ))
+      Ok(bigint_to_expr(product))
     }
     Expr::Integer(_) => Ok(Expr::Identifier("ComplexInfinity".to_string())),
     _ if is_non_integer_number => {

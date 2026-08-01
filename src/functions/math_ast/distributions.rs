@@ -183,7 +183,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if dist_name == "MixtureDistribution" && dargs.len() == 2 {
     let x = args[1].clone();
     return Ok(
-      super::statistics::mixture_weighted_component_quantity(dargs, |d| {
+      mixture_weighted_component_quantity(dargs, |d| {
         pdf_ast(&[d.clone(), x.clone()])
       })?
       .unwrap_or_else(|| unevaluated("PDF", args)),
@@ -522,7 +522,7 @@ pub fn quantile_distribution_closed_form(
 ) -> Option<Expr> {
   // Numeric q in [0, 1] only; the symbolic-q forms wolframscript returns
   // are ConditionalExpression/Piecewise wrappers that are out of scope.
-  let q_num = crate::functions::math_ast::expr_to_num(q)?;
+  let q_num = expr_to_num(q)?;
   if !(0.0..=1.0).contains(&q_num) {
     return None;
   }
@@ -548,7 +548,7 @@ pub fn quantile_distribution_closed_form(
           return Some(if v.1 == 1 {
             Expr::Integer(v.0)
           } else {
-            crate::functions::math_ast::make_rational(v.0, v.1)
+            make_rational(v.0, v.1)
           });
         }
       }
@@ -556,7 +556,7 @@ pub fn quantile_distribution_closed_form(
         if v.1 == 1 {
           Expr::Integer(v.0)
         } else {
-          crate::functions::math_ast::make_rational(v.0, v.1)
+          make_rational(v.0, v.1)
         }
       })
     }
@@ -588,8 +588,7 @@ pub fn quantile_distribution_closed_form(
       }
       let (a, b) = (dargs[0].clone(), dargs[1].clone());
       let pi = pi();
-      let q_minus_half =
-        minus(q.clone(), crate::functions::math_ast::make_rational(1, 2));
+      let q_minus_half = minus(q.clone(), make_rational(1, 2));
       let tan = call("Tan", vec![times(pi, q_minus_half)]);
       eval(plus(a, times(b, tan))).ok()
     }
@@ -704,7 +703,7 @@ pub fn quantile_distribution_closed_form(
           return Some(infinity());
         }
         // InverseErfc[1] = 0: the median is exactly m
-        if let Some((1, 2)) = crate::functions::math_ast::expr_to_rational(q) {
+        if let Some((1, 2)) = expr_to_rational(q) {
           return eval(m).ok();
         }
         // m - Sqrt[2]*s*InverseErfc[2q]. Evaluating the result reflects
@@ -725,9 +724,9 @@ pub fn quantile_distribution_closed_form(
         return eval(result).ok();
       }
       // Machine-precision q: numeric inverse CDF (requires numeric m, s)
-      let m_num = crate::functions::math_ast::expr_to_num(&m)?;
-      let s_num = crate::functions::math_ast::expr_to_num(&s)?;
-      let z = crate::functions::math_ast::inverse_erf_f64(2.0 * q_num - 1.0);
+      let m_num = expr_to_num(&m)?;
+      let s_num = expr_to_num(&s)?;
+      let z = inverse_erf_f64(2.0 * q_num - 1.0);
       Some(Expr::Real(m_num + s_num * std::f64::consts::SQRT_2 * z))
     }
     // Quantile[GammaDistribution[a, b], q] = b InverseGammaRegularized[a, 0, q]
@@ -786,7 +785,7 @@ pub fn quantile_distribution_closed_form(
     // in Woxi, so it is intentionally not handled here.)
     "StudentTDistribution" if dargs.len() == 1 => {
       let nu = dargs[0].clone();
-      crate::functions::math_ast::expr_to_num(&nu)?;
+      expr_to_num(&nu)?;
 
       if is_exact_q && q_num == 0.0 {
         return Some(neg_infinity());
@@ -804,11 +803,7 @@ pub fn quantile_distribution_closed_form(
       };
       let ibr = call(
         "InverseBetaRegularized",
-        vec![
-          s,
-          divide(nu.clone(), int(2)),
-          crate::functions::math_ast::make_rational(1, 2),
-        ],
+        vec![s, divide(nu.clone(), int(2)), make_rational(1, 2)],
       );
       let radical = sqrt(times(nu, plus(int(-1), power(ibr, int(-1)))));
       eval(if q_num < 0.5 { neg(radical) } else { radical }).ok()
@@ -829,8 +824,8 @@ pub fn quantile_distribution_closed_form(
         }
       }
       let (n, m) = (dargs[0].clone(), dargs[1].clone());
-      crate::functions::math_ast::expr_to_num(&n)?;
-      crate::functions::math_ast::expr_to_num(&m)?;
+      expr_to_num(&n)?;
+      expr_to_num(&m)?;
       let ibr = call(
         "InverseBetaRegularized",
         vec![
@@ -868,7 +863,7 @@ pub fn inverse_survival_closed_form(
   dargs: &[Expr],
   q: &Expr,
 ) -> Option<Expr> {
-  let q_num = crate::functions::math_ast::expr_to_num(q)?;
+  let q_num = expr_to_num(q)?;
   if !(0.0..=1.0).contains(&q_num) {
     return None;
   }
@@ -891,7 +886,7 @@ pub fn inverse_survival_closed_form(
           return Some(neg_infinity());
         }
         // InverseErfc[1] = 0, so the median survival point is exactly m.
-        if let Some((1, 2)) = crate::functions::math_ast::expr_to_rational(q) {
+        if let Some((1, 2)) = expr_to_rational(q) {
           return eval(m).ok();
         }
       }
@@ -967,7 +962,7 @@ fn discrete_support(
   dargs: &[Expr],
 ) -> Option<(i128, Option<i128>)> {
   let as_int = |e: &Expr| {
-    crate::functions::math_ast::expr_to_num(e)
+    expr_to_num(e)
       .filter(|v| v.fract() == 0.0)
       .map(|v| v as i128)
   };
@@ -1703,7 +1698,7 @@ fn pdf_log_logistic(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   // Concrete x <= 0 is outside the support. Evaluating the density there would
   // raise x^(-1 + g) (or (x/s)^g) at x = 0 for g < 1 and emit a spurious
   // Power::infy message even though the piecewise selects the 0 branch.
-  if let Some(xv) = crate::functions::math_ast::expr_to_num(&x)
+  if let Some(xv) = expr_to_num(&x)
     && xv <= 0.0
   {
     return Ok(int(0));
@@ -1729,7 +1724,7 @@ fn cdf_log_logistic(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   // Concrete x <= 0 is outside the support; return 0 directly. At x = 0 the
   // value has (x/s)^(-g) = 0^(-g), which would emit a spurious Power::infy
   // message even though the piecewise selects the 0 branch.
-  if let Some(xv) = crate::functions::math_ast::expr_to_num(&x)
+  if let Some(xv) = expr_to_num(&x)
     && xv <= 0.0
   {
     return Ok(int(0));
@@ -1808,7 +1803,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if dist_name == "MixtureDistribution" && dargs.len() == 2 {
     let x = args[1].clone();
     return Ok(
-      super::statistics::mixture_weighted_component_quantity(dargs, |d| {
+      mixture_weighted_component_quantity(dargs, |d| {
         cdf_ast(&[d.clone(), x.clone()])
       })?
       .unwrap_or_else(|| unevaluated("CDF", args)),
@@ -4025,7 +4020,7 @@ pub fn distribution_mean_variance(
         ))?;
         let numeric = [&a, &b, &m, &g]
           .iter()
-          .all(|e| crate::functions::math_ast::try_eval_to_f64(e).is_some());
+          .all(|e| try_eval_to_f64(e).is_some());
         let f1 = call(
           "Plus",
           vec![
@@ -6517,7 +6512,7 @@ fn pdf_multinomial(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 fn any_concrete_non_integer(xs: &[Expr]) -> bool {
   xs.iter().any(|xi| {
     !matches!(xi, Expr::Integer(_) | Expr::BigInteger(_))
-      && crate::functions::math_ast::expr_to_num(xi).is_some()
+      && expr_to_num(xi).is_some()
   })
 }
 
@@ -7251,7 +7246,7 @@ fn pdf_first_passage(
   let Some(f) = fptd_parts(dargs) else {
     return unevaluated(x);
   };
-  match crate::functions::math_ast::try_eval_to_f64(&x) {
+  match try_eval_to_f64(&x) {
     Some(v) => {
       if v < 1.0 || v.fract() != 0.0 || v > 100_000.0 {
         return Ok(int(0));
@@ -7279,7 +7274,7 @@ fn cdf_first_passage(
   let Some(f) = fptd_parts(dargs) else {
     return unevaluated(x);
   };
-  match crate::functions::math_ast::try_eval_to_f64(&x) {
+  match try_eval_to_f64(&x) {
     Some(v) => {
       if v < 1.0 {
         return Ok(int(0));
@@ -7490,7 +7485,7 @@ fn wakeby_checked(dargs: &[Expr]) -> Option<()> {
     ));
     return None;
   }
-  let num = crate::functions::math_ast::try_eval_to_f64;
+  let num = try_eval_to_f64;
   let dist =
     || crate::syntax::expr_to_string(&unevaluated("WakebyDistribution", dargs));
   for pos in [0usize, 2] {
@@ -7546,7 +7541,7 @@ pub fn wakeby_quantile(
     return unevaluated();
   };
   let inf = infinity();
-  match crate::functions::math_ast::try_eval_to_f64(q) {
+  match try_eval_to_f64(q) {
     Some(qv) if qv > 0.0 && qv < 1.0 => eval(wakeby_quantile_body(dargs, q)),
     Some(0.0) => eval(dargs[4].clone()),
     Some(1.0) => Ok(inf),
@@ -7648,7 +7643,7 @@ fn wakeby_mean_variance(
       ),
     ),
   );
-  match crate::functions::math_ast::try_eval_to_f64(&d) {
+  match try_eval_to_f64(&d) {
     Some(dv) => {
       let mean = if dv < 1.0 {
         eval(mean_body)?
@@ -7700,7 +7695,7 @@ fn compound_poisson_mean_variance(
     ));
     return bail();
   }
-  let num = crate::functions::math_ast::try_eval_to_f64;
+  let num = try_eval_to_f64;
   let dist_str = || {
     crate::syntax::expr_to_string(&unevaluated(
       "CompoundPoissonDistribution",
@@ -7763,7 +7758,7 @@ fn hoyt_checked(dargs: &[Expr]) -> Option<()> {
     ));
     return None;
   }
-  let num = crate::functions::math_ast::try_eval_to_f64;
+  let num = try_eval_to_f64;
   let dist =
     || crate::syntax::expr_to_string(&unevaluated("HoytDistribution", dargs));
   if num(&dargs[0]).is_some_and(|v| !(v > 0.0 && v <= 1.0)) {
@@ -7884,7 +7879,7 @@ fn variance_gamma_checked(dargs: &[Expr]) -> Option<()> {
     ));
     return None;
   }
-  let num = crate::functions::math_ast::try_eval_to_f64;
+  let num = try_eval_to_f64;
   let dist = || {
     crate::syntax::expr_to_string(&unevaluated(
       "VarianceGammaDistribution",
@@ -7985,7 +7980,7 @@ fn variance_gamma_pdf(
   let inf = infinity();
   let cond_above = comparison(x.clone(), ComparisonOp::Greater, m.clone());
   let cond_below = comparison(x.clone(), ComparisonOp::Less, m.clone());
-  match crate::functions::math_ast::try_eval_to_f64(&l) {
+  match try_eval_to_f64(&l) {
     Some(lv) => {
       // The point branch folds into the default when λ is numeric.
       let default = if lv > 0.5 { eval(point)? } else { inf };
@@ -8067,7 +8062,7 @@ fn tsallis_checked(dargs: &[Expr]) -> Option<()> {
     ));
     return None;
   }
-  let num = crate::functions::math_ast::try_eval_to_f64;
+  let num = try_eval_to_f64;
   let dist = || {
     crate::syntax::expr_to_string(&unevaluated(
       "TsallisQGaussianDistribution",
@@ -8212,13 +8207,14 @@ fn tsallis_qgaussian_pdf(
     return unevaluated(x);
   };
   let (m, b, q) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
-  if dargs.iter().any(|e| {
-    !coxian_exact(e) && crate::functions::math_ast::try_eval_to_f64(e).is_some()
-  }) {
+  if dargs
+    .iter()
+    .any(|e| !coxian_exact(e) && try_eval_to_f64(e).is_some())
+  {
     return unevaluated(x);
   }
   let parts = tsallis_parts(&m, &b, &q, &x);
-  match crate::functions::math_ast::try_eval_to_f64(&q) {
+  match try_eval_to_f64(&q) {
     Some(1.0) => eval(parts.gaussian),
     Some(qv) if qv > 1.0 => eval(parts.branch_wide),
     Some(_) => {
@@ -8294,7 +8290,7 @@ fn tsallis_qgaussian_cdf(
     ),
     int(2),
   );
-  match crate::functions::math_ast::try_eval_to_f64(&q) {
+  match try_eval_to_f64(&q) {
     Some(1.0) => eval(erf_form),
     Some(_) => unevaluated(x),
     None => unevaluated(x),
@@ -8319,7 +8315,7 @@ fn tsallis_qgaussian_mean_variance(
     times(int(2), power(b.clone(), int(2))),
     plus(int(5), times(int(-3), q.clone())),
   );
-  match crate::functions::math_ast::try_eval_to_f64(&q) {
+  match try_eval_to_f64(&q) {
     Some(qv) => {
       let mean = if qv < 2.0 { eval(m)? } else { indet.clone() };
       let variance = if qv < 5.0 / 3.0 {
@@ -8399,7 +8395,7 @@ fn tukey_lambda_pdf_cdf(
     return unevaluated(x);
   };
   let lam = dargs[0].clone();
-  let Some(lv) = crate::functions::math_ast::try_eval_to_f64(&lam) else {
+  let Some(lv) = try_eval_to_f64(&lam) else {
     return unevaluated(x);
   };
   let scaled = dargs.len() == 3;
@@ -8558,7 +8554,7 @@ fn tukey_lambda_mean_variance(
   };
   let lam = dargs[0].clone();
   let indet = indeterminate();
-  let num = crate::functions::math_ast::try_eval_to_f64;
+  let num = try_eval_to_f64;
   let mu = if dargs.len() == 3 {
     dargs[1].clone()
   } else {
@@ -8632,7 +8628,7 @@ fn hotelling_checked(dargs: &[Expr]) -> Option<()> {
     ));
     return None;
   }
-  let num = crate::functions::math_ast::try_eval_to_f64;
+  let num = try_eval_to_f64;
   for pos in 0..2 {
     if num(&dargs[pos]).is_some_and(|v| v <= 0.0) {
       crate::emit_message(&format!(
@@ -8664,7 +8660,7 @@ fn pdf_hotelling(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     return unevaluated(x);
   };
   let (pp, m) = (dargs[0].clone(), dargs[1].clone());
-  let num = crate::functions::math_ast::try_eval_to_f64;
+  let num = try_eval_to_f64;
   let half = |e: Expr| divide(e, int(2));
   let beta = call(
     "Beta",
@@ -8780,7 +8776,7 @@ fn hotelling_mean_variance(
   };
   let (pp, m) = (dargs[0].clone(), dargs[1].clone());
   let indet = indeterminate();
-  let num = crate::functions::math_ast::try_eval_to_f64;
+  let num = try_eval_to_f64;
   let numeric = num(&pp).zip(num(&m));
   // Mean: (m p)/(-1 + m - p) when -1 + m - p > 0. For numeric
   // parameters the condition is decided up front so a dead branch never
@@ -8863,7 +8859,7 @@ fn benini_checked(dargs: &[Expr]) -> Option<()> {
     ));
     return None;
   }
-  let num = crate::functions::math_ast::try_eval_to_f64;
+  let num = try_eval_to_f64;
   let dist =
     || crate::syntax::expr_to_string(&unevaluated("BeniniDistribution", dargs));
   for pos in 0..2 {
@@ -8919,7 +8915,7 @@ fn pdf_benini(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     e(),
     times(times(int(-1), b.clone()), power(lg.clone(), int(2))),
   );
-  let value = if crate::functions::math_ast::try_eval_to_f64(&a).is_some() {
+  let value = if try_eval_to_f64(&a).is_some() {
     call(
       "Times",
       vec![
@@ -8959,7 +8955,7 @@ fn cdf_benini(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   };
   let (a, b, sg) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
   let lg = benini_log(&x, &sg);
-  let survival = if crate::functions::math_ast::try_eval_to_f64(&a).is_some() {
+  let survival = if try_eval_to_f64(&a).is_some() {
     call(
       "Times",
       vec![
@@ -9057,7 +9053,7 @@ fn vonmises_checked(dargs: &[Expr]) -> Option<()> {
     ));
     return None;
   }
-  let num = crate::functions::math_ast::try_eval_to_f64;
+  let num = try_eval_to_f64;
   if num(&dargs[1]).is_some_and(|v| v < 0.0) {
     crate::emit_message(&format!(
       "VonMisesDistribution::nnegprm: Parameter {} at position 2 in {} is expected to be non-negative.",
@@ -9127,7 +9123,7 @@ fn hyperexponential_checked(dargs: &[Expr]) -> Option<(Vec<Expr>, Vec<Expr>)> {
     ));
     return None;
   }
-  let num = crate::functions::math_ast::try_eval_to_f64;
+  let num = try_eval_to_f64;
   let vals: Vec<Option<f64>> = probs.iter().map(&num).collect();
   let negative = vals.iter().any(|v| v.is_some_and(|v| v < 0.0));
   let bad_sum = vals.iter().all(|v| v.is_some())
@@ -9160,7 +9156,7 @@ fn hyperexponential_numeric_terms(
   rates: &[Expr],
   scale_by_rate: bool,
 ) -> Option<Vec<(Expr, Expr)>> {
-  let num = crate::functions::math_ast::try_eval_to_f64;
+  let num = try_eval_to_f64;
   let vals: Vec<f64> = rates.iter().map(num).collect::<Option<_>>()?;
   let mut groups: Vec<(f64, Expr, Vec<Expr>)> = Vec::new();
   for (i, v) in vals.iter().enumerate() {
@@ -9306,7 +9302,7 @@ fn coxian_checked(dargs: &[Expr]) -> Option<(Vec<Expr>, Vec<Expr>)> {
     ));
     return None;
   }
-  let num = crate::functions::math_ast::try_eval_to_f64;
+  let num = try_eval_to_f64;
   if alphas
     .iter()
     .any(|a| num(a).is_some_and(|v| !(0.0..=1.0).contains(&v)))
@@ -9419,7 +9415,7 @@ fn coxian_exact(e: &Expr) -> bool {
       _ => true,
     }
   }
-  no_real(e) && crate::functions::math_ast::try_eval_to_f64(e).is_some()
+  no_real(e) && try_eval_to_f64(e).is_some()
 }
 
 /// Coxian rate layout for the closed forms: Some(true) if all rates are
@@ -9430,10 +9426,8 @@ fn coxian_rate_layout(alphas: &[Expr], rates: &[Expr]) -> Option<bool> {
   if !alphas.iter().all(coxian_exact) || !rates.iter().all(coxian_exact) {
     return None;
   }
-  let vals: Vec<f64> = rates
-    .iter()
-    .map(|r| crate::functions::math_ast::try_eval_to_f64(r).unwrap())
-    .collect();
+  let vals: Vec<f64> =
+    rates.iter().map(|r| try_eval_to_f64(r).unwrap()).collect();
   let distinct = vals
     .iter()
     .enumerate()
@@ -9510,9 +9504,7 @@ fn pdf_coxian(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let terms: Vec<Expr> = if distinct {
     let coeffs = coxian_distinct_coefficients(&alphas, &rates)?;
     let mut order: Vec<usize> = (0..rates.len()).collect();
-    let val = |i: usize| {
-      crate::functions::math_ast::try_eval_to_f64(&rates[i]).unwrap()
-    };
+    let val = |i: usize| try_eval_to_f64(&rates[i]).unwrap();
     order.sort_by(|&a, &b| val(b).partial_cmp(&val(a)).unwrap());
     order
       .iter()
@@ -9572,9 +9564,7 @@ fn cdf_coxian(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   if distinct {
     let coeffs = coxian_distinct_coefficients(&alphas, &rates)?;
     let mut order: Vec<usize> = (0..rates.len()).collect();
-    let val = |i: usize| {
-      crate::functions::math_ast::try_eval_to_f64(&rates[i]).unwrap()
-    };
+    let val = |i: usize| try_eval_to_f64(&rates[i]).unwrap();
     order.sort_by(|&a, &b| val(b).partial_cmp(&val(a)).unwrap());
     for &i in &order {
       let c = eval(times(int(-1), coeffs[i].clone()))?;
@@ -9623,9 +9613,7 @@ fn hypoexponential_distinct_rates(dargs: &[Expr]) -> Option<Vec<(Expr, f64)>> {
     [Expr::List(rates)] if !rates.is_empty() => {
       let keyed: Option<Vec<(Expr, f64)>> = rates
         .iter()
-        .map(|r| {
-          crate::functions::math_ast::try_eval_to_f64(r).map(|f| (r.clone(), f))
-        })
+        .map(|r| try_eval_to_f64(r).map(|f| (r.clone(), f)))
         .collect();
       let keyed = keyed?;
       for i in 0..keyed.len() {
@@ -9831,10 +9819,7 @@ fn cdf_negative_multinomial(
   let Ok((n, probs)) = negative_multinomial_params(dargs) else {
     return unevaluated(x);
   };
-  if crate::functions::math_ast::expr_to_num(&n).is_none()
-    || probs
-      .iter()
-      .any(|p| crate::functions::math_ast::expr_to_num(p).is_none())
+  if expr_to_num(&n).is_none() || probs.iter().any(|p| expr_to_num(p).is_none())
   {
     return unevaluated(x);
   }
@@ -9846,7 +9831,7 @@ fn cdf_negative_multinomial(
   }
   let mut bounds: Vec<i64> = Vec::with_capacity(xs.len());
   for xi in xs.iter() {
-    let Some(v) = crate::functions::math_ast::expr_to_num(xi) else {
+    let Some(v) = expr_to_num(xi) else {
       return unevaluated(x.clone());
     };
     let f = v.floor();
@@ -10122,7 +10107,7 @@ pub fn wishart_mean_variance(
     }
     let mut row_exprs = Vec::with_capacity(p);
     for (j, cell) in cells.iter().enumerate() {
-      let Some(v) = crate::functions::math_ast::try_eval_to_f64(cell) else {
+      let Some(v) = try_eval_to_f64(cell) else {
         return fail(posdefprm(sigma));
       };
       sig[i][j] = v;
@@ -10181,7 +10166,7 @@ pub fn wishart_mean_variance(
       dist_str()
     )
   };
-  let Some(nu_f) = crate::functions::math_ast::try_eval_to_f64(nu) else {
+  let Some(nu_f) = try_eval_to_f64(nu) else {
     return fail(bprm());
   };
   if nu_f <= (p as f64) - 1.0 {
@@ -11255,7 +11240,7 @@ pub fn log_likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let half_log_2pi = divide(plus(log_of(int(2)), log_of(pi())), int(2));
       let result = plus(
         times(
-          crate::functions::math_ast::make_rational(-1, 2),
+          make_rational(-1, 2),
           divide(poly, times(s.clone(), s.clone())),
         ),
         times(int(-n), plus(half_log_2pi, log_of(s.clone()))),
@@ -11719,7 +11704,7 @@ fn frac_to_rational_expr(f: (i128, i128)) -> Expr {
   if f.1 == 1 {
     Expr::Integer(f.0)
   } else {
-    crate::functions::math_ast::make_rational(f.0, f.1)
+    make_rational(f.0, f.1)
   }
 }
 
@@ -11786,10 +11771,7 @@ fn pdf_multinormal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       neg(sq)
     } else if !first_scaled_seen {
       first_scaled_seen = true;
-      times(
-        crate::functions::math_ast::make_rational(-1, variances[i]),
-        sq,
-      )
+      times(make_rational(-1, variances[i]), sq)
     } else {
       neg(div2(sq, int(variances[i])))
     };
@@ -11810,7 +11792,7 @@ fn pdf_multinormal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   } else {
     // k == 3: 2*Sqrt[2*det]*Pi^(3/2)
     let sqrt_part = eval(call("Sqrt", vec![int(2 * det)]))?;
-    let pi_pow = power(pi(), crate::functions::math_ast::make_rational(3, 2));
+    let pi_pow = power(pi(), make_rational(3, 2));
     match &sqrt_part {
       Expr::Integer(s) => call("Times", vec![int(2 * s), pi_pow]),
       _ => call("Times", vec![int(2), sqrt_part, pi_pow]),
@@ -11895,7 +11877,7 @@ pub fn empirical_distribution_ast(
     uniques.push(if v.1 == 1 {
       Expr::Integer(v.0)
     } else {
-      crate::functions::math_ast::make_rational(v.0, v.1)
+      make_rational(v.0, v.1)
     });
   }
   Ok(call(
@@ -11938,7 +11920,7 @@ fn frac_expr((n, d): (i128, i128)) -> Expr {
   if d == 1 {
     Expr::Integer(n)
   } else {
-    crate::functions::math_ast::make_rational(n, d)
+    make_rational(n, d)
   }
 }
 
@@ -11961,10 +11943,7 @@ pub fn histogram_distribution_ast(
     }
     _ => return unevaluated(),
   };
-  let Some(values) = data
-    .iter()
-    .map(crate::functions::math_ast::expr_to_f64)
-    .collect::<Option<Vec<f64>>>()
+  let Some(values) = data.iter().map(expr_to_f64).collect::<Option<Vec<f64>>>()
   else {
     // Multivariate (matrix) data is not implemented yet: stay silently
     // symbolic. Anything else — symbolic entries, non-numbers — is invalid
@@ -12055,9 +12034,7 @@ pub fn histogram_distribution_ast(
 
   // Machine-real path: automatic binning, a non-exact width, or the
   // value-centered layout.
-  let dx_opt = match width_spec
-    .map(|e| crate::functions::math_ast::expr_to_f64(e).filter(|v| *v > 0.0))
-  {
+  let dx_opt = match width_spec.map(|e| expr_to_f64(e).filter(|v| *v > 0.0)) {
     None => None,
     Some(Some(dx)) => Some(dx),
     Some(None) => return unevaluated(),
@@ -12131,14 +12108,14 @@ fn histogram_pdf_cdf(
   // point the built form is returned as-is, preserving wolframscript's term
   // order (CDF leads with Boole[x >= last] and the bins follow ascending),
   // which ordinary Plus canonicalization would reshuffle.
-  let numeric_point = crate::functions::math_ast::expr_to_f64(x);
+  let numeric_point = expr_to_f64(x);
   // PDF at a numeric point is a direct bin lookup: the stored density inside
   // a bin, and the *exact* integer 0 outside the support (wolframscript
   // returns 0, not 0., even for a real point).
   if let Some(xf) = numeric_point
     && !cumulative
   {
-    let ef = |e: &Expr| crate::functions::math_ast::expr_to_f64(e);
+    let ef = |e: &Expr| expr_to_f64(e);
     for (i, w) in weights.iter().enumerate() {
       let (Some(lo), Some(hi)) = (ef(&edges[i]), ef(&edges[i + 1])) else {
         return Some(Ok(Expr::Integer(0)));
@@ -12250,7 +12227,7 @@ fn histogram_moment(dargs: &[Expr], k: u32) -> Option<Expr> {
     return Some(frac_expr(m));
   }
   // Machine-real path, accumulated left-to-right.
-  let to_f64 = crate::functions::math_ast::expr_to_f64;
+  let to_f64 = expr_to_f64;
   let ws: Option<Vec<f64>> = weights.iter().map(to_f64).collect();
   let es: Option<Vec<f64>> = edges.iter().map(to_f64).collect();
   let (ws, es) = (ws?, es?);
@@ -12327,7 +12304,7 @@ pub fn data_distribution_moment(dargs: &[Expr], k: u32) -> Option<Expr> {
   Some(if den == 1 {
     Expr::Integer(num)
   } else {
-    crate::functions::math_ast::make_rational(num, den)
+    make_rational(num, den)
   })
 }
 
@@ -12365,7 +12342,7 @@ fn data_distribution_pdf_cdf(
   Some(if den == 1 {
     Expr::Integer(num)
   } else {
-    crate::functions::math_ast::make_rational(num, den)
+    make_rational(num, den)
   })
 }
 
@@ -12442,7 +12419,7 @@ fn pdf_product_distribution(
         let sq = pow2(v);
         terms.push(if !first_scaled_seen {
           first_scaled_seen = true;
-          times(crate::functions::math_ast::make_rational(-1, 2), sq)
+          times(make_rational(-1, 2), sq)
         } else {
           neg(div2(sq, int(2)))
         });
@@ -17273,7 +17250,7 @@ pub fn truncated_distribution_value(
           eval("Times", vec![x.clone(), z])?,
         ],
       )?;
-      Ok(Some(super::statistics::quantile_ast(&[base, base_q])?))
+      Ok(Some(quantile_ast(&[base, base_q])?))
     }
     _ => Ok(None),
   }
@@ -17350,7 +17327,7 @@ pub fn censored_distribution_value(
       }
     }
     "Quantile" => {
-      let q = super::statistics::quantile_ast(&[base, x.clone()])?;
+      let q = quantile_ast(&[base, x.clone()])?;
       let clamped = eval("Max", vec![lo, eval("Min", vec![q, hi])?])?;
       Ok(Some(clamped))
     }

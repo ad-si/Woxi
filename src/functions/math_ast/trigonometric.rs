@@ -1076,10 +1076,7 @@ pub fn negate_expr(mut expr: Expr) -> Expr {
       // coefficient, matching Wolfram: -(Sqrt[3]/2) => -1/2*Sqrt[3] and
       // -((-1 + Sqrt[3])/(2 Sqrt[2])) => -1/2*(-1 + Sqrt[3])/Sqrt[2].
       if let Some((k, rest)) = denom_integer_factor(right) {
-        let mut factors = vec![
-          crate::functions::math_ast::make_rational(-1, k),
-          (**left).clone(),
-        ];
+        let mut factors = vec![make_rational(-1, k), (**left).clone()];
         if let Some(rest) = rest {
           factors.push(binop(BinaryOperator::Power, rest, Expr::Integer(-1)));
         }
@@ -1724,10 +1721,7 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // so output precision = `prec_in - log10(|x/tan(x)|)`.
   if let Expr::BigFloat(digits, prec) = &args[0] {
     let p_in = (*prec).max(1.0);
-    let result = crate::functions::math_ast::n_eval_arbitrary(
-      &unevaluated("Sin", args),
-      p_in,
-    )?;
+    let result = n_eval_arbitrary(&unevaluated("Sin", args), p_in)?;
     if let Expr::BigFloat(ref out_digits, _) = result {
       let x_f64 = digits.parse::<f64>().unwrap_or(0.0);
       let t = x_f64.tan();
@@ -1927,10 +1921,7 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // relative precision is `prec_in - log10(|x*tan(x)|)`.
   if let Expr::BigFloat(digits, prec) = &args[0] {
     let p_in = (*prec).max(1.0);
-    let result = crate::functions::math_ast::n_eval_arbitrary(
-      &unevaluated("Cos", args),
-      p_in,
-    )?;
+    let result = n_eval_arbitrary(&unevaluated("Cos", args), p_in)?;
     if let Expr::BigFloat(ref out_digits, _) = result {
       let x_f64 = digits.parse::<f64>().unwrap_or(0.0);
       let cond = (x_f64 * x_f64.tan()).abs();
@@ -2374,9 +2365,7 @@ pub fn exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Arbitrary-precision argument: compute e^x at the tracked precision
     // instead of leaving `E^1.`30.` unevaluated.
     Expr::BigFloat(digits, prec) => {
-      if let Some(result) =
-        crate::functions::math_ast::numerical::bigfloat_exp(digits, *prec)
-      {
+      if let Some(result) = bigfloat_exp(digits, *prec) {
         return result;
       }
       power_two(&Expr::Constant("E".to_string()), &args[0])
@@ -2421,13 +2410,10 @@ pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // the direct difference loses precision to cancellation — the complementary
     // form avoids it.
     let any_inexact =
-      crate::functions::math_ast::contains_inexact_real(&args[0])
-        || crate::functions::math_ast::contains_inexact_real(&args[1]);
+      contains_inexact_real(&args[0]) || contains_inexact_real(&args[1]);
     if any_inexact
-      && let (Some(a), Some(b)) = (
-        crate::functions::math_ast::try_eval_to_f64(&args[0]),
-        crate::functions::math_ast::try_eval_to_f64(&args[1]),
-      )
+      && let (Some(a), Some(b)) =
+        (try_eval_to_f64(&args[0]), try_eval_to_f64(&args[1]))
     {
       let result = if a >= 0.0 && b >= 0.0 {
         erfc_f64(a) - erfc_f64(b)
@@ -2445,7 +2431,7 @@ pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Erf is odd: Erf[-x] = -Erf[x]. Fold every negated argument form (including
   // negative rational coefficients, e.g. Erf[-x/2]) via the shared helper;
   // recursion evaluates special values such as Erf[-Infinity] = -1.
-  if let Some(pos) = crate::functions::math_ast::strip_negation(&args[0]) {
+  if let Some(pos) = strip_negation(&args[0]) {
     let inner = erf_ast(&[pos])?;
     return crate::evaluator::evaluate_function_call_ast(
       "Times",
@@ -2587,7 +2573,7 @@ pub fn erfi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Erfi is odd: Erfi[-x] = -Erfi[x]. Fold every negated argument form
   // (including negative rational coefficients, e.g. Erfi[-x/2]) via the shared
   // helper; recursion evaluates special values such as Erfi[-Infinity].
-  if let Some(pos) = crate::functions::math_ast::strip_negation(&args[0]) {
+  if let Some(pos) = strip_negation(&args[0]) {
     let inner = erfi_ast(&[pos])?;
     return crate::evaluator::evaluate_function_call_ast(
       "Times",
@@ -2769,9 +2755,7 @@ pub fn inverse_erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Numeric evaluation for Real arguments
     Expr::Real(f) => {
       if *f > -1.0 && *f < 1.0 {
-        Ok(Expr::Real(
-          crate::functions::math_ast::numeric_utils::inverse_erf_f64(*f),
-        ))
+        Ok(Expr::Real(inverse_erf_f64(*f)))
       } else if *f == 1.0 {
         Ok(Expr::Identifier("Infinity".to_string()))
       } else if *f == -1.0 {
@@ -2828,9 +2812,7 @@ pub fn inverse_erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Real(f) => {
       if *f > 0.0 && *f < 2.0 {
         // InverseErfc[x] = InverseErf[1 - x]
-        Ok(Expr::Real(
-          crate::functions::math_ast::numeric_utils::inverse_erf_f64(1.0 - *f),
-        ))
+        Ok(Expr::Real(inverse_erf_f64(1.0 - *f)))
       } else if *f == 0.0 {
         Ok(Expr::Identifier("Infinity".to_string()))
       } else if *f == 2.0 {
@@ -2999,10 +2981,9 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             "Re",
             std::slice::from_ref(z),
           )?;
-          if let (Some(im_f), Some(_re_f)) = (
-            crate::functions::math_ast::try_eval_to_f64(&imz),
-            crate::functions::math_ast::try_eval_to_f64(&rez),
-          ) {
+          if let (Some(im_f), Some(_re_f)) =
+            (try_eval_to_f64(&imz), try_eval_to_f64(&rez))
+          {
             use std::f64::consts::PI;
             let two_pi = 2.0 * PI;
             // k brings im into (-Pi, Pi]: im - 2*k*Pi ∈ (-Pi, Pi].
@@ -3079,7 +3060,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "Times",
           &[
             Expr::Identifier("I".to_string()),
-            crate::functions::math_ast::make_rational(1, 2),
+            make_rational(1, 2),
             Expr::Constant("Pi".to_string()),
           ],
         );
@@ -3118,7 +3099,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             &[
               Expr::Integer(-1),
               Expr::Identifier("I".to_string()),
-              crate::functions::math_ast::make_rational(1, 2),
+              make_rational(1, 2),
               Expr::Constant("Pi".to_string()),
             ],
           );
@@ -3129,9 +3110,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Real coefficients (e.g. 2.5 I) are handled by the numeric complex
       // path below; symbolic-real ones (Pi I, Sqrt[2] I) stay unevaluated,
       // matching wolframscript.
-      if let Some(coeff) =
-        crate::functions::math_ast::complex::extract_i_times_real(&args[0])
-      {
+      if let Some(coeff) = extract_i_times_real(&args[0]) {
         let is_exact_real = matches!(&coeff, Expr::Integer(_))
           || matches!(&coeff, Expr::FunctionCall { name, .. } if name == "Rational");
         if is_exact_real {
@@ -3155,7 +3134,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                     name: "Sign".to_string(),
                     args: vec![coeff.clone()].into(),
                   },
-                  crate::functions::math_ast::make_rational(1, 2),
+                  make_rational(1, 2),
                   Expr::Identifier("I".to_string()),
                   Expr::Constant("Pi".to_string()),
                 ]
@@ -3257,7 +3236,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(Expr::Identifier("Infinity".to_string()));
       }
       // Log[-Infinity] = Infinity (principal value)
-      if crate::functions::math_ast::is_neg_infinity(&args[0]) {
+      if is_neg_infinity(&args[0]) {
         return Ok(Expr::Identifier("Infinity".to_string()));
       }
       // Log[p/q] where 0 < p < q: return -Log[q/p]
@@ -3281,8 +3260,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Arbitrary-precision argument: compute ln(x) at the tracked precision
       // instead of leaving `Log[2.`30.]` unevaluated.
       if let Expr::BigFloat(digits, prec) = &args[0]
-        && let Some(result) =
-          crate::functions::math_ast::numerical::bigfloat_log(digits, *prec)
+        && let Some(result) = bigfloat_log(digits, *prec)
       {
         return result;
       }
@@ -3303,16 +3281,13 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       // Log of a complex floating-point number: principal value
       // = 0.5*Log[a^2 + b^2] + I*atan2(b, a)
-      if let Some((a, b)) =
-        crate::functions::math_ast::try_extract_complex_float(&args[0])
+      if let Some((a, b)) = try_extract_complex_float(&args[0])
         && b != 0.0
         && contains_inexact_real_log(&args[0])
       {
         let re = 0.5 * (a * a + b * b).ln();
         let im = b.atan2(a);
-        return Ok(crate::functions::math_ast::build_complex_float_expr(
-          re, im,
-        ));
+        return Ok(build_complex_float_expr(re, im));
       }
       Ok(unevaluated("Log", args))
     }
@@ -3487,7 +3462,7 @@ fn try_complex_inverse_trig(
   if !contains_inexact_real(arg) {
     return None;
   }
-  let (x, y) = crate::functions::math_ast::try_extract_complex_float(arg)?;
+  let (x, y) = try_extract_complex_float(arg)?;
   if y == 0.0 {
     return None;
   }
@@ -3926,7 +3901,7 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {}
   }
   // ArcTan[-Infinity] = -Pi/2
-  if crate::functions::math_ast::is_neg_infinity(&args[0]) {
+  if is_neg_infinity(&args[0]) {
     return Ok(Expr::FunctionCall {
       name: "Times".to_string(),
       args: vec![
@@ -3942,7 +3917,7 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Additional exact values: ArcTan[Sqrt[3]] = Pi/3, ArcTan[1/Sqrt[3]] = Pi/6
   // Use numerical comparison to detect these values robustly regardless of internal form.
-  if let Some(val) = crate::functions::math_ast::try_eval_to_f64(&args[0]) {
+  if let Some(val) = try_eval_to_f64(&args[0]) {
     let sqrt3 = 3.0_f64.sqrt();
     let eps = 1e-12;
     if (val - sqrt3).abs() < eps {
@@ -4982,8 +4957,7 @@ pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Only fire for inexact inputs — wolframscript keeps purely exact
   // arguments like ArcTanh[2 + I] symbolic.
   if contains_inexact_real(&args[0])
-    && let Some((re, im)) =
-      crate::functions::math_ast::try_extract_complex_float(&args[0])
+    && let Some((re, im)) = try_extract_complex_float(&args[0])
     && im != 0.0
   {
     let one_minus_re_sq = (1.0 - re) * (1.0 - re);
@@ -5024,7 +4998,7 @@ pub fn arccoth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // ArcCoth[±Infinity] = 0.
   if matches!(&args[0], Expr::Identifier(s) if s == "Infinity")
-    || crate::functions::math_ast::is_neg_infinity(&args[0])
+    || is_neg_infinity(&args[0])
   {
     return Ok(Expr::Integer(0));
   }
@@ -5164,9 +5138,7 @@ pub fn arccot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("ArcCot", args));
 
   // ArcCot[±Infinity] = 0; ArcCot[0] = Pi/2.
-  if matches!(x, Expr::Identifier(s) if s == "Infinity")
-    || crate::functions::math_ast::is_neg_infinity(x)
-  {
+  if matches!(x, Expr::Identifier(s) if s == "Infinity") || is_neg_infinity(x) {
     return Ok(Expr::Integer(0));
   }
   if matches!(x, Expr::Integer(0)) {
@@ -5300,9 +5272,7 @@ pub fn arccsch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier("ComplexInfinity".to_string()));
   }
   // ArcCsch[±Infinity] = 0.
-  if matches!(x, Expr::Identifier(s) if s == "Infinity")
-    || crate::functions::math_ast::is_neg_infinity(x)
-  {
+  if matches!(x, Expr::Identifier(s) if s == "Infinity") || is_neg_infinity(x) {
     return Ok(Expr::Integer(0));
   }
   // Only inexact arguments evaluate numerically; exact ones (e.g. ArcCsch[2])
@@ -5649,8 +5619,7 @@ pub fn logistic_sigmoid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Complex float input: 1 / (1 + exp(-z)) using complex arithmetic. Only
   // fires for an inexact argument so an exact complex like I stays symbolic.
   if contains_inexact_real(&args[0])
-    && let Some((re, im)) =
-      crate::functions::math_ast::try_extract_complex_float(&args[0])
+    && let Some((re, im)) = try_extract_complex_float(&args[0])
     && im != 0.0
   {
     // exp(-z) = exp(-re) * (cos(-im) + I*sin(-im))

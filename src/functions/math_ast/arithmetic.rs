@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use contains_inexact_real as contains_real;
 use num_bigint::BigInt;
 use num_bigint::Sign;
 
@@ -1264,7 +1265,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // Whole term reduces to a Real (e.g. Pi, E, Sqrt[2]).
           numerified_tail.push(f);
         } else if contains_named_numeric_constant(&arg)
-          && let Ok(n_val) = crate::functions::math_ast::n_eval(&arg)
+          && let Ok(n_val) = n_eval(&arg)
         {
           remaining_symbolic.push(n_val);
         } else {
@@ -1755,8 +1756,8 @@ fn expr_to_coeff(arg: &Expr) -> Option<Coeff> {
       if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
         Some(Coeff::Exact(*n, *d))
       } else {
-        let n = crate::functions::math_ast::expr_to_bigint(&args[0])?;
-        let d = crate::functions::math_ast::expr_to_bigint(&args[1])?;
+        let n = expr_to_bigint(&args[0])?;
+        let d = expr_to_bigint(&args[1])?;
         Some(Coeff::BigExact(n, d))
       }
     }
@@ -6776,7 +6777,6 @@ fn try_series_data_times_var_power(
 /// expressions, and at least one real-free nested product carrying both an
 /// exact coefficient and a constant part.
 pub fn nested_exact_const_machine_times(args: &[Expr]) -> Option<Expr> {
-  use crate::functions::math_ast::try_eval_to_f64;
   fn exact_val(e: &Expr) -> Option<(i128, i128)> {
     match e {
       Expr::Integer(n) => Some((*n, 1)),
@@ -6903,7 +6903,7 @@ pub fn nested_exact_const_machine_times(args: &[Expr]) -> Option<Expr> {
               _ => None,
             };
             exp
-              .and_then(crate::functions::math_ast::try_eval_to_f64)
+              .and_then(try_eval_to_f64)
               .map(|v| v < 0.0)
               .unwrap_or(false)
           };
@@ -7281,8 +7281,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let complex_idx = flat_args.iter().position(|a| {
-    if let Some(((_re_n, _re_d), (im_n, _im_d))) =
-      crate::functions::math_ast::try_extract_complex_exact(a)
+    if let Some(((_re_n, _re_d), (im_n, _im_d))) = try_extract_complex_exact(a)
     {
       return im_n != 0;
     }
@@ -7341,7 +7340,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Known real sign of a factor: Some(1) positive, Some(-1) negative,
     // None when the sign can't be determined (symbolic).
     fn real_factor_sign(e: &Expr) -> Option<i8> {
-      if crate::functions::math_ast::complex::is_strictly_positive_real(e) {
+      if is_strictly_positive_real(e) {
         return Some(1);
       }
       match e {
@@ -7617,10 +7616,8 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `x*(2. + I)` is left untouched; an all-exact product like `Pi*(2 + I)`
   // lacks an inexact factor and stays symbolic.
   if args.len() >= 2 {
-    let float_parts: Vec<Option<(f64, f64)>> = args
-      .iter()
-      .map(crate::functions::math_ast::try_extract_complex_float)
-      .collect();
+    let float_parts: Vec<Option<(f64, f64)>> =
+      args.iter().map(try_extract_complex_float).collect();
     if float_parts.iter().all(|c| c.is_some()) {
       let any_imag = float_parts.iter().any(|c| c.unwrap().1 != 0.0);
       // Trigger on a machine Real (so the product is genuinely machine
@@ -7666,11 +7663,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // parts as machine reals, matching wolframscript's `6. + 8.*I` and
         // `-2. + 0.*I`.
         if re != 0.0 {
-          return Ok(
-            crate::functions::math_ast::build_complex_float_expr_keep_real(
-              re, im,
-            ),
-          );
+          return Ok(build_complex_float_expr_keep_real(re, im));
         }
       }
     }
@@ -8348,7 +8341,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               symbolic_args.remove(i);
             } else if matches!(&new_exp, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 && matches!((&args[0], &args[1]), (Expr::Integer(1), Expr::Integer(2))))
             {
-              symbolic_args[i] = crate::functions::math_ast::sqrt_ast(&[base])?;
+              symbolic_args[i] = sqrt_ast(&[base])?;
             } else if matches!(&new_exp, Expr::Integer(1)) {
               symbolic_args[i] = base;
             } else {
@@ -8695,16 +8688,14 @@ fn direct_real_divide(a: &Expr, b: &Expr) -> Option<Expr> {
       if contains_real(a) {
         return None;
       }
-      let hi = super::numerical::n_eval_arbitrary(a, 25.0)
-        .ok()
-        .and_then(|e| match &e {
-          Expr::BigFloat(digits, _) => digits.parse::<f64>().ok(),
-          Expr::Real(x) => Some(*x),
-          _ => None,
-        });
+      let hi = n_eval_arbitrary(a, 25.0).ok().and_then(|e| match &e {
+        Expr::BigFloat(digits, _) => digits.parse::<f64>().ok(),
+        Expr::Real(x) => Some(*x),
+        _ => None,
+      });
       match hi {
         Some(x) if x.is_finite() => x,
-        _ => match super::numerical::n_eval(a) {
+        _ => match n_eval(a) {
           Ok(Expr::Real(x)) => x,
           _ => return None,
         },
@@ -9678,7 +9669,7 @@ fn infinity_direction(expr: &Expr) -> Option<Option<Expr>> {
   {
     return Some(Some(Expr::Integer(1)));
   }
-  if crate::functions::math_ast::is_neg_infinity(expr) {
+  if is_neg_infinity(expr) {
     return Some(Some(Expr::Integer(-1)));
   }
   if matches!(expr, Expr::Identifier(n) if n == "ComplexInfinity") {
@@ -9880,9 +9871,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   if matches!(base, Expr::Constant(c) if c == "E")
     && matches!(exp, Expr::BigFloat(_, _))
   {
-    return crate::functions::math_ast::trigonometric::exp_ast(
-      std::slice::from_ref(exp),
-    );
+    return exp_ast(std::slice::from_ref(exp));
   }
 
   // An inexact complex base (a machine float with a nonzero imaginary part)
@@ -9959,18 +9948,16 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     && name == "Rational"
     && rargs.len() == 2
     && let Expr::Integer(k) = exp
-    && let (Some(n), Some(d)) = (
-      crate::functions::math_ast::expr_to_bigint(&rargs[0]),
-      crate::functions::math_ast::expr_to_bigint(&rargs[1]),
-    )
+    && let (Some(n), Some(d)) =
+      (expr_to_bigint(&rargs[0]), expr_to_bigint(&rargs[1]))
   {
     let absk = k.unsigned_abs() as u32;
     let np = n.pow(absk);
     let dp = d.pow(absk);
     return Ok(if *k >= 0 {
-      crate::functions::math_ast::number_theory::make_rational_expr(np, dp)
+      make_rational_expr(np, dp)
     } else {
-      crate::functions::math_ast::number_theory::make_rational_expr(dp, np)
+      make_rational_expr(dp, np)
     });
   }
 
@@ -10022,7 +10009,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     let y_expr = if yd == 1 {
       Expr::Integer(yn)
     } else {
-      crate::functions::math_ast::make_rational(yn, yd)
+      make_rational(yn, yd)
     };
     let neg_one_pow = Expr::FunctionCall {
       name: "Power".to_string(),
@@ -10065,7 +10052,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     let y_expr = if yd == 1 {
       Expr::Integer(yn)
     } else {
-      crate::functions::math_ast::make_rational(yn, yd)
+      make_rational(yn, yd)
     };
     let neg_one_pow = Expr::FunctionCall {
       name: "Power".to_string(),
@@ -10242,7 +10229,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     && !matches!(exp, Expr::Identifier(s) if s == "Infinity"
       || s == "ComplexInfinity"
       || s == "Indeterminate")
-    && !crate::functions::math_ast::is_neg_infinity(exp)
+    && !is_neg_infinity(exp)
   {
     return Ok(Expr::Integer(1));
   }
@@ -10255,7 +10242,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     && !matches!(base, Expr::Identifier(s) if s == "Infinity"
       || s == "ComplexInfinity"
       || s == "Indeterminate")
-    && !crate::functions::math_ast::is_neg_infinity(base)
+    && !is_neg_infinity(base)
   {
     // A raw inexact numeric base gives an inexact 1: 2.0^0 -> 1. and an
     // inexact complex -> 1. + 0.*I. Symbolic expressions merely
@@ -10266,7 +10253,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     }
     if contains_real(base)
       && matches!(
-        crate::functions::math_ast::try_extract_complex_float(base),
+        try_extract_complex_float(base),
         Some((_, im)) if im != 0.0
       )
     {
@@ -10280,9 +10267,9 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
 
   // Handle Power with Infinity in base or exponent
   let base_is_pos_inf = matches!(base, Expr::Identifier(s) if s == "Infinity");
-  let base_is_neg_inf = crate::functions::math_ast::is_neg_infinity(base);
+  let base_is_neg_inf = is_neg_infinity(base);
   let exp_is_pos_inf = matches!(exp, Expr::Identifier(s) if s == "Infinity");
-  let exp_is_neg_inf = crate::functions::math_ast::is_neg_infinity(exp);
+  let exp_is_neg_inf = is_neg_infinity(exp);
   let base_is_complex_inf =
     matches!(base, Expr::Identifier(s) if s == "ComplexInfinity");
   let exp_is_complex_inf =
@@ -10902,12 +10889,10 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     && (denom == 1 || denom == 2)
   {
     // Build the symbolic argument k*Pi
-    let k_pi =
-      crate::functions::math_ast::complex::make_rational_times_pi(numer, denom);
+    let k_pi = make_rational_times_pi(numer, denom);
     // Evaluate Cos[k*Pi] and Sin[k*Pi] symbolically
-    let cos_val =
-      crate::functions::math_ast::cos_ast(std::slice::from_ref(&k_pi))?;
-    let sin_val = crate::functions::math_ast::sin_ast(&[k_pi])?;
+    let cos_val = cos_ast(std::slice::from_ref(&k_pi))?;
+    let sin_val = sin_ast(&[k_pi])?;
     // Build result: cos_val + I*sin_val
     let sin_is_zero = matches!(&sin_val, Expr::Integer(0));
     let cos_is_zero = matches!(&cos_val, Expr::Integer(0));
@@ -11056,7 +11041,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       ));
     } else {
       let exp_str = expr_to_string(exp);
-      crate::emit_message(&super::format_power_infy_2d(&base_str, &exp_str));
+      crate::emit_message(&format_power_infy_2d(&base_str, &exp_str));
     }
     return Ok(Expr::Identifier("ComplexInfinity".to_string()));
   }
@@ -11242,9 +11227,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     if let Some(bb) = bb_opt {
       let r = bb.nth_root(*denom as u32);
       if r.pow(*denom as u32) == bb {
-        return Ok(crate::functions::math_ast::bigint_to_expr(
-          r.pow(*numer as u32),
-        ));
+        return Ok(bigint_to_expr(r.pow(*numer as u32)));
       }
     }
   }
@@ -11259,7 +11242,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     && let (Expr::Integer(numer), Expr::Integer(denom)) = (&rargs[0], &rargs[1])
     && *denom > 0
   {
-    let magnitude = crate::functions::math_ast::bigint_to_expr(-b.clone());
+    let magnitude = bigint_to_expr(-b.clone());
     return negative_base_rational_power(&magnitude, *numer, *denom);
   }
 
@@ -11469,12 +11452,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       && !num_traits::Zero::is_zero(&b)
     {
       let den = num_traits::pow::pow(b, e.unsigned_abs() as usize);
-      return Ok(
-        crate::functions::math_ast::number_theory::make_rational_expr(
-          BigInt::from(1),
-          den,
-        ),
-      );
+      return Ok(make_rational_expr(BigInt::from(1), den));
     }
   }
 
@@ -11506,7 +11484,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       // wolframscript's multiplication chains rather than libm pow — the
       // two round differently in the last ULP.
       let result = if let (true, Expr::Integer(e)) = (has_real, exp) {
-        crate::functions::math_ast::numeric_utils::wolfram_powi(a, *e)
+        wolfram_powi(a, *e)
       } else {
         a.powf(b)
       };
@@ -11568,10 +11546,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         && b != 0.0
         && contains_real(base)
       {
-        let (re, im) =
-          crate::functions::math_ast::numeric_utils::wolfram_powi_complex(
-            a, b, *n,
-          );
+        let (re, im) = wolfram_powi_complex(a, b, *n);
         return Ok(build_complex_float_expr(re, im));
       }
       // Try complex float evaluation: z^w = exp(w * log(z))
@@ -11857,8 +11832,6 @@ pub fn try_around_unary(
   Some(Ok(make_around_general(fa, m, p, ar.asym)))
 }
 
-use crate::functions::math_ast::contains_inexact_real as contains_real;
-
 /// Structurally complex: the expression mentions the imaginary unit, even
 /// when its numeric imaginary part works out to `0.` (as in `0.5 + 0.*I`).
 /// Such operands must still numericize in the complex power path of
@@ -12071,7 +12044,7 @@ fn negative_number_magnitude(expr: &Expr) -> Option<Expr> {
   match expr {
     Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-*n)),
     Expr::BigInteger(n) if *n < BigInt::from(0) => {
-      Some(crate::functions::math_ast::bigint_to_expr(-n.clone()))
+      Some(bigint_to_expr(-n.clone()))
     }
     Expr::FunctionCall { name, args }
       if name == "Rational"
@@ -12546,16 +12519,12 @@ fn bigfloat_plus(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
       .fold(0.0f64, f64::max)
       .max(result_prec);
-    let bits = crate::functions::math_ast::numerical::nominal_bits(
-      max_prec.ceil() as usize,
-    );
+    let bits = nominal_bits(max_prec.ceil() as usize);
     if let Ok(mut cc) = Consts::new() {
       let mut sum = BigFloat::from_i32(0, bits);
       let mut ok = true;
       for arg in args {
-        match crate::functions::math_ast::numerical::expr_to_bigfloat(
-          arg, bits, rm, &mut cc,
-        ) {
+        match expr_to_bigfloat(arg, bits, rm, &mut cc) {
           Ok(v) => sum = sum.add(&v, bits, rm),
           Err(_) => {
             ok = false;
@@ -12566,12 +12535,9 @@ fn bigfloat_plus(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if ok {
         let max_fraction_digits =
           ((bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
-        if let Ok(s) = crate::functions::math_ast::numerical::bigfloat_to_string(
-          &sum,
-          Some(max_fraction_digits),
-          rm,
-          &mut cc,
-        ) {
+        if let Ok(s) =
+          bigfloat_to_string(&sum, Some(max_fraction_digits), rm, &mut cc)
+        {
           return Ok(Expr::BigFloat(s, result_prec));
         }
       }
@@ -12731,32 +12697,26 @@ fn try_bigfloat_power(
   };
 
   let rm = RoundingMode::ToEven;
-  let bits = crate::functions::math_ast::numerical::nominal_bits(
-    base_prec.ceil() as usize,
-  );
+  let bits = nominal_bits(base_prec.ceil() as usize);
   let mut cc = match Consts::new() {
     Ok(c) => c,
     Err(e) => {
       return Some(Err(InterpreterError::EvaluationError(format!("{}", e))));
     }
   };
-  let base_bf = match crate::functions::math_ast::numerical::expr_to_bigfloat(
-    base, bits, rm, &mut cc,
-  ) {
+  let base_bf = match expr_to_bigfloat(base, bits, rm, &mut cc) {
     Ok(b) => b,
     Err(e) => return Some(Err(e)),
   };
 
   let result = if let Some(n) = int_exp {
-    crate::functions::math_ast::numerical::bigfloat_powi(&base_bf, n, bits, rm)
+    bigfloat_powi(&base_bf, n, bits, rm)
   } else {
     // Non-integer exponent on a negative base is complex — defer.
     if base_bf.is_negative() {
       return None;
     }
-    let exp_bf = match crate::functions::math_ast::numerical::expr_to_bigfloat(
-      exp, bits, rm, &mut cc,
-    ) {
+    let exp_bf = match expr_to_bigfloat(exp, bits, rm, &mut cc) {
       Ok(e) => e,
       Err(e) => return Some(Err(e)),
     };
@@ -12767,12 +12727,7 @@ fn try_bigfloat_power(
   let max_fraction_digits =
     ((bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
   let result_str =
-    match crate::functions::math_ast::numerical::bigfloat_to_string(
-      &result,
-      Some(max_fraction_digits),
-      rm,
-      &mut cc,
-    ) {
+    match bigfloat_to_string(&result, Some(max_fraction_digits), rm, &mut cc) {
       Ok(s) => s,
       Err(e) => return Some(Err(e)),
     };
@@ -12810,29 +12765,21 @@ fn bigfloat_times(args: &[Expr]) -> Result<Expr, InterpreterError> {
     min_contrib
   };
 
-  let bits = crate::functions::math_ast::numerical::nominal_bits(
-    min_contrib.ceil() as usize,
-  );
+  let bits = nominal_bits(min_contrib.ceil() as usize);
   let rm = RoundingMode::ToEven;
   let mut cc = Consts::new()
     .map_err(|e| InterpreterError::EvaluationError(format!("{}", e)))?;
 
   let mut product = BigFloat::from_i32(1, bits);
   for arg in args {
-    let factor = crate::functions::math_ast::numerical::expr_to_bigfloat(
-      arg, bits, rm, &mut cc,
-    )?;
+    let factor = expr_to_bigfloat(arg, bits, rm, &mut cc)?;
     product = product.mul(&factor, bits, rm);
   }
 
   let max_fraction_digits =
     ((bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
-  let result_str = crate::functions::math_ast::numerical::bigfloat_to_string(
-    &product,
-    Some(max_fraction_digits),
-    rm,
-    &mut cc,
-  )?;
+  let result_str =
+    bigfloat_to_string(&product, Some(max_fraction_digits), rm, &mut cc)?;
   Ok(Expr::BigFloat(result_str, result_prec))
 }
 

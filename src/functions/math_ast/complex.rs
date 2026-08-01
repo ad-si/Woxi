@@ -502,7 +502,7 @@ pub fn is_real_valued(expr: &Expr) -> bool {
   // NumericQ expressions: check if they evaluate to a real number
   if crate::functions::predicate_ast::is_numeric_q(expr) {
     // Try to evaluate numerically - if it gives a real, it's real-valued
-    if let Some(val) = crate::functions::math_ast::try_eval_to_f64(expr) {
+    if let Some(val) = try_eval_to_f64(expr) {
       return val.is_finite() || val.is_nan();
     }
   }
@@ -1070,10 +1070,9 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Re",
         std::slice::from_ref(z),
       )?;
-      if let (Some(im_f), Some(_re_f)) = (
-        crate::functions::math_ast::try_eval_to_f64(&imz),
-        crate::functions::math_ast::try_eval_to_f64(&rez),
-      ) {
+      if let (Some(im_f), Some(_re_f)) =
+        (try_eval_to_f64(&imz), try_eval_to_f64(&rez))
+      {
         use std::f64::consts::PI;
         let two_pi = 2.0 * PI;
         // k brings im into (-Pi, Pi]: im - 2*k*Pi ∈ (-Pi, Pi].
@@ -1188,7 +1187,7 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Real-valued composite (Sqrt[2], Log[2], Pi^2, Pi - 4, …): Arg is 0 for a
   // positive (or zero) value and Pi for a negative one.
   if is_real_valued(&args[0])
-    && let Some(v) = crate::functions::math_ast::try_eval_to_f64(&args[0])
+    && let Some(v) = try_eval_to_f64(&args[0])
   {
     return if v < 0.0 {
       Ok(Expr::Identifier("Pi".to_string()))
@@ -1303,8 +1302,7 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::evaluator::evaluate_function_call_ast("Im", &[args[0].clone()]),
   ) && is_real_valued(&re)
     && is_real_valued(&im)
-    && crate::functions::math_ast::try_eval_to_f64(&im)
-      .is_some_and(|v| v != 0.0)
+    && try_eval_to_f64(&im).is_some_and(|v| v != 0.0)
   {
     return crate::evaluator::evaluate_function_call_ast("ArcTan", &[re, im]);
   }
@@ -1408,8 +1406,7 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Complex argument: rationalize the real and imaginary parts. Following
   // wolframscript, if either part has no exact rational (within the tolerance)
   // both parts stay as machine reals (all-or-nothing).
-  if let Some((re, im)) =
-    crate::functions::math_ast::try_extract_complex_float(&args[0])
+  if let Some((re, im)) = try_extract_complex_float(&args[0])
     && im != 0.0
   {
     let rat = |v: f64| -> Result<Expr, InterpreterError> {
@@ -1504,8 +1501,7 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(x) => x,
     None => {
       // Fall back to numeric evaluation (e.g. for Pi, E) when available.
-      match crate::functions::math_ast::numeric_utils::try_eval_to_f64(&args[0])
-      {
+      match try_eval_to_f64(&args[0]) {
         Some(x) => x,
         None => {
           return Ok(unevaluated("Rationalize", args));
@@ -1552,16 +1548,10 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // N[999999/1000003], N[1/2^40], and N[1000001/2^30] do not
     // (differential fuzzer, seed 15336548261066338105).
     match rationalize_machine_default(x) {
-      Some((n, d)) if d == num_bigint::BigInt::from(1) => {
-        Ok(crate::functions::math_ast::bigint_to_expr(n))
-      }
+      Some((n, d)) if d == num_bigint::BigInt::from(1) => Ok(bigint_to_expr(n)),
       Some((n, d)) => Ok(Expr::FunctionCall {
         name: "Rational".to_string(),
-        args: vec![
-          crate::functions::math_ast::bigint_to_expr(n),
-          crate::functions::math_ast::bigint_to_expr(d),
-        ]
-        .into(),
+        args: vec![bigint_to_expr(n), bigint_to_expr(d)].into(),
       }),
       None => Ok(num_to_expr(x)),
     }

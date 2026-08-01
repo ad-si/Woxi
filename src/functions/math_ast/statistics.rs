@@ -843,7 +843,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Invalid parameters (e.g. BenktanderGibratDistribution[1, 2]) emit a
       // message and leave the call unevaluated, matching wolframscript;
       // they must not surface as an evaluation error.
-      match super::distributions::distribution_mean_variance(dist_name, dargs) {
+      match distribution_mean_variance(dist_name, dargs) {
         Ok((mean, _)) => crate::evaluator::evaluate_expr_to_expr(&mean),
         Err(_) => Ok(unevaluated("Mean", args)),
       }
@@ -852,7 +852,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: dist_name,
       args: dargs,
     } if dist_name == "JohnsonDistribution" => {
-      match super::distributions::distribution_mean_variance(dist_name, dargs) {
+      match distribution_mean_variance(dist_name, dargs) {
         Ok((mean, _)) => crate::evaluator::evaluate_expr_to_expr(&mean),
         Err(_) => Ok(Expr::FunctionCall {
           name: "Mean".to_string(),
@@ -867,10 +867,10 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::FunctionCall {
       name: dist_name, ..
     } if dist_name == "CensoredDistribution"
-      && super::distributions::censored_mean_variance(&args[0])?.is_some() =>
+      && censored_mean_variance(&args[0])?.is_some() =>
     {
       Ok(
-        super::distributions::censored_mean_variance(&args[0])?
+        censored_mean_variance(&args[0])?
           .expect("checked in the guard")
           .0,
       )
@@ -878,10 +878,10 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::FunctionCall {
       name: dist_name, ..
     } if dist_name == "TruncatedDistribution"
-      && super::distributions::truncated_mean_variance(&args[0])?.is_some() =>
+      && truncated_mean_variance(&args[0])?.is_some() =>
     {
       Ok(
-        super::distributions::truncated_mean_variance(&args[0])?
+        truncated_mean_variance(&args[0])?
           .expect("checked in the guard")
           .0,
       )
@@ -903,15 +903,14 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: dist_name,
       args: dargs,
     } if dist_name == "MultinomialDistribution" => {
-      let (mean, _) = super::distributions::multinomial_mean_variance(dargs)?;
+      let (mean, _) = multinomial_mean_variance(dargs)?;
       Ok(mean)
     }
     Expr::FunctionCall {
       name: dist_name,
       args: dargs,
     } if dist_name == "NegativeMultinomialDistribution" => {
-      let (mean, _) =
-        super::distributions::negative_multinomial_mean_variance(dargs)?;
+      let (mean, _) = negative_multinomial_mean_variance(dargs)?;
       Ok(mean)
     }
     Expr::FunctionCall {
@@ -920,7 +919,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } if dist_name == "WishartMatrixDistribution" && dargs.len() == 2 => {
       // Invalid parameters have already emitted their message; the call
       // stays unevaluated.
-      match super::distributions::wishart_mean_variance(dargs) {
+      match wishart_mean_variance(dargs) {
         Ok((mean, _)) => Ok(mean),
         Err(_) => Ok(unevaluated("Mean", args)),
       }
@@ -929,7 +928,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: dist_name,
       args: dargs,
     } if dist_name == "FirstPassageTimeDistribution" && dargs.len() == 2 => {
-      match super::distributions::fptd_mean(dargs)? {
+      match fptd_mean(dargs)? {
         Some(mean) => Ok(mean),
         None => Ok(unevaluated("Mean", args)),
       }
@@ -941,7 +940,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Mean of a Markov chain's stationary distribution: Σ k π_k.
       if let Expr::FunctionCall { name, args: mp } = &dargs[0]
         && name == "DiscreteMarkovProcess"
-        && let Some(mean) = super::distributions::dmp_stationary_mean(mp)?
+        && let Some(mean) = dmp_stationary_mean(mp)?
       {
         return Ok(mean);
       }
@@ -963,15 +962,14 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: dist_name,
       args: dargs,
     } if dist_name == "DirichletDistribution" => {
-      let (mean, _) = super::distributions::dirichlet_mean_variance(dargs)?;
+      let (mean, _) = dirichlet_mean_variance(dargs)?;
       Ok(mean)
     }
     Expr::FunctionCall {
       name: dist_name,
       args: dargs,
     } if dist_name == "MultivariatePoissonDistribution" => {
-      let (mean, _) =
-        super::distributions::multivariate_poisson_mean_variance(dargs)?;
+      let (mean, _) = multivariate_poisson_mean_variance(dargs)?;
       Ok(mean)
     }
     Expr::FunctionCall {
@@ -979,7 +977,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: dargs,
     } if dist_name == "BinormalDistribution" => {
       // Mean[BinormalDistribution[{m1, m2}, …]] = {m1, m2}.
-      match super::distributions::binormal_params(dargs) {
+      match binormal_params(dargs) {
         Some((m1, m2, ..)) => Ok(Expr::List(vec![m1, m2].into())),
         None => Ok(unevaluated("Mean", args)),
       }
@@ -1002,9 +1000,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Random-process time slices delegate to their slice distribution.
     Expr::CurriedCall { func, args: targs } if targs.len() == 1 => {
       if let Expr::FunctionCall { name, args: dargs } = func.as_ref()
-        && let Some(slice) = super::distributions::process_slice_distribution(
-          name, dargs, &targs[0],
-        )
+        && let Some(slice) = process_slice_distribution(name, dargs, &targs[0])
       {
         return mean_ast(&[slice]);
       }
@@ -1115,14 +1111,10 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(uneval) = rectt_if_ragged("Variance", args) {
     return Ok(uneval);
   }
-  if let Some((_, variance)) =
-    super::distributions::truncated_mean_variance(&args[0])?
-  {
+  if let Some((_, variance)) = truncated_mean_variance(&args[0])? {
     return Ok(variance);
   }
-  if let Some((_, variance)) =
-    super::distributions::censored_mean_variance(&args[0])?
-  {
+  if let Some((_, variance)) = censored_mean_variance(&args[0])? {
     return Ok(variance);
   }
   match &args[0] {
@@ -1170,9 +1162,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let sum_sq: BigInt = int_vals.iter().map(|x| x * x).sum();
         let numer = &n * &sum_sq - &sum * &sum;
         let denom = &n * (&n - BigInt::from(1));
-        return Ok(crate::functions::math_ast::make_rational_expr(
-          numer, denom,
-        ));
+        return Ok(make_rational_expr(numer, denom));
       }
       let _ = has_real;
       if !all_int {
@@ -1299,7 +1289,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       // Invalid parameters emit a message and leave the call unevaluated
       // (matching wolframscript), never an evaluation error.
-      match super::distributions::distribution_mean_variance(dist_name, dargs) {
+      match distribution_mean_variance(dist_name, dargs) {
         Ok((_, variance)) => crate::evaluator::evaluate_expr_to_expr(&variance),
         Err(_) => Ok(unevaluated("Variance", args)),
       }
@@ -1308,7 +1298,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: dist_name,
       args: dargs,
     } if dist_name == "JohnsonDistribution" => {
-      match super::distributions::distribution_mean_variance(dist_name, dargs) {
+      match distribution_mean_variance(dist_name, dargs) {
         Ok((_, variance)) => crate::evaluator::evaluate_expr_to_expr(&variance),
         Err(_) => Ok(Expr::FunctionCall {
           name: "Variance".to_string(),
@@ -1335,16 +1325,14 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: dist_name,
       args: dargs,
     } if dist_name == "MultinomialDistribution" => {
-      let (_, variance) =
-        super::distributions::multinomial_mean_variance(dargs)?;
+      let (_, variance) = multinomial_mean_variance(dargs)?;
       Ok(variance)
     }
     Expr::FunctionCall {
       name: dist_name,
       args: dargs,
     } if dist_name == "NegativeMultinomialDistribution" => {
-      let (_, variance) =
-        super::distributions::negative_multinomial_mean_variance(dargs)?;
+      let (_, variance) = negative_multinomial_mean_variance(dargs)?;
       Ok(variance)
     }
     Expr::FunctionCall {
@@ -1353,7 +1341,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } if dist_name == "WishartMatrixDistribution" && dargs.len() == 2 => {
       // Invalid parameters have already emitted their message; the call
       // stays unevaluated.
-      match super::distributions::wishart_mean_variance(dargs) {
+      match wishart_mean_variance(dargs) {
         Ok((_, variance)) => Ok(variance),
         Err(_) => Ok(unevaluated("Variance", args)),
       }
@@ -1362,7 +1350,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: dist_name,
       args: dargs,
     } if dist_name == "FirstPassageTimeDistribution" && dargs.len() == 2 => {
-      match super::distributions::fptd_variance(dargs)? {
+      match fptd_variance(dargs)? {
         Some(variance) => Ok(variance),
         None => Ok(unevaluated("Variance", args)),
       }
@@ -1381,15 +1369,14 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: dist_name,
       args: dargs,
     } if dist_name == "DirichletDistribution" => {
-      let (_, variance) = super::distributions::dirichlet_mean_variance(dargs)?;
+      let (_, variance) = dirichlet_mean_variance(dargs)?;
       Ok(variance)
     }
     Expr::FunctionCall {
       name: dist_name,
       args: dargs,
     } if dist_name == "MultivariatePoissonDistribution" => {
-      let (_, variance) =
-        super::distributions::multivariate_poisson_mean_variance(dargs)?;
+      let (_, variance) = multivariate_poisson_mean_variance(dargs)?;
       Ok(variance)
     }
     Expr::FunctionCall {
@@ -1397,7 +1384,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: dargs,
     } if dist_name == "BinormalDistribution" => {
       // Variance[BinormalDistribution[…, {s1, s2}, …]] = {s1^2, s2^2}.
-      match super::distributions::binormal_params(dargs) {
+      match binormal_params(dargs) {
         Some((_, _, s1, s2, _)) => {
           let sq = |s: Expr| binop(BinaryOperator::Power, s, Expr::Integer(2));
           crate::evaluator::evaluate_expr_to_expr(&Expr::List(
@@ -1423,9 +1410,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Random-process time slices delegate to their slice distribution.
     Expr::CurriedCall { func, args: targs } if targs.len() == 1 => {
       if let Expr::FunctionCall { name, args: dargs } = func.as_ref()
-        && let Some(slice) = super::distributions::process_slice_distribution(
-          name, dargs, &targs[0],
-        )
+        && let Some(slice) = process_slice_distribution(name, dargs, &targs[0])
       {
         return variance_ast(&[slice]);
       }
@@ -1538,8 +1523,7 @@ pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // symbolic sigma of unknown sign.
   if let Expr::FunctionCall { name, args: dargs } = &args[0]
     && name == "BinormalDistribution"
-    && let Some((_, _, s1, s2, _)) =
-      super::distributions::binormal_params(dargs)
+    && let Some((_, _, s1, s2, _)) = binormal_params(dargs)
   {
     return Ok(Expr::List(vec![s1, s2].into()));
   }
@@ -1845,12 +1829,12 @@ pub fn geometric_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .any(|i| matches!(i, Expr::Real(_) | Expr::BigFloat(_, _)));
       // Exact path: if all elements are exact (integers or rationals),
       // compute product symbolically and return Power[product, 1/n]
-      let product = super::times_ast(items);
+      let product = times_ast(items);
       if let Ok(ref prod) = product
         && !has_real
       {
-        let exponent = super::make_rational(1, n);
-        return super::power_two(prod, &exponent);
+        let exponent = make_rational(1, n);
+        return power_two(prod, &exponent);
       }
       // Float path
       let mut vals = Vec::new();
@@ -2319,7 +2303,7 @@ pub fn covariance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Expr::FunctionCall { name, args: dargs } = &args[0]
     && name == "DirichletDistribution"
   {
-    return super::distributions::dirichlet_covariance(dargs);
+    return dirichlet_covariance(dargs);
   }
 
   // Covariance[NegativeMultinomialDistribution[n, {p1, …}]] is the k×k
@@ -2328,7 +2312,7 @@ pub fn covariance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Expr::FunctionCall { name, args: dargs } = &args[0]
     && name == "NegativeMultinomialDistribution"
   {
-    return super::distributions::negative_multinomial_covariance(dargs);
+    return negative_multinomial_covariance(dargs);
   }
 
   // Covariance[BinormalDistribution[…, {s1, s2}, rho]] is the 2×2 covariance
@@ -2336,8 +2320,7 @@ pub fn covariance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 1
     && let Expr::FunctionCall { name, args: dargs } = &args[0]
     && name == "BinormalDistribution"
-    && let Some((_, _, s1, s2, rho)) =
-      super::distributions::binormal_params(dargs)
+    && let Some((_, _, s1, s2, rho)) = binormal_params(dargs)
   {
     use BinaryOperator as B;
     let sq = |s: Expr| binop(B::Power, s, Expr::Integer(2));
@@ -2472,10 +2455,8 @@ fn transpose_rows(rows: &[Expr]) -> Option<Vec<Vec<Expr>>> {
 /// Returns `None` if any element is non-numeric.
 fn average_ranks(items: &[Expr]) -> Option<Vec<Expr>> {
   let n = items.len();
-  let vals: Vec<f64> = items
-    .iter()
-    .map(crate::functions::math_ast::try_eval_to_f64)
-    .collect::<Option<_>>()?;
+  let vals: Vec<f64> =
+    items.iter().map(try_eval_to_f64).collect::<Option<_>>()?;
   let mut order: Vec<usize> = (0..n).collect();
   order.sort_by(|&a, &b| {
     vals[a]
@@ -2492,7 +2473,7 @@ fn average_ranks(items: &[Expr]) -> Option<Vec<Expr>> {
     // Positions i+1 ..= j+1 (1-based); shared rank = mean of positions.
     let count = (j - i + 1) as i128;
     let sum_pos: i128 = ((i as i128 + 1)..=(j as i128 + 1)).sum();
-    let rank = crate::functions::math_ast::make_rational(sum_pos, count);
+    let rank = make_rational(sum_pos, count);
     for &idx in &order[i..=j] {
       ranks[idx] = rank.clone();
     }
@@ -2558,12 +2539,8 @@ pub fn kendall_tau_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return rctneqln(),
   };
   let (Some(xf), Some(yf)) = (
-    x.iter()
-      .map(crate::functions::math_ast::try_eval_to_f64)
-      .collect::<Option<Vec<f64>>>(),
-    y.iter()
-      .map(crate::functions::math_ast::try_eval_to_f64)
-      .collect::<Option<Vec<f64>>>(),
+    x.iter().map(try_eval_to_f64).collect::<Option<Vec<f64>>>(),
+    y.iter().map(try_eval_to_f64).collect::<Option<Vec<f64>>>(),
   ) else {
     return rctneqln();
   };
@@ -2722,9 +2699,7 @@ pub fn hoeffding_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   let to_f64s = |v: &[Expr]| -> Option<Vec<f64>> {
-    v.iter()
-      .map(crate::functions::math_ast::try_eval_to_f64)
-      .collect()
+    v.iter().map(try_eval_to_f64).collect()
   };
   let has_real = |v: &[Expr]| {
     v.iter()
@@ -2844,9 +2819,7 @@ fn rank_statistic_forms(
     unevaluated()
   };
   let to_f64s = |v: &[Expr]| -> Option<Vec<f64>> {
-    v.iter()
-      .map(crate::functions::math_ast::try_eval_to_f64)
-      .collect()
+    v.iter().map(try_eval_to_f64).collect()
   };
   let has_real = |v: &[Expr]| {
     v.iter()
@@ -4232,17 +4205,15 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A truncated distribution maps the requested quantile onto the base
   // distribution's scale.
   if args.len() == 2
-    && let Some(value) = super::distributions::truncated_distribution_value(
-      "Quantile", &args[0], &args[1],
-    )?
+    && let Some(value) =
+      truncated_distribution_value("Quantile", &args[0], &args[1])?
   {
     return Ok(value);
   }
   // A censored distribution clamps the base quantile to the range.
   if args.len() == 2
-    && let Some(value) = super::distributions::censored_distribution_value(
-      "Quantile", &args[0], &args[1],
-    )?
+    && let Some(value) =
+      censored_distribution_value("Quantile", &args[0], &args[1])?
   {
     return Ok(value);
   }
@@ -4251,7 +4222,7 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // result). For plain data a symbolic q is also rejected, whereas a
   // distribution accepts a symbolic q (yielding a ConditionalExpression).
   let q_invalid = |e: &Expr, data_is_list: bool| -> bool {
-    match crate::functions::math_ast::try_eval_to_f64(e) {
+    match try_eval_to_f64(e) {
       Some(v) => !(0.0..=1.0).contains(&v),
       None => data_is_list,
     }
@@ -4275,7 +4246,7 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let gamma = Expr::FunctionCall {
       name: "GammaDistribution".to_string(),
-      args: super::distributions::erlang_gamma_dargs(dargs)?.into(),
+      args: erlang_gamma_dargs(dargs)?.into(),
     };
     let mut new_args = args.to_vec();
     new_args[0] = gamma;
@@ -4287,7 +4258,7 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && args.len() == 2
     && !matches!(&args[1], Expr::List(_))
   {
-    return super::distributions::wakeby_quantile(dargs, &args[1]);
+    return wakeby_quantile(dargs, &args[1]);
   }
   // Quantile[dist, {p1, p2, ...}] for a distribution head threads over the
   // probability list (the second argument of Quantile is always a scalar
@@ -4360,16 +4331,11 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // then fall back to the numerical CDF-inversion for ProbabilityDistribution.
   if let Expr::FunctionCall { name, args: dargs } = &args[0] {
     if let Some(result) =
-      crate::functions::math_ast::distributions::quantile_distribution_closed_form(
-        name, dargs, &args[1],
-      )
+      quantile_distribution_closed_form(name, dargs, &args[1])
     {
       return Ok(result);
     }
-    if let Some(result) =
-      crate::functions::math_ast::quantile_distribution_numeric(
-        name, dargs, &args[1],
-      )?
+    if let Some(result) = quantile_distribution_numeric(name, dargs, &args[1])?
     {
       return Ok(result);
     }
@@ -7178,9 +7144,7 @@ pub fn biweight_midvariance_ast(
   }
   let c = match args.get(1) {
     None => Expr::Integer(9),
-    Some(e) if crate::functions::math_ast::try_eval_to_f64(e).is_some() => {
-      e.clone()
-    }
+    Some(e) if try_eval_to_f64(e).is_some() => e.clone(),
     _ => return unevaluated(),
   };
   let ev = crate::evaluator::evaluate_expr_to_expr;
@@ -7199,7 +7163,7 @@ pub fn biweight_midvariance_ast(
     })
     .collect();
   let mad = ev(&call("Median", vec![Expr::List(deviations.into())]))?;
-  match crate::functions::math_ast::try_eval_to_f64(&mad) {
+  match try_eval_to_f64(&mad) {
     Some(v) if v != 0.0 => {}
     Some(_) => return Ok(Expr::Identifier("Indeterminate".to_string())),
     None => return unevaluated(),
@@ -7210,7 +7174,7 @@ pub fn biweight_midvariance_ast(
   for x in items.iter() {
     let dev = binop(BinaryOperator::Minus, x.clone(), median.clone());
     let u = ev(&binop(BinaryOperator::Divide, dev.clone(), scale.clone()))?;
-    let Some(u_f) = crate::functions::math_ast::try_eval_to_f64(&u) else {
+    let Some(u_f) = try_eval_to_f64(&u) else {
       return unevaluated();
     };
     if u_f.abs() >= 1.0 {
@@ -7746,10 +7710,7 @@ pub fn characteristic_function_ast(
         e_sym(),
         call(
           "Times",
-          vec![
-            crate::functions::math_ast::make_rational(-1, 2),
-            pow(t.clone(), Expr::Integer(2)),
-          ],
+          vec![make_rational(-1, 2), pow(t.clone(), Expr::Integer(2))],
         ),
       ),
       false,
@@ -9007,7 +8968,7 @@ pub fn ztest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) if items.len() >= 2 => {
       match items
         .iter()
-        .map(crate::functions::math_ast::numeric_utils::try_eval_to_f64)
+        .map(try_eval_to_f64)
         .collect::<Option<Vec<f64>>>()
       {
         Some(v) => v,
@@ -9021,37 +8982,27 @@ pub fn ztest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let variance = match args.get(1) {
     None => None,
     Some(Expr::Identifier(s)) if s == "Automatic" => None,
-    Some(e) => {
-      match crate::functions::math_ast::numeric_utils::try_eval_to_f64(e) {
-        Some(v) if v > 0.0 => Some(v),
-        _ => return Ok(uneval()),
-      }
-    }
+    Some(e) => match try_eval_to_f64(e) {
+      Some(v) if v > 0.0 => Some(v),
+      _ => return Ok(uneval()),
+    },
   }
   .unwrap_or_else(|| {
     data.iter().map(|x| (x - mean) * (x - mean)).sum::<f64>() / (n - 1.0)
   });
   let mu0 = match args.get(2) {
     None => 0.0,
-    Some(e) => {
-      match crate::functions::math_ast::numeric_utils::try_eval_to_f64(e) {
-        Some(v) => v,
-        None => return Ok(uneval()),
-      }
-    }
+    Some(e) => match try_eval_to_f64(e) {
+      Some(v) => v,
+      None => return Ok(uneval()),
+    },
   };
   let z = (mean - mu0) / (variance / n).sqrt();
   match args.get(3) {
-    None => Ok(Expr::Real(
-      crate::functions::math_ast::numeric_utils::erfc_cf(
-        z.abs() / std::f64::consts::SQRT_2,
-      ),
-    )),
-    Some(Expr::String(p)) if p == "PValue" => Ok(Expr::Real(
-      crate::functions::math_ast::numeric_utils::erfc_cf(
-        z.abs() / std::f64::consts::SQRT_2,
-      ),
-    )),
+    None => Ok(Expr::Real(erfc_cf(z.abs() / std::f64::consts::SQRT_2))),
+    Some(Expr::String(p)) if p == "PValue" => {
+      Ok(Expr::Real(erfc_cf(z.abs() / std::f64::consts::SQRT_2)))
+    }
     Some(Expr::String(p)) if p == "TestStatistic" => Ok(Expr::Real(z)),
     _ => Ok(uneval()),
   }
@@ -9079,7 +9030,7 @@ pub fn fisher_ratio_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) if items.len() >= 2 => {
       match items
         .iter()
-        .map(crate::functions::math_ast::numeric_utils::try_eval_to_f64)
+        .map(try_eval_to_f64)
         .collect::<Option<Vec<f64>>>()
       {
         Some(v) => v,
@@ -9090,18 +9041,16 @@ pub fn fisher_ratio_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let sigma2 = match args.get(1) {
     None => 1.0,
-    Some(e) => {
-      match crate::functions::math_ast::numeric_utils::try_eval_to_f64(e) {
-        Some(v) if v > 0.0 => v,
-        _ => {
-          crate::emit_message(&format!(
-            "FisherRatioTest::sigmnt: The argument {} should be a positive number.",
-            expr_to_string(&args[1])
-          ));
-          return Ok(uneval());
-        }
+    Some(e) => match try_eval_to_f64(e) {
+      Some(v) if v > 0.0 => v,
+      _ => {
+        crate::emit_message(&format!(
+          "FisherRatioTest::sigmnt: The argument {} should be a positive number.",
+          expr_to_string(&args[1])
+        ));
+        return Ok(uneval());
       }
-    }
+    },
   };
   let n = data.len() as f64;
   let mean = data.iter().sum::<f64>() / n;
@@ -9115,10 +9064,7 @@ pub fn fisher_ratio_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return Ok(uneval()),
   }
   // Two-sided p-value from the chi-square(n-1) CDF
-  let upper = crate::functions::math_ast::gamma::gamma_regularized_numeric(
-    (n - 1.0) / 2.0,
-    t / 2.0,
-  );
+  let upper = gamma_regularized_numeric((n - 1.0) / 2.0, t / 2.0);
   let lower = 1.0 - upper;
   Ok(Expr::Real(2.0 * lower.min(upper)))
 }
@@ -9637,10 +9583,10 @@ fn erlang_b_symbolic(
   };
   let plausible_symbol = |e: &Expr| {
     !matches!(e, Expr::String(_) | Expr::List(_))
-      && crate::functions::math_ast::try_eval_to_f64(e).is_none()
+      && try_eval_to_f64(e).is_none()
   };
-  let c_num = crate::functions::math_ast::try_eval_to_f64(&args[0]);
-  let a_num = crate::functions::math_ast::try_eval_to_f64(&args[1]);
+  let c_num = try_eval_to_f64(&args[0]);
+  let a_num = try_eval_to_f64(&args[1]);
   // Both numeric → exact numeric path; non-scalar symbolic shapes echo.
   if c_num.is_some() && a_num.is_some() {
     return None;
@@ -9797,7 +9743,7 @@ fn erlang_common(
   // stay unevaluated.
   let c = match &args[0] {
     Expr::Integer(n) if *n >= 1 && *n <= 1_000 => *n as u32,
-    other if crate::functions::math_ast::try_eval_to_f64(other).is_some() => {
+    other if try_eval_to_f64(other).is_some() => {
       crate::emit_message(&format!(
         "{}::intp: Positive integer expected at position 1 in {}[{}, {}].",
         name,
@@ -10192,8 +10138,8 @@ pub fn trimmed_statistic_ast(
     None => (count(0.05, n), count(0.05, n)),
     Some(Expr::List(fractions)) if fractions.len() == 2 => {
       let (Some(first), Some(second)) = (
-        super::try_eval_to_f64(&fractions[0]),
-        super::try_eval_to_f64(&fractions[1]),
+        try_eval_to_f64(&fractions[0]),
+        try_eval_to_f64(&fractions[1]),
       ) else {
         arg2();
         return uneval();
@@ -10205,7 +10151,7 @@ pub fn trimmed_statistic_ast(
       (count(first, n), count(second, n))
     }
     Some(spec) => {
-      let Some(fraction) = super::try_eval_to_f64(spec) else {
+      let Some(fraction) = try_eval_to_f64(spec) else {
         arg2();
         return uneval();
       };
@@ -10243,8 +10189,8 @@ pub fn trimmed_statistic_ast(
   let mut sorted: Vec<Expr> = elems.to_vec();
   sorted.sort_by(|a, b| {
     let (a, b) = (
-      super::try_eval_to_f64(a).unwrap_or(0.0),
-      super::try_eval_to_f64(b).unwrap_or(0.0),
+      try_eval_to_f64(a).unwrap_or(0.0),
+      try_eval_to_f64(b).unwrap_or(0.0),
     );
     a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal)
   });

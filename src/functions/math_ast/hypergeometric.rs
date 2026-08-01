@@ -318,9 +318,8 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       //   0F1[; b; -w] = Gamma[b] w^((1-b)/2) BesselJ[b-1, 2 Sqrt[w]],
       // which is what wolframscript prints. Keeping the I-form would make
       // `Sqrt[z]` imaginary and expand into a complex Sinh/Cosh product.
-      let is_negative_real = is_number(z)
-        && crate::functions::math_ast::try_eval_to_f64(z)
-          .is_some_and(|v| v < 0.0);
+      let is_negative_real =
+        is_number(z) && try_eval_to_f64(z).is_some_and(|v| v < 0.0);
       let (radicand, bessel_name) = if is_negative_real {
         (
           crate::evaluator::evaluate_expr_to_expr(&call(
@@ -363,7 +362,7 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let v = crate::evaluator::evaluate_expr_to_expr(&part)?;
         flatten_times(&v, &mut factors);
       }
-      return crate::functions::math_ast::times_ast(&factors);
+      return times_ast(&factors);
     }
   }
 
@@ -489,9 +488,11 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // simplifications. Delegate so e.g. `HypergeometricPFQ[{6},{1},2]` →
   // `(719*E^2)/15` rather than the unsimplified series.
   if a_list.len() == 1 && b_list.len() == 1 {
-    return crate::functions::math_ast::hypergeometric::hypergeometric1f1_ast(
-      &[a_list[0].clone(), b_list[0].clone(), z.clone()],
-    );
+    return hypergeometric1f1_ast(&[
+      a_list[0].clone(),
+      b_list[0].clone(),
+      z.clone(),
+    ]);
   }
 
   // p=2, q=1 form is exactly Hypergeometric2F1, which carries its own
@@ -501,13 +502,12 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Hypergeometric2F1, so in that case we fall through and keep the input as
   // HypergeometricPFQ.
   if a_list.len() == 2 && b_list.len() == 1 {
-    let reduced =
-      crate::functions::math_ast::hypergeometric::hypergeometric2f1_ast(&[
-        a_list[0].clone(),
-        a_list[1].clone(),
-        b_list[0].clone(),
-        z.clone(),
-      ])?;
+    let reduced = hypergeometric2f1_ast(&[
+      a_list[0].clone(),
+      a_list[1].clone(),
+      b_list[0].clone(),
+      z.clone(),
+    ])?;
     let is_bare_2f1 = matches!(
       &reduced,
       Expr::FunctionCall { name, .. } if name == "Hypergeometric2F1"
@@ -573,7 +573,7 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ]
       .into(),
     };
-    return crate::functions::math_ast::times_ast(&[
+    return times_ast(&[
       Expr::Integer(-4),
       inner_neg,
       Expr::FunctionCall {
@@ -1578,7 +1578,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           &[Expr::Integer(num), z_pow],
         )?,
         (num, den) => {
-          let rat = crate::functions::math_ast::make_rational(num, den);
+          let rat = make_rational(num, den);
           crate::evaluator::evaluate_function_call_ast("Times", &[rat, z_pow])?
         }
       };
@@ -1616,14 +1616,13 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // real path.
   let any_inexact = args.iter().any(|a| {
     matches!(a, Expr::Real(_) | Expr::BigFloat(_, _))
-      || crate::functions::math_ast::try_extract_complex_float(a)
-        .is_some_and(|(_, im)| im != 0.0)
+      || try_extract_complex_float(a).is_some_and(|(_, im)| im != 0.0)
   });
   if any_inexact
     && let (Some(a), Some(b), Some(z)) = (
-      crate::functions::math_ast::try_extract_complex_float(&args[0]),
-      crate::functions::math_ast::try_extract_complex_float(&args[1]),
-      crate::functions::math_ast::try_extract_complex_float(&args[2]),
+      try_extract_complex_float(&args[0]),
+      try_extract_complex_float(&args[1]),
+      try_extract_complex_float(&args[2]),
     )
   {
     let inexact_marker = matches!(&args[0], Expr::Real(_))
@@ -1634,7 +1633,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       || z.1 != 0.0;
     if inexact_marker {
       let (re, im) = hypergeometric_1f1_complex(a, b, z);
-      return Ok(crate::functions::math_ast::build_complex_float_expr(re, im));
+      return Ok(build_complex_float_expr(re, im));
     }
   }
 
@@ -2378,19 +2377,18 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // arithmetic.
   let any_inexact = args.iter().any(|a| {
     matches!(a, Expr::Real(_) | Expr::BigFloat(_, _))
-      || crate::functions::math_ast::try_extract_complex_float(a)
-        .is_some_and(|(_, im)| im != 0.0)
+      || try_extract_complex_float(a).is_some_and(|(_, im)| im != 0.0)
   });
   if any_inexact
     && let (Some(av), Some(bv), Some(cv), Some(zv)) = (
-      crate::functions::math_ast::try_extract_complex_float(&args[0]),
-      crate::functions::math_ast::try_extract_complex_float(&args[1]),
-      crate::functions::math_ast::try_extract_complex_float(&args[2]),
-      crate::functions::math_ast::try_extract_complex_float(&args[3]),
+      try_extract_complex_float(&args[0]),
+      try_extract_complex_float(&args[1]),
+      try_extract_complex_float(&args[2]),
+      try_extract_complex_float(&args[3]),
     )
   {
     let (re, im) = hypergeometric_2f1_complex(av, bv, cv, zv);
-    return Ok(crate::functions::math_ast::build_complex_float_expr(re, im));
+    return Ok(build_complex_float_expr(re, im));
   }
 
   // Return unevaluated
@@ -3010,13 +3008,9 @@ pub fn whittaker_m_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       im = 0.0;
     }
     if im == 0.0 {
-      return Ok(crate::functions::math_ast::build_complex_float_expr(
-        re, 0.0,
-      ));
+      return Ok(build_complex_float_expr(re, 0.0));
     }
-    return Ok(
-      crate::functions::math_ast::build_complex_float_expr_keep_real(re, im),
-    );
+    return Ok(build_complex_float_expr_keep_real(re, im));
   }
 
   // Unevaluated symbolic form.
@@ -3094,7 +3088,7 @@ pub fn whittaker_w_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               for n in 1..=(-ki) {
                 fact *= n;
               }
-              return Ok(crate::functions::math_ast::make_rational(1, fact));
+              return Ok(make_rational(1, fact));
             }
             let rounded = value.round();
             if (value - rounded).abs() < 1e-12 {
@@ -3143,13 +3137,9 @@ pub fn whittaker_w_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       im = 0.0;
     }
     if im == 0.0 {
-      return Ok(crate::functions::math_ast::build_complex_float_expr(
-        re, 0.0,
-      ));
+      return Ok(build_complex_float_expr(re, 0.0));
     }
-    return Ok(
-      crate::functions::math_ast::build_complex_float_expr_keep_real(re, im),
-    );
+    return Ok(build_complex_float_expr_keep_real(re, im));
   }
 
   // Unevaluated symbolic form.

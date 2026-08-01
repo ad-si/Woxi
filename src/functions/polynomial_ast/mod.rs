@@ -3,6 +3,9 @@
 //! Expand, Factor, Simplify, Coefficient, Exponent, PolynomialQ.
 
 use crate::InterpreterError;
+use crate::functions::math_ast::{
+  gcd_i128, is_sqrt, lcm_i128, make_sqrt, rat_reduce, rat_reduce_bigint,
+};
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, expr_to_string,
   unevaluated,

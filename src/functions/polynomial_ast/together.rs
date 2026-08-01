@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::functions::math_ast::{gcd_i128, rat_reduce};
 
 // ─── Together ───────────────────────────────────────────────────────
 

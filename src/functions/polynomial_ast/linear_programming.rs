@@ -21,7 +21,6 @@
 
 #[allow(unused_imports)]
 use super::*;
-use crate::functions::math_ast::rat_reduce_bigint;
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
 

@@ -1,7 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
-use crate::functions::math_ast::gcd_i128;
 
 /// PolynomialMod[poly, m] — reduce poly modulo m.
 ///

@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::functions::math_ast::{gcd_i128, is_sqrt, make_sqrt, rat_reduce};
+use crate::functions::math_ast::make_divide;
 
 // ─── Cancel ─────────────────────────────────────────────────────────
 
@@ -199,7 +199,7 @@ fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {
             if new_den == [1] {
               return num_expr;
             }
-            return crate::functions::math_ast::make_divide(num_expr, den_expr);
+            return make_divide(num_expr, den_expr);
           }
         }
 
@@ -237,10 +237,7 @@ fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {
           if new_den == [1] {
             return num_expr;
           }
-          return crate::functions::math_ast::make_divide(
-            num_expr,
-            coeffs_to_expr(&new_den, &var),
-          );
+          return make_divide(num_expr, coeffs_to_expr(&new_den, &var));
         }
 
         // A bare negative-constant denominator absorbs its sign into the
@@ -252,7 +249,7 @@ fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {
           && num_coeffs.len() > 1
         {
           let neg_num: Vec<i128> = num_coeffs.iter().map(|c| -c).collect();
-          return crate::functions::math_ast::make_divide(
+          return make_divide(
             coeffs_to_expr(&neg_num, &var),
             Expr::Integer(-den_coeffs[0]),
           );
@@ -507,10 +504,7 @@ fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {
               }
               // Recursively cancel in case more simplification is possible
               return cancel_expr_impl(
-                &crate::functions::math_ast::make_divide(
-                  new_num_expr,
-                  new_den_expr,
-                ),
+                &make_divide(new_num_expr, new_den_expr),
                 canonicalize_sign,
               );
             }
@@ -840,7 +834,7 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
 
   if !changed && !numeric_changed {
     // Nothing was cancelled, return original
-    return crate::functions::math_ast::make_divide(num.clone(), den.clone());
+    return make_divide(num.clone(), den.clone());
   }
 
   // Rebuild numerator and denominator
@@ -870,7 +864,7 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
   if let Expr::Integer(1) = &new_den {
     new_num
   } else {
-    crate::functions::math_ast::make_divide(new_num, new_den)
+    make_divide(new_num, new_den)
   }
 }
 

@@ -190,7 +190,7 @@ pub fn inverse_elliptic_nome_q_ast(
     Expr::Real(f) => Ok(Expr::Real(inverse_elliptic_nome_q_numeric(*f))),
     other => {
       if expr_is_inexact(other)
-        && let Some(q) = crate::functions::math_ast::expr_to_f64(other)
+        && let Some(q) = expr_to_f64(other)
       {
         return Ok(Expr::Real(inverse_elliptic_nome_q_numeric(q)));
       }
@@ -812,14 +812,11 @@ pub fn dedekind_eta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // — e.g. `2*I` should not auto-evaluate numerically).
   let has_real_part = expr_contains_real(&args[0]);
   if has_real_part
-    && let Some((re, im)) =
-      crate::functions::math_ast::try_extract_complex_float(&args[0])
+    && let Some((re, im)) = try_extract_complex_float(&args[0])
     && im > 0.0
   {
     let (eta_re, eta_im) = dedekind_eta_numeric(re, im);
-    return Ok(crate::functions::math_ast::build_complex_float_expr(
-      eta_re, eta_im,
-    ));
+    return Ok(build_complex_float_expr(eta_re, eta_im));
   }
 
   Ok(unevaluated("DedekindEta", args))
@@ -1025,7 +1022,7 @@ fn weierstrass_cm_invariants(
       args: vec![e.clone()].into(),
     };
     let r = crate::evaluator::evaluate_expr_to_expr(&n).ok()?;
-    crate::functions::math_ast::try_extract_complex_float(&r)
+    try_extract_complex_float(&r)
   };
   let (w1, w2) = match (to_complex(w1e), to_complex(w2e)) {
     (Some(a), Some(b)) => (a, b),
@@ -1116,8 +1113,8 @@ pub fn weierstrass_invariants_ast(
     return unevaluated();
   }
   let (w1, w2) = match (
-    crate::functions::math_ast::try_extract_complex_float(&periods[0]),
-    crate::functions::math_ast::try_extract_complex_float(&periods[1]),
+    try_extract_complex_float(&periods[0]),
+    try_extract_complex_float(&periods[1]),
   ) {
     (Some(a), Some(b)) => (a, b),
     _ => return unevaluated(),
@@ -1125,12 +1122,8 @@ pub fn weierstrass_invariants_ast(
   match weierstrass_invariants_numeric(w1, w2) {
     Some((g2, g3)) => Ok(Expr::List(
       vec![
-        crate::functions::math_ast::build_complex_float_expr_keep_real(
-          g2.0, g2.1,
-        ),
-        crate::functions::math_ast::build_complex_float_expr_keep_real(
-          g3.0, g3.1,
-        ),
+        build_complex_float_expr_keep_real(g2.0, g2.1),
+        build_complex_float_expr_keep_real(g3.0, g3.1),
       ]
       .into(),
     )),
@@ -1163,8 +1156,8 @@ pub fn weierstrass_half_periods_ast(
   }
   // Real invariants only; a complex g₂/g₃ falls back to symbolic.
   let (g2, g3) = match (
-    crate::functions::math_ast::try_extract_complex_float(&items[0]),
-    crate::functions::math_ast::try_extract_complex_float(&items[1]),
+    try_extract_complex_float(&items[0]),
+    try_extract_complex_float(&items[1]),
   ) {
     (Some((a, ai)), Some((b, bi))) if ai == 0.0 && bi == 0.0 => (a, b),
     _ => return unevaluated(),
@@ -1196,9 +1189,7 @@ pub fn weierstrass_half_periods_ast(
   Ok(Expr::List(
     vec![
       Expr::Real(omega1),
-      crate::functions::math_ast::build_complex_float_expr_keep_real(
-        0.0, omega2_im,
-      ),
+      build_complex_float_expr_keep_real(0.0, omega2_im),
     ]
     .into(),
   ))
@@ -1221,12 +1212,11 @@ pub fn modular_lambda_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Numeric (machine-precision) argument in the upper half-plane.
   if expr_contains_real(&args[0])
-    && let Some((re, im)) =
-      crate::functions::math_ast::try_extract_complex_float(&args[0])
+    && let Some((re, im)) = try_extract_complex_float(&args[0])
     && im > 0.0
   {
     let (lr, li) = modular_lambda_numeric(re, im);
-    return Ok(crate::functions::math_ast::build_complex_float_expr(lr, li));
+    return Ok(build_complex_float_expr(lr, li));
   }
   unevaluated()
 }
@@ -1246,8 +1236,7 @@ pub fn klein_invariant_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(1));
   }
   if expr_contains_real(&args[0])
-    && let Some((re, im)) =
-      crate::functions::math_ast::try_extract_complex_float(&args[0])
+    && let Some((re, im)) = try_extract_complex_float(&args[0])
     && im > 0.0
   {
     let lam = modular_lambda_numeric(re, im);
@@ -1260,9 +1249,7 @@ pub fn klein_invariant_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let (jr, ji) = cdiv(num, den);
     // wolframscript reports the j-invariant as a complex machine number even on
     // the imaginary axis (e.g. `166.375 + 0.*I`), so keep the imaginary part.
-    return Ok(
-      crate::functions::math_ast::build_complex_float_expr_keep_real(jr, ji),
-    );
+    return Ok(build_complex_float_expr_keep_real(jr, ji));
   }
   unevaluated()
 }
@@ -1619,10 +1606,7 @@ pub fn neville_theta_ast(
   // arguments stay symbolic in wolframscript).
   let has_real = matches!(z, Expr::Real(_)) || matches!(m, Expr::Real(_));
   if has_real
-    && let (Some(zv), Some(mv)) = (
-      crate::functions::math_ast::try_eval_to_f64(z),
-      crate::functions::math_ast::try_eval_to_f64(m),
-    )
+    && let (Some(zv), Some(mv)) = (try_eval_to_f64(z), try_eval_to_f64(m))
     && let Some(v) = neville_theta_numeric(kind, zv, mv)
   {
     return Ok(Expr::Real(v));

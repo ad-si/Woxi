@@ -2,7 +2,9 @@ use super::together::negate_expr;
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
-use crate::functions::math_ast::{gcd_i128, is_sqrt, make_sqrt, rat_reduce};
+use crate::functions::math_ast::{
+  make_rational, n_ast, try_eval_to_f64, try_extract_complex_float,
+};
 
 /// In Solve context, simplify Sqrt[expr^(2n)] → expr^n since ± handles the sign.
 /// Also simplifies products containing such terms.
@@ -113,10 +115,10 @@ fn filter_real_nsolve_solutions(expr: Expr) -> Expr {
       let Expr::Rule { replacement, .. } = r else {
         return true;
       };
-      if crate::functions::math_ast::try_eval_to_f64(replacement).is_some() {
+      if try_eval_to_f64(replacement).is_some() {
         return true;
       }
-      match crate::functions::math_ast::try_extract_complex_float(replacement) {
+      match try_extract_complex_float(replacement) {
         Some((_re, im)) => im.abs() < 1e-8,
         // A non-numeric (still symbolic) replacement is left in place.
         None => true,
@@ -143,10 +145,10 @@ fn sort_nsolve_solutions(expr: Expr) -> Expr {
     return expr;
   };
   let value_of = |replacement: &Expr| -> Option<(f64, f64)> {
-    if let Some(v) = crate::functions::math_ast::try_eval_to_f64(replacement) {
+    if let Some(v) = try_eval_to_f64(replacement) {
       return Some((v, 0.0));
     }
-    crate::functions::math_ast::try_extract_complex_float(replacement)
+    try_extract_complex_float(replacement)
   };
   let key = |item: &Expr| -> Option<(f64, f64)> {
     if let Expr::List(rules) = item
@@ -259,7 +261,7 @@ fn try_nsolve_quadratic(
   for d in 0..=2 {
     for term in &terms {
       if let Some(c) = extract_coefficient_of_power(term, &var, d as i128) {
-        let val = crate::functions::math_ast::try_eval_to_f64(&simplify(c))?;
+        let val = try_eval_to_f64(&simplify(c))?;
         coeffs_f64[d] += val;
       }
     }
@@ -370,7 +372,7 @@ fn try_nsolve_pure_power(
   for (d, slot) in coeffs_f64.iter_mut().enumerate() {
     for term in &terms {
       if let Some(c) = extract_coefficient_of_power(term, &var, d as i128) {
-        *slot += crate::functions::math_ast::try_eval_to_f64(&simplify(c))?;
+        *slot += try_eval_to_f64(&simplify(c))?;
       }
     }
   }
@@ -428,7 +430,7 @@ fn complex_pow(a: f64, b: f64, c: f64, d: f64) -> (f64, f64) {
 /// symbolic `Power` into NSolve's output.
 fn eval_complex_full(expr: &Expr) -> Option<(f64, f64)> {
   // Reuse the existing extractor for everything but Power.
-  if let Some(v) = crate::functions::math_ast::try_extract_complex_float(expr) {
+  if let Some(v) = try_extract_complex_float(expr) {
     return Some(v);
   }
   let pow_parts = |base: &Expr, exp: &Expr| -> Option<(f64, f64)> {
@@ -521,7 +523,7 @@ fn nsolve_numerize(expr: &Expr) -> Result<Expr, InterpreterError> {
     }),
     _ => {
       // Try pure real first
-      if let Some(v) = crate::functions::math_ast::try_eval_to_f64(expr) {
+      if let Some(v) = try_eval_to_f64(expr) {
         return Ok(Expr::Real(v));
       }
       // Try complex (handles I, -I, a + b*I, and radical Power roots like
@@ -697,7 +699,7 @@ pub fn nroots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for d in 0..=degree {
     for term in &terms {
       if let Some(c) = extract_coefficient_of_power(term, &var, d as i128) {
-        let val = crate::functions::math_ast::try_eval_to_f64(&simplify(c));
+        let val = try_eval_to_f64(&simplify(c));
         match val {
           Some(v) => coeffs[d] += v,
           None => return Ok(unevaluated()),
@@ -2267,7 +2269,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   | ComparisonOp::Greater
                   | ComparisonOp::GreaterEqual)));
             is_ordering
-              && crate::functions::math_ast::try_extract_complex_float(&numeric)
+              && try_extract_complex_float(&numeric)
                 .is_some_and(|(_re, im)| im.abs() > 1e-10)
           };
           let violated = matches!(sol, Expr::List(rules) if rules.iter().any(|rule| {
@@ -2288,8 +2290,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
             if let Expr::List(rules) = sol
               && let Some(Expr::Rule { replacement, .. }) = rules.first()
             {
-              crate::functions::math_ast::try_eval_to_f64(replacement)
-                .unwrap_or(f64::INFINITY)
+              try_eval_to_f64(replacement).unwrap_or(f64::INFINITY)
             } else {
               f64::INFINITY
             }
@@ -2671,8 +2672,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
               // Special case: when nb == 0 and so == 1, absorb denominator into Sqrt
               // E.g. Sqrt[6]/2 → Sqrt[3/2] to match Wolfram's canonical form
               if nb == 0 && den != 1 && so == 1 {
-                let rational_arg =
-                  crate::functions::math_ast::make_rational(sqrt_in, den * den);
+                let rational_arg = make_rational(sqrt_in, den * den);
                 if let Ok(simplified) =
                   crate::functions::math_ast::sqrt_ast(&[rational_arg])
                 {
@@ -2729,11 +2729,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
             let make_neg1_pow = |p: i128, q: i128| -> Expr {
               Expr::FunctionCall {
                 name: "Power".to_string(),
-                args: vec![
-                  Expr::Integer(-1),
-                  crate::functions::math_ast::make_rational(p, q),
-                ]
-                .into(),
+                args: vec![Expr::Integer(-1), make_rational(p, q)].into(),
               }
             };
             // After multiplying by -1, the b/a sign flips along with a's
@@ -2986,7 +2982,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // Solve[x^3 == -2, x] gives -2^(1/3), not (-2)^(1/3), as its
           // second solution.
           let negative_val = matches!(
-            crate::functions::math_ast::try_eval_to_f64(&val),
+            try_eval_to_f64(&val),
             Some(v) if v < 0.0
           );
           let root_of = |value: &Expr| -> Expr {
@@ -3221,7 +3217,7 @@ fn max_degree_of_var(eq: &Expr, var: &str) -> Option<i128> {
 fn numeric_polynomial_solutions(coeffs: &[Expr], var: &str) -> Option<Expr> {
   let mut numeric = Vec::with_capacity(coeffs.len());
   for c in coeffs {
-    numeric.push(crate::functions::math_ast::try_eval_to_f64(c)?);
+    numeric.push(try_eval_to_f64(c)?);
   }
   let degree = numeric.len().checked_sub(1)?;
   if degree < 1 || numeric[degree].abs() < 1e-300 {
@@ -3674,7 +3670,7 @@ fn try_solve_abs_eq(
   };
 
   let mut solutions: Vec<Expr> = Vec::new();
-  match crate::functions::math_ast::try_eval_to_f64(&eff) {
+  match try_eval_to_f64(&eff) {
     Some(v) if v < 0.0 => {} // no real solution → {}
     Some(0.0) => {
       solutions.extend(solve_branch(Expr::Integer(0))?);
@@ -3708,9 +3704,7 @@ fn try_solve_abs_eq(
 /// back unchanged.
 fn strip_constant_factor(expr: &Expr, var: &str) -> Expr {
   let is_nonzero_const = |e: &Expr| -> bool {
-    !contains_var(e, var)
-      && crate::functions::math_ast::try_eval_to_f64(e)
-        .is_some_and(|v| v != 0.0)
+    !contains_var(e, var) && try_eval_to_f64(e).is_some_and(|v| v != 0.0)
   };
   match expr {
     Expr::UnaryOp {
@@ -3791,7 +3785,7 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
     // Sin/Cos is still solved symbolically via ArcSin/ArcCos (the inverse is
     // complex-valued), matching wolframscript's ConditionalExpression form —
     // e.g. Solve[Cos[x] == 2, x] -> ±ArcCos[2] + 2*Pi*C[1].
-    let _c = crate::functions::math_ast::try_eval_to_f64(rhs)?;
+    let _c = try_eval_to_f64(rhs)?;
   }
 
   let var_expr = Expr::Identifier(var.to_string());
@@ -3820,7 +3814,7 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
   };
   let neg_half_pi = Expr::BinaryOp {
     op: BinaryOperator::Times,
-    left: Box::new(crate::functions::math_ast::make_rational(-1, 2)),
+    left: Box::new(make_rational(-1, 2)),
     right: Box::new(pi.clone()),
   };
   let half_pi = Expr::BinaryOp {
@@ -4482,9 +4476,7 @@ pub fn solve_divide(num: &Expr, den: &Expr) -> Expr {
   match (num, den) {
     (Expr::Integer(0), _) => Expr::Integer(0),
     (_, Expr::Integer(1)) => num.clone(),
-    (Expr::Integer(n), Expr::Integer(d)) if *d != 0 => {
-      crate::functions::math_ast::make_rational(*n, *d)
-    }
+    (Expr::Integer(n), Expr::Integer(d)) if *d != 0 => make_rational(*n, *d),
     // Non-integer denominator (a rational such as -1/2, or a symbolic
     // expression): evaluate the quotient so it is fully simplified
     // (e.g. -x / (-1/2) -> 2*x) rather than left as a nested fraction.
@@ -5351,8 +5343,7 @@ fn build_find_root_func(arg: &Expr) -> Expr {
 /// Try to evaluate `expr` to a complex `(re, im)` pair using f64
 /// arithmetic. Returns None when the expression isn't fully numeric.
 fn try_extract_complex_f64(expr: &Expr) -> Option<(f64, f64)> {
-  let n_result =
-    crate::functions::math_ast::n_ast(std::slice::from_ref(expr)).ok()?;
+  let n_result = n_ast(std::slice::from_ref(expr)).ok()?;
   expr_to_complex_f64(&n_result)
 }
 
@@ -5498,7 +5489,7 @@ fn find_root_eval_complex_at(
   if let Some(c) = expr_to_complex_f64(&evaled) {
     return Some(c);
   }
-  let n_result = crate::functions::math_ast::n_ast(&[evaled]).ok()?;
+  let n_result = n_ast(&[evaled]).ok()?;
   expr_to_complex_f64(&n_result)
 }
 
@@ -5631,7 +5622,7 @@ fn find_root_eval_at(
     }
     _ => {
       // Try N[] evaluation
-      let n_result = crate::functions::math_ast::n_ast(&[evaled])?;
+      let n_result = n_ast(&[evaled])?;
       match &n_result {
         Expr::Real(r) => Ok(*r),
         Expr::Integer(n) => Ok(*n as f64),
@@ -5705,7 +5696,7 @@ fn find_root_eval_multivar(
       }
     }
     _ => {
-      let n_result = crate::functions::math_ast::n_ast(&[evaled])?;
+      let n_result = n_ast(&[evaled])?;
       match &n_result {
         Expr::Real(r) => Ok(*r),
         Expr::Integer(k) => Ok(*k as f64),
@@ -6347,9 +6338,7 @@ fn minimize_try_f64(expr: &Expr) -> Option<f64> {
       }
     }
     _ => {
-      if let Ok(n_result) =
-        crate::functions::math_ast::n_ast(std::slice::from_ref(expr))
-      {
+      if let Ok(n_result) = n_ast(std::slice::from_ref(expr)) {
         match n_result {
           Expr::Real(r) => Some(r),
           Expr::Integer(n) => Some(n as f64),
@@ -6445,8 +6434,7 @@ fn minimize_poly_roots_int(coeffs: &[i128], var: &str) -> Vec<Expr> {
               // When nb == 0 and den != 1 and so == 1, use Sqrt[sqrt_in/den^2]
               // to produce canonical form like Sqrt[3/2] instead of Sqrt[6]/2
               if nb == 0 && den != 1 && so == 1 {
-                let rational_arg =
-                  crate::functions::math_ast::make_rational(sqrt_in, den * den);
+                let rational_arg = make_rational(sqrt_in, den * den);
                 if let Ok(simplified) =
                   crate::functions::math_ast::sqrt_ast(&[rational_arg])
                 {
@@ -9331,14 +9319,12 @@ fn specialize_periodic_solution(
     })
   };
   // Linear coefficients: a = body | C=0, b = Coefficient[body, C, 1].
-  let a = crate::functions::math_ast::try_eval_to_f64(&subst_param(
-    Expr::Integer(0),
-  )?)?;
+  let a = try_eval_to_f64(&subst_param(Expr::Integer(0))?)?;
   let b_expr = eval(Expr::FunctionCall {
     name: "Coefficient".to_string(),
     args: vec![body.clone(), param.clone(), Expr::Integer(1)].into(),
   })?;
-  let b = crate::functions::math_ast::try_eval_to_f64(&b_expr)?;
+  let b = try_eval_to_f64(&b_expr)?;
   if b.abs() < 1e-12 {
     return None;
   }
@@ -9351,7 +9337,7 @@ fn specialize_periodic_solution(
         if crate::syntax::expr_to_string(op) == var_name {
           continue;
         }
-        if let Some(v) = crate::functions::math_ast::try_eval_to_f64(op) {
+        if let Some(v) = try_eval_to_f64(op) {
           x_bounds.push(v);
         }
       }
@@ -9735,8 +9721,7 @@ fn expr_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
       }
     }
     _ => {
-      let n_result =
-        crate::functions::math_ast::n_ast(std::slice::from_ref(expr))?;
+      let n_result = n_ast(std::slice::from_ref(expr))?;
       match &n_result {
         Expr::Real(r) => Ok(*r),
         Expr::Integer(n) => Ok(*n as f64),

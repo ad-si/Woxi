@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::functions::math_ast::{gcd_i128, lcm_i128, rat_reduce};
+use crate::functions::math_ast::times_ast;
 
 // ─── Apart ──────────────────────────────────────────────────────────
 
@@ -1237,8 +1237,7 @@ fn extract_leading_sign(expr: &Expr) -> (i128, Expr) {
       let (lsign, labs) = extract_leading_sign(left);
       if lsign < 0 {
         let rebuilt =
-          crate::functions::math_ast::times_ast(&[labs, *right.clone()])
-            .unwrap_or(*right.clone());
+          times_ast(&[labs, *right.clone()]).unwrap_or(*right.clone());
         (-1, rebuilt)
       } else {
         (1, expr.clone())
@@ -1251,8 +1250,7 @@ fn extract_leading_sign(expr: &Expr) -> (i128, Expr) {
       if lsign < 0 {
         let mut new_args = vec![labs];
         new_args.extend_from_slice(&args[1..]);
-        let rebuilt = crate::functions::math_ast::times_ast(&new_args)
-          .unwrap_or(expr.clone());
+        let rebuilt = times_ast(&new_args).unwrap_or(expr.clone());
         (-1, rebuilt)
       } else {
         (1, expr.clone())
@@ -1284,11 +1282,8 @@ fn apart_symbolic(
   for f in &factors {
     if !crate::functions::polynomial_ast::contains_var(f, var) {
       // Constant factor (doesn't contain var)
-      other_factor = crate::functions::math_ast::times_ast(&[
-        other_factor.clone(),
-        f.clone(),
-      ])
-      .unwrap_or(other_factor);
+      other_factor =
+        times_ast(&[other_factor.clone(), f.clone()]).unwrap_or(other_factor);
       continue;
     }
     if let Some((coeff, constant)) = extract_linear_coeffs(f, var) {
@@ -1341,8 +1336,7 @@ fn apart_symbolic(
         scalar_parts.push(fj_at_ri);
       }
     }
-    let scalar = crate::functions::math_ast::times_ast(&scalar_parts)
-      .unwrap_or(Expr::Integer(1));
+    let scalar = times_ast(&scalar_parts).unwrap_or(Expr::Integer(1));
 
     // Extract sign from scalar: if leading coefficient is negative, flip sign
     let (sign, abs_scalar) = extract_leading_sign(&scalar);
@@ -1363,8 +1357,7 @@ fn apart_symbolic(
     let mut denom_factors = Vec::new();
     flatten_product_factors(&abs_scalar, &mut denom_factors);
     denom_factors.push(factor_for_display);
-    let full_denom = crate::functions::math_ast::times_ast(&denom_factors)
-      .unwrap_or(Expr::Integer(1));
+    let full_denom = times_ast(&denom_factors).unwrap_or(Expr::Integer(1));
 
     // Build fraction. When the term is negative, fold the sign into the
     // numerator so the result evaluates as `-num_val / full_denom` and

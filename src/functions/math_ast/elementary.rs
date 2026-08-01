@@ -69,7 +69,7 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Abs[known positive real] = x (symbolic, no numeric conversion):
   // Pi, E, GoldenRatio, Sqrt[n>0], positive^anything, etc.
-  if crate::functions::math_ast::complex::is_strictly_positive_real(&args[0]) {
+  if is_strictly_positive_real(&args[0]) {
     return Ok(args[0].clone());
   }
   // Abs[Conjugate[x]] = Abs[x]
@@ -98,7 +98,7 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut kept: Vec<Expr> = Vec::new();
       let mut simplified = false;
       for f in &factors {
-        if crate::functions::math_ast::complex::is_strictly_positive_real(f) {
+        if is_strictly_positive_real(f) {
           pulled.push((*f).clone());
           simplified = true;
         } else if let Some(absval) = negative_literal_abs(f) {
@@ -143,7 +143,7 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // complex/symbolic exponents the real-exponent rule below can't reach,
   // e.g. Abs[E^(2 I)] = 1, Abs[E^(2 + 3 I)] = E^2, Abs[2^(I x)] = 2^(-Im[x]).
   if let Some((base, exp)) = as_power(&args[0])
-    && crate::functions::math_ast::complex::is_strictly_positive_real(base)
+    && is_strictly_positive_real(base)
   {
     let re_exp = Expr::FunctionCall {
       name: "Re".to_string(),
@@ -458,7 +458,7 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Sign[2^x] = 2^(I Im[x])). The purely-imaginary-exponent case above already
   // returned the expression unchanged.
   if let Some((base, exp)) = power_parts
-    && crate::functions::math_ast::complex::is_strictly_positive_real(base)
+    && is_strictly_positive_real(base)
   {
     let im_exp = Expr::FunctionCall {
       name: "Im".to_string(),
@@ -713,7 +713,7 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut kept: Vec<Expr> = Vec::new();
       let mut simplified = false;
       for f in &factors {
-        if crate::functions::math_ast::complex::is_strictly_positive_real(f) {
+        if is_strictly_positive_real(f) {
           simplified = true; // Sign = 1, drop it
         } else if negative_literal_abs(f).is_some() {
           pulled.push(Expr::Integer(-1));
@@ -849,10 +849,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // the precision-tracked bigfloat path computes it (rather than leaving
   // `Sqrt[2.`30.]` unevaluated).
   if matches!(&args[0], Expr::BigFloat(_, _)) {
-    return crate::functions::math_ast::power_two(
-      &args[0],
-      &make_rational(1, 2),
-    );
+    return power_two(&args[0], &make_rational(1, 2));
   }
   // Sqrt of a power whose exponents combine — either the inner exponent is
   // numeric with magnitude below 1 (`Sqrt[Sqrt[z]]` = z^(1/4)) or the inner
@@ -878,13 +875,9 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => None,
     };
     if let Some((base, e)) = nested
-      && (crate::functions::math_ast::inner_exp_abs_lt_one(&e)
-        || crate::functions::math_ast::is_pos_numeric(&base))
+      && (inner_exp_abs_lt_one(&e) || is_pos_numeric(&base))
     {
-      return crate::functions::math_ast::power_two(
-        &args[0],
-        &make_rational(1, 2),
-      );
+      return power_two(&args[0], &make_rational(1, 2));
     }
   }
   // Sqrt[I] / Sqrt[-I]: delegate to Power[base, 1/2] so the imaginary-unit
@@ -894,25 +887,18 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::UnaryOp { op: UnaryOperator::Minus, operand }
         if matches!(operand.as_ref(), Expr::Identifier(s) if s == "I"))
   {
-    return crate::functions::math_ast::power_two(
-      &args[0],
-      &make_rational(1, 2),
-    );
+    return power_two(&args[0], &make_rational(1, 2));
   }
   // Sqrt of an inexact complex number (a machine float with a nonzero
   // imaginary part, e.g. `2.0 + 3.0 I`) numericizes via Power[base, 1/2] to
   // match wolframscript, rather than staying wrapped as a symbolic Sqrt[…].
   // Exact complex arguments like `2 + 3 I` have no Real component and are left
   // symbolic.
-  if let Some((_, im)) =
-    crate::functions::math_ast::try_extract_complex_float(&args[0])
+  if let Some((_, im)) = try_extract_complex_float(&args[0])
     && im != 0.0
-    && crate::functions::math_ast::contains_inexact_real(&args[0])
+    && contains_inexact_real(&args[0])
   {
-    return crate::functions::math_ast::power_two(
-      &args[0],
-      &make_rational(1, 2),
-    );
+    return power_two(&args[0], &make_rational(1, 2));
   }
   // Handle Sqrt[Quantity[mag, unit]] by delegating to Power[quantity, 1/2]
   if crate::functions::quantity_ast::is_quantity(&args[0]).is_some() {
@@ -930,7 +916,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let bn = BigInt::from(*n);
       let r = bn.sqrt();
       if &r * &r == bn {
-        return Ok(crate::functions::math_ast::bigint_to_expr(r));
+        return Ok(bigint_to_expr(r));
       }
       // Partial extraction (e.g. Sqrt[12] = 2*Sqrt[3]) runs in u64, so only
       // when n fits u64 — casting a larger i128 to u64 would truncate.
@@ -959,12 +945,8 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Larger than u64: extract square factors in BigInt.
         let (outside, inside) = extract_square_factor_big(&bn);
         if outside > BigInt::from(1) {
-          let sqrt_part =
-            make_sqrt(crate::functions::math_ast::bigint_to_expr(inside));
-          return times_ast(&[
-            crate::functions::math_ast::bigint_to_expr(outside),
-            sqrt_part,
-          ]);
+          let sqrt_part = make_sqrt(bigint_to_expr(inside));
+          return times_ast(&[bigint_to_expr(outside), sqrt_part]);
         }
       }
       // Not a perfect square, return symbolic
@@ -975,16 +957,12 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::BigInteger(n) if *n >= BigInt::from(0) => {
       let r = n.sqrt();
       if &r * &r == *n {
-        return Ok(crate::functions::math_ast::bigint_to_expr(r));
+        return Ok(bigint_to_expr(r));
       }
       let (outside, inside) = extract_square_factor_big(n);
       if outside > BigInt::from(1) {
-        let sqrt_part =
-          make_sqrt(crate::functions::math_ast::bigint_to_expr(inside));
-        return times_ast(&[
-          crate::functions::math_ast::bigint_to_expr(outside),
-          sqrt_part,
-        ]);
+        let sqrt_part = make_sqrt(bigint_to_expr(inside));
+        return times_ast(&[bigint_to_expr(outside), sqrt_part]);
       }
       Ok(make_sqrt(args[0].clone()))
     }
@@ -1065,7 +1043,6 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let (Some(nb), Some(db)) = (to_big(&rargs[0]), to_big(&rargs[1]))
         && db > BigInt::from(0)
       {
-        use crate::functions::math_ast::{bigint_to_expr, make_rational_expr};
         let one = BigInt::from(1);
         let (n_out, n_in) = extract_square_factor_big(&nb);
         let (d_out, d_in) = extract_square_factor_big(&db);
@@ -1329,9 +1306,7 @@ fn has_only_numeric_leaves(e: &Expr) -> bool {
     | Expr::Real(_)
     | Expr::BigFloat(_, _)
     | Expr::Constant(_) => true,
-    Expr::Identifier(name) => {
-      name == "I" || crate::functions::math_ast::is_pos_real_const(name)
-    }
+    Expr::Identifier(name) => name == "I" || is_pos_real_const(name),
     Expr::FunctionCall { args, .. } => args.iter().all(has_only_numeric_leaves),
     Expr::BinaryOp { left, right, .. } => {
       has_only_numeric_leaves(left) && has_only_numeric_leaves(right)
@@ -1367,7 +1342,7 @@ fn numeric_real_value(e: &Expr) -> Option<f64> {
 /// special-function value — and products/powers of those.
 fn is_pos_numeric_factor(e: &Expr) -> bool {
   matches!(e, Expr::Real(r) if *r > 0.0)
-    || crate::functions::math_ast::is_pos_numeric(e)
+    || is_pos_numeric(e)
     || numeric_real_value(e).is_some_and(|v| v > 0.0)
 }
 
@@ -1570,7 +1545,7 @@ fn try_sqrt_plus_gcd(expr: &Expr) -> Option<Expr> {
     } else if new_coeff == 1 {
       new_terms.push(base.clone());
     } else if new_coeff == -1 {
-      new_terms.push(super::trigonometric::negate_expr(base.clone()));
+      new_terms.push(negate_expr(base.clone()));
     } else {
       new_terms.push(Expr::FunctionCall {
         name: "Times".to_string(),
@@ -1603,7 +1578,6 @@ fn try_sqrt_plus_gcd(expr: &Expr) -> Option<Expr> {
 /// choosing the principal root with `p >= 0` (or `p == 0, q > 0`).
 /// Returns `None` if no such integer solution exists.
 fn try_sqrt_gaussian(expr: &Expr) -> Option<Expr> {
-  use crate::functions::math_ast::numeric_utils::try_extract_complex_exact;
   let ((rn, rd), (in_, id)) = try_extract_complex_exact(expr)?;
   // Normalize to integers a and b where z = a + b*I
   // Require both parts to be integers (denominator 1 after reducing)
@@ -1754,17 +1728,11 @@ fn floor_via_bigfloat(
   // plus a safety margin.
   let mag_digits = approx.abs().log10().ceil() as i64;
   let precision = (mag_digits.max(20) as usize) + 10;
-  let bits = crate::functions::math_ast::numerical::nominal_bits(precision);
+  let bits = nominal_bits(precision);
   let mut cc = Consts::new().ok()?;
   let rm = RoundingMode::ToEven;
-  let bf = crate::functions::math_ast::numerical::expr_to_bigfloat(
-    expr, bits, rm, &mut cc,
-  )
-  .ok()?;
-  let decimal = crate::functions::math_ast::numerical::bigfloat_to_string(
-    &bf, None, rm, &mut cc,
-  )
-  .ok()?;
+  let bf = expr_to_bigfloat(expr, bits, rm, &mut cc).ok()?;
+  let decimal = bigfloat_to_string(&bf, None, rm, &mut cc).ok()?;
   // decimal looks like "[-]DIGITS.FRAC" (or just "[-]DIGITS.").
   let (sign, rest) = if let Some(s) = decimal.strip_prefix('-') {
     ("-", s)
@@ -1807,7 +1775,6 @@ fn floor_via_bigfloat(
 /// i128::MAX (e.g. Egyptian-fraction denominators around 1e300). Returns None
 /// for non-exact arguments (Real, symbolic, complex), which fall through.
 fn exact_floor_ceil(arg: &Expr, is_floor: bool) -> Option<Expr> {
-  use crate::functions::math_ast::{bigint_to_expr, expr_to_bigint};
   use num_traits::Zero;
   // Plain integers are already integral.
   if let Some(n) = expr_to_bigint(arg) {
@@ -1858,7 +1825,7 @@ fn infinity_passthrough(arg: &Expr) -> Option<Expr> {
   {
     return Some(arg.clone());
   }
-  if crate::functions::math_ast::is_neg_infinity(arg) {
+  if is_neg_infinity(arg) {
     return Some(arg.clone());
   }
   None
@@ -2369,8 +2336,7 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
   }
   // Exact complex in Plus/Times form: extract and round parts separately
-  if let Some(((rn, rd), (in_, id))) =
-    crate::functions::math_ast::try_extract_complex_exact(&args[0])
+  if let Some(((rn, rd), (in_, id))) = try_extract_complex_exact(&args[0])
     && in_ != 0
   {
     let re_rat = make_rational(rn, rd);
@@ -2406,9 +2372,7 @@ fn is_complex_number(expr: &Expr) -> bool {
   {
     return !matches!(&args[1], Expr::Integer(0));
   }
-  if let Some(((_, _), (in_, _))) =
-    crate::functions::math_ast::try_extract_complex_exact(expr)
-  {
+  if let Some(((_, _), (in_, _))) = try_extract_complex_exact(expr) {
     return in_ != 0;
   }
   false
@@ -2420,7 +2384,7 @@ fn is_complex_number(expr: &Expr) -> bool {
 fn is_infinite_expr(expr: &Expr) -> bool {
   matches!(expr, Expr::Identifier(n) | Expr::Constant(n)
     if n == "Infinity" || n == "ComplexInfinity")
-    || crate::functions::math_ast::is_neg_infinity(expr)
+    || is_neg_infinity(expr)
     || matches!(expr, Expr::FunctionCall { name, .. } if name == "DirectedInfinity")
 }
 
@@ -2454,7 +2418,7 @@ fn infinite_mod_quotient(
     // Quotient[±Infinity, y] diverges in the direction of the dividend,
     // flipped by the sign of the divisor.
     let flip = matches!(
-      crate::functions::math_ast::try_eval_to_f64(n),
+      try_eval_to_f64(n),
       Some(v) if v < 0.0
     );
     let divided =
@@ -2940,7 +2904,7 @@ pub fn quotient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         {
           q -= 1;
         }
-        return Ok(crate::functions::math_ast::bigint_to_expr(q));
+        return Ok(bigint_to_expr(q));
       }
       if let (Some(a), Some(b)) =
         (try_eval_to_f64(&args[0]), try_eval_to_f64(&args[1]))
@@ -2953,8 +2917,8 @@ pub fn quotient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Ok(Expr::Integer((a / b).floor() as i128))
         }
       } else if let (Some((_, a_im)), Some((c_re, c_im))) = (
-        crate::functions::math_ast::try_extract_complex_float(&args[0]),
-        crate::functions::math_ast::try_extract_complex_float(&args[1]),
+        try_extract_complex_float(&args[0]),
+        try_extract_complex_float(&args[1]),
       ) && (a_im != 0.0 || c_im != 0.0)
       {
         if c_re == 0.0 && c_im == 0.0 {
@@ -3033,24 +2997,21 @@ pub fn clip_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // preserved in the result, so Clip[1/2] stays 1/2 and Clip[Pi, {0, 10}] stays
   // Pi rather than being floatified. Infinity / -Infinity resolve to ±inf so
   // they clamp to the upper / lower bound respectively.
-  let x =
-    match crate::functions::math_ast::try_eval_to_f64_with_infinity(&args[0]) {
-      Some(v) => v,
-      None => return unevaluated(),
-    };
+  let x = match try_eval_to_f64_with_infinity(&args[0]) {
+    Some(v) => v,
+    None => return unevaluated(),
+  };
 
   // Bounds: exact expressions plus their numeric values. The default range is
   // {-1, 1}.
   let (min_expr, max_expr, min_val, max_val) = if args.len() >= 2 {
     match &args[1] {
       Expr::List(bounds) if bounds.len() == 2 => {
-        let min = match crate::functions::math_ast::try_eval_to_f64(&bounds[0])
-        {
+        let min = match try_eval_to_f64(&bounds[0]) {
           Some(v) => v,
           None => return unevaluated(),
         };
-        let max = match crate::functions::math_ast::try_eval_to_f64(&bounds[1])
-        {
+        let max = match try_eval_to_f64(&bounds[1]) {
           Some(v) => v,
           None => return unevaluated(),
         };
@@ -3151,8 +3112,6 @@ pub fn integer_exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 // ─── IntegerPart / FractionalPart ──────────────────────────────────
 
-use crate::functions::math_ast::contains_inexact_real as contains_inexact_literal;
-
 /// Build `re + im*I`, dropping a zero imaginary part. Used by the complex
 /// branches of IntegerPart/FractionalPart.
 fn build_complex_result(re: Expr, im: Expr) -> Result<Expr, InterpreterError> {
@@ -3181,8 +3140,7 @@ fn complex_parts_for_rounding(expr: &Expr) -> Option<(Expr, Expr)> {
   {
     return Some((re, im));
   }
-  if let Some((re, im)) =
-    crate::functions::math_ast::try_extract_complex_float(expr)
+  if let Some((re, im)) = try_extract_complex_float(expr)
     && im != 0.0
   {
     return Some((Expr::Real(re), Expr::Real(im)));
@@ -3234,8 +3192,7 @@ pub fn integer_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Complex number: IntegerPart[a + b I] = IntegerPart[a] + IntegerPart[b] I,
   // truncating each component toward zero. Covers numeric/Real components;
   // symbolic-constant components (Pi + E I) extract no float and fall through.
-  if let Some((re, im)) =
-    crate::functions::math_ast::try_extract_complex_float(&args[0])
+  if let Some((re, im)) = try_extract_complex_float(&args[0])
     && im != 0.0
   {
     return build_complex_result(
@@ -3313,7 +3270,7 @@ pub fn fractional_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       return Ok(unit_interval(0, 1));
     }
-    if crate::functions::math_ast::is_neg_infinity(&args[0]) {
+    if is_neg_infinity(&args[0]) {
       return Ok(unit_interval(-1, 0));
     }
   }
@@ -3323,8 +3280,7 @@ pub fn fractional_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Exact complex rational: apply FractionalPart to real and imag parts
   // separately (FractionalPart truncates toward zero).
-  if let Some(((rn, rd), (in_, id))) =
-    crate::functions::math_ast::try_extract_complex_exact(&args[0])
+  if let Some(((rn, rd), (in_, id))) = try_extract_complex_exact(&args[0])
     && in_ != 0
   {
     let re_frac = rational_fractional_part(rn, rd);
@@ -3345,9 +3301,8 @@ pub fn fractional_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // FractionalPart[b] I with Real components. Forming a complex from a Real
   // promotes both parts to Real (Complex[2., 2.5]), so even an integer-valued
   // component yields `0.` here — matching wolframscript.
-  if contains_inexact_literal(&args[0])
-    && let Some((re, im)) =
-      crate::functions::math_ast::try_extract_complex_float(&args[0])
+  if contains_inexact_real(&args[0])
+    && let Some((re, im)) = try_extract_complex_float(&args[0])
     && im != 0.0
   {
     return build_complex_result(
@@ -3393,8 +3348,7 @@ pub fn fractional_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
       if !has_inexact(&args[0])
-        && let Ok(floor_val) =
-          crate::functions::math_ast::floor_ast(&[args[0].clone()])
+        && let Ok(floor_val) = floor_ast(&[args[0].clone()])
       {
         // IntegerPart truncates toward zero: Floor for x >= 0, Ceiling
         // for x < 0 (FractionalPart[81*(Pi - 29/2)] = 920 + 81*(-29/2 + Pi),
@@ -3405,8 +3359,7 @@ pub fn fractional_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => false,
         };
         let int_val = if x_negative {
-          crate::functions::math_ast::ceiling_ast(&[args[0].clone()])
-            .unwrap_or(floor_val)
+          ceiling_ast(&[args[0].clone()]).unwrap_or(floor_val)
         } else {
           floor_val
         };
@@ -4001,7 +3954,7 @@ pub fn ramp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Exact rationals and real-valued symbolic numerics (Pi, Sqrt[2], E - 3,
     // …): Ramp[x] = x for x >= 0, else 0. The exact input is preserved; a
     // negative value yields the integer 0 (the Real case is handled above).
-    other => match crate::functions::math_ast::try_eval_to_f64(other) {
+    other => match try_eval_to_f64(other) {
       Some(v) if v >= 0.0 => Ok(other.clone()),
       Some(_) => Ok(Expr::Integer(0)),
       None => Ok(unevaluated("Ramp", args)),
@@ -4106,7 +4059,7 @@ pub fn unit_step_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() > 1 {
     let mut remaining: Vec<Expr> = Vec::new();
     for arg in args {
-      match crate::functions::math_ast::try_eval_to_f64(arg) {
+      match try_eval_to_f64(arg) {
         Some(v) if v < 0.0 => return Ok(Expr::Integer(0)),
         Some(_) => {} // >= 0: contributes 1, drop it
         None => {
@@ -4180,7 +4133,7 @@ pub fn unit_step_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // Exact rationals and real-valued symbolic numerics (Sqrt[2] - 2, …):
     // UnitStep[x] = 1 for x >= 0, else 0.
-    other => match crate::functions::math_ast::try_eval_to_f64(other) {
+    other => match try_eval_to_f64(other) {
       Some(v) if v >= 0.0 => Ok(Expr::Integer(1)),
       Some(_) => Ok(Expr::Integer(0)),
       None => Ok(unevaluated("UnitStep", args)),
@@ -4280,7 +4233,7 @@ pub fn heaviside_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Identifier(name) if name == "Infinity" => Ok(Expr::Integer(1)),
     // Exact rationals and real-valued symbolic numerics (Sqrt[2] - 2, …):
     // HeavisideTheta[x] = 1 for x > 0, 0 for x < 0, and stays unevaluated at 0.
-    other => match crate::functions::math_ast::try_eval_to_f64(other) {
+    other => match try_eval_to_f64(other) {
       Some(v) if v > 0.0 => Ok(Expr::Integer(1)),
       Some(v) if v < 0.0 => Ok(Expr::Integer(0)),
       _ => Ok(unevaluated("HeavisideTheta", args)),
@@ -4593,7 +4546,7 @@ pub fn heaviside_lambda_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         // 1 - |n/d| = (|d| - |n|) / |d|
         let num = abs_d - abs_n;
-        return Ok(crate::functions::math_ast::make_rational(num, abs_d));
+        return Ok(make_rational(num, abs_d));
       }
       Ok(unevaluated("HeavisideLambda", args))
     }
