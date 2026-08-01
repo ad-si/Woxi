@@ -4239,6 +4239,16 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         && !args.is_empty()
         && lays_out_a_graphic(expr) =>
     {
+      // `Column` places its own items, so an alignment argument is honoured
+      // — `Column[{picture, legend}, Center]` centres the narrow legend
+      // under the wide picture. The generic composition below packs every
+      // row to the left instead.
+      if name == "Column"
+        && args.len() >= 2
+        && let Some(svg) = crate::functions::graphics::column_to_svg(args)
+      {
+        return svg;
+      }
       let rows: Vec<Vec<String>> = layout_rows(name, args)
         .iter()
         .map(|cells| cells.iter().map(expr_to_svg).collect())

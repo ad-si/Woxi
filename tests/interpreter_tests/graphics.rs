@@ -7370,6 +7370,39 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       insta::assert_snapshot!(export_svg("Graphics3D[Sphere[]]"));
     }
 
+    // `Column[{picture, legend}, Center]` centres the narrow legend under
+    // the wide picture; the generic layout composition packed every row to
+    // the left regardless of the alignment asked for.
+    #[test]
+    fn a_column_of_pictures_honours_its_alignment() {
+      let x_of = |code: &str| -> Vec<f64> {
+        export_svg(code)
+          .lines()
+          .filter(|l| l.starts_with("<svg x="))
+          .filter_map(|l| {
+            l.split("x=\"").nth(1)?.split('"').next()?.parse().ok()
+          })
+          .collect()
+      };
+      let items = "{Graphics[{Disk[]}, ImageSize -> {200, 200}], \
+                   Graphics[{Rectangle[]}, ImageSize -> {40, 40}]}";
+      assert_eq!(
+        x_of(&format!("Column[{items}, Center]")),
+        vec![0.0, 80.0],
+        "the narrow item centres in the column"
+      );
+      assert_eq!(
+        x_of(&format!("Column[{items}, Right]")),
+        vec![0.0, 160.0],
+        "the narrow item right-aligns"
+      );
+      assert_eq!(
+        x_of(&format!("Column[{items}, Left]")),
+        vec![0.0, 0.0],
+        "the default packs to the left"
+      );
+    }
+
     // A `Spacer[n]` *between* a row's items is blank horizontal space, the
     // same as one used as the separator — the typeset row used to print it
     // as the literal text "Spacer[50]".

@@ -6727,7 +6727,7 @@ fn root_sum_n_eval(poly_arg: &Expr, fn_arg: &Expr) -> Option<Expr> {
 /// non-real roots by increasing real part and then increasing imaginary part.
 /// Returns the root as a `Real` (or `Plus[Real, Times[Real, I]]` for complex
 /// roots), or `None` when the shape doesn't fit.
-fn root_n_eval(poly_arg: &Expr, k_arg: &Expr) -> Option<Expr> {
+pub(crate) fn root_n_eval(poly_arg: &Expr, k_arg: &Expr) -> Option<Expr> {
   use crate::functions::polynomial_ast::extract_poly_coeffs;
   let k = expr_to_i128(k_arg)?;
   if k < 1 {

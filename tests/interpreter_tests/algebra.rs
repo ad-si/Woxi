@@ -12412,6 +12412,49 @@ mod function_expand {
   }
 }
 
+mod root_objects_are_numeric {
+  use super::*;
+
+  // A `Root[…]` object is an exact algebraic number: it keeps its exact form
+  // when printed, but it counts as a number wherever one is wanted. Wolfram
+  // writes the vertex coordinates of a polyhedron this way when they are not
+  // expressible in radicals, and a `Graphics3D` built from them used to drop
+  // every face that touched one.
+  #[test]
+  fn a_root_object_is_numeric() {
+    assert_eq!(interpret("NumericQ[Root[#^2 - 2 &, 1]]").unwrap(), "True");
+    assert_eq!(
+      interpret("NumericQ[Root[1 - 20 #^2 + 80 #^4 &, 1]]").unwrap(),
+      "True"
+    );
+    // A root of a polynomial with symbolic coefficients is not a number.
+    assert_eq!(interpret("NumericQ[Root[#^2 - a &, 1]]").unwrap(), "False");
+  }
+
+  #[test]
+  fn a_root_object_evaluates_where_a_number_is_wanted() {
+    let value: f64 = interpret("Root[1 - 20 #^2 + 80 #^4 &, 1] + 0.0")
+      .unwrap()
+      .parse()
+      .expect("should be a number");
+    assert!(
+      (value - -0.42532540417601994).abs() < 1e-12,
+      "expected -0.4253254041760199, got {value}"
+    );
+    // The whole point: such a coordinate reaches the renderer.
+    let svg = interpret(
+      "ExportString[Graphics3D[{Polygon[{{0, 0, Root[#^2 - 2 &, 1]}, \
+       {1, 0, 0}, {1, 1, 0}}]}, Boxed -> False], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(
+      svg.matches("<polygon").count(),
+      1,
+      "the face must be drawn: {svg}"
+    );
+  }
+}
+
 mod to_radicals {
   use super::*;
 

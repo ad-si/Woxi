@@ -442,6 +442,17 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
         let d = try_eval_to_f64(&args[1])?;
         if d != 0.0 { Some(n / d) } else { None }
       }
+      // `Root[poly &, k]` is an exact algebraic number: it keeps its exact
+      // form when printed, but it counts as a number wherever one is wanted
+      // — a polyhedron's vertex coordinates, say, which is how Wolfram
+      // writes the ones that are not expressible in radicals. Only a real
+      // root has an f64; a complex one has no single value here.
+      "Root" if args.len() == 2 || args.len() == 3 => {
+        match super::numerical::root_n_eval(&args[0], &args[1])? {
+          Expr::Real(v) => Some(v),
+          _ => None,
+        }
+      }
       // Auxiliary Fresnel moduli: symbolic for exact arguments but
       // numericizable (so N[FresnelF[1]] works).
       "FresnelF" | "FresnelG" if args.len() == 1 => {

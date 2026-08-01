@@ -617,6 +617,14 @@ pub fn is_numeric_q(expr: &Expr) -> bool {
         false
       })
     }
+    // `Root[poly &, k]` is an exact algebraic number, so it is numeric even
+    // though its first argument — a pure function — is not.
+    Expr::FunctionCall { name, args, .. }
+      if name == "Root" && (args.len() == 2 || args.len() == 3) =>
+    {
+      crate::functions::math_ast::numerical::root_n_eval(&args[0], &args[1])
+        .is_some()
+    }
     Expr::FunctionCall { name, args, .. } => {
       is_numeric_function(name) && args.iter().all(is_numeric_q)
     }

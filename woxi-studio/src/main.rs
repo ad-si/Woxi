@@ -7384,6 +7384,86 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn constraint_tiling_manipulate_switches_net_and_solid() {
+    // End-to-end regression for "Constraint Tiling on a Truncated
+    // Icosahedron": a setter bar picks one of six constraint sets and a
+    // second one switches between the flat net and the solid. The solid's
+    // vertex coordinates are `Root[…]` objects — algebraic numbers with no
+    // radical form — and every face that touched one used to be dropped.
+    woxi::interpret(
+      "hexFace[c_] := {GrayLevel[c], EdgeForm[Thick], \
+         Polygon[Table[{Cos[i Pi/3], Sin[i Pi/3]}, {i, 6}]]}; \
+       solid[c_] := {EdgeForm[Thick], Darker[Darker[Red]], \
+         Polygon[{{0, 0, Root[1 - 20 #^2 + 80 #^4 &, 1]}, {1, 0, 0}, \
+           {1, 1, 0}}], GrayLevel[c], \
+         Polygon[{{0, 0, 0}, {1, 0, 0}, {1, 1, 1}}]}; \
+       display[n_, tf_] := If[tf === 0, \
+         Column[{Graphics[hexFace[n/6], ImageSize -> {200, 200}], \
+           Row[{Graphics[hexFace[0], ImageSize -> {50, 50}]}]}, Center], \
+         Column[{Graphics3D[{Glow[], Specularity[Black], solid[n/6]}, \
+           Lighting -> \"Neutral\", ImageSize -> {200, 200}, \
+           Boxed -> False], \
+           Row[{Graphics[hexFace[0], ImageSize -> {50, 50}]}]}, Center]];",
+    )
+    .unwrap();
+    let code = "Manipulate[display[code, tf], \
+      {{code, 6, \"constraint set\"}, 1, 6, 1, ControlType -> SetterBar}, \
+      {{tf, 1, \"\"}, {0 -> \"net\", 1 -> \"polyhedron\"}, \
+       ControlType -> SetterBar}, \
+      SynchronousUpdating -> False, SaveDefinitions -> True, \
+      AutorunSequencing -> {1, 2}]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the constraint-tiling Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must draw the solid"
+    );
+
+    // Two setter bars: the six constraint sets, then the net/solid switch
+    // whose labels come from its `value -> label` rules.
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          label,
+          values,
+          current_index,
+          ..
+        },
+        manipulate::ControlState::Discrete {
+          value_labels,
+          current_index: view_index,
+          ..
+        },
+      ] => {
+        assert_eq!(label, "constraint set");
+        assert_eq!(values.len(), 6, "one choice per constraint set");
+        assert_eq!(*current_index, 5, "the sixth set is selected");
+        assert_eq!(
+          value_labels,
+          &["net".to_string(), "polyhedron".to_string()]
+        );
+        assert_eq!(*view_index, 1, "the solid is shown first");
+      }
+      other => panic!("expected two setter bars, got {other:?}"),
+    }
+
+    // Switching to the flat net re-renders.
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[1]
+    {
+      *current_index = 0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
   fn integer_grid_triangle_manipulate_draws_its_locators() {
     // End-to-end regression for "Area of a Triangle on an Integer Grid": a
     // seeded random triangle is shown in a `LocatorPane` whose three
